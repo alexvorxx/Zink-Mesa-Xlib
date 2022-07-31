@@ -21,10 +21,11 @@
 #include "llvmpipe/lp_public.h"
 #endif
 
-#ifdef GALLIUM_VIRGL
+//#ifdef GALLIUM_VIRGL
 #include "virgl/virgl_public.h"
 #include "virgl/vtest/virgl_vtest_public.h"
-#endif
+//#endif
+#include "zink/zink_public.h"
 
 #ifdef GALLIUM_D3D12
 #include "d3d12/d3d12_public.h"
@@ -53,14 +54,14 @@ sw_screen_create_named(struct sw_winsys *winsys, const char *driver)
 #endif
 
 #if defined(GALLIUM_SOFTPIPE)
-   if (screen == NULL && strcmp(driver, "softpipe") == 0)
-      screen = softpipe_create_screen(winsys);
+   //if (screen == NULL && strcmp(driver, "softpipe") == 0)
+      //screen = softpipe_create_screen(winsys);
 #endif
 
-#if defined(GALLIUM_ZINK)
-   if (screen == NULL && strcmp(driver, "zink") == 0)
+//#if defined(GALLIUM_ZINK)
+   //if (screen == NULL && strcmp(driver, "zink") == 0)
       screen = zink_create_screen(winsys, NULL);
-#endif
+//#endif
 
 #if defined(GALLIUM_D3D12)
    if (screen == NULL && strcmp(driver, "d3d12") == 0)
