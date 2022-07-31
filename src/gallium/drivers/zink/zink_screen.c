@@ -2226,10 +2226,10 @@ zink_internal_create_screen(const struct pipe_screen_config *config)
    }
 
    zink_internal_setup_moltenvk(screen);
-   if (!screen->info.have_KHR_timeline_semaphore) {
+   /*if (!screen->info.have_KHR_timeline_semaphore) {
       mesa_loge("zink: KHR_timeline_semaphore is required");
       goto fail;
-   }
+   }*/
 
    init_driver_workarounds(screen);
 
@@ -2355,10 +2355,15 @@ zink_internal_create_screen(const struct pipe_screen_config *config)
    if (!os_get_total_physical_memory(&screen->total_mem))
       goto fail;
 
-   if (!zink_screen_init_semaphore(screen)) {
+   /*if (!zink_screen_init_semaphore(screen)) {
       mesa_loge("zink: failed to create timeline semaphore");
       goto fail;
-   }
+   }*/
+
+   if (debug_get_bool_option("ZINK_NO_TIMELINES", false))
+      screen->info.have_KHR_timeline_semaphore = false;
+   if (screen->info.have_KHR_timeline_semaphore)
+      zink_screen_init_semaphore(screen);
 
    memset(&screen->heap_map, UINT8_MAX, sizeof(screen->heap_map));
    for (enum zink_heap i = 0; i < ZINK_HEAP_MAX; i++) {

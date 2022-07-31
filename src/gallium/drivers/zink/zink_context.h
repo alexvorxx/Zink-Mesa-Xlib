@@ -212,6 +212,8 @@ struct zink_context {
 
    struct pipe_device_reset_callback reset;
 
+   simple_mtx_t batch_mtx;
+
    struct zink_fence *deferred_fence;
    struct zink_fence *last_fence; //the last command buffer submitted
    struct zink_batch_state *batch_states; //list of submitted batch states: ordered by increasing timeline id
@@ -386,6 +388,9 @@ struct zink_context {
    uint32_t num_so_targets;
    struct pipe_stream_output_target *so_targets[PIPE_MAX_SO_OUTPUTS];
    bool dirty_so_targets;
+
+   bool first_frame_done;
+   bool have_timelines;
 
    bool gfx_dirty;
 
