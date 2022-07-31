@@ -59,6 +59,8 @@
 #define XXH_INLINE_ALL
 #include "util/xxhash.h"
 
+struct pipe_context* zink_xlib_context;
+
 static void
 calc_descriptor_hash_sampler_state(struct zink_sampler_state *sampler_state)
 {
@@ -4619,6 +4621,8 @@ zink_context_create(struct pipe_screen *pscreen, void *priv, unsigned flags)
       threaded_context_init_bytes_mapped_limit(tc, 4);
       ctx->base.set_context_param = zink_set_context_param;
    }
+
+   zink_xlib_context = (struct pipe_context*)tc;
 
    return (struct pipe_context*)tc;
 
