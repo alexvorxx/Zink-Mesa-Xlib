@@ -47,6 +47,8 @@
 #include "util/os_file.h"
 #include "frontend/winsys_handle.h"
 
+#include "frontend/sw_winsys.h"
+
 #if !defined(__APPLE__)
 #define ZINK_USE_DMABUF
 #endif
@@ -1110,6 +1112,17 @@ resource_create(struct pipe_screen *pscreen,
       res->layout = res->dmabuf_acquire ? VK_IMAGE_LAYOUT_PREINITIALIZED : VK_IMAGE_LAYOUT_UNDEFINED;
       res->optimal_tiling = optimal_tiling;
       res->aspect = aspect_from_format(templ->format);
+   }
+
+   if (screen->winsys && (templ->bind & PIPE_BIND_DISPLAY_TARGET)) {
+      struct sw_winsys *winsys = screen->winsys;
+      res->dt = winsys->displaytarget_create(screen->winsys,
+                                             res->base.b.bind,
+                                             res->base.b.format,
+                                             templ->width0,
+                                             templ->height0,
+                                             64, NULL,
+                                             &res->dt_stride);
    }
 
    if (loader_private) {
