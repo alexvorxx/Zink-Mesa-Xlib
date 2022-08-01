@@ -1834,6 +1834,81 @@ zink_screen_timeline_wait(struct zink_screen *screen, uint64_t batch_id, uint64_
    return success;
 }
 
+struct noop_submit_info {
+   struct zink_screen *screen;
+   VkFence fence;
+};
+
+static void
+noop_submit(void *data, void *gdata, int thread_index)
+{
+   struct noop_submit_info *n = data;
+   VkSubmitInfo si = {0};
+   si.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+   simple_mtx_lock(&n->screen->queue_lock);
+   if (n->VKSCR(QueueSubmit)(n->screen->threaded ? n->screen->queue_sparse : n->screen->queue,
+                     1, &si, n->fence) != VK_SUCCESS) {
+      mesa_loge("ZINK: vkQueueSubmit failed");
+      n->screen->device_lost = true;
+   }
+   simple_mtx_unlock(&n->screen->queue_lock);
+}
+ 
+bool
+zink_screen_batch_id_wait(struct zink_screen *screen, uint32_t batch_id, uint64_t timeout)
+{
+   if (zink_screen_check_last_finished(screen, batch_id))
+      return true;
+
+   if (screen->info.have_KHR_timeline_semaphore)
+      return zink_screen_timeline_wait(screen, batch_id, timeout);
+
+   if (!timeout)
+      return false;
+
+   uint32_t new_id = 0;
+   while (!new_id)
+      new_id = p_atomic_inc_return(&screen->curr_batch);
+   VkResult ret;
+   struct noop_submit_info n;
+   uint64_t abs_timeout = os_time_get_absolute_timeout(timeout);
+   uint64_t remaining = PIPE_TIMEOUT_INFINITE;
+   VkFenceCreateInfo fci = {0};
+   struct util_queue_fence fence;
+   util_queue_fence_init(&fence);
+   fci.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
+
+   if (VKSCR(CreateFence)(screen->dev, &fci, NULL, &n.fence) != VK_SUCCESS) {
+      mesa_loge("ZINK: vkCreateFence failed");
+      return false;
+   }
+
+   n.screen = screen;
+   if (screen->threaded) {
+      /* must use thread dispatch for sanity */
+      util_queue_add_job(&screen->flush_queue, &n, &fence, noop_submit, NULL, 0);
+      util_queue_fence_wait(&fence);
+   } else {
+      noop_submit(&n, NULL, 0);
+   }
+   if (timeout != PIPE_TIMEOUT_INFINITE) {
+      int64_t time_ns = os_time_get_nano();
+      remaining = abs_timeout > time_ns ? abs_timeout - time_ns : 0;
+   }
+
+   if (remaining)
+      ret = VKSCR(WaitForFences)(screen->dev, 1, &n.fence, VK_TRUE, remaining);
+   else
+      ret = VKSCR(GetFenceStatus)(screen->dev, n.fence);
+   VKSCR(DestroyFence)(screen->dev, n.fence, NULL);
+   bool success = zink_screen_handle_vkresult(screen, ret);
+
+   if (success)
+      zink_screen_update_last_finished(screen, new_id);
+
+   return success;
+}
+
 static uint32_t
 zink_get_loader_version(struct zink_screen *screen)
 {

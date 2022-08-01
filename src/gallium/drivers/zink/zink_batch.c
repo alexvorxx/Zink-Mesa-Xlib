@@ -369,7 +369,8 @@ post_submit(void *data, void *gdata, int thread_index)
          abort();
       screen->device_lost = true;
    } else if (bs->ctx->batch_states_count > 5000) {
-      zink_screen_timeline_wait(screen, bs->fence.batch_id - 2500, PIPE_TIMEOUT_INFINITE);
+      //zink_screen_timeline_wait(screen, bs->fence.batch_id - 2500, PIPE_TIMEOUT_INFINITE); 
+      zink_screen_batch_id_wait(screen, bs->fence.batch_id - 2500, PIPE_TIMEOUT_INFINITE);
    }
 }
 
@@ -694,7 +695,8 @@ zink_screen_usage_check_completion(struct zink_screen *screen, const struct zink
    if (zink_batch_usage_is_unflushed(u))
       return false;
 
-   return zink_screen_timeline_wait(screen, u->usage, 0);
+   //return zink_screen_timeline_wait(screen, u->usage, 0);
+   return zink_screen_batch_id_wait(screen, u->usage, 0);
 }
 
 bool
