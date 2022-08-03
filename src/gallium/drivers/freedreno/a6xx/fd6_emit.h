@@ -31,8 +31,8 @@
 #include "pipe/p_context.h"
 
 #include "fd6_context.h"
-#include "fd6_format.h"
 #include "fd6_program.h"
+#include "fdl/fd6_format_table.h"
 #include "freedreno_context.h"
 #include "ir3_gallium.h"
 

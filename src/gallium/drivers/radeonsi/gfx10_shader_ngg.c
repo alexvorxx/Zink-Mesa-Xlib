@@ -960,11 +960,13 @@ static void cull_primitive(struct si_shader_context *ctx,
    options.cull_w = true;
 
    if (prim_is_lines) {
-      LLVMValueRef terms = ac_build_load_to_sgpr(&ctx->ac, ptr, LLVMConstInt(ctx->ac.i32, 2, 0));
-      terms = LLVMBuildBitCast(builder, terms, ctx->ac.v4f32, "");
+      ptr = LLVMBuildPointerCast(ctx->ac.builder, ptr,
+                                 LLVMPointerType(ctx->ac.v2f32, AC_ADDR_SPACE_CONST_32BIT), "");
+      LLVMValueRef terms = ac_build_load_to_sgpr(&ctx->ac, ptr, LLVMConstInt(ctx->ac.i32, 4, 0));
+      terms = LLVMBuildBitCast(builder, terms, ctx->ac.v2f32, "");
       clip_half_line_width[0] = ac_llvm_extract_elem(&ctx->ac, terms, 0);
       clip_half_line_width[1] = ac_llvm_extract_elem(&ctx->ac, terms, 1);
-      small_prim_precision = ac_llvm_extract_elem(&ctx->ac, terms, 2);
+      small_prim_precision = GET_FIELD(ctx, GS_STATE_SMALL_PRIM_PRECISION_NO_AA);
 
       options.num_vertices = 2;
       options.cull_small_prims = shader->key.ge.opt.ngg_culling & SI_NGG_CULL_SMALL_LINES_DIAMOND_EXIT;
@@ -974,11 +976,6 @@ static void cull_primitive(struct si_shader_context *ctx,
    } else {
       /* Get the small prim filter precision. */
       small_prim_precision = GET_FIELD(ctx, GS_STATE_SMALL_PRIM_PRECISION);
-      small_prim_precision =
-         LLVMBuildOr(builder, small_prim_precision, LLVMConstInt(ctx->ac.i32, 0x70, 0), "");
-      small_prim_precision =
-         LLVMBuildShl(builder, small_prim_precision, LLVMConstInt(ctx->ac.i32, 23, 0), "");
-      small_prim_precision = LLVMBuildBitCast(builder, small_prim_precision, ctx->ac.f32, "");
 
       options.num_vertices = 3;
       options.cull_front = shader->key.ge.opt.ngg_culling & SI_NGG_CULL_FRONT_FACE;
@@ -986,6 +983,13 @@ static void cull_primitive(struct si_shader_context *ctx,
       options.cull_small_prims = true; /* this would only be false with conservative rasterization */
       options.cull_zero_area = options.cull_front || options.cull_back;
    }
+
+   /* Extract the small prim precision. */
+   small_prim_precision =
+      LLVMBuildOr(builder, small_prim_precision, LLVMConstInt(ctx->ac.i32, 0x70, 0), "");
+   small_prim_precision =
+      LLVMBuildShl(builder, small_prim_precision, LLVMConstInt(ctx->ac.i32, 23, 0), "");
+   small_prim_precision = LLVMBuildBitCast(builder, small_prim_precision, ctx->ac.f32, "");
 
    /* Tell ES threads whether their vertex survived. */
    LLVMValueRef params[] = {

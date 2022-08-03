@@ -586,9 +586,8 @@ void AssamblerVisitor::visit(const StreamOutInstr& instr)
    output.burst_count = instr.burst_count();
    output.array_size = instr.array_size();
    output.comp_mask = instr.comp_mask();
-   output.op = instr.op();
+   output.op = instr.op(m_shader->bc.gfx_level);
 
-   assert(output.op >= CF_OP_MEM_STREAM0_BUF0 && output.op <= CF_OP_MEM_STREAM3_BUF3);
 
    if (r600_bytecode_add_output(m_bc, &output))  {
       R600_ERR("shader_from_nir: Error creating stream output instruction\n");

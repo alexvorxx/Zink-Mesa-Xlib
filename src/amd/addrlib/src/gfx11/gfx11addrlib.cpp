@@ -2815,7 +2815,7 @@ ADDR_E_RETURNCODE Gfx11Lib::HwlGetPreferredSurfaceSetting(
                         }
                         else if (pIn->resourceType == ADDR_RSRC_TEX_3D)
                         {
-                            if (pIn->flags.color && allowedSwSet.sw_R)
+                            if (allowedSwSet.sw_D)
                             {
                                 allowedSwModeSet.value &= Gfx11DisplaySwModeMask;
                             }
@@ -2823,7 +2823,7 @@ ADDR_E_RETURNCODE Gfx11Lib::HwlGetPreferredSurfaceSetting(
                             {
                                 allowedSwModeSet.value &= Gfx11StandardSwModeMask;
                             }
-                            else if (allowedSwSet.sw_D)
+                            else if (allowedSwSet.sw_R)
                             {
                                 allowedSwModeSet.value &= Gfx11RenderSwModeMask;
                             }

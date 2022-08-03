@@ -1797,10 +1797,15 @@ handle_precolored_input(struct ra_ctx *ctx, struct ir3_instruction *instr)
    if (instr->dsts[0]->num == INVALID_REG)
       return;
 
+   struct ra_file *file = ra_get_file(ctx, instr->dsts[0]);
    struct ra_interval *interval = &ctx->intervals[instr->dsts[0]->name];
    physreg_t physreg = ra_reg_get_physreg(instr->dsts[0]);
    allocate_dst_fixed(ctx, instr->dsts[0], physreg);
-   insert_dst(ctx, instr->dsts[0]);
+
+   d("insert precolored dst %u physreg %u", instr->dsts[0]->name,
+     ra_interval_get_physreg(interval));
+
+   ra_file_insert(file, interval);
    interval->frozen = true;
 }
 

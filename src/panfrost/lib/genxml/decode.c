@@ -712,8 +712,13 @@ pandecode_bifrost_texture(
         pandecode_indent++;
 
 #if PAN_ARCH >= 9
-        /* TODO: count */
-        for (unsigned i = 0; i < 4; ++i)
+        int plane_count = temp.levels * temp.array_size;
+
+        /* Miptree for each face */
+        if (temp.dimension == MALI_TEXTURE_DIMENSION_CUBE)
+                plane_count *= 6;
+
+        for (unsigned i = 0; i < plane_count; ++i)
                 DUMP_ADDR(PLANE, temp.surfaces + i * pan_size(PLANE), "Plane %u:\n", i);
 #else
         struct pandecode_mapped_memory *tmem = pandecode_find_mapped_gpu_mem_containing(temp.surfaces);

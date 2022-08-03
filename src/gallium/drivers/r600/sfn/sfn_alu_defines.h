@@ -312,18 +312,19 @@ struct AluOp {
    static constexpr int t = 16;
    static constexpr int a = 31;
 
-   AluOp(int ns, int f, int um, const char *n):
-      nsrc(ns), is_float(f), unit_mask(um), name(n)
+   AluOp(int ns, int f, int um, int um_eg, const char *n):
+      nsrc(ns), is_float(f), unit_mask(um), unit_mask_eg(um_eg), name(n)
    {
    }
 
-   bool can_channel(int flags) const {
-      return flags & unit_mask;
+   bool can_channel(int flags, bool eg) const {
+      return flags & (eg ? unit_mask_eg : unit_mask);
    }
 
    int nsrc: 4;
    int is_float:1;
    int unit_mask: 5;
+   int unit_mask_eg: 5;
    const char *name;
 };
 

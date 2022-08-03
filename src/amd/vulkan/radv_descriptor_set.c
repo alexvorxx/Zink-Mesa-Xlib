@@ -107,15 +107,6 @@ radv_mutable_descriptor_type_size_alignment(const VkMutableDescriptorTypeListVAL
    return true;
 }
 
-void
-radv_descriptor_set_layout_destroy(struct radv_device *device,
-                                   struct radv_descriptor_set_layout *set_layout)
-{
-   assert(set_layout->ref_cnt == 0);
-   vk_object_base_finish(&set_layout->base);
-   vk_free2(&device->vk.alloc, NULL, set_layout);
-}
-
 VKAPI_ATTR VkResult VKAPI_CALL
 radv_CreateDescriptorSetLayout(VkDevice _device, const VkDescriptorSetLayoutCreateInfo *pCreateInfo,
                                const VkAllocationCallbacks *pAllocator,
@@ -166,12 +157,9 @@ radv_CreateDescriptorSetLayout(VkDevice _device, const VkDescriptorSetLayoutCrea
     * they are reference counted and may not be destroyed when vkDestroyDescriptorSetLayout is
     * called.
     */
-   set_layout =
-      vk_zalloc(&device->vk.alloc, size, 8, VK_SYSTEM_ALLOCATION_SCOPE_DEVICE);
+   set_layout = vk_descriptor_set_layout_zalloc(&device->vk, size);
    if (!set_layout)
       return vk_error(device, VK_ERROR_OUT_OF_HOST_MEMORY);
-
-   vk_object_base_init(&device->vk, &set_layout->base, VK_OBJECT_TYPE_DESCRIPTOR_SET_LAYOUT);
 
    set_layout->flags = pCreateInfo->flags;
    set_layout->layout_size = size;
@@ -197,11 +185,10 @@ radv_CreateDescriptorSetLayout(VkDevice _device, const VkDescriptorSetLayoutCrea
    VkResult result =
       vk_create_sorted_bindings(pCreateInfo->pBindings, pCreateInfo->bindingCount, &bindings);
    if (result != VK_SUCCESS) {
-      radv_descriptor_set_layout_destroy(device, set_layout);
+      vk_descriptor_set_layout_unref(&device->vk, &set_layout->vk);
       return vk_error(device, result);
    }
 
-   set_layout->ref_cnt = 1;
    set_layout->binding_count = num_bindings;
    set_layout->shader_stages = 0;
    set_layout->dynamic_shader_stages = 0;
@@ -366,19 +353,6 @@ radv_CreateDescriptorSetLayout(VkDevice _device, const VkDescriptorSetLayoutCrea
 }
 
 VKAPI_ATTR void VKAPI_CALL
-radv_DestroyDescriptorSetLayout(VkDevice _device, VkDescriptorSetLayout _set_layout,
-                                const VkAllocationCallbacks *pAllocator)
-{
-   RADV_FROM_HANDLE(radv_device, device, _device);
-   RADV_FROM_HANDLE(radv_descriptor_set_layout, set_layout, _set_layout);
-
-   if (!set_layout)
-      return;
-
-   radv_descriptor_set_layout_unref(device, set_layout);
-}
-
-VKAPI_ATTR void VKAPI_CALL
 radv_GetDescriptorSetLayoutSupport(VkDevice device,
                                    const VkDescriptorSetLayoutCreateInfo *pCreateInfo,
                                    VkDescriptorSetLayoutSupport *pSupport)
@@ -517,7 +491,7 @@ radv_pipeline_layout_add_set(struct radv_pipeline_layout *layout, uint32_t set_i
    layout->num_sets = MAX2(set_idx + 1, layout->num_sets);
 
    layout->set[set_idx].layout = set_layout;
-   radv_descriptor_set_layout_ref(set_layout);
+   vk_descriptor_set_layout_ref(&set_layout->vk);
 
    for (uint32_t b = 0; b < set_layout->binding_count; b++) {
       dynamic_offset_count += set_layout->binding[b].array_size * set_layout->binding[b].dynamic_offset_count;
@@ -560,7 +534,7 @@ radv_pipeline_layout_finish(struct radv_device *device, struct radv_pipeline_lay
       if (!layout->set[i].layout)
          continue;
 
-      radv_descriptor_set_layout_unref(device, layout->set[i].layout);
+      vk_descriptor_set_layout_unref(&device->vk, &layout->set[i].layout->vk);
    }
 
    vk_object_base_finish(&layout->base);
@@ -750,7 +724,7 @@ radv_descriptor_set_create(struct radv_device *device, struct radv_descriptor_po
    }
 
    pool->entry_count++;
-   radv_descriptor_set_layout_ref(layout);
+   vk_descriptor_set_layout_ref(&layout->vk);
    *out_set = set;
    return VK_SUCCESS;
 }
@@ -759,7 +733,7 @@ static void
 radv_descriptor_set_destroy(struct radv_device *device, struct radv_descriptor_pool *pool,
                             struct radv_descriptor_set *set, bool free_bo)
 {
-   radv_descriptor_set_layout_unref(device, set->header.layout);
+   vk_descriptor_set_layout_unref(&device->vk, &set->header.layout->vk);
 
    if (pool->host_memory_base)
       return;

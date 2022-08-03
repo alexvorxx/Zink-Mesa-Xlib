@@ -956,6 +956,10 @@ static void virgl_disk_cache_create(struct virgl_screen *screen)
    uint32_t shader_debug_flags = virgl_debug & VIRGL_DEBUG_USE_TGSI;
    _mesa_sha1_update(&sha1_ctx, &shader_debug_flags, sizeof(shader_debug_flags));
 
+   /* When we switch the host the caps might change and then we might have to
+    * apply different lowering. */
+   _mesa_sha1_update(&sha1_ctx, &screen->caps, sizeof(screen->caps));
+
    uint8_t sha1[20];
    _mesa_sha1_final(&sha1_ctx, sha1);
    char timestamp[41];

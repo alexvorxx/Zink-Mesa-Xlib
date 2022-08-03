@@ -36,7 +36,6 @@
 #include "fd6_context.h"
 #include "fd6_draw.h"
 #include "fd6_emit.h"
-#include "fd6_format.h"
 #include "fd6_program.h"
 #include "fd6_vsc.h"
 #include "fd6_zsa.h"

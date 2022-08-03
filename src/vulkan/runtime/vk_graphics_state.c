@@ -896,13 +896,13 @@ vk_render_pass_state_init(struct vk_render_pass_state *rp,
    }
 
    *rp = (struct vk_render_pass_state) {
+      .render_pass = info->renderPass,
+      .subpass = info->subpass,
       .depth_attachment_format = VK_FORMAT_UNDEFINED,
       .stencil_attachment_format = VK_FORMAT_UNDEFINED,
    };
 
    if (info->renderPass != VK_NULL_HANDLE && sp_info != NULL) {
-      rp->render_pass = info->renderPass;
-      rp->subpass = info->subpass;
       rp->attachment_aspects = sp_info->attachment_aspects;
       rp->view_mask = sp_info->view_mask;
       return;

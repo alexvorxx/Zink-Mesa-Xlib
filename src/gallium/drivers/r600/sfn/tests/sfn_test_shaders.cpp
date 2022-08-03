@@ -3073,7 +3073,7 @@ Shader *TestShader::from_string(const std::string& s)
    Shader *shader = nullptr;
 
    if (line.substr(0,2) == "FS")
-      shader = new FragmentShader(key);
+      shader = new FragmentShaderEG(key);
    else if (line.substr(0,2) == "VS")
       shader = new VertexShader(nullptr, nullptr,  key);
    else if (line.substr(0,2) == "GS")

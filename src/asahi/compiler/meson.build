@@ -86,6 +86,7 @@ if with_tests
     executable(
       'agx_tests',
       files(
+         'test/test-minifloat.cpp',
          'test/test-optimizer.cpp',
          'test/test-lower-pseudo.cpp',
          'test/test-lower-parallel-copy.cpp',

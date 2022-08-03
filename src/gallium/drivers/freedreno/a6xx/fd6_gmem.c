@@ -42,7 +42,6 @@
 #include "fd6_context.h"
 #include "fd6_draw.h"
 #include "fd6_emit.h"
-#include "fd6_format.h"
 #include "fd6_gmem.h"
 #include "fd6_pack.h"
 #include "fd6_program.h"
@@ -278,10 +277,10 @@ patch_fb_read_gmem(struct fd_batch *batch)
           A6XX_TEX_CONST_0_SWAP(WZYX) |
           A6XX_TEX_CONST_0_TILE_MODE(TILE6_2) |
           COND(util_format_is_srgb(format), A6XX_TEX_CONST_0_SRGB) |
-          A6XX_TEX_CONST_0_SWIZ_X(fd6_pipe2swiz(swiz[0])) |
-          A6XX_TEX_CONST_0_SWIZ_Y(fd6_pipe2swiz(swiz[1])) |
-          A6XX_TEX_CONST_0_SWIZ_Z(fd6_pipe2swiz(swiz[2])) |
-          A6XX_TEX_CONST_0_SWIZ_W(fd6_pipe2swiz(swiz[3]));
+          A6XX_TEX_CONST_0_SWIZ_X(fdl6_swiz(swiz[0])) |
+          A6XX_TEX_CONST_0_SWIZ_Y(fdl6_swiz(swiz[1])) |
+          A6XX_TEX_CONST_0_SWIZ_Z(fdl6_swiz(swiz[2])) |
+          A6XX_TEX_CONST_0_SWIZ_W(fdl6_swiz(swiz[3]));
 
    for (unsigned i = 0; i < num_patches; i++) {
       struct fd_cs_patch *patch = fd_patch_element(&batch->fb_read_patches, i);

@@ -244,7 +244,7 @@ fd_resource_set_usage(struct pipe_resource *prsc, enum fd_dirty_3d_state usage)
    if (likely(rsc->dirty & usage))
       return;
    fd_resource_lock(rsc);
-   rsc->dirty |= usage;
+   or_mask(rsc->dirty, usage);
    fd_resource_unlock(rsc);
 }
 

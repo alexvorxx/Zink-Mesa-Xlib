@@ -411,7 +411,10 @@ Shader *Shader::translate_from_nir(nir_shader *nir, const pipe_stream_output_inf
 
    switch (nir->info.stage) {
    case MESA_SHADER_FRAGMENT:
-      shader = new FragmentShader(key);
+      if (chip_class >= ISA_CC_EVERGREEN)
+         shader = new FragmentShaderEG(key);
+      else
+         shader = new FragmentShaderR600(key);
    break;
    case MESA_SHADER_VERTEX:
       shader = new VertexShader(so_info, gs_shader, key);
@@ -505,8 +508,11 @@ bool Shader::scan_shader(const nir_function *func)
 
    int lds_pos = 0;
    for (auto& [index, input] : m_inputs) {
-      if (input.need_lds_pos())
+      if (input.need_lds_pos()) {
+         if (chip_class() < ISA_CC_EVERGREEN)
+            input.set_gpr(lds_pos);
          input.set_lds_pos(lds_pos++);
+      }
    }
 
    int param_id = 0;

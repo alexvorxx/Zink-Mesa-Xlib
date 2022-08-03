@@ -746,7 +746,16 @@ struct vk_graphics_pipeline_state {
  * we can get this information ourselves.
  */
 struct vk_subpass_info {
+   /** VkSubpassDescription2::viewMask */
    uint32_t view_mask;
+
+   /**
+    * Aspects of all attachments used as color or depth/stencil attachments
+    * in the subpass.  Input and resolve attachments should not be considered
+    * when computing the attachments aspect mask.  This is used to determine
+    * whether or not depth/stencil and color blend state are required for a
+    * pipeline.
+    */
    VkImageAspectFlags attachment_aspects;
 };
 

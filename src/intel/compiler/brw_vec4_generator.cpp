@@ -1932,14 +1932,9 @@ generate_code(struct brw_codegen *p,
          send_count++;
          break;
 
-      case SHADER_OPCODE_FIND_LIVE_CHANNEL: {
-         const struct brw_reg mask =
-            brw_stage_has_packed_dispatch(devinfo, nir->info.stage,
-                                          &prog_data->base) ? brw_imm_ud(~0u) :
-            brw_dmask_reg();
-         brw_find_live_channel(p, dst, mask, false);
+      case SHADER_OPCODE_FIND_LIVE_CHANNEL:
+         brw_find_live_channel(p, dst, false);
          break;
-      }
 
       case SHADER_OPCODE_BROADCAST:
          assert(inst->force_writemask_all);

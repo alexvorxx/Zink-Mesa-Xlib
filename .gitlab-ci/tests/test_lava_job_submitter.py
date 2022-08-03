@@ -8,7 +8,7 @@
 import xmlrpc.client
 from contextlib import nullcontext as does_not_raise
 from datetime import datetime
-from itertools import repeat
+from itertools import chain, repeat
 
 import pytest
 from lava.exceptions import MesaCIException, MesaCIRetryError
@@ -22,10 +22,10 @@ from lava.lava_job_submitter import (
 from lava.utils import LogSectionType
 
 from .lava.helpers import (
-    create_lava_yaml_msg,
     generate_n_logs,
     generate_testsuite_result,
     jobs_logs_response,
+    mock_lava_signal,
     mock_logs,
     section_timeout,
 )
@@ -36,7 +36,7 @@ NUMBER_OF_MAX_ATTEMPTS = NUMBER_OF_RETRIES_TIMEOUT_DETECTION + 1
 @pytest.fixture
 def mock_proxy_waiting_time(mock_proxy):
     def update_mock_proxy(frozen_time, **kwargs):
-        wait_time = kwargs.pop("wait_time", 0)
+        wait_time = kwargs.pop("wait_time", 1)
         proxy_mock = mock_proxy(**kwargs)
         proxy_job_state = proxy_mock.scheduler.job_state
         proxy_job_state.return_value = {"job_state": "Running"}
@@ -59,57 +59,79 @@ NETWORK_EXCEPTION = xmlrpc.client.ProtocolError("", 0, "test", {})
 XMLRPC_FAULT = xmlrpc.client.Fault(0, "test")
 
 PROXY_SCENARIOS = {
-    "finish case": (generate_n_logs(1), does_not_raise(), True, {}),
+    "simple pass case": (mock_logs(result="pass"), does_not_raise(), "pass", {}),
+    "simple fail case": (mock_logs(result="fail"), does_not_raise(), "fail", {}),
+    "simple hung case": (
+        mock_logs(
+            messages={
+                LogSectionType.TEST_CASE: [
+                    section_timeout(LogSectionType.TEST_CASE) + 1
+                ]
+                * 1000
+            },
+            result="fail",
+        ),
+        pytest.raises(MesaCIRetryError),
+        "hung",
+        {},
+    ),
+    "leftover dump from last job in boot section": (
+        (
+            mock_lava_signal(LogSectionType.LAVA_BOOT),
+            jobs_logs_response(finished=False, msg=None, result="fail"),
+        ),
+        pytest.raises(MesaCIRetryError),
+        "hung",
+        {},
+    ),
     "boot works at last retry": (
         mock_logs(
-            {
+            messages={
                 LogSectionType.LAVA_BOOT: [
                     section_timeout(LogSectionType.LAVA_BOOT) + 1
                 ]
                 * NUMBER_OF_RETRIES_TIMEOUT_DETECTION
                 + [1]
             },
+            result="pass",
         ),
         does_not_raise(),
-        True,
+        "pass",
         {},
     ),
-    "post process test case took too long": pytest.param(
+    "test case took too long": pytest.param(
         mock_logs(
-            {
-                LogSectionType.LAVA_POST_PROCESSING: [
-                    section_timeout(LogSectionType.LAVA_POST_PROCESSING) + 1
+            messages={
+                LogSectionType.TEST_CASE: [
+                    section_timeout(LogSectionType.TEST_CASE) + 1
                 ]
                 * (NUMBER_OF_MAX_ATTEMPTS + 1)
             },
+            result="pass",
         ),
         pytest.raises(MesaCIRetryError),
-        True,
+        "pass",
         {},
-        marks=pytest.mark.xfail(
-            reason=(
-                "The time travel mock is not behaving as expected. "
-                "It makes a gitlab section end in the past when an "
-                "exception happens."
-            )
-        ),
     ),
     "timed out more times than retry attempts": (
         generate_n_logs(n=4, tick_fn=9999999),
         pytest.raises(MesaCIRetryError),
-        False,
+        "fail",
         {},
     ),
     "long log case, no silence": (
-        generate_n_logs(n=1000, tick_fn=0),
+        mock_logs(
+            messages={LogSectionType.TEST_CASE: [1] * (1000)},
+            result="pass",
+        ),
         does_not_raise(),
-        True,
+        "pass",
         {},
     ),
     "no retries, testsuite succeed": (
-        generate_n_logs(n=1, tick_fn=0),
+        mock_logs(result="pass"),
         does_not_raise(),
-        True,
+        "pass",
         {
             "testsuite_results": [
                 generate_testsuite_result(result="pass")
@@ -117,9 +139,9 @@ PROXY_SCENARIOS = {
         },
     ),
     "no retries, but testsuite fails": (
-        generate_n_logs(n=1, tick_fn=0, result="fail"),
+        mock_logs(result="fail"),
         does_not_raise(),
-        False,
+        "fail",
         {
             "testsuite_results": [
                 generate_testsuite_result(result="fail")
@@ -129,7 +151,7 @@ PROXY_SCENARIOS = {
     "no retries, one testsuite fails": (
         generate_n_logs(n=1, tick_fn=0, result="fail"),
         does_not_raise(),
-        False,
+        "fail",
         {
             "testsuite_results": [
                 generate_testsuite_result(result="fail"),
@@ -140,21 +162,21 @@ PROXY_SCENARIOS = {
     "very long silence": (
         generate_n_logs(n=NUMBER_OF_MAX_ATTEMPTS + 1, tick_fn=100000),
         pytest.raises(MesaCIRetryError),
-        False,
+        "fail",
         {},
     ),
     # If a protocol error happens, _call_proxy will retry without affecting timeouts
     "unstable connection, ProtocolError followed by final message": (
-        (NETWORK_EXCEPTION, jobs_logs_response(finished=True, result="pass")),
+        (NETWORK_EXCEPTION, *list(mock_logs(result="pass"))),
         does_not_raise(),
-        True,
+        "pass",
         {},
     ),
     # After an arbitrary number of retries, _call_proxy should call sys.exit
     "unreachable case, subsequent ProtocolErrors": (
         repeat(NETWORK_EXCEPTION),
         pytest.raises(SystemExit),
-        False,
+        "fail",
         {},
     ),
     "XMLRPC Fault": ([XMLRPC_FAULT], pytest.raises(SystemExit, match="1"), False, {}),
@@ -177,17 +199,15 @@ def test_retriable_follow_job(
     with expectation:
         proxy = mock_proxy(side_effect=test_log, **proxy_args)
         job: LAVAJob = retriable_follow_job(proxy, "")
-        assert job_result == (job.status == "pass")
+        assert job_result == job.status
 
 
-WAIT_FOR_JOB_SCENARIOS = {
-    "one log run taking (sec):": (generate_n_logs(1), True),
-}
+WAIT_FOR_JOB_SCENARIOS = {"one log run taking (sec):": (mock_logs(result="pass"))}
 
 
-@pytest.mark.parametrize("wait_time", (0, DEVICE_HANGING_TIMEOUT_SEC * 2))
+@pytest.mark.parametrize("wait_time", (DEVICE_HANGING_TIMEOUT_SEC * 2,))
 @pytest.mark.parametrize(
-    "side_effect, has_finished",
+    "side_effect",
     WAIT_FOR_JOB_SCENARIOS.values(),
     ids=WAIT_FOR_JOB_SCENARIOS.keys(),
 )
@@ -195,7 +215,6 @@ def test_simulate_a_long_wait_to_start_a_job(
     frozen_time,
     wait_time,
     side_effect,
-    has_finished,
     mock_proxy_waiting_time,
 ):
     start_time = datetime.now()
@@ -209,7 +228,7 @@ def test_simulate_a_long_wait_to_start_a_job(
     end_time = datetime.now()
     delta_time = end_time - start_time
 
-    assert has_finished == (job.status == "pass")
+    assert job.status == "pass"
     assert delta_time.total_seconds() >= wait_time
 
 

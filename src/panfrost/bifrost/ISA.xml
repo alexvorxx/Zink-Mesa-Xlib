@@ -3713,7 +3713,7 @@
     <src start="6" mask="0xf7"/>
   </ins>
 
-  <ins name="+CLPER_V6.i32" mask="0xfffc0" exact="0x3f0c0">
+  <ins name="+CLPER_OLD.i32" mask="0xfffc0" exact="0x3f0c0">
     <src start="0" mask="0x7"/>
     <src start="3"/>
   </ins>

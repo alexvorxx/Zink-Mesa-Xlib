@@ -8,12 +8,6 @@ KHR-Single-GL46.arrays_of_arrays_gl.SubroutineFunctionCalls2,Crash
 dEQP-GLES31.functional.texture.border_clamp.range_clamp.linear_srgb_color,Fail
 dEQP-GLES31.functional.texture.border_clamp.range_clamp.nearest_srgb_color,Fail
 
-# https://gitlab.freedesktop.org/mesa/mesa/-/issues/6940
-KHR-GL46.shader_image_load_store.multiple-uniforms,Fail
-KHR-GL46.texture_cube_map_array.image_op_geometry_sh,Fail
-KHR-GLES31.core.texture_cube_map_array.image_op_geometry_sh,Fail
-KHR-GLES32.core.texture_cube_map_array.image_op_geometry_sh,Fail
-
 # Turnip has maxFragmentInputComponents = 124, while GL requires
 # gl_MaxFragmentInputComponents >= 128
 KHR-GL46.limits.max_fragment_input_components,Fail
@@ -29,12 +23,6 @@ KHR-GL46.gpu_shader_fp64.builtin.mod_dvec4,Fail
 # https://gitlab.freedesktop.org/mesa/mesa/-/issues/6723
 KHR-GL46.copy_image.functional,Fail
 KHR-GL46.texture_view.view_classes,Fail
-
-# WFI is likely required after PC_TESSFACTOR_ADDR update,
-# otherwise GPU may use not updated address.
-KHR-GLES32.core.tessellation_shader.tessellation_shader_point_mode.point_rendering,Fail
-KHR-GLES32.core.tessellation_shader.winding.quads_cw,Fail
-KHR-GLES32.core.tessellation_shader.winding.triangles_cw,Fail
 
 # https://gerrit.khronos.org/c/vk-gl-cts/+/9891/
 KHR-GLES31.core.polygon_offset_clamp.PolygonOffsetClampMinMax,Fail

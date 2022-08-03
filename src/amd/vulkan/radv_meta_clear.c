@@ -245,8 +245,8 @@ finish_meta_clear_htile_mask_state(struct radv_device *device)
                         &state->alloc);
    radv_DestroyPipelineLayout(radv_device_to_handle(device), state->clear_htile_mask_p_layout,
                               &state->alloc);
-   radv_DestroyDescriptorSetLayout(radv_device_to_handle(device), state->clear_htile_mask_ds_layout,
-                                   &state->alloc);
+   device->vk.dispatch_table.DestroyDescriptorSetLayout(
+      radv_device_to_handle(device), state->clear_htile_mask_ds_layout, &state->alloc);
 }
 
 static void
@@ -260,8 +260,8 @@ finish_meta_clear_dcc_comp_to_single_state(struct radv_device *device)
    }
    radv_DestroyPipelineLayout(radv_device_to_handle(device), state->clear_dcc_comp_to_single_p_layout,
                               &state->alloc);
-   radv_DestroyDescriptorSetLayout(radv_device_to_handle(device), state->clear_dcc_comp_to_single_ds_layout,
-                                   &state->alloc);
+   device->vk.dispatch_table.DestroyDescriptorSetLayout(
+      radv_device_to_handle(device), state->clear_dcc_comp_to_single_ds_layout, &state->alloc);
 }
 
 void

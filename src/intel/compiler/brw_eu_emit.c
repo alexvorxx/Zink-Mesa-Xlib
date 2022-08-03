@@ -3365,16 +3365,14 @@ brw_pixel_interpolator_query(struct brw_codegen *p,
 }
 
 void
-brw_find_live_channel(struct brw_codegen *p, struct brw_reg dst,
-                      struct brw_reg mask, bool last)
+brw_find_live_channel(struct brw_codegen *p, struct brw_reg dst, bool last)
 {
    const struct intel_device_info *devinfo = p->devinfo;
    const unsigned exec_size = 1 << brw_get_default_exec_size(p);
    const unsigned qtr_control = brw_get_default_group(p) / 8;
    brw_inst *inst;
 
-   assert(devinfo->ver >= 7);
-   assert(mask.type == BRW_REGISTER_TYPE_UD);
+   assert(devinfo->ver == 7);
 
    brw_push_insn_state(p);
 
@@ -3389,114 +3387,59 @@ brw_find_live_channel(struct brw_codegen *p, struct brw_reg dst,
    if (brw_get_default_access_mode(p) == BRW_ALIGN_1) {
       brw_set_default_mask_control(p, BRW_MASK_DISABLE);
 
-      if (devinfo->ver >= 8) {
-         /* Getting the first active channel index is easy on Gfx8: Just find
-          * the first bit set in the execution mask.  The register exists on
-          * HSW already but it reads back as all ones when the current
-          * instruction has execution masking disabled, so it's kind of
-          * useless.
-          */
-         struct brw_reg exec_mask =
-            retype(brw_mask_reg(0), BRW_REGISTER_TYPE_UD);
+      const struct brw_reg flag = brw_flag_subreg(flag_subreg);
 
-         brw_set_default_exec_size(p, BRW_EXECUTE_1);
-         if (mask.file != BRW_IMMEDIATE_VALUE || mask.ud != 0xffffffff) {
-            /* Unfortunately, ce0 does not take into account the thread
-             * dispatch mask, which may be a problem in cases where it's not
-             * tightly packed (i.e. it doesn't have the form '2^n - 1' for
-             * some n).  Combine ce0 with the given dispatch (or vector) mask
-             * to mask off those channels which were never dispatched by the
-             * hardware.
-             */
-            brw_SHR(p, vec1(dst), mask, brw_imm_ud(qtr_control * 8));
-            brw_set_default_swsb(p, tgl_swsb_regdist(1));
-            brw_AND(p, vec1(dst), exec_mask, vec1(dst));
-            exec_mask = vec1(dst);
-         }
+      brw_set_default_exec_size(p, BRW_EXECUTE_1);
+      brw_MOV(p, retype(flag, BRW_REGISTER_TYPE_UD), brw_imm_ud(0));
 
-         /* Quarter control has the effect of magically shifting the value of
-          * ce0 so you'll get the first/last active channel relative to the
-          * specified quarter control as result.
-          */
-         if (!last) {
-            inst = brw_FBL(p, vec1(dst), exec_mask);
-         } else {
-            inst = brw_LZD(p, vec1(dst), exec_mask);
-            struct brw_reg neg = vec1(dst);
-            neg.negate = true;
-            inst = brw_ADD(p, vec1(dst), neg, brw_imm_uw(31));
-         }
+      /* Run enough instructions returning zero with execution masking and
+       * a conditional modifier enabled in order to get the full execution
+       * mask in f1.0.  We could use a single 32-wide move here if it
+       * weren't because of the hardware bug that causes channel enables to
+       * be applied incorrectly to the second half of 32-wide instructions
+       * on Gfx7.
+       */
+      const unsigned lower_size = MIN2(16, exec_size);
+      for (unsigned i = 0; i < exec_size / lower_size; i++) {
+         inst = brw_MOV(p, retype(brw_null_reg(), BRW_REGISTER_TYPE_UW),
+                        brw_imm_uw(0));
+         brw_inst_set_mask_control(devinfo, inst, BRW_MASK_ENABLE);
+         brw_inst_set_group(devinfo, inst, lower_size * i + 8 * qtr_control);
+         brw_inst_set_cond_modifier(devinfo, inst, BRW_CONDITIONAL_Z);
+         brw_inst_set_exec_size(devinfo, inst, cvt(lower_size) - 1);
+         brw_inst_set_flag_reg_nr(devinfo, inst, flag_subreg / 2);
+         brw_inst_set_flag_subreg_nr(devinfo, inst, flag_subreg % 2);
+      }
+
+      /* Find the first bit set in the exec_size-wide portion of the flag
+       * register that was updated by the last sequence of MOV
+       * instructions.
+       */
+      const enum brw_reg_type type = brw_int_type(exec_size / 8, false);
+      brw_set_default_exec_size(p, BRW_EXECUTE_1);
+      if (!last) {
+         inst = brw_FBL(p, vec1(dst), byte_offset(retype(flag, type), qtr_control));
       } else {
-         const struct brw_reg flag = brw_flag_subreg(flag_subreg);
-
-         brw_set_default_exec_size(p, BRW_EXECUTE_1);
-         brw_MOV(p, retype(flag, BRW_REGISTER_TYPE_UD), brw_imm_ud(0));
-
-         /* Run enough instructions returning zero with execution masking and
-          * a conditional modifier enabled in order to get the full execution
-          * mask in f1.0.  We could use a single 32-wide move here if it
-          * weren't because of the hardware bug that causes channel enables to
-          * be applied incorrectly to the second half of 32-wide instructions
-          * on Gfx7.
-          */
-         const unsigned lower_size = MIN2(16, exec_size);
-         for (unsigned i = 0; i < exec_size / lower_size; i++) {
-            inst = brw_MOV(p, retype(brw_null_reg(), BRW_REGISTER_TYPE_UW),
-                           brw_imm_uw(0));
-            brw_inst_set_mask_control(devinfo, inst, BRW_MASK_ENABLE);
-            brw_inst_set_group(devinfo, inst, lower_size * i + 8 * qtr_control);
-            brw_inst_set_cond_modifier(devinfo, inst, BRW_CONDITIONAL_Z);
-            brw_inst_set_exec_size(devinfo, inst, cvt(lower_size) - 1);
-            brw_inst_set_flag_reg_nr(devinfo, inst, flag_subreg / 2);
-            brw_inst_set_flag_subreg_nr(devinfo, inst, flag_subreg % 2);
-         }
-
-         /* Find the first bit set in the exec_size-wide portion of the flag
-          * register that was updated by the last sequence of MOV
-          * instructions.
-          */
-         const enum brw_reg_type type = brw_int_type(exec_size / 8, false);
-         brw_set_default_exec_size(p, BRW_EXECUTE_1);
-         if (!last) {
-            inst = brw_FBL(p, vec1(dst), byte_offset(retype(flag, type), qtr_control));
-         } else {
-            inst = brw_LZD(p, vec1(dst), byte_offset(retype(flag, type), qtr_control));
-            struct brw_reg neg = vec1(dst);
-            neg.negate = true;
-            inst = brw_ADD(p, vec1(dst), neg, brw_imm_uw(31));
-         }
-
+         inst = brw_LZD(p, vec1(dst), byte_offset(retype(flag, type), qtr_control));
+         struct brw_reg neg = vec1(dst);
+         neg.negate = true;
+         inst = brw_ADD(p, vec1(dst), neg, brw_imm_uw(31));
       }
    } else {
       brw_set_default_mask_control(p, BRW_MASK_DISABLE);
 
-      if (devinfo->ver >= 8 &&
-          mask.file == BRW_IMMEDIATE_VALUE && mask.ud == 0xffffffff) {
-         /* In SIMD4x2 mode the first active channel index is just the
-          * negation of the first bit of the mask register.  Note that ce0
-          * doesn't take into account the dispatch mask, so the Gfx7 path
-          * should be used instead unless you have the guarantee that the
-          * dispatch mask is tightly packed (i.e. it has the form '2^n - 1'
-          * for some n).
-          */
-         inst = brw_AND(p, brw_writemask(dst, WRITEMASK_X),
-                        negate(retype(brw_mask_reg(0), BRW_REGISTER_TYPE_UD)),
-                        brw_imm_ud(1));
+      /* Overwrite the destination without and with execution masking to
+       * find out which of the channels is active.
+       */
+      brw_push_insn_state(p);
+      brw_set_default_exec_size(p, BRW_EXECUTE_4);
+      brw_MOV(p, brw_writemask(vec4(dst), WRITEMASK_X),
+              brw_imm_ud(1));
 
-      } else {
-         /* Overwrite the destination without and with execution masking to
-          * find out which of the channels is active.
-          */
-         brw_push_insn_state(p);
-         brw_set_default_exec_size(p, BRW_EXECUTE_4);
-         brw_MOV(p, brw_writemask(vec4(dst), WRITEMASK_X),
-                 brw_imm_ud(1));
-
-         inst = brw_MOV(p, brw_writemask(vec4(dst), WRITEMASK_X),
-                        brw_imm_ud(0));
-         brw_pop_insn_state(p);
-         brw_inst_set_mask_control(devinfo, inst, BRW_MASK_ENABLE);
-      }
+      inst = brw_MOV(p, brw_writemask(vec4(dst), WRITEMASK_X),
+                     brw_imm_ud(0));
+      brw_pop_insn_state(p);
+      brw_inst_set_mask_control(devinfo, inst, BRW_MASK_ENABLE);
    }
 
    brw_pop_insn_state(p);

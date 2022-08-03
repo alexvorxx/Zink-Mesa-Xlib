@@ -39,22 +39,19 @@ public:
 
    bool process_stage_intrinsic(nir_intrinsic_instr *intr) override;
 
-private:
-   class Interpolator {
-   public:
-      Interpolator();
-      bool enabled : 1;
-      unsigned ij_index : 4;
-      PRegister i;
-      PRegister j;
-   };
-
-   struct InterpolateParams {
-      PVirtualValue i,j;
-      int base;
-   };
+protected:
 
    static const int s_max_interpolators = 6;
+   bool interpolators_used(int i) const {return m_interpolators_used.test(i);}
+private:
+
+   bool load_interpolated_input(nir_intrinsic_instr *intr);
+
+   virtual int allocate_register_inputs(int first_register) = 0;
+   virtual int allocate_interpolators() = 0;
+   virtual bool load_input_hw(nir_intrinsic_instr *intr) = 0;
+   virtual bool process_stage_intrinsic_hw(nir_intrinsic_instr *intr)  = 0;
+   virtual bool load_interpolated_input_hw(nir_intrinsic_instr *intr) = 0;
 
    bool do_scan_instruction(nir_instr *instr) override;
    int do_allocate_reserved_registers() override;
@@ -63,17 +60,6 @@ private:
 
    bool scan_input(nir_intrinsic_instr *instr, int index_src_id);
 
-   bool load_barycentric_pixel(nir_intrinsic_instr *intr);
-   bool load_barycentric_at_sample(nir_intrinsic_instr* instr);
-   bool load_barycentric_at_offset(nir_intrinsic_instr* instr);
-   bool load_interpolated_input(nir_intrinsic_instr *intr);
-   bool load_interpolated(RegisterVec4& dest, const InterpolateParams& params,
-                          int num_dest_comp, int start_comp);
-
-   bool load_interpolated_one_comp(RegisterVec4& dest, const InterpolateParams& params, EAluOp op);
-   bool load_interpolated_two_comp(RegisterVec4& dest, const InterpolateParams& params, EAluOp op, int writemask);
-   bool load_interpolated_two_comp_for_one(RegisterVec4& dest, const InterpolateParams& params, EAluOp op,
-                                           int start, int dest_slot);
 
    bool emit_export_pixel(nir_intrinsic_instr& intr, int num_outputs);
    bool emit_load_sample_mask_in(nir_intrinsic_instr* instr);
@@ -94,7 +80,6 @@ private:
    ExportInstr *m_last_pixel_export;
 
    std::bitset<s_max_interpolators> m_interpolators_used;
-   std::array<Interpolator, s_max_interpolators> m_interpolator;
    RegisterVec4 m_pos_input;
    Register *m_face_input{nullptr};
    bool m_fs_write_all;
@@ -107,6 +92,60 @@ private:
    int m_nsys_inputs{0};
    bool m_apply_sample_mask{false};
    int m_rat_base{0};
+};
+
+class FragmentShaderR600 : public FragmentShader {
+public:
+   using FragmentShader::FragmentShader;
+private:
+   int allocate_register_inputs(int first_register) override;
+   int allocate_interpolators() override;
+   bool load_input_hw(nir_intrinsic_instr *intr) override;
+   bool process_stage_intrinsic_hw(nir_intrinsic_instr *intr) override;
+   bool load_interpolated_input_hw(nir_intrinsic_instr *intr) override;
+
+   IOMap<RegisterVec4> m_interpolated_inputs;
+};
+
+
+class FragmentShaderEG : public FragmentShader {
+public:
+   using FragmentShader::FragmentShader;
+
+private:
+   class Interpolator {
+   public:
+      Interpolator();
+      bool enabled : 1;
+      unsigned ij_index : 4;
+      PRegister i;
+      PRegister j;
+   };
+
+   struct InterpolateParams {
+      PVirtualValue i,j;
+      int base;
+   };
+
+   int allocate_register_inputs(int first_register) override;
+   int allocate_interpolators() override;
+   bool load_input_hw(nir_intrinsic_instr *intr) override;
+   bool process_stage_intrinsic_hw(nir_intrinsic_instr *intr) override;
+   bool load_interpolated_input_hw(nir_intrinsic_instr *intr) override;
+
+   bool load_barycentric_pixel(nir_intrinsic_instr *intr);
+   bool load_barycentric_at_sample(nir_intrinsic_instr* instr);
+   bool load_barycentric_at_offset(nir_intrinsic_instr* instr);
+   bool load_interpolated(RegisterVec4& dest, const InterpolateParams& params,
+                          int num_dest_comp, int start_comp);
+
+   bool load_interpolated_one_comp(RegisterVec4& dest, const InterpolateParams& params, EAluOp op);
+   bool load_interpolated_two_comp(RegisterVec4& dest, const InterpolateParams& params, EAluOp op, int writemask);
+   bool load_interpolated_two_comp_for_one(RegisterVec4& dest, const InterpolateParams& params, EAluOp op,
+                                           int dest_slot);
+
+   std::array<Interpolator, s_max_interpolators> m_interpolator;
+
 };
 
 }

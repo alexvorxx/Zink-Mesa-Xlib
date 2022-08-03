@@ -32,7 +32,6 @@
 
 #include "fd6_context.h"
 #include "fd6_emit.h"
-#include "fd6_format.h"
 #include "fd6_query.h"
 
 struct PACKED fd6_query_sample {

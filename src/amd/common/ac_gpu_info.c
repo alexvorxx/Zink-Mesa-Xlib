@@ -873,6 +873,7 @@ bool ac_query_gpu_info(int fd, void *dev_p, struct radeon_info *info)
 
    info->family_id = device_info.family;
    info->chip_external_rev = device_info.external_rev;
+   info->chip_rev = device_info.chip_rev;
    info->marketing_name = amdgpu_get_marketing_name(dev);
    info->is_pro_graphics = info->marketing_name && (strstr(info->marketing_name, "Pro") ||
                                                     strstr(info->marketing_name, "PRO") ||
@@ -1132,6 +1133,8 @@ bool ac_query_gpu_info(int fd, void *dev_p, struct radeon_info *info)
                                   info->me_fw_feature >= 32) ||
                                  (info->gfx_level == GFX9 &&
                                   info->me_fw_feature >= 52);
+
+   info->has_export_conflict_bug = info->gfx_level == GFX11;
 
    /* Get the number of good compute units. */
    info->num_cu = 0;
@@ -1451,6 +1454,7 @@ void ac_print_gpu_info(struct radeon_info *info, FILE *f)
    fprintf(f, "    gfx_level = %i\n", info->gfx_level);
    fprintf(f, "    family_id = %i\n", info->family_id);
    fprintf(f, "    chip_external_rev = %i\n", info->chip_external_rev);
+   fprintf(f, "    chip_rev = %i\n", info->chip_rev);
 
    fprintf(f, "Flags:\n");
    fprintf(f, "    is_pro_graphics = %u\n", info->is_pro_graphics);

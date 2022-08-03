@@ -428,7 +428,7 @@ radv_destroy_cmd_buffer(struct radv_cmd_buffer *cmd_buffer)
       struct radv_descriptor_set_header *set = &cmd_buffer->descriptors[i].push_set.set;
       free(set->mapped_ptr);
       if (set->layout)
-         radv_descriptor_set_layout_unref(cmd_buffer->device, set->layout);
+         vk_descriptor_set_layout_unref(&cmd_buffer->device->vk, &set->layout->vk);
       vk_object_base_finish(&set->base);
    }
 
@@ -5294,8 +5294,8 @@ radv_init_push_descriptor_set(struct radv_cmd_buffer *cmd_buffer, struct radv_de
 
    if (set->header.layout != layout) {
       if (set->header.layout)
-         radv_descriptor_set_layout_unref(cmd_buffer->device, set->header.layout);
-      radv_descriptor_set_layout_ref(layout);
+         vk_descriptor_set_layout_unref(&cmd_buffer->device->vk, &set->header.layout->vk);
+      vk_descriptor_set_layout_ref(&layout->vk);
       set->header.layout = layout;
    }
 

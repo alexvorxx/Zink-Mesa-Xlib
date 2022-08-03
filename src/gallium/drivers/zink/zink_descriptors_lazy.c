@@ -359,8 +359,6 @@ zink_descriptor_program_deinit_lazy(struct zink_context *ctx, struct zink_progra
    for (unsigned i = 0; pg->num_dsl && i < ZINK_DESCRIPTOR_TYPES; i++) {
       if (pg->dd->pool_key[i])
          pg->dd->pool_key[i]->use_count--;
-   }
-   for (unsigned i = 0; i < pg->num_dsl; i++) {
       if (pg->dd->templates[i])
          VKSCR(DestroyDescriptorUpdateTemplate)(screen->dev, pg->dd->templates[i], NULL);
    }
@@ -582,7 +580,7 @@ zink_descriptors_update_lazy(struct zink_context *ctx, bool is_compute)
    bool batch_changed = !bdd->pg[is_compute];
    if (batch_changed) {
       /* update all sets and bind null sets */
-      dd_lazy(ctx)->state_changed[is_compute] = pg->dd->binding_usage;
+      dd_lazy(ctx)->state_changed[is_compute] = pg->dd->binding_usage & BITFIELD_MASK(ZINK_DESCRIPTOR_TYPES);
       dd_lazy(ctx)->push_state_changed[is_compute] = !!pg->dd->push_usage;
    }
 
@@ -649,7 +647,7 @@ zink_descriptors_update_lazy(struct zink_context *ctx, bool is_compute)
    bdd->pg[is_compute] = pg;
    ctx->dd->pg[is_compute] = pg;
    bdd->compat_id[is_compute] = pg->compat_id;
-   dd_lazy(ctx)->state_changed[is_compute] = false;
+   dd_lazy(ctx)->state_changed[is_compute] = 0;
 }
 
 void

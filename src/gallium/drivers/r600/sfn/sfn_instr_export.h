@@ -132,7 +132,7 @@ public:
    int array_base() const { return m_array_base;}
    int array_size() const { return m_array_size;}
    int comp_mask() const { return m_writemask;}
-   unsigned op() const;
+   unsigned op(amd_gfx_level gfx_level) const;
 
    bool is_equal_to(const StreamOutInstr& lhs) const;
 

@@ -4489,7 +4489,7 @@ fs_visitor::nir_emit_intrinsic(const fs_builder &bld, nir_intrinsic_instr *instr
          ugm_fence = modes & (nir_var_mem_ssbo | nir_var_mem_global);
          slm_fence = modes & nir_var_mem_shared;
          tgm_fence = modes & nir_var_image;
-         urb_fence = modes & nir_var_shader_out;
+         urb_fence = modes & (nir_var_shader_out | nir_var_mem_task_payload);
          break;
       }
 
@@ -4545,11 +4545,18 @@ fs_visitor::nir_emit_intrinsic(const fs_builder &bld, nir_intrinsic_instr *instr
           slm_fence && workgroup_size() <= dispatch_width)
          slm_fence = false;
 
-      if (stage != MESA_SHADER_TESS_CTRL)
-         urb_fence = false;
+      switch (stage) {
+         case MESA_SHADER_TESS_CTRL:
+         case MESA_SHADER_TASK:
+         case MESA_SHADER_MESH:
+            break;
+         default:
+            urb_fence = false;
+            break;
+      }
 
       unsigned fence_regs_count = 0;
-      fs_reg fence_regs[3] = {};
+      fs_reg fence_regs[4] = {};
 
       const fs_builder ubld = bld.group(8, 0);
 

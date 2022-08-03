@@ -601,8 +601,8 @@ radv_device_finish_meta_resolve_fragment_state(struct radv_device *device)
    radv_DestroyPipeline(radv_device_to_handle(device),
                         state->resolve_fragment.stencil_zero_pipeline, &state->alloc);
 
-   radv_DestroyDescriptorSetLayout(radv_device_to_handle(device), state->resolve_fragment.ds_layout,
-                                   &state->alloc);
+   device->vk.dispatch_table.DestroyDescriptorSetLayout(
+      radv_device_to_handle(device), state->resolve_fragment.ds_layout, &state->alloc);
    radv_DestroyPipelineLayout(radv_device_to_handle(device), state->resolve_fragment.p_layout,
                               &state->alloc);
 }

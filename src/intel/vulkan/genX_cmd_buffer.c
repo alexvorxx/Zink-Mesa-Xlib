@@ -5983,15 +5983,16 @@ genX(cmd_buffer_emit_gfx12_depth_wa)(struct anv_cmd_buffer *cmd_buffer,
                                      const struct isl_surf *surf)
 {
 #if GFX_VERx10 == 120
-   const bool fmt_is_d16 = surf->format == ISL_FORMAT_R16_UNORM;
+   const bool is_d16_1x_msaa = surf->format == ISL_FORMAT_R16_UNORM &&
+                               surf->samples == 1;
 
    switch (cmd_buffer->state.depth_reg_mode) {
    case ANV_DEPTH_REG_MODE_HW_DEFAULT:
-      if (!fmt_is_d16)
+      if (!is_d16_1x_msaa)
          return;
       break;
-   case ANV_DEPTH_REG_MODE_D16:
-      if (fmt_is_d16)
+   case ANV_DEPTH_REG_MODE_D16_1X_MSAA:
+      if (is_d16_1x_msaa)
          return;
       break;
    case ANV_DEPTH_REG_MODE_UNKNOWN:
@@ -6015,21 +6016,13 @@ genX(cmd_buffer_emit_gfx12_depth_wa)(struct anv_cmd_buffer *cmd_buffer,
     * Surface Format is D16_UNORM , surface type is not NULL & 1X_MSAA”.
     */
    anv_batch_write_reg(&cmd_buffer->batch, GENX(COMMON_SLICE_CHICKEN1), reg) {
-      reg.HIZPlaneOptimizationdisablebit = fmt_is_d16 && surf->samples == 1;
+      reg.HIZPlaneOptimizationdisablebit = is_d16_1x_msaa;
       reg.HIZPlaneOptimizationdisablebitMask = true;
    }
 
-   /* Wa_1806527549
-    *
-    * Set HIZ_CHICKEN (7018h) bit 13 = 1 when depth buffer is D16_UNORM.
-    */
-   anv_batch_write_reg(&cmd_buffer->batch, GENX(HIZ_CHICKEN), reg) {
-      reg.HZDepthTestLEGEOptimizationDisable = fmt_is_d16;
-      reg.HZDepthTestLEGEOptimizationDisableMask = true;
-   }
-
    cmd_buffer->state.depth_reg_mode =
-      fmt_is_d16 ? ANV_DEPTH_REG_MODE_D16 : ANV_DEPTH_REG_MODE_HW_DEFAULT;
+      is_d16_1x_msaa ? ANV_DEPTH_REG_MODE_D16_1X_MSAA :
+                       ANV_DEPTH_REG_MODE_HW_DEFAULT;
 #endif
 }
 

@@ -977,11 +977,9 @@ to upconvert to 32b float internally?
 		<bitfield name="CP_ILLEGAL_INSTR_ERROR" pos="7" type="boolean"/>
 	</bitset>
 
-	<reg32 offset="0x0800" name="CP_RB_BASE"/>
-	<reg32 offset="0x0801" name="CP_RB_BASE_HI"/>
+	<reg64 offset="0x0800" name="CP_RB_BASE"/>
 	<reg32 offset="0x0802" name="CP_RB_CNTL"/>
-	<reg32 offset="0x0804" name="CP_RB_RPTR_ADDR_LO"/>
-	<reg32 offset="0x0805" name="CP_RB_RPTR_ADDR_HI"/>
+	<reg64 offset="0x0804" name="CP_RB_RPTR_ADDR"/>
 	<reg32 offset="0x0806" name="CP_RB_RPTR"/>
 	<reg32 offset="0x0807" name="CP_RB_WPTR"/>
 	<reg32 offset="0x0808" name="CP_SQE_CNTL"/>
@@ -1040,17 +1038,12 @@ to upconvert to 32b float internally?
 	</array>
 
 	<reg32 offset="0x08A0" name="CP_CONTEXT_SWITCH_CNTL"/>
-	<reg32 offset="0x08A1" name="CP_CONTEXT_SWITCH_SMMU_INFO_LO"/>
-	<reg32 offset="0x08A2" name="CP_CONTEXT_SWITCH_SMMU_INFO_HI"/>
-	<reg32 offset="0x08A3" name="CP_CONTEXT_SWITCH_PRIV_NON_SECURE_RESTORE_ADDR_LO"/>
-	<reg32 offset="0x08A4" name="CP_CONTEXT_SWITCH_PRIV_NON_SECURE_RESTORE_ADDR_HI"/>
-	<reg32 offset="0x08A5" name="CP_CONTEXT_SWITCH_PRIV_SECURE_RESTORE_ADDR_LO"/>
-	<reg32 offset="0x08A6" name="CP_CONTEXT_SWITCH_PRIV_SECURE_RESTORE_ADDR_HI"/>
-	<reg32 offset="0x08A7" name="CP_CONTEXT_SWITCH_NON_PRIV_RESTORE_ADDR_LO"/>
-	<reg32 offset="0x08A8" name="CP_CONTEXT_SWITCH_NON_PRIV_RESTORE_ADDR_HI"/>
+	<reg64 offset="0x08A1" name="CP_CONTEXT_SWITCH_SMMU_INFO"/>
+	<reg64 offset="0x08A3" name="CP_CONTEXT_SWITCH_PRIV_NON_SECURE_RESTORE_ADDR"/>
+	<reg64 offset="0x08A5" name="CP_CONTEXT_SWITCH_PRIV_SECURE_RESTORE_ADDR"/>
+	<reg64 offset="0x08A7" name="CP_CONTEXT_SWITCH_NON_PRIV_RESTORE_ADDR"/>
 	<array offset="0x08D0" name="CP_PERFCTR_CP_SEL" stride="1" length="14"/>
-	<reg32 offset="0x0900" name="CP_CRASH_SCRIPT_BASE_LO"/>
-	<reg32 offset="0x0901" name="CP_CRASH_SCRIPT_BASE_HI"/>
+	<reg64 offset="0x0900" name="CP_CRASH_SCRIPT_BASE"/>
 	<reg32 offset="0x0902" name="CP_CRASH_DUMP_CNTL"/>
 	<reg32 offset="0x0903" name="CP_CRASH_DUMP_STATUS"/>
 	<reg32 offset="0x0908" name="CP_SQE_STAT_ADDR"/>
@@ -1063,26 +1056,21 @@ to upconvert to 32b float internally?
 	<reg32 offset="0x090F" name="CP_MEM_POOL_DBG_DATA"/>
 	<reg32 offset="0x0910" name="CP_SQE_UCODE_DBG_ADDR"/>
 	<reg32 offset="0x0911" name="CP_SQE_UCODE_DBG_DATA"/>
-	<reg32 offset="0x0928" name="CP_IB1_BASE"/>
-	<reg32 offset="0x0929" name="CP_IB1_BASE_HI"/>
+	<reg64 offset="0x0928" name="CP_IB1_BASE"/>
 	<reg32 offset="0x092A" name="CP_IB1_REM_SIZE"/>
-	<reg32 offset="0x092B" name="CP_IB2_BASE"/>
-	<reg32 offset="0x092C" name="CP_IB2_BASE_HI"/>
+	<reg64 offset="0x092B" name="CP_IB2_BASE"/>
 	<reg32 offset="0x092D" name="CP_IB2_REM_SIZE"/>
 	<!-- SDS == CP_SET_DRAW_STATE: -->
-	<reg32 offset="0x092e" name="CP_SDS_BASE"/>
-	<reg32 offset="0x092f" name="CP_SDS_BASE_HI"/>
+	<reg64 offset="0x092e" name="CP_SDS_BASE"/>
 	<reg32 offset="0x0930" name="CP_SDS_REM_SIZE"/>
 	<!-- MRB == MEM_READ_ADDR/$addr in SQE firmware -->
-	<reg32 offset="0x0931" name="CP_MRB_BASE"/>
-	<reg32 offset="0x0932" name="CP_MRB_BASE_HI"/>
+	<reg64 offset="0x0931" name="CP_MRB_BASE"/>
 	<reg32 offset="0x0933" name="CP_MRB_REM_SIZE"/>
 	<!--
 	VSD == Visibility Stream Decode
 	This is used by CP to read the draw stream and skip empty draws
 	-->
-	<reg32 offset="0x0934" name="CP_VSD_BASE"/>
-	<reg32 offset="0x0935" name="CP_VSD_BASE_HI"/>
+	<reg64 offset="0x0934" name="CP_VSD_BASE"/>
 	<reg32 offset="0x0946" name="CP_MRB_DWORDS"/>
 	<reg32 offset="0x0947" name="CP_VSD_DWORDS"/>
 	<!--
@@ -1101,8 +1089,7 @@ to upconvert to 32b float internally?
 		<doc>number of dwords that have already been read but haven't been consumed by $addr</doc>
 		<bitfield name="REM" low="16" high="31"/>
 	</reg32>
-	<reg32 offset="0x0980" name="CP_ALWAYS_ON_COUNTER_LO"/>
-	<reg32 offset="0x0981" name="CP_ALWAYS_ON_COUNTER_HI"/>
+	<reg64 offset="0x0980" name="CP_ALWAYS_ON_COUNTER"/>
 	<reg32 offset="0x098D" name="CP_AHB_CNTL"/>
 	<reg32 offset="0x0A00" name="CP_APERTURE_CNTL_HOST"/>
 	<reg32 offset="0x0A03" name="CP_APERTURE_CNTL_CD"/>
@@ -1199,8 +1186,7 @@ to upconvert to 32b float internally?
 	<reg32 offset="0x0555" name="RBBM_PRIMCTR_10_HI"/>
 
 	<reg32 offset="0xF400" name="RBBM_SECVID_TRUST_CNTL"/>
-	<reg32 offset="0xF800" name="RBBM_SECVID_TSB_TRUSTED_BASE_LO"/>
-	<reg32 offset="0xF801" name="RBBM_SECVID_TSB_TRUSTED_BASE_HI"/>
+	<reg64 offset="0xF800" name="RBBM_SECVID_TSB_TRUSTED_BASE"/>
 	<reg32 offset="0xF802" name="RBBM_SECVID_TSB_TRUSTED_SIZE"/>
 	<reg32 offset="0xF803" name="RBBM_SECVID_TSB_CNTL"/>
 	<reg32 offset="0xF810" name="RBBM_SECVID_TSB_ADDR_MODE_CNTL" type="a5xx_address_mode"/>
@@ -1378,16 +1364,11 @@ to upconvert to 32b float internally?
 	<reg32 offset="0xD000" name="HLSQ_DBG_READ_SEL"/>
 	<reg32 offset="0x0E00" name="UCHE_ADDR_MODE_CNTL" type="a5xx_address_mode"/>
 	<reg32 offset="0x0E01" name="UCHE_MODE_CNTL"/>
-	<reg32 offset="0x0E05" name="UCHE_WRITE_RANGE_MAX_LO"/>
-	<reg32 offset="0x0E06" name="UCHE_WRITE_RANGE_MAX_HI"/>
-	<reg32 offset="0x0E07" name="UCHE_WRITE_THRU_BASE_LO"/>
-	<reg32 offset="0x0E08" name="UCHE_WRITE_THRU_BASE_HI"/>
-	<reg32 offset="0x0E09" name="UCHE_TRAP_BASE_LO"/>
-	<reg32 offset="0x0E0A" name="UCHE_TRAP_BASE_HI"/>
-	<reg32 offset="0x0E0B" name="UCHE_GMEM_RANGE_MIN_LO"/>
-	<reg32 offset="0x0E0C" name="UCHE_GMEM_RANGE_MIN_HI"/>
-	<reg32 offset="0x0E0D" name="UCHE_GMEM_RANGE_MAX_LO"/>
-	<reg32 offset="0x0E0E" name="UCHE_GMEM_RANGE_MAX_HI"/>
+	<reg64 offset="0x0E05" name="UCHE_WRITE_RANGE_MAX"/>
+	<reg64 offset="0x0E07" name="UCHE_WRITE_THRU_BASE"/>
+	<reg64 offset="0x0E09" name="UCHE_TRAP_BASE"/>
+	<reg64 offset="0x0E0B" name="UCHE_GMEM_RANGE_MIN"/>
+	<reg64 offset="0x0E0D" name="UCHE_GMEM_RANGE_MAX"/>
 	<reg32 offset="0x0E17" name="UCHE_CACHE_WAYS"/>
 	<reg32 offset="0x0E18" name="UCHE_FILTER_CNTL"/>
 	<reg32 offset="0x0E19" name="UCHE_CLIENT_PF">

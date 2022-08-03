@@ -1432,14 +1432,8 @@ static int gfx9_get_preferred_swizzle_mode(ADDR_HANDLE addrlib, const struct rad
    /* TODO: We could allow some of these: */
    sin.forbiddenBlock.micro = 1; /* don't allow the 256B swizzle modes */
 
-   if (info->gfx_level >= GFX11) {
-      if ((1 << G_0098F8_NUM_PIPES(info->gb_addr_config)) <= 16) {
-         sin.forbiddenBlock.gfx11.thin256KB = 1;
-         sin.forbiddenBlock.gfx11.thick256KB = 1;
-      }
-   } else {
+   if (info->gfx_level < GFX11)
       sin.forbiddenBlock.var = 1;   /* don't allow the variable-sized swizzle modes */
-   }
 
    sin.bpp = in->bpp;
    sin.width = in->width;

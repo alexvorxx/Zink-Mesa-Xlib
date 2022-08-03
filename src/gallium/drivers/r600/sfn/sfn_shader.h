@@ -269,6 +269,11 @@ protected:
 
    bool emit_simple_mov(nir_dest& dest, int chan, PVirtualValue src, Pin pin = pin_free);
 
+   template <typename T>
+   using IOMap = std::map<int, T, std::less<int>, Allocator<std::pair<const int, T>>>;
+
+   IOMap<ShaderInput>& inputs() {return m_inputs;}
+
 private:
    virtual bool process_stage_intrinsic(nir_intrinsic_instr *intr) = 0;
 
@@ -319,9 +324,6 @@ private:
 
    InstrFactory *m_instr_factory;
    const char *m_type_id;
-
-   template <typename T>
-   using IOMap = std::map<int, T, std::less<int>, Allocator<std::pair<const int, T>>>;
 
    IOMap<ShaderOutput> m_outputs;
    IOMap<ShaderInput> m_inputs;

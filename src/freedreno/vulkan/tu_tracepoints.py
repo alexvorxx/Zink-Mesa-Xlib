@@ -76,14 +76,15 @@ def begin_end_tp(name, args=[], tp_struct=None, tp_print=None,
 
 
 begin_end_tp('render_pass',
-    args=[ArgStruct(type='const struct tu_framebuffer *', var='fb')],
+    args=[ArgStruct(type='const struct tu_framebuffer *', var='fb'),
+          ArgStruct(type='const struct tu_tiling_config *', var='tiling')],
     tp_struct=[Arg(type='uint16_t', name='width',        var='fb->width',                                    c_format='%u'),
                Arg(type='uint16_t', name='height',       var='fb->height',                                   c_format='%u'),
                Arg(type='uint8_t',  name='MRTs',         var='fb->attachment_count',                         c_format='%u'),
             #    Arg(type='uint8_t',  name='samples',      var='fb->samples',                                  c_format='%u'),
-               Arg(type='uint16_t', name='numberOfBins', var='fb->tile_count.width * fb->tile_count.height', c_format='%u'),
-               Arg(type='uint16_t', name='binWidth',     var='fb->tile0.width',                              c_format='%u'),
-               Arg(type='uint16_t', name='binHeight',    var='fb->tile0.height',                             c_format='%u')])
+               Arg(type='uint16_t', name='numberOfBins', var='tiling->tile_count.width * tiling->tile_count.height', c_format='%u'),
+               Arg(type='uint16_t', name='binWidth',     var='tiling->tile0.width',                                  c_format='%u'),
+               Arg(type='uint16_t', name='binHeight',    var='tiling->tile0.height',                                 c_format='%u')])
 
 begin_end_tp('binning_ib')
 begin_end_tp('draw_ib_sysmem')

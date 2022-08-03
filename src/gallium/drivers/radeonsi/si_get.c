@@ -490,14 +490,15 @@ static int si_get_shader_param(struct pipe_screen *pscreen, enum pipe_shader_typ
    case PIPE_SHADER_CAP_INDIRECT_OUTPUT_ADDR: /* lowered in finalize_nir */
       return 1;
 
+   case PIPE_SHADER_CAP_FP16_CONST_BUFFERS:
+      /* We need f16c for fast FP16 conversions in glUniform. */
+      if (!util_get_cpu_caps()->has_f16c)
+         return 0;
+      FALLTHROUGH;
    case PIPE_SHADER_CAP_FP16:
    case PIPE_SHADER_CAP_FP16_DERIVATIVES:
    case PIPE_SHADER_CAP_GLSL_16BIT_CONSTS:
-      return sscreen->options.fp16;
-
-   case PIPE_SHADER_CAP_FP16_CONST_BUFFERS:
-      /* We need f16c for fast FP16 conversions in glUniform. */
-      return sscreen->options.fp16 && util_get_cpu_caps()->has_f16c;
+      return sscreen->info.gfx_level >= GFX8 && sscreen->options.fp16;
 
    /* Unsupported boolean features. */
    case PIPE_SHADER_CAP_INT16:
@@ -1116,8 +1117,8 @@ void si_init_screen_get_functions(struct si_screen *sscreen)
       .max_unroll_iterations_aggressive = LLVM_VERSION_MAJOR >= 13 ? 128 : 32,
       .use_interpolated_input_intrinsics = true,
       .lower_uniforms_to_ubo = true,
-      .support_16bit_alu = sscreen->options.fp16,
-      .vectorize_vec2_16bit = sscreen->options.fp16,
+      .support_16bit_alu = sscreen->info.gfx_level >= GFX8,
+      .vectorize_vec2_16bit = sscreen->info.has_packed_math_16bit,
       .pack_varying_options =
          nir_pack_varying_interp_mode_none |
          nir_pack_varying_interp_mode_smooth |

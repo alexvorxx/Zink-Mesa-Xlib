@@ -339,6 +339,17 @@ init_render_queue_state(struct anv_queue *queue)
 #endif
    }
 
+#if GFX_VERx10 == 120
+   /* Wa_1806527549 says to disable the following HiZ optimization when the
+    * depth buffer is D16_UNORM. We've found the WA to help with more depth
+    * buffer configurations however, so we always disable it just to be safe.
+    */
+   anv_batch_write_reg(&batch, GENX(HIZ_CHICKEN), reg) {
+      reg.HZDepthTestLEGEOptimizationDisable = true;
+      reg.HZDepthTestLEGEOptimizationDisableMask = true;
+   }
+#endif
+
 #if GFX_VERx10 < 125
 #define AA_LINE_QUALITY_REG GENX(3D_CHICKEN3)
 #else

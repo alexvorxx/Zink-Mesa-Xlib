@@ -567,7 +567,7 @@ static bool si_switch_compute_shader(struct si_context *sctx, struct si_compute 
 
    if (sctx->gfx_level >= GFX11) {
       radeon_set_sh_reg(R_00B8A0_COMPUTE_PGM_RSRC3,
-                        S_00B8A0_INST_PREF_SIZE(si_calc_inst_pref_size(shader)));
+                        S_00B8A0_INST_PREF_SIZE(si_get_shader_prefetch_size(shader)));
    }
 
    if (sctx->gfx_level >= GFX11 && shader->scratch_bo) {

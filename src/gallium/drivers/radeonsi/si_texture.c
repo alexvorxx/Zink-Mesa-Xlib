@@ -50,7 +50,7 @@ static bool si_texture_is_aux_plane(const struct pipe_resource *resource);
 
 /* Same as resource_copy_region, except that both upsampling and downsampling are allowed. */
 static void si_copy_region_with_blit(struct pipe_context *pipe, struct pipe_resource *dst,
-                                     unsigned dst_level, unsigned dstx, unsigned dsty,
+                                     unsigned dst_level, unsigned dst_sample, unsigned dstx, unsigned dsty,
                                      unsigned dstz, struct pipe_resource *src, unsigned src_level,
                                      const struct pipe_box *src_box)
 {
@@ -72,9 +72,14 @@ static void si_copy_region_with_blit(struct pipe_context *pipe, struct pipe_reso
    blit.dst.box.depth = src_box->depth;
    blit.mask = util_format_get_mask(dst->format);
    blit.filter = PIPE_TEX_FILTER_NEAREST;
+   blit.dst_sample = dst_sample;
 
    if (blit.mask) {
-      pipe->blit(pipe, &blit);
+      /* Only the gfx blit handles dst_sample. */
+      if (dst_sample)
+         si_gfx_blit(pipe, &blit);
+      else
+         pipe->blit(pipe, &blit);
    }
 }
 
@@ -84,13 +89,15 @@ static void si_copy_to_staging_texture(struct pipe_context *ctx, struct si_trans
    struct pipe_transfer *transfer = (struct pipe_transfer *)stransfer;
    struct pipe_resource *dst = &stransfer->staging->b.b;
    struct pipe_resource *src = transfer->resource;
+   /* level means sample_index - 1 with MSAA. Used by texture uploads. */
+   unsigned src_level = src->nr_samples > 1 ? 0 : transfer->level;
 
    if (src->nr_samples > 1 || ((struct si_texture *)src)->is_depth) {
-      si_copy_region_with_blit(ctx, dst, 0, 0, 0, 0, src, transfer->level, &transfer->box);
+      si_copy_region_with_blit(ctx, dst, 0, 0, 0, 0, 0, src, src_level, &transfer->box);
       return;
    }
 
-   si_resource_copy_region(ctx, dst, 0, 0, 0, 0, src, transfer->level, &transfer->box);
+   si_resource_copy_region(ctx, dst, 0, 0, 0, 0, src, src_level, &transfer->box);
 }
 
 /* Copy from a transfer's staging texture to a full GPU one. */
@@ -104,7 +111,10 @@ static void si_copy_from_staging_texture(struct pipe_context *ctx, struct si_tra
    u_box_3d(0, 0, 0, transfer->box.width, transfer->box.height, transfer->box.depth, &sbox);
 
    if (dst->nr_samples > 1 || ((struct si_texture *)dst)->is_depth) {
-      si_copy_region_with_blit(ctx, dst, transfer->level, transfer->box.x, transfer->box.y,
+      unsigned dst_level = dst->nr_samples > 1 ? 0 : transfer->level;
+      unsigned dst_sample = dst->nr_samples > 1 ? transfer->level : 0;
+
+      si_copy_region_with_blit(ctx, dst, dst_level, dst_sample, transfer->box.x, transfer->box.y,
                                transfer->box.z, src, 0, &sbox);
       return;
    }
@@ -1820,6 +1830,7 @@ static void *si_texture_transfer_map(struct pipe_context *ctx, struct pipe_resou
    unsigned offset = 0;
    char *map;
    bool use_staging_texture = tex->buffer.flags & RADEON_FLAG_ENCRYPTED;
+   unsigned real_level = texture->nr_samples > 1 ? 0 : level;
 
    assert(texture->target != PIPE_BUFFER);
    assert(!(texture->flags & SI_RESOURCE_FLAG_FORCE_LINEAR));
@@ -1839,7 +1850,7 @@ static void *si_texture_transfer_map(struct pipe_context *ctx, struct pipe_resou
        * On dGPUs, the staging texture is always faster.
        * Only count uploads that are at least 4x4 pixels large.
        */
-      if (!sctx->screen->info.has_dedicated_vram && level == 0 && box->width >= 4 &&
+      if (!sctx->screen->info.has_dedicated_vram && real_level == 0 && box->width >= 4 &&
           box->height >= 4 && p_atomic_inc_return(&tex->num_level0_transfers) == 10) {
          bool can_invalidate = si_can_invalidate_texture(sctx->screen, tex, usage, box);
 
@@ -1890,7 +1901,7 @@ static void *si_texture_transfer_map(struct pipe_context *ctx, struct pipe_resou
       unsigned bo_usage = usage & PIPE_MAP_READ ? PIPE_USAGE_STAGING : PIPE_USAGE_STREAM;
       unsigned bo_flags = SI_RESOURCE_FLAG_FORCE_LINEAR | SI_RESOURCE_FLAG_DRIVER_INTERNAL;
 
-      si_init_temp_resource_from_box(&resource, texture, box, level, bo_usage,
+      si_init_temp_resource_from_box(&resource, texture, box, real_level, bo_usage,
                                      bo_flags);
 
       /* Since depth-stencil textures don't support linear tiling,
@@ -1920,7 +1931,7 @@ static void *si_texture_transfer_map(struct pipe_context *ctx, struct pipe_resou
       buf = trans->staging;
    } else {
       /* the resource is mapped directly */
-      offset = si_texture_get_offset(sctx->screen, tex, level, box, &trans->b.b.stride,
+      offset = si_texture_get_offset(sctx->screen, tex, real_level, box, &trans->b.b.stride,
                                      &trans->b.b.layer_stride);
       buf = &tex->buffer;
    }

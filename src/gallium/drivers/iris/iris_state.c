@@ -1102,6 +1102,17 @@ iris_init_render_context(struct iris_batch *batch)
    }
 #endif
 
+#if GFX_VERx10 == 120
+   /* Wa_1806527549 says to disable the following HiZ optimization when the
+    * depth buffer is D16_UNORM. We've found the WA to help with more depth
+    * buffer configurations however, so we always disable it just to be safe.
+    */
+   iris_emit_reg(batch, GENX(HIZ_CHICKEN), reg) {
+      reg.HZDepthTestLEGEOptimizationDisable = true;
+      reg.HZDepthTestLEGEOptimizationDisableMask = true;
+   }
+#endif
+
    upload_pixel_hashing_tables(batch);
 
    /* 3DSTATE_DRAWING_RECTANGLE is non-pipelined, so we want to avoid
@@ -1206,11 +1217,11 @@ struct iris_depth_buffer_state {
 };
 
 #if GFX_VERx10 == 120
-   enum iris_depth_reg_mode {
-      IRIS_DEPTH_REG_MODE_HW_DEFAULT = 0,
-      IRIS_DEPTH_REG_MODE_D16,
-      IRIS_DEPTH_REG_MODE_UNKNOWN,
-   };
+enum iris_depth_reg_mode {
+   IRIS_DEPTH_REG_MODE_HW_DEFAULT = 0,
+   IRIS_DEPTH_REG_MODE_D16_1X_MSAA,
+   IRIS_DEPTH_REG_MODE_UNKNOWN,
+};
 #endif
 
 /**
@@ -5711,15 +5722,16 @@ genX(emit_depth_state_workarounds)(struct iris_context *ice,
                                    const struct isl_surf *surf)
 {
 #if GFX_VERx10 == 120
-   const bool fmt_is_d16 = surf->format == ISL_FORMAT_R16_UNORM;
+   const bool is_d16_1x_msaa = surf->format == ISL_FORMAT_R16_UNORM &&
+                               surf->samples == 1;
 
    switch (ice->state.genx->depth_reg_mode) {
    case IRIS_DEPTH_REG_MODE_HW_DEFAULT:
-      if (!fmt_is_d16)
+      if (!is_d16_1x_msaa)
          return;
       break;
-   case IRIS_DEPTH_REG_MODE_D16:
-      if (fmt_is_d16)
+   case IRIS_DEPTH_REG_MODE_D16_1X_MSAA:
+      if (is_d16_1x_msaa)
          return;
       break;
    case IRIS_DEPTH_REG_MODE_UNKNOWN:
@@ -5741,21 +5753,13 @@ genX(emit_depth_state_workarounds)(struct iris_context *ice,
     * Surface Format is D16_UNORM , surface type is not NULL & 1X_MSAA”.
     */
    iris_emit_reg(batch, GENX(COMMON_SLICE_CHICKEN1), reg) {
-      reg.HIZPlaneOptimizationdisablebit = fmt_is_d16 && surf->samples == 1;
+      reg.HIZPlaneOptimizationdisablebit = is_d16_1x_msaa;
       reg.HIZPlaneOptimizationdisablebitMask = true;
    }
 
-   /* Wa_1806527549
-    *
-    * Set HIZ_CHICKEN (7018h) bit 13 = 1 when depth buffer is D16_UNORM.
-    */
-   iris_emit_reg(batch, GENX(HIZ_CHICKEN), reg) {
-      reg.HZDepthTestLEGEOptimizationDisable = fmt_is_d16;
-      reg.HZDepthTestLEGEOptimizationDisableMask = true;
-   }
-
    ice->state.genx->depth_reg_mode =
-      fmt_is_d16 ? IRIS_DEPTH_REG_MODE_D16 : IRIS_DEPTH_REG_MODE_HW_DEFAULT;
+      is_d16_1x_msaa ? IRIS_DEPTH_REG_MODE_D16_1X_MSAA :
+                       IRIS_DEPTH_REG_MODE_HW_DEFAULT;
 #endif
 }
 

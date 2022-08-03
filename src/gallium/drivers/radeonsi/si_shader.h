@@ -272,6 +272,8 @@ enum
  * in the shader via vs_state_bits in legacy GS, the GS copy shader, and any NGG shader.
  */
 /* bit gap */
+#define GS_STATE_SMALL_PRIM_PRECISION_NO_AA__SHIFT 18
+#define GS_STATE_SMALL_PRIM_PRECISION_NO_AA__MASK  0xf
 #define GS_STATE_SMALL_PRIM_PRECISION__SHIFT    22
 #define GS_STATE_SMALL_PRIM_PRECISION__MASK     0xf
 #define GS_STATE_STREAMOUT_QUERY_ENABLED__SHIFT 26

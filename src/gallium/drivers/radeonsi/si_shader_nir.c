@@ -30,8 +30,7 @@ static bool si_alu_to_scalar_filter(const nir_instr *instr, const void *data)
 {
    struct si_screen *sscreen = (struct si_screen *)data;
 
-   if (sscreen->options.fp16 &&
-       instr->type == nir_instr_type_alu) {
+   if (sscreen->info.has_packed_math_16bit && instr->type == nir_instr_type_alu) {
       nir_alu_instr *alu = nir_instr_as_alu(instr);
 
       if (alu->dest.dest.is_ssa &&
@@ -125,7 +124,7 @@ void si_nir_opts(struct si_screen *sscreen, struct nir_shader *nir, bool first)
       if (nir->info.stage == MESA_SHADER_FRAGMENT)
          NIR_PASS_V(nir, nir_opt_move_discards_to_top);
 
-      if (sscreen->options.fp16)
+      if (sscreen->info.has_packed_math_16bit)
          NIR_PASS(progress, nir, nir_opt_vectorize, si_vectorize_callback, NULL);
    } while (progress);
 

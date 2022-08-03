@@ -474,8 +474,8 @@ radv_device_finish_meta_resolve_compute_state(struct radv_device *device)
    radv_DestroyPipeline(radv_device_to_handle(device), state->resolve_compute.stencil_zero_pipeline,
                         &state->alloc);
 
-   radv_DestroyDescriptorSetLayout(radv_device_to_handle(device), state->resolve_compute.ds_layout,
-                                   &state->alloc);
+   device->vk.dispatch_table.DestroyDescriptorSetLayout(
+      radv_device_to_handle(device), state->resolve_compute.ds_layout, &state->alloc);
    radv_DestroyPipelineLayout(radv_device_to_handle(device), state->resolve_compute.p_layout,
                               &state->alloc);
 }

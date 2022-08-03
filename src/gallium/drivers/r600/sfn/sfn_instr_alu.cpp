@@ -1227,6 +1227,21 @@ bool AluInstr::from_nir(nir_alu_instr *alu, Shader& shader)
          ;
       }
    } else {
+      if (shader.chip_class() == ISA_CC_EVERGREEN) {
+         switch (alu->op) {
+         case nir_op_f2i32: return emit_alu_f2i32_or_u32_eg(*alu, op1_flt_to_int, shader);
+         case nir_op_f2u32: return emit_alu_f2i32_or_u32_eg(*alu, op1_flt_to_uint, shader);
+         default:
+            ;
+         }
+      } else {
+         switch (alu->op) {
+         case nir_op_f2i32: return emit_alu_trans_op1_eg(*alu, op1_flt_to_int, shader);
+         case nir_op_f2u32: return emit_alu_trans_op1_eg(*alu, op1_flt_to_uint, shader);
+         default:
+            ;
+         }
+      }
       switch (alu->op) {
       case nir_op_fcos_amd: return emit_alu_trans_op1_eg(*alu, op1_cos, shader);
       case nir_op_fexp2: return emit_alu_trans_op1_eg(*alu, op1_exp_ieee, shader);
@@ -1240,8 +1255,6 @@ bool AluInstr::from_nir(nir_alu_instr *alu, Shader& shader)
       case nir_op_imul: return emit_alu_trans_op2_eg(*alu, op2_mullo_int, shader);
       case nir_op_imul_high: return emit_alu_trans_op2_eg(*alu, op2_mulhi_int, shader);
       case nir_op_umul_high: return emit_alu_trans_op2_eg(*alu, op2_mulhi_uint, shader);
-      case nir_op_f2i32: return emit_alu_f2i32_or_u32_eg(*alu, op1_flt_to_int, shader);
-      case nir_op_f2u32: return emit_alu_f2i32_or_u32_eg(*alu, op1_flt_to_uint, shader);
       default:
          ;
       }

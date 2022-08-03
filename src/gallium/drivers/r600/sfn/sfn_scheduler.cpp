@@ -148,7 +148,7 @@ public:
 
 class BlockSheduler {
 public:
-   BlockSheduler();
+   BlockSheduler( bool eg_t_slot_handling);
    void run(Shader *shader);
 
    void finalize();
@@ -218,11 +218,13 @@ private:
 
    int m_lds_addr_count{0};
    int m_alu_groups_schduled{0};
+   bool m_eg_t_slot_handling;
 
 };
 
 Shader *schedule(Shader *original)
 {
+   Block::set_chipclass(original->chip_class());
    AluGroup::set_chipclass(original->chip_class());
 
    sfn_log << SfnLog::schedule << "Original shader\n";
@@ -236,7 +238,7 @@ Shader *schedule(Shader *original)
    // to be able to re-start scheduling
 
    auto scheduled_shader = original;
-   BlockSheduler s;
+   BlockSheduler s(original->chip_class() >= ISA_CC_EVERGREEN);
    s.run(scheduled_shader);
    s.finalize();
 
@@ -250,12 +252,13 @@ Shader *schedule(Shader *original)
    return scheduled_shader;
 }
 
-BlockSheduler::BlockSheduler():
+BlockSheduler::BlockSheduler(bool eg_t_slot_handling):
    current_shed(sched_alu),
    m_last_pos(nullptr),
    m_last_pixel(nullptr),
    m_last_param(nullptr),
-   m_current_block(nullptr)
+   m_current_block(nullptr),
+   m_eg_t_slot_handling(eg_t_slot_handling)
 {
 }
 
@@ -820,7 +823,8 @@ bool BlockSheduler::collect_ready_alu_vec(std::list<AluInstr *>& ready, std::lis
          else if (AluGroup::has_t()) {
             auto opinfo = alu_ops.find((*i)->opcode());
             assert(opinfo != alu_ops.end());
-            if (opinfo->second.can_channel(AluOp::t) && !(*i)->indirect_addr().first)
+            if (opinfo->second.can_channel(AluOp::t, m_eg_t_slot_handling) &&
+                !(*i)->indirect_addr().first)
                priority = -1;
          }
 

@@ -449,7 +449,7 @@ clone_phi(clone_state *state, const nir_phi_instr *phi, nir_block *nblk)
     */
    nir_instr_insert_after_block(nblk, &nphi->instr);
 
-   foreach_list_typed(nir_phi_src, src, node, &phi->srcs) {
+   nir_foreach_phi_src(src, phi) {
       nir_phi_src *nsrc = nir_phi_instr_add_src(nphi, src->pred, src->src);
 
       /* Stash it in the list of phi sources.  We'll walk this list and fix up

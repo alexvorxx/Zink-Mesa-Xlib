@@ -51,7 +51,7 @@ libv3dv_files = files(
   'v3dv_queue.c',
   'v3dv_uniforms.c',
   'v3dv_wsi.c',
-)
+) + [v3d_xml_pack, vk_common_entrypoints[0], wsi_entrypoints[0]]
 
 files_per_version = files(
   'v3dvx_cmd_buffer.c',

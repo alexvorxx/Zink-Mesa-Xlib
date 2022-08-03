@@ -117,3 +117,9 @@ v3d_debug_flag_for_shader_stage(gl_shader_stage stage)
         STATIC_ASSERT(MESA_SHADER_STAGES == 6);
         return flags[stage];
 }
+
+void
+v3d_process_debug_variable(void)
+{
+        V3D_DEBUG = debug_get_option_v3d_debug();
+}

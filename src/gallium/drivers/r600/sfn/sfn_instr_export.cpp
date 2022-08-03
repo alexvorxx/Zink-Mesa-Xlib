@@ -280,16 +280,21 @@ StreamOutInstr::StreamOutInstr(const RegisterVec4& value, int num_components,
 {
 }
 
-unsigned StreamOutInstr::op() const
+unsigned StreamOutInstr::op(amd_gfx_level gfx_level) const
 {
    int op = 0;
-   switch (m_output_buffer) {
-   case 0: op = CF_OP_MEM_STREAM0_BUF0; break;
-   case 1: op = CF_OP_MEM_STREAM0_BUF1; break;
-   case 2: op = CF_OP_MEM_STREAM0_BUF2; break;
-   case 3: op = CF_OP_MEM_STREAM0_BUF3; break;
+   if (gfx_level >= EVERGREEN) {
+      switch (m_output_buffer) {
+      case 0: op = CF_OP_MEM_STREAM0_BUF0; break;
+      case 1: op = CF_OP_MEM_STREAM0_BUF1; break;
+      case 2: op = CF_OP_MEM_STREAM0_BUF2; break;
+      case 3: op = CF_OP_MEM_STREAM0_BUF3; break;
+      }
+      return 4 * m_stream + op;
+   } else {
+      assert(m_stream == 0);
+      return CF_OP_MEM_STREAM0 + m_output_buffer;
    }
-   return 4 * m_stream + op;
 }
 
 bool StreamOutInstr::is_equal_to(const StreamOutInstr& oth) const

@@ -49,7 +49,7 @@ bi_lower_swizzle_16(bi_context *ctx, bi_instr *ins, unsigned src)
          * inherently interpret the data, so it can be used for v2f16
          * derivatives, which might require swizzle lowering */
         case BI_OPCODE_CLPER_I32:
-        case BI_OPCODE_CLPER_V6_I32:
+        case BI_OPCODE_CLPER_OLD_I32:
 
         /* Similarly, CSEL.i32 consumes a boolean as a 32-bit argument. If the
          * boolean is implemented as a 16-bit integer, the swizzle is needed

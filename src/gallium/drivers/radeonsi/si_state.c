@@ -110,17 +110,16 @@ static void si_emit_cb_render_state(struct si_context *sctx)
        */
       bool oc_disable =
          blend->dcc_msaa_corruption_4bit & cb_target_mask && sctx->framebuffer.nr_samples >= 2;
-      unsigned watermark = sctx->framebuffer.dcc_overwrite_combiner_watermark;
 
       if (sctx->gfx_level >= GFX11) {
          radeon_opt_set_context_reg(sctx, R_028424_CB_FDCC_CONTROL, SI_TRACKED_CB_DCC_CONTROL,
                                     S_028424_SAMPLE_MASK_TRACKER_DISABLE(oc_disable) |
-                                    S_028424_SAMPLE_MASK_TRACKER_WATERMARK(watermark));
+                                    S_028424_SAMPLE_MASK_TRACKER_WATERMARK(15));
       } else {
          radeon_opt_set_context_reg(
             sctx, R_028424_CB_DCC_CONTROL, SI_TRACKED_CB_DCC_CONTROL,
             S_028424_OVERWRITE_COMBINER_MRT_SHARING_DISABLE(sctx->gfx_level <= GFX9) |
-               S_028424_OVERWRITE_COMBINER_WATERMARK(watermark) |
+               S_028424_OVERWRITE_COMBINER_WATERMARK(sctx->gfx_level >= GFX10 ? 6 : 4) |
                S_028424_OVERWRITE_COMBINER_DISABLE(oc_disable) |
                S_028424_DISABLE_CONSTANT_ENCODE_REG(sctx->gfx_level < GFX11 &&
                                                     sctx->screen->info.has_dcc_constant_encode));
@@ -637,8 +636,7 @@ static void *si_create_blend_state_mode(struct pipe_context *ctx,
          si_pm4_set_reg(pm4, R_028760_SX_MRT0_BLEND_OPT + i * 4, sx_mrt_blend_opt[i]);
 
       /* RB+ doesn't work with dual source blending, logic op, and RESOLVE. */
-      if (blend->dual_src_blend || logicop_enable || mode == V_028808_CB_RESOLVE ||
-          (sctx->gfx_level == GFX11 && blend->blend_enable_4bit))
+      if (blend->dual_src_blend || logicop_enable || mode == V_028808_CB_RESOLVE)
          color_control |= S_028808_DISABLE_DUAL_QUAD(1);
    }
 
@@ -743,6 +741,10 @@ static void si_bind_blend_state(struct pipe_context *ctx, void *state)
        (old_blend->dcc_msaa_corruption_4bit != blend->dcc_msaa_corruption_4bit &&
         sctx->framebuffer.has_dcc_msaa))
       si_mark_atom_dirty(sctx, &sctx->atoms.s.cb_render_state);
+
+   if (sctx->screen->info.has_export_conflict_bug &&
+       old_blend->blend_enable_4bit != blend->blend_enable_4bit)
+      si_mark_atom_dirty(sctx, &sctx->atoms.s.db_render_state);
 
    if (old_blend->cb_target_mask != blend->cb_target_mask ||
        old_blend->alpha_to_coverage != blend->alpha_to_coverage ||
@@ -1592,6 +1594,13 @@ static void si_emit_db_render_state(struct si_context *sctx)
 
    if (sctx->screen->info.has_rbplus && !sctx->screen->info.rbplus_allowed)
       db_shader_control |= S_02880C_DUAL_QUAD_DISABLE(1);
+
+   if (sctx->screen->info.has_export_conflict_bug &&
+       sctx->queued.named.blend->blend_enable_4bit &&
+       si_get_num_coverage_samples(sctx) == 1) {
+      db_shader_control |= S_02880C_OVERRIDE_INTRINSIC_RATE_ENABLE(1) |
+                           S_02880C_OVERRIDE_INTRINSIC_RATE(2);
+   }
 
    radeon_opt_set_context_reg(sctx, R_02880C_DB_SHADER_CONTROL, SI_TRACKED_DB_SHADER_CONTROL,
                               db_shader_control);
@@ -3087,12 +3096,6 @@ static void si_set_framebuffer_state(struct pipe_context *ctx,
           tex->surface.bpe < sctx->framebuffer.min_bytes_per_pixel)
          sctx->framebuffer.min_bytes_per_pixel = tex->surface.bpe;
    }
-
-   /* For optimal DCC performance. */
-   if (sctx->gfx_level >= GFX10)
-      sctx->framebuffer.dcc_overwrite_combiner_watermark = 6;
-   else
-      sctx->framebuffer.dcc_overwrite_combiner_watermark = 4;
 
    struct si_texture *zstex = NULL;
 
@@ -5703,17 +5706,34 @@ void si_init_cs_preamble_state(struct si_context *sctx, bool uses_reg_shadowing)
                      S_028A44_ES_VERTS_PER_SUBGRP(64) | S_028A44_GS_PRIMS_PER_SUBGRP(4));
    }
 
-   if (sctx->gfx_level == GFX8) {
+   if (sctx->gfx_level >= GFX8) {
       unsigned vgt_tess_distribution;
 
-      vgt_tess_distribution = S_028B50_ACCUM_ISOLINE(32) | S_028B50_ACCUM_TRI(11) |
-                              S_028B50_ACCUM_QUAD(11) | S_028B50_DONUT_SPLIT_GFX81(16);
+      if (sctx->gfx_level >= GFX11) {
+         /* ACCUM fields changed their meaning. */
+         vgt_tess_distribution = S_028B50_ACCUM_ISOLINE(255) |
+                                 S_028B50_ACCUM_TRI(255) |
+                                 S_028B50_ACCUM_QUAD(255) |
+                                 S_028B50_DONUT_SPLIT_GFX9(24) |
+                                 S_028B50_TRAP_SPLIT(6);
+      } else if (sctx->gfx_level >= GFX9) {
+         vgt_tess_distribution = S_028B50_ACCUM_ISOLINE(12) |
+                                 S_028B50_ACCUM_TRI(30) |
+                                 S_028B50_ACCUM_QUAD(24) |
+                                 S_028B50_DONUT_SPLIT_GFX9(24) |
+                                 S_028B50_TRAP_SPLIT(6);
+      } else if (sctx->gfx_level == GFX8) {
+         vgt_tess_distribution = S_028B50_ACCUM_ISOLINE(32) |
+                                 S_028B50_ACCUM_TRI(11) |
+                                 S_028B50_ACCUM_QUAD(11) |
+                                 S_028B50_DONUT_SPLIT_GFX81(16);
 
-      /* Testing with Unigine Heaven extreme tesselation yielded best results
-       * with TRAP_SPLIT = 3.
-       */
-      if (sctx->family == CHIP_FIJI || sctx->family >= CHIP_POLARIS10)
-         vgt_tess_distribution |= S_028B50_TRAP_SPLIT(3);
+         /* Testing with Unigine Heaven extreme tesselation yielded best results
+          * with TRAP_SPLIT = 3.
+          */
+         if (sctx->family == CHIP_FIJI || sctx->family >= CHIP_POLARIS10)
+            vgt_tess_distribution |= S_028B50_TRAP_SPLIT(3);
+      }
 
       si_pm4_set_reg(pm4, R_028B50_VGT_TESS_DISTRIBUTION, vgt_tess_distribution);
    }
@@ -5738,9 +5758,6 @@ void si_init_cs_preamble_state(struct si_context *sctx, bool uses_reg_shadowing)
                        0, &sscreen->info,
                        (void*)(sctx->gfx_level >= GFX10 ? si_pm4_set_reg_idx3 : si_pm4_set_reg));
 
-      si_pm4_set_reg(pm4, R_028B50_VGT_TESS_DISTRIBUTION,
-                     S_028B50_ACCUM_ISOLINE(12) | S_028B50_ACCUM_TRI(30) | S_028B50_ACCUM_QUAD(24) |
-                     S_028B50_DONUT_SPLIT_GFX9(24) | S_028B50_TRAP_SPLIT(6));
       si_pm4_set_reg(pm4, R_028C48_PA_SC_BINNER_CNTL_1,
                      S_028C48_MAX_ALLOC_COUNT(sscreen->info.pbb_max_alloc_count - 1) |
                      S_028C48_MAX_PRIM_PER_BATCH(1023));

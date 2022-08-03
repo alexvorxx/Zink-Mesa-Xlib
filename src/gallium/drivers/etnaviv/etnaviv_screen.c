@@ -956,7 +956,7 @@ static const void *
 etna_get_compiler_options(struct pipe_screen *pscreen,
                           enum pipe_shader_ir ir, unsigned shader)
 {
-   return &etna_screen(pscreen)->options;
+   return etna_compiler_get_options(etna_screen(pscreen)->compiler);
 }
 
 static struct disk_cache *
@@ -1094,33 +1094,6 @@ etna_screen_create(struct etna_device *dev, struct etna_gpu *gpu,
       DBG("halti5 requires softpin");
       goto fail;
    }
-
-   screen->options = (nir_shader_compiler_options) {
-      .lower_fpow = true,
-      .lower_ftrunc = true,
-      .fuse_ffma16 = true,
-      .fuse_ffma32 = true,
-      .fuse_ffma64 = true,
-      .lower_bitops = true,
-      .lower_all_io_to_temps = true,
-      .vertex_id_zero_based = true,
-      .lower_flrp32 = true,
-      .lower_fmod = true,
-      .lower_vector_cmp = true,
-      .lower_fdph = true,
-      .lower_insert_byte = true,
-      .lower_insert_word = true,
-      .lower_fdiv = true, /* !screen->specs.has_new_transcendentals */
-      .lower_fsign = !screen->specs.has_sign_floor_ceil,
-      .lower_ffloor = !screen->specs.has_sign_floor_ceil,
-      .lower_fceil = !screen->specs.has_sign_floor_ceil,
-      .lower_fsqrt = !screen->specs.has_sin_cos_sqrt,
-      .lower_sincos = !screen->specs.has_sin_cos_sqrt,
-      .lower_uniforms_to_ubo = screen->specs.halti >= 2,
-      .force_indirect_unrolling = nir_var_all,
-      .max_unroll_iterations = 32,
-      .vectorize_io = true,
-   };
 
    /* apply debug options that disable individual features */
    if (DBG_ENABLED(ETNA_DBG_NO_EARLY_Z))

@@ -2211,7 +2211,7 @@ bi_clper_xor(bi_builder *b, bi_index s0, bi_index s1)
 
         bi_index lane_id = bi_fau(BIR_FAU_LANE_ID, false);
         bi_index lane = bi_lshift_xor_i32(b, lane_id, s1, bi_imm_u8(0));
-        return bi_clper_v6_i32(b, s0, lane);
+        return bi_clper_old_i32(b, s0, lane);
 }
 
 static enum bi_cmpf
@@ -2708,8 +2708,8 @@ bi_emit_alu(bi_builder *b, nir_alu_instr *instr)
                 bi_index left, right;
 
                 if (b->shader->quirks & BIFROST_LIMITED_CLPER) {
-                        left = bi_clper_v6_i32(b, s0, lane1);
-                        right = bi_clper_v6_i32(b, s0, lane2);
+                        left = bi_clper_old_i32(b, s0, lane1);
+                        right = bi_clper_old_i32(b, s0, lane2);
                 } else {
                         left = bi_clper_i32(b, s0, lane1,
                                         BI_INACTIVE_RESULT_ZERO, BI_LANE_OP_NONE,

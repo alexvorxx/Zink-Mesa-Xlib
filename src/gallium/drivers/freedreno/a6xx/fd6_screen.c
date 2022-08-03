@@ -32,7 +32,6 @@
 #include "fd6_blitter.h"
 #include "fd6_context.h"
 #include "fd6_emit.h"
-#include "fd6_format.h"
 #include "fd6_resource.h"
 #include "fd6_screen.h"
 
@@ -129,7 +128,7 @@ fd6_screen_is_format_supported(struct pipe_screen *pscreen,
 }
 
 /* clang-format off */
-static const uint8_t primtypes[] = {
+static const enum pc_di_primtype primtypes[] = {
    [PIPE_PRIM_POINTS]                      = DI_PT_POINTLIST,
    [PIPE_PRIM_LINES]                       = DI_PT_LINELIST,
    [PIPE_PRIM_LINE_STRIP]                  = DI_PT_LINESTRIP,

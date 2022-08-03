@@ -159,6 +159,7 @@ private:
 
    static bool emit_buf_txf(nir_tex_instr *tex, Inputs& src, Shader& shader);
    static bool emit_tex_txf(nir_tex_instr *tex, Inputs& src, Shader& shader);
+   static bool emit_tex_tex_ms_direct(nir_tex_instr *tex, Inputs& src, Shader& shader);
    static bool emit_tex_tex_ms(nir_tex_instr *tex, Inputs& src, Shader& shader);
    static bool emit_tex_tex(nir_tex_instr *tex, Inputs& src, Shader& shader);
    static bool emit_tex_txl_txb(nir_tex_instr *tex, Inputs& src, Shader& shader);

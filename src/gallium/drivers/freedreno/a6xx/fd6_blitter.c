@@ -37,7 +37,6 @@
 
 #include "fd6_blitter.h"
 #include "fd6_emit.h"
-#include "fd6_format.h"
 #include "fd6_resource.h"
 
 static inline enum a6xx_2d_ifmt

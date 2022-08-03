@@ -2680,7 +2680,7 @@ struct anv_cmd_graphics_state {
 enum anv_depth_reg_mode {
    ANV_DEPTH_REG_MODE_UNKNOWN = 0,
    ANV_DEPTH_REG_MODE_HW_DEFAULT,
-   ANV_DEPTH_REG_MODE_D16,
+   ANV_DEPTH_REG_MODE_D16_1X_MSAA,
 };
 
 /** State tracking for compute pipeline

@@ -99,7 +99,7 @@ bi_instr_uses_helpers(bi_instr *I)
                 return (I->va_lod_mode == BI_VA_LOD_MODE_COMPUTED_LOD) ||
                        (I->va_lod_mode == BI_VA_LOD_MODE_COMPUTED_BIAS);
         case BI_OPCODE_CLPER_I32:
-        case BI_OPCODE_CLPER_V6_I32:
+        case BI_OPCODE_CLPER_OLD_I32:
                 /* Fragment shaders require helpers to implement derivatives.
                  * Other shader stages don't have helpers at all */
                 return true;

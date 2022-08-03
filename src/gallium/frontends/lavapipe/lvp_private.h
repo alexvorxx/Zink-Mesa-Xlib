@@ -605,7 +605,6 @@ lvp_vk_format_to_pipe_format(VkFormat format)
 {
    /* Some formats cause problems with CTS right now.*/
    if (format == VK_FORMAT_R4G4B4A4_UNORM_PACK16 ||
-       format == VK_FORMAT_R5G5B5A1_UNORM_PACK16 ||
        format == VK_FORMAT_R8_SRGB ||
        format == VK_FORMAT_R8G8_SRGB ||
        format == VK_FORMAT_R64G64B64A64_SFLOAT ||

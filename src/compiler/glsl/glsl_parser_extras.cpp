@@ -2390,7 +2390,6 @@ do_common_optimization(exec_list *ir, bool linked,
    OPT(propagate_invariance, ir);
    OPT(do_if_simplification, ir);
    OPT(opt_flatten_nested_if_blocks, ir);
-   OPT(opt_conditional_discard, ir);
    OPT(do_copy_propagation_elements, ir);
 
    if (options->OptimizeForAOS && !linked)

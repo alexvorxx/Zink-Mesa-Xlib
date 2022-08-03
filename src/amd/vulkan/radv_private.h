@@ -1047,25 +1047,6 @@ struct radv_descriptor_update_template {
    struct radv_descriptor_update_template_entry entry[0];
 };
 
-void radv_descriptor_set_layout_destroy(struct radv_device *device,
-                                        struct radv_descriptor_set_layout *set_layout);
-
-static inline void
-radv_descriptor_set_layout_ref(struct radv_descriptor_set_layout *set_layout)
-{
-   assert(set_layout && set_layout->ref_cnt >= 1);
-   p_atomic_inc(&set_layout->ref_cnt);
-}
-
-static inline void
-radv_descriptor_set_layout_unref(struct radv_device *device,
-                                 struct radv_descriptor_set_layout *set_layout)
-{
-   assert(set_layout && set_layout->ref_cnt >= 1);
-   if (p_atomic_dec_zero(&set_layout->ref_cnt))
-      radv_descriptor_set_layout_destroy(device, set_layout);
-}
-
 struct radv_buffer {
    struct vk_buffer vk;
 
@@ -3333,8 +3314,7 @@ VK_DEFINE_NONDISP_HANDLE_CASTS(radv_descriptor_pool, base, VkDescriptorPool,
                                VK_OBJECT_TYPE_DESCRIPTOR_POOL)
 VK_DEFINE_NONDISP_HANDLE_CASTS(radv_descriptor_set, header.base, VkDescriptorSet,
                                VK_OBJECT_TYPE_DESCRIPTOR_SET)
-VK_DEFINE_NONDISP_HANDLE_CASTS(radv_descriptor_set_layout, base,
-                               VkDescriptorSetLayout,
+VK_DEFINE_NONDISP_HANDLE_CASTS(radv_descriptor_set_layout, vk.base, VkDescriptorSetLayout,
                                VK_OBJECT_TYPE_DESCRIPTOR_SET_LAYOUT)
 VK_DEFINE_NONDISP_HANDLE_CASTS(radv_descriptor_update_template, base,
                                VkDescriptorUpdateTemplate,

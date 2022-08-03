@@ -1,7 +1,7 @@
 from contextlib import nullcontext as does_not_raise
 from datetime import datetime
 from itertools import cycle
-from typing import Callable, Generator, Iterable, Tuple, Union
+from typing import Callable, Generator, Iterable, Optional, Tuple, Union
 
 import yaml
 from freezegun import freeze_time
@@ -34,6 +34,8 @@ def generate_testsuite_result(
     if extra is None:
         extra = {}
     return {"metadata": {"result": result, **metadata_extra}, "name": name}
+
+
 def jobs_logs_response(
     finished=False, msg=None, lvl="target", result=None
 ) -> Tuple[bool, str]:
@@ -48,12 +50,19 @@ def jobs_logs_response(
 
 
 def section_aware_message_generator(
-    messages: dict[LogSectionType, Iterable[int]]
+    messages: dict[LogSectionType, Iterable[int]], result: Optional[str] = None
 ) -> Iterable[tuple[dict, Iterable[int]]]:
     default = [1]
+
+    result_message_section = LogSectionType.TEST_CASE
+
     for section_type in LogSectionType:
         delay = messages.get(section_type, default)
         yield mock_lava_signal(section_type), delay
+        if result and section_type == result_message_section:
+            # To consider the job finished, the result `echo` should be produced
+            # in the correct section
+            yield create_lava_yaml_msg(msg=f"hwci: mesa: {result}"), delay
 
 
 def message_generator():
@@ -98,23 +107,22 @@ def generate_n_logs(
 
 def to_iterable(tick_fn):
     if isinstance(tick_fn, Generator):
-        tick_gen = tick_fn
+        return tick_fn
     elif isinstance(tick_fn, Iterable):
-        tick_gen = cycle(tick_fn)
+        return cycle(tick_fn)
     else:
-        tick_gen = cycle((tick_fn,))
-    return tick_gen
+        return cycle((tick_fn,))
 
 
-def mock_logs(messages={}, result="pass"):
+def mock_logs(messages=None, result=None):
+    if messages is None:
+        messages = {}
     with freeze_time(datetime.now()) as time_travel:
         # Simulate a complete run given by message_fn
-        for msg, tick_list in section_aware_message_generator(messages):
+        for msg, tick_list in section_aware_message_generator(messages, result):
             for tick_sec in tick_list:
                 yield jobs_logs_response(finished=False, msg=[msg])
                 time_travel.tick(tick_sec)
-
-        yield jobs_logs_response(finished=True, result="pass")
 
 
 def mock_lava_signal(type: LogSectionType) -> dict[str, str]:

@@ -62,15 +62,6 @@ extern "C" {
 /* Alignment for optimal CP DMA performance. */
 #define SI_CPDMA_ALIGNMENT 32
 
-/* We don't want to evict buffers from VRAM by mapping them for CPU access,
- * because they might never be moved back again. If a buffer is large enough,
- * upload data by copying from a temporary GTT buffer. 8K might not seem much,
- * but there can be 100000 buffers.
- *
- * This tweak improves performance for viewperf creo & snx.
- */
-#define SI_MAX_VRAM_MAP_SIZE     8196
-
 /* Tunables for compute-based clear_buffer and copy_buffer: */
 #define SI_COMPUTE_CLEAR_DW_PER_THREAD 4
 #define SI_COMPUTE_COPY_DW_PER_THREAD  4
@@ -275,6 +266,8 @@ enum
 {
    /* Tests: */
    DBG_TEST_IMAGE_COPY,
+   DBG_TEST_CB_RESOLVE,
+   DBG_TEST_COMPUTE_BLIT,
    DBG_TEST_VMFAULT_CP,
    DBG_TEST_VMFAULT_SHADER,
    DBG_TEST_DMA_PERF,
@@ -779,7 +772,6 @@ struct si_framebuffer {
    ubyte color_is_int8;
    ubyte color_is_int10;
    ubyte dirty_cbufs;
-   ubyte dcc_overwrite_combiner_watermark;
    ubyte min_bytes_per_pixel;
    bool dirty_zsbuf;
    bool any_dst_linear;
@@ -921,9 +913,6 @@ struct si_small_prim_cull_info {
    float scale[2], translate[2];
    float scale_no_aa[2], translate_no_aa[2];
    float clip_half_line_width[2];      /* line_width * 0.5 in clip space in X and Y directions */
-   float small_prim_precision_no_aa;   /* same as the small prim precision, but ignores MSAA */
-   /* The above fields are uploaded to memory. The below fields are passed via user SGPRs. */
-   float small_prim_precision;
 };
 
 struct si_vertex_state {
@@ -993,7 +982,6 @@ struct si_context {
    void *cs_clear_render_target;
    void *cs_clear_render_target_1d_array;
    void *cs_clear_12bytes_buffer;
-   void *cs_dcc_decompress;
    void *cs_dcc_retile[32];
    void *cs_fmask_expand[3][2]; /* [log2(samples)-1][is_array] */
    struct si_screen *screen;
@@ -1007,7 +995,6 @@ struct si_context {
 
    bool blitter_running;
    bool in_update_ps_colorbuf0_slot;
-   bool in_dcc_decompress;
    bool is_noop:1;
    bool has_graphics:1;
    bool gfx_flush_in_progress : 1;
@@ -1340,13 +1327,16 @@ void si_blitter_end(struct si_context *sctx);
 void si_init_blit_functions(struct si_context *sctx);
 void si_decompress_textures(struct si_context *sctx, unsigned shader_mask);
 void si_decompress_subresource(struct pipe_context *ctx, struct pipe_resource *tex, unsigned planes,
-                               unsigned level, unsigned first_layer, unsigned last_layer);
+                               unsigned level, unsigned first_layer, unsigned last_layer,
+                               bool need_fmask_expand);
 void si_resource_copy_region(struct pipe_context *ctx, struct pipe_resource *dst,
                              unsigned dst_level, unsigned dstx, unsigned dsty, unsigned dstz,
                              struct pipe_resource *src, unsigned src_level,
                              const struct pipe_box *src_box);
 void si_decompress_dcc(struct si_context *sctx, struct si_texture *tex);
 void si_flush_implicit_resources(struct si_context *sctx);
+bool si_msaa_resolve_blit_via_CB(struct pipe_context *ctx, const struct pipe_blit_info *info);
+void si_gfx_blit(struct pipe_context *ctx, const struct pipe_blit_info *info);
 
 /* si_nir_optim.c */
 bool si_nir_is_output_const_if_tex_is_const(nir_shader *shader, float *in, float *out, int *texunit);
@@ -1413,8 +1403,6 @@ void si_init_clear_functions(struct si_context *sctx);
 
 unsigned si_get_flush_flags(struct si_context *sctx, enum si_coherency coher,
                             enum si_cache_policy cache_policy);
-void si_launch_grid_internal(struct si_context *sctx, struct pipe_grid_info *info,
-                             void *shader, unsigned flags);
 void si_launch_grid_internal_ssbos(struct si_context *sctx, struct pipe_grid_info *info,
                                    void *shader, unsigned flags, enum si_coherency coher,
                                    unsigned num_buffers, const struct pipe_shader_buffer *buffers,
@@ -1436,10 +1424,10 @@ void si_screen_clear_buffer(struct si_screen *sscreen, struct pipe_resource *dst
                             uint64_t size, unsigned value, unsigned flags);
 void si_copy_buffer(struct si_context *sctx, struct pipe_resource *dst, struct pipe_resource *src,
                     uint64_t dst_offset, uint64_t src_offset, unsigned size, unsigned flags);
-void si_compute_copy_image(struct si_context *sctx, struct pipe_resource *dst, unsigned dst_level,
+bool si_compute_copy_image(struct si_context *sctx, struct pipe_resource *dst, unsigned dst_level,
                            struct pipe_resource *src, unsigned src_level, unsigned dstx,
                            unsigned dsty, unsigned dstz, const struct pipe_box *src_box,
-                           bool is_dcc_decompress, unsigned flags);
+                           unsigned flags);
 void si_compute_clear_render_target(struct pipe_context *ctx, struct pipe_surface *dstsurf,
                                     const union pipe_color_union *color, unsigned dstx,
                                     unsigned dsty, unsigned width, unsigned height,
@@ -1565,7 +1553,6 @@ void *si_get_blitter_vs(struct si_context *sctx, enum blitter_attrib_type type,
 void *si_create_dma_compute_shader(struct pipe_context *ctx, unsigned num_dwords_per_thread,
                                    bool dst_stream_cache_policy, bool is_copy);
 void *si_create_clear_buffer_rmw_cs(struct si_context *sctx);
-void *si_create_dcc_decompress_cs(struct pipe_context *ctx);
 void *si_clear_render_target_shader(struct pipe_context *ctx);
 void *si_clear_render_target_shader_1d_array(struct pipe_context *ctx);
 void *si_clear_12bytes_buffer_shader(struct pipe_context *ctx);
@@ -1579,6 +1566,7 @@ void gfx10_destroy_query(struct si_context *sctx);
 
 /* si_test_image_copy_region.c */
 void si_test_image_copy_region(struct si_screen *sscreen);
+void si_test_blit(struct si_screen *sscreen, unsigned test_flags);
 
 /* si_test_clearbuffer.c */
 void si_test_dma_perf(struct si_screen *sscreen);
@@ -1594,7 +1582,7 @@ struct pipe_video_buffer *si_video_buffer_create_with_modifiers(struct pipe_cont
                                                                 const uint64_t *modifiers,
                                                                 unsigned int modifiers_count);
 
-/* si_viewport.c */
+/* si_state_viewport.c */
 void si_update_vs_viewport_state(struct si_context *ctx);
 void si_init_viewport_functions(struct si_context *ctx);
 

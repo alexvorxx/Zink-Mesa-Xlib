@@ -2447,6 +2447,13 @@ anv_queue_submit_simple_batch(struct anv_queue *queue,
    if (result != VK_SUCCESS)
       goto fail;
 
+   if (INTEL_DEBUG(DEBUG_BATCH)) {
+      intel_print_batch(&device->decoder_ctx,
+                        batch_bo->map,
+                        batch_bo->size,
+                        batch_bo->offset, false);
+   }
+
    execbuf.execbuf = (struct drm_i915_gem_execbuffer2) {
       .buffers_ptr = (uintptr_t) execbuf.objects,
       .buffer_count = execbuf.bo_count,

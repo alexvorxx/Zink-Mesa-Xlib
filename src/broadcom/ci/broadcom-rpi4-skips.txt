@@ -7,11 +7,10 @@ spec@glsl-1.10@execution@loops@glsl-vs-unroll-explosion
 spec@!opengl 1.0@gl-1.0-blend-func
 
 # Extensions not supported
+spec@arb_gpu_shader5.*
 spec@arb_gpu_shader_fp64.*
-spec@arb_gpu_shader_gpu5.*
 spec@arb_gpu_shader_int64.*
 spec@arb_tessellation_shader.*
-spec@arb_texture_cube_map.*
 spec@glsl-1.30.*
 spec@glsl-1.40.*
 spec@glsl-1.50.*
@@ -25,6 +24,30 @@ dEQP-VK.rasterization.depth_bias.d32_sfloat
 
 # Slow tests (> 1 minute to run)
 dEQP-VK.api.object_management.max_concurrent.query_pool
+dEQP-VK.binding_model.buffer_device_address.set3.depth3.basessbo.convertcheckuv2.nostore.multi.std140.comp
+dEQP-VK.binding_model.buffer_device_address.set3.depth3.basessbo.convertcheckuv2.nostore.multi.std140.frag
+dEQP-VK.binding_model.buffer_device_address.set3.depth3.basessbo.convertcheckuv2.nostore.multi.std140.vert
+dEQP-VK.binding_model.buffer_device_address.set3.depth3.basessbo.convertcheckuv2.nostore.single.std140.comp
+dEQP-VK.binding_model.buffer_device_address.set3.depth3.basessbo.convertcheckuv2.nostore.single.std140.frag
+dEQP-VK.binding_model.buffer_device_address.set3.depth3.basessbo.convertcheckuv2.nostore.single.std140.vert
+dEQP-VK.binding_model.buffer_device_address.set3.depth3.basessbo.convertcheckuv2.store.multi.std140.comp
+dEQP-VK.binding_model.buffer_device_address.set3.depth3.basessbo.convertcheckuv2.store.multi.std140.frag
+dEQP-VK.binding_model.buffer_device_address.set3.depth3.basessbo.convertcheckuv2.store.multi.std140.vert
+dEQP-VK.binding_model.buffer_device_address.set3.depth3.basessbo.convertcheckuv2.store.single.std140.comp
+dEQP-VK.binding_model.buffer_device_address.set3.depth3.basessbo.convertcheckuv2.store.single.std140.frag
+dEQP-VK.binding_model.buffer_device_address.set3.depth3.basessbo.convertcheckuv2.store.single.std140.vert
+dEQP-VK.binding_model.buffer_device_address.set3.depth3.baseubo.convertcheckuv2.nostore.multi.std140.comp
+dEQP-VK.binding_model.buffer_device_address.set3.depth3.baseubo.convertcheckuv2.nostore.multi.std140.frag
+dEQP-VK.binding_model.buffer_device_address.set3.depth3.baseubo.convertcheckuv2.nostore.multi.std140.vert
+dEQP-VK.binding_model.buffer_device_address.set3.depth3.baseubo.convertcheckuv2.nostore.single.std140.comp
+dEQP-VK.binding_model.buffer_device_address.set3.depth3.baseubo.convertcheckuv2.nostore.single.std140.frag
+dEQP-VK.binding_model.buffer_device_address.set3.depth3.baseubo.convertcheckuv2.nostore.single.std140.vert
+dEQP-VK.binding_model.buffer_device_address.set3.depth3.baseubo.convertcheckuv2.store.multi.std140.comp
+dEQP-VK.binding_model.buffer_device_address.set3.depth3.baseubo.convertcheckuv2.store.multi.std140.frag
+dEQP-VK.binding_model.buffer_device_address.set3.depth3.baseubo.convertcheckuv2.store.multi.std140.vert
+dEQP-VK.binding_model.buffer_device_address.set3.depth3.baseubo.convertcheckuv2.store.single.std140.comp
+dEQP-VK.binding_model.buffer_device_address.set3.depth3.baseubo.convertcheckuv2.store.single.std140.frag
+dEQP-VK.binding_model.buffer_device_address.set3.depth3.baseubo.convertcheckuv2.store.single.std140.vert
 dEQP-VK.binding_model.buffer_device_address.set3.depth3.baseubo.convertuvec2.nostore.multi.std140.vert
 dEQP-VK.binding_model.buffer_device_address.set3.depth3.baseubo.convertuvec2.nostore.single.std140.vert
 dEQP-VK.binding_model.buffer_device_address.set3.depth3.baseubo.convertuvec2.store.multi.std140.vert
@@ -57,5 +80,3 @@ dEQP-VK.texture.explicit_lod.2d.sizes.128x128_nearest_linear_mipmap_linear_clamp
 dEQP-VK.texture.explicit_lod.2d.sizes.128x128_nearest_linear_mipmap_linear_repeat
 dEQP-VK.ubo.random.all_out_of_order_offsets.45
 dEQP-VK.ubo.random.all_shared_buffer.48
-dEQP-VK.binding_model.buffer_device_address.set3.depth3.basessbo.convertcheckuv2.store.single.std140.frag
-dEQP-VK.binding_model.buffer_device_address.set3.depth3.baseubo.convertcheckuv2.nostore.single.std140.frag

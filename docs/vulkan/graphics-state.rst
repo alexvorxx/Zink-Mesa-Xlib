@@ -21,9 +21,31 @@ When creating a pipeline, the
 :cpp:func:`vk_graphics_pipeline_state_fill()` function can be used to
 gather all of the state from the core structures as well as various `pNext`
 chains into a single state structure.  Whenever an extension struct is
-missing, a reasonable default value is provided whenever possible.  The
-usual flow for creating a full graphics pipeline (not library) looks like
-this:
+missing, a reasonable default value is provided whenever possible.
+
+
+:cpp:func:`vk_graphics_pipeline_state_fill()` automatically handles both
+the render pass and dynamic rendering.  For drivers which use
+:cpp:struct:`vk_render_pass`, the :cpp:struct:`vk_render_pass_state`
+structure will be populated as if for dynamic rendering, regardless of
+which path is used.  Drivers which use their own render pass structure
+should parse the render pass, if available, and pass a
+:cpp:struct:`vk_subpass_info` into
+:cpp:func:`vk_graphics_pipeline_state_fill()` with the relevant information
+from the specified subpass.  If a render pass is available,
+:cpp:struct:`vk_render_pass_state` will be populated with the
+:cpp:type:`VkRenderPass` handle and subpass index as well as the
+information from the :cpp:struct:`vk_render_pass_state`.  If dynamic
+rendering is used or the driver does not provide a
+:cpp:struct:`vk_subpass_info` structure, :cpp:struct:`vk_render_pass_state`
+structure will be populated for dynamic rendering, including color, depth,
+and stencil attachment formats.
+
+.. doxygenstruct:: vk_subpass_info
+   :members:
+
+The usual flow for creating a full graphics pipeline (not library) looks
+like this:
 
 .. code-block:: c
 

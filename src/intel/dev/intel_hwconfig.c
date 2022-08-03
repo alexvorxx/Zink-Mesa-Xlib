@@ -265,10 +265,8 @@ apply_hwconfig_item(struct intel_device_info *devinfo,
    case INTEL_HWCONFIG_MAX_EU_PER_SUBSLICE:
    case INTEL_HWCONFIG_RAMBO_L3_BANK_SIZE_IN_KB:
    case INTEL_HWCONFIG_SLM_SIZE_PER_SS_IN_KB:
-      break; /* ignore */
    default:
-      fprintf(stderr, "hwconfig key %d (%s) unhandled!\n", item->key,
-              key_to_name(item->key));
+      break; /* ignore */
    }
 }
 

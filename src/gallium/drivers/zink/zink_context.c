@@ -110,11 +110,13 @@ zink_context_destroy(struct pipe_context *pctx)
    for (unsigned i = 0; i < ARRAY_SIZE(ctx->program_cache); i++) {
       hash_table_foreach(&ctx->program_cache[i], entry) {
          struct zink_program *pg = entry->data;
+         pg->removed = true;
          screen->descriptor_program_deinit(ctx, pg);
       }
    }
    hash_table_foreach(&ctx->compute_program_cache, entry) {
       struct zink_program *pg = entry->data;
+      pg->removed = true;
       screen->descriptor_program_deinit(ctx, pg);
    }
 

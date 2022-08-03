@@ -42,8 +42,12 @@ bool AluGroup::add_instruction(AluInstr *instr)
    if (m_has_lds_op && instr->has_lds_access())
       return false;
 
-   if (instr->has_alu_flag(alu_is_trans) && add_trans_instructions(instr))
-      return true;
+   if (instr->has_alu_flag(alu_is_trans)) {
+      auto opinfo = alu_ops.find(instr->opcode());
+      assert(opinfo->second.can_channel(AluOp::t, s_eg_t_slot_handling));
+      if (add_trans_instructions(instr))
+         return true;
+   }
 
    if (add_vec_instructions(instr)) {
       instr->set_parent_group(this);
@@ -54,7 +58,7 @@ bool AluGroup::add_instruction(AluInstr *instr)
    assert(opinfo != alu_ops.end());
 
    if (s_max_slots > 4 &&
-       opinfo->second.can_channel(AluOp::t) &&
+       opinfo->second.can_channel(AluOp::t, s_eg_t_slot_handling) &&
        add_trans_instructions(instr)) {
       instr->set_parent_group(this);
       return true;
@@ -78,9 +82,8 @@ bool AluGroup::add_trans_instructions(AluInstr *instr)
    auto opinfo = alu_ops.find(instr->opcode());
    assert(opinfo != alu_ops.end());
 
-   if (!opinfo->second.can_channel(AluOp::t))
+   if (!opinfo->second.can_channel(AluOp::t, s_eg_t_slot_handling))
       return false;
-
 
    /* if we schedule a non-trans instr into the trans slot, we have to make
     * sure that the corresponding vector slot is already occupied, otherwise
@@ -373,15 +376,19 @@ AluInstr::SrcValues AluGroup::get_kconsts() const
 
 void AluGroup::set_chipclass(r600_chip_class chip_class)
 {
+   s_eg_t_slot_handling = false;
    switch (chip_class) {
    case ISA_CC_CAYMAN:
       s_max_slots = 4;
    break;
+   case ISA_CC_EVERGREEN:
+      s_eg_t_slot_handling = true;
+      FALLTHROUGH;
    default:
       s_max_slots = 5;
    }
 }
 
 int AluGroup::s_max_slots = 5;
-
+bool AluGroup::s_eg_t_slot_handling = false;
 }

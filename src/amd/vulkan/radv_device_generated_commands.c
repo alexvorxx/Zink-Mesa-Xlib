@@ -914,9 +914,9 @@ radv_device_finish_dgc_prepare_state(struct radv_device *device)
                         &device->meta_state.alloc);
    radv_DestroyPipelineLayout(radv_device_to_handle(device),
                               device->meta_state.dgc_prepare.p_layout, &device->meta_state.alloc);
-   radv_DestroyDescriptorSetLayout(radv_device_to_handle(device),
-                                   device->meta_state.dgc_prepare.ds_layout,
-                                   &device->meta_state.alloc);
+   device->vk.dispatch_table.DestroyDescriptorSetLayout(radv_device_to_handle(device),
+                                                        device->meta_state.dgc_prepare.ds_layout,
+                                                        &device->meta_state.alloc);
 }
 
 VkResult

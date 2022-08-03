@@ -160,7 +160,7 @@ void si_init_resource_fields(struct si_screen *sscreen, struct si_resource *res,
       if (!sscreen->info.smart_access_memory &&
           sscreen->info.has_dedicated_vram &&
           !res->b.cpu_storage && /* TODO: The CPU storage breaks this. */
-          size >= SI_MAX_VRAM_MAP_SIZE)
+          size >= sscreen->options.max_vram_map_size)
          res->b.b.flags |= PIPE_RESOURCE_FLAG_DONT_MAP_DIRECTLY;
    }
 }

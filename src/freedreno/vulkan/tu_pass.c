@@ -113,7 +113,8 @@ tu_render_pass_add_subpass_dep(struct tu_render_pass *pass,
 
    if (dep_invalid_for_gmem(dep, src_stage_mask, dst_stage_mask)) {
       perf_debug((struct tu_device *)pass->base.device, "Disabling gmem rendering due to invalid subpass dependency");
-      pass->gmem_pixels = 0;
+      for (int i = 0; i < ARRAY_SIZE(pass->gmem_pixels); i++)
+         pass->gmem_pixels[i] = 0;
    }
 
    struct tu_subpass_barrier *dst_barrier;
@@ -540,103 +541,113 @@ static void
 tu_render_pass_gmem_config(struct tu_render_pass *pass,
                            const struct tu_physical_device *phys_dev)
 {
-   /* From the VK_KHR_multiview spec:
-    *
-    *    Multiview is all-or-nothing for a render pass - that is, either all
-    *    subpasses must have a non-zero view mask (though some subpasses may
-    *    have only one view) or all must be zero.
-    *
-    * This means we only have to check one of the view masks.
-    */
-   if (pass->subpasses[0].multiview_mask) {
-      /* It seems multiview must use sysmem rendering. */
-      pass->gmem_pixels = 0;
-      return;
-   }
+   for (enum tu_gmem_layout layout = 0; layout < TU_GMEM_LAYOUT_COUNT;
+        layout++) {
+      /* From the VK_KHR_multiview spec:
+       *
+       *    Multiview is all-or-nothing for a render pass - that is, either all
+       *    subpasses must have a non-zero view mask (though some subpasses may
+       *    have only one view) or all must be zero.
+       *
+       * This means we only have to check one of the view masks.
+       */
+      if (pass->subpasses[0].multiview_mask) {
+         /* It seems multiview must use sysmem rendering. */
+         pass->gmem_pixels[layout] = 0;
+         continue;
+      }
 
-   uint32_t block_align_shift = 3; /* log2(gmem_align/(tile_align_w*tile_align_h)) */
-   uint32_t tile_align_w = phys_dev->info->tile_align_w;
-   uint32_t gmem_align = (1 << block_align_shift) * tile_align_w * phys_dev->info->tile_align_h;
+      /* log2(gmem_align/(tile_align_w*tile_align_h)) */
+      uint32_t block_align_shift = 3;
+      uint32_t tile_align_w = phys_dev->info->tile_align_w;
+      uint32_t gmem_align = (1 << block_align_shift) * tile_align_w *
+                            phys_dev->info->tile_align_h;
 
-   /* calculate total bytes per pixel */
-   uint32_t cpp_total = 0;
-   for (uint32_t i = 0; i < pass->attachment_count; i++) {
-      struct tu_render_pass_attachment *att = &pass->attachments[i];
-      bool cpp1 = (att->cpp == 1);
-      if (att->gmem_offset >= 0) {
-         cpp_total += att->cpp;
+      /* calculate total bytes per pixel */
+      uint32_t cpp_total = 0;
+      for (uint32_t i = 0; i < pass->attachment_count; i++) {
+         struct tu_render_pass_attachment *att = &pass->attachments[i];
+         bool cpp1 = (att->cpp == 1);
+         if (att->gmem) {
+            cpp_total += att->cpp;
 
-         /* take into account the separate stencil: */
-         if (att->format == VK_FORMAT_D32_SFLOAT_S8_UINT) {
-            cpp1 = (att->samples == 1);
-            cpp_total += att->samples;
-         }
+            /* take into account the separate stencil: */
+            if (att->format == VK_FORMAT_D32_SFLOAT_S8_UINT) {
+               cpp1 = (att->samples == 1);
+               cpp_total += att->samples;
+            }
 
-         /* texture pitch must be aligned to 64, use a tile_align_w that is
-          * a multiple of 64 for cpp==1 attachment to work as input attachment
-          */
-         if (cpp1 && tile_align_w % 64 != 0) {
-            tile_align_w *= 2;
-            block_align_shift -= 1;
+            /* texture pitch must be aligned to 64, use a tile_align_w that is
+             * a multiple of 64 for cpp==1 attachment to work as input
+             * attachment
+             */
+            if (cpp1 && tile_align_w % 64 != 0) {
+               tile_align_w *= 2;
+               block_align_shift -= 1;
+            }
          }
       }
-   }
 
-   pass->tile_align_w = tile_align_w;
+      pass->tile_align_w = tile_align_w;
 
-   /* no gmem attachments */
-   if (cpp_total == 0) {
-      /* any value non-zero value so tiling config works with no attachments */
-      pass->gmem_pixels = 1024*1024;
-      return;
-   }
-
-   /* TODO: using ccu_offset_gmem so that BLIT_OP_SCALE resolve path
-    * doesn't break things. maybe there is a better solution?
-    * TODO: this algorithm isn't optimal
-    * for example, two attachments with cpp = {1, 4}
-    * result:  nblocks = {12, 52}, pixels = 196608
-    * optimal: nblocks = {13, 51}, pixels = 208896
-    */
-   uint32_t gmem_blocks = phys_dev->ccu_offset_gmem / gmem_align;
-   uint32_t offset = 0, pixels = ~0u, i;
-   for (i = 0; i < pass->attachment_count; i++) {
-      struct tu_render_pass_attachment *att = &pass->attachments[i];
-      if (att->gmem_offset < 0)
+      /* no gmem attachments */
+      if (cpp_total == 0) {
+         /* any value non-zero value so tiling config works with no
+          * attachments
+          */
+         pass->gmem_pixels[layout] = 1024 * 1024;
          continue;
+      }
 
-      att->gmem_offset = offset;
+      /* TODO: this algorithm isn't optimal
+       * for example, two attachments with cpp = {1, 4}
+       * result:  nblocks = {12, 52}, pixels = 196608
+       * optimal: nblocks = {13, 51}, pixels = 208896
+       */
+      uint32_t gmem_size = layout == TU_GMEM_LAYOUT_FULL
+                              ? phys_dev->gmem_size
+                              : phys_dev->ccu_offset_gmem;
+      uint32_t gmem_blocks = gmem_size / gmem_align;
+      uint32_t offset = 0, pixels = ~0u, i;
+      for (i = 0; i < pass->attachment_count; i++) {
+         struct tu_render_pass_attachment *att = &pass->attachments[i];
+         if (!att->gmem)
+            continue;
 
-      uint32_t align = MAX2(1, att->cpp >> block_align_shift);
-      uint32_t nblocks = MAX2((gmem_blocks * att->cpp / cpp_total) & ~(align - 1), align);
+         att->gmem_offset[layout] = offset;
 
-      if (nblocks > gmem_blocks)
-         break;
+         uint32_t align = MAX2(1, att->cpp >> block_align_shift);
+         uint32_t nblocks =
+            MAX2((gmem_blocks * att->cpp / cpp_total) & ~(align - 1), align);
 
-      gmem_blocks -= nblocks;
-      cpp_total -= att->cpp;
-      offset += nblocks * gmem_align;
-      pixels = MIN2(pixels, nblocks * gmem_align / att->cpp);
-
-      /* repeat the same for separate stencil */
-      if (att->format == VK_FORMAT_D32_SFLOAT_S8_UINT) {
-         att->gmem_offset_stencil = offset;
-
-         /* note: for s8_uint, block align is always 1 */
-         uint32_t nblocks = gmem_blocks * att->samples / cpp_total;
          if (nblocks > gmem_blocks)
             break;
 
          gmem_blocks -= nblocks;
-         cpp_total -= att->samples;
+         cpp_total -= att->cpp;
          offset += nblocks * gmem_align;
-         pixels = MIN2(pixels, nblocks * gmem_align / att->samples);
-      }
-   }
+         pixels = MIN2(pixels, nblocks * gmem_align / att->cpp);
 
-   /* if the loop didn't complete then the gmem config is impossible */
-   if (i == pass->attachment_count)
-      pass->gmem_pixels = pixels;
+         /* repeat the same for separate stencil */
+         if (att->format == VK_FORMAT_D32_SFLOAT_S8_UINT) {
+            att->gmem_offset_stencil[layout] = offset;
+
+            /* note: for s8_uint, block align is always 1 */
+            uint32_t nblocks = gmem_blocks * att->samples / cpp_total;
+            if (nblocks > gmem_blocks)
+               break;
+
+            gmem_blocks -= nblocks;
+            cpp_total -= att->samples;
+            offset += nblocks * gmem_align;
+            pixels = MIN2(pixels, nblocks * gmem_align / att->samples);
+         }
+      }
+
+      /* if the loop didn't complete then the gmem config is impossible */
+      if (i == pass->attachment_count)
+         pass->gmem_pixels[layout] = pixels;
+   }
 }
 
 static void
@@ -737,7 +748,7 @@ tu_subpass_use_attachment(struct tu_render_pass *pass, int i, uint32_t a, const 
 {
    struct tu_subpass *subpass = &pass->subpasses[i];
 
-   pass->attachments[a].gmem_offset = 0;
+   pass->attachments[a].gmem = true;
    update_samples(subpass, pCreateInfo->pAttachments[a].samples);
    pass->attachments[a].clear_views |= subpass->multiview_mask;
 }
@@ -786,7 +797,8 @@ tu_CreateRenderPass2(VkDevice _device,
          att->cpp = 4 * att->samples;
       else
          att->cpp = vk_format_get_blocksize(att->format) * att->samples;
-      att->gmem_offset = -1;
+      /* Initially not allocated into gmem, tu_subpass_use_attachment() will move it there. */
+      att->gmem = false;
 
       VkAttachmentLoadOp loadOp = pCreateInfo->pAttachments[i].loadOp;
       VkAttachmentLoadOp stencilLoadOp = pCreateInfo->pAttachments[i].stencilLoadOp;
@@ -916,7 +928,7 @@ tu_CreateRenderPass2(VkDevice _device,
    /* disable unused attachments */
    for (uint32_t i = 0; i < pass->attachment_count; i++) {
       struct tu_render_pass_attachment *att = &pass->attachments[i];
-      if (att->gmem_offset < 0) {
+      if (!att->gmem) {
          att->clear_mask = 0;
          att->load = false;
       }
@@ -1009,7 +1021,7 @@ tu_setup_dynamic_render_pass(struct tu_cmd_buffer *cmd_buffer,
 
       TU_FROM_HANDLE(tu_image_view, view, att_info->imageView);
       tu_setup_dynamic_attachment(att, view);
-      att->gmem_offset = 0;
+      att->gmem = true;
       att->clear_views = info->viewMask;
       attachment_set_ops(device, att, att_info->loadOp, 0,
                          att_info->storeOp, 0);
@@ -1024,7 +1036,7 @@ tu_setup_dynamic_render_pass(struct tu_cmd_buffer *cmd_buffer,
          struct tu_render_pass_attachment *resolve_att = &pass->attachments[a];
          TU_FROM_HANDLE(tu_image_view, resolve_view, att_info->resolveImageView);
          tu_setup_dynamic_attachment(resolve_att, resolve_view);
-         resolve_att->gmem_offset = -1;
+         resolve_att->gmem = false;
          attachment_set_ops(device, resolve_att,
                             VK_ATTACHMENT_LOAD_OP_DONT_CARE, 0,
                             VK_ATTACHMENT_STORE_OP_STORE, 0);
@@ -1048,7 +1060,7 @@ tu_setup_dynamic_render_pass(struct tu_cmd_buffer *cmd_buffer,
 
          struct tu_render_pass_attachment *att = &pass->attachments[a];
          tu_setup_dynamic_attachment(att, view);
-         att->gmem_offset = 0;
+         att->gmem = true;
          att->clear_views = info->viewMask;
          subpass->depth_stencil_attachment.attachment = a++;
 
@@ -1066,7 +1078,7 @@ tu_setup_dynamic_render_pass(struct tu_cmd_buffer *cmd_buffer,
             TU_FROM_HANDLE(tu_image_view, resolve_view,
                            common_info->resolveImageView);
             tu_setup_dynamic_attachment(resolve_att, resolve_view);
-            resolve_att->gmem_offset = -1;
+            resolve_att->gmem = false;
             attachment_set_ops(device, resolve_att,
                                VK_ATTACHMENT_LOAD_OP_DONT_CARE,
                                VK_ATTACHMENT_LOAD_OP_DONT_CARE,

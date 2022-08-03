@@ -29,18 +29,6 @@
 #include "freedreno_layout.h"
 #include "fd6_format_table.h"
 
-static enum a6xx_tex_swiz
-fdl6_swiz(unsigned char swiz)
-{
-   STATIC_ASSERT((unsigned) A6XX_TEX_X == (unsigned) PIPE_SWIZZLE_X);
-   STATIC_ASSERT((unsigned) A6XX_TEX_Y == (unsigned) PIPE_SWIZZLE_Y);
-   STATIC_ASSERT((unsigned) A6XX_TEX_Z == (unsigned) PIPE_SWIZZLE_Z);
-   STATIC_ASSERT((unsigned) A6XX_TEX_W == (unsigned) PIPE_SWIZZLE_W);
-   STATIC_ASSERT((unsigned) A6XX_TEX_ZERO == (unsigned) PIPE_SWIZZLE_0);
-   STATIC_ASSERT((unsigned) A6XX_TEX_ONE == (unsigned) PIPE_SWIZZLE_1);
-   return (enum a6xx_tex_swiz) swiz;
-}
-
 static enum a6xx_tex_type
 fdl6_tex_type(enum fdl_view_type type, bool storage)
 {

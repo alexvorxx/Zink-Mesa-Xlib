@@ -666,10 +666,13 @@ static unsigned si_get_vs_vgpr_comp_cnt(struct si_screen *sscreen, struct si_sha
    return max;
 }
 
-unsigned si_calc_inst_pref_size(struct si_shader *shader)
+unsigned si_get_shader_prefetch_size(struct si_shader *shader)
 {
-   /* TODO: Disable for now. */
-   if (shader->selector->screen->info.gfx_level == GFX11)
+   /* Return 0 for some A0 chips only. Other chips don't need it. */
+   if ((shader->selector->screen->info.family == CHIP_GFX1100 ||
+        shader->selector->screen->info.family == CHIP_GFX1102 ||
+        shader->selector->screen->info.family == CHIP_GFX1103) &&
+       shader->selector->screen->info.chip_rev == 0)
       return 0;
 
    /* inst_pref_size is calculated in cache line size granularity */
@@ -714,7 +717,7 @@ static void si_shader_hs(struct si_screen *sscreen, struct si_shader *shader)
    if (sscreen->info.gfx_level >= GFX9) {
       if (sscreen->info.gfx_level >= GFX11) {
          ac_set_reg_cu_en(pm4, R_00B404_SPI_SHADER_PGM_RSRC4_HS,
-                          S_00B404_INST_PREF_SIZE(si_calc_inst_pref_size(shader)) |
+                          S_00B404_INST_PREF_SIZE(si_get_shader_prefetch_size(shader)) |
                           S_00B404_CU_EN(0xffff),
                           C_00B404_CU_EN, 16, &sscreen->info,
                           (void (*)(void*, unsigned, uint32_t))si_pm4_set_reg_idx3);
@@ -1436,7 +1439,7 @@ static void gfx10_shader_ngg(struct si_screen *sscreen, struct si_shader *shader
    if (sscreen->info.gfx_level >= GFX11) {
       shader->ctx_reg.ngg.spi_shader_pgm_rsrc4_gs =
          S_00B204_CU_EN_GFX11(0x1) | S_00B204_SPI_SHADER_LATE_ALLOC_GS_GFX10(late_alloc_wave64) |
-         S_00B204_INST_PREF_SIZE(si_calc_inst_pref_size(shader));
+         S_00B204_INST_PREF_SIZE(si_get_shader_prefetch_size(shader));
    } else {
       shader->ctx_reg.ngg.spi_shader_pgm_rsrc4_gs =
          S_00B204_CU_EN_GFX10(0xffff) | S_00B204_SPI_SHADER_LATE_ALLOC_GS_GFX10(late_alloc_wave64);
@@ -1513,7 +1516,7 @@ static void gfx10_shader_ngg(struct si_screen *sscreen, struct si_shader *shader
       shader->ge_cntl = S_03096C_PRIMS_PER_SUBGRP(shader->ngg.max_gsprims) |
                         S_03096C_VERTS_PER_SUBGRP(shader->ngg.hw_max_esverts) |
                         S_03096C_BREAK_PRIMGRP_AT_EOI(break_wave_at_eoi) |
-                        S_03096C_PRIM_GRP_SIZE_GFX11(256);
+                        S_03096C_PRIM_GRP_SIZE_GFX11(252 / MAX2(shader->ngg.prim_amp_factor, 1));
    } else {
       shader->ge_cntl = S_03096C_PRIM_GRP_SIZE_GFX10(shader->ngg.max_gsprims) |
                         S_03096C_VERT_GRP_SIZE(shader->ngg.hw_max_esverts) |
@@ -2023,7 +2026,7 @@ static void si_shader_ps(struct si_screen *sscreen, struct si_shader *shader)
       unsigned cu_mask_ps = gfx103_get_cu_mask_ps(sscreen);
 
       ac_set_reg_cu_en(pm4, R_00B004_SPI_SHADER_PGM_RSRC4_PS,
-                       S_00B004_INST_PREF_SIZE(si_calc_inst_pref_size(shader)) |
+                       S_00B004_INST_PREF_SIZE(si_get_shader_prefetch_size(shader)) |
                        S_00B004_CU_EN(cu_mask_ps >> 16),
                        C_00B004_CU_EN, 16, &sscreen->info,
                        (void (*)(void*, unsigned, uint32_t))si_pm4_set_reg_idx3);

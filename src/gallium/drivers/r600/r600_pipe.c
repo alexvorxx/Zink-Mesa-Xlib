@@ -245,8 +245,8 @@ fail:
 }
 
 static bool is_nir_enabled(struct r600_common_screen *screen) {
-   return ((screen->debug_flags & DBG_NIR_PREFERRED) &&
-       screen->family >= CHIP_CEDAR);
+   return (screen->debug_flags & DBG_NIR_PREFERRED); /* &&
+       screen->family >= CHIP_CEDAR);*/
 }
 
 /*
@@ -414,8 +414,9 @@ static int r600_get_param(struct pipe_screen* pscreen, enum pipe_cap param)
 		    rscreen->b.family == CHIP_CYPRESS ||
 		    rscreen->b.family == CHIP_HEMLOCK)
 			return 1;
-                if (is_nir_enabled(&rscreen->b))
-                   return 1;
+		if (is_nir_enabled(&rscreen->b) &&
+			rscreen->b.family >= CHIP_CEDAR)
+			return 1;
 		return 0;
 
 	case PIPE_CAP_TWO_SIDED_COLOR:
@@ -628,7 +629,7 @@ static int r600_get_shader_param(struct pipe_screen* pscreen,
 		int ir = 0;
 		if (shader == PIPE_SHADER_COMPUTE)
 			ir = 1 << PIPE_SHADER_IR_NATIVE;
-		if (rscreen->b.family >= CHIP_CEDAR) {
+		if (is_nir_enabled(&rscreen->b)) {
 			ir |= 1 << PIPE_SHADER_IR_TGSI;
 			ir |= 1 << PIPE_SHADER_IR_NIR;
 		}

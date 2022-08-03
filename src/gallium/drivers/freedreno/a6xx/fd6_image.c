@@ -30,7 +30,6 @@
 #include "freedreno_resource.h"
 #include "freedreno_state.h"
 
-#include "fd6_format.h"
 #include "fd6_image.h"
 #include "fd6_resource.h"
 #include "fd6_texture.h"

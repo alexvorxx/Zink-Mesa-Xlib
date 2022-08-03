@@ -178,7 +178,6 @@ files_libglsl = files(
   'lower_output_reads.cpp',
   'opt_algebraic.cpp',
   'opt_array_splitting.cpp',
-  'opt_conditional_discard.cpp',
   'opt_constant_folding.cpp',
   'opt_constant_propagation.cpp',
   'opt_constant_variable.cpp',

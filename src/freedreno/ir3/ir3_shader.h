@@ -37,8 +37,6 @@
 
 #include "ir3_compiler.h"
 
-struct glsl_type;
-
 /* driver param indices: */
 enum ir3_driver_param {
    /* compute shader driver params: */

@@ -70,7 +70,8 @@ void FragmentShader::do_get_shader_info(r600_shader *sh_info)
    sh_info->rat_base = m_rat_base;
    sh_info->uses_kill = m_uses_discard;
    sh_info->gs_prim_id_input = m_gs_prim_id_input;
-   sh_info->ps_prim_id_input = m_ps_prim_id_input;
+   sh_info->ps_prim_id_input = m_ps_prim_id_input &&
+                               chip_class() >= ISA_CC_EVERGREEN;
    sh_info->nsys_inputs = m_nsys_inputs;
    sh_info->uses_helper_invocation = m_helper_invocation != nullptr;
 }
@@ -79,10 +80,10 @@ void FragmentShader::do_get_shader_info(r600_shader *sh_info)
 bool FragmentShader::load_input(nir_intrinsic_instr *intr)
 {
    auto& vf = value_factory();
-   AluInstr *ir = nullptr;
 
    auto location = nir_intrinsic_io_semantics(intr).location;
    if (location == VARYING_SLOT_POS) {
+      AluInstr *ir = nullptr;
       for (unsigned i = 0; i < nir_dest_num_components(intr->dest) ; ++i) {
          ir = new AluInstr(op1_mov,
                            vf.dest(intr->dest, i, pin_none),
@@ -96,41 +97,17 @@ bool FragmentShader::load_input(nir_intrinsic_instr *intr)
    }
 
    if (location == VARYING_SLOT_FACE) {
-      ir = new AluInstr(op2_setge_dx10,
-                        vf.dest(intr->dest, 0, pin_none),
-                        m_face_input,
-                        vf.inline_const(ALU_SRC_0, 0),
-                        AluInstr::last_write);
+      auto ir = new AluInstr(op2_setgt_dx10,
+                             vf.dest(intr->dest, 0, pin_none),
+                             m_face_input,
+                             vf.inline_const(ALU_SRC_0, 0),
+                             AluInstr::last_write);
       set_input_gpr(nir_intrinsic_base(intr), m_face_input->sel());
-
       emit_instruction(ir);
       return true;
    }
 
-   auto io = input(nir_intrinsic_base(intr));
-   auto comp = nir_intrinsic_component(intr);
-   bool need_temp = comp > 0 || !intr->dest.is_ssa;
-   for (unsigned i = 0; i < nir_dest_num_components(intr->dest) ; ++i) {
-      if (need_temp) {
-         auto tmp = vf.temp_register(comp + i);
-         ir = new AluInstr(op1_interp_load_p0,
-                           tmp,
-                           new InlineConstant(ALU_SRC_PARAM_BASE + io.lds_pos(), i + comp),
-                           AluInstr::last_write);
-         emit_instruction(ir);
-         emit_instruction(new AluInstr(op1_mov, vf.dest(intr->dest, i, pin_chan), tmp, AluInstr::last_write));
-      } else {
-
-         ir = new AluInstr(op1_interp_load_p0,
-                           vf.dest(intr->dest, i, pin_chan),
-                           new InlineConstant(ALU_SRC_PARAM_BASE + io.lds_pos(), i),
-                           AluInstr::write);
-         emit_instruction(ir);
-      }
-
-   }
-   ir->set_alu_flag(alu_last_instr);
-   return true;
+   return load_input_hw(intr);
 }
 
 bool FragmentShader::store_output(nir_intrinsic_instr *intr)
@@ -193,22 +170,12 @@ barycentric_ij_index(nir_intrinsic_instr *intr)
 
 bool FragmentShader::process_stage_intrinsic(nir_intrinsic_instr *intr)
 {
-   auto& vf = value_factory();
-   switch (intr->intrinsic) {
-   case nir_intrinsic_load_barycentric_centroid:
-   case nir_intrinsic_load_barycentric_pixel:
-   case nir_intrinsic_load_barycentric_sample: {
-      unsigned ij = barycentric_ij_index(intr);
-      vf.inject_value(intr->dest, 0, m_interpolator[ij].i);
-      vf.inject_value(intr->dest, 1, m_interpolator[ij].j);
+   if (process_stage_intrinsic_hw(intr))
       return true;
-   }    
+
+   switch (intr->intrinsic) {
    case nir_intrinsic_load_input:
       return load_input(intr);
-   case nir_intrinsic_load_barycentric_at_offset:
-      return load_barycentric_at_offset(intr);
-   case nir_intrinsic_load_barycentric_at_sample:
-      return load_barycentric_at_sample(intr);
    case nir_intrinsic_load_interpolated_input:
       return load_interpolated_input(intr);
    case nir_intrinsic_discard_if:
@@ -250,184 +217,28 @@ bool FragmentShader::load_interpolated_input(nir_intrinsic_instr *intr)
    case VARYING_SLOT_POS:
       for (unsigned i = 0; i < nir_dest_num_components(intr->dest); ++i)
          vf.inject_value(intr->dest, i,  m_pos_input[i]);
-   return true;
+      return true;
    case VARYING_SLOT_FACE:
       return false;
    default:
       ;
    }
 
-   auto param = nir_src_as_const_value(intr->src[1]);
-   assert(param && "Indirect PS inputs not (yet) supported");
-
-   int dest_num_comp = nir_dest_num_components(intr->dest);
-   int start_comp = nir_intrinsic_component(intr);
-   bool need_temp = start_comp > 0 || !intr->dest.is_ssa;
-
-   auto dst = need_temp ? vf.temp_vec4(pin_chan) : vf.dest_vec4(intr->dest, pin_chan);
-
-   InterpolateParams params;
-
-   params.i = vf.src(intr->src[0], 0);
-   params.j = vf.src(intr->src[0], 1);
-   params.base = input(nir_intrinsic_base(intr)).lds_pos();
-
-   if (!load_interpolated(dst, params, dest_num_comp, start_comp))
-      return false;
-
-   if (need_temp) {
-      AluInstr *ir = nullptr;
-      for (unsigned i = 0; i < nir_dest_num_components(intr->dest); ++i) {
-         auto real_dst = vf.dest(intr->dest, i, pin_chan);
-         ir = new AluInstr(op1_mov, real_dst, dst[i + start_comp], AluInstr::write);
-         emit_instruction(ir);
-      }
-      assert(ir);
-      ir->set_alu_flag(alu_last_instr);
-   }
-
-   return true;
+   return load_interpolated_input_hw(intr);
 }
 
-bool FragmentShader::load_interpolated(RegisterVec4& dest, const InterpolateParams& params,
-                                       int num_dest_comp, int start_comp)
-{
-   sfn_log << SfnLog::io << "Using Interpolator (" << *params.j << ", " << *params.i <<  ")" << "\n";
-
-   if (num_dest_comp == 1) {
-      switch (start_comp) {
-      case 0: return load_interpolated_one_comp(dest, params, op2_interp_x);
-      case 1: return load_interpolated_two_comp_for_one(dest, params,  op2_interp_xy, 0, 1);
-      case 2: return load_interpolated_one_comp(dest, params, op2_interp_z);
-      case 3: return load_interpolated_two_comp_for_one(dest, params, op2_interp_zw, 2, 3);
-      default:
-         assert(0);
-      }
-   }
-
-   if (num_dest_comp == 2) {
-      switch (start_comp) {
-      case 0: return load_interpolated_two_comp(dest, params, op2_interp_xy, 0x3);
-      case 2: return load_interpolated_two_comp(dest, params, op2_interp_zw, 0xc);
-      case 1: return load_interpolated_one_comp(dest, params, op2_interp_z) &&
-               load_interpolated_two_comp_for_one(dest, params, op2_interp_xy, 0, 1);
-      default:
-         assert(0);
-      }
-   }
-
-   if (num_dest_comp == 3 && start_comp == 0)
-      return load_interpolated_two_comp(dest, params, op2_interp_xy, 0x3) &&
-            load_interpolated_one_comp(dest, params, op2_interp_z);
-
-   int full_write_mask = ((1 << num_dest_comp) - 1) << start_comp;
-
-   bool success = load_interpolated_two_comp(dest, params, op2_interp_zw, full_write_mask & 0xc);
-   success &= load_interpolated_two_comp(dest, params, op2_interp_xy, full_write_mask & 0x3);
-   return success;
-}
-
-bool FragmentShader::load_interpolated_one_comp(RegisterVec4& dest, const InterpolateParams& params, EAluOp op)
-{
-   auto group = new AluGroup();
-   bool success = true;
-
-   AluInstr *ir = nullptr;
-   for (unsigned i = 0; i < 2 && success; ++i) {
-      int chan = i;
-      if (op == op2_interp_z)
-         chan += 2;
-
-
-      ir = new AluInstr(op, dest[chan],
-                        i & 1 ? params.j : params.i,
-                        new InlineConstant(ALU_SRC_PARAM_BASE + params.base, chan),
-                        i == 0  ? AluInstr::write : AluInstr::last);
-
-      ir->set_bank_swizzle(alu_vec_210);
-      success = group->add_instruction(ir);
-   }
-   ir->set_alu_flag(alu_last_instr);
-   if (success)
-      emit_instruction(group);
-   return success;
-}
-
-bool FragmentShader::load_interpolated_two_comp(RegisterVec4& dest, const InterpolateParams& params, EAluOp op, int writemask)
-{
-   auto group = new AluGroup();
-   bool success = true;
-
-   AluInstr *ir = nullptr;
-   assert(params.j);
-   assert(params.i);
-   for (unsigned i = 0; i < 4 ; ++i) {
-      ir = new AluInstr(op, dest[i], i & 1 ? params.j : params.i,
-                        new InlineConstant(ALU_SRC_PARAM_BASE + params.base, i),
-                        (writemask & (1 << i)) ? AluInstr::write : AluInstr::empty);
-      ir->set_bank_swizzle(alu_vec_210);
-      success = group->add_instruction(ir);
-   }
-   ir->set_alu_flag(alu_last_instr);
-   if (success)
-      emit_instruction(group);
-   return success;
-}
-
-bool FragmentShader::load_interpolated_two_comp_for_one(RegisterVec4& dest, const InterpolateParams& params, EAluOp op,
-                                                        UNUSED int start, int comp)
-{
-   auto group = new AluGroup();
-   bool success = true;
-   AluInstr *ir = nullptr;
-
-   for (int i = 0; i <  4 ; ++i) {
-      ir = new AluInstr(op, dest[i], i & 1 ? params.j : params.i,
-                        new InlineConstant(ALU_SRC_PARAM_BASE + params.base, i),
-                        i == comp ? AluInstr::write : AluInstr::empty);
-      ir->set_bank_swizzle(alu_vec_210);
-      success = group->add_instruction(ir);
-   }
-   ir->set_alu_flag(alu_last_instr);
-   if (success)
-      emit_instruction(group);
-
-   return success;
-}
 
 int FragmentShader::do_allocate_reserved_registers()
 {
-   for (unsigned i = 0; i < s_max_interpolators; ++i) {
-      if (m_interpolators_used.test(i)) {
-         sfn_log << SfnLog::io << "Interpolator " << i << " test enabled\n";
-         m_interpolator[i].enabled = true;
-      }
-   }
-
-   int num_baryc = 0;
-   for (int i = 0; i < 6; ++i) {
-      if (m_interpolator[i].enabled) {
-         sfn_log << SfnLog::io << "Interpolator " << i << " is enabled with ij=" << num_baryc <<" \n";
-         unsigned sel = num_baryc / 2;
-         unsigned chan = 2 * (num_baryc % 2);
-
-         m_interpolator[i].i = value_factory().allocate_pinned_register(sel, chan + 1);
-         m_interpolator[i].i->pin_live_range(true, false);
-
-         m_interpolator[i].j = value_factory().allocate_pinned_register(sel, chan);
-         m_interpolator[i].j->pin_live_range(true, false);
-
-         m_interpolator[i].ij_index = num_baryc++;
-      }
-   }
-
-   int next_register = (num_baryc + 1) >> 1;
+   int next_register = allocate_interpolators();
 
    if (m_sv_values.test(es_pos)) {
       m_pos_input = value_factory().allocate_pinned_vec4(next_register++, false);
       for (int i = 0; i < 4; ++i)
          m_pos_input[i]->pin_live_range(true);
    }
+
+   next_register = allocate_register_inputs(next_register);
 
    int face_reg_index = -1;
    if (m_sv_values.test(es_face)) {
@@ -624,7 +435,6 @@ bool FragmentShader::scan_input(nir_intrinsic_instr *intr, int index_src_id)
 
    switch (name) {
    case TGSI_SEMANTIC_PRIMID:
-      std::cerr << "Found primid input\n";
       m_gs_prim_id_input = true;
       m_ps_prim_id_input = ninputs();
       FALLTHROUGH;
@@ -637,12 +447,14 @@ bool FragmentShader::scan_input(nir_intrinsic_instr *intr, int index_src_id)
    case TGSI_SEMANTIC_PCOORD:
    case TGSI_SEMANTIC_VIEWPORT_INDEX:
    case TGSI_SEMANTIC_CLIPDIST: {
+      sfn_log << SfnLog::io <<  " have IO at " << driver_location << "\n";
       auto iinput = find_input(driver_location);
       if (iinput == input_not_found()) {
          ShaderInput input(driver_location, name);
          input.set_sid(sid);
          input.set_need_lds_pos();
          input.set_interpolator(tgsi_interpolate, tgsi_loc, uses_interpol_at_centroid);
+         sfn_log << SfnLog::io <<  "add IO with LDS ID at " << input.location() << "\n";
          add_input(input);
          assert(find_input(input.location()) != input_not_found());
       } else {
@@ -650,97 +462,12 @@ bool FragmentShader::scan_input(nir_intrinsic_instr *intr, int index_src_id)
             iinput->second.set_uses_interpolate_at_centroid();
          }
       }
-
       return true;
    }
    default:
       return false;
    }
 }
-
-bool FragmentShader::load_barycentric_at_sample(nir_intrinsic_instr* instr)
-{
-   auto& vf = value_factory();
-   RegisterVec4 slope = vf.temp_vec4(pin_group);
-   auto  src = emit_load_to_register(vf.src(instr->src[0], 0));
-   auto fetch = new LoadFromBuffer(slope, {0, 1,2, 3}, src, 0,
-                                   R600_BUFFER_INFO_CONST_BUFFER, nullptr, fmt_32_32_32_32_float);
-
-   fetch->set_fetch_flag(FetchInstr::srf_mode);
-   emit_instruction(fetch);
-
-   auto grad = vf.temp_vec4(pin_group);
-
-   auto interpolator = m_interpolator[barycentric_ij_index(instr)];
-   assert(interpolator.enabled);
-
-   RegisterVec4 interp(interpolator.j, interpolator.i, nullptr, nullptr, pin_group);
-
-   auto tex = new TexInstr(TexInstr::get_gradient_h, grad, {0, 1, 7, 7}, interp, 0, 0);
-   tex->set_tex_flag(TexInstr::grad_fine);
-   tex->set_tex_flag(TexInstr::x_unnormalized);
-   tex->set_tex_flag(TexInstr::y_unnormalized);
-   tex->set_tex_flag(TexInstr::z_unnormalized);
-   tex->set_tex_flag(TexInstr::w_unnormalized);
-   emit_instruction(tex);
-
-   tex = new TexInstr(TexInstr::get_gradient_v, grad, {7,7,0,1}, interp, 0, 0);
-   tex->set_tex_flag(TexInstr::x_unnormalized);
-   tex->set_tex_flag(TexInstr::y_unnormalized);
-   tex->set_tex_flag(TexInstr::z_unnormalized);
-   tex->set_tex_flag(TexInstr::w_unnormalized);
-   tex->set_tex_flag(TexInstr::grad_fine);
-   emit_instruction(tex);
-
-   auto tmp0 = vf.temp_register();
-   auto tmp1 = vf.temp_register();
-
-   emit_instruction(new AluInstr(op3_muladd, tmp0, grad[0], slope[2], interpolator.j, {alu_write}));
-   emit_instruction(new AluInstr(op3_muladd, tmp1, grad[1], slope[2], interpolator.i, {alu_write, alu_last_instr}));
-
-   emit_instruction(new AluInstr(op3_muladd, vf.dest(instr->dest, 0, pin_none), grad[3], slope[3], tmp1, {alu_write}));
-   emit_instruction(new AluInstr(op3_muladd, vf.dest(instr->dest, 1, pin_none), grad[2], slope[3], tmp0, {alu_write, alu_last_instr}));
-
-   return true;
-}
-
-bool FragmentShader::load_barycentric_at_offset(nir_intrinsic_instr* instr)
-{
-   auto& vf = value_factory();
-   auto interpolator = m_interpolator[barycentric_ij_index(instr)];
-
-   auto help = vf.temp_vec4(pin_group);
-   RegisterVec4 interp(interpolator.j, interpolator.i, nullptr, nullptr, pin_group);
-
-   auto getgradh = new TexInstr(TexInstr::get_gradient_h, help, {0,1,7,7}, interp, 0, 0);
-   getgradh->set_tex_flag(TexInstr::x_unnormalized);
-   getgradh->set_tex_flag(TexInstr::y_unnormalized);
-   getgradh->set_tex_flag(TexInstr::z_unnormalized);
-   getgradh->set_tex_flag(TexInstr::w_unnormalized);
-   getgradh->set_tex_flag(TexInstr::grad_fine);
-   emit_instruction(getgradh);
-
-   auto getgradv = new TexInstr(TexInstr::get_gradient_v, help, {7,7,0,1}, interp, 0, 0);
-   getgradv->set_tex_flag(TexInstr::x_unnormalized);
-   getgradv->set_tex_flag(TexInstr::y_unnormalized);
-   getgradv->set_tex_flag(TexInstr::z_unnormalized);
-   getgradv->set_tex_flag(TexInstr::w_unnormalized);
-   getgradv->set_tex_flag(TexInstr::grad_fine);
-   emit_instruction(getgradv);
-
-   auto ofs_x = vf.src(instr->src[0], 0);
-   auto ofs_y = vf.src(instr->src[0], 1);
-   auto tmp0 = vf.temp_register();
-   auto tmp1 = vf.temp_register();
-   emit_instruction(new AluInstr(op3_muladd, tmp0, help[0], ofs_x, interpolator.j, {alu_write}));
-   emit_instruction(new AluInstr(op3_muladd, tmp1, help[1], ofs_x, interpolator.i, {alu_write, alu_last_instr}));
-   emit_instruction(new AluInstr(op3_muladd, vf.dest(instr->dest, 0, pin_none), help[3], ofs_y, tmp1, {alu_write}));
-   emit_instruction(new AluInstr(op3_muladd, vf.dest(instr->dest, 1, pin_none), help[2], ofs_y, tmp0, {alu_write, alu_last_instr}));
-
-   return true;
-}
-
-
 
 bool FragmentShader::emit_export_pixel(nir_intrinsic_instr& intr, int num_outputs)
 {
@@ -889,8 +616,391 @@ void FragmentShader::do_print_properties(std::ostream& os) const
    os << "PROP WRITE_ALL_COLORS:" << m_fs_write_all << "\n";
 }
 
+int FragmentShaderR600::allocate_register_inputs(int first_register)
+{
+   int pos = first_register;
+   auto& vf = value_factory();
+   for (auto& [index, inp]: inputs()) {
+      if (inp.need_lds_pos()) {
 
-FragmentShader::Interpolator::Interpolator():
+         RegisterVec4 input(vf.allocate_pinned_register(pos, 0),
+                            vf.allocate_pinned_register(pos, 1),
+                            vf.allocate_pinned_register(pos, 2),
+                            vf.allocate_pinned_register(pos, 3), pin_fully);
+         inp.set_gpr(pos++);
+         for (int i = 0; i < 4; ++i) {
+            input[i]->pin_live_range(true);
+         }
+
+         sfn_log << SfnLog::io << "Reseve input register at pos " <<
+                    index << " as "  << input << " with register " << inp.gpr() << "\n";
+
+         m_interpolated_inputs[index] = input;
+      }
+   }
+   return pos;
+}
+
+int FragmentShaderR600::allocate_interpolators()
+{
+   return 0;
+}
+
+bool FragmentShaderR600::load_input_hw(nir_intrinsic_instr *intr)
+{
+   auto& vf = value_factory();
+   AluInstr *ir = nullptr;
+   for (unsigned i = 0; i < nir_dest_num_components(intr->dest); ++i) {
+      sfn_log << SfnLog::io << "Inject register "  << *m_interpolated_inputs[nir_intrinsic_base(intr)][i] << "\n";
+      unsigned index = nir_intrinsic_component(intr) + i;
+      assert (index < 4);
+      if (intr->dest.is_ssa) {
+         vf.inject_value(intr->dest, i, m_interpolated_inputs[nir_intrinsic_base(intr)][index]);
+      } else {
+         ir = new AluInstr(op1_mov, vf.dest(intr->dest, i, pin_none),
+                     m_interpolated_inputs[nir_intrinsic_base(intr)][index],
+                     AluInstr::write);
+         emit_instruction(ir);
+      }
+   }
+   if (ir)
+      ir->set_alu_flag(alu_last_instr);
+   return true;
+}
+
+bool FragmentShaderR600::process_stage_intrinsic_hw(nir_intrinsic_instr *intr)
+{
+   switch (intr->intrinsic) {
+   case nir_intrinsic_load_barycentric_centroid:
+   case nir_intrinsic_load_barycentric_pixel:
+   case nir_intrinsic_load_barycentric_sample:
+      return true;
+   default:
+      return false;
+   }
+}
+
+bool FragmentShaderR600::load_interpolated_input_hw(nir_intrinsic_instr *intr)
+{
+   return load_input_hw(intr);
+}
+
+bool FragmentShaderEG::load_input_hw(nir_intrinsic_instr *intr)
+{
+   auto& vf = value_factory();
+   auto io = input(nir_intrinsic_base(intr));
+   auto comp = nir_intrinsic_component(intr);
+
+   bool need_temp = comp > 0 || !intr->dest.is_ssa;
+   AluInstr *ir = nullptr;
+   for (unsigned i = 0; i < nir_dest_num_components(intr->dest) ; ++i) {
+      if (need_temp) {
+         auto tmp = vf.temp_register(comp + i);
+         ir = new AluInstr(op1_interp_load_p0,
+                           tmp,
+                           new InlineConstant(ALU_SRC_PARAM_BASE + io.lds_pos(), i + comp),
+                           AluInstr::last_write);
+         emit_instruction(ir);
+         emit_instruction(new AluInstr(op1_mov, vf.dest(intr->dest, i, pin_chan), tmp, AluInstr::last_write));
+      } else {
+
+         ir = new AluInstr(op1_interp_load_p0,
+                           vf.dest(intr->dest, i, pin_chan),
+                           new InlineConstant(ALU_SRC_PARAM_BASE + io.lds_pos(), i),
+                           AluInstr::write);
+         emit_instruction(ir);
+      }
+
+   }
+   ir->set_alu_flag(alu_last_instr);
+   return true;
+}
+
+int FragmentShaderEG::allocate_register_inputs(int first_register)
+{
+   return first_register;
+}
+
+int FragmentShaderEG::allocate_interpolators()
+{
+   for (unsigned i = 0; i < s_max_interpolators; ++i) {
+      if (interpolators_used(i)) {
+         sfn_log << SfnLog::io << "Interpolator " << i << " test enabled\n";
+         m_interpolator[i].enabled = true;
+      }
+   }
+
+   int num_baryc = 0;
+   for (int i = 0; i < 6; ++i) {
+      if (m_interpolator[i].enabled) {
+         sfn_log << SfnLog::io << "Interpolator " << i << " is enabled with ij=" << num_baryc <<" \n";
+         unsigned sel = num_baryc / 2;
+         unsigned chan = 2 * (num_baryc % 2);
+
+         m_interpolator[i].i = value_factory().allocate_pinned_register(sel, chan + 1);
+         m_interpolator[i].i->pin_live_range(true, false);
+
+         m_interpolator[i].j = value_factory().allocate_pinned_register(sel, chan);
+         m_interpolator[i].j->pin_live_range(true, false);
+
+         m_interpolator[i].ij_index = num_baryc++;
+      }
+   }
+   return (num_baryc + 1) >> 1;
+}
+
+bool FragmentShaderEG::process_stage_intrinsic_hw(nir_intrinsic_instr *intr)
+{
+   auto& vf = value_factory();
+   switch (intr->intrinsic) {
+   case nir_intrinsic_load_barycentric_centroid:
+   case nir_intrinsic_load_barycentric_pixel:
+   case nir_intrinsic_load_barycentric_sample: {
+      unsigned ij = barycentric_ij_index(intr);
+      vf.inject_value(intr->dest, 0, m_interpolator[ij].i);
+      vf.inject_value(intr->dest, 1, m_interpolator[ij].j);
+      return true;
+   }
+   case nir_intrinsic_load_barycentric_at_offset:
+      return load_barycentric_at_offset(intr);
+   case nir_intrinsic_load_barycentric_at_sample:
+      return load_barycentric_at_sample(intr);
+   default:
+      return false;
+   }
+}
+
+bool FragmentShaderEG::load_interpolated_input_hw(nir_intrinsic_instr *intr)
+{
+   auto& vf = value_factory();
+   auto param = nir_src_as_const_value(intr->src[1]);
+   assert(param && "Indirect PS inputs not (yet) supported");
+
+   int dest_num_comp = nir_dest_num_components(intr->dest);
+   int start_comp = nir_intrinsic_component(intr);
+   bool need_temp = start_comp > 0 || !intr->dest.is_ssa;
+
+   auto dst = need_temp ? vf.temp_vec4(pin_chan) : vf.dest_vec4(intr->dest, pin_chan);
+
+   InterpolateParams params;
+
+   params.i = vf.src(intr->src[0], 0);
+   params.j = vf.src(intr->src[0], 1);
+   params.base = input(nir_intrinsic_base(intr)).lds_pos();
+
+   if (!load_interpolated(dst, params, dest_num_comp, start_comp))
+      return false;
+
+   if (need_temp) {
+      AluInstr *ir = nullptr;
+      for (unsigned i = 0; i < nir_dest_num_components(intr->dest); ++i) {
+         auto real_dst = vf.dest(intr->dest, i, pin_chan);
+         ir = new AluInstr(op1_mov, real_dst, dst[i + start_comp], AluInstr::write);
+         emit_instruction(ir);
+      }
+      assert(ir);
+      ir->set_alu_flag(alu_last_instr);
+   }
+
+   return true;
+}
+
+bool FragmentShaderEG::load_interpolated(RegisterVec4& dest, const InterpolateParams& params,
+                                         int num_dest_comp, int start_comp)
+{
+   sfn_log << SfnLog::io << "Using Interpolator (" << *params.j << ", " << *params.i <<  ")" << "\n";
+
+   if (num_dest_comp == 1) {
+      switch (start_comp) {
+      case 0: return load_interpolated_one_comp(dest, params, op2_interp_x);
+      case 1: return load_interpolated_two_comp_for_one(dest, params,  op2_interp_xy, 1);
+      case 2: return load_interpolated_one_comp(dest, params, op2_interp_z);
+      case 3: return load_interpolated_two_comp_for_one(dest, params, op2_interp_zw, 3);
+      default:
+         assert(0);
+      }
+   }
+
+   if (num_dest_comp == 2) {
+      switch (start_comp) {
+      case 0: return load_interpolated_two_comp(dest, params, op2_interp_xy, 0x3);
+      case 2: return load_interpolated_two_comp(dest, params, op2_interp_zw, 0xc);
+      case 1: return load_interpolated_one_comp(dest, params, op2_interp_z) &&
+               load_interpolated_two_comp_for_one(dest, params, op2_interp_xy, 1);
+      default:
+         assert(0);
+      }
+   }
+
+   if (num_dest_comp == 3 && start_comp == 0)
+      return load_interpolated_two_comp(dest, params, op2_interp_xy, 0x3) &&
+            load_interpolated_one_comp(dest, params, op2_interp_z);
+
+   int full_write_mask = ((1 << num_dest_comp) - 1) << start_comp;
+
+   bool success = load_interpolated_two_comp(dest, params, op2_interp_zw, full_write_mask & 0xc);
+   success &= load_interpolated_two_comp(dest, params, op2_interp_xy, full_write_mask & 0x3);
+   return success;
+}
+
+
+bool FragmentShaderEG::load_barycentric_at_sample(nir_intrinsic_instr* instr)
+{
+   auto& vf = value_factory();
+   RegisterVec4 slope = vf.temp_vec4(pin_group);
+   auto  src = emit_load_to_register(vf.src(instr->src[0], 0));
+   auto fetch = new LoadFromBuffer(slope, {0, 1,2, 3}, src, 0,
+                                   R600_BUFFER_INFO_CONST_BUFFER, nullptr, fmt_32_32_32_32_float);
+
+   fetch->set_fetch_flag(FetchInstr::srf_mode);
+   emit_instruction(fetch);
+
+   auto grad = vf.temp_vec4(pin_group);
+
+   auto interpolator = m_interpolator[barycentric_ij_index(instr)];
+   assert(interpolator.enabled);
+
+   RegisterVec4 interp(interpolator.j, interpolator.i, nullptr, nullptr, pin_group);
+
+   auto tex = new TexInstr(TexInstr::get_gradient_h, grad, {0, 1, 7, 7}, interp, 0, 0);
+   tex->set_tex_flag(TexInstr::grad_fine);
+   tex->set_tex_flag(TexInstr::x_unnormalized);
+   tex->set_tex_flag(TexInstr::y_unnormalized);
+   tex->set_tex_flag(TexInstr::z_unnormalized);
+   tex->set_tex_flag(TexInstr::w_unnormalized);
+   emit_instruction(tex);
+
+   tex = new TexInstr(TexInstr::get_gradient_v, grad, {7,7,0,1}, interp, 0, 0);
+   tex->set_tex_flag(TexInstr::x_unnormalized);
+   tex->set_tex_flag(TexInstr::y_unnormalized);
+   tex->set_tex_flag(TexInstr::z_unnormalized);
+   tex->set_tex_flag(TexInstr::w_unnormalized);
+   tex->set_tex_flag(TexInstr::grad_fine);
+   emit_instruction(tex);
+
+   auto tmp0 = vf.temp_register();
+   auto tmp1 = vf.temp_register();
+
+   emit_instruction(new AluInstr(op3_muladd, tmp0, grad[0], slope[2], interpolator.j, {alu_write}));
+   emit_instruction(new AluInstr(op3_muladd, tmp1, grad[1], slope[2], interpolator.i, {alu_write, alu_last_instr}));
+
+   emit_instruction(new AluInstr(op3_muladd, vf.dest(instr->dest, 0, pin_none), grad[3], slope[3], tmp1, {alu_write}));
+   emit_instruction(new AluInstr(op3_muladd, vf.dest(instr->dest, 1, pin_none), grad[2], slope[3], tmp0, {alu_write, alu_last_instr}));
+
+   return true;
+}
+
+bool FragmentShaderEG::load_barycentric_at_offset(nir_intrinsic_instr* instr)
+{
+   auto& vf = value_factory();
+   auto interpolator = m_interpolator[barycentric_ij_index(instr)];
+
+   auto help = vf.temp_vec4(pin_group);
+   RegisterVec4 interp(interpolator.j, interpolator.i, nullptr, nullptr, pin_group);
+
+   auto getgradh = new TexInstr(TexInstr::get_gradient_h, help, {0,1,7,7}, interp, 0, 0);
+   getgradh->set_tex_flag(TexInstr::x_unnormalized);
+   getgradh->set_tex_flag(TexInstr::y_unnormalized);
+   getgradh->set_tex_flag(TexInstr::z_unnormalized);
+   getgradh->set_tex_flag(TexInstr::w_unnormalized);
+   getgradh->set_tex_flag(TexInstr::grad_fine);
+   emit_instruction(getgradh);
+
+   auto getgradv = new TexInstr(TexInstr::get_gradient_v, help, {7,7,0,1}, interp, 0, 0);
+   getgradv->set_tex_flag(TexInstr::x_unnormalized);
+   getgradv->set_tex_flag(TexInstr::y_unnormalized);
+   getgradv->set_tex_flag(TexInstr::z_unnormalized);
+   getgradv->set_tex_flag(TexInstr::w_unnormalized);
+   getgradv->set_tex_flag(TexInstr::grad_fine);
+   emit_instruction(getgradv);
+
+   auto ofs_x = vf.src(instr->src[0], 0);
+   auto ofs_y = vf.src(instr->src[0], 1);
+   auto tmp0 = vf.temp_register();
+   auto tmp1 = vf.temp_register();
+   emit_instruction(new AluInstr(op3_muladd, tmp0, help[0], ofs_x, interpolator.j, {alu_write}));
+   emit_instruction(new AluInstr(op3_muladd, tmp1, help[1], ofs_x, interpolator.i, {alu_write, alu_last_instr}));
+   emit_instruction(new AluInstr(op3_muladd, vf.dest(instr->dest, 0, pin_none), help[3], ofs_y, tmp1, {alu_write}));
+   emit_instruction(new AluInstr(op3_muladd, vf.dest(instr->dest, 1, pin_none), help[2], ofs_y, tmp0, {alu_write, alu_last_instr}));
+
+   return true;
+}
+
+bool FragmentShaderEG::load_interpolated_one_comp(RegisterVec4& dest,
+                                                const InterpolateParams& params,
+                                                EAluOp op)
+{
+   auto group = new AluGroup();
+   bool success = true;
+
+   AluInstr *ir = nullptr;
+   for (unsigned i = 0; i < 2 && success; ++i) {
+      int chan = i;
+      if (op == op2_interp_z)
+         chan += 2;
+
+
+      ir = new AluInstr(op, dest[chan],
+                        i & 1 ? params.j : params.i,
+                        new InlineConstant(ALU_SRC_PARAM_BASE + params.base, chan),
+                        i == 0  ? AluInstr::write : AluInstr::last);
+
+      ir->set_bank_swizzle(alu_vec_210);
+      success = group->add_instruction(ir);
+   }
+   ir->set_alu_flag(alu_last_instr);
+   if (success)
+      emit_instruction(group);
+   return success;
+}
+
+bool FragmentShaderEG::load_interpolated_two_comp(RegisterVec4& dest,
+                                                const InterpolateParams& params,
+                                                EAluOp op, int writemask)
+{
+   auto group = new AluGroup();
+   bool success = true;
+
+   AluInstr *ir = nullptr;
+   assert(params.j);
+   assert(params.i);
+   for (unsigned i = 0; i < 4 ; ++i) {
+      ir = new AluInstr(op, dest[i], i & 1 ? params.j : params.i,
+                        new InlineConstant(ALU_SRC_PARAM_BASE + params.base, i),
+                        (writemask & (1 << i)) ? AluInstr::write : AluInstr::empty);
+      ir->set_bank_swizzle(alu_vec_210);
+      success = group->add_instruction(ir);
+   }
+   ir->set_alu_flag(alu_last_instr);
+   if (success)
+      emit_instruction(group);
+   return success;
+}
+
+bool FragmentShaderEG::load_interpolated_two_comp_for_one(RegisterVec4& dest,
+                                                          const InterpolateParams& params, EAluOp op,
+                                                          int comp)
+{
+   auto group = new AluGroup();
+   bool success = true;
+   AluInstr *ir = nullptr;
+
+   for (int i = 0; i <  4 ; ++i) {
+      ir = new AluInstr(op, dest[i], i & 1 ? params.j : params.i,
+                        new InlineConstant(ALU_SRC_PARAM_BASE + params.base, i),
+                        i == comp ? AluInstr::write : AluInstr::empty);
+      ir->set_bank_swizzle(alu_vec_210);
+      success = group->add_instruction(ir);
+   }
+   ir->set_alu_flag(alu_last_instr);
+   if (success)
+      emit_instruction(group);
+
+   return success;
+}
+
+
+FragmentShaderEG::Interpolator::Interpolator():
    enabled(false)
 {
 }

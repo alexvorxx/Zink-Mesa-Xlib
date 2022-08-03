@@ -635,8 +635,8 @@ radv_device_finish_meta_etc_decode_state(struct radv_device *device)
    radv_DestroyPipeline(radv_device_to_handle(device), state->etc_decode.pipeline, &state->alloc);
    radv_DestroyPipelineLayout(radv_device_to_handle(device), state->etc_decode.p_layout,
                               &state->alloc);
-   radv_DestroyDescriptorSetLayout(radv_device_to_handle(device), state->etc_decode.ds_layout,
-                                   &state->alloc);
+   device->vk.dispatch_table.DestroyDescriptorSetLayout(radv_device_to_handle(device),
+                                                        state->etc_decode.ds_layout, &state->alloc);
 }
 
 static VkPipeline

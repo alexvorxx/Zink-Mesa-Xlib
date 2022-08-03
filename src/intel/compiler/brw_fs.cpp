@@ -5529,6 +5529,77 @@ fs_visitor::lower_derivatives()
    return progress;
 }
 
+bool
+fs_visitor::lower_find_live_channel()
+{
+   bool progress = false;
+
+   if (devinfo->ver < 8)
+      return false;
+
+   bool packed_dispatch =
+      brw_stage_has_packed_dispatch(devinfo, stage, stage_prog_data);
+   bool vmask =
+      stage == MESA_SHADER_FRAGMENT &&
+      brw_wm_prog_data(stage_prog_data)->uses_vmask;
+
+   foreach_block_and_inst_safe(block, fs_inst, inst, cfg) {
+      if (inst->opcode != SHADER_OPCODE_FIND_LIVE_CHANNEL &&
+          inst->opcode != SHADER_OPCODE_FIND_LAST_LIVE_CHANNEL)
+         continue;
+
+      bool first = inst->opcode == SHADER_OPCODE_FIND_LIVE_CHANNEL;
+
+      /* Getting the first active channel index is easy on Gfx8: Just find
+       * the first bit set in the execution mask.  The register exists on
+       * HSW already but it reads back as all ones when the current
+       * instruction has execution masking disabled, so it's kind of
+       * useless there.
+       */
+      fs_reg exec_mask(retype(brw_mask_reg(0), BRW_REGISTER_TYPE_UD));
+
+      const fs_builder ubld = bld.at(block, inst).exec_all().group(1, 0);
+
+      /* ce0 doesn't consider the thread dispatch mask (DMask or VMask),
+       * so combine the execution and dispatch masks to obtain the true mask.
+       *
+       * If we're looking for the first live channel, and we have packed
+       * dispatch, we can skip this step, as we know all dispatched channels
+       * will appear at the front of the mask.
+       */
+      if (!(first && packed_dispatch)) {
+         fs_reg mask = ubld.vgrf(BRW_REGISTER_TYPE_UD);
+         ubld.emit(SHADER_OPCODE_READ_SR_REG, mask, brw_imm_ud(vmask ? 3 : 2));
+
+         /* Quarter control has the effect of magically shifting the value of
+          * ce0 so you'll get the first/last active channel relative to the
+          * specified quarter control as result.
+          */
+         if (inst->group > 0)
+            ubld.SHR(mask, mask, brw_imm_ud(ALIGN(inst->group, 8)));
+
+         ubld.AND(mask, exec_mask, mask);
+         exec_mask = mask;
+      }
+
+      if (first) {
+         ubld.FBL(inst->dst, exec_mask);
+      } else {
+         fs_reg tmp = ubld.vgrf(BRW_REGISTER_TYPE_UD, 1);
+         ubld.LZD(tmp, exec_mask);
+         ubld.ADD(inst->dst, negate(tmp), brw_imm_uw(31));
+      }
+
+      inst->remove(block);
+      progress = true;
+   }
+
+   if (progress)
+      invalidate_analysis(DEPENDENCY_INSTRUCTIONS | DEPENDENCY_VARIABLES);
+
+   return progress;
+}
+
 void
 fs_visitor::dump_instructions() const
 {
@@ -6120,6 +6191,8 @@ fs_visitor::optimize()
    OPT(fixup_sends_duplicate_payload);
 
    lower_uniform_pull_constant_loads();
+
+   lower_find_live_channel();
 
    validate();
 }
@@ -6966,6 +7039,8 @@ fs_visitor::run_task(bool allow_spilling)
    if (failed)
       return false;
 
+   emit_urb_fence();
+
    emit_cs_terminate();
 
    calculate_cfg();
@@ -7010,6 +7085,8 @@ fs_visitor::run_mesh(bool allow_spilling)
 
    if (failed)
       return false;
+
+   emit_urb_fence();
 
    emit_cs_terminate();
 
@@ -7679,10 +7756,10 @@ lower_simd(nir_builder *b, nir_instr *instr, void *options)
    }
 }
 
-void
+bool
 brw_nir_lower_simd(nir_shader *nir, unsigned dispatch_width)
 {
-   nir_shader_lower_instructions(nir, filter_simd, lower_simd,
+   return nir_shader_lower_instructions(nir, filter_simd, lower_simd,
                                  (void *)(uintptr_t)dispatch_width);
 }
 
@@ -7726,11 +7803,11 @@ brw_compile_cs(const struct brw_compiler *compiler,
       brw_nir_apply_key(shader, compiler, &key->base,
                         dispatch_width, true /* is_scalar */);
 
-      NIR_PASS_V(shader, brw_nir_lower_simd, dispatch_width);
+      NIR_PASS(_, shader, brw_nir_lower_simd, dispatch_width);
 
       /* Clean up after the local index and ID calculations. */
-      NIR_PASS_V(shader, nir_opt_constant_folding);
-      NIR_PASS_V(shader, nir_opt_dce);
+      NIR_PASS(_, shader, nir_opt_constant_folding);
+      NIR_PASS(_, shader, nir_opt_dce);
 
       brw_postprocess_nir(shader, compiler, true, debug_enabled,
                           key->base.robust_buffer_access);

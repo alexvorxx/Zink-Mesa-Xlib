@@ -27,6 +27,7 @@
  * makes it easier to do backend-specific optimizations than doing so
  * in the GLSL IR or in the native code.
  */
+#include "brw_eu.h"
 #include "brw_fs.h"
 #include "compiler/glsl_types.h"
 
@@ -1043,6 +1044,24 @@ fs_visitor::emit_urb_writes(const fs_reg &gs_vertex_count)
       inst->mlen = 6;
       inst->offset = 0;
    }
+}
+
+void
+fs_visitor::emit_urb_fence()
+{
+   fs_reg dst = bld.vgrf(BRW_REGISTER_TYPE_UD);
+   fs_inst *fence = bld.emit(SHADER_OPCODE_MEMORY_FENCE, dst,
+                             brw_vec8_grf(0, 0),
+                             brw_imm_ud(true),
+                             brw_imm_ud(0));
+   fence->sfid = BRW_SFID_URB;
+   fence->desc = lsc_fence_msg_desc(devinfo, LSC_FENCE_LOCAL,
+                                    LSC_FLUSH_TYPE_NONE, true);
+
+   bld.exec_all().group(1, 0).emit(FS_OPCODE_SCHEDULING_FENCE,
+                                   bld.null_reg_ud(),
+                                   &dst,
+                                   1);
 }
 
 void

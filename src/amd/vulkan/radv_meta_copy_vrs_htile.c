@@ -37,8 +37,8 @@ radv_device_finish_meta_copy_vrs_htile_state(struct radv_device *device)
                         &state->alloc);
    radv_DestroyPipelineLayout(radv_device_to_handle(device), state->copy_vrs_htile_p_layout,
                               &state->alloc);
-   radv_DestroyDescriptorSetLayout(radv_device_to_handle(device), state->copy_vrs_htile_ds_layout,
-                                   &state->alloc);
+   device->vk.dispatch_table.DestroyDescriptorSetLayout(
+      radv_device_to_handle(device), state->copy_vrs_htile_ds_layout, &state->alloc);
 }
 
 static nir_shader *

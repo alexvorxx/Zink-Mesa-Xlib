@@ -77,6 +77,8 @@ tu6_lazy_emit_tessfactor_addr(struct tu_cmd_buffer *cmd)
       return;
 
    tu_cs_emit_regs(&cmd->cs, A6XX_PC_TESSFACTOR_ADDR(.qword = cmd->device->tess_bo->iova));
+   /* Updating PC_TESSFACTOR_ADDR could race with the next draw which uses it. */
+   cmd->state.cache.flush_bits |= TU_CMD_FLAG_WAIT_FOR_IDLE;
    cmd->state.tessfactor_addr_set = true;
 }
 
@@ -233,7 +235,7 @@ tu6_emit_zs(struct tu_cmd_buffer *cmd,
       tu_cs_image_depth_ref(cs, iview, 0);
    else
       tu_cs_image_ref(cs, &iview->view, 0);
-   tu_cs_emit(cs, attachment->gmem_offset);
+   tu_cs_emit(cs, tu_attachment_gmem_offset(cmd, attachment));
 
    tu_cs_emit_regs(cs,
                    A6XX_GRAS_SU_DEPTH_BUFFER_INFO(.depth_format = fmt));
@@ -248,10 +250,10 @@ tu6_emit_zs(struct tu_cmd_buffer *cmd,
       tu_cs_emit(cs, A6XX_RB_STENCIL_INFO(.separate_stencil = true).value);
       if (attachment->format == VK_FORMAT_D32_SFLOAT_S8_UINT) {
          tu_cs_image_stencil_ref(cs, iview, 0);
-         tu_cs_emit(cs, attachment->gmem_offset_stencil);
+         tu_cs_emit(cs, tu_attachment_gmem_offset_stencil(cmd, attachment));
       } else {
          tu_cs_image_ref(cs, &iview->view, 0);
-         tu_cs_emit(cs, attachment->gmem_offset);
+         tu_cs_emit(cs, tu_attachment_gmem_offset(cmd, attachment));
       }
    } else {
       tu_cs_emit_regs(cs,
@@ -292,7 +294,7 @@ tu6_emit_mrt(struct tu_cmd_buffer *cmd,
       tu_cs_emit_pkt4(cs, REG_A6XX_RB_MRT_BUF_INFO(i), 6);
       tu_cs_emit(cs, iview->view.RB_MRT_BUF_INFO);
       tu_cs_image_ref(cs, &iview->view, 0);
-      tu_cs_emit(cs, cmd->state.pass->attachments[a].gmem_offset);
+      tu_cs_emit(cs, tu_attachment_gmem_offset(cmd, &cmd->state.pass->attachments[a]));
 
       tu_cs_emit_regs(cs,
                       A6XX_SP_FS_MRT_REG(i, .dword = iview->view.SP_FS_MRT_REG));
@@ -563,6 +565,7 @@ static bool
 use_hw_binning(struct tu_cmd_buffer *cmd)
 {
    const struct tu_framebuffer *fb = cmd->state.framebuffer;
+   const struct tu_tiling_config *tiling = &fb->tiling[cmd->state.gmem_layout];
 
    /* XFB commands are emitted for BINNING || SYSMEM, which makes it
     * incompatible with non-hw binning GMEM rendering. this is required because
@@ -571,7 +574,7 @@ use_hw_binning(struct tu_cmd_buffer *cmd)
     * XFB was used.
     */
    if (cmd->state.rp.xfb_used) {
-      assert(fb->binning_possible);
+      assert(tiling->binning_possible);
       return true;
    }
 
@@ -582,11 +585,11 @@ use_hw_binning(struct tu_cmd_buffer *cmd)
     */
    if (cmd->state.rp.has_prim_generated_query_in_rp ||
        cmd->state.prim_generated_query_running_before_rp) {
-      assert(fb->binning_possible);
+      assert(tiling->binning_possible);
       return true;
    }
 
-   return fb->binning;
+   return tiling->binning;
 }
 
 static bool
@@ -597,7 +600,7 @@ use_sysmem_rendering(struct tu_cmd_buffer *cmd,
       return true;
 
    /* can't fit attachments into gmem */
-   if (!cmd->state.pass->gmem_pixels)
+   if (!cmd->state.pass->gmem_pixels[cmd->state.gmem_layout])
       return true;
 
    if (cmd->state.framebuffer->layers > 1)
@@ -615,7 +618,7 @@ use_sysmem_rendering(struct tu_cmd_buffer *cmd,
       return true;
 
    /* XFB is incompatible with non-hw binning GMEM rendering, see use_hw_binning */
-   if (cmd->state.rp.xfb_used && !cmd->state.framebuffer->binning_possible)
+   if (cmd->state.rp.xfb_used && !cmd->state.tiling->binning_possible)
       return true;
 
    /* QUERY_TYPE_PRIMITIVES_GENERATED is incompatible with non-hw binning
@@ -623,7 +626,7 @@ use_sysmem_rendering(struct tu_cmd_buffer *cmd,
     */
    if ((cmd->state.rp.has_prim_generated_query_in_rp ||
         cmd->state.prim_generated_query_running_before_rp) &&
-       !cmd->state.framebuffer->binning_possible)
+       !cmd->state.tiling->binning_possible)
       return true;
 
    if (unlikely(cmd->device->physical_device->instance->debug_flags & TU_DEBUG_GMEM))
@@ -647,7 +650,7 @@ static void
 tu6_emit_cond_for_load_stores(struct tu_cmd_buffer *cmd, struct tu_cs *cs,
                               uint32_t pipe, uint32_t slot, bool wfm)
 {
-   if (cmd->state.framebuffer->binning_possible) {
+   if (cmd->state.tiling->binning_possible) {
       tu_cs_emit_pkt7(cs, CP_REG_TEST, 1);
       tu_cs_emit(cs, A6XX_CP_REG_TEST_0_REG(REG_A6XX_VSC_STATE_REG(pipe)) |
                      A6XX_CP_REG_TEST_0_BIT(slot) |
@@ -662,15 +665,15 @@ tu6_emit_tile_select(struct tu_cmd_buffer *cmd,
                      struct tu_cs *cs,
                      uint32_t tx, uint32_t ty, uint32_t pipe, uint32_t slot)
 {
-   const struct tu_framebuffer *fb = cmd->state.framebuffer;
+   const struct tu_tiling_config *tiling = cmd->state.tiling;
 
    tu_cs_emit_pkt7(cs, CP_SET_MARKER, 1);
    tu_cs_emit(cs, A6XX_CP_SET_MARKER_0_MODE(RM6_GMEM));
 
-   const uint32_t x1 = fb->tile0.width * tx;
-   const uint32_t y1 = fb->tile0.height * ty;
-   const uint32_t x2 = MIN2(x1 + fb->tile0.width - 1, MAX_VIEWPORT_SIZE - 1);
-   const uint32_t y2 = MIN2(y1 + fb->tile0.height - 1, MAX_VIEWPORT_SIZE - 1);
+   const uint32_t x1 = tiling->tile0.width * tx;
+   const uint32_t y1 = tiling->tile0.height * ty;
+   const uint32_t x2 = MIN2(x1 + tiling->tile0.width - 1, MAX_VIEWPORT_SIZE - 1);
+   const uint32_t y2 = MIN2(y1 + tiling->tile0.height - 1, MAX_VIEWPORT_SIZE - 1);
    tu6_emit_window_scissor(cs, x1, y1, x2, y2);
    tu6_emit_window_offset(cs, x1, y1);
 
@@ -683,7 +686,7 @@ tu6_emit_tile_select(struct tu_cmd_buffer *cmd,
       tu_cs_emit(cs, 0x0);
 
       tu_cs_emit_pkt7(cs, CP_SET_BIN_DATA5_OFFSET, 4);
-      tu_cs_emit(cs, fb->pipe_sizes[pipe] |
+      tu_cs_emit(cs, tiling->pipe_sizes[pipe] |
                      CP_SET_BIN_DATA5_0_VSC_N(slot));
       tu_cs_emit(cs, pipe * cmd->vsc_draw_strm_pitch);
       tu_cs_emit(cs, pipe * 4);
@@ -767,7 +770,7 @@ tu6_emit_tile_load(struct tu_cmd_buffer *cmd, struct tu_cs *cs)
    tu6_emit_blit_scissor(cmd, cs, true);
 
    for (uint32_t i = 0; i < cmd->state.pass->attachment_count; ++i)
-      tu_load_gmem_attachment(cmd, cs, i, cmd->state.framebuffer->binning, false);
+      tu_load_gmem_attachment(cmd, cs, i, cmd->state.tiling->binning, false);
 }
 
 static void
@@ -785,8 +788,8 @@ tu6_emit_tile_store(struct tu_cmd_buffer *cmd, struct tu_cs *cs)
    tu6_emit_blit_scissor(cmd, cs, true);
 
    for (uint32_t a = 0; a < pass->attachment_count; ++a) {
-      if (pass->attachments[a].gmem_offset >= 0)
-         tu_store_gmem_attachment(cmd, cs, a, a, cmd->state.framebuffer->binning_possible);
+      if (pass->attachments[a].gmem)
+         tu_store_gmem_attachment(cmd, cs, a, a, cmd->state.tiling->binning_possible);
    }
 
    if (subpass->resolve_attachments) {
@@ -963,18 +966,18 @@ tu6_init_hw(struct tu_cmd_buffer *cmd, struct tu_cs *cs)
 static void
 update_vsc_pipe(struct tu_cmd_buffer *cmd, struct tu_cs *cs)
 {
-   const struct tu_framebuffer *fb = cmd->state.framebuffer;
+   const struct tu_tiling_config *tiling = cmd->state.tiling;
 
    tu_cs_emit_regs(cs,
-                   A6XX_VSC_BIN_SIZE(.width = fb->tile0.width,
-                                     .height = fb->tile0.height));
+                   A6XX_VSC_BIN_SIZE(.width = tiling->tile0.width,
+                                     .height = tiling->tile0.height));
 
    tu_cs_emit_regs(cs,
-                   A6XX_VSC_BIN_COUNT(.nx = fb->tile_count.width,
-                                      .ny = fb->tile_count.height));
+                   A6XX_VSC_BIN_COUNT(.nx = tiling->tile_count.width,
+                                      .ny = tiling->tile_count.height));
 
    tu_cs_emit_pkt4(cs, REG_A6XX_VSC_PIPE_CONFIG_REG(0), 32);
-   tu_cs_emit_array(cs, fb->pipe_config, 32);
+   tu_cs_emit_array(cs, tiling->pipe_config, 32);
 
    tu_cs_emit_regs(cs,
                    A6XX_VSC_PRIM_STRM_PITCH(cmd->vsc_prim_strm_pitch),
@@ -988,9 +991,9 @@ update_vsc_pipe(struct tu_cmd_buffer *cmd, struct tu_cs *cs)
 static void
 emit_vsc_overflow_test(struct tu_cmd_buffer *cmd, struct tu_cs *cs)
 {
-   const struct tu_framebuffer *fb = cmd->state.framebuffer;
+   const struct tu_tiling_config *tiling = cmd->state.tiling;
    const uint32_t used_pipe_count =
-      fb->pipe_count.width * fb->pipe_count.height;
+      tiling->pipe_count.width * tiling->pipe_count.height;
 
    for (int i = 0; i < used_pipe_count; i++) {
       tu_cs_emit_pkt7(cs, CP_COND_WRITE5, 8);
@@ -1108,6 +1111,8 @@ tu_emit_input_attachments(struct tu_cmd_buffer *cmd,
                           const struct tu_subpass *subpass,
                           bool gmem)
 {
+   const struct tu_tiling_config *tiling = cmd->state.tiling;
+
    /* note: we can probably emit input attachments just once for the whole
     * renderpass, this would avoid emitting both sysmem/gmem versions
     *
@@ -1138,7 +1143,7 @@ tu_emit_input_attachments(struct tu_cmd_buffer *cmd,
       const struct tu_render_pass_attachment *att =
          &cmd->state.pass->attachments[a];
       uint32_t *dst = &texture.map[A6XX_TEX_CONST_DWORDS * i];
-      uint32_t gmem_offset = att->gmem_offset;
+      uint32_t gmem_offset = tu_attachment_gmem_offset(cmd, att);
       uint32_t cpp = att->cpp;
 
       memcpy(dst, iview->view.descriptor, A6XX_TEX_CONST_DWORDS * 4);
@@ -1196,7 +1201,7 @@ tu_emit_input_attachments(struct tu_cmd_buffer *cmd,
          dst[5] = (dst[5] & 0xffff) | iview->stencil_base_addr >> 32;
 
          cpp = att->samples;
-         gmem_offset = att->gmem_offset_stencil;
+         gmem_offset = att->gmem_offset_stencil[cmd->state.gmem_layout];
       }
 
       if (!gmem || !subpass->input_attachments[i / 2].patch_input_gmem)
@@ -1207,7 +1212,7 @@ tu_emit_input_attachments(struct tu_cmd_buffer *cmd,
       dst[0] |= A6XX_TEX_CONST_0_TILE_MODE(TILE6_2);
       dst[2] =
          A6XX_TEX_CONST_2_TYPE(A6XX_TEX_2D) |
-         A6XX_TEX_CONST_2_PITCH(cmd->state.framebuffer->tile0.width * cpp);
+         A6XX_TEX_CONST_2_PITCH(tiling->tile0.width * cpp);
       dst[3] = 0;
       dst[4] = cmd->device->physical_device->gmem_base + gmem_offset;
       dst[5] = A6XX_TEX_CONST_5_DEPTH(1);
@@ -1334,7 +1339,7 @@ tu6_tile_render_begin(struct tu_cmd_buffer *cmd, struct tu_cs *cs,
                       struct tu_renderpass_result *autotune_result)
 {
    struct tu_physical_device *phys_dev = cmd->device->physical_device;
-
+   const struct tu_tiling_config *tiling = cmd->state.tiling;
    tu_lrz_tiling_begin(cmd, cs);
 
    tu_cs_emit_pkt7(cs, CP_SKIP_IB2_ENABLE_GLOBAL, 1);
@@ -1342,9 +1347,8 @@ tu6_tile_render_begin(struct tu_cmd_buffer *cmd, struct tu_cs *cs,
 
    tu_emit_cache_flush_ccu(cmd, cs, TU_CMD_CCU_GMEM);
 
-   const struct tu_framebuffer *fb = cmd->state.framebuffer;
    if (use_hw_binning(cmd)) {
-      tu6_emit_bin_size(cs, fb->tile0.width, fb->tile0.height,
+      tu6_emit_bin_size(cs, tiling->tile0.width, tiling->tile0.height,
                         A6XX_RB_BIN_CONTROL_RENDER_MODE(BINNING_PASS) |
                         A6XX_RB_BIN_CONTROL_LRZ_FEEDBACK_ZMODE_MASK(0x6));
 
@@ -1352,7 +1356,7 @@ tu6_tile_render_begin(struct tu_cmd_buffer *cmd, struct tu_cs *cs,
 
       tu6_emit_binning_pass(cmd, cs);
 
-      tu6_emit_bin_size(cs, fb->tile0.width, fb->tile0.height,
+      tu6_emit_bin_size(cs, tiling->tile0.width, tiling->tile0.height,
                         A6XX_RB_BIN_CONTROL_FORCE_LRZ_WRITE_DIS |
                         A6XX_RB_BIN_CONTROL_LRZ_FEEDBACK_ZMODE_MASK(0x6));
 
@@ -1368,14 +1372,14 @@ tu6_tile_render_begin(struct tu_cmd_buffer *cmd, struct tu_cs *cs,
       tu_cs_emit_pkt7(cs, CP_SKIP_IB2_ENABLE_GLOBAL, 1);
       tu_cs_emit(cs, 0x1);
    } else {
-      tu6_emit_bin_size(cs, fb->tile0.width, fb->tile0.height,
+      tu6_emit_bin_size(cs, tiling->tile0.width, tiling->tile0.height,
                         A6XX_RB_BIN_CONTROL_LRZ_FEEDBACK_ZMODE_MASK(0x6));
 
-      if (fb->binning_possible) {
+      if (tiling->binning_possible) {
          /* Mark all tiles as visible for tu6_emit_cond_for_load_stores(), since
           * the actual binner didn't run.
           */
-         int pipe_count = fb->pipe_count.width * fb->pipe_count.height;
+         int pipe_count = tiling->pipe_count.width * tiling->pipe_count.height;
          tu_cs_emit_pkt4(cs, REG_A6XX_VSC_STATE_REG(0), pipe_count);
          for (int i = 0; i < pipe_count; i++)
             tu_cs_emit(cs, ~0);
@@ -1451,6 +1455,7 @@ tu_cmd_render_tiles(struct tu_cmd_buffer *cmd,
                     struct tu_renderpass_result *autotune_result)
 {
    const struct tu_framebuffer *fb = cmd->state.framebuffer;
+   const struct tu_tiling_config *tiling = cmd->state.tiling;
 
    /* Create gmem stores now (at EndRenderPass time)) because they needed to
     * know whether to allow their conditional execution, which was tied to a
@@ -1466,19 +1471,19 @@ tu_cmd_render_tiles(struct tu_cmd_buffer *cmd,
    /* Note: we reverse the order of walking the pipes and tiles on every
     * other row, to improve texture cache locality compared to raster order.
     */
-   for (uint32_t py = 0; py < fb->pipe_count.height; py++) {
-      uint32_t pipe_row = py * fb->pipe_count.width;
-      for (uint32_t pipe_row_i = 0; pipe_row_i < fb->pipe_count.width; pipe_row_i++) {
+   for (uint32_t py = 0; py < tiling->pipe_count.height; py++) {
+      uint32_t pipe_row = py * tiling->pipe_count.width;
+      for (uint32_t pipe_row_i = 0; pipe_row_i < tiling->pipe_count.width; pipe_row_i++) {
          uint32_t px;
          if (py & 1)
-            px = fb->pipe_count.width - 1 - pipe_row_i;
+            px = tiling->pipe_count.width - 1 - pipe_row_i;
          else
             px = pipe_row_i;
          uint32_t pipe = pipe_row + px;
-         uint32_t tx1 = px * fb->pipe0.width;
-         uint32_t ty1 = py * fb->pipe0.height;
-         uint32_t tx2 = MIN2(tx1 + fb->pipe0.width, fb->tile_count.width);
-         uint32_t ty2 = MIN2(ty1 + fb->pipe0.height, fb->tile_count.height);
+         uint32_t tx1 = px * tiling->pipe0.width;
+         uint32_t ty1 = py * tiling->pipe0.height;
+         uint32_t tx2 = MIN2(tx1 + tiling->pipe0.width, tiling->tile_count.width);
+         uint32_t ty2 = MIN2(ty1 + tiling->pipe0.height, tiling->tile_count.height);
          uint32_t tile_row_stride = tx2 - tx1;
          uint32_t slot_row = 0;
          for (uint32_t ty = ty1; ty < ty2; ty++) {
@@ -1498,7 +1503,7 @@ tu_cmd_render_tiles(struct tu_cmd_buffer *cmd,
 
    tu6_tile_render_end(cmd, &cmd->cs, autotune_result);
 
-   trace_end_render_pass(&cmd->trace, &cmd->cs, fb);
+   trace_end_render_pass(&cmd->trace, &cmd->cs, fb, tiling);
 
    if (!u_trace_iterator_equal(cmd->trace_renderpass_start, cmd->trace_renderpass_end))
       u_trace_disable_event_range(cmd->trace_renderpass_start,
@@ -1524,7 +1529,7 @@ tu_cmd_render_sysmem(struct tu_cmd_buffer *cmd,
 
    tu6_sysmem_render_end(cmd, &cmd->cs, autotune_result);
 
-   trace_end_render_pass(&cmd->trace, &cmd->cs, cmd->state.framebuffer);
+   trace_end_render_pass(&cmd->trace, &cmd->cs, cmd->state.framebuffer, cmd->state.tiling);
 }
 
 void
@@ -1560,6 +1565,7 @@ static void tu_reset_render_pass(struct tu_cmd_buffer *cmd_buffer)
    cmd_buffer->state.subpass = NULL;
    cmd_buffer->state.framebuffer = NULL;
    cmd_buffer->state.attachments = NULL;
+   cmd_buffer->state.gmem_layout = TU_GMEM_LAYOUT_COUNT; /* invalid value to prevent looking up gmem offsets */
    memset(&cmd_buffer->state.rp, 0, sizeof(cmd_buffer->state.rp));
 
    /* LRZ is not valid next time we use it */
@@ -1796,6 +1802,7 @@ tu_cmd_buffer_begin(struct tu_cmd_buffer *cmd_buffer,
    memset(&cmd_buffer->state, 0, sizeof(cmd_buffer->state));
    cmd_buffer->state.index_size = 0xff; /* dirty restart index */
    cmd_buffer->state.line_mode = RECTANGULAR;
+   cmd_buffer->state.gmem_layout = TU_GMEM_LAYOUT_COUNT; /* dirty value */
 
    tu_cache_init(&cmd_buffer->state.cache);
    tu_cache_init(&cmd_buffer->state.renderpass_cache);
@@ -1865,6 +1872,12 @@ tu_BeginCommandBuffer(VkCommandBuffer commandBuffer,
             cmd_buffer->state.subpass =
                &cmd_buffer->state.pass->subpasses[pBeginInfo->pInheritanceInfo->subpass];
          }
+
+         /* We can't set the gmem layout here, because the state.pass only has
+          * to be compatible (same formats/sample counts) with the primary's
+          * renderpass, rather than exactly equal.
+          */
+
          tu_lrz_begin_secondary_cmdbuf(cmd_buffer);
       } else {
          /* When executing in the middle of another command buffer, the CCU
@@ -3422,6 +3435,8 @@ tu_restore_suspended_pass(struct tu_cmd_buffer *cmd,
    cmd->state.framebuffer = suspended->state.suspended_pass.framebuffer;
    cmd->state.attachments = suspended->state.suspended_pass.attachments;
    cmd->state.render_area = suspended->state.suspended_pass.render_area;
+   cmd->state.gmem_layout = suspended->state.suspended_pass.gmem_layout;
+   cmd->state.tiling = &cmd->state.framebuffer->tiling[cmd->state.gmem_layout];
    cmd->state.lrz = suspended->state.suspended_pass.lrz;
 }
 
@@ -3864,6 +3879,7 @@ tu_CmdBeginRenderPass2(VkCommandBuffer commandBuffer,
          tu_image_view_from_handle(pAttachmentInfo->pAttachments[i]) :
          cmd->state.framebuffer->attachments[i].attachment;
    }
+   tu_choose_gmem_layout(cmd);
 
    trace_start_render_pass(&cmd->trace, &cmd->cs);
 
@@ -3968,6 +3984,8 @@ tu_CmdBeginRendering(VkCommandBuffer commandBuffer,
       }
    }
 
+   tu_choose_gmem_layout(cmd);
+
    cmd->state.renderpass_cache.pending_flush_bits =
       cmd->state.cache.pending_flush_bits;
    cmd->state.renderpass_cache.flush_bits = 0;
@@ -3997,6 +4015,7 @@ tu_CmdBeginRendering(VkCommandBuffer commandBuffer,
       cmd->state.suspended_pass.framebuffer = cmd->state.framebuffer;
       cmd->state.suspended_pass.render_area = cmd->state.render_area;
       cmd->state.suspended_pass.attachments = cmd->state.attachments;
+      cmd->state.suspended_pass.gmem_layout = cmd->state.gmem_layout;
    }
 
    if (!resuming) {
@@ -4076,7 +4095,7 @@ tu_CmdNextSubpass2(VkCommandBuffer commandBuffer,
 
          tu_store_gmem_attachment(cmd, cs, a, gmem_a, false);
 
-         if (pass->attachments[a].gmem_offset < 0)
+         if (!pass->attachments[a].gmem)
             continue;
 
          /* check if the resolved attachment is needed by later subpasses,

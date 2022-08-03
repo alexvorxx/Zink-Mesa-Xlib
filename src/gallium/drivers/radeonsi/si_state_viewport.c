@@ -83,21 +83,6 @@ static void si_get_small_prim_cull_info(struct si_context *sctx, struct si_small
       info.translate[i] *= num_samples;
    }
 
-   /* Better subpixel precision increases the efficiency of small
-    * primitive culling. (more precision means a tighter bounding box
-    * around primitives and more accurate elimination)
-    */
-   unsigned quant_mode = sctx->viewports.as_scissor[0].quant_mode;
-
-   if (quant_mode == SI_QUANT_MODE_12_12_FIXED_POINT_1_4096TH)
-      info.small_prim_precision_no_aa = 1.0 / 4096.0;
-   else if (quant_mode == SI_QUANT_MODE_14_10_FIXED_POINT_1_1024TH)
-      info.small_prim_precision_no_aa = 1.0 / 1024.0;
-   else
-      info.small_prim_precision_no_aa = 1.0 / 256.0;
-
-   info.small_prim_precision = num_samples * info.small_prim_precision_no_aa;
-
    *out = info;
 }
 
@@ -105,7 +90,6 @@ static void si_emit_cull_state(struct si_context *sctx)
 {
    assert(sctx->screen->use_ngg_culling);
 
-   const unsigned upload_size = offsetof(struct si_small_prim_cull_info, small_prim_precision);
    struct si_small_prim_cull_info info;
    si_get_small_prim_cull_info(sctx, &info);
 
@@ -113,8 +97,8 @@ static void si_emit_cull_state(struct si_context *sctx)
        memcmp(&info, &sctx->last_small_prim_cull_info, sizeof(info))) {
       unsigned offset = 0;
 
-      u_upload_data(sctx->b.const_uploader, 0, upload_size,
-                    si_optimal_tcc_alignment(sctx, upload_size), &info, &offset,
+      u_upload_data(sctx->b.const_uploader, 0, sizeof(info),
+                    si_optimal_tcc_alignment(sctx, sizeof(info)), &info, &offset,
                     (struct pipe_resource **)&sctx->small_prim_cull_info_buf);
 
       sctx->small_prim_cull_info_address = sctx->small_prim_cull_info_buf->gpu_address + offset;
@@ -129,6 +113,23 @@ static void si_emit_cull_state(struct si_context *sctx)
                      sctx->small_prim_cull_info_address);
    radeon_end();
 
+   /* Better subpixel precision increases the efficiency of small
+    * primitive culling. (more precision means a tighter bounding box
+    * around primitives and more accurate elimination)
+    */
+   unsigned quant_mode = sctx->viewports.as_scissor[0].quant_mode;
+   float small_prim_precision_no_aa = 0;
+   unsigned num_samples = si_get_num_coverage_samples(sctx);
+
+   if (quant_mode == SI_QUANT_MODE_12_12_FIXED_POINT_1_4096TH)
+      small_prim_precision_no_aa = 1.0 / 4096.0;
+   else if (quant_mode == SI_QUANT_MODE_14_10_FIXED_POINT_1_1024TH)
+      small_prim_precision_no_aa = 1.0 / 1024.0;
+   else
+      small_prim_precision_no_aa = 1.0 / 256.0;
+
+   float small_prim_precision = num_samples * small_prim_precision_no_aa;
+
    /* Set VS_STATE.SMALL_PRIM_PRECISION for NGG culling.
     *
     * small_prim_precision is 1 / 2^n. We only need n between 5 (1/32) and 12 (1/4096).
@@ -141,8 +142,10 @@ static void si_emit_cull_state(struct si_context *sctx)
     *
     * So pass only the first 4 bits of the float exponent to the shader.
     */
+   SET_FIELD(sctx->current_gs_state, GS_STATE_SMALL_PRIM_PRECISION_NO_AA,
+             (fui(small_prim_precision_no_aa) >> 23) & 0xf);
    SET_FIELD(sctx->current_gs_state, GS_STATE_SMALL_PRIM_PRECISION,
-             (fui(info.small_prim_precision) >> 23) & 0xf);
+             (fui(small_prim_precision) >> 23) & 0xf);
 }
 
 static void si_set_scissor_states(struct pipe_context *pctx, unsigned start_slot,

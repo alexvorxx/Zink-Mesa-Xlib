@@ -36,7 +36,6 @@
 
 #include "fd6_const.h"
 #include "fd6_emit.h"
-#include "fd6_format.h"
 #include "fd6_pack.h"
 #include "fd6_program.h"
 #include "fd6_texture.h"

@@ -405,9 +405,9 @@ radv_device_finish_meta_fast_clear_flush_state(struct radv_device *device)
    radv_DestroyPipelineLayout(radv_device_to_handle(device),
                               state->fast_clear_flush.dcc_decompress_compute_p_layout,
                               &state->alloc);
-   radv_DestroyDescriptorSetLayout(radv_device_to_handle(device),
-                                   state->fast_clear_flush.dcc_decompress_compute_ds_layout,
-                                   &state->alloc);
+   device->vk.dispatch_table.DestroyDescriptorSetLayout(
+      radv_device_to_handle(device), state->fast_clear_flush.dcc_decompress_compute_ds_layout,
+      &state->alloc);
 }
 
 static VkResult

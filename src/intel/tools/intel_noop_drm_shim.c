@@ -293,6 +293,7 @@ query_write_topology(struct drm_i915_query_item *item)
    info->subslice_offset = DIV_ROUND_UP(i915.devinfo.num_slices, 8);
    info->subslice_stride = DIV_ROUND_UP(i915.devinfo.num_subslices[0], 8);
    info->eu_offset = info->subslice_offset + info->max_slices * info->subslice_stride;
+   info->eu_stride = DIV_ROUND_UP(info->max_eus_per_subslice, 8);
 
    uint32_t slice_mask = (1u << i915.devinfo.num_slices) - 1;
    for (uint32_t i = 0; i < info->subslice_offset; i++)

@@ -601,9 +601,9 @@ radv_device_finish_meta_blit2d_state(struct radv_device *device)
       for (unsigned src = 0; src < BLIT2D_NUM_SRC_TYPES; src++) {
          radv_DestroyPipelineLayout(radv_device_to_handle(device),
                                     state->blit2d[log2_samples].p_layouts[src], &state->alloc);
-         radv_DestroyDescriptorSetLayout(radv_device_to_handle(device),
-                                         state->blit2d[log2_samples].ds_layouts[src],
-                                         &state->alloc);
+         device->vk.dispatch_table.DestroyDescriptorSetLayout(
+            radv_device_to_handle(device), state->blit2d[log2_samples].ds_layouts[src],
+            &state->alloc);
 
          for (unsigned j = 0; j < NUM_META_FS_KEYS; ++j) {
             radv_DestroyPipeline(radv_device_to_handle(device),

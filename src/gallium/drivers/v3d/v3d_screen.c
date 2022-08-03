@@ -889,6 +889,8 @@ v3d_screen_create(int fd, const struct pipe_screen_config *config,
 
         v3d_fence_init(screen);
 
+        v3d_process_debug_variable();
+
         v3d_resource_screen_init(pscreen);
 
         screen->compiler = v3d_compiler_init(&screen->devinfo, 0);

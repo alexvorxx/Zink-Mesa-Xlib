@@ -628,7 +628,7 @@ bi_reads_temps(bi_instr *ins, unsigned src)
         switch (ins->op) {
         /* Cannot permute a temporary */
         case BI_OPCODE_CLPER_I32:
-        case BI_OPCODE_CLPER_V6_I32:
+        case BI_OPCODE_CLPER_OLD_I32:
                 return src != 0;
         case BI_OPCODE_IMULD:
                 return false;

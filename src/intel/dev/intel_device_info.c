@@ -1933,61 +1933,33 @@ init_max_scratch_ids(struct intel_device_info *devinfo)
 bool
 intel_get_device_info_from_fd(int fd, struct intel_device_info *devinfo)
 {
-   int devid = 0;
-   const char *devid_override = getenv("INTEL_DEVID_OVERRIDE");
-   if (devid_override && strlen(devid_override) > 0) {
-      if (geteuid() == getuid()) {
-         devid = intel_device_name_to_pci_device_id(devid_override);
-         /* Fallback to PCI ID. */
-         if (devid <= 0)
-            devid = strtol(devid_override, NULL, 0);
-         if (devid <= 0) {
-            mesa_loge("Invalid INTEL_DEVID_OVERRIDE=\"%s\". "
-                    "Use a valid numeric PCI ID or one of the supported "
-                    "platform names:", devid_override);
-            for (unsigned i = 0; i < ARRAY_SIZE(name_map); i++)
-               mesa_loge("   %s", name_map[i].name);
-            return false;
-         }
-      } else {
-         mesa_logi("Ignoring INTEL_DEVID_OVERRIDE=\"%s\" because "
-                   "real and effective user ID don't match.", devid_override);
-      }
+   /* Get PCI info.
+    *
+    * Some callers may already have a valid drm device which holds values of
+    * PCI fields queried here prior to calling this function. But making this
+    * query optional leads to a more cumbersome implementation. These callers
+    * still need to initialize the fields somewhere out of this function and
+    * rely on an ioctl to get PCI device id for the next step when skipping
+    * this drm query.
+    */
+   drmDevicePtr drmdev = NULL;
+   if (drmGetDevice2(fd, DRM_DEVICE_GET_PCI_REVISION, &drmdev)) {
+      mesa_loge("Failed to query drm device.");
+      return false;
    }
-
-   if (devid > 0) {
-      if (!intel_get_device_info_from_pci_id(devid, devinfo))
-         return false;
-      devinfo->no_hw = true;
-   } else {
-      /* Get PCI info.
-       *
-       * Some callers may already have a valid drm device which holds
-       * values of PCI fields queried here prior to calling this function.
-       * But making this query optional leads to a more cumbersome
-       * implementation. These callers still need to initialize the fields
-       * somewhere out of this function and rely on an ioctl to get PCI
-       * device id for the next step when skipping this drm query.
-       */
-      drmDevicePtr drmdev = NULL;
-      if (drmGetDevice2(fd, DRM_DEVICE_GET_PCI_REVISION, &drmdev)) {
-         mesa_loge("Failed to query drm device.");
-         return false;
-      }
-      if (!intel_get_device_info_from_pci_id
-            (drmdev->deviceinfo.pci->device_id, devinfo)) {
-         drmFreeDevice(&drmdev);
-         return false;
-      }
-      devinfo->pci_domain = drmdev->businfo.pci->domain;
-      devinfo->pci_bus = drmdev->businfo.pci->bus;
-      devinfo->pci_dev = drmdev->businfo.pci->dev;
-      devinfo->pci_func = drmdev->businfo.pci->func;
-      devinfo->pci_device_id = drmdev->deviceinfo.pci->device_id;
-      devinfo->pci_revision_id = drmdev->deviceinfo.pci->revision_id;
+   if (!intel_get_device_info_from_pci_id
+       (drmdev->deviceinfo.pci->device_id, devinfo)) {
       drmFreeDevice(&drmdev);
-      devinfo->no_hw = env_var_as_boolean("INTEL_NO_HW", false);
+      return false;
    }
+   devinfo->pci_domain = drmdev->businfo.pci->domain;
+   devinfo->pci_bus = drmdev->businfo.pci->bus;
+   devinfo->pci_dev = drmdev->businfo.pci->dev;
+   devinfo->pci_func = drmdev->businfo.pci->func;
+   devinfo->pci_device_id = drmdev->deviceinfo.pci->device_id;
+   devinfo->pci_revision_id = drmdev->deviceinfo.pci->revision_id;
+   drmFreeDevice(&drmdev);
+   devinfo->no_hw = env_var_as_boolean("INTEL_NO_HW", false);
 
    if (devinfo->ver == 10) {
       mesa_loge("Gfx10 support is redacted.");
@@ -1999,6 +1971,7 @@ intel_get_device_info_from_fd(int fd, struct intel_device_info *devinfo)
       /* Provide some sensible values for NO_HW. */
       devinfo->gtt_size =
          devinfo->ver >= 8 ? (1ull << 48) : 2ull * 1024 * 1024 * 1024;
+      compute_system_memory(devinfo, false);
       return true;
    }
 

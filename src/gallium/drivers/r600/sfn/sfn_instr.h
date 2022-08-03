@@ -210,6 +210,8 @@ public:
 
    bool kcache_reservation_failed() const { return m_kcache_alloc_failed;}
 
+   static void set_chipclass(r600_chip_class chip_class);
+
 private:
    bool try_reserve_kcache(const UniformValue& u,
                            std::array<KCacheLine, 4>& kcache) const;
@@ -231,7 +233,7 @@ private:
 
    int m_lds_group_requirement{0};
    AluInstr *m_lds_group_start{nullptr};
-
+   static unsigned s_max_kcache_banks;
 };
 
 class InstrWithVectorResult : public Instr {

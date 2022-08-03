@@ -90,6 +90,8 @@ extern uint32_t V3D_DEBUG;
 
 extern uint32_t v3d_debug_flag_for_shader_stage(gl_shader_stage stage);
 
+extern void v3d_process_debug_variable(void);
+
 #ifdef __cplusplus
 }
 #endif

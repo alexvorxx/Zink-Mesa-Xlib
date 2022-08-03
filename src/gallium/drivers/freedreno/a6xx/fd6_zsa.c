@@ -30,7 +30,6 @@
 #include "util/u_string.h"
 
 #include "fd6_context.h"
-#include "fd6_format.h"
 #include "fd6_zsa.h"
 
 /* update lza state based on stencil-test func:

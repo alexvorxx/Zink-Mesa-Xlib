@@ -177,7 +177,7 @@ static bool si_update_shaders(struct si_context *sctx)
 
          if (!si_update_gs_ring_buffers(sctx))
             return false;
-      } else {
+      } else if (GFX_VERSION < GFX11) {
          si_pm4_bind_state(sctx, vs, NULL);
          sctx->prefetch_L2_mask &= ~SI_PREFETCH_VS;
       }
@@ -201,8 +201,10 @@ static bool si_update_shaders(struct si_context *sctx)
       if (!HAS_TESS && !HAS_GS) {
          if (NGG) {
             si_pm4_bind_state(sctx, gs, sctx->shader.vs.current);
-            si_pm4_bind_state(sctx, vs, NULL);
-            sctx->prefetch_L2_mask &= ~SI_PREFETCH_VS;
+            if (GFX_VERSION < GFX11) {
+               si_pm4_bind_state(sctx, vs, NULL);
+               sctx->prefetch_L2_mask &= ~SI_PREFETCH_VS;
+            }
          } else {
             si_pm4_bind_state(sctx, vs, sctx->shader.vs.current);
          }
@@ -287,7 +289,8 @@ static bool si_update_shaders(struct si_context *sctx)
       if (GFX_VERSION >= GFX10 && sctx->screen->use_ngg_culling)
          si_mark_atom_dirty(sctx, &sctx->atoms.s.ngg_cull_state);
 
-      if (GFX_VERSION == GFX6)
+      if (GFX_VERSION == GFX6 ||
+          (GFX_VERSION == GFX11 && sctx->screen->info.has_export_conflict_bug))
          si_mark_atom_dirty(sctx, &sctx->atoms.s.db_render_state);
 
       if (sctx->framebuffer.nr_samples <= 1)
@@ -322,7 +325,7 @@ static bool si_update_shaders(struct si_context *sctx)
    if ((GFX_VERSION <= GFX8 &&
         (si_pm4_state_enabled_and_changed(sctx, ls) || si_pm4_state_enabled_and_changed(sctx, es))) ||
        si_pm4_state_enabled_and_changed(sctx, hs) || si_pm4_state_enabled_and_changed(sctx, gs) ||
-       si_pm4_state_enabled_and_changed(sctx, vs) || si_pm4_state_enabled_and_changed(sctx, ps)) {
+       (!NGG && si_pm4_state_enabled_and_changed(sctx, vs)) || si_pm4_state_enabled_and_changed(sctx, ps)) {
       unsigned scratch_size = 0;
 
       if (HAS_TESS) {
@@ -1312,15 +1315,19 @@ static void gfx10_emit_ge_cntl(struct si_context *sctx, unsigned num_patches)
 
    if (NGG) {
       if (HAS_TESS) {
-         if (GFX_VERSION >= GFX11)
+         if (GFX_VERSION >= GFX11) {
+            unsigned prim_grp_size =
+               G_03096C_PRIM_GRP_SIZE_GFX11(si_get_vs_inline(sctx, HAS_TESS, HAS_GS)->current->ge_cntl);
+
             ge_cntl = S_03096C_PRIMS_PER_SUBGRP(num_patches) |
                       S_03096C_VERTS_PER_SUBGRP(0) |
                       S_03096C_BREAK_PRIMGRP_AT_EOI(key.u.tess_uses_prim_id) |
-                      S_03096C_PRIM_GRP_SIZE_GFX11(256);
-         else
+                      S_03096C_PRIM_GRP_SIZE_GFX11(prim_grp_size);
+         } else {
             ge_cntl = S_03096C_PRIM_GRP_SIZE_GFX10(num_patches) |
                       S_03096C_VERT_GRP_SIZE(0) |
                       S_03096C_BREAK_WAVE_AT_EOI(key.u.tess_uses_prim_id);
+         }
       } else {
          ge_cntl = si_get_vs_inline(sctx, HAS_TESS, HAS_GS)->current->ge_cntl;
       }

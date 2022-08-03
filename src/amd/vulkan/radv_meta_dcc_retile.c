@@ -91,8 +91,8 @@ radv_device_finish_meta_dcc_retile_state(struct radv_device *device)
    }
    radv_DestroyPipelineLayout(radv_device_to_handle(device), state->dcc_retile.p_layout,
                               &state->alloc);
-   radv_DestroyDescriptorSetLayout(radv_device_to_handle(device), state->dcc_retile.ds_layout,
-                                   &state->alloc);
+   device->vk.dispatch_table.DestroyDescriptorSetLayout(radv_device_to_handle(device),
+                                                        state->dcc_retile.ds_layout, &state->alloc);
 
    /* Reset for next finish. */
    memset(&state->dcc_retile, 0, sizeof(state->dcc_retile));

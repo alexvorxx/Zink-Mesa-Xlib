@@ -199,6 +199,7 @@ public:
    bool lower_simd_width();
    bool lower_barycentrics();
    bool lower_derivatives();
+   bool lower_find_live_channel();
    bool lower_scoreboard();
    bool lower_sub_sat();
    bool opt_combine_constants();
@@ -326,6 +327,7 @@ public:
    void emit_gs_input_load(const fs_reg &dst, const nir_src &vertex_src,
                            unsigned base_offset, const nir_src &offset_src,
                            unsigned num_components, unsigned first_component);
+   void emit_urb_fence();
    void emit_cs_terminate();
    fs_reg emit_work_group_id_setup();
 
@@ -655,7 +657,7 @@ uint32_t brw_fb_write_msg_control(const fs_inst *inst,
 
 void brw_compute_urb_setup_index(struct brw_wm_prog_data *wm_prog_data);
 
-void brw_nir_lower_simd(nir_shader *nir, unsigned dispatch_width);
+bool brw_nir_lower_simd(nir_shader *nir, unsigned dispatch_width);
 
 namespace brw {
    class fs_builder;

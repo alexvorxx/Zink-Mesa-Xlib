@@ -1693,6 +1693,9 @@ util_format_rgb_to_bgr(enum pipe_format format);
 enum pipe_format
 util_format_snorm_to_unorm(enum pipe_format format);
 
+enum pipe_format
+util_format_rgbx_to_rgba(enum pipe_format format);
+
 #ifdef __cplusplus
 } // extern "C" {
 #endif

@@ -336,7 +336,7 @@ bool TexInstr::from_nir(nir_tex_instr *tex, Shader& shader)
       case nir_texop_tex:
          return emit_tex_tex(tex, src, shader);
       case nir_texop_txf:
-      return emit_tex_txf(tex, src, shader);
+         return emit_tex_txf(tex, src, shader);
       case nir_texop_txb:
       case nir_texop_txl:
          return emit_tex_txl_txb(tex, src, shader);
@@ -349,7 +349,10 @@ bool TexInstr::from_nir(nir_tex_instr *tex, Shader& shader)
       case nir_texop_txd:
           return emit_tex_txd(tex, src, shader);
       case nir_texop_txf_ms:
-         return emit_tex_tex_ms(tex, src, shader);
+         if (shader.chip_class() < ISA_CC_EVERGREEN)
+            return emit_tex_tex_ms_direct(tex, src, shader);
+         else
+            return emit_tex_tex_ms(tex, src, shader);
       case nir_texop_tg4:
          return emit_tex_tg4(tex, src, shader);
       case nir_texop_texture_samples:
@@ -485,17 +488,83 @@ bool TexInstr::emit_tex_txf(nir_tex_instr *tex, Inputs& src, Shader& shader)
 
 bool TexInstr::emit_buf_txf(nir_tex_instr *tex, Inputs& src, Shader& shader)
 {
-   auto dst = shader.value_factory().dest_vec4(tex->dest, pin_group);
+   auto& vf = shader.value_factory();
+   auto dst = vf.dest_vec4(tex->dest, pin_group);
 
    PRegister tex_offset = nullptr;
    if (src.texture_offset)
       tex_offset = shader.emit_load_to_register(src.texture_offset);
-   auto ir = new LoadFromBuffer(dst, {0,1,2,3}, src.coord[0], 0,
+
+   auto *real_dst = &dst;
+   RegisterVec4 tmp = vf.temp_vec4(pin_group);
+
+   if (shader.chip_class() < ISA_CC_EVERGREEN) {
+      real_dst = &tmp;
+   }
+
+   auto ir = new LoadFromBuffer(*real_dst, {0,1,2,3}, src.coord[0], 0,
                                 tex->texture_index +  R600_MAX_CONST_BUFFERS,
-                                tex_offset, fmt_32_32_32_32_float);
+                                tex_offset, fmt_invalid);
    ir->set_fetch_flag(FetchInstr::use_const_field);
    shader.emit_instruction(ir);
    shader.set_flag(Shader::sh_uses_tex_buffer);
+
+   if (shader.chip_class() < ISA_CC_EVERGREEN) {
+      auto tmp_w = vf.temp_register();
+      int buf_sel = (512 + R600_BUFFER_INFO_OFFSET / 16) + 2 * tex->texture_index;
+      AluInstr *ir = nullptr;
+      for (int i = 0; i < 4; ++i) {
+         auto d = i < 3 ? dst[i] : tmp_w;
+         ir = new AluInstr(op2_and_int,  d, tmp[i],
+                           vf.uniform(buf_sel, i, R600_BUFFER_INFO_CONST_BUFFER),
+                           AluInstr::write);
+         shader.emit_instruction(ir);
+      }
+
+      ir->set_alu_flag(alu_last_instr);
+      shader.emit_instruction(new AluInstr(op2_or_int, dst[3], tmp_w,
+                              vf.uniform(buf_sel + 1, 0, R600_BUFFER_INFO_CONST_BUFFER),
+                              AluInstr::last_write));
+   }
+
+   return true;
+}
+
+bool TexInstr::emit_tex_tex_ms_direct(nir_tex_instr *tex, Inputs& src, Shader& shader)
+{
+   assert(tex->src[0].src.is_ssa);
+   auto& vf = shader.value_factory();
+
+   r600::sfn_log << SfnLog::instr << "emit '"
+                 << *reinterpret_cast<nir_instr*>(tex)
+                 << "' (" << __func__ << ")\n";
+
+   auto sampler = get_sampler_id(tex->sampler_index, src.sampler_deref);
+   assert(!sampler.indirect && "Indirect sampler selection not yet supported");
+
+   auto temp2 = vf.temp_vec4(pin_group);
+
+   for (unsigned i = 0; i < tex->coord_components; ++i) {
+      unsigned k = i;
+      if (tex->is_array && tex->sampler_dim == GLSL_SAMPLER_DIM_1D && i == 1)
+         k = 2;
+
+      shader.emit_instruction(new AluInstr(op1_mov, temp2[k],
+                                           src.coord[k], AluInstr::write));
+   }
+
+   shader.emit_instruction(new AluInstr(op1_mov, temp2[3], src.ms_index,
+                           AluInstr::last_write));
+
+   auto dst = vf.dest_vec4(tex->dest, pin_group);
+
+   /* txf doesn't need rounding for the array index, but 1D has the array index
+    * in the z component */
+   auto tex_ir = new TexInstr(ld, dst, {0,1,2,3}, temp2,
+                                    sampler.id,
+                                    sampler.id + R600_MAX_CONST_BUFFERS, src.sampler_offset);
+
+   shader.emit_instruction(tex_ir);
    return true;
 }
 
@@ -698,8 +767,15 @@ bool TexInstr::emit_tex_txs(nir_tex_instr *tex, Inputs& src,
    auto dest = vf.dest_vec4(tex->dest, pin_group);
 
    if (tex->sampler_dim == GLSL_SAMPLER_DIM_BUF) {
-      shader.emit_instruction(new QueryBufferSizeInstr(dest, {0,7,7,7},
-                                                       tex->sampler_index + R600_MAX_CONST_BUFFERS));
+      if (shader.chip_class() >= ISA_CC_EVERGREEN) {
+         shader.emit_instruction(new QueryBufferSizeInstr(dest, {0,7,7,7},
+                                                          tex->sampler_index + R600_MAX_CONST_BUFFERS));
+      } else {
+         int id = 2 * tex->sampler_index + (512 + R600_BUFFER_INFO_OFFSET / 16) + 1;
+         auto src = vf.uniform(id, 1, R600_BUFFER_INFO_CONST_BUFFER);
+         shader.emit_instruction(new AluInstr(op1_mov, dest[0], src, AluInstr::last_write));
+         shader.set_flag(Shader::sh_uses_tex_buffer);
+      }
    } else {
 
       auto src_lod = vf.temp_register();

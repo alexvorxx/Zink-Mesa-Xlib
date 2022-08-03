@@ -178,8 +178,8 @@ radv_device_finish_meta_fmask_expand_state(struct radv_device *device)
    radv_DestroyPipelineLayout(radv_device_to_handle(device), state->fmask_expand.p_layout,
                               &state->alloc);
 
-   radv_DestroyDescriptorSetLayout(radv_device_to_handle(device), state->fmask_expand.ds_layout,
-                                   &state->alloc);
+   device->vk.dispatch_table.DestroyDescriptorSetLayout(
+      radv_device_to_handle(device), state->fmask_expand.ds_layout, &state->alloc);
 }
 
 static VkResult

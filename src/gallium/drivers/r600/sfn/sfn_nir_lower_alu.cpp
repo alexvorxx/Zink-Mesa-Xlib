@@ -72,9 +72,12 @@ nir_ssa_def *Lower2x16::lower(nir_instr *instr)
 }
 
 class LowerSinCos : public NirLowerInstruction {
+public:
+   LowerSinCos(amd_gfx_level gxf_level): m_gxf_level(gxf_level){}
 private:
    bool filter(const nir_instr *instr) const override;
    nir_ssa_def *lower(nir_instr *instr) override;
+   amd_gfx_level m_gxf_level;
 };
 
 bool LowerSinCos::filter(const nir_instr *instr) const
@@ -99,14 +102,17 @@ nir_ssa_def *LowerSinCos::lower(nir_instr *instr)
    assert(alu->op == nir_op_fsin ||
           alu->op == nir_op_fcos);
 
+   auto fract = nir_ffract(b,
+                           nir_ffma(b,
+                                    nir_ssa_for_alu_src(b, alu, 0),
+                                    nir_imm_float(b, 0.15915494),
+                                    nir_imm_float(b, 0.5)));
+
    auto normalized =
-         nir_fadd(b,
-                  nir_ffract(b,
-                             nir_ffma(b,
-                                      nir_ssa_for_alu_src(b, alu, 0),
-                                      nir_imm_float(b, 0.15915494),
-                                      nir_imm_float(b, 0.5))),
-                              nir_imm_float(b, -0.5));
+         m_gxf_level != R600 ?
+                           nir_fadd(b, fract, nir_imm_float(b, -0.5)) :
+                           nir_ffma(b, fract, nir_imm_float(b, 2.0f * M_PI),
+                                    nir_imm_float(b, -M_PI));
 
    if (alu->op == nir_op_fsin)
       return nir_fsin_amd(b, normalized);
@@ -123,7 +129,7 @@ bool r600_nir_lower_pack_unpack_2x16(nir_shader *shader)
    return r600::Lower2x16().run(shader);
 }
 
-bool r600_nir_lower_trigen(nir_shader *shader)
+bool r600_nir_lower_trigen(nir_shader *shader, amd_gfx_level gfx_level)
 {
-   return r600::LowerSinCos().run(shader);
+   return r600::LowerSinCos(gfx_level).run(shader);
 }

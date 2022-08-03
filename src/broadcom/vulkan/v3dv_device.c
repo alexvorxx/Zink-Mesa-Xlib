@@ -225,6 +225,8 @@ v3dv_CreateInstance(const VkInstanceCreateInfo *pCreateInfo,
       return vk_error(NULL, result);
    }
 
+   v3d_process_debug_variable();
+
    instance->physicalDeviceCount = -1;
 
    /* We start with the default values for the pipeline_cache envvars */

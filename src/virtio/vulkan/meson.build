@@ -90,6 +90,7 @@ vn_libs = []
 
 if with_platform_wayland or with_platform_x11
   libvn_files += files('vn_wsi.c')
+  libvn_files += wsi_entrypoints[0]
   vn_flags += '-DVN_USE_WSI_PLATFORM'
 endif
 

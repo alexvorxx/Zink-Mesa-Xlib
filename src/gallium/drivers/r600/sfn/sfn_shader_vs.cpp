@@ -215,7 +215,11 @@ bool VertexExportForFs::emit_varying_pos(const store_loc &store_info, nir_intrin
       auto src = m_parent->value_factory().src(intr.src[0], 0);
       auto clamped = m_parent->value_factory().temp_register();
       m_parent->emit_instruction(new AluInstr(op1_mov, clamped, src, {alu_write, alu_dst_clamp, alu_last_instr}));
-      m_parent->emit_instruction(new AluInstr(op1_flt_to_int, out_value[1], clamped, AluInstr::last_write));
+      auto alu = new AluInstr(op1_flt_to_int, out_value[1], clamped, AluInstr::last_write);
+      if (m_parent->chip_class() < ISA_CC_EVERGREEN)
+         alu->set_alu_flag(alu_is_trans);
+      m_parent->emit_instruction(alu);
+
       value = out_value;
    }
       FALLTHROUGH;

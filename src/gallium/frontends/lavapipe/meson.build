@@ -26,7 +26,7 @@ liblvp_files = files(
     'lvp_pipeline.c',
     'lvp_pipeline_cache.c',
     'lvp_query.c',
-    'lvp_wsi.c')
+    'lvp_wsi.c') + [vk_cmd_enqueue_entrypoints[0]]
 
 lvp_deps = []
 lvp_flags = []
