@@ -109,14 +109,6 @@ blit_resolve(struct zink_context *ctx, const struct pipe_blit_info *info, bool *
    return true;
 }
 
-static VkFormatFeatureFlags
-get_resource_features(struct zink_screen *screen, struct zink_resource *res)
-{
-   VkFormatProperties props = screen->format_props[res->base.b.format];
-   return res->optimal_tiling ? props.optimalTilingFeatures :
-                                props.linearTilingFeatures;
-}
-
 static bool
 blit_native(struct zink_context *ctx, const struct pipe_blit_info *info, bool *needs_present_readback)
 {
@@ -146,8 +138,8 @@ blit_native(struct zink_context *ctx, const struct pipe_blit_info *info, bool *n
        dst->format != zink_get_format(screen, info->dst.format))
       return false;
 
-   if (!(get_resource_features(screen, src) & VK_FORMAT_FEATURE_BLIT_SRC_BIT) ||
-       !(get_resource_features(screen, dst) & VK_FORMAT_FEATURE_BLIT_DST_BIT))
+   if (!(src->obj->vkfeats & VK_FORMAT_FEATURE_BLIT_SRC_BIT) ||
+       !(dst->obj->vkfeats & VK_FORMAT_FEATURE_BLIT_DST_BIT))
       return false;
 
    if ((util_format_is_pure_sint(info->src.format) !=
@@ -157,8 +149,7 @@ blit_native(struct zink_context *ctx, const struct pipe_blit_info *info, bool *n
       return false;
 
    if (info->filter == PIPE_TEX_FILTER_LINEAR &&
-       !(get_resource_features(screen, src) &
-          VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT))
+       !(src->obj->vkfeats & VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT))
       return false;
 
    apply_dst_clears(ctx, info, false);
