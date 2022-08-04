@@ -73,7 +73,8 @@ apt-get install -y --no-remove \
         x11proto-gl-dev \
         x11proto-randr-dev \
         xz-utils \
-        zlib1g-dev
+        zlib1g-dev \
+	zstd
 
 # Needed for ci-fairy, this revision is able to upload files to MinIO
 pip3 install git+http://gitlab.freedesktop.org/freedesktop/ci-templates@34f4ade99434043f88e164933f570301fd18b125

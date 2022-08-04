@@ -92,7 +92,8 @@ apt-get -y install --no-install-recommends \
     waffle-utils \
     wget \
     xinit \
-    xserver-xorg-core
+    xserver-xorg-core \
+    zstd
 
 # Needed for ci-fairy, this revision is able to upload files to
 # MinIO and doesn't depend on git

@@ -571,7 +571,7 @@ struct pipe_screen {
     */
    bool (*is_parallel_shader_compilation_finished)(struct pipe_screen *screen,
                                                    void *shader,
-                                                   unsigned shader_type);
+                                                   enum pipe_shader_type shader_type);
 
    /**
     * Set the damage region (called when KHR_partial_update() is invoked).

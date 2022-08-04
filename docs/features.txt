@@ -307,7 +307,7 @@ Khronos, ARB, and OES extensions that are not part of any OpenGL or OpenGL ES ve
   GL_ARB_sample_locations                               DONE (nvc0, zink)
   GL_ARB_seamless_cubemap_per_texture                   DONE (etnaviv/SEAMLESS_CUBE_MAP, freedreno, i965, nvc0, r600, radeonsi, softpipe, virgl, zink)
   GL_ARB_shader_ballot                                  DONE (i965/gen8+, nvc0, radeonsi, zink)
-  GL_ARB_shader_clock                                   DONE (i965/gen7+, nv50, nvc0, r600, radeonsi, virgl, zink)
+  GL_ARB_shader_clock                                   DONE (i965/gen7+, nv50, nvc0, r600, radeonsi, llvmpipe, virgl, zink)
   GL_ARB_shader_stencil_export                          DONE (i965/gen9+, r600, radeonsi, softpipe, llvmpipe, virgl, panfrost, zink)
   GL_ARB_shader_viewport_layer_array                    DONE (i965/gen6+, nvc0, radeonsi, zink)
   GL_ARB_shading_language_include                       DONE
@@ -516,7 +516,7 @@ Khronos extensions that are not part of any Vulkan version:
   VK_KHR_push_descriptor                                DONE (anv, lvp, radv, tu)
   VK_KHR_ray_query                                      in progress
   VK_KHR_ray_tracing_pipeline                           in progress
-  VK_KHR_shader_clock                                   DONE (anv, radv)
+  VK_KHR_shader_clock                                   DONE (anv, lvp, radv)
   VK_KHR_shader_integer_dot_product                     DONE (anv, radv, tu)
   VK_KHR_shader_subgroup_uniform_control_flow           DONE (anv, radv)
   VK_KHR_shared_presentable_image                       not started

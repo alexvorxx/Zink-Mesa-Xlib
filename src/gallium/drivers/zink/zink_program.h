@@ -95,6 +95,38 @@ struct zink_program {
 
 #define ZINK_MAX_INLINED_VARIANTS 5
 
+struct zink_gfx_library_key {
+   uint32_t hw_rast_state;
+   VkShaderModule modules[ZINK_SHADER_COUNT];
+   VkPipeline pipeline;
+};
+
+struct zink_gfx_input_key {
+   union {
+      struct {
+         unsigned idx:8;
+         bool uses_dynamic_stride;
+      };
+      uint32_t input;
+   };
+   uint32_t vertex_buffers_enabled_mask;
+   uint32_t vertex_strides[PIPE_MAX_ATTRIBS];
+   struct zink_vertex_elements_hw_state *element_state;
+   VkPipeline pipeline;
+};
+
+struct zink_gfx_output_key {
+   uint32_t _pad:15;
+   uint32_t force_persample_interp:1;
+   uint32_t rast_samples:8;
+   uint32_t void_alpha_attachments:PIPE_MAX_COLOR_BUFS;
+   VkSampleMask sample_mask;
+
+   unsigned rp_state;
+   uint32_t blend_id;
+   VkPipeline pipeline;
+};
+
 struct zink_gfx_program {
    struct zink_program base;
 
@@ -112,6 +144,8 @@ struct zink_gfx_program {
    struct hash_table pipelines[11]; // number of draw modes we support
    uint32_t default_variant_hash;
    uint32_t last_variant_hash;
+
+   struct set libs[4]; //zink_gfx_library_key[primtype] -> VkPipeline
 };
 
 struct zink_compute_program {
@@ -208,7 +242,7 @@ zink_update_gfx_program(struct zink_context *ctx, struct zink_gfx_program *prog)
 
 struct zink_gfx_program *
 zink_create_gfx_program(struct zink_context *ctx,
-                        struct zink_shader *stages[ZINK_SHADER_COUNT],
+                        struct zink_shader **stages,
                         unsigned vertices_per_patch);
 
 void

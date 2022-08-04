@@ -1406,27 +1406,6 @@ static void visit_load_const(struct ac_nir_context *ctx, const nir_load_const_in
    ctx->ssa_defs[instr->def.index] = value;
 }
 
-static LLVMValueRef get_buffer_size(struct ac_nir_context *ctx, LLVMValueRef descriptor,
-                                    bool in_elements)
-{
-   LLVMValueRef size =
-      LLVMBuildExtractElement(ctx->ac.builder, descriptor, LLVMConstInt(ctx->ac.i32, 2, false), "");
-
-   /* GFX8 only */
-   if (ctx->ac.gfx_level == GFX8 && in_elements) {
-      /* On GFX8, the descriptor contains the size in bytes,
-       * but TXQ must return the size in elements.
-       * The stride is always non-zero for resources using TXQ.
-       */
-      LLVMValueRef stride = LLVMBuildExtractElement(ctx->ac.builder, descriptor, ctx->ac.i32_1, "");
-      stride = LLVMBuildLShr(ctx->ac.builder, stride, LLVMConstInt(ctx->ac.i32, 16, false), "");
-      stride = LLVMBuildAnd(ctx->ac.builder, stride, LLVMConstInt(ctx->ac.i32, 0x3fff, false), "");
-
-      size = LLVMBuildUDiv(ctx->ac.builder, size, stride, "");
-   }
-   return size;
-}
-
 /* Gather4 should follow the same rules as bilinear filtering, but the hardware
  * incorrectly forces nearest filtering if the texture format is integer.
  * The only effect it has on Gather4, which always returns 4 texels for
@@ -1604,10 +1583,8 @@ static LLVMValueRef build_tex_intrinsic(struct ac_nir_context *ctx, const nir_te
       break;
    case nir_texop_txs:
    case nir_texop_query_levels:
-      args->opcode = ac_image_get_resinfo;
-      if (!args->lod)
-         args->lod = ctx->ac.i32_0;
-      args->level_zero = false;
+   case nir_texop_texture_samples:
+      assert(!"should have been lowered");
       break;
    case nir_texop_tex:
       if (ctx->stage != MESA_SHADER_FRAGMENT &&
@@ -1770,7 +1747,7 @@ static LLVMValueRef visit_get_ssbo_size(struct ac_nir_context *ctx,
 {
    bool non_uniform = nir_intrinsic_access(instr) & ACCESS_NON_UNIFORM;
    LLVMValueRef rsrc = ctx->abi->load_ssbo(ctx->abi, get_src(ctx, instr->src[0]), false, non_uniform);
-   return get_buffer_size(ctx, rsrc, false);
+   return LLVMBuildExtractElement(ctx->ac.builder, rsrc, LLVMConstInt(ctx->ac.i32, 2, false), "");
 }
 
 static LLVMValueRef extract_vector_range(struct ac_llvm_context *ctx, LLVMValueRef src,
@@ -2491,7 +2468,7 @@ static void get_image_coords(struct ac_nir_context *ctx, const nir_intrinsic_ins
       LLVMConstInt(ctx->ac.i32, 2, false),
       LLVMConstInt(ctx->ac.i32, 3, false),
    };
-   LLVMValueRef sample_index = ac_llvm_extract_elem(&ctx->ac, get_src(ctx, instr->src[2]), 0);
+   LLVMValueRef sample_index = NULL;
 
    int count;
    ASSERTED bool add_frag_pos =
@@ -2515,6 +2492,7 @@ static void get_image_coords(struct ac_nir_context *ctx, const nir_intrinsic_ins
       else
          fmask_load_address[2] = NULL;
 
+      sample_index = ac_llvm_extract_elem(&ctx->ac, get_src(ctx, instr->src[2]), 0);
       sample_index = adjust_sample_index_using_fmask(
          &ctx->ac, fmask_load_address[0], fmask_load_address[1], fmask_load_address[2],
          sample_index, get_image_descriptor(ctx, instr, dynamic_desc_index, AC_DESC_FMASK, false));
@@ -2558,6 +2536,8 @@ static void get_image_coords(struct ac_nir_context *ctx, const nir_intrinsic_ins
       }
 
       if (is_ms) {
+         if (!sample_index)
+            sample_index = ac_llvm_extract_elem(&ctx->ac, get_src(ctx, instr->src[2]), 0);
          args->coords[count] = sample_index;
          count++;
       }
@@ -2626,6 +2606,20 @@ static LLVMValueRef visit_image_load(struct ac_nir_context *ctx, const nir_intri
 
       res = ac_trim_vector(&ctx->ac, res, instr->dest.ssa.num_components);
       res = ac_to_integer(&ctx->ac, res);
+   } else if (instr->intrinsic == nir_intrinsic_image_deref_samples_identical) {
+      assert(ctx->ac.gfx_level < GFX11);
+
+      args.opcode = ac_image_load;
+      args.resource = get_image_descriptor(ctx, instr, dynamic_index, AC_DESC_FMASK, false);
+      get_image_coords(ctx, instr, dynamic_index, &args, GLSL_SAMPLER_DIM_2D, is_array);
+      args.dmask = 0xf;
+      args.dim = is_array ? ac_image_2darray : ac_image_2d;
+      args.attributes = AC_FUNC_ATTR_READNONE;
+      args.a16 = ac_get_elem_bits(&ctx->ac, LLVMTypeOf(args.coords[0])) == 16;
+
+      res = ac_build_image_opcode(&ctx->ac, &args);
+      res = LLVMBuildExtractElement(ctx->ac.builder, res, ctx->ac.i32_0, "");
+      res = LLVMBuildICmp(ctx->ac.builder, LLVMIntEQ, res, ctx->ac.i32_0, "");
    } else {
       bool level_zero = nir_src_is_const(instr->src[3]) && nir_src_as_uint(instr->src[3]) == 0;
 
@@ -2894,72 +2888,30 @@ static LLVMValueRef visit_image_atomic(struct ac_nir_context *ctx, const nir_int
    return result;
 }
 
-static LLVMValueRef visit_image_samples(struct ac_nir_context *ctx, nir_intrinsic_instr *instr)
+static LLVMValueRef visit_image_descriptor(struct ac_nir_context *ctx,
+                                           const nir_intrinsic_instr *instr,
+                                           bool bindless)
 {
-   struct waterfall_context wctx;
-   LLVMValueRef dynamic_index = enter_waterfall_image(ctx, &wctx, instr);
-   LLVMValueRef rsrc = get_image_descriptor(ctx, instr, dynamic_index, AC_DESC_IMAGE, false);
-
-   LLVMValueRef ret = ac_build_image_get_sample_count(&ctx->ac, rsrc);
-   if (ctx->abi->robust_buffer_access) {
-      LLVMValueRef dword1, is_null_descriptor;
-
-      /* Extract the second dword of the descriptor, if it's
-       * all zero, then it's a null descriptor.
-       */
-      dword1 =
-         LLVMBuildExtractElement(ctx->ac.builder, rsrc, LLVMConstInt(ctx->ac.i32, 1, false), "");
-      is_null_descriptor = LLVMBuildICmp(ctx->ac.builder, LLVMIntEQ, dword1,
-                                         LLVMConstInt(ctx->ac.i32, 0, false), "");
-      ret = LLVMBuildSelect(ctx->ac.builder, is_null_descriptor, ctx->ac.i32_0, ret, "");
-   }
-
-   return exit_waterfall(ctx, &wctx, ret);
-}
-
-static LLVMValueRef visit_image_size(struct ac_nir_context *ctx, const nir_intrinsic_instr *instr,
-                                     bool bindless)
-{
-   LLVMValueRef res;
-
    enum glsl_sampler_dim dim;
-   bool is_array;
+
    if (bindless) {
       dim = nir_intrinsic_image_dim(instr);
-      is_array = nir_intrinsic_image_array(instr);
    } else {
       const struct glsl_type *type = get_image_deref(instr)->type;
       dim = glsl_get_sampler_dim(type);
-      is_array = glsl_sampler_type_is_array(type);
    }
 
-   struct waterfall_context wctx;
-   LLVMValueRef dynamic_index = enter_waterfall_image(ctx, &wctx, instr);
+   nir_deref_instr *deref_instr = NULL;
+   if (instr->src[0].ssa->parent_instr->type == nir_instr_type_deref)
+      deref_instr = nir_instr_as_deref(instr->src[0].ssa->parent_instr);
+
+   LLVMValueRef dynamic_index = get_sampler_desc_index(ctx, deref_instr, &instr->instr, true);
 
    if (dim == GLSL_SAMPLER_DIM_BUF) {
-      res = get_buffer_size(
-         ctx, get_image_descriptor(ctx, instr, dynamic_index, AC_DESC_BUFFER, false), true);
+      return get_image_descriptor(ctx, instr, dynamic_index, AC_DESC_BUFFER, false);
    } else {
-
-      struct ac_image_args args = {0};
-
-      args.dim = ac_get_image_dim(ctx->ac.gfx_level, dim, is_array);
-      args.dmask = 0xf;
-      args.resource = get_image_descriptor(ctx, instr, dynamic_index, AC_DESC_IMAGE, false);
-      args.opcode = ac_image_get_resinfo;
-      assert(nir_src_as_uint(instr->src[1]) == 0);
-      args.lod = ctx->ac.i32_0;
-      args.attributes = AC_FUNC_ATTR_READNONE;
-
-      res = ac_build_image_opcode(&ctx->ac, &args);
-
-      if (ctx->ac.gfx_level == GFX9 && dim == GLSL_SAMPLER_DIM_1D && is_array) {
-         LLVMValueRef two = LLVMConstInt(ctx->ac.i32, 2, false);
-         LLVMValueRef layers = LLVMBuildExtractElement(ctx->ac.builder, res, two, "");
-         res = LLVMBuildInsertElement(ctx->ac.builder, res, layers, ctx->ac.i32_1, "");
-      }
+      return get_image_descriptor(ctx, instr, dynamic_index, AC_DESC_IMAGE, false);
    }
-   return exit_waterfall(ctx, &wctx, res);
 }
 
 static void emit_discard(struct ac_nir_context *ctx, const nir_intrinsic_instr *instr)
@@ -3834,16 +3786,13 @@ static void visit_intrinsic(struct ac_nir_context *ctx, nir_intrinsic_instr *ins
    case nir_intrinsic_store_shared2_amd:
       visit_store_shared2_amd(ctx, instr);
       break;
-   case nir_intrinsic_bindless_image_samples:
-   case nir_intrinsic_image_deref_samples:
-      result = visit_image_samples(ctx, instr);
-      break;
    case nir_intrinsic_bindless_image_load:
    case nir_intrinsic_bindless_image_sparse_load:
       result = visit_image_load(ctx, instr, true);
       break;
    case nir_intrinsic_image_deref_load:
    case nir_intrinsic_image_deref_sparse_load:
+   case nir_intrinsic_image_deref_samples_identical:
       result = visit_image_load(ctx, instr, false);
       break;
    case nir_intrinsic_bindless_image_store:
@@ -3882,11 +3831,11 @@ static void visit_intrinsic(struct ac_nir_context *ctx, nir_intrinsic_instr *ins
    case nir_intrinsic_image_deref_atomic_fmax:
       result = visit_image_atomic(ctx, instr, false);
       break;
-   case nir_intrinsic_bindless_image_size:
-      result = visit_image_size(ctx, instr, true);
+   case nir_intrinsic_image_deref_descriptor_amd:
+      result = visit_image_descriptor(ctx, instr, false);
       break;
-   case nir_intrinsic_image_deref_size:
-      result = visit_image_size(ctx, instr, false);
+   case nir_intrinsic_bindless_image_descriptor_amd:
+      result = visit_image_descriptor(ctx, instr, true);
       break;
    case nir_intrinsic_shader_clock:
       result = ac_build_shader_clock(&ctx->ac, nir_intrinsic_memory_scope(instr));
@@ -4521,7 +4470,8 @@ static LLVMValueRef sici_fix_sampler_aniso(struct ac_nir_context *ctx, LLVMValue
 
 static void tex_fetch_ptrs(struct ac_nir_context *ctx, nir_tex_instr *instr,
                            struct waterfall_context *wctx, LLVMValueRef *res_ptr,
-                           LLVMValueRef *samp_ptr, LLVMValueRef *fmask_ptr)
+                           LLVMValueRef *samp_ptr, LLVMValueRef *fmask_ptr,
+                           bool divergent)
 {
    LLVMValueRef texture_dynamic_handle = NULL;
    LLVMValueRef sampler_dynamic_handle = NULL;
@@ -4590,10 +4540,10 @@ static void tex_fetch_ptrs(struct ac_nir_context *ctx, nir_tex_instr *instr,
    if (texture_dynamic_handle) {
       /* descriptor handles given through nir_tex_src_{texture,sampler}_handle */
       if (instr->texture_non_uniform)
-         texture_dynamic_handle = enter_waterfall(ctx, &wctx[0], texture_dynamic_handle, true);
+         texture_dynamic_handle = enter_waterfall(ctx, &wctx[0], texture_dynamic_handle, divergent);
 
       if (instr->sampler_non_uniform)
-         sampler_dynamic_handle = enter_waterfall(ctx, &wctx[1], sampler_dynamic_handle, true);
+         sampler_dynamic_handle = enter_waterfall(ctx, &wctx[1], sampler_dynamic_handle, divergent);
 
       *res_ptr = ctx->abi->load_sampler_desc(ctx->abi, 0, 0, 0, texture_dynamic_handle,
                                              main_descriptor, false, false, true);
@@ -4623,11 +4573,11 @@ static void tex_fetch_ptrs(struct ac_nir_context *ctx, nir_tex_instr *instr,
     */
    if (instr->texture_non_uniform ||
        (ctx->abi->use_waterfall_for_divergent_tex_samplers && texture_deref_instr->dest.ssa.divergent))
-      texture_dynamic_index = enter_waterfall(ctx, wctx + 0, texture_dynamic_index, true);
+      texture_dynamic_index = enter_waterfall(ctx, wctx + 0, texture_dynamic_index, divergent);
 
    if (instr->sampler_non_uniform ||
        (ctx->abi->use_waterfall_for_divergent_tex_samplers && sampler_deref_instr->dest.ssa.divergent))
-      sampler_dynamic_index = enter_waterfall(ctx, wctx + 1, sampler_dynamic_index, true);
+      sampler_dynamic_index = enter_waterfall(ctx, wctx + 1, sampler_dynamic_index, divergent);
 
    *res_ptr = get_sampler_desc(ctx, texture_deref_instr, main_descriptor, &instr->instr,
                                texture_dynamic_index, false, false);
@@ -4661,7 +4611,14 @@ static void visit_tex(struct ac_nir_context *ctx, nir_tex_instr *instr)
    unsigned offset_src = 0;
    struct waterfall_context wctx[2] = {{{0}}};
 
-   tex_fetch_ptrs(ctx, instr, wctx, &args.resource, &args.sampler, &fmask_ptr);
+   /* Don't use the waterfall loop when returning a descriptor. */
+   tex_fetch_ptrs(ctx, instr, wctx, &args.resource, &args.sampler, &fmask_ptr,
+                  instr->op != nir_texop_descriptor_amd);
+
+   if (instr->op == nir_texop_descriptor_amd) {
+      result = args.resource;
+      goto write_result;
+   }
 
    for (unsigned i = 0; i < instr->num_srcs; i++) {
       switch (instr->src[i].src_type) {
@@ -4717,48 +4674,6 @@ static void visit_tex(struct ac_nir_context *ctx, nir_tex_instr *instr)
       default:
          break;
       }
-   }
-
-   if (instr->op == nir_texop_txs && instr->sampler_dim == GLSL_SAMPLER_DIM_BUF) {
-      result = get_buffer_size(ctx, args.resource, true);
-      goto write_result;
-   }
-
-   if (instr->op == nir_texop_texture_samples) {
-      LLVMValueRef res, samples, is_msaa;
-      LLVMValueRef default_sample;
-
-      res = LLVMBuildBitCast(ctx->ac.builder, args.resource, ctx->ac.v8i32, "");
-      samples =
-         LLVMBuildExtractElement(ctx->ac.builder, res, LLVMConstInt(ctx->ac.i32, 3, false), "");
-      is_msaa = LLVMBuildLShr(ctx->ac.builder, samples, LLVMConstInt(ctx->ac.i32, 28, false), "");
-      is_msaa = LLVMBuildAnd(ctx->ac.builder, is_msaa, LLVMConstInt(ctx->ac.i32, 0xe, false), "");
-      is_msaa = LLVMBuildICmp(ctx->ac.builder, LLVMIntEQ, is_msaa,
-                              LLVMConstInt(ctx->ac.i32, 0xe, false), "");
-
-      samples = LLVMBuildLShr(ctx->ac.builder, samples, LLVMConstInt(ctx->ac.i32, 16, false), "");
-      samples = LLVMBuildAnd(ctx->ac.builder, samples, LLVMConstInt(ctx->ac.i32, 0xf, false), "");
-      samples = LLVMBuildShl(ctx->ac.builder, ctx->ac.i32_1, samples, "");
-
-      if (ctx->abi->robust_buffer_access) {
-         LLVMValueRef dword1, is_null_descriptor;
-
-         /* Extract the second dword of the descriptor, if it's
-          * all zero, then it's a null descriptor.
-          */
-         dword1 =
-            LLVMBuildExtractElement(ctx->ac.builder, res, LLVMConstInt(ctx->ac.i32, 1, false), "");
-         is_null_descriptor = LLVMBuildICmp(ctx->ac.builder, LLVMIntEQ, dword1,
-                                            LLVMConstInt(ctx->ac.i32, 0, false), "");
-         default_sample =
-            LLVMBuildSelect(ctx->ac.builder, is_null_descriptor, ctx->ac.i32_0, ctx->ac.i32_1, "");
-      } else {
-         default_sample = ctx->ac.i32_1;
-      }
-
-      samples = LLVMBuildSelect(ctx->ac.builder, is_msaa, samples, default_sample, "");
-      result = samples;
-      goto write_result;
    }
 
    if (args.offset && instr->op != nir_texop_txf && instr->op != nir_texop_txf_ms) {
@@ -4899,7 +4814,7 @@ static void visit_tex(struct ac_nir_context *ctx, nir_tex_instr *instr)
    if (ctx->ac.gfx_level < GFX11 &&
        (instr->sampler_dim == GLSL_SAMPLER_DIM_SUBPASS_MS ||
         instr->sampler_dim == GLSL_SAMPLER_DIM_MS) &&
-       instr->op != nir_texop_txs && instr->op != nir_texop_fragment_fetch_amd &&
+       instr->op != nir_texop_fragment_fetch_amd &&
        instr->op != nir_texop_fragment_mask_fetch_amd) {
       unsigned sample_chan = instr->is_array ? 3 : 2;
       args.coords[sample_chan] = adjust_sample_index_using_fmask(
@@ -4971,18 +4886,10 @@ static void visit_tex(struct ac_nir_context *ctx, nir_tex_instr *instr)
       result = ac_trim_vector(&ctx->ac, result, 4);
    }
 
-   if (instr->op == nir_texop_query_levels)
-      result =
-         LLVMBuildExtractElement(ctx->ac.builder, result, LLVMConstInt(ctx->ac.i32, 3, false), "");
-   else if (instr->is_shadow && instr->is_new_style_shadow && instr->op != nir_texop_txs &&
-            instr->op != nir_texop_lod && instr->op != nir_texop_tg4)
+   if (instr->is_shadow && instr->is_new_style_shadow &&
+       instr->op != nir_texop_lod && instr->op != nir_texop_tg4)
       result = LLVMBuildExtractElement(ctx->ac.builder, result, ctx->ac.i32_0, "");
-   else if (ctx->ac.gfx_level == GFX9 && instr->op == nir_texop_txs &&
-              instr->sampler_dim == GLSL_SAMPLER_DIM_1D && instr->is_array) {
-      LLVMValueRef two = LLVMConstInt(ctx->ac.i32, 2, false);
-      LLVMValueRef layers = LLVMBuildExtractElement(ctx->ac.builder, result, two, "");
-      result = LLVMBuildInsertElement(ctx->ac.builder, result, layers, ctx->ac.i32_1, "");
-   } else if (instr->op == nir_texop_fragment_mask_fetch_amd) {
+   else if (instr->op == nir_texop_fragment_mask_fetch_amd) {
       /* Use 0x76543210 if the image doesn't have FMASK. */
       LLVMValueRef tmp = LLVMBuildBitCast(ctx->ac.builder, args.resource, ctx->ac.v8i32, "");
       tmp = LLVMBuildExtractElement(ctx->ac.builder, tmp, ctx->ac.i32_1, "");

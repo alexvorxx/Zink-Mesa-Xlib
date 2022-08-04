@@ -254,6 +254,9 @@ typedef struct shader_info {
    /* Whether or not this shader ever uses textureGather() */
    bool uses_texture_gather:1;
 
+   /* Whether texture size, levels, or samples is queried. */
+   bool uses_resource_info_query:1;
+
    /**
     * True if this shader uses the fddx/fddy opcodes.
     *

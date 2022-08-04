@@ -78,6 +78,7 @@ include:
   - local: 'src/intel/ci/gitlab-ci.yml'
   - local: 'src/microsoft/ci/gitlab-ci.yml'
   - local: 'src/panfrost/ci/gitlab-ci.yml'
+  - local: 'src/virtio/ci/gitlab-ci.yml'
 
 stages:
   - sanity

@@ -1277,19 +1277,19 @@ try_update_scene_state(struct lp_setup_context *setup)
                setup->constants[i].stored_size = current_size;
                setup->constants[i].stored_data = stored;
             }
-            setup->fs.current.jit_context.constants[i] =
+            setup->fs.current.jit_context.constants[i].f =
                setup->constants[i].stored_data;
          }
          else {
             setup->constants[i].stored_size = 0;
             setup->constants[i].stored_data = NULL;
-            setup->fs.current.jit_context.constants[i] = fake_const_buf;
+            setup->fs.current.jit_context.constants[i].f = fake_const_buf;
          }
 
          const int num_constants =
             DIV_ROUND_UP(setup->constants[i].stored_size,
                          lp_get_constant_buffer_stride(scene->pipe->screen));
-         setup->fs.current.jit_context.num_constants[i] = num_constants;
+         setup->fs.current.jit_context.constants[i].num_elements = num_constants;
          setup->dirty |= LP_SETUP_NEW_FS;
       }
    }
@@ -1306,13 +1306,13 @@ try_update_scene_state(struct lp_setup_context *setup)
          if (current_data) {
             current_data += setup->ssbos[i].current.buffer_offset;
 
-            setup->fs.current.jit_context.ssbos[i] =
+            setup->fs.current.jit_context.ssbos[i].u =
                (const uint32_t *)current_data;
-            setup->fs.current.jit_context.num_ssbos[i] =
+            setup->fs.current.jit_context.ssbos[i].num_elements =
                setup->ssbos[i].current.buffer_size;
          } else {
-            setup->fs.current.jit_context.ssbos[i] = NULL;
-            setup->fs.current.jit_context.num_ssbos[i] = 0;
+            setup->fs.current.jit_context.ssbos[i].u = NULL;
+            setup->fs.current.jit_context.ssbos[i].num_elements = 0;
          }
          setup->dirty |= LP_SETUP_NEW_FS;
       }

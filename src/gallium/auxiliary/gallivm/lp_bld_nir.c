@@ -2203,6 +2203,9 @@ visit_intrinsic(struct lp_build_nir_context *bld_base,
    case nir_intrinsic_store_scratch:
       visit_store_scratch(bld_base, instr);
       break;
+   case nir_intrinsic_shader_clock:
+      bld_base->clock(bld_base, result);
+      break;
    default:
       fprintf(stderr, "Unsupported intrinsic: ");
       nir_print_instr(&instr->instr, stderr);

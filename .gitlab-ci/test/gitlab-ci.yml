@@ -124,7 +124,7 @@
     # improve it even more (see https://docs.mesa3d.org/ci/bare-metal.html for
     # setup).
     - echo -e "\e[0Ksection_start:$(date +%s):artifacts_download[collapsed=true]\r\e[0KDownloading artifacts from minio"
-    - wget ${FDO_HTTP_CACHE_URI:-}https://${PIPELINE_ARTIFACTS_BASE}/${MINIO_ARTIFACT_NAME}.tar.gz -S --progress=dot:giga -O- | tar -xz
+    - wget ${FDO_HTTP_CACHE_URI:-}https://${PIPELINE_ARTIFACTS_BASE}/${MINIO_ARTIFACT_NAME}.tar.zst -S --progress=dot:giga -O- | tar --zstd -x
     - echo -e "\e[0Ksection_end:$(date +%s):artifacts_download\r\e[0K"
   artifacts:
     when: always

@@ -676,6 +676,7 @@ zink_bind_rasterizer_state(struct pipe_context *pctx, void *cso)
 
       if (ctx->rast_state->base.force_persample_interp != force_persample_interp)
          zink_set_fs_key(ctx)->force_persample_interp = ctx->rast_state->base.force_persample_interp;
+      ctx->gfx_pipeline_state.force_persample_interp = ctx->rast_state->base.force_persample_interp;
    }
 }
 

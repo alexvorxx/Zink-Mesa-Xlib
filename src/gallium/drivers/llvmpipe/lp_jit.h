@@ -38,6 +38,7 @@
 
 #include "gallivm/lp_bld_struct.h"
 #include "gallivm/lp_bld_limits.h"
+#include "gallivm/lp_bld_jit_types.h"
 
 #include "pipe/p_state.h"
 #include "lp_texture.h"
@@ -153,8 +154,7 @@ enum {
  */
 struct lp_jit_context
 {
-   const float *constants[LP_MAX_TGSI_CONST_BUFFERS];
-   int num_constants[LP_MAX_TGSI_CONST_BUFFERS];
+   struct lp_jit_buffer constants[LP_MAX_TGSI_CONST_BUFFERS];
 
    struct lp_jit_texture textures[PIPE_MAX_SHADER_SAMPLER_VIEWS];
    struct lp_jit_sampler samplers[PIPE_MAX_SAMPLERS];
@@ -169,8 +169,7 @@ struct lp_jit_context
 
    struct lp_jit_viewport *viewports;
 
-   const uint32_t *ssbos[LP_MAX_TGSI_SHADER_BUFFERS];
-   int num_ssbos[LP_MAX_TGSI_SHADER_BUFFERS];
+   struct lp_jit_buffer ssbos[LP_MAX_TGSI_SHADER_BUFFERS];
 
    uint32_t sample_mask;
 
@@ -184,7 +183,6 @@ struct lp_jit_context
  */
 enum {
    LP_JIT_CTX_CONSTANTS = 0,
-   LP_JIT_CTX_NUM_CONSTANTS,
    LP_JIT_CTX_TEXTURES,
    LP_JIT_CTX_SAMPLERS,
    LP_JIT_CTX_IMAGES,
@@ -195,7 +193,6 @@ enum {
    LP_JIT_CTX_F_BLEND_COLOR,
    LP_JIT_CTX_VIEWPORTS,
    LP_JIT_CTX_SSBOS,
-   LP_JIT_CTX_NUM_SSBOS,
    LP_JIT_CTX_SAMPLE_MASK,
    LP_JIT_CTX_ANISO_FILTER_TABLE,
    LP_JIT_CTX_COUNT
@@ -204,9 +201,6 @@ enum {
 
 #define lp_jit_context_constants(_gallivm, _ptr) \
    lp_build_struct_get_ptr(_gallivm, _ptr, LP_JIT_CTX_CONSTANTS, "constants")
-
-#define lp_jit_context_num_constants(_gallivm, _ptr) \
-   lp_build_struct_get_ptr(_gallivm, _ptr, LP_JIT_CTX_NUM_CONSTANTS, "num_constants")
 
 #define lp_jit_context_textures(_gallivm, _ptr) \
    lp_build_struct_get_ptr(_gallivm, _ptr, LP_JIT_CTX_TEXTURES, "textures")
@@ -237,9 +231,6 @@ enum {
 
 #define lp_jit_context_ssbos(_gallivm, _ptr) \
    lp_build_struct_get_ptr(_gallivm, _ptr, LP_JIT_CTX_SSBOS, "ssbos")
-
-#define lp_jit_context_num_ssbos(_gallivm, _ptr) \
-   lp_build_struct_get_ptr(_gallivm, _ptr, LP_JIT_CTX_NUM_SSBOS, "num_ssbos")
 
 #define lp_jit_context_sample_mask(_gallivm, _ptr) \
    lp_build_struct_get_ptr(_gallivm, _ptr, LP_JIT_CTX_SAMPLE_MASK, "sample_mask")
@@ -439,15 +430,13 @@ enum {
 
 struct lp_jit_cs_context
 {
-   const float *constants[LP_MAX_TGSI_CONST_BUFFERS];
-   int num_constants[LP_MAX_TGSI_CONST_BUFFERS];
+   struct lp_jit_buffer constants[LP_MAX_TGSI_CONST_BUFFERS];
 
    struct lp_jit_texture textures[PIPE_MAX_SHADER_SAMPLER_VIEWS];
    struct lp_jit_sampler samplers[PIPE_MAX_SAMPLERS];
    struct lp_jit_image images[PIPE_MAX_SHADER_IMAGES];
 
-   const uint32_t *ssbos[LP_MAX_TGSI_SHADER_BUFFERS];
-   int num_ssbos[LP_MAX_TGSI_SHADER_BUFFERS];
+   struct lp_jit_buffer ssbos[LP_MAX_TGSI_SHADER_BUFFERS];
 
    void *kernel_args;
 
@@ -462,12 +451,10 @@ struct lp_jit_cs_context
  */
 enum {
    LP_JIT_CS_CTX_CONSTANTS = 0,
-   LP_JIT_CS_CTX_NUM_CONSTANTS,
    LP_JIT_CS_CTX_TEXTURES, /* must match the LP_JIT_CTX_TEXTURES */
    LP_JIT_CS_CTX_SAMPLERS,
    LP_JIT_CS_CTX_IMAGES,
    LP_JIT_CS_CTX_SSBOS,
-   LP_JIT_CS_CTX_NUM_SSBOS,
    LP_JIT_CS_CTX_KERNEL_ARGS,
    LP_JIT_CS_CTX_SHARED_SIZE,
    LP_JIT_CS_CTX_ANISO_FILTER_TABLE,
@@ -476,9 +463,6 @@ enum {
 
 #define lp_jit_cs_context_constants(_gallivm, _ptr) \
    lp_build_struct_get_ptr(_gallivm, _ptr, LP_JIT_CS_CTX_CONSTANTS, "constants")
-
-#define lp_jit_cs_context_num_constants(_gallivm, _ptr) \
-   lp_build_struct_get_ptr(_gallivm, _ptr, LP_JIT_CS_CTX_NUM_CONSTANTS, "num_constants")
 
 #define lp_jit_cs_context_textures(_gallivm, _ptr) \
    lp_build_struct_get_ptr(_gallivm, _ptr, LP_JIT_CS_CTX_TEXTURES, "textures")
@@ -491,9 +475,6 @@ enum {
 
 #define lp_jit_cs_context_ssbos(_gallivm, _ptr) \
    lp_build_struct_get_ptr(_gallivm, _ptr, LP_JIT_CS_CTX_SSBOS, "ssbos")
-
-#define lp_jit_cs_context_num_ssbos(_gallivm, _ptr) \
-   lp_build_struct_get_ptr(_gallivm, _ptr, LP_JIT_CS_CTX_NUM_SSBOS, "num_ssbos")
 
 #define lp_jit_cs_context_shared_size(_gallivm, _ptr) \
    lp_build_struct_get_ptr(_gallivm, _ptr, LP_JIT_CS_CTX_SHARED_SIZE, "shared_size")

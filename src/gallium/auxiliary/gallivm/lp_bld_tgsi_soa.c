@@ -68,6 +68,7 @@
 #include "lp_bld_printf.h"
 #include "lp_bld_sample.h"
 #include "lp_bld_struct.h"
+#include "lp_bld_jit_types.h"
 
 #define DUMP_GS_EMITS 0
 
@@ -2958,10 +2959,11 @@ lp_emit_declaration_soa(
       unsigned idx2D = decl->Dim.Index2D;
       LLVMValueRef index2D = lp_build_const_int32(gallivm, idx2D);
       assert(idx2D < LP_MAX_TGSI_CONST_BUFFERS);
-      bld->consts[idx2D] =
-         lp_build_array_get(gallivm, bld->consts_ptr, index2D);
-      bld->consts_sizes[idx2D] =
-         lp_build_array_get(gallivm, bld->const_sizes_ptr, index2D);
+      bld->consts[idx2D] = lp_llvm_buffer_base(gallivm, bld->consts_ptr,
+                                               index2D, LP_MAX_TGSI_CONST_BUFFERS);
+      bld->consts[idx2D] = LLVMBuildBitCast(gallivm->builder, bld->consts[idx2D], LLVMPointerType(LLVMFloatTypeInContext(gallivm->context), 0), "");
+      bld->consts_sizes[idx2D] = lp_llvm_buffer_num_elements(gallivm, bld->consts_ptr,
+                                                             index2D, LP_MAX_TGSI_CONST_BUFFERS);
    }
    break;
    case TGSI_FILE_BUFFER:
@@ -2970,9 +2972,11 @@ lp_emit_declaration_soa(
       LLVMValueRef index = lp_build_const_int32(gallivm, idx);
       assert(idx < LP_MAX_TGSI_SHADER_BUFFERS);
       bld->ssbos[idx] =
-         lp_build_array_get(gallivm, bld->ssbo_ptr, index);
+         lp_llvm_buffer_base(gallivm, bld->ssbo_ptr,
+                             index, LP_MAX_TGSI_SHADER_BUFFERS);
       bld->ssbo_sizes[idx] =
-         lp_build_array_get(gallivm, bld->ssbo_sizes_ptr, index);
+         lp_llvm_buffer_num_elements(gallivm, bld->ssbo_ptr,
+                             index, LP_MAX_TGSI_SHADER_BUFFERS);
 
    }
    break;
@@ -4451,9 +4455,7 @@ lp_build_tgsi_soa(struct gallivm_state *gallivm,
    bld.inputs = params->inputs;
    bld.outputs = outputs;
    bld.consts_ptr = params->consts_ptr;
-   bld.const_sizes_ptr = params->const_sizes_ptr;
    bld.ssbo_ptr = params->ssbo_ptr;
-   bld.ssbo_sizes_ptr = params->ssbo_sizes_ptr;
    bld.sampler = params->sampler;
    bld.bld_base.info = params->info;
    bld.indirect_files = params->info->indirect_files;

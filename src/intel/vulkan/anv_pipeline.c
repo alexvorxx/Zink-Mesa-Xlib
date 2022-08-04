@@ -747,15 +747,26 @@ anv_pipeline_lower_nir(struct anv_pipeline *pipeline,
 
    NIR_PASS(_, nir, anv_nir_lower_ubo_loads);
 
-   /* We don't support non-uniform UBOs and non-uniform SSBO access is
-    * handled naturally by falling back to A64 messages.
+   enum nir_lower_non_uniform_access_type lower_non_uniform_access_types =
+      nir_lower_non_uniform_texture_access | nir_lower_non_uniform_image_access;
+
+   /* In practice, most shaders do not have non-uniform-qualified
+    * accesses (see
+    * https://gitlab.freedesktop.org/mesa/mesa/-/merge_requests/17558#note_1475069)
+    * thus a cheaper and likely to fail check is run first.
     */
-   NIR_PASS(_, nir, nir_lower_non_uniform_access,
-            &(nir_lower_non_uniform_access_options) {
-                .types = nir_lower_non_uniform_texture_access |
-                         nir_lower_non_uniform_image_access,
-                .callback = NULL,
-            });
+   if (nir_has_non_uniform_access(nir, lower_non_uniform_access_types)) {
+      NIR_PASS(_, nir, nir_opt_non_uniform_access);
+
+      /* We don't support non-uniform UBOs and non-uniform SSBO access is
+      * handled naturally by falling back to A64 messages.
+      */
+      NIR_PASS(_, nir, nir_lower_non_uniform_access,
+               &(nir_lower_non_uniform_access_options) {
+                  .types = lower_non_uniform_access_types,
+                  .callback = NULL,
+               });
+   }
 
    NIR_PASS_V(nir, anv_nir_compute_push_layout,
               pdevice, pipeline->device->robust_buffer_access,

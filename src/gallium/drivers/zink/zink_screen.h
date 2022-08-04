@@ -213,6 +213,7 @@ struct zink_screen {
       bool color_write_missing;
       bool depth_clip_control_missing;
       bool implicit_sync;
+      bool force_pipeline_library;
    } driver_workarounds;
 };
 

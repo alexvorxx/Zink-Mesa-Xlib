@@ -254,6 +254,8 @@ struct zink_context {
    struct hash_table program_cache[8];
    uint32_t gfx_hash;
    struct zink_gfx_program *curr_program;
+   struct set gfx_inputs;
+   struct set gfx_outputs;
 
    struct zink_descriptor_data *dd;
 
@@ -416,6 +418,14 @@ zink_fb_clear_enabled(const struct zink_context *ctx, unsigned idx)
    if (idx == PIPE_MAX_COLOR_BUFS)
       return ctx->clears_enabled & PIPE_CLEAR_DEPTHSTENCIL;
    return ctx->clears_enabled & (PIPE_CLEAR_COLOR0 << idx);
+}
+
+static inline uint32_t
+zink_program_cache_stages(uint32_t stages_present)
+{
+   return (stages_present & ((1 << PIPE_SHADER_TESS_CTRL) |
+                             (1 << PIPE_SHADER_TESS_EVAL) |
+                             (1 << PIPE_SHADER_GEOMETRY))) >> 1;
 }
 
 void

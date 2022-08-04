@@ -728,11 +728,8 @@ generate_fs_loop(struct gallivm_state *gallivm,
    stencil_refs[1] = lp_build_broadcast(gallivm, int_vec_type, stencil_refs[1]);
 
    LLVMValueRef consts_ptr = lp_jit_context_constants(gallivm, context_ptr);
-   LLVMValueRef num_consts_ptr = lp_jit_context_num_constants(gallivm,
-                                                              context_ptr);
 
    LLVMValueRef ssbo_ptr = lp_jit_context_ssbos(gallivm, context_ptr);
-   LLVMValueRef num_ssbo_ptr = lp_jit_context_num_ssbos(gallivm, context_ptr);
 
    LLVMValueRef outputs[PIPE_MAX_SHADER_OUTPUTS][TGSI_NUM_CHANNELS];
    memset(outputs, 0, sizeof outputs);
@@ -1024,7 +1021,6 @@ generate_fs_loop(struct gallivm_state *gallivm,
    params.mask = &mask;
    params.fs_iface = &fs_iface.base;
    params.consts_ptr = consts_ptr;
-   params.const_sizes_ptr = num_consts_ptr;
    params.system_values = &system_values;
    params.inputs = interp->inputs;
    params.context_ptr = context_ptr;
@@ -1032,7 +1028,6 @@ generate_fs_loop(struct gallivm_state *gallivm,
    params.sampler = sampler;
    params.info = &shader->info.base;
    params.ssbo_ptr = ssbo_ptr;
-   params.ssbo_sizes_ptr = num_ssbo_ptr;
    params.image = image;
    params.aniso_filter_table = lp_jit_context_aniso_filter_table(gallivm, context_ptr);
 

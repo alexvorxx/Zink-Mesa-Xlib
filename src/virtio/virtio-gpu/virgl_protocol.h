@@ -120,6 +120,15 @@ enum virgl_context_cmd {
    VIRGL_MAX_COMMANDS
 };
 
+enum virgl_shader_stage {
+   VIRGL_SHADER_VERTEX,
+   VIRGL_SHADER_FRAGMENT,
+   VIRGL_SHADER_GEOMETRY,
+   VIRGL_SHADER_TESS_CTRL,
+   VIRGL_SHADER_TESS_EVAL,
+   VIRGL_SHADER_COMPUTE,
+};
+
 /*
  8-bit cmd headers
  8-bit object type

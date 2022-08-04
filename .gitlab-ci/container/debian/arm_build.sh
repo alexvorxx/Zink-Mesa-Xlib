@@ -54,7 +54,8 @@ apt-get -y install \
 	u-boot-tools \
 	wget \
 	xz-utils \
-	zlib1g-dev
+	zlib1g-dev \
+	zstd
 
 # Not available anymore in bullseye
 apt-get install -y --no-remove -t buster \

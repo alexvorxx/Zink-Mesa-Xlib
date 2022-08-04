@@ -2154,6 +2154,7 @@ typedef enum {
    nir_texop_tex_prefetch,       /**< Regular texture look-up, eligible for pre-dispatch */
    nir_texop_fragment_fetch_amd,      /**< Multisample fragment color texture fetch */
    nir_texop_fragment_mask_fetch_amd, /**< Multisample fragment mask texture fetch */
+   nir_texop_descriptor_amd,     /**< Returns a buffer or image descriptor. */
 } nir_texop;
 
 /** Represents a texture instruction */
@@ -5194,6 +5195,8 @@ typedef struct nir_lower_non_uniform_access_options {
    void *callback_data;
 } nir_lower_non_uniform_access_options;
 
+bool nir_has_non_uniform_access(nir_shader *shader, enum nir_lower_non_uniform_access_type types);
+bool nir_opt_non_uniform_access(nir_shader *shader);
 bool nir_lower_non_uniform_access(nir_shader *shader,
                                   const nir_lower_non_uniform_access_options *options);
 

@@ -19,7 +19,8 @@ apt-get install -y --no-remove \
         python3-serial \
         rsync \
         snmp \
-        wget
+        wget \
+        zstd
 
 # setup SNMPv2 SMI MIB
 wget https://raw.githubusercontent.com/net-snmp/net-snmp/master/mibs/SNMPv2-SMI.txt \

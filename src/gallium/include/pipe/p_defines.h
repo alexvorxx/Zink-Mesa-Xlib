@@ -30,6 +30,8 @@
 
 #include "p_compiler.h"
 
+#include "compiler/shader_enums.h"
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -544,19 +546,6 @@ enum pipe_resource_usage {
    PIPE_USAGE_DYNAMIC,        /* uploaded data is used multiple times */
    PIPE_USAGE_STREAM,         /* uploaded data is used once */
    PIPE_USAGE_STAGING,        /* fast CPU access */
-};
-
-/**
- * Shaders
- */
-enum pipe_shader_type {
-   PIPE_SHADER_VERTEX,
-   PIPE_SHADER_FRAGMENT,
-   PIPE_SHADER_GEOMETRY,
-   PIPE_SHADER_TESS_CTRL,
-   PIPE_SHADER_TESS_EVAL,
-   PIPE_SHADER_COMPUTE,
-   PIPE_SHADER_TYPES,
 };
 
 /**

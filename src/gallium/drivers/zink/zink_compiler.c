@@ -3142,7 +3142,7 @@ zink_shader_free(struct zink_context *ctx, struct zink_shader *shader)
             unsigned stages_present = prog->stages_present;
             if (prog->shaders[PIPE_SHADER_TESS_CTRL] && prog->shaders[PIPE_SHADER_TESS_CTRL]->is_generated)
                stages_present &= ~BITFIELD_BIT(PIPE_SHADER_TESS_CTRL);
-            struct hash_table *ht = &ctx->program_cache[stages_present >> 2];
+            struct hash_table *ht = &ctx->program_cache[zink_program_cache_stages(stages_present)];
             struct hash_entry *he = _mesa_hash_table_search(ht, prog->shaders);
             assert(he);
             _mesa_hash_table_remove(ht, he);

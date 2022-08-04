@@ -102,23 +102,6 @@ rogue_get_isp_samples_per_tile_xy(const struct pvr_device_info *dev_info,
    }
 }
 
-static inline uint64_t
-rogue_get_min_free_list_size(const struct pvr_device_info *dev_info)
-{
-   uint64_t min_num_pages;
-
-   if (PVR_HAS_FEATURE(dev_info, roguexe)) {
-      if (PVR_HAS_QUIRK(dev_info, 66011))
-         min_num_pages = 40U;
-      else
-         min_num_pages = 25U;
-   } else {
-      min_num_pages = 50U;
-   }
-
-   return min_num_pages << ROGUE_BIF_PM_PHYSICAL_PAGE_SHIFT;
-}
-
 static inline uint32_t
 rogue_get_max_num_vdm_pds_tasks(const struct pvr_device_info *dev_info)
 {

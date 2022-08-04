@@ -1010,7 +1010,7 @@ fixup_renderer(union virgl_caps *caps)
 static const void *
 virgl_get_compiler_options(struct pipe_screen *pscreen,
                            enum pipe_shader_ir ir,
-                           unsigned shader)
+                           enum pipe_shader_type shader)
 {
    struct virgl_screen *vscreen = virgl_screen(pscreen);
 

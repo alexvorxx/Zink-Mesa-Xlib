@@ -1051,6 +1051,8 @@ pvr_render_target_dataset_create(struct pvr_device *device,
                                  uint32_t layers,
                                  struct pvr_rt_dataset **const rt_dataset_out)
 {
+   struct pvr_device_runtime_info *runtime_info =
+      &device->pdevice->dev_runtime_info;
    const struct pvr_device_info *dev_info = &device->pdevice->dev_info;
    struct pvr_winsys_rt_dataset_create_info rt_dataset_create_info;
    struct pvr_rt_mtile_info mtile_info;
@@ -1084,8 +1086,8 @@ pvr_render_target_dataset_create(struct pvr_device *device,
     * details.
     */
    result = pvr_free_list_create(device,
-                                 rogue_get_min_free_list_size(dev_info),
-                                 rogue_get_min_free_list_size(dev_info),
+                                 runtime_info->min_free_list_size,
+                                 runtime_info->min_free_list_size,
                                  0 /* grow_size */,
                                  0 /* grow_threshold */,
                                  rt_dataset->global_free_list,

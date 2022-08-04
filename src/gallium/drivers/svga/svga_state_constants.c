@@ -1480,7 +1480,7 @@ update_rawbuf(struct svga_context *svga, uint64 dirty)
    };
 
    for (enum pipe_shader_type shader = PIPE_SHADER_VERTEX;
-        shader <= PIPE_SHADER_TESS_EVAL; shader++) {
+        shader < PIPE_SHADER_COMPUTE; shader++) {
       unsigned rawbuf_mask = svga->state.raw_constbufs[shader];
 
       update_rawbuf_mask(svga, shader);

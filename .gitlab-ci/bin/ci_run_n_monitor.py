@@ -12,18 +12,19 @@ Helper script to restrict running only required CI jobs
 and show the job(s) logs.
 """
 
-from typing import Optional
-from functools import partial
-from concurrent.futures import ThreadPoolExecutor
-
+import argparse
 import os
 import re
-import time
-import argparse
 import sys
-import gitlab
+import time
+from concurrent.futures import ThreadPoolExecutor
+from functools import partial
+from itertools import chain
+from typing import Optional
 
+import gitlab
 from colorama import Fore, Style
+from gitlab_gql import GitlabGQL, create_job_needs_dag, filter_dag, print_dag
 
 REFRESH_WAIT_LOG = 10
 REFRESH_WAIT_JOBS = 6
@@ -41,22 +42,6 @@ STATUS_COLORS = {
     "pending": "",
     "skipped": "",
 }
-
-# TODO: This hardcoded list should be replaced by querying the pipeline's
-# dependency graph to see which jobs the target jobs need
-DEPENDENCIES = [
-    "debian/x86_build-base",
-    "debian/x86_build",
-    "debian/x86_test-base",
-    "debian/x86_test-gl",
-    "debian/arm_build",
-    "debian/arm_test",
-    "kernel+rootfs_amd64",
-    "kernel+rootfs_arm64",
-    "kernel+rootfs_armhf",
-    "debian-testing",
-    "debian-arm64",
-]
 
 COMPLETED_STATUSES = ["success", "failed"]
 
@@ -125,10 +110,6 @@ def monitor_pipeline(
     """Monitors pipeline and delegate canceling jobs"""
     statuses = {}
     target_statuses = {}
-
-    if not dependencies:
-        dependencies = []
-    dependencies.extend(DEPENDENCIES)
 
     if target_job:
         target_jobs_regex = re.compile(target_job.strip())
@@ -243,7 +224,6 @@ def parse_args() -> None:
         + '--target ".*traces" ',
     )
     parser.add_argument("--target", metavar="target-job", help="Target job")
-    parser.add_argument("--deps", nargs="+", help="Job dependencies")
     parser.add_argument(
         "--rev", metavar="revision", help="repository git revision", required=True
     )
@@ -269,6 +249,21 @@ def read_token(token_arg: Optional[str]) -> str:
     )
 
 
+def find_dependencies(target_job: str, project_path: str, sha: str) -> set[str]:
+    gql_instance = GitlabGQL()
+    dag, _ = create_job_needs_dag(
+        gql_instance, {"projectPath": project_path.path_with_namespace, "sha": sha}
+    )
+
+    target_dep_dag = filter_dag(dag, target_job)
+    print(Fore.YELLOW)
+    print("Detected job dependencies:")
+    print()
+    print_dag(target_dep_dag)
+    print(Fore.RESET)
+    return set(chain.from_iterable(target_dep_dag.values()))
+
+
 if __name__ == "__main__":
     try:
         t_start = time.perf_counter()
@@ -284,11 +279,14 @@ if __name__ == "__main__":
         print(f"Revision: {args.rev}")
         pipe = wait_for_pipeline(cur_project, args.rev)
         print(f"Pipeline: {pipe.web_url}")
+        deps = set()
         if args.target:
             print("🞋 job: " + Fore.BLUE + args.target + Style.RESET_ALL)
-        print(f"Extra dependencies: {args.deps}")
+            deps = find_dependencies(
+                target_job=args.target, sha=args.rev, project_path=cur_project
+            )
         target_job_id, ret = monitor_pipeline(
-            cur_project, pipe, args.target, args.deps, args.force_manual
+            cur_project, pipe, args.target, deps, args.force_manual
         )
 
         if target_job_id:

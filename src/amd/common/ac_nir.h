@@ -166,6 +166,8 @@ ac_nir_cull_triangle(nir_builder *b,
 bool
 ac_nir_lower_global_access(nir_shader *shader);
 
+bool ac_nir_lower_resinfo(nir_shader *nir, enum amd_gfx_level gfx_level);
+
 #ifdef __cplusplus
 }
 #endif

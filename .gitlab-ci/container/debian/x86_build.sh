@@ -48,7 +48,8 @@ apt-get install -y --no-remove \
       procps \
       spirv-tools \
       strace \
-      time
+      time \
+      zstd
 
 
 . .gitlab-ci/container/container_pre_build.sh

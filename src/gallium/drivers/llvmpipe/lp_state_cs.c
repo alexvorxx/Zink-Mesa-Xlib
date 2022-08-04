@@ -319,8 +319,8 @@ generate_compute(struct llvmpipe_context *lp,
    block = LLVMAppendBasicBlockInContext(gallivm->context, coro, "entry");
    LLVMPositionBuilderAtEnd(builder, block);
    {
-      LLVMValueRef consts_ptr, num_consts_ptr;
-      LLVMValueRef ssbo_ptr, num_ssbo_ptr;
+      LLVMValueRef consts_ptr;
+      LLVMValueRef ssbo_ptr;
       LLVMValueRef shared_ptr;
       LLVMValueRef kernel_args_ptr;
       struct lp_build_mask_context mask;
@@ -328,9 +328,7 @@ generate_compute(struct llvmpipe_context *lp,
 
       memset(&system_values, 0, sizeof(system_values));
       consts_ptr = lp_jit_cs_context_constants(gallivm, context_ptr);
-      num_consts_ptr = lp_jit_cs_context_num_constants(gallivm, context_ptr);
       ssbo_ptr = lp_jit_cs_context_ssbos(gallivm, context_ptr);
-      num_ssbo_ptr = lp_jit_cs_context_num_ssbos(gallivm, context_ptr);
       kernel_args_ptr = lp_jit_cs_context_kernel_args(gallivm, context_ptr);
 
       shared_ptr = lp_jit_cs_thread_data_shared(gallivm, thread_data_ptr);
@@ -437,13 +435,11 @@ generate_compute(struct llvmpipe_context *lp,
       params.type = cs_type;
       params.mask = &mask;
       params.consts_ptr = consts_ptr;
-      params.const_sizes_ptr = num_consts_ptr;
       params.system_values = &system_values;
       params.context_ptr = context_ptr;
       params.sampler = sampler;
       params.info = &shader->info.base;
       params.ssbo_ptr = ssbo_ptr;
-      params.ssbo_sizes_ptr = num_ssbo_ptr;
       params.image = image;
       params.shared_ptr = shared_ptr;
       params.coro = &coro_info;
@@ -1239,14 +1235,14 @@ update_csctx_consts(struct llvmpipe_context *llvmpipe)
 
       if (current_data && current_size >= sizeof(float)) {
          current_data += csctx->constants[i].current.buffer_offset;
-         csctx->cs.current.jit_context.constants[i] = (const float *)current_data;
-         csctx->cs.current.jit_context.num_constants[i] =
+         csctx->cs.current.jit_context.constants[i].f = (const float *)current_data;
+         csctx->cs.current.jit_context.constants[i].num_elements =
             DIV_ROUND_UP(csctx->constants[i].current.buffer_size,
                          lp_get_constant_buffer_stride(llvmpipe->pipe.screen));
       } else {
          static const float fake_const_buf[4];
-         csctx->cs.current.jit_context.constants[i] = fake_const_buf;
-         csctx->cs.current.jit_context.num_constants[i] = 0;
+         csctx->cs.current.jit_context.constants[i].f = fake_const_buf;
+         csctx->cs.current.jit_context.constants[i].num_elements = 0;
       }
    }
 }
@@ -1266,11 +1262,11 @@ update_csctx_ssbo(struct llvmpipe_context *llvmpipe)
       if (current_data) {
          current_data += csctx->ssbos[i].current.buffer_offset;
 
-         csctx->cs.current.jit_context.ssbos[i] = (const uint32_t *)current_data;
-         csctx->cs.current.jit_context.num_ssbos[i] = csctx->ssbos[i].current.buffer_size;
+         csctx->cs.current.jit_context.ssbos[i].u = (const uint32_t *)current_data;
+         csctx->cs.current.jit_context.ssbos[i].num_elements = csctx->ssbos[i].current.buffer_size;
       } else {
-         csctx->cs.current.jit_context.ssbos[i] = NULL;
-         csctx->cs.current.jit_context.num_ssbos[i] = 0;
+         csctx->cs.current.jit_context.ssbos[i].u = NULL;
+         csctx->cs.current.jit_context.ssbos[i].num_elements = 0;
       }
    }
 }

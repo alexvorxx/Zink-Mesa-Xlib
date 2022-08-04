@@ -954,7 +954,7 @@ etna_screen_bo_from_handle(struct pipe_screen *pscreen,
 
 static const void *
 etna_get_compiler_options(struct pipe_screen *pscreen,
-                          enum pipe_shader_ir ir, unsigned shader)
+                          enum pipe_shader_ir ir, enum pipe_shader_type shader)
 {
    return etna_compiler_get_options(etna_screen(pscreen)->compiler);
 }

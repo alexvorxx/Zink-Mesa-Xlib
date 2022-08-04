@@ -1,0 +1,2 @@
+GL_ARB_shader_clock on llvmpipe
+VK_KHR_shader_clock on lavapipe

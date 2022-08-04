@@ -36,6 +36,7 @@
 #include "lp_bld_debug.h"
 #include "lp_bld_misc.h"
 #include "lp_bld_init.h"
+#include "lp_bld_printf.h"
 
 #include <llvm/Config/llvm-config.h>
 #include <llvm-c/Analysis.h>
@@ -568,6 +569,14 @@ gallivm_verify_function(struct gallivm_state *gallivm,
    }
 }
 
+void lp_init_clock_hook(struct gallivm_state *gallivm)
+{
+   if (gallivm->get_time_hook)
+      return;
+
+   LLVMTypeRef get_time_type = LLVMFunctionType(LLVMInt64TypeInContext(gallivm->context), NULL, 0, 1);
+   gallivm->get_time_hook = LLVMAddFunction(gallivm->module, "get_time_hook", get_time_type);
+}
 
 /**
  * Compile a module.
@@ -689,8 +698,11 @@ gallivm_compile_module(struct gallivm_state *gallivm)
 
    ++gallivm->compiled;
 
-   if (gallivm->debug_printf_hook)
-      LLVMAddGlobalMapping(gallivm->engine, gallivm->debug_printf_hook, debug_printf);
+   lp_init_printf_hook(gallivm);
+   LLVMAddGlobalMapping(gallivm->engine, gallivm->debug_printf_hook, debug_printf);
+
+   lp_init_clock_hook(gallivm);
+   LLVMAddGlobalMapping(gallivm->engine, gallivm->get_time_hook, os_time_get_nano);
 
    if (gallivm_debug & GALLIVM_DEBUG_ASM) {
       LLVMValueRef llvm_func = LLVMGetFirstFunction(gallivm->module);

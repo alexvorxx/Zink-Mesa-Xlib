@@ -984,6 +984,7 @@ struct si_context {
    void *cs_clear_12bytes_buffer;
    void *cs_dcc_retile[32];
    void *cs_fmask_expand[3][2]; /* [log2(samples)-1][is_array] */
+   struct hash_table *cs_blit_shaders;
    struct si_screen *screen;
    struct util_debug_callback debug;
    struct ac_llvm_compiler compiler; /* only non-threaded compilation */
@@ -1436,6 +1437,7 @@ void si_retile_dcc(struct si_context *sctx, struct si_texture *tex);
 void gfx9_clear_dcc_msaa(struct si_context *sctx, struct pipe_resource *res, uint32_t clear_value,
                          unsigned flags, enum si_coherency coher);
 void si_compute_expand_fmask(struct pipe_context *ctx, struct pipe_resource *tex);
+bool si_compute_blit(struct si_context *sctx, const struct pipe_blit_info *info);
 void si_init_compute_blit_functions(struct si_context *sctx);
 
 /* si_cp_dma.c */
@@ -1546,6 +1548,31 @@ void *si_create_copy_image_cs(struct si_context *sctx, bool src_is_1d_array, boo
 void *si_create_dcc_retile_cs(struct si_context *sctx, struct radeon_surf *surf);
 void *gfx9_create_clear_dcc_msaa_cs(struct si_context *sctx, struct si_texture *tex);
 void *si_create_passthrough_tcs(struct si_context *sctx);
+
+union si_compute_blit_shader_key {
+   struct {
+      /* The key saved in _mesa_hash_table_create_u32_keys() can't be 0. */
+      bool always_true:1;
+      /* Declaration modifiers. */
+      bool src_is_1d:1;
+      bool dst_is_1d:1;
+      bool src_is_msaa:1;
+      bool dst_is_msaa:1;
+      uint8_t log2_samples:4;
+      bool sample0_only:1; /* src is MSAA, dst is not MSAA, log2_samples is ignored */
+      /* Source coordinate modifiers. */
+      bool flip_x:1;
+      bool flip_y:1;
+      /* Output modifiers. */
+      bool sint_to_uint:1;
+      bool uint_to_sint:1;
+      bool dst_is_srgb:1;
+      bool fp16_rtz:1; /* only for equality with pixel shaders, not necessary otherwise */
+   };
+   uint32_t key;
+};
+
+void *si_create_blit_cs(struct si_context *sctx, const union si_compute_blit_shader_key *options);
 
 /* si_shaderlib_tgsi.c */
 void *si_get_blitter_vs(struct si_context *sctx, enum blitter_attrib_type type,

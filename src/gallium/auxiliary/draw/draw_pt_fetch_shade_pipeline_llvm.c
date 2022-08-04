@@ -439,76 +439,76 @@ llvm_middle_end_bind_parameters(struct draw_pt_middle_end *middle)
    struct draw_llvm *llvm = fpme->llvm;
    unsigned i;
 
-   for (i = 0; i < ARRAY_SIZE(llvm->jit_context.vs_constants); ++i) {
+   for (i = 0; i < ARRAY_SIZE(llvm->jit_context.constants); ++i) {
       /*
        * There could be a potential issue with rounding this up, as the
        * shader expects 16-byte allocations, the fix is likely to move
        * to LOAD intrinsic in the future and remove the vec4 constraint.
        */
       int num_consts = get_num_consts_robust(draw, draw->pt.user.vs_constants_size, i);
-      llvm->jit_context.vs_constants[i] = draw->pt.user.vs_constants[i];
-      llvm->jit_context.num_vs_constants[i] = num_consts;
+      llvm->jit_context.constants[i].f = draw->pt.user.vs_constants[i];
+      llvm->jit_context.constants[i].num_elements = num_consts;
       if (num_consts == 0) {
-         llvm->jit_context.vs_constants[i] = fake_const_buf;
+         llvm->jit_context.constants[i].f = fake_const_buf;
       }
    }
-   for (i = 0; i < ARRAY_SIZE(llvm->jit_context.vs_ssbos); ++i) {
+   for (i = 0; i < ARRAY_SIZE(llvm->jit_context.ssbos); ++i) {
       int num_ssbos = draw->pt.user.vs_ssbos_size[i];
-      llvm->jit_context.vs_ssbos[i] = draw->pt.user.vs_ssbos[i];
-      llvm->jit_context.num_vs_ssbos[i] = num_ssbos;
+      llvm->jit_context.ssbos[i].u = draw->pt.user.vs_ssbos[i];
+      llvm->jit_context.ssbos[i].num_elements = num_ssbos;
       if (num_ssbos == 0) {
-         llvm->jit_context.vs_ssbos[i] = (const uint32_t *)fake_const_buf;
+         llvm->jit_context.ssbos[i].u = (const uint32_t *)fake_const_buf;
       }
    }
 
    for (i = 0; i < ARRAY_SIZE(llvm->gs_jit_context.constants); ++i) {
       int num_consts = get_num_consts_robust(draw, draw->pt.user.gs_constants_size, i);
-      llvm->gs_jit_context.constants[i] = draw->pt.user.gs_constants[i];
-      llvm->gs_jit_context.num_constants[i] = num_consts;
+      llvm->gs_jit_context.constants[i].f = draw->pt.user.gs_constants[i];
+      llvm->gs_jit_context.constants[i].num_elements = num_consts;
       if (num_consts == 0) {
-         llvm->gs_jit_context.constants[i] = fake_const_buf;
+         llvm->gs_jit_context.constants[i].f = fake_const_buf;
       }
    }
    for (i = 0; i < ARRAY_SIZE(llvm->gs_jit_context.ssbos); ++i) {
       int num_ssbos = draw->pt.user.gs_ssbos_size[i];
-      llvm->gs_jit_context.ssbos[i] = draw->pt.user.gs_ssbos[i];
-      llvm->gs_jit_context.num_ssbos[i] = num_ssbos;
+      llvm->gs_jit_context.ssbos[i].u = draw->pt.user.gs_ssbos[i];
+      llvm->gs_jit_context.ssbos[i].num_elements = num_ssbos;
       if (num_ssbos == 0) {
-         llvm->gs_jit_context.ssbos[i] = (const uint32_t *)fake_const_buf;
+         llvm->gs_jit_context.ssbos[i].u = (const uint32_t *)fake_const_buf;
       }
    }
 
    for (i = 0; i < ARRAY_SIZE(llvm->tcs_jit_context.constants); ++i) {
       int num_consts = get_num_consts_robust(draw, draw->pt.user.tcs_constants_size, i);
-      llvm->tcs_jit_context.constants[i] = draw->pt.user.tcs_constants[i];
-      llvm->tcs_jit_context.num_constants[i] = num_consts;
+      llvm->tcs_jit_context.constants[i].f = draw->pt.user.tcs_constants[i];
+      llvm->tcs_jit_context.constants[i].num_elements = num_consts;
       if (num_consts == 0) {
-         llvm->tcs_jit_context.constants[i] = fake_const_buf;
+         llvm->tcs_jit_context.constants[i].f = fake_const_buf;
       }
    }
    for (i = 0; i < ARRAY_SIZE(llvm->tcs_jit_context.ssbos); ++i) {
       int num_ssbos = draw->pt.user.tcs_ssbos_size[i];
-      llvm->tcs_jit_context.ssbos[i] = draw->pt.user.tcs_ssbos[i];
-      llvm->tcs_jit_context.num_ssbos[i] = num_ssbos;
+      llvm->tcs_jit_context.ssbos[i].u = draw->pt.user.tcs_ssbos[i];
+      llvm->tcs_jit_context.ssbos[i].num_elements = num_ssbos;
       if (num_ssbos == 0) {
-         llvm->tcs_jit_context.ssbos[i] = (const uint32_t *)fake_const_buf;
+         llvm->tcs_jit_context.ssbos[i].u = (const uint32_t *)fake_const_buf;
       }
    }
 
    for (i = 0; i < ARRAY_SIZE(llvm->tes_jit_context.constants); ++i) {
       int num_consts = get_num_consts_robust(draw, draw->pt.user.tes_constants_size, i);
-      llvm->tes_jit_context.constants[i] = draw->pt.user.tes_constants[i];
-      llvm->tes_jit_context.num_constants[i] = num_consts;
+      llvm->tes_jit_context.constants[i].f = draw->pt.user.tes_constants[i];
+      llvm->tes_jit_context.constants[i].num_elements = num_consts;
       if (num_consts == 0) {
-         llvm->tes_jit_context.constants[i] = fake_const_buf;
+         llvm->tes_jit_context.constants[i].f = fake_const_buf;
       }
    }
    for (i = 0; i < ARRAY_SIZE(llvm->tes_jit_context.ssbos); ++i) {
       int num_ssbos = draw->pt.user.tes_ssbos_size[i];
-      llvm->tes_jit_context.ssbos[i] = draw->pt.user.tes_ssbos[i];
-      llvm->tes_jit_context.num_ssbos[i] = num_ssbos;
+      llvm->tes_jit_context.ssbos[i].u = draw->pt.user.tes_ssbos[i];
+      llvm->tes_jit_context.ssbos[i].num_elements = num_ssbos;
       if (num_ssbos == 0) {
-         llvm->tes_jit_context.ssbos[i] = (const uint32_t *)fake_const_buf;
+         llvm->tes_jit_context.ssbos[i].u = (const uint32_t *)fake_const_buf;
       }
    }
 

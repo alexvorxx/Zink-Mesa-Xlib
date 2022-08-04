@@ -1607,6 +1607,9 @@ struct nir_shader *si_get_nir_shader(struct si_shader *shader, bool *free_nir,
    if (sel->stage <= MESA_SHADER_GEOMETRY)
       NIR_PASS(progress, nir, si_nir_kill_outputs, key);
 
+   if (nir->info.uses_resource_info_query)
+      NIR_PASS(progress, nir, ac_nir_lower_resinfo, sel->screen->info.gfx_level);
+
    bool inline_uniforms = false;
    uint32_t *inlined_uniform_values;
    si_get_inline_uniform_state((union si_shader_key*)key, sel->pipe_shader_type,

@@ -803,7 +803,7 @@ fd_get_compute_param(struct pipe_screen *pscreen, enum pipe_shader_ir ir_type,
 
 static const void *
 fd_get_compiler_options(struct pipe_screen *pscreen, enum pipe_shader_ir ir,
-                        unsigned shader)
+                        enum pipe_shader_type shader)
 {
    struct fd_screen *screen = fd_screen(pscreen);
 

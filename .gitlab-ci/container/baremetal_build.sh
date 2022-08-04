@@ -12,10 +12,10 @@ else
   ARTIFACTS_URL="${ARTIFACTS_PREFIX}/${CI_PROJECT_PATH}/${ARTIFACTS_SUFFIX}/${arch}"
 fi
 
-wget ${ARTIFACTS_URL}/lava-rootfs.tgz -O rootfs.tgz
+wget ${ARTIFACTS_URL}/lava-rootfs.tar.zst -O rootfs.tar.zst
 mkdir -p /rootfs-$arch
-tar -C /rootfs-$arch '--exclude=./dev/*' -zxf rootfs.tgz
-rm rootfs.tgz
+tar -C /rootfs-$arch '--exclude=./dev/*' --zstd -xf rootfs.tar.zst
+rm rootfs.tar.zst
 
 if [[ $arch == "arm64" ]]; then
     mkdir -p /baremetal-files

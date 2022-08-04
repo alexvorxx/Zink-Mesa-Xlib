@@ -122,6 +122,7 @@ static const struct vk_device_extension_table lvp_device_extensions_supported = 
    .KHR_sampler_mirror_clamp_to_edge      = true,
    .KHR_separate_depth_stencil_layouts    = true,
    .KHR_shader_atomic_int64               = true,
+   .KHR_shader_clock                      = true,
    .KHR_shader_draw_parameters            = true,
    .KHR_shader_float16_int8               = true,
    .KHR_shader_integer_dot_product        = true,
@@ -859,6 +860,13 @@ VKAPI_ATTR void VKAPI_CALL lvp_GetPhysicalDeviceFeatures2(
          VkPhysicalDeviceZeroInitializeWorkgroupMemoryFeatures *features =
             (VkPhysicalDeviceZeroInitializeWorkgroupMemoryFeatures *)ext;
          features->shaderZeroInitializeWorkgroupMemory = true;
+         break;
+      }
+      case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_CLOCK_FEATURES_KHR: {
+         VkPhysicalDeviceShaderClockFeaturesKHR *features =
+            (VkPhysicalDeviceShaderClockFeaturesKHR *)ext;
+         features->shaderSubgroupClock = true;
+         features->shaderDeviceClock = true;
          break;
       }
       case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_TEXEL_BUFFER_ALIGNMENT_FEATURES_EXT: {

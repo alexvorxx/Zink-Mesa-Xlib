@@ -4785,14 +4785,26 @@ radv_create_shaders(struct radv_pipeline *pipeline, struct radv_pipeline_layout 
          /* Wave and workgroup size should already be filled. */
          assert(stages[i].info.wave_size && stages[i].info.workgroup_size);
 
-         if (!radv_use_llvm_for_stage(device, i)) {
-            nir_lower_non_uniform_access_options options = {
-               .types = nir_lower_non_uniform_ubo_access | nir_lower_non_uniform_ssbo_access |
-                        nir_lower_non_uniform_texture_access | nir_lower_non_uniform_image_access,
-               .callback = &non_uniform_access_callback,
-               .callback_data = NULL,
-            };
-            NIR_PASS(_, stages[i].nir, nir_lower_non_uniform_access, &options);
+         enum nir_lower_non_uniform_access_type lower_non_uniform_access_types =
+            nir_lower_non_uniform_ubo_access | nir_lower_non_uniform_ssbo_access |
+            nir_lower_non_uniform_texture_access | nir_lower_non_uniform_image_access;
+
+         /* In practice, most shaders do not have non-uniform-qualified
+          * accesses (see
+          * https://gitlab.freedesktop.org/mesa/mesa/-/merge_requests/17558#note_1475069)
+          * thus a cheaper and likely to fail check is run first.
+          */
+         if (nir_has_non_uniform_access(stages[i].nir, lower_non_uniform_access_types)) {
+            NIR_PASS(_, stages[i].nir, nir_opt_non_uniform_access);
+
+            if (!radv_use_llvm_for_stage(device, i)) {
+               nir_lower_non_uniform_access_options options = {
+                  .types = lower_non_uniform_access_types,
+                  .callback = &non_uniform_access_callback,
+                  .callback_data = NULL,
+               };
+               NIR_PASS(_, stages[i].nir, nir_lower_non_uniform_access, &options);
+            }
          }
          NIR_PASS(_, stages[i].nir, nir_lower_memory_model);
 
@@ -4864,6 +4876,10 @@ radv_create_shaders(struct radv_pipeline *pipeline, struct radv_pipeline_layout 
          bool lowered_ngg = pipeline_has_ngg && i == *last_vgt_api_stage;
          if (lowered_ngg)
             radv_lower_ngg(device, &stages[i], pipeline_key);
+
+         if (radv_use_llvm_for_stage(device, i) &&
+             stages[i].nir->info.uses_resource_info_query)
+            NIR_PASS(_, stages[i].nir, ac_nir_lower_resinfo, device->physical_device->rad_info.gfx_level);
 
          NIR_PASS(_, stages[i].nir, ac_nir_lower_global_access);
          NIR_PASS_V(stages[i].nir, radv_nir_lower_abi, device->physical_device->rad_info.gfx_level,

@@ -356,6 +356,13 @@ static void si_destroy_context(struct pipe_context *context)
    if (!(sctx->context_flags & SI_CONTEXT_FLAG_AUX))
       p_atomic_dec(&context->screen->num_contexts);
 
+   if (sctx->cs_blit_shaders) {
+      hash_table_foreach(sctx->cs_blit_shaders, entry) {
+         context->delete_compute_state(context, entry->data);
+      }
+      _mesa_hash_table_destroy(sctx->cs_blit_shaders, NULL);
+   }
+
    FREE(sctx);
 }
 
@@ -827,6 +834,11 @@ static struct pipe_context *si_create_context(struct pipe_screen *screen, unsign
    }
 
    sctx->initial_gfx_cs_size = sctx->gfx_cs.current.cdw;
+
+   sctx->cs_blit_shaders = _mesa_hash_table_create_u32_keys(NULL);
+   if (!sctx->cs_blit_shaders)
+      goto fail;
+
    return &sctx->b;
 fail:
    fprintf(stderr, "radeonsi: Failed to create a context.\n");

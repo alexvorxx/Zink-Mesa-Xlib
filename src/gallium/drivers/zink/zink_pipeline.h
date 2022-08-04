@@ -54,10 +54,12 @@ struct zink_pipeline_dynamic_state2 {
 
 struct zink_gfx_pipeline_state {
    uint32_t rast_state : ZINK_RAST_HW_STATE_SIZE; //zink_rasterizer_hw_state
-   uint32_t rast_samples:15; //9 extra bits
+   uint32_t _pad1 : 6;
+   uint32_t force_persample_interp:1; //duplicated for gpl hashing
+   /* order matches zink_gfx_output_key: uint16_t offset */
+   uint32_t rast_samples:8; //2 extra bits
    uint32_t void_alpha_attachments:PIPE_MAX_COLOR_BUFS;
    VkSampleMask sample_mask;
-
    unsigned rp_state;
    uint32_t blend_id;
 
@@ -70,18 +72,28 @@ struct zink_gfx_pipeline_state {
 
    struct zink_pipeline_dynamic_state2 dyn_state2;
 
+   uint32_t _pad;
+   uint32_t gkey; //for pipeline library lookups
    VkShaderModule modules[PIPE_SHADER_TYPES - 1];
    bool modules_changed;
 
-   struct zink_vertex_elements_hw_state *element_state;
    uint32_t vertex_hash;
 
    uint32_t final_hash;
 
+   uint32_t _pad2;
+   /* order matches zink_gfx_input_key */
+   union {
+      struct {
+         unsigned idx:8;
+         bool uses_dynamic_stride;
+      };
+      uint32_t input;
+   };
    uint32_t vertex_buffers_enabled_mask;
    uint32_t vertex_strides[PIPE_MAX_ATTRIBS];
+   struct zink_vertex_elements_hw_state *element_state;
    bool sample_locations_enabled;
-   bool uses_dynamic_stride;
    bool have_EXT_extended_dynamic_state;
    bool have_EXT_extended_dynamic_state2;
    bool extendedDynamicState2PatchControlPoints;
@@ -96,7 +108,6 @@ struct zink_gfx_pipeline_state {
    VkFormat rendering_formats[PIPE_MAX_COLOR_BUFS];
    VkPipelineRenderingCreateInfo rendering_info;
    VkPipeline pipeline;
-   unsigned idx : 8;
    enum pipe_prim_type gfx_prim_mode; //pending mode
 };
 
@@ -127,4 +138,17 @@ zink_create_gfx_pipeline(struct zink_screen *screen,
 
 VkPipeline
 zink_create_compute_pipeline(struct zink_screen *screen, struct zink_compute_program *comp, struct zink_compute_pipeline_state *state);
+
+VkPipeline
+zink_create_gfx_pipeline_input(struct zink_screen *screen,
+                               struct zink_gfx_pipeline_state *state,
+                               const uint8_t *binding_map,
+                               VkPrimitiveTopology primitive_topology);
+VkPipeline
+zink_create_gfx_pipeline_library(struct zink_screen *screen, struct zink_gfx_program *prog,
+                                 struct zink_rasterizer_hw_state *hw_rast_state, bool line);
+VkPipeline
+zink_create_gfx_pipeline_output(struct zink_screen *screen, struct zink_gfx_pipeline_state *state);
+VkPipeline
+zink_create_gfx_pipeline_combined(struct zink_screen *screen, struct zink_gfx_program *prog, VkPipeline input, VkPipeline library, VkPipeline output);
 #endif

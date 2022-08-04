@@ -1,6 +1,6 @@
 variables:
    DEBIAN_X86_BUILD_BASE_IMAGE: "debian/x86_build-base"
-   DEBIAN_BASE_TAG: "2022-07-01-bb-llvm13"
+   DEBIAN_BASE_TAG: "2022-08-04-venus-ci"
 
    DEBIAN_X86_BUILD_IMAGE_PATH: "debian/x86_build"
    DEBIAN_BUILD_TAG: "2022-07-14-directx-headers"
@@ -11,8 +11,8 @@ variables:
    DEBIAN_X86_TEST_BASE_IMAGE: "debian/x86_test-base"
 
    DEBIAN_X86_TEST_IMAGE_PATH: "debian/x86_test-gl"
-   DEBIAN_X86_TEST_GL_TAG: "2022-07-06-virgl-update"
-   DEBIAN_X86_TEST_VK_TAG: "2022-07-18-apitrace-11-1"
+   DEBIAN_X86_TEST_GL_TAG: "2022-08-04-crosvm-opaque-fd"
+   DEBIAN_X86_TEST_VK_TAG: "2022-08-04-crosvm-opaque-fd"
 
    FEDORA_X86_BUILD_TAG: "2022-04-24-spirv-tools-5"
    KERNEL_ROOTFS_TAG: "2022-07-06-virgl-update"
