@@ -578,7 +578,7 @@ Khronos extensions that are not part of any Vulkan version:
   VK_EXT_shader_module_identifier                       DONE (anv, radv, tu)
   VK_EXT_transform_feedback                             DONE (anv, lvp, radv, tu, vn)
   VK_EXT_vertex_attribute_divisor                       DONE (anv, radv, lvp, tu, v3dv)
-  VK_EXT_vertex_input_dynamic_state                     DONE (lvp, radv)
+  VK_EXT_vertex_input_dynamic_state                     DONE (lvp, radv, tu)
   VK_EXT_ycbcr_image_arrays                             DONE (anv, radv)
   VK_ANDROID_external_memory_android_hardware_buffer    DONE (anv, radv, vn)
   VK_ANDROID_native_buffer                              DONE (anv, radv, tu, v3dv, vn)

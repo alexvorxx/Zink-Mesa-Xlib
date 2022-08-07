@@ -1272,7 +1272,7 @@ update_csctx_ssbo(struct llvmpipe_context *llvmpipe)
 }
 
 static void
-llvmpipe_cs_update_derived(struct llvmpipe_context *llvmpipe, void *input)
+llvmpipe_cs_update_derived(struct llvmpipe_context *llvmpipe, const void *input)
 {
    if (llvmpipe->cs_dirty & LP_CSNEW_CONSTANTS) {
       lp_csctx_set_cs_constants(llvmpipe->csctx,

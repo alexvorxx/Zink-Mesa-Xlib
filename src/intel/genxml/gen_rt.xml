@@ -56,10 +56,14 @@
     <field name="Z" start="64" end="95" type="float"/>
   </struct>
 
-  <struct name="RT_BVH" length="16">
+  <struct name="RT_BVH_METADATA" length="16">
+    <field name="Bounds Min" start="0" end="95" type="RT_BVH_VEC3"/>
+    <field name="Bounds Max" start="96" end="191" type="RT_BVH_VEC3"/>
+  </struct>
+
+  <struct name="RT_BVH" length="32">
     <field name="Root Node Offset" start="0" end="63" type="offset"/>
-    <field name="Bounds Min" start="64" end="159" type="RT_BVH_VEC3"/>
-    <field name="Bounds Max" start="160" end="255" type="RT_BVH_VEC3"/>
+    <field name="Meta" start="512" end="1023" type="RT_BVH_METADATA"/>
   </struct>
 
   <struct name="RT_BVH_INTERNAL_NODE" length="16">

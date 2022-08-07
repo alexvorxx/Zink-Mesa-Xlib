@@ -1187,6 +1187,13 @@ get_best_layout(struct fd_screen *screen, struct pipe_resource *prsc,
    if (FD_DBG(NOUBWC))
       ubwc_ok = false;
 
+   /* Disallow UBWC for front-buffer rendering.  The GPU does not atomically
+    * write pixel and header data, nor does the display atomically read it.
+    * The result can be visual corruption (ie. moreso than normal tearing).
+    */
+   if (tmpl->bind & PIPE_BIND_USE_FRONT_RENDERING)
+      ubwc_ok = false;
+
    if (ubwc_ok && !implicit_modifiers &&
        !drm_find_modifier(DRM_FORMAT_MOD_QCOM_COMPRESSED, modifiers, count)) {
       perf_debug("%" PRSC_FMT

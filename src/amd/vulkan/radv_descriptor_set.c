@@ -27,6 +27,7 @@
 #include <string.h>
 
 #include "util/mesa-sha1.h"
+#include "radv_acceleration_structure.h"
 #include "radv_private.h"
 #include "sid.h"
 #include "vk_descriptors.h"

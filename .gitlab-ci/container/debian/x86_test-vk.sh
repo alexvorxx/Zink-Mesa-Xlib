@@ -74,67 +74,10 @@ pip3 install gfxinfo-mupuf==0.0.9
 
 apt install -y --no-remove --install-recommends winehq-stable
 
-function setup_wine() {
-    export WINEDEBUG="-all"
-    export WINEPREFIX="$1"
-
-    # We don't want crash dialogs
-    cat >crashdialog.reg <<EOF
-Windows Registry Editor Version 5.00
-
-[HKEY_CURRENT_USER\Software\Wine\WineDbg]
-"ShowCrashDialog"=dword:00000000
-
-EOF
-
-    # Set the wine prefix and disable the crash dialog
-    wine regedit crashdialog.reg
-    rm crashdialog.reg
-
-    # An immediate wine command may fail with: "${WINEPREFIX}: Not a
-    # valid wine prefix."  and that is just spit because of checking
-    # the existance of the system.reg file, which fails.  Just giving
-    # it a bit more of time for it to be created solves the problem
-    # ...
-    while ! test -f  "${WINEPREFIX}/system.reg"; do sleep 1; done
-}
-
 ############### Install DXVK
 
-dxvk_install_release() {
-    local DXVK_VERSION=${1:-"1.10.1"}
-
-    wget "https://github.com/doitsujin/dxvk/releases/download/v${DXVK_VERSION}/dxvk-${DXVK_VERSION}.tar.gz"
-    tar xzpf dxvk-"${DXVK_VERSION}".tar.gz
-    "dxvk-${DXVK_VERSION}"/setup_dxvk.sh install
-    rm -rf "dxvk-${DXVK_VERSION}"
-    rm dxvk-"${DXVK_VERSION}".tar.gz
-}
-
-# Install from a Github PR number
-dxvk_install_pr() {
-    local __prnum=$1
-
-    # NOTE: Clone all the ensite history of the repo so as not to think
-    # harder about cloning just enough for 'git describe' to work.  'git
-    # describe' is used by the dxvk build system to generate a
-    # dxvk_version Meson variable, which is nice-to-have.
-    git clone https://github.com/doitsujin/dxvk
-    pushd dxvk
-    git fetch origin pull/"$__prnum"/head:pr
-    git checkout pr
-    ./package-release.sh pr ../dxvk-build --no-package
-    popd
-    pushd ./dxvk-build/dxvk-pr
-    ./setup_dxvk.sh install
-    popd
-    rm -rf ./dxvk-build ./dxvk
-}
-
-# Sets up the WINEPREFIX for the DXVK installation commands below.
-setup_wine "/dxvk-wine64"
-dxvk_install_release "1.10.1"
-#dxvk_install_pr 2359
+. .gitlab-ci/container/setup-wine.sh "/dxvk-wine64"
+. .gitlab-ci/container/install-wine-dxvk.sh
 
 ############### Install apitrace binaries for wine
 
@@ -177,7 +120,7 @@ PIGLIT_BUILD_TARGETS="piglit_replayer" . .gitlab-ci/container/build-piglit.sh
 
 ############### Build VKD3D-Proton
 
-setup_wine "/vkd3d-proton-wine64"
+. .gitlab-ci/container/setup-wine.sh "/vkd3d-proton-wine64"
 
 . .gitlab-ci/container/build-vkd3d-proton.sh
 

@@ -26,6 +26,7 @@ enum tu_dynamic_state
    TU_DYNAMIC_STATE_VB_STRIDE,
    TU_DYNAMIC_STATE_RASTERIZER_DISCARD,
    TU_DYNAMIC_STATE_BLEND,
+   TU_DYNAMIC_STATE_VERTEX_INPUT,
    TU_DYNAMIC_STATE_COUNT,
    /* no associated draw state: */
    TU_DYNAMIC_STATE_PRIMITIVE_TOPOLOGY = TU_DYNAMIC_STATE_COUNT,
@@ -166,12 +167,6 @@ struct tu_pipeline
 
    struct
    {
-      struct tu_draw_state state;
-      struct tu_draw_state binning_state;
-   } vi;
-
-   struct
-   {
       enum pc_di_primtype primtype;
       bool primitive_restart;
    } ia;
@@ -227,6 +222,14 @@ tu6_emit_depth_bias(struct tu_cs *cs,
                     float constant_factor,
                     float clamp,
                     float slope_factor);
+
+#define TU6_EMIT_VERTEX_INPUT_MAX_DWORDS (MAX_VERTEX_ATTRIBS * 2 + 1)
+
+void tu6_emit_vertex_input(struct tu_cs *cs,
+                           uint32_t binding_count,
+                           const VkVertexInputBindingDescription2EXT *bindings,
+                           uint32_t attr_count,
+                           const VkVertexInputAttributeDescription2EXT *attrs);
 
 uint32_t tu6_rb_mrt_control_rop(VkLogicOp op, bool *rop_reads_dst);
 

@@ -438,7 +438,7 @@ struct lp_jit_cs_context
 
    struct lp_jit_buffer ssbos[LP_MAX_TGSI_SHADER_BUFFERS];
 
-   void *kernel_args;
+   const void *kernel_args;
 
    uint32_t shared_size;
 

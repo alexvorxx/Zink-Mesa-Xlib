@@ -297,6 +297,140 @@ instr_writes_exec(Instruction* instr)
 }
 
 void
+try_optimize_branching_sequence(ssa_elimination_ctx& ctx, Block& block, const int exec_val_idx,
+                                const int exec_copy_idx)
+{
+   /* Try to optimize the branching sequence at the end of a block.
+    *
+    * We are looking for blocks that look like this:
+    *
+    * BB:
+    * ... instructions ...
+    * s[N:M] = <exec_val instruction>
+    * ... other instructions that don't depend on exec ...
+    * p_logical_end
+    * exec = <exec_copy instruction> s[N:M]
+    * p_cbranch exec
+    *
+    * The main motivation is to eliminate exec_copy.
+    * Depending on the context, we try to do the following:
+    *
+    * 1. Reassign exec_val to write exec directly
+    * 2. If possible, eliminate exec_copy
+    * 3. When exec_copy also saves the old exec mask, insert a
+    *    new copy instruction before exec_val
+    * 4. Reassign any instruction that used s[N:M] to use exec
+    *
+    * This is beneficial for the following reasons:
+    *
+    * - Fewer instructions in the block when exec_copy can be eliminated
+    * - As a result, when exec_val is VOPC this also improves the stalls
+    *   due to SALU waiting for VALU. This works best when we can also
+    *   remove the branching instruction, in which case the stall
+    *   is entirely eliminated.
+    * - When exec_copy can't be removed, the reassignment may still be
+    *   very slightly beneficial to latency.
+    */
+
+   aco_ptr<Instruction>& exec_val = block.instructions[exec_val_idx];
+   aco_ptr<Instruction>& exec_copy = block.instructions[exec_copy_idx];
+
+   if (exec_copy->opcode != aco_opcode::s_and_saveexec_b32 &&
+       exec_copy->opcode != aco_opcode::s_and_saveexec_b64 &&
+       exec_copy->opcode != aco_opcode::p_parallelcopy)
+      return;
+
+   if (exec_val->definitions.size() > 1)
+      return;
+
+   /* If s_and_saveexec is used, we'll need to insert a new instruction to save the old exec. */
+   const bool save_original_exec = exec_copy->opcode == aco_opcode::s_and_saveexec_b32 ||
+                                   exec_copy->opcode == aco_opcode::s_and_saveexec_b64;
+   /* Position where the original exec mask copy should be inserted. */
+   const int save_original_exec_idx = exec_val_idx;
+   /* The copy can be removed when it kills its operand. */
+   const bool can_remove_copy = exec_copy->operands[0].isKill();
+
+   /* Only use v_cmpx on GFX10+ where it doesn't always clobber the VCC.
+    * Also check if a suitable v_cmpx opcode exists.
+    */
+   const aco_opcode v_cmpx_op =
+      exec_val->isVOPC() ? get_vcmpx(exec_val->opcode) : aco_opcode::num_opcodes;
+   const bool usable_vcmpx = ctx.program->gfx_level >= GFX10 && v_cmpx_op != aco_opcode::num_opcodes;
+   const bool vopc = exec_val->isVOPC() && usable_vcmpx;
+
+   /* Always allow reassigning when the value is written by (usable) VOPC.
+    * Note, VOPC implicitly contains "& exec" because it yields zero on inactive lanes.
+    * Additionally, when value is copied as-is, also allow SALU and parallelcopies.
+    */
+   const bool can_reassign =
+      vopc || (exec_copy->opcode == aco_opcode::p_parallelcopy &&
+               (exec_val->isSALU() || exec_val->opcode == aco_opcode::p_parallelcopy));
+
+   /* The reassignment is not worth it when both the original exec needs to be copied
+    * and the new exec copy can't be removed. In this case we'd end up with more instructions.
+    */
+   if (!can_reassign || (save_original_exec && !can_remove_copy))
+      return;
+
+   const Definition exec_wr_def = exec_val->definitions[0];
+   const Definition exec_copy_def = exec_copy->definitions[0];
+
+   /* Reassign the instruction to write exec directly. */
+   exec_val->definitions[0] = Definition(exec, ctx.program->lane_mask);
+
+   if (vopc) {
+      /* Set v_cmpx opcode. */
+      exec_val->opcode = v_cmpx_op;
+
+      /* TODO: change instruction from VOP3 to plain VOPC when possible. */
+   }
+
+   if (exec_val_idx != exec_copy_idx - 2) {
+      /* If there are other instructions (besides p_logical_end) between
+       * writing the value and copying it to exec, reassign uses
+       * of the old definition.
+       */
+      for (int idx = exec_val_idx + 1; idx < exec_copy_idx; ++idx) {
+         aco_ptr<Instruction>& instr = block.instructions[idx];
+         for (Operand& op : instr->operands) {
+            if (!op.isConstant() && op.physReg() == exec_wr_def.physReg())
+               op = Operand(exec, ctx.program->lane_mask);
+         }
+      }
+   }
+
+   if (can_remove_copy) {
+      /* Remove the copy. */
+      exec_copy.reset();
+   } else {
+      /* Reassign the copy to write the register of the original value. */
+      exec_copy.reset(
+         create_instruction<Pseudo_instruction>(aco_opcode::p_parallelcopy, Format::PSEUDO, 1, 1));
+      exec_copy->definitions[0] = exec_wr_def;
+      exec_copy->operands[0] = Operand(exec, ctx.program->lane_mask);
+   }
+
+   if (save_original_exec) {
+      /* Insert a new instruction that saves the original exec before it is overwritten. */
+      const auto it = std::next(block.instructions.begin(), save_original_exec_idx);
+      aco_ptr<Instruction> copy(
+         create_instruction<Pseudo_instruction>(aco_opcode::p_parallelcopy, Format::PSEUDO, 1, 1));
+      copy->definitions[0] = exec_copy_def;
+      copy->operands[0] = Operand(exec, ctx.program->lane_mask);
+      block.instructions.insert(it, std::move(copy));
+   }
+
+   if (exec_val->opcode == aco_opcode::p_parallelcopy && exec_val->operands[0].isConstant() &&
+       exec_val->operands[0].constantValue()) {
+      /* Remove the branch instruction when exec is constant non-zero. */
+      aco_ptr<Instruction>& branch = block.instructions.back();
+      if (branch->isBranch() && branch->operands.size() && branch->operands[0].physReg() == exec)
+         block.instructions.back().reset();
+   }
+}
+
+void
 eliminate_useless_exec_writes_in_block(ssa_elimination_ctx& ctx, Block& block)
 {
    /* Check if any successor needs the outgoing exec mask from the current block. */
@@ -325,6 +459,14 @@ eliminate_useless_exec_writes_in_block(ssa_elimination_ctx& ctx, Block& block)
                         [&ctx](int succ_idx) { return ctx.blocks_incoming_exec_used[succ_idx]; });
    }
 
+   /* Collect information about the branching sequence. */
+
+   bool logical_end_found = false;
+   bool branch_reads_exec = false;
+   int branch_exec_val_idx = -1;
+   int branch_exec_copy_idx = -1;
+   unsigned branch_exec_tempid = 0;
+
    /* Go through all instructions and eliminate useless exec writes. */
 
    for (int i = block.instructions.size() - 1; i >= 0; --i) {
@@ -339,6 +481,10 @@ eliminate_useless_exec_writes_in_block(ssa_elimination_ctx& ctx, Block& block)
       bool needs_exec = needs_exec_mask(instr.get());
       bool writes_exec = instr_writes_exec(instr.get());
 
+      logical_end_found |= instr->opcode == aco_opcode::p_logical_end;
+      branch_reads_exec |= i == (int)(block.instructions.size() - 1) && instr->isBranch() &&
+                           instr->operands.size() && instr->operands[0].physReg() == exec;
+
       /* See if we found an unused exec write. */
       if (writes_exec && !exec_write_used) {
          instr.reset();
@@ -346,8 +492,31 @@ eliminate_useless_exec_writes_in_block(ssa_elimination_ctx& ctx, Block& block)
       }
 
       /* For a newly encountered exec write, clear the used flag. */
-      if (writes_exec)
+      if (writes_exec) {
+         if (!logical_end_found && branch_reads_exec && instr->operands.size() == 1) {
+            /* We are in a branch that jumps according to exec.
+             * We just found the instruction that copies to exec before the branch.
+             */
+            assert(branch_exec_copy_idx == -1);
+            branch_exec_copy_idx = i;
+            branch_exec_tempid = instr->operands[0].tempId();
+         } else if (branch_exec_val_idx == -1) {
+            /* The current instruction overwrites exec before branch_exec_val_idx was
+             * found, therefore we can't optimize the branching sequence.
+             */
+            branch_exec_copy_idx = -1;
+            branch_exec_tempid = 0;
+         }
+
          exec_write_used = false;
+      }
+
+      if (branch_exec_tempid && !exec_write_used && instr->definitions.size() &&
+          instr->definitions[0].tempId() == branch_exec_tempid) {
+         /* We just found the instruction that produces the exec mask that is copied. */
+         assert(branch_exec_val_idx == -1);
+         branch_exec_val_idx = i;
+      }
 
       /* If the current instruction needs exec, mark it as used. */
       exec_write_used |= needs_exec;
@@ -355,6 +524,13 @@ eliminate_useless_exec_writes_in_block(ssa_elimination_ctx& ctx, Block& block)
 
    /* Remember if the current block needs an incoming exec mask from its predecessors. */
    ctx.blocks_incoming_exec_used[block.index] = exec_write_used;
+
+   /* See if we can optimize the instruction that produces the exec mask. */
+   if (branch_exec_val_idx != -1) {
+      assert(logical_end_found && branch_reads_exec && branch_exec_tempid &&
+             branch_exec_copy_idx != -1);
+      try_optimize_branching_sequence(ctx, block, branch_exec_val_idx, branch_exec_copy_idx);
+   }
 
    /* Cleanup: remove deleted instructions from the vector. */
    auto new_end = std::remove(block.instructions.begin(), block.instructions.end(), nullptr);

@@ -60,6 +60,9 @@ cp \
 cp \
     /deqp/external/openglcts/modules/gl_cts/data/mustpass/gl/khronos_mustpass/4.6.1.x/*-master.txt \
     /deqp/mustpass/.
+cp \
+    /deqp/external/openglcts/modules/gl_cts/data/mustpass/gl/khronos_mustpass_single/4.6.1.x/*-single.txt \
+    /deqp/mustpass/.
 
 # Save *some* executor utils, but otherwise strip things down
 # to reduct deqp build size:

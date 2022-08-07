@@ -531,18 +531,18 @@ fs_reg_alloc::setup_inst_interference(const fs_inst *inst)
       }
    }
 
-   /* In 16-wide instructions we have an issue where a compressed
-    * instruction is actually two instructions executed simultaneously.
-    * It's actually ok to have the source and destination registers be
-    * the same.  In this case, each instruction over-writes its own
-    * source and there's no problem.  The real problem here is if the
-    * source and destination registers are off by one.  Then you can end
-    * up in a scenario where the first instruction over-writes the
-    * source of the second instruction.  Since the compiler doesn't know
-    * about this level of granularity, we simply make the source and
-    * destination interfere.
+   /* A compressed instruction is actually two instructions executed
+    * simultaneously.  On most platforms, it ok to have the source and
+    * destination registers be the same.  In this case, each instruction
+    * over-writes its own source and there's no problem.  The real problem
+    * here is if the source and destination registers are off by one.  Then
+    * you can end up in a scenario where the first instruction over-writes the
+    * source of the second instruction.  Since the compiler doesn't know about
+    * this level of granularity, we simply make the source and destination
+    * interfere.
     */
-   if (inst->exec_size >= 16 && inst->dst.file == VGRF) {
+   if (inst->dst.component_size(inst->exec_size) > REG_SIZE &&
+       inst->dst.file == VGRF) {
       for (int i = 0; i < inst->sources; ++i) {
          if (inst->src[i].file == VGRF) {
             ra_add_node_interference(g, first_vgrf_node + inst->dst.nr,

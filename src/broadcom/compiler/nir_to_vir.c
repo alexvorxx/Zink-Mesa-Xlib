@@ -3000,18 +3000,18 @@ ntq_get_barycentric_centroid(struct v3d_compile *c,
         /* sN = TRUE if sample N enabled in sample mask, FALSE otherwise */
         struct qreg F = vir_uniform_ui(c, 0);
         struct qreg T = vir_uniform_ui(c, ~0);
-        struct qreg s0 = vir_XOR(c, vir_AND(c, sample_mask, i1), i1);
+        struct qreg s0 = vir_AND(c, sample_mask, i1);
         vir_set_pf(c, vir_MOV_dest(c, vir_nop_reg(), s0), V3D_QPU_PF_PUSHZ);
-        s0 = vir_SEL(c, V3D_QPU_COND_IFA, T, F);
-        struct qreg s1 = vir_XOR(c, vir_AND(c, sample_mask, i2), i2);
+        s0 = vir_SEL(c, V3D_QPU_COND_IFNA, T, F);
+        struct qreg s1 = vir_AND(c, sample_mask, i2);
         vir_set_pf(c, vir_MOV_dest(c, vir_nop_reg(), s1), V3D_QPU_PF_PUSHZ);
-        s1 = vir_SEL(c, V3D_QPU_COND_IFA, T, F);
-        struct qreg s2 = vir_XOR(c, vir_AND(c, sample_mask, i4), i4);
+        s1 = vir_SEL(c, V3D_QPU_COND_IFNA, T, F);
+        struct qreg s2 = vir_AND(c, sample_mask, i4);
         vir_set_pf(c, vir_MOV_dest(c, vir_nop_reg(), s2), V3D_QPU_PF_PUSHZ);
-        s2 = vir_SEL(c, V3D_QPU_COND_IFA, T, F);
-        struct qreg s3 = vir_XOR(c, vir_AND(c, sample_mask, i8), i8);
+        s2 = vir_SEL(c, V3D_QPU_COND_IFNA, T, F);
+        struct qreg s3 = vir_AND(c, sample_mask, i8);
         vir_set_pf(c, vir_MOV_dest(c, vir_nop_reg(), s3), V3D_QPU_PF_PUSHZ);
-        s3 = vir_SEL(c, V3D_QPU_COND_IFA, T, F);
+        s3 = vir_SEL(c, V3D_QPU_COND_IFNA, T, F);
 
         /* sample_idx = s0 ? 0 : s2 ? 2 : s1 ? 1 : 3 */
         struct qreg sample_idx = i3;

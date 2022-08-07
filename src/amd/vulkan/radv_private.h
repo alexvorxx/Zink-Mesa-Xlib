@@ -370,6 +370,7 @@ struct radv_instance {
    bool disable_aniso_single_level;
    bool zero_vram;
    bool disable_sinking_load_input_fs;
+   bool flush_before_query_copy;
 };
 
 VkResult radv_init_wsi(struct radv_physical_device *physical_device);
@@ -3265,20 +3266,6 @@ radv_has_shader_buffer_float_minmax(const struct radv_physical_device *pdevice)
           pdevice->rad_info.gfx_level >= GFX10;
 }
 
-struct radv_acceleration_structure {
-   struct vk_object_base base;
-
-   struct radeon_winsys_bo *bo;
-   uint64_t mem_offset;
-   uint64_t size;
-};
-
-static inline uint64_t
-radv_accel_struct_get_va(const struct radv_acceleration_structure *accel)
-{
-   return radv_buffer_get_va(accel->bo) + accel->mem_offset;
-}
-
 /* radv_perfcounter.c */
 void radv_perfcounter_emit_shaders(struct radeon_cmdbuf *cs, unsigned shaders);
 void radv_perfcounter_emit_spm_reset(struct radeon_cmdbuf *cs);
@@ -3302,9 +3289,6 @@ VK_DEFINE_HANDLE_CASTS(radv_instance, vk.base, VkInstance, VK_OBJECT_TYPE_INSTAN
 VK_DEFINE_HANDLE_CASTS(radv_physical_device, vk.base, VkPhysicalDevice,
                        VK_OBJECT_TYPE_PHYSICAL_DEVICE)
 VK_DEFINE_HANDLE_CASTS(radv_queue, vk.base, VkQueue, VK_OBJECT_TYPE_QUEUE)
-VK_DEFINE_NONDISP_HANDLE_CASTS(radv_acceleration_structure, base,
-                               VkAccelerationStructureKHR,
-                               VK_OBJECT_TYPE_ACCELERATION_STRUCTURE_KHR)
 VK_DEFINE_NONDISP_HANDLE_CASTS(radv_cmd_pool, vk.base, VkCommandPool,
                                VK_OBJECT_TYPE_COMMAND_POOL)
 VK_DEFINE_NONDISP_HANDLE_CASTS(radv_buffer, vk.base, VkBuffer, VK_OBJECT_TYPE_BUFFER)

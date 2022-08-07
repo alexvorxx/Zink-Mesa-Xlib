@@ -635,6 +635,8 @@ struct brw_image_param {
 struct brw_ubo_range
 {
    uint16_t block;
+
+   /* In units of 32-byte registers */
    uint8_t start;
    uint8_t length;
 };
@@ -1103,6 +1105,9 @@ struct brw_bs_prog_data {
 
    /** Offset into the shader where the resume SBT is located */
    uint32_t resume_sbt_offset;
+
+   /** Number of resume shaders */
+   uint32_t num_resume_shaders;
 };
 
 struct brw_ff_gs_prog_data {

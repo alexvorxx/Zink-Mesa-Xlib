@@ -71,7 +71,6 @@ program/execute/calls-struct/small struct in regs: fail
 program/execute/fdiv-modifiers-f32: fail
 program/execute/global-offset/3d, input dependent: fail
 program/execute/image-attributes: crash
-program/execute/image-write-2d: crash
 program/execute/load-hi16-generic: skip
 program/execute/load-lo16-generic: skip
 program/execute/mad-mix: fail

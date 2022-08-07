@@ -28,6 +28,7 @@
 #define ZINK_KOPPER_H
 
 #include "kopper_interface.h"
+#include "u_queue.h"
 
 struct kopper_swapchain_image {
    bool init;

@@ -2145,6 +2145,21 @@ nir_serialize(struct blob *blob, const nir_shader *nir, bool strip)
 
    write_xfb_info(&ctx, nir->xfb_info);
 
+   if (nir->info.stage == MESA_SHADER_KERNEL) {
+      blob_write_uint32(blob, nir->printf_info_count);
+      for (int i = 0; i < nir->printf_info_count; i++) {
+         u_printf_info *info = &nir->printf_info[i];
+         blob_write_uint32(blob, info->num_args);
+         blob_write_uint32(blob, info->string_size);
+         blob_write_bytes(blob, info->arg_sizes,
+                          info->num_args * sizeof(*info->arg_sizes));
+         /* we can't use blob_write_string, because it contains multiple NULL
+          * terminated strings */
+         blob_write_bytes(blob, info->strings,
+                          info->string_size * sizeof(*info->strings));
+      }
+   }
+
    blob_overwrite_uint32(blob, idx_size_offset, ctx.next_idx);
 
    _mesa_hash_table_destroy(ctx.remap_table, NULL);
@@ -2201,6 +2216,24 @@ nir_deserialize(void *mem_ctx,
    }
 
    ctx.nir->xfb_info = read_xfb_info(&ctx);
+
+   if (ctx.nir->info.stage == MESA_SHADER_KERNEL) {
+      ctx.nir->printf_info_count = blob_read_uint32(blob);
+      ctx.nir->printf_info =
+         ralloc_array(ctx.nir, u_printf_info, ctx.nir->printf_info_count);
+
+      for (int i = 0; i < ctx.nir->printf_info_count; i++) {
+         u_printf_info *info = &ctx.nir->printf_info[i];
+         info->num_args = blob_read_uint32(blob);
+         info->string_size = blob_read_uint32(blob);
+         info->arg_sizes = ralloc_array(ctx.nir, unsigned, info->num_args);
+         blob_copy_bytes(blob, info->arg_sizes,
+                         info->num_args * sizeof(*info->arg_sizes));
+         info->strings = ralloc_array(ctx.nir, char, info->string_size);
+         blob_copy_bytes(blob, info->strings,
+                         info->string_size * sizeof(*info->strings));
+      }
+   }
 
    free(ctx.idx_table);
 

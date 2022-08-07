@@ -365,6 +365,8 @@ llvmpipe_get_param(struct pipe_screen *screen, enum pipe_cap param)
    case PIPE_CAP_PACKED_UNIFORMS: {
       struct llvmpipe_screen *lscreen = llvmpipe_screen(screen);
       return !lscreen->use_tgsi;
+   case PIPE_CAP_NIR_IMAGES_AS_DEREF:
+      return 0;
    }
    default:
       return u_pipe_screen_get_param_defaults(screen, param);

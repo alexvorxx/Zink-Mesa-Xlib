@@ -1,0 +1,8 @@
+traces-db:
+  download-url: "https://minio-packet.freedesktop.org/mesa-tracie-public/"
+
+traces:
+  - path: unigine/sanctuary-d3d9.trace-dxgi
+    expectations:
+      - device: lvp
+        checksum: e9a05a395243c7604927daeb001f821d

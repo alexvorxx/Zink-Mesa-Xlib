@@ -142,9 +142,9 @@ create_surface(struct pipe_context *pctx,
    VkImageViewUsageCreateInfo usage_info;
    usage_info.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_USAGE_CREATE_INFO;
    usage_info.pNext = NULL;
-   VkFormatFeatureFlags feats = res->optimal_tiling ?
-                                screen->format_props[templ->format].optimalTilingFeatures :
-                                screen->format_props[templ->format].linearTilingFeatures;
+   VkFormatFeatureFlags feats = res->linear ?
+                                screen->format_props[templ->format].linearTilingFeatures :
+                                screen->format_props[templ->format].optimalTilingFeatures;
    VkImageUsageFlags attachment = (VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT);
    usage_info.usage = res->obj->vkusage & ~attachment;
    if (res->obj->modifier_aspect) {

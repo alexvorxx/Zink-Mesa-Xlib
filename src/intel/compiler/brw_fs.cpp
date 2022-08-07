@@ -7825,9 +7825,6 @@ brw_compile_cs(const struct brw_compiler *compiler,
                                   nir->info.workgroup_size_variable;
 
       if (v[simd]->run_cs(allow_spilling)) {
-         /* We should always be able to do SIMD32 for compute shaders. */
-         assert(v[simd]->max_dispatch_width >= 32);
-
          cs_fill_push_const_info(compiler->devinfo, prog_data);
 
          brw_simd_mark_compiled(simd, prog_data, v[simd]->spilled_any_registers);
@@ -8041,6 +8038,7 @@ brw_compile_bs(const struct brw_compiler *compiler,
    prog_data->base.total_scratch = 0;
 
    prog_data->max_stack_size = 0;
+   prog_data->num_resume_shaders = num_resume_shaders;
 
    fs_generator g(compiler, params->log_data, mem_ctx, &prog_data->base,
                   false, shader->info.stage);

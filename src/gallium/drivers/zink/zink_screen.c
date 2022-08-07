@@ -445,6 +445,7 @@ zink_get_param(struct pipe_screen *pscreen, enum pipe_cap param)
    case PIPE_CAP_CULL_DISTANCE_NOCOMBINE:
    case PIPE_CAP_SEAMLESS_CUBE_MAP_PER_TEXTURE:
    case PIPE_CAP_LOAD_CONSTBUF:
+   case PIPE_CAP_MULTISAMPLE_Z_RESOLVE:
       return 1;
 
    case PIPE_CAP_DRAW_VERTEX_STATE:
@@ -469,6 +470,9 @@ zink_get_param(struct pipe_screen *pscreen, enum pipe_cap param)
 
    case PIPE_CAP_TEXTURE_MIRROR_CLAMP_TO_EDGE:
       return screen->info.have_KHR_sampler_mirror_clamp_to_edge;
+
+   case PIPE_CAP_POLYGON_OFFSET_UNITS_UNSCALED:
+      return 1;
 
    case PIPE_CAP_POLYGON_OFFSET_CLAMP:
       return screen->info.feats.features.depthBiasClamp;
@@ -592,7 +596,7 @@ zink_get_param(struct pipe_screen *pscreen, enum pipe_cap param)
       return screen->info.props.limits.maxImageArrayLayers;
 
    case PIPE_CAP_DEPTH_CLIP_DISABLE:
-      return screen->info.feats.features.depthClamp;
+      return !screen->driver_workarounds.depth_clip_control_missing;
 
    case PIPE_CAP_SHADER_STENCIL_EXPORT:
       return screen->info.have_EXT_shader_stencil_export;
@@ -1327,7 +1331,8 @@ choose_pdev(struct zink_screen *screen)
    assert(pdev_count > 0);
 
    VkPhysicalDeviceProperties props;
-   bool cpu = debug_get_bool_option("LIBGL_ALWAYS_SOFTWARE", false);
+   bool cpu = debug_get_bool_option("LIBGL_ALWAYS_SOFTWARE", false) ||
+              debug_get_bool_option("D3D_ALWAYS_SOFTWARE", false);
    /* priority when multiple drivers are available (highest to lowest):
       VK_PHYSICAL_DEVICE_TYPE_VIRTUAL_GPU
       VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU
@@ -2227,6 +2232,17 @@ init_driver_workarounds(struct zink_screen *screen)
       /* performance */
       screen->info.border_color_feats.customBorderColorWithoutFormat = VK_FALSE;
    }
+   if (screen->info.driver_props.driverID == VK_DRIVER_ID_AMD_OPEN_SOURCE || 
+       screen->info.driver_props.driverID == VK_DRIVER_ID_AMD_PROPRIETARY || 
+       screen->info.driver_props.driverID == VK_DRIVER_ID_NVIDIA_PROPRIETARY || 
+       screen->info.driver_props.driverID == VK_DRIVER_ID_MESA_RADV)
+      screen->driver_workarounds.z24_unscaled_bias = 1<<23;
+   else
+      screen->driver_workarounds.z24_unscaled_bias = 1<<24;
+   if (screen->info.driver_props.driverID == VK_DRIVER_ID_NVIDIA_PROPRIETARY)
+      screen->driver_workarounds.z16_unscaled_bias = 1<<15;
+   else
+      screen->driver_workarounds.z16_unscaled_bias = 1<<16;
 }
 
 static struct zink_screen *

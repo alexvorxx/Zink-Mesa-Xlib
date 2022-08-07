@@ -15,10 +15,16 @@ if [ -n "${DEQP_RUNNER_GIT_TAG}${DEQP_RUNNER_GIT_REV}" ]; then
     DEQP_RUNNER_CARGO_ARGS="${DEQP_RUNNER_CARGO_ARGS} ${EXTRA_CARGO_ARGS}"
 else
     # Install from package registry
-    DEQP_RUNNER_CARGO_ARGS="--version 0.13.1 ${EXTRA_CARGO_ARGS} -- deqp-runner"
+    DEQP_RUNNER_CARGO_ARGS="--version 0.15.0 ${EXTRA_CARGO_ARGS} -- deqp-runner"
 fi
 
 cargo install --locked  \
     -j ${FDO_CI_CONCURRENT:-4} \
     --root /usr/local \
     ${DEQP_RUNNER_CARGO_ARGS}
+
+# remove unused test runners to shrink images for the Mesa CI build (not kernel,
+# which chooses its own deqp branch)
+if [ -z "${DEQP_RUNNER_GIT_TAG}${DEQP_RUNNER_GIT_REV}" ]; then
+    rm -f /usr/local/bin/igt-runner
+fi

@@ -726,7 +726,7 @@ vtn_handle_opencl_vstore_half_r(struct vtn_builder *b, enum OpenCLstd_Entrypoint
 }
 
 static unsigned
-vtn_add_printf_string(struct vtn_builder *b, uint32_t id, nir_printf_info *info)
+vtn_add_printf_string(struct vtn_builder *b, uint32_t id, u_printf_info *info)
 {
    nir_deref_instr *deref = vtn_nir_deref(b, id);
 
@@ -783,8 +783,8 @@ handle_printf(struct vtn_builder *b, uint32_t opcode,
    unsigned info_idx = b->shader->printf_info_count;
 
    b->shader->printf_info = reralloc(b->shader, b->shader->printf_info,
-                                     nir_printf_info, info_idx);
-   nir_printf_info *info = &b->shader->printf_info[info_idx - 1];
+                                     u_printf_info, info_idx);
+   u_printf_info *info = &b->shader->printf_info[info_idx - 1];
 
    info->strings = NULL;
    info->string_size = 0;

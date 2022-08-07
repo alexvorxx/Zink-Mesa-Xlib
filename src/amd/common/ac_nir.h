@@ -55,6 +55,9 @@ typedef unsigned (*ac_nir_map_io_driver_location)(unsigned semantic);
 struct nir_builder;
 typedef struct nir_builder nir_builder;
 
+/* Executed by ac_nir_cull when the current primitive is accepted. */
+typedef void (*ac_nir_cull_accepted)(nir_builder *b, void *state);
+
 nir_ssa_def *
 ac_nir_load_arg(nir_builder *b, const struct ac_shader_args *ac_args, struct ac_arg arg);
 
@@ -158,10 +161,12 @@ ac_nir_lower_mesh_inputs_to_mem(nir_shader *shader,
                                 unsigned task_payload_entry_bytes,
                                 unsigned task_num_entries);
 
-nir_ssa_def *
+void
 ac_nir_cull_triangle(nir_builder *b,
                      nir_ssa_def *initially_accepted,
-                     nir_ssa_def *pos[3][4]);
+                     nir_ssa_def *pos[3][4],
+                     ac_nir_cull_accepted accept_func,
+                     void *state);
 
 bool
 ac_nir_lower_global_access(nir_shader *shader);

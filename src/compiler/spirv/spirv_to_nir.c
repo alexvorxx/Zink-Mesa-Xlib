@@ -4504,7 +4504,6 @@ vtn_handle_preamble_instruction(struct vtn_builder *b, SpvOp opcode,
             vtn_warn("Unsupported SPIR-V capability: %s",
                      spirv_capability_to_string(cap));
          spv_check_supported(linkage, cap);
-         vtn_warn("The SPIR-V Linkage capability is not fully supported");
          break;
 
       case SpvCapabilitySparseResidency:

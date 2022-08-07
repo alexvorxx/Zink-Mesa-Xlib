@@ -19,7 +19,7 @@
 #include "venus-protocol/vn_protocol_driver_info.h"
 #include "vk_enum_to_str.h"
 
-#define VN_RELAX_MIN_BASE_SLEEP_US (10)
+#define VN_RELAX_MIN_BASE_SLEEP_US (20)
 
 static const struct debug_control vn_debug_options[] = {
    { "init", VN_DEBUG_INIT },
@@ -120,10 +120,10 @@ vn_relax(uint32_t *iter, const char *reason)
     * base_sleep_us microseconds for the same number of times.  After that,
     * keep doubling both sleep length and count.
     */
-   const uint32_t busy_wait_order = 4;
+   const uint32_t busy_wait_order = 8;
    const uint32_t base_sleep_us = vn_env.relax_base_sleep_us;
-   const uint32_t warn_order = 12;
-   const uint32_t abort_order = 14;
+   const uint32_t warn_order = 14;
+   const uint32_t abort_order = 16;
 
    (*iter)++;
    if (*iter < (1 << busy_wait_order)) {
@@ -131,8 +131,8 @@ vn_relax(uint32_t *iter, const char *reason)
       return;
    }
 
-   /* warn occasionally if we have slept at least 1.28ms for 2048 times (plus
-    * another 2047 shorter sleeps)
+   /* warn occasionally if we have slept at least 0.64ms for 8192 times (plus
+    * another 8191 shorter sleeps)
     */
    if (unlikely(*iter % (1 << warn_order) == 0)) {
       vn_log(NULL, "stuck in %s wait with iter at %d", reason, *iter);

@@ -56,6 +56,7 @@ dEQP-GLES3.functional.shaders.texture_functions.textureprojgrad.sampler2dshadow_
 dEQP-GLES3.functional.texture.specification.texstorage3d.size.3d_2x2x2_2_levels,Fail
 
 # MESA: error: ir3_ra() failed!
+dEQP-GLES31.functional.atomic_counter.inc_dec.8_counters_5_calls_1_thread,Fail
 dEQP-GLES31.functional.atomic_counter.get_dec.8_counters_5_calls_10_threads,Fail
 dEQP-GLES31.functional.atomic_counter.get_dec.8_counters_5_calls_1_thread,Fail
 dEQP-GLES31.functional.atomic_counter.get_inc.8_counters_5_calls_10_threads,Fail
@@ -65,6 +66,7 @@ dEQP-GLES31.functional.atomic_counter.get_inc_dec.4_counters_5_calls_1_thread,Fa
 dEQP-GLES31.functional.atomic_counter.get_inc_dec.8_counters_5_calls_10_threads,Fail
 dEQP-GLES31.functional.atomic_counter.get_inc_dec.8_counters_5_calls_1_thread,Fail
 dEQP-GLES31.functional.atomic_counter.inc_dec.8_counters_5_calls_10_threads,Fail
+dEQP-GLES31.functional.atomic_counter.layout.default_offset_set.get_inc.8_counters_5_calls_1_thread,Fail
 dEQP-GLES31.functional.atomic_counter.layout.default_offset_set.get_dec.8_counters_5_calls_1000_threads,Fail
 dEQP-GLES31.functional.atomic_counter.layout.default_offset_set.get_dec.8_counters_5_calls_1_thread,Fail
 dEQP-GLES31.functional.atomic_counter.layout.default_offset_set.inc_dec.8_counters_5_calls_1000_threads,Fail
@@ -84,9 +86,6 @@ dEQP-GLES31.functional.atomic_counter.layout.reverse_offset.get_inc.8_counters_5
 dEQP-GLES31.functional.atomic_counter.layout.reverse_offset.get_inc.8_counters_5_calls_1_thread,Fail
 dEQP-GLES31.functional.atomic_counter.layout.reverse_offset.inc_dec.8_counters_5_calls_1000_threads,Fail
 dEQP-GLES31.functional.atomic_counter.layout.reverse_offset.inc_dec.8_counters_5_calls_1_thread,Fail
-
-dEQP-GLES31.functional.compute.basic.image_atomic_op_local_size_1,Crash
-dEQP-GLES31.functional.compute.basic.image_atomic_op_local_size_8,Crash
 
 dEQP-GLES31.functional.draw_base_vertex.draw_elements_base_vertex.builtin_variable.vertex_id,Fail
 dEQP-GLES31.functional.draw_base_vertex.draw_elements_instanced_base_vertex.builtin_variable.vertex_id,Fail

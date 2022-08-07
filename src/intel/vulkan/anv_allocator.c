@@ -1490,9 +1490,11 @@ anv_scratch_pool_alloc(struct anv_device *device, struct anv_scratch_pool *pool,
     *
     * so nothing will ever touch the top page.
     */
+   enum anv_bo_alloc_flags alloc_flags = ANV_BO_ALLOC_LOCAL_MEM;
+   if (devinfo->verx10 < 125)
+      alloc_flags |= ANV_BO_ALLOC_32BIT_ADDRESS;
    VkResult result = anv_device_alloc_bo(device, "scratch", size,
-                                         ANV_BO_ALLOC_32BIT_ADDRESS |
-                                         ANV_BO_ALLOC_LOCAL_MEM,
+                                         alloc_flags,
                                          0 /* explicit_address */,
                                          &bo);
    if (result != VK_SUCCESS)

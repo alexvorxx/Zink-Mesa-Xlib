@@ -15,7 +15,7 @@ git submodule update --init
 # Apply all crosvm patches for Mesa CI
 git am "$SCRIPT_DIR"/.gitlab-ci/container/build-crosvm_*.patch
 
-VIRGLRENDERER_VERSION=dd301caf7e05ec9c09634fb7872067542aad89b7
+VIRGLRENDERER_VERSION=dd19a0f352c06a8c9d6859d026438f7327dec3ec
 rm -rf third_party/virglrenderer
 git clone --single-branch -b master --no-checkout https://gitlab.freedesktop.org/virgl/virglrenderer.git third_party/virglrenderer
 pushd third_party/virglrenderer

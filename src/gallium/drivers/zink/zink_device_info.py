@@ -63,6 +63,7 @@ EXTENSIONS = [
         required=True),
     Extension("VK_KHR_maintenance2"),
     Extension("VK_KHR_maintenance3"),
+    Extension("VK_KHR_maintenance4", alias="maint4", features=True),
     Extension("VK_KHR_external_memory"),
     Extension("VK_KHR_external_memory_fd"),
     Extension("VK_KHR_vulkan_memory_model"),

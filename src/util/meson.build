@@ -159,6 +159,8 @@ files_mesa_util = files(
   'indices/u_indices_priv.h',
   'indices/u_primconvert.c',
   'indices/u_primconvert.h',
+  'mesa_cache_db.c',
+  'mesa_cache_db.h',
 )
 
 files_drirc = files('00-mesa-defaults.conf')

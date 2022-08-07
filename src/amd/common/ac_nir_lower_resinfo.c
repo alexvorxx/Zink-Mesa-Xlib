@@ -180,6 +180,7 @@ lower_query_size(nir_builder *b, nir_ssa_def *desc, nir_src *lod,
    case GLSL_SAMPLER_DIM_2D:
    case GLSL_SAMPLER_DIM_MS:
    case GLSL_SAMPLER_DIM_RECT:
+   case GLSL_SAMPLER_DIM_EXTERNAL:
       result = is_array ? nir_vec3(b, width, height, layers) : nir_vec2(b, width, height);
       break;
    case GLSL_SAMPLER_DIM_3D:

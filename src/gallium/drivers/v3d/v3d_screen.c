@@ -732,6 +732,7 @@ static const nir_shader_compiler_options v3d_nir_options = {
         .lower_int64_options = nir_lower_imul_2x32_64,
         .has_fsub = true,
         .has_isub = true,
+        .lower_mul_high = true,
         .divergence_analysis_options =
                 nir_divergence_multiple_workgroup_per_compute_subgroup,
         /* This will enable loop unrolling in the state tracker so we won't

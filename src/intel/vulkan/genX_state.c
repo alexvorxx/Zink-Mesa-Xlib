@@ -224,6 +224,8 @@ init_common_queue_state(struct anv_queue *queue, struct anv_batch *batch)
       sba.BindlessSamplerStateMOCS = mocs;
       sba.BindlessSamplerStateBaseAddressModifyEnable = true;
       sba.BindlessSamplerStateBufferSize = 0;
+
+      sba.L1CacheControl = L1CC_WB;
    }
 #endif
 }

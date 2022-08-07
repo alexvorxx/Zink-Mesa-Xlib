@@ -400,7 +400,7 @@ reset_qbo(struct zink_query *q)
 static void
 query_pool_get_range(struct zink_context *ctx, struct zink_query *q)
 {
-   bool is_timestamp = q->type == PIPE_QUERY_TIMESTAMP || q->type == PIPE_QUERY_TIMESTAMP_DISJOINT;
+   bool is_timestamp = q->type == PIPE_QUERY_TIMESTAMP;
    struct zink_query_start *start;
    int num_queries = get_num_queries(q);
    if (!is_timestamp || get_num_starts(q) == 0) {
@@ -452,7 +452,7 @@ zink_create_query(struct pipe_context *pctx,
 
    query->index = index;
    query->type = query_type;
-   if (query->type == PIPE_QUERY_GPU_FINISHED)
+   if (query->type == PIPE_QUERY_GPU_FINISHED || query->type == PIPE_QUERY_TIMESTAMP_DISJOINT)
       return (struct pipe_query *)query;
    query->vkqtype = convert_query_type(screen, query_type, &query->precise);
    if (query->vkqtype == -1)
@@ -637,7 +637,7 @@ get_query_result(struct pipe_context *pctx,
    struct pipe_transfer *xfer[PIPE_MAX_VERTEX_STREAMS] = { 0 };
    LIST_FOR_EACH_ENTRY(qbo, &query->buffers, list) {
       uint64_t *results[PIPE_MAX_VERTEX_STREAMS] = { NULL, NULL };
-      bool is_timestamp = query->type == PIPE_QUERY_TIMESTAMP || query->type == PIPE_QUERY_TIMESTAMP_DISJOINT;
+      bool is_timestamp = query->type == PIPE_QUERY_TIMESTAMP;
       if (!qbo->num_results)
          continue;
 
@@ -785,7 +785,7 @@ update_qbo(struct zink_context *ctx, struct zink_query *q)
 {
    struct zink_query_buffer *qbo = q->curr_qbo;
    struct zink_query_start *start = util_dynarray_top_ptr(&q->starts, struct zink_query_start);
-   bool is_timestamp = q->type == PIPE_QUERY_TIMESTAMP || q->type == PIPE_QUERY_TIMESTAMP_DISJOINT;
+   bool is_timestamp = q->type == PIPE_QUERY_TIMESTAMP;
    /* timestamp queries just write to offset 0 always */
    int num_queries = get_num_queries(q);
    for (unsigned i = 0; i < num_queries; i++) {
@@ -817,6 +817,9 @@ static void
 begin_query(struct zink_context *ctx, struct zink_batch *batch, struct zink_query *q)
 {
    VkQueryControlFlags flags = 0;
+
+   if (q->type == PIPE_QUERY_TIMESTAMP_DISJOINT)
+      return;
 
    update_query_id(ctx, q);
    q->predicate_dirty = true;
@@ -922,6 +925,9 @@ static void check_update(struct zink_context *ctx, struct zink_query *q)
 static void
 end_query(struct zink_context *ctx, struct zink_batch *batch, struct zink_query *q)
 {
+   if (q->type == PIPE_QUERY_TIMESTAMP_DISJOINT)
+      return;
+
    ASSERTED struct zink_query_buffer *qbo = q->curr_qbo;
    assert(qbo);
    assert(!is_time_query(q));
@@ -971,6 +977,9 @@ zink_end_query(struct pipe_context *pctx,
    struct zink_query *query = (struct zink_query *)q;
    struct zink_batch *batch = &ctx->batch;
 
+   if (query->type == PIPE_QUERY_TIMESTAMP_DISJOINT)
+      return true;
+
    if (query->type == PIPE_QUERY_GPU_FINISHED) {
       pctx->flush(pctx, &query->fence, PIPE_FLUSH_DEFERRED);
       return true;
@@ -1007,6 +1016,12 @@ zink_get_query_result(struct pipe_context *pctx,
 {
    struct zink_query *query = (void*)q;
    struct zink_context *ctx = zink_context(pctx);
+
+   if (query->type == PIPE_QUERY_TIMESTAMP_DISJOINT) {
+      result->timestamp_disjoint.frequency = zink_screen(pctx->screen)->info.props.limits.timestampPeriod * 1000000.0;
+      result->timestamp_disjoint.disjoint = false;
+      return true;
+   }
 
    if (query->type == PIPE_QUERY_GPU_FINISHED) {
       struct pipe_screen *screen = pctx->screen;

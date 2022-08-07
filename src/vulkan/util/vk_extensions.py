@@ -133,7 +133,8 @@ def init_exts_from_xml(xml, extensions, platform_defines):
 
 # Mapping between extension name and the android version in which the extension
 # was whitelisted in Android CTS's dEQP-VK.info.device_extensions and
-# dEQP-VK.api.info.android.no_unknown_extensions.
+# dEQP-VK.api.info.android.no_unknown_extensions, excluding those blocked by
+# android.graphics.cts.VulkanFeaturesTest#testVulkanBlockedExtensions.
 ALLOWED_ANDROID_VERSION = {
     # checkInstanceExtensions on oreo-cts-release
     "VK_KHR_surface": 26,
@@ -212,7 +213,8 @@ ALLOWED_ANDROID_VERSION = {
     "VK_KHR_spirv_1_4": 30,
     "VK_KHR_pipeline_executable_properties": 30,
     "VK_KHR_shader_clock": 30,
-    "VK_KHR_performance_query": 30,
+    # blocked by testVulkanBlockedExtensions
+    # "VK_KHR_performance_query": 30,
     "VK_KHR_shader_non_semantic_info": 30,
     "VK_KHR_copy_commands2": 30,
     # on android12-tests-release

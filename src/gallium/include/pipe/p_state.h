@@ -934,7 +934,7 @@ struct pipe_grid_info
     * Will be used to initialize the INPUT resource, and it should point to a
     * buffer of at least pipe_compute_state::req_input_mem bytes.
     */
-   void *input;
+   const void *input;
 
    /**
     * Grid number of dimensions, 1-3, e.g. the work_dim parameter passed to

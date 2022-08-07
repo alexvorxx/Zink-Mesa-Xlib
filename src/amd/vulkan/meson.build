@@ -31,6 +31,7 @@ radv_entrypoints = custom_target(
 )
 
 libradv_files = files(
+  'bvh/bvh.h',
   'layers/radv_metro_exodus.c',
   'layers/radv_sqtt_layer.c',
   'winsys/null/radv_null_bo.c',
@@ -125,6 +126,8 @@ endif
 subdir('radix_sort')
 libradv_files += radix_sort_files
 
+subdir('bvh')
+
 radv_deps = []
 radv_flags = cc.get_supported_arguments(['-Wimplicit-fallthrough', '-Wshadow'])
 
@@ -161,7 +164,7 @@ endif
 
 libvulkan_radeon = shared_library(
   'vulkan_radeon',
-  [libradv_files, radv_entrypoints, sha1_h, radix_sort_spv],
+  [libradv_files, radv_entrypoints, sha1_h, radix_sort_spv, bvh_spv],
   vs_module_defs : vulkan_api_def,
   include_directories : [
     inc_include, inc_src, inc_mapi, inc_mesa, inc_gallium, inc_gallium_aux, inc_amd, inc_amd_common, inc_amd_common_llvm, inc_compiler, inc_util,

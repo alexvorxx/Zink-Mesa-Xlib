@@ -8,6 +8,17 @@ MINIO_ARGS="--credentials=/tmp/.minio_credentials"
 RESULTS=$(realpath -s "$PWD"/results)
 mkdir -p "$RESULTS"
 
+# WINE
+PATH="/opt/wine-stable/bin/:$PATH" # WineHQ path
+export WINEPREFIX="/dxvk-wine64" # hardcode DXVK for now
+
+# Set environment for DXVK.
+export DXVK_LOG_LEVEL="info"
+export DXVK_LOG="$RESULTS/dxvk"
+[ -d "$DXVK_LOG" ] || mkdir -pv "$DXVK_LOG"
+export DXVK_STATE_CACHE=0
+
+
 # Set up the driver environment.
 # Modifiying here directly LD_LIBRARY_PATH may cause problems when
 # using a command wrapper. Hence, we will just set it when running the
@@ -36,6 +47,10 @@ quiet() {
 
 # Set environment for apitrace executable.
 export PATH="/apitrace/build:$PATH"
+
+export PIGLIT_REPLAY_WINE_BINARY=wine64
+export PIGLIT_REPLAY_WINE_APITRACE_BINARY="/apitrace-msvc-win64/bin/apitrace.exe"
+export PIGLIT_REPLAY_WINE_D3DRETRACE_BINARY="/apitrace-msvc-win64/bin/d3dretrace.exe"
 
 # Our rootfs may not have "less", which apitrace uses during
 # apitrace dump
