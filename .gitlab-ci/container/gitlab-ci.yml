@@ -409,7 +409,7 @@ windows_build_vs2019:
     - !reference [.build-rules, rules]
   variables:
     MESA_IMAGE_PATH: &windows_build_image_path ${WINDOWS_X64_BUILD_PATH}
-    MESA_IMAGE_TAG: &windows_build_image_tag ${WINDOWS_X64_BUILD_TAG}
+    MESA_IMAGE_TAG: &windows_build_image_tag ${MESA_BASE_IMAGE_TAG}--${WINDOWS_X64_BUILD_TAG}
     DOCKERFILE: Dockerfile_build
     MESA_BASE_IMAGE_PATH: *windows_vs_image_path
     MESA_BASE_IMAGE_TAG: *windows_vs_image_tag
@@ -429,7 +429,7 @@ windows_test_vs2019:
     - !reference [.build-rules, rules]
   variables:
     MESA_IMAGE_PATH: &windows_test_image_path ${WINDOWS_X64_TEST_PATH}
-    MESA_IMAGE_TAG: &windows_test_image_tag ${WINDOWS_X64_BUILD_TAG}--${WINDOWS_X64_TEST_TAG}
+    MESA_IMAGE_TAG: &windows_test_image_tag ${MESA_BASE_IMAGE_TAG}--${WINDOWS_X64_TEST_TAG}
     DOCKERFILE: Dockerfile_test
     MESA_BASE_IMAGE_PATH: *windows_vs_image_path
     MESA_BASE_IMAGE_TAG: *windows_vs_image_tag
@@ -445,6 +445,7 @@ windows_test_vs2019:
   variables:
     MESA_IMAGE_PATH: *windows_build_image_path
     MESA_IMAGE_TAG: *windows_build_image_tag
+    MESA_BASE_IMAGE_TAG: *windows_vs_image_tag
   needs:
     - windows_build_vs2019
 
@@ -456,3 +457,4 @@ windows_test_vs2019:
   variables:
     MESA_IMAGE_PATH: *windows_test_image_path
     MESA_IMAGE_TAG: *windows_test_image_tag
+    MESA_BASE_IMAGE_TAG: *windows_vs_image_tag

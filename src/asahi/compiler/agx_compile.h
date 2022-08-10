@@ -84,9 +84,71 @@ struct agx_push {
 #define AGX_MAX_PUSH_RANGES (16)
 #define AGX_MAX_VARYINGS (32)
 
+struct agx_varyings_vs {
+   /* The first index used for FP16 varyings. Indices less than this are treated
+    * as FP32. This may require remapping slots to guarantee.
+    */
+   unsigned base_index_fp16;
+
+   /* The total number of vertex shader indices output. Must be at least
+    * base_index_fp16.
+    */
+   unsigned nr_index;
+
+   /* If the slot is written, this is the base index that the first component
+    * of the slot is written to.  The next components are found in the next
+    * indices. If less than base_index_fp16, this is a 32-bit slot (with 4
+    * indices for the 4 components), else this is a 16-bit slot (with 2
+    * indices for the 4 components). This must be less than nr_index.
+    *
+    * If the slot is not written, this must be ~0.
+    */
+   unsigned slots[VARYING_SLOT_MAX];
+};
+
+/* Conservative bound */
+#define AGX_MAX_CF_BINDINGS (VARYING_SLOT_MAX)
+
+struct agx_varyings_fs {
+   /* Number of coefficient registers used */
+   unsigned nr_cf;
+
+   /* Number of coefficient register bindings */
+   unsigned nr_bindings;
+
+   /* Whether gl_FragCoord.z is read */
+   bool reads_z;
+
+   /* Coefficient register bindings */
+   struct {
+      /* Base coefficient register */
+      unsigned cf_base;
+
+      /* Slot being bound */
+      gl_varying_slot slot;
+
+      /* First component bound.
+       *
+       * Must be 2 (Z) or 3 (W) if slot == VARYING_SLOT_POS.
+       */
+      unsigned offset : 2;
+
+      /* Number of components bound */
+      unsigned count : 3;
+
+      /* Is smooth shading enabled? If false, flat shading is used */
+      bool smooth : 1;
+
+      /* Perspective correct interpolation */
+      bool perspective : 1;
+   } bindings[AGX_MAX_CF_BINDINGS];
+};
+
 struct agx_varyings {
-   unsigned nr_descs, nr_slots;
-   struct agx_varying_packed packed[AGX_MAX_VARYINGS];
+   union {
+      struct agx_varyings_vs vs;
+      struct agx_varyings_fs fs;
+   };
 };
 
 struct agx_shader_info {
@@ -206,6 +268,8 @@ static const nir_shader_compiler_options agx_nir_options = {
    .lower_fmod = true,
    .lower_ifind_msb = true,
    .lower_find_lsb = true,
+   .lower_uadd_carry = true,
+   .lower_usub_borrow = true,
    .lower_scmp = true,
    .lower_isign = true,
    .lower_fsign = true,
@@ -213,6 +277,8 @@ static const nir_shader_compiler_options agx_nir_options = {
    .lower_fdph = true,
    .lower_ffract = true,
    .lower_pack_split = true,
+   .lower_extract_byte = true,
+   .lower_extract_word = true,
    .lower_insert_byte = true,
    .lower_insert_word = true,
    .lower_cs_local_index_to_id = true,

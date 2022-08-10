@@ -90,8 +90,8 @@ endif
 # Non-upstream headers
 if with_egl
   install_headers(
+    'EGL/eglext_angle.h',
     'EGL/eglmesaext.h',
-    'EGL/eglextchromium.h',
     subdir : 'EGL',
   )
 endif

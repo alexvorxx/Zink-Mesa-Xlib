@@ -192,6 +192,19 @@ Core Mesa environment variables
    not they ever see a wait-before-signal condition.
 :envvar:`MESA_LOADER_DRIVER_OVERRIDE`
    chooses a different driver binary such as ``etnaviv`` or ``zink``.
+:envvar:`DRI_PRIME`
+   the default GPU is the one used by Wayland/Xorg or the one connected to a
+   display. This variable allows to select a different GPU. It applies to OpenGL
+   and Vulkan (in this case "select" means the GPU will be first in the reported
+   physical devices list). The supported syntaxes are:
+
+   - ``DRI_PRIME=1``: selects the first non-default GPU.
+   - ``DRI_PRIME=pci-0000_02_00_0``: selects the GPU connected to this PCIe bus
+   - ``DRI_PRIME=vendor_id:device_id``: selects the first GPU matching these ids
+
+   .. note::
+
+      ``lspci -nn | grep VGA`` can be used to know the PCIe bus or ids to use.
 
 NIR passes environment variables
 --------------------------------

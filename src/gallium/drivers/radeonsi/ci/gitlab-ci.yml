@@ -1,3 +1,27 @@
+.radeonsi-raven-test:amd64:
+  extends:
+    - .radeonsi-rules
+  variables:
+    BOOT_METHOD: depthcharge
+    DRIVER_NAME: radeonsi
+    DTB: ""
+    GPU_VERSION: radeonsi-raven
+    HWCI_FREQ_MAX: "true"
+    HWCI_KERNEL_MODULES: amdgpu
+    KERNEL_IMAGE_TYPE: ""
+    VK_DRIVER: radeon
+    DEVICE_TYPE: lenovo-TPad-C13-Yoga-zork
+    RUNNER_TAG: mesa-ci-x86-64-lava-lenovo-TPad-C13-Yoga-zork
+
+radeonsi-raven-skqp:amd64:
+  extends:
+    - .lava-test:amd64
+    - .radeonsi-raven-test:amd64
+    - .skqp-test
+  variables:
+    # Possible skqp backends: gl, gles, unitTest and vk
+    SKQP_BACKENDS: gl gles vk unitTest  # space separated values
+
 .radeonsi-stoney-test:amd64:
   extends:
     - .radeonsi-rules
@@ -32,20 +56,19 @@ radeonsi-stoney-traces:amd64:
     PIGLIT_REPLAY_EXTRA_ARGS: --keep-image
     RUNNER_TAG: mesa-ci-x86-64-lava-hp-11A-G6-EE-grunt
 
-radeonsi-stoney-piglit-gl:amd64:
+radeonsi-raven-piglit-gl:amd64:
   extends:
     - .lava-piglit:amd64
-    - .radeonsi-stoney-test:amd64
+    - .radeonsi-raven-test:amd64
   variables:
-    PIGLIT_FRACTION: 4
     PIGLIT_PLATFORM: mixed_glx_egl
     PIGLIT_PROFILES: quick_gl
     HWCI_START_XORG: 1
 
-radeonsi-stoney-va:amd64:
+radeonsi-raven-va:amd64:
   extends:
     - .lava-test:amd64
-    - .radeonsi-stoney-test:amd64
+    - .radeonsi-raven-test:amd64
     - .radeonsi-vaapi-rules
   variables:
     HWCI_TEST_SCRIPT: "/install/gtest-runner.sh"
@@ -60,4 +83,4 @@ radeonsi-stoney-va:amd64:
     # A whole run would be about 25 minutes currently.  Fixing
     # https://github.com/intel/libva-utils/issues/247 and
     # https://github.com/google/googletest/issues/3614 would probably help.
-    GTEST_FRACTION: 5
+    GTEST_FRACTION: 2

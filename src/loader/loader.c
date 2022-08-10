@@ -240,8 +240,11 @@ static char *loader_get_dri_config_device_id(void)
                       ARRAY_SIZE(__driConfigOptionsLoader));
    driParseConfigFiles(&userInitOptions, &defaultInitOptions, 0,
                        "loader", NULL, NULL, NULL, 0, NULL, 0);
-   if (driCheckOption(&userInitOptions, "device_id", DRI_STRING))
-      prime = strdup(driQueryOptionstr(&userInitOptions, "device_id"));
+   if (driCheckOption(&userInitOptions, "device_id", DRI_STRING)) {
+      char *opt = driQueryOptionstr(&userInitOptions, "device_id");
+      if (*opt)
+         prime = strdup(opt);
+   }
    driDestroyOptionCache(&userInitOptions);
    driDestroyOptionInfo(&defaultInitOptions);
 
@@ -325,6 +328,8 @@ int loader_get_user_preferred_fd(int default_fd, bool *different_device)
    char *default_tag, *prime = NULL;
    drmDevicePtr devices[MAX_DRM_DEVICES];
    int i, num_devices, fd = -1;
+   bool prime_is_vid_did;
+   uint16_t vendor_id, device_id;
 
    if (dri_prime)
       prime = strdup(dri_prime);
@@ -336,6 +341,8 @@ int loader_get_user_preferred_fd(int default_fd, bool *different_device)
    if (prime == NULL) {
       *different_device = false;
       return default_fd;
+   } else {
+      prime_is_vid_did = sscanf(prime, "%hx:%hx", &vendor_id, &device_id) == 2;
    }
 
    default_tag = drm_get_id_path_tag_for_fd(default_fd);
@@ -350,17 +357,27 @@ int loader_get_user_preferred_fd(int default_fd, bool *different_device)
       if (!(devices[i]->available_nodes & 1 << DRM_NODE_RENDER))
          continue;
 
-      /* two formats of DRI_PRIME are supported:
+      /* three formats of DRI_PRIME are supported:
        * "1": choose any other card than the card used by default.
        * id_path_tag: (for example "pci-0000_02_00_0") choose the card
        * with this id_path_tag.
+       * vendor_id:device_id
        */
       if (!strcmp(prime,"1")) {
          if (drm_device_matches_tag(devices[i], default_tag))
             continue;
       } else {
-         if (!drm_device_matches_tag(devices[i], prime))
-            continue;
+         if (prime_is_vid_did && devices[i]->bustype == DRM_BUS_PCI &&
+             devices[i]->deviceinfo.pci->vendor_id == vendor_id &&
+             devices[i]->deviceinfo.pci->device_id == device_id) {
+            /* Update prime for the "different_device"
+             * determination below. */
+            free(prime);
+            prime = drm_construct_id_path_tag(devices[i]);
+         } else {
+            if (!drm_device_matches_tag(devices[i], prime))
+               continue;
+         }
       }
 
       fd = loader_open_device(devices[i]->nodes[DRM_NODE_RENDER]);

@@ -2794,10 +2794,20 @@ spec/ext_framebuffer_multisample/blit-multiple-render-targets 32: skip
 spec/ext_framebuffer_multisample/clear 32 color: skip
 spec/ext_framebuffer_multisample/clear 32 depth: skip
 spec/ext_framebuffer_multisample/clear 32 stencil: skip
+spec/ext_framebuffer_multisample/clip-and-scissor-blit 16 downsample: fail
+spec/ext_framebuffer_multisample/clip-and-scissor-blit 16 msaa: fail
+spec/ext_framebuffer_multisample/clip-and-scissor-blit 2 downsample: fail
+spec/ext_framebuffer_multisample/clip-and-scissor-blit 2 msaa: fail
 spec/ext_framebuffer_multisample/clip-and-scissor-blit 32 downsample: skip
 spec/ext_framebuffer_multisample/clip-and-scissor-blit 32 msaa: skip
 spec/ext_framebuffer_multisample/clip-and-scissor-blit 32 normal: skip
 spec/ext_framebuffer_multisample/clip-and-scissor-blit 32 upsample: skip
+spec/ext_framebuffer_multisample/clip-and-scissor-blit 4 downsample: fail
+spec/ext_framebuffer_multisample/clip-and-scissor-blit 4 msaa: fail
+spec/ext_framebuffer_multisample/clip-and-scissor-blit 6 downsample: fail
+spec/ext_framebuffer_multisample/clip-and-scissor-blit 6 msaa: fail
+spec/ext_framebuffer_multisample/clip-and-scissor-blit 8 downsample: fail
+spec/ext_framebuffer_multisample/clip-and-scissor-blit 8 msaa: fail
 spec/ext_framebuffer_multisample/draw-buffers-alpha-to-coverage 16: fail
 spec/ext_framebuffer_multisample/draw-buffers-alpha-to-coverage 2: fail
 spec/ext_framebuffer_multisample/draw-buffers-alpha-to-coverage 32: skip
@@ -3511,8 +3521,8 @@ wgl/wgl-sanity: skip
 summary:
        name:  results
        ----  --------
-       pass:    17873
-       fail:     2035
+       pass:    17863
+       fail:     2045
       crash:       11
        skip:     1445
     timeout:        0

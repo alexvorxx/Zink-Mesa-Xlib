@@ -237,6 +237,7 @@ tc_batch_execute(void *job, UNUSED void *gdata, int thread_index)
    tc_clear_driver_thread(batch->tc);
    tc_batch_check(batch);
    batch->num_total_slots = 0;
+   batch->last_mergeable_call = NULL;
 }
 
 static void
@@ -295,6 +296,7 @@ tc_add_sized_call(struct threaded_context *tc, enum tc_call_id id,
       tc_batch_flush(tc);
       next = &tc->batch_slots[tc->next];
       tc_assert(next->num_total_slots == 0);
+      tc_assert(next->last_mergeable_call == NULL);
    }
 
    tc_assert(util_queue_fence_is_signalled(&next->fence));
@@ -322,6 +324,56 @@ tc_add_sized_call(struct threaded_context *tc, enum tc_call_id id,
 #define tc_add_slot_based_call(tc, execute, type, num_slots) \
    ((struct type*)tc_add_sized_call(tc, execute, \
                                     call_size_with_slots(type, num_slots)))
+
+/* Returns the last mergeable call that was added to the unflushed
+ * batch, or NULL if the address of that call is not currently known
+ * or no such call exists in the unflushed batch.
+ */
+static struct tc_call_base *
+tc_get_last_mergeable_call(struct threaded_context *tc)
+{
+   struct tc_batch *batch = &tc->batch_slots[tc->next];
+   struct tc_call_base *call = batch->last_mergeable_call;
+
+   tc_assert(call == NULL || call->num_slots <= batch->num_total_slots);
+
+   if (call && (uint64_t *)call == &batch->slots[batch->num_total_slots - call->num_slots])
+      return call;
+   else
+      return NULL;
+}
+
+/* Increases the size of the last call in the unflushed batch to the
+ * given number of slots, if possible, without changing the call's data.
+ */
+static bool
+tc_enlarge_last_mergeable_call(struct threaded_context *tc, unsigned desired_num_slots)
+{
+   struct tc_batch *batch = &tc->batch_slots[tc->next];
+   struct tc_call_base *call = tc_get_last_mergeable_call(tc);
+
+   tc_assert(call);
+   tc_assert(desired_num_slots >= call->num_slots);
+
+   unsigned added_slots = desired_num_slots - call->num_slots;
+
+   if (unlikely(batch->num_total_slots + added_slots > TC_SLOTS_PER_BATCH))
+      return false;
+
+   batch->num_total_slots += added_slots;
+   call->num_slots += added_slots;
+
+   return true;
+}
+
+static void
+tc_mark_call_mergeable(struct threaded_context *tc, struct tc_call_base *call)
+{
+   struct tc_batch *batch = &tc->batch_slots[tc->next];
+   tc_assert(call->num_slots <= batch->num_total_slots);
+   tc_assert((uint64_t *)call == &batch->slots[batch->num_total_slots - call->num_slots]);
+   batch->last_mergeable_call = call;
+}
 
 static bool
 tc_is_sync(struct threaded_context *tc)
@@ -2558,6 +2610,20 @@ tc_call_buffer_subdata(struct pipe_context *pipe, void *call, uint64_t *last)
    return p->base.num_slots;
 }
 
+static bool
+is_mergeable_buffer_subdata(const struct tc_call_base *previous_call,
+                            unsigned usage, unsigned offset,
+                            struct pipe_resource *resource)
+{
+   if (!previous_call || previous_call->call_id != TC_CALL_buffer_subdata)
+      return false;
+
+   struct tc_buffer_subdata *subdata = (struct tc_buffer_subdata *)previous_call;
+
+   return subdata->usage == usage && subdata->resource == resource
+          && (subdata->offset + subdata->size) == offset;
+}
+
 static void
 tc_buffer_subdata(struct pipe_context *_pipe,
                   struct pipe_resource *resource,
@@ -2601,6 +2667,32 @@ tc_buffer_subdata(struct pipe_context *_pipe,
 
    util_range_add(&tres->b, &tres->valid_buffer_range, offset, offset + size);
 
+   /* We can potentially merge this subdata call with the previous one (if any),
+    * if the application does a whole-buffer upload piecewise. */
+   {
+      struct tc_call_base *last_call = tc_get_last_mergeable_call(tc);
+      struct tc_buffer_subdata *merge_dest = (struct tc_buffer_subdata *)last_call;
+
+      if (is_mergeable_buffer_subdata(last_call, usage, offset, resource) &&
+         tc_enlarge_last_mergeable_call(tc, call_size_with_slots(tc_buffer_subdata, merge_dest->size + size))) {
+         memcpy(merge_dest->slot + merge_dest->size, data, size);
+         merge_dest->size += size;
+
+         /* TODO: We *could* do an invalidate + upload here if we detect that
+          * the merged subdata call overwrites the entire buffer. However, that's
+          * a little complicated since we can't add further calls to our batch
+          * until we have removed the merged subdata call, which means that
+          * calling tc_invalidate_buffer before we have removed the call will
+          * blow things up.
+          * 
+          * Just leave a large, merged subdata call in the batch for now, which is
+          * at least better than tons of tiny subdata calls.
+          */
+
+         return;
+      }
+   }
+
    /* The upload is small. Enqueue it. */
    struct tc_buffer_subdata *p =
       tc_add_slot_based_call(tc, TC_CALL_buffer_subdata, tc_buffer_subdata, size);
@@ -2614,6 +2706,8 @@ tc_buffer_subdata(struct pipe_context *_pipe,
    p->offset = offset;
    p->size = size;
    memcpy(p->slot, data, size);
+
+   tc_mark_call_mergeable(tc, &p->base);
 }
 
 struct tc_texture_subdata {

@@ -148,7 +148,15 @@ build_depth_stencil_resolve_compute_shader(struct radv_device *dev, int samples,
    output_img->data.descriptor_set = 0;
    output_img->data.binding = 1;
 
-   nir_ssa_def *img_coord = get_global_ids(&b, 3);
+   nir_ssa_def *global_id = get_global_ids(&b, 3);
+
+   nir_ssa_def *offset = nir_load_push_constant(&b, 2, 32, nir_imm_int(&b, 0), .range = 8);
+
+   nir_ssa_def *resolve_coord = nir_iadd(&b, nir_channels(&b, global_id, 0x3), offset);
+
+   nir_ssa_def *img_coord = nir_vec3(&b, nir_channel(&b, resolve_coord, 0),
+                                         nir_channel(&b, resolve_coord, 1),
+                                         nir_channel(&b, global_id, 2));
 
    nir_ssa_def *input_img_deref = &nir_build_deref_var(&b, input_img)->dest.ssa;
 
@@ -565,8 +573,9 @@ emit_resolve(struct radv_cmd_buffer *cmd_buffer, struct radv_image_view *src_ivi
 
 static void
 emit_depth_stencil_resolve(struct radv_cmd_buffer *cmd_buffer, struct radv_image_view *src_iview,
-                           struct radv_image_view *dest_iview, const VkExtent3D *resolve_extent,
-                           VkImageAspectFlags aspects, VkResolveModeFlagBits resolve_mode)
+                           struct radv_image_view *dest_iview, const VkOffset2D *resolve_offset,
+                           const VkExtent3D *resolve_extent, VkImageAspectFlags aspects,
+                           VkResolveModeFlagBits resolve_mode)
 {
    struct radv_device *device = cmd_buffer->device;
    const uint32_t samples = src_iview->image->info.samples;
@@ -641,6 +650,12 @@ emit_depth_stencil_resolve(struct radv_cmd_buffer *cmd_buffer, struct radv_image
 
    radv_CmdBindPipeline(radv_cmd_buffer_to_handle(cmd_buffer), VK_PIPELINE_BIND_POINT_COMPUTE,
                         *pipeline);
+
+   uint32_t push_constants[2] = { resolve_offset->x, resolve_offset->y };
+
+   radv_CmdPushConstants(radv_cmd_buffer_to_handle(cmd_buffer),
+                         device->meta_state.resolve_compute.p_layout, VK_SHADER_STAGE_COMPUTE_BIT,
+                         0, sizeof(push_constants), push_constants);
 
    radv_unaligned_dispatch(cmd_buffer, resolve_extent->width, resolve_extent->height,
                            resolve_extent->depth);
@@ -831,10 +846,10 @@ radv_depth_stencil_resolve_subpass_cs(struct radv_cmd_buffer *cmd_buffer,
                                       VkImageAspectFlags aspects,
                                       VkResolveModeFlagBits resolve_mode)
 {
-   struct vk_framebuffer *fb = cmd_buffer->state.framebuffer;
    const struct radv_subpass *subpass = cmd_buffer->state.subpass;
+   uint32_t layer_count = cmd_buffer->state.framebuffer->layers;
+   VkRect2D resolve_area = cmd_buffer->state.render_area;
    struct radv_meta_saved_state saved_state;
-   uint32_t layer_count = fb->layers;
 
    if (subpass->view_mask)
       layer_count = util_last_bit(subpass->view_mask);
@@ -903,9 +918,9 @@ radv_depth_stencil_resolve_subpass_cs(struct radv_cmd_buffer *cmd_buffer,
                         },
                         0, NULL);
 
-   emit_depth_stencil_resolve(cmd_buffer, &tsrc_iview, &tdst_iview,
-                              &(VkExtent3D){fb->width, fb->height, layer_count}, aspects,
-                              resolve_mode);
+   emit_depth_stencil_resolve(cmd_buffer, &tsrc_iview, &tdst_iview, &resolve_area.offset,
+                              &(VkExtent3D){resolve_area.extent.width, resolve_area.extent.height, layer_count},
+                              aspects, resolve_mode);
 
    cmd_buffer->state.flush_bits |=
       RADV_CMD_FLAG_CS_PARTIAL_FLUSH | RADV_CMD_FLAG_INV_VCACHE |

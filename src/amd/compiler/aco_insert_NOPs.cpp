@@ -150,7 +150,7 @@ struct NOP_ctx_gfx6 {
 };
 
 struct NOP_ctx_gfx10 {
-   bool has_VOPC = false;
+   bool has_VOPC_write_exec = false;
    bool has_nonVALU_exec_read = false;
    bool has_VMEM = false;
    bool has_branch_after_VMEM = false;
@@ -163,7 +163,7 @@ struct NOP_ctx_gfx10 {
 
    void join(const NOP_ctx_gfx10& other)
    {
-      has_VOPC |= other.has_VOPC;
+      has_VOPC_write_exec |= other.has_VOPC_write_exec;
       has_nonVALU_exec_read |= other.has_nonVALU_exec_read;
       has_VMEM |= other.has_VMEM;
       has_branch_after_VMEM |= other.has_branch_after_VMEM;
@@ -177,9 +177,10 @@ struct NOP_ctx_gfx10 {
 
    bool operator==(const NOP_ctx_gfx10& other)
    {
-      return has_VOPC == other.has_VOPC && has_nonVALU_exec_read == other.has_nonVALU_exec_read &&
-             has_VMEM == other.has_VMEM && has_branch_after_VMEM == other.has_branch_after_VMEM &&
-             has_DS == other.has_DS && has_branch_after_DS == other.has_branch_after_DS &&
+      return has_VOPC_write_exec == other.has_VOPC_write_exec &&
+             has_nonVALU_exec_read == other.has_nonVALU_exec_read && has_VMEM == other.has_VMEM &&
+             has_branch_after_VMEM == other.has_branch_after_VMEM && has_DS == other.has_DS &&
+             has_branch_after_DS == other.has_branch_after_DS &&
              has_NSA_MIMG == other.has_NSA_MIMG && has_writelane == other.has_writelane &&
              sgprs_read_by_VMEM == other.sgprs_read_by_VMEM &&
              sgprs_read_by_SMEM == other.sgprs_read_by_SMEM;
@@ -637,6 +638,8 @@ handle_instruction_gfx10(State& state, NOP_ctx_gfx10& ctx, aco_ptr<Instruction>&
 {
    // TODO: s_dcache_inv needs to be in it's own group on GFX10
 
+   Builder bld(state.program, &new_instructions);
+
    /* VMEMtoScalarWriteHazard
     * Handle EXEC/M0/SGPR write following a VMEM instruction without a VALU or "waitcnt vmcnt(0)"
     * in-between.
@@ -677,13 +680,14 @@ handle_instruction_gfx10(State& state, NOP_ctx_gfx10& ctx, aco_ptr<Instruction>&
    }
 
    /* VcmpxPermlaneHazard
-    * Handle any permlane following a VOPC instruction, insert v_mov between them.
+    * Handle any permlane following a VOPC instruction writing exec, insert v_mov between them.
     */
-   if (instr->isVOPC()) {
-      ctx.has_VOPC = true;
-   } else if (ctx.has_VOPC && (instr->opcode == aco_opcode::v_permlane16_b32 ||
-                               instr->opcode == aco_opcode::v_permlanex16_b32)) {
-      ctx.has_VOPC = false;
+   if (instr->isVOPC() && instr->definitions[0].physReg() == exec) {
+      /* we only need to check definitions[0] because since GFX10 v_cmpx only writes one dest */
+      ctx.has_VOPC_write_exec = true;
+   } else if (ctx.has_VOPC_write_exec && (instr->opcode == aco_opcode::v_permlane16_b32 ||
+                                          instr->opcode == aco_opcode::v_permlanex16_b32)) {
+      ctx.has_VOPC_write_exec = false;
 
       /* v_nop would be discarded by SQ, so use v_mov with the first operand of the permlane */
       aco_ptr<VOP1_instruction> v_mov{
@@ -692,7 +696,7 @@ handle_instruction_gfx10(State& state, NOP_ctx_gfx10& ctx, aco_ptr<Instruction>&
       v_mov->operands[0] = Operand(instr->operands[0].physReg(), v1);
       new_instructions.emplace_back(std::move(v_mov));
    } else if (instr->isVALU() && instr->opcode != aco_opcode::v_nop) {
-      ctx.has_VOPC = false;
+      ctx.has_VOPC_write_exec = false;
    }
 
    /* VcmpxExecWARHazard
@@ -760,33 +764,24 @@ handle_instruction_gfx10(State& state, NOP_ctx_gfx10& ctx, aco_ptr<Instruction>&
     * Handle VMEM/GLOBAL/SCRATCH->branch->DS and DS->branch->VMEM/GLOBAL/SCRATCH patterns.
     */
    if (instr->isVMEM() || instr->isGlobal() || instr->isScratch()) {
+      if (ctx.has_branch_after_DS)
+         bld.sopk(aco_opcode::s_waitcnt_vscnt, Definition(sgpr_null, s1), 0);
+      ctx.has_branch_after_VMEM = ctx.has_branch_after_DS = ctx.has_DS = false;
       ctx.has_VMEM = true;
-      ctx.has_branch_after_VMEM = false;
-      /* Mitigation for DS is needed only if there was already a branch after */
-      ctx.has_DS = ctx.has_branch_after_DS;
    } else if (instr->isDS()) {
+      if (ctx.has_branch_after_VMEM)
+         bld.sopk(aco_opcode::s_waitcnt_vscnt, Definition(sgpr_null, s1), 0);
+      ctx.has_branch_after_VMEM = ctx.has_branch_after_DS = ctx.has_VMEM = false;
       ctx.has_DS = true;
-      ctx.has_branch_after_DS = false;
-      /* Mitigation for VMEM is needed only if there was already a branch after */
-      ctx.has_VMEM = ctx.has_branch_after_VMEM;
    } else if (instr_is_branch(instr)) {
-      ctx.has_branch_after_VMEM = ctx.has_VMEM;
-      ctx.has_branch_after_DS = ctx.has_DS;
+      ctx.has_branch_after_VMEM |= ctx.has_VMEM;
+      ctx.has_branch_after_DS |= ctx.has_DS;
+      ctx.has_VMEM = ctx.has_DS = false;
    } else if (instr->opcode == aco_opcode::s_waitcnt_vscnt) {
       /* Only s_waitcnt_vscnt can mitigate the hazard */
       const SOPK_instruction& sopk = instr->sopk();
       if (sopk.definitions[0].physReg() == sgpr_null && sopk.imm == 0)
          ctx.has_VMEM = ctx.has_branch_after_VMEM = ctx.has_DS = ctx.has_branch_after_DS = false;
-   }
-   if ((ctx.has_VMEM && ctx.has_branch_after_DS) || (ctx.has_DS && ctx.has_branch_after_VMEM)) {
-      ctx.has_VMEM = ctx.has_branch_after_VMEM = ctx.has_DS = ctx.has_branch_after_DS = false;
-
-      /* Insert s_waitcnt_vscnt to mitigate the problem */
-      aco_ptr<SOPK_instruction> wait{
-         create_instruction<SOPK_instruction>(aco_opcode::s_waitcnt_vscnt, Format::SOPK, 0, 1)};
-      wait->definitions[0] = Definition(sgpr_null, s1);
-      wait->imm = 0;
-      new_instructions.emplace_back(std::move(wait));
    }
 
    /* NSAToVMEMBug
@@ -801,7 +796,7 @@ handle_instruction_gfx10(State& state, NOP_ctx_gfx10& ctx, aco_ptr<Instruction>&
       if (instr->isMUBUF() || instr->isMTBUF()) {
          uint32_t offset = instr->isMUBUF() ? instr->mubuf().offset : instr->mtbuf().offset;
          if (offset & 6)
-            Builder(state.program, &new_instructions).sopp(aco_opcode::s_nop, -1, 0);
+            bld.sopp(aco_opcode::s_nop, -1, 0);
       }
    }
 
@@ -813,7 +808,7 @@ handle_instruction_gfx10(State& state, NOP_ctx_gfx10& ctx, aco_ptr<Instruction>&
    } else if (ctx.has_writelane) {
       ctx.has_writelane = false;
       if (instr->isMIMG() && get_mimg_nsa_dwords(instr.get()) > 0)
-         Builder(state.program, &new_instructions).sopp(aco_opcode::s_nop, -1, 0);
+         bld.sopp(aco_opcode::s_nop, -1, 0);
    }
 }
 

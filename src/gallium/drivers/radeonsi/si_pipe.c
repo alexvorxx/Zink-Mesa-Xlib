@@ -221,6 +221,7 @@ static void si_destroy_context(struct pipe_context *context)
    si_resource_reference(&sctx->wait_mem_scratch_tmz, NULL);
    si_resource_reference(&sctx->small_prim_cull_info_buf, NULL);
    si_resource_reference(&sctx->pipeline_stats_query_buf, NULL);
+   si_resource_reference(&sctx->last_const_upload_buffer, NULL);
 
    if (sctx->cs_preamble_state)
       si_pm4_free_state(sctx, sctx->cs_preamble_state, ~0);

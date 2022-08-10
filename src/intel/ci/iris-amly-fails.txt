@@ -14,6 +14,3 @@ dEQP-GLES3.functional.texture.compressed.astc.void_extent_ldr.8x6,Fail
 dEQP-GLES3.functional.texture.compressed.astc.void_extent_ldr.8x8,Fail
 
 dEQP-EGL.functional.sharing.gles2.multithread.random.images.copyteximage2d.12,Crash
-
-# https://gitlab.freedesktop.org/mesa/mesa/-/merge_requests/17878
-KHR-Single-GL46.enhanced_layouts.xfb_all_stages,Crash

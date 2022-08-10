@@ -106,6 +106,9 @@ virtio_pipe_get_param(struct fd_pipe *pipe, enum fd_param_id param,
       return query_param(pipe, MSM_PARAM_FAULTS, value);
    case FD_SUSPEND_COUNT:
       return query_param(pipe, MSM_PARAM_SUSPENDS, value);
+   case FD_VA_SIZE:
+      *value = virtio_dev->caps.u.msm.va_size;
+      return 0;
    default:
       ERROR_MSG("invalid param id: %d", param);
       return -1;

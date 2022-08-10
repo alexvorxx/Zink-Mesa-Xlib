@@ -1,10 +1,10 @@
 ############### LAVA
-# Run three jobs in parallel each running 1/30th of the test suite
+# Run four jobs in parallel each running 1/40th of the test suite
 radv_stoney_vkcts:amd64:
   extends:
     - .lava-test:amd64
     - .radv-rules
-  parallel: 3
+  parallel: 4
   variables:
     DEQP_VER: vk
     DEQP_FRACTION: 10
@@ -115,6 +115,7 @@ radv_stoney_vkcts:amd64:
     FDO_CI_CONCURRENT: 8
     B2C_TIMEOUT_BOOT_MINUTES: 85
     B2C_TIMEOUT_OVERALL_MINUTES: 120
+    B2C_TIMEOUT_MINUTES: 3
     B2C_KERNEL_CMDLINE_EXTRAS: 'b2c.swap=16g'
   tags:
     - amdgpu:codename:VANGOGH

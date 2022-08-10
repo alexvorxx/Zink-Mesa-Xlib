@@ -58,9 +58,6 @@ struct agx_compiled_shader {
    /* Mapped executable memory */
    struct agx_bo *bo;
 
-   /* Varying descriptor (TODO: is this the right place?) */
-   uint64_t varyings;
-
    /* Metadata returned from the compiler */
    struct agx_shader_info info;
 };
@@ -135,6 +132,7 @@ struct asahi_shader_key {
    struct agx_shader_key base;
    struct agx_blend blend;
    unsigned nr_cbufs;
+   uint8_t clip_plane_enable;
    enum pipe_format rt_formats[PIPE_MAX_COLOR_BUFS];
 };
 
@@ -198,14 +196,14 @@ struct agx_sampler_state {
    struct pipe_sampler_state base;
 
    /* Prepared descriptor */
-   struct agx_bo *desc;
+   struct agx_sampler_packed desc;
 };
 
 struct agx_sampler_view {
    struct pipe_sampler_view base;
 
    /* Prepared descriptor */
-   struct agx_bo *desc;
+   struct agx_texture_packed desc;
 };
 
 struct agx_screen {

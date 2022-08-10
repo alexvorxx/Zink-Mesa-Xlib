@@ -15,10 +15,10 @@ variables:
    DEBIAN_X86_TEST_VK_TAG: "2022-08-04-deqp-runner"
 
    FEDORA_X86_BUILD_TAG: "2022-04-24-spirv-tools-5"
-   KERNEL_ROOTFS_TAG: "2022-08-06-deqp-runner"
+   KERNEL_ROOTFS_TAG: "2022-08-08-skqp"
 
    WINDOWS_X64_VS_PATH: "windows/x64_vs"
-   WINDOWS_X64_VS_TAG: "2022-06-15-vs-winsdk"
+   WINDOWS_X64_VS_TAG: "2022-08-04-graphics-tools"
 
    WINDOWS_X64_BUILD_PATH: "windows/x64_build"
    WINDOWS_X64_BUILD_TAG: "2022-06-15-vs-winsdk"

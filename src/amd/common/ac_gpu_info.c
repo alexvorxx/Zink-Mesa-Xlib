@@ -2008,3 +2008,26 @@ void ac_get_task_info(struct radeon_info *info,
    task_info->payload_ring_offset = ALIGN(task_info->draw_ring_offset + draw_ring_bytes, 256);
    task_info->bo_size_bytes = task_info->payload_ring_offset + payload_ring_bytes;
 }
+
+uint32_t ac_memory_ops_per_clock(uint32_t vram_type)
+{
+   switch (vram_type) {
+   case AMDGPU_VRAM_TYPE_UNKNOWN:
+      return 0;
+   case AMDGPU_VRAM_TYPE_DDR2:
+   case AMDGPU_VRAM_TYPE_DDR3:
+   case AMDGPU_VRAM_TYPE_DDR4:
+   case AMDGPU_VRAM_TYPE_HBM:
+      return 2;
+   case AMDGPU_VRAM_TYPE_DDR5:
+   case AMDGPU_VRAM_TYPE_GDDR5:
+      return 4;
+   case AMDGPU_VRAM_TYPE_GDDR6:
+      return 16;
+   case AMDGPU_VRAM_TYPE_GDDR1:
+   case AMDGPU_VRAM_TYPE_GDDR3:
+   case AMDGPU_VRAM_TYPE_GDDR4:
+   default:
+      unreachable("Invalid vram type");
+   }
+}

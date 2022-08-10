@@ -282,9 +282,9 @@
    DRI_CONF_OPT_S_NODEF(indirect_gl_extension_override, \
                   "Allow enabling/disabling a list of indirect-GL extensions")
 
-#define DRI_CONF_DISABLE_PROTECTED_CONTENT_CHECK(def) \
-   DRI_CONF_OPT_B(disable_protected_content_check, def, \
-                  "Don't reject image import if protected_content attribute doesn't match")
+#define DRI_CONF_FORCE_PROTECTED_CONTENT_CHECK(def) \
+   DRI_CONF_OPT_B(force_protected_content_check, def, \
+                  "Reject image import if protected_content attribute doesn't match")
 
 #define DRI_CONF_IGNORE_MAP_UNSYNCHRONIZED(def) \
    DRI_CONF_OPT_B(ignore_map_unsynchronized, def, \

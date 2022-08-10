@@ -1436,19 +1436,20 @@ ttn_tex(struct ttn_compile *c, nir_alu_dest dest, nir_ssa_def **src)
     */
    sview = tgsi_inst->Src[samp].Register.Index;
 
+   nir_alu_type sampler_type =
+      sview < c->num_samp_types ? c->samp_types[sview] : nir_type_float32;
+
    if (op == nir_texop_lod) {
       instr->dest_type = nir_type_float32;
-   } else if (sview < c->num_samp_types) {
-      instr->dest_type = c->samp_types[sview];
    } else {
-      instr->dest_type = nir_type_float32;
+      instr->dest_type = sampler_type;
    }
 
    nir_variable *var =
       get_sampler_var(c, sview, instr->sampler_dim,
                       instr->is_shadow,
                       instr->is_array,
-                      base_type_for_alu_type(instr->dest_type),
+                      base_type_for_alu_type(sampler_type),
                       op);
 
    nir_deref_instr *deref = nir_build_deref_var(b, var);
@@ -1609,13 +1610,16 @@ ttn_txq(struct ttn_compile *c, nir_alu_dest dest, nir_ssa_def **src)
                     &qlv->sampler_dim, &qlv->is_shadow, &qlv->is_array);
 
    assert(tgsi_inst->Src[1].Register.File == TGSI_FILE_SAMPLER);
-   int tex_index = tgsi_inst->Src[1].Register.Index;
+   int sview = tgsi_inst->Src[1].Register.Index;
+
+   nir_alu_type sampler_type =
+      sview < c->num_samp_types ? c->samp_types[sview] : nir_type_float32;
 
    nir_variable *var =
-      get_sampler_var(c, tex_index, txs->sampler_dim,
+      get_sampler_var(c, sview, txs->sampler_dim,
                       txs->is_shadow,
                       txs->is_array,
-                      base_type_for_alu_type(txs->dest_type),
+                      base_type_for_alu_type(sampler_type),
                       nir_texop_txs);
 
    nir_deref_instr *deref = nir_build_deref_var(b, var);
@@ -2518,7 +2522,7 @@ ttn_optimize_nir(nir_shader *nir)
          NIR_PASS(progress, nir, nir_copy_prop);
          NIR_PASS(progress, nir, nir_opt_dce);
       }
-      NIR_PASS(progress, nir, nir_opt_if, false);
+      NIR_PASS(progress, nir, nir_opt_if, nir_opt_if_optimize_phi_true_false);
       NIR_PASS(progress, nir, nir_opt_dead_cf);
       NIR_PASS(progress, nir, nir_opt_cse);
       NIR_PASS(progress, nir, nir_opt_peephole_select, 8, true, true);

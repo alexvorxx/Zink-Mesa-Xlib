@@ -238,8 +238,8 @@ for is_float in [False, True]:
 
 op("bitop", (0x7E, 0x7F, 6, _), srcs = 2, imms = [TRUTH_TABLE])
 op("convert", (0x3E | L, 0x7F | L | (0x3 << 38), 6, _), srcs = 2, imms = [ROUND]) 
-op("ld_vary", (0x21, 0xBF, 8, _), srcs = 1, imms = [CHANNELS, PERSPECTIVE])
-op("ld_vary_flat", (0xA1, 0xBF, 8, _), srcs = 1, imms = [CHANNELS])
+op("iter", (0x21, 0xBF, 8, _), srcs = 2, imms = [CHANNELS, PERSPECTIVE])
+op("ldcf", (0xA1, 0xBF, 8, _), srcs = 1, imms = [CHANNELS])
 op("st_vary", None, dests = 0, srcs = 2, can_eliminate = False)
 op("stop", (0x88, 0xFFFF, 2, _), dests = 0, can_eliminate = False)
 op("trap", (0x08, 0xFFFF, 2, _), dests = 0, can_eliminate = False)
@@ -257,7 +257,6 @@ op("p_logical_end", _, dests = 0, srcs = 0, can_eliminate = False)
 
 op("p_combine", _, srcs = 4)
 op("p_split", _, srcs = 1, dests = 4)
-op("p_extract", _, srcs = 1, imms = [COMPONENT])
 
 # Phis are special-cased in the IR as they (uniquely) can take an unbounded
 # number of source.

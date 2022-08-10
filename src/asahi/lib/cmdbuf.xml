@@ -67,6 +67,8 @@
 
   <enum name="Layout">
     <value name="Linear" value="0"/>
+    <!-- Default layout if no other layout is set -->
+    <value name="Null" value="1"/>
     <!-- Morton order with 64x64 tiles -->
     <value name="Tiled 64x64" value="2"/>
   </enum>
@@ -135,25 +137,25 @@
     <value name="XR" value="5"/>
   </enum>
 
-  <struct name="Varying header" size="4">
-    <field name="Triangle slots" size="8" start="0:0" type="uint"/>
-    <field name="Point slots" size="8" start="0:8" type="uint"/>
+  <struct name="CF binding header" size="4">
+    <field name="Number of 32-bit slots" size="8" start="0:0" type="uint"/>
+    <field name="Number of coefficient registers" size="8" start="0:8" type="uint"/>
   </struct>
 
-  <enum name="Varying Type">
-    <value name="Flat (first)" value="0"/>
-    <value name="Flat (last)" value="2"/>
-    <value name="Fragcoord W" value="3"/>
-    <value name="Smooth" value="7"/>
-    <value name="Fragcoord Z" value="11"/>
-    <value name="Point coordinates" value="19"/>
+  <enum name="Shade model">
+    <value name="Flat vertex 0" value="0"/>
+    <value name="Flat vertex 2" value="2"/>
+    <value name="Gouraud" value="3"/>
   </enum>
 
-  <struct name="Varying" size="4">
+  <struct name="CF binding" size="4">
     <field name="Components" size="2" start="0" type="uint" modifier="minus(1)"/>
-    <field name="Type" size="6" start="2" type="Varying Type" default="Smooth"/>
-    <field name="Triangle slot" size="8" start="8" type="uint"/>
-    <field name="Point slot" size="8" start="16" type="uint"/>
+    <field name="Shade model" size="2" start="2" type="Shade model"/>
+    <field name="Perspective" size="1" start="4" type="bool"/>
+    <field name="Fragcoord Z" size="1" start="5" type="bool"/>
+    <field name="Point sprite" size="1" start="6" type="bool"/>
+    <field name="Base slot" size="8" start="8" type="uint"/>
+    <field name="Base coefficient register" size="8" start="16" type="uint"/>
   </struct>
 
   <struct name="Format" size="2">
@@ -161,7 +163,7 @@
     <field name="Type" size="3" start="7" type="Texture Type"/>
   </struct>
 
-  <struct name="Render Target" size="16">
+  <struct name="Render Target" size="24">
     <field name="Unknown" size="4" start="0" type="hex" default="0x2"/>
     <field name="Layout" size="2" start="4" type="Layout"/>
     <field name="Format" size="10" start="6" type="Pixel Format"/>
@@ -197,8 +199,7 @@
     <value name="Cube" value="6"/>
   </enum>
 
-  <!-- Payloads follow, right-shifted by 4 because of course -->
-  <struct name="Texture" size="16">
+  <struct name="Texture" size="24">
     <field name="Dimension" size="4" start="0" type="Texture dimension" default="2D"/>
     <field name="Layout" size="2" start="4" type="Layout"/>
     <field name="Format" size="10" start="6" type="Pixel Format"/>
@@ -214,6 +215,8 @@
     to switch tile size (or disable tiling altogether?) at small mip levels to
     reduce wasted memory due to padding. Causing test flakiness when set. -->
     <field name="Unk mipmapped" size="1" start="102" type="bool"/>
+    <!-- This is set when no texture is bound, with layout 1 -->
+    <field name="Null" size="1" start="105" type="bool"/>
     <field name="Compression" size="2" start="106" type="hex"/> <!-- 0 for 64x64 tiling -->
     <field name="sRGB" size="1" start="108" type="bool"/>
     <field name="Unk 2" size="1" start="109" type="bool"/>
@@ -366,7 +369,9 @@
 
   <struct name="Linkage" size="16">
     <field name="Tag" size="32" start="0:0" type="hex" default="0xC020000"/>
-    <field name="Unk 1" size="32" start="1:0" type="hex" default="0x100"/>
+    <field name="Any varyings" size="1" start="1:16" type="bool"/>
+    <field name="Has point size" size="1" start="1:18" type="bool"/>
+    <field name="Has frag coord Z" size="1" start="1:21" type="bool"/>
     <field name="Unk 2" size="32" start="2:0" type="hex" default="0x0"/>
     <field name="Varying count" size="32" start="3:0" type="uint"/>
   </struct>
@@ -383,22 +388,25 @@
     <field name="Tag" size="8" start="0:0" type="hex" default="0x1d"/>
     <field name="Start (halfs)" size="8" start="0:8" type="uint"/>
     <field name="Unk" size="4" start="0:16" type="hex" default="0x0"/>
-    <field name="Size (halfs)" size="4" start="0:20" type="uint"/>
-    <field name="Buffer" size="40" start="0:24" type="address"/>
+    <!-- Exact split is unknown. -->
+    <field name="Size (halfs)" size="8" start="0:20" type="uint"/>
+    <field name="Buffer" size="36" start="0:28" type="address" modifier="shr(4)"/>
   </struct>
 
   <struct name="Bind texture" size="8">
     <field name="Tag" size="8" start="0:0" type="hex" default="0xdd"/>
     <field name="Start" size="8" start="0:8" type="uint"/>
-    <field name="Count" size="4" start="0:20" type="uint"/>
-    <field name="Buffer" size="40" start="0:24" type="address"/>
+    <!-- Exact split is unknown. Count is at least 5 bits. -->
+    <field name="Count" size="8" start="0:20" type="uint"/>
+    <field name="Buffer" size="36" start="0:28" type="address" modifier="shr(4)"/>
   </struct>
 
   <struct name="Bind sampler" size="8">
     <field name="Tag" size="8" start="0:0" type="hex" default="0x9d"/>
     <field name="Start" size="8" start="0:8" type="uint"/>
-    <field name="Count" size="4" start="0:20" type="uint"/>
-    <field name="Buffer" size="40" start="0:24" type="address"/>
+    <field name="Count" size="8" start="0:20" type="uint"/>
+    <!-- Exact split is unknown. -->
+    <field name="Buffer" size="36" start="0:28" type="address" modifier="shr(4)"/>
   </struct>
 
   <enum name="Preshader mode">
@@ -410,7 +418,7 @@
     <field name="Tag" size="8" start="0:0" type="hex" default="0x4d"/>
     <field name="Unk 1" size="24" start="0:8" type="hex" default="0x90"/>
     <field name="Unk 2" size="8" start="1:0" type="hex" default="0x0d"/> <!-- TODO differs with stage -->
-    <field name="Unk 2b" size="8" start="1:8" type="uint" default="4"/>
+    <field name="Unk 2b" size="8" start="1:8" type="uint" default="4"/> <!--- Seemingly texture count related? -->
     <field name="Code" size="32" start="1:16" type="address"/>
     <field name="Unk 3" size="8" start="2:16" type="hex" default="0x8d"/>
     <field name="Register quadwords" size="5" start="2:24" type="uint"/> <!-- 0 for max -->
@@ -455,26 +463,38 @@
 
   <!--- Command to bind a vertex pipeline, followed by subcommands. Counts are
 	specified in 32-bit word units. Intepretation per-shader stage. -->
-  <struct name="Bind pipeline" size="24">
-    <field name="Tag" size="32" start="0:0" type="hex" default="0x4000002e">
-      <value name="AGX_BIND_PIPELINE_VERTEX" value="0x4000002e"/>
-      <value name="AGX_BIND_PIPELINE_FRAGMENT" value="0x800000"/>
-    </field>
+  <struct name="Bind vertex pipeline" size="24">
+    <field name="Tag" size="32" start="0:0" type="hex" default="0x4000002e"/>
+    <!-- 4 if more than 32 textures bound -->
     <field name="Unk 1" size="4" start="1:0" type="hex" default="0x2"/>
-    <field name="Sampler count" start="1:4" size="5" type="uint"/>
-    <field name="Texture count" start="1:9" size="3" type="uint"/>
+    <field name="Groups of 8 immediate textures" start="1:4" size="3" type="uint"/>
+    <field name="Groups of 4 samplers" start="1:9" size="3" type="uint"/>
+    <!-- When more than 48 textures bound, switches to 0x8, unk1 switches to
+    0x6, and some funny sort of bindless access(?) is used in the shader -->
     <field name="Unk 2" size="4" start="1:12" type="hex" default="0x1"/>
-    <field name="Input count" size="8" start="1:16" type="uint" default="0"/>
     <field name="Padding 1" size="8" start="1:24" type="hex" default="0x0"/>
     <field name="Pipeline" size="32" start="2:0" type="address"/>
-
-    <!-- Overlaps -->
-    <field name="FS Varyings" size="32" start="3:0" type="address"/>
-    <field name="VS Output count 1" size="8" start="3:0" type="uint" default="0"/>
-    <field name="VS Output count 2" size="8" start="3:8" type="uint" default="0"/>
+    <field name="Output count 1" size="8" start="3:0" type="uint" default="0"/>
+    <field name="Output count 2" size="8" start="3:8" type="uint" default="0"/>
     <field name="Padding 2" size="16" start="3:16" type="hex" default="0x0"/>
-
+    <field name="More than 4 textures" start="4:0" size="1" type="bool"/>
     <field name="Unk 3" size="32" start="5:0" type="address"/> <!-- C020000 -->
+  </struct>
+
+  <struct name="Bind fragment pipeline" size="20">
+    <field name="Tag" size="32" start="0:0" type="hex" default="0x800000"/>
+    <!-- 4 if more than 32 textures bound -->
+    <field name="Unk 1" size="4" start="1:0" type="hex" default="0x2"/>
+    <field name="Groups of 8 immediate textures" start="1:4" size="3" type="uint"/>
+    <field name="Groups of 4 samplers" start="1:9" size="3" type="uint"/>
+    <!-- When more than 48 textures bound, switches to 0x8, unk1 switches to
+    0x6, and some funny sort of bindless access(?) is used in the shader -->
+    <field name="Unk 2" size="4" start="1:12" type="hex" default="0x1"/>
+    <field name="CF binding count" size="8" start="1:16" type="uint" default="0"/>
+    <field name="Padding 1" size="8" start="1:24" type="hex" default="0x0"/>
+    <field name="Pipeline" size="32" start="2:0" type="address"/>
+    <field name="CF bindings" size="32" start="3:0" type="address"/>
+    <field name="More than 4 textures" start="4:0" size="1" type="bool"/>
   </struct>
 
   <!-- Subcommands are packed inside sized records -->

@@ -217,10 +217,10 @@ radv_pipeline_destroy(struct radv_device *device, struct radv_pipeline *pipeline
 
    for (unsigned i = 0; i < MESA_VULKAN_SHADER_STAGES; ++i)
       if (pipeline->shaders[i])
-         radv_shader_destroy(device, pipeline->shaders[i]);
+         radv_shader_unref(device, pipeline->shaders[i]);
 
    if (pipeline->gs_copy_shader)
-      radv_shader_destroy(device, pipeline->gs_copy_shader);
+      radv_shader_unref(device, pipeline->gs_copy_shader);
 
    if (pipeline->cs.buf)
       free(pipeline->cs.buf);
@@ -972,6 +972,7 @@ radv_pipeline_has_dynamic_ds_states(const struct radv_graphics_pipeline *pipelin
                                          RADV_DYNAMIC_DEPTH_WRITE_ENABLE |
                                          RADV_DYNAMIC_DEPTH_COMPARE_OP |
                                          RADV_DYNAMIC_STENCIL_TEST_ENABLE |
+                                         RADV_DYNAMIC_STENCIL_WRITE_MASK |
                                          RADV_DYNAMIC_STENCIL_OP));
 }
 

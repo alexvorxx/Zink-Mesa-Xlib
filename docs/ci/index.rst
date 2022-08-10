@@ -87,6 +87,11 @@ So the jobs are created in personal repositories, the name of the user's account
 to be added to the rules attribute of the Gitlab CI job that accesses the restricted
 accounts.
 
+.. toctree::
+   :maxdepth: 1
+
+   local-traces
+
 Intel CI
 --------
 

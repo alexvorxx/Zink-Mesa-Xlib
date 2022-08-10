@@ -62,6 +62,7 @@ enum fd_param_id {
    FD_GLOBAL_FAULTS, /* # of global (all context) faults */
    FD_SUSPEND_COUNT, /* # of times the GPU has suspended, and potentially lost state */
    FD_SYSPROF,       /* Settable (for CAP_SYS_ADMIN) param for system profiling */
+   FD_VA_SIZE,       /* GPU virtual address size */
 };
 
 /**
@@ -139,6 +140,7 @@ enum fd_version {
    FD_VERSION_MEMORY_FD = 2,           /* supports shared memory objects */
    FD_VERSION_SUSPENDS = 7,            /* Adds MSM_PARAM_SUSPENDS to detect device suspend */
    FD_VERSION_CACHED_COHERENT = 8,     /* Adds cached-coherent support (a6xx+) */
+   FD_VERSION_VA_SIZE = 9,
 };
 enum fd_version fd_device_version(struct fd_device *dev);
 

@@ -5321,7 +5321,13 @@ tu_barrier(struct tu_cmd_buffer *cmd,
           * to the image. We don't want these entries being flushed later and
           * overwriting the actual image, so we need to flush the CCU.
           */
-         src_flags |= TU_ACCESS_CCU_COLOR_INCOHERENT_WRITE;
+         TU_FROM_HANDLE(tu_image, image, dep_info->pImageMemoryBarriers[i].image);
+
+         if (vk_format_is_depth_or_stencil(image->vk.format)) {
+            src_flags |= TU_ACCESS_CCU_DEPTH_INCOHERENT_WRITE;
+         } else {
+            src_flags |= TU_ACCESS_CCU_COLOR_INCOHERENT_WRITE;
+         }
       }
       VkPipelineStageFlags2 sanitized_src_stage =
          sanitize_src_stage(dep_info->pImageMemoryBarriers[i].srcStageMask);

@@ -957,7 +957,7 @@ dri2_create_image_from_winsys(__DRIscreen *_screen,
        * content protection status of tex and img.
        */
       const struct driOptionCache *optionCache = &screen->dev->option_cache;
-      if (!driQueryOptionb(optionCache, "disable_protected_content_check") &&
+      if (driQueryOptionb(optionCache, "force_protected_content_check") &&
           (tex->bind & PIPE_BIND_PROTECTED) != (bind & PIPE_BIND_PROTECTED)) {
          pipe_resource_reference(&img->texture, NULL);
          pipe_resource_reference(&tex, NULL);

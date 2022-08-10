@@ -13,9 +13,6 @@ dEQP-GLES3.functional.texture.compressed.astc.void_extent_ldr.8x5,Fail
 dEQP-GLES3.functional.texture.compressed.astc.void_extent_ldr.8x6,Fail
 dEQP-GLES3.functional.texture.compressed.astc.void_extent_ldr.8x8,Fail
 
-# https://gitlab.freedesktop.org/mesa/mesa/-/merge_requests/17878
-KHR-Single-GL46.enhanced_layouts.xfb_all_stages,Crash
-
 glx@glx-swap-pixmap-bad,Fail
 
 # failed to create drawable

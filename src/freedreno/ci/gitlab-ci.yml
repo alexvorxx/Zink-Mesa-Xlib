@@ -203,7 +203,7 @@ a630_gles_asan:
 
 a630_skqp:
   extends:
-    - .baremetal-skqp-test
+    - .skqp-test
     - .a630-test
     - .freedreno-turnip-rules
   variables:

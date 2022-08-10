@@ -181,6 +181,9 @@ struct _egl_driver
                                        EGLuint64KHR *ust, EGLuint64KHR *msc,
                                        EGLuint64KHR *sbc);
 
+   EGLBoolean (*GetMscRateANGLE)(_EGLDisplay *disp, _EGLSurface *surface,
+                                 EGLint *numerator, EGLint *denominator);
+
    /* for EGL_MESA_image_dma_buf_export */
    EGLBoolean (*ExportDMABUFImageQueryMESA)(_EGLDisplay *disp, _EGLImage *img,
                                             EGLint *fourcc, EGLint *nplanes,

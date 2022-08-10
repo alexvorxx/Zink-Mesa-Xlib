@@ -158,55 +158,10 @@ radv_bind_dynamic_state(struct radv_cmd_buffer *cmd_buffer, const struct radv_dy
       }
    }
 
-   if (copy_mask & RADV_DYNAMIC_LINE_WIDTH) {
-      if (dest->line_width != src->line_width) {
-         dest->line_width = src->line_width;
-         dest_mask |= RADV_DYNAMIC_LINE_WIDTH;
-      }
-   }
-
-   if (copy_mask & RADV_DYNAMIC_DEPTH_BIAS) {
-      if (memcmp(&dest->depth_bias, &src->depth_bias, sizeof(src->depth_bias))) {
-         dest->depth_bias = src->depth_bias;
-         dest_mask |= RADV_DYNAMIC_DEPTH_BIAS;
-      }
-   }
-
    if (copy_mask & RADV_DYNAMIC_BLEND_CONSTANTS) {
       if (memcmp(&dest->blend_constants, &src->blend_constants, sizeof(src->blend_constants))) {
          typed_memcpy(dest->blend_constants, src->blend_constants, 4);
          dest_mask |= RADV_DYNAMIC_BLEND_CONSTANTS;
-      }
-   }
-
-   if (copy_mask & RADV_DYNAMIC_DEPTH_BOUNDS) {
-      if (memcmp(&dest->depth_bounds, &src->depth_bounds, sizeof(src->depth_bounds))) {
-         dest->depth_bounds = src->depth_bounds;
-         dest_mask |= RADV_DYNAMIC_DEPTH_BOUNDS;
-      }
-   }
-
-   if (copy_mask & RADV_DYNAMIC_STENCIL_COMPARE_MASK) {
-      if (memcmp(&dest->stencil_compare_mask, &src->stencil_compare_mask,
-                 sizeof(src->stencil_compare_mask))) {
-         dest->stencil_compare_mask = src->stencil_compare_mask;
-         dest_mask |= RADV_DYNAMIC_STENCIL_COMPARE_MASK;
-      }
-   }
-
-   if (copy_mask & RADV_DYNAMIC_STENCIL_WRITE_MASK) {
-      if (memcmp(&dest->stencil_write_mask, &src->stencil_write_mask,
-                 sizeof(src->stencil_write_mask))) {
-         dest->stencil_write_mask = src->stencil_write_mask;
-         dest_mask |= RADV_DYNAMIC_STENCIL_WRITE_MASK;
-      }
-   }
-
-   if (copy_mask & RADV_DYNAMIC_STENCIL_REFERENCE) {
-      if (memcmp(&dest->stencil_reference, &src->stencil_reference,
-                 sizeof(src->stencil_reference))) {
-         dest->stencil_reference = src->stencil_reference;
-         dest_mask |= RADV_DYNAMIC_STENCIL_REFERENCE;
       }
    }
 
@@ -233,118 +188,69 @@ radv_bind_dynamic_state(struct radv_cmd_buffer *cmd_buffer, const struct radv_dy
       }
    }
 
-   if (copy_mask & RADV_DYNAMIC_LINE_STIPPLE) {
-      if (memcmp(&dest->line_stipple, &src->line_stipple, sizeof(src->line_stipple))) {
-         dest->line_stipple = src->line_stipple;
-         dest_mask |= RADV_DYNAMIC_LINE_STIPPLE;
-      }
+#define RADV_CMP_COPY(field, flag)                                \
+   if (copy_mask & flag) {                                        \
+      if (dest->field != src->field) {                            \
+         dest->field = src->field;                                \
+         dest_mask |= flag;                                       \
+      }                                                           \
    }
 
-   if (copy_mask & RADV_DYNAMIC_CULL_MODE) {
-      if (dest->cull_mode != src->cull_mode) {
-         dest->cull_mode = src->cull_mode;
-         dest_mask |= RADV_DYNAMIC_CULL_MODE;
-      }
-   }
+   RADV_CMP_COPY(line_width, RADV_DYNAMIC_LINE_WIDTH);
 
-   if (copy_mask & RADV_DYNAMIC_FRONT_FACE) {
-      if (dest->front_face != src->front_face) {
-         dest->front_face = src->front_face;
-         dest_mask |= RADV_DYNAMIC_FRONT_FACE;
-      }
-   }
+   RADV_CMP_COPY(depth_bias.bias, RADV_DYNAMIC_DEPTH_BIAS);
+   RADV_CMP_COPY(depth_bias.clamp, RADV_DYNAMIC_DEPTH_BIAS);
+   RADV_CMP_COPY(depth_bias.slope, RADV_DYNAMIC_DEPTH_BIAS);
 
-   if (copy_mask & RADV_DYNAMIC_PRIMITIVE_TOPOLOGY) {
-      if (dest->primitive_topology != src->primitive_topology) {
-         dest->primitive_topology = src->primitive_topology;
-         dest_mask |= RADV_DYNAMIC_PRIMITIVE_TOPOLOGY;
-      }
-   }
+   RADV_CMP_COPY(depth_bounds.min, RADV_DYNAMIC_DEPTH_BOUNDS);
+   RADV_CMP_COPY(depth_bounds.max, RADV_DYNAMIC_DEPTH_BOUNDS);
 
-   if (copy_mask & RADV_DYNAMIC_DEPTH_TEST_ENABLE) {
-      if (dest->depth_test_enable != src->depth_test_enable) {
-         dest->depth_test_enable = src->depth_test_enable;
-         dest_mask |= RADV_DYNAMIC_DEPTH_TEST_ENABLE;
-      }
-   }
+   RADV_CMP_COPY(stencil_compare_mask.front, RADV_DYNAMIC_STENCIL_COMPARE_MASK);
+   RADV_CMP_COPY(stencil_compare_mask.back, RADV_DYNAMIC_STENCIL_COMPARE_MASK);
 
-   if (copy_mask & RADV_DYNAMIC_DEPTH_WRITE_ENABLE) {
-      if (dest->depth_write_enable != src->depth_write_enable) {
-         dest->depth_write_enable = src->depth_write_enable;
-         dest_mask |= RADV_DYNAMIC_DEPTH_WRITE_ENABLE;
-      }
-   }
+   RADV_CMP_COPY(stencil_write_mask.front, RADV_DYNAMIC_STENCIL_WRITE_MASK);
+   RADV_CMP_COPY(stencil_write_mask.back, RADV_DYNAMIC_STENCIL_WRITE_MASK);
 
-   if (copy_mask & RADV_DYNAMIC_DEPTH_COMPARE_OP) {
-      if (dest->depth_compare_op != src->depth_compare_op) {
-         dest->depth_compare_op = src->depth_compare_op;
-         dest_mask |= RADV_DYNAMIC_DEPTH_COMPARE_OP;
-      }
-   }
+   RADV_CMP_COPY(stencil_reference.front, RADV_DYNAMIC_STENCIL_REFERENCE);
+   RADV_CMP_COPY(stencil_reference.back, RADV_DYNAMIC_STENCIL_REFERENCE);
 
-   if (copy_mask & RADV_DYNAMIC_DEPTH_BOUNDS_TEST_ENABLE) {
-      if (dest->depth_bounds_test_enable != src->depth_bounds_test_enable) {
-         dest->depth_bounds_test_enable = src->depth_bounds_test_enable;
-         dest_mask |= RADV_DYNAMIC_DEPTH_BOUNDS_TEST_ENABLE;
-      }
-   }
+   RADV_CMP_COPY(line_stipple.factor, RADV_DYNAMIC_LINE_STIPPLE);
+   RADV_CMP_COPY(line_stipple.pattern, RADV_DYNAMIC_LINE_STIPPLE);
 
-   if (copy_mask & RADV_DYNAMIC_STENCIL_TEST_ENABLE) {
-      if (dest->stencil_test_enable != src->stencil_test_enable) {
-         dest->stencil_test_enable = src->stencil_test_enable;
-         dest_mask |= RADV_DYNAMIC_STENCIL_TEST_ENABLE;
-      }
-   }
+   RADV_CMP_COPY(cull_mode, RADV_DYNAMIC_CULL_MODE);
+   RADV_CMP_COPY(front_face, RADV_DYNAMIC_FRONT_FACE);
+   RADV_CMP_COPY(primitive_topology, RADV_DYNAMIC_PRIMITIVE_TOPOLOGY);
+   RADV_CMP_COPY(depth_test_enable, RADV_DYNAMIC_DEPTH_TEST_ENABLE);
+   RADV_CMP_COPY(depth_write_enable, RADV_DYNAMIC_DEPTH_WRITE_ENABLE);
+   RADV_CMP_COPY(depth_compare_op, RADV_DYNAMIC_DEPTH_COMPARE_OP);
+   RADV_CMP_COPY(depth_bounds_test_enable, RADV_DYNAMIC_DEPTH_BOUNDS_TEST_ENABLE);
+   RADV_CMP_COPY(stencil_test_enable, RADV_DYNAMIC_STENCIL_TEST_ENABLE);
 
-   if (copy_mask & RADV_DYNAMIC_STENCIL_OP) {
-      if (memcmp(&dest->stencil_op, &src->stencil_op, sizeof(src->stencil_op))) {
-         dest->stencil_op = src->stencil_op;
-         dest_mask |= RADV_DYNAMIC_STENCIL_OP;
-      }
-   }
+   RADV_CMP_COPY(stencil_op.front.fail_op, RADV_DYNAMIC_STENCIL_OP);
+   RADV_CMP_COPY(stencil_op.front.pass_op, RADV_DYNAMIC_STENCIL_OP);
+   RADV_CMP_COPY(stencil_op.front.depth_fail_op, RADV_DYNAMIC_STENCIL_OP);
+   RADV_CMP_COPY(stencil_op.front.compare_op, RADV_DYNAMIC_STENCIL_OP);
+   RADV_CMP_COPY(stencil_op.back.fail_op, RADV_DYNAMIC_STENCIL_OP);
+   RADV_CMP_COPY(stencil_op.back.pass_op, RADV_DYNAMIC_STENCIL_OP);
+   RADV_CMP_COPY(stencil_op.back.depth_fail_op, RADV_DYNAMIC_STENCIL_OP);
+   RADV_CMP_COPY(stencil_op.back.compare_op, RADV_DYNAMIC_STENCIL_OP);
 
-   if (copy_mask & RADV_DYNAMIC_FRAGMENT_SHADING_RATE) {
-      if (memcmp(&dest->fragment_shading_rate, &src->fragment_shading_rate,
-                 sizeof(src->fragment_shading_rate))) {
-         dest->fragment_shading_rate = src->fragment_shading_rate;
-         dest_mask |= RADV_DYNAMIC_FRAGMENT_SHADING_RATE;
-      }
-   }
+   RADV_CMP_COPY(fragment_shading_rate.size.width, RADV_DYNAMIC_FRAGMENT_SHADING_RATE);
+   RADV_CMP_COPY(fragment_shading_rate.size.height, RADV_DYNAMIC_FRAGMENT_SHADING_RATE);
+   RADV_CMP_COPY(fragment_shading_rate.combiner_ops[0], RADV_DYNAMIC_FRAGMENT_SHADING_RATE);
+   RADV_CMP_COPY(fragment_shading_rate.combiner_ops[1], RADV_DYNAMIC_FRAGMENT_SHADING_RATE);
 
-   if (copy_mask & RADV_DYNAMIC_DEPTH_BIAS_ENABLE) {
-      if (dest->depth_bias_enable != src->depth_bias_enable) {
-         dest->depth_bias_enable = src->depth_bias_enable;
-         dest_mask |= RADV_DYNAMIC_DEPTH_BIAS_ENABLE;
-      }
-   }
+   RADV_CMP_COPY(depth_bias_enable, RADV_DYNAMIC_DEPTH_BIAS_ENABLE);
 
-   if (copy_mask & RADV_DYNAMIC_PRIMITIVE_RESTART_ENABLE) {
-      if (dest->primitive_restart_enable != src->primitive_restart_enable) {
-         dest->primitive_restart_enable = src->primitive_restart_enable;
-         dest_mask |= RADV_DYNAMIC_PRIMITIVE_RESTART_ENABLE;
-      }
-   }
+   RADV_CMP_COPY(primitive_restart_enable, RADV_DYNAMIC_PRIMITIVE_RESTART_ENABLE);
 
-   if (copy_mask & RADV_DYNAMIC_RASTERIZER_DISCARD_ENABLE) {
-      if (dest->rasterizer_discard_enable != src->rasterizer_discard_enable) {
-         dest->rasterizer_discard_enable = src->rasterizer_discard_enable;
-         dest_mask |= RADV_DYNAMIC_RASTERIZER_DISCARD_ENABLE;
-      }
-   }
+   RADV_CMP_COPY(rasterizer_discard_enable, RADV_DYNAMIC_RASTERIZER_DISCARD_ENABLE);
 
-   if (copy_mask & RADV_DYNAMIC_LOGIC_OP) {
-      if (dest->logic_op != src->logic_op) {
-         dest->logic_op = src->logic_op;
-         dest_mask |= RADV_DYNAMIC_LOGIC_OP;
-      }
-   }
+   RADV_CMP_COPY(logic_op, RADV_DYNAMIC_LOGIC_OP);
 
-   if (copy_mask & RADV_DYNAMIC_COLOR_WRITE_ENABLE) {
-      if (dest->color_write_enable != src->color_write_enable) {
-         dest->color_write_enable = src->color_write_enable;
-         dest_mask |= RADV_DYNAMIC_COLOR_WRITE_ENABLE;
-      }
-   }
+   RADV_CMP_COPY(color_write_enable, RADV_DYNAMIC_COLOR_WRITE_ENABLE);
+
+#undef RADV_CMP_COPY
 
    cmd_buffer->state.dirty |= dest_mask;
 }
@@ -1789,7 +1695,7 @@ radv_get_pa_su_sc_mode_cntl(const struct radv_cmd_buffer *cmd_buffer)
 }
 
 static void
-radv_emit_culling(struct radv_cmd_buffer *cmd_buffer, uint64_t states)
+radv_emit_culling(struct radv_cmd_buffer *cmd_buffer)
 {
    unsigned pa_su_sc_mode_cntl = radv_get_pa_su_sc_mode_cntl(cmd_buffer);
 
@@ -1812,7 +1718,7 @@ radv_emit_primitive_topology(struct radv_cmd_buffer *cmd_buffer)
 }
 
 static void
-radv_emit_depth_control(struct radv_cmd_buffer *cmd_buffer, uint64_t states)
+radv_emit_depth_control(struct radv_cmd_buffer *cmd_buffer)
 {
    unsigned db_depth_control = cmd_buffer->state.graphics_pipeline->db_depth_control;
    struct radv_dynamic_state *d = &cmd_buffer->state.dynamic;
@@ -3184,7 +3090,7 @@ lookup_vs_prolog(struct radv_cmd_buffer *cmd_buffer, struct radv_shader *vs_shad
       prolog = radv_create_vs_prolog(device, &key);
       uint32_t *key2 = malloc(key_size * 4);
       if (!prolog || !key2) {
-         radv_shader_part_destroy(device, prolog);
+         radv_shader_part_unref(device, prolog);
          free(key2);
          u_rwlock_wrunlock(&device->vs_prologs_lock);
          return NULL;
@@ -3366,7 +3272,7 @@ radv_cmd_buffer_flush_dynamic_state(struct radv_cmd_buffer *cmd_buffer, bool pip
 
    if (states & (RADV_CMD_DIRTY_DYNAMIC_CULL_MODE | RADV_CMD_DIRTY_DYNAMIC_FRONT_FACE |
                  RADV_CMD_DIRTY_DYNAMIC_DEPTH_BIAS_ENABLE))
-      radv_emit_culling(cmd_buffer, states);
+      radv_emit_culling(cmd_buffer);
 
    if (states & RADV_CMD_DIRTY_DYNAMIC_PRIMITIVE_TOPOLOGY)
       radv_emit_primitive_topology(cmd_buffer);
@@ -3375,7 +3281,7 @@ radv_cmd_buffer_flush_dynamic_state(struct radv_cmd_buffer *cmd_buffer, bool pip
        (RADV_CMD_DIRTY_DYNAMIC_DEPTH_TEST_ENABLE | RADV_CMD_DIRTY_DYNAMIC_DEPTH_WRITE_ENABLE |
         RADV_CMD_DIRTY_DYNAMIC_DEPTH_COMPARE_OP | RADV_CMD_DIRTY_DYNAMIC_DEPTH_BOUNDS_TEST_ENABLE |
         RADV_CMD_DIRTY_DYNAMIC_STENCIL_TEST_ENABLE | RADV_CMD_DIRTY_DYNAMIC_STENCIL_OP))
-      radv_emit_depth_control(cmd_buffer, states);
+      radv_emit_depth_control(cmd_buffer);
 
    if (states & RADV_CMD_DIRTY_DYNAMIC_STENCIL_OP)
       radv_emit_stencil_control(cmd_buffer);

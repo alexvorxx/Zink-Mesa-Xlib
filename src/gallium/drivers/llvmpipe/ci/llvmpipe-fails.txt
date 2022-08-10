@@ -23,9 +23,6 @@ dEQP-GLES3.functional.fbo.blit.rect.nearest_consistency_min_reverse_src_dst_x,Fa
 dEQP-GLES3.functional.fbo.blit.rect.nearest_consistency_min_reverse_src_dst_y,Fail
 dEQP-GLES3.functional.fbo.blit.rect.nearest_consistency_min_reverse_src_x,Fail
 
-# https://gitlab.freedesktop.org/mesa/mesa/-/merge_requests/17878
-KHR-Single-GL45.enhanced_layouts.xfb_all_stages,Crash
-
 spec@glsl-1.20@compiler@invalid-vec4-array-to-vec3-array-conversion.vert,Fail
 spec@oes_shader_io_blocks@compiler@layout-location-aliasing.vert,Fail
 

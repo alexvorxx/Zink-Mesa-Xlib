@@ -4875,7 +4875,6 @@ static void *si_create_vertex_elements(struct pipe_context *ctx, unsigned count,
 {
    struct si_screen *sscreen = (struct si_screen *)ctx->screen;
    struct si_vertex_elements *v = CALLOC_STRUCT(si_vertex_elements);
-   bool used[SI_NUM_VERTEX_BUFFERS] = {};
    struct si_fast_udiv_info32 divisor_factors[SI_MAX_ATTRIBS] = {};
    STATIC_ASSERT(sizeof(struct si_fast_udiv_info32) == 16);
    STATIC_ASSERT(sizeof(divisor_factors[0].multiplier) == 4);
@@ -4914,11 +4913,6 @@ static void *si_create_vertex_elements(struct pipe_context *ctx, unsigned count,
             v->instance_divisor_is_fetched |= 1u << i;
             divisor_factors[i] = si_compute_fast_udiv_info32(instance_divisor, 32);
          }
-      }
-
-      if (!used[vbo_index]) {
-         v->first_vb_use_mask |= 1 << i;
-         used[vbo_index] = true;
       }
 
       desc = util_format_description(elements[i].src_format);
@@ -5095,14 +5089,7 @@ static void si_bind_vertex_elements(struct pipe_context *ctx, void *state)
 
    sctx->vertex_elements = v;
    sctx->num_vertex_elements = v->count;
-
-   if (sctx->num_vertex_elements) {
-      sctx->vertex_buffers_dirty = true;
-   } else {
-      sctx->vertex_buffers_dirty = false;
-      sctx->vertex_buffer_pointer_dirty = false;
-      sctx->vertex_buffer_user_sgprs_dirty = false;
-   }
+   sctx->vertex_buffers_dirty = sctx->num_vertex_elements > 0;
 
    if (old->instance_divisor_is_one != v->instance_divisor_is_one ||
        old->instance_divisor_is_fetched != v->instance_divisor_is_fetched ||
@@ -5172,9 +5159,11 @@ static void si_set_vertex_buffers(struct pipe_context *ctx, unsigned start_slot,
             if (src->buffer_offset & 3 || src->stride & 3)
                unaligned |= slot_bit;
 
-            si_context_add_resource_size(sctx, buf);
-            if (buf)
+            if (buf) {
                si_resource(buf)->bind_history |= SI_BIND_VERTEX_BUFFER;
+               radeon_add_to_buffer_list(sctx, &sctx->gfx_cs, si_resource(buf),
+                                         RADEON_USAGE_READ | RADEON_PRIO_VERTEX_BUFFER);
+            }
          }
          /* take_ownership allows us to copy pipe_resource pointers without refcounting. */
          memcpy(dst, buffers, count * sizeof(struct pipe_vertex_buffer));
@@ -5192,9 +5181,11 @@ static void si_set_vertex_buffers(struct pipe_context *ctx, unsigned start_slot,
             if (dsti->buffer_offset & 3 || dsti->stride & 3)
                unaligned |= slot_bit;
 
-            si_context_add_resource_size(sctx, buf);
-            if (buf)
+            if (buf) {
                si_resource(buf)->bind_history |= SI_BIND_VERTEX_BUFFER;
+               radeon_add_to_buffer_list(sctx, &sctx->gfx_cs, si_resource(buf),
+                                         RADEON_USAGE_READ | RADEON_PRIO_VERTEX_BUFFER);
+            }
          }
       }
    } else {

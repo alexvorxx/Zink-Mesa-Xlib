@@ -34,6 +34,7 @@
 #ifdef HAVE_X11_PLATFORM
 #include <xcb/xcb.h>
 #include <xcb/dri2.h>
+#include <xcb/randr.h>
 #include <xcb/xfixes.h>
 #include <X11/Xlib-xcb.h>
 
@@ -159,6 +160,10 @@ struct dri2_egl_display_vtbl {
    EGLBoolean (*get_sync_values)(_EGLDisplay *display, _EGLSurface *surface,
                                  EGLuint64KHR *ust, EGLuint64KHR *msc,
                                  EGLuint64KHR *sbc);
+
+   /* optional */
+   EGLBoolean (*get_msc_rate)(_EGLDisplay *display, _EGLSurface *surface,
+                              EGLint *numerator, EGLint *denominator);
 
    /* mandatory */
    __DRIdrawable *(*get_dri_drawable)(_EGLSurface *surf);

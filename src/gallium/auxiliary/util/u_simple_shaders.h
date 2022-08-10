@@ -118,38 +118,37 @@ util_make_fs_blit_msaa_color(struct pipe_context *pipe,
                              enum tgsi_texture_type tgsi_tex,
                              enum tgsi_return_type stype,
                              enum tgsi_return_type dtype,
-                             bool sample_shading);
+                             bool sample_shading, bool has_txq);
 
 
 extern void *
 util_make_fs_blit_msaa_depth(struct pipe_context *pipe,
                              enum tgsi_texture_type tgsi_tex,
-                             bool sample_shading);
+                             bool sample_shading, bool has_txq);
 
 
 extern void *
 util_make_fs_blit_msaa_depthstencil(struct pipe_context *pipe,
                                     enum tgsi_texture_type tgsi_tex,
-                                    bool sample_shading);
+                                    bool sample_shading, bool has_txq);
 
 
 void *
 util_make_fs_blit_msaa_stencil(struct pipe_context *pipe,
                                enum tgsi_texture_type tgsi_tex,
-                               bool sample_shading);
+                               bool sample_shading, bool has_txq);
 
 
 void *
 util_make_fs_msaa_resolve(struct pipe_context *pipe,
                           enum tgsi_texture_type tgsi_tex, unsigned nr_samples,
-                          enum tgsi_return_type stype);
+                          bool has_txq);
 
 
 void *
 util_make_fs_msaa_resolve_bilinear(struct pipe_context *pipe,
                                    enum tgsi_texture_type tgsi_tex,
-                                   unsigned nr_samples,
-                                   enum tgsi_return_type stype);
+                                   unsigned nr_samples, bool has_txq);
 
 extern void *
 util_make_geometry_passthrough_shader(struct pipe_context *pipe,
@@ -174,7 +173,7 @@ util_make_tess_ctrl_passthrough_shader(struct pipe_context *pipe,
                                        const unsigned vertices_per_patch);
 
 void *
-util_make_fs_stencil_blit(struct pipe_context *pipe, bool msaa_src);
+util_make_fs_stencil_blit(struct pipe_context *pipe, bool msaa_src, bool has_txq);
 
 void *
 util_make_fs_clear_all_cbufs(struct pipe_context *pipe);

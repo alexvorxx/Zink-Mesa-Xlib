@@ -181,11 +181,6 @@
     HWCI_TEST_SCRIPT: "/install/deqp-runner.sh"
     FDO_CI_CONCURRENT: 0 # Default to number of CPUs
 
-.baremetal-skqp-test:
-  variables:
-    HWCI_START_XORG: 1
-    HWCI_TEST_SCRIPT: "/install/skqp-runner.sh"
-
 # For Valve's bare-metal testing farm jobs.
 .b2c-test:
   # It would be nice to use ci-templates within Mesa CI for this job's

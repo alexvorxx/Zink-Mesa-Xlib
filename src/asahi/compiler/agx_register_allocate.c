@@ -30,10 +30,10 @@
 unsigned
 agx_write_registers(agx_instr *I, unsigned d)
 {
-   unsigned size = I->dest[d].size == AGX_SIZE_32 ? 2 : 1;
+   unsigned size = agx_size_align_16(I->dest[d].size);
 
    switch (I->op) {
-   case AGX_OPCODE_LD_VARY:
+   case AGX_OPCODE_ITER:
       assert(1 <= I->channels && I->channels <= 4);
       return I->channels * size;
 
@@ -43,7 +43,7 @@ agx_write_registers(agx_instr *I, unsigned d)
       /* TODO: mask */
       return 4 * size;
 
-   case AGX_OPCODE_LD_VARY_FLAT:
+   case AGX_OPCODE_LDCF:
       return 6;
    case AGX_OPCODE_P_COMBINE:
    {
@@ -59,6 +59,24 @@ agx_write_registers(agx_instr *I, unsigned d)
    default:
       return size;
    }
+}
+
+static inline enum agx_size
+agx_split_width(const agx_instr *I)
+{
+   enum agx_size width = ~0;
+
+   agx_foreach_dest(I, d) {
+      if (agx_is_null(I->dest[d]))
+         continue;
+      else if (width != ~0)
+         assert(width == I->dest[d].size);
+      else
+         width = I->dest[d].size;
+   }
+
+   assert(width != ~0 && "should have been DCE'd");
+   return width;
 }
 
 static unsigned
@@ -114,7 +132,7 @@ agx_ra_assign_local(agx_block *block, uint8_t *ssa_to_reg, uint8_t *ncomps)
       if (I->op == AGX_OPCODE_P_SPLIT && I->src[0].kill) {
          unsigned reg = ssa_to_reg[I->src[0].value];
          unsigned length = ncomps[I->src[0].value];
-         unsigned width = agx_size_align_16(I->src[0].size);
+         unsigned width = agx_size_align_16(agx_split_width(I));
          unsigned count = length / width;
 
          agx_foreach_dest(I, d) {
@@ -163,7 +181,7 @@ agx_ra_assign_local(agx_block *block, uint8_t *ssa_to_reg, uint8_t *ncomps)
       agx_foreach_dest(I, d) {
          if (I->dest[d].type == AGX_INDEX_NORMAL) {
             unsigned count = agx_write_registers(I, d);
-            unsigned align = (I->dest[d].size == AGX_SIZE_16) ? 1 : 2;
+            unsigned align = agx_size_align_16(I->dest[d].size);
             unsigned reg = agx_assign_regs(used_regs, count, align, AGX_NUM_REGS);
 
             ssa_to_reg[I->dest[d].value] = reg;
@@ -324,22 +342,9 @@ agx_ra(agx_context *ctx)
          agx_emit_parallel_copies(&b, copies, n);
          agx_remove_instruction(ins);
          continue;
-      } else if (ins->op == AGX_OPCODE_P_EXTRACT) {
-         /* Uses the destination size */
-         unsigned size = agx_size_align_16(ins->dest[0].size);
-         unsigned left = agx_index_to_reg(ssa_to_reg, ins->dest[0]);
-         unsigned right = agx_index_to_reg(ssa_to_reg, ins->src[0]) + (size * ins->imm);
-
-         if (left != right) {
-            agx_mov_to(&b, agx_register(left, ins->dest[0].size),
-                  agx_register(right, ins->src[0].size));
-         }
-
-         agx_remove_instruction(ins);
-         continue;
       } else if (ins->op == AGX_OPCODE_P_SPLIT) {
          unsigned base = agx_index_to_reg(ssa_to_reg, ins->src[0]);
-         unsigned width = agx_size_align_16(ins->src[0].size);
+         unsigned width = agx_size_align_16(agx_split_width(ins));
 
          struct agx_copy copies[4];
          unsigned n = 0;
@@ -347,7 +352,6 @@ agx_ra(agx_context *ctx)
          /* Move the sources */
          for (unsigned i = 0; i < 4; ++i) {
             if (agx_is_null(ins->dest[i])) continue;
-            assert(ins->dest[i].size == ins->src[0].size);
 
             copies[n++] = (struct agx_copy) {
                .dest = agx_index_to_reg(ssa_to_reg, ins->dest[i]),

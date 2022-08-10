@@ -45,6 +45,7 @@ enum agx_dbg {
    AGX_DBG_VERBOSE     = BITFIELD_BIT(3),
    AGX_DBG_INTERNAL    = BITFIELD_BIT(4),
    AGX_DBG_NOVALIDATE  = BITFIELD_BIT(5),
+   AGX_DBG_NOOPT       = BITFIELD_BIT(6),
 };
 
 extern int agx_debug;
@@ -374,9 +375,6 @@ typedef struct {
    struct list_head blocks; /* list of agx_block */
    struct agx_shader_info *out;
    struct agx_shader_key *key;
-
-   /* Remapping table for varyings indexed by driver_location */
-   unsigned varyings[AGX_MAX_VARYINGS];
 
    /* Place to start pushing new values */
    unsigned push_base;

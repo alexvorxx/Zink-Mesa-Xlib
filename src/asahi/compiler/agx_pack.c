@@ -32,6 +32,20 @@ struct agx_branch_fixup {
    agx_block *block;
 };
 
+static void
+assert_register_is_aligned(agx_index reg)
+{
+   assert(reg.type == AGX_INDEX_REGISTER);
+
+   switch (reg.size) {
+   case AGX_SIZE_16: return;
+   case AGX_SIZE_32: assert((reg.value & 1) == 0 && "unaligned reg"); return;
+   case AGX_SIZE_64: assert((reg.value & 3) == 0 && "unaligned reg"); return;
+   }
+
+   unreachable("Invalid register size");
+}
+
 /* Texturing has its own operands */
 static unsigned
 agx_pack_sample_coords(agx_index index, bool *flag)
@@ -139,14 +153,10 @@ agx_pack_memory_index(agx_index index, bool *flag)
 static unsigned
 agx_pack_alu_dst(agx_index dest)
 {
-   assert(dest.type == AGX_INDEX_REGISTER);
+   assert_register_is_aligned(dest);
    unsigned reg = dest.value;
    enum agx_size size = dest.size;
    assert(reg < 0x100);
-
-   /* RA invariant: alignment of half-reg */
-   if (size >= AGX_SIZE_32)
-      assert((reg & 1) == 0);
 
    return
       (dest.cache ? (1 << 0) : 0) |
@@ -179,7 +189,7 @@ agx_pack_alu_src(agx_index src)
          (0x1 << 8) |
          (((value >> 6) & BITFIELD_MASK(2)) << 10);
    } else {
-      assert(src.type == AGX_INDEX_REGISTER);
+      assert_register_is_aligned(src);
       assert(!(src.cache && src.discard));
 
       unsigned hint = src.discard ? 0x3 : src.cache ? 0x2 : 0x1;
@@ -225,6 +235,7 @@ agx_pack_cmpsel_src(agx_index src, enum agx_size dest_size)
       assert(!(src.cache && src.discard));
       assert(size == AGX_SIZE_16 || size == AGX_SIZE_32);
       assert(size == dest_size);
+      assert_register_is_aligned(src);
 
       unsigned hint = src.discard ? 0x3 : src.cache ? 0x2 : 0x1;
 
@@ -248,6 +259,7 @@ agx_pack_sample_mask_src(agx_index src)
       return packed_value | (1 << 7);
    } else {
       assert(src.type == AGX_INDEX_REGISTER);
+      assert_register_is_aligned(src);
       assert(!(src.cache && src.discard));
 
       return packed_value;
@@ -446,17 +458,30 @@ agx_pack_instr(struct util_dynarray *emission, struct util_dynarray *fixups, agx
       break;
    }
 
-   case AGX_OPCODE_LD_VARY:
-   case AGX_OPCODE_LD_VARY_FLAT:
+   case AGX_OPCODE_ITER:
+   case AGX_OPCODE_LDCF:
    {
-      bool flat = (I->op == AGX_OPCODE_LD_VARY_FLAT);
+      bool flat = (I->op == AGX_OPCODE_LDCF);
       unsigned D = agx_pack_alu_dst(I->dest[0]);
       unsigned channels = (I->channels & 0x3);
       assert(I->mask < 0xF); /* 0 indicates full mask */
-      agx_index index_src = I->src[0];
-      assert(index_src.type == AGX_INDEX_IMMEDIATE);
+
+      agx_index src_I = I->src[0];
+      assert(src_I.type == AGX_INDEX_IMMEDIATE);
       assert(!(flat && I->perspective));
-      unsigned index = index_src.value;
+
+      unsigned cf_I = src_I.value;
+      unsigned cf_J = 0;
+
+      if (I->perspective) {
+         agx_index src_J = I->src[1];
+         assert(src_J.type == AGX_INDEX_IMMEDIATE);
+         cf_J = src_J.value;
+      }
+
+      assert(cf_I < 0x100);
+      assert(cf_J < 0x100);
+
       bool kill = false; // TODO: optimize
 
       uint64_t raw =
@@ -464,11 +489,14 @@ agx_pack_instr(struct util_dynarray *emission, struct util_dynarray *fixups, agx
             (I->perspective ? (1 << 6) : 0) |
             ((D & 0xFF) << 7) |
             (1ull << 15) | /* XXX */
-            (((uint64_t) index) << 16) |
+            ((cf_I & BITFIELD_MASK(6)) << 16) |
+            ((cf_J & BITFIELD_MASK(6)) << 24) |
             (((uint64_t) channels) << 30) |
             (!flat ? (1ull << 46) : 0) | /* XXX */
             (kill ? (1ull << 52) : 0) | /* XXX */
-            (((uint64_t) (D >> 8)) << 56);
+            (((uint64_t) (D >> 8)) << 56) |
+            ((uint64_t) (cf_I >> 6) << 58) |
+            ((uint64_t) (cf_J >> 6) << 60);
 
       unsigned size = 8;
       memcpy(util_dynarray_grow_bytes(emission, 1, size), &raw, size);
@@ -597,7 +625,7 @@ agx_pack_instr(struct util_dynarray *emission, struct util_dynarray *fixups, agx
             (((uint64_t) q3) << 43) |
             (((uint64_t) I->mask) << 48) |
             (((uint64_t) I->lod_mode) << 52) |
-            (((uint64_t) (S & BITFIELD_MASK(6))) << 32) |
+            (((uint64_t) (S & BITFIELD_MASK(6))) << 56) |
             (((uint64_t) St) << 62) |
             (((uint64_t) q5) << 63);
 

@@ -157,7 +157,7 @@ ac_nir_cull_triangle(nir_builder *b,
       nir_ssa_def *prim_outside_view = cull_frustrum(b, bbox_min, bbox_max);
       nir_ssa_def *prim_invisible = cull_small_primitive(b, bbox_min, bbox_max, prim_outside_view);
 
-      accepted = nir_iand(b, nir_inot(b, prim_invisible), nir_inot(b, w_info.any_w_negative));
+      accepted = nir_ior(b, nir_inot(b, prim_invisible), w_info.any_w_negative);
       nir_if *if_still_accepted = nir_push_if(b, accepted);
       {
          accept_func(b, state);

@@ -4026,12 +4026,8 @@ genX(cmd_buffer_flush_state)(struct anv_cmd_buffer *cmd_buffer)
       cmd_buffer_emit_viewport(cmd_buffer);
       cmd_buffer_emit_depth_viewport(cmd_buffer,
                                      pipeline->depth_clamp_enable);
-   }
-
-   if ((cmd_buffer->state.gfx.dirty & ANV_CMD_DIRTY_RENDER_TARGETS) ||
-       BITSET_TEST(dyn->dirty, MESA_VK_DYNAMIC_VP_VIEWPORTS) ||
-       BITSET_TEST(dyn->dirty, MESA_VK_DYNAMIC_VP_SCISSORS))
       cmd_buffer_emit_scissor(cmd_buffer);
+   }
 
    if ((cmd_buffer->state.gfx.dirty & ANV_CMD_DIRTY_PIPELINE) ||
        BITSET_TEST(dyn->dirty, MESA_VK_DYNAMIC_IA_PRIMITIVE_TOPOLOGY)) {

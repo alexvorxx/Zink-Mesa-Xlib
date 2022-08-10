@@ -490,6 +490,7 @@ _eglCreateExtensionsString(_EGLDisplay *disp)
    _EGL_CHECK_EXTENSION(ANDROID_recordable);
 
    _EGL_CHECK_EXTENSION(CHROMIUM_sync_control);
+   _EGL_CHECK_EXTENSION(ANGLE_sync_control_rate);
 
    _EGL_CHECK_EXTENSION(EXT_buffer_age);
    _EGL_CHECK_EXTENSION(EXT_create_context_robustness);
@@ -2365,6 +2366,28 @@ eglGetSyncValuesCHROMIUM(EGLDisplay dpy, EGLSurface surface,
       RETURN_EGL_ERROR(disp, EGL_BAD_PARAMETER, EGL_FALSE);
 
    ret = disp->Driver->GetSyncValuesCHROMIUM(disp, surf, ust, msc, sbc);
+
+   RETURN_EGL_EVAL(disp, ret);
+}
+
+static EGLBoolean EGLAPIENTRY
+eglGetMscRateANGLE(EGLDisplay dpy, EGLSurface surface,
+                    EGLint *numerator, EGLint *denominator)
+{
+   _EGLDisplay *disp = _eglLockDisplay(dpy);
+   _EGLSurface *surf = _eglLookupSurface(surface, disp);
+   EGLBoolean ret;
+
+   _EGL_FUNC_START(disp, EGL_OBJECT_SURFACE_KHR, surf, EGL_FALSE);
+
+   _EGL_CHECK_SURFACE(disp, surf, EGL_FALSE);
+   if (!disp->Extensions.ANGLE_sync_control_rate)
+      RETURN_EGL_EVAL(disp, EGL_FALSE);
+
+   if (!numerator || !denominator)
+      RETURN_EGL_ERROR(disp, EGL_BAD_PARAMETER, EGL_FALSE);
+
+   ret = disp->Driver->GetMscRateANGLE(disp, surf, numerator, denominator);
 
    RETURN_EGL_EVAL(disp, ret);
 }

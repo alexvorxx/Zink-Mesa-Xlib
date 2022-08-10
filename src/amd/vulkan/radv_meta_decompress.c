@@ -470,7 +470,7 @@ radv_process_depth_stencil(struct radv_cmd_buffer *cmd_buffer, struct radv_image
 
    radv_meta_save(
       &saved_state, cmd_buffer,
-      RADV_META_SAVE_GRAPHICS_PIPELINE | RADV_META_SAVE_SAMPLE_LOCATIONS | RADV_META_SAVE_PASS);
+      RADV_META_SAVE_GRAPHICS_PIPELINE | RADV_META_SAVE_PASS);
 
    pipeline = radv_get_depth_pipeline(cmd_buffer, image, subresourceRange, op);
 

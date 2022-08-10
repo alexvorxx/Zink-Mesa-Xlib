@@ -19,7 +19,7 @@ variables:
   # running on a particular CI farm (ie. for outages, etc):
   FD_FARM: "online"
   COLLABORA_FARM: "online"
-  MICROSOFT_FARM: "offline"
+  MICROSOFT_FARM: "online"
   LIMA_FARM: "offline"
   IGALIA_FARM: "online"
 

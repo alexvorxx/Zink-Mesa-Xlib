@@ -44,3 +44,4 @@ lavapipe-traces:
   extends:
     - .piglit-traces-test
     - .lavapipe-test
+    - .test-manual-mr

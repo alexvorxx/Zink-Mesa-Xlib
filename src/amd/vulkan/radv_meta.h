@@ -39,8 +39,7 @@ enum radv_meta_save_flags {
    RADV_META_SAVE_DESCRIPTORS = (1 << 2),
    RADV_META_SAVE_GRAPHICS_PIPELINE = (1 << 3),
    RADV_META_SAVE_COMPUTE_PIPELINE = (1 << 4),
-   RADV_META_SAVE_SAMPLE_LOCATIONS = (1 << 5),
-   RADV_META_SUSPEND_PREDICATING = (1 << 6),
+   RADV_META_SUSPEND_PREDICATING = (1 << 5),
 };
 
 struct radv_meta_saved_state {

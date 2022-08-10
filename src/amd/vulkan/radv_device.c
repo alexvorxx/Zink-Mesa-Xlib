@@ -3029,16 +3029,24 @@ radv_device_finish_vs_prologs(struct radv_device *device)
       hash_table_foreach(device->vs_prologs, entry)
       {
          free((void *)entry->key);
-         radv_shader_part_destroy(device, entry->data);
+         radv_shader_part_unref(device, entry->data);
       }
       _mesa_hash_table_destroy(device->vs_prologs, NULL);
    }
 
-   for (unsigned i = 0; i < ARRAY_SIZE(device->simple_vs_prologs); i++)
-      radv_shader_part_destroy(device, device->simple_vs_prologs[i]);
+   for (unsigned i = 0; i < ARRAY_SIZE(device->simple_vs_prologs); i++) {
+      if (!device->simple_vs_prologs[i])
+         continue;
 
-   for (unsigned i = 0; i < ARRAY_SIZE(device->instance_rate_vs_prologs); i++)
-      radv_shader_part_destroy(device, device->instance_rate_vs_prologs[i]);
+      radv_shader_part_unref(device, device->simple_vs_prologs[i]);
+   }
+
+   for (unsigned i = 0; i < ARRAY_SIZE(device->instance_rate_vs_prologs); i++) {
+      if (!device->instance_rate_vs_prologs[i])
+         continue;
+
+      radv_shader_part_unref(device, device->instance_rate_vs_prologs[i]);
+   }
 }
 
 VkResult

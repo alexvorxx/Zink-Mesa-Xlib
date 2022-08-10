@@ -527,6 +527,14 @@ fd_screen_get_param(struct pipe_screen *pscreen, enum pipe_cap param)
       if (!os_get_total_physical_memory(&system_memory))
          return 0;
 
+      if (fd_device_version(screen->dev) >= FD_VERSION_VA_SIZE) {
+         uint64_t va_size;
+
+         if (!fd_pipe_get_param(screen->pipe, FD_VA_SIZE, &va_size)) {
+            system_memory = MIN2(system_memory, va_size);
+         }
+      }
+
       return (int)(system_memory >> 20);
    }
 

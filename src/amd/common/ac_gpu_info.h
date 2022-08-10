@@ -33,6 +33,23 @@
 #include <stdint.h>
 #include <stdio.h>
 
+#ifdef _WIN32
+#define AMDGPU_VRAM_TYPE_UNKNOWN 0
+#define AMDGPU_VRAM_TYPE_GDDR1 1
+#define AMDGPU_VRAM_TYPE_DDR2  2
+#define AMDGPU_VRAM_TYPE_GDDR3 3
+#define AMDGPU_VRAM_TYPE_GDDR4 4
+#define AMDGPU_VRAM_TYPE_GDDR5 5
+#define AMDGPU_VRAM_TYPE_HBM   6
+#define AMDGPU_VRAM_TYPE_DDR3  7
+#define AMDGPU_VRAM_TYPE_DDR4  8
+#define AMDGPU_VRAM_TYPE_GDDR6 9
+#define AMDGPU_VRAM_TYPE_DDR5  10
+#else
+#include "drm-uapi/amdgpu_drm.h"
+#endif
+#include "util/macros.h"
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -309,6 +326,8 @@ struct ac_task_info {
 
 void ac_get_task_info(struct radeon_info *info,
                       struct ac_task_info *task_info);
+
+uint32_t ac_memory_ops_per_clock(uint32_t vram_type);
 
 #ifdef __cplusplus
 }

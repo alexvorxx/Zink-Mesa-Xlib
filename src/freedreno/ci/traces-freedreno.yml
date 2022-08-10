@@ -27,10 +27,8 @@ traces:
         checksum: f7e6f426d7b9c82742f00baed830797f
       - device: freedreno-a630
         checksum: 14f7656971b98fdaaf00bf576ada7ccf
-      # ../src/vulkan/runtime/vk_image.c:418: vk_image_view_init: Assertion `pCreateInfo->format == image->format' failed.
-      # turnip refuses to do mutable UNORM vs sRGB views of UBWC, but zink tries to do it anyway.
-      # - device: zink-a630
-      #   checksum: affab10e98c1415747b1dc38eb7f7d7d
+      - device: zink-a630
+        checksum: affab10e98c1415747b1dc38eb7f7d7d
   - path: valve/portal-2-v2.trace
     expectations:
       # Skipped since it's slow even on a530.
@@ -42,10 +40,8 @@ traces:
       # Floor splatter rendering failure, probably the same alpha test issue.
       - device: freedreno-a630
         checksum: a3a9e158ccf7fa5ba978e045505a060e
-      # ../src/vulkan/runtime/vk_image.c:418: vk_image_view_init: Assertion `pCreateInfo->format == image->format' failed.
-      # turnip refuses to do mutable UNORM vs sRGB views of UBWC, but zink tries to do it anyway.
-      # - device: zink-a630
-      #   checksum: cd427d434d54990bde533302c01e945f
+      - device: zink-a630
+        checksum: cd427d434d54990bde533302c01e945f
   - path: valve/counterstrike-source-v2.trace
     expectations:
       # Skipped since it's slow even on a530.
@@ -56,10 +52,8 @@ traces:
         checksum: a00c5007c26daab3eccb778e68fb2730
       - device: freedreno-a630
         checksum: 339dce29ae08569652438116829510c7
-      # ../src/vulkan/runtime/vk_image.c:418: vk_image_view_init: Assertion `pCreateInfo->format == image->format' failed.
-      # turnip refuses to do mutable UNORM vs sRGB views of UBWC, but zink tries to do it anyway.
-      # - device: zink-a630
-      #   checksum: dc9a01cfe6f2e542756b4892d80ef49c
+      - device: zink-a630
+        checksum: dc9a01cfe6f2e542756b4892d80ef49c
   - path: xonotic/xonotic-keybench-high.trace
     expectations:
       # Skipped since it's long on a530.
@@ -143,10 +137,8 @@ traces:
         checksum: 3a37faf7ec62d48dada63f157f30d876
       - device: freedreno-a630
         checksum: d25edb433abfcde517b626b3071906ff
-      # ../src/vulkan/runtime/vk_image.c:418: vk_image_view_init: Assertion `pCreateInfo->format == image->format' failed.
-      # turnip refuses to do mutable UNORM vs sRGB views of UBWC, but zink tries to do it anyway.
-      # - device: zink-a630
-      #   checksum: d25edb433abfcde517b626b3071906ff
+      - device: zink-a630
+        checksum: d25edb433abfcde517b626b3071906ff
   - path: glmark2/buffer:update-fraction=0.5:update-dispersion=0.9:columns=200:update-method=map:interleave=false.trace
     expectations:
       - device: freedreno-a306

@@ -100,6 +100,7 @@ struct _egl_extensions
    EGLBoolean ANDROID_native_fence_sync;
    EGLBoolean ANDROID_recordable;
 
+   EGLBoolean ANGLE_sync_control_rate;
    EGLBoolean CHROMIUM_sync_control;
 
    EGLBoolean EXT_buffer_age;

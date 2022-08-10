@@ -83,6 +83,34 @@ enum radeon_bo_flag
   RADEON_FLAG_MALL_NOALLOC = (1 << 11), /* don't cache in the infinity cache */
 };
 
+static inline void
+si_res_print_flags(enum radeon_bo_flag flags) {
+   if (flags & RADEON_FLAG_GTT_WC)
+      fprintf(stderr, "GTT_WC ");
+   if (flags & RADEON_FLAG_NO_CPU_ACCESS)
+      fprintf(stderr, "NO_CPU_ACCESS ");
+   if (flags & RADEON_FLAG_NO_SUBALLOC)
+      fprintf(stderr, "NO_SUBALLOC ");
+   if (flags & RADEON_FLAG_SPARSE)
+      fprintf(stderr, "SPARSE ");
+   if (flags & RADEON_FLAG_NO_INTERPROCESS_SHARING)
+      fprintf(stderr, "NO_INTERPROCESS_SHARING ");
+   if (flags & RADEON_FLAG_READ_ONLY)
+      fprintf(stderr, "READ_ONLY ");
+   if (flags & RADEON_FLAG_32BIT)
+      fprintf(stderr, "32BIT ");
+   if (flags & RADEON_FLAG_ENCRYPTED)
+      fprintf(stderr, "ENCRYPTED ");
+   if (flags & RADEON_FLAG_GL2_BYPASS)
+      fprintf(stderr, "GL2_BYPASS ");
+   if (flags & RADEON_FLAG_DRIVER_INTERNAL)
+      fprintf(stderr, "DRIVER_INTERNAL ");
+   if (flags & RADEON_FLAG_DISCARDABLE)
+      fprintf(stderr, "DISCARDABLE ");
+   if (flags & RADEON_FLAG_MALL_NOALLOC)
+      fprintf(stderr, "MALL_NOALLOC ");
+}
+
 enum radeon_map_flags
 {
    /* Indicates that the caller will unmap the buffer.

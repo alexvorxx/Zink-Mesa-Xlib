@@ -257,8 +257,7 @@ ACO doesn't use FLAT load/store on GFX10, so is unaffected.
 ### VcmpxPermlaneHazard
 
 Triggered by:
-Any permlane instruction that follows any VOPC instruction.
-Confirmed by AMD devs that despite the name, this doesn't only affect v_cmpx.
+Any permlane instruction that follows any VOPC instruction which writes exec.
 
 Mitigated by: any VALU instruction except `v_nop`.
 

@@ -692,11 +692,10 @@ resource_object_create(struct zink_screen *screen, const struct pipe_resource *t
          goto fail1;
 
       obj->render_target = (ici.usage & VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT) != 0;
-      const void *pNext = ici.pNext;
 
       if (shared || external) {
          emici.sType = VK_STRUCTURE_TYPE_EXTERNAL_MEMORY_IMAGE_CREATE_INFO;
-         emici.pNext = NULL;
+         emici.pNext = ici.pNext;
          emici.handleTypes = export_types;
          ici.pNext = &emici;
 
@@ -728,8 +727,6 @@ resource_object_create(struct zink_screen *screen, const struct pipe_resource *t
             idfmlci.pDrmFormatModifiers = modifiers;
             ici.pNext = &idfmlci;
          } else if (ici.tiling == VK_IMAGE_TILING_OPTIMAL) {
-            if (!external)
-               ici.pNext = pNext;
             shared = false;
          }
       }

@@ -359,21 +359,30 @@ agxdecode_pipeline(const uint8_t *map, UNUSED bool verbose)
       agx_unpack(agxdecode_dump_stream, map, BIND_TEXTURE, temp);
       DUMP_UNPACKED(BIND_TEXTURE, temp, "Bind texture\n");
 
-      uint8_t *tex = agxdecode_fetch_gpu_mem(temp.buffer, 64);
-      /* Texture length seen to be <= 0x18 bytes, samplers only need 8 byte
-       * alignment */
-      agx_unpack(agxdecode_dump_stream, tex, TEXTURE, t);
-      DUMP_CL(TEXTURE, tex, "Texture");
-      DUMP_CL(RENDER_TARGET, tex, "Render target");
+      uint8_t *tex = agxdecode_fetch_gpu_mem(temp.buffer,
+            AGX_TEXTURE_LENGTH * temp.count);
+
+      /* Note: samplers only need 8 byte alignment? */
+      for (unsigned i = 0; i < temp.count; ++i) {
+         agx_unpack(agxdecode_dump_stream, tex, TEXTURE, t);
+         DUMP_CL(TEXTURE, tex, "Texture");
+         DUMP_CL(RENDER_TARGET, tex, "Render target");
+
+         tex += AGX_TEXTURE_LENGTH;
+      }
 
       return AGX_BIND_TEXTURE_LENGTH;
    } else if (map[0] == 0x9D) {
       agx_unpack(agxdecode_dump_stream, map, BIND_SAMPLER, temp);
       DUMP_UNPACKED(BIND_SAMPLER, temp, "Bind sampler\n");
 
-      uint8_t *samp = agxdecode_fetch_gpu_mem(temp.buffer, 64);
-      DUMP_CL(SAMPLER, samp, "Sampler");
-      hexdump(agxdecode_dump_stream, samp + AGX_SAMPLER_LENGTH, 64 - AGX_SAMPLER_LENGTH, false);
+      uint8_t *samp = agxdecode_fetch_gpu_mem(temp.buffer,
+            AGX_SAMPLER_LENGTH * temp.count);
+
+      for (unsigned i = 0; i < temp.count; ++i) {
+         DUMP_CL(SAMPLER, samp, "Sampler");
+         samp += AGX_SAMPLER_LENGTH;
+      }
 
       return AGX_BIND_SAMPLER_LENGTH;
    } else if (map[0] == 0x1D) {
@@ -397,6 +406,9 @@ agxdecode_record(uint64_t va, size_t size, bool verbose)
    if (tag == 0x00000C00) {
       assert(size == AGX_VIEWPORT_LENGTH);
       DUMP_CL(VIEWPORT, map, "Viewport");
+   } else if (tag == 0x100C0000) {
+      assert(size == AGX_INTERPOLATION_LENGTH);
+      DUMP_CL(INTERPOLATION, map, "Interpolation");
    } else if (tag == 0x0C020000) {
       assert(size == AGX_LINKAGE_LENGTH);
       DUMP_CL(LINKAGE, map, "Linkage");
@@ -413,26 +425,25 @@ agxdecode_record(uint64_t va, size_t size, bool verbose)
       assert(size == AGX_SET_INDEX_LENGTH);
       DUMP_CL(SET_INDEX, map, "Set index");
    } else if (tag == 0x800000) {
-      assert(size == (AGX_BIND_PIPELINE_LENGTH - 4));
+      assert(size == AGX_BIND_FRAGMENT_PIPELINE_LENGTH);
 
-      agx_unpack(agxdecode_dump_stream, map, BIND_PIPELINE, cmd);
+      agx_unpack(agxdecode_dump_stream, map, BIND_FRAGMENT_PIPELINE, cmd);
       agxdecode_stateful(cmd.pipeline, "Pipeline", agxdecode_pipeline, verbose);
 
-      /* TODO: parse */
-      if (cmd.fs_varyings) {
-         uint8_t *map = agxdecode_fetch_gpu_mem(cmd.fs_varyings, 128);
+      if (cmd.cf_bindings) {
+         uint8_t *map = agxdecode_fetch_gpu_mem(cmd.cf_bindings, 128);
          hexdump(agxdecode_dump_stream, map, 128, false);
 
-         DUMP_CL(VARYING_HEADER, map, "Varying header:");
-         map += AGX_VARYING_HEADER_LENGTH;
+         DUMP_CL(CF_BINDING_HEADER, map, "Coefficient binding header:");
+         map += AGX_CF_BINDING_HEADER_LENGTH;
 
-         for (unsigned i = 0; i < cmd.input_count; ++i) {
-            DUMP_CL(VARYING, map, "Varying:");
-            map += AGX_VARYING_LENGTH;
+         for (unsigned i = 0; i < cmd.cf_binding_count; ++i) {
+            DUMP_CL(CF_BINDING, map, "Coefficient binding:");
+            map += AGX_CF_BINDING_LENGTH;
          }
       }
 
-      DUMP_UNPACKED(BIND_PIPELINE, cmd, "Bind fragment pipeline\n");
+      DUMP_UNPACKED(BIND_FRAGMENT_PIPELINE, cmd, "Bind fragment pipeline\n");
    } else if (size == 0) {
       pipeline_base = va;
    } else {
@@ -450,10 +461,10 @@ agxdecode_cmd(const uint8_t *map, bool verbose)
       DUMP_UNPACKED(LAUNCH, cmd, "Launch\n");
       return AGX_LAUNCH_LENGTH;
    } else if (map[0] == 0x2E && map[1] == 0x00 && map[2] == 0x00 && map[3] == 0x40) {
-      agx_unpack(agxdecode_dump_stream, map, BIND_PIPELINE, cmd);
+      agx_unpack(agxdecode_dump_stream, map, BIND_VERTEX_PIPELINE, cmd);
       agxdecode_stateful(cmd.pipeline, "Pipeline", agxdecode_pipeline, verbose);
-      DUMP_UNPACKED(BIND_PIPELINE, cmd, "Bind vertex pipeline\n");
-      return AGX_BIND_PIPELINE_LENGTH;
+      DUMP_UNPACKED(BIND_VERTEX_PIPELINE, cmd, "Bind vertex pipeline\n");
+      return AGX_BIND_VERTEX_PIPELINE_LENGTH;
    } else if (map[3] == 0x61) {
       DUMP_CL(DRAW, map, "Draw");
       return AGX_DRAW_LENGTH;

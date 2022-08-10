@@ -1111,14 +1111,14 @@ struct si_context {
 
    /* Vertex buffers. */
    bool vertex_buffers_dirty;
-   bool vertex_buffer_pointer_dirty;
-   bool vertex_buffer_user_sgprs_dirty;
-   struct pipe_vertex_buffer vertex_buffer[SI_NUM_VERTEX_BUFFERS];
    uint16_t vertex_buffer_unaligned; /* bitmask of not dword-aligned buffers */
-   uint32_t *vb_descriptors_gpu_list;
-   struct si_resource *vb_descriptors_buffer;
-   unsigned vb_descriptors_offset;
-   unsigned vb_descriptor_user_sgprs[5 * 4];
+   struct pipe_vertex_buffer vertex_buffer[SI_NUM_VERTEX_BUFFERS];
+
+   /* Even though we don't need this variable, u_upload_alloc has an optimization that skips
+    * reference counting when the new upload buffer is the same as the last one. So keep
+    * the last upload buffer here and always pass &last_const_upload_buffer to u_upload_alloc.
+    */
+   struct si_resource *last_const_upload_buffer;
 
    /* MSAA config state. */
    int ps_iter_samples;

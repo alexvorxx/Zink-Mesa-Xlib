@@ -39,6 +39,7 @@ static const struct debug_named_value agx_debug_options[] = {
    {"verbose",   AGX_DBG_VERBOSE,	"Disassemble verbosely"},
    {"internal",  AGX_DBG_INTERNAL,	"Dump even internal shaders"},
    {"novalidate",AGX_DBG_NOVALIDATE,"Skip IR validation in debug builds"},
+   {"noopt",     AGX_DBG_NOOPT,     "Disable backend optimizations"},
    DEBUG_NAMED_VALUE_END
 };
 
@@ -50,6 +51,45 @@ int agx_debug = 0;
    do { if (agx_debug & AGX_DBG_MSGS) \
       fprintf(stderr, "%s:%d: "fmt, \
             __FUNCTION__, __LINE__, ##__VA_ARGS__); } while (0)
+
+static agx_index
+agx_get_cf(agx_context *ctx, bool smooth, bool perspective,
+           gl_varying_slot slot, unsigned offset, unsigned count)
+{
+   struct agx_varyings_fs *varyings = &ctx->out->varyings.fs;
+   unsigned cf_base = varyings->nr_cf;
+
+   if (slot == VARYING_SLOT_POS) {
+      assert(offset == 2 || offset == 3);
+      varyings->reads_z |= (offset == 2);
+   }
+
+   /* First, search for an appropriate binding. This is O(n) to the number of
+    * bindings, which isn't great, but n should be small in practice.
+    */
+   for (unsigned b = 0; b < varyings->nr_bindings; ++b) {
+      if ((varyings->bindings[b].slot == slot) &&
+          (varyings->bindings[b].offset == offset) &&
+          (varyings->bindings[b].count == count) &&
+          (varyings->bindings[b].smooth == smooth) &&
+          (varyings->bindings[b].perspective == perspective)) {
+
+         return agx_immediate(varyings->bindings[b].cf_base);
+      }
+   }
+
+   /* If we didn't find one, make one */
+   unsigned b = varyings->nr_bindings++;
+   varyings->bindings[b].cf_base = varyings->nr_cf;
+   varyings->bindings[b].slot = slot;
+   varyings->bindings[b].offset = offset;
+   varyings->bindings[b].count = count;
+   varyings->bindings[b].smooth = smooth;
+   varyings->bindings[b].perspective = perspective;
+   varyings->nr_cf += count;
+
+   return agx_immediate(cf_base);
+}
 
 /* Builds a 64-bit hash table key for an index */
 static uint64_t
@@ -174,6 +214,33 @@ agx_emit_load_const(agx_builder *b, nir_load_const_instr *instr)
                   nir_const_value_as_uint(instr->value[0], bit_size));
 }
 
+/*
+ * Implement umul_high of 32-bit sources by doing a 32x32->64-bit multiply and
+ * extracting only the high word.
+ */
+static agx_instr *
+agx_umul_high_to(agx_builder *b, agx_index dst, agx_index P, agx_index Q)
+{
+   assert(P.size == Q.size && "source sizes must match");
+   assert(P.size == dst.size && "dest size must match");
+   assert(P.size != AGX_SIZE_64 && "64x64 multiply should have been lowered");
+
+   static_assert(AGX_SIZE_64 == (AGX_SIZE_32 + 1), "enum wrong");
+   static_assert(AGX_SIZE_32 == (AGX_SIZE_16 + 1), "enum wrong");
+
+   agx_index product = agx_temp(b->shader, P.size + 1);
+   agx_imad_to(b, product, agx_abs(P), agx_abs(Q), agx_zero(), 0);
+   return agx_p_split_to(b, agx_null(), dst, agx_null(), agx_null(), product);
+}
+
+static agx_index
+agx_umul_high(agx_builder *b, agx_index P, agx_index Q)
+{
+   agx_index dst = agx_temp(b->shader, P.size);
+   agx_umul_high_to(b, dst, P, Q);
+   return dst;
+}
+
 /* Emit code dividing P by Q */
 static agx_index
 agx_udiv_const(agx_builder *b, agx_index P, uint32_t Q)
@@ -201,16 +268,12 @@ agx_udiv_const(agx_builder *b, agx_index P, uint32_t Q)
    agx_index increment = agx_mov_imm(b, 32, info.increment);
    agx_index postshift = agx_mov_imm(b, 32, info.post_shift);
    agx_index multiplier = agx_mov_imm(b, 32, info.multiplier);
-   agx_index multiplied = agx_temp(b->shader, AGX_SIZE_64);
    agx_index n = P;
 
    if (info.pre_shift != 0) n = agx_ushr(b, n, preshift);
    if (info.increment != 0) n = agx_iadd(b, n, increment, 0);
 
-   /* 64-bit multiplication, zero extending 32-bit x 32-bit, get the top word */
-   agx_imad_to(b, multiplied, agx_abs(n), agx_abs(multiplier), agx_zero(), 0);
-   n = agx_temp(b->shader, AGX_SIZE_32);
-   agx_p_extract_to(b, n, multiplied, 1);
+   n = agx_umul_high(b, n, multiplier);
 
    if (info.post_shift != 0) n = agx_ushr(b, n, postshift);
 
@@ -278,17 +341,26 @@ agx_emit_load_vary_flat(agx_builder *b, agx_index *dests, nir_intrinsic_instr *i
    unsigned components = instr->num_components;
    assert(components >= 1 && components <= 4);
 
+   nir_io_semantics sem = nir_intrinsic_io_semantics(instr);
    nir_src *offset = nir_get_io_offset_src(instr);
    assert(nir_src_is_const(*offset) && "no indirects");
-   unsigned imm_index = b->shader->varyings[nir_intrinsic_base(instr)];
-   imm_index += nir_src_as_uint(*offset);
-
    assert(nir_dest_bit_size(instr->dest) == 32 && "no 16-bit flat shading");
+
+   /* Get all coefficient registers up front. This ensures the driver emits a
+    * single vectorized binding.
+    */
+   agx_index cf = agx_get_cf(b->shader, false, false,
+                             sem.location + nir_src_as_uint(*offset), 0,
+                             components);
 
    for (unsigned i = 0; i < components; ++i) {
       /* vec3 for each vertex, unknown what first 2 channels are for */
-      agx_index values = agx_ld_vary_flat(b, agx_immediate(imm_index + i), 1);
-      dests[i] = agx_p_extract(b, values, 2);
+      agx_index d[3] = { agx_null() };
+      agx_emit_split(b, d, agx_ldcf(b, cf, 1), 3);
+      dests[i] = d[2];
+
+      /* Each component accesses a sequential coefficient register */
+      cf.value++;
    }
 }
 
@@ -296,30 +368,43 @@ static void
 agx_emit_load_vary(agx_builder *b, agx_index *dests, nir_intrinsic_instr *instr)
 {
    ASSERTED unsigned components = instr->num_components;
-   ASSERTED nir_intrinsic_instr *parent = nir_src_as_intrinsic(instr->src[0]);
+   nir_intrinsic_instr *bary = nir_src_as_intrinsic(instr->src[0]);
 
    assert(components >= 1 && components <= 4);
-   assert(parent);
 
    /* TODO: Interpolation modes */
-   assert(parent->intrinsic == nir_intrinsic_load_barycentric_pixel);
+   assert(bary != NULL);
+   assert(bary->intrinsic == nir_intrinsic_load_barycentric_pixel);
 
+   bool perspective =
+      nir_intrinsic_interp_mode(bary) != INTERP_MODE_NOPERSPECTIVE;
+
+   nir_io_semantics sem = nir_intrinsic_io_semantics(instr);
    nir_src *offset = nir_get_io_offset_src(instr);
    assert(nir_src_is_const(*offset) && "no indirects");
-   unsigned imm_index = b->shader->varyings[nir_intrinsic_base(instr)];
-   imm_index += nir_src_as_uint(*offset) * 4;
+
+   /* For perspective interpolation, we need W */
+   agx_index J = !perspective ? agx_zero() :
+                  agx_get_cf(b->shader, true, false, VARYING_SLOT_POS, 3, 1);
+
+   agx_index I = agx_get_cf(b->shader, true, perspective,
+                           sem.location + nir_src_as_uint(*offset), 0,
+                           components);
 
    agx_index vec = agx_vec_for_intr(b->shader, instr);
-   agx_ld_vary_to(b, vec, agx_immediate(imm_index), components, true);
+   agx_iter_to(b, vec, I, J, components, perspective);
    agx_emit_split(b, dests, vec, components);
 }
 
 static agx_instr *
 agx_emit_store_vary(agx_builder *b, nir_intrinsic_instr *instr)
 {
+   nir_io_semantics sem = nir_intrinsic_io_semantics(instr);
    nir_src *offset = nir_get_io_offset_src(instr);
    assert(nir_src_is_const(*offset) && "todo: indirects");
-   unsigned imm_index = b->shader->varyings[nir_intrinsic_base(instr)];
+
+   unsigned imm_index = b->shader->out->varyings.vs.slots[sem.location];
+   assert(imm_index < ~0);
    imm_index += nir_intrinsic_component(instr);
    imm_index += nir_src_as_uint(*offset);
 
@@ -437,18 +522,25 @@ agx_emit_load_ubo(agx_builder *b, agx_index dst, nir_intrinsic_instr *instr)
    return NULL;
 }
 
+/*
+ * Emit code to generate gl_FragCoord. The xy components are calculated from
+ * special registers, whereas the zw components are interpolated varyings.
+ * Because interpolating varyings requires allocating coefficient registers that
+ * might not be used, we only emit code for components that are actually used.
+ */
 static void
 agx_emit_load_frag_coord(agx_builder *b, agx_index *dests, nir_intrinsic_instr *instr)
 {
-   /* xy */
-   for (unsigned i = 0; i < 2; ++i) {
-      dests[i] = agx_fadd(b, agx_convert(b, agx_immediate(AGX_CONVERT_U32_TO_F),
-               agx_get_sr(b, 32, AGX_SR_THREAD_POSITION_IN_GRID_X + i),
-               AGX_ROUND_RTE), agx_immediate_f(0.5f));
+   u_foreach_bit(i, nir_ssa_def_components_read(&instr->dest.ssa)) {
+      if (i < 2) {
+         dests[i] = agx_fadd(b, agx_convert(b, agx_immediate(AGX_CONVERT_U32_TO_F),
+                  agx_get_sr(b, 32, AGX_SR_THREAD_POSITION_IN_GRID_X + i),
+                  AGX_ROUND_RTE), agx_immediate_f(0.5f));
+      } else {
+         agx_index cf = agx_get_cf(b->shader, true, false, VARYING_SLOT_POS, i, 1);
+         dests[i] = agx_iter(b, cf, agx_null(), 1, false);
+      }
    }
-
-   dests[2] = agx_ld_vary(b, agx_immediate(1), 1, false); /* z */
-   dests[3] = agx_ld_vary(b, agx_immediate(0), 1, false); /* w */
 }
 
 static agx_instr *
@@ -700,6 +792,7 @@ agx_emit_alu(agx_builder *b, nir_alu_instr *instr)
    case nir_op_isub: return agx_iadd_to(b, dst, s0, agx_neg(s1), 0);
    case nir_op_ineg: return agx_iadd_to(b, dst, agx_zero(), agx_neg(s0), 0);
    case nir_op_imul: return agx_imad_to(b, dst, s0, s1, agx_zero(), 0);
+   case nir_op_umul_high: return agx_umul_high_to(b, dst, s0, s1);
 
    case nir_op_ishl: return agx_bfi_to(b, dst, agx_zero(), s0, s1, 0);
    case nir_op_ushr: return agx_ushr_to(b, dst, s0, s1);
@@ -1443,7 +1536,6 @@ agx_optimize_nir(nir_shader *nir)
    bool progress;
 
    nir_lower_idiv_options idiv_options = {
-      .imprecise_32bit_lowering = true,
       .allow_fp16 = true,
    };
 
@@ -1500,109 +1592,38 @@ agx_optimize_nir(nir_shader *nir)
 
 /* ABI: position first, then user, then psiz */
 static void
-agx_remap_varyings_vs(nir_shader *nir, struct agx_varyings *varyings,
-                      unsigned *remap)
+agx_remap_varyings_vs(nir_shader *nir, struct agx_varyings_vs *varyings)
 {
    unsigned base = 0;
 
-   nir_variable *pos = nir_find_variable_with_location(nir, nir_var_shader_out, VARYING_SLOT_POS);
-   if (pos) {
-      assert(pos->data.driver_location < AGX_MAX_VARYINGS);
-      remap[pos->data.driver_location] = base;
-      base += 4;
-   }
+   /* Initalize to "nothing is written" */
+   for (unsigned i = 0; i < ARRAY_SIZE(varyings->slots); ++i)
+      varyings->slots[i] = ~0;
+
+   assert(nir->info.outputs_written & VARYING_BIT_POS);
+   varyings->slots[VARYING_SLOT_POS] = base;
+   base += 4;
 
    nir_foreach_shader_out_variable(var, nir) {
       unsigned loc = var->data.location;
 
-      if(loc == VARYING_SLOT_POS || loc == VARYING_SLOT_PSIZ) {
+      if(loc == VARYING_SLOT_POS || loc == VARYING_SLOT_PSIZ)
          continue;
-      }
 
-      assert(var->data.driver_location < AGX_MAX_VARYINGS);
-      remap[var->data.driver_location] = base;
+      varyings->slots[loc] = base;
       base += 4;
    }
 
-   nir_variable *psiz = nir_find_variable_with_location(nir, nir_var_shader_out, VARYING_SLOT_PSIZ);
-   if (psiz) {
-      assert(psiz->data.driver_location < AGX_MAX_VARYINGS);
-      remap[psiz->data.driver_location] = base;
+   /* TODO: Link FP16 varyings */
+   varyings->base_index_fp16 = base;
+
+   if (nir->info.outputs_written & VARYING_BIT_PSIZ) {
+      varyings->slots[VARYING_SLOT_PSIZ] = base;
       base += 1;
    }
 
-   varyings->nr_slots = base;
-}
-
-static void
-agx_remap_varyings_fs(nir_shader *nir, struct agx_varyings *varyings,
-                      unsigned *remap)
-{
-   struct agx_varying_packed *packed = varyings->packed;
-   unsigned base = 0;
-
-   agx_pack(packed, VARYING, cfg) {
-      cfg.type = AGX_VARYING_TYPE_FRAGCOORD_W;
-      cfg.components = 1;
-      cfg.triangle_slot = cfg.point_slot = base;
-   }
-
-   base++;
-   packed++;
-
-   agx_pack(packed, VARYING, cfg) {
-      cfg.type = AGX_VARYING_TYPE_FRAGCOORD_Z;
-      cfg.components = 1;
-      cfg.triangle_slot = cfg.point_slot = base;
-   }
-
-   base++;
-   packed++;
-
-   unsigned comps[MAX_VARYING] = { 0 };
-
-   nir_foreach_shader_in_variable(var, nir) {
-     unsigned loc = var->data.driver_location;
-     const struct glsl_type *column =
-        glsl_without_array_or_matrix(var->type);
-     unsigned chan = glsl_get_components(column);
-
-     /* If we have a fractional location added, we need to increase the size
-      * so it will fit, i.e. a vec3 in YZW requires us to allocate a vec4.
-      * We could do better but this is an edge case as it is, normally
-      * packed varyings will be aligned.
-      */
-     chan += var->data.location_frac;
-     comps[loc] = MAX2(comps[loc], chan);
-   }
-
-   nir_foreach_shader_in_variable(var, nir) {
-     unsigned loc = var->data.driver_location;
-     unsigned sz = glsl_count_attribute_slots(var->type, FALSE);
-     unsigned channels = comps[loc];
-
-     assert(var->data.driver_location <= AGX_MAX_VARYINGS);
-     remap[var->data.driver_location] = base;
-
-     for (int c = 0; c < sz; ++c) {
-        agx_pack(packed, VARYING, cfg) {
-           cfg.type = (var->data.location == VARYING_SLOT_PNTC) ?
-              AGX_VARYING_TYPE_POINT_COORDINATES :
-              (var->data.interpolation == INTERP_MODE_FLAT) ?
-                 AGX_VARYING_TYPE_FLAT_LAST :
-                 AGX_VARYING_TYPE_SMOOTH;
-
-           cfg.components = channels;
-           cfg.triangle_slot = cfg.point_slot = base;
-        }
-
-        base += channels;
-        packed++;
-     }
-   }
-
-   varyings->nr_descs = (packed - varyings->packed);
-   varyings->nr_slots = base;
+   /* All varyings linked now */
+   varyings->nr_index = base;
 }
 
 /*
@@ -1638,6 +1659,8 @@ agx_compile_shader_nir(nir_shader *nir,
    ctx->key = key;
    ctx->stage = nir->info.stage;
    list_inithead(&ctx->blocks);
+
+   memset(out, 0, sizeof *out);
 
    if (ctx->stage == MESA_SHADER_VERTEX) {
       out->writes_psiz = nir->info.outputs_written &
@@ -1704,11 +1727,8 @@ agx_compile_shader_nir(nir_shader *nir,
    NIR_PASS_V(nir, nir_lower_discard_if);
 
    /* Must be last since NIR passes can remap driver_location freely */
-   if (ctx->stage == MESA_SHADER_VERTEX) {
-      agx_remap_varyings_vs(nir, &out->varyings, ctx->varyings);
-   } else if (ctx->stage == MESA_SHADER_FRAGMENT) {
-      agx_remap_varyings_fs(nir, &out->varyings, ctx->varyings);
-   }
+   if (ctx->stage == MESA_SHADER_VERTEX)
+      agx_remap_varyings_vs(nir, &out->varyings.vs);
 
    bool skip_internal = nir->info.internal;
    skip_internal &= !(agx_debug & AGX_DBG_INTERNAL);
@@ -1752,12 +1772,14 @@ agx_compile_shader_nir(nir_shader *nir,
    if (agx_debug & AGX_DBG_SHADERS && !skip_internal)
       agx_print_shader(ctx, stdout);
 
-   agx_optimizer(ctx);
-   agx_dce(ctx);
-   agx_validate(ctx, "Optimization");
+   if (likely(!(agx_debug & AGX_DBG_NOOPT))) {
+      agx_optimizer(ctx);
+      agx_dce(ctx);
+      agx_validate(ctx, "Optimization");
 
-   if (agx_debug & AGX_DBG_SHADERS && !skip_internal)
-      agx_print_shader(ctx, stdout);
+      if (agx_debug & AGX_DBG_SHADERS && !skip_internal)
+         agx_print_shader(ctx, stdout);
+   }
 
    agx_ra(ctx);
 
