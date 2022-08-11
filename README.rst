@@ -48,7 +48,7 @@ Build Mesa Zink using this repository (https://github.com/alexvorxx/Zink-Mesa-Xl
 
 Go to the folder with Mesa code and run the commands:
 
-  $ meson . build -Dgallium-va=false -Ddri-drivers= -Dgallium-drivers=virgl,zink,swrast -Ddri3=false -Dvulkan-drivers= -Dglx=xlib -Dplatforms=x11 -Dbuildtype=release 
+  $ meson . build -Dgallium-va=false -Ddri-drivers= -Dgallium-drivers=zink,swrast -Ddri3=false -Dvulkan-drivers= -Dglx=xlib -Dplatforms=x11 -Dbuildtype=release 
   
   $ ninja -C build
   
