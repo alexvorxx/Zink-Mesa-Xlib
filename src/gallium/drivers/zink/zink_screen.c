@@ -2280,11 +2280,13 @@ zink_internal_create_screen(const struct pipe_screen_config *config)
    screen->instance_info.loader_version = zink_get_loader_version(screen);
 #if WITH_XMLCONFIG
    if (config) {
-      driParseConfigFiles(config->options, config->options_info, 0, "zink",
-                          NULL, NULL, NULL, 0, NULL, 0);
-      screen->driconf.dual_color_blend_by_location = driQueryOptionb(config->options, "dual_color_blend_by_location");
+      /*driParseConfigFiles(config->options, config->options_info, 0, "zink",
+                          NULL, NULL, NULL, 0, NULL, 0);*/
+      //screen->driconf.dual_color_blend_by_location = driQueryOptionb(config->options, "dual_color_blend_by_location");
+      screen->driconf.dual_color_blend_by_location = true;
       //screen->driconf.inline_uniforms = driQueryOptionb(config->options, "radeonsi_inline_uniforms");
-      screen->instance_info.disable_xcb_surface = driQueryOptionb(config->options, "disable_xcb_surface");
+      //screen->instance_info.disable_xcb_surface = driQueryOptionb(config->options, "disable_xcb_surface");
+      screen->instance_info.disable_xcb_surface = false;
    }
 #endif
 
