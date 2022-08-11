@@ -32,6 +32,8 @@ struct vn_physical_device_features {
    VkPhysicalDeviceMaintenance4Features maintenance4;
    VkPhysicalDeviceShaderDemoteToHelperInvocationFeatures
       shader_demote_to_helper_invocation;
+   VkPhysicalDeviceTextureCompressionASTCHDRFeatures
+      texture_compression_astc_hdr;
 
    /* EXT */
    VkPhysicalDeviceConditionalRenderingFeaturesEXT conditional_rendering;

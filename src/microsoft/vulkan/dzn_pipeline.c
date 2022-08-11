@@ -358,7 +358,7 @@ dzn_pipeline_compile_shader(struct dzn_device *device,
    if (instance->debug_flags & DZN_DEBUG_NIR)
       nir_print_shader(nir, stderr);
 
-   if (nir_to_dxil(nir, &opts, &dxil_blob)) {
+   if (nir_to_dxil(nir, &opts, NULL, &dxil_blob)) {
       blob_finish_get_buffer(&dxil_blob, (void **)&slot->pShaderBytecode,
                              (size_t *)&slot->BytecodeLength);
    } else {

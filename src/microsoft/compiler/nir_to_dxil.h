@@ -101,9 +101,16 @@ struct nir_to_dxil_options {
    uint32_t validator_version_max;
 };
 
+typedef void (*dxil_msg_callback)(void *priv, const char *msg);
+
+struct dxil_logger {
+   void *priv;
+   dxil_msg_callback log;
+};
+
 bool
 nir_to_dxil(struct nir_shader *s, const struct nir_to_dxil_options *opts,
-            struct blob *blob);
+            const struct dxil_logger *logger, struct blob *blob);
 
 const nir_shader_compiler_options*
 dxil_get_nir_compiler_options(void);

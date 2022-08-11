@@ -187,6 +187,20 @@ reserve_vma(uintptr_t start, uint64_t reserved_size)
    return reserved;
 }
 
+static void
+nouveau_query_memory_info(struct pipe_screen *pscreen,
+                          struct pipe_memory_info *info)
+{
+   const struct nouveau_screen *screen = nouveau_screen(pscreen);
+   struct nouveau_device *dev = screen->device;
+
+   info->total_device_memory = dev->vram_size / 1024;
+   info->total_staging_memory = dev->gart_size / 1024;
+
+   info->avail_device_memory = dev->vram_limit / 1024;
+   info->avail_staging_memory = dev->gart_limit / 1024;
+}
+
 int
 nouveau_screen_init(struct nouveau_screen *screen, struct nouveau_device *dev)
 {
@@ -324,6 +338,8 @@ nouveau_screen_init(struct nouveau_screen *screen, struct nouveau_device *dev)
 
    pscreen->fence_reference = nouveau_screen_fence_ref;
    pscreen->fence_finish = nouveau_screen_fence_finish;
+
+   pscreen->query_memory_info = nouveau_query_memory_info;
 
    nouveau_disk_cache_create(screen);
 

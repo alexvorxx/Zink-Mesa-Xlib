@@ -49,6 +49,7 @@
 #include "virgl_resource.h"
 #include "virgl_screen.h"
 #include "virgl_staging_mgr.h"
+#include "virgl_video.h"
 
 struct virgl_vertex_elements_state {
    uint32_t handle;
@@ -859,6 +860,17 @@ static void virgl_clear(struct pipe_context *ctx,
    virgl_encode_clear(vctx, buffers, color, depth, stencil);
 }
 
+static void virgl_clear_render_target(struct pipe_context *ctx,
+                                      struct pipe_surface *dst,
+                                      const union pipe_color_union *color,
+                                      unsigned dstx, unsigned dsty,
+                                      unsigned width, unsigned height,
+                                      bool render_condition_enabled)
+{
+   if (virgl_debug & VIRGL_DEBUG_VERBOSE)
+      debug_printf("VIRGL: clear render target unsupported.\n");
+}
+
 static void virgl_clear_texture(struct pipe_context *ctx,
                                 struct pipe_resource *res,
                                 unsigned int level,
@@ -1624,6 +1636,7 @@ struct pipe_context *virgl_context_create(struct pipe_screen *pscreen,
    vctx->base.launch_grid = virgl_launch_grid;
 
    vctx->base.clear = virgl_clear;
+   vctx->base.clear_render_target = virgl_clear_render_target;
    vctx->base.clear_texture = virgl_clear_texture;
    vctx->base.draw_vbo = virgl_draw_vbo;
    vctx->base.flush = virgl_flush_from_st;
@@ -1659,6 +1672,9 @@ struct pipe_context *virgl_context_create(struct pipe_screen *pscreen,
    vctx->base.set_shader_images = virgl_set_shader_images;
    vctx->base.memory_barrier = virgl_memory_barrier;
    vctx->base.emit_string_marker = virgl_emit_string_marker;
+
+   vctx->base.create_video_codec = virgl_video_create_codec;
+   vctx->base.create_video_buffer = virgl_video_create_buffer;
 
    if (rs->caps.caps.v2.host_feature_check_version >= 7)
       vctx->base.link_shader = virgl_link_shader;

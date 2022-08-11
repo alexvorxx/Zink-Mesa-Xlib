@@ -32,6 +32,7 @@
 #include "dxil_signature.h"
 
 #include "nir/nir_builder.h"
+#include "util/ralloc.h"
 #include "util/u_debug.h"
 #include "util/u_dynarray.h"
 #include "util/u_math.h"
@@ -55,13 +56,27 @@ dxil_debug_options[] = {
 
 DEBUG_GET_ONCE_FLAGS_OPTION(debug_dxil, "DXIL_DEBUG", dxil_debug_options, 0)
 
-#define NIR_INSTR_UNSUPPORTED(instr) \
-   if (debug_dxil & DXIL_DEBUG_VERBOSE) \
-   do { \
-      fprintf(stderr, "Unsupported instruction:"); \
-      nir_print_instr(instr, stderr); \
-      fprintf(stderr, "\n"); \
-   } while (0)
+static void
+log_nir_instr_unsupported(const struct dxil_logger *logger,
+                          const char *message_prefix, const nir_instr *instr)
+{
+   char *msg = NULL;
+   char *instr_str = nir_instr_as_str(instr, NULL);
+   asprintf(&msg, "%s: %s\n", message_prefix, instr_str);
+   ralloc_free(instr_str);
+   assert(msg);
+   logger->log(logger->priv, msg);
+   free(msg);
+}
+
+static void
+default_logger_func(void *priv, const char *msg)
+{
+   fprintf(stderr, "%s", msg);
+   unreachable("Unhandled error");
+}
+
+static const struct dxil_logger default_logger = { .priv = NULL, .log = default_logger_func };
 
 #define TRACE_CONVERSION(instr) \
    if (debug_dxil & DXIL_DEBUG_TRACE) \
@@ -487,6 +502,8 @@ struct ntd_context {
    struct dxil_func_def *main_func_def;
    struct dxil_func_def *tess_ctrl_patch_constant_func_def;
    unsigned unnamed_ubo_count;
+
+   const struct dxil_logger *logger;
 };
 
 static const char*
@@ -2503,8 +2520,8 @@ emit_alu(struct ntd_context *ctx, nir_alu_instr *alu)
    case nir_op_b2f32: return emit_b2f32(ctx, alu, src[0]);
    case nir_op_b2f64: return emit_b2f64(ctx, alu, src[0]);
    default:
-      NIR_INSTR_UNSUPPORTED(&alu->instr);
-      assert("Unimplemented ALU instruction");
+      log_nir_instr_unsupported(ctx->logger, "Unimplemented ALU instruction",
+                                &alu->instr);
       return false;
    }
 }
@@ -4400,8 +4417,8 @@ emit_intrinsic(struct ntd_context *ctx, nir_intrinsic_instr *intr)
    case nir_intrinsic_load_num_workgroups:
    case nir_intrinsic_load_workgroup_size:
    default:
-      NIR_INSTR_UNSUPPORTED(&intr->instr);
-      unreachable("Unimplemented intrinsic instruction");
+      log_nir_instr_unsupported(
+         ctx->logger, "Unimplemented intrinsic instruction", &intr->instr);
       return false;
    }
 }
@@ -5050,8 +5067,8 @@ static bool emit_instr(struct ntd_context *ctx, struct nir_instr* instr)
    case nir_instr_type_ssa_undef:
       return emit_undefined(ctx, nir_instr_as_ssa_undef(instr));
    default:
-      NIR_INSTR_UNSUPPORTED(instr);
-      unreachable("Unimplemented instruction type");
+      log_nir_instr_unsupported(ctx->logger, "Unimplemented instruction type",
+                                instr);
       return false;
    }
 }
@@ -5797,7 +5814,7 @@ static const unsigned dxil_validator_max_capable_version = DXIL_VALIDATOR_1_7;
 
 bool
 nir_to_dxil(struct nir_shader *s, const struct nir_to_dxil_options *opts,
-            struct blob *blob)
+            const struct dxil_logger *logger, struct blob *blob)
 {
    assert(opts);
    bool retval = true;
@@ -5831,6 +5848,7 @@ nir_to_dxil(struct nir_shader *s, const struct nir_to_dxil_options *opts,
 
    ctx->opts = opts;
    ctx->shader = s;
+   ctx->logger = logger ? logger : &default_logger;
 
    ctx->ralloc_ctx = ralloc_context(NULL);
    if (!ctx->ralloc_ctx) {

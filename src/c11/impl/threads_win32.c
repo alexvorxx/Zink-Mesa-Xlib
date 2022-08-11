@@ -31,8 +31,11 @@
 #include <errno.h>
 #include <process.h>  // MSVCRT
 #include <stdlib.h>
+#include <stdbool.h>
 
 #include "c11/threads.h"
+
+#include "threads_win32.h"
 
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN 1
@@ -77,21 +80,30 @@ Implementation limits:
     (see EMULATED_THREADS_USE_NATIVE_CALL_ONCE macro)
   - Emulated `mtx_timelock()' with mtx_trylock() + *busy loop*
 */
-static void impl_tss_dtor_invoke(void);  // forward decl.
 
 struct impl_thrd_param {
     thrd_start_t func;
     void *arg;
+    thrd_t thrd;
 };
+
+struct thrd_state {
+    thrd_t thrd;
+    bool handle_need_close;
+};
+
+static thread_local struct thrd_state impl_current_thread = { 0 };
 
 static unsigned __stdcall impl_thrd_routine(void *p)
 {
+    struct impl_thrd_param *pack_p = (struct impl_thrd_param *)p;
     struct impl_thrd_param pack;
     int code;
-    memcpy(&pack, p, sizeof(struct impl_thrd_param));
+    impl_current_thread.thrd = pack_p->thrd;
+    impl_current_thread.handle_need_close = false;
+    memcpy(&pack, pack_p, sizeof(struct impl_thrd_param));
     free(p);
     code = pack.func(pack.arg);
-    impl_tss_dtor_invoke();
     return (unsigned)code;
 }
 
@@ -304,6 +316,16 @@ mtx_unlock(mtx_t *mtx)
     return thrd_success;
 }
 
+void
+__threads_win32_tls_callback(void)
+{
+    struct thrd_state *state = &impl_current_thread;
+    impl_tss_dtor_invoke();
+    if (state->handle_need_close) {
+        state->handle_need_close = false;
+        CloseHandle(state->thrd.handle);
+    }
+}
 
 /*------------------- 7.25.5 Thread functions -------------------*/
 // 7.25.5.1
@@ -317,25 +339,23 @@ thrd_create(thrd_t *thr, thrd_start_t func, void *arg)
     if (!pack) return thrd_nomem;
     pack->func = func;
     pack->arg = arg;
-    handle = _beginthreadex(NULL, 0, impl_thrd_routine, pack, 0, NULL);
+    handle = _beginthreadex(NULL, 0, impl_thrd_routine, pack, CREATE_SUSPENDED, NULL);
     if (handle == 0) {
         free(pack);
         if (errno == EAGAIN || errno == EACCES)
             return thrd_nomem;
         return thrd_error;
     }
-    *thr = (thrd_t)handle;
+    thr->handle = (void*)handle;
+    pack->thrd = *thr;
+    ResumeThread((HANDLE)handle);
     return thrd_success;
 }
 
-#if 0
 // 7.25.5.2
-static inline thrd_t
+thrd_t
 thrd_current(void)
 {
-    HANDLE hCurrentThread;
-    BOOL bRet;
-
     /* GetCurrentThread() returns a pseudo-handle, which we need
      * to pass to DuplicateHandle(). Only the resulting handle can be used
      * from other threads.
@@ -353,27 +373,24 @@ thrd_current(void)
      * Life would be much easier if C11 threads had different abstractions for
      * threads and thread IDs, just like C++11 threads does...
      */
-
-    bRet = DuplicateHandle(GetCurrentProcess(), // source process (pseudo) handle
-                           GetCurrentThread(), // source (pseudo) handle
-                           GetCurrentProcess(), // target process
-                           &hCurrentThread, // target handle
-                           0,
-                           FALSE,
-                           DUPLICATE_SAME_ACCESS);
-    assert(bRet);
-    if (!bRet) {
-	hCurrentThread = GetCurrentThread();
+    struct thrd_state *state = &impl_current_thread;
+    if (state->thrd.handle == NULL)
+    {
+        if (!DuplicateHandle(GetCurrentProcess(), GetCurrentThread(), GetCurrentProcess(),
+            &(state->thrd.handle), 0, FALSE, DUPLICATE_SAME_ACCESS))
+        {
+            abort();
+        }
+        state->handle_need_close = true;
     }
-    return hCurrentThread;
+    return state->thrd;
 }
-#endif
 
 // 7.25.5.3
 int
 thrd_detach(thrd_t thr)
 {
-    CloseHandle(thr);
+    CloseHandle(thr.handle);
     return thrd_success;
 }
 
@@ -381,7 +398,7 @@ thrd_detach(thrd_t thr)
 int
 thrd_equal(thrd_t thr0, thrd_t thr1)
 {
-    return GetThreadId(thr0) == GetThreadId(thr1);
+    return GetThreadId(thr0.handle) == GetThreadId(thr1.handle);
 }
 
 // 7.25.5.5
@@ -389,7 +406,6 @@ _Noreturn
 void
 thrd_exit(int res)
 {
-    impl_tss_dtor_invoke();
     _endthreadex((unsigned)res);
 }
 
@@ -398,17 +414,20 @@ int
 thrd_join(thrd_t thr, int *res)
 {
     DWORD w, code;
-    w = WaitForSingleObject(thr, INFINITE);
+    if (thr.handle == NULL) {
+        return thrd_error;
+    }
+    w = WaitForSingleObject(thr.handle, INFINITE);
     if (w != WAIT_OBJECT_0)
         return thrd_error;
     if (res) {
-        if (!GetExitCodeThread(thr, &code)) {
-            CloseHandle(thr);
+        if (!GetExitCodeThread(thr.handle, &code)) {
+            CloseHandle(thr.handle);
             return thrd_error;
         }
         *res = (int)code;
     }
-    CloseHandle(thr);
+    CloseHandle(thr.handle);
     return thrd_success;
 }
 

@@ -30,7 +30,6 @@ spec@!opengl 1.1@read-front samples=2,Fail
 spec@!opengl 1.1@read-front samples=4,Fail
 spec@!opengl 1.1@read-front samples=6,Fail
 spec@!opengl 1.1@read-front samples=8,Fail
-spec@!opengl 1.1@windowoverlap,Fail
 spec@arb_bindless_texture@compiler@images@arith-bound-image.frag,Crash
 spec@arb_bindless_texture@compiler@samplers@arith-bound-sampler-texture2d.frag,Crash
 spec@arb_gpu_shader_fp64@execution@conversion@frag-conversion-explicit-dmat2-mat2,Fail
@@ -138,9 +137,6 @@ spec@khr_texture_compression_astc@sliced-3d-miptree-gl srgb-fp@sRGB decode full 
 spec@khr_texture_compression_astc@sliced-3d-miptree-gles srgb-fp,Fail
 spec@khr_texture_compression_astc@sliced-3d-miptree-gles srgb-fp@sRGB decode full precision,Fail
 spec@oes_shader_io_blocks@compiler@layout-location-aliasing.vert,Fail
-wgl@wgl-multi-context-single-window,Fail
-wgl@wgl-multi-window-single-context,Fail
-wgl@wgl-sanity,Fail
 
 # glcts failures
 ## Test issue - https://github.com/KhronosGroup/VK-GL-CTS/issues/251
@@ -149,7 +145,7 @@ KHR-GL46.shader_ballot_tests.ShaderBallotFunctionRead,Fail
 KHR-GL46.sparse_texture2_tests.SparseTexture2Allocation,Fail
 KHR-GL46.sparse_texture2_tests.SparseTexture2Commitment,Fail
 ## https://gitlab.freedesktop.org/mesa/mesa/-/issues/636
-KHR-GL46.sparse_texture2_tests.SparseTexture2Lookup,Fail
+KHR-GL46.sparse_texture2_tests.SparseTexture2Lookup,Crash
 KHR-GL46.sparse_texture2_tests.StandardPageSizesTestCase,Fail
 KHR-GL46.sparse_texture2_tests.UncommittedRegionsAccess,Fail
 KHR-GL46.sparse_texture_clamp_tests.SparseTextureClampLookupColor,Fail

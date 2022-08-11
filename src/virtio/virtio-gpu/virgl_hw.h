@@ -546,6 +546,26 @@ struct virgl_caps_v1 {
         uint32_t max_texture_gather_components;
 };
 
+struct virgl_video_caps {
+        uint32_t profile:8;
+        uint32_t entrypoint:8;
+        uint32_t max_level:8;
+        uint32_t stacked_frames:8;
+
+        uint32_t max_width:16;
+        uint32_t max_height:16;
+
+        uint32_t prefered_format:16;
+        uint32_t max_macroblocks:16;
+
+        uint32_t npot_texture:1;
+        uint32_t supports_progressive:1;
+        uint32_t supports_interlaced:1;
+        uint32_t prefers_interlaced:1;
+        uint32_t max_temporal_layers:8;
+        uint32_t reserved:20;
+};
+
 /*
  * This struct should be growable when used in capset 2,
  * so we shouldn't have to add a v3 ever.
@@ -603,6 +623,8 @@ struct virgl_caps_v2 {
         uint32_t max_shader_sampler_views;
         struct virgl_supported_format_mask supported_multisample_formats;
         uint32_t max_const_buffer_size[6]; // PIPE_SHADER_TYPES
+        uint32_t num_video_caps;
+        struct virgl_video_caps video_caps[32];
 };
 
 union virgl_caps {

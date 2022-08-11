@@ -269,6 +269,7 @@ nv50_screen_get_param(struct pipe_screen *pscreen, enum pipe_cap param)
    case PIPE_CAP_ALLOW_DYNAMIC_VAO_FASTPATH:
    case PIPE_CAP_SHAREABLE_SHADERS:
    case PIPE_CAP_PREFER_BACK_BUFFER_REUSE:
+   case PIPE_CAP_QUERY_MEMORY_INFO:
       return 1;
 
    case PIPE_CAP_ALPHA_TEST:
@@ -327,7 +328,6 @@ nv50_screen_get_param(struct pipe_screen *pscreen, enum pipe_cap param)
    case PIPE_CAP_BUFFER_SAMPLER_VIEW_RGBA_ONLY:
    case PIPE_CAP_SURFACE_REINTERPRET_BLOCKS:
    case PIPE_CAP_QUERY_BUFFER_OBJECT:
-   case PIPE_CAP_QUERY_MEMORY_INFO:
    case PIPE_CAP_PCI_GROUP:
    case PIPE_CAP_PCI_BUS:
    case PIPE_CAP_PCI_DEVICE:

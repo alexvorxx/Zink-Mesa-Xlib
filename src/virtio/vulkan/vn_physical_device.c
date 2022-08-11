@@ -140,6 +140,9 @@ vn_physical_device_init_features(struct vn_physical_device *physical_dev)
                        feats->shader_demote_to_helper_invocation,
                        SHADER_DEMOTE_TO_HELPER_INVOCATION_FEATURES,
                        features2);
+   VN_ADD_EXT_TO_PNEXT(exts->EXT_texture_compression_astc_hdr,
+                       feats->texture_compression_astc_hdr,
+                       TEXTURE_COMPRESSION_ASTC_HDR_FEATURES, features2);
 
    /* EXT */
    VN_ADD_EXT_TO_PNEXT(exts->EXT_conditional_rendering,
@@ -1000,6 +1003,7 @@ vn_physical_device_get_passthrough_extensions(
       .EXT_image_robustness = true,
       .EXT_inline_uniform_block = true,
       .EXT_shader_demote_to_helper_invocation = true,
+      .EXT_texture_compression_astc_hdr = true,
       .KHR_copy_commands2 = true,
       .KHR_dynamic_rendering = true,
       .KHR_maintenance4 = true,
@@ -1632,6 +1636,8 @@ vn_GetPhysicalDeviceFeatures2(VkPhysicalDevice physicalDevice,
       VkPhysicalDeviceMaintenance4Features *maintenance4;
       VkPhysicalDeviceShaderDemoteToHelperInvocationFeatures
          *shader_demote_to_helper_invocation;
+      VkPhysicalDeviceTextureCompressionASTCHDRFeatures
+         *texture_compression_astc_hdr;
 
       /* EXT */
       VkPhysicalDeviceConditionalRenderingFeaturesEXT *conditional_rendering;
@@ -1826,6 +1832,10 @@ vn_GetPhysicalDeviceFeatures2(VkPhysicalDevice physicalDevice,
       case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_DEMOTE_TO_HELPER_INVOCATION_FEATURES:
          *u.shader_demote_to_helper_invocation =
             feats->shader_demote_to_helper_invocation;
+         break;
+      case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_TEXTURE_COMPRESSION_ASTC_HDR_FEATURES:
+         *u.texture_compression_astc_hdr =
+            feats->texture_compression_astc_hdr;
          break;
 
       /* EXT */

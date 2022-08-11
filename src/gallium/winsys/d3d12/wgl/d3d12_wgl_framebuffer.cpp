@@ -150,7 +150,7 @@ d3d12_wgl_framebuffer_resize(stw_winsys_framebuffer *fb,
 }
 
 static boolean
-d3d12_wgl_framebuffer_present(stw_winsys_framebuffer *fb)
+d3d12_wgl_framebuffer_present(stw_winsys_framebuffer *fb, int interval)
 {
    auto framebuffer = d3d12_wgl_framebuffer(fb);
    if (!framebuffer->swapchain) {
@@ -158,10 +158,10 @@ d3d12_wgl_framebuffer_present(stw_winsys_framebuffer *fb)
       return false;
    }
 
-   if (stw_dev->swap_interval < 1)
+   if (interval < 1)
       return S_OK == framebuffer->swapchain->Present(0, DXGI_PRESENT_ALLOW_TEARING);
    else
-       return S_OK == framebuffer->swapchain->Present(stw_dev->swap_interval, 0);
+      return S_OK == framebuffer->swapchain->Present(interval, 0);
 }
 
 static struct pipe_resource *

@@ -257,7 +257,7 @@ spin = itertools.cycle("-\\|/")
 shutil.copy(skips, output_folder)
 skips = os.path.join(output_folder, "skips.csv")
 if not args.slow:
-    # Exclude these 3 tests slow tests
+    # Exclude these 4 tests slow tests
     with open(skips, "a") as f:
         print("KHR-GL46.copy_image.functional", file=f)
         print("KHR-GL46.texture_swizzle.smoke", file=f)
@@ -265,6 +265,7 @@ if not args.slow:
             "KHR-GL46.tessellation_shader.tessellation_control_to_tessellation_evaluation.gl_MaxPatchVertices_Position_PointSize",
             file=f,
         )
+        print("KHR-Single-GL46.arrays_of_arrays_gl.AtomicUsage", file=f)
 
 
 def gfx_level_to_str(cl):
@@ -329,7 +330,6 @@ def parse_test_filters(include_tests):
                 for row in csv.reader(file, delimiter=","):
                     if not row or row[0][0] == "#":
                         continue
-                    print(row)
                     cmd += ["-t", row[0]]
         else:
             cmd += ["-t", t]
@@ -364,9 +364,9 @@ flakes = os.path.join(
 )
 
 if os.path.exists(baseline):
-    print_yellow("Baseline: {}\n".format(baseline), args.verbose > 0)
+    print_yellow("Baseline: {}".format(baseline))
 if os.path.exists(flakes):
-    print_yellow("[flakes {}]\n".format(flakes), args.verbose > 0)
+    print_yellow("[flakes {}]".format(flakes))
 
 # piglit test
 if args.piglit:
@@ -374,7 +374,7 @@ if args.piglit:
     new_baseline = os.path.join(
         new_baseline_folder, "{}-piglit-quick-fail.csv".format(gpu_name)
     )
-    print_yellow("Running piglit tests\n", args.verbose > 0)
+    print_yellow("Running piglit tests", args.verbose > 0)
     cmd = [
         "piglit-runner",
         "run",
@@ -400,8 +400,10 @@ if args.piglit:
         cmd += ["--flakes", flakes]
 
     run_cmd(cmd, args.verbose)
-    shutil.copy(os.path.join(out, "failures.csv"), new_baseline)
-    verify_results(new_baseline)
+    failures_path = os.path.join(out, "failures.csv")
+    if os.path.exists(failures_path):
+        shutil.copy(failures_path, new_baseline)
+        verify_results(new_baseline)
 
 deqp_args = "-- --deqp-surface-width=256 --deqp-surface-height=256 --deqp-gl-config-name=rgba8888d24s8ms0 --deqp-visibility=hidden".split(
     " "
@@ -427,6 +429,10 @@ if args.glcts:
         "{}/external/openglcts/modules/gl_cts/data/mustpass/gl/khronos_mustpass/4.6.1.x/gl46-master.txt".format(
             glcts_path
         ),
+        "--caselist",
+        "{}/external/openglcts/modules/gl_cts/data/mustpass/gl/khronos_mustpass_single/4.6.1.x/gl46-khr-single.txt".format(
+            glcts_path
+        ),
         "--output",
         out,
         "--skips",
@@ -441,8 +447,11 @@ if args.glcts:
         cmd += ["--baseline", baseline]
     cmd += deqp_args
     run_cmd(cmd, args.verbose)
-    shutil.copy(os.path.join(out, "failures.csv"), new_baseline)
-    verify_results(new_baseline)
+
+    failures_path = os.path.join(out, "failures.csv")
+    if os.path.exists(failures_path):
+        shutil.copy(os.path.join(out, "failures.csv"), new_baseline)
+        verify_results(new_baseline)
 
 if args.deqp:
     print_yellow("Running   dEQP tests", args.verbose > 0)
@@ -500,5 +509,8 @@ if args.deqp:
         suite_filename,
     ] + filters_args
     run_cmd(cmd, args.verbose)
-    shutil.copy(os.path.join(out, "failures.csv"), new_baseline)
-    verify_results(new_baseline)
+
+    failures_path = os.path.join(out, "failures.csv")
+    if os.path.exists(failures_path):
+        shutil.copy(failures_path, new_baseline)
+        verify_results(new_baseline)

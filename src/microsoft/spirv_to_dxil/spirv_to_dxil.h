@@ -163,6 +163,13 @@ struct dxil_spirv_debug_options {
    bool dump_nir;
 };
 
+typedef void (*dxil_spirv_msg_callback)(void *priv, const char *msg);
+
+struct dxil_spirv_logger {
+   void *priv;
+   dxil_spirv_msg_callback log;
+};
+
 /**
  * Compile a SPIR-V module into DXIL.
  * \param  words  SPIR-V module to compile
@@ -182,6 +189,7 @@ spirv_to_dxil(const uint32_t *words, size_t word_count,
               const char *entry_point_name,
               const struct dxil_spirv_debug_options *debug_options,
               const struct dxil_spirv_runtime_conf *conf,
+              const struct dxil_spirv_logger *logger,
               struct dxil_spirv_object *out_dxil);
 
 /**

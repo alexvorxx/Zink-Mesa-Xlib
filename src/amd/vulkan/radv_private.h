@@ -2152,7 +2152,6 @@ struct radv_graphics_pipeline {
    uint64_t needed_dynamic_state;
    unsigned tess_patch_control_points;
    unsigned pa_su_sc_mode_cntl;
-   unsigned db_depth_control;
    unsigned pa_cl_clip_cntl;
    unsigned cb_color_control;
    uint32_t binding_stride[MAX_VBS];
@@ -2174,7 +2173,6 @@ struct radv_graphics_pipeline {
    bool disable_out_of_order_rast_for_occlusion;
    bool uses_drawid;
    bool uses_baseinstance;
-   bool uses_dynamic_stride;
    bool uses_conservative_overestimate;
    bool negative_one_to_one;
    enum radv_depth_clamp_mode depth_clamp_mode;

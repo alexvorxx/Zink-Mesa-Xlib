@@ -304,17 +304,18 @@ static void
 vn_present_src_attachment_to_image_memory_barrier(
    const struct vn_image *img,
    const struct vn_present_src_attachment *att,
-   VkImageMemoryBarrier *img_barrier)
+   VkImageMemoryBarrier *img_barrier,
+   bool acquire)
 {
    *img_barrier = (VkImageMemoryBarrier)
    {
       .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
       .srcAccessMask = att->src_access_mask,
       .dstAccessMask = att->dst_access_mask,
-      .oldLayout = att->acquire ? VK_IMAGE_LAYOUT_PRESENT_SRC_KHR
-                                : VN_PRESENT_SRC_INTERNAL_LAYOUT,
-      .newLayout = att->acquire ? VN_PRESENT_SRC_INTERNAL_LAYOUT
-                                : VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
+      .oldLayout = acquire ? VK_IMAGE_LAYOUT_PRESENT_SRC_KHR
+                           : VN_PRESENT_SRC_INTERNAL_LAYOUT,
+      .newLayout = acquire ? VN_PRESENT_SRC_INTERNAL_LAYOUT
+                           : VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
       .image = vn_image_to_handle((struct vn_image *)img),
       .subresourceRange = {
          .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
@@ -327,6 +328,7 @@ vn_present_src_attachment_to_image_memory_barrier(
 static void
 vn_cmd_transfer_present_src_images(
    struct vn_command_buffer *cmd,
+   bool acquire,
    const struct vn_image *const *images,
    const struct vn_present_src_attachment *atts,
    uint32_t count)
@@ -344,8 +346,8 @@ vn_cmd_transfer_present_src_images(
       src_stage_mask |= atts[i].src_stage_mask;
       dst_stage_mask |= atts[i].dst_stage_mask;
 
-      vn_present_src_attachment_to_image_memory_barrier(images[i], &atts[i],
-                                                        &img_barriers[i]);
+      vn_present_src_attachment_to_image_memory_barrier(
+         images[i], &atts[i], &img_barriers[i], acquire);
       vn_cmd_fix_image_memory_barrier(cmd, &img_barriers[i],
                                       &img_barriers[i]);
    }
@@ -366,7 +368,7 @@ vn_cmd_begin_render_pass(struct vn_command_buffer *cmd,
    cmd->builder.render_pass = pass;
    cmd->builder.framebuffer = fb;
 
-   if (!pass->present_src_count ||
+   if (!pass->present_count ||
        cmd->level == VK_COMMAND_BUFFER_LEVEL_SECONDARY)
       return;
 
@@ -386,22 +388,23 @@ vn_cmd_begin_render_pass(struct vn_command_buffer *cmd,
    }
 
    const struct vn_image **images =
-      vk_alloc(&cmd->allocator, sizeof(*images) * pass->present_src_count,
+      vk_alloc(&cmd->allocator, sizeof(*images) * pass->present_count,
                VN_DEFAULT_ALIGN, VK_SYSTEM_ALLOCATION_SCOPE_OBJECT);
    if (!images) {
       cmd->state = VN_COMMAND_BUFFER_STATE_INVALID;
       return;
    }
 
-   for (uint32_t i = 0; i < pass->present_src_count; i++) {
-      const uint32_t index = pass->present_src_attachments[i].index;
+   for (uint32_t i = 0; i < pass->present_count; i++) {
+      const uint32_t index = pass->present_attachments[i].index;
       assert(index < view_count);
       images[i] = vn_image_view_from_handle(views[index])->image;
    }
 
-   if (pass->acquire_count) {
-      vn_cmd_transfer_present_src_images(
-         cmd, images, pass->present_src_attachments, pass->acquire_count);
+   if (pass->present_acquire_count) {
+      vn_cmd_transfer_present_src_images(cmd, true, images,
+                                         pass->present_acquire_attachments,
+                                         pass->present_acquire_count);
    }
 
    cmd->builder.present_src_images = images;
@@ -415,17 +418,18 @@ vn_cmd_end_render_pass(struct vn_command_buffer *cmd)
    cmd->builder.render_pass = NULL;
    cmd->builder.framebuffer = NULL;
 
-   if (!pass->present_src_count || !cmd->builder.present_src_images)
+   if (!pass->present_count || !cmd->builder.present_src_images)
       return;
 
    const struct vn_image **images = cmd->builder.present_src_images;
    cmd->builder.present_src_images = NULL;
 
-   if (pass->release_count) {
+   if (pass->present_release_count) {
       vn_cmd_transfer_present_src_images(
-         cmd, images + pass->acquire_count,
-         pass->present_src_attachments + pass->acquire_count,
-         pass->release_count);
+         cmd, false,
+         images + pass->present_acquire_count,
+         pass->present_release_attachments,
+         pass->present_release_count);
    }
 
    vk_free(&cmd->allocator, images);

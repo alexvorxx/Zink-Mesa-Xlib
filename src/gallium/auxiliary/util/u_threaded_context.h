@@ -485,7 +485,7 @@ struct threaded_context {
     * there are cases where the queue is flushed directly
     * from the frontend thread
     */
-   thread_id driver_thread;
+   thrd_t driver_thread;
 #endif
 
    bool seen_tcs;
@@ -600,7 +600,7 @@ tc_assert_driver_thread(struct threaded_context *tc)
    if (!tc)
       return;
 #ifndef NDEBUG
-   assert(util_thread_id_equal(tc->driver_thread, util_get_thread_id()));
+   assert(u_thread_is_self(tc->driver_thread));
 #endif
 }
 

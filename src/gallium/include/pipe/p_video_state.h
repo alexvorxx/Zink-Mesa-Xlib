@@ -137,6 +137,7 @@ struct pipe_picture_desc
    enum pipe_video_entrypoint entry_point;
    bool protected_playback;
    uint8_t *decrypt_key;
+   uint32_t key_size;
    enum pipe_format input_format;
    enum pipe_format output_format;
 };

@@ -38,6 +38,7 @@ libwgl = static_library(
     'stw_ext_swapinterval.c',
     'stw_framebuffer.c',
     'stw_getprocaddress.c',
+    'stw_image.c',
     'stw_nopfuncs.c',
     'stw_nopfuncs.h',
     'stw_pixelformat.c',

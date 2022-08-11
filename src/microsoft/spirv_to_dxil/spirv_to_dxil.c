@@ -23,8 +23,8 @@
 
 #include "dxil_spirv_nir.h"
 #include "spirv_to_dxil.h"
-#include "nir_to_dxil.h"
 #include "dxil_nir.h"
+#include "nir_to_dxil.h"
 #include "shader_enums.h"
 #include "spirv/nir_spirv.h"
 #include "util/blob.h"
@@ -96,6 +96,7 @@ spirv_to_dxil(const uint32_t *words, size_t word_count,
               const char *entry_point_name,
               const struct dxil_spirv_debug_options *dgb_opts,
               const struct dxil_spirv_runtime_conf *conf,
+              const struct dxil_spirv_logger *logger,
               struct dxil_spirv_object *out_dxil)
 {
    if (stage == DXIL_SPIRV_SHADER_NONE || stage == DXIL_SPIRV_SHADER_KERNEL)
@@ -148,8 +149,12 @@ spirv_to_dxil(const uint32_t *words, size_t word_count,
       .shader_model_max = SHADER_MODEL_6_2,
       .validator_version_max = DXIL_VALIDATOR_1_4,
    };
+
+   struct dxil_logger logger_inner = {.priv = logger->priv,
+                                      .log = logger->log};
+
    struct blob dxil_blob;
-   if (!nir_to_dxil(nir, &opts, &dxil_blob)) {
+   if (!nir_to_dxil(nir, &opts, &logger_inner, &dxil_blob)) {
       if (dxil_blob.allocated)
          blob_finish(&dxil_blob);
       ralloc_free(nir);

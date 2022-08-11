@@ -1145,9 +1145,10 @@ iris_resource_create_with_modifiers(struct pipe_screen *pscreen,
       goto fail;
    }
 
-   UNUSED const bool isl_surf_created_successfully =
+   const bool isl_surf_created_successfully =
       iris_resource_configure_main(screen, res, templ, modifier, 0);
-   assert(isl_surf_created_successfully);
+   if (!isl_surf_created_successfully)
+      goto fail;
 
    if (!iris_resource_configure_aux(screen, res, false))
       goto fail;

@@ -36,6 +36,7 @@
 #include "virtio-gpu/virgl_protocol.h"
 #include "virgl_resource.h"
 #include "virgl_screen.h"
+#include "virgl_video.h"
 
 #define VIRGL_ENCODE_MAX_DWORDS MIN2(VIRGL_MAX_CMDBUF_DWORDS, VIRGL_CMD0_MAX_DWORDS)
 
@@ -306,6 +307,18 @@ enum virgl_formats pipe_to_virgl_format(enum pipe_format format)
    if (format != PIPE_FORMAT_NONE && !vformat)
       debug_printf("VIRGL: pipe format %s not in the format table\n", util_format_name(format));
    return vformat;
+}
+
+enum pipe_format virgl_to_pipe_format(enum virgl_formats format)
+{
+   enum pipe_format pformat;
+
+   for (pformat = PIPE_FORMAT_NONE; pformat < PIPE_FORMAT_COUNT; pformat++)
+      if (virgl_formats_conv_table[pformat] == format)
+          return pformat;
+
+   debug_printf("VIRGL: virgl format %u not in the format table\n", format);
+   return PIPE_FORMAT_NONE;
 }
 
 static int virgl_encoder_write_cmd_dword(struct virgl_context *ctx,
@@ -1612,4 +1625,77 @@ void virgl_encode_emit_string_marker(struct virgl_context *ctx,
    virgl_encoder_write_cmd_dword(ctx, VIRGL_CMD0(VIRGL_CCMD_EMIT_STRING_MARKER, 0, buf_len));
    virgl_encoder_write_dword(ctx->cbuf, len);
    virgl_encoder_write_block(ctx->cbuf, (const uint8_t *)message, len);
+}
+
+void virgl_encode_create_video_codec(struct virgl_context *ctx,
+                                     struct virgl_video_codec *cdc)
+{
+   virgl_encoder_write_cmd_dword(ctx, VIRGL_CMD0(VIRGL_CCMD_CREATE_VIDEO_CODEC, 0, 7));
+   virgl_encoder_write_dword(ctx->cbuf, cdc->handle);
+   virgl_encoder_write_dword(ctx->cbuf, cdc->base.profile);
+   virgl_encoder_write_dword(ctx->cbuf, cdc->base.entrypoint);
+   virgl_encoder_write_dword(ctx->cbuf, cdc->base.chroma_format);
+   virgl_encoder_write_dword(ctx->cbuf, cdc->base.level);
+   virgl_encoder_write_dword(ctx->cbuf, cdc->base.width);
+   virgl_encoder_write_dword(ctx->cbuf, cdc->base.height);
+}
+
+void virgl_encode_destroy_video_codec(struct virgl_context *ctx,
+                                      struct virgl_video_codec *cdc)
+{
+   virgl_encoder_write_cmd_dword(ctx, VIRGL_CMD0(VIRGL_CCMD_DESTROY_VIDEO_CODEC, 0, 1));
+   virgl_encoder_write_dword(ctx->cbuf, cdc->handle);
+}
+
+void virgl_encode_create_video_buffer(struct virgl_context *ctx,
+                                      struct virgl_video_buffer *vbuf)
+{
+   unsigned i;
+
+   virgl_encoder_write_cmd_dword(ctx, VIRGL_CMD0(VIRGL_CCMD_CREATE_VIDEO_BUFFER, 0,
+                                                 4 + vbuf->num_planes));
+   virgl_encoder_write_dword(ctx->cbuf, vbuf->handle);
+   virgl_encoder_write_dword(ctx->cbuf, pipe_to_virgl_format(vbuf->buf->buffer_format));
+   virgl_encoder_write_dword(ctx->cbuf, vbuf->buf->width);
+   virgl_encoder_write_dword(ctx->cbuf, vbuf->buf->height);
+   for (i = 0; i < vbuf->num_planes; i++)
+       virgl_encoder_write_res(ctx, virgl_resource(vbuf->plane_views[i]->texture));
+}
+
+void virgl_encode_destroy_video_buffer(struct virgl_context *ctx,
+                                       struct virgl_video_buffer *buf)
+{
+   virgl_encoder_write_cmd_dword(ctx, VIRGL_CMD0(VIRGL_CCMD_DESTROY_VIDEO_BUFFER, 0, 1));
+   virgl_encoder_write_dword(ctx->cbuf, buf->handle);
+}
+
+void virgl_encode_begin_frame(struct virgl_context *ctx,
+                              struct virgl_video_codec *cdc,
+                              struct virgl_video_buffer *buf)
+{
+   virgl_encoder_write_cmd_dword(ctx, VIRGL_CMD0(VIRGL_CCMD_BEGIN_FRAME, 0, 2));
+   virgl_encoder_write_dword(ctx->cbuf, cdc->handle);
+   virgl_encoder_write_dword(ctx->cbuf, buf->handle);
+}
+
+void virgl_encode_decode_bitstream(struct virgl_context *ctx,
+                                   struct virgl_video_codec *cdc,
+                                   struct virgl_video_buffer *buf,
+                                   void *desc, uint32_t desc_size)
+{
+   virgl_encoder_write_cmd_dword(ctx, VIRGL_CMD0(VIRGL_CCMD_DECODE_BITSTREAM, 0, 5));
+   virgl_encoder_write_dword(ctx->cbuf, cdc->handle);
+   virgl_encoder_write_dword(ctx->cbuf, buf->handle);
+   virgl_encoder_write_res(ctx, virgl_resource(cdc->desc_buffers[cdc->cur_buffer]));
+   virgl_encoder_write_res(ctx, virgl_resource(cdc->bs_buffers[cdc->cur_buffer]));
+   virgl_encoder_write_dword(ctx->cbuf, cdc->bs_size);
+}
+
+void virgl_encode_end_frame(struct virgl_context *ctx,
+                            struct virgl_video_codec *cdc,
+                            struct virgl_video_buffer *buf)
+{
+   virgl_encoder_write_cmd_dword(ctx, VIRGL_CMD0(VIRGL_CCMD_END_FRAME, 0, 2));
+   virgl_encoder_write_dword(ctx->cbuf, cdc->handle);
+   virgl_encoder_write_dword(ctx->cbuf, buf->handle);
 }

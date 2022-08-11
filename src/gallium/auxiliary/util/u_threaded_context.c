@@ -97,7 +97,7 @@ static void
 tc_set_driver_thread(struct threaded_context *tc)
 {
 #ifndef NDEBUG
-   tc->driver_thread = util_get_thread_id();
+   tc->driver_thread = thrd_current();
 #endif
 }
 

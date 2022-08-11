@@ -51,7 +51,7 @@ dzn_meta_compile_shader(struct dzn_device *device, nir_shader *nir,
 #endif
    };
    struct blob dxil_blob;
-   ASSERTED bool ret = nir_to_dxil(nir, &opts, &dxil_blob);
+   ASSERTED bool ret = nir_to_dxil(nir, &opts, NULL, &dxil_blob);
    assert(ret);
 
 #ifdef _WIN32

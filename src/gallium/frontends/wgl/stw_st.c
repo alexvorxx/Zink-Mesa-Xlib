@@ -494,7 +494,7 @@ stw_st_framebuffer_flush_front(struct st_context_iface *stctx,
  * Create a framebuffer interface.
  */
 struct st_framebuffer_iface *
-stw_st_create_framebuffer(struct stw_framebuffer *fb)
+stw_st_create_framebuffer(struct stw_framebuffer *fb, struct st_manager *smapi)
 {
    struct stw_st_framebuffer *stwfb;
 
@@ -505,7 +505,7 @@ stw_st_create_framebuffer(struct stw_framebuffer *fb)
    stwfb->fb = fb;
    stwfb->stvis = fb->pfi->stvis;
    stwfb->base.ID = p_atomic_inc_return(&stwfb_ID);
-   stwfb->base.state_manager = stw_dev->smapi;
+   stwfb->base.state_manager = smapi;
 
    stwfb->base.visual = &stwfb->stvis;
    p_atomic_set(&stwfb->base.stamp, 1);

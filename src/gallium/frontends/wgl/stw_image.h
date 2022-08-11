@@ -23,55 +23,40 @@
 
 #pragma once
 
-#include <egldriver.h>
-#include <egldisplay.h>
-#include <eglconfig.h>
-#include <eglimage.h>
-#include <eglsync.h>
+#include <pipe/p_state.h>
+#include "stw_context.h"
 
-#include <stw_pixelformat.h>
-#include <windows.h>
+#include <GL/gl.h>
 
-struct wgl_egl_display
+struct st_egl_image;
+
+enum stw_image_error
 {
-   struct st_manager base;
-   _EGLDisplay *parent;
-   int ref_count;
-   struct pipe_screen *screen;
+   STW_IMAGE_ERROR_SUCCESS,
+   STW_IMAGE_ERROR_BAD_ALLOC,
+   STW_IMAGE_ERROR_BAD_PARAMETER,
+   STW_IMAGE_ERROR_BAD_MATCH,
+   STW_IMAGE_ERROR_BAD_ACCESS,
 };
 
-struct wgl_egl_config
+struct stw_image
 {
-   _EGLConfig                         base;
-   const struct stw_pixelformat_info *stw_config[2];
+   struct pipe_resource *pres;
+   unsigned level;
+   unsigned layer;
+   enum pipe_format format;
 };
 
-struct wgl_egl_context
-{
-   _EGLContext base;
-   struct stw_context *ctx;
-};
+struct stw_image *
+stw_create_image_from_texture(struct stw_context *ctx, GLenum gl_target, GLuint texture,
+                              GLuint depth, GLint level, enum stw_image_error *error);
 
-struct wgl_egl_surface
-{
-   _EGLSurface base;
-   struct stw_framebuffer *fb;
-};
+struct stw_image *
+stw_create_image_from_renderbuffer(struct stw_context *ctx, GLuint renderbuffer,
+                                   enum stw_image_error *error);
 
-struct wgl_egl_image
-{
-   _EGLImage base;
-   struct stw_image *img;
-};
+void
+stw_destroy_image(struct stw_image *img);
 
-struct wgl_egl_sync
-{
-   _EGLSync base;
-   int refcount;
-   struct pipe_fence_handle *fence;
-   HANDLE event;
-};
-
-_EGL_DRIVER_STANDARD_TYPECASTS(wgl_egl)
-_EGL_DRIVER_TYPECAST(wgl_egl_image, _EGLImage, obj)
-_EGL_DRIVER_TYPECAST(wgl_egl_sync, _EGLSync, obj)
+void
+stw_translate_image(struct stw_image *in, struct st_egl_image *out);

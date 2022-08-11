@@ -1337,7 +1337,7 @@ lp_rast_destroy(struct lp_rasterizer *rast)
        * other threads when returning from main.
        */
       DWORD exit_code = STILL_ACTIVE;
-      if (GetExitCodeThread(rast->threads[i], &exit_code) &&
+      if (GetExitCodeThread(rast->threads[i].handle, &exit_code) &&
           exit_code == STILL_ACTIVE) {
          pipe_semaphore_wait(&rast->tasks[i].work_done);
       }

@@ -36,6 +36,8 @@ struct virgl_resource;
 struct virgl_screen;
 struct virgl_transfer;
 struct virgl_sampler_view;
+struct virgl_video_codec;
+struct virgl_video_buffer;
 
 struct virgl_surface {
    struct pipe_surface base;
@@ -317,5 +319,31 @@ void virgl_encode_get_memory_info(struct virgl_context *ctx, struct virgl_resour
 void virgl_encode_emit_string_marker(struct virgl_context *ctx, const char *message,
                                        int len);
 
+void virgl_encode_create_video_codec(struct virgl_context *ctx,
+                                     struct virgl_video_codec *cdc);
+
+void virgl_encode_destroy_video_codec(struct virgl_context *ctx,
+                                      struct virgl_video_codec *cdc);
+
+void virgl_encode_create_video_buffer(struct virgl_context *ctx,
+                                      struct virgl_video_buffer *buf);
+
+void virgl_encode_destroy_video_buffer(struct virgl_context *ctx,
+                                       struct virgl_video_buffer *buf);
+
+void virgl_encode_begin_frame(struct virgl_context *ctx,
+                              struct virgl_video_codec *cdc,
+                              struct virgl_video_buffer *buf);
+
+void virgl_encode_decode_bitstream(struct virgl_context *ctx,
+                                   struct virgl_video_codec *cdc,
+                                   struct virgl_video_buffer *buf,
+                                   void *desc, uint32_t desc_size);
+
+void virgl_encode_end_frame(struct virgl_context *ctx,
+                            struct virgl_video_codec *cdc,
+                            struct virgl_video_buffer *buf);
+
 enum virgl_formats pipe_to_virgl_format(enum pipe_format format);
+enum pipe_format virgl_to_pipe_format(enum virgl_formats format);
 #endif

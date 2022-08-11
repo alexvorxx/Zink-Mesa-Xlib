@@ -283,6 +283,7 @@ handleVAProtectedSliceDataBufferType(vlVaContext *context, vlVaBuffer *buf)
 
 	context->desc.base.decrypt_key = CALLOC(1, drm_key_size);
 	memcpy(context->desc.base.decrypt_key, encrypted_data, drm_key_size);
+	context->desc.base.key_size = drm_key_size;
 	context->desc.base.protected_playback = true;
 }
 

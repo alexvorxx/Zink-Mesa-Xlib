@@ -32,6 +32,8 @@
 #include "pipe/p_defines.h"
 #include "pipe/p_screen.h"
 #include "nir/nir_to_tgsi.h"
+#include "vl/vl_decoder.h"
+#include "vl/vl_video_buffer.h"
 
 #include "tgsi/tgsi_exec.h"
 
@@ -53,6 +55,7 @@ static const struct debug_named_value virgl_debug_options[] = {
    { "xfer",      VIRGL_DEBUG_XFER,                "Do not optimize for transfers" },
    { "r8srgb-readback",   VIRGL_DEBUG_L8_SRGB_ENABLE_READBACK, "Enable redaback for L8 sRGB textures" },
    { "nocoherent", VIRGL_DEBUG_NO_COHERENT,        "Disable coherent memory"},
+   { "video",     VIRGL_DEBUG_VIDEO,               "Video codec"},
    DEBUG_NAMED_VALUE_END
 };
 DEBUG_GET_ONCE_FLAGS_OPTION(virgl_debug, "VIRGL_DEBUG", virgl_debug_options, 0)
@@ -457,6 +460,72 @@ virgl_get_shader_param(struct pipe_screen *screen,
    }
 }
 
+static int
+virgl_get_video_param(struct pipe_screen *screen,
+                      enum pipe_video_profile profile,
+                      enum pipe_video_entrypoint entrypoint,
+                      enum pipe_video_cap param)
+{
+   unsigned i;
+   struct virgl_video_caps *vcaps = NULL;
+   struct virgl_screen *vscreen;
+
+   if (!screen)
+       return 0;
+
+   vscreen = virgl_screen(screen);
+   if (vscreen->caps.caps.v2.num_video_caps > ARRAY_SIZE(vscreen->caps.caps.v2.video_caps))
+       return 0;
+
+   for (i = 0;  i < vscreen->caps.caps.v2.num_video_caps; i++) {
+       if (vscreen->caps.caps.v2.video_caps[i].profile == profile &&
+           vscreen->caps.caps.v2.video_caps[i].entrypoint == entrypoint) {
+           vcaps = &vscreen->caps.caps.v2.video_caps[i];
+           break;
+       }
+   }
+
+   /*
+    * Since there are calls like this:
+    *   pot_buffers = !pipe->screen->get_video_param
+    *   (
+    *      pipe->screen,
+    *      PIPE_VIDEO_PROFILE_UNKNOWN,
+    *      PIPE_VIDEO_ENTRYPOINT_UNKNOWN,
+    *      PIPE_VIDEO_CAP_NPOT_TEXTURES
+    *   );
+    * All parameters need to check the vcaps.
+    */
+   switch (param) {
+      case PIPE_VIDEO_CAP_SUPPORTED:
+         return vcaps != NULL;
+      case PIPE_VIDEO_CAP_NPOT_TEXTURES:
+         return vcaps ? vcaps->npot_texture : true;
+      case PIPE_VIDEO_CAP_MAX_WIDTH:
+         return vcaps ? vcaps->max_width : 0;
+      case PIPE_VIDEO_CAP_MAX_HEIGHT:
+         return vcaps ? vcaps->max_height : 0;
+      case PIPE_VIDEO_CAP_PREFERED_FORMAT:
+         return vcaps ? virgl_to_pipe_format(vcaps->prefered_format) : PIPE_FORMAT_NV12;
+      case PIPE_VIDEO_CAP_PREFERS_INTERLACED:
+         return vcaps ? vcaps->prefers_interlaced : false;
+      case PIPE_VIDEO_CAP_SUPPORTS_INTERLACED:
+         return vcaps ? vcaps->supports_interlaced : false;
+      case PIPE_VIDEO_CAP_SUPPORTS_PROGRESSIVE:
+         return vcaps ? vcaps->supports_progressive : true;
+      case PIPE_VIDEO_CAP_MAX_LEVEL:
+         return vcaps ? vcaps->max_level : 0;
+      case PIPE_VIDEO_CAP_STACKED_FRAMES:
+         return vcaps ? vcaps->stacked_frames : 0;
+      case PIPE_VIDEO_CAP_MAX_MACROBLOCKS:
+         return vcaps ? vcaps->max_macroblocks : 0;
+      case PIPE_VIDEO_CAP_MAX_TEMPORAL_LAYERS:
+         return vcaps ? vcaps->max_temporal_layers : 0;
+      default:
+         return 0;
+   }
+}
+
 static float
 virgl_get_paramf(struct pipe_screen *screen, enum pipe_capf param)
 {
@@ -804,6 +873,15 @@ virgl_is_format_supported( struct pipe_screen *screen,
                                      may_emulate_bgra);
 }
 
+static bool virgl_is_video_format_supported(struct pipe_screen *screen,
+                                            enum pipe_format format,
+                                            enum pipe_video_profile profile,
+                                            enum pipe_video_entrypoint entrypoint)
+{
+    return vl_video_buffer_is_format_supported(screen, format, profile, entrypoint);
+}
+
+
 static void virgl_flush_frontbuffer(struct pipe_screen *screen,
                                     struct pipe_context *ctx,
                                       struct pipe_resource *res,
@@ -1055,10 +1133,12 @@ virgl_create_screen(struct virgl_winsys *vws, const struct pipe_screen_config *c
    screen->base.get_vendor = virgl_get_vendor;
    screen->base.get_param = virgl_get_param;
    screen->base.get_shader_param = virgl_get_shader_param;
+   screen->base.get_video_param = virgl_get_video_param;
    screen->base.get_compute_param = virgl_get_compute_param;
    screen->base.get_paramf = virgl_get_paramf;
    screen->base.get_compiler_options = virgl_get_compiler_options;
    screen->base.is_format_supported = virgl_is_format_supported;
+   screen->base.is_video_format_supported = virgl_is_video_format_supported;
    screen->base.destroy = virgl_destroy_screen;
    screen->base.context_create = virgl_context_create;
    screen->base.flush_frontbuffer = virgl_flush_frontbuffer;

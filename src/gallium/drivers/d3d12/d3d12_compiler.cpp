@@ -154,7 +154,7 @@ compile_nir(struct d3d12_context *ctx, struct d3d12_shader_selector *sel,
 #endif
 
    struct blob tmp;
-   if (!nir_to_dxil(nir, &opts, &tmp)) {
+   if (!nir_to_dxil(nir, &opts, NULL, &tmp)) {
       debug_printf("D3D12: nir_to_dxil failed\n");
       return NULL;
    }

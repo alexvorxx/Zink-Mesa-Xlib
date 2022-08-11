@@ -317,6 +317,7 @@ nvc0_screen_get_param(struct pipe_screen *pscreen, enum pipe_cap param)
    case PIPE_CAP_ALLOW_DYNAMIC_VAO_FASTPATH:
    case PIPE_CAP_SHAREABLE_SHADERS:
    case PIPE_CAP_PREFER_BACK_BUFFER_REUSE:
+   case PIPE_CAP_QUERY_MEMORY_INFO:
       return 1;
    case PIPE_CAP_TEXTURE_TRANSFER_MODES:
       return nouveau_screen(pscreen)->vram_domain & NOUVEAU_BO_VRAM ? PIPE_TEXTURE_TRANSFER_BLIT : 0;
@@ -377,7 +378,6 @@ nvc0_screen_get_param(struct pipe_screen *pscreen, enum pipe_cap param)
    case PIPE_CAP_GENERATE_MIPMAP:
    case PIPE_CAP_BUFFER_SAMPLER_VIEW_RGBA_ONLY:
    case PIPE_CAP_SURFACE_REINTERPRET_BLOCKS:
-   case PIPE_CAP_QUERY_MEMORY_INFO:
    case PIPE_CAP_PCI_GROUP:
    case PIPE_CAP_PCI_BUS:
    case PIPE_CAP_PCI_DEVICE:
