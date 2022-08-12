@@ -182,6 +182,9 @@ _mesa_tex_param_enum_to_count(GLenum pname)
    case GL_TEXTURE_MAX_ANISOTROPY_EXT:
    case GL_TEXTURE_LOD_BIAS:
    case GL_TEXTURE_TILING_EXT:
+   case GL_TEXTURE_SPARSE_ARB:
+   case GL_VIRTUAL_PAGE_SIZE_INDEX_ARB:
+   case GL_NUM_SPARSE_LEVELS_ARB:
       return 1;
    case GL_TEXTURE_CROP_RECT_OES:
    case GL_TEXTURE_SWIZZLE_RGBA:
@@ -777,6 +780,37 @@ _mesa_glthread_DeleteLists(struct gl_context *ctx, GLsizei range)
    /* Track the last display list change. */
    p_atomic_set(&ctx->GLThread.LastDListChangeBatchIndex, ctx->GLThread.next);
    _mesa_glthread_flush_batch(ctx);
+}
+
+static inline void
+_mesa_glthread_BindFramebuffer(struct gl_context *ctx, GLenum target, GLuint id)
+{
+   switch (target) {
+   case GL_FRAMEBUFFER:
+      ctx->GLThread.CurrentDrawFramebuffer = id;
+      ctx->GLThread.CurrentReadFramebuffer = id;
+      break;
+   case GL_DRAW_FRAMEBUFFER:
+      ctx->GLThread.CurrentDrawFramebuffer = id;
+      break;
+   case GL_READ_FRAMEBUFFER:
+      ctx->GLThread.CurrentReadFramebuffer = id;
+      break;
+   }
+}
+
+static inline void
+_mesa_glthread_DeleteFramebuffers(struct gl_context *ctx, GLsizei n,
+                                  const GLuint *ids)
+{
+   if (ctx->GLThread.CurrentDrawFramebuffer) {
+      for (int i = 0; i < n; i++) {
+         if (ctx->GLThread.CurrentDrawFramebuffer == ids[i])
+            ctx->GLThread.CurrentDrawFramebuffer = 0;
+         if (ctx->GLThread.CurrentReadFramebuffer == ids[i])
+            ctx->GLThread.CurrentReadFramebuffer = 0;
+      }
+   }
 }
 
 struct marshal_cmd_CallList

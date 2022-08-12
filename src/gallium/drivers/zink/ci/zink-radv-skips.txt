@@ -18,3 +18,6 @@ glx@glx-tfp
 # Tests below timeout most of the time.
 KHR-GL46.copy_image.functional
 KHR-GL46.texture_swizzle.smoke
+
+#these need format conversions that gallium doesn't implement yet
+spec@arb_texture_buffer_object@formats.*arb.*

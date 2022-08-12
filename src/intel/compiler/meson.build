@@ -149,8 +149,7 @@ brw_nir_trig = custom_target(
   input : 'brw_nir_trig_workarounds.py',
   output : 'brw_nir_trig_workarounds.c',
   command : [
-    prog_python, '@INPUT@',
-    '-p', join_paths(meson.source_root(), 'src/compiler/nir/'),
+    prog_python, '@INPUT@', '-p', dir_compiler_nir,
   ],
   depend_files : nir_algebraic_depends,
   capture : true,

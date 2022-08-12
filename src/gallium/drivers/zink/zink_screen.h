@@ -211,6 +211,7 @@ struct zink_screen {
    VkExtent2D maxSampleLocationGridSize[5];
 
    struct {
+      bool broken_l4a4;
       bool color_write_missing;
       bool depth_clip_control_missing;
       bool implicit_sync;

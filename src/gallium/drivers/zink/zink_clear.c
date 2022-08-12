@@ -23,6 +23,7 @@
 
 #include "zink_context.h"
 #include "zink_kopper.h"
+#include "zink_format.h"
 #include "zink_framebuffer.h"
 #include "zink_query.h"
 #include "zink_resource.h"
@@ -254,17 +255,42 @@ zink_clear(struct pipe_context *pctx,
       for (unsigned i = 0; i < fb->nr_cbufs; i++) {
          if ((buffers & (PIPE_CLEAR_COLOR0 << i)) && fb->cbufs[i]) {
             struct pipe_surface *psurf = fb->cbufs[i];
+            bool emulated_alpha = zink_format_is_emulated_alpha(psurf->format);
             const struct util_format_description *desc = util_format_description(psurf->format);
             struct zink_framebuffer_clear *fb_clear = &ctx->fb_clears[i];
             struct zink_framebuffer_clear_data *clear = get_clear_data(ctx, fb_clear, needs_rp ? scissor_state : NULL);
+            const union pipe_color_union *color = pcolor;
+            union pipe_color_union tmp;
 
             ctx->clears_enabled |= PIPE_CLEAR_COLOR0 << i;
             clear->conditional = ctx->render_condition_active;
             clear->has_scissor = needs_rp;
             if (scissor_state && needs_rp)
                clear->scissor = *scissor_state;
+            if (emulated_alpha) {
+               tmp = *pcolor;
+               if (util_format_is_alpha(psurf->format)) {
+                  tmp.ui[0] = tmp.ui[3];
+                  tmp.ui[1] = 0;
+                  tmp.ui[2] = 0;
+                  tmp.ui[3] = 0;
+               } else if (util_format_is_luminance(psurf->format)) {
+                  tmp.ui[1] = tmp.ui[0];
+                  tmp.ui[2] = tmp.ui[0];
+                  tmp.f[3] = 1.0;
+               } else if (util_format_is_luminance_alpha(psurf->format)) {
+                  tmp.f[3] = tmp.ui[1];
+                  tmp.ui[1] = tmp.ui[0];
+                  tmp.ui[2] = tmp.ui[0];
+               } else /* zink_format_is_red_alpha */ {
+                  tmp.ui[1] = tmp.ui[3];
+                  tmp.ui[2] = 0;
+                  tmp.ui[3] = 0;
+               }
+               color = &tmp;
+            }
             for (unsigned i = 0; i < 4; i++)
-               clamp_color(desc, &clear->color, pcolor, i);
+               clamp_color(desc, &clear->color, color, i);
             if (zink_fb_clear_first_needs_explicit(fb_clear))
                ctx->rp_clears_enabled &= ~(PIPE_CLEAR_COLOR0 << i);
             else

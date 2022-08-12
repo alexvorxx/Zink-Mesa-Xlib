@@ -201,6 +201,111 @@ zink_pipe_format_to_vk_format(enum pipe_format format)
    return formats[format];
 }
 
+bool
+zink_format_is_red_alpha(enum pipe_format format)
+{
+   switch (format) {
+   case PIPE_FORMAT_R4A4_UNORM:
+   case PIPE_FORMAT_R8A8_SINT:
+   case PIPE_FORMAT_R8A8_SNORM:
+   case PIPE_FORMAT_R8A8_UINT:
+   case PIPE_FORMAT_R8A8_UNORM:
+   case PIPE_FORMAT_R16A16_SINT:
+   case PIPE_FORMAT_R16A16_SNORM:
+   case PIPE_FORMAT_R16A16_UINT:
+   case PIPE_FORMAT_R16A16_UNORM:
+   case PIPE_FORMAT_R16A16_FLOAT:
+   case PIPE_FORMAT_R32A32_SINT:
+   case PIPE_FORMAT_R32A32_UINT:
+   case PIPE_FORMAT_R32A32_FLOAT:
+      return true;
+   default: break;
+   }
+   return false;
+}
+
+bool
+zink_format_is_emulated_alpha(enum pipe_format format)
+{
+   return util_format_is_alpha(format) ||
+          util_format_is_luminance(format) ||
+          util_format_is_luminance_alpha(format) ||
+          zink_format_is_red_alpha(format);
+}
+
+static enum pipe_format
+emulate_alpha(enum pipe_format format)
+{
+   if (format == PIPE_FORMAT_A8_UNORM)
+      return PIPE_FORMAT_R8_UNORM;
+   if (format == PIPE_FORMAT_A8_UINT)
+      return PIPE_FORMAT_R8_UINT;
+   if (format == PIPE_FORMAT_A8_SNORM)
+      return PIPE_FORMAT_R8_SNORM;
+   if (format == PIPE_FORMAT_A8_SINT)
+      return PIPE_FORMAT_R8_SINT;
+   if (format == PIPE_FORMAT_A16_UNORM)
+      return PIPE_FORMAT_R16_UNORM;
+   if (format == PIPE_FORMAT_A16_UINT)
+      return PIPE_FORMAT_R16_UINT;
+   if (format == PIPE_FORMAT_A16_SNORM)
+      return PIPE_FORMAT_R16_SNORM;
+   if (format == PIPE_FORMAT_A16_SINT)
+      return PIPE_FORMAT_R16_SINT;
+   if (format == PIPE_FORMAT_A16_FLOAT)
+      return PIPE_FORMAT_R16_FLOAT;
+   if (format == PIPE_FORMAT_A32_UINT)
+      return PIPE_FORMAT_R32_UINT;
+   if (format == PIPE_FORMAT_A32_SINT)
+      return PIPE_FORMAT_R32_SINT;
+   if (format == PIPE_FORMAT_A32_FLOAT)
+      return PIPE_FORMAT_R32_FLOAT;
+   return format;
+}
+
+static enum pipe_format
+emulate_red_alpha(enum pipe_format format)
+{
+   switch (format) {
+   case PIPE_FORMAT_R8A8_SINT:
+      return PIPE_FORMAT_R8G8_SINT;
+   case PIPE_FORMAT_R8A8_SNORM:
+      return PIPE_FORMAT_R8G8_SNORM;
+   case PIPE_FORMAT_R8A8_UINT:
+      return PIPE_FORMAT_R8G8_UINT;
+   case PIPE_FORMAT_R8A8_UNORM:
+      return PIPE_FORMAT_R8G8_UNORM;
+   case PIPE_FORMAT_R16A16_SINT:
+      return PIPE_FORMAT_R16G16_SINT;
+   case PIPE_FORMAT_R16A16_SNORM:
+      return PIPE_FORMAT_R16G16_SNORM;
+   case PIPE_FORMAT_R16A16_UINT:
+      return PIPE_FORMAT_R16G16_UINT;
+   case PIPE_FORMAT_R16A16_UNORM:
+      return PIPE_FORMAT_R16G16_UNORM;
+   case PIPE_FORMAT_R16A16_FLOAT:
+      return PIPE_FORMAT_R16G16_FLOAT;
+   case PIPE_FORMAT_R32A32_SINT:
+      return PIPE_FORMAT_R32G32_SINT;
+   case PIPE_FORMAT_R32A32_UINT:
+      return PIPE_FORMAT_R32G32_UINT;
+   case PIPE_FORMAT_R32A32_FLOAT:
+      return PIPE_FORMAT_R32G32_FLOAT;
+   default: break;
+   }
+   return format;
+}
+
+enum pipe_format
+zink_format_get_emulated_alpha(enum pipe_format format)
+{
+   if (util_format_is_alpha(format))
+      return emulate_alpha(format);
+   if (util_format_is_luminance(format) || util_format_is_luminance_alpha(format))
+      return util_format_luminance_to_red(format);
+
+   return emulate_red_alpha(format);
+}
 
 bool
 zink_format_is_voidable_rgba_variant(enum pipe_format format)

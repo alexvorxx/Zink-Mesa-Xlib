@@ -789,6 +789,9 @@ struct gl_texture_image
    /** Cube map face: index into gl_texture_object::Image[] array */
    GLuint Face;
 
+   unsigned FormatSwizzle;
+   unsigned FormatSwizzleGLSL130; //for depth formats
+
    /** GL_ARB_texture_multisample */
    GLuint NumSamples;            /**< Sample count, or 0 for non-multisample */
    GLboolean FixedSampleLocations; /**< Same sample locations for all pixels? */
@@ -978,6 +981,9 @@ struct gl_texture_object
    /* The texture must include at levels [0..lastLevel] once validated:
     */
    GLuint lastLevel;
+
+   unsigned Swizzle;
+   unsigned SwizzleGLSL130;
 
    unsigned int validated_first_level;
    unsigned int validated_last_level;
@@ -2722,7 +2728,7 @@ struct gl_framebuffer
    bool _HasAttachments;
 
    GLbitfield _IntegerBuffers;  /**< Which color buffers are integer valued */
-   GLbitfield _RGBBuffers;  /**< Which color buffers have baseformat == RGB */
+   GLbitfield _BlendForceAlphaToOne;  /**< Which color buffers need blend factor adjustment */
    GLbitfield _FP32Buffers; /**< Which color buffers are FP32 */
 
    /* ARB_color_buffer_float */

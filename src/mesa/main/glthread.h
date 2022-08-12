@@ -236,6 +236,7 @@ struct glthread_state
    bool CullFace;
 
    GLuint CurrentDrawFramebuffer;
+   GLuint CurrentReadFramebuffer;
    GLuint CurrentProgram;
 };
 

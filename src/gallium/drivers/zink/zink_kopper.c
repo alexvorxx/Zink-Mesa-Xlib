@@ -22,6 +22,7 @@
  * DEALINGS IN THE SOFTWARE.
  */
 
+#include "util/detect_os.h"
 
 #include "zink_context.h"
 #include "zink_screen.h"
@@ -31,7 +32,7 @@
 static void
 zink_kopper_set_present_mode_for_interval(struct kopper_displaytarget *cdt, int interval)
 {
-#ifdef WIN32
+#if DETECT_OS_WINDOWS
     // not hooked up yet so let's not sabotage benchmarks
     cdt->present_mode = VK_PRESENT_MODE_IMMEDIATE_KHR;
 #else

@@ -598,6 +598,9 @@ st_create_context_priv(struct gl_context *ctx, struct pipe_context *pipe,
    st->use_format_with_border_color =
       !!(screen->get_param(screen, PIPE_CAP_TEXTURE_BORDER_COLOR_QUIRK) &
          PIPE_QUIRK_TEXTURE_BORDER_COLOR_SWIZZLE_FREEDRENO);
+   st->alpha_border_color_is_not_w =
+      !!(screen->get_param(screen, PIPE_CAP_TEXTURE_BORDER_COLOR_QUIRK) &
+         PIPE_QUIRK_TEXTURE_BORDER_COLOR_SWIZZLE_ALPHA_NOT_W);
    st->emulate_gl_clamp =
       !screen->get_param(screen, PIPE_CAP_GL_CLAMP);
    st->texture_buffer_sampler =

@@ -1511,14 +1511,14 @@ endif
 with_ld_version_script = false
 if cc.links('int main() { return 0; }',
             args : '-Wl,--version-script=@0@'.format(
-              join_paths(meson.source_root(), 'build-support/conftest.map')),
+              join_paths(meson.current_source_dir(), 'build-support/conftest.map')),
             name : 'version-script')
   with_ld_version_script = true
 endif
 with_ld_dynamic_list = false
 if cc.links('int main() { return 0; }',
             args : '-Wl,--dynamic-list=@0@'.format(
-              join_paths(meson.source_root(), 'build-support/conftest.dyn')),
+              join_paths(meson.current_source_dir(), 'build-support/conftest.dyn')),
             name : 'dynamic-list')
   with_ld_dynamic_list = true
 endif
@@ -2250,6 +2250,8 @@ endif
 gcc_lto_quirk = (cc.get_id() == 'gcc') ? ['-fno-lto'] : []
 
 devenv = environment()
+
+dir_compiler_nir = join_paths(meson.current_source_dir(), 'src/compiler/nir/')
 
 subdir('include')
 subdir('bin')

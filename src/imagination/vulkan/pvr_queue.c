@@ -214,8 +214,10 @@ pvr_process_graphics_cmd(struct pvr_device *device,
                            0U,
                            0UL,
                            &sync_geom);
-   if (result != VK_SUCCESS)
+   if (result != VK_SUCCESS) {
+      STACK_ARRAY_FINISH(bos);
       return result;
+   }
 
    result = vk_sync_create(&device->vk,
                            &device->pdevice->ws->syncobj_type,
@@ -224,6 +226,7 @@ pvr_process_graphics_cmd(struct pvr_device *device,
                            &sync_frag);
    if (result != VK_SUCCESS) {
       vk_sync_destroy(&device->vk, sync_geom);
+      STACK_ARRAY_FINISH(bos);
       return result;
    }
 

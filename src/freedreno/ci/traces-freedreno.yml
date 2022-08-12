@@ -128,7 +128,7 @@ traces:
       - device: freedreno-a630
         checksum: 730692659fbb9eefa44d6b1a2df2fa8e
       - device: zink-a630
-        checksum: 5a97da6dbb6c10d615f92030c03d116c
+        checksum: 165d3c13c8143fbc2265a55758afc04c
   - path: behdad-glyphy/glyphy.trace
     expectations:
       - device: freedreno-a306

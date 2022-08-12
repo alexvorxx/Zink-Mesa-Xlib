@@ -240,6 +240,13 @@ util_thread_get_time_nano(thrd_t thread)
    pthread_getcpuclockid(thread, &cid);
    clock_gettime(cid, &ts);
    return (int64_t)ts.tv_sec * 1000000000 + ts.tv_nsec;
+#elif defined(_WIN32)
+   union {
+      FILETIME time;
+      ULONGLONG value;
+   } kernel_time, user_time;
+   GetThreadTimes((HANDLE)thread.handle, NULL, NULL, &kernel_time.time, &user_time.time);
+   return (kernel_time.value + user_time.value) * 100;
 #else
    (void)thread;
    return 0;

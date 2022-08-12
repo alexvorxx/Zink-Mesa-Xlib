@@ -405,6 +405,7 @@ st_bind_egl_image(struct gl_context *ctx,
 
    texObj->level_override = stimg->level;
    texObj->layer_override = stimg->layer;
+   _mesa_update_texture_object_swizzle(ctx, texObj);
 
    _mesa_dirty_texobj(ctx, texObj);
 }

@@ -536,10 +536,10 @@ uimage2DArray   TYPE_WITH_ALT(130, 300, 420, 310, yyextra->ARB_shader_image_load
 uimageCubeArray TYPE_WITH_ALT(130, 300, 420, 320, yyextra->ARB_shader_image_load_store_enable || yyextra->EXT_shader_image_load_store_enable || yyextra->OES_texture_cube_map_array_enable || yyextra->EXT_texture_cube_map_array_enable, glsl_type::uimageCubeArray_type);
 uimage2DMS      TYPE_WITH_ALT(130, 300, 420, 0, yyextra->ARB_shader_image_load_store_enable || yyextra->EXT_shader_image_load_store_enable, glsl_type::uimage2DMS_type);
 uimage2DMSArray TYPE_WITH_ALT(130, 300, 420, 0, yyextra->ARB_shader_image_load_store_enable || yyextra->EXT_shader_image_load_store_enable, glsl_type::uimage2DMSArray_type);
-image1DShadow           KEYWORD(130, 300, 0, 0, IMAGE1DSHADOW);
-image2DShadow           KEYWORD(130, 300, 0, 0, IMAGE2DSHADOW);
-image1DArrayShadow      KEYWORD(130, 300, 0, 0, IMAGE1DARRAYSHADOW);
-image2DArrayShadow      KEYWORD(130, 300, 0, 0, IMAGE2DARRAYSHADOW);
+image1DShadow           KEYWORD(130, 0, 420, 0, IMAGE1DSHADOW);
+image2DShadow           KEYWORD(130, 0, 420, 0, IMAGE2DSHADOW);
+image1DArrayShadow      KEYWORD(130, 0, 420, 0, IMAGE1DARRAYSHADOW);
+image2DArrayShadow      KEYWORD(130, 0, 420, 0, IMAGE2DARRAYSHADOW);
 
 coherent       KEYWORD_WITH_ALT(420, 300, 420, 310, yyextra->ARB_shader_image_load_store_enable || yyextra->EXT_shader_image_load_store_enable || yyextra->ARB_shader_storage_buffer_object_enable, COHERENT);
 volatile       KEYWORD_WITH_ALT(110, 100, 420, 310, yyextra->ARB_shader_image_load_store_enable || yyextra->EXT_shader_image_load_store_enable || yyextra->ARB_shader_storage_buffer_object_enable, VOLATILE);

@@ -1239,10 +1239,8 @@ loader_dri3_open(xcb_connection_t *conn,
                           provider);
 
    reply = xcb_dri3_open_reply(conn, cookie, NULL);
-   if (!reply)
-      return -1;
 
-   if (reply->nfd != 1) {
+   if (!reply || reply->nfd != 1) {
       free(reply);
       return -1;
    }
@@ -1478,7 +1476,6 @@ dri3_alloc_render_buffer(struct loader_dri3_drawable *draw, unsigned int format,
             count = mod_reply->num_screen_modifiers;
             modifiers = malloc(count * sizeof(uint64_t));
             if (!modifiers) {
-               free(modifiers);
                free(mod_reply);
                goto no_image;
             }

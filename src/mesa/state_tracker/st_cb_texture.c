@@ -1041,6 +1041,7 @@ prep_teximage(struct gl_context *ctx, struct gl_texture_image *texImage,
                                  texImage->InternalFormat, texFormat);
 
       texObj->surface_based = GL_FALSE;
+      _mesa_update_texture_object_swizzle(ctx, texObj);
    }
 }
 

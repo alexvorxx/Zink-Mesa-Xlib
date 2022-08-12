@@ -1,4 +1,5 @@
 #include "zink_context.h"
+#include "zink_format.h"
 #include "zink_kopper.h"
 #include "zink_helpers.h"
 #include "zink_query.h"
@@ -136,6 +137,8 @@ blit_native(struct zink_context *ctx, const struct pipe_blit_info *info, bool *n
    struct zink_screen *screen = zink_screen(ctx->base.screen);
    if (src->format != zink_get_format(screen, info->src.format) ||
        dst->format != zink_get_format(screen, info->dst.format))
+      return false;
+   if (zink_format_is_emulated_alpha(info->src.format))
       return false;
 
    if (!(src->obj->vkfeats & VK_FORMAT_FEATURE_BLIT_SRC_BIT) ||

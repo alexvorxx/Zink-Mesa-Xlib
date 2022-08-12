@@ -239,8 +239,6 @@ spec@arb_shader_texture_lod@execution@glsl-fs-shadow2dgradarb-cumulative,Fail
 spec@arb_shading_language_packing@execution@built-in-functions@fs-packhalf2x16,Fail
 spec@arb_shading_language_packing@execution@built-in-functions@vs-packhalf2x16,Fail
 spec@arb_tessellation_shader@arb_tessellation_shader-tes-gs-max-output -small -scan 1 50,Crash
-spec@arb_texture_buffer_object@formats (fs- arb),Crash
-spec@arb_texture_buffer_object@formats (vs- arb),Crash
 spec@arb_texture_float@fbo-blending-formats,Fail
 spec@arb_texture_float@fbo-blending-formats@GL_INTENSITY16F_ARB,Fail
 spec@arb_texture_float@fbo-blending-formats@GL_INTENSITY32F_ARB,Fail

@@ -396,7 +396,7 @@ update_samplers(struct svga_context *svga, uint64_t dirty )
 
    assert(svga_have_vgpu10(svga));
 
-   for (shader = PIPE_SHADER_VERTEX; shader <= PIPE_SHADER_COMPUTE; shader++) {
+   for (shader = PIPE_SHADER_VERTEX; shader < PIPE_SHADER_COMPUTE; shader++) {
       const unsigned count = svga->curr.num_samplers[shader];
       SVGA3dSamplerId ids[PIPE_MAX_SAMPLERS*2];
       unsigned i;

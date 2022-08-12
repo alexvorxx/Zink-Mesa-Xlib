@@ -186,6 +186,7 @@ struct st_context
    boolean needs_texcoord_semantic;
    boolean apply_texture_swizzle_to_border_color;
    boolean use_format_with_border_color;
+   boolean alpha_border_color_is_not_w;
    boolean emulate_gl_clamp;
    boolean texture_buffer_sampler;
 
