@@ -560,7 +560,7 @@ if with_glx != 'disabled'
     if not with_gallium
       error('xlib based GLX requires at least one gallium driver')
     elif not with_gallium_softpipe
-      error('xlib based GLX requires softpipe or llvmpipe.')
+     # error('xlib based GLX requires softpipe or llvmpipe.')
     elif with_dri
       error('xlib conflicts with any dri driver')
     endif

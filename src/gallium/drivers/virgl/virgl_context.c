@@ -1709,8 +1709,8 @@ struct pipe_context *virgl_context_create(struct pipe_screen *pscreen,
    vctx->base.memory_barrier = virgl_memory_barrier;
    vctx->base.emit_string_marker = virgl_emit_string_marker;
 
-   vctx->base.create_video_codec = virgl_video_create_codec;
-   vctx->base.create_video_buffer = virgl_video_create_buffer;
+   //vctx->base.create_video_codec = virgl_video_create_codec;
+   //vctx->base.create_video_buffer = virgl_video_create_buffer;
 
    if (rs->caps.caps.v2.host_feature_check_version >= 7)
       vctx->base.link_shader = virgl_link_shader;

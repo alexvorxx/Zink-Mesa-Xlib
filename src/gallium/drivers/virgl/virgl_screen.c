@@ -884,7 +884,8 @@ static bool virgl_is_video_format_supported(struct pipe_screen *screen,
                                             enum pipe_video_profile profile,
                                             enum pipe_video_entrypoint entrypoint)
 {
-    return vl_video_buffer_is_format_supported(screen, format, profile, entrypoint);
+    //return vl_video_buffer_is_format_supported(screen, format, profile, entrypoint);
+    return false;
 }
 
 
