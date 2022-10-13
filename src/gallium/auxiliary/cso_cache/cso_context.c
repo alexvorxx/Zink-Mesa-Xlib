@@ -1710,7 +1710,8 @@ cso_draw_vbo(struct cso_context *cso,
           indirect->count_from_stream_output == NULL);
 
    if (vbuf) {
-      u_vbuf_draw_vbo(vbuf, info, drawid_offset, indirect, &draw, 1);
+      //u_vbuf_draw_vbo(vbuf, info, drawid_offset, indirect, &draw, 1);
+      u_vbuf_draw_vbo(vbuf, info, drawid_offset, indirect, draw);
    } else {
       struct pipe_context *pipe = cso->pipe;
       pipe->draw_vbo(pipe, info, drawid_offset, indirect, &draw, 1);
@@ -1728,7 +1729,21 @@ cso_multi_draw(struct cso_context *cso,
    struct u_vbuf *vbuf = cso->vbuf_current;
 
    if (vbuf) {
-      u_vbuf_draw_vbo(vbuf, info, drawid_offset, NULL, draws, num_draws);
+      //u_vbuf_draw_vbo(vbuf, info, drawid_offset, NULL, draws, num_draws);
+
+      /* Increase refcount to be able to use take_index_buffer_ownership with
+       * all draws.
+       */
+      if (num_draws > 1 && info->take_index_buffer_ownership)
+         p_atomic_add(&info->index.resource->reference.count, num_draws - 1);
+
+      unsigned drawid = drawid_offset;
+      for (unsigned i = 0; i < num_draws; i++) {
+         u_vbuf_draw_vbo(vbuf, info, drawid, NULL, draws[i]);
+
+         if (info->increment_draw_id)
+            drawid++;
+      }
    } else {
       struct pipe_context *pipe = cso->pipe;
 
