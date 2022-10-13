@@ -49,6 +49,8 @@
 
 #include "util/u_cpu_detect.h"
 
+#include "frontend/sw_winsys.h"
+
 #if DETECT_OS_WINDOWS
 #include <io.h>
 #define VK_LIBNAME "vulkan-1.dll"
@@ -1510,37 +1512,60 @@ zink_flush_frontbuffer(struct pipe_screen *pscreen,
 {
    struct zink_screen *screen = zink_screen(pscreen);
    struct zink_resource *res = zink_resource(pres);
-   struct zink_context *ctx = zink_context(pctx);
+   //struct zink_context *ctx = zink_context(pctx);
 
    /* if the surface is no longer a swapchain, this is a no-op */
-   if (!zink_is_swapchain(res))
+   /*if (!zink_is_swapchain(res))
       return;
 
    ctx = zink_tc_context_unwrap(pctx, screen->threaded);
 
-   if (!zink_kopper_acquired(res->obj->dt, res->obj->dt_idx)) {
+   if (!zink_kopper_acquired(res->obj->dt, res->obj->dt_idx)) {*/
       /* swapbuffers to an undefined surface: acquire and present garbage */
-      zink_kopper_acquire(ctx, res, UINT64_MAX);
-      ctx->needs_present = res;
+      /*zink_kopper_acquire(ctx, res, UINT64_MAX);
+      ctx->needs_present = res;*/
       /* set batch usage to submit acquire semaphore */
-      zink_batch_resource_usage_set(&ctx->batch, res, true, false);
+      //zink_batch_resource_usage_set(&ctx->batch, res, true, false);
       /* ensure the resource is set up to present garbage */
-      ctx->base.flush_resource(&ctx->base, pres);
-   }
+      /*ctx->base.flush_resource(&ctx->base, pres);
+   }*/
 
    /* handle any outstanding acquire submits (not just from above) */
-   if (ctx->batch.swapchain || ctx->needs_present) {
+   /*if (ctx->batch.swapchain || ctx->needs_present) {
       ctx->batch.has_work = true;
       pctx->flush(pctx, NULL, PIPE_FLUSH_END_OF_FRAME);
       if (ctx->last_fence && screen->threaded) {
          struct zink_batch_state *bs = zink_batch_state(ctx->last_fence);
          util_queue_fence_wait(&bs->flush_completed);
       }
-   }
+   }*/
 
    /* always verify that this was acquired */
-   assert(zink_kopper_acquired(res->obj->dt, res->obj->dt_idx));
-   zink_kopper_present_queue(screen, res);
+   /*assert(zink_kopper_acquired(res->obj->dt, res->obj->dt_idx));
+   zink_kopper_present_queue(screen, res);*/
+
+   struct sw_winsys *winsys = screen->winsys;
+
+   if (!winsys)
+     return;
+   void *map = winsys->displaytarget_map(winsys, res->dt, 0);
+
+   if (map) {
+      struct pipe_transfer *transfer = NULL;
+      void *res_map = pipe_texture_map(pctx, pres, level, layer, PIPE_MAP_READ, 0, 0,
+                                        u_minify(pres->width0, level),
+                                        u_minify(pres->height0, level),
+                                        &transfer);
+      if (res_map) {
+         util_copy_rect((ubyte*)map, pres->format, res->dt_stride, 0, 0,
+                        transfer->box.width, transfer->box.height,
+                        (const ubyte*)res_map, transfer->stride, 0, 0);
+         pipe_texture_unmap(pctx, transfer);
+      }
+      winsys->displaytarget_unmap(winsys, res->dt);
+   }
+
+   winsys->displaytarget_display(winsys, res->dt, winsys_drawable_handle, sub_box);
 }
 
 bool
@@ -2627,6 +2652,7 @@ zink_create_screen(struct sw_winsys *winsys, const struct pipe_screen_config *co
 {
    struct zink_screen *ret = zink_internal_create_screen(config);
    if (ret) {
+      ret->winsys = winsys;
       ret->drm_fd = -1;
    }
 

@@ -31,6 +31,8 @@
 #include "zink_screen.h"
 #include "zink_kopper.h"
 
+#include "frontend/sw_winsys.h"
+
 #ifdef VK_USE_PLATFORM_METAL_EXT
 #include "QuartzCore/CAMetalLayer.h"
 #endif
@@ -1186,6 +1188,17 @@ resource_create(struct pipe_screen *pscreen,
       res->layout = res->dmabuf_acquire ? VK_IMAGE_LAYOUT_PREINITIALIZED : VK_IMAGE_LAYOUT_UNDEFINED;
       res->linear = linear;
       res->aspect = aspect_from_format(templ->format);
+   }
+
+   if (screen->winsys && (templ->bind & PIPE_BIND_DISPLAY_TARGET)) {
+      struct sw_winsys *winsys = screen->winsys;
+      res->dt = winsys->displaytarget_create(screen->winsys,
+                                             res->base.b.bind,
+                                             res->base.b.format,
+                                             templ->width0,
+                                             templ->height0,
+                                             64, NULL,
+                                             &res->dt_stride);
    }
 
    if (loader_private) {
