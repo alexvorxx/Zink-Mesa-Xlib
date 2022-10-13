@@ -1,28 +1,64 @@
 `Mesa <https://mesa3d.org>`_ - The 3D Graphics Library
 ======================================================
 
+======================================================
+
+Build dependencies
+---------------
+
+It's recommended to use Ubuntu 18.04.
+
+  $ sudo apt update
+  
+  $ sudo apt install -y software-properties-common dirmngr apt-transport-https wget git unzip libxcb-shm0 mesa-utils python3-pip software-properties-common dirmngr apt-transport-https python3-mako libxcb-shm0-dev libpciaccess-dev make build-essential libssl-dev zlib1g-dev libbz2-dev libreadline-dev libsqlite3-dev wget curl llvm libncurses5-dev libncursesw5-dev xz-utils tk-dev libxml2-dev graphviz doxygen xsltproc xmlto xutils-dev libxkbcommon-dev libvulkan1 mesa-vulkan-drivers vulkan-utils 
+  
+  $ sudo apt-get build-dep mesa -y
+
+  $ pip3 install meson ninja
+
+It's recommended to use meson-0.61.5 or newer.
+  
+After that, you need to build from source and install the following libraries.
+
+- https://gitlab.freedesktop.org/glvnd/libglvnd
+
+- https://dri.freedesktop.org/libdrm
+
+- https://gitlab.freedesktop.org/wayland/wayland
+
+- https://gitlab.freedesktop.org/wayland/wayland-protocols
+
+For details, see README of the respective repositories.
+
+Build Mesa Turnip
+---------------
+
+Build Mesa Turnip using Mesa repository (https://github.com/mesa3d/mesa).
+
+Go to the folder with Mesa code and run the commands:
+
+  $ meson build -D platforms=x11,wayland -D gallium-drivers=swrast,virgl,zink -D vulkan-drivers=freedreno -D dri3=enabled  -D egl=enabled  -D gles2=enabled -D glvnd=true -D glx=dri  -D libunwind=disabled -D osmesa=true  -D shared-glapi=enabled -D microsoft-clc=disabled  -D valgrind=disabled --prefix /usr -D gles1=disabled -D freedreno-kgsl=true -Dbuildtype=release
+  
+  $ ninja -C build
+
+Build Mesa Zink
+---------------
+
+Build Mesa Zink using this repository (https://github.com/alexvorxx/Zink-Mesa-Xlib).
+
+Go to the folder with Mesa code and run the commands:
+
+  $ meson . build -Dgallium-va=false -Ddri-drivers= -Dgallium-drivers=virgl,zink,swrast -Ddri3=false -Dvulkan-drivers= -Dglx=xlib -Dplatforms=x11 -Dbuildtype=release
+  
+  $ ninja -C build
+  
+======================================================
 
 Source
 ------
 
 This repository lives at https://gitlab.freedesktop.org/mesa/mesa.
-Other repositories are likely forks, and code found there is not supported.
-
-
-Build & install
----------------
-
-You can find more information in our documentation (`docs/install.rst
-<https://mesa3d.org/install.html>`_), but the recommended way is to use
-Meson (`docs/meson.rst <https://mesa3d.org/meson.html>`_):
-
-.. code-block:: sh
-
-  $ mkdir build
-  $ cd build
-  $ meson ..
-  $ sudo ninja install
-
+Other repositories are likely forks, and code found there is not supported.  
 
 Support
 -------
