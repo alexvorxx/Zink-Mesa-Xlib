@@ -51,6 +51,8 @@
 
 #include "frontend/sw_winsys.h"
 
+extern struct pipe_context* zink_xlib_context;
+
 #if DETECT_OS_WINDOWS
 #include <io.h>
 #define VK_LIBNAME "vulkan-1.dll"
@@ -1552,6 +1554,10 @@ zink_flush_frontbuffer(struct pipe_screen *pscreen,
 
    if (map) {
       struct pipe_transfer *transfer = NULL;
+
+      // Context hack
+      pctx = zink_xlib_context;
+
       void *res_map = pipe_texture_map(pctx, pres, level, layer, PIPE_MAP_READ, 0, 0,
                                         u_minify(pres->width0, level),
                                         u_minify(pres->height0, level),
