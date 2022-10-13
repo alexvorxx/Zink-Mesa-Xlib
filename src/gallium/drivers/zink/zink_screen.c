@@ -1362,6 +1362,9 @@ zink_destroy_screen(struct pipe_screen *pscreen)
    if (screen->sem)
       VKSCR(DestroySemaphore)(screen->dev, screen->sem, NULL);
 
+   if (screen->prev_sem)
+      VKSCR(DestroySemaphore)(screen->dev, screen->prev_sem, NULL);
+
    if (screen->fence)
       VKSCR(DestroyFence)(screen->dev, screen->fence, NULL);
 
@@ -1953,12 +1956,30 @@ zink_screen_init_semaphore(struct zink_screen *screen)
 {
    VkSemaphoreCreateInfo sci = {0};
    VkSemaphoreTypeCreateInfo tci = {0};
+
+   VkSemaphore sem;
+
    sci.pNext = &tci;
    sci.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
    tci.sType = VK_STRUCTURE_TYPE_SEMAPHORE_TYPE_CREATE_INFO;
    tci.semaphoreType = VK_SEMAPHORE_TYPE_TIMELINE;
 
-   return VKSCR(CreateSemaphore)(screen->dev, &sci, NULL, &screen->sem) == VK_SUCCESS;
+   //return VKSCR(CreateSemaphore)(screen->dev, &sci, NULL, &screen->sem) == VK_SUCCESS;
+
+   if (VKSCR(CreateSemaphore)(screen->dev, &sci, NULL, &sem) == VK_SUCCESS) {
+      /* semaphore signal values can never decrease,
+       * so we need a new semaphore anytime we overflow
+       */
+      if (screen->prev_sem)
+         VKSCR(DestroySemaphore)(screen->dev, screen->prev_sem, NULL);
+      screen->prev_sem = screen->sem;
+      screen->sem = sem;
+      return true;
+   } else {
+      mesa_loge("ZINK: vkCreateSemaphore failed");
+   }
+   screen->info.have_KHR_timeline_semaphore = false;
+   return false;
 }
 
 bool
@@ -1981,6 +2002,81 @@ zink_screen_timeline_wait(struct zink_screen *screen, uint64_t batch_id, uint64_
 
    if (success)
       zink_screen_update_last_finished(screen, batch_id);
+
+   return success;
+}
+
+struct noop_submit_info {
+   struct zink_screen *screen;
+   VkFence fence;
+};
+
+static void
+noop_submit(void *data, void *gdata, int thread_index)
+{
+   struct noop_submit_info *n = data;
+   VkSubmitInfo si = {0};
+   si.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+   simple_mtx_lock(&n->screen->queue_lock);
+   if (n->VKSCR(QueueSubmit)(n->screen->threaded ? n->screen->queue_sparse : n->screen->queue,
+                     1, &si, n->fence) != VK_SUCCESS) {
+      mesa_loge("ZINK: vkQueueSubmit failed");
+      n->screen->device_lost = true;
+   }
+   simple_mtx_unlock(&n->screen->queue_lock);
+}
+
+bool
+zink_screen_batch_id_wait(struct zink_screen *screen, uint32_t batch_id, uint64_t timeout)
+{
+   if (zink_screen_check_last_finished(screen, batch_id))
+      return true;
+
+   if (screen->info.have_KHR_timeline_semaphore)
+      return zink_screen_timeline_wait(screen, batch_id, timeout);
+
+   if (!timeout)
+      return false;
+
+   uint32_t new_id = 0;
+   while (!new_id)
+      new_id = p_atomic_inc_return(&screen->curr_batch);
+   VkResult ret;
+   struct noop_submit_info n;
+   uint64_t abs_timeout = os_time_get_absolute_timeout(timeout);
+   uint64_t remaining = PIPE_TIMEOUT_INFINITE;
+   VkFenceCreateInfo fci = {0};
+   struct util_queue_fence fence;
+   util_queue_fence_init(&fence);
+   fci.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
+
+   if (VKSCR(CreateFence)(screen->dev, &fci, NULL, &n.fence) != VK_SUCCESS) {
+      mesa_loge("ZINK: vkCreateFence failed");
+      return false;
+   }
+
+   n.screen = screen;
+   if (screen->threaded) {
+      /* must use thread dispatch for sanity */
+      util_queue_add_job(&screen->flush_queue, &n, &fence, noop_submit, NULL, 0);
+      util_queue_fence_wait(&fence);
+   } else {
+      noop_submit(&n, NULL, 0);
+   }
+   if (timeout != PIPE_TIMEOUT_INFINITE) {
+      int64_t time_ns = os_time_get_nano();
+      remaining = abs_timeout > time_ns ? abs_timeout - time_ns : 0;
+   }
+
+   if (remaining)
+      ret = VKSCR(WaitForFences)(screen->dev, 1, &n.fence, VK_TRUE, remaining);
+   else
+      ret = VKSCR(GetFenceStatus)(screen->dev, n.fence);
+   VKSCR(DestroyFence)(screen->dev, n.fence, NULL);
+   bool success = zink_screen_handle_vkresult(screen, ret);
+
+   if (success)
+      zink_screen_update_last_finished(screen, new_id);
 
    return success;
 }
@@ -2441,10 +2537,10 @@ zink_internal_create_screen(const struct pipe_screen_config *config)
    }
 
    zink_internal_setup_moltenvk(screen);
-   if (!screen->info.have_KHR_timeline_semaphore) {
+   /*if (!screen->info.have_KHR_timeline_semaphore) {
       mesa_loge("zink: KHR_timeline_semaphore is required");
       goto fail;
-   }
+   }*/
 
    init_driver_workarounds(screen);
 
@@ -2572,10 +2668,15 @@ zink_internal_create_screen(const struct pipe_screen_config *config)
    if (!os_get_total_physical_memory(&screen->total_mem))
       goto fail;
 
-   if (!zink_screen_init_semaphore(screen)) {
+   /*if (!zink_screen_init_semaphore(screen)) {
       mesa_loge("zink: failed to create timeline semaphore");
       goto fail;
-   }
+   }*/
+
+   if (debug_get_bool_option("ZINK_NO_TIMELINES", false))
+      screen->info.have_KHR_timeline_semaphore = false;
+   if (screen->info.have_KHR_timeline_semaphore)
+      zink_screen_init_semaphore(screen);
 
    memset(&screen->heap_map, UINT8_MAX, sizeof(screen->heap_map));
    for (enum zink_heap i = 0; i < ZINK_HEAP_MAX; i++) {

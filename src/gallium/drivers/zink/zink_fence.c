@@ -140,6 +140,34 @@ fence_wait(struct zink_screen *screen, struct zink_fence *fence, uint64_t timeou
    return success;
 }
 
+bool
+zink_vkfence_wait(struct zink_screen *screen, struct zink_fence *fence, uint64_t timeout_ns)
+{
+   if (screen->device_lost)
+      return true;
+   if (p_atomic_read(&fence->completed))
+      return true;
+
+   assert(fence->batch_id);
+   assert(fence->submitted);
+
+   bool success = false;
+
+   VkResult ret;
+   if (timeout_ns)
+      ret = VKSCR(WaitForFences)(screen->dev, 1, &fence->fence, VK_TRUE, timeout_ns);
+   else
+      ret = VKSCR(GetFenceStatus)(screen->dev, fence->fence);
+   success = zink_screen_handle_vkresult(screen, ret);
+
+   if (success) {
+      p_atomic_set(&fence->completed, true);
+      zink_batch_state(fence)->usage.usage = 0;
+      zink_screen_update_last_finished(screen, fence->batch_id);
+   }
+   return success;
+}
+
 static bool
 zink_fence_finish(struct zink_screen *screen, struct pipe_context *pctx, struct zink_tc_fence *mfence,
                   uint64_t timeout_ns)
@@ -181,7 +209,12 @@ zink_fence_finish(struct zink_screen *screen, struct pipe_context *pctx, struct 
    if (fence->submitted && zink_screen_check_last_finished(screen, fence->batch_id))
       return true;
 
-   return fence_wait(screen, fence, timeout_ns);
+   //return fence_wait(screen, fence, timeout_ns);
+
+   if (screen->info.have_KHR_timeline_semaphore)
+      return fence_wait(screen, fence, timeout_ns);
+
+   return zink_vkfence_wait(screen, fence, timeout_ns);
 }
 
 static bool

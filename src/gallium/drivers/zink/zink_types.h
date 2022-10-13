@@ -205,6 +205,8 @@ struct zink_tc_fence {
 };
 
 struct zink_fence {
+   VkFence fence;
+
    uint64_t batch_id;
    bool submitted;
    bool completed;
@@ -488,6 +490,9 @@ struct zink_batch_state {
    unsigned submit_count;
 
    bool is_device_lost;
+
+   bool have_timelines;
+
    bool has_barriers;
 };
 
@@ -1109,6 +1114,9 @@ struct zink_screen {
    uint64_t curr_batch; //the current batch id
    uint32_t last_finished;
    VkSemaphore sem;
+
+   VkSemaphore prev_sem;
+
    VkFence fence;
    struct util_queue flush_queue;
    struct zink_context *copy_context;
@@ -1418,6 +1426,8 @@ struct zink_context {
 
    struct pipe_device_reset_callback reset;
 
+   simple_mtx_t batch_mtx;
+
    struct zink_fence *deferred_fence;
    struct zink_fence *last_fence; //the last command buffer submitted
    struct zink_batch_state *batch_states; //list of submitted batch states: ordered by increasing timeline id
@@ -1594,6 +1604,9 @@ struct zink_context {
    uint32_t num_so_targets;
    struct pipe_stream_output_target *so_targets[PIPE_MAX_SO_OUTPUTS];
    bool dirty_so_targets;
+
+   bool first_frame_done;
+   bool have_timelines;
 
    bool gfx_dirty;
 
