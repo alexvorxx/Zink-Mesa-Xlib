@@ -441,7 +441,8 @@ remove_phi_src(nir_block *block, nir_block *pred)
          if (src->pred == pred) {
             list_del(&src->src.use_link);
             exec_node_remove(&src->node);
-            gc_free(src);
+            //gc_free(src);
+            free(src);
          }
       }
    }

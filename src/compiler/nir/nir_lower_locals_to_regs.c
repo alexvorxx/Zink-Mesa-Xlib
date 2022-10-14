@@ -159,7 +159,9 @@ get_deref_reg_src(nir_deref_instr *deref, struct locals_to_regs_state *state)
          if (src.reg.indirect) {
             assert(src.reg.base_offset == 0);
          } else {
-            src.reg.indirect = gc_alloc(gc_get_context(deref), nir_src, 1);
+            //src.reg.indirect = gc_alloc(gc_get_context(deref), nir_src, 1);
+            src.reg.indirect = malloc(sizeof(nir_src));
+
             *src.reg.indirect =
                nir_src_for_ssa(nir_imm_int(b, src.reg.base_offset));
             src.reg.base_offset = 0;
