@@ -133,12 +133,15 @@ zink_context_destroy(struct pipe_context *pctx)
       zink_batch_state_destroy(screen, bs);
       bs = bs_next;
    }
-   bs = ctx->free_batch_states;
+   /*bs = ctx->free_batch_states;
    while (bs) {
       struct zink_batch_state *bs_next = bs->next;
       zink_clear_batch_state(ctx, bs);
       zink_batch_state_destroy(screen, bs);
-      bs = bs_next;
+      bs = bs_next;*/
+   util_dynarray_foreach(&ctx->free_batch_states, struct zink_batch_state*, bs) {
+      zink_clear_batch_state(ctx, *bs);
+      zink_batch_state_destroy(screen, *bs);
    }
 
    for (unsigned i = 0; i < 2; i++) {
@@ -4810,6 +4813,8 @@ zink_context_create(struct pipe_screen *pscreen, void *priv, unsigned flags)
    _mesa_set_init(&ctx->update_barriers[1][1], ctx, _mesa_hash_pointer, _mesa_key_pointer_equal);
    ctx->need_barriers[0] = &ctx->update_barriers[0][0];
    ctx->need_barriers[1] = &ctx->update_barriers[1][0];
+
+   util_dynarray_init(&ctx->free_batch_states, ctx);
 
    slab_create_child(&ctx->transfer_pool, &screen->transfer_pool);
    slab_create_child(&ctx->transfer_pool_unsync, &screen->transfer_pool);

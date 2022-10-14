@@ -206,11 +206,13 @@ zink_batch_reset_all(struct zink_context *ctx)
       bs->fence.completed = true;
       pop_batch_state(ctx);
       zink_reset_batch_state(ctx, bs);
-      if (ctx->last_free_batch_state)
+      /*if (ctx->last_free_batch_state)
          ctx->last_free_batch_state->next = bs;
       else
          ctx->free_batch_states = bs;
-      ctx->last_free_batch_state = bs;
+      ctx->last_free_batch_state = bs;*/
+      zink_reset_batch_state(ctx, bs);
+      util_dynarray_append(&ctx->free_batch_states, struct zink_batch_state *, bs);
    }
 }
 
@@ -347,12 +349,16 @@ get_batch_state(struct zink_context *ctx, struct zink_batch *batch)
    struct zink_screen *screen = zink_screen(ctx->base.screen);
    struct zink_batch_state *bs = NULL;
 
-   if (ctx->free_batch_states) {
+   /*if (ctx->free_batch_states) {
       bs = ctx->free_batch_states;
       ctx->free_batch_states = bs->next;
       if (bs == ctx->last_free_batch_state)
          ctx->last_free_batch_state = NULL;
-   }
+   }*/
+
+   if (util_dynarray_num_elements(&ctx->free_batch_states, struct zink_batch_state*))
+      bs = util_dynarray_pop(&ctx->free_batch_states, struct zink_batch_state*);
+
    if (!bs && ctx->batch_states) {
       /* states are stored sequentially, so if the first one doesn't work, none of them will */
       if (zink_screen_check_last_finished(screen, ctx->batch_states->fence.batch_id) ||
@@ -372,11 +378,12 @@ get_batch_state(struct zink_context *ctx, struct zink_batch *batch)
          /* this is batch init, so create a few more states for later use */
          for (int i = 0; i < 3; i++) {
             struct zink_batch_state *state = create_batch_state(ctx);
-            if (ctx->last_free_batch_state)
+            /*if (ctx->last_free_batch_state)
                ctx->last_free_batch_state->next = state;
             else
                ctx->free_batch_states = state;
-            ctx->last_free_batch_state = state;
+            ctx->last_free_batch_state = state;*/
+            util_dynarray_append(&ctx->free_batch_states, struct zink_batch_state *, state);
          }
       }
       bs = create_batch_state(ctx);
@@ -586,11 +593,12 @@ zink_end_batch(struct zink_context *ctx, struct zink_batch *batch)
 
          pop_batch_state(ctx);
          zink_reset_batch_state(ctx, bs);
-         if (ctx->last_free_batch_state)
+         /*if (ctx->last_free_batch_state)
             ctx->last_free_batch_state->next = bs;
          else
             ctx->free_batch_states = bs;
-         ctx->last_free_batch_state = bs;
+         ctx->last_free_batch_state = bs;*/
+         util_dynarray_append(&ctx->free_batch_states, struct zink_batch_state *, bs);
       }
       if (ctx->batch_states_count > 50)
          ctx->oom_flush = true;

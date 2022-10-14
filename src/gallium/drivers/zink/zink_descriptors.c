@@ -693,13 +693,13 @@ check_pool_alloc(struct zink_context *ctx, struct zink_descriptor_pool_multi *mp
          find_pool(screen, bs, mpool, false);
          if (!mpool->pool) {
             /* bad case: iterate unused batches and recycle */
-            for (struct zink_batch_state *state = ctx->free_batch_states; state; state = state->next)
+            /*for (struct zink_batch_state *state = ctx->free_batch_states; state; state = state->next)
                find_pool(screen, state, mpool, true);
-            if (!mpool->pool) {
+            if (!mpool->pool) {*/
                /* worst case: iterate in-use batches and recycle (very safe) */
                for (struct zink_batch_state *state = ctx->batch_states; state; state = state->next)
                   find_pool(screen, state, mpool, false);
-            }
+            //}
          }
       }
       if (!mpool->pool)

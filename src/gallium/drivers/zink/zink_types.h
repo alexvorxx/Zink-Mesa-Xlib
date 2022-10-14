@@ -1432,8 +1432,10 @@ struct zink_context {
    struct zink_fence *last_fence; //the last command buffer submitted
    struct zink_batch_state *batch_states; //list of submitted batch states: ordered by increasing timeline id
    unsigned batch_states_count; //number of states in `batch_states`
-   struct zink_batch_state *free_batch_states; //unused batch states
-   struct zink_batch_state *last_free_batch_state; //for appending
+   //struct zink_batch_state *free_batch_states; //unused batch states
+   //struct zink_batch_state *last_free_batch_state; //for appending
+   struct util_dynarray free_batch_states; //unused batch states
+
    bool oom_flush;
    bool oom_stall;
    struct zink_batch batch;
