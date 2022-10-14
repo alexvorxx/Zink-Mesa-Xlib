@@ -28,9 +28,10 @@
 #define F false
 #define AGX_FORMAT__ 0
 
-#define AGX_FMT(pipe, channels, type, is_renderable, internal_fmt) \
+#define AGX_FMT(pipe, channels_, type_, is_renderable, internal_fmt) \
    [PIPE_FORMAT_ ## pipe] = { \
-      .hw = (AGX_CHANNELS_ ## channels) | ((AGX_TEXTURE_TYPE_ ## type) << 7), \
+      .channels = AGX_CHANNELS_ ## channels_, \
+      .type = AGX_TEXTURE_TYPE_ ## type_, \
       .renderable = is_renderable, \
       .internal = AGX_FORMAT_ ## internal_fmt,\
    }

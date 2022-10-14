@@ -89,9 +89,6 @@ __gen_unpack_sint(const uint8_t *restrict cl, uint32_t start, uint32_t end)
    return util_sign_extend(val, size);
 }
 
-#define agx_prepare(dst, T)                                 \\
-   *(dst) = (struct AGX_ ## T){ AGX_ ## T ## _header }
-
 #define agx_pack(dst, T, name)                              \\
    for (struct AGX_ ## T name = { AGX_ ## T ## _header }, \\
         *_loop_terminate = (void *) (dst);                  \\
@@ -105,24 +102,6 @@ __gen_unpack_sint(const uint8_t *restrict cl, uint32_t start, uint32_t end)
 
 #define agx_print(fp, T, var, indent)                   \\
         AGX_ ## T ## _print(fp, &(var), indent)
-
-#define agx_pixel_format_print(fp, format) do {\\
-   fprintf(fp, "%*sFormat: ", indent, ""); \\
-   \\
-   if (agx_channels_as_str((enum agx_channels)(format & 0x7F))) \\
-      fputs(agx_channels_as_str((enum agx_channels)(format & 0x7F)), fp); \\
-   else \\
-      fprintf(fp, "unknown channels %02X", format & 0x7F); \\
-   \\
-   fputs(" ", fp); \\
-   \\
-   if (agx_texture_type_as_str((enum agx_texture_type)(format >> 7))) \\
-      fputs(agx_texture_type_as_str((enum agx_texture_type)(format >> 7)), fp); \\
-   else \\
-      fprintf(fp, "unknown type %02X", format >> 7); \\
-   \\
-   fputs("\\n", fp); \\
-} while(0) \\
 
 """
 
@@ -167,13 +146,6 @@ def prefixed_upper_name(prefix, name):
 
 def enum_name(name):
     return "{}_{}".format(global_prefix, safe_name(name)).lower()
-
-def num_from_str(num_str):
-    if num_str.lower().startswith('0x'):
-        return int(num_str, base=16)
-    else:
-        assert(not num_str.startswith('0') and 'octals numbers not allowed')
-        return int(num_str)
 
 MODIFIERS = ["shr", "minus", "align", "log2"]
 
@@ -223,11 +195,6 @@ class Field(object):
         else:
             self.prefix = None
 
-        if "exact" in attrs:
-            self.exact = int(attrs["exact"])
-        else:
-            self.exact = None
-
         self.default = attrs.get("default")
 
         # Map enum values
@@ -247,7 +214,7 @@ class Field(object):
             type = 'uint64_t'
         elif self.type == 'int':
             type = 'int32_t'
-        elif self.type in ['uint', 'uint/float', 'Pixel Format', 'hex']:
+        elif self.type in ['uint', 'hex']:
             type = 'uint32_t'
         elif self.type in self.parser.structs:
             type = 'struct ' + self.parser.gen_prefix(safe_name(self.type.upper()))
@@ -298,9 +265,6 @@ class Group(object):
                 print("   int dummy;")
 
             for field in self.fields:
-                if field.exact is not None:
-                    continue
-
                 field.emit_template_struct(dim)
 
     class Word:
@@ -359,8 +323,6 @@ class Group(object):
             if field.modifier is None:
                 continue
 
-            assert(field.exact is None)
-
             if field.modifier[0] == "shr":
                 shift = field.modifier[1]
                 mask = hex((1 << shift) - 1)
@@ -392,7 +354,7 @@ class Group(object):
                 start -= contrib_word_start
                 end -= contrib_word_start
 
-                value = str(field.exact) if field.exact is not None else "values->{}".format(contributor.path)
+                value = "values->{}".format(contributor.path)
                 if field.modifier is not None:
                     if field.modifier[0] == "shr":
                         value = "{} >> {}".format(value, field.modifier[1])
@@ -403,7 +365,7 @@ class Group(object):
                     elif field.modifier[0] == "log2":
                         value = "util_logbase2({})".format(value)
 
-                if field.type in ["uint", "hex", "Pixel Format", "address"]:
+                if field.type in ["uint", "hex", "address"]:
                     s = "util_bitpack_uint(%s, %d, %d)" % \
                         (value, start, end)
                 elif field.type in self.parser.enums:
@@ -477,7 +439,7 @@ class Group(object):
             args.append(str(fieldref.start))
             args.append(str(fieldref.end))
 
-            if field.type in set(["uint", "uint/float", "address", "Pixel Format", "hex"]) | self.parser.enums:
+            if field.type in set(["uint", "address", "hex"]) | self.parser.enums:
                 convert = "__gen_unpack_uint"
             elif field.type == "int":
                 convert = "__gen_unpack_sint"
@@ -537,10 +499,6 @@ class Group(object):
                 print('   fprintf(fp, "%*s{}: 0x%" PRIx64 "\\n", indent, "", {});'.format(name, val))
             elif field.type == "hex":
                 print('   fprintf(fp, "%*s{}: 0x%" PRIx32 "\\n", indent, "", {});'.format(name, val))
-            elif field.type in "Pixel Format":
-                print('   agx_pixel_format_print(fp, {});'.format(val))
-            elif field.type == "uint/float":
-                print('   fprintf(fp, "%*s{}: 0x%X (%f)\\n", indent, "", {}, uif({}));'.format(name, val, val))
             else:
                 print('   fprintf(fp, "%*s{}: %u\\n", indent, "", {});'.format(name, val))
 
@@ -564,11 +522,10 @@ class Parser(object):
         return '{}_{}'.format(global_prefix.upper(), name)
 
     def start_element(self, name, attrs):
-        if name == "agxml":
+        if name == "genxml":
             print(pack_header)
         elif name == "struct":
             name = attrs["name"]
-            self.no_direct_packing = attrs.get("no-direct-packing", False)
             object_name = self.gen_prefix(safe_name(name.upper()))
             self.struct = object_name
 
@@ -601,7 +558,7 @@ class Parser(object):
         elif name  == "enum":
             self.emit_enum()
             self.enum = None
-        elif name == "agxml":
+        elif name == "genxml":
             print('#endif')
 
     def emit_header(self, name):
@@ -661,9 +618,8 @@ class Parser(object):
 
         self.emit_template_struct(self.struct, self.group)
         self.emit_header(name)
-        if self.no_direct_packing == False:
-            self.emit_pack_function(self.struct, self.group)
-            self.emit_unpack_function(self.struct, self.group)
+        self.emit_pack_function(self.struct, self.group)
+        self.emit_unpack_function(self.struct, self.group)
         self.emit_print_function(self.struct, self.group)
 
     def enum_prefix(self, name):

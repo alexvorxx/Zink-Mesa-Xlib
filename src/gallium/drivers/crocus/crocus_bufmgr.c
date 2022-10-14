@@ -164,7 +164,7 @@ struct crocus_bufmgr {
    bool bo_reuse:1;
 };
 
-static simple_mtx_t global_bufmgr_list_mutex = _SIMPLE_MTX_INITIALIZER_NP;
+static simple_mtx_t global_bufmgr_list_mutex = SIMPLE_MTX_INITIALIZER;
 static struct list_head global_bufmgr_list = {
    .next = &global_bufmgr_list,
    .prev = &global_bufmgr_list,

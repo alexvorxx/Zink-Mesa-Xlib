@@ -650,7 +650,7 @@ buffer_usage_warning(struct gl_context *ctx, GLuint *id, const char *fmt, ...)
  * glBindBuffer() so that glIsBuffer() can work correctly.
  */
 static struct gl_buffer_object DummyBufferObject = {
-   .MinMaxCacheMutex = _SIMPLE_MTX_INITIALIZER_NP,
+   .MinMaxCacheMutex = SIMPLE_MTX_INITIALIZER,
    .RefCount = 1000*1000*1000,  /* never delete */
 };
 

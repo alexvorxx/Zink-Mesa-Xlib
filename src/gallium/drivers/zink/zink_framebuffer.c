@@ -140,7 +140,7 @@ fail:
 bool
 zink_use_dummy_attachments(const struct zink_context *ctx)
 {
-   return ctx->disable_color_writes && zink_screen(ctx->base.screen)->info.have_EXT_color_write_enable;
+   return ctx->disable_color_writes && !zink_screen(ctx->base.screen)->info.have_EXT_color_write_enable;
 }
 
 struct zink_framebuffer *

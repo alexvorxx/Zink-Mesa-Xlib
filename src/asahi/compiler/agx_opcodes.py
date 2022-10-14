@@ -93,7 +93,18 @@ SHIFT = immediate("shift")
 MASK = immediate("mask")
 BFI_MASK = immediate("bfi_mask")
 LOD_MODE = immediate("lod_mode", "enum agx_lod_mode")
-DIM = immediate("dim", "enum agx_dim")
+
+DIM = enum("dim", {
+    0: '1d',
+    1: '1d_array',
+    2: '2d',
+    3: '2d_array',
+    4: '2d_ms',
+    5: '3d',
+    6: 'cube',
+    7: 'cube_array'
+})
+
 OFFSET = immediate("offset", "bool")
 SHADOW = immediate("shadow", "bool")
 SCOREBOARD = immediate("scoreboard")
@@ -263,13 +274,17 @@ op("and", _, srcs = 2)
 op("or", _, srcs = 2)
 
 # Indicates the logical end of the block, before final branches/control flow
-op("p_logical_end", _, dests = 0, srcs = 0, can_eliminate = False)
+op("logical_end", _, dests = 0, srcs = 0, can_eliminate = False)
 
-op("p_combine", _, srcs = VARIABLE)
-op("p_split", _, srcs = 1, dests = 4)
-
-# Phis are special-cased in the IR as they (uniquely) can take an unbounded
-# number of source.
-op("phi", _, srcs = 0)
+op("collect", _, srcs = VARIABLE)
+op("split", _, srcs = 1, dests = VARIABLE)
+op("phi", _, srcs = VARIABLE)
 
 op("unit_test", _, dests = 0, srcs = 1, can_eliminate = False)
+
+# Like mov, but takes a register and can only appear at the start. Gauranteed
+# to be coalesced during RA, rather than lowered to a real move. 
+op("preload", _, srcs = 1)
+
+# Set the nesting counter. Lowers to mov r0l, x after RA.
+op("nest", _, dests = 0, srcs = 1, can_eliminate = False)

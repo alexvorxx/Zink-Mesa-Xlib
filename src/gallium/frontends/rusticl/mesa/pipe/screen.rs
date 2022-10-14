@@ -59,6 +59,24 @@ impl ComputeParam<Vec<u64>> for PipeScreen {
     }
 }
 
+#[derive(Clone, Copy)]
+pub enum ResourceType {
+    Normal,
+    Staging,
+}
+
+impl ResourceType {
+    fn apply(&self, tmpl: &mut pipe_resource) {
+        match self {
+            Self::Staging => {
+                tmpl.set_usage(pipe_resource_usage::PIPE_USAGE_STAGING.0);
+                tmpl.flags |= PIPE_RESOURCE_FLAG_MAP_PERSISTENT | PIPE_RESOURCE_FLAG_MAP_COHERENT;
+            }
+            Self::Normal => {}
+        }
+    }
+}
+
 impl PipeScreen {
     pub(super) fn new(ldev: PipeLoaderDevice, screen: *mut pipe_screen) -> Option<Arc<Self>> {
         if screen.is_null() || !has_required_cbs(screen) {
@@ -102,7 +120,11 @@ impl PipeScreen {
         }
     }
 
-    pub fn resource_create_buffer(&self, size: u32) -> Option<PipeResource> {
+    pub fn resource_create_buffer(
+        &self,
+        size: u32,
+        res_type: ResourceType,
+    ) -> Option<PipeResource> {
         let mut tmpl = pipe_resource::default();
 
         tmpl.set_target(pipe_texture_target::PIPE_BUFFER);
@@ -111,6 +133,8 @@ impl PipeScreen {
         tmpl.depth0 = 1;
         tmpl.array_size = 1;
         tmpl.bind = PIPE_BIND_GLOBAL;
+
+        res_type.apply(&mut tmpl);
 
         self.resource_create(&tmpl)
     }
@@ -140,6 +164,7 @@ impl PipeScreen {
         array_size: u16,
         target: pipe_texture_target,
         format: pipe_format,
+        res_type: ResourceType,
     ) -> Option<PipeResource> {
         let mut tmpl = pipe_resource::default();
 
@@ -150,6 +175,8 @@ impl PipeScreen {
         tmpl.depth0 = depth;
         tmpl.array_size = array_size;
         tmpl.bind = PIPE_BIND_SAMPLER_VIEW | PIPE_BIND_SHADER_IMAGE;
+
+        res_type.apply(&mut tmpl);
 
         self.resource_create(&tmpl)
     }

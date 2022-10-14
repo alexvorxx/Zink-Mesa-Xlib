@@ -2873,7 +2873,7 @@ zink_set_color_write_enables(struct zink_context *ctx)
    if (disable_color_writes && ctx->clears_enabled)
       zink_batch_rp(ctx);
    ctx->disable_color_writes = disable_color_writes;
-   if (zink_screen(ctx->base.screen)->info.have_EXT_color_write_enable) {
+   if (!zink_screen(ctx->base.screen)->info.have_EXT_color_write_enable) {
       /* use dummy color buffers instead of the more sane option */
       zink_batch_no_rp(ctx);
       ctx->rp_changed = true;
@@ -3608,9 +3608,18 @@ zink_flush(struct pipe_context *pctx,
    VkSemaphore export_sem = VK_NULL_HANDLE;
 
    /* triggering clears will force has_work */
-   if (!deferred && ctx->clears_enabled)
+   if (!deferred && ctx->clears_enabled) {
+      /* if fbfetch outputs are active, disable them when flushing clears */
+      unsigned fbfetch_outputs = ctx->fbfetch_outputs;
+      if (fbfetch_outputs) {
+         ctx->fbfetch_outputs = 0;
+         ctx->rp_changed = true;
+      }
       /* start rp to do all the clears */
       zink_batch_rp(ctx);
+      ctx->fbfetch_outputs = fbfetch_outputs;
+      ctx->rp_changed |= fbfetch_outputs > 0;
+   }
 
    if (ctx->needs_present && (flags & PIPE_FLUSH_END_OF_FRAME)) {
       if (ctx->needs_present->obj->image)

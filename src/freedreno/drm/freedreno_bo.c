@@ -29,7 +29,7 @@
 #include "freedreno_drmif.h"
 #include "freedreno_priv.h"
 
-simple_mtx_t table_lock = _SIMPLE_MTX_INITIALIZER_NP;
+simple_mtx_t table_lock = SIMPLE_MTX_INITIALIZER;
 void bo_del(struct fd_bo *bo);
 
 /* set buffer name, and add to table, call w/ table_lock held: */

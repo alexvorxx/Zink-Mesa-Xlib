@@ -53,6 +53,30 @@ int agx_debug = 0;
             __FUNCTION__, __LINE__, ##__VA_ARGS__); } while (0)
 
 static agx_index
+agx_cached_preload(agx_context *ctx, agx_index *cache, unsigned base, enum agx_size size)
+{
+   if (agx_is_null(*cache)) {
+      agx_block *block = agx_start_block(ctx);
+      agx_builder b = agx_init_builder(ctx, agx_before_block(block));
+      *cache = agx_preload(&b, agx_register(base, size));
+   }
+
+   return *cache;
+}
+
+static agx_index
+agx_vertex_id(agx_builder *b)
+{
+   return agx_cached_preload(b->shader, &b->shader->vertex_id, 10, AGX_SIZE_32);
+}
+
+static agx_index
+agx_instance_id(agx_builder *b)
+{
+   return agx_cached_preload(b->shader, &b->shader->instance_id, 12, AGX_SIZE_32);
+}
+
+static agx_index
 agx_get_cf(agx_context *ctx, bool smooth, bool perspective,
            gl_varying_slot slot, unsigned offset, unsigned count)
 {
@@ -114,13 +138,13 @@ agx_emit_extract(agx_builder *b, agx_index vec, unsigned channel)
    agx_index *components = _mesa_hash_table_u64_search(b->shader->allocated_vec,
                                                        agx_index_to_key(vec));
 
-   assert(components != NULL && "missing agx_emit_combine_to");
+   assert(components != NULL && "missing agx_emit_collect_to");
 
    return components[channel];
 }
 
 static void
-agx_cache_combine(agx_builder *b, agx_index dst, unsigned nr_srcs,
+agx_cache_collect(agx_builder *b, agx_index dst, unsigned nr_srcs,
                   agx_index *srcs)
 {
    /* Lifetime of a hash table entry has to be at least as long as the table */
@@ -135,20 +159,20 @@ agx_cache_combine(agx_builder *b, agx_index dst, unsigned nr_srcs,
 
 /*
  * Combine multiple scalars into a vector destination. This corresponds to
- * p_combine, lowered to moves (a shuffle in general) after register allocation.
+ * collect, lowered to moves (a shuffle in general) after register allocation.
  *
  * To optimize vector extractions, we record the individual channels
  */
 static agx_instr *
-agx_emit_combine_to(agx_builder *b, agx_index dst, unsigned nr_srcs,
+agx_emit_collect_to(agx_builder *b, agx_index dst, unsigned nr_srcs,
                     agx_index *srcs)
 {
-   agx_cache_combine(b, dst, nr_srcs, srcs);
+   agx_cache_collect(b, dst, nr_srcs, srcs);
 
    if (nr_srcs == 1)
       return agx_mov_to(b, dst, srcs[0]);
 
-   agx_instr *I = agx_p_combine_to(b, dst, nr_srcs);
+   agx_instr *I = agx_collect_to(b, dst, nr_srcs);
 
    agx_foreach_src(I, s)
       I->src[s] = srcs[s];
@@ -161,7 +185,7 @@ agx_vec4(agx_builder *b, agx_index s0, agx_index s1, agx_index s2, agx_index s3)
 {
       agx_index dst = agx_temp(b->shader, s0.size);
       agx_index idx[4] = { s0, s1, s2, s3 };
-      agx_emit_combine_to(b, dst, 4, idx);
+      agx_emit_collect_to(b, dst, 4, idx);
       return dst;
 }
 
@@ -170,7 +194,7 @@ agx_vec2(agx_builder *b, agx_index s0, agx_index s1)
 {
    agx_index dst = agx_temp(b->shader, s0.size);
    agx_index idx[2] = { s0, s1 };
-   agx_emit_combine_to(b, dst, 2, idx);
+   agx_emit_collect_to(b, dst, 2, idx);
    return dst;
 }
 
@@ -208,13 +232,12 @@ agx_block_add_successor(agx_block *block, agx_block *successor)
 static void
 agx_emit_split(agx_builder *b, agx_index *dests, agx_index vec, unsigned n)
 {
-   /* Setup the destinations */
-   for (unsigned i = 0; i < n; ++i) {
-      dests[i] = agx_temp(b->shader, vec.size);
-   }
+   agx_instr *I = agx_split(b, n, vec);
 
-   /* Emit the split */
-   agx_p_split_to(b, dests[0], dests[1], dests[2], dests[3], vec);
+   agx_foreach_dest(I, d) {
+      dests[d] = agx_temp(b->shader, vec.size);
+      I->dest[d] = dests[d];
+   }
 }
 
 static void
@@ -222,7 +245,7 @@ agx_emit_cached_split(agx_builder *b, agx_index vec, unsigned n)
 {
    agx_index dests[4] = { agx_null(), agx_null(), agx_null(), agx_null() };
    agx_emit_split(b, dests, vec, n);
-   agx_cache_combine(b, vec, n, dests);
+   agx_cache_collect(b, vec, n, dests);
 }
 
 static void
@@ -255,7 +278,10 @@ agx_umul_high_to(agx_builder *b, agx_index dst, agx_index P, agx_index Q)
 
    agx_index product = agx_temp(b->shader, P.size + 1);
    agx_imad_to(b, product, agx_abs(P), agx_abs(Q), agx_zero(), 0);
-   return agx_p_split_to(b, agx_null(), dst, agx_null(), agx_null(), product);
+
+   agx_instr *split = agx_split(b, 2, product);
+   split->dest[1] = dst;
+   return split;
 }
 
 static agx_index
@@ -325,13 +351,10 @@ agx_emit_load_attr(agx_builder *b, agx_index dest, nir_intrinsic_instr *instr)
    agx_index shifted_stride = agx_mov_imm(b, 32, stride >> shift);
    agx_index src_offset = agx_mov_imm(b, 32, attrib.src_offset);
 
-   agx_index vertex_id = agx_register(10, AGX_SIZE_32);
-   agx_index instance_id = agx_register(12, AGX_SIZE_32);
-
    /* A nonzero divisor requires dividing the instance ID. A zero divisor
     * specifies per-instance data. */
-   agx_index element_id = (attrib.divisor == 0) ? vertex_id :
-                          agx_udiv_const(b, instance_id, attrib.divisor);
+   agx_index element_id = (attrib.divisor == 0) ? agx_vertex_id(b) :
+                          agx_udiv_const(b, agx_instance_id(b), attrib.divisor);
 
    agx_index offset = agx_imad(b, element_id, shifted_stride, src_offset, 0);
 
@@ -357,7 +380,7 @@ agx_emit_load_attr(agx_builder *b, agx_index dest, nir_intrinsic_instr *instr)
    for (unsigned i = actual_comps; i < instr->num_components; ++i)
       dests[i] = default_value[i];
 
-   agx_emit_combine_to(b, dest, instr->num_components, dests);
+   agx_emit_collect_to(b, dest, instr->num_components, dests);
 }
 
 static void
@@ -391,7 +414,7 @@ agx_emit_load_vary_flat(agx_builder *b, agx_index dest, nir_intrinsic_instr *ins
       cf.value++;
    }
 
-   agx_emit_combine_to(b, dest, components, dests);
+   agx_emit_collect_to(b, dest, components, dests);
 }
 
 static void
@@ -583,7 +606,7 @@ agx_emit_load_frag_coord(agx_builder *b, agx_index dst, nir_intrinsic_instr *ins
       }
    }
 
-   agx_emit_combine_to(b, dst, 4, dests);
+   agx_emit_collect_to(b, dst, 4, dests);
 }
 
 static agx_instr *
@@ -681,10 +704,10 @@ agx_emit_intrinsic(agx_builder *b, nir_intrinsic_instr *instr)
               AGX_PUSH_TEXTURE_BASE, AGX_SIZE_64, 0, 4));
 
   case nir_intrinsic_load_vertex_id:
-     return agx_mov_to(b, dst, agx_abs(agx_register(10, AGX_SIZE_32)));
+     return agx_mov_to(b, dst, agx_abs(agx_vertex_id(b)));
 
   case nir_intrinsic_load_instance_id:
-     return agx_mov_to(b, dst, agx_abs(agx_register(12, AGX_SIZE_32)));
+     return agx_mov_to(b, dst, agx_abs(agx_instance_id(b)));
 
   case nir_intrinsic_load_blend_const_color_r_float: return agx_blend_const(b, dst, 0);
   case nir_intrinsic_load_blend_const_color_g_float: return agx_blend_const(b, dst, 1);
@@ -968,7 +991,7 @@ agx_emit_alu(agx_builder *b, nir_alu_instr *instr)
    case nir_op_vec4:
    {
       agx_index idx[] = { s0, s1, s2, s3 };
-      return agx_emit_combine_to(b, dst, 4, idx);
+      return agx_emit_collect_to(b, dst, srcs, idx);
    }
 
    case nir_op_vec8:
@@ -987,23 +1010,23 @@ agx_tex_dim(enum glsl_sampler_dim dim, bool array)
    switch (dim) {
    case GLSL_SAMPLER_DIM_1D:
    case GLSL_SAMPLER_DIM_BUF:
-      return array ? AGX_DIM_TEX_1D_ARRAY : AGX_DIM_TEX_1D;
+      return array ? AGX_DIM_1D_ARRAY : AGX_DIM_1D;
 
    case GLSL_SAMPLER_DIM_2D:
    case GLSL_SAMPLER_DIM_RECT:
    case GLSL_SAMPLER_DIM_EXTERNAL:
-      return array ? AGX_DIM_TEX_2D_ARRAY : AGX_DIM_TEX_2D;
+      return array ? AGX_DIM_2D_ARRAY : AGX_DIM_2D;
 
    case GLSL_SAMPLER_DIM_MS:
       assert(!array && "multisampled arrays unsupported");
-      return AGX_DIM_TEX_2D_MS;
+      return AGX_DIM_2D_MS;
 
    case GLSL_SAMPLER_DIM_3D:
       assert(!array && "3D arrays unsupported");
-      return AGX_DIM_TEX_3D;
+      return AGX_DIM_3D;
 
    case GLSL_SAMPLER_DIM_CUBE:
-      return array ? AGX_DIM_TEX_CUBE_ARRAY : AGX_DIM_TEX_CUBE;
+      return array ? AGX_DIM_CUBE_ARRAY : AGX_DIM_CUBE;
 
    default:
       unreachable("Invalid sampler dim\n");
@@ -1097,7 +1120,7 @@ agx_emit_tex(agx_builder *b, nir_tex_instr *instr)
 
          /* We explicitly don't cache about the split cache for this */
          lod = agx_temp(b->shader, AGX_SIZE_32);
-         agx_instr *I = agx_p_combine_to(b, lod, 2 * n);
+         agx_instr *I = agx_collect_to(b, lod, 2 * n);
 
          for (unsigned i = 0; i < n; ++i) {
             I->src[(2 * i) + 0] = agx_emit_extract(b, index, i);
@@ -1156,10 +1179,11 @@ static void
 agx_emit_logical_end(agx_builder *b)
 {
    if (!b->shader->current_block->unconditional_jumps)
-      agx_p_logical_end(b);
+      agx_logical_end(b);
 }
 
-/* NIR loops are treated as a pair of AGX loops:
+/*
+ * NIR loops are treated as a pair of AGX loops:
  *
  *    do {
  *       do {
@@ -1167,15 +1191,14 @@ agx_emit_logical_end(agx_builder *b)
  *       } while (0);
  *    } while (cond);
  *
- * By manipulating the nesting counter (r0l), we may break out of nested loops,
- * so under the model, both break and continue may be implemented as breaks,
- * where break breaks out of the outer loop (2 layers) and continue breaks out
- * of the inner loop (1 layer).
+ * By manipulating the nesting counter, we may break out of nested loops, so
+ * under the model, both break and continue may be implemented as breaks, where
+ * break breaks out of the outer loop (2 layers) and continue breaks out of the
+ * inner loop (1 layer).
  *
  * After manipulating the nesting counter directly, pop_exec #0 must be used to
  * flush the update to the execution mask.
  */
-
 static void
 agx_emit_jump(agx_builder *b, nir_jump_instr *instr)
 {
@@ -1194,8 +1217,7 @@ agx_emit_jump(agx_builder *b, nir_jump_instr *instr)
    }
 
    /* Update the counter and flush */
-   agx_index r0l = agx_register(0, false);
-   agx_mov_to(b, r0l, agx_immediate(nestings));
+   agx_nest(b, agx_immediate(nestings));
 
    /* Jumps must come at the end of a block */
    agx_emit_logical_end(b);
@@ -1207,7 +1229,8 @@ agx_emit_jump(agx_builder *b, nir_jump_instr *instr)
 static void
 agx_emit_phi(agx_builder *b, nir_phi_instr *instr)
 {
-   agx_instr *I = agx_phi_to(b, agx_dest_index(&instr->dest));
+   agx_instr *I = agx_phi_to(b, agx_dest_index(&instr->dest),
+                             exec_list_length(&instr->srcs));
 
    /* Deferred */
    I->phi = instr;
@@ -1230,9 +1253,6 @@ agx_emit_phi_deferred(agx_context *ctx, agx_block *block, agx_instr *I)
    /* Guaranteed by lower_phis_to_scalar */
    assert(phi->dest.ssa.num_components == 1);
 
-   I->nr_srcs = exec_list_length(&phi->srcs);
-   I->src = rzalloc_array(I, agx_index, I->nr_srcs);
-
    nir_foreach_phi_src(src, phi) {
       agx_block *pred = agx_from_nir_block(ctx, src->pred);
       unsigned i = agx_predecessor_index(block, pred);
@@ -1246,10 +1266,8 @@ static void
 agx_emit_phis_deferred(agx_context *ctx)
 {
    agx_foreach_block(ctx, block) {
-      agx_foreach_instr_in_block(block, I) {
-         if (I->op == AGX_OPCODE_PHI)
-            agx_emit_phi_deferred(ctx, block, I);
-      }
+      agx_foreach_phi_in_block(block, I)
+         agx_emit_phi_deferred(ctx, block, I);
    }
 }
 
@@ -1421,8 +1439,8 @@ emit_loop(agx_context *ctx, nir_loop *nloop)
    ctx->loop_nesting = pushed_nesting;
 }
 
-/* Before the first control flow structure, the nesting counter (r0l) needs to
- * be zeroed for correct operation. This only happens at most once, since by
+/* Before the first control flow structure, the nesting counter needs to be
+ * zeroed for correct operation. This only happens at most once, since by
  * definition this occurs at the end of the first block, which dominates the
  * rest of the program. */
 
@@ -1433,9 +1451,7 @@ emit_first_cf(agx_context *ctx)
       return;
 
    agx_builder _b = agx_init_builder(ctx, agx_after_block(ctx->current_block));
-   agx_index r0l = agx_register(0, false);
-
-   agx_mov_to(&_b, r0l, agx_immediate(0));
+   agx_nest(&_b, agx_immediate(0));
    ctx->any_cf = true;
 }
 
@@ -1837,10 +1853,6 @@ agx_compile_shader_nir(nir_shader *nir,
    agx_block *last_block = list_last_entry(&ctx->blocks, agx_block, link);
    agx_builder _b = agx_init_builder(ctx, agx_after_block(last_block));
    agx_stop(&_b);
-
-   /* Also add traps to match the blob, unsure what the function is */
-   for (unsigned i = 0; i < 8; ++i)
-      agx_trap(&_b);
 
    /* Index blocks now that we're done emitting so the order is consistent */
    agx_foreach_block(ctx, block)

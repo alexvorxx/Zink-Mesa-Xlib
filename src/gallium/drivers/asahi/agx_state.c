@@ -472,7 +472,8 @@ agx_create_sampler_view(struct pipe_context *pctx,
    agx_pack(&so->desc, TEXTURE, cfg) {
       cfg.dimension = agx_translate_texture_dimension(state->target);
       cfg.layout = agx_translate_layout(rsrc->modifier);
-      cfg.format = agx_pixel_format[state->format].hw;
+      cfg.channels = agx_pixel_format[state->format].channels;
+      cfg.type = agx_pixel_format[state->format].type;
       cfg.swizzle_r = agx_channel_from_pipe(out_swizzle[0]);
       cfg.swizzle_g = agx_channel_from_pipe(out_swizzle[1]);
       cfg.swizzle_b = agx_channel_from_pipe(out_swizzle[2]);
@@ -772,7 +773,8 @@ agx_set_framebuffer_state(struct pipe_context *pctx,
 
       agx_pack(ctx->render_target[i], RENDER_TARGET, cfg) {
          cfg.layout = agx_translate_layout(tex->modifier);
-         cfg.format = agx_pixel_format[surf->format].hw;
+         cfg.channels = agx_pixel_format[surf->format].channels;
+         cfg.type = agx_pixel_format[surf->format].type;
 
          assert(desc->nr_channels >= 1 && desc->nr_channels <= 4);
          cfg.swizzle_r = agx_channel_from_pipe(desc->swizzle[0]);
@@ -1414,7 +1416,8 @@ agx_build_reload_pipeline(struct agx_context *ctx, uint32_t code, struct pipe_su
        */
       cfg.dimension = AGX_TEXTURE_DIMENSION_2D;
       cfg.layout = agx_translate_layout(rsrc->modifier);
-      cfg.format = agx_pixel_format[surf->format].hw;
+      cfg.channels = agx_pixel_format[surf->format].channels;
+      cfg.type = agx_pixel_format[surf->format].type;
       cfg.swizzle_r = agx_channel_from_pipe(desc->swizzle[0]);
       cfg.swizzle_g = agx_channel_from_pipe(desc->swizzle[1]);
       cfg.swizzle_b = agx_channel_from_pipe(desc->swizzle[2]);

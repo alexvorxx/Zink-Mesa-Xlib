@@ -795,8 +795,18 @@ int r600_shader_from_nir(struct r600_context *rctx,
 
    while (optimize_once(sh));
 
-   NIR_PASS_V(sh, nir_lower_bool_to_int32);
-   NIR_PASS_V(sh, nir_opt_algebraic_late);
+   bool late_algebraic_progress;
+   do
+   {
+      late_algebraic_progress = false;
+      NIR_PASS(late_algebraic_progress, sh, nir_opt_algebraic_late);
+      NIR_PASS(late_algebraic_progress, sh, nir_opt_constant_folding);
+      NIR_PASS(late_algebraic_progress, sh, nir_copy_prop);
+      NIR_PASS(late_algebraic_progress, sh, nir_opt_dce);
+      NIR_PASS(late_algebraic_progress, sh, nir_opt_cse);
+   } while (late_algebraic_progress);
+
+   NIR_PASS_V(sh, nir_lower_bool_to_int32);      
 
    if (sh->info.stage == MESA_SHADER_FRAGMENT)
       r600::sort_fsoutput(sh);

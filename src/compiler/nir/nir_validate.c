@@ -1699,8 +1699,11 @@ validate_function_impl(nir_function_impl *impl, validate_state *state)
       validate_dominance =
          NIR_DEBUG(VALIDATE_SSA_DOMINANCE);
    }
-   if (validate_dominance)
+   if (validate_dominance) {
+      memset(state->ssa_defs_found, 0, BITSET_WORDS(impl->ssa_alloc) *
+                                       sizeof(BITSET_WORD));
       validate_ssa_dominance(impl, state);
+   }
 }
 
 static void

@@ -5,10 +5,12 @@ use crate::core::context::*;
 use crate::core::device::*;
 use crate::core::format::*;
 use crate::core::queue::*;
+use crate::core::util::cl_mem_type_to_texture_target;
 use crate::impl_cl_type_trait;
 
 use mesa_rust::pipe::context::*;
 use mesa_rust::pipe::resource::*;
+use mesa_rust::pipe::screen::ResourceType;
 use mesa_rust::pipe::transfer::*;
 use mesa_rust_gen::*;
 use mesa_rust_util::math::*;
@@ -26,8 +28,24 @@ use std::sync::Arc;
 use std::sync::Mutex;
 use std::sync::MutexGuard;
 
+struct MappingTransfer {
+    tx: PipeTransfer,
+    shadow: Option<PipeResource>,
+    pending: u32,
+}
+
+impl MappingTransfer {
+    fn new(tx: PipeTransfer, shadow: Option<PipeResource>) -> Self {
+        MappingTransfer {
+            tx: tx,
+            shadow: shadow,
+            pending: 1,
+        }
+    }
+}
+
 struct Mappings {
-    tx: HashMap<Arc<Device>, (PipeTransfer, u32)>,
+    tx: HashMap<Arc<Device>, MappingTransfer>,
     maps: HashMap<*mut c_void, u32>,
 }
 
@@ -37,6 +55,49 @@ impl Mappings {
             tx: HashMap::new(),
             maps: HashMap::new(),
         })
+    }
+
+    fn mark_pending(&mut self, dev: &Device) {
+        self.tx.get_mut(dev).unwrap().pending += 1;
+    }
+
+    fn unmark_pending(&mut self, dev: &Device) {
+        if let Some(tx) = self.tx.get_mut(dev) {
+            tx.pending -= 1;
+        }
+    }
+
+    fn increase_ref(&mut self, dev: &Device, ptr: *mut c_void) -> bool {
+        let res = self.maps.is_empty();
+        *self.maps.entry(ptr).or_default() += 1;
+        self.unmark_pending(dev);
+        res
+    }
+
+    fn decrease_ref(&mut self, ptr: *mut c_void, dev: &Device) -> (bool, Option<&PipeResource>) {
+        if let Some(r) = self.maps.get_mut(&ptr) {
+            *r -= 1;
+
+            if *r == 0 {
+                self.maps.remove(&ptr);
+            }
+
+            if self.maps.is_empty() {
+                let shadow = self.tx.get(dev).and_then(|tx| tx.shadow.as_ref());
+                return (true, shadow);
+            }
+        }
+        (false, None)
+    }
+
+    fn clean_up_tx(&mut self, dev: &Device, ctx: &PipeContext) {
+        if self.maps.is_empty() {
+            if let Some(tx) = self.tx.get(dev) {
+                if tx.pending == 0 {
+                    self.tx.remove(dev).unwrap().tx.with_ctx(ctx);
+                }
+            }
+        }
     }
 }
 
@@ -230,12 +291,18 @@ impl Mem {
         host_ptr: *mut c_void,
         props: Vec<cl_mem_properties>,
     ) -> CLResult<Arc<Mem>> {
-        if bit_check(flags, CL_MEM_ALLOC_HOST_PTR) {
-            println!("host ptr semantics not implemented!");
-        }
+        let res_type = if bit_check(flags, CL_MEM_ALLOC_HOST_PTR) {
+            ResourceType::Staging
+        } else {
+            ResourceType::Normal
+        };
 
-        let buffer =
-            context.create_buffer(size, host_ptr, bit_check(flags, CL_MEM_COPY_HOST_PTR))?;
+        let buffer = context.create_buffer(
+            size,
+            host_ptr,
+            bit_check(flags, CL_MEM_COPY_HOST_PTR),
+            res_type,
+        )?;
 
         let host_ptr = if bit_check(flags, CL_MEM_USE_HOST_PTR) {
             host_ptr
@@ -304,10 +371,6 @@ impl Mem {
         host_ptr: *mut c_void,
         props: Vec<cl_mem_properties>,
     ) -> CLResult<Arc<Mem>> {
-        if bit_check(flags, CL_MEM_ALLOC_HOST_PTR) {
-            println!("host ptr semantics not implemented!");
-        }
-
         // we have to sanitize the image_desc a little for internal use
         let api_image_desc = image_desc;
         let dims = image_desc.dims();
@@ -322,12 +385,19 @@ impl Mem {
             image_desc.image_array_size = 1;
         }
 
+        let res_type = if bit_check(flags, CL_MEM_ALLOC_HOST_PTR) {
+            ResourceType::Staging
+        } else {
+            ResourceType::Normal
+        };
+
         let texture = if parent.is_none() {
             Some(context.create_texture(
                 &image_desc,
                 image_format,
                 host_ptr,
                 bit_check(flags, CL_MEM_COPY_HOST_PTR),
+                res_type,
             )?)
         } else {
             None
@@ -365,7 +435,7 @@ impl Mem {
     fn tx_raw(
         &self,
         q: &Arc<Queue>,
-        ctx: Option<&PipeContext>,
+        ctx: &PipeContext,
         mut offset: usize,
         size: usize,
         rw: RWFlags,
@@ -375,21 +445,51 @@ impl Mem {
 
         assert!(self.is_buffer());
 
-        Ok(if let Some(ctx) = ctx {
-            ctx.buffer_map(
+        Ok(ctx.buffer_map(
+            r,
+            offset.try_into().map_err(|_| CL_OUT_OF_HOST_MEMORY)?,
+            size.try_into().map_err(|_| CL_OUT_OF_HOST_MEMORY)?,
+            rw,
+            ResourceMapType::Normal,
+        ))
+    }
+
+    fn tx_raw_async(
+        &self,
+        q: &Arc<Queue>,
+        rw: RWFlags,
+    ) -> CLResult<(PipeTransfer, Option<PipeResource>)> {
+        let mut offset = 0;
+        let b = self.to_parent(&mut offset);
+        let r = b.get_res()?.get(&q.device).unwrap();
+        let size = self.size.try_into().map_err(|_| CL_OUT_OF_HOST_MEMORY)?;
+        let ctx = q.device.helper_ctx();
+
+        assert!(self.is_buffer());
+
+        // don't bother mapping directly if it's not UMA or a staging buffer
+        let tx = if q.device.unified_memory() || bit_check(b.flags, CL_MEM_ALLOC_HOST_PTR) {
+            ctx.buffer_map_directly(
                 r,
                 offset.try_into().map_err(|_| CL_OUT_OF_HOST_MEMORY)?,
-                size.try_into().map_err(|_| CL_OUT_OF_HOST_MEMORY)?,
-                true,
+                size,
                 rw,
             )
         } else {
-            q.device.helper_ctx().buffer_map_async(
-                r,
-                offset.try_into().map_err(|_| CL_OUT_OF_HOST_MEMORY)?,
-                size.try_into().map_err(|_| CL_OUT_OF_HOST_MEMORY)?,
-            )
-        })
+            None
+        };
+
+        if let Some(tx) = tx {
+            Ok((tx, None))
+        } else {
+            let shadow = q
+                .device
+                .screen()
+                .resource_create_buffer(size as u32, ResourceType::Staging)
+                .ok_or(CL_OUT_OF_RESOURCES)?;
+            let tx = ctx.buffer_map_coherent(&shadow, 0, size, rw);
+            Ok((tx, Some(shadow)))
+        }
     }
 
     fn tx<'a>(
@@ -400,24 +500,59 @@ impl Mem {
         size: usize,
         rw: RWFlags,
     ) -> CLResult<GuardedPipeTransfer<'a>> {
-        Ok(self.tx_raw(q, Some(ctx), offset, size, rw)?.with_ctx(ctx))
+        Ok(self.tx_raw(q, ctx, offset, size, rw)?.with_ctx(ctx))
     }
 
     fn tx_image_raw(
         &self,
         q: &Arc<Queue>,
-        ctx: Option<&PipeContext>,
+        ctx: &PipeContext,
         bx: &pipe_box,
         rw: RWFlags,
     ) -> CLResult<PipeTransfer> {
         assert!(!self.is_buffer());
 
         let r = self.get_res()?.get(&q.device).unwrap();
-        Ok(if let Some(ctx) = ctx {
-            ctx.texture_map(r, bx, true, rw)
+        Ok(ctx.texture_map(r, bx, rw, ResourceMapType::Normal))
+    }
+
+    fn tx_image_raw_async(
+        &self,
+        q: &Arc<Queue>,
+        bx: &pipe_box,
+        rw: RWFlags,
+    ) -> CLResult<(PipeTransfer, Option<PipeResource>)> {
+        assert!(!self.is_buffer());
+
+        let r = self.get_res()?.get(&q.device).unwrap();
+        let ctx = q.device.helper_ctx();
+
+        // don't bother mapping directly if it's not UMA
+        let tx = if q.device.unified_memory() || bit_check(self.flags, CL_MEM_ALLOC_HOST_PTR) {
+            ctx.texture_map_directly(r, bx, rw)
         } else {
-            q.device.helper_ctx().texture_map_async(r, bx)
-        })
+            None
+        };
+
+        if let Some(tx) = tx {
+            Ok((tx, None))
+        } else {
+            let shadow = q
+                .device
+                .screen()
+                .resource_create_texture(
+                    r.width(),
+                    r.height(),
+                    r.depth(),
+                    r.array_size(),
+                    cl_mem_type_to_texture_target(self.image_desc.image_type),
+                    self.image_format.to_pipe_format().unwrap(),
+                    ResourceType::Staging,
+                )
+                .ok_or(CL_OUT_OF_RESOURCES)?;
+            let tx = ctx.texture_map_coherent(&shadow, bx, rw);
+            Ok((tx, Some(shadow)))
+        }
     }
 
     fn tx_image<'a>(
@@ -427,7 +562,7 @@ impl Mem {
         bx: &pipe_box,
         rw: RWFlags,
     ) -> CLResult<GuardedPipeTransfer<'a>> {
-        Ok(self.tx_image_raw(q, Some(ctx), bx, rw)?.with_ctx(ctx))
+        Ok(self.tx_image_raw(q, ctx, bx, rw)?.with_ctx(ctx))
     }
 
     pub fn has_same_parent(&self, other: &Self) -> bool {
@@ -789,115 +924,139 @@ impl Mem {
         Ok(())
     }
 
-    // TODO: only sync on unmap when memory is mapped for writing
-    pub fn sync_shadow_buffer(&self, q: &Arc<Queue>, ctx: &PipeContext, map: bool) -> CLResult<()> {
+    // TODO: only sync on map when the memory is not mapped with discard
+    pub fn sync_shadow_buffer(
+        &self,
+        q: &Arc<Queue>,
+        ctx: &PipeContext,
+        ptr: *mut c_void,
+    ) -> CLResult<()> {
+        let mut lock = self.maps.lock().unwrap();
+        if !lock.increase_ref(&q.device, ptr) {
+            return Ok(());
+        }
+
         if self.has_user_shadow_buffer(&q.device)? {
-            if map {
-                self.read_to_user(q, ctx, 0, self.host_ptr, self.size)
-            } else {
-                self.write_from_user(q, ctx, 0, self.host_ptr, self.size)
-            }
+            self.read_to_user(q, ctx, 0, self.host_ptr, self.size)
         } else {
+            if let Some(shadow) = lock.tx.get(&q.device).and_then(|tx| tx.shadow.as_ref()) {
+                let mut offset = 0;
+                let b = self.to_parent(&mut offset);
+                let res = b.get_res_of_dev(&q.device)?;
+                let bx = pipe_box {
+                    width: self.size as i32,
+                    height: 1,
+                    depth: 1,
+                    x: offset as i32,
+                    ..Default::default()
+                };
+                ctx.resource_copy_region(res, shadow, &[0; 3], &bx);
+            }
             Ok(())
         }
     }
 
-    // TODO: only sync on unmap when memory is mapped for writing
-    pub fn sync_shadow_image(&self, q: &Arc<Queue>, ctx: &PipeContext, map: bool) -> CLResult<()> {
+    // TODO: only sync on map when the memory is not mapped with discard
+    pub fn sync_shadow_image(
+        &self,
+        q: &Arc<Queue>,
+        ctx: &PipeContext,
+        ptr: *mut c_void,
+    ) -> CLResult<()> {
+        let mut lock = self.maps.lock().unwrap();
+        if !lock.increase_ref(&q.device, ptr) {
+            return Ok(());
+        }
+
         if self.has_user_shadow_buffer(&q.device)? {
-            if map {
-                self.read_to_user_rect(
-                    self.host_ptr,
-                    q,
-                    ctx,
-                    &self.image_desc.size(),
-                    &CLVec::default(),
-                    0,
-                    0,
-                    &CLVec::default(),
-                    self.image_desc.image_row_pitch,
-                    self.image_desc.image_slice_pitch,
-                )
-            } else {
-                self.write_from_user_rect(
-                    self.host_ptr,
-                    q,
-                    ctx,
-                    &self.image_desc.size(),
-                    &CLVec::default(),
-                    self.image_desc.image_row_pitch,
-                    self.image_desc.image_slice_pitch,
-                    &CLVec::default(),
-                    self.image_desc.image_row_pitch,
-                    self.image_desc.image_slice_pitch,
-                )
-            }
+            self.read_to_user_rect(
+                self.host_ptr,
+                q,
+                ctx,
+                &self.image_desc.api_size(),
+                &CLVec::default(),
+                0,
+                0,
+                &CLVec::default(),
+                self.image_desc.image_row_pitch,
+                self.image_desc.image_slice_pitch,
+            )
         } else {
+            if let Some(shadow) = lock.tx.get(&q.device).and_then(|tx| tx.shadow.as_ref()) {
+                let res = self.get_res_of_dev(&q.device)?;
+                let bx = self.image_desc.bx()?;
+                ctx.resource_copy_region(res, shadow, &[0, 0, 0], &bx);
+            }
             Ok(())
         }
     }
 
+    /// Maps the queue associated device's resource.
+    ///
+    /// Mapping resources could have been quite straightforward if OpenCL wouldn't allow for so
+    /// called non blocking maps. Non blocking maps shall return a valid pointer to the mapped
+    /// region immediately, but should not synchronize data (in case of shadow buffers) until after
+    /// the map event is reached in the queue.
+    /// This makes it not possible to simply use pipe_transfers as those can't be explicitly synced
+    /// by the frontend.
+    ///
+    /// In order to have a compliant implementation of the mapping API we have to consider the
+    /// following cases:
+    ///   1. Mapping a cl_mem object with CL_MEM_USE_HOST_PTR: We simply return the host_ptr.
+    ///      Synchronization of shadowed host ptrs are done in `sync_shadow_buffer` and
+    ///      `sync_shadow_image` on demand.
+    ///   2. Mapping linear resources on UMA systems: We simply create the pipe_transfer with
+    ///      `PIPE_MAP_DIRECTLY` and `PIPE_MAP_UNSYNCHRONIZED` and return the attached pointer.
+    ///   3. On non UMA systems or when 2. fails (e.g. due to the resource being tiled) we
+    ///      - create a shadow pipe_resource with `PIPE_USAGE_STAGING`,
+    ///        `PIPE_RESOURCE_FLAG_MAP_PERSISTENT` and `PIPE_RESOURCE_FLAG_MAP_COHERENT`
+    ///      - create a pipe_transfer with `PIPE_MAP_COHERENT`, `PIPE_MAP_PERSISTENT` and
+    ///        `PIPE_MAP_UNSYNCHRONIZED`
+    ///      - sync the shadow buffer like a host_ptr shadow buffer in 1.
+    ///
+    /// Taking this approach we guarentee that we only copy when actually needed while making sure
+    /// the content behind the returned pointer is valid until unmapped.
     fn map<'a>(
         &self,
         q: &Arc<Queue>,
-        ctx: Option<&PipeContext>,
         lock: &'a mut MutexGuard<Mappings>,
         rw: RWFlags,
     ) -> CLResult<&'a PipeTransfer> {
         if !lock.tx.contains_key(&q.device) {
-            let tx = if self.is_buffer() {
-                self.tx_raw(q, ctx, 0, self.size, rw)?
+            let (tx, res) = if self.is_buffer() {
+                self.tx_raw_async(q, rw)?
             } else {
                 let bx = self.image_desc.bx()?;
-                self.tx_image_raw(q, ctx, &bx, rw)?
+                self.tx_image_raw_async(q, &bx, rw)?
             };
 
-            lock.tx.insert(q.device.clone(), (tx, 0));
+            lock.tx
+                .insert(q.device.clone(), MappingTransfer::new(tx, res));
+        } else {
+            lock.mark_pending(&q.device);
         }
 
-        let tx = lock.tx.get_mut(&q.device).unwrap();
-        tx.1 += 1;
-        Ok(&tx.0)
+        Ok(&lock.tx.get_mut(&q.device).unwrap().tx)
     }
 
-    // TODO: we could map a partial region and increase the mapping on the fly
-    pub fn map_buffer(
-        &self,
-        q: &Arc<Queue>,
-        ctx: Option<&PipeContext>,
-        offset: usize,
-        _size: usize,
-    ) -> CLResult<*mut c_void> {
+    pub fn map_buffer(&self, q: &Arc<Queue>, offset: usize, _size: usize) -> CLResult<*mut c_void> {
         assert!(self.is_buffer());
 
         let mut lock = self.maps.lock().unwrap();
         let ptr = if self.has_user_shadow_buffer(&q.device)? {
-            // copy to the host_ptr if we are blocking
-            if let Some(ctx) = ctx {
-                self.sync_shadow_buffer(q, ctx, true)?;
-            }
-
             self.host_ptr
         } else {
-            let tx = self.map(q, ctx, &mut lock, RWFlags::RW)?;
+            let tx = self.map(q, &mut lock, RWFlags::RW)?;
             tx.ptr()
         };
 
         let ptr = unsafe { ptr.add(offset) };
-
-        if let Some(e) = lock.maps.get_mut(&ptr) {
-            *e += 1;
-        } else {
-            lock.maps.insert(ptr, 1);
-        }
-
         Ok(ptr)
     }
 
     pub fn map_image(
         &self,
         q: &Arc<Queue>,
-        ctx: Option<&PipeContext>,
         origin: &CLVec<usize>,
         _region: &CLVec<usize>,
         row_pitch: &mut usize,
@@ -912,14 +1071,9 @@ impl Mem {
             *row_pitch = self.image_desc.image_row_pitch;
             *slice_pitch = self.image_desc.image_slice_pitch;
 
-            // copy to the host_ptr if we are blocking
-            if let Some(ctx) = ctx {
-                self.sync_shadow_image(q, ctx, true)?;
-            }
-
             self.host_ptr
         } else {
-            let tx = self.map(q, ctx, &mut lock, RWFlags::RW)?;
+            let tx = self.map(q, &mut lock, RWFlags::RW)?;
 
             if self.image_desc.dims() > 1 {
                 *row_pitch = tx.row_pitch() as usize;
@@ -942,12 +1096,6 @@ impl Mem {
             )
         };
 
-        if let Some(e) = lock.maps.get_mut(&ptr) {
-            *e += 1;
-        } else {
-            lock.maps.insert(ptr, 1);
-        }
-
         Ok(ptr)
     }
 
@@ -955,36 +1103,53 @@ impl Mem {
         self.maps.lock().unwrap().maps.contains_key(&ptr)
     }
 
+    // TODO: only sync on unmap when the memory is not mapped for writing
     pub fn unmap(&self, q: &Arc<Queue>, ctx: &PipeContext, ptr: *mut c_void) -> CLResult<()> {
         let mut lock = self.maps.lock().unwrap();
-        let e = lock.maps.get_mut(&ptr).unwrap();
-
-        if *e == 0 {
+        if !lock.maps.contains_key(&ptr) {
             return Ok(());
         }
 
-        *e -= 1;
-        if *e == 0 {
-            lock.maps.remove(&ptr);
-        }
+        let (needs_sync, shadow) = lock.decrease_ref(ptr, &q.device);
+        if needs_sync {
+            if let Some(shadow) = shadow {
+                let mut offset = 0;
+                let b = self.to_parent(&mut offset);
+                let res = b.get_res_of_dev(&q.device)?;
 
-        // TODO: only sync on last unmap and only mapped ranges
-        if self.has_user_shadow_buffer(&q.device)? {
-            if self.is_buffer() {
-                self.sync_shadow_buffer(q, ctx, false)?;
-            } else {
-                self.sync_shadow_image(q, ctx, false)?;
+                let bx = if b.is_buffer() {
+                    pipe_box {
+                        width: self.size as i32,
+                        height: 1,
+                        depth: 1,
+                        ..Default::default()
+                    }
+                } else {
+                    self.image_desc.bx()?
+                };
+
+                ctx.resource_copy_region(shadow, res, &[offset as u32, 0, 0], &bx);
+            } else if self.has_user_shadow_buffer(&q.device)? {
+                if self.is_buffer() {
+                    self.write_from_user(q, ctx, 0, self.host_ptr, self.size)?;
+                } else {
+                    self.write_from_user_rect(
+                        self.host_ptr,
+                        q,
+                        ctx,
+                        &self.image_desc.api_size(),
+                        &CLVec::default(),
+                        self.image_desc.image_row_pitch,
+                        self.image_desc.image_slice_pitch,
+                        &CLVec::default(),
+                        self.image_desc.image_row_pitch,
+                        self.image_desc.image_slice_pitch,
+                    )?;
+                }
             }
         }
 
-        // shadow buffers don't get a tx option bound
-        if let Some(tx) = lock.tx.get_mut(&q.device) {
-            tx.1 -= 1;
-
-            if tx.1 == 0 {
-                lock.tx.remove(&q.device).unwrap().0.with_ctx(ctx);
-            }
-        }
+        lock.clean_up_tx(&q.device, ctx);
 
         Ok(())
     }
@@ -1001,7 +1166,7 @@ impl Drop for Mem {
             .for_each(|cb| cb(cl));
 
         for (d, tx) in self.maps.lock().unwrap().tx.drain() {
-            d.helper_ctx().unmap(tx.0);
+            d.helper_ctx().unmap(tx.tx);
         }
     }
 }

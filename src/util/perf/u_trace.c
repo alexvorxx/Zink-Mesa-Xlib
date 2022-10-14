@@ -59,7 +59,7 @@ int ut_perfetto_enabled;
  */
 static struct list_head ctx_list = { &ctx_list, &ctx_list };
 
-static simple_mtx_t ctx_list_mutex = _SIMPLE_MTX_INITIALIZER_NP;
+static simple_mtx_t ctx_list_mutex = SIMPLE_MTX_INITIALIZER;
 #endif
 
 struct u_trace_payload_buf {

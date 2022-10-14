@@ -35,19 +35,54 @@ remap_tess_levels(nir_builder *b, nir_intrinsic_instr *intr,
 {
    const int location = nir_intrinsic_base(intr);
    const unsigned component = nir_intrinsic_component(intr);
-   bool out_of_bounds;
+   bool out_of_bounds = false;
+   bool write = !nir_intrinsic_infos[intr->intrinsic].has_dest;
+   unsigned mask = write ? nir_intrinsic_write_mask(intr) : 0;
+   nir_ssa_def *src = NULL, *dest = NULL;
+
+   if (write) {
+      assert(intr->src[0].is_ssa);
+      assert(intr->num_components == intr->src[0].ssa->num_components);
+   } else {
+      assert(intr->dest.is_ssa);
+      assert(intr->num_components == intr->dest.ssa.num_components);
+   }
 
    if (location == VARYING_SLOT_TESS_LEVEL_INNER) {
+      b->cursor = write ? nir_before_instr(&intr->instr)
+                        : nir_after_instr(&intr->instr);
+
       switch (_primitive_mode) {
       case TESS_PRIMITIVE_QUADS:
          /* gl_TessLevelInner[0..1] lives at DWords 3-2 (reversed). */
          nir_intrinsic_set_base(intr, 0);
-         nir_intrinsic_set_component(intr, 3 - component);
-         out_of_bounds = false;
+
+         if (write) {
+            assert(intr->src[0].ssa->num_components == 2);
+
+            intr->num_components = 4;
+
+            nir_ssa_def *undef = nir_ssa_undef(b, 1, 32);
+            nir_ssa_def *x = nir_channel(b, intr->src[0].ssa, 0);
+            nir_ssa_def *y = nir_channel(b, intr->src[0].ssa, 1);
+            src = nir_vec4(b, undef, undef, y, x);
+            mask = !!(mask & WRITEMASK_X) << 3 | !!(mask & WRITEMASK_Y) << 2;
+         } else if (intr->dest.ssa.num_components > 1) {
+            assert(intr->dest.ssa.num_components == 2);
+
+            intr->num_components = 4;
+            intr->dest.ssa.num_components = 4;
+
+            unsigned wz[2] = { 3, 2 };
+            dest = nir_swizzle(b, &intr->dest.ssa, wz, 2);
+         } else {
+            nir_intrinsic_set_component(intr, 3 - component);
+         }
          break;
       case TESS_PRIMITIVE_TRIANGLES:
          /* gl_TessLevelInner[0] lives at DWord 4. */
          nir_intrinsic_set_base(intr, 1);
+         mask &= WRITEMASK_X;
          out_of_bounds = component > 0;
          break;
       case TESS_PRIMITIVE_ISOLINES:
@@ -57,28 +92,75 @@ remap_tess_levels(nir_builder *b, nir_intrinsic_instr *intr,
          unreachable("Bogus tessellation domain");
       }
    } else if (location == VARYING_SLOT_TESS_LEVEL_OUTER) {
-      if (_primitive_mode == TESS_PRIMITIVE_ISOLINES) {
+      b->cursor = write ? nir_before_instr(&intr->instr)
+                        : nir_after_instr(&intr->instr);
+
+      nir_intrinsic_set_base(intr, 1);
+
+      switch (_primitive_mode) {
+      case TESS_PRIMITIVE_QUADS:
+      case TESS_PRIMITIVE_TRIANGLES:
+         /* Quads:     gl_TessLevelOuter[0..3] lives at DWords 7-4 (reversed).
+          * Triangles: gl_TessLevelOuter[0..2] lives at DWords 7-5 (reversed).
+          */
+         if (write) {
+            assert(intr->src[0].ssa->num_components == 4);
+
+            unsigned wzyx[4] = { 3, 2, 1, 0 };
+            src = nir_swizzle(b, intr->src[0].ssa, wzyx, 4);
+            mask = !!(mask & WRITEMASK_X) << 3 | !!(mask & WRITEMASK_Y) << 2 |
+                   !!(mask & WRITEMASK_Z) << 1 | !!(mask & WRITEMASK_W) << 0;
+
+            /* Don't overwrite the inner factor at DWord 4 for triangles */
+            if (_primitive_mode == TESS_PRIMITIVE_TRIANGLES)
+               mask &= ~WRITEMASK_X;
+         } else if (intr->dest.ssa.num_components > 1) {
+            assert(intr->dest.ssa.num_components == 4);
+
+            unsigned wzyx[4] = { 3, 2, 1, 0 };
+            dest = nir_swizzle(b, &intr->dest.ssa, wzyx, 4);
+         } else {
+            nir_intrinsic_set_component(intr, 3 - component);
+            out_of_bounds = component == 3 &&
+                            _primitive_mode == TESS_PRIMITIVE_TRIANGLES;
+         }
+         break;
+      case TESS_PRIMITIVE_ISOLINES:
          /* gl_TessLevelOuter[0..1] lives at DWords 6-7 (in order). */
-         nir_intrinsic_set_base(intr, 1);
-         nir_intrinsic_set_component(intr, 2 + nir_intrinsic_component(intr));
-         out_of_bounds = component > 1;
-      } else {
-         /* Triangles use DWords 7-5 (reversed); Quads use 7-4 (reversed) */
-         nir_intrinsic_set_base(intr, 1);
-         nir_intrinsic_set_component(intr, 3 - nir_intrinsic_component(intr));
-         out_of_bounds = component == 3 && _primitive_mode == TESS_PRIMITIVE_TRIANGLES;
+         if (write) {
+            assert(intr->src[0].ssa->num_components == 4);
+
+            nir_ssa_def *undef = nir_ssa_undef(b, 1, 32);
+            nir_ssa_def *x = nir_channel(b, intr->src[0].ssa, 0);
+            nir_ssa_def *y = nir_channel(b, intr->src[0].ssa, 1);
+            src = nir_vec4(b, undef, undef, x, y);
+            mask = !!(mask & WRITEMASK_X) << 2 | !!(mask & WRITEMASK_Y) << 3;
+         } else {
+            nir_intrinsic_set_component(intr, 2 + component);
+            out_of_bounds = component > 1;
+         }
+         break;
+      default:
+         unreachable("Bogus tessellation domain");
       }
    } else {
       return false;
    }
 
    if (out_of_bounds) {
-      if (nir_intrinsic_infos[intr->intrinsic].has_dest) {
-         b->cursor = nir_before_instr(&intr->instr);
-         nir_ssa_def *undef = nir_ssa_undef(b, 1, 32);
-         nir_ssa_def_rewrite_uses(&intr->dest.ssa, undef);
-      }
+      if (!write)
+         nir_ssa_def_rewrite_uses(&intr->dest.ssa, nir_ssa_undef(b, 1, 32));
       nir_instr_remove(&intr->instr);
+   } else if (write) {
+      nir_intrinsic_set_write_mask(intr, mask);
+
+      if (src) {
+         nir_instr_rewrite_src(&intr->instr, &intr->src[0],
+                               nir_src_for_ssa(src));
+      }
+   } else if (dest) {
+      nir_ssa_def_rewrite_uses_after(&intr->dest.ssa, dest,
+                                     dest->parent_instr);
    }
 
    return true;
@@ -1008,6 +1090,11 @@ brw_nir_link_shaders(const struct brw_compiler *compiler,
    }
 
    NIR_PASS(_, producer, nir_lower_io_to_vector, nir_var_shader_out);
+
+   if (producer->info.stage == MESA_SHADER_TESS_CTRL &&
+       producer->options->vectorize_tess_levels)
+   NIR_PASS_V(producer, nir_vectorize_tess_levels);
+
    NIR_PASS(_, producer, nir_opt_combine_stores, nir_var_shader_out);
    NIR_PASS(_, consumer, nir_lower_io_to_vector, nir_var_shader_in);
 

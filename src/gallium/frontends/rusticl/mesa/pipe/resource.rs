@@ -27,6 +27,22 @@ impl PipeResource {
         unsafe { self.pipe.as_ref().unwrap() }
     }
 
+    pub fn width(&self) -> u32 {
+        unsafe { self.pipe.as_ref().unwrap().width0 }
+    }
+
+    pub fn height(&self) -> u16 {
+        unsafe { self.pipe.as_ref().unwrap().height0 }
+    }
+
+    pub fn depth(&self) -> u16 {
+        unsafe { self.pipe.as_ref().unwrap().depth0 }
+    }
+
+    pub fn array_size(&self) -> u16 {
+        unsafe { self.pipe.as_ref().unwrap().array_size }
+    }
+
     pub fn pipe_image_view(&self, format: pipe_format, read_write: bool) -> pipe_image_view {
         let u = if self.as_ref().target() == pipe_texture_target::PIPE_BUFFER {
             pipe_image_view__bindgen_ty_1 {

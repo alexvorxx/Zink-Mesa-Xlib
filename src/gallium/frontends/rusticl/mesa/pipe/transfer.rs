@@ -62,6 +62,10 @@ impl PipeTransfer {
         unsafe { (*self.pipe).layer_stride }
     }
 
+    pub fn bx(&self) -> &pipe_box {
+        unsafe { &(*self.pipe).box_ }
+    }
+
     pub fn with_ctx(self, ctx: &PipeContext) -> GuardedPipeTransfer {
         GuardedPipeTransfer {
             inner: self,

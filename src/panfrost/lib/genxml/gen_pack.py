@@ -102,9 +102,6 @@ __gen_unpack_padded(const uint8_t *restrict cl, uint32_t start, uint32_t end)
 #define PREFIX2(A, B) MALI_ ## A ## _ ## B
 #define PREFIX4(A, B, C, D) MALI_ ## A ## _ ## B ## _ ## C ## _ ## D
 
-#define pan_prepare(dst, T)                                 \\
-   *(dst) = (struct PREFIX1(T)){ PREFIX2(T, header) }
-
 #define pan_pack(dst, T, name)                              \\
    for (struct PREFIX1(T) name = { PREFIX2(T, header) }, \\
         *_loop_terminate = (void *) (dst);                  \\
@@ -229,13 +226,6 @@ def prefixed_upper_name(prefix, name):
 def enum_name(name):
     return "{}_{}".format(global_prefix, safe_name(name)).lower()
 
-def num_from_str(num_str):
-    if num_str.lower().startswith('0x'):
-        return int(num_str, base=16)
-    else:
-        assert(not num_str.startswith('0') and 'octals numbers not allowed')
-        return int(num_str)
-
 MODIFIERS = ["shr", "minus", "align", "log2"]
 
 def parse_modifier(modifier):
@@ -322,11 +312,6 @@ class Field(object):
         else:
             self.prefix = None
 
-        if "exact" in attrs:
-            self.exact = int(attrs["exact"])
-        else:
-            self.exact = None
-
         self.default = attrs.get("default")
 
         # Map enum values
@@ -397,9 +382,6 @@ class Group(object):
                 print("   int dummy;")
 
             for field in self.fields:
-                if field.exact is not None:
-                    continue
-
                 field.emit_template_struct(dim)
 
     class Word:
@@ -458,8 +440,6 @@ class Group(object):
             if field.modifier is None:
                 continue
 
-            assert(field.exact is None)
-
             if field.modifier[0] == "shr":
                 shift = field.modifier[1]
                 mask = hex((1 << shift) - 1)
@@ -491,7 +471,7 @@ class Group(object):
                 start -= contrib_word_start
                 end -= contrib_word_start
 
-                value = str(field.exact) if field.exact is not None else "values->{}".format(contributor.path)
+                value = "values->{}".format(contributor.path)
                 if field.modifier is not None:
                     if field.modifier[0] == "shr":
                         value = "{} >> {}".format(value, field.modifier[1])

@@ -66,7 +66,7 @@ agx_validate_block_form(agx_block *block)
          state = AGX_BLOCK_STATE_BODY;
          break;
 
-      case AGX_OPCODE_P_LOGICAL_END:
+      case AGX_OPCODE_LOGICAL_END:
          agx_validate_assert(state != AGX_BLOCK_STATE_CF);
          state = AGX_BLOCK_STATE_CF;
          break;

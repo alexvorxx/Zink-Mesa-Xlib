@@ -44,7 +44,7 @@ static struct rb_tree mmap_tree;
 
 static struct util_dynarray ro_mappings;
 
-static simple_mtx_t pandecode_lock = _SIMPLE_MTX_INITIALIZER_NP;
+static simple_mtx_t pandecode_lock = SIMPLE_MTX_INITIALIZER;
 
 #define to_mapped_memory(x) \
 	rb_node_data(struct pandecode_mapped_memory, x, node)

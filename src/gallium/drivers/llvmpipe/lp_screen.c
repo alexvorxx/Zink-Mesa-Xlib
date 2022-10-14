@@ -291,7 +291,7 @@ llvmpipe_get_param(struct pipe_screen *screen, enum pipe_cap param)
       return (int)(system_memory >> 20);
    }
    case PIPE_CAP_UMA:
-      return 0;
+      return 1;
    case PIPE_CAP_CLIP_HALFZ:
       return 1;
    case PIPE_CAP_POLYGON_OFFSET_CLAMP:

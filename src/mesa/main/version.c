@@ -36,7 +36,7 @@
 
 #include "state_tracker/st_context.h"
 
-static simple_mtx_t override_lock = _SIMPLE_MTX_INITIALIZER_NP;
+static simple_mtx_t override_lock = SIMPLE_MTX_INITIALIZER;
 
 /**
  * Scans 'string' to see if it ends with 'ending'.

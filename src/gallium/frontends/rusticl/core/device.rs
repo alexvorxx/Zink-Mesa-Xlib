@@ -48,8 +48,31 @@ pub trait HelperContextWrapper {
     where
         F: Fn(&HelperContext);
 
-    fn buffer_map_async(&self, res: &PipeResource, offset: i32, size: i32) -> PipeTransfer;
-    fn texture_map_async(&self, res: &PipeResource, bx: &pipe_box) -> PipeTransfer;
+    fn buffer_map_directly(
+        &self,
+        res: &PipeResource,
+        offset: i32,
+        size: i32,
+        rw: RWFlags,
+    ) -> Option<PipeTransfer>;
+
+    fn buffer_map_coherent(
+        &self,
+        res: &PipeResource,
+        offset: i32,
+        size: i32,
+        rw: RWFlags,
+    ) -> PipeTransfer;
+
+    fn texture_map_directly(
+        &self,
+        res: &PipeResource,
+        bx: &pipe_box,
+        rw: RWFlags,
+    ) -> Option<PipeTransfer>;
+
+    fn texture_map_coherent(&self, res: &PipeResource, bx: &pipe_box, rw: RWFlags) -> PipeTransfer;
+
     fn unmap(&self, tx: PipeTransfer);
 }
 
@@ -90,12 +113,39 @@ impl<'a> HelperContextWrapper for HelperContext<'a> {
         self.lock.flush()
     }
 
-    fn buffer_map_async(&self, res: &PipeResource, offset: i32, size: i32) -> PipeTransfer {
-        self.lock.buffer_map(res, offset, size, false, RWFlags::RW)
+    fn buffer_map_directly(
+        &self,
+        res: &PipeResource,
+        offset: i32,
+        size: i32,
+        rw: RWFlags,
+    ) -> Option<PipeTransfer> {
+        self.lock.buffer_map_directly(res, offset, size, rw)
     }
 
-    fn texture_map_async(&self, res: &PipeResource, bx: &pipe_box) -> PipeTransfer {
-        self.lock.texture_map(res, bx, false, RWFlags::RW)
+    fn buffer_map_coherent(
+        &self,
+        res: &PipeResource,
+        offset: i32,
+        size: i32,
+        rw: RWFlags,
+    ) -> PipeTransfer {
+        self.lock
+            .buffer_map(res, offset, size, rw, ResourceMapType::Coherent)
+    }
+
+    fn texture_map_directly(
+        &self,
+        res: &PipeResource,
+        bx: &pipe_box,
+        rw: RWFlags,
+    ) -> Option<PipeTransfer> {
+        self.lock.texture_map_directly(res, bx, rw)
+    }
+
+    fn texture_map_coherent(&self, res: &PipeResource, bx: &pipe_box, rw: RWFlags) -> PipeTransfer {
+        self.lock
+            .texture_map(res, bx, rw, ResourceMapType::Coherent)
     }
 
     fn unmap(&self, tx: PipeTransfer) {

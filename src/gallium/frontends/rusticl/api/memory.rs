@@ -13,7 +13,6 @@ use mesa_rust_util::properties::Properties;
 use mesa_rust_util::ptr::*;
 use rusticl_opencl_gen::*;
 
-use std::cell::Cell;
 use std::cmp::Ordering;
 use std::os::raw::c_void;
 use std::ptr;
@@ -1594,35 +1593,17 @@ pub fn enqueue_map_buffer(
         return Err(CL_INVALID_CONTEXT);
     }
 
-    if block {
-        let ptr = Arc::new(Cell::new(Ok(ptr::null_mut())));
-        let cloned = ptr.clone();
-        create_and_queue(
-            q,
-            CL_COMMAND_MAP_BUFFER,
-            evs,
-            event,
-            block,
-            Box::new(move |q, ctx| {
-                cloned.set(b.map_buffer(q, Some(ctx), offset, size));
-                Ok(())
-            }),
-        )?;
+    let ptr = b.map_buffer(&q, offset, size)?;
+    create_and_queue(
+        q,
+        CL_COMMAND_MAP_BUFFER,
+        evs,
+        event,
+        block,
+        Box::new(move |q, ctx| b.sync_shadow_buffer(q, ctx, ptr)),
+    )?;
 
-        ptr.get()
-    } else {
-        let ptr = b.map_buffer(&q, None, offset, size);
-        create_and_queue(
-            q,
-            CL_COMMAND_MAP_BUFFER,
-            evs,
-            event,
-            block,
-            Box::new(move |q, ctx| b.sync_shadow_buffer(q, ctx, true)),
-        )?;
-
-        ptr
-    }
+    Ok(ptr)
 
     // TODO
     // CL_MISALIGNED_SUB_BUFFER_OFFSET if buffer is a sub-buffer object and offset specified when the sub-buffer object is created is not aligned to CL_DEVICE_MEM_BASE_ADDR_ALIGN value for the device associated with queue. This error code is missing before version 1.1.
@@ -2069,60 +2050,24 @@ pub fn enqueue_map_image(
         unsafe { image_slice_pitch.as_mut().unwrap() }
     };
 
-    if block {
-        let res = Arc::new(Cell::new((Ok(ptr::null_mut()), 0, 0)));
-        let cloned = res.clone();
+    let ptr = i.map_image(
+        &q,
+        &origin,
+        &region,
+        unsafe { image_row_pitch.as_mut().unwrap() },
+        image_slice_pitch,
+    )?;
 
-        create_and_queue(
-            q.clone(),
-            CL_COMMAND_MAP_IMAGE,
-            evs,
-            event,
-            block,
-            // we don't really have anything to do here?
-            Box::new(move |q, ctx| {
-                let mut image_row_pitch = 0;
-                let mut image_slice_pitch = 0;
+    create_and_queue(
+        q.clone(),
+        CL_COMMAND_MAP_IMAGE,
+        evs,
+        event,
+        block,
+        Box::new(move |q, ctx| i.sync_shadow_image(q, ctx, ptr)),
+    )?;
 
-                let ptr = i.map_image(
-                    q,
-                    Some(ctx),
-                    &origin,
-                    &region,
-                    &mut image_row_pitch,
-                    &mut image_slice_pitch,
-                );
-                cloned.set((ptr, image_row_pitch, image_slice_pitch));
-
-                Ok(())
-            }),
-        )?;
-
-        let res = res.get();
-        unsafe { *image_row_pitch = res.1 };
-        *image_slice_pitch = res.2;
-        res.0
-    } else {
-        let ptr = i.map_image(
-            &q,
-            None,
-            &origin,
-            &region,
-            unsafe { image_row_pitch.as_mut().unwrap() },
-            image_slice_pitch,
-        );
-
-        create_and_queue(
-            q.clone(),
-            CL_COMMAND_MAP_IMAGE,
-            evs,
-            event,
-            block,
-            Box::new(move |q, ctx| i.sync_shadow_image(q, ctx, true)),
-        )?;
-
-        ptr
-    }
+    Ok(ptr)
 
     //• CL_INVALID_VALUE if values in origin and region do not follow rules described in the argument description for origin and region.
     //• CL_INVALID_IMAGE_SIZE if image dimensions (image width, height, specified or compute row and/or slice pitch) for image are not supported by device associated with queue.

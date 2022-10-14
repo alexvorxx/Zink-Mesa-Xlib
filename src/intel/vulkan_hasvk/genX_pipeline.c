@@ -1098,16 +1098,13 @@ emit_3dstate_clip(struct anv_graphics_pipeline *pipeline,
 #if GFX_VER == 7
    clip.UserClipDistanceClipTestEnableBitmask = last->clip_distance_mask;
    clip.UserClipDistanceCullTestEnableBitmask = last->cull_distance_mask;
-#endif
-
-#if GFX_VER == 7
    clip.FrontWinding            = genX(vk_to_intel_front_face)[rs->front_face];
    clip.CullMode                = genX(vk_to_intel_cullmode)[rs->cull_mode];
    clip.ViewportZClipTestEnable = pipeline->depth_clip_enable;
-#else
+#endif
+
    clip.NonPerspectiveBarycentricEnable = wm_prog_data ?
       wm_prog_data->uses_nonperspective_interp_modes : 0;
-#endif
 
    GENX(3DSTATE_CLIP_pack)(NULL, pipeline->gfx7.clip, &clip);
 }

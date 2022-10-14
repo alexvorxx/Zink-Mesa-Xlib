@@ -123,7 +123,7 @@ def print_dag(dag: Dag) -> None:
 
 def fetch_merged_yaml(gl_gql: GitlabGQL, params) -> dict[Any]:
     gitlab_yml_file = get_project_root_dir() / ".gitlab-ci.yml"
-    content = Path(gitlab_yml_file).read_text()
+    content = Path(gitlab_yml_file).read_text().strip()
     params["content"] = content
     raw_response = gl_gql.query("job_details.gql", params)
     if merged_yaml := raw_response["ciConfig"]["mergedYaml"]:

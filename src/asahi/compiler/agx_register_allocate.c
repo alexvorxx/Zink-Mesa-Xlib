@@ -26,6 +26,18 @@
 
 /* SSA-based register allocator */
 
+struct ra_ctx {
+   agx_context *shader;
+   agx_block *block;
+   uint8_t *ssa_to_reg;
+   uint8_t *ncomps;
+   BITSET_WORD *visited;
+   BITSET_WORD *used_regs;
+
+   /* Maximum number of registers that RA is allowed to use */
+   unsigned bound;
+};
+
 /** Returns number of registers written by an instruction */
 unsigned
 agx_write_registers(agx_instr *I, unsigned d)
@@ -45,7 +57,7 @@ agx_write_registers(agx_instr *I, unsigned d)
 
    case AGX_OPCODE_LDCF:
       return 6;
-   case AGX_OPCODE_P_COMBINE:
+   case AGX_OPCODE_COLLECT:
       return I->nr_srcs * size;
    default:
       return size;
@@ -98,29 +110,55 @@ agx_assign_regs(BITSET_WORD *used_regs, unsigned count, unsigned align, unsigned
    unreachable("Could not find a free register");
 }
 
+/*
+ * Loop over live-in values at the start of the block and mark their registers
+ * as in-use. We process blocks in dominance order, so this handles everything
+ * but loop headers.
+ *
+ * For loop headers, this handles the forward edges but not the back edge.
+ * However, that's okay: we don't want to reserve the registers that are
+ * defined within the loop, because then we'd get a contradiction. Instead we
+ * leave them available and then they become fixed points of a sort.
+ */
+static void
+reserve_live_in(struct ra_ctx *rctx)
+{
+      int i;
+      BITSET_FOREACH_SET(i, rctx->block->live_in, rctx->shader->alloc) {
+         /* Skip values defined in loops when processing the loop header */
+         if (!BITSET_TEST(rctx->visited, i))
+            continue;
+
+         for (unsigned j = 0; j < rctx->ncomps[i]; ++j)
+            BITSET_SET(rctx->used_regs, rctx->ssa_to_reg[i] + j);
+      }
+}
+
 /** Assign registers to SSA values in a block. */
 
 static void
-agx_ra_assign_local(agx_block *block, uint8_t *ssa_to_reg, uint8_t *ncomps)
+agx_ra_assign_local(struct ra_ctx *rctx)
 {
    BITSET_DECLARE(used_regs, AGX_NUM_REGS) = { 0 };
 
-   agx_foreach_predecessor(block, pred) {
-      for (unsigned i = 0; i < BITSET_WORDS(AGX_NUM_REGS); ++i)
-         used_regs[i] |= (*pred)->regs_out[i];
-   }
+   agx_block *block = rctx->block;
+   uint8_t *ssa_to_reg = rctx->ssa_to_reg;
+   uint8_t *ncomps = rctx->ncomps;
+   rctx->used_regs = used_regs;
 
-   BITSET_SET(used_regs, 0); // control flow writes r0l
-   BITSET_SET(used_regs, 5*2); // TODO: precolouring, don't overwrite vertex ID
-   BITSET_SET(used_regs, (5*2 + 1));
-   BITSET_SET(used_regs, (6*2 + 0));
-   BITSET_SET(used_regs, (6*2 + 1));
+   reserve_live_in(rctx);
+
+   /* Force the nesting counter r0l live throughout shaders using control flow.
+    * This could be optimized (sync with agx_calc_register_demand).
+    */
+   if (rctx->shader->any_cf)
+      BITSET_SET(used_regs, 0);
 
    agx_foreach_instr_in_block(block, I) {
       /* Optimization: if a split contains the last use of a vector, the split
        * can be removed by assigning the destinations overlapping the source.
        */
-      if (I->op == AGX_OPCODE_P_SPLIT && I->src[0].kill) {
+      if (I->op == AGX_OPCODE_SPLIT && I->src[0].kill) {
          unsigned reg = ssa_to_reg[I->src[0].value];
          unsigned length = ncomps[I->src[0].value];
          unsigned width = agx_size_align_16(agx_split_width(I));
@@ -150,8 +188,25 @@ agx_ra_assign_local(agx_block *block, uint8_t *ssa_to_reg, uint8_t *ncomps)
             assert(offset < length);
 
             ssa_to_reg[I->dest[d].value] = reg + offset;
+            BITSET_SET(rctx->visited, I->dest[d].value);
          }
 
+         continue;
+      } else if (I->op == AGX_OPCODE_PRELOAD) {
+         /* We must coalesce all preload moves */
+         assert(I->dest[0].type == AGX_INDEX_NORMAL);
+         assert(I->dest[0].size == I->src[0].size);
+         assert(I->src[0].type == AGX_INDEX_REGISTER);
+
+         unsigned base = I->src[0].value;
+
+         for (unsigned i = 0; i < agx_size_align_16(I->src[0].size); ++i) {
+            assert(!BITSET_TEST(used_regs, base + i));
+            BITSET_SET(used_regs, base + i);
+         }
+
+         ssa_to_reg[I->dest[0].value] = base;
+         BITSET_SET(rctx->visited, I->dest[0].value);
          continue;
       }
 
@@ -173,9 +228,10 @@ agx_ra_assign_local(agx_block *block, uint8_t *ssa_to_reg, uint8_t *ncomps)
          if (I->dest[d].type == AGX_INDEX_NORMAL) {
             unsigned count = agx_write_registers(I, d);
             unsigned align = agx_size_align_16(I->dest[d].size);
-            unsigned reg = agx_assign_regs(used_regs, count, align, AGX_NUM_REGS);
+            unsigned reg = agx_assign_regs(used_regs, count, align, rctx->bound);
 
             ssa_to_reg[I->dest[d].value] = reg;
+            BITSET_SET(rctx->visited, I->dest[d].value);
          }
       }
    }
@@ -221,10 +277,7 @@ agx_insert_parallel_copies(agx_context *ctx, agx_block *block)
    agx_foreach_successor(block, succ) {
       assert(nr_phi == 0 && "control flow graph has a critical edge");
 
-      /* Phi nodes can only come at the start of the block */
-      agx_foreach_instr_in_block(succ, phi) {
-         if (phi->op != AGX_OPCODE_PHI) break;
-
+      agx_foreach_phi_in_block(succ, phi) {
          assert(!any_succ && "control flow graph has a critical edge");
          nr_phi++;
       }
@@ -242,9 +295,7 @@ agx_insert_parallel_copies(agx_context *ctx, agx_block *block)
 
       unsigned i = 0;
 
-      agx_foreach_instr_in_block(succ, phi) {
-         if (phi->op != AGX_OPCODE_PHI) break;
-
+      agx_foreach_phi_in_block(succ, phi) {
          agx_index dest = phi->dest[0];
          agx_index src = phi->src[pred_index];
 
@@ -273,6 +324,7 @@ agx_ra(agx_context *ctx)
    agx_compute_liveness(ctx);
    uint8_t *ssa_to_reg = calloc(ctx->alloc, sizeof(uint8_t));
    uint8_t *ncomps = calloc(ctx->alloc, sizeof(uint8_t));
+   BITSET_WORD *visited = calloc(BITSET_WORDS(ctx->alloc), sizeof(BITSET_WORD));
 
    agx_foreach_instr_global(ctx, I) {
       agx_foreach_dest(I, d) {
@@ -288,7 +340,14 @@ agx_ra(agx_context *ctx)
     * to a NIR invariant, so we do not need special handling for this.
     */
    agx_foreach_block(ctx, block) {
-      agx_ra_assign_local(block, ssa_to_reg, ncomps);
+      agx_ra_assign_local(&(struct ra_ctx) {
+         .shader = ctx,
+         .block = block,
+         .ssa_to_reg = ssa_to_reg,
+         .ncomps = ncomps,
+         .visited = visited,
+         .bound = AGX_NUM_REGS
+      });
    }
 
    agx_foreach_instr_global(ctx, ins) {
@@ -311,7 +370,7 @@ agx_ra(agx_context *ctx)
       /* Lower away RA pseudo-instructions */
       agx_builder b = agx_init_builder(ctx, agx_after_instr(ins));
 
-      if (ins->op == AGX_OPCODE_P_COMBINE) {
+      if (ins->op == AGX_OPCODE_COLLECT) {
          unsigned base = agx_index_to_reg(ssa_to_reg, ins->dest[0]);
          unsigned width = agx_size_align_16(ins->dest[0].size);
 
@@ -333,15 +392,17 @@ agx_ra(agx_context *ctx)
          agx_emit_parallel_copies(&b, copies, n);
          agx_remove_instruction(ins);
          continue;
-      } else if (ins->op == AGX_OPCODE_P_SPLIT) {
+      } else if (ins->op == AGX_OPCODE_SPLIT) {
          unsigned base = agx_index_to_reg(ssa_to_reg, ins->src[0]);
          unsigned width = agx_size_align_16(agx_split_width(ins));
 
          struct agx_copy copies[4];
+         assert(ins->nr_dests <= ARRAY_SIZE(copies));
+
          unsigned n = 0;
 
          /* Move the sources */
-         for (unsigned i = 0; i < 4; ++i) {
+         agx_foreach_dest(ins, i) {
             if (agx_is_null(ins->dest[i])) continue;
 
             copies[n++] = (struct agx_copy) {
@@ -366,21 +427,41 @@ agx_ra(agx_context *ctx)
       agx_insert_parallel_copies(ctx, block);
    }
 
-   /* Phi nodes can be removed now */
    agx_foreach_instr_global_safe(ctx, I) {
-      if (I->op == AGX_OPCODE_PHI || I->op == AGX_OPCODE_P_LOGICAL_END)
+      switch (I->op) {
+      /* Pseudoinstructions for RA must be removed now */
+      case AGX_OPCODE_PHI:
+      case AGX_OPCODE_LOGICAL_END:
+      case AGX_OPCODE_PRELOAD:
          agx_remove_instruction(I);
+         break;
 
-      /* Remove identity moves */
-      if (I->op == AGX_OPCODE_MOV && I->src[0].type == AGX_INDEX_REGISTER &&
-          I->dest[0].size == I->src[0].size && I->src[0].value == I->dest[0].value) {
+      /* Coalesced moves can be removed */
+      case AGX_OPCODE_MOV:
+         if (I->src[0].type == AGX_INDEX_REGISTER &&
+             I->dest[0].size == I->src[0].size &&
+             I->src[0].value == I->dest[0].value) {
 
-         assert(I->dest[0].type == AGX_INDEX_REGISTER);
+            assert(I->dest[0].type == AGX_INDEX_REGISTER);
+            agx_remove_instruction(I);
+         }
+         break;
+
+      /* Writes to the nesting counter lowered to the real register */
+      case AGX_OPCODE_NEST: {
+         agx_builder b = agx_init_builder(ctx, agx_before_instr(I));
+         agx_mov_to(&b, agx_register(0, AGX_SIZE_16), I->src[0]);
          agx_remove_instruction(I);
+         break;
+      }
+
+      default:
+         break;
       }
    }
 
    free(ssa_to_reg);
    free(ncomps);
+   free(visited);
    free(alloc);
 }

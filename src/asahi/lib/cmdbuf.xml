@@ -1,4 +1,6 @@
-<agxml>
+<?xml version="1.0" ?>
+<genxml>
+
   <enum name="Channel">
     <value name="R" value="0"/>
     <value name="G" value="1"/>
@@ -169,15 +171,11 @@
     <field name="Base coefficient register" size="8" start="16" type="uint"/>
   </struct>
 
-  <struct name="Format" size="2">
-    <field name="Channels" size="7" start="0" type="Channels"/>
-    <field name="Type" size="3" start="7" type="Texture Type"/>
-  </struct>
-
   <struct name="Render Target" size="24">
     <field name="Unknown" size="4" start="0" type="hex" default="0x2"/>
     <field name="Layout" size="2" start="4" type="Layout"/>
-    <field name="Format" size="10" start="6" type="Pixel Format"/>
+    <field name="Channels" size="7" start="6" type="Channels"/>
+    <field name="Type" size="3" start="13" type="Texture Type"/>
     <field name="Swizzle R" size="2" start="16" type="Channel"/>
     <field name="Swizzle G" size="2" start="18" type="Channel"/>
     <field name="Swizzle B" size="2" start="20" type="Channel"/>
@@ -228,7 +226,8 @@
   <struct name="Texture" size="24">
     <field name="Dimension" size="4" start="0" type="Texture dimension" default="2D"/>
     <field name="Layout" size="2" start="4" type="Layout"/>
-    <field name="Format" size="10" start="6" type="Pixel Format"/>
+    <field name="Channels" size="7" start="6" type="Channels"/>
+    <field name="Type" size="3" start="13" type="Texture Type"/>
     <field name="Swizzle R" size="3" start="16" type="Channel" default="R"/>
     <field name="Swizzle G" size="3" start="19" type="Channel" default="G"/>
     <field name="Swizzle B" size="3" start="22" type="Channel" default="B"/>
@@ -905,4 +904,4 @@
     <field name="Count" start="3:0" size="32" type="uint"/>
   </struct>
 
-</agxml>
+</genxml>

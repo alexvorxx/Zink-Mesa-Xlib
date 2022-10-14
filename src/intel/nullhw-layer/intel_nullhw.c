@@ -54,7 +54,7 @@ struct device_data {
 };
 
 static struct hash_table_u64 *vk_object_to_data = NULL;
-static simple_mtx_t vk_object_to_data_mutex = _SIMPLE_MTX_INITIALIZER_NP;
+static simple_mtx_t vk_object_to_data_mutex = SIMPLE_MTX_INITIALIZER;
 
 static inline void ensure_vk_object_map(void)
 {

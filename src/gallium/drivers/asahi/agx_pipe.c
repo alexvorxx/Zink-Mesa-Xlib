@@ -918,7 +918,6 @@ agx_get_shader_param(struct pipe_screen* pscreen,
                      enum pipe_shader_type shader,
                      enum pipe_shader_cap param)
 {
-   bool is_deqp = agx_device(pscreen)->debug & AGX_DBG_DEQP;
    bool is_no16 = agx_device(pscreen)->debug & AGX_DBG_NO16;
 
    if (shader != PIPE_SHADER_VERTEX &&
@@ -962,8 +961,6 @@ agx_get_shader_param(struct pipe_screen* pscreen,
       return 0;
 
    case PIPE_SHADER_CAP_INDIRECT_CONST_ADDR:
-      return is_deqp;
-
    case PIPE_SHADER_CAP_INTEGERS:
       return true;
 

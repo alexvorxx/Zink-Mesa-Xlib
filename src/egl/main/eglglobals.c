@@ -47,7 +47,7 @@
 #endif
 
 
-static simple_mtx_t _eglGlobalMutex = _SIMPLE_MTX_INITIALIZER_NP;
+static simple_mtx_t _eglGlobalMutex = SIMPLE_MTX_INITIALIZER;
 
 struct _egl_global _eglGlobal =
 {
