@@ -1984,7 +1984,8 @@ zink_screen_init_semaphore(struct zink_screen *screen)
 }
 
 bool
-zink_screen_timeline_wait(struct zink_screen *screen, uint64_t batch_id, uint64_t timeout)
+//zink_screen_timeline_wait(struct zink_screen *screen, uint64_t batch_id, uint64_t timeout)
+zink_screen_timeline_wait(struct zink_screen *screen, uint32_t batch_id, uint64_t timeout)
 {
    VkSemaphoreWaitInfo wi = {0};
 
@@ -1993,8 +1994,13 @@ zink_screen_timeline_wait(struct zink_screen *screen, uint64_t batch_id, uint64_
 
    wi.sType = VK_STRUCTURE_TYPE_SEMAPHORE_WAIT_INFO;
    wi.semaphoreCount = 1;
-   wi.pSemaphores = &screen->sem;
-   wi.pValues = &batch_id;
+   /*wi.pSemaphores = &screen->sem;
+   wi.pValues = &batch_id;*/
+   /* handle batch_id overflow */
+   wi.pSemaphores = batch_id > screen->curr_batch ? &screen->prev_sem : &screen->sem;
+   uint64_t batch_id64 = batch_id;
+   wi.pValues = &batch_id64;
+
    bool success = false;
    if (screen->device_lost)
       return true;

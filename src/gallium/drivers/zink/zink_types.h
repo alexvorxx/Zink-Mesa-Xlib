@@ -207,7 +207,9 @@ struct zink_tc_fence {
 struct zink_fence {
    VkFence fence;
 
-   uint64_t batch_id;
+   //uint64_t batch_id;
+   uint32_t batch_id;
+
    bool submitted;
    bool completed;
 };
@@ -1111,7 +1113,9 @@ struct zink_screen {
    bool threaded;
    bool is_cpu;
    bool abort_on_hang;
-   uint64_t curr_batch; //the current batch id
+   //uint64_t curr_batch; //the current batch id
+   uint32_t curr_batch; //the current batch id
+
    uint32_t last_finished;
    VkSemaphore sem;
 

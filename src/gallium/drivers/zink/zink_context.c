@@ -3734,7 +3734,8 @@ zink_fence_wait(struct pipe_context *pctx)
 }
 
 void
-zink_wait_on_batch(struct zink_context *ctx, uint64_t batch_id)
+//zink_wait_on_batch(struct zink_context *ctx, uint64_t batch_id)
+zink_wait_on_batch(struct zink_context *ctx, uint32_t batch_id)
 {
    struct zink_batch_state *bs;
    if (!batch_id) {
@@ -3785,7 +3786,8 @@ zink_wait_on_batch(struct zink_context *ctx, uint64_t batch_id)
 }
 
 bool
-zink_check_batch_completion(struct zink_context *ctx, uint64_t batch_id)
+//zink_check_batch_completion(struct zink_context *ctx, uint64_t batch_id)
+zink_check_batch_completion(struct zink_context *ctx, uint32_t batch_id)
 {
    assert(ctx->batch.state);
    if (!batch_id)

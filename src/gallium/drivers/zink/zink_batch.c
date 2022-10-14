@@ -458,7 +458,9 @@ submit_queue(void *data, void *gdata, int thread_index)
    VkSubmitInfo si[2] = {0};
    int num_si = 2;
    while (!bs->fence.batch_id)
-      bs->fence.batch_id = (uint32_t)p_atomic_inc_return(&screen->curr_batch);
+      //bs->fence.batch_id = (uint32_t)p_atomic_inc_return(&screen->curr_batch);
+      bs->fence.batch_id = p_atomic_inc_return(&screen->curr_batch);
+
    bs->usage.usage = bs->fence.batch_id;
    bs->usage.unflushed = false;
 

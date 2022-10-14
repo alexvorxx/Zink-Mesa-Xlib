@@ -702,9 +702,11 @@ kopper_present(void *data, void *gdata, int thread_idx)
    }
    /* queue this wait semaphore for deletion on completion of the next batch */
    assert(screen->curr_batch > 0);
-   uint32_t next = (uint32_t)screen->curr_batch + 1;
+   //uint32_t next = (uint32_t)screen->curr_batch + 1;
    /* handle overflow */
-   next = MAX2(next + 1, 1);
+   //next = MAX2(next + 1, 1);
+   uint32_t next = screen->curr_batch + 1;
+
    struct hash_entry *he = _mesa_hash_table_search(swapchain->presents, (void*)(uintptr_t)next);
    if (he)
       arr = he->data;
