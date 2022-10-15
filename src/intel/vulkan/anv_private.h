@@ -1102,6 +1102,7 @@ struct anv_queue {
 
 struct nir_xfb_info;
 struct anv_pipeline_bind_map;
+struct anv_push_descriptor_info;
 
 extern const struct vk_pipeline_cache_object_ops *const anv_cache_import_ops[2];
 
@@ -1122,7 +1123,8 @@ anv_device_upload_kernel(struct anv_device *device,
                          const struct brw_compile_stats *stats,
                          uint32_t num_stats,
                          const struct nir_xfb_info *xfb_info,
-                         const struct anv_pipeline_bind_map *bind_map);
+                         const struct anv_pipeline_bind_map *bind_map,
+                         const struct anv_push_descriptor_info *push_desc_info);
 
 struct nir_shader;
 struct nir_shader_compiler_options;
@@ -1708,6 +1710,8 @@ bool anv_descriptor_requires_bindless(const struct anv_physical_device *pdevice,
 struct anv_descriptor_set_layout {
    struct vk_object_base base;
 
+   VkDescriptorSetLayoutCreateFlags flags;
+
    /* Descriptor set layouts can be destroyed at almost any time */
    uint32_t ref_cnt;
 
@@ -1790,6 +1794,14 @@ struct anv_descriptor_set {
     * be larger than the size of the descriptor set.
     */
    uint32_t size;
+
+   /* Is this descriptor set a push descriptor */
+   bool is_push;
+
+   /* Bitfield of descriptors for which we need to generate surface states.
+    * Only valid for push descriptors
+    */
+   uint32_t generate_surface_states;
 
    /* State relative to anv_descriptor_pool::bo */
    struct anv_state desc_mem;
@@ -1904,13 +1916,17 @@ anv_descriptor_set_write_buffer_view(struct anv_device *device,
 void
 anv_descriptor_set_write_buffer(struct anv_device *device,
                                 struct anv_descriptor_set *set,
-                                struct anv_state_stream *alloc_stream,
                                 VkDescriptorType type,
                                 struct anv_buffer *buffer,
                                 uint32_t binding,
                                 uint32_t element,
                                 VkDeviceSize offset,
                                 VkDeviceSize range);
+
+void
+anv_descriptor_write_surface_state(struct anv_device *device,
+                                   struct anv_descriptor *desc,
+                                   struct anv_state surface_state);
 
 void
 anv_descriptor_set_write_acceleration_structure(struct anv_device *device,
@@ -1930,7 +1946,6 @@ anv_descriptor_set_write_inline_uniform_data(struct anv_device *device,
 void
 anv_descriptor_set_write_template(struct anv_device *device,
                                   struct anv_descriptor_set *set,
-                                  struct anv_state_stream *alloc_stream,
                                   const struct vk_descriptor_update_template *template,
                                   const void *data);
 
@@ -1947,6 +1962,11 @@ struct anv_pipeline_binding {
     * into account.
     */
    uint32_t index;
+
+   /** Binding in the descriptor set. Not valid for any of the
+    * ANV_DESCRIPTOR_SET_*
+    */
+   uint32_t binding;
 
    /** The descriptor set this surface corresponds to.
     *
@@ -1965,11 +1985,6 @@ struct anv_pipeline_binding {
 
    /** For a storage image, whether it requires a lowered surface */
    uint8_t lowered_storage_surface;
-
-   /** Pad to 64 bits so that there are no holes and we can safely memcmp
-    * assuming POD zero-initialization.
-    */
-   uint8_t pad;
 };
 
 struct anv_push_range {
@@ -2002,6 +2017,10 @@ struct anv_pipeline_layout {
    unsigned char sha1[20];
 };
 
+const struct anv_descriptor_set_layout *
+anv_pipeline_layout_get_push_set(const struct anv_pipeline_layout *layout,
+                                 uint8_t *desc_idx);
+
 struct anv_buffer {
    struct vk_buffer vk;
 
@@ -2014,6 +2033,7 @@ enum anv_cmd_dirty_bits {
    ANV_CMD_DIRTY_INDEX_BUFFER                        = 1 << 1,
    ANV_CMD_DIRTY_RENDER_TARGETS                      = 1 << 2,
    ANV_CMD_DIRTY_XFB_ENABLE                          = 1 << 3,
+   ANV_CMD_DIRTY_RESTART_INDEX                       = 1 << 4,
 };
 typedef enum anv_cmd_dirty_bits anv_cmd_dirty_mask_t;
 
@@ -2432,7 +2452,7 @@ anv_gfx8_9_vb_cache_range_needs_workaround(struct anv_vb_cache_range *bound,
  */
 struct anv_cmd_pipeline_state {
    struct anv_descriptor_set *descriptors[MAX_SETS];
-   struct anv_push_descriptor_set *push_descriptors[MAX_SETS];
+   struct anv_push_descriptor_set *push_descriptor;
 
    struct anv_push_constants push_constants;
 
@@ -2536,6 +2556,7 @@ struct anv_cmd_state {
 
    enum anv_pipe_bits                           pending_pipe_bits;
    VkShaderStageFlags                           descriptors_dirty;
+   VkShaderStageFlags                           push_descriptors_dirty;
    VkShaderStageFlags                           push_constants_dirty;
 
    struct anv_vertex_binding                    vertex_bindings[MAX_VBS];
@@ -2846,6 +2867,17 @@ struct anv_pipeline_bind_map {
    struct anv_push_range                        push_ranges[4];
 };
 
+struct anv_push_descriptor_info {
+   /* A bitfield of descriptors used. */
+   uint32_t used_descriptors;
+
+   /* A bitfield of UBOs bindings fully promoted to push constants. */
+   uint32_t fully_promoted_ubo_descriptors;
+
+   /* */
+   uint8_t used_set_buffer;
+};
+
 struct anv_shader_bin {
    struct vk_pipeline_cache_object base;
 
@@ -2862,6 +2894,8 @@ struct anv_shader_bin {
 
    struct nir_xfb_info *xfb_info;
 
+   struct anv_push_descriptor_info push_desc_info;
+
    struct anv_pipeline_bind_map bind_map;
 };
 
@@ -2874,7 +2908,8 @@ anv_shader_bin_create(struct anv_device *device,
                       uint32_t prog_data_size,
                       const struct brw_compile_stats *stats, uint32_t num_stats,
                       const struct nir_xfb_info *xfb_info,
-                      const struct anv_pipeline_bind_map *bind_map);
+                      const struct anv_pipeline_bind_map *bind_map,
+                      const struct anv_push_descriptor_info *push_desc_info);
 
 static inline void
 anv_shader_bin_ref(struct anv_shader_bin *shader)
@@ -2931,6 +2966,16 @@ struct anv_pipeline {
    VkPipelineCreateFlags                        flags;
 
    uint32_t                                     ray_queries;
+
+   /**
+    * Mask of stages that are accessing push descriptors.
+    */
+   VkShaderStageFlags                           use_push_descriptor;
+
+   /**
+    * Mask of stages that are accessing the push descriptors buffer.
+    */
+   VkShaderStageFlags                           use_push_descriptor_buffer;
 
    struct util_dynarray                         executables;
 

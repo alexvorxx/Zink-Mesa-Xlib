@@ -591,9 +591,6 @@ zink_get_param(struct pipe_screen *pscreen, enum pipe_cap param)
    case PIPE_CAP_SHADER_CLOCK:
       return screen->info.have_KHR_shader_clock;
 
-   case PIPE_CAP_POINT_SPRITE:
-      return 1;
-
    case PIPE_CAP_SHADER_BALLOT:
       if (screen->info.props11.subgroupSize > 64)
          return false;

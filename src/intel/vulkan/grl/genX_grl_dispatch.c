@@ -44,6 +44,7 @@ get_shader_bin(struct anv_device *device,
    assert(kernel_data.prog_data.base.nr_params <= ARRAY_SIZE(dummy_param));
    kernel_data.prog_data.base.param = dummy_param;
 
+   struct anv_push_descriptor_info push_desc_info = {};
    struct anv_pipeline_bind_map bind_map = {
       .kernel_args_size = kernel_data.args_size,
       .kernel_arg_count = kernel_data.arg_count,
@@ -57,7 +58,8 @@ get_shader_bin(struct anv_device *device,
                                   kernel_data.prog_data.base.program_size,
                                   &kernel_data.prog_data.base,
                                   sizeof(kernel_data.prog_data),
-                                  NULL, 0, NULL, &bind_map);
+                                  NULL, 0, NULL, &bind_map,
+                                  &push_desc_info);
 
    /* The cache already has a reference and it's not going anywhere so there
     * is no need to hold a second reference.

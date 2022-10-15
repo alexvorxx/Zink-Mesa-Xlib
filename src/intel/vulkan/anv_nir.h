@@ -82,6 +82,17 @@ void anv_nir_validate_push_layout(struct brw_stage_prog_data *prog_data,
 
 bool anv_nir_add_base_work_group_id(nir_shader *shader);
 
+uint32_t anv_nir_compute_used_push_descriptors(nir_shader *shader,
+                                               const struct anv_pipeline_layout *layout);
+
+bool anv_nir_loads_push_desc_buffer(nir_shader *nir,
+                                    const struct anv_pipeline_layout *layout,
+                                    const struct anv_pipeline_bind_map *bind_map);
+
+uint32_t anv_nir_push_desc_ubo_fully_promoted(nir_shader *nir,
+                                              const struct anv_pipeline_layout *layout,
+                                              const struct anv_pipeline_bind_map *bind_map);
+
 #ifdef __cplusplus
 }
 #endif

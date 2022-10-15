@@ -216,8 +216,6 @@ svga_get_param(struct pipe_screen *screen, enum pipe_cap param)
       return sws->have_vgpu10 ? 1 : 0;
    case PIPE_CAP_ANISOTROPIC_FILTER:
       return 1;
-   case PIPE_CAP_POINT_SPRITE:
-      return 1;
    case PIPE_CAP_MAX_RENDER_TARGETS:
       return svgascreen->max_color_buffers;
    case PIPE_CAP_OCCLUSION_QUERY:

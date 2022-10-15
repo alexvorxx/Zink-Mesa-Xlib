@@ -662,9 +662,13 @@ struct anv_pipeline_stage {
 
    nir_shader *nir;
 
+   struct anv_push_descriptor_info push_desc_info;
+
    struct anv_pipeline_binding surface_to_descriptor[256];
    struct anv_pipeline_binding sampler_to_descriptor[256];
    struct anv_pipeline_bind_map bind_map;
+
+   bool uses_bt_for_push_descs;
 
    union brw_any_prog_data prog_data;
 
@@ -787,6 +791,38 @@ anv_pipeline_hash_ray_tracing_combined_shader(struct anv_ray_tracing_pipeline *p
    _mesa_sha1_final(&ctx, sha1_out);
 }
 
+static void
+anv_stage_nullify_unused_push_desc_surfaces(struct anv_pipeline_stage *stage,
+                                            struct anv_pipeline_layout *layout)
+{
+   uint8_t push_set;
+   const struct anv_descriptor_set_layout *push_set_layout =
+      anv_pipeline_layout_get_push_set(layout, &push_set);
+   if (push_set_layout == NULL)
+      return;
+
+   const uint32_t to_keep_descriptors =
+      stage->push_desc_info.used_descriptors &
+      ~stage->push_desc_info.fully_promoted_ubo_descriptors;
+
+   for (unsigned s = 0; s < stage->bind_map.surface_count; s++) {
+      if (stage->bind_map.surface_to_descriptor[s].set == ANV_DESCRIPTOR_SET_DESCRIPTORS &&
+          stage->bind_map.surface_to_descriptor[s].index == push_set &&
+          !stage->push_desc_info.used_set_buffer)
+         stage->bind_map.surface_to_descriptor[s].set = ANV_DESCRIPTOR_SET_NULL;
+
+
+      if (stage->bind_map.surface_to_descriptor[s].set == push_set) {
+         const uint32_t binding =
+            stage->bind_map.surface_to_descriptor[s].binding;
+         const uint32_t desc_index =
+            push_set_layout->binding[binding].descriptor_index;
+         if (!(BITFIELD_BIT(desc_index) & to_keep_descriptors))
+            stage->bind_map.surface_to_descriptor[s].set = ANV_DESCRIPTOR_SET_NULL;
+      }
+   }
+}
+
 static nir_shader *
 anv_pipeline_stage_get_nir(struct anv_pipeline *pipeline,
                            struct vk_pipeline_cache *cache,
@@ -887,6 +923,9 @@ anv_pipeline_lower_nir(struct anv_pipeline *pipeline,
 
    NIR_PASS(_, nir, brw_nir_lower_ray_queries, &pdevice->info);
 
+   stage->push_desc_info.used_descriptors =
+      anv_nir_compute_used_push_descriptors(nir, layout);
+
    /* Apply the actual pipeline layout to UBOs, SSBOs, and textures */
    NIR_PASS_V(nir, anv_nir_apply_pipeline_layout,
               pdevice, pipeline->device->robust_buffer_access,
@@ -961,6 +1000,12 @@ anv_pipeline_lower_nir(struct anv_pipeline *pipeline,
    if (gl_shader_stage_is_compute(nir->info.stage) ||
        gl_shader_stage_is_mesh(nir->info.stage))
       NIR_PASS(_, nir, brw_nir_lower_cs_intrinsics);
+
+   stage->push_desc_info.used_set_buffer =
+      anv_nir_loads_push_desc_buffer(nir, layout, &stage->bind_map);
+   stage->push_desc_info.fully_promoted_ubo_descriptors =
+      anv_nir_push_desc_ubo_fully_promoted(nir, layout, &stage->bind_map);
+   anv_stage_nullify_unused_push_desc_surfaces(stage, layout);
 
    stage->nir = nir;
 }
@@ -1266,12 +1311,15 @@ anv_pipeline_link_fs(const struct brw_compiler *compiler,
             rt_bindings[rt] = (struct anv_pipeline_binding) {
                .set = ANV_DESCRIPTOR_SET_COLOR_ATTACHMENTS,
                .index = rt,
+               .binding = UINT32_MAX,
+
             };
          } else {
             /* Setup a null render target */
             rt_bindings[rt] = (struct anv_pipeline_binding) {
                .set = ANV_DESCRIPTOR_SET_COLOR_ATTACHMENTS,
                .index = UINT32_MAX,
+               .binding = UINT32_MAX,
             };
          }
       }
@@ -1453,6 +1501,14 @@ anv_pipeline_add_executables(struct anv_pipeline *pipeline,
    }
 
    pipeline->ray_queries = MAX2(pipeline->ray_queries, bin->prog_data->ray_queries);
+
+   if (bin->push_desc_info.used_set_buffer) {
+      pipeline->use_push_descriptor_buffer |=
+         BITFIELD_BIT(mesa_to_vk_shader_stage(stage->stage));
+   }
+   if (bin->push_desc_info.used_descriptors &
+       ~bin->push_desc_info.fully_promoted_ubo_descriptors)
+      pipeline->use_push_descriptor |= mesa_to_vk_shader_stage(stage->stage);
 }
 
 static void
@@ -1921,7 +1977,8 @@ anv_graphics_pipeline_compile(struct anv_graphics_pipeline *pipeline,
                                   brw_prog_data_size(s),
                                   stage->stats, stage->num_stats,
                                   stage->nir->xfb_info,
-                                  &stage->bind_map);
+                                  &stage->bind_map,
+                                  &stage->push_desc_info);
       if (!bin) {
          ralloc_free(stage_ctx);
          result = vk_error(pipeline, VK_ERROR_OUT_OF_HOST_MEMORY);
@@ -2034,6 +2091,7 @@ anv_pipeline_compile_cs(struct anv_compute_pipeline *pipeline,
       stage.bind_map.surface_count = 1;
       stage.bind_map.surface_to_descriptor[0] = (struct anv_pipeline_binding) {
          .set = ANV_DESCRIPTOR_SET_NUM_WORK_GROUPS,
+         .binding = UINT32_MAX,
       };
 
       stage.nir = anv_pipeline_stage_get_nir(&pipeline->base, cache, mem_ctx, &stage);
@@ -2081,7 +2139,8 @@ anv_pipeline_compile_cs(struct anv_compute_pipeline *pipeline,
                                      &stage.prog_data.base,
                                      sizeof(stage.prog_data.cs),
                                      stage.stats, stage.num_stats,
-                                     NULL, &stage.bind_map);
+                                     NULL, &stage.bind_map,
+                                     &stage.push_desc_info);
       if (!bin) {
          ralloc_free(mem_ctx);
          return vk_error(pipeline, VK_ERROR_OUT_OF_HOST_MEMORY);
@@ -2444,7 +2503,8 @@ compile_upload_rt_shader(struct anv_ray_tracing_pipeline *pipeline,
                                &stage->prog_data.base,
                                sizeof(stage->prog_data.bs),
                                stage->stats, 1,
-                               NULL, &empty_bind_map);
+                               NULL, &empty_bind_map,
+                               false /* push_descriptor_uses_bt */);
    if (bin == NULL)
       return vk_error(pipeline, VK_ERROR_OUT_OF_HOST_MEMORY);
 
@@ -2872,6 +2932,7 @@ anv_device_init_rt_shaders(struct anv_device *device)
 
       trampoline_nir->info.subgroup_size = SUBGROUP_SIZE_REQUIRE_16;
 
+      struct anv_push_descriptor_info push_desc_info = {};
       struct anv_pipeline_bind_map bind_map = {
          .surface_count = 0,
          .sampler_count = 0,
@@ -2900,7 +2961,8 @@ anv_device_init_rt_shaders(struct anv_device *device)
                                   trampoline_prog_data.base.program_size,
                                   &trampoline_prog_data.base,
                                   sizeof(trampoline_prog_data),
-                                  NULL, 0, NULL, &bind_map);
+                                  NULL, 0, NULL, &bind_map,
+                                  &push_desc_info);
 
       ralloc_free(tmp_ctx);
 
@@ -2932,6 +2994,7 @@ anv_device_init_rt_shaders(struct anv_device *device)
 
       NIR_PASS_V(trivial_return_nir, brw_nir_lower_rt_intrinsics, device->info);
 
+      struct anv_push_descriptor_info push_desc_info = {};
       struct anv_pipeline_bind_map bind_map = {
          .surface_count = 0,
          .sampler_count = 0,
@@ -2953,7 +3016,8 @@ anv_device_init_rt_shaders(struct anv_device *device)
                                   &return_key, sizeof(return_key),
                                   return_data, return_prog_data.base.program_size,
                                   &return_prog_data.base, sizeof(return_prog_data),
-                                  NULL, 0, NULL, &bind_map);
+                                  NULL, 0, NULL, &bind_map,
+                                  &push_desc_info);
 
       ralloc_free(tmp_ctx);
 

@@ -111,10 +111,6 @@ lima_screen_get_param(struct pipe_screen *pscreen, enum pipe_cap param)
    case PIPE_CAP_SURFACE_SAMPLE_COUNT:
       return 1;
 
-   /* Unimplemented, but for exporting OpenGL 2.0 */
-   case PIPE_CAP_POINT_SPRITE:
-      return 1;
-
    /* not clear supported */
    case PIPE_CAP_FS_COORD_ORIGIN_UPPER_LEFT:
    case PIPE_CAP_FS_COORD_ORIGIN_LOWER_LEFT:

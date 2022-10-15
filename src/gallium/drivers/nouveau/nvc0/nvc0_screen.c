@@ -226,7 +226,6 @@ nvc0_screen_get_param(struct pipe_screen *pscreen, enum pipe_cap param)
    case PIPE_CAP_TEXTURE_BUFFER_OBJECTS:
    case PIPE_CAP_TEXTURE_MULTISAMPLE:
    case PIPE_CAP_DEPTH_CLIP_DISABLE:
-   case PIPE_CAP_POINT_SPRITE:
    case PIPE_CAP_TGSI_TEXCOORD:
    case PIPE_CAP_FRAGMENT_SHADER_TEXTURE_LOD:
    case PIPE_CAP_FRAGMENT_SHADER_DERIVATIVES:

@@ -887,7 +887,7 @@ traces:
       checksum: 3d419f45bc5ce210a7df583e92143089
   blender/blender-demo-cube_diorama.trace:
     gl-intel-apl:
-      label: [no-perf]
+      label: [skip, flakes, no-perf]
       checksum: 6a0e17d98eca33e80810b6158e998aa1
       text: causes intermittent timeouts
     gl-intel-glx:

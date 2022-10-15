@@ -523,10 +523,21 @@ fn lower_and_optimize_nir_late(
             | nir_variable_mode::nir_var_mem_global,
         Some(glsl_get_cl_type_size_align),
     );
+
+    let global_address_format;
+    let shared_address_format;
+    if dev.address_bits() == 32 {
+        global_address_format = nir_address_format::nir_address_format_32bit_global;
+        shared_address_format = nir_address_format::nir_address_format_32bit_offset;
+    } else {
+        global_address_format = nir_address_format::nir_address_format_64bit_global;
+        shared_address_format = nir_address_format::nir_address_format_32bit_offset_as_64bit;
+    }
+
     nir.pass2(
         nir_lower_explicit_io,
         nir_variable_mode::nir_var_mem_global | nir_variable_mode::nir_var_mem_constant,
-        nir_address_format::nir_address_format_64bit_global,
+        global_address_format,
     );
     nir.pass0(nir_lower_system_values);
     let mut compute_options = nir_lower_compute_system_values_options::default();
@@ -539,7 +550,7 @@ fn lower_and_optimize_nir_late(
         nir_variable_mode::nir_var_mem_shared
             | nir_variable_mode::nir_var_function_temp
             | nir_variable_mode::nir_var_uniform,
-        nir_address_format::nir_address_format_32bit_offset_as_64bit,
+        shared_address_format,
     );
 
     if nir_options.lower_int64_options.0 != 0 {

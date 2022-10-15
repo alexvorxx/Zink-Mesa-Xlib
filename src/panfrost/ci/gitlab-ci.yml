@@ -4,7 +4,7 @@
     PAN_MESA_DEBUG: sync
     HWCI_FREQ_MAX: "true"
 
-panfrost-t720-gles2:arm64:
+.panfrost-t720-gles2:arm64:
   extends:
     - .lava-test:arm64
     - .panfrost-midgard-rules

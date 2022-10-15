@@ -85,7 +85,6 @@ nv30_screen_get_param(struct pipe_screen *pscreen, enum pipe_cap param)
 
    /* supported capabilities */
    case PIPE_CAP_ANISOTROPIC_FILTER:
-   case PIPE_CAP_POINT_SPRITE:
    case PIPE_CAP_OCCLUSION_QUERY:
    case PIPE_CAP_QUERY_TIME_ELAPSED:
    case PIPE_CAP_QUERY_TIMESTAMP:

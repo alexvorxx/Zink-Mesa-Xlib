@@ -280,7 +280,9 @@ genX(cmd_buffer_so_memcpy)(struct anv_cmd_buffer *cmd_buffer,
       genX(cmd_buffer_config_l3)(cmd_buffer, cfg);
    }
 
+#if GFX_VER == 9
    genX(cmd_buffer_set_binding_for_gfx8_vb_flush)(cmd_buffer, 32, src, size);
+#endif
    genX(cmd_buffer_apply_pipe_flushes)(cmd_buffer);
 
    genX(flush_pipeline_select_3d)(cmd_buffer);
@@ -289,8 +291,10 @@ genX(cmd_buffer_so_memcpy)(struct anv_cmd_buffer *cmd_buffer,
                          cmd_buffer->state.current_l3_config);
    emit_so_memcpy(&cmd_buffer->batch, cmd_buffer->device, dst, src, size);
 
+#if GFX_VER == 9
    genX(cmd_buffer_update_dirty_vbs_for_gfx8_vb_flush)(cmd_buffer, SEQUENTIAL,
                                                        1ull << 32);
+#endif
 
    /* Invalidate pipeline & raster discard since we touch
     * 3DSTATE_STREAMOUT.

@@ -63,12 +63,14 @@ upload_blorp_shader(struct blorp_batch *batch, uint32_t stage,
       .surface_count = 0,
       .sampler_count = 0,
    };
+   struct anv_push_descriptor_info push_desc_info = {};
 
    struct anv_shader_bin *bin =
       anv_device_upload_kernel(device, device->internal_cache, stage,
                                key, key_size, kernel, kernel_size,
                                prog_data, prog_data_size,
-                               NULL, 0, NULL, &bind_map);
+                               NULL, 0, NULL, &bind_map,
+                               &push_desc_info);
 
    if (!bin)
       return false;

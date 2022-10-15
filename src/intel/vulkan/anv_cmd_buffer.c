@@ -57,12 +57,10 @@ static void
 anv_cmd_pipeline_state_finish(struct anv_cmd_buffer *cmd_buffer,
                               struct anv_cmd_pipeline_state *pipe_state)
 {
-   for (uint32_t i = 0; i < ARRAY_SIZE(pipe_state->push_descriptors); i++) {
-      if (pipe_state->push_descriptors[i]) {
-         anv_descriptor_set_layout_unref(cmd_buffer->device,
-             pipe_state->push_descriptors[i]->set.layout);
-         vk_free(&cmd_buffer->vk.pool->alloc, pipe_state->push_descriptors[i]);
-      }
+   if (pipe_state->push_descriptor) {
+      anv_descriptor_set_layout_unref(cmd_buffer->device,
+                                      pipe_state->push_descriptor->set.layout);
+      vk_free(&cmd_buffer->vk.pool->alloc, pipe_state->push_descriptor);
    }
 }
 
@@ -592,7 +590,10 @@ anv_cmd_buffer_bind_descriptor_set(struct anv_cmd_buffer *cmd_buffer,
       }
    }
 
-   cmd_buffer->state.descriptors_dirty |= dirty_stages;
+   if (set->is_push)
+      cmd_buffer->state.push_descriptors_dirty |= dirty_stages;
+   else
+      cmd_buffer->state.descriptors_dirty |= dirty_stages;
    cmd_buffer->state.push_constants_dirty |= dirty_stages;
 }
 
@@ -877,7 +878,7 @@ anv_cmd_buffer_push_descriptor_set(struct anv_cmd_buffer *cmd_buffer,
    }
 
    struct anv_push_descriptor_set **push_set =
-      &pipe_state->push_descriptors[_set];
+      &pipe_state->push_descriptor;
 
    if (*push_set == NULL) {
       *push_set = vk_zalloc(&cmd_buffer->vk.pool->alloc,
@@ -897,6 +898,7 @@ anv_cmd_buffer_push_descriptor_set(struct anv_cmd_buffer *cmd_buffer,
       anv_descriptor_set_layout_ref(layout);
       set->layout = layout;
    }
+   set->is_push = true;
    set->size = anv_descriptor_set_layout_size(layout, 0);
    set->buffer_view_count = layout->buffer_view_count;
    set->descriptor_count = layout->descriptor_count;
@@ -923,21 +925,6 @@ anv_cmd_buffer_push_descriptor_set(struct anv_cmd_buffer *cmd_buffer,
          .bo = cmd_buffer->dynamic_state_stream.state_pool->block_pool.bo,
          .offset = set->desc_mem.offset,
       };
-
-      enum isl_format format =
-         anv_isl_format_for_descriptor_type(cmd_buffer->device,
-                                            VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
-
-      const struct isl_device *isl_dev = &cmd_buffer->device->isl_dev;
-      set->desc_surface_state =
-         anv_state_stream_alloc(&cmd_buffer->surface_state_stream,
-                                isl_dev->ss.size, isl_dev->ss.align);
-      anv_fill_buffer_surface_state(cmd_buffer->device,
-                                    set->desc_surface_state,
-                                    format, ISL_SWIZZLE_IDENTITY,
-                                    ISL_SURF_USAGE_CONSTANT_BUFFER_BIT,
-                                    set->desc_addr,
-                                    layout->descriptor_buffer_size, 1);
    }
 
    return set;
@@ -1005,7 +992,6 @@ void anv_CmdPushDescriptorSetKHR(
             ANV_FROM_HANDLE(anv_buffer, buffer, write->pBufferInfo[j].buffer);
 
             anv_descriptor_set_write_buffer(cmd_buffer->device, set,
-                                            &cmd_buffer->surface_state_stream,
                                             write->descriptorType,
                                             buffer,
                                             write->dstBinding,
@@ -1063,7 +1049,6 @@ void anv_CmdPushDescriptorSetWithTemplateKHR(
       return;
 
    anv_descriptor_set_write_template(cmd_buffer->device, set,
-                                     &cmd_buffer->surface_state_stream,
                                      template,
                                      pData);
 

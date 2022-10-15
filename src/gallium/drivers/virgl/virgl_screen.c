@@ -89,8 +89,6 @@ virgl_get_param(struct pipe_screen *screen, enum pipe_cap param)
       return 1;
    case PIPE_CAP_ANISOTROPIC_FILTER:
       return vscreen->caps.caps.v2.max_anisotropy > 1.0;
-   case PIPE_CAP_POINT_SPRITE:
-      return 1;
    case PIPE_CAP_MAX_RENDER_TARGETS:
       return vscreen->caps.caps.v1.max_render_targets;
    case PIPE_CAP_MAX_DUAL_SOURCE_RENDER_TARGETS:

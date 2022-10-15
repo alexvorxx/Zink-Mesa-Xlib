@@ -1351,6 +1351,7 @@ anv_nir_apply_pipeline_layout(nir_shader *shader,
          map->surface_to_descriptor[map->surface_count] =
             (struct anv_pipeline_binding) {
                .set = ANV_DESCRIPTOR_SET_DESCRIPTORS,
+               .binding = UINT32_MAX,
                .index = s,
             };
          state.set[s].desc_offset = map->surface_count;
@@ -1440,6 +1441,7 @@ anv_nir_apply_pipeline_layout(nir_shader *shader,
                      map->surface_to_descriptor[map->surface_count++] =
                         (struct anv_pipeline_binding) {
                            .set = set,
+                           .binding = b,
                            .index = binding->descriptor_index + i,
                            .plane = p,
                         };
@@ -1450,6 +1452,7 @@ anv_nir_apply_pipeline_layout(nir_shader *shader,
                   map->surface_to_descriptor[map->surface_count++] =
                      (struct anv_pipeline_binding) {
                         .set = set,
+                        .binding = b,
                         .index = binding->descriptor_index + i,
                         .dynamic_offset_index =
                            layout->set[set].dynamic_offset_start +
@@ -1483,6 +1486,7 @@ anv_nir_apply_pipeline_layout(nir_shader *shader,
                   map->sampler_to_descriptor[map->sampler_count++] =
                      (struct anv_pipeline_binding) {
                         .set = set,
+                        .binding = b,
                         .index = binding->descriptor_index + i,
                         .plane = p,
                      };

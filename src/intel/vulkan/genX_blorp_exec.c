@@ -208,6 +208,7 @@ blorp_vf_invalidate_for_vb_48b_transitions(struct blorp_batch *batch,
                                            uint32_t *sizes,
                                            unsigned num_vbs)
 {
+#if GFX_VER == 9
    struct anv_cmd_buffer *cmd_buffer = batch->driver_batch;
 
    for (unsigned i = 0; i < num_vbs; i++) {
@@ -227,6 +228,7 @@ blorp_vf_invalidate_for_vb_48b_transitions(struct blorp_batch *batch,
     */
    genX(cmd_buffer_update_dirty_vbs_for_gfx8_vb_flush)(cmd_buffer, SEQUENTIAL,
                                                        (1 << num_vbs) - 1);
+#endif
 }
 
 UNUSED static struct blorp_address

@@ -8,3 +8,6 @@ dEQP-VK.rasterization.rasterization_order_attachment_access.stencil.samples_8.mu
 dEQP-VK.ray_tracing_pipeline.acceleration_structures.copy_within_pipeline.gpu.access_sbt_read,Crash
 dEQP-VK.ray_tracing_pipeline.acceleration_structures.copy_within_pipeline.gpu.stage_all_transfer,Crash
 dEQP-VK.ray_tracing_pipeline.acceleration_structures.copy_within_pipeline.gpu.stage_as_copy_bit,Crash
+
+# https://gitlab.freedesktop.org/mesa/mesa/-/issues/7493
+dEQP-VK.ray_query.misc.dynamic_indexing,Crash

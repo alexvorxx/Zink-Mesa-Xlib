@@ -383,6 +383,7 @@ impl Program {
                 &Vec::new(),
                 get_disk_cache(),
                 dev.cl_features(),
+                dev.address_bits(),
             );
 
             d.log = log;
@@ -444,6 +445,7 @@ impl Program {
             headers,
             get_disk_cache(),
             dev.cl_features(),
+            dev.address_bits(),
         );
 
         d.spirv = spirv;
@@ -581,6 +583,7 @@ impl Program {
                     .nir_shader_compiler_options(pipe_shader_type::PIPE_SHADER_COMPUTE),
                 &d.lib_clc,
                 &mut [],
+                d.address_bits(),
             )
             .unwrap()
     }

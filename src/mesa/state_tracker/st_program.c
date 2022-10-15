@@ -938,13 +938,6 @@ st_create_fp_variant(struct st_context *st,
       finalize = true;
    }
 
-   if (key->lower_texcoord_replace) {
-      bool point_coord_is_sysval = st->ctx->Const.GLSLPointCoordIsSysVal;
-      NIR_PASS_V(state.ir.nir, nir_lower_texcoord_replace,
-                  key->lower_texcoord_replace, point_coord_is_sysval, false);
-      finalize = true;
-   }
-
    if (st->emulate_gl_clamp &&
          (key->gl_clamp[0] || key->gl_clamp[1] || key->gl_clamp[2])) {
       nir_lower_tex_options tex_opts = {0};
@@ -1089,7 +1082,7 @@ st_get_fp_variant(struct st_context *st,
 
       if (fp->variants != NULL) {
          _mesa_perf_debug(st->ctx, MESA_DEBUG_SEVERITY_MEDIUM,
-                          "Compiling fragment shader variant (%s%s%s%s%s%s%s%s%s%s%s%s%s)",
+                          "Compiling fragment shader variant (%s%s%s%s%s%s%s%s%s%s%s%s)",
                           key->bitmap ? "bitmap," : "",
                           key->drawpixels ? "drawpixels," : "",
                           key->scaleAndBias ? "scale_bias," : "",
@@ -1099,7 +1092,6 @@ st_get_fp_variant(struct st_context *st,
                           key->fog ? "fog," : "",
                           key->lower_two_sided_color ? "twoside," : "",
                           key->lower_flatshade ? "flatshade," : "",
-                          key->lower_texcoord_replace ? "texcoord_replace," : "",
                           key->lower_alpha_func ? "alpha_compare," : "",
                           /* skipped ATI_fs targets */
                           fp->ExternalSamplersUsed ? "external?," : "",

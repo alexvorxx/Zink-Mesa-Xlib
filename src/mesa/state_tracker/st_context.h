@@ -168,7 +168,6 @@ struct st_context
    boolean lower_ucp;
    boolean prefer_real_buffer_in_constbuf0;
    boolean has_conditional_render;
-   boolean lower_texcoord_replace;
    boolean lower_rect_tex;
 
    /* There are consequences for drivers wanting to call st_finalize_nir

@@ -764,9 +764,11 @@ clc_compile_to_llvm_module(LLVMContext &llvm_ctx,
                                        &c->getDiagnosticOpts())
    };
 
+   const char *triple = args->address_bits == 32 ? "spir-unknown-unknown" : "spir64-unknown-unknown";
+
    std::vector<const char *> clang_opts = {
       args->source.name,
-      "-triple", "spir64-unknown-unknown",
+      "-triple", triple,
       // By default, clang prefers to use modules to pull in the default headers,
       // which doesn't work with our technique of embedding the headers in our binary
 #if LLVM_VERSION_MAJOR >= 15

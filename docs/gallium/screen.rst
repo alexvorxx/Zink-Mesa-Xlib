@@ -29,7 +29,6 @@ The integer capabilities:
 * ``PIPE_CAP_MAX_DUAL_SOURCE_RENDER_TARGETS``: How many dual-source blend RTs are support.
   :ref:`Blend` for more information.
 * ``PIPE_CAP_ANISOTROPIC_FILTER``: Whether textures can be filtered anisotropically.
-* ``PIPE_CAP_POINT_SPRITE``: Whether point sprites are available.
 * ``PIPE_CAP_MAX_RENDER_TARGETS``: The maximum number of render targets that may be
   bound.
 * ``PIPE_CAP_OCCLUSION_QUERY``: Whether occlusion queries are available.
