@@ -211,7 +211,6 @@ zink_batch_reset_all(struct zink_context *ctx)
       else
          ctx->free_batch_states = bs;
       ctx->last_free_batch_state = bs;*/
-      zink_reset_batch_state(ctx, bs);
       util_dynarray_append(&ctx->free_batch_states, struct zink_batch_state *, bs);
    }
 }
