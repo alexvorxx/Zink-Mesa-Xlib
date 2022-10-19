@@ -139,17 +139,6 @@ PERFETTO_DEFINE_DATA_SOURCE_STATIC_MEMBERS(IntelRenderpassDataSource);
 
 using perfetto::protos::pbzero::InternedGpuRenderStageSpecification_RenderStageCategory;
 
-InternedGpuRenderStageSpecification_RenderStageCategory
-i915_engine_class_to_category(enum drm_i915_gem_engine_class engine_class)
-{
-   switch (engine_class) {
-   case I915_ENGINE_CLASS_RENDER:
-      return InternedGpuRenderStageSpecification_RenderStageCategory::GRAPHICS;
-   default:
-      return InternedGpuRenderStageSpecification_RenderStageCategory::OTHER;
-   }
-}
-
 static void
 sync_timestamp(IntelRenderpassDataSource::TraceContext &ctx,
                struct intel_ds_device *device)

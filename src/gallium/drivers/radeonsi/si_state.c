@@ -5553,7 +5553,7 @@ void si_init_cs_preamble_state(struct si_context *sctx, bool uses_reg_shadowing)
       return;
 
    /* Add all the space that we allocated. */
-   pm4->max_dw = sizeof(struct si_cs_preamble) - offsetof(struct si_cs_preamble, pm4.pm4);
+   pm4->max_dw = (sizeof(struct si_cs_preamble) - offsetof(struct si_cs_preamble, pm4.pm4)) / 4;
 
    if (!uses_reg_shadowing) {
       si_pm4_cmd_add(pm4, PKT3(PKT3_CONTEXT_CONTROL, 1, 0));

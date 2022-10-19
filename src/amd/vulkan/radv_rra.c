@@ -403,7 +403,7 @@ rra_parent_table_index_from_offset(uint32_t offset, uint32_t parent_table_size)
 static void PRINTFLIKE(2, 3)
 rra_accel_struct_validation_fail(uint32_t offset, const char *reason, ...)
 {
-   fprintf(stderr, "radv: AS validation failed at node with offset 0x%x with reason: ", offset);
+   fprintf(stderr, "radv: AS validation failed at offset 0x%x with reason: ", offset);
 
    va_list list;
    va_start(list, reason);
@@ -414,6 +414,31 @@ rra_accel_struct_validation_fail(uint32_t offset, const char *reason, ...)
 }
 
 static bool
+rra_validate_header(struct radv_acceleration_structure *accel_struct,
+                    const struct radv_accel_struct_header *header)
+{
+   bool result = true;
+
+   if (accel_struct->type == VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_KHR &&
+       header->instance_count > 0) {
+      rra_accel_struct_validation_fail(0, "BLAS contains instances");
+      result = false;
+   }
+
+   if (header->bvh_offset >= accel_struct->size) {
+      rra_accel_struct_validation_fail(0, "Invalid BVH offset %u", header->bvh_offset);
+      result = false;
+   }
+
+   if (header->instance_count * sizeof(struct radv_bvh_instance_node) >= accel_struct->size) {
+      rra_accel_struct_validation_fail(0, "Too many instances");
+      result = false;
+   }
+
+   return result;
+}
+
+static bool
 is_internal_node(uint32_t type)
 {
    return type == radv_bvh_node_box16 || type == radv_bvh_node_box32;
@@ -421,8 +446,7 @@ is_internal_node(uint32_t type)
 
 static bool
 rra_validate_node(struct hash_table_u64 *accel_struct_vas, uint8_t *data, void *node,
-                  uint32_t root_node_offset, uint32_t size, uint32_t parent_table_size,
-                  bool is_bottom_level)
+                  uint32_t root_node_offset, uint32_t size, bool is_bottom_level)
 {
    /* The child ids are located at offset=0 for both box16 and box32 nodes. */
    uint32_t *children = node;
@@ -474,7 +498,7 @@ rra_validate_node(struct hash_table_u64 *accel_struct_vas, uint8_t *data, void *
 
       if (is_internal_node(type)) {
          result &= rra_validate_node(accel_struct_vas, data, data + offset, root_node_offset, size,
-                                     parent_table_size, is_bottom_level);
+                                     is_bottom_level);
       } else if (type == radv_bvh_node_instance) {
          struct radv_bvh_instance_node *src = (struct radv_bvh_instance_node *)(data + offset);
          uint64_t blas_va = src->bvh_ptr - src->bvh_offset;
@@ -694,6 +718,20 @@ rra_dump_acceleration_structure(struct rra_copied_accel_struct *copied_struct,
       header->compacted_size -
       header->geometry_count * sizeof(struct radv_accel_struct_geometry_info);
 
+   /* convert root node id to offset */
+   uint32_t src_root_offset = (RADV_BVH_ROOT_NODE & ~7) << 3;
+
+   if (should_validate) {
+      if (!rra_validate_header(accel_struct, header)) {
+         return VK_ERROR_VALIDATION_FAILED_EXT;
+      }
+      if (!rra_validate_node(accel_struct_vas, data + header->bvh_offset,
+                             data + header->bvh_offset + src_root_offset, src_root_offset,
+                             accel_struct->size, !is_tlas)) {
+         return VK_ERROR_VALIDATION_FAILED_EXT;
+      }
+   }
+
    struct rra_bvh_info bvh_info = {0};
    rra_gather_bvh_info(data + header->bvh_offset, RADV_BVH_ROOT_NODE, &bvh_info);
 
@@ -707,16 +745,6 @@ rra_dump_acceleration_structure(struct rra_copied_accel_struct *copied_struct,
 
    uint32_t node_parent_table_size =
       ((bvh_info.leaf_nodes_size + bvh_info.internal_nodes_size) / 64) * sizeof(uint32_t);
-
-   /* convert root node id to offset */
-   uint32_t src_root_offset = (RADV_BVH_ROOT_NODE & ~7) << 3;
-
-   if (should_validate)
-      if (!rra_validate_node(accel_struct_vas, data + header->bvh_offset,
-                             data + header->bvh_offset + src_root_offset, src_root_offset,
-                             accel_struct->size, node_parent_table_size, !is_tlas)) {
-         return VK_ERROR_VALIDATION_FAILED_EXT;
-      }
 
    uint32_t *node_parent_table = calloc(node_parent_table_size, 1);
    if (!node_parent_table) {
@@ -1129,7 +1157,7 @@ radv_rra_dump_trace(VkQueue vk_queue, char *filename)
                                                   device->rra_trace.accel_struct_vas,
                                                   device->rra_trace.validate_as, file);
          if (result != VK_SUCCESS)
-            goto copy_fail;
+            continue;
          ++written_accel_struct_count;
       }
    }

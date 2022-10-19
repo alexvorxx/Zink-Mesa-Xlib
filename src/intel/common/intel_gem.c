@@ -68,7 +68,7 @@ intel_gem_create_context_engines(int fd,
    I915_DEFINE_CONTEXT_PARAM_ENGINES(engines_param, 64);
    engines_param.extensions = 0;
 
-   /* For each type of drm_i915_gem_engine_class of interest, we keep track of
+   /* For each type of intel_engine_class of interest, we keep track of
     * the previous engine instance used.
     */
    int last_engine_idx[] = {

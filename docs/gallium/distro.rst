@@ -73,11 +73,6 @@ Trace
 Wrapper driver. Trace dumps an XML record of the calls made to the
 :ref:`Context` and :ref:`Screen` objects that it wraps.
 
-Rbug
-^^^^
-
-Wrapper driver. :ref:`rbug` driver used with stand alone rbug-gui.
-
 Gallium frontends
 -----------------
 
@@ -123,11 +118,6 @@ Xorg DDX
 
 Tracker for Xorg X11 servers. Provides device-dependent
 modesetting and acceleration as a DDX driver.
-
-XvMC
-^^^^
-
-Tracker for X-Video Motion Compensation.
 
 Auxiliary
 ---------

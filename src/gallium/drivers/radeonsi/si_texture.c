@@ -446,7 +446,13 @@ static void si_reallocate_texture_inplace(struct si_context *sctx, struct si_tex
          return;
    }
 
-   new_tex = (struct si_texture *)screen->resource_create(screen, &templ);
+   /* Inherit the modifier from the old texture. */
+   if (tex->surface.modifier != DRM_FORMAT_MOD_INVALID && screen->resource_create_with_modifiers)
+      new_tex = (struct si_texture *)screen->resource_create_with_modifiers(screen, &templ,
+                                                                            &tex->surface.modifier, 1);
+   else
+      new_tex = (struct si_texture *)screen->resource_create(screen, &templ);
+
    if (!new_tex)
       return;
 

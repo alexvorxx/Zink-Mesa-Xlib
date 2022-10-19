@@ -123,6 +123,7 @@ nir_lower_cl_images(nir_shader *shader)
          var->data.driver_location = num_rd_images++;
       else
          var->data.driver_location = num_wr_images++;
+      var->data.binding = var->data.driver_location;
    }
    shader->info.num_textures = num_rd_images;
    BITSET_ZERO(shader->info.textures_used);

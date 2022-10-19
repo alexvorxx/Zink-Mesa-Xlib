@@ -35,7 +35,7 @@ our deqp/piglit/etc. payload is large, we use nfs from the x86 runner system
 rather than initramfs.
 
 See `src/freedreno/ci/gitlab-ci.yml` for an example of fastboot on DB410c and
-DB820c (freedreno-a306 and freereno-a530).
+DB820c (freedreno-a306 and freedreno-a530).
 
 Requirements (servo)
 --------------------

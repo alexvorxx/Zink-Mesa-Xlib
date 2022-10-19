@@ -123,7 +123,7 @@ traces:
       label: [crash]
   gputest/pixmark-julia-fp32-v2.trace:
     gl-virgl:
-      checksum: 8b3584b1dd8f1d1bb63205564bd78e4e
+      checksum: 25f938c726c68c08a88193f28f7c4474
   gputest/pixmark-julia-fp64-v2.trace:
     gl-virgl:
       checksum: 73ccaff82ea764057fb0f93f0024cf84
@@ -159,7 +159,7 @@ traces:
       checksum: 37780a6eaa38a55700e8207e89009f56
   neverball/neverball-v2.trace:
     gl-virgl:
-      checksum: cc11743f008ccd76adf72695a423436a
+      checksum: 0b8ae7dd4f7f26c3278ded8a5694b983
   pathfinder/canvas_moire-v2.trace:
     gl-virgl:
       checksum: 25ba8f18274126670311bd3ffe058f74

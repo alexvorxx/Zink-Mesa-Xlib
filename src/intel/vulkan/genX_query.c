@@ -1014,7 +1014,7 @@ void genX(CmdBeginQueryIndexedEXT)(
       assert(reloc_idx == pdevice->n_perf_query_commands);
 
       const struct intel_device_info *devinfo = cmd_buffer->device->info;
-      const enum drm_i915_gem_engine_class engine_class = cmd_buffer->queue_family->engine_class;
+      const enum intel_engine_class engine_class = cmd_buffer->queue_family->engine_class;
       mi_self_mod_barrier(&b, devinfo->engine_class_prefetch[engine_class]);
 
       anv_batch_emit(&cmd_buffer->batch, GENX(PIPE_CONTROL), pc) {

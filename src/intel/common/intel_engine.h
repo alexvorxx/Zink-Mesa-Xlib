@@ -52,3 +52,4 @@ enum drm_i915_gem_engine_class intel_engine_class_to_i915(enum intel_engine_clas
 struct intel_query_engine_info *intel_engine_get_info(int fd);
 int intel_engines_count(const struct intel_query_engine_info *info,
                         enum intel_engine_class engine_class);
+const char *intel_engines_class_to_string(enum intel_engine_class engine_class);

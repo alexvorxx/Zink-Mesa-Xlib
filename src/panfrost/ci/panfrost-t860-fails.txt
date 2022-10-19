@@ -45,15 +45,6 @@ dEQP-GLES31.functional.separate_shader.random.68,Fail
 dEQP-GLES31.functional.separate_shader.random.79,Fail
 dEQP-GLES31.functional.separate_shader.random.80,Fail
 dEQP-GLES31.functional.separate_shader.random.89,Fail
-dEQP-GLES31.functional.shaders.builtin_functions.integer.findmsb.ivec2_lowp_compute,Fail
-dEQP-GLES31.functional.synchronization.in_invocation.image_alias_overwrite,Crash
-dEQP-GLES31.functional.synchronization.in_invocation.image_atomic_alias_overwrite,Crash
-dEQP-GLES31.functional.synchronization.in_invocation.image_atomic_alias_write,Crash
-dEQP-GLES31.functional.synchronization.in_invocation.image_atomic_overwrite,Crash
-dEQP-GLES31.functional.synchronization.in_invocation.image_atomic_write_read,Crash
-dEQP-GLES31.functional.synchronization.in_invocation.image_overwrite,Crash
-dEQP-GLES31.functional.synchronization.inter_invocation.image_alias_overwrite,Crash
-dEQP-GLES31.functional.synchronization.inter_invocation.image_atomic_alias_overwrite,Crash
 dEQP-GLES31.functional.texture.gather.basic.cube.depth32f.no_corners.size_pot.compare_greater.clamp_to_edge_repeat,Fail
 dEQP-GLES31.functional.texture.gather.basic.cube.depth32f.no_corners.size_pot.compare_greater.mirrored_repeat_clamp_to_edge,Fail
 dEQP-GLES31.functional.texture.gather.basic.cube.depth32f.no_corners.size_pot.compare_greater.repeat_mirrored_repeat,Fail

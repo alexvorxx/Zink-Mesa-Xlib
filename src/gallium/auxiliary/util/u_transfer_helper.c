@@ -112,6 +112,9 @@ u_transfer_helper_resource_create(struct pipe_screen *pscreen,
 
       t.format = util_format_get_depth_only(format);
 
+      if (t.format == PIPE_FORMAT_Z24X8_UNORM && helper->z24_in_z32f)
+         t.format = PIPE_FORMAT_Z32_FLOAT;
+
       prsc = helper->vtbl->resource_create(pscreen, &t);
       if (!prsc)
          return NULL;

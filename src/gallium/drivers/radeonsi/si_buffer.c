@@ -630,6 +630,9 @@ static struct pipe_resource *si_buffer_from_user_memory(struct pipe_screen *scre
                                                         const struct pipe_resource *templ,
                                                         void *user_memory)
 {
+   if (templ->target != PIPE_BUFFER)
+      return NULL;
+
    struct si_screen *sscreen = (struct si_screen *)screen;
    struct radeon_winsys *ws = sscreen->ws;
    struct si_resource *buf = si_alloc_buffer_struct(screen, templ, false);

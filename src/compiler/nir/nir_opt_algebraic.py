@@ -2589,10 +2589,10 @@ late_optimizations = [
 
    # re-combine inexact mul+add to ffma. Do this before fsub so that a * b - c
    # gets combined to fma(a, b, -c).
-   (('~fadd@16', ('fmul', a, b), c), ('ffma', a, b, c), 'options->fuse_ffma16'),
-   (('~fadd@32', ('fmul', a, b), c), ('ffma', a, b, c), 'options->fuse_ffma32'),
-   (('~fadd@64', ('fmul', a, b), c), ('ffma', a, b, c), 'options->fuse_ffma64'),
-   (('~fadd@32', ('fmulz', a, b), c), ('ffmaz', a, b, c), 'options->fuse_ffma32'),
+   (('~fadd@16', ('fmul(is_only_used_by_fadd)', a, b), c), ('ffma', a, b, c), 'options->fuse_ffma16'),
+   (('~fadd@32', ('fmul(is_only_used_by_fadd)', a, b), c), ('ffma', a, b, c), 'options->fuse_ffma32'),
+   (('~fadd@64', ('fmul(is_only_used_by_fadd)', a, b), c), ('ffma', a, b, c), 'options->fuse_ffma64'),
+   (('~fadd@32', ('fmulz(is_only_used_by_fadd)', a, b), c), ('ffmaz', a, b, c), 'options->fuse_ffma32'),
 
    # Subtractions get lowered during optimization, so we need to recombine them
    (('fadd@8', a, ('fneg', 'b')), ('fsub', 'a', 'b'), 'options->has_fsub'),

@@ -810,10 +810,6 @@ emit_cb_state(struct anv_graphics_pipeline *pipeline,
               const struct vk_color_blend_state *cb,
               const struct vk_multisample_state *ms)
 {
-   struct GENX(BLEND_STATE) blend_state = {
-      .AlphaToCoverageEnable = ms && ms->alpha_to_coverage_enable,
-   };
-
    uint32_t surface_count = 0;
    struct anv_pipeline_bind_map *map;
    if (anv_pipeline_has_stage(pipeline, MESA_SHADER_FRAGMENT)) {
@@ -821,8 +817,7 @@ emit_cb_state(struct anv_graphics_pipeline *pipeline,
       surface_count = map->surface_count;
    }
 
-   uint32_t *blend_state_start = pipeline->gfx8.blend_state;
-   uint32_t *state_pos = blend_state_start;
+   uint32_t *state_pos = pipeline->gfx8.blend_state;
 
    state_pos += GENX(BLEND_STATE_length);
    for (unsigned i = 0; i < surface_count; i++) {
@@ -866,8 +861,6 @@ emit_cb_state(struct anv_graphics_pipeline *pipeline,
       GENX(BLEND_STATE_ENTRY_pack)(NULL, state_pos, &entry);
       state_pos += GENX(BLEND_STATE_ENTRY_length);
    }
-
-   GENX(BLEND_STATE_pack)(NULL, blend_state_start, &blend_state);
 }
 
 static void
@@ -1437,7 +1430,7 @@ emit_3dstate_wm(struct anv_graphics_pipeline *pipeline,
    wm.StatisticsEnable                    = true;
    wm.LineEndCapAntialiasingRegionWidth   = _05pixels;
    wm.LineAntialiasingRegionWidth         = _10pixels;
-   wm.PointRasterizationRule              = RASTRULE_UPPER_RIGHT;
+   wm.PointRasterizationRule              = RASTRULE_UPPER_LEFT;
 
    if (anv_pipeline_has_stage(pipeline, MESA_SHADER_FRAGMENT)) {
       if (wm_prog_data->early_fragment_tests) {

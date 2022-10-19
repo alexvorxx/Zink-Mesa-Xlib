@@ -91,7 +91,7 @@ CCS surface layout
 
 Starting with Broadwell, fast-clears and color compression can be used on
 mipmapped and array surfaces.  When considered from a higher level, the CCS is
-layed out like any other surface.  The Broadwell and Sky Lake PRMs describe
+laid out like any other surface.  The Broadwell and Sky Lake PRMs describe
 this as follows:
 
 Broadwell PRM Vol 7, "MCS Buffer for Render Target(s)" (p. 676):

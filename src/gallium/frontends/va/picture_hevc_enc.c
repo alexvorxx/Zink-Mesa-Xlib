@@ -135,7 +135,8 @@ vlVaHandleVAEncSliceParameterBufferTypeHEVC(vlVaDriver *drv, vlVaContext *contex
    context->desc.h265enc.slice.slice_loop_filter_across_slices_enabled_flag = h265->slice_fields.bits.slice_loop_filter_across_slices_enabled_flag;
 
    /* Handle the slice control parameters */
-   struct h265_slice_descriptor slice_descriptor = { };
+   struct h265_slice_descriptor slice_descriptor;
+   memset(&slice_descriptor, 0, sizeof(slice_descriptor));
    slice_descriptor.slice_segment_address = h265->slice_segment_address;
    slice_descriptor.num_ctu_in_slice = h265->num_ctu_in_slice;
    slice_descriptor.slice_type = h265->slice_type;

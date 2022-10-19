@@ -511,8 +511,6 @@ nouveau_create_decoder(struct pipe_context *context,
    debug_printf("Acceleration level: %s\n", templ->entrypoint <= PIPE_VIDEO_ENTRYPOINT_BITSTREAM ? "bit":
                                             templ->entrypoint == PIPE_VIDEO_ENTRYPOINT_IDCT ? "IDCT" : "MC");
 
-   if (getenv("XVMC_VL"))
-      goto vl;
    if (u_reduce_video_profile(templ->profile) != PIPE_VIDEO_FORMAT_MPEG12)
       goto vl;
    if (screen->device->chipset >= 0x98 && screen->device->chipset != 0xa0)
@@ -777,7 +775,7 @@ nouveau_video_buffer_create(struct pipe_context *pipe,
     * hardware decoder is only supported on some chipsets
     * and it only supports the NV12 format
     */
-   if (templat->buffer_format != PIPE_FORMAT_NV12 || getenv("XVMC_VL") ||
+   if (templat->buffer_format != PIPE_FORMAT_NV12 ||
        (screen->device->chipset >= 0x98 && screen->device->chipset != 0xa0) ||
        screen->device->chipset < 0x40)
       return vl_video_buffer_create(pipe, templat);

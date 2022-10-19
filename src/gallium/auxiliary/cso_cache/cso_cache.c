@@ -36,14 +36,6 @@
 #include "cso_hash.h"
 
 
-static inline struct cso_hash *
-_cso_hash_for_type(struct cso_cache *sc, enum cso_cache_type type)
-{
-   assert(type < ARRAY_SIZE(sc->hashes));
-   return &sc->hashes[type];
-}
-
-
 /* Default delete callback. It can also be used by custom callbacks. */
 void
 cso_delete_state(struct pipe_context *pipe, void *state,
@@ -114,18 +106,9 @@ cso_insert_state(struct cso_cache *sc,
                  unsigned hash_key, enum cso_cache_type type,
                  void *state)
 {
-   struct cso_hash *hash = _cso_hash_for_type(sc, type);
+   struct cso_hash *hash = &sc->hashes[type];
    sanitize_hash(sc, hash, type, sc->max_size);
    return cso_hash_insert(hash, hash_key, state);
-}
-
-
-struct cso_hash_iter
-cso_find_state(struct cso_cache *sc,
-               unsigned hash_key, enum cso_cache_type type)
-{
-   struct cso_hash *hash = _cso_hash_for_type(sc, type);
-   return cso_hash_find(hash, hash_key);
 }
 
 
@@ -148,22 +131,6 @@ cso_hash_find_data_from_template(struct cso_hash *hash,
 }
 
 
-struct cso_hash_iter
-cso_find_state_template(struct cso_cache *sc,
-                        unsigned hash_key, enum cso_cache_type type,
-                        void *templ, unsigned size)
-{
-   struct cso_hash_iter iter = cso_find_state(sc, hash_key, type);
-   while (!cso_hash_iter_is_null(iter)) {
-      void *iter_data = cso_hash_iter_data(iter);
-      if (!memcmp(iter_data, templ, size))
-         return iter;
-      iter = cso_hash_iter_next(iter);
-   }
-   return iter;
-}
-
-
 void
 cso_cache_init(struct cso_cache *sc, struct pipe_context *pipe)
 {
@@ -183,7 +150,7 @@ cso_cache_init(struct cso_cache *sc, struct pipe_context *pipe)
 static void
 cso_delete_all(struct cso_cache *sc, enum cso_cache_type type)
 {
-   struct cso_hash *hash = _cso_hash_for_type(sc, type);
+   struct cso_hash *hash = &sc->hashes[type];
    struct cso_hash_iter iter = cso_hash_first_node(hash);
    while (!cso_hash_iter_is_null(iter)) {
       void *state = cso_hash_iter_data(iter);

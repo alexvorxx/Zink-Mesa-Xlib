@@ -449,7 +449,7 @@ ir3_nir_post_finalize(struct ir3_shader *shader)
    struct ir3_compiler *compiler = shader->compiler;
 
    NIR_PASS_V(s, nir_lower_io, nir_var_shader_in | nir_var_shader_out,
-              ir3_glsl_type_size, (nir_lower_io_options)0);
+              ir3_glsl_type_size, nir_lower_io_lower_64bit_to_32);
 
    if (s->info.stage == MESA_SHADER_FRAGMENT) {
       /* NOTE: lower load_barycentric_at_sample first, since it
@@ -647,12 +647,12 @@ lower_ucp_vs(struct ir3_shader_variant *so)
    if (!so->key.ucp_enables)
       return false;
 
-   gl_shader_stage last_geom_stage = MESA_SHADER_VERTEX;
+   gl_shader_stage last_geom_stage;
 
-   if (so->key.tessellation) {
-      last_geom_stage = MESA_SHADER_TESS_EVAL;
-   } else if (so->key.has_gs) {
+   if (so->key.has_gs) {
       last_geom_stage = MESA_SHADER_GEOMETRY;
+   } else if (so->key.tessellation) {
+      last_geom_stage = MESA_SHADER_TESS_EVAL;
    } else {
       last_geom_stage = MESA_SHADER_VERTEX;
    }

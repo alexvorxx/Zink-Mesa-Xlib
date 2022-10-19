@@ -1695,6 +1695,7 @@ lower_lsc_surface_logical_send(const fs_builder &bld, fs_inst *inst)
    const unsigned addr_sz = inst->components_read(SURFACE_LOGICAL_SRC_ADDRESS);
    const unsigned src_comps = inst->components_read(SURFACE_LOGICAL_SRC_DATA);
    const unsigned src_sz = type_sz(src.type);
+   const unsigned dst_sz = type_sz(inst->dst.type);
 
    const bool has_side_effects = inst->has_side_effects();
 
@@ -1758,10 +1759,11 @@ lower_lsc_surface_logical_send(const fs_builder &bld, fs_inst *inst)
          inst->opcode == SHADER_OPCODE_UNTYPED_ATOMIC_FLOAT_LOGICAL ?
          brw_atomic_op_to_lsc_fatomic_op(arg.ud) :
          brw_atomic_op_to_lsc_atomic_op(arg.ud);
+
       inst->desc = lsc_msg_desc(devinfo, opcode, inst->exec_size,
                                 surf_type, LSC_ADDR_SIZE_A32,
                                 1 /* num_coordinates */,
-                                lsc_bits_to_data_size(src_sz * 8),
+                                lsc_bits_to_data_size(dst_sz * 8),
                                 1 /* num_channels */,
                                 false /* transpose */,
                                 LSC_CACHE_STORE_L1UC_L3WB,
@@ -2032,6 +2034,7 @@ lower_lsc_a64_logical_send(const fs_builder &bld, fs_inst *inst)
    const fs_reg &addr = inst->src[A64_LOGICAL_ADDRESS];
    const fs_reg &src = inst->src[A64_LOGICAL_SRC];
    const unsigned src_sz = type_sz(src.type);
+   const unsigned dst_sz = type_sz(inst->dst.type);
 
    const unsigned src_comps = inst->components_read(1);
    assert(inst->src[A64_LOGICAL_ARG].file == IMM);
@@ -2102,7 +2105,7 @@ lower_lsc_a64_logical_send(const fs_builder &bld, fs_inst *inst)
       inst->desc = lsc_msg_desc(devinfo, opcode, inst->exec_size,
                                 LSC_ADDR_SURFTYPE_FLAT, LSC_ADDR_SIZE_A64,
                                 1 /* num_coordinates */,
-                                lsc_bits_to_data_size(src_sz * 8),
+                                lsc_bits_to_data_size(dst_sz * 8),
                                 1 /* num_channels */,
                                 false /* transpose */,
                                 LSC_CACHE_STORE_L1UC_L3WB,

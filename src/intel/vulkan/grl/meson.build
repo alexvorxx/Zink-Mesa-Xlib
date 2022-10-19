@@ -134,6 +134,9 @@ foreach t : [['125', 'gfx125', 'dg2']]
         '-DMAX_HW_SIMD_WIDTH=16', '-DMAX_WORKGROUP_SIZE=16',
         '-I' + join_paths(meson.current_source_dir(), 'gpu'),
         '-I' + join_paths(meson.current_source_dir(), 'include'),
+        '-include' + 'opencl-c.h', # added to bypass build failure from clang15
+                                   # without modifying grl source code, remove
+                                   # if fixed there
       ],
       depends : [prog_intel_clc]
     )

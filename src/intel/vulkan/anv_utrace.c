@@ -263,23 +263,6 @@ anv_utrace_read_ts(struct u_trace_context *utctx,
    return intel_device_info_timebase_scale(device->info, ts[idx]);
 }
 
-static const char *
-queue_family_to_name(const struct anv_queue_family *family)
-{
-   switch (family->engine_class) {
-   case INTEL_ENGINE_CLASS_RENDER:
-      return "render";
-   case INTEL_ENGINE_CLASS_COPY:
-      return "copy";
-   case INTEL_ENGINE_CLASS_VIDEO:
-      return "video";
-   case INTEL_ENGINE_CLASS_VIDEO_ENHANCE:
-      return "video-enh";
-   default:
-      return "unknown";
-   }
-}
-
 void
 anv_device_utrace_init(struct anv_device *device)
 {
@@ -300,7 +283,7 @@ anv_device_utrace_init(struct anv_device *device)
 
       queue->ds =
          intel_ds_device_add_queue(&device->ds, "%s%u",
-                                   queue_family_to_name(queue->family),
+                                   intel_engines_class_to_string(queue->family->engine_class),
                                    queue->index_in_family);
    }
 }

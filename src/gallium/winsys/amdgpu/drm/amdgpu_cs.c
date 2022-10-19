@@ -824,7 +824,8 @@ static void amdgpu_set_ib_size(struct radeon_cmdbuf *rcs, struct amdgpu_ib *ib)
 {
    if (ib->ptr_ib_size_inside_ib) {
       *ib->ptr_ib_size = rcs->current.cdw |
-                         S_3F2_CHAIN(1) | S_3F2_VALID(1);
+                         S_3F2_CHAIN(1) | S_3F2_VALID(1) |
+                         S_3F2_PRE_ENA(((struct amdgpu_cs*)ib)->preamble_ib_bo != NULL);
    } else {
       *ib->ptr_ib_size = rcs->current.cdw;
    }

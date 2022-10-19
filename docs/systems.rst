@@ -7,7 +7,7 @@ Haiku. We're actively developing and maintaining several hardware and
 software drivers.
 
 The primary API is OpenGL but there's also support for OpenGL ES, Vulkan,
-EGL, OpenMAX, OpenCL, VDPAU, VA-API and XvMC.
+EGL, OpenMAX, OpenCL, VDPAU and VA-API.
 
 Hardware drivers include:
 
@@ -35,7 +35,7 @@ Layered driver include:
 -  :doc:`VirGL <drivers/virgl>` - project for accelerated graphics for
    QEMU guests
 -  :doc:`Zink <drivers/zink>` - driver providing OpenGL on top of
-   Khoronos' Vulkan API.
+   Khronos' Vulkan API.
 
 Software drivers include:
 

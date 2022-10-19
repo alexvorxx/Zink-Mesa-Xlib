@@ -1921,16 +1921,16 @@ init_max_scratch_ids(struct intel_device_info *devinfo)
 
 static unsigned
 intel_device_info_calc_engine_prefetch(const struct intel_device_info *devinfo,
-                                       enum drm_i915_gem_engine_class engine_class)
+                                       enum intel_engine_class engine_class)
 {
    if (devinfo->verx10 < 125)
       return 512;
 
    if (intel_device_info_is_mtl(devinfo)) {
       switch (engine_class) {
-      case I915_ENGINE_CLASS_RENDER:
+      case INTEL_ENGINE_CLASS_RENDER:
          return 2048;
-      case I915_ENGINE_CLASS_COMPUTE:
+      case INTEL_ENGINE_CLASS_COMPUTE:
          return 1024;
       default:
          return 512;
@@ -2063,7 +2063,7 @@ intel_get_device_info_from_fd(int fd, struct intel_device_info *devinfo)
 
    init_max_scratch_ids(devinfo);
 
-   for (enum drm_i915_gem_engine_class engine = I915_ENGINE_CLASS_RENDER;
+   for (enum intel_engine_class engine = INTEL_ENGINE_CLASS_RENDER;
         engine < ARRAY_SIZE(devinfo->engine_class_prefetch); engine++)
       devinfo->engine_class_prefetch[engine] =
             intel_device_info_calc_engine_prefetch(devinfo, engine);

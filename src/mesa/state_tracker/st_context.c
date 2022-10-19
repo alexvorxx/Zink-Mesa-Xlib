@@ -700,9 +700,6 @@ st_create_context_priv(struct gl_context *ctx, struct pipe_context *pipe,
    ctx->Point.MaxSize = MAX2(ctx->Const.MaxPointSize,
                              ctx->Const.MaxPointSizeAA);
 
-   ctx->Const.PointCoordOriginUpperLeft =
-      screen->get_param(screen, PIPE_CAP_POINT_COORD_ORIGIN_UPPER_LEFT);
-
    ctx->Const.NoClippingOnCopyTex = screen->get_param(screen,
                                                       PIPE_CAP_NO_CLIP_ON_COPY_TEX);
 

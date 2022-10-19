@@ -402,13 +402,13 @@ i915_ioctl_query(int fd, unsigned long request, void *arg)
 
             for (uint32_t e = 0; e < num_render; e++, info->num_engines++) {
                info->engines[info->num_engines].engine.engine_class =
-                  I915_ENGINE_CLASS_RENDER;
+                  INTEL_ENGINE_CLASS_RENDER;
                info->engines[info->num_engines].engine.engine_instance = e;
             }
 
             for (uint32_t e = 0; e < num_copy; e++, info->num_engines++) {
                info->engines[info->num_engines].engine.engine_class =
-                  I915_ENGINE_CLASS_COPY;
+                  INTEL_ENGINE_CLASS_COPY;
                info->engines[info->num_engines].engine.engine_instance = e;
             }
 

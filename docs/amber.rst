@@ -20,7 +20,7 @@ the actively maintained LLVMpipe offers much of the same functionality.
 Users with Intel GPUs that were using i965 should migrate to either Iris
 or Crocus, depending on their GPU. These drivers generally speaking both
 perform better and have more features than i965 had, and due to sharing
-more code with the rest of the Mesa infrastructure, gets more bugfixes
+more code with the rest of the Mesa infrastructure, gets more bug fixes
 and features.
 
 Similarly, users of i915 should migrate to i915g (the Gallium driver for

@@ -1673,9 +1673,11 @@ struct v3dv_shader_variant {
     */
    uint32_t assembly_offset;
 
-   /* Note: it is really likely that qpu_insts would be NULL, as it will be
-    * used only temporarily, to upload it to the shared bo, as we compile the
-    * different stages individually.
+   /* Note: don't assume qpu_insts to be always NULL or not-NULL. In general
+    * we will try to free it as soon as we upload it to the shared bo while we
+    * compile the different stages. But we can decide to keep it around based
+    * on some pipeline creation flags, like
+    * VK_PIPELINE_CREATE_CAPTURE_INTERNAL_REPRESENTATIONS_BIT.
     */
    uint64_t *qpu_insts;
    uint32_t qpu_insts_size;
@@ -2045,6 +2047,7 @@ struct v3dv_pipeline {
    struct v3dv_device *device;
 
    VkShaderStageFlags active_stages;
+   VkPipelineCreateFlags flags;
 
    struct v3dv_render_pass *pass;
    struct v3dv_subpass *subpass;
@@ -2149,7 +2152,6 @@ struct v3dv_pipeline {
 
    struct {
       void *mem_ctx;
-      bool has_data;
       struct util_dynarray data; /* Array of v3dv_pipeline_executable_data */
    } executables;
 

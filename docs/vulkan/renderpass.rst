@@ -1,7 +1,7 @@
 Render Passes
 =============
 
-The Vulkan runtime code in Mesa provides several helpful utilities ot make
+The Vulkan runtime code in Mesa provides several helpful utilities to make
 managing render passes easier.
 
 
@@ -51,7 +51,7 @@ We also provide a no-op implementation of
 :cpp:func:`vkGetRenderAreaGranularity` which returns a render area
 granularity of 1x1.
 
-Drivers which wish to use the common render pass imlementation in this way
+Drivers which wish to use the common render pass implementation in this way
 **must** also support a Mesa-specific pseudo-extension which optionally
 provides an initial image layout for each attachment at
 :cpp:func:`vkCmdBeginRendering` time.  This is required for us to combine

@@ -964,7 +964,6 @@ create_physical_device(struct v3dv_instance *instance,
    result = v3dv_wsi_init(device);
    if (result != VK_SUCCESS) {
       vk_error(instance, result);
-      result = VK_ERROR_INITIALIZATION_FAILED;
       goto fail;
    }
 

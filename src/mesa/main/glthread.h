@@ -61,6 +61,7 @@ extern "C" {
 struct gl_context;
 struct gl_buffer_object;
 struct _mesa_HashTable;
+struct _glapi_table;
 
 struct glthread_attrib_binding {
    struct gl_buffer_object *buffer; /**< where non-VBO data was uploaded */
@@ -130,8 +131,11 @@ struct glthread_attrib_node {
    GLbitfield Mask;
    int ActiveTexture;
    GLenum16 MatrixMode;
+   bool Blend;
    bool CullFace;
    bool DepthTest;
+   bool Lighting;
+   bool PolygonStipple;
 };
 
 typedef enum {
@@ -233,16 +237,40 @@ struct glthread_state
    int MatrixStackDepth[M_NUM_MATRIX_STACKS];
 
    /** Enable states. */
+   bool Blend;
    bool DepthTest;
    bool CullFace;
+   bool Lighting;
+   bool PolygonStipple;
 
    GLuint CurrentDrawFramebuffer;
    GLuint CurrentReadFramebuffer;
    GLuint CurrentProgram;
+
+   /** The last added call of the given function. */
+   struct marshal_cmd_CallList *LastCallList;
+   struct marshal_cmd_BindBuffer *LastBindBuffer;
 };
 
 void _mesa_glthread_init(struct gl_context *ctx);
 void _mesa_glthread_destroy(struct gl_context *ctx, const char *reason);
+
+void _mesa_glthread_init_dispatch0(struct gl_context *ctx,
+                                   struct _glapi_table *table);
+void _mesa_glthread_init_dispatch1(struct gl_context *ctx,
+                                   struct _glapi_table *table);
+void _mesa_glthread_init_dispatch2(struct gl_context *ctx,
+                                   struct _glapi_table *table);
+void _mesa_glthread_init_dispatch3(struct gl_context *ctx,
+                                   struct _glapi_table *table);
+void _mesa_glthread_init_dispatch4(struct gl_context *ctx,
+                                   struct _glapi_table *table);
+void _mesa_glthread_init_dispatch5(struct gl_context *ctx,
+                                   struct _glapi_table *table);
+void _mesa_glthread_init_dispatch6(struct gl_context *ctx,
+                                   struct _glapi_table *table);
+void _mesa_glthread_init_dispatch7(struct gl_context *ctx,
+                                   struct _glapi_table *table);
 
 void _mesa_glthread_flush_batch(struct gl_context *ctx);
 void _mesa_glthread_finish(struct gl_context *ctx);
@@ -257,8 +285,6 @@ void _mesa_error_glthread_safe(struct gl_context *ctx, GLenum error,
                                bool glthread, const char *format, ...);
 void _mesa_glthread_execute_list(struct gl_context *ctx, GLuint list);
 
-void _mesa_glthread_BindBuffer(struct gl_context *ctx, GLenum target,
-                               GLuint buffer);
 void _mesa_glthread_DeleteBuffers(struct gl_context *ctx, GLsizei n,
                                   const GLuint *buffers);
 

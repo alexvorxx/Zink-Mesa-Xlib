@@ -353,7 +353,7 @@ VkResult anv_EnumeratePhysicalDeviceQueueFamilyPerformanceQueryCountersKHR(
     */
    struct anv_queue_family *queue_family =
       &pdevice->queue.families[queueFamilyIndex];
-   if (queue_family->engine_class != I915_ENGINE_CLASS_RENDER)
+   if (queue_family->engine_class != INTEL_ENGINE_CLASS_RENDER)
       return vk_outarray_status(&out);
 
    for (int c = 0; c < (perf ? perf->n_counters : 0); c++) {

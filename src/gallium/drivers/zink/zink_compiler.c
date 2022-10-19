@@ -2657,23 +2657,27 @@ zink_binding(gl_shader_stage stage, VkDescriptorType type, int index, bool compa
    if (stage == MESA_SHADER_NONE) {
       unreachable("not supported");
    } else {
+      unsigned base = stage;
+      /* clamp compute bindings for better driver efficiency */
+      if (stage == MESA_SHADER_COMPUTE)
+         base = 0;
       switch (type) {
       case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER:
       case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC:
-         return stage * 2 + !!index;
+         return base * 2 + !!index;
 
       case VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER:
       case VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER:
          assert(index < PIPE_MAX_SAMPLERS);
-         return (stage * PIPE_MAX_SAMPLERS) + index;
+         return (base * PIPE_MAX_SAMPLERS) + index;
 
       case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER:
-         return stage + (compact_descriptors * (ZINK_GFX_SHADER_COUNT * 2));
+         return base + (compact_descriptors * (ZINK_GFX_SHADER_COUNT * 2));
 
       case VK_DESCRIPTOR_TYPE_STORAGE_IMAGE:
       case VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER:
          assert(index < ZINK_MAX_SHADER_IMAGES);
-         return (stage * ZINK_MAX_SHADER_IMAGES) + index + (compact_descriptors * (ZINK_GFX_SHADER_COUNT * PIPE_MAX_SAMPLERS));
+         return (base * ZINK_MAX_SHADER_IMAGES) + index + (compact_descriptors * (ZINK_GFX_SHADER_COUNT * PIPE_MAX_SAMPLERS));
 
       default:
          unreachable("unexpected type");

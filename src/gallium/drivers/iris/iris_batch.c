@@ -239,7 +239,7 @@ iris_init_batch(struct iris_context *ice,
       batch->decoder.surface_base = IRIS_MEMZONE_BINDER_START;
       batch->decoder.max_vbo_decoded_lines = 32;
       if (batch->name == IRIS_BATCH_BLITTER)
-         batch->decoder.engine = I915_ENGINE_CLASS_COPY;
+         batch->decoder.engine = INTEL_ENGINE_CLASS_COPY;
    }
 
    iris_init_batch_measure(ice, batch);

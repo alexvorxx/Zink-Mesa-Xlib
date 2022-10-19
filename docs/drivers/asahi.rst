@@ -25,7 +25,7 @@ and dump work submitted to the GPU using agxdecode.
 
 This library allows debugging Mesa, particularly around the undocumented macOS
 user-kernel interface. Logs from Mesa may compared to Metal to check that the
-UABI is being used correcrly.
+UABI is being used correctly.
 
 Furthermore, it allows reverse-engineering the hardware, as glue to get at the
 "interesting" GPU memory.
@@ -43,7 +43,7 @@ Hardware varyings
 
 At an API level, vertex shader outputs need to be interpolated to become
 fragment shader inputs. This process is logically pipelined in AGX, with a value
-travelling from a vertex shader to remapping hardware to coefficient register
+traveling from a vertex shader to remapping hardware to coefficient register
 setup to the fragment shader to the iterator hardware. Each stage is described
 below.
 
@@ -124,7 +124,7 @@ register is a register allocated constant for all fragment shader invocations in
 a given polygon. Physically, it contains the values output by the vertex shader
 for each vertex of the polygon. Coefficient registers are preloaded with values
 from varying slots. This preloading appears to occur in fixed function hardware,
-a simplifcation from PowerVR which requires a specialized program for the
+a simplification from PowerVR which requires a specialized program for the
 programmable data sequencer to do the preload.
 
 The "Bind fragment pipeline" packet points to coefficient register bindings,
@@ -253,7 +253,7 @@ one cache line (128 bytes), ensure no cache line contains multiple mip levels.
 
 There is a wrinkle: the dimensions of large mip levels in tiles are determined
 by the dimensions of level 0. For power-of-two images, the two calculations are
-equivalent. However, they differ subtlely for non-power-of-two images. To
+equivalent. However, they differ subtly for non-power-of-two images. To
 determine the number of tiles to allocate for level :math:`l`, the number of
 tiles for level 0 should be right-shifted by :math:`2l`. That appears to divide
 by :math:`2^l` in both width and height, matching the definition of mipmapping,

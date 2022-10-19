@@ -2,6 +2,8 @@
 # Broken in VK-GL-CTS e5c45899ed7e90fb616ccd1d3c66e6eded120684
 KHR-GL33.cull_distance.coverage,Fail
 
+KHR-GL33.transform_feedback.draw_xfb_stream_instanced_test,Fail
+
 # Lots of errors like "[279] Check failed. Received: [3,0,0,2] instead of: [5,0,0,2]"
 KHR-GLES31.core.geometry_shader.layered_framebuffer.depth_support,Fail
 
@@ -64,20 +66,14 @@ shaders@point-vertex-id gl_vertexid divisor,Crash
 shaders@point-vertex-id gl_vertexid gl_instanceid,Crash
 shaders@point-vertex-id gl_vertexid gl_instanceid divisor,Crash
 
+spec@arb_arrays_of_arrays@execution@sampler@fs-nested-struct-arrays-nonconst-nested-array,Fail
+
 spec@arb_compute_shader@execution@border-color,Fail
 spec@arb_depth_buffer_float@fbo-clear-formats stencil,Fail
 spec@arb_depth_buffer_float@fbo-clear-formats stencil@GL_DEPTH32F_STENCIL8,Fail
 spec@arb_depth_buffer_float@fbo-generatemipmap-formats,Fail
 spec@arb_depth_buffer_float@fbo-generatemipmap-formats@GL_DEPTH_COMPONENT32F,Fail
 spec@arb_depth_buffer_float@fbo-generatemipmap-formats@GL_DEPTH_COMPONENT32F NPOT,Fail
-
-# "0 primitives generated:
-#  Incorrect number of prims generated.
-#  Found 0, expected 4"
-spec@arb_direct_state_access@transformfeedback-bufferbase,Fail
-spec@arb_direct_state_access@transformfeedback-bufferbase@general test,Fail
-spec@arb_direct_state_access@transformfeedback-bufferrange,Fail
-spec@arb_direct_state_access@transformfeedback-bufferrange@general test,Fail
 
 spec@arb_occlusion_query@occlusion_query_order,Fail
 spec@arb_point_sprite@arb_point_sprite-interactions 1.0,Fail
@@ -111,6 +107,12 @@ spec@arb_sample_shading@samplemask 4 all@sample mask_in_one,Fail
 spec@arb_sample_shading@samplemask 4,Fail
 spec@arb_sample_shading@samplemask 4@noms mask_in_one,Fail
 spec@arb_sample_shading@samplemask 4@sample mask_in_one,Fail
+
+# Same results w/ zink-on-tu as with freedreno:
+spec@arb_sample_shading@samplemask 2 all@noms partition,Fail
+spec@arb_sample_shading@samplemask 2@noms partition,Fail
+spec@arb_sample_shading@samplemask 4 all@noms partition,Fail
+spec@arb_sample_shading@samplemask 4@noms partition,Fail
 
 spec@arb_shader_image_load_store@execution@image-array-out-of-bounds-access-load,Crash
 
@@ -146,6 +148,10 @@ spec@arb_tessellation_shader@execution@tes-no-tcs-primitiveid-instanced,Fail
 #  error: Too many tessellation control shader atomic counters"
 spec@arb_tessellation_shader@execution@tes-primitiveid,Fail
 
+# https://gitlab.freedesktop.org/mesa/mesa/-/issues/7518
+spec@arb_tessellation_shader@execution@tess-instance-id,Fail
+spec@arb_tessellation_shader@execution@compatibility@tes-clip-vertex-different-from-position,Fail
+spec@arb_tessellation_shader@execution@vs-tes-tessinner-tessouter-inputs-quads-dlist,Fail
 spec@arb_tessellation_shader@execution@tes-read-texture,Fail
 spec@arb_tessellation_shader@execution@tess_with_geometry,Fail
 spec@arb_tessellation_shader@execution@trivial-tess-gs,Fail
@@ -160,6 +166,8 @@ spec@arb_tessellation_shader@execution@variable-indexing@tcs-patch-vec4-index-wr
 spec@arb_tessellation_shader@execution@variable-indexing@tcs-patch-vec4-swiz-index-wr,Crash
 spec@arb_tessellation_shader@execution@vertex-partial-write,Crash
 
+# https://gitlab.freedesktop.org/mesa/mesa/-/issues/7516
+spec@arb_tessellation_shader@execution@variable-indexing@vs-output-array-dvec4-index-wr-before-tcs,Crash
 
 spec@arb_tessellation_shader@execution@vs-tes-max-in-out-components,Fail
 spec@arb_tessellation_shader@execution@vs-tes-tessinner-tessouter-inputs-quads,Fail
@@ -169,10 +177,6 @@ spec@arb_tessellation_shader@execution@vs-tes-vertex,Fail
 spec@arb_texture_rectangle@1-1-linear-texture,Fail
 
 spec@arb_timer_query@timestamp-get,Fail
-
-# "Expected 1 primitives written, got 0"
-# Note: no FS, rasterizer discard enabled.
-spec@arb_transform_feedback3@arb_transform_feedback3-ext_interleaved_two_bufs_vs,Fail
 
 spec@arb_vertex_type_2_10_10_10_rev@attrib-p-type-size-match,Fail
 
@@ -268,11 +272,8 @@ spec@ext_texture_snorm@fbo-generatemipmap-formats@GL_LUMINANCE16_SNORM NPOT,Fail
 
 spec@ext_texture_snorm@multisample-formats 2 gl_ext_texture_snorm,Fail
 spec@ext_texture_snorm@multisample-formats 4 gl_ext_texture_snorm,Fail
-spec@ext_transform_feedback@geometry-shaders-basic,Fail
 spec@ext_transform_feedback@intervening-read prims_generated,Fail
 spec@ext_transform_feedback@intervening-read prims_generated use_gs,Fail
-spec@ext_transform_feedback@overflow-edge-cases,Fail
-spec@ext_transform_feedback@overflow-edge-cases use_gs,Fail
 spec@ext_transform_feedback@structs struct-array-elem run,Fail
 spec@ext_transform_feedback@structs struct-array-elem run interface,Fail
 spec@ext_transform_feedback@tessellation triangle_fan flat_first,Fail
@@ -283,44 +284,6 @@ spec@glsl-1.30@execution@texelfetch fs sampler3d 98x1x9-98x129x9,Fail
 spec@glsl-1.50@execution@compatibility@vs-gs-texcoord-array-2,Crash
 spec@glsl-1.50@execution@compatibility@vs-gs-texcoord-array,Crash
 
-spec@glsl-1.50@execution@geometry@end-primitive 0,Fail
-spec@glsl-1.50@execution@geometry@primitive-id-restart gl_line_loop ffs,Fail
-spec@glsl-1.50@execution@geometry@primitive-id-restart gl_line_loop other,Fail
-spec@glsl-1.50@execution@geometry@primitive-id-restart gl_lines_adjacency ffs,Fail
-spec@glsl-1.50@execution@geometry@primitive-id-restart gl_lines_adjacency other,Fail
-spec@glsl-1.50@execution@geometry@primitive-id-restart gl_lines ffs,Fail
-spec@glsl-1.50@execution@geometry@primitive-id-restart gl_lines other,Fail
-spec@glsl-1.50@execution@geometry@primitive-id-restart gl_line_strip_adjacency ffs,Fail
-spec@glsl-1.50@execution@geometry@primitive-id-restart gl_line_strip_adjacency other,Fail
-spec@glsl-1.50@execution@geometry@primitive-id-restart gl_line_strip ffs,Fail
-spec@glsl-1.50@execution@geometry@primitive-id-restart gl_line_strip other,Fail
-spec@glsl-1.50@execution@geometry@primitive-id-restart gl_points ffs,Fail
-spec@glsl-1.50@execution@geometry@primitive-id-restart gl_points other,Fail
-spec@glsl-1.50@execution@geometry@primitive-id-restart gl_triangle_fan ffs,Fail
-spec@glsl-1.50@execution@geometry@primitive-id-restart gl_triangle_fan other,Fail
-spec@glsl-1.50@execution@geometry@primitive-id-restart gl_triangles_adjacency ffs,Fail
-spec@glsl-1.50@execution@geometry@primitive-id-restart gl_triangles_adjacency other,Fail
-spec@glsl-1.50@execution@geometry@primitive-id-restart gl_triangles ffs,Fail
-spec@glsl-1.50@execution@geometry@primitive-id-restart gl_triangles other,Fail
-spec@glsl-1.50@execution@geometry@primitive-id-restart gl_triangle_strip_adjacency ffs,Fail
-spec@glsl-1.50@execution@geometry@primitive-id-restart gl_triangle_strip_adjacency other,Fail
-spec@glsl-1.50@execution@geometry@primitive-id-restart gl_triangle_strip ffs,Fail
-spec@glsl-1.50@execution@geometry@primitive-id-restart gl_triangle_strip other,Fail
-spec@glsl-1.50@execution@geometry@primitive-types gl_line_loop,Fail
-spec@glsl-1.50@execution@geometry@primitive-types gl_lines_adjacency,Fail
-spec@glsl-1.50@execution@geometry@primitive-types gl_lines,Fail
-spec@glsl-1.50@execution@geometry@primitive-types gl_line_strip_adjacency,Fail
-spec@glsl-1.50@execution@geometry@primitive-types gl_line_strip,Fail
-spec@glsl-1.50@execution@geometry@primitive-types gl_points,Fail
-spec@glsl-1.50@execution@geometry@primitive-types gl_triangle_fan,Fail
-spec@glsl-1.50@execution@geometry@primitive-types gl_triangles_adjacency,Fail
-spec@glsl-1.50@execution@geometry@primitive-types gl_triangles,Fail
-spec@glsl-1.50@execution@geometry@primitive-types gl_triangle_strip_adjacency,Fail
-spec@glsl-1.50@execution@geometry@primitive-types gl_triangle_strip,Fail
-spec@glsl-1.50@execution@geometry@tri-strip-ordering-with-prim-restart gl_triangle_strip_adjacency ffs,Fail
-spec@glsl-1.50@execution@geometry@tri-strip-ordering-with-prim-restart gl_triangle_strip_adjacency other,Fail
-spec@glsl-1.50@execution@geometry@tri-strip-ordering-with-prim-restart gl_triangle_strip ffs,Fail
-spec@glsl-1.50@execution@geometry@tri-strip-ordering-with-prim-restart gl_triangle_strip other,Fail
 spec@glsl-1.50@execution@primitive-id-no-gs-quads,Fail
 spec@glsl-1.50@execution@primitive-id-no-gs-quad-strip,Fail
 
@@ -405,7 +368,6 @@ spec@!opengl 2.1@pbo,Fail
 spec@!opengl 2.1@pbo@test_polygon_stip,Fail
 spec@!opengl 2.1@polygon-stipple-fs,Fail
 spec@!opengl 3.0@clearbuffer-depth-cs-probe,Timeout
-spec@!opengl 3.1@primitive-restart-xfb generated,Fail
 spec@!opengl 3.2@gl-3.2-adj-prims cull-back pv-first,Fail
 spec@!opengl 3.2@gl-3.2-adj-prims cull-front pv-first,Fail
 spec@!opengl 3.2@gl-3.2-adj-prims line cull-back pv-first,Fail

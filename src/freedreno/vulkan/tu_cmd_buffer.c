@@ -4494,8 +4494,10 @@ tu6_draw_common(struct tu_cmd_buffer *cmd,
    if (cmd->state.dirty & TU_CMD_DIRTY_PATCH_CONTROL_POINTS) {
       bool tess = cmd->state.pipeline->active_stages &
          VK_SHADER_STAGE_TESSELLATION_CONTROL_BIT;
-      struct tu_cs cs = tu_cmd_dynamic_state(cmd, TU_DYNAMIC_STATE_PATCH_CONTROL_POINTS,
-                                             tess ? TU6_EMIT_PATCH_CONTROL_POINTS_DWORDS : 0);
+      uint32_t state_size = TU6_EMIT_PATCH_CONTROL_POINTS_DWORDS(
+         pipeline->program.hs_param_dwords);
+      struct tu_cs cs = tu_cmd_dynamic_state(
+         cmd, TU_DYNAMIC_STATE_PATCH_CONTROL_POINTS, tess ? state_size : 0);
       tu6_emit_patch_control_points(&cs, cmd->state.pipeline,
                                     cmd->state.patch_control_points);
    }

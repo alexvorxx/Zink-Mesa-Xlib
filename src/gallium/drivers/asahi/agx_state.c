@@ -1093,6 +1093,11 @@ agx_update_shader(struct agx_context *ctx, struct agx_compiled_shader **out,
 
       NIR_PASS_V(nir, nir_lower_fragcolor, key->nr_cbufs);
 
+      if (key->sprite_coord_enable) {
+         NIR_PASS_V(nir, nir_lower_texcoord_replace, key->sprite_coord_enable,
+                    false /* point coord is sysval */, false /* Y-invert */);
+      }
+
       if (key->clip_plane_enable) {
          NIR_PASS_V(nir, nir_lower_clip_fs, key->clip_plane_enable,
                     false);
@@ -1147,6 +1152,9 @@ agx_update_fs(struct agx_context *ctx)
       .nr_cbufs = ctx->batch->nr_cbufs,
       .clip_plane_enable = ctx->rast->base.clip_plane_enable,
    };
+
+   if (ctx->batch->reduced_prim == PIPE_PRIM_POINTS)
+      key.sprite_coord_enable = ctx->rast->base.sprite_coord_enable;
 
    for (unsigned i = 0; i < key.nr_cbufs; ++i) {
       struct pipe_surface *surf = ctx->batch->cbufs[i];

@@ -71,8 +71,6 @@ The integer capabilities:
   pixel-center fragment convention is supported.
 * ``PIPE_CAP_FS_COORD_PIXEL_CENTER_INTEGER``: Whether the integer
   pixel-center fragment convention is supported.
-* ``PIPE_CAP_POINT_COORD_ORIGIN_UPPER_LEFT``: Whether point coordinates use the
-  upper-left origin convention. Otherwise the lower-left convention is used.
 * ``PIPE_CAP_DEPTH_CLIP_DISABLE``: Whether the driver is capable of disabling
   depth clipping (through pipe_rasterizer_state).
 * ``PIPE_CAP_DEPTH_CLIP_DISABLE_SEPARATE``: Whether the driver is capable of
@@ -261,8 +259,8 @@ The integer capabilities:
 * ``PIPE_CAP_DEVICE_ID``: The device ID (PCI ID) of the underlying hardware.
   0xFFFFFFFF if not available.
 * ``PIPE_CAP_ACCELERATED``: Whether the renderer is hardware accelerated. 0 means
-  not accelerated (ie. CPU rendering), 1 means accelerated (ie. GPU rendering),
-  -1 means unknown (ie. an API translation driver which doesn't known what kind of
+  not accelerated (i.e. CPU rendering), 1 means accelerated (i.e. GPU rendering),
+  -1 means unknown (i.e. an API translation driver which doesn't known what kind of
   hardware it's running above).
 * ``PIPE_CAP_VIDEO_MEMORY``: The amount of video memory in megabytes.
 * ``PIPE_CAP_UMA``: If the device has a unified memory architecture or on-card
@@ -381,7 +379,7 @@ The integer capabilities:
   supported for patch primitives.
 * ``PIPE_CAP_SHADER_GROUP_VOTE``: Whether the ``VOTE_*`` ops can be used in
   shaders.
-* ``PIPE_CAP_MAX_WINDOW_RECTANGLES``: The maxium number of window rectangles
+* ``PIPE_CAP_MAX_WINDOW_RECTANGLES``: The maximum number of window rectangles
   supported in ``set_window_rectangles``.
 * ``PIPE_CAP_POLYGON_OFFSET_UNITS_UNSCALED``: If true, the driver implements support
   for ``pipe_rasterizer_state::offset_units_unscaled``.
@@ -599,7 +597,7 @@ The integer capabilities:
     fragment shader.
 * ``PIPE_CAP_CLIP_PLANES``: Driver supports user-defined clip-planes. 0 denotes none, 1 denotes MAX_CLIP_PLANES. > 1 overrides MAX.
 * ``PIPE_CAP_MAX_VERTEX_BUFFERS``: Number of supported vertex buffers.
-* ``PIPE_CAP_OPENCL_INTEGER_FUNCTIONS``: Driver supports extended OpenCL-style integer functions.  This includes averge, saturating additiong, saturating subtraction, absolute difference, count leading zeros, and count trailing zeros.
+* ``PIPE_CAP_OPENCL_INTEGER_FUNCTIONS``: Driver supports extended OpenCL-style integer functions.  This includes average, saturating addition, saturating subtraction, absolute difference, count leading zeros, and count trailing zeros.
 * ``PIPE_CAP_INTEGER_MULTIPLY_32X16``: Driver supports integer multiplication between a 32-bit integer and a 16-bit integer.  If the second operand is 32-bits, the upper 16-bits are ignored, and the low 16-bits are possibly sign extended as necessary.
 * ``PIPE_CAP_NIR_IMAGES_AS_DEREF``: Whether NIR image load/store intrinsics should be nir_intrinsic_image_deref_* instead of nir_intrinsic_image_*.  Defaults to true.
 * ``PIPE_CAP_PACKED_STREAM_OUTPUT``: Driver supports packing optimization for stream output (e.g. GL transform feedback captured variables). Defaults to true.
@@ -830,7 +828,7 @@ resources might be created and handled quite differently.
 * ``PIPE_BIND_STREAM_OUTPUT``: A stream output buffer.
 * ``PIPE_BIND_CUSTOM``:
 * ``PIPE_BIND_SCANOUT``: A front color buffer or scanout buffer.
-* ``PIPE_BIND_SHARED``: A sharable buffer that can be given to another
+* ``PIPE_BIND_SHARED``: A shareable buffer that can be given to another
   process.
 * ``PIPE_BIND_GLOBAL``: A buffer that can be mapped into the global
   address space of a compute program.

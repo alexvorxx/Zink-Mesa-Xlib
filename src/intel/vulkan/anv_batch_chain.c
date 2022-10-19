@@ -936,7 +936,7 @@ anv_cmd_buffer_end_batch_buffer(struct anv_cmd_buffer *cmd_buffer)
           */
          if (cmd_buffer->batch_bos.next == cmd_buffer->batch_bos.prev) {
             const struct intel_device_info *devinfo = cmd_buffer->device->info;
-            const enum drm_i915_gem_engine_class engine_class = cmd_buffer->queue_family->engine_class;
+            const enum intel_engine_class engine_class = cmd_buffer->queue_family->engine_class;
             /* Careful to have everything in signed integer. */
             int32_t prefetch_len = devinfo->engine_class_prefetch[engine_class];
             int32_t batch_len = cmd_buffer->batch.next - cmd_buffer->batch.start;

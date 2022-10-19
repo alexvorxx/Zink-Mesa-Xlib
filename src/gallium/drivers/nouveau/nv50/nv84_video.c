@@ -278,9 +278,6 @@ nv84_create_decoder(struct pipe_context *context,
    int is_h264 = u_reduce_video_profile(templ->profile) == PIPE_VIDEO_FORMAT_MPEG4_AVC;
    int is_mpeg12 = u_reduce_video_profile(templ->profile) == PIPE_VIDEO_FORMAT_MPEG12;
 
-   if (getenv("XVMC_VL"))
-      return vl_create_decoder(context, templ);
-
    if ((is_h264 && templ->entrypoint != PIPE_VIDEO_ENTRYPOINT_BITSTREAM) ||
        (is_mpeg12 && templ->entrypoint > PIPE_VIDEO_ENTRYPOINT_IDCT)) {
       debug_printf("%x\n", templ->entrypoint);
@@ -614,7 +611,7 @@ nv84_video_buffer_create(struct pipe_context *pipe,
    union nouveau_bo_config cfg;
    unsigned bo_size;
 
-   if (getenv("XVMC_VL") || template->buffer_format != PIPE_FORMAT_NV12)
+   if (template->buffer_format != PIPE_FORMAT_NV12)
       return vl_video_buffer_create(pipe, template);
 
    if (!template->interlaced) {

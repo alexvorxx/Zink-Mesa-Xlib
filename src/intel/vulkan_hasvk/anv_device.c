@@ -696,7 +696,7 @@ anv_physical_device_init_queue_families(struct anv_physical_device *pdevice)
             .queueFlags = VK_QUEUE_GRAPHICS_BIT |
                           VK_QUEUE_TRANSFER_BIT,
             .queueCount = g_count,
-            .engine_class = I915_ENGINE_CLASS_RENDER,
+            .engine_class = INTEL_ENGINE_CLASS_RENDER,
          };
       }
       if (c_count > 0) {
@@ -704,7 +704,7 @@ anv_physical_device_init_queue_families(struct anv_physical_device *pdevice)
             .queueFlags = VK_QUEUE_COMPUTE_BIT |
                           VK_QUEUE_TRANSFER_BIT,
             .queueCount = c_count,
-            .engine_class = I915_ENGINE_CLASS_RENDER,
+            .engine_class = INTEL_ENGINE_CLASS_RENDER,
          };
       }
       /* Increase count below when other families are added as a reminder to
@@ -718,7 +718,7 @@ anv_physical_device_init_queue_families(struct anv_physical_device *pdevice)
                        VK_QUEUE_COMPUTE_BIT |
                        VK_QUEUE_TRANSFER_BIT,
          .queueCount = 1,
-         .engine_class = I915_ENGINE_CLASS_RENDER,
+         .engine_class = INTEL_ENGINE_CLASS_RENDER,
       };
       family_count = 1;
    }

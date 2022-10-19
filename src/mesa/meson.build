@@ -457,6 +457,7 @@ files_libmesa += [
   ir_expression_operation_h,
   main_remap_helper_h,
   sha1_h,
+  main_unmarshal_table_c,
 ] + main_marshal_generated_c
 
 if with_sse41

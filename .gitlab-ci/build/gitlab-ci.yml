@@ -611,7 +611,10 @@ debian-mingw32-x86_64:
       -D microsoft-clc=enabled
       -D static-libclc=all
       -D llvm=enabled
+      -D gallium-va=true
+      -D video-codecs=h264dec,h264enc,h265dec,h265enc,vc1dec
     EXTRA_OPTION: >
+      -D min-windows-version=7
       -D spirv-to-dxil=true
       -D gles1=enabled
       -D gles2=enabled

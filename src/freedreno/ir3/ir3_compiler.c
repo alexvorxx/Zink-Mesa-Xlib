@@ -122,10 +122,8 @@ static const nir_shader_compiler_options ir3_base_options = {
    .lower_cs_local_index_to_id = true,
    .lower_wpos_pntc = true,
 
-   /* Only needed for the spirv_to_nir() pass done in ir3_cmdline.c but that
-    * should be harmless for GL since 64b is not supported there.
-    */
    .lower_int64_options = (nir_lower_int64_options)~0,
+   .lower_doubles_options = (nir_lower_doubles_options)~0,
 };
 
 struct ir3_compiler *

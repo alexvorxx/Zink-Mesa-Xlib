@@ -106,3 +106,22 @@ intel_engines_count(const struct intel_query_engine_info *info,
 
    return count;
 }
+
+const char *
+intel_engines_class_to_string(enum intel_engine_class engine_class)
+{
+   switch (engine_class) {
+   case INTEL_ENGINE_CLASS_RENDER:
+      return "render";
+   case INTEL_ENGINE_CLASS_COPY:
+      return "copy";
+   case INTEL_ENGINE_CLASS_VIDEO:
+      return "video";
+   case INTEL_ENGINE_CLASS_VIDEO_ENHANCE:
+      return "video-enh";
+   case INTEL_ENGINE_CLASS_COMPUTE:
+      return "compute";
+   default:
+      return "unknown";
+   }
+}

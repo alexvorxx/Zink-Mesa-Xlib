@@ -438,8 +438,12 @@ files_libgalliumvl = files(
 )
 
 vlwinsys_deps = []
-files_libgalliumvlwinsys = files('vl/vl_winsys.h',
-                                 'vl/vl_winsys_drm.c')
+files_libgalliumvlwinsys = files('vl/vl_winsys.h')
+if host_machine.system() == 'windows'
+  files_libgalliumvlwinsys += files('vl/vl_winsys_win32.c')
+else
+  files_libgalliumvlwinsys += files('vl/vl_winsys_drm.c')
+endif
 if with_dri2 and with_platform_x11
   files_libgalliumvlwinsys += files('vl/vl_winsys_dri.c')
   if with_dri3

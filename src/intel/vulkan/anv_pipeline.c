@@ -2504,7 +2504,7 @@ compile_upload_rt_shader(struct anv_ray_tracing_pipeline *pipeline,
                                sizeof(stage->prog_data.bs),
                                stage->stats, 1,
                                NULL, &empty_bind_map,
-                               false /* push_descriptor_uses_bt */);
+                               &stage->push_desc_info);
    if (bin == NULL)
       return vk_error(pipeline, VK_ERROR_OUT_OF_HOST_MEMORY);
 

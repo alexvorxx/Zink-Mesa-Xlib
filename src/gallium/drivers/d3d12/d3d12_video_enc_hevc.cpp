@@ -383,22 +383,49 @@ d3d12_video_encoder_convert_hevc_codec_configuration(struct d3d12_video_encoder 
    capCodecConfigData.CodecSupportLimits.pHEVCSupport = &pD3D12Enc->m_currentEncodeCapabilities.m_encoderCodecSpecificConfigCaps.m_HEVCCodecCaps;
    capCodecConfigData.CodecSupportLimits.DataSize = sizeof(pD3D12Enc->m_currentEncodeCapabilities.m_encoderCodecSpecificConfigCaps.m_HEVCCodecCaps);
 
-   if(FAILED(pD3D12Enc->m_spD3D12VideoDevice->CheckFeatureSupport(D3D12_FEATURE_VIDEO_ENCODER_CODEC_CONFIGURATION_SUPPORT, &capCodecConfigData, sizeof(capCodecConfigData))
-      || !capCodecConfigData.IsSupported))
+   if(FAILED(pD3D12Enc->m_spD3D12VideoDevice->CheckFeatureSupport(D3D12_FEATURE_VIDEO_ENCODER_CODEC_CONFIGURATION_SUPPORT, &capCodecConfigData, sizeof(capCodecConfigData)))
+      || !capCodecConfigData.IsSupported)
    {
-         debug_printf("D3D12_VIDEO_ENCODER_CODEC_CONFIGURATION arguments are not supported - "
-            "Call to CheckFeatureCaps (D3D12_FEATURE_VIDEO_ENCODER_CODEC_CONFIGURATION_SUPPORT, ...) returned failure "
-            "or not supported for Codec HEVC -  MinLumaSize %d - MaxLumaSize %d -  MinTransformSize %d - "
-            "MaxTransformSize %d - Depth_inter %d - Depth intra %d\n",
-            config.MinLumaCodingUnitSize,
-            config.MaxLumaCodingUnitSize,
-            config.MinLumaTransformUnitSize,
-            config.MaxLumaTransformUnitSize,
-            config.max_transform_hierarchy_depth_inter,
-            config.max_transform_hierarchy_depth_intra);
-
          is_supported = false;
-         return config;
+
+         // Workaround for https://github.com/intel/libva/issues/641
+         if ( !capCodecConfigData.IsSupported
+            && ((picture->seq.max_transform_hierarchy_depth_inter == 0)
+               || (picture->seq.max_transform_hierarchy_depth_intra == 0)) )
+         {
+            // Try and see if the values where 4 and overflowed in the 2 bit fields
+            capCodecConfigData.CodecSupportLimits.pHEVCSupport->max_transform_hierarchy_depth_inter =
+               (picture->seq.max_transform_hierarchy_depth_inter == 0) ? 4 : picture->seq.max_transform_hierarchy_depth_inter;
+            capCodecConfigData.CodecSupportLimits.pHEVCSupport->max_transform_hierarchy_depth_intra =
+               (picture->seq.max_transform_hierarchy_depth_intra == 0) ? 4 : picture->seq.max_transform_hierarchy_depth_intra;
+
+            // Call the caps check again
+            if(SUCCEEDED(pD3D12Enc->m_spD3D12VideoDevice->CheckFeatureSupport(D3D12_FEATURE_VIDEO_ENCODER_CODEC_CONFIGURATION_SUPPORT, &capCodecConfigData, sizeof(capCodecConfigData)))
+               && capCodecConfigData.IsSupported)
+            {
+               // If this was the case, then update the config return variable with the overriden values too
+               is_supported = true;
+               config.max_transform_hierarchy_depth_inter =
+                  capCodecConfigData.CodecSupportLimits.pHEVCSupport->max_transform_hierarchy_depth_inter;
+               config.max_transform_hierarchy_depth_intra =
+                  capCodecConfigData.CodecSupportLimits.pHEVCSupport->max_transform_hierarchy_depth_intra;
+            }
+         }
+
+         if (!is_supported) {
+            debug_printf("D3D12_VIDEO_ENCODER_CODEC_CONFIGURATION arguments are not supported - "
+               "Call to CheckFeatureCaps (D3D12_FEATURE_VIDEO_ENCODER_CODEC_CONFIGURATION_SUPPORT, ...) returned failure "
+               "or not supported for Codec HEVC -  MinLumaSize %d - MaxLumaSize %d -  MinTransformSize %d - "
+               "MaxTransformSize %d - Depth_inter %d - Depth intra %d\n",
+               config.MinLumaCodingUnitSize,
+               config.MaxLumaCodingUnitSize,
+               config.MinLumaTransformUnitSize,
+               config.MaxLumaTransformUnitSize,
+               config.max_transform_hierarchy_depth_inter,
+               config.max_transform_hierarchy_depth_intra);
+
+            return config;
+         }
    }
 
    if (picture->seq.amp_enabled_flag)

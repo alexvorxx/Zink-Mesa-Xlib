@@ -993,8 +993,5 @@ struct gl_constants
 
    /** Use hardware accelerated GL_SELECT */
    bool HardwareAcceleratedSelect;
-
-   /** Origin of point coordinates. True if upper left, false if lower left. */
-   bool PointCoordOriginUpperLeft;
 };
 #endif

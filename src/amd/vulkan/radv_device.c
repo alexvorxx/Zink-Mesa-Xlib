@@ -3667,8 +3667,10 @@ radv_CreateDevice(VkPhysicalDevice physicalDevice, const VkDeviceCreateInfo *pCr
        */
       keep_shader_info = true;
 
-      if (!radv_init_trace(device))
+      if (!radv_init_trace(device)) {
+         result = VK_ERROR_INITIALIZATION_FAILED;
          goto fail;
+      }
 
       fprintf(stderr,
               "*****************************************************************************\n");
@@ -3694,8 +3696,10 @@ radv_CreateDevice(VkPhysicalDevice physicalDevice, const VkDeviceCreateInfo *pCr
          abort();
       }
 
-      if (!radv_thread_trace_init(device))
+      if (!radv_thread_trace_init(device)) {
+         result = VK_ERROR_INITIALIZATION_FAILED;
          goto fail;
+      }
 
       fprintf(stderr, "radv: Thread trace support is enabled (initial buffer size: %u MiB, "
                       "instruction timing: %s, cache counters: %s).\n",
@@ -3705,8 +3709,10 @@ radv_CreateDevice(VkPhysicalDevice physicalDevice, const VkDeviceCreateInfo *pCr
 
       if (radv_spm_trace_enabled()) {
          if (device->physical_device->rad_info.gfx_level >= GFX10) {
-            if (!radv_spm_init(device))
+            if (!radv_spm_init(device)) {
+               result = VK_ERROR_INITIALIZATION_FAILED;
                goto fail;
+            }
          } else {
             fprintf(stderr, "radv: SPM isn't supported for this GPU (%s)!\n",
                     device->physical_device->name);
@@ -3727,8 +3733,10 @@ radv_CreateDevice(VkPhysicalDevice physicalDevice, const VkDeviceCreateInfo *pCr
        */
       keep_shader_info = true;
 
-      if (!radv_trap_handler_init(device))
+      if (!radv_trap_handler_init(device)) {
+         result = VK_ERROR_INITIALIZATION_FAILED;
          goto fail;
+      }
    }
 
    if (device->physical_device->rad_info.gfx_level >= GFX10_3) {

@@ -43,5 +43,5 @@ called simpenrose, and the Mesa driver includes a backend
 (``src/broadcom/drm-shim/``) to use simpenrose from an x86 system with
 the i915 graphics driver with all of the vc4 rendering commands
 emulated on simpenrose and memcpyed to the real GPU.  Note that
-simpenrose's API drifts over time, so you need to be syned up with
+simpenrose's API drifts over time, so you need to be synced up with
 whatever version Mesa was last being developed against.

@@ -752,7 +752,7 @@ RADV driver environment variables
 
 :envvar:`RADV_FORCE_VRS`
    allow to force per-pipeline vertex VRS rates on GFX10.3+. This is only
-   forced for pipelines that don't explicitely use VRS or flat shading.
+   forced for pipelines that don't explicitly use VRS or flat shading.
    The supported values are 2x2, 1x2, 2x1 and 1x1. Only for testing purposes.
 
 :envvar:`RADV_FORCE_VRS_CONFIG_FILE`

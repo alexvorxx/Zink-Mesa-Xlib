@@ -116,7 +116,6 @@ each directory.
             shaders. Incomplete.
          -  **hud** - Heads-Up Display, an overlay showing GPU statistics
          -  **pipebuffer** - utility module for managing buffers
-         -  **rbug** - Gallium remote debug utility
          -  **rtasm** - run-time assembly/machine code generation.
             Currently there's run-time code generation for x86/SSE,
             PowerPC and Cell SPU.
@@ -148,7 +147,6 @@ each directory.
          -  **vdpau** - VDPAU frontend
          -  **wgl** - Windows WGL frontend
          -  **xa** - XA frontend
-         -  **xvmc** - XvMC frontend
 
       -  **winsys** - The device drivers are platform-independent, the
          winsys connects them to various platforms. There is usually one winsys
@@ -165,7 +163,6 @@ each directory.
 
          -  **d3dadapter9** - d3dadapter9.so for Wine
          -  **dri** - libgallium_dri.so loaded by libGL.so
-         -  **graw** - raw Gallium interface without a frontend
          -  XXX more
 
    -  **glx** - The GLX library code for building libGL.so using DRI

@@ -687,7 +687,7 @@ anv_physical_device_init_queue_families(struct anv_physical_device *pdevice)
       if (env_var_as_boolean("INTEL_COMPUTE_CLASS", false))
          c_count = intel_engines_count(pdevice->engine_info,
                                        INTEL_ENGINE_CLASS_COMPUTE);
-      enum drm_i915_gem_engine_class compute_class =
+      enum intel_engine_class compute_class =
          c_count < 1 ? INTEL_ENGINE_CLASS_RENDER : INTEL_ENGINE_CLASS_COMPUTE;
 
       anv_override_engine_counts(&gc_count, &g_count, &c_count);
@@ -1614,15 +1614,15 @@ void anv_GetPhysicalDeviceFeatures2(
 
       case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_ATOMIC_FLOAT_2_FEATURES_EXT: {
          VkPhysicalDeviceShaderAtomicFloat2FeaturesEXT *features = (void *)ext;
-         features->shaderBufferFloat16Atomics      = false;
+         features->shaderBufferFloat16Atomics      = pdevice->info.has_lsc;
          features->shaderBufferFloat16AtomicAdd    = false;
-         features->shaderBufferFloat16AtomicMinMax = false;
+         features->shaderBufferFloat16AtomicMinMax = pdevice->info.has_lsc;
          features->shaderBufferFloat32AtomicMinMax = true;
          features->shaderBufferFloat64AtomicMinMax =
             pdevice->info.has_64bit_float && pdevice->info.has_lsc;
-         features->shaderSharedFloat16Atomics      = false;
+         features->shaderSharedFloat16Atomics      = pdevice->info.has_lsc;
          features->shaderSharedFloat16AtomicAdd    = false;
-         features->shaderSharedFloat16AtomicMinMax = false;
+         features->shaderSharedFloat16AtomicMinMax = pdevice->info.has_lsc;
          features->shaderSharedFloat32AtomicMinMax = true;
          features->shaderSharedFloat64AtomicMinMax = false;
          features->shaderImageFloat32AtomicMinMax  = false;
@@ -3248,8 +3248,16 @@ VkResult anv_CreateDevice(
       return vk_error(physical_device, VK_ERROR_OUT_OF_HOST_MEMORY);
 
    struct vk_device_dispatch_table dispatch_table;
+
+   bool override_initial_entrypoints = true;
+   if (physical_device->instance->vk.app_info.app_name &&
+       !strcmp(physical_device->instance->vk.app_info.app_name, "HITMAN3.exe")) {
+      vk_device_dispatch_table_from_entrypoints(&dispatch_table, &hitman3_device_entrypoints, true);
+      override_initial_entrypoints = false;
+   }
    vk_device_dispatch_table_from_entrypoints(&dispatch_table,
-      anv_genX(&physical_device->info, device_entrypoints), true);
+      anv_genX(&physical_device->info, device_entrypoints),
+      override_initial_entrypoints);
    vk_device_dispatch_table_from_entrypoints(&dispatch_table,
       &anv_device_entrypoints, false);
    vk_device_dispatch_table_from_entrypoints(&dispatch_table,

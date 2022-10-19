@@ -99,7 +99,7 @@ class Format(Enum):
          return [('uint8_t', 'attr', 0),
                  ('uint8_t', 'attr_chan', 0),
                  ('memory_sync_info', 'sync', 'memory_sync_info()'),
-                 ('uint8_t', 'wait_vdst', 0)]
+                 ('uint8_t', 'wait_vdst', 15)]
       elif self == Format.MTBUF:
          return [('unsigned', 'dfmt', None),
                  ('unsigned', 'nfmt', None),

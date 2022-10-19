@@ -35,6 +35,7 @@ struct radv_acceleration_structure {
    uint64_t mem_offset;
    uint64_t size;
    uint64_t va;
+   VkAccelerationStructureTypeKHR type;
 };
 
 VK_DEFINE_NONDISP_HANDLE_CASTS(radv_acceleration_structure, base, VkAccelerationStructureKHR,

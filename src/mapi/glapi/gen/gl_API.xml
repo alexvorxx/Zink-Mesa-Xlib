@@ -4804,7 +4804,7 @@
         <glx handcode="true"/>
     </function>
 
-    <function name="MultiDrawElements" alias="MultiDrawElementsEXT">
+    <function name="MultiDrawElementsEXT" alias="MultiDrawElements">
         <param name="mode" type="GLenum"/>
         <param name="count" type="const GLsizei *"/>
         <param name="type" type="GLenum"/>
@@ -5094,8 +5094,7 @@
     <type name="intptr"   size="4"                  glx_name="CARD32"/>
     <type name="sizeiptr" size="4"  unsigned="true" glx_name="CARD32"/>
 
-    <function name="BindBuffer" es1="1.1" es2="2.0" no_error="true"
-              marshal_call_after="_mesa_glthread_BindBuffer(ctx, target, buffer);">
+    <function name="BindBuffer" es1="1.1" es2="2.0" no_error="true" marshal="custom">
         <param name="target" type="GLenum"/>
         <param name="buffer" type="GLuint"/>
         <glx ignore="true"/>
@@ -9861,7 +9860,7 @@
         <param name="primcount" type="GLsizei"/>
     </function>
 
-    <function name="MultiDrawElementsEXT" es1="1.0" es2="2.0" marshal="custom" exec="dlist">
+    <function name="MultiDrawElements" es1="1.0" es2="2.0" marshal="custom" exec="dlist">
         <param name="mode" type="GLenum"/>
         <param name="count" type="const GLsizei *" count="primcount"/>
         <param name="type" type="GLenum"/>
@@ -12595,6 +12594,23 @@
     <enum name="GPU_MEMORY_INFO_EVICTED_MEMORY_NVX"           value="0x904B" />
 </category>
 
+<category name="GL_EXT_debug_label" number="439">
+  <function name="LabelObjectEXT" es1="1.1" es2="2.0">
+    <param name="type" type="GLenum"/>
+    <param name="object" type="GLuint"/>
+    <param name="length" type="GLsizei"/>
+    <param name="label" type="const GLchar *"/>
+  </function>
+
+  <function name="GetObjectLabelEXT" es1="1.1" es2="2.0">
+    <param name="type" type="GLenum"/>
+    <param name="object" type="GLuint"/>
+    <param name="bufSize" type="GLsizei"/>
+    <param name="length" type="GLsizei *"/>
+    <param name="label" type="GLchar *"/>
+  </function>
+</category>
+
 <xi:include href="AMD_gpu_shader_int64.xml" xmlns:xi="http://www.w3.org/2001/XInclude"/>
 
 <category name="GL_NV_fill_rectangle" number="466">
@@ -12922,6 +12938,18 @@
     <!-- Set a GL error. Used by glthread to set errors without syncing. -->
     <function name="InternalSetError" es1="1.0" es2="2.0">
         <param name="error" type="GLenum"/>
+    </function>
+
+    <function name="DrawArraysUserBuf" es1="1.0" es2="2.0" marshal="custom">
+    </function>
+
+    <function name="DrawElementsUserBuf" es1="1.0" es2="2.0" marshal="custom">
+    </function>
+
+    <function name="MultiDrawArraysUserBuf" es1="1.0" es2="2.0" marshal="custom">
+    </function>
+
+    <function name="MultiDrawElementsUserBuf" es1="1.0" es2="2.0" marshal="custom">
     </function>
 </category>
 

@@ -35,6 +35,10 @@
 
 #include "va_private.h"
 
+#ifdef _WIN32
+#include <va/va_win32.h>
+#endif
+
 VAStatus
 vlVaCreateBuffer(VADriverContextP ctx, VAContextID context, VABufferType type,
                  unsigned int size, unsigned int num_elements, void *data,
@@ -126,7 +130,7 @@ vlVaMapBuffer(VADriverContextP ctx, VABufferID buf_id, void **pbuff)
 
    if (buf->derived_surface.resource) {
       struct pipe_resource *resource;
-      struct pipe_box box = {};
+      struct pipe_box box;
       void *(*map_func)(struct pipe_context *,
              struct pipe_resource *resource,
              unsigned level,
@@ -134,6 +138,7 @@ vlVaMapBuffer(VADriverContextP ctx, VABufferID buf_id, void **pbuff)
              const struct pipe_box *,
              struct pipe_transfer **out_transfer);
 
+      memset(&box, 0, sizeof(box));
       resource = buf->derived_surface.resource;
       box.width = resource->width0;
       box.height = resource->height0;
@@ -277,7 +282,12 @@ vlVaAcquireBufferHandle(VADriverContextP ctx, VABufferID buf_id,
 
    /* List of supported memory types, in preferred order. */
    static const uint32_t mem_types[] = {
+#ifdef _WIN32
+      VA_SURFACE_ATTRIB_MEM_TYPE_NTHANDLE,
+      VA_SURFACE_ATTRIB_MEM_TYPE_D3D12_RESOURCE,
+#else
       VA_SURFACE_ATTRIB_MEM_TYPE_DRM_PRIME,
+#endif
       0
    };
 
@@ -324,7 +334,13 @@ vlVaAcquireBufferHandle(VADriverContextP ctx, VABufferID buf_id,
       VABufferInfo * const buf_info = &buf->export_state;
 
       switch (mem_type) {
-      case VA_SURFACE_ATTRIB_MEM_TYPE_DRM_PRIME: {
+#ifdef _WIN32
+      case VA_SURFACE_ATTRIB_MEM_TYPE_D3D12_RESOURCE:
+      case VA_SURFACE_ATTRIB_MEM_TYPE_NTHANDLE:
+#else
+      case VA_SURFACE_ATTRIB_MEM_TYPE_DRM_PRIME:
+#endif
+      {
          struct winsys_handle whandle;
 
          mtx_lock(&drv->mutex);
@@ -333,6 +349,10 @@ vlVaAcquireBufferHandle(VADriverContextP ctx, VABufferID buf_id,
          memset(&whandle, 0, sizeof(whandle));
          whandle.type = WINSYS_HANDLE_TYPE_FD;
 
+#ifdef _WIN32
+         if (mem_type == VA_SURFACE_ATTRIB_MEM_TYPE_D3D12_RESOURCE)
+            whandle.type = WINSYS_HANDLE_TYPE_D3D12_RES;
+#endif
          if (!screen->resource_get_handle(screen, drv->pipe,
                                           buf->derived_surface.resource,
                                           &whandle, PIPE_HANDLE_USAGE_FRAMEBUFFER_WRITE)) {
@@ -343,6 +363,11 @@ vlVaAcquireBufferHandle(VADriverContextP ctx, VABufferID buf_id,
          mtx_unlock(&drv->mutex);
 
          buf_info->handle = (intptr_t)whandle.handle;
+
+#ifdef _WIN32
+         if (mem_type == VA_SURFACE_ATTRIB_MEM_TYPE_D3D12_RESOURCE)
+            buf_info->handle = (intptr_t)whandle.com_obj;
+#endif
          break;
       }
       default:
@@ -385,9 +410,18 @@ vlVaReleaseBufferHandle(VADriverContextP ctx, VABufferID buf_id)
       VABufferInfo * const buf_info = &buf->export_state;
 
       switch (buf_info->mem_type) {
+#ifdef _WIN32
+      case VA_SURFACE_ATTRIB_MEM_TYPE_D3D12_RESOURCE:
+         // Do nothing for this case.
+         break;
+      case VA_SURFACE_ATTRIB_MEM_TYPE_NTHANDLE:
+         CloseHandle((HANDLE) buf_info->handle);
+      break;
+#else
       case VA_SURFACE_ATTRIB_MEM_TYPE_DRM_PRIME:
          close((intptr_t)buf_info->handle);
          break;
+#endif
       default:
          return VA_STATUS_ERROR_INVALID_BUFFER;
       }

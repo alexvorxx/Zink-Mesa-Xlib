@@ -400,8 +400,8 @@ d3d12_video_encode_max_supported_slices(const D3D12_VIDEO_ENCODER_CODEC &argTarg
    D3D12_VIDEO_ENCODER_LEVELS_H264 h264lvl = {};
    D3D12_VIDEO_ENCODER_SEQUENCE_GOP_STRUCTURE_H264 h264Gop = { 1, 0, 0, 0, 0 };
    D3D12_VIDEO_ENCODER_CODEC_CONFIGURATION_H264 h264Config = {};
-   D3D12_VIDEO_ENCODER_PROFILE_HEVC hevcprof = D3D12_VIDEO_ENCODER_PROFILE_HEVC_MAIN;
-   D3D12_VIDEO_ENCODER_LEVEL_TIER_CONSTRAINTS_HEVC hevcLvl = { D3D12_VIDEO_ENCODER_LEVELS_HEVC_62, D3D12_VIDEO_ENCODER_TIER_HEVC_HIGH };
+   D3D12_VIDEO_ENCODER_PROFILE_HEVC hevcprof = { };
+   D3D12_VIDEO_ENCODER_LEVEL_TIER_CONSTRAINTS_HEVC hevcLvl = { };
    D3D12_VIDEO_ENCODER_SEQUENCE_GOP_STRUCTURE_HEVC hevcGop = { 1, 0, 0 };
    D3D12_VIDEO_ENCODER_CODEC_CONFIGURATION_HEVC hevcConfig = {};
    switch (argTargetCodec) {
@@ -431,6 +431,10 @@ d3d12_video_encode_max_supported_slices(const D3D12_VIDEO_ENCODER_CODEC &argTarg
             codecSupport.pHEVCSupport->max_transform_hierarchy_depth_inter,
             codecSupport.pHEVCSupport->max_transform_hierarchy_depth_intra,
          };
+
+         if ((codecSupport.pHEVCSupport->SupportFlags & D3D12_VIDEO_ENCODER_CODEC_CONFIGURATION_SUPPORT_HEVC_FLAG_ASYMETRIC_MOTION_PARTITION_REQUIRED) != 0)
+            hevcConfig.ConfigurationFlags |= D3D12_VIDEO_ENCODER_CODEC_CONFIGURATION_HEVC_FLAG_USE_ASYMETRIC_MOTION_PARTITION;
+
          capEncoderSupportData.SuggestedProfile.pHEVCProfile = &hevcprof;
          capEncoderSupportData.SuggestedProfile.DataSize = sizeof(hevcprof);
          capEncoderSupportData.SuggestedLevel.pHEVCLevelSetting = &hevcLvl;
@@ -534,8 +538,8 @@ static d3d12_video_encode_get_hevc_codec_support ( const D3D12_VIDEO_ENCODER_COD
 
    for (auto hevc_config : hevcConfigurationSets) {
       hevcCodecCaps = hevc_config;
-      if(SUCCEEDED(pD3D12VideoDevice->CheckFeatureSupport(D3D12_FEATURE_VIDEO_ENCODER_CODEC_CONFIGURATION_SUPPORT, &capCodecConfigData, sizeof(capCodecConfigData))
-         && capCodecConfigData.IsSupported)) {
+      if(SUCCEEDED(pD3D12VideoDevice->CheckFeatureSupport(D3D12_FEATURE_VIDEO_ENCODER_CODEC_CONFIGURATION_SUPPORT, &capCodecConfigData, sizeof(capCodecConfigData)))
+         && capCodecConfigData.IsSupported) {
             hevc_config.SupportFlags = hevcCodecCaps.SupportFlags;
             return hevc_config;
       }

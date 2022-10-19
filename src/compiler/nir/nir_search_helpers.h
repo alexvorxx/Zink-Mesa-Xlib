@@ -423,6 +423,24 @@ is_only_used_as_float(const nir_alu_instr *instr)
 }
 
 static inline bool
+is_only_used_by_fadd(const nir_alu_instr *instr)
+{
+   nir_foreach_use(src, &instr->dest.dest.ssa) {
+      const nir_instr *const user_instr = src->parent_instr;
+      if (user_instr->type != nir_instr_type_alu)
+         return false;
+
+      const nir_alu_instr *const user_alu = nir_instr_as_alu(user_instr);
+      assert(instr != user_alu);
+
+      if (user_alu->op != nir_op_fadd)
+         return false;
+   }
+
+   return true;
+}
+
+static inline bool
 only_lower_8_bits_used(const nir_alu_instr *instr)
 {
    return (nir_ssa_def_bits_used(&instr->dest.dest.ssa) & ~0xffull) == 0;

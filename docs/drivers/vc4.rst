@@ -4,7 +4,7 @@ VC4
 Mesa's ``vc4`` graphics driver supports multiple implementations of
 Broadcom's VideoCore IV GPU. It is notably used in the Raspberry Pi 0
 through Raspberry Pi 3 hardware, and the driver is included as an
-option as of the 2016-02-09 Rasbpian release using ``raspi-config``.
+option as of the 2016-02-09 Raspbian release using ``raspi-config``.
 On most other distributions such as Debian or Fedora, you need no
 configuration to enable the driver.
 

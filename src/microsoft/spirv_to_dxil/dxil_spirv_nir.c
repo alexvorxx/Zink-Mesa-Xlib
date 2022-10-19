@@ -726,6 +726,7 @@ dxil_spirv_nir_passes(nir_shader *nir,
 
    NIR_PASS_V(nir, nir_lower_readonly_images_to_tex, true);
    nir_lower_tex_options lower_tex_options = {
+      .lower_txp = UINT32_MAX,
       .lower_invalid_implicit_lod = true,
    };
    NIR_PASS_V(nir, nir_lower_tex, &lower_tex_options);

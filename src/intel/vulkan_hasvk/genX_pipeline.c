@@ -1682,7 +1682,7 @@ emit_3dstate_wm(struct anv_graphics_pipeline *pipeline,
    wm.StatisticsEnable                    = true;
    wm.LineEndCapAntialiasingRegionWidth   = _05pixels;
    wm.LineAntialiasingRegionWidth         = _10pixels;
-   wm.PointRasterizationRule              = RASTRULE_UPPER_RIGHT;
+   wm.PointRasterizationRule              = RASTRULE_UPPER_LEFT;
 
    if (anv_pipeline_has_stage(pipeline, MESA_SHADER_FRAGMENT)) {
       if (wm_prog_data->early_fragment_tests) {

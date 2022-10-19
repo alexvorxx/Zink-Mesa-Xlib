@@ -425,7 +425,7 @@ genX(init_device_state)(struct anv_device *device)
    for (uint32_t i = 0; i < device->queue_count; i++) {
       struct anv_queue *queue = &device->queues[i];
       switch (queue->family->engine_class) {
-      case I915_ENGINE_CLASS_RENDER:
+      case INTEL_ENGINE_CLASS_RENDER:
          res = init_render_queue_state(queue);
          break;
       default:

@@ -2882,7 +2882,8 @@ radv_generate_graphics_pipeline_key(const struct radv_graphics_pipeline *pipelin
    if (device->primitives_generated_query)
       key.primitives_generated_query = true;
 
-   key.ps.has_epilog = !!pipeline->ps_epilog;
+   key.ps.has_epilog =
+      !!(pipeline->active_stages & VK_SHADER_STAGE_FRAGMENT_BIT) && !!pipeline->ps_epilog;
 
    key.dynamic_patch_control_points =
       !!(pipeline->dynamic_states & RADV_DYNAMIC_PATCH_CONTROL_POINTS);
@@ -4079,7 +4080,8 @@ radv_create_shaders(struct radv_pipeline *pipeline, struct radv_pipeline_layout 
       goto done;
    }
 
-   if (pipeline->type == RADV_PIPELINE_GRAPHICS && !stages[MESA_SHADER_FRAGMENT].entrypoint) {
+   if (pipeline->type == RADV_PIPELINE_GRAPHICS &&
+       !(radv_pipeline_to_graphics(pipeline)->active_stages & VK_SHADER_STAGE_FRAGMENT_BIT)) {
       nir_builder fs_b = radv_meta_init_shader(device, MESA_SHADER_FRAGMENT, "noop_fs");
 
       stages[MESA_SHADER_FRAGMENT] = (struct radv_pipeline_stage) {
@@ -4195,12 +4197,20 @@ radv_create_shaders(struct radv_pipeline *pipeline, struct radv_pipeline_layout 
       }
    }
 
-   /* When the main FS is compiled inside a library, we need to compile a PS epilog if it hasn't
-    * been already imported.
-    */
    if (pipeline->type == RADV_PIPELINE_GRAPHICS) {
-      if (!radv_pipeline_create_ps_epilog(radv_pipeline_to_graphics(pipeline), pipeline_key))
-         return result;
+      struct radv_graphics_pipeline *graphics_pipeline = radv_pipeline_to_graphics(pipeline);
+
+      if (noop_fs && graphics_pipeline->ps_epilog) {
+         /* Discard the PS epilog when the pipeline doesn't use a FS because it makes no sense. */
+         radv_shader_part_unref(device, graphics_pipeline->ps_epilog);
+         graphics_pipeline->ps_epilog = NULL;
+      } else {
+         /* When the main FS is compiled inside a library, we need to compile a PS epilog if it
+          * hasn't been already imported.
+          */
+         if (!radv_pipeline_create_ps_epilog(graphics_pipeline, pipeline_key))
+            return result;
+      }
    }
 
    /* Upload shader binaries. */

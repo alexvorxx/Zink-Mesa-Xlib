@@ -3271,8 +3271,6 @@ is_next_call_a_mergeable_draw(struct tc_draw_single *first,
    if (next->base.call_id != TC_CALL_draw_single)
       return false;
 
-   simplify_draw_info(&next->info);
-
    STATIC_ASSERT(offsetof(struct pipe_draw_info, min_index) ==
                  sizeof(struct pipe_draw_info) - 8);
    STATIC_ASSERT(offsetof(struct pipe_draw_info, max_index) ==
@@ -3294,8 +3292,6 @@ tc_call_draw_single(struct pipe_context *pipe, void *call, uint64_t *last_ptr)
    /* If at least 2 consecutive draw calls can be merged... */
    if (next != last &&
        next->base.call_id == TC_CALL_draw_single) {
-      simplify_draw_info(&first->info);
-
       if (is_next_call_a_mergeable_draw(first, next)) {
          /* The maximum number of merged draws is given by the batch size. */
          struct pipe_draw_start_count_bias multi[TC_SLOTS_PER_BATCH / call_size(tc_draw_single)];
@@ -3487,6 +3483,7 @@ tc_draw_vbo(struct pipe_context *_pipe, const struct pipe_draw_info *info,
          p->info.min_index = offset >> util_logbase2(index_size);
          p->info.max_index = draws[0].count;
          p->index_bias = draws[0].index_bias;
+         simplify_draw_info(&p->info);
       } else {
          /* Non-indexed call or indexed with a real index buffer. */
          struct tc_draw_single *p = drawid_offset > 0 ?
@@ -3506,6 +3503,7 @@ tc_draw_vbo(struct pipe_context *_pipe, const struct pipe_draw_info *info,
          p->info.min_index = draws[0].start;
          p->info.max_index = draws[0].count;
          p->index_bias = draws[0].index_bias;
+         simplify_draw_info(&p->info);
       }
 
       /* This must be after tc_add_call, which can flush the batch. */

@@ -129,7 +129,8 @@ vlVaHandleVAEncSliceParameterBufferTypeH264(vlVaDriver *drv, vlVaContext *contex
     *  Slice type.
     *  Range: 0..2, 5..7, i.e. no switching slices.
    */
-   struct h264_slice_descriptor slice_descriptor = { };
+   struct h264_slice_descriptor slice_descriptor;
+   memset(&slice_descriptor, 0, sizeof(slice_descriptor));
    slice_descriptor.macroblock_address = h264->macroblock_address;
    slice_descriptor.num_macroblocks = h264->num_macroblocks;
 

@@ -1881,8 +1881,8 @@ save_DrawRangeElementsBaseVertex(GLenum mode, GLuint start, GLuint end,
 }
 
 void GLAPIENTRY
-save_MultiDrawElementsEXT(GLenum mode, const GLsizei *count, GLenum type,
-                           const GLvoid * const *indices, GLsizei primcount)
+save_MultiDrawElements(GLenum mode, const GLsizei *count, GLenum type,
+                       const GLvoid * const *indices, GLsizei primcount)
 {
    GET_CURRENT_CONTEXT(ctx);
    struct _glapi_table *dispatch = ctx->CurrentServerDispatch;

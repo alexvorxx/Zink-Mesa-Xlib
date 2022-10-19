@@ -1532,10 +1532,10 @@ save_BlendEquationSeparateiARB(GLuint buf, GLenum modeRGB, GLenum modeA)
 
 /* GL_ARB_draw_instanced. */
 void GLAPIENTRY
-save_DrawArraysInstancedARB(UNUSED GLenum mode,
-                            UNUSED GLint first,
-                            UNUSED GLsizei count,
-                            UNUSED GLsizei primcount)
+save_DrawArraysInstanced(UNUSED GLenum mode,
+                         UNUSED GLint first,
+                         UNUSED GLsizei count,
+                         UNUSED GLsizei primcount)
 {
    GET_CURRENT_CONTEXT(ctx);
    _mesa_error(ctx, GL_INVALID_OPERATION,
@@ -1543,11 +1543,11 @@ save_DrawArraysInstancedARB(UNUSED GLenum mode,
 }
 
 void GLAPIENTRY
-save_DrawElementsInstancedARB(UNUSED GLenum mode,
-                              UNUSED GLsizei count,
-                              UNUSED GLenum type,
-                              UNUSED const GLvoid *indices,
-                              UNUSED GLsizei primcount)
+save_DrawElementsInstanced(UNUSED GLenum mode,
+                           UNUSED GLsizei count,
+                           UNUSED GLenum type,
+                           UNUSED const GLvoid *indices,
+                           UNUSED GLsizei primcount)
 {
    GET_CURRENT_CONTEXT(ctx);
    _mesa_error(ctx, GL_INVALID_OPERATION,

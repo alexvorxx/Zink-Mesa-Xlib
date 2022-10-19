@@ -75,11 +75,6 @@ u_pipe_screen_get_param_defaults(struct pipe_screen *pscreen,
    case PIPE_CAP_FS_COORD_ORIGIN_LOWER_LEFT:
    case PIPE_CAP_FS_COORD_PIXEL_CENTER_HALF_INTEGER:
    case PIPE_CAP_FS_COORD_PIXEL_CENTER_INTEGER:
-      return 0;
-
-   case PIPE_CAP_POINT_COORD_ORIGIN_UPPER_LEFT:
-      return 1;
-
    case PIPE_CAP_DEPTH_CLIP_DISABLE:
    case PIPE_CAP_DEPTH_CLIP_DISABLE_SEPARATE:
    case PIPE_CAP_DEPTH_CLAMP_ENABLE:

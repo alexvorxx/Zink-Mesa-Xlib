@@ -238,12 +238,6 @@ if with_platform_windows
   subdir('targets/libgl-gdi')
 endif
 if with_tests
-  subdir('targets/graw-null')
-  if with_platform_windows
-    subdir('targets/graw-gdi')
-  elif with_glx == 'gallium-xlib'
-    subdir('targets/graw-xlib')
-  endif
   subdir('tests')
 endif
 if with_swrast_vk

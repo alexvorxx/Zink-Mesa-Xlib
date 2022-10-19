@@ -38,8 +38,7 @@ _mesa_glthread_ProgramChanged(struct gl_context *ctx)
 
 uint32_t
 _mesa_unmarshal_GetActiveUniform(struct gl_context *ctx,
-                                 const struct marshal_cmd_GetActiveUniform *cmd,
-                                 const uint64_t *last)
+                                 const struct marshal_cmd_GetActiveUniform *cmd)
 {
    unreachable("never executed");
    return 0;
@@ -87,8 +86,7 @@ _mesa_marshal_GetActiveUniform(GLuint program, GLuint index, GLsizei bufSize,
 
 uint32_t
 _mesa_unmarshal_GetUniformLocation(struct gl_context *ctx,
-                                   const struct marshal_cmd_GetUniformLocation *cmd,
-                                   const uint64_t *last)
+                                   const struct marshal_cmd_GetUniformLocation *cmd)
 {
    unreachable("never executed");
    return 0;

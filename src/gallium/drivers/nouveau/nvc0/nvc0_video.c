@@ -106,9 +106,6 @@ nvc0_create_decoder(struct pipe_context *context,
    uint32_t timeout;
    u32 tmp_size = 0;
 
-   if (getenv("XVMC_VL"))
-       return vl_create_decoder(context, templ);
-
    if (templ->entrypoint != PIPE_VIDEO_ENTRYPOINT_BITSTREAM) {
       debug_printf("%x\n", templ->entrypoint);
       return NULL;

@@ -38,6 +38,7 @@ anv_entrypoints = custom_target(
     '--device-prefix', 'gfx11',
     '--device-prefix', 'gfx12',
     '--device-prefix', 'gfx125',
+    '--device-prefix', 'hitman3'
   ],
   depend_files : vk_entrypoints_gen_depend_files,
 )
@@ -127,6 +128,8 @@ foreach g : [['90', ['gfx8_cmd_buffer.c']],
 endforeach
 
 libanv_files = files(
+  'layers/anv_hitman3.c',
+  'anv_acceleration_structure.c',
   'anv_allocator.c',
   'anv_android.h',
   'anv_batch_chain.c',

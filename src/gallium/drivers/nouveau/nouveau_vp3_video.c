@@ -86,7 +86,7 @@ nouveau_vp3_video_buffer_create(struct pipe_context *pipe,
    struct pipe_sampler_view sv_templ;
    struct pipe_surface surf_templ;
 
-   if (getenv("XVMC_VL") || templat->buffer_format != PIPE_FORMAT_NV12)
+   if (templat->buffer_format != PIPE_FORMAT_NV12)
       return vl_video_buffer_create(pipe, templat);
 
    assert(templat->interlaced);

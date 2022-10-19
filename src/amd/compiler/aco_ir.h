@@ -53,6 +53,7 @@ enum {
    DEBUG_NO_SCHED = 0x40,
    DEBUG_PERF_INFO = 0x80,
    DEBUG_LIVE_INFO = 0x100,
+   DEBUG_FORCE_WAITDEPS = 0x200,
 };
 
 /**

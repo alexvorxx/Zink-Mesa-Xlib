@@ -40,6 +40,7 @@ static const struct debug_control aco_debug_options[] = {{"validateir", DEBUG_VA
                                                          {"validatera", DEBUG_VALIDATE_RA},
                                                          {"perfwarn", DEBUG_PERFWARN},
                                                          {"force-waitcnt", DEBUG_FORCE_WAITCNT},
+                                                         {"force-waitdeps", DEBUG_FORCE_WAITDEPS},
                                                          {"novn", DEBUG_NO_VN},
                                                          {"noopt", DEBUG_NO_OPT},
                                                          {"nosched", DEBUG_NO_SCHED},

@@ -315,15 +315,20 @@ fd_screen_get_param(struct pipe_screen *pscreen, enum pipe_cap param)
        * Since draw_indirect is needed sooner (gles31 and gl40 vs
        * gl42), hide base_instance on a5xx.  :-/
        */
-      return is_a4xx(screen);
+      return is_a4xx(screen) || is_a6xx(screen);
 
    case PIPE_CAP_CONSTANT_BUFFER_OFFSET_ALIGNMENT:
       return 64;
 
+   case PIPE_CAP_INT64:
+   case PIPE_CAP_INT64_DIVMOD:
+   case PIPE_CAP_DOUBLES:
+      return is_ir3(screen);
+
    case PIPE_CAP_GLSL_FEATURE_LEVEL:
    case PIPE_CAP_GLSL_FEATURE_LEVEL_COMPATIBILITY:
       if (is_a6xx(screen))
-         return 330;
+         return 400;
       else if (is_ir3(screen))
          return 140;
       else
@@ -410,7 +415,7 @@ fd_screen_get_param(struct pipe_screen *pscreen, enum pipe_cap param)
 
    /* Geometry shaders.. */
    case PIPE_CAP_MAX_GEOMETRY_OUTPUT_VERTICES:
-      return 512;
+      return 256;
    case PIPE_CAP_MAX_GEOMETRY_TOTAL_OUTPUT_COMPONENTS:
       return 2048;
    case PIPE_CAP_MAX_GS_INVOCATIONS:

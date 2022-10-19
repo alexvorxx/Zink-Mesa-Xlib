@@ -1,7 +1,7 @@
 Dispatch
 =============
 
-This chapter attemtps to document the Vulkan dispatch infrastructure in the
+This chapter attempts to document the Vulkan dispatch infrastructure in the
 Mesa Vulkan runtime.  There are a lot of moving pieces here but the end
 result has proven quite effective for implementing all the various Vulkan
 API requirements.
@@ -165,7 +165,7 @@ times if you want more than one table.  It also generates an entrypoint
 table for each prefix and each dispatch level (instance, physical device,
 and device) which is populated using the driver's functions.  Thanks to our
 use of weak function pointers (or something roughly equivalent for MSVC),
-any entrypoints which are not implented will automatically show up as
+any entrypoints which are not implemented will automatically show up as
 ``NULL`` entries in the table rather than resulting in linking errors.
 
 The above generates entrypoint tables because, thanks to aliasing and the C

@@ -167,15 +167,6 @@ cso_insert_state(struct cso_cache *sc,
                  unsigned hash_key, enum cso_cache_type type,
                  void *state);
 
-struct cso_hash_iter
-cso_find_state(struct cso_cache *sc,
-               unsigned hash_key, enum cso_cache_type type);
-
-struct cso_hash_iter
-cso_find_state_template(struct cso_cache *sc,
-                        unsigned hash_key, enum cso_cache_type type,
-                        void *templ, unsigned size);
-
 void
 cso_set_maximum_cache_size(struct cso_cache *sc, int number);
 
@@ -184,10 +175,11 @@ cso_delete_state(struct pipe_context *pipe, void *state,
                  enum cso_cache_type type);
 
 
-static inline unsigned
-cso_construct_key(void *key, int key_size)
+static ALWAYS_INLINE unsigned
+cso_construct_key(const void *key, int key_size)
 {
-   unsigned hash = 0, *ikey = (unsigned *)key;
+   unsigned hash = 0;
+   const unsigned *ikey = (const unsigned *)key;
    unsigned num_elements = key_size / 4;
 
    assert(key_size % 4 == 0);
@@ -198,6 +190,22 @@ cso_construct_key(void *key, int key_size)
    return hash;
 }
 
+static ALWAYS_INLINE struct cso_hash_iter
+cso_find_state_template(struct cso_cache *sc, unsigned hash_key,
+                        enum cso_cache_type type, const void *key,
+                        unsigned key_size)
+{
+   struct cso_hash *hash = &sc->hashes[type];
+   struct cso_hash_iter iter = cso_hash_find(hash, hash_key);
+
+   while (!cso_hash_iter_is_null(iter)) {
+      void *iter_data = cso_hash_iter_data(iter);
+      if (!memcmp(iter_data, key, key_size))
+         return iter;
+      iter = cso_hash_iter_next(iter);
+   }
+   return iter;
+}
 
 #ifdef __cplusplus
 }

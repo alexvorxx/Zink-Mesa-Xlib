@@ -783,13 +783,7 @@ elif _va == 'false'
   _va = 'disabled'
   warning('gallium-va option "false" deprecated, please use "disabled" instead.')
 endif
-if not system_has_kms_drm
-  if _va == 'enabled'
-    error('VA state tracker can only be built on unix-like OSes.')
-  else
-    _va = 'disabled'
-  endif
-elif not (with_gallium_r600 or with_gallium_radeonsi or with_gallium_nouveau or with_gallium_d3d12_video or with_gallium_virgl)
+if not (with_gallium_r600 or with_gallium_radeonsi or with_gallium_nouveau or with_gallium_d3d12_video or with_gallium_virgl)
   if _va == 'enabled'
     error('VA state tracker requires at least one of the following gallium drivers: r600, radeonsi, nouveau, d3d12 (with option gallium-d3d12-video), virgl.')
   else
@@ -799,7 +793,11 @@ endif
 with_gallium_va = false
 dep_va = null_dep
 if _va != 'disabled'
-  dep_va = dependency('libva', version : '>= 1.8.0', required : _va == 'enabled')
+  _dep_va_name = 'libva'
+  if host_machine.system() == 'windows'
+    _dep_va_name = 'libva-win32'
+  endif
+  dep_va = dependency(_dep_va_name, version : '>= 1.8.0', required : _va == 'enabled')
   if dep_va.found()
     dep_va_headers = dep_va.partial_dependency(compile_args : true)
     with_gallium_va = true
@@ -1639,7 +1637,7 @@ endif
 dep_futex = null_dep
 if host_machine.system() == 'windows'
   if (get_option('min-windows-version') < 8)
-    dep_futex = declare_dependency(compile_args : ['-DWINDOWS_NO_FUTEX'])
+    pre_args += '-DWINDOWS_NO_FUTEX'
   else
     dep_futex = cc.find_library('synchronization', required : true)
   endif

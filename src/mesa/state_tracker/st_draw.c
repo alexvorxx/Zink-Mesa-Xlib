@@ -67,22 +67,11 @@
 #include "draw/draw_context.h"
 #include "cso_cache/cso_context.h"
 
-
-/**
- * Translate OpenGL primtive type (GL_POINTS, GL_TRIANGLE_STRIP, etc) to
- * the corresponding Gallium type.
- */
-static unsigned
-translate_prim(const struct gl_context *ctx, unsigned prim)
-{
-   /* GL prims should match Gallium prims, spot-check a few */
-   STATIC_ASSERT(GL_POINTS == PIPE_PRIM_POINTS);
-   STATIC_ASSERT(GL_QUADS == PIPE_PRIM_QUADS);
-   STATIC_ASSERT(GL_TRIANGLE_STRIP_ADJACENCY == PIPE_PRIM_TRIANGLE_STRIP_ADJACENCY);
-   STATIC_ASSERT(GL_PATCHES == PIPE_PRIM_PATCHES);
-
-   return prim;
-}
+/* GL prims should match Gallium prims, spot-check a few */
+static_assert(GL_POINTS == PIPE_PRIM_POINTS, "enum mismatch");
+static_assert(GL_QUADS == PIPE_PRIM_QUADS, "enum mismatch");
+static_assert(GL_TRIANGLE_STRIP_ADJACENCY == PIPE_PRIM_TRIANGLE_STRIP_ADJACENCY, "enum mismatch");
+static_assert(GL_PATCHES == PIPE_PRIM_PATCHES, "enum mismatch");
 
 static inline void
 prepare_draw(struct st_context *st, struct gl_context *ctx, uint64_t state_mask,
@@ -283,7 +272,7 @@ st_indirect_draw_vbo(struct gl_context *ctx,
       info.primitive_restart = ctx->Array._PrimitiveRestart[index_size_shift];
    }
 
-   info.mode = translate_prim(ctx, mode);
+   info.mode = mode;
    indirect.buffer = indirect_data->buffer;
    indirect.offset = indirect_offset;
 
@@ -339,7 +328,7 @@ st_draw_transform_feedback(struct gl_context *ctx, GLenum mode,
    memset(&indirect, 0, sizeof(indirect));
    util_draw_init_info(&info);
    info.max_index = ~0u; /* so that u_vbuf can tell that it's unknown */
-   info.mode = translate_prim(ctx, mode);
+   info.mode = mode;
    info.instance_count = num_instances;
 
    /* Transform feedback drawing is always non-indexed. */

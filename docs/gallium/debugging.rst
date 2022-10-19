@@ -21,10 +21,6 @@ This option controls if the debug variables should be printed to stderr. This
 is probably the most useful variable, since it allows you to find which
 variables a driver uses.
 
-.. envvar:: GALLIUM_RBUG <bool> (false)
-
-Controls if the :ref:`rbug` should be used.
-
 .. envvar:: GALLIUM_TRACE <string> ("")
 
 If set, this variable will cause the :ref:`trace` output to be written to the
@@ -104,15 +100,3 @@ The variables of type "flags" all take a string with comma-separated flags to
 enable different debugging for different parts of the drivers or state
 tracker. If set to "help", the driver will print a list of flags which the
 variable accepts. Order does not matter.
-
-
-.. _rbug:
-
-Remote Debugger
-^^^^^^^^^^^^^^^
-
-The remote debugger, commonly known as rbug, allows for runtime inspections of
-:ref:`Context`, :ref:`Screen`, :ref:`Resource` and :ref:`Shader` objects; and
-pausing and stepping of :ref:`Draw` calls. Is used with rbug-gui which is
-hosted outside of the main mesa repository. rbug is can be used over a network
-connection, so the debugger does not need to be on the same machine.

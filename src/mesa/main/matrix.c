@@ -388,6 +388,7 @@ pop_matrix( struct gl_context *ctx, struct gl_matrix_stack *stack )
    }
 
    stack->Top = &(stack->Stack[stack->Depth]);
+   stack->ChangedSincePush = true;
    return GL_TRUE;
 }
 

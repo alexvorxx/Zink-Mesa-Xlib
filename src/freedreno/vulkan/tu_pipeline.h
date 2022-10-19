@@ -209,6 +209,7 @@ struct tu_pipeline
 
       uint32_t vs_param_stride;
       uint32_t hs_param_stride;
+      uint32_t hs_param_dwords;
       uint32_t hs_vertices_out;
       uint32_t cs_instrlen;
    } program;
@@ -295,8 +296,8 @@ void tu6_emit_vertex_input(struct tu_cs *cs,
                            const VkVertexInputAttributeDescription2EXT *attrs);
 
 #define EMIT_CONST_DWORDS(const_dwords) (4 + const_dwords)
-#define TU6_EMIT_PATCH_CONTROL_POINTS_DWORDS \
-   (EMIT_CONST_DWORDS(4) + EMIT_CONST_DWORDS(8) + 2 + 2 + 2)
+#define TU6_EMIT_PATCH_CONTROL_POINTS_DWORDS(hs_param_dwords) \
+   (EMIT_CONST_DWORDS(4) + EMIT_CONST_DWORDS(hs_param_dwords) + 2 + 2 + 2)
 void tu6_emit_patch_control_points(struct tu_cs *cs,
                                    const struct tu_pipeline *pipeline,
                                    unsigned patch_control_points);

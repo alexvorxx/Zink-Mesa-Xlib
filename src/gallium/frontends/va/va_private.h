@@ -383,7 +383,9 @@ typedef struct {
 } vlVaQualityBits;
 
 // Public functions:
+#ifndef _WIN32
 VAStatus VA_DRIVER_INIT_FUNC(VADriverContextP ctx);
+#endif
 
 // vtable functions:
 VAStatus vlVaTerminate(VADriverContextP ctx);

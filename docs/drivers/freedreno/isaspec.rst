@@ -13,7 +13,7 @@ and disassemblers, include easier detection of new bit combinations that
 were not seen before in previous generations due to more rigorous
 description of bits that are expect to be '0' or '1' or 'x' (dontcare)
 and verification that different encodings don't have conflicting bits
-(ie. that the specification cannot result in more than one valid
+(i.e. that the specification cannot result in more than one valid
 interpretation of any bit pattern).
 
 The isaspec tool and xml schema are intended to be generic (not specific
@@ -38,7 +38,7 @@ Bitsets
 -------
 
 The fundamental concept of matching a bit-pattern to an instruction
-decoding/encoding is the concept of a hierarchial tree of bitsets.
+decoding/encoding is the concept of a hierarchical tree of bitsets.
 This is intended to match how the hw decodes instructions, where certain
 bits describe the instruction (and sub-encoding, and so on), and other
 bits describe various operands to the instruction.
@@ -81,7 +81,7 @@ group things into instruction "categories":
    	<field name="UL" pos="45" type="bool" display="(ul)"/>
    	<field name="DST_CONV" pos="46" type="bool">
    		<doc>
-   			Destination register is opposite precision as source, ie.
+   			Destination register is opposite precision as source, i.e.
    			if {FULL} is true then destination is half precision, and
    			visa versa.
    		</doc>
@@ -150,7 +150,7 @@ we don't expect, which may signal a new instruction (sub)encoding).
 
 You'll notice that ``SRC1`` refers back to a different bitset hierarchy
 that describes various different src register encoding (used for cat2 and
-cat4 instructions), ie. GPR vs CONST vs relative GPR/CONST.  For fields
+cat4 instructions), i.e. GPR vs CONST vs relative GPR/CONST.  For fields
 which have bitset types, parameters can be "passed" in via ``<param>``
 elements, which can be referred to by the display template string, and/or
 expressions.  For example, this helps to deal with cases where other fields
@@ -178,14 +178,14 @@ outside of that bitset control the encoding/decoding, such as in the
    	<field name="ABSNEG" low="14" high="15" type="#absneg"/>
    </bitset>
 
-At some level in the bitset inheritance hiearchy, there is expected to be a
+At some level in the bitset inheritance hierarchy, there is expected to be a
 ``<display>`` element specifying a template string used during bitset
 decoding.  The display template consists of references to fields (which may
 be derived fields) specified as ``{FIELDNAME}`` and other characters
 which are just echoed through to the resulting decoded bitset.
 
 It is possible to define a line column alignment value per field to influence
-the visual output. It needs to be pecified as ``{FIELDNAME:align=xx}``.
+the visual output. It needs to be specified as ``{FIELDNAME:align=xx}``.
 
 The ``<override>`` element will be described in the next section, but it
 provides for both different decoded instruction syntax/mnemonics (when
@@ -210,7 +210,7 @@ An ``<override>`` in a bitset allows to redefine the display string, and/or
 field definitions from the default case.  If the override's expr(ession)
 evaluates to non-zero, ``<display>``, ``<field>``, and ``<derived>``
 elements take precedence over what is defined in the toplevel of the
-bitset (ie. the default case).
+bitset (i.e. the default case).
 
 Expressions
 -----------
@@ -275,7 +275,7 @@ The ``type`` attribute specifies that the input to encoding an instruction
 is a ``struct ir3_instruction *``.  In the case of bitset hierarchies with
 multiple possible leaf nodes, a ``case-prefix`` attribute should be supplied
 along with a function that maps the bitset encode source to an enum value
-with the specified prefix prepended to uppercase'd leaf node name.  Ie. in
+with the specified prefix prepended to uppercase'd leaf node name.  I.e. in
 this case, "add.f" becomes ``OPC_ADD_F``.
 
 Individual ``<map>`` elements teach the encoder how to map from the encode

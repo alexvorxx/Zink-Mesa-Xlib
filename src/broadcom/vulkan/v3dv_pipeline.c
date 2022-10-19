@@ -79,8 +79,10 @@ v3dv_shader_variant_destroy(struct v3dv_device *device,
    /* The assembly BO is shared by all variants in the pipeline, so it can't
     * be freed here and should be freed with the pipeline
     */
-   if (variant->qpu_insts)
+   if (variant->qpu_insts) {
       free(variant->qpu_insts);
+      variant->qpu_insts = NULL;
+   }
    ralloc_free(variant->prog_data.base);
    vk_free(&device->vk.alloc, variant);
 }
@@ -1433,6 +1435,19 @@ pipeline_stage_create_binning(const struct v3dv_pipeline_stage *src,
    return p_stage;
 }
 
+/*
+ * Based on some creation flags we assume that the QPU would be needed later
+ * to gather further info. In that case we just keep the qput_insts around,
+ * instead of map/unmap the bo later.
+ */
+static bool
+pipeline_keep_qpu(struct v3dv_pipeline *pipeline)
+{
+   return pipeline->flags &
+      (VK_PIPELINE_CREATE_CAPTURE_INTERNAL_REPRESENTATIONS_BIT_KHR |
+       VK_PIPELINE_CREATE_CAPTURE_STATISTICS_BIT_KHR);
+}
+
 /**
  * Returns false if it was not able to allocate or map the assembly bo memory.
  */
@@ -1472,9 +1487,10 @@ upload_assembly(struct v3dv_pipeline *pipeline)
          memcpy(bo->map + offset, variant->qpu_insts, variant->qpu_insts_size);
          offset += variant->qpu_insts_size;
 
-         /* We dont need qpu_insts anymore. */
-         free(variant->qpu_insts);
-         variant->qpu_insts = NULL;
+         if (!pipeline_keep_qpu(pipeline)) {
+            free(variant->qpu_insts);
+            variant->qpu_insts = NULL;
+         }
       }
    }
    assert(total_size == offset);
@@ -2912,6 +2928,7 @@ pipeline_init(struct v3dv_pipeline *pipeline,
    VkResult result = VK_SUCCESS;
 
    pipeline->device = device;
+   pipeline->flags = pCreateInfo->flags;
 
    V3DV_FROM_HANDLE(v3dv_pipeline_layout, layout, pCreateInfo->layout);
    pipeline->layout = layout;
@@ -3381,15 +3398,8 @@ pipeline_get_qpu(struct v3dv_pipeline *pipeline,
       return NULL;
    }
 
-   /* We expect the QPU BO to have been mapped before calling here */
-   struct v3dv_bo *qpu_bo = pipeline->shared_data->assembly_bo;
-   assert(qpu_bo && qpu_bo->map_size >= variant->assembly_offset +
-                                        variant->qpu_insts_size);
-
    *qpu_size = variant->qpu_insts_size;
-   uint64_t *qpu = (uint64_t *)
-      (((uint8_t *) qpu_bo->map) + variant->assembly_offset);
-   return qpu;
+   return variant->qpu_insts;
 }
 
 /* FIXME: we use the same macro in various drivers, maybe move it to
@@ -3442,16 +3452,8 @@ pipeline_collect_executable_data(struct v3dv_pipeline *pipeline)
                       pipeline->executables.mem_ctx);
 
    /* Don't crash for failed/bogus pipelines */
-   if (!pipeline->shared_data || !pipeline->shared_data->assembly_bo)
+   if (!pipeline->shared_data)
       return;
-
-   /* Map the assembly BO so we can read the pipeline's QPU code */
-   struct v3dv_bo *qpu_bo = pipeline->shared_data->assembly_bo;
-
-   if (!v3dv_bo_map(pipeline->device, qpu_bo, qpu_bo->size)) {
-      fprintf(stderr, "failed to map QPU buffer\n");
-      return;
-   }
 
    for (int s = BROADCOM_SHADER_VERTEX; s <= BROADCOM_SHADER_COMPUTE; s++) {
       VkShaderStageFlags vk_stage =
@@ -3459,22 +3461,26 @@ pipeline_collect_executable_data(struct v3dv_pipeline *pipeline)
       if (!(vk_stage & pipeline->active_stages))
          continue;
 
-      nir_shader *nir = pipeline_get_nir(pipeline, s);
-      char *nir_str = nir ?
-         nir_shader_as_str(nir, pipeline->executables.mem_ctx) : NULL;
-
+      char *nir_str = NULL;
       char *qpu_str = NULL;
-      uint32_t qpu_size;
-      uint64_t *qpu = pipeline_get_qpu(pipeline, s, &qpu_size);
-      if (qpu) {
-         uint32_t qpu_inst_count = qpu_size / sizeof(uint64_t);
-         qpu_str = rzalloc_size(pipeline->executables.mem_ctx,
-                                qpu_inst_count * 96);
-         size_t offset = 0;
-         for (int i = 0; i < qpu_inst_count; i++) {
-            const char *str = v3d_qpu_disasm(&pipeline->device->devinfo, qpu[i]);
-            append(&qpu_str, &offset, "%s\n", str);
-            ralloc_free((void *)str);
+
+      if (pipeline_keep_qpu(pipeline)) {
+         nir_shader *nir = pipeline_get_nir(pipeline, s);
+         nir_str = nir ?
+            nir_shader_as_str(nir, pipeline->executables.mem_ctx) : NULL;
+
+         uint32_t qpu_size;
+         uint64_t *qpu = pipeline_get_qpu(pipeline, s, &qpu_size);
+         if (qpu) {
+            uint32_t qpu_inst_count = qpu_size / sizeof(uint64_t);
+            qpu_str = rzalloc_size(pipeline->executables.mem_ctx,
+                                   qpu_inst_count * 96);
+            size_t offset = 0;
+            for (int i = 0; i < qpu_inst_count; i++) {
+               const char *str = v3d_qpu_disasm(&pipeline->device->devinfo, qpu[i]);
+               append(&qpu_str, &offset, "%s\n", str);
+               ralloc_free((void *)str);
+            }
          }
       }
 
@@ -3486,8 +3492,6 @@ pipeline_collect_executable_data(struct v3dv_pipeline *pipeline)
       util_dynarray_append(&pipeline->executables.data,
                            struct v3dv_pipeline_executable_data, data);
    }
-
-   v3dv_bo_unmap(pipeline->device, qpu_bo);
 }
 
 static const struct v3dv_pipeline_executable_data *

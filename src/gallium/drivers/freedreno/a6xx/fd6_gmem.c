@@ -966,12 +966,14 @@ fd6_emit_tile_prep(struct fd_batch *batch, const struct fd_tile *tile)
 static void
 set_blit_scissor(struct fd_batch *batch, struct fd_ringbuffer *ring)
 {
-   struct pipe_scissor_state blit_scissor = batch->max_scissor;
+   const struct pipe_framebuffer_state *pfb = &batch->framebuffer;
 
-   blit_scissor.minx = ROUND_DOWN_TO(blit_scissor.minx, 16);
-   blit_scissor.miny = ROUND_DOWN_TO(blit_scissor.miny, 4);
-   blit_scissor.maxx = ALIGN(blit_scissor.maxx, 16);
-   blit_scissor.maxy = ALIGN(blit_scissor.maxy, 4);
+   struct pipe_scissor_state blit_scissor;
+
+   blit_scissor.minx = 0;
+   blit_scissor.miny = 0;
+   blit_scissor.maxx = ALIGN(pfb->width, 16);
+   blit_scissor.maxy = ALIGN(pfb->height, 4);
 
    OUT_PKT4(ring, REG_A6XX_RB_BLIT_SCISSOR_TL, 2);
    OUT_RING(ring, A6XX_RB_BLIT_SCISSOR_TL_X(blit_scissor.minx) |

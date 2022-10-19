@@ -927,7 +927,7 @@ struct anv_queue_family {
    uint32_t       queueCount;
 
    /* Driver internal information */
-   enum drm_i915_gem_engine_class engine_class;
+   enum intel_engine_class engine_class;
 };
 
 #define ANV_MAX_QUEUE_FAMILIES 3

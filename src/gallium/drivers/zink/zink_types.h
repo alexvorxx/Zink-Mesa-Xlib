@@ -1583,8 +1583,6 @@ struct zink_context {
       VkDescriptorImageInfo fbfetch;
 
       struct zink_resource *descriptor_res[ZINK_DESCRIPTOR_TYPES][MESA_SHADER_STAGES][PIPE_MAX_SAMPLERS];
-      struct zink_descriptor_surface sampler_surfaces[MESA_SHADER_STAGES][PIPE_MAX_SAMPLERS];
-      struct zink_descriptor_surface image_surfaces[MESA_SHADER_STAGES][ZINK_MAX_SHADER_IMAGES];
 
       struct {
          struct util_idalloc tex_slots;

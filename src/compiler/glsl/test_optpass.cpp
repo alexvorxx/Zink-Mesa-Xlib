@@ -103,7 +103,7 @@ do_optimization(struct exec_list *ir, const char *optimization,
       return lower_discard(ir);
    } else if (sscanf(optimization, "lower_instructions ( %d ) ",
                      &int_0) == 1) {
-      return lower_instructions(ir, int_0);
+      return lower_instructions(ir, false, false, false, false, false);
    } else {
       printf("Unrecognized optimization %s\n", optimization);
       exit(EXIT_FAILURE);

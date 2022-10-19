@@ -791,19 +791,19 @@ BEGIN_TEST(assembler.gfx11.ldsdir)
    bld.ldsdir(aco_opcode::lds_direct_load, dst, op).instr->ldsdir().wait_vdst = 6;
 
    //! lds_direct_load v42                                         ; ce10002a
-   bld.ldsdir(aco_opcode::lds_direct_load, dst, op);
+   bld.ldsdir(aco_opcode::lds_direct_load, dst, op).instr->ldsdir().wait_vdst = 0;
 
    //! lds_param_load v42, attr56.x wait_vdst:8                    ; ce08e02a
    bld.ldsdir(aco_opcode::lds_param_load, dst, op, 56, 0).instr->ldsdir().wait_vdst = 8;
 
    //! lds_param_load v42, attr56.x                                ; ce00e02a
-   bld.ldsdir(aco_opcode::lds_param_load, dst, op, 56, 0);
+   bld.ldsdir(aco_opcode::lds_param_load, dst, op, 56, 0).instr->ldsdir().wait_vdst = 0;
 
    //! lds_param_load v42, attr34.y                                ; ce00892a
-   bld.ldsdir(aco_opcode::lds_param_load, dst, op, 34, 1);
+   bld.ldsdir(aco_opcode::lds_param_load, dst, op, 34, 1).instr->ldsdir().wait_vdst = 0;
 
    //! lds_param_load v42, attr12.z                                ; ce00322a
-   bld.ldsdir(aco_opcode::lds_param_load, dst, op, 12, 2);
+   bld.ldsdir(aco_opcode::lds_param_load, dst, op, 12, 2).instr->ldsdir().wait_vdst = 0;
 
    finish_assembler_test();
 END_TEST

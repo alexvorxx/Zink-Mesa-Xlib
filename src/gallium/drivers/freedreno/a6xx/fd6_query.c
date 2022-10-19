@@ -319,7 +319,7 @@ log_counters(struct fd6_primitives_sample *ps)
 #else
 
 static const unsigned counter_count = 1;
-static const unsigned counter_base = REG_A6XX_RBBM_PRIMCTR_8_LO;
+static const unsigned counter_base = REG_A6XX_RBBM_PRIMCTR_7_LO;
 
 static void
 log_counters(struct fd6_primitives_sample *ps)
@@ -366,9 +366,9 @@ primitives_generated_pause(struct fd_acc_query *aq,
    primitives_relocw(ring, aq, result.generated);
    primitives_reloc(ring, aq, prim_emitted);
    primitives_reloc(ring, aq,
-                    prim_stop[(REG_A6XX_RBBM_PRIMCTR_8_LO - counter_base) / 2])
+                    prim_stop[(REG_A6XX_RBBM_PRIMCTR_7_LO - counter_base) / 2])
       primitives_reloc(
-         ring, aq, prim_start[(REG_A6XX_RBBM_PRIMCTR_8_LO - counter_base) / 2]);
+         ring, aq, prim_start[(REG_A6XX_RBBM_PRIMCTR_7_LO - counter_base) / 2]);
 }
 
 static void

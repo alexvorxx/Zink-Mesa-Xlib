@@ -58,17 +58,17 @@ traces:
       checksum: f53ac20e17da91c0359c31f2fa3f401e
   0ad/0ad-v2.trace:
     gl-intel-apl:
-      checksum: 45739401f068971e6e1052f10afe9f99
+      checksum: e67b7a93bac02e41de0326419ee17a3e
     gl-intel-glk:
-      checksum: 45739401f068971e6e1052f10afe9f99
+      checksum: e67b7a93bac02e41de0326419ee17a3e
     gl-intel-amly:
-      checksum: 45739401f068971e6e1052f10afe9f99
+      checksum: e67b7a93bac02e41de0326419ee17a3e
     gl-intel-kbl:
-      checksum: 45739401f068971e6e1052f10afe9f99
+      checksum: e67b7a93bac02e41de0326419ee17a3e
     gl-intel-whl:
-      checksum: 45739401f068971e6e1052f10afe9f99
+      checksum: e67b7a93bac02e41de0326419ee17a3e
     gl-intel-cml:
-      checksum: 45739401f068971e6e1052f10afe9f99
+      checksum: e67b7a93bac02e41de0326419ee17a3e
   pathfinder/demo-v2.trace:
     gl-intel-apl:
       checksum: d9b33f0a2efe17c21b7933242afd9ec7
@@ -198,17 +198,17 @@ traces:
       checksum: 29a7734de59f3745158596942d0fb2fe
   glmark2/bump:bump-render=height-v2.trace:
     gl-intel-apl:
-      checksum: e299189c84a7005726554f7ca74611eb
+      checksum: cefbfd68f02a1b776f2d314789c859f1
     gl-intel-glk:
-      checksum: e299189c84a7005726554f7ca74611eb
+      checksum: cefbfd68f02a1b776f2d314789c859f1
     gl-intel-amly:
-      checksum: e299189c84a7005726554f7ca74611eb
+      checksum: cefbfd68f02a1b776f2d314789c859f1
     gl-intel-kbl:
-      checksum: e299189c84a7005726554f7ca74611eb
+      checksum: cefbfd68f02a1b776f2d314789c859f1
     gl-intel-whl:
-      checksum: e299189c84a7005726554f7ca74611eb
+      checksum: cefbfd68f02a1b776f2d314789c859f1
     gl-intel-cml:
-      checksum: e299189c84a7005726554f7ca74611eb
+      checksum: cefbfd68f02a1b776f2d314789c859f1
   glmark2/bump:bump-render=high-poly-v2.trace:
     gl-intel-apl:
       checksum: a6e89335a4443a80eaf7b1ae75575cac
@@ -549,17 +549,17 @@ traces:
       checksum: 15d736a49c5457bdcf0abcfb9eb07890
   godot/Material Testers.x86_64_2020.04.08_13.38_frame799.rdc:
     gl-intel-apl:
-      checksum: ba5302821a4a4024ade9b98a191e80cc
+      checksum: dbe1de4e2e812413f173ea6c423117ff
     gl-intel-glk:
-      checksum: ba5302821a4a4024ade9b98a191e80cc
+      checksum: dbe1de4e2e812413f173ea6c423117ff
     gl-intel-amly:
-      checksum: ba5302821a4a4024ade9b98a191e80cc
+      checksum: dbe1de4e2e812413f173ea6c423117ff
     gl-intel-kbl:
-      checksum: ba5302821a4a4024ade9b98a191e80cc
+      checksum: dbe1de4e2e812413f173ea6c423117ff
     gl-intel-whl:
-      checksum: ba5302821a4a4024ade9b98a191e80cc
+      checksum: dbe1de4e2e812413f173ea6c423117ff
     gl-intel-cml:
-      checksum: ba5302821a4a4024ade9b98a191e80cc
+      checksum: dbe1de4e2e812413f173ea6c423117ff
   gputest/pixmark-julia-fp32-v2.trace:
     gl-intel-apl:
       checksum: a5ec72a5da355dfcd689411f89164f0c
