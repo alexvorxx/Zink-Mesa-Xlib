@@ -38,6 +38,8 @@
 
 #if DETECT_OS_WINDOWS
 
+#include <windows.h>
+
 bool
 disk_cache_get_function_identifier(void *ptr, struct mesa_sha1 *ctx)
 {

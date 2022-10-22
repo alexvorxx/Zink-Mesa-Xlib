@@ -40,6 +40,7 @@ enum ac_arg_regfile
 
 enum ac_arg_type
 {
+   AC_ARG_INVALID = -1,
    AC_ARG_FLOAT,
    AC_ARG_INT,
    AC_ARG_CONST_PTR,       /* Pointer to i8 array */

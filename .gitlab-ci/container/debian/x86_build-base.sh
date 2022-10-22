@@ -57,7 +57,6 @@ apt-get install -y --no-remove \
         libxrandr-dev \
         libxrender-dev \
         libxshmfence-dev \
-        libxvmc-dev \
         libxxf86vm-dev \
         make \
         meson \

@@ -441,7 +441,7 @@ generate_gfx_program_modules_optimal(struct zink_context *ctx, struct zink_scree
 
       assert(prog->shaders[i]);
 
-      struct zink_shader_module *zm = zm = create_shader_module_for_stage_optimal(ctx, screen, prog->shaders[i], prog, i, state);
+      struct zink_shader_module *zm = create_shader_module_for_stage_optimal(ctx, screen, prog->shaders[i], prog, i, state);
       prog->modules[i] = zm->shader;
    }
 

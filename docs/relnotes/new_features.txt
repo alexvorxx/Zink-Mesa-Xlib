@@ -11,3 +11,4 @@ VK_EXT_shader_atomic_float2 on lvp
 GL_NV_shader_atomic_float on llvmpipe
 VK_EXT_image_robustness on v3dv
 VK_EXT_extended_dynamic_state3 on lavapipe
+VK_EXT_extended_dynamic_state3 on RADV

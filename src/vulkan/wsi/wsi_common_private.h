@@ -168,6 +168,10 @@ struct wsi_swapchain {
 bool
 wsi_device_matches_drm_fd(const struct wsi_device *wsi, int drm_fd);
 
+void
+wsi_wl_surface_destroy(VkIcdSurfaceBase *icd_surface, VkInstance _instance,
+                       const VkAllocationCallbacks *pAllocator);
+
 VkResult
 wsi_swapchain_init(const struct wsi_device *wsi,
                    struct wsi_swapchain *chain,

@@ -75,6 +75,7 @@
 #define dzn_stub() unreachable("Unsupported feature")
 
 struct dxil_validator;
+struct util_dl_library;
 
 struct dzn_instance;
 struct dzn_device;
@@ -227,16 +228,16 @@ dzn_get_shader_model(const struct dzn_physical_device *pdev);
    mesa_logd("%s: ignored VkStructureType %u\n", __func__, (sType))
 
 PFN_D3D12_SERIALIZE_VERSIONED_ROOT_SIGNATURE
-d3d12_get_serialize_root_sig(void);
+d3d12_get_serialize_root_sig(struct util_dl_library *d3d12_mod);
 
 void
-d3d12_enable_debug_layer(void);
+d3d12_enable_debug_layer(struct util_dl_library *d3d12_mod, ID3D12DeviceFactory *factory);
 
 void
-d3d12_enable_gpu_validation(void);
+d3d12_enable_gpu_validation(struct util_dl_library *d3d12_mod, ID3D12DeviceFactory *factory);
 
 ID3D12Device2 *
-d3d12_create_device(IUnknown *adapter, bool experimental_features);
+d3d12_create_device(struct util_dl_library *d3d12_mod, IUnknown *adapter, ID3D12DeviceFactory *factory, bool experimental_features);
 
 struct dzn_queue {
    struct vk_queue vk;
@@ -252,6 +253,7 @@ struct dzn_device {
    struct vk_device_dispatch_table cmd_dispatch;
 
    ID3D12Device2 *dev;
+   ID3D12DeviceConfiguration *dev_config;
 
    struct dzn_meta_indirect_draw indirect_draws[DZN_NUM_INDIRECT_DRAW_TYPES];
    struct dzn_meta_triangle_fan_rewrite_index triangle_fan[DZN_NUM_INDEX_TYPE];
@@ -1046,6 +1048,8 @@ struct dzn_instance {
    struct vk_instance vk;
 
    struct dxil_validator *dxil_validator;
+   struct util_dl_library *d3d12_mod;
+   ID3D12DeviceFactory *factory;
    struct {
       PFN_D3D12_SERIALIZE_VERSIONED_ROOT_SIGNATURE serialize_root_sig;
    } d3d12;

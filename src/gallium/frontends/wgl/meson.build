@@ -47,7 +47,6 @@ libwgl = static_library(
   ),
   c_args : [
     '-D_GDI32_',             # prevent wgl* being declared __declspec(dllimport)
-    '-DWIN32_LEAN_AND_MEAN', # http://msdn2.microsoft.com/en-us/library/6dwk3a1z.aspx
     _c_args_wgl
   ],
   include_directories : [

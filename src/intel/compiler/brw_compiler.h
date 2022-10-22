@@ -526,6 +526,12 @@ struct brw_cs_prog_key {
 
 struct brw_bs_prog_key {
    struct brw_base_prog_key base;
+
+   /* Represents enum enum brw_rt_ray_flags values given at pipeline creation
+    * to be combined with ray_flags handed to the traceRayEXT() calls by the
+    * shader.
+    */
+   uint32_t pipeline_ray_flags;
 };
 
 struct brw_ff_gs_prog_key {

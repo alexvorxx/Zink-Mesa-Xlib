@@ -63,7 +63,6 @@ struct radv_blend_state {
    uint32_t col_format_is_int10;
    uint32_t col_format_is_float32;
    uint32_t cb_shader_mask;
-   uint32_t db_alpha_to_mask;
 
    uint32_t commutative_4bit;
 
@@ -72,7 +71,6 @@ struct radv_blend_state {
 
 struct radv_depth_stencil_state {
    uint32_t db_render_control;
-   uint32_t db_render_override;
    uint32_t db_render_override2;
 };
 
@@ -717,21 +715,12 @@ radv_pipeline_init_blend_state(struct radv_graphics_pipeline *pipeline,
    const enum amd_gfx_level gfx_level = device->physical_device->rad_info.gfx_level;
    int i;
 
-   if (device->instance->debug_flags & RADV_DEBUG_NO_ATOC_DITHERING)
-   {
-      blend.db_alpha_to_mask = S_028B70_ALPHA_TO_MASK_OFFSET0(2) | S_028B70_ALPHA_TO_MASK_OFFSET1(2) |
-                               S_028B70_ALPHA_TO_MASK_OFFSET2(2) | S_028B70_ALPHA_TO_MASK_OFFSET3(2) |
-                               S_028B70_OFFSET_ROUND(0);
-   }
-   else
-   {
-      blend.db_alpha_to_mask = S_028B70_ALPHA_TO_MASK_OFFSET0(3) | S_028B70_ALPHA_TO_MASK_OFFSET1(1) |
-                               S_028B70_ALPHA_TO_MASK_OFFSET2(0) | S_028B70_ALPHA_TO_MASK_OFFSET3(2) |
-                               S_028B70_OFFSET_ROUND(1);
-   }
-
-   if (state->ms && state->ms->alpha_to_coverage_enable) {
-      blend.db_alpha_to_mask |= S_028B70_ALPHA_TO_MASK_ENABLE(1);
+   if (state->ms && ((pipeline->dynamic_states & RADV_DYNAMIC_ALPHA_TO_COVERAGE_ENABLE) ||
+                     state->ms->alpha_to_coverage_enable)) {
+      /* When alpha to coverage is enabled, the driver needs to select a color export format with
+       * alpha. When this state is dynamic, always select a format with alpha because it's hard to
+       * change color export formats dynamically (note that it's suboptimal).
+       */
       blend.need_src_alpha |= 0x1;
    }
 
@@ -879,22 +868,6 @@ radv_pipeline_init_blend_state(struct radv_graphics_pipeline *pipeline,
    return blend;
 }
 
-static uint32_t
-si_translate_fill(VkPolygonMode func)
-{
-   switch (func) {
-   case VK_POLYGON_MODE_FILL:
-      return V_028814_X_DRAW_TRIANGLES;
-   case VK_POLYGON_MODE_LINE:
-      return V_028814_X_DRAW_LINES;
-   case VK_POLYGON_MODE_POINT:
-      return V_028814_X_DRAW_POINTS;
-   default:
-      assert(0);
-      return V_028814_X_DRAW_POINTS;
-   }
-}
-
 static unsigned
 radv_pipeline_color_samples(const struct vk_graphics_pipeline_state *state)
 {
@@ -1009,7 +982,8 @@ radv_pipeline_out_of_order_rast(struct radv_graphics_pipeline *pipeline,
       return false;
 
    /* Be conservative if a logic operation is enabled with color buffers. */
-   if (colormask && state->cb && state->cb->logic_op_enable)
+   if (colormask &&
+       ((pipeline->dynamic_states & RADV_DYNAMIC_LOGIC_OP_ENABLE) || state->cb->logic_op_enable))
       return false;
 
    /* Be conservative if an extended dynamic depth/stencil state is
@@ -1103,9 +1077,7 @@ radv_pipeline_init_multisample_state(struct radv_graphics_pipeline *pipeline,
    const struct radv_physical_device *pdevice = pipeline->base.device->physical_device;
    struct radv_multisample_state *ms = &pipeline->ms;
    unsigned num_tile_pipes = pdevice->rad_info.num_tile_pipes;
-   const VkConservativeRasterizationModeEXT mode = state->rs->conservative_mode;
    bool out_of_order_rast = false;
-   uint32_t sample_mask = 0xffff;
    int ps_iter_samples = 1;
 
    ms->num_samples = state->ms ? state->ms->rasterization_samples : 1;
@@ -1148,14 +1120,6 @@ radv_pipeline_init_multisample_state(struct radv_graphics_pipeline *pipeline,
    ms->db_eqaa = S_028804_HIGH_QUALITY_INTERSECTIONS(1) | S_028804_INCOHERENT_EQAA_READS(1) |
                  S_028804_INTERPOLATE_COMP_Z(1) | S_028804_STATIC_ANCHOR_ASSOCIATIONS(1);
 
-   /* Adjust MSAA state if conservative rasterization is enabled. */
-   if (mode != VK_CONSERVATIVE_RASTERIZATION_MODE_DISABLED_EXT) {
-      ms->pa_sc_aa_config |= S_028BE0_AA_MASK_CENTROID_DTMN(1);
-
-      ms->db_eqaa |=
-         S_028804_ENABLE_POSTZ_OVERRASTERIZATION(1) | S_028804_OVERRASTERIZATION_AMOUNT(4);
-   }
-
    ms->pa_sc_mode_cntl_1 =
       S_028A4C_WALK_FENCE_ENABLE(1) | // TODO linear dst fixes
       S_028A4C_WALK_FENCE_SIZE(num_tile_pipes == 2 ? 2 : 3) |
@@ -1166,8 +1130,7 @@ radv_pipeline_init_multisample_state(struct radv_graphics_pipeline *pipeline,
       S_028A4C_TILE_WALK_ORDER_ENABLE(1) | S_028A4C_MULTI_SHADER_ENGINE_PRIM_DISCARD_ENABLE(1) |
       S_028A4C_FORCE_EOV_CNTDWN_ENABLE(1) | S_028A4C_FORCE_EOV_REZ_ENABLE(1);
    ms->pa_sc_mode_cntl_0 = S_028A48_ALTERNATE_RBS_PER_TILE(pdevice->rad_info.gfx_level >= GFX9) |
-                           S_028A48_VPORT_SCISSOR_ENABLE(1) |
-                           S_028A48_LINE_STIPPLE_ENABLE(state->rs->line.stipple.enable);
+                           S_028A48_VPORT_SCISSOR_ENABLE(1);
 
    if (state->rs->line.mode == VK_LINE_RASTERIZATION_MODE_BRESENHAM_EXT &&
        radv_rast_prim_is_line(rast_prim)) {
@@ -1202,13 +1165,6 @@ radv_pipeline_init_multisample_state(struct radv_graphics_pipeline *pipeline,
       if (ps_iter_samples > 1)
          pipeline->spi_baryc_cntl |= S_0286E0_POS_FLOAT_LOCATION(2);
    }
-
-   if (state->ms) {
-      sample_mask = state->ms->sample_mask & 0xffff;
-   }
-
-   ms->pa_sc_aa_mask[0] = sample_mask | ((uint32_t)sample_mask << 16);
-   ms->pa_sc_aa_mask[1] = sample_mask | ((uint32_t)sample_mask << 16);
 }
 
 static void
@@ -1346,6 +1302,28 @@ radv_dynamic_state_mask(VkDynamicState state)
       return RADV_DYNAMIC_COLOR_WRITE_ENABLE;
    case VK_DYNAMIC_STATE_VERTEX_INPUT_EXT:
       return RADV_DYNAMIC_VERTEX_INPUT;
+   case VK_DYNAMIC_STATE_POLYGON_MODE_EXT:
+      return RADV_DYNAMIC_POLYGON_MODE;
+   case VK_DYNAMIC_STATE_TESSELLATION_DOMAIN_ORIGIN_EXT:
+      return RADV_DYNAMIC_TESS_DOMAIN_ORIGIN;
+   case VK_DYNAMIC_STATE_LOGIC_OP_ENABLE_EXT:
+      return RADV_DYNAMIC_LOGIC_OP_ENABLE;
+   case VK_DYNAMIC_STATE_LINE_STIPPLE_ENABLE_EXT:
+      return RADV_DYNAMIC_LINE_STIPPLE_ENABLE;
+   case VK_DYNAMIC_STATE_ALPHA_TO_COVERAGE_ENABLE_EXT:
+      return RADV_DYNAMIC_ALPHA_TO_COVERAGE_ENABLE;
+   case VK_DYNAMIC_STATE_SAMPLE_MASK_EXT:
+      return RADV_DYNAMIC_SAMPLE_MASK;
+   case VK_DYNAMIC_STATE_DEPTH_CLIP_ENABLE_EXT:
+      return RADV_DYNAMIC_DEPTH_CLIP_ENABLE;
+   case VK_DYNAMIC_STATE_CONSERVATIVE_RASTERIZATION_MODE_EXT:
+      return RADV_DYNAMIC_CONSERVATIVE_RAST_MODE;
+   case VK_DYNAMIC_STATE_DEPTH_CLIP_NEGATIVE_ONE_TO_ONE_EXT:
+      return RADV_DYNAMIC_DEPTH_CLIP_NEGATIVE_ONE_TO_ONE;
+   case VK_DYNAMIC_STATE_PROVOKING_VERTEX_MODE_EXT:
+      return RADV_DYNAMIC_PROVOKING_VERTEX_MODE;
+   case VK_DYNAMIC_STATE_DEPTH_CLAMP_ENABLE_EXT:
+      return RADV_DYNAMIC_DEPTH_CLAMP_ENABLE;
    default:
       unreachable("Unhandled dynamic state");
    }
@@ -1390,7 +1368,7 @@ radv_pipeline_needed_dynamic_state(const struct radv_graphics_pipeline *pipeline
                RADV_DYNAMIC_VERTEX_INPUT;
 
       if (pipeline->active_stages & VK_SHADER_STAGE_TESSELLATION_CONTROL_BIT)
-         states |= RADV_DYNAMIC_PATCH_CONTROL_POINTS;
+         states |= RADV_DYNAMIC_PATCH_CONTROL_POINTS | RADV_DYNAMIC_TESS_DOMAIN_ORIGIN;
 
       return states;
    }
@@ -1414,7 +1392,8 @@ radv_pipeline_needed_dynamic_state(const struct radv_graphics_pipeline *pipeline
    if (!state->ms || !state->ms->sample_locations_enable)
       states &= ~RADV_DYNAMIC_SAMPLE_LOCATIONS;
 
-   if (!state->rs->line.stipple.enable)
+   if (!(pipeline->dynamic_states & RADV_DYNAMIC_LINE_STIPPLE_ENABLE) &&
+       !state->rs->line.stipple.enable)
       states &= ~RADV_DYNAMIC_LINE_STIPPLE;
 
    if (!radv_is_vrs_enabled(pipeline, state))
@@ -1427,7 +1406,7 @@ radv_pipeline_needed_dynamic_state(const struct radv_graphics_pipeline *pipeline
       states &= ~RADV_DYNAMIC_COLOR_WRITE_ENABLE;
 
    if (!(pipeline->active_stages & VK_SHADER_STAGE_TESSELLATION_CONTROL_BIT))
-      states &= ~RADV_DYNAMIC_PATCH_CONTROL_POINTS;
+      states &= ~(RADV_DYNAMIC_PATCH_CONTROL_POINTS | RADV_DYNAMIC_TESS_DOMAIN_ORIGIN);
 
    return states;
 }
@@ -1864,7 +1843,7 @@ radv_pipeline_init_dynamic_state(struct radv_graphics_pipeline *pipeline,
    }
 
    if (radv_pipeline_has_color_attachments(state->rp) && states & RADV_DYNAMIC_LOGIC_OP) {
-      if (state->cb->logic_op_enable) {
+      if ((pipeline->dynamic_states & RADV_DYNAMIC_LOGIC_OP_ENABLE) || state->cb->logic_op_enable) {
          dynamic->logic_op = si_translate_blend_logic_op(state->cb->logic_op);
       } else {
          dynamic->logic_op = V_028808_ROP3_COPY;
@@ -1881,49 +1860,51 @@ radv_pipeline_init_dynamic_state(struct radv_graphics_pipeline *pipeline,
       dynamic->patch_control_points = state->ts->patch_control_points;
    }
 
+   if (states & RADV_DYNAMIC_POLYGON_MODE) {
+      dynamic->polygon_mode = si_translate_fill(state->rs->polygon_mode);
+   }
+
+   if (states & RADV_DYNAMIC_TESS_DOMAIN_ORIGIN) {
+      dynamic->tess_domain_origin = state->ts->domain_origin;
+   }
+
+   if (radv_pipeline_has_color_attachments(state->rp) && states & RADV_DYNAMIC_LOGIC_OP_ENABLE) {
+      dynamic->logic_op_enable = state->cb->logic_op_enable;
+   }
+
+   if (states & RADV_DYNAMIC_LINE_STIPPLE_ENABLE) {
+      dynamic->stippled_line_enable = state->rs->line.stipple.enable;
+   }
+
+   if (states & RADV_DYNAMIC_ALPHA_TO_COVERAGE_ENABLE) {
+      dynamic->alpha_to_coverage_enable = state->ms->alpha_to_coverage_enable;
+   }
+
+   if (states & RADV_DYNAMIC_SAMPLE_MASK) {
+      dynamic->sample_mask = state->ms->sample_mask & 0xffff;
+   }
+
+   if (states & RADV_DYNAMIC_DEPTH_CLIP_ENABLE) {
+      dynamic->depth_clip_enable = state->rs->depth_clip_enable == VK_MESA_DEPTH_CLIP_ENABLE_TRUE;
+   }
+
+   if (states & RADV_DYNAMIC_CONSERVATIVE_RAST_MODE) {
+      dynamic->conservative_rast_mode = state->rs->conservative_mode;
+   }
+
+   if (states & RADV_DYNAMIC_DEPTH_CLIP_NEGATIVE_ONE_TO_ONE) {
+      dynamic->depth_clip_negative_one_to_one = state->vp->depth_clip_negative_one_to_one;
+   }
+
+   if (states & RADV_DYNAMIC_PROVOKING_VERTEX_MODE) {
+      dynamic->provoking_vertex_mode = state->rs->provoking_vertex;
+   }
+
+   if (states & RADV_DYNAMIC_DEPTH_CLAMP_ENABLE) {
+      dynamic->depth_clamp_enable = state->rs->depth_clamp_enable;
+   }
+
    pipeline->dynamic_state.mask = states;
-}
-
-static void
-radv_pipeline_init_raster_state(struct radv_graphics_pipeline *pipeline,
-                                const struct vk_graphics_pipeline_state *state)
-{
-   const struct radv_device *device = pipeline->base.device;
-
-   pipeline->pa_su_sc_mode_cntl =
-      S_028814_POLY_MODE(state->rs->polygon_mode != VK_POLYGON_MODE_FILL) |
-      S_028814_POLYMODE_FRONT_PTYPE(si_translate_fill(state->rs->polygon_mode)) |
-      S_028814_POLYMODE_BACK_PTYPE(si_translate_fill(state->rs->polygon_mode)) |
-      S_028814_PROVOKING_VTX_LAST(state->rs->provoking_vertex == VK_PROVOKING_VERTEX_MODE_LAST_VERTEX_EXT);
-
-   if (device->physical_device->rad_info.gfx_level >= GFX10) {
-      /* It should also be set if PERPENDICULAR_ENDCAP_ENA is set. */
-      pipeline->pa_su_sc_mode_cntl |=
-         S_028814_KEEP_TOGETHER_ENABLE(state->rs->polygon_mode != VK_POLYGON_MODE_FILL);
-   }
-
-   pipeline->pa_cl_clip_cntl =
-      S_028810_DX_CLIP_SPACE_DEF(!pipeline->negative_one_to_one) |
-      S_028810_ZCLIP_NEAR_DISABLE(!state->rs->depth_clip_enable) |
-      S_028810_ZCLIP_FAR_DISABLE(!state->rs->depth_clip_enable) |
-      S_028810_DX_LINEAR_ATTR_CLIP_ENA(1);
-
-   pipeline->uses_conservative_overestimate =
-      state->rs->conservative_mode == VK_CONSERVATIVE_RASTERIZATION_MODE_OVERESTIMATE_EXT;
-
-   pipeline->depth_clamp_mode = RADV_DEPTH_CLAMP_MODE_VIEWPORT;
-   if (!state->rs->depth_clamp_enable) {
-      /* For optimal performance, depth clamping should always be enabled except if the
-       * application disables clamping explicitly or uses depth values outside of the [0.0, 1.0]
-       * range.
-       */
-      if (!state->rs->depth_clip_enable ||
-          device->vk.enabled_extensions.EXT_depth_range_unrestricted) {
-         pipeline->depth_clamp_mode = RADV_DEPTH_CLAMP_MODE_DISABLED;
-      } else {
-         pipeline->depth_clamp_mode = RADV_DEPTH_CLAMP_MODE_ZERO_TO_ONE;
-      }
-   }
 }
 
 static struct radv_depth_stencil_state
@@ -1943,12 +1924,6 @@ radv_pipeline_init_depth_stencil_state(struct radv_graphics_pipeline *pipeline,
       if (pdevice->rad_info.gfx_level >= GFX10_3)
          ds_state.db_render_override2 |= S_028010_CENTROID_COMPUTATION_MODE(1);
    }
-
-   ds_state.db_render_override |= S_02800C_FORCE_HIS_ENABLE0(V_02800C_FORCE_DISABLE) |
-                                  S_02800C_FORCE_HIS_ENABLE1(V_02800C_FORCE_DISABLE);
-
-   if (pipeline->depth_clamp_mode == RADV_DEPTH_CLAMP_MODE_DISABLED)
-      ds_state.db_render_override |= S_02800C_DISABLE_VIEWPORT_CLAMP(1);
 
    if (pdevice->rad_info.gfx_level >= GFX11) {
       unsigned max_allowed_tiles_in_wave = 0;
@@ -4764,9 +4739,7 @@ radv_pipeline_emit_depth_stencil_state(struct radeon_cmdbuf *ctx_cs,
 {
    radeon_set_context_reg(ctx_cs, R_028000_DB_RENDER_CONTROL, ds_state->db_render_control);
 
-   radeon_set_context_reg_seq(ctx_cs, R_02800C_DB_RENDER_OVERRIDE, 2);
-   radeon_emit(ctx_cs, ds_state->db_render_override);
-   radeon_emit(ctx_cs, ds_state->db_render_override2);
+   radeon_set_context_reg(ctx_cs, R_028010_DB_RENDER_OVERRIDE2, ds_state->db_render_override2);
 }
 
 static void
@@ -4778,7 +4751,6 @@ radv_pipeline_emit_blend_state(struct radeon_cmdbuf *ctx_cs,
 
    radeon_set_context_reg_seq(ctx_cs, R_028780_CB_BLEND0_CONTROL, 8);
    radeon_emit_array(ctx_cs, blend->cb_blend_control, 8);
-   radeon_set_context_reg(ctx_cs, R_028B70_DB_ALPHA_TO_MASK, blend->db_alpha_to_mask);
 
    if (pdevice->rad_info.has_rbplus) {
 
@@ -4792,56 +4764,13 @@ radv_pipeline_emit_blend_state(struct radeon_cmdbuf *ctx_cs,
 }
 
 static void
-radv_pipeline_emit_raster_state(struct radeon_cmdbuf *ctx_cs,
-                                const struct radv_graphics_pipeline *pipeline,
-                                const struct vk_graphics_pipeline_state *state)
-{
-   const struct radv_physical_device *pdevice = pipeline->base.device->physical_device;
-   const VkConservativeRasterizationModeEXT mode = state->rs->conservative_mode;
-   uint32_t pa_sc_conservative_rast = S_028C4C_NULL_SQUAD_AA_MASK_ENABLE(1);
-
-   if (pdevice->rad_info.gfx_level >= GFX9) {
-      /* Conservative rasterization. */
-      if (mode != VK_CONSERVATIVE_RASTERIZATION_MODE_DISABLED_EXT) {
-         pa_sc_conservative_rast = S_028C4C_PREZ_AA_MASK_ENABLE(1) | S_028C4C_POSTZ_AA_MASK_ENABLE(1) |
-                                   S_028C4C_CENTROID_SAMPLE_OVERRIDE(1);
-
-         if (mode == VK_CONSERVATIVE_RASTERIZATION_MODE_OVERESTIMATE_EXT) {
-            pa_sc_conservative_rast |=
-               S_028C4C_OVER_RAST_ENABLE(1) | S_028C4C_OVER_RAST_SAMPLE_SELECT(0) |
-               S_028C4C_UNDER_RAST_ENABLE(0) | S_028C4C_UNDER_RAST_SAMPLE_SELECT(1) |
-               S_028C4C_PBB_UNCERTAINTY_REGION_ENABLE(1);
-         } else {
-            assert(mode == VK_CONSERVATIVE_RASTERIZATION_MODE_UNDERESTIMATE_EXT);
-            pa_sc_conservative_rast |=
-               S_028C4C_OVER_RAST_ENABLE(0) | S_028C4C_OVER_RAST_SAMPLE_SELECT(1) |
-               S_028C4C_UNDER_RAST_ENABLE(1) | S_028C4C_UNDER_RAST_SAMPLE_SELECT(0) |
-               S_028C4C_PBB_UNCERTAINTY_REGION_ENABLE(0);
-         }
-      }
-
-      radeon_set_context_reg(ctx_cs, R_028C4C_PA_SC_CONSERVATIVE_RASTERIZATION_CNTL,
-                             pa_sc_conservative_rast);
-   }
-}
-
-static void
 radv_pipeline_emit_multisample_state(struct radeon_cmdbuf *ctx_cs,
                                      const struct radv_graphics_pipeline *pipeline)
 {
    const struct radv_physical_device *pdevice = pipeline->base.device->physical_device;
    const struct radv_multisample_state *ms = &pipeline->ms;
 
-   radeon_set_context_reg_seq(ctx_cs, R_028C38_PA_SC_AA_MASK_X0Y0_X1Y0, 2);
-   radeon_emit(ctx_cs, ms->pa_sc_aa_mask[0]);
-   radeon_emit(ctx_cs, ms->pa_sc_aa_mask[1]);
-
-   radeon_set_context_reg(ctx_cs, R_028804_DB_EQAA, ms->db_eqaa);
-   radeon_set_context_reg(ctx_cs, R_028BE0_PA_SC_AA_CONFIG, ms->pa_sc_aa_config);
-
-   radeon_set_context_reg_seq(ctx_cs, R_028A48_PA_SC_MODE_CNTL_0, 2);
-   radeon_emit(ctx_cs, ms->pa_sc_mode_cntl_0);
-   radeon_emit(ctx_cs, ms->pa_sc_mode_cntl_1);
+   radeon_set_context_reg(ctx_cs, R_028A4C_PA_SC_MODE_CNTL_1, ms->pa_sc_mode_cntl_1);
 
    /* The exclusion bits can be set to improve rasterization efficiency
     * if no sample lies on the pixel boundary (-8 sample offset). It's
@@ -5231,70 +5160,6 @@ radv_pipeline_emit_tess_shaders(struct radeon_cmdbuf *ctx_cs, struct radeon_cmdb
                              S_028A44_ES_VERTS_PER_SUBGRP(250) | S_028A44_GS_PRIMS_PER_SUBGRP(126) |
                                 S_028A44_GS_INST_PRIMS_IN_SUBGRP(126));
    }
-}
-
-static void
-radv_pipeline_emit_tess_state(struct radeon_cmdbuf *ctx_cs,
-                              const struct radv_graphics_pipeline *pipeline,
-                              const struct vk_graphics_pipeline_state *state)
-{
-   const struct radv_physical_device *pdevice = pipeline->base.device->physical_device;
-   struct radv_shader *tes = radv_get_shader(&pipeline->base, MESA_SHADER_TESS_EVAL);
-   unsigned type = 0, partitioning = 0, topology = 0, distribution_mode = 0;
-
-   switch (tes->info.tes._primitive_mode) {
-   case TESS_PRIMITIVE_TRIANGLES:
-      type = V_028B6C_TESS_TRIANGLE;
-      break;
-   case TESS_PRIMITIVE_QUADS:
-      type = V_028B6C_TESS_QUAD;
-      break;
-   case TESS_PRIMITIVE_ISOLINES:
-      type = V_028B6C_TESS_ISOLINE;
-      break;
-   default:
-      break;
-   }
-
-   switch (tes->info.tes.spacing) {
-   case TESS_SPACING_EQUAL:
-      partitioning = V_028B6C_PART_INTEGER;
-      break;
-   case TESS_SPACING_FRACTIONAL_ODD:
-      partitioning = V_028B6C_PART_FRAC_ODD;
-      break;
-   case TESS_SPACING_FRACTIONAL_EVEN:
-      partitioning = V_028B6C_PART_FRAC_EVEN;
-      break;
-   default:
-      break;
-   }
-
-   bool ccw = tes->info.tes.ccw;
-   if (state->ts->domain_origin != VK_TESSELLATION_DOMAIN_ORIGIN_UPPER_LEFT)
-      ccw = !ccw;
-
-   if (tes->info.tes.point_mode)
-      topology = V_028B6C_OUTPUT_POINT;
-   else if (tes->info.tes._primitive_mode == TESS_PRIMITIVE_ISOLINES)
-      topology = V_028B6C_OUTPUT_LINE;
-   else if (ccw)
-      topology = V_028B6C_OUTPUT_TRIANGLE_CCW;
-   else
-      topology = V_028B6C_OUTPUT_TRIANGLE_CW;
-
-   if (pdevice->rad_info.has_distributed_tess) {
-      if (pdevice->rad_info.family == CHIP_FIJI || pdevice->rad_info.family >= CHIP_POLARIS10)
-         distribution_mode = V_028B6C_TRAPEZOIDS;
-      else
-         distribution_mode = V_028B6C_DONUTS;
-   } else
-      distribution_mode = V_028B6C_NO_DIST;
-
-   radeon_set_context_reg(ctx_cs, R_028B6C_VGT_TF_PARAM,
-                          S_028B6C_TYPE(type) | S_028B6C_PARTITIONING(partitioning) |
-                             S_028B6C_TOPOLOGY(topology) |
-                             S_028B6C_DISTRIBUTION_MODE(distribution_mode));
 }
 
 static void
@@ -5881,7 +5746,6 @@ radv_pipeline_emit_pm4(struct radv_graphics_pipeline *pipeline,
 
    radv_pipeline_emit_depth_stencil_state(ctx_cs, ds_state);
    radv_pipeline_emit_blend_state(ctx_cs, pipeline, blend);
-   radv_pipeline_emit_raster_state(ctx_cs, pipeline, state);
    radv_pipeline_emit_multisample_state(ctx_cs, pipeline);
    radv_pipeline_emit_vgt_gs_mode(ctx_cs, pipeline);
    radv_pipeline_emit_vertex_shader(ctx_cs, cs, pipeline);
@@ -5889,7 +5753,6 @@ radv_pipeline_emit_pm4(struct radv_graphics_pipeline *pipeline,
 
    if (radv_pipeline_has_stage(pipeline, MESA_SHADER_TESS_CTRL)) {
       radv_pipeline_emit_tess_shaders(ctx_cs, cs, pipeline);
-      radv_pipeline_emit_tess_state(ctx_cs, pipeline, state);
    }
 
    radv_pipeline_emit_geometry_shader(ctx_cs, cs, pipeline);
@@ -6093,6 +5956,54 @@ radv_pipeline_init_vgt_gs_out(struct radv_graphics_pipeline *pipeline,
 }
 
 static void
+radv_pipeline_init_tess_state(struct radv_graphics_pipeline *pipeline,
+                              const struct vk_graphics_pipeline_state *state)
+{
+   const struct radv_physical_device *pdevice = pipeline->base.device->physical_device;
+   struct radv_shader *tes = radv_get_shader(&pipeline->base, MESA_SHADER_TESS_EVAL);
+   unsigned type = 0, partitioning = 0, distribution_mode = 0;
+
+   switch (tes->info.tes._primitive_mode) {
+   case TESS_PRIMITIVE_TRIANGLES:
+      type = V_028B6C_TESS_TRIANGLE;
+      break;
+   case TESS_PRIMITIVE_QUADS:
+      type = V_028B6C_TESS_QUAD;
+      break;
+   case TESS_PRIMITIVE_ISOLINES:
+      type = V_028B6C_TESS_ISOLINE;
+      break;
+   default:
+      break;
+   }
+
+   switch (tes->info.tes.spacing) {
+   case TESS_SPACING_EQUAL:
+      partitioning = V_028B6C_PART_INTEGER;
+      break;
+   case TESS_SPACING_FRACTIONAL_ODD:
+      partitioning = V_028B6C_PART_FRAC_ODD;
+      break;
+   case TESS_SPACING_FRACTIONAL_EVEN:
+      partitioning = V_028B6C_PART_FRAC_EVEN;
+      break;
+   default:
+      break;
+   }
+
+   if (pdevice->rad_info.has_distributed_tess) {
+      if (pdevice->rad_info.family == CHIP_FIJI || pdevice->rad_info.family >= CHIP_POLARIS10)
+         distribution_mode = V_028B6C_TRAPEZOIDS;
+      else
+         distribution_mode = V_028B6C_DONUTS;
+   } else
+      distribution_mode = V_028B6C_NO_DIST;
+
+   pipeline->vgt_tf_param = S_028B6C_TYPE(type) | S_028B6C_PARTITIONING(partitioning) |
+                            S_028B6C_DISTRIBUTION_MODE(distribution_mode);
+}
+
+static void
 radv_pipeline_init_extra(struct radv_graphics_pipeline *pipeline,
                          const struct radv_graphics_pipeline_create_info *extra,
                          struct radv_blend_state *blend_state,
@@ -6225,11 +6136,6 @@ radv_graphics_pipeline_init(struct radv_graphics_pipeline *pipeline, struct radv
       radv_pipeline_init_input_assembly_state(pipeline);
    radv_pipeline_init_dynamic_state(pipeline, &state);
 
-   if (state.vp)
-      pipeline->negative_one_to_one = state.vp->depth_clip_negative_one_to_one;
-
-   radv_pipeline_init_raster_state(pipeline, &state);
-
    struct radv_depth_stencil_state ds_state =
       radv_pipeline_init_depth_stencil_state(pipeline, &state);
 
@@ -6282,6 +6188,10 @@ radv_graphics_pipeline_init(struct radv_graphics_pipeline *pipeline, struct radv
       struct radv_shader *gs = pipeline->base.shaders[MESA_SHADER_GEOMETRY];
 
       radv_pipeline_init_gs_ring_state(pipeline, &gs->info.gs_ring_info);
+   }
+
+   if (radv_pipeline_has_stage(pipeline, MESA_SHADER_TESS_CTRL)) {
+      radv_pipeline_init_tess_state(pipeline, &state);
    }
 
    if (!radv_pipeline_has_stage(pipeline, MESA_SHADER_MESH))

@@ -34,7 +34,7 @@ protected:
    void SetUp() override;
    void TearDown() override;
 
-   InstrFactory *m_instr_factory;
+   InstrFactory *m_instr_factory{nullptr};
 
 };
 

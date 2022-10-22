@@ -38,16 +38,6 @@
  */
 
 /**
- * The supported rendering API.
- */
-enum st_api_type {
-   ST_API_OPENGL,
-   ST_API_OPENVG,
-
-   ST_API_COUNT
-};
-
-/**
  * The profile of a context.
  */
 enum st_profile_type
@@ -518,7 +508,7 @@ struct st_manager
 };
 
 /**
- * Represent a rendering API such as OpenGL or OpenVG.
+ * Represent the OpenGL rendering API.
  *
  * Implemented by the gallium frontend and used by the frontend manager.
  */
@@ -528,11 +518,6 @@ struct st_api
     * The name of the rendering API.  This is informative.
     */
    const char *name;
-
-   /**
-    * The supported rendering API.
-    */
-   enum st_api_type api;
 
    /**
     * The supported profiles.  Tested with ST_PROFILE_*_MASK.

@@ -265,16 +265,6 @@ impl PipeContext {
         unsafe { self.pipe.as_ref().texture_unmap.unwrap()(self.pipe.as_ptr(), tx) };
     }
 
-    pub fn blit(&self, src: &PipeResource, dst: &PipeResource) {
-        let mut blit_info = pipe_blit_info::default();
-        blit_info.src.resource = src.pipe();
-        blit_info.dst.resource = dst.pipe();
-
-        println!("blit not implemented!");
-
-        unsafe { self.pipe.as_ref().blit.unwrap()(self.pipe.as_ptr(), &blit_info) }
-    }
-
     pub fn create_compute_state(
         &self,
         nir: &NirShader,
@@ -473,7 +463,6 @@ fn has_required_cbs(c: &pipe_context) -> bool {
     c.destroy.is_some()
         && c.bind_compute_state.is_some()
         && c.bind_sampler_states.is_some()
-        && c.blit.is_some()
         && c.buffer_map.is_some()
         && c.buffer_subdata.is_some()
         && c.buffer_unmap.is_some()

@@ -43,7 +43,6 @@ panfrost_create_compute_state(
         const struct pipe_compute_state *cso)
 {
         struct panfrost_context *ctx = pan_context(pctx);
-        struct panfrost_screen *screen = pan_screen(pctx->screen);
 
         struct panfrost_shader_variants *so = CALLOC_STRUCT(panfrost_shader_variants);
         so->req_input_mem = cso->req_input_mem;
@@ -54,28 +53,11 @@ panfrost_create_compute_state(
         so->variant_count = 1;
         so->active_variant = 0;
 
-        nir_shader *deserialized = NULL;
-
-        if (cso->ir_type == PIPE_SHADER_IR_NIR_SERIALIZED) {
-                struct blob_reader reader;
-                const struct pipe_binary_program_header *hdr = cso->prog;
-
-                blob_reader_init(&reader, hdr->blob, hdr->num_bytes);
-
-                const struct nir_shader_compiler_options *options =
-                        screen->vtbl.get_compiler_options();
-
-                deserialized = nir_deserialize(NULL, options, &reader);
-        } else {
-                assert(cso->ir_type == PIPE_SHADER_IR_NIR && "TGSI kernels unsupported");
-        }
+        assert(cso->ir_type == PIPE_SHADER_IR_NIR && "TGSI kernels unsupported");
 
         panfrost_shader_compile(pctx->screen, &ctx->shaders, &ctx->descs,
-                                deserialized ?: cso->prog,
-                                &ctx->base.debug, v, cso->req_local_mem);
-
-        /* There are no variants so we won't need the NIR again */
-        ralloc_free(deserialized);
+                                cso->prog, &ctx->base.debug, v,
+                                cso->req_local_mem);
 
         return so;
 }

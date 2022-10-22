@@ -196,6 +196,20 @@ VkResult pvr_srv_winsys_compute_submit(
       }
    }
 
+   if (submit_info->barrier) {
+      struct pvr_srv_sync *srv_wait_sync = to_srv_sync(submit_info->barrier);
+
+      if (srv_wait_sync->fd >= 0) {
+         int ret;
+
+         ret = sync_accumulate("", &in_fd, srv_wait_sync->fd);
+         if (ret) {
+            result = vk_error(NULL, VK_ERROR_OUT_OF_HOST_MEMORY);
+            goto end_close_in_fd;
+         }
+      }
+   }
+
    do {
       result = pvr_srv_rgx_kick_compute2(srv_ws->render_fd,
                                          srv_ctx->handle,

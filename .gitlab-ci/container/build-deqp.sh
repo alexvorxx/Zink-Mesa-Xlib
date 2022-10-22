@@ -12,6 +12,13 @@ git clone \
     /VK-GL-CTS
 pushd /VK-GL-CTS
 
+# Apply a patch to update zlib link to an available version.
+# vulkan-cts-1.3.3.0 uses zlib 1.2.12 which was removed from zlib server due to
+# a CVE. See https://zlib.net/
+# FIXME: Remove this patch when uprev to 1.3.4.0+
+wget -O- https://github.com/KhronosGroup/VK-GL-CTS/commit/6bb2e7d64261bedb503947b1b251b1eeeb49be73.patch |
+    git am -
+
 # --insecure is due to SSL cert failures hitting sourceforge for zlib and
 # libpng (sigh).  The archives get their checksums checked anyway, and git
 # always goes through ssh or https.

@@ -549,6 +549,7 @@ radv_physical_device_get_supported_extensions(const struct radv_physical_device 
 #endif
       .EXT_extended_dynamic_state = true,
       .EXT_extended_dynamic_state2 = true,
+      .EXT_extended_dynamic_state3 = true,
       .EXT_external_memory_dma_buf = true,
       .EXT_external_memory_host = device->rad_info.has_userptr,
       .EXT_global_priority = true,
@@ -620,11 +621,12 @@ radv_physical_device_get_supported_extensions(const struct radv_physical_device 
       .AMD_shader_ballot = true,
       .AMD_shader_core_properties = true,
       .AMD_shader_core_properties2 = true,
-      .AMD_shader_explicit_vertex_parameter = true,
+      /* TODO: Figure out if it's possible to implement it on gfx11. */
+      .AMD_shader_explicit_vertex_parameter = device->rad_info.gfx_level < GFX11,
       .AMD_shader_fragment_mask = device->rad_info.gfx_level < GFX11,
       .AMD_shader_image_load_store_lod = true,
       .AMD_shader_trinary_minmax = true,
-      .AMD_texture_gather_bias_lod = true,
+      .AMD_texture_gather_bias_lod = device->rad_info.gfx_level < GFX11,
 #ifdef ANDROID
       .ANDROID_external_memory_android_hardware_buffer = RADV_SUPPORT_ANDROID_HARDWARE_BUFFER,
       .ANDROID_native_buffer = true,
@@ -1859,6 +1861,42 @@ radv_GetPhysicalDeviceFeatures2(VkPhysicalDevice physicalDevice,
          features->graphicsPipelineLibrary = true;
          break;
       }
+      case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTENDED_DYNAMIC_STATE_3_FEATURES_EXT: {
+         VkPhysicalDeviceExtendedDynamicState3FeaturesEXT *features =
+            (VkPhysicalDeviceExtendedDynamicState3FeaturesEXT *)ext;
+         features->extendedDynamicState3TessellationDomainOrigin = true;
+         features->extendedDynamicState3PolygonMode = true;
+         features->extendedDynamicState3SampleMask = true;
+         features->extendedDynamicState3AlphaToCoverageEnable = pdevice->rad_info.gfx_level < GFX11;
+         features->extendedDynamicState3LogicOpEnable = true;
+         features->extendedDynamicState3LineStippleEnable = true;
+         features->extendedDynamicState3ColorBlendEnable = false; /* TODO: Zink */
+         features->extendedDynamicState3DepthClipEnable = true;
+         features->extendedDynamicState3ConservativeRasterizationMode = true;
+         features->extendedDynamicState3DepthClipNegativeOneToOne = true;
+         features->extendedDynamicState3ProvokingVertexMode = !pdevice->use_ngg; /* TODO: NGG */
+         features->extendedDynamicState3DepthClampEnable = true;
+         features->extendedDynamicState3ColorWriteMask = false; /* TODO: Zink */
+         features->extendedDynamicState3RasterizationSamples = false; /* TODO: Zink */
+         features->extendedDynamicState3ColorBlendEquation = false; /* TODO: Zink */
+         features->extendedDynamicState3SampleLocationsEnable = false; /* TODO: Zink */
+         features->extendedDynamicState3LineRasterizationMode = false; /* TODO: Zink */
+         features->extendedDynamicState3ExtraPrimitiveOverestimationSize = false;
+         features->extendedDynamicState3AlphaToOneEnable = false;
+         features->extendedDynamicState3RasterizationStream = false;
+         features->extendedDynamicState3ColorBlendAdvanced = false;
+         features->extendedDynamicState3ViewportWScalingEnable = false;
+         features->extendedDynamicState3ViewportSwizzle = false;
+         features->extendedDynamicState3CoverageToColorEnable = false;
+         features->extendedDynamicState3CoverageToColorLocation = false;
+         features->extendedDynamicState3CoverageModulationMode = false;
+         features->extendedDynamicState3CoverageModulationTableEnable = false;
+         features->extendedDynamicState3CoverageModulationTable = false;
+         features->extendedDynamicState3CoverageReductionMode = false;
+         features->extendedDynamicState3RepresentativeFragmentTestEnable = false;
+         features->extendedDynamicState3ShadingRateImageEnable = false;
+         break;
+      }
       default:
          break;
       }
@@ -2441,7 +2479,7 @@ radv_GetPhysicalDeviceProperties2(VkPhysicalDevice physicalDevice,
          props->maxFragmentSizeAspectRatio = 2;
          props->maxFragmentShadingRateCoverageSamples = 32;
          props->maxFragmentShadingRateRasterizationSamples = VK_SAMPLE_COUNT_8_BIT;
-         props->fragmentShadingRateWithShaderDepthStencilWrites = false;
+         props->fragmentShadingRateWithShaderDepthStencilWrites = !pdevice->rad_info.has_vrs_ds_export_bug;
          props->fragmentShadingRateWithSampleMask = true;
          props->fragmentShadingRateWithShaderSampleMask = false;
          props->fragmentShadingRateWithConservativeRasterization = true;
@@ -2637,6 +2675,12 @@ radv_GetPhysicalDeviceProperties2(VkPhysicalDevice physicalDevice,
          properties->prefersCompactVertexOutput = true;
          properties->prefersCompactPrimitiveOutput = false;
 
+         break;
+      }
+      case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTENDED_DYNAMIC_STATE_3_PROPERTIES_EXT: {
+         VkPhysicalDeviceExtendedDynamicState3PropertiesEXT *properties =
+            (VkPhysicalDeviceExtendedDynamicState3PropertiesEXT *)ext;
+         properties->dynamicPrimitiveTopologyUnrestricted = false;
          break;
       }
       default:
@@ -2966,6 +3010,8 @@ radv_queue_state_finish(struct radv_queue_state *queue, struct radeon_winsys *ws
       ws->buffer_destroy(ws, queue->tess_rings_bo);
    if (queue->task_rings_bo)
       ws->buffer_destroy(ws, queue->task_rings_bo);
+   if (queue->attr_ring_bo)
+      ws->buffer_destroy(ws, queue->attr_ring_bo);
    if (queue->gds_bo)
       ws->buffer_destroy(ws, queue->gds_bo);
    if (queue->gds_oa_bo)
@@ -3966,7 +4012,8 @@ radv_fill_shader_rings(struct radv_device *device, uint32_t *map, bool add_sampl
                        uint32_t gsvs_ring_size, struct radeon_winsys_bo *gsvs_ring_bo,
                        struct radeon_winsys_bo *tess_rings_bo,
                        struct radeon_winsys_bo *task_rings_bo,
-                       struct radeon_winsys_bo *mesh_scratch_ring_bo)
+                       struct radeon_winsys_bo *mesh_scratch_ring_bo,
+                       uint32_t attr_ring_size, struct radeon_winsys_bo *attr_ring_bo)
 {
    uint32_t *desc = &map[4];
 
@@ -4169,6 +4216,22 @@ radv_fill_shader_rings(struct radv_device *device, uint32_t *map, bool add_sampl
          desc[3] |= S_008F0C_FORMAT(V_008F0C_GFX10_FORMAT_32_UINT) |
                     S_008F0C_OOB_SELECT(V_008F0C_OOB_SELECT_DISABLED) | S_008F0C_RESOURCE_LEVEL(1);
       }
+   }
+
+   desc += 4;
+
+   if (attr_ring_bo) {
+      assert(device->physical_device->rad_info.gfx_level >= GFX11);
+
+      uint64_t va = radv_buffer_get_va(attr_ring_bo);
+
+      desc[0] = va;
+      desc[1] = S_008F04_BASE_ADDRESS_HI(va >> 32) | S_008F04_SWIZZLE_ENABLE_GFX11(3) /* 16B */;
+      desc[2] = attr_ring_size;
+      desc[3] = S_008F0C_DST_SEL_X(V_008F0C_SQ_SEL_X) | S_008F0C_DST_SEL_Y(V_008F0C_SQ_SEL_Y) |
+                S_008F0C_DST_SEL_Z(V_008F0C_SQ_SEL_Z) | S_008F0C_DST_SEL_W(V_008F0C_SQ_SEL_W) |
+                S_008F0C_FORMAT(V_008F0C_GFX11_FORMAT_32_32_32_32_FLOAT) |
+                S_008F0C_INDEX_STRIDE(2) /* 32 elements */;
    }
 
    desc += 4;
@@ -4431,6 +4494,56 @@ radv_emit_graphics_shader_pointers(struct radv_device *device, struct radeon_cmd
 }
 
 static void
+radv_emit_attribute_ring(struct radv_device *device, struct radeon_cmdbuf *cs,
+                         struct radeon_winsys_bo *attr_ring_bo, uint32_t attr_ring_size)
+{
+   const struct radv_physical_device *pdevice = device->physical_device;
+   uint64_t va;
+
+   if (!attr_ring_bo)
+      return;
+
+   assert(pdevice->rad_info.gfx_level >= GFX11);
+
+   va = radv_buffer_get_va(attr_ring_bo);
+   assert((va >> 32) == pdevice->rad_info.address32_hi);
+
+   radv_cs_add_buffer(device->ws, cs, attr_ring_bo);
+
+   /* We must wait for idle using an EOP event before changing the attribute ring registers. Use the
+    * bottom-of-pipe EOP event, but increment the PWS counter instead of writing memory.
+    */
+   radeon_emit(cs, PKT3(PKT3_RELEASE_MEM, 6, 0));
+   radeon_emit(cs, S_490_EVENT_TYPE(V_028A90_BOTTOM_OF_PIPE_TS) | S_490_EVENT_INDEX(5) |
+                   S_490_PWS_ENABLE(1));
+   radeon_emit(cs, 0); /* DST_SEL, INT_SEL, DATA_SEL */
+   radeon_emit(cs, 0); /* ADDRESS_LO */
+   radeon_emit(cs, 0); /* ADDRESS_HI */
+   radeon_emit(cs, 0); /* DATA_LO */
+   radeon_emit(cs, 0); /* DATA_HI */
+   radeon_emit(cs, 0); /* INT_CTXID */
+
+   /* Wait for the PWS counter. */
+   radeon_emit(cs, PKT3(PKT3_ACQUIRE_MEM, 6, 0));
+   radeon_emit(cs, S_580_PWS_STAGE_SEL(V_580_CP_ME) |
+                   S_580_PWS_COUNTER_SEL(V_580_TS_SELECT) |
+                   S_580_PWS_ENA2(1) | S_580_PWS_COUNT(0));
+   radeon_emit(cs, 0xffffffff); /* GCR_SIZE */
+   radeon_emit(cs, 0x01ffffff); /* GCR_SIZE_HI */
+   radeon_emit(cs, 0); /* GCR_BASE_LO */
+   radeon_emit(cs, 0); /* GCR_BASE_HI */
+   radeon_emit(cs, S_585_PWS_ENA(1));
+   radeon_emit(cs, 0); /* GCR_CNTL */
+
+   /* The PS will read inputs from this address. */
+   radeon_set_uconfig_reg(cs, R_031118_SPI_ATTRIBUTE_RING_BASE, va >> 16);
+   radeon_set_uconfig_reg(cs, R_03111C_SPI_ATTRIBUTE_RING_SIZE,
+                              S_03111C_MEM_SIZE(((attr_ring_size / pdevice->rad_info.max_se) >> 16) - 1) |
+                              S_03111C_BIG_PAGE(pdevice->rad_info.discardable_allows_big_page) |
+                              S_03111C_L1_POLICY(1));
+}
+
+static void
 radv_init_graphics_state(struct radeon_cmdbuf *cs, struct radv_device *device)
 {
    if (device->gfx_init) {
@@ -4466,6 +4579,7 @@ radv_update_preamble_cs(struct radv_queue_state *queue, struct radv_device *devi
    struct radeon_winsys_bo *tess_rings_bo = queue->tess_rings_bo;
    struct radeon_winsys_bo *task_rings_bo = queue->task_rings_bo;
    struct radeon_winsys_bo *mesh_scratch_ring_bo = queue->mesh_scratch_ring_bo;
+   struct radeon_winsys_bo *attr_ring_bo = queue->attr_ring_bo;
    struct radeon_winsys_bo *gds_bo = queue->gds_bo;
    struct radeon_winsys_bo *gds_oa_bo = queue->gds_oa_bo;
    struct radeon_cmdbuf *dest_cs[3] = {0};
@@ -4547,6 +4661,15 @@ radv_update_preamble_cs(struct radv_queue_state *queue, struct radv_device *devi
          goto fail;
    }
 
+   if (needs->attr_ring_size > queue->ring_info.attr_ring_size) {
+      assert(device->physical_device->rad_info.gfx_level >= GFX11);
+      result = ws->buffer_create(ws, needs->attr_ring_size, 2 * 1024 * 1024 /* 2MiB */,
+                                 RADEON_DOMAIN_VRAM, RADEON_FLAG_32BIT | RADEON_FLAG_DISCARDABLE |
+                                 ring_bo_flags, RADV_BO_PRIORITY_SCRATCH, 0, &attr_ring_bo);
+      if (result != VK_SUCCESS)
+         goto fail;
+   }
+
    if (!queue->ring_info.gds && needs->gds) {
       assert(device->physical_device->rad_info.gfx_level >= GFX10);
 
@@ -4578,10 +4701,11 @@ radv_update_preamble_cs(struct radv_queue_state *queue, struct radv_device *devi
        scratch_bo != queue->scratch_bo || esgs_ring_bo != queue->esgs_ring_bo ||
        gsvs_ring_bo != queue->gsvs_ring_bo || tess_rings_bo != queue->tess_rings_bo ||
        task_rings_bo != queue->task_rings_bo || mesh_scratch_ring_bo != queue->mesh_scratch_ring_bo ||
-       add_sample_positions) {
+       attr_ring_bo != queue->attr_ring_bo || add_sample_positions) {
       uint32_t size = 0;
-      if (gsvs_ring_bo || esgs_ring_bo || tess_rings_bo || task_rings_bo || mesh_scratch_ring_bo || add_sample_positions) {
-         size = 160; /* 2 dword + 2 padding + 4 dword * 9 */
+      if (gsvs_ring_bo || esgs_ring_bo || tess_rings_bo || task_rings_bo || mesh_scratch_ring_bo ||
+          attr_ring_bo || add_sample_positions) {
+         size = 176; /* 2 dword + 2 padding + 4 dword * 10 */
          if (add_sample_positions)
             size += 128; /* 64+32+16+8 = 120 bytes */
       } else if (scratch_bo) {
@@ -4614,10 +4738,12 @@ radv_update_preamble_cs(struct radv_queue_state *queue, struct radv_device *devi
          map[1] = rsrc1;
       }
 
-      if (esgs_ring_bo || gsvs_ring_bo || tess_rings_bo || task_rings_bo || mesh_scratch_ring_bo || add_sample_positions)
+      if (esgs_ring_bo || gsvs_ring_bo || tess_rings_bo || task_rings_bo || mesh_scratch_ring_bo ||
+          attr_ring_bo || add_sample_positions)
          radv_fill_shader_rings(device, map, add_sample_positions, needs->esgs_ring_size,
                                 esgs_ring_bo, needs->gsvs_ring_size, gsvs_ring_bo, tess_rings_bo,
-                                task_rings_bo, mesh_scratch_ring_bo);
+                                task_rings_bo, mesh_scratch_ring_bo, needs->attr_ring_size,
+                                attr_ring_bo);
 
       ws->buffer_unmap(descriptor_bo);
    }
@@ -4632,7 +4758,8 @@ radv_update_preamble_cs(struct radv_queue_state *queue, struct radv_device *devi
          /* Continue preamble is unnecessary when no shader rings are used. */
          if (!needs->scratch_size_per_wave && !needs->compute_scratch_size_per_wave &&
              !needs->esgs_ring_size && !needs->gsvs_ring_size && !needs->tess_rings &&
-             !needs->task_rings && !needs->mesh_scratch_ring && !needs->gds && !needs->gds_oa && !needs->sample_positions)
+             !needs->task_rings && !needs->mesh_scratch_ring && !needs->attr_ring_size &&
+             !needs->gds && !needs->gds_oa && !needs->sample_positions)
             continue;
       }
 
@@ -4666,6 +4793,7 @@ radv_update_preamble_cs(struct radv_queue_state *queue, struct radv_device *devi
                                  needs->gsvs_ring_size);
          radv_emit_tess_factor_ring(device, cs, tess_rings_bo);
          radv_emit_task_rings(device, cs, task_rings_bo, false);
+         radv_emit_attribute_ring(device, cs, attr_ring_bo, needs->attr_ring_size);
          radv_emit_graphics_shader_pointers(device, cs, descriptor_bo);
          radv_emit_compute_scratch(device, cs, needs->compute_scratch_size_per_wave,
                                    needs->compute_scratch_waves, compute_scratch_bo);
@@ -4763,6 +4891,7 @@ radv_update_preamble_cs(struct radv_queue_state *queue, struct radv_device *devi
    queue->tess_rings_bo = tess_rings_bo;
    queue->task_rings_bo = task_rings_bo;
    queue->mesh_scratch_ring_bo = mesh_scratch_ring_bo;
+   queue->attr_ring_bo = attr_ring_bo;
    queue->gds_bo = gds_bo;
    queue->gds_oa_bo = gds_oa_bo;
    queue->ring_info = *needs;
@@ -4785,6 +4914,8 @@ fail:
       ws->buffer_destroy(ws, tess_rings_bo);
    if (task_rings_bo && task_rings_bo != queue->task_rings_bo)
       ws->buffer_destroy(ws, task_rings_bo);
+   if (attr_ring_bo && attr_ring_bo != queue->attr_ring_bo)
+      ws->buffer_destroy(ws, attr_ring_bo);
    if (gds_bo && gds_bo != queue->gds_bo)
       ws->buffer_destroy(ws, gds_bo);
    if (gds_oa_bo && gds_oa_bo != queue->gds_oa_bo)
@@ -5069,6 +5200,14 @@ radv_update_preambles(struct radv_queue_state *queue, struct radv_device *device
          ? MIN2(needs.compute_scratch_waves, UINT32_MAX / needs.compute_scratch_size_per_wave)
          : 0;
 
+   if (device->physical_device->rad_info.gfx_level >= GFX11) {
+      /* TODO: tweak this */
+      unsigned attr_ring_size_per_se = align(1400000, 64 * 1024);
+      unsigned attr_ring_size = attr_ring_size_per_se * device->physical_device->rad_info.max_se;
+      assert(attr_ring_size <= 16 * 1024 * 1024); /* maximum size */
+      needs.attr_ring_size = attr_ring_size;
+   }
+
    /* Return early if we already match these needs.
     * Note that it's not possible for any of the needed values to be less
     * than what the queue already had, because we only ever increase the allocated size.
@@ -5083,6 +5222,7 @@ radv_update_preambles(struct radv_queue_state *queue, struct radv_device *device
        queue->ring_info.tess_rings == needs.tess_rings &&
        queue->ring_info.task_rings == needs.task_rings &&
        queue->ring_info.mesh_scratch_ring == needs.mesh_scratch_ring &&
+       queue->ring_info.attr_ring_size == needs.attr_ring_size &&
        queue->ring_info.gds == needs.gds &&
        queue->ring_info.gds_oa == needs.gds_oa &&
        queue->ring_info.sample_positions == needs.sample_positions)

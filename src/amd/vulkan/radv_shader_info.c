@@ -1009,7 +1009,8 @@ gfx10_get_ngg_info(const struct radv_device *device, struct radv_pipeline_stage 
    unsigned gsprim_lds_size = 0;
 
    /* All these are per subgroup: */
-   const unsigned min_esverts = gfx_level >= GFX10_3 ? 29 : 24;
+   const unsigned min_esverts = gfx_level >= GFX11 ? 3 : /* gfx11 requires at least 1 primitive per TG */
+                                gfx_level >= GFX10_3 ? 29 : 24;
    bool max_vert_out_per_gs_instance = false;
    unsigned max_esverts_base = 128;
    unsigned max_gsprims_base = 128; /* default prim group size clamp */

@@ -1,4 +1,3 @@
-# Basic test set
 [[deqp]]
 deqp = "/deqp/modules/gles2/deqp-gles2"
 caselists = ["/deqp/mustpass/gles2-master.txt"]
@@ -18,7 +17,6 @@ deqp_args = [
     "--deqp-surface-type=pbuffer", "--deqp-visibility=hidden",
     "--deqp-gl-config-name=rgba8888d24s8ms0",
 ]
-fraction = 2
 
 [[deqp]]
 deqp = "/deqp/modules/gles31/deqp-gles31"
@@ -28,4 +26,12 @@ deqp_args = [
     "--deqp-surface-type=pbuffer", "--deqp-visibility=hidden",
     "--deqp-gl-config-name=rgba8888d24s8ms0",
 ]
-fraction = 2
+
+[[piglit]]
+piglit_folder = "/piglit"
+profile = "quick_gl"
+process_isolation = true
+timeout = 180.0
+  [piglit.env]
+  PIGLIT_PLATFORM = "mixed_glx_egl"
+  PIGLIT_NO_WINDOW = "1"

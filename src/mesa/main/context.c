@@ -127,6 +127,7 @@
 #include "util/debug.h"
 #include "util/disk_cache.h"
 #include "util/strtod.h"
+#include "util/u_call_once.h"
 #include "stencil.h"
 #include "shaderimage.h"
 #include "texcompress_s3tc.h"
@@ -239,20 +240,6 @@ one_time_init(const char *extensions_override)
 }
 
 /**
- * One-time initialization flag
- *
- * \sa Used by _mesa_initialize().
- */
-static bool init_done = false;
-static mtx_t init_once_lock;
-static once_flag init_once = ONCE_FLAG_INIT;
-
-static void init_lock(void) {
-   mtx_init(&init_once_lock, mtx_plain);
-}
-
-
-/**
  * Calls all the various one-time-init functions in Mesa.
  *
  * While holding a global mutex lock, calls several initialization functions,
@@ -262,14 +249,9 @@ static void init_lock(void) {
 void
 _mesa_initialize(const char *extensions_override)
 {
-   call_once(&init_once, init_lock);
-
-   mtx_lock(&init_once_lock);
-   if (!init_done) {
-      one_time_init(extensions_override);
-      init_done = true;
-   }
-   mtx_unlock(&init_once_lock);
+   static util_once_flag once = UTIL_ONCE_FLAG_INIT;
+   util_call_once_data(&once,
+      (util_call_once_data_func)one_time_init, extensions_override);
 }
 
 

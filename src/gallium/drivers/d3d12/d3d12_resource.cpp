@@ -255,7 +255,14 @@ init_texture(struct d3d12_screen *screen,
        */
    }
 
-   if (screen->support_shader_images && templ->nr_samples <= 1) {
+   /* The VA frontend VaFourccToPipeFormat chooses _UNORM types for RGBx formats as typeless formats
+    * such as DXGI_R8G8B8A8_TYPELESS are not supported as Video Processor input/output as specified in:
+    * https://learn.microsoft.com/en-us/windows/win32/direct3ddxgi/hardware-support-for-direct3d-12-1-formats
+    * PIPE_BIND_CUSTOM is used by the video frontend to hint this resource will be used in video and the
+    * original format must be not converted to _TYPELESS
+   */
+   if ( ((templ->bind & PIPE_BIND_CUSTOM) == 0) &&
+      (screen->support_shader_images && templ->nr_samples <= 1)) {
       /* Ideally, we'd key off of PIPE_BIND_SHADER_IMAGE for this, but it doesn't
        * seem to be set properly. So, all UAV-capable resources need the UAV flag.
        */
@@ -1034,7 +1041,7 @@ fill_buffer_location(struct d3d12_context *ctx,
    buf_loc.Type = D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT;
    buf_loc.pResource = d3d12_resource_underlying(staging_res, &offset);
    buf_loc.PlacedFootprint = footprint;
-   buf_loc.PlacedFootprint.Offset += offset;
+   buf_loc.PlacedFootprint.Offset = offset;
    buf_loc.PlacedFootprint.Offset += trans->base.b.offset;
 
    if (util_format_has_depth(util_format_description(res->base.b.format)) &&

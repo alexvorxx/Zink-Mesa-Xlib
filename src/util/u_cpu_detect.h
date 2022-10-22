@@ -38,6 +38,7 @@
 #include <stdbool.h>
 
 #include "pipe/p_config.h"
+#include "util/macros.h"
 #include "util/u_atomic.h"
 #include "util/u_thread.h"
 

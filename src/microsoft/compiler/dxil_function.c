@@ -90,6 +90,7 @@ static struct  predefined_func_descr predefined_funcs[] = {
 {"dx.op.loadOutputControlPoint", "O", "iiici", DXIL_ATTR_KIND_READ_NONE},
 {"dx.op.createHandleFromBinding", "@", "i#ib", DXIL_ATTR_KIND_READ_NONE},
 {"dx.op.annotateHandle", "@", "i@P", DXIL_ATTR_KIND_READ_NONE},
+{"dx.op.isHelperLane", "b", "i", DXIL_ATTR_KIND_READ_ONLY},
 };
 
 struct func_descr {

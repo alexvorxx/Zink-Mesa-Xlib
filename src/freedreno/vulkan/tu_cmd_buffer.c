@@ -1724,6 +1724,8 @@ tu_reset_cmd_buffer(struct vk_command_buffer *vk_cmd_buffer,
    u_trace_init(&cmd_buffer->trace, &cmd_buffer->device->trace_context);
 
    cmd_buffer->state.max_vbs_bound = 0;
+   cmd_buffer->state.last_prim_params.valid = false;
+
    cmd_buffer->vsc_initialized = false;
 
    cmd_buffer->status = TU_CMD_BUFFER_STATUS_INITIAL;
@@ -4390,25 +4392,25 @@ tu6_draw_common(struct tu_cmd_buffer *cmd,
                 uint32_t draw_count)
 {
    const struct tu_pipeline *pipeline = cmd->state.pipeline;
+   struct tu_render_pass_state *rp = &cmd->state.rp;
 
    /* Fill draw stats for autotuner */
-   cmd->state.rp.drawcall_count++;
+   rp->drawcall_count++;
 
-   cmd->state.rp.drawcall_bandwidth_per_sample_sum +=
-      cmd->state.pipeline->output.color_bandwidth_per_sample;
+   rp->drawcall_bandwidth_per_sample_sum +=
+      pipeline->output.color_bandwidth_per_sample;
 
    /* add depth memory bandwidth cost */
-   const uint32_t depth_bandwidth = cmd->state.pipeline->output.depth_cpp_per_sample;
+   const uint32_t depth_bandwidth = pipeline->output.depth_cpp_per_sample;
    if (cmd->state.rb_depth_cntl & A6XX_RB_DEPTH_CNTL_Z_WRITE_ENABLE)
-      cmd->state.rp.drawcall_bandwidth_per_sample_sum += depth_bandwidth;
+      rp->drawcall_bandwidth_per_sample_sum += depth_bandwidth;
    if (cmd->state.rb_depth_cntl & A6XX_RB_DEPTH_CNTL_Z_TEST_ENABLE)
-      cmd->state.rp.drawcall_bandwidth_per_sample_sum += depth_bandwidth;
+      rp->drawcall_bandwidth_per_sample_sum += depth_bandwidth;
 
    /* add stencil memory bandwidth cost */
-   const uint32_t stencil_bandwidth =
-      cmd->state.pipeline->output.stencil_cpp_per_sample;
+   const uint32_t stencil_bandwidth = pipeline->output.stencil_cpp_per_sample;
    if (cmd->state.rb_stencil_cntl & A6XX_RB_STENCIL_CONTROL_STENCIL_ENABLE)
-      cmd->state.rp.drawcall_bandwidth_per_sample_sum += stencil_bandwidth * 2;
+      rp->drawcall_bandwidth_per_sample_sum += stencil_bandwidth * 2;
 
    tu_emit_cache_flush_renderpass(cmd, cs);
 
@@ -4416,19 +4418,37 @@ tu6_draw_common(struct tu_cmd_buffer *cmd,
    if (pipeline->dynamic_state_mask & BIT(TU_DYNAMIC_STATE_PRIMITIVE_RESTART_ENABLE))
       primitive_restart_enabled = cmd->state.primitive_restart_enable;
 
-   tu_cs_emit_regs(cs, A6XX_PC_PRIMITIVE_CNTL_0(
-         .primitive_restart =
-               primitive_restart_enabled && indexed,
-         .provoking_vtx_last = pipeline->rast.provoking_vertex_last,
+   bool primitive_restart = primitive_restart_enabled && indexed;
+   bool provoking_vtx_last = pipeline->rast.provoking_vertex_last;
+   bool tess_upper_left_domain_origin =
+      pipeline->tess.upper_left_domain_origin;
+
+   struct tu_primitive_params* prim_params = &cmd->state.last_prim_params;
+
+   if (!prim_params->valid ||
+       prim_params->primitive_restart != primitive_restart ||
+       prim_params->provoking_vtx_last != provoking_vtx_last ||
+       prim_params->tess_upper_left_domain_origin !=
+          tess_upper_left_domain_origin) {
+      tu_cs_emit_regs(
+         cs,
+         A6XX_PC_PRIMITIVE_CNTL_0(.primitive_restart = primitive_restart,
+                                  .provoking_vtx_last = provoking_vtx_last,
          .tess_upper_left_domain_origin =
-               pipeline->tess.upper_left_domain_origin));
+                                     tess_upper_left_domain_origin));
+      prim_params->valid = true;
+      prim_params->primitive_restart = primitive_restart;
+      prim_params->provoking_vtx_last = provoking_vtx_last;
+      prim_params->tess_upper_left_domain_origin = tess_upper_left_domain_origin;
+   }
 
    /* Early exit if there is nothing to emit, saves CPU cycles */
-   if (!(cmd->state.dirty & ~TU_CMD_DIRTY_COMPUTE_DESC_SETS_LOAD))
+   uint32_t dirty = cmd->state.dirty;
+   if (!(dirty & ~TU_CMD_DIRTY_COMPUTE_DESC_SETS_LOAD))
       return VK_SUCCESS;
 
    bool dirty_lrz =
-      cmd->state.dirty & (TU_CMD_DIRTY_LRZ | TU_CMD_DIRTY_RB_DEPTH_CNTL |
+      dirty & (TU_CMD_DIRTY_LRZ | TU_CMD_DIRTY_RB_DEPTH_CNTL |
                           TU_CMD_DIRTY_RB_STENCIL_CNTL | TU_CMD_DIRTY_BLEND);
 
    if (dirty_lrz) {
@@ -4442,18 +4462,18 @@ tu6_draw_common(struct tu_cmd_buffer *cmd,
       tu6_build_depth_plane_z_mode(cmd, &cs);
    }
 
-   if (cmd->state.dirty & TU_CMD_DIRTY_RASTERIZER_DISCARD) {
+   if (dirty & TU_CMD_DIRTY_RASTERIZER_DISCARD) {
       struct tu_cs cs = tu_cmd_dynamic_state(cmd, TU_DYNAMIC_STATE_RASTERIZER_DISCARD, 4);
       tu_cs_emit_regs(&cs, A6XX_PC_RASTER_CNTL(.dword = cmd->state.pc_raster_cntl));
       tu_cs_emit_regs(&cs, A6XX_VPC_UNKNOWN_9107(.dword = cmd->state.vpc_unknown_9107));
    }
 
-   if (cmd->state.dirty & TU_CMD_DIRTY_GRAS_SU_CNTL) {
+   if (dirty & TU_CMD_DIRTY_GRAS_SU_CNTL) {
       struct tu_cs cs = tu_cmd_dynamic_state(cmd, TU_DYNAMIC_STATE_GRAS_SU_CNTL, 2);
       tu_cs_emit_regs(&cs, A6XX_GRAS_SU_CNTL(.dword = cmd->state.gras_su_cntl));
    }
 
-   if (cmd->state.dirty & TU_CMD_DIRTY_RB_DEPTH_CNTL) {
+   if (dirty & TU_CMD_DIRTY_RB_DEPTH_CNTL) {
       struct tu_cs cs = tu_cmd_dynamic_state(cmd, TU_DYNAMIC_STATE_RB_DEPTH_CNTL, 2);
       uint32_t rb_depth_cntl = cmd->state.rb_depth_cntl;
 
@@ -4471,27 +4491,27 @@ tu6_draw_common(struct tu_cmd_buffer *cmd,
       tu_cs_emit_regs(&cs, A6XX_RB_DEPTH_CNTL(.dword = rb_depth_cntl));
    }
 
-   if (cmd->state.dirty & TU_CMD_DIRTY_RB_STENCIL_CNTL) {
+   if (dirty & TU_CMD_DIRTY_RB_STENCIL_CNTL) {
       struct tu_cs cs = tu_cmd_dynamic_state(cmd, TU_DYNAMIC_STATE_RB_STENCIL_CNTL, 2);
       tu_cs_emit_regs(&cs, A6XX_RB_STENCIL_CONTROL(.dword = cmd->state.rb_stencil_cntl));
    }
 
-   if (cmd->state.dirty & TU_CMD_DIRTY_SHADER_CONSTS)
+   if (dirty & TU_CMD_DIRTY_SHADER_CONSTS)
       cmd->state.shader_const = tu6_emit_consts(cmd, pipeline, false);
 
-   if (cmd->state.dirty & TU_CMD_DIRTY_VIEWPORTS) {
+   if (dirty & TU_CMD_DIRTY_VIEWPORTS) {
       struct tu_cs cs = tu_cmd_dynamic_state(cmd, VK_DYNAMIC_STATE_VIEWPORT, 8 + 10 * cmd->state.max_viewport);
       tu6_emit_viewport(&cs, cmd->state.viewport, cmd->state.max_viewport,
                         pipeline->viewport.z_negative_one_to_one);
    }
 
-   if (cmd->state.dirty & TU_CMD_DIRTY_BLEND) {
+   if (dirty & TU_CMD_DIRTY_BLEND) {
       struct tu_cs cs = tu_cmd_dynamic_state(cmd, TU_DYNAMIC_STATE_BLEND,
                                              8 + 3 * cmd->state.pipeline->blend.num_rts);
       tu6_emit_blend(&cs, cmd);
    }
 
-   if (cmd->state.dirty & TU_CMD_DIRTY_PATCH_CONTROL_POINTS) {
+   if (dirty & TU_CMD_DIRTY_PATCH_CONTROL_POINTS) {
       bool tess = cmd->state.pipeline->active_stages &
          VK_SHADER_STAGE_TESSELLATION_CONTROL_BIT;
       uint32_t state_size = TU6_EMIT_PATCH_CONTROL_POINTS_DWORDS(
@@ -4512,7 +4532,7 @@ tu6_draw_common(struct tu_cmd_buffer *cmd,
     * buffer doesn't have a state ib to restore it, and not re-emitting them
     * is OK since CmdClearAttachments won't disable/overwrite them
     */
-   if (cmd->state.dirty & TU_CMD_DIRTY_DRAW_STATE) {
+   if (dirty & TU_CMD_DIRTY_DRAW_STATE) {
       tu_cs_emit_pkt7(cs, CP_SET_DRAW_STATE, 3 * (TU_DRAW_STATE_COUNT - 2));
 
       tu_cs_emit_draw_state(cs, TU_DRAW_STATE_PROGRAM_CONFIG, pipeline->program.config_state);
@@ -4542,25 +4562,25 @@ tu6_draw_common(struct tu_cmd_buffer *cmd,
       bool emit_binding_stride = false, emit_blend = false,
            emit_patch_control_points = false;
       uint32_t draw_state_count =
-         ((cmd->state.dirty & TU_CMD_DIRTY_SHADER_CONSTS) ? 1 : 0) +
-         ((cmd->state.dirty & TU_CMD_DIRTY_DESC_SETS_LOAD) ? 1 : 0) +
-         ((cmd->state.dirty & TU_CMD_DIRTY_VERTEX_BUFFERS) ? 1 : 0) +
-         ((cmd->state.dirty & TU_CMD_DIRTY_VS_PARAMS) ? 1 : 0) +
+         ((dirty & TU_CMD_DIRTY_SHADER_CONSTS) ? 1 : 0) +
+         ((dirty & TU_CMD_DIRTY_DESC_SETS_LOAD) ? 1 : 0) +
+         ((dirty & TU_CMD_DIRTY_VERTEX_BUFFERS) ? 1 : 0) +
+         ((dirty & TU_CMD_DIRTY_VS_PARAMS) ? 1 : 0) +
          (dirty_lrz ? 1 : 0);
 
-      if ((cmd->state.dirty & TU_CMD_DIRTY_VB_STRIDE) &&
+      if ((dirty & TU_CMD_DIRTY_VB_STRIDE) &&
           (pipeline->dynamic_state_mask & BIT(TU_DYNAMIC_STATE_VB_STRIDE))) {
          emit_binding_stride = true;
          draw_state_count += 1;
       }
 
-      if ((cmd->state.dirty & TU_CMD_DIRTY_BLEND) &&
+      if ((dirty & TU_CMD_DIRTY_BLEND) &&
           (pipeline->dynamic_state_mask & BIT(TU_DYNAMIC_STATE_BLEND))) {
          emit_blend = true;
          draw_state_count += 1;
       }
 
-      if ((cmd->state.dirty & TU_CMD_DIRTY_PATCH_CONTROL_POINTS) &&
+      if ((dirty & TU_CMD_DIRTY_PATCH_CONTROL_POINTS) &&
           (pipeline->dynamic_state_mask &
            BIT(TU_DYNAMIC_STATE_PATCH_CONTROL_POINTS))) {
          emit_patch_control_points = true;
@@ -4570,11 +4590,11 @@ tu6_draw_common(struct tu_cmd_buffer *cmd,
       if (draw_state_count > 0)
          tu_cs_emit_pkt7(cs, CP_SET_DRAW_STATE, 3 * draw_state_count);
 
-      if (cmd->state.dirty & TU_CMD_DIRTY_SHADER_CONSTS)
+      if (dirty & TU_CMD_DIRTY_SHADER_CONSTS)
          tu_cs_emit_draw_state(cs, TU_DRAW_STATE_CONST, cmd->state.shader_const);
-      if (cmd->state.dirty & TU_CMD_DIRTY_DESC_SETS_LOAD)
+      if (dirty & TU_CMD_DIRTY_DESC_SETS_LOAD)
          tu_cs_emit_draw_state(cs, TU_DRAW_STATE_DESC_SETS_LOAD, pipeline->load_state);
-      if (cmd->state.dirty & TU_CMD_DIRTY_VERTEX_BUFFERS)
+      if (dirty & TU_CMD_DIRTY_VERTEX_BUFFERS)
          tu_cs_emit_draw_state(cs, TU_DRAW_STATE_VB, cmd->state.vertex_buffers);
       if (emit_binding_stride) {
          tu_cs_emit_draw_state(cs, TU_DRAW_STATE_DYNAMIC + TU_DYNAMIC_STATE_VB_STRIDE,
@@ -4588,7 +4608,7 @@ tu6_draw_common(struct tu_cmd_buffer *cmd,
          tu_cs_emit_draw_state(cs, TU_DRAW_STATE_DYNAMIC + TU_DYNAMIC_STATE_PATCH_CONTROL_POINTS,
                                cmd->state.dynamic_state[TU_DYNAMIC_STATE_PATCH_CONTROL_POINTS]);
       }
-      if (cmd->state.dirty & TU_CMD_DIRTY_VS_PARAMS)
+      if (dirty & TU_CMD_DIRTY_VS_PARAMS)
          tu_cs_emit_draw_state(cs, TU_DRAW_STATE_VS_PARAMS, cmd->state.vs_params);
 
       if (dirty_lrz) {

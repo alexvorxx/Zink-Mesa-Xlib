@@ -504,7 +504,13 @@ si_emit_graphics(struct radv_device *device, struct radeon_cmdbuf *cs)
       }
    }
 
-   if (physical_device->rad_info.gfx_level >= GFX9) {
+   if (physical_device->rad_info.gfx_level >= GFX11) {
+      /* ACCUM fields changed their meaning. */
+      radeon_set_context_reg(cs, R_028B50_VGT_TESS_DISTRIBUTION,
+                                 S_028B50_ACCUM_ISOLINE(255) | S_028B50_ACCUM_TRI(255) |
+                                 S_028B50_ACCUM_QUAD(255) | S_028B50_DONUT_SPLIT_GFX9(24) |
+                                 S_028B50_TRAP_SPLIT(6));
+   } else if (physical_device->rad_info.gfx_level >= GFX9) {
       radeon_set_context_reg(cs, R_028B50_VGT_TESS_DISTRIBUTION,
                              S_028B50_ACCUM_ISOLINE(40) | S_028B50_ACCUM_TRI(30) |
                                 S_028B50_ACCUM_QUAD(24) | S_028B50_DONUT_SPLIT_GFX9(24) |
@@ -1183,40 +1189,89 @@ gfx10_cs_emit_cache_flush(struct radeon_cmdbuf *cs, enum amd_gfx_level gfx_level
    }
 
    if (cb_db_event) {
-      /* CB/DB flush and invalidate (or possibly just a wait for a
-       * meta flush) via RELEASE_MEM.
-       *
-       * Combine this with other cache flushes when possible; this
-       * requires affected shaders to be idle, so do it after the
-       * CS_PARTIAL_FLUSH before (VS/PS partial flushes are always
-       * implied).
-       */
-      /* Get GCR_CNTL fields, because the encoding is different in RELEASE_MEM. */
-      unsigned glm_wb = G_586_GLM_WB(gcr_cntl);
-      unsigned glm_inv = G_586_GLM_INV(gcr_cntl);
-      unsigned glv_inv = G_586_GLV_INV(gcr_cntl);
-      unsigned gl1_inv = G_586_GL1_INV(gcr_cntl);
-      assert(G_586_GL2_US(gcr_cntl) == 0);
-      assert(G_586_GL2_RANGE(gcr_cntl) == 0);
-      assert(G_586_GL2_DISCARD(gcr_cntl) == 0);
-      unsigned gl2_inv = G_586_GL2_INV(gcr_cntl);
-      unsigned gl2_wb = G_586_GL2_WB(gcr_cntl);
-      unsigned gcr_seq = G_586_SEQ(gcr_cntl);
+      if (gfx_level >= GFX11) {
+         /* Get GCR_CNTL fields, because the encoding is different in RELEASE_MEM. */
+         unsigned glm_wb = G_586_GLM_WB(gcr_cntl);
+         unsigned glm_inv = G_586_GLM_INV(gcr_cntl);
+         unsigned glk_wb = G_586_GLK_WB(gcr_cntl);
+         unsigned glk_inv = G_586_GLK_INV(gcr_cntl);
+         unsigned glv_inv = G_586_GLV_INV(gcr_cntl);
+         unsigned gl1_inv = G_586_GL1_INV(gcr_cntl);
+         assert(G_586_GL2_US(gcr_cntl) == 0);
+         assert(G_586_GL2_RANGE(gcr_cntl) == 0);
+         assert(G_586_GL2_DISCARD(gcr_cntl) == 0);
+         unsigned gl2_inv = G_586_GL2_INV(gcr_cntl);
+         unsigned gl2_wb = G_586_GL2_WB(gcr_cntl);
+         unsigned gcr_seq = G_586_SEQ(gcr_cntl);
 
-      gcr_cntl &= C_586_GLM_WB & C_586_GLM_INV & C_586_GLV_INV & C_586_GL1_INV & C_586_GL2_INV &
-                  C_586_GL2_WB; /* keep SEQ */
+         gcr_cntl &= C_586_GLM_WB & C_586_GLM_INV & C_586_GLK_WB & C_586_GLK_INV &
+                     C_586_GLV_INV & C_586_GL1_INV & C_586_GL2_INV & C_586_GL2_WB; /* keep SEQ */
 
-      assert(flush_cnt);
-      (*flush_cnt)++;
+         /* Send an event that flushes caches. */
+         radeon_emit(cs, PKT3(PKT3_RELEASE_MEM, 6, 0));
+         radeon_emit(cs, S_490_EVENT_TYPE(cb_db_event) |
+                         S_490_EVENT_INDEX(5) |
+                         S_490_GLM_WB(glm_wb) | S_490_GLM_INV(glm_inv) | S_490_GLV_INV(glv_inv) |
+                         S_490_GL1_INV(gl1_inv) | S_490_GL2_INV(gl2_inv) | S_490_GL2_WB(gl2_wb) |
+                         S_490_SEQ(gcr_seq) | S_490_GLK_WB(glk_wb) | S_490_GLK_INV(glk_inv) |
+                         S_490_PWS_ENABLE(1));
+         radeon_emit(cs, 0); /* DST_SEL, INT_SEL, DATA_SEL */
+         radeon_emit(cs, 0); /* ADDRESS_LO */
+         radeon_emit(cs, 0); /* ADDRESS_HI */
+         radeon_emit(cs, 0); /* DATA_LO */
+         radeon_emit(cs, 0); /* DATA_HI */
+         radeon_emit(cs, 0); /* INT_CTXID */
 
-      si_cs_emit_write_event_eop(
-         cs, gfx_level, false, cb_db_event,
-         S_490_GLM_WB(glm_wb) | S_490_GLM_INV(glm_inv) | S_490_GLV_INV(glv_inv) |
-            S_490_GL1_INV(gl1_inv) | S_490_GL2_INV(gl2_inv) | S_490_GL2_WB(gl2_wb) |
-            S_490_SEQ(gcr_seq),
-         EOP_DST_SEL_MEM, EOP_DATA_SEL_VALUE_32BIT, flush_va, *flush_cnt, gfx9_eop_bug_va);
+         /* Wait for the event and invalidate remaining caches if needed. */
+         radeon_emit(cs, PKT3(PKT3_ACQUIRE_MEM, 6, 0));
+         radeon_emit(cs, S_580_PWS_STAGE_SEL(V_580_CP_PFP) |
+                         S_580_PWS_COUNTER_SEL(V_580_TS_SELECT) |
+                         S_580_PWS_ENA2(1) |
+                         S_580_PWS_COUNT(0));
+         radeon_emit(cs, 0xffffffff); /* GCR_SIZE */
+         radeon_emit(cs, 0x01ffffff); /* GCR_SIZE_HI */
+         radeon_emit(cs, 0); /* GCR_BASE_LO */
+         radeon_emit(cs, 0); /* GCR_BASE_HI */
+         radeon_emit(cs, S_585_PWS_ENA(1));
+         radeon_emit(cs, gcr_cntl); /* GCR_CNTL */
 
-      radv_cp_wait_mem(cs, WAIT_REG_MEM_EQUAL, flush_va, *flush_cnt, 0xffffffff);
+         gcr_cntl = 0; /* all done */
+      } else {
+         /* CB/DB flush and invalidate (or possibly just a wait for a
+          * meta flush) via RELEASE_MEM.
+          *
+          * Combine this with other cache flushes when possible; this
+          * requires affected shaders to be idle, so do it after the
+          * CS_PARTIAL_FLUSH before (VS/PS partial flushes are always
+          * implied).
+          */
+         /* Get GCR_CNTL fields, because the encoding is different in RELEASE_MEM. */
+         unsigned glm_wb = G_586_GLM_WB(gcr_cntl);
+         unsigned glm_inv = G_586_GLM_INV(gcr_cntl);
+         unsigned glv_inv = G_586_GLV_INV(gcr_cntl);
+         unsigned gl1_inv = G_586_GL1_INV(gcr_cntl);
+         assert(G_586_GL2_US(gcr_cntl) == 0);
+         assert(G_586_GL2_RANGE(gcr_cntl) == 0);
+         assert(G_586_GL2_DISCARD(gcr_cntl) == 0);
+         unsigned gl2_inv = G_586_GL2_INV(gcr_cntl);
+         unsigned gl2_wb = G_586_GL2_WB(gcr_cntl);
+         unsigned gcr_seq = G_586_SEQ(gcr_cntl);
+
+         gcr_cntl &= C_586_GLM_WB & C_586_GLM_INV & C_586_GLV_INV & C_586_GL1_INV & C_586_GL2_INV &
+                     C_586_GL2_WB; /* keep SEQ */
+
+         assert(flush_cnt);
+         (*flush_cnt)++;
+
+         si_cs_emit_write_event_eop(
+            cs, gfx_level, false, cb_db_event,
+            S_490_GLM_WB(glm_wb) | S_490_GLM_INV(glm_inv) | S_490_GLV_INV(glv_inv) |
+               S_490_GL1_INV(gl1_inv) | S_490_GL2_INV(gl2_inv) | S_490_GL2_WB(gl2_wb) |
+               S_490_SEQ(gcr_seq),
+            EOP_DST_SEL_MEM, EOP_DATA_SEL_VALUE_32BIT, flush_va, *flush_cnt, gfx9_eop_bug_va);
+
+         radv_cp_wait_mem(cs, WAIT_REG_MEM_EQUAL, flush_va, *flush_cnt, 0xffffffff);
+      }
    }
 
    /* VGT state sync */

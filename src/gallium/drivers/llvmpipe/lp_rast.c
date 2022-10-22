@@ -50,6 +50,9 @@
 #include "lp_screen.h"
 #include "lp_tex_sample.h"
 
+#ifdef _WIN32
+#include <windows.h>
+#endif
 
 #ifdef DEBUG
 int jit_line = 0;

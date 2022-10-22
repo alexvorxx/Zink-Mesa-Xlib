@@ -10,6 +10,8 @@ use rusticl_opencl_gen::*;
 
 use std::ffi::CStr;
 use std::ffi::CString;
+use std::iter;
+use std::num::NonZeroUsize;
 use std::os::raw::c_char;
 use std::ptr;
 use std::slice;
@@ -113,25 +115,62 @@ pub fn create_program_with_source(
         return Err(CL_INVALID_VALUE);
     }
 
-    let mut source = String::new();
-    // we don't want encoding or any other problems with the source to prevent compilations, so
-    // just use CString::from_vec_unchecked and to_string_lossy
-    for i in 0..count as usize {
-        unsafe {
-            if lengths.is_null() || *lengths.add(i) == 0 {
-                source.push_str(&CStr::from_ptr(*strings.add(i)).to_string_lossy());
-            } else {
-                let l = *lengths.add(i);
-                let arr = slice::from_raw_parts(*strings.add(i).cast(), l);
-                source.push_str(&CString::from_vec_unchecked(arr.to_vec()).to_string_lossy());
+    // "lengths argument is an array with the number of chars in each string
+    // (the string length). If an element in lengths is zero, its accompanying
+    // string is null-terminated. If lengths is NULL, all strings in the
+    // strings argument are considered null-terminated."
+
+    // A length of zero represents "no length given", so semantically we're
+    // dealing not with a slice of usize but actually with a slice of
+    // Option<NonZeroUsize>. Handily those two are layout compatible, so simply
+    // reinterpret the data.
+    //
+    // Take either an iterator over the given slice or - if the `lengths`
+    // pointer is NULL - an iterator that always returns None (infinite, but
+    // later bounded by being zipped with the finite `srcs`).
+    //
+    // Looping over different iterators is no problem as long as they return
+    // the same item type. However, since we can only decide which to use at
+    // runtime, we need to use dynamic dispatch. The compiler also needs to
+    // know how much space to reserve on the stack, but different
+    // implementations of the `Iterator` trait will need different amounts of
+    // memory. This is resolved by putting the actual iterator on the heap
+    // with `Box` and only a reference to it on the stack.
+    let lengths: Box<dyn Iterator<Item = _>> = if lengths.is_null() {
+        Box::new(iter::repeat(&None))
+    } else {
+        // SAFETY: Option<NonZeroUsize> is guaranteed to be layout compatible
+        // with usize. The zero niche represents None.
+        let lengths = lengths as *const Option<NonZeroUsize>;
+        Box::new(unsafe { slice::from_raw_parts(lengths, count as usize) }.iter())
+    };
+
+    // We don't want encoding or any other problems with the source to prevent
+    // compilation, so don't convert this to a Rust `String`.
+    let mut source = Vec::new();
+    for (&string_ptr, len_opt) in iter::zip(srcs, lengths) {
+        let arr = match len_opt {
+            Some(len) => {
+                // The spec doesn't say how nul bytes should be handled here or
+                // if they are legal at all. Assume they truncate the string.
+                let arr = unsafe { slice::from_raw_parts(string_ptr.cast(), len.get()) };
+                // TODO: simplify this a bit with from_bytes_until_nul once
+                // that's stabilized and available in our msrv
+                arr.iter()
+                    .position(|&x| x == 0)
+                    .map_or(arr, |nul_index| &arr[..nul_index])
             }
-        }
+            None => unsafe { CStr::from_ptr(string_ptr) }.to_bytes(),
+        };
+
+        source.extend_from_slice(arr);
     }
 
     Ok(cl_program::from_arc(Program::new(
         &c,
         &c.devs,
-        CString::new(source).map_err(|_| CL_INVALID_VALUE)?,
+        // SAFETY: We've constructed `source` such that it contains no nul bytes.
+        unsafe { CString::from_vec_unchecked(source) },
     )))
 }
 

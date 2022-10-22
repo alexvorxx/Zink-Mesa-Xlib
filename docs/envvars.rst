@@ -548,6 +548,23 @@ Clover environment variables
    appended after the options set by the OpenCL program in
    ``clLinkProgram``.
 
+Rusticl environment variables
+-----------------------------
+
+:envvar:`RUSTICL_DEVICE_TYPE`
+   allows to overwrite the device type of devices. Possible values are
+   `accelerator`, `cpu`, `custom` and `gpu`
+:envvar:`RUSTICL_CL_VERSION`
+   overwrites the auto detected OpenCL version of all devices. Specified as
+   `major.minor`.
+:envvar:`RUSTICL_ENABLE`
+   a comma-separated list of drivers to enable CL on. An optional list of
+   comma-separated integers can be passed per driver to specify which devices
+   to enable. Examples:
+
+   -  `RUSTICL_ENABLE=iris` (enables all iris devices)
+   -  `RUSTICL_ENABLE=iris:1,radeonsi:0,2` (enables second iris and first
+      and third radeonsi device)
 
 Nine frontend environment variables
 -----------------------------------

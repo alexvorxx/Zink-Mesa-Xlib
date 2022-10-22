@@ -122,6 +122,10 @@ foreach t : [['125', 'gfx125', 'dg2']]
         input_args += [ lib_file ]
       endforeach
     endif
+    prepended_input_args = []
+    foreach input_arg : input_args
+      prepended_input_args += ['--in', input_arg]
+    endforeach
     outfile = kernel_prefix + '.h'
     grl_compiled_cl_kernels += custom_target(
       outfile,
@@ -129,12 +133,12 @@ foreach t : [['125', 'gfx125', 'dg2']]
       output : outfile,
       command : [
         prog_intel_clc, '-p', platform, '--prefix', kernel_prefix,
-        '-e', entrypoint, input_args, '-o', '@OUTPUT@', '--',
+        '-e', entrypoint, prepended_input_args, '-o', '@OUTPUT@', '--',
         '-cl-std=cl2.0', '-D__OPENCL_VERSION__=200',
         '-DMAX_HW_SIMD_WIDTH=16', '-DMAX_WORKGROUP_SIZE=16',
         '-I' + join_paths(meson.current_source_dir(), 'gpu'),
         '-I' + join_paths(meson.current_source_dir(), 'include'),
-        '-include' + 'opencl-c.h', # added to bypass build failure from clang15
+        '-include', 'opencl-c.h', # added to bypass build failure from clang15
                                    # without modifying grl source code, remove
                                    # if fixed there
       ],

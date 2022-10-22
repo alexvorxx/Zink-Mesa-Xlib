@@ -1450,7 +1450,6 @@ st_api_query_versions(struct st_api *stapi, struct st_manager *sm,
 
 static const struct st_api st_gl_api = {
    .name = "Mesa " PACKAGE_VERSION,
-   .api = ST_API_OPENGL,
    .profile_mask = ST_PROFILE_DEFAULT_MASK |
                    ST_PROFILE_OPENGL_CORE_MASK |
                    ST_PROFILE_OPENGL_ES1_MASK |

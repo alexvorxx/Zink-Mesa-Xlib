@@ -127,7 +127,7 @@ void pvr_csb_init(struct pvr_device *device,
                   struct pvr_csb *csb);
 void pvr_csb_finish(struct pvr_csb *csb);
 void *pvr_csb_alloc_dwords(struct pvr_csb *csb, uint32_t num_dwords);
-void pvr_csb_copy(struct pvr_csb *csb_dst, struct pvr_csb *csb_src);
+VkResult pvr_csb_copy(struct pvr_csb *csb_dst, struct pvr_csb *csb_src);
 void pvr_csb_emit_link(struct pvr_csb *csb, pvr_dev_addr_t addr, bool ret);
 VkResult pvr_csb_emit_return(struct pvr_csb *csb);
 VkResult pvr_csb_emit_terminate(struct pvr_csb *csb);

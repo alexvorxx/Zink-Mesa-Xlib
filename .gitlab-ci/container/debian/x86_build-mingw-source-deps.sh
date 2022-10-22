@@ -12,7 +12,7 @@ mkdir -p ~/tmp
 pushd ~/tmp
 
 # Building DirectX-Headers
-git clone https://github.com/microsoft/DirectX-Headers -b v1.606.3 --depth 1
+git clone https://github.com/microsoft/DirectX-Headers -b v1.606.4 --depth 1
 mkdir -p DirectX-Headers/build
 pushd DirectX-Headers/build
 meson .. \

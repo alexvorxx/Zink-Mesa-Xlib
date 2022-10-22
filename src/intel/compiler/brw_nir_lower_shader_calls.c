@@ -153,6 +153,8 @@ store_resume_addr(nir_builder *b, nir_intrinsic_instr *call)
 static bool
 lower_shader_trace_ray_instr(struct nir_builder *b, nir_instr *instr, void *data)
 {
+   struct brw_bs_prog_key *key = data;
+
    if (instr->type != nir_instr_type_intrinsic)
       return false;
 
@@ -223,7 +225,10 @@ lower_shader_trace_ray_instr(struct nir_builder *b, nir_instr *instr, void *data
 
    struct brw_nir_rt_mem_ray_defs ray_defs = {
       .root_node_ptr = root_node_ptr,
-      .ray_flags = nir_u2u16(b, ray_flags),
+      /* Combine the shader value given to traceRayEXT() with the pipeline
+       * creation value VkPipelineCreateFlags.
+       */
+      .ray_flags = nir_ior_imm(b, nir_u2u16(b, ray_flags), key->pipeline_ray_flags),
       .ray_mask = cull_mask,
       .hit_group_sr_base_ptr = hit_sbt_addr,
       .hit_group_sr_stride = nir_u2u16(b, hit_sbt_stride_B),
@@ -233,6 +238,13 @@ lower_shader_trace_ray_instr(struct nir_builder *b, nir_instr *instr, void *data
       .dir = ray_dir,
       .t_far = ray_t_max,
       .shader_index_multiplier = sbt_stride,
+      /* The instance leaf pointer is unused in the top level BVH traversal
+       * since we always start from the root node. We can reuse that field to
+       * store the ray_flags handed to traceRayEXT(). This will be reloaded
+       * when the shader accesses gl_IncomingRayFlagsEXT (see
+       * nir_intrinsic_load_ray_flags brw_nir_lower_rt_intrinsic.c)
+       */
+      .inst_leaf_ptr = nir_u2u64(b, ray_flags),
    };
    brw_nir_rt_store_mem_ray(b, &ray_defs, BRW_RT_BVH_LEVEL_WORLD);
 
@@ -272,13 +284,13 @@ lower_shader_call_instr(struct nir_builder *b, nir_instr *instr, void *data)
 }
 
 bool
-brw_nir_lower_shader_calls(nir_shader *shader)
+brw_nir_lower_shader_calls(nir_shader *shader, struct brw_bs_prog_key *key)
 {
    return
       nir_shader_instructions_pass(shader,
                                    lower_shader_trace_ray_instr,
                                    nir_metadata_none,
-                                   NULL) |
+                                   key) |
       nir_shader_instructions_pass(shader,
                                    lower_shader_call_instr,
                                    nir_metadata_block_index |

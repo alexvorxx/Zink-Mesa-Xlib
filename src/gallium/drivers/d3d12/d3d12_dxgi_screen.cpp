@@ -203,7 +203,10 @@ d3d12_create_dxgi_screen(struct sw_winsys *winsys, LUID *adapter_luid)
    if (!screen)
       return nullptr;
 
-   d3d12_init_screen_base(&screen->base, winsys, adapter_luid);
+   if (!d3d12_init_screen_base(&screen->base, winsys, adapter_luid)) {
+      d3d12_destroy_screen(&screen->base);
+      return nullptr;
+   }
    screen->base.base.destroy = d3d12_destroy_dxgi_screen;
    screen->base.init = d3d12_init_dxgi_screen;
    screen->base.deinit = d3d12_deinit_dxgi_screen;

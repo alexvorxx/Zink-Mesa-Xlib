@@ -59,7 +59,7 @@ static struct list_head queue_list = {
    .next = &queue_list,
    .prev = &queue_list,
 };
-static mtx_t exit_mutex = _MTX_INITIALIZER_NP;
+static mtx_t exit_mutex;
 
 static void
 atexit_handler(void)
@@ -77,6 +77,7 @@ atexit_handler(void)
 static void
 global_init(void)
 {
+   mtx_init(&exit_mutex, mtx_plain);
    atexit(atexit_handler);
 }
 

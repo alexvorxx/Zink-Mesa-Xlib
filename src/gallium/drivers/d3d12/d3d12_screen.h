@@ -34,6 +34,7 @@
 #include "d3d12_common.h"
 
 struct pb_manager;
+struct util_dl_library;
 
 enum resource_dimension
 {
@@ -63,6 +64,7 @@ struct d3d12_screen {
    char driver_uuid[PIPE_UUID_SIZE];
    char device_uuid[PIPE_UUID_SIZE];
 
+   util_dl_library *d3d12_mod;
    ID3D12Device3 *dev;
    ID3D12CommandQueue *cmdqueue;
    bool (*init)(struct d3d12_screen *screen);
@@ -156,7 +158,7 @@ d3d12_dxcore_screen(struct d3d12_screen *screen)
    return (struct d3d12_dxcore_screen *)screen;
 }
 
-void
+bool
 d3d12_init_screen_base(struct d3d12_screen *screen, struct sw_winsys *winsys, LUID *adapter_luid);
 
 bool

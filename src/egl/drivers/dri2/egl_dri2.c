@@ -65,6 +65,7 @@
 #include "util/libsync.h"
 #include "util/os_file.h"
 #include "util/u_atomic.h"
+#include "util/u_call_once.h"
 #include "util/u_vector.h"
 #include "mapi/glapi/glapi.h"
 #include "util/bitscan.h"
@@ -133,15 +134,19 @@ dri_set_background_context(void *loaderPrivate)
 }
 
 static void
+dri2_gl_flush_get(_glapi_proc *glFlush)
+{
+   *glFlush = _glapi_get_proc_address("glFlush");
+}
+
+static void
 dri2_gl_flush()
 {
    static void (*glFlush)(void);
-   static mtx_t glFlushMutex = _MTX_INITIALIZER_NP;
+   static util_once_flag once = UTIL_ONCE_FLAG_INIT;
 
-   mtx_lock(&glFlushMutex);
-   if (!glFlush)
-      glFlush = _glapi_get_proc_address("glFlush");
-   mtx_unlock(&glFlushMutex);
+   util_call_once_data(&once,
+      (util_call_once_data_func)dri2_gl_flush_get, &glFlush);
 
    /* if glFlush is not available things are horribly broken */
    if (!glFlush) {
@@ -1225,6 +1230,7 @@ dri2_display_release(_EGLDisplay *disp)
    if (!p_atomic_dec_zero(&dri2_dpy->ref_count))
       return;
 
+   _eglCleanupDisplay(disp);
    dri2_display_destroy(disp);
 }
 
@@ -1326,6 +1332,9 @@ dri2_egl_surface_free_local_buffers(struct dri2_egl_surface *dri2_surf)
 static EGLBoolean
 dri2_terminate(_EGLDisplay *disp)
 {
+   /* Release all non-current Context/Surfaces. */
+   _eglReleaseDisplayResources(disp);
+
    dri2_display_release(disp);
 
    return EGL_TRUE;
@@ -2937,6 +2946,7 @@ dri2_create_image_dma_buf(_EGLDisplay *disp, _EGLContext *ctx,
    uint64_t modifier;
    bool has_modifier = false;
    unsigned error;
+   EGLint egl_error;
 
    /**
     * The spec says:
@@ -3024,7 +3034,10 @@ dri2_create_image_dma_buf(_EGLDisplay *disp, _EGLContext *ctx,
             &error,
             NULL);
    }
-   dri2_create_image_khr_texture_error(error);
+
+   egl_error = egl_error_from_dri_image_error(error);
+   if (egl_error != EGL_SUCCESS)
+      _eglError(egl_error, "createImageFromDmaBufs failed");
 
    if (!dri_image)
       return EGL_NO_IMAGE_KHR;

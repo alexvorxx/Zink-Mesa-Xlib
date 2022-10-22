@@ -330,6 +330,8 @@ enum dxil_intr {
 
    DXIL_INTR_ANNOTATE_HANDLE = 216,
    DXIL_INTR_CREATE_HANDLE_FROM_BINDING = 217,
+
+   DXIL_INTR_IS_HELPER_LANE = 221,
 };
 
 enum dxil_atomic_op {
@@ -4541,6 +4543,10 @@ emit_intrinsic(struct ntd_context *ctx, nir_intrinsic_instr *intr)
 
    case nir_intrinsic_load_sample_pos_from_id:
       return emit_load_sample_pos_from_id(ctx, intr);
+
+   case nir_intrinsic_load_helper_invocation:
+      return emit_load_unary_external_function(
+         ctx, intr, "dx.op.isHelperLane", DXIL_INTR_IS_HELPER_LANE);
 
    case nir_intrinsic_load_num_workgroups:
    case nir_intrinsic_load_workgroup_size:

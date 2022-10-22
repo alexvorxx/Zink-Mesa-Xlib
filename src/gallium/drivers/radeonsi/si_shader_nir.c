@@ -342,6 +342,8 @@ char *si_finalize_nir(struct pipe_screen *screen, void *nirptr)
 
    nir_lower_io_passes(nir);
 
+   NIR_PASS_V(nir, nir_lower_explicit_io, nir_var_mem_shared, nir_address_format_32bit_offset);
+
    /* Remove dead derefs, so that we can remove uniforms. */
    NIR_PASS_V(nir, nir_opt_dce);
 

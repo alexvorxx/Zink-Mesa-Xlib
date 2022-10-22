@@ -58,7 +58,3 @@ gmem-dEQP-VK.pipeline.fast_linked_library.color_write_enable_maxa.cwe_after_bind
 
 spill-dEQP-VK.subgroups.ballot_broadcast.compute.subgroupbroadcast_bool,Fail
 spill-dEQP-VK.subgroups.ballot_broadcast.compute.subgroupbroadcast_bool_requiredsubgroupsize128,Fail
-
-# https://gitlab.freedesktop.org/mesa/mesa/-/issues/7143
-bypass-dEQP-VK.renderpass2.depth_stencil_resolve.image_2d_32_32.samples_2.d32_sfloat_s8_uint.compatibility_depth_zero_stencil_zero_testing_depth,Fail
-bypass-dEQP-VK.renderpass2.depth_stencil_resolve.image_2d_32_32.samples_2.d32_sfloat_s8_uint_separate_layouts.compatibility_depth_zero_stencil_zero_testing_depth,Fail

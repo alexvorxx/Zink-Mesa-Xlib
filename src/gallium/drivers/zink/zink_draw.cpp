@@ -645,7 +645,8 @@ zink_draw(struct pipe_context *pctx,
                                                                 VK_PROVOKING_VERTEX_MODE_LAST_VERTEX_EXT :
                                                                 VK_PROVOKING_VERTEX_MODE_FIRST_VERTEX_EXT);
       VKCTX(CmdSetLineRasterizationModeEXT)(batch->state->cmdbuf, (VkLineRasterizationModeEXT)rast_state->hw_state.line_mode);
-      VKCTX(CmdSetLineStippleEnableEXT)(batch->state->cmdbuf, rast_state->hw_state.line_stipple_enable);
+      if (screen->info.dynamic_state3_feats.extendedDynamicState3LineStippleEnable)
+         VKCTX(CmdSetLineStippleEnableEXT)(batch->state->cmdbuf, rast_state->hw_state.line_stipple_enable);
    }
    if ((BATCH_CHANGED || ctx->sample_mask_changed) && screen->have_full_ds3) {
       VKCTX(CmdSetRasterizationSamplesEXT)(batch->state->cmdbuf, (VkSampleCountFlagBits)(ctx->gfx_pipeline_state.rast_samples + 1));

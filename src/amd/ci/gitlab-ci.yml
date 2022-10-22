@@ -1,17 +1,14 @@
 ############### LAVA
 # job prefixes: radeonsi (OpenGL), radv (Vulkan), amd (radeonsi+radv)
-# 10 devices (2022-10-19)
 .stoney-test:amd64:
   variables:
     BOOT_METHOD: depthcharge
-    DEVICE_TYPE: hp-11A-G6-EE-grunt
     DEQP_EXPECTED_RENDERER: STONEY
     DTB: ""
-    FDO_CI_CONCURRENT: 4
+    FDO_CI_CONCURRENT: 3
     HWCI_FREQ_MAX: "true"
     HWCI_KERNEL_MODULES: amdgpu
     KERNEL_IMAGE_TYPE: ""
-    RUNNER_TAG: mesa-ci-x86-64-lava-hp-11A-G6-EE-grunt
 
 .radeonsi-stoney-test:amd64:
   extends:
@@ -20,6 +17,9 @@
   variables:
     GPU_VERSION: radeonsi-stoney
     DRIVER_NAME: radeonsi
+    # 12 devices (2022-10-12)
+    RUNNER_TAG: mesa-ci-x86-64-lava-acer-R721T-grunt
+    DEVICE_TYPE: acer-R721T-grunt
 
 .radv-stoney-test:amd64:
   extends:
@@ -30,23 +30,27 @@
     DRIVER_NAME: radv
     GPU_VERSION: radv-stoney-aco
     VK_DRIVER: radeon
+    # 10 devices (2022-10-12)
+    DEVICE_TYPE: hp-11A-G6-EE-grunt
+    RUNNER_TAG: mesa-ci-x86-64-lava-hp-11A-G6-EE-grunt
 
-# Run four jobs in parallel each running 1/40th of the test suite
+# Run ten jobs in parallel each running 1/40th of the test suite
 radv-stoney-vkcts:amd64:
   extends:
     - .lava-test:amd64
     - .radv-stoney-test:amd64
-  parallel: 4
+  parallel: 10
   variables:
-    DEQP_FRACTION: 10
+    DEQP_FRACTION: 4
 
 radeonsi-stoney-gl:amd64:
   extends:
     - .lava-test:amd64
     - .radeonsi-stoney-test:amd64
-  parallel: 5
+  parallel: 11
   variables:
     DEQP_SUITE: radeonsi-stoney
+    HWCI_START_XORG: 1
 
 radeonsi-stoney-traces:amd64:
   extends:
@@ -231,7 +235,7 @@ radeonsi-raven-va:amd64:
 
 .navi21-test-valve:
   variables:
-    FDO_CI_CONCURRENT: 16
+    FDO_CI_CONCURRENT: 32
     B2C_KERNEL_CMDLINE_EXTRAS: 'b2c.swap=16g'
   tags:
     - amdgpu:codename:NAVI21
@@ -323,6 +327,7 @@ vkcts-navi10-valve:
     GPU_VERSION: radv-navi10-aco
 
 vkcts-navi21-valve:
+  parallel: 2
   extends:
     - .vkcts-test-valve
     - .navi21-test-valve

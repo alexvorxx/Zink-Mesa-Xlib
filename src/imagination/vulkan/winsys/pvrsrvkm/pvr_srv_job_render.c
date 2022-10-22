@@ -587,6 +587,36 @@ VkResult pvr_srv_winsys_render_submit(
       }
    }
 
+   if (submit_info->barrier_geom) {
+      struct pvr_srv_sync *srv_wait_sync =
+         to_srv_sync(submit_info->barrier_geom);
+
+      if (srv_wait_sync->fd >= 0) {
+         int ret;
+
+         ret = sync_accumulate("", &in_geom_fd, srv_wait_sync->fd);
+         if (ret) {
+            result = vk_error(NULL, VK_ERROR_OUT_OF_HOST_MEMORY);
+            goto end_close_in_fds;
+         }
+      }
+   }
+
+   if (submit_info->barrier_frag) {
+      struct pvr_srv_sync *srv_wait_sync =
+         to_srv_sync(submit_info->barrier_frag);
+
+      if (srv_wait_sync->fd >= 0) {
+         int ret;
+
+         ret = sync_accumulate("", &in_frag_fd, srv_wait_sync->fd);
+         if (ret) {
+            result = vk_error(NULL, VK_ERROR_OUT_OF_HOST_MEMORY);
+            goto end_close_in_fds;
+         }
+      }
+   }
+
    if (submit_info->bo_count <= ARRAY_SIZE(sync_pmrs)) {
       sync_pmr_count = submit_info->bo_count;
    } else {

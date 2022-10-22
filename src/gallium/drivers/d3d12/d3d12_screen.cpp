@@ -183,9 +183,6 @@ d3d12_get_param(struct pipe_screen *pscreen, enum pipe_cap param)
    case PIPE_CAP_TGSI_TEXCOORD:
       return 1;
 
-   case PIPE_CAP_MIXED_COLORBUFFER_FORMATS:
-      return 1;
-
    case PIPE_CAP_VERTEX_COLOR_UNCLAMPED:
       return 1;
 
@@ -731,6 +728,7 @@ d3d12_destroy_screen(struct d3d12_screen *screen)
    slab_destroy_parent(&screen->transfer_pool);
    mtx_destroy(&screen->submit_mutex);
    mtx_destroy(&screen->descriptor_pool_mutex);
+   util_dl_close(screen->d3d12_mod);
    glsl_type_singleton_decref();
    FREE(screen);
 }
@@ -775,6 +773,7 @@ d3d12_flush_frontbuffer(struct pipe_screen * pscreen,
    if (SUCCEEDED(screen->cmdqueue->QueryInterface(IID_PPV_ARGS(&sharing_contract)))) {
       ID3D12Resource *d3d12_res = d3d12_resource_resource(res);
       sharing_contract->Present(d3d12_res, 0, WindowFromDC((HDC)winsys_drawable_handle));
+      sharing_contract->Release();
    }
 #endif
 
@@ -782,16 +781,16 @@ d3d12_flush_frontbuffer(struct pipe_screen * pscreen,
 }
 
 static ID3D12Debug *
-get_debug_interface()
+get_debug_interface(util_dl_library *d3d12_mod, ID3D12DeviceFactory *factory)
 {
+   ID3D12Debug *debug = nullptr;
+   if (factory) {
+      factory->GetConfigurationInterface(CLSID_D3D12Debug, IID_PPV_ARGS(&debug));
+      return debug;
+   }
+
    typedef HRESULT(WINAPI *PFN_D3D12_GET_DEBUG_INTERFACE)(REFIID riid, void **ppFactory);
    PFN_D3D12_GET_DEBUG_INTERFACE D3D12GetDebugInterface;
-
-   util_dl_library *d3d12_mod = util_dl_open(UTIL_DL_PREFIX "d3d12" UTIL_DL_EXT);
-   if (!d3d12_mod) {
-      debug_printf("D3D12: failed to load D3D12.DLL\n");
-      return NULL;
-   }
 
    D3D12GetDebugInterface = (PFN_D3D12_GET_DEBUG_INTERFACE)util_dl_get_proc_address(d3d12_mod, "D3D12GetDebugInterface");
    if (!D3D12GetDebugInterface) {
@@ -799,7 +798,6 @@ get_debug_interface()
       return NULL;
    }
 
-   ID3D12Debug *debug;
    if (FAILED(D3D12GetDebugInterface(IID_PPV_ARGS(&debug)))) {
       debug_printf("D3D12: D3D12GetDebugInterface failed\n");
       return NULL;
@@ -809,9 +807,9 @@ get_debug_interface()
 }
 
 static void
-enable_d3d12_debug_layer()
+enable_d3d12_debug_layer(util_dl_library *d3d12_mod, ID3D12DeviceFactory *factory)
 {
-   ID3D12Debug *debug = get_debug_interface();
+   ID3D12Debug *debug = get_debug_interface(d3d12_mod, factory);
    if (debug) {
       debug->EnableDebugLayer();
       debug->Release();
@@ -819,9 +817,9 @@ enable_d3d12_debug_layer()
 }
 
 static void
-enable_gpu_validation()
+enable_gpu_validation(util_dl_library *d3d12_mod, ID3D12DeviceFactory *factory)
 {
-   ID3D12Debug *debug = get_debug_interface();
+   ID3D12Debug *debug = get_debug_interface(d3d12_mod, factory);
    ID3D12Debug3 *debug3;
    if (debug) {
       if (SUCCEEDED(debug->QueryInterface(IID_PPV_ARGS(&debug3)))) {
@@ -833,43 +831,49 @@ enable_gpu_validation()
 }
 
 static ID3D12Device3 *
-create_device(IUnknown *adapter)
+create_device(util_dl_library *d3d12_mod, IUnknown *adapter, ID3D12DeviceFactory *factory)
 {
-   typedef HRESULT(WINAPI *PFN_D3D12CREATEDEVICE)(IUnknown*, D3D_FEATURE_LEVEL, REFIID, void**);
-   typedef HRESULT(WINAPI *PFN_D3D12ENABLEEXPERIMENTALFEATURES)(UINT, const IID*, void*, UINT*);
-   PFN_D3D12CREATEDEVICE D3D12CreateDevice;
-   PFN_D3D12ENABLEEXPERIMENTALFEATURES D3D12EnableExperimentalFeatures;
-
-   util_dl_library *d3d12_mod = util_dl_open(UTIL_DL_PREFIX "d3d12" UTIL_DL_EXT);
-   if (!d3d12_mod) {
-      debug_printf("D3D12: failed to load D3D12.DLL\n");
-      return NULL;
-   }
 
 #ifdef _WIN32
    if (d3d12_debug & D3D12_DEBUG_EXPERIMENTAL)
 #endif
    {
-      D3D12EnableExperimentalFeatures = (PFN_D3D12ENABLEEXPERIMENTALFEATURES)util_dl_get_proc_address(d3d12_mod, "D3D12EnableExperimentalFeatures");
-      if (FAILED(D3D12EnableExperimentalFeatures(1, &D3D12ExperimentalShaderModels, NULL, NULL))) {
-         debug_printf("D3D12: failed to enable experimental shader models\n");
-         return nullptr;
+      if (factory) {
+         if (FAILED(factory->EnableExperimentalFeatures(1, &D3D12ExperimentalShaderModels, nullptr, nullptr))) {
+            debug_printf("D3D12: failed to enable experimental shader models\n");
+            return nullptr;
+         }
+      } else {
+         typedef HRESULT(WINAPI *PFN_D3D12ENABLEEXPERIMENTALFEATURES)(UINT, const IID*, void*, UINT*);
+         PFN_D3D12ENABLEEXPERIMENTALFEATURES D3D12EnableExperimentalFeatures =
+            (PFN_D3D12ENABLEEXPERIMENTALFEATURES)util_dl_get_proc_address(d3d12_mod, "D3D12EnableExperimentalFeatures");
+
+         if (!D3D12EnableExperimentalFeatures ||
+             FAILED(D3D12EnableExperimentalFeatures(1, &D3D12ExperimentalShaderModels, NULL, NULL))) {
+            debug_printf("D3D12: failed to enable experimental shader models\n");
+            return nullptr;
+         }
       }
    }
 
-   D3D12CreateDevice = (PFN_D3D12CREATEDEVICE)util_dl_get_proc_address(d3d12_mod, "D3D12CreateDevice");
-   if (!D3D12CreateDevice) {
-      debug_printf("D3D12: failed to load D3D12CreateDevice from D3D12.DLL\n");
-      return NULL;
+   ID3D12Device3 *dev = nullptr;
+   if (factory) {
+      factory->SetFlags(D3D12_DEVICE_FACTORY_FLAG_ALLOW_RETURNING_EXISTING_DEVICE |
+         D3D12_DEVICE_FACTORY_FLAG_ALLOW_RETURNING_INCOMPATIBLE_EXISTING_DEVICE);
+      if (FAILED(factory->CreateDevice(adapter, D3D_FEATURE_LEVEL_11_0, IID_PPV_ARGS(&dev))))
+         debug_printf("D3D12: D3D12CreateDevice failed\n");
+   } else {
+      typedef HRESULT(WINAPI *PFN_D3D12CREATEDEVICE)(IUnknown*, D3D_FEATURE_LEVEL, REFIID, void**);
+      PFN_D3D12CREATEDEVICE D3D12CreateDevice = (PFN_D3D12CREATEDEVICE)util_dl_get_proc_address(d3d12_mod, "D3D12CreateDevice");
+      if (!D3D12CreateDevice) {
+         debug_printf("D3D12: failed to load D3D12CreateDevice from D3D12.DLL\n");
+         return NULL;
+      }
+      if (FAILED(D3D12CreateDevice(adapter, D3D_FEATURE_LEVEL_11_0, IID_PPV_ARGS(&dev))))
+         debug_printf("D3D12: D3D12CreateDevice failed\n");
    }
 
-   ID3D12Device3 *dev;
-   if (SUCCEEDED(D3D12CreateDevice(adapter, D3D_FEATURE_LEVEL_11_0,
-                 IID_PPV_ARGS(&dev))))
-      return dev;
-
-   debug_printf("D3D12: D3D12CreateDevice failed\n");
-   return NULL;
+   return dev;
 }
 
 static bool
@@ -1126,9 +1130,10 @@ d3d12_set_fence_timeline_value(struct pipe_screen *pscreen, struct pipe_fence_ha
    d3d12_fence(pfence)->value = value;
 }
 
-void
+bool
 d3d12_init_screen_base(struct d3d12_screen *screen, struct sw_winsys *winsys, LUID *adapter_luid)
 {
+   glsl_type_singleton_init_or_ref();
    d3d12_debug = debug_get_option_d3d12_debug();
 
    screen->winsys = winsys;
@@ -1138,6 +1143,7 @@ d3d12_init_screen_base(struct d3d12_screen *screen, struct sw_winsys *winsys, LU
    mtx_init(&screen->submit_mutex, mtx_plain);
 
    list_inithead(&screen->context_list);
+   slab_create_parent(&screen->transfer_pool, sizeof(struct d3d12_transfer), 16);
 
    screen->base.get_vendor = d3d12_get_vendor;
    screen->base.get_device_vendor = d3d12_get_device_vendor;
@@ -1155,6 +1161,98 @@ d3d12_init_screen_base(struct d3d12_screen *screen, struct sw_winsys *winsys, LU
    screen->base.get_device_node_mask = d3d12_get_node_mask;
    screen->base.create_fence_win32 = d3d12_create_fence_win32;
    screen->base.set_fence_timeline_value = d3d12_set_fence_timeline_value;
+
+   screen->d3d12_mod = util_dl_open(UTIL_DL_PREFIX "d3d12" UTIL_DL_EXT);
+   if (!screen->d3d12_mod) {
+      debug_printf("D3D12: failed to load D3D12.DLL\n");
+      return false;
+   }
+   return true;
+}
+
+#ifdef _WIN32
+extern "C" IMAGE_DOS_HEADER __ImageBase;
+static const char *
+try_find_d3d12core_next_to_self(char *path, size_t path_arr_size)
+{
+   uint32_t path_size = GetModuleFileNameA((HINSTANCE)&__ImageBase,
+                                           path, path_arr_size);
+   if (!path_arr_size || path_size == path_arr_size) {
+      debug_printf("Unable to get path to self");
+      return nullptr;
+   }
+
+   auto last_slash = strrchr(path, '\\');
+   if (!last_slash) {
+      debug_printf("Unable to get path to self");
+      return nullptr;
+   }
+
+   *(last_slash + 1) = '\0';
+   if (strcat_s(path, path_arr_size, "D3D12Core.dll") != 0) {
+      debug_printf("Unable to get path to D3D12Core.dll next to self");
+      return nullptr;
+   }
+
+   if (GetFileAttributesA(path) == INVALID_FILE_ATTRIBUTES) {
+      debug_printf("No D3D12Core.dll exists next to self");
+      return nullptr;
+   }
+
+   return path;
+}
+#endif
+
+static ID3D12DeviceFactory *
+try_create_device_factory(util_dl_library *d3d12_mod)
+{
+   /* A device factory allows us to isolate things like debug layer enablement from other callers,
+    * and can potentially even refer to a different D3D12 redist implementation from others.
+    */
+   ID3D12DeviceFactory *factory = nullptr;
+
+   typedef HRESULT(WINAPI *PFN_D3D12_GET_INTERFACE)(REFCLSID clsid, REFIID riid, void **ppFactory);
+   PFN_D3D12_GET_INTERFACE D3D12GetInterface = (PFN_D3D12_GET_INTERFACE)util_dl_get_proc_address(d3d12_mod, "D3D12GetInterface");
+   if (!D3D12GetInterface) {
+      debug_printf("D3D12: Failed to retrieve D3D12GetInterface");
+      return nullptr;
+   }
+
+#ifdef _WIN32
+   /* First, try to create a device factory from a DLL-parallel D3D12Core.dll */
+   ID3D12SDKConfiguration *sdk_config = nullptr;
+   if (SUCCEEDED(D3D12GetInterface(CLSID_D3D12SDKConfiguration, IID_PPV_ARGS(&sdk_config)))) {
+      ID3D12SDKConfiguration1 *sdk_config1 = nullptr;
+      if (SUCCEEDED(sdk_config->QueryInterface(&sdk_config1))) {
+         char self_path[MAX_PATH];
+         const char *d3d12core_path = try_find_d3d12core_next_to_self(self_path, sizeof(self_path));
+         if (d3d12core_path) {
+            if (SUCCEEDED(sdk_config1->CreateDeviceFactory(D3D12_PREVIEW_SDK_VERSION, d3d12core_path, IID_PPV_ARGS(&factory))) ||
+                SUCCEEDED(sdk_config1->CreateDeviceFactory(D3D12_SDK_VERSION, d3d12core_path, IID_PPV_ARGS(&factory)))) {
+               sdk_config->Release();
+               sdk_config1->Release();
+               return factory;
+            }
+         }
+
+         /* Nope, seems we don't have a matching D3D12Core.dll next to ourselves */
+         sdk_config1->Release();
+      }
+
+      /* It's possible there's a D3D12Core.dll next to the .exe, for development/testing purposes. If so, we'll be notified
+       * by environment variables what the relative path is and the version to use.
+       */
+      const char *d3d12core_relative_path = getenv("D3D12_AGILITY_RELATIVE_PATH");
+      const char *d3d12core_sdk_version = getenv("D3D12_AGILITY_SDK_VERSION");
+      if (d3d12core_relative_path && d3d12core_sdk_version) {
+         (void)sdk_config->SetSDKVersion(atoi(d3d12core_sdk_version), d3d12core_relative_path);
+      }
+      sdk_config->Release();
+   }
+#endif
+
+   (void)D3D12GetInterface(CLSID_D3D12DeviceFactory, IID_PPV_ARGS(&factory));
+   return factory;
 }
 
 bool
@@ -1162,15 +1260,20 @@ d3d12_init_screen(struct d3d12_screen *screen, IUnknown *adapter)
 {
    assert(screen->base.destroy != nullptr);
 
+   ID3D12DeviceFactory *factory = try_create_device_factory(screen->d3d12_mod);
+
 #ifndef DEBUG
    if (d3d12_debug & D3D12_DEBUG_DEBUG_LAYER)
 #endif
-      enable_d3d12_debug_layer();
+      enable_d3d12_debug_layer(screen->d3d12_mod, factory);
 
    if (d3d12_debug & D3D12_DEBUG_GPU_VALIDATOR)
-      enable_gpu_validation();
+      enable_gpu_validation(screen->d3d12_mod, factory);
 
-   screen->dev = create_device(adapter);
+   screen->dev = create_device(screen->d3d12_mod, adapter, factory);
+
+   if (factory)
+      factory->Release();
 
    if (!screen->dev) {
       debug_printf("D3D12: failed to create device\n");
@@ -1302,7 +1405,6 @@ d3d12_init_screen(struct d3d12_screen *screen, IUnknown *adapter)
 #ifdef HAVE_GALLIUM_D3D12_VIDEO
    d3d12_screen_video_init(&screen->base);
 #endif
-   slab_create_parent(&screen->transfer_pool, sizeof(struct d3d12_transfer), 16);
 
    struct pb_desc desc;
    desc.alignment = D3D12_TEXTURE_DATA_PLACEMENT_ALIGNMENT;
@@ -1392,6 +1494,5 @@ d3d12_init_screen(struct d3d12_screen *screen, IUnknown *adapter)
    _mesa_sha1_final(&sha1_ctx, sha1);
    memcpy(screen->device_uuid, sha1, PIPE_UUID_SIZE);
 
-   glsl_type_singleton_init_or_ref();
    return true;
 }

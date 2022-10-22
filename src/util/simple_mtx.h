@@ -29,10 +29,7 @@
 #include "util/u_call_once.h"
 #include "u_atomic.h"
 
-#include "c11/threads.h"
-
 #if UTIL_FUTEX_SUPPORTED
-
 #if defined(HAVE_VALGRIND) && !defined(NDEBUG)
 #  include <valgrind.h>
 #  include <helgrind.h>
@@ -40,7 +37,8 @@
 #else
 #  define HG(x)
 #endif
-
+#else /* !UTIL_FUTEX_SUPPORTED */
+#  include "c11/threads.h"
 #endif /* UTIL_FUTEX_SUPPORTED */
 
 #ifdef __cplusplus

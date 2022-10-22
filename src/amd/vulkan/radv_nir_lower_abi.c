@@ -112,6 +112,21 @@ lower_abi_instr(nir_builder *b, nir_instr *instr, void *state)
    case nir_intrinsic_load_ring_es2gs_offset_amd:
       replacement = ac_nir_load_arg(b, &s->args->ac, s->args->ac.es2gs_offset);
       break;
+
+   case nir_intrinsic_load_ring_attr_amd:
+      if (s->use_llvm)
+         break;
+
+      replacement = load_ring(b, RING_PS_ATTR, s);
+      break;
+
+   case nir_intrinsic_load_ring_attr_offset_amd: {
+      nir_ssa_def *ring_attr_offset = ac_nir_load_arg(b, &s->args->ac, s->args->ac.gs_attr_offset);
+      replacement = nir_ishl(b, nir_ubfe(b, ring_attr_offset, nir_imm_int(b, 0), nir_imm_int(b, 15)),
+                             nir_imm_int(b, 9)); /* 512b increments. */
+      break;
+   }
+
    case nir_intrinsic_load_tess_rel_patch_id_amd:
       if (stage == MESA_SHADER_TESS_CTRL) {
          replacement = nir_extract_u8(b, ac_nir_load_arg(b, &s->args->ac, s->args->ac.tcs_rel_ids),
@@ -280,6 +295,23 @@ lower_abi_instr(nir_builder *b, nir_instr *instr, void *state)
          replacement = nir_imm_int(b, s->pl_key->ps.num_samples);
       }
       break;
+   case nir_intrinsic_load_provoking_vtx_in_prim_amd: {
+      unsigned provoking_vertex = 0;
+      if (s->pl_key->vs.provoking_vtx_last) {
+         if (stage == MESA_SHADER_VERTEX) {
+            provoking_vertex = radv_get_num_vertices_per_prim(s->pl_key) - 1;
+         } else if (stage == MESA_SHADER_GEOMETRY) {
+            provoking_vertex = b->shader->info.gs.vertices_in - 1;
+         } else {
+            /* TES won't use this intrinsic, because it can get primitive id directly
+             * instead of using this intrinsic to pass primitive id by LDS.
+             */
+            unreachable("load_provoking_vtx_in_prim_amd is only supported in VS and GS");
+         }
+      }
+      replacement = nir_imm_int(b, provoking_vertex);
+      break;
+   }
    default:
       break;
    }

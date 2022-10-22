@@ -37,6 +37,7 @@
 #include "util/disk_cache.h"
 #include "util/macros.h"
 #include "util/mesa-sha1.h"
+#include "util/u_dl.h"
 
 #include "glsl_types.h"
 
@@ -167,8 +168,97 @@ dzn_instance_destroy(struct dzn_instance *instance, const VkAllocationCallbacks 
       dzn_physical_device_destroy(pdev);
    }
 
+   if (instance->factory)
+      ID3D12DeviceFactory_Release(instance->factory);
+
+   util_dl_close(instance->d3d12_mod);
+
    vk_instance_finish(&instance->vk);
    vk_free2(vk_default_allocator(), alloc, instance);
+}
+
+#ifdef _WIN32
+extern IMAGE_DOS_HEADER __ImageBase;
+static const char *
+try_find_d3d12core_next_to_self(char *path, size_t path_arr_size)
+{
+   uint32_t path_size = GetModuleFileNameA((HINSTANCE)&__ImageBase,
+                                           path, path_arr_size);
+   if (!path_arr_size || path_size == path_arr_size) {
+      mesa_loge("Unable to get path to self\n");
+      return NULL;
+   }
+
+   char *last_slash = strrchr(path, '\\');
+   if (!last_slash) {
+      mesa_loge("Unable to get path to self\n");
+      return NULL;
+   }
+
+   *(last_slash + 1) = '\0';
+   if (strcat_s(path, path_arr_size, "D3D12Core.dll") != 0) {
+      mesa_loge("Unable to get path to D3D12Core.dll next to self\n");
+      return NULL;
+   }
+
+   if (GetFileAttributesA(path) == INVALID_FILE_ATTRIBUTES) {
+      mesa_logi("No D3D12Core.dll exists next to self\n");
+      return NULL;
+   }
+
+   return path;
+}
+#endif
+
+static ID3D12DeviceFactory *
+try_create_device_factory(struct util_dl_library *d3d12_mod)
+{
+   /* A device factory allows us to isolate things like debug layer enablement from other callers,
+   * and can potentially even refer to a different D3D12 redist implementation from others.
+   */
+   ID3D12DeviceFactory *factory = NULL;
+
+   PFN_D3D12_GET_INTERFACE D3D12GetInterface = (PFN_D3D12_GET_INTERFACE)util_dl_get_proc_address(d3d12_mod, "D3D12GetInterface");
+   if (!D3D12GetInterface) {
+      mesa_loge("Failed to retrieve D3D12GetInterface\n");
+      return NULL;
+   }
+
+#ifdef _WIN32
+   /* First, try to create a device factory from a DLL-parallel D3D12Core.dll */
+   ID3D12SDKConfiguration *sdk_config = NULL;
+   if (SUCCEEDED(D3D12GetInterface(&CLSID_D3D12SDKConfiguration, &IID_ID3D12SDKConfiguration, (void **)&sdk_config))) {
+      ID3D12SDKConfiguration1 *sdk_config1 = NULL;
+      if (SUCCEEDED(IUnknown_QueryInterface(sdk_config, &IID_ID3D12SDKConfiguration1, (void **)&sdk_config1))) {
+         char self_path[MAX_PATH];
+         const char *d3d12core_path = try_find_d3d12core_next_to_self(self_path, sizeof(self_path));
+         if (d3d12core_path) {
+            if (SUCCEEDED(ID3D12SDKConfiguration1_CreateDeviceFactory(sdk_config1, D3D12_PREVIEW_SDK_VERSION, d3d12core_path, &IID_ID3D12DeviceFactory, (void **)&factory)) ||
+                SUCCEEDED(ID3D12SDKConfiguration1_CreateDeviceFactory(sdk_config1, D3D12_SDK_VERSION, d3d12core_path, &IID_ID3D12DeviceFactory, (void **)&factory))) {
+               ID3D12SDKConfiguration_Release(sdk_config);
+               ID3D12SDKConfiguration1_Release(sdk_config1);
+               return factory;
+            }
+         }
+
+         /* Nope, seems we don't have a matching D3D12Core.dll next to ourselves */
+         ID3D12SDKConfiguration1_Release(sdk_config1);
+      }
+
+      /* It's possible there's a D3D12Core.dll next to the .exe, for development/testing purposes. If so, we'll be notified
+      * by environment variables what the relative path is and the version to use.
+      */
+      const char *d3d12core_relative_path = getenv("DZN_AGILITY_RELATIVE_PATH");
+      const char *d3d12core_sdk_version = getenv("DZN_AGILITY_SDK_VERSION");
+      if (d3d12core_relative_path && d3d12core_sdk_version) {
+         ID3D12SDKConfiguration_SetSDKVersion(sdk_config, atoi(d3d12core_sdk_version), d3d12core_relative_path);
+      }
+      ID3D12SDKConfiguration_Release(sdk_config);
+   }
+#endif
+
+   (void)D3D12GetInterface(&CLSID_D3D12DeviceFactory, &IID_ID3D12DeviceFactory, (void **)&factory);
+   return factory;
 }
 
 static VkResult
@@ -226,18 +316,29 @@ dzn_instance_create(const VkInstanceCreateInfo *pCreateInfo,
    missing_validator = !instance->dxil_validator;
 #endif
 
-   instance->d3d12.serialize_root_sig = d3d12_get_serialize_root_sig();
-
-   if (missing_validator ||
-       !instance->d3d12.serialize_root_sig) {
+   if (missing_validator) {
       dzn_instance_destroy(instance, pAllocator);
       return vk_error(NULL, VK_ERROR_INITIALIZATION_FAILED);
    }
 
+   instance->d3d12_mod = util_dl_open(UTIL_DL_PREFIX "d3d12" UTIL_DL_EXT);
+   if (!instance->d3d12_mod) {
+      dzn_instance_destroy(instance, pAllocator);
+      return vk_error(NULL, VK_ERROR_INITIALIZATION_FAILED);
+   }
+
+   instance->d3d12.serialize_root_sig = d3d12_get_serialize_root_sig(instance->d3d12_mod);
+   if (!instance->d3d12.serialize_root_sig) {
+      dzn_instance_destroy(instance, pAllocator);
+      return vk_error(NULL, VK_ERROR_INITIALIZATION_FAILED);
+   }
+
+   instance->factory = try_create_device_factory(instance->d3d12_mod);
+
    if (instance->debug_flags & DZN_DEBUG_D3D12)
-      d3d12_enable_debug_layer();
+      d3d12_enable_debug_layer(instance->d3d12_mod, instance->factory);
    if (instance->debug_flags & DZN_DEBUG_GBV)
-      d3d12_enable_gpu_validation();
+      d3d12_enable_gpu_validation(instance->d3d12_mod, instance->factory);
 
    instance->sync_binary_type = vk_sync_binary_get_type(&dzn_sync_type);
 
@@ -585,7 +686,10 @@ dzn_physical_device_get_d3d12_dev(struct dzn_physical_device *pdev)
 
    mtx_lock(&pdev->dev_lock);
    if (!pdev->dev) {
-      pdev->dev = d3d12_create_device(pdev->adapter, !instance->dxil_validator);
+      pdev->dev = d3d12_create_device(instance->d3d12_mod,
+                                      pdev->adapter,
+                                      instance->factory,
+                                      !instance->dxil_validator);
 
       dzn_physical_device_cache_caps(pdev);
       dzn_physical_device_init_memory(pdev);
@@ -1528,13 +1632,7 @@ dzn_GetPhysicalDeviceProperties2(VkPhysicalDevice physicalDevice,
    VkPhysicalDeviceType devtype = VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU;
    if (pdevice->desc.is_warp)
       devtype = VK_PHYSICAL_DEVICE_TYPE_CPU;
-   else if (false) { // TODO: detect discreete GPUs
-      /* This is a tad tricky to get right, because we need to have the
-       * actual ID3D12Device before we can query the
-       * D3D12_FEATURE_DATA_ARCHITECTURE structure... So for now, let's
-       * just pretend everything is integrated, because... well, that's
-       * what I have at hand right now ;)
-       */
+   else if (!pdevice->architecture.UMA) {
       devtype = VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU;
    }
 
@@ -2005,6 +2103,9 @@ dzn_device_destroy(struct dzn_device *device, const VkAllocationCallbacks *pAllo
    dzn_device_query_finish(device);
    dzn_meta_finish(device);
 
+   if (device->dev_config)
+      ID3D12DeviceConfiguration_Release(device->dev_config);
+
    if (device->dev)
       ID3D12Device1_Release(device->dev);
 
@@ -2107,7 +2208,10 @@ dzn_device_create(struct dzn_physical_device *pdev,
       NewFilter.DenyList.pIDList = msg_ids;
 
       ID3D12InfoQueue_PushStorageFilter(info_queue, &NewFilter);
+      ID3D12InfoQueue_Release(info_queue);
    }
+
+   IUnknown_QueryInterface(device->dev, &IID_ID3D12DeviceConfiguration, (void **)&device->dev_config);
 
    result = dzn_meta_init(device);
    if (result != VK_SUCCESS) {
@@ -2140,17 +2244,19 @@ dzn_device_create(struct dzn_physical_device *pdev,
    return VK_SUCCESS;
 }
 
-ID3D12RootSignature *
-dzn_device_create_root_sig(struct dzn_device *device,
-                           const D3D12_VERSIONED_ROOT_SIGNATURE_DESC *desc)
+static ID3DBlob *
+serialize_root_sig(struct dzn_device *device,
+                   const D3D12_VERSIONED_ROOT_SIGNATURE_DESC *desc)
 {
    struct dzn_instance *instance =
       container_of(device->vk.physical->instance, struct dzn_instance, vk);
-   ID3D12RootSignature *root_sig = NULL;
    ID3DBlob *sig = NULL, *error = NULL;
 
-   if (FAILED(instance->d3d12.serialize_root_sig(desc,
-                                                 &sig, &error))) {
+   HRESULT hr = device->dev_config ?
+         ID3D12DeviceConfiguration_SerializeVersionedRootSignature(device->dev_config, desc, &sig, &error) :
+         instance->d3d12.serialize_root_sig(desc, &sig, &error);
+
+   if (FAILED(hr)) {
       if (instance->debug_flags & DZN_DEBUG_SIG) {
          const char *error_msg = (const char *)ID3D10Blob_GetBufferPointer(error);
          fprintf(stderr,
@@ -2159,23 +2265,29 @@ dzn_device_create_root_sig(struct dzn_device *device,
                  "== END ==========================================================\n",
                  error_msg);
       }
-
-      goto out;
    }
 
+   if (error)
+      ID3D10Blob_Release(error);
+
+   return sig;
+}
+
+ID3D12RootSignature *
+dzn_device_create_root_sig(struct dzn_device *device,
+                           const D3D12_VERSIONED_ROOT_SIGNATURE_DESC *desc)
+{
+   ID3DBlob *sig = serialize_root_sig(device, desc);
+   if (!sig)
+      return NULL;
+
+   ID3D12RootSignature *root_sig = NULL;
    ID3D12Device1_CreateRootSignature(device->dev, 0,
                                      ID3D10Blob_GetBufferPointer(sig),
                                      ID3D10Blob_GetBufferSize(sig),
                                      &IID_ID3D12RootSignature,
                                      (void **)&root_sig);
-
-out:
-   if (error)
-      ID3D10Blob_Release(error);
-
-   if (sig)
-      ID3D10Blob_Release(sig);
-
+   ID3D10Blob_Release(sig);
    return root_sig;
 }
 

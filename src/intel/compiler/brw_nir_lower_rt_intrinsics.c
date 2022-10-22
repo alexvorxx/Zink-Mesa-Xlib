@@ -221,7 +221,15 @@ lower_rt_intrinsics_impl(nir_function_impl *impl,
          }
 
          case nir_intrinsic_load_ray_flags:
-            sysval = nir_u2u32(b, world_ray_in.ray_flags);
+            /* We need to fetch the original ray flags we stored in the
+             * leaf pointer, because the actual ray flags we get here
+             * will include any flags passed on the pipeline at creation
+             * time, and the spec for IncomingRayFlagsKHR says:
+             *   Setting pipeline flags on the raytracing pipeline must not
+             *   cause any corresponding flags to be set in variables with
+             *   this decoration.
+             */
+            sysval = nir_u2u32(b, world_ray_in.inst_leaf_ptr);
             break;
 
          case nir_intrinsic_load_ray_geometry_index: {

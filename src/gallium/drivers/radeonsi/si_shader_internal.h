@@ -56,7 +56,7 @@ struct si_shader_context {
    LLVMBasicBlockRef merged_wrap_if_entry_block;
    int merged_wrap_if_label;
 
-   LLVMValueRef main_fn;
+   struct ac_llvm_pointer main_fn;
    LLVMTypeRef return_type;
 
    struct ac_arg const_and_shader_buffers;
@@ -145,7 +145,7 @@ struct si_shader_context {
    LLVMValueRef gs_curprim_verts[4];
    LLVMValueRef gs_generated_prims[4];
    LLVMValueRef gs_ngg_emit;
-   LLVMValueRef gs_ngg_scratch;
+   struct ac_llvm_pointer gs_ngg_scratch;
    LLVMValueRef return_value;
 
    LLVMValueRef gs_emitted_vertices;
@@ -218,9 +218,11 @@ void si_llvm_declare_esgs_ring(struct si_shader_context *ctx);
 LLVMValueRef si_unpack_param(struct si_shader_context *ctx, struct ac_arg param, unsigned rshift,
                              unsigned bitwidth);
 LLVMValueRef si_get_primitive_id(struct si_shader_context *ctx, unsigned swizzle);
-void si_build_wrapper_function(struct si_shader_context *ctx, LLVMValueRef *parts,
+void si_build_wrapper_function(struct si_shader_context *ctx, struct ac_llvm_pointer *parts,
                                unsigned num_parts, unsigned main_part,
-                               unsigned next_shader_first_part, bool same_thread_count);
+                               unsigned next_shader_first_part,
+                               enum ac_arg_type *main_arg_types,
+                               bool same_thread_count);
 bool si_llvm_translate_nir(struct si_shader_context *ctx, struct si_shader *shader,
                            struct nir_shader *nir, bool free_nir, bool ngg_cull_shader);
 bool si_llvm_compile_shader(struct si_screen *sscreen, struct ac_llvm_compiler *compiler,

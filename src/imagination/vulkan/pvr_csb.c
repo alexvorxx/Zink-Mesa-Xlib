@@ -241,7 +241,7 @@ void *pvr_csb_alloc_dwords(struct pvr_csb *csb, uint32_t num_dwords)
  * \param[in,out] csb_dst Destination control Stream Builder object.
  * \param[in]     csb_src Source Control Stream Builder object.
  */
-void pvr_csb_copy(struct pvr_csb *csb_dst, struct pvr_csb *csb_src)
+VkResult pvr_csb_copy(struct pvr_csb *csb_dst, struct pvr_csb *csb_src)
 {
    const uint8_t stream_link_space = (pvr_cmd_length(VDMCTRL_STREAM_LINK0) +
                                       pvr_cmd_length(VDMCTRL_STREAM_LINK1)) *
@@ -249,6 +249,7 @@ void pvr_csb_copy(struct pvr_csb *csb_dst, struct pvr_csb *csb_src)
    const uint32_t size =
       util_dynarray_num_elements(&csb_src->deferred_cs_mem, char);
    const uint8_t *start = util_dynarray_begin(&csb_src->deferred_cs_mem);
+   void *destination;
 
    /* Only deferred control stream supported as src. */
    assert(csb_src->stream_type == PVR_CMD_STREAM_TYPE_GRAPHICS_DEFERRED);
@@ -266,7 +267,15 @@ void pvr_csb_copy(struct pvr_csb *csb_dst, struct pvr_csb *csb_src)
 
    assert(size < (PVR_CMD_BUFFER_CSB_BO_SIZE - stream_link_space));
 
-   memcpy(pvr_csb_alloc_dwords(csb_dst, size), start, size);
+   destination = pvr_csb_alloc_dwords(csb_dst, size);
+   if (!destination) {
+      assert(csb_dst->status != VK_SUCCESS);
+      return csb_dst->status;
+   }
+
+   memcpy(destination, start, size);
+
+   return VK_SUCCESS;
 }
 
 /**

@@ -25,6 +25,7 @@ RUSTFLAGS='-L native=/usr/local/lib' cargo install \
   bindgen \
   -j ${FDO_CI_CONCURRENT:-4} \
   --root /usr/local \
+  --version 0.60.1 \
   $EXTRA_CARGO_ARGS
 
 RUSTFLAGS='-L native=/usr/local/lib' cargo install \

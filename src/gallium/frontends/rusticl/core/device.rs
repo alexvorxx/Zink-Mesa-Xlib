@@ -234,9 +234,12 @@ impl Device {
     }
 
     fn check_valid(screen: &PipeScreen) -> bool {
-        if screen.param(pipe_cap::PIPE_CAP_COMPUTE) == 0 ||
-         // even though we use PIPE_SHADER_IR_NIR, PIPE_SHADER_IR_NIR_SERIALIZED marks CL support by the driver
-         screen.shader_param(pipe_shader_type::PIPE_SHADER_COMPUTE, pipe_shader_cap::PIPE_SHADER_CAP_SUPPORTED_IRS) & (1 << (pipe_shader_ir::PIPE_SHADER_IR_NIR_SERIALIZED as i32)) == 0
+        if screen.param(pipe_cap::PIPE_CAP_COMPUTE) == 0
+            || screen.shader_param(
+                pipe_shader_type::PIPE_SHADER_COMPUTE,
+                pipe_shader_cap::PIPE_SHADER_CAP_SUPPORTED_IRS,
+            ) & (1 << (pipe_shader_ir::PIPE_SHADER_IR_NIR as i32))
+                == 0
         {
             return false;
         }

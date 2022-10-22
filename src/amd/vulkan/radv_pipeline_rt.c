@@ -1289,7 +1289,7 @@ handle_candidate_aabb(nir_builder *b, struct radv_leaf_intersection *intersectio
                               nir_fge(b, t_max, nir_load_var(b, data->vars->tmin))));
       {
          nir_store_var(b, data->vars->ahit_accept, nir_imm_true(b), 0x1);
-         nir_store_var(b, data->vars->tmax, nir_fmax(b, t_min, nir_load_var(b, data->vars->tmin)),
+         nir_store_var(b, inner_vars.tmax, nir_fmax(b, t_min, nir_load_var(b, data->vars->tmin)),
                        1);
       }
       nir_pop_if(b, NULL);

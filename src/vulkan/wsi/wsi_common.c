@@ -257,6 +257,13 @@ wsi_DestroySurfaceKHR(VkInstance _instance,
    if (!surface)
       return;
 
+#ifdef VK_USE_PLATFORM_WAYLAND_KHR
+   if (surface->platform == VK_ICD_WSI_PLATFORM_WAYLAND) {
+      wsi_wl_surface_destroy(surface, _instance, pAllocator);
+      return;
+   }
+#endif
+
    vk_free2(&instance->alloc, pAllocator, surface);
 }
 

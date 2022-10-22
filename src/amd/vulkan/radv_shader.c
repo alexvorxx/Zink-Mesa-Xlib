@@ -91,11 +91,13 @@ get_nir_options_for_stage(struct radv_physical_device *device, gl_shader_stage s
       .lower_iadd_sat = device->rad_info.gfx_level <= GFX8,
       .lower_hadd = true,
       .lower_mul_32x16 = true,
+      .lower_uclz = true,
       .has_fsub = true,
       .has_isub = true,
       .has_sdot_4x8 = device->rad_info.has_accelerated_dot_product,
       .has_udot_4x8 = device->rad_info.has_accelerated_dot_product,
       .has_dot_2x16 = device->rad_info.has_accelerated_dot_product,
+      .has_find_msb_rev = true,
       .use_scoped_barrier = true,
 #ifdef LLVM_AVAILABLE
       .has_fmulz = !device->use_llvm || LLVM_VERSION_MAJOR >= 12,
@@ -1383,7 +1385,7 @@ void radv_lower_ngg(struct radv_device *device, struct radv_pipeline_stage *ngg_
                  max_vtx_in, num_vertices_per_prim,
                  info->workgroup_size, info->wave_size, info->has_ngg_culling,
                  info->has_ngg_early_prim_export, info->is_ngg_passthrough, export_prim_id,
-                 pl_key->vs.provoking_vtx_last, false, pl_key->primitives_generated_query,
+                 false, pl_key->primitives_generated_query,
                  true, pl_key->vs.instance_rate_inputs, 0, 0);
 
       /* Increase ESGS ring size so the LLVM binary contains the correct LDS size. */
@@ -1392,8 +1394,7 @@ void radv_lower_ngg(struct radv_device *device, struct radv_pipeline_stage *ngg_
       assert(info->is_ngg);
       NIR_PASS_V(nir, ac_nir_lower_ngg_gs, info->wave_size, info->workgroup_size,
                  info->ngg_info.esgs_ring_size, info->gs.gsvs_vertex_size,
-                 info->ngg_info.ngg_emit_size * 4u, pl_key->vs.provoking_vtx_last,
-                 false, true);
+                 info->ngg_info.ngg_emit_size * 4u, false, true);
    } else if (nir->info.stage == MESA_SHADER_MESH) {
       bool scratch_ring = false;
       NIR_PASS_V(nir, ac_nir_lower_ngg_ms, &scratch_ring, info->wave_size, pl_key->has_multiview_view_index);

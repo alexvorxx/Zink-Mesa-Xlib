@@ -1582,7 +1582,7 @@ void anv_GetPhysicalDeviceFeatures2(
          features->rayTracingPipelineShaderGroupHandleCaptureReplay = false;
          features->rayTracingPipelineShaderGroupHandleCaptureReplayMixed = false;
          features->rayTracingPipelineTraceRaysIndirect = true;
-         features->rayTraversalPrimitiveCulling = false;
+         features->rayTraversalPrimitiveCulling = true;
          break;
       }
 

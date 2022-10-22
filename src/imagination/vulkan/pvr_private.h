@@ -290,6 +290,13 @@ struct pvr_queue {
    struct pvr_transfer_ctx *transfer_ctx;
 
    struct vk_sync *completion[PVR_JOB_TYPE_MAX];
+
+   /* Used to setup a job dependency from jobs previously submitted, onto
+    * the next job per job type.
+    *
+    * Used to create dependencies for pipeline barriers.
+    */
+   struct vk_sync *job_dependancy[PVR_JOB_TYPE_MAX];
 };
 
 struct pvr_vertex_binding {
@@ -764,6 +771,15 @@ struct pvr_sub_cmd_event {
          /* Stages to wait at. */
          uint32_t *wait_at_stage_masks;
       } wait;
+
+      struct {
+         bool in_render_pass;
+
+         /* Stages to wait for. */
+         uint32_t wait_for_stage_mask;
+         /* Stages to wait at. */
+         uint32_t wait_at_stage_mask;
+      } barrier;
    };
 };
 

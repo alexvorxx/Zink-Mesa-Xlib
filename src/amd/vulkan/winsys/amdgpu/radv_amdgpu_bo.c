@@ -497,6 +497,9 @@ radv_amdgpu_winsys_bo_create(struct radeon_winsys *_ws, uint64_t size, unsigned 
          request.flags |= AMDGPU_GEM_CREATE_VRAM_CLEARED;
    }
 
+   if (flags & RADEON_FLAG_DISCARDABLE && ws->info.drm_minor >= 47)
+      request.flags |= AMDGPU_GEM_CREATE_DISCARDABLE;
+
    r = amdgpu_bo_alloc(ws->dev, &request, &buf_handle);
    if (r) {
       fprintf(stderr, "radv/amdgpu: Failed to allocate a buffer:\n");

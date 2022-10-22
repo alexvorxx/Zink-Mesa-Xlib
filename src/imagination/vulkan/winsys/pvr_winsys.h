@@ -279,6 +279,8 @@ struct pvr_winsys_transfer_submit_info {
    uint32_t frame_num;
    uint32_t job_num;
 
+   struct vk_sync *barrier;
+
    /* waits and stage_flags are arrays of length wait_count. */
    struct vk_sync **waits;
    uint32_t wait_count;
@@ -299,6 +301,8 @@ struct pvr_winsys_transfer_submit_info {
 struct pvr_winsys_compute_submit_info {
    uint32_t frame_num;
    uint32_t job_num;
+
+   struct vk_sync *barrier;
 
    /* waits and stage_flags are arrays of length wait_count. */
    struct vk_sync **waits;
@@ -348,6 +352,9 @@ struct pvr_winsys_render_submit_info {
 
    /* FIXME: should this be flags instead? */
    bool run_frag;
+
+   struct vk_sync *barrier_geom;
+   struct vk_sync *barrier_frag;
 
    /* waits and stage_flags are arrays of length wait_count. */
    struct vk_sync **waits;

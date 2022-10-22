@@ -27,6 +27,10 @@
 
 #include <stdlib.h>
 
+#ifdef _WIN32
+#include <windows.h>
+#endif
+
 bool
 u_memstream_open(struct u_memstream *mem, char **bufp, size_t *sizep)
 {

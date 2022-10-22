@@ -146,10 +146,6 @@
 extern "C" {
 #endif
 
-// Use LDS symbols when supported by LLVM. Can be disabled for testing the old
-// path on newer LLVM for now. Should be removed in the long term.
-#define USE_LDS_SYMBOLS (true)
-
 struct nir_shader;
 struct si_shader;
 struct si_context;

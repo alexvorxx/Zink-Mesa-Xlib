@@ -275,7 +275,7 @@ static LLVMValueRef si_nir_load_tcs_varyings(struct ac_shader_abi *abi, LLVMType
 
    LLVMValueRef value[4];
    for (unsigned i = component; i < component + num_components; i++) {
-      value[i] = LLVMGetParam(ctx->main_fn, func_param + i);
+      value[i] = LLVMGetParam(ctx->main_fn.value, func_param + i);
       value[i] = LLVMBuildBitCast(ctx->ac.builder, value[i], type, "");
    }
 

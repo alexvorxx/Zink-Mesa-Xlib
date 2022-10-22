@@ -77,7 +77,8 @@
 #define RING_TS_DRAW             7
 #define RING_TS_PAYLOAD          8
 #define RING_MS_SCRATCH          9
-#define RING_PS_SAMPLE_POSITIONS 10
+#define RING_PS_ATTR             10
+#define RING_PS_SAMPLE_POSITIONS 11
 
 /* max number of descriptor sets */
 #define MAX_SETS 32

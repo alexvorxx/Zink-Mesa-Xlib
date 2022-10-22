@@ -159,6 +159,8 @@ visit_intrinsic(nir_shader *shader, nir_intrinsic_instr *instr)
    case nir_intrinsic_load_task_ring_entry_amd:
    case nir_intrinsic_load_task_ib_addr:
    case nir_intrinsic_load_task_ib_stride:
+   case nir_intrinsic_load_ring_attr_amd:
+   case nir_intrinsic_load_ring_attr_offset_amd:
    case nir_intrinsic_load_sample_positions_pan:
    case nir_intrinsic_load_workgroup_num_input_vertices_amd:
    case nir_intrinsic_load_workgroup_num_input_primitives_amd:
@@ -189,6 +191,7 @@ visit_intrinsic(nir_shader *shader, nir_intrinsic_instr *instr)
    case nir_intrinsic_load_num_vertices_per_primitive_amd:
    case nir_intrinsic_load_streamout_buffer_amd:
    case nir_intrinsic_load_ordered_id_amd:
+   case nir_intrinsic_load_provoking_vtx_in_prim_amd:
       is_divergent = false;
       break;
 

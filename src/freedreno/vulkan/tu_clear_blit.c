@@ -2274,7 +2274,7 @@ resolve_sysmem(struct tu_cmd_buffer *cmd,
 
    for_each_layer(i, layer_mask, layers) {
       if (src_separate_ds) {
-         if (vk_src_format == VK_FORMAT_D32_SFLOAT) {
+         if (vk_src_format == VK_FORMAT_D32_SFLOAT || vk_dst_format == VK_FORMAT_D32_SFLOAT) {
             r2d_src_depth(cmd, cs, src, i, VK_FILTER_NEAREST);
          } else {
             r2d_src_stencil(cmd, cs, src, i, VK_FILTER_NEAREST);

@@ -36,7 +36,7 @@ link_with_libva_gallium = [
   libpipe_loader_static, libws_null, libwsw, libswdri, libswkmsdri,
 ]
 
-if with_glx == 'xlib' or with_glx == 'gallium-xlib'
+if with_glx == 'xlib'
   link_with_libva_gallium += [libws_xlib]
 endif
 

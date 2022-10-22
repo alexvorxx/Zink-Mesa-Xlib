@@ -62,18 +62,22 @@
 #include "vk_dispatch_table.h"
 
 
+/* the descriptor binding id for fbfetch/input attachment */
 #define ZINK_FBFETCH_BINDING 6 //COMPUTE+1
 #define ZINK_GFX_SHADER_COUNT 5
 
-#define ZINK_DEFAULT_MAX_DESCS 5000
-#define MAX_LAZY_DESCRIPTORS (ZINK_DEFAULT_MAX_DESCS / 10)
-#define ZINK_DEFAULT_DESC_CLAMP (ZINK_DEFAULT_MAX_DESCS * 0.9)
+/* number of descriptors to allocate in a pool */
+#define MAX_LAZY_DESCRIPTORS 500
+/* explicit clamping because descriptor caching used to exist */
 #define ZINK_MAX_SHADER_IMAGES 32
+/* total number of bindless ids that can be allocated */
 #define ZINK_MAX_BINDLESS_HANDLES 1024
 
+/* enum zink_descriptor_type */
 #define ZINK_MAX_DESCRIPTOR_SETS 6
 #define ZINK_MAX_DESCRIPTORS_PER_TYPE (32 * ZINK_GFX_SHADER_COUNT)
 
+/* suballocator defines */
 #define NUM_SLAB_ALLOCATORS 3
 #define MIN_SLAB_ORDER 8
 
@@ -81,13 +85,16 @@
 /* this is the spec minimum */
 #define ZINK_SPARSE_BUFFER_PAGE_SIZE (64 * 1024)
 
+/* flag to create screen->copy_context */
 #define ZINK_CONTEXT_COPY_ONLY (1<<30)
 
+/* convenience macros for accessing dispatch table functions */
 #define VKCTX(fn) zink_screen(ctx->base.screen)->vk.fn
 #define VKSCR(fn) screen->vk.fn
 
 /** enums */
 
+/* features for draw/program templates */
 typedef enum {
    ZINK_NO_MULTIDRAW,
    ZINK_MULTIDRAW,
@@ -123,6 +130,9 @@ enum zink_blit_flags {
    ZINK_BLIT_NO_COND_RENDER = 1 << 4,
 };
 
+/* descriptor types; also the ordering of the sets
+ * ...except that ZINK_DESCRIPTOR_TYPES is actually set 0, which is the uniform data (UBO0) for all stages
+ */
 enum zink_descriptor_type {
    ZINK_DESCRIPTOR_TYPE_UBO,
    ZINK_DESCRIPTOR_TYPE_SAMPLER_VIEW,
@@ -138,6 +148,7 @@ enum zink_descriptor_mode {
    ZINK_DESCRIPTOR_MODE_COMPACT,
 };
 
+/* indexing for descriptor template management */
 enum zink_descriptor_size_index {
    ZDS_INDEX_UBO,
    ZDS_INDEX_COMBINED_SAMPLER,
@@ -147,6 +158,7 @@ enum zink_descriptor_size_index {
    ZDS_INDEX_STORAGE_TEXELS,
 };
 
+/* indexing for descriptor template management in COMPACT mode */
 enum zink_descriptor_size_index_compact {
    ZDS_INDEX_COMP_UBO,
    ZDS_INDEX_COMP_STORAGE_BUFFER,
@@ -194,16 +206,23 @@ enum zink_debug {
 /** fence types */
 struct tc_unflushed_batch_token;
 
+/* an async fence created for tc */
 struct zink_tc_fence {
    struct pipe_reference reference;
+   /* enables distinction between tc fence submission and vk queue submission */
    uint32_t submit_count;
+   /* when the tc fence is signaled for use */
    struct util_queue_fence ready;
    struct tc_unflushed_batch_token *tc_token;
+   /* for deferred flushes */
    struct pipe_context *deferred_ctx;
+   /* multiple tc fences may point to a real fence */
    struct zink_fence *fence;
+   /* for use with semaphore/imported fences */
    VkSemaphore sem;
 };
 
+/* a fence is actually a zink_batch_state, but these are split out for logical consistency */
 struct zink_fence {
    VkFence fence;
 
@@ -220,6 +239,7 @@ struct zink_fence {
 struct zink_vertex_elements_hw_state {
    uint32_t hash;
    uint32_t num_bindings, num_attribs;
+   /* VK_EXT_vertex_input_dynamic_state uses different types */
    union {
       VkVertexInputAttributeDescription attribs[PIPE_MAX_ATTRIBS];
       VkVertexInputAttributeDescription2EXT dynattribs[PIPE_MAX_ATTRIBS];
@@ -236,6 +256,7 @@ struct zink_vertex_elements_hw_state {
 };
 
 struct zink_vertex_elements_state {
+   /* decomposed attributes read only a single component for format compatibility */
    bool has_decomposed_attrs;
    struct {
       uint32_t binding;
@@ -250,6 +271,7 @@ struct zink_vertex_elements_state {
    struct zink_vertex_elements_hw_state hw_state;
 };
 
+/* for vertex state draws */
 struct zink_vertex_state {
    struct pipe_vertex_state b;
    struct zink_vertex_elements_state velems;
@@ -317,6 +339,8 @@ struct zink_depth_stencil_alpha_state {
 
 
 /** descriptor types */
+
+/* zink_descriptor_layout objects are cached: this is the key for one */
 struct zink_descriptor_layout_key {
    unsigned num_bindings;
    VkDescriptorSetLayoutBinding *bindings;
@@ -326,6 +350,7 @@ struct zink_descriptor_layout {
    VkDescriptorSetLayout layout;
 };
 
+/* descriptor pools are cached: zink_descriptor_pool_key::id is the id for a type of pool */
 struct zink_descriptor_pool_key {
    unsigned use_count;
    unsigned num_type_sizes;
@@ -334,6 +359,7 @@ struct zink_descriptor_pool_key {
    struct zink_descriptor_layout_key *layout;
 };
 
+/* ctx->dd; created at context creation */
 struct zink_descriptor_data {
    bool bindless_bound;
    bool has_fbfetch;
@@ -355,42 +381,65 @@ struct zink_descriptor_data {
    VkDescriptorUpdateTemplateEntry compute_push_entry;
 };
 
+/* pg->dd; created at program creation */
 struct zink_program_descriptor_data {
    bool bindless;
    bool fbfetch;
+   /* bitmask of ubo0 usage for stages */
    uint8_t push_usage;
+   /* bitmask of which sets are used by the program */
    uint8_t binding_usage;
-   uint8_t real_binding_usage;
+   /* all the pool keys for the program */
    struct zink_descriptor_pool_key *pool_key[ZINK_DESCRIPTOR_TYPES]; //push set doesn't need one
+   /* all the layouts for the program */
    struct zink_descriptor_layout *layouts[ZINK_DESCRIPTOR_TYPES + 1];
+   /* all the templates for the program */
    VkDescriptorUpdateTemplate templates[ZINK_DESCRIPTOR_TYPES + 1];
 };
 
 struct zink_descriptor_pool {
+   /* the current index of 'sets' */
    unsigned set_idx;
+   /* number of sets allocated */
    unsigned sets_alloc;
    VkDescriptorPool pool;
+   /* sets are lazily allocated */
    VkDescriptorSet sets[MAX_LAZY_DESCRIPTORS];
 };
 
+/* a zink_descriptor_pool_key matches up to this struct */
 struct zink_descriptor_pool_multi {
+   /* for flagging when overflowed pools must be destroyed instead of reused */
    bool reinit_overflow;
+   /* this flips to split usable overflow from in-use overflow */
    unsigned overflow_idx;
+   /* zink_descriptor_pool objects that have exceeded MAX_LAZY_DESCRIPTORS sets */
    struct util_dynarray overflowed_pools[2];
+   /* the current pool; may be null */
    struct zink_descriptor_pool *pool;
+   /* pool key for convenience */
    const struct zink_descriptor_pool_key *pool_key;
 };
 
+/* bs->dd; created on batch state creation */
 struct zink_batch_descriptor_data {
+   /* pools have fbfetch initialized */
    bool has_fbfetch;
+   /* real size of 'pools' */
    unsigned pool_size[ZINK_DESCRIPTOR_TYPES];
+   /* this array is sized based on the max zink_descriptor_pool_key::id used by the batch; members may be NULL */
    struct util_dynarray pools[ZINK_DESCRIPTOR_TYPES];
-   struct zink_descriptor_pool_multi push_pool[2];
+   struct zink_descriptor_pool_multi push_pool[2]; //gfx, compute
+   /* the current program (for descriptor updating) */
    struct zink_program *pg[2]; //gfx, compute
-   uint32_t compat_id[2];
-   VkDescriptorSetLayout dsl[2][ZINK_DESCRIPTOR_TYPES];
-   VkDescriptorSet sets[2][ZINK_DESCRIPTOR_TYPES + 1];
-   unsigned push_usage[2];
+   /* the current pipeline compatibility id (for pipeline compatibility rules) */
+   uint32_t compat_id[2]; //gfx, compute
+   /* the current set layout */
+   VkDescriptorSetLayout dsl[2][ZINK_DESCRIPTOR_TYPES]; //gfx, compute
+   /* the current set for a given type; used for rebinding if pipeline compat id changes and current set must be rebound */
+   VkDescriptorSet sets[2][ZINK_DESCRIPTOR_TYPES + 1]; //gfx, compute
+   /* mask of push descriptor usage */
+   unsigned push_usage[2]; //gfx, compute
 };
 
 /** batch types */

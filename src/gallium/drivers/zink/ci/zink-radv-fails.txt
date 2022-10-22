@@ -393,7 +393,6 @@ spec@!opengl 1.0@rasterpos@glsl_vs_tes_linked,Fail
 
 glx@glx-buffer-age,Fail
 glx@glx-buffer-age vblank_mode=0,Fail
-spec@!opengl 1.1@getteximage-formats,Fail
 spec@!opengl 1.1@teximage-colors gl_sluminance8_alpha8,Fail
 spec@!opengl 1.1@teximage-colors gl_sluminance8_alpha8@GL_SLUMINANCE8_ALPHA8 texture with GL_ABGR_EXT and GL_BYTE,Fail
 spec@!opengl 1.1@teximage-colors gl_sluminance8_alpha8@GL_SLUMINANCE8_ALPHA8 texture with GL_ABGR_EXT and GL_FLOAT,Fail
@@ -442,9 +441,6 @@ spec@!opengl 1.1@teximage-colors gl_sluminance8_alpha8@GL_SLUMINANCE8_ALPHA8 tex
 spec@!opengl 1.1@teximage-colors gl_sluminance8_alpha8@GL_SLUMINANCE8_ALPHA8 texture with GL_RGBA and GL_UNSIGNED_SHORT,Fail
 spec@!opengl 1.1@teximage-colors gl_sluminance8_alpha8@GL_SLUMINANCE8_ALPHA8 texture with GL_RGBA and GL_UNSIGNED_SHORT_4_4_4_4,Fail
 spec@!opengl 1.1@teximage-colors gl_sluminance8_alpha8@GL_SLUMINANCE8_ALPHA8 texture with GL_RGBA and GL_UNSIGNED_SHORT_4_4_4_4_REV,Fail
-spec@arb_bindless_texture@illegal,Crash
-spec@arb_bindless_texture@legal,Crash
-spec@arb_direct_state_access@gettextureimage-formats,Fail
 spec@arb_texture_buffer_object@texture-buffer-size-clamp,Fail
 spec@arb_texture_buffer_object@texture-buffer-size-clamp@r8ui_texture_buffer_size_via_image,Fail
 spec@arb_texture_buffer_object@texture-buffer-size-clamp@r8ui_texture_buffer_size_via_sampler,Fail

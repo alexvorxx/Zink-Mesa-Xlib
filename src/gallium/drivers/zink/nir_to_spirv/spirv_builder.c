@@ -217,6 +217,14 @@ spirv_builder_emit_decoration(struct spirv_builder *b, SpvId target,
 }
 
 void
+spirv_builder_emit_rounding_mode(struct spirv_builder *b, SpvId target,
+                                 SpvFPRoundingMode rounding)
+{
+   uint32_t args[] = { rounding };
+   emit_decoration(b, target, SpvDecorationFPRoundingMode, args, ARRAY_SIZE(args));
+}
+
+void
 spirv_builder_emit_input_attachment_index(struct spirv_builder *b, SpvId target, uint32_t id)
 {
    uint32_t args[] = { id };
@@ -1510,7 +1518,7 @@ spirv_builder_const_bool(struct spirv_builder *b, bool val)
 SpvId
 spirv_builder_const_int(struct spirv_builder *b, int width, int64_t val)
 {
-   assert(width >= 16);
+   assert(width >= 8);
    SpvId type = spirv_builder_type_int(b, width);
    if (width <= 32)
       return emit_constant_32(b, type, val);
@@ -1539,7 +1547,16 @@ SpvId
 spirv_builder_spec_const_uint(struct spirv_builder *b, int width)
 {
    assert(width <= 32);
-   return spirv_builder_emit_unop(b, SpvOpSpecConstant, spirv_builder_type_uint(b, width), 0);
+   SpvId result = spirv_builder_new_id(b);
+   spirv_buffer_prepare(&b->types_const_defs, b->mem_ctx, 4);
+   spirv_buffer_emit_word(&b->types_const_defs, SpvOpSpecConstant | (4 << 16));
+   spirv_buffer_emit_word(&b->types_const_defs, spirv_builder_type_uint(b, width));
+   spirv_buffer_emit_word(&b->types_const_defs, result);
+   /* this is the default value for spec constants;
+    * if any users need a different default, add a param to pass for it
+    */
+   spirv_buffer_emit_word(&b->types_const_defs, 1);
+   return result;
 }
 
 SpvId

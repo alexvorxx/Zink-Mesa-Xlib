@@ -3513,6 +3513,11 @@ typedef struct nir_shader_compiler_options {
    bool lower_mul_32x16;
 
    /**
+    * Set if uclz should be lowered to find_msb_rev.
+    */
+   bool lower_uclz;
+
+   /**
     * Should IO be re-vectorized?  Some scalar ISAs still operate on vec4's
     * for IO purposes and would prefer loads/stores be vectorized.
     */
@@ -3616,6 +3621,9 @@ typedef struct nir_shader_compiler_options {
 
    /** Backend supports fmulz (and ffmaz if lower_ffma32=false) */
    bool has_fmulz;
+
+   /** Backend supports 32bit ufind_msb_rev and ifind_msb_rev. */
+   bool has_find_msb_rev;
 
    /**
     * Is this the Intel vec4 backend?

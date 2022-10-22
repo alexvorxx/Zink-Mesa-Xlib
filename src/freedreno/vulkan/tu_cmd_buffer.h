@@ -254,6 +254,13 @@ struct tu_vs_params {
    uint32_t draw_id;
 };
 
+struct tu_primitive_params {
+   bool valid;
+   bool primitive_restart;
+   bool provoking_vtx_last;
+   bool tess_upper_left_domain_origin;
+};
+
 /* This should be for state that is set inside a renderpass and used at
  * renderpass end time, e.g. to decide whether to use sysmem. This needs
  * special handling for secondary cmdbufs and suspending/resuming render
@@ -515,6 +522,8 @@ struct tu_cmd_state
    struct tu_draw_state lrz_and_depth_plane_state;
 
    struct tu_vs_params last_vs_params;
+
+   struct tu_primitive_params last_prim_params;
 };
 
 enum tu_cmd_buffer_status

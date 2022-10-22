@@ -1424,8 +1424,16 @@ label_instruction(opt_ctx& ctx, aco_ptr<Instruction>& instr)
           * MUBUF accesses. */
          bool vaddr_prevent_overflow = mubuf.swizzled && ctx.program->gfx_level < GFX9;
 
-         if (mubuf.offen && i == 1 && info.is_constant_or_literal(32) &&
-             mubuf.offset + info.val < 4096) {
+         if (mubuf.offen && mubuf.idxen && i == 1 && info.is_vec() &&
+             info.instr->operands.size() == 2 && info.instr->operands[0].isTemp() &&
+             info.instr->operands[0].regClass() == v1 && info.instr->operands[1].isConstant() &&
+             mubuf.offset + info.instr->operands[1].constantValue() < 4096) {
+            instr->operands[1] = info.instr->operands[0];
+            mubuf.offset += info.instr->operands[1].constantValue();
+            mubuf.offen = false;
+            continue;
+         } else if (mubuf.offen && i == 1 && info.is_constant_or_literal(32) &&
+                    mubuf.offset + info.val < 4096) {
             assert(!mubuf.idxen);
             instr->operands[1] = Operand(v1);
             mubuf.offset += info.val;

@@ -1,11 +1,14 @@
-name: macOS CI
+name: macOS-CI
 on: push
 
 permissions:
   contents: read
 
 jobs:
-  CI:
+  macOS-CI:
+    strategy:
+      matrix:
+        glx_option: ['dri', 'xlib']
     runs-on: macos-latest
     env:
       GALLIUM_DUMP_CPU: true
@@ -37,7 +40,7 @@ jobs:
         [binaries]
         llvm-config = '/usr/local/opt/llvm/bin/llvm-config'
         EOL
-        meson . build --native-file=native_config -Dbuild-tests=true -Dosmesa=true -Dgallium-drivers=swrast
+        meson . build --native-file=native_config -Dbuild-tests=true -Dosmesa=true -Dgallium-drivers=swrast -Dglx=${{ matrix.glx_option }}
     - name: Build
       run: meson compile -C build
     - name: Test

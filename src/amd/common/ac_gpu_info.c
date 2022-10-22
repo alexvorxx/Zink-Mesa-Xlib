@@ -1101,6 +1101,12 @@ bool ac_query_gpu_info(int fd, void *dev_p, struct radeon_info *info)
    info->has_vgt_flush_ngg_legacy_bug = info->gfx_level == GFX10 ||
                                         info->family == CHIP_NAVI21;
 
+   /* First Navi2x chips have a hw bug that doesn't allow to write
+    * depth/stencil from a FS for multi-pixel fragments.
+    */
+   info->has_vrs_ds_export_bug = info->family == CHIP_NAVI21 ||
+                                 info->family == CHIP_NAVI22;
+
    /* HW bug workaround when CS threadgroups > 256 threads and async compute
     * isn't used, i.e. only one compute job can run at a time.  If async
     * compute is possible, the threadgroup size must be limited to 256 threads

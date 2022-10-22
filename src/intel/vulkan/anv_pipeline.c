@@ -639,11 +639,14 @@ populate_cs_prog_key(const struct anv_device *device,
 static void
 populate_bs_prog_key(const struct anv_device *device,
                      bool robust_buffer_access,
+                     uint32_t ray_flags,
                      struct brw_bs_prog_key *key)
 {
    memset(key, 0, sizeof(*key));
 
    populate_base_prog_key(device, robust_buffer_access, &key->base);
+
+   key->pipeline_ray_flags = ray_flags;
 }
 
 struct anv_pipeline_stage {
@@ -2466,12 +2469,12 @@ compile_upload_rt_shader(struct anv_ray_tracing_pipeline *pipeline,
                nir_address_format_64bit_global,
                BRW_BTD_STACK_ALIGN,
                &resume_shaders, &num_resume_shaders, mem_ctx);
-      NIR_PASS(_, nir, brw_nir_lower_shader_calls);
+      NIR_PASS(_, nir, brw_nir_lower_shader_calls, &stage->key.bs);
       NIR_PASS_V(nir, brw_nir_lower_rt_intrinsics, devinfo);
    }
 
    for (unsigned i = 0; i < num_resume_shaders; i++) {
-      NIR_PASS(_,resume_shaders[i], brw_nir_lower_shader_calls);
+      NIR_PASS(_,resume_shaders[i], brw_nir_lower_shader_calls, &stage->key.bs);
       NIR_PASS_V(resume_shaders[i], brw_nir_lower_rt_intrinsics, devinfo);
    }
 
@@ -2578,6 +2581,25 @@ anv_pipeline_compute_ray_tracing_stacks(struct anv_ray_tracing_pipeline *pipelin
    }
 }
 
+static enum brw_rt_ray_flags
+anv_pipeline_get_pipeline_ray_flags(VkPipelineCreateFlags flags)
+{
+   uint32_t ray_flags = 0;
+
+   const bool rt_skip_triangles =
+      flags & VK_PIPELINE_CREATE_RAY_TRACING_SKIP_TRIANGLES_BIT_KHR;
+   const bool rt_skip_aabbs =
+      flags & VK_PIPELINE_CREATE_RAY_TRACING_SKIP_AABBS_BIT_KHR;
+   assert(!(rt_skip_triangles && rt_skip_aabbs));
+
+   if (rt_skip_triangles)
+      ray_flags |= BRW_RT_RAY_FLAG_SKIP_TRIANGLES;
+   else if (rt_skip_aabbs)
+      ray_flags |= BRW_RT_RAY_FLAG_SKIP_AABBS;
+
+   return ray_flags;
+}
+
 static struct anv_pipeline_stage *
 anv_pipeline_init_ray_tracing_stages(struct anv_ray_tracing_pipeline *pipeline,
                                      const VkRayTracingPipelineCreateInfoKHR *info,
@@ -2590,6 +2612,9 @@ anv_pipeline_init_ray_tracing_stages(struct anv_ray_tracing_pipeline *pipeline,
     */
    struct anv_pipeline_stage *stages =
       rzalloc_array(pipeline_ctx, struct anv_pipeline_stage, info->stageCount);
+
+   enum brw_rt_ray_flags ray_flags =
+      anv_pipeline_get_pipeline_ray_flags(pipeline->base.flags);
 
    for (uint32_t i = 0; i < info->stageCount; i++) {
       const VkPipelineShaderStageCreateInfo *sinfo = &info->pStages[i];
@@ -2611,6 +2636,7 @@ anv_pipeline_init_ray_tracing_stages(struct anv_ray_tracing_pipeline *pipeline,
 
       populate_bs_prog_key(pipeline->base.device,
                            pipeline->base.device->robust_buffer_access,
+                           ray_flags,
                            &stages[i].key.bs);
 
       vk_pipeline_hash_shader_stage(sinfo, stages[i].shader_sha1);
