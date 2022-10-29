@@ -268,13 +268,13 @@ lp_llvm_sampler_member(struct gallivm_state *gallivm,
 
 #define LP_LLVM_SAMPLER_MEMBER(_name, _index, _emit_load)  \
    static LLVMValueRef \
-   lp_llvm_sampler_##_name( struct gallivm_state *gallivm, \
-                            LLVMTypeRef context_type, \
-                            LLVMValueRef context_ptr, \
-                            unsigned sampler_unit) \
+   lp_llvm_sampler_##_name(struct gallivm_state *gallivm, \
+                           LLVMTypeRef context_type, \
+                           LLVMValueRef context_ptr, \
+                           unsigned sampler_unit) \
    { \
       return lp_llvm_sampler_member(gallivm, context_type, context_ptr,  \
-                                    sampler_unit, _index, #_name, _emit_load ); \
+                                    sampler_unit, _index, #_name, _emit_load); \
    }
 
 
@@ -350,28 +350,28 @@ lp_llvm_image_member(struct gallivm_state *gallivm,
  */
 #define LP_LLVM_IMAGE_MEMBER(_name, _index, _emit_load)  \
    static LLVMValueRef \
-   lp_llvm_image_##_name( struct gallivm_state *gallivm,               \
-                          LLVMTypeRef context_type,                    \
-                          LLVMValueRef context_ptr,                     \
-                          unsigned image_unit, LLVMValueRef image_unit_offset) \
+   lp_llvm_image_##_name(struct gallivm_state *gallivm,               \
+                         LLVMTypeRef context_type,                    \
+                         LLVMValueRef context_ptr,                     \
+                         unsigned image_unit, LLVMValueRef image_unit_offset) \
    { \
       return lp_llvm_image_member(gallivm, context_type, context_ptr,    \
                                   image_unit, image_unit_offset, \
-                                  _index, #_name, _emit_load );  \
+                                  _index, #_name, _emit_load);  \
    }
 
 #define LP_LLVM_IMAGE_MEMBER_OUTTYPE(_name, _index, _emit_load)  \
    static LLVMValueRef \
-   lp_llvm_image_##_name( struct gallivm_state *gallivm,               \
-                          LLVMTypeRef context_type,                    \
-                          LLVMValueRef context_ptr,                     \
-                          unsigned image_unit, LLVMValueRef image_unit_offset, \
-                          LLVMTypeRef *out_type)                        \
+   lp_llvm_image_##_name(struct gallivm_state *gallivm,               \
+                         LLVMTypeRef context_type,                    \
+                         LLVMValueRef context_ptr,                     \
+                         unsigned image_unit, LLVMValueRef image_unit_offset, \
+                         LLVMTypeRef *out_type)                        \
    { \
       assert(!out_type);                                                \
       return lp_llvm_image_member(gallivm, context_type, context_ptr,    \
                                   image_unit, image_unit_offset, \
-                                  _index, #_name, _emit_load );  \
+                                  _index, #_name, _emit_load);  \
    }
 
 

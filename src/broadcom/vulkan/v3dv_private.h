@@ -50,6 +50,7 @@
 #include "vk_command_buffer.h"
 #include "vk_command_pool.h"
 #include "vk_queue.h"
+#include "vk_pipeline.h"
 
 #include <xf86drm.h>
 
@@ -312,8 +313,6 @@ struct v3dv_meta_texel_buffer_copy_pipeline {
 };
 
 struct v3dv_pipeline_key {
-   bool robust_buffer_access;
-   bool robust_image_access;
    uint8_t topology;
    uint8_t logicop_func;
    bool msaa;
@@ -455,6 +454,15 @@ struct v3dv_pipeline_cache {
    bool externally_synchronized;
 };
 
+/* This is used to implement a list of free events in the BO we use
+ * hold event states. The index here is used to calculate the offset
+ * within that BO.
+ */
+struct v3dv_event_desc {
+   struct list_head link;
+   uint32_t index;
+};
+
 struct v3dv_device {
    struct vk_device vk;
 
@@ -510,6 +518,44 @@ struct v3dv_device {
    uint32_t bo_size;
    uint32_t bo_count;
 
+   /* Event handling resources.
+    *
+    * Our implementation of events uses a BO to store event state (signaled vs
+    * reset) and dispatches compute shaders to handle GPU event functions
+    * (signal, reset, wait). This struct holds all the resources required
+    * by the implementation.
+    */
+   struct {
+      mtx_t lock;
+
+      /* BO for the event states: signaled (1) or reset (0) */
+      struct v3dv_bo *bo;
+
+      /* Events can be created and destroyed. Since we have a dedicated BO for
+       * all events we use, we need to keep track of the free slots within that
+       * BO. For that we use a free list where we link together available event
+       * slots in the form of "descriptors" that include an index (which is
+       * basically an offset into the BO that is available).
+       */
+      uint32_t desc_count;
+      struct v3dv_event_desc *desc;
+      struct list_head free_list;
+
+      /* Vulkan resources to access the event BO from shaders. We have a
+       * pipeline that sets the state of an event and another that waits on
+       * a single event. Both pipelines require access to the event state BO,
+       * for which we need to allocate a single descripot set.
+       */
+      VkBuffer buffer;
+      VkDeviceMemory mem;
+      VkDescriptorSetLayout descriptor_set_layout;
+      VkPipelineLayout pipeline_layout;
+      VkDescriptorPool descriptor_pool;
+      VkDescriptorSet descriptor_set;
+      VkPipeline set_event_pipeline;
+      VkPipeline wait_event_pipeline;
+   } events;
+
    struct v3dv_pipeline_cache default_pipeline_cache;
 
    /* GL_SHADER_STATE_RECORD needs to speficy default attribute values. The
@@ -519,11 +565,6 @@ struct v3dv_device {
     * attributes will create their own BO.
     */
    struct v3dv_bo *default_attribute_float;
-
-   VkPhysicalDeviceFeatures features;
-   struct {
-      bool robustImageAccess;
-   } ext_features;
 
    void *device_address_mem_ctx;
    struct util_dynarray device_address_bo_list; /* Array of struct v3dv_bo * */
@@ -974,8 +1015,6 @@ enum v3dv_job_type {
    V3DV_JOB_TYPE_CPU_RESET_QUERIES,
    V3DV_JOB_TYPE_CPU_END_QUERY,
    V3DV_JOB_TYPE_CPU_COPY_QUERY_RESULTS,
-   V3DV_JOB_TYPE_CPU_SET_EVENT,
-   V3DV_JOB_TYPE_CPU_WAIT_EVENTS,
    V3DV_JOB_TYPE_CPU_COPY_BUFFER_TO_IMAGE,
    V3DV_JOB_TYPE_CPU_CSD_INDIRECT,
    V3DV_JOB_TYPE_CPU_TIMESTAMP_QUERY,
@@ -1013,17 +1052,6 @@ struct v3dv_submit_sync_info {
    /* List of syncs to signal when all jobs complete */
    uint32_t signal_count;
    struct vk_sync_signal *signals;
-};
-
-struct v3dv_event_set_cpu_job_info {
-   struct v3dv_event *event;
-   int state;
-};
-
-struct v3dv_event_wait_cpu_job_info {
-   /* List of events to wait on */
-   uint32_t event_count;
-   struct v3dv_event **events;
 };
 
 struct v3dv_copy_buffer_to_image_cpu_job_info {
@@ -1192,8 +1220,6 @@ struct v3dv_job {
       struct v3dv_reset_query_cpu_job_info          query_reset;
       struct v3dv_end_query_cpu_job_info            query_end;
       struct v3dv_copy_query_results_cpu_job_info   query_copy_results;
-      struct v3dv_event_set_cpu_job_info            event_set;
-      struct v3dv_event_wait_cpu_job_info           event_wait;
       struct v3dv_copy_buffer_to_image_cpu_job_info copy_buffer_to_image;
       struct v3dv_csd_indirect_cpu_job_info         csd_indirect;
       struct v3dv_timestamp_query_cpu_job_info      query_timestamp;
@@ -1649,8 +1675,18 @@ bool v3dv_cmd_buffer_check_needs_store(const struct v3dv_cmd_buffer_state *state
 
 struct v3dv_event {
    struct vk_object_base base;
-   int state;
+
+   /* Each event gets a different index, which we use to compute the offset
+    * in the BO we use to track their state (signaled vs reset).
+    */
+   uint32_t index;
 };
+
+bool
+v3dv_event_allocate_resources(struct v3dv_device *device);
+
+void
+v3dv_event_free_resources(struct v3dv_device *device);
 
 struct v3dv_shader_variant {
    enum broadcom_shader_stage stage;
@@ -1710,6 +1746,8 @@ struct v3dv_pipeline_stage {
    uint32_t program_id;
 
    VkPipelineCreationFeedback feedback;
+
+   struct vk_pipeline_robustness_state robustness;
 };
 
 /* We are using the descriptor pool entry for two things:
@@ -1732,6 +1770,9 @@ struct v3dv_descriptor_pool_entry
 
 struct v3dv_descriptor_pool {
    struct vk_object_base base;
+
+   /* A list with all descriptor sets allocated from the pool. */
+   struct list_head set_list;
 
    /* If this descriptor pool has been allocated for the driver for internal
     * use, typically to implement meta operations.
@@ -1761,6 +1802,9 @@ struct v3dv_descriptor_pool {
 
 struct v3dv_descriptor_set {
    struct vk_object_base base;
+
+   /* List link into the list of all sets allocated from the pool */
+   struct list_head pool_link;
 
    struct v3dv_descriptor_pool *pool;
 
@@ -1906,7 +1950,7 @@ v3dv_pipeline_layout_unref(struct v3dv_device *device,
 
 
 struct v3dv_descriptor_map {
-   /* TODO: avoid fixed size array/justify the size */
+   /* FIXME: avoid fixed size array/justify the size */
    unsigned num_desc; /* Number of descriptors  */
    int set[DESCRIPTOR_MAP_SIZE];
    int binding[DESCRIPTOR_MAP_SIZE];

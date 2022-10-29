@@ -323,14 +323,6 @@ struct pvr_winsys_compute_submit_info {
    uint32_t flags;
 };
 
-#define PVR_WINSYS_JOB_BO_FLAG_WRITE BITFIELD_BIT(0U)
-
-struct pvr_winsys_job_bo {
-   struct pvr_winsys_bo *bo;
-   /* Must be 0 or a combination of PVR_WINSYS_JOB_BO_FLAG_* flags. */
-   uint32_t flags;
-};
-
 #define PVR_WINSYS_GEOM_FLAG_FIRST_GEOMETRY BITFIELD_BIT(0U)
 #define PVR_WINSYS_GEOM_FLAG_LAST_GEOMETRY BITFIELD_BIT(1U)
 #define PVR_WINSYS_GEOM_FLAG_SINGLE_CORE BITFIELD_BIT(2U)
@@ -346,9 +338,6 @@ struct pvr_winsys_render_submit_info {
 
    uint32_t frame_num;
    uint32_t job_num;
-
-   uint32_t bo_count;
-   const struct pvr_winsys_job_bo *bos;
 
    /* FIXME: should this be flags instead? */
    bool run_frag;

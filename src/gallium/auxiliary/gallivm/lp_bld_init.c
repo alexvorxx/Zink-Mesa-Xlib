@@ -601,7 +601,7 @@ gallivm_compile_module(struct gallivm_state *gallivm)
    LLVMRunPasses(gallivm->module, passes, LLVMGetExecutionEngineTargetMachine(gallivm->engine), opts);
 
    if (!(gallivm_perf & GALLIVM_PERF_NO_OPT))
-      strcpy(passes, "sroa,early-cse,simplifycfg,reassociate,mem2reg,constprop,instcombine,");
+      strcpy(passes, "sroa,early-cse,simplifycfg,reassociate,mem2reg,instsimplify,instcombine");
    else
       strcpy(passes, "mem2reg");
 

@@ -121,6 +121,9 @@ zink_batch_usage_check_completion(struct zink_context *ctx, const struct zink_ba
 void
 zink_batch_usage_wait(struct zink_context *ctx, struct zink_batch_usage *u);
 
+void
+zink_batch_usage_try_wait(struct zink_context *ctx, struct zink_batch_usage *u);
+
 #ifdef __cplusplus
 }
 #endif

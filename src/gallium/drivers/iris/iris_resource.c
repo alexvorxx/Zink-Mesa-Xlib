@@ -480,6 +480,9 @@ iris_resource_alloc_flags(const struct iris_screen *screen,
        util_format_get_num_planes(templ->format) > 1)
       flags |= BO_ALLOC_NO_SUBALLOC;
 
+   if (templ->bind & PIPE_BIND_PROTECTED)
+      flags |= BO_ALLOC_PROTECTED;
+
    return flags;
 }
 
@@ -1944,7 +1947,8 @@ iris_invalidate_resource(struct pipe_context *ctx,
    struct iris_bo *new_bo =
       iris_bo_alloc(screen->bufmgr, res->bo->name, resource->width0,
                     iris_buffer_alignment(resource->width0),
-                    iris_memzone_for_address(old_bo->address), 0);
+                    iris_memzone_for_address(old_bo->address),
+                    old_bo->real.protected ? BO_ALLOC_PROTECTED : 0);
    if (!new_bo)
       return;
 

@@ -155,12 +155,10 @@ struct ray_query_traversal_vars {
 struct ray_query_intersection_vars {
    rq_variable *primitive_id;
    rq_variable *geometry_id_and_flags;
-   rq_variable *instance_id;
    rq_variable *instance_addr;
    rq_variable *intersection_type;
    rq_variable *opaque;
    rq_variable *frontface;
-   rq_variable *custom_instance_and_mask;
    rq_variable *sbt_offset_and_flags;
    rq_variable *barycentrics;
    rq_variable *t;
@@ -231,8 +229,6 @@ init_ray_query_intersection_vars(nir_shader *shader, nir_function_impl *impl, un
       rq_variable_create(shader, impl, array_length, glsl_uint_type(), VAR_NAME("_primitive_id"));
    result.geometry_id_and_flags = rq_variable_create(shader, impl, array_length, glsl_uint_type(),
                                                      VAR_NAME("_geometry_id_and_flags"));
-   result.instance_id =
-      rq_variable_create(shader, impl, array_length, glsl_uint_type(), VAR_NAME("_instance_id"));
    result.instance_addr = rq_variable_create(shader, impl, array_length, glsl_uint64_t_type(),
                                              VAR_NAME("_instance_addr"));
    result.intersection_type = rq_variable_create(shader, impl, array_length, glsl_uint_type(),
@@ -241,8 +237,6 @@ init_ray_query_intersection_vars(nir_shader *shader, nir_function_impl *impl, un
       rq_variable_create(shader, impl, array_length, glsl_bool_type(), VAR_NAME("_opaque"));
    result.frontface =
       rq_variable_create(shader, impl, array_length, glsl_bool_type(), VAR_NAME("_frontface"));
-   result.custom_instance_and_mask = rq_variable_create(
-      shader, impl, array_length, glsl_uint_type(), VAR_NAME("_custom_instance_and_mask"));
    result.sbt_offset_and_flags = rq_variable_create(shader, impl, array_length, glsl_uint_type(),
                                                     VAR_NAME("_sbt_offset_and_flags"));
    result.barycentrics =
@@ -307,12 +301,9 @@ static void
 copy_candidate_to_closest(nir_builder *b, nir_ssa_def *index, struct ray_query_vars *vars)
 {
    rq_copy_var(b, index, vars->closest.barycentrics, vars->candidate.barycentrics, 0x3);
-   rq_copy_var(b, index, vars->closest.custom_instance_and_mask,
-               vars->candidate.custom_instance_and_mask, 0x1);
    rq_copy_var(b, index, vars->closest.geometry_id_and_flags, vars->candidate.geometry_id_and_flags,
                0x1);
    rq_copy_var(b, index, vars->closest.instance_addr, vars->candidate.instance_addr, 0x1);
-   rq_copy_var(b, index, vars->closest.instance_id, vars->candidate.instance_id, 0x1);
    rq_copy_var(b, index, vars->closest.intersection_type, vars->candidate.intersection_type, 0x1);
    rq_copy_var(b, index, vars->closest.opaque, vars->candidate.opaque, 0x1);
    rq_copy_var(b, index, vars->closest.frontface, vars->candidate.frontface, 0x1);
@@ -443,15 +434,25 @@ lower_rq_load(nir_builder *b, nir_ssa_def *index, struct ray_query_vars *vars,
          nir_bcsel(b, committed, rq_load_var(b, index, vars->closest.geometry_id_and_flags),
                    rq_load_var(b, index, vars->candidate.geometry_id_and_flags)),
          0xFFFFFF);
-   case nir_ray_query_value_intersection_instance_custom_index:
-      return nir_iand_imm(
-         b,
-         nir_bcsel(b, committed, rq_load_var(b, index, vars->closest.custom_instance_and_mask),
-                   rq_load_var(b, index, vars->candidate.custom_instance_and_mask)),
-         0xFFFFFF);
-   case nir_ray_query_value_intersection_instance_id:
-      return nir_bcsel(b, committed, rq_load_var(b, index, vars->closest.instance_id),
-                       rq_load_var(b, index, vars->candidate.instance_id));
+   case nir_ray_query_value_intersection_instance_custom_index: {
+      nir_ssa_def *instance_node_addr =
+         nir_bcsel(b, committed, rq_load_var(b, index, vars->closest.instance_addr),
+                   rq_load_var(b, index, vars->candidate.instance_addr));
+      return nir_iand_imm(b,
+                          nir_build_load_global(b, 1, 32,
+                                                nir_iadd_imm(b, instance_node_addr,
+                                                             offsetof(struct radv_bvh_instance_node,
+                                                                      custom_instance_and_mask))),
+                          0xFFFFFF);
+   }
+   case nir_ray_query_value_intersection_instance_id: {
+      nir_ssa_def *instance_node_addr =
+         nir_bcsel(b, committed, rq_load_var(b, index, vars->closest.instance_addr),
+                   rq_load_var(b, index, vars->candidate.instance_addr));
+      return nir_build_load_global(
+         b, 1, 32,
+         nir_iadd_imm(b, instance_node_addr, offsetof(struct radv_bvh_instance_node, instance_id)));
+   }
    case nir_ray_query_value_intersection_instance_sbt_index:
       return nir_iand_imm(
          b,
@@ -647,9 +648,7 @@ lower_rq_proceed(nir_builder *b, nir_ssa_def *index, struct ray_query_vars *vars
       .previous_node = rq_deref_var(b, index, vars->trav.previous_node),
       .instance_top_node = rq_deref_var(b, index, vars->trav.instance_top_node),
       .instance_bottom_node = rq_deref_var(b, index, vars->trav.instance_bottom_node),
-      .instance_id = rq_deref_var(b, index, vars->candidate.instance_id),
       .instance_addr = rq_deref_var(b, index, vars->candidate.instance_addr),
-      .custom_instance_and_mask = rq_deref_var(b, index, vars->candidate.custom_instance_and_mask),
       .sbt_offset_and_flags = rq_deref_var(b, index, vars->candidate.sbt_offset_and_flags),
    };
 

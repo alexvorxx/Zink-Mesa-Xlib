@@ -817,8 +817,8 @@ static unsigned get_lds_granularity(struct si_screen *screen, gl_shader_stage st
           screen->info.gfx_level >= GFX7 ? 512 : 256;
 }
 
-static bool si_shader_binary_open(struct si_screen *screen, struct si_shader *shader,
-                                  struct ac_rtld_binary *rtld)
+bool si_shader_binary_open(struct si_screen *screen, struct si_shader *shader,
+                           struct ac_rtld_binary *rtld)
 {
    const struct si_shader_selector *sel = shader->selector;
    const char *part_elfs[5];
@@ -889,8 +889,8 @@ static unsigned si_get_shader_binary_size(struct si_screen *screen, struct si_sh
    return size;
 }
 
-static bool si_get_external_symbol(enum amd_gfx_level gfx_level, void *data, const char *name,
-                                   uint64_t *value)
+bool si_get_external_symbol(enum amd_gfx_level gfx_level, void *data, const char *name,
+                            uint64_t *value)
 {
    uint64_t *scratch_va = data;
 
@@ -951,6 +951,7 @@ bool si_shader_binary_upload(struct si_screen *sscreen, struct si_shader *shader
 
    sscreen->ws->buffer_unmap(sscreen->ws, shader->bo->buf);
    ac_rtld_close(&binary);
+   shader->gpu_address = u.rx_va;
 
    return size >= 0;
 }

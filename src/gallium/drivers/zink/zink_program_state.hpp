@@ -24,12 +24,18 @@
  *    Mike Blumenkrantz <michael.blumenkrantz@gmail.com>
  */
 
+
+/**
+ * this file is used to optimize pipeline state management
+ * pipeline state comparisons are the most significant cause of CPU overhead aside from descriptors,
+ * so more effort must be taken to reduce it by any means
+ */
 #include "zink_types.h"
 #include "zink_pipeline.h"
 #include "zink_program.h"
 #include "zink_screen.h"
 
-
+/* runtime-optimized pipeline state hashing */
 template <zink_dynamic_state DYNAMIC_STATE>
 static uint32_t
 hash_gfx_pipeline_state(const void *key)
@@ -60,6 +66,7 @@ get_pipeline_idx(enum pipe_prim_type mode, VkPrimitiveTopology vkmode)
    return vkmode;
 }
 
+/* vertex input pipeline library states with dynamic vertex input: only the topology matters */
 static struct zink_gfx_input_key *
 find_or_create_input_dynamic(struct zink_context *ctx, VkPrimitiveTopology vkmode)
 {
@@ -74,6 +81,7 @@ find_or_create_input_dynamic(struct zink_context *ctx, VkPrimitiveTopology vkmod
    return (struct zink_gfx_input_key *)he->key;
 }
 
+/* vertex input pipeline library states without dynamic vertex input: everything is hashed */
 static struct zink_gfx_input_key *
 find_or_create_input(struct zink_context *ctx, VkPrimitiveTopology vkmode)
 {
@@ -93,6 +101,7 @@ find_or_create_input(struct zink_context *ctx, VkPrimitiveTopology vkmode)
    return (struct zink_gfx_input_key*)he->key;
 }
 
+/* fragment output pipeline library states with dynamic state3 */
 static struct zink_gfx_output_key *
 find_or_create_output_ds3(struct zink_context *ctx)
 {
@@ -107,6 +116,7 @@ find_or_create_output_ds3(struct zink_context *ctx)
    return (struct zink_gfx_output_key*)he->key;
 }
 
+/* fragment output pipeline library states without dynamic state3 */
 static struct zink_gfx_output_key *
 find_or_create_output(struct zink_context *ctx)
 {
@@ -144,6 +154,10 @@ check_vertex_strides(struct zink_context *ctx)
    return true;
 }
 
+/* runtime-optimized function to recalc pipeline state and find a usable pipeline:
+ * in theory, zink supports many feature levels,
+ * but it's important to provide a more optimized codepath for drivers that support all the best features
+ */
 template <zink_dynamic_state DYNAMIC_STATE, bool HAVE_LIB>
 VkPipeline
 zink_get_gfx_pipeline(struct zink_context *ctx,
@@ -166,6 +180,7 @@ zink_get_gfx_pipeline(struct zink_context *ctx,
 
    struct hash_entry *entry = NULL;
 
+   /* recalc the base pipeline state hash */
    if (state->dirty) {
       if (state->pipeline) //avoid on first hash
          state->final_hash ^= state->hash;
@@ -173,14 +188,17 @@ zink_get_gfx_pipeline(struct zink_context *ctx,
       state->final_hash ^= state->hash;
       state->dirty = false;
    }
+   /* extra safety asserts for optimal path to catch refactoring bugs */
    if (screen->optimal_keys) {
       ASSERTED const union zink_shader_key_optimal *opt = (union zink_shader_key_optimal*)&prog->last_variant_hash;
       assert(opt->val == state->shader_keys_optimal.key.val);
       assert(state->optimal_key == state->shader_keys_optimal.key.val);
    }
+   /* recalc vertex state if missing optimal extensions */
    if (DYNAMIC_STATE != ZINK_DYNAMIC_VERTEX_INPUT2 && DYNAMIC_STATE != ZINK_DYNAMIC_VERTEX_INPUT && ctx->vertex_state_changed) {
       if (state->pipeline)
          state->final_hash ^= state->vertex_hash;
+      /* even if dynamic stride is available, it may not be usable with the current pipeline */
       if (DYNAMIC_STATE != ZINK_NO_DYNAMIC_STATE)
          uses_dynamic_stride = check_vertex_strides(ctx);
       if (!uses_dynamic_stride) {
@@ -206,6 +224,7 @@ zink_get_gfx_pipeline(struct zink_context *ctx,
    ctx->vertex_state_changed = false;
 
    const int rp_idx = state->render_pass ? 1 : 0;
+   /* shortcut for reusing previous pipeline across program changes */
    if (DYNAMIC_STATE == ZINK_DYNAMIC_VERTEX_INPUT || DYNAMIC_STATE == ZINK_DYNAMIC_VERTEX_INPUT2) {
       if (prog->last_finalized_hash[rp_idx][idx] == state->final_hash && !prog->inline_variants && likely(prog->last_pipeline[rp_idx][idx])) {
          state->pipeline = prog->last_pipeline[rp_idx][idx]->pipeline;
@@ -215,13 +234,18 @@ zink_get_gfx_pipeline(struct zink_context *ctx,
    entry = _mesa_hash_table_search_pre_hashed(&prog->pipelines[rp_idx][idx], state->final_hash, state);
 
    if (!entry) {
+      /* always wait on async precompile/cache fence */
       util_queue_fence_wait(&prog->base.cache_fence);
       VkPipeline pipeline = VK_NULL_HANDLE;
       struct zink_gfx_pipeline_cache_entry *pc_entry = CALLOC_STRUCT(zink_gfx_pipeline_cache_entry);
       if (!pc_entry)
          return VK_NULL_HANDLE;
+      /* cache entries must have all state needed to construct pipelines
+       * TODO: maybe optimize this since all these values aren't actually needed
+       */
       memcpy(&pc_entry->state, state, sizeof(*state));
       pc_entry->prog = prog;
+      /* init the optimized background compile fence */
       util_queue_fence_init(&pc_entry->fence);
       entry = _mesa_hash_table_insert_pre_hashed(&prog->pipelines[rp_idx][idx], state->final_hash, pc_entry, pc_entry);
       if (HAVE_LIB &&
@@ -232,6 +256,7 @@ zink_get_gfx_pipeline(struct zink_context *ctx,
           !zink_get_fs_key(ctx)->fbfetch_ms &&
           !ctx->gfx_pipeline_state.force_persample_interp &&
           !ctx->gfx_pipeline_state.min_samples) {
+         /* this is the graphics pipeline library path: find/construct all partial pipelines */
          struct set_entry *he = _mesa_set_search(&prog->libs, &ctx->gfx_pipeline_state.optimal_key);
          struct zink_gfx_library_key *gkey;
          if (he)
@@ -244,10 +269,12 @@ zink_get_gfx_pipeline(struct zink_context *ctx,
          struct zink_gfx_output_key *okey = DYNAMIC_STATE >= ZINK_DYNAMIC_STATE3 && screen->have_full_ds3 ?
                                              find_or_create_output_ds3(ctx) :
                                              find_or_create_output(ctx);
+         /* partial pipelines are stored to the cache entry for async optimized pipeline compiles */
          pc_entry->ikey = ikey;
          pc_entry->gkey = gkey;
          pc_entry->okey = okey;
-         pipeline = zink_create_gfx_pipeline_combined(screen, prog, ikey->pipeline, gkey->pipeline, okey->pipeline, true);
+         /* create the non-optimized pipeline first using fast-linking to avoid stuttering */
+         pipeline = zink_create_gfx_pipeline_combined(screen, prog, ikey->pipeline, gkey->pipeline, okey->pipeline, false);
       } else {
          /* optimize by default only when expecting precompiles in order to reduce stuttering */
          pipeline = zink_create_gfx_pipeline(screen, prog, state, state->element_state->binding_map, vkmode, !HAVE_LIB);
@@ -258,11 +285,13 @@ zink_get_gfx_pipeline(struct zink_context *ctx,
       zink_screen_update_pipeline_cache(screen, &prog->base, false);
       pc_entry->pipeline = pipeline;
       if (HAVE_LIB)
+         /* trigger async optimized pipeline compile if this was the fast-linked unoptimized pipeline */
          zink_gfx_program_compile_queue(ctx, pc_entry);
    }
 
    struct zink_gfx_pipeline_cache_entry *cache_entry = (struct zink_gfx_pipeline_cache_entry *)entry->data;
    state->pipeline = cache_entry->pipeline;
+   /* update states for fastpath */
    if (DYNAMIC_STATE >= ZINK_DYNAMIC_VERTEX_INPUT) {
       prog->last_finalized_hash[rp_idx][idx] = state->final_hash;
       prog->last_pipeline[rp_idx][idx] = cache_entry;
@@ -270,6 +299,7 @@ zink_get_gfx_pipeline(struct zink_context *ctx,
    return state->pipeline;
 }
 
+/* runtime-optimized pipeline state comparisons */
 template <zink_pipeline_dynamic_state DYNAMIC_STATE, unsigned STAGE_MASK>
 static bool
 equals_gfx_pipeline_state(const void *a, const void *b)
@@ -294,6 +324,10 @@ equals_gfx_pipeline_state(const void *a, const void *b)
             return false;
       }
    }
+
+   /* each dynamic state extension has its own struct on the pipeline state to compare
+    * if all extensions are supported, none of them are accessed
+    */
    if (DYNAMIC_STATE == ZINK_PIPELINE_NO_DYNAMIC_STATE) {
       if (memcmp(&sa->dyn_state1, &sb->dyn_state1, offsetof(struct zink_pipeline_dynamic_state1, depth_stencil_alpha_state)))
          return false;
@@ -319,6 +353,7 @@ equals_gfx_pipeline_state(const void *a, const void *b)
       if (sa->dyn_state2.vertices_per_patch != sb->dyn_state2.vertices_per_patch)
          return false;
    }
+   /* optimal keys are the fastest path: only a single uint32_t comparison for all shader module variants */
    if (STAGE_MASK & STAGE_MASK_OPTIMAL) {
       if (sa->optimal_key != sb->optimal_key)
          return false;
@@ -340,9 +375,11 @@ equals_gfx_pipeline_state(const void *a, const void *b)
       if (sa->modules[MESA_SHADER_FRAGMENT] != sb->modules[MESA_SHADER_FRAGMENT])
          return false;
    }
+   /* the base pipeline state is a 12 byte comparison */
    return !memcmp(a, b, offsetof(struct zink_gfx_pipeline_state, hash));
 }
 
+/* below is a bunch of code to pick the right equals_gfx_pipeline_state template for runtime */
 template <zink_pipeline_dynamic_state DYNAMIC_STATE, unsigned STAGE_MASK>
 static equals_gfx_pipeline_state_func
 get_optimal_gfx_pipeline_stage_eq_func(bool optimal_keys)

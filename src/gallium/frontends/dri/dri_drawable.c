@@ -191,7 +191,6 @@ dri_destroy_buffer(__DRIdrawable * dPriv)
 {
    struct dri_drawable *drawable = dri_drawable(dPriv);
    struct dri_screen *screen = drawable->screen;
-   struct st_api *stapi = screen->st_api;
    int i;
 
    for (i = 0; i < ST_ATTACHMENT_COUNT; i++)
@@ -203,7 +202,7 @@ dri_destroy_buffer(__DRIdrawable * dPriv)
          &drawable->throttle_fence, NULL);
 
    /* Notify the st manager that this drawable is no longer valid */
-   stapi->destroy_drawable(stapi, &drawable->base);
+   st_api_destroy_drawable(&drawable->base);
 
    FREE(drawable->damage_rects);
    FREE(drawable);

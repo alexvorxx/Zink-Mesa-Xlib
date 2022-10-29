@@ -208,22 +208,15 @@ pvr_process_graphics_cmd(struct pvr_device *device,
    const struct pvr_framebuffer *framebuffer = sub_cmd->framebuffer;
    struct vk_sync *sync_geom;
    struct vk_sync *sync_frag;
-   uint32_t bo_count = 0;
    VkResult result;
-
-   STACK_ARRAY(struct pvr_winsys_job_bo, bos, framebuffer->attachment_count);
-   if (!bos)
-      return vk_error(device, VK_ERROR_OUT_OF_HOST_MEMORY);
 
    result = vk_sync_create(&device->vk,
                            &device->pdevice->ws->syncobj_type,
                            0U,
                            0UL,
                            &sync_geom);
-   if (result != VK_SUCCESS) {
-      STACK_ARRAY_FINISH(bos);
+   if (result != VK_SUCCESS)
       return result;
-   }
 
    result = vk_sync_create(&device->vk,
                            &device->pdevice->ws->syncobj_type,
@@ -232,7 +225,6 @@ pvr_process_graphics_cmd(struct pvr_device *device,
                            &sync_frag);
    if (result != VK_SUCCESS) {
       vk_sync_destroy(&device->vk, sync_geom);
-      STACK_ARRAY_FINISH(bos);
       return result;
    }
 
@@ -244,23 +236,8 @@ pvr_process_graphics_cmd(struct pvr_device *device,
    if (sub_cmd->job.run_frag && framebuffer->layers > 1)
       pvr_finishme("Split job submission for framebuffers with > 1 layers");
 
-   /* Get any imported buffers used in framebuffer attachments. */
-   for (uint32_t i = 0U; i < framebuffer->attachment_count; i++) {
-      const struct pvr_image *image =
-         vk_to_pvr_image(framebuffer->attachments[i]->vk.image);
-
-      if (!image->vma->bo->is_imported)
-         continue;
-
-      bos[bo_count].bo = image->vma->bo;
-      bos[bo_count].flags = PVR_WINSYS_JOB_BO_FLAG_WRITE;
-      bo_count++;
-   }
-
    result = pvr_render_job_submit(queue->gfx_ctx,
                                   &sub_cmd->job,
-                                  bos,
-                                  bo_count,
                                   barrier_geom,
                                   barrier_frag,
                                   waits,
@@ -268,7 +245,6 @@ pvr_process_graphics_cmd(struct pvr_device *device,
                                   stage_flags,
                                   sync_geom,
                                   sync_frag);
-   STACK_ARRAY_FINISH(bos);
    if (result != VK_SUCCESS) {
       vk_sync_destroy(&device->vk, sync_geom);
       vk_sync_destroy(&device->vk, sync_frag);

@@ -389,8 +389,8 @@ TEST_F(TestInstrFromString, test_tex_sampler_with_offset)
 {
    add_dest_vec4_from_string("R2002.xyzw");
    auto init = std::string("TEX SAMPLE R1001.xyzw : R2002.xyzw RID:7 SID:27 SO:R200.z NNNN");
-   TexInstr expect(TexInstr::sample, RegisterVec4(1001), {0,1,2,3}, RegisterVec4(2002), 27, 7);
-   expect.set_sampler_offset(new Register( 200, 2, pin_none));
+   TexInstr expect(TexInstr::sample, RegisterVec4(1001), {0,1,2,3},
+                   RegisterVec4(2002), 27, 7, new Register( 200, 2, pin_none));
    check(init, expect);
 }
 

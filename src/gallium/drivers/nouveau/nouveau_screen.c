@@ -59,7 +59,7 @@ nouveau_screen_get_device_vendor(struct pipe_screen *pscreen)
 static uint64_t
 nouveau_screen_get_timestamp(struct pipe_screen *pscreen)
 {
-   int64_t cpu_time = os_time_get() * 1000;
+   int64_t cpu_time = os_time_get_nano();
 
    /* getparam of PTIMER_TIME takes about x10 as long (several usecs) */
 

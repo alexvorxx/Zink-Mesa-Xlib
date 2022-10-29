@@ -50,7 +50,8 @@ etna_render_handle_incompatible(struct pipe_context *pctx,
    struct etna_resource *res = etna_resource(prsc);
    bool need_multitiled = screen->specs.pixel_pipes > 1 && !screen->specs.single_buffer;
    bool want_supertiled = screen->specs.can_supertile;
-   unsigned int min_tilesize = etna_screen_get_tile_size(screen, TS_MODE_128B);
+   unsigned int min_tilesize = etna_screen_get_tile_size(screen, TS_MODE_128B,
+                                                         prsc->nr_samples > 1);
 
    /* Resource is compatible if it is tiled or PE is able to render to linear
     * and has multi tiling when required.

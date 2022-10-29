@@ -170,6 +170,23 @@ void ac_get_scratch_tmpring_size(const struct radeon_info *info, bool compute,
                                  unsigned bytes_per_wave, unsigned *max_seen_bytes_per_wave,
                                  uint32_t *tmpring_size);
 
+unsigned
+ac_ngg_nogs_get_pervertex_lds_size(gl_shader_stage stage,
+                                   unsigned shader_num_outputs,
+                                   bool streamout_enabled,
+                                   bool export_prim_id,
+                                   bool has_user_edgeflags,
+                                   bool can_cull,
+                                   bool uses_instance_id,
+                                   bool uses_primitive_id);
+
+unsigned
+ac_ngg_get_scratch_lds_size(gl_shader_stage stage,
+                            unsigned workgroup_size,
+                            unsigned wave_size,
+                            bool streamout_enabled,
+                            bool can_cull);
+
 #ifdef __cplusplus
 }
 #endif

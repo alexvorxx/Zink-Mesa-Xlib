@@ -380,6 +380,7 @@ agxdecode_usc(const uint8_t *map, UNUSED uint64_t *link, UNUSED bool verbose)
 
    USC_CASE(FRAGMENT_PROPERTIES, "Fragment properties");
    USC_CASE(UNIFORM, "Uniform");
+   USC_CASE(UNIFORM_HIGH, "Uniform high");
    USC_CASE(SHARED, "Shared");
    USC_CASE(REGISTERS, "Registers");
 

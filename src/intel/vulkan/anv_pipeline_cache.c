@@ -30,6 +30,8 @@
 #include "anv_private.h"
 #include "nir/nir_xfb_info.h"
 #include "vulkan/util/vk_util.h"
+#include "compiler/spirv/nir_spirv.h"
+#include "float64_spv.h"
 
 static bool
 anv_shader_bin_serialize(struct vk_pipeline_cache_object *object,
@@ -413,4 +415,69 @@ anv_device_upload_nir(struct anv_device *device,
       cache = device->default_pipeline_cache;
 
    vk_pipeline_cache_add_nir(cache, sha1_key, SHA1_KEY_SIZE, nir);
+}
+
+void
+anv_load_fp64_shader(struct anv_device *device)
+{
+   const nir_shader_compiler_options *nir_options =
+      device->physical->compiler->nir_options[MESA_SHADER_VERTEX];
+
+   const char* shader_name = "float64_spv_lib";
+   struct mesa_sha1 sha1_ctx;
+   uint8_t sha1[20];
+   _mesa_sha1_init(&sha1_ctx);
+   _mesa_sha1_update(&sha1_ctx, shader_name, strlen(shader_name));
+   _mesa_sha1_final(&sha1_ctx, sha1);
+
+   device->fp64_nir =
+      anv_device_search_for_nir(device, device->internal_cache,
+                                   nir_options, sha1, NULL);
+
+   /* The shader found, no need to call spirv_to_nir() again. */
+   if (device->fp64_nir)
+      return;
+
+   struct spirv_to_nir_options spirv_options = {
+      .caps = {
+         .address = true,
+         .float64 = true,
+         .int8 = true,
+         .int16 = true,
+         .int64 = true,
+      },
+      .environment = MESA_SHADER_VERTEX,
+      .create_library = true
+   };
+
+   nir_shader* nir =
+      spirv_to_nir(float64_spv_source, sizeof(float64_spv_source) / 4,
+                   NULL, 0, PIPE_SHADER_VERTEX, "main",
+                   &spirv_options, nir_options);
+
+   assert(nir != NULL);
+
+   nir_validate_shader(nir, "after spirv_to_nir");
+   nir_validate_ssa_dominance(nir, "after spirv_to_nir");
+
+   NIR_PASS_V(nir, nir_lower_variable_initializers, nir_var_function_temp);
+   NIR_PASS_V(nir, nir_lower_returns);
+   NIR_PASS_V(nir, nir_inline_functions);
+   NIR_PASS_V(nir, nir_opt_deref);
+
+   NIR_PASS_V(nir, nir_lower_vars_to_ssa);
+   NIR_PASS_V(nir, nir_copy_prop);
+   NIR_PASS_V(nir, nir_opt_dce);
+   NIR_PASS_V(nir, nir_opt_cse);
+   NIR_PASS_V(nir, nir_opt_gcm, true);
+   NIR_PASS_V(nir, nir_opt_peephole_select, 1, false, false);
+   NIR_PASS_V(nir, nir_opt_dce);
+
+   NIR_PASS_V(nir, nir_lower_explicit_io, nir_var_function_temp,
+              nir_address_format_62bit_generic);
+
+   anv_device_upload_nir(device, device->internal_cache,
+                         nir, sha1);
+
+   device->fp64_nir = nir;
 }

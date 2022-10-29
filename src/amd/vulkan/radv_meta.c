@@ -41,6 +41,9 @@ radv_suspend_queries(struct radv_meta_saved_state *state, struct radv_cmd_buffer
    if (cmd_buffer->state.active_pipeline_queries > 0) {
       cmd_buffer->state.flush_bits &= ~RADV_CMD_FLAG_START_PIPELINE_STATS;
       cmd_buffer->state.flush_bits |= RADV_CMD_FLAG_STOP_PIPELINE_STATS;
+
+      state->active_pipeline_gds_queries = cmd_buffer->state.active_pipeline_gds_queries;
+      cmd_buffer->state.active_pipeline_gds_queries = 0;
    }
 
    /* Occlusion queries. */
@@ -49,15 +52,15 @@ radv_suspend_queries(struct radv_meta_saved_state *state, struct radv_cmd_buffer
    }
 
    /* Primitives generated queries. */
-   if (cmd_buffer->state.prims_gen_query_enabled) {
+   if (cmd_buffer->state.active_prims_gen_queries) {
       cmd_buffer->state.suspend_streamout = true;
       radv_emit_streamout_enable(cmd_buffer);
 
       /* Save the number of active GDS queries and reset it to make sure internal operations won't
        * increment the counters via GDS.
        */
-      state->active_pipeline_gds_queries = cmd_buffer->state.active_pipeline_gds_queries;
-      cmd_buffer->state.active_pipeline_gds_queries = 0;
+      state->active_prims_gen_gds_queries = cmd_buffer->state.active_prims_gen_gds_queries;
+      cmd_buffer->state.active_prims_gen_gds_queries = 0;
    }
 }
 
@@ -68,6 +71,8 @@ radv_resume_queries(const struct radv_meta_saved_state *state, struct radv_cmd_b
    if (cmd_buffer->state.active_pipeline_queries > 0) {
       cmd_buffer->state.flush_bits &= ~RADV_CMD_FLAG_STOP_PIPELINE_STATS;
       cmd_buffer->state.flush_bits |= RADV_CMD_FLAG_START_PIPELINE_STATS;
+
+      cmd_buffer->state.active_pipeline_gds_queries = state->active_pipeline_gds_queries;
    }
 
    /* Occlusion queries. */
@@ -76,12 +81,12 @@ radv_resume_queries(const struct radv_meta_saved_state *state, struct radv_cmd_b
    }
 
    /* Primitives generated queries. */
-   if (cmd_buffer->state.prims_gen_query_enabled) {
+   if (cmd_buffer->state.active_prims_gen_queries) {
       cmd_buffer->state.suspend_streamout = false;
       radv_emit_streamout_enable(cmd_buffer);
 
       /* Restore the number of active GDS queries to resume counting. */
-      cmd_buffer->state.active_pipeline_gds_queries = state->active_pipeline_gds_queries;
+      cmd_buffer->state.active_prims_gen_gds_queries = state->active_prims_gen_gds_queries;
    }
 }
 

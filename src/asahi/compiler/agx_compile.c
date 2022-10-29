@@ -32,6 +32,9 @@
 #include "agx_compiler.h"
 #include "agx_builder.h"
 
+/* Alignment for shader programs. I'm not sure what the optimal value is. */
+#define AGX_CODE_ALIGN 0x100
+
 static const struct debug_named_value agx_debug_options[] = {
    {"msgs",      AGX_DBG_MSGS,		"Print debug messages"},
    {"shaders",   AGX_DBG_SHADERS,	"Dump shaders in NIR and AIR"},
@@ -254,7 +257,6 @@ agx_emit_load_const(agx_builder *b, nir_load_const_instr *instr)
    /* Ensure we've been scalarized and bit size lowered */
    unsigned bit_size = instr->def.bit_size;
    assert(instr->def.num_components == 1);
-   assert(bit_size == 1 || bit_size == 16 || bit_size == 32);
 
    /* Emit move, later passes can inline/push if useful */
    agx_mov_imm_to(b,
@@ -358,8 +360,11 @@ agx_emit_load_attr(agx_builder *b, agx_index dest, nir_intrinsic_instr *instr)
 
    agx_index offset = agx_imad(b, element_id, shifted_stride, src_offset, 0);
 
-   /* Each VBO has a 64-bit = 4 x 16-bit address, lookup the base address as a sysval */
-   agx_index base = agx_vbo_base(b->shader, buf);
+   /* Each VBO has a 64-bit = 4 x 16-bit address, lookup the base address as a
+    * sysval.  Mov around the base to handle uniform restrictions, copyprop will
+    * usually clean that up.
+    */
+   agx_index base = agx_mov(b, agx_vbo_base(b->shader, buf));
 
    /* Load the data */
    assert(instr->num_components <= 4);
@@ -572,13 +577,34 @@ agx_emit_load_ubo(agx_builder *b, agx_index dst, nir_intrinsic_instr *instr)
    /* Load the data */
    assert(instr->num_components <= 4);
 
-   agx_device_load_to(b, dst, base, agx_src_index(offset),
+   /* Mov around the base to handle uniform restrictions, copyprop will usually
+    * clean that up.
+    */
+   agx_device_load_to(b, dst, agx_mov(b, base), agx_src_index(offset),
                       agx_format_for_bits(nir_dest_bit_size(instr->dest)),
                       BITFIELD_MASK(instr->num_components), 0);
    agx_wait(b, 0);
    agx_emit_cached_split(b, dst, instr->num_components);
 
    return NULL;
+}
+
+/* Preambles write directly to uniform registers, so move from uniform to GPR */
+static agx_instr *
+agx_emit_load_preamble(agx_builder *b, agx_index dst, nir_intrinsic_instr *instr)
+{
+   assert(nir_dest_num_components(instr->dest) == 1 && "already scalarized");
+   return agx_mov_to(b, dst, agx_uniform(nir_intrinsic_base(instr), dst.size));
+}
+
+static agx_instr *
+agx_emit_store_preamble(agx_builder *b, nir_intrinsic_instr *instr)
+{
+   assert(nir_src_num_components(instr->src[0]) == 1 && "already scalarized");
+
+   agx_index value = agx_src_index(&instr->src[0]);
+   agx_index offset = agx_immediate(nir_intrinsic_base(instr));
+   return agx_uniform_store(b, value, offset);
 }
 
 /*
@@ -708,6 +734,12 @@ agx_emit_intrinsic(agx_builder *b, nir_intrinsic_instr *instr)
 
   case nir_intrinsic_load_instance_id:
      return agx_mov_to(b, dst, agx_abs(agx_instance_id(b)));
+
+  case nir_intrinsic_load_preamble:
+     return agx_emit_load_preamble(b, dst, instr);
+
+  case nir_intrinsic_store_preamble:
+     return agx_emit_store_preamble(b, instr);
 
   case nir_intrinsic_load_blend_const_color_r_float: return agx_blend_const(b, dst, 0);
   case nir_intrinsic_load_blend_const_color_g_float: return agx_blend_const(b, dst, 1);
@@ -1500,32 +1532,23 @@ agx_set_st_vary_final(agx_context *ctx)
    }
 }
 
-static void
-agx_print_stats(agx_context *ctx, unsigned size, FILE *fp)
+static int
+agx_dump_stats(agx_context *ctx, unsigned size, char **out)
 {
-   unsigned nr_ins = 0, max_reg = 0;
+   unsigned nr_ins = 0;
 
-   agx_foreach_instr_global(ctx, I) {
-      /* Count instructions */
+   /* Count instructions */
+   agx_foreach_instr_global(ctx, I)
       nr_ins++;
-
-      /* Count registers */
-      agx_foreach_dest(I, d) {
-         if (I->dest[d].type == AGX_INDEX_REGISTER) {
-            max_reg = MAX2(max_reg,
-                           I->dest[d].value + agx_write_registers(I, d) - 1);
-         }
-      }
-   }
 
    /* TODO: Pipe through occupancy */
    unsigned nr_threads = 1;
 
-   fprintf(stderr, "%s - %s shader: %u inst, %u bytes, %u halfregs, %u threads, "
-           "%u loops, %u:%u spills:fills\n",
-           ctx->nir->info.label ?: "",
+   return asprintf(out,
+           "%s shader: %u inst, %u bytes, %u halfregs, %u threads, "
+           "%u loops, %u:%u spills:fills",
            gl_shader_stage_name(ctx->stage),
-           nr_ins, size, max_reg, nr_threads, ctx->loop_count,
+           nr_ins, size, ctx->max_reg, nr_threads, ctx->loop_count,
            ctx->spills, ctx->fills);
 }
 
@@ -1623,7 +1646,7 @@ agx_lower_aligned_offsets(struct nir_builder *b,
 }
 
 static void
-agx_optimize_nir(nir_shader *nir)
+agx_optimize_nir(nir_shader *nir, unsigned *preamble_size)
 {
    bool progress;
 
@@ -1664,6 +1687,7 @@ agx_optimize_nir(nir_shader *nir)
       NIR_PASS(progress, nir, nir_opt_loop_unroll);
    } while (progress);
 
+   NIR_PASS_V(nir, agx_nir_opt_preamble, preamble_size);
    NIR_PASS_V(nir, nir_opt_algebraic_late);
    NIR_PASS_V(nir, nir_opt_constant_folding);
    NIR_PASS_V(nir, nir_copy_prop);
@@ -1737,27 +1761,125 @@ agx_flat_varying_mask(nir_shader *nir)
    return mask;
 }
 
-void
-agx_compile_shader_nir(nir_shader *nir,
-      struct agx_shader_key *key,
-      struct util_dynarray *binary,
-      struct agx_shader_info *out)
+static bool
+agx_should_dump(nir_shader *nir, unsigned agx_dbg_bit)
 {
-   agx_debug = debug_get_option_agx_debug();
+   return (agx_debug & agx_dbg_bit) &&
+          !(nir->info.internal && !(agx_debug & AGX_DBG_INTERNAL));
+}
+
+static unsigned
+agx_compile_function_nir(nir_shader *nir, nir_function_impl *impl,
+                         struct agx_shader_key *key,
+                         struct util_debug_callback *debug,
+                         struct util_dynarray *binary,
+                         struct agx_shader_info *out)
+{
+   nir_index_blocks(impl);
 
    agx_context *ctx = rzalloc(NULL, agx_context);
    ctx->nir = nir;
    ctx->out = out;
    ctx->key = key;
    ctx->stage = nir->info.stage;
+   ctx->allocated_vec = _mesa_hash_table_u64_create(ctx);
+   ctx->indexed_nir_blocks = rzalloc_array(ctx, agx_block *, impl->num_blocks);
    list_inithead(&ctx->blocks);
+
+   ctx->alloc = impl->ssa_alloc;
+   emit_cf_list(ctx, &impl->body);
+   agx_emit_phis_deferred(ctx);
+
+   /* Stop the main shader or preamble shader after the exit block. For real
+    * functions, we would return here.
+    */
+   agx_block *last_block = list_last_entry(&ctx->blocks, agx_block, link);
+   agx_builder _b = agx_init_builder(ctx, agx_after_block(last_block));
+   agx_stop(&_b);
+
+   /* Index blocks now that we're done emitting so the order is consistent */
+   agx_foreach_block(ctx, block)
+      block->index = ctx->num_blocks++;
+
+   agx_validate(ctx, "IR translation");
+
+   if (agx_should_dump(nir, AGX_DBG_SHADERS))
+      agx_print_shader(ctx, stdout);
+
+   if (likely(!(agx_debug & AGX_DBG_NOOPT))) {
+      agx_optimizer(ctx);
+      agx_dce(ctx);
+      agx_validate(ctx, "Optimization");
+
+      if (agx_should_dump(nir, AGX_DBG_SHADERS))
+         agx_print_shader(ctx, stdout);
+   }
+
+   agx_ra(ctx);
+   agx_lower_64bit_postra(ctx);
+
+   if (ctx->stage == MESA_SHADER_VERTEX)
+      agx_set_st_vary_final(ctx);
+
+   if (agx_should_dump(nir, AGX_DBG_SHADERS))
+      agx_print_shader(ctx, stdout);
+
+   agx_lower_pseudo(ctx);
+
+   /* Pad binary */
+   if (binary->size % AGX_CODE_ALIGN) {
+      unsigned ngrow = AGX_CODE_ALIGN - (binary->size % AGX_CODE_ALIGN);
+      memset(util_dynarray_grow_bytes(binary, ngrow, 1), 0, ngrow);
+   }
+
+   unsigned offset = binary->size;
+   assert((offset % AGX_CODE_ALIGN) == 0);
+
+   agx_pack_binary(ctx, binary);
+
+   unsigned nr_gprs = ctx->max_reg + 1;
+
+   if (impl->function->is_preamble)
+      out->nr_preamble_gprs = nr_gprs;
+   else
+      out->nr_gprs = nr_gprs;
+
+   /* Don't dump statistics for preambles, since they're not worth optimizing */
+   if (!impl->function->is_preamble) {
+      char *stats;
+      int ret = agx_dump_stats(ctx, binary->size, &stats);
+
+      if (ret >= 0) {
+         if (agx_should_dump(nir, AGX_DBG_SHADERDB))
+            fprintf(stderr, "SHADER-DB: %s - %s\n", nir->info.label ?: "", stats);
+
+         if (debug)
+            util_debug_message(debug, SHADER_INFO, "%s", stats);
+
+         free(stats);
+      }
+   }
+
+   ralloc_free(ctx);
+
+   return offset;
+}
+
+void
+agx_compile_shader_nir(nir_shader *nir,
+      struct agx_shader_key *key,
+      struct util_debug_callback *debug,
+      struct util_dynarray *binary,
+      struct agx_shader_info *out)
+{
+   agx_debug = debug_get_option_agx_debug();
 
    memset(out, 0, sizeof *out);
 
-   if (ctx->stage == MESA_SHADER_VERTEX) {
+   if (nir->info.stage == MESA_SHADER_VERTEX) {
       out->writes_psiz = nir->info.outputs_written &
          BITFIELD_BIT(VARYING_SLOT_PSIZ);
-   } else if (ctx->stage == MESA_SHADER_FRAGMENT) {
+   } else if (nir->info.stage == MESA_SHADER_FRAGMENT) {
       out->no_colour_output = !(nir->info.outputs_written >> FRAG_RESULT_DATA0);
    }
 
@@ -1773,7 +1895,7 @@ agx_compile_shader_nir(nir_shader *nir,
    NIR_PASS_V(nir, nir_lower_vars_to_ssa);
    NIR_PASS_V(nir, nir_lower_io, nir_var_shader_in | nir_var_shader_out,
          glsl_type_size, 0);
-   if (ctx->stage == MESA_SHADER_FRAGMENT) {
+   if (nir->info.stage == MESA_SHADER_FRAGMENT) {
       /* Interpolate varyings at fp16 and write to the tilebuffer at fp16. As an
        * exception, interpolate flat shaded at fp32. This works around a
        * hardware limitation. The resulting code (with an extra f2f16 at the end
@@ -1790,7 +1912,7 @@ agx_compile_shader_nir(nir_shader *nir,
    NIR_PASS_V(nir, nir_lower_ssbo);
 
    /* Varying output is scalar, other I/O is vector */
-   if (ctx->stage == MESA_SHADER_VERTEX) {
+   if (nir->info.stage == MESA_SHADER_VERTEX) {
       NIR_PASS_V(nir, nir_lower_io_to_scalar, nir_var_shader_out);
    }
 
@@ -1814,7 +1936,7 @@ agx_compile_shader_nir(nir_shader *nir,
    NIR_PASS_V(nir, agx_lower_resinfo);
    NIR_PASS_V(nir, nir_legalize_16bit_sampler_srcs, tex_constraints);
 
-   agx_optimize_nir(nir);
+   agx_optimize_nir(nir, &out->push_count);
 
    /* Implement conditional discard with real control flow like Metal */
    NIR_PASS_V(nir, nir_lower_discard_if, (nir_lower_discard_if_to_cf |
@@ -1822,70 +1944,24 @@ agx_compile_shader_nir(nir_shader *nir,
                                           nir_lower_terminate_if_to_cf));
 
    /* Must be last since NIR passes can remap driver_location freely */
-   if (ctx->stage == MESA_SHADER_VERTEX)
+   if (nir->info.stage == MESA_SHADER_VERTEX)
       agx_remap_varyings_vs(nir, &out->varyings.vs);
 
-   bool skip_internal = nir->info.internal;
-   skip_internal &= !(agx_debug & AGX_DBG_INTERNAL);
-
-   if (agx_debug & AGX_DBG_SHADERS && !skip_internal) {
+   if (agx_should_dump(nir, AGX_DBG_SHADERS))
       nir_print_shader(nir, stdout);
-   }
-
-   ctx->allocated_vec = _mesa_hash_table_u64_create(ctx);
 
    nir_foreach_function(func, nir) {
-      if (!func->impl)
-         continue;
+      if (!func->impl) continue;
 
-      nir_index_blocks(func->impl);
+      unsigned offset = agx_compile_function_nir(nir, func->impl, key, debug, binary, out);
 
-      ctx->indexed_nir_blocks =
-         rzalloc_array(ctx, agx_block *, func->impl->num_blocks);
-
-      ctx->alloc += func->impl->ssa_alloc;
-      emit_cf_list(ctx, &func->impl->body);
-      agx_emit_phis_deferred(ctx);
-      break; /* TODO: Multi-function shaders */
+      if (func->is_preamble) {
+         out->preamble_offset = offset;
+         out->has_preamble = true;
+      } else if (func->is_entrypoint) {
+         out->main_offset = offset;
+      } else {
+         unreachable("General functions not yet supported");
+      }
    }
-
-   /* Terminate the shader after the exit block */
-   agx_block *last_block = list_last_entry(&ctx->blocks, agx_block, link);
-   agx_builder _b = agx_init_builder(ctx, agx_after_block(last_block));
-   agx_stop(&_b);
-
-   /* Index blocks now that we're done emitting so the order is consistent */
-   agx_foreach_block(ctx, block)
-      block->index = ctx->num_blocks++;
-
-   agx_validate(ctx, "IR translation");
-
-   if (agx_debug & AGX_DBG_SHADERS && !skip_internal)
-      agx_print_shader(ctx, stdout);
-
-   if (likely(!(agx_debug & AGX_DBG_NOOPT))) {
-      agx_optimizer(ctx);
-      agx_dce(ctx);
-      agx_validate(ctx, "Optimization");
-
-      if (agx_debug & AGX_DBG_SHADERS && !skip_internal)
-         agx_print_shader(ctx, stdout);
-   }
-
-   agx_ra(ctx);
-
-   if (ctx->stage == MESA_SHADER_VERTEX)
-      agx_set_st_vary_final(ctx);
-
-   if (agx_debug & AGX_DBG_SHADERS && !skip_internal)
-      agx_print_shader(ctx, stdout);
-
-   agx_lower_pseudo(ctx);
-
-   agx_pack_binary(ctx, binary);
-
-   if ((agx_debug & AGX_DBG_SHADERDB) && !skip_internal)
-      agx_print_stats(ctx, binary->size, stderr);
-
-   ralloc_free(ctx);
 }

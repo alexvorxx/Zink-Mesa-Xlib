@@ -25,6 +25,9 @@
  */
 
 #include "sfn_instr_alugroup.h"
+#include "sfn_instr_export.h"
+#include "sfn_instr_mem.h"
+#include "sfn_instr_tex.h"
 #include "sfn_debug.h"
 #include <algorithm>
 
@@ -158,25 +161,6 @@ int AluGroup::free_slots() const
    return free_mask;
 }
 
-class AluAllowSlotSwitch : public AluInstrVisitor {
-public:
-   using AluInstrVisitor::visit;
-
-   void visit(AluInstr *alu) {
-      if (alu->alu_slots() != 1) {
-         if (alu->has_alu_flag(alu_is_cayman_trans)) {
-            free_mask &= (1 << alu->alu_slots()) - 1;
-         } else {
-            yes = false;
-         }
-      }
-   }
-
-   bool yes{true};
-   uint8_t free_mask{0xf};
-
-};
-
 bool AluGroup::add_vec_instructions(AluInstr *instr)
 {
    if (!update_indirect_access(instr))
@@ -213,18 +197,18 @@ bool AluGroup::add_vec_instructions(AluInstr *instr)
    } else {
 
       auto dest = instr->dest();
-      if (dest && dest->pin() == pin_free) {
+      if (dest && (dest->pin() == pin_free || dest->pin() == pin_group)) {
 
-         AluAllowSlotSwitch swich_allowed;
+         int free_mask = 0xf;
          for (auto u : dest->uses()) {
-            u->accept(swich_allowed);
-            if (!swich_allowed.yes)
+            free_mask &= u->allowed_dest_chan_mask();
+            if (!free_mask)
                return false;
          }
 
          int free_chan = 0;
          while (free_chan < 4 && (m_slots[free_chan] ||
-                !(swich_allowed.free_mask & (1 << free_chan))))
+                !(free_mask & (1 << free_chan))))
             free_chan++;
 
          if (free_chan < 4) {
@@ -255,8 +239,12 @@ bool AluGroup::try_readport(AluInstr *instr, AluBankSwizzle cycle)
       m_has_lds_op |= instr->has_lds_access();
       sfn_log << SfnLog::schedule << "V: " << *instr << "\n";
       auto dest = instr->dest();
-      if (dest && dest->pin() == pin_free)
-         dest->set_pin(pin_chan);
+      if (dest) {
+         if (dest->pin() == pin_free)
+            dest->set_pin(pin_chan);
+         else if (dest->pin() == pin_group)
+            dest->set_pin(pin_chgr);
+      }
       instr->pin_sources_to_chan();
       return true;
    }

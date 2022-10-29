@@ -43,7 +43,6 @@ extern "C" {
 #endif
 
 struct pipe_screen;
-struct st_api;
 struct st_manager;
 struct stw_framebuffer;
 
@@ -58,7 +57,6 @@ struct stw_device
    /* Cache some PIPE_CAP_* */
    unsigned max_2d_length;
 
-   struct st_api *stapi;
    struct st_manager *smapi;
 
    LUID AdapterLuid;

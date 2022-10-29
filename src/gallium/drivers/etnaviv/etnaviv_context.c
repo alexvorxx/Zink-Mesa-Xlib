@@ -518,6 +518,7 @@ etna_flush(struct pipe_context *pctx, struct pipe_fence_handle **fence,
       struct pipe_resource *prsc = (struct pipe_resource *)entry->key;
 
       pctx->flush_resource(pctx, prsc);
+      pipe_resource_reference(&prsc, NULL);
    }
    _mesa_set_clear(ctx->flush_resources, NULL);
 

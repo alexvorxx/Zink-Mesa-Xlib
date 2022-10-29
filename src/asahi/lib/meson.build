@@ -72,7 +72,7 @@ if with_tests
     executable(
       'libasahi_tests',
       files(
-        'tests/test-lod-clamps.cpp',
+        'tests/test-packing.cpp',
       ),
       c_args : [c_msvc_compat_args, no_override_init_args],
       gnu_symbol_visibility : 'hidden',

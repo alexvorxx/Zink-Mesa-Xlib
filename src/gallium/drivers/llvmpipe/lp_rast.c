@@ -231,8 +231,7 @@ lp_rast_clear_zstencil(struct lp_rasterizer_task *task,
                         *row++ = (uint16_t) clear_value;
                      dst += dst_stride;
                   }
-               }
-               else {
+               } else {
                   for (unsigned i = 0; i < height; i++) {
                      uint16_t *row = (uint16_t *)dst;
                      for (unsigned j = 0; j < width; j++) {
@@ -249,8 +248,7 @@ lp_rast_clear_zstencil(struct lp_rasterizer_task *task,
                      util_memset32(dst, clear_value, width);
                      dst += dst_stride;
                   }
-               }
-               else {
+               } else {
                   for (unsigned i = 0; i < height; i++) {
                      uint32_t *row = (uint32_t *)dst;
                      for (unsigned j = 0; j < width; j++) {
@@ -268,8 +266,7 @@ lp_rast_clear_zstencil(struct lp_rasterizer_task *task,
                      util_memset64(dst, clear_value64, width);
                      dst += dst_stride;
                   }
-               }
-               else {
+               } else {
                   for (unsigned i = 0; i < height; i++) {
                      uint64_t *row = (uint64_t *)dst;
                      for (unsigned j = 0; j < width; j++) {
@@ -334,8 +331,7 @@ lp_rast_shade_tile(struct lp_rasterizer_task *task,
                color[i] = lp_rast_get_color_block_pointer(task, i, tile_x + x,
                                           tile_y + y,
                                           inputs->layer + inputs->view_index);
-            }
-            else {
+            } else {
                stride[i] = 0;
                sample_stride[i] = 0;
                color[i] = NULL;
@@ -441,8 +437,7 @@ lp_rast_shade_quads_mask_sample(struct lp_rasterizer_task *task,
          sample_stride[i] = scene->cbufs[i].sample_stride;
          color[i] = lp_rast_get_color_block_pointer(task, i, x, y,
                                                     inputs->layer + inputs->view_index);
-      }
-      else {
+      } else {
          stride[i] = 0;
          sample_stride[i] = 0;
          color[i] = NULL;
@@ -813,7 +808,7 @@ dispatch_blit[] = {
 
 
 
-/* Triangle and general case rasterization: Use the SOA llvm shdaers,
+/* Triangle and general case rasterization: Use the SOA llvm shaders,
  * an active swizzled tile for each color buf, etc.  Don't blit/clear
  * directly to destination surface as we know there are swizzled
  * operations coming.
@@ -1126,8 +1121,7 @@ lp_rast_queue_scene(struct lp_rasterizer *rast,
       util_fpstate_set(fpstate);
 
       rast->curr_scene = NULL;
-   }
-   else {
+   } else {
       /* threaded rendering! */
       unsigned i;
 
@@ -1148,8 +1142,7 @@ lp_rast_finish(struct lp_rasterizer *rast)
 {
    if (rast->num_threads == 0) {
       /* nothing to do */
-   }
-   else {
+   } else {
       int i;
 
       /* wait for work to complete */

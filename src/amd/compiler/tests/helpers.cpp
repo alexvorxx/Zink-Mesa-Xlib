@@ -214,6 +214,13 @@ void finish_to_hw_instr_test()
    aco_print_program(program.get(), output);
 }
 
+void finish_waitcnt_test()
+{
+   finish_program(program.get());
+   aco::insert_wait_states(program.get());
+   aco_print_program(program.get(), output);
+}
+
 void finish_insert_nops_test()
 {
    finish_program(program.get());

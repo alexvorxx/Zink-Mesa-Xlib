@@ -996,11 +996,13 @@ static const struct intel_device_info intel_device_info_rkl_gt1 = {
 static const struct intel_device_info intel_device_info_adl_gt05 = {
    GFX12_GT05_FEATURES,
    .platform = INTEL_PLATFORM_ADL,
+   .display_ver = 13,
 };
 
 static const struct intel_device_info intel_device_info_adl_gt1 = {
    GFX12_GT_FEATURES(1),
    .platform = INTEL_PLATFORM_ADL,
+   .display_ver = 13,
 };
 
 static const struct intel_device_info intel_device_info_adl_n = {
@@ -1019,6 +1021,7 @@ static const struct intel_device_info intel_device_info_rpl = {
    GFX12_FEATURES(1, 1, 4),
    .num_subslices = dual_subslices(2),
    .platform = INTEL_PLATFORM_RPL,
+   .display_ver = 13,
 };
 
 static const struct intel_device_info intel_device_info_rpl_p = {
@@ -1055,6 +1058,7 @@ static const struct intel_device_info intel_device_info_sg1 = {
 #define DG2_FEATURES                                            \
    /* (Sub)slice info comes from the kernel topology info */    \
    XEHP_FEATURES(0, 1, 0),                                      \
+   .display_ver = 13,                                           \
    .revision = 4, /* For offline compiler */                    \
    .num_subslices = dual_subslices(1),                          \
    .has_lsc = true,                                             \

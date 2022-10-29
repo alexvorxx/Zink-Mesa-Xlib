@@ -741,9 +741,15 @@ int r600_get_lds_unique_index(unsigned semantic_name, unsigned index)
 		return 2 + index;
 	case TGSI_SEMANTIC_TEXCOORD:
 		return 4 + index;
+	case TGSI_SEMANTIC_COLOR:
+		return 12 + index;
+	case TGSI_SEMANTIC_BCOLOR:
+		return 14 + index;
+	case TGSI_SEMANTIC_CLIPVERTEX:
+		return 16;
 	case TGSI_SEMANTIC_GENERIC:
-		if (index <= 63-4)
-			return 4 + index;
+		if (index <= 63-17)
+			return 17 + index;
 		else
 			/* same explanation as in the default statement,
 			 * the only user hitting this is st/nine.

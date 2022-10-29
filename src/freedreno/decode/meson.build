@@ -69,6 +69,29 @@ if dep_libarchive.found()
     ],
     build_by_default: false,
   )
+
+  replay = executable(
+    'replay',
+    [
+      'replay.c'
+    ],
+    include_directories: [
+      inc_freedreno,
+      inc_include,
+      inc_src,
+    ],
+    c_args : [no_override_init_args],
+    gnu_symbol_visibility: 'hidden',
+    dependencies: [
+      dep_libdrm,
+    ],
+    link_with: [
+      libfreedreno_cffdec,
+      libfreedreno_io,
+    ],
+    build_by_default: with_tools.contains('freedreno'),
+    install: install_fd_decode_tools,
+  )
 endif
 
 if dep_lua.found() and dep_libarchive.found()

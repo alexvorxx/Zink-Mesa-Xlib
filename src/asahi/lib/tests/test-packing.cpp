@@ -45,16 +45,34 @@ const struct {
    { INFINITY, 0x380, true },
 };
 
-class LODClamp : public testing::Test {
+const struct {
+   uint32_t group_size;
+   uint32_t length;
+   uint32_t value;
+   uint32_t encoded;
+} group_cases[] = {
+   /* Groups of 16 in a 4-bit word */
+   { 16, 4,   0, 0x1 },
+   { 16, 4,   1, 0x1 },
+   { 16, 4,  16, 0x1 },
+   { 16, 4,  17, 0x2 },
+   { 16, 4,  31, 0x2 },
+   { 16, 4,  32, 0x2 },
+   { 16, 4,  33, 0x3 },
+   { 16, 4, 239, 0xF },
+   { 16, 4, 240, 0xF },
+   { 16, 4, 241, 0x0 },
+   { 16, 4, 255, 0x0 },
+   { 16, 4, 256, 0x0 },
 };
 
-TEST_F(LODClamp, Encode)
+TEST(LODClamp, Encode)
 {
    for (unsigned i = 0; i < ARRAY_SIZE(lod_cases); ++i)
       ASSERT_EQ(__gen_pack_lod(lod_cases[i].f, 0, 9), lod_cases[i].encoded);
 }
 
-TEST_F(LODClamp, Decode)
+TEST(LODClamp, Decode)
 {
    for (unsigned i = 0; i < ARRAY_SIZE(lod_cases); ++i) {
       if (lod_cases[i].inexact)
@@ -64,5 +82,32 @@ TEST_F(LODClamp, Decode)
       memcpy(cl, &lod_cases[i].encoded, sizeof(lod_cases[i].encoded));
 
       ASSERT_EQ(__gen_unpack_lod(cl, 0, 10), lod_cases[i].f);
+   }
+}
+
+TEST(Groups, Encode)
+{
+   for (unsigned i = 0; i < ARRAY_SIZE(group_cases); ++i) {
+      ASSERT_EQ(__gen_to_groups(group_cases[i].value,
+                                group_cases[i].group_size,
+                                group_cases[i].length),
+                group_cases[i].encoded);
+   }
+}
+
+TEST(Groups, Decode)
+{
+   for (unsigned i = 0; i < ARRAY_SIZE(group_cases); ++i) {
+      unsigned expected = ALIGN_POT(group_cases[i].value,
+                                    group_cases[i].group_size);
+
+      /* Clamp to minimum encodable */
+      if (group_cases[i].value == 0)
+         expected = group_cases[i].group_size;
+
+      ASSERT_EQ(__gen_from_groups(group_cases[i].encoded,
+                                  group_cases[i].group_size,
+                                  group_cases[i].length),
+                expected);
    }
 }

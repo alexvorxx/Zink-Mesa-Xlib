@@ -1674,7 +1674,7 @@ store_unswizzled_block(struct gallivm_state *gallivm,
                        LLVMValueRef stride,
                        unsigned block_width,
                        unsigned block_height,
-                       LLVMValueRef* src,
+                       LLVMValueRef src[],   // [src_count]
                        struct lp_type src_type,
                        unsigned src_count,
                        unsigned src_alignment)
@@ -2301,8 +2301,7 @@ convert_alpha(struct gallivm_state *gallivm,
               LLVMValueRef* src_alpha)
 {
    LLVMBuilderRef builder = gallivm->builder;
-   unsigned i, j;
-   unsigned length = row_type.length;
+   const unsigned length = row_type.length;
    row_type.length = alpha_type.length;
 
    /* Twiddle the alpha to match pixels */
@@ -2312,7 +2311,7 @@ convert_alpha(struct gallivm_state *gallivm,
     * TODO this should use single lp_build_conv call for
     * src_count == 1 && dst_channels == 1 case (dropping the concat below)
     */
-   for (i = 0; i < block_height; ++i) {
+   for (unsigned i = 0; i < block_height; ++i) {
       lp_build_conv(gallivm, alpha_type, row_type, &src_alpha[i], 1,
                     &src_alpha[i], 1);
    }
@@ -2327,7 +2326,7 @@ convert_alpha(struct gallivm_state *gallivm,
    } else {
       /* If there are more srcs than rows then we need to split alpha up */
       if (src_count > block_height) {
-         for (i = src_count; i > 0; --i) {
+         for (unsigned i = src_count; i > 0; --i) {
             unsigned pixels = block_size / src_count;
             unsigned idx = i - 1;
 
@@ -2341,7 +2340,7 @@ convert_alpha(struct gallivm_state *gallivm,
        * row
        */
       if (src_count == block_size) {
-         for (i = 0; i < src_count; ++i) {
+         for (unsigned i = 0; i < src_count; ++i) {
             src_alpha[i] = lp_build_broadcast(gallivm,
                               lp_build_vec_type(gallivm, row_type), src_alpha[i]);
          }
@@ -2357,7 +2356,7 @@ convert_alpha(struct gallivm_state *gallivm,
          }
 
          /* Broadcast alpha across all channels, e.g. a1a2 to a1a1a1a1a2a2a2a2 */
-         for (j = 0; j < row_type.length; ++j) {
+         for (unsigned j = 0; j < row_type.length; ++j) {
             if (j < pixels * channels) {
                shuffles[j] = lp_build_const_int32(gallivm, j / channels);
             } else {
@@ -2365,7 +2364,7 @@ convert_alpha(struct gallivm_state *gallivm,
             }
          }
 
-         for (i = 0; i < src_count; ++i) {
+         for (unsigned i = 0; i < src_count; ++i) {
             unsigned idx1 = i, idx2 = i;
 
             if (alpha_span > 1){
@@ -2420,43 +2419,28 @@ generate_unswizzled_blend(struct gallivm_state *gallivm,
    LLVMValueRef src[4 * 4];
    LLVMValueRef src1[4 * 4];
    LLVMValueRef dst[4 * 4];
-   LLVMValueRef blend_color;
-   LLVMValueRef blend_alpha;
-   LLVMValueRef i32_zero;
-   LLVMValueRef check_mask;
-   LLVMValueRef undef_src_val;
 
    struct lp_build_mask_context mask_ctx;
-   struct lp_type mask_type;
-   struct lp_type blend_type;
-   struct lp_type row_type;
-   struct lp_type dst_type;
-   struct lp_type ls_type;
 
    unsigned char swizzle[TGSI_NUM_CHANNELS];
-   unsigned vector_width;
    unsigned src_channels = TGSI_NUM_CHANNELS;
-   unsigned dst_channels;
-   unsigned dst_count;
-   unsigned src_count;
 
-   const struct util_format_description* out_format_desc = util_format_description(out_format);
-
-   unsigned dst_alignment;
+   const struct util_format_description *out_format_desc =
+      util_format_description(out_format);
 
    bool pad_inline = is_arithmetic_format(out_format_desc);
-   bool has_alpha = false;
-   const boolean dual_source_blend = variant->key.blend.rt[0].blend_enable &&
-                                     util_blend_state_is_dual(&variant->key.blend, 0);
+   const boolean dual_source_blend =
+      variant->key.blend.rt[0].blend_enable &&
+      util_blend_state_is_dual(&variant->key.blend, 0);
 
    const boolean is_1d = variant->key.resource_1d;
-   boolean twiddle_after_convert = FALSE;
-   unsigned num_fullblock_fs = is_1d ? 2 * num_fs : num_fs;
+   const unsigned num_fullblock_fs = is_1d ? 2 * num_fs : num_fs;
    LLVMValueRef fpstate = 0;
 
    LLVMTypeRef fs_vec_type = lp_build_vec_type(gallivm, fs_type);
 
    /* Get type from output format */
+   struct lp_type row_type, dst_type;
    lp_blend_type_from_format_desc(out_format_desc, &row_type);
    lp_mem_type_from_format_desc(out_format_desc, &dst_type);
 
@@ -2477,7 +2461,7 @@ generate_unswizzled_blend(struct gallivm_state *gallivm,
       lp_build_fpstate_set_denorms_zero(gallivm, FALSE);
    }
 
-   mask_type = lp_int32_vec4_type();
+   struct lp_type mask_type = lp_int32_vec4_type();
    mask_type.length = fs_type.length;
 
    for (unsigned i = num_fs; i < num_fullblock_fs; i++) {
@@ -2486,7 +2470,8 @@ generate_unswizzled_blend(struct gallivm_state *gallivm,
 
    /* Do not bother executing code when mask is empty.. */
    if (do_branch) {
-      check_mask = LLVMConstNull(lp_build_int_vec_type(gallivm, mask_type));
+      LLVMValueRef check_mask =
+         LLVMConstNull(lp_build_int_vec_type(gallivm, mask_type));
 
       for (unsigned i = 0; i < num_fullblock_fs; ++i) {
          check_mask = LLVMBuildOr(builder, check_mask, fs_mask[i], "");
@@ -2497,17 +2482,19 @@ generate_unswizzled_blend(struct gallivm_state *gallivm,
    }
 
    partial_mask |= !variant->opaque;
-   i32_zero = lp_build_const_int32(gallivm, 0);
+   LLVMValueRef i32_zero = lp_build_const_int32(gallivm, 0);
 
-   undef_src_val = lp_build_undef(gallivm, fs_type);
+   LLVMValueRef undef_src_val = lp_build_undef(gallivm, fs_type);
 
    row_type.length = fs_type.length;
-   vector_width    = dst_type.floating ? lp_native_vector_width : lp_integer_vector_width;
+   unsigned vector_width =
+      dst_type.floating ? lp_native_vector_width : lp_integer_vector_width;
 
    /* Compute correct swizzle and count channels */
    memset(swizzle, LP_BLD_SWIZZLE_DONTCARE, TGSI_NUM_CHANNELS);
-   dst_channels = 0;
+   unsigned dst_channels = 0;
 
+   bool has_alpha = false;
    for (unsigned i = 0; i < TGSI_NUM_CHANNELS; ++i) {
       /* Ensure channel is used */
       if (out_format_desc->swizzle[i] >= TGSI_NUM_CHANNELS) {
@@ -2682,6 +2669,7 @@ generate_unswizzled_blend(struct gallivm_state *gallivm,
     * unpack only with 128bit vectors).
     * Note: for 16bit sizes really need matching pack conversion code
     */
+   boolean twiddle_after_convert = FALSE;
    if (!is_1d && dst_channels != 3 && dst_type.width == 8) {
       twiddle_after_convert = TRUE;
    }
@@ -2689,6 +2677,7 @@ generate_unswizzled_blend(struct gallivm_state *gallivm,
    /*
     * Pixel twiddle from fragment shader order to memory order
     */
+   unsigned src_count;
    if (!twiddle_after_convert) {
       src_count = generate_fs_twiddle(gallivm, fs_type, num_fullblock_fs,
                                       dst_channels, fs_src, src, pad_inline);
@@ -2722,7 +2711,7 @@ generate_unswizzled_blend(struct gallivm_state *gallivm,
       fs_vec_type = lp_build_vec_type(gallivm, fs_type);
    }
 
-   blend_type = row_type;
+   struct lp_type blend_type = row_type;
    mask_type.length = 4;
 
    /* Convert src to row_type */
@@ -2743,7 +2732,7 @@ generate_unswizzled_blend(struct gallivm_state *gallivm,
 
       assert(src_count >= (vector_width / bits));
 
-      dst_count = src_count / (vector_width / bits);
+      const unsigned dst_count = src_count / (vector_width / bits);
 
       combined = lp_build_concat_n(gallivm, row_type, src, src_count,
                                    src, dst_count);
@@ -2768,12 +2757,15 @@ generate_unswizzled_blend(struct gallivm_state *gallivm,
    /*
     * Blend Colour conversion
     */
-   blend_color = lp_jit_context_f_blend_color(gallivm, context_type, context_ptr);
+   LLVMValueRef blend_color =
+      lp_jit_context_f_blend_color(gallivm, context_type, context_ptr);
    blend_color = LLVMBuildPointerCast(builder, blend_color,
-                    LLVMPointerType(fs_vec_type, 0),
+                                      LLVMPointerType(fs_vec_type, 0),
                                       "");
-   blend_color = LLVMBuildLoad2(builder, fs_vec_type, LLVMBuildGEP2(builder, fs_vec_type, blend_color,
-                               &i32_zero, 1, ""), "");
+   blend_color = LLVMBuildLoad2(builder, fs_vec_type,
+                                LLVMBuildGEP2(builder, fs_vec_type,
+                                              blend_color,
+                                              &i32_zero, 1, ""), "");
 
    /* Convert */
    lp_build_conv(gallivm, fs_type, blend_type, &blend_color, 1,
@@ -2810,9 +2802,10 @@ generate_unswizzled_blend(struct gallivm_state *gallivm,
    }
 
    /* Extract alpha */
-   blend_alpha = lp_build_extract_broadcast(gallivm, blend_type, row_type,
-                                            blend_color,
-                                            lp_build_const_int32(gallivm, 3));
+   LLVMValueRef blend_alpha =
+      lp_build_extract_broadcast(gallivm, blend_type, row_type,
+                                 blend_color,
+                                 lp_build_const_int32(gallivm, 3));
 
    /* Swizzle to appropriate channels, e.g. from RGBA to BGRA BGRA */
    pad_inline &= (dst_channels * (block_size / src_count) * row_type.width)
@@ -2899,6 +2892,7 @@ generate_unswizzled_blend(struct gallivm_state *gallivm,
    /*
     * Load dst from memory
     */
+   unsigned dst_count;
    if (src_count < block_height) {
       dst_count = block_height;
    } else {
@@ -2924,6 +2918,7 @@ generate_unswizzled_blend(struct gallivm_state *gallivm,
     * 1d tex but can't distinguish here) so need to stick with per-pixel
     * alignment in this case.
     */
+   unsigned dst_alignment;
    if (is_1d) {
       dst_alignment = (out_format_desc->block.bits + 7)/(out_format_desc->block.width * 8);
    } else {
@@ -2937,7 +2932,7 @@ generate_unswizzled_blend(struct gallivm_state *gallivm,
     */
    dst_alignment = MIN2(16, dst_alignment);
 
-   ls_type = dst_type;
+   struct lp_type ls_type = dst_type;
 
    if (dst_count > src_count) {
       if ((dst_type.width == 8 || dst_type.width == 16) &&

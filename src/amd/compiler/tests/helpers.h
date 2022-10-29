@@ -83,6 +83,7 @@ void finish_opt_test();
 void finish_ra_test(aco::ra_test_policy, bool lower=false);
 void finish_optimizer_postRA_test();
 void finish_to_hw_instr_test();
+void finish_waitcnt_test();
 void finish_insert_nops_test();
 void finish_form_hard_clause_test();
 void finish_assembler_test();

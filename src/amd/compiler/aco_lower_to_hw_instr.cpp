@@ -1019,20 +1019,21 @@ get_intersection_mask(int a_start, int a_size, int b_start, int b_size)
    return u_bit_consecutive(intersection_start, intersection_end - intersection_start) & mask;
 }
 
+/* src1 are bytes 0-3. dst/src0 are bytes 4-7. */
 void
-create_bperm(Builder& bld, uint8_t swiz[4], Definition dst, Operand src0,
-             Operand src1 = Operand(v1))
+create_bperm(Builder& bld, uint8_t swiz[4], Definition dst, Operand src1,
+             Operand src0 = Operand(v1))
 {
    uint32_t swiz_packed =
       swiz[0] | ((uint32_t)swiz[1] << 8) | ((uint32_t)swiz[2] << 16) | ((uint32_t)swiz[3] << 24);
 
    dst = Definition(PhysReg(dst.physReg().reg()), v1);
-   if (!src0.isConstant())
-      src0 = Operand(PhysReg(src0.physReg().reg()), v1);
-   if (src1.isUndefined())
-      src1 = Operand(dst.physReg(), v1);
-   else if (!src1.isConstant())
+   if (!src1.isConstant())
       src1 = Operand(PhysReg(src1.physReg().reg()), v1);
+   if (src0.isUndefined())
+      src0 = Operand(dst.physReg(), v1);
+   else if (!src0.isConstant())
+      src0 = Operand(PhysReg(src0.physReg().reg()), v1);
    bld.vop3(aco_opcode::v_perm_b32, dst, src0, src1, Operand::c32(swiz_packed));
 }
 

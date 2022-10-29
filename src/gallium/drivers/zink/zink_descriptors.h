@@ -44,10 +44,13 @@ zink_vktype_to_size_idx(VkDescriptorType type)
    case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER:
    case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC:
       return ZDS_INDEX_UBO;
+   case VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE:
    case VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER:
       return ZDS_INDEX_COMBINED_SAMPLER;
    case VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER:
       return ZDS_INDEX_UNIFORM_TEXELS;
+   case VK_DESCRIPTOR_TYPE_SAMPLER:
+      return ZDS_INDEX_SAMPLER;
    case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER:
       return ZDS_INDEX_STORAGE_BUFFER;
    case VK_DESCRIPTOR_TYPE_STORAGE_IMAGE:
@@ -66,10 +69,13 @@ zink_vktype_to_size_idx_comp(VkDescriptorType type)
    case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER:
    case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC:
       return ZDS_INDEX_COMP_UBO;
+   case VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE:
    case VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER:
       return ZDS_INDEX_COMP_COMBINED_SAMPLER;
    case VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER:
       return ZDS_INDEX_COMP_UNIFORM_TEXELS;
+   case VK_DESCRIPTOR_TYPE_SAMPLER:
+      return ZDS_INDEX_COMP_SAMPLER;
    case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER:
       return ZDS_INDEX_COMP_STORAGE_BUFFER;
    case VK_DESCRIPTOR_TYPE_STORAGE_IMAGE:
@@ -162,8 +168,6 @@ zink_descriptors_init(struct zink_context *ctx);
 void
 zink_descriptors_deinit(struct zink_context *ctx);
 
-void
-zink_descriptor_set_update(struct zink_context *ctx, struct zink_program *pg, enum zink_descriptor_type type, VkDescriptorSet set);
 void
 zink_descriptors_update_masked(struct zink_context *ctx, bool is_compute, uint8_t changed_sets, uint8_t bind_sets);
 #ifdef __cplusplus

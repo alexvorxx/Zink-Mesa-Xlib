@@ -665,7 +665,7 @@ fd_context_init(struct fd_context *ctx, struct pipe_screen *pscreen,
    list_add(&ctx->node, &ctx->screen->context_list);
    fd_screen_unlock(ctx->screen);
 
-   ctx->current_scissor = &ctx->disabled_scissor;
+   ctx->current_scissor = ctx->disabled_scissor;
 
    fd_gpu_tracepoint_config_variable();
    u_trace_pipe_context_init(&ctx->trace_context, pctx,

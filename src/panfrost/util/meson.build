@@ -30,6 +30,7 @@ libpanfrost_util_files = files(
   'pan_lower_helper_invocation.c',
   'pan_lower_sample_position.c',
   'pan_lower_writeout.c',
+  'pan_lower_xfb.c',
   'pan_lower_64bit_intrin.c',
   'pan_sysval.c',
 )

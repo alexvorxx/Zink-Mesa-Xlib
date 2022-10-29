@@ -163,14 +163,6 @@ job_destroy_gpu_csd_resources(struct v3dv_job *job)
       v3dv_bo_free(job->device, job->csd.shared_memory);
 }
 
-static void
-job_destroy_cpu_wait_events_resources(struct v3dv_job *job)
-{
-   assert(job->type == V3DV_JOB_TYPE_CPU_WAIT_EVENTS);
-   assert(job->cmd_buffer);
-   vk_free(&job->cmd_buffer->device->vk.alloc, job->cpu.event_wait.events);
-}
-
 void
 v3dv_job_destroy(struct v3dv_job *job)
 {
@@ -190,9 +182,6 @@ v3dv_job_destroy(struct v3dv_job *job)
          break;
       case V3DV_JOB_TYPE_GPU_CSD:
          job_destroy_gpu_csd_resources(job);
-         break;
-      case V3DV_JOB_TYPE_CPU_WAIT_EVENTS:
-         job_destroy_cpu_wait_events_resources(job);
          break;
       default:
          break;
@@ -3754,104 +3743,6 @@ v3dv_cmd_buffer_add_tfu_job(struct v3dv_cmd_buffer *cmd_buffer,
 
    v3dv_job_init(job, V3DV_JOB_TYPE_GPU_TFU, device, cmd_buffer, -1);
    job->tfu = *tfu;
-   list_addtail(&job->list_link, &cmd_buffer->jobs);
-}
-
-VKAPI_ATTR void VKAPI_CALL
-v3dv_CmdSetEvent2(VkCommandBuffer commandBuffer,
-                  VkEvent _event,
-                  const VkDependencyInfo *pDependencyInfo)
-{
-   V3DV_FROM_HANDLE(v3dv_cmd_buffer, cmd_buffer, commandBuffer);
-   V3DV_FROM_HANDLE(v3dv_event, event, _event);
-
-   /* Event (re)sets can only happen outside a render pass instance so we
-    * should not be in the middle of job recording.
-    */
-   assert(cmd_buffer->state.pass == NULL);
-   assert(cmd_buffer->state.job == NULL);
-
-   struct v3dv_job *job =
-      v3dv_cmd_buffer_create_cpu_job(cmd_buffer->device,
-                                     V3DV_JOB_TYPE_CPU_SET_EVENT,
-                                     cmd_buffer, -1);
-   v3dv_return_if_oom(cmd_buffer, NULL);
-
-   job->cpu.event_set.event = event;
-   job->cpu.event_set.state = 1;
-
-   list_addtail(&job->list_link, &cmd_buffer->jobs);
-}
-
-VKAPI_ATTR void VKAPI_CALL
-v3dv_CmdResetEvent2(VkCommandBuffer commandBuffer,
-                    VkEvent _event,
-                    VkPipelineStageFlags2 stageMask)
-{
-   V3DV_FROM_HANDLE(v3dv_cmd_buffer, cmd_buffer, commandBuffer);
-   V3DV_FROM_HANDLE(v3dv_event, event, _event);
-
-   /* Event (re)sets can only happen outside a render pass instance so we
-    * should not be in the middle of job recording.
-    */
-   assert(cmd_buffer->state.pass == NULL);
-   assert(cmd_buffer->state.job == NULL);
-
-   struct v3dv_job *job =
-      v3dv_cmd_buffer_create_cpu_job(cmd_buffer->device,
-                                     V3DV_JOB_TYPE_CPU_SET_EVENT,
-                                     cmd_buffer, -1);
-   v3dv_return_if_oom(cmd_buffer, NULL);
-
-   job->cpu.event_set.event = event;
-   job->cpu.event_set.state = 0;
-
-   list_addtail(&job->list_link, &cmd_buffer->jobs);
-}
-
-VKAPI_ATTR void VKAPI_CALL
-v3dv_CmdWaitEvents2(VkCommandBuffer commandBuffer,
-                    uint32_t eventCount,
-                    const VkEvent *pEvents,
-                    const VkDependencyInfo *pDependencyInfos)
-{
-   V3DV_FROM_HANDLE(v3dv_cmd_buffer, cmd_buffer, commandBuffer);
-
-   assert(eventCount > 0);
-
-   struct v3dv_job *job =
-      v3dv_cmd_buffer_create_cpu_job(cmd_buffer->device,
-                                     V3DV_JOB_TYPE_CPU_WAIT_EVENTS,
-                                     cmd_buffer, -1);
-   v3dv_return_if_oom(cmd_buffer, NULL);
-
-   const uint32_t event_list_size = sizeof(struct v3dv_event *) * eventCount;
-
-   job->cpu.event_wait.events =
-      vk_alloc(&cmd_buffer->device->vk.alloc, event_list_size, 8,
-               VK_SYSTEM_ALLOCATION_SCOPE_COMMAND);
-   if (!job->cpu.event_wait.events) {
-      v3dv_flag_oom(cmd_buffer, NULL);
-      return;
-   }
-   job->cpu.event_wait.event_count = eventCount;
-
-   for (uint32_t i = 0; i < eventCount; i++)
-      job->cpu.event_wait.events[i] = v3dv_event_from_handle(pEvents[i]);
-
-   /* vkCmdWaitEvents can be recorded inside a render pass, so we might have
-    * an active job.
-    *
-    * If we are inside a render pass, because we vkCmd(Re)SetEvent can't happen
-    * inside a render pass, it is safe to move the wait job so it happens right
-    * before the current job we are currently recording for the subpass, if any
-    * (it would actually be safe to move it all the way back to right before
-    * the start of the render pass).
-    *
-    * If we are outside a render pass then we should not have any on-going job
-    * and we are free to just add the wait job without restrictions.
-    */
-   assert(cmd_buffer->state.pass || !cmd_buffer->state.job);
    list_addtail(&job->list_link, &cmd_buffer->jobs);
 }
 

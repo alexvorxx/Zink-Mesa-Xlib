@@ -30,6 +30,9 @@
 #include "hwdef/rogue_hw_utils.h"
 #include "pvr_formats.h"
 #include "pvr_private.h"
+#include "util/bitpack_helpers.h"
+#include "util/format/format_utils.h"
+#include "util/half_float.h"
 #include "util/log.h"
 #include "util/macros.h"
 #include "util/u_math.h"
@@ -244,6 +247,184 @@ uint32_t pvr_get_pbe_accum_format(VkFormat vk_format)
 
    return PVR_PBE_ACCUM_FORMAT_INVALID;
 }
+
+uint32_t pvr_get_pbe_accum_format_size_in_bytes(VkFormat vk_format)
+{
+   enum pvr_pbe_accum_format pbe_accum_format;
+   uint32_t nr_components;
+
+   pbe_accum_format = pvr_get_pbe_accum_format(vk_format);
+   nr_components = vk_format_get_nr_components(vk_format);
+
+   switch (pbe_accum_format) {
+   case PVR_PBE_ACCUM_FORMAT_U8:
+   case PVR_PBE_ACCUM_FORMAT_S8:
+   case PVR_PBE_ACCUM_FORMAT_UINT8:
+   case PVR_PBE_ACCUM_FORMAT_SINT8:
+      return nr_components * 1;
+
+   case PVR_PBE_ACCUM_FORMAT_U16:
+   case PVR_PBE_ACCUM_FORMAT_S16:
+   case PVR_PBE_ACCUM_FORMAT_F16:
+   case PVR_PBE_ACCUM_FORMAT_UINT16:
+   case PVR_PBE_ACCUM_FORMAT_SINT16:
+      return nr_components * 2;
+
+   case PVR_PBE_ACCUM_FORMAT_F32:
+   case PVR_PBE_ACCUM_FORMAT_UINT32:
+   case PVR_PBE_ACCUM_FORMAT_SINT32:
+   case PVR_PBE_ACCUM_FORMAT_UINT32_MEDP:
+   case PVR_PBE_ACCUM_FORMAT_SINT32_MEDP:
+   case PVR_PBE_ACCUM_FORMAT_U1010102:
+   case PVR_PBE_ACCUM_FORMAT_U24:
+      return nr_components * 4;
+
+   default:
+      unreachable("Unknown pbe accum format. Implementation error");
+   }
+}
+
+/**
+ * \brief Packs VK_FORMAT_A2B10G10R10_UINT_PACK32 or A2R10G10B10.
+ *
+ * \param[in] values   RGBA ordered values to pack.
+ * \param[in] swap_rb  If true pack A2B10G10R10 else pack A2R10G10B10.
+ */
+static inline uint32_t pvr_pack_a2x10y10z10_uint(
+   const uint32_t values[static const PVR_CLEAR_COLOR_ARRAY_SIZE],
+   bool swap_rb)
+{
+   const uint32_t blue = swap_rb ? values[0] : values[2];
+   const uint32_t red = swap_rb ? values[2] : values[0];
+   uint32_t packed_val;
+
+   /* The user is allowed to specify a value which is over the range
+    * representable for a component so we need to AND before packing.
+    */
+
+   packed_val = util_bitpack_uint(values[3] & BITSET_MASK(2), 30, 31);
+   packed_val |= util_bitpack_uint(red & BITSET_MASK(10), 20, 29);
+   packed_val |= util_bitpack_uint(values[1] & BITSET_MASK(10), 10, 19);
+   packed_val |= util_bitpack_uint(blue & BITSET_MASK(10), 0, 9);
+
+   return packed_val;
+}
+
+#define APPLY_FUNC_4V(DST, FUNC, ARG) \
+   ASSIGN_4V(DST, FUNC(ARG[0]), FUNC(ARG[1]), FUNC(ARG[2]), FUNC(ARG[3]))
+
+#define f32_to_unorm8(val) _mesa_float_to_unorm(val, 8)
+#define f32_to_unorm16(val) _mesa_float_to_unorm(val, 16)
+#define f32_to_snorm8(val) _mesa_float_to_snorm(val, 8)
+#define f32_to_snorm16(val) _mesa_float_to_snorm(val, 16)
+#define f32_to_f16(val) _mesa_float_to_half(val)
+
+/**
+ * \brief Packs clear color input values into the appropriate accum format.
+ *
+ * The input value array must have zeroed out elements for components not
+ * present in the format. E.g. R8G8B8 has no A component so [3] must be 0.
+ *
+ * Note: the output is not swizzled so it's packed in RGBA order no matter the
+ * component order specified by the vk_format.
+ *
+ * \param[in] vk_format   Vulkan format of the input color value.
+ * \param[in] value       Unpacked RGBA input color values.
+ * \param[out] packed_out Accum format packed values.
+ */
+void pvr_get_hw_clear_color(
+   VkFormat vk_format,
+   VkClearColorValue value,
+   uint32_t packed_out[static const PVR_CLEAR_COLOR_ARRAY_SIZE])
+{
+   union {
+      uint32_t u32[PVR_CLEAR_COLOR_ARRAY_SIZE];
+      int32_t i32[PVR_CLEAR_COLOR_ARRAY_SIZE];
+      uint16_t u16[PVR_CLEAR_COLOR_ARRAY_SIZE * 2];
+      int16_t i16[PVR_CLEAR_COLOR_ARRAY_SIZE * 2];
+      uint8_t u8[PVR_CLEAR_COLOR_ARRAY_SIZE * 4];
+      int8_t i8[PVR_CLEAR_COLOR_ARRAY_SIZE * 4];
+   } packed_val = { 0 };
+
+   const enum pvr_pbe_accum_format pbe_accum_format =
+      pvr_get_pbe_accum_format(vk_format);
+   const uint32_t nr_components = vk_format_get_nr_components(vk_format);
+
+   /* Make sure that the caller has zeroed out unused components. Otherwise we
+    * might end up with garbage being packed with the actual values.
+    */
+   for (uint32_t i = nr_components; i < 4; i++)
+      assert(value.uint32[i] == 0);
+
+   static_assert(ARRAY_SIZE(value.uint32) == PVR_CLEAR_COLOR_ARRAY_SIZE,
+                 "Size mismatch. Unknown/unhandled extra values.");
+
+   /* TODO: Right now we pack all RGBA values. Would we get any benefit in
+    * packing just the components required by the format?
+    */
+
+   switch (pbe_accum_format) {
+   case PVR_PBE_ACCUM_FORMAT_U8:
+      APPLY_FUNC_4V(packed_val.u8, f32_to_unorm8, value.float32);
+      break;
+   case PVR_PBE_ACCUM_FORMAT_S8:
+      APPLY_FUNC_4V(packed_val.i8, f32_to_snorm8, value.float32);
+      break;
+   case PVR_PBE_ACCUM_FORMAT_UINT8:
+      COPY_4V(packed_val.u8, value.uint32);
+      break;
+   case PVR_PBE_ACCUM_FORMAT_SINT8:
+      COPY_4V(packed_val.i8, value.int32);
+      break;
+
+   case PVR_PBE_ACCUM_FORMAT_U16:
+      APPLY_FUNC_4V(packed_val.u16, f32_to_unorm16, value.float32);
+      break;
+   case PVR_PBE_ACCUM_FORMAT_S16:
+      APPLY_FUNC_4V(packed_val.i16, f32_to_snorm16, value.float32);
+      break;
+   case PVR_PBE_ACCUM_FORMAT_F16:
+      APPLY_FUNC_4V(packed_val.u16, f32_to_f16, value.float32);
+      break;
+   case PVR_PBE_ACCUM_FORMAT_UINT16:
+      COPY_4V(packed_val.u16, value.uint32);
+      break;
+   case PVR_PBE_ACCUM_FORMAT_SINT16:
+      COPY_4V(packed_val.i16, value.int32);
+      break;
+
+   case PVR_PBE_ACCUM_FORMAT_F32:
+      COPY_4V(packed_val.u32, value.uint32);
+      break;
+   case PVR_PBE_ACCUM_FORMAT_UINT32:
+      /* The PBE can't pack 1010102 UINT. */
+      if (vk_format == VK_FORMAT_A2B10G10R10_UINT_PACK32) {
+         packed_val.u32[0] = pvr_pack_a2x10y10z10_uint(value.uint32, true);
+         break;
+      } else if (vk_format == VK_FORMAT_A2R10G10B10_UINT_PACK32) {
+         packed_val.u32[0] = pvr_pack_a2x10y10z10_uint(value.uint32, false);
+         break;
+      }
+      COPY_4V(packed_val.u32, value.uint32);
+      break;
+   case PVR_PBE_ACCUM_FORMAT_SINT32:
+      COPY_4V(packed_val.i32, value.int32);
+      break;
+
+   default:
+      unreachable("Packing not supported for the accum format.");
+      break;
+   }
+
+   COPY_4V(packed_out, packed_val.u32);
+}
+
+#undef APPLY_FUNC_4V
+#undef f32_to_unorm8
+#undef f32_to_unorm16
+#undef f32_to_snorm8
+#undef f32_to_snorm16
+#undef f32_to_f16
 
 static VkFormatFeatureFlags
 pvr_get_image_format_features(const struct pvr_format *pvr_format,

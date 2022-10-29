@@ -912,6 +912,13 @@ struct si_saved_cs {
    int64_t time_flush;
 };
 
+struct si_sqtt_fake_pipeline {
+   struct si_pm4_state pm4; /* base class */
+   uint64_t code_hash;
+   struct si_resource *bo;
+   uint32_t offset[SI_NUM_GRAPHICS_SHADERS];
+};
+
 struct si_small_prim_cull_info {
    float scale[2], translate[2];
    float scale_no_aa[2], translate_no_aa[2];
@@ -1646,7 +1653,7 @@ void si_sqtt_write_event_marker(struct si_context* sctx, struct radeon_cmdbuf *r
                                 uint32_t vertex_offset_user_data,
                                 uint32_t instance_offset_user_data,
                                 uint32_t draw_index_user_data);
-bool si_sqtt_register_pipeline(struct si_context* sctx, uint64_t pipeline_hash, uint64_t base_address, bool is_compute);
+bool si_sqtt_register_pipeline(struct si_context* sctx, struct si_sqtt_fake_pipeline *pipeline, bool is_compute);
 bool si_sqtt_pipeline_is_registered(struct ac_thread_trace_data *thread_trace_data,
                                     uint64_t pipeline_hash);
 void si_sqtt_describe_pipeline_bind(struct si_context* sctx, uint64_t pipeline_hash, int bind_point);

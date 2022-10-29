@@ -516,12 +516,6 @@ softpipe_flush_frontbuffer(struct pipe_screen *_screen,
       winsys->displaytarget_display(winsys, texture->dt, context_private, sub_box);
 }
 
-static uint64_t
-softpipe_get_timestamp(struct pipe_screen *_screen)
-{
-   return os_time_get_nano();
-}
-
 static int
 softpipe_get_compute_param(struct pipe_screen *_screen,
                            enum pipe_shader_ir ir_type,
@@ -599,7 +593,7 @@ softpipe_create_screen(struct sw_winsys *winsys)
    screen->base.get_param = softpipe_get_param;
    screen->base.get_shader_param = softpipe_get_shader_param;
    screen->base.get_paramf = softpipe_get_paramf;
-   screen->base.get_timestamp = softpipe_get_timestamp;
+   screen->base.get_timestamp = u_default_get_timestamp;
    screen->base.is_format_supported = softpipe_is_format_supported;
    screen->base.context_create = softpipe_create_context;
    screen->base.flush_frontbuffer = softpipe_flush_frontbuffer;

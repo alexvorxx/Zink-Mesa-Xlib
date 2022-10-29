@@ -84,7 +84,9 @@ struct d3d12_screen {
    struct slab_parent_pool transfer_pool;
    struct pb_manager *bufmgr;
    struct pb_manager *cache_bufmgr;
+   struct pb_manager *slab_cache_bufmgr;
    struct pb_manager *slab_bufmgr;
+   struct pb_manager *readback_slab_cache_bufmgr;
    struct pb_manager *readback_slab_bufmgr;
 
    mtx_t descriptor_pool_mutex;

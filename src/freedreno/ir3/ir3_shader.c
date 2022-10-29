@@ -415,9 +415,58 @@ ir3_shader_get_variant(struct ir3_shader *shader,
    return v;
 }
 
+struct ir3_shader *
+ir3_shader_passthrough_tcs(struct ir3_shader *vs, unsigned patch_vertices)
+{
+   assert(vs->type == MESA_SHADER_VERTEX);
+   assert(patch_vertices > 0);
+   assert(patch_vertices <= 32);
+
+   unsigned n = patch_vertices - 1;
+   if (!vs->vs.passthrough_tcs[n]) {
+      const nir_shader_compiler_options *options =
+            ir3_get_compiler_options(vs->compiler);
+      nir_shader *tcs =
+            nir_create_passthrough_tcs(options, vs->nir, patch_vertices);
+
+      /* Technically it is an internal shader but it is confusing to
+       * not have it show up in debug output
+       */
+      tcs->info.internal = false;
+
+      nir_assign_io_var_locations(tcs, nir_var_shader_in,
+                                  &tcs->num_inputs,
+                                  tcs->info.stage);
+
+      nir_assign_io_var_locations(tcs, nir_var_shader_out,
+                                  &tcs->num_outputs,
+                                  tcs->info.stage);
+
+      NIR_PASS_V(tcs, nir_lower_system_values);
+
+      nir_shader_gather_info(tcs, nir_shader_get_entrypoint(tcs));
+
+      ir3_finalize_nir(vs->compiler, tcs);
+
+      struct ir3_shader_options ir3_options = {};
+
+      vs->vs.passthrough_tcs[n] =
+            ir3_shader_from_nir(vs->compiler, tcs, &ir3_options, NULL);
+
+      vs->vs.passthrough_tcs_compiled |= BITFIELD_BIT(n);
+   }
+
+   return vs->vs.passthrough_tcs[n];
+}
+
 void
 ir3_shader_destroy(struct ir3_shader *shader)
 {
+   if (shader->type == MESA_SHADER_VERTEX) {
+      u_foreach_bit (b, shader->vs.passthrough_tcs_compiled) {
+         ir3_shader_destroy(shader->vs.passthrough_tcs[b]);
+      }
+   }
    ralloc_free(shader->nir);
    mtx_destroy(&shader->variants_lock);
    ralloc_free(shader);
@@ -456,14 +505,6 @@ ir3_setup_used_key(struct ir3_shader *shader)
 
       if (info->inputs_read & VARYING_BITS_COLOR) {
          key->rasterflat = true;
-      }
-
-      if (info->inputs_read & VARYING_BIT_LAYER) {
-         key->layer_zero = true;
-      }
-
-      if (info->inputs_read & VARYING_BIT_VIEWPORT) {
-         key->view_zero = true;
       }
 
       /* Only used for deciding on behavior of

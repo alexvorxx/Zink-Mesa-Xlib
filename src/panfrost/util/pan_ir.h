@@ -507,6 +507,7 @@ bool pan_nir_lower_64bit_intrin(nir_shader *shader);
 
 bool pan_lower_helper_invocation(nir_shader *shader);
 bool pan_lower_sample_pos(nir_shader *shader);
+bool pan_lower_xfb(nir_shader *nir);
 
 /*
  * Helper returning the subgroup size. Generally, this is equal to the number of

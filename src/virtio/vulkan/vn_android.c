@@ -1014,14 +1014,41 @@ vn_GetAndroidHardwareBufferPropertiesANDROID(
    uint64_t alloc_size = 0;
    uint32_t mem_type_bits = 0;
 
+   VkAndroidHardwareBufferFormatProperties2ANDROID *format_props2 =
+      vk_find_struct(pProperties->pNext,
+                     ANDROID_HARDWARE_BUFFER_FORMAT_PROPERTIES_2_ANDROID);
    VkAndroidHardwareBufferFormatPropertiesANDROID *format_props =
       vk_find_struct(pProperties->pNext,
                      ANDROID_HARDWARE_BUFFER_FORMAT_PROPERTIES_ANDROID);
-   if (format_props) {
+   if (format_props2 || format_props) {
+      VkAndroidHardwareBufferFormatPropertiesANDROID local_props = {
+         .sType =
+            VK_STRUCTURE_TYPE_ANDROID_HARDWARE_BUFFER_FORMAT_PROPERTIES_ANDROID,
+      };
+      if (!format_props)
+         format_props = &local_props;
+
       result =
          vn_android_get_ahb_format_properties(dev, buffer, format_props);
       if (result != VK_SUCCESS)
          return vn_error(dev->instance, result);
+
+      if (format_props2) {
+         format_props2->format = format_props->format;
+         format_props2->externalFormat = format_props->externalFormat;
+         format_props2->formatFeatures =
+            (VkFormatFeatureFlags2)format_props->formatFeatures;
+         format_props2->samplerYcbcrConversionComponents =
+            format_props->samplerYcbcrConversionComponents;
+         format_props2->suggestedYcbcrModel =
+            format_props->suggestedYcbcrModel;
+         format_props2->suggestedYcbcrRange =
+            format_props->suggestedYcbcrRange;
+         format_props2->suggestedXChromaOffset =
+            format_props->suggestedXChromaOffset;
+         format_props2->suggestedYChromaOffset =
+            format_props->suggestedYChromaOffset;
+      }
    }
 
    dma_buf_fd = vn_android_gralloc_get_dma_buf_fd(

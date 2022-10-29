@@ -187,6 +187,7 @@ union si_state {
       struct si_pm4_state *vgt_shader_config;
       struct si_shader *vs;
       struct si_shader *ps;
+      struct si_sqtt_fake_pipeline *sqtt_pipeline;
    } named;
    struct si_pm4_state *array[sizeof(struct si_state_named) / sizeof(struct si_pm4_state *)];
 };

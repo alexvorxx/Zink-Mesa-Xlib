@@ -64,35 +64,6 @@ anv_gem_close(struct anv_device *device, uint32_t gem_handle)
    intel_ioctl(device->fd, DRM_IOCTL_GEM_CLOSE, &close);
 }
 
-uint32_t
-anv_gem_create_regions(struct anv_device *device, uint64_t anv_bo_size,
-                       uint32_t flags, uint32_t num_regions,
-                       struct drm_i915_gem_memory_class_instance *regions)
-{
-   /* Check for invalid flags */
-   assert((flags & ~I915_GEM_CREATE_EXT_FLAG_NEEDS_CPU_ACCESS) == 0);
-
-   struct drm_i915_gem_create_ext_memory_regions ext_regions = {
-      .base = { .name = I915_GEM_CREATE_EXT_MEMORY_REGIONS },
-      .num_regions = num_regions,
-      .regions = (uintptr_t)regions,
-   };
-
-   struct drm_i915_gem_create_ext gem_create = {
-      .size = anv_bo_size,
-      .extensions = (uintptr_t) &ext_regions,
-      .flags = flags,
-   };
-
-   int ret = intel_ioctl(device->fd, DRM_IOCTL_I915_GEM_CREATE_EXT,
-                         &gem_create);
-   if (ret != 0) {
-      return 0;
-   }
-
-   return gem_create.handle;
-}
-
 /**
  * Wrapper around DRM_IOCTL_I915_GEM_MMAP. Returns MAP_FAILED on error.
  */

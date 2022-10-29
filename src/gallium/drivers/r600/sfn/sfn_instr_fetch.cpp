@@ -46,7 +46,7 @@ FetchInstr::FetchInstr(EVFetchInstr opcode,
                        EVFetchEndianSwap endian_swap,
                        uint32_t resource_id,
                        PRegister resource_offset):
-   InstrWithVectorResult(dst, dest_swizzle),
+   InstrWithVectorResult(dst, dest_swizzle, resource_id, resource_offset),
    m_opcode(opcode),
    m_src(src),
    m_src_offset(src_offset),
@@ -54,8 +54,6 @@ FetchInstr::FetchInstr(EVFetchInstr opcode,
    m_data_format(data_format),
    m_num_format(num_format),
    m_endian_swap(endian_swap),
-   m_resource_id(resource_id),
-   m_resource_offset(resource_offset),
    m_mega_fetch_count(0),
    m_array_base(0),
    m_array_size(0),
@@ -83,9 +81,6 @@ FetchInstr::FetchInstr(EVFetchInstr opcode,
 
    if (m_src)
       m_src->add_use(this);
-
-   if (m_resource_offset && m_resource_offset->as_register())
-      m_resource_offset->as_register()->add_use(this);
 }
 
 void FetchInstr::accept(ConstInstrVisitor& visitor) const
@@ -115,10 +110,10 @@ bool FetchInstr::is_equal_to(const FetchInstr& rhs) const
    if (m_tex_flags != rhs.m_tex_flags)
       return false;
 
-   if (m_resource_offset && rhs.m_resource_offset) {
-      if (!m_resource_offset->equal_to(*rhs.m_resource_offset))
+   if (resource_offset() && rhs.resource_offset()) {
+      if (!resource_offset()->equal_to(*rhs.resource_offset()))
          return false;
-   } else if (!(!!m_resource_offset == !!rhs.m_resource_offset))
+   } else if (!(!!resource_offset() == !!rhs.resource_offset()))
       return false;
 
    return m_opcode == rhs.m_opcode &&
@@ -127,11 +122,11 @@ bool FetchInstr::is_equal_to(const FetchInstr& rhs) const
          m_data_format == rhs.m_data_format &&
          m_num_format == rhs.m_num_format &&
          m_endian_swap == rhs.m_endian_swap &&
-         m_resource_id == rhs.m_resource_id &&
          m_mega_fetch_count == rhs.m_mega_fetch_count &&
          m_array_base == rhs.m_array_base &&
          m_array_size == rhs.m_array_size &&
-         m_elm_size == rhs.m_elm_size;
+         m_elm_size == rhs.m_elm_size &&
+         resource_base() == rhs.resource_base();
 }
 
 bool FetchInstr::propagate_death()
@@ -153,12 +148,7 @@ bool FetchInstr::replace_source(PRegister old_src, PVirtualValue new_src)
          new_reg->add_use(this);
          success = true;
       }
-      if (m_resource_offset && old_src->equal_to(*m_resource_offset)) {
-         m_resource_offset->del_use(this);
-         m_resource_offset = new_reg;
-         new_reg->add_use(this);
-         success = true;
-      }
+      success |= replace_resource_offset(old_src, new_reg);
    }
    return success;
 }
@@ -171,11 +161,8 @@ bool FetchInstr::do_ready() const
    }
 
    bool result = m_src && m_src->ready(block_id(), index());
-   if (m_resource_offset) {
-      auto r = m_resource_offset->as_register();
-      if (r)
-         result &= r->ready(block_id(), index());
-   }
+   if (resource_offset())
+         result &= resource_offset()->ready(block_id(), index());
    return result;
 }
 
@@ -197,12 +184,9 @@ void FetchInstr::do_print(std::ostream& os) const
    }
 
    if (m_opcode != vc_read_scratch)
-      os << " RID:" << m_resource_id;
+      os << " RID:" << resource_base();
 
-   if (m_resource_offset) {
-      os << " + ";
-      m_resource_offset->print(os);
-   }
+   print_resource_offset(os);
 
    if (!m_skip_print.test(ftype)) {
       switch (m_fetch_type) {

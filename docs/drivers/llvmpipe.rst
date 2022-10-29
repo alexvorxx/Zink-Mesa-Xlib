@@ -4,7 +4,7 @@ LLVMpipe
 Introduction
 ------------
 
-The Gallium llvmpipe driver is a software rasterizer that uses LLVM to
+The Gallium LLVMpipe driver is a software rasterizer that uses LLVM to
 do runtime code generation. Shaders, point/line/triangle rasterization
 and vertex processing are implemented with LLVM IR which is translated
 to x86, x86-64, or ppc64le machine code. Also, the driver is
@@ -69,7 +69,7 @@ Requirements
    +-----------------+--------------------------------+-------------------------------+
 
    You can build only the x86 target by passing
-   ``-DLLVM_TARGETS_TO_BUILD=X86`` to cmake.
+   ``-DLLVM_TARGETS_TO_BUILD=X86`` to CMake.
 
 Building
 --------
@@ -92,10 +92,10 @@ Environment variables
 
 ``LP_NATIVE_VECTOR_WIDTH``
    We can use it to override vector bits. Because sometimes it turns
-   out llvmpipe can be fastest by using 128 bit vectors,
+   out LLVMpipe can be fastest by using 128 bit vectors,
    yet use AVX instructions.
 ``GALLIUM_OVERRIDE_CPU_CAPS``
-   Override cpu capabilities for llvmpipe and softpipe, possible values for x86:
+   Override CPU capabilities for LLVMpipe and softpipe, possible values for x86:
    `nosse`
    `sse`
    `sse2`
@@ -140,7 +140,7 @@ be used by replacing the native ICD driver, but it's quite an advanced usage, so
 you need to ask, don't even try it.
 
 There is however an easy way to replace the OpenGL software renderer
-that comes with Microsoft Windows 7 (or later) with llvmpipe (that is,
+that comes with Microsoft Windows 7 (or later) with LLVMpipe (that is,
 on systems without any OpenGL drivers):
 
 -  copy
@@ -177,7 +177,7 @@ On Linux, it is possible to have symbol resolution of JIT code with
    perf record -g /my/application
    perf report
 
-When run inside Linux perf, llvmpipe will create a
+When run inside Linux perf, LLVMpipe will create a
 ``/tmp/perf-XXXXX.map`` file with symbol address table. It also dumps
 assembly code to ``/tmp/perf-XXXXX.map.asm``, which can be used by the
 ``bin/perf-annotate-jit.py`` script to produce disassembly of the

@@ -123,9 +123,7 @@ struct radv_ray_traversal_vars {
    nir_deref_instr *instance_bottom_node;
 
    /* Information about the current instance used for culling. */
-   nir_deref_instr *instance_id;
    nir_deref_instr *instance_addr;
-   nir_deref_instr *custom_instance_and_mask;
    nir_deref_instr *sbt_offset_and_flags;
 };
 

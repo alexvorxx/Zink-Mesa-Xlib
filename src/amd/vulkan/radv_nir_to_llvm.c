@@ -66,6 +66,7 @@ struct radv_shader_context {
    LLVMValueRef gsvs_ring[4];
    LLVMValueRef hs_ring_tess_offchip;
    LLVMValueRef hs_ring_tess_factor;
+   LLVMValueRef attr_ring;
 
    uint64_t output_mask;
 };
@@ -668,7 +669,6 @@ si_llvm_init_export_args(struct radv_shader_context *ctx, LLVMValueRef *values,
             packed = packf(&ctx->ac, pack_args);
             args->out[chan] = ac_to_float(&ctx->ac, packed);
          }
-         args->compr = 1; /* COMPR flag */
       }
 
       /* Pack i16/u16. */
@@ -681,8 +681,16 @@ si_llvm_init_export_args(struct radv_shader_context *ctx, LLVMValueRef *values,
             packed = packi(&ctx->ac, pack_args, is_int8 ? 8 : is_int10 ? 10 : 16, chan == 1);
             args->out[chan] = ac_to_float(&ctx->ac, packed);
          }
-         args->compr = 1; /* COMPR flag */
       }
+
+      if (packf || packi) {
+         if (ctx->options->gfx_level >= GFX11) {
+            args->enabled_channels = 0x3;
+         } else {
+            args->compr = 1; /* COMPR flag */
+         }
+      }
+
       return;
    }
 
@@ -978,6 +986,9 @@ radv_llvm_export_vs(struct radv_shader_context *ctx, struct radv_shader_output_v
       ac_build_export(&ctx->ac, &pos_args[i]);
    }
 
+   if (ctx->options->gfx_level >= GFX11)
+      return;
+
    /* Build parameter exports */
    radv_build_param_exports(ctx, outputs, noutput, outinfo, export_clip_dists);
 }
@@ -1030,8 +1041,14 @@ static bool
 si_export_mrt_color(struct radv_shader_context *ctx, LLVMValueRef *color, unsigned target,
                     unsigned index, struct ac_export_args *args)
 {
-   /* Export */
-   si_llvm_init_export_args(ctx, color, 0xf, V_008DFC_SQ_EXP_MRT + target, index, args);
+   unsigned mrt_target = V_008DFC_SQ_EXP_MRT + target;
+
+   if (ctx->options->gfx_level >= GFX11 && ctx->options->key.ps.mrt0_is_dual_src &&
+       (target == 0 || target == 1)) {
+      mrt_target += 21;
+   }
+
+   si_llvm_init_export_args(ctx, color, 0xf, mrt_target, index, args);
    if (!args->enabled_channels)
       return false; /* unnecessary NULL export */
 
@@ -1094,6 +1111,10 @@ handle_fs_outputs_post(struct radv_shader_context *ctx)
 
       color_args[last].valid_mask = 1; /* whether the EXEC mask is valid */
       color_args[last].done = 1;       /* DONE bit */
+
+      if (ctx->options->gfx_level >= GFX11 && ctx->options->key.ps.mrt0_is_dual_src) {
+         ac_build_dual_src_blend_swizzle(&ctx->ac, &color_args[0], &color_args[1]);
+      }
    }
 
    /* Export PS outputs. */
@@ -1250,6 +1271,14 @@ ac_setup_rings(struct radv_shader_context *ctx)
       ctx->hs_ring_tess_factor = ac_build_load_to_sgpr(
          &ctx->ac, ring_offsets, LLVMConstInt(ctx->ac.i32, RING_HS_TESS_FACTOR, false));
    }
+
+   if (ctx->options->gfx_level >= GFX11 &&
+       ((ctx->stage == MESA_SHADER_VERTEX && !ctx->shader_info->vs.as_es && !ctx->shader_info->vs.as_ls) ||
+        (ctx->stage == MESA_SHADER_TESS_EVAL && !ctx->shader_info->tes.as_es) ||
+        (ctx->stage == MESA_SHADER_GEOMETRY))) {
+      ctx->attr_ring = ac_build_load_to_sgpr(&ctx->ac, ring_offsets,
+                                             LLVMConstInt(ctx->ac.i32, RING_PS_ATTR, false));
+   }
 }
 
 /* Fixup the HW not emitting the TCS regs if there are no HS threads. */
@@ -1314,6 +1343,10 @@ static LLVMValueRef radv_intrinsic_load(struct ac_shader_abi *abi, nir_intrinsic
       return ctx->hs_ring_tess_offchip;
    case nir_intrinsic_load_ring_esgs_amd:
       return ctx->esgs_ring;
+   case nir_intrinsic_load_ring_attr_amd:
+      return ctx->attr_ring;
+   case nir_intrinsic_load_ring_gsvs_amd:
+      return ctx->gsvs_ring[0];
    default:
       return NULL;
    }

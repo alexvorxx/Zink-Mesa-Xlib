@@ -70,7 +70,7 @@ Although Mali hardware is usually paired with an Arm CPU, Panfrost is portable C
 code and should work on any Linux machine. In particular, you can test the
 compiler on shader-db on an Intel desktop.
 
-To build Mesa with Panfrost drm-shim, configure meson with
+To build Mesa with Panfrost drm-shim, configure Meson with
 ``-Dgallium-drivers=panfrost`` and ``-Dtools=drm-shim``. See the above
 building section for a full invocation. The drm-shim binary will be built to
 ``build/src/panfrost/drm-shim/libpanfrost_noop_drm_shim.so``.

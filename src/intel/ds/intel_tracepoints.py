@@ -103,6 +103,16 @@ def define_tracepoints(args):
     begin_end_tp('draw_indexed_indirect_count',
                  tp_args=[Arg(type='uint32_t', var='max_draw_count', c_format='%u'),])
 
+    begin_end_tp('draw_mesh',
+                 tp_args=[Arg(type='uint32_t', var='group_x', c_format='%u'),
+                          Arg(type='uint32_t', var='group_y', c_format='%u'),
+                          Arg(type='uint32_t', var='group_z', c_format='%u'),],
+                 tp_print=['group=%ux%ux%u', '__entry->group_x', '__entry->group_y', '__entry->group_z'])
+    begin_end_tp('draw_mesh_indirect',
+                 tp_args=[Arg(type='uint32_t', var='draw_count', c_format='%u'),])
+    begin_end_tp('draw_mesh_indirect_count',
+                 tp_args=[Arg(type='uint32_t', var='max_draw_count', c_format='%u'),])
+
     begin_end_tp('compute',
                  tp_args=[Arg(type='uint32_t', var='group_x', c_format='%u'),
                           Arg(type='uint32_t', var='group_y', c_format='%u'),

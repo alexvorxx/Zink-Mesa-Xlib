@@ -7,11 +7,11 @@ but only on the 21.3.x branch, and only for critical fixes.
 
 These drivers include:
 
--  radeon
+-  Radeon
 -  r200
 -  i915
 -  i965
--  nouveau (the DRI driver for NV04-NV20)
+-  Nouveau (the DRI driver for NV04-NV20)
 
 At the same time, the OpenSWR Gallium driver was removed from the Mesa
 source-tree, because it was already practically speaking unmaintained and

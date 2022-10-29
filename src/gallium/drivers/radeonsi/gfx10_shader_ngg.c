@@ -1753,6 +1753,36 @@ void gfx10_ngg_build_end(struct si_shader_context *ctx)
    ac_build_endif(&ctx->ac, 6002);
 }
 
+void gfx10_ngg_atomic_add_prim_count(struct ac_shader_abi *abi, unsigned stream,
+                                     LLVMValueRef prim_count, enum ac_prim_count count_type)
+{
+   struct si_shader_context *ctx = si_shader_context_from_abi(abi);
+
+   unsigned offset;
+   LLVMValueRef query_buf;
+   if (count_type == ac_prim_count_gs_emit) {
+      offset = si_query_pipestat_end_dw_offset(ctx->screen, PIPE_STAT_QUERY_GS_PRIMITIVES) * 4;
+      query_buf = ngg_get_emulated_counters_buf(ctx);
+   } else {
+      offset = count_type == ac_prim_count_gen ?
+         offsetof(struct gfx10_sh_query_buffer_mem, stream[stream].generated_primitives) :
+         offsetof(struct gfx10_sh_query_buffer_mem, stream[stream].emitted_primitives);
+
+      query_buf = ngg_get_query_buf(ctx);
+   }
+
+   LLVMValueRef args[] = {
+      prim_count,
+      query_buf,
+      LLVMConstInt(ctx->ac.i32, offset, false),
+      ctx->ac.i32_0, /* soffset */
+      ctx->ac.i32_0, /* cachepolicy */
+   };
+
+   ac_build_intrinsic(&ctx->ac, "llvm.amdgcn.raw.buffer.atomic.add.i32",
+                      ctx->ac.i32, args, 5, 0);
+}
+
 static struct ac_llvm_pointer ngg_gs_get_vertex_storage(struct si_shader_context *ctx)
 {
    const struct si_shader_selector *sel = ctx->shader->selector;

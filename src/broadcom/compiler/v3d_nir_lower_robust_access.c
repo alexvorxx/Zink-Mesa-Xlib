@@ -148,12 +148,23 @@ lower_buffer_instr(nir_builder *b, nir_instr *instr, void *_state)
 
         switch (intr->intrinsic) {
         case nir_intrinsic_load_ubo:
+                if (c->key->robust_uniform_access) {
+                   lower_buffer_load(c, b, intr);
+                   return true;
+                }
+                return false;
         case nir_intrinsic_load_ssbo:
-                lower_buffer_load(c, b, intr);
-                return true;
+                if (c->key->robust_storage_access) {
+                   lower_buffer_load(c, b, intr);
+                   return true;
+                }
+                return false;
         case nir_intrinsic_store_ssbo:
-                lower_buffer_store(c, b, intr);
-                return true;
+                if (c->key->robust_storage_access) {
+                   lower_buffer_store(c, b, intr);
+                   return true;
+                }
+                return false;
         case nir_intrinsic_ssbo_atomic_add:
         case nir_intrinsic_ssbo_atomic_imin:
         case nir_intrinsic_ssbo_atomic_umin:
@@ -164,8 +175,11 @@ lower_buffer_instr(nir_builder *b, nir_instr *instr, void *_state)
         case nir_intrinsic_ssbo_atomic_xor:
         case nir_intrinsic_ssbo_atomic_exchange:
         case nir_intrinsic_ssbo_atomic_comp_swap:
-                lower_buffer_atomic(c, b, intr);
-                return true;
+                if (c->key->robust_storage_access) {
+                   lower_buffer_atomic(c, b, intr);
+                   return true;
+                }
+                return false;
         case nir_intrinsic_store_shared:
         case nir_intrinsic_load_shared:
         case nir_intrinsic_shared_atomic_add:

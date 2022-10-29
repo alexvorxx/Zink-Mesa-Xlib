@@ -160,6 +160,8 @@ public:
 
    AluInstr *as_alu() override { return this;}
 
+   uint8_t allowed_dest_chan_mask() const override;
+
 private:
    friend class AluGroup;
 

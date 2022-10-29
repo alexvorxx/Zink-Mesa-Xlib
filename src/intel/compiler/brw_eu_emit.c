@@ -3496,7 +3496,7 @@ brw_broadcast(struct brw_codegen *p,
       src = align1 ? stride(suboffset(src, i), 0, 1, 0) :
                      stride(suboffset(src, 4 * i), 0, 4, 1);
 
-      if (type_sz(src.type) > 4 && !devinfo->has_64bit_float) {
+      if (type_sz(src.type) > 4 && !devinfo->has_64bit_int) {
          brw_MOV(p, subscript(dst, BRW_REGISTER_TYPE_D, 0),
                     subscript(src, BRW_REGISTER_TYPE_D, 0));
          brw_set_default_swsb(p, tgl_swsb_null());
@@ -3554,7 +3554,7 @@ brw_broadcast(struct brw_codegen *p,
          /* Use indirect addressing to fetch the specified component. */
          if (type_sz(src.type) > 4 &&
              (devinfo->platform == INTEL_PLATFORM_CHV || intel_device_info_is_9lp(devinfo) ||
-              !devinfo->has_64bit_float)) {
+              !devinfo->has_64bit_int)) {
             /* From the Cherryview PRM Vol 7. "Register Region Restrictions":
              *
              *    "When source or destination datatype is 64b or operation is

@@ -1,8 +1,21 @@
-# Test bug, using GLSL 4.20 on a 3.3 context.
-# Broken in VK-GL-CTS e5c45899ed7e90fb616ccd1d3c66e6eded120684
-KHR-GL33.cull_distance.coverage,Fail
+# Shader compilation error log: 0:6(1): error: invalid stream specified 1 is larger than MAX_VERTEX_STREAMS - 1
+KHR-GL43.transform_feedback.draw_xfb_stream_instanced_test,Fail
 
-KHR-GL33.transform_feedback.draw_xfb_stream_instanced_test,Fail
+# glGetError() returned GL_INVALID_ENUM at gl4cMapBufferAlignmentTests.cpp:279
+KHR-GL43.map_buffer_alignment.functional,Fail
+
+KHR-GL43.gpu_shader_fp64.fp64.max_uniform_components,Fail
+KHR-GL43.gpu_shader_fp64.builtin.mod_dvec2,Fail
+KHR-GL43.gpu_shader_fp64.builtin.mod_dvec3,Fail
+KHR-GL43.gpu_shader_fp64.builtin.mod_dvec4,Fail
+KHR-GL43.shader_subroutine.control_flow_and_returned_subroutine_values_used_as_subroutine_input,Fail
+KHR-GL43.shader_image_load_store.basic-allFormats-store,Fail
+KHR-GL43.shader_image_load_store.basic-allTargets-store,Fail
+KHR-GL43.shader_image_load_store.non-layered_binding,Fail
+KHR-GL43.shading_language_420pack.binding_images,Fail
+KHR-GL43.copy_image.functional,Fail
+KHR-GL43.compute_shader.conditional-dispatching,Fail
+KHR-GL43.vertex_attrib_binding.advanced-largeStrideAndOffsetsNewAndLegacyAPI,Fail
 
 # Lots of errors like "[279] Check failed. Received: [3,0,0,2] instead of: [5,0,0,2]"
 KHR-GLES31.core.geometry_shader.layered_framebuffer.depth_support,Fail
@@ -65,6 +78,11 @@ shaders@point-vertex-id gl_vertexid,Crash
 shaders@point-vertex-id gl_vertexid divisor,Crash
 shaders@point-vertex-id gl_vertexid gl_instanceid,Crash
 shaders@point-vertex-id gl_vertexid gl_instanceid divisor,Crash
+spec@!opengl 2.0@gl-2.0-edgeflag,Crash
+spec@!opengl 2.0@gl-2.0-edgeflag-immediate,Crash
+spec@!opengl 1.0@gl-1.0-edgeflag,Crash
+spec@!opengl 1.0@gl-1.0-edgeflag-quads,Crash
+
 
 spec@arb_arrays_of_arrays@execution@sampler@fs-nested-struct-arrays-nonconst-nested-array,Fail
 
@@ -124,7 +142,6 @@ spec@arb_shader_image_load_store@qualifiers@r8/strict layout qualifiers/permissi
 
 spec@arb_shader_storage_buffer_object@array-ssbo-auto-binding,Fail
 spec@arb_shader_storage_buffer_object@linker@instance-matching-shader-storage-blocks-member-array-size-mismatch,Fail
-spec@arb_tessellation_shader@execution@gs-primitiveid-instanced,Fail
 
 # Test bug: https://gitlab.freedesktop.org/mesa/piglit/-/merge_requests/601#note_1154259
 # "Failed to link:
@@ -132,16 +149,11 @@ spec@arb_tessellation_shader@execution@gs-primitiveid-instanced,Fail
 spec@arb_tessellation_shader@execution@invocation-counting-even,Fail
 spec@arb_tessellation_shader@execution@invocation-counting-odd,Fail
 
-# "ir3_nir_lower_tess.c:585: lower_tess_ctrl_block: Assertion `util_is_power_of_two_nonzero(nir_intrinsic_write_mask(intr) + 1)' failed."
-spec@arb_tessellation_shader@execution@patch-partial-write,Crash
-
 # Test bug: https://gitlab.freedesktop.org/mesa/piglit/-/merge_requests/601#note_1154259
 # "Failed to link:
 #  error: Too many tessellation control shader atomic counters"
 spec@arb_tessellation_shader@execution@tcs-output-unmatched,Fail
 spec@arb_tessellation_shader@execution@tcs-primitiveid,Fail
-
-spec@arb_tessellation_shader@execution@tes-no-tcs-primitiveid-instanced,Fail
 
 # Test bug: https://gitlab.freedesktop.org/mesa/piglit/-/merge_requests/601#note_1154259
 # "Failed to link:
@@ -149,36 +161,23 @@ spec@arb_tessellation_shader@execution@tes-no-tcs-primitiveid-instanced,Fail
 spec@arb_tessellation_shader@execution@tes-primitiveid,Fail
 
 # https://gitlab.freedesktop.org/mesa/mesa/-/issues/7518
-spec@arb_tessellation_shader@execution@tess-instance-id,Fail
-spec@arb_tessellation_shader@execution@compatibility@tes-clip-vertex-different-from-position,Fail
-spec@arb_tessellation_shader@execution@vs-tes-tessinner-tessouter-inputs-quads-dlist,Fail
 spec@arb_tessellation_shader@execution@tes-read-texture,Fail
-spec@arb_tessellation_shader@execution@tess_with_geometry,Fail
-spec@arb_tessellation_shader@execution@trivial-tess-gs,Fail
-spec@arb_tessellation_shader@execution@trivial-tess-gs_no-gs-inputs,Fail
-spec@arb_tessellation_shader@execution@trivial-tess-gs_no-tes-inputs,Fail
 
 # ir3_nir_lower_tess.c:251: lower_block_to_explicit_output: Assertion `util_is_power_of_two_nonzero(nir_intrinsic_write_mask(intr) + 1)' failed.
 spec@arb_tessellation_shader@execution@tcs-input-read-mat,Crash
 
-# "ir3_nir_lower_tess.c:585: lower_tess_ctrl_block: Assertion `util_is_power_of_two_nonzero(nir_intrinsic_write_mask(intr) + 1)' failed."
-spec@arb_tessellation_shader@execution@variable-indexing@tcs-patch-vec4-index-wr,Crash
-spec@arb_tessellation_shader@execution@variable-indexing@tcs-patch-vec4-swiz-index-wr,Crash
-spec@arb_tessellation_shader@execution@vertex-partial-write,Crash
-
-# https://gitlab.freedesktop.org/mesa/mesa/-/issues/7516
+# Some 64b not getting lowered to 32b:
 spec@arb_tessellation_shader@execution@variable-indexing@vs-output-array-dvec4-index-wr-before-tcs,Crash
-
-spec@arb_tessellation_shader@execution@vs-tes-max-in-out-components,Fail
-spec@arb_tessellation_shader@execution@vs-tes-tessinner-tessouter-inputs-quads,Fail
-spec@arb_tessellation_shader@execution@vs-tes-tessinner-tessouter-inputs-tris,Fail
-spec@arb_tessellation_shader@execution@vs-tes-vertex,Fail
 
 spec@arb_texture_rectangle@1-1-linear-texture,Fail
 
 spec@arb_timer_query@timestamp-get,Fail
 
 spec@arb_vertex_type_2_10_10_10_rev@attrib-p-type-size-match,Fail
+
+# fails unrelated to GL_ARB_enhanced_layouts
+spec@arb_enhanced_layouts@execution@component-layout@vs-fs-array-dvec3,Crash
+spec@arb_enhanced_layouts@gs-stream-location-aliasing,Fail
 
 spec@egl 1.4@eglterminate then unbind context,Fail
 spec@egl_chromium_sync_control@conformance@eglGetSyncValuesCHROMIUM_msc_and_sbc_test,Fail
@@ -322,15 +321,9 @@ spec@khr_texture_compression_astc@sliced-3d-miptree-gl hdr@HDR Profile,Fail
 spec@oes_egl_image_external_essl3@oes_egl_image_external_essl3@oes_egl_image_external_essl3_imageStore,Fail
 spec@oes_egl_image_external_essl3@oes_egl_image_external_essl3,Fail
 
-# "MESA: error: unknown vertex shader output name: VARYING_SLOT_EDGE
-#  gl-2.0-edgeflag: ../src/freedreno/ir3/ir3_context.c:411: ir3_context_error: Assertion `!""' failed."
-spec@!opengl 1.0@gl-1.0-edgeflag,Crash
-spec@!opengl 1.0@gl-1.0-edgeflag-quads,Crash
-
 # "Failure with Polygon Stipple set to fail mode."
 spec@!opengl 1.0@gl-1.0-no-op-paths,Fail
 
-spec@!opengl 1.0@gl-1.0-scissor-offscreen,Fail
 spec@!opengl 1.0@gl-1.0-spot-light,Fail
 
 # crash in tgsi exec doing st_freedback_draw_vbo().
@@ -359,10 +352,6 @@ spec@!opengl 1.1@polygon-mode-offset@config 6: Expected white pixel on top edge,
 spec@!opengl 1.1@polygon-mode-offset,Fail
 spec@!opengl 1.4@gl-1.4-polygon-offset,Fail
 
-# "MESA: error: unknown vertex shader output name: VARYING_SLOT_EDGE
-#  gl-2.0-edgeflag: ../src/freedreno/ir3/ir3_context.c:411: ir3_context_error: Assertion `!""' failed."
-spec@!opengl 2.0@gl-2.0-edgeflag,Crash
-spec@!opengl 2.0@gl-2.0-edgeflag-immediate,Crash
 
 spec@!opengl 2.1@pbo,Fail
 spec@!opengl 2.1@pbo@test_polygon_stip,Fail
@@ -378,7 +367,6 @@ spec@!opengl 1.0@depth-clear-precision-check,Fail
 spec@!opengl 1.0@depth-clear-precision-check@depth24,Fail
 spec@!opengl 1.0@depth-clear-precision-check@depth24_stencil8,Fail
 spec@!opengl 1.0@depth-clear-precision-check@depth32,Fail
-spec@arb_texture_buffer_object@texture-buffer-size-clamp,Fail
 
 # https://gitlab.khronos.org/Tracker/vk-gl-cts/-/issues/3759
 # deqp-vk: ../src/freedreno/vulkan/tu_pipeline.c:3894: tu_pipeline_builder_init_graphics: Assertion `subpass->color_count == 0 || !create_info->pColorBlendState || subpass->color_count == create_info->pColorBlendState->attachmentCount' failed

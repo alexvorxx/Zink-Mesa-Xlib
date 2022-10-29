@@ -290,9 +290,7 @@ get_device_extensions(const struct anv_physical_device *device,
       /* Enable the extension only if we have support on both the local &
        * system memory
        */
-      .EXT_memory_budget                     = (!device->info.has_local_mem ||
-                                                device->vram_mappable.available > 0) &&
-                                               device->sys.available,
+      .EXT_memory_budget                     = device->sys.available,
       .EXT_non_seamless_cube_map             = true,
       .EXT_pci_bus_info                      = true,
       .EXT_physical_device_drm               = true,
@@ -377,24 +375,9 @@ anv_init_meminfo(struct anv_physical_device *device, int fd)
 {
    const struct intel_device_info *devinfo = &device->info;
 
-   device->sys.region.memory_class = devinfo->mem.sram.mem_class;
-   device->sys.region.memory_instance = devinfo->mem.sram.mem_instance;
    device->sys.size =
       anv_compute_sys_heap_size(device, devinfo->mem.sram.mappable.size);
    device->sys.available = devinfo->mem.sram.mappable.free;
-
-   device->vram_mappable.region.memory_class = devinfo->mem.vram.mem_class;
-   device->vram_mappable.region.memory_instance =
-      devinfo->mem.vram.mem_instance;
-   device->vram_mappable.size = devinfo->mem.vram.mappable.size;
-   device->vram_mappable.available = devinfo->mem.vram.mappable.free;
-
-   device->vram_non_mappable.region.memory_class =
-      devinfo->mem.vram.mem_class;
-   device->vram_non_mappable.region.memory_instance =
-      devinfo->mem.vram.mem_instance;
-   device->vram_non_mappable.size = devinfo->mem.vram.unmappable.size;
-   device->vram_non_mappable.available = devinfo->mem.vram.unmappable.free;
 
    return VK_SUCCESS;
 }
@@ -407,8 +390,6 @@ anv_update_meminfo(struct anv_physical_device *device, int fd)
 
    const struct intel_device_info *devinfo = &device->info;
    device->sys.available = devinfo->mem.sram.mappable.free;
-   device->vram_mappable.available = devinfo->mem.vram.mappable.free;
-   device->vram_non_mappable.available = devinfo->mem.vram.unmappable.free;
 }
 
 
@@ -421,66 +402,11 @@ anv_physical_device_init_heaps(struct anv_physical_device *device, int fd)
 
    assert(device->sys.size != 0);
 
-   if (anv_physical_device_has_vram(device)) {
-      /* We can create 2 or 3 different heaps when we have local memory
-       * support, first heap with local memory size and second with system
-       * memory size and the third is added only if part of the vram is
-       * mappable to the host.
-       */
-      device->memory.heap_count = 2;
-      device->memory.heaps[0] = (struct anv_memory_heap) {
-         /* If there is a vram_non_mappable, use that for the device only
-          * heap. Otherwise use the vram_mappable.
-          */
-         .size = device->vram_non_mappable.size != 0 ?
-                 device->vram_non_mappable.size : device->vram_mappable.size,
-         .flags = VK_MEMORY_HEAP_DEVICE_LOCAL_BIT,
-         .is_local_mem = true,
-      };
-      device->memory.heaps[1] = (struct anv_memory_heap) {
-         .size = device->sys.size,
-         .flags = 0,
-         .is_local_mem = false,
-      };
-      /* Add an additional smaller vram mappable heap if we can't map all the
-       * vram to the host.
-       */
-      if (device->vram_non_mappable.size > 0) {
-         device->memory.heap_count++;
-         device->memory.heaps[2] = (struct anv_memory_heap) {
-            .size = device->vram_mappable.size,
-            .flags = VK_MEMORY_HEAP_DEVICE_LOCAL_BIT,
-            .is_local_mem = true,
-         };
-      }
-
-      device->memory.type_count = 3;
-      device->memory.types[0] = (struct anv_memory_type) {
-         .propertyFlags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-         .heapIndex = 0,
-      };
-      device->memory.types[1] = (struct anv_memory_type) {
-         .propertyFlags = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
-                          VK_MEMORY_PROPERTY_HOST_COHERENT_BIT |
-                          VK_MEMORY_PROPERTY_HOST_CACHED_BIT,
-         .heapIndex = 1,
-      };
-      device->memory.types[2] = (struct anv_memory_type) {
-         .propertyFlags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT |
-                          VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
-                          VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-         /* This memory type either comes from heaps[0] if there is only
-          * mappable vram region, or from heaps[2] if there is both mappable &
-          * non-mappable vram regions.
-          */
-         .heapIndex = device->vram_non_mappable.size > 0 ? 2 : 0,
-      };
-   } else if (device->info.has_llc) {
+   if (device->info.has_llc) {
       device->memory.heap_count = 1;
       device->memory.heaps[0] = (struct anv_memory_heap) {
          .size = device->sys.size,
          .flags = VK_MEMORY_HEAP_DEVICE_LOCAL_BIT,
-         .is_local_mem = false,
       };
 
       /* Big core GPUs share LLC with the CPU and thus one memory type can be
@@ -499,7 +425,6 @@ anv_physical_device_init_heaps(struct anv_physical_device *device, int fd)
       device->memory.heaps[0] = (struct anv_memory_heap) {
          .size = device->sys.size,
          .flags = VK_MEMORY_HEAP_DEVICE_LOCAL_BIT,
-         .is_local_mem = false,
       };
 
       /* The spec requires that we expose a host-visible, coherent memory
@@ -2561,14 +2486,9 @@ anv_get_memory_budget(VkPhysicalDevice physicalDevice,
 
    anv_update_meminfo(device, device->local_fd);
 
-   VkDeviceSize total_sys_heaps_size = 0, total_vram_heaps_size = 0;
-   for (size_t i = 0; i < device->memory.heap_count; i++) {
-      if (device->memory.heaps[i].is_local_mem) {
-         total_vram_heaps_size += device->memory.heaps[i].size;
-      } else {
-         total_sys_heaps_size += device->memory.heaps[i].size;
-      }
-   }
+   VkDeviceSize total_sys_heaps_size = 0;
+   for (size_t i = 0; i < device->memory.heap_count; i++)
+      total_sys_heaps_size += device->memory.heaps[i].size;
 
    for (size_t i = 0; i < device->memory.heap_count; i++) {
       VkDeviceSize heap_size = device->memory.heaps[i].size;
@@ -2576,17 +2496,8 @@ anv_get_memory_budget(VkPhysicalDevice physicalDevice,
       VkDeviceSize heap_budget, total_heaps_size;
       uint64_t mem_available = 0;
 
-      if (device->memory.heaps[i].is_local_mem) {
-         total_heaps_size = total_vram_heaps_size;
-         if (device->vram_non_mappable.size > 0 && i == 0) {
-            mem_available = device->vram_non_mappable.available;
-         } else {
-            mem_available = device->vram_mappable.available;
-         }
-      } else {
-         total_heaps_size = total_sys_heaps_size;
-         mem_available = device->sys.available;
-      }
+      total_heaps_size = total_sys_heaps_size;
+      mem_available = device->sys.available;
 
       double heap_proportion = (double) heap_size / total_heaps_size;
       VkDeviceSize available_prop = mem_available * heap_proportion;
@@ -3647,16 +3558,6 @@ VkResult anv_AllocateMemory(
    /* By default, we want all VkDeviceMemory objects to support CCS */
    if (device->physical->has_implicit_ccs && device->info->has_aux_map)
       alloc_flags |= ANV_BO_ALLOC_IMPLICIT_CCS;
-
-   /* If i915 reported a mappable/non_mappable vram regions and the
-    * application want lmem mappable, then we need to use the
-    * I915_GEM_CREATE_EXT_FLAG_NEEDS_CPU_ACCESS flag to create our BO.
-    */
-   if (pdevice->vram_mappable.size > 0 &&
-       pdevice->vram_non_mappable.size > 0 &&
-       (mem_type->propertyFlags & VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT) &&
-       (mem_type->propertyFlags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT))
-      alloc_flags |= ANV_BO_ALLOC_LOCAL_MEM_CPU_VISIBLE;
 
    if (vk_flags & VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT)
       alloc_flags |= ANV_BO_ALLOC_CLIENT_VISIBLE_ADDRESS;

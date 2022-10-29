@@ -202,6 +202,12 @@ struct InstrPred {
       }
 
       switch (a->format) {
+      case Format::SOP1: {
+         if (a->opcode == aco_opcode::s_sendmsg_rtn_b32 ||
+             a->opcode == aco_opcode::s_sendmsg_rtn_b64)
+            return false;
+         return true;
+      }
       case Format::SOPK: {
          if (a->opcode == aco_opcode::s_getreg_b32)
             return false;

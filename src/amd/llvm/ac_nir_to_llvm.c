@@ -1312,14 +1312,27 @@ static bool visit_alu(struct ac_nir_context *ctx, const nir_alu_instr *instr)
    }
 
    case nir_op_sdot_4x8_iadd:
+   case nir_op_sdot_4x8_iadd_sat: {
+      if (ctx->ac.gfx_level >= GFX11) {
+         result = ac_build_sudot_4x8(&ctx->ac, src[0], src[1], src[2],
+                                     instr->op == nir_op_sdot_4x8_iadd_sat, 0x3);
+      } else {
+         const char *name = "llvm.amdgcn.sdot4";
+         src[3] = LLVMConstInt(ctx->ac.i1, instr->op == nir_op_sdot_4x8_iadd_sat, false);
+         result = ac_build_intrinsic(&ctx->ac, name, def_type, src, 4, AC_FUNC_ATTR_READNONE);
+      }
+      break;
+   }
+   case nir_op_sudot_4x8_iadd:
+   case nir_op_sudot_4x8_iadd_sat: {
+      result = ac_build_sudot_4x8(&ctx->ac, src[0], src[1], src[2],
+                                  instr->op == nir_op_sudot_4x8_iadd_sat, 0x1);
+      break;
+   }
    case nir_op_udot_4x8_uadd:
-   case nir_op_sdot_4x8_iadd_sat:
    case nir_op_udot_4x8_uadd_sat: {
-      const char *name = instr->op == nir_op_sdot_4x8_iadd ||
-                         instr->op == nir_op_sdot_4x8_iadd_sat
-                         ? "llvm.amdgcn.sdot4" : "llvm.amdgcn.udot4";
-      src[3] = LLVMConstInt(ctx->ac.i1, instr->op == nir_op_sdot_4x8_iadd_sat ||
-                                        instr->op == nir_op_udot_4x8_uadd_sat, false);
+      const char *name = "llvm.amdgcn.udot4";
+      src[3] = LLVMConstInt(ctx->ac.i1, instr->op == nir_op_udot_4x8_uadd_sat, false);
       result = ac_build_intrinsic(&ctx->ac, name, def_type, src, 4, AC_FUNC_ATTR_READNONE);
       break;
    }
@@ -3605,6 +3618,8 @@ static bool visit_intrinsic(struct ac_nir_context *ctx, nir_intrinsic_instr *ins
    case nir_intrinsic_load_ring_tess_offchip_offset_amd:
    case nir_intrinsic_load_ring_esgs_amd:
    case nir_intrinsic_load_ring_es2gs_offset_amd:
+   case nir_intrinsic_load_ring_attr_amd:
+   case nir_intrinsic_load_ring_gsvs_amd:
    case nir_intrinsic_load_lshs_vertex_stride_amd:
    case nir_intrinsic_load_tcs_num_patches_amd:
    case nir_intrinsic_load_hs_out_patch_data_offset_amd:
@@ -3617,6 +3632,9 @@ static bool visit_intrinsic(struct ac_nir_context *ctx, nir_intrinsic_instr *ins
    case nir_intrinsic_load_cull_small_prim_precision_amd:
    case nir_intrinsic_load_cull_small_primitives_enabled_amd:
    case nir_intrinsic_load_provoking_vtx_in_prim_amd:
+   case nir_intrinsic_load_pipeline_stat_query_enabled_amd:
+   case nir_intrinsic_load_prim_gen_query_enabled_amd:
+   case nir_intrinsic_load_prim_xfb_query_enabled_amd:
       result = ctx->abi->intrinsic_load(ctx->abi, instr->intrinsic);
       break;
    case nir_intrinsic_load_user_clip_plane:
@@ -4252,6 +4270,15 @@ static bool visit_intrinsic(struct ac_nir_context *ctx, nir_intrinsic_instr *ins
       }
       break;
    }
+   case nir_intrinsic_load_packed_passthrough_primitive_amd:
+      result = ac_get_arg(&ctx->ac, ctx->args->gs_vtx_offset[0]);
+      break;
+   case nir_intrinsic_load_initial_edgeflags_amd:
+      if (ctx->stage == MESA_SHADER_VERTEX && !ctx->info->vs.blit_sgprs_amd)
+         result = ac_pack_edgeflags_for_export(&ctx->ac, ctx->args);
+      else
+         result = ctx->ac.i32_0;
+      break;
    case nir_intrinsic_has_input_vertex_amd: {
       LLVMValueRef num =
          ac_unpack_param(&ctx->ac, ac_get_arg(&ctx->ac, ctx->args->merged_wave_info), 0, 8);
@@ -4264,6 +4291,12 @@ static bool visit_intrinsic(struct ac_nir_context *ctx, nir_intrinsic_instr *ins
       result = LLVMBuildICmp(ctx->ac.builder, LLVMIntULT, ac_get_thread_id(&ctx->ac), num, "");
       break;
    }
+   case nir_intrinsic_load_workgroup_num_input_vertices_amd:
+      result = ac_unpack_param(&ctx->ac, ac_get_arg(&ctx->ac, ctx->args->gs_tg_info), 12, 9);
+      break;
+   case nir_intrinsic_load_workgroup_num_input_primitives_amd:
+      result = ac_unpack_param(&ctx->ac, ac_get_arg(&ctx->ac, ctx->args->gs_tg_info), 22, 9);
+      break;
    case nir_intrinsic_alloc_vertices_and_primitives_amd:
       /* The caller should only call this conditionally for wave 0, so pass NULL to disable
        * the wave 0 check inside this function.
@@ -4279,8 +4312,8 @@ static bool visit_intrinsic(struct ac_nir_context *ctx, nir_intrinsic_instr *ins
    case nir_intrinsic_overwrite_tes_arguments_amd:
       ctx->abi->tes_u_replaced = ac_to_float(&ctx->ac, get_src(ctx, instr->src[0]));
       ctx->abi->tes_v_replaced = ac_to_float(&ctx->ac, get_src(ctx, instr->src[1]));
-      ctx->abi->tes_rel_patch_id_replaced = get_src(ctx, instr->src[2]);
-      ctx->abi->tes_patch_id_replaced = get_src(ctx, instr->src[3]);
+      ctx->abi->tes_rel_patch_id_replaced = get_src(ctx, instr->src[3]);
+      ctx->abi->tes_patch_id_replaced = get_src(ctx, instr->src[2]);
       break;
    case nir_intrinsic_export_primitive_amd: {
       struct ac_ngg_prim prim = {0};
@@ -4409,6 +4442,21 @@ static bool visit_intrinsic(struct ac_nir_context *ctx, nir_intrinsic_instr *ins
                          args, ARRAY_SIZE(args), 0);
 
       result = ac_build_gather_values(&ctx->ac, global_count, instr->num_components);
+      break;
+   }
+   case nir_intrinsic_atomic_add_gs_emit_prim_count_amd:
+      ctx->abi->atomic_add_prim_count(ctx->abi, ~0U, get_src(ctx, instr->src[0]),
+                                      ac_prim_count_gs_emit);
+      break;
+   case nir_intrinsic_atomic_add_gen_prim_count_amd:
+   case nir_intrinsic_atomic_add_xfb_prim_count_amd: {
+      LLVMValueRef prim_count = get_src(ctx, instr->src[0]);
+      unsigned stream = nir_intrinsic_stream_id(instr);
+      enum ac_prim_count count_type =
+         instr->intrinsic == nir_intrinsic_atomic_add_gen_prim_count_amd ?
+         ac_prim_count_gen : ac_prim_count_xfb;
+
+      ctx->abi->atomic_add_prim_count(ctx->abi, stream, prim_count, count_type);
       break;
    }
    default:
@@ -5090,7 +5138,7 @@ static void visit_ssa_undef(struct ac_nir_context *ctx, const nir_ssa_undef_inst
    } else {
       LLVMValueRef zero = LLVMConstInt(type, 0, false);
       if (num_components > 1) {
-         zero = ac_build_gather_values_extended(&ctx->ac, &zero, 4, 0, false);
+         zero = ac_build_gather_values_extended(&ctx->ac, &zero, num_components, 0, false);
       }
       ctx->ssa_defs[instr->def.index] = zero;
    }

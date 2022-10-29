@@ -240,7 +240,7 @@ pub fn set_kernel_arg(
                     return Err(CL_INVALID_ARG_SIZE);
                 }
             }
-            KernelArgType::MemGlobal => {
+            KernelArgType::MemGlobal | KernelArgType::MemConstant => {
                 if arg_size != std::mem::size_of::<cl_mem>() {
                     return Err(CL_INVALID_ARG_SIZE);
                 }

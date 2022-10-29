@@ -230,6 +230,11 @@ zink_copy_image_buffer(struct zink_context *ctx, struct zink_resource *dst, stru
 void
 zink_destroy_buffer_view(struct zink_screen *screen, struct zink_buffer_view *buffer_view);
 
+struct pipe_surface *
+zink_get_dummy_pipe_surface(struct zink_context *ctx, int samples_index);
+struct zink_surface *
+zink_get_dummy_surface(struct zink_context *ctx, int samples_index);
+
 void
 debug_describe_zink_buffer_view(char *buf, const struct zink_buffer_view *ptr);
 

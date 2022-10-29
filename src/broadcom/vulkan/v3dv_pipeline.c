@@ -69,7 +69,7 @@ pipeline_compute_sha1_from_nir(struct v3dv_pipeline_stage *p_stage)
       .stage = mesa_to_vk_shader_stage(p_stage->nir->info.stage),
    };
 
-   vk_pipeline_hash_shader_stage(&info, p_stage->shader_sha1);
+   vk_pipeline_hash_shader_stage(&info, NULL, p_stage->shader_sha1);
 }
 
 void
@@ -245,111 +245,6 @@ v3dv_pipeline_get_nir_options(void)
    return &v3dv_nir_options;
 }
 
-#define OPT(pass, ...) ({                                  \
-   bool this_progress = false;                             \
-   NIR_PASS(this_progress, nir, pass, ##__VA_ARGS__);      \
-   if (this_progress)                                      \
-      progress = true;                                     \
-   this_progress;                                          \
-})
-
-static void
-nir_optimize(nir_shader *nir, bool allow_copies)
-{
-   bool progress;
-
-   do {
-      progress = false;
-      OPT(nir_split_array_vars, nir_var_function_temp);
-      OPT(nir_shrink_vec_array_vars, nir_var_function_temp);
-      OPT(nir_opt_deref);
-      OPT(nir_lower_vars_to_ssa);
-      if (allow_copies) {
-         /* Only run this pass in the first call to nir_optimize.  Later calls
-          * assume that we've lowered away any copy_deref instructions and we
-          * don't want to introduce any more.
-          */
-         OPT(nir_opt_find_array_copies);
-      }
-
-      OPT(nir_remove_dead_variables,
-          (nir_variable_mode)(nir_var_function_temp |
-                              nir_var_shader_temp |
-                              nir_var_mem_shared),
-          NULL);
-
-      OPT(nir_opt_copy_prop_vars);
-      OPT(nir_opt_dead_write_vars);
-      OPT(nir_opt_combine_stores, nir_var_all);
-
-      OPT(nir_lower_alu_to_scalar, NULL, NULL);
-
-      OPT(nir_copy_prop);
-      OPT(nir_lower_phis_to_scalar, false);
-
-      OPT(nir_copy_prop);
-      OPT(nir_opt_dce);
-      OPT(nir_opt_cse);
-      OPT(nir_opt_combine_stores, nir_var_all);
-
-      /* Passing 0 to the peephole select pass causes it to convert
-       * if-statements that contain only move instructions in the branches
-       * regardless of the count.
-       *
-       * Passing 1 to the peephole select pass causes it to convert
-       * if-statements that contain at most a single ALU instruction (total)
-       * in both branches.
-       */
-      OPT(nir_opt_peephole_select, 0, false, false);
-      OPT(nir_opt_peephole_select, 8, false, true);
-
-      OPT(nir_opt_intrinsics);
-      OPT(nir_opt_idiv_const, 32);
-      OPT(nir_opt_algebraic);
-      OPT(nir_lower_alu);
-      OPT(nir_opt_constant_folding);
-
-      OPT(nir_opt_dead_cf);
-      if (nir_opt_trivial_continues(nir)) {
-         progress = true;
-         OPT(nir_copy_prop);
-         OPT(nir_opt_dce);
-      }
-      OPT(nir_opt_conditional_discard);
-
-      OPT(nir_opt_remove_phis);
-      OPT(nir_opt_gcm, false);
-      OPT(nir_opt_if, nir_opt_if_optimize_phi_true_false);
-      OPT(nir_opt_undef);
-      OPT(nir_lower_pack);
-
-      /* There are two optimizations that we don't do here, and we rely on the
-       * backend:
-       *
-       * nir_lower_flrp only needs to be called once, as nothing should
-       * rematerialize any flrps. As we are already calling it on the backend
-       * compiler, we don't call it again.
-       *
-       * nir_opt_loop_unroll: as the backend includes custom strategies in
-       * order to get the lowest spill/fills possible, and some of them
-       * include disable loop unrolling.
-       *
-       * FIXME: ideally we would like to just remove this method and
-       * v3d_optimize_nir. But:
-       *
-       *   * Using it leads to some regressions on Vulkan CTS tests, due to
-       *     some lowering use there
-       *   * We would need to move to the backend some additional
-       *     lowerings/optimizations that are used on the Vulkan
-       *     frontend. That would require to check that we are not getting any
-       *     regression or performance drop on OpenGL
-       *
-       * For now we would keep this Vulkan fronted nir_optimize
-       */
-
-   } while (progress);
-}
-
 static void
 preprocess_nir(nir_shader *nir)
 {
@@ -390,7 +285,7 @@ preprocess_nir(nir_shader *nir)
    NIR_PASS(_, nir, nir_split_var_copies);
    NIR_PASS(_, nir, nir_split_struct_vars, nir_var_function_temp);
 
-   nir_optimize(nir, true);
+   v3d_optimize_nir(NULL, nir, true);
 
    NIR_PASS(_, nir, nir_lower_explicit_io,
             nir_var_mem_push_const,
@@ -421,7 +316,7 @@ preprocess_nir(nir_shader *nir)
    NIR_PASS(_, nir, nir_lower_frexp);
 
    /* Get rid of split copies */
-   nir_optimize(nir, false);
+   v3d_optimize_nir(NULL, nir, false);
 }
 
 static nir_shader *
@@ -1025,9 +920,7 @@ shader_debug_output(const char *message, void *data)
 static void
 pipeline_populate_v3d_key(struct v3d_key *key,
                           const struct v3dv_pipeline_stage *p_stage,
-                          uint32_t ucp_enables,
-                          bool robust_buffer_access,
-                          bool robust_image_access)
+                          uint32_t ucp_enables)
 {
    assert(p_stage->pipeline->shared_data &&
           p_stage->pipeline->shared_data->maps[p_stage->stage]);
@@ -1091,8 +984,18 @@ pipeline_populate_v3d_key(struct v3d_key *key,
     */
    key->ucp_enables = ucp_enables;
 
-   key->robust_buffer_access = robust_buffer_access;
-   key->robust_image_access = robust_image_access;
+   const VkPipelineRobustnessBufferBehaviorEXT robust_buffer_enabled =
+      VK_PIPELINE_ROBUSTNESS_BUFFER_BEHAVIOR_ROBUST_BUFFER_ACCESS_EXT;
+
+   const VkPipelineRobustnessImageBehaviorEXT robust_image_enabled =
+      VK_PIPELINE_ROBUSTNESS_IMAGE_BEHAVIOR_ROBUST_IMAGE_ACCESS_EXT;
+
+   key->robust_uniform_access =
+      p_stage->robustness.uniform_buffers == robust_buffer_enabled;
+   key->robust_storage_access =
+      p_stage->robustness.storage_buffers == robust_buffer_enabled;
+   key->robust_image_access =
+      p_stage->robustness.images == robust_image_enabled;
 
    key->environment = V3D_ENVIRONMENT_VULKAN;
 }
@@ -1143,9 +1046,10 @@ pipeline_populate_v3d_fs_key(struct v3d_fs_key *key,
 
    memset(key, 0, sizeof(*key));
 
-   const bool rba = p_stage->pipeline->device->features.robustBufferAccess;
-   const bool ria = p_stage->pipeline->device->ext_features.robustImageAccess;
-   pipeline_populate_v3d_key(&key->base, p_stage, ucp_enables, rba, ria);
+   struct v3dv_device *device = p_stage->pipeline->device;
+   assert(device);
+
+   pipeline_populate_v3d_key(&key->base, p_stage, ucp_enables);
 
    const VkPipelineInputAssemblyStateCreateInfo *ia_info =
       pCreateInfo->pInputAssemblyState;
@@ -1260,11 +1164,12 @@ pipeline_populate_v3d_gs_key(struct v3d_gs_key *key,
    assert(p_stage->stage == BROADCOM_SHADER_GEOMETRY ||
           p_stage->stage == BROADCOM_SHADER_GEOMETRY_BIN);
 
+   struct v3dv_device *device = p_stage->pipeline->device;
+   assert(device);
+
    memset(key, 0, sizeof(*key));
 
-   const bool rba = p_stage->pipeline->device->features.robustBufferAccess;
-   const bool ria = p_stage->pipeline->device->ext_features.robustImageAccess;
-   pipeline_populate_v3d_key(&key->base, p_stage, 0, rba, ria);
+   pipeline_populate_v3d_key(&key->base, p_stage, 0);
 
    struct v3dv_pipeline *pipeline = p_stage->pipeline;
 
@@ -1303,11 +1208,11 @@ pipeline_populate_v3d_vs_key(struct v3d_vs_key *key,
    assert(p_stage->stage == BROADCOM_SHADER_VERTEX ||
           p_stage->stage == BROADCOM_SHADER_VERTEX_BIN);
 
-   memset(key, 0, sizeof(*key));
+   struct v3dv_device *device = p_stage->pipeline->device;
+   assert(device);
 
-   const bool rba = p_stage->pipeline->device->features.robustBufferAccess;
-   const bool ria = p_stage->pipeline->device->ext_features.robustImageAccess;
-   pipeline_populate_v3d_key(&key->base, p_stage, 0, rba, ria);
+   memset(key, 0, sizeof(*key));
+   pipeline_populate_v3d_key(&key->base, p_stage, 0);
 
    struct v3dv_pipeline *pipeline = p_stage->pipeline;
 
@@ -1430,6 +1335,7 @@ pipeline_stage_create_binning(const struct v3dv_pipeline_stage *src,
    p_stage->program_id = src->program_id;
    p_stage->spec_info = src->spec_info;
    p_stage->feedback = (VkPipelineCreationFeedback) { 0 };
+   p_stage->robustness = src->robustness;
    memcpy(p_stage->shader_sha1, src->shader_sha1, 20);
 
    return p_stage;
@@ -1726,11 +1632,11 @@ link_shaders(nir_shader *producer, nir_shader *consumer)
 
    nir_lower_io_arrays_to_elements(producer, consumer);
 
-   nir_optimize(producer, false);
-   nir_optimize(consumer, false);
+   v3d_optimize_nir(NULL, producer, false);
+   v3d_optimize_nir(NULL, consumer, false);
 
    if (nir_link_opt_varyings(producer, consumer))
-      nir_optimize(consumer, false);
+      v3d_optimize_nir(NULL, consumer, false);
 
    NIR_PASS(_, producer, nir_remove_dead_variables, nir_var_shader_out, NULL);
    NIR_PASS(_, consumer, nir_remove_dead_variables, nir_var_shader_in, NULL);
@@ -1739,8 +1645,8 @@ link_shaders(nir_shader *producer, nir_shader *consumer)
       NIR_PASS(_, producer, nir_lower_global_vars_to_local);
       NIR_PASS(_, consumer, nir_lower_global_vars_to_local);
 
-      nir_optimize(producer, false);
-      nir_optimize(consumer, false);
+      v3d_optimize_nir(NULL, producer, false);
+      v3d_optimize_nir(NULL, consumer, false);
 
       /* Optimizations can cause varyings to become unused.
        * nir_compact_varyings() depends on all dead varyings being removed so
@@ -1944,11 +1850,12 @@ pipeline_compile_fragment_shader(struct v3dv_pipeline *pipeline,
       pipeline->stages[BROADCOM_SHADER_VERTEX];
    struct v3dv_pipeline_stage *p_stage_fs =
       pipeline->stages[BROADCOM_SHADER_FRAGMENT];
+   struct v3dv_pipeline_stage *p_stage_gs =
+      pipeline->stages[BROADCOM_SHADER_GEOMETRY];
 
    struct v3d_fs_key key;
-
    pipeline_populate_v3d_fs_key(&key, pCreateInfo, p_stage_fs,
-                                pipeline->stages[BROADCOM_SHADER_GEOMETRY] != NULL,
+                                p_stage_gs != NULL,
                                 get_ucp_enable_mask(p_stage_vs));
 
    VkResult vk_result;
@@ -1964,12 +1871,10 @@ pipeline_populate_graphics_key(struct v3dv_pipeline *pipeline,
                                struct v3dv_pipeline_key *key,
                                const VkGraphicsPipelineCreateInfo *pCreateInfo)
 {
-   memset(key, 0, sizeof(*key));
-   key->robust_buffer_access =
-      pipeline->device->features.robustBufferAccess;
+   struct v3dv_device *device = pipeline->device;
+   assert(device);
 
-   key->robust_image_access =
-      pipeline->device->ext_features.robustImageAccess;
+   memset(key, 0, sizeof(*key));
 
    const bool raster_enabled =
       !pCreateInfo->pRasterizationState->rasterizerDiscardEnable;
@@ -2054,16 +1959,15 @@ pipeline_populate_compute_key(struct v3dv_pipeline *pipeline,
                               struct v3dv_pipeline_key *key,
                               const VkComputePipelineCreateInfo *pCreateInfo)
 {
+   struct v3dv_device *device = pipeline->device;
+   assert(device);
+
    /* We use the same pipeline key for graphics and compute, but we don't need
     * to add a field to flag compute keys because this key is not used alone
     * to search in the cache, we also use the SPIR-V or the serialized NIR for
     * example, which already flags compute shaders.
     */
    memset(key, 0, sizeof(*key));
-   key->robust_buffer_access =
-      pipeline->device->features.robustBufferAccess;
-   key->robust_image_access =
-      pipeline->device->ext_features.robustImageAccess;
 }
 
 static struct v3dv_pipeline_shared_data *
@@ -2318,6 +2222,7 @@ pipeline_add_multiview_gs(struct v3dv_pipeline *pipeline,
    p_stage->nir = nir;
    pipeline_compute_sha1_from_nir(p_stage);
    p_stage->program_id = p_atomic_inc_return(&physical_device->next_program_id);
+   p_stage->robustness = pipeline->stages[BROADCOM_SHADER_VERTEX]->robustness;
 
    pipeline->has_gs = true;
    pipeline->stages[BROADCOM_SHADER_GEOMETRY] = p_stage;
@@ -2395,7 +2300,12 @@ pipeline_compile_graphics(struct v3dv_pipeline *pipeline,
       p_stage->module = vk_shader_module_from_handle(sinfo->module);
       p_stage->spec_info = sinfo->pSpecializationInfo;
 
-      vk_pipeline_hash_shader_stage(&pCreateInfo->pStages[i], p_stage->shader_sha1);
+      vk_pipeline_robustness_state_fill(&device->vk, &p_stage->robustness,
+                                        pCreateInfo->pNext, sinfo->pNext);
+
+      vk_pipeline_hash_shader_stage(&pCreateInfo->pStages[i],
+                                    &p_stage->robustness,
+                                    p_stage->shader_sha1);
 
       pipeline->active_stages |= sinfo->stage;
 
@@ -2437,6 +2347,8 @@ pipeline_compile_graphics(struct v3dv_pipeline *pipeline,
       p_stage->entrypoint = "main";
       p_stage->module = 0;
       p_stage->nir = b.shader;
+      vk_pipeline_robustness_state_fill(&device->vk, &p_stage->robustness,
+                                        NULL, NULL);
       pipeline_compute_sha1_from_nir(p_stage);
       p_stage->program_id =
          p_atomic_inc_return(&physical_device->next_program_id);
@@ -3178,7 +3090,12 @@ pipeline_compile_compute(struct v3dv_pipeline *pipeline,
    p_stage->spec_info = sinfo->pSpecializationInfo;
    p_stage->feedback = (VkPipelineCreationFeedback) { 0 };
 
-   vk_pipeline_hash_shader_stage(&info->stage, p_stage->shader_sha1);
+   vk_pipeline_robustness_state_fill(&device->vk, &p_stage->robustness,
+                                     info->pNext, sinfo->pNext);
+
+   vk_pipeline_hash_shader_stage(&info->stage,
+                                 &p_stage->robustness,
+                                 p_stage->shader_sha1);
 
    p_stage->nir = NULL;
 
@@ -3223,7 +3140,7 @@ pipeline_compile_compute(struct v3dv_pipeline *pipeline,
    p_stage->nir = pipeline_stage_get_nir(p_stage, pipeline, cache);
    assert(p_stage->nir);
 
-   nir_optimize(p_stage->nir, false);
+   v3d_optimize_nir(NULL, p_stage->nir, false);
    pipeline_lower_nir(pipeline, p_stage, pipeline->layout);
    lower_cs_shared(p_stage->nir);
 
@@ -3231,9 +3148,7 @@ pipeline_compile_compute(struct v3dv_pipeline *pipeline,
 
    struct v3d_key key;
    memset(&key, 0, sizeof(key));
-   const bool rba = pipeline->device->features.robustBufferAccess;
-   const bool ria = pipeline->device->ext_features.robustImageAccess;
-   pipeline_populate_v3d_key(&key, p_stage, 0, rba, ria);
+   pipeline_populate_v3d_key(&key, p_stage, 0);
    pipeline->shared_data->variants[BROADCOM_SHADER_COMPUTE] =
       pipeline_compile_shader_variant(p_stage, &key, sizeof(key),
                                       alloc, &result);

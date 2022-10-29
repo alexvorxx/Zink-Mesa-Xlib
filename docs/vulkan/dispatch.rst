@@ -192,7 +192,7 @@ something like this:
 
 The ``vk_*_dispatch_table_from_entrypoints()`` functions are designed so
 that they can be layered like this.  In this case, it starts with the
-instance entrypoints from the Intel vulkan driver and then adds in the WSI
+instance entrypoints from the Intel Vulkan driver and then adds in the WSI
 entrypoints.  If there are any entrypoints duplicated between the two, the
 first one to define the entrypoint wins.
 

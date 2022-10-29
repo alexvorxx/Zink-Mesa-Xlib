@@ -147,17 +147,22 @@ struct agx_varyings_fs {
    } bindings[AGX_MAX_CF_BINDINGS];
 };
 
-struct agx_varyings {
-   union {
-      struct agx_varyings_vs vs;
-      struct agx_varyings_fs fs;
-   };
+union agx_varyings {
+   struct agx_varyings_vs vs;
+   struct agx_varyings_fs fs;
 };
 
 struct agx_shader_info {
+   unsigned push_count;
    unsigned push_ranges;
    struct agx_push push[AGX_MAX_PUSH_RANGES];
-   struct agx_varyings varyings;
+   union agx_varyings varyings;
+
+   /* Does the shader have a preamble? If so, it is at offset preamble_offset.
+    * The main shader is at offset main_offset. The preamble is executed first.
+    */
+   bool has_preamble;
+   unsigned preamble_offset, main_offset;
 
    /* Does the shader read the tilebuffer? */
    bool reads_tib;
@@ -170,6 +175,11 @@ struct agx_shader_info {
 
    /* Is colour output omitted? */
    bool no_colour_output;
+
+   /* Number of 16-bit registers used by the main shader and preamble
+    * respectively.
+    */
+   unsigned nr_gprs, nr_preamble_gprs;
 };
 
 #define AGX_MAX_RTS (8)
@@ -270,6 +280,7 @@ struct agx_shader_key {
 void
 agx_compile_shader_nir(nir_shader *nir,
       struct agx_shader_key *key,
+      struct util_debug_callback *debug,
       struct util_dynarray *binary,
       struct agx_shader_info *out);
 

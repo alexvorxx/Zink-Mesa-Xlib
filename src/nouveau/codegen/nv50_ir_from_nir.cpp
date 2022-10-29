@@ -2929,6 +2929,8 @@ Converter::visit(nir_alu_instr *insn)
       mkCmp(OP_SET, cc, TYPE_U32, newDefs[0], sTypes[0], getSrc(&insn->src[0]), src1);
       break;
    }
+   case nir_op_b2i8:
+   case nir_op_b2i16:
    case nir_op_b2i32: {
       DEFAULT_CHECKS;
       LValues &newDefs = convert(&insn->dest);
@@ -3354,7 +3356,6 @@ Converter::run()
     *      nir_opt_idiv_const effectively before this.
     */
    nir_lower_idiv_options idiv_options = {
-      .imprecise_32bit_lowering = false,
       .allow_fp16 = true,
    };
    NIR_PASS(progress, nir, nir_lower_idiv, &idiv_options);

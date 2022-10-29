@@ -43,6 +43,9 @@
 #include "util/u_thread.h"
 
 
+/* Maximal cpu count for update affinity */
+#define UTIL_MAX_CPUS               1024  /* this should be enough */
+
 #ifdef __cplusplus
 extern "C" {
 #endif

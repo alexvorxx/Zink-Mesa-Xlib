@@ -80,15 +80,15 @@ Dump all commands going to the hardware.
 
 .. envvar:: LP_DEBUG <flags> (0x0)
 
-Debug :ref:`flags` for the llvmpipe driver.
+Debug :ref:`flags` for the LLVMpipe driver.
 
 .. envvar:: LP_NUM_THREADS <int> (number of CPUs)
 
-Number of threads that the llvmpipe driver should use.
+Number of threads that the LLVMpipe driver should use.
 
 .. envvar:: FD_MESA_DEBUG <flags> (0x0)
 
-Debug :ref:`flags` for the freedreno driver.
+Debug :ref:`flags` for the Freedreno driver.
 
 
 .. _flags:

@@ -54,7 +54,7 @@ stw_current_context(void)
 {
    struct st_context_iface *st;
 
-   st = (stw_dev) ? stw_dev->stapi->get_current(stw_dev->stapi) : NULL;
+   st = (stw_dev) ? st_api_get_current() : NULL;
 
    return (struct stw_context *) ((st) ? st->st_manager_private : NULL);
 }
@@ -241,7 +241,7 @@ stw_create_context_attribs(HDC hdc, INT iLayerPlane, struct stw_context *shareCt
 
    attribs.options = stw_dev->st_options;
 
-   ctx->st = stw_dev->stapi->create_context(stw_dev->stapi,
+   ctx->st = st_api_create_context(
          smapi, &attribs, &ctx_err, shareCtx ? shareCtx->st : NULL);
    if (ctx->st == NULL)
       goto no_st_ctx;
@@ -322,7 +322,7 @@ DrvDeleteContext(DHGLRC dhglrc)
 
       /* Unbind current if deleting current context. */
       if (curctx == ctx)
-         stw_dev->stapi->make_current(stw_dev->stapi, NULL, NULL, NULL);
+         st_api_make_current(NULL, NULL, NULL);
 
       stw_destroy_context(ctx);
       ret = TRUE;
@@ -487,9 +487,9 @@ stw_make_current(struct stw_framebuffer *fb, struct stw_framebuffer *fbRead, str
       ctx->current_framebuffer = fb;
       ctx->current_read_framebuffer = fbRead;
 
-      ret = stw_dev->stapi->make_current(stw_dev->stapi, ctx->st,
-                                         fb ? fb->stfb : NULL,
-                                         fbRead ? fbRead->stfb : NULL);
+      ret = st_api_make_current(ctx->st,
+                                fb ? fb->stfb : NULL,
+                                fbRead ? fbRead->stfb : NULL);
 
       /* Release the old framebuffers from this context. */
       release_old_framebuffers(old_fb, old_fbRead, ctx);
@@ -508,7 +508,7 @@ fail:
          stw_make_current(NULL, NULL, NULL);
       }
    } else {
-      ret = stw_dev->stapi->make_current(stw_dev->stapi, NULL, NULL, NULL);
+      ret = st_api_make_current(NULL, NULL, NULL);
    }
 
    /* Unreference the previous framebuffer if any. It must be done after

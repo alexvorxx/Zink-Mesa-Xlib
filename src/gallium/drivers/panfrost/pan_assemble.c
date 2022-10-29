@@ -49,7 +49,7 @@ panfrost_shader_compile(struct pipe_screen *pscreen,
 
         nir_shader *s = nir_shader_clone(NULL, ir);
 
-        if (dev->arch >= 6 && s->xfb_info && !s->info.internal) {
+        if (s->xfb_info && !s->info.internal) {
                 /* Create compute shader doing transform feedback */
                 nir_shader *xfb = nir_shader_clone(NULL, s);
                 xfb->info.name = ralloc_asprintf(xfb, "%s@xfb", xfb->info.name);

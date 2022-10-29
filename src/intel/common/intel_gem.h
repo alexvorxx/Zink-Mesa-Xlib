@@ -168,4 +168,21 @@ bool intel_gem_read_render_timestamp(int fd, uint64_t *value);
 }
 #endif
 
+bool intel_gem_supports_protected_context(int fd);
+
+static inline void
+intel_gem_add_ext(__u64 *ptr, uint32_t ext_name,
+                  struct i915_user_extension *ext)
+{
+   __u64 *iter = ptr;
+
+   while (*iter != 0) {
+      iter = (__u64 *) &((struct i915_user_extension *)(uintptr_t)*iter)->next_extension;
+   }
+
+   ext->name = ext_name;
+
+   *iter = (uintptr_t) ext;
+}
+
 #endif /* INTEL_GEM_H */

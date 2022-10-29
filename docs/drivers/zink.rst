@@ -12,7 +12,19 @@ Features
 --------
 
 The feature-level of Zink depends on two things; what's implemented in Zink,
-as well as the features of the Vulkan driver.
+as well as the capabilities of the Vulkan driver. 
+
+The feature-levels implemented by Zink are exposed by 
+`Vulkan Profiles<https://dev.vulkan.org/tools#vulkan-profiles>` in the 
+`VP_ZINK_requirements.json<src/gallium/drivers/zink/VP_ZINK_requirements.json>`
+profiles file.
+
+Used with the `Vulkan Profiles tools<https://github.com/KhronosGroup/Vulkan-Profiles>`, 
+we can compare the ZINK profiles with Vulkan devices profiles generated with 
+`Vulkaninfo<https://vulkan.lunarg.com/doc/view/latest/windows/vulkaninfo.html>`
+or downloaded from 
+`GPUinfo.org<https://www.saschawillems.de/blog/2022/03/12/vulkan-profiles-support-for-the-vulkan-hardware-capability-viewer-and-database/>`
+to establish the feature-levels supported by these drivers.
 
 OpenGL 2.1
 ^^^^^^^^^^

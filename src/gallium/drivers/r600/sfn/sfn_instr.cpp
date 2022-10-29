@@ -188,7 +188,10 @@ void Instr::forward_set_blockid(int id, int index)
 }
 
 InstrWithVectorResult::InstrWithVectorResult(const RegisterVec4& dest,
-                                             const RegisterVec4::Swizzle& dest_swizzle):
+                                             const RegisterVec4::Swizzle& dest_swizzle,
+                                             int resource_base,
+                                             PRegister resource_offset):
+   InstrWithResource(resource_base, resource_offset),
    m_dest(dest),
    m_dest_swizzle(dest_swizzle)
 {
@@ -425,6 +428,7 @@ void Block::lds_group_end()
 }
 
 InstrWithVectorResult::InstrWithVectorResult(const InstrWithVectorResult& orig):
+   InstrWithResource(orig),
    m_dest(orig.m_dest),
    m_dest_swizzle(orig.m_dest_swizzle)
 {

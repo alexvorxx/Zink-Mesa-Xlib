@@ -404,7 +404,8 @@ struct v3d_key {
         uint8_t num_samplers_used;
         uint8_t ucp_enables;
         bool is_last_geometry_stage;
-        bool robust_buffer_access;
+        bool robust_uniform_access;
+        bool robust_storage_access;
         bool robust_image_access;
 
         enum v3d_execution_environment environment;
@@ -720,6 +721,14 @@ struct v3d_compile {
         /* Disables loop unrolling to reduce register pressure. */
         bool disable_loop_unrolling;
         bool unrolled_any_loops;
+
+        /* Disables nir_opt_gcm to reduce register pressure. */
+        bool disable_gcm;
+
+        /* If calling nir_opt_gcm made any progress. Used to skip new rebuilds
+         * if possible
+         */
+        bool gcm_progress;
 
         /* Disables scheduling of general TMU loads (and unfiltered image load).
          */
@@ -1071,7 +1080,7 @@ vir_has_uniform(struct qinst *inst)
 const struct v3d_compiler *v3d_compiler_init(const struct v3d_device_info *devinfo,
                                              uint32_t max_inline_uniform_buffers);
 void v3d_compiler_free(const struct v3d_compiler *compiler);
-void v3d_optimize_nir(struct v3d_compile *c, struct nir_shader *s);
+void v3d_optimize_nir(struct v3d_compile *c, struct nir_shader *s, bool allow_copies);
 
 uint64_t *v3d_compile(const struct v3d_compiler *compiler,
                       struct v3d_key *key,

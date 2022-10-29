@@ -871,7 +871,8 @@ alloc_bo_from_cache(struct iris_bufmgr *bufmgr,
                     unsigned flags,
                     bool match_zone)
 {
-   if (!bucket)
+   /* Don't put anything protected in the BO cache. */
+   if (!bucket || (flags & BO_ALLOC_PROTECTED))
       return NULL;
 
    struct iris_bo *bo = NULL;
@@ -964,42 +965,56 @@ alloc_fresh_bo(struct iris_bufmgr *bufmgr, uint64_t bo_size, unsigned flags)
    /* If we have vram size, we have multiple memory regions and should choose
     * one of them.
     */
-   if (bufmgr->vram.size > 0) {
+   if (bufmgr->vram.size > 0 || flags & BO_ALLOC_PROTECTED) {
       /* All new BOs we get from the kernel are zeroed, so we don't need to
        * worry about that here.
        */
-      struct drm_i915_gem_memory_class_instance regions[2];
-      uint32_t nregions = 0;
-      switch (bo->real.heap) {
-      case IRIS_HEAP_DEVICE_LOCAL_PREFERRED:
-         /* For vram allocations, still use system memory as a fallback. */
-         regions[nregions++] = bufmgr->vram.region;
-         regions[nregions++] = bufmgr->sys.region;
-         break;
-      case IRIS_HEAP_DEVICE_LOCAL:
-         regions[nregions++] = bufmgr->vram.region;
-         break;
-      case IRIS_HEAP_SYSTEM_MEMORY:
-         regions[nregions++] = bufmgr->sys.region;
-         break;
-      case IRIS_HEAP_MAX:
-         unreachable("invalid heap for BO");
-      }
+      struct drm_i915_gem_create_ext create = {
+         .size = bo_size,
+      };
 
+      struct drm_i915_gem_memory_class_instance regions[2];
       struct drm_i915_gem_create_ext_memory_regions ext_regions = {
          .base = { .name = I915_GEM_CREATE_EXT_MEMORY_REGIONS },
-         .num_regions = nregions,
+         .num_regions = 0,
          .regions = (uintptr_t)regions,
       };
 
-      struct drm_i915_gem_create_ext create = {
-         .size = bo_size,
-         .extensions = (uintptr_t)&ext_regions,
-      };
+      if (bufmgr->vram.size > 0) {
+         switch (bo->real.heap) {
+         case IRIS_HEAP_DEVICE_LOCAL_PREFERRED:
+            /* For vram allocations, still use system memory as a fallback. */
+            regions[ext_regions.num_regions++] = bufmgr->vram.region;
+            regions[ext_regions.num_regions++] = bufmgr->sys.region;
+            break;
+         case IRIS_HEAP_DEVICE_LOCAL:
+            regions[ext_regions.num_regions++] = bufmgr->vram.region;
+            break;
+         case IRIS_HEAP_SYSTEM_MEMORY:
+            regions[ext_regions.num_regions++] = bufmgr->sys.region;
+            break;
+         case IRIS_HEAP_MAX:
+            unreachable("invalid heap for BO");
+         }
 
-      if (!bufmgr->all_vram_mappable &&
-          bo->real.heap == IRIS_HEAP_DEVICE_LOCAL_PREFERRED) {
-         create.flags |= I915_GEM_CREATE_EXT_FLAG_NEEDS_CPU_ACCESS;
+         intel_gem_add_ext(&create.extensions,
+                           I915_GEM_CREATE_EXT_MEMORY_REGIONS,
+                           &ext_regions.base);
+
+         if (!bufmgr->all_vram_mappable &&
+             bo->real.heap == IRIS_HEAP_DEVICE_LOCAL_PREFERRED) {
+            create.flags |= I915_GEM_CREATE_EXT_FLAG_NEEDS_CPU_ACCESS;
+         }
+      }
+
+      /* Protected param */
+      struct drm_i915_gem_create_ext_protected_content protected_param = {
+         .flags = 0,
+      };
+      if (flags & BO_ALLOC_PROTECTED) {
+         intel_gem_add_ext(&create.extensions,
+                           I915_GEM_CREATE_EXT_PROTECTED_CONTENT,
+                           &protected_param.base);
       }
 
       /* It should be safe to use GEM_CREATE_EXT without checking, since we are
@@ -1127,6 +1142,7 @@ iris_bo_alloc(struct iris_bufmgr *bufmgr,
    bo->name = name;
    p_atomic_set(&bo->refcount, 1);
    bo->real.reusable = bucket && bufmgr->bo_reuse;
+   bo->real.protected = flags & BO_ALLOC_PROTECTED;
    bo->index = -1;
    bo->real.kflags = EXEC_OBJECT_SUPPORTS_48B_ADDRESS | EXEC_OBJECT_PINNED;
 
@@ -1674,16 +1690,6 @@ iris_bo_map(struct util_debug_callback *dbg,
    return map;
 }
 
-/** Waits for all GPU rendering with the object to have completed. */
-void
-iris_bo_wait_rendering(struct iris_bo *bo)
-{
-   /* We require a kernel recent enough for WAIT_IOCTL support.
-    * See intel_init_bufmgr()
-    */
-   iris_bo_wait(bo, -1);
-}
-
 static int
 iris_bo_wait_gem(struct iris_bo *bo, int64_t timeout_ns)
 {
@@ -1729,7 +1735,7 @@ iris_bo_wait_gem(struct iris_bo *bo, int64_t timeout_ns)
  * Note that some kernels have broken the infinite wait for negative values
  * promise, upgrade to latest stable kernels if this is the case.
  */
-int
+static inline int
 iris_bo_wait(struct iris_bo *bo, int64_t timeout_ns)
 {
    int ret;
@@ -1739,12 +1745,19 @@ iris_bo_wait(struct iris_bo *bo, int64_t timeout_ns)
    else
       ret = iris_bo_wait_syncobj(bo, timeout_ns);
 
-   if (ret != 0)
-      return -errno;
-
-   bo->idle = true;
+   bo->idle = ret == 0;
 
    return ret;
+}
+
+/** Waits for all GPU rendering with the object to have completed. */
+void
+iris_bo_wait_rendering(struct iris_bo *bo)
+{
+   /* We require a kernel recent enough for WAIT_IOCTL support.
+    * See intel_init_bufmgr()
+    */
+   iris_bo_wait(bo, -1);
 }
 
 static void
@@ -2198,19 +2211,56 @@ iris_hw_context_set_vm_id(struct iris_bufmgr *bufmgr, uint32_t ctx_id)
 }
 
 uint32_t
-iris_create_hw_context(struct iris_bufmgr *bufmgr)
+iris_create_hw_context(struct iris_bufmgr *bufmgr, bool protected)
 {
-   struct drm_i915_gem_context_create create = { };
-   int ret = intel_ioctl(bufmgr->fd, DRM_IOCTL_I915_GEM_CONTEXT_CREATE, &create);
-   if (ret != 0) {
-      DBG("DRM_IOCTL_I915_GEM_CONTEXT_CREATE failed: %s\n", strerror(errno));
-      return 0;
+   uint32_t ctx_id;
+
+   if (protected) {
+      struct drm_i915_gem_context_create_ext_setparam recoverable_param = {
+         .param = {
+            .param = I915_CONTEXT_PARAM_RECOVERABLE,
+            .value = false,
+         },
+      };
+      struct drm_i915_gem_context_create_ext_setparam protected_param = {
+         .param = {
+            .param = I915_CONTEXT_PARAM_PROTECTED_CONTENT,
+            .value = true,
+         },
+      };
+      struct drm_i915_gem_context_create_ext create = {
+         .flags = I915_CONTEXT_CREATE_FLAGS_USE_EXTENSIONS,
+      };
+
+      intel_gem_add_ext(&create.extensions,
+                        I915_CONTEXT_CREATE_EXT_SETPARAM,
+                        &recoverable_param.base);
+      intel_gem_add_ext(&create.extensions,
+                        I915_CONTEXT_CREATE_EXT_SETPARAM,
+                        &protected_param.base);
+
+      int ret = intel_ioctl(bufmgr->fd, DRM_IOCTL_I915_GEM_CONTEXT_CREATE_EXT, &create);
+      if (ret == -1) {
+         DBG("DRM_IOCTL_I915_GEM_CONTEXT_CREATE_EXT failed: %s\n", strerror(errno));
+         return 0;
+      }
+
+      ctx_id = create.ctx_id;
+   } else {
+      struct drm_i915_gem_context_create create = { };
+      int ret = intel_ioctl(bufmgr->fd, DRM_IOCTL_I915_GEM_CONTEXT_CREATE, &create);
+      if (ret != 0) {
+         DBG("DRM_IOCTL_I915_GEM_CONTEXT_CREATE failed: %s\n", strerror(errno));
+         return 0;
+      }
+
+      ctx_id = create.ctx_id;
    }
 
-   iris_hw_context_set_unrecoverable(bufmgr, create.ctx_id);
-   iris_hw_context_set_vm_id(bufmgr, create.ctx_id);
+   iris_hw_context_set_unrecoverable(bufmgr, ctx_id);
+   iris_hw_context_set_vm_id(bufmgr, ctx_id);
 
-   return create.ctx_id;
+   return ctx_id;
 }
 
 int
@@ -2243,10 +2293,23 @@ iris_hw_context_set_priority(struct iris_bufmgr *bufmgr,
    return err;
 }
 
+static bool
+iris_hw_context_get_protected(struct iris_bufmgr *bufmgr, uint32_t ctx_id)
+{
+   struct drm_i915_gem_context_param p = {
+      .ctx_id = ctx_id,
+      .param = I915_CONTEXT_PARAM_PROTECTED_CONTENT,
+   };
+   drmIoctl(bufmgr->fd, DRM_IOCTL_I915_GEM_CONTEXT_GETPARAM, &p);
+   return p.value; /* on error, return 0 i.e. default priority */
+}
+
 uint32_t
 iris_clone_hw_context(struct iris_bufmgr *bufmgr, uint32_t ctx_id)
 {
-   uint32_t new_ctx = iris_create_hw_context(bufmgr);
+   uint32_t new_ctx =
+      iris_create_hw_context(bufmgr,
+                             iris_hw_context_get_protected(bufmgr, ctx_id));
 
    if (new_ctx) {
       int priority = iris_kernel_context_get_priority(bufmgr, ctx_id);

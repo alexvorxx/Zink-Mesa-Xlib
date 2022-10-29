@@ -424,7 +424,7 @@ bool
 is_done_sendmsg(amd_gfx_level gfx_level, const Instruction* instr)
 {
    if (gfx_level <= GFX10_3 && instr->opcode == aco_opcode::s_sendmsg)
-      return (instr->sopp().imm & sendmsg_id_mask_gfx6) == _sendmsg_gs_done;
+      return (instr->sopp().imm & sendmsg_id_mask) == _sendmsg_gs_done;
    return false;
 }
 
@@ -568,7 +568,8 @@ perform_hazard_query(hazard_query* query, Instruction* instr, bool upwards)
    /* don't move non-reorderable instructions */
    if (instr->opcode == aco_opcode::s_memtime || instr->opcode == aco_opcode::s_memrealtime ||
        instr->opcode == aco_opcode::s_setprio || instr->opcode == aco_opcode::s_getreg_b32 ||
-       instr->opcode == aco_opcode::p_init_scratch || instr->opcode == aco_opcode::p_jump_to_epilog)
+       instr->opcode == aco_opcode::p_init_scratch || instr->opcode == aco_opcode::p_jump_to_epilog ||
+       instr->opcode == aco_opcode::s_sendmsg_rtn_b32 || instr->opcode == aco_opcode::s_sendmsg_rtn_b64)
       return hazard_fail_unreorderable;
 
    memory_event_set instr_set;
@@ -608,8 +609,7 @@ perform_hazard_query(hazard_query* query, Instruction* instr, bool upwards)
    /* Don't move memory accesses to before control barriers. I don't think
     * this is necessary for the Vulkan memory model, but it might be for GLSL450. */
    unsigned control_classes =
-      storage_buffer | storage_atomic_counter | storage_image | storage_shared |
-      storage_task_payload;
+      storage_buffer | storage_image | storage_shared | storage_task_payload;
    if (first->has_control_barrier &&
        ((second->access_atomic | second->access_relaxed) & control_classes))
       return hazard_fail_barrier;
@@ -644,7 +644,10 @@ schedule_SMEM(sched_ctx& ctx, Block* block, std::vector<RegisterDemand>& registe
    int16_t k = 0;
 
    /* don't move s_memtime/s_memrealtime */
-   if (current->opcode == aco_opcode::s_memtime || current->opcode == aco_opcode::s_memrealtime)
+   if (current->opcode == aco_opcode::s_memtime ||
+       current->opcode == aco_opcode::s_memrealtime ||
+       current->opcode == aco_opcode::s_sendmsg_rtn_b32 ||
+       current->opcode == aco_opcode::s_sendmsg_rtn_b64)
       return;
 
    /* first, check if we have instructions before current to move down */

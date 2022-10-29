@@ -132,6 +132,12 @@ zink_resource_usage_check_completion(struct zink_screen *screen, struct zink_res
 }
 
 static inline void
+zink_resource_usage_try_wait(struct zink_context *ctx, struct zink_resource *res, enum zink_resource_access access)
+{
+   zink_bo_usage_try_wait(ctx, res->obj->bo, access);
+}
+
+static inline void
 zink_resource_usage_wait(struct zink_context *ctx, struct zink_resource *res, enum zink_resource_access access)
 {
    zink_bo_usage_wait(ctx, res->obj->bo, access);

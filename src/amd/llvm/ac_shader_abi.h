@@ -34,6 +34,12 @@
 
 #define AC_LLVM_MAX_OUTPUTS (VARYING_SLOT_VAR31 + 1)
 
+enum ac_prim_count {
+   ac_prim_count_gs_emit,
+   ac_prim_count_gen,
+   ac_prim_count_xfb,
+};
+
 /* Document the shader ABI during compilation. This is what allows radeonsi and
  * radv to share a compiler backend.
  */
@@ -68,6 +74,9 @@ struct ac_shader_abi {
 
    void (*emit_vertex_with_counter)(struct ac_shader_abi *abi, unsigned stream,
                                     LLVMValueRef vertexidx, LLVMValueRef *addrs);
+
+   void (*atomic_add_prim_count)(struct ac_shader_abi *abi, unsigned stream,
+                                 LLVMValueRef prim_count, enum ac_prim_count count_type);
 
    LLVMValueRef (*load_inputs)(struct ac_shader_abi *abi,
                                unsigned driver_location, unsigned component,

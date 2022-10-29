@@ -128,7 +128,7 @@ add_conv_test(struct gallivm_state *gallivm,
    block = LLVMAppendBasicBlockInContext(context, func, "entry");
    LLVMPositionBuilderAtEnd(builder, block);
 
-   for(i = 0; i < num_srcs; ++i) {
+   for (i = 0; i < num_srcs; ++i) {
       LLVMValueRef index = LLVMConstInt(LLVMInt32TypeInContext(context), i, 0);
       LLVMValueRef ptr = LLVMBuildGEP2(builder, src_vec_type, src_ptr, &index, 1, "");
       src[i] = LLVMBuildLoad2(builder, src_vec_type, ptr, "");
@@ -136,7 +136,7 @@ add_conv_test(struct gallivm_state *gallivm,
 
    lp_build_conv(gallivm, src_type, dst_type, src, num_srcs, dst, num_dsts);
 
-   for(i = 0; i < num_dsts; ++i) {
+   for (i = 0; i < num_dsts; ++i) {
       LLVMValueRef index = LLVMConstInt(LLVMInt32TypeInContext(context), i, 0);
       LLVMValueRef ptr = LLVMBuildGEP2(builder, dst_vec_type, dst_ptr, &index, 1, "");
       LLVMBuildStore(builder, dst[i], ptr);
@@ -193,7 +193,7 @@ test_one(unsigned verbose,
       return TRUE;
    }
 
-   if(verbose >= 1)
+   if (verbose >= 1)
       dump_conv_types(stderr, src_type, dst_type);
 
    if (src_type.length > dst_type.length) {
@@ -237,7 +237,7 @@ test_one(unsigned verbose,
    gallivm_free_ir(gallivm);
 
    success = TRUE;
-   for(i = 0; i < n && success; ++i) {
+   for (i = 0; i < n && success; ++i) {
       unsigned src_stride = src_type.length*src_type.width/8;
       unsigned dst_stride = dst_type.length*dst_type.width/8;
       alignas(LP_MIN_VECTOR_ALIGN) uint8_t src[LP_MAX_VECTOR_LENGTH*LP_MAX_VECTOR_LENGTH];
@@ -247,12 +247,12 @@ test_one(unsigned verbose,
       int64_t start_counter = 0;
       int64_t end_counter = 0;
 
-      for(j = 0; j < num_srcs; ++j) {
+      for (j = 0; j < num_srcs; ++j) {
          random_vec(src_type, src + j*src_stride);
          read_vec(src_type, src + j*src_stride, fref + j*src_type.length);
       }
 
-      for(j = 0; j < num_dsts; ++j) {
+      for (j = 0; j < num_dsts; ++j) {
          write_vec(dst_type, ref + j*dst_stride, fref + j*dst_type.length);
       }
 
@@ -262,13 +262,13 @@ test_one(unsigned verbose,
 
       cycles[i] = end_counter - start_counter;
 
-      for(j = 0; j < num_dsts; ++j) {
-         if(!compare_vec_with_eps(dst_type, dst + j*dst_stride, ref + j*dst_stride, eps))
+      for (j = 0; j < num_dsts; ++j) {
+         if (!compare_vec_with_eps(dst_type, dst + j*dst_stride, ref + j*dst_stride, eps))
             success = FALSE;
       }
 
       if (!success || verbose >= 3) {
-         if(verbose < 1)
+         if (verbose < 1)
             dump_conv_types(stderr, src_type, dst_type);
          if (success) {
             fprintf(stderr, "PASS\n");
@@ -277,7 +277,7 @@ test_one(unsigned verbose,
             fprintf(stderr, "MISMATCH\n");
          }
 
-         for(j = 0; j < num_srcs; ++j) {
+         for (j = 0; j < num_srcs; ++j) {
             fprintf(stderr, "  Src%u: ", j);
             dump_vec(stderr, src_type, src + j*src_stride);
             fprintf(stderr, "\n");
@@ -285,12 +285,12 @@ test_one(unsigned verbose,
 
 #if 1
          fprintf(stderr, "  Ref: ");
-         for(j = 0; j < src_type.length*num_srcs; ++j)
+         for (j = 0; j < src_type.length*num_srcs; ++j)
             fprintf(stderr, " %f", fref[j]);
          fprintf(stderr, "\n");
 #endif
 
-         for(j = 0; j < num_dsts; ++j) {
+         for (j = 0; j < num_dsts; ++j) {
             fprintf(stderr, "  Dst%u: ", j);
             dump_vec(stderr, dst_type, dst + j*dst_stride);
             fprintf(stderr, "\n");
@@ -312,7 +312,7 @@ test_one(unsigned verbose,
       double avg, std;
       unsigned m;
 
-      for(i = 0; i < n; ++i) {
+      for (i = 0; i < n; ++i) {
          sum += cycles[i];
          sum2 += cycles[i]*cycles[i];
       }
@@ -322,8 +322,8 @@ test_one(unsigned verbose,
 
       m = 0;
       sum = 0.0;
-      for(i = 0; i < n; ++i) {
-         if(fabs(cycles[i] - avg) <= 4.0*std) {
+      for (i = 0; i < n; ++i) {
+         if (fabs(cycles[i] - avg) <= 4.0*std) {
             sum += cycles[i];
             ++m;
          }
@@ -333,7 +333,7 @@ test_one(unsigned verbose,
 
    }
 
-   if(fp)
+   if (fp)
       write_tsv_row(fp, src_type, dst_type, cycles_avg, success);
 
    gallivm_destroy(gallivm);
@@ -409,13 +409,13 @@ test_all(unsigned verbose, FILE *fp)
    boolean success = TRUE;
    int error_count = 0;
 
-   for(src_type = conv_types; src_type < &conv_types[num_types]; ++src_type) {
-      for(dst_type = conv_types; dst_type < &conv_types[num_types]; ++dst_type) {
+   for (src_type = conv_types; src_type < &conv_types[num_types]; ++src_type) {
+      for (dst_type = conv_types; dst_type < &conv_types[num_types]; ++dst_type) {
 
-         if(src_type == dst_type)
+         if (src_type == dst_type)
             continue;
 
-         if(!test_one(verbose, fp, *src_type, *dst_type)){
+         if (!test_one(verbose, fp, *src_type, *dst_type)){
             success = FALSE;
             ++error_count;
          }
@@ -437,14 +437,14 @@ test_some(unsigned verbose, FILE *fp,
    unsigned long i;
    boolean success = TRUE;
 
-   for(i = 0; i < n; ++i) {
+   for (i = 0; i < n; ++i) {
       src_type = &conv_types[rand() % num_types];
-      
+
       do {
          dst_type = &conv_types[rand() % num_types];
       } while (src_type == dst_type || src_type->norm != dst_type->norm);
 
-      if(!test_one(verbose, fp, *src_type, *dst_type))
+      if (!test_one(verbose, fp, *src_type, *dst_type))
         success = FALSE;
    }
 

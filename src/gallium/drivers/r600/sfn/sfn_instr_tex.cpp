@@ -39,20 +39,15 @@ using std::string;
 TexInstr::TexInstr(Opcode op, const RegisterVec4& dest,
                    const RegisterVec4::Swizzle& dest_swizzle,
                    const RegisterVec4& src, unsigned sid, unsigned rid,
-                   PVirtualValue sampler_offs):
-   InstrWithVectorResult(dest, dest_swizzle),
+                   PRegister sampler_offs):
+   InstrWithVectorResult(dest, dest_swizzle, sid, sampler_offs),
    m_opcode(op),
    m_src(src),
-   m_sampler_offset(sampler_offs),
    m_inst_mode(0),
-   m_sampler_id(sid),
    m_resource_id(rid)
 {
    memset(m_offset, 0, sizeof(m_offset));
    m_src.add_use(this);
-
-   if (m_sampler_offset && m_sampler_offset->as_register())
-      m_sampler_offset->as_register()->add_use(this);
 }
 
 void TexInstr::accept(ConstInstrVisitor& visitor) const
@@ -93,11 +88,11 @@ bool TexInstr::is_equal_to(const TexInstr& lhs) const
    if (m_src != lhs.m_src)
       return false;
 
-   if (m_sampler_offset && lhs.m_sampler_offset) {
-      if (!m_sampler_offset->equal_to(*lhs.m_sampler_offset))
+   if (resource_offset() && lhs.resource_offset()) {
+      if (!resource_offset()->equal_to(*lhs.resource_offset()))
          return false;
-   } else if ((m_sampler_offset && !lhs.m_sampler_offset) ||
-              (!m_sampler_offset && lhs.m_sampler_offset))
+   } else if ((resource_offset() && !lhs.resource_offset()) ||
+              (!resource_offset() && lhs.resource_offset()))
       return false;
 
    if (m_tex_flags != lhs.m_tex_flags)
@@ -108,7 +103,7 @@ bool TexInstr::is_equal_to(const TexInstr& lhs) const
          return false;
    }
    return m_inst_mode == lhs.m_inst_mode &&
-         m_sampler_id == lhs.m_sampler_id &&
+         resource_base() == lhs.resource_base() &&
          m_resource_id == lhs.m_resource_id;
 }
 
@@ -129,8 +124,7 @@ bool TexInstr::do_ready() const
          return false;
       }
 
-   if (m_sampler_offset && m_sampler_offset->as_register() &&
-       !m_sampler_offset->as_register()->ready(block_id(), index()))
+   if (resource_offset() && !resource_offset()->ready(block_id(), index()))
        return false;
    return m_src.ready(block_id(), index());
 }
@@ -149,10 +143,10 @@ void TexInstr::do_print(std::ostream& os) const
    m_src.print(os);
 
    os << " RID:" << m_resource_id
-      << " SID:" << m_sampler_id;
+      << " SID:" << resource_base();
 
-   if (m_sampler_offset)
-      os << " SO:" << *m_sampler_offset;
+   if (resource_offset())
+      os << " SO:" << *resource_offset();
 
    if (m_offset[0])
       os << " OX:" << m_offset[0];
@@ -318,7 +312,7 @@ void TexInstr::set_tex_param(const std::string& token)
    else if (token.substr(0,5) == "MODE:")
       set_inst_mode(int_from_string_with_prefix(token, "MODE:"));
    else if (token.substr(0,3) == "SO:")
-      set_sampler_offset(VirtualValue::from_string(token.substr(3)));
+      set_resource_offset(VirtualValue::from_string(token.substr(3))->as_register());
    else {
       std::cerr << "Token '" << token << "': ";
       unreachable("Unknown token in tex param");
@@ -382,6 +376,11 @@ bool TexInstr::replace_source(PRegister old_src, PVirtualValue new_src)
    return success;
 }
 
+uint8_t TexInstr::allowed_dest_chan_mask() const
+{
+   return m_src.free_chan_mask();
+}
+
 struct SamplerId {
    int id;
    bool indirect;
@@ -407,13 +406,13 @@ void TexInstr::emit_set_gradients(nir_tex_instr* tex, int sampler_id,
    grad[0] = new TexInstr(set_gradient_h, empty_dst, {7,7,7,7}, src.ddx,
                           sampler_id,
                           sampler_id + R600_MAX_CONST_BUFFERS,
-                          src.sampler_offset);
+                          src.resource_offset);
    grad[0]->set_rect_coordinate_flags(tex);
    grad[0]->set_always_keep();
 
    grad[1] = new TexInstr(set_gradient_v, empty_dst, {7,7,7,7}, src.ddy,
                           sampler_id, sampler_id + R600_MAX_CONST_BUFFERS,
-                          src.sampler_offset);
+                          src.resource_offset);
    grad[1]->set_rect_coordinate_flags(tex);
    grad[1]->set_always_keep();
    irt->add_prepare_instr(grad[0]);
@@ -444,7 +443,7 @@ void TexInstr::emit_set_offsets(nir_tex_instr* tex, int sampler_id,
    auto set_ofs = new TexInstr(TexInstr::set_offsets, empty_dst, {7,7,7,7},
                                ofs, sampler_id,
                                sampler_id + R600_MAX_CONST_BUFFERS,
-                               src.sampler_offset);
+                               src.resource_offset);
    set_ofs->set_always_keep();
    irt->add_prepare_instr(set_ofs);
 }
@@ -485,7 +484,7 @@ bool TexInstr::emit_lowered_tex(nir_tex_instr* tex, Inputs& src, Shader& shader)
    }
    auto irt = new TexInstr(src.opcode, dst, dst_swz,  src_coord, sampler.id,
                            sampler.id + R600_MAX_CONST_BUFFERS,
-                           src.sampler_offset);
+                           src.resource_offset);
 
    if (tex->op == nir_texop_txd)
       emit_set_gradients(tex, sampler.id, src, irt, shader);
@@ -514,8 +513,8 @@ bool TexInstr::emit_buf_txf(nir_tex_instr *tex, Inputs& src, Shader& shader)
    auto dst = vf.dest_vec4(tex->dest, pin_group);
 
    PRegister tex_offset = nullptr;
-   if (src.texture_offset)
-      tex_offset = shader.emit_load_to_register(src.texture_offset);
+   if (src.resource_offset)
+      tex_offset = shader.emit_load_to_register(src.resource_offset);
 
    auto *real_dst = &dst;
    RegisterVec4 tmp = vf.temp_vec4(pin_group);
@@ -559,8 +558,9 @@ bool TexInstr::emit_tex_texture_samples(nir_tex_instr* instr, Inputs& src, Shade
 
    int res_id = R600_MAX_CONST_BUFFERS + instr->sampler_index;
 
+   // Fishy: should the zero be instr->sampler_index?
    auto ir = new TexInstr(src.opcode, dest, {3, 7, 7, 7}, help,
-                          0, res_id, src.sampler_offset);
+                          0, res_id, src.resource_offset);
    shader.emit_instruction(ir);
    return true;
 }
@@ -598,7 +598,7 @@ bool TexInstr::emit_tex_txs(nir_tex_instr *tex, Inputs& src,
       auto ir = new TexInstr(get_resinfo, dest, dest_swz, src_coord,
                              sampler.id,
                              sampler.id + R600_MAX_CONST_BUFFERS,
-                             src.sampler_offset);
+                             src.resource_offset);
 
       ir->set_dest_swizzle(dest_swz);
       shader.emit_instruction(ir);
@@ -677,8 +677,8 @@ TexInstr::Inputs::Inputs(const nir_tex_instr& instr, ValueFactory& vf):
    offset(nullptr),
    gather_comp(nullptr),
    ms_index(nullptr),
-   sampler_offset(nullptr),
    texture_offset(nullptr),
+   resource_offset(nullptr),
    backend1(nullptr),
    backend2(nullptr),
    opcode(ld)
@@ -727,7 +727,7 @@ TexInstr::Inputs::Inputs(const nir_tex_instr& instr, ValueFactory& vf):
          texture_offset = vf.src(instr.src[i], 0);
       break;
       case nir_tex_src_sampler_offset:
-         sampler_offset = vf.src(instr.src[i], 0);
+         resource_offset = vf.src(instr.src[i], 0)->as_register();
       break;
       case nir_tex_src_backend1:
          backend1 = &instr.src[i].src;

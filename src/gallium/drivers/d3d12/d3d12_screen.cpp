@@ -335,6 +335,11 @@ d3d12_get_param(struct pipe_screen *pscreen, enum pipe_cap param)
       /* This is asking about varyings, not total registers, so remove the 2 tess factor registers. */
       return D3D12_HS_OUTPUT_PATCH_CONSTANT_REGISTER_COUNT - 2;
 
+   case PIPE_CAP_MAX_TEXTURE_UPLOAD_MEMORY_BUDGET:
+      /* Picking a value in line with other drivers. Without this, we can end up easily hitting OOM
+       * if an app just creates, initializes, and destroys resources without explicitly flushing. */
+      return 64 * 1024 * 1024;
+
    default:
       return u_pipe_screen_get_param_defaults(pscreen, param);
    }
@@ -702,6 +707,14 @@ d3d12_deinit_screen(struct d3d12_screen *screen)
    if (screen->cache_bufmgr) {
       screen->cache_bufmgr->destroy(screen->cache_bufmgr);
       screen->cache_bufmgr = nullptr;
+   }
+   if (screen->slab_cache_bufmgr) {
+      screen->slab_cache_bufmgr->destroy(screen->slab_cache_bufmgr);
+      screen->slab_cache_bufmgr = nullptr;
+   }
+   if (screen->readback_slab_cache_bufmgr) {
+      screen->readback_slab_cache_bufmgr->destroy(screen->readback_slab_cache_bufmgr);
+      screen->readback_slab_cache_bufmgr = nullptr;
    }
    if (screen->bufmgr) {
       screen->bufmgr->destroy(screen->bufmgr);
@@ -1418,15 +1431,23 @@ d3d12_init_screen(struct d3d12_screen *screen, IUnknown *adapter)
    if (!screen->cache_bufmgr)
       return false;
 
-   screen->slab_bufmgr = pb_slab_range_manager_create(screen->cache_bufmgr, 16,
+   screen->slab_cache_bufmgr = pb_cache_manager_create(screen->bufmgr, 0xfffff, 2, 0, 512 * 1024 * 1024);
+   if (!screen->slab_cache_bufmgr)
+      return false;
+
+   screen->slab_bufmgr = pb_slab_range_manager_create(screen->slab_cache_bufmgr, 16,
                                                       D3D12_DEFAULT_RESOURCE_PLACEMENT_ALIGNMENT,
                                                       D3D12_DEFAULT_RESOURCE_PLACEMENT_ALIGNMENT,
                                                       &desc);
    if (!screen->slab_bufmgr)
       return false;
+   
+   screen->readback_slab_cache_bufmgr = pb_cache_manager_create(screen->bufmgr, 0xfffff, 2, 0, 512 * 1024 * 1024);
+   if (!screen->readback_slab_cache_bufmgr)
+      return false;
 
    desc.usage = (pb_usage_flags)(PB_USAGE_CPU_READ_WRITE | PB_USAGE_GPU_WRITE);
-   screen->readback_slab_bufmgr = pb_slab_range_manager_create(screen->cache_bufmgr, 16,
+   screen->readback_slab_bufmgr = pb_slab_range_manager_create(screen->readback_slab_cache_bufmgr, 16,
                                                                D3D12_DEFAULT_RESOURCE_PLACEMENT_ALIGNMENT,
                                                                D3D12_DEFAULT_RESOURCE_PLACEMENT_ALIGNMENT,
                                                                &desc);

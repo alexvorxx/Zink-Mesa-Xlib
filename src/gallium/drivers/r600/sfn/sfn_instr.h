@@ -127,6 +127,8 @@ public:
    const InstrList& dependend_instr() { return m_dependend_instr;}
 
    virtual AluInstr *as_alu() { return nullptr;}
+   virtual uint8_t allowed_dest_chan_mask() const { return 0; }
+
 protected:
 
    const InstrList& required_instr() const {return m_required_instr; }
@@ -241,9 +243,76 @@ private:
    int m_emitted_rat_instr{0};
 };
 
-class InstrWithVectorResult : public Instr {
+class InstrWithResource : public Instr {
 public:
-   InstrWithVectorResult(const RegisterVec4& dest, const RegisterVec4::Swizzle& dest_swizzle);
+   InstrWithResource(int base, PRegister offset) :
+      m_base(base), m_offset(offset)
+   {
+      if (m_offset) {
+         m_offset->add_use(this);
+      }
+   }
+   bool replace_resource_offset(PRegister old_offset, PRegister new_offset) {
+      if (m_offset && old_offset->equal_to(*m_offset)) {
+         m_offset->del_use(this);
+         m_offset = new_offset;
+         m_offset->add_use(this);
+         return true;
+      }
+      return false;
+   }
+   void set_resource_offset(PRegister offset) {
+      if (m_offset)
+         m_offset->del_use(this);
+      m_offset = offset;
+      if (m_offset) {
+         m_offset->add_use(this);
+      }
+   }
+
+   bool resource_is_equal(const InstrWithResource& other) const {
+      if (m_base != other.m_base)
+         return false;
+      if (m_offset && other.m_offset)
+         return m_offset->equal_to(*other.m_offset);
+      return !m_offset && !other.m_offset;
+   }
+
+   auto resource_base() const {return m_base;}
+
+   auto resource_offset() const {return m_offset;}
+
+   auto buffer_index_mode() const -> EBufferIndexMode {
+      if (!m_offset)
+         return bim_none;
+      switch (m_offset->sel()) {
+      case 1: return bim_zero;
+      case 2: return bim_one;
+      default:
+         unreachable("Invalid resource offset, scheduler must substitute registers");
+      }
+   }
+
+   bool resource_ready(int block_id, int index) const {
+      return !m_offset || m_offset->ready(block_id, index);
+   }
+protected:
+   void print_resource_offset(std::ostream& os) const {
+      if (m_offset)
+         os << " + " << *m_offset;
+   }
+private:
+   int m_base{0};
+   PRegister m_offset{nullptr};
+};
+
+
+class InstrWithVectorResult : public InstrWithResource {
+public:
+   InstrWithVectorResult(const RegisterVec4& dest,
+                         const RegisterVec4::Swizzle& dest_swizzle,
+                         int resource_base,
+                         PRegister resource_offset);
 
    void set_dest_swizzle(const RegisterVec4::Swizzle& swz) {m_dest_swizzle = swz;}
    int dest_swizzle(int i) const { return m_dest_swizzle[i];}

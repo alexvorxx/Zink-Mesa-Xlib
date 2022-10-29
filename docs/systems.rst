@@ -66,7 +66,7 @@ the Git repo. The list includes:
 -  DEC OpenVMS
 -  Intel i810
 -  Intel i830 - i865
--  Linux fbdev
+-  Linux Framebuffer
 -  Matrox
 -  MS-DOS
 -  NVIDIA Riva TNT - GeForce 4

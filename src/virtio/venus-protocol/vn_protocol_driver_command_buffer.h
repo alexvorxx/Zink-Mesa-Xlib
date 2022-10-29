@@ -11,6 +11,12 @@
 #include "vn_instance.h"
 #include "vn_protocol_driver_structs.h"
 
+/*
+ * These structs/unions/commands are not included
+ *
+ *   vkCmdPushDescriptorSetWithTemplateKHR
+ */
+
 /* struct VkCommandBufferAllocateInfo chain */
 
 static inline size_t
@@ -5790,6 +5796,78 @@ static inline void vn_decode_vkCmdExecuteCommands_reply(struct vn_cs_decoder *de
     /* skip pCommandBuffers */
 }
 
+static inline size_t vn_sizeof_vkCmdPushDescriptorSetKHR(VkCommandBuffer commandBuffer, VkPipelineBindPoint pipelineBindPoint, VkPipelineLayout layout, uint32_t set, uint32_t descriptorWriteCount, const VkWriteDescriptorSet* pDescriptorWrites)
+{
+    const VkCommandTypeEXT cmd_type = VK_COMMAND_TYPE_vkCmdPushDescriptorSetKHR_EXT;
+    const VkFlags cmd_flags = 0;
+    size_t cmd_size = vn_sizeof_VkCommandTypeEXT(&cmd_type) + vn_sizeof_VkFlags(&cmd_flags);
+
+    cmd_size += vn_sizeof_VkCommandBuffer(&commandBuffer);
+    cmd_size += vn_sizeof_VkPipelineBindPoint(&pipelineBindPoint);
+    cmd_size += vn_sizeof_VkPipelineLayout(&layout);
+    cmd_size += vn_sizeof_uint32_t(&set);
+    cmd_size += vn_sizeof_uint32_t(&descriptorWriteCount);
+    if (pDescriptorWrites) {
+        cmd_size += vn_sizeof_array_size(descriptorWriteCount);
+        for (uint32_t i = 0; i < descriptorWriteCount; i++)
+            cmd_size += vn_sizeof_VkWriteDescriptorSet(&pDescriptorWrites[i]);
+    } else {
+        cmd_size += vn_sizeof_array_size(0);
+    }
+
+    return cmd_size;
+}
+
+static inline void vn_encode_vkCmdPushDescriptorSetKHR(struct vn_cs_encoder *enc, VkCommandFlagsEXT cmd_flags, VkCommandBuffer commandBuffer, VkPipelineBindPoint pipelineBindPoint, VkPipelineLayout layout, uint32_t set, uint32_t descriptorWriteCount, const VkWriteDescriptorSet* pDescriptorWrites)
+{
+    const VkCommandTypeEXT cmd_type = VK_COMMAND_TYPE_vkCmdPushDescriptorSetKHR_EXT;
+
+    vn_encode_VkCommandTypeEXT(enc, &cmd_type);
+    vn_encode_VkFlags(enc, &cmd_flags);
+
+    vn_encode_VkCommandBuffer(enc, &commandBuffer);
+    vn_encode_VkPipelineBindPoint(enc, &pipelineBindPoint);
+    vn_encode_VkPipelineLayout(enc, &layout);
+    vn_encode_uint32_t(enc, &set);
+    vn_encode_uint32_t(enc, &descriptorWriteCount);
+    if (pDescriptorWrites) {
+        vn_encode_array_size(enc, descriptorWriteCount);
+        for (uint32_t i = 0; i < descriptorWriteCount; i++)
+            vn_encode_VkWriteDescriptorSet(enc, &pDescriptorWrites[i]);
+    } else {
+        vn_encode_array_size(enc, 0);
+    }
+}
+
+static inline size_t vn_sizeof_vkCmdPushDescriptorSetKHR_reply(VkCommandBuffer commandBuffer, VkPipelineBindPoint pipelineBindPoint, VkPipelineLayout layout, uint32_t set, uint32_t descriptorWriteCount, const VkWriteDescriptorSet* pDescriptorWrites)
+{
+    const VkCommandTypeEXT cmd_type = VK_COMMAND_TYPE_vkCmdPushDescriptorSetKHR_EXT;
+    size_t cmd_size = vn_sizeof_VkCommandTypeEXT(&cmd_type);
+
+    /* skip commandBuffer */
+    /* skip pipelineBindPoint */
+    /* skip layout */
+    /* skip set */
+    /* skip descriptorWriteCount */
+    /* skip pDescriptorWrites */
+
+    return cmd_size;
+}
+
+static inline void vn_decode_vkCmdPushDescriptorSetKHR_reply(struct vn_cs_decoder *dec, VkCommandBuffer commandBuffer, VkPipelineBindPoint pipelineBindPoint, VkPipelineLayout layout, uint32_t set, uint32_t descriptorWriteCount, const VkWriteDescriptorSet* pDescriptorWrites)
+{
+    VkCommandTypeEXT command_type;
+    vn_decode_VkCommandTypeEXT(dec, &command_type);
+    assert(command_type == VK_COMMAND_TYPE_vkCmdPushDescriptorSetKHR_EXT);
+
+    /* skip commandBuffer */
+    /* skip pipelineBindPoint */
+    /* skip layout */
+    /* skip set */
+    /* skip descriptorWriteCount */
+    /* skip pDescriptorWrites */
+}
+
 static inline size_t vn_sizeof_vkCmdSetDeviceMask(VkCommandBuffer commandBuffer, uint32_t deviceMask)
 {
     const VkCommandTypeEXT cmd_type = VK_COMMAND_TYPE_vkCmdSetDeviceMask_EXT;
@@ -9263,6 +9341,27 @@ static inline void vn_submit_vkCmdExecuteCommands(struct vn_instance *vn_instanc
     }
 }
 
+static inline void vn_submit_vkCmdPushDescriptorSetKHR(struct vn_instance *vn_instance, VkCommandFlagsEXT cmd_flags, VkCommandBuffer commandBuffer, VkPipelineBindPoint pipelineBindPoint, VkPipelineLayout layout, uint32_t set, uint32_t descriptorWriteCount, const VkWriteDescriptorSet* pDescriptorWrites, struct vn_instance_submit_command *submit)
+{
+    uint8_t local_cmd_data[VN_SUBMIT_LOCAL_CMD_SIZE];
+    void *cmd_data = local_cmd_data;
+    size_t cmd_size = vn_sizeof_vkCmdPushDescriptorSetKHR(commandBuffer, pipelineBindPoint, layout, set, descriptorWriteCount, pDescriptorWrites);
+    if (cmd_size > sizeof(local_cmd_data)) {
+        cmd_data = malloc(cmd_size);
+        if (!cmd_data)
+            cmd_size = 0;
+    }
+    const size_t reply_size = cmd_flags & VK_COMMAND_GENERATE_REPLY_BIT_EXT ? vn_sizeof_vkCmdPushDescriptorSetKHR_reply(commandBuffer, pipelineBindPoint, layout, set, descriptorWriteCount, pDescriptorWrites) : 0;
+
+    struct vn_cs_encoder *enc = vn_instance_submit_command_init(vn_instance, submit, cmd_data, cmd_size, reply_size);
+    if (cmd_size) {
+        vn_encode_vkCmdPushDescriptorSetKHR(enc, cmd_flags, commandBuffer, pipelineBindPoint, layout, set, descriptorWriteCount, pDescriptorWrites);
+        vn_instance_submit_command(vn_instance, submit);
+        if (cmd_data != local_cmd_data)
+            free(cmd_data);
+    }
+}
+
 static inline void vn_submit_vkCmdSetDeviceMask(struct vn_instance *vn_instance, VkCommandFlagsEXT cmd_flags, VkCommandBuffer commandBuffer, uint32_t deviceMask, struct vn_instance_submit_command *submit)
 {
     uint8_t local_cmd_data[VN_SUBMIT_LOCAL_CMD_SIZE];
@@ -11204,6 +11303,25 @@ static inline void vn_async_vkCmdExecuteCommands(struct vn_instance *vn_instance
 {
     struct vn_instance_submit_command submit;
     vn_submit_vkCmdExecuteCommands(vn_instance, 0, commandBuffer, commandBufferCount, pCommandBuffers, &submit);
+}
+
+static inline void vn_call_vkCmdPushDescriptorSetKHR(struct vn_instance *vn_instance, VkCommandBuffer commandBuffer, VkPipelineBindPoint pipelineBindPoint, VkPipelineLayout layout, uint32_t set, uint32_t descriptorWriteCount, const VkWriteDescriptorSet* pDescriptorWrites)
+{
+    VN_TRACE_FUNC();
+
+    struct vn_instance_submit_command submit;
+    vn_submit_vkCmdPushDescriptorSetKHR(vn_instance, VK_COMMAND_GENERATE_REPLY_BIT_EXT, commandBuffer, pipelineBindPoint, layout, set, descriptorWriteCount, pDescriptorWrites, &submit);
+    struct vn_cs_decoder *dec = vn_instance_get_command_reply(vn_instance, &submit);
+    if (dec) {
+        vn_decode_vkCmdPushDescriptorSetKHR_reply(dec, commandBuffer, pipelineBindPoint, layout, set, descriptorWriteCount, pDescriptorWrites);
+        vn_instance_free_command_reply(vn_instance, &submit);
+    }
+}
+
+static inline void vn_async_vkCmdPushDescriptorSetKHR(struct vn_instance *vn_instance, VkCommandBuffer commandBuffer, VkPipelineBindPoint pipelineBindPoint, VkPipelineLayout layout, uint32_t set, uint32_t descriptorWriteCount, const VkWriteDescriptorSet* pDescriptorWrites)
+{
+    struct vn_instance_submit_command submit;
+    vn_submit_vkCmdPushDescriptorSetKHR(vn_instance, 0, commandBuffer, pipelineBindPoint, layout, set, descriptorWriteCount, pDescriptorWrites, &submit);
 }
 
 static inline void vn_call_vkCmdSetDeviceMask(struct vn_instance *vn_instance, VkCommandBuffer commandBuffer, uint32_t deviceMask)

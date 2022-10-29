@@ -34,7 +34,7 @@ namespace r600 {
 
 class Shader;
 
-class GDSInstr : public Instr {
+class GDSInstr : public InstrWithResource {
 public:
 
    GDSInstr(ESDOp op, Register *dest,
@@ -53,9 +53,6 @@ public:
 
    const auto& dest() const { return m_dest;}
    auto& dest() { return m_dest;}
-
-   auto uav_id() const {return m_uav_id;}
-   auto uav_base() const {return m_uav_base;}
 
    static auto from_string(std::istream& is, ValueFactory& value_factory) -> Pointer;
 
@@ -76,13 +73,11 @@ private:
 
    RegisterVec4 m_src;
 
-   int m_uav_base{0};
-   PRegister m_uav_id{nullptr};
    std::bitset<8> m_tex_flags;
 };
 
 
-class RatInstr : public Instr {
+class RatInstr : public InstrWithResource {
 
 public:
    enum ERatOp {
@@ -131,9 +126,6 @@ public:
             const RegisterVec4& data, const RegisterVec4& index,
             int rat_id, PRegister rat_id_offset,
             int burst_count, int comp_mask, int element_size);
-
-   auto rat_id_offset() const { return m_rat_id_offset;}
-   int  rat_id() const { return m_rat_id;}
 
    ERatOp rat_op() const {return m_rat_op;}
 
@@ -186,9 +178,7 @@ private:
 
    RegisterVec4 m_data;
    RegisterVec4 m_index;
-   PRegister m_rat_id_offset{nullptr};
 
-   int m_rat_id{0};
    int m_burst_count{0};
    int m_comp_mask{15};
    int m_element_size{3};

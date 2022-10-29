@@ -450,6 +450,7 @@ struct lvp_buffer {
    struct pipe_memory_allocation *pmem;
    struct pipe_resource *bo;
    uint64_t total_size;
+   uint64_t offset;
 };
 
 struct lvp_buffer_view {

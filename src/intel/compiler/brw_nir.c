@@ -1254,7 +1254,6 @@ brw_postprocess_nir(nir_shader *nir, const struct brw_compiler *compiler,
       /* Lower integer division by constants before nir_lower_idiv. */
       OPT(nir_opt_idiv_const, 32);
       const nir_lower_idiv_options options = {
-         .imprecise_32bit_lowering = false,
          .allow_fp16 = false
       };
       OPT(nir_lower_idiv, &options);

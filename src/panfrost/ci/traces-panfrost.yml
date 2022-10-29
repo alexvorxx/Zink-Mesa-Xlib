@@ -49,7 +49,7 @@ traces:
     gl-panfrost-t860:
       checksum: ad04db74ea70b7772719080f8a4c499b
     gl-panfrost-t760:
-      checksum: 67db7302b28cb8e3e217cc79b672af79
+      checksum: 4a1937c257107833cd43816daae1d814
   0ad/0ad-v2.trace:
     gl-panfrost-t860:
       label: [skip, timeout]
@@ -179,7 +179,7 @@ traces:
   neverball/neverball-v2.trace:
     gl-panfrost-t860:
       label: [broken]
-      checksum: 12c8f3af1ed07b939b5e1de8067e5edd
+      checksum: 53365059f3b84436c199f1cb6f6d3b35
       text: Missing the coins and the texture on the "Nev" of the level.
   paraview/pv-manyspheres-v2.trace:
     gl-panfrost-t860:

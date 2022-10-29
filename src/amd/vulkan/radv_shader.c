@@ -95,8 +95,11 @@ get_nir_options_for_stage(struct radv_physical_device *device, gl_shader_stage s
       .has_fsub = true,
       .has_isub = true,
       .has_sdot_4x8 = device->rad_info.has_accelerated_dot_product,
+      .has_sudot_4x8 =
+         device->rad_info.has_accelerated_dot_product && device->rad_info.gfx_level >= GFX11,
       .has_udot_4x8 = device->rad_info.has_accelerated_dot_product,
-      .has_dot_2x16 = device->rad_info.has_accelerated_dot_product,
+      .has_dot_2x16 =
+         device->rad_info.has_accelerated_dot_product && device->rad_info.gfx_level < GFX11,
       .has_find_msb_rev = true,
       .use_scoped_barrier = true,
 #ifdef LLVM_AVAILABLE
@@ -1323,6 +1326,56 @@ radv_consider_culling(const struct radv_physical_device *pdevice, struct nir_sha
    return true;
 }
 
+static void
+setup_ngg_lds_layout(nir_shader *nir, struct radv_shader_info *info,
+                     unsigned max_vtx_in)
+{
+   unsigned scratch_lds_base = 0;
+   gl_shader_stage stage = nir->info.stage;
+
+   if (stage == MESA_SHADER_VERTEX || stage == MESA_SHADER_TESS_EVAL) {
+      /* Get pervertex LDS usage. */
+      bool uses_instanceid =
+         BITSET_TEST(nir->info.system_values_read, SYSTEM_VALUE_INSTANCE_ID);
+      bool uses_primtive_id =
+         BITSET_TEST(nir->info.system_values_read, SYSTEM_VALUE_PRIMITIVE_ID);
+      unsigned pervertex_lds_bytes =
+         ac_ngg_nogs_get_pervertex_lds_size(stage,
+                                            nir->num_outputs,
+                                            false, /* streamout */
+                                            info->outinfo.export_prim_id,
+                                            false, /* user edge flag */
+                                            info->has_ngg_culling,
+                                            uses_instanceid,
+                                            uses_primtive_id);
+
+      unsigned total_es_lds_bytes = pervertex_lds_bytes * max_vtx_in;
+      scratch_lds_base = ALIGN(total_es_lds_bytes, 8u);
+   } else if (stage == MESA_SHADER_GEOMETRY) {
+      unsigned esgs_ring_lds_bytes = info->ngg_info.esgs_ring_size;
+      unsigned gs_total_out_vtx_bytes = info->ngg_info.ngg_emit_size * 4u;
+      scratch_lds_base =
+         ALIGN(esgs_ring_lds_bytes + gs_total_out_vtx_bytes, 8u /* for the repacking code */);
+   } else {
+      /* not handled here */
+      return;
+   }
+
+   /* Get scratch LDS usage. */
+   unsigned scratch_lds_size =
+      ac_ngg_get_scratch_lds_size(stage,
+                                  info->workgroup_size,
+                                  info->wave_size,
+                                  false, /* streamout */
+                                  info->has_ngg_culling);
+
+   /* Get total LDS usage. */
+   nir->info.shared_size = scratch_lds_base + scratch_lds_size;
+
+   /* Record scratch base for abi lower of nir_load_lds_ngg_scratch_base_amd. */
+   info->ngg_info.scratch_lds_base = scratch_lds_base;
+}
+
 void radv_lower_ngg(struct radv_device *device, struct radv_pipeline_stage *ngg_stage,
                     const struct radv_pipeline_key *pl_key)
 {
@@ -1371,30 +1424,41 @@ void radv_lower_ngg(struct radv_device *device, struct radv_pipeline_stage *ngg_
    /* Invocations that process an input vertex */
    unsigned max_vtx_in = MIN2(256, ngg_info->hw_max_esverts);
 
+   setup_ngg_lds_layout(nir, &ngg_stage->info, max_vtx_in);
+
+   ac_nir_lower_ngg_options options = {0};
+   options.family = device->physical_device->rad_info.family;
+   options.gfx_level = device->physical_device->rad_info.gfx_level;
+   options.max_workgroup_size = info->workgroup_size;
+   options.wave_size = info->wave_size;
+   options.can_cull = nir->info.stage != MESA_SHADER_GEOMETRY && info->has_ngg_culling;
+   options.disable_streamout = true;
+
    if (nir->info.stage == MESA_SHADER_VERTEX ||
        nir->info.stage == MESA_SHADER_TESS_EVAL) {
-      bool export_prim_id = info->outinfo.export_prim_id;
-
       assert(info->is_ngg);
 
       if (info->has_ngg_culling)
          radv_optimize_nir_algebraic(nir, false);
 
-      NIR_PASS_V(nir, ac_nir_lower_ngg_nogs,
-                 device->physical_device->rad_info.family,
-                 max_vtx_in, num_vertices_per_prim,
-                 info->workgroup_size, info->wave_size, info->has_ngg_culling,
-                 info->has_ngg_early_prim_export, info->is_ngg_passthrough, export_prim_id,
-                 false, pl_key->primitives_generated_query,
-                 true, pl_key->vs.instance_rate_inputs, 0, 0);
+      options.num_vertices_per_primitive = num_vertices_per_prim;
+      options.early_prim_export = info->has_ngg_early_prim_export;
+      options.passthrough = info->is_ngg_passthrough;
+      options.has_prim_query = pl_key->primitives_generated_query;
+      options.primitive_id_location = info->outinfo.export_prim_id ? VARYING_SLOT_PRIMITIVE_ID : -1;
+      options.instance_rate_inputs = pl_key->vs.instance_rate_inputs;
+
+      NIR_PASS_V(nir, ac_nir_lower_ngg_nogs, &options);
 
       /* Increase ESGS ring size so the LLVM binary contains the correct LDS size. */
       ngg_stage->info.ngg_info.esgs_ring_size = nir->info.shared_size;
    } else if (nir->info.stage == MESA_SHADER_GEOMETRY) {
       assert(info->is_ngg);
-      NIR_PASS_V(nir, ac_nir_lower_ngg_gs, info->wave_size, info->workgroup_size,
-                 info->ngg_info.esgs_ring_size, info->gs.gsvs_vertex_size,
-                 info->ngg_info.ngg_emit_size * 4u, false, true);
+
+      options.gs_out_vtx_bytes = info->gs.gsvs_vertex_size;
+      options.has_xfb_query = true;
+
+      NIR_PASS_V(nir, ac_nir_lower_ngg_gs, &options);
    } else if (nir->info.stage == MESA_SHADER_MESH) {
       bool scratch_ring = false;
       NIR_PASS_V(nir, ac_nir_lower_ngg_ms, &scratch_ring, info->wave_size, pl_key->has_multiview_view_index);

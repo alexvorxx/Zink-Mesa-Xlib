@@ -297,6 +297,17 @@ public:
       }
    }
 
+   uint8_t free_chan_mask() const {
+      int mask = 0xf;
+      for (int i = 0; i < 4; ++i) {
+         int chan = m_values[i]->value()->chan();
+         if (chan <= 3) {
+            mask &= ~(1 << chan);
+         }
+      }
+      return mask;
+   }
+
    bool ready(int block_id, int index) const;
 private:
    int m_sel;

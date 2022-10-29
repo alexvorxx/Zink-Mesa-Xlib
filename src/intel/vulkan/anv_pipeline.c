@@ -176,6 +176,29 @@ anv_nir_lower_mesh_ext(nir_shader *nir)
                                        &state);
 }
 
+static bool
+nir_shader_uses_64bit_alu(nir_shader *shader)
+{
+   nir_foreach_function(function, shader) {
+      if (!function->impl)
+         continue;
+
+      nir_foreach_block(block, function->impl) {
+         nir_foreach_instr(instr, block) {
+            if (instr->type != nir_instr_type_alu)
+               continue;
+            nir_alu_instr *alu = nir_instr_as_alu(instr);
+            if (nir_alu_type_get_base_type(nir_op_infos[alu->op].output_type) != nir_type_float)
+               continue;
+            if (alu->dest.dest.ssa.bit_size == 64)
+               return true;
+         }
+      }
+   }
+
+   return false;
+}
+
 /* Eventually, this will become part of anv_CreateShader.  Unfortunately,
  * we can't do that yet because we don't have the ability to copy nir.
  */
@@ -297,7 +320,10 @@ anv_shader_stage_to_nir(struct anv_device *device,
    /* Vulkan uses the separate-shader linking model */
    nir->info.separate_shader = true;
 
-   brw_preprocess_nir(compiler, nir, NULL);
+   assert(device->info->has_64bit_float || instance->fp64_workaround_enabled ||
+          !nir_shader_uses_64bit_alu(nir));
+
+   brw_preprocess_nir(compiler, nir, device->fp64_nir);
 
    if (nir->info.stage == MESA_SHADER_MESH && !nir->info.mesh.nv) {
       bool progress = false;
@@ -1525,7 +1551,7 @@ anv_graphics_pipeline_init_keys(struct anv_graphics_pipeline *pipeline,
 
       int64_t stage_start = os_time_get_nano();
 
-      vk_pipeline_hash_shader_stage(stages[s].info, stages[s].shader_sha1);
+      vk_pipeline_hash_shader_stage(stages[s].info, NULL, stages[s].shader_sha1);
 
       const struct anv_device *device = pipeline->base.device;
       switch (stages[s].stage) {
@@ -2056,7 +2082,7 @@ anv_pipeline_compile_cs(struct anv_compute_pipeline *pipeline,
          .flags = VK_PIPELINE_CREATION_FEEDBACK_VALID_BIT,
       },
    };
-   vk_pipeline_hash_shader_stage(&info->stage, stage.shader_sha1);
+   vk_pipeline_hash_shader_stage(&info->stage, NULL, stage.shader_sha1);
 
    struct anv_shader_bin *bin = NULL;
 
@@ -2465,9 +2491,13 @@ compile_upload_rt_shader(struct anv_ray_tracing_pipeline *pipeline,
    nir_shader **resume_shaders = NULL;
    uint32_t num_resume_shaders = 0;
    if (nir->info.stage != MESA_SHADER_COMPUTE) {
-      NIR_PASS(_, nir, nir_lower_shader_calls,
-               nir_address_format_64bit_global,
-               BRW_BTD_STACK_ALIGN,
+      const nir_lower_shader_calls_options opts = {
+         .address_format = nir_address_format_64bit_global,
+         .stack_alignment = BRW_BTD_STACK_ALIGN,
+         .localized_loads = true,
+      };
+
+      NIR_PASS(_, nir, nir_lower_shader_calls, &opts,
                &resume_shaders, &num_resume_shaders, mem_ctx);
       NIR_PASS(_, nir, brw_nir_lower_shader_calls, &stage->key.bs);
       NIR_PASS_V(nir, brw_nir_lower_rt_intrinsics, devinfo);
@@ -2639,7 +2669,7 @@ anv_pipeline_init_ray_tracing_stages(struct anv_ray_tracing_pipeline *pipeline,
                            ray_flags,
                            &stages[i].key.bs);
 
-      vk_pipeline_hash_shader_stage(sinfo, stages[i].shader_sha1);
+      vk_pipeline_hash_shader_stage(sinfo, NULL, stages[i].shader_sha1);
 
       if (stages[i].stage != MESA_SHADER_INTERSECTION) {
          anv_pipeline_hash_ray_tracing_shader(pipeline, layout, &stages[i],

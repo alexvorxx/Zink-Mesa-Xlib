@@ -360,6 +360,10 @@
    DRI_CONF_OPT_B(adaptive_sync,def, \
                   "Adapt the monitor sync to the application performance (when possible)")
 
+#define DRI_CONF_BLOCK_ON_DEPLETED_BUFFERS(def) \
+   DRI_CONF_OPT_B(block_on_depleted_buffers, def, \
+                  "Block clients using buffer backpressure until new buffer is available to reduce latency")
+
 #define DRI_CONF_VK_WSI_FORCE_BGRA8_UNORM_FIRST(def) \
    DRI_CONF_OPT_B(vk_wsi_force_bgra8_unorm_first, def, \
                   "Force vkGetPhysicalDeviceSurfaceFormatsKHR to return VK_FORMAT_B8G8R8A8_UNORM as the first format")
@@ -598,5 +602,9 @@
 #define DRI_CONF_ANV_SAMPLE_MASK_OUT_OPENGL_BEHAVIOUR(def) \
    DRI_CONF_OPT_B(anv_sample_mask_out_opengl_behaviour, def, \
                   "Ignore sample mask out when having single sampled target")
+
+#define DRI_CONF_ANV_FP64_WORKAROUND_ENABLED(def) \
+   DRI_CONF_OPT_B(fp64_workaround_enabled, def, \
+                  "Use softpf64 when the shader uses float64, but the device doesn't support that type")
 
 #endif

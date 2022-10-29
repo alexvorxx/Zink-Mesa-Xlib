@@ -129,7 +129,7 @@ void DCEVisitor::visit(AluInstr *instr)
       return;
 
    if (instr->dest() &&
-       (instr->dest()->has_uses() || !instr->dest()->is_ssa()) ) {
+       (instr->dest()->has_uses()) ) {
       sfn_log << SfnLog::opt << " dest used\n";
       return;
    }

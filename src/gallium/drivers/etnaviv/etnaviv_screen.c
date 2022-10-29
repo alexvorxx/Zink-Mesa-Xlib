@@ -432,12 +432,6 @@ etna_screen_get_shader_param(struct pipe_screen *pscreen,
    return 0;
 }
 
-static uint64_t
-etna_screen_get_timestamp(struct pipe_screen *pscreen)
-{
-   return os_time_get_nano();
-}
-
 static bool
 gpu_supports_texture_target(struct etna_screen *screen,
                             enum pipe_texture_target target)
@@ -1130,7 +1124,7 @@ etna_screen_create(struct etna_device *dev, struct etna_gpu *gpu,
    pscreen->get_vendor = etna_screen_get_vendor;
    pscreen->get_device_vendor = etna_screen_get_device_vendor;
 
-   pscreen->get_timestamp = etna_screen_get_timestamp;
+   pscreen->get_timestamp = u_default_get_timestamp;
    pscreen->context_create = etna_context_create;
    pscreen->is_format_supported = etna_screen_is_format_supported;
    pscreen->query_dmabuf_modifiers = etna_screen_query_dmabuf_modifiers;

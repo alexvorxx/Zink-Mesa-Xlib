@@ -473,6 +473,13 @@ void ac_build_optimization_barrier(struct ac_llvm_context *ctx, LLVMValueRef *pg
 
 LLVMValueRef ac_build_shader_clock(struct ac_llvm_context *ctx, nir_scope scope)
 {
+   if (ctx->gfx_level >= GFX11 && scope == NIR_SCOPE_DEVICE) {
+      const char *name = "llvm.amdgcn.s.sendmsg.rtn.i64";
+      LLVMValueRef arg = LLVMConstInt(ctx->i32, 0x83 /* realtime */, 0);
+      LLVMValueRef tmp = ac_build_intrinsic(ctx, name, ctx->i64, &arg, 1, 0);
+      return LLVMBuildBitCast(ctx->builder, tmp, ctx->v2i32, "");
+   }
+
    const char *subgroup = "llvm.readcyclecounter";
    const char *name = scope == NIR_SCOPE_DEVICE ? "llvm.amdgcn.s.memrealtime" : subgroup;
 
@@ -2760,6 +2767,22 @@ LLVMValueRef ac_build_bitfield_reverse(struct ac_llvm_context *ctx, LLVMValueRef
    }
 
    return result;
+}
+
+LLVMValueRef ac_build_sudot_4x8(struct ac_llvm_context *ctx, LLVMValueRef s0, LLVMValueRef s1,
+                                LLVMValueRef s2, bool clamp, unsigned neg_lo)
+{
+   const char *name = "llvm.amdgcn.sudot4";
+   LLVMValueRef src[6];
+
+   src[0] = LLVMConstInt(ctx->i1, !!(neg_lo & 0x1), false);
+   src[1] = s0;
+   src[2] = LLVMConstInt(ctx->i1, !!(neg_lo & 0x2), false);
+   src[3] = s1;
+   src[4] = s2;
+   src[5] = LLVMConstInt(ctx->i1, clamp, false);
+
+   return ac_build_intrinsic(ctx, name, ctx->i32, src, 6, AC_FUNC_ATTR_READNONE);
 }
 
 void ac_init_exec_full_mask(struct ac_llvm_context *ctx)

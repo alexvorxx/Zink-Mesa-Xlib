@@ -589,59 +589,6 @@ ir3_nir_post_finalize(struct ir3_shader *shader)
 }
 
 static bool
-ir3_nir_lower_view_layer_id(nir_shader *nir, bool layer_zero, bool view_zero)
-{
-   unsigned layer_id_loc = ~0, view_id_loc = ~0;
-   nir_foreach_shader_in_variable (var, nir) {
-      if (var->data.location == VARYING_SLOT_LAYER)
-         layer_id_loc = var->data.driver_location;
-      if (var->data.location == VARYING_SLOT_VIEWPORT)
-         view_id_loc = var->data.driver_location;
-   }
-
-   assert(!layer_zero || layer_id_loc != ~0);
-   assert(!view_zero || view_id_loc != ~0);
-
-   bool progress = false;
-   nir_builder b;
-
-   nir_foreach_function (func, nir) {
-      nir_builder_init(&b, func->impl);
-
-      nir_foreach_block (block, func->impl) {
-         nir_foreach_instr_safe (instr, block) {
-            if (instr->type != nir_instr_type_intrinsic)
-               continue;
-
-            nir_intrinsic_instr *intrin = nir_instr_as_intrinsic(instr);
-
-            if (intrin->intrinsic != nir_intrinsic_load_input)
-               continue;
-
-            unsigned base = nir_intrinsic_base(intrin);
-            if (base != layer_id_loc && base != view_id_loc)
-               continue;
-
-            b.cursor = nir_before_instr(&intrin->instr);
-            nir_ssa_def *zero = nir_imm_int(&b, 0);
-            nir_ssa_def_rewrite_uses(&intrin->dest.ssa, zero);
-            nir_instr_remove(&intrin->instr);
-            progress = true;
-         }
-      }
-
-      if (progress) {
-         nir_metadata_preserve(
-            func->impl, nir_metadata_block_index | nir_metadata_dominance);
-      } else {
-         nir_metadata_preserve(func->impl, nir_metadata_all);
-      }
-   }
-
-   return progress;
-}
-
-static bool
 lower_ucp_vs(struct ir3_shader_variant *so)
 {
    if (!so->key.ucp_enables)
@@ -679,6 +626,8 @@ ir3_nir_lower_variant(struct ir3_shader_variant *so, nir_shader *s)
          progress = true;
          break;
       case MESA_SHADER_TESS_CTRL:
+         NIR_PASS_V(s, nir_lower_io_to_scalar,
+                     nir_var_shader_in | nir_var_shader_out);
          NIR_PASS_V(s, ir3_nir_lower_tess_ctrl, so, so->key.tessellation);
          NIR_PASS_V(s, ir3_nir_lower_to_explicit_input, so);
          progress = true;
@@ -705,15 +654,8 @@ ir3_nir_lower_variant(struct ir3_shader_variant *so, nir_shader *s)
    if (lower_ucp_vs(so)) {
       progress |= OPT(s, nir_lower_clip_vs, so->key.ucp_enables, false, true, NULL);
    } else if (s->info.stage == MESA_SHADER_FRAGMENT) {
-      bool layer_zero =
-         so->key.layer_zero && (s->info.inputs_read & VARYING_BIT_LAYER);
-      bool view_zero =
-         so->key.view_zero && (s->info.inputs_read & VARYING_BIT_VIEWPORT);
-
       if (so->key.ucp_enables && !so->compiler->has_clip_cull)
          progress |= OPT(s, nir_lower_clip_fs, so->key.ucp_enables, true);
-      if (layer_zero || view_zero)
-         progress |= OPT(s, ir3_nir_lower_view_layer_id, layer_zero, view_zero);
    }
 
    /* Move large constant variables to the constants attached to the NIR
@@ -939,6 +881,14 @@ ir3_nir_scan_driver_consts(struct ir3_compiler *compiler, nir_shader *shader, st
             case nir_intrinsic_load_draw_id:
                layout->num_driver_params =
                   MAX2(layout->num_driver_params, IR3_DP_DRAWID + 1);
+               break;
+            case nir_intrinsic_load_tess_level_outer_default:
+               layout->num_driver_params = MAX2(layout->num_driver_params,
+                                                IR3_DP_HS_DEFAULT_OUTER_LEVEL_W + 1);
+               break;
+            case nir_intrinsic_load_tess_level_inner_default:
+               layout->num_driver_params = MAX2(layout->num_driver_params,
+                                                IR3_DP_HS_DEFAULT_INNER_LEVEL_Y + 1);
                break;
             default:
                break;

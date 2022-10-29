@@ -255,9 +255,8 @@ void LiveRangeInstrVisitor::visit(TexInstr *instr)
    auto src = instr->src();
    record_read(src, LiveRangeEntry::use_unspecified);
 
-   if (instr->sampler_offset() && instr->sampler_offset()->as_register())
-      record_read(instr->sampler_offset()->as_register(), LiveRangeEntry::use_unspecified);
-
+   if (instr->resource_offset())
+      record_read(instr->resource_offset(), LiveRangeEntry::use_unspecified);
 }
 
 void LiveRangeInstrVisitor::visit(ExportInstr *instr)
@@ -347,8 +346,8 @@ void LiveRangeInstrVisitor::visit(GDSInstr *instr)
 {
    sfn_log << SfnLog::merge << "Visit " << *instr << "\n";
    record_read(instr->src(), LiveRangeEntry::use_unspecified);
-   if (instr->uav_id())
-      record_read(instr->uav_id(), LiveRangeEntry::use_unspecified);
+   if (instr->resource_offset())
+      record_read(instr->resource_offset(), LiveRangeEntry::use_unspecified);
    record_write(instr->dest());
 }
 
@@ -358,7 +357,7 @@ void LiveRangeInstrVisitor::visit(RatInstr *instr)
    record_read(instr->value(), LiveRangeEntry::use_unspecified);
    record_read(instr->addr(), LiveRangeEntry::use_unspecified);
 
-   auto idx = instr->rat_id_offset();
+   auto idx = instr->resource_offset();
    if (idx)
       record_read(idx, LiveRangeEntry::use_unspecified);
 }

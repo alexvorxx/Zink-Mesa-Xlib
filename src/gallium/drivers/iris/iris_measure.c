@@ -241,7 +241,7 @@ state_changed(const struct iris_context *ice,
    /* else blorp, all programs NULL */
 
    return intel_measure_state_changed(&batch->measure->base,
-                                      vs, tcs, tes, gs, fs, cs);
+                                      vs, tcs, tes, gs, fs, cs, 0, 0);
 }
 
 static void

@@ -21,7 +21,9 @@
  * SOFTWARE.
  */
 
-#include "bifrost_nir.h"
+
+#include "pan_ir.h"
+#include "compiler/nir/nir_builder.h"
 
 static void
 lower_xfb_output(nir_builder *b, nir_intrinsic_instr *intr,
@@ -41,6 +43,9 @@ lower_xfb_output(nir_builder *b, nir_intrinsic_instr *intr,
                 nir_imul(b, nir_load_instance_id(b),
                             nir_load_num_vertices(b)),
                 nir_load_vertex_id_zero_base(b));
+
+        BITSET_SET(b->shader->info.system_values_read, SYSTEM_VALUE_VERTEX_ID_ZERO_BASE);
+        BITSET_SET(b->shader->info.system_values_read, SYSTEM_VALUE_INSTANCE_ID);
 
         nir_ssa_def *buf = nir_load_xfb_address(b, 64, .base = buffer);
         nir_ssa_def *addr =
@@ -87,7 +92,7 @@ lower_xfb(nir_builder *b, nir_instr *instr, UNUSED void *data)
 }
 
 bool
-bifrost_nir_lower_xfb(nir_shader *nir)
+pan_lower_xfb(nir_shader *nir)
 {
         return nir_shader_instructions_pass(nir, lower_xfb,
                                             nir_metadata_block_index |

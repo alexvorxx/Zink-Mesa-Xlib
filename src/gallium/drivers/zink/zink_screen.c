@@ -386,8 +386,10 @@ get_smallest_buffer_heap(struct zink_screen *screen)
    };
    unsigned size = UINT32_MAX;
    for (unsigned i = 0; i < ARRAY_SIZE(heaps); i++) {
-      unsigned heap_idx = screen->info.mem_props.memoryTypes[screen->heap_map[i]].heapIndex;
-      size = MIN2(screen->info.mem_props.memoryHeaps[heap_idx].size, size);
+      for (unsigned j = 0; j < screen->heap_count[i]; j++) {
+         unsigned heap_idx = screen->info.mem_props.memoryTypes[screen->heap_map[i][j]].heapIndex;
+         size = MIN2(screen->info.mem_props.memoryHeaps[heap_idx].size, size);
+      }
    }
    return size;
 }
@@ -1339,6 +1341,8 @@ zink_destroy_screen(struct pipe_screen *pscreen)
    }
 
    util_vertex_state_cache_deinit(&screen->vertex_state_cache);
+
+   VKSCR(DestroyPipelineLayout)(screen->dev, screen->gfx_push_constant_layout, NULL);
 
    u_transfer_helper_destroy(pscreen->transfer_helper);
    util_queue_finish(&screen->cache_get_thread);
@@ -2458,6 +2462,17 @@ init_driver_workarounds(struct zink_screen *screen)
    default:
       break;
    }
+   /* these drivers cannot handle OOB gl_Layer values, and therefore need clamping in shader.
+    * TODO: Vulkan extension that details whether vulkan driver can handle OOB layer values
+    */
+   switch (screen->info.driver_props.driverID) {
+   case VK_DRIVER_ID_IMAGINATION_PROPRIETARY:
+      screen->driver_workarounds.needs_sanitised_layer = true;
+      break;
+   default:
+      screen->driver_workarounds.needs_sanitised_layer = false;
+      break;
+   }
 }
 
 static struct zink_screen *
@@ -2564,9 +2579,13 @@ zink_internal_create_screen(const struct pipe_screen_config *config)
 
    zink_verify_device_extensions(screen);
 
+   /* descriptor set indexing is determined by 'compact' descriptor mode:
+    * by default, 6 sets are used to provide more granular updating
+    * in compact mode, a maximum of 4 sets are used, with like-types combined
+    */
    if ((zink_debug & ZINK_DEBUG_COMPACT) ||
        screen->info.props.limits.maxBoundDescriptorSets < ZINK_MAX_DESCRIPTOR_SETS) {
-      screen->desc_set_id[ZINK_DESCRIPTOR_TYPES] = 0;
+      screen->desc_set_id[ZINK_DESCRIPTOR_TYPE_UNIFORMS] = 0;
       screen->desc_set_id[ZINK_DESCRIPTOR_TYPE_UBO] = 1;
       screen->desc_set_id[ZINK_DESCRIPTOR_TYPE_SSBO] = 1;
       screen->desc_set_id[ZINK_DESCRIPTOR_TYPE_SAMPLER_VIEW] = 2;
@@ -2574,7 +2593,7 @@ zink_internal_create_screen(const struct pipe_screen_config *config)
       screen->desc_set_id[ZINK_DESCRIPTOR_BINDLESS] = 3;
       screen->compact_descriptors = true;
    } else {
-      screen->desc_set_id[ZINK_DESCRIPTOR_TYPES] = 0;
+      screen->desc_set_id[ZINK_DESCRIPTOR_TYPE_UNIFORMS] = 0;
       screen->desc_set_id[ZINK_DESCRIPTOR_TYPE_UBO] = 1;
       screen->desc_set_id[ZINK_DESCRIPTOR_TYPE_SAMPLER_VIEW] = 2;
       screen->desc_set_id[ZINK_DESCRIPTOR_TYPE_SSBO] = 3;
@@ -2686,30 +2705,35 @@ zink_internal_create_screen(const struct pipe_screen_config *config)
       for (unsigned j = 0; j < screen->info.mem_props.memoryTypeCount; j++) {
          VkMemoryPropertyFlags domains = vk_domain_from_heap(i);
          if ((screen->info.mem_props.memoryTypes[j].propertyFlags & domains) == domains) {
-            assert(screen->heap_map[i] == UINT8_MAX);
-            screen->heap_map[i] = j;
-            break;
+            screen->heap_map[i][screen->heap_count[i]++] = j;
          }
       }
-
+   }
+   /* iterate again to check for missing heaps */
+   for (enum zink_heap i = 0; i < ZINK_HEAP_MAX; i++) {
       /* not found: use compatible heap */
-      if (screen->heap_map[i] == UINT8_MAX) {
+      if (screen->heap_map[i][0] == UINT8_MAX) {
          /* only cached mem has a failure case for now */
          assert(i == ZINK_HEAP_HOST_VISIBLE_CACHED || i == ZINK_HEAP_DEVICE_LOCAL_LAZY ||
                 i == ZINK_HEAP_DEVICE_LOCAL_VISIBLE);
-         if (i == ZINK_HEAP_HOST_VISIBLE_CACHED)
-            screen->heap_map[i] = screen->heap_map[ZINK_HEAP_HOST_VISIBLE_COHERENT];
-         else
-            screen->heap_map[i] = screen->heap_map[ZINK_HEAP_DEVICE_LOCAL];
+         if (i == ZINK_HEAP_HOST_VISIBLE_CACHED) {
+            memcpy(screen->heap_map[i], screen->heap_map[ZINK_HEAP_HOST_VISIBLE_COHERENT], screen->heap_count[ZINK_HEAP_HOST_VISIBLE_COHERENT]);
+            screen->heap_count[i] = screen->heap_count[ZINK_HEAP_HOST_VISIBLE_COHERENT];
+         } else {
+            memcpy(screen->heap_map[i], screen->heap_map[ZINK_HEAP_DEVICE_LOCAL], screen->heap_count[ZINK_HEAP_DEVICE_LOCAL]);
+            screen->heap_count[i] = screen->heap_count[ZINK_HEAP_DEVICE_LOCAL];
+         }
       }
-      screen->heap_flags[i] = screen->info.mem_props.memoryTypes[screen->heap_map[i]].propertyFlags;
    }
    {
-      unsigned vis_vram = screen->heap_map[ZINK_HEAP_DEVICE_LOCAL_VISIBLE];
-      unsigned vram = screen->heap_map[ZINK_HEAP_DEVICE_LOCAL];
+      uint64_t biggest_vis_vram = 0;
+      for (unsigned i = 0; i < screen->heap_count[ZINK_HEAP_DEVICE_LOCAL_VISIBLE]; i++)
+         biggest_vis_vram = MAX2(biggest_vis_vram, screen->info.mem_props.memoryHeaps[screen->info.mem_props.memoryTypes[i].heapIndex].size);
+      uint64_t biggest_vram = 0;
+      for (unsigned i = 0; i < screen->heap_count[ZINK_HEAP_DEVICE_LOCAL]; i++)
+         biggest_vram = MAX2(biggest_vis_vram, screen->info.mem_props.memoryHeaps[screen->info.mem_props.memoryTypes[i].heapIndex].size);
       /* determine if vis vram is roughly equal to total vram */
-      if (screen->info.mem_props.memoryHeaps[screen->info.mem_props.memoryTypes[vis_vram].heapIndex].size >
-          screen->info.mem_props.memoryHeaps[screen->info.mem_props.memoryTypes[vram].heapIndex].size * 0.9)
+      if (biggest_vis_vram > biggest_vram * 0.9)
          screen->resizable_bar = true;
    }
 
@@ -2730,6 +2754,10 @@ zink_internal_create_screen(const struct pipe_screen_config *config)
       screen->image_barrier = zink_resource_image_barrier;
       screen->buffer_barrier = zink_resource_buffer_barrier;
    }
+
+   screen->gfx_push_constant_layout = zink_pipeline_layout_create(screen, NULL, 0, false);
+   if (screen->gfx_push_constant_layout == VK_NULL_HANDLE)
+      goto fail;
 
    if (!zink_descriptor_layouts_init(screen))
       goto fail;

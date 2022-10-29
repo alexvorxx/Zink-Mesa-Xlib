@@ -103,20 +103,6 @@ PUSH_RESRC(struct nouveau_pushbuf *push, int subc, int mthd, int bin,
              r->domain | access, vor, tor)->priv = r;
 }
 
-static inline void
-BEGIN_NV04(struct nouveau_pushbuf *push, int subc, int mthd, int size)
-{
-   PUSH_SPACE(push, size + 1);
-   PUSH_DATA (push, 0x00000000 | (size << 18) | (subc << 13) | mthd);
-}
-
-static inline void
-BEGIN_NI04(struct nouveau_pushbuf *push, int subc, int mthd, int size)
-{
-   PUSH_SPACE(push, size + 1);
-   PUSH_DATA (push, 0x40000000 | (size << 18) | (subc << 13) | mthd);
-}
-
 /* subchannel assignment
  *
  * 0: <1.0.0 - used by kernel for m2mf

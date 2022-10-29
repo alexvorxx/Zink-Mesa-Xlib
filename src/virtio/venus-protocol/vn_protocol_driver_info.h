@@ -19,14 +19,15 @@ struct vn_info_extension {
 };
 
 /* sorted by extension names for bsearch */
-static const uint32_t _vn_info_extension_count = 95;
-static const struct vn_info_extension _vn_info_extensions[95] = {
+static const uint32_t _vn_info_extension_count = 98;
+static const struct vn_info_extension _vn_info_extensions[98] = {
    { "VK_EXT_4444_formats", 341, 1 },
    { "VK_EXT_calibrated_timestamps", 185, 2 },
    { "VK_EXT_command_serialization", 384, 0 },
    { "VK_EXT_conditional_rendering", 82, 2 },
    { "VK_EXT_conservative_rasterization", 102, 1 },
    { "VK_EXT_custom_border_color", 288, 12 },
+   { "VK_EXT_depth_clip_control", 356, 1 },
    { "VK_EXT_depth_clip_enable", 103, 1 },
    { "VK_EXT_descriptor_indexing", 162, 2 },
    { "VK_EXT_extended_dynamic_state", 268, 1 },
@@ -44,6 +45,7 @@ static const struct vn_info_extension _vn_info_extensions[95] = {
    { "VK_EXT_pipeline_creation_cache_control", 298, 3 },
    { "VK_EXT_pipeline_creation_feedback", 193, 1 },
    { "VK_EXT_primitive_topology_list_restart", 357, 1 },
+   { "VK_EXT_primitives_generated_query", 383, 1 },
    { "VK_EXT_private_data", 296, 1 },
    { "VK_EXT_provoking_vertex", 255, 1 },
    { "VK_EXT_queue_family_foreign", 127, 1 },
@@ -94,6 +96,7 @@ static const struct vn_info_extension _vn_info_extensions[95] = {
    { "VK_KHR_maintenance3", 169, 1 },
    { "VK_KHR_maintenance4", 414, 2 },
    { "VK_KHR_multiview", 54, 1 },
+   { "VK_KHR_push_descriptor", 81, 2 },
    { "VK_KHR_relaxed_block_layout", 145, 1 },
    { "VK_KHR_sampler_mirror_clamp_to_edge", 15, 3 },
    { "VK_KHR_sampler_ycbcr_conversion", 157, 14 },

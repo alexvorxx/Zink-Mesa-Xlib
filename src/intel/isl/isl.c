@@ -104,6 +104,8 @@ __isl_finishme(const char *file, int line, const char *fmt, ...)
 static void
 isl_device_setup_mocs(struct isl_device *dev)
 {
+   dev->mocs.protected_mask = 0;
+
    if (dev->info->ver >= 12) {
       if (intel_device_info_is_dg2(dev->info)) {
          /* L3CC=WB; BSpec: 45101 */
@@ -149,6 +151,8 @@ isl_device_setup_mocs(struct isl_device *dev)
          /* L1 - HDC:L1 + L3 + LLC */
          dev->mocs.l1_hdc_l3_llc = 48 << 1;
       }
+      /* Protected is just an additional flag. */
+      dev->mocs.protected_mask = 1 << 0;
    } else if (dev->info->ver >= 9) {
       /* TC=LLC/eLLC, LeCC=PTE, LRUM=3, L3CC=WB */
       dev->mocs.external = 1 << 1;
@@ -197,12 +201,15 @@ uint32_t
 isl_mocs(const struct isl_device *dev, isl_surf_usage_flags_t usage,
          bool external)
 {
+   uint32_t mask = (usage & ISL_SURF_USAGE_PROTECTED_BIT) ?
+      dev->mocs.protected_mask : 0;
+
    if (external)
-      return dev->mocs.external;
+      return dev->mocs.external | mask;
 
    if (dev->info->verx10 == 120 && dev->info->platform != INTEL_PLATFORM_DG1) {
       if (usage & ISL_SURF_USAGE_STAGING_BIT)
-         return dev->mocs.internal;
+         return dev->mocs.internal | mask;
 
       if (usage & ISL_SURF_USAGE_CPB_BIT)
          return dev->mocs.internal;
@@ -213,15 +220,15 @@ isl_mocs(const struct isl_device *dev, isl_surf_usage_flags_t usage,
        * continue with ordinary internal MOCS for now.
        */
       if (usage & ISL_SURF_USAGE_STORAGE_BIT)
-         return dev->mocs.internal;
+         return dev->mocs.internal | mask;
 
       if (usage & (ISL_SURF_USAGE_CONSTANT_BUFFER_BIT |
                    ISL_SURF_USAGE_RENDER_TARGET_BIT |
                    ISL_SURF_USAGE_TEXTURE_BIT))
-         return dev->mocs.l1_hdc_l3_llc;
+         return dev->mocs.l1_hdc_l3_llc | mask;
    }
 
-   return dev->mocs.internal;
+   return dev->mocs.internal | mask;
 }
 
 void

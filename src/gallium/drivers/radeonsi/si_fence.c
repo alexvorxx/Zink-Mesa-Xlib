@@ -488,6 +488,11 @@ static void si_flush_all_queues(struct pipe_context *ctx,
          ws->cs_sync_flush(&sctx->gfx_cs);
 
       tc_driver_internal_flush_notify(sctx->tc);
+
+      if (unlikely(sctx->thread_trace &&
+                   (flags & PIPE_FLUSH_END_OF_FRAME))) {
+         si_handle_thread_trace(sctx, &sctx->gfx_cs);
+      }
    } else {
       /* Instead of flushing, create a deferred fence. Constraints:
        * - the gallium frontend must allow a deferred flush.

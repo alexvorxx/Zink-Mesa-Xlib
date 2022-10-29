@@ -393,8 +393,8 @@ batch_clear_tracking(struct fd_batch *batch, unsigned buffers) assert_dt
     */
    batch->max_scissor.minx = 0;
    batch->max_scissor.miny = 0;
-   batch->max_scissor.maxx = pfb->width;
-   batch->max_scissor.maxy = pfb->height;
+   batch->max_scissor.maxx = pfb->width - 1;
+   batch->max_scissor.maxy = pfb->height - 1;
 
    /* for bookkeeping about which buffers have been cleared (and thus
     * can fully or partially skip mem2gmem) we need to ignore buffers

@@ -136,6 +136,7 @@ vk_pipeline_shader_stage_to_nir(struct vk_device *device,
 
 void
 vk_pipeline_hash_shader_stage(const VkPipelineShaderStageCreateInfo *info,
+                              const struct vk_pipeline_robustness_state *rstate,
                               unsigned char *stage_sha1)
 {
    VK_FROM_HANDLE(vk_shader_module, module, info->module);
@@ -187,6 +188,13 @@ vk_pipeline_hash_shader_stage(const VkPipelineShaderStageCreateInfo *info,
       assert(iinfo);
       assert(iinfo->identifierSize <= VK_MAX_SHADER_MODULE_IDENTIFIER_SIZE_EXT);
       _mesa_sha1_update(&ctx, iinfo->pIdentifier, iinfo->identifierSize);
+   }
+
+   if (rstate) {
+      _mesa_sha1_update(&ctx, &rstate->storage_buffers, sizeof(rstate->storage_buffers));
+      _mesa_sha1_update(&ctx, &rstate->uniform_buffers, sizeof(rstate->uniform_buffers));
+      _mesa_sha1_update(&ctx, &rstate->vertex_inputs, sizeof(rstate->vertex_inputs));
+      _mesa_sha1_update(&ctx, &rstate->images, sizeof(rstate->images));
    }
 
    _mesa_sha1_update(&ctx, info->pName, strlen(info->pName));

@@ -109,6 +109,36 @@ PUSH_VAL(struct nouveau_pushbuf *push)
    return res;
 }
 
+static inline uint32_t
+NV04_FIFO_PKHDR(int subc, int mthd, unsigned size)
+{
+   return 0x00000000 | (size << 18) | (subc << 13) | mthd;
+}
+
+static inline uint32_t
+NV04_FIFO_PKHDR_NI(int subc, int mthd, unsigned size)
+{
+   return 0x40000000 | (size << 18) | (subc << 13) | mthd;
+}
+
+static inline void
+BEGIN_NV04(struct nouveau_pushbuf *push, int subc, int mthd, unsigned size)
+{
+#ifndef NV50_PUSH_EXPLICIT_SPACE_CHECKING
+   PUSH_SPACE(push, size + 1);
+#endif
+   PUSH_DATA (push, NV04_FIFO_PKHDR(subc, mthd, size));
+}
+
+static inline void
+BEGIN_NI04(struct nouveau_pushbuf *push, int subc, int mthd, unsigned size)
+{
+#ifndef NV50_PUSH_EXPLICIT_SPACE_CHECKING
+   PUSH_SPACE(push, size + 1);
+#endif
+   PUSH_DATA (push, NV04_FIFO_PKHDR_NI(subc, mthd, size));
+}
+
 static inline int
 BO_MAP(struct nouveau_screen *screen, struct nouveau_bo *bo, uint32_t access, struct nouveau_client *client)
 {

@@ -181,7 +181,7 @@ zink_bind_vertex_state(struct zink_batch *batch, struct zink_context *ctx,
 ALWAYS_INLINE static void
 update_drawid(struct zink_context *ctx, unsigned draw_id)
 {
-   VKCTX(CmdPushConstants)(ctx->batch.state->cmdbuf, ctx->curr_program->base.layout, VK_SHADER_STAGE_VERTEX_BIT,
+   VKCTX(CmdPushConstants)(ctx->batch.state->cmdbuf, ctx->curr_program->base.layout, VK_SHADER_STAGE_ALL_GRAPHICS,
                       offsetof(struct zink_gfx_push_constant, draw_id), sizeof(unsigned),
                       &draw_id);
 }
@@ -359,6 +359,16 @@ update_gfx_pipeline(struct zink_context *ctx, struct zink_batch_state *bs, enum 
    return pipeline_changed;
 }
 
+static enum pipe_prim_type
+zink_rast_prim(const struct zink_context *ctx,
+               const struct pipe_draw_info *dinfo)
+{
+   if (ctx->gfx_pipeline_state.shader_rast_prim != PIPE_PRIM_MAX)
+      return ctx->gfx_pipeline_state.shader_rast_prim;
+
+   return u_reduced_prim((enum pipe_prim_type)dinfo->mode);
+}
+
 template <zink_multidraw HAS_MULTIDRAW, zink_dynamic_state DYNAMIC_STATE, bool BATCH_CHANGED, bool DRAW_STATE>
 void
 zink_draw(struct pipe_context *pctx,
@@ -491,17 +501,21 @@ zink_draw(struct pipe_context *pctx,
                       (HAS_MULTIDRAW && num_draws > 1 && !dinfo->increment_draw_id));
    if (drawid_broken != zink_get_last_vertex_key(ctx)->push_drawid)
       zink_set_last_vertex_key(ctx)->push_drawid = drawid_broken;
-   if (mode_changed) {
-      bool points_changed = false;
-      if (mode == PIPE_PRIM_POINTS) {
-         ctx->gfx_pipeline_state.has_points++;
-         points_changed = true;
-      } else if (ctx->gfx_pipeline_state.gfx_prim_mode == PIPE_PRIM_POINTS) {
-         ctx->gfx_pipeline_state.has_points--;
-         points_changed = true;
+
+   bool rast_prim_changed = false;
+   if (mode_changed || ctx->gfx_pipeline_state.modules_changed) {
+      enum pipe_prim_type rast_prim = zink_rast_prim(ctx, dinfo);
+      if (rast_prim != ctx->gfx_pipeline_state.rast_prim) {
+         bool points_changed =
+            (ctx->gfx_pipeline_state.rast_prim == PIPE_PRIM_POINTS) !=
+            (rast_prim == PIPE_PRIM_POINTS);
+
+         ctx->gfx_pipeline_state.rast_prim = rast_prim;
+         rast_prim_changed = true;
+
+         if (points_changed && ctx->rast_state->base.point_quad_rasterization)
+            zink_set_fs_point_coord_key(ctx);
       }
-      if (points_changed && ctx->rast_state->base.point_quad_rasterization)
-         zink_set_fs_point_coord_key(ctx);
    }
    ctx->gfx_pipeline_state.gfx_prim_mode = mode;
 
@@ -666,13 +680,9 @@ zink_draw(struct pipe_context *pctx,
       }
    }
 
-   if (BATCH_CHANGED || rast_state_changed) {
-      enum pipe_prim_type reduced_prim = ctx->last_vertex_stage->reduced_prim;
-      if (reduced_prim == PIPE_PRIM_MAX)
-         reduced_prim = u_reduced_prim(mode);
-
+   if (BATCH_CHANGED || rast_state_changed || rast_prim_changed) {
       bool depth_bias = false;
-      switch (reduced_prim) {
+      switch (ctx->gfx_pipeline_state.rast_prim) {
       case PIPE_PRIM_POINTS:
          depth_bias = rast_state->offset_point;
          break;
@@ -756,12 +766,12 @@ zink_draw(struct pipe_context *pctx,
 
    if (reads_basevertex) {
       unsigned draw_mode_is_indexed = index_size > 0;
-      VKCTX(CmdPushConstants)(batch->state->cmdbuf, ctx->curr_program->base.layout, VK_SHADER_STAGE_VERTEX_BIT,
+      VKCTX(CmdPushConstants)(batch->state->cmdbuf, ctx->curr_program->base.layout, VK_SHADER_STAGE_ALL_GRAPHICS,
                          offsetof(struct zink_gfx_push_constant, draw_mode_is_indexed), sizeof(unsigned),
                          &draw_mode_is_indexed);
    }
    if (ctx->curr_program->shaders[MESA_SHADER_TESS_CTRL] && ctx->curr_program->shaders[MESA_SHADER_TESS_CTRL]->is_generated) {
-      VKCTX(CmdPushConstants)(batch->state->cmdbuf, ctx->curr_program->base.layout, VK_SHADER_STAGE_TESSELLATION_CONTROL_BIT,
+      VKCTX(CmdPushConstants)(batch->state->cmdbuf, ctx->curr_program->base.layout, VK_SHADER_STAGE_ALL_GRAPHICS,
                          offsetof(struct zink_gfx_push_constant, default_inner_level), sizeof(float) * 6,
                          &ctx->tess_levels[0]);
    }
@@ -968,11 +978,6 @@ zink_launch_grid(struct pipe_context *pctx, const struct pipe_grid_info *info)
       zink_descriptors_update(ctx, true);
    if (ctx->di.any_bindless_dirty && ctx->curr_compute->base.dd.bindless)
       zink_descriptors_update_bindless(ctx);
-
-   if (BITSET_TEST(ctx->curr_compute->shader->nir->info.system_values_read, SYSTEM_VALUE_WORK_DIM))
-      VKCTX(CmdPushConstants)(batch->state->cmdbuf, ctx->curr_compute->base.layout, VK_SHADER_STAGE_COMPUTE_BIT,
-                         offsetof(struct zink_cs_push_constant, work_dim), sizeof(uint32_t),
-                         &info->work_dim);
 
    batch->work_count++;
    zink_batch_no_rp(ctx);

@@ -4160,7 +4160,7 @@ radv_flush_ngg_query_state(struct radv_cmd_buffer *cmd_buffer)
    struct radv_graphics_pipeline *pipeline = cmd_buffer->state.graphics_pipeline;
    const unsigned stage = pipeline->last_vgt_api_stage;
    const struct radv_userdata_info *loc = &pipeline->last_vgt_api_stage_locs[AC_UD_NGG_QUERY_STATE];
-   uint32_t ngg_query_state = 0;
+   enum radv_ngg_query_state ngg_query_state = radv_ngg_query_none;
    uint32_t base_reg;
 
    if (loc->sgpr_idx == -1)
@@ -4175,7 +4175,10 @@ radv_flush_ngg_query_state(struct radv_cmd_buffer *cmd_buffer)
    if (cmd_buffer->state.active_pipeline_gds_queries ||
        (cmd_buffer->state.inherited_pipeline_statistics &
         VK_QUERY_PIPELINE_STATISTIC_GEOMETRY_SHADER_PRIMITIVES_BIT))
-      ngg_query_state = 1;
+      ngg_query_state |= radv_ngg_query_pipeline_stat;
+
+   if (cmd_buffer->state.active_prims_gen_gds_queries)
+      ngg_query_state |= radv_ngg_query_prim_gen;
 
    base_reg = pipeline->base.user_data_0[stage];
    assert(loc->sgpr_idx != -1);

@@ -2354,6 +2354,7 @@ void r600_bytecode_disasm(struct r600_bytecode *bc)
 		id = cf->addr;
 		nliteral = 0;
 		last = 1;
+		int chan_mask = 0;
 		LIST_FOR_EACH_ENTRY(alu, &cf->alu, list) {
 			const char chan[] = "xyzwt";
 			const char *omod_str[] = {"","*2","*4","/2"};
@@ -2366,7 +2367,14 @@ void r600_bytecode_disasm(struct r600_bytecode *bc)
 				o += fprintf(stderr, "%4d ", ++ngr);
 			else
 				o += fprintf(stderr, "     ");
-			o += fprintf(stderr, "%c:", chan[alu->dst.chan]);
+
+			if ((chan_mask & (1 << alu->dst.chan)) ||
+				((aop->slots[bc->isa->hw_class] == AF_S) && !(bc->isa->hw_class == ISA_CC_CAYMAN)))
+				o += fprintf(stderr, "t:");
+			else
+				o += fprintf(stderr, "%c:", chan[alu->dst.chan]);
+			chan_mask |= 1 << alu->dst.chan;
+
 			o += fprintf(stderr, "%c%c %c ", alu->execute_mask ? 'M':' ',
 					alu->update_pred ? 'P':' ',
 					alu->pred_sel ? alu->pred_sel==2 ? '0':'1':' ');
@@ -2398,6 +2406,7 @@ void r600_bytecode_disasm(struct r600_bytecode *bc)
 				}
 				id += nliteral & 1;
 				nliteral = 0;
+				chan_mask = 0;
 			}
 			last = alu->last;
 		}

@@ -24,6 +24,7 @@
 #include "pipe/p_screen.h"
 #include "util/u_screen.h"
 #include "util/u_debug.h"
+#include "util/os_time.h"
 
 /**
  * Helper to use from a pipe_screen->get_param() implementation to return
@@ -225,7 +226,8 @@ u_pipe_screen_get_param_defaults(struct pipe_screen *pscreen,
    case PIPE_CAP_RESOURCE_FROM_USER_MEMORY:
    case PIPE_CAP_RESOURCE_FROM_USER_MEMORY_COMPUTE_ONLY:
    case PIPE_CAP_DEVICE_RESET_STATUS_QUERY:
-   case PIPE_CAP_DEVICE_PROTECTED_CONTENT:
+   case PIPE_CAP_DEVICE_PROTECTED_SURFACE:
+   case PIPE_CAP_DEVICE_PROTECTED_CONTEXT:
    case PIPE_CAP_MAX_SHADER_PATCH_VARYINGS:
    case PIPE_CAP_TEXTURE_FLOAT_LINEAR:
    case PIPE_CAP_TEXTURE_HALF_FLOAT_LINEAR:
@@ -515,4 +517,9 @@ u_pipe_screen_get_param_defaults(struct pipe_screen *pscreen,
    default:
       unreachable("bad PIPE_CAP_*");
    }
+}
+
+uint64_t u_default_get_timestamp(UNUSED struct pipe_screen *screen)
+{
+   return os_time_get_nano();
 }

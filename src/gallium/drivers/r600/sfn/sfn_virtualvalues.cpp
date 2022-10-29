@@ -451,7 +451,7 @@ void RegisterVec4::print(std::ostream& os) const
 {
    os << (m_values[0]->value()->is_ssa() ? 'S' : 'R') << sel() << ".";
    for (int i = 0; i < 4; ++i)
-      os << VirtualValue::chanchar[m_swz[i]];
+      os << VirtualValue::chanchar[m_values[i]->value()->chan()];
 }
 
 bool operator == (const RegisterVec4& lhs, const RegisterVec4& rhs)

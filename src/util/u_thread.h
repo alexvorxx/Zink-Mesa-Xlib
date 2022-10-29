@@ -35,10 +35,6 @@
 #include "c11/threads.h"
 #include "detect_os.h"
 
-/* For util_set_thread_affinity to size the mask. */
-#define UTIL_MAX_CPUS               1024  /* this should be enough */
-#define UTIL_MAX_L3_CACHES          UTIL_MAX_CPUS
-
 /* Some highly performance-sensitive thread-local variables like the current GL
  * context are declared with the initial-exec model on Linux.  glibc allocates a
  * fixed number of extra slots for initial-exec TLS variables at startup, and
@@ -124,12 +120,6 @@ static inline bool u_thread_is_self(thrd_t thread)
 
 typedef pthread_barrier_t util_barrier;
 
-void util_barrier_init(util_barrier *barrier, unsigned count);
-
-void util_barrier_destroy(util_barrier *barrier);
-
-bool util_barrier_wait(util_barrier *barrier);
-
 #else /* If the OS doesn't have its own, implement barriers using a mutex and a condvar */
 
 typedef struct {
@@ -140,13 +130,13 @@ typedef struct {
    cnd_t condvar;
 } util_barrier;
 
+#endif
+
 void util_barrier_init(util_barrier *barrier, unsigned count);
 
 void util_barrier_destroy(util_barrier *barrier);
 
 bool util_barrier_wait(util_barrier *barrier);
-
-#endif
 
 #ifdef __cplusplus
 }

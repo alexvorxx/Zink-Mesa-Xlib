@@ -70,6 +70,8 @@ float64_glsl_h = custom_target(
   command : [prog_python, '@INPUT@', '@OUTPUT@', '-n', 'float64_source'],
 )
 
+float64_glsl_file = [files('float64.glsl')]
+
 files_libglsl = files(
   'ast.h',
   'ast_array_index.cpp',

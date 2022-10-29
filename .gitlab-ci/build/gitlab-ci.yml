@@ -462,6 +462,9 @@ debian-clang-release:
   extends: debian-clang
   variables:
     BUILDTYPE: "release"
+    DRI_LOADERS: >
+      -D glx=xlib
+      -D platforms=x11,wayland
 
 windows-vs2019:
   extends:

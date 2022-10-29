@@ -46,11 +46,13 @@ jobs:
     - name: Test
       run: meson test -C build --print-errorlogs
     - name: Install
-      run: meson install -C build
+      run: meson install -C build --destdir $PWD/install
     - name: 'Upload Artifact'
       if: always()
       uses: actions/upload-artifact@v3
       with:
-        name: test-result
-        path: build/meson-logs/testlog.txt
+        name: macos-${{ matrix.glx_option }}-result
+        path: |
+          build/meson-logs/
+          install/
         retention-days: 5

@@ -530,6 +530,34 @@ ir3_emit_driver_params(const struct ir3_shader_variant *v,
    }
 }
 
+
+static inline void
+ir3_emit_hs_driver_params(const struct ir3_shader_variant *v,
+                          struct fd_ringbuffer *ring,
+                          struct fd_context *ctx)
+   assert_dt
+{
+   assert(v->need_driver_params);
+
+   const struct ir3_const_state *const_state = ir3_const_state(v);
+   uint32_t offset = const_state->offsets.driver_param;
+   uint32_t hs_params[IR3_DP_HS_COUNT] = {
+      [IR3_DP_HS_DEFAULT_OUTER_LEVEL_X] = fui(ctx->default_outer_level[0]),
+      [IR3_DP_HS_DEFAULT_OUTER_LEVEL_Y] = fui(ctx->default_outer_level[1]),
+      [IR3_DP_HS_DEFAULT_OUTER_LEVEL_Z] = fui(ctx->default_outer_level[2]),
+      [IR3_DP_HS_DEFAULT_OUTER_LEVEL_W] = fui(ctx->default_outer_level[3]),
+      [IR3_DP_HS_DEFAULT_INNER_LEVEL_X] = fui(ctx->default_inner_level[0]),
+      [IR3_DP_HS_DEFAULT_INNER_LEVEL_Y] = fui(ctx->default_inner_level[1]),
+   };
+
+   const uint32_t hs_params_size =
+      MIN2(const_state->num_driver_params, (v->constlen - offset) * 4);
+   assert(hs_params_size <= IR3_DP_HS_COUNT);
+
+   emit_const_user(ring, v, offset * 4, hs_params_size, hs_params);
+}
+
+
 static inline void
 ir3_emit_vs_consts(const struct ir3_shader_variant *v,
                    struct fd_ringbuffer *ring, struct fd_context *ctx,

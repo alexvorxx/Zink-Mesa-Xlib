@@ -1010,6 +1010,7 @@ panfrost_ptr_map(struct pipe_context *pctx,
 
         if (!create_new_bo &&
             !(usage & PIPE_MAP_UNSYNCHRONIZED) &&
+            !(resource->flags & PIPE_RESOURCE_FLAG_MAP_PERSISTENT) &&
             (usage & PIPE_MAP_WRITE) &&
             !(resource->target == PIPE_BUFFER
               && !util_ranges_intersect(&rsrc->valid_buffer_range, box->x, box->x + box->width)) &&

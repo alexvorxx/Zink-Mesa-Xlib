@@ -513,15 +513,15 @@ gmem_key_init(struct fd_batch *batch, bool assume_zs, bool no_scis_opt)
       if (FD_DBG(NOSCIS)) {
          scissor->minx = 0;
          scissor->miny = 0;
-         scissor->maxx = pfb->width;
-         scissor->maxy = pfb->height;
+         scissor->maxx = pfb->width - 1;
+         scissor->maxy = pfb->height - 1;
       }
 
       /* round down to multiple of alignment: */
       key->minx = scissor->minx & ~(screen->info->gmem_align_w - 1);
       key->miny = scissor->miny & ~(screen->info->gmem_align_h - 1);
-      key->width = scissor->maxx - key->minx;
-      key->height = scissor->maxy - key->miny;
+      key->width = scissor->maxx + 1 - key->minx;
+      key->height = scissor->maxy + 1 - key->miny;
    }
 
    if (is_a20x(screen) && batch->cleared) {

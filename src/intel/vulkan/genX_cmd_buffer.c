@@ -4718,6 +4718,12 @@ genX(CmdDrawMeshTasksNV)(
    if (anv_batch_has_error(&cmd_buffer->batch))
       return;
 
+   anv_measure_snapshot(cmd_buffer,
+                        INTEL_SNAPSHOT_DRAW,
+                        "draw mesh", taskCount);
+
+   trace_intel_begin_draw_mesh(&cmd_buffer->trace);
+
    /* TODO(mesh): Check if this is not emitting more packets than we need. */
    genX(cmd_buffer_flush_gfx_state)(cmd_buffer);
 
@@ -4734,6 +4740,8 @@ genX(CmdDrawMeshTasksNV)(
       m.ThreadGroupCountX = taskCount;
       m.StartingThreadGroupIDX = firstTask;
    }
+
+   trace_intel_end_draw_mesh(&cmd_buffer->trace, taskCount, 1, 1);
 }
 
 void
@@ -4748,6 +4756,12 @@ genX(CmdDrawMeshTasksEXT)(
    if (anv_batch_has_error(&cmd_buffer->batch))
       return;
 
+   anv_measure_snapshot(cmd_buffer,
+                        INTEL_SNAPSHOT_DRAW,
+                        "draw mesh", x * y * z);
+
+   trace_intel_begin_draw_mesh(&cmd_buffer->trace);
+
    /* TODO(mesh): Check if this is not emitting more packets than we need. */
    genX(cmd_buffer_flush_gfx_state)(cmd_buffer);
 
@@ -4760,6 +4774,8 @@ genX(CmdDrawMeshTasksEXT)(
       m.ThreadGroupCountY = y;
       m.ThreadGroupCountZ = z;
    }
+
+   trace_intel_end_draw_mesh(&cmd_buffer->trace, x, y, z);
 }
 
 #define GFX125_3DMESH_TG_COUNT 0x26F0
@@ -4856,6 +4872,12 @@ genX(CmdDrawMeshTasksIndirectNV)(
    if (anv_batch_has_error(&cmd_buffer->batch))
       return;
 
+   anv_measure_snapshot(cmd_buffer,
+                        INTEL_SNAPSHOT_DRAW,
+                        "draw mesh indirect", drawCount);
+
+   trace_intel_begin_draw_mesh_indirect(&cmd_buffer->trace);
+
    genX(cmd_buffer_flush_gfx_state)(cmd_buffer);
 
    if (cmd_state->conditional_render_enabled)
@@ -4876,6 +4898,8 @@ genX(CmdDrawMeshTasksIndirectNV)(
 
       offset += stride;
    }
+
+   trace_intel_end_draw_mesh_indirect(&cmd_buffer->trace, drawCount);
 }
 
 void
@@ -4895,6 +4919,12 @@ genX(CmdDrawMeshTasksIndirectEXT)(
 
    if (anv_batch_has_error(&cmd_buffer->batch))
       return;
+
+   anv_measure_snapshot(cmd_buffer,
+                        INTEL_SNAPSHOT_DRAW,
+                        "draw mesh indirect", drawCount);
+
+   trace_intel_begin_draw_mesh_indirect(&cmd_buffer->trace);
 
    genX(cmd_buffer_flush_gfx_state)(cmd_buffer);
 
@@ -4916,6 +4946,8 @@ genX(CmdDrawMeshTasksIndirectEXT)(
 
       offset += stride;
    }
+
+   trace_intel_end_draw_mesh_indirect(&cmd_buffer->trace, drawCount);
 }
 
 void
@@ -4937,6 +4969,12 @@ genX(CmdDrawMeshTasksIndirectCountNV)(
 
    if (anv_batch_has_error(&cmd_buffer->batch))
       return;
+
+   anv_measure_snapshot(cmd_buffer,
+                        INTEL_SNAPSHOT_DRAW,
+                        "draw mesh indirect count", 0);
+
+   trace_intel_begin_draw_mesh_indirect_count(&cmd_buffer->trace);
 
    genX(cmd_buffer_flush_gfx_state)(cmd_buffer);
 
@@ -4961,6 +4999,8 @@ genX(CmdDrawMeshTasksIndirectCountNV)(
 
       offset += stride;
    }
+
+   trace_intel_end_draw_mesh_indirect_count(&cmd_buffer->trace, maxDrawCount);
 }
 
 void
@@ -4982,6 +5022,12 @@ genX(CmdDrawMeshTasksIndirectCountEXT)(
 
    if (anv_batch_has_error(&cmd_buffer->batch))
       return;
+
+   anv_measure_snapshot(cmd_buffer,
+                        INTEL_SNAPSHOT_DRAW,
+                        "draw mesh indirect count", 0);
+
+   trace_intel_begin_draw_mesh_indirect_count(&cmd_buffer->trace);
 
    genX(cmd_buffer_flush_gfx_state)(cmd_buffer);
 
@@ -5006,6 +5052,8 @@ genX(CmdDrawMeshTasksIndirectCountEXT)(
 
       offset += stride;
    }
+
+   trace_intel_end_draw_mesh_indirect_count(&cmd_buffer->trace, maxDrawCount);
 }
 
 #endif /* GFX_VERx10 >= 125 */

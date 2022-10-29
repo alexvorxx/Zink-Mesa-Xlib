@@ -763,7 +763,7 @@ dzn_graphics_pipeline_compile_shaders(struct dzn_device *device,
       _mesa_sha1_update(&pipeline_hash_ctx, &force_sample_rate_shading, sizeof(force_sample_rate_shading));
 
       u_foreach_bit(stage, active_stage_mask) {
-         vk_pipeline_hash_shader_stage(stages[stage].info, stages[stage].spirv_hash);
+         vk_pipeline_hash_shader_stage(stages[stage].info, NULL, stages[stage].spirv_hash);
          _mesa_sha1_update(&pipeline_hash_ctx, stages[stage].spirv_hash, sizeof(stages[stage].spirv_hash));
          _mesa_sha1_update(&pipeline_hash_ctx, layout->stages[stage].hash, sizeof(layout->stages[stage].hash));
       }
@@ -2097,7 +2097,7 @@ dzn_compute_pipeline_compile_shader(struct dzn_device *device,
       struct mesa_sha1 pipeline_hash_ctx;
 
       _mesa_sha1_init(&pipeline_hash_ctx);
-      vk_pipeline_hash_shader_stage(&info->stage, spirv_hash);
+      vk_pipeline_hash_shader_stage(&info->stage, NULL, spirv_hash);
       _mesa_sha1_update(&pipeline_hash_ctx, spirv_hash, sizeof(spirv_hash));
       _mesa_sha1_update(&pipeline_hash_ctx, layout->stages[MESA_SHADER_COMPUTE].hash,
                         sizeof(layout->stages[MESA_SHADER_COMPUTE].hash));

@@ -181,7 +181,7 @@ BEGIN_TEST(regalloc.precolor.different_regs)
       return;
 
    //! v1: %tmp1:v[1], v1: %tmp2:v[2] = p_parallelcopy %tmp0:v[0], %tmp0:v[0]
-   //! p_unit_test %tmp1:v[1], %tmp1:v[1], %tmp1:v[1]
+   //! p_unit_test %tmp0:v[0], %tmp1:v[1], %tmp2:v[2]
    bld.pseudo(aco_opcode::p_unit_test, Operand(inputs[0], PhysReg(256+0)),
               Operand(inputs[0], PhysReg(256+1)), Operand(inputs[0], PhysReg(256+2)));
 

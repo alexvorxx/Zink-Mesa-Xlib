@@ -5165,7 +5165,8 @@ tu_emit_compute_driver_params(struct tu_cmd_buffer *cmd,
     * indirect dispatch.
     */
    if (info->indirect && num_consts > IR3_DP_BASE_GROUP_X) {
-      tu_cs_emit_pkt7(cs, tu6_stage2opcode(type), 7);
+      bool emit_local = num_consts > IR3_DP_LOCAL_GROUP_SIZE_X;
+      tu_cs_emit_pkt7(cs, tu6_stage2opcode(type), 7 + (emit_local ? 4 : 0));
       tu_cs_emit(cs, CP_LOAD_STATE6_0_DST_OFF(offset + (IR3_DP_BASE_GROUP_X / 4)) |
                  CP_LOAD_STATE6_0_STATE_TYPE(ST6_CONSTANTS) |
                  CP_LOAD_STATE6_0_STATE_SRC(SS6_DIRECT) |
@@ -5176,7 +5177,7 @@ tu_emit_compute_driver_params(struct tu_cmd_buffer *cmd,
       tu_cs_emit(cs, 0); /* BASE_GROUP_Y */
       tu_cs_emit(cs, 0); /* BASE_GROUP_Z */
       tu_cs_emit(cs, subgroup_size);
-      if (num_consts > IR3_DP_LOCAL_GROUP_SIZE_X) {
+      if (emit_local) {
          assert(num_consts == align(IR3_DP_SUBGROUP_ID_SHIFT, 4));
          tu_cs_emit(cs, 0); /* LOCAL_GROUP_SIZE_X */
          tu_cs_emit(cs, 0); /* LOCAL_GROUP_SIZE_Y */

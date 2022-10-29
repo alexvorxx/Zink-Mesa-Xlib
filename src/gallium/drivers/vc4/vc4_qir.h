@@ -464,6 +464,7 @@ struct vc4_compile {
         struct qreg undef;
         enum qstage stage;
         uint32_t num_temps;
+        uint32_t max_reg_pressure;
 
         struct list_head blocks;
         int next_block_index;

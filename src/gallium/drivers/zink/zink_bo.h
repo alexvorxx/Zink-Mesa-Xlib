@@ -30,6 +30,7 @@
 #include "zink_batch.h"
 
 #define VK_VIS_VRAM (VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT | VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT)
+#define VK_STAGING_RAM (VK_MEMORY_PROPERTY_HOST_COHERENT_BIT | VK_MEMORY_PROPERTY_HOST_CACHED_BIT)
 #define VK_LAZY_VRAM (VK_MEMORY_PROPERTY_LAZILY_ALLOCATED_BIT | VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT)
 
 
@@ -92,6 +93,17 @@ zink_heap_from_domain_flags(VkMemoryPropertyFlags domains, enum zink_alloc_flag 
    return ZINK_HEAP_HOST_VISIBLE_COHERENT;
 }
 
+static inline unsigned
+zink_heap_idx_from_bits(struct zink_screen *screen, enum zink_heap heap, uint32_t bits)
+{
+   for (unsigned i = 0; i < screen->heap_count[heap]; i++) {
+      if (bits & BITFIELD_BIT(screen->heap_map[heap][i])) {
+         return screen->heap_map[heap][i];
+      }
+   }
+   return UINT32_MAX;
+}
+
 bool
 zink_bo_init(struct zink_screen *screen);
 
@@ -99,7 +111,7 @@ void
 zink_bo_deinit(struct zink_screen *screen);
 
 struct pb_buffer *
-zink_bo_create(struct zink_screen *screen, uint64_t size, unsigned alignment, enum zink_heap heap, enum zink_alloc_flag flags, const void *pNext);
+zink_bo_create(struct zink_screen *screen, uint64_t size, unsigned alignment, enum zink_heap heap, enum zink_alloc_flag flags, unsigned heap_idx, const void *pNext);
 
 bool
 zink_bo_get_kms_handle(struct zink_screen *screen, struct zink_bo *bo, int fd, uint32_t *handle);
@@ -168,6 +180,15 @@ zink_bo_usage_wait(struct zink_context *ctx, struct zink_bo *bo, enum zink_resou
       zink_batch_usage_wait(ctx, bo->reads);
    if (access & ZINK_RESOURCE_ACCESS_WRITE)
       zink_batch_usage_wait(ctx, bo->writes);
+}
+
+static inline void
+zink_bo_usage_try_wait(struct zink_context *ctx, struct zink_bo *bo, enum zink_resource_access access)
+{
+   if (access & ZINK_RESOURCE_ACCESS_READ)
+      zink_batch_usage_try_wait(ctx, bo->reads);
+   if (access & ZINK_RESOURCE_ACCESS_WRITE)
+      zink_batch_usage_try_wait(ctx, bo->writes);
 }
 
 static inline void

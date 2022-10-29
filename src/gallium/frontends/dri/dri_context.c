@@ -50,7 +50,6 @@ dri_create_context(gl_api api, const struct gl_config * visual,
 {
    __DRIscreen *sPriv = cPriv->driScreenPriv;
    struct dri_screen *screen = dri_screen(sPriv);
-   struct st_api *stapi = screen->st_api;
    struct dri_context *ctx = NULL;
    struct st_context_iface *st_share = NULL;
    struct st_context_attribs attribs;
@@ -69,6 +68,9 @@ dri_create_context(gl_api api, const struct gl_config * visual,
       allowed_flags |= __DRI_CTX_FLAG_ROBUST_BUFFER_ACCESS;
       allowed_attribs |= __DRIVER_CONTEXT_ATTRIB_RESET_STRATEGY;
    }
+
+   if (screen->has_protected_context)
+      allowed_attribs |= __DRIVER_CONTEXT_ATTRIB_PROTECTED;
 
    if (ctx_config->flags & ~allowed_flags) {
       *error = __DRI_CTX_ERROR_UNKNOWN_FLAG;
@@ -138,6 +140,9 @@ dri_create_context(gl_api api, const struct gl_config * visual,
        && (ctx_config->release_behavior == __DRI_CTX_RELEASE_BEHAVIOR_NONE))
       attribs.flags |= ST_CONTEXT_FLAG_RELEASE_NONE;
 
+   if (ctx_config->attribute_mask & __DRIVER_CONTEXT_ATTRIB_PROTECTED)
+      attribs.flags |= ST_CONTEXT_FLAG_PROTECTED;
+
    struct dri_context *share_ctx = NULL;
    if (sharedContextPrivate) {
       share_ctx = (struct dri_context *)sharedContextPrivate;
@@ -166,7 +171,7 @@ dri_create_context(gl_api api, const struct gl_config * visual,
 
    attribs.options = screen->options;
    dri_fill_st_visual(&attribs.visual, screen, visual);
-   ctx->st = stapi->create_context(stapi, &screen->base, &attribs, &ctx_err,
+   ctx->st = st_api_create_context(&screen->base, &attribs, &ctx_err,
 				   st_share);
    if (ctx->st == NULL) {
       switch (ctx_err) {
@@ -195,7 +200,6 @@ dri_create_context(gl_api api, const struct gl_config * visual,
       goto fail;
    }
    ctx->st->st_manager_private = (void *) ctx;
-   ctx->stapi = stapi;
 
    if (ctx->st->cso_context) {
       ctx->pp = pp_init(ctx->st->pipe, screen->pp_enabled, ctx->st->cso_context,
@@ -264,12 +268,10 @@ GLboolean
 dri_unbind_context(__DRIcontext * cPriv)
 {
    /* dri_util.c ensures cPriv is not null */
-   struct dri_screen *screen = dri_screen(cPriv->driScreenPriv);
    struct dri_context *ctx = dri_context(cPriv);
    struct st_context_iface *st = ctx->st;
-   struct st_api *stapi = screen->st_api;
 
-   if (st == stapi->get_current(stapi)) {
+   if (st == st_api_get_current()) {
       if (st->thread_finish)
          st->thread_finish(st);
 
@@ -277,7 +279,7 @@ dri_unbind_context(__DRIcontext * cPriv)
       if (ctx->hud)
          hud_record_only(ctx->hud, st->pipe);
 
-      stapi->make_current(stapi, NULL, NULL, NULL);
+      st_api_make_current(NULL, NULL, NULL);
    }
    ctx->dPriv = NULL;
    ctx->rPriv = NULL;
@@ -302,7 +304,7 @@ dri_make_current(__DRIcontext * cPriv,
       ctx->st->thread_finish(ctx->st);
 
    if (!draw && !read)
-      return ctx->stapi->make_current(ctx->stapi, ctx->st, NULL, NULL);
+      return st_api_make_current(ctx->st, NULL, NULL);
    else if (!draw || !read)
       return GL_FALSE;
 
@@ -315,7 +317,7 @@ dri_make_current(__DRIcontext * cPriv,
       read->texture_stamp = driReadPriv->lastStamp - 1;
    }
 
-   ctx->stapi->make_current(ctx->stapi, ctx->st, &draw->base, &read->base);
+   st_api_make_current(ctx->st, &draw->base, &read->base);
 
    /* This is ok to call here. If they are already init, it's a no-op. */
    if (ctx->pp && draw->textures[ST_ATTACHMENT_BACK_LEFT])
@@ -328,11 +330,7 @@ dri_make_current(__DRIcontext * cPriv,
 struct dri_context *
 dri_get_current(__DRIscreen *sPriv)
 {
-   struct dri_screen *screen = dri_screen(sPriv);
-   struct st_api *stapi = screen->st_api;
-   struct st_context_iface *st;
-
-   st = stapi->get_current(stapi);
+   struct st_context_iface *st = st_api_get_current();
 
    return (struct dri_context *) st ? st->st_manager_private : NULL;
 }

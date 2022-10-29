@@ -34,7 +34,6 @@
 #include "util/u_string.h"
 #include "util/u_viewport.h"
 
-#include "common/freedreno_guardband.h"
 #include "freedreno_query_hw.h"
 #include "freedreno_resource.h"
 #include "freedreno_state.h"
@@ -731,16 +730,19 @@ static struct fd_ringbuffer *
 build_scissor(struct fd6_emit *emit) assert_dt
 {
    struct fd_context *ctx = emit->ctx;
-   struct pipe_scissor_state *scissor = fd_context_get_scissor(ctx);
+   struct pipe_scissor_state *scissors = fd_context_get_scissor(ctx);
+   unsigned num_viewports = emit->prog->num_viewports;
 
    struct fd_ringbuffer *ring = fd_submit_new_ringbuffer(
-      emit->ctx->batch->submit, 3 * 4, FD_RINGBUFFER_STREAMING);
+      emit->ctx->batch->submit, (1 + (2 * num_viewports)) * 4, FD_RINGBUFFER_STREAMING);
 
-   OUT_REG(
-      ring,
-      A6XX_GRAS_SC_SCREEN_SCISSOR_TL(0, .x = scissor->minx, .y = scissor->miny),
-      A6XX_GRAS_SC_SCREEN_SCISSOR_BR(0, .x = MAX2(scissor->maxx, 1) - 1,
-                                     .y = MAX2(scissor->maxy, 1) - 1));
+   OUT_PKT4(ring, REG_A6XX_GRAS_SC_SCREEN_SCISSOR_TL(0), 2 * num_viewports);
+   for (unsigned i = 0; i < num_viewports; i++) {
+      OUT_RING(ring, A6XX_GRAS_SC_SCREEN_SCISSOR_TL_X(scissors[i].minx) |
+               A6XX_GRAS_SC_SCREEN_SCISSOR_TL_Y(scissors[i].miny));
+      OUT_RING(ring, A6XX_GRAS_SC_SCREEN_SCISSOR_BR_X(scissors[i].maxx) |
+               A6XX_GRAS_SC_SCREEN_SCISSOR_BR_Y(scissors[i].maxy));
+   }
 
    return ring;
 }
@@ -956,6 +958,7 @@ fd6_emit_non_ring(struct fd_ringbuffer *ring, struct fd6_emit *emit) assert_dt
 {
    struct fd_context *ctx = emit->ctx;
    const enum fd_dirty_3d_state dirty = emit->dirty;
+   unsigned num_viewports = emit->prog->num_viewports;
 
    if (dirty & FD_DIRTY_STENCIL_REF) {
       struct pipe_stencil_ref *sr = &ctx->stencil_ref;
@@ -965,45 +968,51 @@ fd6_emit_non_ring(struct fd_ringbuffer *ring, struct fd6_emit *emit) assert_dt
                         A6XX_RB_STENCILREF_BFREF(sr->ref_value[1]));
    }
 
-   if (dirty & FD_DIRTY_VIEWPORT) {
-      struct pipe_scissor_state *scissor = &ctx->viewport_scissor;
+   if (dirty & (FD_DIRTY_VIEWPORT | FD_DIRTY_PROG)) {
+      for (unsigned i = 0; i < num_viewports; i++) {
+         struct pipe_scissor_state *scissor = &ctx->viewport_scissor[i];
+         struct pipe_viewport_state *vp = & ctx->viewport[i];
 
-      OUT_REG(ring, A6XX_GRAS_CL_VPORT_XOFFSET(0, ctx->viewport.translate[0]),
-              A6XX_GRAS_CL_VPORT_XSCALE(0, ctx->viewport.scale[0]),
-              A6XX_GRAS_CL_VPORT_YOFFSET(0, ctx->viewport.translate[1]),
-              A6XX_GRAS_CL_VPORT_YSCALE(0, ctx->viewport.scale[1]),
-              A6XX_GRAS_CL_VPORT_ZOFFSET(0, ctx->viewport.translate[2]),
-              A6XX_GRAS_CL_VPORT_ZSCALE(0, ctx->viewport.scale[2]));
+         OUT_REG(ring, A6XX_GRAS_CL_VPORT_XOFFSET(i, vp->translate[0]),
+                 A6XX_GRAS_CL_VPORT_XSCALE(i, vp->scale[0]),
+                 A6XX_GRAS_CL_VPORT_YOFFSET(i, vp->translate[1]),
+                 A6XX_GRAS_CL_VPORT_YSCALE(i, vp->scale[1]),
+                 A6XX_GRAS_CL_VPORT_ZOFFSET(i, vp->translate[2]),
+                 A6XX_GRAS_CL_VPORT_ZSCALE(i, vp->scale[2]));
 
-      OUT_REG(
-         ring,
-         A6XX_GRAS_SC_VIEWPORT_SCISSOR_TL(0, .x = scissor->minx,
-                                          .y = scissor->miny),
-         A6XX_GRAS_SC_VIEWPORT_SCISSOR_BR(0, .x = MAX2(scissor->maxx, 1) - 1,
-                                          .y = MAX2(scissor->maxy, 1) - 1));
+         OUT_REG(
+               ring,
+               A6XX_GRAS_SC_VIEWPORT_SCISSOR_TL(i,
+                                                .x = scissor->minx,
+                                                .y = scissor->miny),
+               A6XX_GRAS_SC_VIEWPORT_SCISSOR_BR(i,
+                                                .x = scissor->maxx,
+                                                .y = scissor->maxy));
+      }
 
-      unsigned guardband_x = fd_calc_guardband(ctx->viewport.translate[0],
-                                               ctx->viewport.scale[0], false);
-      unsigned guardband_y = fd_calc_guardband(ctx->viewport.translate[1],
-                                               ctx->viewport.scale[1], false);
-
-      OUT_REG(ring, A6XX_GRAS_CL_GUARDBAND_CLIP_ADJ(.horz = guardband_x,
-                                                    .vert = guardband_y));
+      OUT_REG(ring, A6XX_GRAS_CL_GUARDBAND_CLIP_ADJ(.horz = ctx->guardband.x,
+                                                    .vert = ctx->guardband.y));
    }
 
    /* The clamp ranges are only used when the rasterizer wants depth
     * clamping.
     */
-   if ((dirty & (FD_DIRTY_VIEWPORT | FD_DIRTY_RASTERIZER)) &&
+   if ((dirty & (FD_DIRTY_VIEWPORT | FD_DIRTY_RASTERIZER | FD_DIRTY_PROG)) &&
        fd_depth_clamp_enabled(ctx)) {
-      float zmin, zmax;
-      util_viewport_zmin_zmax(&ctx->viewport, ctx->rasterizer->clip_halfz,
-                              &zmin, &zmax);
+      for (unsigned i = 0; i < num_viewports; i++) {
+         struct pipe_viewport_state *vp = & ctx->viewport[i];
+         float zmin, zmax;
 
-      OUT_REG(ring, A6XX_GRAS_CL_Z_CLAMP_MIN(0, zmin),
-              A6XX_GRAS_CL_Z_CLAMP_MAX(0, zmax));
+         util_viewport_zmin_zmax(vp, ctx->rasterizer->clip_halfz,
+                                 &zmin, &zmax);
 
-      OUT_REG(ring, A6XX_RB_Z_CLAMP_MIN(zmin), A6XX_RB_Z_CLAMP_MAX(zmax));
+         OUT_REG(ring, A6XX_GRAS_CL_Z_CLAMP_MIN(i, zmin),
+                 A6XX_GRAS_CL_Z_CLAMP_MAX(i, zmax));
+
+         /* TODO: what to do about this and multi viewport ? */
+         if (i == 0)
+            OUT_REG(ring, A6XX_RB_Z_CLAMP_MIN(zmin), A6XX_RB_Z_CLAMP_MAX(zmax));
+      }
    }
 }
 

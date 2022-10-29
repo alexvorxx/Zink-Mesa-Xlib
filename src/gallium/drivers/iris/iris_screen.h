@@ -165,9 +165,6 @@ struct iris_screen {
     */
    int winsys_fd;
 
-   /** PCI ID for our GPU device */
-   int pci_id;
-
    struct iris_vtable vtbl;
 
    /** Global program_string_id counter (see get_program_string_id()) */
@@ -189,7 +186,8 @@ struct iris_screen {
 
    /** Does the kernel support various features (KERNEL_HAS_* bitfield)? */
    unsigned kernel_features;
-#define KERNEL_HAS_WAIT_FOR_SUBMIT (1<<0)
+#define KERNEL_HAS_WAIT_FOR_SUBMIT   (1U<<0)
+#define KERNEL_HAS_PROTECTED_CONTEXT (1U<<1)
 
    /**
     * Last sequence number allocated by the cache tracking mechanism.

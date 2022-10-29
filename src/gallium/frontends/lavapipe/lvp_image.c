@@ -440,7 +440,7 @@ VKAPI_ATTR VkDeviceAddress VKAPI_CALL lvp_GetBufferDeviceAddress(
 {
    LVP_FROM_HANDLE(lvp_buffer, buffer, pInfo->buffer);
 
-   return (VkDeviceAddress)(uintptr_t)buffer->pmem;
+   return (VkDeviceAddress)(uintptr_t)((char*)buffer->pmem + buffer->offset);
 }
 
 VKAPI_ATTR uint64_t VKAPI_CALL lvp_GetBufferOpaqueCaptureAddress(

@@ -99,14 +99,18 @@ agx_validate_sources(agx_instr *I)
          agx_validate_assert(!src.cache);
          agx_validate_assert(!src.discard);
 
-         /* Immediates are encoded as 8-bit. For integers, they extend to
-          * 16-bit. For floating point, they are 8-bit minifloats. The 8-bit
-          * minifloats are a strict subset of 16-bit standard floats, so we
-          * treat them as such in the IR, with an implicit f16->f32 for 32-bit
-          * floating point operations.
+         bool ldst =
+            (I->op == AGX_OPCODE_DEVICE_LOAD) ||
+            (I->op == AGX_OPCODE_UNIFORM_STORE);
+
+         /* Immediates are encoded as 8-bit (16-bit for memory load/store). For
+          * integers, they extend to 16-bit. For floating point, they are 8-bit
+          * minifloats. The 8-bit minifloats are a strict subset of 16-bit
+          * standard floats, so we treat them as such in the IR, with an
+          * implicit f16->f32 for 32-bit floating point operations.
           */
          agx_validate_assert(src.size == AGX_SIZE_16);
-         agx_validate_assert(src.value < 0x100);
+         agx_validate_assert(src.value < (1 << (ldst ? 16 : 8)));
       }
    }
 

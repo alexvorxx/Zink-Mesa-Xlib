@@ -31,7 +31,7 @@ traces:
       checksum: 67694d4c5ddd2e353786b7400f26eae9
   civilization-v/CivilizationV-trim--s705-761-f762-v20201203-v2.trace:
     freedreno-a630:
-      checksum: 930dd4d5deb6df171235217898fa3567
+      checksum: 282b0fdb96624977fa656d93745c1037
   golf-with-your-friends/GolfWithYourFriends-trim--f1070-v20201203-v2.trace:
     freedreno-a630:
       checksum: cd01820de77063f0397f26d6cd747d1c

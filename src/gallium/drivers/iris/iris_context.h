@@ -609,6 +609,9 @@ struct iris_context {
    /** A debug callback for KHR_debug output. */
    struct util_debug_callback dbg;
 
+   /** Whether the context protected (through EGL_EXT_protected_content) */
+   bool protected;
+
    /** A device reset status callback for notifying that the GPU is hosed. */
    struct pipe_device_reset_callback reset;
 

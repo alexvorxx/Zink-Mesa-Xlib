@@ -442,6 +442,31 @@ fd_msaa_samples(unsigned samples)
    }
 }
 
+#define A3XX_MAX_TEXEL_BUFFER_ELEMENTS_UINT (1 << 13)
+
+/* Note that the Vulkan blob on a540 and 640 report a
+ * maxTexelBufferElements of just 65536 (the GLES3.2 and Vulkan
+ * minimum).
+ */
+#define A4XX_MAX_TEXEL_BUFFER_ELEMENTS_UINT (1 << 27)
+
+static inline uint32_t
+fd_clamp_buffer_size(enum pipe_format format, uint32_t size,
+                     unsigned max_texel_buffer_elements)
+{
+   /* The spec says:
+    *    The number of texels in the texel array is then clamped to the value of
+    *    the implementation-dependent limit GL_MAX_TEXTURE_BUFFER_SIZE.
+    *
+    * So compute the number of texels, compare to GL_MAX_TEXTURE_BUFFER_SIZE and update it.
+    */
+   unsigned blocksize = util_format_get_blocksize(format);
+   unsigned elements = MIN2(max_texel_buffer_elements, size / blocksize);
+
+   return elements * blocksize;
+}
+
+
 /*
  * a4xx+ helpers:
  */

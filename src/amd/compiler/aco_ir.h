@@ -33,6 +33,7 @@
 
 #include "nir.h"
 
+#include <algorithm>
 #include <bitset>
 #include <memory>
 #include <vector>
@@ -54,6 +55,7 @@ enum {
    DEBUG_PERF_INFO = 0x80,
    DEBUG_LIVE_INFO = 0x100,
    DEBUG_FORCE_WAITDEPS = 0x200,
+   DEBUG_NO_VALIDATE_IR = 0x400,
 };
 
 /**
@@ -136,7 +138,7 @@ enum class instr_class : uint8_t {
 enum storage_class : uint8_t {
    storage_none = 0x0,   /* no synchronization and can be reordered around aliasing stores */
    storage_buffer = 0x1, /* SSBOs and global memory */
-   storage_atomic_counter = 0x2, /* not used for Vulkan */
+   storage_gds = 0x2,
    storage_image = 0x4,
    storage_shared = 0x8,       /* or TCS output */
    storage_vmem_output = 0x10, /* GS or TCS output stores using VMEM */
@@ -1776,7 +1778,7 @@ struct Pseudo_reduction_instruction : public Instruction {
 static_assert(sizeof(Pseudo_reduction_instruction) == sizeof(Instruction) + 4,
               "Unexpected padding");
 
-extern thread_local aco::monotonic_buffer_resource instruction_buffer;
+extern thread_local aco::monotonic_buffer_resource* instruction_buffer;
 
 struct instr_deleter_functor {
    /* Don't yet free any instructions. They will be de-allocated
@@ -1794,7 +1796,7 @@ create_instruction(aco_opcode opcode, Format format, uint32_t num_operands,
 {
    std::size_t size =
       sizeof(T) + num_operands * sizeof(Operand) + num_definitions * sizeof(Definition);
-   void* data = instruction_buffer.allocate(size, alignof(uint32_t));
+   void* data = instruction_buffer->allocate(size, alignof(uint32_t));
    memset(data, 0, size);
    T* inst = (T*)data;
 
@@ -1851,7 +1853,19 @@ is_phi(aco_ptr<Instruction>& instr)
 
 memory_sync_info get_sync_info(const Instruction* instr);
 
-bool is_dead(const std::vector<uint16_t>& uses, Instruction* instr);
+inline bool
+is_dead(const std::vector<uint16_t>& uses, const Instruction* instr)
+{
+   if (instr->definitions.empty() || instr->isBranch() ||
+       instr->opcode == aco_opcode::p_init_scratch)
+      return false;
+
+   if (std::any_of(instr->definitions.begin(), instr->definitions.end(),
+                   [&uses](const Definition& def) { return !def.isTemp() || uses[def.tempId()]; }))
+      return false;
+
+   return !(get_sync_info(instr).semantics & (semantic_volatile | semantic_acqrel));
+}
 
 bool can_use_opsel(amd_gfx_level gfx_level, aco_opcode op, int idx);
 bool instr_is_16bit(amd_gfx_level gfx_level, aco_opcode op);
@@ -2141,6 +2155,7 @@ enum class CompilationProgress {
 
 class Program final {
 public:
+   aco::monotonic_buffer_resource m{65536};
    std::vector<Block> blocks;
    std::vector<RegClass> temp_rc = {s1};
    RegisterDemand max_reg_demand = RegisterDemand();

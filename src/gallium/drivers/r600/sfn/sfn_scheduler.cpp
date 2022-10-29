@@ -332,7 +332,7 @@ void BlockSheduler::schedule_block(Block& in_block, Shader::ShaderBlocks& out_bl
             current_shed = sched_mem_ring;
          else if (rat_instr_ready.size() > 3)
             current_shed = sched_rat;
-         else if (tex_ready.size() > 3)
+         else if (tex_ready.size() > (m_chip_class >= ISA_CC_EVERGREEN ? 15 : 7))
             current_shed = sched_tex;         
       }
 

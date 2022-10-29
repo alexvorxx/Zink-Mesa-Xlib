@@ -393,6 +393,11 @@ kill(wait_imm& imm, Instruction* instr, wait_ctx& ctx, memory_sync_info sync_inf
       }
    }
 
+   if (instr->opcode == aco_opcode::ds_ordered_count &&
+       ((instr->ds().offset1 | (instr->ds().offset0 >> 8)) & 0x1)) {
+      imm.combine(ctx.barrier_imm[ffs(storage_gds) - 1]);
+   }
+
    if (ctx.program->early_rast && instr->opcode == aco_opcode::exp) {
       if (instr->exp().dest >= V_008DFC_SQ_EXP_POS && instr->exp().dest < V_008DFC_SQ_EXP_PRIM) {
 
@@ -716,6 +721,14 @@ gen(Instruction* instr, wait_ctx& ctx)
          update_counters(ctx, event_sendmsg);
       break;
    }
+   case Format::SOP1: {
+      if (instr->opcode == aco_opcode::s_sendmsg_rtn_b32 ||
+          instr->opcode == aco_opcode::s_sendmsg_rtn_b64) {
+         update_counters(ctx, event_sendmsg);
+         insert_wait_entry(ctx, instr->definitions[0], event_sendmsg);
+      }
+      break;
+   }
    default: break;
    }
 }
@@ -766,8 +779,15 @@ handle_block(Program* program, Block& block, wait_ctx& ctx)
          if (!queued_imm.empty())
             emit_waitcnt(ctx, new_instructions, queued_imm);
 
+         bool is_ordered_count_acquire =
+            instr->opcode == aco_opcode::ds_ordered_count &&
+            !((instr->ds().offset1 | (instr->ds().offset0 >> 8)) & 0x1);
+
          new_instructions.emplace_back(std::move(instr));
          perform_barrier(ctx, queued_imm, sync_info, semantic_acquire);
+
+         if (is_ordered_count_acquire)
+            queued_imm.combine(ctx.barrier_imm[ffs(storage_gds) - 1]);
       }
    }
 

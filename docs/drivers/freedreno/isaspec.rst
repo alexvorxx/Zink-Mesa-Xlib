@@ -39,7 +39,7 @@ Bitsets
 
 The fundamental concept of matching a bit-pattern to an instruction
 decoding/encoding is the concept of a hierarchical tree of bitsets.
-This is intended to match how the hw decodes instructions, where certain
+This is intended to match how the HW decodes instructions, where certain
 bits describe the instruction (and sub-encoding, and so on), and other
 bits describe various operands to the instruction.
 
@@ -203,7 +203,7 @@ disasm syntax, and/or interpretation of some range of bits differs based
 on some other field or combination of fields.  These *could* be modeled
 as different derived bitsets, at the expense of a combinatorical explosion
 of the size of the bitset inheritance tree.  For example, *every* cat2
-(and cat3) instruction has both a ``(nopN)`` interpretation in addtion to
+(and cat3) instruction has both a ``(nopN)`` interpretation in addition to
 the ``(rptN`)`` interpretation.
 
 An ``<override>`` in a bitset allows to redefine the display string, and/or

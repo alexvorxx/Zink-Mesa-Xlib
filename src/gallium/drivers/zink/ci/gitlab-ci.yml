@@ -10,7 +10,7 @@
     # Fix non-conformant llvmpipe filter defaults
     GALLIVM_PERF: "no_quad_lod"
 
-zink:
+zink-lvp:
   tags:
     - mesa-swrast
   extends:

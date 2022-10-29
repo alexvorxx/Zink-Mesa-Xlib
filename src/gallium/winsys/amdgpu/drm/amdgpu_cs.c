@@ -740,6 +740,15 @@ static bool amdgpu_ib_new_buffer(struct amdgpu_winsys *ws,
    enum radeon_bo_domain domain = RADEON_DOMAIN_GTT;
    unsigned flags = RADEON_FLAG_NO_INTERPROCESS_SHARING;
 
+   if (cs->ip_type == AMD_IP_GFX ||
+       cs->ip_type == AMD_IP_COMPUTE ||
+       cs->ip_type == AMD_IP_SDMA) {
+      /* Avoids hangs with "rendercheck -t cacomposite -f a8r8g8b8" via glamor
+       * on Navi 14
+       */
+      flags |= RADEON_FLAG_32BIT;
+   }
+
    pb = amdgpu_bo_create(ws, buffer_size,
                          ws->info.gart_page_size,
                          domain, flags);

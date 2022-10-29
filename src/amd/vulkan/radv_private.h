@@ -1212,6 +1212,12 @@ enum radv_nggc_settings {
    radv_nggc_small_primitives = 1 << 3,
 };
 
+enum radv_ngg_query_state {
+   radv_ngg_query_none = 0,
+   radv_ngg_query_pipeline_stat = 1 << 0,
+   radv_ngg_query_prim_gen = 1 << 1,
+};
+
 struct radv_vertex_binding {
    VkDeviceSize offset;
    VkDeviceSize size;
@@ -1529,7 +1535,8 @@ struct radv_cmd_state {
    bool perfect_occlusion_queries_enabled;
    unsigned active_pipeline_queries;
    unsigned active_pipeline_gds_queries;
-   bool prims_gen_query_enabled;
+   unsigned active_prims_gen_queries;
+   unsigned active_prims_gen_gds_queries;
    uint32_t trace_id;
    uint32_t last_ia_multi_vgt_param;
    uint32_t last_ge_cntl;
@@ -3112,7 +3119,7 @@ radv_is_streamout_enabled(struct radv_cmd_buffer *cmd_buffer)
    struct radv_streamout_state *so = &cmd_buffer->state.streamout;
 
    /* Streamout must be enabled for the PRIMITIVES_GENERATED query to work. */
-   return (so->streamout_enabled || cmd_buffer->state.prims_gen_query_enabled) &&
+   return (so->streamout_enabled || cmd_buffer->state.active_prims_gen_queries) &&
           !cmd_buffer->state.suspend_streamout;
 }
 
@@ -3137,10 +3144,11 @@ radv_use_llvm_for_stage(struct radv_device *device, UNUSED gl_shader_stage stage
 }
 
 static inline bool
-radv_has_shader_buffer_float_minmax(const struct radv_physical_device *pdevice)
+radv_has_shader_buffer_float_minmax(const struct radv_physical_device *pdevice, unsigned bitsize)
 {
    return (pdevice->rad_info.gfx_level <= GFX7 && !pdevice->use_llvm) ||
-          pdevice->rad_info.gfx_level >= GFX10;
+          pdevice->rad_info.gfx_level == GFX10 || pdevice->rad_info.gfx_level == GFX10_3 ||
+          (pdevice->rad_info.gfx_level == GFX11 && bitsize == 32);
 }
 
 /* radv_perfcounter.c */

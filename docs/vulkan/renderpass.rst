@@ -38,7 +38,7 @@ VK_KHR_dynamic_rendering
 ------------------------
 
 For drivers which don't need to do subpass combining, it is recommended
-that they skip implementing render passess entirely and implement
+that they skip implementing render passes entirely and implement
 VK_KHR_dynamic_rendering instead.  If they choose to do so, the runtime
 will provide the following, implemented in terms of
 :cpp:func:`vkCmdBeginRendering` and :cpp:func:`vkCmdEndRendering`:

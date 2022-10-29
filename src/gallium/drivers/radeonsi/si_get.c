@@ -195,7 +195,7 @@ static int si_get_param(struct pipe_screen *pscreen, enum pipe_cap param)
    case PIPE_CAP_RESOURCE_FROM_USER_MEMORY:
       return !SI_BIG_ENDIAN && sscreen->info.has_userptr;
 
-   case PIPE_CAP_DEVICE_PROTECTED_CONTENT:
+   case PIPE_CAP_DEVICE_PROTECTED_SURFACE:
       return sscreen->info.has_tmz_support;
 
    case PIPE_CAP_MIN_MAP_BUFFER_ALIGNMENT:
@@ -1180,8 +1180,9 @@ void si_init_screen_get_functions(struct si_screen *sscreen)
       .lower_to_scalar = true,
       .lower_int64_options = nir_lower_imul_2x32_64,
       .has_sdot_4x8 = sscreen->info.has_accelerated_dot_product,
+      .has_sudot_4x8 = sscreen->info.has_accelerated_dot_product && sscreen->info.gfx_level >= GFX11,
       .has_udot_4x8 = sscreen->info.has_accelerated_dot_product,
-      .has_dot_2x16 = sscreen->info.has_accelerated_dot_product,
+      .has_dot_2x16 = sscreen->info.has_accelerated_dot_product && sscreen->info.gfx_level < GFX11,
       .optimize_sample_mask_in = true,
       .max_unroll_iterations = LLVM_VERSION_MAJOR >= 13 ? 128 : 32,
       .max_unroll_iterations_aggressive = LLVM_VERSION_MAJOR >= 13 ? 128 : 32,

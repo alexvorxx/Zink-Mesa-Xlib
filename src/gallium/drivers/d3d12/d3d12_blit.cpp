@@ -281,12 +281,6 @@ copy_subregion_no_barriers(struct d3d12_context *ctx,
    int src_array_size = src->base.b.array_size;
    int dst_array_size = dst->base.b.array_size;
 
-   if (dst->base.b.target == PIPE_TEXTURE_CUBE)
-      dst_array_size *= 6;
-
-   if (src->base.b.target == PIPE_TEXTURE_CUBE)
-      src_array_size *= 6;
-
    int stencil_src_res_offset = 1;
    int stencil_dst_res_offset = 1;
 

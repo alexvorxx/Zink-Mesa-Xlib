@@ -132,7 +132,7 @@ fd6_build_tess_consts(struct fd6_emit *emit)
     * size is dwords, since that's what LDG/STG use.
     */
    unsigned num_vertices = emit->hs
-                              ? emit->patch_vertices
+                              ? emit->key.patch_vertices
                               : emit->gs->gs.vertices_in;
 
    uint32_t vs_params[4] = {
@@ -146,7 +146,7 @@ fd6_build_tess_consts(struct fd6_emit *emit)
       uint32_t hs_params[4] = {
          emit->vs->output_size * num_vertices * 4, /* vs primitive stride */
          emit->vs->output_size * 4,                /* vs vertex stride */
-         emit->hs->output_size, emit->patch_vertices};
+         emit->hs->output_size, emit->key.patch_vertices};
 
       emit_stage_tess_consts(constobj, emit->hs, hs_params,
                              ARRAY_SIZE(hs_params));
@@ -294,6 +294,9 @@ fd6_build_driver_params(struct fd6_emit *emit)
    if (emit->gs && emit->gs->need_driver_params)
       num_dp++;
 
+   if (emit->hs && emit->hs->need_driver_params)
+      num_dp++;
+
    if (emit->ds && emit->ds->need_driver_params)
       num_dp++;
 
@@ -314,6 +317,10 @@ fd6_build_driver_params(struct fd6_emit *emit)
    if (emit->gs && emit->gs->need_driver_params) {
       ir3_emit_driver_params(emit->gs, dpconstobj, ctx, emit->info,
                              emit->indirect, emit->draw);
+   }
+
+   if (emit->hs && emit->hs->need_driver_params) {
+      ir3_emit_hs_driver_params(emit->hs, dpconstobj, ctx);
    }
 
    if (emit->ds && emit->ds->need_driver_params) {

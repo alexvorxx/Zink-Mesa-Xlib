@@ -186,6 +186,8 @@ void gfx10_ngg_build_export_prim(struct si_shader_context *ctx, LLVMValueRef use
                                  LLVMValueRef prim_passthrough);
 void gfx10_ngg_culling_build_end(struct si_shader_context *ctx);
 void gfx10_ngg_build_end(struct si_shader_context *ctx);
+void gfx10_ngg_atomic_add_prim_count(struct ac_shader_abi *abi, unsigned stream,
+                                     LLVMValueRef prim_count, enum ac_prim_count count_type);
 void gfx10_ngg_gs_emit_vertex(struct si_shader_context *ctx, unsigned stream, LLVMValueRef *addrs);
 void gfx10_ngg_gs_emit_begin(struct si_shader_context *ctx);
 void gfx10_ngg_gs_build_end(struct si_shader_context *ctx);

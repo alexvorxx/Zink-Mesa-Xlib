@@ -2513,6 +2513,9 @@ dri2_init_screen(__DRIscreen * sPriv)
 
    dri2_init_screen_extensions(screen, pscreen, false);
 
+   if (pscreen->get_param(pscreen, PIPE_CAP_DEVICE_PROTECTED_CONTEXT))
+      screen->has_protected_context = true;
+
    configs = dri_init_screen_helper(screen, pscreen);
    if (!configs)
       goto destroy_screen;

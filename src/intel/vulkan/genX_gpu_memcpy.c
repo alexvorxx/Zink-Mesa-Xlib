@@ -69,6 +69,16 @@ emit_common_so_memcpy(struct anv_batch *batch, struct anv_device *device,
    anv_batch_emit(batch, GENX(3DSTATE_GS), gs);
    anv_batch_emit(batch, GENX(3DSTATE_PS), gs);
 
+#if GFX_VERx10 >= 125
+   /* Disable Mesh, we can't have this and streamout enabled at the same
+    * time.
+    */
+   if (device->info->has_mesh_shading) {
+      anv_batch_emit(batch, GENX(3DSTATE_MESH_CONTROL), mesh);
+      anv_batch_emit(batch, GENX(3DSTATE_TASK_CONTROL), task);
+   }
+#endif
+
    anv_batch_emit(batch, GENX(3DSTATE_SBE), sbe) {
       sbe.VertexURBEntryReadOffset = 1;
       sbe.NumberofSFOutputAttributes = 1;

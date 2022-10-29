@@ -11,9 +11,9 @@ each directory.
    -  **amd** - AMD-specific sources
 
       -  **addrlib** - common sources for creating images
-      -  **common** - common code between RADV, radeonsi and ACO
+      -  **common** - common code between RADV, RadeonSI and ACO
       -  **compiler** - ACO shader compiler
-      -  **llvm** - common code between RADV and radeonsi for compiling
+      -  **llvm** - common code between RADV and RadeonSI for compiling
          shaders using LLVM
       -  **registers** - register definitions
       -  **vulkan** - RADV Vulkan implementation for AMD Southern Island
@@ -87,7 +87,7 @@ each directory.
          -  **nouveau** - Driver for NVIDIA GPUs.
          -  **panfrost** - Driver for ARM Mali Txxx (Midgard) and
             Gxx (Bifrost) GPUs.
-         -  **radeon** - Shared module for the r600 and radeonsi
+         -  **radeon** - Shared module for the r600 and RadeonSI
             drivers.
          -  **r300** - Driver for ATI R300 - R500.
          -  **r600** - Driver for ATI/AMD R600 - Northern Island (Terascale).
@@ -135,11 +135,11 @@ each directory.
          device drivers
 
          -  **clover** - OpenCL frontend
-         -  **d3d10umd** - D3D10 frontend for Windows only. It's similar to Microsoft WARP, but using llvmpipe/softpipe.
+         -  **d3d10umd** - D3D10 frontend for Windows only. It's similar to Microsoft WARP, but using LLVMpipe/softpipe.
          -  **dri** - Meta frontend for DRI drivers, see mesa/state_tracker
          -  **glx** - Meta frontend for GLX
          -  **hgl** - Haiku OpenGL
-         -  **lavapipe** - Vulkan frontend, software Vulkan rasterizer using llvmpipe.
+         -  **lavapipe** - Vulkan frontend, software Vulkan rasterizer using LLVMpipe.
          -  **nine** - D3D9 frontend, see targets/d3dadapter9
          -  **omx** - OpenMAX Bellagio frontend
          -  **osmesa** - Off-screen OpenGL rendering library

@@ -948,12 +948,9 @@ struct anv_memory_heap {
     * Align it to 64 bits to make atomic operations faster on 32 bit platforms.
     */
    VkDeviceSize      used __attribute__ ((aligned (8)));
-
-   bool              is_local_mem;
 };
 
 struct anv_memregion {
-   struct drm_i915_gem_memory_class_instance region;
    uint64_t size;
    uint64_t available;
 };
@@ -1038,11 +1035,6 @@ struct anv_physical_device {
       bool                                      need_clflush;
     } memory;
 
-    /* Either we have a single vram region and it's all mappable, or we have
-     * both mappable & non-mappable parts. System memory is always available.
-     */
-    struct anv_memregion                        vram_mappable;
-    struct anv_memregion                        vram_non_mappable;
     struct anv_memregion                        sys;
     uint8_t                                     driver_build_sha1[20];
     uint8_t                                     pipeline_cache_uuid[VK_UUID_SIZE];
@@ -1067,12 +1059,6 @@ struct anv_physical_device {
     void (*cmd_emit_timestamp)(struct anv_batch *, struct anv_device *, struct anv_address, bool);
     struct intel_measure_device                 measure_device;
 };
-
-static inline bool
-anv_physical_device_has_vram(const struct anv_physical_device *device)
-{
-   return device->vram_mappable.size > 0;
-}
 
 struct anv_instance {
     struct vk_instance                          vk;
@@ -1344,9 +1330,6 @@ enum anv_bo_alloc_flags {
 
    /** This buffer has implicit CCS data attached to it */
    ANV_BO_ALLOC_IMPLICIT_CCS = (1 << 9),
-
-   /** This buffer is allocated from local memory and should be cpu visible */
-   ANV_BO_ALLOC_LOCAL_MEM_CPU_VISIBLE = (1 << 10),
 };
 
 VkResult anv_device_alloc_bo(struct anv_device *device,
@@ -1417,9 +1400,6 @@ void* anv_gem_mmap(struct anv_device *device,
 void anv_gem_munmap(struct anv_device *device, void *p, uint64_t size);
 uint32_t anv_gem_create(struct anv_device *device, uint64_t size);
 void anv_gem_close(struct anv_device *device, uint32_t gem_handle);
-uint32_t anv_gem_create_regions(struct anv_device *device, uint64_t anv_bo_size,
-                                uint32_t flags, uint32_t num_regions,
-                                struct drm_i915_gem_memory_class_instance *regions);
 uint32_t anv_gem_userptr(struct anv_device *device, void *mem, size_t size);
 int anv_gem_wait(struct anv_device *device, uint32_t gem_handle, int64_t *timeout_ns);
 int anv_gem_execbuffer(struct anv_device *device,

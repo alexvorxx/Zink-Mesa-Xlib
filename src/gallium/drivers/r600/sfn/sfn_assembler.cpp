@@ -430,8 +430,7 @@ void AssamblerVisitor::visit(const TexInstr& tex_instr)
 {
    clear_states(sf_vtx | sf_alu);
 
-   int sampler_offset = 0;
-   auto addr = tex_instr.sampler_offset();
+   auto addr = tex_instr.resource_offset();
    EBufferIndexMode index_mode = bim_none;
 
    if (addr)
@@ -446,8 +445,8 @@ void AssamblerVisitor::visit(const TexInstr& tex_instr)
    r600_bytecode_tex tex;
    memset(&tex, 0, sizeof(struct r600_bytecode_tex));
    tex.op = tex_instr.opcode();
-   tex.sampler_id = tex_instr.sampler_id() + sampler_offset;
-   tex.resource_id = tex_instr.resource_id() + sampler_offset;
+   tex.sampler_id = tex_instr.resource_base();
+   tex.resource_id = tex_instr.resource_id();
    tex.src_gpr = tex_instr.src().sel();
    tex.dst_gpr = tex_instr.dst().sel();
    tex.dst_sel_x = tex_instr.dest_swizzle(0);
@@ -666,7 +665,7 @@ void AssamblerVisitor::visit(const FetchInstr& fetch_instr)
    struct r600_bytecode_vtx vtx;
    memset(&vtx, 0, sizeof(vtx));
    vtx.op = fetch_instr.opcode();
-   vtx.buffer_id = fetch_instr.resource_id();
+   vtx.buffer_id = fetch_instr.resource_base();
    vtx.fetch_type = fetch_instr.fetch_type();
    vtx.src_gpr = fetch_instr.src().sel();
    vtx.src_sel_x = fetch_instr.src().chan();
@@ -759,10 +758,10 @@ void AssamblerVisitor::visit(const RatInstr& instr)
    if (m_ack_suggested /*&& instr.has_instr_flag(Instr::ack_rat_return_write)*/)
       emit_wait_ack();
 
-   int rat_idx = instr.rat_id();
+   int rat_idx = instr.resource_base();
    EBufferIndexMode rat_index_mode = bim_none;
-   auto addr = instr.rat_id_offset();
 
+   auto addr = instr.resource_offset();
    if (addr)
       rat_index_mode = emit_index_reg(*addr, 1);
 
@@ -925,7 +924,7 @@ void AssamblerVisitor::visit(const GDSInstr& instr)
    struct r600_bytecode_gds gds;
 
    bool indirect = false;
-   auto addr = instr.uav_id();
+   auto addr = instr.resource_offset();
 
    if (addr) {
       indirect = true;
@@ -936,7 +935,7 @@ void AssamblerVisitor::visit(const GDSInstr& instr)
 
    gds.op = ds_opcode_map.at(instr.opcode());
    gds.dst_gpr = instr.dest()->sel();
-   gds.uav_id = instr.uav_base();
+   gds.uav_id = instr.resource_base();
    gds.uav_index_mode = indirect ? bim_one : bim_none;
    gds.src_gpr = instr.src().sel();
 

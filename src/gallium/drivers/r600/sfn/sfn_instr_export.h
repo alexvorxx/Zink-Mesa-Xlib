@@ -43,6 +43,8 @@ public:
 
    const RegisterVec4& value() const {return m_value;};
    RegisterVec4& value() {return m_value;};
+
+
 private:
 
    RegisterVec4 m_value;
@@ -78,6 +80,8 @@ public:
 
    static Instr::Pointer from_string(std::istream& is, ValueFactory &vf);
    static Instr::Pointer last_from_string(std::istream& is, ValueFactory &vf);
+
+   uint8_t allowed_dest_chan_mask() const override;
 
 private:
    static ExportInstr::Pointer from_string_impl(std::istream& is, ValueFactory &vf);

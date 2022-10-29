@@ -1115,6 +1115,7 @@ typedef uint64_t isl_surf_usage_flags_t;
 #define ISL_SURF_USAGE_CONSTANT_BUFFER_BIT     (1u << 13)
 #define ISL_SURF_USAGE_STAGING_BIT             (1u << 14)
 #define ISL_SURF_USAGE_CPB_BIT                 (1u << 15)
+#define ISL_SURF_USAGE_PROTECTED_BIT           (1u << 16)
 /** @} */
 
 /**
@@ -1290,6 +1291,8 @@ struct isl_device {
       uint32_t l1_hdc_l3_llc;
       uint32_t blitter_src;
       uint32_t blitter_dst;
+      /* Protected is an additional bit on top of the existing entry index. */
+      uint32_t protected_mask;
    } mocs;
 
    void (*surf_fill_state_s)(const struct isl_device *dev, void *state,

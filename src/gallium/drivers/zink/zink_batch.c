@@ -149,10 +149,6 @@ zink_reset_batch_state(struct zink_context *ctx, struct zink_batch_state *bs)
    util_dynarray_init(&bs->wait_semaphores, NULL);
    bs->swapchain = NULL;
 
-   /* swapchain views are managed independent of the owner resource */
-   while (util_dynarray_contains(&bs->dead_swapchains, VkImageView))
-      VKSCR(DestroyImageView)(screen->dev, util_dynarray_pop(&bs->dead_swapchains, VkImageView), NULL);
-
    /* only reset submitted here so that tc fence desync can pick up the 'completed' flag
     * before the state is reused
     */
@@ -279,7 +275,6 @@ zink_batch_state_destroy(struct zink_screen *screen, struct zink_batch_state *bs
    util_dynarray_fini(&bs->acquires);
    util_dynarray_fini(&bs->unref_semaphores);
    util_dynarray_fini(&bs->acquire_flags);
-   util_dynarray_fini(&bs->dead_swapchains);
    zink_batch_descriptor_deinit(screen, bs);
    ralloc_free(bs);
 }
@@ -340,7 +335,6 @@ create_batch_state(struct zink_context *ctx)
    util_dynarray_init(&bs->acquires, NULL);
    util_dynarray_init(&bs->unref_semaphores, NULL);
    util_dynarray_init(&bs->acquire_flags, NULL);
-   util_dynarray_init(&bs->dead_swapchains, NULL);
    util_dynarray_init(&bs->bindless_releases[0], NULL);
    util_dynarray_init(&bs->bindless_releases[1], NULL);
    util_dynarray_init(&bs->swapchain_obj, NULL);
@@ -859,8 +853,8 @@ zink_batch_usage_check_completion(struct zink_context *ctx, const struct zink_ba
    return zink_check_batch_completion(ctx, u->usage);
 }
 
-void
-zink_batch_usage_wait(struct zink_context *ctx, struct zink_batch_usage *u)
+static void
+batch_usage_wait(struct zink_context *ctx, struct zink_batch_usage *u, bool trywait)
 {
    if (!zink_batch_usage_exists(u))
       return;
@@ -869,9 +863,25 @@ zink_batch_usage_wait(struct zink_context *ctx, struct zink_batch_usage *u)
          ctx->base.flush(&ctx->base, NULL, PIPE_FLUSH_HINT_FINISH);
       else { //multi-context
          mtx_lock(&u->mtx);
-         cnd_wait(&u->flush, &u->mtx);
+         if (trywait) {
+            struct timespec ts = {0, 10000};
+            cnd_timedwait(&u->flush, &u->mtx, &ts);
+         } else
+            cnd_wait(&u->flush, &u->mtx);
          mtx_unlock(&u->mtx);
       }
    }
    zink_wait_on_batch(ctx, u->usage);
+}
+
+void
+zink_batch_usage_wait(struct zink_context *ctx, struct zink_batch_usage *u)
+{
+   batch_usage_wait(ctx, u, false);
+}
+
+void
+zink_batch_usage_try_wait(struct zink_context *ctx, struct zink_batch_usage *u)
+{
+   batch_usage_wait(ctx, u, true);
 }

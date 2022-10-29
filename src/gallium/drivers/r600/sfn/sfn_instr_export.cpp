@@ -147,6 +147,11 @@ ExportInstr::Pointer ExportInstr::from_string_impl(std::istream& is, ValueFactor
    return new ExportInstr( type, pos, value);
 }
 
+uint8_t ExportInstr::allowed_dest_chan_mask() const
+{
+   return value().free_chan_mask();
+}
+
 ScratchIOInstr::ScratchIOInstr(const RegisterVec4& value, PRegister addr,
                                int align, int align_offset, int writemask,
                                int array_size, bool is_read):

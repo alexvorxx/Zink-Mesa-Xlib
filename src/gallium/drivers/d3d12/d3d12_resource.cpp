@@ -222,8 +222,6 @@ init_texture(struct d3d12_screen *screen,
 
    case PIPE_TEXTURE_CUBE:
    case PIPE_TEXTURE_CUBE_ARRAY:
-      desc.DepthOrArraySize *= 6;
-      FALLTHROUGH;
    case PIPE_TEXTURE_2D:
    case PIPE_TEXTURE_2D_ARRAY:
    case PIPE_TEXTURE_RECT:
@@ -990,17 +988,7 @@ unsigned int
 get_subresource_id(struct d3d12_resource *res, unsigned resid,
                    unsigned z, unsigned base_level)
 {
-   unsigned resource_stride = res->base.b.last_level + 1;
-   if (res->base.b.target == PIPE_TEXTURE_1D_ARRAY ||
-       res->base.b.target == PIPE_TEXTURE_2D_ARRAY)
-      resource_stride *= res->base.b.array_size;
-
-   if (res->base.b.target == PIPE_TEXTURE_CUBE)
-      resource_stride *= 6;
-
-   if (res->base.b.target == PIPE_TEXTURE_CUBE_ARRAY)
-      resource_stride *= 6 * res->base.b.array_size;
-
+   unsigned resource_stride = (res->base.b.last_level + 1) * res->base.b.array_size;
    unsigned layer_stride = res->base.b.last_level + 1;
 
    return resid * resource_stride + z * layer_stride +

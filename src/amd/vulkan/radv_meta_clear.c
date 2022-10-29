@@ -1605,68 +1605,108 @@ static bool
 gfx11_get_fast_clear_parameters(struct radv_device *device, const struct radv_image_view *iview,
                                 const VkClearColorValue *clear_value, uint32_t *reset_value)
 {
-   int extra_channel;
-
-   bool all_bits_are_0 = true;
-   bool all_bits_are_1 = true;
-   bool all_words_are_fp16_1 = true;
-   bool all_words_are_fp32_1 = true;
-   bool unorm_0001 = true;
-   bool unorm_1110 = true;
-
    const struct util_format_description *desc = vk_format_description(iview->vk.format);
-   if (iview->vk.format == VK_FORMAT_B10G11R11_UFLOAT_PACK32 ||
-       iview->vk.format == VK_FORMAT_R5G6B5_UNORM_PACK16 ||
-       iview->vk.format == VK_FORMAT_B5G6R5_UNORM_PACK16)
-      extra_channel = -1;
-   else if (desc->layout == UTIL_FORMAT_LAYOUT_PLAIN) {
-      if (vi_alpha_is_on_msb(device, iview->vk.format))
-         extra_channel = desc->nr_channels - 1;
-      else
-         extra_channel = 0;
-   } else
+   unsigned start_bit = UINT_MAX;
+   unsigned end_bit = 0;
+
+   /* TODO: 8bpp and 16bpp fast DCC clears don't work. */
+   if (desc->block.bits <= 16)
       return false;
 
-   for (int i = 0; i < 4; i++) {
-      int index = desc->swizzle[i] - PIPE_SWIZZLE_X;
-      if (desc->swizzle[i] < PIPE_SWIZZLE_X || desc->swizzle[i] > PIPE_SWIZZLE_W)
+   /* Find the used bit range. */
+   for (unsigned i = 0; i < 4; i++) {
+      unsigned swizzle = desc->swizzle[i];
+
+      if (swizzle >= PIPE_SWIZZLE_0)
          continue;
 
-      uint32_t extra_xor = index == extra_channel ? ~0u : 0;
-      if (clear_value->uint32[i] & ((1u << desc->channel[i].size) - 1))
-         all_bits_are_0 = false;
-      if (~clear_value->uint32[i] & ((1u << desc->channel[i].size) - 1))
-         all_bits_are_1 = false;
-      if (desc->channel[i].type != UTIL_FORMAT_TYPE_FLOAT || desc->channel[i].size != 16 ||
-          clear_value->float32[i] != 1.0)
-         all_words_are_fp16_1 = false;
-      if (desc->channel[i].type != UTIL_FORMAT_TYPE_FLOAT || desc->channel[i].size != 32 ||
-          clear_value->float32[i] != 1.0)
-         all_words_are_fp32_1 = false;
-      if ((clear_value->uint32[i] ^ extra_xor) & ((1u << desc->channel[i].size) - 1))
-         unorm_0001 = false;
-      if ((~clear_value->uint32[i] ^ extra_xor) & ((1u << desc->channel[i].size) - 1))
-         unorm_1110 = false;
+      start_bit = MIN2(start_bit, desc->channel[swizzle].shift);
+      end_bit = MAX2(end_bit, desc->channel[swizzle].shift + desc->channel[swizzle].size);
    }
 
-   if (all_bits_are_0)
-      *reset_value = RADV_DCC_CLEAR_0000;
-   else if (all_bits_are_1)
-      *reset_value = RADV_DCC_GFX11_CLEAR_1111_UNORM;
-   else if (all_words_are_fp16_1)
-      *reset_value = RADV_DCC_GFX11_CLEAR_1111_FP16;
-   else if (all_words_are_fp32_1)
-      *reset_value = RADV_DCC_GFX11_CLEAR_1111_FP32;
-   else if (unorm_0001)
-      *reset_value = RADV_DCC_GFX11_CLEAR_0001_UNORM;
-   else if (unorm_1110)
-      *reset_value = RADV_DCC_GFX11_CLEAR_1110_UNORM;
-   else if (iview->image->support_comp_to_single)
-      *reset_value = RADV_DCC_GFX11_CLEAR_SINGLE;
-   else
-      return false;
+   union {
+      uint8_t ub[16];
+      uint16_t us[8];
+      uint32_t ui[4];
+   } value;
+   memset(&value, 0, sizeof(value));
+   util_format_pack_rgba(vk_format_to_pipe_format(iview->vk.format), &value, clear_value, 1);
 
-   return true;
+   /* Check the cases where all components or bits are either all 0 or all 1. */
+   bool all_bits_are_0 = true;
+   bool all_bits_are_1 = true;
+   bool all_words_are_fp16_1 = false;
+   bool all_words_are_fp32_1 = false;
+
+   for (unsigned i = start_bit; i < end_bit; i++) {
+      bool bit = value.ub[i / 8] & BITFIELD_BIT(i % 8);
+
+      all_bits_are_0 &= !bit;
+      all_bits_are_1 &= bit;
+   }
+
+   if (start_bit % 16 == 0 && end_bit % 16 == 0) {
+      all_words_are_fp16_1 = true;
+      for (unsigned i = start_bit / 16; i < end_bit / 16; i++)
+         all_words_are_fp16_1 &= value.us[i] == 0x3c00;
+   }
+
+   if (start_bit % 32 == 0 && end_bit % 32 == 0) {
+      all_words_are_fp32_1 = true;
+      for (unsigned i = start_bit / 32; i < end_bit / 32; i++)
+         all_words_are_fp32_1 &= value.ui[i] == 0x3f800000;
+   }
+
+   if (all_bits_are_0 || all_bits_are_1 || all_words_are_fp16_1 || all_words_are_fp32_1) {
+      if (all_bits_are_0)
+         *reset_value = RADV_DCC_CLEAR_0000;
+      else if (all_bits_are_1)
+         *reset_value = RADV_DCC_GFX11_CLEAR_1111_UNORM;
+      else if (all_words_are_fp16_1)
+         *reset_value = RADV_DCC_GFX11_CLEAR_1111_FP16;
+      else if (all_words_are_fp32_1)
+         *reset_value = RADV_DCC_GFX11_CLEAR_1111_FP32;
+      return true;
+   }
+
+   if (vi_alpha_is_on_msb(device, iview->vk.format)) {
+      if (desc->nr_channels == 2 && desc->channel[0].size == 8) {
+         if (value.ub[0] == 0x00 && value.ub[1] == 0xff) {
+            *reset_value = RADV_DCC_GFX11_CLEAR_0001_UNORM;
+            return true;
+         } else if (value.ub[0] == 0xff && value.ub[1] == 0x00) {
+            *reset_value = RADV_DCC_GFX11_CLEAR_1110_UNORM;
+            return true;
+         }
+      } else if (desc->nr_channels == 4 && desc->channel[0].size == 8) {
+         if (value.ub[0] == 0x00 && value.ub[1] == 0x00 &&
+             value.ub[2] == 0x00 && value.ub[3] == 0xff) {
+            *reset_value = RADV_DCC_GFX11_CLEAR_0001_UNORM;
+            return true;
+         } else if (value.ub[0] == 0xff && value.ub[1] == 0xff &&
+                    value.ub[2] == 0xff && value.ub[3] == 0x00) {
+            *reset_value = RADV_DCC_GFX11_CLEAR_1110_UNORM;
+            return true;
+         }
+      } else if (desc->nr_channels == 4 && desc->channel[0].size == 16) {
+         if (value.us[0] == 0x0000 && value.us[1] == 0x0000 &&
+             value.us[2] == 0x0000 && value.us[3] == 0xffff) {
+            *reset_value = RADV_DCC_GFX11_CLEAR_0001_UNORM;
+            return true;
+         } else if (value.us[0] == 0xffff && value.us[1] == 0xffff &&
+                    value.us[2] == 0xffff && value.us[3] == 0x0000) {
+            *reset_value = RADV_DCC_GFX11_CLEAR_1110_UNORM;
+            return true;
+         }
+      }
+   }
+
+   if (iview->image->support_comp_to_single) {
+      *reset_value = RADV_DCC_GFX11_CLEAR_SINGLE;
+      return true;
+   }
+
+   return false;
 }
 
 static bool

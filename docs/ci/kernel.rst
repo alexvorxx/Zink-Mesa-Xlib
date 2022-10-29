@@ -1,16 +1,16 @@
 Upreving Linux Kernel
 =====================
 
-Occasionally, the Gitlab CI needs a Linux Kernel update to enable new kernel
+Occasionally, the GitLab CI needs a Linux Kernel update to enable new kernel
 features, device drivers, bug fixes etc to CI jobs.
-Kernel uprevs in Gitlab CI are relatively simple, but prone to lots of
+Kernel uprevs in GitLab CI are relatively simple, but prone to lots of
 side-effects since many devices from different platforms are involved in the
 pipeline.
 
 Kernel repository
 -----------------
 
-The Linux Kernel used in the Gitlab CI is stored at the following repository:
+The Linux Kernel used in the GitLab CI is stored at the following repository:
 https://gitlab.freedesktop.org/gfx-ci/linux
 
 It is common that Mesa kernel brings some patches that were not merged on the
@@ -63,7 +63,7 @@ Every kernel uprev should update 3 image tags, located at two files.
 :code:`.gitlab-ci/image-tags.yml` tags
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 - **KERNEL_ROOTFS_TAG** to rebuild rootfs with the new kernel
-- **DEBIAN_X86_TEST_GL_TAG** to ensure that the new rootfs is being used by the Gitlab x86 jobs
+- **DEBIAN_X86_TEST_GL_TAG** to ensure that the new rootfs is being used by the GitLab x86 jobs
 
 Development routine
 -------------------
@@ -71,7 +71,7 @@ Development routine
 1. Compile the newer kernel locally for each platform.
 2. Compile device trees for ARM platforms
 3. Update Kconfigs. Are new Kconfigs necessary? Is CONFIG_XYZ_BLA deprecated? Does the `merge_config.sh` override an important config?
-4. Push a new development branch to `Kernel repository`_ based on the latest kernel tag used in Gitlab CI
+4. Push a new development branch to `Kernel repository`_ based on the latest kernel tag used in GitLab CI
 5. Hack `build-kernel.sh` script to clone kernel from your development branch
 6. Update image tags. See `Updating image tags`_
 7. Run the entire CI pipeline, all the automatic jobs should be green. If some job is red or taking too long, you will need to investigate it and probably ask for help.

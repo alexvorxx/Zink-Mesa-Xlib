@@ -29,6 +29,8 @@
 #include "util/u_index_modify.h"
 #include "util/u_prim.h"
 #include "util/u_upload_mgr.h"
+#include "ac_rtld.h"
+#include "si_build_pm4.h"
 
 #if (GFX_VER == 6)
 #define GFX(name) name##GFX6
@@ -302,29 +304,110 @@ static bool si_update_shaders(struct si_context *sctx)
          si_mark_atom_dirty(sctx, &sctx->atoms.s.msaa_sample_locs);
    }
 
-   if (unlikely(sctx->screen->debug_flags & DBG(SQTT) && sctx->thread_trace)) {
-      /* Pretend the bound shaders form a vk pipeline */
-      uint32_t pipeline_code_hash = 0;
-      uint64_t base_address = ~0;
+   if (GFX_VERSION >= GFX9 && unlikely(sctx->thread_trace)) {
+      /* Pretend the bound shaders form a vk pipeline. Include the scratch size in
+       * the hash calculation to force re-emitting the pipeline if the scratch bo
+       * changes.
+       */
+      uint64_t scratch_bo_size = sctx->scratch_buffer ? sctx->scratch_buffer->bo_size : 0;
+      uint64_t pipeline_code_hash = scratch_bo_size;
+      uint32_t total_size = 0;
 
+      /* Compute pipeline code hash. */
       for (int i = 0; i < SI_NUM_GRAPHICS_SHADERS; i++) {
          struct si_shader *shader = sctx->shaders[i].current;
          if (sctx->shaders[i].cso && shader) {
-            pipeline_code_hash = _mesa_hash_data_with_seed(
+            pipeline_code_hash = XXH64(
                shader->binary.elf_buffer,
                shader->binary.elf_size,
                pipeline_code_hash);
-            base_address = MIN2(base_address,
-                                shader->bo->gpu_address);
+
+            total_size += ALIGN(shader->binary.uploaded_code_size, 256);
          }
       }
 
+      struct si_sqtt_fake_pipeline *pipeline = NULL;
       struct ac_thread_trace_data *thread_trace_data = sctx->thread_trace;
       if (!si_sqtt_pipeline_is_registered(thread_trace_data, pipeline_code_hash)) {
-         si_sqtt_register_pipeline(sctx, pipeline_code_hash, base_address, false);
+         /* This is a new pipeline. Allocate a new bo to hold all the shaders. Without
+          * this, shader code export process creates huge rgp files because RGP assumes
+          * the shaders live sequentially in memory (shader N address = shader 0 + offset N)
+          */
+         struct si_resource *bo = si_aligned_buffer_create(
+            &sctx->screen->b,
+            (sctx->screen->info.cpdma_prefetch_writes_memory ? 0 : SI_RESOURCE_FLAG_READ_ONLY) |
+            SI_RESOURCE_FLAG_DRIVER_INTERNAL | SI_RESOURCE_FLAG_32BIT,
+            PIPE_USAGE_IMMUTABLE, align(total_size, SI_CPDMA_ALIGNMENT), 256);
+
+         char *ptr = (char *) (bo ? sctx->screen->ws->buffer_map(sctx->screen->ws,
+               bo->buf, NULL,
+               (enum pipe_map_flags)(PIPE_MAP_READ_WRITE | PIPE_MAP_UNSYNCHRONIZED | RADEON_MAP_TEMPORARY)) :
+             NULL);
+
+         uint32_t offset = 0;
+         uint64_t scratch_va = sctx->scratch_buffer ? sctx->scratch_buffer->gpu_address : 0;
+
+         if (ptr) {
+            pipeline = (struct si_sqtt_fake_pipeline *)
+               CALLOC(1, sizeof(struct si_sqtt_fake_pipeline));
+            pipeline->code_hash = pipeline_code_hash;
+            si_resource_reference(&pipeline->bo, bo);
+
+            /* Re-upload all gfx shaders and init PM4. */
+            si_pm4_clear_state(&pipeline->pm4);
+
+            for (int i = 0; i < SI_NUM_GRAPHICS_SHADERS; i++) {
+               struct si_shader *shader = sctx->shaders[i].current;
+               if (sctx->shaders[i].cso && shader) {
+                  struct ac_rtld_binary binary;
+                  si_shader_binary_open(sctx->screen, shader, &binary);
+
+                  struct ac_rtld_upload_info u = {};
+                  u.binary = &binary;
+                  u.get_external_symbol = si_get_external_symbol;
+                  u.cb_data = &scratch_va;
+                  u.rx_va = bo->gpu_address + offset;
+                  u.rx_ptr = ptr + offset;
+
+                  int size = ac_rtld_upload(&u);
+                  ac_rtld_close(&binary);
+
+                  pipeline->offset[i] = offset;
+
+                  shader->gpu_address = u.rx_va;
+
+                  offset += align(size, 256);
+
+                  struct si_pm4_state *pm4 = &shader->pm4;
+
+                  uint32_t va_low = (pipeline->bo->gpu_address + pipeline->offset[i]) >> 8;
+                  assert(PKT3_IT_OPCODE_G(pm4->pm4[pm4->reg_va_low_idx - 2]) == PKT3_SET_SH_REG);
+                  uint32_t reg = (pm4->pm4[pm4->reg_va_low_idx - 1] << 2) + SI_SH_REG_OFFSET;
+                  si_pm4_set_reg(&pipeline->pm4, reg, va_low);
+               }
+            }
+            sctx->screen->ws->buffer_unmap(sctx->screen->ws, bo->buf);
+
+            _mesa_hash_table_u64_insert(sctx->thread_trace->pipeline_bos,
+                                        pipeline_code_hash, pipeline);
+
+            si_sqtt_register_pipeline(sctx, pipeline, false);
+         } else {
+            if (bo)
+               si_resource_reference(&bo, NULL);
+         }
+      } else {
+         pipeline = (struct si_sqtt_fake_pipeline *)
+            _mesa_hash_table_u64_search(sctx->thread_trace->pipeline_bos, pipeline_code_hash);
       }
+      assert(pipeline);
+
+      pipeline->code_hash = pipeline_code_hash;
+      radeon_add_to_buffer_list(sctx, &sctx->gfx_cs, pipeline->bo,
+                                RADEON_USAGE_READ | RADEON_PRIO_SHADER_BINARY);
 
       si_sqtt_describe_pipeline_bind(sctx, pipeline_code_hash, 0);
+      si_pm4_bind_state(sctx, sqtt_pipeline, pipeline);
    }
 
    if ((GFX_VERSION <= GFX8 &&
@@ -417,11 +500,8 @@ static unsigned si_conv_pipe_prim(unsigned mode)
 }
 
 template<amd_gfx_level GFX_VERSION>
-static void si_cp_dma_prefetch_inline(struct si_context *sctx, struct pipe_resource *buf,
-                                      unsigned offset, unsigned size)
+static void si_cp_dma_prefetch_inline(struct si_context *sctx, uint64_t address, unsigned size)
 {
-   uint64_t address = si_resource(buf)->gpu_address + offset;
-
    assert(GFX_VERSION >= GFX7);
 
    if (GFX_VERSION >= GFX11)
@@ -465,24 +545,25 @@ static void si_cp_dma_prefetch_inline(struct si_context *sctx, struct pipe_resou
 void si_cp_dma_prefetch(struct si_context *sctx, struct pipe_resource *buf,
                         unsigned offset, unsigned size)
 {
+   uint64_t address = si_resource(buf)->gpu_address + offset;
    switch (sctx->gfx_level) {
    case GFX7:
-      si_cp_dma_prefetch_inline<GFX7>(sctx, buf, offset, size);
+      si_cp_dma_prefetch_inline<GFX7>(sctx, address, size);
       break;
    case GFX8:
-      si_cp_dma_prefetch_inline<GFX8>(sctx, buf, offset, size);
+      si_cp_dma_prefetch_inline<GFX8>(sctx, address, size);
       break;
    case GFX9:
-      si_cp_dma_prefetch_inline<GFX9>(sctx, buf, offset, size);
+      si_cp_dma_prefetch_inline<GFX9>(sctx, address, size);
       break;
    case GFX10:
-      si_cp_dma_prefetch_inline<GFX10>(sctx, buf, offset, size);
+      si_cp_dma_prefetch_inline<GFX10>(sctx, address, size);
       break;
    case GFX10_3:
-      si_cp_dma_prefetch_inline<GFX10_3>(sctx, buf, offset, size);
+      si_cp_dma_prefetch_inline<GFX10_3>(sctx, address, size);
       break;
    case GFX11:
-      si_cp_dma_prefetch_inline<GFX11>(sctx, buf, offset, size);
+      si_cp_dma_prefetch_inline<GFX11>(sctx, address, size);
       break;
    default:
       break;
@@ -495,21 +576,13 @@ template<amd_gfx_level GFX_VERSION>
 static void si_prefetch_shader_async(struct si_context *sctx, struct si_shader *shader)
 {
    struct pipe_resource *bo = &shader->bo->b.b;
-
-   si_cp_dma_prefetch_inline<GFX_VERSION>(sctx, bo, 0, bo->width0);
+   si_cp_dma_prefetch_inline<GFX_VERSION>(sctx, shader->gpu_address, bo->width0);
 }
-
-enum si_L2_prefetch_mode {
-   PREFETCH_BEFORE_DRAW = 1,
-   PREFETCH_AFTER_DRAW,
-   PREFETCH_ALL,
-};
 
 /**
  * Prefetch shaders.
  */
-template<amd_gfx_level GFX_VERSION, si_has_tess HAS_TESS, si_has_gs HAS_GS, si_has_ngg NGG,
-         si_L2_prefetch_mode mode>
+template<amd_gfx_level GFX_VERSION, si_has_tess HAS_TESS, si_has_gs HAS_GS, si_has_ngg NGG>
 static void si_prefetch_shaders(struct si_context *sctx)
 {
    unsigned mask = sctx->prefetch_L2_mask;
@@ -520,100 +593,40 @@ static void si_prefetch_shaders(struct si_context *sctx)
 
    /* Prefetch shaders and VBO descriptors to TC L2. */
    if (GFX_VERSION >= GFX11) {
-      if (HAS_TESS) {
-         if (mode != PREFETCH_AFTER_DRAW) {
-            if (mask & SI_PREFETCH_HS)
-               si_prefetch_shader_async<GFX_VERSION>(sctx, sctx->queued.named.hs);
+      if (HAS_TESS && mask & SI_PREFETCH_HS)
+         si_prefetch_shader_async<GFX_VERSION>(sctx, sctx->queued.named.hs);
 
-            if (mode == PREFETCH_BEFORE_DRAW)
-               return;
-         }
-
-         if (mask & SI_PREFETCH_GS)
-            si_prefetch_shader_async<GFX_VERSION>(sctx, sctx->queued.named.gs);
-      } else if (mode != PREFETCH_AFTER_DRAW) {
-         if (mask & SI_PREFETCH_GS)
-            si_prefetch_shader_async<GFX_VERSION>(sctx, sctx->queued.named.gs);
-
-         if (mode == PREFETCH_BEFORE_DRAW)
-            return;
-      }
+      if (mask & SI_PREFETCH_GS)
+         si_prefetch_shader_async<GFX_VERSION>(sctx, sctx->queued.named.gs);
    } else if (GFX_VERSION >= GFX9) {
       if (HAS_TESS) {
-         if (mode != PREFETCH_AFTER_DRAW) {
-            if (mask & SI_PREFETCH_HS)
-               si_prefetch_shader_async<GFX_VERSION>(sctx, sctx->queued.named.hs);
-
-            if (mode == PREFETCH_BEFORE_DRAW)
-               return;
-         }
-
-         if ((HAS_GS || NGG) && mask & SI_PREFETCH_GS)
-            si_prefetch_shader_async<GFX_VERSION>(sctx, sctx->queued.named.gs);
-         if (!NGG && mask & SI_PREFETCH_VS)
-            si_prefetch_shader_async<GFX_VERSION>(sctx, sctx->queued.named.vs);
-      } else if (HAS_GS || NGG) {
-         if (mode != PREFETCH_AFTER_DRAW) {
-            if (mask & SI_PREFETCH_GS)
-               si_prefetch_shader_async<GFX_VERSION>(sctx, sctx->queued.named.gs);
-
-            if (mode == PREFETCH_BEFORE_DRAW)
-               return;
-         }
-
-         if (!NGG && mask & SI_PREFETCH_VS)
-            si_prefetch_shader_async<GFX_VERSION>(sctx, sctx->queued.named.vs);
-      } else {
-         if (mode != PREFETCH_AFTER_DRAW) {
-            if (mask & SI_PREFETCH_VS)
-               si_prefetch_shader_async<GFX_VERSION>(sctx, sctx->queued.named.vs);
-
-            if (mode == PREFETCH_BEFORE_DRAW)
-               return;
-         }
+         if (mask & SI_PREFETCH_HS)
+            si_prefetch_shader_async<GFX_VERSION>(sctx, sctx->queued.named.hs);
       }
+      if ((HAS_GS || NGG) && mask & SI_PREFETCH_GS)
+         si_prefetch_shader_async<GFX_VERSION>(sctx, sctx->queued.named.gs);
+      if (!NGG && mask & SI_PREFETCH_VS)
+            si_prefetch_shader_async<GFX_VERSION>(sctx, sctx->queued.named.vs);
    } else {
       /* GFX6-GFX8 */
       /* Choose the right spot for the VBO prefetch. */
       if (HAS_TESS) {
-         if (mode != PREFETCH_AFTER_DRAW) {
-            if (mask & SI_PREFETCH_LS)
-               si_prefetch_shader_async<GFX_VERSION>(sctx, sctx->queued.named.ls);
-
-            if (mode == PREFETCH_BEFORE_DRAW)
-               return;
-         }
-
+         if (mask & SI_PREFETCH_LS)
+            si_prefetch_shader_async<GFX_VERSION>(sctx, sctx->queued.named.ls);
          if (mask & SI_PREFETCH_HS)
             si_prefetch_shader_async<GFX_VERSION>(sctx, sctx->queued.named.hs);
          if (mask & SI_PREFETCH_ES)
             si_prefetch_shader_async<GFX_VERSION>(sctx, sctx->queued.named.es);
          if (mask & SI_PREFETCH_GS)
             si_prefetch_shader_async<GFX_VERSION>(sctx, sctx->queued.named.gs);
-         if (mask & SI_PREFETCH_VS)
-            si_prefetch_shader_async<GFX_VERSION>(sctx, sctx->queued.named.vs);
       } else if (HAS_GS) {
-         if (mode != PREFETCH_AFTER_DRAW) {
-            if (mask & SI_PREFETCH_ES)
-               si_prefetch_shader_async<GFX_VERSION>(sctx, sctx->queued.named.es);
-
-            if (mode == PREFETCH_BEFORE_DRAW)
-               return;
-         }
-
+         if (mask & SI_PREFETCH_ES)
+            si_prefetch_shader_async<GFX_VERSION>(sctx, sctx->queued.named.es);
          if (mask & SI_PREFETCH_GS)
             si_prefetch_shader_async<GFX_VERSION>(sctx, sctx->queued.named.gs);
-         if (mask & SI_PREFETCH_VS)
-            si_prefetch_shader_async<GFX_VERSION>(sctx, sctx->queued.named.vs);
-      } else {
-         if (mode != PREFETCH_AFTER_DRAW) {
-            if (mask & SI_PREFETCH_VS)
-               si_prefetch_shader_async<GFX_VERSION>(sctx, sctx->queued.named.vs);
-
-            if (mode == PREFETCH_BEFORE_DRAW)
-               return;
-         }
       }
+      if (mask & SI_PREFETCH_VS)
+         si_prefetch_shader_async<GFX_VERSION>(sctx, sctx->queued.named.vs);
    }
 
    if (mask & SI_PREFETCH_PS)
@@ -1923,9 +1936,10 @@ static bool si_upload_and_prefetch_VB_descriptors(struct si_context *sctx,
          vb_descriptors_address = sctx->last_const_upload_buffer->gpu_address + offset;
 
          /* GFX6 doesn't support the L2 prefetch. */
-         if (GFX_VERSION >= GFX7)
-            si_cp_dma_prefetch_inline<GFX_VERSION>(sctx, &sctx->last_const_upload_buffer->b.b,
-                                                   offset, alloc_size);
+         if (GFX_VERSION >= GFX7) {
+            uint64_t address = sctx->last_const_upload_buffer->gpu_address + offset;
+            si_cp_dma_prefetch_inline<GFX_VERSION>(sctx, address, alloc_size);
+         }
       }
 
       unsigned count_in_user_sgprs = MIN2(count, num_vbos_in_user_sgprs);
@@ -2467,7 +2481,7 @@ static void si_draw(struct pipe_context *ctx,
    /* Start prefetches after the draw has been started. Both will run
     * in parallel, but starting the draw first is more important.
     */
-   si_prefetch_shaders<GFX_VERSION, HAS_TESS, HAS_GS, NGG, PREFETCH_ALL>(sctx);
+   si_prefetch_shaders<GFX_VERSION, HAS_TESS, HAS_GS, NGG>(sctx);
 
    /* Clear the context roll flag after the draw call.
     * Only used by the gfx9 scissor bug.

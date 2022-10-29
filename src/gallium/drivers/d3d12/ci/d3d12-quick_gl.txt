@@ -120,7 +120,6 @@ spec/!opengl 1.1/draw-pixels samples=32: skip
 spec/!opengl 1.1/draw-pixels samples=4: skip
 spec/!opengl 1.1/draw-pixels samples=6: skip
 spec/!opengl 1.1/draw-pixels samples=8: skip
-spec/!opengl 1.1/getteximage-depth/gl_texture_cube_map-gl_stencil_index8: fail
 spec/!opengl 1.1/linestipple/factor 2x: fail
 spec/!opengl 1.1/linestipple/factor 3x: fail
 spec/!opengl 1.1/linestipple/line loop: fail
@@ -3520,8 +3519,8 @@ wgl/wgl-sanity: skip
 summary:
        name:  results
        ----  --------
-       pass:    17864
-       fail:     2044
+       pass:    17865
+       fail:     2043
       crash:       11
        skip:     1445
     timeout:        0

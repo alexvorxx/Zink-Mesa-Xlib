@@ -172,6 +172,13 @@ nir_lower_bool_to_int32_instr(UNUSED nir_builder *b,
 bool
 nir_lower_bool_to_int32(nir_shader *shader)
 {
+   nir_foreach_function(func, shader) {
+      for (unsigned idx = 0; idx < func->num_params; idx++) {
+         nir_parameter *param = &func->params[idx];
+         if (param->bit_size == 1)
+            param->bit_size = 32;
+      }
+   }
    return nir_shader_instructions_pass(shader, nir_lower_bool_to_int32_instr,
                                        nir_metadata_block_index |
                                        nir_metadata_dominance,

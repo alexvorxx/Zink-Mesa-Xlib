@@ -35,19 +35,15 @@ namespace r600 {
 GDSInstr::GDSInstr(ESDOp op, Register *dest,
                    const RegisterVec4& src, int uav_base,
                    PRegister uav_id):
+   InstrWithResource(uav_base, uav_id),
    m_op(op),
    m_dest(dest),
-   m_src(src),
-   m_uav_base(uav_base),
-   m_uav_id(uav_id)
+   m_src(src)
 {
    set_always_keep();
 
    m_src.add_use(this);
    m_dest->add_parent(this);
-
-   if (m_uav_id)
-      m_uav_id->add_use(this);
 }
 
 bool GDSInstr::is_equal_to(const GDSInstr& rhs) const
@@ -55,13 +51,12 @@ bool GDSInstr::is_equal_to(const GDSInstr& rhs) const
 #define NE(X) (X != rhs. X)
 
    if (NE(m_op) ||
-       NE(m_src) ||
-       NE(m_uav_base))
+       NE(m_src))
       return false;
 
    sfn_value_equal(m_dest, rhs.m_dest);
 
-   return sfn_value_equal(m_uav_id, rhs.m_uav_id);
+   return resource_is_equal(rhs);
 }
 
 void GDSInstr::accept(ConstInstrVisitor& visitor) const
@@ -77,7 +72,7 @@ void GDSInstr::accept(InstrVisitor& visitor)
 bool GDSInstr::do_ready() const
 {
    return m_src.ready(block_id(), index()) &&
-         (!m_uav_id || m_uav_id->ready(block_id(), index()));
+         resource_ready(block_id(), index());
 }
 
 void GDSInstr::do_print(std::ostream& os) const
@@ -85,10 +80,9 @@ void GDSInstr::do_print(std::ostream& os) const
    os << "GDS " << lds_ops.at(m_op).name
       << *m_dest;
    os << " " << m_src;
-   os << " BASE:" << m_uav_base;
+   os << " BASE:" << resource_base();
 
-   if (m_uav_id)
-      os << " UAV:" << *m_uav_id;
+   print_resource_offset(os);
 }
 
 bool GDSInstr::emit_atomic_counter(nir_intrinsic_instr *intr, Shader& shader)
@@ -323,22 +317,18 @@ RatInstr::RatInstr(ECFOpCode cf_opcode, ERatOp rat_op,
                    const RegisterVec4& data, const RegisterVec4& index,
                    int rat_id, PRegister rat_id_offset,
                    int burst_count, int comp_mask, int element_size):
+   InstrWithResource(rat_id, rat_id_offset),
    m_cf_opcode(cf_opcode),
    m_rat_op(rat_op),
    m_data(data),
    m_index(index),
-   m_rat_id_offset(rat_id_offset),
-   m_rat_id(rat_id),
    m_burst_count(burst_count),
    m_comp_mask(comp_mask),
    m_element_size(element_size)
 {
    set_always_keep();
-
    m_data.add_use(this);
    m_index.add_use(this);
-   if (m_rat_id_offset)
-      m_rat_id_offset->add_use(this);
 }
 
 
@@ -375,9 +365,8 @@ bool RatInstr::do_ready() const
 
 void RatInstr::do_print(std::ostream& os) const
 {
-   os << "MEM_RAT RAT " << m_rat_id;
-   if (m_rat_id_offset)
-      os << "+" << *m_rat_id_offset;
+   os << "MEM_RAT RAT " << resource_base();
+   print_resource_offset(os);
    os << " @" << m_index;
    os << " OP:" << m_rat_op << " " << m_data;
    os << " BC:" << m_burst_count

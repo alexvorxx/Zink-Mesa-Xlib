@@ -73,6 +73,15 @@ enum ir3_driver_param {
    IR3_DP_UCP7_W = 35,
    IR3_DP_VS_COUNT = 36, /* must be aligned to vec4 */
 
+   /* TCS driver params: */
+   IR3_DP_HS_DEFAULT_OUTER_LEVEL_X = 0,
+   IR3_DP_HS_DEFAULT_OUTER_LEVEL_Y = 1,
+   IR3_DP_HS_DEFAULT_OUTER_LEVEL_Z = 2,
+   IR3_DP_HS_DEFAULT_OUTER_LEVEL_W = 3,
+   IR3_DP_HS_DEFAULT_INNER_LEVEL_X = 4,
+   IR3_DP_HS_DEFAULT_INNER_LEVEL_Y = 5,
+   IR3_DP_HS_COUNT = 8, /* must be aligned to vec4 */
+
    /* fragment shader driver params: */
    IR3_DP_FS_SUBGROUP_SIZE = 0,
 };
@@ -315,13 +324,6 @@ struct ir3_shader_key {
           * the limit:
           */
          unsigned safe_constlen : 1;
-
-         /* Whether gl_Layer must be forced to 0 because it isn't written. */
-         unsigned layer_zero : 1;
-
-         /* Whether gl_ViewportIndex must be forced to 0 because it isn't
-          * written. */
-         unsigned view_zero : 1;
       };
       uint32_t global;
    };
@@ -392,9 +394,6 @@ ir3_shader_key_changes_fs(struct ir3_shader_key *key,
    }
 
    if (last_key->rasterflat != key->rasterflat)
-      return true;
-
-   if (last_key->layer_zero != key->layer_zero)
       return true;
 
    if (last_key->ucp_enables != key->ucp_enables)
@@ -854,6 +853,15 @@ struct ir3_shader {
          unsigned req_input_mem;    /* in dwords */
          unsigned req_local_mem;
       } cs;
+      /* For vertex shaders: */
+      struct {
+         /* If we need to generate a passthrough TCS, it will be a function of
+          * (a) the VS and (b) the # of patch_vertices (max 32), so cache them
+          * in the VS keyed by # of patch_vertices-1.
+          */
+         unsigned passthrough_tcs_compiled;
+         struct ir3_shader *passthrough_tcs[32];
+      } vs;
    };
 
    struct ir3_shader_variant *variants;
@@ -939,6 +947,8 @@ ir3_shader_from_nir(struct ir3_compiler *compiler, nir_shader *nir,
                     struct ir3_stream_output_info *stream_output);
 uint32_t ir3_trim_constlen(struct ir3_shader_variant **variants,
                            const struct ir3_compiler *compiler);
+struct ir3_shader *
+ir3_shader_passthrough_tcs(struct ir3_shader *vs, unsigned patch_vertices);
 void ir3_shader_destroy(struct ir3_shader *shader);
 void ir3_shader_disasm(struct ir3_shader_variant *so, uint32_t *bin, FILE *out);
 uint64_t ir3_shader_outputs(const struct ir3_shader *so);

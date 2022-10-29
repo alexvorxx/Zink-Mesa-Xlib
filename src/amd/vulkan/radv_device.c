@@ -387,6 +387,13 @@ radv_perf_query_supported(const struct radv_physical_device *pdev)
 }
 
 static bool
+radv_vrs_attachment_enabled(const struct radv_physical_device *pdevice)
+{
+   return !(pdevice->instance->debug_flags & RADV_DEBUG_NO_HIZ) &&
+          pdevice->rad_info.gfx_level < GFX11; /* TODO: VRS no longer uses HTILE. */
+}
+
+static bool
 radv_taskmesh_enabled(const struct radv_physical_device *pdevice)
 {
    return pdevice->use_ngg && !pdevice->use_llvm && pdevice->rad_info.gfx_level >= GFX10_3 &&
@@ -1619,9 +1626,7 @@ radv_GetPhysicalDeviceFeatures2(VkPhysicalDevice physicalDevice,
             (VkPhysicalDeviceFragmentShadingRateFeaturesKHR *)ext;
          features->pipelineFragmentShadingRate = true;
          features->primitiveFragmentShadingRate = true;
-         features->attachmentFragmentShadingRate =
-            !(pdevice->instance->debug_flags & RADV_DEBUG_NO_HIZ) &&
-            pdevice->rad_info.gfx_level < GFX11; /* TODO: VRS no longer uses HTILE. */
+         features->attachmentFragmentShadingRate = radv_vrs_attachment_enabled(pdevice);
          break;
       }
       case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_WORKGROUP_MEMORY_EXPLICIT_LAYOUT_FEATURES_KHR: {
@@ -1684,14 +1689,16 @@ radv_GetPhysicalDeviceFeatures2(VkPhysicalDevice physicalDevice,
       case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_ATOMIC_FLOAT_2_FEATURES_EXT: {
          VkPhysicalDeviceShaderAtomicFloat2FeaturesEXT *features =
             (VkPhysicalDeviceShaderAtomicFloat2FeaturesEXT *)ext;
-         bool has_shader_buffer_float_minmax = radv_has_shader_buffer_float_minmax(pdevice);
          bool has_shader_image_float_minmax =
-            pdevice->rad_info.gfx_level != GFX8 && pdevice->rad_info.gfx_level != GFX9;
+            pdevice->rad_info.gfx_level != GFX8 && pdevice->rad_info.gfx_level != GFX9 &&
+            pdevice->rad_info.gfx_level != GFX11;
          features->shaderBufferFloat16Atomics = false;
          features->shaderBufferFloat16AtomicAdd = false;
          features->shaderBufferFloat16AtomicMinMax = false;
-         features->shaderBufferFloat32AtomicMinMax = has_shader_buffer_float_minmax;
-         features->shaderBufferFloat64AtomicMinMax = has_shader_buffer_float_minmax;
+         features->shaderBufferFloat32AtomicMinMax =
+            radv_has_shader_buffer_float_minmax(pdevice, 32);
+         features->shaderBufferFloat64AtomicMinMax =
+            radv_has_shader_buffer_float_minmax(pdevice, 64);
          features->shaderSharedFloat16Atomics = false;
          features->shaderSharedFloat16AtomicAdd = false;
          features->shaderSharedFloat16AtomicMinMax = false;
@@ -2267,14 +2274,15 @@ radv_get_physical_device_properties_1_3(struct radv_physical_device *pdevice,
    p->maxInlineUniformTotalSize = UINT16_MAX;
 
    bool accel = pdevice->rad_info.has_accelerated_dot_product;
+   bool gfx11plus = pdevice->rad_info.gfx_level >= GFX11;
    p->integerDotProduct8BitUnsignedAccelerated = accel;
    p->integerDotProduct8BitSignedAccelerated = accel;
-   p->integerDotProduct8BitMixedSignednessAccelerated = false;
+   p->integerDotProduct8BitMixedSignednessAccelerated = accel && gfx11plus;
    p->integerDotProduct4x8BitPackedUnsignedAccelerated = accel;
    p->integerDotProduct4x8BitPackedSignedAccelerated = accel;
-   p->integerDotProduct4x8BitPackedMixedSignednessAccelerated = false;
-   p->integerDotProduct16BitUnsignedAccelerated = accel;
-   p->integerDotProduct16BitSignedAccelerated = accel;
+   p->integerDotProduct4x8BitPackedMixedSignednessAccelerated = accel && gfx11plus;
+   p->integerDotProduct16BitUnsignedAccelerated = accel && !gfx11plus;
+   p->integerDotProduct16BitSignedAccelerated = accel && !gfx11plus;
    p->integerDotProduct16BitMixedSignednessAccelerated = false;
    p->integerDotProduct32BitUnsignedAccelerated = false;
    p->integerDotProduct32BitSignedAccelerated = false;
@@ -2284,12 +2292,12 @@ radv_get_physical_device_properties_1_3(struct radv_physical_device *pdevice,
    p->integerDotProduct64BitMixedSignednessAccelerated = false;
    p->integerDotProductAccumulatingSaturating8BitUnsignedAccelerated = accel;
    p->integerDotProductAccumulatingSaturating8BitSignedAccelerated = accel;
-   p->integerDotProductAccumulatingSaturating8BitMixedSignednessAccelerated = false;
+   p->integerDotProductAccumulatingSaturating8BitMixedSignednessAccelerated = accel && gfx11plus;
    p->integerDotProductAccumulatingSaturating4x8BitPackedUnsignedAccelerated = accel;
    p->integerDotProductAccumulatingSaturating4x8BitPackedSignedAccelerated = accel;
-   p->integerDotProductAccumulatingSaturating4x8BitPackedMixedSignednessAccelerated = false;
-   p->integerDotProductAccumulatingSaturating16BitUnsignedAccelerated = accel;
-   p->integerDotProductAccumulatingSaturating16BitSignedAccelerated = accel;
+   p->integerDotProductAccumulatingSaturating4x8BitPackedMixedSignednessAccelerated = accel && gfx11plus;
+   p->integerDotProductAccumulatingSaturating16BitUnsignedAccelerated = accel && !gfx11plus;
+   p->integerDotProductAccumulatingSaturating16BitSignedAccelerated = accel && !gfx11plus;
    p->integerDotProductAccumulatingSaturating16BitMixedSignednessAccelerated = false;
    p->integerDotProductAccumulatingSaturating32BitUnsignedAccelerated = false;
    p->integerDotProductAccumulatingSaturating32BitSignedAccelerated = false;
@@ -2469,8 +2477,13 @@ radv_GetPhysicalDeviceProperties2(VkPhysicalDevice physicalDevice,
       case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FRAGMENT_SHADING_RATE_PROPERTIES_KHR: {
          VkPhysicalDeviceFragmentShadingRatePropertiesKHR *props =
             (VkPhysicalDeviceFragmentShadingRatePropertiesKHR *)ext;
-         props->minFragmentShadingRateAttachmentTexelSize = (VkExtent2D){8, 8};
-         props->maxFragmentShadingRateAttachmentTexelSize = (VkExtent2D){8, 8};
+         if (radv_vrs_attachment_enabled(pdevice)) {
+            props->minFragmentShadingRateAttachmentTexelSize = (VkExtent2D){8, 8};
+            props->maxFragmentShadingRateAttachmentTexelSize = (VkExtent2D){8, 8};
+         } else {
+            props->minFragmentShadingRateAttachmentTexelSize = (VkExtent2D){0, 0};
+            props->maxFragmentShadingRateAttachmentTexelSize = (VkExtent2D){0, 0};
+         }
          props->maxFragmentShadingRateAttachmentTexelSizeAspectRatio = 1;
          props->primitiveFragmentShadingRateWithMultipleViewports = true;
          props->layeredShadingRateAttachments = false; /* TODO */

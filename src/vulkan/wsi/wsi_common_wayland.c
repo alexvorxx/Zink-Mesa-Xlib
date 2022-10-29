@@ -32,6 +32,7 @@
 #include <pthread.h>
 #include <poll.h>
 #include <sys/mman.h>
+#include <sys/types.h>
 
 #include "drm-uapi/drm_fourcc.h"
 
@@ -48,6 +49,13 @@
 #include <util/u_vector.h>
 #include <util/u_dynarray.h>
 #include <util/anon_file.h>
+
+#ifdef MAJOR_IN_MKDEV
+#include <sys/mkdev.h>
+#endif
+#ifdef MAJOR_IN_SYSMACROS
+#include <sys/sysmacros.h>
+#endif
 
 struct wsi_wayland;
 
@@ -98,6 +106,9 @@ struct wsi_wl_display {
    struct u_vector formats;
 
    bool sw;
+
+   dev_t main_device;
+   bool same_gpu;
 };
 
 struct wsi_wayland {
@@ -632,7 +643,11 @@ default_dmabuf_feedback_main_device(void *data,
                                     struct zwp_linux_dmabuf_feedback_v1 *dmabuf_feedback,
                                     struct wl_array *device)
 {
-   /* ignore this event */
+   struct wsi_wl_display *display = data;
+
+   assert(device->size == sizeof(dev_t));
+   dev_t *dev = device->data;
+   display->main_device = *dev;
 }
 
 static void
@@ -813,6 +828,9 @@ wsi_wl_display_init(struct wsi_wayland *wsi_wl,
    if (!get_format_list)
       goto out;
 
+   /* Default assumption */
+   display->same_gpu = true;
+
    /* Get the default dma-buf feedback */
    if (display->wl_dmabuf && zwp_linux_dmabuf_v1_get_version(display->wl_dmabuf) >=
                              ZWP_LINUX_DMABUF_V1_GET_DEFAULT_FEEDBACK_SINCE_VERSION) {
@@ -821,6 +839,15 @@ wsi_wl_display_init(struct wsi_wayland *wsi_wl,
             zwp_linux_dmabuf_v1_get_default_feedback(display->wl_dmabuf);
          zwp_linux_dmabuf_feedback_v1_add_listener(display->wl_dmabuf_feedback,
                                                    &dmabuf_feedback_listener, display);
+
+         /* Round-trip again to fetch dma-buf feedback */
+         wl_display_roundtrip_queue(display->wl_display, display->queue);
+
+         if (wsi_wl->wsi->drm_info.hasRender) {
+            display->same_gpu =
+               major(display->main_device) == wsi_wl->wsi->drm_info.renderMajor &&
+               minor(display->main_device) == wsi_wl->wsi->drm_info.renderMinor;
+         }
    }
 
    /* Round-trip again to get formats and modifiers */
@@ -1790,7 +1817,7 @@ wsi_wl_surface_create_swapchain(VkIcdSurfaceBase *icd_surface,
    } else {
       drm_image_params = (struct wsi_drm_image_params) {
          .base.image_type = WSI_IMAGE_TYPE_DRM,
-         .same_gpu = true,
+         .same_gpu = wsi_wl_surface->display->same_gpu,
       };
       /* Use explicit DRM format modifiers when both the server and the driver
        * support them.

@@ -173,7 +173,7 @@ TEST_F(LiveRangeTests, SimpleArrayAccess)
    auto s2x = vf.dest_from_string("S2.x");
    auto s2y = vf.dest_from_string("S2.y");
 
-   auto s3 = vf.dest_vec4_from_string("S3.xy01", dummy, pin_group);
+   auto s3 = vf.dest_vec4_from_string("S3.xy01", dummy, pin_chgr);
 
 
    LiveRangeMap expect = vf.prepare_live_range_map();

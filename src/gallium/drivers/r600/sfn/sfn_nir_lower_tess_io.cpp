@@ -74,6 +74,16 @@ static int get_tcs_varying_offset(nir_intrinsic_instr *op)
       return 0x20;
    case VARYING_SLOT_CLIP_DIST1:
       return 0x30;
+   case VARYING_SLOT_COL0:
+      return 0x40;
+   case VARYING_SLOT_COL1:
+      return 0x50;
+   case VARYING_SLOT_BFC0:
+      return 0x60;
+   case VARYING_SLOT_BFC1:
+      return 0x70;
+   case VARYING_SLOT_CLIP_VERTEX:
+      return 0x80;
    case VARYING_SLOT_TESS_LEVEL_OUTER:
       return 0;
    case VARYING_SLOT_TESS_LEVEL_INNER:
@@ -81,7 +91,7 @@ static int get_tcs_varying_offset(nir_intrinsic_instr *op)
    default:
       if (location >= VARYING_SLOT_VAR0 &&
           location <= VARYING_SLOT_VAR31)
-         return 0x10 * (location - VARYING_SLOT_VAR0) + 0x40;
+         return 0x10 * (location - VARYING_SLOT_VAR0) + 0x90;
 
       if (location >=  VARYING_SLOT_PATCH0) {
          return 0x10 * (location - VARYING_SLOT_PATCH0) + 0x20;

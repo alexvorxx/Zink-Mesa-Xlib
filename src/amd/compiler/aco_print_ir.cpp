@@ -215,8 +215,8 @@ print_storage(storage_class storage, FILE* output)
    int printed = 0;
    if (storage & storage_buffer)
       printed += fprintf(output, "%sbuffer", printed ? "," : "");
-   if (storage & storage_atomic_counter)
-      printed += fprintf(output, "%satomic_counter", printed ? "," : "");
+   if (storage & storage_gds)
+      printed += fprintf(output, "%sgds", printed ? "," : "");
    if (storage & storage_image)
       printed += fprintf(output, "%simage", printed ? "," : "");
    if (storage & storage_shared)
@@ -333,8 +333,7 @@ print_instr_format_specific(enum amd_gfx_level gfx_level, const Instruction* ins
          break;
       }
       case aco_opcode::s_sendmsg: {
-         unsigned id =
-            gfx_level >= GFX11 ? (imm & sendmsg_id_mask_gfx11) : (imm & sendmsg_id_mask_gfx6);
+         unsigned id = imm & sendmsg_id_mask;
          static_assert(_sendmsg_gs == sendmsg_hs_tessfactor);
          static_assert(_sendmsg_gs_done == sendmsg_dealloc_vgprs);
          switch (id) {
@@ -361,12 +360,6 @@ print_instr_format_specific(enum amd_gfx_level gfx_level, const Instruction* ins
          case sendmsg_gs_alloc_req: fprintf(output, " sendmsg(gs_alloc_req)"); break;
          case sendmsg_get_doorbell: fprintf(output, " sendmsg(get_doorbell)"); break;
          case sendmsg_get_ddid: fprintf(output, " sendmsg(get_ddid)"); break;
-         case sendmsg_rtn_get_doorbell: fprintf(output, " sendmsg(rtn_get_doorbell)"); break;
-         case sendmsg_rtn_get_ddid: fprintf(output, " sendmsg(rtn_get_ddid)"); break;
-         case sendmsg_rtn_get_tma: fprintf(output, " sendmsg(rtn_get_Tma)"); break;
-         case sendmsg_rtn_get_realtime: fprintf(output, " sendmsg(rtn_get_realtime)"); break;
-         case sendmsg_rtn_save_wave: fprintf(output, " sendmsg(rtn_save_wave)"); break;
-         case sendmsg_rtn_get_tba: fprintf(output, " sendmsg(rtn_get_Tba)"); break;
          default: fprintf(output, " imm:%u", imm);
          }
          break;
@@ -379,6 +372,23 @@ print_instr_format_specific(enum amd_gfx_level gfx_level, const Instruction* ins
       }
       if (instr->sopp().block != -1)
          fprintf(output, " block:BB%d", instr->sopp().block);
+      break;
+   }
+   case Format::SOP1: {
+      if (instr->opcode == aco_opcode::s_sendmsg_rtn_b32 ||
+          instr->opcode == aco_opcode::s_sendmsg_rtn_b64) {
+         unsigned id = instr->operands[0].constantValue();
+         switch (id) {
+         case sendmsg_rtn_get_doorbell: fprintf(output, " sendmsg(rtn_get_doorbell)"); break;
+         case sendmsg_rtn_get_ddid: fprintf(output, " sendmsg(rtn_get_ddid)"); break;
+         case sendmsg_rtn_get_tma: fprintf(output, " sendmsg(rtn_get_tma)"); break;
+         case sendmsg_rtn_get_realtime: fprintf(output, " sendmsg(rtn_get_realtime)"); break;
+         case sendmsg_rtn_save_wave: fprintf(output, " sendmsg(rtn_save_wave)"); break;
+         case sendmsg_rtn_get_tba: fprintf(output, " sendmsg(rtn_get_tba)"); break;
+         default: break;
+         }
+         break;
+      }
       break;
    }
    case Format::SMEM: {

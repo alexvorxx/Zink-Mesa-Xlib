@@ -322,8 +322,7 @@ bool AluInstr::can_propagate_dest() const
 
    assert(m_dest);
 
-   if (src_reg->pin() == pin_fully ||
-       src_reg->pin() == pin_group) {
+   if (src_reg->pin() == pin_fully) {
       return false;
    }
 
@@ -443,6 +442,18 @@ void AluInstr::set_sources(SrcValues src)
       if (r)
          r->add_use(this);
    }
+}
+
+uint8_t AluInstr::allowed_dest_chan_mask() const
+{
+   if (alu_slots() != 1) {
+      if (has_alu_flag(alu_is_cayman_trans)) {
+         return (1 << alu_slots()) - 1;
+      } else {
+         return 0;
+      }
+   }
+   return 0xf;
 }
 
 bool AluInstr::replace_dest(PRegister new_dest, AluInstr *move_instr)
@@ -729,9 +740,16 @@ int AluInstr::register_priority() const
    int priority = 0;
    if (!has_alu_flag(alu_no_schedule_bias)) {
 
-      if (m_dest && m_dest->is_ssa() && has_alu_flag(alu_write)) {
-         if (m_dest->pin() != pin_group && m_dest->pin() != pin_chgr)
-            priority--;
+      if (m_dest) {
+         if (m_dest->is_ssa() && has_alu_flag(alu_write)) {
+            if (m_dest->pin() != pin_group &&
+                m_dest->pin() != pin_chgr)
+               priority--;
+         } else {
+            // Arrays and registers are pre-allocated, hence scheduling
+            // assignments early is unlikely to increase register pressure
+            priority++;
+         }
       }
 
       for (const auto s : m_src) {
@@ -745,6 +763,8 @@ int AluInstr::register_priority() const
             if (pending == 1)
                ++priority;
          }
+         if (s->as_uniform())
+            ++priority;
       }
    }
    return priority;
@@ -1372,6 +1392,8 @@ bool AluInstr::from_nir(nir_alu_instr *alu, Shader& shader)
    case nir_op_pack_half_2x16_split: return emit_pack_32_2x16_split(*alu, shader);
    case nir_op_slt: return emit_alu_op2(*alu, op2_setgt, shader, op2_opt_reverse);
    case nir_op_sge: return emit_alu_op2(*alu, op2_setge, shader);
+   case nir_op_seq: return emit_alu_op2(*alu, op2_sete, shader);
+   case nir_op_sne: return emit_alu_op2(*alu, op2_setne, shader);
    case nir_op_ubfe: return emit_alu_op3(*alu, op3_bfe_uint, shader);
    case nir_op_ufind_msb_rev: return emit_alu_op1(*alu, op1_ffbh_uint, shader);
    case nir_op_uge32: return emit_alu_op2_int(*alu, op2_setge_uint, shader);

@@ -98,8 +98,8 @@ public:
       nir_src *offset;
       PVirtualValue gather_comp;
       PVirtualValue ms_index;
-      PVirtualValue sampler_offset;
       PVirtualValue texture_offset;
+      PRegister resource_offset;
       nir_src *backend1;
       nir_src *backend2;
 
@@ -113,7 +113,7 @@ public:
    TexInstr(Opcode op, const RegisterVec4& dest,
             const RegisterVec4::Swizzle& dest_swizzle,
             const RegisterVec4& src, unsigned sid, unsigned rid,
-            PVirtualValue sampler_offs = nullptr);
+            PRegister sampler_offs = nullptr);
 
    TexInstr(const TexInstr& orig) = delete;
    TexInstr(const TexInstr&& orig) = delete;
@@ -127,7 +127,6 @@ public:
    auto& src() {return m_src;}
 
    unsigned opcode() const {return m_opcode;}
-   unsigned sampler_id() const {return m_sampler_id;}
    unsigned resource_id() const {return m_resource_id;}
 
    void set_offset(unsigned index, int32_t val);
@@ -138,9 +137,6 @@ public:
 
    void set_tex_flag(Flags flag) {m_tex_flags.set(flag);}
    bool has_tex_flag(Flags flag) const {return m_tex_flags.test(flag);}
-
-   void set_sampler_offset(PVirtualValue ofs) {m_sampler_offset = ofs;}
-   auto* sampler_offset() const {return m_sampler_offset;}
 
    void set_gather_comp(int cmp);
    bool is_equal_to(const TexInstr& lhs) const;
@@ -156,6 +152,7 @@ public:
 
    bool replace_source(PRegister old_src, PVirtualValue new_src) override;
 
+   uint8_t allowed_dest_chan_mask() const override;
 private:
 
    bool do_ready() const override;
@@ -188,11 +185,9 @@ private:
    Opcode m_opcode;
 
    RegisterVec4 m_src;
-   PVirtualValue m_sampler_offset;
    std::bitset<num_tex_flag> m_tex_flags;
    int m_offset[3];
    int m_inst_mode;
-   unsigned m_sampler_id;
    unsigned m_resource_id;
 
    static const std::map<Opcode, std::string> s_opcode_map;

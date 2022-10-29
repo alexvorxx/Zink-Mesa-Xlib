@@ -2176,12 +2176,7 @@ fs_visitor::split_virtual_grfs()
    foreach_block_and_inst(block, fs_inst, inst, cfg) {
       /* We fix up undef instructions later */
       if (inst->opcode == SHADER_OPCODE_UNDEF) {
-         /* UNDEF instructions are currently only used to undef entire
-          * registers.  We need this invariant later when we split them.
-          */
          assert(inst->dst.file == VGRF);
-         assert(inst->dst.offset == 0);
-         assert(inst->size_written == alloc.sizes[inst->dst.nr] * REG_SIZE);
          continue;
       }
 
@@ -2256,11 +2251,18 @@ fs_visitor::split_virtual_grfs()
          if (vgrf_has_split[inst->dst.nr]) {
             const fs_builder ibld(this, block, inst);
             assert(inst->size_written % REG_SIZE == 0);
-            unsigned reg_offset = 0;
-            while (reg_offset < inst->size_written / REG_SIZE) {
-               reg = vgrf_to_reg[inst->dst.nr] + reg_offset;
-               ibld.UNDEF(fs_reg(VGRF, new_virtual_grf[reg], inst->dst.type));
-               reg_offset += alloc.sizes[new_virtual_grf[reg]];
+            unsigned reg_offset = inst->dst.offset / REG_SIZE;
+            unsigned size_written = 0;
+            while (size_written < inst->size_written) {
+               reg = vgrf_to_reg[inst->dst.nr] + reg_offset + size_written / REG_SIZE;
+               fs_inst *undef =
+                  ibld.UNDEF(
+                     byte_offset(fs_reg(VGRF, new_virtual_grf[reg], inst->dst.type),
+                                 new_reg_offset[reg] * REG_SIZE));
+               undef->size_written =
+                  MIN2(inst->size_written - size_written, undef->size_written);
+               assert(undef->size_written % REG_SIZE == 0);
+               size_written += undef->size_written;
             }
             inst->remove(block);
          } else {
@@ -2547,6 +2549,9 @@ fs_visitor::opt_algebraic()
             assert(!inst->src[0].negate);
             const brw::fs_builder ibld(this, block, inst);
 
+            if (!inst->is_partial_write())
+               ibld.emit_undef_for_dst(inst);
+
             ibld.MOV(subscript(inst->dst, BRW_REGISTER_TYPE_F, 1),
                      subscript(inst->src[0], BRW_REGISTER_TYPE_F, 1));
             ibld.MOV(subscript(inst->dst, BRW_REGISTER_TYPE_F, 0),
@@ -2564,6 +2569,9 @@ fs_visitor::opt_algebraic()
             assert(!inst->src[0].abs);
             assert(!inst->src[0].negate);
             const brw::fs_builder ibld(this, block, inst);
+
+            if (!inst->is_partial_write())
+               ibld.emit_undef_for_dst(inst);
 
             ibld.MOV(subscript(inst->dst, BRW_REGISTER_TYPE_UD, 1),
                      subscript(inst->src[0], BRW_REGISTER_TYPE_UD, 1));
@@ -2694,6 +2702,9 @@ fs_visitor::opt_algebraic()
             assert(!inst->src[0].abs && !inst->src[0].negate);
             assert(!inst->src[1].abs && !inst->src[1].negate);
             const brw::fs_builder ibld(this, block, inst);
+
+            if (!inst->is_partial_write())
+               ibld.emit_undef_for_dst(inst);
 
             set_predicate(inst->predicate,
                           ibld.SEL(subscript(inst->dst, BRW_REGISTER_TYPE_UD, 0),
@@ -4105,6 +4116,7 @@ fs_visitor::lower_mul_qword_inst(fs_inst *inst, bblock_t *block)
                 subscript(inst->src[1], BRW_REGISTER_TYPE_UD, 0));
       ibld.MOV(bd_low, acc);
 
+      ibld.UNDEF(bd);
       ibld.MOV(subscript(bd, BRW_REGISTER_TYPE_UD, 0), bd_low);
       ibld.MOV(subscript(bd, BRW_REGISTER_TYPE_UD, 1), bd_high);
    }
@@ -4121,6 +4133,8 @@ fs_visitor::lower_mul_qword_inst(fs_inst *inst, bblock_t *block)
    if (devinfo->has_64bit_int) {
       ibld.MOV(inst->dst, bd);
    } else {
+      if (!inst->is_partial_write())
+         ibld.emit_undef_for_dst(inst);
       ibld.MOV(subscript(inst->dst, BRW_REGISTER_TYPE_UD, 0),
                subscript(bd, BRW_REGISTER_TYPE_UD, 0));
       ibld.MOV(subscript(inst->dst, BRW_REGISTER_TYPE_UD, 1),
@@ -5562,6 +5576,10 @@ fs_visitor::lower_find_live_channel()
        */
       fs_reg exec_mask(retype(brw_mask_reg(0), BRW_REGISTER_TYPE_UD));
 
+      const fs_builder ibld(this, block, inst);
+      if (!inst->is_partial_write())
+         ibld.emit_undef_for_dst(inst);
+
       const fs_builder ubld = bld.at(block, inst).exec_all().group(1, 0);
 
       /* ce0 doesn't consider the thread dispatch mask (DMask or VMask),
@@ -5930,7 +5948,7 @@ fs_visitor::optimize()
          snprintf(filename, 64, "%s%d-%s-%02d-%02d-" #pass,              \
                   stage_abbrev, dispatch_width, nir->info.name, iteration, pass_num); \
                                                                         \
-         backend_shader::dump_instructions(filename);                   \
+         dump_instructions(filename);                                   \
       }                                                                 \
                                                                         \
       validate();                                                       \
@@ -5944,7 +5962,7 @@ fs_visitor::optimize()
       snprintf(filename, 64, "%s%d-%s-00-00-start",
                stage_abbrev, dispatch_width, nir->info.name);
 
-      backend_shader::dump_instructions(filename);
+      dump_instructions(filename);
    }
 
    bool progress = false;

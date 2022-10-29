@@ -545,27 +545,6 @@ err_free_usc_pixel_program:
    return result;
 }
 
-static uint32_t pvr_get_hw_clear_color(VkFormat vk_format,
-                                       const VkClearValue *clear_value)
-{
-   union util_color uc = { .ui = 0 };
-
-   switch (vk_format) {
-   case VK_FORMAT_B8G8R8A8_UNORM:
-      util_pack_color(clear_value->color.float32,
-                      PIPE_FORMAT_R8G8B8A8_UNORM,
-                      &uc);
-      break;
-
-   default:
-      assert(!"Unsupported format");
-      uc.ui[0] = 0;
-      break;
-   }
-
-   return uc.ui[0];
-}
-
 static VkResult
 pvr_load_op_constants_create_and_upload(struct pvr_cmd_buffer *cmd_buffer,
                                         const struct pvr_load_op *load_op,
@@ -581,7 +560,7 @@ pvr_load_op_constants_create_and_upload(struct pvr_cmd_buffer *cmd_buffer,
       &pass->attachments[color_init->index];
    const VkClearValue *clear_value =
       &render_pass_info->clear_values[color_init->index];
-   uint32_t hw_clear_value;
+   uint32_t hw_clear_value[PVR_CLEAR_COLOR_ARRAY_SIZE];
    struct pvr_bo *clear_bo;
    VkResult result;
 
@@ -594,10 +573,15 @@ pvr_load_op_constants_create_and_upload(struct pvr_cmd_buffer *cmd_buffer,
    assert(color_init->op == VK_ATTACHMENT_LOAD_OP_CLEAR);
 
    /* FIXME: do this at the point we store the clear values? */
-   hw_clear_value = pvr_get_hw_clear_color(attachment->vk_format, clear_value);
+   pvr_get_hw_clear_color(attachment->vk_format,
+                          clear_value->color,
+                          hw_clear_value);
+
+   if (vk_format_get_blocksize(attachment->vk_format) > 4)
+      pvr_finishme("Handle clear color greater than 32 bits.");
 
    result = pvr_cmd_buffer_upload_general(cmd_buffer,
-                                          &hw_clear_value,
+                                          &hw_clear_value[0],
                                           sizeof(hw_clear_value),
                                           &clear_bo);
    if (result != VK_SUCCESS)

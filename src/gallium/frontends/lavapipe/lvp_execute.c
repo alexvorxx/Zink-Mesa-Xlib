@@ -257,15 +257,17 @@ fill_ubo0(struct rendering_state *state, uint8_t *mem, enum pipe_shader_type pst
 static void
 update_pcbuf(struct rendering_state *state, enum pipe_shader_type pstage)
 {
-   uint8_t *mem;
-   struct pipe_constant_buffer cbuf;
    unsigned size = calc_ubo0_size(state, pstage);
-   cbuf.buffer_size = size;
-   cbuf.buffer = NULL;
-   cbuf.user_buffer = NULL;
-   u_upload_alloc(state->uploader, 0, size, 64, &cbuf.buffer_offset, &cbuf.buffer, (void**)&mem);
-   fill_ubo0(state, mem, pstage);
-   state->pctx->set_constant_buffer(state->pctx, pstage, 0, true, &cbuf);
+   if (size) {
+      uint8_t *mem;
+      struct pipe_constant_buffer cbuf;
+      cbuf.buffer_size = size;
+      cbuf.buffer = NULL;
+      cbuf.user_buffer = NULL;
+      u_upload_alloc(state->uploader, 0, size, 64, &cbuf.buffer_offset, &cbuf.buffer, (void**)&mem);
+      fill_ubo0(state, mem, pstage);
+      state->pctx->set_constant_buffer(state->pctx, pstage, 0, true, &cbuf);
+   }
    state->pcbuf_dirty[pstage] = false;
 }
 

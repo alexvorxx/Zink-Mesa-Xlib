@@ -306,10 +306,6 @@ agx_open_device(void *memctx, struct agx_device *dev)
    /* Oddly, the return codes are flipped for SET_API */
    if (ret != 1)
       return false;
-#else
-   /* Only open a fake AGX device on other operating systems if forced */
-   if (!getenv("AGX_FAKE_DEVICE"))
-      return false;
 #endif
 
    dev->memctx = memctx;

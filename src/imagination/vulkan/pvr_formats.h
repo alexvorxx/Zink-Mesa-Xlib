@@ -28,6 +28,14 @@
 #include <stdint.h>
 #include <vulkan/vulkan.h>
 
+/* This is based on VkClearColorValue which is an array of RGBA, and on the
+ * output register usage for the biggest 32 bit 4 component formats which use up
+ * all 4 output registers.
+ * So this can be used for both unpacked RGBA value and to represent values
+ * packed according to the hardware (the accum format).
+ */
+#define PVR_CLEAR_COLOR_ARRAY_SIZE 4
+
 enum pvr_pbe_accum_format {
    PVR_PBE_ACCUM_FORMAT_INVALID = 0, /* Explicitly treat 0 as invalid. */
    PVR_PBE_ACCUM_FORMAT_U8,
@@ -53,6 +61,11 @@ const uint8_t *pvr_get_format_swizzle(VkFormat vk_format);
 uint32_t pvr_get_tex_format(VkFormat vk_format);
 uint32_t pvr_get_pbe_packmode(VkFormat vk_format);
 uint32_t pvr_get_pbe_accum_format(VkFormat vk_format);
+uint32_t pvr_get_pbe_accum_format_size_in_bytes(VkFormat vk_format);
 bool pvr_format_is_pbe_downscalable(VkFormat vk_format);
+
+void pvr_get_hw_clear_color(VkFormat vk_format,
+                            VkClearColorValue value,
+                            uint32_t packed_out[static const 4]);
 
 #endif /* PVR_FORMATS_H */

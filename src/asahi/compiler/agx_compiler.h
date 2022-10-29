@@ -53,6 +53,9 @@ extern int agx_debug;
 /* r0-r127 inclusive, as pairs of 16-bits, gives 256 registers */
 #define AGX_NUM_REGS (256)
 
+/* u0-u255 inclusive, as pairs of 16-bits */
+#define AGX_NUM_UNIFORMS (512)
+
 enum agx_index_type {
    AGX_INDEX_NULL = 0,
    AGX_INDEX_NORMAL = 1,
@@ -111,8 +114,10 @@ agx_get_index(unsigned value, enum agx_size size)
 }
 
 static inline agx_index
-agx_immediate(uint16_t imm)
+agx_immediate(uint32_t imm)
 {
+   assert(imm < (1 << 16) && "overflowed immediate");
+
    return (agx_index) {
       .value = imm,
       .size = AGX_SIZE_16,
@@ -129,8 +134,10 @@ agx_immediate_f(float f)
 
 /* in half-words, specify r0h as 1, r1 as 2... */
 static inline agx_index
-agx_register(uint8_t imm, enum agx_size size)
+agx_register(uint32_t imm, enum agx_size size)
 {
+   assert(imm < AGX_NUM_REGS);
+
    return (agx_index) {
       .value = imm,
       .size = size,
@@ -140,8 +147,10 @@ agx_register(uint8_t imm, enum agx_size size)
 
 /* Also in half-words */
 static inline agx_index
-agx_uniform(uint8_t imm, enum agx_size size)
+agx_uniform(uint32_t imm, enum agx_size size)
 {
+   assert(imm < AGX_NUM_UNIFORMS);
+
    return (agx_index) {
       .value = imm,
       .size = size,
@@ -283,7 +292,7 @@ typedef struct {
    uint8_t nr_srcs;
 
    union {
-      uint32_t imm;
+      uint64_t imm;
       uint32_t writeout;
       uint32_t truth_table;
       uint32_t component;
@@ -365,9 +374,6 @@ typedef struct {
    struct agx_shader_info *out;
    struct agx_shader_key *key;
 
-   /* Place to start pushing new values */
-   unsigned push_base;
-
    /* Maximum block index */
    unsigned num_blocks;
 
@@ -405,6 +411,7 @@ typedef struct {
    unsigned loop_count;
    unsigned spills;
    unsigned fills;
+   unsigned max_reg;
 } agx_context;
 
 static inline void
@@ -749,6 +756,7 @@ void agx_optimizer(agx_context *ctx);
 void agx_lower_pseudo(agx_context *ctx);
 void agx_dce(agx_context *ctx);
 void agx_ra(agx_context *ctx);
+void agx_lower_64bit_postra(agx_context *ctx);
 void agx_pack_binary(agx_context *ctx, struct util_dynarray *emission);
 
 #ifndef NDEBUG
@@ -763,8 +771,9 @@ struct agx_copy {
    /* Base register destination of the copy */
    unsigned dest;
 
-   /* Base register source of the copy */
+   /* Base register source (or uniform base) of the copy */
    unsigned src;
+   bool is_uniform;
 
    /* Size of the copy */
    enum agx_size size;
@@ -781,6 +790,7 @@ void agx_liveness_ins_update(BITSET_WORD *live, agx_instr *I);
 
 bool agx_lower_resinfo(nir_shader *s);
 bool agx_nir_lower_array_texture(nir_shader *s);
+bool agx_nir_opt_preamble(nir_shader *s, unsigned *preamble_size);
 
 #ifdef __cplusplus
 } /* extern C */

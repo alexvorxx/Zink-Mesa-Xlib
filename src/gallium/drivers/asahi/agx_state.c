@@ -1,6 +1,7 @@
 /*
  * Copyright 2021 Alyssa Rosenzweig
  * Copyright (C) 2019-2020 Collabora, Ltd.
+ * Copyright © 2014-2017 Broadcom
  * Copyright 2010 Red Hat Inc.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
@@ -913,28 +914,6 @@ static bool asahi_shader_key_equal(const void *a, const void *b)
    return memcmp(a, b, sizeof(struct asahi_shader_key)) == 0;
 }
 
-static void *
-agx_create_shader_state(struct pipe_context *pctx,
-                        const struct pipe_shader_state *cso)
-{
-   struct agx_uncompiled_shader *so = CALLOC_STRUCT(agx_uncompiled_shader);
-
-   if (!so)
-      return NULL;
-
-   so->base = *cso;
-
-   if (cso->type == PIPE_SHADER_IR_NIR) {
-      so->nir = cso->ir.nir;
-   } else {
-      assert(cso->type == PIPE_SHADER_IR_TGSI);
-      so->nir = tgsi_to_nir(cso->tokens, pctx->screen, false);
-   }
-
-   so->variants = _mesa_hash_table_create(NULL, asahi_shader_key_hash, asahi_shader_key_equal);
-   return so;
-}
-
 static unsigned
 agx_find_linked_slot(struct agx_varyings_vs *vs, struct agx_varyings_fs *fs,
                      gl_varying_slot slot, unsigned offset)
@@ -1052,30 +1031,19 @@ agx_link_varyings_vs_fs(struct agx_pool *pool, struct agx_varyings_vs *vs,
 }
 
 /* Does not take ownership of key. Clones if necessary. */
-static bool
-agx_update_shader(struct agx_context *ctx, struct agx_compiled_shader **out,
-                  enum pipe_shader_type stage, struct asahi_shader_key *key)
+static struct agx_compiled_shader *
+agx_compile_variant(struct agx_device *dev,
+                    struct agx_uncompiled_shader *so,
+                    struct util_debug_callback *debug,
+                    struct asahi_shader_key *key)
 {
-   struct agx_uncompiled_shader *so = ctx->stage[stage].shader;
-   assert(so != NULL);
-
-   struct hash_entry *he = _mesa_hash_table_search(so->variants, key);
-
-   if (he) {
-      if ((*out) == he->data)
-         return false;
-
-      *out = he->data;
-      return true;
-   }
-
    struct agx_compiled_shader *compiled = CALLOC_STRUCT(agx_compiled_shader);
    struct util_dynarray binary;
    util_dynarray_init(&binary, NULL);
 
    nir_shader *nir = nir_shader_clone(NULL, so->nir);
 
-   if (stage == PIPE_SHADER_FRAGMENT) {
+   if (nir->info.stage == MESA_SHADER_FRAGMENT) {
       nir_lower_blend_options opts = {
          .scalar_blend_const = true,
          .logicop_enable = key->blend.logicop_enable,
@@ -1104,10 +1072,9 @@ agx_update_shader(struct agx_context *ctx, struct agx_compiled_shader **out,
       }
    }
 
-   agx_compile_shader_nir(nir, &key->base, &binary, &compiled->info);
+   agx_compile_shader_nir(nir, &key->base, debug, &binary, &compiled->info);
 
    if (binary.size) {
-      struct agx_device *dev = agx_device(ctx->base.screen);
       compiled->bo = agx_bo_create(dev, binary.size, AGX_MEMORY_TYPE_SHADER);
       memcpy(compiled->bo->ptr.cpu, binary.data, binary.size);
    }
@@ -1121,8 +1088,87 @@ agx_update_shader(struct agx_context *ctx, struct agx_compiled_shader **out,
    struct asahi_shader_key *cloned_key = ralloc(so->variants, struct asahi_shader_key);
    memcpy(cloned_key, key, sizeof(struct asahi_shader_key));
 
-   he = _mesa_hash_table_insert(so->variants, cloned_key, compiled);
-   *out = he->data;
+   struct hash_entry *he = _mesa_hash_table_insert(so->variants, cloned_key, compiled);
+   return he->data;
+ 
+}
+
+static void *
+agx_create_shader_state(struct pipe_context *pctx,
+                        const struct pipe_shader_state *cso)
+{
+   struct agx_uncompiled_shader *so = CALLOC_STRUCT(agx_uncompiled_shader);
+   struct agx_device *dev = agx_device(pctx->screen);
+
+   if (!so)
+      return NULL;
+
+   so->base = *cso;
+
+   if (cso->type == PIPE_SHADER_IR_NIR) {
+      so->nir = cso->ir.nir;
+   } else {
+      assert(cso->type == PIPE_SHADER_IR_TGSI);
+      so->nir = tgsi_to_nir(cso->tokens, pctx->screen, false);
+   }
+
+   so->variants = _mesa_hash_table_create(NULL, asahi_shader_key_hash, asahi_shader_key_equal);
+
+   /* For shader-db, precompile a shader with a default key. This could be
+    * improved but hopefully this is acceptable for now.
+    */
+   if (dev->debug & AGX_DBG_PRECOMPILE) {
+      struct asahi_shader_key key = { 0 };
+
+      switch (so->nir->info.stage) {
+      case MESA_SHADER_VERTEX:
+      {
+         key.base.vs.num_vbufs = AGX_MAX_VBUFS;
+         for (unsigned i = 0; i < AGX_MAX_VBUFS; ++i) {
+            key.base.vs.vbuf_strides[i] = 16;
+            key.base.vs.attributes[i] = (struct agx_attribute) {
+               .buf = i,
+               .nr_comps_minus_1 = 4 - 1,
+               .format = AGX_FORMAT_I32
+            };
+         }
+
+         break;
+      }
+      case MESA_SHADER_FRAGMENT:
+         key.nr_cbufs = 1;
+         key.base.fs.tib_formats[0] = AGX_FORMAT_U8NORM;
+         break;
+      default:
+         unreachable("Unknown shader stage in shader-db precompile");
+      }
+
+      agx_compile_variant(dev, so, &pctx->debug, &key);
+   }
+
+   return so;
+}
+
+/* Does not take ownership of key. Clones if necessary. */
+static bool
+agx_update_shader(struct agx_context *ctx, struct agx_compiled_shader **out,
+                  enum pipe_shader_type stage, struct asahi_shader_key *key)
+{
+   struct agx_uncompiled_shader *so = ctx->stage[stage].shader;
+   assert(so != NULL);
+
+   struct hash_entry *he = _mesa_hash_table_search(so->variants, key);
+
+   if (he) {
+      if ((*out) == he->data)
+         return false;
+
+      *out = he->data;
+      return true;
+   }
+
+   struct agx_device *dev = agx_device(ctx->base.screen);
+   *out = agx_compile_variant(dev, so, &ctx->base.debug, key);
    return true;
 }
 
@@ -1216,6 +1262,7 @@ static struct agx_usc_builder
 agx_alloc_usc_control(struct agx_pool *pool,
                       unsigned num_reg_bindings)
 {
+   STATIC_ASSERT(AGX_USC_UNIFORM_HIGH_LENGTH == AGX_USC_UNIFORM_LENGTH);
    STATIC_ASSERT(AGX_USC_TEXTURE_LENGTH == AGX_USC_UNIFORM_LENGTH);
    STATIC_ASSERT(AGX_USC_SAMPLER_LENGTH == AGX_USC_UNIFORM_LENGTH);
 
@@ -1254,6 +1301,27 @@ agx_usc_builder_validate(struct agx_usc_builder *b, size_t size)
    for (bool it = agx_usc_builder_validate((b), AGX_USC_##struct_name##_LENGTH); \
         it; it = false, (b)->head += AGX_USC_##struct_name##_LENGTH) \
       agx_pack((b)->head, USC_##struct_name, template)
+
+static void
+agx_usc_uniform(struct agx_usc_builder *b, unsigned start_halfs,
+                unsigned size_halfs, uint64_t buffer)
+{
+   assert((start_halfs + size_halfs) < (1 << 9) && "uniform file overflow");
+
+   if (start_halfs & BITFIELD_BIT(8)) {
+      agx_usc_pack(b, UNIFORM_HIGH, cfg) {
+         cfg.start_halfs = start_halfs & BITFIELD_MASK(8);
+         cfg.size_halfs = size_halfs;
+         cfg.buffer = buffer;
+      }
+   } else {
+      agx_usc_pack(b, UNIFORM, cfg) {
+         cfg.start_halfs = start_halfs;
+         cfg.size_halfs = size_halfs;
+         cfg.buffer = buffer;
+      }
+   }
+}
 
 static uint32_t
 agx_usc_fini(struct agx_usc_builder *b)
@@ -1319,13 +1387,8 @@ agx_build_pipeline(struct agx_context *ctx, struct agx_compiled_shader *cs, enum
     * AGX_PUSH_TEXTURE_BASE sysval correctly.
     */
    for (unsigned i = 0; i < cs->info.push_ranges; ++i) {
-      struct agx_push push = cs->info.push[i];
-
-      agx_usc_pack(&b, UNIFORM, cfg) {
-         cfg.start_halfs = push.base;
-         cfg.size_halfs = push.length;
-         cfg.buffer = agx_push_location(ctx, push, stage);
-      }
+      agx_usc_uniform(&b, cs->info.push[i].base, cs->info.push[i].length,
+                      agx_push_location(ctx, cs->info.push[i], stage));
    }
 
    agx_usc_pack(&b, SHARED, cfg) {
@@ -1341,12 +1404,12 @@ agx_build_pipeline(struct agx_context *ctx, struct agx_compiled_shader *cs, enum
 
    agx_usc_pack(&b, SHADER, cfg) {
       cfg.loads_varyings = (stage == PIPE_SHADER_FRAGMENT);
-      cfg.code = cs->bo->ptr.gpu;
+      cfg.code = cs->bo->ptr.gpu + cs->info.main_offset;
       cfg.unk_2 = (stage == PIPE_SHADER_FRAGMENT) ? 2 : 3;
    }
 
    agx_usc_pack(&b, REGISTERS, cfg) {
-      cfg.register_quadwords = 0;
+      cfg.register_count = cs->info.nr_gprs;
       cfg.unk_1 = (stage == PIPE_SHADER_FRAGMENT);
    }
 
@@ -1359,7 +1422,13 @@ agx_build_pipeline(struct agx_context *ctx, struct agx_compiled_shader *cs, enum
       }
    }
 
-   agx_usc_pack(&b, NO_PRESHADER, cfg);
+   if (cs->info.has_preamble) {
+      agx_usc_pack(&b, PRESHADER, cfg) {
+         cfg.code = cs->bo->ptr.gpu + cs->info.preamble_offset;
+      }
+   } else {
+      agx_usc_pack(&b, NO_PRESHADER, cfg);
+   }
 
    return agx_usc_fini(&b);
 }
@@ -1389,7 +1458,7 @@ agx_build_clear_pipeline(struct agx_context *ctx, uint32_t code, uint64_t clear_
       cfg.unk_2 = 3;
    }
 
-   agx_usc_pack(&b, REGISTERS, cfg) cfg.register_quadwords = 1;
+   agx_usc_pack(&b, REGISTERS, cfg) cfg.register_count = 8;
    agx_usc_pack(&b, NO_PRESHADER, cfg);
 
    return agx_usc_fini(&b);
@@ -1471,7 +1540,7 @@ agx_build_reload_pipeline(struct agx_context *ctx, uint32_t code, struct pipe_su
       cfg.unk_2 = 3;
    }
 
-   agx_usc_pack(&b, REGISTERS, cfg) cfg.register_quadwords = 0;
+   agx_usc_pack(&b, REGISTERS, cfg) cfg.register_count = 256;
    agx_usc_pack(&b, NO_PRESHADER, cfg);
 
    return agx_usc_fini(&b);
@@ -1506,7 +1575,7 @@ agx_build_store_pipeline(struct agx_context *ctx, uint32_t code,
    }
 
    agx_usc_pack(&b, SHADER, cfg) cfg.code = code;
-   agx_usc_pack(&b, REGISTERS, cfg) cfg.register_quadwords = 1;
+   agx_usc_pack(&b, REGISTERS, cfg) cfg.register_count = 8;
    agx_usc_pack(&b, NO_PRESHADER, cfg);
 
    return agx_usc_fini(&b);
@@ -1572,8 +1641,10 @@ agx_encode_state(struct agx_context *ctx, uint8_t *out,
 
       unsigned tex_count = ctx->stage[PIPE_SHADER_VERTEX].texture_count;
       agx_pack(out, VDM_STATE_VERTEX_SHADER_WORD_0, cfg) {
-         cfg.groups_of_8_immediate_textures = DIV_ROUND_UP(tex_count, 8);
-         cfg.groups_of_4_samplers = DIV_ROUND_UP(tex_count, 4);
+         cfg.uniform_register_count = ctx->vs->info.push_count;
+         cfg.preshader_register_count = ctx->vs->info.nr_preamble_gprs;
+         cfg.texture_state_register_count = tex_count;
+         cfg.sampler_state_register_count = tex_count;
       }
       out += AGX_VDM_STATE_VERTEX_SHADER_WORD_0_LENGTH;
 
@@ -1589,7 +1660,8 @@ agx_encode_state(struct agx_context *ctx, uint8_t *out,
       out += AGX_VDM_STATE_VERTEX_OUTPUTS_LENGTH;
 
       agx_pack(out, VDM_STATE_VERTEX_UNKNOWN, cfg) {
-         cfg.more_than_4_textures = tex_count >= 4;
+         /* XXX: This is probably wrong */
+         cfg.unknown = tex_count >= 4;
       }
       out += AGX_VDM_STATE_VERTEX_UNKNOWN_LENGTH;
 
@@ -1740,11 +1812,15 @@ agx_encode_state(struct agx_context *ctx, uint8_t *out,
       unsigned frag_tex_count = ctx->stage[PIPE_SHADER_FRAGMENT].texture_count;
       agx_ppp_push(&ppp, FRAGMENT_SHADER, cfg) {
          cfg.pipeline = agx_build_pipeline(ctx, ctx->fs, PIPE_SHADER_FRAGMENT),
-         cfg.groups_of_8_immediate_textures = DIV_ROUND_UP(frag_tex_count, 8);
-         cfg.groups_of_4_samplers = DIV_ROUND_UP(frag_tex_count, 4);
-         cfg.more_than_4_textures = frag_tex_count >= 4;
+         cfg.uniform_register_count = ctx->fs->info.push_count;
+         cfg.preshader_register_count = ctx->fs->info.nr_preamble_gprs;
+         cfg.texture_state_register_count = frag_tex_count;
+         cfg.sampler_state_register_count = frag_tex_count;
          cfg.cf_binding_count = ctx->fs->info.varyings.fs.nr_bindings;
          cfg.cf_bindings = ctx->batch->varyings;
+
+         /* XXX: This is probably wrong */
+         cfg.unknown_30 = frag_tex_count >= 4;
       }
    }
 

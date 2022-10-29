@@ -161,6 +161,9 @@ struct fd_batch {
    /* Track the maximal bounds of the scissor of all the draws within a
     * batch.  Used at the tile rendering step (fd_gmem_render_tiles(),
     * mem2gmem/gmem2mem) to avoid needlessly moving data in/out of gmem.
+    *
+    * Note that unlike gallium state, maxx/maxy are inclusive (for
+    * fully covered 512x512 the scissor would be 0,0+511,511)
     */
    struct pipe_scissor_state max_scissor;
 

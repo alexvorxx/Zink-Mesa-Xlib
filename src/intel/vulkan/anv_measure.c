@@ -176,6 +176,8 @@ anv_measure_start_snapshot(struct anv_cmd_buffer *cmd_buffer,
       snapshot->tes = (uintptr_t) pipeline->shaders[MESA_SHADER_TESS_EVAL];
       snapshot->gs = (uintptr_t) pipeline->shaders[MESA_SHADER_GEOMETRY];
       snapshot->fs = (uintptr_t) pipeline->shaders[MESA_SHADER_FRAGMENT];
+      snapshot->ms = (uintptr_t) pipeline->shaders[MESA_SHADER_MESH];
+      snapshot->ts = (uintptr_t) pipeline->shaders[MESA_SHADER_TASK];
    }
 }
 
@@ -206,7 +208,7 @@ static bool
 state_changed(struct anv_cmd_buffer *cmd_buffer,
               enum intel_measure_snapshot_type type)
 {
-   uintptr_t vs=0, tcs=0, tes=0, gs=0, fs=0, cs=0;
+   uintptr_t vs=0, tcs=0, tes=0, gs=0, fs=0, cs=0, ms=0, ts=0;
 
    if (cmd_buffer->usage_flags & VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT)
       /* can't record timestamps in this mode */
@@ -225,11 +227,13 @@ state_changed(struct anv_cmd_buffer *cmd_buffer,
       tes = (uintptr_t) gfx->shaders[MESA_SHADER_TESS_EVAL];
       gs = (uintptr_t) gfx->shaders[MESA_SHADER_GEOMETRY];
       fs = (uintptr_t) gfx->shaders[MESA_SHADER_FRAGMENT];
+      ms = (uintptr_t) gfx->shaders[MESA_SHADER_MESH];
+      ts = (uintptr_t) gfx->shaders[MESA_SHADER_TASK];
    }
    /* else blorp, all programs NULL */
 
    return intel_measure_state_changed(&cmd_buffer->measure->base,
-                                      vs, tcs, tes, gs, fs, cs);
+                                      vs, tcs, tes, gs, fs, cs, ms, ts);
 }
 
 void

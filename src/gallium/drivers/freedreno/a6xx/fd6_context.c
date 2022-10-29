@@ -187,7 +187,8 @@ setup_state_map(struct fd_context *ctx)
    /* NOTE: scissor enabled bit is part of rasterizer state, but
     * fd_rasterizer_state_bind() will mark scissor dirty if needed:
     */
-   fd_context_add_map(ctx, FD_DIRTY_SCISSOR, BIT(FD6_GROUP_SCISSOR));
+   fd_context_add_map(ctx, FD_DIRTY_SCISSOR | FD_DIRTY_PROG,
+                      BIT(FD6_GROUP_SCISSOR));
 
    /* Stuff still emit in IB2
     *
@@ -195,7 +196,7 @@ setup_state_map(struct fd_context *ctx)
     * move it into FD6_GROUP_RASTERIZER?
     */
    fd_context_add_map(
-      ctx, FD_DIRTY_STENCIL_REF | FD_DIRTY_VIEWPORT | FD_DIRTY_RASTERIZER,
+      ctx, FD_DIRTY_STENCIL_REF | FD_DIRTY_VIEWPORT | FD_DIRTY_RASTERIZER | FD_DIRTY_PROG,
       BIT(FD6_GROUP_NON_GROUP));
 }
 

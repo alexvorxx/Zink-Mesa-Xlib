@@ -3,7 +3,7 @@ variables:
    DEBIAN_BASE_TAG: "2022-10-19-remove-xvmc-dev"
 
    DEBIAN_X86_BUILD_IMAGE_PATH: "debian/x86_build"
-   DEBIAN_BUILD_TAG: "2022-10-18-dx-headers"
+   DEBIAN_BUILD_TAG: "2022-10-22-mold-1_6"
 
    DEBIAN_X86_BUILD_MINGW_IMAGE_PATH: "debian/x86_build-mingw"
    DEBIAN_BUILD_MINGW_TAG: "2022-10-18-dx-headers-va"

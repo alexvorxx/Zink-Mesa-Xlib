@@ -452,18 +452,19 @@
   </struct>
 
   <struct name="Fragment shader" size="16">
-    <!-- 4 if more than 32 textures bound -->
-    <field name="Unk 1" size="4" start="0:0" type="hex" default="0x2"/>
-    <field name="Groups of 8 immediate textures" start="0:4" size="3" type="uint"/>
-    <field name="Groups of 4 samplers" start="0:9" size="3" type="uint"/>
-    <!-- When more than 48 textures bound, switches to 0x8, unk1 switches to
-    0x6, and some funny sort of bindless access(?) is used in the shader -->
-    <field name="Unk 2" size="4" start="0:12" type="hex" default="0x1"/>
-    <field name="CF binding count" size="8" start="0:16" type="uint" default="0"/>
-    <field name="Padding 1" size="8" start="0:24" type="hex" default="0x0"/>
-    <field name="Pipeline" size="32" start="1:0" type="address"/>
-    <field name="CF bindings" size="32" start="2:0" type="address"/>
-    <field name="More than 4 textures" start="3:0" size="1" type="bool"/>
+    <field name="Unknown 0" size="1" start="0" type="hex" default="0"/>
+    <field name="Uniform register count" size="3" start="1" type="uint" modifier="groups(64)"/>
+    <field name="Texture state register count" size="5" start="4" type="uint" modifier="groups(8)"/>
+    <field name="Sampler state register count" size="3" start="9" type="uint" modifier="groups(4)"/>
+    <field name="Preshader register count" size="4" start="12" type="uint" modifier="groups(16)"/>
+    <field name="CF binding count" size="7" start="16" type="uint"/>
+    <field name="Unknown 1:0" size="2" start="1:0" type="hex"/>
+    <field name="Pipeline" size="26" start="1:6" type="address" modifier="shr(6)"/>
+
+    <field name="CF bindings" size="30" start="2:2" type="address" modifier="shr(2)"/>
+    <!-- Seems to be set to small values depending on textures? and pushed
+         uniforms? Needs investigation -->
+    <field name="Unknown 3:0" start="3:0" size="4" type="hex"/>
   </struct>
 
   <!-- PPP state ends -->
@@ -475,6 +476,7 @@
     <value name="No preshader" value="0x88"/>
     <value name="Shader" value="0x0d"/>
     <value name="Uniform" value="0x1d"/>
+    <value name="Uniform high" value="0x3d"/>
     <value name="Shared" value="0x4d"/>
     <value name="Registers" value="0x8d"/>
     <value name="Sampler" value="0x9d"/>
@@ -484,7 +486,14 @@
   <struct name="USC Uniform" size="8">
     <field name="Tag" size="8" start="0:0" type="USC Control" default="Uniform"/>
     <field name="Start (halfs)" size="8" start="0:8" type="uint"/>
-    <field name="Unk" size="4" start="0:16" type="hex" default="0x0"/>
+    <!-- Exact split is unknown. -->
+    <field name="Size (halfs)" size="7" start="0:20" type="uint"/>
+    <field name="Buffer" size="36" start="0:27" type="address" modifier="shr(3)"/>
+  </struct>
+
+  <struct name="USC Uniform High" size="8">
+    <field name="Tag" size="8" start="0:0" type="USC Control" default="Uniform High"/>
+    <field name="Start (halfs)" size="8" start="0:8" type="uint"/>
     <!-- Exact split is unknown. -->
     <field name="Size (halfs)" size="7" start="0:20" type="uint"/>
     <field name="Buffer" size="36" start="0:27" type="address" modifier="shr(3)"/>
@@ -531,7 +540,7 @@
 
   <struct name="USC Registers" size="4">
     <field name="Tag" size="8" start="0" type="USC Control" default="Registers"/>
-    <field name="Register quadwords" size="5" start="8" type="uint"/> <!-- 0 for max -->
+    <field name="Register count" size="5" start="8" type="uint" modifier="groups(8)"/>
     <field name="Unk 1" size="1" start="13" type="bool" default="false"/>
     <field name="Spill size" size="8" start="16" type="hex" default="0"/> <!-- TODO: determine relation, see docs/table.py -->
     <field name="Unk 4" size="8" start="24" type="hex" default="0x1"/>
@@ -597,14 +606,11 @@
   </struct>
 
   <struct name="VDM State Vertex Shader Word 0" size="4">
-    <!-- 4 if more than 32 textures bound -->
-    <field name="Unk 1" size="4" start="0" type="hex" default="0x2"/>
-    <field name="Groups of 8 immediate textures" start="4" size="3" type="uint"/>
-    <field name="Groups of 4 samplers" start="9" size="3" type="uint"/>
-    <!-- When more than 48 textures bound, switches to 0x8, unk1 switches to
-    0x6, and some funny sort of bindless access(?) is used in the shader -->
-    <field name="Unk 2" size="4" start="12" type="hex" default="0x1"/>
-    <field name="Padding 1" size="8" start="24" type="hex" default="0x0"/>
+    <field name="Unknown 0" size="1" start="0" type="hex" default="0"/>
+    <field name="Uniform register count" size="3" start="1" type="uint" modifier="groups(64)"/>
+    <field name="Texture state register count" size="5" start="4" type="uint" modifier="groups(8)"/>
+    <field name="Sampler state register count" size="3" start="9" type="uint" modifier="groups(4)"/>
+    <field name="Preshader register count" size="4" start="12" type="uint" modifier="groups(16)"/>
   </struct>
 
   <struct name="VDM State Vertex Shader Word 1" size="4">
@@ -614,12 +620,10 @@
   <struct name="VDM State Vertex Outputs" size="4">
     <field name="Output count 1" size="8" start="0" type="uint" default="0"/>
     <field name="Output count 2" size="8" start="8" type="uint" default="0"/>
-    <field name="Padding 2" size="16" start="16" type="hex" default="0x0"/>
   </struct>
 
   <struct name="VDM State Vertex Unknown" size="4">
-    <!-- XXX Probably not? -->
-    <field name="More than 4 textures" start="0" size="1" type="bool"/>
+    <field name="Unknown" start="0" size="1" type="bool"/>
   </struct>
 
   <!--- Command to issue a direct non-indexed draw -->

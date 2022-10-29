@@ -539,10 +539,6 @@ VkResult pvr_srv_winsys_render_submit(
       to_pvr_srv_winsys_render_ctx(ctx);
    const struct pvr_srv_winsys *srv_ws = to_pvr_srv_winsys(ctx->ws);
 
-   uint32_t sync_pmr_flags[PVR_SRV_SYNC_MAX] = { 0U };
-   void *sync_pmrs[PVR_SRV_SYNC_MAX] = { NULL };
-   uint32_t sync_pmr_count;
-
    struct pvr_srv_sync *srv_signal_sync_geom;
    struct pvr_srv_sync *srv_signal_sync_frag;
 
@@ -617,28 +613,6 @@ VkResult pvr_srv_winsys_render_submit(
       }
    }
 
-   if (submit_info->bo_count <= ARRAY_SIZE(sync_pmrs)) {
-      sync_pmr_count = submit_info->bo_count;
-   } else {
-      mesa_logw("Too many bos to synchronize access to (ignoring %zu bos)\n",
-                submit_info->bo_count - ARRAY_SIZE(sync_pmrs));
-      sync_pmr_count = ARRAY_SIZE(sync_pmrs);
-   }
-
-   STATIC_ASSERT(ARRAY_SIZE(sync_pmrs) == ARRAY_SIZE(sync_pmr_flags));
-   assert(sync_pmr_count <= ARRAY_SIZE(sync_pmrs));
-   for (uint32_t i = 0; i < sync_pmr_count; i++) {
-      const struct pvr_winsys_job_bo *job_bo = &submit_info->bos[i];
-      const struct pvr_srv_winsys_bo *srv_bo = to_pvr_srv_winsys_bo(job_bo->bo);
-
-      sync_pmrs[i] = srv_bo->pmr;
-
-      if (job_bo->flags & PVR_WINSYS_JOB_BO_FLAG_WRITE)
-         sync_pmr_flags[i] = PVR_BUFFER_FLAG_WRITE;
-      else
-         sync_pmr_flags[i] = PVR_BUFFER_FLAG_READ;
-   }
-
    /* The 1.14 PowerVR Services KM driver doesn't add a sync dependency to the
     * fragment phase on the geometry phase for us. This makes it
     * necessary to use a sync prim for this purpose. This requires that we pass
@@ -696,9 +670,9 @@ VkResult pvr_srv_winsys_render_submit(
                                         NULL,
                                         /* Currently no support for PRs. */
                                         NULL,
-                                        sync_pmr_count,
-                                        sync_pmr_count ? sync_pmr_flags : NULL,
-                                        sync_pmr_count ? sync_pmrs : NULL,
+                                        0,
+                                        NULL,
+                                        NULL,
                                         0,
                                         0,
                                         0,

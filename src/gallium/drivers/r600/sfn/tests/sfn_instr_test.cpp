@@ -409,7 +409,7 @@ TEST_F(InstrTest, test_tex_basic)
       EXPECT_EQ(tex.dest_swizzle(i), i);
    }
 
-   EXPECT_EQ(tex.sampler_id(), 1);
+   EXPECT_EQ(tex.resource_base(), 1);
    EXPECT_EQ(tex.resource_id(), 17);
 
    EXPECT_TRUE(tex.end_group());
@@ -443,7 +443,7 @@ TEST_F(InstrTest, test_tex_basic)
 
    EXPECT_EQ(tex.inst_mode(), 0);
 
-   EXPECT_FALSE(tex.sampler_offset());
+   EXPECT_FALSE(tex.resource_offset());
 
    tex.set_dest_swizzle({4, 7, 0, 1});
    EXPECT_EQ(tex.dest_swizzle(0), 4);
@@ -487,7 +487,7 @@ TEST_F(InstrTest, test_tex_gather4)
       EXPECT_EQ(tex.dest_swizzle(i), i);
    }
 
-   EXPECT_EQ(tex.sampler_id(), 2);
+   EXPECT_EQ(tex.resource_base(), 2);
    EXPECT_EQ(tex.resource_id(), 19);
 
    for (int i = 0; i < 3; ++i)
@@ -625,7 +625,7 @@ TEST_F(InstrTest, test_fetch_basic)
    EXPECT_EQ(fetch.src(), Register(201, 2, pin_none));
    EXPECT_EQ(fetch.src_offset(), 0);
 
-   EXPECT_EQ(fetch.resource_id(), 1);
+   EXPECT_EQ(fetch.resource_base(), 1);
    EXPECT_FALSE(fetch.resource_offset());
 
    EXPECT_EQ(fetch.fetch_type(), vertex_data);
@@ -758,7 +758,7 @@ TEST_F(InstrTest, test_fetch_basic2)
    EXPECT_EQ(fetch.src(), Register(202, 3, pin_none));
    EXPECT_EQ(fetch.src_offset(), 1);
 
-   EXPECT_EQ(fetch.resource_id(), 3);
+   EXPECT_EQ(fetch.resource_base(), 3);
    EXPECT_EQ(*fetch.resource_offset(), Register(300, 1, pin_none));
 
    EXPECT_EQ(fetch.fetch_type(), no_index_offset);

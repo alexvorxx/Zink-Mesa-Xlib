@@ -265,6 +265,8 @@ zink_create_gfx_pipeline(struct zink_screen *screen,
    if (screen->info.have_EXT_color_write_enable)
       dynamicStateEnables[state_count++] = VK_DYNAMIC_STATE_COLOR_WRITE_ENABLE_EXT;
 
+   assert(state->rast_prim != PIPE_PRIM_MAX);
+
    VkPipelineRasterizationLineStateCreateInfoEXT rast_line_state;
    if (screen->info.have_EXT_line_rasterization) {
       rast_line_state.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_LINE_STATE_CREATE_INFO_EXT;
@@ -272,34 +274,7 @@ zink_create_gfx_pipeline(struct zink_screen *screen,
       rast_line_state.stippledLineEnable = VK_FALSE;
       rast_line_state.lineRasterizationMode = VK_LINE_RASTERIZATION_MODE_DEFAULT_EXT;
 
-      bool check_warn = false;
-      switch (primitive_topology) {
-      case VK_PRIMITIVE_TOPOLOGY_LINE_LIST:
-      case VK_PRIMITIVE_TOPOLOGY_LINE_STRIP:
-      case VK_PRIMITIVE_TOPOLOGY_LINE_LIST_WITH_ADJACENCY:
-      case VK_PRIMITIVE_TOPOLOGY_LINE_STRIP_WITH_ADJACENCY:
-         check_warn = true;
-         break;
-      default: break;
-      }
-      if (prog->nir[MESA_SHADER_TESS_EVAL]) {
-         check_warn |= !prog->nir[MESA_SHADER_TESS_EVAL]->info.tess.point_mode &&
-                       prog->nir[MESA_SHADER_TESS_EVAL]->info.tess._primitive_mode == TESS_PRIMITIVE_ISOLINES;
-      }
-      if (prog->nir[MESA_SHADER_GEOMETRY]) {
-         switch (prog->nir[MESA_SHADER_GEOMETRY]->info.gs.output_primitive) {
-         case SHADER_PRIM_LINES:
-         case SHADER_PRIM_LINE_LOOP:
-         case SHADER_PRIM_LINE_STRIP:
-         case SHADER_PRIM_LINES_ADJACENCY:
-         case SHADER_PRIM_LINE_STRIP_ADJACENCY:
-            check_warn = true;
-            break;
-         default: break;
-         }
-      }
-
-      if (check_warn) {
+      if (state->rast_prim == PIPE_PRIM_LINES) {
          const char *features[4][2] = {
             [VK_LINE_RASTERIZATION_MODE_DEFAULT_EXT] = {"",""},
             [VK_LINE_RASTERIZATION_MODE_RECTANGULAR_EXT] = {"rectangularLines", "stippledRectangularLines"},

@@ -276,7 +276,6 @@ VkResult pvr_srv_winsys_transfer_submit(
                                             (uint8_t **)cmds_ptr_arr,
                                             cmd_flags,
                                             job_num,
-                                            /* TODO: Add sync PMR support. */
                                             0U,
                                             NULL,
                                             NULL,

@@ -86,24 +86,6 @@ PUSH_DATAh(struct nouveau_pushbuf *push, uint64_t data)
    *push->cur++ = (uint32_t)(data >> 32);
 }
 
-static inline void
-BEGIN_NV04(struct nouveau_pushbuf *push, int subc, int mthd, unsigned size)
-{
-#ifndef NV50_PUSH_EXPLICIT_SPACE_CHECKING
-   PUSH_SPACE(push, size + 1);
-#endif
-   PUSH_DATA (push, NV50_FIFO_PKHDR(subc, mthd, size));
-}
-
-static inline void
-BEGIN_NI04(struct nouveau_pushbuf *push, int subc, int mthd, unsigned size)
-{
-#ifndef NV50_PUSH_EXPLICIT_SPACE_CHECKING
-   PUSH_SPACE(push, size + 1);
-#endif
-   PUSH_DATA (push, NV50_FIFO_PKHDR_NI(subc, mthd, size));
-}
-
 /* long, non-incremental, nv50-only */
 static inline void
 BEGIN_NL50(struct nouveau_pushbuf *push, int subc, int mthd, uint32_t size)

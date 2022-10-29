@@ -71,7 +71,7 @@ the byte granularity of most tiling formats.
 The following table represents the bit-layouts that yield the CCS tiling format
 on different hardware generations.  Bits 0-11 correspond to the regular swizzle
 of bytes within a 4KB page whereas the negative bits represent the address of
-the particular 1 or 2-bit portion of a byte. (Note: The haswell data was
+the particular 1 or 2-bit portion of a byte. (Note: The Haswell data was
 gathered on a dual-channel system so bit-6 swizzling was enabled.  It's unclear
 how this affects the CCS layout.)
 

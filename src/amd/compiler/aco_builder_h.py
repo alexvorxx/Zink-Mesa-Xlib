@@ -97,14 +97,18 @@ enum sendmsg {
    sendmsg_gs_alloc_req = 9, /* gfx9+ */
    sendmsg_get_doorbell = 10, /* gfx9 to gfx10.3 */
    sendmsg_get_ddid = 11, /* gfx10 to gfx10.3 */
-   sendmsg_rtn_get_doorbell = 128, /* gfx11+ */
-   sendmsg_rtn_get_ddid = 129, /* gfx11+ */
-   sendmsg_rtn_get_tma = 130, /* gfx11+ */
-   sendmsg_rtn_get_realtime = 131, /* gfx11+ */
-   sendmsg_rtn_save_wave = 132, /* gfx11+ */
-   sendmsg_rtn_get_tba = 133, /* gfx11+ */
-   sendmsg_id_mask_gfx6 = 0xf,
-   sendmsg_id_mask_gfx11 = 0xff,
+   sendmsg_id_mask = 0xf,
+};
+
+/* gfx11+ */
+enum sendmsg_rtn {
+   sendmsg_rtn_get_doorbell = 0,
+   sendmsg_rtn_get_ddid = 1,
+   sendmsg_rtn_get_tma = 2,
+   sendmsg_rtn_get_realtime = 3,
+   sendmsg_rtn_save_wave = 4,
+   sendmsg_rtn_get_tba = 5,
+   sendmsg_rtn_mask = 0xff,
 };
 
 inline sendmsg

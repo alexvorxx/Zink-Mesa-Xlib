@@ -63,11 +63,43 @@ Idx const_or_undef{UINT32_MAX, 2};
 Idx overwritten_untrackable{UINT32_MAX, 3};
 
 struct pr_opt_ctx {
+   using Idx_array = std::array<Idx, max_reg_cnt>;
+
    Program* program;
    Block* current_block;
    uint32_t current_instr_idx;
    std::vector<uint16_t> uses;
-   std::vector<std::array<Idx, max_reg_cnt>> instr_idx_by_regs;
+   std::unique_ptr<Idx_array[]> instr_idx_by_regs;
+
+   pr_opt_ctx(Program* p)
+       : program(p), current_block(nullptr), current_instr_idx(0), uses(dead_code_analysis(p)),
+         instr_idx_by_regs(std::unique_ptr<Idx_array[]>{new Idx_array[p->blocks.size()]})
+   {}
+
+   ALWAYS_INLINE void reset_block_regs(const std::vector<uint32_t>& preds,
+                                       const unsigned block_index, const unsigned min_reg,
+                                       const unsigned num_regs)
+   {
+      const unsigned num_preds = preds.size();
+      const unsigned first_pred = preds[0];
+
+      /* Copy information from the first predecessor. */
+      memcpy(&instr_idx_by_regs[block_index][min_reg], &instr_idx_by_regs[first_pred][min_reg],
+             num_regs * sizeof(Idx));
+
+      /* Mark overwritten if it doesn't match with other predecessors. */
+      const unsigned until_reg = min_reg + num_regs;
+      for (unsigned pred = 1; pred < num_preds; ++pred) {
+         for (unsigned i = min_reg; i < until_reg; ++i) {
+            Idx& idx = instr_idx_by_regs[block_index][i];
+            if (idx == overwritten_untrackable)
+               continue;
+
+            if (idx != instr_idx_by_regs[pred][i])
+               idx = overwritten_untrackable;
+         }
+      }
+   }
 
    void reset_block(Block* block)
    {
@@ -78,40 +110,14 @@ struct pr_opt_ctx {
          std::fill(instr_idx_by_regs[block->index].begin(), instr_idx_by_regs[block->index].end(),
                    not_written_yet);
       } else {
-         const uint32_t first_linear_pred = block->linear_preds[0];
-         const std::vector<uint32_t>& linear_preds = block->linear_preds;
-
-         for (unsigned i = 0; i < max_sgpr_cnt; i++) {
-            const bool all_same = std::all_of(
-               std::next(linear_preds.begin()), linear_preds.end(),
-               [=](unsigned pred)
-               { return instr_idx_by_regs[pred][i] == instr_idx_by_regs[first_linear_pred][i]; });
-
-            if (all_same)
-               instr_idx_by_regs[block->index][i] = instr_idx_by_regs[first_linear_pred][i];
-            else
-               instr_idx_by_regs[block->index][i] = overwritten_untrackable;
-         }
+         reset_block_regs(block->linear_preds, block->index, 0, max_sgpr_cnt);
+         reset_block_regs(block->linear_preds, block->index, 251, 3);
 
          if (!block->logical_preds.empty()) {
             /* We assume that VGPRs are only read by blocks which have a logical predecessor,
              * ie. any block that reads any VGPR has at least 1 logical predecessor.
              */
-            const unsigned first_logical_pred = block->logical_preds[0];
-            const std::vector<uint32_t>& logical_preds = block->logical_preds;
-
-            for (unsigned i = min_vgpr; i < (min_vgpr + max_vgpr_cnt); i++) {
-               const bool all_same = std::all_of(
-                  std::next(logical_preds.begin()), logical_preds.end(),
-                  [=](unsigned pred) {
-                     return instr_idx_by_regs[pred][i] == instr_idx_by_regs[first_logical_pred][i];
-                  });
-
-               if (all_same)
-                  instr_idx_by_regs[block->index][i] = instr_idx_by_regs[first_logical_pred][i];
-               else
-                  instr_idx_by_regs[block->index][i] = overwritten_untrackable;
-            }
+            reset_block_regs(block->logical_preds, block->index, min_vgpr, max_vgpr_cnt);
          } else {
             /* If a block has no logical predecessors, it is not part of the
              * logical CFG and therefore it also won't have any logical successors.
@@ -557,10 +563,7 @@ process_instruction(pr_opt_ctx& ctx, aco_ptr<Instruction>& instr)
 void
 optimize_postRA(Program* program)
 {
-   pr_opt_ctx ctx;
-   ctx.program = program;
-   ctx.uses = dead_code_analysis(program);
-   ctx.instr_idx_by_regs.resize(program->blocks.size());
+   pr_opt_ctx ctx(program);
 
    /* Forward pass
     * Goes through each instruction exactly once, and can transform
@@ -578,10 +581,17 @@ optimize_postRA(Program* program)
     * no longer have any uses.
     */
    for (auto& block : program->blocks) {
-      auto new_end = std::remove_if(block.instructions.begin(), block.instructions.end(),
-                                    [&ctx](const aco_ptr<Instruction>& instr)
-                                    { return !instr || is_dead(ctx.uses, instr.get()); });
-      block.instructions.resize(new_end - block.instructions.begin());
+      std::vector<aco_ptr<Instruction>> instructions;
+      instructions.reserve(block.instructions.size());
+
+      for (aco_ptr<Instruction>& instr : block.instructions) {
+         if (!instr || is_dead(ctx.uses, instr.get()))
+            continue;
+
+         instructions.emplace_back(std::move(instr));
+      }
+
+      block.instructions = std::move(instructions);
    }
 }
 

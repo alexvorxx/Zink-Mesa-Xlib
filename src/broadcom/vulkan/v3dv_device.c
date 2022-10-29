@@ -183,6 +183,7 @@ get_device_extensions(const struct v3dv_physical_device *device,
       .EXT_physical_device_drm              = true,
       .EXT_pipeline_creation_cache_control  = true,
       .EXT_pipeline_creation_feedback       = true,
+      .EXT_pipeline_robustness              = true,
       .EXT_primitive_topology_list_restart  = true,
       .EXT_private_data                     = true,
       .EXT_provoking_vertex                 = true,
@@ -920,29 +921,31 @@ create_physical_device(struct v3dv_instance *instance,
     */
    device->drm_syncobj_type.features &= ~VK_SYNC_FEATURE_TIMELINE;
 
-#ifndef ANDROID
-   /* Sync file export is incompatible with the current model of execution
-    * where some jobs may run on the CPU.  There are CTS tests which do the
-    * following:
+#if using_v3d_simulator
+   /* There are CTS tests which do the following:
     *
     *  1. Create a command buffer with a vkCmdWaitEvents()
     *  2. Submit the command buffer
     *  3. vkGetSemaphoreFdKHR() to try to get a sync_file
     *  4. vkSetEvent()
     *
-    * This deadlocks because we have to wait for the syncobj to get a real
-    * fence in vkGetSemaphoreFdKHR() which only happens after all the work
-    * from the command buffer is complete which only happens after
-    * vkSetEvent().  No amount of CPU threading in userspace will ever fix
-    * this.  Sadly, this is pretty explicitly allowed by the Vulkan spec:
+    * This deadlocks in the simulator because we have to wait for the syncobj
+    * to get a real fence in vkGetSemaphoreFdKHR(). This will never happen
+    * though because the simulator, unlike real hardware, executes ioctls
+    * synchronously in the same thread, which means that it will try to
+    * execute the wait for event immediately and never get to emit the
+    * signaling job that comes after the compute job that implements the wait
+    * in the command buffer, which would be responsible for creating the fence
+    * for the signaling semaphore.
     *
-    *    VUID-vkCmdWaitEvents-pEvents-01163
+    * This behavior was seemingly allowed in previous Vulkan versions, however,
+    * this was fixed in Vulkan the 1.3.228 spec. From commit 355367640f2e:
     *
-    *    "If pEvents includes one or more events that will be signaled by
-    *    vkSetEvent after commandBuffer has been submitted to a queue, then
-    *    vkCmdWaitEvents must not be called inside a render pass instance"
+    *    "Clarify that vkCmdWaitEvents must not execute before a vkSetEvent it
+    *     waits on (internal issue 2971)"
     *
-    * Disable sync file support for now.
+    * Either way, we disable sync file support in the simulator for now, until
+    * the CTS is fixed.
     */
    device->drm_syncobj_type.import_sync_file = NULL;
    device->drm_syncobj_type.export_sync_file = NULL;
@@ -998,7 +1001,7 @@ enumerate_devices(struct vk_instance *vk_instance)
    struct v3dv_instance *instance =
       container_of(vk_instance, struct v3dv_instance, vk);
 
-   /* TODO: Check for more devices? */
+   /* FIXME: Check for more devices? */
    drmDevicePtr devices[8];
    int max_devices;
 
@@ -1373,6 +1376,13 @@ v3dv_GetPhysicalDeviceFeatures2(VkPhysicalDevice physicalDevice,
          features->primitiveTopologyListRestart = true;
          /* FIXME: we don't support tessellation shaders yet */
          features->primitiveTopologyPatchListRestart = false;
+         break;
+      }
+
+      case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PIPELINE_ROBUSTNESS_FEATURES_EXT: {
+         VkPhysicalDevicePipelineRobustnessFeaturesEXT *features =
+            (void *) ext;
+         features->pipelineRobustness = true;
          break;
       }
 
@@ -1778,6 +1788,19 @@ v3dv_GetPhysicalDeviceProperties2(VkPhysicalDevice physicalDevice,
                 sizeof(props->shaderModuleIdentifierAlgorithmUUID));
          break;
       }
+      case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PIPELINE_ROBUSTNESS_PROPERTIES_EXT: {
+         VkPhysicalDevicePipelineRobustnessPropertiesEXT *props =
+            (VkPhysicalDevicePipelineRobustnessPropertiesEXT *)ext;
+         props->defaultRobustnessStorageBuffers =
+            VK_PIPELINE_ROBUSTNESS_BUFFER_BEHAVIOR_DEVICE_DEFAULT_EXT;
+         props->defaultRobustnessUniformBuffers =
+            VK_PIPELINE_ROBUSTNESS_BUFFER_BEHAVIOR_DEVICE_DEFAULT_EXT;
+         props->defaultRobustnessVertexInputs =
+            VK_PIPELINE_ROBUSTNESS_BUFFER_BEHAVIOR_DEVICE_DEFAULT_EXT;
+         props->defaultRobustnessImages =
+            VK_PIPELINE_ROBUSTNESS_BUFFER_BEHAVIOR_DEVICE_DEFAULT_EXT;
+         break;
+      }
       default:
          v3dv_debug_ignored_stype(ext->sType);
          break;
@@ -2059,30 +2082,10 @@ v3dv_CreateDevice(VkPhysicalDevice physicalDevice,
 
    device->devinfo = physical_device->devinfo;
 
-   /* Vulkan 1.1 and VK_KHR_get_physical_device_properties2 added
-    * VkPhysicalDeviceFeatures2 which can be used in the pNext chain of
-    * vkDeviceCreateInfo, in which case it should be used instead of
-    * pEnabledFeatures.
-    */
-   const VkPhysicalDeviceFeatures2 *features2 =
-      vk_find_struct_const(pCreateInfo->pNext, PHYSICAL_DEVICE_FEATURES_2);
-   if (features2) {
-      memcpy(&device->features, &features2->features,
-             sizeof(device->features));
-
-      const VkPhysicalDeviceImageRobustnessFeatures *irf =
-         vk_find_struct_const(pCreateInfo->pNext,
-         PHYSICAL_DEVICE_IMAGE_ROBUSTNESS_FEATURES);
-      device->ext_features.robustImageAccess = irf && irf->robustImageAccess;
-   } else  if (pCreateInfo->pEnabledFeatures) {
-      memcpy(&device->features, pCreateInfo->pEnabledFeatures,
-             sizeof(device->features));
-   }
-
-   if (device->features.robustBufferAccess)
+   if (device->vk.enabled_features.robustBufferAccess)
       perf_debug("Device created with Robust Buffer Access enabled.\n");
 
-   if (device->ext_features.robustImageAccess)
+   if (device->vk.enabled_features.robustImageAccess)
       perf_debug("Device created with Robust Image Access enabled.\n");
 
 
@@ -2099,6 +2102,18 @@ v3dv_CreateDevice(VkPhysicalDevice physicalDevice,
    device->device_address_mem_ctx = ralloc_context(NULL);
    util_dynarray_init(&device->device_address_bo_list,
                       device->device_address_mem_ctx);
+
+   mtx_init(&device->events.lock, mtx_plain);
+   if (!device->events.bo) {
+      result = v3dv_event_allocate_resources(device);
+      if (result != VK_SUCCESS)
+         goto fail;
+   }
+
+   if (list_is_empty(&device->events.free_list)) {
+      result = vk_error(device, VK_ERROR_OUT_OF_DEVICE_MEMORY);
+      goto fail;
+   }
 
    *pDevice = v3dv_device_to_handle(device);
 
@@ -2121,6 +2136,10 @@ v3dv_DestroyDevice(VkDevice _device,
 
    device->vk.dispatch_table.DeviceWaitIdle(_device);
    queue_finish(&device->queue);
+
+   v3dv_event_free_resources(device);
+   mtx_destroy(&device->events.lock);
+
    destroy_device_meta(device);
    v3dv_pipeline_cache_finish(&device->default_pipeline_cache);
 
@@ -2891,63 +2910,6 @@ v3dv_GetMemoryFdKHR(VkDevice _device,
 
    *pFd = fd;
 
-   return VK_SUCCESS;
-}
-
-VKAPI_ATTR VkResult VKAPI_CALL
-v3dv_CreateEvent(VkDevice _device,
-                 const VkEventCreateInfo *pCreateInfo,
-                 const VkAllocationCallbacks *pAllocator,
-                 VkEvent *pEvent)
-{
-   V3DV_FROM_HANDLE(v3dv_device, device, _device);
-   struct v3dv_event *event =
-      vk_object_zalloc(&device->vk, pAllocator, sizeof(*event),
-                       VK_OBJECT_TYPE_EVENT);
-   if (!event)
-      return vk_error(device, VK_ERROR_OUT_OF_HOST_MEMORY);
-
-   /* Events are created in the unsignaled state */
-   event->state = false;
-   *pEvent = v3dv_event_to_handle(event);
-
-   return VK_SUCCESS;
-}
-
-VKAPI_ATTR void VKAPI_CALL
-v3dv_DestroyEvent(VkDevice _device,
-                  VkEvent _event,
-                  const VkAllocationCallbacks *pAllocator)
-{
-   V3DV_FROM_HANDLE(v3dv_device, device, _device);
-   V3DV_FROM_HANDLE(v3dv_event, event, _event);
-
-   if (!event)
-      return;
-
-   vk_object_free(&device->vk, pAllocator, event);
-}
-
-VKAPI_ATTR VkResult VKAPI_CALL
-v3dv_GetEventStatus(VkDevice _device, VkEvent _event)
-{
-   V3DV_FROM_HANDLE(v3dv_event, event, _event);
-   return p_atomic_read(&event->state) ? VK_EVENT_SET : VK_EVENT_RESET;
-}
-
-VKAPI_ATTR VkResult VKAPI_CALL
-v3dv_SetEvent(VkDevice _device, VkEvent _event)
-{
-   V3DV_FROM_HANDLE(v3dv_event, event, _event);
-   p_atomic_set(&event->state, 1);
-   return VK_SUCCESS;
-}
-
-VKAPI_ATTR VkResult VKAPI_CALL
-v3dv_ResetEvent(VkDevice _device, VkEvent _event)
-{
-   V3DV_FROM_HANDLE(v3dv_event, event, _event);
-   p_atomic_set(&event->state, 0);
    return VK_SUCCESS;
 }
 

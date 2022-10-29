@@ -78,8 +78,7 @@ public:
    const auto& src() const {assert(m_src); return *m_src;}
    uint32_t src_offset() const {return m_src_offset;}
 
-   uint32_t resource_id() const {return m_resource_id;}
-   auto resource_offset() const {return m_resource_offset;}
+   uint32_t resource_id() const __attribute__((deprecated)) {return resource_base();}
 
    EVFetchType fetch_type() const {return m_fetch_type;}
    EVTXDataFormat data_format() const {return m_data_format;}
@@ -139,9 +138,6 @@ private:
    EVTXDataFormat m_data_format;
    EVFetchNumFormat m_num_format;
    EVFetchEndianSwap m_endian_swap;
-
-   uint32_t m_resource_id;
-   PRegister m_resource_offset;
 
    std::bitset<EFlags::unknown> m_tex_flags;
    std::bitset<EPrintSkip::count> m_skip_print;

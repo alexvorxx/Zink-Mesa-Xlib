@@ -89,6 +89,32 @@ __gen_unpack_sint(const uint8_t *restrict cl, uint32_t start, uint32_t end)
    return util_sign_extend(val, size);
 }
 
+static inline uint64_t
+__gen_to_groups(uint32_t value, uint32_t group_size, uint32_t length)
+{
+    /* Zero is not representable, clamp to minimum */
+    if (value == 0)
+        return 1;
+
+    /* Round up to the nearest number of groups */
+    uint32_t groups = DIV_ROUND_UP(value, group_size);
+
+    /* The 0 encoding means "all" */
+    if (groups == (1ull << length))
+        return 0;
+
+    /* Otherwise it's encoded as the identity */
+    assert(groups < (1u << length) && "out of bounds");
+    assert(groups >= 1 && "exhaustive");
+    return groups;
+}
+
+static inline uint64_t
+__gen_from_groups(uint32_t value, uint32_t group_size, uint32_t length)
+{
+    return group_size * (value ? value: (1 << length));
+}
+
 #define agx_pack(dst, T, name)                              \\
    for (struct AGX_ ## T name = { AGX_ ## T ## _header }, \\
         *_loop_terminate = (void *) (dst);                  \\
@@ -147,7 +173,7 @@ def prefixed_upper_name(prefix, name):
 def enum_name(name):
     return "{}_{}".format(global_prefix, safe_name(name)).lower()
 
-MODIFIERS = ["shr", "minus", "align", "log2"]
+MODIFIERS = ["shr", "minus", "align", "log2", "groups"]
 
 def parse_modifier(modifier):
     if modifier is None:
@@ -364,6 +390,9 @@ class Group(object):
                         value = "ALIGN_POT({}, {})".format(value, field.modifier[1])
                     elif field.modifier[0] == "log2":
                         value = "util_logbase2({})".format(value)
+                    elif field.modifier[0] == "groups":
+                        value = "__gen_to_groups({}, {}, {})".format(value,
+                                field.modifier[1], end - start + 1)
 
                 if field.type in ["uint", "hex", "address"]:
                     s = "util_bitpack_uint(%s, %d, %d)" % \
@@ -461,6 +490,10 @@ class Group(object):
                     suffix = " << {}".format(field.modifier[1])
                 if field.modifier[0] == "log2":
                     prefix = "1 << "
+                elif field.modifier[0] == "groups":
+                    prefix = "__gen_from_groups("
+                    suffix = ", {}, {})".format(field.modifier[1],
+                                                fieldref.end - fieldref.start + 1)
 
             if field.type in self.parser.enums:
                 prefix = f"(enum {enum_name(field.type)}) {prefix}"

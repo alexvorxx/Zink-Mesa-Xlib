@@ -194,6 +194,7 @@ crocus_get_param(struct pipe_screen *pscreen, enum pipe_cap param)
    case PIPE_CAP_DEMOTE_TO_HELPER_INVOCATION:
    case PIPE_CAP_GL_CLAMP:
    case PIPE_CAP_LEGACY_MATH_RULES:
+   case PIPE_CAP_NATIVE_FENCE_FD:
       return true;
    case PIPE_CAP_INT64:
    case PIPE_CAP_INT64_DIVMOD:

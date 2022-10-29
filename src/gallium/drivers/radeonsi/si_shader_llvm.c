@@ -868,6 +868,17 @@ static LLVMValueRef si_llvm_load_intrinsic(struct ac_shader_abi *abi, nir_intrin
       else
          return ctx->ac.i1true;
 
+   case nir_intrinsic_load_pipeline_stat_query_enabled_amd: {
+      LLVMValueRef enabled = GET_FIELD(ctx, GS_STATE_PIPELINE_STATS_EMU);
+      return LLVMBuildTrunc(ctx->ac.builder, enabled, ctx->ac.i1, "");
+   }
+
+   case nir_intrinsic_load_prim_gen_query_enabled_amd:
+   case nir_intrinsic_load_prim_xfb_query_enabled_amd: {
+      LLVMValueRef enabled = GET_FIELD(ctx, GS_STATE_STREAMOUT_QUERY_ENABLED);
+      return LLVMBuildTrunc(ctx->ac.builder, enabled, ctx->ac.i1, "");
+   }
+
    default:
       return NULL;
    }
@@ -911,6 +922,7 @@ bool si_llvm_translate_nir(struct si_shader_context *ctx, struct si_shader *shad
    ctx->abi.intrinsic_load = si_llvm_load_intrinsic;
    ctx->abi.load_user_clip_plane = si_llvm_load_user_clip_plane;
    ctx->abi.load_streamout_buffer = si_llvm_load_streamout_buffer;
+   ctx->abi.atomic_add_prim_count = gfx10_ngg_atomic_add_prim_count;
 
    si_llvm_init_resource_callbacks(ctx);
    si_llvm_create_main_func(ctx, ngg_cull_shader);

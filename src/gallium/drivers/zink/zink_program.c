@@ -683,7 +683,7 @@ optimized_compile_job(void *data, void *gdata, int thread_index)
    struct zink_screen *screen = gdata;
    VkPipeline pipeline;
    if (pc_entry->gkey)
-      pipeline = zink_create_gfx_pipeline_combined(screen, pc_entry->prog, pc_entry->ikey->pipeline, pc_entry->gkey->pipeline, pc_entry->okey->pipeline, false);
+      pipeline = zink_create_gfx_pipeline_combined(screen, pc_entry->prog, pc_entry->ikey->pipeline, pc_entry->gkey->pipeline, pc_entry->okey->pipeline, true);
    else
       pipeline = zink_create_gfx_pipeline(screen, pc_entry->prog, &pc_entry->state, pc_entry->state.element_state->binding_map, zink_primitive_topology(pc_entry->state.gfx_prim_mode), true);
    if (pipeline) {
@@ -784,32 +784,22 @@ zink_update_compute_program(struct zink_context *ctx)
 }
 
 VkPipelineLayout
-zink_pipeline_layout_create(struct zink_screen *screen, struct zink_program *pg, uint32_t *compat)
+zink_pipeline_layout_create(struct zink_screen *screen, VkDescriptorSetLayout *dsl, unsigned num_dsl, bool is_compute)
 {
    VkPipelineLayoutCreateInfo plci = {0};
    plci.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
 
-   plci.pSetLayouts = pg->dsl;
-   plci.setLayoutCount = pg->num_dsl;
+   plci.pSetLayouts = dsl;
+   plci.setLayoutCount = num_dsl;
 
-   VkPushConstantRange pcr[2] = {0};
-   if (pg->is_compute) {
-      if (((struct zink_compute_program*)pg)->shader->nir->info.stage == MESA_SHADER_KERNEL) {
-         pcr[0].stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
-         pcr[0].offset = 0;
-         pcr[0].size = sizeof(struct zink_cs_push_constant);
-         plci.pushConstantRangeCount = 1;
-      }
-   } else {
-      pcr[0].stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
-      pcr[0].offset = offsetof(struct zink_gfx_push_constant, draw_mode_is_indexed);
-      pcr[0].size = 2 * sizeof(unsigned);
-      pcr[1].stageFlags = VK_SHADER_STAGE_TESSELLATION_CONTROL_BIT;
-      pcr[1].offset = offsetof(struct zink_gfx_push_constant, default_inner_level);
-      pcr[1].size = sizeof(float) * 6;
-      plci.pushConstantRangeCount = 2;
+   VkPushConstantRange pcr;
+   if (!is_compute) {
+      pcr.stageFlags = VK_SHADER_STAGE_ALL_GRAPHICS;
+      pcr.offset = 0;
+      pcr.size = sizeof(struct zink_gfx_push_constant);
+      plci.pushConstantRangeCount = 1;
+      plci.pPushConstantRanges = &pcr;
    }
-   plci.pPushConstantRanges = &pcr[0];
 
    VkPipelineLayout layout;
    VkResult result = VKSCR(CreatePipelineLayout)(screen->dev, &plci, NULL, &layout);
@@ -817,8 +807,6 @@ zink_pipeline_layout_create(struct zink_screen *screen, struct zink_program *pg,
       mesa_loge("vkCreatePipelineLayout failed (%s)", vk_Result_to_str(result));
       return VK_NULL_HANDLE;
    }
-
-   *compat = _mesa_hash_data(pg->dsl, pg->num_dsl * sizeof(pg->dsl[0]));
 
    return layout;
 }
@@ -838,7 +826,9 @@ create_program(struct zink_context *ctx, bool is_compute)
 }
 
 static void
-assign_io(struct zink_gfx_program *prog, struct zink_shader *stages[ZINK_GFX_SHADER_COUNT])
+assign_io(struct zink_screen *screen,
+          struct zink_gfx_program *prog,
+          struct zink_shader *stages[ZINK_GFX_SHADER_COUNT])
 {
    struct zink_shader *shaders[MESA_SHADER_STAGES];
 
@@ -856,7 +846,7 @@ assign_io(struct zink_gfx_program *prog, struct zink_shader *stages[ZINK_GFX_SHA
             prog->nir[producer->info.stage] = nir_shader_clone(prog, producer);
          if (!prog->nir[j])
             prog->nir[j] = nir_shader_clone(prog, consumer->nir);
-         zink_compiler_assign_io(prog->nir[producer->info.stage], prog->nir[j]);
+         zink_compiler_assign_io(screen, prog->nir[producer->info.stage], prog->nir[j]);
          i = j;
          break;
       }
@@ -893,7 +883,7 @@ zink_create_gfx_program(struct zink_context *ctx,
    }
    prog->stages_remaining = prog->stages_present;
 
-   assign_io(prog, prog->shaders);
+   assign_io(screen, prog, prog->shaders);
 
    if (stages[MESA_SHADER_GEOMETRY])
       prog->last_vertex_stage = stages[MESA_SHADER_GEOMETRY];
@@ -1103,6 +1093,8 @@ static unsigned
 get_num_bindings(struct zink_shader *zs, enum zink_descriptor_type type)
 {
    switch (type) {
+   case ZINK_DESCRIPTOR_TYPE_UNIFORMS:
+      return !!zs->has_uniforms;
    case ZINK_DESCRIPTOR_TYPE_UBO:
    case ZINK_DESCRIPTOR_TYPE_SSBO:
       return zs->num_bindings[type];
@@ -1116,10 +1108,10 @@ get_num_bindings(struct zink_shader *zs, enum zink_descriptor_type type)
 }
 
 unsigned
-zink_program_num_bindings_typed(const struct zink_program *pg, enum zink_descriptor_type type, bool is_compute)
+zink_program_num_bindings_typed(const struct zink_program *pg, enum zink_descriptor_type type)
 {
    unsigned num_bindings = 0;
-   if (is_compute) {
+   if (pg->is_compute) {
       struct zink_compute_program *comp = (void*)pg;
       return get_num_bindings(comp->shader, type);
    }
@@ -1132,11 +1124,11 @@ zink_program_num_bindings_typed(const struct zink_program *pg, enum zink_descrip
 }
 
 unsigned
-zink_program_num_bindings(const struct zink_program *pg, bool is_compute)
+zink_program_num_bindings(const struct zink_program *pg)
 {
    unsigned num_bindings = 0;
-   for (unsigned i = 0; i < ZINK_DESCRIPTOR_TYPES; i++)
-      num_bindings += zink_program_num_bindings_typed(pg, i, is_compute);
+   for (unsigned i = 0; i < ZINK_DESCRIPTOR_BASE_TYPES; i++)
+      num_bindings += zink_program_num_bindings_typed(pg, i);
    return num_bindings;
 }
 
@@ -1314,6 +1306,56 @@ bind_gfx_stage(struct zink_context *ctx, gl_shader_stage stage, struct zink_shad
    }
 }
 
+static enum pipe_prim_type
+gs_output_to_reduced_prim_type(struct shader_info *info)
+{
+   switch (info->gs.output_primitive) {
+   case SHADER_PRIM_POINTS:
+      return PIPE_PRIM_POINTS;
+
+   case SHADER_PRIM_LINES:
+   case SHADER_PRIM_LINE_LOOP:
+   case SHADER_PRIM_LINE_STRIP:
+   case SHADER_PRIM_LINES_ADJACENCY:
+   case SHADER_PRIM_LINE_STRIP_ADJACENCY:
+      return PIPE_PRIM_LINES;
+
+   case SHADER_PRIM_TRIANGLES:
+   case SHADER_PRIM_TRIANGLE_STRIP:
+   case SHADER_PRIM_TRIANGLE_FAN:
+   case SHADER_PRIM_TRIANGLES_ADJACENCY:
+   case SHADER_PRIM_TRIANGLE_STRIP_ADJACENCY:
+      return PIPE_PRIM_TRIANGLES;
+
+   default:
+      unreachable("unexpected output primitive type");
+   }
+}
+
+static enum pipe_prim_type
+update_rast_prim(struct zink_shader *shader)
+{
+   struct shader_info *info = &shader->nir->info;
+   if (info->stage == MESA_SHADER_GEOMETRY)
+      return gs_output_to_reduced_prim_type(info);
+   else if (info->stage == MESA_SHADER_TESS_EVAL) {
+      if (info->tess.point_mode)
+         return PIPE_PRIM_POINTS;
+      else {
+         switch (info->tess._primitive_mode) {
+         case TESS_PRIMITIVE_ISOLINES:
+            return PIPE_PRIM_LINES;
+         case TESS_PRIMITIVE_TRIANGLES:
+         case TESS_PRIMITIVE_QUADS:
+            return PIPE_PRIM_TRIANGLES;
+         default:
+            return PIPE_PRIM_MAX;
+         }
+      }
+   }
+   return PIPE_PRIM_MAX;
+}
+
 static void
 bind_last_vertex_stage(struct zink_context *ctx)
 {
@@ -1325,6 +1367,12 @@ bind_last_vertex_stage(struct zink_context *ctx)
    else
       ctx->last_vertex_stage = ctx->gfx_stages[MESA_SHADER_VERTEX];
    gl_shader_stage current = ctx->last_vertex_stage ? ctx->last_vertex_stage->nir->info.stage : MESA_SHADER_VERTEX;
+
+   /* update rast_prim */
+   ctx->gfx_pipeline_state.shader_rast_prim =
+      ctx->last_vertex_stage ? update_rast_prim(ctx->last_vertex_stage) :
+                               PIPE_PRIM_MAX;
+
    if (old != current) {
       if (!zink_screen(ctx->base.screen)->optimal_keys) {
          if (old != MESA_SHADER_STAGES) {
@@ -1427,16 +1475,8 @@ zink_bind_gs_state(struct pipe_context *pctx,
    struct zink_context *ctx = zink_context(pctx);
    if (!cso && !ctx->gfx_stages[MESA_SHADER_GEOMETRY])
       return;
-   bool had_points = ctx->gfx_stages[MESA_SHADER_GEOMETRY] ? ctx->gfx_stages[MESA_SHADER_GEOMETRY]->nir->info.gs.output_primitive == SHADER_PRIM_POINTS : false;
    bind_gfx_stage(ctx, MESA_SHADER_GEOMETRY, cso);
    bind_last_vertex_stage(ctx);
-   if (cso) {
-      if (!had_points && ctx->last_vertex_stage->nir->info.gs.output_primitive == SHADER_PRIM_POINTS)
-         ctx->gfx_pipeline_state.has_points++;
-   } else {
-      if (had_points)
-         ctx->gfx_pipeline_state.has_points--;
-   }
 }
 
 static void

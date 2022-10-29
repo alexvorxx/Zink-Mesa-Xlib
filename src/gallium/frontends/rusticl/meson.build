@@ -23,6 +23,7 @@ rust = import('unstable-rust')
 libmesa_rust_util_files = files(
   'util/lib.rs',
   'util/assert.rs',
+  'util/bitset.rs',
   'util/properties.rs',
   'util/ptr.rs',
   'util/string.rs',

@@ -257,8 +257,6 @@ aco_compile_shader(const struct aco_compiler_options* options,
    if (program->collect_statistics)
       stats_size = aco::num_statistics * sizeof(uint32_t);
 
-   aco::instruction_buffer.release();
-
    (*build_binary)(binary,
                    shaders[shader_count - 1]->info.stage,
                    args->is_gs_copy_shader,
@@ -310,8 +308,6 @@ aco_compile_vs_prolog(const struct aco_compiler_options* options,
    if (get_disasm)
       disasm = get_disasm_string(program.get(), code, exec_size);
 
-   aco::instruction_buffer.release();
-
    (*build_prolog)(binary,
                    config.num_sgprs,
                    config.num_vgprs,
@@ -356,8 +352,6 @@ aco_compile_ps_epilog(const struct aco_compiler_options* options,
    std::string disasm;
    if (get_disasm)
       disasm = get_disasm_string(program.get(), code, exec_size);
-
-   aco::instruction_buffer.release();
 
    (*build_epilog)(binary,
                    config.num_sgprs,

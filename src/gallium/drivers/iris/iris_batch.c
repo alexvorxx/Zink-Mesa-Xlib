@@ -255,7 +255,7 @@ iris_init_non_engine_contexts(struct iris_context *ice, int priority)
    struct iris_screen *screen = (void *) ice->ctx.screen;
 
    iris_foreach_batch(ice, batch) {
-      batch->ctx_id = iris_create_hw_context(screen->bufmgr);
+      batch->ctx_id = iris_create_hw_context(screen->bufmgr, ice->protected);
       batch->exec_flags = I915_EXEC_RENDER;
       batch->has_engines_context = false;
       assert(batch->ctx_id);

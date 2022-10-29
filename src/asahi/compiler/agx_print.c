@@ -164,7 +164,7 @@ agx_print_instr(agx_instr *I, FILE *fp)
       else
          print_comma = true;
 
-      fprintf(fp, "#%X", I->imm);
+      fprintf(fp, "#%" PRIx64, I->imm);
    }
 
    if (info.immediates & AGX_IMMEDIATE_DIM) {

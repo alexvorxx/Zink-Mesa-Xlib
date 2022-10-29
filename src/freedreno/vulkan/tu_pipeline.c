@@ -1680,7 +1680,7 @@ tu6_emit_fs_outputs(struct tu_cs *cs,
       pipeline->lrz.fs.early_fragment_tests = fs->fs.early_fragment_tests;
 
       if (!fs->fs.early_fragment_tests &&
-          (fs->no_earlyz || fs->has_kill || fs->writes_pos || fs->writes_stencilref || fs->writes_smask)) {
+          (fs->no_earlyz || fs->writes_pos || fs->writes_stencilref || fs->writes_smask)) {
          pipeline->lrz.force_late_z = true;
       }
 
@@ -2801,7 +2801,7 @@ tu_hash_stage(struct mesa_sha1 *ctx,
       blob_finish(&blob);
    } else {
       unsigned char stage_hash[SHA1_DIGEST_LENGTH];
-      vk_pipeline_hash_shader_stage(stage, stage_hash);
+      vk_pipeline_hash_shader_stage(stage, NULL, stage_hash);
       _mesa_sha1_update(ctx, stage_hash, sizeof(stage_hash));
    }
    _mesa_sha1_update(ctx, key, sizeof(*key));

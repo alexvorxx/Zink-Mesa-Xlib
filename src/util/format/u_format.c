@@ -32,9 +32,9 @@
  * @author Jose Fonseca <jfonseca@vmware.com>
  */
 
+#include "c11/threads.h"
 #include "util/format/u_format.h"
 #include "util/format/u_format_s3tc.h"
-#include "util/u_cpu_detect.h"
 #include "util/u_math.h"
 
 #include "pipe/p_defines.h"

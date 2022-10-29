@@ -666,11 +666,6 @@ radv_build_ray_traversal(struct radv_device *device, nir_builder *b,
 
                   nir_ssa_def *wto_matrix[3];
                   nir_build_wto_matrix_load(b, instance_node_addr, wto_matrix);
-                  nir_ssa_def *instance_id = nir_build_load_global(
-                  b, 1, 32,
-                  nir_iadd_imm(b, instance_node_addr,
-                               offsetof(struct radv_bvh_instance_node, instance_id)));
-
 
                   nir_store_deref(b, args->vars.top_stack, nir_load_deref(b, args->vars.stack), 1);
                   nir_store_deref(b, args->vars.bvh_base,
@@ -695,8 +690,6 @@ radv_build_ray_traversal(struct radv_device *device, nir_builder *b,
 
                   nir_store_deref(b, args->vars.sbt_offset_and_flags,
                                   nir_channel(b, instance_data, 3), 1);
-                  nir_store_deref(b, args->vars.custom_instance_and_mask, instance_and_mask, 1);
-                  nir_store_deref(b, args->vars.instance_id, instance_id, 1);
                   nir_store_deref(b, args->vars.instance_addr, instance_node_addr, 1);
                }
                nir_pop_if(b, NULL);

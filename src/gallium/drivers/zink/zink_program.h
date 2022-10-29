@@ -44,6 +44,8 @@ zink_desc_type_from_vktype(VkDescriptorType type)
    case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER:
    case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC:
       return ZINK_DESCRIPTOR_TYPE_UBO;
+   case VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE:
+   case VK_DESCRIPTOR_TYPE_SAMPLER:
    case VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER:
    case VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER:
       return ZINK_DESCRIPTOR_TYPE_SAMPLER_VIEW;
@@ -105,10 +107,10 @@ void *
 zink_create_gfx_shader_state(struct pipe_context *pctx, const struct pipe_shader_state *shader);
 
 unsigned
-zink_program_num_bindings_typed(const struct zink_program *pg, enum zink_descriptor_type type, bool is_compute);
+zink_program_num_bindings_typed(const struct zink_program *pg, enum zink_descriptor_type type);
 
 unsigned
-zink_program_num_bindings(const struct zink_program *pg, bool is_compute);
+zink_program_num_bindings(const struct zink_program *pg);
 
 bool
 zink_program_descriptor_is_buffer(struct zink_context *ctx, gl_shader_stage stage, enum zink_descriptor_type type, unsigned i);
@@ -221,7 +223,7 @@ zink_program_reference(struct zink_screen *screen,
 }
 
 VkPipelineLayout
-zink_pipeline_layout_create(struct zink_screen *screen, struct zink_program *pg, uint32_t *compat);
+zink_pipeline_layout_create(struct zink_screen *screen, VkDescriptorSetLayout *dsl, unsigned num_dsl, bool is_compute);
 
 void
 zink_program_update_compute_pipeline_state(struct zink_context *ctx, struct zink_compute_program *comp, const uint block[3]);
@@ -315,7 +317,7 @@ static inline void
 zink_set_fs_point_coord_key(struct zink_context *ctx)
 {
    const struct zink_fs_key *fs = zink_get_fs_key(ctx);
-   bool disable = !ctx->gfx_pipeline_state.has_points || !ctx->rast_state->base.sprite_coord_enable;
+   bool disable = ctx->gfx_pipeline_state.rast_prim != PIPE_PRIM_POINTS || !ctx->rast_state->base.sprite_coord_enable;
    uint8_t coord_replace_bits = disable ? 0 : ctx->rast_state->base.sprite_coord_enable;
    bool coord_replace_yinvert = disable ? false : !!ctx->rast_state->base.sprite_coord_mode;
    if (fs->coord_replace_bits != coord_replace_bits || fs->coord_replace_yinvert != coord_replace_yinvert) {

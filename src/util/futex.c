@@ -70,7 +70,7 @@ int futex_wake(uint32_t *addr, int count)
    return _umtx_op(addr, UMTX_OP_WAKE, (uint32_t)count, NULL, NULL) == -1 ? errno : 0;
 }
 
-int futex_wait(uint32_t *addr, int32_t value, struct timespec *timeout)
+int futex_wait(uint32_t *addr, int32_t value, const struct timespec *timeout)
 {
    void *uaddr = NULL, *uaddr2 = NULL;
    struct _umtx_time tmo = {

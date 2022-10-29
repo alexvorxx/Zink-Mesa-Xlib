@@ -527,8 +527,8 @@ impl Mem {
         let r = self.get_res()?.get(&q.device).unwrap();
         let ctx = q.device.helper_ctx();
 
-        // don't bother mapping directly if it's not UMA
-        let tx = if q.device.unified_memory() || bit_check(self.flags, CL_MEM_ALLOC_HOST_PTR) {
+        // don't bother mapping directly if it's not staging
+        let tx = if bit_check(self.flags, CL_MEM_ALLOC_HOST_PTR) {
             ctx.texture_map_directly(r, bx, rw)
         } else {
             None

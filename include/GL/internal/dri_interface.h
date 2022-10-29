@@ -1090,7 +1090,14 @@ struct __DRIdri2LoaderExtensionRec {
 
 #define __DRI_CTX_ATTRIB_NO_ERROR               6
 
-#define __DRI_CTX_NUM_ATTRIBS                   7
+/**
+ * \requires __DRI2_RENDER_HAS_PROTECTED_CONTEXT.
+ *
+ */
+#define __DRI_CTX_ATTRIB_PROTECTED              7
+
+
+#define __DRI_CTX_NUM_ATTRIBS                   8
 
 /**
  * \name Reasons that __DRIdri2Extension::createContextAttribs might fail
@@ -1890,9 +1897,11 @@ typedef struct __DRIDriverVtableExtensionRec {
 #define   __DRI2_RENDERER_HAS_CONTEXT_PRIORITY_MEDIUM         (1 << 1)
 #define   __DRI2_RENDERER_HAS_CONTEXT_PRIORITY_HIGH           (1 << 2)
 
-#define __DRI2_RENDERER_HAS_PROTECTED_CONTENT                 0x000e
+#define __DRI2_RENDERER_HAS_PROTECTED_SURFACE                 0x000e
 #define __DRI2_RENDERER_PREFER_BACK_BUFFER_REUSE              0x000f
 #define __DRI2_RENDERER_HAS_NO_ERROR_CONTEXT                  0x0010
+
+#define __DRI2_RENDERER_HAS_PROTECTED_CONTEXT                 0x0020
 
 typedef struct __DRI2rendererQueryExtensionRec __DRI2rendererQueryExtension;
 struct __DRI2rendererQueryExtensionRec {
