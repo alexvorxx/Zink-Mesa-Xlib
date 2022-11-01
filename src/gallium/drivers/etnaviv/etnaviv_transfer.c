@@ -222,6 +222,7 @@ etna_transfer_map(struct pipe_context *pctx, struct pipe_resource *prsc,
     */
    if ((usage & PIPE_MAP_DISCARD_RANGE) &&
        !(usage & PIPE_MAP_UNSYNCHRONIZED) &&
+       !(prsc->flags & PIPE_RESOURCE_FLAG_MAP_PERSISTENT) &&
        prsc->last_level == 0 &&
        prsc->width0 == box->width &&
        prsc->height0 == box->height &&

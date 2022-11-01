@@ -31,11 +31,13 @@
 #include "pvr_formats.h"
 #include "pvr_private.h"
 #include "util/bitpack_helpers.h"
+#include "util/compiler.h"
 #include "util/format/format_utils.h"
 #include "util/half_float.h"
 #include "util/log.h"
 #include "util/macros.h"
 #include "util/u_math.h"
+#include "vk_enum_defines.h"
 #include "vk_enum_to_str.h"
 #include "vk_format.h"
 #include "vk_log.h"
@@ -426,21 +428,107 @@ void pvr_get_hw_clear_color(
 #undef f32_to_snorm16
 #undef f32_to_f16
 
-static VkFormatFeatureFlags
-pvr_get_image_format_features(const struct pvr_format *pvr_format,
-                              VkImageTiling vk_tiling)
+/* TODO: This currently only sets up Vulkan 1.0 flags. */
+static VkFormatFeatureFlags2
+pvr_get_image_format_features2(const struct pvr_format *pvr_format,
+                               VkImageTiling vk_tiling)
 {
    VkFormatFeatureFlags flags = 0;
-   VkImageAspectFlags aspects;
+   VkFormat vk_format;
 
    if (!pvr_format)
       return 0;
 
-   aspects = vk_format_aspects(pvr_format->vk_format);
-   if (aspects & (VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT)) {
-      flags |= VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT |
-               VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT |
-               VK_FORMAT_FEATURE_BLIT_SRC_BIT;
+   assert(pvr_format->supported);
+
+   vk_format = pvr_format->vk_format;
+
+   if (pvr_get_tex_format(vk_format) != ROGUE_TEXSTATE_FORMAT_INVALID) {
+      if (vk_tiling == VK_IMAGE_TILING_OPTIMAL) {
+         const uint32_t first_component_size =
+            vk_format_get_component_bits(vk_format,
+                                         UTIL_FORMAT_COLORSPACE_RGB,
+                                         0);
+
+         flags |= VK_FORMAT_FEATURE_2_SAMPLED_IMAGE_BIT |
+                  VK_FORMAT_FEATURE_2_BLIT_SRC_BIT;
+
+         if (!vk_format_is_int(vk_format) &&
+             !vk_format_is_depth_or_stencil(vk_format) &&
+             first_component_size < 32) {
+            flags |= VK_FORMAT_FEATURE_2_SAMPLED_IMAGE_FILTER_LINEAR_BIT;
+         }
+      } else if (!vk_format_is_block_compressed(vk_format)) {
+         flags |= VK_FORMAT_FEATURE_2_SAMPLED_IMAGE_BIT |
+                  VK_FORMAT_FEATURE_2_BLIT_SRC_BIT;
+      }
+   }
+
+   if (pvr_get_pbe_accum_format(vk_format) != ROGUE_PBESTATE_PACKMODE_INVALID) {
+      if (vk_format_is_color(vk_format)) {
+         flags |= VK_FORMAT_FEATURE_2_COLOR_ATTACHMENT_BIT |
+                  VK_FORMAT_FEATURE_2_BLIT_DST_BIT;
+
+         if (!vk_format_is_int(vk_format)) {
+            flags |= VK_FORMAT_FEATURE_2_COLOR_ATTACHMENT_BLEND_BIT;
+         }
+      } else if (vk_format_is_depth_or_stencil(vk_format)) {
+         flags |= VK_FORMAT_FEATURE_2_DEPTH_STENCIL_ATTACHMENT_BIT |
+                  VK_FORMAT_FEATURE_2_BLIT_DST_BIT;
+      }
+   }
+
+   if (vk_tiling == VK_IMAGE_TILING_OPTIMAL) {
+      if (vk_format_is_color(vk_format) &&
+          vk_format_get_nr_components(vk_format) == 1 &&
+          vk_format_get_blocksize(vk_format) == 32 &&
+          vk_format_is_int(vk_format)) {
+         flags |= VK_FORMAT_FEATURE_2_STORAGE_IMAGE_BIT |
+                  VK_FORMAT_FEATURE_2_STORAGE_IMAGE_ATOMIC_BIT;
+      }
+
+      switch (vk_format) {
+      case VK_FORMAT_R8_UNORM:
+      case VK_FORMAT_R8_SNORM:
+      case VK_FORMAT_R8_UINT:
+      case VK_FORMAT_R8_SINT:
+      case VK_FORMAT_R8G8_UNORM:
+      case VK_FORMAT_R8G8_SNORM:
+      case VK_FORMAT_R8G8_UINT:
+      case VK_FORMAT_R8G8_SINT:
+      case VK_FORMAT_R8G8B8A8_UNORM:
+      case VK_FORMAT_R8G8B8A8_SNORM:
+      case VK_FORMAT_R8G8B8A8_UINT:
+      case VK_FORMAT_R8G8B8A8_SINT:
+      case VK_FORMAT_A2B10G10R10_UNORM_PACK32:
+      case VK_FORMAT_A2B10G10R10_UINT_PACK32:
+      case VK_FORMAT_R16_UNORM:
+      case VK_FORMAT_R16_SNORM:
+      case VK_FORMAT_R16_UINT:
+      case VK_FORMAT_R16_SINT:
+      case VK_FORMAT_R16_SFLOAT:
+      case VK_FORMAT_R16G16_UNORM:
+      case VK_FORMAT_R16G16_SNORM:
+      case VK_FORMAT_R16G16_UINT:
+      case VK_FORMAT_R16G16_SINT:
+      case VK_FORMAT_R16G16_SFLOAT:
+      case VK_FORMAT_R16G16B16A16_UNORM:
+      case VK_FORMAT_R16G16B16A16_SNORM:
+      case VK_FORMAT_R16G16B16A16_UINT:
+      case VK_FORMAT_R16G16B16A16_SINT:
+      case VK_FORMAT_R16G16B16A16_SFLOAT:
+      case VK_FORMAT_R32_SFLOAT:
+      case VK_FORMAT_R32G32_UINT:
+      case VK_FORMAT_R32G32_SINT:
+      case VK_FORMAT_R32G32_SFLOAT:
+      case VK_FORMAT_R32G32B32A32_UINT:
+      case VK_FORMAT_R32G32B32A32_SINT:
+      case VK_FORMAT_R32G32B32A32_SFLOAT:
+         flags |= VK_FORMAT_FEATURE_2_STORAGE_IMAGE_BIT;
+         break;
+      default:
+         break;
+      }
    }
 
    return flags;
@@ -453,15 +541,82 @@ const uint8_t *pvr_get_format_swizzle(VkFormat vk_format)
    return vf->swizzle;
 }
 
-static VkFormatFeatureFlags
-pvr_get_buffer_format_features(const struct pvr_format *pvr_format)
+/* TODO: This currently only sets up Vulkan 1.0 flags. */
+static VkFormatFeatureFlags2
+pvr_get_buffer_format_features2(const struct pvr_format *pvr_format)
 {
-   VkFormatFeatureFlags flags = 0;
+   const struct util_format_description *desc;
+   VkFormatFeatureFlags2 flags = 0;
+   VkFormat vk_format;
 
    if (!pvr_format)
       return 0;
 
+   assert(pvr_format->supported);
+
+   vk_format = pvr_format->vk_format;
+
+   if (!vk_format_is_color(vk_format))
+      return 0;
+
+   desc = vk_format_description(vk_format);
+
+   if (desc->layout == UTIL_FORMAT_LAYOUT_PLAIN &&
+       desc->colorspace == UTIL_FORMAT_COLORSPACE_RGB) {
+      flags |= VK_FORMAT_FEATURE_2_VERTEX_BUFFER_BIT;
+
+      if (desc->is_array && vk_format != VK_FORMAT_R32G32B32_UINT &&
+          vk_format != VK_FORMAT_R32G32B32_SINT &&
+          vk_format != VK_FORMAT_R32G32B32_SFLOAT) {
+         flags |= VK_FORMAT_FEATURE_2_UNIFORM_TEXEL_BUFFER_BIT;
+      } else if (vk_format == VK_FORMAT_A2B10G10R10_UNORM_PACK32 ||
+                 vk_format == VK_FORMAT_A2B10G10R10_UINT_PACK32) {
+         flags |= VK_FORMAT_FEATURE_2_UNIFORM_TEXEL_BUFFER_BIT;
+      }
+   } else if (vk_format == VK_FORMAT_E5B9G9R9_UFLOAT_PACK32) {
+      flags |= VK_FORMAT_FEATURE_2_VERTEX_BUFFER_BIT;
+   }
+
+   if (vk_format_is_color(vk_format) &&
+       vk_format_get_nr_components(vk_format) == 1 &&
+       vk_format_get_blocksize(vk_format) == 32 &&
+       vk_format_is_int(vk_format)) {
+      flags |= VK_FORMAT_FEATURE_2_STORAGE_TEXEL_BUFFER_BIT |
+               VK_FORMAT_FEATURE_2_STORAGE_TEXEL_BUFFER_ATOMIC_BIT;
+   }
+
+   switch (vk_format) {
+   case VK_FORMAT_R8G8B8A8_UNORM:
+   case VK_FORMAT_R8G8B8A8_SNORM:
+   case VK_FORMAT_R8G8B8A8_UINT:
+   case VK_FORMAT_R8G8B8A8_SINT:
+   case VK_FORMAT_A8B8G8R8_UNORM_PACK32:
+   case VK_FORMAT_A8B8G8R8_SNORM_PACK32:
+   case VK_FORMAT_A8B8G8R8_UINT_PACK32:
+   case VK_FORMAT_A8B8G8R8_SINT_PACK32:
+   case VK_FORMAT_R16G16B16A16_UINT:
+   case VK_FORMAT_R16G16B16A16_SINT:
+   case VK_FORMAT_R16G16B16A16_SFLOAT:
+   case VK_FORMAT_R32_SFLOAT:
+   case VK_FORMAT_R32G32_UINT:
+   case VK_FORMAT_R32G32_SINT:
+   case VK_FORMAT_R32G32_SFLOAT:
+   case VK_FORMAT_R32G32B32A32_UINT:
+   case VK_FORMAT_R32G32B32A32_SINT:
+   case VK_FORMAT_R32G32B32A32_SFLOAT:
+      flags |= VK_FORMAT_FEATURE_2_STORAGE_TEXEL_BUFFER_BIT;
+      break;
+   default:
+      break;
+   }
+
    return flags;
+}
+
+static VkFormatFeatureFlags
+pvr_features2_to_features(VkFormatFeatureFlags2 features2)
+{
+   return features2 & VK_ALL_FORMAT_FEATURE_FLAG_BITS;
 }
 
 void pvr_GetPhysicalDeviceFormatProperties2(
@@ -470,13 +625,17 @@ void pvr_GetPhysicalDeviceFormatProperties2(
    VkFormatProperties2 *pFormatProperties)
 {
    const struct pvr_format *pvr_format = pvr_get_format(format);
+   VkFormatFeatureFlags2 linear2, optimal2, buffer2;
+
+   linear2 = pvr_get_image_format_features2(pvr_format, VK_IMAGE_TILING_LINEAR);
+   optimal2 =
+      pvr_get_image_format_features2(pvr_format, VK_IMAGE_TILING_OPTIMAL);
+   buffer2 = pvr_get_buffer_format_features2(pvr_format);
 
    pFormatProperties->formatProperties = (VkFormatProperties){
-      .linearTilingFeatures =
-         pvr_get_image_format_features(pvr_format, VK_IMAGE_TILING_LINEAR),
-      .optimalTilingFeatures =
-         pvr_get_image_format_features(pvr_format, VK_IMAGE_TILING_OPTIMAL),
-      .bufferFeatures = pvr_get_buffer_format_features(pvr_format),
+      .linearTilingFeatures = pvr_features2_to_features(linear2),
+      .optimalTilingFeatures = pvr_features2_to_features(optimal2),
+      .bufferFeatures = pvr_features2_to_features(buffer2),
    };
 
    vk_foreach_struct (ext, pFormatProperties->pNext) {
@@ -498,7 +657,7 @@ pvr_get_image_format_properties(struct pvr_physical_device *pdevice,
       VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT |
       VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
    const struct pvr_format *pvr_format = pvr_get_format(info->format);
-   VkFormatFeatureFlags tiling_features;
+   VkFormatFeatureFlags2 tiling_features2;
    VkResult result;
 
    if (!pvr_format) {
@@ -506,8 +665,8 @@ pvr_get_image_format_properties(struct pvr_physical_device *pdevice,
       goto err_unsupported_format;
    }
 
-   tiling_features = pvr_get_image_format_features(pvr_format, info->tiling);
-   if (tiling_features == 0) {
+   tiling_features2 = pvr_get_image_format_features2(pvr_format, info->tiling);
+   if (tiling_features2 == 0) {
       result = vk_error(pdevice, VK_ERROR_FORMAT_NOT_SUPPORTED);
       goto err_unsupported_format;
    }
@@ -524,12 +683,11 @@ pvr_get_image_format_properties(struct pvr_physical_device *pdevice,
    }
 
    if (info->type == VK_IMAGE_TYPE_3D) {
-      const VkImageUsageFlags transfer_usage =
-         VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT |
-         VK_FORMAT_FEATURE_BLIT_SRC_BIT | VK_FORMAT_FEATURE_BLIT_DST_BIT;
+      const VkImageUsageFlags transfer_usage = VK_IMAGE_USAGE_TRANSFER_SRC_BIT |
+                                               VK_IMAGE_USAGE_TRANSFER_DST_BIT;
 
       /* We don't support 3D depth/stencil images. */
-      if (tiling_features & VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT) {
+      if (tiling_features2 & VK_FORMAT_FEATURE_2_DEPTH_STENCIL_ATTACHMENT_BIT) {
          result = vk_error(pdevice, VK_ERROR_FORMAT_NOT_SUPPORTED);
          goto err_unsupported_format;
       }
@@ -575,8 +733,8 @@ pvr_get_image_format_properties(struct pvr_physical_device *pdevice,
       pImageFormatProperties->sampleCounts = max_sample_bits;
    }
 
-   if (!(tiling_features & VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT ||
-         tiling_features & VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT)) {
+   if (!(tiling_features2 & VK_FORMAT_FEATURE_2_COLOR_ATTACHMENT_BIT ||
+         tiling_features2 & VK_FORMAT_FEATURE_2_DEPTH_STENCIL_ATTACHMENT_BIT)) {
       pImageFormatProperties->sampleCounts = VK_SAMPLE_COUNT_1_BIT;
    }
 

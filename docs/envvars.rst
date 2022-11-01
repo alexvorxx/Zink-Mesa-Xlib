@@ -801,6 +801,8 @@ RADV driver environment variables
       enable unofficial experimental support for NV_mesh_shader.
    ``pswave32``
       enable wave32 for pixel shaders (GFX10+)
+   ``ngg_streamout``
+      enable NGG streamout
    ``nggc``
       enable NGG culling on GPUs where it's not enabled by default (GFX10.1 only).
    ``rt``

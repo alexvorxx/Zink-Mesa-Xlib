@@ -693,8 +693,10 @@
 
   <!--- Command to launch a direct compute kernel -->
   <struct name="Launch" size="36">
-    <!-- Bottom 2 becomes 4 with excessive spilling? -->
-    <field name="Unk 1" size="29" start="0:0" type="hex" default="0x1002"/>
+    <field name="Uniform register count" size="3" start="1" type="uint" modifier="groups(64)"/>
+    <field name="Texture state register count" size="5" start="4" type="uint" modifier="groups(8)"/>
+    <field name="Sampler state register count" size="3" start="9" type="uint" modifier="groups(4)"/>
+    <field name="Preshader register count" size="4" start="12" type="uint" modifier="groups(16)"/>
     <field name="Block Type" size="3" start="29" type="CDM Block Type" default="Compute Kernel"/>
     <field name="Pipeline" size="32" start="1:0" type="address"/>
     <field name="Group count X" size="32" start="2:0" type="uint"/>

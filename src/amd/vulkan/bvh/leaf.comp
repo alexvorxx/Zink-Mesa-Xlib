@@ -33,6 +33,9 @@
 #extension GL_EXT_scalar_block_layout : require
 #extension GL_EXT_buffer_reference : require
 #extension GL_EXT_buffer_reference2 : require
+#extension GL_KHR_shader_subgroup_vote : require
+#extension GL_KHR_shader_subgroup_arithmetic : require
+#extension GL_KHR_shader_subgroup_ballot : require
 
 layout(local_size_x = 64, local_size_y = 1, local_size_z = 1) in;
 
@@ -183,7 +186,7 @@ TYPE(AccelerationStructureInstance, 8);
 
 /* Returns whether the instance is active. */
 bool
-build_instance(inout AABB bounds, VOID_REF src_ptr, VOID_REF dst_ptr, uint32_t global_id)
+build_instance(inout radv_aabb bounds, VOID_REF src_ptr, VOID_REF dst_ptr, uint32_t global_id)
 {
    REF(radv_ir_instance_node) node = REF(radv_ir_instance_node)(dst_ptr);
 
@@ -204,12 +207,7 @@ build_instance(inout AABB bounds, VOID_REF src_ptr, VOID_REF dst_ptr, uint32_t g
    DEREF(node).sbt_offset_and_flags = instance.sbt_offset_and_flags;
    DEREF(node).instance_id = global_id;
 
-   DEREF(node).base.aabb[0][0] = bounds.min.x;
-   DEREF(node).base.aabb[0][1] = bounds.min.y;
-   DEREF(node).base.aabb[0][2] = bounds.min.z;
-   DEREF(node).base.aabb[1][0] = bounds.max.x;
-   DEREF(node).base.aabb[1][1] = bounds.max.y;
-   DEREF(node).base.aabb[1][2] = bounds.max.z;
+   DEREF(node).base.aabb = bounds;
 
    return true;
 }
@@ -238,7 +236,7 @@ main(void)
    uint32_t dst_offset = args.dst_offset + global_id * dst_stride;
    VOID_REF dst_ptr = OFFSET(args.bvh, dst_offset);
 
-   AABB bounds;
+   radv_aabb bounds;
    bool is_active = true;
    if (args.geometry_type == VK_GEOMETRY_TYPE_TRIANGLES_KHR) {
       triangle_indices indices = load_indices(args.indices, args.index_format, global_id);
@@ -269,12 +267,7 @@ main(void)
             bounds.max[comp] = max(bounds.max[comp], vertices.vertex[coord][comp]);
          }
 
-      DEREF(node).base.aabb[0][0] = bounds.min.x;
-      DEREF(node).base.aabb[0][1] = bounds.min.y;
-      DEREF(node).base.aabb[0][2] = bounds.min.z;
-      DEREF(node).base.aabb[1][0] = bounds.max.x;
-      DEREF(node).base.aabb[1][1] = bounds.max.y;
-      DEREF(node).base.aabb[1][2] = bounds.max.z;
+      DEREF(node).base.aabb = bounds;
 
       DEREF(node).triangle_id = global_id;
       DEREF(node).geometry_id_and_flags = args.geometry_id;
@@ -288,7 +281,6 @@ main(void)
       for (uint32_t vec = 0; vec < 2; vec++)
          for (uint32_t comp = 0; comp < 3; comp++) {
             float coord = DEREF(INDEX(float, src_ptr, comp + vec * 3));
-            DEREF(node).base.aabb[vec][comp] = coord;
 
             if (vec == 0)
                bounds.min[comp] = coord;
@@ -296,6 +288,7 @@ main(void)
                bounds.max[comp] = coord;
          }
 
+      DEREF(node).base.aabb = bounds;
       DEREF(node).primitive_id = global_id;
       DEREF(node).geometry_id_and_flags = args.geometry_id;
    } else {
@@ -310,10 +303,14 @@ main(void)
 
    DEREF(id_ptr).id = is_active ? pack_ir_node_id(dst_offset, node_type) : RADV_BVH_INVALID_NODE;
 
-   min_float_emulated(INDEX(int32_t, args.bounds, 0), bounds.min.x);
-   min_float_emulated(INDEX(int32_t, args.bounds, 1), bounds.min.y);
-   min_float_emulated(INDEX(int32_t, args.bounds, 2), bounds.min.z);
-   max_float_emulated(INDEX(int32_t, args.bounds, 3), bounds.max.x);
-   max_float_emulated(INDEX(int32_t, args.bounds, 4), bounds.max.y);
-   max_float_emulated(INDEX(int32_t, args.bounds, 5), bounds.max.z);
+   uvec4 ballot = subgroupBallot(is_active);
+   if (subgroupElect())
+      atomicAdd(DEREF(args.header).active_leaf_count, subgroupBallotBitCount(ballot));
+
+   atomicMin(DEREF(args.header).min_bounds[0], to_emulated_float(bounds.min.x));
+   atomicMin(DEREF(args.header).min_bounds[1], to_emulated_float(bounds.min.y));
+   atomicMin(DEREF(args.header).min_bounds[2], to_emulated_float(bounds.min.z));
+   atomicMax(DEREF(args.header).max_bounds[0], to_emulated_float(bounds.max.x));
+   atomicMax(DEREF(args.header).max_bounds[1], to_emulated_float(bounds.max.y));
+   atomicMax(DEREF(args.header).max_bounds[2], to_emulated_float(bounds.max.z));
 }

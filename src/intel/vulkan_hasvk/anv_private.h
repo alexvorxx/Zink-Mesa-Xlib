@@ -348,17 +348,6 @@ anv_clamp_f(float f, float min, float max)
       return f;
 }
 
-static inline bool
-anv_clear_mask(uint32_t *inout_mask, uint32_t clear_mask)
-{
-   if (*inout_mask & clear_mask) {
-      *inout_mask &= ~clear_mask;
-      return true;
-   } else {
-      return false;
-   }
-}
-
 static inline union isl_color_value
 vk_to_isl_color(VkClearColorValue color)
 {
@@ -390,20 +379,6 @@ vk_to_isl_color_with_format(VkClearColorValue color, enum isl_format format)
 #undef COPY_COLOR_CHANNEL
 
    return isl_color;
-}
-
-static inline void *anv_unpack_ptr(uintptr_t ptr, int bits, int *flags)
-{
-   uintptr_t mask = (1ull << bits) - 1;
-   *flags = ptr & mask;
-   return (void *) (ptr & ~mask);
-}
-
-static inline uintptr_t anv_pack_ptr(void *ptr, int bits, int flags)
-{
-   uintptr_t value = (uintptr_t) ptr;
-   uintptr_t mask = (1ull << bits) - 1;
-   return value | (mask & flags);
 }
 
 /**

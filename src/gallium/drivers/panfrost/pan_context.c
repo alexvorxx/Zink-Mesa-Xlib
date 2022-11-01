@@ -78,6 +78,7 @@ panfrost_clear(
         /* Once there is content, clear with a fullscreen quad */
         panfrost_blitter_save(ctx, false /* render condition */);
 
+        perf_debug_ctx(ctx, "Clearing with quad");
         util_blitter_clear(ctx->blitter,
                            ctx->pipe_framebuffer.width,
                            ctx->pipe_framebuffer.height,

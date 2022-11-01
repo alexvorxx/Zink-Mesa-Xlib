@@ -75,6 +75,8 @@ glsl_get_bare_type(const glsl_type *type)
 const glsl_type *
 glsl_get_struct_field(const glsl_type *type, unsigned index)
 {
+   assert(type->is_struct() || type->is_interface());
+   assert(index < type->length);
    return type->fields.structure[index].type;
 }
 

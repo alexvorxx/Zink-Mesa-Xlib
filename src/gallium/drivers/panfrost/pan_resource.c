@@ -1401,6 +1401,8 @@ panfrost_generate_mipmap(
 {
         struct panfrost_resource *rsrc = pan_resource(prsrc);
 
+        perf_debug_ctx(pan_context(pctx), "Unoptimized mipmap generation");
+
         /* Generating a mipmap invalidates the written levels, so make that
          * explicit so we don't try to wallpaper them back and end up with
          * u_blitter recursion */

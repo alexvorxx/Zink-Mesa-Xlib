@@ -189,13 +189,6 @@ option(
   description : 'List of vulkan drivers to build. If this is set to auto all drivers applicable to the target OS/architecture will be built'
 )
 option(
-  'vulkan-rt-drivers',
-  type : 'array',
-  value : ['auto'],
-  choices : ['auto', 'intel'],
-  description : 'List of vulkan drivers to enable ray-tracing support on. If this is set to auto all drivers applicable to the target OS/architecture will enabled ray-tracing support.'
-)
-option(
   'freedreno-kgsl',
   type : 'boolean',
   value : false,
@@ -531,7 +524,7 @@ option(
   'intel-clc',
   type : 'feature',
   value : 'disabled',
-  description : 'Build the intel-clc compiler (required for ray queries).'
+  description : 'Build the intel-clc compiler (enables Vulkan Intel Ray Tracing on supported hardware).'
 )
 option(
   'video-codecs',

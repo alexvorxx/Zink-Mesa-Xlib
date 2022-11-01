@@ -99,8 +99,8 @@ intersect_ray_amd_software_box(struct radv_device *device, nir_builder *b, nir_s
    for (int i = 0; i < 4; i++) {
       const uint32_t child_offset = offsetof(struct radv_bvh_box32_node, children[i]);
       const uint32_t coord_offsets[2] = {
-         offsetof(struct radv_bvh_box32_node, coords[i][0][0]),
-         offsetof(struct radv_bvh_box32_node, coords[i][1][0]),
+         offsetof(struct radv_bvh_box32_node, coords[i].min.x),
+         offsetof(struct radv_bvh_box32_node, coords[i].max.x),
       };
 
       /* node->children[i] -> uint */

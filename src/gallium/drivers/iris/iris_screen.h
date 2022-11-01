@@ -140,6 +140,7 @@ struct iris_vtable {
    void (*populate_cs_key)(const struct iris_context *ice,
                            struct iris_cs_prog_key *key);
    void (*lost_genx_state)(struct iris_context *ice, struct iris_batch *batch);
+   void (*disable_rhwo_optimization)(struct iris_batch *batch, bool disable);
 };
 
 struct iris_address {

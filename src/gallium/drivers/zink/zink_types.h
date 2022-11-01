@@ -206,6 +206,7 @@ enum zink_debug {
    ZINK_DEBUG_NOREORDER = (1<<6),
    ZINK_DEBUG_GPL = (1<<7),
    ZINK_DEBUG_SHADERDB = (1<<8),
+   ZINK_DEBUG_RP = (1<<9),
 };
 
 
@@ -1292,6 +1293,7 @@ struct zink_screen {
       bool always_feedback_loop;
       bool always_feedback_loop_zs;
       bool needs_sanitised_layer;
+      bool track_renderpasses;
       unsigned z16_unscaled_bias;
       unsigned z24_unscaled_bias;
    } driver_workarounds;
@@ -1564,6 +1566,7 @@ struct zink_context {
    struct {
       VkRenderingAttachmentInfo attachments[PIPE_MAX_COLOR_BUFS + 2]; //+depth, +stencil
       VkRenderingInfo info;
+      struct tc_renderpass_info tc_info;
    } dynamic_fb;
    uint32_t fb_layer_mismatch; //bitmask
    unsigned depth_bias_scale_factor;
@@ -1690,6 +1693,7 @@ struct zink_context {
 
    bool is_device_lost;
    bool primitive_restart;
+   bool blitting : 1;
    bool vertex_state_changed : 1;
    bool blend_state_changed : 1;
    bool sample_mask_changed : 1;
@@ -1697,6 +1701,7 @@ struct zink_context {
    bool dsa_state_changed : 1;
    bool stencil_ref_changed : 1;
    bool rasterizer_discard_changed : 1;
+   bool rp_tc_info_updated : 1;
 };
 
 static inline struct zink_context *

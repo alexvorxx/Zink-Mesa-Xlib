@@ -3954,6 +3954,10 @@ static bool visit_intrinsic(struct ac_nir_context *ctx, nir_intrinsic_instr *ins
 
       ac_build_s_barrier(&ctx->ac, ctx->stage);
       break;
+   case nir_intrinsic_optimization_barrier_vgpr_amd:
+      result = get_src(ctx, instr->src[0]);
+      ac_build_optimization_barrier(&ctx->ac, &result, false);
+      break;
    case nir_intrinsic_shared_atomic_add:
    case nir_intrinsic_shared_atomic_imin:
    case nir_intrinsic_shared_atomic_umin:
@@ -4279,16 +4283,10 @@ static bool visit_intrinsic(struct ac_nir_context *ctx, nir_intrinsic_instr *ins
       else
          result = ctx->ac.i32_0;
       break;
-   case nir_intrinsic_has_input_vertex_amd: {
-      LLVMValueRef num =
-         ac_unpack_param(&ctx->ac, ac_get_arg(&ctx->ac, ctx->args->merged_wave_info), 0, 8);
-      result = LLVMBuildICmp(ctx->ac.builder, LLVMIntULT, ac_get_thread_id(&ctx->ac), num, "");
-      break;
-   }
-   case nir_intrinsic_has_input_primitive_amd: {
-      LLVMValueRef num =
-         ac_unpack_param(&ctx->ac, ac_get_arg(&ctx->ac, ctx->args->merged_wave_info), 8, 8);
-      result = LLVMBuildICmp(ctx->ac.builder, LLVMIntULT, ac_get_thread_id(&ctx->ac), num, "");
+   case nir_intrinsic_is_subgroup_invocation_lt_amd: {
+      LLVMValueRef count = LLVMBuildAnd(ctx->ac.builder, get_src(ctx, instr->src[0]),
+                                        LLVMConstInt(ctx->ac.i32, 0xff, 0), "");
+      result = LLVMBuildICmp(ctx->ac.builder, LLVMIntULT, ac_get_thread_id(&ctx->ac), count, "");
       break;
    }
    case nir_intrinsic_load_workgroup_num_input_vertices_amd:

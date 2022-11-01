@@ -69,7 +69,7 @@ def create_include_guard(lines, filename):
 
     guard_head = ["#ifndef {}\n".format(upper_name),
                   "#define {}\n".format(upper_name)]
-    guard_tail = ["#endif // {}\n".format(upper_name)]
+    guard_tail = ["\n#endif // {}\n".format(upper_name)]
 
     # remove '#pragma once'
     for idx, l in enumerate(lines):

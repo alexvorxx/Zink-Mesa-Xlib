@@ -1001,7 +1001,8 @@ handle_vs_outputs_post(struct radv_shader_context *ctx)
    struct radv_shader_output_values *outputs;
    unsigned noutput = 0;
 
-   if (ctx->shader_info->so.num_outputs && !ctx->args->is_gs_copy_shader && ctx->stage != MESA_SHADER_GEOMETRY) {
+   if (ctx->shader_info->so.num_outputs && !ctx->args->is_gs_copy_shader &&
+       ctx->stage != MESA_SHADER_GEOMETRY && !ctx->shader_info->is_ngg) {
       /* The GS copy shader emission already emits streamout. */
       radv_emit_streamout(ctx, 0);
    }
@@ -1196,7 +1197,7 @@ radv_llvm_visit_export_vertex(struct ac_shader_abi *abi)
 static void
 ac_setup_rings(struct radv_shader_context *ctx)
 {
-   struct ac_llvm_pointer ring_offsets = { .t = ctx->ac.i8, .v = ctx->ring_offsets };
+   struct ac_llvm_pointer ring_offsets = { .t = ctx->ac.v4i32, .v = ctx->ring_offsets };
 
    if (ctx->options->gfx_level <= GFX8 &&
        (ctx->stage == MESA_SHADER_GEOMETRY ||
@@ -1278,6 +1279,11 @@ ac_setup_rings(struct radv_shader_context *ctx)
         (ctx->stage == MESA_SHADER_GEOMETRY))) {
       ctx->attr_ring = ac_build_load_to_sgpr(&ctx->ac, ring_offsets,
                                              LLVMConstInt(ctx->ac.i32, RING_PS_ATTR, false));
+
+      LLVMValueRef tmp = LLVMBuildExtractElement(ctx->ac.builder, ctx->attr_ring, ctx->ac.i32_1, "");
+      uint32_t stride = S_008F04_STRIDE(16 * ctx->shader_info->outinfo.param_exports);
+      tmp = LLVMBuildOr(ctx->ac.builder, tmp, LLVMConstInt(ctx->ac.i32, stride, false), "");
+      ctx->attr_ring = LLVMBuildInsertElement(ctx->ac.builder, ctx->attr_ring, tmp, ctx->ac.i32_1, "");
    }
 }
 

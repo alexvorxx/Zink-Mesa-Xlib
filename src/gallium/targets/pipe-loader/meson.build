@@ -48,7 +48,7 @@ pipe_loader_install_dir = join_paths(get_option('libdir'), 'gallium-pipe')
 
 _kmsro_targets = [
    driver_kmsro, driver_v3d, driver_vc4, driver_freedreno, driver_etnaviv,
-   driver_panfrost, driver_lima,
+   driver_panfrost, driver_lima, driver_asahi,
 ]
 
 if with_gallium_v3d

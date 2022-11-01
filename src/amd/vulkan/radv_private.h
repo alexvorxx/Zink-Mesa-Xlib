@@ -392,10 +392,12 @@ bool radv_create_shaders_from_pipeline_cache(
 
 void radv_pipeline_cache_insert_shaders(
    struct radv_device *device, struct radv_pipeline_cache *cache, const unsigned char *sha1,
-   struct radv_pipeline *pipeline, const struct radv_pipeline_shader_stack_size *stack_sizes,
-   uint32_t num_stack_sizes);
+   struct radv_pipeline *pipeline, struct radv_shader_binary *const *binaries,
+   const struct radv_pipeline_shader_stack_size *stack_sizes, uint32_t num_stack_sizes);
 
-VkResult radv_upload_shaders(struct radv_device *device, struct radv_pipeline *pipeline);
+VkResult radv_upload_shaders(struct radv_device *device, struct radv_pipeline *pipeline,
+                             struct radv_shader_binary **binaries,
+                             struct radv_shader_binary *gs_copy_binary);
 
 enum radv_blit_ds_layout {
    RADV_BLIT_DS_LAYOUT_TILE_ENABLE,
@@ -668,6 +670,8 @@ struct radv_meta_state {
       VkPipeline morton_pipeline;
       VkPipelineLayout lbvh_internal_p_layout;
       VkPipeline lbvh_internal_pipeline;
+      VkPipelineLayout ploc_p_layout;
+      VkPipeline ploc_pipeline;
       VkPipelineLayout convert_leaf_p_layout;
       VkPipeline convert_leaf_pipeline;
       VkPipelineLayout convert_internal_p_layout;
@@ -1216,6 +1220,7 @@ enum radv_ngg_query_state {
    radv_ngg_query_none = 0,
    radv_ngg_query_pipeline_stat = 1 << 0,
    radv_ngg_query_prim_gen = 1 << 1,
+   radv_ngg_query_prim_xfb = 1 << 2,
 };
 
 struct radv_vertex_binding {
@@ -1537,6 +1542,7 @@ struct radv_cmd_state {
    unsigned active_pipeline_gds_queries;
    unsigned active_prims_gen_queries;
    unsigned active_prims_gen_gds_queries;
+   unsigned active_prims_xfb_gds_queries;
    uint32_t trace_id;
    uint32_t last_ia_multi_vgt_param;
    uint32_t last_ge_cntl;
@@ -1790,6 +1796,9 @@ unsigned radv_get_default_max_sample_dist(int log_samples);
 void radv_device_init_msaa(struct radv_device *device);
 VkResult radv_device_init_vrs_state(struct radv_device *device);
 
+void radv_emit_write_data_imm(struct radeon_cmdbuf *cs, unsigned engine_sel, uint64_t va,
+                              uint32_t imm);
+
 void radv_update_ds_clear_metadata(struct radv_cmd_buffer *cmd_buffer,
                                    const struct radv_image_view *iview,
                                    VkClearDepthStencilValue ds_clear_value,
@@ -1882,6 +1891,8 @@ radv_get_viewport_xform(const VkViewport *viewport, float scale[3], float transl
  */
 void radv_unaligned_dispatch(struct radv_cmd_buffer *cmd_buffer, uint32_t x, uint32_t y,
                              uint32_t z);
+void radv_indirect_unaligned_dispatch(struct radv_cmd_buffer *cmd_buffer,
+                                      struct radeon_winsys_bo *bo, uint64_t va);
 
 void radv_indirect_dispatch(struct radv_cmd_buffer *cmd_buffer, struct radeon_winsys_bo *bo,
                             uint64_t va);

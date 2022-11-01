@@ -74,6 +74,7 @@ struct isel_context {
       struct {
          bool is_divergent = false;
       } parent_if;
+      bool had_divergent_discard = false;
       bool exec_potentially_empty_discard =
          false; /* set to false when loop_nest_depth==0 && parent_if.is_divergent==false */
       uint16_t exec_potentially_empty_break_depth = UINT16_MAX;

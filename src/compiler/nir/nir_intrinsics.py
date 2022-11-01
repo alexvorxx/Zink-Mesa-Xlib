@@ -1304,6 +1304,13 @@ store("tf_r600", [])
 
 # AMD GCN/RDNA specific intrinsics
 
+# This barrier is a hint that prevents moving the instruction that computes
+# src after this barrier. It's a constraint for the instruction scheduler.
+# Otherwise it's identical to a move instruction.
+# On AMD, it also forces the src value to be stored in a VGPR.
+intrinsic("optimization_barrier_vgpr_amd", dest_comp=0, src_comp=[0],
+          flags=[CAN_ELIMINATE])
+
 # src[] = { descriptor, vector byte offset, scalar byte offset, index offset }
 # The index offset is multiplied by the stride in the descriptor. The vertex/scalar byte offsets
 # are in bytes.
@@ -1368,11 +1375,9 @@ system_value("streamout_offset_amd", 1, indices=[BASE])
 
 # AMD merged shader intrinsics
 
-# Whether the current invocation has an input vertex / primitive to process (also known as "ES thread" or "GS thread").
-# Not safe to reorder because it changes after overwrite_subgroup_num_vertices_and_primitives_amd.
-# Also, the generated code is more optimal if they are not CSE'd.
-intrinsic("has_input_vertex_amd", src_comp=[], dest_comp=1, bit_sizes=[1], indices=[])
-intrinsic("has_input_primitive_amd", src_comp=[], dest_comp=1, bit_sizes=[1], indices=[])
+# Whether the current invocation index in the subgroup is less than the source. The source must be
+# subgroup uniform and bits 0-7 must be less than or equal to the wave size.
+intrinsic("is_subgroup_invocation_lt_amd", src_comp=[1], dest_comp=1, bit_sizes=[1], flags=[CAN_ELIMINATE])
 
 # AMD NGG intrinsics
 
@@ -1388,6 +1393,9 @@ system_value("pipeline_stat_query_enabled_amd", dest_comp=1, bit_sizes=[1])
 system_value("prim_gen_query_enabled_amd", dest_comp=1, bit_sizes=[1])
 # Whether NGG should execute shader query for primitive streamouted.
 system_value("prim_xfb_query_enabled_amd", dest_comp=1, bit_sizes=[1])
+# Merged wave info. Bits 0-7 are the ES thread count, 8-15 are the GS thread count, 16-24 is the
+# GS Wave ID, 24-27 is the wave index in the workgroup, and 28-31 is the workgroup size in waves.
+system_value("merged_wave_info_amd", dest_comp=1)
 # Whether the shader should cull front facing triangles.
 intrinsic("load_cull_front_face_enabled_amd", dest_comp=1, bit_sizes=[1], flags=[CAN_ELIMINATE])
 # Whether the shader should cull back facing triangles.

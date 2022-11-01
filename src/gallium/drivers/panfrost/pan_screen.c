@@ -113,7 +113,6 @@ panfrost_get_param(struct pipe_screen *screen, enum pipe_cap param)
         case PIPE_CAP_MIXED_COLOR_DEPTH_BITS:
         case PIPE_CAP_FRAGMENT_SHADER_TEXTURE_LOD:
         case PIPE_CAP_VERTEX_COLOR_UNCLAMPED:
-        case PIPE_CAP_BUFFER_MAP_PERSISTENT_COHERENT:
         case PIPE_CAP_DEPTH_CLIP_DISABLE:
         case PIPE_CAP_DEPTH_CLIP_DISABLE_SEPARATE:
         case PIPE_CAP_MIXED_FRAMEBUFFER_SIZES:

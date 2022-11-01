@@ -607,7 +607,9 @@ get_subdword_definition_info(Program* program, const aco_ptr<Instruction>& instr
    amd_gfx_level gfx_level = program->gfx_level;
 
    if (instr->isPseudo()) {
-      if (gfx_level >= GFX8)
+      if (instr->opcode == aco_opcode::p_interp_gfx11)
+         return std::make_pair(4u, 4u);
+      else if (gfx_level >= GFX8)
          return std::make_pair(rc.bytes() % 2 == 0 ? 2 : 1, rc.bytes());
       else
          return std::make_pair(4, rc.size() * 4u);

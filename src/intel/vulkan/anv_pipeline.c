@@ -176,29 +176,6 @@ anv_nir_lower_mesh_ext(nir_shader *nir)
                                        &state);
 }
 
-static bool
-nir_shader_uses_64bit_alu(nir_shader *shader)
-{
-   nir_foreach_function(function, shader) {
-      if (!function->impl)
-         continue;
-
-      nir_foreach_block(block, function->impl) {
-         nir_foreach_instr(instr, block) {
-            if (instr->type != nir_instr_type_alu)
-               continue;
-            nir_alu_instr *alu = nir_instr_as_alu(instr);
-            if (nir_alu_type_get_base_type(nir_op_infos[alu->op].output_type) != nir_type_float)
-               continue;
-            if (alu->dest.dest.ssa.bit_size == 64)
-               return true;
-         }
-      }
-   }
-
-   return false;
-}
-
 /* Eventually, this will become part of anv_CreateShader.  Unfortunately,
  * we can't do that yet because we don't have the ability to copy nir.
  */
@@ -319,9 +296,6 @@ anv_shader_stage_to_nir(struct anv_device *device,
 
    /* Vulkan uses the separate-shader linking model */
    nir->info.separate_shader = true;
-
-   assert(device->info->has_64bit_float || instance->fp64_workaround_enabled ||
-          !nir_shader_uses_64bit_alu(nir));
 
    brw_preprocess_nir(compiler, nir, device->fp64_nir);
 

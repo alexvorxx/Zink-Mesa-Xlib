@@ -999,6 +999,18 @@ static void
 init_aux_map_state(struct iris_batch *batch);
 #endif
 
+/* This updates a register. Caller should stall the pipeline as needed. */
+static void
+iris_disable_rhwo_optimization(struct iris_batch *batch, bool disable)
+{
+#if GFX_VERx10 == 120
+   iris_emit_reg(batch, GENX(COMMON_SLICE_CHICKEN1), c1) {
+      c1.RCCRHWOOptimizationDisable = disable;
+      c1.RCCRHWOOptimizationDisableMask = true;
+   };
+#endif
+}
+
 /**
  * Upload initial GPU state for any kind of context.
  *
@@ -1142,6 +1154,22 @@ iris_init_render_context(struct iris_batch *batch)
 #endif
 
 #if GFX_VERx10 == 120
+   /* Wa_1508744258
+    *
+    *    Disable RHWO by setting 0x7010[14] by default except during resolve
+    *    pass.
+    *
+    * We implement global disabling of the optimization here and we toggle it
+    * in iris_resolve_color.
+    *
+    * iris_init_compute_context is unmodified because we don't expect to
+    * access the RCC in the compute context. iris_mcs_partial_resolve is
+    * unmodified because that pass doesn't use a HW bit to perform the
+    * resolve (related HSDs specifically call out the RenderTargetResolveType
+    * field in the 3DSTATE_PS instruction).
+    */
+   iris_disable_rhwo_optimization(batch, true);
+
    /* Wa_1806527549 says to disable the following HiZ optimization when the
     * depth buffer is D16_UNORM. We've found the WA to help with more depth
     * buffer configurations however, so we always disable it just to be safe.
@@ -8531,6 +8559,7 @@ genX(init_screen_state)(struct iris_screen *screen)
    screen->vtbl.populate_fs_key = iris_populate_fs_key;
    screen->vtbl.populate_cs_key = iris_populate_cs_key;
    screen->vtbl.lost_genx_state = iris_lost_genx_state;
+   screen->vtbl.disable_rhwo_optimization = iris_disable_rhwo_optimization;
 }
 
 void

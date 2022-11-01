@@ -21,7 +21,7 @@
 #include "d3d12/d3d12_public.h"
 #endif
 
-#ifdef GALLIUM_ASAHI
+#if defined(GALLIUM_ASAHI) && __APPLE__
 #include "asahi/agx_public.h"
 #endif
 
@@ -71,9 +71,9 @@ sw_screen_create_named(struct sw_winsys *winsys, const struct pipe_screen_config
       screen = d3d12_create_dxcore_screen(winsys, NULL);
 #endif
 
-#if defined(GALLIUM_ASAHI)
+#if defined(GALLIUM_ASAHI) && __APPLE__
    if (screen == NULL && strcmp(driver, "asahi") == 0)
-      screen = agx_screen_create(winsys);
+      screen = agx_screen_create(0, NULL, winsys);
 #endif
 
    return screen;
@@ -88,7 +88,7 @@ sw_screen_create_vk(struct sw_winsys *winsys, const struct pipe_screen_config *c
 #if defined(GALLIUM_D3D12)
       (sw_vk || only_sw) ? "" : "d3d12",
 #endif
-#if defined(GALLIUM_ASAHI)
+#if defined(GALLIUM_ASAHI) && __APPLE__
       (sw_vk || only_sw) ? "" : "asahi",
 #endif
 #if defined(GALLIUM_LLVMPIPE)

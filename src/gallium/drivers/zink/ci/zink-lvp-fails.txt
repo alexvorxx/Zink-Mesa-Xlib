@@ -95,7 +95,6 @@ spec@!opengl 2.1@polygon-stipple-fs,Fail
 spec@!opengl es 2.0@glsl-fs-pointcoord,Fail
 spec@arb_depth_texture@depth-tex-modes,Fail
 spec@arb_framebuffer_object@fbo-gl_pointcoord,Fail
-spec@arb_get_program_binary@restore-sso-program,Fail
 spec@arb_gpu_shader_fp64@execution@arb_gpu_shader_fp64-tf-separate,Fail
 spec@arb_pipeline_statistics_query@arb_pipeline_statistics_query-frag,Fail
 spec@arb_point_sprite@arb_point_sprite-checkerboard,Fail

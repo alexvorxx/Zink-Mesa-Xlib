@@ -55,13 +55,13 @@ main(void)
 
    REF(radv_ir_box_node) dst_node = REF(radv_ir_box_node)(OFFSET(args.bvh, dst_offset));
 
-   AABB total_bounds;
+   radv_aabb total_bounds;
    total_bounds.min = vec3(INFINITY);
    total_bounds.max = vec3(-INFINITY);
 
    bool is_active = false;
    for (uint32_t i = 0; i < 2; i++) {
-      AABB bounds;
+      radv_aabb bounds;
       bounds.min = vec3(NAN);
       bounds.max = vec3(NAN);
 
@@ -70,7 +70,7 @@ main(void)
       if (i < child_count && child_id != RADV_BVH_INVALID_NODE) {
          VOID_REF node = OFFSET(args.bvh, ir_id_to_offset(child_id));
          REF(radv_ir_node) child = REF(radv_ir_node)(node);
-         bounds = load_aabb(child);
+         bounds = DEREF(child).aabb;
 
          total_bounds.min = min(total_bounds.min, bounds.min);
          total_bounds.max = max(total_bounds.max, bounds.max);
@@ -81,12 +81,7 @@ main(void)
 
       DEREF(dst_node).children[i] = child_id;
    }
-   DEREF(dst_node).base.aabb[0][0] = total_bounds.min.x;
-   DEREF(dst_node).base.aabb[0][1] = total_bounds.min.y;
-   DEREF(dst_node).base.aabb[0][2] = total_bounds.min.z;
-   DEREF(dst_node).base.aabb[1][0] = total_bounds.max.x;
-   DEREF(dst_node).base.aabb[1][1] = total_bounds.max.y;
-   DEREF(dst_node).base.aabb[1][2] = total_bounds.max.z;
+   DEREF(dst_node).base.aabb = total_bounds;
    DEREF(dst_node).in_final_tree = is_active ? FINAL_TREE_UNKNOWN : FINAL_TREE_NOT_PRESENT;
 
    /* An internal node is considered inactive if it has no children. Set the resulting scratch node

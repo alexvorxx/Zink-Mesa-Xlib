@@ -546,9 +546,12 @@ rra_transcode_aabb_node(struct rra_transcoding_context *ctx, const struct radv_b
    struct rra_aabb_node *dst = (struct rra_aabb_node *)(ctx->dst + ctx->dst_leaf_offset);
    ctx->dst_leaf_offset += sizeof(struct rra_aabb_node);
 
-   for (int i = 0; i < 2; ++i)
-      for (int j = 0; j < 3; ++j)
-         dst->aabb[i][j] = src->aabb[i][j];
+   dst->aabb[0][0] = src->aabb.min.x;
+   dst->aabb[0][1] = src->aabb.min.y;
+   dst->aabb[0][2] = src->aabb.min.z;
+   dst->aabb[1][0] = src->aabb.max.x;
+   dst->aabb[1][1] = src->aabb.max.y;
+   dst->aabb[1][2] = src->aabb.max.z;
 
    dst->geometry_id = src->geometry_id_and_flags & 0xfffffff;
    dst->flags = src->geometry_id_and_flags >> 28;
@@ -609,7 +612,7 @@ rra_transcode_box32_node(struct rra_transcoding_context *ctx, const struct radv_
    memcpy(dst->coords, src->coords, sizeof(dst->coords));
 
    for (uint32_t i = 0; i < 4; ++i) {
-      if (isnan(src->coords[i][0][0])) {
+      if (isnan(src->coords[i].min.x)) {
          dst->children[i] = 0xffffffff;
          continue;
       }

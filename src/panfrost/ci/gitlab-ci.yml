@@ -50,7 +50,7 @@ panfrost-t760-gles2:armhf:
     - .lava-rk3288-veyron-jaq
     - .test-manual-mr
 
-panfrost-t760-traces:armhf:
+.panfrost-t760-traces:armhf:
   extends:
     - .lava-piglit-traces:armhf
     - .panfrost-midgard-rules
@@ -80,7 +80,7 @@ panfrost-t860-gl:arm64:
     FDO_CI_CONCURRENT: 6
     DEQP_SUITE: panfrost-t860
 
-panfrost-t860-traces:arm64:
+.panfrost-t860-traces:arm64:
   extends:
     - .lava-piglit-traces:arm64
     - .lava-rk3399-gru-kevin

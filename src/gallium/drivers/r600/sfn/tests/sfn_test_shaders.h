@@ -109,13 +109,10 @@ class TestShader : public ::testing::Test {
    virtual void SetUpMore();
    virtual void TearDownMore();
 
-
 protected:
    Shader *from_string(const std::string& s);
 };
 
-
-}
-
+} // namespace r600
 
 #endif // SFN_TEST_SHADERS_H

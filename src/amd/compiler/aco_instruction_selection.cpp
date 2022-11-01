@@ -72,6 +72,8 @@ struct if_context {
    bool divergent_old;
    bool exec_potentially_empty_discard_old;
    bool exec_potentially_empty_break_old;
+   bool had_divergent_discard_old;
+   bool had_divergent_discard_then;
    uint16_t exec_potentially_empty_break_depth_old;
 
    unsigned BB_if_idx;
@@ -5157,8 +5159,9 @@ store_vmem_mubuf(isel_context* ctx, Temp src, Temp descriptor, Temp voffset, Tem
    unsigned write_count = 0;
    Temp write_datas[32];
    unsigned offsets[32];
-   split_buffer_store(ctx, NULL, false, RegType::vgpr, src, write_mask, swizzled ? 4 : 16,
-                      &write_count, write_datas, offsets);
+   split_buffer_store(ctx, NULL, false, RegType::vgpr, src, write_mask,
+                      swizzled && ctx->program->gfx_level <= GFX8 ? 4 : 16, &write_count,
+                      write_datas, offsets);
 
    for (unsigned i = 0; i < write_count; i++) {
       unsigned const_offset = offsets[i] + base_const_offset;
@@ -5305,6 +5308,13 @@ visit_store_output(isel_context* ctx, nir_intrinsic_instr* instr)
    }
 }
 
+bool
+in_exec_divergent_or_in_loop(isel_context* ctx)
+{
+   return ctx->block->loop_nest_depth || ctx->cf_info.parent_if.is_divergent ||
+          ctx->cf_info.had_divergent_discard;
+}
+
 void
 emit_interp_instr_gfx11(isel_context* ctx, unsigned idx, unsigned component, Temp src, Temp dst,
                         Temp prim_mask)
@@ -5314,18 +5324,30 @@ emit_interp_instr_gfx11(isel_context* ctx, unsigned idx, unsigned component, Tem
 
    Builder bld(ctx->program, ctx->block);
 
-   //TODO: this doesn't work in quad-divergent control flow
+   if (in_exec_divergent_or_in_loop(ctx)) {
+      Operand prim_mask_op = bld.m0(prim_mask);
+      prim_mask_op.setLateKill(true); /* we don't want the bld.lm definition to use m0 */
+      Operand coord2_op(coord2);
+      coord2_op.setLateKill(true); /* we re-use the destination reg in the middle */
+      bld.pseudo(aco_opcode::p_interp_gfx11, Definition(dst), bld.def(bld.lm),
+                 Operand(v1.as_linear()), Operand::c32(idx), Operand::c32(component), coord1,
+                 coord2_op, prim_mask_op);
+      return;
+   }
 
    Temp p = bld.ldsdir(aco_opcode::lds_param_load, bld.def(v1), bld.m0(prim_mask), idx, component);
 
+   Temp res;
    if (dst.regClass() == v2b) {
       Temp p10 =
          bld.vinterp_inreg(aco_opcode::v_interp_p10_f16_f32_inreg, bld.def(v1), p, coord1, p);
-      bld.vinterp_inreg(aco_opcode::v_interp_p2_f16_f32_inreg, Definition(dst), p, coord2, p10);
+      res = bld.vinterp_inreg(aco_opcode::v_interp_p2_f16_f32_inreg, bld.def(v1), p, coord2, p10);
    } else {
       Temp p10 = bld.vinterp_inreg(aco_opcode::v_interp_p10_f32_inreg, bld.def(v1), p, coord1, p);
-      bld.vinterp_inreg(aco_opcode::v_interp_p2_f32_inreg, Definition(dst), p, coord2, p10);
+      res = bld.vinterp_inreg(aco_opcode::v_interp_p2_f32_inreg, bld.def(v1), p, coord2, p10);
    }
+   /* lds_param_load must be done in WQM, and the result kept valid for helper lanes. */
+   emit_wqm(bld, res, dst, true);
 }
 
 void
@@ -5381,10 +5403,22 @@ emit_interp_mov_instr(isel_context* ctx, unsigned idx, unsigned component, unsig
 {
    Builder bld(ctx->program, ctx->block);
    if (ctx->options->gfx_level >= GFX11) {
-      //TODO: this doesn't work in quad-divergent control flow and ignores vertex_id
-      Temp p = bld.ldsdir(aco_opcode::lds_param_load, bld.def(v1), bld.m0(prim_mask), idx, component);
+      // TODO: this ignores vertex_id
       uint16_t dpp_ctrl = dpp_quad_perm(0, 0, 0, 0);
-      bld.vop1_dpp(aco_opcode::v_mov_b32, Definition(dst), p, dpp_ctrl);
+      if (in_exec_divergent_or_in_loop(ctx)) {
+         Operand prim_mask_op = bld.m0(prim_mask);
+         prim_mask_op.setLateKill(true); /* we don't want the bld.lm definition to use m0 */
+         bld.pseudo(aco_opcode::p_interp_gfx11, Definition(dst), bld.def(bld.lm),
+                    Operand(v1.as_linear()), Operand::c32(idx), Operand::c32(component),
+                    Operand::c32(dpp_ctrl), prim_mask_op);
+      } else {
+         Temp p =
+            bld.ldsdir(aco_opcode::lds_param_load, bld.def(v1), bld.m0(prim_mask), idx, component);
+         Temp res = bld.vop1_dpp(aco_opcode::v_mov_b32, bld.def(v1), p, dpp_ctrl);
+
+         /* lds_param_load must be done in WQM, and the result kept valid for helper lanes. */
+         emit_wqm(bld, res, dst, true);
+      }
    } else {
       bld.vintrp(aco_opcode::v_interp_mov_f32, Definition(dst), Operand::c32(vertex_id),
                  bld.m0(prim_mask), idx, component);
@@ -5818,7 +5852,8 @@ visit_load_input(isel_context* ctx, nir_intrinsic_instr* instr)
             unsigned chan_component = (component + i) % 4;
             unsigned chan_idx = idx + (component + i) / 4;
             vec->operands[i] = Operand(bld.tmp(instr->dest.ssa.bit_size == 16 ? v2b : v1));
-            emit_interp_mov_instr(ctx, chan_idx, chan_component, vertex_id, vec->operands[i].getTemp(), prim_mask);
+            emit_interp_mov_instr(ctx, chan_idx, chan_component, vertex_id,
+                                  vec->operands[i].getTemp(), prim_mask);
          }
          vec->definitions[0] = Definition(dst);
          bld.insert(std::move(vec));
@@ -8250,6 +8285,7 @@ emit_interp_center(isel_context* ctx, Temp dst, Temp bary, Temp pos1, Temp pos2)
 }
 
 Temp merged_wave_info_to_mask(isel_context* ctx, unsigned i);
+Temp lanecount_to_mask(isel_context* ctx, Temp count);
 void ngg_emit_sendmsg_gs_alloc_req(isel_context* ctx, Temp vtx_cnt, Temp prm_cnt);
 static void create_primitive_exports(isel_context *ctx, Temp prim_ch1);
 static void create_vs_exports(isel_context* ctx);
@@ -8269,6 +8305,24 @@ get_interp_param(isel_context* ctx, nir_intrinsic_op intrin,
       assert(intrin == nir_intrinsic_load_barycentric_sample);
       return get_arg(ctx, linear ? ctx->args->ac.linear_sample : ctx->args->ac.persp_sample);
    }
+}
+
+void
+ds_ordered_count_offsets(isel_context *ctx, unsigned index_operand,
+                         unsigned wave_release, unsigned wave_done,
+                         unsigned *offset0, unsigned *offset1)
+{
+   unsigned ordered_count_index = index_operand & 0x3f;
+   unsigned count_dword = (index_operand >> 24) & 0xf;
+
+   assert(ctx->options->gfx_level >= GFX10);
+   assert(count_dword >= 1 && count_dword <= 4);
+
+   *offset0 = ordered_count_index << 2;
+   *offset1 = wave_release | (wave_done << 1) | ((count_dword - 1) << 6);
+
+   if (ctx->options->gfx_level < GFX11)
+      *offset1 |= 3 /* GS shader type */ << 2;
 }
 
 void
@@ -8954,6 +9008,7 @@ visit_intrinsic(isel_context* ctx, nir_intrinsic_instr* instr)
 
       if (ctx->block->loop_nest_depth || ctx->cf_info.parent_if.is_divergent)
          ctx->cf_info.exec_potentially_empty_discard = true;
+
       ctx->block->kind |= block_kind_uses_discard;
       ctx->program->needs_exact = true;
       break;
@@ -8966,6 +9021,7 @@ visit_intrinsic(isel_context* ctx, nir_intrinsic_instr* instr)
 
       if (ctx->block->loop_nest_depth || ctx->cf_info.parent_if.is_divergent)
          ctx->cf_info.exec_potentially_empty_discard = true;
+
       ctx->block->kind |= block_kind_uses_discard;
       ctx->program->needs_exact = true;
       break;
@@ -8981,12 +9037,15 @@ visit_intrinsic(isel_context* ctx, nir_intrinsic_instr* instr)
          assert(src.regClass() == bld.lm);
          cond =
             bld.sop2(Builder::s_and, bld.def(bld.lm), bld.def(s1, scc), src, Operand(exec, bld.lm));
+
+         ctx->cf_info.had_divergent_discard |= nir_src_is_divergent(instr->src[0]);
       }
 
       bld.pseudo(aco_opcode::p_discard_if, cond);
 
       if (ctx->block->loop_nest_depth || ctx->cf_info.parent_if.is_divergent)
          ctx->cf_info.exec_potentially_empty_discard = true;
+      ctx->cf_info.had_divergent_discard |= in_exec_divergent_or_in_loop(ctx);
       ctx->block->kind |= block_kind_uses_discard;
       ctx->program->needs_exact = true;
       break;
@@ -9122,11 +9181,9 @@ visit_intrinsic(isel_context* ctx, nir_intrinsic_instr* instr)
       /* unused in the legacy pipeline, the HW keeps track of this for us */
       break;
    }
-   case nir_intrinsic_has_input_vertex_amd:
-   case nir_intrinsic_has_input_primitive_amd: {
-      assert(ctx->stage.hw == HWStage::NGG);
-      unsigned i = instr->intrinsic == nir_intrinsic_has_input_vertex_amd ? 0 : 1;
-      bld.copy(Definition(get_ssa_temp(ctx, &instr->dest.ssa)), merged_wave_info_to_mask(ctx, i));
+   case nir_intrinsic_is_subgroup_invocation_lt_amd: {
+      Temp src = bld.as_uniform(get_ssa_temp(ctx, instr->src[0].ssa));
+      bld.copy(Definition(get_ssa_temp(ctx, &instr->dest.ssa)), lanecount_to_mask(ctx, src));
       break;
    }
    case nir_intrinsic_export_vertex_amd: {
@@ -9194,6 +9251,64 @@ visit_intrinsic(isel_context* ctx, nir_intrinsic_instr* instr)
       assert(src.type() == (instr->intrinsic == nir_intrinsic_load_scalar_arg_amd ? RegType::sgpr : RegType::vgpr));
       bld.copy(Definition(dst), src);
       emit_split_vector(ctx, dst, dst.size());
+      break;
+   }
+   case nir_intrinsic_ordered_xfb_counter_add_amd: {
+      Temp dst = get_ssa_temp(ctx, &instr->dest.ssa);
+      Temp ordered_id = get_ssa_temp(ctx, instr->src[0].ssa);
+      Temp counter = get_ssa_temp(ctx, instr->src[1].ssa);
+
+      Temp gds_base = bld.copy(bld.def(v1), Operand::c32(0u));
+      unsigned offset0, offset1;
+      Instruction *ds_instr;
+      Operand m;
+
+      /* Lock a GDS mutex. */
+      ds_ordered_count_offsets(ctx, 1 << 24u, false, false, &offset0, &offset1);
+      m = bld.m0(bld.as_uniform(ordered_id));
+      ds_instr = bld.ds(aco_opcode::ds_ordered_count, bld.def(v1), gds_base, m,
+                        offset0, offset1, true);
+      ds_instr->ds().sync = memory_sync_info(storage_gds, semantic_volatile);
+
+      aco_ptr<Pseudo_instruction> vec{create_instruction<Pseudo_instruction>(
+         aco_opcode::p_create_vector, Format::PSEUDO, instr->num_components, 1)};
+      unsigned write_mask = nir_intrinsic_write_mask(instr);
+
+      for (unsigned i = 0; i < instr->num_components; i++) {
+         if (write_mask & (1 << i)) {
+            Temp chan_counter = emit_extract_vector(ctx, counter, i, v1);
+
+            m = bld.m0((Temp)bld.copy(bld.def(s1, m0), Operand::c32(0x100u)));
+
+            ds_instr = bld.ds(aco_opcode::ds_add_rtn_u32, bld.def(v1),
+                              gds_base, chan_counter, m, i * 4, 0u, true);
+            ds_instr->ds().sync = memory_sync_info(storage_gds, semantic_atomicrmw);
+
+            vec->operands[i] = Operand(ds_instr->definitions[0].getTemp());
+         } else {
+            vec->operands[i] = Operand::zero();
+         }
+      }
+
+      vec->definitions[0] = Definition(dst);
+      ctx->block->instructions.emplace_back(std::move(vec));
+
+      /* Unlock a GDS mutex. */
+      ds_ordered_count_offsets(ctx, 1 << 24u, true, true, &offset0, &offset1);
+      m = bld.m0(bld.as_uniform(ordered_id));
+      ds_instr = bld.ds(aco_opcode::ds_ordered_count, bld.def(v1), gds_base, m,
+                        offset0, offset1, true);
+      ds_instr->ds().sync = memory_sync_info(storage_gds, semantic_volatile);
+
+      emit_split_vector(ctx, dst, instr->num_components);
+      break;
+   }
+   case nir_intrinsic_memory_barrier_buffer: {
+      wait_imm wait;
+      wait.lgkm = 0;
+      wait.vm = 0;
+      bld.sopp(aco_opcode::s_waitcnt, -1, wait.pack(bld.program->gfx_level));
+      bld.sopk(aco_opcode::s_waitcnt_vscnt, Definition(sgpr_null, s1), 0);
       break;
    }
    default:
@@ -9336,7 +9451,8 @@ get_const_vec(nir_ssa_def* vec, nir_const_value* cv[4])
 void
 visit_tex(isel_context* ctx, nir_tex_instr* instr)
 {
-   assert(instr->op != nir_texop_txf_ms && instr->op != nir_texop_samples_identical);
+   assert((instr->op != nir_texop_txf_ms || ctx->program->gfx_level >= GFX11) &&
+          instr->op != nir_texop_samples_identical);
 
    Builder bld(ctx->program, ctx->block);
    bool has_bias = false, has_lod = false, level_zero = false, has_compare = false,
@@ -9750,7 +9866,7 @@ visit_tex(isel_context* ctx, nir_tex_instr* instr)
    args.insert(args.end(), coords.begin(), coords.end());
 
    if (instr->op == nir_texop_txf || instr->op == nir_texop_fragment_fetch_amd ||
-       instr->op == nir_texop_fragment_mask_fetch_amd) {
+       instr->op == nir_texop_fragment_mask_fetch_amd || instr->op == nir_texop_txf_ms) {
       aco_opcode op = level_zero || instr->sampler_dim == GLSL_SAMPLER_DIM_MS ||
                             instr->sampler_dim == GLSL_SAMPLER_DIM_SUBPASS_MS
                          ? aco_opcode::image_load
@@ -10471,6 +10587,7 @@ begin_divergent_if_then(isel_context* ctx, if_context* ic, Temp cond,
    ic->exec_potentially_empty_break_old = ctx->cf_info.exec_potentially_empty_break;
    ic->exec_potentially_empty_break_depth_old = ctx->cf_info.exec_potentially_empty_break_depth;
    ic->divergent_old = ctx->cf_info.parent_if.is_divergent;
+   ic->had_divergent_discard_old = ctx->cf_info.had_divergent_discard;
    ctx->cf_info.parent_if.is_divergent = true;
 
    /* divergent branches use cbranch_execz */
@@ -10538,6 +10655,9 @@ begin_divergent_if_else(isel_context* ctx, if_context* ic,
    ctx->cf_info.exec_potentially_empty_break = false;
    ctx->cf_info.exec_potentially_empty_break_depth = UINT16_MAX;
 
+   ic->had_divergent_discard_then = ctx->cf_info.had_divergent_discard;
+   ctx->cf_info.had_divergent_discard = ic->had_divergent_discard_old;
+
    /** emit logical else block */
    ctx->program->next_divergent_if_logical_depth++;
    Block* BB_else_logical = ctx->program->create_and_insert_block();
@@ -10600,6 +10720,7 @@ end_divergent_if(isel_context* ctx, if_context* ic)
       ctx->cf_info.exec_potentially_empty_break = false;
       ctx->cf_info.exec_potentially_empty_break_depth = UINT16_MAX;
    }
+   ctx->cf_info.had_divergent_discard |= ic->had_divergent_discard_then;
 }
 
 static void
@@ -10625,6 +10746,8 @@ begin_uniform_if_then(isel_context* ctx, if_context* ic, Temp cond)
 
    ctx->cf_info.has_branch = false;
    ctx->cf_info.parent_loop.has_divergent_branch = false;
+
+   ic->had_divergent_discard_old = ctx->cf_info.had_divergent_discard;
 
    /** emit then block */
    ctx->program->next_uniform_if_depth++;
@@ -10659,6 +10782,9 @@ begin_uniform_if_else(isel_context* ctx, if_context* ic)
    ctx->cf_info.has_branch = false;
    ctx->cf_info.parent_loop.has_divergent_branch = false;
 
+   ic->had_divergent_discard_then = ctx->cf_info.had_divergent_discard;
+   ctx->cf_info.had_divergent_discard = ic->had_divergent_discard_old;
+
    /** emit else block */
    Block* BB_else = ctx->program->create_and_insert_block();
    add_edge(ic->BB_if_idx, BB_else);
@@ -10687,6 +10813,7 @@ end_uniform_if(isel_context* ctx, if_context* ic)
 
    ctx->cf_info.has_branch &= ic->uniform_has_then_branch;
    ctx->cf_info.parent_loop.has_divergent_branch &= ic->then_branch_divergent;
+   ctx->cf_info.had_divergent_discard |= ic->had_divergent_discard_then;
 
    /** emit endif merge block */
    ctx->program->next_uniform_if_depth--;
@@ -11701,7 +11828,7 @@ cleanup_cfg(Program* program)
 }
 
 Temp
-lanecount_to_mask(isel_context* ctx, Temp count, bool allow64 = true)
+lanecount_to_mask(isel_context* ctx, Temp count)
 {
    assert(count.regClass() == s1);
 
@@ -11710,10 +11837,6 @@ lanecount_to_mask(isel_context* ctx, Temp count, bool allow64 = true)
    Temp cond;
 
    if (ctx->program->wave_size == 64) {
-      /* If we know that all 64 threads can't be active at a time, we just use the mask as-is */
-      if (!allow64)
-         return mask;
-
       /* Special case for 64 active invocations, because 64 doesn't work with s_bfm */
       Temp active_64 = bld.sopc(aco_opcode::s_bitcmp1_b32, bld.def(s1, scc), count,
                                 Operand::c32(6u /* log2(64) */));

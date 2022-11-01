@@ -185,7 +185,15 @@ u_pipe_screen_get_param_defaults(struct pipe_screen *pscreen,
    case PIPE_CAP_MAX_GEOMETRY_TOTAL_OUTPUT_COMPONENTS:
    case PIPE_CAP_MAX_TEXTURE_GATHER_COMPONENTS: /* Enables ARB_texture_gather */
    case PIPE_CAP_TEXTURE_GATHER_SM5:
+      return 0;
+
+   /* All new drivers should support persistent/coherent mappings. This CAP
+    * should only be unset by layered drivers whose host drivers cannot support
+    * coherent mappings.
+    */
    case PIPE_CAP_BUFFER_MAP_PERSISTENT_COHERENT:
+      return 1;
+
    case PIPE_CAP_FAKE_SW_MSAA:
    case PIPE_CAP_TEXTURE_QUERY_LOD:
       return 0;

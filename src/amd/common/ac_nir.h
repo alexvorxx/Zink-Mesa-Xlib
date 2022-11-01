@@ -125,6 +125,7 @@ typedef struct {
 
    unsigned max_workgroup_size;
    unsigned wave_size;
+   const uint8_t *vs_output_param_offset; /* GFX11+ */
    bool can_cull;
    bool disable_streamout;
 

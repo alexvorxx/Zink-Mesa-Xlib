@@ -6888,7 +6888,9 @@
   </register>
   <register name="COMMON_SLICE_CHICKEN1" length="1" num="0x7010">
     <field name="HIZ Plane Optimization disable bit" start="9" end="9" type="bool" />
+    <field name="RCC RHWO Optimization Disable" start="14" end="14" type="bool" />
     <field name="HIZ Plane Optimization disable bit Mask" start="25" end="25" type="bool" />
+    <field name="RCC RHWO Optimization Disable Mask" start="30" end="30" type="bool" />
   </register>
   <register name="COMMON_SLICE_CHICKEN3" length="1" num="0x7304">
     <field name="PS Thread Panic Dispatch" start="6" end="7" type="uint" />

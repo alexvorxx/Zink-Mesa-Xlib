@@ -344,6 +344,7 @@ zink_blit(struct pipe_context *pctx,
    /* this will draw a full-resource quad, so ignore existing data */
    if (util_blit_covers_whole_resource(info))
       pctx->invalidate_resource(pctx, info->dst.resource);
+   ctx->blitting = true;
    zink_blit_begin(ctx, ZINK_BLIT_SAVE_FB | ZINK_BLIT_SAVE_FS | ZINK_BLIT_SAVE_TEXTURES);
 
    if (stencil_blit) {
@@ -368,6 +369,7 @@ zink_blit(struct pipe_context *pctx,
    } else {
       util_blitter_blit(ctx->blitter, info);
    }
+   ctx->blitting = false;
 end:
    if (needs_present_readback)
       zink_kopper_present_readback(ctx, src);

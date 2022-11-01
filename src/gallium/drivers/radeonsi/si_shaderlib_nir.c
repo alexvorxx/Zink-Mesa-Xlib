@@ -284,8 +284,16 @@ void *si_create_passthrough_tcs(struct si_context *sctx)
       sctx->b.screen->get_compiler_options(sctx->b.screen, PIPE_SHADER_IR_NIR,
                                            PIPE_SHADER_TESS_CTRL);
 
-   nir_shader *tcs = nir_create_passthrough_tcs(options, sctx->shader.vs.cso->nir,
-                                                sctx->patch_vertices);
+   unsigned locations[PIPE_MAX_SHADER_OUTPUTS];
+
+   struct si_shader_info *info = &sctx->shader.vs.cso->info;
+   for (unsigned i = 0; i < info->num_outputs; i++) {
+      locations[i] = info->output_semantic[i];
+   }
+
+   nir_shader *tcs =
+         nir_create_passthrough_tcs_impl(options, locations, info->num_outputs,
+                                         sctx->patch_vertices);
 
    return create_shader_state(sctx, tcs);
 }
@@ -339,12 +347,26 @@ static nir_ssa_def *image_resolve_msaa(nir_builder *b, nir_variable *img, unsign
       nir_push_else(b, NULL);
    }
 
+   /* We need to hide the constant sample indices behind the optimization barrier, otherwise
+    * LLVM doesn't put loads into the same clause.
+    *
+    * TODO: nir_group_loads could do this.
+    */
+   nir_ssa_def *sample_index[16];
+   for (unsigned i = 0; i < num_samples; i++)
+      sample_index[i] = nir_optimization_barrier_vgpr_amd(b, 32, nir_imm_int(b, i));
+
+   /* Load all samples. */
+   nir_ssa_def *samples[16];
+   for (unsigned i = 0; i < num_samples; i++) {
+      samples[i] = nir_image_deref_load(b, 4, 32, deref_ssa(b, img),
+                                        coord, sample_index[i], zero);
+   }
+
    /* Average all samples. (the only options on gfx11) */
    result = NULL;
    for (unsigned i = 0; i < num_samples; i++) {
-      nir_ssa_def *sample = nir_image_deref_load(b, 4, 32, deref_ssa(b, img),
-                                                 coord, nir_imm_int(b, i), zero);
-      result = result ? nir_fadd(b, result, sample) : sample;
+      result = i ? nir_fadd(b, result, samples[i]) : samples[i];
    }
    result = nir_fmul_imm(b, result, 1.0 / num_samples); /* average the sum */
 

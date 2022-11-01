@@ -29,7 +29,7 @@ deqp_args = [
 
 [[piglit]]
 piglit_folder = "/piglit"
-profile = "quick_gl"
+profile = "gpu"
 process_isolation = true
 timeout = 180.0
   [piglit.env]

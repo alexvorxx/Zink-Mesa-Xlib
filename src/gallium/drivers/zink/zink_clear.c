@@ -451,8 +451,10 @@ zink_clear_texture(struct pipe_context *pctx,
       surf = create_clear_surface(pctx, pres, level, box);
       util_blitter_save_framebuffer(ctx->blitter, &ctx->fb_state);
       set_clear_fb(pctx, surf, NULL);
+      ctx->blitting = true;
       pctx->clear(pctx, PIPE_CLEAR_COLOR0, &scissor, &color, 0, 0);
       util_blitter_restore_fb_state(ctx->blitter);
+      ctx->blitting = false;
    } else {
       float depth = 0.0;
       uint8_t stencil = 0;
@@ -470,9 +472,11 @@ zink_clear_texture(struct pipe_context *pctx,
          flags |= PIPE_CLEAR_STENCIL;
       surf = create_clear_surface(pctx, pres, level, box);
       util_blitter_save_framebuffer(ctx->blitter, &ctx->fb_state);
+      ctx->blitting = true;
       set_clear_fb(pctx, NULL, surf);
       pctx->clear(pctx, flags, &scissor, NULL, depth, stencil);
       util_blitter_restore_fb_state(ctx->blitter);
+      ctx->blitting = false;
    }
    /* this will never destroy the surface */
    pipe_surface_reference(&surf, NULL);
@@ -538,8 +542,10 @@ zink_clear_render_target(struct pipe_context *pctx, struct pipe_surface *dst,
    util_blitter_save_framebuffer(ctx->blitter, &ctx->fb_state);
    set_clear_fb(pctx, dst, NULL);
    struct pipe_scissor_state scissor = {dstx, dsty, dstx + width, dsty + height};
+   ctx->blitting = true;
    pctx->clear(pctx, PIPE_CLEAR_COLOR0, &scissor, color, 0, 0);
    util_blitter_restore_fb_state(ctx->blitter);
+   ctx->blitting = false;
    if (!render_condition_enabled && render_condition_active)
       zink_start_conditional_render(ctx);
    ctx->render_condition_active = render_condition_active;
@@ -565,11 +571,14 @@ zink_clear_depth_stencil(struct pipe_context *pctx, struct pipe_surface *dst,
    if (!cur_attachment) {
       util_blitter_save_framebuffer(ctx->blitter, &ctx->fb_state);
       set_clear_fb(pctx, NULL, dst);
+      ctx->blitting = true;
    }
    struct pipe_scissor_state scissor = {dstx, dsty, dstx + width, dsty + height};
    pctx->clear(pctx, clear_flags, &scissor, NULL, depth, stencil);
-   if (!cur_attachment)
+   if (!cur_attachment) {
       util_blitter_restore_fb_state(ctx->blitter);
+      ctx->blitting = false;
+   }
    if (!render_condition_enabled && render_condition_active)
       zink_start_conditional_render(ctx);
    ctx->render_condition_active = render_condition_active;

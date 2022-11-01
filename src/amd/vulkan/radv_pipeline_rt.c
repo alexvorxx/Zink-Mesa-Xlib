@@ -1378,6 +1378,7 @@ build_traversal_shader(struct radv_device *device,
    nir_store_var(&b, vars.tmin, nir_load_ray_t_min(&b), 0x1);
    nir_store_var(&b, vars.direction, nir_load_ray_world_direction(&b), 0x7);
    nir_store_var(&b, vars.tmax, nir_load_ray_t_max(&b), 0x1);
+   nir_store_var(&b, vars.arg, nir_load_rt_arg_scratch_offset_amd(&b), 0x1);
    nir_store_var(&b, vars.stack_ptr, nir_imm_int(&b, 0), 0x1);
 
    struct rt_traversal_vars trav_vars = init_traversal_vars(&b);

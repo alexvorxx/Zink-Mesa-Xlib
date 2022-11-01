@@ -146,7 +146,12 @@ init_buffer(struct d3d12_screen *screen,
     * element state */
    assert(templ->format == d3d12_emulated_vtx_format(templ->format));
 
-   switch (templ->usage) {
+   if ((templ->flags & PIPE_RESOURCE_FLAG_MAP_PERSISTENT) &&
+       res->base.b.usage == PIPE_USAGE_DEFAULT)
+   {
+      res->base.b.usage = PIPE_USAGE_STAGING;
+   }
+   switch (res->base.b.usage) {
    case PIPE_USAGE_DEFAULT:
    case PIPE_USAGE_IMMUTABLE:
       bufmgr = screen->cache_bufmgr;

@@ -242,8 +242,6 @@ files_libgallium = files(
   'util/u_live_shader_cache.h',
   'util/u_log.c',
   'util/u_log.h',
-  'util/u_network.c',
-  'util/u_network.h',
   'util/u_pack_color.h',
   'util/u_prim.h',
   'util/u_prim.c',

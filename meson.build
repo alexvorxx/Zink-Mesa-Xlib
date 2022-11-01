@@ -234,7 +234,11 @@ foreach gallium_driver : gallium_drivers
 endforeach
 
 with_gallium = gallium_drivers.length() != 0
-with_gallium_kmsro = with_gallium_v3d or with_gallium_vc4 or with_gallium_etnaviv or with_gallium_panfrost or with_gallium_lima or with_gallium_freedreno
+with_gallium_kmsro = with_gallium_v3d or with_gallium_vc4 or with_gallium_etnaviv or with_gallium_panfrost or with_gallium_lima or with_gallium_freedreno or with_gallium_asahi
+
+if not system_has_kms_drm
+   with_gallium_kmsro = false
+endif
 
 with_dri = false
 if with_gallium and system_has_kms_drm
@@ -282,11 +286,6 @@ with_imagination_srv = get_option('imagination-srv')
 with_microsoft_vk = _vulkan_drivers.contains('microsoft-experimental')
 with_any_vk = _vulkan_drivers.length() != 0
 
-_vulkan_rt_drivers = get_option('vulkan-rt-drivers')
-if _vulkan_rt_drivers.contains('intel')
-  error('Use -Dintel-clc=enabled to enable Intel Vulkan Ray Tracing')
-endif
-
 with_any_broadcom = with_gallium_vc4 or with_gallium_v3d or with_broadcom_vk
 with_any_intel = with_intel_vk or with_intel_hasvk or with_gallium_iris or with_gallium_crocus or with_intel_tools
 
@@ -302,7 +301,7 @@ endif
 
 with_microsoft_clc = get_option('microsoft-clc').enabled()
 with_intel_clc = get_option('intel-clc').enabled()
-with_intel_vk_rt = with_intel_clc
+with_intel_vk_rt = with_intel_vk and with_intel_clc
 with_clc = with_microsoft_clc or with_intel_clc
 with_libclc = with_clc
 with_spirv_to_dxil = get_option('spirv-to-dxil')
@@ -2354,6 +2353,7 @@ if with_any_vk
   if with_any_vulkan_layers
     lines += 'Vulkan layers:   ' + ' '.join(get_option('vulkan-layers'))
   endif
+  lines += 'Vulkan Intel Ray Tracing:  ' + (with_intel_vk_rt ? 'yes' : 'no')
 else
   lines += 'Vulkan drivers:  no'
 endif

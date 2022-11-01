@@ -17,6 +17,8 @@
 
 #include <nouveau_drm.h>
 #include <xf86drm.h>
+#include <nvif/class.h>
+#include <nvif/cl0080.h>
 
 #include "nouveau_winsys.h"
 #include "nouveau_screen.h"
@@ -243,6 +245,18 @@ nouveau_pushbuf_destroy(struct nouveau_pushbuf **push)
    nouveau_pushbuf_del(push);
 }
 
+static bool
+nouveau_check_for_uma(int chipset, struct nouveau_object *obj)
+{
+   struct nv_device_info_v0 info = {
+      .version = 0,
+   };
+
+   nouveau_object_mthd(obj, NV_DEVICE_V0_INFO, &info, sizeof(info));
+
+   return (info.platform == NV_DEVICE_INFO_V0_IGP) || (info.platform == NV_DEVICE_INFO_V0_SOC);
+}
+
 int
 nouveau_screen_init(struct nouveau_screen *screen, struct nouveau_device *dev)
 {
@@ -398,6 +412,8 @@ nouveau_screen_init(struct nouveau_screen *screen, struct nouveau_device *dev)
    screen->sysmem_bindings =
       PIPE_BIND_SAMPLER_VIEW | PIPE_BIND_STREAM_OUTPUT |
       PIPE_BIND_COMMAND_ARGS_BUFFER;
+
+   screen->is_uma = nouveau_check_for_uma(dev->chipset, &dev->object);
 
    memset(&mm_config, 0, sizeof(mm_config));
    nouveau_fence_list_init(&screen->fence);

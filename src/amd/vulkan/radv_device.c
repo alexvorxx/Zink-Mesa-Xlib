@@ -611,7 +611,7 @@ radv_physical_device_get_supported_extensions(const struct radv_physical_device 
       .EXT_shader_viewport_index_layer = true,
       .EXT_subgroup_size_control = true,
       .EXT_texel_buffer_alignment = true,
-      .EXT_transform_feedback = device->rad_info.gfx_level < GFX11,
+      .EXT_transform_feedback = true,
       .EXT_vertex_attribute_divisor = true,
       .EXT_vertex_input_dynamic_state = !device->use_llvm &&
                                         !radv_NV_device_generated_commands_enabled(device),
@@ -871,7 +871,9 @@ radv_physical_device_try_create(struct radv_instance *instance, drmDevicePtr drm
                               (device->instance->perftest_flags & RADV_PERFTEST_NGGC)) &&
                              !(device->instance->debug_flags & RADV_DEBUG_NO_NGGC);
 
-   device->use_ngg_streamout = false;
+   device->use_ngg_streamout = device->use_ngg &&
+                               (device->rad_info.gfx_level >= GFX11 ||
+                                (device->instance->perftest_flags & RADV_PERFTEST_NGG_STREAMOUT));
 
    /* Determine the number of threads per wave for all stages. */
    device->cs_wave_size = 64;
@@ -890,7 +892,13 @@ radv_physical_device_try_create(struct radv_instance *instance, drmDevicePtr drm
       if (device->instance->perftest_flags & RADV_PERFTEST_GE_WAVE_32)
          device->ge_wave_size = 32;
 
-      if (!(device->instance->perftest_flags & RADV_PERFTEST_RT_WAVE_64))
+      /* Default to 32 on RDNA1-2 as that gives better perf due to less issues with divergence.
+       * However, on GFX11 default to wave64 as ACO does not support VOPD yet, and with the VALU
+       * dependence wave32 would likely be a net-loss (as well as the SALU count becoming more
+       * problematic)
+       */
+      if (!(device->instance->perftest_flags & RADV_PERFTEST_RT_WAVE_64) &&
+          device->rad_info.gfx_level < GFX11)
          device->rt_wave_size = 32;
    }
 
@@ -1056,6 +1064,7 @@ static const struct debug_control radv_perftest_options[] = {{"localbos", RADV_P
                                                              {"rtwave64", RADV_PERFTEST_RT_WAVE_64},
                                                              {"gpl", RADV_PERFTEST_GPL},
                                                              {"ext_ms", RADV_PERFTEST_EXT_MS},
+                                                             {"ngg_streamout", RADV_PERFTEST_NGG_STREAMOUT},
                                                              {NULL, 0}};
 
 const char *
@@ -1469,8 +1478,8 @@ radv_GetPhysicalDeviceFeatures2(VkPhysicalDevice physicalDevice,
       case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_TRANSFORM_FEEDBACK_FEATURES_EXT: {
          VkPhysicalDeviceTransformFeedbackFeaturesEXT *features =
             (VkPhysicalDeviceTransformFeedbackFeaturesEXT *)ext;
-         features->transformFeedback = pdevice->rad_info.gfx_level < GFX11;
-         features->geometryStreams = !pdevice->use_ngg_streamout && pdevice->rad_info.gfx_level < GFX11;
+         features->transformFeedback = true;
+         features->geometryStreams = true;
          break;
       }
       case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SCALAR_BLOCK_LAYOUT_FEATURES: {
@@ -2437,8 +2446,8 @@ radv_GetPhysicalDeviceProperties2(VkPhysicalDevice physicalDevice,
          properties->maxTransformFeedbackStreamDataSize = 512;
          properties->maxTransformFeedbackBufferDataSize = 512;
          properties->maxTransformFeedbackBufferDataStride = 512;
-         properties->transformFeedbackQueries = !pdevice->use_ngg_streamout;
-         properties->transformFeedbackStreamsLinesTriangles = !pdevice->use_ngg_streamout;
+         properties->transformFeedbackQueries = true;
+         properties->transformFeedbackStreamsLinesTriangles = true;
          properties->transformFeedbackRasterizationStreamSelect = false;
          properties->transformFeedbackDraw = true;
          break;

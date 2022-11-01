@@ -54,7 +54,7 @@ void
 main()
 {
    /* Revert the order so we start at the root */
-   uint32_t global_id = args.internal_node_count - 1 - gl_GlobalInvocationID.x;
+   uint32_t global_id = DEREF(args.header).ir_internal_node_count - 1 - gl_GlobalInvocationID.x;
 
    uint32_t intermediate_leaf_node_size;
    uint32_t output_leaf_node_size;
@@ -84,15 +84,16 @@ main()
    radv_ir_box_node src = DEREF(src_node);
 
   uint32_t dst_node_offset = dst_internal_offset + global_id * SIZEOF(radv_bvh_box32_node);
-   if (global_id == args.internal_node_count - 1)
+   if (global_id == DEREF(args.header).ir_internal_node_count - 1)
       dst_node_offset = id_to_offset(RADV_BVH_ROOT_NODE);
 
    REF(radv_bvh_box32_node) dst_node = REF(radv_bvh_box32_node)(OFFSET(args.output_bvh, dst_node_offset));
    uint32_t node_id = pack_node_id(dst_node_offset, radv_bvh_node_box32);
 
    for (;;) {
-      controlBarrier(gl_ScopeWorkgroup, gl_ScopeDevice, gl_StorageSemanticsBuffer,
-                     gl_SemanticsAcquireRelease | gl_SemanticsMakeAvailable | gl_SemanticsMakeVisible);
+      /* Make changes to the current node's in_final_tree value visible. */
+      memoryBarrier(gl_ScopeDevice, gl_StorageSemanticsBuffer,
+                    gl_SemanticsAcquireRelease | gl_SemanticsMakeAvailable | gl_SemanticsMakeVisible);
 
       uint32_t in_final_tree = node_id == RADV_BVH_ROOT_NODE ? FINAL_TREE_PRESENT : DEREF(src_node).in_final_tree;
       if (in_final_tree == FINAL_TREE_UNKNOWN)
@@ -114,9 +115,9 @@ main()
             if (ir_id_to_type(children[i]) != radv_ir_node_internal)
                continue;
 
-            AABB bounds =
-               load_aabb(REF(radv_ir_node)OFFSET(args.intermediate_bvh,
-                                                 ir_id_to_offset(children[i])));
+            radv_aabb bounds =
+               DEREF(REF(radv_ir_node)OFFSET(args.intermediate_bvh,
+                                             ir_id_to_offset(children[i]))).aabb;
 
             float surface_area = aabb_surface_area(bounds);
             if (surface_area > largest_surface_area) {
@@ -145,6 +146,7 @@ main()
 
             if (valid_grandchild_count > 0)
                children[collapsed_child_index] = grandchildren[0];
+
             if (in_final_tree == FINAL_TREE_PRESENT)
                DEREF(child_node).in_final_tree = FINAL_TREE_NOT_PRESENT;
          } else
@@ -170,15 +172,10 @@ main()
             }
          }
 
-         AABB child_aabb =
-            load_aabb(REF(radv_ir_node)OFFSET(args.intermediate_bvh, offset));
+         radv_aabb child_aabb =
+            DEREF(REF(radv_ir_node)OFFSET(args.intermediate_bvh, offset)).aabb;
 
-         DEREF(dst_node).coords[i][0][0] = child_aabb.min.x;
-         DEREF(dst_node).coords[i][0][1] = child_aabb.min.y;
-         DEREF(dst_node).coords[i][0][2] = child_aabb.min.z;
-         DEREF(dst_node).coords[i][1][0] = child_aabb.max.x;
-         DEREF(dst_node).coords[i][1][1] = child_aabb.max.y;
-         DEREF(dst_node).coords[i][1][2] = child_aabb.max.z;
+         DEREF(dst_node).coords[i] = child_aabb;
 
          uint32_t child_id = pack_node_id(dst_offset, ir_type_to_bvh_type(type));
          children[i] = child_id;
@@ -187,16 +184,21 @@ main()
       }
 
       for (uint i = found_child_count; i < 4; ++i) {
-         for (uint vec = 0; vec < 2; ++vec)
-            for (uint comp = 0; comp < 3; ++comp)
-               DEREF(dst_node).coords[i][vec][comp] = NAN;
+            for (uint comp = 0; comp < 3; ++comp) {
+               DEREF(dst_node).coords[i].min[comp] = NAN;
+               DEREF(dst_node).coords[i].max[comp] = NAN;
+            }
       }
+
+      /* Make changes to the children's in_final_tree value available to the other invocations. */
+      memoryBarrier(gl_ScopeDevice, gl_StorageSemanticsBuffer,
+                    gl_SemanticsAcquireRelease | gl_SemanticsMakeAvailable | gl_SemanticsMakeVisible);
 
       DEREF(dst_node).children = children;
       break;
    }
 
-   if (global_id == args.internal_node_count - 1) {
+   if (global_id == DEREF(args.header).ir_internal_node_count - 1) {
       REF(radv_accel_struct_header) header = REF(radv_accel_struct_header)(args.output_bvh - args.output_bvh_offset);
       DEREF(header).aabb = src.base.aabb;
       DEREF(header).bvh_offset = args.output_bvh_offset;

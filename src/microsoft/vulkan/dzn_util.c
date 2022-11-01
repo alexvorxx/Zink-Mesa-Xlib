@@ -375,6 +375,8 @@ d3d12_create_device(struct util_dl_library *d3d12_mod, IUnknown *adapter, ID3D12
 
    ID3D12Device2 *dev;
    if (factory) {
+      ID3D12DeviceFactory_SetFlags(factory, D3D12_DEVICE_FACTORY_FLAG_ALLOW_RETURNING_EXISTING_DEVICE |
+                                            D3D12_DEVICE_FACTORY_FLAG_ALLOW_RETURNING_INCOMPATIBLE_EXISTING_DEVICE);
       if (FAILED(ID3D12DeviceFactory_CreateDevice(factory, adapter, D3D_FEATURE_LEVEL_11_0,
                                                   &IID_ID3D12Device2,
                                                   (void **)&dev))) {

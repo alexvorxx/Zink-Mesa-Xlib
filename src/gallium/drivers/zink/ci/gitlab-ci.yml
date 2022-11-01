@@ -64,3 +64,4 @@ zink-freedreno-a630-traces:
     HWCI_START_XORG: ""
     WAFFLE_PLATFORM: gbm
     PIGLIT_PLATFORM: gbm
+    ZINK_DEBUG: rp

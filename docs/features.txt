@@ -111,7 +111,7 @@ GL 3.3, GLSL 3.30 --- all DONE: freedreno, i965, nv50, nvc0, r600, radeonsi, llv
   GL_ARB_vertex_type_2_10_10_10_rev                     DONE (v3d, panfrost)
 
 
-GL 4.0, GLSL 4.00 --- all DONE: i965/gen7+, nvc0, r600, radeonsi, llvmpipe, virgl, zink, d3d12
+GL 4.0, GLSL 4.00 --- all DONE: freedreno/a6xx, i965/gen7+, nvc0, r600, radeonsi, llvmpipe, virgl, zink, d3d12
 
   GL_ARB_draw_buffers_blend                             DONE (freedreno, i965/gen6+, nv50, softpipe, panfrost, v3d)
   GL_ARB_draw_indirect                                  DONE (freedreno, i965/gen7+, softpipe, v3d)
@@ -140,7 +140,7 @@ GL 4.0, GLSL 4.00 --- all DONE: i965/gen7+, nvc0, r600, radeonsi, llvmpipe, virg
   GL_ARB_transform_feedback3                            DONE (freedreno/a3xx+, i965/gen7+, softpipe, )
 
 
-GL 4.1, GLSL 4.10 --- all DONE: i965/gen7+, nvc0, r600, radeonsi, llvmpipe, virgl, zink, d3d12
+GL 4.1, GLSL 4.10 --- all DONE: freedreno/a6xx, i965/gen7+, nvc0, r600, radeonsi, llvmpipe, virgl, zink, d3d12
 
   GL_ARB_ES2_compatibility                              DONE (freedreno, i965, nv50, softpipe, v3d, vc4, panfrost, lima)
   GL_ARB_get_program_binary                             DONE (freedreno, v3d, 0 or 1 binary formats)
@@ -150,7 +150,7 @@ GL 4.1, GLSL 4.10 --- all DONE: i965/gen7+, nvc0, r600, radeonsi, llvmpipe, virg
   GL_ARB_viewport_array                                 DONE (freedreno/a6xx, i965, nv50, softpipe, )
 
 
-GL 4.2, GLSL 4.20 -- all DONE: i965/gen7+, nvc0, r600, radeonsi, llvmpipe, virgl, zink, d3d12
+GL 4.2, GLSL 4.20 -- all DONE: freedreno/a6xx, i965/gen7+, nvc0, r600, radeonsi, llvmpipe, virgl, zink, d3d12
 
   GL_ARB_texture_compression_bptc                       DONE (all drivers that supports EXT_texture_sRGB and OES_texture_half_float)
   GL_ARB_compressed_texture_pixel_storage               DONE (all drivers)
@@ -166,7 +166,7 @@ GL 4.2, GLSL 4.20 -- all DONE: i965/gen7+, nvc0, r600, radeonsi, llvmpipe, virgl
   GL_ARB_map_buffer_alignment                           DONE (all drivers)
 
 
-GL 4.3, GLSL 4.30 -- all DONE: i965/gen8+, nvc0, r600, radeonsi, llvmpipe, virgl, zink
+GL 4.3, GLSL 4.30 -- all DONE: freedreno/a6xx, i965/gen8+, nvc0, r600, radeonsi, llvmpipe, virgl, zink
 
   GL_ARB_arrays_of_arrays                               DONE (all drivers that support GLSL 1.30)
   GL_ARB_ES3_compatibility                              DONE (all drivers that support GLSL 3.30)
@@ -195,7 +195,7 @@ GL 4.3, GLSL 4.30 -- all DONE: i965/gen8+, nvc0, r600, radeonsi, llvmpipe, virgl
 GL 4.4, GLSL 4.40 -- all DONE: i965/gen8+, nvc0, r600, radeonsi, llvmpipe, zink
 
   GL_MAX_VERTEX_ATTRIB_STRIDE                           DONE (all drivers)
-  GL_ARB_buffer_storage                                 DONE (freedreno, i965, nv50, v3d, vc4, lima, panfrost, asahi)
+  GL_ARB_buffer_storage                                 DONE (freedreno, i965, nv50, v3d, vc4, lima, panfrost, asahi, d3d12, softpipe, etnaviv)
   GL_ARB_clear_texture                                  DONE (i965, nv50, softpipe, virgl)
   GL_ARB_enhanced_layouts                               DONE (freedreno/a3xx+, i965, nv50, softpipe, virgl)
   - compile-time constant expressions                   DONE
@@ -240,7 +240,7 @@ GL 4.6, GLSL 4.60 -- all DONE: radeonsi, zink
   GL_KHR_no_error                                       DONE (all drivers)
 
 These are the extensions cherry-picked to make GLES 3.1
-GLES3.1, GLSL ES 3.1 -- all DONE: i965/hsw+, nvc0, r600, radeonsi, virgl, v3d, softpipe, llvmpipe, zink, panfrost, d3d12
+GLES3.1, GLSL ES 3.1 -- all DONE: freedreno/a5xx+, i965/hsw+, nvc0, r600, radeonsi, virgl, v3d, softpipe, llvmpipe, zink, panfrost, d3d12
 
   GL_ARB_arrays_of_arrays                               DONE (all drivers that support GLSL 1.30)
   GL_ARB_compute_shader                                 DONE (freedreno/a5xx+, i965/gen7+)
@@ -268,7 +268,7 @@ GLES3.1, GLSL ES 3.1 -- all DONE: i965/hsw+, nvc0, r600, radeonsi, virgl, v3d, s
       glGetBooleani_v - restrict to GLES enums
       gl_HelperInvocation support                       DONE (i965, r600, panfrost)
 
-GLES3.2, GLSL ES 3.2 -- all DONE: i965/gen9+, radeonsi, virgl, llvmpipe, zink
+GLES3.2, GLSL ES 3.2 -- all DONE: freedreno/a6xx, i965/gen9+, radeonsi, virgl, llvmpipe, zink
 
   GL_EXT_color_buffer_float                             DONE (all drivers)
   GL_KHR_blend_equation_advanced                        DONE (freedreno/a6xx, i965, nvc0, panfrost)

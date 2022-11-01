@@ -56,7 +56,8 @@ build_resolve_fragment_shader(struct radv_device *dev, bool is_integer, int samp
    nir_ssa_def *img_coord = nir_channels(&b, nir_iadd(&b, pos_int, src_offset), 0x3);
    nir_variable *color = nir_local_variable_create(b.impl, glsl_vec4_type(), "color");
 
-   radv_meta_build_resolve_shader_core(&b, is_integer, samples, input_img, color, img_coord);
+   radv_meta_build_resolve_shader_core(&b, is_integer, samples, input_img, color, img_coord,
+                                       dev->physical_device->rad_info.gfx_level);
 
    nir_ssa_def *outval = nir_load_var(&b, color);
    nir_store_var(&b, color_out, outval, 0xf);

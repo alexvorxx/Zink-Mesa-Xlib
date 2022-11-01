@@ -2062,3 +2062,13 @@ radv_device_init_msaa(struct radv_device *device)
    for (i = 0; i < 8; i++)
       radv_get_sample_position(device, 8, i, device->sample_locations_8x[i]);
 }
+
+void
+radv_emit_write_data_imm(struct radeon_cmdbuf *cs, unsigned engine_sel, uint64_t va, uint32_t imm)
+{
+   radeon_emit(cs, PKT3(PKT3_WRITE_DATA, 3, 0));
+   radeon_emit(cs, S_370_DST_SEL(V_370_MEM) | S_370_WR_CONFIRM(1) | S_370_ENGINE_SEL(engine_sel));
+   radeon_emit(cs, va);
+   radeon_emit(cs, va >> 32);
+   radeon_emit(cs, imm);
+}

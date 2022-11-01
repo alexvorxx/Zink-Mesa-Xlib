@@ -9,6 +9,7 @@ hardware is currently supported:
 =========  ============ ============ =======
 Product    Architecture OpenGL ES    OpenGL
 =========  ============ ============ =======
+Mali T620  Midgard (v4) 2.0          2.1
 Mali T720  Midgard (v4) 2.0          2.1
 Mali T760  Midgard (v5) 3.1          3.1
 Mali T820  Midgard (v5) 3.1          3.1
@@ -23,7 +24,7 @@ Mali G76   Bifrost (v7) 3.1          3.1
 Mali G57   Valhall (v9) 3.1          3.1
 =========  ============ ============ =======
 
-Other Midgard and Bifrost chips (T604, T628, G71) are not yet supported.
+Other Midgard and Bifrost chips (T604, G71) are not yet supported.
 
 Older Mali chips based on the Utgard architecture (Mali 400, Mali 450) are
 supported in the Lima driver, not Panfrost. Lima is also available in Mesa.

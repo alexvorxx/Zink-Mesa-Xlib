@@ -431,7 +431,7 @@ nv50_screen_get_param(struct pipe_screen *pscreen, enum pipe_cap param)
    case PIPE_CAP_VIDEO_MEMORY:
       return dev->vram_size >> 20;
    case PIPE_CAP_UMA:
-      return 0;
+      return nouveau_screen(pscreen)->is_uma;
 
    default:
       if (!debug_cap_printed[param]) {

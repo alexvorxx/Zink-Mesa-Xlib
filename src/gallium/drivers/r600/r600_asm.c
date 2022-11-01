@@ -1327,14 +1327,14 @@ int r600_bytecode_add_alu_type(struct r600_bytecode *bc,
 	}
 	/* number of gpr == the last gpr used in any alu */
 	for (i = 0; i < 3; i++) {
-		if (nalu->src[i].sel >= bc->ngpr && nalu->src[i].sel < 128) {
+		if (nalu->src[i].sel >= bc->ngpr && nalu->src[i].sel < 124) {
 			bc->ngpr = nalu->src[i].sel + 1;
 		}
 		if (nalu->src[i].sel == V_SQ_ALU_SRC_LITERAL)
 			r600_bytecode_special_constants(nalu->src[i].value,
 				&nalu->src[i].sel);
 	}
-	if (nalu->dst.write && nalu->dst.sel >= bc->ngpr) {
+	if (nalu->dst.write && nalu->dst.sel >= bc->ngpr && nalu->dst.sel < 124) {
 		bc->ngpr = nalu->dst.sel + 1;
 	}
 	list_addtail(&nalu->list, &bc->cf_last->alu);
@@ -2176,7 +2176,7 @@ void r600_bytecode_disasm(struct r600_bytecode *bc)
 	struct r600_bytecode_tex *tex = NULL;
 	struct r600_bytecode_gds *gds = NULL;
 
-	unsigned i, id, ngr = 0, last;
+	unsigned id, ngr = 0, last;
 	uint32_t literal[4];
 	unsigned nliteral;
 	char chip = '6';
@@ -2216,7 +2216,7 @@ void r600_bytecode_disasm(struct r600_bytecode *bc)
 				fprintf(stderr, "%04d %08X %08X  %s ", id, bc->bytecode[id],
 						bc->bytecode[id + 1], cfop->name);
 				fprintf(stderr, "%d @%d ", cf->ndw / 2, cf->addr);
-				for (i = 0; i < 4; ++i) {
+				for (int i = 0; i < 4; ++i) {
 					if (cf->kcache[i].mode) {
 						int c_start = (cf->kcache[i].addr << 4);
 						int c_end = c_start + (cf->kcache[i].mode << 4);
@@ -2306,7 +2306,7 @@ void r600_bytecode_disasm(struct r600_bytecode *bc)
 					o += print_indent(o, 55);
 					o += fprintf(stderr, "R%d.", cf->output.gpr);
 				}
-				for (i = 0; i < 4; ++i) {
+				for (int i = 0; i < 4; ++i) {
 					if (cf->output.comp_mask & (1 << i))
 						o += print_swizzle(i);
 					else
@@ -2383,8 +2383,16 @@ void r600_bytecode_disasm(struct r600_bytecode *bc)
 					omod_str[alu->omod], alu->dst.clamp ? "_sat":"");
 
 			o += print_indent(o,60);
-			o += print_dst(alu);
-			for (i = 0; i < aop->src_count; ++i) {
+			if (bc->isa->hw_class == ISA_CC_CAYMAN && alu->op == ALU_OP1_MOVA_INT) {
+				switch (alu->dst.sel) {
+				case 0: fprintf(stderr, "AR"); break;
+				case 2: fprintf(stderr, "CF_IDX0"); break;
+				case 3: fprintf(stderr, "CF_IDX1"); break;
+				}
+			} else {
+				o += print_dst(alu);
+			}
+			for (int i = 0; i < aop->src_count; ++i) {
 				o += fprintf(stderr, i == 0 ? ",  ": ", ");
 				o += print_src(alu, i);
 			}
@@ -2398,7 +2406,7 @@ void r600_bytecode_disasm(struct r600_bytecode *bc)
 			id += 2;
 
 			if (alu->last) {
-				for (i = 0; i < nliteral; i++, id++) {
+				for (unsigned i = 0; i < nliteral; i++, id++) {
 					float *f = (float*)(bc->bytecode + id);
 					o = fprintf(stderr, " %04d %08X", id, bc->bytecode[id]);
 					print_indent(o, 60);

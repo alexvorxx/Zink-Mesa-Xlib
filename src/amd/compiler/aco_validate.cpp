@@ -262,6 +262,7 @@ validate_ir(Program* program)
                bool can_be_undef = is_phi(instr) || instr->isEXP() || instr->isReduction() ||
                                    instr->opcode == aco_opcode::p_create_vector ||
                                    instr->opcode == aco_opcode::p_jump_to_epilog ||
+                                   (instr->opcode == aco_opcode::p_interp_gfx11 && i == 0) ||
                                    (flat && i == 1) || (instr->isMIMG() && (i == 1 || i == 2)) ||
                                    ((instr->isMUBUF() || instr->isMTBUF()) && i == 1) ||
                                    (instr->isScratch() && i == 0);

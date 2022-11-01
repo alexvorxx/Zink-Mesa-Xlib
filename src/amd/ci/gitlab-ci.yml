@@ -122,7 +122,7 @@ radv-raven-traces:amd64:
   variables:
     PIGLIT_REPLAY_DEVICE_NAME: "vk-${GPU_VERSION}"
 
-radeonsi-raven-piglit-gl:amd64:
+radeonsi-raven-piglit-quick_gl:amd64:
   extends:
     - .lava-piglit:amd64
     - .radeonsi-raven-test:amd64
@@ -130,6 +130,12 @@ radeonsi-raven-piglit-gl:amd64:
     PIGLIT_PLATFORM: mixed_glx_egl
     PIGLIT_PROFILES: quick_gl
     HWCI_START_XORG: 1
+
+radeonsi-raven-piglit-quick_shader:amd64:
+  extends:
+    - radeonsi-raven-piglit-quick_gl:amd64
+  variables:
+    PIGLIT_PROFILES: quick_shader
 
 radeonsi-raven-va:amd64:
   extends:

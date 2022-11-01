@@ -51,14 +51,14 @@ radv_suspend_queries(struct radv_meta_saved_state *state, struct radv_cmd_buffer
       radv_set_db_count_control(cmd_buffer, false);
    }
 
-   /* Primitives generated queries. */
+   /* Primitives generated queries (legacy). */
    if (cmd_buffer->state.active_prims_gen_queries) {
       cmd_buffer->state.suspend_streamout = true;
       radv_emit_streamout_enable(cmd_buffer);
+   }
 
-      /* Save the number of active GDS queries and reset it to make sure internal operations won't
-       * increment the counters via GDS.
-       */
+   /* Primitives generated queries (NGG). */
+   if (cmd_buffer->state.active_prims_gen_gds_queries) {
       state->active_prims_gen_gds_queries = cmd_buffer->state.active_prims_gen_gds_queries;
       cmd_buffer->state.active_prims_gen_gds_queries = 0;
    }
@@ -80,12 +80,14 @@ radv_resume_queries(const struct radv_meta_saved_state *state, struct radv_cmd_b
       radv_set_db_count_control(cmd_buffer, true);
    }
 
-   /* Primitives generated queries. */
+   /* Primitives generated queries (legacy). */
    if (cmd_buffer->state.active_prims_gen_queries) {
       cmd_buffer->state.suspend_streamout = false;
       radv_emit_streamout_enable(cmd_buffer);
+   }
 
-      /* Restore the number of active GDS queries to resume counting. */
+   /* Primitives generated queries (NGG). */
+   if (state->active_prims_gen_gds_queries) {
       cmd_buffer->state.active_prims_gen_gds_queries = state->active_prims_gen_gds_queries;
    }
 }
@@ -103,6 +105,7 @@ radv_meta_save(struct radv_meta_saved_state *state, struct radv_cmd_buffer *cmd_
    assert(flags & (RADV_META_SAVE_GRAPHICS_PIPELINE | RADV_META_SAVE_COMPUTE_PIPELINE));
 
    state->flags = flags;
+   state->active_prims_gen_gds_queries = 0;
 
    if (state->flags & RADV_META_SAVE_GRAPHICS_PIPELINE) {
       assert(!(state->flags & RADV_META_SAVE_COMPUTE_PIPELINE));
@@ -450,19 +453,21 @@ radv_device_init_meta(struct radv_device *device)
    if (result != VK_SUCCESS)
       goto fail_resolve_fragment;
 
-   result = radv_device_init_meta_fmask_expand_state(device);
-   if (result != VK_SUCCESS)
-      goto fail_fmask_expand;
+   if (device->physical_device->rad_info.gfx_level < GFX11) {
+      result = radv_device_init_meta_fmask_expand_state(device);
+      if (result != VK_SUCCESS)
+         goto fail_fmask_expand;
+
+      result = radv_device_init_meta_fmask_copy_state(device);
+      if (result != VK_SUCCESS)
+         goto fail_fmask_copy;
+   }
 
    if (radv_enable_rt(device->physical_device, false)) {
       result = radv_device_init_accel_struct_build_state(device);
       if (result != VK_SUCCESS)
          goto fail_accel_struct_build;
    }
-
-   result = radv_device_init_meta_fmask_copy_state(device);
-   if (result != VK_SUCCESS)
-      goto fail_fmask_copy;
 
    result = radv_device_init_meta_etc_decode_state(device, on_demand);
    if (result != VK_SUCCESS)
@@ -482,10 +487,10 @@ fail_dgc:
    radv_device_finish_dgc_prepare_state(device);
 fail_etc_decode:
    radv_device_finish_meta_etc_decode_state(device);
-fail_fmask_copy:
-   radv_device_finish_meta_fmask_copy_state(device);
 fail_accel_struct_build:
    radv_device_finish_accel_struct_build_state(device);
+fail_fmask_copy:
+   radv_device_finish_meta_fmask_copy_state(device);
 fail_fmask_expand:
    radv_device_finish_meta_fmask_expand_state(device);
 fail_resolve_fragment:
@@ -591,11 +596,10 @@ radv_meta_build_nir_fs_noop(struct radv_device *dev)
 void
 radv_meta_build_resolve_shader_core(nir_builder *b, bool is_integer, int samples,
                                     nir_variable *input_img, nir_variable *color,
-                                    nir_ssa_def *img_coord)
+                                    nir_ssa_def *img_coord, enum amd_gfx_level gfx_level)
 {
    /* do a txf_ms on each sample */
    nir_ssa_def *tmp;
-   bool inserted_if = false;
 
    nir_ssa_def *input_img_deref = &nir_build_deref_var(b, input_img)->dest.ssa;
 
@@ -617,7 +621,12 @@ radv_meta_build_resolve_shader_core(nir_builder *b, bool is_integer, int samples
 
    tmp = &tex->dest.ssa;
 
-   if (!is_integer && samples > 1) {
+   if (is_integer || samples <= 1) {
+      nir_store_var(b, color, &tex->dest.ssa, 0xf);
+      return;
+   }
+
+   if (gfx_level < GFX11) {
       nir_tex_instr *tex_all_same = nir_tex_instr_create(b->shader, 2);
       tex_all_same->sampler_dim = GLSL_SAMPLER_DIM_MS;
       tex_all_same->op = nir_texop_samples_identical;
@@ -634,35 +643,36 @@ radv_meta_build_resolve_shader_core(nir_builder *b, bool is_integer, int samples
 
       nir_ssa_def *not_all_same = nir_inot(b, &tex_all_same->dest.ssa);
       nir_push_if(b, not_all_same);
-      for (int i = 1; i < samples; i++) {
-         nir_tex_instr *tex_add = nir_tex_instr_create(b->shader, 3);
-         tex_add->sampler_dim = GLSL_SAMPLER_DIM_MS;
-         tex_add->op = nir_texop_txf_ms;
-         tex_add->src[0].src_type = nir_tex_src_coord;
-         tex_add->src[0].src = nir_src_for_ssa(img_coord);
-         tex_add->src[1].src_type = nir_tex_src_ms_index;
-         tex_add->src[1].src = nir_src_for_ssa(nir_imm_int(b, i));
-         tex_add->src[2].src_type = nir_tex_src_texture_deref;
-         tex_add->src[2].src = nir_src_for_ssa(input_img_deref);
-         tex_add->dest_type = nir_type_float32;
-         tex_add->is_array = false;
-         tex_add->coord_components = 2;
-
-         nir_ssa_dest_init(&tex_add->instr, &tex_add->dest, 4, 32, "tex");
-         nir_builder_instr_insert(b, &tex_add->instr);
-
-         tmp = nir_fadd(b, tmp, &tex_add->dest.ssa);
-      }
-
-      tmp = nir_fdiv(b, tmp, nir_imm_float(b, samples));
-      nir_store_var(b, color, tmp, 0xf);
-      nir_push_else(b, NULL);
-      inserted_if = true;
    }
-   nir_store_var(b, color, &tex->dest.ssa, 0xf);
 
-   if (inserted_if)
+   for (int i = 1; i < samples; i++) {
+      nir_tex_instr *tex_add = nir_tex_instr_create(b->shader, 3);
+      tex_add->sampler_dim = GLSL_SAMPLER_DIM_MS;
+      tex_add->op = nir_texop_txf_ms;
+      tex_add->src[0].src_type = nir_tex_src_coord;
+      tex_add->src[0].src = nir_src_for_ssa(img_coord);
+      tex_add->src[1].src_type = nir_tex_src_ms_index;
+      tex_add->src[1].src = nir_src_for_ssa(nir_imm_int(b, i));
+      tex_add->src[2].src_type = nir_tex_src_texture_deref;
+      tex_add->src[2].src = nir_src_for_ssa(input_img_deref);
+      tex_add->dest_type = nir_type_float32;
+      tex_add->is_array = false;
+      tex_add->coord_components = 2;
+
+      nir_ssa_dest_init(&tex_add->instr, &tex_add->dest, 4, 32, "tex");
+      nir_builder_instr_insert(b, &tex_add->instr);
+
+      tmp = nir_fadd(b, tmp, &tex_add->dest.ssa);
+   }
+
+   tmp = nir_fdiv(b, tmp, nir_imm_float(b, samples));
+   nir_store_var(b, color, tmp, 0xf);
+
+   if (gfx_level < GFX11) {
+      nir_push_else(b, NULL);
+      nir_store_var(b, color, &tex->dest.ssa, 0xf);
       nir_pop_if(b, NULL);
+   }
 }
 
 nir_ssa_def *

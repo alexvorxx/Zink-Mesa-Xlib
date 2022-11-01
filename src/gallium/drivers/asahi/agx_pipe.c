@@ -731,7 +731,6 @@ agx_get_param(struct pipe_screen* pscreen, enum pipe_cap param)
    case PIPE_CAP_MIXED_COLOR_DEPTH_BITS:
    case PIPE_CAP_FRAGMENT_SHADER_TEXTURE_LOD:
    case PIPE_CAP_VERTEX_COLOR_UNCLAMPED:
-   case PIPE_CAP_BUFFER_MAP_PERSISTENT_COHERENT:
    case PIPE_CAP_DEPTH_CLIP_DISABLE:
    case PIPE_CAP_MIXED_FRAMEBUFFER_SIZES:
    case PIPE_CAP_FRAGMENT_SHADER_DERIVATIVES:
@@ -1155,7 +1154,7 @@ static const struct u_transfer_vtbl transfer_vtbl = {
 };
 
 struct pipe_screen *
-agx_screen_create(struct sw_winsys *winsys)
+agx_screen_create(int fd, struct renderonly *ro, struct sw_winsys *winsys)
 {
    struct agx_screen *agx_screen;
    struct pipe_screen *screen;

@@ -298,6 +298,9 @@ panfrost_get_blend_shaders(struct panfrost_batch *batch,
                                         c, &shader_bo, &shader_offset);
                 }
         }
+
+        if (shader_bo)
+                perf_debug_ctx(batch->ctx, "Blend shader use");
 }
 
 #if PAN_ARCH >= 5
@@ -3547,6 +3550,8 @@ panfrost_launch_xfb(struct panfrost_batch *batch,
         if (count == 0)
                 return;
 
+        perf_debug_ctx(batch->ctx, "Emulating transform feedback");
+
         struct panfrost_shader_state *vs = panfrost_get_shader_state(ctx, PIPE_SHADER_VERTEX);
         struct panfrost_shader_variants v = { .variants = vs->xfb };
 
@@ -3800,6 +3805,8 @@ panfrost_indirect_draw(struct panfrost_batch *batch,
         struct panfrost_context *ctx = batch->ctx;
         struct panfrost_device *dev = pan_device(ctx->base.screen);
 
+        perf_debug(dev, "Emulating indirect draw on the GPU");
+
         /* TODO: update statistics (see panfrost_statistics_record()) */
         /* TODO: Increment transform feedback offsets */
         assert(ctx->streamout.num_targets == 0);
@@ -3991,6 +3998,7 @@ panfrost_draw_vbo(struct pipe_context *pipe,
         if ((!(dev->debug & PAN_DBG_INDIRECT) || !PAN_GPU_INDIRECTS) && indirect && indirect->buffer) {
                 assert(num_draws == 1);
                 util_draw_indirect(pipe, info, indirect);
+                perf_debug(dev, "Emulating indirect draw on the CPU");
                 return;
         }
 

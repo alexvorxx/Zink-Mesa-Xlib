@@ -4118,12 +4118,11 @@ radv_flush_streamout_descriptors(struct radv_cmd_buffer *cmd_buffer)
           */
          uint32_t size = 0xffffffff;
 
-         /* Compute the correct buffer size for NGG streamout
-          * because it's used to determine the max emit per
-          * buffer.
+         /* Set the correct buffer size for NGG streamout because it's used to determine the max
+          * emit per buffer.
           */
          if (cmd_buffer->device->physical_device->use_ngg_streamout)
-            size = buffer->vk.size - sb[i].offset;
+            size = sb[i].size;
 
          uint32_t rsrc_word3 =
             S_008F0C_DST_SEL_X(V_008F0C_SQ_SEL_X) | S_008F0C_DST_SEL_Y(V_008F0C_SQ_SEL_Y) |
@@ -4179,6 +4178,10 @@ radv_flush_ngg_query_state(struct radv_cmd_buffer *cmd_buffer)
 
    if (cmd_buffer->state.active_prims_gen_gds_queries)
       ngg_query_state |= radv_ngg_query_prim_gen;
+
+   if (cmd_buffer->state.active_prims_xfb_gds_queries) {
+      ngg_query_state |= radv_ngg_query_prim_xfb | radv_ngg_query_prim_gen;
+   }
 
    base_reg = pipeline->base.user_data_0[stage];
    assert(loc->sgpr_idx != -1);
@@ -8880,6 +8883,19 @@ radv_unaligned_dispatch(struct radv_cmd_buffer *cmd_buffer, uint32_t x, uint32_t
    info.blocks[0] = x;
    info.blocks[1] = y;
    info.blocks[2] = z;
+   info.unaligned = 1;
+
+   radv_compute_dispatch(cmd_buffer, &info);
+}
+
+void
+radv_indirect_unaligned_dispatch(struct radv_cmd_buffer *cmd_buffer, struct radeon_winsys_bo *bo,
+                                 uint64_t va)
+{
+   struct radv_dispatch_info info = {0};
+
+   info.indirect = bo;
+   info.va = va;
    info.unaligned = 1;
 
    radv_compute_dispatch(cmd_buffer, &info);
