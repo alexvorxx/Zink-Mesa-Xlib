@@ -25,7 +25,7 @@
  */
 
 #include "pipe/p_state.h"
-#include "util/debug.h"
+#include "util/u_debug.h"
 #include "util/format/u_format.h"
 #include "util/hash_table.h"
 #include "util/u_dump.h"
@@ -334,8 +334,8 @@ gmem_stateobj_init(struct fd_screen *screen, struct gmem_key *key)
    }
 
 #ifdef DEBUG
-   tpp_x = env_var_as_unsigned("TPP_X", tpp_x);
-   tpp_y = env_var_as_unsigned("TPP_Y", tpp_x);
+   tpp_x = debug_get_num_option("TPP_X", tpp_x);
+   tpp_y = debug_get_num_option("TPP_Y", tpp_x);
 #endif
 
    gmem->maxpw = tpp_x;

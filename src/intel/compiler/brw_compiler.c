@@ -27,7 +27,7 @@
 #include "dev/intel_debug.h"
 #include "compiler/nir/nir.h"
 #include "main/errors.h"
-#include "util/debug.h"
+#include "util/u_debug.h"
 
 #define COMMON_OPTIONS                                                        \
    .lower_fdiv = true,                                                        \
@@ -115,7 +115,7 @@ brw_compiler_create(void *mem_ctx, const struct intel_device_info *devinfo)
    if (devinfo->ver < 8)
       brw_vec4_alloc_reg_set(compiler);
 
-   compiler->precise_trig = env_var_as_boolean("INTEL_PRECISE_TRIG", false);
+   compiler->precise_trig = debug_get_bool_option("INTEL_PRECISE_TRIG", false);
 
    compiler->use_tcs_multi_patch = devinfo->ver >= 12;
 

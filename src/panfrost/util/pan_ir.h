@@ -335,7 +335,10 @@ struct pan_shader_info {
 
                 struct {
                         /* Is it legal to merge workgroups? This is true if the
-                         * shader uses neither barriers nor shared memory.
+                         * shader uses neither barriers nor shared memory. This
+                         * requires caution: if the API allows specifying shared
+                         * memory at launch time (instead of compile time), that
+                         * memory will not be accounted for by the compiler.
                          *
                          * Used by the Valhall hardware.
                          */
@@ -502,12 +505,15 @@ bool pan_has_dest_mod(nir_dest **dest, nir_op op);
 #define PAN_WRITEOUT_2 8
 
 bool pan_nir_lower_zs_store(nir_shader *nir);
+bool pan_nir_lower_store_component(nir_shader *shader);
 
 bool pan_nir_lower_64bit_intrin(nir_shader *shader);
 
 bool pan_lower_helper_invocation(nir_shader *shader);
 bool pan_lower_sample_pos(nir_shader *shader);
 bool pan_lower_xfb(nir_shader *nir);
+
+void pan_nir_collect_varyings(nir_shader *s, struct pan_shader_info *info);
 
 /*
  * Helper returning the subgroup size. Generally, this is equal to the number of

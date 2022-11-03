@@ -25,7 +25,7 @@
 #include "d3d12_public.h"
 #include "d3d12_debug.h"
 
-#include "util/debug.h"
+#include "util/u_debug.h"
 #include "util/u_memory.h"
 #include "util/u_dl.h"
 
@@ -81,7 +81,7 @@ choose_dxgi_adapter(IDXGIFactory4 *factory, LUID *adapter)
       debug_printf("D3D12: requested adapter missing, falling back to auto-detection...\n");
    }
 
-   bool want_warp = env_var_as_boolean("LIBGL_ALWAYS_SOFTWARE", false);
+   bool want_warp = debug_get_bool_option("LIBGL_ALWAYS_SOFTWARE", false);
    if (want_warp) {
       if (SUCCEEDED(factory->EnumWarpAdapter(IID_PPV_ARGS(&ret))))
          return ret;

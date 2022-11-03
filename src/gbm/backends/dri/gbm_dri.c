@@ -50,7 +50,7 @@
 #include "loader_dri_helper.h"
 #include "kopper_interface.h"
 #include "loader.h"
-#include "util/debug.h"
+#include "util/u_debug.h"
 #include "util/macros.h"
 
 /* For importing wl_buffer */
@@ -1478,7 +1478,7 @@ dri_device_create(int fd, uint32_t gbm_backend_version)
 
    mtx_init(&dri->mutex, mtx_plain);
 
-   force_sw = env_var_as_boolean("GBM_ALWAYS_SOFTWARE", false);
+   force_sw = debug_get_bool_option("GBM_ALWAYS_SOFTWARE", false);
    if (!force_sw) {
       ret = dri_screen_create(dri);
       if (ret)

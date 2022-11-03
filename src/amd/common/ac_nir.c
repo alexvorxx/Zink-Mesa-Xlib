@@ -185,7 +185,6 @@ ac_nir_create_gs_copy_shader(const nir_shader *gs_nir,
       stream_id = nir_ubfe_imm(&b, nir_load_streamout_config_amd(&b), 24, 2);
 
    nir_ssa_def *vtx_offset = nir_imul_imm(&b, nir_load_vertex_id_zero_base(&b), 4);
-   nir_ssa_def *undef = nir_ssa_undef(&b, 1, 32);
    nir_ssa_def *zero = nir_imm_zero(&b, 1, 32);
 
    for (unsigned stream = 0; stream < 4; stream++) {
@@ -222,17 +221,18 @@ ac_nir_create_gs_copy_shader(const nir_shader *gs_nir,
 
       if (stream == 0) {
          u_foreach_bit64 (i, output_mask) {
-            uint8_t mask = 0;
-            nir_ssa_def *vec[4];
-            for (unsigned j = 0; j < 4; j++) {
-               vec[j] = outputs[i][j] ? outputs[i][j] : undef;
-               mask |= (outputs[i][j] ? 1 : 0) << j;
-            }
-
             gl_varying_slot location = output_semantics ? output_semantics[i] : i;
-            nir_store_output(&b, nir_vec(&b, vec, 4), zero, .base = i, .write_mask = mask,
-                             .src_type = nir_type_uint32,
-                             .io_semantics = {.location = location, .num_slots = 1});
+
+            for (unsigned j = 0; j < 4; j++) {
+               if (outputs[i][j]) {
+                  nir_store_output(&b, outputs[i][j], zero,
+                                   .base = i,
+                                   .component = j,
+                                   .write_mask = 1,
+                                   .src_type = nir_type_uint32,
+                                   .io_semantics = {.location = location, .num_slots = 1});
+               }
+            }
          }
 
          nir_export_vertex_amd(&b);

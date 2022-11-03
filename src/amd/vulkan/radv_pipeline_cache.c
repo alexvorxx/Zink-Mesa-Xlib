@@ -21,7 +21,7 @@
  * IN THE SOFTWARE.
  */
 
-#include "util/debug.h"
+#include "util/u_debug.h"
 #include "util/disk_cache.h"
 #include "util/macros.h"
 #include "util/mesa-sha1.h"

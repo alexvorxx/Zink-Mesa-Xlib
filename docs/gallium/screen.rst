@@ -576,7 +576,7 @@ The integer capabilities:
 * ``PIPE_CAP_PREFER_IMM_ARRAYS_AS_CONSTBUF``: True if gallium frontends should
   turn arrays whose contents can be deduced at compile time into constant
   buffer loads, or false if the driver can handle such arrays itself in a more
-  efficient manner.
+  efficient manner (such as through nir_opt_large_constants() and nir->constant_data).
 * ``PIPE_CAP_GL_SPIRV``: True if the driver supports ARB_gl_spirv extension.
 * ``PIPE_CAP_GL_SPIRV_VARIABLE_POINTERS``: True if the driver supports Variable Pointers in SPIR-V shaders.
 * ``PIPE_CAP_DEMOTE_TO_HELPER_INVOCATION``: True if driver supports demote keyword in GLSL programs.

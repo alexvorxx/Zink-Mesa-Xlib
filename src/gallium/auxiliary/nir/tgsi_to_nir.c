@@ -23,7 +23,7 @@
  */
 
 #include "util/blob.h"
-#include "util/debug.h"
+#include "util/u_debug.h"
 #include "util/disk_cache.h"
 #include "util/u_memory.h"
 #include "util/ralloc.h"

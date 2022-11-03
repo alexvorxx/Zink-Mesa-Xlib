@@ -40,7 +40,7 @@
 #endif
 #include <sys/types.h>
 #include <sys/stat.h>
-#include "util/debug.h"
+#include "util/u_debug.h"
 #include "util/macros.h"
 #include "util/bitscan.h"
 
@@ -1714,12 +1714,12 @@ dri2_initialize_x11(_EGLDisplay *disp)
       return dri2_initialize_x11_swrast(disp);
 
 #ifdef HAVE_DRI3
-   if (!env_var_as_boolean("LIBGL_DRI3_DISABLE", false))
+   if (!debug_get_bool_option("LIBGL_DRI3_DISABLE", false))
       if (dri2_initialize_x11_dri3(disp))
          return EGL_TRUE;
 #endif
 
-   if (!env_var_as_boolean("LIBGL_DRI2_DISABLE", false))
+   if (!debug_get_bool_option("LIBGL_DRI2_DISABLE", false))
       if (dri2_initialize_x11_dri2(disp))
          return EGL_TRUE;
 

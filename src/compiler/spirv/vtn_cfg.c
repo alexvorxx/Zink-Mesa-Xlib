@@ -24,7 +24,7 @@
 #include "vtn_private.h"
 #include "spirv_info.h"
 #include "nir/nir_vla.h"
-#include "util/debug.h"
+#include "util/u_debug.h"
 
 static struct vtn_block *
 vtn_block(struct vtn_builder *b, uint32_t value_id)
@@ -1452,7 +1452,7 @@ vtn_function_emit(struct vtn_builder *b, struct vtn_function *func,
    static int force_unstructured = -1;
    if (force_unstructured < 0) {
       force_unstructured =
-         env_var_as_boolean("MESA_SPIRV_FORCE_UNSTRUCTURED", false);
+         debug_get_bool_option("MESA_SPIRV_FORCE_UNSTRUCTURED", false);
    }
 
    nir_function_impl *impl = func->nir_func->impl;

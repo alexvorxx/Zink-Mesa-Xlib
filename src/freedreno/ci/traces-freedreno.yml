@@ -459,7 +459,7 @@ traces:
     freedreno-a630:
       checksum: 0a6a16c394a413f02ec2ebcc3251e366
     zink-a630:
-      checksum: 42ec4a9cae7fe1eac6f8472269140fe5
+      checksum: 0a6a16c394a413f02ec2ebcc3251e366
 
   gputest/tessmark-v2.trace:
     freedreno-a306:

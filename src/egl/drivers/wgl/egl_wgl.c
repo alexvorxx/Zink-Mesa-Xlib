@@ -35,6 +35,7 @@
 #include <stw_framebuffer.h>
 #include <stw_image.h>
 #include <stw_winsys.h>
+#include <stw_ext_interop.h>
 
 #include <GL/wglext.h>
 
@@ -44,6 +45,8 @@
 
 #include <mapi/glapi/glapi.h>
 #include "util/u_call_once.h"
+
+#include <GL/mesa_glinterop.h>
 
 static EGLBoolean
 wgl_match_config(const _EGLConfig *conf, const _EGLConfig *criteria)
@@ -1161,6 +1164,32 @@ wgl_query_driver_config(_EGLDisplay *disp)
    return stw_get_config_xml();
 }
 
+static int
+wgl_interop_query_device_info(_EGLDisplay *disp, _EGLContext *ctx,
+                              struct mesa_glinterop_device_info *out)
+{
+   struct wgl_egl_context *wgl_ctx = wgl_egl_context(ctx);
+   return stw_interop_query_device_info(wgl_ctx->ctx, out);
+}
+
+static int
+wgl_interop_export_object(_EGLDisplay *disp, _EGLContext *ctx,
+                          struct mesa_glinterop_export_in *in,
+                          struct mesa_glinterop_export_out *out)
+{
+   struct wgl_egl_context *wgl_ctx = wgl_egl_context(ctx);
+   return stw_interop_export_object(wgl_ctx->ctx, in, out);
+}
+
+static int
+wgl_interop_flush_objects(_EGLDisplay *disp, _EGLContext *ctx,
+                          unsigned count, struct mesa_glinterop_export_in *objects,
+                          GLsync *sync)
+{
+   struct wgl_egl_context *wgl_ctx = wgl_egl_context(ctx);
+   return stw_interop_flush_objects(wgl_ctx->ctx, count, objects, sync);
+}
+
 struct _egl_driver _eglDriver = {
    .Initialize = wgl_initialize,
    .Terminate = wgl_terminate,
@@ -1187,5 +1216,8 @@ struct _egl_driver _eglDriver = {
    .SignalSyncKHR = wgl_signal_sync_khr,
    .QueryDriverName = wgl_query_driver_name,
    .QueryDriverConfig = wgl_query_driver_config,
+   .GLInteropQueryDeviceInfo = wgl_interop_query_device_info,
+   .GLInteropExportObject = wgl_interop_export_object,
+   .GLInteropFlushObjects = wgl_interop_flush_objects,
 };
 

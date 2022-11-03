@@ -2029,6 +2029,7 @@ void
 crocus_init_resource_functions(struct pipe_context *ctx)
 {
    ctx->flush_resource = crocus_flush_resource;
+   ctx->clear_buffer = u_default_clear_buffer;
    ctx->invalidate_resource = crocus_invalidate_resource;
    ctx->buffer_map = u_transfer_helper_transfer_map;
    ctx->texture_map = u_transfer_helper_transfer_map;

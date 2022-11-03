@@ -50,7 +50,7 @@
 #endif
 #include "glxextensions.h"
 
-#include "util/debug.h"
+#include "util/u_debug.h"
 #ifndef GLX_USE_APPLEGL
 #include "dri_common.h"
 #endif
@@ -921,8 +921,8 @@ __glXInitialize(Display * dpy)
    dpyPriv->glXDrawHash = __glxHashCreate();
 
 #if defined(GLX_DIRECT_RENDERING) && !defined(GLX_USE_APPLEGL)
-   Bool glx_direct = !env_var_as_boolean("LIBGL_ALWAYS_INDIRECT", false);
-   Bool glx_accel = !env_var_as_boolean("LIBGL_ALWAYS_SOFTWARE", false);
+   Bool glx_direct = !debug_get_bool_option("LIBGL_ALWAYS_INDIRECT", false);
+   Bool glx_accel = !debug_get_bool_option("LIBGL_ALWAYS_SOFTWARE", false);
    const char *env = getenv("MESA_LOADER_DRIVER_OVERRIDE");
    Bool explicit_zink = env && !strcmp(env, "zink");
    Bool infer_zink = false;
@@ -942,14 +942,14 @@ __glXInitialize(Display * dpy)
 #if defined(GLX_USE_DRM)
    if (glx_direct && glx_accel && !explicit_zink) {
 #if defined(HAVE_DRI3)
-      if (!env_var_as_boolean("LIBGL_DRI3_DISABLE", false))
+      if (!debug_get_bool_option("LIBGL_DRI3_DISABLE", false))
          dpyPriv->dri3Display = dri3_create_display(dpy);
 #endif /* HAVE_DRI3 */
-      if (!env_var_as_boolean("LIBGL_DRI2_DISABLE", false))
+      if (!debug_get_bool_option("LIBGL_DRI2_DISABLE", false))
          dpyPriv->dri2Display = dri2CreateDisplay(dpy);
       /* zink fallback */
       if (!dpyPriv->dri3Display && !dpyPriv->dri2Display)
-         infer_zink =  !env_var_as_boolean("LIBGL_KOPPER_DISABLE", false) && !getenv("GALLIUM_DRIVER");
+         infer_zink =  !debug_get_bool_option("LIBGL_KOPPER_DISABLE", false) && !getenv("GALLIUM_DRIVER");
    }
 #endif /* GLX_USE_DRM */
    if (glx_direct)

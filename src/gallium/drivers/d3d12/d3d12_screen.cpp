@@ -32,12 +32,13 @@
 #include "d3d12_video_screen.h"
 #endif
 #include "d3d12_format.h"
+#include "d3d12_interop_public.h"
 #include "d3d12_residency.h"
 #include "d3d12_resource.h"
 #include "d3d12_nir_passes.h"
 
 #include "pipebuffer/pb_bufmgr.h"
-#include "util/debug.h"
+#include "util/u_debug.h"
 #include "util/u_math.h"
 #include "util/u_memory.h"
 #include "util/u_screen.h"
@@ -1143,6 +1144,35 @@ d3d12_set_fence_timeline_value(struct pipe_screen *pscreen, struct pipe_fence_ha
    d3d12_fence(pfence)->value = value;
 }
 
+static uint32_t
+d3d12_interop_query_device_info(struct pipe_screen *pscreen, uint32_t data_size, void *data)
+{
+   if (data_size < sizeof(d3d12_interop_device_info) || !data)
+      return 0;
+   d3d12_interop_device_info *info = (d3d12_interop_device_info *)data;
+   struct d3d12_screen *screen = d3d12_screen(pscreen);
+
+   static_assert(sizeof(info->adapter_luid) == sizeof(screen->adapter_luid),
+                 "Using uint64_t instead of Windows-specific type");
+   memcpy(&info->adapter_luid, &screen->adapter_luid, sizeof(screen->adapter_luid));
+   info->device = screen->dev;
+   info->queue = screen->cmdqueue;
+   return sizeof(*info);
+}
+
+static uint32_t
+d3d12_interop_export_object(struct pipe_screen *pscreen, struct pipe_resource *res,
+                              uint32_t data_size, void *data, bool *need_export_dmabuf)
+{
+   if (data_size < sizeof(d3d12_interop_resource_info) || !data)
+      return 0;
+   d3d12_interop_resource_info *info = (d3d12_interop_resource_info *)data;
+   
+   info->resource = d3d12_resource_underlying(d3d12_resource(res), &info->buffer_offset);
+   *need_export_dmabuf = false;
+   return sizeof(*info);
+}
+
 bool
 d3d12_init_screen_base(struct d3d12_screen *screen, struct sw_winsys *winsys, LUID *adapter_luid)
 {
@@ -1174,6 +1204,8 @@ d3d12_init_screen_base(struct d3d12_screen *screen, struct sw_winsys *winsys, LU
    screen->base.get_device_node_mask = d3d12_get_node_mask;
    screen->base.create_fence_win32 = d3d12_create_fence_win32;
    screen->base.set_fence_timeline_value = d3d12_set_fence_timeline_value;
+   screen->base.interop_query_device_info = d3d12_interop_query_device_info;
+   screen->base.interop_export_object = d3d12_interop_export_object;
 
    screen->d3d12_mod = util_dl_open(UTIL_DL_PREFIX "d3d12" UTIL_DL_EXT);
    if (!screen->d3d12_mod) {

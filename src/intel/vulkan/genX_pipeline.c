@@ -1695,6 +1695,7 @@ emit_task_state(struct anv_graphics_pipeline *pipeline)
       tc.TaskShaderEnable = true;
       tc.ScratchSpaceBuffer =
          get_scratch_surf(&pipeline->base, MESA_SHADER_TASK, task_bin);
+      tc.MaximumNumberofThreadGroups = 511;
    }
 
    const struct intel_device_info *devinfo = pipeline->base.device->info;
@@ -1751,8 +1752,7 @@ emit_mesh_state(struct anv_graphics_pipeline *pipeline)
       mc.MeshShaderEnable = true;
       mc.ScratchSpaceBuffer =
          get_scratch_surf(&pipeline->base, MESA_SHADER_MESH, mesh_bin);
-
-      /* TODO(mesh): MaximumNumberofThreadGroups. */
+      mc.MaximumNumberofThreadGroups = 511;
    }
 
    const struct intel_device_info *devinfo = pipeline->base.device->info;
@@ -1807,8 +1807,8 @@ emit_mesh_state(struct anv_graphics_pipeline *pipeline)
    /* Recommended values from "Task and Mesh Distribution Programming". */
    anv_batch_emit(&pipeline->base.batch, GENX(3DSTATE_MESH_DISTRIB), distrib) {
       distrib.DistributionMode = MESH_RR_FREE;
-      distrib.TaskDistributionBatchSize = devinfo->num_slices > 2 ? 8 : 9; /* 2^N thread groups */
-      distrib.MeshDistributionBatchSize = devinfo->num_slices > 2 ? 5 : 3; /* 2^N thread groups */
+      distrib.TaskDistributionBatchSize = devinfo->num_slices > 2 ? 4 : 9; /* 2^N thread groups */
+      distrib.MeshDistributionBatchSize = devinfo->num_slices > 2 ? 3 : 3; /* 2^N thread groups */
    }
 }
 #endif

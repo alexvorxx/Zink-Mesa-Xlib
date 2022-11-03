@@ -107,9 +107,9 @@ Bare-metal custom kernels
 Some CI jobs have support to plug in a custom kernel by simply changing a variable.
 This is great, since rebuilding the kernel and rootfs may takes dozens of minutes.
 
-For example, freedreno jobs `gitlab.yml` manifest support a variable named
+For example, Freedreno jobs `gitlab.yml` manifest support a variable named
 `BM_KERNEL`. If one puts a gz-compressed kernel URL there, the job will use that
-kernel to boot the freedreno bare-metal devices. The same works for `BM_DTB` in
+kernel to boot the Freedreno bare-metal devices. The same works for `BM_DTB` in
 the case of device tree binaries.
 
 Careful reading of the job logs

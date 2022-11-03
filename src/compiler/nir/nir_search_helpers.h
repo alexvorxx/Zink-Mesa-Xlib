@@ -433,8 +433,12 @@ is_only_used_by_fadd(const nir_alu_instr *instr)
       const nir_alu_instr *const user_alu = nir_instr_as_alu(user_instr);
       assert(instr != user_alu);
 
-      if (user_alu->op != nir_op_fadd)
+      if (user_alu->op == nir_op_fneg || user_alu->op == nir_op_fabs) {
+         if (!is_only_used_by_fadd(user_alu))
+            return false;
+      } else if (user_alu->op != nir_op_fadd) {
          return false;
+      }
    }
 
    return true;

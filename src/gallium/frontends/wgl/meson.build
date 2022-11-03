@@ -32,6 +32,7 @@ libwgl = static_library(
     'stw_device.c',
     'stw_ext_context.c',
     'stw_ext_extensionsstring.c',
+    'stw_ext_interop.c',
     'stw_ext_pbuffer.c',
     'stw_ext_pixelformat.c',
     'stw_ext_rendertexture.c',

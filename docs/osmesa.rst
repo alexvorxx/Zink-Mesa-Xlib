@@ -14,7 +14,7 @@ information about the API functions.
 The OSMesa interface may be used with the gallium software renderers:
 
 #. LLVMpipe - this is the high-performance Gallium LLVM driver
-#. softpipe - this is the reference Gallium software driver
+#. Softpipe - this is the reference Gallium software driver
 
 There are several examples of OSMesa in the mesa/demos repository.
 
@@ -25,7 +25,7 @@ Configure and build Mesa with something like:
 
 .. code-block:: console
 
-   meson builddir -Dosmesa=true -Dgallium-drivers=swrast -Ddri-drivers=[] -Dvulkan-drivers=[] -Dprefix=$PWD/builddir/install
+   meson builddir -Dosmesa=true -Dgallium-drivers=swrast -Dvulkan-drivers=[] -Dprefix=$PWD/builddir/install
    ninja -C builddir install
 
 Make sure you have LLVM installed first if you want to use the LLVMpipe

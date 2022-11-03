@@ -24,7 +24,7 @@
 #include "d3d12_screen.h"
 #include "d3d12_public.h"
 
-#include "util/debug.h"
+#include "util/u_debug.h"
 #include "util/u_memory.h"
 #include "util/u_dl.h"
 

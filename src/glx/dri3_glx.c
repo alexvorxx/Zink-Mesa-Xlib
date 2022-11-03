@@ -710,7 +710,8 @@ static const struct glx_context_vtable dri3_context_vtable = {
    .wait_gl             = dri3_wait_gl,
    .wait_x              = dri3_wait_x,
    .interop_query_device_info = dri3_interop_query_device_info,
-   .interop_export_object = dri3_interop_export_object
+   .interop_export_object = dri3_interop_export_object,
+   .interop_flush_objects = dri3_interop_flush_objects
 };
 
 /** dri3_bind_extensions

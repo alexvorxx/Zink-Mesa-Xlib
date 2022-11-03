@@ -122,7 +122,7 @@ panfrost_batch_cleanup(struct panfrost_context *ctx, struct panfrost_batch *batc
                 panfrost_bo_unreference(bo);
         }
 
-        set_foreach_remove(batch->resources, entry) {
+        set_foreach(batch->resources, entry) {
                 struct panfrost_resource *rsrc = (void *) entry->key;
 
                 if (_mesa_hash_table_search(ctx->writers, rsrc)) {
@@ -362,6 +362,44 @@ panfrost_batch_write_rsrc(struct panfrost_batch *batch,
                 panfrost_batch_add_bo_old(batch, rsrc->separate_stencil->image.data.bo, access);
 
         panfrost_batch_update_access(batch, rsrc, true);
+}
+
+void
+panfrost_resource_swap_bo(struct panfrost_context *ctx,
+                          struct panfrost_resource *rsrc,
+                          struct panfrost_bo *newbo)
+{
+        /* Any batch writing this resource is writing to the old BO, not the
+         * new BO. After swapping the resource's backing BO, there will be no
+         * writers of the updated resource. Existing writers still hold a
+         * reference to the old BO for reference counting.
+         */
+        struct hash_entry *writer = _mesa_hash_table_search(ctx->writers, rsrc);
+        if (writer) {
+                _mesa_hash_table_remove(ctx->writers, writer);
+                rsrc->track.nr_writers--;
+        }
+
+        /* Likewise, any batch reading this resource is reading the old BO, and
+         * after swapping will not be reading this resource.
+         */
+        unsigned i;
+        foreach_batch(ctx, i) {
+                struct panfrost_batch *batch = &ctx->batches.slots[i];
+                struct set_entry *ent = _mesa_set_search(batch->resources, rsrc);
+
+                if (!ent)
+                        continue;
+
+                _mesa_set_remove(batch->resources, ent);
+                rsrc->track.nr_users--;
+        }
+
+        /* Swap the pointers, dropping a reference to the old BO which is no
+         * long referenced from the resource
+         */
+        panfrost_bo_unreference(rsrc->image.data.bo);
+        rsrc->image.data.bo = newbo;
 }
 
 struct panfrost_bo *
@@ -873,9 +911,8 @@ panfrost_batch_adjust_stack_size(struct panfrost_batch *batch)
         struct panfrost_context *ctx = batch->ctx;
 
         for (unsigned i = 0; i < PIPE_SHADER_TYPES; ++i) {
-                struct panfrost_shader_state *ss;
+                struct panfrost_compiled_shader *ss = ctx->prog[i];
 
-                ss = panfrost_get_shader_state(ctx, i);
                 if (!ss)
                         continue;
 

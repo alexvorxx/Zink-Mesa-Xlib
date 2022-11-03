@@ -500,7 +500,6 @@ llvmpipe_create_compute_state(struct pipe_context *pipe,
    shader->no = cs_no++;
 
    shader->base.type = templ->ir_type;
-   shader->req_local_mem = templ->req_local_mem;
    if (templ->ir_type == PIPE_SHADER_IR_NIR_SERIALIZED) {
       struct blob_reader reader;
       const struct pipe_binary_program_header *hdr = templ->prog;
@@ -1428,7 +1427,7 @@ llvmpipe_launch_grid(struct pipe_context *pipe,
    job_info.block_size[1] = info->block[1];
    job_info.block_size[2] = info->block[2];
    job_info.work_dim = info->work_dim;
-   job_info.req_local_mem = llvmpipe->cs->req_local_mem;
+   job_info.req_local_mem = llvmpipe->cs->req_local_mem + info->variable_shared_mem;
    job_info.zero_initialize_shared_memory = llvmpipe->cs->zero_initialize_shared_memory;
    job_info.current = &llvmpipe->csctx->cs.current;
 

@@ -640,7 +640,6 @@ dxil_spirv_nir_passes(nir_shader *nir,
    if (conf->read_only_images_as_srvs) {
       const nir_opt_access_options opt_access_options = {
          .is_vulkan = true,
-         .infer_non_readable = true,
       };
       NIR_PASS_V(nir, nir_opt_access, &opt_access_options);
    }

@@ -1437,14 +1437,17 @@ fd6_emit_tile(struct fd_batch *batch, const struct fd_tile *tile)
       emit_conditional_ib(batch, tile, batch->draw);
    }
 
-   if (batch->epilogue)
-      fd6_emit_ib(batch->gmem, batch->epilogue);
+   if (batch->tile_epilogue)
+      fd6_emit_ib(batch->gmem, batch->tile_epilogue);
 }
 
 static void
 fd6_emit_tile_gmem2mem(struct fd_batch *batch, const struct fd_tile *tile)
 {
    struct fd_ringbuffer *ring = batch->gmem;
+
+   if (batch->epilogue)
+      fd6_emit_ib(batch->gmem, batch->epilogue);
 
    if (use_hw_binning(batch)) {
       OUT_PKT7(ring, CP_SET_MARKER, 1);
@@ -1505,6 +1508,9 @@ emit_sysmem_clears(struct fd_batch *batch, struct fd_ringbuffer *ring) assert_dt
    if (!buffers)
       return;
 
+   struct pipe_box box2d;
+   u_box_2d(0, 0, pfb->width, pfb->height, &box2d);
+
    trace_start_clear_restore(&batch->trace, ring, buffers);
 
    if (buffers & PIPE_CLEAR_COLOR) {
@@ -1517,8 +1523,7 @@ emit_sysmem_clears(struct fd_batch *batch, struct fd_ringbuffer *ring) assert_dt
          if (!(buffers & (PIPE_CLEAR_COLOR0 << i)))
             continue;
 
-         fd6_clear_surface(ctx, ring, pfb->cbufs[i], pfb->width, pfb->height,
-                           &color, 0);
+         fd6_clear_surface(ctx, ring, pfb->cbufs[i], &box2d, &color, 0);
       }
    }
    if (buffers & (PIPE_CLEAR_DEPTH | PIPE_CLEAR_STENCIL)) {
@@ -1533,7 +1538,7 @@ emit_sysmem_clears(struct fd_batch *batch, struct fd_ringbuffer *ring) assert_dt
       if ((buffers & PIPE_CLEAR_DEPTH) || (!separate_stencil && (buffers & PIPE_CLEAR_STENCIL))) {
          value.f[0] = batch->clear_depth;
          value.ui[1] = batch->clear_stencil;
-         fd6_clear_surface(ctx, ring, pfb->zsbuf, pfb->width, pfb->height,
+         fd6_clear_surface(ctx, ring, pfb->zsbuf, &box2d,
                            &value, fd6_unknown_8c01(pfb->zsbuf->format, buffers));
       }
 
@@ -1544,8 +1549,7 @@ emit_sysmem_clears(struct fd_batch *batch, struct fd_ringbuffer *ring) assert_dt
          stencil_surf.format = PIPE_FORMAT_S8_UINT;
          stencil_surf.texture = separate_stencil;
 
-         fd6_clear_surface(ctx, ring, &stencil_surf, pfb->width, pfb->height,
-                           &value, 0);
+         fd6_clear_surface(ctx, ring, &stencil_surf, &box2d, &value, 0);
       }
    }
 
@@ -1631,6 +1635,9 @@ fd6_emit_sysmem_fini(struct fd_batch *batch) assert_dt
    struct fd_ringbuffer *ring = batch->gmem;
 
    emit_common_fini(batch);
+
+   if (batch->tile_epilogue)
+      fd6_emit_ib(batch->gmem, batch->tile_epilogue);
 
    if (batch->epilogue)
       fd6_emit_ib(batch->gmem, batch->epilogue);

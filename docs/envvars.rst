@@ -521,7 +521,7 @@ Gallium environment variables
    to stderr.
 :envvar:`DRAW_FSE`
    Enable fetch-shade-emit middle-end even though its not correct (e.g.
-   for softpipe)
+   for Softpipe)
 :envvar:`DRAW_NO_FSE`
    Disable fetch-shade-emit middle-end even when it is correct
 :envvar:`DRAW_USE_LLVM`
@@ -604,10 +604,10 @@ Softpipe driver environment variables
    ``no_rast``
       rasterization is disabled. For profiling purposes.
    ``use_llvm``
-      the softpipe driver will try to use LLVM JIT for vertex
+      the Softpipe driver will try to use LLVM JIT for vertex
       shading processing.
    ``use_tgsi``
-      if set, the softpipe driver will ask to directly consume TGSI, instead
+      if set, the Softpipe driver will ask to directly consume TGSI, instead
       of NIR.
 
 LLVMpipe driver environment variables

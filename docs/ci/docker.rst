@@ -1,7 +1,7 @@
 Docker CI
 =========
 
-For LLVMpipe and swrast CI, we run tests in a container containing
+For LLVMpipe and Softpipe CI, we run tests in a container containing
 VK-GL-CTS, on the shared GitLab runners provided by `freedesktop
 <http://freedesktop.org>`_
 

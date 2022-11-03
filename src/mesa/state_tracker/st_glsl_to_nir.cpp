@@ -762,6 +762,17 @@ st_link_nir(struct gl_context *ctx,
    if (num_shaders == 1)
       gl_nir_opts(linked_shader[0]->Program->nir);
 
+   /* nir_opt_access() needs to run before linking so that ImageAccess[]
+    * and BindlessImage[].access are filled out with the correct modes.
+    */
+   for (unsigned i = 0; i < num_shaders; i++) {
+      nir_shader *nir = linked_shader[i]->Program->nir;
+
+      nir_opt_access_options opt_access_options;
+      opt_access_options.is_vulkan = false;
+      NIR_PASS_V(nir, nir_opt_access, &opt_access_options);
+   }
+
    if (shader_program->data->spirv) {
       static const gl_nir_linker_options opts = {
          true /*fill_parameters */
@@ -807,14 +818,6 @@ st_link_nir(struct gl_context *ctx,
 
          nir_lower_indirect_derefs(nir, mode, UINT32_MAX);
       }
-
-      /* don't infer ACCESS_NON_READABLE so that Program->sh.ImageAccess is
-       * correct: https://gitlab.freedesktop.org/mesa/mesa/-/issues/3278
-       */
-      nir_opt_access_options opt_access_options;
-      opt_access_options.is_vulkan = false;
-      opt_access_options.infer_non_readable = false;
-      NIR_PASS_V(nir, nir_opt_access, &opt_access_options);
 
       /* This needs to run after the initial pass of nir_lower_vars_to_ssa, so
        * that the buffer indices are constants in nir where they where

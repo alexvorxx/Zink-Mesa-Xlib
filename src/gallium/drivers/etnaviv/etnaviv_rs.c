@@ -109,6 +109,8 @@ etna_compile_rs_state(struct etna_context *ctx, struct compiled_rs_state *cs,
    if (VIV_FEATURE(ctx->screen, chipMinorFeatures6, CACHE128B256BPERLINE))
       cs->RS_SOURCE_STRIDE |= VIVS_RS_SOURCE_STRIDE_TS_MODE(rs->source_ts_mode) |
                               COND(src_super, VIVS_RS_SOURCE_STRIDE_SUPER_TILED_NEW);
+   else if ((rs->downsample_x || rs->downsample_y) && VIV_FEATURE(screen, chipMinorFeatures4, SMALL_MSAA))
+      cs->RS_SOURCE_STRIDE |= VIVS_RS_SOURCE_STRIDE_TS_MODE(TS_MODE_256B);
 
    /* Initially all pipes are set to the base address of the source and
     * destination buffer respectively. This will be overridden below as
@@ -819,35 +821,6 @@ manual:
    return false;
 }
 
-static bool
-etna_blit_rs(struct pipe_context *pctx, const struct pipe_blit_info *blit_info)
-{
-   /* This is a more extended version of resource_copy_region */
-   /* TODO Some cases can be handled by RS; if not, fall back to rendering or
-    * even CPU copy block of pixels from info->src to info->dst
-    * (resource, level, box, format);
-    * function is used for scaling, flipping in x and y direction (negative
-    * width/height), format conversion, mask and filter and even a scissor rectangle
-    *
-    * What can the RS do for us:
-    *   convert between tiling formats (layouts)
-    *   downsample 2x in x and y
-    *   convert between a limited number of pixel formats
-    *
-    * For the rest, fall back to util_blitter
-    * XXX this goes wrong when source surface is supertiled. */
-
-   if (blit_info->src.resource->nr_samples > 1 &&
-       blit_info->dst.resource->nr_samples <= 1 &&
-       !util_format_is_depth_or_stencil(blit_info->src.resource->format) &&
-       !util_format_is_pure_integer(blit_info->src.resource->format)) {
-      DBG("color resolve unimplemented");
-      return false;
-   }
-
-   return etna_try_rs_blit(pctx, blit_info);
-}
-
 void
 etna_clear_blit_rs_init(struct pipe_context *pctx)
 {
@@ -855,5 +828,5 @@ etna_clear_blit_rs_init(struct pipe_context *pctx)
 
    DBG("etnaviv: Using RS blit engine");
    pctx->clear = etna_clear_rs;
-   ctx->blit = etna_blit_rs;
+   ctx->blit = etna_try_rs_blit;
 }

@@ -38,9 +38,8 @@
 #include <inttypes.h>
 
 #include "dev/intel_device_info.h"
-#include "util/debug.h"
-#include "util/macros.h"
 #include "util/u_debug.h"
+#include "util/macros.h"
 
 
 static const struct debug_control debug_control[] = {

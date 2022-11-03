@@ -1437,9 +1437,6 @@ emit_varying_read(
         unsigned nr_comp, unsigned component,
         nir_src *indirect_offset, nir_alu_type type, bool flat)
 {
-        /* XXX: Half-floats? */
-        /* TODO: swizzle, mask */
-
         midgard_instruction ins = m_ld_vary_32(dest, PACK_LDST_ATTRIB_OFS(offset));
         ins.mask = mask_of(nr_comp);
         ins.dest_type = type;
@@ -1451,7 +1448,6 @@ emit_varying_read(
 
         for (unsigned i = 0; i < ARRAY_SIZE(ins.swizzle[0]); ++i)
                 ins.swizzle[0][i] = MIN2(i + component, COMPONENT_W);
-
 
         midgard_varying_params p = {
                 .flat_shading = flat,
@@ -1469,24 +1465,20 @@ emit_varying_read(
         ins.load_store.arg_reg = REGISTER_LDST_ZERO;
         ins.load_store.index_format = midgard_index_address_u32;
 
-        /* Use the type appropriate load */
-        switch (type) {
-        case nir_type_uint32:
-        case nir_type_bool32:
+        /* For flat shading, we always use .u32 and require 32-bit mode. For
+         * smooth shading, we use the appropriate floating-point type.
+         *
+         * This could be optimized, but it makes it easy to check correctness.
+         */
+        if (flat) {
+                assert(nir_alu_type_get_type_size(type) == 32);
                 ins.op = midgard_op_ld_vary_32u;
-                break;
-        case nir_type_int32:
-                ins.op = midgard_op_ld_vary_32i;
-                break;
-        case nir_type_float32:
-                ins.op = midgard_op_ld_vary_32;
-                break;
-        case nir_type_float16:
-                ins.op = midgard_op_ld_vary_16;
-                break;
-        default:
-                unreachable("Attempted to load unknown type");
-                break;
+        } else {
+                assert(nir_alu_type_get_base_type(type) == nir_type_float);
+
+                ins.op = (nir_alu_type_get_type_size(type) == 32) ?
+                         midgard_op_ld_vary_32 :
+                         midgard_op_ld_vary_16;
         }
 
         emit_mir_instruction(ctx, ins);
@@ -1763,11 +1755,7 @@ output_load_rt_addr(compiler_context *ctx, nir_intrinsic_instr *instr)
         if (ctx->inputs->is_blend)
                 return MIDGARD_COLOR_RT0 + ctx->inputs->blend.rt;
 
-        const nir_variable *var;
-        var = nir_find_variable_with_driver_location(ctx->nir, nir_var_shader_out, nir_intrinsic_base(instr));
-        assert(var);
-
-        unsigned loc = var->data.location;
+        unsigned loc = nir_intrinsic_io_semantics(instr).location;
 
         if (loc >= FRAG_RESULT_DATA0)
                 return loc - FRAG_RESULT_DATA0;
@@ -1988,15 +1976,10 @@ emit_intrinsic(compiler_context *ctx, nir_intrinsic_instr *instr)
                         }
 
                         if (writeout & PAN_WRITEOUT_C) {
-                                const nir_variable *var =
-                                        nir_find_variable_with_driver_location(ctx->nir, nir_var_shader_out,
-                                                 nir_intrinsic_base(instr));
+                                nir_io_semantics sem = nir_intrinsic_io_semantics(instr);
 
-                                assert(var != NULL);
-                                assert(var->data.location >= FRAG_RESULT_DATA0);
-
-                                rt = MIDGARD_COLOR_RT0 + var->data.location -
-                                     FRAG_RESULT_DATA0;
+                                rt = MIDGARD_COLOR_RT0 +
+                                     (sem.location - FRAG_RESULT_DATA0);
                         } else {
                                 rt = MIDGARD_ZS_RT;
                         }
@@ -2037,26 +2020,29 @@ emit_intrinsic(compiler_context *ctx, nir_intrinsic_instr *instr)
                         unsigned dst_component = nir_intrinsic_component(instr);
                         unsigned nr_comp = nir_src_num_components(instr->src[0]);
 
+                        /* ABI: Format controlled by the attribute descriptor.
+                         * This simplifies flat shading, although it prevents
+                         * certain (unimplemented) 16-bit optimizations.
+                         *
+                         * In particular, it lets the driver handle internal
+                         * TGSI shaders that set flat in the VS but smooth in
+                         * the FS. This matches our handling on Bifrost.
+                         */
+                        bool auto32 = true;
+                        assert(nir_alu_type_get_type_size(nir_intrinsic_src_type(instr)) == 32);
+
+                        /* ABI: varyings in the secondary attribute table */
+                        bool secondary_table = true;
+
                         midgard_instruction st = m_st_vary_32(reg, PACK_LDST_ATTRIB_OFS(offset));
                         st.load_store.arg_reg = REGISTER_LDST_ZERO;
-                        st.load_store.index_format = midgard_index_address_u32;
                         st.load_store.index_reg = REGISTER_LDST_ZERO;
 
-                        switch (nir_alu_type_get_base_type(nir_intrinsic_src_type(instr))) {
-                        case nir_type_uint:
-                        case nir_type_bool:
-                                st.op = midgard_op_st_vary_32u;
-                                break;
-                        case nir_type_int:
-                                st.op = midgard_op_st_vary_32i;
-                                break;
-                        case nir_type_float:
-                                st.op = midgard_op_st_vary_32;
-                                break;
-                        default:
-                                unreachable("Attempted to store unknown type");
-                                break;
-                        }
+                        /* Attribute instruction uses these 2-bits for the
+                         * a32 and table bits, pack this specially.
+                         */
+                        st.load_store.index_format = (auto32 ? (1 << 0) : 0) |
+                                                     (secondary_table ? (1 << 1) : 0);
 
                         /* nir_intrinsic_component(store_intr) encodes the
                          * destination component start. Source component offset
@@ -3200,12 +3186,25 @@ midgard_compile_shader_nir(nir_shader *nir,
 
         NIR_PASS_V(nir, nir_lower_io, nir_var_shader_in | nir_var_shader_out,
                         glsl_type_size, 0);
+
+        if (ctx->stage == MESA_SHADER_VERTEX) {
+                /* nir_lower[_explicit]_io is lazy and emits mul+add chains even
+                 * for offsets it could figure out are constant.  Do some
+                 * constant folding before pan_nir_lower_store_component below.
+                 */
+                NIR_PASS_V(nir, nir_opt_constant_folding);
+                NIR_PASS_V(nir, pan_nir_lower_store_component);
+        }
+
         NIR_PASS_V(nir, nir_lower_ssbo);
         NIR_PASS_V(nir, pan_nir_lower_zs_store);
 
         NIR_PASS_V(nir, pan_nir_lower_64bit_intrin);
 
         NIR_PASS_V(nir, midgard_nir_lower_global_load);
+
+        /* Collect varyings after lowering I/O */
+        pan_nir_collect_varyings(nir, info);
 
         /* Optimisation passes */
 

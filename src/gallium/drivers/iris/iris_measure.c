@@ -25,7 +25,7 @@
  */
 
 #include <stdio.h>
-#include "util/debug.h"
+#include "util/u_debug.h"
 #include "util/list.h"
 #include "util/crc32.h"
 #include "iris_context.h"

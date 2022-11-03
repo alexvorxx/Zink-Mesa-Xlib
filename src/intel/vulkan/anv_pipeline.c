@@ -288,7 +288,6 @@ anv_shader_stage_to_nir(struct anv_device *device,
 
    const nir_opt_access_options opt_access_options = {
       .is_vulkan = true,
-      .infer_non_readable = true,
    };
    NIR_PASS(_, nir, nir_opt_access, &opt_access_options);
 

@@ -1306,7 +1306,12 @@ bool ac_query_gpu_info(int fd, void *dev_p, struct radeon_info *info)
       info->wave64_vgpr_alloc_granularity = 4;
    }
 
-   info->num_physical_wave64_vgprs_per_simd = info->gfx_level >= GFX10 ? 512 : 256;
+   if (info->family == CHIP_GFX1100 || info->family == CHIP_GFX1101)
+      info->num_physical_wave64_vgprs_per_simd = 768;
+   else if (info->gfx_level >= GFX10)
+      info->num_physical_wave64_vgprs_per_simd = 512;
+   else
+      info->num_physical_wave64_vgprs_per_simd = 256;
    info->num_simd_per_compute_unit = info->gfx_level >= GFX10 ? 2 : 4;
 
    /* BIG_PAGE is supported since gfx10.3 and requires VRAM. VRAM is only guaranteed

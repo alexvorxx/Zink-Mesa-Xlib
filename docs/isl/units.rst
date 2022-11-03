@@ -5,12 +5,12 @@ Almost every variable, function parameter, or struct field in ISL that carries
 a numeric value has explicit units associated with it.  The units used in ISL
 are as follows:
 
- * Pixels (px)
- * Samples (sa)
- * Elements (el)
- * Tiles (tl)
- * Bytes (B)
- * Rows of some other unit size (<unit>_rows)
+ * Pixels (*px*)
+ * Samples (*sa*)
+ * Elements (*el*)
+ * Tiles (*tl*)
+ * Bytes (*B*)
+ * Rows of some other unit size (*<unit>_rows*)
 
 These units are fundamental to ISL because they allow us to specify information
 about a surface in a canonical way that isn't dependent on hardware generation.

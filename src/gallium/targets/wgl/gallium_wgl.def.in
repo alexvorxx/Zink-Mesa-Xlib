@@ -44,3 +44,6 @@ stw_create_image_from_renderbuffer
 stw_destroy_image
 stw_translate_image
 stw_get_config_xml
+stw_interop_query_device_info
+stw_interop_export_object
+stw_interop_flush_objects

@@ -374,6 +374,19 @@ init_render_queue_state(struct anv_queue *queue)
       reg.HZDepthTestLEGEOptimizationDisable = true;
       reg.HZDepthTestLEGEOptimizationDisableMask = true;
    }
+
+   /* Wa_1508744258
+    *
+    *    Disable RHWO by setting 0x7010[14] by default except during resolve
+    *    pass.
+    *
+    * We implement global disabling of the optimization here and we toggle it
+    * in anv_image_ccs_op().
+    */
+   anv_batch_write_reg(&batch, GENX(COMMON_SLICE_CHICKEN1), c1) {
+      c1.RCCRHWOOptimizationDisable = true;
+      c1.RCCRHWOOptimizationDisableMask = true;
+   }
 #endif
 
 #if GFX_VERx10 < 125

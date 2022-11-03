@@ -929,7 +929,8 @@ static const struct glx_context_vtable dri2_context_vtable = {
    .wait_gl             = dri2_wait_gl,
    .wait_x              = dri2_wait_x,
    .interop_query_device_info = dri2_interop_query_device_info,
-   .interop_export_object = dri2_interop_export_object
+   .interop_export_object = dri2_interop_export_object,
+   .interop_flush_objects = dri2_interop_flush_objects
 };
 
 static void

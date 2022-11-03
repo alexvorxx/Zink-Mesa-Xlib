@@ -87,7 +87,7 @@ anyone who doesn't can use the table without needing to pull in all the
 platform headers.
 
 Dispatch tables are similar to entrypoint tables except that they're
-de-duplicated so that aliased entrypoints have only one entry in the table.
+deduplicated so that aliased entrypoints have only one entry in the table.
 The device dispatch table looks like this:
 
 .. code-block:: c

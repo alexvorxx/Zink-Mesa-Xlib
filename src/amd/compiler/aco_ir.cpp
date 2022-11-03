@@ -26,7 +26,7 @@
 
 #include "aco_builder.h"
 
-#include "util/debug.h"
+#include "util/u_debug.h"
 
 #include "c11/threads.h"
 
@@ -111,14 +111,20 @@ init_program(Program* program, Stage stage, const struct aco_shader_info* info,
 
    if (gfx_level >= GFX10) {
       program->dev.physical_sgprs = 5120; /* doesn't matter as long as it's at least 128 * 40 */
-      program->dev.physical_vgprs = program->wave_size == 32 ? 1024 : 512;
       program->dev.sgpr_alloc_granule = 128;
       program->dev.sgpr_limit =
          108; /* includes VCC, which can be treated as s[106-107] on GFX10+ */
-      if (gfx_level == GFX10_3)
-         program->dev.vgpr_alloc_granule = program->wave_size == 32 ? 16 : 8;
-      else
-         program->dev.vgpr_alloc_granule = program->wave_size == 32 ? 8 : 4;
+
+      if (family == CHIP_GFX1100 || family == CHIP_GFX1101) {
+         program->dev.physical_vgprs = program->wave_size == 32 ? 1536 : 768;
+         program->dev.vgpr_alloc_granule = program->wave_size == 32 ? 24 : 12;
+      } else {
+         program->dev.physical_vgprs = program->wave_size == 32 ? 1024 : 512;
+         if (gfx_level >= GFX10_3)
+            program->dev.vgpr_alloc_granule = program->wave_size == 32 ? 16 : 8;
+         else
+            program->dev.vgpr_alloc_granule = program->wave_size == 32 ? 8 : 4;
+      }
    } else if (program->gfx_level >= GFX8) {
       program->dev.physical_sgprs = 800;
       program->dev.sgpr_alloc_granule = 16;

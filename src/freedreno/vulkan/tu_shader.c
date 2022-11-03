@@ -778,7 +778,6 @@ tu_shader_create(struct tu_device *dev,
 
    NIR_PASS_V(nir, nir_opt_access, &(nir_opt_access_options) {
                .is_vulkan = true,
-               .infer_non_readable = true,
              });
 
    if (nir->info.stage == MESA_SHADER_FRAGMENT) {

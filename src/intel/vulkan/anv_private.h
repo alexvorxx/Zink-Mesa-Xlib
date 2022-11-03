@@ -2574,6 +2574,17 @@ struct anv_cmd_state {
     */
    enum anv_depth_reg_mode                      depth_reg_mode;
 
+   /**
+    * Whether RHWO optimization is enabled (Wa_1508744258).
+    */
+   bool                                         rhwo_optimization_enabled;
+
+   /**
+    * Pending state of the RHWO optimization, to be applied at the next
+    * genX(cmd_buffer_apply_pipe_flushes).
+    */
+   bool                                         pending_rhwo_optimization_enabled;
+
    bool                                         conditional_render_enabled;
 
    /**

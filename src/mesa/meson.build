@@ -357,6 +357,8 @@ files_libmesa = files(
   'state_tracker/st_glsl_to_ir.cpp',
   'state_tracker/st_glsl_to_ir.h',
   'state_tracker/st_glsl_to_nir.cpp',
+  'state_tracker/st_interop.c',
+  'state_tracker/st_interop.h',
   'state_tracker/st_manager.c',
   'state_tracker/st_manager.h',
   'state_tracker/st_nir.h',

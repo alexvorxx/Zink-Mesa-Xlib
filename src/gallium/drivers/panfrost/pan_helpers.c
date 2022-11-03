@@ -25,7 +25,7 @@
 #include "util/u_vbuf.h"
 
 void
-panfrost_analyze_sysvals(struct panfrost_shader_state *ss)
+panfrost_analyze_sysvals(struct panfrost_compiled_shader *ss)
 {
         unsigned dirty = 0;
         unsigned dirty_shader = PAN_DIRTY_STAGE_SHADER | PAN_DIRTY_STAGE_CONST;

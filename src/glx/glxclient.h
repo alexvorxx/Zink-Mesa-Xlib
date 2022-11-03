@@ -244,6 +244,9 @@ struct glx_context_vtable {
    int (*interop_export_object)(struct glx_context *ctx,
                                 struct mesa_glinterop_export_in *in,
                                 struct mesa_glinterop_export_out *out);
+   int (*interop_flush_objects)(struct glx_context *ctx,
+                                unsigned count, struct mesa_glinterop_export_in *objects,
+                                GLsync *sync);
 };
 
 /**

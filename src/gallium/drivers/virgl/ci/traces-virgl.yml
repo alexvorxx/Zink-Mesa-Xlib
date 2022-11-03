@@ -123,7 +123,7 @@ traces:
       label: [crash]
   gputest/pixmark-julia-fp32-v2.trace:
     gl-virgl:
-      checksum: 25f938c726c68c08a88193f28f7c4474
+      checksum: 8b3584b1dd8f1d1bb63205564bd78e4e
   gputest/pixmark-julia-fp64-v2.trace:
     gl-virgl:
       checksum: 73ccaff82ea764057fb0f93f0024cf84
@@ -183,7 +183,7 @@ traces:
       checksum: f4af4067b37c00861fa5911e4c0a6629
   supertuxkart/supertuxkart-mansion-egl-gles-v2.trace:
     gl-virgl:
-      checksum: 092e8ca38e58aaa83df2a9f0b7b8aee5
+      checksum: cc7092975dd6c9064aa54cd7f18053b6
   xonotic/xonotic-keybench-high-v2.trace:
     gl-virgl:
       checksum: f3b184bf8858a6ebccd09e7ca032197e

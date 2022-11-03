@@ -23,7 +23,7 @@
 
 #include "wsi_common_private.h"
 #include "wsi_common_entrypoints.h"
-#include "util/debug.h"
+#include "util/u_debug.h"
 #include "util/macros.h"
 #include "util/os_file.h"
 #include "util/xmlconfig.h"

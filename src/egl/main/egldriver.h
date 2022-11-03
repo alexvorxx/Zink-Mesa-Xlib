@@ -75,6 +75,7 @@ struct wl_display;
 struct mesa_glinterop_device_info;
 struct mesa_glinterop_export_in;
 struct mesa_glinterop_export_out;
+typedef struct __GLsync *GLsync;
 
 /**
  * The API dispatcher jumps through these functions
@@ -202,6 +203,9 @@ struct _egl_driver
    int (*GLInteropExportObject)(_EGLDisplay *disp, _EGLContext *ctx,
                                 struct mesa_glinterop_export_in *in,
                                 struct mesa_glinterop_export_out *out);
+   int (*GLInteropFlushObjects)(_EGLDisplay *disp, _EGLContext *ctx,
+                                unsigned count, struct mesa_glinterop_export_in *in,
+                                GLsync *sync);
 
    /* for EGL_EXT_image_dma_buf_import_modifiers */
    EGLBoolean (*QueryDmaBufFormatsEXT)(_EGLDisplay *disp,

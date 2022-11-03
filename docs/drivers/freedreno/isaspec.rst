@@ -1,7 +1,7 @@
 ISASPEC - XML Based ISA Specification
 =====================================
 
-isaspec provides a mechanism to describe an instruction set in xml, and
+isaspec provides a mechanism to describe an instruction set in XML, and
 generate a disassembler and assembler.  The intention is
 to describe the instruction set more formally than hand-coded assembler
 and disassembler, and better decouple the shader compiler from the
@@ -16,10 +16,10 @@ and verification that different encodings don't have conflicting bits
 (i.e. that the specification cannot result in more than one valid
 interpretation of any bit pattern).
 
-The isaspec tool and xml schema are intended to be generic (not specific
+The isaspec tool and XML schema are intended to be generic (not specific
 to ir3), although there are currently a couple limitations due to short-
 cuts taken to get things up and running (which are mostly not inherent to
-the xml schema, and should not be too difficult to remove from the py and
+the XML schema, and should not be too difficult to remove from the py and
 decode/disasm utility):
 
 * Maximum "field" size is 64b

@@ -36,7 +36,7 @@
 #include "genxml/genX_bits.h"
 #include "perf/intel_perf.h"
 
-#include "util/debug.h"
+#include "util/u_debug.h"
 #include "util/perf/u_trace.h"
 
 /** \file anv_batch_chain.c
@@ -1510,7 +1510,7 @@ execbuf_can_skip_relocations(struct anv_execbuf *exec)
 
    static int userspace_relocs = -1;
    if (userspace_relocs < 0)
-      userspace_relocs = env_var_as_boolean("ANV_USERSPACE_RELOCS", true);
+      userspace_relocs = debug_get_bool_option("ANV_USERSPACE_RELOCS", true);
    if (!userspace_relocs)
       return false;
 

@@ -2137,9 +2137,9 @@ pub fn enqueue_migrate_mem_objects(
 
     // CL_INVALID_VALUE if flags is not 0 or is not any of the values described in the table above.
     if flags != 0
-        && !bit_check(
+        && bit_check(
             flags,
-            CL_MIGRATE_MEM_OBJECT_HOST | CL_MIGRATE_MEM_OBJECT_CONTENT_UNDEFINED,
+            !(CL_MIGRATE_MEM_OBJECT_HOST | CL_MIGRATE_MEM_OBJECT_CONTENT_UNDEFINED),
         )
     {
         return Err(CL_INVALID_VALUE);

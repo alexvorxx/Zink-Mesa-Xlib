@@ -23,7 +23,7 @@
 
 #include "anv_nir.h"
 #include "nir/nir_builder.h"
-#include "util/debug.h"
+#include "util/u_debug.h"
 
 /**
  * This file implements the lowering required for VK_KHR_multiview.
@@ -305,7 +305,7 @@ anv_check_for_primitive_replication(struct anv_device *device,
 
       primitive_replication_max_views =
          MIN2(MAX_VIEWS_FOR_PRIMITIVE_REPLICATION,
-              env_var_as_unsigned("ANV_PRIMITIVE_REPLICATION_MAX_VIEWS",
+              debug_get_num_option("ANV_PRIMITIVE_REPLICATION_MAX_VIEWS",
                                   default_max_views));
    }
 

@@ -1,26 +1,25 @@
 # Shader compilation error log: 0:6(1): error: invalid stream specified 1 is larger than MAX_VERTEX_STREAMS - 1
-KHR-GL43.transform_feedback.draw_xfb_stream_instanced_test,Fail
+KHR-GL45.transform_feedback.draw_xfb_stream_instanced_test,Fail
 
-# glGetError() returned GL_INVALID_ENUM at gl4cMapBufferAlignmentTests.cpp:279
-KHR-GL43.map_buffer_alignment.functional,Fail
-
-KHR-GL43.gpu_shader_fp64.fp64.max_uniform_components,Fail
-KHR-GL43.gpu_shader_fp64.builtin.mod_dvec2,Fail
-KHR-GL43.gpu_shader_fp64.builtin.mod_dvec3,Fail
-KHR-GL43.gpu_shader_fp64.builtin.mod_dvec4,Fail
-KHR-GL43.shader_subroutine.control_flow_and_returned_subroutine_values_used_as_subroutine_input,Fail
-KHR-GL43.shader_image_load_store.basic-allFormats-store,Fail
-KHR-GL43.shader_image_load_store.basic-allTargets-store,Fail
-KHR-GL43.shader_image_load_store.non-layered_binding,Fail
-KHR-GL43.shading_language_420pack.binding_images,Fail
-KHR-GL43.copy_image.functional,Fail
-KHR-GL43.compute_shader.conditional-dispatching,Fail
-KHR-GL43.vertex_attrib_binding.advanced-largeStrideAndOffsetsNewAndLegacyAPI,Fail
+KHR-GL45.gpu_shader_fp64.fp64.max_uniform_components,Fail
+KHR-GL45.gpu_shader_fp64.builtin.mod_dvec2,Fail
+KHR-GL45.gpu_shader_fp64.builtin.mod_dvec3,Fail
+KHR-GL45.gpu_shader_fp64.builtin.mod_dvec4,Fail
+KHR-GL45.shader_subroutine.control_flow_and_returned_subroutine_values_used_as_subroutine_input,Fail
+KHR-GL45.shader_image_load_store.basic-allFormats-store,Fail
+KHR-GL45.shader_image_load_store.basic-allTargets-store,Fail
+KHR-GL45.shader_image_load_store.non-layered_binding,Fail
+KHR-GL45.shading_language_420pack.binding_images,Fail
+KHR-GL45.compute_shader.conditional-dispatching,Fail
+KHR-GL45.vertex_attrib_binding.advanced-largeStrideAndOffsetsNewAndLegacyAPI,Fail
+KHR-GL45.buffer_storage.map_persistent_draw,Fail
 
 # Lots of errors like "[279] Check failed. Received: [3,0,0,2] instead of: [5,0,0,2]"
 KHR-GLES31.core.geometry_shader.layered_framebuffer.depth_support,Fail
+KHR-GL45.geometry_shader.layered_framebuffer.depth_support,Fail
 
 KHR-GLES31.core.geometry_shader.layered_framebuffer.stencil_support,Fail
+KHR-GL45.geometry_shader.layered_framebuffer.stencil_support,Fail
 
 # "Invalid value returned: expected:[1, 1, 1, 1] retrieved: [0, 0, 0, 0
 #  Invalid rendering result at esextcTessellationShaderBarrier.cpp:504"
@@ -28,6 +27,31 @@ KHR-GLES31.core.tessellation_shader.tessellation_shader_tc_barriers.barrier_guar
 
 # https://gitlab.freedesktop.org/mesa/mesa/-/issues/5582
 KHR-GLES31.core.texture_cube_map_array.color_depth_attachments,Fail
+KHR-GL45.texture_cube_map_array.color_depth_attachments,Fail
+
+#
+# new fails with gl45:
+#
+
+# Various limits we cannot or do not support:
+KHR-GL45.limits.max_array_texture_layers,Fail
+KHR-GL45.limits.max_framebuffer_layers,Fail
+KHR-GL45.limits.max_vertex_streams,Fail
+
+# Shader compile fails:
+KHR-GL45.shader_atomic_counter_ops_tests.ShaderAtomicCounterOpsExchangeTestCase,Fail
+KHR-GL45.shader_atomic_counter_ops_tests.ShaderAtomicCounterOpsMinMaxTestCase,Fail
+KHR-GL45.shader_atomic_counter_ops_tests.ShaderAtomicCounterOpsAdditionSubstractionTestCase,Fail
+KHR-GL45.shader_atomic_counter_ops_tests.ShaderAtomicCounterOpsBitwiseTestCase,Fail
+
+# MESA: warning: sample averaging on fallback z24s8 blit when we shouldn't.
+KHR-GL45.direct_state_access.renderbuffers_storage_multisample,Fail
+
+KHR-GL45.multi_bind.dispatch_bind_image_textures,Fail
+
+# Unhandled intrinsic type: image_samples
+KHR-GL45.shader_texture_image_samples_tests.image_functional_test,Crash
+
 
 # rendering errors in ~4x4 blocks around the bottom side of the diagonal for the quad
 bypass-dEQP-GLES31.functional.blend_equation_advanced.msaa.colorburn,Fail
@@ -85,6 +109,8 @@ spec@!opengl 1.0@gl-1.0-edgeflag-quads,Crash
 
 
 spec@arb_arrays_of_arrays@execution@sampler@fs-nested-struct-arrays-nonconst-nested-array,Fail
+# Skips prior to exposing gl45, now fails for same reason as above test
+spec@arb_gl_spirv@execution@uniform@sampler2d-nonconst-nested-array,Fail
 
 spec@arb_compute_shader@execution@border-color,Fail
 spec@arb_depth_buffer_float@fbo-clear-formats stencil,Fail
@@ -367,6 +393,23 @@ spec@!opengl 1.0@depth-clear-precision-check,Fail
 spec@!opengl 1.0@depth-clear-precision-check@depth24,Fail
 spec@!opengl 1.0@depth-clear-precision-check@depth24_stencil8,Fail
 spec@!opengl 1.0@depth-clear-precision-check@depth32,Fail
+
+# timestamp/time-elapsed qbo tests fail due to lack of way to convert
+# from ticks to ns on the CP (ie. we'd need to spin up a compute shader
+# or something equally drastic)
+spec@arb_query_buffer_object@qbo,Fail
+spec@arb_query_buffer_object@qbo@query-GL_TIMESTAMP-ASYNC_CPU_READ_AFTER-GL_INT,Fail
+spec@arb_query_buffer_object@qbo@query-GL_TIMESTAMP-ASYNC_CPU_READ_AFTER-GL_UNSIGNED_INT,Fail
+spec@arb_query_buffer_object@qbo@query-GL_TIMESTAMP-ASYNC_CPU_READ_AFTER-GL_UNSIGNED_INT64_ARB,Fail
+spec@arb_query_buffer_object@qbo@query-GL_TIMESTAMP-SYNC_CPU_READ_AFTER_CACHE_TEST-GL_INT,Fail
+spec@arb_query_buffer_object@qbo@query-GL_TIMESTAMP-SYNC_CPU_READ_AFTER_CACHE_TEST-GL_UNSIGNED_INT,Fail
+spec@arb_query_buffer_object@qbo@query-GL_TIMESTAMP-SYNC_CPU_READ_AFTER_CACHE_TEST-GL_UNSIGNED_INT64_ARB,Fail
+spec@arb_query_buffer_object@qbo@query-GL_TIME_ELAPSED-ASYNC_CPU_READ_AFTER-GL_INT,Fail
+spec@arb_query_buffer_object@qbo@query-GL_TIME_ELAPSED-ASYNC_CPU_READ_AFTER-GL_UNSIGNED_INT,Fail
+spec@arb_query_buffer_object@qbo@query-GL_TIME_ELAPSED-ASYNC_CPU_READ_AFTER-GL_UNSIGNED_INT64_ARB,Fail
+spec@arb_query_buffer_object@qbo@query-GL_TIME_ELAPSED-SYNC_CPU_READ_AFTER_CACHE_TEST-GL_INT,Fail
+spec@arb_query_buffer_object@qbo@query-GL_TIME_ELAPSED-SYNC_CPU_READ_AFTER_CACHE_TEST-GL_UNSIGNED_INT,Fail
+spec@arb_query_buffer_object@qbo@query-GL_TIME_ELAPSED-SYNC_CPU_READ_AFTER_CACHE_TEST-GL_UNSIGNED_INT64_ARB,Fail
 
 # https://gitlab.khronos.org/Tracker/vk-gl-cts/-/issues/3759
 # deqp-vk: ../src/freedreno/vulkan/tu_pipeline.c:3894: tu_pipeline_builder_init_graphics: Assertion `subpass->color_count == 0 || !create_info->pColorBlendState || subpass->color_count == create_info->pColorBlendState->attachmentCount' failed

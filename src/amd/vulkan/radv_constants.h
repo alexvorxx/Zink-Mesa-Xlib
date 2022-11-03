@@ -137,4 +137,14 @@
 #define PERF_CTR_BO_LOCK_OFFSET  0
 #define PERF_CTR_BO_FENCE_OFFSET 8
 
+/* NGG GDS counters:
+ *   offset  0| 4| 8|12  - reserved for NGG streamout counters
+ *   offset 16           - pipeline statistics counter for all streams
+ *   offset 20|24|28|32  - generated primitive counter for stream 0|1|2|3
+ *   offset 36|40|44|48  - written primitive counter for stream 0|1|2|3
+ */
+#define RADV_NGG_QUERY_PIPELINE_STAT_OFFSET 16
+#define RADV_NGG_QUERY_PRIM_GEN_OFFSET(stream) (20 + stream * 4)
+#define RADV_NGG_QUERY_PRIM_XFB_OFFSET(stream) (36 + stream * 4)
+
 #endif /* RADV_CONSTANTS_H */

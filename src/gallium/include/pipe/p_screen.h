@@ -744,6 +744,35 @@ struct pipe_screen {
    void (*set_fence_timeline_value)(struct pipe_screen *screen,
                                     struct pipe_fence_handle *fence,
                                     uint64_t value);
+
+   /**
+    * Get additional data for interop_query_device_info
+    * 
+    * \p in_data_size is how much data was allocated by the caller
+    * \p data is the buffer to fill
+    * 
+    * \return how much data was written
+    */
+   uint32_t (*interop_query_device_info)(struct pipe_screen *screen,
+                                         uint32_t in_data_size,
+                                         void *data);
+
+   /**
+    * Get additional data for interop_export_object
+    * 
+    * \p in_data_size is how much data was allocated by the caller
+    * \p data is the buffer to fill
+    * \p need_export_dmabuf can be set to false to prevent
+    *    a following call to resource_get_handle, if the private
+    *    data contains the exported data
+    * 
+    * \return how much data was written
+    */
+   uint32_t (*interop_export_object)(struct pipe_screen *screen,
+                                     struct pipe_resource *res,
+                                     uint32_t in_data_size,
+                                     void *data,
+                                     bool *need_export_dmabuf);
 };
 
 

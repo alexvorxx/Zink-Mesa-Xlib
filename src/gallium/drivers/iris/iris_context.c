@@ -24,7 +24,7 @@
 #include <time.h>
 #include "pipe/p_defines.h"
 #include "pipe/p_state.h"
-#include "util/debug.h"
+#include "util/u_debug.h"
 #include "util/ralloc.h"
 #include "util/u_inlines.h"
 #include "util/format/u_format.h"
@@ -83,6 +83,7 @@ iris_lost_context_state(struct iris_batch *batch)
    memset(&ice->shaders.urb, 0, sizeof(ice->shaders.urb));
    memset(ice->state.last_block, 0, sizeof(ice->state.last_block));
    memset(ice->state.last_grid, 0, sizeof(ice->state.last_grid));
+   ice->state.last_grid_dim = 0;
    batch->last_binder_address = ~0ull;
    batch->last_aux_map_state = 0;
    batch->screen->vtbl.lost_genx_state(ice, batch);

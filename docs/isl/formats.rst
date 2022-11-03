@@ -160,11 +160,11 @@ turn it on and off.
 
 In Vulkan, this is all much more straightforward.  Your format is sRGB or it
 isn't.  If you have an sRGB image and you don't want sRGB decoding to happen
-when you sample from it, you simply create a c:struct:`VkImageView` that has
+when you sample from it, you simply create a :c:struct:`VkImageView` that has
 the appropriate linear format and the data will be treated as linear and not
 converted.  Similarly for render targets, blending always happens in the same
 colorspace as the shader output and you determine whether or not you want sRGB
-conversion by the format of the c:struct:`VkImageView` used as the render
+conversion by the format of the :c:struct:`VkImageView` used as the render
 target.
 
 Surface Format Introspection API
@@ -172,7 +172,7 @@ Surface Format Introspection API
 
 ISL provides an API for introspecting the :cpp:enum:`isl_format` enum and
 getting various bits of information about a format.  ISL provides helpers for
-introspecting both the data layout of an cpp:enum:`isl_format` and the
+introspecting both the data layout of an :cpp:enum:`isl_format` and the
 capabilities of that format for a particular piece of Intel hardware.
 
 Format Layout Introspection

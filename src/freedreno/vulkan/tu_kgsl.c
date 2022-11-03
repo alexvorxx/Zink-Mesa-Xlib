@@ -13,7 +13,7 @@
 #include "msm_kgsl.h"
 #include "vk_util.h"
 
-#include "util/debug.h"
+#include "util/u_debug.h"
 
 #include "tu_cmd_buffer.h"
 #include "tu_cs.h"
@@ -270,7 +270,7 @@ tu_enumerate_devices(struct vk_instance *vk_instance)
       ((info.chip_id >> 16) & 0xff) * 10 +
       ((info.chip_id >>  8) & 0xff);
    device->dev_id.chip_id = info.chip_id;
-   device->gmem_size = env_var_as_unsigned("TU_GMEM", info.gmem_sizebytes);
+   device->gmem_size = debug_get_num_option("TU_GMEM", info.gmem_sizebytes);
    device->gmem_base = gmem_iova;
 
    device->submitqueue_priority_count = 1;

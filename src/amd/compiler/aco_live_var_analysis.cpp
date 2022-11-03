@@ -348,7 +348,7 @@ get_vgpr_alloc(Program* program, uint16_t addressable_vgprs)
 {
    assert(addressable_vgprs <= program->dev.vgpr_limit);
    uint16_t granule = program->dev.vgpr_alloc_granule;
-   return align(std::max(addressable_vgprs, granule), granule);
+   return ALIGN_NPOT(std::max(addressable_vgprs, granule), granule);
 }
 
 unsigned
@@ -370,7 +370,8 @@ get_addr_sgpr_from_waves(Program* program, uint16_t waves)
 uint16_t
 get_addr_vgpr_from_waves(Program* program, uint16_t waves)
 {
-   uint16_t vgprs = program->dev.physical_vgprs / waves & ~(program->dev.vgpr_alloc_granule - 1);
+   uint16_t vgprs = program->dev.physical_vgprs / waves;
+   vgprs = vgprs / program->dev.vgpr_alloc_granule * program->dev.vgpr_alloc_granule;
    vgprs -= program->config->num_shared_vgprs / 2;
    return std::min(vgprs, program->dev.vgpr_limit);
 }

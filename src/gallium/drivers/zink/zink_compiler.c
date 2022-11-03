@@ -2348,7 +2348,7 @@ zink_shader_compile(struct zink_screen *screen, struct zink_shader *zs, nir_shad
    ralloc_free(nir);
 
    /* TODO: determine if there's any reason to cache spirv output? */
-   if (zs->is_generated)
+   if (zs->nir->info.stage == MESA_SHADER_TESS_CTRL && zs->tcs.is_generated)
       zs->spirv = spirv;
    else
       ralloc_free(spirv);
@@ -3630,9 +3630,10 @@ zink_shader_free(struct zink_screen *screen, struct zink_shader *shader)
       gl_shader_stage stage = shader->nir->info.stage;
       assert(stage < ZINK_GFX_SHADER_COUNT);
       if (!prog->base.removed && prog->stages_present == prog->stages_remaining &&
-          (stage != MESA_SHADER_TESS_CTRL || !shader->is_generated)) {
+          (stage != MESA_SHADER_TESS_CTRL || !shader->tcs.is_generated)) {
          unsigned stages_present = prog->stages_present;
-         if (prog->shaders[MESA_SHADER_TESS_CTRL] && prog->shaders[MESA_SHADER_TESS_CTRL]->is_generated)
+         if (prog->shaders[MESA_SHADER_TESS_CTRL] &&
+             prog->shaders[MESA_SHADER_TESS_CTRL]->tcs.is_generated)
             stages_present &= ~BITFIELD_BIT(MESA_SHADER_TESS_CTRL);
          unsigned idx = zink_program_cache_stages(stages_present);
          struct hash_table *ht = &prog->ctx->program_cache[idx];
@@ -3644,19 +3645,20 @@ zink_shader_free(struct zink_screen *screen, struct zink_shader *shader)
          simple_mtx_unlock(&prog->ctx->program_lock[idx]);
          util_queue_fence_wait(&prog->base.cache_fence);
       }
-      if (stage != MESA_SHADER_TESS_CTRL || !shader->is_generated) {
+      if (stage != MESA_SHADER_TESS_CTRL || !shader->tcs.is_generated) {
          prog->shaders[stage] = NULL;
          prog->stages_remaining &= ~BITFIELD_BIT(stage);
       }
       /* only remove generated tcs during parent tes destruction */
-      if (stage == MESA_SHADER_TESS_EVAL && shader->generated)
+      if (stage == MESA_SHADER_TESS_EVAL && shader->tes.generated)
          prog->shaders[MESA_SHADER_TESS_CTRL] = NULL;
       zink_gfx_program_reference(screen, &prog, NULL);
    }
-   if (shader->nir->info.stage == MESA_SHADER_TESS_EVAL && shader->generated) {
+   if (shader->nir->info.stage == MESA_SHADER_TESS_EVAL &&
+       shader->tes.generated) {
       /* automatically destroy generated tcs shaders when tes is destroyed */
-      zink_shader_free(screen, shader->generated);
-      shader->generated = NULL;
+      zink_shader_free(screen, shader->tes.generated);
+      shader->tes.generated = NULL;
    }
    _mesa_set_destroy(shader->programs, NULL);
    ralloc_free(shader->nir);
@@ -3775,7 +3777,7 @@ zink_shader_tcs_create(struct zink_screen *screen, struct zink_shader *vs, unsig
    NIR_PASS_V(nir, nir_convert_from_ssa, true);
 
    ret->nir = nir;
-   ret->is_generated = true;
+   ret->tcs.is_generated = true;
    return ret;
 }
 

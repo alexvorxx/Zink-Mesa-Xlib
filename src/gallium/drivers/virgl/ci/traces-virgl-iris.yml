@@ -30,7 +30,7 @@ traces:
       checksum: 32e8b627a33ad08d416dfdb804920371
   0ad/0ad-v2.trace:
     gl-virgl:
-      checksum: bf22fd7c3fc8baa7b0e9345728626d5f
+      checksum: 638fa405f78a6631ba829a8fc98392a6
   glmark2/buffer:update-fraction=0.5:update-dispersion=0.9:columns=200:update-method=map:interleave=false-v2.trace:
     gl-virgl:
       checksum: 040232e01e394a967dc3320bb9252870
@@ -42,7 +42,7 @@ traces:
       checksum: df21895268db3ab185ae5ffa5b2d7f37
   glmark2/bump:bump-render=height-v2.trace:
     gl-virgl:
-      checksum: cd32f46925906c53fae747372a8f2ed8
+      checksum: cceb2b8d4852b94709684b69c688638c
   glmark2/bump:bump-render=high-poly-v2.trace:
     gl-virgl:
       checksum: 11b7a4820b452934e6f12b57b8910a9a
@@ -126,7 +126,7 @@ traces:
       label: [crash]
   gputest/pixmark-julia-fp32-v2.trace:
     gl-virgl:
-      checksum: 0aa3a82a5b849cb83436e52c4e3e95ac
+      checksum: fbf5e44a6f46684b84e5bb5ad6d36c67
   gputest/pixmark-julia-fp64-v2.trace:
     gl-virgl:
       checksum: 1760aea00af985b8cd902128235b08f6

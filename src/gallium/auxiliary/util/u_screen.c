@@ -335,7 +335,7 @@ u_pipe_screen_get_param_defaults(struct pipe_screen *pscreen,
       return 1;
 
    case PIPE_CAP_PREFER_IMM_ARRAYS_AS_CONSTBUF:
-      /* Don't unset this unless your driver can do better */
+      /* Don't unset this unless your driver can do better, like using nir_opt_large_constants() */
       return 1;
 
    case PIPE_CAP_POST_DEPTH_COVERAGE:

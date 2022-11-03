@@ -28,7 +28,6 @@
 #include <windows.h>
 
 #include "glapi/glapi.h"
-#include "util/debug.h"
 #include "util/u_debug.h"
 #include "util/u_math.h"
 #include "util/u_memory.h"
@@ -128,7 +127,7 @@ stw_init(const struct stw_winsys *stw_winsys)
 {
    static struct stw_device stw_dev_storage;
 
-   if (env_var_as_boolean("WGL_DISABLE_ERROR_DIALOGS", false))
+   if (debug_get_bool_option("WGL_DISABLE_ERROR_DIALOGS", false))
       debug_disable_win32_error_dialogs();
 
    assert(!stw_dev);

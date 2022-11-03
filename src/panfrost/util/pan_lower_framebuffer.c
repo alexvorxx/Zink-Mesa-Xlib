@@ -554,11 +554,15 @@ pan_lower_fb_load(nir_shader *shader,
                 nir_intrinsic_instr *intr,
                 const struct util_format_description *desc,
                 bool reorder_comps,
-                unsigned base, int sample)
+                int sample)
 {
+        nir_io_semantics sem = {
+                .location = nir_intrinsic_get_var(intr, 0)->data.location,
+        };
+
         nir_ssa_def *packed =
                 nir_load_raw_output_pan(b, 4, 32, pan_sample_id(b, sample),
-                                        .base = base);
+                                        .io_semantics = sem);
 
         /* Convert the raw value */
         nir_ssa_def *unpacked = pan_unpack(b, desc, packed);
@@ -621,7 +625,6 @@ pan_lower_framebuffer(nir_shader *shader, const enum pipe_format *rt_fmts,
                                 if (var->data.location < FRAG_RESULT_DATA0)
                                         continue;
 
-                                unsigned base = var->data.driver_location;
                                 unsigned rt = var->data.location - FRAG_RESULT_DATA0;
 
                                 if (rt_fmts[rt] == PIPE_FORMAT_NONE)
@@ -649,7 +652,7 @@ pan_lower_framebuffer(nir_shader *shader, const enum pipe_format *rt_fmts,
                                         pan_lower_fb_store(shader, &b, intr, desc, reorder_comps);
                                 } else {
                                         b.cursor = nir_after_instr(instr);
-                                        pan_lower_fb_load(shader, &b, intr, desc, reorder_comps, base, sample);
+                                        pan_lower_fb_load(shader, &b, intr, desc, reorder_comps, sample);
                                 }
 
                                 nir_instr_remove(instr);

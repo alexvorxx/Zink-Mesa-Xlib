@@ -2638,15 +2638,39 @@ late_optimizations = [
 
    # nir_lower_to_source_mods will collapse this, but its existence during the
    # optimization loop can prevent other optimizations.
-   (('fneg', ('fneg', a)), a),
+   (('fneg', ('fneg', a)), a)
+]
 
-   # re-combine inexact mul+add to ffma. Do this before fsub so that a * b - c
-   # gets combined to fma(a, b, -c).
-   (('~fadd@16', ('fmul(is_only_used_by_fadd)', a, b), c), ('ffma', a, b, c), 'options->fuse_ffma16'),
-   (('~fadd@32', ('fmul(is_only_used_by_fadd)', a, b), c), ('ffma', a, b, c), 'options->fuse_ffma32'),
-   (('~fadd@64', ('fmul(is_only_used_by_fadd)', a, b), c), ('ffma', a, b, c), 'options->fuse_ffma64'),
-   (('~fadd@32', ('fmulz(is_only_used_by_fadd)', a, b), c), ('ffmaz', a, b, c), 'options->fuse_ffma32'),
+# re-combine inexact mul+add to ffma. Do this before fsub so that a * b - c
+# gets combined to fma(a, b, -c).
+for sz, mulz in itertools.product([16, 32, 64], [False, True]):
+    # fmulz/ffmaz only for fp32
+    if mulz and sz != 32:
+        continue
 
+    # Fuse the correct fmul. Only consider fmuls where the only users are fadd
+    # (or fneg/fabs which are assumed to be propagated away), as a heuristic to
+    # avoid fusing in cases where it's harmful.
+    fmul = ('fmulz' if mulz else 'fmul') + '(is_only_used_by_fadd)'
+    ffma = 'ffmaz' if mulz else 'ffma'
+
+    fadd = '~fadd@{}'.format(sz)
+    option = 'options->fuse_ffma{}'.format(sz)
+
+    late_optimizations.extend([
+        ((fadd, (fmul, a, b), c), (ffma, a, b, c), option),
+
+        ((fadd, ('fneg(is_only_used_by_fadd)', (fmul, a, b)), c),
+         (ffma, ('fneg', a), b, c), option),
+
+        ((fadd, ('fabs(is_only_used_by_fadd)', (fmul, a, b)), c),
+         (ffma, ('fabs', a), ('fabs', b), c), option),
+
+        ((fadd, ('fneg(is_only_used_by_fadd)', ('fabs', (fmul, a, b))), c),
+         (ffma, ('fneg', ('fabs', a)), ('fabs', b), c), option),
+    ])
+
+late_optimizations.extend([
    # Subtractions get lowered during optimization, so we need to recombine them
    (('fadd@8', a, ('fneg', 'b')), ('fsub', 'a', 'b'), 'options->has_fsub'),
    (('fadd@16', a, ('fneg', 'b')), ('fsub', 'a', 'b'), 'options->has_fsub'),
@@ -2823,7 +2847,7 @@ late_optimizations = [
    (('extract_i8', ('extract_u8', a, b), 0), ('extract_i8', a, b)),
    (('extract_u8', ('extract_i8', a, b), 0), ('extract_u8', a, b)),
    (('extract_u8', ('extract_u8', a, b), 0), ('extract_u8', a, b)),
-]
+])
 
 # A few more extract cases we'd rather leave late
 for N in [16, 32]:

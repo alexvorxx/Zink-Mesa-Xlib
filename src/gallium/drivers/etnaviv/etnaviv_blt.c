@@ -70,7 +70,9 @@ blt_compute_stride_bits(const struct blt_imginfo *img)
 {
    return VIVS_BLT_DEST_STRIDE_TILING(img->tiling == ETNA_LAYOUT_LINEAR ? 0 : 3) | /* 1/3? */
           VIVS_BLT_DEST_STRIDE_FORMAT(img->format) |
-          VIVS_BLT_DEST_STRIDE_STRIDE(img->stride);
+          VIVS_BLT_DEST_STRIDE_STRIDE(img->stride) |
+          COND(img->downsample_x, VIVS_BLT_SRC_STRIDE_DOWNSAMPLE_X) |
+          COND(img->downsample_y, VIVS_BLT_SRC_STRIDE_DOWNSAMPLE_Y);
 }
 
 static inline uint32_t
@@ -479,6 +481,8 @@ etna_try_blt_blit(struct pipe_context *pctx,
       op.src.format = format;
       op.src.stride = src_lev->stride;
       op.src.tiling = src->layout;
+      op.src.downsample_x = msaa_xscale > 1;
+      op.src.downsample_y = msaa_yscale > 1;
       for (unsigned x=0; x<4; ++x)
          op.src.swizzle[x] = x;
 
@@ -549,20 +553,6 @@ etna_try_blt_blit(struct pipe_context *pctx,
    return true;
 }
 
-static bool
-etna_blit_blt(struct pipe_context *pctx, const struct pipe_blit_info *blit_info)
-{
-   if (blit_info->src.resource->nr_samples > 1 &&
-       blit_info->dst.resource->nr_samples <= 1 &&
-       !util_format_is_depth_or_stencil(blit_info->src.resource->format) &&
-       !util_format_is_pure_integer(blit_info->src.resource->format)) {
-      DBG("color resolve unimplemented");
-      return false;
-   }
-
-   return etna_try_blt_blit(pctx, blit_info);
-}
-
 void
 etna_clear_blit_blt_init(struct pipe_context *pctx)
 {
@@ -570,5 +560,5 @@ etna_clear_blit_blt_init(struct pipe_context *pctx)
 
    DBG("etnaviv: Using BLT blit engine");
    pctx->clear = etna_clear_blt;
-   ctx->blit = etna_blit_blt;
+   ctx->blit = etna_try_blt_blit;
 }

@@ -219,6 +219,11 @@ panfrost_batch_write_rsrc(struct panfrost_batch *batch,
                           struct panfrost_resource *rsrc,
                           enum pipe_shader_type stage);
 
+void
+panfrost_resource_swap_bo(struct panfrost_context *ctx,
+                          struct panfrost_resource *rsrc,
+                          struct panfrost_bo *newbo);
+
 struct panfrost_bo *
 panfrost_batch_create_bo(struct panfrost_batch *batch, size_t size,
                          uint32_t create_flags, enum pipe_shader_type stage,

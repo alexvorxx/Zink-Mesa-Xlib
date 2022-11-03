@@ -937,6 +937,13 @@ struct pipe_grid_info
    const void *input;
 
    /**
+    * Variable shared memory used by this invocation.
+    *
+    * This comes on top of shader declared shared memory.
+    */
+   uint32_t variable_shared_mem;
+
+   /**
     * Grid number of dimensions, 1-3, e.g. the work_dim parameter passed to
     * clEnqueueNDRangeKernel. Note block[] and grid[] must be padded with
     * 1 for non-used dimensions.
@@ -1005,8 +1012,7 @@ struct pipe_compute_state
 {
    enum pipe_shader_ir ir_type; /**< IR type contained in prog. */
    const void *prog; /**< Compute program to be executed. */
-   unsigned req_local_mem; /**< Required size of the LOCAL resource. */
-   unsigned req_private_mem; /**< Required size of the PRIVATE resource. */
+   unsigned static_shared_mem; /**< equal to info.shared_size, used for shaders passed as TGSI */
    unsigned req_input_mem; /**< Required size of the INPUT resource. */
 };
 

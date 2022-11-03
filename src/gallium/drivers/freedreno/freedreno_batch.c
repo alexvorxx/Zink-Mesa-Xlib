@@ -163,6 +163,11 @@ cleanup_submit(struct fd_batch *batch)
       batch->prologue = NULL;
    }
 
+   if (batch->tile_epilogue) {
+      fd_ringbuffer_del(batch->tile_epilogue);
+      batch->tile_epilogue = NULL;
+   }
+
    if (batch->epilogue) {
       fd_ringbuffer_del(batch->epilogue);
       batch->epilogue = NULL;

@@ -32,11 +32,11 @@ Simulating CI trace job
 
 Sometimes it's useful to be able to test traces on your local machine instead of the Mesa CI runner. To simulate the CI environment as closely as possible.
 
-Download the yml file from your driver's `ci/` directory and then change the path in the yml file from local proxy or MinIO to the local directory (url-like format ``file://``)
+Download the YAML file from your driver's `ci/` directory and then change the path in the YAML file from local proxy or MinIO to the local directory (url-like format ``file://``)
 
 .. code-block:: console
 
-    # The PIGLIT_REPLAY_DEVICE_NAME has to match name in the yml file.
+    # The PIGLIT_REPLAY_DEVICE_NAME has to match name in the YAML file.
     export PIGLIT_REPLAY_DEVICE_NAME='your_device_name'
     export PIGLIT_REPLAY_DESCRIPTION_FILE='path_to_mesa_traces_file.yml'
     ./piglit run -l verbose --timeout 300 -j10 replay ~/results/

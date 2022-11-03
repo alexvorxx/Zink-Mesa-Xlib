@@ -955,10 +955,6 @@ brw_preprocess_nir(const struct brw_compiler *compiler, nir_shader *nir,
 
    OPT(nir_lower_bit_size, lower_bit_size_callback, (void *)compiler);
 
-   if (is_scalar) {
-      OPT(nir_lower_load_const_to_scalar);
-   }
-
    /* Lower a bunch of stuff */
    OPT(nir_lower_var_copies);
 
@@ -967,6 +963,10 @@ brw_preprocess_nir(const struct brw_compiler *compiler, nir_shader *nir,
     */
    if (compiler->supports_shader_constants) {
       OPT(nir_opt_large_constants, NULL, 32);
+   }
+
+   if (is_scalar) {
+      OPT(nir_lower_load_const_to_scalar);
    }
 
    OPT(nir_lower_system_values);

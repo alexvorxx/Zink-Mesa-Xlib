@@ -124,7 +124,7 @@
 #include "shaderobj.h"
 #include "shaderimage.h"
 #include "state.h"
-#include "util/debug.h"
+#include "util/u_debug.h"
 #include "util/disk_cache.h"
 #include "util/strtod.h"
 #include "util/u_call_once.h"
@@ -714,7 +714,7 @@ init_attrib_groups(struct gl_context *ctx)
    ctx->ErrorValue = GL_NO_ERROR;
    ctx->ShareGroupReset = false;
    ctx->VertexProgram._VaryingInputs = VERT_BIT_ALL;
-   ctx->IntelBlackholeRender = env_var_as_boolean("INTEL_BLACKHOLE_DEFAULT", false);
+   ctx->IntelBlackholeRender = debug_get_bool_option("INTEL_BLACKHOLE_DEFAULT", false);
 
    return GL_TRUE;
 }

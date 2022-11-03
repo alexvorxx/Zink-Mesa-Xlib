@@ -97,7 +97,7 @@ disk_cache_get_function_identifier(void *ptr, struct mesa_sha1 *ctx)
 
 #include "util/blob.h"
 #include "util/crc32.h"
-#include "util/debug.h"
+#include "util/u_debug.h"
 #include "util/ralloc.h"
 #include "util/rand_xor.h"
 
@@ -832,9 +832,9 @@ disk_cache_generate_cache_dir(void *mem_ctx, const char *gpu_name,
                               const char *driver_id)
 {
    char *cache_dir_name = CACHE_DIR_NAME;
-   if (env_var_as_boolean("MESA_DISK_CACHE_SINGLE_FILE", false))
+   if (debug_get_bool_option("MESA_DISK_CACHE_SINGLE_FILE", false))
       cache_dir_name = CACHE_DIR_NAME_SF;
-   else if (env_var_as_boolean("MESA_DISK_CACHE_DATABASE", false))
+   else if (debug_get_bool_option("MESA_DISK_CACHE_DATABASE", false))
       cache_dir_name = CACHE_DIR_NAME_DB;
 
    char *path = getenv("MESA_SHADER_CACHE_DIR");
@@ -904,7 +904,7 @@ disk_cache_generate_cache_dir(void *mem_ctx, const char *gpu_name,
          return NULL;
    }
 
-   if (env_var_as_boolean("MESA_DISK_CACHE_SINGLE_FILE", false)) {
+   if (debug_get_bool_option("MESA_DISK_CACHE_SINGLE_FILE", false)) {
       path = concatenate_and_mkdir(mem_ctx, path, driver_id);
       if (!path)
          return NULL;
@@ -939,7 +939,7 @@ disk_cache_enabled()
                  "use MESA_SHADER_CACHE_DISABLE instead ***\n");
    }
 
-   if (env_var_as_boolean(envvar_name, disable_by_default))
+   if (debug_get_bool_option(envvar_name, disable_by_default))
       return false;
 
    return true;

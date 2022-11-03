@@ -620,9 +620,7 @@ zink_create_rasterizer_state(struct pipe_context *pctx,
       state->base.line_stipple_pattern = UINT16_MAX;
    }
 
-   state->offset_point = rs_state->offset_point;
-   state->offset_line = rs_state->offset_line;
-   state->offset_tri = rs_state->offset_tri;
+   state->offset_fill = util_get_offset(rs_state, rs_state->fill_front);
    state->offset_units = rs_state->offset_units;
    if (!rs_state->offset_units_unscaled)
       state->offset_units *= 2;

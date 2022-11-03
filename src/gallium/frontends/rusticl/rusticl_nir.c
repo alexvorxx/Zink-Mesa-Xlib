@@ -77,3 +77,73 @@ rusticl_lower_intrinsics(nir_shader *nir, struct rusticl_lower_state* state)
         state
     );
 }
+
+static nir_ssa_def*
+rusticl_lower_input_instr(struct nir_builder *b, nir_instr *instr, void *_)
+{
+   nir_intrinsic_instr *intrins = nir_instr_as_intrinsic(instr);
+   if (intrins->intrinsic != nir_intrinsic_load_kernel_input)
+      return NULL;
+
+   nir_ssa_def *ubo_idx = nir_imm_int(b, 0);
+   nir_ssa_def *uniform_offset = nir_ssa_for_src(b, intrins->src[0], 1);
+
+   assert(intrins->dest.ssa.bit_size >= 8);
+   nir_ssa_def *load_result =
+      nir_load_ubo(b, intrins->num_components, intrins->dest.ssa.bit_size,
+                   ubo_idx, nir_iadd_imm(b, uniform_offset, nir_intrinsic_base(intrins)));
+
+   nir_intrinsic_instr *load = nir_instr_as_intrinsic(load_result->parent_instr);
+
+   /* If it's const, set the alignment to our known constant offset.  If
+    * not, set it to a pessimistic value based on the multiplier (or the
+    * scalar size, for qword loads).
+    *
+    * We could potentially set up stricter alignments for indirects by
+    * knowing what features are enabled in the APIs (see comment in
+    * nir_lower_ubo_vec4.c)
+    */
+   if (nir_src_is_const(intrins->src[0])) {
+      nir_intrinsic_set_align(load, NIR_ALIGN_MUL_MAX,
+                              (nir_src_as_uint(intrins->src[0]) +
+                              nir_intrinsic_base(intrins) * 1) %
+                              NIR_ALIGN_MUL_MAX);
+   } else {
+      nir_intrinsic_set_align(load, intrins->dest.ssa.bit_size / 8, 0);
+   }
+
+   nir_intrinsic_set_range_base(load, nir_intrinsic_base(intrins));
+   nir_intrinsic_set_range(load, nir_intrinsic_range(intrins));
+   return load_result;
+}
+
+bool
+rusticl_lower_inputs(nir_shader *shader)
+{
+   bool progress = false;
+
+   assert(!shader->info.first_ubo_is_default_ubo);
+
+   progress = nir_shader_lower_instructions(
+      shader,
+      rusticl_lower_intrinsics_filter,
+      rusticl_lower_input_instr,
+      NULL
+   );
+
+   nir_foreach_variable_with_modes(var, shader, nir_var_mem_ubo) {
+      var->data.binding++;
+      var->data.driver_location++;
+   }
+   shader->info.num_ubos++;
+
+   if (shader->num_uniforms > 0) {
+      const struct glsl_type *type = glsl_array_type(glsl_uint8_t_type(), shader->num_uniforms, 1);
+      nir_variable *ubo = nir_variable_create(shader, nir_var_mem_ubo, type, "kernel_input");
+      ubo->data.binding = 0;
+      ubo->data.explicit_binding = 1;
+   }
+
+   shader->info.first_ubo_is_default_ubo = true;
+   return progress;
+}

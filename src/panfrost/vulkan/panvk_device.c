@@ -45,7 +45,7 @@
 
 #include "drm-uapi/panfrost_drm.h"
 
-#include "util/debug.h"
+#include "util/u_debug.h"
 #include "util/disk_cache.h"
 #include "util/strtod.h"
 #include "vk_format.h"
@@ -76,7 +76,7 @@ _panvk_device_set_lost(struct panvk_device *device,
    vfprintf(stderr, msg, ap);
    va_end(ap);
 
-   if (env_var_as_boolean("PANVK_ABORT_ON_DEVICE_LOSS", false))
+   if (debug_get_bool_option("PANVK_ABORT_ON_DEVICE_LOSS", false))
       abort();
 
    return VK_ERROR_DEVICE_LOST;

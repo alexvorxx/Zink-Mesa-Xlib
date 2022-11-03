@@ -3133,6 +3133,8 @@ Converter::visit(nir_tex_instr *insn)
 
       r = bindless ? 0xff : insn->texture_index;
       s = bindless ? 0x1f : insn->sampler_index;
+      if (op == OP_TXF || op == OP_TXQ)
+         s = 0;
 
       defs.resize(newDefs.size());
       for (uint8_t d = 0u; d < newDefs.size(); ++d) {

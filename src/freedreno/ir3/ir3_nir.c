@@ -24,7 +24,7 @@
  *    Rob Clark <robclark@freedesktop.org>
  */
 
-#include "util/debug.h"
+#include "util/u_debug.h"
 #include "util/u_math.h"
 
 #include "ir3_compiler.h"
@@ -102,7 +102,7 @@ ir3_optimize_loop(struct ir3_compiler *compiler, nir_shader *s)
 
       static int gcm = -1;
       if (gcm == -1)
-         gcm = env_var_as_unsigned("GCM", 0);
+         gcm = debug_get_num_option("GCM", 0);
       if (gcm == 1)
          progress |= OPT(s, nir_opt_gcm, true);
       else if (gcm == 2)
@@ -500,9 +500,7 @@ ir3_nir_post_finalize(struct ir3_shader *shader)
       NIR_PASS_V(s, nir_lower_mediump_io, nir_var_shader_out, 0, false);
    }
 
-   if ((s->info.stage == MESA_SHADER_COMPUTE) ||
-       (s->info.stage == MESA_SHADER_KERNEL) ||
-       compiler->has_getfiberid) {
+   {
       /* If the API-facing subgroup size is forced to a particular value, lower
        * it here. Beyond this point nir_intrinsic_load_subgroup_size will return
        * the "real" subgroup size.
@@ -531,18 +529,26 @@ ir3_nir_post_finalize(struct ir3_shader *shader)
          break;
       }
 
-      OPT(s, nir_lower_subgroups,
-          &(nir_lower_subgroups_options){
-             .subgroup_size = subgroup_size,
-             .ballot_bit_size = 32,
-             .ballot_components = max_subgroup_size / 32,
-             .lower_to_scalar = true,
-             .lower_vote_eq = true,
-             .lower_subgroup_masks = true,
-             .lower_read_invocation_to_cond = true,
-             .lower_shuffle = true,
-             .lower_relative_shuffle = true,
-          });
+      nir_lower_subgroups_options options = {
+            .subgroup_size = subgroup_size,
+            .ballot_bit_size = 32,
+            .ballot_components = max_subgroup_size / 32,
+            .lower_to_scalar = true,
+            .lower_vote_eq = true,
+            .lower_subgroup_masks = true,
+            .lower_read_invocation_to_cond = true,
+            .lower_shuffle = true,
+            .lower_relative_shuffle = true,
+      };
+
+      if (!((s->info.stage == MESA_SHADER_COMPUTE) ||
+            (s->info.stage == MESA_SHADER_KERNEL) ||
+            compiler->has_getfiberid)) {
+         options.subgroup_size = 1;
+         options.lower_vote_trivial = true;
+      }
+
+      OPT(s, nir_lower_subgroups, &options);
    }
 
    if ((s->info.stage == MESA_SHADER_COMPUTE) ||

@@ -1348,7 +1348,11 @@ print_load_store_instr(disassemble_context *ctx, FILE *fp, uint64_t data, bool v
                         (word->op == midgard_op_ld_attr_32i);
 
                 bool has_default = (default_secondary || default_primary);
-                bool is_secondary = (word->index_format >> 1);
+                bool auto32 = (word->index_format >> 0) & 1;
+                bool is_secondary = (word->index_format >> 1) & 1;
+
+                if (auto32)
+                        fprintf(fp, ".a32");
 
                 if (has_default && (is_secondary != default_secondary))
                         fprintf(fp, ".%s", is_secondary ? "secondary" : "primary");

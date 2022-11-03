@@ -3756,7 +3756,7 @@ static void si_emit_msaa_config(struct si_context *sctx)
    unsigned db_eqaa = S_028804_HIGH_QUALITY_INTERSECTIONS(1) | S_028804_INCOHERENT_EQAA_READS(1) |
                       S_028804_INTERPOLATE_COMP_Z(sctx->gfx_level < GFX11) |
                       S_028804_STATIC_ANCHOR_ASSOCIATIONS(1);
-   unsigned coverage_samples, color_samples, z_samples;
+   unsigned coverage_samples, z_samples;
    struct si_state_rasterizer *rs = sctx->queued.named.rasterizer;
 
    /* S: Coverage samples (up to 16x):
@@ -3800,18 +3800,7 @@ static void si_emit_msaa_config(struct si_context *sctx)
     *   EQAA  4s 4z 2f - might look the same as 4x MSAA with low-density geometry
     *   EQAA  2s 2z 2f = 2x MSAA
     */
-   coverage_samples = color_samples = z_samples = si_get_num_coverage_samples(sctx);
-
-   if (sctx->framebuffer.nr_samples > 1 && rs->multisample_enable) {
-      color_samples = sctx->framebuffer.nr_color_samples;
-
-      if (sctx->framebuffer.state.zsbuf) {
-         z_samples = sctx->framebuffer.state.zsbuf->texture->nr_samples;
-         z_samples = MAX2(1, z_samples);
-      } else {
-         z_samples = coverage_samples;
-      }
-   }
+   coverage_samples = si_get_num_coverage_samples(sctx);
 
    /* The DX10 diamond test is not required by GL and decreases line rasterization
     * performance, so don't use it.
@@ -3819,7 +3808,7 @@ static void si_emit_msaa_config(struct si_context *sctx)
    unsigned sc_line_cntl = 0;
    unsigned sc_aa_config = 0;
 
-   if (coverage_samples > 1) {
+   if (coverage_samples > 1 && rs->multisample_enable) {
       /* distance from the pixel center, indexed by log2(nr_samples) */
       static unsigned max_dist[] = {
          0, /* unused */
@@ -3829,9 +3818,6 @@ static void si_emit_msaa_config(struct si_context *sctx)
          8, /* 16x MSAA */
       };
       unsigned log_samples = util_logbase2(coverage_samples);
-      unsigned log_z_samples = util_logbase2(z_samples);
-      unsigned ps_iter_samples = si_get_ps_iter_samples(sctx);
-      unsigned log_ps_iter_samples = util_logbase2(ps_iter_samples);
 
       sc_line_cntl |= S_028BDC_EXPAND_LINE_WIDTH(1) |
                       S_028BDC_PERPENDICULAR_ENDCAP_ENA(rs->perpendicular_end_caps) |
@@ -3842,7 +3828,19 @@ static void si_emit_msaa_config(struct si_context *sctx)
                      S_028BE0_MAX_SAMPLE_DIST(max_dist[log_samples]) |
                      S_028BE0_MSAA_EXPOSED_SAMPLES(log_samples) |
                      S_028BE0_COVERED_CENTROID_IS_CENTER(sctx->gfx_level >= GFX10_3);
+   }
 
+   if (sctx->framebuffer.nr_samples > 1) {
+      if (sctx->framebuffer.state.zsbuf) {
+         z_samples = sctx->framebuffer.state.zsbuf->texture->nr_samples;
+         z_samples = MAX2(1, z_samples);
+      } else {
+         z_samples = coverage_samples;
+      }
+      unsigned log_samples = util_logbase2(coverage_samples);
+      unsigned log_z_samples = util_logbase2(z_samples);
+      unsigned ps_iter_samples = si_get_ps_iter_samples(sctx);
+      unsigned log_ps_iter_samples = util_logbase2(ps_iter_samples);
       if (sctx->framebuffer.nr_samples > 1) {
          db_eqaa |= S_028804_MAX_ANCHOR_SAMPLES(log_z_samples) |
                     S_028804_PS_ITER_SAMPLES(log_ps_iter_samples) |

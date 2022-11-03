@@ -50,7 +50,7 @@
 #include "git_sha1.h"
 
 #include "util/build_id.h"
-#include "util/debug.h"
+#include "util/u_debug.h"
 
 #ifdef VK_USE_PLATFORM_XCB_KHR
 #include <xcb/xcb.h>

@@ -169,6 +169,12 @@ struct __perf_time_state {
        ? os_time_get_nano()                                                    \
        : 0)
 
+#define DEFINE_CAST(parent, child)                                             \
+   static inline struct child *child(struct parent *x)                         \
+   {                                                                           \
+      return (struct child *)x;                                                \
+   }
+
 struct fd_context;
 
 /**

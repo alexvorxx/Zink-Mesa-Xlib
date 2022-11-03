@@ -26,7 +26,7 @@
  */
 
 #include "ac_drm_fourcc.h"
-#include "util/debug.h"
+#include "util/u_debug.h"
 #include "util/u_atomic.h"
 #include "vulkan/util/vk_format.h"
 #include "radv_debug.h"

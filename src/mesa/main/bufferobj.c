@@ -32,7 +32,7 @@
 
 #include <stdbool.h>
 #include <inttypes.h>  /* for PRId64 macro */
-#include "util/debug.h"
+#include "util/u_debug.h"
 #include "glheader.h"
 #include "enums.h"
 #include "hash.h"
@@ -1062,7 +1062,7 @@ get_no_minmax_cache()
    static bool disable = false;
 
    if (!read) {
-      disable = env_var_as_boolean("MESA_NO_MINMAX_CACHE", false);
+      disable = debug_get_bool_option("MESA_NO_MINMAX_CACHE", false);
       read = true;
    }
 

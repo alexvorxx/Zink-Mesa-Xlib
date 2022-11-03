@@ -2,7 +2,6 @@ api/clbuildprogram: fail
 api/clcompileprogram: fail
 api/clcreateprogramwithbinary: fail
 api/clenqueuefillimage: fail
-api/clenqueuemigratememobjects: fail
 api/clgetcommandqueueinfo: fail
 api/clgetdeviceinfo: fail
 api/clgetextensionfunctionaddressforplatform: fail

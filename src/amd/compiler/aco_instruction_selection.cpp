@@ -7823,20 +7823,18 @@ visit_emit_vertex_with_counter(isel_context* ctx, nir_intrinsic_instr* instr)
                const_offset %= 4096u;
             }
 
-            aco_ptr<MTBUF_instruction> mtbuf{create_instruction<MTBUF_instruction>(
-               aco_opcode::tbuffer_store_format_x, Format::MTBUF, 4, 0)};
-            mtbuf->operands[0] = Operand(gsvs_ring);
-            mtbuf->operands[1] = vaddr_offset;
-            mtbuf->operands[2] = Operand(get_arg(ctx, ctx->args->ac.gs2vs_offset));
-            mtbuf->operands[3] = Operand(ctx->outputs.temps[i * 4u + j]);
-            mtbuf->offen = !vaddr_offset.isUndefined();
-            mtbuf->dfmt = V_008F0C_BUF_DATA_FORMAT_32;
-            mtbuf->nfmt = V_008F0C_BUF_NUM_FORMAT_UINT;
-            mtbuf->offset = const_offset;
-            mtbuf->glc = ctx->program->gfx_level < GFX11;
-            mtbuf->slc = true;
-            mtbuf->sync = memory_sync_info(storage_vmem_output, semantic_can_reorder);
-            bld.insert(std::move(mtbuf));
+            aco_ptr<MUBUF_instruction> mubuf{create_instruction<MUBUF_instruction>(
+               aco_opcode::buffer_store_dword, Format::MUBUF, 4, 0)};
+            mubuf->operands[0] = Operand(gsvs_ring);
+            mubuf->operands[1] = vaddr_offset;
+            mubuf->operands[2] = Operand(get_arg(ctx, ctx->args->ac.gs2vs_offset));
+            mubuf->operands[3] = Operand(ctx->outputs.temps[i * 4u + j]);
+            mubuf->offen = !vaddr_offset.isUndefined();
+            mubuf->offset = const_offset;
+            mubuf->glc = ctx->program->gfx_level < GFX11;
+            mubuf->slc = true;
+            mubuf->sync = memory_sync_info(storage_vmem_output, semantic_can_reorder);
+            bld.insert(std::move(mubuf));
          }
 
          offset += ctx->shader->info.gs.vertices_out;
@@ -12565,7 +12563,7 @@ select_vs_prolog(Program* program, const struct aco_vs_prolog_key* key, ac_shade
    program->config->float_mode = program->blocks[0].fp_mode.val;
    /* addition on GFX6-8 requires a carry-out (we use VCC) */
    program->needs_vcc = program->gfx_level <= GFX8;
-   program->config->num_vgprs = get_vgpr_alloc(program, num_vgprs);
+   program->config->num_vgprs = std::min<uint16_t>(get_vgpr_alloc(program, num_vgprs), 256);
    program->config->num_sgprs = get_sgpr_alloc(program, num_sgprs);
 }
 

@@ -1498,6 +1498,9 @@ build_explicit_io_load(nir_builder *b, nir_intrinsic_instr *intrin,
    if (op == nir_intrinsic_load_constant) {
       nir_intrinsic_set_base(load, 0);
       nir_intrinsic_set_range(load, b->shader->constant_data_size);
+   } else if (op == nir_intrinsic_load_kernel_input) {
+      nir_intrinsic_set_base(load, 0);
+      nir_intrinsic_set_range(load, b->shader->num_uniforms);
    } else if (mode == nir_var_mem_push_const) {
       /* Push constants are required to be able to be chased back to the
        * variable so we can provide a base/range.

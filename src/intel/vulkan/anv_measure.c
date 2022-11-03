@@ -28,7 +28,7 @@
 #include <sys/types.h>
 
 #include "common/intel_measure.h"
-#include "util/debug.h"
+#include "util/u_debug.h"
 
 struct anv_measure_batch {
    struct anv_bo *bo;

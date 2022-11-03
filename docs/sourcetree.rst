@@ -64,8 +64,8 @@ each directory.
       -  **vbo** - Vertex Buffer Object code. All drawing with
          glBegin/glEnd, glDrawArrays, display lists, etc. goes through
          this module. The results is a well-defined set of vertex arrays
-         which are passed to the device driver (or tnl module) for
-         rendering.
+         which are passed to the device driver (or transform and lighting
+         module) for rendering.
       -  **x86** - Assembly code/optimizations for 32-bit x86 systems
          (not used with Gallium)
       -  **x86-64** - Assembly code/optimizations for 64-bit x86 systems
@@ -87,8 +87,6 @@ each directory.
          -  **nouveau** - Driver for NVIDIA GPUs.
          -  **panfrost** - Driver for ARM Mali Txxx (Midgard) and
             Gxx (Bifrost) GPUs.
-         -  **radeon** - Shared module for the r600 and RadeonSI
-            drivers.
          -  **r300** - Driver for ATI R300 - R500.
          -  **r600** - Driver for ATI/AMD R600 - Northern Island (Terascale).
          -  **radeonsi** - Driver for AMD Southern Island and newer (GCN, RDNA).
@@ -135,7 +133,7 @@ each directory.
          device drivers
 
          -  **clover** - OpenCL frontend
-         -  **d3d10umd** - D3D10 frontend for Windows only. It's similar to Microsoft WARP, but using LLVMpipe/softpipe.
+         -  **d3d10umd** - D3D10 frontend for Windows only. It's similar to Microsoft WARP, but using LLVMpipe/Softpipe.
          -  **dri** - Meta frontend for DRI drivers, see mesa/state_tracker
          -  **glx** - Meta frontend for GLX
          -  **hgl** - Haiku OpenGL

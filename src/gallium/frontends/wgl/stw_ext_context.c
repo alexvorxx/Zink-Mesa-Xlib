@@ -249,6 +249,9 @@ wglMakeContextCurrentARB(HDC hDrawDC, HDC hReadDC, HGLRC hglrc)
    if (stw_dev && stw_dev->callbacks.pfnGetDhglrc) {
       /* Convert HGLRC to DHGLRC */
       dhglrc = stw_dev->callbacks.pfnGetDhglrc(hglrc);
+   } else {
+      /* not using ICD */
+      dhglrc = (DHGLRC)(INT_PTR)hglrc;
    }
 
    return stw_make_current_by_handles(hDrawDC, hReadDC, dhglrc);

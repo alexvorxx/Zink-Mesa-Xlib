@@ -268,18 +268,9 @@ etna_resource_alloc(struct pipe_screen *pscreen, unsigned layout,
          templat->last_level, templat->nr_samples, templat->usage,
          templat->bind, templat->flags);
 
-   /* Determine scaling for antialiasing, allow override using debug flag */
-   int nr_samples = templat->nr_samples;
-   if ((templat->bind & (PIPE_BIND_RENDER_TARGET | PIPE_BIND_DEPTH_STENCIL)) &&
-       !(templat->bind & PIPE_BIND_SAMPLER_VIEW)) {
-      if (DBG_ENABLED(ETNA_DBG_MSAA_2X))
-         nr_samples = 2;
-      if (DBG_ENABLED(ETNA_DBG_MSAA_4X))
-         nr_samples = 4;
-   }
-
+   /* Determine scaling for antialiasing */
    int msaa_xscale = 1, msaa_yscale = 1;
-   if (!translate_samples_to_xyscale(nr_samples, &msaa_xscale, &msaa_yscale)) {
+   if (!translate_samples_to_xyscale(templat->nr_samples, &msaa_xscale, &msaa_yscale)) {
       /* Number of samples not supported */
       return NULL;
    }
@@ -294,7 +285,7 @@ etna_resource_alloc(struct pipe_screen *pscreen, unsigned layout,
 
    rsc->base = *templat;
    rsc->base.screen = pscreen;
-   rsc->base.nr_samples = nr_samples;
+   rsc->base.nr_samples = templat->nr_samples;
    rsc->layout = layout;
    rsc->halign = halign;
    rsc->explicit_flush = true;
@@ -378,6 +369,15 @@ etna_resource_create(struct pipe_screen *pscreen,
               VIV_FEATURE(screen, chipMinorFeatures2, SUPERTILED_TEXTURE) &&
               etna_resource_hw_tileable(screen->specs.use_blt, templat)) {
       layout |= ETNA_LAYOUT_BIT_SUPER;
+   }
+
+   if (/* MSAA render target */
+       (templat->nr_samples > 1) &&
+       (templat->bind & (PIPE_BIND_RENDER_TARGET | PIPE_BIND_DEPTH_STENCIL))) {
+      if (screen->specs.pixel_pipes > 1 && !screen->specs.single_buffer)
+         layout |= ETNA_LAYOUT_BIT_MULTI;
+      if (screen->specs.can_supertile)
+         layout |= ETNA_LAYOUT_BIT_SUPER;
    }
 
    if (/* linear base or scanout without modifier requested */

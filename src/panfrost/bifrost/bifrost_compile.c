@@ -859,12 +859,7 @@ bi_emit_fragment_out(bi_builder *b, nir_intrinsic_instr *instr)
         bool emit_blend = writeout & (PAN_WRITEOUT_C);
         bool emit_zs = writeout & (PAN_WRITEOUT_Z | PAN_WRITEOUT_S);
 
-        const nir_variable *var =
-                nir_find_variable_with_driver_location(b->shader->nir,
-                                                       nir_var_shader_out, nir_intrinsic_base(instr));
-
-        unsigned loc = var ? var->data.location : 0;
-
+        unsigned loc = nir_intrinsic_io_semantics(instr).location;
         bi_index src0 = bi_src_index(&instr->src[0]);
 
         /* By ISA convention, the coverage mask is stored in R60. The store
@@ -924,10 +919,7 @@ bi_emit_fragment_out(bi_builder *b, nir_intrinsic_instr *instr)
                 /* Explicit copy since BLEND inputs are precoloured to R0-R3,
                  * TODO: maybe schedule around this or implement in RA as a
                  * spill */
-                bool has_mrt = false;
-
-                nir_foreach_shader_out_variable(var, b->shader->nir)
-                        has_mrt |= (var->data.location > FRAG_RESULT_DATA0);
+                bool has_mrt = (b->shader->nir->info.outputs_written >> FRAG_RESULT_DATA1);
 
                 if (has_mrt) {
                         bi_index srcs[4] = { color, color, color, color };
@@ -1578,10 +1570,8 @@ bi_emit_ld_tile(bi_builder *b, nir_intrinsic_instr *instr)
 
         /* Get the render target */
         if (!b->shader->inputs->is_blend) {
-                const nir_variable *var =
-                        nir_find_variable_with_driver_location(b->shader->nir,
-                                        nir_var_shader_out, nir_intrinsic_base(instr));
-                unsigned loc = var->data.location;
+                nir_io_semantics sem = nir_intrinsic_io_semantics(instr);
+                unsigned loc = sem.location;
                 assert(loc >= FRAG_RESULT_DATA0);
                 rt = (loc - FRAG_RESULT_DATA0);
         }
@@ -4696,68 +4686,6 @@ bi_opt_post_ra(bi_context *ctx)
         }
 }
 
-/* If the shader packs multiple varyings into the same location with different
- * location_frac, we'll need to lower to a single varying store that collects
- * all of the channels together.
- */
-static bool
-bifrost_nir_lower_store_component(struct nir_builder *b,
-                nir_instr *instr, void *data)
-{
-        if (instr->type != nir_instr_type_intrinsic)
-                return false;
-
-        nir_intrinsic_instr *intr = nir_instr_as_intrinsic(instr);
-
-        if (intr->intrinsic != nir_intrinsic_store_output)
-                return false;
-
-        struct hash_table_u64 *slots = data;
-        unsigned component = nir_intrinsic_component(intr);
-        nir_src *slot_src = nir_get_io_offset_src(intr);
-        uint64_t slot = nir_src_as_uint(*slot_src) + nir_intrinsic_base(intr);
-
-        nir_intrinsic_instr *prev = _mesa_hash_table_u64_search(slots, slot);
-        unsigned mask = (prev ? nir_intrinsic_write_mask(prev) : 0);
-
-        nir_ssa_def *value = intr->src[0].ssa;
-        b->cursor = nir_before_instr(&intr->instr);
-
-        nir_ssa_def *undef = nir_ssa_undef(b, 1, value->bit_size);
-        nir_ssa_def *channels[4] = { undef, undef, undef, undef };
-
-        /* Copy old */
-        u_foreach_bit(i, mask) {
-                assert(prev != NULL);
-                nir_ssa_def *prev_ssa = prev->src[0].ssa;
-                channels[i] = nir_channel(b, prev_ssa, i);
-        }
-
-        /* Copy new */
-        unsigned new_mask = nir_intrinsic_write_mask(intr);
-        mask |= (new_mask << component);
-
-        u_foreach_bit(i, new_mask) {
-                assert(component + i < 4);
-                channels[component + i] = nir_channel(b, value, i);
-        }
-
-        intr->num_components = util_last_bit(mask);
-        nir_instr_rewrite_src_ssa(instr, &intr->src[0],
-                        nir_vec(b, channels, intr->num_components));
-
-        nir_intrinsic_set_component(intr, 0);
-        nir_intrinsic_set_write_mask(intr, mask);
-
-        if (prev) {
-                _mesa_hash_table_u64_remove(slots, slot);
-                nir_instr_remove(&prev->instr);
-        }
-
-        _mesa_hash_table_u64_insert(slots, slot, intr);
-        return false;
-}
-
 /* Dead code elimination for branches at the end of a block - only one branch
  * per block is legal semantically, but unreachable jumps can be generated.
  * Likewise on Bifrost we can generate jumps to the terminal block which need
@@ -4938,18 +4866,13 @@ bi_finalize_nir(nir_shader *nir, unsigned gpu_id, bool is_blend)
                 NIR_PASS_V(nir, nir_lower_mediump_io,
                            nir_var_shader_in | nir_var_shader_out,
                            ~bi_fp32_varying_mask(nir), false);
-        } else {
+        } else if (nir->info.stage == MESA_SHADER_VERTEX) {
                 if (gpu_id >= 0x9000) {
                         NIR_PASS_V(nir, nir_lower_mediump_io, nir_var_shader_out,
                                         BITFIELD64_BIT(VARYING_SLOT_PSIZ), false);
                 }
 
-                struct hash_table_u64 *stores = _mesa_hash_table_u64_create(NULL);
-                NIR_PASS_V(nir, nir_shader_instructions_pass,
-                                bifrost_nir_lower_store_component,
-                                nir_metadata_block_index |
-                                nir_metadata_dominance, stores);
-                _mesa_hash_table_u64_destroy(stores);
+                NIR_PASS_V(nir, pan_nir_lower_store_component);
         }
 
         NIR_PASS_V(nir, nir_lower_ssbo);
@@ -5371,6 +5294,8 @@ bifrost_compile_shader_nir(nir_shader *nir,
 
         info->tls_size = nir->scratch_size;
         info->vs.idvs = bi_should_idvs(nir, inputs);
+
+        pan_nir_collect_varyings(nir, info);
 
         if (info->vs.idvs) {
                 bi_compile_variant(nir, inputs, binary, sysval_to_id, info, BI_IDVS_POSITION);

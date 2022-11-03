@@ -350,23 +350,19 @@ lower_abi_instr(nir_builder *b, nir_instr *instr, void *state)
       replacement = nir_imm_int(b, provoking_vertex);
       break;
    }
-
-   /* GDS counters:
-    *   offset  0           - pipeline statistics counter for all streams
-    *   offset  4| 8|12|16  - generated primitive counter for stream 0|1|2|3
-    *   offset 20|24|28|32  - written primitive counter for stream 0|1|2|3
-    */
    case nir_intrinsic_atomic_add_gs_emit_prim_count_amd:
-      nir_gds_atomic_add_amd(b, 32, intrin->src[0].ssa, nir_imm_int(b, 0), nir_imm_int(b, 0x100));
+      nir_gds_atomic_add_amd(b, 32, intrin->src[0].ssa,
+                             nir_imm_int(b, RADV_NGG_QUERY_PIPELINE_STAT_OFFSET),
+                             nir_imm_int(b, 0x100));
       break;
    case nir_intrinsic_atomic_add_gen_prim_count_amd:
       nir_gds_atomic_add_amd(b, 32, intrin->src[0].ssa,
-                             nir_imm_int(b, 4 + nir_intrinsic_stream_id(intrin) * 4),
+                             nir_imm_int(b, RADV_NGG_QUERY_PRIM_GEN_OFFSET(nir_intrinsic_stream_id(intrin))),
                              nir_imm_int(b, 0x100));
       break;
    case nir_intrinsic_atomic_add_xfb_prim_count_amd:
       nir_gds_atomic_add_amd(b, 32, intrin->src[0].ssa,
-                             nir_imm_int(b, 20 + nir_intrinsic_stream_id(intrin) * 4),
+                             nir_imm_int(b, RADV_NGG_QUERY_PRIM_XFB_OFFSET(nir_intrinsic_stream_id(intrin))),
                              nir_imm_int(b, 0x100));
       break;
 

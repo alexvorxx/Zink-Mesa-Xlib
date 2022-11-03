@@ -33,7 +33,7 @@
 #include "drisw_priv.h"
 #include <X11/extensions/shmproto.h>
 #include <assert.h>
-#include "util/debug.h"
+#include "util/u_debug.h"
 #include "kopper_interface.h"
 #include "loader_dri_helper.h"
 

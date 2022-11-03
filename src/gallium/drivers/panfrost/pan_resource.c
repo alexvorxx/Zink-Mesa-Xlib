@@ -936,6 +936,17 @@ panfrost_store_tiled_images(struct panfrost_transfer *transfer,
         }
 }
 
+static bool
+panfrost_box_covers_resource(const struct pipe_resource *resource,
+                             const struct pipe_box *box)
+{
+        return resource->last_level == 0 &&
+               resource->width0 == box->width &&
+               resource->height0 == box->height &&
+               resource->depth0 == box->depth &&
+               resource->array_size == 1;
+}
+
 static void *
 panfrost_ptr_map(struct pipe_context *pctx,
                       struct pipe_resource *resource,
@@ -1005,6 +1016,18 @@ panfrost_ptr_map(struct pipe_context *pctx,
         if (dev->debug & (PAN_DBG_TRACE | PAN_DBG_SYNC))
                 pandecode_inject_mmap(bo->ptr.gpu, bo->ptr.cpu, bo->size, NULL);
 
+        /* Upgrade DISCARD_RANGE to WHOLE_RESOURCE if the whole resource is
+         * being mapped.
+         */
+        if ((usage & PIPE_MAP_DISCARD_RANGE) &&
+            !(usage & PIPE_MAP_UNSYNCHRONIZED) &&
+            !(resource->flags & PIPE_RESOURCE_FLAG_MAP_PERSISTENT) &&
+            panfrost_box_covers_resource(resource, box) &&
+            !(rsrc->image.data.bo->flags & PAN_BO_SHARED)) {
+
+                usage |= PIPE_MAP_DISCARD_WHOLE_RESOURCE;
+        }
+
         bool create_new_bo = usage & PIPE_MAP_DISCARD_WHOLE_RESOURCE;
         bool copy_resource = false;
 
@@ -1025,7 +1048,15 @@ panfrost_ptr_map(struct pipe_context *pctx,
                 panfrost_bo_wait(bo, INT64_MAX, false);
 
                 create_new_bo = true;
-                copy_resource = true;
+                copy_resource = !panfrost_box_covers_resource(resource, box);
+        }
+
+        /* Shadowing with separate stencil may require additional accounting.
+         * Bail in these exotic cases.
+         */
+        if (rsrc->separate_stencil) {
+                create_new_bo = false;
+                copy_resource = false;
         }
 
         if (create_new_bo) {
@@ -1055,14 +1086,7 @@ panfrost_ptr_map(struct pipe_context *pctx,
                                 if (copy_resource)
                                         memcpy(newbo->ptr.cpu, rsrc->image.data.bo->ptr.cpu, bo->size);
 
-                                panfrost_bo_unreference(bo);
-                                rsrc->image.data.bo = newbo;
-
-                                /* Swapping out the BO will invalidate batches
-                                 * accessing this resource, flush them but do
-                                 * not wait for them.
-                                 */
-                                panfrost_flush_batches_accessing_rsrc(ctx, rsrc, "Resource shadowing");
+                                panfrost_resource_swap_bo(ctx, rsrc, newbo);
 
 	                        if (!copy_resource &&
                                     drm_is_afbc(rsrc->image.layout.modifier))

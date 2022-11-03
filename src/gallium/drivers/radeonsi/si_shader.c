@@ -1058,10 +1058,25 @@ static void si_calculate_max_simd_waves(struct si_shader *shader)
    }
 
    if (conf->num_vgprs) {
+      /* GFX 10.3 internally:
+       * - aligns VGPRS to 16 for Wave32 and 8 for Wave64
+       * - aligns LDS to 1024
+       *
+       * For shader-db stats, set num_vgprs that the hw actually uses.
+       */
+      unsigned num_vgprs = conf->num_vgprs;
+      if (sscreen->info.family == CHIP_GFX1100 || sscreen->info.family == CHIP_GFX1101) {
+         num_vgprs = util_align_npot(num_vgprs, shader->wave_size == 32 ? 24 : 12);
+      } else if (sscreen->info.gfx_level == GFX10_3) {
+         num_vgprs = align(num_vgprs, shader->wave_size == 32 ? 16 : 8);
+      } else {
+         num_vgprs = align(num_vgprs, shader->wave_size == 32 ? 8 : 4);
+      }
+
       /* Always print wave limits as Wave64, so that we can compare
        * Wave32 and Wave64 with shader-db fairly. */
       unsigned max_vgprs = sscreen->info.num_physical_wave64_vgprs_per_simd;
-      max_simd_waves = MIN2(max_simd_waves, max_vgprs / conf->num_vgprs);
+      max_simd_waves = MIN2(max_simd_waves, max_vgprs / num_vgprs);
    }
 
    unsigned max_lds_per_simd = sscreen->info.lds_size_per_workgroup / 4;

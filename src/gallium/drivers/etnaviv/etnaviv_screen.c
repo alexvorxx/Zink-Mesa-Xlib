@@ -65,8 +65,6 @@ static const struct debug_named_value etna_debug_options[] = {
    {"no_supertile",   ETNA_DBG_NO_SUPERTILE, "Disable supertiles"},
    {"no_early_z",     ETNA_DBG_NO_EARLY_Z, "Disable early z"},
    {"cflush_all",     ETNA_DBG_CFLUSH_ALL, "Flush every cache before state update"},
-   {"msaa2x",         ETNA_DBG_MSAA_2X, "Force 2x msaa"},
-   {"msaa4x",         ETNA_DBG_MSAA_4X, "Force 4x msaa"},
    {"flush_all",      ETNA_DBG_FLUSH_ALL, "Flush after every rendered primitive"},
    {"zero",           ETNA_DBG_ZERO, "Zero all resources after allocation"},
    {"draw_stall",     ETNA_DBG_DRAW_STALL, "Stall FE/PE after each rendered primitive"},
@@ -497,9 +495,28 @@ gpu_supports_render_format(struct etna_screen *screen, enum pipe_format format,
    if (fmt == ETNA_NO_MATCH)
       return false;
 
-   /* MSAA is broken */
-   if (sample_count > 1)
+   if (sample_count > 1) {
+      /* The hardware supports it. */
+      if (!VIV_FEATURE(screen, chipFeatures, MSAA))
          return false;
+
+      /* Number of samples must be allowed. */
+      if (!translate_samples_to_xyscale(sample_count, NULL, NULL))
+         return false;
+
+      /* On SMALL_MSAA hardware 2x MSAA does not work. */
+      if (sample_count == 2 && VIV_FEATURE(screen, chipMinorFeatures4, SMALL_MSAA))
+         return false;
+
+      /* BLT/RS supports the format. */
+      if (screen->specs.use_blt) {
+         if (translate_blt_format(format) == ETNA_NO_MATCH)
+            return false;
+      } else {
+         if (translate_rs_format(format) == ETNA_NO_MATCH)
+            return false;
+      }
+   }
 
    if (format == PIPE_FORMAT_R8_UNORM)
       return VIV_FEATURE(screen, chipMinorFeatures5, HALTI5);

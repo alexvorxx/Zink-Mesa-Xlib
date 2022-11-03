@@ -34,7 +34,7 @@
 
 #include "pipe/p_screen.h"
 #include "renderonly/renderonly.h"
-#include "util/debug.h"
+#include "util/u_debug.h"
 #include "util/simple_mtx.h"
 #include "util/slab.h"
 #include "util/u_idalloc.h"

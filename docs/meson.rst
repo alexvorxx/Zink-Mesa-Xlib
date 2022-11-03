@@ -241,7 +241,7 @@ For example:
 As of Meson 0.49.0 Meson also has the concept of a `"native
 file" <https://mesonbuild.com/Native-environments.html>`__, these files
 provide information about the native build environment (as opposed to a
-cross build environment). They are ini formatted and can override where
+cross build environment). They are INI formatted and can override where
 to find llvm-config:
 
 .. code-block:: ini

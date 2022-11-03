@@ -942,7 +942,7 @@ download_texture_compute(struct st_context *st,
             assert(async->nir && !async->cs);
             struct pipe_compute_state state = {0};
             state.ir_type = PIPE_SHADER_IR_NIR;
-            state.req_local_mem = async->nir->info.shared_size;
+            state.static_shared_mem = async->nir->info.shared_size;
             state.prog = async->nir;
             async->nir = NULL;
             async->cs = pipe->create_compute_state(pipe, &state);
@@ -957,7 +957,7 @@ download_texture_compute(struct st_context *st,
                if (!spec->cs) {
                   struct pipe_compute_state state = {0};
                   state.ir_type = PIPE_SHADER_IR_NIR;
-                  state.req_local_mem = spec->nir->info.shared_size;
+                  state.static_shared_mem = spec->nir->info.shared_size;
                   state.prog = spec->nir;
                   spec->nir = NULL;
                   spec->cs = pipe->create_compute_state(pipe, &state);

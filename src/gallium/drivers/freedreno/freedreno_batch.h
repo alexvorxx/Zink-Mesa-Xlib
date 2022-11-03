@@ -210,6 +210,9 @@ struct fd_batch {
    struct fd_ringbuffer *prologue;
 
    /** epilogue cmdstream (executed after each tile): */
+   struct fd_ringbuffer *tile_epilogue;
+
+   /** epilogue cmdstream (executed after all tiles): */
    struct fd_ringbuffer *epilogue;
 
    struct fd_ringbuffer *tile_setup;
@@ -401,6 +404,18 @@ fd_event_write(struct fd_batch *batch, struct fd_ringbuffer *ring,
 }
 
 /* Get per-tile epilogue */
+static inline struct fd_ringbuffer *
+fd_batch_get_tile_epilogue(struct fd_batch *batch)
+{
+   if (batch->tile_epilogue == NULL) {
+      batch->tile_epilogue = fd_submit_new_ringbuffer(batch->submit, 0x1000,
+                                                 FD_RINGBUFFER_GROWABLE);
+   }
+
+   return batch->tile_epilogue;
+}
+
+/* Get epilogue run after all tiles*/
 static inline struct fd_ringbuffer *
 fd_batch_get_epilogue(struct fd_batch *batch)
 {

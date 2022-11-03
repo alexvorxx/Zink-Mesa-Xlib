@@ -14,7 +14,7 @@
 #include <sys/sysinfo.h>
 
 #include "git_sha1.h"
-#include "util/debug.h"
+#include "util/u_debug.h"
 #include "util/disk_cache.h"
 #include "util/driconf.h"
 #include "util/os_misc.h"

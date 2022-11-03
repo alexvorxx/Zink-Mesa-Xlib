@@ -25,7 +25,7 @@
 
 #include <math.h>
 
-#include "util/debug.h"
+#include "util/u_debug.h"
 #include "util/half_float.h"
 #include "util/u_atomic.h"
 

@@ -315,7 +315,7 @@ ir3_shader_compute_state_create(struct pipe_context *pctx,
                               .real_wavesize = IR3_SINGLE_OR_DOUBLE,
                           }, NULL);
    shader->cs.req_input_mem = align(cso->req_input_mem, 4) / 4;     /* byte->dword */
-   shader->cs.req_local_mem = cso->req_local_mem;
+   shader->cs.req_local_mem = cso->static_shared_mem;
 
    struct ir3_shader_state *hwcso = calloc(1, sizeof(*hwcso));
 

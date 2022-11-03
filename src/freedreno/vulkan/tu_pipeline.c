@@ -17,7 +17,7 @@
 #include "nir/nir_builder.h"
 #include "nir/nir_serialize.h"
 #include "spirv/nir_spirv.h"
-#include "util/debug.h"
+#include "util/u_debug.h"
 #include "util/mesa-sha1.h"
 #include "vk_pipeline.h"
 #include "vk_render_pass.h"

@@ -253,7 +253,7 @@ panfrost_create_sampler_state(
 
 static bool
 panfrost_fs_required(
-                struct panfrost_shader_state *fs,
+                struct panfrost_compiled_shader *fs,
                 struct panfrost_blend_state *blend,
                 struct pipe_framebuffer_state *state,
                 const struct panfrost_zsa_state *zsa)
@@ -401,8 +401,8 @@ panfrost_emit_blend(struct panfrost_batch *batch, void *rts, mali_ptr *blend_sha
 
 #if PAN_ARCH >= 6
                 const struct panfrost_device *dev = pan_device(ctx->base.screen);
-                struct panfrost_shader_state *fs =
-                        panfrost_get_shader_state(ctx, PIPE_SHADER_FRAGMENT);
+                struct panfrost_compiled_shader *fs =
+                        ctx->prog[PIPE_SHADER_FRAGMENT];
 
                 /* Words 2 and 3: Internal blend */
                 if (blend_shaders[i]) {
@@ -462,7 +462,7 @@ panfrost_emit_blend(struct panfrost_batch *batch, void *rts, mali_ptr *blend_sha
 #endif
 
 static inline bool
-pan_allow_forward_pixel_to_kill(struct panfrost_context *ctx, struct panfrost_shader_state *fs)
+pan_allow_forward_pixel_to_kill(struct panfrost_context *ctx, struct panfrost_compiled_shader *fs)
 {
         /* Track if any colour buffer is reused across draws, either
          * from reading it directly, or from failing to write it
@@ -481,7 +481,7 @@ pan_allow_forward_pixel_to_kill(struct panfrost_context *ctx, struct panfrost_sh
 static mali_ptr
 panfrost_emit_compute_shader_meta(struct panfrost_batch *batch, enum pipe_shader_type stage)
 {
-        struct panfrost_shader_state *ss = panfrost_get_shader_state(batch->ctx, stage);
+        struct panfrost_compiled_shader *ss = batch->ctx->prog[stage];
 
         panfrost_batch_add_bo(batch, ss->bin.bo, PIPE_SHADER_VERTEX);
         panfrost_batch_add_bo(batch, ss->state.bo, PIPE_SHADER_VERTEX);
@@ -526,7 +526,7 @@ panfrost_prepare_fs_state(struct panfrost_context *ctx,
 {
         struct pipe_rasterizer_state *rast = &ctx->rasterizer->base;
         const struct panfrost_zsa_state *zsa = ctx->depth_stencil;
-        struct panfrost_shader_state *fs = panfrost_get_shader_state(ctx, PIPE_SHADER_FRAGMENT);
+        struct panfrost_compiled_shader *fs = ctx->prog[PIPE_SHADER_FRAGMENT];
         struct panfrost_blend_state *so = ctx->blend;
         bool alpha_to_coverage = ctx->blend->base.alpha_to_coverage;
         bool msaa = rast->multisample;
@@ -660,8 +660,8 @@ panfrost_emit_frag_shader(struct panfrost_context *ctx,
 {
         const struct panfrost_zsa_state *zsa = ctx->depth_stencil;
         const struct panfrost_rasterizer *rast = ctx->rasterizer;
-        struct panfrost_shader_state *fs =
-                panfrost_get_shader_state(ctx, PIPE_SHADER_FRAGMENT);
+        struct panfrost_compiled_shader *fs =
+                ctx->prog[PIPE_SHADER_FRAGMENT];
 
         /* We need to merge several several partial renderer state descriptors,
          * so stage to temporary storage rather than reading back write-combine
@@ -705,7 +705,7 @@ static mali_ptr
 panfrost_emit_frag_shader_meta(struct panfrost_batch *batch)
 {
         struct panfrost_context *ctx = batch->ctx;
-        struct panfrost_shader_state *ss = panfrost_get_shader_state(ctx, PIPE_SHADER_FRAGMENT);
+        struct panfrost_compiled_shader *ss = ctx->prog[PIPE_SHADER_FRAGMENT];
 
         panfrost_batch_add_bo(batch, ss->bin.bo, PIPE_SHADER_FRAGMENT);
 
@@ -821,7 +821,7 @@ panfrost_emit_depth_stencil(struct panfrost_batch *batch)
         struct panfrost_context *ctx = batch->ctx;
         const struct panfrost_zsa_state *zsa = ctx->depth_stencil;
         struct panfrost_rasterizer *rast = ctx->rasterizer;
-        struct panfrost_shader_state *fs = panfrost_get_shader_state(ctx, PIPE_SHADER_FRAGMENT);
+        struct panfrost_compiled_shader *fs = ctx->prog[PIPE_SHADER_FRAGMENT];
         bool back_enab = zsa->base.stencil[1].enabled;
 
         struct panfrost_ptr T = pan_pool_alloc_desc(&batch->pool.base, DEPTH_STENCIL);
@@ -1292,7 +1292,7 @@ panfrost_xfb_offset(unsigned stride, struct pipe_stream_output_target *target)
 static void
 panfrost_upload_sysvals(struct panfrost_batch *batch,
                         const struct panfrost_ptr *ptr,
-                        struct panfrost_shader_state *ss,
+                        struct panfrost_compiled_shader *ss,
                         enum pipe_shader_type st)
 {
         struct sysval_uniform *uniforms = ptr->cpu;
@@ -1323,8 +1323,8 @@ panfrost_upload_sysvals(struct panfrost_batch *batch,
                 case PAN_SYSVAL_XFB:
                 {
                         unsigned buf = PAN_SYSVAL_ID(sysval);
-                        struct panfrost_shader_state *vs =
-                                panfrost_get_shader_state(batch->ctx, PIPE_SHADER_VERTEX);
+                        struct panfrost_compiled_shader *vs =
+                                batch->ctx->prog[PIPE_SHADER_VERTEX];
                         struct pipe_stream_output_info *so = &vs->stream_output;
                         unsigned stride = so->stride[buf] * 4;
 
@@ -1472,13 +1472,11 @@ panfrost_emit_const_buf(struct panfrost_batch *batch,
                         unsigned *pushed_words)
 {
         struct panfrost_context *ctx = batch->ctx;
-        struct panfrost_shader_variants *all = ctx->shader[stage];
-
-        if (!all)
-                return 0;
-
         struct panfrost_constant_buffer *buf = &ctx->constant_buffer[stage];
-        struct panfrost_shader_state *ss = &all->variants[all->active_variant];
+        struct panfrost_compiled_shader *ss = ctx->prog[stage];
+
+        if (!ss)
+                return 0;
 
         /* Allocate room for the sysval and the uniforms */
         size_t sys_size = sizeof(float) * 4 * ss->info.sysvals.sysval_count;
@@ -1489,7 +1487,7 @@ panfrost_emit_const_buf(struct panfrost_batch *batch,
         panfrost_upload_sysvals(batch, &transfer, ss, stage);
 
         /* Next up, attach UBOs. UBO count includes gaps but no sysval UBO */
-        struct panfrost_shader_state *shader = panfrost_get_shader_state(ctx, stage);
+        struct panfrost_compiled_shader *shader = ctx->prog[stage];
         unsigned ubo_count = shader->info.ubo_count - (sys_size ? 1 : 0);
         unsigned sysval_ubo = sys_size ? ubo_count : ~0;
         struct panfrost_ptr ubos = { 0 };
@@ -1621,14 +1619,13 @@ panfrost_emit_shared_memory(struct panfrost_batch *batch,
 {
         struct panfrost_context *ctx = batch->ctx;
         struct panfrost_device *dev = pan_device(ctx->base.screen);
-        struct panfrost_shader_variants *all = ctx->shader[PIPE_SHADER_COMPUTE];
-        struct panfrost_shader_state *ss = &all->variants[all->active_variant];
+        struct panfrost_compiled_shader *ss = ctx->prog[PIPE_SHADER_COMPUTE];
         struct panfrost_ptr t =
                 pan_pool_alloc_desc(&batch->pool.base, LOCAL_STORAGE);
 
         struct pan_tls_info info = {
                 .tls.size = ss->info.tls_size,
-                .wls.size = ss->info.wls_size,
+                .wls.size = ss->info.wls_size + grid->variable_shared_mem,
                 .wls.instances = panfrost_choose_wls_instance_count(grid),
         };
 
@@ -1970,7 +1967,7 @@ panfrost_emit_image_attribs(struct panfrost_batch *batch,
                             enum pipe_shader_type type)
 {
         struct panfrost_context *ctx = batch->ctx;
-        struct panfrost_shader_state *shader = panfrost_get_shader_state(ctx, type);
+        struct panfrost_compiled_shader *shader = ctx->prog[type];
 
         if (!shader->info.attribute_count) {
                 *buffers = 0;
@@ -2006,7 +2003,7 @@ panfrost_emit_vertex_data(struct panfrost_batch *batch,
 {
         struct panfrost_context *ctx = batch->ctx;
         struct panfrost_vertex_state *so = ctx->vertex;
-        struct panfrost_shader_state *vs = panfrost_get_shader_state(ctx, PIPE_SHADER_VERTEX);
+        struct panfrost_compiled_shader *vs = ctx->prog[PIPE_SHADER_VERTEX];
         bool instanced = ctx->indirect_draw || ctx->instance_count > 1;
         uint32_t image_mask = ctx->image_mask[PIPE_SHADER_VERTEX];
         unsigned nr_images = util_last_bit(image_mask);
@@ -2021,8 +2018,11 @@ panfrost_emit_vertex_data(struct panfrost_batch *batch,
 
         unsigned count = vs->info.attribute_count;
 
-        if (vs->xfb)
-                count = MAX2(count, vs->xfb->info.attribute_count);
+        struct panfrost_compiled_shader *xfb =
+                ctx->uncompiled[PIPE_SHADER_VERTEX]->xfb;
+
+        if (xfb)
+                count = MAX2(count, xfb->info.attribute_count);
 
 #if PAN_ARCH <= 5
         /* Midgard needs vertexid/instanceid handled specially */
@@ -2404,11 +2404,12 @@ pan_assign_varyings(const struct panfrost_device *dev,
         for (unsigned i = 0; i < producer_count; ++i) {
                 signed loc = pan_find_vary(consumer_vars, consumer_count,
                                 producer_vars[i].location);
+                enum pipe_format format = loc >= 0 ?
+                                          consumer_vars[loc].format :
+                                          PIPE_FORMAT_NONE;
 
-                if (loc >= 0) {
+                if (format != PIPE_FORMAT_NONE) {
                         offsets[i] = stride;
-
-                        enum pipe_format format = consumer_vars[loc].format;
                         stride += util_format_get_blocksize(format);
                 } else {
                         offsets[i] = -1;
@@ -2460,8 +2461,8 @@ panfrost_emit_varying(const struct panfrost_device *dev,
 static void
 panfrost_emit_varying_descs(
                 struct panfrost_pool *pool,
-                struct panfrost_shader_state *producer,
-                struct panfrost_shader_state *consumer,
+                struct panfrost_compiled_shader *producer,
+                struct panfrost_compiled_shader *consumer,
                 uint16_t point_coord_mask,
                 struct pan_linkage *out)
 {
@@ -2557,12 +2558,9 @@ panfrost_emit_varying_descriptor(struct panfrost_batch *batch,
                                  mali_ptr *psiz,
                                  bool point_coord_replace)
 {
-        /* Load the shaders */
         struct panfrost_context *ctx = batch->ctx;
-        struct panfrost_shader_state *vs, *fs;
-
-        vs = panfrost_get_shader_state(ctx, PIPE_SHADER_VERTEX);
-        fs = panfrost_get_shader_state(ctx, PIPE_SHADER_FRAGMENT);
+        struct panfrost_compiled_shader *vs = ctx->prog[PIPE_SHADER_VERTEX];
+        struct panfrost_compiled_shader *fs = ctx->prog[PIPE_SHADER_FRAGMENT];
 
         uint16_t point_coord_mask = 0;
 
@@ -2956,7 +2954,7 @@ panfrost_update_shader_state(struct panfrost_batch *batch,
                              enum pipe_shader_type st)
 {
         struct panfrost_context *ctx = batch->ctx;
-        struct panfrost_shader_state *ss = panfrost_get_shader_state(ctx, st);
+        struct panfrost_compiled_shader *ss = ctx->prog[st];
 
         bool frag = (st == PIPE_SHADER_FRAGMENT);
         unsigned dirty_3d = ctx->dirty;
@@ -3111,8 +3109,8 @@ panfrost_emit_primitive(struct panfrost_context *ctx,
 
                 cfg.job_task_split = 6;
 #else
-                struct panfrost_shader_state *fs =
-                        panfrost_get_shader_state(ctx, PIPE_SHADER_FRAGMENT);
+                struct panfrost_compiled_shader *fs =
+                        ctx->prog[PIPE_SHADER_FRAGMENT];
 
                 cfg.allow_rotating_primitives = !(lines || fs->info.bifrost.uses_flat_shading);
                 cfg.primitive_restart = info->primitive_restart;
@@ -3272,8 +3270,8 @@ panfrost_emit_draw(void *out,
                 }
 
 #if PAN_ARCH >= 9
-                struct panfrost_shader_state *fs =
-                        panfrost_get_shader_state(ctx, PIPE_SHADER_FRAGMENT);
+                struct panfrost_compiled_shader *fs =
+                        ctx->prog[PIPE_SHADER_FRAGMENT];
 
                 cfg.multisample_enable = rast->multisample;
                 cfg.sample_mask = rast->multisample ? ctx->sample_mask : 0xFFFF;
@@ -3405,12 +3403,8 @@ panfrost_emit_malloc_vertex(struct panfrost_batch *batch,
                             void *job)
 {
         struct panfrost_context *ctx = batch->ctx;
-
-        struct panfrost_shader_state *vs =
-                panfrost_get_shader_state(ctx, PIPE_SHADER_VERTEX);
-
-        struct panfrost_shader_state *fs =
-                panfrost_get_shader_state(ctx, PIPE_SHADER_FRAGMENT);
+        struct panfrost_compiled_shader *vs = ctx->prog[PIPE_SHADER_VERTEX];
+        struct panfrost_compiled_shader *fs = ctx->prog[PIPE_SHADER_FRAGMENT];
 
         bool fs_required = panfrost_fs_required(fs, ctx->blend,
                                                 &ctx->pipe_framebuffer,
@@ -3433,7 +3427,7 @@ panfrost_emit_malloc_vertex(struct panfrost_batch *batch,
                         unsigned v = vs->info.varyings.output_count;
                         unsigned f = fs->info.varyings.input_count;
                         unsigned slots = MAX2(v, f);
-                        slots += util_bitcount(fs->key.fixed_varying_mask);
+                        slots += util_bitcount(fs->key.fs.fixed_varying_mask);
                         unsigned size = slots * 16;
 
                         /* Assumes 16 byte slots. We could do better. */
@@ -3552,17 +3546,17 @@ panfrost_launch_xfb(struct panfrost_batch *batch,
 
         perf_debug_ctx(batch->ctx, "Emulating transform feedback");
 
-        struct panfrost_shader_state *vs = panfrost_get_shader_state(ctx, PIPE_SHADER_VERTEX);
-        struct panfrost_shader_variants v = { .variants = vs->xfb };
+        struct panfrost_uncompiled_shader *vs_uncompiled = ctx->uncompiled[PIPE_SHADER_VERTEX];
+        struct panfrost_compiled_shader *vs = ctx->prog[PIPE_SHADER_VERTEX];
 
-        vs->xfb->stream_output = vs->stream_output;
+        vs_uncompiled->xfb->stream_output = vs->stream_output;
 
-        struct panfrost_shader_variants *saved_vs = ctx->shader[PIPE_SHADER_VERTEX];
         mali_ptr saved_rsd = batch->rsd[PIPE_SHADER_VERTEX];
         mali_ptr saved_ubo = batch->uniform_buffers[PIPE_SHADER_VERTEX];
         mali_ptr saved_push = batch->push_uniforms[PIPE_SHADER_VERTEX];
 
-        ctx->shader[PIPE_SHADER_VERTEX] = &v;
+        ctx->uncompiled[PIPE_SHADER_VERTEX] = NULL; /* should not be read */
+        ctx->prog[PIPE_SHADER_VERTEX] = vs_uncompiled->xfb;
         batch->rsd[PIPE_SHADER_VERTEX] = panfrost_emit_compute_shader_meta(batch, PIPE_SHADER_VERTEX);
 
 #if PAN_ARCH >= 9
@@ -3610,7 +3604,8 @@ panfrost_launch_xfb(struct panfrost_batch *batch,
         panfrost_add_job(&batch->pool.base, &batch->scoreboard, job_type,
                          true, false, 0, 0, &t, false);
 
-        ctx->shader[PIPE_SHADER_VERTEX] = saved_vs;
+        ctx->uncompiled[PIPE_SHADER_VERTEX] = vs_uncompiled;
+        ctx->prog[PIPE_SHADER_VERTEX] = vs;
         batch->rsd[PIPE_SHADER_VERTEX] = saved_rsd;
         batch->uniform_buffers[PIPE_SHADER_VERTEX] = saved_ubo;
         batch->push_uniforms[PIPE_SHADER_VERTEX] = saved_push;
@@ -3649,7 +3644,7 @@ panfrost_direct_draw(struct panfrost_batch *batch,
         ctx->active_prim = info->mode;
         ctx->drawid = drawid_offset;
 
-        struct panfrost_shader_state *vs = panfrost_get_shader_state(ctx, PIPE_SHADER_VERTEX);
+        struct panfrost_compiled_shader *vs = ctx->prog[PIPE_SHADER_VERTEX];
 
         bool idvs = vs->info.vs.idvs;
         bool secondary_shader = vs->info.vs.secondary_enable;
@@ -3742,7 +3737,7 @@ panfrost_direct_draw(struct panfrost_batch *batch,
         panfrost_update_shader_state(batch, PIPE_SHADER_FRAGMENT);
         panfrost_clean_state_3d(ctx);
 
-        if (vs->xfb) {
+        if (ctx->uncompiled[PIPE_SHADER_VERTEX]->xfb) {
 #if PAN_ARCH >= 9
                 mali_ptr attribs = 0, attrib_bufs = 0;
 #endif
@@ -3815,7 +3810,7 @@ panfrost_indirect_draw(struct panfrost_batch *batch,
         ctx->drawid = drawid_offset;
         ctx->indirect_draw = true;
 
-        struct panfrost_shader_state *vs = panfrost_get_shader_state(ctx, PIPE_SHADER_VERTEX);
+        struct panfrost_compiled_shader *vs = ctx->prog[PIPE_SHADER_VERTEX];
 
         bool idvs = vs->info.vs.idvs;
         bool secondary_shader = vs->info.vs.secondary_enable;
@@ -4148,8 +4143,7 @@ panfrost_launch_grid(struct pipe_context *pipe,
                 cfg.samplers = batch->samplers[PIPE_SHADER_COMPUTE];
         }
 #else
-        struct panfrost_shader_state *cs =
-                &ctx->shader[PIPE_SHADER_COMPUTE]->variants[0];
+        struct panfrost_compiled_shader *cs = ctx->prog[PIPE_SHADER_COMPUTE];
 
         pan_section_pack(t.cpu, COMPUTE_JOB, PAYLOAD, cfg) {
                 cfg.workgroup_size_x = info->block[0];
@@ -4164,7 +4158,16 @@ panfrost_launch_grid(struct pipe_context *pipe,
                                      batch->rsd[PIPE_SHADER_COMPUTE],
                                      panfrost_emit_shared_memory(batch, info));
 
-                cfg.allow_merging_workgroups = cs->info.cs.allow_merging_workgroups;
+                /* Workgroups may be merged if the shader does not use barriers
+                 * or shared memory. This condition is checked against the
+                 * static shared_size at compile-time. We need to check the
+                 * variable shared size at launch_grid time, because the
+                 * compiler doesn't know about that.
+                 */
+                cfg.allow_merging_workgroups =
+                        cs->info.cs.allow_merging_workgroups &&
+                        (info->variable_shared_mem == 0);
+
                 cfg.task_increment = 1;
                 cfg.task_axis = MALI_TASK_AXIS_Z;
         }
@@ -4572,7 +4575,7 @@ panfrost_ftz_mode(struct pan_shader_info *info)
 #endif
 
 static void
-prepare_shader(struct panfrost_shader_state *state,
+prepare_shader(struct panfrost_compiled_shader *state,
             struct panfrost_pool *pool, bool upload)
 {
 #if PAN_ARCH <= 7

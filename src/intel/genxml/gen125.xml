@@ -3030,7 +3030,7 @@
     <field name="3D Command Opcode" start="24" end="26" type="uint" default="0" />
     <field name="Command SubType" start="27" end="28" type="uint" default="3" />
     <field name="Command Type" start="29" end="31" type="uint" default="3" />
-    <field name="Maximum Number of ThreadGroups" start="32" end="32" type="uint" />
+    <field name="Maximum Number of ThreadGroups" start="32" end="40" type="uint" />
     <field name="Thread Dispatch Priority" start="60" end="60" type="uint">
       <value name="High" value="1" />
     </field>

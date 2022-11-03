@@ -22,7 +22,7 @@
 #include "vk_util.h"
 
 #include "drm-uapi/msm_drm.h"
-#include "util/debug.h"
+#include "util/u_debug.h"
 #include "util/hash_table.h"
 #include "util/timespec.h"
 #include "util/os_time.h"
@@ -883,7 +883,7 @@ tu_physical_device_try_create(struct vk_instance *vk_instance,
                                 "could not get GMEM size");
       goto fail;
    }
-   device->gmem_size = env_var_as_unsigned("TU_GMEM", device->gmem_size);
+   device->gmem_size = debug_get_num_option("TU_GMEM", device->gmem_size);
 
    if (tu_drm_get_gmem_base(device, &device->gmem_base)) {
       result = vk_startup_errorf(instance, VK_ERROR_INITIALIZATION_FAILED,

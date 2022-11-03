@@ -17,7 +17,7 @@ Hardware drivers include:
    `RadeonFeature <https://www.x.org/wiki/RadeonFeature>`__
 -  NVIDIA GPUs (GeForce 5 / FX and later). See `Nouveau
    Wiki <https://nouveau.freedesktop.org>`__
--  Qualcomm Adreno A2xx-A6xx. See :doc:`Freedreno
+-  Qualcomm Adreno 2xx-6xx. See :doc:`Freedreno
    <drivers/freedreno>`
 -  Broadcom VideoCore 4 and 5. See :doc:`VC4 <drivers/vc4>` and
    :doc:`V3D <drivers/v3d>`
@@ -47,7 +47,7 @@ Additional driver information:
 
 -  `DRI hardware drivers <https://dri.freedesktop.org/>`__ for the X
    Window System
--  :doc:`Xlib / swrast driver <xlibdriver>` for the X Window System
+-  :doc:`Xlib driver <xlibdriver>` for the X Window System
    and Unix-like operating systems
 
 Deprecated Systems and Drivers

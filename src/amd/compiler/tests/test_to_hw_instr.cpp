@@ -648,7 +648,8 @@ BEGIN_TEST(to_hw_instr.extract)
       EXT(2, 8)
       //! s1: %_:s[0],  s1: %_:scc = @s_shr %_:s[1], 24
       EXT(3, 8)
-      //~gfx.*_unsigned! s1: %_:s[0],  s1: %_:scc = @s_bfe %_:s[1], 0x100000
+      //~gfx(7|8)_unsigned! s1: %_:s[0],  s1: %_:scc = @s_bfe %_:s[1], 0x100000
+      //~gfx(9|11)_unsigned! s1: %_:s[0] = s_pack_ll_b32_b16 %_:s[1], 0
       //~gfx.*_signed! s1: %_:s[0] = s_sext_i32_i16 %_:s[1]
       EXT(0, 16)
       //! s1: %_:s[0],  s1: %_:scc = @s_shr %_:s[1], 16

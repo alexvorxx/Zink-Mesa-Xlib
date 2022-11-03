@@ -23,7 +23,7 @@
 
 #include "util/blob.h"
 #include "util/hash_table.h"
-#include "util/debug.h"
+#include "util/u_debug.h"
 #include "util/disk_cache.h"
 #include "util/mesa-sha1.h"
 #include "nir/nir_serialize.h"

@@ -601,7 +601,7 @@ lvp_pipeline_compile_stage(struct lvp_pipeline *pipeline, nir_shader *nir)
       struct pipe_compute_state shstate = {0};
       shstate.prog = nir;
       shstate.ir_type = PIPE_SHADER_IR_NIR;
-      shstate.req_local_mem = nir->info.shared_size;
+      shstate.static_shared_mem = nir->info.shared_size;
       return device->queue.ctx->create_compute_state(device->queue.ctx, &shstate);
    } else {
       struct pipe_shader_state shstate = {0};

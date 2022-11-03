@@ -49,7 +49,7 @@
 #include <stdio.h>
 
 #ifndef NDEBUG
-#include "util/debug.h"
+#include "util/u_debug.h"
 #endif /* NDEBUG */
 
 #include "nir_opcodes.h"
@@ -5518,7 +5518,6 @@ bool nir_opt_comparison_pre(nir_shader *shader);
 
 typedef struct nir_opt_access_options {
    bool is_vulkan;
-   bool infer_non_readable;
 } nir_opt_access_options;
 
 bool nir_opt_access(nir_shader *shader, const nir_opt_access_options *options);

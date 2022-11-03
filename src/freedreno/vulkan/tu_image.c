@@ -11,7 +11,7 @@
 
 #include "fdl/fd6_format_table.h"
 
-#include "util/debug.h"
+#include "util/u_debug.h"
 #include "util/format/u_format.h"
 #include "vk_util.h"
 #include "drm-uapi/drm_fourcc.h"

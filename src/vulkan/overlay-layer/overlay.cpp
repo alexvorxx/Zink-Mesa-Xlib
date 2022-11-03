@@ -34,7 +34,7 @@
 
 #include "overlay_params.h"
 
-#include "util/debug.h"
+#include "util/u_debug.h"
 #include "util/hash_table.h"
 #include "util/list.h"
 #include "util/ralloc.h"

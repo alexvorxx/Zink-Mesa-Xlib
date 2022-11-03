@@ -74,7 +74,7 @@ access it.  You probably have a ``volumes = ["/cache"]`` already, so now it woul
 
 Note that this token is visible to anybody that can submit MRs to
 Mesa!  It is not an actual secret.  We could just bake it into the
-GitLab CI yml, but this way the current method of connecting to the
+GitLab CI YAML, but this way the current method of connecting to the
 LAVA instance is separated from the Mesa branches (particularly
 relevant as we have many stable branches all using CI).
 

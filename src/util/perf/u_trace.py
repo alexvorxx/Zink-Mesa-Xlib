@@ -304,7 +304,7 @@ src_template = """\
 % endfor
 
 #define __NEEDS_TRACE_PRIV
-#include "util/debug.h"
+#include "util/u_debug.h"
 #include "util/perf/u_trace_priv.h"
 
 % if trace_toggle_name is not None:

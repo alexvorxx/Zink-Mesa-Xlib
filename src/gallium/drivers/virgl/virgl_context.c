@@ -1440,7 +1440,7 @@ static void *virgl_create_compute_state(struct pipe_context *ctx,
    handle = virgl_object_assign_handle();
    ret = virgl_encode_shader_state(vctx, handle, PIPE_SHADER_COMPUTE,
                                    &so_info,
-                                   state->req_local_mem,
+                                   state->static_shared_mem,
                                    new_tokens);
    if (ret) {
       FREE((void *)ntt_tokens);
