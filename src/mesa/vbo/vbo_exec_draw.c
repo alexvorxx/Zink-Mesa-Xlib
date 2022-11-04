@@ -28,7 +28,7 @@
 #include <stdbool.h>
 #include <stdio.h>
 #include "main/arrayobj.h"
-#include "main/glheader.h"
+#include "util/glheader.h"
 #include "main/bufferobj.h"
 #include "main/context.h"
 #include "main/enums.h"

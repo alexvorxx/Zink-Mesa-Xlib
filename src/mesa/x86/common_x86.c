@@ -34,7 +34,6 @@
  * \author Andre Werthmann <wertmann@cs.uni-potsdam.de>
  */
 
-/* XXX these includes should probably go into imports.h or glheader.h */
 #if defined(USE_SSE_ASM) && defined(__FreeBSD__)
 #include <sys/types.h>
 #include <sys/sysctl.h>

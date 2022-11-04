@@ -673,12 +673,39 @@ tu6_calculate_lrz_state(struct tu_cmd_buffer *cmd,
    gras_lrz_cntl.dir_write = cmd->state.lrz.gpu_dir_tracking;
    gras_lrz_cntl.disable_on_wrong_dir = cmd->state.lrz.gpu_dir_tracking;
 
+
    /* See comment in tu_pipeline about disabling LRZ write for blending. */
    if ((cmd->state.pipeline->dynamic_state_mask & BIT(TU_DYNAMIC_STATE_LOGIC_OP)) &&
        cmd->state.logic_op_enabled && cmd->state.rop_reads_dst) {
       if (gras_lrz_cntl.lrz_write)
          perf_debug(cmd->device, "disabling lrz write due to dynamic logic op");
       gras_lrz_cntl.lrz_write = false;
+   }
+
+   if ((cmd->state.pipeline->dynamic_state_mask & BIT(TU_DYNAMIC_STATE_BLEND_ENABLE)) &&
+       cmd->state.blend_enable) {
+      if (gras_lrz_cntl.lrz_write)
+         perf_debug(cmd->device, "disabling lrz write due to dynamic blend");
+      gras_lrz_cntl.lrz_write = false;
+   }
+
+   if ((cmd->state.pipeline->dynamic_state_mask & BIT(TU_DYNAMIC_STATE_BLEND))) {
+      for (unsigned i = 0; i < cmd->state.subpass->color_count; i++) {
+         unsigned a = cmd->state.subpass->color_attachments[i].attachment;
+         if (a == VK_ATTACHMENT_UNUSED)
+            continue;
+
+         VkFormat format = cmd->state.pass->attachments[a].format;
+         unsigned mask = MASK(vk_format_get_nr_components(format));
+         if ((cmd->state.rb_mrt_control[i] &
+              A6XX_RB_MRT_CONTROL_COMPONENT_ENABLE__MASK) >>
+             A6XX_RB_MRT_CONTROL_COMPONENT_ENABLE__SHIFT != mask) {
+            if (gras_lrz_cntl.lrz_write)
+               perf_debug(cmd->device, "disabling lrz write due to dynamic color write mask");
+            gras_lrz_cntl.lrz_write = false;
+            break;
+         }
+      }
    }
 
    if ((cmd->state.pipeline->dynamic_state_mask &

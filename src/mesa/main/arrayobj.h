@@ -27,7 +27,7 @@
 #ifndef ARRAYOBJ_H
 #define ARRAYOBJ_H
 
-#include "glheader.h"
+#include "util/glheader.h"
 #include "mtypes.h"
 #include "glformats.h"
 #include "vbo/vbo.h"

@@ -4254,7 +4254,7 @@ static bool visit_intrinsic(struct ac_nir_context *ctx, nir_intrinsic_instr *ins
       enum ac_image_cache_policy cache_policy = 0;
       if (swizzled)
          cache_policy |= ac_swizzled;
-      if (coherent && ctx->ac.gfx_level < GFX11)
+      if (coherent)
          cache_policy |= ac_glc;
       if (slc)
          cache_policy |= ac_slc;

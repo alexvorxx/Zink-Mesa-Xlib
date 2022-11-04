@@ -30,7 +30,7 @@
 #ifndef _M_VECTOR_H_
 #define _M_VECTOR_H_
 
-#include "main/glheader.h"
+#include "util/glheader.h"
 #define MATH_ASM_PTR_SIZE sizeof(void *)
 #include "math/m_vector_asm.h"
 

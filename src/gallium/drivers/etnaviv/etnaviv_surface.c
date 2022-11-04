@@ -119,7 +119,7 @@ etna_create_surface(struct pipe_context *pctx, struct pipe_resource *prsc,
        /* Multi-layer resources would need to keep much more state (TS valid and
         * clear color per layer) and are unlikely to profit from TS usage. */
        prsc->depth0 == 1 && prsc->array_size == 1) {
-      etna_screen_resource_alloc_ts(pctx->screen, rsc);
+      etna_screen_resource_alloc_ts(pctx->screen, rsc, 0);
    }
 
    surf->base.format = templat->format;

@@ -164,7 +164,7 @@ class PrintGlxProtoStubs(glX_proto_common.glx_print_proto):
 
     def printRealHeader(self):
         print('')
-        print('#include <GL/gl.h>')
+        print('#include "util/glheader.h"')
         print('#include "indirect.h"')
         print('#include "glxclient.h"')
         print('#include "indirect_size.h"')

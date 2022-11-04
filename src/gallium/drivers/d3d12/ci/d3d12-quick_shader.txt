@@ -269,18 +269,6 @@ spec/arb_gpu_shader5/execution/ubo_array_indexing/vs-nonuniform-control-flow: fa
 spec/arb_gpu_shader_fp64/execution/built-in-functions/fs-frexp-dvec4-only-exponent: fail
 spec/arb_gpu_shader_fp64/execution/built-in-functions/fs-frexp-dvec4-only-mantissa: fail
 spec/arb_gpu_shader_fp64/execution/built-in-functions/fs-frexp-dvec4-variable-index: fail
-spec/arb_gpu_shader_fp64/execution/conversion/frag-conversion-explicit-double-uint: fail
-spec/arb_gpu_shader_fp64/execution/conversion/frag-conversion-explicit-dvec2-uvec2: fail
-spec/arb_gpu_shader_fp64/execution/conversion/frag-conversion-explicit-dvec3-uvec3: fail
-spec/arb_gpu_shader_fp64/execution/conversion/frag-conversion-explicit-dvec4-uvec4: fail
-spec/arb_gpu_shader_fp64/execution/conversion/geom-conversion-explicit-double-uint: fail
-spec/arb_gpu_shader_fp64/execution/conversion/geom-conversion-explicit-dvec2-uvec2: fail
-spec/arb_gpu_shader_fp64/execution/conversion/geom-conversion-explicit-dvec3-uvec3: fail
-spec/arb_gpu_shader_fp64/execution/conversion/geom-conversion-explicit-dvec4-uvec4: fail
-spec/arb_gpu_shader_fp64/execution/conversion/vert-conversion-explicit-double-uint: fail
-spec/arb_gpu_shader_fp64/execution/conversion/vert-conversion-explicit-dvec2-uvec2: fail
-spec/arb_gpu_shader_fp64/execution/conversion/vert-conversion-explicit-dvec3-uvec3: fail
-spec/arb_gpu_shader_fp64/execution/conversion/vert-conversion-explicit-dvec4-uvec4: fail
 spec/arb_gpu_shader_fp64/execution/inout/vs-out-fs-in-s1/2-s2/2-s3/2-double-location-0: crash
 spec/arb_gpu_shader_fp64/execution/vs-fs-explicit-locations: crash
 spec/arb_gpu_shader_int64/execution/built-in-functions/cs-abs-i64vec2: skip
@@ -461,30 +449,6 @@ spec/arb_gpu_shader_int64/execution/built-in-functions/cs-sign-i64vec2: skip
 spec/arb_gpu_shader_int64/execution/built-in-functions/cs-sign-i64vec3: skip
 spec/arb_gpu_shader_int64/execution/built-in-functions/cs-sign-i64vec4: skip
 spec/arb_gpu_shader_int64/execution/built-in-functions/cs-sign-int64_t: skip
-spec/arb_gpu_shader_int64/execution/conversion/frag-conversion-explicit-double-int64_t: crash
-spec/arb_gpu_shader_int64/execution/conversion/frag-conversion-explicit-double-uint64_t: crash
-spec/arb_gpu_shader_int64/execution/conversion/frag-conversion-explicit-dvec2-i64vec2: crash
-spec/arb_gpu_shader_int64/execution/conversion/frag-conversion-explicit-dvec2-u64vec2: crash
-spec/arb_gpu_shader_int64/execution/conversion/frag-conversion-explicit-dvec3-i64vec3: crash
-spec/arb_gpu_shader_int64/execution/conversion/frag-conversion-explicit-dvec3-u64vec3: crash
-spec/arb_gpu_shader_int64/execution/conversion/frag-conversion-explicit-dvec4-i64vec4: crash
-spec/arb_gpu_shader_int64/execution/conversion/frag-conversion-explicit-dvec4-u64vec4: crash
-spec/arb_gpu_shader_int64/execution/conversion/geom-conversion-explicit-double-int64_t: crash
-spec/arb_gpu_shader_int64/execution/conversion/geom-conversion-explicit-double-uint64_t: crash
-spec/arb_gpu_shader_int64/execution/conversion/geom-conversion-explicit-dvec2-i64vec2: crash
-spec/arb_gpu_shader_int64/execution/conversion/geom-conversion-explicit-dvec2-u64vec2: crash
-spec/arb_gpu_shader_int64/execution/conversion/geom-conversion-explicit-dvec3-i64vec3: crash
-spec/arb_gpu_shader_int64/execution/conversion/geom-conversion-explicit-dvec3-u64vec3: crash
-spec/arb_gpu_shader_int64/execution/conversion/geom-conversion-explicit-dvec4-i64vec4: crash
-spec/arb_gpu_shader_int64/execution/conversion/geom-conversion-explicit-dvec4-u64vec4: crash
-spec/arb_gpu_shader_int64/execution/conversion/vert-conversion-explicit-double-int64_t: crash
-spec/arb_gpu_shader_int64/execution/conversion/vert-conversion-explicit-double-uint64_t: crash
-spec/arb_gpu_shader_int64/execution/conversion/vert-conversion-explicit-dvec2-i64vec2: crash
-spec/arb_gpu_shader_int64/execution/conversion/vert-conversion-explicit-dvec2-u64vec2: crash
-spec/arb_gpu_shader_int64/execution/conversion/vert-conversion-explicit-dvec3-i64vec3: crash
-spec/arb_gpu_shader_int64/execution/conversion/vert-conversion-explicit-dvec3-u64vec3: crash
-spec/arb_gpu_shader_int64/execution/conversion/vert-conversion-explicit-dvec4-i64vec4: crash
-spec/arb_gpu_shader_int64/execution/conversion/vert-conversion-explicit-dvec4-u64vec4: crash
 spec/arb_gpu_shader_int64/execution/indirect-array-two-accesses: fail
 spec/arb_gpu_shader_int64/execution/inout/vs-out-fs-in-s1/2-s2/2-s3/2-int64_t-location-0: crash
 spec/arb_gpu_shader_int64/execution/inout/vs-out-fs-in-s1/2-s2/2-s3/2-uint64_t-location-0: crash
@@ -1016,18 +980,6 @@ spec/glsl-1.50/execution/primitive-id-no-gs-line: fail
 spec/glsl-1.50/execution/primitive-id-no-gs-quad-strip: fail
 spec/glsl-1.50/execution/primitive-id-no-gs-quads: fail
 spec/glsl-1.50/execution/variable-indexing/gs-output-array-vec4-index-wr: crash
-spec/glsl-4.00/execution/conversion/frag-conversion-explicit-double-uint: fail
-spec/glsl-4.00/execution/conversion/frag-conversion-explicit-dvec2-uvec2: fail
-spec/glsl-4.00/execution/conversion/frag-conversion-explicit-dvec3-uvec3: fail
-spec/glsl-4.00/execution/conversion/frag-conversion-explicit-dvec4-uvec4: fail
-spec/glsl-4.00/execution/conversion/geom-conversion-explicit-double-uint: fail
-spec/glsl-4.00/execution/conversion/geom-conversion-explicit-dvec2-uvec2: fail
-spec/glsl-4.00/execution/conversion/geom-conversion-explicit-dvec3-uvec3: fail
-spec/glsl-4.00/execution/conversion/geom-conversion-explicit-dvec4-uvec4: fail
-spec/glsl-4.00/execution/conversion/vert-conversion-explicit-double-uint: fail
-spec/glsl-4.00/execution/conversion/vert-conversion-explicit-dvec2-uvec2: fail
-spec/glsl-4.00/execution/conversion/vert-conversion-explicit-dvec3-uvec3: fail
-spec/glsl-4.00/execution/conversion/vert-conversion-explicit-dvec4-uvec4: fail
 spec/glsl-4.00/execution/inout/vs-out-fs-in-s1/2-s2/2-s3/2-double-location-0: crash
 spec/glsl-4.10/execution/vs_in/vs-input-position-double_double_array5-float_mat4x3_array3: skip
 spec/glsl-4.20/execution/vs_in/vs-input-double_dmat2-double_dmat4_array2-position: skip
@@ -3059,9 +3011,9 @@ spec/oes_viewport_array/viewport-gs-writes-out-of-range: skip
 summary:
        name:  results
        ----  --------
-       pass:    17183
-       fail:       44
-      crash:       64
+       pass:    17231
+       fail:       20
+      crash:       40
        skip:     2925
     timeout:        0
        warn:       25

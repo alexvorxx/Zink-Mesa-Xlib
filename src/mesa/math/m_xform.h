@@ -28,7 +28,7 @@
 
 
 #include "util/compiler.h"
-#include "main/glheader.h"
+#include "util/glheader.h"
 #include "math/m_matrix.h"
 #include "math/m_vector.h"
 

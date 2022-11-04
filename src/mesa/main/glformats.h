@@ -30,8 +30,8 @@
 
 #include <stdbool.h>
 #include <stdint.h>
-#include <GL/gl.h>
 
+#include "util/glheader.h"
 
 #ifdef __cplusplus
 extern "C" {

@@ -34,8 +34,19 @@
 
 
 #define GL_GLEXT_PROTOTYPES
+#if defined(_WIN32) && !defined(__CYGWIN__)
+/* Prevent glheader.h from including <windows.h> by defining APIENTRY */
+#pragma push_macro("APIENTRY")
+#ifndef APIENTRY
+#define APIENTRY GLAPIENTRY
+#endif
 #include "GL/gl.h"
 #include "GL/glext.h"
+#pragma pop_macro("APIENTRY")
+#else /* !(defined(_WIN32) && !defined(__CYGWIN__)) */
+#include "GL/gl.h"
+#include "GL/glext.h"
+#endif /* defined(_WIN32) && !defined(__CYGWIN__) */
 
 
 #ifdef __cplusplus

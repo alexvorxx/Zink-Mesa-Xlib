@@ -77,6 +77,7 @@ bool dxil_nir_lower_ubo_array_one_to_static(nir_shader *s);
 bool dxil_nir_fix_io_uint_type(nir_shader *s, uint64_t in_mask, uint64_t out_mask);
 bool dxil_nir_lower_discard_and_terminate(nir_shader* s);
 bool dxil_nir_ensure_position_writes(nir_shader *s);
+bool dxil_nir_lower_sample_pos(nir_shader *s);
 
 #ifdef __cplusplus
 }

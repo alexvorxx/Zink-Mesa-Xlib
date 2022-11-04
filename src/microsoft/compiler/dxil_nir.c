@@ -2156,3 +2156,24 @@ dxil_nir_ensure_position_writes(nir_shader *s)
                                        nir_metadata_block_index | nir_metadata_dominance,
                                        NULL);
 }
+
+static bool
+is_sample_pos(const nir_instr *instr, const void *_data)
+{
+   if (instr->type != nir_instr_type_intrinsic)
+      return false;
+   nir_intrinsic_instr *intr = nir_instr_as_intrinsic(instr);
+   return intr->intrinsic == nir_intrinsic_load_sample_pos;
+}
+
+static nir_ssa_def *
+lower_sample_pos(nir_builder *b, nir_instr *instr, void *_data)
+{
+   return nir_load_sample_pos_from_id(b, 32, nir_load_sample_id(b));
+}
+
+bool
+dxil_nir_lower_sample_pos(nir_shader *s)
+{
+   return nir_shader_lower_instructions(s, is_sample_pos, lower_sample_pos, NULL);
+}

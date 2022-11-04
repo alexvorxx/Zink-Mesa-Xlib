@@ -231,6 +231,7 @@ struct etna_resource *
 etna_texture_handle_incompatible(struct pipe_context *pctx, struct pipe_resource *prsc)
 {
    struct etna_resource *res = etna_resource(prsc);
+
    if (!etna_resource_sampler_compatible(res)) {
       /* The original resource is not compatible with the sampler.
        * Allocate an appropriately tiled texture. */

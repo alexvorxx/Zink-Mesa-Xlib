@@ -34,7 +34,7 @@
  *    Keith Whitwell <keithw@vmware.com>
  */
 
-#include "glheader.h"
+#include "util/glheader.h"
 #include "arrayobj.h"
 #include "api_arrayelt.h"
 #include "bufferobj.h"

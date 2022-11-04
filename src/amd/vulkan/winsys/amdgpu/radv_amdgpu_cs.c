@@ -1510,7 +1510,7 @@ radv_amdgpu_winsys_cs_dump(struct radeon_cmdbuf *_cs, FILE *file, const int *tra
    }
    assert(ib);
    ac_parse_ib(file, ib, num_dw, trace_ids, trace_id_count, "main IB", cs->ws->info.gfx_level,
-               radv_amdgpu_winsys_get_cpu_addr, cs);
+               cs->ws->info.family, radv_amdgpu_winsys_get_cpu_addr, cs);
 }
 
 static uint32_t

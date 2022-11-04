@@ -190,6 +190,7 @@ get_device_extensions(const struct tu_physical_device *device,
       .EXT_descriptor_indexing = true,
       .EXT_extended_dynamic_state = true,
       .EXT_extended_dynamic_state2 = true,
+      .EXT_extended_dynamic_state3 = true,
       .EXT_filter_cubic = device->info->a6xx.has_tex_filter_cubic,
       .EXT_global_priority = true,
       .EXT_global_priority_query = true,
@@ -757,6 +758,42 @@ tu_GetPhysicalDeviceFeatures2(VkPhysicalDevice physicalDevice,
          features->extendedDynamicState2PatchControlPoints = true;
          break;
       }
+      case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTENDED_DYNAMIC_STATE_3_FEATURES_EXT: {
+         VkPhysicalDeviceExtendedDynamicState3FeaturesEXT *features =
+            (VkPhysicalDeviceExtendedDynamicState3FeaturesEXT *)ext;
+         features->extendedDynamicState3PolygonMode = true;
+         features->extendedDynamicState3TessellationDomainOrigin = true;
+         features->extendedDynamicState3DepthClampEnable = true;
+         features->extendedDynamicState3DepthClipEnable = true;
+         features->extendedDynamicState3LogicOpEnable = true;
+         features->extendedDynamicState3SampleMask = true;
+         features->extendedDynamicState3RasterizationSamples = true;
+         features->extendedDynamicState3AlphaToCoverageEnable = true;
+         features->extendedDynamicState3AlphaToOneEnable = true;
+         features->extendedDynamicState3DepthClipNegativeOneToOne = true;
+         features->extendedDynamicState3RasterizationStream = true;
+         features->extendedDynamicState3ConservativeRasterizationMode = false;
+         features->extendedDynamicState3ExtraPrimitiveOverestimationSize = false;
+         features->extendedDynamicState3LineRasterizationMode = true;
+         features->extendedDynamicState3LineStippleEnable = false;
+         features->extendedDynamicState3ProvokingVertexMode = true;
+         features->extendedDynamicState3SampleLocationsEnable = true;
+         features->extendedDynamicState3ColorBlendEnable = true;
+         features->extendedDynamicState3ColorBlendEquation = true;
+         features->extendedDynamicState3ColorWriteMask = true;
+         features->extendedDynamicState3ViewportWScalingEnable = false;
+         features->extendedDynamicState3ViewportSwizzle = false;
+         features->extendedDynamicState3ShadingRateImageEnable = false;
+         features->extendedDynamicState3CoverageToColorEnable = false;
+         features->extendedDynamicState3CoverageToColorLocation = false;
+         features->extendedDynamicState3CoverageModulationMode = false;
+         features->extendedDynamicState3CoverageModulationTableEnable = false;
+         features->extendedDynamicState3CoverageModulationTable = false;
+         features->extendedDynamicState3CoverageReductionMode = false;
+         features->extendedDynamicState3RepresentativeFragmentTestEnable = false;
+         features->extendedDynamicState3ColorBlendAdvanced = false;
+         break;
+      }
       case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PERFORMANCE_QUERY_FEATURES_KHR: {
          VkPhysicalDevicePerformanceQueryFeaturesKHR *feature =
             (VkPhysicalDevicePerformanceQueryFeaturesKHR *)ext;
@@ -1307,8 +1344,8 @@ tu_GetPhysicalDeviceProperties2(VkPhysicalDevice physicalDevice,
                VK_SAMPLE_COUNT_1_BIT | VK_SAMPLE_COUNT_2_BIT | VK_SAMPLE_COUNT_4_BIT;
          }
          properties->maxSampleLocationGridSize = (VkExtent2D) { 1 , 1 };
-         properties->sampleLocationCoordinateRange[0] = 0.0f;
-         properties->sampleLocationCoordinateRange[1] = 0.9375f;
+         properties->sampleLocationCoordinateRange[0] = SAMPLE_LOCATION_MIN;
+         properties->sampleLocationCoordinateRange[1] = SAMPLE_LOCATION_MAX;
          properties->sampleLocationSubPixelBits = 4;
          properties->variableSampleLocations = true;
          break;
@@ -1385,6 +1422,12 @@ tu_GetPhysicalDeviceProperties2(VkPhysicalDevice physicalDevice,
             (VkPhysicalDeviceGraphicsPipelineLibraryPropertiesEXT *)ext;
          props->graphicsPipelineLibraryFastLinking = true;
          props->graphicsPipelineLibraryIndependentInterpolationDecoration = true;
+         break;
+      }
+      case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTENDED_DYNAMIC_STATE_3_PROPERTIES_EXT: {
+         VkPhysicalDeviceExtendedDynamicState3PropertiesEXT *properties =
+            (VkPhysicalDeviceExtendedDynamicState3PropertiesEXT *)ext;
+         properties->dynamicPrimitiveTopologyUnrestricted = true;
          break;
       }
       default:

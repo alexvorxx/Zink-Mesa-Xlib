@@ -1517,10 +1517,9 @@ init_cache_buckets(struct crocus_bufmgr *bufmgr)
 uint32_t
 crocus_create_hw_context(struct crocus_bufmgr *bufmgr)
 {
-   struct drm_i915_gem_context_create create = { };
-   int ret = intel_ioctl(bufmgr->fd, DRM_IOCTL_I915_GEM_CONTEXT_CREATE, &create);
-   if (ret != 0) {
-      DBG("DRM_IOCTL_I915_GEM_CONTEXT_CREATE failed: %s\n", strerror(errno));
+   uint32_t ctx_id;
+   if (!intel_gem_create_context(bufmgr->fd, &ctx_id)) {
+      DBG("intel_gem_create_context failed: %s\n", strerror(errno));
       return 0;
    }
 
@@ -1539,25 +1538,19 @@ crocus_create_hw_context(struct crocus_bufmgr *bufmgr)
     * context is lost, and we will do the recovery ourselves.  Ideally,
     * we'll have two lost batches instead of a continual stream of hangs.
     */
-   struct drm_i915_gem_context_param p = {
-      .ctx_id = create.ctx_id,
-      .param = I915_CONTEXT_PARAM_RECOVERABLE,
-      .value = false,
-   };
-   drmIoctl(bufmgr->fd, DRM_IOCTL_I915_GEM_CONTEXT_SETPARAM, &p);
+   intel_gem_set_context_param(bufmgr->fd, ctx_id,
+                               I915_CONTEXT_PARAM_RECOVERABLE, false);
 
-   return create.ctx_id;
+   return ctx_id;
 }
 
 static int
 crocus_hw_context_get_priority(struct crocus_bufmgr *bufmgr, uint32_t ctx_id)
 {
-   struct drm_i915_gem_context_param p = {
-      .ctx_id = ctx_id,
-      .param = I915_CONTEXT_PARAM_PRIORITY,
-   };
-   drmIoctl(bufmgr->fd, DRM_IOCTL_I915_GEM_CONTEXT_GETPARAM, &p);
-   return p.value; /* on error, return 0 i.e. default priority */
+   uint64_t priority = 0;
+   intel_gem_get_context_param(bufmgr->fd, ctx_id,
+                               I915_CONTEXT_PARAM_PRIORITY, &priority);
+   return priority; /* on error, return 0 i.e. default priority */
 }
 
 int
@@ -1565,15 +1558,9 @@ crocus_hw_context_set_priority(struct crocus_bufmgr *bufmgr,
                                uint32_t ctx_id,
                                int priority)
 {
-   struct drm_i915_gem_context_param p = {
-      .ctx_id = ctx_id,
-      .param = I915_CONTEXT_PARAM_PRIORITY,
-      .value = priority,
-   };
-   int err;
-
-   err = 0;
-   if (intel_ioctl(bufmgr->fd, DRM_IOCTL_I915_GEM_CONTEXT_SETPARAM, &p))
+   int err = 0;
+   if (!intel_gem_set_context_param(bufmgr->fd, ctx_id,
+                                    I915_CONTEXT_PARAM_PRIORITY, priority))
       err = -errno;
 
    return err;
@@ -1595,10 +1582,8 @@ crocus_clone_hw_context(struct crocus_bufmgr *bufmgr, uint32_t ctx_id)
 void
 crocus_destroy_hw_context(struct crocus_bufmgr *bufmgr, uint32_t ctx_id)
 {
-   struct drm_i915_gem_context_destroy d = { .ctx_id = ctx_id };
-
    if (ctx_id != 0 &&
-       intel_ioctl(bufmgr->fd, DRM_IOCTL_I915_GEM_CONTEXT_DESTROY, &d) != 0) {
+       !intel_gem_destroy_context(bufmgr->fd, ctx_id)) {
       fprintf(stderr, "DRM_IOCTL_I915_GEM_CONTEXT_DESTROY failed: %s\n",
               strerror(errno));
    }

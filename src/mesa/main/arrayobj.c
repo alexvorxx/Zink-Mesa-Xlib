@@ -40,7 +40,7 @@
  */
 
 
-#include "glheader.h"
+#include "util/glheader.h"
 #include "hash.h"
 #include "image.h"
 

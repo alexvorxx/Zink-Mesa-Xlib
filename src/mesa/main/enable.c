@@ -28,7 +28,7 @@
  */
 
 
-#include "glheader.h"
+#include "util/glheader.h"
 #include "arrayobj.h"
 #include "blend.h"
 #include "clip.h"

@@ -632,7 +632,7 @@ dxil_spirv_nir_passes(nir_shader *nir,
 
       NIR_PASS_V(nir, dxil_nir_lower_discard_and_terminate);
       NIR_PASS_V(nir, nir_lower_returns);
-
+      NIR_PASS_V(nir, dxil_nir_lower_sample_pos);
    }
 
    NIR_PASS_V(nir, nir_opt_deref);

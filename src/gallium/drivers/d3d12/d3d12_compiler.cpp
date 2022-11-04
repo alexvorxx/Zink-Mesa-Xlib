@@ -1433,7 +1433,7 @@ d3d12_create_shader(struct d3d12_context *ctx,
                                             next ? next->current->nir->info.inputs_read : 0);
    } else {
       NIR_PASS_V(nir, nir_lower_fragcoord_wtrans);
-      NIR_PASS_V(nir, d3d12_lower_sample_pos);
+      NIR_PASS_V(nir, dxil_nir_lower_sample_pos);
       dxil_sort_ps_outputs(nir);
    }
 

@@ -140,7 +140,11 @@ compiler_perf_log(UNUSED void *data, UNUSED unsigned *id, const char *fmt, ...)
 VkResult anv_EnumerateInstanceVersion(
     uint32_t*                                   pApiVersion)
 {
+#ifdef ANDROID
+   *pApiVersion = ANV_API_VERSION;
+#else
    *pApiVersion = ANV_API_VERSION_1_3;
+#endif
    return VK_SUCCESS;
 }
 
@@ -1819,7 +1823,11 @@ void anv_GetPhysicalDeviceProperties(
    };
 
    *pProperties = (VkPhysicalDeviceProperties) {
+#ifdef ANDROID
+      .apiVersion = ANV_API_VERSION,
+#else
       .apiVersion = pdevice->use_softpin ? ANV_API_VERSION_1_3 : ANV_API_VERSION_1_2,
+#endif
       .driverVersion = vk_get_driver_version(),
       .vendorID = 0x8086,
       .deviceID = pdevice->info.pci_device_id,
@@ -2804,19 +2812,20 @@ anv_device_setup_context(struct anv_device *device,
          for (uint32_t j = 0; j < queueCreateInfo->queueCount; j++)
             engine_classes[engine_count++] = queue_family->engine_class;
       }
-      device->context_id =
-         intel_gem_create_context_engines(device->fd,
-                                          physical_device->engine_info,
-                                          engine_count, engine_classes);
+      if (!intel_gem_create_context_engines(device->fd,
+                                            physical_device->engine_info,
+                                            engine_count, engine_classes,
+                                            (uint32_t *)&device->context_id))
+         result = vk_errorf(device, VK_ERROR_INITIALIZATION_FAILED,
+                            "kernel context creation failed");
    } else {
       assert(num_queues == 1);
-      device->context_id = anv_gem_create_context(device);
+      if (!intel_gem_create_context(device->fd, &device->context_id))
+         result = vk_error(device, VK_ERROR_INITIALIZATION_FAILED);
    }
 
-   if (device->context_id == -1) {
-      result = vk_error(device, VK_ERROR_INITIALIZATION_FAILED);
+   if (result != VK_SUCCESS)
       return result;
-   }
 
    /* Here we tell the kernel not to attempt to recover our context but
     * immediately (on the next batchbuffer submission) report that the
@@ -2854,7 +2863,7 @@ anv_device_setup_context(struct anv_device *device,
    return result;
 
 fail_context:
-   anv_gem_destroy_context(device, device->context_id);
+   intel_gem_destroy_context(device->fd, device->context_id);
    return result;
 }
 
@@ -3262,7 +3271,7 @@ VkResult anv_CreateDevice(
       anv_queue_finish(&device->queues[i]);
    vk_free(&device->vk.alloc, device->queues);
  fail_context_id:
-   anv_gem_destroy_context(device, device->context_id);
+   intel_gem_destroy_context(device->fd, device->context_id);
  fail_fd:
    close(device->fd);
  fail_device:
@@ -3334,7 +3343,7 @@ void anv_DestroyDevice(
       anv_queue_finish(&device->queues[i]);
    vk_free(&device->vk.alloc, device->queues);
 
-   anv_gem_destroy_context(device, device->context_id);
+   intel_gem_destroy_context(device->fd, device->context_id);
 
    if (INTEL_DEBUG(DEBUG_BATCH))
       intel_batch_decode_ctx_finish(&device->decoder_ctx);

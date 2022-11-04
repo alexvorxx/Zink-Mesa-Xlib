@@ -74,11 +74,6 @@
 
 #endif /* logging */
 
-
-#ifndef GLAPIENTRY
-#define GLAPIENTRY
-#endif
-
 #ifdef GLX_INDIRECT_RENDERING
 /* those link to libglapi.a should provide the entry points */
 #define _GLAPI_SKIP_PROTO_ENTRY_POINTS
@@ -150,7 +145,7 @@ GL_API void GL_APIENTRY glBlendBarrier (void);
 GL_API void GL_APIENTRY glPrimitiveBoundingBox (GLfloat minX, GLfloat minY, GLfloat minZ, GLfloat minW, GLfloat maxX, GLfloat maxY, GLfloat maxZ, GLfloat maxW);
 
 /* Enable frame pointer elimination on Windows, otherwise forgetting to add
- * APIENTRY to _mesa_* entrypoints will not cause crashes on debug builds, as
+ * GLAPIENTRY to _mesa_* entrypoints will not cause crashes on debug builds, as
  * the initial ESP value is saved in the EBP in the function prologue, then
  * restored on the epilogue, clobbering any corruption in the ESP pointer due
  * to mismatch in the callee calling convention.

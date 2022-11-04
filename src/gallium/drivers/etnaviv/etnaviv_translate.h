@@ -333,6 +333,44 @@ translate_blt_format(enum pipe_format fmt)
    }
 }
 
+static inline uint32_t
+drmfourcc_to_ts_format(uint32_t fourcc)
+{
+   switch (fourcc) {
+   case DRM_FORMAT_ARGB8888:
+      return COMPRESSION_FORMAT_A8R8G8B8;
+   case DRM_FORMAT_XRGB8888:
+      return COMPRESSION_FORMAT_X8R8G8B8;
+   case DRM_FORMAT_RGB565:
+      return COMPRESSION_FORMAT_R5G6B5;
+   case DRM_FORMAT_ARGB4444:
+      return COMPRESSION_FORMAT_A4R4G4B4;
+   case DRM_FORMAT_ARGB1555:
+      return COMPRESSION_FORMAT_A1R5G5B5;
+   default:
+      return ~0;
+   }
+}
+
+static inline uint32_t
+ts_format_to_drmfourcc(uint32_t comp_format)
+{
+   switch (comp_format) {
+   case COMPRESSION_FORMAT_A8R8G8B8:
+      return DRM_FORMAT_ARGB8888;
+   case COMPRESSION_FORMAT_X8R8G8B8:
+      return DRM_FORMAT_XRGB8888;
+   case COMPRESSION_FORMAT_R5G6B5:
+      return DRM_FORMAT_RGB565;
+   case COMPRESSION_FORMAT_A4R4G4B4:
+      return DRM_FORMAT_ARGB4444;
+   case COMPRESSION_FORMAT_A1R5G5B5:
+      return DRM_FORMAT_ARGB1555;
+   default:
+      return 0;
+   }
+}
+
 /* Return normalization flag for vertex element format */
 static inline uint32_t
 translate_vertex_format_normalize(enum pipe_format fmt)

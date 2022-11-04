@@ -3,7 +3,7 @@ Amber Branch
 
 After Mesa 21.3, all non-Gallium DRI drivers were removed from the Mesa
 source-tree. These drivers are still being maintained to some degree,
-but only on the 21.3.x branch, and only for critical fixes.
+but only on the ``amber`` branch, and only for critical fixes.
 
 These drivers include:
 

@@ -32,7 +32,7 @@
 #define DRAW_H
 
 #include <stdbool.h>
-#include "main/glheader.h"
+#include "util/glheader.h"
 
 #ifdef __cplusplus
 extern "C" {

@@ -47,7 +47,7 @@ class PrintCode(gl_XML.gl_print_base):
             #ifndef API_EXEC_DECL_H
             #define API_EXEC_DECL_H
 
-            #include "GL/gl.h"
+            #include "util/glheader.h"
 
             #define GL_API GLAPI
             #define GL_APIENTRY GLAPIENTRY

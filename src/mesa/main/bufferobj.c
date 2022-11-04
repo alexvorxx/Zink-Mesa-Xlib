@@ -33,7 +33,7 @@
 #include <stdbool.h>
 #include <inttypes.h>  /* for PRId64 macro */
 #include "util/u_debug.h"
-#include "glheader.h"
+#include "util/glheader.h"
 #include "enums.h"
 #include "hash.h"
 #include "context.h"

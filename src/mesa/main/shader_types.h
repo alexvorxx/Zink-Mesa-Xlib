@@ -32,7 +32,7 @@
 #define SHADER_TYPES_H
 
 #include "main/config.h" /* for MAX_FEEDBACK_BUFFERS */
-#include "main/glheader.h"
+#include "util/glheader.h"
 #include "main/menums.h"
 #include "util/mesa-sha1.h"
 #include "compiler/shader_info.h"

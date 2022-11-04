@@ -177,7 +177,7 @@ etna_flush_resource(struct pipe_context *pctx, struct pipe_resource *prsc)
          etna_copy_resource(pctx, prsc, rsc->render, 0, 0);
          rsc->seqno = etna_resource(rsc->render)->seqno;
       }
-   } else if (etna_resource_needs_flush(rsc)) {
+   } else if (!etna_resource_ext_ts(rsc) && etna_resource_needs_flush(rsc)) {
       etna_copy_resource(pctx, prsc, prsc, 0, 0);
       rsc->flush_seqno = rsc->seqno;
    }

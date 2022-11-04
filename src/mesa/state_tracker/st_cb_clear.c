@@ -34,7 +34,7 @@
   */
 
 #include "main/errors.h"
-#include "main/glheader.h"
+#include "util/glheader.h"
 #include "main/accum.h"
 #include "main/formats.h"
 #include "main/framebuffer.h"

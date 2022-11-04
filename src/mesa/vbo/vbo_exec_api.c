@@ -30,7 +30,7 @@ USE OR OTHER DEALINGS IN THE SOFTWARE.
  *   Keith Whitwell <keithw@vmware.com>
  */
 
-#include "main/glheader.h"
+#include "util/glheader.h"
 #include "main/bufferobj.h"
 #include "main/context.h"
 #include "main/macros.h"

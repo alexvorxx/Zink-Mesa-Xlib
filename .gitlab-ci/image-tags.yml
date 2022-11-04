@@ -24,4 +24,4 @@ variables:
    WINDOWS_X64_BUILD_TAG: "2022-10-18-wrap-nodownload-va"
 
    WINDOWS_X64_TEST_PATH: "windows/x64_test"
-   WINDOWS_X64_TEST_TAG: "2022-08-17-bump"
+   WINDOWS_X64_TEST_TAG: "2022-11-03-agility-sdk"

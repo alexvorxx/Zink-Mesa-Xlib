@@ -147,8 +147,8 @@ radv_null_winsys_query_info(struct radeon_winsys *rws, struct radeon_info *info)
       info->family == CHIP_NAVI23 || info->family == CHIP_VANGOGH;
 
    info->has_accelerated_dot_product =
-      info->family == CHIP_ARCTURUS || info->family == CHIP_ALDEBARAN ||
-      info->family == CHIP_VEGA20 || info->family >= CHIP_NAVI12;
+      info->family == CHIP_VEGA20 ||
+      (info->family >= CHIP_ARCTURUS && info->family != CHIP_NAVI10);
 
    info->address32_hi = info->gfx_level >= GFX9 ? 0xffff8000u : 0x0;
 

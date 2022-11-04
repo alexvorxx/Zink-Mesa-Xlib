@@ -28,7 +28,7 @@
  */
 
 
-#include "glheader.h"
+#include "util/glheader.h"
 
 #include "context.h"
 #include "draw_validate.h"

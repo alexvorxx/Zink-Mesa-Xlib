@@ -28,7 +28,7 @@
 
 #include <stdio.h>
 #include "arrayobj.h"
-#include "glheader.h"
+#include "util/glheader.h"
 #include "c99_alloca.h"
 #include "context.h"
 #include "state.h"

@@ -4,8 +4,7 @@ Copy-Item -Path _install\bin\opengl32.dll -Destination C:\Piglit\lib\piglit\bin\
 Copy-Item -Path _install\bin\libgallium_wgl.dll -Destination C:\Piglit\lib\piglit\bin\libgallium_wgl.dll
 Copy-Item -Path _install\bin\libglapi.dll -Destination C:\Piglit\lib\piglit\bin\libglapi.dll
 
-# Run this using VsDevCmd.bat to ensure DXIL.dll is in %PATH%
-cmd.exe /C "C:\BuildTools\Common7\Tools\VsDevCmd.bat -host_arch=amd64 -arch=amd64 && py -3 C:\Piglit\bin\piglit.py run `"$env:PIGLIT_PROFILE`" $env:PIGLIT_OPTIONS $env:PIGLIT_TESTS .\results"
+cmd.exe /C "py -3 C:\Piglit\bin\piglit.py run --timeout 240 `"$env:PIGLIT_PROFILE`" $env:PIGLIT_OPTIONS $env:PIGLIT_TESTS .\results"
 
 py -3 C:\Piglit\bin\piglit.py summary console .\results | Select -SkipLast 1 | Select-String -NotMatch -Pattern ': pass' | Set-Content -Path .\result.txt
 

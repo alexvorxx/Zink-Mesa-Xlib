@@ -25,11 +25,7 @@
 #ifndef TEXCOMPRESS_S3TC_TMP_H
 #define TEXCOMPRESS_S3TC_TMP_H
 
-#ifdef __APPLE__
-#include <OpenGL/gl.h>
-#else
-#include <GL/gl.h>
-#endif
+#include "util/glheader.h"
 
 typedef GLubyte GLchan;
 #define UBYTE_TO_CHAN(b)  (b)

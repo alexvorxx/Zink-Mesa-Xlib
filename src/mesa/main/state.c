@@ -31,7 +31,7 @@
  */
 
 
-#include "glheader.h"
+#include "util/glheader.h"
 #include "mtypes.h"
 #include "arrayobj.h"
 #include "context.h"

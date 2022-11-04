@@ -33,9 +33,10 @@
 #define FORMATS_H
 
 
-#include <GL/gl.h>
 #include <stdbool.h>
 #include <stdint.h>
+
+#include "util/glheader.h"
 #include "gallium/include/pipe/p_format.h"
 #include "util/u_endian.h"
 

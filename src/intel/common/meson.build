@@ -124,7 +124,7 @@ if with_tests and not with_platform_android
       ],
       gnu_symbol_visibility : 'hidden',
       include_directories : [inc_include, inc_src, inc_intel],
-      link_with : [libintel_dev],
+      link_with : [libintel_dev, libintel_common],
       dependencies : [dep_libdrm, idep_gtest, idep_genxml, idep_mesautil],
       install : install_intel_gpu_tests,
     )

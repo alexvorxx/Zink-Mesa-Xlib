@@ -38,7 +38,7 @@
 #include <stdbool.h>
 #include "c11/threads.h"
 
-#include "main/glheader.h"
+#include "util/glheader.h"
 #include "main/glthread.h"
 #include "main/consts_exts.h"
 #include "main/shader_types.h"

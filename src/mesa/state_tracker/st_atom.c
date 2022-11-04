@@ -28,7 +28,7 @@
 
 #include <stdio.h>
 #include "main/arrayobj.h"
-#include "main/glheader.h"
+#include "util/glheader.h"
 #include "main/context.h"
 
 #include "pipe/p_defines.h"

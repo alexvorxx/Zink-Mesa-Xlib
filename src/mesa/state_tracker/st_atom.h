@@ -34,7 +34,7 @@
 #ifndef ST_ATOM_H
 #define ST_ATOM_H
 
-#include "main/glheader.h"
+#include "util/glheader.h"
 
 #ifdef __cplusplus
 extern "C" {

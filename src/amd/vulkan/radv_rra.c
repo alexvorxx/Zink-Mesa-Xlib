@@ -444,6 +444,17 @@ is_internal_node(uint32_t type)
    return type == radv_bvh_node_box16 || type == radv_bvh_node_box32;
 }
 
+static const char *node_type_names[8] = {
+   [radv_bvh_node_triangle + 0] = "triangle0",
+   [radv_bvh_node_triangle + 1] = "triangle1",
+   [radv_bvh_node_triangle + 2] = "triangle2",
+   [radv_bvh_node_triangle + 3] = "triangle3",
+   [radv_bvh_node_box16] = "box16",
+   [radv_bvh_node_box32] = "box32",
+   [radv_bvh_node_instance] = "instance",
+   [radv_bvh_node_aabb] = "aabb",
+};
+
 static bool
 rra_validate_node(struct hash_table_u64 *accel_struct_vas, uint8_t *data, void *node,
                   uint32_t root_node_offset, uint32_t size, bool is_bottom_level)
@@ -483,9 +494,9 @@ rra_validate_node(struct hash_table_u64 *accel_struct_vas, uint8_t *data, void *
       }
       if (!node_type_matches_as_type) {
          rra_accel_struct_validation_fail(offset,
-                                          is_bottom_level ? "BLAS node in TLAS (child index %u)"
-                                                          : "TLAS node in BLAS (child index %u)",
-                                          i);
+                                          is_bottom_level ? "%s node in BLAS (child index %u)"
+                                                          : "%s node in TLAS (child index %u)",
+                                          node_type_names[type], i);
 
          result = false;
       }

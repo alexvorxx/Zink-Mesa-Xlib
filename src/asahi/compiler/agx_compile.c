@@ -23,7 +23,7 @@
  * SOFTWARE.
  */
 
-#include "main/glheader.h"
+#include "util/glheader.h"
 #include "compiler/nir_types.h"
 #include "compiler/nir/nir_builder.h"
 #include "util/u_debug.h"

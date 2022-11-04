@@ -23,7 +23,7 @@
  * Author: Kristian Høgsberg <krh@bitplanet.net>
  */
 
-#include "glheader.h"
+#include "util/glheader.h"
 #include "context.h"
 #include "blend.h"
 #include "debug_output.h"

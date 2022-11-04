@@ -35,13 +35,13 @@
 #include "tgsi/tgsi_info.h"
 #include "tgsi/tgsi_dump.h"
 #include "tgsi/tgsi_sanity.h"
+#include "util/glheader.h"
 #include "util/u_debug.h"
 #include "util/u_inlines.h"
 #include "util/u_memory.h"
 #include "util/u_math.h"
 #include "util/u_prim.h"
 #include "util/u_bitmask.h"
-#include "GL/gl.h"
 #include "compiler/shader_info.h"
 
 union tgsi_any_token {

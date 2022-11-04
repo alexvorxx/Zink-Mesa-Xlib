@@ -1488,7 +1488,8 @@ pvr_enable_z_replicate(struct pvr_renderpass_context *ctx,
       struct pvr_render_subpass *input_subpass = subpass->input_subpass;
 
       /* If the subpass writes to the attachment then enable z replication. */
-      if (*input_subpass->depth_stencil_attachment == replicate_attach_idx &&
+      if (input_subpass->depth_stencil_attachment &&
+          *input_subpass->depth_stencil_attachment == replicate_attach_idx &&
           !subpass->z_replicate) {
          subpass->z_replicate = true;
 

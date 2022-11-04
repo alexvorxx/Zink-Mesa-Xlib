@@ -30,7 +30,7 @@
 
 
 
-#include "glheader.h"
+#include "util/glheader.h"
 #include "buffers.h"
 #include "context.h"
 #include "enums.h"

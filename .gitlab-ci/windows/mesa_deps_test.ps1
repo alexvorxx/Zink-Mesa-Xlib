@@ -136,4 +136,49 @@ $env:Path += ";$($env:USERPROFILE)\.cargo\bin"
 cargo install --git https://gitlab.freedesktop.org/anholt/deqp-runner.git
 
 Get-Date
+Write-Host "Downloading DirectX 12 Agility SDK"
+Invoke-WebRequest -Uri https://www.nuget.org/api/v2/package/Microsoft.Direct3D.D3D12/1.706.3-preview -OutFile 'agility.zip'
+Expand-Archive -Path 'agility.zip' -DestinationPath 'C:\agility'
+Remove-Item 'agility.zip'
+
+$piglit_bin = 'C:\Piglit\lib\piglit\bin'
+$vk_cts_bin = "$deqp_build\external\vulkancts\modules\vulkan"
+
+# Copy Agility SDK into subfolder of piglit and Vulkan CTS
+$agility_dest = New-Item -ItemType Directory -Path $piglit_bin -Name 'D3D12'
+Copy-Item 'C:\agility\build\native\bin\x64\*.dll' -Destination $agility_dest
+$agility_dest = New-Item -ItemType Directory -Path $vk_cts_bin -Name 'D3D12'
+Copy-Item 'C:\agility\build\native\bin\x64\*.dll' -Destination $agility_dest
+Remove-Item -Recurse 'C:\agility'
+
+Get-Date
+Write-Host "Downloading Updated WARP"
+Invoke-WebRequest -Uri https://www.nuget.org/api/v2/package/Microsoft.Direct3D.WARP/1.0.2 -OutFile 'warp.zip'
+Expand-Archive -Path 'warp.zip' -DestinationPath 'C:\warp'
+Remove-Item 'warp.zip'
+
+# Copy WARP next to piglit and Vulkan CTS
+Copy-Item 'C:\warp\build\native\amd64\d3d10warp.dll' -Destination $piglit_bin
+Copy-Item 'C:\warp\build\native\amd64\d3d10warp.dll' -Destination $vk_cts_bin
+Remove-Item -Recurse 'C:\warp'
+
+Get-Date
+Write-Host "Downloading DirectXShaderCompiler release"
+Invoke-WebRequest -Uri https://github.com/microsoft/DirectXShaderCompiler/releases/download/v1.7.2207/dxc_2022_07_18.zip -OutFile 'DXC.zip'
+Expand-Archive -Path 'DXC.zip' -DestinationPath 'C:\DXC'
+# No more need to get dxil.dll from the VS install
+Copy-Item 'C:\DXC\bin\x64\*.dll' -Destination 'C:\Windows\System32'
+
+Get-Date
+Write-Host "Enabling developer mode"
+# Create AppModelUnlock if it doesn't exist, required for enabling Developer Mode
+$RegistryKeyPath = "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\AppModelUnlock"
+if (-not(Test-Path -Path $RegistryKeyPath)) {
+    New-Item -Path $RegistryKeyPath -ItemType Directory -Force
+}
+
+# Add registry value to enable Developer Mode
+New-ItemProperty -Path $RegistryKeyPath -Name AllowDevelopmentWithoutDevLicense -PropertyType DWORD -Value 1 -Force
+
+Get-Date
 Write-Host "Complete"

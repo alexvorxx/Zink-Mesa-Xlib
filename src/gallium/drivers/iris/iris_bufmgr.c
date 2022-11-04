@@ -2184,12 +2184,8 @@ iris_hw_context_set_unrecoverable(struct iris_bufmgr *bufmgr,
     * context is lost, and we will do the recovery ourselves.  Ideally,
     * we'll have two lost batches instead of a continual stream of hangs.
     */
-   struct drm_i915_gem_context_param p = {
-      .ctx_id = ctx_id,
-      .param = I915_CONTEXT_PARAM_RECOVERABLE,
-      .value = false,
-   };
-   intel_ioctl(bufmgr->fd, DRM_IOCTL_I915_GEM_CONTEXT_SETPARAM, &p);
+   intel_gem_set_context_param(bufmgr->fd, ctx_id,
+                               I915_CONTEXT_PARAM_RECOVERABLE, false);
 }
 
 void
@@ -2198,16 +2194,11 @@ iris_hw_context_set_vm_id(struct iris_bufmgr *bufmgr, uint32_t ctx_id)
    if (!bufmgr->use_global_vm)
       return;
 
-   struct drm_i915_gem_context_param p = {
-      .ctx_id = ctx_id,
-      .param = I915_CONTEXT_PARAM_VM,
-      .value = bufmgr->global_vm_id,
-   };
-   int ret = intel_ioctl(bufmgr->fd, DRM_IOCTL_I915_GEM_CONTEXT_SETPARAM, &p);
-   if (ret != 0) {
+   if (!intel_gem_set_context_param(bufmgr->fd, ctx_id,
+                                    I915_CONTEXT_PARAM_VM,
+                                    bufmgr->global_vm_id))
       DBG("DRM_IOCTL_I915_GEM_CONTEXT_SETPARAM failed: %s\n",
           strerror(errno));
-   }
 }
 
 uint32_t
@@ -2216,48 +2207,20 @@ iris_create_hw_context(struct iris_bufmgr *bufmgr, bool protected)
    uint32_t ctx_id;
 
    if (protected) {
-      struct drm_i915_gem_context_create_ext_setparam recoverable_param = {
-         .param = {
-            .param = I915_CONTEXT_PARAM_RECOVERABLE,
-            .value = false,
-         },
-      };
-      struct drm_i915_gem_context_create_ext_setparam protected_param = {
-         .param = {
-            .param = I915_CONTEXT_PARAM_PROTECTED_CONTENT,
-            .value = true,
-         },
-      };
-      struct drm_i915_gem_context_create_ext create = {
-         .flags = I915_CONTEXT_CREATE_FLAGS_USE_EXTENSIONS,
-      };
-
-      intel_gem_add_ext(&create.extensions,
-                        I915_CONTEXT_CREATE_EXT_SETPARAM,
-                        &recoverable_param.base);
-      intel_gem_add_ext(&create.extensions,
-                        I915_CONTEXT_CREATE_EXT_SETPARAM,
-                        &protected_param.base);
-
-      int ret = intel_ioctl(bufmgr->fd, DRM_IOCTL_I915_GEM_CONTEXT_CREATE_EXT, &create);
-      if (ret == -1) {
+      if (!intel_gem_create_context_ext(bufmgr->fd,
+                                        INTEL_GEM_CREATE_CONTEXT_EXT_PROTECTED_FLAG,
+                                        &ctx_id)) {
          DBG("DRM_IOCTL_I915_GEM_CONTEXT_CREATE_EXT failed: %s\n", strerror(errno));
          return 0;
       }
-
-      ctx_id = create.ctx_id;
    } else {
-      struct drm_i915_gem_context_create create = { };
-      int ret = intel_ioctl(bufmgr->fd, DRM_IOCTL_I915_GEM_CONTEXT_CREATE, &create);
-      if (ret != 0) {
-         DBG("DRM_IOCTL_I915_GEM_CONTEXT_CREATE failed: %s\n", strerror(errno));
+      if (!intel_gem_create_context(bufmgr->fd, &ctx_id)) {
+         DBG("intel_gem_create_context failed: %s\n", strerror(errno));
          return 0;
       }
-
-      ctx_id = create.ctx_id;
+      iris_hw_context_set_unrecoverable(bufmgr, ctx_id);
    }
 
-   iris_hw_context_set_unrecoverable(bufmgr, ctx_id);
    iris_hw_context_set_vm_id(bufmgr, ctx_id);
 
    return ctx_id;
@@ -2266,12 +2229,10 @@ iris_create_hw_context(struct iris_bufmgr *bufmgr, bool protected)
 int
 iris_kernel_context_get_priority(struct iris_bufmgr *bufmgr, uint32_t ctx_id)
 {
-   struct drm_i915_gem_context_param p = {
-      .ctx_id = ctx_id,
-      .param = I915_CONTEXT_PARAM_PRIORITY,
-   };
-   intel_ioctl(bufmgr->fd, DRM_IOCTL_I915_GEM_CONTEXT_GETPARAM, &p);
-   return p.value; /* on error, return 0 i.e. default priority */
+   uint64_t priority = 0;
+   intel_gem_get_context_param(bufmgr->fd, ctx_id,
+                               I915_CONTEXT_PARAM_PRIORITY, &priority);
+   return priority; /* on error, return 0 i.e. default priority */
 }
 
 int
@@ -2279,15 +2240,9 @@ iris_hw_context_set_priority(struct iris_bufmgr *bufmgr,
                             uint32_t ctx_id,
                             int priority)
 {
-   struct drm_i915_gem_context_param p = {
-      .ctx_id = ctx_id,
-      .param = I915_CONTEXT_PARAM_PRIORITY,
-      .value = priority,
-   };
-   int err;
-
-   err = 0;
-   if (intel_ioctl(bufmgr->fd, DRM_IOCTL_I915_GEM_CONTEXT_SETPARAM, &p))
+   int err = 0;
+   if (!intel_gem_set_context_param(bufmgr->fd, ctx_id,
+                                    I915_CONTEXT_PARAM_PRIORITY, priority))
       err = -errno;
 
    return err;
@@ -2296,12 +2251,11 @@ iris_hw_context_set_priority(struct iris_bufmgr *bufmgr,
 static bool
 iris_hw_context_get_protected(struct iris_bufmgr *bufmgr, uint32_t ctx_id)
 {
-   struct drm_i915_gem_context_param p = {
-      .ctx_id = ctx_id,
-      .param = I915_CONTEXT_PARAM_PROTECTED_CONTENT,
-   };
-   drmIoctl(bufmgr->fd, DRM_IOCTL_I915_GEM_CONTEXT_GETPARAM, &p);
-   return p.value; /* on error, return 0 i.e. default priority */
+   uint64_t protected_content = 0;
+   intel_gem_get_context_param(bufmgr->fd, ctx_id,
+                               I915_CONTEXT_PARAM_PROTECTED_CONTENT,
+                               &protected_content);
+   return protected_content;
 }
 
 uint32_t
@@ -2322,10 +2276,8 @@ iris_clone_hw_context(struct iris_bufmgr *bufmgr, uint32_t ctx_id)
 void
 iris_destroy_kernel_context(struct iris_bufmgr *bufmgr, uint32_t ctx_id)
 {
-   struct drm_i915_gem_context_destroy d = { .ctx_id = ctx_id };
-
    if (ctx_id != 0 &&
-       intel_ioctl(bufmgr->fd, DRM_IOCTL_I915_GEM_CONTEXT_DESTROY, &d) != 0) {
+       !intel_gem_destroy_context(bufmgr->fd, ctx_id)) {
       fprintf(stderr, "DRM_IOCTL_I915_GEM_CONTEXT_DESTROY failed: %s\n",
               strerror(errno));
    }
@@ -2418,17 +2370,13 @@ iris_bufmgr_get_meminfo(struct iris_bufmgr *bufmgr,
 static void
 iris_bufmgr_init_global_vm(int fd, struct iris_bufmgr *bufmgr)
 {
-   struct drm_i915_gem_context_param gcp = {
-      .ctx_id = 0,
-      .param = I915_CONTEXT_PARAM_VM,
-   };
-
-   if (intel_ioctl(fd, DRM_IOCTL_I915_GEM_CONTEXT_GETPARAM, &gcp)) {
+   uint64_t value;
+   if (!intel_gem_get_context_param(fd, 0, I915_CONTEXT_PARAM_VM, &value)) {
       bufmgr->use_global_vm = false;
       bufmgr->global_vm_id = 0;
    } else {
       bufmgr->use_global_vm = true;
-      bufmgr->global_vm_id = gcp.value;
+      bufmgr->global_vm_id = value;
    }
 }
 

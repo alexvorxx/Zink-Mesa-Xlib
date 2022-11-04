@@ -1921,20 +1921,30 @@ get_src(struct ntd_context *ctx, nir_src *src, unsigned chan,
    switch (nir_alu_type_get_base_type(type)) {
    case nir_type_int:
    case nir_type_uint: {
-      assert(bit_size != 64 || ctx->mod.feats.int64_ops);
       const struct dxil_type *expect_type =  dxil_module_get_int_type(&ctx->mod, bit_size);
       /* nohing to do */
-      if (dxil_value_type_equal_to(value, expect_type))
+      if (dxil_value_type_equal_to(value, expect_type)) {
+         assert(bit_size != 64 || ctx->mod.feats.int64_ops);
          return value;
+      }
+      if (bit_size == 64) {
+         assert(ctx->mod.feats.doubles);
+         ctx->mod.feats.int64_ops = true;
+      }
       assert(dxil_value_type_bitsize_equal_to(value, bit_size));
       return bitcast_to_int(ctx,  bit_size, value);
       }
 
    case nir_type_float:
       assert(nir_src_bit_size(*src) >= 16);
-      assert(nir_src_bit_size(*src) != 64 || ctx->mod.feats.doubles);
-      if (dxil_value_type_equal_to(value, dxil_module_get_float_type(&ctx->mod, bit_size)))
+      if (dxil_value_type_equal_to(value, dxil_module_get_float_type(&ctx->mod, bit_size))) {
+         assert(nir_src_bit_size(*src) != 64 || ctx->mod.feats.doubles);
          return value;
+      }
+      if (bit_size == 64) {
+         assert(ctx->mod.feats.int64_ops);
+         ctx->mod.feats.doubles = true;
+      }
       assert(dxil_value_type_bitsize_equal_to(value, bit_size));
       return bitcast_to_float(ctx, bit_size, value);
 

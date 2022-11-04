@@ -56,6 +56,7 @@ files_mesa_util = files(
   'fossilize_db.h',
   'futex.c',
   'futex.h',
+  'glheader.h',
   'half_float.c',
   'half_float.h',
   'hash_table.c',

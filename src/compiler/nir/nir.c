@@ -89,7 +89,7 @@ static const struct debug_named_value nir_debug_control[] = {
      "Dump resulting kernel shader after each successful lowering/optimization call" },
    { "print_consts", NIR_DEBUG_PRINT_CONSTS,
      "Print const value near each use of const SSA variable" },
-   { NULL }
+   DEBUG_NAMED_VALUE_END
 };
 
 DEBUG_GET_ONCE_FLAGS_OPTION(nir_debug, "NIR_DEBUG", nir_debug_control, 0)

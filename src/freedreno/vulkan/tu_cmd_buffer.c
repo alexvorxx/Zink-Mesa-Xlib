@@ -609,7 +609,29 @@ tu6_emit_msaa(struct tu_cs *cs, VkSampleCountFlagBits vk_samples,
 }
 
 static void
-tu6_update_msaa(struct tu_cmd_buffer *cmd, VkSampleCountFlagBits samples)
+tu6_update_msaa(struct tu_cmd_buffer *cmd)
+{
+   struct tu_cs cs;
+
+   cmd->state.msaa = tu_cs_draw_state(&cmd->sub_cs, &cs, 9);
+   tu6_emit_msaa(&cs, cmd->state.samples, cmd->state.msaa_disable);
+   if (!(cmd->state.dirty & TU_CMD_DIRTY_DRAW_STATE)) {
+      tu_cs_emit_pkt7(&cmd->draw_cs, CP_SET_DRAW_STATE, 3);
+      tu_cs_emit_draw_state(&cmd->draw_cs, TU_DRAW_STATE_MSAA, cmd->state.msaa);
+   }
+}
+
+static void
+tu6_update_msaa_samples(struct tu_cmd_buffer *cmd, VkSampleCountFlagBits samples)
+{
+   if (cmd->state.samples != samples) {
+      cmd->state.samples = samples;
+      tu6_update_msaa(cmd);
+   }
+}
+
+static void
+tu6_update_msaa_disable(struct tu_cmd_buffer *cmd)
 {
    bool is_line =
       tu6_primtype_line(cmd->state.primtype) ||
@@ -618,17 +640,9 @@ tu6_update_msaa(struct tu_cmd_buffer *cmd, VkSampleCountFlagBits samples)
        cmd->state.pipeline->tess.patch_type == IR3_TESS_ISOLINES);
    bool msaa_disable = is_line && cmd->state.line_mode == BRESENHAM;
 
-   if (cmd->state.msaa_disable != msaa_disable ||
-       cmd->state.samples != samples) {
-      struct tu_cs cs;
-      cmd->state.msaa = tu_cs_draw_state(&cmd->sub_cs, &cs, 9);
-      tu6_emit_msaa(&cs, samples, msaa_disable);
-      if (!(cmd->state.dirty & TU_CMD_DIRTY_DRAW_STATE)) {
-         tu_cs_emit_pkt7(&cmd->draw_cs, CP_SET_DRAW_STATE, 3);
-         tu_cs_emit_draw_state(&cmd->draw_cs, TU_DRAW_STATE_MSAA, cmd->state.msaa);
-      }
+   if (cmd->state.msaa_disable != msaa_disable) {
       cmd->state.msaa_disable = msaa_disable;
-      cmd->state.samples = samples;
+      tu6_update_msaa(cmd);
    }
 }
 
@@ -2578,11 +2592,10 @@ tu_CmdBindPipeline(VkCommandBuffer commandBuffer,
    if (!(cmd->state.dirty & TU_CMD_DIRTY_DRAW_STATE)) {
       uint32_t mask = ~pipeline->dynamic_state_mask & BITFIELD_MASK(TU_DYNAMIC_STATE_COUNT);
 
-      tu_cs_emit_pkt7(cs, CP_SET_DRAW_STATE, 3 * (6 + util_bitcount(mask)));
+      tu_cs_emit_pkt7(cs, CP_SET_DRAW_STATE, 3 * (5 + util_bitcount(mask)));
       tu_cs_emit_draw_state(cs, TU_DRAW_STATE_PROGRAM_CONFIG, pipeline->program.config_state);
       tu_cs_emit_draw_state(cs, TU_DRAW_STATE_PROGRAM, pipeline->program.state);
       tu_cs_emit_draw_state(cs, TU_DRAW_STATE_PROGRAM_BINNING, pipeline->program.binning_state);
-      tu_cs_emit_draw_state(cs, TU_DRAW_STATE_RAST, pipeline->rast.state);
       tu_cs_emit_draw_state(cs, TU_DRAW_STATE_PRIM_MODE_SYSMEM, pipeline->prim_order.state_sysmem);
       tu_cs_emit_draw_state(cs, TU_DRAW_STATE_PRIM_MODE_GMEM, pipeline->prim_order.state_gmem);
 
@@ -2594,24 +2607,61 @@ tu_CmdBindPipeline(VkCommandBuffer commandBuffer,
       cmd->state.rp.has_tess = true;
 
       if (!(pipeline->dynamic_state_mask &
-            BIT(TU_DYNAMIC_STATE_PATCH_CONTROL_POINTS)))
+            BIT(TU_DYNAMIC_STATE_PATCH_CONTROL_POINTS))) {
          cmd->state.patch_control_points = pipeline->tess.patch_control_points;
-      else
+         cmd->state.dirty &= ~TU_CMD_DIRTY_PATCH_CONTROL_POINTS;
+      } else {
          cmd->state.dirty |= TU_CMD_DIRTY_PATCH_CONTROL_POINTS;
+      }
    }
 
-   cmd->state.line_mode = pipeline->rast.line_mode;
+   if (!(pipeline->dynamic_state_mask &
+         BIT(TU_DYNAMIC_STATE_LINE_MODE)))
+      cmd->state.line_mode = pipeline->rast.line_mode;
+
    if (!(pipeline->dynamic_state_mask &
          BIT(TU_DYNAMIC_STATE_PRIMITIVE_TOPOLOGY)))
       cmd->state.primtype = pipeline->ia.primtype;
 
-   tu6_update_msaa(cmd, pipeline->output.samples);
+   if (!(pipeline->dynamic_state_mask &
+         BIT(TU_DYNAMIC_STATE_POLYGON_MODE)))
+       cmd->state.polygon_mode = pipeline->rast.polygon_mode;
+
+   if (!(pipeline->dynamic_state_mask &
+         BIT(TU_DYNAMIC_STATE_TESS_DOMAIN_ORIGIN)))
+       cmd->state.tess_upper_left_domain_origin =
+          pipeline->tess.upper_left_domain_origin;
+
+   if (!(pipeline->dynamic_state_mask &
+         BIT(TU_DYNAMIC_STATE_PROVOKING_VTX)))
+       cmd->state.provoking_vertex_last = pipeline->rast.provoking_vertex_last;
+
+   tu6_update_msaa_disable(cmd);
+
+   if (!(pipeline->dynamic_state_mask & BIT(TU_DYNAMIC_STATE_MSAA_SAMPLES)))
+      tu6_update_msaa_samples(cmd, pipeline->output.samples);
 
    if ((pipeline->dynamic_state_mask & BIT(VK_DYNAMIC_STATE_VIEWPORT)) &&
+       !(pipeline->dynamic_state_mask & BIT(TU_DYNAMIC_STATE_VIEWPORT_RANGE)) &&
        (pipeline->viewport.z_negative_one_to_one != cmd->state.z_negative_one_to_one)) {
       cmd->state.z_negative_one_to_one = pipeline->viewport.z_negative_one_to_one;
       cmd->state.dirty |= TU_CMD_DIRTY_VIEWPORTS;
    }
+
+   if (pipeline->viewport.set_dynamic_vp_to_static) {
+      memcpy(cmd->state.viewport, pipeline->viewport.viewports,
+             pipeline->viewport.num_viewports *
+             sizeof(pipeline->viewport.viewports[0]));
+
+      /* Any viewports set dynamically are invalidated when the pipeline is
+       * bound, so we don't need to take the max here.
+       */
+      cmd->state.max_viewport = pipeline->viewport.num_viewports;
+      cmd->state.dirty |= TU_CMD_DIRTY_VIEWPORTS;
+   }
+
+   if (!(pipeline->dynamic_state_mask & BIT(VK_DYNAMIC_STATE_VIEWPORT)))
+      cmd->state.dirty &= ~TU_CMD_DIRTY_VIEWPORTS;
 
    if (!(pipeline->dynamic_state_mask & BIT(TU_DYNAMIC_STATE_VERTEX_INPUT)))
       tu_update_num_vbs(cmd, pipeline->vi.num_vbs);
@@ -2634,11 +2684,12 @@ tu_CmdBindPipeline(VkCommandBuffer commandBuffer,
     * the relevant dirty bit is cleared to avoid overriding the non-dynamic
     * state with a dynamic state the next draw.
     */
-   UPDATE_REG(rast, gras_su_cntl, GRAS_SU_CNTL);
+   UPDATE_REG(rast, gras_su_cntl, RAST);
+   UPDATE_REG(rast, gras_cl_cntl, RAST);
    UPDATE_REG(rast_ds, rb_depth_cntl, RB_DEPTH_CNTL);
    UPDATE_REG(ds, rb_stencil_cntl, RB_STENCIL_CNTL);
-   UPDATE_REG(rast, pc_raster_cntl, RASTERIZER_DISCARD);
-   UPDATE_REG(rast, vpc_unknown_9107, RASTERIZER_DISCARD);
+   UPDATE_REG(rast, pc_raster_cntl, PC_RASTER_CNTL);
+   UPDATE_REG(rast, vpc_unknown_9107, PC_RASTER_CNTL);
    UPDATE_REG(blend, sp_blend_cntl, BLEND);
    UPDATE_REG(blend, rb_blend_cntl, BLEND);
 
@@ -2650,7 +2701,8 @@ tu_CmdBindPipeline(VkCommandBuffer commandBuffer,
          cmd->state.dirty |= TU_CMD_DIRTY_BLEND;
       }
 
-      if (cmd->state.rb_mrt_blend_control[i] != pipeline->blend.rb_mrt_blend_control[i]) {
+      if (!(pipeline->dynamic_state_mask & BIT(TU_DYNAMIC_STATE_BLEND_EQUATION)) &&
+          cmd->state.rb_mrt_blend_control[i] != pipeline->blend.rb_mrt_blend_control[i]) {
          cmd->state.rb_mrt_blend_control[i] = pipeline->blend.rb_mrt_blend_control[i];
          cmd->state.dirty |= TU_CMD_DIRTY_BLEND;
       }
@@ -2661,16 +2713,19 @@ tu_CmdBindPipeline(VkCommandBuffer commandBuffer,
       cmd->state.pipeline_color_write_enable = pipeline->blend.color_write_enable;
       cmd->state.dirty |= TU_CMD_DIRTY_BLEND;
    }
-   if (cmd->state.pipeline_blend_enable != pipeline->blend.blend_enable) {
-      cmd->state.pipeline_blend_enable = pipeline->blend.blend_enable;
+   if (!(pipeline->dynamic_state_mask & BIT(TU_DYNAMIC_STATE_BLEND_ENABLE)) &&
+       cmd->state.blend_enable != pipeline->blend.blend_enable) {
+      cmd->state.blend_enable = pipeline->blend.blend_enable;
       cmd->state.dirty |= TU_CMD_DIRTY_BLEND;
    }
-   if (cmd->state.logic_op_enabled != pipeline->blend.logic_op_enabled) {
+   if (!(pipeline->dynamic_state_mask & BIT(TU_DYNAMIC_STATE_LOGIC_OP_ENABLE)) &&
+       cmd->state.logic_op_enabled != pipeline->blend.logic_op_enabled) {
       cmd->state.logic_op_enabled = pipeline->blend.logic_op_enabled;
       cmd->state.dirty |= TU_CMD_DIRTY_BLEND;
    }
    if (!(pipeline->dynamic_state_mask & BIT(TU_DYNAMIC_STATE_LOGIC_OP)) &&
-       cmd->state.rop_reads_dst != pipeline->blend.rop_reads_dst) {
+       cmd->state.rb_mrt_control_rop != pipeline->blend.rb_mrt_control_rop) {
+      cmd->state.rb_mrt_control_rop = pipeline->blend.rb_mrt_control_rop;
       cmd->state.rop_reads_dst = pipeline->blend.rop_reads_dst;
       cmd->state.dirty |= TU_CMD_DIRTY_BLEND;
    }
@@ -2727,7 +2782,7 @@ tu_CmdSetLineWidth(VkCommandBuffer commandBuffer, float lineWidth)
    cmd->state.gras_su_cntl &= ~A6XX_GRAS_SU_CNTL_LINEHALFWIDTH__MASK;
    cmd->state.gras_su_cntl |= A6XX_GRAS_SU_CNTL_LINEHALFWIDTH(lineWidth / 2.0f);
 
-   cmd->state.dirty |= TU_CMD_DIRTY_GRAS_SU_CNTL;
+   cmd->state.dirty |= TU_CMD_DIRTY_RAST;
 }
 
 VKAPI_ATTR void VKAPI_CALL
@@ -2821,11 +2876,22 @@ tu_CmdSetSampleLocationsEXT(VkCommandBuffer commandBuffer,
                             const VkSampleLocationsInfoEXT* pSampleLocationsInfo)
 {
    TU_FROM_HANDLE(tu_cmd_buffer, cmd, commandBuffer);
-   struct tu_cs cs = tu_cmd_dynamic_state(cmd, TU_DYNAMIC_STATE_SAMPLE_LOCATIONS, 9);
+   struct tu_cs cs = tu_cmd_dynamic_state(cmd, TU_DYNAMIC_STATE_SAMPLE_LOCATIONS, 6);
 
    assert(pSampleLocationsInfo);
 
    tu6_emit_sample_locations(&cs, pSampleLocationsInfo);
+}
+
+VKAPI_ATTR void VKAPI_CALL
+tu_CmdSetSampleLocationsEnableEXT(VkCommandBuffer commandBuffer,
+                                  VkBool32 sampleLocationsEnable)
+{
+   TU_FROM_HANDLE(tu_cmd_buffer, cmd, commandBuffer);
+
+   struct tu_cs cs = tu_cmd_dynamic_state(cmd, TU_DYNAMIC_STATE_SAMPLE_LOCATIONS_ENABLE, 6);
+
+   tu6_emit_sample_locations_enable(&cs, sampleLocationsEnable);
 }
 
 VKAPI_ATTR void VKAPI_CALL
@@ -2841,7 +2907,7 @@ tu_CmdSetCullModeEXT(VkCommandBuffer commandBuffer, VkCullModeFlags cullMode)
    if (cullMode & VK_CULL_MODE_BACK_BIT)
       cmd->state.gras_su_cntl |= A6XX_GRAS_SU_CNTL_CULL_BACK;
 
-   cmd->state.dirty |= TU_CMD_DIRTY_GRAS_SU_CNTL;
+   cmd->state.dirty |= TU_CMD_DIRTY_RAST;
 }
 
 VKAPI_ATTR void VKAPI_CALL
@@ -2854,7 +2920,7 @@ tu_CmdSetFrontFaceEXT(VkCommandBuffer commandBuffer, VkFrontFace frontFace)
    if (frontFace == VK_FRONT_FACE_CLOCKWISE)
       cmd->state.gras_su_cntl |= A6XX_GRAS_SU_CNTL_FRONT_CW;
 
-   cmd->state.dirty |= TU_CMD_DIRTY_GRAS_SU_CNTL;
+   cmd->state.dirty |= TU_CMD_DIRTY_RAST;
 }
 
 VKAPI_ATTR void VKAPI_CALL
@@ -2864,7 +2930,7 @@ tu_CmdSetPrimitiveTopologyEXT(VkCommandBuffer commandBuffer,
    TU_FROM_HANDLE(tu_cmd_buffer, cmd, commandBuffer);
 
    cmd->state.primtype = tu6_primtype(primitiveTopology);
-   tu6_update_msaa(cmd, cmd->state.samples);
+   tu6_update_msaa_disable(cmd);
 }
 
 VKAPI_ATTR void VKAPI_CALL
@@ -3011,7 +3077,7 @@ tu_CmdSetDepthBiasEnableEXT(VkCommandBuffer commandBuffer,
    if (depthBiasEnable)
       cmd->state.gras_su_cntl |= A6XX_GRAS_SU_CNTL_POLY_OFFSET;
 
-   cmd->state.dirty |= TU_CMD_DIRTY_GRAS_SU_CNTL;
+   cmd->state.dirty |= TU_CMD_DIRTY_RAST;
 }
 
 VKAPI_ATTR void VKAPI_CALL
@@ -3036,7 +3102,7 @@ tu_CmdSetRasterizerDiscardEnableEXT(VkCommandBuffer commandBuffer,
       cmd->state.vpc_unknown_9107 |= A6XX_VPC_UNKNOWN_9107_RASTER_DISCARD;
    }
 
-   cmd->state.dirty |= TU_CMD_DIRTY_RASTERIZER_DISCARD;
+   cmd->state.dirty |= TU_CMD_DIRTY_PC_RASTER_CNTL;
 }
 
 VKAPI_ATTR void VKAPI_CALL
@@ -3047,6 +3113,17 @@ tu_CmdSetLogicOpEXT(VkCommandBuffer commandBuffer,
 
    cmd->state.rb_mrt_control_rop =
       tu6_rb_mrt_control_rop(logicOp, &cmd->state.rop_reads_dst);
+
+   cmd->state.dirty |= TU_CMD_DIRTY_BLEND;
+}
+
+VKAPI_ATTR void VKAPI_CALL
+tu_CmdSetLogicOpEnableEXT(VkCommandBuffer commandBuffer,
+                          VkBool32 logicOpEnable)
+{
+   TU_FROM_HANDLE(tu_cmd_buffer, cmd, commandBuffer);
+
+   cmd->state.logic_op_enabled = logicOpEnable;
 
    cmd->state.dirty |= TU_CMD_DIRTY_BLEND;
 }
@@ -3067,7 +3144,6 @@ tu_CmdSetLineStippleEXT(VkCommandBuffer commandBuffer,
                         uint32_t lineStippleFactor,
                         uint16_t lineStipplePattern)
 {
-   tu_stub();
 }
 
 VKAPI_ATTR void VKAPI_CALL
@@ -3083,6 +3159,255 @@ tu_CmdSetColorWriteEnableEXT(VkCommandBuffer commandBuffer, uint32_t attachmentC
    }
 
    cmd->state.color_write_enable = color_write_enable;
+   cmd->state.dirty |= TU_CMD_DIRTY_BLEND;
+}
+
+VKAPI_ATTR void VKAPI_CALL
+tu_CmdSetPolygonModeEXT(VkCommandBuffer commandBuffer,
+                        VkPolygonMode polygonMode)
+{
+   TU_FROM_HANDLE(tu_cmd_buffer, cmd, commandBuffer);
+   cmd->state.polygon_mode = tu6_polygon_mode(polygonMode);
+   cmd->state.dirty |= TU_CMD_DIRTY_RAST;
+}
+
+VKAPI_ATTR void VKAPI_CALL
+tu_CmdSetTessellationDomainOriginEXT(VkCommandBuffer commandBuffer,
+                                     VkTessellationDomainOrigin domainOrigin)
+{
+   TU_FROM_HANDLE(tu_cmd_buffer, cmd, commandBuffer);
+   cmd->state.tess_upper_left_domain_origin =
+      domainOrigin == VK_TESSELLATION_DOMAIN_ORIGIN_UPPER_LEFT;
+}
+
+VKAPI_ATTR void VKAPI_CALL
+tu_CmdSetDepthClipEnableEXT(VkCommandBuffer commandBuffer,
+                            VkBool32 depthClipEnable)
+{
+   TU_FROM_HANDLE(tu_cmd_buffer, cmd, commandBuffer);
+   cmd->state.gras_cl_cntl =
+      (cmd->state.gras_cl_cntl & ~(A6XX_GRAS_CL_CNTL_ZNEAR_CLIP_DISABLE |
+                                   A6XX_GRAS_CL_CNTL_ZFAR_CLIP_DISABLE)) |
+      COND(!depthClipEnable,
+           A6XX_GRAS_CL_CNTL_ZNEAR_CLIP_DISABLE |
+           A6XX_GRAS_CL_CNTL_ZFAR_CLIP_DISABLE);
+   cmd->state.dirty |= TU_CMD_DIRTY_RAST;
+}
+
+VKAPI_ATTR void VKAPI_CALL
+tu_CmdSetDepthClampEnableEXT(VkCommandBuffer commandBuffer,
+                             VkBool32 depthClampEnable)
+{
+   TU_FROM_HANDLE(tu_cmd_buffer, cmd, commandBuffer);
+   cmd->state.gras_cl_cntl =
+      (cmd->state.gras_cl_cntl & ~A6XX_GRAS_CL_CNTL_Z_CLAMP_ENABLE) |
+      COND(depthClampEnable, A6XX_GRAS_CL_CNTL_Z_CLAMP_ENABLE);
+   cmd->state.rb_depth_cntl =
+      (cmd->state.rb_depth_cntl & ~A6XX_RB_DEPTH_CNTL_Z_CLAMP_ENABLE) |
+      COND(depthClampEnable, A6XX_RB_DEPTH_CNTL_Z_CLAMP_ENABLE);
+   cmd->state.dirty |= TU_CMD_DIRTY_RAST | TU_CMD_DIRTY_RB_DEPTH_CNTL;
+}
+
+VKAPI_ATTR void VKAPI_CALL
+tu_CmdSetSampleMaskEXT(VkCommandBuffer commandBuffer,
+                       VkSampleCountFlagBits samples,
+                       const VkSampleMask *pSampleMask)
+{
+   TU_FROM_HANDLE(tu_cmd_buffer, cmd, commandBuffer);
+
+   cmd->state.rb_blend_cntl =
+      (cmd->state.rb_blend_cntl & ~A6XX_RB_BLEND_CNTL_SAMPLE_MASK__MASK) |
+      A6XX_RB_BLEND_CNTL_SAMPLE_MASK(*pSampleMask & 0xffff);
+
+   cmd->state.dirty |= TU_CMD_DIRTY_BLEND;
+}
+
+VKAPI_ATTR void VKAPI_CALL
+tu_CmdSetRasterizationSamplesEXT(VkCommandBuffer commandBuffer,
+                                 VkSampleCountFlagBits rasterizationSamples)
+{
+   TU_FROM_HANDLE(tu_cmd_buffer, cmd, commandBuffer);
+
+   tu6_update_msaa_samples(cmd, rasterizationSamples);
+}
+
+VKAPI_ATTR void VKAPI_CALL
+tu_CmdSetAlphaToCoverageEnableEXT(VkCommandBuffer commandBuffer,
+                                  VkBool32 alphaToCoverageEnable)
+{
+   TU_FROM_HANDLE(tu_cmd_buffer, cmd, commandBuffer);
+
+   cmd->state.alpha_to_coverage = alphaToCoverageEnable;
+   cmd->state.rb_blend_cntl =
+      (cmd->state.rb_blend_cntl & ~A6XX_RB_BLEND_CNTL_ALPHA_TO_COVERAGE) |
+      COND(alphaToCoverageEnable, A6XX_RB_BLEND_CNTL_ALPHA_TO_COVERAGE);
+   cmd->state.sp_blend_cntl =
+      (cmd->state.sp_blend_cntl & ~A6XX_RB_BLEND_CNTL_ALPHA_TO_COVERAGE) |
+      COND(alphaToCoverageEnable, A6XX_RB_BLEND_CNTL_ALPHA_TO_COVERAGE);
+
+   cmd->state.dirty |= TU_CMD_DIRTY_BLEND;
+}
+
+VKAPI_ATTR void VKAPI_CALL
+tu_CmdSetAlphaToOneEnableEXT(VkCommandBuffer commandBuffer,
+                             VkBool32 alphaToOneEnable)
+{
+   TU_FROM_HANDLE(tu_cmd_buffer, cmd, commandBuffer);
+
+   cmd->state.rb_blend_cntl =
+      (cmd->state.rb_blend_cntl & ~A6XX_RB_BLEND_CNTL_ALPHA_TO_ONE) |
+      COND(alphaToOneEnable, A6XX_RB_BLEND_CNTL_ALPHA_TO_ONE);
+
+   cmd->state.dirty |= TU_CMD_DIRTY_BLEND;
+}
+
+VKAPI_ATTR void VKAPI_CALL
+tu_CmdSetDepthClipNegativeOneToOneEXT(VkCommandBuffer commandBuffer,
+                                      VkBool32 negativeOneToOne)
+{
+   TU_FROM_HANDLE(tu_cmd_buffer, cmd, commandBuffer);
+
+   cmd->state.gras_cl_cntl =
+      (cmd->state.gras_cl_cntl & ~A6XX_GRAS_CL_CNTL_ZERO_GB_SCALE_Z) |
+      COND(!negativeOneToOne, A6XX_GRAS_CL_CNTL_ZERO_GB_SCALE_Z);
+   cmd->state.z_negative_one_to_one = negativeOneToOne;
+
+   cmd->state.dirty |= TU_CMD_DIRTY_RAST | TU_CMD_DIRTY_VIEWPORTS;
+}
+
+VKAPI_ATTR void VKAPI_CALL
+tu_CmdSetRasterizationStreamEXT(VkCommandBuffer commandBuffer,
+                                uint32_t rasterizationStream)
+{
+   TU_FROM_HANDLE(tu_cmd_buffer, cmd, commandBuffer);
+
+   cmd->state.pc_raster_cntl =
+      (cmd->state.pc_raster_cntl & ~A6XX_PC_RASTER_CNTL_STREAM__MASK) |
+      A6XX_PC_RASTER_CNTL_STREAM(rasterizationStream);
+
+   cmd->state.dirty |= TU_CMD_DIRTY_PC_RASTER_CNTL;
+}
+
+VKAPI_ATTR void VKAPI_CALL
+tu_CmdSetLineRasterizationModeEXT(VkCommandBuffer commandBuffer,
+                                  VkLineRasterizationModeEXT lineRasterizationMode)
+{
+   TU_FROM_HANDLE(tu_cmd_buffer, cmd, commandBuffer);
+
+   cmd->state.line_mode = lineRasterizationMode ==
+      VK_LINE_RASTERIZATION_MODE_BRESENHAM_EXT ? BRESENHAM : RECTANGULAR;
+
+   tu6_update_msaa_disable(cmd);
+
+   cmd->state.gras_su_cntl =
+      (cmd->state.gras_su_cntl & ~A6XX_GRAS_SU_CNTL_LINE_MODE__MASK) |
+      A6XX_GRAS_SU_CNTL_LINE_MODE(cmd->state.line_mode);
+
+   cmd->state.dirty |= TU_CMD_DIRTY_RAST;
+}
+
+VKAPI_ATTR void VKAPI_CALL
+tu_CmdSetProvokingVertexModeEXT(VkCommandBuffer commandBuffer,
+                                VkProvokingVertexModeEXT provokingVertexMode)
+{
+   TU_FROM_HANDLE(tu_cmd_buffer, cmd, commandBuffer);
+
+   cmd->state.provoking_vertex_last =
+      provokingVertexMode == VK_PROVOKING_VERTEX_MODE_LAST_VERTEX_EXT;
+}
+
+VKAPI_ATTR void VKAPI_CALL
+tu_CmdSetColorBlendEnableEXT(VkCommandBuffer commandBuffer,
+                             uint32_t firstAttachment,
+                             uint32_t attachmentCount,
+                             const VkBool32 *pColorBlendEnables)
+{
+   TU_FROM_HANDLE(tu_cmd_buffer, cmd, commandBuffer);
+
+   for (unsigned i = 0; i < attachmentCount; i++) {
+      unsigned att = i + firstAttachment;
+      cmd->state.blend_enable =
+         (cmd->state.blend_enable & ~BIT(att)) |
+         COND(pColorBlendEnables[i], BIT(att));
+      const uint32_t blend_enable =
+         A6XX_RB_MRT_CONTROL_BLEND | A6XX_RB_MRT_CONTROL_BLEND2;
+      cmd->state.rb_mrt_control[i] =
+         (cmd->state.rb_mrt_control[i] & ~blend_enable) |
+         COND(pColorBlendEnables[i], blend_enable);
+   }
+
+   cmd->state.dirty |= TU_CMD_DIRTY_BLEND;
+}
+
+VKAPI_ATTR void VKAPI_CALL
+tu_CmdSetColorBlendEquationEXT(VkCommandBuffer commandBuffer,
+                               uint32_t firstAttachment,
+                               uint32_t attachmentCount,
+                               const VkColorBlendEquationEXT *pColorBlendEquation)
+{
+   TU_FROM_HANDLE(tu_cmd_buffer, cmd, commandBuffer);
+
+   for (unsigned i = 0; i < attachmentCount; i++) {
+      unsigned att = i + firstAttachment;
+      const VkColorBlendEquationEXT *equation = &pColorBlendEquation[i];
+
+      const enum a3xx_rb_blend_opcode color_op = tu6_blend_op(equation->colorBlendOp);
+      const enum adreno_rb_blend_factor src_color_factor =
+         tu6_blend_factor(equation->srcColorBlendFactor);
+      const enum adreno_rb_blend_factor dst_color_factor =
+         tu6_blend_factor(equation->dstColorBlendFactor);
+      const enum a3xx_rb_blend_opcode alpha_op = tu6_blend_op(equation->alphaBlendOp);
+      const enum adreno_rb_blend_factor src_alpha_factor =
+         tu6_blend_factor(equation->srcAlphaBlendFactor);
+      const enum adreno_rb_blend_factor dst_alpha_factor =
+         tu6_blend_factor(equation->dstAlphaBlendFactor);
+
+      cmd->state.rb_mrt_blend_control[att] = A6XX_RB_MRT_BLEND_CONTROL(0,
+         .rgb_src_factor = src_color_factor,
+         .rgb_blend_opcode = color_op,
+         .rgb_dest_factor = dst_color_factor,
+         .alpha_src_factor = src_alpha_factor,
+         .alpha_blend_opcode = alpha_op,
+         .alpha_dest_factor = dst_alpha_factor).value;
+
+      /* Dual-src blend can only be on attachment 0, so we don't need to worry
+       * about OR'ing together the state from multiple attachments and can set
+       * DUAL_COLOR_IN_ENABLE right here.
+       */
+      if (att == 0) {
+         bool dual_src_blend =
+            tu_blend_factor_is_dual_src(equation->srcColorBlendFactor) ||
+            tu_blend_factor_is_dual_src(equation->dstColorBlendFactor) ||
+            tu_blend_factor_is_dual_src(equation->srcAlphaBlendFactor) ||
+            tu_blend_factor_is_dual_src(equation->dstAlphaBlendFactor);
+         cmd->state.sp_blend_cntl =
+            (cmd->state.sp_blend_cntl & ~A6XX_SP_BLEND_CNTL_DUAL_COLOR_IN_ENABLE) |
+            COND(dual_src_blend, A6XX_SP_BLEND_CNTL_DUAL_COLOR_IN_ENABLE);
+         cmd->state.rb_blend_cntl =
+            (cmd->state.rb_blend_cntl & ~A6XX_RB_BLEND_CNTL_DUAL_COLOR_IN_ENABLE) |
+            COND(dual_src_blend, A6XX_RB_BLEND_CNTL_DUAL_COLOR_IN_ENABLE);
+      }
+   }
+
+   cmd->state.dirty |= TU_CMD_DIRTY_BLEND;
+}
+
+VKAPI_ATTR void VKAPI_CALL
+tu_CmdSetColorWriteMaskEXT(VkCommandBuffer commandBuffer,
+                           uint32_t firstAttachment,
+                           uint32_t attachmentCount,
+                           const VkColorComponentFlags *pColorWriteMasks)
+{
+   TU_FROM_HANDLE(tu_cmd_buffer, cmd, commandBuffer);
+
+   for (unsigned i = 0; i < attachmentCount; i++) {
+      unsigned att = i + firstAttachment;
+      cmd->state.rb_mrt_control[att] =
+         (cmd->state.rb_mrt_control[att] &
+          ~A6XX_RB_MRT_CONTROL_COMPONENT_ENABLE__MASK) |
+         A6XX_RB_MRT_CONTROL_COMPONENT_ENABLE(pColorWriteMasks[i]);
+   }
+
    cmd->state.dirty |= TU_CMD_DIRTY_BLEND;
 }
 
@@ -3820,7 +4145,7 @@ tu_emit_subpass_begin(struct tu_cmd_buffer *cmd)
    tu6_emit_zs(cmd, cmd->state.subpass, &cmd->draw_cs);
    tu6_emit_mrt(cmd, cmd->state.subpass, &cmd->draw_cs);
    if (cmd->state.subpass->samples != 0)
-      tu6_update_msaa(cmd, cmd->state.subpass->samples);
+      tu6_update_msaa_samples(cmd, cmd->state.subpass->samples);
    tu6_emit_render_cntl(cmd, cmd->state.subpass, &cmd->draw_cs, false);
 
    tu_set_input_attachments(cmd, cmd->state.subpass);
@@ -4328,8 +4653,14 @@ tu6_build_depth_plane_z_mode(struct tu_cmd_buffer *cmd, struct tu_cs *cs)
                  : A6XX_LATE_Z;
    }
 
-   if ((cmd->state.pipeline->lrz.force_late_z &&
-        !cmd->state.pipeline->lrz.fs.force_early_z) || !depth_test_enable)
+   bool force_late_z = cmd->state.pipeline->lrz.force_late_z ||
+      /* If enabled dynamically, alpha-to-coverage can behave like a discard.
+       */
+      ((cmd->state.pipeline->dynamic_state_mask &
+        BIT(TU_DYNAMIC_STATE_ALPHA_TO_COVERAGE)) &&
+       cmd->state.alpha_to_coverage);
+   if ((force_late_z && !cmd->state.pipeline->lrz.fs.force_early_z) ||
+       !depth_test_enable)
       zmode = A6XX_LATE_Z;
 
    /* User defined early tests take precedence above all else */
@@ -4353,13 +4684,19 @@ tu6_emit_blend(struct tu_cs *cs, struct tu_cmd_buffer *cmd)
        BIT(TU_DYNAMIC_STATE_COLOR_WRITE_ENABLE))
       color_write_enable &= cmd->state.color_write_enable;
 
-   for (unsigned i = 0; i < pipeline->blend.num_rts; i++) {
+   unsigned num_rts = pipeline->blend.num_rts;
+   if (num_rts == 0 &&
+       (pipeline->dynamic_state_mask & BIT(TU_DYNAMIC_STATE_ALPHA_TO_COVERAGE)) &&
+       cmd->state.alpha_to_coverage) {
+      num_rts = 1;
+   }
+
+   for (unsigned i = 0; i < num_rts; i++) {
       tu_cs_emit_pkt4(cs, REG_A6XX_RB_MRT_CONTROL(i), 2);
       if (color_write_enable & BIT(i)) {
          tu_cs_emit(cs, cmd->state.rb_mrt_control[i] |
-                        ((cmd->state.logic_op_enabled ?
-                          cmd->state.rb_mrt_control_rop : 0) &
-                         ~pipeline->blend.rb_mrt_control_mask));
+                        (cmd->state.logic_op_enabled ?
+                         cmd->state.rb_mrt_control_rop : 0));
          tu_cs_emit(cs, cmd->state.rb_mrt_blend_control[i]);
       } else {
          tu_cs_emit(cs, 0);
@@ -4369,10 +4706,10 @@ tu6_emit_blend(struct tu_cs *cs, struct tu_cmd_buffer *cmd)
 
    uint32_t blend_enable_mask = color_write_enable;
    if (!(cmd->state.logic_op_enabled && cmd->state.rop_reads_dst))
-      blend_enable_mask &= cmd->state.pipeline_blend_enable;
+      blend_enable_mask &= cmd->state.blend_enable;
 
-   tu_cs_emit_regs(cs, A6XX_SP_FS_OUTPUT_CNTL1(.mrt = pipeline->blend.num_rts));
-   tu_cs_emit_regs(cs, A6XX_RB_FS_OUTPUT_CNTL1(.mrt = pipeline->blend.num_rts));
+   tu_cs_emit_regs(cs, A6XX_SP_FS_OUTPUT_CNTL1(.mrt = num_rts));
+   tu_cs_emit_regs(cs, A6XX_RB_FS_OUTPUT_CNTL1(.mrt = num_rts));
    tu_cs_emit_pkt4(cs, REG_A6XX_SP_BLEND_CNTL, 1);
    tu_cs_emit(cs, cmd->state.sp_blend_cntl |
                   (A6XX_SP_BLEND_CNTL_ENABLE_BLEND(blend_enable_mask) &
@@ -4419,9 +4756,9 @@ tu6_draw_common(struct tu_cmd_buffer *cmd,
       primitive_restart_enabled = cmd->state.primitive_restart_enable;
 
    bool primitive_restart = primitive_restart_enabled && indexed;
-   bool provoking_vtx_last = pipeline->rast.provoking_vertex_last;
+   bool provoking_vtx_last = cmd->state.provoking_vertex_last;
    bool tess_upper_left_domain_origin =
-      pipeline->tess.upper_left_domain_origin;
+      cmd->state.tess_upper_left_domain_origin;
 
    struct tu_primitive_params* prim_params = &cmd->state.last_prim_params;
 
@@ -4462,15 +4799,34 @@ tu6_draw_common(struct tu_cmd_buffer *cmd,
       tu6_build_depth_plane_z_mode(cmd, &cs);
    }
 
-   if (dirty & TU_CMD_DIRTY_RASTERIZER_DISCARD) {
-      struct tu_cs cs = tu_cmd_dynamic_state(cmd, TU_DYNAMIC_STATE_RASTERIZER_DISCARD, 4);
+   if (dirty & TU_CMD_DIRTY_PC_RASTER_CNTL) {
+      struct tu_cs cs = tu_cmd_dynamic_state(cmd, TU_DYNAMIC_STATE_PC_RASTER_CNTL, 4);
       tu_cs_emit_regs(&cs, A6XX_PC_RASTER_CNTL(.dword = cmd->state.pc_raster_cntl));
       tu_cs_emit_regs(&cs, A6XX_VPC_UNKNOWN_9107(.dword = cmd->state.vpc_unknown_9107));
    }
 
-   if (dirty & TU_CMD_DIRTY_GRAS_SU_CNTL) {
-      struct tu_cs cs = tu_cmd_dynamic_state(cmd, TU_DYNAMIC_STATE_GRAS_SU_CNTL, 2);
-      tu_cs_emit_regs(&cs, A6XX_GRAS_SU_CNTL(.dword = cmd->state.gras_su_cntl));
+   if (dirty & TU_CMD_DIRTY_RAST) {
+      struct tu_cs cs = tu_cmd_dynamic_state(cmd, TU_DYNAMIC_STATE_RAST,
+                                             tu6_rast_size(cmd->device));
+      uint32_t gras_cl_cntl = cmd->state.gras_cl_cntl;
+      /* Implement this spec text from vkCmdSetDepthClampEnableEXT():
+       *
+       *    If the depth clamping state is changed dynamically, and the
+       *    pipeline was not created with
+       *    VK_DYNAMIC_STATE_DEPTH_CLIP_ENABLE_EXT enabled, then depth
+       *    clipping is enabled when depth clamping is disabled and vice
+       *    versa.
+       */
+      if (pipeline->rast.override_depth_clip) {
+         gras_cl_cntl =
+            (gras_cl_cntl & ~(A6XX_GRAS_CL_CNTL_ZFAR_CLIP_DISABLE |
+                              A6XX_GRAS_CL_CNTL_ZNEAR_CLIP_DISABLE)) |
+            COND(gras_cl_cntl & A6XX_GRAS_CL_CNTL_Z_CLAMP_ENABLE,
+                 A6XX_GRAS_CL_CNTL_ZFAR_CLIP_DISABLE |
+                 A6XX_GRAS_CL_CNTL_ZNEAR_CLIP_DISABLE);
+      }
+      tu6_emit_rast(&cs, cmd->state.gras_su_cntl,
+                    gras_cl_cntl, cmd->state.polygon_mode);
    }
 
    if (dirty & TU_CMD_DIRTY_RB_DEPTH_CNTL) {
@@ -4502,7 +4858,7 @@ tu6_draw_common(struct tu_cmd_buffer *cmd,
    if (dirty & TU_CMD_DIRTY_VIEWPORTS) {
       struct tu_cs cs = tu_cmd_dynamic_state(cmd, VK_DYNAMIC_STATE_VIEWPORT, 8 + 10 * cmd->state.max_viewport);
       tu6_emit_viewport(&cs, cmd->state.viewport, cmd->state.max_viewport,
-                        pipeline->viewport.z_negative_one_to_one);
+                        cmd->state.z_negative_one_to_one);
    }
 
    if (dirty & TU_CMD_DIRTY_BLEND) {
@@ -4538,7 +4894,6 @@ tu6_draw_common(struct tu_cmd_buffer *cmd,
       tu_cs_emit_draw_state(cs, TU_DRAW_STATE_PROGRAM_CONFIG, pipeline->program.config_state);
       tu_cs_emit_draw_state(cs, TU_DRAW_STATE_PROGRAM, pipeline->program.state);
       tu_cs_emit_draw_state(cs, TU_DRAW_STATE_PROGRAM_BINNING, pipeline->program.binning_state);
-      tu_cs_emit_draw_state(cs, TU_DRAW_STATE_RAST, pipeline->rast.state);
       tu_cs_emit_draw_state(cs, TU_DRAW_STATE_PRIM_MODE_SYSMEM, pipeline->prim_order.state_sysmem);
       tu_cs_emit_draw_state(cs, TU_DRAW_STATE_PRIM_MODE_GMEM, pipeline->prim_order.state_gmem);
       tu_cs_emit_draw_state(cs, TU_DRAW_STATE_CONST, cmd->state.shader_const);

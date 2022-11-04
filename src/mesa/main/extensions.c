@@ -31,7 +31,7 @@
 
 #include "util/os_misc.h"
 
-#include "glheader.h"
+#include "util/glheader.h"
 
 #include "context.h"
 #include "extensions.h"

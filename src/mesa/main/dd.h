@@ -31,17 +31,13 @@
 #ifndef DD_INCLUDED
 #define DD_INCLUDED
 
-#include "glheader.h"
+#include "util/glheader.h"
 #include "formats.h"
 #include "menums.h"
 #include "compiler/shader_enums.h"
 
-/* Windows winnt.h defines MemoryBarrier as a macro on some platforms,
- * including as a function-like macro in some cases. That either causes
- * the table entry below to have a weird name, or fail to compile.
- */
-#ifdef MemoryBarrier
-#undef MemoryBarrier
+#if defined(_WIN32) && defined(_WINDOWS_)
+#error "Should not include <windows.h> here"
 #endif
 
 struct gl_buffer_object;

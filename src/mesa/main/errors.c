@@ -41,6 +41,9 @@
 #if DETECT_OS_ANDROID
 #  include <log/log.h>
 #endif
+#if DETECT_OS_WINDOWS
+#  include <windows.h>
+#endif
 
 static FILE *LogFile = NULL;
 

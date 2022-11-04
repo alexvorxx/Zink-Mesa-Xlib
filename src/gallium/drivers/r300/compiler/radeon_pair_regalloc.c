@@ -30,7 +30,7 @@
 
 #include <stdio.h>
 
-#include "main/glheader.h"
+#include "util/glheader.h"
 #include "util/register_allocate.h"
 #include "util/u_memory.h"
 #include "util/ralloc.h"
