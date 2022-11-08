@@ -103,6 +103,7 @@ anv-tgl-vk:
 .iris-cml-test:
   extends:
     - .iris-test
+    - .test-manual-mr    # Devices have too often network problems and fail to boot.
   variables:
     DEVICE_TYPE: asus-C436FA-Flip-hatch
     GPU_VERSION: iris-cml

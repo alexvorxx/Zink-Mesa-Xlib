@@ -91,7 +91,7 @@ the Mesa :doc:`compilation instructions <install>`.
 ----------------------------------------------------------
 
 Yes, SGI's `OpenGL Sample Implementation
-(SI) <http://web.archive.org/web/20171010115110_/http://oss.sgi.com/projects/ogl-sample/index.html>`__
+(SI) <https://web.archive.org/web/20171010115110_/http://oss.sgi.com/projects/ogl-sample/index.html>`__
 is available. The SI was written during the time that OpenGL was
 originally designed. Unfortunately, development of the SI has stagnated.
 Mesa is much more up to date with modern features and extensions.
@@ -99,21 +99,21 @@ Mesa is much more up to date with modern features and extensions.
 `Vincent <https://sourceforge.net/projects/ogl-es/>`__ is an open-source
 implementation of OpenGL ES for mobile devices.
 
-`miniGL <http://web.archive.org/web/20130830162848/http://www.dsbox.com/minigl.html>`__
+`miniGL <https://web.archive.org/web/20130830162848/http://www.dsbox.com/minigl.html>`__
 is a subset of OpenGL for PalmOS devices. The website is gone, but the
 source code can still be found on
 `sourceforge.net <https://sourceforge.net/projects/minigl/>`__.
 
-`TinyGL <http://bellard.org/TinyGL/>`__ is a subset of OpenGL.
+`TinyGL <https://bellard.org/TinyGL/>`__ is a subset of OpenGL.
 
 `SoftGL <https://sourceforge.net/projects/softgl/>`__ is an OpenGL
 subset for mobile devices.
 
-`Chromium <http://chromium.sourceforge.net/>`__ isn't a conventional
+`Chromium <https://chromium.sourceforge.net/>`__ isn't a conventional
 OpenGL implementation (it's layered upon OpenGL), but it does export the
 OpenGL API. It allows tiled rendering, sort-last rendering, etc.
 
-`ClosedGL <http://www.ticalc.org/archives/files/fileinfo/361/36173.html>`__
+`ClosedGL <https://www.ticalc.org/archives/files/fileinfo/361/36173.html>`__
 is an OpenGL subset library for TI graphing calculators.
 
 There may be other open OpenGL implementations, but Mesa is the most
@@ -141,7 +141,7 @@ not the solution.
 GLUT (OpenGL Utility Toolkit) is no longer in the separate
 ``MesaGLUT-x.y.z.tar.gz`` file. If you don't already have GLUT
 installed, you should grab
-`freeglut <http://freeglut.sourceforge.net/>`__.
+`freeglut <https://freeglut.sourceforge.net/>`__.
 
 2.4 Where is the GLw library?
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~

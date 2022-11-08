@@ -580,18 +580,9 @@ load_pipeline_statistic_metrics(struct intel_perf_config *perf_cfg,
 static int
 i915_perf_version(int drm_fd)
 {
-   int tmp;
-   drm_i915_getparam_t gp = {
-      .param = I915_PARAM_PERF_REVISION,
-      .value = &tmp,
-   };
-
-   int ret = intel_ioctl(drm_fd, DRM_IOCTL_I915_GETPARAM, &gp);
-
-   /* Return 0 if this getparam is not supported, the first version supported
-    * is 1.
-    */
-   return ret < 0 ? 0 : tmp;
+   int tmp = 0;
+   intel_gem_get_param(drm_fd, I915_PARAM_PERF_REVISION, &tmp);
+   return tmp;
 }
 
 static void

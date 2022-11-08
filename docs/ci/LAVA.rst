@@ -1,7 +1,7 @@
 LAVA CI
 =======
 
-`LAVA <https://lavasoftware.org/>`_ is a system for functional testing
+`LAVA <https://lavasoftware.org/>`__ is a system for functional testing
 of boards including deploying custom bootloaders and kernels.  This is
 particularly relevant to testing Mesa because we often need to change
 kernels for UAPI changes (and this lets us do full testing of a new

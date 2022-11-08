@@ -1176,7 +1176,7 @@ bool v3d_nir_lower_robust_image_access(nir_shader *s, struct v3d_compile *c);
 bool v3d_nir_lower_scratch(nir_shader *s);
 bool v3d_nir_lower_txf_ms(nir_shader *s, struct v3d_compile *c);
 bool v3d_nir_lower_image_load_store(nir_shader *s);
-bool v3d_nir_lower_load_store_bitsize(nir_shader *s, struct v3d_compile *c);
+bool v3d_nir_lower_load_store_bitsize(nir_shader *s);
 
 void v3d33_vir_vpm_read_setup(struct v3d_compile *c, int num_components);
 void v3d33_vir_vpm_write_setup(struct v3d_compile *c);

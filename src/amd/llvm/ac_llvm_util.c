@@ -153,9 +153,9 @@ const char *ac_get_llvm_processor_name(enum radeon_family family)
    case CHIP_RAVEN2:
    case CHIP_RENOIR:
       return "gfx909";
-   case CHIP_ARCTURUS:
+   case CHIP_MI100:
       return "gfx908";
-   case CHIP_ALDEBARAN:
+   case CHIP_MI200:
       return "gfx90a";
    case CHIP_NAVI10:
       return "gfx1010";

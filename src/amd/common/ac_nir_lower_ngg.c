@@ -506,7 +506,7 @@ emit_ngg_nogs_prim_export(nir_builder *b, lower_ngg_nogs_state *st, nir_ssa_def 
          arg = nir_iand(b, arg, mask);
       }
 
-      if (st->options->has_prim_query) {
+      if (st->options->has_gen_prim_query) {
          nir_if *if_shader_query = nir_push_if(b, nir_load_prim_gen_query_enabled_amd(b));
          {
             /* Number of active GS threads. Each has 1 output primitive. */
@@ -1677,7 +1677,7 @@ ngg_nogs_store_all_outputs_to_lds(nir_shader *shader, lower_ngg_nogs_state *st)
 static void
 ngg_build_streamout_buffer_info(nir_builder *b,
                                 nir_xfb_info *info,
-                                bool has_prim_query,
+                                bool has_xfb_prim_query,
                                 nir_ssa_def *scratch_base,
                                 nir_ssa_def *tid_in_tg,
                                 nir_ssa_def *gen_prim[4],
@@ -1769,7 +1769,7 @@ ngg_build_streamout_buffer_info(nir_builder *b,
       }
 
       /* Update shader query. */
-      if (has_prim_query) {
+      if (has_xfb_prim_query) {
          nir_if *if_shader_query = nir_push_if(b, nir_load_prim_xfb_query_enabled_amd(b));
          {
             for (unsigned stream = 0; stream < 4; stream++) {
@@ -1859,7 +1859,7 @@ ngg_nogs_build_streamout(nir_builder *b, lower_ngg_nogs_state *s)
    nir_ssa_def *so_buffer[4] = {0};
    nir_ssa_def *prim_stride[4] = {0};
    nir_ssa_def *tid_in_tg = nir_load_local_invocation_index(b);
-   ngg_build_streamout_buffer_info(b, info, s->options->has_prim_query,
+   ngg_build_streamout_buffer_info(b, info, s->options->has_xfb_prim_query,
                                    lds_scratch_base, tid_in_tg,
                                    gen_prim_per_stream, prim_stride,
                                    so_buffer, buffer_offsets,
@@ -2387,13 +2387,13 @@ ngg_gs_clear_primflags(nir_builder *b, nir_ssa_def *num_vertices, unsigned strea
 static void
 ngg_gs_shader_query(nir_builder *b, nir_intrinsic_instr *intrin, lower_ngg_gs_state *s)
 {
-   bool has_xfb_query = s->options->has_xfb_query;
+   bool has_gen_prim_query = s->options->has_gen_prim_query;
    bool has_pipeline_stats_query = s->options->gfx_level < GFX11;
 
    nir_ssa_def *pipeline_query_enabled = NULL;
    nir_ssa_def *prim_gen_query_enabled = NULL;
    nir_ssa_def *shader_query_enabled = NULL;
-   if (has_xfb_query) {
+   if (has_gen_prim_query) {
       prim_gen_query_enabled = nir_load_prim_gen_query_enabled_amd(b);
       if (has_pipeline_stats_query) {
          pipeline_query_enabled = nir_load_pipeline_stat_query_enabled_amd(b);
@@ -2443,7 +2443,7 @@ ngg_gs_shader_query(nir_builder *b, nir_intrinsic_instr *intrin, lower_ngg_gs_st
          nir_pop_if(b, if_pipeline_query);
       }
 
-      if (has_xfb_query) {
+      if (has_gen_prim_query) {
          nir_if *if_prim_gen_query = nir_push_if(b, prim_gen_query_enabled);
          {
             /* Add to the counter for this stream. */
@@ -3036,7 +3036,7 @@ ngg_gs_build_streamout(nir_builder *b, lower_ngg_gs_state *st)
    nir_ssa_def *buffer_offsets[4] = {0};
    nir_ssa_def *so_buffer[4] = {0};
    nir_ssa_def *prim_stride[4] = {0};
-   ngg_build_streamout_buffer_info(b, info, st->options->has_xfb_query,
+   ngg_build_streamout_buffer_info(b, info, st->options->has_xfb_prim_query,
                                    st->lds_addr_gs_scratch, tid_in_tg, gen_prim,
                                    prim_stride, so_buffer, buffer_offsets, emit_prim);
 

@@ -2,6 +2,7 @@
  * Mesa 3-D graphics library
  *
  * Copyright (C) 1999-2008  Brian Paul   All Rights Reserved.
+ * Copyright (C) 2022  Yongang Luo       All Rights Reserved.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -25,7 +26,7 @@
 
 /**
  * \file glheader.h
- * Wrapper for GL/gl.h and GL/glext.h
+ * Wrapper for GL/gl*.h and GLES[3|2|]/gl*.h
  */
 
 
@@ -48,6 +49,34 @@
 #include "GL/glext.h"
 #endif /* defined(_WIN32) && !defined(__CYGWIN__) */
 
+/**
+ * Define GL_API, GL_APICALL and GL_APIENTRY to avoid MSVC/MinGW warnings
+ * about different dllimport attributes for prototypes between
+ * GL/gl*.h and GLES[|3|2]/gl*.h
+ */
+#define GL_API GLAPI
+#define GL_APICALL GLAPI
+#define GL_APIENTRY GLAPIENTRY
+
+/**
+ * The order for including GLES[|3|2]/gl*.h headers are from newest to oldest.
+ * As the newer header contains extra symbols that are not present in the
+ * older header, some extra symbols can be visible only when you include the
+ * newer header first; otherwise, if the older header is included first, some
+ * extra symbols will be hidden by the older header.
+ * For example, suppose we move the inclusion of GLES/gl*.h to the front,
+ * then GL_SAMPLER_EXTERNAL_OES will not be present and cause compiling error.
+ */
+
+
+#include "GLES3/gl3.h"
+#include "GLES3/gl31.h"
+#include "GLES3/gl32.h"
+#include "GLES3/gl3ext.h"
+#include "GLES2/gl2.h"
+#include "GLES2/gl2ext.h"
+#include "GLES/gl.h"
+#include "GLES/glext.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -61,103 +90,10 @@ typedef unsigned char GLbitfield8;
 typedef unsigned short GLbitfield16;
 typedef GLuint64 GLbitfield64;
 
-/* Common GLES 1.0 and 2.0 tokens */
-
-#ifndef GL_OES_EGL_image_external
-#define GL_TEXTURE_EXTERNAL_OES                                 0x8D65
-#define GL_SAMPLER_EXTERNAL_OES                                 0x8D66
-#define GL_TEXTURE_BINDING_EXTERNAL_OES                         0x8D67
-#define GL_REQUIRED_TEXTURE_IMAGE_UNITS_OES                     0x8D68
-#endif
-
-#ifndef GL_OES_compressed_ETC1_RGB8_texture
-#define GL_ETC1_RGB8_OES                                        0x8D64
-#endif
-
-
-/* GLES 1.0 only tokens */
-
-typedef int GLclampx;
-
-#ifndef GL_OES_point_size_array
-#define GL_POINT_SIZE_ARRAY_OES                                 0x8B9C
-#define GL_POINT_SIZE_ARRAY_TYPE_OES                            0x898A
-#define GL_POINT_SIZE_ARRAY_STRIDE_OES                          0x898B
-#define GL_POINT_SIZE_ARRAY_POINTER_OES                         0x898C
-#define GL_POINT_SIZE_ARRAY_BUFFER_BINDING_OES                  0x8B9F
-#endif
-
-
-#ifndef GL_OES_draw_texture
-#define GL_TEXTURE_CROP_RECT_OES                                0x8B9D
-#endif
-
-#ifndef GL_TEXTURE_GEN_STR_OES
-#define GL_TEXTURE_GEN_STR_OES                                  0x8D60
-#endif
-
-
-/* GLES 2.0 only tokens */
-
-#ifndef GL_PROGRAM_BINARY_LENGTH_OES
-#define GL_PROGRAM_BINARY_LENGTH_OES                            0x8741
-#endif
-
-#ifndef GL_OES_texture_compression_astc
-#define GL_COMPRESSED_RGBA_ASTC_3x3x3_OES                       0x93C0
-#define GL_COMPRESSED_RGBA_ASTC_4x3x3_OES                       0x93C1
-#define GL_COMPRESSED_RGBA_ASTC_4x4x3_OES                       0x93C2
-#define GL_COMPRESSED_RGBA_ASTC_4x4x4_OES                       0x93C3
-#define GL_COMPRESSED_RGBA_ASTC_5x4x4_OES                       0x93C4
-#define GL_COMPRESSED_RGBA_ASTC_5x5x4_OES                       0x93C5
-#define GL_COMPRESSED_RGBA_ASTC_5x5x5_OES                       0x93C6
-#define GL_COMPRESSED_RGBA_ASTC_6x5x5_OES                       0x93C7
-#define GL_COMPRESSED_RGBA_ASTC_6x6x5_OES                       0x93C8
-#define GL_COMPRESSED_RGBA_ASTC_6x6x6_OES                       0x93C9
-#define GL_COMPRESSED_SRGB8_ALPHA8_ASTC_3x3x3_OES               0x93E0
-#define GL_COMPRESSED_SRGB8_ALPHA8_ASTC_4x3x3_OES               0x93E1
-#define GL_COMPRESSED_SRGB8_ALPHA8_ASTC_4x4x3_OES               0x93E2
-#define GL_COMPRESSED_SRGB8_ALPHA8_ASTC_4x4x4_OES               0x93E3
-#define GL_COMPRESSED_SRGB8_ALPHA8_ASTC_5x4x4_OES               0x93E4
-#define GL_COMPRESSED_SRGB8_ALPHA8_ASTC_5x5x4_OES               0x93E5
-#define GL_COMPRESSED_SRGB8_ALPHA8_ASTC_5x5x5_OES               0x93E6
-#define GL_COMPRESSED_SRGB8_ALPHA8_ASTC_6x5x5_OES               0x93E7
-#define GL_COMPRESSED_SRGB8_ALPHA8_ASTC_6x6x5_OES               0x93E8
-#define GL_COMPRESSED_SRGB8_ALPHA8_ASTC_6x6x6_OES               0x93E9
-#endif
-
-#ifndef GL_EXT_shader_framebuffer_fetch
-#define GL_FRAGMENT_SHADER_DISCARDS_SAMPLES_EXT                 0x8A52
-#endif
-
-#ifndef GL_EXT_disjoint_timer_query
-#define GL_GPU_DISJOINT_EXT                                     0x8FBB
-#endif
-
-/* Inexplicably, GL_HALF_FLOAT_OES has a different value than GL_HALF_FLOAT.
- */
-#ifndef GL_HALF_FLOAT_OES
-#define GL_HALF_FLOAT_OES                                       0x8D61
-#endif
-
 /* There is no formal spec for the following extension. */
 #ifndef GL_ATI_texture_compression_3dc
 #define GL_ATI_texture_compression_3dc                          1
 #define GL_COMPRESSED_LUMINANCE_ALPHA_3DC_ATI                   0x8837
-#endif
-
-#ifndef GL_EXT_texture_sRGB_R8
-#define GL_SR8_EXT                                              0x8FBD
-#endif
-
-#ifndef GL_EXT_texture_sRGB_RG8
-#define GL_SRG8_EXT                                             0x8FBE
-#endif
-
-#ifndef GL_AMD_compressed_ATC_texture
-#define GL_ATC_RGB_AMD                                          0x8C92
-#define GL_ATC_RGBA_EXPLICIT_ALPHA_AMD                          0x8C93
-#define GL_ATC_RGBA_INTERPOLATED_ALPHA_AMD                      0x87EE
 #endif
 
 /**
@@ -168,14 +104,6 @@ typedef int GLclampx;
  * GL_VERTEX/FRAGMENT/GEOMETRY_PROGRAM tokens.
  */
 #define GL_SHADER_PROGRAM_MESA                                  0x9999
-
-#ifndef GL_EXT_multisampled_render_to_texture
-#define GL_FRAMEBUFFER_ATTACHMENT_TEXTURE_SAMPLES_EXT 0x8D6C
-#endif
-
-#ifndef GL_ANGLE_pack_reverse_row_order
-#define GL_PACK_REVERSE_ROW_ORDER_ANGLE 0x93A4
-#endif
 
 #ifdef __cplusplus
 }

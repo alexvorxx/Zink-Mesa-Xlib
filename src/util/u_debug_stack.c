@@ -45,7 +45,7 @@
 #endif
 #include <dlfcn.h>
 
-#include "os/os_thread.h"
+#include "util/u_thread.h"
 #include "util/hash_table.h"
 
 static struct hash_table* symbols_hash;

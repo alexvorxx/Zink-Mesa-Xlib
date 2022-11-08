@@ -44,7 +44,7 @@
 #include "vl/vl_csc.h"
 
 #include "util/u_dynarray.h"
-#include "os/os_thread.h"
+#include "util/u_thread.h"
 
 #ifndef VA_RT_FORMAT_YUV420_10
 #define VA_RT_FORMAT_YUV420_10  VA_RT_FORMAT_YUV420_10BPP

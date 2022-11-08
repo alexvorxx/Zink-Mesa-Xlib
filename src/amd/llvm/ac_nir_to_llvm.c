@@ -1614,7 +1614,7 @@ static LLVMValueRef build_tex_intrinsic(struct ac_nir_context *ctx, const nir_te
       break;
    }
 
-   /* Aldebaran doesn't have image_sample_lz, but image_sample behaves like lz. */
+   /* MI200 doesn't have image_sample_lz, but image_sample behaves like lz. */
    if (!ctx->ac.has_3d_cube_border_color_mipmap)
       args->level_zero = false;
 

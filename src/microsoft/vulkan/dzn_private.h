@@ -201,12 +201,14 @@ struct dzn_physical_device {
 
    mtx_t dev_lock;
    ID3D12Device2 *dev;
+   ID3D12Device10 *dev10;
    D3D_FEATURE_LEVEL feature_level;
    D3D_SHADER_MODEL shader_model;
    D3D12_FEATURE_DATA_ARCHITECTURE1 architecture;
    D3D12_FEATURE_DATA_D3D12_OPTIONS options;
    D3D12_FEATURE_DATA_D3D12_OPTIONS2 options2;
    D3D12_FEATURE_DATA_D3D12_OPTIONS3 options3;
+   D3D12_FEATURE_DATA_D3D12_OPTIONS12 options12;
    VkPhysicalDeviceMemoryProperties memory;
    D3D12_HEAP_FLAGS heap_flags_for_mem_type[VK_MAX_MEMORY_TYPES];
    const struct vk_sync_type *sync_types[MAX_SYNC_TYPES + 1];
@@ -253,6 +255,7 @@ struct dzn_device {
    struct vk_device_dispatch_table cmd_dispatch;
 
    ID3D12Device2 *dev;
+   ID3D12Device10 *dev10;
    ID3D12DeviceConfiguration *dev_config;
 
    struct dzn_meta_indirect_draw indirect_draws[DZN_NUM_INDIRECT_DRAW_TYPES];
@@ -880,6 +883,8 @@ struct dzn_image {
    ID3D12Resource *res;
    struct dzn_device_memory *mem;
    VkDeviceSize mem_offset;
+   uint32_t castable_format_count;
+   DXGI_FORMAT *castable_formats;
 };
 
 bool

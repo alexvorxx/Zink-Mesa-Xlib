@@ -741,41 +741,43 @@ static VkResult
 anv_i915_physical_device_get_parameters(struct anv_physical_device *device)
 {
    VkResult result = VK_SUCCESS;
-   int fd = device->local_fd;
+   int val, fd = device->local_fd;
 
-   if (!anv_gem_get_param(fd, I915_PARAM_HAS_WAIT_TIMEOUT)) {
+   if (!intel_gem_get_param(fd, I915_PARAM_HAS_WAIT_TIMEOUT, &val) || !val) {
        result = vk_errorf(device, VK_ERROR_INITIALIZATION_FAILED,
                           "kernel missing gem wait");
        return result;
    }
 
-   if (!anv_gem_get_param(fd, I915_PARAM_HAS_EXECBUF2)) {
+   if (!intel_gem_get_param(fd, I915_PARAM_HAS_EXECBUF2, &val) || !val) {
       result = vk_errorf(device, VK_ERROR_INITIALIZATION_FAILED,
                          "kernel missing execbuf2");
       return result;
    }
 
    if (!device->info.has_llc &&
-       anv_gem_get_param(fd, I915_PARAM_MMAP_VERSION) < 1) {
+       (!intel_gem_get_param(fd, I915_PARAM_MMAP_VERSION, &val) || val < 1)) {
        result = vk_errorf(device, VK_ERROR_INITIALIZATION_FAILED,
                           "kernel missing wc mmap");
        return result;
    }
 
-   if (!anv_gem_get_param(fd, I915_PARAM_HAS_EXEC_SOFTPIN)) {
+   if (!intel_gem_get_param(fd, I915_PARAM_HAS_EXEC_SOFTPIN, &val) || !val) {
       result = vk_errorf(device, VK_ERROR_INITIALIZATION_FAILED,
                          "kernel missing softpin");
       return result;
    }
 
-   if (!anv_gem_get_param(fd, I915_PARAM_HAS_EXEC_FENCE_ARRAY)) {
+   if (!intel_gem_get_param(fd, I915_PARAM_HAS_EXEC_FENCE_ARRAY, &val) || !val) {
       result = vk_errorf(device, VK_ERROR_INITIALIZATION_FAILED,
                          "kernel missing syncobj support");
       return result;
    }
 
-   device->has_exec_async = anv_gem_get_param(fd, I915_PARAM_HAS_EXEC_ASYNC);
-   device->has_exec_capture = anv_gem_get_param(fd, I915_PARAM_HAS_EXEC_CAPTURE);
+   if (intel_gem_get_param(fd, I915_PARAM_HAS_EXEC_ASYNC, &val))
+      device->has_exec_async = val;
+   if (intel_gem_get_param(fd, I915_PARAM_HAS_EXEC_CAPTURE, &val))
+      device->has_exec_capture = val;
 
    /* Start with medium; sorted low to high */
    const VkQueueGlobalPriorityKHR priorities[] = {
@@ -791,17 +793,8 @@ anv_i915_physical_device_get_parameters(struct anv_physical_device *device)
       device->max_context_priority = priorities[i];
    }
 
-   device->has_context_isolation =
-      anv_gem_get_param(fd, I915_PARAM_HAS_CONTEXT_ISOLATION);
-
-   device->has_exec_timeline =
-      anv_gem_get_param(fd, I915_PARAM_HAS_EXEC_TIMELINE_FENCES);
-
-   device->has_mmap_offset =
-      anv_gem_get_param(fd, I915_PARAM_MMAP_GTT_VERSION) >= 4;
-
-   device->has_userptr_probe =
-      anv_gem_get_param(fd, I915_PARAM_HAS_USERPTR_PROBE);
+   if (intel_gem_get_param(fd, I915_PARAM_HAS_EXEC_TIMELINE_FENCES, &val))
+      device->has_exec_timeline = val;
 
    return result;
 }
@@ -960,7 +953,7 @@ anv_physical_device_try_create(struct vk_instance *vk_instance,
    device->compiler->shader_debug_log = compiler_debug_log;
    device->compiler->shader_perf_log = compiler_perf_log;
    device->compiler->constant_buffer_0_is_relative =
-      !device->has_context_isolation;
+      !device->info.has_context_isolation;
    device->compiler->supports_shader_constants = true;
    device->compiler->indirect_ubos_use_sampler = device->info.ver < 12;
 
@@ -975,10 +968,8 @@ anv_physical_device_try_create(struct vk_instance *vk_instance,
    if (instance->vk.enabled_extensions.KHR_display) {
       master_fd = open(primary_path, O_RDWR | O_CLOEXEC);
       if (master_fd >= 0) {
-         /* prod the device with a GETPARAM call which will fail if
-          * we don't have permission to even render on this device
-          */
-         if (anv_gem_get_param(master_fd, I915_PARAM_CHIPSET_ID) == 0) {
+         /* fail if we don't have permission to even render on this device */
+         if (!intel_gem_can_render_on_fd(master_fd)) {
             close(master_fd);
             master_fd = -1;
          }
@@ -4308,7 +4299,7 @@ VkResult anv_MapMemory(
 
    /* GEM will fail to map if the offset isn't 4k-aligned.  Round down. */
    uint64_t map_offset;
-   if (!device->physical->has_mmap_offset)
+   if (!device->physical->info.has_mmap_offset)
       map_offset = offset & ~4095ull;
    else
       map_offset = 0;

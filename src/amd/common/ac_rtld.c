@@ -454,7 +454,7 @@ bool ac_rtld_open(struct ac_rtld_binary *binary, struct ac_rtld_open_info i)
     */
    unsigned prefetch_distance = 0;
 
-   if (!i.info->has_graphics && i.info->family >= CHIP_ALDEBARAN)
+   if (!i.info->has_graphics && i.info->family >= CHIP_MI200)
       prefetch_distance = 16;
    else if (i.info->gfx_level >= GFX10)
       prefetch_distance = 3;

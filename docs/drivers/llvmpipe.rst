@@ -96,19 +96,19 @@ Environment variables
    yet use AVX instructions.
 ``GALLIUM_OVERRIDE_CPU_CAPS``
    Override CPU capabilities for LLVMpipe and Softpipe, possible values for x86:
-   `nosse`
-   `sse`
-   `sse2`
-   `sse3`
-   `ssse3`
-   `sse4.1`
-   `avx`
+   ``nosse``
+   ``sse``
+   ``sse2``
+   ``sse3``
+   ``ssse3``
+   ``sse4.1``
+   ``avx``
 ``GALLIUM_NOSSE``
-   Deprecated in favor of `GALLIUM_OVERRIDE_CPU_CAPS`,
-   use `GALLIUM_OVERRIDE_CPU_CAPS=nosse` instead.
+   Deprecated in favor of ``GALLIUM_OVERRIDE_CPU_CAPS``,
+   use ``GALLIUM_OVERRIDE_CPU_CAPS=nosse`` instead.
 ``LP_FORCE_SSE2``
-   Deprecated in favor of `GALLIUM_OVERRIDE_CPU_CAPS`
-   use `GALLIUM_OVERRIDE_CPU_CAPS=sse2` instead.
+   Deprecated in favor of ``GALLIUM_OVERRIDE_CPU_CAPS``
+   use ``GALLIUM_OVERRIDE_CPU_CAPS=sse2`` instead.
 
 Linux
 ~~~~~
@@ -229,7 +229,7 @@ Recommended Reading
    -  `Triangle Scan Conversion using 2D Homogeneous
       Coordinates <https://www.cs.unc.edu/~olano/papers/2dh-tri/>`__
    -  `Rasterization on
-      Larrabee <http://www.drdobbs.com/parallel/rasterization-on-larrabee/217200602>`__
+      Larrabee <https://www.drdobbs.com/parallel/rasterization-on-larrabee/217200602>`__
       (`DevMaster
       copy <http://devmaster.net/posts/2887/rasterization-on-larrabee>`__)
    -  `Rasterization using half-space
@@ -242,13 +242,13 @@ Recommended Reading
 -  Texture sampling
 
    -  `Perspective Texture
-      Mapping <http://chrishecker.com/Miscellaneous_Technical_Articles#Perspective_Texture_Mapping>`__
+      Mapping <https://chrishecker.com/Miscellaneous_Technical_Articles#Perspective_Texture_Mapping>`__
    -  `Texturing As In
       Unreal <https://www.flipcode.com/archives/Texturing_As_In_Unreal.shtml>`__
    -  `Run-Time MIP-Map
       Filtering <http://www.gamasutra.com/view/feature/3301/runtime_mipmap_filtering.php>`__
    -  `Will "brilinear" filtering
-      persist? <http://alt.3dcenter.org/artikel/2003/10-26_a_english.php>`__
+      persist? <https://alt.3dcenter.org/artikel/2003/10-26_a_english.php>`__
    -  `Trilinear
       filtering <http://ixbtlabs.com/articles2/gffx/nv40-rx800-3.html>`__
    -  `Texture
@@ -262,18 +262,18 @@ Recommended Reading
 -  Optimization
 
    -  `Optimizing Pixomatic For Modern x86
-      Processors <http://www.drdobbs.com/optimizing-pixomatic-for-modern-x86-proc/184405807>`__
+      Processors <https://www.drdobbs.com/optimizing-pixomatic-for-modern-x86-proc/184405807>`__
    -  `Intel 64 and IA-32 Architectures Optimization Reference
-      Manual <http://www.intel.com/content/www/us/en/architecture-and-technology/64-ia-32-architectures-optimization-manual.html>`__
+      Manual <https://www.intel.com/content/www/us/en/architecture-and-technology/64-ia-32-architectures-optimization-manual.html>`__
    -  `Software optimization
-      resources <http://www.agner.org/optimize/>`__
+      resources <https://www.agner.org/optimize/>`__
    -  `Intel Intrinsics
       Guide <https://software.intel.com/en-us/articles/intel-intrinsics-guide>`__
 
 -  LLVM
 
    -  `LLVM Language Reference
-      Manual <http://llvm.org/docs/LangRef.html>`__
+      Manual <https://llvm.org/docs/LangRef.html>`__
    -  `The secret of LLVM C
       bindings <https://npcontemplation.blogspot.co.uk/2008/06/secret-of-llvm-c-bindings.html>`__
 

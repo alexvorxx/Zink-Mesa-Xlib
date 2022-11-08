@@ -741,31 +741,31 @@ anv_physical_device_try_create(struct vk_instance *vk_instance,
 
    device->cmd_parser_version = -1;
    if (device->info.ver == 7) {
-      device->cmd_parser_version =
-         anv_gem_get_param(fd, I915_PARAM_CMD_PARSER_VERSION);
-      if (device->cmd_parser_version == -1) {
+      if (!intel_gem_get_param(fd, I915_PARAM_CMD_PARSER_VERSION, &device->cmd_parser_version) ||
+          device->cmd_parser_version == -1) {
          result = vk_errorf(device, VK_ERROR_INITIALIZATION_FAILED,
                             "failed to get command parser version");
          goto fail_base;
       }
    }
 
-   if (!anv_gem_get_param(fd, I915_PARAM_HAS_WAIT_TIMEOUT)) {
+   int val;
+   if (!intel_gem_get_param(fd, I915_PARAM_HAS_WAIT_TIMEOUT, &val) || !val) {
       result = vk_errorf(device, VK_ERROR_INITIALIZATION_FAILED,
                          "kernel missing gem wait");
       goto fail_base;
    }
 
-   if (!anv_gem_get_param(fd, I915_PARAM_HAS_EXECBUF2)) {
+   if (!intel_gem_get_param(fd, I915_PARAM_HAS_EXECBUF2, &val) || !val) {
       result = vk_errorf(device, VK_ERROR_INITIALIZATION_FAILED,
                          "kernel missing execbuf2");
       goto fail_base;
    }
 
    if (!device->info.has_llc &&
-       anv_gem_get_param(fd, I915_PARAM_MMAP_VERSION) < 1) {
-      result = vk_errorf(device, VK_ERROR_INITIALIZATION_FAILED,
-                         "kernel missing wc mmap");
+       (!intel_gem_get_param(fd, I915_PARAM_MMAP_VERSION, &val) || val < 1)) {
+       result = vk_errorf(device, VK_ERROR_INITIALIZATION_FAILED,
+                          "kernel missing wc mmap");
       goto fail_base;
    }
 
@@ -773,20 +773,22 @@ anv_physical_device_try_create(struct vk_instance *vk_instance,
                              device->info.platform == INTEL_PLATFORM_CHV;
 
    if (!device->use_relocations &&
-       !anv_gem_get_param(fd, I915_PARAM_HAS_EXEC_SOFTPIN)) {
+       (!intel_gem_get_param(fd, I915_PARAM_HAS_EXEC_SOFTPIN, &val) || !val)) {
       result = vk_errorf(device, VK_ERROR_INITIALIZATION_FAILED,
                          "kernel missing softpin");
       goto fail_alloc;
    }
 
-   if (!anv_gem_get_param(fd, I915_PARAM_HAS_EXEC_FENCE_ARRAY)) {
+   if (!intel_gem_get_param(fd, I915_PARAM_HAS_EXEC_FENCE_ARRAY, &val) || !val) {
       result = vk_errorf(device, VK_ERROR_INITIALIZATION_FAILED,
                          "kernel missing syncobj support");
       goto fail_base;
    }
 
-   device->has_exec_async = anv_gem_get_param(fd, I915_PARAM_HAS_EXEC_ASYNC);
-   device->has_exec_capture = anv_gem_get_param(fd, I915_PARAM_HAS_EXEC_CAPTURE);
+   if (intel_gem_get_param(fd, I915_PARAM_HAS_EXEC_ASYNC, &val))
+      device->has_exec_async = val;
+   if (intel_gem_get_param(fd, I915_PARAM_HAS_EXEC_CAPTURE, &val))
+      device->has_exec_capture = val;
 
    /* Start with medium; sorted low to high */
    const int priorities[] = {
@@ -817,11 +819,8 @@ anv_physical_device_try_create(struct vk_instance *vk_instance,
    assert(device->supports_48bit_addresses == !device->use_relocations);
    device->use_softpin = !device->use_relocations;
 
-   device->has_context_isolation =
-      anv_gem_get_param(fd, I915_PARAM_HAS_CONTEXT_ISOLATION);
-
-   device->has_exec_timeline =
-      anv_gem_get_param(fd, I915_PARAM_HAS_EXEC_TIMELINE_FENCES);
+   if (intel_gem_get_param(fd, I915_PARAM_HAS_EXEC_TIMELINE_FENCES, &val))
+      device->has_exec_timeline = val;
    if (debug_get_bool_option("ANV_QUEUE_THREAD_DISABLE", false))
       device->has_exec_timeline = false;
 
@@ -880,12 +879,6 @@ anv_physical_device_try_create(struct vk_instance *vk_instance,
    device->always_flush_cache = INTEL_DEBUG(DEBUG_STALL) ||
       driQueryOptionb(&instance->dri_options, "always_flush_cache");
 
-   device->has_mmap_offset =
-      anv_gem_get_param(fd, I915_PARAM_MMAP_GTT_VERSION) >= 4;
-
-   device->has_userptr_probe =
-      anv_gem_get_param(fd, I915_PARAM_HAS_USERPTR_PROBE);
-
    device->compiler = brw_compiler_create(NULL, &device->info);
    if (device->compiler == NULL) {
       result = vk_error(instance, VK_ERROR_OUT_OF_HOST_MEMORY);
@@ -894,7 +887,7 @@ anv_physical_device_try_create(struct vk_instance *vk_instance,
    device->compiler->shader_debug_log = compiler_debug_log;
    device->compiler->shader_perf_log = compiler_perf_log;
    device->compiler->constant_buffer_0_is_relative =
-      device->info.ver < 8 || !device->has_context_isolation;
+      device->info.ver < 8 || !device->info.has_context_isolation;
    device->compiler->supports_shader_constants = true;
    device->compiler->indirect_ubos_use_sampler = device->info.ver < 12;
 
@@ -909,10 +902,8 @@ anv_physical_device_try_create(struct vk_instance *vk_instance,
    if (instance->vk.enabled_extensions.KHR_display) {
       master_fd = open(primary_path, O_RDWR | O_CLOEXEC);
       if (master_fd >= 0) {
-         /* prod the device with a GETPARAM call which will fail if
-          * we don't have permission to even render on this device
-          */
-         if (anv_gem_get_param(master_fd, I915_PARAM_CHIPSET_ID) == 0) {
+         /* fail if we don't have permission to even render on this device */
+         if (!intel_gem_can_render_on_fd(master_fd)) {
             close(master_fd);
             master_fd = -1;
          }
@@ -3883,7 +3874,7 @@ VkResult anv_MapMemory(
 
    /* GEM will fail to map if the offset isn't 4k-aligned.  Round down. */
    uint64_t map_offset;
-   if (!device->physical->has_mmap_offset)
+   if (!device->physical->info.has_mmap_offset)
       map_offset = offset & ~4095ull;
    else
       map_offset = 0;

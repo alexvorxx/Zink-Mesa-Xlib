@@ -174,6 +174,8 @@ intel_gem_get_context_param(int fd, uint32_t context, uint32_t param,
                             uint64_t *value);
 
 bool intel_gem_read_render_timestamp(int fd, uint64_t *value);
+bool intel_gem_get_param(int fd, uint32_t param, int *value);
+bool intel_gem_can_render_on_fd(int fd);
 
 #ifdef __cplusplus
 }

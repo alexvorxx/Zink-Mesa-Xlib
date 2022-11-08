@@ -963,9 +963,6 @@ struct anv_physical_device {
     bool                                        has_exec_async;
     bool                                        has_exec_capture;
     VkQueueGlobalPriorityKHR                    max_context_priority;
-    bool                                        has_context_isolation;
-    bool                                        has_mmap_offset;
-    bool                                        has_userptr_probe;
     uint64_t                                    gtt_size;
 
     bool                                        always_use_bindless;
@@ -1349,7 +1346,6 @@ int anv_gem_set_tiling(struct anv_device *device, uint32_t gem_handle,
 bool anv_gem_has_context_priority(int fd, VkQueueGlobalPriorityKHR priority);
 int anv_gem_set_context_param(int fd, uint32_t context, uint32_t param,
                               uint64_t value);
-int anv_gem_get_param(int fd, uint32_t param);
 int anv_gem_get_tiling(struct anv_device *device, uint32_t gem_handle);
 int anv_gem_context_get_reset_stats(int fd, int context,
                                     uint32_t *active, uint32_t *pending);
@@ -3442,13 +3438,6 @@ struct anv_image {
       struct anv_surface primary_surface;
 
       /**
-       * A surface which shadows the main surface and may have different
-       * tiling. This is used for sampling using a tiling that isn't supported
-       * for other operations.
-       */
-      struct anv_surface shadow_surface;
-
-      /**
        * The base aux usage for this image.  For color images, this can be
        * either CCS_E or CCS_D depending on whether or not we can reliably
        * leave CCS on all the time.
@@ -3756,13 +3745,6 @@ anv_image_ccs_op(struct anv_cmd_buffer *cmd_buffer,
                  uint32_t base_layer, uint32_t layer_count,
                  enum isl_aux_op ccs_op, union isl_color_value *clear_value,
                  bool predicate);
-
-void
-anv_image_copy_to_shadow(struct anv_cmd_buffer *cmd_buffer,
-                         const struct anv_image *image,
-                         VkImageAspectFlagBits aspect,
-                         uint32_t base_level, uint32_t level_count,
-                         uint32_t base_layer, uint32_t layer_count);
 
 enum isl_aux_state ATTRIBUTE_PURE
 anv_layout_to_aux_state(const struct intel_device_info * const devinfo,

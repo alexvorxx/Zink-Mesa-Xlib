@@ -2974,16 +2974,16 @@ Functions
 ^^^^^^^^^^^^^^
 
 
-  :math:`|x|`       Absolute value of `x`.
+  :math:`|x|`       Absolute value of ``x``.
 
-  :math:`\lceil x \rceil` Ceiling of `x`.
+  :math:`\lceil x \rceil` Ceiling of ``x``.
 
   clamp(x,y,z)      Clamp x between y and z.
                     (x < y) ? y : (x > z) ? z : x
 
-  :math:`\lfloor x\rfloor` Floor of `x`.
+  :math:`\lfloor x\rfloor` Floor of ``x``.
 
-  :math:`\log_2{x}` Logarithm of `x`, base 2.
+  :math:`\log_2{x}` Logarithm of ``x``, base 2.
 
   max(x,y)          Maximum of x and y.
                     (x > y) ? x : y
@@ -2997,7 +2997,7 @@ Functions
 
   pop()             Pop from stack.
 
-  :math:`x^y`       `x` to the power `y`.
+  :math:`x^y`       ``x`` to the power ``y``.
 
   push(x)           Push x on stack.
 
@@ -3850,6 +3850,6 @@ well.
 | S                  | (s, s, s, s) | unknown            | unknown      |
 +--------------------+--------------+--------------------+--------------+
 
-.. [#envmap-bumpmap] http://www.opengl.org/registry/specs/ATI/envmap_bumpmap.txt
+.. [#envmap-bumpmap] https://www.opengl.org/registry/specs/ATI/envmap_bumpmap.txt
 .. [#depth-tex-mode] the default is (z, z, z, 1) but may also be (0, 0, 0, z)
    or (z, z, z, z) depending on the value of GL_DEPTH_TEXTURE_MODE.

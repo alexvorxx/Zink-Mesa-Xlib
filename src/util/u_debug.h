@@ -46,6 +46,7 @@
 #endif
 
 #include "util/os_misc.h"
+#include "util/u_atomic.h"
 #include "util/detect_os.h"
 #include "util/macros.h"
 
@@ -164,18 +165,6 @@ debug_printf(const char *format, ...)
 #else
 #define debug_vprintf(_format, _ap) ((void)0)
 #endif
-
-
-#ifdef DEBUG
-/**
- * Dump a blob in hex to the same place that debug_printf sends its
- * messages.
- */
-void debug_print_blob( const char *name, const void *blob, unsigned size );
-#else
-#define debug_print_blob(_name, _blob, _size) ((void)0)
-#endif
-
 
 #ifdef _WIN32
 /**
@@ -333,12 +322,6 @@ const char *
 debug_dump_enum(const struct debug_named_value *names,
                 unsigned long value);
 
-const char *
-debug_dump_enum_noprefix(const struct debug_named_value *names,
-                         const char *prefix,
-                         unsigned long value);
-
-
 /**
  * Convert binary flags value to a string.
  */
@@ -366,44 +349,6 @@ parse_enable_string(const char *debug,
 bool
 comma_separated_list_contains(const char *list, const char *s);
 
-
-/**
- * Function enter exit loggers
- */
-#ifdef DEBUG
-int debug_funclog_enter(const char* f, const int line, const char* file);
-void debug_funclog_exit(const char* f, const int line, const char* file);
-void debug_funclog_enter_exit(const char* f, const int line, const char* file);
-
-#define DEBUG_FUNCLOG_ENTER() \
-   int __debug_decleration_work_around = \
-      debug_funclog_enter(__FUNCTION__, __LINE__, __FILE__)
-#define DEBUG_FUNCLOG_EXIT() \
-   do { \
-      (void)__debug_decleration_work_around; \
-      debug_funclog_exit(__FUNCTION__, __LINE__, __FILE__); \
-      return; \
-   } while(0)
-#define DEBUG_FUNCLOG_EXIT_RET(ret) \
-   do { \
-      (void)__debug_decleration_work_around; \
-      debug_funclog_exit(__FUNCTION__, __LINE__, __FILE__); \
-      return ret; \
-   } while(0)
-#define DEBUG_FUNCLOG_ENTER_EXIT() \
-   debug_funclog_enter_exit(__FUNCTION__, __LINE__, __FILE__)
-
-#else
-#define DEBUG_FUNCLOG_ENTER() \
-   int __debug_decleration_work_around
-#define DEBUG_FUNCLOG_EXIT() \
-   do { (void)__debug_decleration_work_around; return; } while(0)
-#define DEBUG_FUNCLOG_EXIT_RET(ret) \
-   do { (void)__debug_decleration_work_around; return ret; } while(0)
-#define DEBUG_FUNCLOG_ENTER_EXIT()
-#endif
-
-
 /**
  * Get option.
  *
@@ -430,9 +375,9 @@ debug_get_option_ ## suffix (void) \
 { \
    static bool initialized = false; \
    static const char * value; \
-   if (!initialized) { \
-      initialized = true; \
+   if (unlikely(!p_atomic_read_relaxed(&initialized))) { \
       value = debug_get_option(name, dfault); \
+      p_atomic_set(&initialized, true); \
    } \
    return value; \
 }
@@ -453,9 +398,9 @@ debug_get_option_ ## sufix (void) \
 { \
    static bool initialized = false; \
    static bool value; \
-   if (!initialized) { \
-      initialized = true; \
+   if (unlikely(!p_atomic_read_relaxed(&initialized))) { \
       value = debug_get_bool_option(name, dfault); \
+      p_atomic_set(&initialized, true); \
    } \
    return value; \
 }
@@ -466,9 +411,9 @@ debug_get_option_ ## sufix (void) \
 { \
    static bool initialized = false; \
    static long value; \
-   if (!initialized) { \
-      initialized = true; \
+   if (unlikely(!p_atomic_read_relaxed(&initialized))) { \
       value = debug_get_num_option(name, dfault); \
+      p_atomic_set(&initialized, true); \
    } \
    return value; \
 }
@@ -479,9 +424,9 @@ debug_get_option_ ## sufix (void) \
 { \
    static bool initialized = false; \
    static unsigned long value; \
-   if (!initialized) { \
-      initialized = true; \
+   if (unlikely(!p_atomic_read_relaxed(&initialized))) { \
       value = debug_get_flags_option(name, flags, dfault); \
+      p_atomic_set(&initialized, true); \
    } \
    return value; \
 }

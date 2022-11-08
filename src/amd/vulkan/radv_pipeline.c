@@ -578,7 +578,9 @@ radv_pipeline_compute_spi_color_formats(const struct radv_graphics_pipeline *pip
       unsigned cf;
       VkFormat fmt = state->rp->color_attachment_formats[i];
 
-      if (fmt == VK_FORMAT_UNDEFINED || !(blend->cb_target_mask & (0xfu << (i * 4)))) {
+      if (fmt == VK_FORMAT_UNDEFINED ||
+          (!(pipeline->dynamic_states & RADV_DYNAMIC_COLOR_WRITE_MASK) &&
+           !(blend->cb_target_mask & (0xfu << (i * 4))))) {
          cf = V_028714_SPI_SHADER_ZERO;
       } else {
          bool blend_enable = blend->blend_enable_4bit & (0xfu << (i * 4));
@@ -760,7 +762,8 @@ radv_pipeline_init_blend_state(struct radv_graphics_pipeline *pipeline,
          blend.sx_mrt_blend_opt[i] = S_028760_COLOR_COMB_FCN(V_028760_OPT_COMB_BLEND_DISABLED) |
                                      S_028760_ALPHA_COMB_FCN(V_028760_OPT_COMB_BLEND_DISABLED);
 
-         if (!state->cb->attachments[i].write_mask)
+         if (!(pipeline->dynamic_states & RADV_DYNAMIC_COLOR_WRITE_MASK) &&
+             !state->cb->attachments[i].write_mask)
             continue;
 
          /* Ignore other blend targets if dual-source blending
@@ -875,11 +878,6 @@ radv_pipeline_init_blend_state(struct radv_graphics_pipeline *pipeline,
           (device->physical_device->rad_info.gfx_level >= GFX11 && blend.blend_enable_4bit))
          cb_color_control |= S_028808_DISABLE_DUAL_QUAD(1);
    }
-
-   if (blend.cb_target_mask)
-      cb_color_control |= S_028808_MODE(V_028808_CB_NORMAL);
-   else
-      cb_color_control |= S_028808_MODE(V_028808_CB_DISABLE);
 
    if (state->rp)
       radv_pipeline_compute_spi_color_formats(pipeline, &blend, state, has_ps_epilog);
@@ -1345,6 +1343,8 @@ radv_dynamic_state_mask(VkDynamicState state)
       return RADV_DYNAMIC_PROVOKING_VERTEX_MODE;
    case VK_DYNAMIC_STATE_DEPTH_CLAMP_ENABLE_EXT:
       return RADV_DYNAMIC_DEPTH_CLAMP_ENABLE;
+   case VK_DYNAMIC_STATE_COLOR_WRITE_MASK_EXT:
+      return RADV_DYNAMIC_COLOR_WRITE_MASK;
    default:
       unreachable("Unhandled dynamic state");
    }
@@ -1356,7 +1356,8 @@ radv_pipeline_is_blend_enabled(const struct radv_graphics_pipeline *pipeline,
 {
    if (cb) {
       for (uint32_t i = 0; i < cb->attachment_count; i++) {
-         if (cb->attachments[i].write_mask && cb->attachments[i].blend_enable)
+         if (((pipeline->dynamic_states & RADV_DYNAMIC_COLOR_WRITE_MASK) ||
+              cb->attachments[i].write_mask) && cb->attachments[i].blend_enable)
             return true;
       }
    }
@@ -1925,6 +1926,12 @@ radv_pipeline_init_dynamic_state(struct radv_graphics_pipeline *pipeline,
       dynamic->depth_clamp_enable = state->rs->depth_clamp_enable;
    }
 
+   if (radv_pipeline_has_color_attachments(state->rp) && states & RADV_DYNAMIC_COLOR_WRITE_MASK) {
+      for (unsigned i = 0; i < state->cb->attachment_count; i++) {
+         dynamic->color_write_mask |= state->cb->attachments[i].write_mask << (4 * i);
+      }
+   }
+
    pipeline->dynamic_state.mask = states;
 }
 
@@ -2283,6 +2290,10 @@ static void
 radv_remove_color_exports(const struct radv_pipeline_key *pipeline_key, nir_shader *nir)
 {
    bool fixup_derefs = false;
+
+   /* Do not remove color exports when the write mask is dynamic. */
+   if (pipeline_key->dynamic_color_write_mask)
+      return;
 
    nir_foreach_shader_out_variable(var, nir) {
       int idx = var->data.location;
@@ -2886,6 +2897,8 @@ radv_generate_graphics_pipeline_key(const struct radv_graphics_pipeline *pipelin
 
    key.dynamic_rasterization_samples =
       !!(pipeline->active_stages & VK_SHADER_STAGE_FRAGMENT_BIT) && !state->ms;
+
+   key.dynamic_color_write_mask = !!(pipeline->dynamic_states & RADV_DYNAMIC_COLOR_WRITE_MASK);
 
    return key;
 }
@@ -4323,435 +4336,6 @@ radv_pipeline_stage_to_user_data_0(struct radv_graphics_pipeline *pipeline, gl_s
    }
 }
 
-struct radv_bin_size_entry {
-   unsigned bpp;
-   VkExtent2D extent;
-};
-
-static VkExtent2D
-radv_gfx9_compute_bin_size(const struct radv_graphics_pipeline *pipeline,
-                           const struct vk_graphics_pipeline_state *state)
-{
-   const struct radv_physical_device *pdevice = pipeline->base.device->physical_device;
-   static const struct radv_bin_size_entry color_size_table[][3][9] = {
-      {
-         /* One RB / SE */
-         {
-            /* One shader engine */
-            {0, {128, 128}},
-            {1, {64, 128}},
-            {2, {32, 128}},
-            {3, {16, 128}},
-            {17, {0, 0}},
-            {UINT_MAX, {0, 0}},
-         },
-         {
-            /* Two shader engines */
-            {0, {128, 128}},
-            {2, {64, 128}},
-            {3, {32, 128}},
-            {5, {16, 128}},
-            {17, {0, 0}},
-            {UINT_MAX, {0, 0}},
-         },
-         {
-            /* Four shader engines */
-            {0, {128, 128}},
-            {3, {64, 128}},
-            {5, {16, 128}},
-            {17, {0, 0}},
-            {UINT_MAX, {0, 0}},
-         },
-      },
-      {
-         /* Two RB / SE */
-         {
-            /* One shader engine */
-            {0, {128, 128}},
-            {2, {64, 128}},
-            {3, {32, 128}},
-            {5, {16, 128}},
-            {33, {0, 0}},
-            {UINT_MAX, {0, 0}},
-         },
-         {
-            /* Two shader engines */
-            {0, {128, 128}},
-            {3, {64, 128}},
-            {5, {32, 128}},
-            {9, {16, 128}},
-            {33, {0, 0}},
-            {UINT_MAX, {0, 0}},
-         },
-         {
-            /* Four shader engines */
-            {0, {256, 256}},
-            {2, {128, 256}},
-            {3, {128, 128}},
-            {5, {64, 128}},
-            {9, {16, 128}},
-            {33, {0, 0}},
-            {UINT_MAX, {0, 0}},
-         },
-      },
-      {
-         /* Four RB / SE */
-         {
-            /* One shader engine */
-            {0, {128, 256}},
-            {2, {128, 128}},
-            {3, {64, 128}},
-            {5, {32, 128}},
-            {9, {16, 128}},
-            {33, {0, 0}},
-            {UINT_MAX, {0, 0}},
-         },
-         {
-            /* Two shader engines */
-            {0, {256, 256}},
-            {2, {128, 256}},
-            {3, {128, 128}},
-            {5, {64, 128}},
-            {9, {32, 128}},
-            {17, {16, 128}},
-            {33, {0, 0}},
-            {UINT_MAX, {0, 0}},
-         },
-         {
-            /* Four shader engines */
-            {0, {256, 512}},
-            {2, {256, 256}},
-            {3, {128, 256}},
-            {5, {128, 128}},
-            {9, {64, 128}},
-            {17, {16, 128}},
-            {33, {0, 0}},
-            {UINT_MAX, {0, 0}},
-         },
-      },
-   };
-   static const struct radv_bin_size_entry ds_size_table[][3][9] = {
-      {
-         // One RB / SE
-         {
-            // One shader engine
-            {0, {128, 256}},
-            {2, {128, 128}},
-            {4, {64, 128}},
-            {7, {32, 128}},
-            {13, {16, 128}},
-            {49, {0, 0}},
-            {UINT_MAX, {0, 0}},
-         },
-         {
-            // Two shader engines
-            {0, {256, 256}},
-            {2, {128, 256}},
-            {4, {128, 128}},
-            {7, {64, 128}},
-            {13, {32, 128}},
-            {25, {16, 128}},
-            {49, {0, 0}},
-            {UINT_MAX, {0, 0}},
-         },
-         {
-            // Four shader engines
-            {0, {256, 512}},
-            {2, {256, 256}},
-            {4, {128, 256}},
-            {7, {128, 128}},
-            {13, {64, 128}},
-            {25, {16, 128}},
-            {49, {0, 0}},
-            {UINT_MAX, {0, 0}},
-         },
-      },
-      {
-         // Two RB / SE
-         {
-            // One shader engine
-            {0, {256, 256}},
-            {2, {128, 256}},
-            {4, {128, 128}},
-            {7, {64, 128}},
-            {13, {32, 128}},
-            {25, {16, 128}},
-            {97, {0, 0}},
-            {UINT_MAX, {0, 0}},
-         },
-         {
-            // Two shader engines
-            {0, {256, 512}},
-            {2, {256, 256}},
-            {4, {128, 256}},
-            {7, {128, 128}},
-            {13, {64, 128}},
-            {25, {32, 128}},
-            {49, {16, 128}},
-            {97, {0, 0}},
-            {UINT_MAX, {0, 0}},
-         },
-         {
-            // Four shader engines
-            {0, {512, 512}},
-            {2, {256, 512}},
-            {4, {256, 256}},
-            {7, {128, 256}},
-            {13, {128, 128}},
-            {25, {64, 128}},
-            {49, {16, 128}},
-            {97, {0, 0}},
-            {UINT_MAX, {0, 0}},
-         },
-      },
-      {
-         // Four RB / SE
-         {
-            // One shader engine
-            {0, {256, 512}},
-            {2, {256, 256}},
-            {4, {128, 256}},
-            {7, {128, 128}},
-            {13, {64, 128}},
-            {25, {32, 128}},
-            {49, {16, 128}},
-            {UINT_MAX, {0, 0}},
-         },
-         {
-            // Two shader engines
-            {0, {512, 512}},
-            {2, {256, 512}},
-            {4, {256, 256}},
-            {7, {128, 256}},
-            {13, {128, 128}},
-            {25, {64, 128}},
-            {49, {32, 128}},
-            {97, {16, 128}},
-            {UINT_MAX, {0, 0}},
-         },
-         {
-            // Four shader engines
-            {0, {512, 512}},
-            {4, {256, 512}},
-            {7, {256, 256}},
-            {13, {128, 256}},
-            {25, {128, 128}},
-            {49, {64, 128}},
-            {97, {16, 128}},
-            {UINT_MAX, {0, 0}},
-         },
-      },
-   };
-
-   VkExtent2D extent = {512, 512};
-
-   unsigned log_num_rb_per_se =
-      util_logbase2_ceil(pdevice->rad_info.max_render_backends / pdevice->rad_info.max_se);
-   unsigned log_num_se = util_logbase2_ceil(pdevice->rad_info.max_se);
-
-   unsigned total_samples = 1u << G_028BE0_MSAA_NUM_SAMPLES(pipeline->ms.pa_sc_aa_config);
-   unsigned ps_iter_samples = 1u << G_028804_PS_ITER_SAMPLES(pipeline->ms.db_eqaa);
-   unsigned effective_samples = total_samples;
-   unsigned color_bytes_per_pixel = 0;
-
-   if (state->cb) {
-      for (unsigned i = 0; i < state->rp->color_attachment_count; i++) {
-         if (!state->cb->attachments[i].write_mask)
-            continue;
-
-         if (state->rp->color_attachment_formats[i] == VK_FORMAT_UNDEFINED)
-            continue;
-
-         color_bytes_per_pixel += vk_format_get_blocksize(state->rp->color_attachment_formats[i]);
-      }
-   }
-
-   /* MSAA images typically don't use all samples all the time. */
-   if (effective_samples >= 2 && ps_iter_samples <= 1)
-      effective_samples = 2;
-   color_bytes_per_pixel *= effective_samples;
-
-   const struct radv_bin_size_entry *color_entry = color_size_table[log_num_rb_per_se][log_num_se];
-   while (color_entry[1].bpp <= color_bytes_per_pixel)
-      ++color_entry;
-
-   extent = color_entry->extent;
-
-   if (radv_pipeline_has_ds_attachments(state->rp)) {
-      /* Coefficients taken from AMDVLK */
-      unsigned depth_coeff = state->rp->depth_attachment_format != VK_FORMAT_UNDEFINED ? 5 : 0;
-      unsigned stencil_coeff = state->rp->stencil_attachment_format != VK_FORMAT_UNDEFINED ? 1 : 0;
-      unsigned ds_bytes_per_pixel = 4 * (depth_coeff + stencil_coeff) * total_samples;
-
-      const struct radv_bin_size_entry *ds_entry = ds_size_table[log_num_rb_per_se][log_num_se];
-      while (ds_entry[1].bpp <= ds_bytes_per_pixel)
-         ++ds_entry;
-
-      if (ds_entry->extent.width * ds_entry->extent.height < extent.width * extent.height)
-         extent = ds_entry->extent;
-   }
-
-   return extent;
-}
-
-static VkExtent2D
-radv_gfx10_compute_bin_size(const struct radv_graphics_pipeline *pipeline,
-                            const struct vk_graphics_pipeline_state *state)
-{
-   const struct radv_physical_device *pdevice = pipeline->base.device->physical_device;
-   VkExtent2D extent = {512, 512};
-
-   const unsigned db_tag_size = 64;
-   const unsigned db_tag_count = 312;
-   const unsigned color_tag_size = 1024;
-   const unsigned color_tag_count = 31;
-   const unsigned fmask_tag_size = 256;
-   const unsigned fmask_tag_count = 44;
-
-   const unsigned rb_count = pdevice->rad_info.max_render_backends;
-   const unsigned pipe_count = MAX2(rb_count, pdevice->rad_info.num_tcc_blocks);
-
-   const unsigned db_tag_part = (db_tag_count * rb_count / pipe_count) * db_tag_size * pipe_count;
-   const unsigned color_tag_part =
-      (color_tag_count * rb_count / pipe_count) * color_tag_size * pipe_count;
-   const unsigned fmask_tag_part =
-      (fmask_tag_count * rb_count / pipe_count) * fmask_tag_size * pipe_count;
-
-   const unsigned total_samples =
-      1u << G_028BE0_MSAA_NUM_SAMPLES(pipeline->ms.pa_sc_aa_config);
-   const unsigned samples_log = util_logbase2_ceil(total_samples);
-
-   unsigned color_bytes_per_pixel = 0;
-   unsigned fmask_bytes_per_pixel = 0;
-
-   if (state->cb) {
-      for (unsigned i = 0; i < state->rp->color_attachment_count; i++) {
-         if (!state->cb->attachments[i].write_mask)
-            continue;
-
-         if (state->rp->color_attachment_formats[i] == VK_FORMAT_UNDEFINED)
-            continue;
-
-         color_bytes_per_pixel += vk_format_get_blocksize(state->rp->color_attachment_formats[i]);
-
-         if (total_samples > 1) {
-            assert(samples_log <= 3);
-            const unsigned fmask_array[] = {0, 1, 1, 4};
-            fmask_bytes_per_pixel += fmask_array[samples_log];
-         }
-      }
-   }
-
-   color_bytes_per_pixel *= total_samples;
-   color_bytes_per_pixel = MAX2(color_bytes_per_pixel, 1);
-
-   const unsigned color_pixel_count_log = util_logbase2(color_tag_part / color_bytes_per_pixel);
-   extent.width = 1ull << ((color_pixel_count_log + 1) / 2);
-   extent.height = 1ull << (color_pixel_count_log / 2);
-
-   if (fmask_bytes_per_pixel) {
-      const unsigned fmask_pixel_count_log = util_logbase2(fmask_tag_part / fmask_bytes_per_pixel);
-
-      const VkExtent2D fmask_extent =
-         (VkExtent2D){.width = 1ull << ((fmask_pixel_count_log + 1) / 2),
-                      .height = 1ull << (color_pixel_count_log / 2)};
-
-      if (fmask_extent.width * fmask_extent.height < extent.width * extent.height)
-         extent = fmask_extent;
-   }
-
-   if (radv_pipeline_has_ds_attachments(state->rp)) {
-      /* Coefficients taken from AMDVLK */
-      unsigned depth_coeff = state->rp->depth_attachment_format != VK_FORMAT_UNDEFINED ? 5 : 0;
-      unsigned stencil_coeff = state->rp->stencil_attachment_format != VK_FORMAT_UNDEFINED ? 1 : 0;
-      unsigned db_bytes_per_pixel = (depth_coeff + stencil_coeff) * total_samples;
-
-      const unsigned db_pixel_count_log = util_logbase2(db_tag_part / db_bytes_per_pixel);
-
-      const VkExtent2D db_extent = (VkExtent2D){.width = 1ull << ((db_pixel_count_log + 1) / 2),
-                                                .height = 1ull << (color_pixel_count_log / 2)};
-
-      if (db_extent.width * db_extent.height < extent.width * extent.height)
-         extent = db_extent;
-   }
-
-   extent.width = MAX2(extent.width, 128);
-   extent.height = MAX2(extent.width, 64);
-
-   return extent;
-}
-
-static void
-radv_pipeline_init_disabled_binning_state(struct radv_graphics_pipeline *pipeline,
-                                          const struct vk_graphics_pipeline_state *state)
-{
-   const struct radv_physical_device *pdevice = pipeline->base.device->physical_device;
-   uint32_t pa_sc_binner_cntl_0 = S_028C44_BINNING_MODE(V_028C44_DISABLE_BINNING_USE_LEGACY_SC) |
-                                  S_028C44_DISABLE_START_OF_PRIM(1);
-
-   if (pdevice->rad_info.gfx_level >= GFX10) {
-      unsigned min_bytes_per_pixel = 0;
-
-      if (state->cb) {
-         for (unsigned i = 0; i < state->rp->color_attachment_count; i++) {
-            if (!state->cb->attachments[i].write_mask)
-               continue;
-
-            if (state->rp->color_attachment_formats[i] == VK_FORMAT_UNDEFINED)
-               continue;
-
-            unsigned bytes = vk_format_get_blocksize(state->rp->color_attachment_formats[i]);
-            if (!min_bytes_per_pixel || bytes < min_bytes_per_pixel)
-               min_bytes_per_pixel = bytes;
-         }
-      }
-
-      pa_sc_binner_cntl_0 =
-         S_028C44_BINNING_MODE(V_028C44_DISABLE_BINNING_USE_NEW_SC) | S_028C44_BIN_SIZE_X(0) |
-         S_028C44_BIN_SIZE_Y(0) | S_028C44_BIN_SIZE_X_EXTEND(2) |       /* 128 */
-         S_028C44_BIN_SIZE_Y_EXTEND(min_bytes_per_pixel <= 4 ? 2 : 1) | /* 128 or 64 */
-         S_028C44_DISABLE_START_OF_PRIM(1);
-   }
-
-   pipeline->binning.pa_sc_binner_cntl_0 = pa_sc_binner_cntl_0;
-}
-
-static void
-radv_pipeline_init_binning_state(struct radv_graphics_pipeline *pipeline,
-                                 const struct radv_blend_state *blend,
-                                 const struct vk_graphics_pipeline_state *state)
-{
-   const struct radv_device *device = pipeline->base.device;
-
-   if (device->physical_device->rad_info.gfx_level < GFX9)
-      return;
-
-   VkExtent2D bin_size;
-   if (device->physical_device->rad_info.gfx_level >= GFX10) {
-      bin_size = radv_gfx10_compute_bin_size(pipeline, state);
-   } else if (device->physical_device->rad_info.gfx_level == GFX9) {
-      bin_size = radv_gfx9_compute_bin_size(pipeline, state);
-   } else
-      unreachable("Unhandled generation for binning bin size calculation");
-
-   if (device->pbb_allowed && bin_size.width && bin_size.height) {
-      struct radv_binning_settings *settings = &device->physical_device->binning_settings;
-
-      const uint32_t pa_sc_binner_cntl_0 =
-         S_028C44_BINNING_MODE(V_028C44_BINNING_ALLOWED) |
-         S_028C44_BIN_SIZE_X(bin_size.width == 16) | S_028C44_BIN_SIZE_Y(bin_size.height == 16) |
-         S_028C44_BIN_SIZE_X_EXTEND(util_logbase2(MAX2(bin_size.width, 32)) - 5) |
-         S_028C44_BIN_SIZE_Y_EXTEND(util_logbase2(MAX2(bin_size.height, 32)) - 5) |
-         S_028C44_CONTEXT_STATES_PER_BIN(settings->context_states_per_bin - 1) |
-         S_028C44_PERSISTENT_STATES_PER_BIN(settings->persistent_states_per_bin - 1) |
-         S_028C44_DISABLE_START_OF_PRIM(1) |
-         S_028C44_FPOVS_PER_BATCH(settings->fpovs_per_batch) | S_028C44_OPTIMAL_BIN_SELECTION(1);
-
-      pipeline->binning.pa_sc_binner_cntl_0 = pa_sc_binner_cntl_0;
-   } else
-      radv_pipeline_init_disabled_binning_state(pipeline, state);
-}
-
 static void
 radv_pipeline_emit_depth_stencil_state(struct radeon_cmdbuf *ctx_cs,
                                        const struct radv_depth_stencil_state *ds_state)
@@ -6043,8 +5627,7 @@ radv_pipeline_init_extra(struct radv_graphics_pipeline *pipeline,
       if (extra->custom_blend_mode == V_028808_CB_RESOLVE)
          pipeline->cb_color_control |= S_028808_DISABLE_DUAL_QUAD(1);
 
-      pipeline->cb_color_control &= C_028808_MODE;
-      pipeline->cb_color_control |= S_028808_MODE(extra->custom_blend_mode);
+      pipeline->custom_blend_mode = extra->custom_blend_mode;
    }
 
    if (extra->use_rectlist) {
@@ -6201,8 +5784,6 @@ radv_graphics_pipeline_init(struct radv_graphics_pipeline *pipeline, struct radv
       blend.cb_shader_mask &= ps->info.ps.colors_written;
    }
 
-   pipeline->cb_target_mask = blend.cb_target_mask;
-
    if (radv_pipeline_has_stage(pipeline, MESA_SHADER_GEOMETRY) && !radv_pipeline_has_ngg(pipeline)) {
       struct radv_shader *gs = pipeline->base.shaders[MESA_SHADER_GEOMETRY];
 
@@ -6216,7 +5797,6 @@ radv_graphics_pipeline_init(struct radv_graphics_pipeline *pipeline, struct radv
    if (!radv_pipeline_has_stage(pipeline, MESA_SHADER_MESH))
       radv_pipeline_init_vertex_input_state(pipeline, &state);
 
-   radv_pipeline_init_binning_state(pipeline, &blend, &state);
    radv_pipeline_init_shader_stages_state(pipeline);
    radv_pipeline_init_scratch(device, &pipeline->base);
 

@@ -60,7 +60,7 @@ static const struct {
    [CHIP_VEGA20] = {0x66A0, 16, true},
    [CHIP_RAVEN] = {0x15DD, 2, false},
    [CHIP_RENOIR] = {0x1636, 2, false},
-   [CHIP_ARCTURUS] = {0x738C, 2, true},
+   [CHIP_MI100] = {0x738C, 2, true},
    [CHIP_NAVI10] = {0x7310, 16, true},
    [CHIP_NAVI12] = {0x7360, 8, true},
    [CHIP_NAVI14] = {0x7340, 8, true},
@@ -148,7 +148,7 @@ radv_null_winsys_query_info(struct radeon_winsys *rws, struct radeon_info *info)
 
    info->has_accelerated_dot_product =
       info->family == CHIP_VEGA20 ||
-      (info->family >= CHIP_ARCTURUS && info->family != CHIP_NAVI10);
+      (info->family >= CHIP_MI100 && info->family != CHIP_NAVI10);
 
    info->address32_hi = info->gfx_level >= GFX9 ? 0xffff8000u : 0x0;
 

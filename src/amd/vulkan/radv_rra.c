@@ -400,14 +400,24 @@ rra_parent_table_index_from_offset(uint32_t offset, uint32_t parent_table_size)
    return max_parent_table_index - (offset - RRA_ROOT_NODE_OFFSET) / 64;
 }
 
+struct rra_validation_context {
+   bool failed;
+   char location[31];
+};
+
 static void PRINTFLIKE(2, 3)
-rra_accel_struct_validation_fail(uint32_t offset, const char *reason, ...)
+rra_validation_fail(struct rra_validation_context *ctx, const char *message, ...)
 {
-   fprintf(stderr, "radv: AS validation failed at offset 0x%x with reason: ", offset);
+   if (!ctx->failed) {
+      fprintf(stderr, "radv: rra: Validation failed at %s:\n", ctx->location);
+      ctx->failed = true;
+   }
+
+   fprintf(stderr, "   ");
 
    va_list list;
-   va_start(list, reason);
-   vfprintf(stderr, reason, list);
+   va_start(list, message);
+   vfprintf(stderr, message, list);
    va_end(list);
 
    fprintf(stderr, "\n");
@@ -417,25 +427,21 @@ static bool
 rra_validate_header(struct radv_acceleration_structure *accel_struct,
                     const struct radv_accel_struct_header *header)
 {
-   bool result = true;
+   struct rra_validation_context ctx = {
+      .location = "header",
+   };
 
    if (accel_struct->type == VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_KHR &&
-       header->instance_count > 0) {
-      rra_accel_struct_validation_fail(0, "BLAS contains instances");
-      result = false;
-   }
+       header->instance_count > 0)
+      rra_validation_fail(&ctx, "BLAS contains instances");
 
-   if (header->bvh_offset >= accel_struct->size) {
-      rra_accel_struct_validation_fail(0, "Invalid BVH offset %u", header->bvh_offset);
-      result = false;
-   }
+   if (header->bvh_offset >= accel_struct->size)
+      rra_validation_fail(&ctx, "Invalid BVH offset %u", header->bvh_offset);
 
-   if (header->instance_count * sizeof(struct radv_bvh_instance_node) >= accel_struct->size) {
-      rra_accel_struct_validation_fail(0, "Too many instances");
-      result = false;
-   }
+   if (header->instance_count * sizeof(struct radv_bvh_instance_node) >= accel_struct->size)
+      rra_validation_fail(&ctx, "Too many instances");
 
-   return result;
+   return ctx.failed;
 }
 
 static bool
@@ -459,10 +465,13 @@ static bool
 rra_validate_node(struct hash_table_u64 *accel_struct_vas, uint8_t *data, void *node,
                   uint32_t root_node_offset, uint32_t size, bool is_bottom_level)
 {
+   struct rra_validation_context ctx = {0};
+
+   uint32_t cur_offset = (uint8_t *)node - data;
+   snprintf(ctx.location, sizeof(ctx.location), "internal node (offset=%u)", cur_offset);
+
    /* The child ids are located at offset=0 for both box16 and box32 nodes. */
    uint32_t *children = node;
-   bool result = true;
-   uint32_t cur_offset = (uint8_t *)node - data;
    for (uint32_t i = 0; i < 4; ++i) {
       if (children[i] == 0xFFFFFFFF)
          continue;
@@ -470,58 +479,36 @@ rra_validate_node(struct hash_table_u64 *accel_struct_vas, uint8_t *data, void *
       uint32_t type = children[i] & 7;
       uint32_t offset = (children[i] & (~7u)) << 3;
 
-      bool is_node_type_valid = true;
-      bool node_type_matches_as_type = true;
-
-      switch (type) {
-      case radv_bvh_node_box16:
-      case radv_bvh_node_box32:
-         break;
-      case radv_bvh_node_instance:
-         node_type_matches_as_type = !is_bottom_level;
-         break;
-      case radv_bvh_node_triangle:
-      case radv_bvh_node_aabb:
-         node_type_matches_as_type = is_bottom_level;
-         break;
-      default:
-         is_node_type_valid = false;
-      }
-      if (!is_node_type_valid) {
-         rra_accel_struct_validation_fail(cur_offset, "Invalid node type %u (child index %u)", type,
-                                          i);
-         result = false;
-      }
-      if (!node_type_matches_as_type) {
-         rra_accel_struct_validation_fail(offset,
-                                          is_bottom_level ? "%s node in BLAS (child index %u)"
-                                                          : "%s node in TLAS (child index %u)",
-                                          node_type_names[type], i);
-
-         result = false;
-      }
+      if (is_bottom_level == (type == radv_bvh_node_instance))
+         rra_validation_fail(&ctx,
+                             is_bottom_level ? "%s node in BLAS (child index %u)"
+                                             : "%s node in TLAS (child index %u)",
+                             node_type_names[type], i);
 
       if (offset > size) {
-         rra_accel_struct_validation_fail(cur_offset, "Invalid child offset (child index %u)", i);
-         result = false;
+         rra_validation_fail(&ctx, "Invalid child offset (child index %u)", i);
          continue;
       }
 
       if (is_internal_node(type)) {
-         result &= rra_validate_node(accel_struct_vas, data, data + offset, root_node_offset, size,
-                                     is_bottom_level);
+         ctx.failed |= rra_validate_node(accel_struct_vas, data, data + offset, root_node_offset,
+                                         size, is_bottom_level);
       } else if (type == radv_bvh_node_instance) {
+         struct rra_validation_context instance_ctx = {0};
+         snprintf(instance_ctx.location, sizeof(instance_ctx.location), "instance node (offset=%u)",
+                  offset);
+
          struct radv_bvh_instance_node *src = (struct radv_bvh_instance_node *)(data + offset);
          uint64_t blas_va = src->bvh_ptr - src->bvh_offset;
-         if (!_mesa_hash_table_u64_search(accel_struct_vas, blas_va)) {
-            rra_accel_struct_validation_fail(offset,
-                                             "Invalid instance node pointer 0x%llx (offset: 0x%x)",
-                                             (unsigned long long)src->bvh_ptr, src->bvh_offset);
-            result = false;
-         }
+         if (!_mesa_hash_table_u64_search(accel_struct_vas, blas_va))
+            rra_validation_fail(&instance_ctx,
+                                "Invalid instance node pointer 0x%llx (offset: 0x%x)",
+                                (unsigned long long)src->bvh_ptr, src->bvh_offset);
+
+         ctx.failed |= instance_ctx.failed;
       }
    }
-   return result;
+   return ctx.failed;
 }
 
 struct rra_transcoding_context {
@@ -736,12 +723,12 @@ rra_dump_acceleration_structure(struct rra_copied_accel_struct *copied_struct,
    uint32_t src_root_offset = (RADV_BVH_ROOT_NODE & ~7) << 3;
 
    if (should_validate) {
-      if (!rra_validate_header(accel_struct, header)) {
+      if (rra_validate_header(accel_struct, header)) {
          return VK_ERROR_VALIDATION_FAILED_EXT;
       }
-      if (!rra_validate_node(accel_struct_vas, data + header->bvh_offset,
-                             data + header->bvh_offset + src_root_offset, src_root_offset,
-                             accel_struct->size, !is_tlas)) {
+      if (rra_validate_node(accel_struct_vas, data + header->bvh_offset,
+                            data + header->bvh_offset + src_root_offset, src_root_offset,
+                            accel_struct->size, !is_tlas)) {
          return VK_ERROR_VALIDATION_FAILED_EXT;
       }
    }

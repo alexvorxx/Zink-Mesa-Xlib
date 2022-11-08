@@ -36,7 +36,7 @@
 #include "translate.h"
 
 
-#if (defined(PIPE_ARCH_X86) || defined(PIPE_ARCH_X86_64)) && !defined(EMBEDDED_DEVICE)
+#if defined(PIPE_ARCH_X86) || defined(PIPE_ARCH_X86_64)
 
 #include "rtasm/rtasm_x86sse.h"
 

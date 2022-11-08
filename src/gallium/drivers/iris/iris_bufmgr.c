@@ -2340,18 +2340,6 @@ static struct intel_mapped_pinned_buffer_alloc aux_map_allocator = {
    .free = intel_aux_map_buffer_free,
 };
 
-static int
-gem_param(int fd, int name)
-{
-   int v = -1; /* No param uses (yet) the sign bit, reserve it for errors */
-
-   struct drm_i915_getparam gp = { .param = name, .value = &v };
-   if (intel_ioctl(fd, DRM_IOCTL_I915_GETPARAM, &gp))
-      return -1;
-
-   return v;
-}
-
 static bool
 iris_bufmgr_get_meminfo(struct iris_bufmgr *bufmgr,
                         struct intel_device_info *devinfo)
@@ -2420,9 +2408,8 @@ iris_bufmgr_create(struct intel_device_info *devinfo, int fd, bool bo_reuse)
    bufmgr->has_local_mem = devinfo->has_local_mem;
    bufmgr->has_tiling_uapi = devinfo->has_tiling_uapi;
    bufmgr->bo_reuse = bo_reuse;
-   bufmgr->has_mmap_offset = gem_param(fd, I915_PARAM_MMAP_GTT_VERSION) >= 4;
-   bufmgr->has_userptr_probe =
-      gem_param(fd, I915_PARAM_HAS_USERPTR_PROBE) >= 1;
+   bufmgr->has_mmap_offset = devinfo->has_mmap_offset;
+   bufmgr->has_userptr_probe = devinfo->has_userptr_probe;
    iris_bufmgr_get_meminfo(bufmgr, devinfo);
    bufmgr->all_vram_mappable = intel_vram_all_mappable(devinfo);
 

@@ -68,14 +68,39 @@ dzn_image_create(struct dzn_device *device,
                  const VkAllocationCallbacks *pAllocator,
                  VkImage *out)
 {
-   struct dzn_image *image =
-      vk_zalloc2(&device->vk.alloc, pAllocator, sizeof(*image), 8,
-                VK_SYSTEM_ALLOCATION_SCOPE_OBJECT);
    struct dzn_physical_device *pdev =
       container_of(device->vk.physical, struct dzn_physical_device, vk);
+   VkFormat *compat_formats = NULL;
+   uint32_t compat_format_count = 0;
 
-   if (!image)
+   if (pdev->options12.RelaxedFormatCastingSupported) {
+      VkResult ret =
+         vk_image_create_get_format_list(&device->vk, pCreateInfo, pAllocator,
+                                         &compat_formats, &compat_format_count);
+      if (ret != VK_SUCCESS)
+         return ret;
+   }
+
+   VK_MULTIALLOC(ma);
+   VK_MULTIALLOC_DECL(&ma, struct dzn_image, image, 1);
+   VK_MULTIALLOC_DECL(&ma, DXGI_FORMAT, castable_formats, compat_format_count);
+
+   if (!vk_multialloc_zalloc2(&ma, &device->vk.alloc, pAllocator, VK_SYSTEM_ALLOCATION_SCOPE_OBJECT)) {
+      vk_free2(&device->vk.alloc, pAllocator, compat_formats);
       return vk_error(device, VK_ERROR_OUT_OF_HOST_MEMORY);
+   }
+
+   image->castable_formats = castable_formats;
+   image->castable_format_count = 0;
+   for (uint32_t i = 0; i < compat_format_count; i++) {
+      castable_formats[image->castable_format_count] =
+         dzn_image_get_dxgi_format(compat_formats[i], pCreateInfo->usage, 0);
+
+      if (castable_formats[image->castable_format_count] != DXGI_FORMAT_UNKNOWN)
+         image->castable_format_count++;
+   }
+
+   vk_free2(&device->vk.alloc, pAllocator, compat_formats);
 
 #if 0
     VkExternalMemoryHandleTypeFlags supported =
@@ -153,6 +178,8 @@ dzn_image_create(struct dzn_device *device,
       image->desc.MipLevels = 1;
       image->desc.SampleDesc.Count = 1;
       image->desc.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
+      image->castable_formats = NULL;
+      image->castable_format_count = 0;
    } else {
       image->desc.Format =
          dzn_image_get_dxgi_format(pCreateInfo->format,
@@ -169,7 +196,8 @@ dzn_image_create(struct dzn_device *device,
       image->desc.Layout = D3D12_TEXTURE_LAYOUT_UNKNOWN;
    }
 
-   if (image->vk.create_flags & VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT)
+   if ((image->vk.create_flags & VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT) &&
+       !pdev->options12.RelaxedFormatCastingSupported)
       image->desc.Format = dzn_get_typeless_dxgi_format(image->desc.Format);
 
    if (image->desc.SampleDesc.Count > 1)
@@ -708,13 +736,42 @@ dzn_BindImageMemory2(VkDevice dev,
       if (!did_bind) {
          image->mem = mem;
          image->mem_offset = bind_info->memoryOffset;
-         if (FAILED(ID3D12Device1_CreatePlacedResource(device->dev, mem->heap,
+
+         HRESULT hres;
+
+         if (device->dev10 && image->castable_format_count > 0) {
+            D3D12_RESOURCE_DESC1 desc = {
+               .Dimension = image->desc.Dimension,
+               .Alignment = image->desc.Alignment,
+               .Width = image->desc.Width,
+               .Height = image->desc.Height,
+               .DepthOrArraySize = image->desc.DepthOrArraySize,
+               .MipLevels = image->desc.MipLevels,
+               .Format = image->desc.Format,
+               .SampleDesc = image->desc.SampleDesc,
+               .Layout = image->desc.Layout,
+               .Flags = image->desc.Flags,
+            };
+
+            hres = ID3D12Device10_CreatePlacedResource2(device->dev10, mem->heap,
+                                                        bind_info->memoryOffset,
+                                                        &desc,
+                                                        mem->initial_state,
+                                                        NULL,
+                                                        image->castable_format_count,
+                                                        image->castable_formats,
+                                                        &IID_ID3D12Resource,
+                                                        (void **)&image->res);
+         } else {
+            hres = ID3D12Device1_CreatePlacedResource(device->dev, mem->heap,
                                                       bind_info->memoryOffset,
                                                       &image->desc,
                                                       mem->initial_state,
                                                       NULL,
                                                       &IID_ID3D12Resource,
-                                                      (void **)&image->res)))
+                                                      (void **)&image->res);
+         }
+         if (FAILED(hres))
             return vk_error(device, VK_ERROR_OUT_OF_DEVICE_MEMORY);
          did_bind = true;
       }

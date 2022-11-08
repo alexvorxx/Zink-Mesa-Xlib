@@ -20,7 +20,7 @@ These are the primary Mesa 3D / DRI mailing lists:
    - announcements of new Mesa versions are sent to this list. Very low
    traffic.
 
--  `dri-devel <http://lists.freedesktop.org/mailman/listinfo/dri-devel>`__
+-  `dri-devel <https://lists.freedesktop.org/mailman/listinfo/dri-devel>`__
    - for the Linux/BSD Direct Rendering Module (DRM) kernel modules
    supporting Mesa's userspace drivers
 

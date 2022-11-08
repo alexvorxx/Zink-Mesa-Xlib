@@ -7,7 +7,7 @@ Development Utilities
    is an open-source test suite for OpenGL implementations.
 `ApiTrace <https://github.com/apitrace/apitrace>`__
    is a project to trace, analyze and debug graphics APIs.
-`Valgrind <http://www.valgrind.org>`__
+`Valgrind <https://www.valgrind.org>`__
    is a very useful tool for tracking down memory-related problems in
    your code.
 `Coverity <https://scan.coverity.com/projects/mesa>`__

@@ -39,7 +39,7 @@
 #include "pipe/p_state.h"
 #include "frontend/api.h"
 #include "frontend/opencl_interop.h"
-#include "os/os_thread.h"
+#include "util/u_thread.h"
 #include "postprocess/filters.h"
 #include "kopper_interface.h"
 

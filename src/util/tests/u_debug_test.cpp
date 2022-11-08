@@ -24,8 +24,45 @@
  *
  */
 
+#include <stdlib.h>
+
 #include <gtest/gtest.h>
+#include "c11/threads.h"
 #include "util/u_debug.h"
+
+#define NUM_DEBUG_TEST_THREAD 8
+
+DEBUG_GET_ONCE_BOOL_OPTION(bool_test,"X_TEST_ENV_BOOL", false);
+
+static int
+test_thread(void *_state)
+{
+   EXPECT_STREQ(debug_get_option("X_TEST_GALLIUM_DRIVER", ""), "test_driver");
+   EXPECT_EQ(debug_get_option_bool_test(), true);
+   return 0;
+}
+
+TEST(u_debug, DEBUG_GET_ONCE_BOOL_Multithread)
+{
+   {
+      static char env_str[] = "X_TEST_ENV_BOOL=true";
+      putenv(env_str);
+   }
+
+   {
+      static char env_str[] = "X_TEST_GALLIUM_DRIVER=test_driver";
+      putenv(env_str);
+   }
+
+   thrd_t threads[NUM_DEBUG_TEST_THREAD];
+   for (unsigned i = 0; i < NUM_DEBUG_TEST_THREAD; i++) {
+        thrd_create(&threads[i], test_thread, NULL);
+   }
+   for (unsigned i = 0; i < NUM_DEBUG_TEST_THREAD; i++) {
+      int ret;
+      thrd_join(threads[i], &ret);
+   }
+}
 
 /* When testing, the environment variable name should not be the same */
 

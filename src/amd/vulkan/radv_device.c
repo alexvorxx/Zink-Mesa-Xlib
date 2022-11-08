@@ -1891,7 +1891,7 @@ radv_GetPhysicalDeviceFeatures2(VkPhysicalDevice physicalDevice,
          features->extendedDynamicState3DepthClipNegativeOneToOne = true;
          features->extendedDynamicState3ProvokingVertexMode = !pdevice->use_ngg; /* TODO: NGG */
          features->extendedDynamicState3DepthClampEnable = true;
-         features->extendedDynamicState3ColorWriteMask = false; /* TODO: Zink */
+         features->extendedDynamicState3ColorWriteMask = true;
          features->extendedDynamicState3RasterizationSamples = false; /* TODO: Zink */
          features->extendedDynamicState3ColorBlendEquation = false; /* TODO: Zink */
          features->extendedDynamicState3SampleLocationsEnable = false; /* TODO: Zink */
@@ -3033,10 +3033,14 @@ radv_queue_state_finish(struct radv_queue_state *queue, struct radeon_winsys *ws
       ws->buffer_destroy(ws, queue->task_rings_bo);
    if (queue->attr_ring_bo)
       ws->buffer_destroy(ws, queue->attr_ring_bo);
-   if (queue->gds_bo)
+   if (queue->gds_bo) {
+      ws->buffer_make_resident(ws, queue->gds_bo, false);
       ws->buffer_destroy(ws, queue->gds_bo);
-   if (queue->gds_oa_bo)
+   }
+   if (queue->gds_oa_bo) {
+      ws->buffer_make_resident(ws, queue->gds_oa_bo, false);
       ws->buffer_destroy(ws, queue->gds_oa_bo);
+   }
    if (queue->compute_scratch_bo)
       ws->buffer_destroy(ws, queue->compute_scratch_bo);
 }
@@ -4710,6 +4714,13 @@ radv_update_preamble_cs(struct radv_queue_state *queue, struct radv_device *devi
                                  RADV_BO_PRIORITY_SCRATCH, 0, &gds_bo);
       if (result != VK_SUCCESS)
          goto fail;
+
+      /* Add the GDS BO to our global BO list to prevent the kernel to emit a GDS switch and reset
+       * the state when a compute queue is used.
+       */
+      result = device->ws->buffer_make_resident(ws, gds_bo, true);
+      if (result != VK_SUCCESS)
+         goto fail;
    }
 
    if (!queue->ring_info.gds_oa && needs->gds_oa) {
@@ -4717,6 +4728,13 @@ radv_update_preamble_cs(struct radv_queue_state *queue, struct radv_device *devi
 
       result = ws->buffer_create(ws, 4, 1, RADEON_DOMAIN_OA, ring_bo_flags,
                                  RADV_BO_PRIORITY_SCRATCH, 0, &gds_oa_bo);
+      if (result != VK_SUCCESS)
+         goto fail;
+
+      /* Add the GDS OA BO to our global BO list to prevent the kernel to emit a GDS switch and
+       * reset the state when a compute queue is used.
+       */
+      result = device->ws->buffer_make_resident(ws, gds_oa_bo, true);
       if (result != VK_SUCCESS)
          goto fail;
    }
@@ -4847,11 +4865,6 @@ radv_update_preamble_cs(struct radv_queue_state *queue, struct radv_device *devi
          break;
       }
 
-      if (gds_bo)
-         radv_cs_add_buffer(ws, cs, gds_bo);
-      if (gds_oa_bo)
-         radv_cs_add_buffer(ws, cs, gds_oa_bo);
-
       if (i < 2) {
          /* The two initial preambles have a cache flush at the beginning. */
          const enum amd_gfx_level gfx_level = device->physical_device->rad_info.gfx_level;
@@ -4946,10 +4959,14 @@ fail:
       ws->buffer_destroy(ws, task_rings_bo);
    if (attr_ring_bo && attr_ring_bo != queue->attr_ring_bo)
       ws->buffer_destroy(ws, attr_ring_bo);
-   if (gds_bo && gds_bo != queue->gds_bo)
+   if (gds_bo && gds_bo != queue->gds_bo) {
+      ws->buffer_make_resident(ws, queue->gds_bo, false);
       ws->buffer_destroy(ws, gds_bo);
-   if (gds_oa_bo && gds_oa_bo != queue->gds_oa_bo)
+   }
+   if (gds_oa_bo && gds_oa_bo != queue->gds_oa_bo) {
+      ws->buffer_make_resident(ws, queue->gds_oa_bo, false);
       ws->buffer_destroy(ws, gds_oa_bo);
+   }
 
    return vk_error(queue, result);
 }

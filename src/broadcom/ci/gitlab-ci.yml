@@ -122,9 +122,6 @@ v3d-rpi4-traces:arm64:
     PIGLIT_REPLAY_DESCRIPTION_FILE: "/install/traces-broadcom.yml"
     PIGLIT_REPLAY_DEVICE_NAME: "broadcom-rpi4"
     PIGLIT_RESULTS: "broadcom-rpi4-replay"
-  artifacts:
-    reports:
-      junit: results/junit.xml
   script:
     - ./install/bare-metal/poe-powered.sh
   tags:

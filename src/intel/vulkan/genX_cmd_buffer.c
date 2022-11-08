@@ -1059,24 +1059,6 @@ transition_color_buffer(struct anv_cmd_buffer *cmd_buffer,
 
    const uint32_t plane = anv_image_aspect_to_plane(image, aspect);
 
-   if (anv_surface_is_valid(&image->planes[plane].shadow_surface) &&
-       final_layout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL) {
-      /* This surface is a linear compressed image with a tiled shadow surface
-       * for texturing.  The client is about to use it in READ_ONLY_OPTIMAL so
-       * we need to ensure the shadow copy is up-to-date.
-       */
-      assert(image->vk.tiling != VK_IMAGE_TILING_DRM_FORMAT_MODIFIER_EXT);
-      assert(image->vk.aspects == VK_IMAGE_ASPECT_COLOR_BIT);
-      assert(image->planes[plane].primary_surface.isl.tiling == ISL_TILING_LINEAR);
-      assert(image->planes[plane].shadow_surface.isl.tiling != ISL_TILING_LINEAR);
-      assert(isl_format_is_compressed(image->planes[plane].primary_surface.isl.format));
-      assert(plane == 0);
-      anv_image_copy_to_shadow(cmd_buffer, image,
-                               VK_IMAGE_ASPECT_COLOR_BIT,
-                               base_level, level_count,
-                               base_layer, layer_count);
-   }
-
    if (base_layer >= anv_image_aux_layers(image, aspect, base_level))
       return;
 

@@ -170,6 +170,7 @@
 # Rules for changes that impact either freedreno or turnip.
 .freedreno-common-rules:
   rules:
+    - !reference [.no_scheduled_pipelines-rules, rules]
     - !reference [.freedreno-farm-rules, rules]
     - changes: &freedreno_core_file_list
       - src/freedreno/ci/**/*

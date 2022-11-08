@@ -766,15 +766,39 @@ fs_visitor::try_constant_propagate(fs_inst *inst, acp_entry *entry)
                                entry->dst, entry->size_written))
          continue;
 
-      /* If the type sizes don't match each channel of the instruction is
-       * either extracting a portion of the constant (which could be handled
-       * with some effort but the code below doesn't) or reading multiple
-       * channels of the source at once.
+      /* If the size of the use type is larger than the size of the entry
+       * type, the entry doesn't contain all of the data that the user is
+       * trying to use.
        */
-      if (type_sz(inst->src[i].type) != type_sz(entry->dst.type))
+      if (type_sz(inst->src[i].type) > type_sz(entry->dst.type))
          continue;
 
       fs_reg val = entry->src;
+
+      /* If the size of the use type is smaller than the size of the entry,
+       * clamp the value to the range of the use type.  This enables constant
+       * copy propagation in cases like
+       *
+       *
+       *    mov(8)          g12<1>UD        0x0000000cUD
+       *    ...
+       *    mul(8)          g47<1>D         g86<8,8,1>D     g12<16,8,2>W
+       */
+      if (type_sz(inst->src[i].type) < type_sz(entry->dst.type)) {
+         if (type_sz(inst->src[i].type) != 2 || type_sz(entry->dst.type) != 4)
+            continue;
+
+         assert(inst->src[i].subnr == 0 || inst->src[i].subnr == 2);
+
+         /* When subnr is 0, we want the lower 16-bits, and when it's 2, we
+          * want the upper 16-bits. No other values of subnr are valid for a
+          * UD source.
+          */
+         const uint16_t v = inst->src[i].subnr == 2 ? val.ud >> 16 : val.ud;
+
+         val.ud = v | (uint32_t(v) << 16);
+      }
+
       val.type = inst->src[i].type;
 
       if (inst->src[i].abs) {
@@ -836,6 +860,33 @@ fs_visitor::try_constant_propagate(fs_inst *inst, acp_entry *entry)
             inst->src[i] = val;
             progress = true;
          } else if (i == 0 && inst->src[1].file != IMM) {
+            /* Don't copy propagate the constant in situations like
+             *
+             *    mov(8)          g8<1>D          0x7fffffffD
+             *    mul(8)          g16<1>D         g8<8,8,1>D      g15<16,8,2>W
+             *
+             * On platforms that only have a 32x16 multiplier, this will
+             * result in lowering the multiply to
+             *
+             *    mul(8)          g15<1>D         g14<8,8,1>D     0xffffUW
+             *    mul(8)          g16<1>D         g14<8,8,1>D     0x7fffUW
+             *    add(8)          g15.1<2>UW      g15.1<16,8,2>UW g16<16,8,2>UW
+             *
+             * On Gfx8 and Gfx9, which have the full 32x32 multiplier, it
+             * results in
+             *
+             *    mul(8)          g16<1>D         g15<16,8,2>W    0x7fffffffD
+             *
+             * Volume 2a of the Skylake PRM says:
+             *
+             *    When multiplying a DW and any lower precision integer, the
+             *    DW operand must on src0.
+             */
+            if (inst->opcode == BRW_OPCODE_MUL &&
+                type_sz(inst->src[1].type) < 4 &&
+                type_sz(val.type) == 4)
+               break;
+
             /* Fit this constant in by commuting the operands.
              * Exception: we can't do this for 32-bit integer MUL/MACH
              * because it's asymmetric.

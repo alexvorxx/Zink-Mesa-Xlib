@@ -49,7 +49,7 @@
 #endif
 
 #include "pipe/p_compiler.h"
-#include "os/os_thread.h"
+#include "util/u_thread.h"
 #include "util/os_time.h"
 #include "util/simple_mtx.h"
 #include "util/u_debug.h"

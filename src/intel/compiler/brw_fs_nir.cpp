@@ -2125,24 +2125,6 @@ fs_visitor::get_nir_dest(const nir_dest &dest)
    }
 }
 
-void
-fs_visitor::emit_percomp(const fs_builder &bld, const fs_inst &inst,
-                         unsigned wr_mask)
-{
-   for (unsigned i = 0; i < 4; i++) {
-      if (!((wr_mask >> i) & 1))
-         continue;
-
-      fs_inst *new_inst = new(mem_ctx) fs_inst(inst);
-      new_inst->dst = offset(new_inst->dst, bld, i);
-      for (unsigned j = 0; j < new_inst->sources; j++)
-         if (new_inst->src[j].file == VGRF)
-            new_inst->src[j] = offset(new_inst->src[j], bld, i);
-
-      bld.emit(new_inst);
-   }
-}
-
 static fs_inst *
 emit_pixel_interpolater_send(const fs_builder &bld,
                              enum opcode opcode,

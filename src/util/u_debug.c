@@ -26,7 +26,7 @@
  *
  **************************************************************************/
 
-
+#include "util/u_atomic.h"
 #include "util/u_debug.h"
 #include "util/u_string.h"
 #include "util/u_math.h"
@@ -46,7 +46,7 @@ void
 _debug_vprintf(const char *format, va_list ap)
 {
    static char buf[4096] = {'\0'};
-#if DETECT_OS_WINDOWS || defined(EMBEDDED_DEVICE)
+#if DETECT_OS_WINDOWS
    /* We buffer until we find a newline. */
    size_t len = strlen(buf);
    int ret = vsnprintf(buf + len, sizeof(buf) - len, format, ap);
@@ -100,23 +100,38 @@ debug_disable_win32_error_dialogs(void)
 }
 #endif /* _WIN32 */
 
-
-#ifdef DEBUG
-void
-debug_print_blob(const char *name, const void *blob, unsigned size)
+static bool
+debug_get_bool_option_direct(const char *name, bool dfault)
 {
-   const unsigned *ublob = (const unsigned *)blob;
-   unsigned i;
+   const char *str = os_get_option(name);
+   bool result;
 
-   debug_printf("%s (%d dwords%s)\n", name, size/4,
-                size%4 ? "... plus a few bytes" : "");
-
-   for (i = 0; i < size/4; i++) {
-      debug_printf("%d:\t%08x\n", i, ublob[i]);
-   }
+   if (str == NULL)
+      result = dfault;
+   else if (!strcmp(str, "0"))
+      result = false;
+   else if (!strcasecmp(str, "n"))
+      result = false;
+   else if (!strcasecmp(str, "no"))
+      result = false;
+   else if (!strcasecmp(str, "f"))
+      result = false;
+   else if (!strcasecmp(str, "false"))
+      result = false;
+   else if (!strcmp(str, "1"))
+      result = true;
+   else if (!strcasecmp(str, "y"))
+      result = true;
+   else if (!strcasecmp(str, "yes"))
+      result = true;
+   else if (!strcasecmp(str, "t"))
+      result = true;
+   else if (!strcasecmp(str, "true"))
+      result = true;
+   else
+      result = dfault;
+   return result;
 }
-#endif
-
 
 static bool
 debug_get_option_should_print(void)
@@ -124,15 +139,12 @@ debug_get_option_should_print(void)
    static bool initialized = false;
    static bool value = false;
 
-   if (initialized)
-      return value;
+   if (unlikely(!p_atomic_read_relaxed(&initialized))) {
+      value = debug_get_bool_option_direct("GALLIUM_PRINT_OPTIONS", false);
+      p_atomic_set(&initialized, true);
+   }
 
-   /* Oh hey this will call into this function,
-    * but its cool since we set first to false
-    */
-   initialized = true;
-   value = debug_get_bool_option("GALLIUM_PRINT_OPTIONS", false);
-   /* XXX should we print this option? Currently it wont */
+   /* We do not print value of GALLIUM_PRINT_OPTIONS intentionally. */
    return value;
 }
 
@@ -163,34 +175,7 @@ debug_get_option(const char *name, const char *dfault)
 bool
 debug_get_bool_option(const char *name, bool dfault)
 {
-   const char *str = os_get_option(name);
-   bool result;
-
-   if (str == NULL)
-      result = dfault;
-   else if (!strcmp(str, "0"))
-      result = false;
-   else if (!strcasecmp(str, "n"))
-      result = false;
-   else if (!strcasecmp(str, "no"))
-      result = false;
-   else if (!strcasecmp(str, "f"))
-      result = false;
-   else if (!strcasecmp(str, "false"))
-      result = false;
-   else if (!strcmp(str, "1"))
-      result = true;
-   else if (!strcasecmp(str, "y"))
-      result = true;
-   else if (!strcasecmp(str, "yes"))
-      result = true;
-   else if (!strcasecmp(str, "t"))
-      result = true;
-   else if (!strcasecmp(str, "true"))
-      result = true;
-   else
-      result = dfault;
-
+   bool result = debug_get_bool_option_direct(name, dfault);
    if (debug_get_option_should_print())
       debug_printf("%s: %s = %s\n", __FUNCTION__, name,
                    result ? "TRUE" : "FALSE");
@@ -357,30 +342,6 @@ debug_dump_enum(const struct debug_named_value *names,
 
 
 const char *
-debug_dump_enum_noprefix(const struct debug_named_value *names,
-                         const char *prefix,
-                         unsigned long value)
-{
-   static char rest[64];
-
-   while (names->name) {
-      if (names->value == value) {
-         const char *name = names->name;
-         while (*name == *prefix) {
-            name++;
-            prefix++;
-         }
-         return name;
-      }
-      ++names;
-   }
-
-   snprintf(rest, sizeof(rest), "0x%08lx", value);
-   return rest;
-}
-
-
-const char *
 debug_dump_flags(const struct debug_named_value *names, unsigned long value)
 {
    static char output[4096];
@@ -504,44 +465,3 @@ comma_separated_list_contains(const char *list, const char *s)
 
    return false;
 }
-
-
-#ifdef DEBUG
-int fl_indent = 0;
-const char* fl_function[1024];
-
-int
-debug_funclog_enter(const char* f, UNUSED const int line,
-                    UNUSED const char* file)
-{
-   int i;
-
-   for (i = 0; i < fl_indent; i++)
-      debug_printf("  ");
-   debug_printf("%s\n", f);
-
-   assert(fl_indent < 1023);
-   fl_function[fl_indent++] = f;
-
-   return 0;
-}
-
-void
-debug_funclog_exit(const char* f, UNUSED const int line,
-                   UNUSED const char* file)
-{
-   --fl_indent;
-   assert(fl_indent >= 0);
-   assert(fl_function[fl_indent] == f);
-}
-
-void
-debug_funclog_enter_exit(const char* f, UNUSED const int line,
-                         UNUSED const char* file)
-{
-   int i;
-   for (i = 0; i < fl_indent; i++)
-      debug_printf("  ");
-   debug_printf("%s\n", f);
-}
-#endif

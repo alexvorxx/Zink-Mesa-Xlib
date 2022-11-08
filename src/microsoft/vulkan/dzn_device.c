@@ -144,6 +144,9 @@ dzn_physical_device_destroy(struct dzn_physical_device *pdev)
    if (pdev->dev)
       ID3D12Device1_Release(pdev->dev);
 
+   if (pdev->dev10)
+      ID3D12Device1_Release(pdev->dev10);
+
    if (pdev->adapter)
       IUnknown_Release(pdev->adapter);
 
@@ -501,6 +504,7 @@ dzn_physical_device_cache_caps(struct dzn_physical_device *pdev)
    ID3D12Device1_CheckFeatureSupport(pdev->dev, D3D12_FEATURE_D3D12_OPTIONS, &pdev->options, sizeof(pdev->options));
    ID3D12Device1_CheckFeatureSupport(pdev->dev, D3D12_FEATURE_D3D12_OPTIONS2, &pdev->options2, sizeof(pdev->options2));
    ID3D12Device1_CheckFeatureSupport(pdev->dev, D3D12_FEATURE_D3D12_OPTIONS3, &pdev->options3, sizeof(pdev->options3));
+   ID3D12Device1_CheckFeatureSupport(pdev->dev, D3D12_FEATURE_D3D12_OPTIONS12, &pdev->options12, sizeof(pdev->options12));
 
    pdev->queue_families[pdev->queue_family_count++] = (struct dzn_queue_family) {
       .props = {
@@ -691,6 +695,8 @@ dzn_physical_device_get_d3d12_dev(struct dzn_physical_device *pdev)
                                       instance->factory,
                                       !instance->dxil_validator);
 
+      if (FAILED(ID3D12Device1_QueryInterface(pdev->dev, &IID_ID3D12Device10, (void **)&pdev->dev10)))
+         pdev->dev10 = NULL;
       dzn_physical_device_cache_caps(pdev);
       dzn_physical_device_init_memory(pdev);
       dzn_physical_device_init_uuids(pdev);
@@ -2109,6 +2115,9 @@ dzn_device_destroy(struct dzn_device *device, const VkAllocationCallbacks *pAllo
    if (device->dev)
       ID3D12Device1_Release(device->dev);
 
+   if (device->dev10)
+      ID3D12Device1_Release(device->dev10);
+
    vk_device_finish(&device->vk);
    vk_free2(&instance->vk.alloc, pAllocator, device);
 }
@@ -2187,6 +2196,11 @@ dzn_device_create(struct dzn_physical_device *pdev,
    }
 
    ID3D12Device1_AddRef(device->dev);
+
+   if (pdev->dev10) {
+      device->dev10 = pdev->dev10;
+      ID3D12Device1_AddRef(device->dev10);
+   }
 
    ID3D12InfoQueue *info_queue;
    if (SUCCEEDED(ID3D12Device1_QueryInterface(device->dev,

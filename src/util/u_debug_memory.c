@@ -36,7 +36,7 @@
 
 #define DEBUG_MEMORY_IMPLEMENTATION
 
-#include "os/os_thread.h"
+#include "util/u_thread.h"
 
 #include "util/simple_mtx.h"
 #include "util/u_debug.h"

@@ -86,7 +86,7 @@
 #endif
 
 #include "c11/threads.h"
-#include "os/os_thread.h"
+#include "util/u_thread.h"
 #include "pipe/p_config.h"
 #include "util/u_debug.h"
 #include "util/u_cpu_detect.h"

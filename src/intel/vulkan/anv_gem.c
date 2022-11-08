@@ -146,7 +146,7 @@ anv_gem_mmap(struct anv_device *device, uint32_t gem_handle,
              uint64_t offset, uint64_t size, uint32_t flags)
 {
    void *map;
-   if (device->physical->has_mmap_offset)
+   if (device->physical->info.has_mmap_offset)
       map = anv_gem_mmap_offset(device, gem_handle, offset, size, flags);
    else
       map = anv_gem_mmap_legacy(device, gem_handle, offset, size, flags);
@@ -176,7 +176,7 @@ anv_gem_userptr(struct anv_device *device, void *mem, size_t size)
       .flags = 0,
    };
 
-   if (device->physical->has_userptr_probe)
+   if (device->physical->info.has_userptr_probe)
       userptr.flags |= I915_USERPTR_PROBE;
 
    int ret = intel_ioctl(device->fd, DRM_IOCTL_I915_GEM_USERPTR, &userptr);
@@ -276,23 +276,6 @@ anv_gem_set_tiling(struct anv_device *device,
    } while (ret == -1 && (errno == EINTR || errno == EAGAIN));
 
    return ret;
-}
-
-int
-anv_gem_get_param(int fd, uint32_t param)
-{
-   int tmp;
-
-   drm_i915_getparam_t gp = {
-      .param = param,
-      .value = &tmp,
-   };
-
-   int ret = intel_ioctl(fd, DRM_IOCTL_I915_GETPARAM, &gp);
-   if (ret == 0)
-      return tmp;
-
-   return 0;
 }
 
 bool

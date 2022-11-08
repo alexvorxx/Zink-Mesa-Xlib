@@ -30,7 +30,7 @@ performed on all render targets.
    The blend_enable flag is ignored for all render targets when logical
    operations are enabled.
 
-For a source component `s` and destination component `d`, the logical
+For a source component ``s`` and destination component ``d``, the logical
 operations are defined as taking the bits of each channel of each component,
 and performing one of the following operations per-channel:
 

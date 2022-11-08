@@ -2793,7 +2793,7 @@ struct pipe_video_codec *radeon_create_decoder(struct pipe_context *context,
 
    if (dec->stream_type == RDECODE_CODEC_JPEG) {
 
-      if (sctx->family == CHIP_ARCTURUS || sctx->family == CHIP_ALDEBARAN)
+      if (sctx->family == CHIP_MI100 || sctx->family == CHIP_MI200)
          dec->njctx = 2;
       else
          dec->njctx = 1;
@@ -2913,8 +2913,8 @@ struct pipe_video_codec *radeon_create_decoder(struct pipe_context *context,
       dec->reg.cntl = RDECODE_VCN2_ENGINE_CNTL;
       dec->jpg.direct_reg = true;
       break;
-   case CHIP_ARCTURUS:
-   case CHIP_ALDEBARAN:
+   case CHIP_MI100:
+   case CHIP_MI200:
    case CHIP_NAVI21:
    case CHIP_NAVI22:
    case CHIP_NAVI23:

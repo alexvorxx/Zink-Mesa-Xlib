@@ -39,8 +39,8 @@ enable that logic, you need to pass the ``-Damber=true`` flag to Meson.
 Documentation
 -------------
 
-On `docs.mesa3d.org <https://docs.mesa3d.org/>`, we currently only
+On `docs.mesa3d.org <https://docs.mesa3d.org/>`__, we currently only
 publish the documentation from our main branch. But you can view the
 documentation for the Amber branch `here
-<https://gitlab.freedesktop.org/mesa/mesa/-/tree/21.3/docs>`_.
+<https://gitlab.freedesktop.org/mesa/mesa/-/tree/amber/docs>`__.
 

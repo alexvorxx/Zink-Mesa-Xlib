@@ -36,7 +36,7 @@ Third party/extra tools.
 ^^^^^^^^^^^^^^^^^^^^^^^^
 
 -  `Python <https://www.python.org/>`__ - Python 3.5 or newer is required.
--  `Python Mako module <http://www.makotemplates.org/>`__ - Python Mako
+-  `Python Mako module <https://www.makotemplates.org/>`__ - Python Mako
    module is required. Version 0.8.0 or later should work.
 -  Lex / Yacc - for building the Mesa IR and GLSL compiler.
 
@@ -49,7 +49,7 @@ Third party/extra tools.
       mingw-get install msys-flex msys-bison
 
    For MSVC on Windows, install `Win
-   flex-bison <http://winflexbison.sourceforge.net/>`__.
+   flex-bison <https://winflexbison.sourceforge.net/>`__.
 
 .. note::
 

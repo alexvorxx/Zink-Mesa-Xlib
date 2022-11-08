@@ -130,6 +130,7 @@ static void si_create_compute_state_async(void *job, void *gdata, int thread_ind
                             &sel->active_samplers_and_images);
 
    program->shader.is_monolithic = true;
+   program->shader.wave_size = si_determine_wave_size(sscreen, &program->shader);
 
    /* Variable block sizes need 10 bits (1 + log2(SI_MAX_VARIABLE_THREADS_PER_BLOCK)) per dim.
     * We pack them into a single user SGPR.
@@ -242,7 +243,6 @@ static void *si_create_compute_state(struct pipe_context *ctx, const struct pipe
       si_sampler_and_image_descriptors_idx(PIPE_SHADER_COMPUTE);
    sel->info.base.shared_size = cso->static_shared_mem;
    program->shader.selector = &program->sel;
-   program->shader.wave_size = si_determine_wave_size(sscreen, &program->shader);
    program->ir_type = cso->ir_type;
    program->input_size = cso->req_input_mem;
 
@@ -272,6 +272,9 @@ static void *si_create_compute_state(struct pipe_context *ctx, const struct pipe
          return NULL;
       }
       memcpy((void *)program->shader.binary.elf_buffer, header->blob, header->num_bytes);
+
+      /* This is only for clover without NIR. */
+      program->shader.wave_size = sscreen->info.gfx_level >= GFX10 ? 32 : 64;
 
       const amd_kernel_code_t *code_object = si_compute_get_code_object(program, 0);
       code_object_to_config(code_object, &program->shader.config);
@@ -415,7 +418,7 @@ void si_emit_initial_compute_regs(struct si_context *sctx, struct radeon_cmdbuf 
       }
 
       /* Set the pointer to border colors. */
-      /* Aldebaran doesn't support border colors. */
+      /* MI200 doesn't support border colors. */
       if (sctx->border_color_buffer) {
          uint64_t bc_va = sctx->border_color_buffer->gpu_address;
 
@@ -434,7 +437,7 @@ void si_emit_initial_compute_regs(struct si_context *sctx, struct radeon_cmdbuf 
                              sctx->gfx_level >= GFX10 ? 0x20 : 0);
    }
 
-   if (!info->has_graphics && info->family >= CHIP_ARCTURUS) {
+   if (!info->has_graphics && info->family >= CHIP_MI100) {
       radeon_set_sh_reg_seq(R_00B894_COMPUTE_STATIC_THREAD_MGMT_SE4, 4);
       radeon_emit(S_00B858_SH0_CU_EN(info->spi_cu_en) | S_00B858_SH1_CU_EN(info->spi_cu_en));
       radeon_emit(S_00B858_SH0_CU_EN(info->spi_cu_en) | S_00B858_SH1_CU_EN(info->spi_cu_en));
@@ -563,7 +566,7 @@ static bool si_switch_compute_shader(struct si_context *sctx, struct si_compute 
    }
 
    unsigned tmpring_size;
-   ac_get_scratch_tmpring_size(&sctx->screen->info, true,
+   ac_get_scratch_tmpring_size(&sctx->screen->info,
                                config->scratch_bytes_per_wave,
                                &sctx->max_seen_compute_scratch_bytes_per_wave, &tmpring_size);
 

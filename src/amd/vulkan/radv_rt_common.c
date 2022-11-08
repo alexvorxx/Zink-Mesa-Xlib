@@ -641,11 +641,12 @@ radv_build_ray_traversal(struct radv_device *device, nir_builder *b,
                nir_load_deref(b, args->vars.dir), nir_load_deref(b, args->vars.inv_dir));
          }
 
-         nir_push_if(b, nir_ine_imm(b, nir_iand_imm(b, bvh_node, 4), 0));
+         nir_ssa_def *node_type = nir_iand_imm(b, bvh_node, 7);
+         nir_push_if(b, nir_uge(b, node_type, nir_imm_int(b, radv_bvh_node_box16)));
          {
-            nir_push_if(b, nir_ine_imm(b, nir_iand_imm(b, bvh_node, 2), 0));
+            nir_push_if(b, nir_uge(b, node_type, nir_imm_int(b, radv_bvh_node_instance)));
             {
-               nir_push_if(b, nir_ine_imm(b, nir_iand_imm(b, bvh_node, 1), 0));
+               nir_push_if(b, nir_ieq_imm(b, node_type, radv_bvh_node_aabb));
                {
                   insert_traversal_aabb_case(device, b, args, global_bvh_node);
                }

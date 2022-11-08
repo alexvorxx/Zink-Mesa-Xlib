@@ -252,6 +252,6 @@ Reference
 ---------
 
 Luc Verhaegen’s original Lima site:
-http://web.archive.org/web/20180106112822/http://limadriver.org/
+https://web.archive.org/web/20180106112822/http://limadriver.org/
 
 .. _Mesa issue: https://gitlab.freedesktop.org/mesa/mesa/issues?label_name%5B%5D=lima

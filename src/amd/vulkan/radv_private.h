@@ -1111,7 +1111,8 @@ enum radv_dynamic_state_bits {
    RADV_DYNAMIC_DEPTH_CLIP_NEGATIVE_ONE_TO_ONE = 1ull << 38,
    RADV_DYNAMIC_PROVOKING_VERTEX_MODE = 1ull << 39,
    RADV_DYNAMIC_DEPTH_CLAMP_ENABLE = 1ull << 40,
-   RADV_DYNAMIC_ALL = (1ull << 41) - 1,
+   RADV_DYNAMIC_COLOR_WRITE_MASK = 1ull << 41,
+   RADV_DYNAMIC_ALL = (1ull << 42) - 1,
 };
 
 enum radv_cmd_dirty_bits {
@@ -1158,13 +1159,14 @@ enum radv_cmd_dirty_bits {
    RADV_CMD_DIRTY_DYNAMIC_DEPTH_CLIP_NEGATIVE_ONE_TO_ONE = 1ull << 38,
    RADV_CMD_DIRTY_DYNAMIC_PROVOKING_VERTEX_MODE = 1ull << 39,
    RADV_CMD_DIRTY_DYNAMIC_DEPTH_CLAMP_ENABLE = 1ull << 40,
-   RADV_CMD_DIRTY_DYNAMIC_ALL = (1ull << 41) - 1,
-   RADV_CMD_DIRTY_PIPELINE = 1ull << 41,
-   RADV_CMD_DIRTY_INDEX_BUFFER = 1ull << 42,
-   RADV_CMD_DIRTY_FRAMEBUFFER = 1ull << 43,
-   RADV_CMD_DIRTY_VERTEX_BUFFER = 1ull << 44,
-   RADV_CMD_DIRTY_STREAMOUT_BUFFER = 1ull << 45,
-   RADV_CMD_DIRTY_GUARDBAND = 1ull << 46,
+   RADV_CMD_DIRTY_DYNAMIC_COLOR_WRITE_MASK = 1ull << 41,
+   RADV_CMD_DIRTY_DYNAMIC_ALL = (1ull << 42) - 1,
+   RADV_CMD_DIRTY_PIPELINE = 1ull << 42,
+   RADV_CMD_DIRTY_INDEX_BUFFER = 1ull << 43,
+   RADV_CMD_DIRTY_FRAMEBUFFER = 1ull << 44,
+   RADV_CMD_DIRTY_VERTEX_BUFFER = 1ull << 45,
+   RADV_CMD_DIRTY_STREAMOUT_BUFFER = 1ull << 46,
+   RADV_CMD_DIRTY_GUARDBAND = 1ull << 47,
 };
 
 enum radv_cmd_flush_bits {
@@ -1384,6 +1386,8 @@ struct radv_dynamic_state {
    VkProvokingVertexModeEXT provoking_vertex_mode;
 
    bool depth_clamp_enable;
+
+   uint32_t color_write_mask;
 };
 
 extern const struct radv_dynamic_state default_dynamic_state;
@@ -1615,6 +1619,9 @@ struct radv_cmd_state {
    /* Tessellation info when patch control points is dynamic. */
    unsigned tess_num_patches;
    unsigned tess_lds_size;
+
+   /* Binning state */
+   unsigned last_pa_sc_binner_cntl_0;
 };
 
 struct radv_cmd_buffer_upload {
@@ -1974,10 +1981,6 @@ struct radv_ia_multi_vgt_param_helpers {
    bool partial_vs_wave;
 };
 
-struct radv_binning_state {
-   uint32_t pa_sc_binner_cntl_0;
-};
-
 #define SI_GS_PER_ES 128
 
 enum radv_pipeline_type {
@@ -2062,7 +2065,6 @@ struct radv_graphics_pipeline {
 
    uint64_t dynamic_states;
    struct radv_multisample_state ms;
-   struct radv_binning_state binning;
    struct radv_vrs_state vrs;
    uint32_t spi_baryc_cntl;
    unsigned esgs_ring_size;
@@ -2088,7 +2090,6 @@ struct radv_graphics_pipeline {
 
    /* Used for rbplus */
    uint32_t col_format_non_compacted;
-   uint32_t cb_target_mask;
 
    bool disable_out_of_order_rast_for_occlusion;
    bool uses_drawid;
@@ -2114,6 +2115,9 @@ struct radv_graphics_pipeline {
 
    /* Not NULL if graphics pipeline uses a PS epilog. */
    struct radv_shader_part *ps_epilog;
+
+   /* Custom blend mode for internal operations. */
+   unsigned custom_blend_mode;
 };
 
 struct radv_compute_pipeline {

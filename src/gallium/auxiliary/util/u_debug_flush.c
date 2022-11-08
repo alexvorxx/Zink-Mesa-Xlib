@@ -48,7 +48,7 @@
 #include "util/list.h"
 #include "util/u_inlines.h"
 #include "util/u_string.h"
-#include "os/os_thread.h"
+#include "util/u_thread.h"
 #include <stdio.h>
 
 /* Future improvement: Use realloc instead? */

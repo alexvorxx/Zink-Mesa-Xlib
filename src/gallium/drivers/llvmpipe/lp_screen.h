@@ -36,7 +36,7 @@
 
 #include "pipe/p_screen.h"
 #include "pipe/p_defines.h"
-#include "os/os_thread.h"
+#include "util/u_thread.h"
 #include "util/list.h"
 #include "gallivm/lp_bld.h"
 #include "gallivm/lp_bld_misc.h"

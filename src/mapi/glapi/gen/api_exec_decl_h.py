@@ -49,10 +49,6 @@ class PrintCode(gl_XML.gl_print_base):
 
             #include "util/glheader.h"
 
-            #define GL_API GLAPI
-            #define GL_APIENTRY GLAPIENTRY
-            #include "GLES/gl.h"
-
             #ifdef __cplusplus
             extern "C" {
             #endif

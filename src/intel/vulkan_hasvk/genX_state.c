@@ -387,7 +387,7 @@ init_render_queue_state(struct anv_queue *queue)
     *
     * This is only safe on kernels with context isolation support.
     */
-   if (GFX_VER >= 8 && device->physical->has_context_isolation) {
+   if (GFX_VER >= 8 && device->physical->info.has_context_isolation) {
 #if GFX_VER >= 9
       anv_batch_write_reg(&batch, GENX(CS_DEBUG_MODE2), csdm2) {
          csdm2.CONSTANT_BUFFERAddressOffsetDisable = true;

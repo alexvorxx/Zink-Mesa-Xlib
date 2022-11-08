@@ -190,7 +190,7 @@ etna_set_framebuffer_state(struct pipe_context *pctx,
              cbuf->surf.offset, cbuf->surf.stride * 4);
       }
 
-      if (screen->specs.halti >= 0) {
+      if (screen->specs.halti >= 0 && screen->model != 0x880) {
          /* Rendertargets on GPUs with more than a single pixel pipe must always
           * be multi-tiled, or single-buffer mode must be supported */
          assert(screen->specs.pixel_pipes == 1 ||
@@ -273,7 +273,7 @@ etna_set_framebuffer_state(struct pipe_context *pctx,
       /* VIVS_PE_DEPTH_CONFIG_ONLY_DEPTH */
       /* merged with depth_stencil_alpha */
 
-      if (screen->specs.halti >= 0) {
+      if (screen->specs.halti >= 0 && screen->model != 0x880) {
          for (int i = 0; i < screen->specs.pixel_pipes; i++) {
             cs->PE_PIPE_DEPTH_ADDR[i] = zsbuf->reloc[i];
             cs->PE_PIPE_DEPTH_ADDR[i].flags = ETNA_RELOC_READ | ETNA_RELOC_WRITE;

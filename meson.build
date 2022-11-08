@@ -847,7 +847,8 @@ if with_gallium_st_nine
     error('The nine state tracker requires gallium softpipe/llvmpipe.')
   elif not (with_gallium_radeonsi or with_gallium_nouveau or with_gallium_r600
             or with_gallium_r300 or with_gallium_svga or with_gallium_i915
-            or with_gallium_iris or with_gallium_crocus or with_gallium_zink)
+            or with_gallium_iris or with_gallium_crocus or with_gallium_zink
+            or with_gallium_freedreno)
     error('The nine state tracker requires at least one non-swrast gallium driver.')
   endif
   if not with_dri3

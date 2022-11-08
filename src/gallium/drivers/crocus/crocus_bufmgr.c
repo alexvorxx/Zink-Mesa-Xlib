@@ -1589,18 +1589,6 @@ crocus_destroy_hw_context(struct crocus_bufmgr *bufmgr, uint32_t ctx_id)
    }
 }
 
-static int
-gem_param(int fd, int name)
-{
-   int v = -1; /* No param uses (yet) the sign bit, reserve it for errors */
-
-   struct drm_i915_getparam gp = { .param = name, .value = &v };
-   if (intel_ioctl(fd, DRM_IOCTL_I915_GETPARAM, &gp))
-      return -1;
-
-   return v;
-}
-
 /**
  * Initializes the GEM buffer manager, which uses the kernel to allocate, map,
  * and manage map buffer objections.
@@ -1634,7 +1622,7 @@ crocus_bufmgr_create(struct intel_device_info *devinfo, int fd, bool bo_reuse)
    bufmgr->has_llc = devinfo->has_llc;
    bufmgr->has_tiling_uapi = devinfo->has_tiling_uapi;
    bufmgr->bo_reuse = bo_reuse;
-   bufmgr->has_mmap_offset = gem_param(fd, I915_PARAM_MMAP_GTT_VERSION) >= 4;
+   bufmgr->has_mmap_offset = devinfo->has_mmap_offset;
 
    init_cache_buckets(bufmgr);
 

@@ -201,8 +201,6 @@ os_get_android_option(const char *name)
 }
 #endif
 
-
-#if !defined(EMBEDDED_DEVICE)
 const char *
 os_get_option(const char *name)
 {
@@ -214,7 +212,6 @@ os_get_option(const char *name)
 #endif
    return opt;
 }
-#endif /* !EMBEDDED_DEVICE */
 
 /**
  * Return the size of the total physical memory.

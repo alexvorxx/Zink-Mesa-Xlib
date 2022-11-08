@@ -1955,10 +1955,9 @@ intel_i915_get_device_info_from_fd(int fd, struct intel_device_info *devinfo)
       update_cs_workgroup_threads(devinfo);
    }
 
-   int timestamp_frequency;
-   if (getparam(fd, I915_PARAM_CS_TIMESTAMP_FREQUENCY,
-                &timestamp_frequency))
-      devinfo->timestamp_frequency = timestamp_frequency;
+   int val;
+   if (getparam(fd, I915_PARAM_CS_TIMESTAMP_FREQUENCY, &val))
+      devinfo->timestamp_frequency = val;
    else if (devinfo->ver >= 10) {
       mesa_loge("Kernel 4.15 required to read the CS timestamp frequency.");
       return false;
@@ -2004,6 +2003,13 @@ intel_i915_get_device_info_from_fd(int fd, struct intel_device_info *devinfo)
    intel_get_aperture_size(fd, &devinfo->aperture_bytes);
    get_context_param(fd, 0, I915_CONTEXT_PARAM_GTT_SIZE, &devinfo->gtt_size);
    devinfo->has_tiling_uapi = has_get_tiling(fd);
+
+   if (getparam(fd, I915_PARAM_MMAP_GTT_VERSION, &val))
+      devinfo->has_mmap_offset = val >= 4;
+   if (getparam(fd, I915_PARAM_HAS_USERPTR_PROBE, &val))
+      devinfo->has_userptr_probe = val;
+   if (getparam(fd, I915_PARAM_HAS_CONTEXT_ISOLATION, &val))
+      devinfo->has_context_isolation = val;
 
    return true;
 }

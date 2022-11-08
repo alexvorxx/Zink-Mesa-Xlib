@@ -3291,26 +3291,31 @@ LLVMValueRef ac_build_writelane(struct ac_llvm_context *ctx, LLVMValueRef src, L
 
 LLVMValueRef ac_build_mbcnt_add(struct ac_llvm_context *ctx, LLVMValueRef mask, LLVMValueRef add_src)
 {
+   LLVMValueRef add = LLVM_VERSION_MAJOR >= 16 ? add_src : ctx->i32_0;
    LLVMValueRef val;
 
    if (ctx->wave_size == 32) {
       val = ac_build_intrinsic(ctx, "llvm.amdgcn.mbcnt.lo", ctx->i32,
-                               (LLVMValueRef[]){mask, ctx->i32_0}, 2, AC_FUNC_ATTR_READNONE);
+                               (LLVMValueRef[]){mask, add}, 2, AC_FUNC_ATTR_READNONE);
    } else {
       LLVMValueRef mask_vec = LLVMBuildBitCast(ctx->builder, mask, ctx->v2i32, "");
       LLVMValueRef mask_lo = LLVMBuildExtractElement(ctx->builder, mask_vec, ctx->i32_0, "");
       LLVMValueRef mask_hi = LLVMBuildExtractElement(ctx->builder, mask_vec, ctx->i32_1, "");
       val = ac_build_intrinsic(ctx, "llvm.amdgcn.mbcnt.lo", ctx->i32,
-                               (LLVMValueRef[]){mask_lo, ctx->i32_0}, 2, AC_FUNC_ATTR_READNONE);
+                               (LLVMValueRef[]){mask_lo, add}, 2, AC_FUNC_ATTR_READNONE);
       val = ac_build_intrinsic(ctx, "llvm.amdgcn.mbcnt.hi", ctx->i32, (LLVMValueRef[]){mask_hi, val},
                                2, AC_FUNC_ATTR_READNONE);
    }
 
-   /* Bug workaround. LLVM always believes the upper bound of mbcnt to be the wave size,
-    * regardless of ac_set_range_metadata. Use an extra add instruction to work around it.
-    */
-   if (add_src != NULL && add_src != ctx->i32_0) {
-      return LLVMBuildAdd(ctx->builder, val, add_src, "");
+   if (add == ctx->i32_0)
+      ac_set_range_metadata(ctx, val, 0, ctx->wave_size);
+
+   if (LLVM_VERSION_MAJOR < 16) {
+      /* Bug workaround. LLVM always believes the upper bound of mbcnt to be the wave size,
+       * regardless of ac_set_range_metadata. Use an extra add instruction to work around it.
+       */
+      ac_set_range_metadata(ctx, val, 0, ctx->wave_size);
+      val = LLVMBuildAdd(ctx->builder, val, add_src, "");
    }
 
    return val;

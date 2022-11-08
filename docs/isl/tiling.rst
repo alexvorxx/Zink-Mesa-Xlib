@@ -82,10 +82,10 @@ The structure of any given tiling format is represented by ISL using the
 .. doxygenstruct:: isl_tile_info
    :members:
 
-The `isl_tile_info` structure has two different sizes for a tile: a logical
+The ``isl_tile_info`` structure has two different sizes for a tile: a logical
 size in surface elements and a physical size in bytes.  In order to determine
 the proper logical size, the bits-per-block of the underlying format has to be
-passed into `isl_tiling_get_info`. The proper way to compute the size of an
+passed into ``isl_tiling_get_info``. The proper way to compute the size of an
 image in bytes given a width and height in elements is as follows:
 
 .. code-block:: c

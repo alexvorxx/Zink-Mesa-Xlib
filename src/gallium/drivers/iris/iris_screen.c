@@ -680,28 +680,6 @@ iris_get_disk_shader_cache(struct pipe_screen *pscreen)
    return screen->disk_cache;
 }
 
-static int
-iris_getparam(int fd, int param, int *value)
-{
-   struct drm_i915_getparam gp = { .param = param, .value = value };
-
-   if (ioctl(fd, DRM_IOCTL_I915_GETPARAM, &gp) == -1)
-      return -errno;
-
-   return 0;
-}
-
-static int
-iris_getparam_integer(int fd, int param)
-{
-   int value = -1;
-
-   if (iris_getparam(fd, param, &value) == 0)
-      return value;
-
-   return -1;
-}
-
 static const struct intel_l3_config *
 iris_get_default_l3_config(const struct intel_device_info *devinfo,
                            bool compute)
@@ -806,7 +784,7 @@ iris_screen_create(int fd, const struct pipe_screen_config *config)
     *
     * Checking the last feature availability will include all previous ones.
     */
-   if (iris_getparam_integer(fd, I915_PARAM_HAS_CONTEXT_ISOLATION) <= 0) {
+   if (!screen->devinfo.has_context_isolation) {
       debug_error("Kernel is too old (4.16+ required) or unusable for Iris.\n"
                   "Check your dmesg logs for loading failures.\n");
       return NULL;

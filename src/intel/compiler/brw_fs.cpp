@@ -3933,15 +3933,147 @@ fs_visitor::lower_load_payload()
    return progress;
 }
 
+/**
+ * Factor an unsigned 32-bit integer.
+ *
+ * Attempts to factor \c x into two values that are at most 0xFFFF.  If no
+ * such factorization is possible, either because the value is too large or is
+ * prime, both \c result_a and \c result_b will be zero.
+ */
+static void
+factor_uint32(uint32_t x, unsigned *result_a, unsigned *result_b)
+{
+   /* This is necessary to prevent various opportunities for division by zero
+    * below.
+    */
+   assert(x > 0xffff);
+
+   /* This represents the actual expected constraints on the input.  Namely,
+    * both the upper and lower words should be > 1.
+    */
+   assert(x >= 0x00020002);
+
+   *result_a = 0;
+   *result_b = 0;
+
+   /* The value is too large to factor with the constraints. */
+   if (x > (0xffffu * 0xffffu))
+      return;
+
+   /* A non-prime number will have the form p*q*d where p is some prime
+    * number, q > 1, and 1 <= d <= q.  To meet the constraints of this
+    * function, (p*d) < 0x10000.  This implies d <= floor(0xffff / p).
+    * Furthermore, since q < 0x10000, d >= floor(x / (0xffff * p)).  Finally,
+    * floor(x / (0xffff * p)) <= d <= floor(0xffff / p).
+    *
+    * The observation is finding the largest possible value of p reduces the
+    * possible range of d.  After selecting p, all values of d in this range
+    * are tested until a factorization is found.  The size of the range of
+    * possible values of d sets an upper bound on the run time of the
+    * function.
+    */
+   static const uint16_t primes[256] = {
+         2,    3,    5,    7,   11,   13,   17,   19,
+        23,   29,   31,   37,   41,   43,   47,   53,
+        59,   61,   67,   71,   73,   79,   83,   89,
+        97,  101,  103,  107,  109,  113,  127,  131,  /*  32 */
+       137,  139,  149,  151,  157,  163,  167,  173,
+       179,  181,  191,  193,  197,  199,  211,  223,
+       227,  229,  233,  239,  241,  251,  257,  263,
+       269,  271,  277,  281,  283,  293,  307,  311,  /*  64 */
+       313,  317,  331,  337,  347,  349,  353,  359,
+       367,  373,  379,  383,  389,  397,  401,  409,
+       419,  421,  431,  433,  439,  443,  449,  457,
+       461,  463,  467,  479,  487,  491,  499,  503,  /*  96 */
+       509,  521,  523,  541,  547,  557,  563,  569,
+       571,  577,  587,  593,  599,  601,  607,  613,
+       617,  619,  631,  641,  643,  647,  653,  659,
+       661,  673,  677,  683,  691,  701,  709,  719,   /* 128 */
+       727,  733,  739,  743,  751,  757,  761,  769,
+       773,  787,  797,  809,  811,  821,  823,  827,
+       829,  839,  853,  857,  859,  863,  877,  881,
+       883,  887,  907,  911,  919,  929,  937,  941,  /* 160 */
+       947,  953,  967,  971,  977,  983,  991,  997,
+      1009, 1013, 1019, 1021, 1031, 1033, 1039, 1049,
+      1051, 1061, 1063, 1069, 1087, 1091, 1093, 1097,
+      1103, 1109, 1117, 1123, 1129, 1151, 1153, 1163,  /* 192 */
+      1171, 1181, 1187, 1193, 1201, 1213, 1217, 1223,
+      1229, 1231, 1237, 1249, 1259, 1277, 1279, 1283,
+      1289, 1291, 1297, 1301, 1303, 1307, 1319, 1321,
+      1327, 1361, 1367, 1373, 1381, 1399, 1409, 1423,  /* 224 */
+      1427, 1429, 1433, 1439, 1447, 1451, 1453, 1459,
+      1471, 1481, 1483, 1487, 1489, 1493, 1499, 1511,
+      1523, 1531, 1543, 1549, 1553, 1559, 1567, 1571,
+      1579, 1583, 1597, 1601, 1607, 1609, 1613, 1619,  /* 256 */
+   };
+
+   unsigned p;
+   unsigned x_div_p;
+
+   for (int i = ARRAY_SIZE(primes) - 1; i >= 0; i--) {
+      p = primes[i];
+      x_div_p = x / p;
+
+      if ((x_div_p * p) == x)
+         break;
+   }
+
+   /* A prime factor was not found. */
+   if (x_div_p * p != x)
+      return;
+
+   /* Terminate early if d=1 is a solution. */
+   if (x_div_p < 0x10000) {
+      *result_a = x_div_p;
+      *result_b = p;
+      return;
+   }
+
+   /* Pick the maximum possible value for 'd'.  It's important that the loop
+    * below execute while d <= max_d because max_d is a valid value.  Having
+    * the wrong loop bound would cause 1627*1367*47 (0x063b0c83) to be
+    * incorrectly reported as not being factorable.  The problem would occur
+    * with any value that is a factor of two primes in the table and one prime
+    * not in the table.
+    */
+   const unsigned max_d = 0xffff / p;
+
+   /* Pick an initial value of 'd' that (combined with rejecting too large
+    * values above) guarantees that 'q' will always be small enough.
+    * DIV_ROUND_UP is used to prevent 'd' from being zero.
+    */
+   for (unsigned d = DIV_ROUND_UP(x_div_p, 0xffff); d <= max_d; d++) {
+      unsigned q = x_div_p / d;
+
+      if ((q * d) == x_div_p) {
+         assert(p * d * q == x);
+         assert((p * d) < 0x10000);
+
+         *result_a = q;
+         *result_b = p * d;
+         break;
+      }
+
+      /* Since every value of 'd' is tried, as soon as 'd' is larger
+       * than 'q', we're just re-testing combinations that have
+       * already been tested.
+       */
+      if (d > q)
+         break;
+   }
+}
+
 void
 fs_visitor::lower_mul_dword_inst(fs_inst *inst, bblock_t *block)
 {
    const fs_builder ibld(this, block, inst);
 
-   const bool ud = (inst->src[1].type == BRW_REGISTER_TYPE_UD);
+   /* It is correct to use inst->src[1].d in both end of the comparison.
+    * Using .ud in the UINT16_MAX comparison would cause any negative value to
+    * fail the check.
+    */
    if (inst->src[1].file == IMM &&
-       (( ud && inst->src[1].ud <= UINT16_MAX) ||
-        (!ud && inst->src[1].d <= INT16_MAX && inst->src[1].d >= INT16_MIN))) {
+       (inst->src[1].d >= INT16_MIN && inst->src[1].d <= UINT16_MAX)) {
       /* The MUL instruction isn't commutative. On Gen <= 6, only the low
        * 16-bits of src0 are read, and on Gen >= 7 only the low 16-bits of
        * src1 are used.
@@ -3949,6 +4081,7 @@ fs_visitor::lower_mul_dword_inst(fs_inst *inst, bblock_t *block)
        * If multiplying by an immediate value that fits in 16-bits, do a
        * single MUL instruction with that value in the proper location.
        */
+      const bool ud = (inst->src[1].d >= 0);
       if (devinfo->ver < 7) {
          fs_reg imm(VGRF, alloc.allocate(dispatch_width / 8), inst->dst.type);
          ibld.MOV(imm, inst->src[1]);
@@ -4029,6 +4162,7 @@ fs_visitor::lower_mul_dword_inst(fs_inst *inst, bblock_t *block)
       high.stride = inst->dst.stride;
       high.offset = inst->dst.offset % REG_SIZE;
 
+      bool do_addition = true;
       if (devinfo->ver >= 7) {
          /* From Wa_1604601757:
           *
@@ -4047,10 +4181,37 @@ fs_visitor::lower_mul_dword_inst(fs_inst *inst, bblock_t *block)
             lower_src_modifiers(this, block, inst, 1);
 
          if (inst->src[1].file == IMM) {
-            ibld.MUL(low, inst->src[0],
-                     brw_imm_uw(inst->src[1].ud & 0xffff));
-            ibld.MUL(high, inst->src[0],
-                     brw_imm_uw(inst->src[1].ud >> 16));
+            unsigned a;
+            unsigned b;
+
+            /* If the immeditate value can be factored into two values, A and
+             * B, that each fit in 16-bits, the multiplication result can
+             * instead be calculated as (src1 * (A * B)) = ((src1 * A) * B).
+             * This saves an operation (the addition) and a temporary register
+             * (high).
+             *
+             * Skip the optimization if either the high word or the low word
+             * is 0 or 1.  In these conditions, at least one of the
+             * multiplications generated by the straightforward method will be
+             * eliminated anyway.
+             */
+            if (inst->src[1].ud > 0x0001ffff &&
+                (inst->src[1].ud & 0xffff) > 1) {
+               factor_uint32(inst->src[1].ud, &a, &b);
+
+               if (a != 0) {
+                  ibld.MUL(low, inst->src[0], brw_imm_uw(a));
+                  ibld.MUL(low, low, brw_imm_uw(b));
+                  do_addition = false;
+               }
+            }
+
+            if (do_addition) {
+               ibld.MUL(low, inst->src[0],
+                        brw_imm_uw(inst->src[1].ud & 0xffff));
+               ibld.MUL(high, inst->src[0],
+                        brw_imm_uw(inst->src[1].ud >> 16));
+            }
          } else {
             ibld.MUL(low, inst->src[0],
                      subscript(inst->src[1], BRW_REGISTER_TYPE_UW, 0));
@@ -4067,9 +4228,11 @@ fs_visitor::lower_mul_dword_inst(fs_inst *inst, bblock_t *block)
                   inst->src[1]);
       }
 
-      ibld.ADD(subscript(low, BRW_REGISTER_TYPE_UW, 1),
-               subscript(low, BRW_REGISTER_TYPE_UW, 1),
-               subscript(high, BRW_REGISTER_TYPE_UW, 0));
+      if (do_addition) {
+         ibld.ADD(subscript(low, BRW_REGISTER_TYPE_UW, 1),
+                  subscript(low, BRW_REGISTER_TYPE_UW, 1),
+                  subscript(high, BRW_REGISTER_TYPE_UW, 0));
+      }
 
       if (needs_mov || inst->conditional_mod)
          set_condmod(inst->conditional_mod, ibld.MOV(orig_dst, low));

@@ -45,6 +45,7 @@
 
 #include "dev/intel_debug.h"
 #include "dev/intel_device_info.h"
+#include "common/intel_gem.h"
 #include "util/macros.h"
 
 static int close_init_helper(int fd);
@@ -410,16 +411,12 @@ close(int fd)
 static int
 get_pci_id(int fd, int *pci_id)
 {
-   struct drm_i915_getparam gparam;
-
    if (device_override) {
       *pci_id = device;
       return 0;
    }
 
-   gparam.param = I915_PARAM_CHIPSET_ID;
-   gparam.value = pci_id;
-   return libc_ioctl(fd, DRM_IOCTL_I915_GETPARAM, &gparam);
+   return intel_gem_get_param(fd, I915_PARAM_CHIPSET_ID, pci_id) ? 0 : -1;
 }
 
 static void

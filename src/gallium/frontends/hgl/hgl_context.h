@@ -8,7 +8,7 @@
 #ifndef HGL_CONTEXT_H
 #define HGL_CONTEXT_H
 
-#include "os/os_thread.h"
+#include "util/u_thread.h"
 #include "pipe/p_format.h"
 #include "pipe/p_compiler.h"
 #include "pipe/p_screen.h"

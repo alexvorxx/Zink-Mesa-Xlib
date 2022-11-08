@@ -27,7 +27,6 @@
 #include "util/u_call_once.h"
 #include "util/u_debug.h"
 #include "util/u_inlines.h"
-#include "util/u_fifo.h"
 #include "util/u_vector.h"
 
 #include "u_trace.h"

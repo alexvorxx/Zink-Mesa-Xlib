@@ -58,7 +58,6 @@ spec@arb_fragment_program_shadow@txp-shadow2drect,Fail
 spec@arb_framebuffer_no_attachments@arb_framebuffer_no_attachments-query,Fail
 spec@arb_framebuffer_no_attachments@arb_framebuffer_no_attachments-query@MS8,Fail
 spec@arb_framebuffer_object@fbo-gl_pointcoord,Fail
-spec@arb_get_program_binary@restore-sso-program,Fail
 spec@arb_gpu_shader_fp64@execution@arb_gpu_shader_fp64-tf-separate,Fail
 spec@arb_gpu_shader_fp64@execution@conversion@frag-conversion-explicit-dmat2-mat2,Fail
 spec@arb_gpu_shader_fp64@execution@conversion@frag-conversion-explicit-dmat2x3-mat2x3,Fail
@@ -368,6 +367,7 @@ spec@!opengl 1.1@polygon-mode-offset@config 0: Expected white pixel on bottom ed
 spec@!opengl 1.1@polygon-mode-offset@config 0: Expected white pixel on left edge,Fail
 spec@!opengl 1.1@polygon-mode-offset@config 0: Expected white pixel on right edge,Fail
 spec@!opengl 1.1@polygon-mode-offset@config 0: Expected white pixel on top edge,Fail
+spec@!opengl 1.1@polygon-mode-offset@config 0: Expected blue pixel in center,Fail
 spec@!opengl 1.1@polygon-mode-offset@config 1: Expected blue pixel in center,Fail
 spec@!opengl 1.1@polygon-mode-offset@config 2: Expected blue pixel in center,Fail
 spec@!opengl 1.1@polygon-mode-offset@config 2: Expected white pixel on right edge,Fail
@@ -483,3 +483,6 @@ spec@nv_shader_atomic_int64@execution@ssbo-atomicmax-int,Crash
 spec@nv_shader_atomic_int64@execution@ssbo-atomicmax-uint,Crash
 spec@nv_shader_atomic_int64@execution@ssbo-atomicmin-int,Crash
 spec@nv_shader_atomic_int64@execution@ssbo-atomicmin-uint,Crash
+
+# Introduced with the uprev of piglit (70ce1dcacc92 - "ci: Update piglit with s3 support")
+spec@egl 1.4@egl-ext_egl_image_storage,Fail
