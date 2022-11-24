@@ -83,15 +83,15 @@ instr_is_shader_call(nir_instr *instr)
  * named bitset in sys/_bitset.h required by pthread_np.h which is included
  * from src/util/u_thread.h that is indirectly included by this file.
  */
-struct brw_bitset {
+struct sized_bitset {
    BITSET_WORD *set;
    unsigned size;
 };
 
-static struct brw_bitset
+static struct sized_bitset
 bitset_create(void *mem_ctx, unsigned size)
 {
-   return (struct brw_bitset) {
+   return (struct sized_bitset) {
       .set = rzalloc_array(mem_ctx, BITSET_WORD, BITSET_WORDS(size)),
       .size = size,
    };
@@ -100,7 +100,7 @@ bitset_create(void *mem_ctx, unsigned size)
 static bool
 src_is_in_bitset(nir_src *src, void *_set)
 {
-   struct brw_bitset *set = _set;
+   struct sized_bitset *set = _set;
    assert(src->is_ssa);
 
    /* Any SSA values which were added after we generated liveness information
@@ -115,7 +115,7 @@ src_is_in_bitset(nir_src *src, void *_set)
 }
 
 static void
-add_ssa_def_to_bitset(nir_ssa_def *def, struct brw_bitset *set)
+add_ssa_def_to_bitset(nir_ssa_def *def, struct sized_bitset *set)
 {
    if (def->index >= set->size)
       return;
@@ -124,7 +124,7 @@ add_ssa_def_to_bitset(nir_ssa_def *def, struct brw_bitset *set)
 }
 
 static bool
-can_remat_instr(nir_instr *instr, struct brw_bitset *remat)
+can_remat_instr(nir_instr *instr, struct sized_bitset *remat)
 {
    /* Set of all values which are trivially re-materializable and we shouldn't
     * ever spill them.  This includes:
@@ -212,14 +212,14 @@ can_remat_instr(nir_instr *instr, struct brw_bitset *remat)
 }
 
 static bool
-can_remat_ssa_def(nir_ssa_def *def, struct brw_bitset *remat)
+can_remat_ssa_def(nir_ssa_def *def, struct sized_bitset *remat)
 {
    return can_remat_instr(def->parent_instr, remat);
 }
 
 struct add_instr_data {
    struct util_dynarray *buf;
-   struct brw_bitset *remat;
+   struct sized_bitset *remat;
 };
 
 static bool
@@ -251,7 +251,7 @@ compare_instr_indexes(const void *_inst1, const void *_inst2)
 }
 
 static bool
-can_remat_chain_ssa_def(nir_ssa_def *def, struct brw_bitset *remat, struct util_dynarray *buf)
+can_remat_chain_ssa_def(nir_ssa_def *def, struct sized_bitset *remat, struct util_dynarray *buf)
 {
    assert(util_dynarray_num_elements(buf, nir_instr *) == 0);
 
@@ -282,7 +282,7 @@ can_remat_chain_ssa_def(nir_ssa_def *def, struct brw_bitset *remat, struct util_
     * through values that might not be in that set but that we can
     * rematerialize.
     */
-   struct brw_bitset potential_remat = bitset_create(mem_ctx, remat->size);
+   struct sized_bitset potential_remat = bitset_create(mem_ctx, remat->size);
    memcpy(potential_remat.set, remat->set, BITSET_WORDS(remat->size) * sizeof(BITSET_WORD));
 
    util_dynarray_foreach(buf, nir_instr *, instr_ptr) {
@@ -321,7 +321,7 @@ remat_ssa_def(nir_builder *b, nir_ssa_def *def, struct hash_table *remap_table)
 
 static nir_ssa_def *
 remat_chain_ssa_def(nir_builder *b, struct util_dynarray *buf,
-                    struct brw_bitset *remat, nir_ssa_def ***fill_defs,
+                    struct sized_bitset *remat, nir_ssa_def ***fill_defs,
                     unsigned call_idx, struct hash_table *remap_table)
 {
    nir_ssa_def *last_def = NULL;
@@ -454,7 +454,7 @@ spill_ssa_defs_and_lower_shader_calls(nir_shader *shader, uint32_t num_calls,
 
    const unsigned num_ssa_defs = impl->ssa_alloc;
    const unsigned live_words = BITSET_WORDS(num_ssa_defs);
-   struct brw_bitset trivial_remat = bitset_create(mem_ctx, num_ssa_defs);
+   struct sized_bitset trivial_remat = bitset_create(mem_ctx, num_ssa_defs);
 
    /* Array of all live SSA defs which are spill candidates */
    nir_ssa_def **spill_defs =
@@ -534,7 +534,7 @@ spill_ssa_defs_and_lower_shader_calls(nir_shader *shader, uint32_t num_calls,
          /* Make a copy of trivial_remat that we'll update as we crawl through
           * the live SSA defs and unspill them.
           */
-         struct brw_bitset remat = bitset_create(mem_ctx, num_ssa_defs);
+         struct sized_bitset remat = bitset_create(mem_ctx, num_ssa_defs);
          memcpy(remat.set, trivial_remat.set, live_words * sizeof(BITSET_WORD));
 
          /* Before the two builders are always separated by the call
@@ -964,7 +964,7 @@ flatten_resume_if_ladder(nir_builder *b,
                          struct exec_list *child_list,
                          bool child_list_contains_cursor,
                          nir_instr *resume_instr,
-                         struct brw_bitset *remat)
+                         struct sized_bitset *remat)
 {
    nir_cf_list cf_list;
 
@@ -1015,24 +1015,8 @@ flatten_resume_if_ladder(nir_builder *b,
       }
 
       case nir_cf_node_if: {
-         nir_if *_if = nir_cf_node_as_if(child);
-
-         /* Because of the dummy blocks inserted in the first if block of the
-          * loops, it's possible we find an empty if block that contains our
-          * cursor. At this point, the block should still be empty and we can
-          * just skip it and consider we're after the cursor.
-          */
-         if (cf_node_contains_block(&_if->cf_node,
-                                    nir_cursor_current_block(b->cursor))) {
-            /* Some sanity checks to verify this is actually a dummy block */
-            assert(nir_src_as_bool(_if->condition) == true);
-            assert(nir_cf_list_is_empty_block(&_if->then_list));
-            assert(nir_cf_list_is_empty_block(&_if->else_list));
-            before_cursor = false;
-            break;
-         }
          assert(!before_cursor);
-
+         nir_if *_if = nir_cf_node_as_if(child);
          if (flatten_resume_if_ladder(b, &_if->cf_node, &_if->then_list,
                                       false, resume_instr, remat)) {
             resume_node = child;
@@ -1065,26 +1049,17 @@ flatten_resume_if_ladder(nir_builder *b,
             nir_block *header = nir_loop_first_block(loop);
             nir_if *_if = nir_cf_node_as_if(nir_cf_node_next(&header->cf_node));
 
+            /* We want to place anything re-materialized from inside the loop
+             * at the top of the resume half of the loop.
+             */
             nir_builder bl;
             nir_builder_init(&bl, b->impl);
             bl.cursor = nir_before_cf_list(&_if->then_list);
-            /* We want to place anything re-materialized from inside the loop
-             * at the top of the resume half of the loop.
-             *
-             * Because we're inside a loop, we might run into a break/continue
-             * instructions. We can't place those within a block of
-             * instructions, they need to be at the end of a block. So we
-             * build our own dummy block to place them.
-             */
-            nir_push_if(&bl, nir_imm_true(&bl));
-            {
-               ASSERTED bool found =
-                  flatten_resume_if_ladder(&bl, &_if->cf_node, &_if->then_list,
-                                           true, resume_instr, remat);
-               assert(found);
-            }
-            nir_pop_if(&bl, NULL);
 
+            ASSERTED bool found =
+               flatten_resume_if_ladder(&bl, &_if->cf_node, &_if->then_list,
+                                        true, resume_instr, remat);
+            assert(found);
             resume_node = child;
             goto found_resume;
          } else {
@@ -1160,23 +1135,7 @@ found_resume:
     * cursor.  Delete everything else.
     */
    if (child_list_contains_cursor) {
-      /* If the cursor is in child_list, then we're either a loop or function
-       * that contains the cursor. Cursors are always placed in a wrapper if
-       * (true) to deal with break/continue and early returns. We've already
-       * moved everything interesting inside the wrapper if and we want to
-       * remove whatever is left after it.
-       */
-      nir_block *cursor_block = nir_cursor_current_block(b->cursor);
-      nir_if *wrapper_if = nir_cf_node_as_if(cursor_block->cf_node.parent);
-      assert(wrapper_if->cf_node.parent == parent_node);
-      /* The wrapper if blocks are either put into the body of the main
-       * function, or within the resume if block of the loops.
-       */
-      assert(parent_node->type == nir_cf_node_function ||
-             (parent_node->type == nir_cf_node_if &&
-              parent_node->parent->type == nir_cf_node_loop));
-      nir_cf_extract(&cf_list, nir_after_cf_node(&wrapper_if->cf_node),
-                     nir_after_cf_list(child_list));
+      nir_cf_extract(&cf_list, b->cursor, nir_after_cf_list(child_list));
    } else {
       nir_cf_list_extract(&cf_list, child_list);
    }
@@ -1185,16 +1144,47 @@ found_resume:
    return true;
 }
 
+static bool
+wrap_jump_instr(nir_builder *b, nir_instr *instr, void *data)
+{
+   if (instr->type != nir_instr_type_jump)
+      return false;
+
+   b->cursor = nir_before_instr(instr);
+
+   nir_if *_if = nir_push_if(b, nir_imm_true(b));
+   nir_pop_if(b, NULL);
+
+   nir_cf_list cf_list;
+   nir_cf_extract(&cf_list, nir_before_instr(instr), nir_after_instr(instr));
+   nir_cf_reinsert(&cf_list, nir_before_block(nir_if_first_then_block(_if)));
+
+   return true;
+}
+
+/* This pass wraps jump instructions in a dummy if block so that when
+ * flatten_resume_if_ladder() does its job, it doesn't move a jump instruction
+ * directly in front of another instruction which the NIR control flow helpers
+ * do not allow.
+ */
+static bool
+wrap_jumps(nir_shader *shader)
+{
+   return nir_shader_instructions_pass(shader, wrap_jump_instr,
+                                       nir_metadata_none, NULL);
+}
+
 static nir_instr *
 lower_resume(nir_shader *shader, int call_idx)
 {
-   nir_function_impl *impl = nir_shader_get_entrypoint(shader);
+   wrap_jumps(shader);
 
+   nir_function_impl *impl = nir_shader_get_entrypoint(shader);
    nir_instr *resume_instr = find_resume_instr(impl, call_idx);
 
    if (duplicate_loop_bodies(impl, resume_instr)) {
       nir_validate_shader(shader, "after duplicate_loop_bodies in "
-                                  "brw_nir_lower_shader_calls");
+                                  "nir_lower_shader_calls");
       /* If we duplicated the bodies of any loops, run regs_to_ssa to get rid
        * of all those pesky registers we just added.
        */
@@ -1214,7 +1204,7 @@ lower_resume(nir_shader *shader, int call_idx)
    /* Used to track which things may have been assumed to be re-materialized
     * by the spilling pass and which we shouldn't delete.
     */
-   struct brw_bitset remat = bitset_create(mem_ctx, impl->ssa_alloc);
+   struct sized_bitset remat = bitset_create(mem_ctx, impl->ssa_alloc);
 
    /* Create a nop instruction to use as a cursor as we extract and re-insert
     * stuff into the CFG.
@@ -1222,22 +1212,17 @@ lower_resume(nir_shader *shader, int call_idx)
    nir_builder b;
    nir_builder_init(&b, impl);
    b.cursor = nir_before_cf_list(&impl->body);
-
-   nir_push_if(&b, nir_imm_true(&b));
-   {
-      ASSERTED bool found =
-         flatten_resume_if_ladder(&b, &impl->cf_node, &impl->body,
-                                  true, resume_instr, &remat);
-      assert(found);
-   }
-   nir_pop_if(&b, NULL);
+   ASSERTED bool found =
+      flatten_resume_if_ladder(&b, &impl->cf_node, &impl->body,
+                               true, resume_instr, &remat);
+   assert(found);
 
    ralloc_free(mem_ctx);
 
-   nir_validate_shader(shader, "after flatten_resume_if_ladder in "
-                               "brw_nir_lower_shader_calls");
-
    nir_metadata_preserve(impl, nir_metadata_none);
+
+   nir_validate_shader(shader, "after flatten_resume_if_ladder in "
+                               "nir_lower_shader_calls");
 
    return resume_instr;
 }

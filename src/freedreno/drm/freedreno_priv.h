@@ -53,6 +53,11 @@
 
 extern simple_mtx_t table_lock;
 
+#define SUBALLOC_SIZE (32 * 1024)
+/* Maximum known alignment requirement is a6xx's TEX_CONST at 16 dwords */
+#define SUBALLOC_ALIGNMENT 64
+#define RING_FLAGS (FD_BO_GPUREADONLY | FD_BO_CACHED_COHERENT | _FD_BO_RING)
+
 /*
  * Stupid/simple growable array implementation:
  */
@@ -102,6 +107,7 @@ struct fd_device_funcs {
 
    struct fd_pipe *(*pipe_new)(struct fd_device *dev, enum fd_pipe_id id,
                                unsigned prio);
+   int (*flush)(struct fd_device *dev);
    void (*destroy)(struct fd_device *dev);
 };
 
@@ -174,6 +180,15 @@ struct fd_device {
    simple_mtx_t suballoc_lock;
 
    struct util_queue submit_queue;
+
+   /**
+    * GEM handles can be queued/batched for freeing in cases where many
+    * buffers are freed together under table_lock.  This enables the
+    * virtio backend to batch messages to the host to avoid quickly
+    * depleting the virtqueue ringbuffer slots.
+    */
+   uint32_t deferred_handles[64];
+   uint32_t num_deferred_handles;
 };
 
 #define foreach_submit(name, list) \
@@ -340,27 +355,27 @@ bool fd_dbg(void);
 #define INFO_MSG(fmt, ...)                                                     \
    do {                                                                        \
       if (fd_dbg())                                                            \
-         mesa_logi("%s:%d: " fmt, __FUNCTION__, __LINE__, ##__VA_ARGS__);      \
+         mesa_logi("%s:%d: " fmt, __func__, __LINE__, ##__VA_ARGS__);          \
    } while (0)
 #define DEBUG_MSG(fmt, ...)                                                    \
    do                                                                          \
       if (enable_debug) {                                                      \
-         mesa_logd("%s:%d: " fmt, __FUNCTION__, __LINE__, ##__VA_ARGS__);      \
+         mesa_logd("%s:%d: " fmt, __func__, __LINE__, ##__VA_ARGS__);          \
       }                                                                        \
    while (0)
 #define WARN_MSG(fmt, ...)                                                     \
    do {                                                                        \
-      mesa_logw("%s:%d: " fmt, __FUNCTION__, __LINE__, ##__VA_ARGS__);         \
+      mesa_logw("%s:%d: " fmt, __func__, __LINE__, ##__VA_ARGS__);             \
    } while (0)
 #define ERROR_MSG(fmt, ...)                                                    \
    do {                                                                        \
-      mesa_loge("%s:%d: " fmt, __FUNCTION__, __LINE__, ##__VA_ARGS__);         \
+      mesa_loge("%s:%d: " fmt, __func__, __LINE__, ##__VA_ARGS__);             \
    } while (0)
 
 #define U642VOID(x) ((void *)(unsigned long)(x))
 #define VOID2U64(x) ((uint64_t)(unsigned long)(x))
 
-#if HAVE_VALGRIND
+#ifdef HAVE_VALGRIND
 #include <memcheck.h>
 
 /*

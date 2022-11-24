@@ -1316,28 +1316,23 @@ fs_visitor::nir_emit_alu(const fs_builder &bld, nir_alu_instr *instr,
    case nir_op_imul_32x16:
    case nir_op_umul_32x16: {
       const bool ud = instr->op == nir_op_umul_32x16;
-
-      assert(nir_dest_bit_size(instr->dest.dest) == 32);
-
-      /* Before Gfx7, the order of the 32-bit source and the 16-bit source was
-       * swapped.  The extension isn't enabled on those platforms, so don't
-       * pretend to support the differences.
-       */
-      assert(devinfo->ver >= 7);
-
-      if (op[1].file == IMM)
-         op[1] = ud ? brw_imm_uw(op[1].ud) : brw_imm_w(op[1].d);
-      else {
-         const enum brw_reg_type word_type =
-            ud ? BRW_REGISTER_TYPE_UW : BRW_REGISTER_TYPE_W;
-
-         op[1] = subscript(op[1], word_type, 0);
-      }
-
+      const enum brw_reg_type word_type =
+         ud ? BRW_REGISTER_TYPE_UW : BRW_REGISTER_TYPE_W;
       const enum brw_reg_type dword_type =
          ud ? BRW_REGISTER_TYPE_UD : BRW_REGISTER_TYPE_D;
 
-      bld.MUL(result, retype(op[0], dword_type), op[1]);
+      assert(nir_dest_bit_size(instr->dest.dest) == 32);
+
+      /* Before copy propagation there are no immediate values. */
+      assert(op[0].file != IMM && op[1].file != IMM);
+
+      op[1] = subscript(op[1], word_type, 0);
+
+      if (devinfo->ver >= 7)
+         bld.MUL(result, retype(op[0], dword_type), op[1]);
+      else
+         bld.MUL(result, op[1], retype(op[0], dword_type));
+
       break;
    }
 
@@ -5095,6 +5090,7 @@ fs_visitor::nir_emit_intrinsic(const fs_builder &bld, nir_intrinsic_instr *instr
          fs_reg handle = component(ubld.vgrf(BRW_REGISTER_TYPE_UD), 0);
          ubld.AND(handle, retype(brw_vec1_grf(0, 5), BRW_REGISTER_TYPE_UD),
                           brw_imm_ud(~0x3ffu));
+         srcs[SURFACE_LOGICAL_SRC_SURFACE] = brw_imm_ud(GFX125_NON_BINDLESS);
          srcs[SURFACE_LOGICAL_SRC_SURFACE_HANDLE] = handle;
       } else if (devinfo->ver >= 8) {
          srcs[SURFACE_LOGICAL_SRC_SURFACE] =
@@ -5161,6 +5157,7 @@ fs_visitor::nir_emit_intrinsic(const fs_builder &bld, nir_intrinsic_instr *instr
          fs_reg handle = component(ubld.vgrf(BRW_REGISTER_TYPE_UD), 0);
          ubld.AND(handle, retype(brw_vec1_grf(0, 5), BRW_REGISTER_TYPE_UD),
                           brw_imm_ud(~0x3ffu));
+         srcs[SURFACE_LOGICAL_SRC_SURFACE] = brw_imm_ud(GFX125_NON_BINDLESS);
          srcs[SURFACE_LOGICAL_SRC_SURFACE_HANDLE] = handle;
       } else if (devinfo->ver >= 8) {
          srcs[SURFACE_LOGICAL_SRC_SURFACE] =

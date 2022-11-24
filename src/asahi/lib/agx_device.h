@@ -39,6 +39,7 @@ enum agx_dbg {
    AGX_DBG_NO16  = BITFIELD_BIT(2),
    AGX_DBG_DIRTY  = BITFIELD_BIT(3),
    AGX_DBG_PRECOMPILE  = BITFIELD_BIT(4),
+   AGX_DBG_PERF  = BITFIELD_BIT(5),
 };
 
 struct agx_device {
@@ -56,21 +57,10 @@ struct agx_device {
 #else
    int fd;
 #endif
+   struct renderonly *ro;
 
    pthread_mutex_t bo_map_lock;
    struct util_sparse_array bo_map;
-
-   /* Fixed shaders */
-   struct {
-      struct agx_bo *bo;
-      uint32_t clear;
-      uint32_t store;
-   } internal;
-
-   struct {
-      struct agx_bo *bo;
-      uint32_t format[AGX_NUM_FORMATS];
-   } reload;
 };
 
 bool

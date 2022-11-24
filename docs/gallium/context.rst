@@ -102,7 +102,7 @@ objects. They all follow simple, one-method binding calls, e.g.
   PIPE_MAX_VIEWPORTS.
 * ``set_viewport_states``
 * ``set_window_rectangles`` sets the window rectangles to be used for
-  rendering, as defined by GL_EXT_window_rectangles. There are two
+  rendering, as defined by :ext:`GL_EXT_window_rectangles`. There are two
   modes - include and exclude, which define whether the supplied
   rectangles are to be used for including fragments or excluding
   them. All of the rectangles are ORed together, so in exclude mode,
@@ -122,7 +122,7 @@ objects. They all follow simple, one-method binding calls, e.g.
   for tessellation.
 
 * ``set_debug_callback`` sets the callback to be used for reporting
-  various debug messages, eventually reported via KHR_debug and
+  various debug messages, eventually reported via :ext:`GL_KHR_debug` and
   similar mechanisms.
 
 Samplers

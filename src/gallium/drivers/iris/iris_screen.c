@@ -143,6 +143,19 @@ iris_get_name(struct pipe_screen *pscreen)
    return buf;
 }
 
+static const char *
+iris_get_cl_cts_version(struct pipe_screen *pscreen)
+{
+   struct iris_screen *screen = (struct iris_screen *)pscreen;
+   const struct intel_device_info *devinfo = &screen->devinfo;
+
+   /* https://www.khronos.org/conformance/adopters/conformant-products/opencl#submission_405 */
+   if (devinfo->verx10 == 120)
+      return "v2022-04-22-00";
+
+   return NULL;
+}
+
 static int
 iris_get_video_memory(struct iris_screen *screen)
 {
@@ -285,6 +298,7 @@ iris_get_param(struct pipe_screen *pscreen, enum pipe_cap param)
    case PIPE_CAP_FENCE_SIGNAL:
    case PIPE_CAP_IMAGE_STORE_FORMATTED:
    case PIPE_CAP_LEGACY_MATH_RULES:
+   case PIPE_CAP_ALPHA_TO_COVERAGE_DITHER_CONTROL:
       return true;
    case PIPE_CAP_UMA:
       return iris_bufmgr_vram_size(screen->bufmgr) == 0;
@@ -573,7 +587,7 @@ iris_get_compute_param(struct pipe_screen *pscreen,
       RET((uint64_t []) { 3 });
 
    case PIPE_COMPUTE_CAP_MAX_GRID_SIZE:
-      RET(((uint64_t []) { 65535, 65535, 65535 }));
+      RET(((uint64_t []) { UINT32_MAX, UINT32_MAX, UINT32_MAX }));
 
    case PIPE_COMPUTE_CAP_MAX_BLOCK_SIZE:
       /* MaxComputeWorkGroupSize[0..2] */
@@ -866,6 +880,7 @@ iris_screen_create(int fd, const struct pipe_screen_config *config)
    pscreen->get_name = iris_get_name;
    pscreen->get_vendor = iris_get_vendor;
    pscreen->get_device_vendor = iris_get_device_vendor;
+   pscreen->get_cl_cts_version = iris_get_cl_cts_version;
    pscreen->get_param = iris_get_param;
    pscreen->get_shader_param = iris_get_shader_param;
    pscreen->get_compute_param = iris_get_compute_param;

@@ -256,6 +256,9 @@ def find_dependencies(target_job: str, project_path: str, sha: str) -> set[str]:
     )
 
     target_dep_dag = filter_dag(dag, target_job)
+    if not target_dep_dag:
+        print(Fore.RED + "The job(s) were not found in the pipeline." + Fore.RESET)
+        sys.exit(1)
     print(Fore.YELLOW)
     print("Detected job dependencies:")
     print()

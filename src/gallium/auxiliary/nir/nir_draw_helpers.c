@@ -174,12 +174,13 @@ nir_lower_aaline_block(nir_block *block,
       nir_ssa_def *out_input = intrin->src[1].ssa;
       b->cursor = nir_before_instr(instr);
       nir_ssa_def *lw = nir_load_var(b, state->line_width_input);
-      nir_ssa_def *tmp = nir_fsat(b, nir_fadd(b, nir_channel(b, lw, 1),
-                                              nir_fneg(b, nir_fabs(b, nir_channel(b, lw, 0)))));
-      nir_ssa_def *tmp1 = nir_fsat(b, nir_fadd(b, nir_channel(b, lw, 3),
-                                               nir_fneg(b, nir_fabs(b, nir_channel(b, lw, 2)))));
+      nir_ssa_def *len = nir_channel(b, lw, 3);
+      len = nir_fadd_imm(b, nir_fmul_imm(b, len, 2.0), -1.0);
+      nir_ssa_def *tmp = nir_fsat(b, nir_fadd(b, nir_channels(b, lw, 0xa),
+                                              nir_fneg(b, nir_fabs(b, nir_channels(b, lw, 0x5)))));
 
-      tmp = nir_fmul(b, tmp, tmp1);
+      tmp = nir_fmul(b, nir_channel(b, tmp, 0),
+                     nir_fmin(b, nir_channel(b, tmp, 1), len));
       tmp = nir_fmul(b, nir_channel(b, out_input, 3), tmp);
 
       nir_ssa_def *out = nir_vec4(b, nir_channel(b, out_input, 0),

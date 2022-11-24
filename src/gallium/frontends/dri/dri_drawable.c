@@ -558,6 +558,8 @@ dri_flush(__DRIcontext *cPriv,
        */
       p_atomic_inc(&drawable->base.stamp);
    }
+
+   st->invalidate_state(st, ST_INVALIDATE_FB_STATE);
 }
 
 /**

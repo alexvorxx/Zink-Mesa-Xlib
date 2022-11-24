@@ -559,10 +559,10 @@ agxdecode_vdm(const uint8_t *map, uint64_t *link, bool verbose)
       }
 
       IDX_PRINT(index_buffer, BUFFER_LO, "Index buffer");
-      IDX_PRINT(index_buffer_size, BUFFER_SIZE, "Index buffer size");
       IDX_PRINT(index_count, COUNT, "Index count");
       IDX_PRINT(instance_count, INSTANCES, "Instance count");
       IDX_PRINT(start, START, "Start");
+      IDX_PRINT(index_buffer_size, BUFFER_SIZE, "Index buffer size");
 
 #undef IDX_PRINT
       return ALIGN_POT(length, 8);

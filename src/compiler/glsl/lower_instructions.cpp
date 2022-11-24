@@ -89,8 +89,6 @@ private:
    void dldexp_to_arith(ir_expression *);
    void dfrexp_sig_to_arith(ir_expression *);
    void dfrexp_exp_to_arith(ir_expression *);
-   void carry_to_arith(ir_expression *);
-   void borrow_to_arith(ir_expression *);
    void double_dot_to_fma(ir_expression *);
    void double_lrp(ir_expression *);
    void dceil_to_dfrac(ir_expression *);
@@ -576,44 +574,6 @@ lower_instructions_visitor::dfrexp_exp_to_arith(ir_expression *ir)
    ir->operands[0] = new(ir) ir_dereference_variable(is_not_zero);
    ir->operands[1] = add(exponent_bias, u2i(rshift(high_words, exponent_shift)));
    ir->operands[2] = izero;
-
-   this->progress = true;
-}
-
-void
-lower_instructions_visitor::carry_to_arith(ir_expression *ir)
-{
-   /* Translates
-    *   ir_binop_carry x y
-    * into
-    *   sum = ir_binop_add x y
-    *   bcarry = ir_binop_less sum x
-    *   carry = ir_unop_b2i bcarry
-    */
-
-   ir_rvalue *x_clone = ir->operands[0]->clone(ir, NULL);
-   ir->operation = ir_unop_i2u;
-   ir->init_num_operands();
-   ir->operands[0] = b2i(less(add(ir->operands[0], ir->operands[1]), x_clone));
-   ir->operands[1] = NULL;
-
-   this->progress = true;
-}
-
-void
-lower_instructions_visitor::borrow_to_arith(ir_expression *ir)
-{
-   /* Translates
-    *   ir_binop_borrow x y
-    * into
-    *   bcarry = ir_binop_less x y
-    *   carry = ir_unop_b2i bcarry
-    */
-
-   ir->operation = ir_unop_i2u;
-   ir->init_num_operands();
-   ir->operands[0] = b2i(less(ir->operands[0], ir->operands[1]));
-   ir->operands[1] = NULL;
 
    this->progress = true;
 }
@@ -1465,14 +1425,6 @@ lower_instructions_visitor::visit_leave(ir_expression *ir)
    case ir_unop_frexp_sig:
       if (lowering(DFREXP_DLDEXP_TO_ARITH) && ir->operands[0]->type->is_double())
          dfrexp_sig_to_arith(ir);
-      break;
-
-   case ir_binop_carry:
-      carry_to_arith(ir);
-      break;
-
-   case ir_binop_borrow:
-      borrow_to_arith(ir);
       break;
 
    case ir_unop_trunc:

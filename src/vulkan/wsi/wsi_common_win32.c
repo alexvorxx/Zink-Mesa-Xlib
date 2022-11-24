@@ -400,8 +400,9 @@ wsi_win32_acquire_next_image(struct wsi_swapchain *drv_chain,
 
 static VkResult
 wsi_win32_queue_present(struct wsi_swapchain *drv_chain,
-                          uint32_t image_index,
-                          const VkPresentRegionKHR *damage)
+                        uint32_t image_index,
+                        uint64_t present_id,
+                        const VkPresentRegionKHR *damage)
 {
    struct wsi_win32_swapchain *chain = (struct wsi_win32_swapchain *) drv_chain;
    assert(image_index < chain->base.image_count);

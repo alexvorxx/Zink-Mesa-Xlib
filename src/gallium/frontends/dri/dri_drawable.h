@@ -29,7 +29,7 @@
 #define DRI_DRAWABLE_H
 
 #include "pipe/p_compiler.h"
-#include "pipe/p_format.h"
+#include "util/format/u_formats.h"
 #include "frontend/api.h"
 #include "dri_util.h"
 

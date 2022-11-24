@@ -71,7 +71,8 @@ static void copy_propagate_scan_read(void * data, struct rc_instruction * inst,
 	rc_register_file file = src->File;
 	struct rc_reader_data * reader_data = data;
 
-	if(!rc_inst_can_use_presub(inst,
+	if(!rc_inst_can_use_presub(reader_data->C,
+				inst,
 				reader_data->Writer->U.I.PreSub.Opcode,
 				rc_swizzle_to_writemask(src->Swizzle),
 				src,
@@ -455,7 +456,9 @@ static void presub_scan_read(
 	struct rc_reader_data * reader_data = data;
 	rc_presubtract_op * presub_opcode = reader_data->CbData;
 
-	if (!rc_inst_can_use_presub(inst, *presub_opcode,
+	if (!rc_inst_can_use_presub(reader_data->C,
+			inst,
+			*presub_opcode,
 			reader_data->Writer->U.I.DstReg.WriteMask,
 			src,
 			&reader_data->Writer->U.I.SrcReg[0],
@@ -1333,7 +1336,7 @@ void rc_optimize(struct radeon_compiler * c, void *user)
 	/* Merge MOVs to same source in different channels using the constant
 	 * swizzles.
 	 */
-	if (c->is_r500) {
+	if (c->is_r500 || c->type == RC_VERTEX_PROGRAM) {
 		inst = c->Program.Instructions.Next;
 		while(inst != &c->Program.Instructions) {
 			struct rc_instruction * cur = inst;

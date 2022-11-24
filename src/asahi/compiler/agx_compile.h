@@ -26,7 +26,6 @@
 
 #include "compiler/nir/nir.h"
 #include "util/u_dynarray.h"
-#include "asahi/lib/agx_pack.h"
 
 enum agx_push_type {
    /* Array of 64-bit pointers to the base addresses (BASES) and array of
@@ -255,8 +254,6 @@ struct agx_vs_shader_key {
 };
 
 struct agx_fs_shader_key {
-   enum agx_format tib_formats[AGX_MAX_RTS];
-
    /* Normally, access to the tilebuffer must be guarded by appropriate fencing
     * instructions to ensure correct results in the presence of out-of-order
     * hardware optimizations. However, specially dispatched clear shaders are
@@ -278,6 +275,9 @@ struct agx_shader_key {
 };
 
 void
+agx_preprocess_nir(nir_shader *nir);
+
+void
 agx_compile_shader_nir(nir_shader *nir,
       struct agx_shader_key *key,
       struct util_debug_callback *debug,
@@ -292,6 +292,8 @@ static const nir_shader_compiler_options agx_nir_options = {
    .lower_flrp32 = true,
    .lower_fpow = true,
    .lower_fmod = true,
+   .lower_bitfield_extract_to_shifts = true,
+   .lower_bitfield_insert_to_shifts = true,
    .lower_ifind_msb = true,
    .lower_find_lsb = true,
    .lower_uadd_carry = true,
@@ -302,6 +304,8 @@ static const nir_shader_compiler_options agx_nir_options = {
    .lower_iabs = true,
    .lower_fdph = true,
    .lower_ffract = true,
+   .lower_pack_half_2x16 = true,
+   .lower_unpack_half_2x16 = true,
    .lower_pack_split = true,
    .lower_extract_byte = true,
    .lower_extract_word = true,

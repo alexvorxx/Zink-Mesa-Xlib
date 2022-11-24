@@ -38,6 +38,10 @@ enum agx_alloc_type {
    AGX_NUM_ALLOC,
 };
 
+/* BO is shared across processes (imported or exported) and therefore cannot be
+ * cached locally */
+#define AGX_BO_SHARED             (1 << 0)
+
 struct agx_ptr {
    /* If CPU mapped, CPU address. NULL if not mapped */
    void *cpu;
@@ -86,5 +90,7 @@ agx_bo_create(struct agx_device *dev, unsigned size, unsigned flags);
 
 void agx_bo_reference(struct agx_bo *bo);
 void agx_bo_unreference(struct agx_bo *bo);
+struct agx_bo *agx_bo_import(struct agx_device *dev, int fd);
+int agx_bo_export(struct agx_bo *bo);
 
 #endif

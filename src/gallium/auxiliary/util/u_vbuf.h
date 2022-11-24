@@ -35,7 +35,7 @@
 
 #include "pipe/p_context.h"
 #include "pipe/p_state.h"
-#include "pipe/p_format.h"
+#include "util/format/u_formats.h"
 
 struct cso_context;
 struct cso_velems_state;

@@ -274,6 +274,9 @@ drisw_swap_buffers(__DRIdrawable *dPriv)
                                         fence, PIPE_TIMEOUT_INFINITE);
       screen->base.screen->fence_reference(screen->base.screen, &fence, NULL);
       drisw_copy_to_front(ctx->st->pipe, dPriv, ptex);
+
+      /* TODO: remove this if the framebuffer state doesn't change. */
+      ctx->st->invalidate_state(ctx->st, ST_INVALIDATE_FB_STATE);
    }
 }
 

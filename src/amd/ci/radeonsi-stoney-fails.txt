@@ -124,8 +124,6 @@ spec@arb_texture_rgb10_a2ui@texwrap formats bordercolor-swizzled,Fail
 spec@arb_texture_rgb10_a2ui@texwrap formats bordercolor-swizzled@GL_RGB10_A2UI- swizzled- border color only,Fail
 spec@arb_timer_query@timestamp-get,Fail
 spec@egl 1.4@eglterminate then unbind context,Fail
-spec@egl_chromium_sync_control@conformance,Fail
-spec@egl_chromium_sync_control@conformance@eglGetSyncValuesCHROMIUM_msc_and_sbc_test,Fail
 spec@egl_khr_surfaceless_context@viewport,Fail
 spec@egl_mesa_configless_context@basic,Fail
 spec@ext_framebuffer_blit@fbo-blit-check-limits,Fail

@@ -86,34 +86,6 @@ get_wait_event_cs()
    return b.shader;
 }
 
-static VkResult
-create_compute_pipeline_from_nir(struct v3dv_device *device,
-                                 nir_shader *nir,
-                                 VkPipelineLayout pipeline_layout,
-                                 VkPipeline *pipeline)
-{
-   struct vk_shader_module cs_m = vk_shader_module_from_nir(nir);
-
-   VkPipelineShaderStageCreateInfo set_event_cs_stage = {
-      .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
-      .stage = VK_SHADER_STAGE_COMPUTE_BIT,
-      .module = vk_shader_module_to_handle(&cs_m),
-      .pName = "main",
-   };
-
-   VkComputePipelineCreateInfo info = {
-      .sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO,
-      .stage = set_event_cs_stage,
-      .layout = pipeline_layout,
-   };
-
-   VkResult result =
-      v3dv_CreateComputePipelines(v3dv_device_to_handle(device), VK_NULL_HANDLE,
-                                  1, &info, &device->vk.alloc, pipeline);
-
-   return result;
-}
-
 static bool
 create_event_pipelines(struct v3dv_device *device)
 {
@@ -173,10 +145,10 @@ create_event_pipelines(struct v3dv_device *device)
 
    if (!device->events.set_event_pipeline) {
       nir_shader *set_event_cs_nir = get_set_event_cs();
-      result = create_compute_pipeline_from_nir(device,
-                                                set_event_cs_nir,
-                                                device->events.pipeline_layout,
-                                                &pipeline);
+      result = v3dv_create_compute_pipeline_from_nir(device,
+                                                     set_event_cs_nir,
+                                                     device->events.pipeline_layout,
+                                                     &pipeline);
       ralloc_free(set_event_cs_nir);
       if (result != VK_SUCCESS)
          return false;
@@ -186,10 +158,10 @@ create_event_pipelines(struct v3dv_device *device)
 
    if (!device->events.wait_event_pipeline) {
       nir_shader *wait_event_cs_nir = get_wait_event_cs();
-      result = create_compute_pipeline_from_nir(device,
-                                                wait_event_cs_nir,
-                                                device->events.pipeline_layout,
-                                                &pipeline);
+      result = v3dv_create_compute_pipeline_from_nir(device,
+                                                     wait_event_cs_nir,
+                                                     device->events.pipeline_layout,
+                                                     &pipeline);
       ralloc_free(wait_event_cs_nir);
       if (result != VK_SUCCESS)
          return false;

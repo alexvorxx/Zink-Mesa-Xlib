@@ -33,7 +33,7 @@
 #include "main/formats.h"
 #include "util/glheader.h"
 
-#include "pipe/p_format.h"
+#include "util/format/u_formats.h"
 
 #ifdef __cplusplus
 extern "C" {

@@ -87,6 +87,12 @@ struct disk_cache {
 
    /* Don't compress cached data. This is for testing purposes only. */
    bool compression_disabled;
+
+   struct {
+      bool enabled;
+      unsigned hits;
+      unsigned misses;
+   } stats;
 };
 
 struct cache_entry_file_data {

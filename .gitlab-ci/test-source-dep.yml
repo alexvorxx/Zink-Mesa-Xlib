@@ -160,6 +160,16 @@
     - if: '$ANHOLT_FARM == "offline"'
       when: never
 
+.valve-farm-rules:
+  rules:
+    - if: '$VALVE_FARM == "offline"'
+      when: never
+    # The Valve CI Farm uses allow lists for projects/users to prevent abuse,
+    # so only enable automatic testing when running in the context of Mesa to
+    # prevent failures in forks.
+    - if: '$CI_PROJECT_NAMESPACE != "mesa"'
+      when: manual
+
 # Skips freedreno jobs if either of the farms we use are offline.
 .freedreno-farm-rules:
   rules:
@@ -299,13 +309,27 @@
       - src/panfrost/bifrost/**/*
       when: on_success
 
+.broadcom-common-rules:
+  rules:
+    - changes:
+      - src/broadcom/meson.build
+      - src/broadcom/ci/**/*
+      - src/broadcom/cle/**/*
+      - src/broadcom/clif/**/*
+      - src/broadcom/common/**/*
+      - src/broadcom/compiler/**/*
+      - src/broadcom/drm-shim/**/*
+      - src/broadcom/qpu/**/*
+      - src/broadcom/simulator/**/*
+      when: on_success
+
 .vc4-rules:
   stage: broadcom
   rules:
     - !reference [.igalia-farm-rules, rules]
     - !reference [.gl-rules, rules]
+    - !reference [.broadcom-common-rules, rules]
     - changes:
-      - src/broadcom/**/*
       - src/gallium/drivers/vc4/**/*
       - src/gallium/winsys/kmsro/**/*
       - src/gallium/winsys/vc4/**/*
@@ -316,8 +340,8 @@
   rules:
     - !reference [.igalia-farm-rules, rules]
     - !reference [.gl-rules, rules]
+    - !reference [.broadcom-common-rules, rules]
     - changes:
-      - src/broadcom/**/*
       - src/gallium/drivers/v3d/**/*
       - src/gallium/winsys/kmsro/**/*
       - src/gallium/winsys/v3d/**/*
@@ -347,12 +371,23 @@
 .radv-rules:
   stage: amd
   rules:
-    - !reference [.collabora-farm-rules, rules]
     - !reference [.vulkan-rules, rules]
     - changes: &radv_file_list
       - src/amd/**/*
       - src/vulkan/**/*
       when: on_success
+
+.radv-collabora-rules:
+  stage: amd
+  rules:
+    - !reference [.collabora-farm-rules, rules]
+    - !reference [.radv-rules, rules]
+
+.radv-valve-rules:
+  stage: amd
+  rules:
+    - !reference [.valve-farm-rules, rules]
+    - !reference [.radv-rules, rules]
 
 .virgl-rules:
   stage: layered-backends
@@ -546,6 +581,8 @@
       when: on_success
     - changes:
       - src/microsoft/**/*
+      - src/gallium/frontends/va/*
+      - src/gallium/targets/va/*
       when: on_success
     - changes:
         *radv_file_list

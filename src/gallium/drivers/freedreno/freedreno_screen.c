@@ -305,6 +305,9 @@ fd_screen_get_param(struct pipe_screen *pscreen, enum pipe_cap param)
 
       return 0;
 
+   case PIPE_CAP_TEXTURE_BORDER_COLOR_QUIRK:
+      return PIPE_QUIRK_TEXTURE_BORDER_COLOR_SWIZZLE_FREEDRENO;
+
    case PIPE_CAP_TEXTURE_FLOAT_LINEAR:
    case PIPE_CAP_CUBE_MAP_ARRAY:
    case PIPE_CAP_SAMPLER_VIEW_TARGET:

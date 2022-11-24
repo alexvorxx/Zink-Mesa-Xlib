@@ -32,7 +32,7 @@
 #include "drm/freedreno_drmif.h"
 #include "drm/freedreno_ringbuffer.h"
 
-#include "pipe/p_format.h"
+#include "util/format/u_formats.h"
 #include "pipe/p_state.h"
 #include "util/compiler.h"
 #include "util/half_float.h"
@@ -115,7 +115,7 @@ extern bool fd_binning_enabled;
    do {                                                                        \
       if (FD_DBG(MSGS))                                                        \
          mesa_logi("%5d: %s:%d: " fmt, ((pid_t)syscall(SYS_gettid)),           \
-                                        __FUNCTION__, __LINE__,                \
+                                        __func__, __LINE__,                    \
                                         ##__VA_ARGS__);                        \
    } while (0)
 

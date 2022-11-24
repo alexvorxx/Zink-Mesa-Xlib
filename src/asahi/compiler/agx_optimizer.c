@@ -94,11 +94,10 @@ agx_compose_float_src(agx_index to, agx_index from)
 static void
 agx_optimizer_fmov(agx_instr **defs, agx_instr *ins)
 {
-   agx_foreach_src(ins, s) {
+   agx_foreach_ssa_src(ins, s) {
       agx_index src = ins->src[s];
-      if (src.type != AGX_INDEX_NORMAL) continue;
-      
       agx_instr *def = defs[src.value];
+
       if (def == NULL) continue; /* happens for phis in loops */
       if (!agx_is_fmov(def)) continue;
       if (def->saturate) continue;
@@ -123,6 +122,7 @@ agx_optimizer_inline_imm(agx_instr **defs, agx_instr *I,
 
       /* cmpselsrc takes integer immediates only */
       if (s >= 2 && I->op == AGX_OPCODE_FCMPSEL) float_src = false;
+      if (I->op == AGX_OPCODE_ST_TILE && s == 0) continue;
 
       if (float_src) {
          bool fp16 = (def->dest[0].size == AGX_SIZE_16);
@@ -153,11 +153,10 @@ agx_optimizer_fmov_rev(agx_instr *I, agx_instr *use)
 static void
 agx_optimizer_copyprop(agx_instr **defs, agx_instr *I)
 {
-   agx_foreach_src(I, s) {
+   agx_foreach_ssa_src(I, s) {
       agx_index src = I->src[s];
-      if (src.type != AGX_INDEX_NORMAL) continue;
-
       agx_instr *def = defs[src.value];
+
       if (def == NULL) continue; /* happens for phis in loops */
       if (def->op != AGX_OPCODE_MOV) continue;
 
@@ -182,6 +181,7 @@ agx_optimizer_copyprop(agx_instr **defs, agx_instr *I)
            I->op == AGX_OPCODE_PHI ||
            I->op == AGX_OPCODE_ST_TILE ||
            I->op == AGX_OPCODE_LD_TILE ||
+           I->op == AGX_OPCODE_BLOCK_IMAGE_STORE ||
            /*I->op == AGX_OPCODE_DEVICE_STORE ||*/
            I->op == AGX_OPCODE_UNIFORM_STORE ||
            I->op == AGX_OPCODE_ST_VARY))
@@ -192,7 +192,7 @@ agx_optimizer_copyprop(agx_instr **defs, agx_instr *I)
           !(I->op == AGX_OPCODE_DEVICE_LOAD && s == 0))
          continue;
 
-      I->src[s] = agx_replace_index(src, def->src[0]);
+      agx_replace_src(I, s, def->src[0]);
    }
 }
 
@@ -204,9 +204,8 @@ agx_optimizer_forward(agx_context *ctx)
    agx_foreach_instr_global(ctx, I) {
       struct agx_opcode_info info = agx_opcodes_info[I->op];
 
-      agx_foreach_dest(I, d) {
-         if (I->dest[d].type == AGX_INDEX_NORMAL)
-            defs[I->dest[d].value] = I;
+      agx_foreach_ssa_dest(I, d) {
+         defs[I->dest[d].value] = I;
       }
 
       /* Optimize moves */
@@ -217,9 +216,12 @@ agx_optimizer_forward(agx_context *ctx)
          agx_optimizer_fmov(defs, I);
 
       /* Inline immediates if we can. TODO: systematic */
-      if (I->op != AGX_OPCODE_ST_VARY && I->op != AGX_OPCODE_ST_TILE &&
-          I->op != AGX_OPCODE_COLLECT && I->op != AGX_OPCODE_TEXTURE_SAMPLE &&
-          I->op != AGX_OPCODE_TEXTURE_LOAD && I->op != AGX_OPCODE_UNIFORM_STORE)
+      if (I->op != AGX_OPCODE_ST_VARY &&
+          I->op != AGX_OPCODE_COLLECT &&
+          I->op != AGX_OPCODE_TEXTURE_SAMPLE &&
+          I->op != AGX_OPCODE_TEXTURE_LOAD &&
+          I->op != AGX_OPCODE_UNIFORM_STORE &&
+          I->op != AGX_OPCODE_BLOCK_IMAGE_STORE)
          agx_optimizer_inline_imm(defs, I, info.nr_srcs, info.is_float);
    }
 
@@ -235,7 +237,7 @@ agx_optimizer_backward(agx_context *ctx)
    agx_foreach_instr_global_rev(ctx, I) {
       struct agx_opcode_info info = agx_opcodes_info[I->op];
 
-      for (unsigned s = 0; s < info.nr_srcs; ++s) {
+      agx_foreach_ssa_src(I, s) {
          if (I->src[s].type == AGX_INDEX_NORMAL) {
             unsigned v = I->src[s].value;
 

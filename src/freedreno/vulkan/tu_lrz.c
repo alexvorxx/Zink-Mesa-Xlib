@@ -697,11 +697,16 @@ tu6_calculate_lrz_state(struct tu_cmd_buffer *cmd,
 
          VkFormat format = cmd->state.pass->attachments[a].format;
          unsigned mask = MASK(vk_format_get_nr_components(format));
-         if ((cmd->state.rb_mrt_control[i] &
+         uint32_t enabled_mask = (cmd->state.rb_mrt_control[i] &
               A6XX_RB_MRT_CONTROL_COMPONENT_ENABLE__MASK) >>
-             A6XX_RB_MRT_CONTROL_COMPONENT_ENABLE__SHIFT != mask) {
-            if (gras_lrz_cntl.lrz_write)
-               perf_debug(cmd->device, "disabling lrz write due to dynamic color write mask");
+             A6XX_RB_MRT_CONTROL_COMPONENT_ENABLE__SHIFT;
+         if ((enabled_mask & mask) != mask) {
+            if (gras_lrz_cntl.lrz_write) {
+               perf_debug(cmd->device,
+                          "disabling lrz write due to dynamic color write "
+                          "mask (%x/%x)",
+                          enabled_mask, mask);
+            }
             gras_lrz_cntl.lrz_write = false;
             break;
          }

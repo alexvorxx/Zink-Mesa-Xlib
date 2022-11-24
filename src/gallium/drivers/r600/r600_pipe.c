@@ -684,6 +684,9 @@ static struct pipe_resource *r600_resource_create(struct pipe_screen *screen,
 	return r600_resource_create_common(screen, templ);
 }
 
+char *
+r600_finalize_nir(struct pipe_screen *screen, void *shader);
+
 struct pipe_screen *r600_screen_create(struct radeon_winsys *ws,
 				       const struct pipe_screen_config *config)
 {
@@ -724,6 +727,9 @@ struct pipe_screen *r600_screen_create(struct radeon_winsys *ws,
 		FREE(rscreen);
 		return NULL;
 	}
+
+   if (is_nir_enabled(&rscreen->b))
+       rscreen->b.b.finalize_nir = r600_finalize_nir;
 
 	rscreen->b.has_streamout = true;
 

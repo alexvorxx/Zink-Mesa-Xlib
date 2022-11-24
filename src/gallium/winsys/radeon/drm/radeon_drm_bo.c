@@ -29,7 +29,7 @@
 #include "util/u_hash_table.h"
 #include "util/u_memory.h"
 #include "util/u_thread.h"
-#include "os/os_mman.h"
+#include "util/os_mman.h"
 #include "util/os_time.h"
 
 #include "frontend/drm_driver.h"

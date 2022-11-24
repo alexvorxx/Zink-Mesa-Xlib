@@ -165,7 +165,7 @@ static struct reg_value ** get_reg_valuep(struct schedule_state * s,
 		return NULL;
 
 	if (index >= RC_REGISTER_MAX_INDEX) {
-		rc_error(s->C, "%s: index %i out of bounds\n", __FUNCTION__, index);
+		rc_error(s->C, "%s: index %i out of bounds\n", __func__, index);
 		return NULL;
 	}
 
@@ -1203,7 +1203,7 @@ static void scan_read(void * data, struct rc_instruction * inst,
 	(*v)->NumReaders++;
 
 	if (s->Current->NumReadValues >= 12) {
-		rc_error(s->C, "%s: NumReadValues overflow\n", __FUNCTION__);
+		rc_error(s->C, "%s: NumReadValues overflow\n", __func__);
 	} else {
 		s->Current->ReadValues[s->Current->NumReadValues++] = *v;
 	}
@@ -1237,7 +1237,7 @@ static void scan_write(void * data, struct rc_instruction * inst,
 	*pv = newv;
 
 	if (s->Current->NumWriteValues >= 4) {
-		rc_error(s->C, "%s: NumWriteValues overflow\n", __FUNCTION__);
+		rc_error(s->C, "%s: NumWriteValues overflow\n", __func__);
 	} else {
 		s->Current->WriteValues[s->Current->NumWriteValues++] = newv;
 	}

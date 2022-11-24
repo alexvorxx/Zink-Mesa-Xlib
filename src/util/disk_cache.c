@@ -37,11 +37,13 @@
 #include <dirent.h>
 #include <inttypes.h>
 
+#include "util/compress.h"
 #include "util/crc32.h"
 #include "util/u_debug.h"
 #include "util/rand_xor.h"
 #include "util/u_atomic.h"
 #include "util/mesa-sha1.h"
+#include "util/perf/cpu_trace.h"
 #include "util/ralloc.h"
 #include "util/compiler.h"
 
@@ -127,6 +129,9 @@ disk_cache_create(const char *gpu_name, const char *driver_id,
 
       cache->use_cache_db = true;
    }
+
+   cache->stats.enabled = debug_get_bool_option("MESA_SHADER_CACHE_SHOW_STATS",
+                                                false);
 
    if (!disk_cache_mmap_cache_index(local, cache, path))
       goto path_fail;
@@ -253,6 +258,12 @@ disk_cache_create(const char *gpu_name, const char *driver_id,
 void
 disk_cache_destroy(struct disk_cache *cache)
 {
+   if (unlikely(cache && cache->stats.enabled)) {
+      printf("disk shader cache:  hits = %u, misses = %u\n",
+             cache->stats.hits,
+             cache->stats.misses);
+   }
+
    if (cache && !cache->path_init_failed) {
       util_queue_finish(&cache->cache_queue);
       util_queue_destroy(&cache->cache_queue);
@@ -386,13 +397,96 @@ done:
    }
 }
 
+struct blob_cache_entry {
+   uint32_t uncompressed_size;
+   uint8_t compressed_data[];
+};
+
+static void
+blob_put_compressed(struct disk_cache *cache, const cache_key key,
+         const void *data, size_t size)
+{
+   MESA_TRACE_FUNC();
+
+   size_t max_buf = util_compress_max_compressed_len(size);
+   struct blob_cache_entry *entry = malloc(max_buf + sizeof(*entry));
+   if (!entry)
+      goto out;
+
+   entry->uncompressed_size = size;
+
+   MESA_TRACE_BEGIN("deflate");
+   size_t compressed_size =
+         util_compress_deflate(data, size, entry->compressed_data, max_buf);
+   MESA_TRACE_END();
+   if (!compressed_size)
+      goto out;
+
+   unsigned entry_size = compressed_size + sizeof(*entry);
+   MESA_TRACE_BEGIN("blob_put");
+   cache->blob_put_cb(key, CACHE_KEY_SIZE, entry, entry_size);
+   MESA_TRACE_END();
+
+out:
+   free(entry);
+}
+
+static void *
+blob_get_compressed(struct disk_cache *cache, const cache_key key,
+                    size_t *size)
+{
+   MESA_TRACE_FUNC();
+
+   /* This is what Android EGL defines as the maxValueSize in egl_cache_t
+    * class implementation.
+    */
+   const signed long max_blob_size = 64 * 1024;
+   struct blob_cache_entry *entry = malloc(max_blob_size);
+   if (!entry)
+      return NULL;
+
+   MESA_TRACE_BEGIN("blob_get");
+   signed long entry_size =
+      cache->blob_get_cb(key, CACHE_KEY_SIZE, entry, max_blob_size);
+   MESA_TRACE_END();
+
+   if (!entry_size) {
+      free(entry);
+      return NULL;
+   }
+
+   void *data = malloc(entry->uncompressed_size);
+   if (!data) {
+      free(entry);
+      return NULL;
+   }
+
+   unsigned compressed_size = entry_size - sizeof(*entry);
+   MESA_TRACE_BEGIN("inflate");
+   bool ret = util_compress_inflate(entry->compressed_data, compressed_size,
+                                    data, entry->uncompressed_size);
+   MESA_TRACE_END();
+   if (!ret) {
+      free(data);
+      free(entry);
+      return NULL;
+   }
+
+   if (size)
+      *size = entry->uncompressed_size;
+
+   free(entry);
+
+   return data;
+}
+
 void
 disk_cache_put(struct disk_cache *cache, const cache_key key,
                const void *data, size_t size,
                struct cache_item_metadata *cache_item_metadata)
 {
    if (cache->blob_put_cb) {
-      cache->blob_put_cb(key, CACHE_KEY_SIZE, data, size);
+      blob_put_compressed(cache, key, data, size);
       return;
    }
 
@@ -415,7 +509,7 @@ disk_cache_put_nocopy(struct disk_cache *cache, const cache_key key,
                       struct cache_item_metadata *cache_item_metadata)
 {
    if (cache->blob_put_cb) {
-      cache->blob_put_cb(key, CACHE_KEY_SIZE, data, size);
+      blob_put_compressed(cache, key, data, size);
       free(data);
       return;
    }
@@ -438,42 +532,33 @@ disk_cache_put_nocopy(struct disk_cache *cache, const cache_key key,
 void *
 disk_cache_get(struct disk_cache *cache, const cache_key key, size_t *size)
 {
+   void *buf;
+
    if (size)
       *size = 0;
 
    if (cache->blob_get_cb) {
-      /* This is what Android EGL defines as the maxValueSize in egl_cache_t
-       * class implementation.
-       */
-      const signed long max_blob_size = 64 * 1024;
-      void *blob = malloc(max_blob_size);
-      if (!blob)
-         return NULL;
-
-      signed long bytes =
-         cache->blob_get_cb(key, CACHE_KEY_SIZE, blob, max_blob_size);
-
-      if (!bytes) {
-         free(blob);
-         return NULL;
-      }
-
-      if (size)
-         *size = bytes;
-      return blob;
-   }
-
-   if (debug_get_bool_option("MESA_DISK_CACHE_SINGLE_FILE", false)) {
-      return disk_cache_load_item_foz(cache, key, size);
+      buf = blob_get_compressed(cache, key, size);
+   } else if (debug_get_bool_option("MESA_DISK_CACHE_SINGLE_FILE", false)) {
+      buf = disk_cache_load_item_foz(cache, key, size);
    } else if (cache->use_cache_db) {
-      return disk_cache_db_load_item(cache, key, size);
+      buf = disk_cache_db_load_item(cache, key, size);
    } else {
       char *filename = disk_cache_get_cache_filename(cache, key);
       if (filename == NULL)
-         return NULL;
-
-      return disk_cache_load_item(cache, filename, size);
+         buf = NULL;
+      else
+         buf = disk_cache_load_item(cache, filename, size);
    }
+
+   if (unlikely(cache->stats.enabled)) {
+      if (buf)
+         p_atomic_inc(&cache->stats.hits);
+      else
+         p_atomic_inc(&cache->stats.misses);
+   }
+
+   return buf;
 }
 
 void

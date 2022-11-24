@@ -39,6 +39,8 @@ public:
 
    bool process_stage_intrinsic(nir_intrinsic_instr *intr) override;
 
+   unsigned image_size_const_offset() override { return m_image_size_const_offset;}
+
 protected:
    static const int s_max_interpolators = 6;
    bool interpolators_used(int i) const { return m_interpolators_used.test(i); }
@@ -73,7 +75,6 @@ private:
    unsigned m_export_highest;
    unsigned m_num_color_exports;
    unsigned m_color_export_mask;
-   unsigned m_depth_exports;
    ExportInstr *m_last_pixel_export;
 
    std::bitset<s_max_interpolators> m_interpolators_used;
@@ -91,6 +92,7 @@ private:
    int m_rat_base{0};
    int m_pos_driver_loc{0};
    int m_face_driver_loc{0};
+   int m_image_size_const_offset{0};
 };
 
 class FragmentShaderR600 : public FragmentShader {

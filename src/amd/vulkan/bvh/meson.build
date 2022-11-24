@@ -28,7 +28,7 @@ bvh_shaders = [
   'converter_leaf.comp',
 ]
 
-bvh_include_dir = meson.source_root() + '/src/amd/vulkan/bvh'
+bvh_include_dir = dir_source_root + '/src/amd/vulkan/bvh'
 
 bvh_includes = files(
   'build_helpers.h',

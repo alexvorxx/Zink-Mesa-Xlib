@@ -37,6 +37,12 @@ percent(uint64_t a, uint64_t b)
    return 100.f * (a / static_cast<double>(b));
 }
 
+bool
+FreedrenoDriver::is_dump_perfcnt_preemptible() const
+{
+   return false;
+}
+
 uint64_t
 FreedrenoDriver::get_min_sampling_period_ns()
 {

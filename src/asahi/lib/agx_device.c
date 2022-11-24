@@ -218,6 +218,20 @@ agx_bo_unreference(struct agx_bo *bo)
 }
 
 struct agx_bo *
+agx_bo_import(struct agx_device *dev, int fd)
+{
+   unreachable("Linux UAPI not yet upstream");
+}
+
+int
+agx_bo_export(struct agx_bo *bo)
+{
+   bo->flags |= AGX_BO_SHARED;
+
+   unreachable("Linux UAPI not yet upstream");
+}
+
+struct agx_bo *
 agx_bo_create(struct agx_device *dev, unsigned size, unsigned flags)
 {
    struct agx_bo *bo;

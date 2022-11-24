@@ -33,6 +33,7 @@
 
 #include "radeon_compiler.h"
 #include "radeon_dataflow.h"
+#include "r300_fragprog_swizzle.h"
 /**
  */
 unsigned int rc_swizzle_to_writemask(unsigned int swz)
@@ -220,6 +221,20 @@ static void normal_rewrite_writemask_cb(
 {
 	unsigned int * conversion_swizzle = (unsigned int *)userdata;
 	src->Swizzle = rc_adjust_channels(src->Swizzle, *conversion_swizzle);
+
+	/* Per-channel negates are possible in vertex shaders,
+	 * so we need to rewrite it properly as well. */
+	unsigned int new_negate = 0;
+	for (unsigned int i = 0; i < 4; i++) {
+		unsigned int new_chan = get_swz(*conversion_swizzle, i);
+
+		if (new_chan == RC_SWIZZLE_UNUSED)
+			continue;
+
+		if ((1 << i) & src->Negate)
+			new_negate |= 1 << new_chan;
+	}
+	src->Negate = new_negate;
 }
 
 /**
@@ -369,6 +384,7 @@ struct src_select {
 	rc_register_file File;
 	int Index;
 	unsigned int SrcType;
+	unsigned int Swizzle;
 };
 
 struct can_use_presub_data {
@@ -382,14 +398,15 @@ static void can_use_presub_data_add_select(
 	struct can_use_presub_data * data,
 	rc_register_file file,
 	unsigned int index,
-	unsigned int src_type)
+	unsigned int swizzle)
 {
 	struct src_select * select;
 
 	select = &data->Selects[data->SelectCount++];
 	select->File = file;
 	select->Index = index;
-	select->SrcType = src_type;
+	select->SrcType = rc_source_type_swz(swizzle);
+	select->Swizzle = swizzle;
 }
 
 /**
@@ -412,10 +429,11 @@ static void can_use_presub_read_cb(
 		return;
 
 	can_use_presub_data_add_select(d, src->File, src->Index,
-					rc_source_type_swz(src->Swizzle));
+					src->Swizzle);
 }
 
 unsigned int rc_inst_can_use_presub(
+	struct radeon_compiler * c,
 	struct rc_instruction * inst,
 	rc_presubtract_op presub_op,
 	unsigned int presub_writemask,
@@ -439,6 +457,16 @@ unsigned int rc_inst_can_use_presub(
 		return 0;
 	}
 
+	/* We can't allow constant swizzles from presubtract, because it is not possible
+	 * to rewrite it to a native swizzle later. */
+	if (!c->is_r500) {
+		for (i = 0; i < 4; i++) {
+			rc_swizzle swz = GET_SWZ(replace_reg->Swizzle, i);
+			if (swz > RC_SWIZZLE_W && swz < RC_SWIZZLE_UNUSED)
+				return 0;
+		}
+	}
+
 	/* We can't use more than one presubtract value in an
 	 * instruction, unless the two prsubtract operations
 	 * are the same and read from the same registers.
@@ -459,14 +487,14 @@ unsigned int rc_inst_can_use_presub(
 	can_use_presub_data_add_select(&d,
 		presub_src0->File,
 		presub_src0->Index,
-		src_type0);
+		presub_src0->Swizzle);
 
 	if (num_presub_srcs > 1) {
 		src_type1 = rc_source_type_swz(presub_src1->Swizzle);
 		can_use_presub_data_add_select(&d,
 			presub_src1->File,
 			presub_src1->Index,
-			src_type1);
+			presub_src1->Swizzle);
 
 		/* Even if both of the presub sources read from the same
 		 * register, we still need to use 2 different source selects
@@ -490,6 +518,12 @@ unsigned int rc_inst_can_use_presub(
 		unsigned int j;
 		unsigned int src_type = d.Selects[i].SrcType;
 		for (j = i + 1; j < d.SelectCount; j++) {
+			/* Even if the sources are the same now, they will not be the
+			 * same later, if we have to rewrite some non-native swizzle. */
+			if(!c->is_r500 && (
+				!r300_swizzle_is_native_basic(d.Selects[i].Swizzle) ||
+				!r300_swizzle_is_native_basic(d.Selects[j].Swizzle)))
+				continue;
 			if (d.Selects[i].File == d.Selects[j].File
 			    && d.Selects[i].Index == d.Selects[j].Index) {
 				src_type &= ~d.Selects[j].SrcType;

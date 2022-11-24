@@ -134,6 +134,7 @@ struct wsi_swapchain {
    VkFence* fences;
    VkSemaphore* buffer_blit_semaphores;
    VkPresentModeKHR present_mode;
+   VkSemaphore present_id_timeline;
 
    int signal_dma_buf_from_semaphore;
    VkSemaphore dma_buf_semaphore;
@@ -162,7 +163,11 @@ struct wsi_swapchain {
                                   uint32_t *image_index);
    VkResult (*queue_present)(struct wsi_swapchain *swap_chain,
                              uint32_t image_index,
+                             uint64_t present_id,
                              const VkPresentRegionKHR *damage);
+   VkResult (*wait_for_present)(struct wsi_swapchain *swap_chain,
+                                uint64_t present_id,
+                                uint64_t timeout);
 };
 
 bool
@@ -252,6 +257,10 @@ void
 wsi_destroy_image(const struct wsi_swapchain *chain,
                   struct wsi_image *image);
 
+VkResult
+wsi_swapchain_wait_for_present_semaphore(const struct wsi_swapchain *chain,
+                                         uint64_t present_id, uint64_t timeout);
+
 #ifdef HAVE_LIBDRM
 VkResult
 wsi_prepare_signal_dma_buf_from_semaphore(struct wsi_swapchain *chain,
@@ -331,5 +340,10 @@ wsi_display_setup_syncobj_fd(struct wsi_device *wsi_device,
 
 VK_DEFINE_NONDISP_HANDLE_CASTS(wsi_swapchain, base, VkSwapchainKHR,
                                VK_OBJECT_TYPE_SWAPCHAIN_KHR)
+
+#if defined(HAVE_PTHREAD) && !defined(_WIN32)
+bool
+wsi_init_pthread_cond_monotonic(pthread_cond_t *cond);
+#endif
 
 #endif /* WSI_COMMON_PRIVATE_H */

@@ -37,8 +37,8 @@ public:
 
    fs_reg();
    fs_reg(struct ::brw_reg reg);
-   fs_reg(enum brw_reg_file file, int nr);
-   fs_reg(enum brw_reg_file file, int nr, enum brw_reg_type type);
+   fs_reg(enum brw_reg_file file, unsigned nr);
+   fs_reg(enum brw_reg_file file, unsigned nr, enum brw_reg_type type);
 
    bool equals(const fs_reg &r) const;
    bool negative_equals(const fs_reg &r) const;

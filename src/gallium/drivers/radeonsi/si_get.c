@@ -1134,7 +1134,6 @@ void si_init_screen_get_functions(struct si_screen *sscreen)
       .lower_flrp16 = true,
       .lower_flrp32 = true,
       .lower_flrp64 = true,
-      .lower_fsat = true,
       .lower_fdiv = true,
       .lower_bitfield_insert_to_bitfield_select = true,
       .lower_bitfield_extract = true,

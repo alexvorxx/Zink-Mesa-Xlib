@@ -15,7 +15,8 @@ clamp_vertex_color
    the execution of the vertex shader, before being passed to the geometry
    shader or fragment shader.
 
-   OpenGL: glClampColor(GL_CLAMP_VERTEX_COLOR) in GL 3.0 or GL_ARB_color_buffer_float
+   OpenGL: glClampColor(GL_CLAMP_VERTEX_COLOR) in GL 3.0 or
+   :ext:`GL_ARB_color_buffer_float`
 
    D3D11: seems always disabled
 
@@ -28,7 +29,8 @@ clamp_fragment_color
    Controls whether TGSI_SEMANTIC_COLOR outputs of the fragment shader
    are clamped to [0, 1].
 
-   OpenGL: glClampColor(GL_CLAMP_FRAGMENT_COLOR) in GL 3.0 or ARB_color_buffer_float
+   OpenGL: glClampColor(GL_CLAMP_FRAGMENT_COLOR) in GL 3.0 or
+   :ext:`GL_ARB_color_buffer_float`
 
    D3D11: seems always disabled
 
@@ -305,8 +307,8 @@ bottom_edge_rule
         assumes that top is always at y=0.
 
     See also:
-     - https://msdn.microsoft.com/en-us/library/windows/desktop/cc627092.aspx
-     - https://msdn.microsoft.com/en-us/library/windows/desktop/bb147314.aspx
+     - https://learn.microsoft.com/en-us/windows/win32/direct3d11/d3d10-graphics-programming-guide-rasterizer-stage-rules
+     - https://learn.microsoft.com/en-us/windows/win32/direct3d9/rasterization-rules
 
 clip_halfz
     When true clip space in the z axis goes from [0..1] (D3D).  When false
@@ -334,7 +336,7 @@ clip_plane_enable
 
 conservative_raster_mode
     The conservative rasterization mode.  For PIPE_CONSERVATIVE_RASTER_OFF,
-    conservative rasterization is disabled.  For IPE_CONSERVATIVE_RASTER_POST_SNAP
+    conservative rasterization is disabled.  For PIPE_CONSERVATIVE_RASTER_POST_SNAP
     or PIPE_CONSERVATIVE_RASTER_PRE_SNAP, conservative rasterization is nabled.
     When conservative rasterization is enabled, the polygon smooth, line mooth,
     point smooth and line stipple settings are ignored.

@@ -31,7 +31,7 @@
 #include "nir.h"
 #include "nir_builtin_builder.h"
 
-#include "u_memory.h"
+#include "util/u_memory.h"
 
 union state_key {
    struct {

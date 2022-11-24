@@ -501,71 +501,6 @@ static void si_llvm_init_vs_export_args(struct si_shader_context *ctx, const LLV
 }
 
 /**
- * Vertex color clamping.
- *
- * This uses a state constant loaded in a user data SGPR and
- * an IF statement is added that clamps all colors if the constant
- * is true.
- */
-static void si_vertex_color_clamping(struct si_shader_context *ctx,
-                                     struct si_shader_output_values *outputs, unsigned noutput)
-{
-   LLVMValueRef addr[SI_MAX_VS_OUTPUTS][4];
-   bool has_colors = false;
-
-   /* Store original colors to alloca variables. */
-   for (unsigned i = 0; i < noutput; i++) {
-      if (outputs[i].semantic != VARYING_SLOT_COL0 &&
-          outputs[i].semantic != VARYING_SLOT_COL1 &&
-          outputs[i].semantic != VARYING_SLOT_BFC0 &&
-          outputs[i].semantic != VARYING_SLOT_BFC1)
-         continue;
-
-      for (unsigned j = 0; j < 4; j++)
-         addr[i][j] = ac_build_alloca_init(&ctx->ac, outputs[i].values[j], "");
-
-      has_colors = true;
-   }
-
-   if (!has_colors)
-      return;
-
-   /* The state is in the first bit of the user SGPR. */
-   LLVMValueRef cond = GET_FIELD(ctx, VS_STATE_CLAMP_VERTEX_COLOR);
-   cond = LLVMBuildTrunc(ctx->ac.builder, cond, ctx->ac.i1, "");
-
-   ac_build_ifcc(&ctx->ac, cond, 6502);
-
-   /* Store clamped colors to alloca variables within the conditional block. */
-   for (unsigned i = 0; i < noutput; i++) {
-      if (outputs[i].semantic != VARYING_SLOT_COL0 &&
-          outputs[i].semantic != VARYING_SLOT_COL1 &&
-          outputs[i].semantic != VARYING_SLOT_BFC0 &&
-          outputs[i].semantic != VARYING_SLOT_BFC1)
-         continue;
-
-      for (unsigned j = 0; j < 4; j++) {
-         LLVMBuildStore(ctx->ac.builder, ac_build_clamp(&ctx->ac, outputs[i].values[j]),
-                        addr[i][j]);
-      }
-   }
-   ac_build_endif(&ctx->ac, 6502);
-
-   /* Load clamped colors */
-   for (unsigned i = 0; i < noutput; i++) {
-      if (outputs[i].semantic != VARYING_SLOT_COL0 &&
-          outputs[i].semantic != VARYING_SLOT_COL1 &&
-          outputs[i].semantic != VARYING_SLOT_BFC0 &&
-          outputs[i].semantic != VARYING_SLOT_BFC1)
-         continue;
-
-      for (unsigned j = 0; j < 4; j++) {
-         outputs[i].values[j] = LLVMBuildLoad2(ctx->ac.builder, ctx->ac.f32, addr[i][j], "");
-      }
-   }
-}
-
-/**
  * Generate export instructions for hardware VS shader stage or NGG GS stage
  * (position and parameter data only).
  *
@@ -583,8 +518,6 @@ void si_llvm_build_vs_exports(struct si_shader_context *ctx, LLVMValueRef num_ex
                              ~shader->key.ge.opt.kill_clip_distances) |
                             shader->selector->info.culldist_mask;
    int i;
-
-   si_vertex_color_clamping(ctx, outputs, noutput);
 
    /* Build position exports. */
    for (i = 0; i < noutput; i++) {
@@ -810,32 +743,7 @@ void si_llvm_build_vs_exports(struct si_shader_context *ctx, LLVMValueRef num_ex
                     LLVMBuildICmp(ctx->ac.builder, LLVMIntULT,
                                   ac_get_thread_id(&ctx->ac), num_export_threads, ""), 0);
 
-      /* Get the attribute ring address and descriptor. */
-      LLVMValueRef attr_address;
-      if (ctx->stage == MESA_SHADER_VERTEX && shader->selector->info.base.vs.blit_sgprs_amd) {
-         struct ac_llvm_pointer ring_ptr = ac_get_ptr_arg(&ctx->ac, &ctx->args, ctx->internal_bindings);
-         ring_ptr.pointee_type = ctx->ac.i32;
-         attr_address = ac_build_load_to_sgpr(&ctx->ac, ring_ptr,
-                                              LLVMConstInt(ctx->ac.i32, SI_GS_ATTRIBUTE_RING * 4, 0));
-      } else {
-         attr_address = ac_get_arg(&ctx->ac, ctx->gs_attr_address);
-      }
-
-      unsigned stride = 16 * shader->info.nr_param_exports;
-      LLVMValueRef attr_desc[4] = {
-         attr_address,
-         LLVMConstInt(ctx->ac.i32, S_008F04_BASE_ADDRESS_HI(ctx->screen->info.address32_hi) |
-                                   S_008F04_STRIDE(stride) |
-                                   S_008F04_SWIZZLE_ENABLE_GFX11(3) /* 16B */, 0),
-         LLVMConstInt(ctx->ac.i32, 0xffffffff, 0),
-         LLVMConstInt(ctx->ac.i32, S_008F0C_DST_SEL_X(V_008F0C_SQ_SEL_X) |
-                                   S_008F0C_DST_SEL_Y(V_008F0C_SQ_SEL_Y) |
-                                   S_008F0C_DST_SEL_Z(V_008F0C_SQ_SEL_Z) |
-                                   S_008F0C_DST_SEL_W(V_008F0C_SQ_SEL_W) |
-                                   S_008F0C_FORMAT(V_008F0C_GFX11_FORMAT_32_32_32_32_FLOAT) |
-                                   S_008F0C_INDEX_STRIDE(2) /* 32 elements */, 0),
-      };
-      LLVMValueRef attr_rsrc = ac_build_gather_values(&ctx->ac, attr_desc, 4);
+      LLVMValueRef attr_rsrc = si_llvm_build_attr_ring_desc(ctx);
       LLVMValueRef attr_offset = LLVMBuildShl(ctx->ac.builder,
                                               si_unpack_param(ctx, ctx->args.gs_attr_offset, 0, 15),
                                               LLVMConstInt(ctx->ac.i32, 9, 0), ""); /* 512B increments */

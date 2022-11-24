@@ -32,7 +32,7 @@
 namespace r600 {
 
 GeometryShader::GeometryShader(const r600_shader_key& key):
-    Shader("GS"),
+    Shader("GS", key.gs.first_atomic_counter),
     m_tri_strip_adj_fix(key.gs.tri_strip_adj_fix)
 {
 }
@@ -147,13 +147,10 @@ GeometryShader::do_allocate_reserved_registers()
     * components are actually used */
    for (int i = 0; i < 6; ++i) {
       m_per_vertex_offsets[i] = value_factory().allocate_pinned_register(sel[i], chan[i]);
-      m_per_vertex_offsets[i]->pin_live_range(true);
    }
 
    m_primitive_id = value_factory().allocate_pinned_register(0, 2);
-   m_primitive_id->pin_live_range(true);
    m_invocation_id = value_factory().allocate_pinned_register(1, 3);
-   m_invocation_id->pin_live_range(true);
 
    value_factory().set_virtual_register_base(2);
 

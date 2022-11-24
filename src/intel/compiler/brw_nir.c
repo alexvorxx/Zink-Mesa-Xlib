@@ -643,6 +643,7 @@ brw_nir_optimize(nir_shader *nir, const struct brw_compiler *compiler,
       OPT(nir_opt_combine_stores, nir_var_all);
 
       OPT(nir_opt_ray_queries);
+      OPT(nir_opt_ray_query_ranges);
 
       if (is_scalar) {
          OPT(nir_lower_alu_to_scalar, NULL, NULL);
@@ -1286,7 +1287,7 @@ brw_postprocess_nir(nir_shader *nir, const struct brw_compiler *compiler,
       OPT(brw_nir_opt_peephole_ffma);
    }
 
-   if (devinfo->ver >= 7 && is_scalar)
+   if (is_scalar)
       OPT(brw_nir_opt_peephole_imul32x16);
 
    if (OPT(nir_opt_comparison_pre)) {
@@ -1697,9 +1698,10 @@ brw_type_for_nir_type(const struct intel_device_info *devinfo,
 
 nir_shader *
 brw_nir_create_passthrough_tcs(void *mem_ctx, const struct brw_compiler *compiler,
-                               const nir_shader_compiler_options *options,
                                const struct brw_tcs_prog_key *key)
 {
+   const nir_shader_compiler_options *options =
+      compiler->nir_options[MESA_SHADER_TESS_CTRL];
    nir_builder b = nir_builder_init_simple_shader(MESA_SHADER_TESS_CTRL,
                                                   options, "passthrough TCS");
    ralloc_steal(mem_ctx, b.shader);

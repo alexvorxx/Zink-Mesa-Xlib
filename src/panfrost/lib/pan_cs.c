@@ -107,7 +107,7 @@ GENX(pan_select_crc_rt)(const struct pan_fb_info *fb, unsigned tile_size)
 
 #if PAN_ARCH <= 6
         if (fb->rt_count == 1 && fb->rts[0].view && !fb->rts[0].discard &&
-            fb->rts[0].view->image->layout.crc_mode != PAN_IMAGE_CRC_NONE)
+            fb->rts[0].view->image->layout.crc)
                 return 0;
 
         return -1;
@@ -117,7 +117,7 @@ GENX(pan_select_crc_rt)(const struct pan_fb_info *fb, unsigned tile_size)
 
         for (unsigned i = 0; i < fb->rt_count; i++) {
 		if (!fb->rts[i].view || fb->rts[0].discard ||
-                    fb->rts[i].view->image->layout.crc_mode == PAN_IMAGE_CRC_NONE)
+                    !fb->rts[i].view->image->layout.crc)
                         continue;
 
                 bool valid = *(fb->rts[i].crc_valid);
@@ -274,10 +274,8 @@ pan_prepare_crc(const struct pan_fb_info *fb, int rt_crc,
 
         const struct pan_image_view *rt = fb->rts[rt_crc].view;
         const struct pan_image_slice_layout *slice = &rt->image->layout.slices[rt->first_level];
-        ext->crc_base = (rt->image->layout.crc_mode == PAN_IMAGE_CRC_INBAND ?
-                         (rt->image->data.bo->ptr.gpu + rt->image->data.offset) :
-                         (rt->image->crc.bo->ptr.gpu + rt->image->crc.offset)) +
-                        slice->crc.offset;
+        ext->crc_base = rt->image->data.bo->ptr.gpu + rt->image->data.offset
+                                                    + slice->crc.offset;
         ext->crc_row_stride = slice->crc.stride;
 
 #if PAN_ARCH >= 7
@@ -883,20 +881,14 @@ GENX(pan_emit_fbd)(const struct panfrost_device *dev,
                         assert(cfg.color_block_format == MALI_BLOCK_FORMAT_LINEAR ||
                                cfg.color_block_format == MALI_BLOCK_FORMAT_TILED_U_INTERLEAVED);
 
-                        if (rt->image->layout.crc_mode != PAN_IMAGE_CRC_NONE) {
+                        if (rt->image->layout.crc) {
                                 const struct pan_image_slice_layout *slice =
                                         &rt->image->layout.slices[level];
 
                                 cfg.crc_buffer.row_stride = slice->crc.stride;
-                                if (rt->image->layout.crc_mode == PAN_IMAGE_CRC_INBAND) {
-                                        cfg.crc_buffer.base = rt->image->data.bo->ptr.gpu +
-                                                              rt->image->data.offset +
-                                                              slice->crc.offset;
-                                } else {
-                                        cfg.crc_buffer.base = rt->image->crc.bo->ptr.gpu +
-                                                              rt->image->crc.offset +
-                                                              slice->crc.offset;
-                                }
+                                cfg.crc_buffer.base = rt->image->data.bo->ptr.gpu +
+                                                      rt->image->data.offset +
+                                                      slice->crc.offset;
                         }
                 }
 

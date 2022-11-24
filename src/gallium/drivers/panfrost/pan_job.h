@@ -192,7 +192,7 @@ struct panfrost_batch {
         struct pan_tristate sprite_coord_origin;
         struct pan_tristate first_provoking_vertex;
 
-        /* Referenced resources */
+        /* Referenced resources, holds a pipe_reference. */
         struct set *resources;
 };
 

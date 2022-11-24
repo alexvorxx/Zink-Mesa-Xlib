@@ -340,7 +340,7 @@ fd_resource_ubwc_enabled(struct fd_resource *rsc, int level)
  * most of the time)
  */
 static inline unsigned
-fd_resource_nr_samples(struct pipe_resource *prsc)
+fd_resource_nr_samples(const struct pipe_resource *prsc)
 {
    return MAX2(1, prsc->nr_samples);
 }

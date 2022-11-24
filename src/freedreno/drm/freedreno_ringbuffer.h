@@ -183,9 +183,6 @@ fd_ringbuffer_grow(struct fd_ringbuffer *ring, uint32_t ndwords)
 {
    assert(ring->funcs->grow); /* unsupported on kgsl */
 
-   /* there is an upper bound on IB size, which appears to be 0x0fffff */
-   ring->size = MIN2(ring->size << 1, 0x0fffff);
-
    ring->funcs->grow(ring, ring->size);
 }
 

@@ -25,7 +25,7 @@
 #include "bi_builder.h"
 
 #define XXH_INLINE_ALL
-#include "xxhash.h"
+#include "util/xxhash.h"
 
 /* Fuse pairs of TEXS_2D instructions into a single dual texture TEXC, if both
  * sample at the same coordinate with the default LOD mode for the shader stage

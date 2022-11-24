@@ -93,7 +93,7 @@ if with_tests and not with_platform_android
     depend_files: gen_pack_header_deps
   )
 
-  genxml_path = join_paths(meson.source_root(),
+  genxml_path = join_paths(dir_source_root,
                            '@0@'.format(gentest_xml[0]))
 
   test(

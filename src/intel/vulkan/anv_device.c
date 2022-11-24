@@ -67,6 +67,7 @@ static const driOptionDescription anv_dri_options[] = {
       DRI_CONF_ADAPTIVE_SYNC(true)
       DRI_CONF_VK_X11_OVERRIDE_MIN_IMAGE_COUNT(0)
       DRI_CONF_VK_X11_STRICT_IMAGE_COUNT(false)
+      DRI_CONF_VK_KHR_PRESENT_WAIT(false)
       DRI_CONF_VK_XWAYLAND_WAIT_READY(true)
       DRI_CONF_ANV_ASSUME_FULL_SUBGROUPS(false)
       DRI_CONF_ANV_SAMPLE_MASK_OUT_OPENGL_BEHAVIOUR(false)
@@ -154,6 +155,7 @@ static const struct vk_instance_extension_table instance_extensions = {
    .KHR_get_surface_capabilities2            = true,
    .KHR_surface                              = true,
    .KHR_surface_protected_capabilities       = true,
+   .EXT_swapchain_colorspace                 = true,
 #endif
 #ifdef VK_USE_PLATFORM_WAYLAND_KHR
    .KHR_wayland_surface                      = true,
@@ -230,6 +232,17 @@ get_device_extensions(const struct anv_physical_device *device,
          device->use_call_secondary,
       .KHR_pipeline_executable_properties    = true,
       .KHR_pipeline_library                  = true,
+      /* Hide these behind dri configs for now since we cannot implement it reliably on
+       * all surfaces yet. There is no surface capability query for present wait/id,
+       * but the feature is useful enough to hide behind an opt-in mechanism for now.
+       * If the instance only enables surface extensions that unconditionally support present wait,
+       * we can also expose the extension that way. */
+      .KHR_present_id =
+         driQueryOptionb(&device->instance->dri_options, "vk_khr_present_wait") ||
+         wsi_common_vk_instance_supports_present_wait(&device->instance->vk),
+      .KHR_present_wait =
+         driQueryOptionb(&device->instance->dri_options, "vk_khr_present_wait") ||
+         wsi_common_vk_instance_supports_present_wait(&device->instance->vk),
       .KHR_push_descriptor                   = true,
       .KHR_ray_query                         =
          ANV_SUPPORT_RT && device->info.has_ray_tracing,
@@ -534,12 +547,16 @@ anv_physical_device_init_heaps(struct anv_physical_device *device, int fd)
       };
    }
 
-   device->memory.need_clflush = false;
    for (unsigned i = 0; i < device->memory.type_count; i++) {
       VkMemoryPropertyFlags props = device->memory.types[i].propertyFlags;
       if ((props & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT) &&
           !(props & VK_MEMORY_PROPERTY_HOST_COHERENT_BIT))
+#ifdef SUPPORT_INTEL_INTEGRATED_GPUS
          device->memory.need_clflush = true;
+#else
+         return vk_errorf(device, VK_ERROR_INITIALIZATION_FAILED,
+                          "Memory configuration requires flushing, but it's not implemented for this architecture");
+#endif
    }
 
    return VK_SUCCESS;
@@ -1734,13 +1751,13 @@ void anv_GetPhysicalDeviceFeatures2(
          features->extendedDynamicState3ColorBlendEnable = true;
          features->extendedDynamicState3ColorWriteMask = true;
          features->extendedDynamicState3ColorBlendEquation = true;
+         features->extendedDynamicState3SampleLocationsEnable = true;
          features->extendedDynamicState3SampleMask = true;
 
          features->extendedDynamicState3RasterizationSamples = false;
          features->extendedDynamicState3AlphaToCoverageEnable = false;
          features->extendedDynamicState3ConservativeRasterizationMode = false;
          features->extendedDynamicState3ExtraPrimitiveOverestimationSize = false;
-         features->extendedDynamicState3SampleLocationsEnable = false;
          features->extendedDynamicState3ViewportWScalingEnable = false;
          features->extendedDynamicState3ViewportSwizzle = false;
          features->extendedDynamicState3ShadingRateImageEnable = false;
@@ -1781,6 +1798,20 @@ void anv_GetPhysicalDeviceFeatures2(
          VkPhysicalDeviceDepthClipControlFeaturesEXT *features =
             (VkPhysicalDeviceDepthClipControlFeaturesEXT *)ext;
          features->depthClipControl = true;
+         break;
+      }
+
+      case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PRESENT_ID_FEATURES_KHR: {
+         VkPhysicalDevicePresentIdFeaturesKHR *features =
+            (VkPhysicalDevicePresentIdFeaturesKHR *) ext;
+         features->presentId = pdevice->vk.supported_extensions.KHR_present_id;
+         break;
+      }
+
+      case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PRESENT_WAIT_FEATURES_KHR: {
+         VkPhysicalDevicePresentWaitFeaturesKHR *features =
+            (VkPhysicalDevicePresentWaitFeaturesKHR *) ext;
+         features->presentWait = pdevice->vk.supported_extensions.KHR_present_wait;
          break;
       }
 
@@ -2355,6 +2386,13 @@ void anv_GetPhysicalDeviceProperties2(
          props->renderMajor = pdevice->local_major;
          props->renderMinor = pdevice->local_minor;
 
+         break;
+      }
+
+      case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTENDED_DYNAMIC_STATE_3_PROPERTIES_EXT: {
+         VkPhysicalDeviceExtendedDynamicState3PropertiesEXT *props =
+            (VkPhysicalDeviceExtendedDynamicState3PropertiesEXT *) ext;
+         props->dynamicPrimitiveTopologyUnrestricted = true;
          break;
       }
 
@@ -3015,8 +3053,10 @@ anv_device_init_trivial_batch(struct anv_device *device)
    anv_batch_emit(&batch, GFX7_MI_BATCH_BUFFER_END, bbe);
    anv_batch_emit(&batch, GFX7_MI_NOOP, noop);
 
+#ifdef SUPPORT_INTEL_INTEGRATED_GPUS
    if (device->physical->memory.need_clflush)
       intel_clflush_range(batch.start, batch.next - batch.start);
+#endif
 
    return VK_SUCCESS;
 }
@@ -3055,7 +3095,11 @@ decode_get_bo(void *v_batch, bool ppgtt, uint64_t address)
       return ret_bo;
    if (get_bo_from_pool(&ret_bo, &device->binding_table_pool.block_pool, address))
       return ret_bo;
-   if (get_bo_from_pool(&ret_bo, &device->surface_state_pool.block_pool, address))
+   if (get_bo_from_pool(&ret_bo, &device->scratch_surface_state_pool.block_pool, address))
+      return ret_bo;
+   if (get_bo_from_pool(&ret_bo, &device->bindless_surface_state_pool.block_pool, address))
+      return ret_bo;
+   if (get_bo_from_pool(&ret_bo, &device->internal_surface_state_pool.block_pool, address))
       return ret_bo;
 
    if (!device->cmd_buffer_being_decoded)
@@ -3285,7 +3329,7 @@ VkResult anv_CreateDevice(
                                   decode_get_bo, NULL, device);
 
       device->decoder_ctx.dynamic_base = DYNAMIC_STATE_POOL_MIN_ADDRESS;
-      device->decoder_ctx.surface_base = SURFACE_STATE_POOL_MIN_ADDRESS;
+      device->decoder_ctx.surface_base = INTERNAL_SURFACE_STATE_POOL_MIN_ADDRESS;
       device->decoder_ctx.instruction_base =
          INSTRUCTION_STATE_POOL_MIN_ADDRESS;
    }
@@ -3299,6 +3343,7 @@ VkResult anv_CreateDevice(
       goto fail_device;
    }
 
+   device->vk.command_buffer_ops = &anv_cmd_buffer_ops;
    device->vk.check_status = anv_device_check_status;
    device->vk.create_sync_for_memory = anv_create_sync_for_memory;
    vk_device_set_drm_fd(&device->vk, device->fd);
@@ -3426,11 +3471,33 @@ VkResult anv_CreateDevice(
    if (result != VK_SUCCESS)
       goto fail_dynamic_state_pool;
 
-   result = anv_state_pool_init(&device->surface_state_pool, device,
-                                "surface state pool",
-                                SURFACE_STATE_POOL_MIN_ADDRESS, 0, 4096);
+   if (device->info->verx10 >= 125) {
+      /* Put the scratch surface states at the beginning of the internal
+       * surface state pool.
+       */
+      result = anv_state_pool_init(&device->scratch_surface_state_pool, device,
+                                   "scratch surface state pool",
+                                   SCRATCH_SURFACE_STATE_POOL_MIN_ADDRESS, 0, 4096);
+      if (result != VK_SUCCESS)
+         goto fail_instruction_state_pool;
+
+      result = anv_state_pool_init(&device->internal_surface_state_pool, device,
+                                   "internal surface state pool",
+                                   INTERNAL_SURFACE_STATE_POOL_MIN_ADDRESS,
+                                   SCRATCH_SURFACE_STATE_POOL_SIZE, 4096);
+   } else {
+      result = anv_state_pool_init(&device->internal_surface_state_pool, device,
+                                   "internal surface state pool",
+                                   INTERNAL_SURFACE_STATE_POOL_MIN_ADDRESS, 0, 4096);
+   }
    if (result != VK_SUCCESS)
-      goto fail_instruction_state_pool;
+      goto fail_scratch_surface_state_pool;
+
+   result = anv_state_pool_init(&device->bindless_surface_state_pool, device,
+                                "bindless surface state pool",
+                                BINDLESS_SURFACE_STATE_POOL_MIN_ADDRESS, 0, 4096);
+   if (result != VK_SUCCESS)
+      goto fail_internal_surface_state_pool;
 
    if (device->info->verx10 >= 125) {
       /* We're using 3DSTATE_BINDING_TABLE_POOL_ALLOC to give the binding
@@ -3442,16 +3509,16 @@ VkResult anv_CreateDevice(
                                    BINDING_TABLE_POOL_BLOCK_SIZE);
    } else {
       int64_t bt_pool_offset = (int64_t)BINDING_TABLE_POOL_MIN_ADDRESS -
-                               (int64_t)SURFACE_STATE_POOL_MIN_ADDRESS;
+                               (int64_t)INTERNAL_SURFACE_STATE_POOL_MIN_ADDRESS;
       assert(INT32_MIN < bt_pool_offset && bt_pool_offset < 0);
       result = anv_state_pool_init(&device->binding_table_pool, device,
                                    "binding table pool",
-                                   SURFACE_STATE_POOL_MIN_ADDRESS,
+                                   INTERNAL_SURFACE_STATE_POOL_MIN_ADDRESS,
                                    bt_pool_offset,
                                    BINDING_TABLE_POOL_BLOCK_SIZE);
    }
    if (result != VK_SUCCESS)
-      goto fail_surface_state_pool;
+      goto fail_bindless_surface_state_pool;
 
    if (device->info->has_aux_map) {
       device->aux_map_ctx = intel_aux_map_init(device, &aux_map_allocator,
@@ -3505,8 +3572,10 @@ VkResult anv_CreateDevice(
    if (result != VK_SUCCESS)
       goto fail_ray_query_bo;
 
-   if (device->info->ver >= 12 &&
-       device->vk.enabled_extensions.KHR_fragment_shading_rate) {
+   /* Emit the CPS states before running the initialization batch as those
+    * structures are referenced.
+    */
+   if (device->info->ver >= 12) {
       uint32_t n_cps_states = 3 * 3; /* All combinaisons of X by Y CP sizes (1, 2, 4) */
 
       if (device->info->has_coarse_pixel_primitive_and_cb)
@@ -3532,7 +3601,9 @@ VkResult anv_CreateDevice(
     * to zero and they have a valid descriptor.
     */
    device->null_surface_state =
-      anv_state_pool_alloc(&device->surface_state_pool,
+      anv_state_pool_alloc(device->info->verx10 >= 125 ?
+                           &device->scratch_surface_state_pool :
+                           &device->internal_surface_state_pool,
                            device->isl_dev.ss.size,
                            device->isl_dev.ss.align);
    isl_null_fill_state(&device->isl_dev, device->null_surface_state.map,
@@ -3629,8 +3700,13 @@ VkResult anv_CreateDevice(
    }
  fail_binding_table_pool:
    anv_state_pool_finish(&device->binding_table_pool);
- fail_surface_state_pool:
-   anv_state_pool_finish(&device->surface_state_pool);
+ fail_bindless_surface_state_pool:
+   anv_state_pool_finish(&device->bindless_surface_state_pool);
+ fail_internal_surface_state_pool:
+   anv_state_pool_finish(&device->internal_surface_state_pool);
+ fail_scratch_surface_state_pool:
+   if (device->info->verx10 >= 125)
+      anv_state_pool_finish(&device->scratch_surface_state_pool);
  fail_instruction_state_pool:
    anv_state_pool_finish(&device->instruction_state_pool);
  fail_dynamic_state_pool:
@@ -3719,7 +3795,10 @@ void anv_DestroyDevice(
    }
 
    anv_state_pool_finish(&device->binding_table_pool);
-   anv_state_pool_finish(&device->surface_state_pool);
+   if (device->info->verx10 >= 125)
+      anv_state_pool_finish(&device->scratch_surface_state_pool);
+   anv_state_pool_finish(&device->internal_surface_state_pool);
+   anv_state_pool_finish(&device->bindless_surface_state_pool);
    anv_state_pool_finish(&device->instruction_state_pool);
    anv_state_pool_finish(&device->dynamic_state_pool);
    anv_state_pool_finish(&device->general_state_pool);
@@ -4345,6 +4424,7 @@ VkResult anv_FlushMappedMemoryRanges(
     uint32_t                                    memoryRangeCount,
     const VkMappedMemoryRange*                  pMemoryRanges)
 {
+#ifdef SUPPORT_INTEL_INTEGRATED_GPUS
    ANV_FROM_HANDLE(anv_device, device, _device);
 
    if (!device->physical->memory.need_clflush)
@@ -4366,7 +4446,7 @@ VkResult anv_FlushMappedMemoryRanges(
                           MIN2(pMemoryRanges[i].size,
                                mem->map_size - map_offset));
    }
-
+#endif
    return VK_SUCCESS;
 }
 
@@ -4375,6 +4455,7 @@ VkResult anv_InvalidateMappedMemoryRanges(
     uint32_t                                    memoryRangeCount,
     const VkMappedMemoryRange*                  pMemoryRanges)
 {
+#ifdef SUPPORT_INTEL_INTEGRATED_GPUS
    ANV_FROM_HANDLE(anv_device, device, _device);
 
    if (!device->physical->memory.need_clflush)
@@ -4396,7 +4477,7 @@ VkResult anv_InvalidateMappedMemoryRanges(
 
    /* Make sure no reads get moved up above the invalidate. */
    __builtin_ia32_mfence();
-
+#endif
    return VK_SUCCESS;
 }
 

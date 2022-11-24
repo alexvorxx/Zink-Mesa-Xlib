@@ -28,6 +28,7 @@
 #include "freedreno_priv.h"
 
 void bo_del(struct fd_bo *bo);
+void bo_del_flush(struct fd_device *dev);
 extern simple_mtx_t table_lock;
 
 static void
@@ -79,6 +80,7 @@ fd_bo_cache_init(struct fd_bo_cache *cache, int coarse)
 void
 fd_bo_cache_cleanup(struct fd_bo_cache *cache, time_t time)
 {
+   struct fd_device *dev = NULL;
    int i;
 
    simple_mtx_assert_locked(&table_lock);
@@ -97,11 +99,19 @@ fd_bo_cache_cleanup(struct fd_bo_cache *cache, time_t time)
          if (time && ((time - bo->free_time) <= 1))
             break;
 
+         dev = bo->dev;
+
          VG_BO_OBTAIN(bo);
          list_del(&bo->list);
          bo_del(bo);
       }
    }
+
+   /* Note: when called in bo_del_or_recycle() -> fd_bo_cache_free() path,
+    * the caller will handle bo_del_flush().
+    */
+   if (time && dev)
+      bo_del_flush(dev);
 
    cache->time = time;
 }
@@ -170,8 +180,10 @@ retry:
          VG_BO_OBTAIN(bo);
          if (bo->funcs->madvise(bo, true) <= 0) {
             /* we've lost the backing pages, delete and try again: */
+            struct fd_device *dev = bo->dev;
             simple_mtx_lock(&table_lock);
             bo_del(bo);
+            bo_del_flush(dev);
             simple_mtx_unlock(&table_lock);
             goto retry;
          }

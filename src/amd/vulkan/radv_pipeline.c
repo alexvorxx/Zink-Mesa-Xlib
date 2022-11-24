@@ -55,8 +55,6 @@ struct radv_blend_state {
 
    uint32_t cb_target_mask;
    uint32_t cb_target_enabled_4bit;
-   uint32_t sx_mrt_blend_opt[8];
-   uint32_t cb_blend_control[8];
 
    uint32_t spi_shader_col_format;
    uint32_t col_format_is_int8;
@@ -207,17 +205,7 @@ radv_pipeline_destroy(struct radv_device *device, struct radv_pipeline *pipeline
    } else if (pipeline->type == RADV_PIPELINE_LIBRARY) {
       struct radv_library_pipeline *library_pipeline = radv_pipeline_to_library(pipeline);
 
-      free(library_pipeline->groups);
-      for (uint32_t i = 0; i < library_pipeline->stage_count; i++) {
-         RADV_FROM_HANDLE(vk_shader_module, module, library_pipeline->stages[i].module);
-         if (module) {
-            vk_object_base_finish(&module->base);
-            ralloc_free(module);
-         }
-      }
-      free(library_pipeline->stages);
-      free(library_pipeline->identifiers);
-      free(library_pipeline->hashes);
+      ralloc_free(library_pipeline->ctx);
    } else if (pipeline->type == RADV_PIPELINE_GRAPHICS_LIB) {
       struct radv_graphics_lib_pipeline *gfx_pipeline_lib =
          radv_pipeline_to_graphics_lib(pipeline);
@@ -291,6 +279,8 @@ radv_get_hash_flags(const struct radv_device *device, bool stats)
       hash_flags |= RADV_HASH_SHADER_ROBUST_BUFFER_ACCESS2;
    if (device->instance->debug_flags & RADV_DEBUG_SPLIT_FMA)
       hash_flags |= RADV_HASH_SHADER_SPLIT_FMA;
+   if (device->instance->debug_flags & RADV_DEBUG_NO_FMASK)
+      hash_flags |= RADV_HASH_SHADER_NO_FMASK;
    return hash_flags;
 }
 
@@ -583,7 +573,11 @@ radv_pipeline_compute_spi_color_formats(const struct radv_graphics_pipeline *pip
            !(blend->cb_target_mask & (0xfu << (i * 4))))) {
          cf = V_028714_SPI_SHADER_ZERO;
       } else {
-         bool blend_enable = blend->blend_enable_4bit & (0xfu << (i * 4));
+         /* Assume blend is enabled when the state is dynamic. This might select a suboptimal format
+          * in some situations but changing color export formats dynamically is hard.
+          */
+         bool blend_enable = (pipeline->dynamic_states & RADV_DYNAMIC_COLOR_BLEND_ENABLE) ||
+                             blend->blend_enable_4bit & (0xfu << (i * 4));
 
          cf = radv_choose_spi_color_format(pipeline->base.device, fmt, blend_enable,
                                            blend->need_src_alpha & (1 << i));
@@ -718,8 +712,6 @@ radv_can_enable_dual_src(const struct vk_color_blend_attachment_state *att)
    bool eqRGB_minmax = eqRGB == VK_BLEND_OP_MIN || eqRGB == VK_BLEND_OP_MAX;
    bool eqA_minmax = eqA == VK_BLEND_OP_MIN || eqA == VK_BLEND_OP_MAX;
 
-   assert(att->blend_enable);
-
    if (!eqRGB_minmax && (is_dual_src(srcRGB) || is_dual_src(dstRGB)))
       return true;
    if (!eqA_minmax && (is_dual_src(srcA) || is_dual_src(dstA)))
@@ -759,9 +751,6 @@ radv_pipeline_init_blend_state(struct radv_graphics_pipeline *pipeline,
          VkBlendFactor srcA = state->cb->attachments[i].src_alpha_blend_factor;
          VkBlendFactor dstA = state->cb->attachments[i].dst_alpha_blend_factor;
 
-         blend.sx_mrt_blend_opt[i] = S_028760_COLOR_COMB_FCN(V_028760_OPT_COMB_BLEND_DISABLED) |
-                                     S_028760_ALPHA_COMB_FCN(V_028760_OPT_COMB_BLEND_DISABLED);
-
          if (!(pipeline->dynamic_states & RADV_DYNAMIC_COLOR_WRITE_MASK) &&
              !state->cb->attachments[i].write_mask)
             continue;
@@ -774,8 +763,9 @@ radv_pipeline_init_blend_state(struct radv_graphics_pipeline *pipeline,
 
          blend.cb_target_mask |= (unsigned)state->cb->attachments[i].write_mask << (4 * i);
          blend.cb_target_enabled_4bit |= 0xfu << (4 * i);
-         if (!state->cb->attachments[i].blend_enable) {
-            blend.cb_blend_control[i] = blend_cntl;
+         if (!(pipeline->dynamic_states & RADV_DYNAMIC_COLOR_BLEND_ENABLE) &&
+             !state->cb->attachments[i].blend_enable) {
+            pipeline->cb_blend_control[i] = blend_cntl;
             continue;
          }
 
@@ -828,12 +818,11 @@ radv_pipeline_init_blend_state(struct radv_graphics_pipeline *pipeline,
             dstRGB_opt = V_028760_BLEND_OPT_PRESERVE_NONE_IGNORE_A0;
 
          /* Set the final value. */
-         blend.sx_mrt_blend_opt[i] =
+         pipeline->sx_mrt_blend_opt[i] =
             S_028760_COLOR_SRC_OPT(srcRGB_opt) | S_028760_COLOR_DST_OPT(dstRGB_opt) |
             S_028760_COLOR_COMB_FCN(si_translate_blend_opt_function(eqRGB)) |
             S_028760_ALPHA_SRC_OPT(srcA_opt) | S_028760_ALPHA_DST_OPT(dstA_opt) |
             S_028760_ALPHA_COMB_FCN(si_translate_blend_opt_function(eqA));
-         blend_cntl |= S_028780_ENABLE(1);
 
          blend_cntl |= S_028780_COLOR_COMB_FCN(si_translate_blend_function(eqRGB));
          blend_cntl |= S_028780_COLOR_SRCBLEND(si_translate_blend_factor(gfx_level, srcRGB));
@@ -844,7 +833,7 @@ radv_pipeline_init_blend_state(struct radv_graphics_pipeline *pipeline,
             blend_cntl |= S_028780_ALPHA_SRCBLEND(si_translate_blend_factor(gfx_level, srcA));
             blend_cntl |= S_028780_ALPHA_DESTBLEND(si_translate_blend_factor(gfx_level, dstA));
          }
-         blend.cb_blend_control[i] = blend_cntl;
+         pipeline->cb_blend_control[i] = blend_cntl;
 
          blend.blend_enable_4bit |= 0xfu << (i * 4);
 
@@ -855,19 +844,14 @@ radv_pipeline_init_blend_state(struct radv_graphics_pipeline *pipeline,
              dstRGB == VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA)
             blend.need_src_alpha |= 1 << i;
       }
-      for (i = state->cb->attachment_count; i < 8; i++) {
-         blend.cb_blend_control[i] = 0;
-         blend.sx_mrt_blend_opt[i] = S_028760_COLOR_COMB_FCN(V_028760_OPT_COMB_BLEND_DISABLED) |
-                                     S_028760_ALPHA_COMB_FCN(V_028760_OPT_COMB_BLEND_DISABLED);
-      }
    }
 
    if (device->physical_device->rad_info.has_rbplus) {
       /* Disable RB+ blend optimizations for dual source blending. */
       if (blend.mrt0_is_dual_src) {
          for (i = 0; i < 8; i++) {
-            blend.sx_mrt_blend_opt[i] = S_028760_COLOR_COMB_FCN(V_028760_OPT_COMB_NONE) |
-                                        S_028760_ALPHA_COMB_FCN(V_028760_OPT_COMB_NONE);
+            pipeline->sx_mrt_blend_opt[i] = S_028760_COLOR_COMB_FCN(V_028760_OPT_COMB_NONE) |
+                                            S_028760_ALPHA_COMB_FCN(V_028760_OPT_COMB_NONE);
          }
       }
 
@@ -914,19 +898,6 @@ radv_pipeline_depth_samples(const struct vk_graphics_pipeline_state *state)
    }
 
    return state->ms ? state->ms->rasterization_samples : 1;
-}
-
-static uint8_t
-radv_pipeline_get_ps_iter_samples(const struct vk_graphics_pipeline_state *state)
-{
-   uint32_t ps_iter_samples = 1;
-   uint32_t num_samples = radv_pipeline_color_samples(state);
-
-   if (state->ms && state->ms->sample_shading_enable) {
-      ps_iter_samples = ceilf(state->ms->min_sample_shading * num_samples);
-      ps_iter_samples = util_next_power_of_two(ps_iter_samples);
-   }
-   return ps_iter_samples;
 }
 
 static bool
@@ -1001,7 +972,7 @@ radv_pipeline_out_of_order_rast(struct radv_graphics_pipeline *pipeline,
       return false;
 
    /* Be conservative if a logic operation is enabled with color buffers. */
-   if (colormask &&
+   if (colormask && (pipeline->dynamic_states & RADV_DYNAMIC_COLOR_BLEND_ENABLE) &&
        ((pipeline->dynamic_states & RADV_DYNAMIC_LOGIC_OP_ENABLE) || state->cb->logic_op_enable))
       return false;
 
@@ -1117,10 +1088,19 @@ radv_pipeline_init_multisample_state(struct radv_graphics_pipeline *pipeline,
     *
     * Otherwise, sample shading is considered disabled."
     */
-   if (pipeline->base.shaders[MESA_SHADER_FRAGMENT]->info.ps.uses_sample_shading) {
-      ps_iter_samples = ms->num_samples;
-   } else {
-      ps_iter_samples = radv_pipeline_get_ps_iter_samples(state);
+   if (pipeline->base.shaders[MESA_SHADER_FRAGMENT]->info.ps.uses_sample_shading ||
+       (state->ms && state->ms->sample_shading_enable)) {
+      uint32_t color_samples = radv_pipeline_color_samples(state);
+      float min_sample_shading;
+
+      if (pipeline->base.shaders[MESA_SHADER_FRAGMENT]->info.ps.uses_sample_shading) {
+         min_sample_shading = 1.0f;
+      } else {
+         min_sample_shading = state->ms->min_sample_shading;
+      }
+
+      ps_iter_samples = ceilf(min_sample_shading * color_samples);
+      ps_iter_samples = util_next_power_of_two(ps_iter_samples);
    }
 
    if (state->rs->rasterization_order_amd == VK_RASTERIZATION_ORDER_RELAXED_AMD) {
@@ -1345,6 +1325,8 @@ radv_dynamic_state_mask(VkDynamicState state)
       return RADV_DYNAMIC_DEPTH_CLAMP_ENABLE;
    case VK_DYNAMIC_STATE_COLOR_WRITE_MASK_EXT:
       return RADV_DYNAMIC_COLOR_WRITE_MASK;
+   case VK_DYNAMIC_STATE_COLOR_BLEND_ENABLE_EXT:
+      return RADV_DYNAMIC_COLOR_BLEND_ENABLE;
    default:
       unreachable("Unhandled dynamic state");
    }
@@ -1355,9 +1337,12 @@ radv_pipeline_is_blend_enabled(const struct radv_graphics_pipeline *pipeline,
                                const struct vk_color_blend_state *cb)
 {
    if (cb) {
+      if (pipeline->dynamic_states & (RADV_DYNAMIC_COLOR_WRITE_MASK |
+                                      RADV_DYNAMIC_COLOR_BLEND_ENABLE))
+         return true;
+
       for (uint32_t i = 0; i < cb->attachment_count; i++) {
-         if (((pipeline->dynamic_states & RADV_DYNAMIC_COLOR_WRITE_MASK) ||
-              cb->attachments[i].write_mask) && cb->attachments[i].blend_enable)
+         if (cb->attachments[i].write_mask && cb->attachments[i].blend_enable)
             return true;
       }
    }
@@ -1929,6 +1914,15 @@ radv_pipeline_init_dynamic_state(struct radv_graphics_pipeline *pipeline,
    if (radv_pipeline_has_color_attachments(state->rp) && states & RADV_DYNAMIC_COLOR_WRITE_MASK) {
       for (unsigned i = 0; i < state->cb->attachment_count; i++) {
          dynamic->color_write_mask |= state->cb->attachments[i].write_mask << (4 * i);
+      }
+   }
+
+   if (radv_pipeline_has_color_attachments(state->rp) && states & RADV_DYNAMIC_COLOR_BLEND_ENABLE) {
+      for (unsigned i = 0; i < state->cb->attachment_count; i++) {
+         if (!state->cb->attachments[i].blend_enable)
+            continue;
+
+         dynamic->color_blend_enable |= 0xfu << (i * 4);
       }
    }
 
@@ -2837,10 +2831,11 @@ radv_generate_graphics_pipeline_key(const struct radv_graphics_pipeline *pipelin
    if (state->ts)
       key.tcs.tess_input_vertices = state->ts->patch_control_points;
 
-   if (state->ms && state->ms->rasterization_samples > 1) {
-      uint32_t ps_iter_samples = radv_pipeline_get_ps_iter_samples(state);
-      key.ps.num_samples = state->ms->rasterization_samples;
-      key.ps.log2_ps_iter_samples = util_logbase2(ps_iter_samples);
+   if (state->ms) {
+      key.ps.sample_shading_enable = state->ms->sample_shading_enable;
+      if (state->ms->rasterization_samples > 1) {
+         key.ps.num_samples = state->ms->rasterization_samples;
+      }
    }
 
    key.ps.col_format = blend->spi_shader_col_format;
@@ -2899,6 +2894,22 @@ radv_generate_graphics_pipeline_key(const struct radv_graphics_pipeline *pipelin
       !!(pipeline->active_stages & VK_SHADER_STAGE_FRAGMENT_BIT) && !state->ms;
 
    key.dynamic_color_write_mask = !!(pipeline->dynamic_states & RADV_DYNAMIC_COLOR_WRITE_MASK);
+
+   if (device->physical_device->use_ngg) {
+      VkShaderStageFlags ngg_stage;
+
+      if (pipeline->active_stages & VK_SHADER_STAGE_GEOMETRY_BIT) {
+         ngg_stage = VK_SHADER_STAGE_GEOMETRY_BIT;
+      } else if (pipeline->active_stages & VK_SHADER_STAGE_TESSELLATION_EVALUATION_BIT) {
+         ngg_stage = VK_SHADER_STAGE_TESSELLATION_EVALUATION_BIT;
+      } else {
+         ngg_stage = VK_SHADER_STAGE_VERTEX_BIT;
+      }
+
+      key.dynamic_provoking_vtx_mode =
+         !!(pipeline->dynamic_states & RADV_DYNAMIC_PROVOKING_VERTEX_MODE) &&
+         (ngg_stage == VK_SHADER_STAGE_VERTEX_BIT || ngg_stage == VK_SHADER_STAGE_GEOMETRY_BIT);
+   }
 
    return key;
 }
@@ -3119,6 +3130,8 @@ lower_bit_size_callback(const nir_instr *instr, void *_)
       case nir_op_bitfield_select:
       case nir_op_imul_high:
       case nir_op_umul_high:
+      case nir_op_uadd_carry:
+      case nir_op_usub_borrow:
          return 32;
       case nir_op_iabs:
       case nir_op_imax:
@@ -3985,6 +3998,7 @@ radv_pipeline_create_ps_epilog(struct radv_graphics_pipeline *pipeline,
          .color_is_int8 = pipeline_key->ps.is_int8,
          .color_is_int10 = pipeline_key->ps.is_int10,
          .enable_mrt_output_nan_fixup = pipeline_key->ps.enable_mrt_output_nan_fixup,
+         .mrt0_is_dual_src = pipeline_key->ps.mrt0_is_dual_src,
       };
 
       pipeline->ps_epilog = radv_create_ps_epilog(device, &epilog_key);
@@ -4350,17 +4364,6 @@ radv_pipeline_emit_blend_state(struct radeon_cmdbuf *ctx_cs,
                                const struct radv_graphics_pipeline *pipeline,
                                const struct radv_blend_state *blend)
 {
-   const struct radv_physical_device *pdevice = pipeline->base.device->physical_device;
-
-   radeon_set_context_reg_seq(ctx_cs, R_028780_CB_BLEND0_CONTROL, 8);
-   radeon_emit_array(ctx_cs, blend->cb_blend_control, 8);
-
-   if (pdevice->rad_info.has_rbplus) {
-
-      radeon_set_context_reg_seq(ctx_cs, R_028760_SX_MRT0_BLEND_OPT, 8);
-      radeon_emit_array(ctx_cs, blend->sx_mrt_blend_opt, 8);
-   }
-
    radeon_set_context_reg(ctx_cs, R_028714_SPI_SHADER_COL_FORMAT, blend->spi_shader_col_format);
 
    radeon_set_context_reg(ctx_cs, R_02823C_CB_SHADER_MASK, blend->cb_shader_mask);
@@ -4370,19 +4373,9 @@ static void
 radv_pipeline_emit_multisample_state(struct radeon_cmdbuf *ctx_cs,
                                      const struct radv_graphics_pipeline *pipeline)
 {
-   const struct radv_physical_device *pdevice = pipeline->base.device->physical_device;
    const struct radv_multisample_state *ms = &pipeline->ms;
 
    radeon_set_context_reg(ctx_cs, R_028A4C_PA_SC_MODE_CNTL_1, ms->pa_sc_mode_cntl_1);
-
-   /* The exclusion bits can be set to improve rasterization efficiency
-    * if no sample lies on the pixel boundary (-8 sample offset). It's
-    * currently always TRUE because the driver doesn't support 16 samples.
-    */
-   bool exclusion = pdevice->rad_info.gfx_level >= GFX7;
-   radeon_set_context_reg(
-      ctx_cs, R_02882C_PA_SU_PRIM_FILTER_CNTL,
-      S_02882C_XMAX_RIGHT_EXCLUSION(exclusion) | S_02882C_YMAX_BOTTOM_EXCLUSION(exclusion));
 }
 
 static void
@@ -5748,7 +5741,8 @@ radv_graphics_pipeline_init(struct radv_graphics_pipeline *pipeline, struct radv
    pipeline->col_format_non_compacted = blend.spi_shader_col_format;
 
    struct radv_shader *ps = pipeline->base.shaders[MESA_SHADER_FRAGMENT];
-   if (!ps->info.ps.has_epilog) {
+   bool enable_mrt_compaction = !blend.mrt0_is_dual_src && !ps->info.ps.has_epilog;
+   if (enable_mrt_compaction) {
       blend.spi_shader_col_format = radv_compact_spi_shader_col_format(ps, &blend);
    }
 
@@ -5775,7 +5769,7 @@ radv_graphics_pipeline_init(struct radv_graphics_pipeline *pipeline, struct radv
       }
    }
 
-   if (!ps->info.ps.has_epilog) {
+   if (enable_mrt_compaction) {
       /* In presense of MRT holes (ie. the FS exports MRT1 but not MRT0), the compiler will remap
        * them, so that only MRT0 is exported and the driver will compact SPI_SHADER_COL_FORMAT to
        * match what the FS actually exports. Though, to make sure the hw remapping works as
@@ -5919,6 +5913,7 @@ radv_graphics_lib_pipeline_init(struct radv_graphics_lib_pipeline *pipeline,
          .color_is_int8 = blend.col_format_is_int8,
          .color_is_int10 = blend.col_format_is_int10,
          .enable_mrt_output_nan_fixup = key.ps.enable_mrt_output_nan_fixup,
+         .mrt0_is_dual_src = blend.mrt0_is_dual_src,
       };
 
       pipeline->base.ps_epilog = radv_create_ps_epilog(device, &epilog_key);

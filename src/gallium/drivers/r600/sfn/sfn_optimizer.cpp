@@ -357,7 +357,7 @@ CopyPropFwdVisitor::visit(AluInstr *instr)
    for (auto& i : dest->uses()) {
       /* SSA can always be propagated, registers only in the same block
        * and only if they are assigned in the same block */
-      bool can_propagate = dest->is_ssa();
+      bool can_propagate = dest->has_flag(Register::ssa);
 
       if (!can_propagate) {
 
@@ -418,7 +418,7 @@ CopyPropFwdVisitor::propagate_to(RegisterVec4& src, Instr *instr)
 {
    AluInstr *parents[4] = {nullptr};
    for (int i = 0; i < 4; ++i) {
-      if (src[i]->chan() < 4 && src[i]->is_ssa()) {
+      if (src[i]->chan() < 4 && src[i]->has_flag(Register::ssa)) {
          /*  We have a pre-define value, so we can't propagate a copy */
          if (src[i]->parents().empty())
             return;
@@ -442,7 +442,7 @@ CopyPropFwdVisitor::propagate_to(RegisterVec4& src, Instr *instr)
          auto src = parents[i]->src(0).as_register();
          if (!src)
             return;
-         else if (!src->is_ssa())
+         else if (!src->has_flag(Register::ssa))
             return;
          else if (sel < 0)
             sel = src->sel();
@@ -513,7 +513,7 @@ CopyPropBackVisitor::visit(AluInstr *instr)
       return;
    }
 
-   if (!dest->is_ssa() && dest->parents().size() > 1)
+   if (!dest->has_flag(Register::ssa) && dest->parents().size() > 1)
       return;
 
    for (auto& i : src_reg->parents()) {
@@ -673,7 +673,7 @@ SimplifySourceVecVisitor::replace_src(Instr *instr, RegisterVec4& reg4)
       if (s->chan() > 3)
          continue;
 
-      if (!s->is_ssa())
+      if (!s->has_flag(Register::ssa))
          continue;
 
       /* Cayman trans ops have more then one parent for
@@ -717,23 +717,10 @@ ReplaceConstSource::visit(AluInstr *alu)
 
    int override_chan = -1;
 
-   auto ic = src->as_inline_const();
-   if (ic) {
-      if (ic->sel() == ALU_SRC_0)
-         override_chan = 4;
-
-      if (ic->sel() == ALU_SRC_1)
-         override_chan = 5;
-   }
-
-   auto literal = src->as_literal();
-   if (literal) {
-
-      if (literal->value() == 0)
-         override_chan = 4;
-
-      if (literal->value() == 0x3F800000)
-         override_chan = 5;
+   if (value_is_const_uint(*src, 0)) {
+      override_chan = 4;
+   } else if (value_is_const_float(*src, 1.0f)) {
+      override_chan = 5;
    }
 
    if (override_chan >= 0) {

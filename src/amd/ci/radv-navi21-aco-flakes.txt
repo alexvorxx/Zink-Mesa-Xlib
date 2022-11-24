@@ -15,3 +15,6 @@ dEQP-VK.rasterization.primitives_multisample_2_bit.static_stipple.bresenham_line
 #
 # See: https://gitlab.freedesktop.org/mesa/mesa/-/issues/7220
 dEQP-VK.draw.renderpass.linear_interpolation.no_offset_8_samples
+
+# Timeout but pass.
+dEQP-VK.memory.pipeline_barrier.all.65536_vertex_buffer_stride_2

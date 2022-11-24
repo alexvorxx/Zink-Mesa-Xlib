@@ -40,6 +40,7 @@
 #include "d3d12_video_proc.h"
 #include "d3d12_video_buffer.h"
 #endif
+#include "util/indices/u_primconvert.h"
 #include "util/u_atomic.h"
 #include "util/u_blitter.h"
 #include "util/u_dual_blend.h"
@@ -53,10 +54,6 @@
 #include "nir_to_dxil.h"
 
 #include <dxguids/dxguids.h>
-
-extern "C" {
-#include "indices/u_primconvert.h"
-}
 
 #include <string.h>
 

@@ -257,7 +257,8 @@ the function pointer:
     index into the entrypoint table, not the dispatch table, because the
     rules for when an entrypoint should be exposed are per-entrypoint.  For
     instance, ``vkBindImageMemory2`` is available on Vulkan 1.1 and later but
-    ``vkBindImageMemory2KHR`` is available if VK_KHR_bind_memory2 is enabled.
+    ``vkBindImageMemory2KHR`` is available if :ext:`VK_KHR_bind_memory2` is
+    enabled.
 
  3. A compaction table is used to map from the entrypoint table index to
     the dispatch table index and the function is finally fetched from the

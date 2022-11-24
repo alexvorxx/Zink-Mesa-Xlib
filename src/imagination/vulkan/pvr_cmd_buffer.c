@@ -46,6 +46,7 @@
 #include "pvr_types.h"
 #include "pvr_winsys.h"
 #include "util/bitscan.h"
+#include "util/bitset.h"
 #include "util/compiler.h"
 #include "util/list.h"
 #include "util/macros.h"
@@ -54,7 +55,9 @@
 #include "vk_alloc.h"
 #include "vk_command_buffer.h"
 #include "vk_command_pool.h"
+#include "vk_common_entrypoints.h"
 #include "vk_format.h"
+#include "vk_graphics_state.h"
 #include "vk_log.h"
 #include "vk_object.h"
 #include "vk_util.h"
@@ -111,8 +114,7 @@ static void pvr_cmd_buffer_free_sub_cmd(struct pvr_cmd_buffer *cmd_buffer,
          break;
 
       default:
-         pvr_finishme("Unsupported sub-command type %d", sub_cmd->type);
-         break;
+         unreachable("Unsupported sub-command type");
       }
    }
 
@@ -149,23 +151,24 @@ static void pvr_cmd_buffer_free_resources(struct pvr_cmd_buffer *cmd_buffer)
    util_dynarray_fini(&cmd_buffer->depth_bias_array);
 }
 
-static void pvr_cmd_buffer_reset(struct pvr_cmd_buffer *cmd_buffer)
+static void pvr_cmd_buffer_reset(struct vk_command_buffer *vk_cmd_buffer,
+                                 VkCommandBufferResetFlags flags)
 {
-   if (cmd_buffer->status != PVR_CMD_BUFFER_STATUS_INITIAL) {
-      /* FIXME: For now we always free all resources as if
-       * VK_COMMAND_BUFFER_RESET_RELEASE_RESOURCES_BIT was set.
-       */
-      pvr_cmd_buffer_free_resources(cmd_buffer);
+   struct pvr_cmd_buffer *cmd_buffer =
+      container_of(vk_cmd_buffer, struct pvr_cmd_buffer, vk);
 
-      vk_command_buffer_reset(&cmd_buffer->vk);
+   /* FIXME: For now we always free all resources as if
+    * VK_COMMAND_BUFFER_RESET_RELEASE_RESOURCES_BIT was set.
+    */
+   pvr_cmd_buffer_free_resources(cmd_buffer);
 
-      memset(&cmd_buffer->state, 0, sizeof(cmd_buffer->state));
-      memset(cmd_buffer->scissor_words, 0, sizeof(cmd_buffer->scissor_words));
+   vk_command_buffer_reset(&cmd_buffer->vk);
 
-      cmd_buffer->usage_flags = 0;
-      cmd_buffer->state.status = VK_SUCCESS;
-      cmd_buffer->status = PVR_CMD_BUFFER_STATUS_INITIAL;
-   }
+   memset(&cmd_buffer->state, 0, sizeof(cmd_buffer->state));
+   memset(&cmd_buffer->scissor_words, 0, sizeof(cmd_buffer->scissor_words));
+
+   cmd_buffer->usage_flags = 0;
+   cmd_buffer->state.status = VK_SUCCESS;
 }
 
 static void pvr_cmd_buffer_destroy(struct vk_command_buffer *vk_cmd_buffer)
@@ -179,6 +182,7 @@ static void pvr_cmd_buffer_destroy(struct vk_command_buffer *vk_cmd_buffer)
 }
 
 static const struct vk_command_buffer_ops cmd_buffer_ops = {
+   .reset = pvr_cmd_buffer_reset,
    .destroy = pvr_cmd_buffer_destroy,
 };
 
@@ -211,7 +215,6 @@ static VkResult pvr_cmd_buffer_create(struct pvr_device *device,
    util_dynarray_init(&cmd_buffer->deferred_csb_commands, NULL);
 
    cmd_buffer->state.status = VK_SUCCESS;
-   cmd_buffer->status = PVR_CMD_BUFFER_STATUS_INITIAL;
 
    list_inithead(&cmd_buffer->sub_cmds);
    list_inithead(&cmd_buffer->bo_list);
@@ -277,9 +280,7 @@ static void pvr_cmd_buffer_update_barriers(struct pvr_cmd_buffer *cmd_buffer,
       break;
 
    default:
-      barriers = 0;
-      pvr_finishme("Unsupported sub-command type %d", type);
-      break;
+      unreachable("Unsupported sub-command type");
    }
 
    for (uint32_t i = 0; i < ARRAY_SIZE(state->barriers_needed); i++)
@@ -569,6 +570,9 @@ pvr_load_op_constants_create_and_upload(struct pvr_cmd_buffer *cmd_buffer,
    assert(load_op->is_hw_object);
    assert(hw_render->color_init_count == 1);
 
+   assert(vk_format_get_blocksize(attachment->vk_format) <=
+          sizeof(hw_clear_value));
+
    /* FIXME: add support for VK_ATTACHMENT_LOAD_OP_LOAD. */
    assert(color_init->op == VK_ATTACHMENT_LOAD_OP_CLEAR);
 
@@ -576,9 +580,6 @@ pvr_load_op_constants_create_and_upload(struct pvr_cmd_buffer *cmd_buffer,
    pvr_get_hw_clear_color(attachment->vk_format,
                           clear_value->color,
                           hw_clear_value);
-
-   if (vk_format_get_blocksize(attachment->vk_format) > 4)
-      pvr_finishme("Handle clear color greater than 32 bits.");
 
    result = pvr_cmd_buffer_upload_general(cmd_buffer,
                                           &hw_clear_value[0],
@@ -895,6 +896,8 @@ static VkResult pvr_sub_cmd_gfx_job_init(const struct pvr_device_info *dev_info,
                                          struct pvr_cmd_buffer *cmd_buffer,
                                          struct pvr_sub_cmd_gfx *sub_cmd)
 {
+   const struct vk_dynamic_graphics_state *dynamic_state =
+      &cmd_buffer->vk.dynamic_graphics_state;
    struct pvr_render_pass_info *render_pass_info =
       &cmd_buffer->state.render_pass_info;
    const struct pvr_renderpass_hwsetup_render *hw_render =
@@ -1091,7 +1094,7 @@ static VkResult pvr_sub_cmd_gfx_job_init(const struct pvr_device_info *dev_info,
        * determine the sample count from the count given during pipeline
        * creation.
        */
-      job->samples = cmd_buffer->state.gfx_pipeline->rasterization_samples;
+      job->samples = dynamic_state->ms.rasterization_samples;
    } else if (render_pass_info->pass->attachment_count > 0) {
       /* If we get here, we have a render pass with subpasses containing no
        * attachments. The next best thing is largest of the sample counts
@@ -1131,65 +1134,10 @@ pvr_sub_cmd_compute_job_init(const struct pvr_physical_device *pdevice,
                              struct pvr_cmd_buffer *cmd_buffer,
                              struct pvr_sub_cmd_compute *sub_cmd)
 {
-   const struct pvr_device_runtime_info *dev_runtime_info =
-      &pdevice->dev_runtime_info;
-   const struct pvr_device_info *dev_info = &pdevice->dev_info;
-
-   if (sub_cmd->uses_barrier)
-      sub_cmd->submit_info.flags |= PVR_WINSYS_COMPUTE_FLAG_PREVENT_ALL_OVERLAP;
-
-   pvr_csb_pack (&sub_cmd->submit_info.regs.cdm_ctrl_stream_base,
-                 CR_CDM_CTRL_STREAM_BASE,
-                 value) {
-      value.addr = pvr_csb_get_start_address(&sub_cmd->control_stream);
-   }
-
-   /* FIXME: Need to set up the border color table at device creation
-    * time. Set to invalid for the time being.
-    */
-   pvr_csb_pack (&sub_cmd->submit_info.regs.tpu_border_colour_table,
-                 CR_TPU_BORDER_COLOUR_TABLE_CDM,
-                 value) {
-      value.border_colour_table_address = PVR_DEV_ADDR_INVALID;
-   }
-
    sub_cmd->num_shared_regs = MAX2(cmd_buffer->device->idfwdf_state.usc_shareds,
                                    cmd_buffer->state.max_shared_regs);
 
    cmd_buffer->state.max_shared_regs = 0U;
-
-   if (PVR_HAS_FEATURE(dev_info, compute_morton_capable))
-      sub_cmd->submit_info.regs.cdm_item = 0;
-
-   pvr_csb_pack (&sub_cmd->submit_info.regs.tpu, CR_TPU, value) {
-      value.tag_cem_4k_face_packing = true;
-   }
-
-   if (PVR_HAS_FEATURE(dev_info, cluster_grouping) &&
-       PVR_HAS_FEATURE(dev_info, slc_mcu_cache_controls) &&
-       dev_runtime_info->num_phantoms > 1 && sub_cmd->uses_atomic_ops) {
-      /* Each phantom has its own MCU, so atomicity can only be guaranteed
-       * when all work items are processed on the same phantom. This means we
-       * need to disable all USCs other than those of the first phantom, which
-       * has 4 clusters.
-       */
-      pvr_csb_pack (&sub_cmd->submit_info.regs.compute_cluster,
-                    CR_COMPUTE_CLUSTER,
-                    value) {
-         value.mask = 0xFU;
-      }
-   } else {
-      pvr_csb_pack (&sub_cmd->submit_info.regs.compute_cluster,
-                    CR_COMPUTE_CLUSTER,
-                    value) {
-         value.mask = 0U;
-      }
-   }
-
-   if (PVR_HAS_FEATURE(dev_info, gpu_multicore_support) &&
-       sub_cmd->uses_atomic_ops) {
-      sub_cmd->submit_info.flags |= PVR_WINSYS_COMPUTE_FLAG_SINGLE_CORE;
-   }
 }
 
 #define PIXEL_ALLOCATION_SIZE_MAX_IN_BLOCKS \
@@ -1563,8 +1511,7 @@ static VkResult pvr_cmd_buffer_end_sub_cmd(struct pvr_cmd_buffer *cmd_buffer)
       break;
 
    default:
-      pvr_finishme("Unsupported sub-command type %d", sub_cmd->type);
-      break;
+      unreachable("Unsupported sub-command type");
    }
 
    state->current_sub_cmd = NULL;
@@ -1572,9 +1519,13 @@ static VkResult pvr_cmd_buffer_end_sub_cmd(struct pvr_cmd_buffer *cmd_buffer)
    return VK_SUCCESS;
 }
 
-static void pvr_reset_graphics_dirty_state(struct pvr_cmd_buffer_state *state,
-                                           bool start_geom)
+static void
+pvr_reset_graphics_dirty_state(struct pvr_cmd_buffer *const cmd_buffer,
+                               bool start_geom)
 {
+   struct vk_dynamic_graphics_state *const dynamic_state =
+      &cmd_buffer->vk.dynamic_graphics_state;
+
    if (start_geom) {
       /*
        * Initial geometry phase state.
@@ -1592,7 +1543,7 @@ static void pvr_reset_graphics_dirty_state(struct pvr_cmd_buffer_state *state,
        * phase.
        */
 
-      state->emit_header = (struct PVRX(TA_STATE_HEADER)){
+      cmd_buffer->state.emit_header = (struct PVRX(TA_STATE_HEADER)){
          .pres_stream_out_size = true,
          .pres_ppp_ctrl = true,
          .pres_varying_word2 = true,
@@ -1607,22 +1558,29 @@ static void pvr_reset_graphics_dirty_state(struct pvr_cmd_buffer_state *state,
          .pres_ispctl = true,
       };
    } else {
-      state->emit_header.pres_ppp_ctrl = true;
-      state->emit_header.pres_varying_word1 = true;
-      state->emit_header.pres_varying_word0 = true;
-      state->emit_header.pres_outselects = true;
-      state->emit_header.pres_viewport = true;
-      state->emit_header.pres_region_clip = true;
-      state->emit_header.pres_pds_state_ptr0 = true;
-      state->emit_header.pres_ispctl_fb = true;
-      state->emit_header.pres_ispctl = true;
+      struct PVRX(TA_STATE_HEADER) *const emit_header =
+         &cmd_buffer->state.emit_header;
+
+      emit_header->pres_ppp_ctrl = true;
+      emit_header->pres_varying_word1 = true;
+      emit_header->pres_varying_word0 = true;
+      emit_header->pres_outselects = true;
+      emit_header->pres_viewport = true;
+      emit_header->pres_region_clip = true;
+      emit_header->pres_pds_state_ptr0 = true;
+      emit_header->pres_ispctl_fb = true;
+      emit_header->pres_ispctl = true;
    }
 
-   memset(&state->ppp_state, 0U, sizeof(state->ppp_state));
+   memset(&cmd_buffer->state.ppp_state,
+          0U,
+          sizeof(cmd_buffer->state.ppp_state));
 
-   state->dirty.vertex_bindings = true;
-   state->dirty.gfx_pipeline_binding = true;
-   state->dirty.viewport = true;
+   cmd_buffer->state.dirty.vertex_bindings = true;
+   cmd_buffer->state.dirty.gfx_pipeline_binding = true;
+
+   BITSET_SET(dynamic_state->dirty, MESA_VK_DYNAMIC_VP_VIEWPORTS);
+   BITSET_SET(dynamic_state->dirty, MESA_VK_DYNAMIC_VP_VIEWPORT_COUNT);
 }
 
 static inline bool
@@ -1691,7 +1649,7 @@ static VkResult pvr_cmd_buffer_start_sub_cmd(struct pvr_cmd_buffer *cmd_buffer,
       sub_cmd->gfx.framebuffer = state->render_pass_info.framebuffer;
       sub_cmd->gfx.empty_cmd = true;
 
-      pvr_reset_graphics_dirty_state(state, true);
+      pvr_reset_graphics_dirty_state(cmd_buffer, true);
       if (pvr_cmd_uses_deferred_cs_cmds(cmd_buffer)) {
          pvr_csb_init(device,
                       PVR_CMD_STREAM_TYPE_GRAPHICS_DEFERRED,
@@ -1717,8 +1675,7 @@ static VkResult pvr_cmd_buffer_start_sub_cmd(struct pvr_cmd_buffer *cmd_buffer,
       break;
 
    default:
-      pvr_finishme("Unsupported sub-command type %d", type);
-      break;
+      unreachable("Unsupported sub-command type");
    }
 
    list_addtail(&sub_cmd->link, &cmd_buffer->sub_cmds);
@@ -1768,71 +1725,11 @@ static void pvr_cmd_bind_graphics_pipeline(
    const struct pvr_graphics_pipeline *const gfx_pipeline,
    struct pvr_cmd_buffer *const cmd_buffer)
 {
-   struct pvr_dynamic_state *const dest_state =
-      &cmd_buffer->state.dynamic.common;
-   const struct pvr_dynamic_state *const src_state =
-      &gfx_pipeline->dynamic_state;
-   struct pvr_cmd_buffer_state *const cmd_buffer_state = &cmd_buffer->state;
-   const uint32_t state_mask = src_state->mask;
+   cmd_buffer->state.gfx_pipeline = gfx_pipeline;
+   cmd_buffer->state.dirty.gfx_pipeline_binding = true;
 
-   cmd_buffer_state->gfx_pipeline = gfx_pipeline;
-   cmd_buffer_state->dirty.gfx_pipeline_binding = true;
-
-   /* FIXME: Handle PVR_DYNAMIC_STATE_BIT_VIEWPORT. */
-   if (!(state_mask & PVR_DYNAMIC_STATE_BIT_VIEWPORT)) {
-      assert(!"Unimplemented");
-   }
-
-   /* FIXME: Handle PVR_DYNAMIC_STATE_BIT_SCISSOR. */
-   if (!(state_mask & PVR_DYNAMIC_STATE_BIT_SCISSOR)) {
-      assert(!"Unimplemented");
-   }
-
-   if (!(state_mask & PVR_DYNAMIC_STATE_BIT_LINE_WIDTH)) {
-      dest_state->line_width = src_state->line_width;
-
-      cmd_buffer_state->dirty.line_width = true;
-   }
-
-   if (!(state_mask & PVR_DYNAMIC_STATE_BIT_DEPTH_BIAS)) {
-      memcpy(&dest_state->depth_bias,
-             &src_state->depth_bias,
-             sizeof(src_state->depth_bias));
-
-      cmd_buffer_state->dirty.depth_bias = true;
-   }
-
-   if (!(state_mask & PVR_DYNAMIC_STATE_BIT_BLEND_CONSTANTS)) {
-      STATIC_ASSERT(
-         __same_type(dest_state->blend_constants, src_state->blend_constants));
-
-      typed_memcpy(dest_state->blend_constants,
-                   src_state->blend_constants,
-                   ARRAY_SIZE(dest_state->blend_constants));
-
-      cmd_buffer_state->dirty.blend_constants = true;
-   }
-
-   if (!(state_mask & PVR_DYNAMIC_STATE_BIT_STENCIL_COMPARE_MASK)) {
-      dest_state->compare_mask.front = src_state->compare_mask.front;
-      dest_state->compare_mask.back = src_state->compare_mask.back;
-
-      cmd_buffer_state->dirty.compare_mask = true;
-   }
-
-   if (!(state_mask & PVR_DYNAMIC_STATE_BIT_STENCIL_WRITE_MASK)) {
-      dest_state->write_mask.front = src_state->write_mask.front;
-      dest_state->write_mask.back = src_state->write_mask.back;
-
-      cmd_buffer_state->dirty.write_mask = true;
-   }
-
-   if (!(state_mask & PVR_DYNAMIC_STATE_BIT_STENCIL_REFERENCE)) {
-      dest_state->reference.front = src_state->reference.front;
-      dest_state->reference.back = src_state->reference.back;
-
-      cmd_buffer_state->dirty.reference = true;
-   }
+   vk_cmd_set_dynamic_graphics_state(&cmd_buffer->vk,
+                                     &gfx_pipeline->dynamic_state);
 }
 
 void pvr_CmdBindPipeline(VkCommandBuffer commandBuffer,
@@ -1933,7 +1830,6 @@ void pvr_CmdSetViewport(VkCommandBuffer commandBuffer,
 {
    PVR_FROM_HANDLE(pvr_cmd_buffer, cmd_buffer, commandBuffer);
    const uint32_t total_count = firstViewport + viewportCount;
-   struct pvr_cmd_buffer_state *const state = &cmd_buffer->state;
 
    assert(firstViewport < PVR_MAX_VIEWPORTS && viewportCount > 0);
    assert(total_count >= 1 && total_count <= PVR_MAX_VIEWPORTS);
@@ -1948,75 +1844,10 @@ void pvr_CmdSetViewport(VkCommandBuffer commandBuffer,
    }
 #endif
 
-   if (state->dynamic.common.viewport.count < total_count)
-      state->dynamic.common.viewport.count = total_count;
-
-   memcpy(&state->dynamic.common.viewport.viewports[firstViewport],
-          pViewports,
-          viewportCount * sizeof(*pViewports));
-
-   state->dirty.viewport = true;
-}
-
-void pvr_CmdSetScissor(VkCommandBuffer commandBuffer,
-                       uint32_t firstScissor,
-                       uint32_t scissorCount,
-                       const VkRect2D *pScissors)
-{
-   PVR_FROM_HANDLE(pvr_cmd_buffer, cmd_buffer, commandBuffer);
-   const uint32_t total_count = firstScissor + scissorCount;
-   struct pvr_cmd_buffer_state *const state = &cmd_buffer->state;
-
-   assert(firstScissor < PVR_MAX_VIEWPORTS && scissorCount > 0);
-   assert(total_count >= 1 && total_count <= PVR_MAX_VIEWPORTS);
-
-   PVR_CHECK_COMMAND_BUFFER_BUILDING_STATE(cmd_buffer);
-
-   if (state->dynamic.common.scissor.count < total_count)
-      state->dynamic.common.scissor.count = total_count;
-
-   memcpy(&state->dynamic.common.scissor.scissors[firstScissor],
-          pScissors,
-          scissorCount * sizeof(*pScissors));
-
-   state->dirty.scissor = true;
-}
-
-void pvr_CmdSetLineWidth(VkCommandBuffer commandBuffer, float lineWidth)
-{
-   PVR_FROM_HANDLE(pvr_cmd_buffer, cmd_buffer, commandBuffer);
-   struct pvr_cmd_buffer_state *const state = &cmd_buffer->state;
-
-   state->dynamic.common.line_width = lineWidth;
-   state->dirty.line_width = true;
-}
-
-void pvr_CmdSetDepthBias(VkCommandBuffer commandBuffer,
-                         float depthBiasConstantFactor,
-                         float depthBiasClamp,
-                         float depthBiasSlopeFactor)
-{
-   PVR_FROM_HANDLE(pvr_cmd_buffer, cmd_buffer, commandBuffer);
-   struct pvr_cmd_buffer_state *const state = &cmd_buffer->state;
-
-   state->dynamic.common.depth_bias.constant_factor = depthBiasConstantFactor;
-   state->dynamic.common.depth_bias.slope_factor = depthBiasSlopeFactor;
-   state->dynamic.common.depth_bias.clamp = depthBiasClamp;
-   state->dirty.depth_bias = true;
-}
-
-void pvr_CmdSetBlendConstants(VkCommandBuffer commandBuffer,
-                              const float blendConstants[4])
-{
-   PVR_FROM_HANDLE(pvr_cmd_buffer, cmd_buffer, commandBuffer);
-   struct pvr_cmd_buffer_state *const state = &cmd_buffer->state;
-
-   STATIC_ASSERT(ARRAY_SIZE(state->dynamic.common.blend_constants) == 4);
-   memcpy(state->dynamic.common.blend_constants,
-          blendConstants,
-          sizeof(state->dynamic.common.blend_constants));
-
-   state->dirty.blend_constants = true;
+   vk_common_CmdSetViewport(commandBuffer,
+                            firstViewport,
+                            viewportCount,
+                            pViewports);
 }
 
 void pvr_CmdSetDepthBounds(VkCommandBuffer commandBuffer,
@@ -2024,54 +1855,6 @@ void pvr_CmdSetDepthBounds(VkCommandBuffer commandBuffer,
                            float maxDepthBounds)
 {
    mesa_logd("No support for depth bounds testing.");
-}
-
-void pvr_CmdSetStencilCompareMask(VkCommandBuffer commandBuffer,
-                                  VkStencilFaceFlags faceMask,
-                                  uint32_t compareMask)
-{
-   PVR_FROM_HANDLE(pvr_cmd_buffer, cmd_buffer, commandBuffer);
-   struct pvr_cmd_buffer_state *const state = &cmd_buffer->state;
-
-   if (faceMask & VK_STENCIL_FACE_FRONT_BIT)
-      state->dynamic.common.compare_mask.front = compareMask;
-
-   if (faceMask & VK_STENCIL_FACE_BACK_BIT)
-      state->dynamic.common.compare_mask.back = compareMask;
-
-   state->dirty.compare_mask = true;
-}
-
-void pvr_CmdSetStencilWriteMask(VkCommandBuffer commandBuffer,
-                                VkStencilFaceFlags faceMask,
-                                uint32_t writeMask)
-{
-   PVR_FROM_HANDLE(pvr_cmd_buffer, cmd_buffer, commandBuffer);
-   struct pvr_cmd_buffer_state *const state = &cmd_buffer->state;
-
-   if (faceMask & VK_STENCIL_FACE_FRONT_BIT)
-      state->dynamic.common.write_mask.front = writeMask;
-
-   if (faceMask & VK_STENCIL_FACE_BACK_BIT)
-      state->dynamic.common.write_mask.back = writeMask;
-
-   state->dirty.write_mask = true;
-}
-
-void pvr_CmdSetStencilReference(VkCommandBuffer commandBuffer,
-                                VkStencilFaceFlags faceMask,
-                                uint32_t reference)
-{
-   PVR_FROM_HANDLE(pvr_cmd_buffer, cmd_buffer, commandBuffer);
-   struct pvr_cmd_buffer_state *const state = &cmd_buffer->state;
-
-   if (faceMask & VK_STENCIL_FACE_FRONT_BIT)
-      state->dynamic.common.reference.front = reference;
-
-   if (faceMask & VK_STENCIL_FACE_BACK_BIT)
-      state->dynamic.common.reference.back = reference;
-
-   state->dirty.reference = true;
 }
 
 void pvr_CmdBindDescriptorSets(VkCommandBuffer commandBuffer,
@@ -2572,7 +2355,7 @@ static VkResult pvr_cs_write_load_op(struct pvr_cmd_buffer *cmd_buffer,
 
    pvr_emit_clear_words(cmd_buffer, sub_cmd);
 
-   pvr_reset_graphics_dirty_state(&cmd_buffer->state, false);
+   pvr_reset_graphics_dirty_state(cmd_buffer, false);
 
    return VK_SUCCESS;
 }
@@ -2643,16 +2426,6 @@ void pvr_CmdBeginRenderPass2(VkCommandBuffer commandBuffer,
    pvr_perform_start_of_render_clears(cmd_buffer);
    pvr_stash_depth_format(&cmd_buffer->state,
                           &cmd_buffer->state.current_sub_cmd->gfx);
-
-   if (!pvr_loadops_contain_clear(pass->hw_setup)) {
-      state->dynamic.scissor_accum_state = PVR_SCISSOR_ACCUM_CHECK_FOR_CLEAR;
-      state->dynamic.scissor_accum_bounds.offset.x = 0;
-      state->dynamic.scissor_accum_bounds.offset.y = 0;
-      state->dynamic.scissor_accum_bounds.extent.width = 0;
-      state->dynamic.scissor_accum_bounds.extent.height = 0;
-   } else {
-      state->dynamic.scissor_accum_state = PVR_SCISSOR_ACCUM_DISABLED;
-   }
 }
 
 VkResult pvr_BeginCommandBuffer(VkCommandBuffer commandBuffer,
@@ -2662,7 +2435,7 @@ VkResult pvr_BeginCommandBuffer(VkCommandBuffer commandBuffer,
    struct pvr_cmd_buffer_state *state;
    VkResult result;
 
-   pvr_cmd_buffer_reset(cmd_buffer);
+   vk_command_buffer_begin(&cmd_buffer->vk, pBeginInfo);
 
    cmd_buffer->usage_flags = pBeginInfo->flags;
    state = &cmd_buffer->state;
@@ -2705,18 +2478,6 @@ VkResult pvr_BeginCommandBuffer(VkCommandBuffer commandBuffer,
           0xFF,
           sizeof(*state->barriers_needed) * ARRAY_SIZE(state->barriers_needed));
 
-   cmd_buffer->status = PVR_CMD_BUFFER_STATUS_RECORDING;
-
-   return VK_SUCCESS;
-}
-
-VkResult pvr_ResetCommandBuffer(VkCommandBuffer commandBuffer,
-                                VkCommandBufferResetFlags flags)
-{
-   PVR_FROM_HANDLE(pvr_cmd_buffer, cmd_buffer, commandBuffer);
-
-   pvr_cmd_buffer_reset(cmd_buffer);
-
    return VK_SUCCESS;
 }
 
@@ -2754,7 +2515,7 @@ pvr_setup_vertex_buffers(struct pvr_cmd_buffer *cmd_buffer,
                          const struct pvr_graphics_pipeline *const gfx_pipeline)
 {
    const struct pvr_vertex_shader_state *const vertex_state =
-      &gfx_pipeline->vertex_shader_state;
+      &gfx_pipeline->shader_state.vertex;
    struct pvr_cmd_buffer_state *const state = &cmd_buffer->state;
    const struct pvr_pds_info *const pds_info = state->pds_shader.info;
    const uint8_t *entries;
@@ -2910,13 +2671,6 @@ static VkResult pvr_setup_descriptor_mappings(
       const struct pvr_const_map_entry *const entry_header =
          (struct pvr_const_map_entry *)entries;
 
-      /* TODO: See if instead of reusing the blend constant buffer type entry,
-       * we can setup a new buffer type specifically for num_workgroups or other
-       * built-in variables. The mappings are setup at pipeline creation when
-       * creating the descriptor program.
-       */
-      pvr_finishme("Handle blend constant reuse for compute.");
-
       switch (entry_header->type) {
       case PVR_PDS_CONST_MAP_ENTRY_TYPE_LITERAL32: {
          const struct pvr_const_map_entry_literal32 *const literal =
@@ -2981,15 +2735,21 @@ static VkResult pvr_setup_descriptor_mappings(
             const struct pvr_const_map_entry_literal32 *literal;
             uint32_t zero_literal_value;
 
+            /* The code segment contains a DOUT instructions so in the data
+             * section we have to write a DOUTD_SRC0 and DOUTD_SRC1.
+             * We'll write 0 for DOUTD_SRC0 since we don't have a buffer to DMA.
+             * We're expecting a LITERAL32 entry containing the value for
+             * DOUTD_SRC1 next so let's make sure we get it and write it
+             * with BSIZE to 0 disabling the DMA operation.
+             * We don't want the LITERAL32 to be processed as normal otherwise
+             * we'd be DMAing from an address of 0.
+             */
+
             entries += sizeof(*desc_set_entry);
             literal = (struct pvr_const_map_entry_literal32 *)entries;
 
-            /* TODO: Is there any guarantee that a literal will follow the
-             * descriptor set entry?
-             */
             assert(literal->type == PVR_PDS_CONST_MAP_ENTRY_TYPE_LITERAL32);
 
-            /* We zero out the DMA size so the DMA isn't performed. */
             zero_literal_value =
                literal->literal_value &
                PVR_ROGUE_PDSINST_DOUT_FIELDS_DOUTD_SRC1_BSIZE_CLRMSK;
@@ -3056,6 +2816,11 @@ static VkResult pvr_setup_descriptor_mappings(
          }
 
          case PVR_BUFFER_TYPE_BLEND_CONSTS:
+            /* TODO: See if instead of reusing the blend constant buffer type
+             * entry, we can setup a new buffer type specifically for
+             * num_workgroups or other built-in variables. The mappings are
+             * setup at pipeline creation when creating the descriptor program.
+             */
             if (stage == PVR_STAGE_ALLOCATION_COMPUTE) {
                assert(num_worgroups_buff_addr->addr);
 
@@ -3433,13 +3198,15 @@ static uint32_t pvr_calc_shared_regs_count(
    const struct pvr_graphics_pipeline *const gfx_pipeline)
 {
    const struct pvr_pipeline_stage_state *const vertex_state =
-      &gfx_pipeline->vertex_shader_state.stage_state;
+      &gfx_pipeline->shader_state.vertex.stage_state;
+
    uint32_t shared_regs = vertex_state->const_shared_reg_count +
                           vertex_state->const_shared_reg_offset;
 
-   if (gfx_pipeline->fragment_shader_state.bo) {
+   if (gfx_pipeline->shader_state.fragment.bo) {
       const struct pvr_pipeline_stage_state *const fragment_state =
-         &gfx_pipeline->fragment_shader_state.stage_state;
+         &gfx_pipeline->shader_state.fragment.stage_state;
+
       uint32_t fragment_regs = fragment_state->const_shared_reg_count +
                                fragment_state->const_shared_reg_offset;
 
@@ -3457,9 +3224,9 @@ pvr_emit_dirty_pds_state(const struct pvr_cmd_buffer *const cmd_buffer,
    const struct pvr_cmd_buffer_state *const state = &cmd_buffer->state;
    const struct pvr_stage_allocation_descriptor_state
       *const vertex_descriptor_state =
-         &state->gfx_pipeline->vertex_shader_state.descriptor_state;
+         &state->gfx_pipeline->shader_state.vertex.descriptor_state;
    const struct pvr_pipeline_stage_state *const vertex_stage_state =
-      &state->gfx_pipeline->vertex_shader_state.stage_state;
+      &state->gfx_pipeline->shader_state.vertex.stage_state;
    struct pvr_csb *const csb = &sub_cmd->control_stream;
 
    if (!vertex_descriptor_state->pds_info.code_size_in_dwords)
@@ -3490,23 +3257,23 @@ pvr_emit_dirty_pds_state(const struct pvr_cmd_buffer *const cmd_buffer,
 
 static void pvr_setup_output_select(struct pvr_cmd_buffer *const cmd_buffer)
 {
-   struct PVRX(TA_STATE_HEADER) *const header = &cmd_buffer->state.emit_header;
    const struct pvr_graphics_pipeline *const gfx_pipeline =
       cmd_buffer->state.gfx_pipeline;
-   struct pvr_ppp_state *const ppp_state = &cmd_buffer->state.ppp_state;
    const struct pvr_vertex_shader_state *const vertex_state =
-      &gfx_pipeline->vertex_shader_state;
+      &gfx_pipeline->shader_state.vertex;
+   struct vk_dynamic_graphics_state *const dynamic_state =
+      &cmd_buffer->vk.dynamic_graphics_state;
+   struct PVRX(TA_STATE_HEADER) *const header = &cmd_buffer->state.emit_header;
+   struct pvr_ppp_state *const ppp_state = &cmd_buffer->state.ppp_state;
    uint32_t output_selects;
 
    /* TODO: Handle vertex and fragment shader state flags. */
 
    pvr_csb_pack (&output_selects, TA_OUTPUT_SEL, state) {
-      const VkPrimitiveTopology topology =
-         gfx_pipeline->input_asm_state.topology;
-
       state.rhw_pres = true;
       state.vtxsize = DIV_ROUND_UP(vertex_state->vertex_output_size, 4U);
-      state.psprite_size_pres = (topology == VK_PRIMITIVE_TOPOLOGY_POINT_LIST);
+      state.psprite_size_pres = (dynamic_state->ia.primitive_topology ==
+                                 VK_PRIMITIVE_TOPOLOGY_POINT_LIST);
    }
 
    if (ppp_state->output_selects != output_selects) {
@@ -3530,36 +3297,37 @@ pvr_setup_isp_faces_and_control(struct pvr_cmd_buffer *const cmd_buffer,
                                 struct PVRX(TA_STATE_ISPA) *const ispa_out)
 {
    struct PVRX(TA_STATE_HEADER) *const header = &cmd_buffer->state.emit_header;
-   const struct pvr_graphics_pipeline *const gfx_pipeline =
-      cmd_buffer->state.gfx_pipeline;
-   struct pvr_ppp_state *const ppp_state = &cmd_buffer->state.ppp_state;
-   const struct pvr_dynamic_state *const dynamic_state =
-      &cmd_buffer->state.dynamic.common;
+   const struct pvr_fragment_shader_state *const fragment_shader_state =
+      &cmd_buffer->state.gfx_pipeline->shader_state.fragment;
    const struct pvr_render_pass_info *const pass_info =
       &cmd_buffer->state.render_pass_info;
+   struct vk_dynamic_graphics_state *dynamic_state =
+      &cmd_buffer->vk.dynamic_graphics_state;
+   struct pvr_ppp_state *const ppp_state = &cmd_buffer->state.ppp_state;
+
+   const bool rasterizer_discard = dynamic_state->rs.rasterizer_discard_enable;
    const uint32_t subpass_idx = pass_info->subpass_idx;
    const uint32_t *depth_stencil_attachment_idx =
       pass_info->pass->subpasses[subpass_idx].depth_stencil_attachment;
    const struct pvr_image_view *const attachment =
-      (!depth_stencil_attachment_idx)
-         ? NULL
-         : pass_info->attachments[*depth_stencil_attachment_idx];
+      depth_stencil_attachment_idx
+         ? pass_info->attachments[*depth_stencil_attachment_idx]
+         : NULL;
 
-   const VkCullModeFlags cull_mode = gfx_pipeline->raster_state.cull_mode;
-   const bool raster_discard_enabled =
-      gfx_pipeline->raster_state.discard_enable;
-   const bool disable_all = raster_discard_enabled || !attachment;
+   const enum PVRX(TA_OBJTYPE)
+      obj_type = pvr_ta_objtype(dynamic_state->ia.primitive_topology);
 
-   const VkPrimitiveTopology topology = gfx_pipeline->input_asm_state.topology;
-   const enum PVRX(TA_OBJTYPE) obj_type = pvr_ta_objtype(topology);
+   const VkImageAspectFlags ds_aspects =
+      (!rasterizer_discard && attachment)
+         ? vk_format_aspects(attachment->vk.format) &
+              (VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT)
+         : VK_IMAGE_ASPECT_NONE;
 
-   const bool disable_stencil_write = disable_all;
-   const bool disable_stencil_test =
-      disable_all || !vk_format_has_stencil(attachment->vk.format);
-
-   const bool disable_depth_write = disable_all;
-   const bool disable_depth_test = disable_all ||
-                                   !vk_format_has_depth(attachment->vk.format);
+   /* This is deliberately a full copy rather than a pointer because
+    * vk_optimize_depth_stencil_state() can only be run once against any given
+    * instance of vk_depth_stencil_state.
+    */
+   struct vk_depth_stencil_state ds_state = dynamic_state->ds;
 
    uint32_t ispb_stencil_off;
    bool is_two_sided = false;
@@ -3572,8 +3340,10 @@ pvr_setup_isp_faces_and_control(struct pvr_cmd_buffer *const cmd_buffer,
    uint32_t back_a;
    uint32_t back_b;
 
+   vk_optimize_depth_stencil_state(&ds_state, ds_aspects, true);
+
    /* Convert to 4.4 fixed point format. */
-   line_width = util_unsigned_fixed(dynamic_state->line_width, 4);
+   line_width = util_unsigned_fixed(dynamic_state->rs.line.width, 4);
 
    /* Subtract 1 to shift values from range [0=0,256=16] to [0=1/16,255=16].
     * If 0 it stays at 0, otherwise we subtract 1.
@@ -3589,23 +3359,10 @@ pvr_setup_isp_faces_and_control(struct pvr_cmd_buffer *const cmd_buffer,
    pvr_csb_pack (&common_a, TA_STATE_ISPA, ispa) {
       ispa.pointlinewidth = line_width;
 
-      if (disable_depth_test)
-         ispa.dcmpmode = PVRX(TA_CMPMODE_ALWAYS);
-      else
-         ispa.dcmpmode = pvr_ta_cmpmode(gfx_pipeline->depth_compare_op);
+      ispa.dcmpmode = pvr_ta_cmpmode(ds_state.depth.compare_op);
+      ispa.dwritedisable = !ds_state.depth.write_enable;
 
-      /* FIXME: Can we just have this and remove the assignment above?
-       * The user provides a depthTestEnable at vkCreateGraphicsPipelines()
-       * should we be using that?
-       */
-      ispa.dcmpmode |= gfx_pipeline->depth_compare_op;
-
-      ispa.dwritedisable = disable_depth_test || disable_depth_write;
-      /* FIXME: Can we just have this and remove the assignment above? */
-      ispa.dwritedisable = ispa.dwritedisable ||
-                           gfx_pipeline->depth_write_disable;
-
-      ispa.passtype = gfx_pipeline->fragment_shader_state.pass_type;
+      ispa.passtype = fragment_shader_state->pass_type;
 
       ispa.objtype = obj_type;
 
@@ -3615,20 +3372,6 @@ pvr_setup_isp_faces_and_control(struct pvr_cmd_buffer *const cmd_buffer,
       if (ispa_out)
          *ispa_out = ispa;
    }
-
-   /* FIXME: This logic should be redone and improved. Can we also get rid of
-    * the front and back variants?
-    */
-
-   pvr_csb_pack (&front_a, TA_STATE_ISPA, ispa) {
-      ispa.sref = (!disable_stencil_test) * dynamic_state->reference.front;
-   }
-   front_a |= common_a;
-
-   pvr_csb_pack (&back_a, TA_STATE_ISPA, ispa) {
-      ispa.sref = (!disable_stencil_test) * dynamic_state->reference.back;
-   }
-   back_a |= common_a;
 
    /* TODO: Does this actually represent the ispb control word on stencil off?
     * If not, rename the variable.
@@ -3640,39 +3383,65 @@ pvr_setup_isp_faces_and_control(struct pvr_cmd_buffer *const cmd_buffer,
       ispb.scmpmode = PVRX(TA_CMPMODE_ALWAYS);
    }
 
-   if (disable_stencil_test) {
-      back_b = front_b = ispb_stencil_off;
-   } else {
+   /* FIXME: This logic should be redone and improved. Can we also get rid of
+    * the front and back variants?
+    */
+
+   front_a = common_a;
+   back_a = common_a;
+
+   if (ds_state.stencil.test_enable) {
+      uint32_t front_a_sref;
+      uint32_t back_a_sref;
+
+      pvr_csb_pack (&front_a_sref, TA_STATE_ISPA, ispa) {
+         ispa.sref = ds_state.stencil.front.reference;
+      }
+      front_a |= front_a_sref;
+
+      pvr_csb_pack (&back_a_sref, TA_STATE_ISPA, ispa) {
+         ispa.sref = ds_state.stencil.back.reference;
+      }
+      back_a |= back_a_sref;
+
       pvr_csb_pack (&front_b, TA_STATE_ISPB, ispb) {
-         ispb.swmask =
-            (!disable_stencil_write) * dynamic_state->write_mask.front;
-         ispb.scmpmask = dynamic_state->compare_mask.front;
+         const struct vk_stencil_test_face_state *const front =
+            &ds_state.stencil.front;
 
-         ispb.sop3 = pvr_ta_stencilop(gfx_pipeline->stencil_front.pass_op);
-         ispb.sop2 =
-            pvr_ta_stencilop(gfx_pipeline->stencil_front.depth_fail_op);
-         ispb.sop1 = pvr_ta_stencilop(gfx_pipeline->stencil_front.fail_op);
+         if (ds_state.stencil.write_enable)
+            ispb.swmask = front->write_mask;
 
-         ispb.scmpmode = pvr_ta_cmpmode(gfx_pipeline->stencil_front.compare_op);
+         ispb.scmpmask = front->compare_mask;
+
+         ispb.sop3 = pvr_ta_stencilop(front->op.pass);
+         ispb.sop2 = pvr_ta_stencilop(front->op.depth_fail);
+         ispb.sop1 = pvr_ta_stencilop(front->op.fail);
+         ispb.scmpmode = pvr_ta_cmpmode(front->op.compare);
       }
 
       pvr_csb_pack (&back_b, TA_STATE_ISPB, ispb) {
-         ispb.swmask =
-            (!disable_stencil_write) * dynamic_state->write_mask.back;
-         ispb.scmpmask = dynamic_state->compare_mask.back;
+         const struct vk_stencil_test_face_state *const back =
+            &ds_state.stencil.back;
 
-         ispb.sop3 = pvr_ta_stencilop(gfx_pipeline->stencil_back.pass_op);
-         ispb.sop2 = pvr_ta_stencilop(gfx_pipeline->stencil_back.depth_fail_op);
-         ispb.sop1 = pvr_ta_stencilop(gfx_pipeline->stencil_back.fail_op);
+         if (ds_state.stencil.write_enable)
+            ispb.swmask = back->write_mask;
 
-         ispb.scmpmode = pvr_ta_cmpmode(gfx_pipeline->stencil_back.compare_op);
+         ispb.scmpmask = back->compare_mask;
+
+         ispb.sop3 = pvr_ta_stencilop(back->op.pass);
+         ispb.sop2 = pvr_ta_stencilop(back->op.depth_fail);
+         ispb.sop1 = pvr_ta_stencilop(back->op.fail);
+         ispb.scmpmode = pvr_ta_cmpmode(back->op.compare);
       }
+   } else {
+      front_b = ispb_stencil_off;
+      back_b = ispb_stencil_off;
    }
 
    if (front_a != back_a || front_b != back_b) {
-      if (cull_mode & VK_CULL_MODE_BACK_BIT) {
+      if (dynamic_state->rs.cull_mode & VK_CULL_MODE_BACK_BIT) {
          /* Single face, using front state. */
-      } else if (cull_mode & VK_CULL_MODE_FRONT_BIT) {
+      } else if (dynamic_state->rs.cull_mode & VK_CULL_MODE_FRONT_BIT) {
          /* Single face, using back state. */
 
          front_a = back_a;
@@ -3682,8 +3451,7 @@ pvr_setup_isp_faces_and_control(struct pvr_cmd_buffer *const cmd_buffer,
 
          header->pres_ispctl_ba = is_two_sided = true;
 
-         if (gfx_pipeline->raster_state.front_face ==
-             VK_FRONT_FACE_COUNTER_CLOCKWISE) {
+         if (dynamic_state->rs.front_face == VK_FRONT_FACE_COUNTER_CLOCKWISE) {
             uint32_t tmp = front_a;
 
             front_a = back_a;
@@ -3702,23 +3470,22 @@ pvr_setup_isp_faces_and_control(struct pvr_cmd_buffer *const cmd_buffer,
       }
    }
 
-   if (!disable_stencil_test && front_b != ispb_stencil_off)
+   if (ds_state.stencil.test_enable && front_b != ispb_stencil_off)
       header->pres_ispctl_fb = true;
 
    pvr_csb_pack (&isp_control, TA_STATE_ISPCTL, ispctl) {
       ispctl.upass = pass_info->isp_userpass;
 
       /* TODO: is bo ever NULL? Figure out what to do. */
-      ispctl.tagwritedisable = raster_discard_enabled ||
-                               !gfx_pipeline->fragment_shader_state.bo;
+      ispctl.tagwritedisable = rasterizer_discard || !fragment_shader_state->bo;
 
       ispctl.two_sided = is_two_sided;
       ispctl.bpres = header->pres_ispctl_fb || header->pres_ispctl_bb;
 
-      ispctl.dbenable = !raster_discard_enabled &&
-                        gfx_pipeline->raster_state.depth_bias_enable &&
+      ispctl.dbenable = !rasterizer_discard &&
+                        dynamic_state->rs.depth_bias.enable &&
                         obj_type == PVRX(TA_OBJTYPE_TRIANGLE);
-      ispctl.scenable = !raster_discard_enabled;
+      ispctl.scenable = !rasterizer_discard;
 
       ppp_state->isp.control_struct = ispctl;
    }
@@ -3894,22 +3661,25 @@ pvr_setup_isp_depth_bias_scissor_state(struct pvr_cmd_buffer *const cmd_buffer)
 {
    struct PVRX(TA_STATE_HEADER) *const header = &cmd_buffer->state.emit_header;
    struct pvr_ppp_state *const ppp_state = &cmd_buffer->state.ppp_state;
-   const struct pvr_dynamic_state *const dynamic_state =
-      &cmd_buffer->state.dynamic.common;
+   struct vk_dynamic_graphics_state *const dynamic_state =
+      &cmd_buffer->vk.dynamic_graphics_state;
    const struct PVRX(TA_STATE_ISPCTL) *const ispctl =
       &ppp_state->isp.control_struct;
    struct pvr_device_info *const dev_info =
       &cmd_buffer->device->pdevice->dev_info;
 
-   if (ispctl->dbenable && (cmd_buffer->state.dirty.depth_bias ||
-                            cmd_buffer->depth_bias_array.size == 0)) {
-      struct pvr_depth_bias_state depth_bias = dynamic_state->depth_bias;
-
-      depth_bias.constant_factor =
-         pvr_calculate_final_depth_bias_contant_factor(
+   if (ispctl->dbenable &&
+       (BITSET_TEST(dynamic_state->dirty,
+                    MESA_VK_DYNAMIC_RS_DEPTH_BIAS_FACTORS) ||
+        cmd_buffer->depth_bias_array.size == 0)) {
+      struct pvr_depth_bias_state depth_bias = {
+         .constant_factor = pvr_calculate_final_depth_bias_contant_factor(
             dev_info,
             cmd_buffer->state.depth_format,
-            depth_bias.constant_factor);
+            dynamic_state->rs.depth_bias.constant),
+         .slope_factor = dynamic_state->rs.depth_bias.slope,
+         .clamp = dynamic_state->rs.depth_bias.clamp,
+      };
 
       ppp_state->depthbias_scissor_indices.depthbias_index =
          util_dynarray_num_elements(&cmd_buffer->depth_bias_array,
@@ -3925,10 +3695,10 @@ pvr_setup_isp_depth_bias_scissor_state(struct pvr_cmd_buffer *const cmd_buffer)
    if (ispctl->scenable) {
       const uint32_t region_clip_align_size =
          pvr_get_geom_region_clip_align_size(dev_info);
-      const VkViewport *const viewport = &dynamic_state->viewport.viewports[0];
-      const VkRect2D *const scissor = &dynamic_state->scissor.scissors[0];
+      const VkViewport *const viewport = &dynamic_state->vp.viewports[0];
+      const VkRect2D *const scissor = &dynamic_state->vp.scissors[0];
+      struct pvr_scissor_words scissor_words;
       VkRect2D overlap_rect;
-      uint32_t scissor_words[2];
       uint32_t height;
       uint32_t width;
       uint32_t x;
@@ -3941,9 +3711,9 @@ pvr_setup_isp_depth_bias_scissor_state(struct pvr_cmd_buffer *const cmd_buffer)
       uint32_t top;
 
       /* We don't support multiple viewport calculations. */
-      assert(dynamic_state->viewport.count == 1);
+      assert(dynamic_state->vp.viewport_count == 1);
       /* We don't support multiple scissor calculations. */
-      assert(dynamic_state->scissor.count == 1);
+      assert(dynamic_state->vp.scissor_count == 1);
 
       pvr_get_viewport_scissor_overlap(viewport, scissor, &overlap_rect);
 
@@ -3952,24 +3722,23 @@ pvr_setup_isp_depth_bias_scissor_state(struct pvr_cmd_buffer *const cmd_buffer)
       width = overlap_rect.extent.width;
       height = overlap_rect.extent.height;
 
-      pvr_csb_pack (&scissor_words[0], IPF_SCISSOR_WORD_0, word0) {
+      pvr_csb_pack (&scissor_words.w0, IPF_SCISSOR_WORD_0, word0) {
          word0.scw0_xmax = x + width;
          word0.scw0_xmin = x;
       }
 
-      pvr_csb_pack (&scissor_words[1], IPF_SCISSOR_WORD_1, word1) {
+      pvr_csb_pack (&scissor_words.w1, IPF_SCISSOR_WORD_1, word1) {
          word1.scw1_ymax = y + height;
          word1.scw1_ymin = y;
       }
 
       if (cmd_buffer->scissor_array.size &&
-          cmd_buffer->scissor_words[0] == scissor_words[0] &&
-          cmd_buffer->scissor_words[1] == scissor_words[1]) {
+          cmd_buffer->scissor_words.w0 == scissor_words.w0 &&
+          cmd_buffer->scissor_words.w1 == scissor_words.w1) {
          return;
       }
 
-      cmd_buffer->scissor_words[0] = scissor_words[0];
-      cmd_buffer->scissor_words[1] = scissor_words[1];
+      cmd_buffer->scissor_words = scissor_words;
 
       /* Calculate region clip. */
 
@@ -4004,13 +3773,11 @@ pvr_setup_isp_depth_bias_scissor_state(struct pvr_cmd_buffer *const cmd_buffer)
 
       ppp_state->depthbias_scissor_indices.scissor_index =
          util_dynarray_num_elements(&cmd_buffer->scissor_array,
-                                    __typeof__(cmd_buffer->scissor_words));
+                                    struct pvr_scissor_words);
 
-      memcpy(util_dynarray_grow_bytes(&cmd_buffer->scissor_array,
-                                      1,
-                                      sizeof(cmd_buffer->scissor_words)),
-             cmd_buffer->scissor_words,
-             sizeof(cmd_buffer->scissor_words));
+      util_dynarray_append(&cmd_buffer->scissor_array,
+                           struct pvr_scissor_words,
+                           cmd_buffer->scissor_words);
 
       header->pres_ispctl_dbsc = true;
       header->pres_region_clip = true;
@@ -4054,12 +3821,16 @@ pvr_setup_fragment_state_pointers(struct pvr_cmd_buffer *const cmd_buffer,
                                   struct pvr_sub_cmd_gfx *const sub_cmd)
 {
    struct pvr_cmd_buffer_state *const state = &cmd_buffer->state;
+
+   const struct pvr_fragment_shader_state *const fragment =
+      &state->gfx_pipeline->shader_state.fragment;
    const struct pvr_stage_allocation_descriptor_state *descriptor_shader_state =
-      &state->gfx_pipeline->fragment_shader_state.descriptor_state;
-   const struct pvr_pds_upload *pds_coeff_program =
-      &state->gfx_pipeline->fragment_shader_state.pds_coeff_program;
+      &fragment->descriptor_state;
    const struct pvr_pipeline_stage_state *fragment_state =
-      &state->gfx_pipeline->fragment_shader_state.stage_state;
+      &fragment->stage_state;
+   const struct pvr_pds_upload *pds_coeff_program =
+      &fragment->pds_coeff_program;
+
    const struct pvr_physical_device *pdevice = cmd_buffer->device->pdevice;
    struct PVRX(TA_STATE_HEADER) *const header = &state->emit_header;
    struct pvr_ppp_state *const ppp_state = &state->ppp_state;
@@ -4100,7 +3871,7 @@ pvr_setup_fragment_state_pointers(struct pvr_cmd_buffer *const cmd_buffer,
                  TA_STATE_PDS_SHADERBASE,
                  shader_base) {
       const struct pvr_pds_upload *const pds_upload =
-         &state->gfx_pipeline->fragment_shader_state.pds_fragment_program;
+         &fragment->pds_fragment_program;
 
       shader_base.addr = PVR_DEV_ADDR(pds_upload->data_offset);
    }
@@ -4162,14 +3933,16 @@ static void pvr_setup_viewport(struct pvr_cmd_buffer *const cmd_buffer)
 {
    struct pvr_cmd_buffer_state *const state = &cmd_buffer->state;
    struct PVRX(TA_STATE_HEADER) *const header = &state->emit_header;
+   struct vk_dynamic_graphics_state *const dynamic_state =
+      &cmd_buffer->vk.dynamic_graphics_state;
    struct pvr_ppp_state *const ppp_state = &state->ppp_state;
 
-   if (ppp_state->viewport_count != state->dynamic.common.viewport.count) {
-      ppp_state->viewport_count = state->dynamic.common.viewport.count;
+   if (ppp_state->viewport_count != dynamic_state->vp.viewport_count) {
+      ppp_state->viewport_count = dynamic_state->vp.viewport_count;
       header->pres_viewport = true;
    }
 
-   if (state->gfx_pipeline->raster_state.discard_enable) {
+   if (dynamic_state->rs.rasterizer_discard_enable) {
       /* We don't want to emit any viewport data as it'll just get thrown
        * away. It's after the previous condition because we still want to
        * stash the viewport_count as it's our trigger for when
@@ -4180,7 +3953,7 @@ static void pvr_setup_viewport(struct pvr_cmd_buffer *const cmd_buffer)
    }
 
    for (uint32_t i = 0; i < ppp_state->viewport_count; i++) {
-      VkViewport *viewport = &state->dynamic.common.viewport.viewports[i];
+      VkViewport *viewport = &dynamic_state->vp.viewports[i];
       uint32_t x_scale = fui(viewport->width * 0.5f);
       uint32_t y_scale = fui(viewport->height * 0.5f);
       uint32_t z_scale = fui(viewport->maxDepth - viewport->minDepth);
@@ -4208,15 +3981,15 @@ static void pvr_setup_viewport(struct pvr_cmd_buffer *const cmd_buffer)
 
 static void pvr_setup_ppp_control(struct pvr_cmd_buffer *const cmd_buffer)
 {
+   struct vk_dynamic_graphics_state *const dynamic_state =
+      &cmd_buffer->vk.dynamic_graphics_state;
+   const VkPrimitiveTopology topology = dynamic_state->ia.primitive_topology;
    struct pvr_cmd_buffer_state *const state = &cmd_buffer->state;
-   const struct pvr_graphics_pipeline *const gfx_pipeline = state->gfx_pipeline;
    struct PVRX(TA_STATE_HEADER) *const header = &state->emit_header;
    struct pvr_ppp_state *const ppp_state = &state->ppp_state;
    uint32_t ppp_control;
 
    pvr_csb_pack (&ppp_control, TA_STATE_PPP_CTRL, control) {
-      const struct pvr_raster_state *raster_state = &gfx_pipeline->raster_state;
-      VkPrimitiveTopology topology = gfx_pipeline->input_asm_state.topology;
       control.drawclippededges = true;
       control.wclampen = true;
 
@@ -4225,7 +3998,7 @@ static void pvr_setup_ppp_control(struct pvr_cmd_buffer *const cmd_buffer)
       else
          control.flatshade_vtx = PVRX(TA_FLATSHADE_VTX_VERTEX_0);
 
-      if (raster_state->depth_clamp_enable)
+      if (dynamic_state->rs.depth_clamp_enable)
          control.clip_mode = PVRX(TA_CLIP_MODE_NO_FRONT_OR_REAR);
       else
          control.clip_mode = PVRX(TA_CLIP_MODE_FRONT_REAR);
@@ -4238,11 +4011,11 @@ static void pvr_setup_ppp_control(struct pvr_cmd_buffer *const cmd_buffer)
        * 1|0 CULLMODE_CULL_CW,
        * 1|1 CULLMODE_CULL_CCW,
        */
-      switch (raster_state->cull_mode) {
+      switch (dynamic_state->rs.cull_mode) {
       case VK_CULL_MODE_BACK_BIT:
       case VK_CULL_MODE_FRONT_BIT:
-         if ((raster_state->front_face == VK_FRONT_FACE_COUNTER_CLOCKWISE) ^
-             (raster_state->cull_mode == VK_CULL_MODE_FRONT_BIT)) {
+         if ((dynamic_state->rs.front_face == VK_FRONT_FACE_COUNTER_CLOCKWISE) ^
+             (dynamic_state->rs.cull_mode == VK_CULL_MODE_FRONT_BIT)) {
             control.cullmode = PVRX(TA_CULLMODE_CULL_CW);
          } else {
             control.cullmode = PVRX(TA_CULLMODE_CULL_CCW);
@@ -4571,9 +4344,13 @@ static VkResult pvr_emit_ppp_state(struct pvr_cmd_buffer *const cmd_buffer,
 }
 
 static inline bool
-pvr_ppp_state_update_required(const struct pvr_cmd_buffer_state *state)
+pvr_ppp_state_update_required(const struct pvr_cmd_buffer *cmd_buffer)
 {
+   const BITSET_WORD *const dynamic_dirty =
+      cmd_buffer->vk.dynamic_graphics_state.dirty;
+   const struct pvr_cmd_buffer_state *const state = &cmd_buffer->state;
    const struct PVRX(TA_STATE_HEADER) *const header = &state->emit_header;
+
    return header->pres_ppp_ctrl || header->pres_ispctl ||
           header->pres_ispctl_fb || header->pres_ispctl_ba ||
           header->pres_ispctl_bb || header->pres_ispctl_dbsc ||
@@ -4582,7 +4359,19 @@ pvr_ppp_state_update_required(const struct pvr_cmd_buffer_state *state)
           header->pres_region_clip || header->pres_viewport ||
           header->pres_wclamp || header->pres_outselects ||
           header->pres_varying_word0 || header->pres_varying_word1 ||
-          header->pres_varying_word2 || header->pres_stream_out_program;
+          header->pres_varying_word2 || header->pres_stream_out_program ||
+          state->dirty.fragment_descriptors ||
+          state->dirty.gfx_pipeline_binding || state->dirty.isp_userpass ||
+          BITSET_TEST(dynamic_dirty, MESA_VK_DYNAMIC_DS_STENCIL_COMPARE_MASK) ||
+          BITSET_TEST(dynamic_dirty, MESA_VK_DYNAMIC_DS_STENCIL_WRITE_MASK) ||
+          BITSET_TEST(dynamic_dirty, MESA_VK_DYNAMIC_DS_STENCIL_REFERENCE) ||
+          BITSET_TEST(dynamic_dirty, MESA_VK_DYNAMIC_RS_DEPTH_BIAS_ENABLE) ||
+          BITSET_TEST(dynamic_dirty, MESA_VK_DYNAMIC_RS_DEPTH_BIAS_FACTORS) ||
+          BITSET_TEST(dynamic_dirty, MESA_VK_DYNAMIC_RS_LINE_WIDTH) ||
+          BITSET_TEST(dynamic_dirty, MESA_VK_DYNAMIC_VP_SCISSORS) ||
+          BITSET_TEST(dynamic_dirty, MESA_VK_DYNAMIC_VP_SCISSOR_COUNT) ||
+          BITSET_TEST(dynamic_dirty, MESA_VK_DYNAMIC_VP_VIEWPORTS) ||
+          BITSET_TEST(dynamic_dirty, MESA_VK_DYNAMIC_VP_VIEWPORT_COUNT);
 }
 
 static VkResult
@@ -4590,9 +4379,8 @@ pvr_emit_dirty_ppp_state(struct pvr_cmd_buffer *const cmd_buffer,
                          struct pvr_sub_cmd_gfx *const sub_cmd)
 {
    struct pvr_cmd_buffer_state *const state = &cmd_buffer->state;
-   const struct pvr_graphics_pipeline *const gfx_pipeline = state->gfx_pipeline;
-   const bool dirty_stencil = state->dirty.compare_mask ||
-                              state->dirty.write_mask || state->dirty.reference;
+   struct vk_dynamic_graphics_state *const dynamic_state =
+      &cmd_buffer->vk.dynamic_graphics_state;
    VkResult result;
 
    /* TODO: The emit_header will be dirty only if
@@ -4602,13 +4390,8 @@ pvr_emit_dirty_ppp_state(struct pvr_cmd_buffer *const cmd_buffer,
     * flag in there and check it here instead of checking the header.
     * Check if this is true and implement the flag.
     */
-   if (!(dirty_stencil || state->dirty.depth_bias ||
-         state->dirty.fragment_descriptors || state->dirty.line_width ||
-         state->dirty.gfx_pipeline_binding || state->dirty.scissor ||
-         state->dirty.isp_userpass || state->dirty.viewport ||
-         pvr_ppp_state_update_required(state))) {
+   if (!pvr_ppp_state_update_required(cmd_buffer))
       return VK_SUCCESS;
-   }
 
    if (state->dirty.gfx_pipeline_binding) {
       struct PVRX(TA_STATE_ISPA) ispa;
@@ -4616,20 +4399,28 @@ pvr_emit_dirty_ppp_state(struct pvr_cmd_buffer *const cmd_buffer,
       pvr_setup_output_select(cmd_buffer);
       pvr_setup_isp_faces_and_control(cmd_buffer, &ispa);
       pvr_setup_triangle_merging_flag(cmd_buffer, &ispa);
-   } else if (dirty_stencil || state->dirty.line_width ||
+   } else if (BITSET_TEST(dynamic_state->dirty,
+                          MESA_VK_DYNAMIC_DS_STENCIL_COMPARE_MASK) ||
+              BITSET_TEST(dynamic_state->dirty,
+                          MESA_VK_DYNAMIC_DS_STENCIL_REFERENCE) ||
+              BITSET_TEST(dynamic_state->dirty,
+                          MESA_VK_DYNAMIC_DS_STENCIL_WRITE_MASK) ||
+              BITSET_TEST(dynamic_state->dirty,
+                          MESA_VK_DYNAMIC_RS_LINE_WIDTH) ||
               state->dirty.isp_userpass) {
       pvr_setup_isp_faces_and_control(cmd_buffer, NULL);
    }
 
-   if (!gfx_pipeline->raster_state.discard_enable &&
+   if (!dynamic_state->rs.rasterizer_discard_enable &&
        state->dirty.fragment_descriptors &&
-       gfx_pipeline->fragment_shader_state.bo) {
+       state->gfx_pipeline->shader_state.fragment.bo) {
       pvr_setup_fragment_state_pointers(cmd_buffer, sub_cmd);
    }
 
    pvr_setup_isp_depth_bias_scissor_state(cmd_buffer);
 
-   if (state->dirty.viewport)
+   if (BITSET_TEST(dynamic_state->dirty, MESA_VK_DYNAMIC_VP_VIEWPORTS) ||
+       BITSET_TEST(dynamic_state->dirty, MESA_VK_DYNAMIC_VP_VIEWPORT_COUNT))
       pvr_setup_viewport(cmd_buffer);
 
    pvr_setup_ppp_control(cmd_buffer);
@@ -4637,7 +4428,7 @@ pvr_emit_dirty_ppp_state(struct pvr_cmd_buffer *const cmd_buffer,
    /* The hardware doesn't have an explicit mode for this so we use a
     * negative viewport to make sure all objects are culled out early.
     */
-   if (gfx_pipeline->raster_state.cull_mode == VK_CULL_MODE_FRONT_AND_BACK) {
+   if (dynamic_state->rs.cull_mode == VK_CULL_MODE_FRONT_AND_BACK) {
       /* Shift the viewport out of the guard-band culling everything. */
       const uint32_t negative_vp_val = fui(-2.0f);
 
@@ -4726,9 +4517,8 @@ void pvr_calculate_vertex_cam_size(const struct pvr_device_info *dev_info,
    }
 }
 
-static void
-pvr_emit_dirty_vdm_state(const struct pvr_cmd_buffer *const cmd_buffer,
-                         struct pvr_sub_cmd_gfx *const sub_cmd)
+static void pvr_emit_dirty_vdm_state(struct pvr_cmd_buffer *const cmd_buffer,
+                                     struct pvr_sub_cmd_gfx *const sub_cmd)
 {
    /* FIXME: Assume all state is dirty for the moment. */
    struct pvr_device_info *const dev_info =
@@ -4737,18 +4527,19 @@ pvr_emit_dirty_vdm_state(const struct pvr_cmd_buffer *const cmd_buffer,
       pvr_get_max_user_vertex_output_components(dev_info);
    struct PVRX(VDMCTRL_VDM_STATE0)
       header = { pvr_cmd_header(VDMCTRL_VDM_STATE0) };
+   struct vk_dynamic_graphics_state *const dynamic_state =
+      &cmd_buffer->vk.dynamic_graphics_state;
    const struct pvr_cmd_buffer_state *const state = &cmd_buffer->state;
-   const struct pvr_graphics_pipeline *const gfx_pipeline = state->gfx_pipeline;
+   const struct pvr_vertex_shader_state *const vertex_shader_state =
+      &state->gfx_pipeline->shader_state.vertex;
    struct pvr_csb *const csb = &sub_cmd->control_stream;
    uint32_t vs_output_size;
    uint32_t max_instances;
    uint32_t cam_size;
 
-   assert(gfx_pipeline);
-
    /* CAM Calculations and HW state take vertex size aligned to DWORDS. */
    vs_output_size =
-      DIV_ROUND_UP(gfx_pipeline->vertex_shader_state.vertex_output_size,
+      DIV_ROUND_UP(vertex_shader_state->vertex_output_size,
                    PVRX(VDMCTRL_VDM_STATE4_VS_OUTPUT_SIZE_UNIT_SIZE));
 
    assert(vs_output_size <= max_user_vertex_output_components);
@@ -4762,12 +4553,12 @@ pvr_emit_dirty_vdm_state(const struct pvr_cmd_buffer *const cmd_buffer,
    pvr_csb_emit (csb, VDMCTRL_VDM_STATE0, state0) {
       state0.cam_size = cam_size;
 
-      if (gfx_pipeline->input_asm_state.primitive_restart) {
+      if (dynamic_state->ia.primitive_restart_enable) {
          state0.cut_index_enable = true;
          state0.cut_index_present = true;
       }
 
-      switch (gfx_pipeline->input_asm_state.topology) {
+      switch (dynamic_state->ia.primitive_topology) {
       case VK_PRIMITIVE_TOPOLOGY_TRIANGLE_FAN:
          state0.flatshade_control = PVRX(VDMCTRL_FLATSHADE_CONTROL_VERTEX_1);
          break;
@@ -4835,7 +4626,7 @@ pvr_emit_dirty_vdm_state(const struct pvr_cmd_buffer *const cmd_buffer,
 
    if (header.vs_other_present) {
       const uint32_t usc_unified_store_size_in_bytes =
-         gfx_pipeline->vertex_shader_state.vertex_input_size << 2;
+         vertex_shader_state->vertex_input_size << 2;
 
       pvr_csb_emit (csb, VDMCTRL_VDM_STATE3, state3) {
          state3.vs_pds_code_base_addr =
@@ -4865,11 +4656,15 @@ pvr_emit_dirty_vdm_state(const struct pvr_cmd_buffer *const cmd_buffer,
 static VkResult pvr_validate_draw_state(struct pvr_cmd_buffer *cmd_buffer)
 {
    struct pvr_cmd_buffer_state *const state = &cmd_buffer->state;
+   struct vk_dynamic_graphics_state *const dynamic_state =
+      &cmd_buffer->vk.dynamic_graphics_state;
    const struct pvr_graphics_pipeline *const gfx_pipeline = state->gfx_pipeline;
+   const struct pvr_pipeline_stage_state *const fragment_state =
+      &gfx_pipeline->shader_state.fragment.stage_state;
+   const struct pvr_pipeline_stage_state *const vertex_state =
+      &gfx_pipeline->shader_state.vertex.stage_state;
    const struct pvr_pipeline_layout *const pipeline_layout =
       gfx_pipeline->base.layout;
-   const struct pvr_pipeline_stage_state *const fragment_state =
-      &gfx_pipeline->fragment_shader_state.stage_state;
    struct pvr_sub_cmd_gfx *sub_cmd;
    bool fstencil_writemask_zero;
    bool bstencil_writemask_zero;
@@ -4888,14 +4683,14 @@ static VkResult pvr_validate_draw_state(struct pvr_cmd_buffer *cmd_buffer)
     */
    /* Pipeline uses depth testing. */
    if (sub_cmd->depth_usage == PVR_DEPTH_STENCIL_USAGE_UNDEFINED &&
-       gfx_pipeline->depth_compare_op != VK_COMPARE_OP_ALWAYS) {
+       dynamic_state->ds.depth.compare_op != VK_COMPARE_OP_ALWAYS) {
       sub_cmd->depth_usage = PVR_DEPTH_STENCIL_USAGE_NEEDED;
    }
 
    /* Pipeline uses stencil testing. */
    if (sub_cmd->stencil_usage == PVR_DEPTH_STENCIL_USAGE_UNDEFINED &&
-       (gfx_pipeline->stencil_front.compare_op != VK_COMPARE_OP_ALWAYS ||
-        gfx_pipeline->stencil_back.compare_op != VK_COMPARE_OP_ALWAYS)) {
+       (dynamic_state->ds.stencil.front.op.compare != VK_COMPARE_OP_ALWAYS ||
+        dynamic_state->ds.stencil.back.op.compare != VK_COMPARE_OP_ALWAYS)) {
       sub_cmd->stencil_usage = PVR_DEPTH_STENCIL_USAGE_NEEDED;
    }
 
@@ -4913,16 +4708,16 @@ static VkResult pvr_validate_draw_state(struct pvr_cmd_buffer *cmd_buffer)
    sub_cmd->frag_uses_atomic_ops |= fragment_state->uses_atomic_ops;
    sub_cmd->frag_has_side_effects |= fragment_state->has_side_effects;
    sub_cmd->frag_uses_texture_rw |= fragment_state->uses_texture_rw;
-   sub_cmd->vertex_uses_texture_rw |=
-      gfx_pipeline->vertex_shader_state.stage_state.uses_texture_rw;
+   sub_cmd->vertex_uses_texture_rw |= vertex_state->uses_texture_rw;
 
    fstencil_keep =
-      (gfx_pipeline->stencil_front.fail_op == VK_STENCIL_OP_KEEP) &&
-      (gfx_pipeline->stencil_front.pass_op == VK_STENCIL_OP_KEEP);
-   bstencil_keep = (gfx_pipeline->stencil_back.fail_op == VK_STENCIL_OP_KEEP) &&
-                   (gfx_pipeline->stencil_back.pass_op == VK_STENCIL_OP_KEEP);
-   fstencil_writemask_zero = (state->dynamic.common.write_mask.front == 0);
-   bstencil_writemask_zero = (state->dynamic.common.write_mask.back == 0);
+      (dynamic_state->ds.stencil.front.op.fail == VK_STENCIL_OP_KEEP) &&
+      (dynamic_state->ds.stencil.front.op.pass == VK_STENCIL_OP_KEEP);
+   bstencil_keep =
+      (dynamic_state->ds.stencil.back.op.fail == VK_STENCIL_OP_KEEP) &&
+      (dynamic_state->ds.stencil.back.op.pass == VK_STENCIL_OP_KEEP);
+   fstencil_writemask_zero = (dynamic_state->ds.stencil.front.write_mask == 0);
+   bstencil_writemask_zero = (dynamic_state->ds.stencil.back.write_mask == 0);
 
    /* Set stencil modified flag if:
     * - Neither front nor back-facing stencil has a fail_op/pass_op of KEEP.
@@ -4934,7 +4729,7 @@ static VkResult pvr_validate_draw_state(struct pvr_cmd_buffer *cmd_buffer)
    }
 
    /* Set depth modified flag if depth write is enabled. */
-   if (!gfx_pipeline->depth_write_disable)
+   if (dynamic_state->ds.depth.write_enable)
       sub_cmd->modifies_depth = true;
 
    /* If either the data or code changes for pds vertex attribs, regenerate the
@@ -4953,7 +4748,7 @@ static VkResult pvr_validate_draw_state(struct pvr_cmd_buffer *cmd_buffer)
          prog_type = PVR_PDS_VERTEX_ATTRIB_PROGRAM_BASIC;
 
       program =
-         &gfx_pipeline->vertex_shader_state.pds_attrib_programs[prog_type];
+         &gfx_pipeline->shader_state.vertex.pds_attrib_programs[prog_type];
       state->pds_shader.info = &program->info;
       state->pds_shader.code_offset = program->program.code_offset;
 
@@ -4977,13 +4772,14 @@ static VkResult pvr_validate_draw_state(struct pvr_cmd_buffer *cmd_buffer)
       state->dirty.gfx_desc_dirty &&
       pipeline_layout->per_stage_descriptor_masks[PVR_STAGE_ALLOCATION_FRAGMENT];
 
-   state->dirty.fragment_descriptors |= state->dirty.blend_constants;
+   if (BITSET_TEST(dynamic_state->dirty, MESA_VK_DYNAMIC_CB_BLEND_CONSTANTS))
+      state->dirty.fragment_descriptors = true;
 
    if (state->dirty.fragment_descriptors) {
       result = pvr_setup_descriptor_mappings(
          cmd_buffer,
          PVR_STAGE_ALLOCATION_FRAGMENT,
-         &state->gfx_pipeline->fragment_shader_state.descriptor_state,
+         &state->gfx_pipeline->shader_state.fragment.descriptor_state,
          NULL,
          &state->pds_fragment_descriptor_data_offset);
       if (result != VK_SUCCESS) {
@@ -4998,7 +4794,7 @@ static VkResult pvr_validate_draw_state(struct pvr_cmd_buffer *cmd_buffer)
       result = pvr_setup_descriptor_mappings(
          cmd_buffer,
          PVR_STAGE_ALLOCATION_VERTEX_GEOMETRY,
-         &state->gfx_pipeline->vertex_shader_state.descriptor_state,
+         &state->gfx_pipeline->shader_state.vertex.descriptor_state,
          NULL,
          &pds_vertex_descriptor_data_offset);
       if (result != VK_SUCCESS) {
@@ -5014,21 +4810,14 @@ static VkResult pvr_validate_draw_state(struct pvr_cmd_buffer *cmd_buffer)
    pvr_emit_dirty_ppp_state(cmd_buffer, sub_cmd);
    pvr_emit_dirty_vdm_state(cmd_buffer, sub_cmd);
 
+   vk_dynamic_graphics_state_clear_dirty(dynamic_state);
    state->dirty.gfx_desc_dirty = false;
-   state->dirty.blend_constants = false;
-   state->dirty.compare_mask = false;
-   state->dirty.depth_bias = false;
    state->dirty.draw_base_instance = false;
    state->dirty.draw_variant = false;
    state->dirty.fragment_descriptors = false;
-   state->dirty.line_width = false;
    state->dirty.gfx_pipeline_binding = false;
-   state->dirty.reference = false;
-   state->dirty.scissor = false;
    state->dirty.isp_userpass = false;
    state->dirty.vertex_bindings = false;
-   state->dirty.viewport = false;
-   state->dirty.write_mask = false;
 
    return VK_SUCCESS;
 }
@@ -5081,9 +4870,13 @@ pvr_write_draw_indirect_vdm_stream(struct pvr_cmd_buffer *cmd_buffer,
    struct pvr_pds_drawindirect_program pds_prog = { 0 };
    uint32_t word0;
 
-   /* Draw indirect always has index offset and instance count. */
+   /* Draw indirect always has index offset and instance count... */
    list_hdr->index_offset_present = true;
    list_hdr->index_instance_count_present = true;
+
+   /* ...and requires a zeroed index_base_addr. */
+   list_hdr->index_base_addrmsb = PVR_DEV_ADDR_INVALID;
+   assert(!list_hdr->index_addr_present);
 
    pvr_cmd_pack(VDMCTRL_INDEX_LIST0)(&word0, list_hdr);
 
@@ -5247,8 +5040,7 @@ pvr_write_draw_indirect_vdm_stream(struct pvr_cmd_buffer *cmd_buffer,
 static void pvr_emit_vdm_index_list(struct pvr_cmd_buffer *cmd_buffer,
                                     struct pvr_sub_cmd_gfx *const sub_cmd,
                                     VkPrimitiveTopology topology,
-                                    uint32_t first_vertex,
-                                    uint32_t vertex_count,
+                                    uint32_t index_offset,
                                     uint32_t first_index,
                                     uint32_t index_count,
                                     uint32_t instance_count,
@@ -5259,7 +5051,7 @@ static void pvr_emit_vdm_index_list(struct pvr_cmd_buffer *cmd_buffer,
 {
    struct pvr_cmd_buffer_state *state = &cmd_buffer->state;
    const bool vertex_shader_has_side_effects =
-      state->gfx_pipeline->vertex_shader_state.stage_state.has_side_effects;
+      state->gfx_pipeline->shader_state.vertex.stage_state.has_side_effects;
    struct PVRX(VDMCTRL_INDEX_LIST0)
       list_hdr = { pvr_cmd_header(VDMCTRL_INDEX_LIST0) };
    pvr_dev_addr_t index_buffer_addr = PVR_DEV_ADDR_INVALID;
@@ -5278,12 +5070,10 @@ static void pvr_emit_vdm_index_list(struct pvr_cmd_buffer *cmd_buffer,
    if (instance_count > 1)
       list_hdr.index_instance_count_present = true;
 
-   if (first_vertex != 0)
+   if (index_offset)
       list_hdr.index_offset_present = true;
 
    if (state->draw_state.draw_indexed) {
-      struct pvr_buffer *buffer = state->index_buffer_binding.buffer;
-
       switch (state->index_buffer_binding.type) {
       case VK_INDEX_TYPE_UINT32:
          list_hdr.index_size = PVRX(VDMCTRL_INDEX_SIZE_B32);
@@ -5300,16 +5090,11 @@ static void pvr_emit_vdm_index_list(struct pvr_cmd_buffer *cmd_buffer,
       }
 
       index_buffer_addr = PVR_DEV_ADDR_OFFSET(
-         buffer->dev_addr,
+         state->index_buffer_binding.buffer->dev_addr,
          state->index_buffer_binding.offset + first_index * index_stride);
 
       list_hdr.index_addr_present = true;
-
-      /* For indirect draw calls, index buffer address is not embedded into VDM
-       * control stream.
-       */
-      if (!state->draw_state.draw_indirect)
-         list_hdr.index_base_addrmsb = index_buffer_addr;
+      list_hdr.index_base_addrmsb = index_buffer_addr;
    }
 
    list_hdr.degen_cull_enable =
@@ -5343,7 +5128,7 @@ static void pvr_emit_vdm_index_list(struct pvr_cmd_buffer *cmd_buffer,
 
    if (list_hdr.index_count_present) {
       pvr_csb_emit (csb, VDMCTRL_INDEX_LIST2, list2) {
-         list2.index_count = vertex_count | index_count;
+         list2.index_count = index_count;
       }
    }
 
@@ -5355,11 +5140,9 @@ static void pvr_emit_vdm_index_list(struct pvr_cmd_buffer *cmd_buffer,
 
    if (list_hdr.index_offset_present) {
       pvr_csb_emit (csb, VDMCTRL_INDEX_LIST4, list4) {
-         list4.index_offset = first_vertex;
+         list4.index_offset = index_offset;
       }
    }
-
-   /* TODO: See if we need list_words[5-9]. */
 }
 
 void pvr_CmdDraw(VkCommandBuffer commandBuffer,
@@ -5372,7 +5155,10 @@ void pvr_CmdDraw(VkCommandBuffer commandBuffer,
       .base_vertex = firstVertex,
       .base_instance = firstInstance,
    };
+
    PVR_FROM_HANDLE(pvr_cmd_buffer, cmd_buffer, commandBuffer);
+   struct vk_dynamic_graphics_state *const dynamic_state =
+      &cmd_buffer->vk.dynamic_graphics_state;
    struct pvr_cmd_buffer_state *state = &cmd_buffer->state;
    VkResult result;
 
@@ -5387,11 +5173,10 @@ void pvr_CmdDraw(VkCommandBuffer commandBuffer,
    /* Write the VDM control stream for the primitive. */
    pvr_emit_vdm_index_list(cmd_buffer,
                            &state->current_sub_cmd->gfx,
-                           state->gfx_pipeline->input_asm_state.topology,
+                           dynamic_state->ia.primitive_topology,
                            firstVertex,
+                           0U,
                            vertexCount,
-                           0U,
-                           0U,
                            instanceCount,
                            NULL,
                            0U,
@@ -5411,7 +5196,10 @@ void pvr_CmdDrawIndexed(VkCommandBuffer commandBuffer,
       .base_instance = firstInstance,
       .draw_indexed = true,
    };
+
    PVR_FROM_HANDLE(pvr_cmd_buffer, cmd_buffer, commandBuffer);
+   struct vk_dynamic_graphics_state *const dynamic_state =
+      &cmd_buffer->vk.dynamic_graphics_state;
    struct pvr_cmd_buffer_state *state = &cmd_buffer->state;
    VkResult result;
 
@@ -5426,9 +5214,8 @@ void pvr_CmdDrawIndexed(VkCommandBuffer commandBuffer,
    /* Write the VDM control stream for the primitive. */
    pvr_emit_vdm_index_list(cmd_buffer,
                            &state->current_sub_cmd->gfx,
-                           state->gfx_pipeline->input_asm_state.topology,
+                           dynamic_state->ia.primitive_topology,
                            vertexOffset,
-                           0,
                            firstIndex,
                            indexCount,
                            instanceCount,
@@ -5448,8 +5235,11 @@ void pvr_CmdDrawIndexedIndirect(VkCommandBuffer commandBuffer,
       .draw_indirect = true,
       .draw_indexed = true,
    };
+
    PVR_FROM_HANDLE(pvr_cmd_buffer, cmd_buffer, commandBuffer);
    struct pvr_cmd_buffer_state *state = &cmd_buffer->state;
+   struct vk_dynamic_graphics_state *const dynamic_state =
+      &cmd_buffer->vk.dynamic_graphics_state;
    PVR_FROM_HANDLE(pvr_buffer, buffer, _buffer);
    VkResult result;
 
@@ -5464,12 +5254,11 @@ void pvr_CmdDrawIndexedIndirect(VkCommandBuffer commandBuffer,
    /* Write the VDM control stream for the primitive. */
    pvr_emit_vdm_index_list(cmd_buffer,
                            &state->current_sub_cmd->gfx,
-                           state->gfx_pipeline->input_asm_state.topology,
-                           0,
-                           0,
-                           0,
-                           0,
-                           0,
+                           dynamic_state->ia.primitive_topology,
+                           0U,
+                           0U,
+                           0U,
+                           0U,
                            buffer,
                            offset,
                            drawCount,
@@ -5485,9 +5274,12 @@ void pvr_CmdDrawIndirect(VkCommandBuffer commandBuffer,
    const struct pvr_cmd_buffer_draw_state draw_state = {
       .draw_indirect = true,
    };
+
    PVR_FROM_HANDLE(pvr_cmd_buffer, cmd_buffer, commandBuffer);
    struct pvr_cmd_buffer_state *state = &cmd_buffer->state;
    PVR_FROM_HANDLE(pvr_buffer, buffer, _buffer);
+   struct vk_dynamic_graphics_state *const dynamic_state =
+      &cmd_buffer->vk.dynamic_graphics_state;
    VkResult result;
 
    PVR_CHECK_COMMAND_BUFFER_BUILDING_STATE(cmd_buffer);
@@ -5501,12 +5293,11 @@ void pvr_CmdDrawIndirect(VkCommandBuffer commandBuffer,
    /* Write the VDM control stream for the primitive. */
    pvr_emit_vdm_index_list(cmd_buffer,
                            &state->current_sub_cmd->gfx,
-                           state->gfx_pipeline->input_asm_state.topology,
-                           0,
-                           0,
-                           0,
-                           0,
-                           0,
+                           dynamic_state->ia.primitive_topology,
+                           0U,
+                           0U,
+                           0U,
+                           0U,
                            buffer,
                            offset,
                            drawCount,
@@ -5634,13 +5425,14 @@ static VkResult
 pvr_execute_deferred_cmd_buffer(struct pvr_cmd_buffer *cmd_buffer,
                                 const struct pvr_cmd_buffer *sec_cmd_buffer)
 {
-   struct pvr_cmd_buffer_state *state = &cmd_buffer->state;
+   struct vk_dynamic_graphics_state *const dynamic_state =
+      &cmd_buffer->vk.dynamic_graphics_state;
    const uint32_t prim_db_elems =
       util_dynarray_num_elements(&cmd_buffer->depth_bias_array,
-                                 __typeof__(state->dynamic.common.depth_bias));
+                                 struct pvr_depth_bias_state);
    const uint32_t prim_scissor_elems =
       util_dynarray_num_elements(&cmd_buffer->scissor_array,
-                                 __typeof__(cmd_buffer->scissor_words));
+                                 struct pvr_scissor_words);
    const uint32_t sec_db_size =
       util_dynarray_num_elements(&sec_cmd_buffer->depth_bias_array, char);
    const uint32_t sec_scissor_size =
@@ -5726,8 +5518,8 @@ pvr_execute_deferred_cmd_buffer(struct pvr_cmd_buffer *cmd_buffer,
           util_dynarray_begin(&sec_cmd_buffer->scissor_array),
           sec_scissor_size);
 
-   cmd_buffer->state.dirty.depth_bias = true;
-   memset(&cmd_buffer->scissor_words[0], 0, sizeof(cmd_buffer->scissor_words));
+   BITSET_SET(dynamic_state->dirty, MESA_VK_DYNAMIC_RS_DEPTH_BIAS_FACTORS);
+   cmd_buffer->scissor_words = (struct pvr_scissor_words){ 0 };
 
    return VK_SUCCESS;
 }
@@ -5774,8 +5566,7 @@ static VkResult pvr_execute_sub_cmd(struct pvr_cmd_buffer *cmd_buffer,
       break;
 
    default:
-      mesa_loge("Unsupported sub-command type %d", primary_sub_cmd->type);
-      break;
+      unreachable("Unsupported sub-command type");
    }
 
    return VK_SUCCESS;
@@ -5885,7 +5676,7 @@ void pvr_CmdExecuteCommands(VkCommandBuffer commandBuffer,
     * Can't just copy state from the secondary because the recording state of
     * the secondary command buffers would have been deleted at this point.
     */
-   pvr_reset_graphics_dirty_state(state, false);
+   pvr_reset_graphics_dirty_state(cmd_buffer, false);
 
    if (state->current_sub_cmd &&
        state->current_sub_cmd->type == PVR_SUB_CMD_TYPE_GRAPHICS) {
@@ -5980,7 +5771,7 @@ static void pvr_insert_transparent_obj(struct pvr_cmd_buffer *const cmd_buffer,
    pvr_emit_clear_words(cmd_buffer, sub_cmd);
 
    /* Reset graphics state. */
-   pvr_reset_graphics_dirty_state(&cmd_buffer->state, false);
+   pvr_reset_graphics_dirty_state(cmd_buffer, false);
 }
 
 static inline struct pvr_render_subpass *
@@ -6515,7 +6306,7 @@ VkResult pvr_EndCommandBuffer(VkCommandBuffer commandBuffer)
     *
     * CommandBuffer must be in the recording state.
     */
-   assert(cmd_buffer->status == PVR_CMD_BUFFER_STATUS_RECORDING);
+   assert(cmd_buffer->vk.state == MESA_VK_COMMAND_BUFFER_STATE_RECORDING);
 
    if (state->status != VK_SUCCESS)
       return state->status;
@@ -6524,7 +6315,5 @@ VkResult pvr_EndCommandBuffer(VkCommandBuffer commandBuffer)
    if (result != VK_SUCCESS)
       return result;
 
-   cmd_buffer->status = PVR_CMD_BUFFER_STATUS_EXECUTABLE;
-
-   return VK_SUCCESS;
+   return vk_command_buffer_end(&cmd_buffer->vk);
 }

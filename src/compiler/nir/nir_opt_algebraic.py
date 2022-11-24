@@ -368,11 +368,17 @@ optimizations.extend([
    (('~flrp', ('fmul(is_used_once)', a, b), ('fmul(is_used_once)', a, c), d), ('fmul', ('flrp', b, c, d), a)),
 
    (('~flrp', a, 0.0, c), ('fadd', ('fmul', ('fneg', a), c), a)),
-   (('ftrunc', a), ('bcsel', ('flt', a, 0.0), ('fneg', ('ffloor', ('fabs', a))), ('ffloor', ('fabs', a))), 'options->lower_ftrunc'),
+
+   (('ftrunc@16', a), ('bcsel', ('flt', a, 0.0), ('fneg', ('ffloor', ('fabs', a))), ('ffloor', ('fabs', a))), 'options->lower_ftrunc'),
+   (('ftrunc@32', a), ('bcsel', ('flt', a, 0.0), ('fneg', ('ffloor', ('fabs', a))), ('ffloor', ('fabs', a))), 'options->lower_ftrunc'),
+   (('ftrunc@64', a), ('bcsel', ('flt', a, 0.0), ('fneg', ('ffloor', ('fabs', a))), ('ffloor', ('fabs', a))), 'options->lower_ftrunc || (options->lower_doubles_options & nir_lower_dtrunc)'),
 
    (('ffloor@16', a), ('fsub', a, ('ffract', a)), 'options->lower_ffloor'),
    (('ffloor@32', a), ('fsub', a, ('ffract', a)), 'options->lower_ffloor'),
-   (('ffloor@64', a), ('fsub', a, ('ffract', a)), 'options->lower_ffloor || ((options->lower_doubles_options & nir_lower_dfloor) && !(options->lower_doubles_options & nir_lower_dfloor))'),
+   (('ffloor@64', a), ('fsub', a, ('ffract', a)), '(options->lower_ffloor || (options->lower_doubles_options & nir_lower_dfloor)) && !(options->lower_doubles_options & nir_lower_dfract)'),
+   (('fadd@16', a, ('fadd@16', b, ('fneg', ('ffract', a)))), ('fadd@16', b, ('ffloor', a)), '!options->lower_ffloor'),
+   (('fadd@32', a, ('fadd@32', b, ('fneg', ('ffract', a)))), ('fadd@32', b, ('ffloor', a)), '!options->lower_ffloor'),
+   (('fadd@64', a, ('fadd@64', b, ('fneg', ('ffract', a)))), ('fadd@64', b, ('ffloor', a)), '!options->lower_ffloor && !(options->lower_doubles_options & nir_lower_dfloor)'),
    (('fadd@16', a, ('fneg', ('ffract', a))), ('ffloor', a), '!options->lower_ffloor'),
    (('fadd@32', a, ('fneg', ('ffract', a))), ('ffloor', a), '!options->lower_ffloor'),
    (('fadd@64', a, ('fneg', ('ffract', a))), ('ffloor', a), '!options->lower_ffloor && !(options->lower_doubles_options & nir_lower_dfloor)'),
@@ -1259,6 +1265,40 @@ optimizations.extend([
    (('ior', ('ior', a, b), b), ('ior', a, b)),
    (('iand', ('ior', a, b), b), b),
    (('iand', ('iand', a, b), b), ('iand', a, b)),
+
+   (('iand@64', a, '#b(is_lower_half_zero)'),
+    ('pack_64_2x32_split', 0,
+                           ('iand', ('unpack_64_2x32_split_y', a), ('unpack_64_2x32_split_y', b)))),
+   (('iand@64', a, '#b(is_upper_half_zero)'),
+    ('pack_64_2x32_split', ('iand', ('unpack_64_2x32_split_x', a), ('unpack_64_2x32_split_x', b)),
+                           0)),
+   (('iand@64', a, '#b(is_lower_half_negative_one)'),
+    ('pack_64_2x32_split', ('unpack_64_2x32_split_x', a),
+                           ('iand', ('unpack_64_2x32_split_y', a), ('unpack_64_2x32_split_y', b)))),
+   (('iand@64', a, '#b(is_upper_half_negative_one)'),
+    ('pack_64_2x32_split', ('iand', ('unpack_64_2x32_split_x', a), ('unpack_64_2x32_split_x', b)),
+                           ('unpack_64_2x32_split_y', a))),
+
+   (('ior@64', a, '#b(is_lower_half_zero)'),
+    ('pack_64_2x32_split', ('unpack_64_2x32_split_x', a),
+                           ('ior', ('unpack_64_2x32_split_y', a), ('unpack_64_2x32_split_y', b)))),
+   (('ior@64', a, '#b(is_upper_half_zero)'),
+    ('pack_64_2x32_split', ('ior', ('unpack_64_2x32_split_x', a), ('unpack_64_2x32_split_x', b)),
+                           ('unpack_64_2x32_split_y', a))),
+   (('ior@64', a, '#b(is_lower_half_negative_one)'),
+    ('pack_64_2x32_split', -1,
+                           ('ior', ('unpack_64_2x32_split_y', a), ('unpack_64_2x32_split_y', b)))),
+   (('ior@64', a, '#b(is_upper_half_negative_one)'),
+    ('pack_64_2x32_split', ('ior', ('unpack_64_2x32_split_x', a), ('unpack_64_2x32_split_x', b)),
+                           -1)),
+
+   (('ixor@64', a, '#b(is_lower_half_zero)'),
+    ('pack_64_2x32_split', ('unpack_64_2x32_split_x', a),
+                           ('ixor', ('unpack_64_2x32_split_y', a), ('unpack_64_2x32_split_y', b)))),
+   (('ixor@64', a, '#b(is_upper_half_zero)'),
+    ('pack_64_2x32_split', ('ixor', ('unpack_64_2x32_split_x', a), ('unpack_64_2x32_split_x', b)),
+                           ('unpack_64_2x32_split_y', a))),
+
    # DeMorgan's Laws
    (('iand', ('inot', a), ('inot', b)), ('inot', ('ior',  a, b))),
    (('ior',  ('inot', a), ('inot', b)), ('inot', ('iand', a, b))),
@@ -2072,6 +2112,32 @@ optimizations.extend([
    (('imul24', a, '#b@32(is_neg_power_of_two)'), ('ineg', ('ishl', a, ('find_lsb', ('iabs', b)))), '!options->lower_bitops'),
    (('imul24', a, 0), (0)),
 ])
+
+for bit_size in [8, 16, 32, 64]:
+   cond = '!options->lower_uadd_sat'
+   if bit_size == 64:
+      cond += ' && !(options->lower_int64_options & nir_lower_iadd64)'
+   add = 'iadd@' + str(bit_size)
+
+   optimizations += [
+      (('bcsel', ('ult', ('iadd', a, b), a), -1, (add, a, b)), ('uadd_sat', a, b), cond),
+      (('bcsel', ('uge', ('iadd', a, b), a), (add, a, b), -1), ('uadd_sat', a, b), cond),
+      (('bcsel', ('ieq', ('uadd_carry', a, b), 0), (add, a, b), -1), ('uadd_sat', a, b), cond),
+      (('bcsel', ('ine', ('uadd_carry', a, b), 0), -1, (add, a, b)), ('uadd_sat', a, b), cond),
+   ]
+
+for bit_size in [8, 16, 32, 64]:
+   cond = '!options->lower_usub_sat'
+   if bit_size == 64:
+      cond += ' && !(options->lower_int64_options & nir_lower_usub_sat64)'
+   add = 'iadd@' + str(bit_size)
+
+   optimizations += [
+      (('bcsel', ('ult', a, b), 0, (add, a, ('ineg', b))), ('usub_sat', a, b), cond),
+      (('bcsel', ('uge', a, b), (add, a, ('ineg', b)), 0), ('usub_sat', a, b), cond),
+      (('bcsel', ('ieq', ('usub_borrow', a, b), 0), (add, a, ('ineg', b)), 0), ('usub_sat', a, b), cond),
+      (('bcsel', ('ine', ('usub_borrow', a, b), 0), 0, (add, a, ('ineg', b))), ('usub_sat', a, b), cond),
+   ]
 
 # bit_size dependent lowerings
 for bit_size in [8, 16, 32, 64]:

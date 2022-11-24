@@ -423,7 +423,7 @@ u_pipe_screen_get_param_defaults(struct pipe_screen *pscreen,
       return 0;
 
    case PIPE_CAP_DMABUF:
-#if defined(PIPE_OS_LINUX) || defined(PIPE_OS_BSD)
+#if DETECT_OS_LINUX || DETECT_OS_BSD
       return 1;
 #else
       return 0;

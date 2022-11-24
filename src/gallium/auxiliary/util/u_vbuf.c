@@ -92,7 +92,7 @@
 #include "util/u_helpers.h"
 #include "util/u_inlines.h"
 #include "util/u_memory.h"
-#include "indices/u_primconvert.h"
+#include "util/indices/u_primconvert.h"
 #include "util/u_prim_restart.h"
 #include "util/u_screen.h"
 #include "util/u_upload_mgr.h"

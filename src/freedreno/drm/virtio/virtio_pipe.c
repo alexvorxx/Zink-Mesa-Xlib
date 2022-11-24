@@ -220,6 +220,8 @@ init_shmem(struct fd_device *dev)
       uint32_t offset = virtio_dev->shmem->rsp_mem_offset;
       virtio_dev->rsp_mem_len = fd_bo_size(virtio_dev->shmem_bo) - offset;
       virtio_dev->rsp_mem = &((uint8_t *)virtio_dev->shmem)[offset];
+
+      virtio_bo_setup_prealloc(dev);
    }
 
    simple_mtx_unlock(&virtio_dev->rsp_lock);

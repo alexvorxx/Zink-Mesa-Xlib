@@ -39,10 +39,6 @@
  * (but still builds a bos table)
  */
 
-#define INIT_SIZE 0x1000
-
-#define SUBALLOC_SIZE (32 * 1024)
-
 /* In the pipe->flush() path, we don't have a util_queue_fence we can wait on,
  * instead use a condition-variable.  Note that pipe->flush() is not expected
  * to be a common/hot path.
@@ -103,7 +99,7 @@ fd_submit_suballoc_ring_bo(struct fd_submit *submit,
       suballoc_offset =
          fd_ringbuffer_size(fd_submit->suballoc_ring) + suballoc_ring->offset;
 
-      suballoc_offset = align(suballoc_offset, 0x10);
+      suballoc_offset = align(suballoc_offset, SUBALLOC_ALIGNMENT);
 
       if ((size + suballoc_offset) > suballoc_bo->size) {
          suballoc_bo = NULL;
@@ -147,7 +143,7 @@ fd_submit_sp_new_ringbuffer(struct fd_submit *submit, uint32_t size,
       fd_submit_suballoc_ring_bo(submit, fd_ring, size);
    } else {
       if (flags & FD_RINGBUFFER_GROWABLE)
-         size = INIT_SIZE;
+         size = SUBALLOC_SIZE;
 
       fd_ring->offset = 0;
       fd_ring->ring_bo = fd_bo_new_ring(submit->pipe->dev, size);
@@ -396,8 +392,7 @@ fd_submit_sp_destroy(struct fd_submit *submit)
    // an indication that we are leaking bo's
    slab_destroy_child(&fd_submit->ring_pool);
 
-   for (unsigned i = 0; i < fd_submit->nr_bos; i++)
-      fd_bo_del(fd_submit->bos[i]);
+   fd_bo_del_array(fd_submit->bos, fd_submit->nr_bos);
 
    free(fd_submit->bos);
    free(fd_submit);
@@ -552,15 +547,13 @@ fd_ringbuffer_sp_destroy(struct fd_ringbuffer *ring)
    fd_bo_del(fd_ring->ring_bo);
 
    if (ring->flags & _FD_RINGBUFFER_OBJECT) {
-      for (unsigned i = 0; i < fd_ring->u.nr_reloc_bos; i++) {
-         fd_bo_del(fd_ring->u.reloc_bos[i]);
-      }
+      fd_bo_del_array(fd_ring->u.reloc_bos, fd_ring->u.nr_reloc_bos);
       free(fd_ring->u.reloc_bos);
-
       free(fd_ring);
    } else {
       struct fd_submit *submit = fd_ring->u.submit;
 
+      // TODO re-arrange the data structures so we can use fd_bo_del_array()
       for (unsigned i = 0; i < fd_ring->u.nr_cmds; i++) {
          fd_bo_del(fd_ring->u.cmds[i].ring_bo);
       }
@@ -661,8 +654,7 @@ fd_ringbuffer_sp_new_object(struct fd_pipe *pipe, uint32_t size)
     */
    simple_mtx_lock(&dev->suballoc_lock);
 
-   /* Maximum known alignment requirement is a6xx's TEX_CONST at 16 dwords */
-   fd_ring->offset = align(dev->suballoc_offset, 64);
+   fd_ring->offset = align(dev->suballoc_offset, SUBALLOC_ALIGNMENT);
    if (!dev->suballoc_bo ||
        fd_ring->offset + size > fd_bo_size(dev->suballoc_bo)) {
       if (dev->suballoc_bo)

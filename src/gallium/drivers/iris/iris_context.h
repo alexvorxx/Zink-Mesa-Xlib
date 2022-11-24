@@ -627,6 +627,7 @@ struct iris_context {
    struct blorp_context blorp;
 
    struct iris_batch batches[IRIS_BATCH_COUNT];
+   bool has_engines_context;
 
    struct u_upload_mgr *query_buffer_uploader;
 
@@ -826,7 +827,7 @@ struct iris_context {
       struct iris_state_ref null_fb;
 
       struct u_upload_mgr *surface_uploader;
-      struct u_upload_mgr *bindless_uploader;
+      struct u_upload_mgr *scratch_surface_uploader;
       struct u_upload_mgr *dynamic_uploader;
 
       struct iris_binder binder;

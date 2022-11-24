@@ -440,10 +440,12 @@ anv_perf_write_pass_results(struct intel_perf_config *perf,
                             const struct intel_perf_query_result *accumulated_results,
                             union VkPerformanceCounterResultKHR *results)
 {
+   const struct intel_perf_query_info *query = pool->pass_query[pass];
+
    for (uint32_t c = 0; c < pool->n_counters; c++) {
       const struct intel_perf_counter_pass *counter_pass = &pool->counter_pass[c];
 
-      if (counter_pass->pass != pass)
+      if (counter_pass->query != query)
          continue;
 
       switch (pool->pass_query[pass]->kind) {

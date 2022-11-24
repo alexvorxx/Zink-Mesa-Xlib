@@ -233,6 +233,12 @@ radv_CreateAccelerationStructureKHR(VkDevice _device,
    RADV_FROM_HANDLE(radv_device, device, _device);
    RADV_FROM_HANDLE(radv_buffer, buffer, pCreateInfo->buffer);
    struct radv_acceleration_structure *accel;
+   uint64_t mem_offset, va;
+
+   mem_offset = buffer->offset + pCreateInfo->offset;
+   va = radv_buffer_get_va(buffer->bo) + mem_offset;
+   if (pCreateInfo->deviceAddress && va != pCreateInfo->deviceAddress)
+      return vk_error(device, VK_ERROR_INVALID_OPAQUE_CAPTURE_ADDRESS_KHR);
 
    accel = vk_alloc2(&device->vk.alloc, pAllocator, sizeof(*accel), 8,
                      VK_SYSTEM_ALLOCATION_SCOPE_OBJECT);
@@ -241,10 +247,10 @@ radv_CreateAccelerationStructureKHR(VkDevice _device,
 
    vk_object_base_init(&device->vk, &accel->base, VK_OBJECT_TYPE_ACCELERATION_STRUCTURE_KHR);
 
-   accel->mem_offset = buffer->offset + pCreateInfo->offset;
+   accel->mem_offset = mem_offset;
    accel->size = pCreateInfo->size;
    accel->bo = buffer->bo;
-   accel->va = radv_buffer_get_va(accel->bo) + accel->mem_offset;
+   accel->va = va;
    accel->type = pCreateInfo->type;
 
    *pAccelerationStructure = radv_acceleration_structure_to_handle(accel);

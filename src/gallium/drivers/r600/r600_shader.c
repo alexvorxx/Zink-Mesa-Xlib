@@ -195,6 +195,8 @@ int r600_pipe_shader_create(struct pipe_context *ctx,
 			goto error;
 		}
 	} else {
+		glsl_type_singleton_init_or_ref();
+
 		if (sel->ir_type == PIPE_SHADER_IR_TGSI) {
 			if (sel->nir)
 				ralloc_free(sel->nir);
@@ -207,15 +209,17 @@ int r600_pipe_shader_create(struct pipe_context *ctx,
                         /* Lower int64 ops because we have some r600 build-in shaders that use it */
 			if (nir_options->lower_int64_options) {
 				NIR_PASS_V(sel->nir, nir_lower_regs_to_ssa);
-				NIR_PASS_V(sel->nir, nir_lower_alu_to_scalar, NULL, NULL);
+				NIR_PASS_V(sel->nir, nir_lower_alu_to_scalar, r600_lower_to_scalar_instr_filter, NULL);
 				NIR_PASS_V(sel->nir, nir_lower_int64);
-				NIR_PASS_V(sel->nir, nir_opt_vectorize, NULL, NULL);
 			}
 			NIR_PASS_V(sel->nir, nir_lower_flrp, ~0, false);
 		}
 		nir_tgsi_scan_shader(sel->nir, &sel->info, true);
 
 		r = r600_shader_from_nir(rctx, shader, &key);
+
+		glsl_type_singleton_decref();
+
 		if (r) {
 			fprintf(stderr, "--Failed shader--------------------------------------------------\n");
 			

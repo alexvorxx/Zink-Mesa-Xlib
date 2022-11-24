@@ -6892,8 +6892,8 @@
     <field name="General State Base Address" start="44" end="95" type="address" />
     <field name="Stateless Data Port Access MOCS" start="112" end="118" type="uint" nonzero="true" />
     <field name="L1 Cache Control" start="119" end="121" type="uint" prefix="L1CC">
-      <value name="WBP" value="0" />
-      <value name="UC" value="1" />
+      <value name="WBP" value="0" dont_use="1" />
+      <value name="UC" value="1" dont_use="1" />
       <value name="WB" value="2" />
       <value name="WT" value="3" />
       <value name="WS" value="4" />

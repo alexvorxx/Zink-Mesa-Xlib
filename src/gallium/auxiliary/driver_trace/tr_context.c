@@ -30,7 +30,7 @@
 #include "util/u_memory.h"
 #include "util/u_framebuffer.h"
 
-#include "pipe/p_format.h"
+#include "util/format/u_formats.h"
 #include "pipe/p_screen.h"
 
 #include "tr_dump.h"

@@ -35,7 +35,7 @@
 
 #include "context.h"
 #include "debug_output.h"
-#include "detect_os.h"
+#include "util/detect_os.h"
 #include "api_exec_decl.h"
 
 #if DETECT_OS_ANDROID

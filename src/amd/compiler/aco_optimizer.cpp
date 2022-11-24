@@ -609,15 +609,15 @@ can_apply_sgprs(opt_ctx& ctx, aco_ptr<Instruction>& instr)
 }
 
 void
-to_VOP3(opt_ctx& ctx, aco_ptr<Instruction>& instr)
+to_VOP3(opt_ctx& ctx, aco_ptr<Instruction>& instr, unsigned add_operands = 0)
 {
    if (instr->isVOP3())
       return;
 
    aco_ptr<Instruction> tmp = std::move(instr);
    Format format = asVOP3(tmp->format);
-   instr.reset(create_instruction<VOP3_instruction>(tmp->opcode, format, tmp->operands.size(),
-                                                    tmp->definitions.size()));
+   instr.reset(create_instruction<VOP3_instruction>(
+      tmp->opcode, format, tmp->operands.size() + add_operands, tmp->definitions.size()));
    std::copy(tmp->operands.cbegin(), tmp->operands.cend(), instr->operands.begin());
    for (unsigned i = 0; i < instr->definitions.size(); i++) {
       instr->definitions[i] = tmp->definitions[i];
@@ -673,7 +673,8 @@ alu_can_accept_constant(aco_opcode opcode, unsigned operand)
    case aco_opcode::v_readfirstlane_b32:
    case aco_opcode::p_extract:
    case aco_opcode::p_insert: return operand != 0;
-   case aco_opcode::p_interp_gfx11: return false;
+   case aco_opcode::p_interp_gfx11:
+   case aco_opcode::p_dual_src_export_gfx11: return false;
    default: return true;
    }
 }
@@ -3200,13 +3201,22 @@ apply_insert(opt_ctx& ctx, aco_ptr<Instruction>& instr)
    SubdwordSel sel = parse_insert(def_info.instr);
    assert(sel);
 
-   if (!can_use_SDWA(ctx.program->gfx_level, instr, true))
-      return false;
+   if (instr->opcode == aco_opcode::v_cvt_u32_f32 && instr->format == Format::VOP1 &&
+       !sel.sign_extend() && sel.size() == 1) {
+      to_VOP3(ctx, instr, 2);
+      instr->format = Format::VOP3;
+      instr->opcode = aco_opcode::v_cvt_pk_u8_f32;
+      instr->operands[1] = Operand::c32(sel.offset());
+      instr->operands[2] = Operand::zero();
+   } else {
+      if (!can_use_SDWA(ctx.program->gfx_level, instr, true))
+         return false;
 
-   to_SDWA(ctx, instr);
-   if (instr->sdwa().dst_sel.size() != 4)
-      return false;
-   static_cast<SDWA_instruction*>(instr.get())->dst_sel = sel;
+      to_SDWA(ctx, instr);
+      if (instr->sdwa().dst_sel.size() != 4)
+         return false;
+      static_cast<SDWA_instruction*>(instr.get())->dst_sel = sel;
+   }
 
    instr->definitions[0].swapTemp(def_info.instr->definitions[0]);
    ctx.info[instr->definitions[0].tempId()].label = 0;
@@ -3773,7 +3783,7 @@ combine_instruction(opt_ctx& ctx, aco_ptr<Instruction>& instr)
       if (can_apply_sgprs(ctx, instr))
          apply_sgprs(ctx, instr);
       combine_mad_mix(ctx, instr);
-      while (apply_omod_clamp(ctx, instr) | combine_output_conversion(ctx, instr))
+      while (apply_omod_clamp(ctx, instr) || combine_output_conversion(ctx, instr))
          ;
       apply_insert(ctx, instr);
    }

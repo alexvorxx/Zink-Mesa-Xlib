@@ -90,6 +90,7 @@ static const struct vk_instance_extension_table tu_instance_extensions_supported
    .KHR_get_physical_device_properties2 = true,
    .KHR_surface                         = TU_HAS_SURFACE,
    .KHR_get_surface_capabilities2       = TU_HAS_SURFACE,
+   .EXT_swapchain_colorspace            = TU_HAS_SURFACE,
    .EXT_debug_report                    = true,
    .EXT_debug_utils                     = true,
 #ifdef VK_USE_PLATFORM_WAYLAND_KHR
@@ -170,6 +171,17 @@ get_device_extensions(const struct tu_physical_device *device,
       .KHR_shader_non_semantic_info = true,
       .KHR_synchronization2 = true,
       .KHR_dynamic_rendering = true,
+      /* Hide these behind dri configs for now since we cannot implement it reliably on
+       * all surfaces yet. There is no surface capability query for present wait/id,
+       * but the feature is useful enough to hide behind an opt-in mechanism for now.
+       * If the instance only enables surface extensions that unconditionally support present wait,
+       * we can also expose the extension that way. */
+      .KHR_present_id =
+         driQueryOptionb(&device->instance->dri_options, "vk_khr_present_wait") ||
+         wsi_common_vk_instance_supports_present_wait(&device->instance->vk),
+      .KHR_present_wait =
+         driQueryOptionb(&device->instance->dri_options, "vk_khr_present_wait") ||
+         wsi_common_vk_instance_supports_present_wait(&device->instance->vk),
 #ifndef TU_USE_KGSL
       .KHR_timeline_semaphore = true,
 #endif
@@ -241,6 +253,7 @@ get_device_extensions(const struct tu_physical_device *device,
       .EXT_mutable_descriptor_type = true,
       .KHR_pipeline_library = true,
       .EXT_graphics_pipeline_library = true,
+      .EXT_post_depth_coverage = true,
    };
 }
 
@@ -410,6 +423,7 @@ tu_get_debug_option_name(int id)
 static const driOptionDescription tu_dri_options[] = {
    DRI_CONF_SECTION_PERFORMANCE
       DRI_CONF_VK_X11_OVERRIDE_MIN_IMAGE_COUNT(0)
+      DRI_CONF_VK_KHR_PRESENT_WAIT(false)
       DRI_CONF_VK_X11_STRICT_IMAGE_COUNT(false)
       DRI_CONF_VK_X11_ENSURE_MIN_IMAGE_COUNT(false)
       DRI_CONF_VK_XWAYLAND_WAIT_READY(true)
@@ -952,6 +966,18 @@ tu_GetPhysicalDeviceFeatures2(VkPhysicalDevice physicalDevice,
          features->graphicsPipelineLibrary = true;
          break;
       }
+      case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PRESENT_ID_FEATURES_KHR: {
+         VkPhysicalDevicePresentIdFeaturesKHR *features =
+            (VkPhysicalDevicePresentIdFeaturesKHR *) ext;
+         features->presentId = pdevice->vk.supported_extensions.KHR_present_id;
+         break;
+      }
+      case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PRESENT_WAIT_FEATURES_KHR: {
+         VkPhysicalDevicePresentWaitFeaturesKHR *features =
+            (VkPhysicalDevicePresentWaitFeaturesKHR *) ext;
+         features->presentWait = pdevice->vk.supported_extensions.KHR_present_wait;
+         break;
+      }
 
       default:
          break;
@@ -1096,19 +1122,12 @@ tu_get_physical_device_properties_1_3(struct tu_physical_device *pdevice,
    p->maxComputeWorkgroupSubgroups = 16; /* max_waves */
    p->requiredSubgroupSizeStages = VK_SHADER_STAGE_ALL;
 
-   /* Inline uniform buffers are just normal UBOs */
-   p->maxInlineUniformBlockSize = MAX_UNIFORM_BUFFER_RANGE;
-
-   /* Halve the normal limit on the number of descriptors, see below. */
-   p->maxPerStageDescriptorInlineUniformBlocks = max_descriptor_set_size / 2;
-   p->maxPerStageDescriptorUpdateAfterBindInlineUniformBlocks = max_descriptor_set_size / 2;
-   p->maxDescriptorSetInlineUniformBlocks = max_descriptor_set_size / 2;
-   p->maxDescriptorSetUpdateAfterBindInlineUniformBlocks = max_descriptor_set_size / 2;
-   /* Because we halve the normal limit on the number of descriptors, in the
-    * worst case each descriptor takes up half the space, leaving the rest for
-    * the actual data.
-    */
-   p->maxInlineUniformTotalSize = MAX_SET_SIZE / 2;
+   p->maxInlineUniformBlockSize = MAX_INLINE_UBO_RANGE;
+   p->maxPerStageDescriptorInlineUniformBlocks = MAX_INLINE_UBOS;
+   p->maxPerStageDescriptorUpdateAfterBindInlineUniformBlocks = MAX_INLINE_UBOS;
+   p->maxDescriptorSetInlineUniformBlocks = MAX_INLINE_UBOS;
+   p->maxDescriptorSetUpdateAfterBindInlineUniformBlocks = MAX_INLINE_UBOS;
+   p->maxInlineUniformTotalSize = MAX_INLINE_UBOS * MAX_INLINE_UBO_RANGE;
 
    p->integerDotProduct8BitUnsignedAccelerated = false;
    p->integerDotProduct8BitSignedAccelerated = false;
@@ -1668,6 +1687,12 @@ tu_device_ticks_to_ns(struct tu_device *dev, uint64_t ts)
     * TODO we should probably query this value from kernel..
     */
    return ts * (1000000000 / 19200000);
+}
+
+struct u_trace_context *
+tu_device_get_u_trace(struct tu_device *device)
+{
+   return &device->trace_context;
 }
 
 static void*

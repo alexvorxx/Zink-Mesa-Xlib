@@ -2564,7 +2564,7 @@ lp_build_sample_common(struct lp_build_sample_context *bld,
    struct lp_derivatives cube_derivs;
 
    /*
-   printf("%s mip %d  min %d  mag %d\n", __FUNCTION__,
+   printf("%s mip %d  min %d  mag %d\n", __func__,
           mip_filter, min_filter, mag_filter);
    */
 
@@ -3769,7 +3769,7 @@ lp_build_sample_soa_code(struct gallivm_state *gallivm,
       if ((gallivm_debug & GALLIVM_DEBUG_PERF) &&
           !use_aos && util_format_fits_8unorm(bld.format_desc)) {
          debug_printf("%s: using floating point linear filtering for %s\n",
-                      __FUNCTION__, bld.format_desc->short_name);
+                      __func__, bld.format_desc->short_name);
          debug_printf("  min_img %d  mag_img %d  mip %d  target %d  seamless %d"
                       "  wraps %d  wrapt %d  wrapr %d\n",
                       derived_sampler_state.min_img_filter,

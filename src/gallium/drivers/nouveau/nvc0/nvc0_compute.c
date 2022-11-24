@@ -30,30 +30,7 @@ int
 nvc0_screen_compute_setup(struct nvc0_screen *screen,
                           struct nouveau_pushbuf *push)
 {
-   struct nouveau_object *chan = screen->base.channel;
-   struct nouveau_device *dev = screen->base.device;
-   uint32_t obj_class;
-   int ret;
    int i;
-
-   switch (dev->chipset & ~0xf) {
-   case 0xc0:
-   case 0xd0:
-      /* In theory, GF110+ should also support NVC8_COMPUTE_CLASS but,
-       * in practice, a ILLEGAL_CLASS dmesg fail appears when using it. */
-      obj_class = NVC0_COMPUTE_CLASS;
-      break;
-   default:
-      NOUVEAU_ERR("unsupported chipset: NV%02x\n", dev->chipset);
-      return -1;
-   }
-
-   ret = nouveau_object_new(chan, 0xbeef90c0, obj_class, NULL, 0,
-                            &screen->compute);
-   if (ret) {
-      NOUVEAU_ERR("Failed to allocate compute object: %d\n", ret);
-      return ret;
-   }
 
    BEGIN_NVC0(push, SUBC_CP(NV01_SUBCHAN_OBJECT), 1);
    PUSH_DATA (push, screen->compute->oclass);

@@ -335,7 +335,7 @@ lp_build_intrinsic_binary_anylength(struct gallivm_state *gallivm,
           * so crash and burn.
           */
          debug_printf("%s: should handle arbitrary vector size\n",
-                      __FUNCTION__);
+                      __func__);
          assert(0);
          return NULL;
       }

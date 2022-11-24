@@ -30,8 +30,9 @@
 
 namespace r600 {
 
-ComputeShader::ComputeShader(UNUSED const r600_shader_key& key):
-    Shader("CS")
+ComputeShader::ComputeShader(UNUSED const r600_shader_key& key, int num_samplers):
+    Shader("CS", 0),
+    m_image_size_const_offset(num_samplers)
 {
 }
 
@@ -51,10 +52,7 @@ ComputeShader::do_allocate_reserved_registers()
 
    for (int i = 0; i < 3; ++i) {
       m_local_invocation_id[i] = vf.allocate_pinned_register(thread_id_sel, i);
-      m_local_invocation_id[i]->pin_live_range(true);
-
       m_workgroup_id[i] = vf.allocate_pinned_register(wg_id_sel, i);
-      m_workgroup_id[i]->pin_live_range(true);
    }
    return 2;
 }

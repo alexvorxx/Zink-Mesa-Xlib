@@ -1344,6 +1344,9 @@ void XMesaSwapBuffers( XMesaBuffer b )
    }
 
    xmesa_swap_st_framebuffer(b->stfb);
+
+   /* TODO: remove this if the framebuffer state doesn't change. */
+   xmctx->st->invalidate_state(xmctx->st, ST_INVALIDATE_FB_STATE);
 }
 
 

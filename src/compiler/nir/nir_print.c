@@ -1134,6 +1134,34 @@ print_intrinsic_instr(nir_intrinsic_instr *instr, print_state *state)
          break;
       }
 
+      case NIR_INTRINSIC_RAY_QUERY_VALUE: {
+         fprintf(fp, "ray_query_value=");
+         switch (nir_intrinsic_ray_query_value(instr)) {
+#define VAL(_name) case nir_ray_query_value_##_name: fprintf(fp, #_name); break
+         VAL(intersection_type);
+         VAL(intersection_t);
+         VAL(intersection_instance_custom_index);
+         VAL(intersection_instance_id);
+         VAL(intersection_instance_sbt_index);
+         VAL(intersection_geometry_index);
+         VAL(intersection_primitive_index);
+         VAL(intersection_barycentrics);
+         VAL(intersection_front_face);
+         VAL(intersection_object_ray_direction);
+         VAL(intersection_object_ray_origin);
+         VAL(intersection_object_to_world);
+         VAL(intersection_world_to_object);
+         VAL(intersection_candidate_aabb_opaque);
+         VAL(tmin);
+         VAL(flags);
+         VAL(world_ray_direction);
+         VAL(world_ray_origin);
+#undef VAL
+         default: fprintf(fp, "unknown"); break;
+         }
+         break;
+      }
+
       default: {
          unsigned off = info->index_map[idx] - 1;
          fprintf(fp, "%s=%d", nir_intrinsic_index_names[idx], instr->const_index[off]);

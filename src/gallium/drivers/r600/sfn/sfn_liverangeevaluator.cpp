@@ -118,7 +118,7 @@ LiveRangeInstrVisitor::finalize()
 
       auto& live_ranges = m_live_range_map.component(i);
       for (const auto& r : live_ranges) {
-         if (r.m_register->live_end_pinned())
+         if (r.m_register->has_flag(Register::pin_end))
             record_read(r.m_register, LiveRangeEntry::use_unspecified);
       }
 
@@ -154,7 +154,7 @@ LiveRangeInstrVisitor::LiveRangeInstrVisitor(LiveRangeMap& live_range_map):
    for (int i = 0; i < 4; ++i) {
       const auto& comp = live_range_map.component(i);
       for (const auto& r : comp) {
-         if (r.m_register->live_start_pinned())
+         if (r.m_register->has_flag(Register::pin_start))
             record_write(r.m_register);
       }
    }

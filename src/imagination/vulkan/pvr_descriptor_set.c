@@ -893,6 +893,9 @@ VkResult pvr_CreatePipelineLayout(VkDevice _device,
             layout->descriptor_offsets[set_num][stage][type] =
                descriptor_counts[type];
 
+            if (!layout->set_layout[set_num]->descriptor_count)
+               continue;
+
             descriptor_count = layout->set_layout[set_num]
                                   ->per_stage_descriptor_count[stage][type];
 

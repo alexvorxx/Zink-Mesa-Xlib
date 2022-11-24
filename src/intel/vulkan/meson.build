@@ -49,6 +49,7 @@ float64_spv_h = custom_target(
   output : 'float64_spv.h',
   command : [
     prog_python, '@INPUT@', '@OUTPUT@',
+    prog_glslang,
     '--create-entry', 'main',
     '--vn', 'float64_spv_source',
     '--glsl-version', '450',

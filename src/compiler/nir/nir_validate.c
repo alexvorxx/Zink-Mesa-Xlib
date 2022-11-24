@@ -28,6 +28,7 @@
 #include "nir.h"
 #include "nir_xfb_info.h"
 #include "c11/threads.h"
+#include "util/simple_mtx.h"
 #include <assert.h>
 
 /*
@@ -1741,7 +1742,7 @@ destroy_validate_state(validate_state *state)
    ralloc_free(state->mem_ctx);
 }
 
-mtx_t fail_dump_mutex = _MTX_INITIALIZER_NP;
+simple_mtx_t fail_dump_mutex = SIMPLE_MTX_INITIALIZER;
 
 static void
 dump_errors(validate_state *state, const char *when)
@@ -1751,7 +1752,7 @@ dump_errors(validate_state *state, const char *when)
    /* Lock around dumping so that we get clean dumps in a multi-threaded
     * scenario
     */
-   mtx_lock(&fail_dump_mutex);
+   simple_mtx_lock(&fail_dump_mutex);
 
    if (when) {
       fprintf(stderr, "NIR validation failed %s\n", when);
@@ -1771,7 +1772,7 @@ dump_errors(validate_state *state, const char *when)
       }
    }
 
-   mtx_unlock(&fail_dump_mutex);
+   simple_mtx_unlock(&fail_dump_mutex);
 
    abort();
 }

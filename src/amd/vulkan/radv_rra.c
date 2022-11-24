@@ -67,6 +67,14 @@ struct rra_file_chunk_description {
 static_assert(sizeof(struct rra_file_chunk_description) == 64,
               "rra_file_chunk_description does not match RRA spec");
 
+static uint64_t
+node_to_addr(uint64_t node)
+{
+   node &= ~7ull;
+   node <<= 19;
+   return ((int64_t)node) >> 16;
+}
+
 static void
 rra_dump_header(FILE *output, uint64_t chunk_descriptions_offset, uint64_t chunk_descriptions_size)
 {
@@ -479,7 +487,7 @@ rra_validate_node(struct hash_table_u64 *accel_struct_vas, uint8_t *data, void *
       uint32_t type = children[i] & 7;
       uint32_t offset = (children[i] & (~7u)) << 3;
 
-      if (is_bottom_level == (type == radv_bvh_node_instance))
+      if (!is_internal_node(type) && is_bottom_level == (type == radv_bvh_node_instance))
          rra_validation_fail(&ctx,
                              is_bottom_level ? "%s node in BLAS (child index %u)"
                                              : "%s node in TLAS (child index %u)",
@@ -499,7 +507,7 @@ rra_validate_node(struct hash_table_u64 *accel_struct_vas, uint8_t *data, void *
                   offset);
 
          struct radv_bvh_instance_node *src = (struct radv_bvh_instance_node *)(data + offset);
-         uint64_t blas_va = src->bvh_ptr - src->bvh_offset;
+         uint64_t blas_va = node_to_addr(src->bvh_ptr) - src->bvh_offset;
          if (!_mesa_hash_table_u64_search(accel_struct_vas, blas_va))
             rra_validation_fail(&instance_ctx,
                                 "Invalid instance node pointer 0x%llx (offset: 0x%x)",
@@ -560,7 +568,7 @@ static void
 rra_transcode_instance_node(struct rra_transcoding_context *ctx,
                             const struct radv_bvh_instance_node *src)
 {
-   uint64_t blas_va = src->bvh_ptr - src->bvh_offset;
+   uint64_t blas_va = node_to_addr(src->bvh_ptr) - src->bvh_offset;
 
    struct rra_instance_node *dst = (struct rra_instance_node *)(ctx->dst + ctx->dst_leaf_offset);
    ctx->dst_leaf_offset += sizeof(struct rra_instance_node);
@@ -1019,7 +1027,7 @@ rra_copy_acceleration_structures(VkQueue vk_queue, struct rra_accel_struct_copy 
    radv_BeginCommandBuffer(dst->cmd_buffer, &begin_info);
 
    uint64_t dst_offset = 0;
-   for (uint32_t i = 0; i < count;) {
+   for (uint32_t i = 0; i < count; i++) {
       struct hash_entry *entry = entries[i];
 
       VkResult event_result = radv_GetEventStatus(vk_device, radv_event_to_handle(entry->data));
@@ -1048,13 +1056,12 @@ rra_copy_acceleration_structures(VkQueue vk_queue, struct rra_accel_struct_copy 
 
       radv_buffer_finish(&tmp_buffer);
 
-      dst->copied_structures[i].handle = structure;
-      dst->copied_structures[i].data = dst->map_data + dst_offset;
+      dst->copied_structures[*copied_structure_count].handle = structure;
+      dst->copied_structures[*copied_structure_count].data = dst->map_data + dst_offset;
 
       dst_offset += accel_struct->size;
 
       ++(*copied_structure_count);
-      ++i;
    }
    result = radv_EndCommandBuffer(dst->cmd_buffer);
    if (result != VK_SUCCESS)

@@ -336,8 +336,9 @@ radv_image_use_dcc_predication(const struct radv_device *device, const struct ra
 static inline bool
 radv_use_fmask_for_image(const struct radv_device *device, const struct radv_image *image)
 {
-   return image->info.samples > 1 && ((image->vk.usage & VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT) ||
-                                      (device->instance->debug_flags & RADV_DEBUG_FORCE_COMPRESS));
+   return device->physical_device->use_fmask && image->info.samples > 1 &&
+          ((image->vk.usage & VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT) ||
+           (device->instance->debug_flags & RADV_DEBUG_FORCE_COMPRESS));
 }
 
 static inline bool
@@ -713,6 +714,8 @@ radv_make_texel_buffer_descriptor(struct radv_device *device, uint64_t va, VkFor
    unsigned num_format, data_format;
    int first_non_void;
    enum pipe_swizzle swizzle[4];
+   unsigned rsrc_word3;
+
    desc = vk_format_description(vk_format);
    first_non_void = vk_format_get_first_non_void_channel(vk_format);
    stride = desc->block.bits / 8;
@@ -720,18 +723,15 @@ radv_make_texel_buffer_descriptor(struct radv_device *device, uint64_t va, VkFor
    radv_compose_swizzle(desc, NULL, swizzle);
 
    va += offset;
-   state[0] = va;
-   state[1] = S_008F04_BASE_ADDRESS_HI(va >> 32) | S_008F04_STRIDE(stride);
 
    if (device->physical_device->rad_info.gfx_level != GFX8 && stride) {
       range /= stride;
    }
 
-   state[2] = range;
-   state[3] = S_008F0C_DST_SEL_X(radv_map_swizzle(swizzle[0])) |
-              S_008F0C_DST_SEL_Y(radv_map_swizzle(swizzle[1])) |
-              S_008F0C_DST_SEL_Z(radv_map_swizzle(swizzle[2])) |
-              S_008F0C_DST_SEL_W(radv_map_swizzle(swizzle[3]));
+   rsrc_word3 = S_008F0C_DST_SEL_X(radv_map_swizzle(swizzle[0])) |
+                S_008F0C_DST_SEL_Y(radv_map_swizzle(swizzle[1])) |
+                S_008F0C_DST_SEL_Z(radv_map_swizzle(swizzle[2])) |
+                S_008F0C_DST_SEL_W(radv_map_swizzle(swizzle[3]));
 
    if (device->physical_device->rad_info.gfx_level >= GFX10) {
       const struct gfx10_format *fmt = &ac_get_gfx10_format_table(&device->physical_device->rad_info)[vk_format_to_pipe_format(vk_format)];
@@ -743,9 +743,9 @@ radv_make_texel_buffer_descriptor(struct radv_device *device, uint64_t va, VkFor
        *  - 3: if SWIZZLE_ENABLE == 0: offset >= NUM_RECORDS
        *       else: swizzle_address >= NUM_RECORDS
        */
-      state[3] |= S_008F0C_FORMAT(fmt->img_format) |
-                  S_008F0C_OOB_SELECT(V_008F0C_OOB_SELECT_STRUCTURED_WITH_OFFSET) |
-                  S_008F0C_RESOURCE_LEVEL(device->physical_device->rad_info.gfx_level < GFX11);
+      rsrc_word3 |= S_008F0C_FORMAT(fmt->img_format) |
+                    S_008F0C_OOB_SELECT(V_008F0C_OOB_SELECT_STRUCTURED_WITH_OFFSET) |
+                    S_008F0C_RESOURCE_LEVEL(device->physical_device->rad_info.gfx_level < GFX11);
    } else {
       num_format = radv_translate_buffer_numformat(desc, first_non_void);
       data_format = radv_translate_buffer_dataformat(desc, first_non_void);
@@ -753,8 +753,13 @@ radv_make_texel_buffer_descriptor(struct radv_device *device, uint64_t va, VkFor
       assert(data_format != V_008F0C_BUF_DATA_FORMAT_INVALID);
       assert(num_format != ~0);
 
-      state[3] |= S_008F0C_NUM_FORMAT(num_format) | S_008F0C_DATA_FORMAT(data_format);
+      rsrc_word3 |= S_008F0C_NUM_FORMAT(num_format) | S_008F0C_DATA_FORMAT(data_format);
    }
+
+   state[0] = va;
+   state[1] = S_008F04_BASE_ADDRESS_HI(va >> 32) | S_008F04_STRIDE(stride);
+   state[2] = range;
+   state[3] = rsrc_word3;
 }
 
 static void

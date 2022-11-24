@@ -38,7 +38,7 @@
  * @author Jose Fonseca <jfonseca@vmware.com>
  */
 
-#include "pipe/p_config.h"
+#include "util/detect.h"
 
 #include <stdio.h>
 #include <stdlib.h>

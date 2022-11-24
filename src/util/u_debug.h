@@ -199,7 +199,7 @@ debug_get_version_option(const char *name, unsigned *major, unsigned *minor);
  */
 #ifdef DEBUG
 #define debug_checkpoint() \
-   _debug_printf("%s\n", __FUNCTION__)
+   _debug_printf("%s\n", __func__)
 #else
 #define debug_checkpoint() \
    ((void)0)
@@ -211,7 +211,7 @@ debug_get_version_option(const char *name, unsigned *major, unsigned *minor);
  */
 #ifdef DEBUG
 #define debug_checkpoint_full() \
-   _debug_printf("%s:%u:%s\n", __FILE__, __LINE__, __FUNCTION__)
+   _debug_printf("%s:%u:%s\n", __FILE__, __LINE__, __func__)
 #else
 #define debug_checkpoint_full() \
    ((void)0)
@@ -223,7 +223,7 @@ debug_get_version_option(const char *name, unsigned *major, unsigned *minor);
  */
 #ifdef DEBUG
 #define debug_warning(__msg) \
-   _debug_printf("%s:%u:%s: warning: %s\n", __FILE__, __LINE__, __FUNCTION__, __msg)
+   _debug_printf("%s:%u:%s: warning: %s\n", __FILE__, __LINE__, __func__, __msg)
 #else
 #define debug_warning(__msg) \
    ((void)0)
@@ -239,7 +239,7 @@ debug_get_version_option(const char *name, unsigned *major, unsigned *minor);
       static bool warned = false; \
       if (!warned) { \
          _debug_printf("%s:%u:%s: one time warning: %s\n", \
-                       __FILE__, __LINE__, __FUNCTION__, __msg); \
+                       __FILE__, __LINE__, __func__, __msg); \
          warned = true; \
       } \
    } while (0)
@@ -254,7 +254,7 @@ debug_get_version_option(const char *name, unsigned *major, unsigned *minor);
  */
 #ifdef DEBUG
 #define debug_error(__msg) \
-   _debug_printf("%s:%u:%s: error: %s\n", __FILE__, __LINE__, __FUNCTION__, __msg)
+   _debug_printf("%s:%u:%s: error: %s\n", __FILE__, __LINE__, __func__, __msg)
 #else
 #define debug_error(__msg) \
    _debug_printf("error: %s\n", __msg)

@@ -131,6 +131,15 @@ if [ -n "$HWCI_START_XORG" ]; then
   export DISPLAY=:0
 fi
 
+if [ -n "$HWCI_START_WESTON" ]; then
+  export XDG_RUNTIME_DIR=/run/user
+  mkdir -p $XDG_RUNTIME_DIR
+
+  weston -Bheadless-backend.so -Swayland-0 &
+  export WAYLAND_DISPLAY=wayland-0
+  sleep 1
+fi
+
 RESULT=fail
 set +e
 sh -c "$HWCI_TEST_SCRIPT"

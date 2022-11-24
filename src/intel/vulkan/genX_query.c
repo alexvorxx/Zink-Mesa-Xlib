@@ -415,7 +415,19 @@ static VkResult
 wait_for_available(struct anv_device *device,
                    struct anv_query_pool *pool, uint32_t query)
 {
-   uint64_t abs_timeout_ns = os_time_get_absolute_timeout(2 * NSEC_PER_SEC);
+   /* By default we leave a 2s timeout before declaring the device lost. */
+   uint64_t rel_timeout = 2 * NSEC_PER_SEC;
+   if (pool->type == VK_QUERY_TYPE_PERFORMANCE_QUERY_KHR) {
+      /* With performance queries, there is an additional 500us reconfiguration
+       * time in i915.
+       */
+      rel_timeout += 500 * 1000;
+      /* Additionally a command buffer can be replayed N times to gather data
+       * for each of the metric sets to capture all the counters requested.
+       */
+      rel_timeout *= pool->n_passes;
+   }
+   uint64_t abs_timeout_ns = os_time_get_absolute_timeout(rel_timeout);
 
    while (os_time_get_nano() < abs_timeout_ns) {
       if (query_is_available(pool, query))

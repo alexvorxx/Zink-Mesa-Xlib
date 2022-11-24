@@ -117,7 +117,7 @@ do_flush(struct pipe_context *pipe,
          struct pipe_fence_handle **fence,
          unsigned flags)
 {
-   llvmpipe_flush(pipe, fence, __FUNCTION__);
+   llvmpipe_flush(pipe, fence, __func__);
 }
 
 

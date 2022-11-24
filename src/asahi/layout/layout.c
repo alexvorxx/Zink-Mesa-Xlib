@@ -73,12 +73,28 @@ ail_get_max_tile_size(unsigned blocksize_B)
    }
 }
 
+/*
+ * Calculate the number of bytes in a block. This must take both block
+ * dimensions and multisampling into account.
+ */
+static uint32_t
+ail_get_block_size_B(struct ail_layout *layout)
+{
+   ASSERTED const struct util_format_description *desc =
+      util_format_description(layout->format);
+
+   assert(((layout->sample_count_sa == 1) ||
+           (desc->block.width == 1 && desc->block.height == 1)) &&
+          "multisampling and block-compression are mutually-exclusive");
+
+   return util_format_get_blocksize(layout->format) * layout->sample_count_sa;
+}
+
 static void
 ail_initialize_twiddled(struct ail_layout *layout)
 {
    unsigned offset_B = 0;
-   unsigned blocksize_B = util_format_get_blocksize(layout->format);
-
+   unsigned blocksize_B = ail_get_block_size_B(layout);
    unsigned w_el = util_format_get_nblocksx(layout->format, layout->width_px);
    unsigned h_el = util_format_get_nblocksy(layout->format, layout->height_px);
 
@@ -161,6 +177,8 @@ ail_make_miptree(struct ail_layout *layout)
    if (layout->tiling == AIL_TILING_LINEAR) {
       assert(layout->depth_px == 1 && "Invalid linear layout");
       assert(layout->levels == 1 && "Invalid linear layout");
+      assert(layout->sample_count_sa == 1 &&
+             "Multisampled linear layouts not supported");
       assert(util_format_get_blockwidth(layout->format) == 1 &&
             "Strided linear block formats unsupported");
       assert(util_format_get_blockheight(layout->format) == 1 &&
@@ -169,6 +187,7 @@ ail_make_miptree(struct ail_layout *layout)
       assert(layout->linear_stride_B == 0 && "Invalid nonlinear layout");
       assert(layout->depth_px >= 1 && "Invalid dimensions");
       assert(layout->levels >= 1 && "Invalid dimensions");
+      assert(layout->sample_count_sa >= 1 && "Invalid samplt count");
    }
 
    assert(util_format_get_blockdepth(layout->format) == 1 &&

@@ -70,7 +70,7 @@ int bifrost_debug = 0;
 #define DBG(fmt, ...) \
 		do { if (bifrost_debug & BIFROST_DBG_MSGS) \
 			fprintf(stderr, "%s:%d: "fmt, \
-				__FUNCTION__, __LINE__, ##__VA_ARGS__); } while (0)
+				__func__, __LINE__, ##__VA_ARGS__); } while (0)
 
 static bi_block *emit_cf_list(bi_context *ctx, struct exec_list *list);
 

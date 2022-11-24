@@ -593,6 +593,10 @@ static const struct dri2_format_mapping dri2_format_table[] = {
         __DRI_IMAGE_COMPONENTS_Y_UV,      PIPE_FORMAT_P016, 2,
         { { 0, 0, 0, __DRI_IMAGE_FORMAT_R16 },
           { 1, 1, 1, __DRI_IMAGE_FORMAT_GR1616 } } },
+      { DRM_FORMAT_P030,          __DRI_IMAGE_FORMAT_NONE,
+        __DRI_IMAGE_COMPONENTS_Y_UV,      PIPE_FORMAT_P030, 2,
+        { { 0, 0, 0, __DRI_IMAGE_FORMAT_R16 },
+          { 1, 1, 1, __DRI_IMAGE_FORMAT_GR1616 } } },
 
       { DRM_FORMAT_NV16,          __DRI_IMAGE_FORMAT_NONE,
         __DRI_IMAGE_COMPONENTS_Y_UV,      PIPE_FORMAT_NV12, 2,

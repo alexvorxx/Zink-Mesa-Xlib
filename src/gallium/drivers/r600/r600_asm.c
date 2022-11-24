@@ -2166,6 +2166,62 @@ static int print_indent(int p, int c)
 	return o;
 }
 
+const char *rat_instr_name[] = {
+   "NOP",
+   "STORE_TYPED",
+   "STORE_RAW",
+   "STORE_RAW_FDENORM",
+   "CMP_XCHG_INT",
+   "CMP_XCHG_FLT",
+   "CMP_XCHG_FDENORM",
+   "ADD",
+   "SUB",
+   "RSUB",
+   "MIN_INT",
+   "MIN_UINT",
+   "MAX_INT",
+   "MAX_UINT",
+   "AND",
+   "OR",
+   "XOR",
+   "MSKOR",
+   "INC_UINT",
+   "DEC_UINT",
+   "RESERVED20",
+   "RESERVED21",
+   "RESERVED22",
+   "RESERVED23",
+   "RESERVED24",
+   "RESERVED25",
+   "RESERVED26",
+   "RESERVED27",
+   "RESERVED28",
+   "RESERVED29",
+   "RESERVED30",
+   "RESERVED31",
+   "NOP_RTN",
+   "RESERVED33",
+   "XCHG_RTN",
+   "XCHG_FDENORM_RTN",
+   "CMPXCHG_INT_RTN",
+   "CMPXCHG_FLT_RTN",
+   "CMPXCHG_FDENORM_RTN",
+   "ADD_RTN",
+   "SUB_RTN",
+   "RSUB_RTN",
+   "MIN_INT_RTN",
+   "MIN_UINT_RTN",
+   "MAX_INT_RTN",
+   "MAX_UINT_RTN",
+   "AND_RTN",
+   "OR_RTN",
+   "XOR_RTN",
+   "MSKOR_RTN",
+   "INC_UINT_RTN",
+   "DEC_UINT_RTN",
+};
+
+
 void r600_bytecode_disasm(struct r600_bytecode *bc)
 {
 	const char *index_mode[] = {"CF_INDEX_NONE", "CF_INDEX_0", "CF_INDEX_1"};
@@ -2292,7 +2348,8 @@ void r600_bytecode_disasm(struct r600_bytecode *bc)
 					if (cf->rat.index_mode) {
 						o += fprintf(stderr, "[IDX%d]", cf->rat.index_mode - 1);
 					}
-					o += fprintf(stderr, " INST: %d ", cf->rat.inst);
+               assert(ARRAY_SIZE(rat_instr_name) > cf->rat.inst);
+					o += fprintf(stderr, " %s ", rat_instr_name[cf->rat.inst]);
 				}
 
 				if (cf->output.burst_count > 1) {
@@ -2315,7 +2372,7 @@ void r600_bytecode_disasm(struct r600_bytecode *bc)
 
 				if (cf->output.type == V_SQ_CF_ALLOC_EXPORT_WORD0_SQ_EXPORT_WRITE_IND ||
 				    cf->output.type == V_SQ_CF_ALLOC_EXPORT_WORD0_SQ_EXPORT_READ_IND)
-					o += fprintf(stderr, " R%d", cf->output.index_gpr);
+					o += fprintf(stderr, " R%d.xyz", cf->output.index_gpr);
 
 				o += print_indent(o, 67);
 
@@ -2525,7 +2582,7 @@ void r600_bytecode_disasm(struct r600_bytecode *bc)
 		}
 
 		LIST_FOR_EACH_ENTRY(gds, &cf->gds, list) {
-			int o = 0;
+			UNUSED int o = 0;
 			o += fprintf(stderr, " %04d %08X %08X %08X   ", id, bc->bytecode[id],
 					bc->bytecode[id + 1], bc->bytecode[id + 2]);
 

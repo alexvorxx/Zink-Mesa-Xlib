@@ -135,7 +135,8 @@ signed_integer_range_analysis(nir_shader *shader, struct hash_table *range_ht,
 
          *lo = MAX2(src0_lo, src1_lo);
          *hi = MAX2(src0_hi, src1_hi);
-         break;
+
+         return non_unary;
       }
 
       case nir_op_imin: {
@@ -151,7 +152,8 @@ signed_integer_range_analysis(nir_shader *shader, struct hash_table *range_ht,
 
          *lo = MIN2(src0_lo, src1_lo);
          *hi = MIN2(src0_hi, src1_hi);
-         break;
+
+         return non_unary;
       }
 
       default:

@@ -65,6 +65,7 @@ struct radv_pipeline_key {
    uint32_t dynamic_patch_control_points : 1;
    uint32_t dynamic_rasterization_samples : 1;
    uint32_t dynamic_color_write_mask : 1;
+   uint32_t dynamic_provoking_vtx_mode : 1;
 
    struct {
       uint32_t instance_rate_inputs;
@@ -88,8 +89,8 @@ struct radv_pipeline_key {
       uint32_t is_int8;
       uint32_t is_int10;
       uint32_t cb_target_mask;
-      uint8_t log2_ps_iter_samples;
       uint8_t num_samples;
+      bool sample_shading_enable;
       bool mrt0_is_dual_src;
 
       bool lower_discard_to_demote;
@@ -141,11 +142,12 @@ enum radv_ud_index {
    AC_UD_VIEW_INDEX = 4,
    AC_UD_STREAMOUT_BUFFERS = 5,
    AC_UD_NGG_QUERY_STATE = 6,
-   AC_UD_NGG_CULLING_SETTINGS = 7,
-   AC_UD_NGG_VIEWPORT = 8,
-   AC_UD_FORCE_VRS_RATES = 9,
-   AC_UD_TASK_RING_ENTRY = 10,
-   AC_UD_SHADER_START = 11,
+   AC_UD_NGG_PROVOKING_VTX = 7,
+   AC_UD_NGG_CULLING_SETTINGS = 8,
+   AC_UD_NGG_VIEWPORT = 9,
+   AC_UD_FORCE_VRS_RATES = 10,
+   AC_UD_TASK_RING_ENTRY = 11,
+   AC_UD_SHADER_START = 12,
    AC_UD_VS_VERTEX_BUFFERS = AC_UD_SHADER_START,
    AC_UD_VS_BASE_VERTEX_START_INSTANCE,
    AC_UD_VS_PROLOG_INPUTS,
@@ -418,6 +420,7 @@ struct radv_ps_epilog_key {
    uint8_t color_is_int10;
    uint8_t enable_mrt_output_nan_fixup;
 
+   bool mrt0_is_dual_src;
    bool wave32;
 };
 
@@ -759,5 +762,9 @@ bool radv_force_primitive_shading_rate(nir_shader *nir, struct radv_device *devi
 
 bool radv_lower_fs_intrinsics(nir_shader *nir, const struct radv_pipeline_stage *fs_stage,
                               const struct radv_pipeline_key *key);
+
+nir_shader *create_rt_shader(struct radv_device *device,
+                             const VkRayTracingPipelineCreateInfoKHR *pCreateInfo,
+                             struct radv_pipeline_shader_stack_size *stack_sizes);
 
 #endif

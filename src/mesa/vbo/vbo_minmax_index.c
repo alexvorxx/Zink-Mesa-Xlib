@@ -27,11 +27,11 @@
  */
 
 #include "util/glheader.h"
+#include "util/u_cpu_detect.h"
 #include "main/context.h"
 #include "main/varray.h"
 #include "main/macros.h"
 #include "main/sse_minmax.h"
-#include "x86/common_x86_asm.h"
 #include "util/hash_table.h"
 #include "util/u_memory.h"
 #include "pipe/p_state.h"
@@ -249,7 +249,7 @@ vbo_get_minmax_index_mapped(unsigned count, unsigned index_size,
       }
       else {
 #if defined(USE_SSE41)
-         if (cpu_has_sse4_1) {
+         if (util_get_cpu_caps()->has_sse4_1) {
             _mesa_uint_array_min_max(ui_indices, &min_ui, &max_ui, count);
          }
          else

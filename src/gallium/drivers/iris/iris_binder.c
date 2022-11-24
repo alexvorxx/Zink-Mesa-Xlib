@@ -70,7 +70,7 @@ binder_realloc(struct iris_context *ice)
       iris_bo_unreference(binder->bo);
 
    binder->bo = iris_bo_alloc(bufmgr, "binder", binder->size, binder->alignment,
-                              IRIS_MEMZONE_BINDER, 4096);
+                              IRIS_MEMZONE_BINDER, 0);
    binder->map = iris_bo_map(NULL, binder->bo, MAP_WRITE);
 
    /* Avoid using offset 0 - tools consider it NULL. */

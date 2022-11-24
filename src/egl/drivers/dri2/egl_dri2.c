@@ -2775,6 +2775,7 @@ dri2_num_fourcc_format_planes(EGLint format)
    case DRM_FORMAT_P010:
    case DRM_FORMAT_P012:
    case DRM_FORMAT_P016:
+   case DRM_FORMAT_P030:
       return 2;
 
    case DRM_FORMAT_YUV410:

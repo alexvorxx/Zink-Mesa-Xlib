@@ -29,7 +29,7 @@
 #define PIPE_VIDEO_STATE_H
 
 #include "pipe/p_defines.h"
-#include "pipe/p_format.h"
+#include "util/format/u_formats.h"
 #include "pipe/p_state.h"
 #include "pipe/p_screen.h"
 #include "util/u_hash_table.h"
@@ -498,6 +498,8 @@ struct pipe_h264_enc_picture_desc
    struct pipe_h264_enc_motion_estimation motion_est;
    struct pipe_h264_enc_pic_control pic_ctrl;
    struct pipe_h264_enc_dbk_param dbk;
+
+   unsigned intra_idr_period;
 
    unsigned quant_i_frames;
    unsigned quant_p_frames;

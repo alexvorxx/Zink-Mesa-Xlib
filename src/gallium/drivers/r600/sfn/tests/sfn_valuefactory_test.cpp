@@ -28,7 +28,7 @@
 #include "../sfn_debug.h"
 #include "../sfn_valuefactory.h"
 #include "nir_builder.h"
-#include "ralloc.h"
+#include "util/ralloc.h"
 
 #include "gtest/gtest.h"
 

@@ -452,7 +452,7 @@ void
 intel_ds_end_submit(struct intel_ds_queue *queue,
                     uint64_t start_ts)
 {
-   if (!u_trace_context_actively_tracing(&queue->device->trace_context)) {
+   if (!u_trace_should_process(&queue->device->trace_context)) {
       queue->device->sync_gpu_ts = 0;
       queue->device->next_clock_sync_ns = 0;
       return;

@@ -35,12 +35,12 @@
 #include "glxextensions.h"
 
 #include "util/driconf.h"
+#include "util/macros.h"
 
 #define SET_BIT(m,b)   (m[ (b) / 8 ] |=  (1U << ((b) % 8)))
 #define CLR_BIT(m,b)   (m[ (b) / 8 ] &= ~(1U << ((b) % 8)))
 #define IS_SET(m,b)    ((m[ (b) / 8 ] & (1U << ((b) % 8))) != 0)
-#define CONCAT(a,b) a ## b
-#define GLX(n) "GLX_" # n, 4 + sizeof( # n ) - 1, CONCAT(n,_bit)
+#define GLX(n) "GLX_" # n, 4 + sizeof( # n ) - 1, PASTE2(n,_bit)
 #define GL(n)  "GL_" # n,  3 + sizeof( # n ) - 1, GL_ ## n ## _bit
 #define Y  1
 #define N  0

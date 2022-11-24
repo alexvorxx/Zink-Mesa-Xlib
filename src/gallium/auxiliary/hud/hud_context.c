@@ -73,7 +73,7 @@ static boolean huds_visible = TRUE;
 static int hud_scale = 1;
 
 
-#ifdef PIPE_OS_UNIX
+#if DETECT_OS_UNIX
 static void
 signal_visible_handler(int sig, siginfo_t *siginfo, void *context)
 {
@@ -1866,7 +1866,7 @@ hud_create(struct cso_context *cso, struct st_context_iface *st,
    struct hud_context *hud;
    unsigned i;
    const char *env = debug_get_option("GALLIUM_HUD", NULL);
-#ifdef PIPE_OS_UNIX
+#if DETECT_OS_UNIX
    unsigned signo = debug_get_num_option("GALLIUM_HUD_TOGGLE_SIGNAL", 0);
    static boolean sig_handled = FALSE;
    struct sigaction action;
@@ -1953,7 +1953,7 @@ hud_create(struct cso_context *cso, struct st_context_iface *st,
    list_inithead(&hud->pane_list);
 
    /* setup sig handler once for all hud contexts */
-#ifdef PIPE_OS_UNIX
+#if DETECT_OS_UNIX
    if (!sig_handled && signo != 0) {
       action.sa_sigaction = &signal_visible_handler;
       action.sa_flags = SA_SIGINFO;

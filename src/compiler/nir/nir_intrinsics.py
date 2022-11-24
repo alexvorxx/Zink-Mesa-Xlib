@@ -263,6 +263,9 @@ index("struct nir_io_semantics", "io_semantics")
 index("struct nir_io_xfb", "io_xfb")
 index("struct nir_io_xfb", "io_xfb2")
 
+# Ray query values accessible from the RayQueryKHR object
+index("nir_ray_query_value", "ray_query_value")
+
 # Rounding mode for conversions
 index("nir_rounding_mode", "rounding_mode")
 
@@ -550,8 +553,8 @@ intrinsic("rq_proceed", src_comp=[-1], dest_comp=1)
 intrinsic("rq_generate_intersection", src_comp=[-1, 1])
 # src[] = { query }
 intrinsic("rq_confirm_intersection", src_comp=[-1])
-# src[] = { query, committed } BASE=nir_ray_query_value
-intrinsic("rq_load", src_comp=[-1, 1], dest_comp=0, indices=[BASE,COLUMN])
+# src[] = { query, committed }
+intrinsic("rq_load", src_comp=[-1, 1], dest_comp=0, indices=[RAY_QUERY_VALUE,COLUMN])
 
 # Driver independent raytracing helpers
 
@@ -1396,6 +1399,8 @@ system_value("prim_xfb_query_enabled_amd", dest_comp=1, bit_sizes=[1])
 # Merged wave info. Bits 0-7 are the ES thread count, 8-15 are the GS thread count, 16-24 is the
 # GS Wave ID, 24-27 is the wave index in the workgroup, and 28-31 is the workgroup size in waves.
 system_value("merged_wave_info_amd", dest_comp=1)
+# Whether the shader should clamp vertex color outputs to [0, 1].
+system_value("clamp_vertex_color_amd", dest_comp=1, bit_sizes=[1])
 # Whether the shader should cull front facing triangles.
 intrinsic("load_cull_front_face_enabled_amd", dest_comp=1, bit_sizes=[1], flags=[CAN_ELIMINATE])
 # Whether the shader should cull back facing triangles.
@@ -1543,6 +1548,48 @@ store("tlb_sample_color_v3d", [1], [BASE, COMPONENT, SRC_TYPE], [])
 # V3D-specific intrinsic to load the number of layers attached to
 # the target framebuffer
 intrinsic("load_fb_layers_v3d", dest_comp=1, flags=[CAN_ELIMINATE, CAN_REORDER])
+
+# Load/store a pixel in local memory. This operation is formatted, with
+# conversion between the specified format and the implied register format of the
+# source/destination (for store/loads respectively). This mostly matters for
+# converting between floating-point registers and normalized memory formats.
+#
+# The format is the pipe_format of the local memory (the source), see
+# agx_internal_formats.h for the supported list.
+#
+# Logically, this loads/stores a single sample. The sample to load is
+# specified by the bitfield sample mask source. However, for stores multiple
+# bits of the sample mask may be set, which will replicate the value. For
+# pixel rate shading, use 0xFF as the mask to store to all samples regardless of
+# the sample count.
+#
+# All calculations are relative to an immediate byte offset into local
+# memory, which acts relative to the start of the sample. These instructions
+# logically access:
+#
+#   (((((y * tile_width) + x) * nr_samples) + sample) * sample_stride) + offset
+#
+# src[] = { sample mask }
+# base = offset
+load("local_pixel_agx", [1], [BASE, FORMAT], [CAN_REORDER, CAN_ELIMINATE])
+# src[] = { value, sample mask }
+# base = offset
+store("local_pixel_agx", [1], [BASE, WRITE_MASK, FORMAT], [CAN_REORDER])
+
+# Store a block from local memory into a bound image. Used to write out render
+# targets within the end-of-tile shader, although it is valid in general compute
+# kernels.
+#
+# The format is the pipe_format of the local memory (the source), see
+# agx_internal_formats.h for the supported list. The image format is
+# specified in the PBE descriptor.
+#
+# The image dimension is used to distinguish multisampled images from
+# non-multisampled images. It must be 2D or MS.
+#
+# src[] = { image index, logical offset within shared memory }
+intrinsic("block_image_store_agx", [1, 1], bit_sizes=[32, 16],
+          indices=[FORMAT, IMAGE_DIM], flags=[CAN_REORDER])
 
 # Logical complement of load_front_face, mapping to an AGX system value
 system_value("back_face_agx", 1, bit_sizes=[1, 32])

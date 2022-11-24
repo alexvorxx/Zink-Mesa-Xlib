@@ -26,6 +26,8 @@
 
 #include <stdbool.h>
 
+#include "freedreno_pm4.h"
+
 enum query_mode {
    /* default mode, dump all queried regs on each draw: */
    QUERY_ALL = 0,
@@ -91,5 +93,42 @@ void reset_regs(void);
 void cffdec_init(const struct cffdec_options *options);
 void dump_register_val(uint32_t regbase, uint32_t dword, int level);
 void dump_commands(uint32_t *dwords, uint32_t sizedwords, int level);
+
+/*
+ * Packets (mostly) fall into two categories, "write one or more registers"
+ * (type0 or type4 depending on generation) or "packet with opcode and
+ * opcode specific payload" (type3 or type7).  These helpers deal with
+ * the type0+type3 vs type4+type7 differences (a2xx-a4xx vs a5xx+).
+ */
+
+static inline bool
+pkt_is_regwrite(uint32_t dword, uint32_t *offset, uint32_t *size)
+{
+   if (pkt_is_type0(dword)) {
+      *size = type0_pkt_size(dword) + 1;
+      *offset = type0_pkt_offset(dword);
+      return true;
+   } if (pkt_is_type4(dword)) {
+      *size = type4_pkt_size(dword) + 1;
+      *offset = type4_pkt_offset(dword);
+      return true;
+   }
+   return false;
+}
+
+static inline bool
+pkt_is_opcode(uint32_t dword, uint32_t *opcode, uint32_t *size)
+{
+   if (pkt_is_type3(dword)) {
+      *size = type3_pkt_size(dword) + 1;
+      *opcode = cp_type3_opcode(dword);
+      return true;
+   } else if (pkt_is_type7(dword)) {
+      *size = type7_pkt_size(dword) + 1;
+      *opcode = cp_type7_opcode(dword);
+     return true;
+   }
+   return false;
+}
 
 #endif /* __CFFDEC_H__ */

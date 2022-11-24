@@ -187,15 +187,15 @@ stw_framebuffer_get_size(struct stw_framebuffer *fb)
 
 #if 0
    debug_printf("\n");
-   debug_printf("%s: hwnd = %p\n", __FUNCTION__, fb->hWnd);
+   debug_printf("%s: hwnd = %p\n", __func__, fb->hWnd);
    debug_printf("%s: client_position = (%li, %li)\n",
-                __FUNCTION__, client_pos.x, client_pos.y);
+                __func__, client_pos.x, client_pos.y);
    debug_printf("%s: window_rect = (%li, %li) - (%li, %li)\n",
-                __FUNCTION__,
+                __func__,
                 window_rect.left, window_rect.top,
                 window_rect.right, window_rect.bottom);
    debug_printf("%s: client_rect = (%li, %li) - (%li, %li)\n",
-                __FUNCTION__,
+                __func__,
                 fb->client_rect.left, fb->client_rect.top,
                 fb->client_rect.right, fb->client_rect.bottom);
 #endif

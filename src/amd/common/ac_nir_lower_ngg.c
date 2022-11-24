@@ -26,8 +26,8 @@
 #include "amdgfxregs.h"
 #include "nir_builder.h"
 #include "nir_xfb_info.h"
-#include "u_math.h"
-#include "u_vector.h"
+#include "util/u_math.h"
+#include "util/u_vector.h"
 
 #define SPECIAL_MS_OUT_MASK \
    (BITFIELD64_BIT(VARYING_SLOT_PRIMITIVE_COUNT) | \
@@ -264,7 +264,7 @@ summarize_repack(nir_builder *b, nir_ssa_def *packed_counts, unsigned num_lds_dw
     */
 
    nir_ssa_def *lane_id = nir_load_subgroup_invocation(b);
-   nir_ssa_def *shift = nir_iadd_imm_nuw(b, nir_imul_imm(b, lane_id, -4u), num_lds_dwords * 16);
+   nir_ssa_def *shift = nir_iadd_imm(b, nir_imul_imm(b, lane_id, -4u), num_lds_dwords * 16);
    bool use_dot = b->shader->options->has_udot_4x8;
 
    if (num_lds_dwords == 1) {
@@ -856,8 +856,7 @@ cleanup_culling_shader_after_dce(nir_shader *shader,
             uses_vs_instance_id = true;
             break;
          case nir_intrinsic_load_input:
-            if (state->options->instance_rate_inputs &
-                (1u << (nir_intrinsic_base(intrin) - VERT_ATTRIB_GENERIC0)))
+            if (state->options->instance_rate_inputs & BITFIELD_BIT(nir_intrinsic_base(intrin)))
                uses_vs_instance_id = true;
             else
                uses_vs_vertex_id = true;
@@ -2427,7 +2426,7 @@ ngg_gs_shader_query(nir_builder *b, nir_intrinsic_instr *intrin, lower_ngg_gs_st
       nir_ssa_def *gs_vtx_cnt = intrin->src[0].ssa;
       nir_ssa_def *prm_cnt = intrin->src[1].ssa;
       if (s->num_vertices_per_primitive > 1)
-         prm_cnt = nir_iadd_nuw(b, nir_imul_imm(b, prm_cnt, -1u * (s->num_vertices_per_primitive - 1)), gs_vtx_cnt);
+         prm_cnt = nir_iadd(b, nir_imul_imm(b, prm_cnt, -1u * (s->num_vertices_per_primitive - 1)), gs_vtx_cnt);
       num_prims_in_wave = nir_reduce(b, prm_cnt, .reduction_op = nir_op_iadd);
    }
 
@@ -2791,12 +2790,12 @@ ngg_gs_export_vertices(nir_builder *b, nir_ssa_def *max_num_out_vtx, nir_ssa_def
 
             nir_ssa_def *val = nir_channel(b, load, i);
 
-            /* Convert to the expected bit size of the output variable. */
-            unsigned bit_size = glsl_base_type_bit_size(glsl_get_base_type(var->type));
-            if (bit_size != 32)
-               val = nir_u2u(b, val, bit_size);
-
             if (s->options->gfx_level < GFX11 || is_pos) {
+               /* Convert to the expected bit size of the output variable. */
+               unsigned bit_size = glsl_base_type_bit_size(glsl_get_base_type(var->type));
+               if (bit_size != 32)
+                  val = nir_u2u(b, val, bit_size);
+
                nir_store_output(b, val, nir_imm_int(b, 0), .base = info->base,
                                 .io_semantics = io_sem, .component = start + i, .write_mask = 1);
             }

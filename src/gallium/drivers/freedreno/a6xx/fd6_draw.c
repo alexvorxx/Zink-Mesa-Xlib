@@ -429,18 +429,21 @@ fd6_clear_lrz(struct fd_batch *batch, struct fd_resource *zsbuf, double depth) a
 
    fd6_event_write(batch, ring, 0x3f, false);
 
-   OUT_WFI5(ring);
-
-   OUT_PKT4(ring, REG_A6XX_RB_DBG_ECO_CNTL, 1);
-   OUT_RING(ring, screen->info->a6xx.magic.RB_DBG_ECO_CNTL_blit);
+   if (screen->info->a6xx.magic.RB_DBG_ECO_CNTL_blit != screen->info->a6xx.magic.RB_DBG_ECO_CNTL) {
+      /* This a non-context register, so we have to WFI before changing. */
+      OUT_WFI5(ring);
+      OUT_PKT4(ring, REG_A6XX_RB_DBG_ECO_CNTL, 1);
+      OUT_RING(ring, screen->info->a6xx.magic.RB_DBG_ECO_CNTL_blit);
+   }
 
    OUT_PKT7(ring, CP_BLIT, 1);
    OUT_RING(ring, CP_BLIT_0_OP(BLIT_OP_SCALE));
 
-   OUT_WFI5(ring);
-
-   OUT_PKT4(ring, REG_A6XX_RB_DBG_ECO_CNTL, 1);
-   OUT_RING(ring, 0x0); /* RB_DBG_ECO_CNTL */
+   if (screen->info->a6xx.magic.RB_DBG_ECO_CNTL_blit != screen->info->a6xx.magic.RB_DBG_ECO_CNTL) {
+      OUT_WFI5(ring);
+      OUT_PKT4(ring, REG_A6XX_RB_DBG_ECO_CNTL, 1);
+      OUT_RING(ring, screen->info->a6xx.magic.RB_DBG_ECO_CNTL);
+   }
 
    fd6_event_write(batch, ring, PC_CCU_FLUSH_COLOR_TS, true);
    fd6_event_write(batch, ring, PC_CCU_FLUSH_DEPTH_TS, true);
@@ -472,9 +475,13 @@ fd6_clear(struct fd_context *ctx, unsigned buffers,
    const bool has_depth = pfb->zsbuf;
    unsigned color_buffers = buffers >> 2;
 
-   /* we need to do multisample clear on 3d pipe, so fallback to u_blitter: */
-   if (pfb->samples > 1)
-      return false;
+   /* multisample clear does not work properly for sysmem: */
+   if (pfb->samples > 1) {
+      /* layered rendering forces sysmem, so just bail now: */
+      if (pfb->layers > 1)
+         return false;
+      ctx->batch->gmem_reason |= FD_GMEM_MSAA_CLEAR;
+   }
 
    /* If we're clearing after draws, fallback to 3D pipe clears.  We could
     * use blitter clears in the draw batch but then we'd have to patch up the

@@ -39,8 +39,16 @@ rusticl_lower_intrinsics_instr(
         }
 
         val = intrins->src[0].ssa;
+
+        if (val->parent_instr->type == nir_instr_type_deref) {
+            nir_deref_instr *deref = nir_instr_as_deref(val->parent_instr);
+            nir_variable *var = nir_deref_instr_get_variable(deref);
+            assert(var);
+            val = nir_imm_intN_t(b, var->data.binding, val->bit_size);
+        }
+
         // we put write images after read images
-        if (nir_intrinsic_access(intrins) & ACCESS_NON_WRITEABLE) {
+        if (glsl_type_is_image(var->type)) {
             val = nir_iadd_imm(b, val, b->shader->info.num_textures);
         }
 
@@ -95,25 +103,11 @@ rusticl_lower_input_instr(struct nir_builder *b, nir_instr *instr, void *_)
 
    nir_intrinsic_instr *load = nir_instr_as_intrinsic(load_result->parent_instr);
 
-   /* If it's const, set the alignment to our known constant offset.  If
-    * not, set it to a pessimistic value based on the multiplier (or the
-    * scalar size, for qword loads).
-    *
-    * We could potentially set up stricter alignments for indirects by
-    * knowing what features are enabled in the APIs (see comment in
-    * nir_lower_ubo_vec4.c)
-    */
-   if (nir_src_is_const(intrins->src[0])) {
-      nir_intrinsic_set_align(load, NIR_ALIGN_MUL_MAX,
-                              (nir_src_as_uint(intrins->src[0]) +
-                              nir_intrinsic_base(intrins) * 1) %
-                              NIR_ALIGN_MUL_MAX);
-   } else {
-      nir_intrinsic_set_align(load, intrins->dest.ssa.bit_size / 8, 0);
-   }
-
+   nir_intrinsic_set_align_mul(load, nir_intrinsic_align_mul(intrins));
+   nir_intrinsic_set_align_offset(load, nir_intrinsic_align_offset(intrins));
    nir_intrinsic_set_range_base(load, nir_intrinsic_base(intrins));
    nir_intrinsic_set_range(load, nir_intrinsic_range(intrins));
+
    return load_result;
 }
 

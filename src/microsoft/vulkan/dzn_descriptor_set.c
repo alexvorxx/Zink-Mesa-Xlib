@@ -878,6 +878,7 @@ dzn_descriptor_heap_write_image_view_desc(struct dzn_descriptor_heap *heap,
       D3D12_SHADER_RESOURCE_VIEW_DESC srv_desc = iview->srv_desc;
       srv_desc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2DARRAY;
       srv_desc.Texture2DArray.PlaneSlice = 0;
+      srv_desc.Texture2DArray.ResourceMinLODClamp = 0.0f;
       if (iview->srv_desc.ViewDimension == D3D12_SRV_DIMENSION_TEXTURECUBEARRAY) {
          srv_desc.Texture2DArray.MostDetailedMip =
             iview->srv_desc.TextureCubeArray.MostDetailedMip;

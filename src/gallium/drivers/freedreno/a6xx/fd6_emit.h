@@ -49,7 +49,6 @@ enum fd6_state_id {
    FD6_GROUP_PROG_INTERP,
    FD6_GROUP_PROG_FB_RAST,
    FD6_GROUP_LRZ,
-   FD6_GROUP_LRZ_BINNING,
    FD6_GROUP_VTXSTATE,
    FD6_GROUP_VBO,
    FD6_GROUP_CONST,
@@ -277,9 +276,9 @@ fd6_gl2spacing(enum gl_tess_spacing spacing)
    }
 }
 
-bool fd6_emit_textures(struct fd_context *ctx, struct fd_ringbuffer *ring,
+void fd6_emit_textures(struct fd_context *ctx, struct fd_ringbuffer *ring,
                        enum pipe_shader_type type,
-                       struct fd_texture_stateobj *tex, unsigned bcolor_offset,
+                       struct fd_texture_stateobj *tex,
                        const struct ir3_shader_variant *v) assert_dt;
 
 void fd6_emit_state(struct fd_ringbuffer *ring,

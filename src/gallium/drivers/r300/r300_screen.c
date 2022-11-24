@@ -516,7 +516,7 @@ static const nir_shader_compiler_options r500_vs_compiler_options = {
    /* Have HW loops support and 1024 max instr count, but don't unroll *too*
     * hard.
     */
-   .max_unroll_iterations = 32,
+   .max_unroll_iterations = 29,
 };
 
 static const nir_shader_compiler_options r500_fs_compiler_options = {

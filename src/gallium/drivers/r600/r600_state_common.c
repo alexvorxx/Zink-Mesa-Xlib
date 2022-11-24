@@ -2020,13 +2020,6 @@ static bool r600_update_derived_state(struct r600_context *rctx)
 		r600_update_db_shader_control(rctx);
 	}
 
-	/* For each shader stage that needs to spill, set up buffer for MEM_SCRATCH */
-	if (rctx->b.gfx_level >= EVERGREEN) {
-		evergreen_setup_scratch_buffers(rctx);
-	} else {
-		r600_setup_scratch_buffers(rctx);
-	}
-
 	/* on R600 we stuff masks + txq info into one constant buffer */
 	/* on evergreen we only need a txq info one */
 	if (rctx->ps_shader) {
@@ -2404,6 +2397,13 @@ static void r600_draw_vbo(struct pipe_context *ctx, const struct pipe_draw_info 
 				      r600_conv_pipe_prim(info->mode));
 
 		rctx->last_primitive_type = info->mode;
+	}
+
+   /* For each shader stage that needs to spill, set up buffer for MEM_SCRATCH */
+	if (rctx->b.gfx_level >= EVERGREEN) {
+		evergreen_setup_scratch_buffers(rctx);
+	} else {
+		r600_setup_scratch_buffers(rctx);
 	}
 
 	/* Draw packets. */

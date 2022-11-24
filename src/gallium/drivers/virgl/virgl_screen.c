@@ -471,6 +471,7 @@ virgl_get_video_param(struct pipe_screen *screen,
                       enum pipe_video_cap param)
 {
    unsigned i;
+   bool drv_supported;
    struct virgl_video_caps *vcaps = NULL;
    struct virgl_screen *vscreen;
 
@@ -481,11 +482,26 @@ virgl_get_video_param(struct pipe_screen *screen,
    if (vscreen->caps.caps.v2.num_video_caps > ARRAY_SIZE(vscreen->caps.caps.v2.video_caps))
        return 0;
 
-   for (i = 0;  i < vscreen->caps.caps.v2.num_video_caps; i++) {
-       if (vscreen->caps.caps.v2.video_caps[i].profile == profile &&
-           vscreen->caps.caps.v2.video_caps[i].entrypoint == entrypoint) {
-           vcaps = &vscreen->caps.caps.v2.video_caps[i];
-           break;
+   /* Profiles and entrypoints supported by the driver */
+   switch (u_reduce_video_profile(profile)) {
+   case PIPE_VIDEO_FORMAT_MPEG4_AVC: /* fall through */
+   case PIPE_VIDEO_FORMAT_HEVC:
+       drv_supported = (entrypoint == PIPE_VIDEO_ENTRYPOINT_BITSTREAM ||
+                        entrypoint == PIPE_VIDEO_ENTRYPOINT_ENCODE);
+       break;
+   default:
+       drv_supported = false;
+       break;
+   }
+
+   if (drv_supported) {
+       /* Check if the device supports it, vcaps is NULL means not supported */
+       for (i = 0;  i < vscreen->caps.caps.v2.num_video_caps; i++) {
+           if (vscreen->caps.caps.v2.video_caps[i].profile == profile &&
+               vscreen->caps.caps.v2.video_caps[i].entrypoint == entrypoint) {
+               vcaps = &vscreen->caps.caps.v2.video_caps[i];
+               break;
+           }
        }
    }
 

@@ -974,7 +974,7 @@ tu_queue_submit_create_locked(struct tu_queue *queue,
 {
    VkResult result;
 
-   bool u_trace_enabled = u_trace_context_actively_tracing(&queue->device->trace_context);
+   bool u_trace_enabled = u_trace_should_process(&queue->device->trace_context);
    bool has_trace_points = false;
 
    struct vk_command_buffer **vk_cmd_buffers = vk_submit->command_buffers;

@@ -109,6 +109,12 @@
  */
 #define MAX_UNIFORM_BUFFER_RANGE 0x10000
 
+/* Use the minimum maximum to guarantee that it can always fit in the safe
+ * const file size, even with maximum push constant usage and driver params.
+ */
+#define MAX_INLINE_UBO_RANGE 256
+#define MAX_INLINE_UBOS 4
+
 #define A6XX_TEX_CONST_DWORDS 16
 #define A6XX_TEX_SAMP_DWORDS 4
 

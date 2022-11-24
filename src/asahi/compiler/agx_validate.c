@@ -117,6 +117,30 @@ agx_validate_sources(agx_instr *I)
    return true;
 }
 
+static bool
+agx_validate_defs(agx_instr *I, BITSET_WORD *defs)
+{
+   agx_foreach_ssa_src(I, s) {
+      /* Skip phis, they're special in loop headers */
+      if (I->op == AGX_OPCODE_PHI)
+         break;
+
+      /* Sources must be defined before their use */
+      if (!BITSET_TEST(defs, I->src[s].value))
+         return false;
+   }
+
+   agx_foreach_ssa_dest(I, d) {
+      /* Static single assignment */ 
+      if (BITSET_TEST(defs, I->dest[d].value))
+         return false;
+
+      BITSET_SET(defs, I->dest[d].value);
+   }
+
+   return true;
+}
+
 void
 agx_validate(agx_context *ctx, const char *after)
 {
@@ -131,6 +155,20 @@ agx_validate(agx_context *ctx, const char *after)
          agx_print_block(block, stdout);
          fail = true;
       }
+   }
+
+   {
+      BITSET_WORD *defs = calloc(sizeof(BITSET_WORD), BITSET_WORDS(ctx->alloc));
+
+      agx_foreach_instr_global(ctx, I) {
+         if (!agx_validate_defs(I, defs)) {
+               fprintf(stderr, "Invalid defs after %s\n", after);
+               agx_print_instr(I, stdout);
+               fail = true;
+         }
+      }
+
+      free(defs);
    }
 
    agx_foreach_instr_global(ctx, I) {

@@ -44,7 +44,7 @@
 
 #include "pipe/p_screen.h"
 #include "pipe/p_context.h"
-#include "pipe/p_config.h"
+#include "util/detect.h"
 #include "util/macros.h"
 #include "util/u_math.h"
 #include "util/u_inlines.h"
@@ -59,7 +59,7 @@
 
 #define DBG_CHANNEL DBG_DEVICE
 
-#if defined(PIPE_CC_GCC) && (defined(PIPE_ARCH_X86) || defined(PIPE_ARCH_X86_64))
+#if DETECT_CC_GCC && (DETECT_ARCH_X86 || DETECT_ARCH_X86_64)
 
 static void nine_setup_fpu()
 {

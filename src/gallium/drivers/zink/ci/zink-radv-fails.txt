@@ -1,3 +1,4 @@
+# CTS bug, see https://gitlab.khronos.org/Tracker/vk-gl-cts/-/issues/4108
 dEQP-GLES3.functional.shaders.texture_functions.textureprojlodoffset.sampler2dshadow_vertex,Fail
 dEQP-GLES3.functional.shaders.texture_functions.textureprojoffset.sampler2dshadow_vertex,Fail
 

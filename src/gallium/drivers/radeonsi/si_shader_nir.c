@@ -350,6 +350,7 @@ char *si_finalize_nir(struct pipe_screen *screen, void *nirptr)
    /* Remove uniforms because those should have been lowered to UBOs already. */
    nir_foreach_variable_with_modes_safe(var, nir, nir_var_uniform) {
       if (!glsl_type_get_image_count(var->type) &&
+          !glsl_type_get_texture_count(var->type) &&
           !glsl_type_get_sampler_count(var->type))
          exec_node_remove(&var->node);
    }

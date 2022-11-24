@@ -117,9 +117,10 @@ radv_device_get_cache_uuid(struct radv_physical_device *pdevice, void *uuid)
 
 #ifdef RADV_BUILD_ID_OVERRIDE
    {
-      char data[strlen(RADV_BUILD_ID_OVERRIDE) / 2];
-      parse_hex(data, RADV_BUILD_ID_OVERRIDE, ARRAY_SIZE(data));
-      _mesa_sha1_update(&ctx, data, ARRAY_SIZE(data));
+      unsigned size = strlen(RADV_BUILD_ID_OVERRIDE) / 2;
+      char *data = alloca(size);
+      parse_hex(data, RADV_BUILD_ID_OVERRIDE, size);
+      _mesa_sha1_update(&ctx, data, size);
    }
 #else
    if (!disk_cache_get_function_identifier(radv_device_get_cache_uuid, &ctx))
@@ -276,11 +277,28 @@ radv_physical_device_init_mem_types(struct radv_physical_device *device)
                           VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
          .heapIndex = visible_vram_index,
       };
+
+      device->memory_domains[type_count] = RADEON_DOMAIN_VRAM;
+      device->memory_flags[type_count] = RADEON_FLAG_CPU_ACCESS | RADEON_FLAG_32BIT;
+      device->memory_properties.memoryTypes[type_count++] = (VkMemoryType){
+         .propertyFlags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT |
+                          VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+                          VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+         .heapIndex = visible_vram_index,
+      };
    }
 
    if (gart_index >= 0) {
       device->memory_domains[type_count] = RADEON_DOMAIN_GTT;
       device->memory_flags[type_count] = RADEON_FLAG_CPU_ACCESS;
+      device->memory_properties.memoryTypes[type_count++] = (VkMemoryType){
+         .propertyFlags = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+                          VK_MEMORY_PROPERTY_HOST_COHERENT_BIT | VK_MEMORY_PROPERTY_HOST_CACHED_BIT,
+         .heapIndex = gart_index,
+      };
+
+      device->memory_domains[type_count] = RADEON_DOMAIN_GTT;
+      device->memory_flags[type_count] = RADEON_FLAG_CPU_ACCESS | RADEON_FLAG_32BIT;
       device->memory_properties.memoryTypes[type_count++] = (VkMemoryType){
          .propertyFlags = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
                           VK_MEMORY_PROPERTY_HOST_COHERENT_BIT | VK_MEMORY_PROPERTY_HOST_CACHED_BIT,
@@ -439,6 +457,7 @@ static const struct vk_instance_extension_table radv_instance_extensions_support
    .KHR_get_surface_capabilities2 = true,
    .KHR_surface = true,
    .KHR_surface_protected_capabilities = true,
+   .EXT_swapchain_colorspace = true,
 #endif
 #ifdef VK_USE_PLATFORM_WAYLAND_KHR
    .KHR_wayland_surface = true,
@@ -504,6 +523,15 @@ radv_physical_device_get_supported_extensions(const struct radv_physical_device 
       .KHR_performance_query = radv_perf_query_supported(device),
       .KHR_pipeline_executable_properties = true,
       .KHR_pipeline_library = !device->use_llvm,
+      /* Hide these behind dri configs for now since we cannot implement it reliably on
+       * all surfaces yet. There is no surface capability query for present wait/id,
+       * but the feature is useful enough to hide behind an opt-in mechanism for now.
+       * If the instance only enables surface extensions that unconditionally support present wait,
+       * we can also expose the extension that way. */
+      .KHR_present_id = driQueryOptionb(&device->instance->dri_options, "vk_khr_present_wait") ||
+         wsi_common_vk_instance_supports_present_wait(&device->instance->vk),
+      .KHR_present_wait = driQueryOptionb(&device->instance->dri_options, "vk_khr_present_wait") ||
+         wsi_common_vk_instance_supports_present_wait(&device->instance->vk),
       .KHR_push_descriptor = true,
       .KHR_ray_query = radv_enable_rt(device, false),
       .KHR_ray_tracing_maintenance1 = radv_enable_rt(device, false),
@@ -548,6 +576,7 @@ radv_physical_device_get_supported_extensions(const struct radv_physical_device 
       .EXT_depth_clip_control = true,
       .EXT_depth_clip_enable = true,
       .EXT_depth_range_unrestricted = true,
+      .EXT_descriptor_buffer = true,
       .EXT_descriptor_indexing = true,
       .EXT_discard_rectangles = true,
 #ifdef VK_USE_PLATFORM_DISPLAY_KHR
@@ -629,7 +658,7 @@ radv_physical_device_get_supported_extensions(const struct radv_physical_device 
       .AMD_shader_core_properties2 = true,
       /* TODO: Figure out if it's possible to implement it on gfx11. */
       .AMD_shader_explicit_vertex_parameter = device->rad_info.gfx_level < GFX11,
-      .AMD_shader_fragment_mask = device->rad_info.gfx_level < GFX11,
+      .AMD_shader_fragment_mask = device->use_fmask,
       .AMD_shader_image_load_store_lod = true,
       .AMD_shader_trinary_minmax = true,
       .AMD_texture_gather_bias_lod = device->rad_info.gfx_level < GFX11,
@@ -860,6 +889,9 @@ radv_physical_device_try_create(struct radv_instance *instance, drmDevicePtr drm
 
    device->dcc_msaa_allowed = (device->instance->perftest_flags & RADV_PERFTEST_DCC_MSAA);
 
+   device->use_fmask = device->rad_info.gfx_level < GFX11 &&
+                       !(device->instance->debug_flags & RADV_DEBUG_NO_FMASK);
+
    device->use_ngg = (device->rad_info.gfx_level >= GFX10 &&
                      device->rad_info.family != CHIP_NAVI14 &&
                      !(device->instance->debug_flags & RADV_DEBUG_NO_NGG)) ||
@@ -873,6 +905,9 @@ radv_physical_device_try_create(struct radv_instance *instance, drmDevicePtr drm
    device->use_ngg_streamout = device->use_ngg &&
                                (device->rad_info.gfx_level >= GFX11 ||
                                 (device->instance->perftest_flags & RADV_PERFTEST_NGG_STREAMOUT));
+
+   device->emulate_ngg_gs_query_pipeline_stat =
+      device->use_ngg && device->rad_info.gfx_level < GFX11;
 
    /* Determine the number of threads per wave for all stages. */
    device->cs_wave_size = 64;
@@ -900,6 +935,8 @@ radv_physical_device_try_create(struct radv_instance *instance, drmDevicePtr drm
           device->rad_info.gfx_level < GFX11)
          device->rt_wave_size = 32;
    }
+
+   device->max_shared_size = device->rad_info.gfx_level >= GFX7 ? 65536 : 32768;
 
    radv_physical_device_init_mem_types(device);
 
@@ -1039,6 +1076,7 @@ static const struct debug_control radv_debug_options[] = {
    {"prologs", RADV_DEBUG_DUMP_PROLOGS},
    {"nodma", RADV_DEBUG_NO_DMA_BLIT},
    {"epilogs", RADV_DEBUG_DUMP_EPILOGS},
+   {"nofmask", RADV_DEBUG_NO_FMASK},
    {NULL, 0}};
 
 const char *
@@ -1080,6 +1118,7 @@ static const driOptionDescription radv_dri_options[] = {
       DRI_CONF_VK_X11_OVERRIDE_MIN_IMAGE_COUNT(0)
       DRI_CONF_VK_X11_STRICT_IMAGE_COUNT(false)
       DRI_CONF_VK_X11_ENSURE_MIN_IMAGE_COUNT(false)
+      DRI_CONF_VK_KHR_PRESENT_WAIT(false)
       DRI_CONF_VK_XWAYLAND_WAIT_READY(true)
       DRI_CONF_RADV_REPORT_LLVM9_VERSION_STRING(false)
       DRI_CONF_RADV_ENABLE_MRT_OUTPUT_NAN_FIXUP(false)
@@ -1671,7 +1710,7 @@ radv_GetPhysicalDeviceFeatures2(VkPhysicalDevice physicalDevice,
          VkPhysicalDeviceAccelerationStructureFeaturesKHR *features =
             (VkPhysicalDeviceAccelerationStructureFeaturesKHR *)ext;
          features->accelerationStructure = true;
-         features->accelerationStructureCaptureReplay = false;
+         features->accelerationStructureCaptureReplay = true;
          features->accelerationStructureIndirectBuild = false;
          features->accelerationStructureHostCommands = false;
          features->descriptorBindingAccelerationStructureUpdateAfterBind = true;
@@ -1714,6 +1753,18 @@ radv_GetPhysicalDeviceFeatures2(VkPhysicalDevice physicalDevice,
          features->shaderSharedFloat64AtomicMinMax = true;
          features->shaderImageFloat32AtomicMinMax = has_shader_image_float_minmax;
          features->sparseImageFloat32AtomicMinMax = has_shader_image_float_minmax;
+         break;
+      }
+      case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PRESENT_ID_FEATURES_KHR: {
+         VkPhysicalDevicePresentIdFeaturesKHR *features =
+            (VkPhysicalDevicePresentIdFeaturesKHR *) ext;
+         features->presentId = pdevice->vk.supported_extensions.KHR_present_id;
+         break;
+      }
+      case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PRESENT_WAIT_FEATURES_KHR: {
+         VkPhysicalDevicePresentWaitFeaturesKHR *features =
+            (VkPhysicalDevicePresentWaitFeaturesKHR *) ext;
+         features->presentWait = pdevice->vk.supported_extensions.KHR_present_wait;
          break;
       }
       case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PRIMITIVE_TOPOLOGY_LIST_RESTART_FEATURES_EXT: {
@@ -1885,11 +1936,11 @@ radv_GetPhysicalDeviceFeatures2(VkPhysicalDevice physicalDevice,
          features->extendedDynamicState3AlphaToCoverageEnable = pdevice->rad_info.gfx_level < GFX11;
          features->extendedDynamicState3LogicOpEnable = true;
          features->extendedDynamicState3LineStippleEnable = true;
-         features->extendedDynamicState3ColorBlendEnable = false; /* TODO: Zink */
+         features->extendedDynamicState3ColorBlendEnable = true;
          features->extendedDynamicState3DepthClipEnable = true;
          features->extendedDynamicState3ConservativeRasterizationMode = true;
          features->extendedDynamicState3DepthClipNegativeOneToOne = true;
-         features->extendedDynamicState3ProvokingVertexMode = !pdevice->use_ngg; /* TODO: NGG */
+         features->extendedDynamicState3ProvokingVertexMode = true;
          features->extendedDynamicState3DepthClampEnable = true;
          features->extendedDynamicState3ColorWriteMask = true;
          features->extendedDynamicState3RasterizationSamples = false; /* TODO: Zink */
@@ -1910,6 +1961,15 @@ radv_GetPhysicalDeviceFeatures2(VkPhysicalDevice physicalDevice,
          features->extendedDynamicState3CoverageReductionMode = false;
          features->extendedDynamicState3RepresentativeFragmentTestEnable = false;
          features->extendedDynamicState3ShadingRateImageEnable = false;
+         break;
+      }
+      case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_BUFFER_FEATURES_EXT: {
+         VkPhysicalDeviceDescriptorBufferFeaturesEXT *features =
+            (VkPhysicalDeviceDescriptorBufferFeaturesEXT *)ext;
+         features->descriptorBuffer = true;
+         features->descriptorBufferCaptureReplay = false;
+         features->descriptorBufferImageLayoutIgnored = true;
+         features->descriptorBufferPushDescriptors = true;
          break;
       }
       default:
@@ -2013,7 +2073,7 @@ radv_GetPhysicalDeviceProperties(VkPhysicalDevice physicalDevice,
       .maxFragmentOutputAttachments = 8,
       .maxFragmentDualSrcAttachments = 1,
       .maxFragmentCombinedOutputResources = max_descriptor_set_size,
-      .maxComputeSharedMemorySize = pdevice->rad_info.gfx_level >= GFX7 ? 65536 : 32768,
+      .maxComputeSharedMemorySize = pdevice->max_shared_size,
       .maxComputeWorkGroupCount = {65535, 65535, 65535},
       .maxComputeWorkGroupInvocations = 1024,
       .maxComputeWorkGroupSize = {1024, 1024, 1024},
@@ -2214,13 +2274,8 @@ radv_get_physical_device_properties_1_2(struct radv_physical_device *pdevice,
    p->robustBufferAccessUpdateAfterBind = true;
    p->quadDivergentImplicitLod = false;
 
-   size_t max_descriptor_set_size =
-      ((1ull << 31) - 16 * MAX_DYNAMIC_BUFFERS -
-       MAX_INLINE_UNIFORM_BLOCK_SIZE * MAX_INLINE_UNIFORM_BLOCK_COUNT) /
-      (32 /* uniform buffer, 32 due to potential space wasted on alignment */ +
-       32 /* storage buffer, 32 due to potential space wasted on alignment */ +
-       32 /* sampler, largest when combined with image */ + 64 /* sampled image */ +
-       64 /* storage image */);
+   size_t max_descriptor_set_size = radv_max_descriptor_set_size();
+
    p->maxPerStageDescriptorUpdateAfterBindSamplers = max_descriptor_set_size;
    p->maxPerStageDescriptorUpdateAfterBindUniformBuffers = max_descriptor_set_size;
    p->maxPerStageDescriptorUpdateAfterBindStorageBuffers = max_descriptor_set_size;
@@ -2702,6 +2757,44 @@ radv_GetPhysicalDeviceProperties2(VkPhysicalDevice physicalDevice,
          VkPhysicalDeviceExtendedDynamicState3PropertiesEXT *properties =
             (VkPhysicalDeviceExtendedDynamicState3PropertiesEXT *)ext;
          properties->dynamicPrimitiveTopologyUnrestricted = false;
+         break;
+      }
+      case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_BUFFER_PROPERTIES_EXT: {
+         VkPhysicalDeviceDescriptorBufferPropertiesEXT *properties =
+            (VkPhysicalDeviceDescriptorBufferPropertiesEXT *)ext;
+         properties->combinedImageSamplerDescriptorSingleArray = true;
+         properties->bufferlessPushDescriptors = true;
+         properties->allowSamplerImageViewPostSubmitCreation = false;
+         properties->descriptorBufferOffsetAlignment = 4;
+         properties->maxDescriptorBufferBindings = MAX_SETS;
+         properties->maxResourceDescriptorBufferBindings = MAX_SETS;
+         properties->maxSamplerDescriptorBufferBindings = MAX_SETS;
+         properties->maxEmbeddedImmutableSamplerBindings = MAX_SETS;
+         properties->maxEmbeddedImmutableSamplers = radv_max_descriptor_set_size();
+         properties->bufferCaptureReplayDescriptorDataSize = 0;
+         properties->imageCaptureReplayDescriptorDataSize = 0;
+         properties->imageViewCaptureReplayDescriptorDataSize = 0;
+         properties->samplerCaptureReplayDescriptorDataSize = 0;
+         properties->accelerationStructureCaptureReplayDescriptorDataSize = 0;
+         properties->samplerDescriptorSize = 16;
+         properties->combinedImageSamplerDescriptorSize = 96;
+         properties->sampledImageDescriptorSize = 64;
+         properties->storageImageDescriptorSize = 32;
+         properties->uniformTexelBufferDescriptorSize = 16;
+         properties->robustUniformTexelBufferDescriptorSize = 16;
+         properties->storageTexelBufferDescriptorSize = 16;
+         properties->robustStorageTexelBufferDescriptorSize = 16;
+         properties->uniformBufferDescriptorSize = 16;
+         properties->robustUniformBufferDescriptorSize = 16;
+         properties->storageBufferDescriptorSize = 16;
+         properties->robustStorageBufferDescriptorSize = 16;
+         properties->inputAttachmentDescriptorSize = 64;
+         properties->accelerationStructureDescriptorSize = 16;
+         properties->maxSamplerDescriptorBufferRange = UINT32_MAX;
+         properties->maxResourceDescriptorBufferRange = UINT32_MAX;
+         properties->samplerDescriptorBufferAddressSpaceSize = RADV_MAX_MEMORY_ALLOCATION_SIZE;
+         properties->resourceDescriptorBufferAddressSpaceSize = RADV_MAX_MEMORY_ALLOCATION_SIZE;
+         properties->descriptorBufferAddressSpaceSize = RADV_MAX_MEMORY_ALLOCATION_SIZE;
          break;
       }
       default:
@@ -5473,7 +5566,6 @@ radv_queue_submit_normal(struct radv_queue *queue, struct vk_queue_submit *submi
       if ((cmd_buffer->usage_flags & VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT))
          can_patch = false;
 
-      cmd_buffer->status = RADV_CMD_BUFFER_STATUS_PENDING;
       use_ace |= radv_cmd_buffer_needs_ace(cmd_buffer);
    }
 
@@ -5987,6 +6079,14 @@ radv_get_buffer_memory_requirements(struct radv_device *device, VkDeviceSize siz
     */
    if ((usage & VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT) && device->uses_device_generated_commands)
       pMemoryRequirements->memoryRequirements.memoryTypeBits |=
+         device->physical_device->memory_types_32bit;
+
+   /* Force 32-bit address-space for descriptor buffers usage because they are passed to shaders
+    * through 32-bit pointers.
+    */
+   if (usage & (VK_BUFFER_USAGE_RESOURCE_DESCRIPTOR_BUFFER_BIT_EXT |
+                VK_BUFFER_USAGE_SAMPLER_DESCRIPTOR_BUFFER_BIT_EXT))
+      pMemoryRequirements->memoryRequirements.memoryTypeBits =
          device->physical_device->memory_types_32bit;
 
    if (flags & VK_BUFFER_CREATE_SPARSE_BINDING_BIT)

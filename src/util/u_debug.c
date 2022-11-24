@@ -159,7 +159,7 @@ debug_get_option(const char *name, const char *dfault)
       result = dfault;
 
    if (debug_get_option_should_print())
-      debug_printf("%s: %s = %s\n", __FUNCTION__, name,
+      debug_printf("%s: %s = %s\n", __func__, name,
                    result ? result : "(null)");
 
    return result;
@@ -177,7 +177,7 @@ debug_get_bool_option(const char *name, bool dfault)
 {
    bool result = debug_get_bool_option_direct(name, dfault);
    if (debug_get_option_should_print())
-      debug_printf("%s: %s = %s\n", __FUNCTION__, name,
+      debug_printf("%s: %s = %s\n", __func__, name,
                    result ? "TRUE" : "FALSE");
 
    return result;
@@ -204,7 +204,7 @@ debug_get_num_option(const char *name, long dfault)
    }
 
    if (debug_get_option_should_print())
-      debug_printf("%s: %s = %li\n", __FUNCTION__, name, result);
+      debug_printf("%s: %s = %li\n", __func__, name, result);
 
    return result;
 }
@@ -229,7 +229,7 @@ debug_get_version_option(const char *name, unsigned *major, unsigned *minor)
    }
 
    if (debug_get_option_should_print())
-      debug_printf("%s: %s = %u.%u\n", __FUNCTION__, name, *major, *minor);
+      debug_printf("%s: %s = %u.%u\n", __func__, name, *major, *minor);
 
    return;
 }
@@ -294,7 +294,7 @@ debug_get_flags_option(const char *name,
       result = dfault;
    else if (!strcmp(str, "help")) {
       result = dfault;
-      _debug_printf("%s: help for %s:\n", __FUNCTION__, name);
+      _debug_printf("%s: help for %s:\n", __func__, name);
       for (; flags->name; ++flags)
          namealign = MAX2(namealign, strlen(flags->name));
       for (flags = orig; flags->name; ++flags)
@@ -314,9 +314,9 @@ debug_get_flags_option(const char *name,
    if (debug_get_option_should_print()) {
       if (str) {
          debug_printf("%s: %s = 0x%"PRIx64" (%s)\n",
-                      __FUNCTION__, name, result, str);
+                      __func__, name, result, str);
       } else {
-         debug_printf("%s: %s = 0x%"PRIx64"\n", __FUNCTION__, name, result);
+         debug_printf("%s: %s = 0x%"PRIx64"\n", __func__, name, result);
       }
    }
 

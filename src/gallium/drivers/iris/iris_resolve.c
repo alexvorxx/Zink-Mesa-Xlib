@@ -442,7 +442,7 @@ iris_resolve_color(struct iris_context *ice,
                    unsigned level, unsigned layer,
                    enum isl_aux_op resolve_op)
 {
-   //DBG("%s to mt %p level %u layer %u\n", __FUNCTION__, mt, level, layer);
+   //DBG("%s to mt %p level %u layer %u\n", __func__, mt, level, layer);
 
    struct blorp_surf surf;
    iris_blorp_surf_for_resource(&batch->screen->isl_dev, &surf,
@@ -500,7 +500,7 @@ iris_mcs_partial_resolve(struct iris_context *ice,
                          uint32_t start_layer,
                          uint32_t num_layers)
 {
-   //DBG("%s to mt %p layers %u-%u\n", __FUNCTION__, mt,
+   //DBG("%s to mt %p layers %u-%u\n", __func__, mt,
        //start_layer, start_layer + num_layers - 1);
 
    assert(isl_aux_usage_has_mcs(res->aux.usage));

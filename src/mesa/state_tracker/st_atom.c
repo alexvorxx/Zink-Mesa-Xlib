@@ -219,8 +219,6 @@ void st_validate_state( struct st_context *st, enum st_pipeline pipeline )
          st->gfx_shaders_may_be_dirty = false;
       }
 
-      st_manager_validate_framebuffers(st);
-
       if (pipeline == ST_PIPELINE_RENDER)
          pipeline_mask = ST_PIPELINE_RENDER_STATE_MASK;
       else
@@ -228,7 +226,6 @@ void st_validate_state( struct st_context *st, enum st_pipeline pipeline )
       break;
 
    case ST_PIPELINE_CLEAR:
-      st_manager_validate_framebuffers(st);
       pipeline_mask = ST_PIPELINE_CLEAR_STATE_MASK;
       break;
 
@@ -238,12 +235,10 @@ void st_validate_state( struct st_context *st, enum st_pipeline pipeline )
          st->gfx_shaders_may_be_dirty = false;
       }
 
-      st_manager_validate_framebuffers(st);
       pipeline_mask = ST_PIPELINE_META_STATE_MASK;
       break;
 
    case ST_PIPELINE_UPDATE_FRAMEBUFFER:
-      st_manager_validate_framebuffers(st);
       pipeline_mask = ST_PIPELINE_UPDATE_FB_STATE_MASK;
       break;
 

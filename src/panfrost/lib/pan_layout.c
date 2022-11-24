@@ -275,21 +275,56 @@ panfrost_texture_offset(const struct pan_image_layout *layout,
                (surface_idx * layout->slices[level].surface_stride);
 }
 
+/*
+ * Return the minimum stride alignment in bytes for a given texture format.
+ *
+ * There is no format on any supported Mali with a minimum alignment greater
+ * than 64 bytes, but 64 bytes is the required alignment of all regular formats
+ * in v7 and newer. If this alignment is not met, imprecise faults may be
+ * raised.
+ *
+ * This may not be necessary on older hardware but we enforce it there too for
+ * uniformity. If this poses a problem there, we'll need a solution that can
+ * handle v7 as well.
+ *
+ * Certain non-regular formats require smaller power-of-two alignments.
+ * This requirement could be loosened in the future if there is a compelling
+ * reason, by making this query more precise.
+ */
+uint32_t
+pan_stride_align_B(UNUSED enum pipe_format format)
+{
+        return 64;
+}
+
+bool
+pan_is_stride_aligned(enum pipe_format format, uint32_t stride_B)
+{
+        return (stride_B % pan_stride_align_B(format)) == 0;
+}
+
 bool
 pan_image_layout_init(struct pan_image_layout *layout,
                       const struct pan_image_explicit_layout *explicit_layout)
 {
-        /* Explicit stride only work with non-mipmap, non-array; single-sample
-         * 2D image, and in-band CRC can't be used.
+        /* Explicit stride only work with non-mipmap, non-array, single-sample
+         * 2D image without CRC.
          */
         if (explicit_layout &&
 	    (layout->depth > 1 || layout->nr_samples > 1 ||
              layout->array_size > 1 || layout->dim != MALI_TEXTURE_DIMENSION_2D ||
-             layout->nr_slices > 1 || layout->crc_mode == PAN_IMAGE_CRC_INBAND))
+             layout->nr_slices > 1 || layout->crc))
                 return false;
 
-        /* Mandate 64 byte alignement */
-        if (explicit_layout && (explicit_layout->offset & 63))
+        /* Require both offsets and strides to be aligned to the hardware
+         * requirement. Panfrost allocates offsets and strides like this, so
+         * this requirement is satisfied by any image that was exported from
+         * another process with Panfrost. However, it does restrict imports of
+         * EGL external images.
+         */
+        if (explicit_layout &&
+            !(pan_is_stride_aligned(layout->format, explicit_layout->offset) &&
+              pan_is_stride_aligned(layout->format, explicit_layout->row_stride)))
                 return false;
 
         unsigned fmt_blocksize = util_format_get_blocksize(layout->format);
@@ -303,7 +338,6 @@ pan_image_layout_init(struct pan_image_layout *layout,
         bool linear = layout->modifier == DRM_FORMAT_MOD_LINEAR;
         bool is_3d = layout->dim == MALI_TEXTURE_DIMENSION_3D;
 
-        unsigned oob_crc_offset = 0;
         unsigned offset = explicit_layout ? explicit_layout->offset : 0;
         struct pan_block_size block_size =
                 panfrost_block_size(layout->modifier, layout->format);
@@ -343,9 +377,18 @@ pan_image_layout_init(struct pan_image_layout *layout,
 
                         row_stride = explicit_layout->row_stride;
                 } else if (linear) {
-                        /* Keep lines alignment on 64 byte for performance */
+                        /* Keep lines alignment on 64 byte for performance.
+                         *
+                         * Note that this is a multiple of the minimum
+                         * stride alignment, so the hardware requirement is
+                         * satisfied as a result.
+                         */
                         row_stride = ALIGN_POT(row_stride, 64);
                 }
+
+
+                assert(pan_is_stride_aligned(layout->format, row_stride) &&
+                       "alignment gauranteed in both code paths");
 
                 unsigned slice_one_size = row_stride * (effective_height / block_size.height);
 
@@ -386,24 +429,23 @@ pan_image_layout_init(struct pan_image_layout *layout,
 
                 slice->surface_stride = slice_one_size;
 
+                assert(pan_is_stride_aligned(layout->format, slice->surface_stride) &&
+                       "integer multiple of aligned is still aligned, "
+                       "and AFBC header is at least 64 byte aligned");
+
                 /* Compute AFBC sizes if necessary */
 
                 offset += slice_full_size;
                 slice->size = slice_full_size;
 
                 /* Add a checksum region if necessary */
-                if (layout->crc_mode != PAN_IMAGE_CRC_NONE) {
+                if (layout->crc) {
                         slice->crc.size =
                                 panfrost_compute_checksum_size(slice, width, height);
 
-                        if (layout->crc_mode == PAN_IMAGE_CRC_INBAND) {
-                                slice->crc.offset = offset;
-                                offset += slice->crc.size;
-                                slice->size += slice->crc.size;
-                        } else {
-                                slice->crc.offset = oob_crc_offset;
-                                oob_crc_offset += slice->crc.size;
-                        }
+                        slice->crc.offset = offset;
+                        offset += slice->crc.size;
+                        slice->size += slice->crc.size;
                 }
 
                 width = u_minify(width, 1);
@@ -417,7 +459,6 @@ pan_image_layout_init(struct pan_image_layout *layout,
                 layout->data_size = offset;
         else
                 layout->data_size = ALIGN_POT(layout->array_stride * layout->array_size, 4096);
-        layout->crc_size = oob_crc_offset;
 
         return true;
 }

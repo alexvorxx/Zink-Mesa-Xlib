@@ -28,7 +28,6 @@
 #include "nir_builder.h"
 #include "nir_serialize.h"
 #include "nir/nir_helpers.h"
-#include "ralloc.h"
 #include "si_pipe.h"
 #include "si_shader_internal.h"
 #include "sid.h"
@@ -36,6 +35,7 @@
 #include "tgsi/tgsi_strings.h"
 #include "util/u_memory.h"
 #include "util/mesa-sha1.h"
+#include "util/ralloc.h"
 
 static const char scratch_rsrc_dword0_symbol[] = "SCRATCH_RSRC_DWORD0";
 
@@ -1096,17 +1096,45 @@ void si_shader_dump_stats_for_shader_db(struct si_screen *screen, struct si_shad
       si_shader_dump_disassembly(screen, &shader->binary, shader->selector->stage,
                                  shader->wave_size, debug, "main", NULL);
 
+   unsigned num_outputs = 0;
+
+   if (shader->selector->stage <= MESA_SHADER_GEOMETRY) {
+      /* This doesn't include pos exports because only param exports are interesting
+       * for performance and can be optimized.
+       */
+      if (shader->gs_copy_shader)
+         num_outputs = shader->gs_copy_shader->info.nr_param_exports;
+      else if (shader->key.ge.as_es)
+         num_outputs = shader->selector->info.esgs_itemsize / 16;
+      else if (shader->key.ge.as_ls)
+         num_outputs = shader->selector->info.lshs_vertex_stride / 16;
+      else if (shader->selector->stage == MESA_SHADER_VERTEX ||
+               shader->selector->stage == MESA_SHADER_TESS_EVAL ||
+               shader->key.ge.as_ngg)
+         num_outputs = shader->info.nr_param_exports;
+      else if (shader->selector->stage == MESA_SHADER_TESS_CTRL)
+         num_outputs = util_last_bit64(shader->selector->info.outputs_written);
+      else
+         unreachable("invalid shader key");
+   } else if (shader->selector->stage == MESA_SHADER_FRAGMENT) {
+      num_outputs = util_bitcount(shader->selector->info.colors_written) +
+                    (shader->selector->info.writes_z ||
+                     shader->selector->info.writes_stencil ||
+                     shader->selector->info.writes_samplemask);
+   }
+
    util_debug_message(debug, SHADER_INFO,
                       "Shader Stats: SGPRS: %d VGPRS: %d Code Size: %d "
                       "LDS: %d Scratch: %d Max Waves: %d Spilled SGPRs: %d "
-                      "Spilled VGPRs: %d PrivMem VGPRs: %d DivergentLoop: %d, InlineUniforms: %d, "
-                      "ParamExports: %u, (%s, W%u)",
+                      "Spilled VGPRs: %d PrivMem VGPRs: %d Outputs: %u PatchOutputs: %u DivergentLoop: %d "
+                      "InlineUniforms: %d (%s, W%u)",
                       conf->num_sgprs, conf->num_vgprs, si_get_shader_binary_size(screen, shader),
                       conf->lds_size, conf->scratch_bytes_per_wave, shader->info.max_simd_waves,
                       conf->spilled_sgprs, conf->spilled_vgprs, shader->info.private_mem_vgprs,
+                      num_outputs,
+                      util_last_bit64(shader->selector->info.patch_outputs_written),
                       shader->selector->info.has_divergent_loop,
                       shader->selector->info.base.num_inlinable_uniforms,
-                      shader->info.nr_param_exports,
                       stages[shader->selector->stage], shader->wave_size);
 }
 
@@ -1519,6 +1547,46 @@ static bool si_nir_kill_outputs(nir_shader *nir, const union si_shader_key *key)
    return progress;
 }
 
+static bool clamp_vertex_color_instr(nir_builder *b, nir_instr *instr, void *state)
+{
+   if (instr->type != nir_instr_type_intrinsic)
+      return false;
+
+   nir_intrinsic_instr *intrin = nir_instr_as_intrinsic(instr);
+   if (intrin->intrinsic != nir_intrinsic_store_output)
+      return false;
+
+   unsigned location = nir_intrinsic_io_semantics(intrin).location;
+   if (location != VARYING_SLOT_COL0 && location != VARYING_SLOT_COL1 &&
+       location != VARYING_SLOT_BFC0 && location != VARYING_SLOT_BFC1)
+      return false;
+
+   /* no indirect output */
+   assert(nir_src_is_const(intrin->src[1]) && !nir_src_as_uint(intrin->src[1]));
+   /* only scalar output */
+   assert(intrin->src[0].ssa->num_components == 1);
+
+   b->cursor = nir_before_instr(instr);
+
+   nir_ssa_def *color = intrin->src[0].ssa;
+   nir_ssa_def *clamp = nir_load_clamp_vertex_color_amd(b);
+   nir_ssa_def *new_color = nir_bcsel(b, clamp, nir_fsat(b, color), color);
+   nir_instr_rewrite_src_ssa(instr, &intrin->src[0], new_color);
+
+   return true;
+}
+
+static bool si_nir_clamp_vertex_color(nir_shader *nir)
+{
+   uint64_t mask = VARYING_BIT_COL0 | VARYING_BIT_COL1 | VARYING_BIT_BFC0 | VARYING_BIT_BFC1;
+   if (!(nir->info.outputs_written & mask))
+      return false;
+
+   return nir_shader_instructions_pass(nir, clamp_vertex_color_instr,
+                                       nir_metadata_dominance | nir_metadata_block_index,
+                                       NULL);
+}
+
 static unsigned si_map_io_driver_location(unsigned semantic)
 {
    if ((semantic >= VARYING_SLOT_PATCH0 && semantic < VARYING_SLOT_TESS_MAX) ||
@@ -1587,6 +1655,84 @@ struct nir_shader *si_deserialize_shader(struct si_shader_selector *sel)
    struct blob_reader blob_reader;
    blob_reader_init(&blob_reader, sel->nir_binary, sel->nir_size);
    return nir_deserialize(NULL, options, &blob_reader);
+}
+
+static void si_nir_assign_param_offsets(nir_shader *nir, struct si_shader *shader,
+                                        int8_t slot_remap[NUM_TOTAL_VARYING_SLOTS])
+{
+   struct si_shader_selector *sel = shader->selector;
+   struct si_shader_binary_info *info = &shader->info;
+
+   nir_function_impl *impl = nir_shader_get_entrypoint(nir);
+   assert(impl);
+
+   nir_foreach_block(block, impl) {
+      nir_foreach_instr_safe(instr, block) {
+         if (instr->type != nir_instr_type_intrinsic)
+            continue;
+
+         nir_intrinsic_instr *intr = nir_instr_as_intrinsic(instr);
+         if (intr->intrinsic != nir_intrinsic_store_output)
+            continue;
+
+         /* No indirect indexing allowed. */
+         ASSERTED nir_src offset = *nir_get_io_offset_src(intr);
+         assert(nir_src_is_const(offset) && nir_src_as_uint(offset) == 0);
+
+         assert(intr->num_components == 1); /* only scalar stores expected */
+         nir_io_semantics sem = nir_intrinsic_io_semantics(intr);
+
+         /* Assign the param index if it's unassigned. */
+         if (nir_slot_is_varying(sem.location) && !sem.no_varying &&
+             (sem.gs_streams & 0x3) == 0 &&
+             info->vs_output_param_offset[sem.location] == AC_EXP_PARAM_DEFAULT_VAL_0000) {
+            /* The semantic and the base should be the same as in si_shader_info. */
+            assert(sem.location == sel->info.output_semantic[nir_intrinsic_base(intr)]);
+            /* It must not be remapped (duplicated). */
+            assert(slot_remap[sem.location] == -1);
+
+            info->vs_output_param_offset[sem.location] = info->nr_param_exports++;
+            info->vs_output_param_mask |= BITFIELD64_BIT(nir_intrinsic_base(intr));
+         }
+      }
+   }
+
+   /* Duplicated outputs are redirected here. */
+   for (unsigned i = 0; i < NUM_TOTAL_VARYING_SLOTS; i++) {
+      if (slot_remap[i] >= 0)
+         info->vs_output_param_offset[i] = info->vs_output_param_offset[slot_remap[i]];
+   }
+
+   if (shader->key.ge.mono.u.vs_export_prim_id) {
+      info->vs_output_param_offset[VARYING_SLOT_PRIMITIVE_ID] = info->nr_param_exports++;
+      info->vs_output_param_mask |= BITFIELD64_BIT(sel->info.num_outputs);
+   }
+}
+
+static void si_assign_param_offsets(nir_shader *nir, struct si_shader *shader)
+{
+   /* Initialize this first. */
+   shader->info.nr_param_exports = 0;
+   shader->info.vs_output_param_mask = 0;
+
+   STATIC_ASSERT(sizeof(shader->info.vs_output_param_offset[0]) == 1);
+   memset(shader->info.vs_output_param_offset, AC_EXP_PARAM_DEFAULT_VAL_0000,
+          sizeof(shader->info.vs_output_param_offset));
+
+   /* A slot remapping table for duplicated outputs, so that 1 vertex shader output can be
+    * mapped to multiple fragment shader inputs.
+    */
+   int8_t slot_remap[NUM_TOTAL_VARYING_SLOTS];
+   memset(slot_remap, -1, NUM_TOTAL_VARYING_SLOTS);
+
+   /* This sets DEFAULT_VAL for constant outputs in vs_output_param_offset. */
+   /* TODO: This doesn't affect GS. */
+   NIR_PASS_V(nir, ac_nir_optimize_outputs, false, slot_remap,
+              shader->info.vs_output_param_offset);
+
+   /* Assign the non-constant outputs. */
+   /* TODO: Use this for the GS copy shader too. */
+   si_nir_assign_param_offsets(nir, shader, slot_remap);
 }
 
 struct nir_shader *si_get_nir_shader(struct si_shader *shader, bool *free_nir,
@@ -1686,6 +1832,15 @@ struct nir_shader *si_get_nir_shader(struct si_shader *shader, bool *free_nir,
    if (sel->stage == MESA_SHADER_FRAGMENT && key->ps.mono.point_smoothing)
       NIR_PASS(progress, nir, nir_lower_point_smooth);
 
+   bool is_last_vgt_stage =
+      (sel->stage == MESA_SHADER_VERTEX ||
+       sel->stage == MESA_SHADER_TESS_EVAL ||
+       (sel->stage == MESA_SHADER_GEOMETRY && shader->key.ge.as_ngg)) &&
+      !shader->key.ge.as_ls && !shader->key.ge.as_es;
+
+   if (is_last_vgt_stage)
+      NIR_PASS(progress, nir, si_nir_clamp_vertex_color);
+
    if (progress)
       si_nir_opts(sel->screen, nir, true);
 
@@ -1708,6 +1863,10 @@ struct nir_shader *si_get_nir_shader(struct si_shader *shader, bool *free_nir,
    progress2 |= ac_nir_lower_indirect_derefs(nir, sel->screen->info.gfx_level);
 
    bool opt_offsets = si_lower_io_to_mem(shader, nir, tcs_vgpr_only_inputs);
+
+   /* Assign param export indices. */
+   if (is_last_vgt_stage)
+      si_assign_param_offsets(nir, shader);
 
    if (progress2 || opt_offsets)
       si_nir_opts(sel->screen, nir, false);
@@ -1748,94 +1907,12 @@ void si_update_shader_binary_info(struct si_shader *shader, nir_shader *nir)
    shader->info.uses_vmem_sampler_or_bvh |= info.uses_vmem_sampler_or_bvh;
 }
 
-static void si_nir_assign_param_offsets(nir_shader *nir, const struct si_shader_info *info,
-                                        int8_t slot_remap[NUM_TOTAL_VARYING_SLOTS],
-                                        uint8_t *num_param_exports, uint64_t *output_param_mask,
-                                        uint8_t vs_output_param_offset[NUM_TOTAL_VARYING_SLOTS])
-{
-   nir_function_impl *impl = nir_shader_get_entrypoint(nir);
-   assert(impl);
-
-   nir_foreach_block(block, impl) {
-      nir_foreach_instr_safe(instr, block) {
-         if (instr->type != nir_instr_type_intrinsic)
-            continue;
-
-         nir_intrinsic_instr *intr = nir_instr_as_intrinsic(instr);
-         if (intr->intrinsic != nir_intrinsic_store_output)
-            continue;
-
-         /* No indirect indexing allowed. */
-         ASSERTED nir_src offset = *nir_get_io_offset_src(intr);
-         assert(nir_src_is_const(offset) && nir_src_as_uint(offset) == 0);
-
-         assert(intr->num_components == 1); /* only scalar stores expected */
-         nir_io_semantics sem = nir_intrinsic_io_semantics(intr);
-
-         /* Assign the param index if it's unassigned. */
-         if (nir_slot_is_varying(sem.location) && !sem.no_varying &&
-             (sem.gs_streams & 0x3) == 0 &&
-             vs_output_param_offset[sem.location] == AC_EXP_PARAM_DEFAULT_VAL_0000) {
-            /* The semantic and the base should be the same as in si_shader_info. */
-            assert(sem.location == info->output_semantic[nir_intrinsic_base(intr)]);
-            /* It must not be remapped (duplicated). */
-            assert(slot_remap[sem.location] == -1);
-
-            vs_output_param_offset[sem.location] = (*num_param_exports)++;
-            *output_param_mask |= BITFIELD64_BIT(nir_intrinsic_base(intr));
-         }
-      }
-   }
-
-   /* Duplicated outputs are redirected here. */
-   for (unsigned i = 0; i < NUM_TOTAL_VARYING_SLOTS; i++) {
-      if (slot_remap[i] >= 0)
-         vs_output_param_offset[i] = vs_output_param_offset[slot_remap[i]];
-   }
-}
-
 bool si_compile_shader(struct si_screen *sscreen, struct ac_llvm_compiler *compiler,
                        struct si_shader *shader, struct util_debug_callback *debug)
 {
    struct si_shader_selector *sel = shader->selector;
    bool free_nir;
    struct nir_shader *nir = si_get_nir_shader(shader, &free_nir, 0);
-
-   /* Assign param export indices. */
-   if ((sel->stage == MESA_SHADER_VERTEX ||
-        sel->stage == MESA_SHADER_TESS_EVAL ||
-        (sel->stage == MESA_SHADER_GEOMETRY && shader->key.ge.as_ngg)) &&
-       !shader->key.ge.as_ls && !shader->key.ge.as_es) {
-      /* Initialize this first. */
-      shader->info.nr_param_exports = 0;
-      shader->info.vs_output_param_mask = 0;
-
-      STATIC_ASSERT(sizeof(shader->info.vs_output_param_offset[0]) == 1);
-      memset(shader->info.vs_output_param_offset, AC_EXP_PARAM_DEFAULT_VAL_0000,
-             sizeof(shader->info.vs_output_param_offset));
-
-      /* A slot remapping table for duplicated outputs, so that 1 vertex shader output can be
-       * mapped to multiple fragment shader inputs.
-       */
-      int8_t slot_remap[NUM_TOTAL_VARYING_SLOTS];
-      memset(slot_remap, -1, NUM_TOTAL_VARYING_SLOTS);
-
-      /* This sets DEFAULT_VAL for constant outputs in vs_output_param_offset. */
-      /* TODO: This doesn't affect GS. */
-      NIR_PASS_V(nir, ac_nir_optimize_outputs, false, slot_remap,
-                 shader->info.vs_output_param_offset);
-
-      /* Assign the non-constant outputs. */
-      /* TODO: Use this for the GS copy shader too. */
-      si_nir_assign_param_offsets(nir, &sel->info, slot_remap, &shader->info.nr_param_exports,
-                                  &shader->info.vs_output_param_mask,
-                                  shader->info.vs_output_param_offset);
-
-      if (shader->key.ge.mono.u.vs_export_prim_id) {
-         shader->info.vs_output_param_offset[VARYING_SLOT_PRIMITIVE_ID] = shader->info.nr_param_exports++;
-         shader->info.vs_output_param_mask |= BITFIELD64_BIT(sel->info.num_outputs);
-      }
-   }
 
    struct pipe_stream_output_info so = {};
    if (si_shader_uses_streamout(shader))

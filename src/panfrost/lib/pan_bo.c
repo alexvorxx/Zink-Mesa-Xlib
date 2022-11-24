@@ -35,7 +35,7 @@
 #include "pan_util.h"
 #include "wrap.h"
 
-#include "os/os_mman.h"
+#include "util/os_mman.h"
 
 #include "util/u_inlines.h"
 #include "util/u_math.h"

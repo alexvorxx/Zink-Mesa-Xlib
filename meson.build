@@ -22,11 +22,12 @@ project(
   'mesa',
   ['c', 'cpp'],
   version : run_command(
-    [find_program('python3', 'python'), 'bin/meson_get_version.py'],
+    [find_program('python3', 'python'), 'bin/meson_get_version.py',
+     meson.version().version_compare('>= 0.56') ? meson.project_source_root() : meson.source_root()],
     check : true
   ).stdout(),
   license : 'MIT',
-  meson_version : '>= 0.53',
+  meson_version : '>= 0.54',
   default_options : ['buildtype=debugoptimized', 'b_ndebug=if-release', 'c_std=c11', 'cpp_std=c++17', 'rust_std=2021']
 )
 
@@ -300,8 +301,13 @@ if with_aco_tests and not with_amd_vk
 endif
 
 with_microsoft_clc = get_option('microsoft-clc').enabled()
-with_intel_clc = get_option('intel-clc').enabled()
-with_intel_vk_rt = with_intel_vk and with_intel_clc
+if ['x86_64'].contains(host_machine.cpu_family())
+  with_intel_clc = get_option('intel-clc').enabled()
+  with_intel_vk_rt = with_intel_vk and with_intel_clc
+else
+  with_intel_clc = false
+  with_intel_vk_rt = false
+endif
 with_clc = with_microsoft_clc or with_intel_clc
 with_libclc = with_clc
 with_spirv_to_dxil = get_option('spirv-to-dxil')
@@ -321,6 +327,10 @@ else
 endif
 
 with_vulkan_beta = get_option('vulkan-beta')
+if host_machine.system() == 'darwin'
+  #macOS seems to need beta extensions to build for now:
+  with_vulkan_beta = true
+endif
 if with_vulkan_beta
   pre_args += '-DVK_ENABLE_BETA_EXTENSIONS'
 endif
@@ -451,9 +461,6 @@ if host_machine.system() == 'darwin'
   cpp_args += '-DVK_USE_PLATFORM_MACOS_MVK'
   c_args += '-DVK_USE_PLATFORM_METAL_EXT'
   cpp_args += '-DVK_USE_PLATFORM_METAL_EXT'
-  #macOS seems to need beta extensions to build for now:
-  c_args += '-DVK_ENABLE_BETA_EXTENSIONS'
-  cpp_args += '-DVK_ENABLE_BETA_EXTENSIONS'
 endif
 
 _egl = get_option('egl')
@@ -684,8 +691,8 @@ if vdpau_drivers_path == ''
   vdpau_drivers_path = join_paths(get_option('libdir'), 'vdpau')
 endif
 
-if with_vulkan_overlay_layer or with_aco_tests or with_amd_vk
-  prog_glslang = find_program('glslangValidator')
+if with_vulkan_overlay_layer or with_aco_tests or with_amd_vk or with_intel_vk
+  prog_glslang = find_program('glslangValidator', native : true)
   if run_command(prog_glslang, [ '--quiet', '--version' ], check : false).returncode() == 0
     glslang_quiet = ['--quiet']
   else
@@ -1131,6 +1138,7 @@ if cc.get_argument_syntax() == 'msvc'
     '/wd5105',  # macro expansion producing 'defined' has undefined behavior (winbase.h, need Windows SDK upgrade)
     '/we4020',  # Error when passing the wrong number of parameters
     '/we4024',  # Error when passing different type of parameter
+    '/we4189',  # 'identifier' : local variable is initialized but not referenced
     '/Zc:__cplusplus', #Set __cplusplus macro to match the /std:c++<version> on the command line
   ]
   c_args += cc.get_supported_arguments(_trial)
@@ -1144,6 +1152,7 @@ else
     '-Werror=incompatible-pointer-types',
     '-Werror=int-conversion',
     '-Wimplicit-fallthrough',
+    '-Wmisleading-indentation',
     '-Wno-missing-field-initializers',
     '-Wno-format-truncation',
     '-fno-math-errno',
@@ -1157,6 +1166,7 @@ else
   _trial_cpp = [
     '-Werror=return-type',
     '-Werror=empty-body',
+    '-Wmisleading-indentation',
     '-Wno-non-virtual-dtor',
     '-Wno-missing-field-initializers',
     '-Wno-format-truncation',
@@ -1252,34 +1262,36 @@ if host_machine.system() == 'windows'
   endif
 endif
 
-if host_machine.cpu_family().startswith('x86') and cc.get_argument_syntax() != 'msvc'
+sse41_args = []
+with_sse41 = false
+if host_machine.cpu_family().startswith('x86')
   pre_args += '-DUSE_SSE41'
   with_sse41 = true
-  sse41_args = ['-msse4.1']
 
-  if host_machine.cpu_family() == 'x86'
-    if get_option('sse2')
-      # These settings make generated GCC code match MSVC and follow
-      # GCC advice on https://gcc.gnu.org/wiki/FloatingPointMath#x86note
-      #
-      # NOTE: We need to ensure stack is realigned given that we
-      # produce shared objects, and have no control over the stack
-      # alignment policy of the application. Therefore we need
-      # -mstackrealign or -mincoming-stack-boundary=2.
-      #
-      # XXX: We could have SSE without -mstackrealign if we always used
-      # __attribute__((force_align_arg_pointer)), but that's not
-      # always the case.
-      c_args += ['-msse2', '-mfpmath=sse', '-mstackrealign']
-    else
-      # GCC on x86 (not x86_64) with -msse* assumes a 16 byte aligned stack, but
-      # that's not guaranteed
-      sse41_args += '-mstackrealign'
+  if cc.get_id() != 'msvc'
+    sse41_args = ['-msse4.1']
+
+    if host_machine.cpu_family() == 'x86'
+      if get_option('sse2')
+        # These settings make generated GCC code match MSVC and follow
+        # GCC advice on https://gcc.gnu.org/wiki/FloatingPointMath#x86note
+        #
+        # NOTE: We need to ensure stack is realigned given that we
+        # produce shared objects, and have no control over the stack
+        # alignment policy of the application. Therefore we need
+        # -mstackrealign or -mincoming-stack-boundary=2.
+        #
+        # XXX: We could have SSE without -mstackrealign if we always used
+        # __attribute__((force_align_arg_pointer)), but that's not
+        # always the case.
+        c_args += ['-msse2', '-mfpmath=sse', '-mstackrealign']
+      else
+        # GCC on x86 (not x86_64) with -msse* assumes a 16 byte aligned stack, but
+        # that's not guaranteed
+        sse41_args += '-mstackrealign'
+      endif
     endif
   endif
-else
-  with_sse41 = false
-  sse41_args = []
 endif
 
 # Check for GCC style atomics
@@ -1560,6 +1572,11 @@ elif with_intel_vk or with_intel_hasvk
   error('Intel "Anvil" Vulkan driver requires the dl_iterate_phdr function')
 endif
 
+# only used in Iris and ANV
+if with_any_intel and ['x86', 'x86_64'].contains(host_machine.cpu_family())
+  pre_args += '-DSUPPORT_INTEL_INTEGRATED_GPUS'
+endif
+
 # Determine whether or not the rt library is needed for time functions
 if host_machine.system() == 'windows' or cc.has_function('clock_gettime')
   dep_clock = null_dep
@@ -1616,13 +1633,21 @@ if dep_thread.found()
     pre_args += '-DHAVE_PTHREAD_SETAFFINITY'
   endif
 endif
+
+# We don't have expat on Android or Windows, which is a needed dep for xmlconfig
+supports_xmlconfig = not (with_platform_android or with_platform_windows)
+
+opt_xmlconfig = get_option('xmlconfig')
+if opt_xmlconfig.enabled() and not supports_xmlconfig
+   error('xmlconfig not available on Android or Windows')
+endif
+use_xmlconfig = supports_xmlconfig and not opt_xmlconfig.disabled()
+
 if host_machine.system() == 'darwin'
   dep_expat = meson.get_compiler('c').find_library('expat')
-elif host_machine.system() != 'windows'
-  dep_expat = dependency('expat', fallback : ['expat', 'expat_dep'],
-                         required: not with_platform_android)
 else
-  dep_expat = null_dep
+  dep_expat = dependency('expat', fallback : ['expat', 'expat_dep'],
+                         required: use_xmlconfig)
 endif
 # Predefined macros for windows
 if host_machine.system() == 'windows'
@@ -2278,6 +2303,14 @@ gcc_lto_quirk = (cc.get_id() == 'gcc') ? ['-fno-lto'] : []
 devenv = environment()
 
 dir_compiler_nir = join_paths(meson.current_source_dir(), 'src/compiler/nir/')
+if meson.version().version_compare('>= 0.56')
+  dir_source_root = meson.project_source_root()
+else
+  # source_root() returns a source root of the parent project if called from
+  # a subproject, which makes impossible to use Mesa as a meson subproject.
+  dir_source_root = meson.source_root()
+endif
+
 
 subdir('include')
 subdir('bin')

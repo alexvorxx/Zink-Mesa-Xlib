@@ -45,6 +45,13 @@
 
 #include "util/u_dynarray.h"
 #include "util/u_thread.h"
+#include "util/detect_os.h"
+
+#if DETECT_OS_WINDOWS
+#define VA_PUBLIC_API
+#else
+#define VA_PUBLIC_API PUBLIC
+#endif
 
 #ifndef VA_RT_FORMAT_YUV420_10
 #define VA_RT_FORMAT_YUV420_10  VA_RT_FORMAT_YUV420_10BPP
@@ -383,9 +390,7 @@ typedef struct {
 } vlVaQualityBits;
 
 // Public functions:
-#ifndef _WIN32
 VAStatus VA_DRIVER_INIT_FUNC(VADriverContextP ctx);
-#endif
 
 // vtable functions:
 VAStatus vlVaTerminate(VADriverContextP ctx);
@@ -507,7 +512,7 @@ void vlVaHandlePictureParameterBufferVP9(vlVaDriver *drv, vlVaContext *context, 
 void vlVaHandleSliceParameterBufferVP9(vlVaContext *context, vlVaBuffer *buf);
 void vlVaDecoderVP9BitstreamHeader(vlVaContext *context, vlVaBuffer *buf);
 void vlVaHandlePictureParameterBufferAV1(vlVaDriver *drv, vlVaContext *context, vlVaBuffer *buf);
-void vlVaHandleSliceParameterBufferAV1(vlVaContext *context, vlVaBuffer *buf, unsigned num_slice_buffers, unsigned num_slices);
+void vlVaHandleSliceParameterBufferAV1(vlVaContext *context, vlVaBuffer *buf, unsigned num_slices);
 void getEncParamPresetH264(vlVaContext *context);
 void getEncParamPresetH265(vlVaContext *context);
 void vlVaHandleVAEncMiscParameterTypeQualityLevel(struct pipe_enc_quality_modes *p, vlVaQualityBits *in);

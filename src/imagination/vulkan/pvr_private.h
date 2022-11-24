@@ -56,6 +56,7 @@
 #include "vk_buffer.h"
 #include "vk_command_buffer.h"
 #include "vk_device.h"
+#include "vk_graphics_state.h"
 #include "vk_image.h"
 #include "vk_instance.h"
 #include "vk_log.h"
@@ -90,13 +91,6 @@ enum pvr_memlayout {
    PVR_MEMLAYOUT_LINEAR,
    PVR_MEMLAYOUT_TWIDDLED,
    PVR_MEMLAYOUT_3DTWIDDLED,
-};
-
-enum pvr_cmd_buffer_status {
-   PVR_CMD_BUFFER_STATUS_INVALID = 0, /* explicitly treat 0 as invalid */
-   PVR_CMD_BUFFER_STATUS_INITIAL,
-   PVR_CMD_BUFFER_STATUS_RECORDING,
-   PVR_CMD_BUFFER_STATUS_EXECUTABLE,
 };
 
 enum pvr_texture_state {
@@ -170,21 +164,6 @@ enum pvr_stage_allocation {
    PVR_STAGE_ALLOCATION_FRAGMENT,
    PVR_STAGE_ALLOCATION_COMPUTE,
    PVR_STAGE_ALLOCATION_COUNT
-};
-
-/* Scissor accumulation state defines
- *  - Disabled means that a clear has been detected, and scissor accumulation
- *    should stop.
- *  - Check for clear is when there's no clear loadops, but there could be
- *    another clear call that would be broken via scissoring
- *  - Enabled means that a scissor has been set in the pipeline, and
- *    accumulation can continue
- */
-enum pvr_scissor_accum_state {
-   PVR_SCISSOR_ACCUM_INVALID = 0, /* Explicitly treat 0 as invalid */
-   PVR_SCISSOR_ACCUM_DISABLED,
-   PVR_SCISSOR_ACCUM_CHECK_FOR_CLEAR,
-   PVR_SCISSOR_ACCUM_ENABLED,
 };
 
 #define PVR_STATIC_CLEAR_PDS_STATE_COUNT          \
@@ -729,8 +708,6 @@ struct pvr_sub_cmd_compute {
    /* Control stream builder object. */
    struct pvr_csb control_stream;
 
-   struct pvr_winsys_compute_submit_info submit_info;
-
    uint32_t num_shared_regs;
 
    /* True if any shader used in this sub command uses atomic
@@ -904,63 +881,6 @@ struct pvr_deferred_cs_command {
    };
 };
 
-#define PVR_DYNAMIC_STATE_BIT_VIEWPORT BITFIELD_BIT(0U)
-#define PVR_DYNAMIC_STATE_BIT_SCISSOR BITFIELD_BIT(1U)
-#define PVR_DYNAMIC_STATE_BIT_LINE_WIDTH BITFIELD_BIT(2U)
-#define PVR_DYNAMIC_STATE_BIT_DEPTH_BIAS BITFIELD_BIT(3U)
-#define PVR_DYNAMIC_STATE_BIT_STENCIL_COMPARE_MASK BITFIELD_BIT(4U)
-#define PVR_DYNAMIC_STATE_BIT_STENCIL_WRITE_MASK BITFIELD_BIT(5U)
-#define PVR_DYNAMIC_STATE_BIT_STENCIL_REFERENCE BITFIELD_BIT(6U)
-#define PVR_DYNAMIC_STATE_BIT_BLEND_CONSTANTS BITFIELD_BIT(7U)
-
-#define PVR_DYNAMIC_STATE_ALL_BITS \
-   ((PVR_DYNAMIC_STATE_BIT_BLEND_CONSTANTS << 1U) - 1U)
-
-struct pvr_dynamic_state {
-   /* Identifies which pipeline state is static or dynamic.
-    * To test for dynamic: & PVR_STATE_BITS_...
-    */
-   uint32_t mask;
-
-   struct {
-      /* TODO: fixme in the original code - figure out what. */
-      uint32_t count;
-      VkViewport viewports[PVR_MAX_VIEWPORTS];
-   } viewport;
-
-   struct {
-      /* TODO: fixme in the original code - figure out what. */
-      uint32_t count;
-      VkRect2D scissors[PVR_MAX_VIEWPORTS];
-   } scissor;
-
-   /* Saved information from pCreateInfo. */
-   float line_width;
-
-   /* Do not change this. This is the format used for the depth_bias_array
-    * elements uploaded to the device.
-    */
-   struct pvr_depth_bias_state {
-      /* Saved information from pCreateInfo. */
-      float constant_factor;
-      float slope_factor;
-      float clamp;
-   } depth_bias;
-   float blend_constants[4];
-   struct {
-      uint32_t front;
-      uint32_t back;
-   } compare_mask;
-   struct {
-      uint32_t front;
-      uint32_t back;
-   } write_mask;
-   struct {
-      uint32_t front;
-      uint32_t back;
-   } reference;
-};
-
 struct pvr_cmd_buffer_draw_state {
    uint32_t base_instance;
    uint32_t base_vertex;
@@ -983,18 +903,6 @@ struct pvr_cmd_buffer_state {
    struct pvr_ppp_state ppp_state;
 
    struct PVRX(TA_STATE_HEADER) emit_header;
-
-   struct {
-      /* FIXME: Check if we need a dirty state flag for the given scissor
-       * accumulation state.
-       * Check whether these members should be moved in the top level struct
-       * and this struct replaces with just pvr_dynamic_state "dynamic".
-       */
-      enum pvr_scissor_accum_state scissor_accum_state;
-      VkRect2D scissor_accum_bounds;
-
-      struct pvr_dynamic_state common;
-   } dynamic;
 
    struct pvr_vertex_binding vertex_bindings[PVR_MAX_VERTEX_INPUT_BINDINGS];
 
@@ -1020,9 +928,6 @@ struct pvr_cmd_buffer_state {
    VkFormat depth_format;
 
    struct {
-      bool viewport : 1;
-      bool scissor : 1;
-
       bool compute_pipeline_binding : 1;
       bool compute_desc_dirty : 1;
 
@@ -1033,16 +938,6 @@ struct pvr_cmd_buffer_state {
       bool index_buffer_binding : 1;
       bool vertex_descriptors : 1;
       bool fragment_descriptors : 1;
-
-      bool line_width : 1;
-
-      bool depth_bias : 1;
-
-      bool blend_constants : 1;
-
-      bool compare_mask : 1;
-      bool write_mask : 1;
-      bool reference : 1;
 
       bool isp_userpass : 1;
 
@@ -1072,21 +967,40 @@ struct pvr_cmd_buffer_state {
    uint32_t pds_compute_descriptor_data_offset;
 };
 
+/* Do not change this. This is the format used for the depth_bias_array
+ * elements uploaded to the device.
+ */
+struct pvr_depth_bias_state {
+   /* Saved information from pCreateInfo. */
+   float constant_factor;
+   float slope_factor;
+   float clamp;
+};
+
+/* Do not change this. This is the format used for the scissor_array
+ * elements uploaded to the device.
+ */
+struct pvr_scissor_words {
+   /* Contains a packed IPF_SCISSOR_WORD_0. */
+   uint32_t w0;
+   /* Contains a packed IPF_SCISSOR_WORD_1. */
+   uint32_t w1;
+};
+
 struct pvr_cmd_buffer {
    struct vk_command_buffer vk;
 
    struct pvr_device *device;
 
-   /* Buffer status, invalid/initial/recording/executable */
-   enum pvr_cmd_buffer_status status;
-
    /* Buffer usage flags */
    VkCommandBufferUsageFlags usage_flags;
 
+   /* Array of struct pvr_depth_bias_state. */
    struct util_dynarray depth_bias_array;
 
+   /* Array of struct pvr_scissor_words. */
    struct util_dynarray scissor_array;
-   uint32_t scissor_words[2];
+   struct pvr_scissor_words scissor_words;
 
    struct pvr_cmd_buffer_state state;
 
@@ -1220,7 +1134,7 @@ struct pvr_fragment_shader_state {
    struct pvr_pipeline_stage_state stage_state;
    /* FIXME: Move this into stage_state? */
    struct pvr_stage_allocation_descriptor_state descriptor_state;
-   uint32_t pass_type;
+   enum PVRX(TA_PASSTYPE) pass_type;
 
    struct pvr_pds_upload pds_coeff_program;
    struct pvr_pds_upload pds_fragment_program;
@@ -1283,44 +1197,15 @@ struct pvr_compute_pipeline {
 struct pvr_graphics_pipeline {
    struct pvr_pipeline base;
 
-   VkSampleCountFlagBits rasterization_samples;
-   struct pvr_raster_state {
-      /* Derived and other state. */
-      /* Indicates whether primitives are discarded immediately before the
-       * rasterization stage.
-       */
-      bool discard_enable;
-      VkCullModeFlags cull_mode;
-      VkFrontFace front_face;
-      bool depth_bias_enable;
-      bool depth_clamp_enable;
-   } raster_state;
-   struct {
-      VkPrimitiveTopology topology;
-      bool primitive_restart;
-   } input_asm_state;
-   uint32_t sample_mask;
-
-   struct pvr_dynamic_state dynamic_state;
-
-   VkCompareOp depth_compare_op;
-   bool depth_write_disable;
-
-   struct {
-      VkCompareOp compare_op;
-      /* SOP1 */
-      VkStencilOp fail_op;
-      /* SOP2 */
-      VkStencilOp depth_fail_op;
-      /* SOP3 */
-      VkStencilOp pass_op;
-   } stencil_front, stencil_back;
+   struct vk_dynamic_graphics_state dynamic_state;
 
    /* Derived and other state */
    size_t stage_indices[MESA_SHADER_FRAGMENT + 1];
 
-   struct pvr_vertex_shader_state vertex_shader_state;
-   struct pvr_fragment_shader_state fragment_shader_state;
+   struct {
+      struct pvr_vertex_shader_state vertex;
+      struct pvr_fragment_shader_state fragment;
+   } shader_state;
 };
 
 struct pvr_query_pool {
@@ -1377,9 +1262,8 @@ struct pvr_render_pass_attachment {
    uint32_t sample_count;
    VkImageLayout initial_layout;
 
-   /*  Derived and other state. */
-   /* True if the attachment format includes a stencil component. */
-   bool has_stencil;
+   /* Derived and other state. */
+   VkImageAspectFlags aspects;
 
    /* Can this surface be resolved by the PBE. */
    bool is_pbe_downscalable;
@@ -1730,21 +1614,21 @@ VK_DEFINE_NONDISP_HANDLE_CASTS(pvr_render_pass,
    mesa_logd("%s: ignored VkStructureType %u\n", __func__, (sType))
 
 /* Debug helper macros. */
-#define PVR_CHECK_COMMAND_BUFFER_BUILDING_STATE(cmd_buffer)         \
-   do {                                                             \
-      struct pvr_cmd_buffer *const _cmd_buffer = (cmd_buffer);      \
-      if (_cmd_buffer->status != PVR_CMD_BUFFER_STATUS_RECORDING) { \
-         vk_errorf(_cmd_buffer,                                     \
-                   VK_ERROR_OUT_OF_DEVICE_MEMORY,                   \
-                   "Command buffer is not in recording state");     \
-         return;                                                    \
-      } else if (_cmd_buffer->state.status < VK_SUCCESS) {          \
-         vk_errorf(_cmd_buffer,                                     \
-                   _cmd_buffer->state.status,                       \
-                   "Skipping function as command buffer has "       \
-                   "previous build error");                         \
-         return;                                                    \
-      }                                                             \
+#define PVR_CHECK_COMMAND_BUFFER_BUILDING_STATE(cmd_buffer)                  \
+   do {                                                                      \
+      struct pvr_cmd_buffer *const _cmd_buffer = (cmd_buffer);               \
+      if (_cmd_buffer->vk.state != MESA_VK_COMMAND_BUFFER_STATE_RECORDING) { \
+         vk_errorf(_cmd_buffer,                                              \
+                   VK_ERROR_OUT_OF_DEVICE_MEMORY,                            \
+                   "Command buffer is not in recording state");              \
+         return;                                                             \
+      } else if (_cmd_buffer->state.status < VK_SUCCESS) {                   \
+         vk_errorf(_cmd_buffer,                                              \
+                   _cmd_buffer->state.status,                                \
+                   "Skipping function as command buffer has "                \
+                   "previous build error");                                  \
+         return;                                                             \
+      }                                                                      \
    } while (0)
 
 /**

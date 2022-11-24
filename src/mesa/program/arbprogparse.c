@@ -23,6 +23,8 @@
  */
 
 #define DEBUG_PARSING 0
+#define DEBUG_VP 0
+#define DEBUG_FP 0
 
 /**
  * \file arbprogparse.c

@@ -317,7 +317,7 @@ AluInstr::can_propagate_src() const
 
    assert(m_dest);
 
-   if (!m_dest->is_ssa()) {
+   if (!m_dest->has_flag(Register::ssa)) {
       return false;
    }
 
@@ -349,7 +349,7 @@ AluInstr::can_propagate_dest() const
       return false;
    }
 
-   if (!src_reg->is_ssa())
+   if (!src_reg->has_flag(Register::ssa))
       return false;
 
    if (src_reg->pin() == pin_chan)
@@ -771,7 +771,7 @@ AluInstr::register_priority() const
    if (!has_alu_flag(alu_no_schedule_bias)) {
 
       if (m_dest) {
-         if (m_dest->is_ssa() && has_alu_flag(alu_write)) {
+         if (m_dest->has_flag(Register::ssa) && has_alu_flag(alu_write)) {
             if (m_dest->pin() != pin_group && m_dest->pin() != pin_chgr)
                priority--;
          } else {
@@ -783,7 +783,7 @@ AluInstr::register_priority() const
 
       for (const auto s : m_src) {
          auto r = s->as_register();
-         if (r && r->is_ssa()) {
+         if (r && r->has_flag(Register::ssa)) {
             int pending = 0;
             for (auto b : r->uses()) {
                if (!b->is_scheduled())
@@ -1094,7 +1094,7 @@ AluInstr::do_ready() const
       }
    }
 
-   if (m_dest && !m_dest->is_ssa()) {
+   if (m_dest && !m_dest->has_flag(Register::ssa)) {
       if (m_dest->pin() == pin_array) {
          auto av = static_cast<const LocalArrayValue *>(m_dest);
          auto addr = av->addr();
@@ -1725,17 +1725,21 @@ emit_alu_op1_64bit(const nir_alu_instr& alu,
    }
 
    for (unsigned i = 0; i < nir_dest_num_components(alu.dest.dest); ++i) {
-      for (unsigned c = 0; c < 2; ++c) {
-         ir = new AluInstr(opcode,
-                           value_factory.dest(alu.dest, 2 * i + c, pin_chan),
-                           value_factory.src64(alu.src[0], i, swz[c]),
-                           {alu_write});
-         group->add_instruction(ir);
-      }
+      ir = new AluInstr(opcode,
+                        value_factory.dest(alu.dest, 2 * i, pin_chan),
+                        value_factory.src64(alu.src[0], i, swz[0]),
+                        {alu_write});
+      group->add_instruction(ir);
       if (alu.src[0].abs)
          ir->set_alu_flag(alu_src0_abs);
       if (alu.src[0].negate)
          ir->set_alu_flag(alu_src0_neg);
+
+      ir = new AluInstr(opcode,
+                        value_factory.dest(alu.dest, 2 * i + 1, pin_chan),
+                        value_factory.src64(alu.src[0], i, swz[1]),
+                        {alu_write});
+      group->add_instruction(ir);
    }
    if (ir)
       ir->set_alu_flag(alu_last_instr);

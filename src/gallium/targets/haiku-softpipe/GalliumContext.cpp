@@ -18,7 +18,7 @@
 #include "bitmap_wrapper.h"
 
 #include "glapi/glapi.h"
-#include "pipe/p_format.h"
+#include "util/format/u_formats.h"
 //#include "state_tracker/st_cb_fbo.h"
 //#include "state_tracker/st_cb_flush.h"
 #include "state_tracker/st_context.h"
@@ -96,7 +96,7 @@ GalliumContext::CreateDisplay()
 	struct pipe_screen* screen = sw_screen_create(winsys);
 
 	if (screen == NULL) {
-		ERROR("%s: Couldn't create screen!\n", __FUNCTION__);
+		ERROR("%s: Couldn't create screen!\n", __func__);
 		winsys->destroy(winsys);
 		return B_ERROR;
 	}
@@ -109,7 +109,7 @@ GalliumContext::CreateDisplay()
 	fDisplay = hgl_create_display(screen);
 
 	if (fDisplay == NULL) {
-		ERROR("%s: Couldn't create display!\n", __FUNCTION__);
+		ERROR("%s: Couldn't create display!\n", __func__);
 		screen->destroy(screen); // will also destroy winsys
 		return B_ERROR;
 	}
@@ -140,7 +140,7 @@ GalliumContext::CreateContext(HGLWinsysContext *wsContext)
 	struct hgl_context* context = CALLOC_STRUCT(hgl_context);
 
 	if (!context) {
-		ERROR("%s: Couldn't create pipe context!\n", __FUNCTION__);
+		ERROR("%s: Couldn't create pipe context!\n", __func__);
 		return 0;
 	}
 
@@ -348,6 +348,9 @@ GalliumContext::SwapBuffers(context_id contextID)
 		std::swap(buffer->textures[ST_ATTACHMENT_FRONT_LEFT], buffer->textures[ST_ATTACHMENT_BACK_LEFT]);
 		p_atomic_inc(&buffer->stfbi->stamp);
 	}
+
+        /* TODO: remove this if the framebuffer state doesn't change. */
+        context->st->invalidate_state(context->st, ST_INVALIDATE_FB_STATE);
 
 	Unlock();
 	return B_OK;

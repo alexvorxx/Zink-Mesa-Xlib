@@ -255,6 +255,9 @@ dzn_cmd_buffer_destroy(struct vk_command_buffer *cbuf)
    if (cmdbuf->cmdlist)
       ID3D12GraphicsCommandList1_Release(cmdbuf->cmdlist);
 
+   if (cmdbuf->cmdlist8)
+      ID3D12GraphicsCommandList8_Release(cmdbuf->cmdlist8);
+
    if (cmdbuf->cmdalloc)
       ID3D12CommandAllocator_Release(cmdbuf->cmdalloc);
 
@@ -311,6 +314,59 @@ dzn_cmd_buffer_destroy(struct vk_command_buffer *cbuf)
    vk_free(&cbuf->pool->alloc, cmdbuf);
 }
 
+static void
+dzn_cmd_buffer_reset(struct vk_command_buffer *cbuf, VkCommandBufferResetFlags flags)
+{
+   struct dzn_cmd_buffer *cmdbuf = container_of(cbuf, struct dzn_cmd_buffer, vk);
+
+   /* Reset the state */
+   memset(&cmdbuf->state, 0, sizeof(cmdbuf->state));
+
+   /* TODO: Return resources to the pool */
+   list_for_each_entry_safe(struct dzn_internal_resource, res, &cmdbuf->internal_bufs, link) {
+      list_del(&res->link);
+      ID3D12Resource_Release(res->res);
+      vk_free(&cmdbuf->vk.pool->alloc, res);
+   }
+
+   util_dynarray_clear(&cmdbuf->events.wait);
+   util_dynarray_clear(&cmdbuf->events.signal);
+   util_dynarray_clear(&cmdbuf->queries.reset);
+   util_dynarray_clear(&cmdbuf->queries.wait);
+   util_dynarray_clear(&cmdbuf->queries.signal);
+   hash_table_foreach(cmdbuf->rtvs.ht, he)
+      vk_free(&cmdbuf->vk.pool->alloc, he->data);
+   _mesa_hash_table_clear(cmdbuf->rtvs.ht, NULL);
+   cmdbuf->null_rtv.ptr = 0;
+   dzn_descriptor_heap_pool_reset(&cmdbuf->rtvs.pool);
+   hash_table_foreach(cmdbuf->dsvs.ht, he)
+      vk_free(&cmdbuf->vk.pool->alloc, he->data);
+   _mesa_hash_table_clear(cmdbuf->dsvs.ht, NULL);
+   hash_table_foreach(cmdbuf->queries.ht, he) {
+      struct dzn_cmd_buffer_query_pool_state *qpstate = he->data;
+      util_dynarray_fini(&qpstate->reset);
+      util_dynarray_fini(&qpstate->collect);
+      util_dynarray_fini(&qpstate->wait);
+      util_dynarray_fini(&qpstate->signal);
+      vk_free(&cmdbuf->vk.pool->alloc, he->data);
+   }
+   _mesa_hash_table_clear(cmdbuf->queries.ht, NULL);
+   _mesa_hash_table_clear(cmdbuf->events.ht, NULL);
+   hash_table_foreach(cmdbuf->transition_barriers, he)
+      vk_free(&cmdbuf->vk.pool->alloc, he->data);
+   _mesa_hash_table_clear(cmdbuf->transition_barriers, NULL);
+   dzn_descriptor_heap_pool_reset(&cmdbuf->dsvs.pool);
+   dzn_descriptor_heap_pool_reset(&cmdbuf->cbv_srv_uav_pool);
+   dzn_descriptor_heap_pool_reset(&cmdbuf->sampler_pool);
+
+   if (cmdbuf->vk.state == MESA_VK_COMMAND_BUFFER_STATE_RECORDING)
+      ID3D12GraphicsCommandList1_Close(cmdbuf->cmdlist);
+
+   vk_command_buffer_reset(&cmdbuf->vk);
+
+   ID3D12CommandAllocator_Reset(cmdbuf->cmdalloc);
+}
+
 static uint32_t
 dzn_cmd_buffer_rtv_key_hash_function(const void *key)
 {
@@ -337,6 +393,7 @@ dzn_cmd_buffer_dsv_key_equals_function(const void *a, const void *b)
 
 static const struct vk_command_buffer_ops cmd_buffer_ops = {
    .destroy = dzn_cmd_buffer_destroy,
+   .reset = dzn_cmd_buffer_reset,
 };
 
 static VkResult
@@ -413,13 +470,15 @@ dzn_cmd_buffer_create(const VkCommandBufferAllocateInfo *info,
       goto out;
    }
 
-   if (FAILED(ID3D12Device1_CreateCommandList(device->dev, 0, type,
-                                              cmdbuf->cmdalloc, NULL,
-                                              &IID_ID3D12GraphicsCommandList1,
-                                              (void **)&cmdbuf->cmdlist))) {
+   if (FAILED(ID3D12Device4_CreateCommandList1(device->dev, 0, type,
+                                               D3D12_COMMAND_LIST_FLAG_NONE,
+                                               &IID_ID3D12GraphicsCommandList1,
+                                               (void **)&cmdbuf->cmdlist))) {
       result = vk_error(device, VK_ERROR_OUT_OF_HOST_MEMORY);
       goto out;
    }
+
+   (void)ID3D12GraphicsCommandList_QueryInterface(cmdbuf->cmdlist, &IID_ID3D12GraphicsCommandList8, (void **)&cmdbuf->cmdlist8);
 
 out:
    if (result != VK_SUCCESS)
@@ -428,76 +487,6 @@ out:
       *out = dzn_cmd_buffer_to_handle(cmdbuf);
 
    return result;
-}
-
-static VkResult
-dzn_cmd_buffer_reset(struct dzn_cmd_buffer *cmdbuf)
-{
-   struct dzn_device *device = container_of(cmdbuf->vk.base.device, struct dzn_device, vk);
-   const struct dzn_physical_device *pdev =
-      container_of(device->vk.physical, struct dzn_physical_device, vk);
-   const struct vk_command_pool *pool = cmdbuf->vk.pool;
-
-   /* Reset the state */
-   memset(&cmdbuf->state, 0, sizeof(cmdbuf->state));
-
-   /* TODO: Return resources to the pool */
-   list_for_each_entry_safe(struct dzn_internal_resource, res, &cmdbuf->internal_bufs, link) {
-      list_del(&res->link);
-      ID3D12Resource_Release(res->res);
-      vk_free(&cmdbuf->vk.pool->alloc, res);
-   }
-
-   util_dynarray_clear(&cmdbuf->events.wait);
-   util_dynarray_clear(&cmdbuf->events.signal);
-   util_dynarray_clear(&cmdbuf->queries.reset);
-   util_dynarray_clear(&cmdbuf->queries.wait);
-   util_dynarray_clear(&cmdbuf->queries.signal);
-   hash_table_foreach(cmdbuf->rtvs.ht, he)
-      vk_free(&cmdbuf->vk.pool->alloc, he->data);
-   _mesa_hash_table_clear(cmdbuf->rtvs.ht, NULL);
-   cmdbuf->null_rtv.ptr = 0;
-   dzn_descriptor_heap_pool_reset(&cmdbuf->rtvs.pool);
-   hash_table_foreach(cmdbuf->dsvs.ht, he)
-      vk_free(&cmdbuf->vk.pool->alloc, he->data);
-   _mesa_hash_table_clear(cmdbuf->dsvs.ht, NULL);
-   hash_table_foreach(cmdbuf->queries.ht, he) {
-      struct dzn_cmd_buffer_query_pool_state *qpstate = he->data;
-      util_dynarray_fini(&qpstate->reset);
-      util_dynarray_fini(&qpstate->collect);
-      util_dynarray_fini(&qpstate->wait);
-      util_dynarray_fini(&qpstate->signal);
-      vk_free(&cmdbuf->vk.pool->alloc, he->data);
-   }
-   _mesa_hash_table_clear(cmdbuf->queries.ht, NULL);
-   _mesa_hash_table_clear(cmdbuf->events.ht, NULL);
-   hash_table_foreach(cmdbuf->transition_barriers, he)
-      vk_free(&cmdbuf->vk.pool->alloc, he->data);
-   _mesa_hash_table_clear(cmdbuf->transition_barriers, NULL);
-   dzn_descriptor_heap_pool_reset(&cmdbuf->dsvs.pool);
-   dzn_descriptor_heap_pool_reset(&cmdbuf->cbv_srv_uav_pool);
-   dzn_descriptor_heap_pool_reset(&cmdbuf->sampler_pool);
-   vk_command_buffer_reset(&cmdbuf->vk);
-
-   /* cmdlist->Reset() doesn't return the memory back the the command list
-    * allocator, and cmdalloc->Reset() can only be called if there's no live
-    * cmdlist allocated from the allocator, so we need to release and create
-    * a new command list.
-    */
-   ID3D12GraphicsCommandList1_Release(cmdbuf->cmdlist);
-   cmdbuf->cmdlist = NULL;
-   ID3D12CommandAllocator_Reset(cmdbuf->cmdalloc);
-   D3D12_COMMAND_LIST_TYPE type =
-      pdev->queue_families[pool->queue_family_index].desc.Type;
-   if (FAILED(ID3D12Device1_CreateCommandList(device->dev, 0,
-                                              type,
-                                              cmdbuf->cmdalloc, NULL,
-                                              &IID_ID3D12GraphicsCommandList1,
-                                              (void **)&cmdbuf->cmdlist))) {
-      vk_command_buffer_set_error(&cmdbuf->vk, VK_ERROR_OUT_OF_HOST_MEMORY);
-   }
-
-   return vk_command_buffer_get_record_result(&cmdbuf->vk);
 }
 
 VKAPI_ATTR VkResult VKAPI_CALL
@@ -527,35 +516,13 @@ dzn_AllocateCommandBuffers(VkDevice device,
 }
 
 VKAPI_ATTR VkResult VKAPI_CALL
-dzn_ResetCommandBuffer(VkCommandBuffer commandBuffer,
-                       VkCommandBufferResetFlags flags)
-{
-   VK_FROM_HANDLE(dzn_cmd_buffer, cmdbuf, commandBuffer);
-
-   return dzn_cmd_buffer_reset(cmdbuf);
-}
-
-VKAPI_ATTR VkResult VKAPI_CALL
 dzn_BeginCommandBuffer(VkCommandBuffer commandBuffer,
                        const VkCommandBufferBeginInfo *info)
 {
    VK_FROM_HANDLE(dzn_cmd_buffer, cmdbuf, commandBuffer);
-
-   /* If this is the first vkBeginCommandBuffer, we must *initialize* the
-    * command buffer's state. Otherwise, we must *reset* its state. In both
-    * cases we reset it.
-    *
-    * From the Vulkan 1.0 spec:
-    *
-    *    If a command buffer is in the executable state and the command buffer
-    *    was allocated from a command pool with the
-    *    VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT flag set, then
-    *    vkBeginCommandBuffer implicitly resets the command buffer, behaving
-    *    as if vkResetCommandBuffer had been called with
-    *    VK_COMMAND_BUFFER_RESET_RELEASE_RESOURCES_BIT not set. It then puts
-    *    the command buffer in the recording state.
-    */
-   return dzn_cmd_buffer_reset(cmdbuf);
+   vk_command_buffer_begin(&cmdbuf->vk, info);
+   ID3D12GraphicsCommandList1_Reset(cmdbuf->cmdlist, cmdbuf->cmdalloc, NULL);
+   return vk_command_buffer_get_record_result(&cmdbuf->vk);
 }
 
 static void
@@ -866,7 +833,7 @@ dzn_EndCommandBuffer(VkCommandBuffer commandBuffer)
          vk_command_buffer_set_error(&cmdbuf->vk, VK_ERROR_OUT_OF_HOST_MEMORY);
    }
 
-   return vk_command_buffer_get_record_result(&cmdbuf->vk);
+   return vk_command_buffer_end(&cmdbuf->vk);
 }
 
 VKAPI_ATTR void VKAPI_CALL
@@ -1047,7 +1014,7 @@ dzn_cmd_buffer_alloc_internal_buf(struct dzn_cmd_buffer *cmdbuf,
    /* Align size on 64k (the default alignment) */
    size = ALIGN_POT(size, 64 * 1024);
 
-   D3D12_HEAP_PROPERTIES hprops = dzn_ID3D12Device2_GetCustomHeapProperties(device->dev, 0, heap_type);
+   D3D12_HEAP_PROPERTIES hprops = dzn_ID3D12Device4_GetCustomHeapProperties(device->dev, 0, heap_type);
    D3D12_RESOURCE_DESC rdesc = {
       .Dimension = D3D12_RESOURCE_DIMENSION_BUFFER,
       .Alignment = D3D12_DEFAULT_RESOURCE_PLACEMENT_ALIGNMENT,
@@ -1725,7 +1692,7 @@ dzn_cmd_buffer_copy_img_chunk(struct dzn_cmd_buffer *cmdbuf,
    VK_FROM_HANDLE(dzn_image, src, info->srcImage);
    VK_FROM_HANDLE(dzn_image, dst, info->dstImage);
 
-   ID3D12Device2 *dev = device->dev;
+   ID3D12Device4 *dev = device->dev;
    ID3D12GraphicsCommandList1 *cmdlist = cmdbuf->cmdlist;
 
    VkImageCopy2 region = info->pRegions[r];
@@ -2473,14 +2440,23 @@ dzn_cmd_buffer_update_push_constants(struct dzn_cmd_buffer *cmdbuf, uint32_t bin
 static void
 dzn_cmd_buffer_update_zsa(struct dzn_cmd_buffer *cmdbuf)
 {
+   struct dzn_physical_device *pdev =
+      container_of(cmdbuf->vk.base.device->physical, struct dzn_physical_device, vk);
    if (cmdbuf->state.dirty & DZN_CMD_DIRTY_STENCIL_REF) {
       const struct dzn_graphics_pipeline *gfx = (const struct dzn_graphics_pipeline *)
          cmdbuf->state.bindpoint[VK_PIPELINE_BIND_POINT_GRAPHICS].pipeline;
-      uint32_t ref =
-         gfx->zsa.stencil_test.front.uses_ref ?
-         cmdbuf->state.zsa.stencil_test.front.ref :
-         cmdbuf->state.zsa.stencil_test.back.ref;
-      ID3D12GraphicsCommandList1_OMSetStencilRef(cmdbuf->cmdlist, ref);
+      if (cmdbuf->cmdlist8 &&
+          pdev->options14.IndependentFrontAndBackStencilRefMaskSupported) {
+         ID3D12GraphicsCommandList8_OMSetFrontAndBackStencilRef(cmdbuf->cmdlist8,
+                                                                cmdbuf->state.zsa.stencil_test.front.ref,
+                                                                cmdbuf->state.zsa.stencil_test.back.ref);
+      } else {
+         uint32_t ref =
+            gfx->zsa.stencil_test.front.uses_ref ?
+            cmdbuf->state.zsa.stencil_test.front.ref :
+            cmdbuf->state.zsa.stencil_test.back.ref;
+         ID3D12GraphicsCommandList1_OMSetStencilRef(cmdbuf->cmdlist, ref);
+      }
    }
 }
 
@@ -3087,7 +3063,7 @@ dzn_CmdCopyImage2(VkCommandBuffer commandBuffer,
    };
 
    if (requires_temp_res) {
-      ID3D12Device2 *dev = device->dev;
+      ID3D12Device4 *dev = device->dev;
       VkImageAspectFlags aspect = 0;
       uint64_t max_size = 0;
 

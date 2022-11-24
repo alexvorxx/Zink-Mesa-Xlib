@@ -62,8 +62,8 @@ protected:
 
 TEST_F(LowerParallelCopy, UnrelatedCopies) {
    struct agx_copy test_1[] = {
-        { .dest = 0, .src = 2, .size = AGX_SIZE_32 },
-        { .dest = 4, .src = 6, .size = AGX_SIZE_32 },
+        { .dest = 0, .src = agx_register(2, AGX_SIZE_32) },
+        { .dest = 4, .src = agx_register(6, AGX_SIZE_32) },
    };
 
    CASE(test_1, {
@@ -72,8 +72,8 @@ TEST_F(LowerParallelCopy, UnrelatedCopies) {
    });
 
    struct agx_copy test_2[] = {
-        { .dest = 0, .src = 1, .size = AGX_SIZE_16 },
-        { .dest = 4, .src = 5, .size = AGX_SIZE_16 },
+        { .dest = 0, .src = agx_register(1, AGX_SIZE_16) },
+        { .dest = 4, .src = agx_register(5, AGX_SIZE_16) },
    };
 
    CASE(test_2, {
@@ -85,8 +85,8 @@ TEST_F(LowerParallelCopy, UnrelatedCopies) {
 TEST_F(LowerParallelCopy, RelatedSource)
 {
    struct agx_copy test_1[] = {
-        { .dest = 0, .src = 2, .size = AGX_SIZE_32 },
-        { .dest = 4, .src = 2, .size = AGX_SIZE_32 },
+        { .dest = 0, .src = agx_register(2, AGX_SIZE_32) },
+        { .dest = 4, .src = agx_register(2, AGX_SIZE_32) },
    };
 
    CASE(test_1, {
@@ -95,8 +95,8 @@ TEST_F(LowerParallelCopy, RelatedSource)
    });
 
    struct agx_copy test_2[] = {
-        { .dest = 0, .src = 1, .size = AGX_SIZE_16 },
-        { .dest = 4, .src = 1, .size = AGX_SIZE_16 },
+        { .dest = 0, .src = agx_register(1, AGX_SIZE_16) },
+        { .dest = 4, .src = agx_register(1, AGX_SIZE_16) },
    };
 
    CASE(test_2, {
@@ -108,8 +108,8 @@ TEST_F(LowerParallelCopy, RelatedSource)
 TEST_F(LowerParallelCopy, DependentCopies)
 {
    struct agx_copy test_1[] = {
-        { .dest = 0, .src = 2, .size = AGX_SIZE_32 },
-        { .dest = 4, .src = 0, .size = AGX_SIZE_32 },
+        { .dest = 0, .src = agx_register(2, AGX_SIZE_32) },
+        { .dest = 4, .src = agx_register(0, AGX_SIZE_32) },
    };
 
    CASE(test_1, {
@@ -118,8 +118,8 @@ TEST_F(LowerParallelCopy, DependentCopies)
    });
 
    struct agx_copy test_2[] = {
-        { .dest = 0, .src = 1, .size = AGX_SIZE_16 },
-        { .dest = 4, .src = 0, .size = AGX_SIZE_16 },
+        { .dest = 0, .src = agx_register(1, AGX_SIZE_16) },
+        { .dest = 4, .src = agx_register(0, AGX_SIZE_16) },
    };
 
    CASE(test_2, {
@@ -131,10 +131,10 @@ TEST_F(LowerParallelCopy, DependentCopies)
 TEST_F(LowerParallelCopy, ManyDependentCopies)
 {
    struct agx_copy test_1[] = {
-        { .dest = 0, .src = 2, .size = AGX_SIZE_32 },
-        { .dest = 4, .src = 0, .size = AGX_SIZE_32 },
-        { .dest = 8, .src = 6, .size = AGX_SIZE_32 },
-        { .dest = 6, .src = 4, .size = AGX_SIZE_32 },
+        { .dest = 0, .src = agx_register(2, AGX_SIZE_32) },
+        { .dest = 4, .src = agx_register(0, AGX_SIZE_32) },
+        { .dest = 8, .src = agx_register(6, AGX_SIZE_32) },
+        { .dest = 6, .src = agx_register(4, AGX_SIZE_32) },
    };
 
    CASE(test_1, {
@@ -145,10 +145,10 @@ TEST_F(LowerParallelCopy, ManyDependentCopies)
    });
 
    struct agx_copy test_2[] = {
-        { .dest = 0, .src = 1, .size = AGX_SIZE_16 },
-        { .dest = 2, .src = 0, .size = AGX_SIZE_16 },
-        { .dest = 4, .src = 3, .size = AGX_SIZE_16 },
-        { .dest = 3, .src = 2, .size = AGX_SIZE_16 },
+        { .dest = 0, .src = agx_register(1, AGX_SIZE_16) },
+        { .dest = 2, .src = agx_register(0, AGX_SIZE_16) },
+        { .dest = 4, .src = agx_register(3, AGX_SIZE_16) },
+        { .dest = 3, .src = agx_register(2, AGX_SIZE_16) },
    };
 
    CASE(test_2, {
@@ -161,8 +161,8 @@ TEST_F(LowerParallelCopy, ManyDependentCopies)
 
 TEST_F(LowerParallelCopy, Swap) {
    struct agx_copy test_1[] = {
-        { .dest = 0, .src = 2, .size = AGX_SIZE_32 },
-        { .dest = 2, .src = 0, .size = AGX_SIZE_32 },
+        { .dest = 0, .src = agx_register(2, AGX_SIZE_32) },
+        { .dest = 2, .src = agx_register(0, AGX_SIZE_32) },
    };
 
    CASE(test_1, {
@@ -170,8 +170,8 @@ TEST_F(LowerParallelCopy, Swap) {
    });
 
    struct agx_copy test_2[] = {
-        { .dest = 0, .src = 1, .size = AGX_SIZE_16 },
-        { .dest = 1, .src = 0, .size = AGX_SIZE_16 },
+        { .dest = 0, .src = agx_register(1, AGX_SIZE_16) },
+        { .dest = 1, .src = agx_register(0, AGX_SIZE_16) },
    };
 
    CASE(test_2, {
@@ -181,9 +181,9 @@ TEST_F(LowerParallelCopy, Swap) {
 
 TEST_F(LowerParallelCopy, Cycle3) {
    struct agx_copy test[] = {
-        { .dest = 0, .src = 1, .size = AGX_SIZE_16 },
-        { .dest = 1, .src = 2, .size = AGX_SIZE_16 },
-        { .dest = 2, .src = 0, .size = AGX_SIZE_16 },
+        { .dest = 0, .src = agx_register(1, AGX_SIZE_16) },
+        { .dest = 1, .src = agx_register(2, AGX_SIZE_16) },
+        { .dest = 2, .src = agx_register(0, AGX_SIZE_16) },
    };
 
    /* XXX: requires 6 instructions. if we had a temp free, could do it in 4 */
@@ -196,10 +196,10 @@ TEST_F(LowerParallelCopy, Cycle3) {
 /* Test case from Hack et al */
 TEST_F(LowerParallelCopy, TwoSwaps) {
    struct agx_copy test[] = {
-        { .dest = 4, .src = 2, .size = AGX_SIZE_32 },
-        { .dest = 6, .src = 4, .size = AGX_SIZE_32 },
-        { .dest = 2, .src = 6, .size = AGX_SIZE_32 },
-        { .dest = 8, .src = 8, .size = AGX_SIZE_32 },
+        { .dest = 4, .src = agx_register(2, AGX_SIZE_32) },
+        { .dest = 6, .src = agx_register(4, AGX_SIZE_32) },
+        { .dest = 2, .src = agx_register(6, AGX_SIZE_32) },
+        { .dest = 8, .src = agx_register(8, AGX_SIZE_32) },
    };
 
    CASE(test, {
@@ -211,9 +211,9 @@ TEST_F(LowerParallelCopy, TwoSwaps) {
 #if 0
 TEST_F(LowerParallelCopy, LooksLikeASwap) {
    struct agx_copy test[] = {
-        { .dest = 0, .src = 2, .size = AGX_SIZE_32 },
-        { .dest = 2, .src = 0, .size = AGX_SIZE_32 },
-        { .dest = 4, .src = 2, .size = AGX_SIZE_32 },
+        { .dest = 0, .src = agx_register(2, AGX_SIZE_32) },
+        { .dest = 2, .src = agx_register(0, AGX_SIZE_32) },
+        { .dest = 4, .src = agx_register(2, AGX_SIZE_32) },
    };
 
    CASE(test, {

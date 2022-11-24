@@ -37,6 +37,7 @@
 #include "stw_winsys.h"
 
 #ifdef GALLIUM_ZINK
+#include <vulkan/vulkan.h>
 #include "kopper_interface.h"
 #endif
 
@@ -125,17 +126,21 @@ stw_pipe_blit(struct pipe_context *pipe,
 }
 
 #ifdef GALLIUM_ZINK
+
+static_assert(sizeof(struct kopper_vk_surface_create_storage) >= sizeof(VkWin32SurfaceCreateInfoKHR), "");
+
 static void
 stw_st_fill_private_loader_data(struct stw_st_framebuffer *stwfb, struct kopper_loader_info *out)
 {
-   out->win32.sType = VK_STRUCTURE_TYPE_WIN32_SURFACE_CREATE_INFO_KHR;
-   out->win32.pNext = NULL;
-   out->win32.flags = 0;
-   out->win32.hinstance = GetModuleHandle(NULL);
-   out->win32.hwnd = stwfb->fb->hWnd;
+   VkWin32SurfaceCreateInfoKHR *win32 = (VkWin32SurfaceCreateInfoKHR *)&out->bos;
+   win32->sType = VK_STRUCTURE_TYPE_WIN32_SURFACE_CREATE_INFO_KHR;
+   win32->pNext = NULL;
+   win32->flags = 0;
+   win32->hinstance = GetModuleHandle(NULL);
+   win32->hwnd = stwfb->fb->hWnd;
    out->has_alpha = true;
 }
-#endif 
+#endif
 /**
  * Remove outdated textures and create the requested ones.
  */
@@ -405,6 +410,9 @@ stw_st_flush(struct st_context_iface *stctx,
    if (flags & ST_FLUSH_WAIT)
       pfence = &fence;
    stctx->flush(stctx, flags, pfence, notify_before_flush_cb, &args);
+
+   /* TODO: remove this if the framebuffer state doesn't change. */
+   stctx->invalidate_state(stctx, ST_INVALIDATE_FB_STATE);
 }
 
 /**

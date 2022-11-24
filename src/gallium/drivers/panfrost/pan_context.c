@@ -25,8 +25,8 @@
  *
  */
 
-#include <sys/poll.h>
 #include <errno.h>
+#include <poll.h>
 
 #include "pan_bo.h"
 #include "pan_context.h"

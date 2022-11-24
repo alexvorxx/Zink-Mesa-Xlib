@@ -169,7 +169,19 @@ insert_fsoutput_sorted(struct exec_list *var_list, nir_variable *new_var)
 
    nir_foreach_variable_in_list(var, var_list)
    {
-      if (var->data.location > new_var->data.location ||
+      if ((var->data.location >= FRAG_RESULT_DATA0 ||
+          var->data.location == FRAG_RESULT_COLOR) &&
+          (new_var->data.location < FRAG_RESULT_COLOR ||
+           new_var->data.location == FRAG_RESULT_SAMPLE_MASK)) {
+         exec_node_insert_after(&var->node, &new_var->node);
+         return;
+      } else if ((new_var->data.location >= FRAG_RESULT_DATA0 ||
+                  new_var->data.location == FRAG_RESULT_COLOR) &&
+                 (var->data.location < FRAG_RESULT_COLOR ||
+                  var->data.location == FRAG_RESULT_SAMPLE_MASK)) {
+         exec_node_insert_node_before(&var->node, &new_var->node);
+         return;
+      } else if (var->data.location > new_var->data.location ||
           (var->data.location == new_var->data.location &&
            var->data.index > new_var->data.index)) {
          exec_node_insert_node_before(&var->node, &new_var->node);
@@ -727,11 +739,52 @@ public:
    ~MallocPoolRelease() { r600::release_pool(); }
 };
 
+extern "C" char *
+r600_finalize_nir(pipe_screen *screen, void *shader)
+{
+   r600_screen *rs = (r600_screen *)screen;
+
+   nir_shader *nir = (nir_shader *)shader;
+
+   NIR_PASS_V(nir, nir_lower_regs_to_ssa);
+   const int nir_lower_flrp_mask = 16 | 32 | 64;
+
+   NIR_PASS_V(nir, nir_lower_flrp, nir_lower_flrp_mask, false);
+
+   nir_lower_idiv_options idiv_options = {0};
+   NIR_PASS_V(nir, nir_lower_idiv, &idiv_options);
+
+   NIR_PASS_V(nir, r600_nir_lower_trigen, rs->b.gfx_level);
+   NIR_PASS_V(nir, nir_lower_phis_to_scalar, false);
+   NIR_PASS_V(nir, nir_lower_undef_to_zero);
+
+   struct nir_lower_tex_options lower_tex_options = {0};
+   lower_tex_options.lower_txp = ~0u;
+   lower_tex_options.lower_txf_offset = true;
+   lower_tex_options.lower_invalid_implicit_lod = true;
+   lower_tex_options.lower_tg4_offsets = true;
+
+   NIR_PASS_V(nir, nir_lower_tex, &lower_tex_options);
+   NIR_PASS_V(nir, r600_nir_lower_txl_txf_array_or_cube);
+   NIR_PASS_V(nir, r600_nir_lower_cube_to_2darray);
+
+   NIR_PASS_V(nir, r600_nir_lower_pack_unpack_2x16);
+
+   NIR_PASS_V(nir, r600_lower_shared_io);
+   NIR_PASS_V(nir, r600_nir_lower_atomics);
+
+   while (optimize_once(nir))
+      ;
+
+   return NULL;
+}
+
 int
 r600_shader_from_nir(struct r600_context *rctx,
                      struct r600_pipe_shader *pipeshader,
                      r600_shader_key *key)
 {
+
    MallocPoolRelease pool_release;
 
    struct r600_pipe_shader_selector *sel = pipeshader->selector;
@@ -748,78 +801,54 @@ r600_shader_from_nir(struct r600_context *rctx,
       fprintf(stderr, "END PRE-OPT-NIR--------------------------------------\n\n");
    }
 
+   auto sh = nir_shader_clone(sel->nir, sel->nir);
    r600::sort_uniforms(sel->nir);
 
-   /* Cayman seems very crashy about accessing images that don't exists or are
-    * accessed out of range, this lowering seems to help (but it can also be
-    * another problem */
 
-   NIR_PASS_V(sel->nir, nir_lower_regs_to_ssa);
-   nir_lower_idiv_options idiv_options = {0};
-   idiv_options.allow_fp16 = true;
-
-   NIR_PASS_V(sel->nir, nir_lower_idiv, &idiv_options);
-   NIR_PASS_V(sel->nir, r600_nir_lower_trigen, rctx->b.gfx_level);
-   NIR_PASS_V(sel->nir, nir_lower_phis_to_scalar, false);
-   NIR_PASS_V(sel->nir, nir_lower_undef_to_zero);
-
-   if (lower_64bit)
-      NIR_PASS_V(sel->nir, nir_lower_int64);
-   while (optimize_once(sel->nir))
+   while (optimize_once(sh))
       ;
 
-   NIR_PASS_V(sel->nir, r600_lower_shared_io);
-   NIR_PASS_V(sel->nir, r600_nir_lower_atomics);
 
-   struct nir_lower_tex_options lower_tex_options = {0};
-   lower_tex_options.lower_txp = ~0u;
-   lower_tex_options.lower_txf_offset = true;
-   lower_tex_options.lower_invalid_implicit_lod = true;
-   lower_tex_options.lower_tg4_offsets = true;
+   if (sh->info.stage == MESA_SHADER_VERTEX)
+      NIR_PASS_V(sh, r600_vectorize_vs_inputs);
 
-   NIR_PASS_V(sel->nir, nir_lower_tex, &lower_tex_options);
-   NIR_PASS_V(sel->nir, r600_nir_lower_txl_txf_array_or_cube);
-   NIR_PASS_V(sel->nir, r600_nir_lower_cube_to_2darray);
-
-   NIR_PASS_V(sel->nir, r600_nir_lower_pack_unpack_2x16);
-
-   if (sel->nir->info.stage == MESA_SHADER_VERTEX)
-      NIR_PASS_V(sel->nir, r600_vectorize_vs_inputs);
-
-   if (sel->nir->info.stage == MESA_SHADER_FRAGMENT) {
-      NIR_PASS_V(sel->nir, nir_lower_fragcoord_wtrans);
-      NIR_PASS_V(sel->nir, r600_lower_fs_out_to_vector);
+   if (sh->info.stage == MESA_SHADER_FRAGMENT) {
+      NIR_PASS_V(sh, nir_lower_fragcoord_wtrans);
+      NIR_PASS_V(sh, r600_lower_fs_out_to_vector);
+      NIR_PASS_V(sh, nir_opt_dce);
+      NIR_PASS_V(sh, nir_remove_dead_variables, nir_var_shader_out, 0);
+      r600::sort_fsoutput(sh);
    }
    nir_variable_mode io_modes = nir_var_uniform | nir_var_shader_in | nir_var_shader_out;
 
-   NIR_PASS_V(sel->nir, nir_opt_combine_stores, nir_var_shader_out);
-   NIR_PASS_V(sel->nir,
+   NIR_PASS_V(sh, nir_opt_combine_stores, nir_var_shader_out);
+   NIR_PASS_V(sh,
               nir_lower_io,
               io_modes,
               r600_glsl_type_size,
               nir_lower_io_lower_64bit_to_32);
 
-   if (sel->nir->info.stage == MESA_SHADER_FRAGMENT)
-      NIR_PASS_V(sel->nir, r600_lower_fs_pos_input);
+   if (sh->info.stage == MESA_SHADER_FRAGMENT)
+      NIR_PASS_V(sh, r600_lower_fs_pos_input);
 
    /**/
    if (lower_64bit)
-      NIR_PASS_V(sel->nir, nir_lower_indirect_derefs, nir_var_function_temp, 10);
+      NIR_PASS_V(sh, nir_lower_indirect_derefs, nir_var_function_temp, 10);
 
-   NIR_PASS_V(sel->nir, nir_opt_constant_folding);
-   NIR_PASS_V(sel->nir, nir_io_add_const_offset_to_base, io_modes);
+   NIR_PASS_V(sh, nir_opt_constant_folding);
+   NIR_PASS_V(sh, nir_io_add_const_offset_to_base, io_modes);
 
-   NIR_PASS_V(sel->nir, nir_lower_alu_to_scalar, r600_lower_to_scalar_instr_filter, NULL);
-   NIR_PASS_V(sel->nir, nir_lower_phis_to_scalar, false);
+   NIR_PASS_V(sh, nir_lower_alu_to_scalar, r600_lower_to_scalar_instr_filter, NULL);
+   NIR_PASS_V(sh, nir_lower_phis_to_scalar, false);
    if (lower_64bit)
-      NIR_PASS_V(sel->nir, r600::r600_nir_split_64bit_io);
-   NIR_PASS_V(sel->nir, nir_lower_alu_to_scalar, r600_lower_to_scalar_instr_filter, NULL);
-   NIR_PASS_V(sel->nir, nir_lower_phis_to_scalar, false);
-   NIR_PASS_V(sel->nir, nir_lower_alu_to_scalar, r600_lower_to_scalar_instr_filter, NULL);
-   NIR_PASS_V(sel->nir, nir_copy_prop);
-   NIR_PASS_V(sel->nir, nir_opt_dce);
+      NIR_PASS_V(sh, r600::r600_nir_split_64bit_io);
+   NIR_PASS_V(sh, nir_lower_alu_to_scalar, r600_lower_to_scalar_instr_filter, NULL);
+   NIR_PASS_V(sh, nir_lower_phis_to_scalar, false);
+   NIR_PASS_V(sh, nir_lower_alu_to_scalar, r600_lower_to_scalar_instr_filter, NULL);
+   NIR_PASS_V(sh, nir_copy_prop);
+   NIR_PASS_V(sh, nir_opt_dce);
 
-   auto sh = nir_shader_clone(sel->nir, sel->nir);
+
 
    if (r600_is_last_vertex_stage(sh, *key))
       r600_lower_clipvertex_to_clipdist(sh, sel->so);
@@ -894,9 +923,6 @@ r600_shader_from_nir(struct r600_context *rctx,
    } while (late_algebraic_progress);
 
    NIR_PASS_V(sh, nir_lower_bool_to_int32);
-
-   if (sh->info.stage == MESA_SHADER_FRAGMENT)
-      r600::sort_fsoutput(sh);
 
    NIR_PASS_V(sh, nir_lower_locals_to_regs);
 

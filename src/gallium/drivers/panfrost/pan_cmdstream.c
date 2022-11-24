@@ -2658,12 +2658,8 @@ panfrost_emit_vertex_tiler_jobs(struct panfrost_batch *batch,
 {
         struct panfrost_context *ctx = batch->ctx;
 
-        /* XXX - set job_barrier in case buffers get ping-ponged and we need to
-         * enforce ordering, this has a perf hit! See
-         * KHR-GLES31.core.vertex_attrib_binding.advanced-iterations
-         */
         unsigned vertex = panfrost_add_job(&batch->pool.base, &batch->scoreboard,
-                                           MALI_JOB_TYPE_VERTEX, true, false,
+                                           MALI_JOB_TYPE_VERTEX, false, false,
                                            ctx->indirect_draw ?
                                            batch->indirect_draw_job_id : 0,
                                            0, vertex_job, false);
@@ -4827,7 +4823,6 @@ GENX(panfrost_cmdstream_screen_init)(struct panfrost_screen *screen)
         GENX(pan_blitter_init)(dev, &screen->blitter.bin_pool.base,
                                &screen->blitter.desc_pool.base);
 #if PAN_GPU_INDIRECTS
-        GENX(pan_indirect_dispatch_init)(dev);
         GENX(panfrost_init_indirect_draw_shaders)(dev, &screen->indirect_draw.bin_pool.base);
 #endif
 }

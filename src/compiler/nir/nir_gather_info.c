@@ -1001,7 +1001,8 @@ nir_shader_gather_info(nir_shader *shader, nir_function_impl *entrypoint)
       if (var->data.bindless || var->interface_type)
          continue;
 
-      shader->info.num_textures += glsl_type_get_sampler_count(var->type);
+      shader->info.num_textures += glsl_type_get_sampler_count(var->type) +
+                                   glsl_type_get_texture_count(var->type);
       shader->info.num_images += glsl_type_get_image_count(var->type);
    }
 

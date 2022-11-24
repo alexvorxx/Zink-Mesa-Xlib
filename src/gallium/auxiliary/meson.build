@@ -112,8 +112,6 @@ files_libgallium = files(
   'hud/hud_driver_query.c',
   'hud/hud_fps.c',
   'hud/hud_private.h',
-  'os/os_mman.h',
-  'os/os_process.c',
   'os/os_process.h',
   'pipebuffer/pb_buffer_fenced.c',
   'pipebuffer/pb_buffer_fenced.h',
@@ -469,7 +467,7 @@ files_libgallium += custom_target(
   output: 'u_tracepoints.c',
   command: [
     prog_python, '@INPUT@',
-    '-p', join_paths(meson.source_root(), 'src/util/perf/'),
+    '-p', join_paths(dir_source_root, 'src/util/perf/'),
     '-C', '@OUTPUT@',
   ],
   depend_files: u_trace_py,
@@ -481,7 +479,7 @@ files_u_tracepoints = custom_target(
   output: 'u_tracepoints.h',
   command: [
     prog_python, '@INPUT@',
-    '-p', join_paths(meson.source_root(), 'src/util/perf/'),
+    '-p', join_paths(dir_source_root, 'src/util/perf/'),
     '-H', '@OUTPUT@',
   ],
   depend_files: u_trace_py,

@@ -2,6 +2,8 @@
 
 if test -f /etc/debian_version; then
     CCACHE_PATH=/usr/lib/ccache
+elif test -f /etc/alpine-release; then
+    CCACHE_PATH=/usr/lib/ccache/bin
 else
     CCACHE_PATH=/usr/lib64/ccache
 fi

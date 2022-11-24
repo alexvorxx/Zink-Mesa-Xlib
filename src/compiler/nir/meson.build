@@ -398,6 +398,7 @@ if with_tests
         'tests/comparison_pre_tests.cpp',
         'tests/control_flow_tests.cpp',
         'tests/core_tests.cpp',
+        'tests/loop_analyze_tests.cpp',
         'tests/lower_returns_tests.cpp',
         'tests/negative_equal_tests.cpp',
         'tests/opt_if_tests.cpp',

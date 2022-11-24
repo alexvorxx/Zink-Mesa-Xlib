@@ -154,7 +154,7 @@ etna_screen_resource_alloc_ts(struct pipe_screen *pscreen,
    DBG_F(ETNA_DBG_RESOURCE_MSGS, "%p: Allocating tile status of size %zu",
          rsc, ts_bo_size);
 
-   if ((rsc->base.bind & PIPE_BIND_SCANOUT) && screen->ro->kms_fd >= 0) {
+   if ((rsc->base.bind & PIPE_BIND_SCANOUT) && screen->ro) {
       struct pipe_resource scanout_templat;
       struct winsys_handle handle;
 
@@ -518,6 +518,9 @@ select_best_modifier(const struct etna_screen * screen,
    }
 
    best_modifier = base_modifier = priority_to_modifier[prio];
+
+   if (!VIV_FEATURE(screen, chipFeatures, FAST_CLEAR))
+      return best_modifier;
 
    /* Make a second pass to try and find the best TS modifier if any. */
    for (int i = 0; i < count; i++) {

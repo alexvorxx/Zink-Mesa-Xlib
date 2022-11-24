@@ -43,6 +43,8 @@
 #include "program/prog_parameter.h"
 #include "util/u_math.h"
 
+#include <memory>
+
 using namespace brw;
 
 static unsigned get_lowered_simd_width(const struct brw_compiler *compiler,
@@ -1120,7 +1122,7 @@ fs_visitor::vgrf(const glsl_type *const type)
                  brw_type_for_base_type(type));
 }
 
-fs_reg::fs_reg(enum brw_reg_file file, int nr)
+fs_reg::fs_reg(enum brw_reg_file file, unsigned nr)
 {
    init();
    this->file = file;
@@ -1129,7 +1131,7 @@ fs_reg::fs_reg(enum brw_reg_file file, int nr)
    this->stride = (file == UNIFORM ? 0 : 1);
 }
 
-fs_reg::fs_reg(enum brw_reg_file file, int nr, enum brw_reg_type type)
+fs_reg::fs_reg(enum brw_reg_file file, unsigned nr, enum brw_reg_type type)
 {
    init();
    this->file = file;
@@ -2137,12 +2139,12 @@ fs_visitor::split_virtual_grfs()
     */
    compact_virtual_grfs();
 
-   int num_vars = this->alloc.count;
+   unsigned num_vars = this->alloc.count;
 
    /* Count the total number of registers */
-   int reg_count = 0;
-   int vgrf_to_reg[num_vars];
-   for (int i = 0; i < num_vars; i++) {
+   unsigned reg_count = 0;
+   unsigned vgrf_to_reg[num_vars];
+   for (unsigned i = 0; i < num_vars; i++) {
       vgrf_to_reg[i] = reg_count;
       reg_count += alloc.sizes[i];
    }
@@ -2159,14 +2161,14 @@ fs_visitor::split_virtual_grfs()
    /* Mark all used registers as fully splittable */
    foreach_block_and_inst(block, fs_inst, inst, cfg) {
       if (inst->dst.file == VGRF) {
-         int reg = vgrf_to_reg[inst->dst.nr];
+         unsigned reg = vgrf_to_reg[inst->dst.nr];
          for (unsigned j = 1; j < this->alloc.sizes[inst->dst.nr]; j++)
             split_points[reg + j] = true;
       }
 
-      for (int i = 0; i < inst->sources; i++) {
+      for (unsigned i = 0; i < inst->sources; i++) {
          if (inst->src[i].file == VGRF) {
-            int reg = vgrf_to_reg[inst->src[i].nr];
+            unsigned reg = vgrf_to_reg[inst->src[i].nr];
             for (unsigned j = 1; j < this->alloc.sizes[inst->src[i].nr]; j++)
                split_points[reg + j] = true;
          }
@@ -2181,13 +2183,13 @@ fs_visitor::split_virtual_grfs()
       }
 
       if (inst->dst.file == VGRF) {
-         int reg = vgrf_to_reg[inst->dst.nr] + inst->dst.offset / REG_SIZE;
+         unsigned reg = vgrf_to_reg[inst->dst.nr] + inst->dst.offset / REG_SIZE;
          for (unsigned j = 1; j < regs_written(inst); j++)
             split_points[reg + j] = false;
       }
-      for (int i = 0; i < inst->sources; i++) {
+      for (unsigned i = 0; i < inst->sources; i++) {
          if (inst->src[i].file == VGRF) {
-            int reg = vgrf_to_reg[inst->src[i].nr] + inst->src[i].offset / REG_SIZE;
+            unsigned reg = vgrf_to_reg[inst->src[i].nr] + inst->src[i].offset / REG_SIZE;
             for (unsigned j = 1; j < regs_read(inst, i); j++)
                split_points[reg + j] = false;
          }
@@ -2198,19 +2200,19 @@ fs_visitor::split_virtual_grfs()
    bool *vgrf_has_split = new bool[num_vars];
    memset(vgrf_has_split, 0, num_vars * sizeof(*vgrf_has_split));
 
-   int *new_virtual_grf = new int[reg_count];
-   int *new_reg_offset = new int[reg_count];
+   unsigned *new_virtual_grf = new unsigned[reg_count];
+   unsigned *new_reg_offset = new unsigned[reg_count];
 
-   int reg = 0;
+   unsigned reg = 0;
    bool has_splits = false;
-   for (int i = 0; i < num_vars; i++) {
+   for (unsigned i = 0; i < num_vars; i++) {
       /* The first one should always be 0 as a quick sanity check. */
       assert(split_points[reg] == false);
 
       /* j = 0 case */
       new_reg_offset[reg] = 0;
       reg++;
-      int offset = 1;
+      unsigned offset = 1;
 
       /* j > 0 case */
       for (unsigned j = 1; j < alloc.sizes[i]; j++) {
@@ -2221,8 +2223,8 @@ fs_visitor::split_virtual_grfs()
             has_splits = true;
             vgrf_has_split[i] = true;
             assert(offset <= MAX_VGRF_SIZE);
-            int grf = alloc.allocate(offset);
-            for (int k = reg - offset; k < reg; k++)
+            unsigned grf = alloc.allocate(offset);
+            for (unsigned k = reg - offset; k < reg; k++)
                new_virtual_grf[k] = grf;
             offset = 0;
          }
@@ -2234,7 +2236,7 @@ fs_visitor::split_virtual_grfs()
       /* The last one gets the original register number */
       assert(offset <= MAX_VGRF_SIZE);
       alloc.sizes[i] = offset;
-      for (int k = reg - offset; k < reg; k++)
+      for (unsigned k = reg - offset; k < reg; k++)
          new_virtual_grf[k] = i;
    }
    assert(reg == reg_count);
@@ -2268,7 +2270,7 @@ fs_visitor::split_virtual_grfs()
          } else {
             reg = vgrf_to_reg[inst->dst.nr];
             assert(new_reg_offset[reg] == 0);
-            assert(new_virtual_grf[reg] == (int)inst->dst.nr);
+            assert(new_virtual_grf[reg] == inst->dst.nr);
          }
          continue;
       }
@@ -2279,14 +2281,13 @@ fs_visitor::split_virtual_grfs()
             inst->dst.nr = new_virtual_grf[reg];
             inst->dst.offset = new_reg_offset[reg] * REG_SIZE +
                                inst->dst.offset % REG_SIZE;
-            assert((unsigned)new_reg_offset[reg] <
-                   alloc.sizes[new_virtual_grf[reg]]);
+            assert(new_reg_offset[reg] < alloc.sizes[new_virtual_grf[reg]]);
          } else {
             assert(new_reg_offset[reg] == inst->dst.offset / REG_SIZE);
-            assert(new_virtual_grf[reg] == (int)inst->dst.nr);
+            assert(new_virtual_grf[reg] == inst->dst.nr);
          }
       }
-      for (int i = 0; i < inst->sources; i++) {
+      for (unsigned i = 0; i < inst->sources; i++) {
 	 if (inst->src[i].file != VGRF)
             continue;
 
@@ -2295,11 +2296,10 @@ fs_visitor::split_virtual_grfs()
             inst->src[i].nr = new_virtual_grf[reg];
             inst->src[i].offset = new_reg_offset[reg] * REG_SIZE +
                                   inst->src[i].offset % REG_SIZE;
-            assert((unsigned)new_reg_offset[reg] <
-                   alloc.sizes[new_virtual_grf[reg]]);
+            assert(new_reg_offset[reg] < alloc.sizes[new_virtual_grf[reg]]);
          } else {
             assert(new_reg_offset[reg] == inst->src[i].offset / REG_SIZE);
-            assert(new_virtual_grf[reg] == (int)inst->src[i].nr);
+            assert(new_virtual_grf[reg] == inst->src[i].nr);
          }
       }
    }
@@ -6330,18 +6330,34 @@ needs_dummy_fence(const intel_device_info *devinfo, fs_inst *inst)
 {
    /* This workaround is about making sure that any instruction writing
     * through UGM has completed before we hit EOT.
-    *
-    * The workaround talks about UGM writes or atomic message but what is
-    * important is anything that hasn't completed. Usually any SEND
-    * instruction that has a destination register will be read by something
-    * else so we don't need to care about those as they will be synchronized
-    * by other parts of the shader or optimized away. What is left are
-    * instructions that don't have a destination register.
     */
    if (inst->sfid != GFX12_SFID_UGM)
       return false;
 
-   return inst->dst.file == BAD_FILE;
+   /* Any UGM, non-Scratch-surface Stores (not including Atomic) messages,
+    * where the L1-cache override is NOT among {WB, WS, WT}
+    */
+   enum lsc_opcode opcode = lsc_msg_desc_opcode(devinfo, inst->desc);
+   if (lsc_opcode_is_store(opcode)) {
+      switch (lsc_msg_desc_cache_ctrl(devinfo, inst->desc)) {
+      case LSC_CACHE_STORE_L1STATE_L3MOCS:
+      case LSC_CACHE_STORE_L1WB_L3WB:
+      case LSC_CACHE_STORE_L1S_L3UC:
+      case LSC_CACHE_STORE_L1S_L3WB:
+      case LSC_CACHE_STORE_L1WT_L3UC:
+      case LSC_CACHE_STORE_L1WT_L3WB:
+         return false;
+
+      default:
+         return true;
+      }
+   }
+
+   /* Any UGM Atomic message WITHOUT return value */
+   if (lsc_opcode_is_atomic(opcode) && inst->dst.file == BAD_FILE)
+      return true;
+
+   return false;
 }
 
 /* Wa_22013689345
@@ -7460,17 +7476,16 @@ brw_compile_fs(const struct brw_compiler *compiler,
    brw_nir_populate_wm_prog_data(nir, compiler->devinfo, key, prog_data,
                                  params->mue_map);
 
-   fs_visitor *v8 = NULL, *v16 = NULL, *v32 = NULL;
+   std::unique_ptr<fs_visitor> v8, v16, v32;
    cfg_t *simd8_cfg = NULL, *simd16_cfg = NULL, *simd32_cfg = NULL;
    float throughput = 0;
    bool has_spilled = false;
 
-   v8 = new fs_visitor(compiler, params->log_data, mem_ctx, &key->base,
-                       &prog_data->base, nir, 8,
-                       debug_enabled);
+   v8 = std::make_unique<fs_visitor>(compiler, params->log_data, mem_ctx, &key->base,
+                                     &prog_data->base, nir, 8,
+                                     debug_enabled);
    if (!v8->run_fs(allow_spilling, false /* do_rep_send */)) {
       params->error_str = ralloc_strdup(mem_ctx, v8->fail_msg);
-      delete v8;
       return NULL;
    } else if (!INTEL_DEBUG(DEBUG_NO8)) {
       simd8_cfg = v8->cfg;
@@ -7508,10 +7523,10 @@ brw_compile_fs(const struct brw_compiler *compiler,
        v8->max_dispatch_width >= 16 &&
        (!INTEL_DEBUG(DEBUG_NO16) || params->use_rep_send)) {
       /* Try a SIMD16 compile */
-      v16 = new fs_visitor(compiler, params->log_data, mem_ctx, &key->base,
-                           &prog_data->base, nir, 16,
-                           debug_enabled);
-      v16->import_uniforms(v8);
+      v16 = std::make_unique<fs_visitor>(compiler, params->log_data, mem_ctx, &key->base,
+                                         &prog_data->base, nir, 16,
+                                         debug_enabled);
+      v16->import_uniforms(v8.get());
       if (!v16->run_fs(allow_spilling, params->use_rep_send)) {
          brw_shader_perf_log(compiler, params->log_data,
                              "SIMD16 shader failed to compile: %s\n",
@@ -7535,10 +7550,10 @@ brw_compile_fs(const struct brw_compiler *compiler,
        devinfo->ver >= 6 && !simd16_failed &&
        !INTEL_DEBUG(DEBUG_NO32)) {
       /* Try a SIMD32 compile */
-      v32 = new fs_visitor(compiler, params->log_data, mem_ctx, &key->base,
-                           &prog_data->base, nir, 32,
-                           debug_enabled);
-      v32->import_uniforms(v8);
+      v32 = std::make_unique<fs_visitor>(compiler, params->log_data, mem_ctx, &key->base,
+                                         &prog_data->base, nir, 32,
+                                         debug_enabled);
+      v32->import_uniforms(v8.get());
       if (!v32->run_fs(allow_spilling, false)) {
          brw_shader_perf_log(compiler, params->log_data,
                              "SIMD32 shader failed to compile: %s\n",
@@ -7648,11 +7663,6 @@ brw_compile_fs(const struct brw_compiler *compiler,
    }
 
    g.add_const_data(nir->constant_data, nir->constant_data_size);
-
-   delete v8;
-   delete v16;
-   delete v32;
-
    return g.get_assembly();
 }
 
@@ -7810,15 +7820,17 @@ brw_compile_cs(const struct brw_compiler *compiler,
       prog_data->local_size[2] = nir->info.workgroup_size[2];
    }
 
-   const unsigned required_dispatch_width =
-      brw_required_dispatch_width(&nir->info);
+   brw_simd_selection_state simd_state{
+      .mem_ctx = mem_ctx,
+      .devinfo = compiler->devinfo,
+      .prog_data = prog_data,
+      .required_width = brw_required_dispatch_width(&nir->info),
+   };
 
-   fs_visitor *v[3]     = {0};
-   const char *error[3] = {0};
+   std::unique_ptr<fs_visitor> v[3];
 
    for (unsigned simd = 0; simd < 3; simd++) {
-      if (!brw_simd_should_compile(mem_ctx, simd, compiler->devinfo, prog_data,
-                                   required_dispatch_width, &error[simd]))
+      if (!brw_simd_should_compile(simd_state, simd))
          continue;
 
       const unsigned dispatch_width = 8u << simd;
@@ -7836,24 +7848,22 @@ brw_compile_cs(const struct brw_compiler *compiler,
       brw_postprocess_nir(shader, compiler, true, debug_enabled,
                           key->base.robust_buffer_access);
 
-      v[simd] = new fs_visitor(compiler, params->log_data, mem_ctx, &key->base,
-                               &prog_data->base, shader, dispatch_width,
-                               debug_enabled);
+      v[simd] = std::make_unique<fs_visitor>(compiler, params->log_data, mem_ctx, &key->base,
+                                    &prog_data->base, shader, dispatch_width,
+                                             debug_enabled);
 
-      if (prog_data->prog_mask) {
-         unsigned first = ffs(prog_data->prog_mask) - 1;
-         v[simd]->import_uniforms(v[first]);
-      }
+      const int first = brw_simd_first_compiled(simd_state);
+      if (first >= 0)
+         v[simd]->import_uniforms(v[first].get());
 
-      const bool allow_spilling = !prog_data->prog_mask ||
-                                  nir->info.workgroup_size_variable;
+      const bool allow_spilling = first < 0 || nir->info.workgroup_size_variable;
 
       if (v[simd]->run_cs(allow_spilling)) {
          cs_fill_push_const_info(compiler->devinfo, prog_data);
 
-         brw_simd_mark_compiled(simd, prog_data, v[simd]->spilled_any_registers);
+         brw_simd_mark_compiled(simd_state, simd, v[simd]->spilled_any_registers);
       } else {
-         error[simd] = ralloc_strdup(mem_ctx, v[simd]->fail_msg);
+         simd_state.error[simd] = ralloc_strdup(mem_ctx, v[simd]->fail_msg);
          if (simd > 0) {
             brw_shader_perf_log(compiler, params->log_data,
                                 "SIMD%u shader failed to compile: %s\n",
@@ -7862,20 +7872,19 @@ brw_compile_cs(const struct brw_compiler *compiler,
       }
    }
 
-   const int selected_simd = brw_simd_select(prog_data);
+   const int selected_simd = brw_simd_select(simd_state);
    if (selected_simd < 0) {
       params->error_str = ralloc_asprintf(mem_ctx, "Can't compile shader: %s, %s and %s.\n",
-                                          error[0], error[1], error[2]);;
+                                          simd_state.error[0], simd_state.error[1],
+                                          simd_state.error[2]);
       return NULL;
    }
 
    assert(selected_simd < 3);
-   fs_visitor *selected = v[selected_simd];
+   fs_visitor *selected = v[selected_simd].get();
 
    if (!nir->info.workgroup_size_variable)
       prog_data->prog_mask = 1 << selected_simd;
-
-   const unsigned *ret = NULL;
 
    fs_generator g(compiler, params->log_data, mem_ctx, &prog_data->base,
                   selected->runtime_check_aads_emit, MESA_SHADER_COMPUTE);
@@ -7900,13 +7909,7 @@ brw_compile_cs(const struct brw_compiler *compiler,
 
    g.add_const_data(nir->constant_data, nir->constant_data_size);
 
-   ret = g.get_assembly();
-
-   delete v[0];
-   delete v[1];
-   delete v[2];
-
-   return ret;
+   return g.get_assembly();
 }
 
 struct brw_cs_dispatch_info
@@ -7920,9 +7923,7 @@ brw_cs_get_dispatch_info(const struct intel_device_info *devinfo,
       override_local_size ? override_local_size :
                             prog_data->local_size;
 
-   const int simd =
-      override_local_size ? brw_simd_select_for_workgroup_size(devinfo, prog_data, sizes) :
-                            brw_simd_select(prog_data);
+   const int simd = brw_simd_select_for_workgroup_size(devinfo, prog_data, sizes);
    assert(simd >= 0 && simd < 3);
 
    info.group_size = sizes[0] * sizes[1] * sizes[2];
@@ -7960,81 +7961,63 @@ compile_single_bs(const struct brw_compiler *compiler, void *log_data,
    brw_postprocess_nir(shader, compiler, true, debug_enabled,
                        key->base.robust_buffer_access);
 
-   fs_visitor *v = NULL, *v8 = NULL, *v16 = NULL;
-   bool has_spilled = false;
+   brw_simd_selection_state simd_state{
+      .mem_ctx = mem_ctx,
+      .devinfo = compiler->devinfo,
+      .prog_data = prog_data,
 
-   uint8_t simd_size = 0;
-   if ((shader->info.subgroup_size == SUBGROUP_SIZE_VARYING ||
-        shader->info.subgroup_size == SUBGROUP_SIZE_REQUIRE_8) &&
-       !INTEL_DEBUG(DEBUG_NO8)) {
-      v8 = new fs_visitor(compiler, log_data, mem_ctx, &key->base,
-                          &prog_data->base, shader,
-                          8, debug_enabled);
-      const bool allow_spilling = true;
-      if (!v8->run_bs(allow_spilling)) {
-         if (error_str)
-            *error_str = ralloc_strdup(mem_ctx, v8->fail_msg);
-         delete v8;
-         return 0;
+      /* Since divergence is a lot more likely in RT than compute, it makes
+       * sense to limit ourselves to SIMD8 for now.
+       */
+      .required_width = 8,
+   };
+
+   std::unique_ptr<fs_visitor> v[2];
+
+   for (unsigned simd = 0; simd < ARRAY_SIZE(v); simd++) {
+      if (!brw_simd_should_compile(simd_state, simd))
+         continue;
+
+      const unsigned dispatch_width = 8u << simd;
+
+      v[simd] = std::make_unique<fs_visitor>(compiler, log_data, mem_ctx, &key->base,
+                                             &prog_data->base, shader,
+                                             dispatch_width, debug_enabled);
+
+      const bool allow_spilling = !brw_simd_any_compiled(simd_state);
+      if (v[simd]->run_bs(allow_spilling)) {
+         brw_simd_mark_compiled(simd_state, simd, v[simd]->spilled_any_registers);
       } else {
-         v = v8;
-         simd_size = 8;
-         if (v8->spilled_any_registers)
-            has_spilled = true;
-      }
-   }
-
-   if ((shader->info.subgroup_size == SUBGROUP_SIZE_VARYING ||
-        shader->info.subgroup_size == SUBGROUP_SIZE_REQUIRE_16) &&
-       !has_spilled && !INTEL_DEBUG(DEBUG_NO16)) {
-      v16 = new fs_visitor(compiler, log_data, mem_ctx, &key->base,
-                           &prog_data->base, shader,
-                           16, debug_enabled);
-      const bool allow_spilling = (v == NULL);
-      if (!v16->run_bs(allow_spilling)) {
-         brw_shader_perf_log(compiler, log_data,
-                             "SIMD16 shader failed to compile: %s\n",
-                             v16->fail_msg);
-         if (v == NULL) {
-            assert(v8 == NULL);
-            if (error_str) {
-               *error_str = ralloc_asprintf(
-                  mem_ctx, "SIMD8 disabled and couldn't generate SIMD16: %s",
-                  v16->fail_msg);
-            }
-            delete v16;
-            return 0;
+         simd_state.error[simd] = ralloc_strdup(mem_ctx, v[simd]->fail_msg);
+         if (simd > 0) {
+            brw_shader_perf_log(compiler, log_data,
+                                "SIMD%u shader failed to compile: %s",
+                                dispatch_width, v[simd]->fail_msg);
          }
-      } else {
-         v = v16;
-         simd_size = 16;
-         if (v16->spilled_any_registers)
-            has_spilled = true;
       }
    }
 
-   if (unlikely(v == NULL)) {
-      assert(INTEL_DEBUG(DEBUG_NO8 | DEBUG_NO16));
-      if (error_str) {
-         *error_str = ralloc_strdup(mem_ctx,
-            "Cannot satisfy INTEL_DEBUG flags SIMD restrictions");
-      }
-      return false;
+   const int selected_simd = brw_simd_select(simd_state);
+   if (selected_simd < 0) {
+      *error_str = ralloc_asprintf(mem_ctx, "Can't compile shader: %s and %s.",
+                                   simd_state.error[0], simd_state.error[1]);
+      return 0;
    }
 
-   assert(v);
+   assert(selected_simd < int(ARRAY_SIZE(v)));
+   fs_visitor *selected = v[selected_simd].get();
+   assert(selected);
 
-   int offset = g->generate_code(v->cfg, simd_size, v->shader_stats,
-                                 v->performance_analysis.require(), stats);
+   const unsigned dispatch_width = selected->dispatch_width;
+
+   int offset = g->generate_code(selected->cfg, dispatch_width, selected->shader_stats,
+                                 selected->performance_analysis.require(), stats);
    if (prog_offset)
       *prog_offset = offset;
    else
       assert(offset == 0);
 
-   delete v8;
-   delete v16;
-
-   return simd_size;
+   return dispatch_width;
 }
 
 uint64_t

@@ -1,6 +1,6 @@
 variables:
    DEBIAN_X86_BUILD_BASE_IMAGE: "debian/x86_build-base"
-   DEBIAN_BASE_TAG: "2022-11-04-kernel-6.0"
+   DEBIAN_BASE_TAG: "2022-11-22-arm-test-split-1"
 
    DEBIAN_X86_BUILD_IMAGE_PATH: "debian/x86_build"
    DEBIAN_BUILD_TAG: "2022-11-03-ci-fairy-s3"
@@ -10,12 +10,16 @@ variables:
 
    DEBIAN_X86_TEST_BASE_IMAGE: "debian/x86_test-base"
 
-   DEBIAN_X86_TEST_IMAGE_PATH: "debian/x86_test-gl"
-   DEBIAN_X86_TEST_GL_TAG: "2022-11-04-cts-zlib-cve"
-   DEBIAN_X86_TEST_VK_TAG: "2022-11-04-cts-vkd3d-proton"
+   DEBIAN_X86_TEST_IMAGE_GL_PATH: "debian/x86_test-gl"
+   DEBIAN_X86_TEST_IMAGE_VK_PATH: "debian/x86_test-vk"
+   DEBIAN_X86_TEST_IMAGE_PATH: ${DEBIAN_X86_TEST_IMAGE_GL_PATH}
 
+   DEBIAN_X86_TEST_GL_TAG: "2022-11-17-weston"
+   DEBIAN_X86_TEST_VK_TAG: "2022-11-17-test-img-path"
+
+   ALPINE_X86_BUILD_TAG: "2022-11-15-alpine-bringup"
    FEDORA_X86_BUILD_TAG: "2022-09-22-python3-ply-2"
-   KERNEL_ROOTFS_TAG: "2022-11-04-kernel-6.0"
+   KERNEL_ROOTFS_TAG: "2022-11-17-weston"
 
    WINDOWS_X64_VS_PATH: "windows/x64_vs"
    WINDOWS_X64_VS_TAG: "2022-10-20-upgrade-zlib"

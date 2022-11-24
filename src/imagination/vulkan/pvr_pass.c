@@ -451,8 +451,8 @@ VkResult pvr_CreateRenderPass2(VkDevice _device,
       attachment->load_op = desc->loadOp;
       attachment->store_op = desc->storeOp;
 
-      attachment->has_stencil = vk_format_has_stencil(attachment->vk_format);
-      if (attachment->has_stencil) {
+      attachment->aspects = vk_format_aspects(desc->format);
+      if (attachment->aspects & VK_IMAGE_ASPECT_STENCIL_BIT) {
          attachment->stencil_load_op = desc->stencilLoadOp;
          attachment->stencil_store_op = desc->stencilStoreOp;
       }

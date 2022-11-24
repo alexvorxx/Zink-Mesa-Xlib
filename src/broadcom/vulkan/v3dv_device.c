@@ -44,13 +44,13 @@
 #include "compiler/v3d_compiler.h"
 
 #include "drm-uapi/v3d_drm.h"
-#include "format/u_format.h"
 #include "vk_drm_syncobj.h"
 #include "vk_util.h"
 #include "git_sha1.h"
 
 #include "util/build_id.h"
 #include "util/u_debug.h"
+#include "util/format/u_format.h"
 
 #ifdef VK_USE_PLATFORM_XCB_KHR
 #include <xcb/xcb.h>
@@ -749,7 +749,7 @@ v3dv_physical_device_init_disk_cache(struct v3dv_physical_device *device)
    _mesa_sha1_format(timestamp, device->driver_build_sha1);
 
    assert(device->name);
-   device->disk_cache = disk_cache_create(device->name, timestamp, 0);
+   device->disk_cache = disk_cache_create(device->name, timestamp, v3d_mesa_debug);
 #else
    device->disk_cache = NULL;
 #endif
@@ -2113,6 +2113,10 @@ v3dv_CreateDevice(VkPhysicalDevice physicalDevice,
       goto fail;
    }
 
+   result = v3dv_query_allocate_resources(device);
+   if (result != VK_SUCCESS)
+      goto fail;
+
    *pDevice = v3dv_device_to_handle(device);
 
    return VK_SUCCESS;
@@ -2123,6 +2127,8 @@ fail:
    queue_finish(&device->queue);
    destroy_device_meta(device);
    v3dv_pipeline_cache_finish(&device->default_pipeline_cache);
+   v3dv_event_free_resources(device);
+   v3dv_query_free_resources(device);
    vk_device_finish(&device->vk);
    vk_free(&device->vk.alloc, device);
 
@@ -2140,6 +2146,8 @@ v3dv_DestroyDevice(VkDevice _device,
 
    v3dv_event_free_resources(device);
    mtx_destroy(&device->events.lock);
+
+   v3dv_query_free_resources(device);
 
    destroy_device_meta(device);
    v3dv_pipeline_cache_finish(&device->default_pipeline_cache);
@@ -2278,7 +2286,7 @@ device_import_bo(struct v3dv_device *device,
    assert(*bo);
 
    if ((*bo)->refcnt == 0)
-      v3dv_bo_init(*bo, handle, size, get_offset.offset, "import", false);
+      v3dv_bo_init_import(*bo, handle, size, get_offset.offset, false);
    else
       p_atomic_inc(&(*bo)->refcnt);
 
@@ -3072,4 +3080,32 @@ v3dv_GetDeviceMemoryOpaqueCaptureAddress(
 {
    /* Not implemented */
    return 0;
+}
+
+VkResult
+v3dv_create_compute_pipeline_from_nir(struct v3dv_device *device,
+                                      nir_shader *nir,
+                                      VkPipelineLayout pipeline_layout,
+                                      VkPipeline *pipeline)
+{
+   struct vk_shader_module cs_m = vk_shader_module_from_nir(nir);
+
+   VkPipelineShaderStageCreateInfo set_event_cs_stage = {
+      .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+      .stage = VK_SHADER_STAGE_COMPUTE_BIT,
+      .module = vk_shader_module_to_handle(&cs_m),
+      .pName = "main",
+   };
+
+   VkComputePipelineCreateInfo info = {
+      .sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO,
+      .stage = set_event_cs_stage,
+      .layout = pipeline_layout,
+   };
+
+   VkResult result =
+      v3dv_CreateComputePipelines(v3dv_device_to_handle(device), VK_NULL_HANDLE,
+                                  1, &info, &device->vk.alloc, pipeline);
+
+   return result;
 }

@@ -80,18 +80,12 @@ anv_cmd_state_reset(struct anv_cmd_buffer *cmd_buffer)
    anv_cmd_state_init(cmd_buffer);
 }
 
-static void anv_cmd_buffer_destroy(struct vk_command_buffer *vk_cmd_buffer);
-
-static const struct vk_command_buffer_ops cmd_buffer_ops = {
-   .destroy = anv_cmd_buffer_destroy,
-};
-
-static VkResult anv_create_cmd_buffer(
-    struct anv_device *                         device,
-    struct vk_command_pool *                    pool,
-    VkCommandBufferLevel                        level,
-    VkCommandBuffer*                            pCommandBuffer)
+static VkResult
+anv_create_cmd_buffer(struct vk_command_pool *pool,
+                      struct vk_command_buffer **cmd_buffer_out)
 {
+   struct anv_device *device =
+      container_of(pool->base.device, struct anv_device, vk);
    struct anv_cmd_buffer *cmd_buffer;
    VkResult result;
 
@@ -101,7 +95,7 @@ static VkResult anv_create_cmd_buffer(
       return vk_error(pool, VK_ERROR_OUT_OF_HOST_MEMORY);
 
    result = vk_command_buffer_init(pool, &cmd_buffer->vk,
-                                   &cmd_buffer_ops, level);
+                                   &anv_cmd_buffer_ops, 0);
    if (result != VK_SUCCESS)
       goto fail_alloc;
 
@@ -121,7 +115,7 @@ static VkResult anv_create_cmd_buffer(
       goto fail_vk;
 
    anv_state_stream_init(&cmd_buffer->surface_state_stream,
-                         &device->surface_state_pool, 4096);
+                         &device->internal_surface_state_pool, 4096);
    anv_state_stream_init(&cmd_buffer->dynamic_state_stream,
                          &device->dynamic_state_pool, 16384);
    anv_state_stream_init(&cmd_buffer->general_state_stream,
@@ -140,7 +134,7 @@ static VkResult anv_create_cmd_buffer(
 
    u_trace_init(&cmd_buffer->trace, &device->ds.trace_context);
 
-   *pCommandBuffer = anv_cmd_buffer_to_handle(cmd_buffer);
+   *cmd_buffer_out = &cmd_buffer->vk;
 
    return VK_SUCCESS;
 
@@ -150,36 +144,6 @@ static VkResult anv_create_cmd_buffer(
    vk_command_buffer_finish(&cmd_buffer->vk);
  fail_alloc:
    vk_free2(&device->vk.alloc, &pool->alloc, cmd_buffer);
-
-   return result;
-}
-
-VkResult anv_AllocateCommandBuffers(
-    VkDevice                                    _device,
-    const VkCommandBufferAllocateInfo*          pAllocateInfo,
-    VkCommandBuffer*                            pCommandBuffers)
-{
-   ANV_FROM_HANDLE(anv_device, device, _device);
-   VK_FROM_HANDLE(vk_command_pool, pool, pAllocateInfo->commandPool);
-
-   VkResult result = VK_SUCCESS;
-   uint32_t i;
-
-   for (i = 0; i < pAllocateInfo->commandBufferCount; i++) {
-      result = anv_create_cmd_buffer(device, pool, pAllocateInfo->level,
-                                     &pCommandBuffers[i]);
-      if (result != VK_SUCCESS)
-         break;
-   }
-
-   if (result != VK_SUCCESS) {
-      while (i--) {
-         VK_FROM_HANDLE(vk_command_buffer, cmd_buffer, pCommandBuffers[i]);
-         anv_cmd_buffer_destroy(cmd_buffer);
-      }
-      for (i = 0; i < pAllocateInfo->commandBufferCount; i++)
-         pCommandBuffers[i] = VK_NULL_HANDLE;
-   }
 
    return result;
 }
@@ -214,9 +178,13 @@ anv_cmd_buffer_destroy(struct vk_command_buffer *vk_cmd_buffer)
    vk_free(&cmd_buffer->vk.pool->alloc, cmd_buffer);
 }
 
-VkResult
-anv_cmd_buffer_reset(struct anv_cmd_buffer *cmd_buffer)
+void
+anv_cmd_buffer_reset(struct vk_command_buffer *vk_cmd_buffer,
+                     UNUSED VkCommandBufferResetFlags flags)
 {
+   struct anv_cmd_buffer *cmd_buffer =
+      container_of(vk_cmd_buffer, struct anv_cmd_buffer, vk);
+
    vk_command_buffer_reset(&cmd_buffer->vk);
 
    cmd_buffer->usage_flags = 0;
@@ -226,7 +194,7 @@ anv_cmd_buffer_reset(struct anv_cmd_buffer *cmd_buffer)
 
    anv_state_stream_finish(&cmd_buffer->surface_state_stream);
    anv_state_stream_init(&cmd_buffer->surface_state_stream,
-                         &cmd_buffer->device->surface_state_pool, 4096);
+                         &cmd_buffer->device->internal_surface_state_pool, 4096);
 
    anv_state_stream_finish(&cmd_buffer->dynamic_state_stream);
    anv_state_stream_init(&cmd_buffer->dynamic_state_stream,
@@ -245,17 +213,13 @@ anv_cmd_buffer_reset(struct anv_cmd_buffer *cmd_buffer)
 
    u_trace_fini(&cmd_buffer->trace);
    u_trace_init(&cmd_buffer->trace, &cmd_buffer->device->ds.trace_context);
-
-   return VK_SUCCESS;
 }
 
-VkResult anv_ResetCommandBuffer(
-    VkCommandBuffer                             commandBuffer,
-    VkCommandBufferResetFlags                   flags)
-{
-   ANV_FROM_HANDLE(anv_cmd_buffer, cmd_buffer, commandBuffer);
-   return anv_cmd_buffer_reset(cmd_buffer);
-}
+const struct vk_command_buffer_ops anv_cmd_buffer_ops = {
+   .create = anv_create_cmd_buffer,
+   .reset = anv_cmd_buffer_reset,
+   .destroy = anv_cmd_buffer_destroy,
+};
 
 void
 anv_cmd_buffer_emit_state_base_address(struct anv_cmd_buffer *cmd_buffer)
@@ -318,13 +282,6 @@ set_dirty_for_bind_map(struct anv_cmd_buffer *cmd_buffer,
       cmd_buffer->state.push_constants_dirty |= mesa_to_vk_shader_stage(stage);
 }
 
-static inline uint32_t
-ilog2_round_up(uint32_t value)
-{
-   assert(value != 0);
-   return 32 - __builtin_clz(value - 1);
-}
-
 static void
 anv_cmd_buffer_set_ray_query_buffer(struct anv_cmd_buffer *cmd_buffer,
                                     struct anv_cmd_pipeline_state *pipeline_state,
@@ -340,7 +297,7 @@ anv_cmd_buffer_set_ray_query_buffer(struct anv_cmd_buffer *cmd_buffer,
    if (ray_shadow_size > 0 &&
        (!cmd_buffer->state.ray_query_shadow_bo ||
         cmd_buffer->state.ray_query_shadow_bo->size < ray_shadow_size)) {
-      unsigned shadow_size_log2 = MAX2(ilog2_round_up(ray_shadow_size), 16);
+      unsigned shadow_size_log2 = MAX2(util_logbase2_ceil(ray_shadow_size), 16);
       unsigned bucket = shadow_size_log2 - 16;
       assert(bucket < ARRAY_SIZE(device->ray_query_shadow_bos));
 
@@ -1076,7 +1033,7 @@ void anv_CmdSetRayTracingPipelineStackSizeKHR(
 
    uint32_t stack_ids_per_dss = 2048; /* TODO */
 
-   unsigned stack_size_log2 = ilog2_round_up(pipelineStackSize);
+   unsigned stack_size_log2 = util_logbase2_ceil(pipelineStackSize);
    if (stack_size_log2 < 10)
       stack_size_log2 = 10;
 

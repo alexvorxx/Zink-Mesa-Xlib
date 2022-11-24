@@ -21,7 +21,7 @@
  * IN THE SOFTWARE.
  */
 
-#include "u_math.h"
+#include "util/u_math.h"
 #include "nir.h"
 #include "glsl_types.h"
 #include "nir_types.h"

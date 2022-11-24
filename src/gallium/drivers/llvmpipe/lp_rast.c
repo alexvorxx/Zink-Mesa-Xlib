@@ -75,7 +75,7 @@ lp_rast_begin(struct lp_rasterizer *rast,
 {
    rast->curr_scene = scene;
 
-   LP_DBG(DEBUG_RAST, "%s\n", __FUNCTION__);
+   LP_DBG(DEBUG_RAST, "%s\n", __func__);
 
    lp_scene_begin_rasterization(scene);
    lp_scene_bin_iter_begin(scene);
@@ -101,7 +101,7 @@ lp_rast_tile_begin(struct lp_rasterizer_task *task,
 {
    struct lp_scene *scene = task->scene;
 
-   LP_DBG(DEBUG_RAST, "%s %d,%d\n", __FUNCTION__, x, y);
+   LP_DBG(DEBUG_RAST, "%s %d,%d\n", __func__, x, y);
 
    task->bin = bin;
    task->x = x * TILE_SIZE;
@@ -154,7 +154,7 @@ lp_rast_clear_color(struct lp_rasterizer_task *task,
     */
    LP_DBG(DEBUG_RAST,
           "%s clear value (target format %d) raw 0x%x,0x%x,0x%x,0x%x\n",
-          __FUNCTION__, format, uc.ui[0], uc.ui[1], uc.ui[2], uc.ui[3]);
+          __func__, format, uc.ui[0], uc.ui[1], uc.ui[2], uc.ui[3]);
 
    for (unsigned s = 0; s < scene->cbufs[cbuf].nr_samples; s++) {
       void *map = (char *) scene->cbufs[cbuf].map
@@ -196,7 +196,7 @@ lp_rast_clear_zstencil(struct lp_rasterizer_task *task,
    const unsigned dst_stride = scene->zsbuf.stride;
 
    LP_DBG(DEBUG_RAST, "%s: value=0x%08x, mask=0x%08x\n",
-           __FUNCTION__, clear_value, clear_mask);
+           __func__, clear_value, clear_mask);
 
    /*
     * Clear the area of the depth/depth buffer matching this tile.
@@ -307,7 +307,7 @@ lp_rast_shade_tile(struct lp_rasterizer_task *task,
       return;
    }
 
-   LP_DBG(DEBUG_RAST, "%s\n", __FUNCTION__);
+   LP_DBG(DEBUG_RAST, "%s\n", __func__);
 
    const struct lp_rast_state *state = task->state;
    assert(state);
@@ -389,7 +389,7 @@ static void
 lp_rast_shade_tile_opaque(struct lp_rasterizer_task *task,
                           const union lp_rast_cmd_arg arg)
 {
-   LP_DBG(DEBUG_RAST, "%s\n", __FUNCTION__);
+   LP_DBG(DEBUG_RAST, "%s\n", __func__);
 
    assert(task->state);
    if (!task->state) {
@@ -517,7 +517,7 @@ lp_rast_blit_tile_to_dest(struct lp_rasterizer_task *task,
    const unsigned level = cbuf->u.tex.level;
    struct llvmpipe_resource *lpt = llvmpipe_resource(cbuf->texture);
 
-   LP_DBG(DEBUG_RAST, "%s\n", __FUNCTION__);
+   LP_DBG(DEBUG_RAST, "%s\n", __func__);
 
    if (inputs->disable) {
       /* This command was partially binned and has been disabled */
@@ -937,7 +937,7 @@ blit_rasterize_bin(struct lp_rasterizer_task *task,
 {
    STATIC_ASSERT(ARRAY_SIZE(dispatch_blit) == LP_RAST_OP_MAX);
 
-   if (0) debug_printf("%s\n", __FUNCTION__);
+   if (0) debug_printf("%s\n", __func__);
    for (const struct cmd_block *block = bin->head; block; block = block->next) {
       for (unsigned k = 0; k < block->count; k++) {
          dispatch_blit[block->cmd[k]](task, block->arg[k]);
@@ -1097,7 +1097,7 @@ void
 lp_rast_queue_scene(struct lp_rasterizer *rast,
                     struct lp_scene *scene)
 {
-   LP_DBG(DEBUG_SETUP, "%s\n", __FUNCTION__);
+   LP_DBG(DEBUG_SETUP, "%s\n", __func__);
 
    lp_fence_reference(&rast->last_fence, scene->fence);
    if (rast->last_fence)
@@ -1133,7 +1133,7 @@ lp_rast_queue_scene(struct lp_rasterizer *rast,
       }
    }
 
-   LP_DBG(DEBUG_SETUP, "%s done \n", __FUNCTION__);
+   LP_DBG(DEBUG_SETUP, "%s done \n", __func__);
 }
 
 

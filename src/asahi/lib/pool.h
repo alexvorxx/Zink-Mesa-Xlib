@@ -73,13 +73,28 @@ agx_pool_get_bo_handles(struct agx_pool *pool, uint32_t *handles);
  * allocator and not used for much else */
 
 struct agx_ptr
-agx_pool_alloc_aligned(struct agx_pool *pool, size_t sz, unsigned alignment);
+agx_pool_alloc_aligned_with_bo(struct agx_pool *pool, size_t sz,
+                               unsigned alignment, struct agx_bo **bo);
+
+static inline struct agx_ptr
+agx_pool_alloc_aligned(struct agx_pool *pool, size_t sz, unsigned alignment)
+{
+   return agx_pool_alloc_aligned_with_bo(pool, sz, alignment, NULL);
+}
 
 uint64_t
 agx_pool_upload(struct agx_pool *pool, const void *data, size_t sz);
 
 uint64_t
-agx_pool_upload_aligned(struct agx_pool *pool, const void *data, size_t sz, unsigned alignment);
+agx_pool_upload_aligned_with_bo(struct agx_pool *pool, const void *data,
+                                size_t sz, unsigned alignment,
+                                struct agx_bo **bo);
+
+static inline uint64_t
+agx_pool_upload_aligned(struct agx_pool *pool, const void *data, size_t sz, unsigned alignment)
+{
+   return agx_pool_upload_aligned_with_bo(pool, data, sz, alignment, NULL);
+}
 
 struct agx_desc_alloc_info {
    unsigned size;

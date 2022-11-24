@@ -37,11 +37,11 @@
 #ifndef U_SSE_H_
 #define U_SSE_H_
 
-#include "pipe/p_config.h"
+#include "util/detect.h"
 #include "pipe/p_compiler.h"
 #include "util/u_debug.h"
 
-#if defined(PIPE_ARCH_SSE)
+#if DETECT_ARCH_SSE
 
 #include <emmintrin.h>
 
@@ -585,6 +585,6 @@ util_sse2_stretch_row_8unorm(__m128i * restrict dst,
 
 
 
-#endif /* PIPE_ARCH_SSE */
+#endif /* DETECT_ARCH_SSE */
 
 #endif /* U_SSE_H_ */

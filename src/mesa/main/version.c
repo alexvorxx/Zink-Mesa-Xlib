@@ -261,7 +261,6 @@ compute_version(const struct gl_extensions *extensions,
                          extensions->EXT_blend_equation_separate &&
                          extensions->EXT_stencil_two_side);
    const bool ver_2_1 = (ver_2_0 &&
-                         extensions->EXT_pixel_buffer_object &&
                          extensions->EXT_texture_sRGB);
    /* We lie about the minimum number of color attachments. Strictly, OpenGL
     * 3.0 requires 8, whereas OpenGL ES requires 4. OpenGL ES 3.0 class

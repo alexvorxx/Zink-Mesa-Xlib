@@ -37,7 +37,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 
-#include "detect_os.h"
+#include "util/detect.h"
 
 
 #if DETECT_OS_UNIX
@@ -54,9 +54,9 @@ extern "C" {
 /*
  * Trap into the debugger.
  */
-#if (defined(PIPE_ARCH_X86) || defined(PIPE_ARCH_X86_64)) && defined(PIPE_CC_GCC)
+#if (DETECT_ARCH_X86 || DETECT_ARCH_X86_64) && DETECT_CC_GCC
 #  define os_break() __asm("int3")
-#elif defined(PIPE_CC_MSVC)
+#elif DETECT_CC_MSVC
 #  define os_break()  __debugbreak()
 #elif DETECT_OS_UNIX
 #  define os_break() kill(getpid(), SIGTRAP)

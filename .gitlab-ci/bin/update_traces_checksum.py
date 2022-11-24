@@ -18,6 +18,7 @@ import sys
 from ruamel.yaml import YAML
 
 import gitlab
+from colorama import Fore, Style
 from gitlab_common import get_gitlab_project, read_token, wait_for_pipeline
 
 
@@ -37,8 +38,8 @@ def gather_results(
         if target_jobs_regex.match(job.name) and job.status == "failed":
             cur_job = project.jobs.get(job.id)
             # get variables
-            print(f"👁 Looking through logs for the device variable and traces.yml file in {job.name}...")
-            log = cur_job.trace().decode("unicode_escape").splitlines()
+            print(f"👁  {job.name}...")
+            log: list[str] = cur_job.trace().decode("unicode_escape").splitlines()
             filename: str = ''
             dev_name: str = ''
             for logline in log:
@@ -50,7 +51,7 @@ def gather_results(
                     dev_name = device_name.group(1)
 
             if not filename or not dev_name:
-                print("! Couldn't find device name or YML file in the logs!")
+                print(Fore.RED + "Couldn't find device name or YML file in the logs!" + Style.RESET_ALL)
                 return
 
             print(f"👁 Found {dev_name} and file {filename}")
@@ -83,22 +84,20 @@ def gather_results(
                     checksum: str = value['images'][0]['checksum_render']
 
                     if not checksum:
-                        print(f"Trace {trace} checksum is missing! Abort.")
+                        print(Fore.RED + f"{dev_name}: {trace}: checksum is missing! Crash?" + Style.RESET_ALL)
                         continue
 
                     if checksum == "error":
-                        print(f"Trace {trace} crashed")
+                        print(Fore.RED + f"{dev_name}: {trace}: crashed" + Style.RESET_ALL)
                         continue
 
-                    if (
-                        checksum in target['traces'][trace][dev_name] and
-                        target['traces'][trace][dev_name]['checksum'] == checksum
-                    ):
+                    if target['traces'][trace][dev_name].get('checksum') == checksum:
                         continue
 
                     if "label" in target['traces'][trace][dev_name]:
-                        print(f'{trace}: {dev_name}: has label: {target["traces"][trace][dev_name]["label"]}, is it still right?')
+                        print(f'{dev_name}: {trace}: please verify that label {Fore.BLUE}{target["traces"][trace][dev_name]["label"]}{Style.RESET_ALL} is still valid')
 
+                    print(Fore.GREEN + f'{dev_name}: {trace}: checksum updated' + Style.RESET_ALL)
                     target['traces'][trace][dev_name]['checksum'] = checksum
 
             with open(traces_file[0], 'w', encoding='utf-8') as target_file:

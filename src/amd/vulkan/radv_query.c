@@ -1091,8 +1091,9 @@ radv_CreateQueryPool(VkDevice _device, const VkQueryPoolCreateInfo *pCreateInfo,
     * hardware if GS uses the legacy path. When NGG GS is used, the hardware can't know the number
     * of generated primitives and we have to increment it from the shader using a plain GDS atomic.
     */
-   pool->uses_gds = device->physical_device->use_ngg &&
-                    ((pool->pipeline_stats_mask & VK_QUERY_PIPELINE_STATISTIC_GEOMETRY_SHADER_PRIMITIVES_BIT) ||
+   pool->uses_gds = (device->physical_device->emulate_ngg_gs_query_pipeline_stat &&
+                     (pool->pipeline_stats_mask & VK_QUERY_PIPELINE_STATISTIC_GEOMETRY_SHADER_PRIMITIVES_BIT)) ||
+                    (device->physical_device->use_ngg &&
                      pCreateInfo->queryType == VK_QUERY_TYPE_PRIMITIVES_GENERATED_EXT);
 
    switch (pCreateInfo->queryType) {

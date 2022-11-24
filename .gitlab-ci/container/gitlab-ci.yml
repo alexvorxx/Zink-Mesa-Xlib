@@ -213,7 +213,7 @@ debian/x86_test-gl:
     - .set-image-base-tag
   variables:
     MESA_BASE_TAG: *debian-x86_test-base
-    MESA_IMAGE_PATH: ${DEBIAN_X86_TEST_IMAGE_PATH}
+    MESA_IMAGE_PATH: ${DEBIAN_X86_TEST_IMAGE_GL_PATH}
     MESA_IMAGE_TAG: *debian-x86_test-gl
   needs:
     - debian/x86_test-gl
@@ -229,7 +229,7 @@ debian/x86_test-vk:
     - .set-image-base-tag
   variables:
     MESA_BASE_TAG: *debian-x86_test-base
-    MESA_IMAGE_PATH: "debian/x86_test-vk"
+    MESA_IMAGE_PATH: ${DEBIAN_X86_TEST_IMAGE_VK_PATH}
     MESA_IMAGE_TAG: *debian-x86_test-vk
   needs:
     - debian/x86_test-vk
@@ -254,6 +254,24 @@ debian/arm_build:
   needs:
     - debian/arm_build
 
+
+# Alpine based x86 build image
+alpine/x86_build:
+  extends:
+    - .fdo.container-build@alpine
+    - .container
+  variables:
+    FDO_DISTRIBUTION_VERSION: "3.16"
+    MESA_IMAGE_TAG: &alpine-x86_build ${ALPINE_X86_BUILD_TAG}
+
+.use-alpine/x86_build:
+  extends:
+    - .set-image
+  variables:
+    MESA_IMAGE_PATH: "alpine/x86_build"
+    MESA_IMAGE_TAG: *alpine-x86_build
+  needs:
+    - alpine/x86_build
 
 # Fedora 34 based x86 build image
 fedora/x86_build:
@@ -322,30 +340,57 @@ kernel+rootfs_armhf:
     MESA_ROOTFS_TAG: *kernel-rootfs
 
 # x86 image with ARM64 & armhf kernel & rootfs for baremetal testing
-debian/arm_test:
+.debian/arm_test:
   extends:
     - .fdo.container-build@debian
     - .container
     # Don't want the .container rules
     - .build-rules
-  needs:
-    - kernel+rootfs_arm64
-    - kernel+rootfs_armhf
   variables:
     FDO_DISTRIBUTION_TAG: "${MESA_IMAGE_TAG}--${MESA_ROOTFS_TAG}--${MESA_ARM_BUILD_TAG}--${MESA_TEMPLATES_COMMIT}"
     ARTIFACTS_PREFIX: "https://${MINIO_HOST}/mesa-lava"
     ARTIFACTS_SUFFIX: "${MESA_ROOTFS_TAG}--${MESA_ARM_BUILD_TAG}--${MESA_TEMPLATES_COMMIT}"
     MESA_ARM_BUILD_TAG: *debian-arm_build
-    MESA_IMAGE_TAG: &debian-arm_test ${DEBIAN_BASE_TAG}
     MESA_ROOTFS_TAG: *kernel-rootfs
 
+debian/armhf_test:
+  extends:
+    - .debian/arm_test
+  needs:
+    - kernel+rootfs_armhf
+  variables:
+    MESA_IMAGE_TAG: &debian-armhf_test ${DEBIAN_BASE_TAG}
+
+debian/arm64_test:
+  extends:
+    - .debian/arm_test
+  needs:
+    - kernel+rootfs_arm64
+  variables:
+    MESA_IMAGE_TAG: &debian-arm64_test ${DEBIAN_BASE_TAG}
+
 .use-debian/arm_test:
-  image: "$CI_REGISTRY_IMAGE/${MESA_IMAGE_PATH}:${MESA_IMAGE_TAG}--${MESA_ROOTFS_TAG}--${MESA_ARM_BUILD_TAG}--${MESA_TEMPLATES_COMMIT}"
   variables:
     MESA_ARM_BUILD_TAG: *debian-arm_build
-    MESA_IMAGE_PATH: "debian/arm_test"
-    MESA_IMAGE_TAG: *debian-arm_test
     MESA_ROOTFS_TAG: *kernel-rootfs
+
+.use-debian/armhf_test:
+  image: "$CI_REGISTRY_IMAGE/${MESA_IMAGE_PATH}:${MESA_IMAGE_TAG}--${MESA_ROOTFS_TAG}--${MESA_ARM_BUILD_TAG}--${MESA_TEMPLATES_COMMIT}"
+  extends:
+    - .use-debian/arm_test
+  variables:
+    MESA_IMAGE_PATH: "debian/armhf_test"
+    MESA_IMAGE_TAG: *debian-armhf_test
+  needs:
+    - debian/arm_test
+
+.use-debian/arm64_test:
+  image: "$CI_REGISTRY_IMAGE/${MESA_IMAGE_PATH}:${MESA_IMAGE_TAG}--${MESA_ROOTFS_TAG}--${MESA_ARM_BUILD_TAG}--${MESA_TEMPLATES_COMMIT}"
+  extends:
+    - .use-debian/arm_test
+  variables:
+    MESA_IMAGE_PATH: "debian/arm64_test"
+    MESA_IMAGE_TAG: *debian-arm64_test
   needs:
     - debian/arm_test
 

@@ -1,4 +1,4 @@
-/* 
+/*
  * Copyright (C) 2021 Alyssa Rosenzweig
  * Copyright (C) 2020-2021 Collabora, Ltd.
  * Copyright (C) 2014 Broadcom
@@ -27,60 +27,6 @@
 #include "compiler/nir/nir_builder.h"
 #include "asahi/compiler/agx_compile.h"
 #include "gallium/auxiliary/util/u_blitter.h"
-
-static void
-agx_build_reload_shader(struct agx_device *dev)
-{
-   nir_builder b = nir_builder_init_simple_shader(MESA_SHADER_FRAGMENT,
-         &agx_nir_options, "agx_reload");
-
-   nir_variable *out = nir_variable_create(b.shader, nir_var_shader_out,
-         glsl_vector_type(GLSL_TYPE_FLOAT, 4), "output");
-   out->data.location = FRAG_RESULT_DATA0;
-
-   nir_ssa_def *fragcoord = nir_load_frag_coord(&b);
-   nir_ssa_def *coord = nir_channels(&b, fragcoord, 0x3);
-
-   nir_tex_instr *tex = nir_tex_instr_create(b.shader, 1);
-   tex->dest_type = nir_type_float32;
-   tex->sampler_dim = GLSL_SAMPLER_DIM_RECT;
-   tex->op = nir_texop_tex;
-   tex->src[0].src_type = nir_tex_src_coord;
-   tex->src[0].src = nir_src_for_ssa(coord);
-   tex->coord_components = 2;
-   nir_ssa_dest_init(&tex->instr, &tex->dest, 4, 32, NULL);
-   nir_builder_instr_insert(&b, &tex->instr);
-   nir_store_var(&b, out, &tex->dest.ssa, 0xFF);
-
-   unsigned offset = 0;
-   unsigned bo_size = 4096;
-
-   struct agx_bo *bo = agx_bo_create(dev, bo_size, AGX_MEMORY_TYPE_SHADER);
-   dev->reload.bo = bo;
-
-   for (unsigned i = 0; i < AGX_NUM_FORMATS; ++i) {
-      struct util_dynarray binary;
-      util_dynarray_init(&binary, NULL);
-
-      nir_shader *s = nir_shader_clone(NULL, b.shader);
-      struct agx_shader_info info;
-
-      struct agx_shader_key key = {
-         .fs.tib_formats[0] = i,
-         .fs.ignore_tib_dependencies = true,
-      };
-
-      agx_compile_shader_nir(s, &key, NULL, &binary, &info);
-
-      assert(offset + binary.size < bo_size);
-      memcpy(((uint8_t *) bo->ptr.cpu) + offset, binary.data, binary.size);
-
-      dev->reload.format[i] = bo->ptr.gpu + offset;
-      offset += ALIGN_POT(binary.size, 128);
-
-      util_dynarray_fini(&binary);
-   }
-}
 
 void
 agx_blitter_save(struct agx_context *ctx, struct blitter_context *blitter,
@@ -131,52 +77,4 @@ agx_blit(struct pipe_context *pipe,
 
    agx_blitter_save(ctx, ctx->blitter, info->render_condition_enable);
    util_blitter_blit(ctx->blitter, info);
-}
-
-/* We need some fixed shaders for common rendering tasks. When colour buffer
- * reload is not in use, a shader is used to clear a particular colour. At the
- * end of rendering a tile, a shader is used to write it out. These shaders are
- * too trivial to go through the compiler at this stage. */
-#define AGX_STOP \
-	0x88, 0x00, 0x08, 0x00, 0x08, 0x00, 0x08, 0x00, 0x08, \
-	0x00, 0x08, 0x00, 0x08, 0x00, 0x08, 0x00, 0x08, 0x00 \
-
-#define AGX_BLEND \
-	0x09, 0x00, 0x00, 0x04, 0xf0, 0xfc, 0x80, 0x03
-
-/* Clears the tilebuffer, where u6-u7 are preloaded with the FP16 clear colour
-
-   0: 7e018c098040         bitop_mov        r0, u6
-   6: 7e058e098000         bitop_mov        r1, u7
-   c: 09000004f0fc8003     TODO.blend
-   */
-
-static uint8_t shader_clear[] = {
-   0x7e, 0x01, 0x8c, 0x09, 0x80, 0x40,
-   0x7e, 0x05, 0x8e, 0x09, 0x80, 0x00,
-   AGX_BLEND,
-   AGX_STOP
-};
-
-static uint8_t shader_store[] = {
-   0x7e, 0x00, 0x04, 0x09, 0x80, 0x00,
-   0xb1, 0x80, 0x00, 0x80, 0x00, 0x4a, 0x00, 0x00, 0x0a, 0x00,
-   AGX_STOP
-};
-
-void
-agx_internal_shaders(struct agx_device *dev)
-{
-   unsigned clear_offset = 0;
-   unsigned store_offset = 1024;
-
-   struct agx_bo *bo = agx_bo_create(dev, 4096, AGX_MEMORY_TYPE_SHADER);
-   memcpy(((uint8_t *) bo->ptr.cpu) + clear_offset, shader_clear, sizeof(shader_clear));
-   memcpy(((uint8_t *) bo->ptr.cpu) + store_offset, shader_store, sizeof(shader_store));
-
-   dev->internal.bo = bo;
-   dev->internal.clear = bo->ptr.gpu + clear_offset;
-   dev->internal.store = bo->ptr.gpu + store_offset;
-
-   agx_build_reload_shader(dev);
 }

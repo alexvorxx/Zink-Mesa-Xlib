@@ -154,7 +154,7 @@ using very old Xt/Motif applications with OpenGL, you shouldn't need it.
 ----------------------------------------------------------
 
 On Linux-based systems you'll want to follow the `Linux
-ABI <https://www.khronos.org/registry/OpenGL/ABI/>`__ standard.
+ABI <https://registry.khronos.org/OpenGL/ABI/>`__ standard.
 Basically you'll want the following:
 
 ``/usr/include/GL/gl.h``
@@ -265,8 +265,9 @@ problem.
 First, join the :doc:`mesa-dev mailing list <lists>`. That's where
 Mesa development is discussed.
 
-The `OpenGL Specification <https://www.opengl.org/documentation>`__ is
-the bible for OpenGL implementation work. You should read it.
+The `OpenGL Specification
+<https://registry.khronos.org/OpenGL/index_gl.php#apispecs>`__ is the
+bible for OpenGL implementation work. You should read it.
 
 Most of the Mesa development work involves implementing new OpenGL
 extensions, writing hardware drivers (for the DRI), and code
@@ -292,8 +293,8 @@ being said, many people have managed to figure out the process.
 Joining the appropriate mailing lists and asking questions (and
 searching the archives) is a good way to get information.
 
-4.3 Why isn't ``GL_EXT_texture_compression_s3tc`` implemented in Mesa?
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+4.3 Why isn't :ext:`GL_EXT_texture_compression_s3tc` implemented in Mesa?
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 Oh but it is! Prior to 2nd October 2017, the Mesa project did not
 include S3TC support due to intellectual property (IP) and/or patent

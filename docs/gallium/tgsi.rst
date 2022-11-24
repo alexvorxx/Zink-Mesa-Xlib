@@ -899,9 +899,9 @@ XXX doesn't look like most of the opcodes really belong here.
 
 .. opcode:: TXF - Texel Fetch
 
-  As per NV_gpu_shader4, extract a single texel from a specified texture
-  image or PIPE_BUFFER resource. The source sampler may not be a CUBE or
-  SHADOW.  *src0* is a
+  As per :ext:`GL_NV_gpu_program4`, extract a single texel from a specified
+  texture image or PIPE_BUFFER resource. The source sampler may not be a
+  CUBE or SHADOW.  *src0* is a
   four-component signed integer vector used to identify the single texel
   accessed. 3 components + level.  If the texture is multisampled, then
   the fourth component indicates the sample, not the mipmap level.
@@ -915,11 +915,11 @@ XXX doesn't look like most of the opcodes really belong here.
 
 .. opcode:: TXQ - Texture Size Query
 
-  As per NV_gpu_program4, retrieve the dimensions of the texture depending on
-  the target. For 1D (width), 2D/RECT/CUBE (width, height), 3D (width, height,
-  depth), 1D array (width, layers), 2D array (width, height, layers).
-  Also return the number of accessible levels (last_level - first_level + 1)
-  in W.
+  As per :ext:`GL_NV_gpu_program4`, retrieve the dimensions of the texture
+  depending on   the target. For 1D (width), 2D/RECT/CUBE (width, height),
+  3D (width, height, depth), 1D array (width, layers), 2D array (width,
+  height, layers).  Also return the number of accessible levels
+  (last_level - first_level + 1) in W.
 
   For components which don't return a resource dimension, their value
   is undefined.
@@ -951,15 +951,15 @@ XXX doesn't look like most of the opcodes really belong here.
 
 .. opcode:: TG4 - Texture Gather
 
-  As per ARB_texture_gather, gathers the four texels to be used in a bi-linear
-  filtering operation and packs them into a single register.  Only works with
-  2D, 2D array, cubemaps, and cubemaps arrays.  For 2D textures, only the
-  addressing modes of the sampler and the top level of any mip pyramid are
-  used. Set W to zero.  It behaves like the TEX instruction, but a filtered
-  sample is not generated. The four samples that contribute to filtering are
-  placed into XYZW in clockwise order, starting with the (u,v) texture
-  coordinate delta at the following locations (-, +), (+, +), (+, -), (-, -),
-  where the magnitude of the deltas are half a texel.
+  As per :ext:`GL_ARB_texture_gather`, gathers the four texels to be used in a
+  bi-linear   filtering operation and packs them into a single register.
+  Only works with 2D, 2D array, cubemaps, and cubemaps arrays.  For 2D
+  textures, only the addressing modes of the sampler and the top level of any
+  mip pyramid are used. Set W to zero.  It behaves like the TEX instruction,
+  but a filtered sample is not generated. The four samples that contribute to
+  filtering are placed into XYZW in clockwise order, starting with the (u,v)
+  texture coordinate delta at the following locations (-, +), (+, +), (+, -),
+  (-, -), where the magnitude of the deltas are half a texel.
 
   PIPE_CAP_TEXTURE_SM5 enhances this instruction to support shadow per-sample
   depth compares, single component selection, and a non-constant offset. It
@@ -3537,7 +3537,7 @@ TGSI_SEMANTIC_VIEWPORT_MASK
 """""""""""""""""""""""""""
 
 A bit mask of viewports to broadcast the current primitive to. See
-GL_NV_viewport_array2 for more details.
+:ext:`GL_NV_viewport_array2` for more details.
 
 
 TGSI_SEMANTIC_TESS_DEFAULT_OUTER_LEVEL
@@ -3576,7 +3576,7 @@ DCL SVIEW[#], resource, type(s)
 Declares a shader input sampler view and assigns it to a SVIEW[#]
 register.
 
-resource can be one of BUFFER, 1D, 2D, 3D, 1DArray and 2DArray.
+resource can be one of BUFFER, 1D, 2D, 3D, 1D_ARRAY and 2D_ARRAY.
 
 type must be 1 or 4 entries (if specifying on a per-component
 level) out of UNORM, SNORM, SINT, UINT and FLOAT.
@@ -3604,8 +3604,8 @@ DCL RES[#], resource [, WR] [, RAW]
 Declares a shader input resource and assigns it to a RES[#]
 register.
 
-resource can be one of BUFFER, 1D, 2D, 3D, CUBE, 1DArray and
-2DArray.
+resource can be one of BUFFER, 1D, 2D, 3D, CUBE, 1D_ARRAY and
+2D_ARRAY.
 
 If the RAW keyword is not specified, the texture data will be
 subject to conversion, swizzling and scaling as required to yield
@@ -3666,7 +3666,7 @@ If LOWER_LEFT, the position will be (0,0) at the lower left corner and
 increase upward and rightward.
 
 OpenGL defaults to LOWER_LEFT, and is configurable with the
-GL_ARB_fragment_coord_conventions extension.
+:ext:`GL_ARB_fragment_coord_conventions` extension.
 
 DirectX 9/10 use UPPER_LEFT.
 
@@ -3684,7 +3684,7 @@ rasterization, which is instead controlled by half_pixel_center in the
 rasterizer.
 
 OpenGL defaults to HALF_INTEGER, and is configurable with the
-GL_ARB_fragment_coord_conventions extension.
+:ext:`GL_ARB_fragment_coord_conventions` extension.
 
 DirectX 9 uses INTEGER.
 DirectX 10 uses HALF_INTEGER.
@@ -3850,6 +3850,6 @@ well.
 | S                  | (s, s, s, s) | unknown            | unknown      |
 +--------------------+--------------+--------------------+--------------+
 
-.. [#envmap-bumpmap] https://www.opengl.org/registry/specs/ATI/envmap_bumpmap.txt
+.. [#envmap-bumpmap] https://registry.khronos.org/OpenGL/extensions/ATI/ATI_envmap_bumpmap.txt
 .. [#depth-tex-mode] the default is (z, z, z, 1) but may also be (0, 0, 0, z)
    or (z, z, z, z) depending on the value of GL_DEPTH_TEXTURE_MODE.

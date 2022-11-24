@@ -2948,6 +2948,7 @@ VkResult anv_CreateDevice(
       goto fail_device;
    }
 
+   device->vk.command_buffer_ops = &anv_cmd_buffer_ops;
    device->vk.check_status = anv_device_check_status;
    device->vk.create_sync_for_memory = anv_create_sync_for_memory;
    vk_device_set_drm_fd(&device->vk, device->fd);

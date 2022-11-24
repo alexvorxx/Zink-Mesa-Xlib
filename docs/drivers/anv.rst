@@ -14,7 +14,7 @@ specific to ANV:
 :envvar:`ANV_DISABLE_SECONDARY_CMD_BUFFER_CALLS`
    If defined to ``1`` or ``true``, this will prevent usage of self
    modifying command buffers to implement ``vkCmdExecuteCommands``. As
-   a result of this, it will also disable ``VK_KHR_performance_query``.
+   a result of this, it will also disable :ext:`VK_KHR_performance_query`.
 :envvar:`ANV_ALWAYS_BINDLESS`
    If defined to ``1`` or ``true``, this forces all descriptor sets to
    use the internal `Bindless model`_.
@@ -28,7 +28,7 @@ specific to ANV:
    Haswell, Cherryview).
 :envvar:`ANV_PRIMITIVE_REPLICATION_MAX_VIEWS`
    Specifies up to how many view shaders can be lowered to handle
-   VK_KHR_multiview. Beyond this number, multiview is implemented
+   :ext:`VK_KHR_multiview`. Beyond this number, multiview is implemented
    using instanced rendering. If unspecified, the value default to
    ``2``.
 
@@ -38,7 +38,7 @@ Experimental features
 
 :envvar:`ANV_EXPERIMENTAL_NV_MESH_SHADER`
    If defined to ``1`` or ``true``, this advertise support for
-   VK_NV_mesh_shader extension for platforms that have hardware
+   :ext:`VK_NV_mesh_shader` extension for platforms that have hardware
    support for it.
 
 

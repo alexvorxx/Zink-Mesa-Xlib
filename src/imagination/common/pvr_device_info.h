@@ -344,7 +344,6 @@ struct pvr_device_quirks {
    bool has_brn51764 : 1;
    bool has_brn52354 : 1;
    bool has_brn52942 : 1;
-   bool has_brn56279 : 1;
    bool has_brn58839 : 1;
    bool has_brn62269 : 1;
    bool has_brn66011 : 1;

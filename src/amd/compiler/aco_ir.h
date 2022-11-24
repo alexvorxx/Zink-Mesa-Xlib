@@ -1857,7 +1857,8 @@ inline bool
 is_dead(const std::vector<uint16_t>& uses, const Instruction* instr)
 {
    if (instr->definitions.empty() || instr->isBranch() ||
-       instr->opcode == aco_opcode::p_init_scratch)
+       instr->opcode == aco_opcode::p_init_scratch ||
+       instr->opcode == aco_opcode::p_dual_src_export_gfx11)
       return false;
 
    if (std::any_of(instr->definitions.begin(), instr->definitions.end(),
@@ -2110,20 +2111,6 @@ static constexpr Stage tess_eval_es(HWStage::ES,
                                     SWStage::TES); /* tesselation evaluation before geometry */
 static constexpr Stage geometry_gs(HWStage::GS, SWStage::GS);
 
-enum statistic {
-   statistic_hash,
-   statistic_instructions,
-   statistic_copies,
-   statistic_branches,
-   statistic_latency,
-   statistic_inv_throughput,
-   statistic_vmem_clauses,
-   statistic_smem_clauses,
-   statistic_sgpr_presched,
-   statistic_vgpr_presched,
-   num_statistics
-};
-
 struct DeviceInfo {
    uint16_t lds_encoding_granule;
    uint16_t lds_alloc_granule;
@@ -2185,7 +2172,7 @@ public:
    CompilationProgress progress;
 
    bool collect_statistics = false;
-   uint32_t statistics[num_statistics];
+   uint32_t statistics[aco_num_statistics];
 
    float_mode next_fp_mode;
    unsigned next_loop_depth = 0;

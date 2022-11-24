@@ -176,7 +176,7 @@ etna_update_sampler_source(struct pipe_sampler_view *view, int num)
       to->seqno = from->seqno;
       ctx->dirty |= ETNA_DIRTY_TEXTURE_CACHES;
    } else if ((to == from) && etna_resource_needs_flush(to)) {
-      if (ctx->ts_for_sampler_view && etna_can_use_sampler_ts(view, num)) {
+      if (etna_can_use_sampler_ts(view, num)) {
          enable_sampler_ts = true;
          /* Do not set flush_seqno because the resolve-to-self was bypassed */
       } else {
@@ -186,12 +186,9 @@ etna_update_sampler_source(struct pipe_sampler_view *view, int num)
          to->flush_seqno = from->seqno;
          ctx->dirty |= ETNA_DIRTY_TEXTURE_CACHES;
       }
-  } else if ((to == from) && (to->flush_seqno < from->seqno)) {
-      to->flush_seqno = from->seqno;
-      ctx->dirty |= ETNA_DIRTY_TEXTURE_CACHES;
    }
-   if (ctx->ts_for_sampler_view &&
-       etna_configure_sampler_ts(ctx->ts_for_sampler_view(view), view, enable_sampler_ts)) {
+
+   if (etna_configure_sampler_ts(ctx->ts_for_sampler_view(view), view, enable_sampler_ts)) {
       ctx->dirty |= ETNA_DIRTY_SAMPLER_VIEWS | ETNA_DIRTY_TEXTURE_CACHES;
       ctx->dirty_sampler_views |= (1 << num);
    }

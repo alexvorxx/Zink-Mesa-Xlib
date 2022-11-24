@@ -79,7 +79,8 @@ agx_txs(nir_builder *b, nir_tex_instr *tex)
    /* Add LOD offset to first level to get the interesting LOD */
    int lod_idx = nir_tex_instr_src_index(tex, nir_tex_src_lod);
    if (lod_idx >= 0)
-      lod = nir_iadd(b, lod, nir_ssa_for_src(b, tex->src[lod_idx].src, 1));
+      lod = nir_iadd(b, lod, nir_u2u32(b, nir_ssa_for_src(b,
+                     tex->src[lod_idx].src, 1)));
 
    /* Add 1 to width-1, height-1 to get base dimensions */
    nir_ssa_def *width = nir_iadd_imm(b, width_m1, 1);

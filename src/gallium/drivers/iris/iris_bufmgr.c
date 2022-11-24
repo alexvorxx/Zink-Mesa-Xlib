@@ -54,7 +54,7 @@
 #include "common/intel_gem.h"
 #include "dev/intel_device_info.h"
 #include "isl/isl.h"
-#include "os/os_mman.h"
+#include "util/os_mman.h"
 #include "util/u_debug.h"
 #include "util/macros.h"
 #include "util/hash_table.h"
@@ -136,7 +136,7 @@ memzone_name(enum iris_memory_zone memzone)
    const char *names[] = {
       [IRIS_MEMZONE_SHADER]   = "shader",
       [IRIS_MEMZONE_BINDER]   = "binder",
-      [IRIS_MEMZONE_BINDLESS] = "scratchsurf",
+      [IRIS_MEMZONE_SCRATCH]  = "scratchsurf",
       [IRIS_MEMZONE_SURFACE]  = "surface",
       [IRIS_MEMZONE_DYNAMIC]  = "dynamic",
       [IRIS_MEMZONE_OTHER]    = "other",
@@ -354,10 +354,10 @@ enum iris_memory_zone
 iris_memzone_for_address(uint64_t address)
 {
    STATIC_ASSERT(IRIS_MEMZONE_OTHER_START    > IRIS_MEMZONE_DYNAMIC_START);
-   STATIC_ASSERT(IRIS_MEMZONE_DYNAMIC_START  > IRIS_MEMZONE_SURFACE_START);
-   STATIC_ASSERT(IRIS_MEMZONE_SURFACE_START  > IRIS_MEMZONE_BINDLESS_START);
-   STATIC_ASSERT(IRIS_MEMZONE_BINDLESS_START > IRIS_MEMZONE_BINDER_START);
+   STATIC_ASSERT(IRIS_MEMZONE_SURFACE_START  > IRIS_MEMZONE_SCRATCH_START);
+   STATIC_ASSERT(IRIS_MEMZONE_SCRATCH_START == IRIS_MEMZONE_BINDER_START);
    STATIC_ASSERT(IRIS_MEMZONE_BINDER_START   > IRIS_MEMZONE_SHADER_START);
+   STATIC_ASSERT(IRIS_MEMZONE_DYNAMIC_START  > IRIS_MEMZONE_SURFACE_START);
    STATIC_ASSERT(IRIS_BORDER_COLOR_POOL_ADDRESS == IRIS_MEMZONE_DYNAMIC_START);
 
    if (address >= IRIS_MEMZONE_OTHER_START)
@@ -372,11 +372,11 @@ iris_memzone_for_address(uint64_t address)
    if (address >= IRIS_MEMZONE_SURFACE_START)
       return IRIS_MEMZONE_SURFACE;
 
-   if (address >= IRIS_MEMZONE_BINDLESS_START)
-      return IRIS_MEMZONE_BINDLESS;
-
-   if (address >= IRIS_MEMZONE_BINDER_START)
+   if (address >= (IRIS_MEMZONE_BINDER_START + IRIS_SCRATCH_ZONE_SIZE))
       return IRIS_MEMZONE_BINDER;
+
+   if (address >= IRIS_MEMZONE_SCRATCH_START)
+      return IRIS_MEMZONE_SCRATCH;
 
    return IRIS_MEMZONE_SHADER;
 }
@@ -2356,10 +2356,10 @@ iris_bufmgr_get_meminfo(struct iris_bufmgr *bufmgr,
 }
 
 static void
-iris_bufmgr_init_global_vm(int fd, struct iris_bufmgr *bufmgr)
+iris_bufmgr_init_global_vm(struct iris_bufmgr *bufmgr)
 {
    uint64_t value;
-   if (!intel_gem_get_context_param(fd, 0, I915_CONTEXT_PARAM_VM, &value)) {
+   if (!intel_gem_get_context_param(bufmgr->fd, 0, I915_CONTEXT_PARAM_VM, &value)) {
       bufmgr->use_global_vm = false;
       bufmgr->global_vm_id = 0;
    } else {
@@ -2400,7 +2400,7 @@ iris_bufmgr_create(struct intel_device_info *devinfo, int fd, bool bo_reuse)
    simple_mtx_init(&bufmgr->lock, mtx_plain);
    simple_mtx_init(&bufmgr->bo_deps_lock, mtx_plain);
 
-   iris_bufmgr_init_global_vm(fd, bufmgr);
+   iris_bufmgr_init_global_vm(bufmgr);
 
    list_inithead(&bufmgr->zombie_list);
 
@@ -2423,12 +2423,13 @@ iris_bufmgr_create(struct intel_device_info *devinfo, int fd, bool bo_reuse)
    util_vma_heap_init(&bufmgr->vma_allocator[IRIS_MEMZONE_SHADER],
                       PAGE_SIZE, _4GB_minus_1 - PAGE_SIZE);
    util_vma_heap_init(&bufmgr->vma_allocator[IRIS_MEMZONE_BINDER],
-                      IRIS_MEMZONE_BINDER_START, IRIS_BINDER_ZONE_SIZE);
-   util_vma_heap_init(&bufmgr->vma_allocator[IRIS_MEMZONE_BINDLESS],
-                      IRIS_MEMZONE_BINDLESS_START, IRIS_BINDLESS_SIZE);
+                      IRIS_MEMZONE_BINDER_START + IRIS_SCRATCH_ZONE_SIZE,
+                      IRIS_BINDER_ZONE_SIZE - IRIS_SCRATCH_ZONE_SIZE);
+   util_vma_heap_init(&bufmgr->vma_allocator[IRIS_MEMZONE_SCRATCH],
+                      IRIS_MEMZONE_SCRATCH_START, IRIS_SCRATCH_ZONE_SIZE);
    util_vma_heap_init(&bufmgr->vma_allocator[IRIS_MEMZONE_SURFACE],
                       IRIS_MEMZONE_SURFACE_START, _4GB_minus_1 -
-                      IRIS_BINDER_ZONE_SIZE - IRIS_BINDLESS_SIZE);
+                      IRIS_BINDER_ZONE_SIZE - IRIS_SCRATCH_ZONE_SIZE);
 
    /* Wa_2209859288: the Tigerlake PRM's workarounds volume says:
     *

@@ -174,6 +174,8 @@ etna_compile_rs_state(struct etna_context *ctx, struct compiled_rs_state *cs,
          !rs->swap_rb && !rs->flip &&
          !rs->clear_mode && rs->source_padded_width &&
          !rs->source_ts_compressed) {
+      if (VIV_FEATURE(ctx->screen, chipMinorFeatures6, CACHE128B256BPERLINE))
+         cs->RS_EXTRA_CONFIG |= VIVS_RS_EXTRA_CONFIG_TS_MODE(rs->source_ts_mode);
       /* Total number of tiles (same as for autodisable) */
       cs->RS_KICKER_INPLACE = rs->tile_count;
    }

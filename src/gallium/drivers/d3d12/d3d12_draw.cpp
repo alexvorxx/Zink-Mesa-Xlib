@@ -32,6 +32,7 @@
 #include "d3d12_screen.h"
 #include "d3d12_surface.h"
 
+#include "util/indices/u_primconvert.h"
 #include "util/u_debug.h"
 #include "util/u_draw.h"
 #include "util/u_helpers.h"
@@ -39,10 +40,6 @@
 #include "util/u_prim.h"
 #include "util/u_prim_restart.h"
 #include "util/u_math.h"
-
-extern "C" {
-#include "indices/u_primconvert.h"
-}
 
 static const D3D12_RECT MAX_SCISSOR = { D3D12_VIEWPORT_BOUNDS_MIN,
                                         D3D12_VIEWPORT_BOUNDS_MIN,

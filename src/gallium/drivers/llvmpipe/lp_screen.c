@@ -79,7 +79,6 @@ static const struct debug_named_value lp_debug_flags[] = {
    { "fs", DEBUG_FS, NULL },
    { "cs", DEBUG_CS, NULL },
    { "tgsi_ir", DEBUG_TGSI_IR, NULL },
-   { "cache_stats", DEBUG_CACHE_STATS, NULL },
    { "accurate_a0", DEBUG_ACCURATE_A0 },
    DEBUG_NAMED_VALUE_END
 };
@@ -865,10 +864,6 @@ llvmpipe_destroy_screen(struct pipe_screen *_screen)
 
    lp_jit_screen_cleanup(screen);
 
-   if (LP_DEBUG & DEBUG_CACHE_STATS)
-      printf("disk shader cache:   hits = %u, misses = %u\n",
-             screen->num_disk_shader_cache_hits,
-             screen->num_disk_shader_cache_misses);
    disk_cache_destroy(screen->disk_shader_cache);
    if (winsys->destroy)
       winsys->destroy(winsys);
@@ -982,12 +977,10 @@ lp_disk_cache_find_shader(struct llvmpipe_screen *screen,
                                     sha1, &binary_size);
    if (!buffer) {
       cache->data_size = 0;
-      p_atomic_inc(&screen->num_disk_shader_cache_misses);
       return;
    }
    cache->data_size = binary_size;
    cache->data = buffer;
-   p_atomic_inc(&screen->num_disk_shader_cache_hits);
 }
 
 

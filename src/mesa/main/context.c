@@ -87,7 +87,6 @@
 #include "bufferobj.h"
 #include "conservativeraster.h"
 #include "context.h"
-#include "cpuinfo.h"
 #include "debug.h"
 #include "debug_output.h"
 #include "depth.h"
@@ -217,7 +216,6 @@ one_time_init(const char *extensions_override)
 
    _mesa_one_time_init_extension_overrides(extensions_override);
 
-   _mesa_get_cpu_features();
 
    for (i = 0; i < 256; i++) {
       _mesa_ubyte_to_float_color_tab[i] = (float) i / 255.0F;

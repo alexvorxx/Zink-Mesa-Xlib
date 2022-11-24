@@ -115,6 +115,7 @@ nir_options = {
    .lower_usub_sat = true,
    .lower_iadd_sat = true,
    .lower_uadd_carry = true,
+   .lower_usub_borrow = true,
    .lower_mul_high = true,
    .lower_rotate = true,
    .lower_pack_half_2x16 = true,
@@ -335,6 +336,7 @@ enum dxil_intr {
    DXIL_INTR_CREATE_HANDLE_FROM_BINDING = 217,
 
    DXIL_INTR_IS_HELPER_LANE = 221,
+   DXIL_INTR_SAMPLE_CMP_LEVEL = 224,
 };
 
 enum dxil_atomic_op {
@@ -1708,7 +1710,7 @@ emit_resources(struct ntd_context *ctx)
       dxil_get_metadata_node(&ctx->mod, resources_nodes, ARRAY_SIZE(resources_nodes)): NULL;
 }
 
-static boolean
+static bool
 emit_tag(struct ntd_context *ctx, enum dxil_shader_tag tag,
          const struct dxil_mdnode *value_node)
 {
@@ -4856,17 +4858,9 @@ emit_sample_cmp(struct ntd_context *ctx, struct texop_parameters *params)
 {
    const struct dxil_func *func;
    enum dxil_intr opcode;
-   int numparam;
 
-   if (ctx->mod.shader_kind == DXIL_PIXEL_SHADER)  {
-      func = dxil_get_function(&ctx->mod, "dx.op.sampleCmp", DXIL_F32);
-      opcode = DXIL_INTR_SAMPLE_CMP;
-      numparam = 12;
-   } else {
-      func = dxil_get_function(&ctx->mod, "dx.op.sampleCmpLevelZero", DXIL_F32);
-      opcode = DXIL_INTR_SAMPLE_CMP_LVL_ZERO;
-      numparam = 11;
-   }
+   func = dxil_get_function(&ctx->mod, "dx.op.sampleCmp", DXIL_F32);
+   opcode = DXIL_INTR_SAMPLE_CMP;
 
    if (!func)
       return NULL;
@@ -4879,7 +4873,50 @@ emit_sample_cmp(struct ntd_context *ctx, struct texop_parameters *params)
       params->cmp, params->min_lod
    };
 
-   return dxil_emit_call(&ctx->mod, func, args, numparam);
+   return dxil_emit_call(&ctx->mod, func, args, ARRAY_SIZE(args));
+}
+
+static const struct dxil_value *
+emit_sample_cmp_level_zero(struct ntd_context *ctx, struct texop_parameters *params)
+{
+   const struct dxil_func *func;
+   enum dxil_intr opcode;
+
+   func = dxil_get_function(&ctx->mod, "dx.op.sampleCmpLevelZero", DXIL_F32);
+   opcode = DXIL_INTR_SAMPLE_CMP_LVL_ZERO;
+
+   if (!func)
+      return NULL;
+
+   const struct dxil_value *args[11] = {
+      dxil_module_get_int32_const(&ctx->mod, opcode),
+      params->tex, params->sampler,
+      params->coord[0], params->coord[1], params->coord[2], params->coord[3],
+      params->offset[0], params->offset[1], params->offset[2],
+      params->cmp
+   };
+
+   return dxil_emit_call(&ctx->mod, func, args, ARRAY_SIZE(args));
+}
+
+static const struct dxil_value *
+emit_sample_cmp_level(struct ntd_context *ctx, struct texop_parameters *params)
+{
+   const struct dxil_func *func = dxil_get_function(&ctx->mod, "dx.op.sampleCmpLevel", params->overload);
+   if (!func)
+      return NULL;
+
+   assert(params->lod_or_sample != NULL);
+
+   const struct dxil_value *args[12] = {
+      dxil_module_get_int32_const(&ctx->mod, DXIL_INTR_SAMPLE_CMP_LEVEL),
+      params->tex, params->sampler,
+      params->coord[0], params->coord[1], params->coord[2], params->coord[3],
+      params->offset[0], params->offset[1], params->offset[2],
+      params->cmp, params->lod_or_sample
+   };
+
+   return dxil_emit_call(&ctx->mod, func, args, ARRAY_SIZE(args));
 }
 
 static const struct dxil_value *
@@ -4986,6 +5023,7 @@ emit_tex(struct ntd_context *ctx, nir_tex_instr *instr)
    unsigned coord_components = 0, offset_components = 0, dx_components = 0, dy_components = 0;
    params.overload = get_overload(instr->dest_type, 32);
 
+   bool lod_is_zero = false;
    for (unsigned i = 0; i < instr->num_srcs; i++) {
       nir_alu_type type = nir_tex_instr_src_type(instr, i);
 
@@ -5026,6 +5064,9 @@ emit_tex(struct ntd_context *ctx, nir_tex_instr *instr)
             params.lod_or_sample = int_undef;
          if (!params.lod_or_sample)
             return false;
+
+         if (nir_src_is_const(instr->src[i].src) && nir_src_as_float(instr->src[i].src) == 0.0f)
+            lod_is_zero = true;
          break;
 
       case nir_tex_src_min_lod:
@@ -5126,9 +5167,21 @@ emit_tex(struct ntd_context *ctx, nir_tex_instr *instr)
          break;
       }
       params.lod_or_sample = dxil_module_get_float_const(&ctx->mod, 0);
+      lod_is_zero = true;
       FALLTHROUGH;
    case nir_texop_txl:
-      sample = emit_sample_level(ctx, &params);
+      if (lod_is_zero && params.cmp != NULL && ctx->opts->shader_model_max < SHADER_MODEL_6_7) {
+         /* Prior to SM 6.7, if the level is constant 0.0, ignore the LOD argument,
+          * so level-less DXIL instructions are used. This is needed to avoid emitting
+          * dx.op.sampleCmpLevel, which would not be available.
+          */
+         sample = emit_sample_cmp_level_zero(ctx, &params);
+      } else {
+         if (params.cmp != NULL)
+            sample = emit_sample_cmp_level(ctx, &params);
+         else
+            sample = emit_sample_level(ctx, &params);
+      }
       break;
 
    case nir_texop_txd:

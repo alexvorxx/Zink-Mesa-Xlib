@@ -40,7 +40,7 @@ zink-tu-a618:
   extends:
     - .a618-test
     - .zink-turnip-rules
-    - .test-manual-mr
+  parallel: 3
   variables:
     FLAKES_CHANNEL: "#zink-ci"
     MESA_LOADER_DRIVER_OVERRIDE: "zink"
@@ -48,6 +48,10 @@ zink-tu-a618:
     HWCI_START_XORG: 1
     GPU_VERSION: zink-freedreno-a618
     JOB_TIMEOUT: 120
+    VK_DRIVER: freedreno
+    DEVICE_TYPE: sc7180-trogdor-lazor-limozeen
+    DTB: sc7180-trogdor-lazor-limozeen-nots-r5
+    RUNNER_TAG: mesa-ci-x86-64-lava-sc7180-trogdor-lazor-limozeen
 
 zink-freedreno-a630-traces:
   extends:

@@ -200,7 +200,7 @@ struct dzn_physical_device {
    struct wsi_device wsi_device;
 
    mtx_t dev_lock;
-   ID3D12Device2 *dev;
+   ID3D12Device4 *dev;
    ID3D12Device10 *dev10;
    D3D_FEATURE_LEVEL feature_level;
    D3D_SHADER_MODEL shader_model;
@@ -209,6 +209,7 @@ struct dzn_physical_device {
    D3D12_FEATURE_DATA_D3D12_OPTIONS2 options2;
    D3D12_FEATURE_DATA_D3D12_OPTIONS3 options3;
    D3D12_FEATURE_DATA_D3D12_OPTIONS12 options12;
+   D3D12_FEATURE_DATA_D3D12_OPTIONS14 options14;
    VkPhysicalDeviceMemoryProperties memory;
    D3D12_HEAP_FLAGS heap_flags_for_mem_type[VK_MAX_MEMORY_TYPES];
    const struct vk_sync_type *sync_types[MAX_SYNC_TYPES + 1];
@@ -238,7 +239,7 @@ d3d12_enable_debug_layer(struct util_dl_library *d3d12_mod, ID3D12DeviceFactory 
 void
 d3d12_enable_gpu_validation(struct util_dl_library *d3d12_mod, ID3D12DeviceFactory *factory);
 
-ID3D12Device2 *
+ID3D12Device4 *
 d3d12_create_device(struct util_dl_library *d3d12_mod, IUnknown *adapter, ID3D12DeviceFactory *factory, bool experimental_features);
 
 struct dzn_queue {
@@ -254,7 +255,7 @@ struct dzn_device {
    struct vk_device_extension_table enabled_extensions;
    struct vk_device_dispatch_table cmd_dispatch;
 
-   ID3D12Device2 *dev;
+   ID3D12Device4 *dev;
    ID3D12Device10 *dev10;
    ID3D12DeviceConfiguration *dev_config;
 
@@ -363,7 +364,7 @@ struct dzn_buffer_desc {
 #define MAX_DESCS_PER_CBV_SRV_UAV_HEAP 1000000u
 
 struct dzn_descriptor_heap {
-   ID3D12Device2 *dev;
+   ID3D12Device4 *dev;
    ID3D12DescriptorHeap *heap;
    D3D12_DESCRIPTOR_HEAP_TYPE type;
    SIZE_T cpu_base;
@@ -591,6 +592,7 @@ struct dzn_cmd_buffer {
 
    ID3D12CommandAllocator *cmdalloc;
    ID3D12GraphicsCommandList1 *cmdlist;
+   ID3D12GraphicsCommandList8 *cmdlist8;
 };
 
 struct dzn_descriptor_pool {
@@ -714,6 +716,9 @@ enum dzn_register_space {
 #define D3D12_PIPELINE_STATE_STREAM_DESC_SIZE(__type) \
    ALIGN_POT(ALIGN_POT(sizeof(D3D12_PIPELINE_STATE_SUBOBJECT_TYPE), alignof(__type)) + sizeof(__type), alignof(void *))
 
+static_assert(sizeof(D3D12_DEPTH_STENCIL_DESC2) > sizeof(D3D12_DEPTH_STENCIL_DESC1),
+              "Using just one of these descs in the max size calculation");
+
 #define MAX_GFX_PIPELINE_STATE_STREAM_SIZE \
    D3D12_PIPELINE_STATE_STREAM_DESC_SIZE(ID3D12RootSignature *) + \
    (D3D12_PIPELINE_STATE_STREAM_DESC_SIZE(D3D12_SHADER_BYTECODE) * 5) + /* VS, PS, DS, HS, GS */ \
@@ -730,7 +735,7 @@ enum dzn_register_space {
    D3D12_PIPELINE_STATE_STREAM_DESC_SIZE(D3D12_NODE_MASK) + \
    D3D12_PIPELINE_STATE_STREAM_DESC_SIZE(D3D12_CACHED_PIPELINE_STATE) + \
    D3D12_PIPELINE_STATE_STREAM_DESC_SIZE(D3D12_PIPELINE_STATE_FLAGS) + \
-   D3D12_PIPELINE_STATE_STREAM_DESC_SIZE(D3D12_DEPTH_STENCIL_DESC1) + \
+   D3D12_PIPELINE_STATE_STREAM_DESC_SIZE(D3D12_DEPTH_STENCIL_DESC2) + \
    D3D12_PIPELINE_STATE_STREAM_DESC_SIZE(D3D12_VIEW_INSTANCING_DESC)
 
 #define MAX_COMPUTE_PIPELINE_STATE_STREAM_SIZE \
@@ -797,7 +802,6 @@ struct dzn_graphics_pipeline {
    struct {
       struct {
          bool enable;
-         bool independent_front_back;
          bool dynamic_ref;
          bool dynamic_write_mask;
          bool dynamic_compare_mask;

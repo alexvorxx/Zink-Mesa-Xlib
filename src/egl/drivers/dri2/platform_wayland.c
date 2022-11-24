@@ -34,6 +34,7 @@
 #include <dlfcn.h>
 #include <errno.h>
 #include <unistd.h>
+#include <vulkan/vulkan.h>
 #include <fcntl.h>
 #include <xf86drm.h>
 #include "drm-uapi/drm_fourcc.h"
@@ -2653,12 +2654,14 @@ static const __DRIswrastLoaderExtension swrast_loader_extension = {
    .putImage2       = dri2_wl_swrast_put_image2,
 };
 
+static_assert(sizeof(struct kopper_vk_surface_create_storage) >= sizeof(VkWaylandSurfaceCreateInfoKHR), "");
+
 static void
 kopperSetSurfaceCreateInfo(void *_draw, struct kopper_loader_info *out)
 {
     struct dri2_egl_surface *dri2_surf = _draw;
     struct dri2_egl_display *dri2_dpy = dri2_egl_display(dri2_surf->base.Resource.Display);
-    VkWaylandSurfaceCreateInfoKHR *wlsci = &out->wl;
+    VkWaylandSurfaceCreateInfoKHR *wlsci = (VkWaylandSurfaceCreateInfoKHR *)&out->bos;
 
     wlsci->sType = VK_STRUCTURE_TYPE_WAYLAND_SURFACE_CREATE_INFO_KHR;
     wlsci->pNext = NULL;

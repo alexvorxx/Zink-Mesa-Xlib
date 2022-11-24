@@ -529,15 +529,6 @@ struct tu_cmd_state
    struct tu_primitive_params last_prim_params;
 };
 
-enum tu_cmd_buffer_status
-{
-   TU_CMD_BUFFER_STATUS_INVALID,
-   TU_CMD_BUFFER_STATUS_INITIAL,
-   TU_CMD_BUFFER_STATUS_RECORDING,
-   TU_CMD_BUFFER_STATUS_EXECUTABLE,
-   TU_CMD_BUFFER_STATUS_PENDING,
-};
-
 struct tu_cmd_buffer
 {
    struct vk_command_buffer vk;
@@ -552,7 +543,6 @@ struct tu_cmd_buffer
    struct tu_autotune_results_buffer* autotune_buffer;
 
    VkCommandBufferUsageFlags usage_flags;
-   enum tu_cmd_buffer_status status;
 
    VkQueryPipelineStatisticFlags inherited_pipeline_statistics;
 
@@ -609,25 +599,30 @@ extern const struct vk_command_buffer_ops tu_cmd_buffer_ops;
 
 static inline uint32_t
 tu_attachment_gmem_offset(struct tu_cmd_buffer *cmd,
-                          const struct tu_render_pass_attachment *att)
+                          const struct tu_render_pass_attachment *att,
+                          uint32_t layer)
 {
    assert(cmd->state.gmem_layout < TU_GMEM_LAYOUT_COUNT);
-   return att->gmem_offset[cmd->state.gmem_layout];
+   return att->gmem_offset[cmd->state.gmem_layout] +
+      layer * cmd->state.tiling->tile0.width * cmd->state.tiling->tile0.height *
+      att->cpp;
 }
 
 static inline uint32_t
 tu_attachment_gmem_offset_stencil(struct tu_cmd_buffer *cmd,
-                                  const struct tu_render_pass_attachment *att)
+                                  const struct tu_render_pass_attachment *att,
+                                  uint32_t layer)
 {
    assert(cmd->state.gmem_layout < TU_GMEM_LAYOUT_COUNT);
-   return att->gmem_offset_stencil[cmd->state.gmem_layout];
+   return att->gmem_offset_stencil[cmd->state.gmem_layout] +
+      layer * cmd->state.tiling->tile0.width * cmd->state.tiling->tile0.height;
 }
 
 void tu_render_pass_state_merge(struct tu_render_pass_state *dst,
                                 const struct tu_render_pass_state *src);
 
 VkResult tu_cmd_buffer_begin(struct tu_cmd_buffer *cmd_buffer,
-                             VkCommandBufferUsageFlags usage_flags);
+                             const VkCommandBufferBeginInfo *pBeginInfo);
 
 void tu_emit_cache_flush_renderpass(struct tu_cmd_buffer *cmd_buffer,
                                     struct tu_cs *cs);

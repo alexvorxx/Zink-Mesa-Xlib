@@ -36,18 +36,15 @@
 void
 agx_liveness_ins_update(BITSET_WORD *live, agx_instr *I)
 {
-   agx_foreach_dest(I, d) {
-      if (I->dest[d].type == AGX_INDEX_NORMAL)
-         BITSET_CLEAR(live, I->dest[d].value);
-   }
+   agx_foreach_ssa_dest(I, d)
+      BITSET_CLEAR(live, I->dest[d].value);
 
-   agx_foreach_src(I, s) {
-      if (I->src[s].type == AGX_INDEX_NORMAL) {
-         /* If the source is not live after this instruction, but becomes live
-          * at this instruction, this is the use that kills the source */
-         I->src[s].kill = !BITSET_TEST(live, I->src[s].value);
-         BITSET_SET(live, I->src[s].value);
-      }
+   agx_foreach_ssa_src(I, s) {
+      /* If the source is not live after this instruction, but becomes live
+       * at this instruction, this is the use that kills the source 
+       */
+      I->src[s].kill = !BITSET_TEST(live, I->src[s].value);
+      BITSET_SET(live, I->src[s].value);
    }
 }
 

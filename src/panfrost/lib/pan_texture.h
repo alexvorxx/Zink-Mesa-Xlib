@@ -89,12 +89,6 @@ struct pan_image_slice_layout {
         unsigned size;
 };
 
-enum pan_image_crc_mode {
-      PAN_IMAGE_CRC_NONE,
-      PAN_IMAGE_CRC_INBAND,
-      PAN_IMAGE_CRC_OOB,
-};
-
 struct pan_image_layout {
         uint64_t modifier;
         enum pipe_format format;
@@ -103,7 +97,7 @@ struct pan_image_layout {
         enum mali_texture_dimension dim;
         unsigned nr_slices;
         unsigned array_size;
-        enum pan_image_crc_mode crc_mode;
+        bool crc;
 
         /* The remaining fields may be derived from the above by calling
          * pan_image_layout_init
@@ -111,9 +105,6 @@ struct pan_image_layout {
 
         struct pan_image_slice_layout slices[MAX_MIP_LEVELS];
 
-        /* crc_size != 0 only if crc_mode == OOB otherwise CRC words are
-         * counted in data_size */
-        unsigned crc_size;
         unsigned data_size;
         unsigned array_stride;
 };
@@ -125,7 +116,6 @@ struct pan_image_mem {
 
 struct pan_image {
         struct pan_image_mem data;
-        struct pan_image_mem crc;
         struct pan_image_layout layout;
 };
 
@@ -247,6 +237,12 @@ unsigned
 panfrost_from_legacy_stride(unsigned legacy_stride,
                             enum pipe_format format,
                             uint64_t modifier);
+
+uint32_t
+pan_stride_align_B(enum pipe_format format);
+
+bool
+pan_is_stride_aligned(enum pipe_format format, unsigned stride_B);
 
 struct pan_surface {
         union {

@@ -87,6 +87,7 @@ struct wsi_memory_signal_submit_info {
 };
 
 struct wsi_interface;
+struct vk_instance;
 
 struct driOptionCache;
 
@@ -166,6 +167,12 @@ struct wsi_device {
     */
    bool signal_fence_with_memory;
 
+   /* Whether present_wait functionality is enabled on the device.
+    * In this case, we have to create an extra timeline semaphore
+    * to be able to synchronize with the WSI present semaphore being unsignalled.
+    * This requires VK_KHR_timeline_semaphore. */
+   bool khr_present_wait;
+
    /*
     * This sets the ownership for a WSI memory object:
     *
@@ -229,6 +236,7 @@ struct wsi_device {
    WSI_CB(WaitForFences);
    WSI_CB(MapMemory);
    WSI_CB(UnmapMemory);
+   WSI_CB(WaitSemaphoresKHR);
 #undef WSI_CB
 
     struct wsi_interface *                  wsi[VK_ICD_WSI_PLATFORM_MAX];
@@ -304,6 +312,9 @@ wsi_common_bind_swapchain_image(const struct wsi_device *wsi,
                                 VkImage vk_image,
                                 VkSwapchainKHR _swapchain,
                                 uint32_t image_idx);
+
+bool
+wsi_common_vk_instance_supports_present_wait(const struct vk_instance *instance);
 
 #ifdef __cplusplus
 }

@@ -31,7 +31,7 @@ command_buffers_count_utraces(struct anv_device *device,
                               struct anv_cmd_buffer **cmd_buffers,
                               uint32_t *utrace_copies)
 {
-   if (!u_trace_context_actively_tracing(&device->ds.trace_context))
+   if (!u_trace_should_process(&device->ds.trace_context))
       return 0;
 
    uint32_t utraces = 0;

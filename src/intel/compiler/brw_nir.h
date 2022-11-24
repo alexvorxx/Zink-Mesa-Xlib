@@ -185,7 +185,6 @@ void brw_nir_optimize(nir_shader *nir,
 
 nir_shader *brw_nir_create_passthrough_tcs(void *mem_ctx,
                                            const struct brw_compiler *compiler,
-                                           const nir_shader_compiler_options *options,
                                            const struct brw_tcs_prog_key *key);
 
 #define BRW_NIR_FRAG_OUTPUT_INDEX_SHIFT 0

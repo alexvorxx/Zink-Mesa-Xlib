@@ -1222,7 +1222,7 @@ translate_stencil_op(VkStencilOp in)
 
 static void
 translate_stencil_test(struct dzn_graphics_pipeline *pipeline,
-                       D3D12_DEPTH_STENCIL_DESC1 *out,
+                       D3D12_DEPTH_STENCIL_DESC2 *out,
                        const VkGraphicsPipelineCreateInfo *in)
 {
    const VkPipelineDepthStencilStateCreateInfo *in_zsa =
@@ -1254,22 +1254,6 @@ translate_stencil_test(struct dzn_graphics_pipeline *pipeline,
       pipeline->zsa.stencil_test.back.compare_mask = in_zsa->back.compareMask;
    else
       pipeline->zsa.stencil_test.back.compare_mask = 0;
-
-   bool diff_wr_mask =
-      in->pRasterizationState->cullMode == VK_CULL_MODE_NONE &&
-      (pipeline->zsa.stencil_test.dynamic_write_mask ||
-       in_zsa->back.writeMask != in_zsa->front.writeMask);
-   bool diff_ref =
-      in->pRasterizationState->cullMode == VK_CULL_MODE_NONE &&
-      (pipeline->zsa.stencil_test.dynamic_ref ||
-       in_zsa->back.reference != in_zsa->front.reference);
-   bool diff_cmp_mask =
-      back_test_uses_ref && front_test_uses_ref &&
-      (pipeline->zsa.stencil_test.dynamic_compare_mask ||
-       pipeline->zsa.stencil_test.front.compare_mask != pipeline->zsa.stencil_test.back.compare_mask);
-
-   if (diff_cmp_mask || diff_wr_mask)
-      pipeline->zsa.stencil_test.independent_front_back = true;
 
    bool back_wr_uses_ref =
       !(in->pRasterizationState->cullMode & VK_CULL_MODE_BACK_BIT) &&
@@ -1304,38 +1288,26 @@ translate_stencil_test(struct dzn_graphics_pipeline *pipeline,
    pipeline->zsa.stencil_test.front.uses_ref = front_test_uses_ref || front_wr_uses_ref;
    pipeline->zsa.stencil_test.back.uses_ref = back_test_uses_ref || back_wr_uses_ref;
 
-   if (diff_ref &&
-       pipeline->zsa.stencil_test.front.uses_ref &&
-       pipeline->zsa.stencil_test.back.uses_ref)
-      pipeline->zsa.stencil_test.independent_front_back = true;
-
    pipeline->zsa.stencil_test.front.ref =
       pipeline->zsa.stencil_test.dynamic_ref ? 0 : in_zsa->front.reference;
    pipeline->zsa.stencil_test.back.ref =
       pipeline->zsa.stencil_test.dynamic_ref ? 0 : in_zsa->back.reference;
 
-   /* FIXME: We don't support independent {compare,write}_mask and stencil
-    * reference. Until we have proper support for independent front/back
-    * stencil test, let's prioritize the front setup when both are active.
-    */
-   out->StencilReadMask =
-      front_test_uses_ref ?
-      pipeline->zsa.stencil_test.front.compare_mask :
-      back_test_uses_ref ?
-      pipeline->zsa.stencil_test.back.compare_mask : 0;
-   out->StencilWriteMask =
-      pipeline->zsa.stencil_test.front.write_mask ?
-      pipeline->zsa.stencil_test.front.write_mask :
-      pipeline->zsa.stencil_test.back.write_mask;
-
-   assert(!pipeline->zsa.stencil_test.independent_front_back);
+   out->FrontFace.StencilReadMask = pipeline->zsa.stencil_test.front.compare_mask;
+   out->BackFace.StencilReadMask = pipeline->zsa.stencil_test.back.compare_mask;
+   out->FrontFace.StencilWriteMask = pipeline->zsa.stencil_test.front.write_mask;
+   out->BackFace.StencilWriteMask = pipeline->zsa.stencil_test.back.write_mask;
 }
 
 static void
-dzn_graphics_pipeline_translate_zsa(struct dzn_graphics_pipeline *pipeline,
+dzn_graphics_pipeline_translate_zsa(struct dzn_device *device,
+                                    struct dzn_graphics_pipeline *pipeline,
                                     D3D12_PIPELINE_STATE_STREAM_DESC *out,
                                     const VkGraphicsPipelineCreateInfo *in)
 {
+   struct dzn_physical_device *pdev =
+      container_of(device->vk.physical, struct dzn_physical_device, vk);
+
    const VkPipelineRasterizationStateCreateInfo *in_rast =
       in->pRasterizationState;
    const VkPipelineDepthStencilStateCreateInfo *in_zsa =
@@ -1344,45 +1316,65 @@ dzn_graphics_pipeline_translate_zsa(struct dzn_graphics_pipeline *pipeline,
    if (!in_zsa)
       return;
 
-   d3d12_gfx_pipeline_state_stream_new_desc(out, DEPTH_STENCIL1, D3D12_DEPTH_STENCIL_DESC1, desc);
-   pipeline->templates.desc_offsets.ds =
-      (uintptr_t)desc - (uintptr_t)out->pPipelineStateSubobjectStream;
+   D3D12_DEPTH_STENCIL_DESC2 desc;
+   memset(&desc, 0, sizeof(desc));
 
-   desc->DepthEnable =
+   desc.DepthEnable =
       in_zsa->depthTestEnable || in_zsa->depthBoundsTestEnable;
-   desc->DepthWriteMask =
+   desc.DepthWriteMask =
       in_zsa->depthWriteEnable ?
       D3D12_DEPTH_WRITE_MASK_ALL : D3D12_DEPTH_WRITE_MASK_ZERO;
-   desc->DepthFunc =
+   desc.DepthFunc =
       in_zsa->depthTestEnable ?
       dzn_translate_compare_op(in_zsa->depthCompareOp) :
       D3D12_COMPARISON_FUNC_ALWAYS;
    pipeline->zsa.depth_bounds.enable = in_zsa->depthBoundsTestEnable;
    pipeline->zsa.depth_bounds.min = in_zsa->minDepthBounds;
    pipeline->zsa.depth_bounds.max = in_zsa->maxDepthBounds;
-   desc->DepthBoundsTestEnable = in_zsa->depthBoundsTestEnable;
-   desc->StencilEnable = in_zsa->stencilTestEnable;
+   desc.DepthBoundsTestEnable = in_zsa->depthBoundsTestEnable;
+   desc.StencilEnable = in_zsa->stencilTestEnable;
    if (in_zsa->stencilTestEnable) {
-      desc->FrontFace.StencilFailOp =
-        translate_stencil_op(in_zsa->front.failOp);
-      desc->FrontFace.StencilDepthFailOp =
-        translate_stencil_op(in_zsa->front.depthFailOp);
-      desc->FrontFace.StencilPassOp =
-        translate_stencil_op(in_zsa->front.passOp);
-      desc->FrontFace.StencilFunc =
-        dzn_translate_compare_op(in_zsa->front.compareOp);
-      desc->BackFace.StencilFailOp =
-        translate_stencil_op(in_zsa->back.failOp);
-      desc->BackFace.StencilDepthFailOp =
-        translate_stencil_op(in_zsa->back.depthFailOp);
-      desc->BackFace.StencilPassOp =
-        translate_stencil_op(in_zsa->back.passOp);
-      desc->BackFace.StencilFunc =
-        dzn_translate_compare_op(in_zsa->back.compareOp);
+      desc.FrontFace.StencilFailOp = translate_stencil_op(in_zsa->front.failOp);
+      desc.FrontFace.StencilDepthFailOp = translate_stencil_op(in_zsa->front.depthFailOp);
+      desc.FrontFace.StencilPassOp = translate_stencil_op(in_zsa->front.passOp);
+      desc.FrontFace.StencilFunc = dzn_translate_compare_op(in_zsa->front.compareOp);
+      desc.BackFace.StencilFailOp = translate_stencil_op(in_zsa->back.failOp);
+      desc.BackFace.StencilDepthFailOp = translate_stencil_op(in_zsa->back.depthFailOp);
+      desc.BackFace.StencilPassOp = translate_stencil_op(in_zsa->back.passOp);
+      desc.BackFace.StencilFunc = dzn_translate_compare_op(in_zsa->back.compareOp);
 
       pipeline->zsa.stencil_test.enable = true;
 
-      translate_stencil_test(pipeline, desc, in);
+      translate_stencil_test(pipeline, &desc, in);
+   }
+
+   if (pdev->options14.IndependentFrontAndBackStencilRefMaskSupported) {
+      d3d12_gfx_pipeline_state_stream_new_desc(out, DEPTH_STENCIL2, D3D12_DEPTH_STENCIL_DESC2, stream_desc);
+      pipeline->templates.desc_offsets.ds =
+         (uintptr_t)stream_desc - (uintptr_t)out->pPipelineStateSubobjectStream;
+      *stream_desc = desc;
+   } else {
+      d3d12_gfx_pipeline_state_stream_new_desc(out, DEPTH_STENCIL1, D3D12_DEPTH_STENCIL_DESC1, stream_desc);
+      pipeline->templates.desc_offsets.ds =
+         (uintptr_t)stream_desc - (uintptr_t)out->pPipelineStateSubobjectStream;
+
+      stream_desc->DepthEnable = desc.DepthEnable;
+      stream_desc->DepthWriteMask = desc.DepthWriteMask;
+      stream_desc->DepthFunc = desc.DepthFunc;
+      stream_desc->DepthBoundsTestEnable = desc.DepthBoundsTestEnable;
+      stream_desc->StencilEnable = desc.StencilEnable;
+      stream_desc->FrontFace.StencilFailOp = desc.FrontFace.StencilFailOp;
+      stream_desc->FrontFace.StencilDepthFailOp = desc.FrontFace.StencilDepthFailOp;
+      stream_desc->FrontFace.StencilPassOp = desc.FrontFace.StencilPassOp;
+      stream_desc->FrontFace.StencilFunc = desc.FrontFace.StencilFunc;
+      stream_desc->BackFace.StencilFailOp = desc.BackFace.StencilFailOp;
+      stream_desc->BackFace.StencilDepthFailOp = desc.BackFace.StencilDepthFailOp;
+      stream_desc->BackFace.StencilPassOp = desc.BackFace.StencilPassOp;
+      stream_desc->BackFace.StencilFunc = desc.BackFace.StencilFunc;
+
+      /* No support for independent front/back, just pick front (if set, else back) */
+      stream_desc->StencilReadMask = desc.FrontFace.StencilReadMask ? desc.FrontFace.StencilReadMask : desc.BackFace.StencilReadMask;
+      stream_desc->StencilWriteMask = desc.FrontFace.StencilWriteMask ? desc.FrontFace.StencilWriteMask : desc.BackFace.StencilWriteMask;
    }
 }
 
@@ -1690,7 +1682,7 @@ dzn_graphics_pipeline_create(struct dzn_device *device,
 
    dzn_graphics_pipeline_translate_rast(pipeline, stream_desc, pCreateInfo);
    dzn_graphics_pipeline_translate_ms(pipeline, stream_desc, pCreateInfo);
-   dzn_graphics_pipeline_translate_zsa(pipeline, stream_desc, pCreateInfo);
+   dzn_graphics_pipeline_translate_zsa(device, pipeline, stream_desc, pCreateInfo);
    dzn_graphics_pipeline_translate_blend(pipeline, stream_desc, pCreateInfo);
 
    if (pass) {
@@ -1752,7 +1744,7 @@ dzn_graphics_pipeline_create(struct dzn_device *device,
       goto out;
 
    if (!pipeline->variants) {
-      hres = ID3D12Device2_CreatePipelineState(device->dev, stream_desc,
+      hres = ID3D12Device4_CreatePipelineState(device->dev, stream_desc,
                                                &IID_ID3D12PipelineState,
                                                (void **)&pipeline->base.state);
       if (FAILED(hres)) {
@@ -1869,7 +1861,7 @@ dzn_graphics_pipeline_get_state(struct dzn_graphics_pipeline *pipeline,
          }
       }
 
-      ASSERTED HRESULT hres = ID3D12Device2_CreatePipelineState(device->dev, &stream_desc,
+      ASSERTED HRESULT hres = ID3D12Device4_CreatePipelineState(device->dev, &stream_desc,
                                                                 &IID_ID3D12PipelineState,
                                                                 (void**)(&variant->state));
       assert(!FAILED(hres));
@@ -2195,7 +2187,7 @@ dzn_compute_pipeline_create(struct dzn_device *device,
    if (ret != VK_SUCCESS)
       goto out;
 
-   if (FAILED(ID3D12Device2_CreatePipelineState(device->dev, &stream_desc,
+   if (FAILED(ID3D12Device4_CreatePipelineState(device->dev, &stream_desc,
                                                 &IID_ID3D12PipelineState,
                                                 (void **)&pipeline->base.state)))
       ret = vk_error(device, VK_ERROR_OUT_OF_HOST_MEMORY);

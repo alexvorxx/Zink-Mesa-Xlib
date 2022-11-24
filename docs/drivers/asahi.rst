@@ -38,7 +38,7 @@ The library is only built if ``-Dtools=asahi`` is passed. It builds a single
 
 For example, to trace an app ``./app``, run:
 
-    DYLD_INSERT_LIBRARIES=~/mesa/build/src/asahi/lib/libwrap.dylib ./app
+   DYLD_INSERT_LIBRARIES=~/mesa/build/src/asahi/lib/libwrap.dylib ./app
 
 Hardware varyings
 -----------------
@@ -285,14 +285,20 @@ Mesa includes a library that mocks out the DRM UABI used by the Asahi driver
 stack, allowing the Mesa driver to run on non-M1 Linux hardware. This can be
 useful for exercising the compiler. To build, use options:
 
+::
+
    -Dgallium-drivers=asahi -Dtools=drm-shim
 
 Then run an OpenGL workload with environment variable:
+
+.. code-block:: console
 
    LD_PRELOAD=~/mesa/build/src/asahi/drm-shim/libasahi_noop_drm_shim.so
 
 For example to compile a shader with shaderdb and print some statistics along
 with the IR:
+
+.. code-block:: console
 
    ~/shader-db$ AGX_MESA_DEBUG=shaders,shaderdb ASAHI_MESA_DEBUG=precompile LIBGL_DRIVERS_PATH=~/lib/dri/ LD_PRELOAD=~/mesa/build/src/asahi/drm-shim/libasahi_noop_drm_shim.so ./run shaders/glmark/1-12.shader_test
 

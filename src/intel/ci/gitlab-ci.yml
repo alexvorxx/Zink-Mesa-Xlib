@@ -134,7 +134,8 @@ iris-apl-egl:
   variables:
     PIGLIT_NO_WINDOW: 0
     HWCI_START_XORG: 1
-    DEQP_VER: egl
+    HWCI_START_WESTON: 1
+    DEQP_SUITE: iris-apl-egl
 
 iris-glk-deqp:
   extends:
@@ -149,7 +150,8 @@ iris-glk-egl:
   variables:
     PIGLIT_NO_WINDOW: 0
     HWCI_START_XORG: 1
-    DEQP_VER: egl
+    HWCI_START_WESTON: 1
+    DEQP_SUITE: iris-glk-egl
 
 iris-amly-deqp:
   extends:
@@ -192,7 +194,8 @@ iris-amly-egl:
   variables:
     PIGLIT_NO_WINDOW: 0
     HWCI_START_XORG: 1
-    DEQP_VER: egl
+    HWCI_START_WESTON: 1
+    DEQP_SUITE: iris-amly-egl
 
 iris-kbl-piglit:
   extends:

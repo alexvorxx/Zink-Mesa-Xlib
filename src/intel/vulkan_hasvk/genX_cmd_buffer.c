@@ -87,7 +87,7 @@ convert_pc_to_bits(struct GENX(PIPE_CONTROL) *pc) {
    if (INTEL_DEBUG(DEBUG_PIPE_CONTROL)) { \
       fputs("pc: emit PC=( ", stderr); \
       anv_dump_pipe_bits(convert_pc_to_bits(&(pc))); \
-      fprintf(stderr, ") reason: %s\n", __FUNCTION__); \
+      fprintf(stderr, ") reason: %s\n", __func__); \
    }
 
 static bool
@@ -1629,7 +1629,7 @@ genX(BeginCommandBuffer)(
     *    VK_COMMAND_BUFFER_RESET_RELEASE_RESOURCES_BIT not set. It then puts
     *    the command buffer in the recording state.
     */
-   anv_cmd_buffer_reset(cmd_buffer);
+   anv_cmd_buffer_reset(&cmd_buffer->vk, 0);
    anv_cmd_buffer_reset_rendering(cmd_buffer);
 
    cmd_buffer->usage_flags = pBeginInfo->flags;

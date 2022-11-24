@@ -1102,22 +1102,6 @@ nir_visitor::visit(ir_call *ir)
       case ir_intrinsic_image_sparse_load:
          op = nir_intrinsic_image_deref_sparse_load;
          break;
-      case ir_intrinsic_ssbo_store:
-      case ir_intrinsic_ssbo_load:
-      case ir_intrinsic_ssbo_atomic_add:
-      case ir_intrinsic_ssbo_atomic_and:
-      case ir_intrinsic_ssbo_atomic_or:
-      case ir_intrinsic_ssbo_atomic_xor:
-      case ir_intrinsic_ssbo_atomic_min:
-      case ir_intrinsic_ssbo_atomic_max:
-      case ir_intrinsic_ssbo_atomic_exchange:
-      case ir_intrinsic_ssbo_atomic_comp_swap:
-         /* SSBO store/loads should only have been lowered in GLSL IR for
-          * non-nir drivers, NIR drivers make use of gl_nir_lower_buffers()
-          * instead.
-          */
-         unreachable("Invalid operation nir doesn't want lowered ssbo "
-                     "store/loads");
       case ir_intrinsic_shader_clock:
          op = nir_intrinsic_shader_clock;
          break;

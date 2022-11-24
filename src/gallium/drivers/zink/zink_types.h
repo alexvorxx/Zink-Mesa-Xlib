@@ -146,11 +146,6 @@ enum zink_descriptor_type {
    ZINK_DESCRIPTOR_NON_BINDLESS_TYPES = ZINK_DESCRIPTOR_BASE_TYPES + 1, /**< for struct sizing */
 };
 
-enum zink_descriptor_mode {
-   ZINK_DESCRIPTOR_MODE_AUTO,
-   ZINK_DESCRIPTOR_MODE_LAZY,
-};
-
 /* indexing for descriptor template management */
 enum zink_descriptor_size_index {
    ZDS_INDEX_UBO,

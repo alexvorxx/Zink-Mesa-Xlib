@@ -183,6 +183,7 @@ debian-build-testing:
       -D spirv-to-dxil=true
       -D osmesa=true
       -D tools=drm-shim,etnaviv,freedreno,glsl,intel,intel-ui,nir,nouveau,lima,panfrost,asahi
+    LLVM_VERSION: 13
   script:
     - .gitlab-ci/lava/lava-pytest.sh
     - .gitlab-ci/run-shellcheck.sh
@@ -224,6 +225,44 @@ debian-release:
   script:
     - .gitlab-ci/meson/build.sh
 
+alpine-build-testing:
+  extends:
+    - .meson-build
+    - .use-alpine/x86_build
+  stage: build-x86_64
+  variables:
+    BUILDTYPE: "release"
+    C_ARGS: >
+      -Wno-error=cpp
+      -Wno-error=array-bounds
+      -Wno-error=stringop-overread
+    DRI_LOADERS: >
+      -D glx=disabled
+      -D gbm=enabled
+      -D egl=enabled
+      -D glvnd=false
+      -D platforms=wayland
+    LLVM_VERSION: ""
+    GALLIUM_DRIVERS: "crocus,etnaviv,freedreno,iris,kmsro,lima,nouveau,panfrost,r300,r600,radeonsi,svga,swrast,tegra,v3d,vc4,virgl,zink"
+    GALLIUM_ST: >
+      -D dri3=enabled
+      -D gallium-extra-hud=true
+      -D gallium-vdpau=disabled
+      -D gallium-omx=disabled
+      -D gallium-va=enabled
+      -D gallium-xa=disabled
+      -D gallium-nine=true
+      -D gallium-rusticl=false
+      -D gles1=disabled
+      -D gles2=enabled
+      -D llvm=enabled
+      -D microsoft-clc=disabled
+      -D shared-llvm=enabled
+    UNWIND: "disabled"
+    VULKAN_DRIVERS: "amd,broadcom,freedreno,intel,imagination-experimental"
+  script:
+    - .gitlab-ci/meson/build.sh
+
 fedora-release:
   extends:
     - .meson-build
@@ -233,9 +272,6 @@ fedora-release:
     C_ARGS: >
       -Wno-error=array-bounds
       -Wno-error=stringop-overread
-      -Wno-error=uninitialized
-    CPP_ARGS: >
-      -Wno-error=array-bounds
     DRI_LOADERS: >
       -D glx=dri
       -D gbm=enabled
@@ -285,9 +321,6 @@ debian-android:
       -Wno-error=initializer-overrides
       -Wno-error=missing-braces
       -Wno-error=sometimes-uninitialized
-      -Wno-error=unused-function
-    CPP_ARGS: >
-      -Wno-error=deprecated-declarations
     DRI_LOADERS: >
       -D glx=disabled
       -D gbm=disabled
@@ -421,7 +454,6 @@ debian-clang:
       -Wno-error=implicit-const-int-float-conversion
       -Wno-error=overloaded-virtual
       -Wno-error=tautological-constant-out-of-range-compare
-      -Wno-error=unused-const-variable
       -Wno-error=unused-private-field
     DRI_LOADERS: >
       -D glx=dri

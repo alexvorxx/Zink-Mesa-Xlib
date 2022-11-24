@@ -2134,6 +2134,156 @@ instruction_restrictions(const struct brw_isa_info *isa,
       }
    }
 
+   if (brw_inst_opcode(isa, inst) == BRW_OPCODE_MUL) {
+      const enum brw_reg_type src0_type = brw_inst_src0_type(devinfo, inst);
+      const enum brw_reg_type src1_type = brw_inst_src1_type(devinfo, inst);
+      const enum brw_reg_type dst_type = inst_dst_type(isa, inst);
+
+      if (devinfo->ver == 6) {
+         /* Page 223 of the Sandybridge PRM volume 4 part 2 says:
+          *
+          *    [DevSNB]: When multiple (sic) a DW and a W, the W has to be on
+          *    src0, and the DW has to be on src1.
+          *
+          * This text appears only in the Sandybridge PRMw.
+          */
+         ERROR_IF(brw_reg_type_is_integer(src0_type) &&
+                  type_sz(src0_type) == 4 && type_sz(src1_type) < 4,
+                  "When multiplying a DW and any lower precision integer, the "
+                  "DW operand must be src1.");
+      } else if (devinfo->ver >= 7) {
+         /* Page 966 (page 982 of the PDF) of Broadwell PRM volume 2a says:
+          *
+          *    When multiplying a DW and any lower precision integer, the DW
+          *    operand must on src0.
+          *
+          * Ivy Bridge, Haswell, Skylake, and Ice Lake PRMs contain the same
+          * text.
+          */
+         ERROR_IF(brw_reg_type_is_integer(src1_type) &&
+                  type_sz(src0_type) < 4 && type_sz(src1_type) == 4,
+                  "When multiplying a DW and any lower precision integer, the "
+                  "DW operand must be src0.");
+      }
+
+      if (devinfo->ver <= 7) {
+         /* Section 14.2.28 of Intel 965 Express Chipset PRM volume 4 says:
+          *
+          *    Source operands cannot be an accumulator register.
+          *
+          * Iron Lake, Sandybridge, and Ivy Bridge PRMs have the same text.
+          * Haswell does not.  Given that later PRMs have different
+          * restrictions on accumulator sources (see below), it seems most
+          * likely that Haswell shares the Ivy Bridge restriction.
+          */
+         ERROR_IF(src0_is_acc(devinfo, inst) || src1_is_acc(devinfo, inst),
+                  "Source operands cannot be an accumulator register.");
+      } else {
+         /* Page 971 (page 987 of the PDF), section "Accumulator
+          * Restrictions," of the Broadwell PRM volume 7 says:
+          *
+          *    Integer source operands cannot be accumulators.
+          *
+          * The Skylake and Ice Lake PRMs contain the same text.
+          */
+         ERROR_IF((src0_is_acc(devinfo, inst) &&
+                   brw_reg_type_is_integer(src0_type)) ||
+                  (src1_is_acc(devinfo, inst) &&
+                   brw_reg_type_is_integer(src1_type)),
+                  "Integer source operands cannot be accumulators.");
+      }
+
+      if (devinfo->ver <= 6) {
+         /* Page 223 of the Sandybridge PRM volume 4 part 2 says:
+          *
+          *    Dword integer source is not allowed for this instruction in
+          *    float execution mode.  In other words, if one source is of type
+          *    float (:f, :vf), the other source cannot be of type dword
+          *    integer (:ud or :d).
+          *
+          * G965 and Iron Lake PRMs have similar text.  Later GPUs do not
+          * allow mixed source types at all, but that restriction should be
+          * handled elsewhere.
+          */
+         ERROR_IF(execution_type(isa, inst) == BRW_REGISTER_TYPE_F &&
+                  (src0_type == BRW_REGISTER_TYPE_UD ||
+                   src0_type == BRW_REGISTER_TYPE_D ||
+                   src1_type == BRW_REGISTER_TYPE_UD ||
+                   src1_type == BRW_REGISTER_TYPE_D),
+                  "Dword integer source is not allowed for this instruction in"
+                  "float execution mode.");
+      }
+
+      if (devinfo->ver <= 7) {
+         /* Page 118 of the Haswell PRM volume 2b says:
+          *
+          *    When operating on integers with at least one of the source
+          *    being a DWord type (signed or unsigned), the destination cannot
+          *    be floating-point (implementation note: the data converter only
+          *    looks at the low 34 bits of the result).
+          *
+          * G965, Iron Lake, Sandybridge, and Ivy Bridge have similar text.
+          * Later GPUs do not allow mixed source and destination types at all,
+          * but that restriction should be handled elsewhere.
+          */
+         ERROR_IF(dst_type == BRW_REGISTER_TYPE_F &&
+                  (src0_type == BRW_REGISTER_TYPE_UD ||
+                   src0_type == BRW_REGISTER_TYPE_D ||
+                   src1_type == BRW_REGISTER_TYPE_UD ||
+                   src1_type == BRW_REGISTER_TYPE_D),
+                  "Float destination type not allowed with DWord source type.");
+      }
+
+      if (devinfo->ver == 8) {
+         /* Page 966 (page 982 of the PDF) of the Broadwell PRM volume 2a
+          * says:
+          *
+          *    When multiplying DW x DW, the dst cannot be accumulator.
+          *
+          * This text also appears in the Cherry Trail / Braswell PRM, but it
+          * does not appear in any other PRM.
+          */
+         ERROR_IF((src0_type == BRW_REGISTER_TYPE_UD ||
+                   src0_type == BRW_REGISTER_TYPE_D) &&
+                  (src1_type == BRW_REGISTER_TYPE_UD ||
+                   src1_type == BRW_REGISTER_TYPE_D) &&
+                  brw_inst_dst_reg_file(devinfo, inst) == BRW_ARCHITECTURE_REGISTER_FILE &&
+                  brw_inst_dst_da_reg_nr(devinfo, inst) != BRW_ARF_NULL,
+                  "When multiplying DW x DW, the dst cannot be accumulator.");
+      }
+
+      /* Page 935 (page 951 of the PDF) of the Ice Lake PRM volume 2a says:
+       *
+       *    When multiplying integer data types, if one of the sources is a
+       *    DW, the resulting full precision data is stored in the
+       *    accumulator. However, if the destination data type is either W or
+       *    DW, the low bits of the result are written to the destination
+       *    register and the remaining high bits are discarded. This results
+       *    in undefined Overflow and Sign flags. Therefore, conditional
+       *    modifiers and saturation (.sat) cannot be used in this case.
+       *
+       * Similar text appears in every version of the PRM.
+       *
+       * The wording of the last sentence is not very clear.  It could either
+       * be interpreted as "conditional modifiers combined with saturation
+       * cannot be used" or "neither conditional modifiers nor saturation can
+       * be used."  I have interpreted it as the latter primarily because that
+       * is the more restrictive interpretation.
+       */
+      ERROR_IF((src0_type == BRW_REGISTER_TYPE_UD ||
+                src0_type == BRW_REGISTER_TYPE_D ||
+                src1_type == BRW_REGISTER_TYPE_UD ||
+                src1_type == BRW_REGISTER_TYPE_D) &&
+               (dst_type == BRW_REGISTER_TYPE_UD ||
+                dst_type == BRW_REGISTER_TYPE_D ||
+                dst_type == BRW_REGISTER_TYPE_UW ||
+                dst_type == BRW_REGISTER_TYPE_W) &&
+               (brw_inst_saturate(devinfo, inst) != 0 ||
+                brw_inst_cond_modifier(devinfo, inst) != BRW_CONDITIONAL_NONE),
+               "Neither Saturate nor conditional modifier allowed with DW "
+               "integer multiply.");
+   }
+
    if (brw_inst_opcode(isa, inst) == BRW_OPCODE_MATH) {
       unsigned math_function = brw_inst_math_function(devinfo, inst);
       switch (math_function) {

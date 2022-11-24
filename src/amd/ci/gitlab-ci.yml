@@ -24,7 +24,7 @@
 .radv-stoney-test:amd64:
   extends:
     - .stoney-test:amd64
-    - .radv-rules
+    - .radv-collabora-rules
   variables:
     DEQP_VER: vk
     DRIVER_NAME: radv
@@ -83,7 +83,7 @@ radeonsi-stoney-traces:amd64:
 .radv-raven-test:amd64:
   extends:
     - .raven-test:amd64
-    - .radv-rules
+    - .radv-collabora-rules
   variables:
     GPU_VERSION: radv-raven
     VK_DRIVER: radeon
@@ -160,7 +160,7 @@ radeonsi-raven-va:amd64:
 ############### Valve Infra
 .test-radv:
   extends:
-    - .radv-rules
+    - .radv-valve-rules
   variables:
     VK_DRIVER: radeon
     DRIVER_NAME: radv
@@ -172,6 +172,7 @@ radeonsi-raven-va:amd64:
     MESA_SPIRV_LOG_LEVEL: error
     ACO_DEBUG: validateir,validatera
     MESA_VK_IGNORE_CONFORMANCE_WARNING: 1
+    B2C_JOB_VOLUME_EXCLUSIONS: "*.shader_cache,install/*,*/install/*,*/vkd3d-proton.cache*,vkd3d-proton.cache*"
 
 .b2c-test-radv-vk:
   extends:
@@ -186,15 +187,9 @@ radeonsi-raven-va:amd64:
     MESA_LOADER_DRIVER_OVERRIDE: zink
 
 .deqp-test-valve:
-  extends:
-    # Keep all the dEQP jobs as manual trigger jobs for now, until we
-    # have enough resources to meet the throughput requirements for
-    # automatic pre-merge in the Mesa CI.
-    - .test-manual-mr
   variables:
     B2C_JOB_SUCCESS_REGEX: '^\+ DEQP_EXITCODE=0\r$'
     B2C_TEST_SCRIPT: ./install/deqp-runner.sh
-    B2C_JOB_VOLUME_EXCLUSIONS: "*.shader_cache"
 
 .kabini-test-valve:
   variables:
@@ -288,6 +283,7 @@ vkcts-kabini-valve:
 .vkcts-stoney-valve:
   extends:
     - .vkcts-test-valve
+    - .test-manual-mr
   parallel: 2
   # The thin clients can't manage a full run in less than an hour
   # currently.  Interpolation suggests four more thin clients (6
@@ -307,6 +303,7 @@ vkcts-kabini-valve:
   extends:
     - .vkcts-test-valve
     - .polaris10-test-valve
+    - .test-manual-mr
   variables:
     GPU_VERSION: radv-polaris10-aco
 
@@ -314,6 +311,7 @@ vkcts-vega10-valve:
   extends:
     - .vkcts-test-valve
     - .vega10-test-valve
+    - .test-manual-mr
   variables:
     GPU_VERSION: radv-vega10-aco
 
@@ -321,6 +319,7 @@ vkcts-renoir-valve:
   extends:
     - .vkcts-test-valve
     - .renoir-test-valve
+    - .test-manual-mr
   timeout: 2h 10m
   variables:
     GPU_VERSION: radv-renoir-aco
@@ -329,6 +328,7 @@ vkcts-navi10-valve:
   extends:
     - .vkcts-test-valve
     - .navi10-test-valve
+    - .test-manual-mr
   variables:
     GPU_VERSION: radv-navi10-aco
 
@@ -344,15 +344,17 @@ vkcts-navi21-llvm-valve:
   extends:
     - .vkcts-test-valve
     - .navi21-test-valve
+    - .test-manual-mr
   variables:
     GPU_VERSION: radv-navi21-llvm
     RADV_DEBUG: llvm,checkir
 
 vkcts-vangogh-valve:
-  parallel: 2
+  parallel: 4
   extends:
     - .vkcts-test-valve
     - .vangogh-test-valve
+    - .test-manual-mr
   timeout: 2h 10m
   variables:
     GPU_VERSION: radv-vangogh-aco
@@ -362,6 +364,7 @@ vkcts-vangogh-valve:
   extends:
     - .b2c-test-radv-gl
     - .deqp-test-valve
+    - .test-manual-mr
   variables:
     DEQP_VER: gl46
 
@@ -369,6 +372,7 @@ glcts-navi10-valve:
   extends:
     - .glcts-test-valve
     - .navi10-test-valve
+    - .test-manual-mr
   variables:
     GPU_VERSION: zink-radv
 
@@ -376,6 +380,7 @@ glcts-navi10-valve:
   extends:
     - .b2c-test-radv-gl
     - .deqp-test-valve
+    - .test-manual-mr
   variables:
     DEQP_SUITE: zink-radv
 
@@ -383,6 +388,7 @@ gles-navi10-valve:
   extends:
     - .gles-test-valve
     - .navi10-test-valve
+    - .test-manual-mr
   variables:
     GPU_VERSION: zink-radv
 
@@ -390,10 +396,6 @@ gles-navi10-valve:
 .piglit-test-valve:
   extends:
     - .b2c-test-radv-gl
-    # Keep all the piglit jobs as manual trigger jobs for now, until we
-    # have enough resources to meet the throughput requirements for
-    # automatic pre-merge in the Mesa CI.
-    - .test-manual-mr
   variables:
     B2C_JOB_SUCCESS_REGEX: '^\+ PIGLIT_EXITCODE=0\r$'
     B2C_TEST_SCRIPT: ./install/piglit/piglit-runner.sh
@@ -404,6 +406,7 @@ piglit-navi10-valve:
   extends:
     - .piglit-test-valve
     - .navi10-test-valve
+    - .test-manual-mr
   variables:
     GPU_VERSION: zink-radv
 
@@ -440,10 +443,6 @@ radv-fossils:
 .vkd3d-test-valve:
   extends:
     - .b2c-test-radv-vk
-    # Keep all the vkd3d-proton jobs as manual trigger jobs for now, until we
-    # have enough resources to meet the throughput requirements for
-    # automatic pre-merge in the Mesa CI.
-    - .test-manual-mr
   variables:
     B2C_JOB_SUCCESS_REGEX: 'SUCCESS: No changes found!\r$'
     B2C_TEST_SCRIPT: ./install/vkd3d-proton/run.sh
@@ -452,6 +451,7 @@ radv-fossils:
   extends:
     - .vkd3d-test-valve
     - .kabini-test-valve
+    - .test-manual-mr
   variables:
     VKD3D_PROTON_RESULTS: radv-kabini-vkd3d
 
@@ -459,6 +459,7 @@ radv-fossils:
   extends:
     - .vkd3d-test-valve
     - .polaris10-test-valve
+    - .test-manual-mr
   variables:
     VKD3D_PROTON_RESULTS: radv-polaris10-vkd3d
 
@@ -466,6 +467,7 @@ vkd3d-vega10-valve:
   extends:
     - .vkd3d-test-valve
     - .vega10-test-valve
+    - .test-manual-mr
   variables:
     VKD3D_PROTON_RESULTS: radv-vega10-vkd3d
 
@@ -473,6 +475,7 @@ vkd3d-renoir-valve:
   extends:
     - .vkd3d-test-valve
     - .renoir-test-valve
+    - .test-manual-mr
   variables:
     VKD3D_PROTON_RESULTS: radv-renoir-vkd3d
 
@@ -480,6 +483,7 @@ vkd3d-navi10-valve:
   extends:
     - .vkd3d-test-valve
     - .navi10-test-valve
+    - .test-manual-mr
   variables:
     VKD3D_PROTON_RESULTS: radv-navi10-vkd3d
 
@@ -487,6 +491,7 @@ vkd3d-navi21-valve:
   extends:
     - .vkd3d-test-valve
     - .navi21-test-valve
+    - .test-manual-mr
   variables:
     VKD3D_PROTON_RESULTS: radv-navi21-vkd3d
 
@@ -494,5 +499,6 @@ vkd3d-vangogh-valve:
   extends:
     - .vkd3d-test-valve
     - .vangogh-test-valve
+    - .test-manual-mr
   variables:
     VKD3D_PROTON_RESULTS: radv-vangogh-vkd3d

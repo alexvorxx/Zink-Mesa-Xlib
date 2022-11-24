@@ -97,11 +97,12 @@ etna_blit(struct pipe_context *pctx, const struct pipe_blit_info *blit_info)
    struct etna_context *ctx = etna_context(pctx);
    struct pipe_blit_info info = *blit_info;
 
+
    if (ctx->blit(pctx, &info))
-      return;
+      goto success;
 
    if (util_try_blit_via_copy_region(pctx, &info, false))
-      return;
+      goto success;
 
    if (info.mask & PIPE_MASK_S) {
       DBG("cannot blit stencil, skipping");
@@ -117,6 +118,10 @@ etna_blit(struct pipe_context *pctx, const struct pipe_blit_info *blit_info)
 
    etna_blit_save_state(ctx);
    util_blitter_blit(ctx->blitter, &info);
+
+success:
+   if (info.dst.resource->bind & PIPE_BIND_SAMPLER_VIEW)
+      ctx->dirty |= ETNA_DIRTY_TEXTURE_CACHES;
 }
 
 static void
@@ -230,6 +235,7 @@ etna_copy_resource_box(struct pipe_context *pctx, struct pipe_resource *dst,
 {
    assert(src->format == dst->format);
    assert(src->array_size == dst->array_size);
+   assert(!etna_resource_needs_flush(etna_resource(dst)));
 
    struct pipe_blit_info blit = {};
    blit.mask = util_format_get_mask(dst->format);

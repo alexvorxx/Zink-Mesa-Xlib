@@ -34,7 +34,7 @@ somewhat dated, unfortunately.
    superseded by SGI SI GLU).
 -  **Holger Waechtler** contributed AMD 3DNow! assembly code which
    accelerates vertex transformation in Mesa 3.1. Holger also
-   implemented the GL_EXT_texture_env_combine extension.
+   implemented the :ext:`GL_EXT_texture_env_combine` extension.
 -  **Jeroen van der Zijp** and **Thorsten Ohl** contributed the Xt/Motif
    widget code.
 -  **John Stone** provided the multi-threading support in Mesa 3.0.

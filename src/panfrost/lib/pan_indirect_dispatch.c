@@ -53,38 +53,8 @@ get_tls(const struct panfrost_device *dev)
                pan_size(RENDERER_STATE);
 }
 
-unsigned
-GENX(pan_indirect_dispatch_emit)(struct pan_pool *pool,
-                                 struct pan_scoreboard *scoreboard,
-                                 const struct pan_indirect_dispatch_info *inputs)
-{
-        struct panfrost_device *dev = pool->dev;
-        struct panfrost_ptr job =
-                pan_pool_alloc_desc(pool, COMPUTE_JOB);
-        void *invocation =
-                pan_section_ptr(job.cpu, COMPUTE_JOB, INVOCATION);
-
-        panfrost_pack_work_groups_compute(invocation,
-                                          1, 1, 1, 1, 1, 1,
-                                          false, false);
-
-        pan_section_pack(job.cpu, COMPUTE_JOB, PARAMETERS, cfg) {
-                cfg.job_task_split = 2;
-        }
-
-        pan_section_pack(job.cpu, COMPUTE_JOB, DRAW, cfg) {
-                cfg.state = get_rsd(dev);
-                cfg.thread_storage = get_tls(pool->dev);
-                cfg.push_uniforms =
-                        pan_pool_upload_aligned(pool, inputs, sizeof(*inputs), 16);
-        }
-
-        return panfrost_add_job(pool, scoreboard, MALI_JOB_TYPE_COMPUTE,
-                                false, true, 0, 0, &job, false);
-}
-
-void
-GENX(pan_indirect_dispatch_init)(struct panfrost_device *dev)
+static void
+pan_indirect_dispatch_init(struct panfrost_device *dev)
 {
         nir_builder b =
                 nir_builder_init_simple_shader(MESA_SHADER_COMPUTE,
@@ -190,6 +160,40 @@ GENX(pan_indirect_dispatch_init)(struct panfrost_device *dev)
         pan_pack(tsd, LOCAL_STORAGE, ls) {
                 ls.wls_instances = MALI_LOCAL_STORAGE_NO_WORKGROUP_MEM;
         };
+}
+
+unsigned
+GENX(pan_indirect_dispatch_emit)(struct pan_pool *pool,
+                                 struct pan_scoreboard *scoreboard,
+                                 const struct pan_indirect_dispatch_info *inputs)
+{
+        struct panfrost_device *dev = pool->dev;
+        struct panfrost_ptr job =
+                pan_pool_alloc_desc(pool, COMPUTE_JOB);
+        void *invocation =
+                pan_section_ptr(job.cpu, COMPUTE_JOB, INVOCATION);
+
+        /* If we haven't compiled the indirect dispatch shader yet, do it now */
+        if (!dev->indirect_dispatch.bin)
+                pan_indirect_dispatch_init(dev);
+
+        panfrost_pack_work_groups_compute(invocation,
+                                          1, 1, 1, 1, 1, 1,
+                                          false, false);
+
+        pan_section_pack(job.cpu, COMPUTE_JOB, PARAMETERS, cfg) {
+                cfg.job_task_split = 2;
+        }
+
+        pan_section_pack(job.cpu, COMPUTE_JOB, DRAW, cfg) {
+                cfg.state = get_rsd(dev);
+                cfg.thread_storage = get_tls(pool->dev);
+                cfg.push_uniforms =
+                        pan_pool_upload_aligned(pool, inputs, sizeof(*inputs), 16);
+        }
+
+        return panfrost_add_job(pool, scoreboard, MALI_JOB_TYPE_COMPUTE,
+                                false, true, 0, 0, &job, false);
 }
 
 void

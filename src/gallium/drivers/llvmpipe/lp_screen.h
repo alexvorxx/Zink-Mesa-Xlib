@@ -74,8 +74,6 @@ struct llvmpipe_screen
    char renderer_string[100];
 
    struct disk_cache *disk_shader_cache;
-   unsigned num_disk_shader_cache_hits;
-   unsigned num_disk_shader_cache_misses;
 };
 
 

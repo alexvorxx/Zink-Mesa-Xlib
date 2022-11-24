@@ -43,6 +43,7 @@ static const struct fd_device_funcs funcs = {
    .bo_new = virtio_bo_new,
    .bo_from_handle = virtio_bo_from_handle,
    .pipe_new = virtio_pipe_new,
+   .flush = virtio_execbuf_flush,
    .destroy = virtio_device_destroy,
 };
 
@@ -203,6 +204,8 @@ virtio_device_new(int fd, drmVersionPtr version)
    simple_mtx_init(&virtio_dev->eb_lock, mtx_plain);
 
    set_debuginfo(dev);
+
+   list_inithead(&virtio_dev->prealloc_list);
 
    util_vma_heap_init(&virtio_dev->address_space,
                       caps.u.msm.va_start,

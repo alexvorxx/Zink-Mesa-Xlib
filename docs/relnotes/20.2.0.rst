@@ -3822,7 +3822,7 @@ Rhys Perry (174):
 - aco: allow reading/writing upper halves/bytes when possible
 - aco: prefer 4-byte aligned definitions
 - aco: add Info::{operand_size,definition_size}
-- aco: use Info::definition_size instead of definition's regclass
+- aco: use \Info::definition_size instead of definition's regclass
 - aco: fix moving sub-dword values out of a register for a fixed definition
 - aco: use num_opcodes instead of last_opcode
 - aco: improve code for f2{i,u}{8,16}

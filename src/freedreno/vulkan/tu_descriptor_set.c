@@ -66,8 +66,7 @@ descriptor_size(struct tu_device *dev,
          return A6XX_TEX_CONST_DWORDS * 4;
       }
    case VK_DESCRIPTOR_TYPE_INLINE_UNIFORM_BLOCK:
-      return A6XX_TEX_CONST_DWORDS * 4 +
-         ALIGN(binding->descriptorCount, A6XX_TEX_CONST_DWORDS * 4);
+      return binding->descriptorCount;
    default:
       return A6XX_TEX_CONST_DWORDS * 4;
    }
@@ -557,8 +556,8 @@ tu_descriptor_set_create(struct tu_device *device,
       struct tu_descriptor_set_binding_layout *binding =
          &layout->binding[layout->binding_count - 1];
       if (binding->type == VK_DESCRIPTOR_TYPE_INLINE_UNIFORM_BLOCK) {
-         layout_size = binding->offset + A6XX_TEX_CONST_DWORDS * 4 +
-            ALIGN(variable_count, A6XX_TEX_CONST_DWORDS * 4);
+         layout_size = binding->offset +
+            ALIGN(variable_count, 4 * A6XX_TEX_CONST_DWORDS);
       } else {
          uint32_t stride = binding->size;
          layout_size = binding->offset + variable_count * stride;
@@ -635,24 +634,6 @@ tu_descriptor_set_create(struct tu_device *device,
       }
    }
 
-   if (layout->has_inline_uniforms) {
-      for (unsigned i = 0; i < layout->binding_count; i++) {
-         if (layout->binding[i].type != VK_DESCRIPTOR_TYPE_INLINE_UNIFORM_BLOCK)
-            continue;
-
-         uint32_t *ptr = set->mapped_ptr + layout->binding[i].offset / 4;
-         uint64_t va = set->va + layout->binding[i].offset +
-            A6XX_TEX_CONST_DWORDS * 4;
-         uint32_t size =
-            (layout->has_variable_descriptors && i == layout->binding_count - 1) ?
-            variable_count : layout->binding[i].size - A6XX_TEX_CONST_DWORDS * 4;
-         size = ALIGN_POT(size, 16) / 16;
-
-         ptr[0] = A6XX_UBO_0_BASE_LO(va);
-         ptr[1] = A6XX_UBO_1_BASE_HI(va >> 32) | A6XX_UBO_1_SIZE(size);
-      }
-   }
-
    vk_descriptor_set_layout_ref(&layout->vk);
    list_addtail(&set->pool_link, &pool->desc_sets);
 
@@ -705,12 +686,12 @@ tu_CreateDescriptorPool(VkDevice _device,
                            DESCRIPTOR_POOL_INLINE_UNIFORM_BLOCK_CREATE_INFO);
 
    if (inline_info) {
-      /* In addition to the size of the descriptors, we have to factor in the
-       * padding for each binding. The sizes are 4 aligned but we have to
-       * align to a descriptor size, and in the worst case each inline
-       * binding has a size of 4 bytes and we have to pad each one out.
+      /* We have to factor in the padding for each binding. The sizes are 4
+       * aligned but we have to align to 4 * A6XX_TEX_CONST_DWORDS bytes, and in
+       * the worst case each inline binding has a size of 4 bytes and we have
+       * to pad each one out.
        */
-      bo_size += (2 * 4 * A6XX_TEX_CONST_DWORDS - 4) *
+      bo_size += (4 * A6XX_TEX_CONST_DWORDS - 4) *
          inline_info->maxInlineUniformBlockBindings;
    }
 
@@ -1086,8 +1067,8 @@ tu_update_descriptor_sets(const struct tu_device *device,
           *    rule.
           *
           * This means we can't just do a straight memcpy, because due to
-          * alignment padding and the descriptor itself there are gaps between
-          * sequential bindings. We have to loop over each binding updated.
+          * alignment padding there are gaps between sequential bindings. We
+          * have to loop over each binding updated.
           */
          const VkWriteDescriptorSetInlineUniformBlock *inline_write =
             vk_find_struct_const(writeset->pNext,
@@ -1096,9 +1077,8 @@ tu_update_descriptor_sets(const struct tu_device *device,
          const uint8_t *src = inline_write->pData;
          uint32_t dst_offset = writeset->dstArrayElement;
          do {
-            uint8_t *dst = (uint8_t *)(ptr + A6XX_TEX_CONST_DWORDS) + dst_offset;
-            uint32_t binding_size =
-               binding_layout->size - A6XX_TEX_CONST_DWORDS * 4 - dst_offset;
+            uint8_t *dst = (uint8_t *)(ptr) + dst_offset;
+            uint32_t binding_size = binding_layout->size - dst_offset;
             uint32_t to_write = MIN2(remaining, binding_size);
             memcpy(dst, src, to_write);
 
@@ -1188,12 +1168,12 @@ tu_update_descriptor_sets(const struct tu_device *device,
          uint32_t remaining = copyset->descriptorCount;
          uint32_t src_start = copyset->srcArrayElement;
          uint32_t dst_start = copyset->dstArrayElement;
-         uint8_t *src = (uint8_t *)(src_ptr + A6XX_TEX_CONST_DWORDS) + src_start;
-         uint8_t *dst = (uint8_t *)(dst_ptr + A6XX_TEX_CONST_DWORDS) + dst_start;
+         uint8_t *src = (uint8_t *)(src_ptr) + src_start;
+         uint8_t *dst = (uint8_t *)(dst_ptr) + dst_start;
          uint32_t src_remaining =
-            src_binding_layout->size - src_start - 4 * A6XX_TEX_CONST_DWORDS;
+            src_binding_layout->size - src_start;
          uint32_t dst_remaining =
-            dst_binding_layout->size - dst_start - 4 * A6XX_TEX_CONST_DWORDS;
+            dst_binding_layout->size - dst_start;
          do {
             uint32_t to_write = MIN3(remaining, src_remaining, dst_remaining);
             memcpy(dst, src, to_write);
@@ -1294,7 +1274,7 @@ tu_CreateDescriptorUpdateTemplate(
          set_layout->binding + entry->dstBinding;
       uint32_t dst_start = entry->dstArrayElement;
       do {
-         uint32_t size = binding_layout->size - A6XX_TEX_CONST_DWORDS * 4;
+         uint32_t size = binding_layout->size;
          uint32_t count = MIN2(remaining, size - dst_start);
          remaining -= count;
          binding_layout++;
@@ -1343,8 +1323,8 @@ tu_CreateDescriptorUpdateTemplate(
          /* See comment in update_descriptor_sets() */
          do {
             dst_offset =
-               binding_layout->offset + A6XX_TEX_CONST_DWORDS * 4 + dst_start;
-            uint32_t size = binding_layout->size - A6XX_TEX_CONST_DWORDS * 4;
+               binding_layout->offset + dst_start;
+            uint32_t size = binding_layout->size;
             uint32_t count = MIN2(remaining, size - dst_start);
             templ->entry[j++] = (struct tu_descriptor_update_template_entry) {
                .descriptor_type = entry->descriptorType,

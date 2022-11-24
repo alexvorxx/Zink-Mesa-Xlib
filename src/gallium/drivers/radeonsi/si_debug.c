@@ -1067,7 +1067,7 @@ void si_check_vm_faults(struct si_context *sctx, struct radeon_saved_cs *saved, 
       return;
 
    fprintf(f, "VM fault report.\n\n");
-   if (os_get_command_line(cmd_line, sizeof(cmd_line)))
+   if (util_get_command_line(cmd_line, sizeof(cmd_line)))
       fprintf(f, "Command: %s\n", cmd_line);
    fprintf(f, "Driver vendor: %s\n", screen->get_vendor(screen));
    fprintf(f, "Device vendor: %s\n", screen->get_device_vendor(screen));

@@ -199,7 +199,7 @@ lp_scene_begin_rasterization(struct lp_scene *scene)
 {
    const struct pipe_framebuffer_state *fb = &scene->fb;
 
-   //LP_DBG(DEBUG_RAST, "%s\n", __FUNCTION__);
+   //LP_DBG(DEBUG_RAST, "%s\n", __func__);
 
    for (unsigned i = 0; i < scene->fb.nr_cbufs; i++) {
       struct pipe_surface *cbuf = scene->fb.cbufs[i];
@@ -354,7 +354,7 @@ struct data_block *
 lp_scene_new_data_block(struct lp_scene *scene)
 {
    if (scene->scene_size + DATA_BLOCK_SIZE > LP_SCENE_MAX_SIZE) {
-      if (0) debug_printf("%s: failed\n", __FUNCTION__);
+      if (0) debug_printf("%s: failed\n", __func__);
       scene->alloc_failed = TRUE;
       return NULL;
    } else {

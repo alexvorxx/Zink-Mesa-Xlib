@@ -376,7 +376,7 @@ binary clover::nir::spirv_to_nir(const binary &mod, const device &dev,
 
       NIR_PASS_V(nir, nir_opt_deref);
       NIR_PASS_V(nir, nir_lower_readonly_images_to_tex, false);
-      NIR_PASS_V(nir, nir_lower_cl_images);
+      NIR_PASS_V(nir, nir_lower_cl_images, true, true);
       NIR_PASS_V(nir, nir_lower_memcpy);
 
       /* use offsets for kernel inputs (uniform) */

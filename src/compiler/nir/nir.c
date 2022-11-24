@@ -2881,17 +2881,18 @@ nir_binding nir_chase_binding(nir_src rsrc)
     * instructions to skip trimming of vec2_index_32bit_offset addresses after
     * lowering ALU to scalar.
     */
+   unsigned num_components = nir_src_num_components(rsrc);
    while (true) {
       nir_alu_instr *alu = nir_src_as_alu_instr(rsrc);
       nir_intrinsic_instr *intrin = nir_src_as_intrinsic(rsrc);
       if (alu && alu->op == nir_op_mov) {
-         for (unsigned i = 0; i < alu->dest.dest.ssa.num_components; i++) {
+         for (unsigned i = 0; i < num_components; i++) {
             if (alu->src[0].swizzle[i] != i)
                return (nir_binding){0};
          }
          rsrc = alu->src[0].src;
       } else if (alu && nir_op_is_vec(alu->op)) {
-         for (unsigned i = 0; i < nir_op_infos[alu->op].num_inputs; i++) {
+         for (unsigned i = 0; i < num_components; i++) {
             if (alu->src[i].swizzle[0] != i || alu->src[i].src.ssa != alu->src[0].src.ssa)
                return (nir_binding){0};
          }

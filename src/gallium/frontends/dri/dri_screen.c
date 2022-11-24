@@ -35,7 +35,7 @@
 
 #include "util/u_inlines.h"
 #include "pipe/p_screen.h"
-#include "pipe/p_format.h"
+#include "util/format/u_formats.h"
 #include "pipe-loader/pipe_loader.h"
 #include "frontend/drm_driver.h"
 
@@ -573,7 +573,7 @@ dri_fill_in_modes(struct dri_screen *screen)
    }
 
    if (configs == NULL) {
-      debug_printf("%s: driCreateConfigs failed\n", __FUNCTION__);
+      debug_printf("%s: driCreateConfigs failed\n", __func__);
       return NULL;
    }
 

@@ -2391,7 +2391,16 @@ static void visit_store_output(struct ac_nir_context *ctx, nir_intrinsic_instr *
           * using read-modify-write.
           */
          index = LLVMConstInt(ctx->ac.i32, nir_intrinsic_io_semantics(instr).high_16bits, 0);
+
+#if LLVM_VERSION_MAJOR <= 14
+         /* To work around old LLVM bug which won't change the output type to
+          * LLVMBuildLoad2 type argument.
+          */
+         output = LLVMBuildLoad2(ctx->ac.builder, ctx->ac.f32, output_addr, "");
+         output = LLVMBuildBitCast(ctx->ac.builder, output, ctx->ac.v2f16, "");
+#else
          output = LLVMBuildLoad2(ctx->ac.builder, ctx->ac.v2f16, output_addr, "");
+#endif
          output = LLVMBuildInsertElement(ctx->ac.builder, output, value, index, "");
          value = LLVMBuildBitCast(ctx->ac.builder, output, ctx->ac.f32, "");
       }
@@ -3635,6 +3644,7 @@ static bool visit_intrinsic(struct ac_nir_context *ctx, nir_intrinsic_instr *ins
    case nir_intrinsic_load_pipeline_stat_query_enabled_amd:
    case nir_intrinsic_load_prim_gen_query_enabled_amd:
    case nir_intrinsic_load_prim_xfb_query_enabled_amd:
+   case nir_intrinsic_load_clamp_vertex_color_amd:
       result = ctx->abi->intrinsic_load(ctx->abi, instr->intrinsic);
       break;
    case nir_intrinsic_load_user_clip_plane:
@@ -3643,6 +3653,15 @@ static bool visit_intrinsic(struct ac_nir_context *ctx, nir_intrinsic_instr *ins
    case nir_intrinsic_load_streamout_buffer_amd:
       result = ctx->abi->load_streamout_buffer(ctx->abi, nir_intrinsic_base(instr));
       break;
+   case nir_intrinsic_load_merged_wave_info_amd:
+      result = ac_get_arg(&ctx->ac, ctx->args->merged_wave_info);
+      break;
+   case nir_intrinsic_load_ring_attr_offset_amd: {
+      LLVMValueRef offset = ac_get_arg(&ctx->ac, ctx->args->gs_attr_offset);
+      offset = ac_unpack_param(&ctx->ac, offset, 0, 15);
+      result = LLVMBuildShl(ctx->ac.builder, offset, LLVMConstInt(ctx->ac.i32, 9, false), "");
+      break;
+   }
    case nir_intrinsic_load_ordered_id_amd:
       result = ac_unpack_param(&ctx->ac, ac_get_arg(&ctx->ac, ctx->args->gs_tg_info), 0, 12);
       break;

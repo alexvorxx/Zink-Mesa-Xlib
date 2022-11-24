@@ -5,6 +5,7 @@ use crate::pipe::screen::*;
 use crate::pipe::transfer::*;
 
 use mesa_rust_gen::*;
+use mesa_rust_util::has_required_feature;
 
 use std::os::raw::*;
 use std::ptr;
@@ -475,28 +476,30 @@ impl Drop for PipeContext {
     }
 }
 
-fn has_required_cbs(c: &pipe_context) -> bool {
-    c.destroy.is_some()
-        && c.bind_compute_state.is_some()
-        && c.bind_sampler_states.is_some()
-        && c.buffer_map.is_some()
-        && c.buffer_subdata.is_some()
-        && c.buffer_unmap.is_some()
-        && c.clear_buffer.is_some()
-        && c.clear_texture.is_some()
-        && c.create_compute_state.is_some()
-        && c.delete_compute_state.is_some()
-        && c.delete_sampler_state.is_some()
-        && c.flush.is_some()
-        && c.launch_grid.is_some()
-        && c.memory_barrier.is_some()
-        && c.resource_copy_region.is_some()
-        && c.sampler_view_destroy.is_some()
-        && c.set_constant_buffer.is_some()
-        && c.set_global_binding.is_some()
-        && c.set_sampler_views.is_some()
-        && c.set_shader_images.is_some()
-        && c.texture_map.is_some()
-        && c.texture_subdata.is_some()
-        && c.texture_unmap.is_some()
+fn has_required_cbs(context: &pipe_context) -> bool {
+    // Use '&' to evaluate all features and to not stop
+    // on first missing one to list all missing features.
+    has_required_feature!(context, destroy)
+        & has_required_feature!(context, bind_compute_state)
+        & has_required_feature!(context, bind_sampler_states)
+        & has_required_feature!(context, buffer_map)
+        & has_required_feature!(context, buffer_subdata)
+        & has_required_feature!(context, buffer_unmap)
+        & has_required_feature!(context, clear_buffer)
+        & has_required_feature!(context, clear_texture)
+        & has_required_feature!(context, create_compute_state)
+        & has_required_feature!(context, delete_compute_state)
+        & has_required_feature!(context, delete_sampler_state)
+        & has_required_feature!(context, flush)
+        & has_required_feature!(context, launch_grid)
+        & has_required_feature!(context, memory_barrier)
+        & has_required_feature!(context, resource_copy_region)
+        & has_required_feature!(context, sampler_view_destroy)
+        & has_required_feature!(context, set_constant_buffer)
+        & has_required_feature!(context, set_global_binding)
+        & has_required_feature!(context, set_sampler_views)
+        & has_required_feature!(context, set_shader_images)
+        & has_required_feature!(context, texture_map)
+        & has_required_feature!(context, texture_subdata)
+        & has_required_feature!(context, texture_unmap)
 }

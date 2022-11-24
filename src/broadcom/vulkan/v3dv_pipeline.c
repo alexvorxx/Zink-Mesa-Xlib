@@ -3322,7 +3322,7 @@ pipeline_get_qpu(struct v3dv_pipeline *pipeline,
 }
 
 /* FIXME: we use the same macro in various drivers, maybe move it to
- * the comon vk_util.h?
+ * the common vk_util.h?
  */
 #define WRITE_STR(field, ...) ({                                \
    memset(field, 0, sizeof(field));                             \

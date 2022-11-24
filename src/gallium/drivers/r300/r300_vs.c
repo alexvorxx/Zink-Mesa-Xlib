@@ -190,7 +190,7 @@ void r300_translate_vertex_shader(struct r300_context *r300,
 
     /* Setup the compiler */
     memset(&compiler, 0, sizeof(compiler));
-    rc_init(&compiler.Base, NULL);
+    rc_init(&compiler.Base, &r300->vs_regalloc_state);
 
     DBG_ON(r300, DBG_VP) ? compiler.Base.Debug |= RC_DBG_LOG : 0;
     compiler.code = &vs->code;

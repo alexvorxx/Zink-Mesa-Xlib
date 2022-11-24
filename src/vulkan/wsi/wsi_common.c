@@ -26,6 +26,7 @@
 #include "util/u_debug.h"
 #include "util/macros.h"
 #include "util/os_file.h"
+#include "util/os_time.h"
 #include "util/xmlconfig.h"
 #include "vk_device.h"
 #include "vk_fence.h"
@@ -128,6 +129,12 @@ wsi_device_init(struct wsi_device *wsi,
       &vk_physical_device_from_handle(pdevice)->supported_extensions;
    wsi->has_import_memory_host =
       supported_extensions->EXT_external_memory_host;
+   wsi->khr_present_wait =
+      supported_extensions->KHR_present_id &&
+      supported_extensions->KHR_present_wait;
+
+   /* We cannot expose KHR_present_wait without timeline semaphores. */
+   assert(!wsi->khr_present_wait || supported_extensions->KHR_timeline_semaphore);
 
    list_inithead(&wsi->hotplug_fences);
 
@@ -168,6 +175,8 @@ wsi_device_init(struct wsi_device *wsi,
    WSI_GET_CB(WaitForFences);
    WSI_GET_CB(MapMemory);
    WSI_GET_CB(UnmapMemory);
+   if (wsi->khr_present_wait)
+      WSI_GET_CB(WaitSemaphoresKHR);
 #undef WSI_GET_CB
 
 #ifdef VK_USE_PLATFORM_XCB_KHR
@@ -325,6 +334,32 @@ configure_image(const struct wsi_swapchain *chain,
    }
 }
 
+#if defined(HAVE_PTHREAD) && !defined(_WIN32)
+bool
+wsi_init_pthread_cond_monotonic(pthread_cond_t *cond)
+{
+   pthread_condattr_t condattr;
+   bool ret = false;
+
+   if (pthread_condattr_init(&condattr) != 0)
+      goto fail_attr_init;
+
+   if (pthread_condattr_setclock(&condattr, CLOCK_MONOTONIC) != 0)
+      goto fail_attr_set;
+
+   if (pthread_cond_init(cond, &condattr) != 0)
+      goto fail_cond_init;
+
+   ret = true;
+
+fail_cond_init:
+fail_attr_set:
+   pthread_condattr_destroy(&condattr);
+fail_attr_init:
+   return ret;
+}
+#endif
+
 VkResult
 wsi_swapchain_init(const struct wsi_device *wsi,
                    struct wsi_swapchain *chain,
@@ -459,6 +494,8 @@ wsi_swapchain_finish(struct wsi_swapchain *chain)
       vk_free(&chain->alloc, chain->buffer_blit_semaphores);
    }
    chain->wsi->DestroySemaphore(chain->device, chain->dma_buf_semaphore,
+                                &chain->alloc);
+   chain->wsi->DestroySemaphore(chain->device, chain->present_id_timeline,
                                 &chain->alloc);
 
    int cmd_pools_count = chain->buffer_blit_queue != VK_NULL_HANDLE ?
@@ -852,12 +889,33 @@ wsi_CreateSwapchainKHR(VkDevice _device,
       return VK_ERROR_OUT_OF_HOST_MEMORY;
    }
 
+   if (wsi_device->khr_present_wait) {
+      const VkSemaphoreTypeCreateInfo type_info = {
+         .sType = VK_STRUCTURE_TYPE_SEMAPHORE_TYPE_CREATE_INFO,
+         .semaphoreType = VK_SEMAPHORE_TYPE_TIMELINE,
+      };
+
+      const VkSemaphoreCreateInfo sem_info = {
+         .sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO,
+         .pNext = &type_info,
+         .flags = 0,
+      };
+
+      /* We assume here that a driver exposing present_wait also exposes VK_KHR_timeline_semaphore. */
+      result = wsi_device->CreateSemaphore(_device, &sem_info, alloc, &swapchain->present_id_timeline);
+      if (result != VK_SUCCESS) {
+         swapchain->destroy(swapchain, alloc);
+         return VK_ERROR_OUT_OF_HOST_MEMORY;
+      }
+   }
+
    if (swapchain->buffer_blit_queue != VK_NULL_HANDLE) {
       swapchain->buffer_blit_semaphores = vk_zalloc(alloc,
                                          sizeof (*swapchain->buffer_blit_semaphores) * swapchain->image_count,
                                          sizeof (*swapchain->buffer_blit_semaphores),
                                          VK_SYSTEM_ALLOCATION_SCOPE_OBJECT);
       if (!swapchain->buffer_blit_semaphores) {
+         wsi_device->DestroySemaphore(_device, swapchain->present_id_timeline, alloc);
          swapchain->destroy(swapchain, alloc);
          return VK_ERROR_OUT_OF_HOST_MEMORY;
       }
@@ -1064,6 +1122,27 @@ wsi_AcquireNextImage2KHR(VkDevice _device,
                                          _device, pAcquireInfo, pImageIndex);
 }
 
+static VkResult wsi_signal_present_id_timeline(struct wsi_swapchain *swapchain,
+                                               VkQueue queue, uint64_t present_id)
+{
+   assert(swapchain->present_id_timeline);
+
+   const VkTimelineSemaphoreSubmitInfo timeline_info = {
+      .sType = VK_STRUCTURE_TYPE_TIMELINE_SEMAPHORE_SUBMIT_INFO,
+      .pSignalSemaphoreValues = &present_id,
+      .signalSemaphoreValueCount = 1,
+   };
+
+   const VkSubmitInfo submit_info = {
+      .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
+      .pNext = &timeline_info,
+      .signalSemaphoreCount = 1,
+      .pSignalSemaphores = &swapchain->present_id_timeline,
+   };
+
+   return swapchain->wsi->QueueSubmit(queue, 1, &submit_info, VK_NULL_HANDLE);
+}
+
 VkResult
 wsi_common_queue_present(const struct wsi_device *wsi,
                          VkDevice device,
@@ -1080,6 +1159,8 @@ wsi_common_queue_present(const struct wsi_device *wsi,
 
    const VkPresentRegionsKHR *regions =
       vk_find_struct_const(pPresentInfo->pNext, PRESENT_REGIONS_KHR);
+   const VkPresentIdKHR *present_ids =
+      vk_find_struct_const(pPresentInfo->pNext, PRESENT_ID_KHR);
 
    for (uint32_t i = 0; i < pPresentInfo->swapchainCount; i++) {
       VK_FROM_HANDLE(wsi_swapchain, swapchain, pPresentInfo->pSwapchains[i]);
@@ -1227,7 +1308,17 @@ wsi_common_queue_present(const struct wsi_device *wsi,
       if (regions && regions->pRegions)
          region = &regions->pRegions[i];
 
-      result = swapchain->queue_present(swapchain, image_index, region);
+      uint64_t present_id = 0;
+      if (present_ids && present_ids->pPresentIds)
+         present_id = present_ids->pPresentIds[i];
+
+      if (present_id) {
+         result = wsi_signal_present_id_timeline(swapchain, queue, present_id);
+         if (result != VK_SUCCESS)
+            goto fail_present;
+      }
+
+      result = swapchain->queue_present(swapchain, image_index, present_id, region);
       if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR)
          goto fail_present;
 
@@ -1283,6 +1374,20 @@ wsi_GetDeviceGroupSurfacePresentModesKHR(VkDevice device,
    *pModes = VK_DEVICE_GROUP_PRESENT_MODE_LOCAL_BIT_KHR;
 
    return VK_SUCCESS;
+}
+
+bool
+wsi_common_vk_instance_supports_present_wait(const struct vk_instance *instance)
+{
+   /* We can only expose KHR_present_wait and KHR_present_id
+    * if we are guaranteed support on all potential VkSurfaceKHR objects. */
+   if (instance->enabled_extensions.KHR_wayland_surface ||
+         instance->enabled_extensions.KHR_win32_surface ||
+         instance->enabled_extensions.KHR_android_surface) {
+      return false;
+   }
+
+   return true;
 }
 
 VkResult
@@ -1351,6 +1456,21 @@ wsi_common_bind_swapchain_image(const struct wsi_device *wsi,
    struct wsi_image *image = chain->get_wsi_image(chain, image_idx);
 
    return wsi->BindImageMemory(chain->device, vk_image, image->memory, 0);
+}
+
+VkResult
+wsi_swapchain_wait_for_present_semaphore(const struct wsi_swapchain *chain,
+                                         uint64_t present_id, uint64_t timeout)
+{
+   assert(chain->present_id_timeline);
+   const VkSemaphoreWaitInfo wait_info = {
+      .sType = VK_STRUCTURE_TYPE_SEMAPHORE_WAIT_INFO,
+      .semaphoreCount = 1,
+      .pSemaphores = &chain->present_id_timeline,
+      .pValues = &present_id,
+   };
+
+   return chain->wsi->WaitSemaphoresKHR(chain->device, &wait_info, timeout);
 }
 
 uint32_t
@@ -1788,4 +1908,13 @@ wsi_configure_cpu_image(const struct wsi_swapchain *chain,
    info->alloc_shm = params->alloc_shm;
 
    return VK_SUCCESS;
+}
+
+VKAPI_ATTR VkResult VKAPI_CALL
+wsi_WaitForPresentKHR(VkDevice device, VkSwapchainKHR _swapchain,
+                      uint64_t presentId, uint64_t timeout)
+{
+   VK_FROM_HANDLE(wsi_swapchain, swapchain, _swapchain);
+   assert(swapchain->wait_for_present);
+   return swapchain->wait_for_present(swapchain, presentId, timeout);
 }

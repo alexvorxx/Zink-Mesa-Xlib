@@ -33,6 +33,7 @@
 #include "drisw_priv.h"
 #include <X11/extensions/shmproto.h>
 #include <assert.h>
+#include <vulkan/vulkan.h>
 #include "util/u_debug.h"
 #include "kopper_interface.h"
 #include "loader_dri_helper.h"
@@ -367,16 +368,19 @@ static const __DRIswrastLoaderExtension swrastLoaderExtension = {
    .getImage2           = swrastGetImage2,
 };
 
+static_assert(sizeof(struct kopper_vk_surface_create_storage) >= sizeof(VkXcbSurfaceCreateInfoKHR), "");
+
 static void
 kopperSetSurfaceCreateInfo(void *_draw, struct kopper_loader_info *out)
 {
     __GLXDRIdrawable *draw = _draw;
+    VkXcbSurfaceCreateInfoKHR *xcb = (VkXcbSurfaceCreateInfoKHR *)&out->bos;
 
-    out->xcb.sType = VK_STRUCTURE_TYPE_XCB_SURFACE_CREATE_INFO_KHR;
-    out->xcb.pNext = NULL;
-    out->xcb.flags = 0;
-    out->xcb.connection = XGetXCBConnection(draw->psc->dpy);
-    out->xcb.window = draw->xDrawable;
+    xcb->sType = VK_STRUCTURE_TYPE_XCB_SURFACE_CREATE_INFO_KHR;
+    xcb->pNext = NULL;
+    xcb->flags = 0;
+    xcb->connection = XGetXCBConnection(draw->psc->dpy);
+    xcb->window = draw->xDrawable;
 }
 
 static const __DRIkopperLoaderExtension kopperLoaderExtension = {
@@ -1054,8 +1058,11 @@ static struct glx_screen *
 driswCreateScreen(int screen, struct glx_display *priv)
 {
    const struct drisw_display *pdpyp = (struct drisw_display *)priv->driswDisplay;
+   if (pdpyp->zink && !debug_get_bool_option("LIBGL_KOPPER_DISABLE", false)) {
+      return driswCreateScreenDriver(screen, priv, "zink");
+   }
 
-   return driswCreateScreenDriver(screen, priv, pdpyp->zink ? "zink" : "swrast");
+   return driswCreateScreenDriver(screen, priv, "swrast");
 }
 
 /* Called from __glXFreeDisplayPrivate.

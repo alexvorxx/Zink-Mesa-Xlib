@@ -34,7 +34,7 @@
 #include "freedreno_priv.h"
 
 struct fd_device *msm_device_new(int fd, drmVersionPtr version);
-#if HAVE_FREEDRENO_VIRTIO
+#ifdef HAVE_FREEDRENO_VIRTIO
 struct fd_device *virtio_device_new(int fd, drmVersionPtr version);
 #endif
 
@@ -60,7 +60,7 @@ fd_device_new(int fd)
       }
 
       dev = msm_device_new(fd, version);
-#if HAVE_FREEDRENO_VIRTIO
+#ifdef HAVE_FREEDRENO_VIRTIO
    } else if (!strcmp(version->name, "virtio_gpu")) {
       DEBUG_MSG("virtio_gpu DRM device");
       dev = virtio_device_new(fd, version);
@@ -122,7 +122,7 @@ fd_device_open(void)
    int fd;
 
    fd = drmOpenWithType("msm", NULL, DRM_NODE_RENDER);
-#if HAVE_FREEDRENO_VIRTIO
+#ifdef HAVE_FREEDRENO_VIRTIO
    if (fd < 0)
       fd = drmOpenWithType("virtio_gpu", NULL, DRM_NODE_RENDER);
 #endif

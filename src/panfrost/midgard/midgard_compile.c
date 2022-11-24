@@ -68,7 +68,7 @@ int midgard_debug = 0;
 #define DBG(fmt, ...) \
 		do { if (midgard_debug & MIDGARD_DBG_MSGS) \
 			fprintf(stderr, "%s:%d: "fmt, \
-				__FUNCTION__, __LINE__, ##__VA_ARGS__); } while (0)
+				__func__, __LINE__, ##__VA_ARGS__); } while (0)
 static midgard_block *
 create_empty_block(compiler_context *ctx)
 {

@@ -34,6 +34,7 @@
 #include "util/blob.h"
 #include "util/format/u_format.h"
 #include "util/macros.h"
+#include "util/simple_mtx.h"
 
 #ifdef __cplusplus
 #include "mesa/main/config.h"
@@ -1289,7 +1290,7 @@ public:
 
 private:
 
-   static mtx_t hash_mutex;
+   static simple_mtx_t hash_mutex;
 
    /**
     * ralloc context for the type itself.

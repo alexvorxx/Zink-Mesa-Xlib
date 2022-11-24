@@ -10,7 +10,7 @@
 static int
 test_thread(void *_state)
 {
-   struct u_trace_context ctx = { 0 };
+   struct u_trace_context ctx = {};
    u_trace_context_init(&ctx, NULL, NULL, NULL, NULL, NULL, NULL);
    u_trace_context_fini(&ctx);
 
@@ -19,7 +19,7 @@ test_thread(void *_state)
 
 TEST(UtilPerfTraceTest, Multithread)
 {
-   static char env_tracefile[] = "GPU_TRACEFILE=tracefile_for_test-b5ba5a0c-6ed1-4901-a38d-755991182663";
+   static char env_tracefile[] = "MESA_GPU_TRACEFILE=tracefile_for_test-b5ba5a0c-6ed1-4901-a38d-755991182663";
    thrd_t threads[NUM_DEBUG_TEST_THREAD];
    putenv(env_tracefile);
    for (unsigned i = 0; i < NUM_DEBUG_TEST_THREAD; i++) {

@@ -67,7 +67,6 @@ typedef void (aco_shader_part_callback)(void **priv_ptr,
                                         const char *disasm_str,
                                         uint32_t disasm_size);
 
-extern const unsigned aco_num_statistics;
 extern const struct aco_compiler_statistic_info* aco_statistic_infos;
 
 void aco_compile_shader(const struct aco_compiler_options* options,

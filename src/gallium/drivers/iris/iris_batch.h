@@ -85,7 +85,6 @@ struct iris_batch {
 
    uint32_t ctx_id;
    uint32_t exec_flags;
-   bool has_engines_context;
 
    /** A list of all BOs referenced by this batch */
    struct iris_bo **exec_bos;

@@ -254,7 +254,7 @@ ScratchIOInstr::do_print(std::ostream& os) const
    os << (is_read() ? "READ_SCRATCH " : "WRITE_SCRATCH ");
 
    if (is_read()) {
-      os << (value()[0]->is_ssa() ? " S" : " R") << value().sel() << "."
+      os << (value()[0]->has_flag(Register::ssa) ? " S" : " R") << value().sel() << "."
          << writemask_to_swizzle(m_writemask, buf) << " ";
    }
 
@@ -264,7 +264,7 @@ ScratchIOInstr::do_print(std::ostream& os) const
       os << m_loc;
 
    if (!is_read())
-      os << (value()[0]->is_ssa() ? " S" : " R") << value().sel() << "."
+      os << (value()[0]->has_flag(Register::ssa) ? " S" : " R") << value().sel() << "."
          << writemask_to_swizzle(m_writemask, buf);
 
    os << " "

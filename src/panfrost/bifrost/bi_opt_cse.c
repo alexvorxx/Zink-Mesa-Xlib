@@ -26,7 +26,7 @@
 #include "bi_builder.h"
 
 #define XXH_INLINE_ALL
-#include "xxhash.h"
+#include "util/xxhash.h"
 
 /* This pass handles CSE'ing repeated expressions created in the process of
  * translating from NIR. Also, currently this is intra-block only, to make it

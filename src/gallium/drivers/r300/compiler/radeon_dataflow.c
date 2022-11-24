@@ -196,9 +196,6 @@ void rc_for_all_reads_src(
 
 	for(unsigned int src = 0; src < opcode->NumSrcRegs; ++src) {
 
-		if (inst->U.I.SrcReg[src].File == RC_FILE_NONE)
-			continue;
-
 		if (inst->U.I.SrcReg[src].File == RC_FILE_PRESUB) {
 			unsigned int i;
 			unsigned int srcp_regs = rc_presubtract_src_reg_count(
@@ -689,6 +686,7 @@ static void get_readers_for_single_write(
 	struct rc_instruction * endloop = NULL;
 	unsigned int abort_on_read_at_endloop = 0;
 	unsigned int abort_on_read_at_break = 0;
+	unsigned int alive_write_mask_at_breaks = 0;
 	struct get_readers_callback_data * d = userdata;
 
 	d->ReaderData->Writer = writer;
@@ -748,6 +746,7 @@ static void get_readers_for_single_write(
 				d->ReaderData->AbortOnRead = d->AliveWriteMask;
 			} else {
 				struct branch_write_mask * masks = &d->BranchMasks[branch_depth];
+				alive_write_mask_at_breaks |= d->AliveWriteMask;
 				if (masks->HasElse) {
 					/* Abort on read for components that were written in the IF
 					 * block. */
@@ -808,6 +807,10 @@ static void get_readers_for_single_write(
 			endloop = NULL;
 			d->ReaderData->AbortOnRead = abort_on_read_at_endloop
 							| abort_on_read_at_break;
+			/* Restore the AliveWriteMask to account for all possible
+			 * exits from the loop. */
+			d->AliveWriteMask = alive_write_mask_at_breaks;
+			alive_write_mask_at_breaks = 0;
 			continue;
 		}
 		rc_for_all_writes_mask(tmp, get_readers_write_callback, d);
@@ -815,7 +818,25 @@ static void get_readers_for_single_write(
 		if (d->ReaderData->ExitOnAbort && d->ReaderData->Abort)
 			return;
 
-		if (branch_depth == 0 && !d->AliveWriteMask)
+		/* The check for !endloop in needed for the following scenario:
+		 *
+		 * 0 MOV TEMP[0] none.0
+		 * 1 BGNLOOP
+		 * 2   IF some exit condition
+		 * 3      BRK
+		 * 4   ENDIF
+		 * 5 ADD TEMP[0], TEMP[0], CONST[0]
+		 * 6 ADD TEMP[0], TEMP[0], none.1
+		 * 7 ENDLOOP
+		 * 8 MOV OUT[0] TEMP[0]
+		 *
+		 * When we search for the readers of instruction 6, we encounter the ENDLOOP
+		 * and continue searching at BGNLOOP. At instruction 5 the AliveWriteMask
+		 * becomes 0 and we would stop the search. However we still need to continue
+		 * back to 6 from which we jump after the endloop, restore the AliveWriteMask
+		 * according to the possible states at breaks and continue after the loop.
+                 */
+		if (branch_depth == 0 && !d->AliveWriteMask && !endloop)
 			return;
 	}
 }
@@ -828,6 +849,7 @@ static void init_get_readers_callback_data(
 	rc_pair_read_arg_fn read_pair_cb,
 	rc_read_write_mask_fn write_cb)
 {
+	reader_data->C = c;
 	reader_data->Abort = 0;
 	reader_data->ReaderCount = 0;
 	reader_data->ReadersReserved = 0;

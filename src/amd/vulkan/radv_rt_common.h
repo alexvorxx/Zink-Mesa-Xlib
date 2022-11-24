@@ -47,19 +47,26 @@ nir_ssa_def *intersect_ray_amd_software_tri(struct radv_device *device, nir_buil
 
 nir_ssa_def *build_addr_to_node(nir_builder *b, nir_ssa_def *addr);
 
-nir_ssa_def *build_node_to_addr(struct radv_device *device, nir_builder *b, nir_ssa_def *node);
-
 nir_ssa_def *nir_build_vec3_mat_mult(nir_builder *b, nir_ssa_def *vec, nir_ssa_def *matrix[],
                                      bool translation);
 
 void nir_build_wto_matrix_load(nir_builder *b, nir_ssa_def *instance_addr, nir_ssa_def **out);
 
-nir_ssa_def *hit_is_opaque(nir_builder *b, nir_ssa_def *sbt_offset_and_flags, nir_ssa_def *flags,
-                           nir_ssa_def *geometry_id_and_flags);
-
 nir_ssa_def *create_bvh_descriptor(nir_builder *b);
 
 struct radv_ray_traversal_args;
+
+struct radv_ray_flags {
+   nir_ssa_def *force_opaque;
+   nir_ssa_def *force_not_opaque;
+   nir_ssa_def *terminate_on_first_hit;
+   nir_ssa_def *no_cull_front;
+   nir_ssa_def *no_cull_back;
+   nir_ssa_def *no_cull_opaque;
+   nir_ssa_def *no_cull_no_opaque;
+   nir_ssa_def *no_skip_triangles;
+   nir_ssa_def *no_skip_aabbs;
+};
 
 struct radv_leaf_intersection {
    nir_ssa_def *node_addr;
@@ -82,7 +89,8 @@ struct radv_triangle_intersection {
 
 typedef void (*radv_triangle_intersection_cb)(nir_builder *b,
                                               struct radv_triangle_intersection *intersection,
-                                              const struct radv_ray_traversal_args *args);
+                                              const struct radv_ray_traversal_args *args,
+                                              const struct radv_ray_flags *ray_flags);
 
 typedef void (*radv_rt_stack_store_cb)(nir_builder *b, nir_ssa_def *index, nir_ssa_def *value,
                                        const struct radv_ray_traversal_args *args);

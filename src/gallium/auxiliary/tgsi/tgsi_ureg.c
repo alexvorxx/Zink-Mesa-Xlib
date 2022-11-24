@@ -2131,7 +2131,7 @@ const struct tgsi_token *ureg_finalize( struct ureg_program *ureg )
 
    if (ureg->domain[0].tokens == error_tokens ||
        ureg->domain[1].tokens == error_tokens) {
-      debug_printf("%s: error in generated shader\n", __FUNCTION__);
+      debug_printf("%s: error in generated shader\n", __func__);
       assert(0);
       return NULL;
    }
@@ -2139,7 +2139,7 @@ const struct tgsi_token *ureg_finalize( struct ureg_program *ureg )
    tokens = &ureg->domain[DOMAIN_DECL].tokens[0].token;
 
    if (0) {
-      debug_printf("%s: emitted shader %d tokens:\n", __FUNCTION__,
+      debug_printf("%s: emitted shader %d tokens:\n", __func__,
                    ureg->domain[DOMAIN_DECL].count);
       tgsi_dump( tokens, 0 );
    }

@@ -108,8 +108,9 @@ struct fd_fence {
 /* Hint that the bo will be exported/shared: */
 #define FD_BO_SHARED              BITSET_BIT(5)
 
-/* backend private bo flags: */
+/* internal bo flags: */
 #define _FD_BO_VIRTIO_SHM         BITSET_BIT(6)
+#define _FD_BO_RING               BITSET_BIT(7)
 
 /* bo access flags: (keep aligned to MSM_PREP_x) */
 #define FD_BO_PREP_READ   BITSET_BIT(0)
@@ -280,6 +281,7 @@ fd_bo_get_iova(struct fd_bo *bo)
 
 struct fd_bo *fd_bo_ref(struct fd_bo *bo);
 void fd_bo_del(struct fd_bo *bo);
+void fd_bo_del_array(struct fd_bo **bos, unsigned count);
 int fd_bo_get_name(struct fd_bo *bo, uint32_t *name);
 uint32_t fd_bo_handle(struct fd_bo *bo);
 int fd_bo_dmabuf(struct fd_bo *bo);

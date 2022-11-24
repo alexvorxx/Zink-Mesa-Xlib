@@ -24,13 +24,14 @@
  *    Rob Clark <robclark@freedesktop.org>
  */
 
-#include "os/os_mman.h"
+#include "util/os_mman.h"
 
 #include "freedreno_drmif.h"
 #include "freedreno_priv.h"
 
 simple_mtx_t table_lock = SIMPLE_MTX_INITIALIZER;
 void bo_del(struct fd_bo *bo);
+void bo_del_flush(struct fd_device *dev);
 
 /* set buffer name, and add to table, call w/ table_lock held: */
 static void
@@ -150,8 +151,7 @@ _fd_bo_set_name(struct fd_bo *bo, const char *fmt, va_list ap)
 struct fd_bo *
 fd_bo_new_ring(struct fd_device *dev, uint32_t size)
 {
-   uint32_t flags = FD_BO_GPUREADONLY | FD_BO_CACHED_COHERENT;
-   struct fd_bo *bo = bo_new(dev, size, flags, &dev->ring_cache);
+   struct fd_bo *bo = bo_new(dev, size, RING_FLAGS, &dev->ring_cache);
    if (bo) {
       bo->bo_reuse = RING_CACHE;
       bo->reloc_flags |= FD_RELOC_DUMP;
@@ -288,7 +288,10 @@ fd_bo_del_locked(struct fd_bo *bo)
    if (!p_atomic_dec_zero(&bo->refcnt))
       return;
 
+   struct fd_device *dev = bo->dev;
+
    bo_del_or_recycle(bo);
+   bo_del_flush(dev);
 }
 
 void
@@ -297,8 +300,29 @@ fd_bo_del(struct fd_bo *bo)
    if (!p_atomic_dec_zero(&bo->refcnt))
       return;
 
+   struct fd_device *dev = bo->dev;
+
    simple_mtx_lock(&table_lock);
    bo_del_or_recycle(bo);
+   bo_del_flush(dev);
+   simple_mtx_unlock(&table_lock);
+}
+
+void
+fd_bo_del_array(struct fd_bo **bos, unsigned count)
+{
+   if (!count)
+      return;
+
+   struct fd_device *dev = bos[0]->dev;
+
+   simple_mtx_lock(&table_lock);
+   for (unsigned i = 0; i < count; i++) {
+      if (!p_atomic_dec_zero(&bos[i]->refcnt))
+         continue;
+      bo_del_or_recycle(bos[i]);
+   }
+   bo_del_flush(dev);
    simple_mtx_unlock(&table_lock);
 }
 
@@ -334,7 +358,11 @@ cleanup_fences(struct fd_bo *bo, bool expired)
    }
 }
 
-/* Called under table_lock */
+/* Called under table_lock, bo_del_flush() *must* be called before
+ * table_lock is released (but bo_del() can be called multiple times
+ * before bo_del_flush(), as long as table_lock is held the entire
+ * time)
+ */
 void
 bo_del(struct fd_bo *bo)
 {
@@ -361,11 +389,30 @@ bo_del(struct fd_bo *bo)
    bo->funcs->destroy(bo);
 
    if (handle) {
+      if (dev->num_deferred_handles == ARRAY_SIZE(dev->deferred_handles))
+         bo_del_flush(dev);
+      dev->deferred_handles[dev->num_deferred_handles++] = handle;
+   }
+}
+
+/* Called under table_lock */
+void
+bo_del_flush(struct fd_device *dev)
+{
+   if (!dev->num_deferred_handles)
+      return;
+
+   if (dev->funcs->flush)
+      dev->funcs->flush(dev);
+
+   for (unsigned i = 0; i < dev->num_deferred_handles; i++) {
       struct drm_gem_close req = {
-         .handle = handle,
+         .handle = dev->deferred_handles[i],
       };
       drmIoctl(dev->fd, DRM_IOCTL_GEM_CLOSE, &req);
    }
+
+   dev->num_deferred_handles = 0;
 }
 
 static void

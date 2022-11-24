@@ -40,18 +40,18 @@ namespace r600 {
 using std::string;
 
 FragmentShader::FragmentShader(const r600_shader_key& key):
-    Shader("FS"),
+    Shader("FS", key.ps.first_atomic_counter),
     m_dual_source_blend(key.ps.dual_source_blend),
     m_max_color_exports(MAX2(key.ps.nr_cbufs, 1)),
     m_export_highest(0),
     m_num_color_exports(0),
     m_color_export_mask(0),
-    m_depth_exports(0),
     m_last_pixel_export(nullptr),
     m_pos_input(127, false),
     m_fs_write_all(false),
     m_apply_sample_mask(key.ps.apply_sample_id_mask),
-    m_rat_base(key.ps.nr_cbufs)
+    m_rat_base(key.ps.nr_cbufs),
+    m_image_size_const_offset(key.ps.image_size_const_offset)
 {
 }
 
@@ -224,8 +224,6 @@ FragmentShader::do_allocate_reserved_registers()
    if (m_sv_values.test(es_pos)) {
       set_input_gpr(m_pos_driver_loc, next_register);
       m_pos_input = value_factory().allocate_pinned_vec4(next_register++, false);
-      for (int i = 0; i < 4; ++i)
-         m_pos_input[i]->pin_live_range(true);
    }
 
    int face_reg_index = -1;
@@ -233,14 +231,12 @@ FragmentShader::do_allocate_reserved_registers()
       set_input_gpr(m_face_driver_loc, next_register);
       face_reg_index = next_register++;
       m_face_input = value_factory().allocate_pinned_register(face_reg_index, 0);
-      m_face_input->pin_live_range(true);
    }
 
    if (m_sv_values.test(es_sample_mask_in)) {
       if (face_reg_index < 0)
          face_reg_index = next_register++;
       m_sample_mask_reg = value_factory().allocate_pinned_register(face_reg_index, 2);
-      m_sample_mask_reg->pin_live_range(true);
       sfn_log << SfnLog::io << "Set sample mask in register to " << *m_sample_mask_reg
               << "\n";
       m_nsys_inputs = 1;
@@ -252,7 +248,6 @@ FragmentShader::do_allocate_reserved_registers()
    if (m_sv_values.test(es_sample_id) || m_sv_values.test(es_sample_mask_in)) {
       int sample_id_reg = next_register++;
       m_sample_id_reg = value_factory().allocate_pinned_register(sample_id_reg, 3);
-      m_sample_id_reg->pin_live_range(true);
       sfn_log << SfnLog::io << "Set sample id register to " << *m_sample_id_reg << "\n";
       m_nsys_inputs++;
       ShaderInput input(ninputs(), TGSI_SEMANTIC_SAMPLEID);
@@ -515,8 +510,7 @@ FragmentShader::emit_export_pixel(nir_intrinsic_instr& intr)
          unsigned location =
             (m_dual_source_blend && (semantics.location == FRAG_RESULT_COLOR)
                 ? semantics.dual_source_blend_index
-                : driver_location) +
-            k - m_depth_exports;
+                : driver_location) + k;
 
          sfn_log << SfnLog::io << "Pixel output at loc:" << location << "\n";
 
@@ -551,7 +545,6 @@ FragmentShader::emit_export_pixel(nir_intrinsic_instr& intr)
    } else if (semantics.location == FRAG_RESULT_DEPTH ||
               semantics.location == FRAG_RESULT_STENCIL ||
               semantics.location == FRAG_RESULT_SAMPLE_MASK) {
-      m_depth_exports++;
       emit_instruction(new ExportInstr(ExportInstr::pixel, 61, value));
       int semantic = TGSI_SEMANTIC_POSITION;
       if (semantics.location == FRAG_RESULT_STENCIL)
@@ -649,9 +642,6 @@ FragmentShaderR600::allocate_interpolators_or_inputs()
                             vf.allocate_pinned_register(pos, 3),
                             pin_fully);
          inp.set_gpr(pos++);
-         for (int i = 0; i < 4; ++i) {
-            input[i]->pin_live_range(true);
-         }
 
          sfn_log << SfnLog::io << "Reseve input register at pos " << index << " as "
                  << input << " with register " << inp.gpr() << "\n";
@@ -760,10 +750,7 @@ FragmentShaderEG::allocate_interpolators_or_inputs()
          unsigned chan = 2 * (num_baryc % 2);
 
          m_interpolator[i].i = value_factory().allocate_pinned_register(sel, chan + 1);
-         m_interpolator[i].i->pin_live_range(true, false);
-
          m_interpolator[i].j = value_factory().allocate_pinned_register(sel, chan);
-         m_interpolator[i].j->pin_live_range(true, false);
 
          m_interpolator[i].ij_index = num_baryc++;
       }

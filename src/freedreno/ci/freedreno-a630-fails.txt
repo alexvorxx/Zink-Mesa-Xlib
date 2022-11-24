@@ -112,7 +112,6 @@ spec@arb_arrays_of_arrays@execution@sampler@fs-nested-struct-arrays-nonconst-nes
 # Skips prior to exposing gl45, now fails for same reason as above test
 spec@arb_gl_spirv@execution@uniform@sampler2d-nonconst-nested-array,Fail
 
-spec@arb_compute_shader@execution@border-color,Fail
 spec@arb_depth_buffer_float@fbo-clear-formats stencil,Fail
 spec@arb_depth_buffer_float@fbo-clear-formats stencil@GL_DEPTH32F_STENCIL8,Fail
 spec@arb_depth_buffer_float@fbo-generatemipmap-formats,Fail
@@ -185,9 +184,6 @@ spec@arb_tessellation_shader@execution@tcs-primitiveid,Fail
 # "Failed to link:
 #  error: Too many tessellation control shader atomic counters"
 spec@arb_tessellation_shader@execution@tes-primitiveid,Fail
-
-# https://gitlab.freedesktop.org/mesa/mesa/-/issues/7518
-spec@arb_tessellation_shader@execution@tes-read-texture,Fail
 
 # ir3_nir_lower_tess.c:251: lower_block_to_explicit_output: Assertion `util_is_power_of_two_nonzero(nir_intrinsic_write_mask(intr) + 1)' failed.
 spec@arb_tessellation_shader@execution@tcs-input-read-mat,Crash
@@ -464,3 +460,20 @@ gmem-dEQP-VK.pipeline.fast_linked_library.color_write_enable_maxa.cwe_after_bind
 
 # https://gitlab.freedesktop.org/mesa/mesa/-/issues/7152
 spec@ext_transform_feedback@builtin-varyings gl_culldistance,Fail
+
+# EGL_BAD_DISPLAY is generated if display is not an EGL display connection
+# eglCreatePixmapSurface(0, 0x0000000000000000, 0x0000000000000000, { EGL_NONE });
+# // 0x0000000000000000 returned
+# eglCreatePixmapSurface(0xffffffffffffffff, 0x0000000000000000, 0x0000000000000000, { EGL_NONE });
+# // 0x0000000000000000 returned
+# EGL_BAD_CONFIG or EGL_BAD_PARAMETER is generated if config is not an EGL frame buffer configuration or if the PixmapSurface call is not supported
+# eglCreatePixmapSurface(0xaaab01f31100, 0xffffffffffffffff, 0x0000000000000000, { EGL_NONE });
+# // 0x0000000000000000 returned
+# // ERROR expected: EGL_BAD_CONFIG or EGL_BAD_PARAMETER, Got: EGL_BAD_NATIVE_PIXMAP
+wayland-dEQP-EGL.functional.negative_api.create_pixmap_surface,Fail
+# Excerpt:
+# Image comparison failed: reference = -0.000488281, expected = 0:0:0:0, result = 0:0:0:3
+# Image comparison failed: reference = 0, expected = 0:0:0:0, result = 0:0:0:3
+# Image comparison failed: reference = 0.000488281, expected = 0:1:0:0, result = 0:1:0:3
+# Image comparison failed: reference = 0.000976562, expected = 1:1:0:0, result = 1:1:0:3
+wayland-dEQP-EGL.functional.wide_color.pbuffer_888_colorspace_default,Fail

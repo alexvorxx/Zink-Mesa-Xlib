@@ -39,7 +39,6 @@
 #include <mesa/main/conservativeraster.h>
 #include <mesa/main/consts_exts.h>
 #include <mesa/main/context.h>
-#include <mesa/main/cpuinfo.h>
 #include <mesa/main/dd.h>
 #include <mesa/main/debug.h>
 #include <mesa/main/debug_output.h>
@@ -113,13 +112,11 @@
 #include <mesa/main/texcompress.h>
 #include <mesa/main/texcompress_astc.h>
 #include <mesa/main/texcompress_bptc.h>
-#include <mesa/main/texcompress_bptc_tmp.h>
 #include <mesa/main/texcompress_cpal.h>
 #include <mesa/main/texcompress_etc.h>
 #include <mesa/main/texcompress_fxt1.h>
 #include <mesa/main/texcompress_rgtc.h>
 #include <mesa/main/texcompress_s3tc.h>
-#include <mesa/main/texcompress_s3tc_tmp.h>
 #include <mesa/main/texenvprogram.h>
 #include <mesa/main/texgetimage.h>
 #include <mesa/main/teximage.h>

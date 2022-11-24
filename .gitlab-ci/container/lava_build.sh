@@ -110,6 +110,7 @@ apt-get install -y --no-remove \
                    libx11-xcb-dev \
                    libxcb-dri2-0-dev \
                    libxkbcommon-dev \
+                   libwayland-dev \
                    ninja-build \
                    patch \
                    protobuf-compiler \

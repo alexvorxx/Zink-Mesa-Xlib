@@ -661,7 +661,7 @@ static VkResult pvr_process_cmd_buffer(
    PVR_FROM_HANDLE(pvr_cmd_buffer, cmd_buffer, commandBuffer);
    VkResult result;
 
-   assert(cmd_buffer->status == PVR_CMD_BUFFER_STATUS_EXECUTABLE);
+   assert(cmd_buffer->vk.state == MESA_VK_COMMAND_BUFFER_STATE_EXECUTABLE);
 
    list_for_each_entry_safe (struct pvr_sub_cmd,
                              sub_cmd,
@@ -718,10 +718,8 @@ static VkResult pvr_process_cmd_buffer(
          result = vk_error(device, VK_ERROR_OUT_OF_HOST_MEMORY);
       }
 
-      if (result != VK_SUCCESS) {
-         cmd_buffer->status = PVR_CMD_BUFFER_STATUS_INVALID;
+      if (result != VK_SUCCESS)
          return result;
-      }
 
       p_atomic_inc(&device->global_queue_job_count);
    }

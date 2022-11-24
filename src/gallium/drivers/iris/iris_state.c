@@ -73,7 +73,7 @@
 #include <stdio.h>
 #include <errno.h>
 
-#if HAVE_VALGRIND
+#ifdef HAVE_VALGRIND
 #include <valgrind.h>
 #include <memcheck.h>
 #define VG(x) x
@@ -709,6 +709,9 @@ init_state_base_address(struct iris_batch *batch)
       sba.IndirectObjectMOCS          = mocs;
       sba.InstructionMOCS             = mocs;
       sba.SurfaceStateMOCS            = mocs;
+#if GFX_VER >= 9
+      sba.BindlessSurfaceStateMOCS    = mocs;
+#endif
 
       sba.GeneralStateBaseAddressModifyEnable   = true;
       sba.DynamicStateBaseAddressModifyEnable   = true;
@@ -717,12 +720,6 @@ init_state_base_address(struct iris_batch *batch)
       sba.GeneralStateBufferSizeModifyEnable    = true;
       sba.DynamicStateBufferSizeModifyEnable    = true;
       sba.SurfaceStateBaseAddressModifyEnable   = true;
-#if GFX_VER >= 9
-      sba.BindlessSurfaceStateBaseAddress = ro_bo(NULL, IRIS_MEMZONE_BINDLESS_START);
-      sba.BindlessSurfaceStateSize = (IRIS_BINDLESS_SIZE >> 12) - 1;
-      sba.BindlessSurfaceStateBaseAddressModifyEnable = true;
-      sba.BindlessSurfaceStateMOCS    = mocs;
-#endif
 #if GFX_VER >= 11
       sba.BindlessSamplerStateMOCS    = mocs;
 #endif
@@ -980,16 +977,17 @@ iris_alloc_push_constants(struct iris_batch *batch)
    }
 
 #if GFX_VERx10 == 125
-   /* Wa_22011440098
+   /* DG2: Wa_22011440098
+    * MTL: Wa_18022330953
     *
     * In 3D mode, after programming push constant alloc command immediately
     * program push constant command(ZERO length) without any commit between
     * them.
     */
-   if (intel_device_info_is_dg2(devinfo)) {
-      iris_emit_cmd(batch, GENX(3DSTATE_CONSTANT_ALL), c) {
-         c.MOCS = iris_mocs(NULL, &batch->screen->isl_dev, 0);
-      }
+   iris_emit_cmd(batch, GENX(3DSTATE_CONSTANT_ALL), c) {
+      /* Update empty push constants for all stages (bitmask = 11111b) */
+      c.ShaderUpdateEnable = 0x1f;
+      c.MOCS = iris_mocs(NULL, &batch->screen->isl_dev, 0);
    }
 #endif
 }
@@ -1477,7 +1475,7 @@ iris_create_blend_state(struct pipe_context *ctx,
       bs.AlphaToCoverageEnable = state->alpha_to_coverage;
       bs.IndependentAlphaBlendEnable = indep_alpha_blend;
       bs.AlphaToOneEnable = state->alpha_to_one;
-      bs.AlphaToCoverageDitherEnable = state->alpha_to_coverage;
+      bs.AlphaToCoverageDitherEnable = state->alpha_to_coverage_dither;
       bs.ColorDitherEnable = state->dither;
       /* bl.AlphaTestEnable and bs.AlphaTestFunction are filled in later. */
    }
@@ -5331,7 +5329,7 @@ pin_scratch_space(struct iris_context *ice,
                          false, IRIS_DOMAIN_NONE);
       scratch_addr = ref->offset +
                      iris_resource_bo(ref->res)->address -
-                     IRIS_MEMZONE_BINDLESS_START;
+                     IRIS_MEMZONE_SCRATCH_START;
       assert((scratch_addr & 0x3f) == 0 && scratch_addr < (1 << 26));
 #else
       scratch_addr = scratch_bo->address;
