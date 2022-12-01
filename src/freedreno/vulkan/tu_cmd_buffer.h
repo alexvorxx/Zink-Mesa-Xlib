@@ -624,8 +624,7 @@ void tu_render_pass_state_merge(struct tu_render_pass_state *dst,
 VkResult tu_cmd_buffer_begin(struct tu_cmd_buffer *cmd_buffer,
                              const VkCommandBufferBeginInfo *pBeginInfo);
 
-void tu_emit_cache_flush_renderpass(struct tu_cmd_buffer *cmd_buffer,
-                                    struct tu_cs *cs);
+void tu_emit_cache_flush_renderpass(struct tu_cmd_buffer *cmd_buffer);
 
 void tu_emit_cache_flush_ccu(struct tu_cmd_buffer *cmd_buffer,
                              struct tu_cs *cs,

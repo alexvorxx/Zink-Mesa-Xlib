@@ -157,6 +157,13 @@ uint32_t brw_aop_for_nir_intrinsic(const nir_intrinsic_instr *atomic);
 enum brw_reg_type brw_type_for_nir_type(const struct intel_device_info *devinfo,
                                         nir_alu_type type);
 
+bool brw_nir_should_vectorize_mem(unsigned align_mul, unsigned align_offset,
+                                  unsigned bit_size,
+                                  unsigned num_components,
+                                  nir_intrinsic_instr *low,
+                                  nir_intrinsic_instr *high,
+                                  void *data);
+
 void brw_nir_setup_glsl_uniforms(void *mem_ctx, nir_shader *shader,
                                  const struct gl_program *prog,
                                  struct brw_stage_prog_data *stage_prog_data,

@@ -117,7 +117,6 @@ supported, although some of these might not actually get verified:
 
 * ``VkPhysicalDeviceFeatures``:
 
-  * ``occlusionQueryPrecise``
   * ``dualSrcBlend``
 
 * Device extensions:
@@ -158,7 +157,11 @@ supported:
 
 * ``VkPhysicalDeviceLimits``
 
+  * ``maxImageDimension1D`` ≥ 16384
   * ``maxImageDimension2D`` ≥ 16384
+  * ``maxImageDimension3D`` ≥ 2048
+  * ``maxImageDimensionCube`` ≥ 16384
+  * ``maxImageArrayLayers`` ≥ 2048
   * ``maxViewports`` ≥ 16
 
 OpenGL 4.2
@@ -240,7 +243,6 @@ are required to be supported
 * ``VkPhysicalDeviceFeatures``:
 
   * ``samplerAnisotropy``
-  * ``pipelineStatisticsQuery``
   * ``depthBiasClamp``
 
 * Device extensions:

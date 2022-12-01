@@ -112,12 +112,11 @@ si_emit_compute(struct radv_device *device, struct radeon_cmdbuf *cs)
    }
 
    if (device->physical_device->rad_info.gfx_level >= GFX10) {
-      radeon_set_sh_reg_seq(cs, R_00B890_COMPUTE_USER_ACCUM_0, 5);
+      radeon_set_sh_reg_seq(cs, R_00B890_COMPUTE_USER_ACCUM_0, 4);
       radeon_emit(cs, 0); /* R_00B890_COMPUTE_USER_ACCUM_0 */
       radeon_emit(cs, 0); /* R_00B894_COMPUTE_USER_ACCUM_1 */
       radeon_emit(cs, 0); /* R_00B898_COMPUTE_USER_ACCUM_2 */
       radeon_emit(cs, 0); /* R_00B89C_COMPUTE_USER_ACCUM_3 */
-      radeon_emit(cs, 0); /* R_00B8A0_COMPUTE_PGM_RSRC3 */
    }
 
    /* This register has been moved to R_00CD20_COMPUTE_MAX_WAVE_ID
@@ -352,11 +351,14 @@ si_emit_graphics(struct radv_device *device, struct radeon_cmdbuf *cs)
       if (physical_device->rad_info.gfx_level >= GFX10 &&
           physical_device->rad_info.gfx_level < GFX11) {
          /* Logical CUs 16 - 31 */
-         ac_set_reg_cu_en(cs, R_00B404_SPI_SHADER_PGM_RSRC4_HS, S_00B404_CU_EN(0xffff),
-                          C_00B404_CU_EN, 16, &physical_device->rad_info,
-                          (void*)gfx10_set_sh_reg_idx3);
          ac_set_reg_cu_en(cs, R_00B104_SPI_SHADER_PGM_RSRC4_VS, S_00B104_CU_EN(0xffff),
                           C_00B104_CU_EN, 16, &physical_device->rad_info,
+                          (void*)gfx10_set_sh_reg_idx3);
+      }
+
+      if (physical_device->rad_info.gfx_level >= GFX10) {
+         ac_set_reg_cu_en(cs, R_00B404_SPI_SHADER_PGM_RSRC4_HS, S_00B404_CU_EN(0xffff),
+                          C_00B404_CU_EN, 16, &physical_device->rad_info,
                           (void*)gfx10_set_sh_reg_idx3);
          ac_set_reg_cu_en(cs, R_00B004_SPI_SHADER_PGM_RSRC4_PS, S_00B004_CU_EN(cu_mask_ps >> 16),
                           C_00B004_CU_EN, 16, &physical_device->rad_info,

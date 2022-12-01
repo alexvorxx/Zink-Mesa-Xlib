@@ -520,7 +520,7 @@ static VkResult pvr_pds_vertex_attrib_programs_create_and_upload(
    return VK_SUCCESS;
 }
 
-static size_t pvr_pds_get_max_descriptor_upload_const_map_size_in_bytes(void)
+size_t pvr_pds_get_max_descriptor_upload_const_map_size_in_bytes(void)
 {
    /* Maximum memory allocation needed for const map entries in
     * pvr_pds_generate_descriptor_upload_program().

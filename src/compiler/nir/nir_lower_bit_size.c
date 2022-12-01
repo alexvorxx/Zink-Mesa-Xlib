@@ -199,7 +199,7 @@ lower_intrinsic_instr(nir_builder *b, nir_intrinsic_instr *intrin,
 
       if (intrin->intrinsic != nir_intrinsic_vote_feq &&
           intrin->intrinsic != nir_intrinsic_vote_ieq)
-         res = nir_u2u(b, res, old_bit_size);
+         res = nir_u2uN(b, res, old_bit_size);
 
       nir_ssa_def_rewrite_uses(&intrin->dest.ssa, res);
       break;
@@ -221,7 +221,7 @@ lower_phi_instr(nir_builder *b, nir_phi_instr *phi, unsigned bit_size,
    nir_foreach_phi_src(src, phi) {
       b->cursor = nir_after_block_before_jump(src->pred);
       assert(src->src.is_ssa);
-      nir_ssa_def *new_src = nir_u2u(b, src->src.ssa, bit_size);
+      nir_ssa_def *new_src = nir_u2uN(b, src->src.ssa, bit_size);
 
       nir_instr_rewrite_src(&phi->instr, &src->src, nir_src_for_ssa(new_src));
    }
@@ -230,7 +230,7 @@ lower_phi_instr(nir_builder *b, nir_phi_instr *phi, unsigned bit_size,
 
    b->cursor = nir_after_instr(&last_phi->instr);
 
-   nir_ssa_def *new_dest = nir_u2u(b, &phi->dest.ssa, old_bit_size);
+   nir_ssa_def *new_dest = nir_u2uN(b, &phi->dest.ssa, old_bit_size);
    nir_ssa_def_rewrite_uses_after(&phi->dest.ssa, new_dest,
                                   new_dest->parent_instr);
 }

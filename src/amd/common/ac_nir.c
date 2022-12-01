@@ -23,6 +23,7 @@
 
 #include "ac_nir.h"
 #include "nir_builder.h"
+#include "nir_xfb_info.h"
 
 nir_ssa_def *
 ac_nir_load_arg(nir_builder *b, const struct ac_shader_args *ac_args, struct ac_arg arg)
@@ -110,7 +111,7 @@ ac_nir_lower_indirect_derefs(nir_shader *shader,
 }
 
 static void
-emit_streamout(nir_builder *b, const struct pipe_stream_output_info *info, unsigned stream,
+emit_streamout(nir_builder *b, unsigned stream, nir_xfb_info *info,
                nir_ssa_def *const outputs[64][4])
 {
    nir_ssa_def *so_vtx_count = nir_ubfe_imm(b, nir_load_streamout_config_amd(b), 16, 7);
@@ -119,44 +120,43 @@ emit_streamout(nir_builder *b, const struct pipe_stream_output_info *info, unsig
    nir_push_if(b, nir_ilt(b, tid, so_vtx_count));
    nir_ssa_def *so_write_index = nir_load_streamout_write_index_amd(b);
 
-   nir_ssa_def *so_buffers[PIPE_MAX_SO_BUFFERS];
-   nir_ssa_def *so_write_offset[PIPE_MAX_SO_BUFFERS];
-   for (unsigned i = 0; i < PIPE_MAX_SO_BUFFERS; i++) {
-      uint16_t stride = info->stride[i];
-      if (!stride)
-         continue;
-
+   nir_ssa_def *so_buffers[NIR_MAX_XFB_BUFFERS];
+   nir_ssa_def *so_write_offset[NIR_MAX_XFB_BUFFERS];
+   u_foreach_bit(i, info->buffers_written) {
       so_buffers[i] = nir_load_streamout_buffer_amd(b, i);
 
+      unsigned stride = info->buffers[i].stride;
       nir_ssa_def *offset = nir_load_streamout_offset_amd(b, i);
-      offset = nir_iadd(b, nir_imul_imm(b, nir_iadd(b, so_write_index, tid), stride * 4),
+      offset = nir_iadd(b, nir_imul_imm(b, nir_iadd(b, so_write_index, tid), stride),
                         nir_imul_imm(b, offset, 4));
       so_write_offset[i] = offset;
    }
 
    nir_ssa_def *undef = nir_ssa_undef(b, 1, 32);
-   for (unsigned i = 0; i < info->num_outputs; i++) {
-      const struct pipe_stream_output *output = &info->output[i];
-      if (stream != output->stream)
+   for (unsigned i = 0; i < info->output_count; i++) {
+      const nir_xfb_output_info *output = info->outputs + i;
+      if (stream != info->buffer_to_stream[output->buffer])
          continue;
 
       nir_ssa_def *vec[4] = {undef, undef, undef, undef};
       uint8_t mask = 0;
-      for (unsigned j = 0; j < output->num_components; j++) {
-         if (outputs[output->register_index][output->start_component + j]) {
-            vec[j] = outputs[output->register_index][output->start_component + j];
-            mask |= 1 << j;
+      u_foreach_bit(j, output->component_mask) {
+         nir_ssa_def *src = outputs[output->location][j];
+         if (src) {
+            unsigned comp = j - output->component_offset;
+            vec[comp] = src;
+            mask |= 1 << comp;
          }
       }
 
       if (!mask)
          continue;
 
-      unsigned buffer = output->output_buffer;
-      nir_ssa_def *data = nir_vec(b, vec, output->num_components);
+      unsigned buffer = output->buffer;
+      nir_ssa_def *data = nir_vec(b, vec, util_last_bit(mask));
       nir_ssa_def *zero = nir_imm_int(b, 0);
       nir_store_buffer_amd(b, data, so_buffers[buffer], so_write_offset[buffer], zero, zero,
-                           .base = output->dst_offset * 4, .slc_amd = true, .write_mask = mask,
+                           .base = output->offset, .slc_amd = true, .write_mask = mask,
                            .access = ACCESS_COHERENT);
    }
 
@@ -165,10 +165,11 @@ emit_streamout(nir_builder *b, const struct pipe_stream_output_info *info, unsig
 
 nir_shader *
 ac_nir_create_gs_copy_shader(const nir_shader *gs_nir,
-                             const struct pipe_stream_output_info *so_info, size_t num_outputs,
-                             const uint8_t *output_usage_mask, const uint8_t *output_streams,
-                             const uint8_t *output_semantics,
-                             const uint8_t num_stream_output_components[4])
+                             bool disable_streamout,
+                             size_t num_outputs,
+                             const uint8_t *output_usage_mask,
+                             const uint8_t *output_streams,
+                             const uint8_t *output_semantics)
 {
    assert(num_outputs <= 64);
 
@@ -180,15 +181,16 @@ ac_nir_create_gs_copy_shader(const nir_shader *gs_nir,
 
    nir_ssa_def *gsvs_ring = nir_load_ring_gsvs_amd(&b);
 
+   nir_xfb_info *info = gs_nir->xfb_info;
    nir_ssa_def *stream_id = NULL;
-   if (so_info->num_outputs)
+   if (!disable_streamout && info)
       stream_id = nir_ubfe_imm(&b, nir_load_streamout_config_amd(&b), 24, 2);
 
    nir_ssa_def *vtx_offset = nir_imul_imm(&b, nir_load_vertex_id_zero_base(&b), 4);
    nir_ssa_def *zero = nir_imm_zero(&b, 1, 32);
 
    for (unsigned stream = 0; stream < 4; stream++) {
-      if (stream > 0 && (!stream_id || !num_stream_output_components[stream]))
+      if (stream > 0 && (!stream_id || !(info->streams_written & BITFIELD_BIT(stream))))
          continue;
 
       if (stream_id)
@@ -202,13 +204,16 @@ ac_nir_create_gs_copy_shader(const nir_shader *gs_nir,
          if (!mask)
             continue;
 
+         gl_varying_slot location = output_semantics ? output_semantics[i] : i;
+
          u_foreach_bit (j, mask) {
             if (((output_streams[i] >> (j * 2)) & 0x3) != stream)
                continue;
 
-            outputs[i][j] = nir_load_buffer_amd(&b, 1, 32, gsvs_ring, vtx_offset, zero, zero,
-                                                .base = offset, .is_swizzled = false,
-                                                .slc_amd = true, .access = ACCESS_COHERENT);
+            outputs[location][j] =
+               nir_load_buffer_amd(&b, 1, 32, gsvs_ring, vtx_offset, zero, zero,
+                                   .base = offset, .is_swizzled = false,
+                                   .slc_amd = true, .access = ACCESS_COHERENT);
 
             offset += gs_nir->info.gs.vertices_out * 16 * 4;
          }
@@ -217,15 +222,15 @@ ac_nir_create_gs_copy_shader(const nir_shader *gs_nir,
       }
 
       if (stream_id)
-         emit_streamout(&b, so_info, stream, outputs);
+         emit_streamout(&b, stream, info, outputs);
 
       if (stream == 0) {
          u_foreach_bit64 (i, output_mask) {
             gl_varying_slot location = output_semantics ? output_semantics[i] : i;
 
             for (unsigned j = 0; j < 4; j++) {
-               if (outputs[i][j]) {
-                  nir_store_output(&b, outputs[i][j], zero,
+               if (outputs[location][j]) {
+                  nir_store_output(&b, outputs[location][j], zero,
                                    .base = i,
                                    .component = j,
                                    .write_mask = 1,
@@ -267,7 +272,7 @@ gather_outputs(nir_builder *b, nir_function_impl *impl, nir_ssa_def *outputs[64]
 
          assert(nir_src_is_const(intrin->src[1]) && !nir_src_as_uint(intrin->src[1]));
 
-         unsigned slot = nir_intrinsic_base(intrin);
+         unsigned slot = nir_intrinsic_io_semantics(intrin).location;
          u_foreach_bit (i, nir_intrinsic_write_mask(intrin)) {
             unsigned comp = nir_intrinsic_component(intrin) + i;
             outputs[slot][comp] = nir_channel(b, intrin->src[0].ssa, i);
@@ -277,8 +282,7 @@ gather_outputs(nir_builder *b, nir_function_impl *impl, nir_ssa_def *outputs[64]
 }
 
 void
-ac_nir_lower_legacy_vs(nir_shader *nir, int primitive_id_location,
-                       const struct pipe_stream_output_info *so_info)
+ac_nir_lower_legacy_vs(nir_shader *nir, int primitive_id_location, bool disable_streamout)
 {
    nir_function_impl *impl = nir_shader_get_entrypoint(nir);
    nir_metadata preserved = nir_metadata_block_index | nir_metadata_dominance;
@@ -306,7 +310,7 @@ ac_nir_lower_legacy_vs(nir_shader *nir, int primitive_id_location,
       nir->info.outputs_written |= BITFIELD64_BIT(VARYING_SLOT_PRIMITIVE_ID);
    }
 
-   if (so_info && so_info->num_outputs) {
+   if (!disable_streamout && nir->xfb_info) {
       /* 26.1. Transform Feedback of Vulkan 1.3.229 spec:
        * > The size of each component of an output variable must be at least 32-bits.
        * We lower 64-bit outputs.
@@ -314,7 +318,7 @@ ac_nir_lower_legacy_vs(nir_shader *nir, int primitive_id_location,
       nir_ssa_def *outputs[64][4] = {{0}};
       gather_outputs(&b, impl, outputs);
 
-      emit_streamout(&b, so_info, 0, outputs);
+      emit_streamout(&b, 0, nir->xfb_info, outputs);
       preserved = nir_metadata_none;
    }
 

@@ -974,7 +974,10 @@ brw_preprocess_nir(const struct brw_compiler *compiler, nir_shader *nir,
    }
 
    OPT(nir_lower_system_values);
-   OPT(nir_lower_compute_system_values, NULL);
+   nir_lower_compute_system_values_options lower_csv_options = {
+      .has_base_workgroup_id = nir->info.stage == MESA_SHADER_COMPUTE,
+   };
+   OPT(nir_lower_compute_system_values, &lower_csv_options);
 
    const nir_lower_subgroups_options subgroups_options = {
       .ballot_bit_size = 32,
@@ -1123,7 +1126,7 @@ brw_nir_link_shaders(const struct brw_compiler *compiler,
    }
 }
 
-static bool
+bool
 brw_nir_should_vectorize_mem(unsigned align_mul, unsigned align_offset,
                              unsigned bit_size,
                              unsigned num_components,

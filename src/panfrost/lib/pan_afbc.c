@@ -66,45 +66,22 @@
  * generate a linear staging buffer and use the GPU to blit AFBC<--->linear.
  */
 
-/* AFBC supports compressing a few canonical formats. Additional formats are
- * available by using a canonical internal format. Given a PIPE format, find
- * the canonical AFBC internal format if it exists, or NONE if the format
- * cannot be compressed. */
-
-enum pipe_format
-panfrost_afbc_format(unsigned arch, enum pipe_format format)
+static enum pipe_format
+unswizzled_format(enum pipe_format format)
 {
-        /* Don't allow swizzled formats on v7 */
         switch (format) {
-        case PIPE_FORMAT_B8G8R8A8_UNORM:
-        case PIPE_FORMAT_B8G8R8X8_UNORM:
-        case PIPE_FORMAT_A8R8G8B8_UNORM:
-        case PIPE_FORMAT_X8R8G8B8_UNORM:
-        case PIPE_FORMAT_X8B8G8R8_UNORM:
-        case PIPE_FORMAT_A8B8G8R8_UNORM:
-        case PIPE_FORMAT_B8G8R8_UNORM:
-        case PIPE_FORMAT_B5G6R5_UNORM:
-                if (arch >= 7)
-                        return PIPE_FORMAT_NONE;
+        case PIPE_FORMAT_A8_UNORM:
+        case PIPE_FORMAT_L8_UNORM:
+        case PIPE_FORMAT_I8_UNORM:
+                return PIPE_FORMAT_R8_UNORM;
 
-                break;
-        default:
-                break;
-        }
-
-        switch (format) {
-        case PIPE_FORMAT_Z16_UNORM:
+        case PIPE_FORMAT_L8A8_UNORM:
                 return PIPE_FORMAT_R8G8_UNORM;
 
-        case PIPE_FORMAT_R8G8B8_UNORM:
         case PIPE_FORMAT_B8G8R8_UNORM:
                 return PIPE_FORMAT_R8G8B8_UNORM;
 
-        case PIPE_FORMAT_R8G8B8A8_UNORM:
         case PIPE_FORMAT_R8G8B8X8_UNORM:
-        case PIPE_FORMAT_Z24_UNORM_S8_UINT:
-        case PIPE_FORMAT_Z24X8_UNORM:
-        case PIPE_FORMAT_X24S8_UINT:
         case PIPE_FORMAT_B8G8R8A8_UNORM:
         case PIPE_FORMAT_B8G8R8X8_UNORM:
         case PIPE_FORMAT_A8R8G8B8_UNORM:
@@ -113,11 +90,67 @@ panfrost_afbc_format(unsigned arch, enum pipe_format format)
         case PIPE_FORMAT_A8B8G8R8_UNORM:
                 return PIPE_FORMAT_R8G8B8A8_UNORM;
 
-        case PIPE_FORMAT_R5G6B5_UNORM:
         case PIPE_FORMAT_B5G6R5_UNORM:
                 return PIPE_FORMAT_R5G6B5_UNORM;
 
-        /* TODO: More AFBC formats */
+        case PIPE_FORMAT_B5G5R5A1_UNORM:
+                return PIPE_FORMAT_R5G5B5A1_UNORM;
+
+        case PIPE_FORMAT_R10G10B10X2_UNORM:
+        case PIPE_FORMAT_B10G10R10A2_UNORM:
+        case PIPE_FORMAT_B10G10R10X2_UNORM:
+                return PIPE_FORMAT_R10G10B10A2_UNORM;
+
+        case PIPE_FORMAT_A4B4G4R4_UNORM:
+        case PIPE_FORMAT_B4G4R4A4_UNORM:
+                return PIPE_FORMAT_R4G4B4A4_UNORM;
+
+        default:
+                return format;
+        }
+}
+
+/* AFBC supports compressing a few canonical formats. Additional formats are
+ * available by using a canonical internal format. Given a PIPE format, find
+ * the canonical AFBC internal format if it exists, or NONE if the format
+ * cannot be compressed. */
+
+enum pipe_format
+panfrost_afbc_format(unsigned arch, enum pipe_format format)
+{
+        /* sRGB does not change the pixel format itself, only the
+         * interpretation. The interpretation is handled by conversion hardware
+         * independent to the compression hardware, so we can compress sRGB
+         * formats by using the corresponding linear format.
+         */
+        format = util_format_linear(format);
+
+        /* Don't allow swizzled formats on v7+ */
+        if (arch >= 7 && format != unswizzled_format(format))
+                return PIPE_FORMAT_NONE;
+
+        /* Otherwise swizzling doesn't affect AFBC */
+        format = unswizzled_format(format);
+
+        switch (format) {
+        case PIPE_FORMAT_R8_UNORM:
+        case PIPE_FORMAT_R8G8_UNORM:
+        case PIPE_FORMAT_R8G8B8_UNORM:
+        case PIPE_FORMAT_R8G8B8A8_UNORM:
+        case PIPE_FORMAT_R5G6B5_UNORM:
+        case PIPE_FORMAT_R5G5B5A1_UNORM:
+        case PIPE_FORMAT_R10G10B10A2_UNORM:
+        case PIPE_FORMAT_R4G4B4A4_UNORM:
+                return format;
+
+        case PIPE_FORMAT_Z16_UNORM:
+                return PIPE_FORMAT_R8G8_UNORM;
+
+        case PIPE_FORMAT_Z24_UNORM_S8_UINT:
+        case PIPE_FORMAT_Z24X8_UNORM:
+        case PIPE_FORMAT_X24S8_UINT:
+                return PIPE_FORMAT_R8G8B8A8_UNORM;
+
         default:
                 return PIPE_FORMAT_NONE;
         }

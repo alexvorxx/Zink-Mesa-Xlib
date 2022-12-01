@@ -343,7 +343,7 @@ build_array_index(nir_builder *b, nir_deref_instr *deref, nir_ssa_def *base,
    case nir_deref_type_var:
       return base;
    case nir_deref_type_array: {
-      nir_ssa_def *index = nir_i2i(b, deref->arr.index.ssa,
+      nir_ssa_def *index = nir_i2iN(b, deref->arr.index.ssa,
                                    deref->dest.ssa.bit_size);
 
       if (nir_deref_instr_parent(deref)->deref_type == nir_deref_type_var &&

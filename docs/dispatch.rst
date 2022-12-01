@@ -71,7 +71,7 @@ This can be implemented in just a few lines of C code. The file
    {
        const struct _glapi_table * const dispatch = GET_DISPATCH();
 
-       (*dispatch->Vertex3f)(x, y, z);
+       dispatch->Vertex3f(x, y, z);
    }
 
 The problem with this simple implementation is the large amount of

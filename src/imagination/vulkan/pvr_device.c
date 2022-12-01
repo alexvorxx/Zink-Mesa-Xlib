@@ -1124,7 +1124,7 @@ vk_icdGetPhysicalDeviceProcAddr(VkInstance _instance, const char *pName)
    return vk_instance_get_physical_device_proc_addr(&instance->vk, pName);
 }
 
-static VkResult pvr_pds_compute_shader_create_and_upload(
+VkResult pvr_pds_compute_shader_create_and_upload(
    struct pvr_device *device,
    struct pvr_pds_compute_shader_program *program,
    struct pvr_pds_upload *const pds_upload_out)
@@ -1990,6 +1990,82 @@ err_free_nop_usc_bo:
    return result;
 }
 
+static void pvr_device_init_tile_buffer_state(struct pvr_device *device)
+{
+   simple_mtx_init(&device->tile_buffer_state.mtx, mtx_plain);
+
+   for (uint32_t i = 0; i < ARRAY_SIZE(device->tile_buffer_state.buffers); i++)
+      device->tile_buffer_state.buffers[i] = NULL;
+
+   device->tile_buffer_state.buffer_count = 0;
+}
+
+static void pvr_device_finish_tile_buffer_state(struct pvr_device *device)
+{
+   /* Destroy the mutex first to trigger asserts in case it's still locked so
+    * that we don't put things in an inconsistent state by freeing buffers that
+    * might be in use or attempt to free buffers while new buffers are being
+    * allocated.
+    */
+   simple_mtx_destroy(&device->tile_buffer_state.mtx);
+
+   for (uint32_t i = 0; i < device->tile_buffer_state.buffer_count; i++)
+      pvr_bo_free(device, device->tile_buffer_state.buffers[i]);
+}
+
+/**
+ * \brief Ensures that a certain amount of tile buffers are allocated.
+ *
+ * Make sure that \p capacity amount of tile buffers are allocated. If less were
+ * present, append new tile buffers of \p size_in_bytes each to reach the quota.
+ */
+VkResult pvr_device_tile_buffer_ensure_cap(struct pvr_device *device,
+                                           uint32_t capacity,
+                                           uint32_t size_in_bytes)
+{
+   const uint32_t cache_line_size =
+      rogue_get_slc_cache_line_size(&device->pdevice->dev_info);
+   uint32_t offset;
+   VkResult result;
+
+   simple_mtx_lock(&device->tile_buffer_state.mtx);
+
+   offset = device->tile_buffer_state.buffer_count;
+
+   /* Clamping in release and asserting in debug. */
+   assert(capacity <= ARRAY_SIZE(device->tile_buffer_state.buffers));
+   capacity = MIN2(capacity, ARRAY_SIZE(device->tile_buffer_state.buffers));
+
+   /* TODO: Implement bo multialloc? To reduce the amount of syscalls and
+    * allocations.
+    */
+   for (uint32_t i = 0; i < (capacity - offset); i++) {
+      result = pvr_bo_alloc(device,
+                            device->heaps.general_heap,
+                            size_in_bytes,
+                            cache_line_size,
+                            0,
+                            &device->tile_buffer_state.buffers[offset + i]);
+      if (result != VK_SUCCESS) {
+         for (uint32_t j = 0; j < i; j++)
+            pvr_bo_free(device, device->tile_buffer_state.buffers[offset + j]);
+
+         goto err_release_lock;
+      }
+   }
+
+   device->tile_buffer_state.buffer_count = capacity;
+
+   simple_mtx_unlock(&device->tile_buffer_state.mtx);
+
+   return VK_SUCCESS;
+
+err_release_lock:
+   simple_mtx_unlock(&device->tile_buffer_state.mtx);
+
+   return result;
+}
+
 static void pvr_device_init_default_sampler_state(struct pvr_device *device)
 {
    pvr_csb_pack (&device->input_attachment_sampler, TEXSTATE_SAMPLER, sampler) {
@@ -2070,6 +2146,10 @@ VkResult pvr_CreateDevice(VkPhysicalDevice physicalDevice,
 
    device->ws->ops->get_heaps_info(device->ws, &device->heaps);
 
+   result = pvr_bo_store_create(device);
+   if (result != VK_SUCCESS)
+      goto err_pvr_winsys_destroy;
+
    result = pvr_free_list_create(device,
                                  PVR_GLOBAL_FREE_LIST_INITIAL_SIZE,
                                  PVR_GLOBAL_FREE_LIST_MAX_SIZE,
@@ -2078,7 +2158,7 @@ VkResult pvr_CreateDevice(VkPhysicalDevice physicalDevice,
                                  NULL /* parent_free_list */,
                                  &device->global_free_list);
    if (result != VK_SUCCESS)
-      goto err_pvr_winsys_destroy;
+      goto err_pvr_bo_store_destroy;
 
    result = pvr_device_init_nop_program(device);
    if (result != VK_SUCCESS)
@@ -2088,17 +2168,23 @@ VkResult pvr_CreateDevice(VkPhysicalDevice physicalDevice,
    if (result != VK_SUCCESS)
       goto err_pvr_free_nop_program;
 
-   result = pvr_device_init_compute_idfwdf_state(device);
+   result = pvr_device_create_compute_query_programs(device);
    if (result != VK_SUCCESS)
       goto err_pvr_free_compute_fence;
+
+   result = pvr_device_init_compute_idfwdf_state(device);
+   if (result != VK_SUCCESS)
+      goto err_pvr_destroy_compute_query_programs;
 
    result = pvr_device_init_graphics_static_clear_state(device);
    if (result != VK_SUCCESS)
       goto err_pvr_finish_compute_idfwdf;
 
+   pvr_device_init_tile_buffer_state(device);
+
    result = pvr_queues_create(device, pCreateInfo);
    if (result != VK_SUCCESS)
-      goto err_pvr_finish_graphics_static_clear;
+      goto err_pvr_finish_tile_buffer_state;
 
    pvr_device_init_default_sampler_state(device);
 
@@ -2122,11 +2208,15 @@ VkResult pvr_CreateDevice(VkPhysicalDevice physicalDevice,
 
    return VK_SUCCESS;
 
-err_pvr_finish_graphics_static_clear:
+err_pvr_finish_tile_buffer_state:
+   pvr_device_finish_tile_buffer_state(device);
    pvr_device_finish_graphics_static_clear_state(device);
 
 err_pvr_finish_compute_idfwdf:
    pvr_device_finish_compute_idfwdf_state(device);
+
+err_pvr_destroy_compute_query_programs:
+   pvr_device_destroy_compute_query_programs(device);
 
 err_pvr_free_compute_fence:
    pvr_bo_free(device, device->pds_compute_fence_program.pvr_bo);
@@ -2137,6 +2227,9 @@ err_pvr_free_nop_program:
 
 err_pvr_free_list_destroy:
    pvr_free_list_destroy(device->global_free_list);
+
+err_pvr_bo_store_destroy:
+   pvr_bo_store_destroy(device);
 
 err_pvr_winsys_destroy:
    pvr_winsys_destroy(device->ws);
@@ -2162,12 +2255,15 @@ void pvr_DestroyDevice(VkDevice _device,
    PVR_FROM_HANDLE(pvr_device, device, _device);
 
    pvr_queues_destroy(device);
+   pvr_device_finish_tile_buffer_state(device);
    pvr_device_finish_graphics_static_clear_state(device);
    pvr_device_finish_compute_idfwdf_state(device);
+   pvr_device_destroy_compute_query_programs(device);
    pvr_bo_free(device, device->pds_compute_fence_program.pvr_bo);
    pvr_bo_free(device, device->nop_program.pds.pvr_bo);
    pvr_bo_free(device, device->nop_program.usc);
    pvr_free_list_destroy(device->global_free_list);
+   pvr_bo_store_destroy(device);
    pvr_winsys_destroy(device->ws);
 
    if (device->master_fd >= 0)

@@ -180,6 +180,165 @@ agx_bo_alloc(struct agx_device *dev, size_t size,
    return bo;
 }
 
+/* Helper to calculate the bucket index of a BO */
+static unsigned
+agx_bucket_index(unsigned size)
+{
+   /* Round down to POT to compute a bucket index */
+   unsigned bucket_index = util_logbase2(size);
+
+   /* Clamp to supported buckets. Huge allocations use the largest bucket */
+   bucket_index = CLAMP(bucket_index, MIN_BO_CACHE_BUCKET, MAX_BO_CACHE_BUCKET);
+
+   /* Reindex from 0 */
+   return (bucket_index - MIN_BO_CACHE_BUCKET);
+}
+
+static struct list_head *
+agx_bucket(struct agx_device *dev, unsigned size)
+{
+   return &dev->bo_cache.buckets[agx_bucket_index(size)];
+}
+
+static bool
+agx_bo_wait(struct agx_bo *bo, int64_t timeout_ns)
+{
+   /* TODO: When we allow parallelism we'll need to implement this for real */
+   return true;
+}
+
+static void
+agx_bo_cache_remove_locked(struct agx_device *dev, struct agx_bo *bo)
+{
+   simple_mtx_assert_locked(&dev->bo_cache.lock);
+   list_del(&bo->bucket_link);
+   list_del(&bo->lru_link);
+   dev->bo_cache.size -= bo->size;
+}
+
+/* Tries to fetch a BO of sufficient size with the appropriate flags from the
+ * BO cache. If it succeeds, it returns that BO and removes the BO from the
+ * cache. If it fails, it returns NULL signaling the caller to allocate a new
+ * BO. */
+
+static struct agx_bo *
+agx_bo_cache_fetch(struct agx_device *dev, size_t size, uint32_t flags, const
+                   bool dontwait)
+{
+   simple_mtx_lock(&dev->bo_cache.lock);
+   struct list_head *bucket = agx_bucket(dev, size);
+   struct agx_bo *bo = NULL;
+
+   /* Iterate the bucket looking for something suitable */
+   list_for_each_entry_safe(struct agx_bo, entry, bucket, bucket_link) {
+      if (entry->size < size || entry->flags != flags)
+         continue;
+
+      /* If the oldest BO in the cache is busy, likely so is
+       * everything newer, so bail. */
+      if (!agx_bo_wait(entry, dontwait ? 0 : INT64_MAX))
+         break;
+
+      /* This one works, use it */
+      agx_bo_cache_remove_locked(dev, entry);
+      bo = entry;
+      break;
+   }
+   simple_mtx_unlock(&dev->bo_cache.lock);
+
+   return bo;
+}
+
+static void
+agx_bo_cache_evict_stale_bos(struct agx_device *dev)
+{
+   struct timespec time;
+
+   clock_gettime(CLOCK_MONOTONIC, &time);
+   list_for_each_entry_safe(struct agx_bo, entry,
+         &dev->bo_cache.lru, lru_link) {
+      /* We want all entries that have been used more than 1 sec ago to be
+       * dropped, others can be kept.  Note the <= 2 check and not <= 1. It's
+       * here to account for the fact that we're only testing ->tv_sec, not
+       * ->tv_nsec.  That means we might keep entries that are between 1 and 2
+       * seconds old, but we don't really care, as long as unused BOs are
+       * dropped at some point.
+       */
+      if (time.tv_sec - entry->last_used <= 2)
+         break;
+
+      agx_bo_cache_remove_locked(dev, entry);
+      agx_bo_free(dev, entry);
+   }
+}
+
+static void
+agx_bo_cache_put_locked(struct agx_bo *bo)
+{
+   struct agx_device *dev = bo->dev;
+   struct list_head *bucket = agx_bucket(dev, bo->size);
+   struct timespec time;
+
+   /* Add us to the bucket */
+   list_addtail(&bo->bucket_link, bucket);
+
+   /* Add us to the LRU list and update the last_used field. */
+   list_addtail(&bo->lru_link, &dev->bo_cache.lru);
+   clock_gettime(CLOCK_MONOTONIC, &time);
+   bo->last_used = time.tv_sec;
+
+   /* Update statistics */
+   dev->bo_cache.size += bo->size;
+
+   if (0) {
+      printf("BO cache: %zu KiB (+%zu KiB from %s, hit/miss %" PRIu64 "/%" PRIu64 ")\n",
+             DIV_ROUND_UP(dev->bo_cache.size, 1024),
+             DIV_ROUND_UP(bo->size, 1024),
+             bo->label,
+             dev->bo_cache.hits,
+             dev->bo_cache.misses);
+   }
+
+   /* Update label for debug */
+   bo->label = "Unused (BO cache)";
+
+   /* Let's do some cleanup in the BO cache while we hold the lock. */
+   agx_bo_cache_evict_stale_bos(dev);
+}
+
+/* Tries to add a BO to the cache. Returns if it was successful */
+static bool
+agx_bo_cache_put(struct agx_bo *bo)
+{
+   struct agx_device *dev = bo->dev;
+
+   if (bo->flags & AGX_BO_SHARED) {
+      return false;
+   } else {
+      simple_mtx_lock(&dev->bo_cache.lock);
+      agx_bo_cache_put_locked(bo);
+      simple_mtx_unlock(&dev->bo_cache.lock);
+
+      return true;
+   }
+}
+
+static void
+agx_bo_cache_evict_all(struct agx_device *dev)
+{
+   simple_mtx_lock(&dev->bo_cache.lock);
+   for (unsigned i = 0; i < ARRAY_SIZE(dev->bo_cache.buckets); ++i) {
+      struct list_head *bucket = &dev->bo_cache.buckets[i];
+
+      list_for_each_entry_safe(struct agx_bo, entry, bucket,
+            bucket_link) {
+         agx_bo_cache_remove_locked(dev, entry);
+         agx_bo_free(dev, entry);
+      }
+   }
+   simple_mtx_unlock(&dev->bo_cache.lock);
+}
+
 void
 agx_bo_reference(struct agx_bo *bo)
 {
@@ -210,10 +369,10 @@ agx_bo_unreference(struct agx_bo *bo)
       if (dev->debug & AGX_DBG_TRACE)
          agxdecode_track_free(bo);
 
-      /* TODO: cache */
-      agx_bo_free(dev, bo);
-
+      if (!agx_bo_cache_put(bo))
+         agx_bo_free(dev, bo);
    }
+
    pthread_mutex_unlock(&dev->bo_map_lock);
 }
 
@@ -232,22 +391,43 @@ agx_bo_export(struct agx_bo *bo)
 }
 
 struct agx_bo *
-agx_bo_create(struct agx_device *dev, unsigned size, unsigned flags)
+agx_bo_create(struct agx_device *dev, unsigned size, unsigned flags,
+              const char *label)
 {
    struct agx_bo *bo;
    assert(size > 0);
 
    /* To maximize BO cache usage, don't allocate tiny BOs */
-   size = ALIGN_POT(size, 4096);
+   size = ALIGN_POT(size, 16384);
 
-   /* TODO: Cache fetch */
-   bo = agx_bo_alloc(dev, size, flags);
+   /* See if we have a BO already in the cache */
+   bo = agx_bo_cache_fetch(dev, size, flags, true);
+
+   /* Update stats based on the first attempt to fetch */
+   if (bo != NULL)
+      dev->bo_cache.hits++;
+   else
+      dev->bo_cache.misses++;
+
+   /* Otherwise, allocate a fresh BO. If allocation fails, we can try waiting
+    * for something in the cache. But if there's no nothing suitable, we should
+    * flush the cache to make space for the new allocation.
+    */
+   if (!bo)
+      bo = agx_bo_alloc(dev, size, flags);
+   if (!bo)
+      bo = agx_bo_cache_fetch(dev, size, flags, false);
+   if (!bo) {
+      agx_bo_cache_evict_all(dev);
+      bo = agx_bo_alloc(dev, size, flags);
+   }
 
    if (!bo) {
       fprintf(stderr, "BO creation failed\n");
       return NULL;
    }
 
+   bo->label = label;
    p_atomic_set(&bo->refcnt, 1);
 
    if (dev->debug & AGX_DBG_TRACE)
@@ -325,6 +505,12 @@ agx_open_device(void *memctx, struct agx_device *dev)
    dev->memctx = memctx;
    util_sparse_array_init(&dev->bo_map, sizeof(struct agx_bo), 512);
 
+   simple_mtx_init(&dev->bo_cache.lock, mtx_plain);
+   list_inithead(&dev->bo_cache.lru);
+
+   for (unsigned i = 0; i < ARRAY_SIZE(dev->bo_cache.buckets); ++i)
+      list_inithead(&dev->bo_cache.buckets[i]);
+
    dev->queue = agx_create_command_queue(dev);
    dev->cmdbuf = agx_shmem_alloc(dev, 0x4000, true); // length becomes kernelCommandDataSize
    dev->memmap = agx_shmem_alloc(dev, 0x10000, false);
@@ -336,6 +522,7 @@ agx_open_device(void *memctx, struct agx_device *dev)
 void
 agx_close_device(struct agx_device *dev)
 {
+   agx_bo_cache_evict_all(dev);
    util_sparse_array_finish(&dev->bo_map);
 
 #if __APPLE__

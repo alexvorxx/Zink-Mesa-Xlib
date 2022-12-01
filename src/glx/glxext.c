@@ -303,22 +303,22 @@ glx_display_free(struct glx_display *priv)
 
    /* Free the direct rendering per display data */
    if (priv->driswDisplay)
-      (*priv->driswDisplay->destroyDisplay) (priv->driswDisplay);
+      priv->driswDisplay->destroyDisplay(priv->driswDisplay);
    priv->driswDisplay = NULL;
 
 #if defined (GLX_USE_DRM)
    if (priv->dri2Display)
-      (*priv->dri2Display->destroyDisplay) (priv->dri2Display);
+      priv->dri2Display->destroyDisplay(priv->dri2Display);
    priv->dri2Display = NULL;
 
    if (priv->dri3Display)
-      (*priv->dri3Display->destroyDisplay) (priv->dri3Display);
+      priv->dri3Display->destroyDisplay(priv->dri3Display);
    priv->dri3Display = NULL;
 #endif /* GLX_USE_DRM */
 
 #if defined(GLX_USE_WINDOWSGL)
    if (priv->windowsdriDisplay)
-      (*priv->windowsdriDisplay->destroyDisplay) (priv->windowsdriDisplay);
+      priv->windowsdriDisplay->destroyDisplay(priv->windowsdriDisplay);
    priv->windowsdriDisplay = NULL;
 #endif /* GLX_USE_WINDOWSGL */
 
@@ -836,19 +836,19 @@ AllocAndFetchScreenConfigs(Display * dpy, struct glx_display * priv)
 #if defined(GLX_USE_DRM)
 #if defined(HAVE_DRI3)
       if (priv->dri3Display)
-         psc = (*priv->dri3Display->createScreen) (i, priv);
+         psc = priv->dri3Display->createScreen(i, priv);
 #endif /* HAVE_DRI3 */
       if (psc == NULL && priv->dri2Display)
-	 psc = (*priv->dri2Display->createScreen) (i, priv);
+	 psc = priv->dri2Display->createScreen(i, priv);
 #endif /* GLX_USE_DRM */
 
 #ifdef GLX_USE_WINDOWSGL
       if (psc == NULL && priv->windowsdriDisplay)
-	 psc = (*priv->windowsdriDisplay->createScreen) (i, priv);
+	 psc = priv->windowsdriDisplay->createScreen(i, priv);
 #endif
 
       if (psc == NULL && priv->driswDisplay)
-	 psc = (*priv->driswDisplay->createScreen) (i, priv);
+	 psc = priv->driswDisplay->createScreen(i, priv);
 #endif /* GLX_DIRECT_RENDERING && !GLX_USE_APPLEGL */
 
 #if defined(GLX_USE_APPLEGL)

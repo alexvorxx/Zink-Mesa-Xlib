@@ -509,8 +509,9 @@ fd_screen_get_param(struct pipe_screen *pscreen, enum pipe_cap param)
       return 12;
 
    case PIPE_CAP_MAX_TEXTURE_ARRAY_LAYERS:
-      return (is_a3xx(screen) || is_a4xx(screen) || is_a5xx(screen) ||
-              is_a6xx(screen))
+      if (is_a6xx(screen))
+         return 2048;
+      return (is_a3xx(screen) || is_a4xx(screen) || is_a5xx(screen))
                 ? 256
                 : 0;
 

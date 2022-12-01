@@ -42,6 +42,12 @@
 #include "pan_device.h"
 #include "pan_mempool.h"
 
+#define PAN_QUERY_DRAW_CALLS (PIPE_QUERY_DRIVER_SPECIFIC + 0)
+
+static const struct pipe_driver_query_info panfrost_driver_query_list[] = {
+        {"draw-calls", PAN_QUERY_DRAW_CALLS, { 0 }},
+};
+
 struct panfrost_batch;
 struct panfrost_context;
 struct panfrost_resource;
@@ -125,6 +131,10 @@ pan_device(struct pipe_screen *p)
 
 struct pipe_fence_handle *
 panfrost_fence_create(struct panfrost_context *ctx);
+
+int
+panfrost_get_driver_query_info(struct pipe_screen *pscreen, unsigned index,
+                               struct pipe_driver_query_info *info);
 
 void panfrost_cmdstream_screen_init_v4(struct panfrost_screen *screen);
 void panfrost_cmdstream_screen_init_v5(struct panfrost_screen *screen);

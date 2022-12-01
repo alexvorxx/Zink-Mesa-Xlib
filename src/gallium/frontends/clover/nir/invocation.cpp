@@ -162,7 +162,7 @@ clover_lower_nir_instr(nir_builder *b, nir_instr *instr, void *_state)
          loads[i] = var ? nir_load_var(b, var) : nir_imm_int(b, 0);
       }
 
-      return nir_u2u(b, nir_vec(b, loads, state->global_dims),
+      return nir_u2uN(b, nir_vec(b, loads, state->global_dims),
                      nir_dest_bit_size(intrinsic->dest));
    }
    case nir_intrinsic_load_constant_base_ptr: {

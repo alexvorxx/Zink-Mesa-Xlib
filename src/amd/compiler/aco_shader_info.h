@@ -88,20 +88,6 @@ struct aco_vp_output_info {
    bool export_clip_dists;
 };
 
-struct aco_stream_output {
-   uint8_t location;
-   uint8_t buffer;
-   uint16_t offset;
-   uint8_t component_mask;
-   uint8_t stream;
-};
-
-struct aco_streamout_info {
-   uint16_t num_outputs;
-   struct aco_stream_output outputs[ACO_MAX_SO_OUTPUTS];
-   uint16_t strides[ACO_MAX_SO_BUFFERS];
-};
-
 struct aco_shader_info {
    uint8_t wave_size;
    bool is_ngg;
@@ -143,7 +129,6 @@ struct aco_shader_info {
    struct {
       uint8_t subgroup_size;
    } cs;
-   struct aco_streamout_info so;
 
    uint32_t gfx9_gs_ring_lds_size;
 };

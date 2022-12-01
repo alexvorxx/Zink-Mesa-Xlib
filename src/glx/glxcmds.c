@@ -764,7 +764,7 @@ glXCreateGLXPixmap(Display * dpy, XVisualInfo * vis, Pixmap pixmap)
       }
 
       if (__glxHashInsert(priv->drawHash, xid, pdraw)) {
-         (*pdraw->destroyDrawable) (pdraw);
+         pdraw->destroyDrawable(pdraw);
          xid = None;
          break;
       }
@@ -821,7 +821,7 @@ glXDestroyGLXPixmap(Display * dpy, GLXPixmap glxpixmap)
       __GLXDRIdrawable *pdraw = GetGLXDRIDrawable(dpy, glxpixmap);
 
       if (priv != NULL && pdraw != NULL) {
-         (*pdraw->destroyDrawable) (pdraw);
+         pdraw->destroyDrawable(pdraw);
          __glxHashDelete(priv->drawHash, glxpixmap);
       }
    }
@@ -2225,7 +2225,7 @@ glXSwapBuffersMscOML(Display *dpy, GLXDrawable drawable,
 
 #ifdef GLX_DIRECT_RENDERING
    if (psc->driScreen && psc->driScreen->swapBuffers)
-      return (*psc->driScreen->swapBuffers)(pdraw, target_msc, divisor,
+      return psc->driScreen->swapBuffers(pdraw, target_msc, divisor,
 					    remainder, False);
 #endif
 
@@ -2364,7 +2364,7 @@ glXCopySubBufferMESA(Display * dpy, GLXDrawable drawable,
    if (pdraw != NULL) {
       struct glx_screen *psc = pdraw->psc;
       if (psc->driScreen->copySubBuffer != NULL) {
-         (*psc->driScreen->copySubBuffer) (pdraw, x, y, width, height, True);
+         psc->driScreen->copySubBuffer(pdraw, x, y, width, height, True);
       }
 
       return;
@@ -2431,7 +2431,7 @@ glXBindTexImageEXT(Display *dpy, GLXDrawable drawable, int buffer,
    if (pdraw != NULL) {
       struct glx_screen *psc = pdraw->psc;
       if (psc->driScreen->bindTexImage != NULL)
-         (*psc->driScreen->bindTexImage) (pdraw, buffer, attrib_list);
+         psc->driScreen->bindTexImage(pdraw, buffer, attrib_list);
 
       return;
    }
@@ -2489,7 +2489,7 @@ glXReleaseTexImageEXT(Display * dpy, GLXDrawable drawable, int buffer)
    if (pdraw != NULL) {
       struct glx_screen *psc = pdraw->psc;
       if (psc->driScreen->releaseTexImage != NULL)
-         (*psc->driScreen->releaseTexImage) (pdraw, buffer);
+         psc->driScreen->releaseTexImage(pdraw, buffer);
 
       return;
    }

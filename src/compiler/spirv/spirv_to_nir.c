@@ -3593,7 +3593,7 @@ vtn_handle_image(struct vtn_builder *b, SpvOp opcode,
 
       if (opcode == SpvOpImageQuerySize ||
           opcode == SpvOpImageQuerySizeLod)
-         result = nir_u2u(&b->nb, result, glsl_get_bit_size(type->type));
+         result = nir_u2uN(&b->nb, result, glsl_get_bit_size(type->type));
 
       if (opcode == SpvOpImageSparseRead) {
          struct vtn_ssa_value *dest = vtn_create_ssa_value(b, struct_type->type);
@@ -5540,7 +5540,7 @@ vtn_handle_ptr(struct vtn_builder *b, SpvOp opcode,
                                 vtn_get_nir_ssa(b, w[4]),
                                 addr_format);
       def = nir_idiv(&b->nb, def, nir_imm_intN_t(&b->nb, elem_size, def->bit_size));
-      def = nir_i2i(&b->nb, def, glsl_get_bit_size(type));
+      def = nir_i2iN(&b->nb, def, glsl_get_bit_size(type));
       break;
    }
 

@@ -1065,7 +1065,8 @@ static const struct intel_device_info intel_device_info_sg1 = {
    .apply_hwconfig = true,                                      \
    .has_coarse_pixel_primitive_and_cb = true,                   \
    .has_mesh_shading = true,                                    \
-   .has_ray_tracing = true
+   .has_ray_tracing = true,                                     \
+   .has_flat_ccs = true
 
 static const struct intel_device_info intel_device_info_dg2_g10 = {
    DG2_FEATURES,
@@ -2003,6 +2004,8 @@ intel_i915_get_device_info_from_fd(int fd, struct intel_device_info *devinfo)
    intel_get_aperture_size(fd, &devinfo->aperture_bytes);
    get_context_param(fd, 0, I915_CONTEXT_PARAM_GTT_SIZE, &devinfo->gtt_size);
    devinfo->has_tiling_uapi = has_get_tiling(fd);
+   devinfo->has_caching_uapi =
+      devinfo->platform < INTEL_PLATFORM_DG2_START && !devinfo->has_local_mem;
 
    if (getparam(fd, I915_PARAM_MMAP_GTT_VERSION, &val))
       devinfo->has_mmap_offset = val >= 4;

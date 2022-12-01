@@ -27,6 +27,7 @@
 #include <vulkan/vulkan.h>
 
 #include "pvr_csb.h"
+#include "pvr_debug.h"
 #include "pvr_job_common.h"
 #include "pvr_job_context.h"
 #include "pvr_job_compute.h"
@@ -212,6 +213,12 @@ VkResult pvr_compute_job_submit(struct pvr_compute_ctx *ctx,
                                        wait_count,
                                        stage_flags,
                                        &submit_info);
+
+   if (PVR_IS_DEBUG_SET(DUMP_CONTROL_STREAM)) {
+      pvr_csb_dump(&sub_cmd->control_stream,
+                   submit_info.frame_num,
+                   submit_info.job_num);
+   }
 
    return device->ws->ops->compute_submit(ctx->ws_ctx,
                                           &submit_info,

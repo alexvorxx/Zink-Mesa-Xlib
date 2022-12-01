@@ -1664,8 +1664,6 @@ anv_pipeline_compile_cs(struct anv_compute_pipeline *pipeline,
          return vk_error(pipeline, VK_ERROR_UNKNOWN);
       }
 
-      NIR_PASS(_, stage.nir, anv_nir_add_base_work_group_id);
-
       anv_pipeline_lower_nir(&pipeline->base, mem_ctx, &stage, layout,
                              false /* use_primitive_replication */);
 

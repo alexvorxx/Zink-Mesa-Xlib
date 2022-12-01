@@ -196,7 +196,7 @@ CreateDRIDrawable(Display *dpy, struct glx_config *config,
    }
 
    if (__glxHashInsert(priv->drawHash, glxdrawable, pdraw)) {
-      (*pdraw->destroyDrawable) (pdraw);
+      pdraw->destroyDrawable(pdraw);
       return GL_FALSE;
    }
 
@@ -217,7 +217,7 @@ DestroyDRIDrawable(Display *dpy, GLXDrawable drawable)
    __GLXDRIdrawable *pdraw = GetGLXDRIDrawable(dpy, drawable);
 
    if (priv != NULL && pdraw != NULL) {
-      (*pdraw->destroyDrawable) (pdraw);
+      pdraw->destroyDrawable(pdraw);
       __glxHashDelete(priv->drawHash, drawable);
    }
 #endif

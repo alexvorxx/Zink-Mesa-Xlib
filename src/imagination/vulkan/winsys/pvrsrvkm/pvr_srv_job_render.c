@@ -659,6 +659,9 @@ static void pvr_srv_fragment_cmd_init(
 
    if (state->flags & PVR_WINSYS_FRAG_FLAG_SINGLE_CORE)
       cmd->flags |= ROGUE_FWIF_RENDERFLAGS_SINGLE_CORE;
+
+   if (state->flags & PVR_WINSYS_FRAG_FLAG_GET_VIS_RESULTS)
+      cmd->flags |= ROGUE_FWIF_RENDERFLAGS_GETVISRESULTS;
 }
 
 VkResult pvr_srv_winsys_render_submit(

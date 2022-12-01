@@ -43,7 +43,7 @@ resize_deref(nir_builder *b, nir_deref_instr *deref,
       if (nir_src_is_const(deref->arr.index)) {
          idx = nir_imm_intN_t(b, nir_src_as_int(deref->arr.index), bit_size);
       } else {
-         idx = nir_i2i(b, deref->arr.index.ssa, bit_size);
+         idx = nir_i2iN(b, deref->arr.index.ssa, bit_size);
       }
       nir_instr_rewrite_src(&deref->instr, &deref->arr.index,
                             nir_src_for_ssa(idx));

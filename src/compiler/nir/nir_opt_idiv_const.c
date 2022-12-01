@@ -67,7 +67,7 @@ build_idiv(nir_builder *b, nir_ssa_def *n, int64_t d)
 {
    int64_t int_min = u_intN_min(n->bit_size);
    if (d == int_min)
-      return nir_b2i(b, nir_ieq_imm(b, n, int_min), n->bit_size);
+      return nir_b2iN(b, nir_ieq_imm(b, n, int_min), n->bit_size);
 
    uint64_t abs_d = d < 0 ? -d : d;
 

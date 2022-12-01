@@ -610,6 +610,11 @@ Gallium environment variables
 
    Scale HUD by an integer factor, for high DPI displays. Default is 1.
 
+.. envvar:: GALLIUM_HUD_ROTATION
+
+   Rotate the HUD by an integer number of degrees, the specified value must be
+   a multiple of 90. Default is 0.
+
 .. envvar:: GALLIUM_HUD_DUMP_DIR
 
    specifies a directory for writing the displayed HUD values into
@@ -1432,6 +1437,15 @@ Asahi driver environment variables
       In debug builds only: skip internal intermediate representation validation.
    ``noopt``
       Disable various backend optimizations.
+
+.. _imagination env-vars:
+
+PowerVR driver environment variables
+------------------------------------------------
+
+:envvar:`PVR_DEBUG`
+    A comma-separated list of debug options. Use `PVR_DEBUG=help` to
+    print a list of available options.
 
 Other Gallium drivers have their own environment variables. These may
 change frequently so the source code should be consulted for details.

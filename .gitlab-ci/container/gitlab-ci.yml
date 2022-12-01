@@ -261,7 +261,7 @@ alpine/x86_build:
     - .fdo.container-build@alpine
     - .container
   variables:
-    FDO_DISTRIBUTION_VERSION: "3.16"
+    FDO_DISTRIBUTION_VERSION: "3.17"
     MESA_IMAGE_TAG: &alpine-x86_build ${ALPINE_X86_BUILD_TAG}
 
 .use-alpine/x86_build:

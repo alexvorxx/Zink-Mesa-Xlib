@@ -61,7 +61,7 @@ agx_write_registers(agx_instr *I, unsigned d)
    case AGX_OPCODE_LDCF:
       return 6;
    case AGX_OPCODE_COLLECT:
-      return I->nr_srcs * size;
+      return I->nr_srcs * agx_size_align_16(I->src[0].size);
    default:
       return size;
    }
@@ -178,6 +178,10 @@ pick_regs(struct ra_ctx *rctx, agx_instr *I, unsigned d)
          if (base >= rctx->bound || (base + count) > rctx->bound)
             continue;
 
+         /* Unaligned destinations can happen when dest size > src size */
+         if (base % align)
+            continue;
+
          if (!BITSET_TEST_RANGE(rctx->used_regs, base, base + count - 1))
             return base;
       }
@@ -221,6 +225,20 @@ pick_regs(struct ra_ctx *rctx, agx_instr *I, unsigned d)
          /* If those registers are free, then choose them */
          if (!BITSET_TEST_RANGE(rctx->used_regs, our_reg, our_reg + align - 1))
             return our_reg;
+      }
+
+      /* Try to respect the alignment requirement of the collect destination,
+       * which may be greater than the sources (e.g. pack_64_2x32_split). Look
+       * for a register for the source such that the collect base is aligned.
+       */
+      unsigned collect_align = agx_size_align_16(collect->dest[0].size);
+      if (collect_align > align) {
+         unsigned offset = our_source * align;
+
+         for (unsigned reg = offset; reg < rctx->bound; reg += collect_align) {
+            if (!BITSET_TEST_RANGE(rctx->used_regs, reg, reg + count - 1))
+               return reg;
+         }
       }
    }
 
@@ -405,6 +423,12 @@ agx_ra(agx_context *ctx)
          ctx->max_reg = MAX2(ctx->max_reg, ssa_to_reg[i] + ncomps[i] - 1);
    }
 
+   /* Vertex shaders preload the vertex/instance IDs (r5, r6) even if the shader
+    * don't use them. Account for that so the preload doesn't clobber GPRs.
+    */
+   if (ctx->nir->info.stage == MESA_SHADER_VERTEX)
+      ctx->max_reg = MAX2(ctx->max_reg, 6 * 2);
+
    agx_foreach_instr_global(ctx, ins) {
       agx_foreach_ssa_src(ins, s) {
          unsigned v = ssa_to_reg[ins->src[s].value];
@@ -424,7 +448,7 @@ agx_ra(agx_context *ctx)
       if (ins->op == AGX_OPCODE_COLLECT) {
          assert(ins->dest[0].type == AGX_INDEX_REGISTER);
          unsigned base = ins->dest[0].value;
-         unsigned width = agx_size_align_16(ins->dest[0].size);
+         unsigned width = agx_size_align_16(ins->src[0].size);
 
          struct agx_copy *copies = alloca(sizeof(copies[0]) * ins->nr_srcs);
          unsigned n = 0;
@@ -432,7 +456,7 @@ agx_ra(agx_context *ctx)
          /* Move the sources */
          agx_foreach_src(ins, i) {
             if (agx_is_null(ins->src[i])) continue;
-            assert(ins->src[i].size == ins->dest[0].size);
+            assert(ins->src[i].size == ins->src[0].size);
 
             copies[n++] = (struct agx_copy) {
                .dest = base + (i * width),

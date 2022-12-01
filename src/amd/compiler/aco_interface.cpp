@@ -230,9 +230,7 @@ aco_compile_shader(const struct aco_compiler_options* options,
    program->debug.private_data = options->debug.private_data;
 
    /* Instruction Selection */
-   if (args->is_gs_copy_shader)
-      aco::select_gs_copy_shader(program.get(), shaders[0], &config, options, info, args);
-   else if (args->is_trap_handler_shader)
+   if (args->is_trap_handler_shader)
       aco::select_trap_handler_shader(program.get(), shaders[0], &config, options, info, args);
    else
       aco::select_program(program.get(), shader_count, shaders, &config, options, info, args);
@@ -258,7 +256,6 @@ aco_compile_shader(const struct aco_compiler_options* options,
 
    (*build_binary)(binary,
                    shaders[shader_count - 1]->info.stage,
-                   args->is_gs_copy_shader,
                    &config,
                    llvm_ir.c_str(),
                    llvm_ir.size(),

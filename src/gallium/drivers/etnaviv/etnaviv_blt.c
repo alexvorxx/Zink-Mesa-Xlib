@@ -226,16 +226,16 @@ etna_blit_clear_color_blt(struct pipe_context *pctx, struct pipe_surface *dst,
    struct etna_resource *res = etna_resource(surf->base.texture);
    struct blt_clear_op clr = {};
    clr.dest.addr.bo = res->bo;
-   clr.dest.addr.offset = surf->surf.offset;
+   clr.dest.addr.offset = surf->offset;
    clr.dest.addr.flags = ETNA_RELOC_WRITE;
    clr.dest.bpp = util_format_get_blocksize(surf->base.format);
-   clr.dest.stride = surf->surf.stride;
+   clr.dest.stride = surf->level->stride;
    clr.dest.tiling = res->layout;
 
-   if (surf->surf.ts_size) {
+   if (surf->level->ts_size) {
       clr.dest.use_ts = 1;
       clr.dest.ts_addr.bo = res->ts_bo;
-      clr.dest.ts_addr.offset = surf->level->ts_offset;
+      clr.dest.ts_addr.offset = surf->ts_offset;
       clr.dest.ts_addr.flags = ETNA_RELOC_WRITE;
       clr.dest.ts_clear_value[0] = new_clear_value;
       clr.dest.ts_clear_value[1] = new_clear_value >> 32;
@@ -249,13 +249,13 @@ etna_blit_clear_color_blt(struct pipe_context *pctx, struct pipe_surface *dst,
    clr.clear_bits[1] = 0xffffffff;
    clr.rect_x = 0; /* What about scissors? */
    clr.rect_y = 0;
-   clr.rect_w = surf->surf.width * msaa_xscale;
-   clr.rect_h = surf->surf.height * msaa_yscale;
+   clr.rect_w = surf->level->width * msaa_xscale;
+   clr.rect_h = surf->level->height * msaa_yscale;
 
    emit_blt_clearimage(ctx->stream, &clr);
 
    /* This made the TS valid */
-   if (surf->surf.ts_size) {
+   if (surf->level->ts_size) {
       ctx->framebuffer.TS_COLOR_CLEAR_VALUE = new_clear_value;
       ctx->framebuffer.TS_COLOR_CLEAR_VALUE_EXT = new_clear_value >> 32;
 
@@ -315,16 +315,16 @@ etna_blit_clear_zs_blt(struct pipe_context *pctx, struct pipe_surface *dst,
    struct etna_resource *res = etna_resource(surf->base.texture);
    struct blt_clear_op clr = {};
    clr.dest.addr.bo = res->bo;
-   clr.dest.addr.offset = surf->surf.offset;
+   clr.dest.addr.offset = surf->offset;
    clr.dest.addr.flags = ETNA_RELOC_WRITE;
    clr.dest.bpp = util_format_get_blocksize(surf->base.format);
-   clr.dest.stride = surf->surf.stride;
+   clr.dest.stride = surf->level->stride;
    clr.dest.tiling = res->layout;
 
-   if (surf->surf.ts_size) {
+   if (surf->level->ts_size) {
       clr.dest.use_ts = 1;
       clr.dest.ts_addr.bo = res->ts_bo;
-      clr.dest.ts_addr.offset = surf->level->ts_offset;
+      clr.dest.ts_addr.offset = surf->ts_offset;
       clr.dest.ts_addr.flags = ETNA_RELOC_WRITE;
       clr.dest.ts_clear_value[0] = surf->level->clear_value;
       clr.dest.ts_clear_value[1] = surf->level->clear_value;
@@ -338,13 +338,13 @@ etna_blit_clear_zs_blt(struct pipe_context *pctx, struct pipe_surface *dst,
    clr.clear_bits[1] = new_clear_bits;
    clr.rect_x = 0; /* What about scissors? */
    clr.rect_y = 0;
-   clr.rect_w = surf->surf.width * msaa_xscale;
-   clr.rect_h = surf->surf.height * msaa_yscale;
+   clr.rect_w = surf->level->width * msaa_xscale;
+   clr.rect_h = surf->level->height * msaa_yscale;
 
    emit_blt_clearimage(ctx->stream, &clr);
 
    /* This made the TS valid */
-   if (surf->surf.ts_size) {
+   if (surf->level->ts_size) {
       ctx->framebuffer.TS_DEPTH_CLEAR_VALUE = surf->level->clear_value;
       surf->level->ts_valid = true;
       ctx->dirty |= ETNA_DIRTY_TS | ETNA_DIRTY_DERIVE_TS;

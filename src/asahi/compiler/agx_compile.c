@@ -1088,6 +1088,12 @@ agx_emit_alu(agx_builder *b, nir_alu_instr *instr)
       return agx_convert_to(b, dst, agx_immediate(mode), s0, AGX_ROUND_RTE);
    }
 
+   case nir_op_pack_64_2x32_split:
+   {
+      agx_index idx[] = { s0, s1 };
+      return agx_emit_collect_to(b, dst, 2, idx);
+   }
+
    /* Split a 64-bit word into 32-bit parts. Do not use null destinations to
     * let us CSE (and coalesce) the splits when both x and y are split.
     */

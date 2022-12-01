@@ -30,6 +30,7 @@
 #include "hwdef/rogue_hw_utils.h"
 #include "pvr_bo.h"
 #include "pvr_csb.h"
+#include "pvr_debug.h"
 #include "pvr_csb_enum_helpers.h"
 #include "pvr_debug.h"
 #include "pvr_job_common.h"
@@ -147,6 +148,8 @@ VkResult pvr_free_list_create(struct pvr_device *device,
                               struct pvr_free_list *parent_free_list,
                               struct pvr_free_list **const free_list_out)
 {
+   const struct pvr_device_runtime_info *runtime_info =
+      &device->pdevice->dev_runtime_info;
    struct pvr_winsys_free_list *parent_ws_free_list =
       parent_free_list ? parent_free_list->ws_free_list : NULL;
    const uint64_t bo_flags = PVR_BO_ALLOC_FLAG_GPU_UNCACHED |
@@ -204,8 +207,8 @@ VkResult pvr_free_list_create(struct pvr_device *device,
    /* Make sure the 'max' size doesn't exceed what the firmware supports and
     * adjust the other sizes accordingly.
     */
-   if (max_size > ROGUE_FREE_LIST_MAX_SIZE) {
-      max_size = ROGUE_FREE_LIST_MAX_SIZE;
+   if (max_size > runtime_info->max_free_list_size) {
+      max_size = runtime_info->max_free_list_size;
       assert(align64(max_size, size_alignment) == max_size);
    }
 
@@ -1620,6 +1623,9 @@ pvr_render_job_ws_fragment_state_init(struct pvr_render_ctx *ctx,
 
    if (job->frag_uses_atomic_ops)
       state->flags |= PVR_WINSYS_FRAG_FLAG_SINGLE_CORE;
+
+   if (job->get_vis_results)
+      state->flags |= PVR_WINSYS_FRAG_FLAG_GET_VIS_RESULTS;
 }
 
 static void pvr_render_job_ws_submit_info_init(
@@ -1676,6 +1682,20 @@ VkResult pvr_render_job_submit(struct pvr_render_ctx *ctx,
                                       wait_count,
                                       stage_flags,
                                       &submit_info);
+
+   if (PVR_IS_DEBUG_SET(DUMP_CONTROL_STREAM)) {
+      /* FIXME: This isn't an ideal method of accessing the information we
+       * need, but it's considered good enough for a debug code path. It can be
+       * streamlined and made more correct if/when pvr_render_job becomes a
+       * subclass of pvr_sub_cmd.
+       */
+      const struct pvr_sub_cmd *sub_cmd =
+         container_of(job, const struct pvr_sub_cmd, gfx.job);
+
+      pvr_csb_dump(&sub_cmd->gfx.control_stream,
+                   submit_info.frame_num,
+                   submit_info.job_num);
+   }
 
    result = device->ws->ops->render_submit(ctx->ws_ctx,
                                            &submit_info,

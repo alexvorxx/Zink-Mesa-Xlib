@@ -13,3 +13,8 @@ glx@glx-copy-sub-buffer samples=16
 #  Serial number of failed request:  41
 #  Current serial number in output stream:  45
 glx@glx-multi-context-ib-1
+
+# The following two case are xfails, but sometimes pass.
+spec@egl_chromium_sync_control@conformance
+# piglit: error: SBC did not change after second SwapBuffers: 0
+spec@egl_chromium_sync_control@conformance@eglGetSyncValuesCHROMIUM_msc_and_sbc_test

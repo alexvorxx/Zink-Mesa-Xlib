@@ -413,20 +413,20 @@ lower_rq_initialize(nir_builder *b, nir_ssa_def *index, nir_intrinsic_instr *ins
          rq_store_var(b, index, vars->trav.stack, base_offset, 0x1);
          rq_store_var(b, index, vars->trav.stack_base, base_offset, 0x1);
       }
-
-      rq_store_var(b, index, vars->trav.current_node, nir_imm_int(b, RADV_BVH_ROOT_NODE), 0x1);
-      rq_store_var(b, index, vars->trav.previous_node, nir_imm_int(b, RADV_BVH_INVALID_NODE), 0x1);
-      rq_store_var(b, index, vars->trav.instance_top_node, nir_imm_int(b, RADV_BVH_INVALID_NODE),
-                   0x1);
-      rq_store_var(b, index, vars->trav.instance_bottom_node, nir_imm_int(b, RADV_BVH_NO_INSTANCE_ROOT), 0x1);
-
-      rq_store_var(b, index, vars->trav.top_stack, nir_imm_int(b, -1), 1);
    }
    nir_push_else(b, NULL);
    {
       rq_store_var(b, index, vars->root_bvh_base, nir_imm_int64(b, 0), 0x1);
    }
    nir_pop_if(b, NULL);
+
+   rq_store_var(b, index, vars->trav.current_node, nir_imm_int(b, RADV_BVH_ROOT_NODE), 0x1);
+   rq_store_var(b, index, vars->trav.previous_node, nir_imm_int(b, RADV_BVH_INVALID_NODE), 0x1);
+   rq_store_var(b, index, vars->trav.instance_top_node, nir_imm_int(b, RADV_BVH_INVALID_NODE), 0x1);
+   rq_store_var(b, index, vars->trav.instance_bottom_node,
+                nir_imm_int(b, RADV_BVH_NO_INSTANCE_ROOT), 0x1);
+
+   rq_store_var(b, index, vars->trav.top_stack, nir_imm_int(b, -1), 1);
 
    rq_store_var(b, index, vars->incomplete, nir_imm_bool(b, true), 0x1);
 }
@@ -559,51 +559,14 @@ handle_candidate_aabb(nir_builder *b, struct radv_leaf_intersection *intersectio
    struct ray_query_vars *vars = data->vars;
    nir_ssa_def *index = data->index;
 
-   nir_ssa_def *vec3_zero = nir_channels(b, nir_imm_vec4(b, 0, 0, 0, 0), 0x7);
-   nir_ssa_def *vec3_inf = nir_channels(b, nir_imm_vec4(b, INFINITY, INFINITY, INFINITY, 0), 0x7);
+   rq_store_var(b, index, vars->candidate.primitive_id, intersection->primitive_id, 1);
+   rq_store_var(b, index, vars->candidate.geometry_id_and_flags,
+                intersection->geometry_id_and_flags, 1);
+   rq_store_var(b, index, vars->candidate.opaque, intersection->opaque, 0x1);
+   rq_store_var(b, index, vars->candidate.intersection_type, nir_imm_int(b, intersection_type_aabb),
+                0x1);
 
-   nir_ssa_def *bvh_lo =
-      nir_build_load_global(b, 3, 32, nir_iadd_imm(b, intersection->node_addr, 0));
-   nir_ssa_def *bvh_hi =
-      nir_build_load_global(b, 3, 32, nir_iadd_imm(b, intersection->node_addr, 12));
-
-   bvh_lo = nir_fsub(b, bvh_lo, nir_load_deref(b, args->vars.origin));
-   bvh_hi = nir_fsub(b, bvh_hi, nir_load_deref(b, args->vars.origin));
-   nir_ssa_def *t_vec = nir_fmin(b, nir_fmul(b, bvh_lo, nir_load_deref(b, args->vars.inv_dir)),
-                                 nir_fmul(b, bvh_hi, nir_load_deref(b, args->vars.inv_dir)));
-   nir_ssa_def *t2_vec = nir_fmax(b, nir_fmul(b, bvh_lo, nir_load_deref(b, args->vars.inv_dir)),
-                                  nir_fmul(b, bvh_hi, nir_load_deref(b, args->vars.inv_dir)));
-   /* If we run parallel to one of the edges the range should be [0, inf) not [0,0] */
-   t2_vec =
-      nir_bcsel(b, nir_feq(b, nir_load_deref(b, args->vars.dir), vec3_zero), vec3_inf, t2_vec);
-
-   nir_ssa_def *t_min = nir_fmax(b, nir_channel(b, t_vec, 0), nir_channel(b, t_vec, 1));
-   t_min = nir_fmax(b, t_min, nir_channel(b, t_vec, 2));
-
-   nir_ssa_def *t_max = nir_fmin(b, nir_channel(b, t2_vec, 0), nir_channel(b, t2_vec, 1));
-   t_max = nir_fmin(b, t_max, nir_channel(b, t2_vec, 2));
-
-   nir_push_if(b, nir_iand(b, nir_fge(b, rq_load_var(b, index, vars->closest.t), t_min),
-                           nir_fge(b, t_max, rq_load_var(b, index, vars->tmin))));
-   {
-      rq_store_var(b, index, vars->candidate.t,
-                   nir_fmax(b, t_min, rq_load_var(b, index, vars->tmin)), 0x1);
-      rq_store_var(b, index, vars->candidate.primitive_id, intersection->primitive_id, 1);
-      rq_store_var(b, index, vars->candidate.geometry_id_and_flags,
-                   intersection->geometry_id_and_flags, 1);
-      rq_store_var(b, index, vars->candidate.opaque, intersection->opaque, 0x1);
-      rq_store_var(b, index, vars->candidate.intersection_type,
-                   nir_imm_int(b, intersection_type_aabb), 0x1);
-
-      nir_push_if(b, intersection->opaque);
-      {
-         copy_candidate_to_closest(b, index, vars);
-      }
-      nir_pop_if(b, NULL);
-
-      nir_jump(b, nir_jump_break);
-   }
-   nir_pop_if(b, NULL);
+   nir_jump(b, nir_jump_break);
 }
 
 static void

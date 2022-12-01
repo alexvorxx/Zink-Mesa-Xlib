@@ -197,8 +197,12 @@ demo_cmdbuf(uint64_t *buf, size_t size,
 
       if (framebuffer->zsbuf) {
          struct pipe_surface *zsbuf = framebuffer->zsbuf;
+         struct agx_resource *zsres = agx_resource(zsbuf->texture);
+         struct agx_resource *zres = NULL;
+         struct agx_resource *sres = NULL;
+
          const struct util_format_description *desc =
-            util_format_description(agx_resource(zsbuf->texture)->layout.format);
+            util_format_description(zsres->layout.format);
 
          assert(desc->format == PIPE_FORMAT_Z32_FLOAT ||
                 desc->format == PIPE_FORMAT_Z32_FLOAT_S8X24_UINT ||
@@ -208,22 +212,53 @@ demo_cmdbuf(uint64_t *buf, size_t size,
          cfg.depth_height = framebuffer->height;
 
          if (util_format_has_depth(desc)) {
+            zres = zsres;
             depth_buffer = agx_map_surface(zsbuf);
-
-            cfg.zls_control.z_store_enable = true;
-            cfg.zls_control.z_load_enable = !should_clear_depth;
          } else {
+            sres = zsres;
             stencil_buffer = agx_map_surface(zsbuf);
-            cfg.zls_control.s_store_enable = true;
-            cfg.zls_control.s_load_enable = !should_clear_stencil;
          }
 
-         if (agx_resource(zsbuf->texture)->separate_stencil) {
+         if (zsres->separate_stencil) {
+            sres = zsres->separate_stencil;
             stencil_buffer = agx_map_surface_resource(zsbuf,
-                  agx_resource(zsbuf->texture)->separate_stencil);
+                                                      sres);
+         }
 
+         if (zres) {
+            cfg.zls_control.z_store_enable = true;
+            cfg.zls_control.z_load_enable = !should_clear_depth;
+            cfg.depth_buffer_1 = depth_buffer;
+            cfg.depth_buffer_2 = depth_buffer;
+            cfg.depth_buffer_3 = depth_buffer;
+
+            if (ail_is_compressed(&zres->layout)) {
+               uint64_t accel_buffer = depth_buffer + zres->layout.metadata_offset_B;
+               cfg.depth_acceleration_buffer_1 = accel_buffer;
+               cfg.depth_acceleration_buffer_2 = accel_buffer;
+               cfg.depth_acceleration_buffer_3 = accel_buffer;
+
+               cfg.zls_control.z_compress_1 = true;
+               cfg.zls_control.z_compress_2 = true;
+            }
+         }
+
+         if (sres) {
             cfg.zls_control.s_store_enable = true;
             cfg.zls_control.s_load_enable = !should_clear_stencil;
+            cfg.stencil_buffer_1 = stencil_buffer;
+            cfg.stencil_buffer_2 = stencil_buffer;
+            cfg.stencil_buffer_3 = stencil_buffer;
+
+            if (ail_is_compressed(&sres->layout)) {
+               uint64_t accel_buffer = stencil_buffer + sres->layout.metadata_offset_B;
+               cfg.stencil_acceleration_buffer_1 = accel_buffer;
+               cfg.stencil_acceleration_buffer_2 = accel_buffer;
+               cfg.stencil_acceleration_buffer_3 = accel_buffer;
+
+               cfg.zls_control.s_compress_1 = true;
+               cfg.zls_control.s_compress_2 = true;
+            }
          }
 
          /* It's unclear how tile size is conveyed for depth/stencil targets,
@@ -232,12 +267,6 @@ demo_cmdbuf(uint64_t *buf, size_t size,
           */
          if (zsbuf->u.tex.level != 0)
             unreachable("todo: mapping other levels");
-
-         cfg.depth_buffer_1 = depth_buffer;
-         cfg.depth_buffer_2 = depth_buffer;
-
-         cfg.stencil_buffer_1 = stencil_buffer;
-         cfg.stencil_buffer_2 = stencil_buffer;
       }
 
       cfg.width_1 = framebuffer->width;
@@ -246,6 +275,7 @@ demo_cmdbuf(uint64_t *buf, size_t size,
 
       cfg.set_when_reloading_z_or_s_1 = clear_pipeline_textures;
 
+      /* More specifically, this is set when both load+storing Z or S */
       if (depth_buffer && !should_clear_depth) {
          cfg.set_when_reloading_z_or_s_1 = true;
          cfg.set_when_reloading_z_or_s_2 = true;

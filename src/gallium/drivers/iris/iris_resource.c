@@ -764,7 +764,7 @@ iris_get_ccs_surf_or_support(const struct isl_device *dev,
       ccs_surf = aux_surf;
    }
 
-   if (dev->info->verx10 >= 125) {
+   if (dev->info->has_flat_ccs) {
       /* CCS doesn't require VMA on XeHP. So, instead of creating a separate
        * surface, we can just return whether CCS is supported for the given
        * input surfaces.
@@ -868,7 +868,7 @@ iris_resource_configure_aux(struct iris_screen *screen,
          assert(res->aux.usage != ISL_AUX_USAGE_STC_CCS);
          initial_state =
             isl_drm_modifier_get_default_aux_state(res->mod_info->modifier);
-      } else if (devinfo->verx10 >= 125) {
+      } else if (devinfo->has_flat_ccs) {
          assert(res->aux.surf.size_B == 0);
          /* From Bspec 47709, "MCS/CCS Buffers for Render Target(s)":
           *

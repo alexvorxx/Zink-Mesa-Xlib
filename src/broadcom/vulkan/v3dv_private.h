@@ -454,15 +454,6 @@ struct v3dv_pipeline_cache {
    bool externally_synchronized;
 };
 
-/* This is used to implement a list of free events in the BO we use
- * hold event states. The index here is used to calculate the offset
- * within that BO.
- */
-struct v3dv_event_desc {
-   struct list_head link;
-   uint32_t index;
-};
-
 struct v3dv_device {
    struct vk_device vk;
 
@@ -531,14 +522,13 @@ struct v3dv_device {
       /* BO for the event states: signaled (1) or reset (0) */
       struct v3dv_bo *bo;
 
-      /* Events can be created and destroyed. Since we have a dedicated BO for
-       * all events we use, we need to keep track of the free slots within that
-       * BO. For that we use a free list where we link together available event
-       * slots in the form of "descriptors" that include an index (which is
-       * basically an offset into the BO that is available).
+      /* We pre-allocate all the events we can fit for the size of the BO we
+       * create to track their states, where each event has an index which is
+       * basically the offset of its state in that BO. We keep a free list with
+       * the pre-allocated events that are available.
        */
-      uint32_t desc_count;
-      struct v3dv_event_desc *desc;
+      uint32_t event_count;
+      struct v3dv_event *events;
       struct list_head free_list;
 
       /* Vulkan resources to access the event BO from shaders. We have a
@@ -1740,6 +1730,9 @@ void v3dv_cmd_buffer_emit_pipeline_barrier(struct v3dv_cmd_buffer *cmd_buffer,
 
 struct v3dv_event {
    struct vk_object_base base;
+
+   /* Link in the device list of pre-allocated free events */
+   struct list_head link;
 
    /* Each event gets a different index, which we use to compute the offset
     * in the BO we use to track their state (signaled vs reset).

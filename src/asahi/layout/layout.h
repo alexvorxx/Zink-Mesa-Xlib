@@ -48,6 +48,11 @@ enum ail_tiling {
     * Twiddled (Morton order). Always allowed.
     */
    AIL_TILING_TWIDDLED,
+
+   /**
+    * Twiddled (Morton order) with compression.
+    */
+   AIL_TILING_TWIDDLED_COMPRESSED,
 };
 
 /*
@@ -95,6 +100,12 @@ struct ail_layout {
    uint32_t layer_stride_B;
 
    /**
+    * Whether the layer stride is aligned to the page size or not. The hardware
+    * needs this flag to compute the implicit layer stride.
+    */
+   bool page_aligned_layers;
+
+   /**
     * Offsets of mip levels within a layer.
     */
    uint32_t level_offsets_B[AIL_MAX_MIP_LEVELS];
@@ -105,6 +116,9 @@ struct ail_layout {
     * ail_initialized_twiddled.
     */
    struct ail_tile tilesize_el[AIL_MAX_MIP_LEVELS];
+
+   /* Offset of the start of the compression metadata buffer */
+   uint32_t metadata_offset_B;
 
    /* Size of entire texture */
    uint32_t size_B;
@@ -172,6 +186,12 @@ ail_get_linear_pixel_B(struct ail_layout *layout, ASSERTED unsigned level,
 
    return (y_px * ail_get_linear_stride_B(layout, level)) +
           (x_px * util_format_get_blocksize(layout->format));
+}
+
+static inline bool
+ail_is_compressed(struct ail_layout *layout)
+{
+   return layout->tiling == AIL_TILING_TWIDDLED_COMPRESSED;
 }
 
 void ail_make_miptree(struct ail_layout *layout);

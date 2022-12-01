@@ -929,7 +929,7 @@ vtn_handle_alu(struct vtn_builder *b, SpvOp opcode,
       /* bit_count always returns int32, but the SPIR-V opcode just says the return
        * value needs to be big enough to store the number of bits.
        */
-      dest->def = nir_u2u(&b->nb, nir_bit_count(&b->nb, src[0]), glsl_get_bit_size(dest_type));
+      dest->def = nir_u2uN(&b->nb, nir_bit_count(&b->nb, src[0]), glsl_get_bit_size(dest_type));
       break;
    }
 
@@ -1270,12 +1270,12 @@ vtn_handle_integer_dot(struct vtn_builder *b, SpvOp opcode,
           */
          if (num_inputs == 3) {
             dest = is_signed
-               ? nir_iadd_sat(&b->nb, nir_i2i(&b->nb, dest, dest_size), src[2])
-               : nir_uadd_sat(&b->nb, nir_u2u(&b->nb, dest, dest_size), src[2]);
+               ? nir_iadd_sat(&b->nb, nir_i2iN(&b->nb, dest, dest_size), src[2])
+               : nir_uadd_sat(&b->nb, nir_u2uN(&b->nb, dest, dest_size), src[2]);
          } else {
             dest = is_signed
-               ? nir_i2i(&b->nb, dest, dest_size)
-               : nir_u2u(&b->nb, dest, dest_size);
+               ? nir_i2iN(&b->nb, dest, dest_size)
+               : nir_u2uN(&b->nb, dest, dest_size);
          }
       }
    }

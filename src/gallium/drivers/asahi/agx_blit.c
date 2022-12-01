@@ -27,6 +27,7 @@
 #include "compiler/nir/nir_builder.h"
 #include "asahi/compiler/agx_compile.h"
 #include "gallium/auxiliary/util/u_blitter.h"
+#include "gallium/auxiliary/util/u_dump.h"
 
 void
 agx_blitter_save(struct agx_context *ctx, struct blitter_context *blitter,
@@ -72,8 +73,12 @@ agx_blit(struct pipe_context *pipe,
 
    struct agx_context *ctx = agx_context(pipe);
 
-   if (!util_blitter_is_blit_supported(ctx->blitter, info))
-      unreachable("Unsupported blit\n");
+   if (!util_blitter_is_blit_supported(ctx->blitter, info)) {
+      fprintf(stderr, "\n");
+      util_dump_blit_info(stderr, info);
+      fprintf(stderr, "\n\n");
+      unreachable("Unsupported blit");
+   }
 
    agx_blitter_save(ctx, ctx->blitter, info->render_condition_enable);
    util_blitter_blit(ctx->blitter, info);

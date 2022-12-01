@@ -31,6 +31,21 @@
 #include "rogue/rogue.h"
 #include "util/macros.h"
 
+static const char *
+pvr_cmd_stream_type_to_str(const enum pvr_cmd_stream_type stream_type)
+{
+   switch (stream_type) {
+   case PVR_CMD_STREAM_TYPE_INVALID:
+      return "INVALID";
+   case PVR_CMD_STREAM_TYPE_GRAPHICS:
+      return "GRAPHICS";
+   case PVR_CMD_STREAM_TYPE_COMPUTE:
+      return "COMPUTE";
+   default:
+      return NULL;
+   }
+}
+
 /******************************************************************************
    CR
  ******************************************************************************/

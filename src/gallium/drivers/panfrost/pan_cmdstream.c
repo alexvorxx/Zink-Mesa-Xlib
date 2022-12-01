@@ -3985,6 +3985,8 @@ panfrost_draw_vbo(struct pipe_context *pipe,
         if (!panfrost_render_condition_check(ctx))
                 return;
 
+        ctx->draw_calls++;
+
         /* Emulate indirect draws unless we're using the experimental path */
         if ((!(dev->debug & PAN_DBG_INDIRECT) || !PAN_GPU_INDIRECTS) && indirect && indirect->buffer) {
                 assert(num_draws == 1);

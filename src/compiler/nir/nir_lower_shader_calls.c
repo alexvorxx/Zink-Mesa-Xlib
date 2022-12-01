@@ -1670,16 +1670,41 @@ nir_opt_sort_and_pack_stack(nir_shader *shader,
    return true;
 }
 
+static unsigned
+nir_block_loop_depth(nir_block *block)
+{
+   nir_cf_node *node = &block->cf_node;
+   unsigned loop_depth = 0;
+
+   while (node != NULL) {
+      if (node->type == nir_cf_node_loop)
+         loop_depth++;
+      node = node->parent;
+   }
+
+   return loop_depth;
+}
+
 /* Find the last block dominating all the uses of a SSA value. */
 static nir_block *
 find_last_dominant_use_block(nir_function_impl *impl, nir_ssa_def *value)
 {
+   nir_block *old_block = value->parent_instr->block;
+   unsigned old_block_loop_depth = nir_block_loop_depth(old_block);
+
    nir_foreach_block_reverse_safe(block, impl) {
       bool fits = true;
 
       /* Store on the current block of the value */
-      if (block == value->parent_instr->block)
+      if (block == old_block)
          return block;
+
+      /* Don't move instructions deeper into loops, this would generate more
+       * memory traffic.
+       */
+      unsigned block_loop_depth = nir_block_loop_depth(block);
+      if (block_loop_depth > old_block_loop_depth)
+         continue;
 
       nir_foreach_if_use(src, value) {
          nir_block *block_before_if =
@@ -1758,6 +1783,99 @@ nir_opt_stack_loads(nir_shader *shader)
    }
 
    return progress;
+}
+
+static bool
+split_stack_components_instr(struct nir_builder *b, nir_instr *instr, void *data)
+{
+   if (instr->type != nir_instr_type_intrinsic)
+      return false;
+
+   nir_intrinsic_instr *intrin = nir_instr_as_intrinsic(instr);
+   if (intrin->intrinsic != nir_intrinsic_load_stack &&
+       intrin->intrinsic != nir_intrinsic_store_stack)
+      return false;
+
+   if (intrin->intrinsic == nir_intrinsic_load_stack &&
+       intrin->dest.ssa.num_components == 1)
+      return false;
+
+   if (intrin->intrinsic == nir_intrinsic_store_stack &&
+       intrin->src[0].ssa->num_components == 1)
+      return false;
+
+   b->cursor = nir_before_instr(instr);
+
+   if (intrin->intrinsic == nir_intrinsic_load_stack) {
+      nir_ssa_def *components[NIR_MAX_VEC_COMPONENTS] = { 0, };
+      for (unsigned c = 0; c < intrin->dest.ssa.num_components; c++) {
+         components[c] = nir_load_stack(b, 1, intrin->dest.ssa.bit_size,
+                                        .base = nir_intrinsic_base(intrin) +
+                                                c * intrin->dest.ssa.bit_size / 8,
+                                        .call_idx = nir_intrinsic_call_idx(intrin),
+                                        .value_id = nir_intrinsic_value_id(intrin),
+                                        .align_mul = nir_intrinsic_align_mul(intrin));
+      }
+
+      nir_ssa_def_rewrite_uses(&intrin->dest.ssa,
+                               nir_vec(b, components,
+                                       intrin->dest.ssa.num_components));
+   } else {
+      assert(intrin->intrinsic == nir_intrinsic_store_stack);
+      for (unsigned c = 0; c < intrin->src[0].ssa->num_components; c++) {
+         nir_store_stack(b, nir_channel(b, intrin->src[0].ssa, c),
+                         .base = nir_intrinsic_base(intrin) +
+                                 c * intrin->src[0].ssa->bit_size / 8,
+                         .call_idx = nir_intrinsic_call_idx(intrin),
+                         .align_mul = nir_intrinsic_align_mul(intrin),
+                         .value_id = nir_intrinsic_value_id(intrin),
+                         .write_mask = 0x1);
+      }
+   }
+
+   nir_instr_remove(instr);
+
+   return true;
+}
+
+/* Break the load_stack/store_stack intrinsics into single compoments. This
+ * helps the vectorizer to pack components.
+ */
+static bool
+nir_split_stack_components(nir_shader *shader)
+{
+   return nir_shader_instructions_pass(shader,
+                                       split_stack_components_instr,
+                                       nir_metadata_block_index |
+                                       nir_metadata_dominance,
+                                       NULL);
+}
+
+struct stack_op_vectorizer_state {
+   nir_should_vectorize_mem_func     driver_callback;
+   void                             *driver_data;
+};
+
+static bool
+should_vectorize(unsigned align_mul,
+                 unsigned align_offset,
+                 unsigned bit_size,
+                 unsigned num_components,
+                 nir_intrinsic_instr *low, nir_intrinsic_instr *high,
+                 void *data)
+{
+   /* We only care about those intrinsics */
+   if ((low->intrinsic != nir_intrinsic_load_stack &&
+        low->intrinsic != nir_intrinsic_store_stack) ||
+       (high->intrinsic != nir_intrinsic_load_stack &&
+        high->intrinsic != nir_intrinsic_store_stack))
+      return false;
+
+   struct stack_op_vectorizer_state *state = data;
+
+   return state->driver_callback(align_mul, align_offset,
+                                 bit_size, num_components,
+                                 low, high, state->driver_data);
 }
 
 /** Lower shader call instructions to split shaders.
@@ -1868,9 +1986,27 @@ nir_lower_shader_calls(nir_shader *shader,
          NIR_PASS_V(resume_shaders[i], nir_opt_stack_loads);
    }
 
+   struct stack_op_vectorizer_state vectorizer_state = {
+      .driver_callback = options->vectorizer_callback,
+      .driver_data     = options->vectorizer_data,
+   };
+   nir_load_store_vectorize_options vect_opts = {
+      .modes = nir_var_shader_temp,
+      .callback = should_vectorize,
+      .cb_data = &vectorizer_state,
+   };
+
+   if (options->vectorizer_callback != NULL) {
+      NIR_PASS_V(shader, nir_split_stack_components);
+      NIR_PASS_V(shader, nir_opt_load_store_vectorize, &vect_opts);
+   }
    NIR_PASS_V(shader, nir_lower_stack_to_scratch, options->address_format);
    nir_opt_cse(shader);
    for (unsigned i = 0; i < num_calls; i++) {
+      if (options->vectorizer_callback != NULL) {
+         NIR_PASS_V(shader, nir_split_stack_components);
+         NIR_PASS_V(shader, nir_opt_load_store_vectorize, &vect_opts);
+      }
       NIR_PASS_V(resume_shaders[i], nir_lower_stack_to_scratch,
                  options->address_format);
       nir_opt_cse(resume_shaders[i]);

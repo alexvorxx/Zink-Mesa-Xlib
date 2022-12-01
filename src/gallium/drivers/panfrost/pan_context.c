@@ -645,6 +645,10 @@ panfrost_begin_query(struct pipe_context *pipe, struct pipe_query *q)
                 query->start = ctx->tf_prims_generated;
                 break;
 
+        case PAN_QUERY_DRAW_CALLS:
+                query->start = ctx->draw_calls;
+                break;
+
         default:
                 /* TODO: timestamp queries, etc? */
                 break;
@@ -671,6 +675,9 @@ panfrost_end_query(struct pipe_context *pipe, struct pipe_query *q)
                 break;
         case PIPE_QUERY_PRIMITIVES_EMITTED:
                 query->end = ctx->tf_prims_generated;
+                break;
+        case PAN_QUERY_DRAW_CALLS:
+                query->end = ctx->draw_calls;
                 break;
         }
 
@@ -716,6 +723,10 @@ panfrost_get_query_result(struct pipe_context *pipe,
         case PIPE_QUERY_PRIMITIVES_GENERATED:
         case PIPE_QUERY_PRIMITIVES_EMITTED:
                 panfrost_flush_all_batches(ctx, "Primitive count query");
+                vresult->u64 = query->end - query->start;
+                break;
+
+        case PAN_QUERY_DRAW_CALLS:
                 vresult->u64 = query->end - query->start;
                 break;
 

@@ -45,30 +45,18 @@ agx_batch_init(struct agx_context *ctx,
       memset(batch->bo_list.set, 0, batch->bo_list.word_count * sizeof(BITSET_WORD));
    }
 
-   if (!batch->encoder) {
-      batch->encoder = agx_bo_create(dev, 0x80000, AGX_MEMORY_TYPE_FRAMEBUFFER);
-      batch->encoder_current = batch->encoder->ptr.cpu;
-      batch->encoder_end = batch->encoder_current + batch->encoder->size;
-   } else {
-      batch->encoder_current = batch->encoder->ptr.cpu;
-      batch->encoder_end = batch->encoder_current + batch->encoder->size;
-   }
+   batch->encoder = agx_bo_create(dev, 0x80000, AGX_MEMORY_TYPE_FRAMEBUFFER, "Encoder");
+   batch->encoder_current = batch->encoder->ptr.cpu;
+   batch->encoder_end = batch->encoder_current + batch->encoder->size;
 
-   if (!batch->scissor.bo) {
-      batch->scissor.bo = agx_bo_create(dev, 0x80000, AGX_MEMORY_TYPE_FRAMEBUFFER);
-   }
-
-   if (!batch->depth_bias.bo) {
-      batch->depth_bias.bo = agx_bo_create(dev, 0x80000, AGX_MEMORY_TYPE_FRAMEBUFFER);
-   }
+   util_dynarray_init(&batch->scissor, ctx);
+   util_dynarray_init(&batch->depth_bias, ctx);
 
    batch->clear = 0;
    batch->draw = 0;
    batch->load = 0;
    batch->clear_depth = 0;
    batch->clear_stencil = 0;
-   batch->scissor.count = 0;
-   batch->depth_bias.count = 0;
    batch->varyings = 0;
 
    /* We need to emit prim state at the start. Max collides with all. */
@@ -108,8 +96,12 @@ agx_batch_cleanup(struct agx_context *ctx, struct agx_batch *batch)
       agx_bo_unreference(agx_lookup_bo(dev, handle));
    }
 
+   agx_bo_unreference(batch->encoder);
    agx_pool_cleanup(&batch->pool);
    agx_pool_cleanup(&batch->pipeline_pool);
+
+   util_dynarray_fini(&batch->scissor);
+   util_dynarray_fini(&batch->depth_bias);
    util_unreference_framebuffer_state(&batch->key);
 
    unsigned batch_idx = agx_batch_idx(batch);
@@ -182,6 +174,15 @@ agx_flush_all(struct agx_context *ctx, const char *reason)
    foreach_batch(ctx, idx) {
       agx_flush_batch(ctx, &ctx->batches.slots[idx]);
    }
+}
+
+void
+agx_flush_batch_for_reason(struct agx_context *ctx, struct agx_batch *batch, const char *reason)
+{
+   if (reason)
+      perf_debug_ctx(ctx, "Flushing due to: %s\n", reason);
+
+   agx_flush_batch(ctx, batch);
 }
 
 static void

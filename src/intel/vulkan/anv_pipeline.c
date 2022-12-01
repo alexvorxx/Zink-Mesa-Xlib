@@ -2102,8 +2102,6 @@ anv_pipeline_compile_cs(struct anv_compute_pipeline *pipeline,
          return vk_error(pipeline, VK_ERROR_UNKNOWN);
       }
 
-      NIR_PASS(_, stage.nir, anv_nir_add_base_work_group_id);
-
       anv_pipeline_lower_nir(&pipeline->base, mem_ctx, &stage, layout,
                              false /* use_primitive_replication */);
 
@@ -2468,6 +2466,8 @@ compile_upload_rt_shader(struct anv_ray_tracing_pipeline *pipeline,
          .address_format = nir_address_format_64bit_global,
          .stack_alignment = BRW_BTD_STACK_ALIGN,
          .localized_loads = true,
+         .vectorizer_callback = brw_nir_should_vectorize_mem,
+         .vectorizer_data = NULL,
       };
 
       NIR_PASS(_, nir, nir_lower_shader_calls, &opts,

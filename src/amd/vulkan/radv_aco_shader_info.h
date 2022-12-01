@@ -35,16 +35,6 @@
 #define ASSIGN_FIELD_CP(x) memcpy(&aco_info->x, &radv->x, sizeof(radv->x))
 
 static inline void
-radv_aco_convert_shader_so_info(struct aco_shader_info *aco_info,
-                       const struct radv_shader_info *radv)
-{
-   ASSIGN_FIELD(so.num_outputs);
-   ASSIGN_FIELD_CP(so.outputs);
-   ASSIGN_FIELD_CP(so.strides);
-   /* enabled_stream_buffers_mask unused */
-}
-
-static inline void
 radv_aco_convert_shader_vp_info(struct aco_vp_output_info *aco_info,
 				const struct radv_vs_output_info *radv)
 {
@@ -97,7 +87,6 @@ radv_aco_convert_shader_info(struct aco_shader_info *aco_info,
    ASSIGN_FIELD(ps.num_interp);
    ASSIGN_FIELD(ps.spi_ps_input);
    ASSIGN_FIELD(cs.subgroup_size);
-   radv_aco_convert_shader_so_info(aco_info, radv);
    aco_info->gfx9_gs_ring_lds_size = radv->gs_ring_info.lds_size;
 }
 

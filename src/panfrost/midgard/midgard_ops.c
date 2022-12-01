@@ -113,10 +113,18 @@ struct mir_op_props alu_opcode_props[256] = {
         [midgard_alu_op_ult]             = {"CMP.lt", UNITS_MOST},
         [midgard_alu_op_ule]             = {"CMP.le", UNITS_MOST},
 
-        /* csel must run in the second pipeline stage (condition written in first) */
+        /* CSEL (MUX) runs in the second pipeline stage, sourcing its selector
+         * the previous scalar or vector stage as indicated in the opcode. It
+         * muxes individual bits based on the selector, implementing both
+         * bit_select and bcsel (the latter because CMP returns 0/~0 booleans).
+         *
+         * It is legal to schedule (F)CSEL.vector to the scalar unit, but it
+         * isn't usually useful. Our scheduler does not handle that case, so
+         * don't try to and fall over.
+         */
         [midgard_alu_op_icsel]           = {"CSEL.scalar", UNIT_VADD | UNIT_SMUL},
-        [midgard_alu_op_icsel_v]         = {"CSEL.vector", UNIT_VADD | UNIT_SMUL}, /* Acts as bitselect() */
-        [midgard_alu_op_fcsel_v]         = {"FCSEL.vector", UNIT_VADD | UNIT_SMUL},
+        [midgard_alu_op_icsel_v]         = {"CSEL.vector", UNIT_VADD},
+        [midgard_alu_op_fcsel_v]         = {"FCSEL.vector", UNIT_VADD},
         [midgard_alu_op_fcsel]           = {"FCSEL.scalar", UNIT_VADD | UNIT_SMUL},
 
         [midgard_alu_op_frcp]            = {"FRCP", UNIT_VLUT},

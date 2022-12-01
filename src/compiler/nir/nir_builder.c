@@ -434,9 +434,9 @@ nir_compare_func(nir_builder *b, enum compare_func func,
 
 nir_ssa_def *
 nir_type_convert(nir_builder *b,
-                    nir_ssa_def *src,
-                    nir_alu_type src_type,
-                    nir_alu_type dest_type)
+                 nir_ssa_def *src,
+                 nir_alu_type src_type,
+                 nir_alu_type dest_type)
 {
    assert(nir_alu_type_get_type_size(src_type) == 0 ||
           nir_alu_type_get_type_size(src_type) == src->bit_size);
@@ -445,6 +445,8 @@ nir_type_convert(nir_builder *b,
 
    nir_op opcode =
       nir_type_conversion_op(src_type, dest_type, nir_rounding_mode_undef);
+   if (opcode == nir_op_mov)
+      return src;
 
    return nir_build_alu(b, opcode, src, NULL, NULL, NULL);
 }

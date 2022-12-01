@@ -677,8 +677,10 @@ struct radv_meta_state {
       VkPipeline leaf_pipeline;
       VkPipelineLayout morton_p_layout;
       VkPipeline morton_pipeline;
-      VkPipelineLayout lbvh_internal_p_layout;
-      VkPipeline lbvh_internal_pipeline;
+      VkPipelineLayout lbvh_main_p_layout;
+      VkPipeline lbvh_main_pipeline;
+      VkPipelineLayout lbvh_generate_ir_p_layout;
+      VkPipeline lbvh_generate_ir_pipeline;
       VkPipelineLayout ploc_p_layout;
       VkPipeline ploc_pipeline;
       VkPipelineLayout convert_leaf_p_layout;
@@ -1447,6 +1449,7 @@ struct radv_ds_buffer_info {
    uint32_t pa_su_poly_offset_db_fmt_cntl;
    uint32_t db_z_info2;       /* GFX9 only */
    uint32_t db_stencil_info2; /* GFX9 only */
+   uint32_t db_render_override2;
 };
 
 void radv_initialise_color_surface(struct radv_device *device, struct radv_color_buffer_info *cb,
@@ -2088,7 +2091,7 @@ struct radv_graphics_pipeline {
    struct radv_ia_multi_vgt_param_helpers ia_multi_vgt_param;
    uint8_t vtx_emit_num;
    uint64_t needed_dynamic_state;
-   unsigned cb_color_control;
+   bool disable_dual_quad;
    unsigned cb_blend_control[MAX_RTS];
    unsigned sx_mrt_blend_opt[MAX_RTS];
    uint32_t binding_stride[MAX_VBS];
@@ -2236,6 +2239,10 @@ void radv_pipeline_emit_hw_cs(const struct radv_physical_device *pdevice, struct
 
 void radv_pipeline_emit_compute_state(const struct radv_physical_device *pdevice,
                                       struct radeon_cmdbuf *cs, const struct radv_shader *shader);
+
+bool radv_mem_vectorize_callback(unsigned align_mul, unsigned align_offset, unsigned bit_size,
+                                 unsigned num_components, nir_intrinsic_instr *low, nir_intrinsic_instr *high,
+                                 void *data);
 
 void radv_compute_pipeline_init(struct radv_compute_pipeline *pipeline,
                                 const struct radv_pipeline_layout *layout);
@@ -2439,8 +2446,10 @@ radv_image_has_htile(const struct radv_image *image)
 static inline bool
 radv_image_has_vrs_htile(const struct radv_device *device, const struct radv_image *image)
 {
-   /* Any depth buffer can potentially use VRS. */
-   return device->attachment_vrs_enabled && radv_image_has_htile(image) &&
+   const enum amd_gfx_level gfx_level = device->physical_device->rad_info.gfx_level;
+
+   /* Any depth buffer can potentially use VRS on GFX10.3. */
+   return gfx_level == GFX10_3 && device->attachment_vrs_enabled && radv_image_has_htile(image) &&
           (image->vk.usage & VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT);
 }
 
@@ -3173,7 +3182,7 @@ radv_queue_ring(struct radv_queue *queue)
  * specific shader stage (developers only).
  */
 static inline bool
-radv_use_llvm_for_stage(struct radv_device *device, UNUSED gl_shader_stage stage)
+radv_use_llvm_for_stage(const struct radv_device *device, UNUSED gl_shader_stage stage)
 {
    return device->physical_device->use_llvm;
 }

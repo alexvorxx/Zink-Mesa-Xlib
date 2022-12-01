@@ -2816,7 +2816,7 @@ tu_CmdClearAttachments(VkCommandBuffer commandBuffer,
    /* sysmem path behaves like a draw, note we don't have a way of using different
     * flushes for sysmem/gmem, so this needs to be outside of the cond_exec
     */
-   tu_emit_cache_flush_renderpass(cmd, cs);
+   tu_emit_cache_flush_renderpass(cmd);
 
    for (uint32_t j = 0; j < attachmentCount; j++) {
       if ((pAttachments[j].aspectMask & VK_IMAGE_ASPECT_DEPTH_BIT) == 0)

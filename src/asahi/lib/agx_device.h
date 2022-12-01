@@ -25,6 +25,7 @@
 #define __AGX_DEVICE_H
 
 #include "util/sparse_array.h"
+#include "util/simple_mtx.h"
 #include "io.h"
 #include "agx_formats.h"
 
@@ -40,7 +41,17 @@ enum agx_dbg {
    AGX_DBG_DIRTY  = BITFIELD_BIT(3),
    AGX_DBG_PRECOMPILE  = BITFIELD_BIT(4),
    AGX_DBG_PERF  = BITFIELD_BIT(5),
+   AGX_DBG_NOCOMPRESS = BITFIELD_BIT(6),
 };
+
+/* How many power-of-two levels in the BO cache do we want? 2^14 minimum chosen
+ * as it is the page size that all allocations are rounded to
+ */
+#define MIN_BO_CACHE_BUCKET (14) /* 2^14 = 16KB */
+#define MAX_BO_CACHE_BUCKET (22) /* 2^22 = 4MB */
+
+/* Fencepost problem, hence the off-by-one */
+#define NR_BO_CACHE_BUCKETS (MAX_BO_CACHE_BUCKET - MIN_BO_CACHE_BUCKET + 1)
 
 struct agx_device {
    void *memctx;
@@ -61,6 +72,26 @@ struct agx_device {
 
    pthread_mutex_t bo_map_lock;
    struct util_sparse_array bo_map;
+
+   struct {
+      simple_mtx_t lock;
+
+      /* List containing all cached BOs sorted in LRU (Least Recently Used)
+       * order so we can quickly evict BOs that are more than 1 second old.
+       */
+      struct list_head lru;
+
+      /* The BO cache is a set of buckets with power-of-two sizes.  Each bucket
+       * is a linked list of free panfrost_bo objects.
+       */
+      struct list_head buckets[NR_BO_CACHE_BUCKETS];
+
+      /* Current size of the BO cache in bytes (sum of sizes of cached BOs) */
+      size_t size;
+
+      /* Number of hits/misses for the BO cache */
+      uint64_t hits, misses;
+   } bo_cache;
 };
 
 bool

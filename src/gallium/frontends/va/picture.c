@@ -686,6 +686,27 @@ handleVAEncPackedHeaderDataBufferType(vlVaContext *context, vlVaBuffer *buf)
    return status;
 }
 
+static VAStatus
+handleVAStatsStatisticsBufferType(VADriverContextP ctx, vlVaContext *context, vlVaBuffer *buf)
+{
+   if (context->decoder->entrypoint != PIPE_VIDEO_ENTRYPOINT_ENCODE)
+      return VA_STATUS_ERROR_UNIMPLEMENTED;
+
+   vlVaDriver *drv;
+   drv = VL_VA_DRIVER(ctx);
+
+   if (!drv)
+      return VA_STATUS_ERROR_INVALID_CONTEXT;
+
+   if (!buf->derived_surface.resource)
+      buf->derived_surface.resource = pipe_buffer_create(drv->pipe->screen, PIPE_BIND_VERTEX_BUFFER,
+                                            PIPE_USAGE_STREAM, buf->size);
+
+   context->target->associated_data = buf->derived_surface.resource;
+
+   return VA_STATUS_SUCCESS;
+}
+
 VAStatus
 vlVaRenderPicture(VADriverContextP ctx, VAContextID context_id, VABufferID *buffers, int num_buffers)
 {
@@ -779,6 +800,10 @@ vlVaRenderPicture(VADriverContextP ctx, VAContextID context_id, VABufferID *buff
          break;
       case VAEncPackedHeaderDataBufferType:
          handleVAEncPackedHeaderDataBufferType(context, buf);
+         break;
+
+      case VAStatsStatisticsBufferType:
+         handleVAStatsStatisticsBufferType(ctx, context, buf);
          break;
 
       default:

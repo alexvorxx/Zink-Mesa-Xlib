@@ -28,6 +28,8 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
+#include <time.h>
+#include "util/list.h"
 
 struct agx_device;
 
@@ -51,6 +53,15 @@ struct agx_ptr {
 };
 
 struct agx_bo {
+   /* Must be first for casting */
+   struct list_head bucket_link;
+
+   /* Used to link the BO to the BO cache LRU list. */
+   struct list_head lru_link;
+
+   /* The time this BO was used last, so we can evict stale BOs. */
+   time_t last_used;
+
    enum agx_alloc_type type;
 
    /* Creation attributes */
@@ -83,10 +94,14 @@ struct agx_bo {
 
    /* Used while decoding, mapped */
    bool mapped;
+
+   /* For debugging */
+   const char *label;
 };
 
 struct agx_bo *
-agx_bo_create(struct agx_device *dev, unsigned size, unsigned flags);
+agx_bo_create(struct agx_device *dev, unsigned size, unsigned flags,
+              const char *label);
 
 void agx_bo_reference(struct agx_bo *bo);
 void agx_bo_unreference(struct agx_bo *bo);

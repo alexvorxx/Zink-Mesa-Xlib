@@ -68,16 +68,16 @@ dri_init_options(struct dri_screen *screen)
 static unsigned
 dri_loader_get_cap(struct dri_screen *screen, enum dri_loader_cap cap)
 {
-   const __DRIdri2LoaderExtension *dri2_loader = screen->sPriv->dri2.loader;
-   const __DRIimageLoaderExtension *image_loader = screen->sPriv->image.loader;
+   const __DRIdri2LoaderExtension *dri2_loader = screen->dri2.loader;
+   const __DRIimageLoaderExtension *image_loader = screen->image.loader;
 
    if (dri2_loader && dri2_loader->base.version >= 4 &&
        dri2_loader->getCapability)
-      return dri2_loader->getCapability(screen->sPriv->loaderPrivate, cap);
+      return dri2_loader->getCapability(screen->loaderPrivate, cap);
 
    if (image_loader && image_loader->base.version >= 2 &&
        image_loader->getCapability)
-      return image_loader->getCapability(screen->sPriv->loaderPrivate, cap);
+      return image_loader->getCapability(screen->loaderPrivate, cap);
 
    return 0;
 }
@@ -779,10 +779,8 @@ dri_destroy_screen_helper(struct dri_screen * screen)
 }
 
 void
-dri_destroy_screen(__DRIscreen * sPriv)
+dri_destroy_screen(struct dri_screen *screen)
 {
-   struct dri_screen *screen = dri_screen(sPriv);
-
    dri_destroy_screen_helper(screen);
 
    pipe_loader_release(&screen->dev, 1);
@@ -791,10 +789,11 @@ dri_destroy_screen(__DRIscreen * sPriv)
    free(screen->options.force_gl_renderer);
    free(screen->options.mesa_extension_override);
 
+   driDestroyOptionCache(&screen->optionCache);
+   driDestroyOptionInfo(&screen->optionInfo);
+
    /* The caller in dri_util preserves the fd ownership */
    free(screen);
-   sPriv->driverPrivate = NULL;
-   sPriv->extensions = NULL;
 }
 
 static void
@@ -814,10 +813,10 @@ dri_set_background_context(struct st_context_iface *st,
 {
    struct dri_context *ctx = (struct dri_context *)st->st_manager_private;
    const __DRIbackgroundCallableExtension *backgroundCallable =
-      ctx->sPriv->dri2.backgroundCallable;
+      ctx->screen->dri2.backgroundCallable;
 
    if (backgroundCallable)
-      backgroundCallable->setBackgroundContext(ctx->cPriv->loaderPrivate);
+      backgroundCallable->setBackgroundContext(ctx->loaderPrivate);
 
    if (ctx->hud)
       hud_add_queue_for_monitoring(ctx->hud, queue_info);
@@ -844,10 +843,10 @@ dri_init_screen_helper(struct dri_screen *screen,
 
    st_api_query_versions(&screen->base,
                          &screen->options,
-                         &screen->sPriv->max_gl_core_version,
-                         &screen->sPriv->max_gl_compat_version,
-                         &screen->sPriv->max_gl_es1_version,
-                         &screen->sPriv->max_gl_es2_version);
+                         &screen->max_gl_core_version,
+                         &screen->max_gl_compat_version,
+                         &screen->max_gl_es1_version,
+                         &screen->max_gl_es2_version);
 
    return dri_fill_in_modes(screen);
 }

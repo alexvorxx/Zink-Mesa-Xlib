@@ -61,6 +61,7 @@ static VkResult pvr_queue_init(struct pvr_device *device,
 {
    struct pvr_transfer_ctx *transfer_ctx;
    struct pvr_compute_ctx *compute_ctx;
+   struct pvr_compute_ctx *query_ctx;
    struct pvr_render_ctx *gfx_ctx;
    VkResult result;
 
@@ -83,17 +84,27 @@ static VkResult pvr_queue_init(struct pvr_device *device,
    if (result != VK_SUCCESS)
       goto err_transfer_ctx_destroy;
 
+   result = pvr_compute_ctx_create(device,
+                                   PVR_WINSYS_CTX_PRIORITY_MEDIUM,
+                                   &query_ctx);
+   if (result != VK_SUCCESS)
+      goto err_compute_ctx_destroy;
+
    result =
       pvr_render_ctx_create(device, PVR_WINSYS_CTX_PRIORITY_MEDIUM, &gfx_ctx);
    if (result != VK_SUCCESS)
-      goto err_compute_ctx_destroy;
+      goto err_query_ctx_destroy;
 
    queue->device = device;
    queue->gfx_ctx = gfx_ctx;
    queue->compute_ctx = compute_ctx;
+   queue->query_ctx = query_ctx;
    queue->transfer_ctx = transfer_ctx;
 
    return VK_SUCCESS;
+
+err_query_ctx_destroy:
+   pvr_compute_ctx_destroy(query_ctx);
 
 err_compute_ctx_destroy:
    pvr_compute_ctx_destroy(compute_ctx);
@@ -157,6 +168,7 @@ static void pvr_queue_finish(struct pvr_queue *queue)
    }
 
    pvr_render_ctx_destroy(queue->gfx_ctx);
+   pvr_compute_ctx_destroy(queue->query_ctx);
    pvr_compute_ctx_destroy(queue->compute_ctx);
    pvr_transfer_ctx_destroy(queue->transfer_ctx);
 
@@ -348,6 +360,53 @@ pvr_process_transfer_cmds(struct pvr_device *device,
       vk_sync_destroy(&device->vk, completions[PVR_JOB_TYPE_TRANSFER]);
 
    completions[PVR_JOB_TYPE_TRANSFER] = sync;
+
+   return result;
+}
+
+static VkResult pvr_process_occlusion_query_cmd(
+   struct pvr_device *device,
+   struct pvr_queue *queue,
+   struct pvr_sub_cmd_compute *sub_cmd,
+   struct vk_sync *barrier,
+   struct vk_sync **waits,
+   uint32_t wait_count,
+   uint32_t *stage_flags,
+   struct vk_sync *completions[static PVR_JOB_TYPE_MAX])
+{
+   struct vk_sync *sync;
+   VkResult result;
+
+   /* TODO: Currently we add barrier event sub commands to handle the sync
+    * necessary for the different occlusion query types. Would we get any speed
+    * up in processing the queue by doing that sync here without using event sub
+    * commands?
+    */
+
+   result = vk_sync_create(&device->vk,
+                           &device->pdevice->ws->syncobj_type,
+                           0U,
+                           0UL,
+                           &sync);
+   if (result != VK_SUCCESS)
+      return result;
+
+   result = pvr_compute_job_submit(queue->query_ctx,
+                                   sub_cmd,
+                                   barrier,
+                                   waits,
+                                   wait_count,
+                                   stage_flags,
+                                   sync);
+   if (result != VK_SUCCESS) {
+      vk_sync_destroy(&device->vk, sync);
+      return result;
+   }
+
+   if (completions[PVR_JOB_TYPE_OCCLUSION_QUERY])
+      vk_sync_destroy(&device->vk, completions[PVR_JOB_TYPE_OCCLUSION_QUERY]);
+
+   completions[PVR_JOB_TYPE_OCCLUSION_QUERY] = sync;
 
    return result;
 }
@@ -667,6 +726,10 @@ static VkResult pvr_process_cmd_buffer(
                              sub_cmd,
                              &cmd_buffer->sub_cmds,
                              link) {
+      /* TODO: Process PVR_SUB_COMMAND_FLAG_WAIT_ON_PREVIOUS_FRAG and
+       * PVR_SUB_COMMAND_FLAG_OCCLUSION_QUERY flags.
+       */
+
       switch (sub_cmd->type) {
       case PVR_SUB_CMD_TYPE_GRAPHICS:
          result = pvr_process_graphics_cmd(device,
@@ -701,6 +764,18 @@ static VkResult pvr_process_cmd_buffer(
                                             wait_count,
                                             stage_flags,
                                             per_cmd_buffer_syncobjs);
+         break;
+
+      case PVR_SUB_CMD_TYPE_OCCLUSION_QUERY:
+         result = pvr_process_occlusion_query_cmd(
+            device,
+            queue,
+            &sub_cmd->compute,
+            barriers[PVR_JOB_TYPE_OCCLUSION_QUERY],
+            waits,
+            wait_count,
+            stage_flags,
+            per_cmd_buffer_syncobjs);
          break;
 
       case PVR_SUB_CMD_TYPE_EVENT:

@@ -50,7 +50,7 @@ dri_st_framebuffer_validate(struct st_context_iface *stctx,
    struct dri_context *ctx = (struct dri_context *)stctx->st_manager_private;
    struct dri_drawable *drawable =
       (struct dri_drawable *) stfbi->st_manager_private;
-   struct dri_screen *screen = dri_screen(drawable->sPriv);
+   struct dri_screen *screen = drawable->screen;
    unsigned statt_mask, new_mask;
    bool new_stamp;
    int i;
@@ -66,13 +66,8 @@ dri_st_framebuffer_validate(struct st_context_iface *stctx,
    /* record newly allocated textures */
    new_mask = (statt_mask & ~drawable->texture_mask);
 
-   /*
-    * dPriv->dri2.stamp is the server stamp.  dPriv->lastStamp is the
-    * client stamp.  It has the value of the server stamp when last
-    * checked.
-    */
    do {
-      lastStamp = drawable->dPriv->lastStamp;
+      lastStamp = drawable->lastStamp;
       new_stamp = (drawable->texture_stamp != lastStamp);
 
       if (new_stamp || new_mask) {
@@ -90,7 +85,7 @@ dri_st_framebuffer_validate(struct st_context_iface *stctx,
          drawable->texture_stamp = lastStamp;
          drawable->texture_mask = statt_mask;
       }
-   } while (lastStamp != drawable->dPriv->lastStamp);
+   } while (lastStamp != drawable->lastStamp);
 
    /* Flush the pending set_damage_region request. */
    struct pipe_screen *pscreen = screen->base.screen;
@@ -147,12 +142,10 @@ dri_st_framebuffer_flush_swapbuffers(struct st_context_iface *stctx,
 /**
  * This is called when we need to set up GL rendering to a new X window.
  */
-bool
-dri_create_buffer(__DRIscreen * sPriv,
-		  __DRIdrawable * dPriv,
-		  const struct gl_config * visual, bool isPixmap)
+struct dri_drawable *
+dri_create_drawable(struct dri_screen *screen, const struct gl_config *visual,
+                    bool isPixmap, void *loaderPrivate)
 {
-   struct dri_screen *screen = sPriv->driverPrivate;
    struct dri_drawable *drawable = NULL;
 
    if (isPixmap)
@@ -161,6 +154,12 @@ dri_create_buffer(__DRIscreen * sPriv,
    drawable = CALLOC_STRUCT(dri_drawable);
    if (drawable == NULL)
       goto fail;
+
+   drawable->loaderPrivate = loaderPrivate;
+   drawable->refcount = 1;
+   drawable->lastStamp = 0;
+   drawable->w = 0;
+   drawable->h = 0;
 
    dri_fill_st_visual(&drawable->stvis, screen, visual);
 
@@ -172,24 +171,20 @@ dri_create_buffer(__DRIscreen * sPriv,
    drawable->base.st_manager_private = (void *) drawable;
 
    drawable->screen = screen;
-   drawable->sPriv = sPriv;
-   drawable->dPriv = dPriv;
 
-   dPriv->driverPrivate = (void *)drawable;
    p_atomic_set(&drawable->base.stamp, 1);
    drawable->base.ID = p_atomic_inc_return(&drifb_ID);
    drawable->base.state_manager = &screen->base;
 
-   return true;
+   return drawable;
 fail:
    FREE(drawable);
-   return false;
+   return NULL;
 }
 
-void
-dri_destroy_buffer(__DRIdrawable * dPriv)
+static void
+dri_destroy_drawable(struct dri_drawable *drawable)
 {
-   struct dri_drawable *drawable = dri_drawable(dPriv);
    struct dri_screen *screen = drawable->screen;
    int i;
 
@@ -206,6 +201,18 @@ dri_destroy_buffer(__DRIdrawable * dPriv)
 
    FREE(drawable->damage_rects);
    FREE(drawable);
+}
+
+void
+dri_put_drawable(struct dri_drawable *drawable)
+{
+   if (drawable) {
+      int refcount = --drawable->refcount;
+      assert(refcount >= 0);
+
+      if (!refcount)
+         dri_destroy_drawable(drawable);
+   }
 }
 
 /**
@@ -232,7 +239,7 @@ dri_drawable_validate_att(struct dri_context *ctx,
    }
    statts[count++] = statt;
 
-   drawable->texture_stamp = drawable->dPriv->lastStamp - 1;
+   drawable->texture_stamp = drawable->lastStamp - 1;
 
    drawable->base.validate(ctx->st, &drawable->base, statts, count, NULL);
 }
@@ -516,7 +523,7 @@ dri_flush(__DRIcontext *cPriv,
       flush_flags |= ST_FLUSH_END_OF_FRAME;
 
    /* Flush the context and throttle if needed. */
-   if (dri_screen(ctx->sPriv)->throttle &&
+   if (ctx->screen->throttle &&
        drawable &&
        (reason == __DRI2_THROTTLE_SWAPBUFFER ||
         reason == __DRI2_THROTTLE_FLUSHFRONT)) {
@@ -560,6 +567,18 @@ dri_flush(__DRIcontext *cPriv,
    }
 
    st->invalidate_state(st, ST_INVALIDATE_FB_STATE);
+}
+
+/**
+ * DRI2 flush extension.
+ */
+void
+dri_flush_drawable(__DRIdrawable *dPriv)
+{
+   struct dri_context *ctx = dri_get_current();
+
+   if (ctx)
+      dri_flush(opaque_dri_context(ctx), dPriv, __DRI2_FLUSH_DRAWABLE, -1);
 }
 
 /**

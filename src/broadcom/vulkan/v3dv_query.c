@@ -1114,19 +1114,8 @@ copy_pipeline_index_from_flags(VkQueryResultFlags flags)
    return index;
 }
 
-static VkQueryResultFlags
-copy_pipeline_flags_from_index(uint32_t index)
-{
-   assert(index < 8);
-   VkQueryResultFlagBits flags = 0;
-   if (index & 1)
-      flags |= VK_QUERY_RESULT_64_BIT;
-   if (index & 2)
-      flags |= VK_QUERY_RESULT_WITH_AVAILABILITY_BIT;
-   if (index & 4)
-      flags |= VK_QUERY_RESULT_PARTIAL_BIT;
-   return flags;
-}
+static nir_shader *
+get_copy_query_results_cs(VkQueryResultFlags flags);
 
 static void
 cmd_buffer_emit_copy_query_pool_results(struct v3dv_cmd_buffer *cmd_buffer,
@@ -1139,6 +1128,22 @@ cmd_buffer_emit_copy_query_pool_results(struct v3dv_cmd_buffer *cmd_buffer,
    struct v3dv_device *device = cmd_buffer->device;
    VkDevice vk_device = v3dv_device_to_handle(device);
    VkCommandBuffer vk_cmd_buffer = v3dv_cmd_buffer_to_handle(cmd_buffer);
+
+   /* Create the required copy pipeline if not yet created */
+   uint32_t pipeline_idx = copy_pipeline_index_from_flags(flags);
+   if (!device->queries.copy_pipeline[pipeline_idx]) {
+      nir_shader *copy_query_results_cs_nir = get_copy_query_results_cs(flags);
+      VkResult result =
+         v3dv_create_compute_pipeline_from_nir(
+               device, copy_query_results_cs_nir,
+               device->queries.copy_pipeline_layout,
+               &device->queries.copy_pipeline[pipeline_idx]);
+      ralloc_free(copy_query_results_cs_nir);
+      if (result != VK_SUCCESS) {
+         fprintf(stderr, "Failed to create copy query results pipeline\n");
+         return;
+      }
+   }
 
    /* FIXME: do we need this barrier? Since vkCmdEndQuery should've been called
     * and that already waits maybe we don't (since this is serialized
@@ -1188,7 +1193,7 @@ cmd_buffer_emit_copy_query_pool_results(struct v3dv_cmd_buffer *cmd_buffer,
    /* Dispatch copy */
    v3dv_cmd_buffer_meta_state_push(cmd_buffer, true);
 
-   uint32_t pipeline_idx = copy_pipeline_index_from_flags(flags);
+   assert(device->queries.copy_pipeline[pipeline_idx]);
    v3dv_CmdBindPipeline(vk_cmd_buffer,
                         VK_PIPELINE_BIND_POINT_COMPUTE,
                         device->queries.copy_pipeline[pipeline_idx]);
@@ -1803,21 +1808,10 @@ create_query_pipelines(struct v3dv_device *device)
          return false;
    }
 
-   for (int i = 0; i < 8; i++) {
-      if (!device->queries.copy_pipeline[i]) {
-         VkQueryResultFlags flags = copy_pipeline_flags_from_index(i);
-         nir_shader *copy_query_results_cs_nir = get_copy_query_results_cs(flags);
-         result = v3dv_create_compute_pipeline_from_nir(device,
-                                                        copy_query_results_cs_nir,
-                                                        device->queries.copy_pipeline_layout,
-                                                        &pipeline);
-         ralloc_free(copy_query_results_cs_nir);
-         if (result != VK_SUCCESS)
-            return false;
-
-         device->queries.copy_pipeline[i] = pipeline;
-      }
-   }
+   /* Actual copy pipelines are created lazily on demand since there can be up
+    * to 8 depending on the flags used, however it is likely that applications
+    * will use the same flags every time and only one pipeline is required.
+    */
 
    return true;
 }

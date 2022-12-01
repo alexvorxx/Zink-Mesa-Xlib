@@ -87,6 +87,7 @@ dEQP-GLES3.functional.fbo.blit.depth_stencil.depth32f_stencil8_stencil_only
 
 # looks like a cache flushing issue, and it does sometimes pass.
 bypass-dEQP-GLES31.functional.blend_equation_advanced.msaa.*
+bypass-dEQP-GLES31.functional.blend_equation_advanced.srgb.difference
 bypass-dEQP-GLES31.functional.blend_equation_advanced.srgb.hsl_color
 bypass-dEQP-GLES31.functional.blend_equation_advanced.srgb.multiply
 

@@ -54,7 +54,7 @@ rusticl_lower_intrinsics_instr(
 
         deref = nir_build_deref_var(b, var);
         deref = nir_build_deref_array(b, deref, val);
-        val = nir_u2u(b, nir_load_deref(b, deref), 32);
+        val = nir_u2uN(b, nir_load_deref(b, deref), 32);
 
         // we have to fix up the value base
         val = nir_iadd_imm(b, val, -offset);
@@ -69,7 +69,7 @@ rusticl_lower_intrinsics_instr(
         return nir_load_var(b, state->printf_buf);
     case nir_intrinsic_load_work_dim:
         assert(state->work_dim);
-        return nir_u2u(b, nir_load_var(b, state->work_dim), nir_dest_bit_size(intrins->dest));
+        return nir_u2uN(b, nir_load_var(b, state->work_dim), nir_dest_bit_size(intrins->dest));
     default:
         return NULL;
     }

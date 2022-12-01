@@ -96,7 +96,8 @@ if dep_libarchive.found()
   rddecompiler = executable(
     'rddecompiler',
     [
-      'rddecompiler.c'
+      'rddecompiler.c',
+      freedreno_xml_header_files,
     ],
     include_directories: [
       inc_freedreno,

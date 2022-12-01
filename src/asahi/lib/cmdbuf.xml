@@ -204,6 +204,7 @@
     <field name="Flip vertical" size="1" start="54" type="bool" default="false"/>
     <field name="Samples" size="1" start="56" type="Sample Count"/>
     <field name="Unk mipmapped" size="1" start="58" type="bool"/>
+    <field name="Compressed 1" size="1" start="59" type="bool"/>
     <field name="Buffer" size="36" start="64" type="address" modifier="shr(4)"/>
     <!-- N.b. sRGB is not specified here -->
     <field name="Level" size="4" start="100" type="uint"/>
@@ -212,26 +213,27 @@
     array texture (with a layered framebuffer) -->
     <field name="Levels" size="4" start="104" type="uint" modifier="minus(1)"/>
     <field name="Layers" size="14" start="108" type="uint" modifier="minus(1)" default="1"/>
-    <field name="Unk tiled" size="1" start="124" type="bool"/>
+    <field name="Page-aligned layers" size="1" start="124" type="bool"/>
+    <field name="Compressed 2" size="1" start="127" type="bool"/>
 
     <!-- If layout is linear. Off by 4? -->
     <field name="Stride" size="24" start="104" type="hex"/>
 
     <!-- If layout is compressed -->
-    <field name="Acceleration buffer" size="64" start="128" type="address"/>
+    <field name="Acceleration buffer" size="64" start="128" type="address" modifier="shr(4)"/>
   </struct>
 
   <struct name="Texture" size="24">
-    <field name="Dimension" size="4" start="0" type="Texture dimension" default="2D"/>
+    <field name="Dimension" size="4" start="0" type="Texture dimension"/>
     <field name="Layout" size="2" start="4" type="Layout"/>
     <field name="Channels" size="7" start="6" type="Channels"/>
     <field name="Type" size="3" start="13" type="Texture Type"/>
-    <field name="Swizzle R" size="3" start="16" type="Channel" default="R"/>
-    <field name="Swizzle G" size="3" start="19" type="Channel" default="G"/>
-    <field name="Swizzle B" size="3" start="22" type="Channel" default="B"/>
-    <field name="Swizzle A" size="3" start="25" type="Channel" default="A"/>
-    <field name="Width" size="14" start="28" type="uint" modifier="minus(1)"/>
-    <field name="Height" size="14" start="42" type="uint" modifier="minus(1)"/>
+    <field name="Swizzle R" size="3" start="16" type="Channel"/>
+    <field name="Swizzle G" size="3" start="19" type="Channel"/>
+    <field name="Swizzle B" size="3" start="22" type="Channel"/>
+    <field name="Swizzle A" size="3" start="25" type="Channel"/>
+    <field name="Width" size="14" start="28" type="uint" modifier="minus(1)" default="1"/>
+    <field name="Height" size="14" start="42" type="uint" modifier="minus(1)" default="1"/>
     <field name="First level" size="4" start="56" type="uint"/>
     <field name="Last level" size="4" start="60" type="uint"/>
     <field name="Samples" size="1" start="64" type="Sample Count"/>
@@ -240,6 +242,7 @@
     to switch tile size (or disable tiling altogether?) at small mip levels to
     reduce wasted memory due to padding. Causing test flakiness when set. -->
     <field name="Unk mipmapped" size="1" start="102" type="bool"/>
+    <field name="Compressed 1" size="1" start="103" type="bool"/>
     <!-- This is set when no texture is bound, with layout 1 -->
     <field name="Null" size="1" start="105" type="bool"/>
     <field name="Compression" size="2" start="106" type="hex"/> <!-- 0 for uncompressed -->
@@ -248,7 +251,11 @@
     <field name="Stride" size="18" start="110" type="hex" modifier="shr(4)"/>
     <!-- Note that 3D/arrays cannot be linear. -->
     <field name="Depth" size="14" start="110" type="uint" modifier="minus(1)" default="1"/>
-    <field name="Unk tiled" size="1" start="126" type="bool"/>
+    <field name="Page-aligned layers" size="1" start="126" type="bool"/>
+    <field name="Compressed 2" size="1" start="127" type="bool"/>
+
+    <!-- If layout is compressed -->
+    <field name="Acceleration buffer" size="64" start="128" type="address" modifier="shr(4)"/>
   </struct>
 
   <enum name="Wrap">
@@ -793,12 +800,13 @@
   <struct name="ZLS Control" size="8">
     <field name="Unknown 0" start="0" size="1" type="bool"/>
     <field name="Unknown 1" start="1" size="1" type="bool"/>
-    <field name="Unknown 2" start="2" size="1" type="bool"/>
+    <field name="Z Compress 1" start="2" size="1" type="bool"/>
     <field name="Unknown 3" start="3" size="1" type="bool"/>
-    <field name="Unknown 4" start="4" size="1" type="bool"/>
+    <field name="S Compress 1" start="4" size="1" type="bool"/>
     <field name="Unknown 5" start="5" size="1" type="bool"/>
-    <field name="Unknown 6" start="6" size="1" type="bool"/>
+    <field name="Z Compress 2" start="6" size="1" type="bool"/>
     <field name="Unknown 7" start="7" size="1" type="bool"/>
+    <field name="S Compress 2" start="8" size="1" type="bool"/>
     <field name="S Load Enable" start="14" size="1" type="bool"/>
     <field name="Z Load Enable" start="15" size="1" type="bool"/>
     <field name="S Store Enable" start="18" size="1" type="bool"/>

@@ -88,12 +88,6 @@ struct agx_stage {
    unsigned sampler_count, texture_count;
 };
 
-/* Uploaded scissor or depth bias descriptors */
-struct agx_array {
-      struct agx_bo *bo;
-      unsigned count;
-};
-
 struct agx_batch {
    struct agx_context *ctx;
    struct pipe_framebuffer_state key;
@@ -130,7 +124,8 @@ struct agx_batch {
    uint8_t *encoder_current;
    uint8_t *encoder_end;
 
-   struct agx_array scissor, depth_bias;
+   /* Scissor and depth-bias descriptors, uploaded at GPU time */
+   struct util_dynarray scissor, depth_bias;
 };
 
 struct agx_zsa {
@@ -141,11 +136,8 @@ struct agx_zsa {
 
 struct agx_blend {
    bool logicop_enable, blend_enable;
-
-   union {
-      nir_lower_blend_rt rt[8];
-      unsigned logicop_func;
-   };
+   nir_lower_blend_rt rt[8];
+   unsigned logicop_func;
 };
 
 struct asahi_shader_key {
@@ -265,8 +257,8 @@ struct agx_sampler_state {
 struct agx_sampler_view {
    struct pipe_sampler_view base;
 
-   /* BO, may differ from base.texture's BO in case of separate stencil */
-   struct agx_bo *bo;
+   /* Resource, may differ from base.texture in case of separate stencil */
+   struct agx_resource *rsrc;
 
    /* Prepared descriptor */
    struct agx_texture_packed desc;
@@ -422,6 +414,7 @@ agx_batch_num_bo(struct agx_batch *batch)
    BITSET_FOREACH_SET(handle, (batch)->bo_list.set, agx_batch_bo_list_bits(batch))
 
 void agx_flush_batch(struct agx_context *ctx, struct agx_batch *batch);
+void agx_flush_batch_for_reason(struct agx_context *ctx, struct agx_batch *batch, const char *reason);
 void agx_flush_all(struct agx_context *ctx, const char *reason);
 void agx_flush_readers(struct agx_context *ctx, struct agx_resource *rsrc, const char *reason);
 void agx_flush_writer(struct agx_context *ctx, struct agx_resource *rsrc, const char *reason);

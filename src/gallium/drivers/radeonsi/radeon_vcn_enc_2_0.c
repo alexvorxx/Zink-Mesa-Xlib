@@ -54,6 +54,7 @@
 #define RENCODE_IB_PARAM_ENCODE_CONTEXT_BUFFER     0x00000011
 #define RENCODE_IB_PARAM_VIDEO_BITSTREAM_BUFFER    0x00000012
 #define RENCODE_IB_PARAM_FEEDBACK_BUFFER           0x00000015
+#define RENCODE_IB_PARAM_ENCODE_STATISTICS         0x00000019
 
 #define RENCODE_HEVC_IB_PARAM_SLICE_CONTROL        0x00100001
 #define RENCODE_HEVC_IB_PARAM_SPEC_MISC            0x00100002
@@ -513,6 +514,7 @@ static void encode(struct radeon_encoder *enc)
    enc->ctx(enc);
    enc->bitstream(enc);
    enc->feedback(enc);
+   enc->encode_statistics(enc);
    enc->intra_refresh(enc);
    enc->input_format(enc);
    enc->output_format(enc);
@@ -563,6 +565,7 @@ void radeon_enc_2_0_init(struct radeon_encoder *enc)
    enc->cmd.spec_misc_h264 = RENCODE_H264_IB_PARAM_SPEC_MISC;
    enc->cmd.enc_params_h264 = RENCODE_H264_IB_PARAM_ENCODE_PARAMS;
    enc->cmd.deblocking_filter_h264 = RENCODE_H264_IB_PARAM_DEBLOCKING_FILTER;
+   enc->cmd.enc_statistics = RENCODE_IB_PARAM_ENCODE_STATISTICS;
 
    enc->enc_pic.session_info.interface_version =
       ((RENCODE_FW_INTERFACE_MAJOR_VERSION << RENCODE_IF_MAJOR_VERSION_SHIFT) |

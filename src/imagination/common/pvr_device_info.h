@@ -359,6 +359,7 @@ struct pvr_device_info {
 
 struct pvr_device_runtime_info {
    uint64_t min_free_list_size;
+   uint64_t max_free_list_size;
    uint64_t reserved_shared_size;
    uint64_t total_reserved_partition_size;
    uint64_t num_phantoms;

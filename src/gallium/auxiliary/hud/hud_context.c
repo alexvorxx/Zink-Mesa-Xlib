@@ -71,7 +71,7 @@
 /* Control the visibility of all HUD contexts */
 static boolean huds_visible = TRUE;
 static int hud_scale = 1;
-
+static int hud_rotate = 0;
 
 #if DETECT_OS_UNIX
 static void
@@ -486,8 +486,21 @@ hud_draw_results(struct hud_context *hud, struct pipe_resource *tex)
 
    hud->fb_width = tex->width0;
    hud->fb_height = tex->height0;
-   hud->constants.two_div_fb_width = 2.0f / hud->fb_width;
-   hud->constants.two_div_fb_height = 2.0f / hud->fb_height;
+   float th = hud_rotate * (M_PI / 180.0f);
+   hud->constants.rotate[0] = cos(th);
+   hud->constants.rotate[1] = -sin(th);
+   hud->constants.rotate[2] = sin(th);
+   hud->constants.rotate[3] = cos(th);
+
+   /* invert the aspect ratio when we rotate the hud */
+   if (hud_rotate % 180 == 90) {
+      hud->constants.two_div_fb_height = 2.0f / hud->fb_width;
+      hud->constants.two_div_fb_width = 2.0f / hud->fb_height;
+   } else {
+      assert(hud_rotate % 180 == 0);
+      hud->constants.two_div_fb_width = 2.0f / hud->fb_width;
+      hud->constants.two_div_fb_height = 2.0f / hud->fb_height;
+   }
 
    cso_save_state(cso, (CSO_BIT_FRAMEBUFFER |
                         CSO_BIT_SAMPLE_MASK |
@@ -1721,15 +1734,20 @@ hud_set_draw_context(struct hud_context *hud, struct cso_context *cso,
          "DCL OUT[2], GENERIC[0]\n" /* texcoord */
          /* [0] = color,
           * [1] = (2/fb_width, 2/fb_height, xoffset, yoffset)
-          * [2] = (xscale, yscale, 0, 0) */
-         "DCL CONST[0][0..2]\n"
-         "DCL TEMP[0]\n"
+          * [2] = (xscale, yscale, 0, 0)
+          * [3] = rotation_matrix */
+         "DCL CONST[0][0..3]\n"
+         "DCL TEMP[0..2]\n"
          "IMM[0] FLT32 { -1, 0, 0, 1 }\n"
 
          /* v = in * (xscale, yscale) + (xoffset, yoffset) */
          "MAD TEMP[0].xy, IN[0], CONST[0][2].xyyy, CONST[0][1].zwww\n"
-         /* pos = v * (2 / fb_width, 2 / fb_height) - (1, 1) */
-         "MAD OUT[0].xy, TEMP[0], CONST[0][1].xyyy, IMM[0].xxxx\n"
+         /* v = v * (2 / fb_width, 2 / fb_height) - (1, 1) */
+         "MAD TEMP[1].xy, TEMP[0], CONST[0][1].xyyy, IMM[0].xxxx\n"
+
+         /* pos = rotation_matrix * v */
+         "MUL TEMP[2].xyzw, TEMP[1].xyxy, CONST[0][3].xyzw\n"
+         "ADD OUT[0].xy, TEMP[2].xzzz, TEMP[2].ywww\n"
          "MOV OUT[0].zw, IMM[0]\n"
 
          "MOV OUT[1], CONST[0][0]\n"
@@ -1758,16 +1776,21 @@ hud_set_draw_context(struct hud_context *hud, struct cso_context *cso,
          "DCL OUT[1], GENERIC[0]\n" /* texcoord */
          /* [0] = color,
           * [1] = (2/fb_width, 2/fb_height, xoffset, yoffset)
-          * [2] = (xscale, yscale, 0, 0) */
-         "DCL CONST[0][0..2]\n"
-         "DCL TEMP[0]\n"
+          * [2] = (xscale, yscale, 0, 0)
+          * [3] = rotation_matrix */
+         "DCL CONST[0][0..3]\n"
+         "DCL TEMP[0..2]\n"
          "IMM[0] FLT32 { -1, 0, 0, 1 }\n"
          "IMM[1] FLT32 { 0.0078125, 0.00390625, 1, 1 }\n" // 1.0 / 128, 1.0 / 256, 1, 1
 
          /* v = in * (xscale, yscale) + (xoffset, yoffset) */
          "MAD TEMP[0].xy, IN[0], CONST[0][2].xyyy, CONST[0][1].zwww\n"
          /* pos = v * (2 / fb_width, 2 / fb_height) - (1, 1) */
-         "MAD OUT[0].xy, TEMP[0], CONST[0][1].xyyy, IMM[0].xxxx\n"
+         "MAD TEMP[1].xy, TEMP[0], CONST[0][1].xyyy, IMM[0].xxxx\n"
+
+         /* pos = rotation_matrix * v */
+         "MUL TEMP[2].xyzw, TEMP[1].xyxy, CONST[0][3].xyzw\n"
+         "ADD OUT[0].xy, TEMP[2].xzzz, TEMP[2].ywww\n"
          "MOV OUT[0].zw, IMM[0]\n"
 
          "MUL OUT[1], IN[1], IMM[1]\n"
@@ -1875,6 +1898,14 @@ hud_create(struct cso_context *cso, struct st_context_iface *st,
 #endif
    huds_visible = debug_get_bool_option("GALLIUM_HUD_VISIBLE", TRUE);
    hud_scale = debug_get_num_option("GALLIUM_HUD_SCALE", 1);
+   hud_rotate = debug_get_num_option("GALLIUM_HUD_ROTATION", 0) % 360;
+   if (hud_rotate < 0) {
+      hud_rotate += 360;
+   }
+   if (hud_rotate % 90 != 0) {
+      fprintf(stderr, "gallium_hud: rotation must be a multiple of 90. Falling back to 0.\n");
+      hud_rotate = 0;
+   }
 
    if (!env || !*env)
       return NULL;

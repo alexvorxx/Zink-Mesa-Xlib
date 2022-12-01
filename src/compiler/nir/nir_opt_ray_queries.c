@@ -232,8 +232,6 @@ nir_opt_ray_query_ranges(nir_shader *shader)
       (struct nir_function *)exec_list_get_head_const(&shader->functions);
    assert(func->impl);
 
-   void *mem_ctx = ralloc_context(NULL);
-
    uint32_t ray_query_count = 0;
    nir_foreach_variable_in_shader(var, shader) {
       if (!var->data.ray_query || glsl_type_is_array(var->type))
@@ -250,6 +248,8 @@ nir_opt_ray_query_ranges(nir_shader *shader)
       nir_metadata_preserve(func->impl, nir_metadata_all);
       return false;
    }
+
+   void *mem_ctx = ralloc_context(NULL);
 
    nir_metadata_require(func->impl, nir_metadata_instr_index | nir_metadata_dominance);
 

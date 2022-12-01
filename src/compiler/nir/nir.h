@@ -4884,6 +4884,23 @@ bool nir_lower_explicit_io(nir_shader *shader,
                            nir_variable_mode modes,
                            nir_address_format);
 
+typedef bool (*nir_should_vectorize_mem_func)(unsigned align_mul,
+                                              unsigned align_offset,
+                                              unsigned bit_size,
+                                              unsigned num_components,
+                                              nir_intrinsic_instr *low, nir_intrinsic_instr *high,
+                                              void *data);
+
+typedef struct {
+   nir_should_vectorize_mem_func callback;
+   nir_variable_mode modes;
+   nir_variable_mode robust_modes;
+   void *cb_data;
+   bool has_shared2_amd;
+} nir_load_store_vectorize_options;
+
+bool nir_opt_load_store_vectorize(nir_shader *shader, const nir_load_store_vectorize_options *options);
+
 typedef struct nir_lower_shader_calls_options {
    /* Address format used for load/store operations on the call stack. */
    nir_address_format address_format;
@@ -4895,6 +4912,15 @@ typedef struct nir_lower_shader_calls_options {
     * You might want to disable combined_loads for best effects.
     */
    bool localized_loads;
+
+   /* If this function pointer is not NULL, lower_shader_calls will run
+    * nir_opt_load_store_vectorize for stack load/store operations. Otherwise
+    * the optimizaion is not run.
+    */
+   nir_should_vectorize_mem_func vectorizer_callback;
+
+   /* Data passed to vectorizer_callback */
+   void *vectorizer_data;
 } nir_lower_shader_calls_options;
 
 bool
@@ -4972,6 +4998,10 @@ nir_shader * nir_create_passthrough_tcs_impl(const nir_shader_compiler_options *
                                              uint8_t patch_vertices);
 nir_shader * nir_create_passthrough_tcs(const nir_shader_compiler_options *options,
                                         const nir_shader *vs, uint8_t patch_vertices);
+nir_shader * nir_create_passthrough_gs(const nir_shader_compiler_options *options,
+                                       const nir_shader *prev_stage,
+                                       enum shader_prim primitive_type,
+                                       unsigned vertices);
 
 bool nir_lower_fragcolor(nir_shader *shader, unsigned max_cbufs);
 bool nir_lower_fragcoord_wtrans(nir_shader *shader);
@@ -5685,23 +5715,6 @@ bool nir_opt_move_discards_to_top(nir_shader *shader);
 bool nir_opt_ray_queries(nir_shader *shader);
 
 bool nir_opt_ray_query_ranges(nir_shader *shader);
-
-typedef bool (*nir_should_vectorize_mem_func)(unsigned align_mul,
-                                              unsigned align_offset,
-                                              unsigned bit_size,
-                                              unsigned num_components,
-                                              nir_intrinsic_instr *low, nir_intrinsic_instr *high,
-                                              void *data);
-
-typedef struct {
-   nir_should_vectorize_mem_func callback;
-   nir_variable_mode modes;
-   nir_variable_mode robust_modes;
-   void *cb_data;
-   bool has_shared2_amd;
-} nir_load_store_vectorize_options;
-
-bool nir_opt_load_store_vectorize(nir_shader *shader, const nir_load_store_vectorize_options *options);
 
 void nir_sweep(nir_shader *shader);
 

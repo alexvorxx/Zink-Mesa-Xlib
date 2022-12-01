@@ -338,10 +338,9 @@ anv_cmd_buffer_set_ray_query_buffer(struct anv_cmd_buffer *cmd_buffer,
    struct anv_state ray_query_global_state =
       anv_genX(device->info, cmd_buffer_ray_query_globals)(cmd_buffer);
 
-   struct anv_address ray_query_globals_addr = (struct anv_address) {
-      .bo = device->dynamic_state_pool.block_pool.bo,
-      .offset = ray_query_global_state.offset,
-   };
+   struct anv_address ray_query_globals_addr =
+      anv_state_pool_state_address(&device->dynamic_state_pool,
+                                   ray_query_global_state);
    pipeline_state->push_constants.ray_query_globals =
       anv_address_physical(ray_query_globals_addr);
    cmd_buffer->state.push_constants_dirty |= stages;

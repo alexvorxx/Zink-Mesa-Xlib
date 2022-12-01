@@ -1191,6 +1191,8 @@ void r600_delete_shader_selector(struct pipe_context *ctx,
 	}
 	else if (sel->ir_type == PIPE_SHADER_IR_NIR)
 		ralloc_free(sel->nir);
+	if (sel->nir_blob)
+		free(sel->nir_blob);
 	free(sel);
 }
 

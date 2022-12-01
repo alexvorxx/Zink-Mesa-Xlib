@@ -6,6 +6,7 @@
 #ifndef __AGX_META_H
 #define __AGX_META_H
 
+#include "asahi/compiler/agx_compile.h"
 #include "agx_tilebuffer.h"
 #include "pool.h"
 
@@ -29,6 +30,7 @@ struct agx_meta_key {
 };
 
 struct agx_meta_shader {
+   struct agx_shader_info info;
    struct agx_bo *bo;
    uint32_t ptr;
 };

@@ -456,9 +456,13 @@ nir_lower_mediump_vars_impl(nir_function_impl *impl, nir_variable_mode modes,
                   break;
 
                nir_deref_instr *deref = nir_src_as_deref(intrin->src[0]);
-               nir_ssa_def *replace = NULL;
+               if (glsl_get_bit_size(deref->type) != 16)
+                  break;
+
+               intrin->dest.ssa.bit_size = 16;
 
                b.cursor = nir_after_instr(&intrin->instr);
+               nir_ssa_def *replace = NULL;
                switch (glsl_get_base_type(deref->type)) {
                case GLSL_TYPE_FLOAT16:
                   replace = nir_f2f32(&b, &intrin->dest.ssa);
@@ -470,12 +474,9 @@ nir_lower_mediump_vars_impl(nir_function_impl *impl, nir_variable_mode modes,
                   replace = nir_u2u32(&b, &intrin->dest.ssa);
                   break;
                default:
-                  break;
+                  unreachable("Invalid 16-bit type");
                }
-               if (!replace)
-                  break;
 
-               intrin->dest.ssa.bit_size = 16;
                nir_ssa_def_rewrite_uses_after(&intrin->dest.ssa,
                                               replace,
                                               replace->parent_instr);
@@ -488,8 +489,11 @@ nir_lower_mediump_vars_impl(nir_function_impl *impl, nir_variable_mode modes,
                if (data->bit_size != 32)
                   break;
 
-               b.cursor = nir_before_instr(&intrin->instr);
                nir_deref_instr *deref = nir_src_as_deref(intrin->src[0]);
+               if (glsl_get_bit_size(deref->type) != 16)
+                  break;
+
+               b.cursor = nir_before_instr(&intrin->instr);
                nir_ssa_def *replace = NULL;
                switch (glsl_get_base_type(deref->type)) {
                case GLSL_TYPE_FLOAT16:
@@ -500,10 +504,8 @@ nir_lower_mediump_vars_impl(nir_function_impl *impl, nir_variable_mode modes,
                   replace = nir_i2imp(&b, data);
                   break;
                default:
-                  break;
+                  unreachable("Invalid 16-bit type");
                }
-               if (!replace)
-                  break;
 
                nir_instr_rewrite_src(&intrin->instr, &intrin->src[1],
                                      nir_src_for_ssa(replace));

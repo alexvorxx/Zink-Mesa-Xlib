@@ -509,6 +509,13 @@ iris_setup_uniforms(ASSERTED const struct intel_device_info *devinfo,
          nir_ssa_def *offset;
 
          switch (intrin->intrinsic) {
+         case nir_intrinsic_load_base_workgroup_id: {
+            /* GL doesn't have a concept of base workgroup */
+            b.cursor = nir_instr_remove(&intrin->instr);
+            nir_ssa_def_rewrite_uses(&intrin->dest.ssa,
+                                     nir_imm_zero(&b, 3, 32));
+            continue;
+         }
          case nir_intrinsic_load_constant: {
             unsigned load_size = intrin->dest.ssa.num_components *
                                  intrin->dest.ssa.bit_size / 8;

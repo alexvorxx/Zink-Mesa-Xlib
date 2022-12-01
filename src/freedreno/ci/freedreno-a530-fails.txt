@@ -415,6 +415,8 @@ KHR-GLES3.packed_pixels.varied_rectangle.rgba32i,Fail
 KHR-GLES3.packed_pixels.varied_rectangle.rgba32ui,Fail
 
 
+glx@glx-make-current,Crash
+glx@glx-multi-window-single-context,Fail
 glx@glx-swap-pixmap-bad,Fail
 glx@glx-visuals-depth -pixmap,Crash
 glx@glx-visuals-stencil -pixmap,Crash

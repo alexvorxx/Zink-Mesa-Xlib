@@ -107,7 +107,12 @@ isl_device_setup_mocs(struct isl_device *dev)
    dev->mocs.protected_mask = 0;
 
    if (dev->info->ver >= 12) {
-      if (intel_device_info_is_dg2(dev->info)) {
+      if (intel_device_info_is_mtl(dev->info)) {
+         /* Cached L3+L4; BSpec: 45101 */
+         dev->mocs.internal = 1 << 1;
+         /* Displayables cached to L3+L4:WT */
+         dev->mocs.external = 14 << 1;
+      } else if (intel_device_info_is_dg2(dev->info)) {
          /* L3CC=WB; BSpec: 45101 */
          dev->mocs.internal = 3 << 1;
          dev->mocs.external = 3 << 1;

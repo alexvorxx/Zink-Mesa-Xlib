@@ -105,7 +105,7 @@ dri2_destroy_context(struct glx_context *context)
 
    free((char *) context->extensions);
 
-   (*psc->core->destroyContext) (context->driContext);
+   psc->core->destroyContext(context->driContext);
 
    free(context);
 }
@@ -121,7 +121,7 @@ dri2_bind_context(struct glx_context *context, struct glx_context *old,
    pdraw = (struct dri2_drawable *) driFetchDrawable(context, draw);
    pread = (struct dri2_drawable *) driFetchDrawable(context, read);
 
-   driReleaseDrawables(old);
+   driReleaseDrawables(context);
 
    if (pdraw)
       dri_draw = pdraw->driDrawable;
@@ -133,7 +133,7 @@ dri2_bind_context(struct glx_context *context, struct glx_context *old,
    else if (read != None)
       return GLXBadDrawable;
 
-   if (!(*psc->core->bindContext) (context->driContext, dri_draw, dri_read))
+   if (!psc->core->bindContext(context->driContext, dri_draw, dri_read))
       return GLXBadContext;
 
    return Success;
@@ -144,7 +144,7 @@ dri2_unbind_context(struct glx_context *context, struct glx_context *new)
 {
    struct dri2_screen *psc = (struct dri2_screen *) context->psc;
 
-   (*psc->core->unbindContext) (context->driContext);
+   psc->core->unbindContext(context->driContext);
 }
 
 static struct glx_context *
@@ -236,7 +236,7 @@ dri2_create_context_attribs(struct glx_screen *base,
    pcp->renderType = dca.render_type;
 
    pcp->driContext =
-      (*psc->dri2->createContextAttribs) (psc->driScreen,
+      psc->dri2->createContextAttribs(psc->driScreen,
 					  dca.api,
 					  config ? config->driConfig : NULL,
 					  shared,
@@ -267,7 +267,7 @@ dri2DestroyDrawable(__GLXDRIdrawable *base)
    struct dri2_display *pdp = (struct dri2_display *)dpyPriv->dri2Display;
 
    __glxHashDelete(pdp->dri2Hash, pdraw->base.xDrawable);
-   (*psc->core->destroyDrawable) (pdraw->driDrawable);
+   psc->core->destroyDrawable(pdraw->driDrawable);
 
    /* If it's a GLX 1.3 drawables, we can destroy the DRI2 drawable
     * now, as the application explicitly asked to destroy the GLX
@@ -313,7 +313,7 @@ dri2CreateDrawable(struct glx_screen *base, XID xDrawable,
    pdp = (struct dri2_display *)dpyPriv->dri2Display;
    /* Create a new drawable */
    pdraw->driDrawable =
-      (*psc->dri2->createNewDrawable) (psc->driScreen,
+      psc->dri2->createNewDrawable(psc->driScreen,
                                        config->driConfig, pdraw);
 
    if (!pdraw->driDrawable) {
@@ -323,7 +323,7 @@ dri2CreateDrawable(struct glx_screen *base, XID xDrawable,
    }
 
    if (__glxHashInsert(pdp->dri2Hash, xDrawable, pdraw)) {
-      (*psc->core->destroyDrawable) (pdraw->driDrawable);
+      psc->core->destroyDrawable(pdraw->driDrawable);
       DRI2DestroyDrawable(psc->base.dpy, xDrawable);
       free(pdraw);
       return None;
@@ -534,7 +534,7 @@ dri2_copy_drawable(struct dri2_drawable *priv, int dest, int src)
    xrect.height = priv->height;
 
    if (psc->f)
-      (*psc->f->flush) (priv->driDrawable);
+      psc->f->flush(priv->driDrawable);
 
    region = XFixesCreateRegion(psc->base.dpy, &xrect, 1);
    DRI2CopyRegion(psc->base.dpy, priv->base.xDrawable, region, dest, src);
@@ -605,7 +605,7 @@ dri2DestroyScreen(struct glx_screen *base)
    struct dri2_screen *psc = (struct dri2_screen *) base;
 
    /* Free the direct rendering per screen data */
-   (*psc->core->destroyScreen) (psc->driScreen);
+   psc->core->destroyScreen(psc->driScreen);
    driDestroyConfigs(psc->driver_configs);
    free(psc->driverName);
    close(psc->fd);
@@ -890,13 +890,13 @@ dri2_bind_tex_image(__GLXDRIdrawable *base,
 
       if (psc->texBuffer->base.version >= 2 &&
 	  psc->texBuffer->setTexBuffer2 != NULL) {
-	 (*psc->texBuffer->setTexBuffer2) (gc->driContext,
+	 psc->texBuffer->setTexBuffer2(gc->driContext,
 					   pdraw->base.textureTarget,
 					   pdraw->base.textureFormat,
 					   pdraw->driDrawable);
       }
       else {
-	 (*psc->texBuffer->setTexBuffer) (gc->driContext,
+	 psc->texBuffer->setTexBuffer(gc->driContext,
 					  pdraw->base.textureTarget,
 					  pdraw->driDrawable);
       }
@@ -915,7 +915,7 @@ dri2_release_tex_image(__GLXDRIdrawable *base, int buffer)
 
       if (psc->texBuffer->base.version >= 3 &&
           psc->texBuffer->releaseTexBuffer != NULL) {
-         (*psc->texBuffer->releaseTexBuffer) (gc->driContext,
+         psc->texBuffer->releaseTexBuffer(gc->driContext,
                                            pdraw->base.textureTarget,
                                            pdraw->driDrawable);
       }

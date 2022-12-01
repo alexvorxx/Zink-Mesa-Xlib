@@ -195,6 +195,14 @@ destroy_event_pipelines(struct v3dv_device *device)
    device->events.descriptor_set_layout = VK_NULL_HANDLE;
 }
 
+static void
+init_event(struct v3dv_device *device, struct v3dv_event *event, uint32_t index)
+{
+   vk_object_base_init(&device->vk, &event->base, VK_OBJECT_TYPE_EVENT);
+   event->index = index;
+   list_addtail(&event->link, &device->events.free_list);
+}
+
 VkResult
 v3dv_event_allocate_resources(struct v3dv_device *device)
 {
@@ -221,22 +229,20 @@ v3dv_event_allocate_resources(struct v3dv_device *device)
       goto fail;
    }
 
-   /* List of free event state slots in the BO, 1 byte per slot */
-   device->events.desc_count = bo_size;
-   device->events.desc =
-      vk_alloc2(&device->vk.alloc, NULL,
-                device->events.desc_count * sizeof(struct v3dv_event_desc), 8,
-                VK_SYSTEM_ALLOCATION_SCOPE_DEVICE);
-   if (!device->events.desc) {
+   /* Pre-allocate our events, each event requires 1 byte of BO storage */
+   device->events.event_count = bo_size;
+   device->events.events =
+      vk_zalloc2(&device->vk.alloc, NULL,
+                 device->events.event_count * sizeof(struct v3dv_event), 8,
+                 VK_SYSTEM_ALLOCATION_SCOPE_DEVICE);
+   if (!device->events.events) {
       result = vk_error(device, VK_ERROR_OUT_OF_HOST_MEMORY);
       goto fail;
    }
 
    list_inithead(&device->events.free_list);
-   for (int i = 0; i < device->events.desc_count; i++) {
-      device->events.desc[i].index = i;
-      list_addtail(&device->events.desc[i].link, &device->events.free_list);
-   }
+   for (int i = 0; i < device->events.event_count; i++)
+      init_event(device, &device->events.events[i], i);
 
    /* Vulkan buffer for the event state BO */
    VkBufferCreateInfo buf_info = {
@@ -337,9 +343,9 @@ v3dv_event_free_resources(struct v3dv_device *device)
       device->events.bo = NULL;
    }
 
-   if (device->events.desc) {
-      vk_free2(&device->vk.alloc, NULL, device->events.desc);
-      device->events.desc = NULL;
+   if (device->events.events) {
+      vk_free2(&device->vk.alloc, NULL, device->events.events);
+      device->events.events = NULL;
    }
 
    if (device->events.mem) {
@@ -365,8 +371,8 @@ v3dv_event_free_resources(struct v3dv_device *device)
    destroy_event_pipelines(device);
 }
 
-static struct v3dv_event_desc *
-allocate_event_descriptor(struct v3dv_device *device)
+static struct v3dv_event *
+allocate_event(struct v3dv_device *device)
 {
    mtx_lock(&device->events.lock);
    if (list_is_empty(&device->events.free_list)) {
@@ -374,20 +380,20 @@ allocate_event_descriptor(struct v3dv_device *device)
       return NULL;
    }
 
-   struct v3dv_event_desc *desc =
-      list_first_entry(&device->events.free_list, struct v3dv_event_desc, link);
-   list_del(&desc->link);
+   struct v3dv_event *event =
+      list_first_entry(&device->events.free_list, struct v3dv_event, link);
+   list_del(&event->link);
    mtx_unlock(&device->events.lock);
 
-   return desc;
+   return event;
 }
 
 static void
-free_event_descriptor(struct v3dv_device *device, uint32_t index)
+free_event(struct v3dv_device *device, uint32_t index)
 {
+   assert(index < device->events.event_count);
    mtx_lock(&device->events.lock);
-   assert(index < device->events.desc_count);
-   list_addtail(&device->events.desc[index].link, &device->events.free_list);
+   list_addtail(&device->events.events[index].link, &device->events.free_list);
    mtx_unlock(&device->events.lock);
 }
 
@@ -417,21 +423,12 @@ v3dv_CreateEvent(VkDevice _device,
    V3DV_FROM_HANDLE(v3dv_device, device, _device);
    VkResult result = VK_SUCCESS;
 
-   struct v3dv_event *event =
-      vk_object_zalloc(&device->vk, pAllocator, sizeof(*event),
-                       VK_OBJECT_TYPE_EVENT);
+   struct v3dv_event *event = allocate_event(device);
    if (!event) {
-      result = vk_error(device, VK_ERROR_OUT_OF_HOST_MEMORY);
-      goto fail;
-   }
-
-   struct v3dv_event_desc *desc = allocate_event_descriptor(device);
-   if (!desc) {
       result = vk_error(device, VK_ERROR_OUT_OF_DEVICE_MEMORY);
       goto fail;
    }
 
-   event->index = desc->index;
    event_set_value(device, event, 0);
    *pEvent = v3dv_event_to_handle(event);
    return VK_SUCCESS;
@@ -451,8 +448,7 @@ v3dv_DestroyEvent(VkDevice _device,
    if (!event)
       return;
 
-   free_event_descriptor(device, event->index);
-   vk_object_free(&device->vk, pAllocator, event);
+   free_event(device, event->index);
 }
 
 VKAPI_ATTR VkResult VKAPI_CALL
@@ -502,7 +498,7 @@ cmd_buffer_emit_set_event(struct v3dv_cmd_buffer *cmd_buffer,
                               device->events.pipeline_layout,
                               0, 1, &device->events.descriptor_set, 0, NULL);
 
-   assert(event->index < device->events.desc_count);
+   assert(event->index < device->events.event_count);
    uint32_t offset = event->index;
    v3dv_CmdPushConstants(commandBuffer,
                          device->events.pipeline_layout,
@@ -537,7 +533,7 @@ cmd_buffer_emit_wait_event(struct v3dv_cmd_buffer *cmd_buffer,
                               device->events.pipeline_layout,
                               0, 1, &device->events.descriptor_set, 0, NULL);
 
-   assert(event->index < device->events.desc_count);
+   assert(event->index < device->events.event_count);
    uint32_t offset = event->index;
    v3dv_CmdPushConstants(commandBuffer,
                          device->events.pipeline_layout,

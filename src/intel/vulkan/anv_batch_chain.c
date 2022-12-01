@@ -711,10 +711,9 @@ anv_cmd_buffer_alloc_space(struct anv_cmd_buffer *cmd_buffer,
                                 size, alignment);
 
       return (struct anv_cmd_alloc) {
-         .address = (struct anv_address) {
-            .bo = cmd_buffer->device->dynamic_state_pool.block_pool.bo,
-            .offset = state.offset,
-         },
+         .address = anv_state_pool_state_address(
+            &cmd_buffer->device->dynamic_state_pool,
+            state),
          .map = state.map,
          .size = size,
       };

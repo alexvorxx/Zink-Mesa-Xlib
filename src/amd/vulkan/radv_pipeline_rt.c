@@ -368,6 +368,16 @@ radv_rt_pipeline_create(VkDevice _device, VkPipelineCache _cache,
       case VK_SHADER_GROUP_SHADER_MAX_ENUM_KHR:
          unreachable("VK_SHADER_GROUP_SHADER_MAX_ENUM_KHR");
       }
+
+      if (pCreateInfo->flags &
+          VK_PIPELINE_CREATE_RAY_TRACING_SHADER_GROUP_HANDLE_CAPTURE_REPLAY_BIT_KHR) {
+         if (group_info->pShaderGroupCaptureReplayHandle &&
+             memcmp(group_info->pShaderGroupCaptureReplayHandle, &rt_pipeline->group_handles[i],
+                    sizeof(rt_pipeline->group_handles[i])) != 0) {
+            result = VK_ERROR_INVALID_OPAQUE_CAPTURE_ADDRESS;
+            goto shader_fail;
+         }
+      }
    }
 
    *pPipeline = radv_pipeline_to_handle(&rt_pipeline->base.base);
@@ -450,11 +460,10 @@ radv_GetRayTracingShaderGroupStackSizeKHR(VkDevice device, VkPipeline _pipeline,
 }
 
 VKAPI_ATTR VkResult VKAPI_CALL
-radv_GetRayTracingCaptureReplayShaderGroupHandlesKHR(VkDevice _device, VkPipeline pipeline,
+radv_GetRayTracingCaptureReplayShaderGroupHandlesKHR(VkDevice device, VkPipeline pipeline,
                                                      uint32_t firstGroup, uint32_t groupCount,
                                                      size_t dataSize, void *pData)
 {
-   RADV_FROM_HANDLE(radv_device, device, _device);
-   unreachable("Unimplemented");
-   return vk_error(device, VK_ERROR_FEATURE_NOT_PRESENT);
+   return radv_GetRayTracingShaderGroupHandlesKHR(device, pipeline, firstGroup, groupCount,
+                                                  dataSize, pData);
 }

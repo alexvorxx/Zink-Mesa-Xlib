@@ -39,6 +39,7 @@
 
 #include "util/format/u_format.h"
 #include "util/u_math.h"
+#include "util/u_pack_color.h"
 
 /* Returned when there is no match of pipe value to etna value */
 #define ETNA_NO_MATCH (~0)
@@ -449,24 +450,14 @@ translate_draw_mode(unsigned mode)
 }
 
 static inline uint32_t
-translate_clear_depth_stencil(enum pipe_format format, float depth,
-                              unsigned stencil)
+translate_clear_depth_stencil(enum pipe_format format, double depth,
+                              uint8_t stencil)
 {
-   uint32_t clear_value = 0;
+   uint32_t clear_value = util_pack_z_stencil(format, depth, stencil);
 
-   // XXX util_pack_color
-   switch (format) {
-   case PIPE_FORMAT_Z16_UNORM:
-      clear_value = etna_cfloat_to_uintN(depth, 16);
+   if (format == PIPE_FORMAT_Z16_UNORM)
       clear_value |= clear_value << 16;
-      break;
-   case PIPE_FORMAT_X8Z24_UNORM:
-   case PIPE_FORMAT_S8_UINT_Z24_UNORM:
-      clear_value = (etna_cfloat_to_uintN(depth, 24) << 8) | (stencil & 0xFF);
-      break;
-   default:
-      DBG("Unhandled pipe format for depth stencil clear: %i", format);
-   }
+
    return clear_value;
 }
 

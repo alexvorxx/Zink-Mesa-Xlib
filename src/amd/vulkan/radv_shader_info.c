@@ -287,15 +287,9 @@ gather_xfb_info(const nir_shader *nir, struct radv_shader_info *info)
    so->num_outputs = xfb->output_count;
 
    for (unsigned i = 0; i < xfb->output_count; i++) {
-      struct radv_stream_output *output = &so->outputs[i];
-
-      output->buffer = xfb->outputs[i].buffer;
-      output->stream = xfb->buffer_to_stream[xfb->outputs[i].buffer];
-      output->offset = xfb->outputs[i].offset;
-      output->location = xfb->outputs[i].location;
-      output->component_mask = xfb->outputs[i].component_mask;
-
-      so->enabled_stream_buffers_mask |= (1 << output->buffer) << (output->stream * 4);
+      unsigned output_buffer = xfb->outputs[i].buffer;
+      unsigned stream = xfb->buffer_to_stream[xfb->outputs[i].buffer];
+      so->enabled_stream_buffers_mask |= (1 << output_buffer) << (stream * 4);
    }
 
    for (unsigned i = 0; i < NIR_MAX_XFB_BUFFERS; i++) {
@@ -463,7 +457,7 @@ gather_shader_info_gs(const nir_shader *nir, struct radv_shader_info *info)
       assert(stream < 4);
 
       info->gs.num_stream_output_components[stream] += num_components;
-      info->gs.output_streams[idx] = stream;
+      info->gs.output_streams[idx] = stream | (stream << 2) | (stream << 4) | (stream << 6);
    }
 }
 
@@ -1278,7 +1272,7 @@ radv_link_shaders_info(struct radv_device *device,
 
       if (ps_prim_id_in &&
           (producer->stage == MESA_SHADER_VERTEX || producer->stage == MESA_SHADER_TESS_EVAL)) {
-         /* Mark the primitive ID as output when it's implicitly exported by VS or TES with NGG. */
+         /* Mark the primitive ID as output when it's implicitly exported by VS or TES. */
          if (outinfo->vs_output_param_offset[VARYING_SLOT_PRIMITIVE_ID] == AC_EXP_PARAM_UNDEFINED)
             outinfo->vs_output_param_offset[VARYING_SLOT_PRIMITIVE_ID] = outinfo->param_exports++;
 

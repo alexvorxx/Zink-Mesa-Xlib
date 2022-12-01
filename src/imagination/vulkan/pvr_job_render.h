@@ -51,6 +51,7 @@ struct pvr_render_job {
    bool disable_compute_overlap;
    bool enable_bg_tag;
    bool process_empty_tiles;
+   bool get_vis_results;
 
    uint32_t pds_pixel_event_data_offset;
 

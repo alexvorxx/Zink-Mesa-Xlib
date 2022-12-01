@@ -79,6 +79,7 @@ struct hud_context {
       float translate[2];
       float scale[2];
       float padding[2];
+      float rotate[4];
    } constants;
    struct pipe_constant_buffer constbuf;
 

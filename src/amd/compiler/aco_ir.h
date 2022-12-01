@@ -2025,7 +2025,6 @@ enum class SWStage : uint16_t {
    CS = 1 << 5,     /* Compute Shader */
    TS = 1 << 6,     /* Task Shader */
    MS = 1 << 7,     /* Mesh Shader */
-   GSCopy = 1 << 8, /* GS Copy Shader (internal) */
 
    /* Stage combinations merged to run on a single HWStage */
    VS_GS = VS | GS,
@@ -2090,7 +2089,6 @@ static constexpr Stage vertex_vs(HWStage::VS, SWStage::VS);
 static constexpr Stage fragment_fs(HWStage::FS, SWStage::FS);
 static constexpr Stage compute_cs(HWStage::CS, SWStage::CS);
 static constexpr Stage tess_eval_vs(HWStage::VS, SWStage::TES);
-static constexpr Stage gs_copy_vs(HWStage::VS, SWStage::GSCopy);
 /* Mesh shading pipeline */
 static constexpr Stage task_cs(HWStage::CS, SWStage::TS);
 static constexpr Stage mesh_ngg(HWStage::NGG, SWStage::MS);
@@ -2252,10 +2250,6 @@ void select_program(Program* program, unsigned shader_count, struct nir_shader* 
                     ac_shader_config* config, const struct aco_compiler_options* options,
                     const struct aco_shader_info* info,
                     const struct radv_shader_args* args);
-void select_gs_copy_shader(Program* program, struct nir_shader* gs_shader, ac_shader_config* config,
-                           const struct aco_compiler_options* options,
-                           const struct aco_shader_info* info,
-                           const struct radv_shader_args* args);
 void select_trap_handler_shader(Program* program, struct nir_shader* shader,
                                 ac_shader_config* config,
                                 const struct aco_compiler_options* options,

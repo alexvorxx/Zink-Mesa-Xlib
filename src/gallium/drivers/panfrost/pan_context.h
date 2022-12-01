@@ -165,6 +165,7 @@ struct panfrost_context {
         bool active_queries;
         uint64_t prims_generated;
         uint64_t tf_prims_generated;
+        uint64_t draw_calls;
         struct panfrost_query *occlusion_query;
 
         bool indirect_draw;

@@ -204,6 +204,7 @@ decompile_shader(const char *name, uint32_t regbase, uint32_t *dwords, int level
       printlvl(level + 1, "upload_shader(&ctx, 0x%" PRIx64 ", source);\n", gpuaddr);
       printlvl(level + 1, "emit_shader_iova(&ctx, cs, 0x%" PRIx64 ");\n", gpuaddr);
       printlvl(level, "}\n");
+      free(stream_data);
    }
 
    return 2;

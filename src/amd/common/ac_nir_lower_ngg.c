@@ -2794,7 +2794,7 @@ ngg_gs_export_vertices(nir_builder *b, nir_ssa_def *max_num_out_vtx, nir_ssa_def
                /* Convert to the expected bit size of the output variable. */
                unsigned bit_size = glsl_base_type_bit_size(glsl_get_base_type(var->type));
                if (bit_size != 32)
-                  val = nir_u2u(b, val, bit_size);
+                  val = nir_u2uN(b, val, bit_size);
 
                nir_store_output(b, val, nir_imm_int(b, 0), .base = info->base,
                                 .io_semantics = io_sem, .component = start + i, .write_mask = 1);
@@ -3397,7 +3397,7 @@ lower_ms_load_output(nir_builder *b,
    } else if (io_sem.location == VARYING_SLOT_PRIMITIVE_INDICES) {
       nir_ssa_def *offset_src = nir_get_io_offset_src(intrin)->ssa;
       nir_ssa_def *index = ms_load_prim_indices(b, offset_src, s);
-      return nir_u2u(b, index, intrin->dest.ssa.bit_size);
+      return nir_u2uN(b, index, intrin->dest.ssa.bit_size);
    }
 
    unreachable("Invalid mesh shader output");
@@ -3495,7 +3495,7 @@ regroup_load_val(nir_builder *b, nir_ssa_def *load, unsigned dest_bit_size)
    assert(num_components <= 4);
    nir_ssa_def *components[4] = {0};
    for (unsigned i = 0; i < num_components; ++i)
-      components[i] = nir_u2u(b, nir_channel(b, load, i), dest_bit_size);
+      components[i] = nir_u2uN(b, nir_channel(b, load, i), dest_bit_size);
 
    return nir_vec(b, components, num_components);
 }

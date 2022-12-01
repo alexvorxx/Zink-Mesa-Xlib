@@ -32,7 +32,7 @@ apk add \
     gettext \
     glslang \
     linux-headers \
-    llvm13-dev \
+    llvm15-dev \
     meson \
     expat-dev \
     elfutils-dev \

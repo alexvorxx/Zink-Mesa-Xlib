@@ -234,6 +234,7 @@ struct iris_bufmgr {
    bool has_llc:1;
    bool has_local_mem:1;
    bool has_mmap_offset:1;
+   bool has_caching_uapi:1;
    bool has_tiling_uapi:1;
    bool has_userptr_probe:1;
    bool bo_reuse:1;
@@ -1159,7 +1160,7 @@ iris_bo_alloc(struct iris_bufmgr *bufmgr,
     * For discrete, we instead use SMEM and avoid WB maps for coherency.
     */
    if ((flags & BO_ALLOC_COHERENT) &&
-       !bufmgr->has_llc && bufmgr->vram.size == 0) {
+       !bufmgr->has_llc && bufmgr->has_caching_uapi) {
       struct drm_i915_gem_caching arg = {
          .handle = bo->gem_handle,
          .caching = 1,
@@ -2406,6 +2407,7 @@ iris_bufmgr_create(struct intel_device_info *devinfo, int fd, bool bo_reuse)
 
    bufmgr->has_llc = devinfo->has_llc;
    bufmgr->has_local_mem = devinfo->has_local_mem;
+   bufmgr->has_caching_uapi = devinfo->has_caching_uapi;
    bufmgr->has_tiling_uapi = devinfo->has_tiling_uapi;
    bufmgr->bo_reuse = bo_reuse;
    bufmgr->has_mmap_offset = devinfo->has_mmap_offset;

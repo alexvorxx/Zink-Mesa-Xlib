@@ -316,8 +316,10 @@ panfrost_should_afbc(struct panfrost_device *dev,
 
         switch (pres->base.target) {
         case PIPE_TEXTURE_2D:
-        case PIPE_TEXTURE_2D_ARRAY:
         case PIPE_TEXTURE_RECT:
+        case PIPE_TEXTURE_2D_ARRAY:
+        case PIPE_TEXTURE_CUBE:
+        case PIPE_TEXTURE_CUBE_ARRAY:
                 break;
 
         case PIPE_TEXTURE_3D:

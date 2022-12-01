@@ -176,7 +176,7 @@ dri3_destroy_context(struct glx_context *context)
 
    free((char *) context->extensions);
 
-   (*psc->core->destroyContext) (context->driContext);
+   psc->core->destroyContext(context->driContext);
 
    free(context);
 }
@@ -192,7 +192,7 @@ dri3_bind_context(struct glx_context *context, struct glx_context *old,
    pdraw = (struct dri3_drawable *) driFetchDrawable(context, draw);
    pread = (struct dri3_drawable *) driFetchDrawable(context, read);
 
-   driReleaseDrawables(old);
+   driReleaseDrawables(context);
 
    if (pdraw)
       dri_draw = pdraw->loader_drawable.dri_drawable;
@@ -204,7 +204,7 @@ dri3_bind_context(struct glx_context *context, struct glx_context *old,
    else if (read != None)
       return GLXBadDrawable;
 
-   if (!(*psc->core->bindContext) (context->driContext, dri_draw, dri_read))
+   if (!psc->core->bindContext(context->driContext, dri_draw, dri_read))
       return GLXBadContext;
 
    if (dri_draw)
@@ -220,7 +220,7 @@ dri3_unbind_context(struct glx_context *context, struct glx_context *new)
 {
    struct dri3_screen *psc = (struct dri3_screen *) context->psc;
 
-   (*psc->core->unbindContext) (context->driContext);
+   psc->core->unbindContext(context->driContext);
 }
 
 static struct glx_context *
@@ -309,7 +309,7 @@ dri3_create_context_attribs(struct glx_screen *base,
    pcp->renderType = dca.render_type;
 
    pcp->driContext =
-      (*psc->image_driver->createContextAttribs) (psc->driScreen,
+      psc->image_driver->createContextAttribs(psc->driScreen,
                                                   dca.api,
                                                   config ? config->driConfig
                                                          : NULL,
@@ -618,12 +618,12 @@ dri3_destroy_screen(struct glx_screen *base)
    if (psc->is_different_gpu) {
       if (psc->driScreenDisplayGPU) {
          loader_dri3_close_screen(psc->driScreenDisplayGPU);
-         (*psc->core->destroyScreen) (psc->driScreenDisplayGPU);
+         psc->core->destroyScreen(psc->driScreenDisplayGPU);
       }
       close(psc->fd_display_gpu);
    }
    loader_dri3_close_screen(psc->driScreen);
-   (*psc->core->destroyScreen) (psc->driScreen);
+   psc->core->destroyScreen(psc->driScreen);
    driDestroyConfigs(psc->driver_configs);
    close(psc->fd);
    free(psc);
@@ -678,7 +678,7 @@ dri3_bind_tex_image(__GLXDRIdrawable *base,
 
       XSync(gc->currentDpy, false);
 
-      (*psc->texBuffer->setTexBuffer2) (gc->driContext,
+      psc->texBuffer->setTexBuffer2(gc->driContext,
                                         pdraw->base.textureTarget,
                                         pdraw->base.textureFormat,
                                         pdraw->loader_drawable.dri_drawable);
@@ -697,7 +697,7 @@ dri3_release_tex_image(__GLXDRIdrawable *base, int buffer)
 
       if (psc->texBuffer->base.version >= 3 &&
           psc->texBuffer->releaseTexBuffer != NULL)
-         (*psc->texBuffer->releaseTexBuffer) (gc->driContext,
+         psc->texBuffer->releaseTexBuffer(gc->driContext,
                                               pdraw->base.textureTarget,
                                               pdraw->loader_drawable.dri_drawable);
    }

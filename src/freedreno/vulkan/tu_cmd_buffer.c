@@ -133,8 +133,11 @@ tu6_lazy_emit_vsc(struct tu_cmd_buffer *cmd, struct tu_cs *cs)
 static void
 tu6_emit_flushes(struct tu_cmd_buffer *cmd_buffer,
                  struct tu_cs *cs,
-                 enum tu_cmd_flush_bits flushes)
+                 struct tu_cache_state *cache)
 {
+   enum tu_cmd_flush_bits flushes = cache->flush_bits;
+   cache->flush_bits = 0;
+
    if (unlikely(cmd_buffer->device->physical_device->instance->debug_flags & TU_DEBUG_FLUSHALL))
       flushes |= TU_CMD_FLAG_ALL_FLUSH | TU_CMD_FLAG_ALL_INVALIDATE;
 
@@ -172,27 +175,22 @@ tu6_emit_flushes(struct tu_cmd_buffer *cmd_buffer,
       tu_cs_emit_pkt7(cs, CP_WAIT_FOR_ME, 0);
 }
 
-/* "Normal" cache flushes, that don't require any special handling */
-
+/* "Normal" cache flushes outside the renderpass, that don't require any special handling */
 static void
-tu_emit_cache_flush(struct tu_cmd_buffer *cmd_buffer,
-                    struct tu_cs *cs)
+tu_emit_cache_flush(struct tu_cmd_buffer *cmd_buffer)
 {
-   tu6_emit_flushes(cmd_buffer, cs, cmd_buffer->state.cache.flush_bits);
-   cmd_buffer->state.cache.flush_bits = 0;
+   tu6_emit_flushes(cmd_buffer, &cmd_buffer->cs, &cmd_buffer->state.cache);
 }
 
-/* Renderpass cache flushes */
-
+/* Renderpass cache flushes inside the draw_cs */
 void
-tu_emit_cache_flush_renderpass(struct tu_cmd_buffer *cmd_buffer,
-                               struct tu_cs *cs)
+tu_emit_cache_flush_renderpass(struct tu_cmd_buffer *cmd_buffer)
 {
    if (!cmd_buffer->state.renderpass_cache.flush_bits &&
        likely(!cmd_buffer->device->physical_device->instance->debug_flags))
       return;
-   tu6_emit_flushes(cmd_buffer, cs, cmd_buffer->state.renderpass_cache.flush_bits);
-   cmd_buffer->state.renderpass_cache.flush_bits = 0;
+   tu6_emit_flushes(cmd_buffer, &cmd_buffer->draw_cs,
+                    &cmd_buffer->state.renderpass_cache);
 }
 
 /* Cache flushes for things that use the color/depth read/write path (i.e.
@@ -205,8 +203,6 @@ tu_emit_cache_flush_ccu(struct tu_cmd_buffer *cmd_buffer,
                         struct tu_cs *cs,
                         enum tu_cmd_ccu_state ccu_state)
 {
-   enum tu_cmd_flush_bits flushes = cmd_buffer->state.cache.flush_bits;
-
    assert(ccu_state != TU_CMD_CCU_UNKNOWN);
    /* It's unsafe to flush inside condition because we clear flush_bits */
    assert(!cs->cond_stack_depth);
@@ -218,14 +214,14 @@ tu_emit_cache_flush_ccu(struct tu_cmd_buffer *cmd_buffer,
     */
    if (ccu_state != cmd_buffer->state.ccu_state) {
       if (cmd_buffer->state.ccu_state != TU_CMD_CCU_GMEM) {
-         flushes |=
+         cmd_buffer->state.cache.flush_bits |=
             TU_CMD_FLAG_CCU_FLUSH_COLOR |
             TU_CMD_FLAG_CCU_FLUSH_DEPTH;
          cmd_buffer->state.cache.pending_flush_bits &= ~(
             TU_CMD_FLAG_CCU_FLUSH_COLOR |
             TU_CMD_FLAG_CCU_FLUSH_DEPTH);
       }
-      flushes |=
+      cmd_buffer->state.cache.flush_bits |=
          TU_CMD_FLAG_CCU_INVALIDATE_COLOR |
          TU_CMD_FLAG_CCU_INVALIDATE_DEPTH |
          TU_CMD_FLAG_WAIT_FOR_IDLE;
@@ -235,8 +231,7 @@ tu_emit_cache_flush_ccu(struct tu_cmd_buffer *cmd_buffer,
          TU_CMD_FLAG_WAIT_FOR_IDLE);
    }
 
-   tu6_emit_flushes(cmd_buffer, cs, flushes);
-   cmd_buffer->state.cache.flush_bits = 0;
+   tu6_emit_flushes(cmd_buffer, cs, &cmd_buffer->state.cache);
 
    if (ccu_state != cmd_buffer->state.ccu_state) {
       struct tu_physical_device *phys_dev = cmd_buffer->device->physical_device;
@@ -2092,6 +2087,9 @@ tu_CmdBindDescriptorSets(VkCommandBuffer commandBuffer,
 
       descriptors_state->sets[idx] = set;
 
+      if (!set)
+         continue;
+
       if (set->layout->has_inline_uniforms)
          cmd->state.dirty |= TU_CMD_DIRTY_SHADER_CONSTS;
 
@@ -2515,7 +2513,7 @@ tu_EndCommandBuffer(VkCommandBuffer commandBuffer)
     */
    if (cmd_buffer->state.pass) {
       tu_flush_all_pending(&cmd_buffer->state.renderpass_cache);
-      tu_emit_cache_flush_renderpass(cmd_buffer, &cmd_buffer->draw_cs);
+      tu_emit_cache_flush_renderpass(cmd_buffer);
 
       trace_end_cmd_buffer(&cmd_buffer->trace, &cmd_buffer->draw_cs);
    } else {
@@ -2523,7 +2521,7 @@ tu_EndCommandBuffer(VkCommandBuffer commandBuffer)
       cmd_buffer->state.cache.flush_bits |=
          TU_CMD_FLAG_CCU_FLUSH_COLOR |
          TU_CMD_FLAG_CCU_FLUSH_DEPTH;
-      tu_emit_cache_flush(cmd_buffer, &cmd_buffer->cs);
+      tu_emit_cache_flush(cmd_buffer);
 
       trace_end_cmd_buffer(&cmd_buffer->trace, &cmd_buffer->cs);
    }
@@ -3945,10 +3943,10 @@ tu_CmdExecuteCommands(VkCommandBuffer commandBuffer,
    /* Emit any pending flushes. */
    if (cmd->state.pass) {
       tu_flush_all_pending(&cmd->state.renderpass_cache);
-      tu_emit_cache_flush_renderpass(cmd, &cmd->draw_cs);
+      tu_emit_cache_flush_renderpass(cmd);
    } else {
       tu_flush_all_pending(&cmd->state.cache);
-      tu_emit_cache_flush(cmd, &cmd->cs);
+      tu_emit_cache_flush(cmd);
    }
 
    for (uint32_t i = 0; i < commandBufferCount; i++) {
@@ -4493,13 +4491,25 @@ tu6_emit_user_consts(struct tu_cs *cs,
     */
    for (unsigned i = 0; i < link->tu_const_state.num_inline_ubos; i++) {
       const struct tu_inline_ubo *ubo = &link->tu_const_state.ubos[i];
-      tu_cs_emit_pkt7(cs, tu6_stage2opcode(type), 3);
-      tu_cs_emit(cs, CP_LOAD_STATE6_0_DST_OFF(ubo->const_offset_vec4) |
-            CP_LOAD_STATE6_0_STATE_TYPE(ST6_CONSTANTS) |
-            CP_LOAD_STATE6_0_STATE_SRC(SS6_INDIRECT) |
-            CP_LOAD_STATE6_0_STATE_BLOCK(tu6_stage2shadersb(type)) |
-            CP_LOAD_STATE6_0_NUM_UNIT(ubo->size_vec4));
-      tu_cs_emit_qw(cs, descriptors->sets[ubo->base]->va + ubo->offset);
+
+      /* With variable-count inline uniform blocks, we allocate constant space
+       * based on the maximum size specified in the descriptor set layout, but
+       * the actual size may be smaller. In that case we have to avoid
+       * fetching out-of-bounds of the buffer that contains the descriptor
+       * set to avoid faults.
+       */
+      unsigned num_units = MIN2(ubo->size_vec4,
+                                (descriptors->sets[ubo->base]->size - ubo->offset) / 16);
+
+      if (num_units > 0) {
+         tu_cs_emit_pkt7(cs, tu6_stage2opcode(type), 3);
+         tu_cs_emit(cs, CP_LOAD_STATE6_0_DST_OFF(ubo->const_offset_vec4) |
+               CP_LOAD_STATE6_0_STATE_TYPE(ST6_CONSTANTS) |
+               CP_LOAD_STATE6_0_STATE_SRC(SS6_INDIRECT) |
+               CP_LOAD_STATE6_0_STATE_BLOCK(tu6_stage2shadersb(type)) |
+               CP_LOAD_STATE6_0_NUM_UNIT(num_units));
+         tu_cs_emit_qw(cs, descriptors->sets[ubo->base]->va + ubo->offset);
+      }
    }
 }
 
@@ -4778,7 +4788,7 @@ tu6_draw_common(struct tu_cmd_buffer *cmd,
    if (cmd->state.rb_stencil_cntl & A6XX_RB_STENCIL_CONTROL_STENCIL_ENABLE)
       rp->drawcall_bandwidth_per_sample_sum += stencil_bandwidth * 2;
 
-   tu_emit_cache_flush_renderpass(cmd, cs);
+   tu_emit_cache_flush_renderpass(cmd);
 
    bool primitive_restart_enabled = pipeline->ia.primitive_restart;
    if (pipeline->dynamic_state_mask & BIT(TU_DYNAMIC_STATE_PRIMITIVE_RESTART_ENABLE))
@@ -5609,7 +5619,7 @@ tu_dispatch(struct tu_cmd_buffer *cmd,
    /* TODO: We could probably flush less if we add a compute_flush_bits
     * bitfield.
     */
-   tu_emit_cache_flush(cmd, cs);
+   tu_emit_cache_flush(cmd);
 
    /* note: no reason to have this in a separate IB */
    tu_cs_emit_state_ib(cs, tu6_emit_consts(cmd, pipeline, true));
@@ -5920,7 +5930,7 @@ write_event(struct tu_cmd_buffer *cmd, struct tu_event *event,
    /* vkCmdSetEvent/vkCmdResetEvent cannot be called inside a render pass */
    assert(!cmd->state.pass);
 
-   tu_emit_cache_flush(cmd, cs);
+   tu_emit_cache_flush(cmd);
 
    /* Flags that only require a top-of-pipe event. DrawIndirect parameters are
     * read by the CP, so the draw indirect stage counts as top-of-pipe too.
@@ -6018,9 +6028,9 @@ tu_CmdBeginConditionalRenderingEXT(VkCommandBuffer commandBuffer,
 
    /* Wait for any writes to the predicate to land */
    if (cmd->state.pass)
-      tu_emit_cache_flush_renderpass(cmd, cs);
+      tu_emit_cache_flush_renderpass(cmd);
    else
-      tu_emit_cache_flush(cmd, cs);
+      tu_emit_cache_flush(cmd);
 
    TU_FROM_HANDLE(tu_buffer, buf, pConditionalRenderingBegin->buffer);
    uint64_t iova = buf->iova + pConditionalRenderingBegin->offset;
@@ -6108,9 +6118,9 @@ tu_CmdWriteBufferMarker2AMD(VkCommandBuffer commandBuffer,
    }
 
    if (cmd->state.pass) {
-      tu_emit_cache_flush_renderpass(cmd, cs);
+      tu_emit_cache_flush_renderpass(cmd);
    } else {
-      tu_emit_cache_flush(cmd, cs);
+      tu_emit_cache_flush(cmd);
    }
 
    if (is_top_of_pipe) {

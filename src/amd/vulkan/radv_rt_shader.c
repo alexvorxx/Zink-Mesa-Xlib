@@ -1462,7 +1462,9 @@ create_rt_shader(struct radv_device *device, const VkRayTracingPipelineCreateInf
       const nir_lower_shader_calls_options opts = {
          .address_format = nir_address_format_32bit_offset,
          .stack_alignment = 16,
-         .localized_loads = true};
+         .localized_loads = true,
+         .vectorizer_callback = radv_mem_vectorize_callback,
+      };
       uint32_t num_resume_shaders = 0;
       nir_shader **resume_shaders = NULL;
       nir_lower_shader_calls(nir_stage, &opts, &resume_shaders, &num_resume_shaders, nir_stage);

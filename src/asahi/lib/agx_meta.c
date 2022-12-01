@@ -14,7 +14,6 @@ agx_compile_meta_shader(struct agx_meta_cache *cache, nir_shader *shader,
                         struct agx_shader_key *key,
                         struct agx_tilebuffer_layout *tib)
 {
-   struct agx_shader_info info = { 0 };
    struct util_dynarray binary;
    util_dynarray_init(&binary, NULL);
 
@@ -22,9 +21,9 @@ agx_compile_meta_shader(struct agx_meta_cache *cache, nir_shader *shader,
    if (tib)
       agx_nir_lower_tilebuffer(shader, tib);
 
-   agx_compile_shader_nir(shader, key, NULL, &binary, &info);
-
    struct agx_meta_shader *res = rzalloc(cache->ht, struct agx_meta_shader);
+   agx_compile_shader_nir(shader, key, NULL, &binary, &res->info);
+
    res->ptr = agx_pool_upload_aligned_with_bo(&cache->pool, binary.data,
                                               binary.size, 128,
                                               &res->bo);

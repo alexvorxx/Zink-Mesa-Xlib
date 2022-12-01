@@ -608,6 +608,8 @@ static void radeon_enc_encode_bitstream(struct pipe_video_codec *encoder,
                                         struct pipe_resource *destination, void **fb)
 {
    struct radeon_encoder *enc = (struct radeon_encoder *)encoder;
+   struct vl_video_buffer *vid_buf = (struct vl_video_buffer *)source;
+
    enc->get_buffer(destination, &enc->bs_handle, NULL);
    enc->bs_size = destination->width0;
 
@@ -617,6 +619,17 @@ static void radeon_enc_encode_bitstream(struct pipe_video_codec *encoder,
       RVID_ERR("Can't create feedback buffer.\n");
       return;
    }
+
+   if (vid_buf->base.associated_data) {
+      enc->get_buffer(vid_buf->base.associated_data, &enc->stats, NULL);
+      if (enc->stats->size < sizeof(rvcn_encode_stats_type_0_t)) {
+         RVID_ERR("Encoder statistics output buffer is too small.\n");
+         enc->stats = NULL;
+      }
+      vid_buf->base.associated_data = NULL;
+   }
+   else
+      enc->stats = NULL;
 
    enc->need_feedback = true;
    enc->encode(enc);

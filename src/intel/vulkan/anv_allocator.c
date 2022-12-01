@@ -1527,7 +1527,7 @@ anv_device_alloc_bo(struct anv_device *device,
        * I915_CACHING_CACHED, which on non-LLC means snooped so there's no
        * need to do this there.
        */
-      if (!device->info->has_llc) {
+      if (device->info->has_caching_uapi && !device->info->has_llc) {
          anv_gem_set_caching(device, new_bo.gem_handle,
                              I915_CACHING_CACHED);
       }

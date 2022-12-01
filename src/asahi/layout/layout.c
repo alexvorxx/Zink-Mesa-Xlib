@@ -163,9 +163,51 @@ ail_initialize_twiddled(struct ail_layout *layout)
       poth_el = u_minify(poth_el, 1);
    }
 
-   /* Arrays and cubemaps have the entire miptree duplicated and page aligned */
-   layout->layer_stride_B = ALIGN_POT(offset_B, AIL_PAGESIZE);
+   /* Align layer size if we have mipmaps and one miptree is larger than one page */
+   layout->page_aligned_layers = layout->levels != 1 && offset_B > AIL_PAGESIZE;
+
+   /* Single-layer images are not padded unless they are Z/S */
+   if (layout->depth_px == 1 && !util_format_is_depth_or_stencil(layout->format))
+      layout->page_aligned_layers = false;
+
+   if (layout->page_aligned_layers)
+      layout->layer_stride_B = ALIGN_POT(offset_B, AIL_PAGESIZE);
+   else
+      layout->layer_stride_B = offset_B;
+
    layout->size_B = layout->layer_stride_B * layout->depth_px;
+}
+
+static void
+ail_initialize_compression(struct ail_layout *layout)
+{
+   assert(!util_format_is_compressed(layout->format) && "Compressed pixel formats not supported");
+   assert(util_format_get_blockwidth(layout->format) == 1);
+   assert(util_format_get_blockheight(layout->format) == 1);
+   assert(layout->width_px >= 16 && "Small textures are never compressed");
+   assert(layout->height_px >= 16 && "Small textures are never compressed");
+
+   layout->metadata_offset_B = layout->size_B;
+
+   unsigned width_px = ALIGN_POT(layout->width_px, 16);
+   unsigned height_px = ALIGN_POT(layout->height_px, 16);
+
+   unsigned compbuf_B = 0;
+
+   for (unsigned l = 0; l < layout->levels; ++l) {
+      if (width_px < 16 && height_px < 16)
+         break;
+
+      /* The compression buffer seems to have 8 bytes per 16 x 16 pixel block. */
+      unsigned cmpw_el = DIV_ROUND_UP(util_next_power_of_two(width_px), 16);
+      unsigned cmph_el = DIV_ROUND_UP(util_next_power_of_two(height_px), 16);
+      compbuf_B += ALIGN_POT(cmpw_el * cmph_el * 8, AIL_CACHELINE);
+
+      width_px = DIV_ROUND_UP(width_px, 2);
+      height_px = DIV_ROUND_UP(height_px, 2);
+   }
+
+   layout->size_B += compbuf_B * layout->depth_px;
 }
 
 void
@@ -193,13 +235,21 @@ ail_make_miptree(struct ail_layout *layout)
    assert(util_format_get_blockdepth(layout->format) == 1 &&
          "Deep formats unsupported");
 
-   if (layout->tiling == AIL_TILING_LINEAR)
+   switch (layout->tiling) {
+   case AIL_TILING_LINEAR:
       ail_initialize_linear(layout);
-   else if (layout->tiling == AIL_TILING_TWIDDLED)
+      break;
+   case AIL_TILING_TWIDDLED:
       ail_initialize_twiddled(layout);
-   else
+      break;
+   case AIL_TILING_TWIDDLED_COMPRESSED:
+      ail_initialize_twiddled(layout);
+      ail_initialize_compression(layout);
+      break;
+   default:
       unreachable("Unsupported tiling");
+   }
 
-   layout->size_B = ALIGN_POT(layout->size_B, AIL_PAGESIZE);
+   layout->size_B = ALIGN_POT(layout->size_B, AIL_CACHELINE);
    assert(layout->size_B > 0 && "Invalid dimensions");
 }

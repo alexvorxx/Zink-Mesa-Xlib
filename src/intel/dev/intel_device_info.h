@@ -140,6 +140,7 @@ struct intel_device_info
     */
    bool has_flat_ccs;
    bool has_aux_map;
+   bool has_caching_uapi;
    bool has_tiling_uapi;
    bool has_ray_tracing;
    bool has_ray_query;

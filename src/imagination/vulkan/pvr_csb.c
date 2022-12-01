@@ -36,6 +36,7 @@
 #include "hwdef/rogue_hw_utils.h"
 #include "pvr_bo.h"
 #include "pvr_csb.h"
+#include "pvr_debug.h"
 #include "pvr_device_info.h"
 #include "pvr_private.h"
 #include "util/list.h"
@@ -60,11 +61,6 @@
  * Note: Sub control stream is only supported for PVR_CMD_STREAM_TYPE_GRAPHICS
  * type control streams.
  */
-
-/**
- * \brief Size of the individual csb buffer object.
- */
-#define PVR_CMD_BUFFER_CSB_BO_SIZE 4096
 
 /**
  * \brief Initializes the csb object.
@@ -137,8 +133,16 @@ static bool pvr_csb_buffer_extend(struct pvr_csb *csb)
                                      sizeof(uint32_t);
    const uint32_t cache_line_size =
       rogue_get_slc_cache_line_size(&csb->device->pdevice->dev_info);
+   uint64_t alloc_flags = PVR_BO_ALLOC_FLAG_CPU_MAPPED;
    struct pvr_bo *pvr_bo;
    VkResult result;
+
+   /* If we're dumping the control stream, ensure the buffer is zeroed to make
+    * the contents deterministic. This keeps valgrind happy and makes for
+    * cleaner dump output.
+    */
+   if (PVR_IS_DEBUG_SET(DUMP_CONTROL_STREAM))
+      alloc_flags |= PVR_BO_ALLOC_FLAG_ZERO_ON_ALLOC;
 
    /* Make sure extra space allocated for stream links is sufficient for both
     * stream types.
@@ -152,7 +156,7 @@ static bool pvr_csb_buffer_extend(struct pvr_csb *csb)
                          csb->device->heaps.general_heap,
                          PVR_CMD_BUFFER_CSB_BO_SIZE,
                          cache_line_size,
-                         PVR_BO_ALLOC_FLAG_CPU_MAPPED,
+                         alloc_flags,
                          &pvr_bo);
    if (result != VK_SUCCESS) {
       vk_error(csb->device, result);

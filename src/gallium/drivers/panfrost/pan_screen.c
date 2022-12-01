@@ -869,6 +869,24 @@ panfrost_get_disk_shader_cache(struct pipe_screen *pscreen)
         return pan_screen(pscreen)->disk_cache;
 }
 
+int
+panfrost_get_driver_query_info(struct pipe_screen *pscreen, unsigned index,
+                               struct pipe_driver_query_info *info)
+{
+        int num_queries = ARRAY_SIZE(panfrost_driver_query_list);
+
+        if (!info)
+           return num_queries;
+
+        if (index >= num_queries)
+           return 0;
+
+        *info = panfrost_driver_query_list[index];
+
+        return 1;
+}
+
+
 struct pipe_screen *
 panfrost_create_screen(int fd, struct renderonly *ro)
 {
@@ -901,6 +919,7 @@ panfrost_create_screen(int fd, struct renderonly *ro)
         screen->base.get_name = panfrost_get_name;
         screen->base.get_vendor = panfrost_get_vendor;
         screen->base.get_device_vendor = panfrost_get_device_vendor;
+        screen->base.get_driver_query_info = panfrost_get_driver_query_info;
         screen->base.get_param = panfrost_get_param;
         screen->base.get_shader_param = panfrost_get_shader_param;
         screen->base.get_compute_param = panfrost_get_compute_param;
