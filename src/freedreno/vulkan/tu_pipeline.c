@@ -87,7 +87,6 @@ tu6_load_state_size(struct tu_pipeline *pipeline,
          case VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER:
          case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER:
          case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC:
-         case VK_DESCRIPTOR_TYPE_INLINE_UNIFORM_BLOCK_EXT:
             /* Textures and UBO's needs a packet for each stage */
             count = stage_count;
             break;
@@ -98,6 +97,7 @@ tu6_load_state_size(struct tu_pipeline *pipeline,
             count = stage_count * binding->array_size * 2;
             break;
          case VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT:
+         case VK_DESCRIPTOR_TYPE_INLINE_UNIFORM_BLOCK_EXT:
          case VK_DESCRIPTOR_TYPE_MUTABLE_EXT:
             break;
          default:
@@ -185,8 +185,9 @@ tu6_emit_load_state(struct tu_pipeline *pipeline,
             break;
          }
          case VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT:
+         case VK_DESCRIPTOR_TYPE_INLINE_UNIFORM_BLOCK_EXT:
          case VK_DESCRIPTOR_TYPE_MUTABLE_EXT:
-            /* nothing - input attachment doesn't use bindless */
+            /* nothing - input attachments and inline uniforms don't use bindless */
             break;
          case VK_DESCRIPTOR_TYPE_SAMPLER:
          case VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE:
@@ -204,8 +205,7 @@ tu6_emit_load_state(struct tu_pipeline *pipeline,
             offset = (layout->set[i].dynamic_offset_start +
                       binding->dynamic_offset_offset) / 4;
             FALLTHROUGH;
-         case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER:
-         case VK_DESCRIPTOR_TYPE_INLINE_UNIFORM_BLOCK_EXT: {
+         case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER: {
             tu_foreach_stage(stage, stages) {
                emit_load_state(&cs, tu6_stage2opcode(stage), ST6_UBO,
                                tu6_stage2shadersb(stage), base, offset, count);

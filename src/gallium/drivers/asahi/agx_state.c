@@ -259,6 +259,17 @@ agx_bind_zsa_state(struct pipe_context *pctx, void *cso)
    ctx->dirty |= AGX_DIRTY_ZS;
 }
 
+static enum agx_polygon_mode
+agx_translate_polygon_mode(unsigned mode)
+{
+   switch (mode) {
+   case PIPE_POLYGON_MODE_FILL: return AGX_POLYGON_MODE_FILL;
+   case PIPE_POLYGON_MODE_POINT: return AGX_POLYGON_MODE_POINT;
+   case PIPE_POLYGON_MODE_LINE: return AGX_POLYGON_MODE_LINE;
+   default: unreachable("Unsupported polygon mode");
+   }
+}
+
 static void *
 agx_create_rs_state(struct pipe_context *ctx,
                     const struct pipe_rasterizer_state *cso)
@@ -279,6 +290,16 @@ agx_create_rs_state(struct pipe_context *ctx,
       cfg.depth_clip = cso->depth_clip_near;
       cfg.depth_clamp = !cso->depth_clip_near;
    };
+
+   /* Two-sided polygon mode doesn't seem to work on G13. Apple's OpenGL
+    * implementation lowers to multiple draws with culling. Warn.
+    */
+   if (unlikely(cso->fill_front != cso->fill_back)) {
+      fprintf(stderr, "Warning: Two-sided fill modes are unsupported, "
+                      "rendering may be incorrect.\n");
+   }
+
+   so->polygon_mode = agx_translate_polygon_mode(cso->fill_front);
 
    return so;
 }
@@ -966,18 +987,13 @@ agx_create_vertex_elements(struct pipe_context *ctx,
 
       const struct util_format_description *desc =
          util_format_description(ve.src_format);
-
       unsigned chan_size = desc->channel[0].size / 8;
-
-      assert(chan_size == 1 || chan_size == 2 || chan_size == 4);
-      assert(desc->nr_channels >= 1 && desc->nr_channels <= 4);
       assert((ve.src_offset & (chan_size - 1)) == 0);
 
       attribs[i] = (struct agx_attribute) {
          .buf = ve.vertex_buffer_index,
-         .src_offset = ve.src_offset / chan_size,
-         .nr_comps_minus_1 = desc->nr_channels - 1,
-         .format = agx_vertex_format[ve.src_format],
+         .src_offset = ve.src_offset,
+         .format = ve.src_format,
          .divisor = ve.instance_divisor
       };
    }
@@ -1163,11 +1179,13 @@ agx_compile_variant(struct agx_device *dev,
 
    agx_preprocess_nir(nir);
 
-   if (nir->info.stage == MESA_SHADER_FRAGMENT) {
+   if (nir->info.stage == MESA_SHADER_VERTEX) {
+      NIR_PASS_V(nir, agx_nir_lower_vbo, &key->vbuf);
+   } else {
       struct agx_tilebuffer_layout tib =
          agx_build_tilebuffer_layout(key->rt_formats, key->nr_cbufs, 1);
 
-      agx_nir_lower_tilebuffer(nir, &tib);
+      NIR_PASS_V(nir, agx_nir_lower_tilebuffer, &tib);
    }
 
    agx_compile_shader_nir(nir, &key->base, debug, &binary, &compiled->info);
@@ -1222,13 +1240,12 @@ agx_create_shader_state(struct pipe_context *pctx,
       switch (so->nir->info.stage) {
       case MESA_SHADER_VERTEX:
       {
-         key.base.vs.num_vbufs = AGX_MAX_VBUFS;
+         key.vbuf.count = AGX_MAX_VBUFS;
          for (unsigned i = 0; i < AGX_MAX_VBUFS; ++i) {
-            key.base.vs.vbuf_strides[i] = 16;
-            key.base.vs.attributes[i] = (struct agx_attribute) {
+            key.vbuf.strides[i] = 16;
+            key.vbuf.attributes[i] = (struct agx_attribute) {
                .buf = i,
-               .nr_comps_minus_1 = 4 - 1,
-               .format = AGX_FORMAT_I32
+               .format = PIPE_FORMAT_R32G32B32A32_FLOAT
             };
          }
 
@@ -1274,20 +1291,18 @@ agx_update_shader(struct agx_context *ctx, struct agx_compiled_shader **out,
 static bool
 agx_update_vs(struct agx_context *ctx)
 {
-   struct agx_vs_shader_key key = { 0 };
-
-   memcpy(key.attributes, ctx->attributes,
-          sizeof(key.attributes[0]) * AGX_MAX_ATTRIBS);
-
-   u_foreach_bit(i, ctx->vb_mask) {
-      key.vbuf_strides[i] = ctx->vertex_buffers[i].stride;
-   }
-
-   struct asahi_shader_key akey = {
-      .base.vs = key
+   struct asahi_shader_key key = {
+      .vbuf.count = util_last_bit(ctx->vb_mask),
    };
 
-   return agx_update_shader(ctx, &ctx->vs, PIPE_SHADER_VERTEX, &akey);
+   memcpy(key.vbuf.attributes, ctx->attributes,
+          sizeof(key.vbuf.attributes[0]) * AGX_MAX_ATTRIBS);
+
+   u_foreach_bit(i, ctx->vb_mask) {
+      key.vbuf.strides[i] = ctx->vertex_buffers[i].stride;
+   }
+
+   return agx_update_shader(ctx, &ctx->vs, PIPE_SHADER_VERTEX, &key);
 }
 
 static bool
@@ -1363,6 +1378,13 @@ agx_build_pipeline(struct agx_batch *batch, struct agx_compiled_shader *cs, enum
    /* TODO: Dirty track me to save some CPU cycles and maybe improve caching */
    for (unsigned i = 0; i < nr_textures; ++i) {
       struct agx_sampler_view *tex = ctx->stage[stage].textures[i];
+
+      /* TODO: Use an actual null texture for robustness */
+      if (tex == NULL) {
+         memset(&textures[i], 0, sizeof(textures[i]));
+         continue;
+      }
+
       agx_batch_reads(batch, agx_resource(tex->base.texture));
 
       /* Without the address */
@@ -1388,6 +1410,8 @@ agx_build_pipeline(struct agx_batch *batch, struct agx_compiled_shader *cs, enum
 
       if (sampler)
          samplers[i] = sampler->desc;
+      else
+         memset(&samplers[i], 0, sizeof(samplers[i]));
    }
 
    struct agx_usc_builder b =
@@ -1774,15 +1798,14 @@ agx_encode_state(struct agx_batch *batch, uint8_t *out,
       agx_pack(&front_face, FRAGMENT_FACE, cfg) {
          cfg.stencil_reference = ctx->stencil_ref.ref_value[0];
          cfg.line_width = rast->line_width;
-         cfg.polygon_mode = AGX_POLYGON_MODE_FILL;
+         cfg.polygon_mode = rast->polygon_mode;
       };
 
       agx_pack(&back_face, FRAGMENT_FACE, cfg) {
          bool twosided = ctx->zs->base.stencil[1].enabled;
          cfg.stencil_reference = ctx->stencil_ref.ref_value[twosided ? 1 : 0];
-
          cfg.line_width = rast->line_width;
-         cfg.polygon_mode = AGX_POLYGON_MODE_FILL;
+         cfg.polygon_mode = rast->polygon_mode;
       };
 
       front_face.opaque[0] |= ctx->zs->depth.opaque[0];

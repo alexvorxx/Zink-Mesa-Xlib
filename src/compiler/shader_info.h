@@ -509,7 +509,7 @@ typedef struct shader_info {
 
       /* Applies to both TCS and TES. */
       struct {
-	 enum tess_primitive_mode _primitive_mode;
+         enum tess_primitive_mode _primitive_mode;
 
          /** The number of vertices in the TCS output patch. */
          uint8_t tcs_vertices_out;

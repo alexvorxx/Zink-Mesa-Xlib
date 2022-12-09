@@ -141,13 +141,21 @@ struct pvr_dump_buffer_ctx {
       pvr_dump_printf_cont(&_ctx->base, format "\n", ##args);   \
    } while (0)
 
-#define pvr_dump_error(ctx, format, args...)                  \
-   ({                                                         \
-      struct pvr_dump_ctx *_ctx = (ctx);                      \
-      pvr_dump_println(_ctx, "<!ERROR! " format ">", ##args); \
-      _ctx->ok = false;                                       \
-      false;                                                  \
+#define pvr_dump_msg(ctx, prefix, ret, format, args...)            \
+   ({                                                              \
+      bool _ret = (ret);                                           \
+      struct pvr_dump_ctx *_ctx = (ctx);                           \
+      pvr_dump_println(_ctx, "<!" prefix "! " format ">", ##args); \
+      if (!_ret)                                                   \
+         _ctx->ok = _ret;                                          \
+      _ret;                                                        \
    })
+
+#define pvr_dump_error(ctx, format, args...) \
+   pvr_dump_msg(ctx, "ERROR", false, format, ##args)
+
+#define pvr_dump_warn(ctx, format, args...) \
+   pvr_dump_msg(ctx, "WARN", true, format, ##args)
 
 static inline bool pvr_dump_ctx_require_top(struct pvr_dump_ctx *const ctx)
 {
@@ -287,7 +295,7 @@ pvr_dump_buffer_ctx_pop(struct pvr_dump_buffer_ctx *const ctx)
    return pvr_dump_ctx_pop(&ctx->base);
 }
 
-bool pvr_dump_buffer_hex(struct pvr_dump_buffer_ctx *ctx, uint64_t nr_words);
+bool pvr_dump_buffer_hex(struct pvr_dump_buffer_ctx *ctx, uint64_t nr_bytes);
 
 static inline void __pvr_dump_buffer_advance(struct pvr_dump_buffer_ctx *ctx,
                                              const uint64_t nr_bytes)
@@ -306,6 +314,27 @@ static inline bool pvr_dump_buffer_advance(struct pvr_dump_buffer_ctx *ctx,
       return pvr_dump_error(&ctx->base, "advanced past end of context buffer");
 
    __pvr_dump_buffer_advance(ctx, nr_bytes);
+
+   return true;
+}
+
+static inline void __pvr_dump_buffer_rewind(struct pvr_dump_buffer_ctx *ctx,
+                                            const uint32_t nr_bytes)
+{
+   ctx->ptr -= nr_bytes;
+   ctx->remaining_size += nr_bytes;
+}
+
+static inline bool pvr_dump_buffer_rewind(struct pvr_dump_buffer_ctx *ctx,
+                                          const uint32_t nr_bytes)
+{
+   if (!ctx->base.ok || !pvr_dump_ctx_require_top(&ctx->base))
+      return false;
+
+   if (nr_bytes > ctx->capacity - ctx->remaining_size)
+      return pvr_dump_error(&ctx->base, "rewound past start of context buffer");
+
+   __pvr_dump_buffer_rewind(ctx, nr_bytes);
 
    return true;
 }
@@ -561,6 +590,20 @@ static inline void pvr_dump_field_addr_split(struct pvr_dump_ctx *const ctx,
    pvr_dump_dedent(ctx);
 }
 
+static inline void pvr_dump_field_addr_offset(struct pvr_dump_ctx *const ctx,
+                                              const char *const name,
+                                              const pvr_dev_addr_t value,
+                                              const pvr_dev_addr_t base)
+{
+   pvr_dump_field_computed(ctx,
+                           name,
+                           PVR_DEV_ADDR_FMT,
+                           PVR_DEV_ADDR_FMT " + " PVR_DEV_ADDR_FMT,
+                           PVR_DEV_ADDR_OFFSET(base, value.addr).addr,
+                           base.addr,
+                           value.addr);
+}
+
 /*****************************************************************************
    Field printers: enums
 *****************************************************************************/
@@ -640,6 +683,9 @@ static inline void pvr_dump_field_not_present(struct pvr_dump_ctx *const ctx,
 
 #define pvr_dump_field_member_addr(ctx, compound, member) \
    pvr_dump_field_addr(ctx, #member, (compound)->member)
+
+#define pvr_dump_field_member_addr_offset(ctx, compound, member, base) \
+   pvr_dump_field_addr_offset(ctx, #member, (compound)->member, base)
 
 #define pvr_dump_field_member_enum(ctx, compound, member, to_str) \
    pvr_dump_field_enum(ctx, #member, (compound)->member, to_str)

@@ -50,7 +50,7 @@ dri_create_context(struct dri_screen *screen,
                    void *loaderPrivate)
 {
    struct dri_context *ctx = NULL;
-   struct st_context_iface *st_share = NULL;
+   struct st_context *st_share = NULL;
    struct st_context_attribs attribs;
    enum st_context_error ctx_err = 0;
    unsigned allowed_flags = __DRI_CTX_FLAG_DEBUG |
@@ -84,18 +84,18 @@ dri_create_context(struct dri_screen *screen,
    memset(&attribs, 0, sizeof(attribs));
    switch (api) {
    case API_OPENGLES:
-      attribs.profile = ST_PROFILE_OPENGL_ES1;
+      attribs.profile = API_OPENGLES;
       break;
    case API_OPENGLES2:
-      attribs.profile = ST_PROFILE_OPENGL_ES2;
+      attribs.profile = API_OPENGLES2;
       break;
    case API_OPENGL_COMPAT:
    case API_OPENGL_CORE:
       if (driQueryOptionb(optionCache, "force_compat_profile")) {
-         attribs.profile = ST_PROFILE_DEFAULT;
+         attribs.profile = API_OPENGL_COMPAT;
       } else {
-         attribs.profile = api == API_OPENGL_COMPAT ? ST_PROFILE_DEFAULT
-                                                    : ST_PROFILE_OPENGL_CORE;
+         attribs.profile = api == API_OPENGL_COMPAT ? API_OPENGL_COMPAT
+                                                    : API_OPENGL_CORE;
       }
 
       attribs.major = ctx_config->major_version;
@@ -113,11 +113,11 @@ dri_create_context(struct dri_screen *screen,
       attribs.flags |= ST_CONTEXT_FLAG_DEBUG;
 
    if (ctx_config->flags & __DRI_CTX_FLAG_ROBUST_BUFFER_ACCESS)
-      attribs.flags |= ST_CONTEXT_FLAG_ROBUST_ACCESS;
+      attribs.context_flags |= PIPE_CONTEXT_ROBUST_BUFFER_ACCESS;
 
    if (ctx_config->attribute_mask & __DRIVER_CONTEXT_ATTRIB_RESET_STRATEGY)
       if (ctx_config->reset_strategy != __DRI_CTX_RESET_NO_NOTIFICATION)
-         attribs.flags |= ST_CONTEXT_FLAG_RESET_NOTIFICATION_ENABLED;
+         attribs.context_flags |= PIPE_CONTEXT_LOSE_CONTEXT_ON_RESET;
 
    if (ctx_config->attribute_mask & __DRIVER_CONTEXT_ATTRIB_NO_ERROR)
       attribs.flags |= ctx_config->no_error ? ST_CONTEXT_FLAG_NO_ERROR : 0;
@@ -125,10 +125,10 @@ dri_create_context(struct dri_screen *screen,
    if (ctx_config->attribute_mask & __DRIVER_CONTEXT_ATTRIB_PRIORITY) {
       switch (ctx_config->priority) {
       case __DRI_CTX_PRIORITY_LOW:
-         attribs.flags |= ST_CONTEXT_FLAG_LOW_PRIORITY;
+         attribs.context_flags |= PIPE_CONTEXT_LOW_PRIORITY;
          break;
       case __DRI_CTX_PRIORITY_HIGH:
-         attribs.flags |= ST_CONTEXT_FLAG_HIGH_PRIORITY;
+         attribs.context_flags |= PIPE_CONTEXT_HIGH_PRIORITY;
          break;
       default:
          break;
@@ -140,7 +140,7 @@ dri_create_context(struct dri_screen *screen,
       attribs.flags |= ST_CONTEXT_FLAG_RELEASE_NONE;
 
    if (ctx_config->attribute_mask & __DRIVER_CONTEXT_ATTRIB_PROTECTED)
-      attribs.flags |= ST_CONTEXT_FLAG_PROTECTED;
+      attribs.context_flags |= PIPE_CONTEXT_PROTECTED;
 
    struct dri_context *share_ctx = NULL;
    if (sharedContextPrivate) {
@@ -179,36 +179,24 @@ dri_create_context(struct dri_screen *screen,
       case ST_CONTEXT_ERROR_NO_MEMORY:
 	 *error = __DRI_CTX_ERROR_NO_MEMORY;
 	 break;
-      case ST_CONTEXT_ERROR_BAD_API:
-	 *error = __DRI_CTX_ERROR_BAD_API;
-	 break;
       case ST_CONTEXT_ERROR_BAD_VERSION:
 	 *error = __DRI_CTX_ERROR_BAD_VERSION;
-	 break;
-      case ST_CONTEXT_ERROR_BAD_FLAG:
-	 *error = __DRI_CTX_ERROR_BAD_FLAG;
-	 break;
-      case ST_CONTEXT_ERROR_UNKNOWN_ATTRIBUTE:
-	 *error = __DRI_CTX_ERROR_UNKNOWN_ATTRIBUTE;
-	 break;
-      case ST_CONTEXT_ERROR_UNKNOWN_FLAG:
-	 *error = __DRI_CTX_ERROR_UNKNOWN_FLAG;
 	 break;
       }
       goto fail;
    }
-   ctx->st->st_manager_private = (void *) ctx;
+   ctx->st->frontend_context = (void *) ctx;
 
    if (ctx->st->cso_context) {
       ctx->pp = pp_init(ctx->st->pipe, screen->pp_enabled, ctx->st->cso_context,
-                        ctx->st);
-      ctx->hud = hud_create(ctx->st->cso_context, ctx->st,
-                            share_ctx ? share_ctx->hud : NULL);
+                        ctx->st, (void*)st_context_invalidate_state);
+      ctx->hud = hud_create(ctx->st->cso_context,
+                            share_ctx ? share_ctx->hud : NULL,
+                            ctx->st, (void*)st_context_invalidate_state);
    }
 
    /* Do this last. */
-   if (ctx->st->start_thread &&
-       driQueryOptionb(&screen->dev->option_cache, "mesa_glthread")) {
+   if (driQueryOptionb(&screen->dev->option_cache, "mesa_glthread")) {
       bool safe = true;
 
       /* This is only needed by X11/DRI2, which can be unsafe. */
@@ -219,7 +207,7 @@ dri_create_context(struct dri_screen *screen,
          safe = false;
 
       if (safe)
-         ctx->st->start_thread(ctx->st);
+         _mesa_glthread_init(ctx->st->ctx);
    }
 
    *error = __DRI_CTX_ERROR_SUCCESS;
@@ -227,7 +215,7 @@ dri_create_context(struct dri_screen *screen,
 
  fail:
    if (ctx && ctx->st)
-      ctx->st->destroy(ctx->st);
+      st_destroy_context(ctx->st);
 
    free(ctx);
    return NULL;
@@ -239,8 +227,7 @@ dri_destroy_context(struct dri_context *ctx)
    /* Wait for glthread to finish because we can't use pipe_context from
     * multiple threads.
     */
-   if (ctx->st->thread_finish)
-      ctx->st->thread_finish(ctx->st);
+   _mesa_glthread_finish(ctx->st->ctx);
 
    if (ctx->hud) {
       hud_destroy(ctx->hud, ctx->st->cso_context);
@@ -254,8 +241,8 @@ dri_destroy_context(struct dri_context *ctx)
     * to avoid having to add code elsewhere to cope with flushing a
     * partially destroyed context.
     */
-   ctx->st->flush(ctx->st, 0, NULL, NULL, NULL);
-   ctx->st->destroy(ctx->st);
+   st_context_flush(ctx->st, 0, NULL, NULL, NULL);
+   st_destroy_context(ctx->st);
    free(ctx);
 }
 
@@ -264,11 +251,10 @@ GLboolean
 dri_unbind_context(struct dri_context *ctx)
 {
    /* dri_util.c ensures cPriv is not null */
-   struct st_context_iface *st = ctx->st;
+   struct st_context *st = ctx->st;
 
    if (st == st_api_get_current()) {
-      if (st->thread_finish)
-         st->thread_finish(st);
+      _mesa_glthread_finish(st->ctx);
 
       /* Record HUD queries for the duration the context was "current". */
       if (ctx->hud)
@@ -309,8 +295,7 @@ dri_make_current(struct dri_context *ctx,
    /* Wait for glthread to finish because we can't use st_context from
     * multiple threads.
     */
-   if (ctx->st->thread_finish)
-      ctx->st->thread_finish(ctx->st);
+   _mesa_glthread_finish(ctx->st->ctx);
 
    /* There are 2 cases that can occur here. Either we bind drawables, or we
     * bind NULL for configless and surfaceless contexts.
@@ -343,9 +328,9 @@ dri_make_current(struct dri_context *ctx,
 struct dri_context *
 dri_get_current(void)
 {
-   struct st_context_iface *st = st_api_get_current();
+   struct st_context *st = st_api_get_current();
 
-   return (struct dri_context *) st ? st->st_manager_private : NULL;
+   return (struct dri_context *) st ? st->frontend_context : NULL;
 }
 
 /* vim: set sw=3 ts=8 sts=3 expandtab: */

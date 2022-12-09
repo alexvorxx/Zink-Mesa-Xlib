@@ -3333,7 +3333,7 @@ glsl_type::cl_alignment() const
    if (this->is_scalar() || this->is_vector())
       return this->cl_size();
    else if (this->is_array())
-      return this->without_array()->cl_alignment();
+      return this->fields.array->cl_alignment();
    else if (this->is_struct()) {
       /* Packed Structs are 0x1 aligned despite their size. */
       if (this->packed)
@@ -3356,7 +3356,7 @@ glsl_type::cl_size() const
       return util_next_power_of_two(this->vector_elements) *
              explicit_type_scalar_byte_size(this);
    } else if (this->is_array()) {
-      unsigned size = this->without_array()->cl_size();
+      unsigned size = this->fields.array->cl_size();
       return size * this->length;
    } else if (this->is_struct()) {
       unsigned size = 0;

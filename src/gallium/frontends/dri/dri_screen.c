@@ -43,6 +43,8 @@
 #include "util/u_driconf.h"
 #include "util/format/u_format_s3tc.h"
 
+#include "state_tracker/st_context.h"
+
 #define MSAA_VISUAL_MAX_SAMPLES 32
 
 #undef false
@@ -709,11 +711,11 @@ dri_fill_st_visual(struct st_visual *stvis,
 }
 
 static bool
-dri_get_egl_image(struct st_manager *smapi,
+dri_get_egl_image(struct pipe_frontend_screen *fscreen,
                   void *egl_image,
                   struct st_egl_image *stimg)
 {
-   struct dri_screen *screen = (struct dri_screen *)smapi;
+   struct dri_screen *screen = (struct dri_screen *)fscreen;
    __DRIimage *img = NULL;
    const struct dri2_format_mapping *map;
 
@@ -751,16 +753,16 @@ dri_get_egl_image(struct st_manager *smapi,
 }
 
 static bool
-dri_validate_egl_image(struct st_manager *smapi,
+dri_validate_egl_image(struct pipe_frontend_screen *fscreen,
                        void *egl_image)
 {
-   struct dri_screen *screen = (struct dri_screen *)smapi;
+   struct dri_screen *screen = (struct dri_screen *)fscreen;
 
    return screen->validate_egl_image(screen, egl_image);
 }
 
 static int
-dri_get_param(struct st_manager *smapi,
+dri_get_param(struct pipe_frontend_screen *fscreen,
               enum st_manager_param param)
 {
    return 0;
@@ -769,8 +771,7 @@ dri_get_param(struct st_manager *smapi,
 void
 dri_destroy_screen_helper(struct dri_screen * screen)
 {
-   if (screen->base.destroy)
-      screen->base.destroy(&screen->base);
+   st_screen_destroy(&screen->base);
 
    if (screen->base.screen)
       screen->base.screen->destroy(screen->base.screen);
@@ -808,10 +809,10 @@ dri_postprocessing_init(struct dri_screen *screen)
 }
 
 static void
-dri_set_background_context(struct st_context_iface *st,
+dri_set_background_context(struct st_context *st,
                            struct util_queue_monitoring *queue_info)
 {
-   struct dri_context *ctx = (struct dri_context *)st->st_manager_private;
+   struct dri_context *ctx = (struct dri_context *)st->frontend_context;
    const __DRIbackgroundCallableExtension *backgroundCallable =
       ctx->screen->dri2.backgroundCallable;
 

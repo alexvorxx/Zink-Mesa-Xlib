@@ -12,7 +12,7 @@ traces:
       checksum: c377f21f7bfaca0c04983612e7c9a7bb
   gputest/pixmark-piano-v2.trace:
     gl-virgl:
-      checksum: b284da2f0666e1b5fcdecbc3ab8e4270
+      checksum: 85620a20ed358db81a33ad117fd93739
   gputest/triangle-v2.trace:
     gl-virgl:
       checksum: 5f694874b15bcd7a3689b387c143590b
@@ -33,7 +33,7 @@ traces:
       checksum: 1760aea00af985b8cd902128235b08f6
   gputest/pixmark-volplosion-v2.trace:
     gl-virgl:
-      checksum: 00642d04fd37eca519d07f7f345f6b9c
+      checksum: c4ae80a143de76e137e5dd406586a459
   gputest/plot3d-v2.trace:
     gl-virgl:
       checksum: 56f11d133f72712a6df13855ec00cdb0
@@ -89,7 +89,7 @@ traces:
       checksum: b36c25e52624cbf8dab73b6acecb8e84
   supertuxkart/supertuxkart-mansion-egl-gles-v2.trace:
     gl-virgl:
-      checksum: e3f0df3f1162f7e9658b9c9225f0c28c
+      checksum: 5f09cbda043d1b6ee41ab287209e903d
   xonotic/xonotic-keybench-high-v2.trace:
     gl-virgl:
       checksum: 181424f3afd256108be63d8ea0669b6b
@@ -117,7 +117,7 @@ traces:
       label: [crash]
   godot/Material Testers.x86_64_2020.04.08_13.38_frame799.rdc:
     gl-virgl:
-      checksum: 2703d52248a4c6e76a4e748f31f7fb4d
+      checksum: 9f73f0d775b579a6bd15a75f86d956a2
   ror/ror-default.trace:
     gl-virgl:
       label: [crash]

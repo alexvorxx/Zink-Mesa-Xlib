@@ -1,6 +1,6 @@
 variables:
    DEBIAN_X86_BUILD_BASE_IMAGE: "debian/x86_build-base"
-   DEBIAN_BASE_TAG: "2022-11-22-arm-test-split-1"
+   DEBIAN_BASE_TAG: "2022-12-02-kernel-zram"
 
    DEBIAN_X86_BUILD_IMAGE_PATH: "debian/x86_build"
    DEBIAN_BUILD_TAG: "2022-11-03-ci-fairy-s3"
@@ -19,7 +19,7 @@ variables:
 
    ALPINE_X86_BUILD_TAG: "2022-11-28-disable-mold"
    FEDORA_X86_BUILD_TAG: "2022-09-22-python3-ply-2"
-   KERNEL_ROOTFS_TAG: "2022-11-17-weston"
+   KERNEL_ROOTFS_TAG: "2022-12-02-kernel-zram"
 
    WINDOWS_X64_VS_PATH: "windows/x64_vs"
    WINDOWS_X64_VS_TAG: "2022-10-20-upgrade-zlib"

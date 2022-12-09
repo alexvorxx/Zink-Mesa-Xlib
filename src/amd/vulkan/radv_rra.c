@@ -228,10 +228,10 @@ struct rra_accel_struct_header {
    uint32_t unused1;
    uint32_t geometry_description_count;
    VkGeometryTypeKHR geometry_type;
-   uint32_t internal_node_data_start;
-   uint32_t internal_node_data_end;
-   uint32_t leaf_node_data_start;
-   uint32_t leaf_node_data_end;
+   uint32_t internal_nodes_offset;
+   uint32_t leaf_nodes_offset;
+   uint32_t geometry_infos_offset;
+   uint32_t leaf_ids_offset;
    uint32_t interior_fp32_node_count;
    uint32_t interior_fp16_node_count;
    uint32_t leaf_node_count;
@@ -266,32 +266,36 @@ static_assert(sizeof(struct rra_geometry_info) == 12, "rra_geometry_info does no
 
 static struct rra_accel_struct_header
 rra_fill_accel_struct_header_common(struct radv_accel_struct_header *header,
-                                    size_t leaf_node_data_size, size_t internal_node_data_size,
-                                    uint64_t primitive_count)
+                                    size_t parent_id_table_size, size_t leaf_node_data_size,
+                                    size_t internal_node_data_size, uint64_t primitive_count)
 {
-   return (struct rra_accel_struct_header){
+   struct rra_accel_struct_header result = {
       .post_build_info =
          {
             .build_flags = header->build_flags,
             /* Seems to be no compression */
             .tri_compression_mode = 0,
          },
-      .metadata_size = sizeof(struct rra_accel_struct_metadata),
-      .file_size = sizeof(struct rra_accel_struct_metadata) +
-                   sizeof(struct rra_accel_struct_header) + internal_node_data_size +
-                   leaf_node_data_size,
       .primitive_count = primitive_count,
       /* TODO: calculate active primitives */
       .active_primitive_count = primitive_count,
       .geometry_description_count = header->geometry_count,
-      .internal_node_data_start = sizeof(struct rra_accel_struct_metadata),
-      .internal_node_data_end = sizeof(struct rra_accel_struct_metadata) + internal_node_data_size,
-      .leaf_node_data_start = sizeof(struct rra_accel_struct_metadata) + internal_node_data_size,
-      .leaf_node_data_end =
-         sizeof(struct rra_accel_struct_metadata) + internal_node_data_size + leaf_node_data_size,
       .interior_fp32_node_count = internal_node_data_size / sizeof(struct radv_bvh_box32_node),
       .leaf_node_count = primitive_count,
    };
+
+   result.metadata_size = sizeof(struct rra_accel_struct_metadata) + parent_id_table_size;
+   result.file_size = result.metadata_size + sizeof(struct rra_accel_struct_header) +
+                      internal_node_data_size + leaf_node_data_size;
+
+   result.internal_nodes_offset = sizeof(struct rra_accel_struct_metadata);
+   result.leaf_nodes_offset = result.internal_nodes_offset + internal_node_data_size;
+   result.geometry_infos_offset = result.leaf_nodes_offset + leaf_node_data_size;
+   result.leaf_ids_offset = result.geometry_infos_offset;
+   if (!header->instance_count)
+      result.leaf_ids_offset += header->geometry_count * sizeof(struct rra_geometry_info);
+
+   return result;
 }
 
 struct rra_box32_node {
@@ -354,11 +358,12 @@ struct rra_triangle_node {
 static_assert(sizeof(struct rra_triangle_node) == 64, "rra_triangle_node does not match RRA spec!");
 
 static void
-rra_dump_tlas_header(struct radv_accel_struct_header *header, size_t leaf_node_data_size,
-                     size_t internal_node_data_size, uint64_t primitive_count, FILE *output)
+rra_dump_tlas_header(struct radv_accel_struct_header *header, size_t parent_id_table_size,
+                     size_t leaf_node_data_size, size_t internal_node_data_size,
+                     uint64_t primitive_count, FILE *output)
 {
    struct rra_accel_struct_header file_header = rra_fill_accel_struct_header_common(
-      header, leaf_node_data_size, internal_node_data_size, primitive_count);
+      header, parent_id_table_size, leaf_node_data_size, internal_node_data_size, primitive_count);
    file_header.post_build_info.bvh_type = RRA_BVH_TYPE_TLAS;
    file_header.geometry_type = VK_GEOMETRY_TYPE_INSTANCES_KHR;
 
@@ -366,21 +371,16 @@ rra_dump_tlas_header(struct radv_accel_struct_header *header, size_t leaf_node_d
 }
 
 static void
-rra_dump_blas_header(struct radv_accel_struct_header *header,
+rra_dump_blas_header(struct radv_accel_struct_header *header, size_t parent_id_table_size,
                      struct radv_accel_struct_geometry_info *geometry_infos,
                      size_t leaf_node_data_size, size_t internal_node_data_size,
                      uint64_t primitive_count, FILE *output)
 {
    struct rra_accel_struct_header file_header = rra_fill_accel_struct_header_common(
-      header, leaf_node_data_size, internal_node_data_size, primitive_count);
+      header, parent_id_table_size, leaf_node_data_size, internal_node_data_size, primitive_count);
    file_header.post_build_info.bvh_type = RRA_BVH_TYPE_BLAS;
    file_header.geometry_type =
       header->geometry_count ? geometry_infos->type : VK_GEOMETRY_TYPE_TRIANGLES_KHR;
-   /*
-    * In BLASes in RRA, this seems to correspond to the start offset of the
-    * geometry info instead of leaf node data.
-    */
-   file_header.leaf_node_data_start += leaf_node_data_size;
 
    fwrite(&file_header, sizeof(struct rra_accel_struct_header), 1, output);
 }
@@ -432,7 +432,7 @@ rra_validation_fail(struct rra_validation_context *ctx, const char *message, ...
 }
 
 static bool
-rra_validate_header(struct radv_acceleration_structure *accel_struct,
+rra_validate_header(struct radv_rra_accel_struct_data *accel_struct,
                     const struct radv_accel_struct_header *header)
 {
    struct rra_validation_context ctx = {
@@ -705,20 +705,11 @@ rra_gather_bvh_info(const uint8_t *bvh, uint32_t node_id, struct rra_bvh_info *d
    }
 }
 
-struct rra_copied_accel_struct {
-   VkAccelerationStructureKHR handle;
-   uint8_t *data;
-};
-
 static VkResult
-rra_dump_acceleration_structure(struct rra_copied_accel_struct *copied_struct,
+rra_dump_acceleration_structure(struct radv_rra_accel_struct_data *accel_struct, uint8_t *data,
                                 struct hash_table_u64 *accel_struct_vas, bool should_validate,
                                 FILE *output)
 {
-   VkAccelerationStructureKHR structure = copied_struct->handle;
-   uint8_t *data = copied_struct->data;
-
-   RADV_FROM_HANDLE(radv_acceleration_structure, accel_struct, structure);
    struct radv_accel_struct_header *header = (struct radv_accel_struct_header *)data;
 
    bool is_tlas = header->instance_count > 0;
@@ -820,19 +811,14 @@ rra_dump_acceleration_structure(struct rra_copied_accel_struct *copied_struct,
    fwrite(&chunk_header, sizeof(struct rra_accel_struct_chunk_header), 1, output);
    fwrite(&rra_metadata, sizeof(struct rra_accel_struct_metadata), 1, output);
 
-   /*
-    * See the meta shader source for the memory layout of the
-    * acceleration structure.
-    */
-
    /* Write node parent id data */
    fwrite(node_parent_table, 1, node_parent_table_size, output);
 
    if (is_tlas)
-      rra_dump_tlas_header(header, bvh_info.leaf_nodes_size, bvh_info.internal_nodes_size,
-                           primitive_count, output);
+      rra_dump_tlas_header(header, node_parent_table_size, bvh_info.leaf_nodes_size,
+                           bvh_info.internal_nodes_size, primitive_count, output);
    else
-      rra_dump_blas_header(header, geometry_infos, bvh_info.leaf_nodes_size,
+      rra_dump_blas_header(header, node_parent_table_size, geometry_infos, bvh_info.leaf_nodes_size,
                            bvh_info.internal_nodes_size, primitive_count, output);
 
    /* Write acceleration structure data  */
@@ -886,200 +872,22 @@ radv_rra_trace_init(struct radv_device *device)
 void
 radv_rra_trace_finish(VkDevice vk_device, struct radv_rra_trace_data *data)
 {
+   if (data->accel_structs)
+      hash_table_foreach (data->accel_structs, entry)
+         radv_destroy_rra_accel_struct_data(vk_device, entry->data);
+
    simple_mtx_destroy(&data->data_mtx);
    _mesa_hash_table_destroy(data->accel_structs, NULL);
    _mesa_hash_table_u64_destroy(data->accel_struct_vas);
 }
 
-static uint32_t
-find_memory_index(VkDevice _device, VkMemoryPropertyFlags flags)
+void
+radv_destroy_rra_accel_struct_data(VkDevice device, struct radv_rra_accel_struct_data *data)
 {
-   RADV_FROM_HANDLE(radv_device, device, _device);
-   VkPhysicalDeviceMemoryProperties *mem_properties = &device->physical_device->memory_properties;
-   for (uint32_t i = 0; i < mem_properties->memoryTypeCount; ++i) {
-      if (mem_properties->memoryTypes[i].propertyFlags == flags) {
-         return i;
-      }
-   }
-   unreachable("invalid memory properties");
-}
-
-#define RRA_COPY_BATCH_SIZE 8
-
-struct rra_accel_struct_copy {
-   struct rra_copied_accel_struct copied_structures[RRA_COPY_BATCH_SIZE];
-   uint8_t *map_data;
-   VkDeviceMemory memory;
-   VkBuffer buffer;
-   VkCommandPool pool;
-   VkCommandBuffer cmd_buffer;
-};
-
-static VkResult
-rra_init_acceleration_structure_copy(VkDevice vk_device, uint32_t family_index,
-                                     struct rra_accel_struct_copy *dst)
-{
-   RADV_FROM_HANDLE(radv_device, device, vk_device);
-
-   VkCommandPoolCreateInfo pool_info = {
-      .sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
-      .queueFamilyIndex = family_index,
-   };
-
-   VkResult result = vk_common_CreateCommandPool(vk_device, &pool_info, NULL, &dst->pool);
-   if (result != VK_SUCCESS)
-      goto fail;
-
-   VkCommandBufferAllocateInfo cmdbuf_alloc_info = {
-      .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
-      .commandPool = dst->pool,
-      .commandBufferCount = 1,
-   };
-   result = vk_common_AllocateCommandBuffers(vk_device, &cmdbuf_alloc_info, &dst->cmd_buffer);
-   if (result != VK_SUCCESS)
-      goto fail_pool;
-
-   size_t max_size = 0;
-
-   hash_table_foreach(device->rra_trace.accel_structs, entry)
-   {
-      VkAccelerationStructureKHR structure = radv_acceleration_structure_to_handle((void *)entry->key);
-      RADV_FROM_HANDLE(radv_acceleration_structure, accel_struct, structure);
-      max_size = MAX2(max_size, accel_struct->size);
-   }
-
-   size_t data_size = max_size * RRA_COPY_BATCH_SIZE;
-
-   VkBufferCreateInfo buffer_create_info = {
-      .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
-      .size = data_size,
-      .usage = VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
-   };
-
-   result = radv_CreateBuffer(vk_device, &buffer_create_info, NULL, &dst->buffer);
-   if (result != VK_SUCCESS)
-      goto fail_pool;
-   VkMemoryRequirements requirements;
-   vk_common_GetBufferMemoryRequirements(vk_device, dst->buffer, &requirements);
-
-   VkMemoryAllocateFlagsInfo flags_info = {
-      .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_FLAGS_INFO,
-      .flags = VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT,
-   };
-
-   VkMemoryAllocateInfo alloc_info = {
-      .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
-      .pNext = &flags_info,
-      .allocationSize = requirements.size,
-      .memoryTypeIndex = find_memory_index(vk_device, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
-                                                         VK_MEMORY_PROPERTY_HOST_COHERENT_BIT |
-                                                         VK_MEMORY_PROPERTY_HOST_CACHED_BIT),
-   };
-   result = radv_AllocateMemory(vk_device, &alloc_info, NULL, &dst->memory);
-   if (result != VK_SUCCESS)
-      goto fail_buffer;
-
-   result = radv_MapMemory(vk_device, dst->memory, 0, VK_WHOLE_SIZE, 0, (void **)&dst->map_data);
-   if (result != VK_SUCCESS)
-      goto fail_memory;
-
-   result = vk_common_BindBufferMemory(vk_device, dst->buffer, dst->memory, 0);
-   if (result != VK_SUCCESS)
-      goto fail_memory;
-
-   return result;
-fail_memory:
-   radv_FreeMemory(vk_device, dst->memory, NULL);
-fail_buffer:
-   radv_DestroyBuffer(vk_device, dst->buffer, NULL);
-fail_pool:
-   vk_common_DestroyCommandPool(vk_device, dst->pool, NULL);
-fail:
-   return result;
-}
-
-static VkResult
-rra_copy_acceleration_structures(VkQueue vk_queue, struct rra_accel_struct_copy *dst,
-                                 struct hash_entry **entries, uint32_t count,
-                                 uint32_t *copied_structure_count)
-{
-   RADV_FROM_HANDLE(radv_queue, queue, vk_queue);
-   *copied_structure_count = 0;
-
-   struct radv_device *device = queue->device;
-   VkDevice vk_device = radv_device_to_handle(device);
-
-   RADV_FROM_HANDLE(radv_cmd_buffer, cmdbuf, dst->cmd_buffer);
-
-   vk_common_ResetCommandPool(vk_device, dst->pool, 0);
-
-   /*
-    * Wait for possible AS build/trace calls on all queues.
-    */
-   VkResult result = vk_common_DeviceWaitIdle(radv_device_to_handle(device));
-   if (result != VK_SUCCESS)
-      goto fail;
-
-   VkCommandBufferBeginInfo begin_info = {
-      .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
-   };
-
-   radv_BeginCommandBuffer(dst->cmd_buffer, &begin_info);
-
-   uint64_t dst_offset = 0;
-   for (uint32_t i = 0; i < count; i++) {
-      struct hash_entry *entry = entries[i];
-
-      VkResult event_result = radv_GetEventStatus(vk_device, radv_event_to_handle(entry->data));
-      if (event_result != VK_EVENT_SET) {
-         continue;
-      }
-
-      VkAccelerationStructureKHR structure = radv_acceleration_structure_to_handle((void *)entry->key);
-      RADV_FROM_HANDLE(radv_acceleration_structure, accel_struct, structure);
-
-      struct radv_buffer tmp_buffer;
-      radv_buffer_init(&tmp_buffer, cmdbuf->device, accel_struct->bo, accel_struct->size, accel_struct->mem_offset);
-
-      radv_CmdCopyBuffer2(dst->cmd_buffer, &(const VkCopyBufferInfo2){
-         .sType = VK_STRUCTURE_TYPE_COPY_BUFFER_INFO_2,
-         .srcBuffer = radv_buffer_to_handle(&tmp_buffer),
-         .dstBuffer = dst->buffer,
-         .regionCount = 1,
-         .pRegions = &(const VkBufferCopy2){
-            .sType = VK_STRUCTURE_TYPE_BUFFER_COPY_2,
-            .srcOffset = 0,
-            .dstOffset = dst_offset,
-            .size = accel_struct->size,
-         },
-      });
-
-      radv_buffer_finish(&tmp_buffer);
-
-      dst->copied_structures[*copied_structure_count].handle = structure;
-      dst->copied_structures[*copied_structure_count].data = dst->map_data + dst_offset;
-
-      dst_offset += accel_struct->size;
-
-      ++(*copied_structure_count);
-   }
-   result = radv_EndCommandBuffer(dst->cmd_buffer);
-   if (result != VK_SUCCESS)
-      goto fail;
-
-   VkSubmitInfo submit_info = {
-      .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
-      .commandBufferCount = 1,
-      .pCommandBuffers = &dst->cmd_buffer,
-   };
-   result = vk_common_QueueSubmit(vk_queue, 1, &submit_info, VK_NULL_HANDLE);
-   if (result != VK_SUCCESS)
-      goto fail;
-
-   result = vk_common_QueueWaitIdle(vk_queue);
-
-fail:
-   return result;
+   radv_DestroyEvent(device, data->build_event, NULL);
+   radv_DestroyBuffer(device, data->buffer, NULL);
+   radv_FreeMemory(device, data->memory, NULL);
+   free(data);
 }
 
 static int
@@ -1087,8 +895,8 @@ accel_struct_entry_cmp(const void *a, const void *b)
 {
    struct hash_entry *entry_a = *(struct hash_entry *const *)a;
    struct hash_entry *entry_b = *(struct hash_entry *const *)b;
-   const struct radv_acceleration_structure *s_a = entry_a->key;
-   const struct radv_acceleration_structure *s_b = entry_b->key;
+   const struct radv_rra_accel_struct_data *s_a = entry_a->data;
+   const struct radv_rra_accel_struct_data *s_b = entry_b->data;
 
    return s_a->va > s_b->va ? 1 : s_a->va < s_b->va ? -1 : 0;
 }
@@ -1099,20 +907,29 @@ radv_rra_dump_trace(VkQueue vk_queue, char *filename)
    RADV_FROM_HANDLE(radv_queue, queue, vk_queue);
    struct radv_device *device = queue->device;
    VkDevice vk_device = radv_device_to_handle(device);
-   struct hash_entry **hash_entries = NULL;
+
+   VkResult result = vk_common_DeviceWaitIdle(vk_device);
+   if (result != VK_SUCCESS)
+      return result;
 
    uint32_t accel_struct_count = _mesa_hash_table_num_entries(device->rra_trace.accel_structs);
-
-   VkResult result;
 
    uint64_t *accel_struct_offsets = calloc(accel_struct_count, sizeof(uint64_t));
    if (!accel_struct_offsets)
       return VK_ERROR_OUT_OF_HOST_MEMORY;
 
+   uint32_t struct_count = _mesa_hash_table_num_entries(device->rra_trace.accel_structs);
+   struct hash_entry **hash_entries = malloc(sizeof(*hash_entries) * struct_count);
+   if (!hash_entries) {
+      free(accel_struct_offsets);
+      return VK_ERROR_OUT_OF_HOST_MEMORY;
+   }
+
    FILE *file = fopen(filename, "w");
    if (!file) {
-      result = VK_ERROR_OUT_OF_HOST_MEMORY;
-      goto fail;
+      free(accel_struct_offsets);
+      free(hash_entries);
+      return VK_ERROR_OUT_OF_HOST_MEMORY;
    }
 
    /*
@@ -1132,18 +949,6 @@ radv_rra_dump_trace(VkQueue vk_queue, char *filename)
 
    uint64_t written_accel_struct_count = 0;
 
-   struct rra_accel_struct_copy copy = {0};
-   result = rra_init_acceleration_structure_copy(vk_device, queue->vk.queue_family_index, &copy);
-   if (result != VK_SUCCESS)
-      goto init_fail;
-
-   uint32_t struct_count = _mesa_hash_table_num_entries(device->rra_trace.accel_structs);
-   hash_entries = malloc(sizeof(*hash_entries) * struct_count);
-   if (!hash_entries) {
-      result = VK_ERROR_OUT_OF_HOST_MEMORY;
-      goto fail;
-   }
-
    struct hash_entry *last_entry = NULL;
    for (unsigned i = 0;
         (last_entry = _mesa_hash_table_next_entry(device->rra_trace.accel_structs, last_entry));
@@ -1151,23 +956,26 @@ radv_rra_dump_trace(VkQueue vk_queue, char *filename)
       hash_entries[i] = last_entry;
 
    qsort(hash_entries, struct_count, sizeof(*hash_entries), accel_struct_entry_cmp);
-   for (unsigned j = 0; j < struct_count; j += RRA_COPY_BATCH_SIZE) {
-      uint32_t copied_structure_count;
-      result = rra_copy_acceleration_structures(vk_queue, &copy, hash_entries + j,
-                                                MIN2(RRA_COPY_BATCH_SIZE, struct_count - j),
-                                                &copied_structure_count);
-      if (result != VK_SUCCESS)
-         goto copy_fail;
 
-      for (uint32_t i = 0; i < copied_structure_count; ++i) {
-         accel_struct_offsets[written_accel_struct_count] = (uint64_t)ftell(file);
-         result = rra_dump_acceleration_structure(&copy.copied_structures[i],
-                                                  device->rra_trace.accel_struct_vas,
-                                                  device->rra_trace.validate_as, file);
-         if (result != VK_SUCCESS)
-            continue;
-         ++written_accel_struct_count;
-      }
+   for (unsigned i = 0; i < struct_count; i++) {
+      struct radv_rra_accel_struct_data *data = hash_entries[i]->data;
+      if (radv_GetEventStatus(vk_device, data->build_event) != VK_EVENT_SET)
+         continue;
+
+      void *mapped_data;
+      result = radv_MapMemory(vk_device, data->memory, 0, VK_WHOLE_SIZE, 0, &mapped_data);
+      if (result != VK_SUCCESS)
+         continue;
+
+      accel_struct_offsets[written_accel_struct_count] = (uint64_t)ftell(file);
+      result =
+         rra_dump_acceleration_structure(data, mapped_data, device->rra_trace.accel_struct_vas,
+                                         device->rra_trace.validate_as, file);
+
+      radv_UnmapMemory(vk_device, data->memory);
+
+      if (result == VK_SUCCESS)
+         written_accel_struct_count++;
    }
 
    uint64_t chunk_info_offset = (uint64_t)ftell(file);
@@ -1193,14 +1001,8 @@ radv_rra_dump_trace(VkQueue vk_queue, char *filename)
    /* All info is available, dump header now */
    fseek(file, 0, SEEK_SET);
    rra_dump_header(file, chunk_info_offset, file_end - chunk_info_offset);
-copy_fail:
-   radv_DestroyBuffer(vk_device, copy.buffer, NULL);
-   radv_FreeMemory(vk_device, copy.memory, NULL);
-   vk_common_DestroyCommandPool(vk_device, copy.pool, NULL);
-init_fail:
    fclose(file);
-fail:
    free(hash_entries);
    free(accel_struct_offsets);
-   return result;
+   return VK_SUCCESS;
 }

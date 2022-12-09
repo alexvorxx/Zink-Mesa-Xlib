@@ -1183,22 +1183,9 @@ VkResult pvr_pds_compute_shader_create_and_upload(
 
 static VkResult pvr_device_init_compute_fence_program(struct pvr_device *device)
 {
-   struct pvr_pds_compute_shader_program program = { 0U };
+   struct pvr_pds_compute_shader_program program;
 
-   STATIC_ASSERT(ARRAY_SIZE(program.local_input_regs) ==
-                 ARRAY_SIZE(program.work_group_input_regs));
-   STATIC_ASSERT(ARRAY_SIZE(program.local_input_regs) ==
-                 ARRAY_SIZE(program.global_input_regs));
-
-   /* Initialize PDS structure. */
-   for (uint32_t i = 0U; i < ARRAY_SIZE(program.local_input_regs); i++) {
-      program.local_input_regs[i] = PVR_PDS_COMPUTE_INPUT_REG_UNUSED;
-      program.work_group_input_regs[i] = PVR_PDS_COMPUTE_INPUT_REG_UNUSED;
-      program.global_input_regs[i] = PVR_PDS_COMPUTE_INPUT_REG_UNUSED;
-   }
-
-   program.barrier_coefficient = PVR_PDS_COMPUTE_INPUT_REG_UNUSED;
-
+   pvr_pds_compute_shader_program_init(&program);
    /* Fence kernel. */
    program.fence = true;
    program.clear_pds_barrier = true;
@@ -1207,6 +1194,19 @@ static VkResult pvr_device_init_compute_fence_program(struct pvr_device *device)
       device,
       &program,
       &device->pds_compute_fence_program);
+}
+
+static VkResult pvr_device_init_compute_empty_program(struct pvr_device *device)
+{
+   struct pvr_pds_compute_shader_program program;
+
+   pvr_pds_compute_shader_program_init(&program);
+   program.clear_pds_barrier = true;
+
+   return pvr_pds_compute_shader_create_and_upload(
+      device,
+      &program,
+      &device->pds_compute_empty_program);
 }
 
 static VkResult pvr_pds_idfwdf_programs_create_and_upload(
@@ -2168,9 +2168,13 @@ VkResult pvr_CreateDevice(VkPhysicalDevice physicalDevice,
    if (result != VK_SUCCESS)
       goto err_pvr_free_nop_program;
 
-   result = pvr_device_create_compute_query_programs(device);
+   result = pvr_device_init_compute_empty_program(device);
    if (result != VK_SUCCESS)
       goto err_pvr_free_compute_fence;
+
+   result = pvr_device_create_compute_query_programs(device);
+   if (result != VK_SUCCESS)
+      goto err_pvr_free_compute_empty;
 
    result = pvr_device_init_compute_idfwdf_state(device);
    if (result != VK_SUCCESS)
@@ -2218,6 +2222,9 @@ err_pvr_finish_compute_idfwdf:
 err_pvr_destroy_compute_query_programs:
    pvr_device_destroy_compute_query_programs(device);
 
+err_pvr_free_compute_empty:
+   pvr_bo_free(device, device->pds_compute_empty_program.pvr_bo);
+
 err_pvr_free_compute_fence:
    pvr_bo_free(device, device->pds_compute_fence_program.pvr_bo);
 
@@ -2259,6 +2266,7 @@ void pvr_DestroyDevice(VkDevice _device,
    pvr_device_finish_graphics_static_clear_state(device);
    pvr_device_finish_compute_idfwdf_state(device);
    pvr_device_destroy_compute_query_programs(device);
+   pvr_bo_free(device, device->pds_compute_empty_program.pvr_bo);
    pvr_bo_free(device, device->pds_compute_fence_program.pvr_bo);
    pvr_bo_free(device, device->nop_program.pds.pvr_bo);
    pvr_bo_free(device, device->nop_program.usc);

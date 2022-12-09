@@ -1451,19 +1451,6 @@ brw_nir_apply_sampler_key(nir_shader *nir,
    /* Prior to Haswell, we have to lower gradients on shadow samplers */
    tex_options.lower_txd_shadow = devinfo->verx10 <= 70;
 
-   tex_options.lower_y_uv_external = key_tex->y_uv_image_mask;
-   tex_options.lower_y_u_v_external = key_tex->y_u_v_image_mask;
-   tex_options.lower_yx_xuxv_external = key_tex->yx_xuxv_image_mask;
-   tex_options.lower_xy_uxvx_external = key_tex->xy_uxvx_image_mask;
-   tex_options.lower_ayuv_external = key_tex->ayuv_image_mask;
-   tex_options.lower_xyuv_external = key_tex->xyuv_image_mask;
-   tex_options.bt709_external = key_tex->bt709_mask;
-   tex_options.bt2020_external = key_tex->bt2020_mask;
-
-   /* Setup array of scaling factors for each texture. */
-   memcpy(&tex_options.scale_factors, &key_tex->scale_factors,
-          sizeof(tex_options.scale_factors));
-
    return nir_lower_tex(nir, &tex_options);
 }
 

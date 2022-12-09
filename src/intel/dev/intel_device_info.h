@@ -135,6 +135,11 @@ struct intel_device_info
    bool disable_ccs_repack;
 
    /**
+    * True if CCS needs to be initialized before use.
+    */
+   bool has_illegal_ccs_values;
+
+   /**
     * True if CCS uses a flat virtual address translation to a memory
     * carve-out, rather than aux map translations, or additional surfaces.
     */

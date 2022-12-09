@@ -65,102 +65,9 @@ void st_init_atoms( struct st_context *st )
    call_once(&flag, init_atoms_once);
 }
 
-
 void st_destroy_atoms( struct st_context *st )
 {
    /* no-op */
-}
-
-
-/* Too complex to figure out, just check every time:
- */
-static void check_program_state( struct st_context *st )
-{
-   struct gl_context *ctx = st->ctx;
-   struct gl_program *old_vp = st->vp;
-   struct gl_program *old_tcp = st->tcp;
-   struct gl_program *old_tep = st->tep;
-   struct gl_program *old_gp = st->gp;
-   struct gl_program *old_fp = st->fp;
-
-   struct gl_program *new_vp = ctx->VertexProgram._Current;
-   struct gl_program *new_tcp = ctx->TessCtrlProgram._Current;
-   struct gl_program *new_tep = ctx->TessEvalProgram._Current;
-   struct gl_program *new_gp = ctx->GeometryProgram._Current;
-   struct gl_program *new_fp = ctx->FragmentProgram._Current;
-   uint64_t dirty = 0;
-   unsigned num_viewports = 1;
-
-   /* Flag states used by both new and old shaders to unbind shader resources
-    * properly when transitioning to shaders that don't use them.
-    */
-   if (unlikely(new_vp != old_vp)) {
-      ctx->Array.NewVertexElements = true;
-      if (old_vp)
-         dirty |= old_vp->affected_states;
-      if (new_vp)
-         dirty |= ST_NEW_VERTEX_PROGRAM(st, new_vp);
-   }
-
-   if (unlikely(new_tcp != old_tcp)) {
-      if (old_tcp)
-         dirty |= old_tcp->affected_states;
-      if (new_tcp)
-         dirty |= new_tcp->affected_states;
-   }
-
-   if (unlikely(new_tep != old_tep)) {
-      if (old_tep)
-         dirty |= old_tep->affected_states;
-      if (new_tep)
-         dirty |= new_tep->affected_states;
-   }
-
-   if (unlikely(new_gp != old_gp)) {
-      if (old_gp)
-         dirty |= old_gp->affected_states;
-      if (new_gp)
-         dirty |= new_gp->affected_states;
-   }
-
-   if (unlikely(new_fp != old_fp)) {
-      if (old_fp)
-         dirty |= old_fp->affected_states;
-      if (new_fp)
-         dirty |= new_fp->affected_states;
-   }
-
-   /* Find out the number of viewports. This determines how many scissors
-    * and viewport states we need to update.
-    */
-   struct gl_program *last_prim_shader = new_gp ? new_gp :
-                                         new_tep ? new_tep : new_vp;
-   if (last_prim_shader &&
-       last_prim_shader->info.outputs_written & (
-             VARYING_BIT_VIEWPORT | VARYING_BIT_VIEWPORT_MASK))
-      num_viewports = ctx->Const.MaxViewports;
-
-   if (st->state.num_viewports != num_viewports) {
-      st->state.num_viewports = num_viewports;
-      dirty |= ST_NEW_VIEWPORT;
-
-      if (ctx->Scissor.EnableFlags & u_bit_consecutive(0, num_viewports))
-         dirty |= ST_NEW_SCISSOR;
-   }
-
-   if (st->lower_point_size && st->ctx->LastVertexStageDirty &&
-       !st->ctx->VertexProgram.PointSizeEnabled && !st->ctx->PointSizeIsSet) {
-      if (new_gp) {
-         st->dirty |= ST_NEW_GS_CONSTANTS;
-      } else if (new_tep) {
-         st->dirty |= ST_NEW_TES_CONSTANTS;
-      } else {
-         st->dirty |= ST_NEW_VS_CONSTANTS;
-      }
-   }
-   st->ctx->LastVertexStageDirty = false;
-
-   st->dirty |= dirty;
 }
 
 void st_update_edgeflags(struct st_context *st, bool per_vertex_edgeflags)
@@ -174,7 +81,7 @@ void st_update_edgeflags(struct st_context *st, bool per_vertex_edgeflags)
 
       struct gl_program *vp = st->ctx->VertexProgram._Current;
       if (vp)
-         st->dirty |= ST_NEW_VERTEX_PROGRAM(st, vp);
+         st->dirty |= ST_NEW_VERTEX_PROGRAM(st->ctx, vp);
    }
 
    bool edgeflag_culls_prims = edgeflags_enabled && !vertdata_edgeflags &&
@@ -214,11 +121,6 @@ void st_validate_state( struct st_context *st, enum st_pipeline pipeline )
       if (st->ctx->API == API_OPENGL_COMPAT)
          check_attrib_edgeflag(st);
 
-      if (st->gfx_shaders_may_be_dirty) {
-         check_program_state(st);
-         st->gfx_shaders_may_be_dirty = false;
-      }
-
       if (pipeline == ST_PIPELINE_RENDER)
          pipeline_mask = ST_PIPELINE_RENDER_STATE_MASK;
       else
@@ -230,11 +132,6 @@ void st_validate_state( struct st_context *st, enum st_pipeline pipeline )
       break;
 
    case ST_PIPELINE_META:
-      if (st->gfx_shaders_may_be_dirty) {
-         check_program_state(st);
-         st->gfx_shaders_may_be_dirty = false;
-      }
-
       pipeline_mask = ST_PIPELINE_META_STATE_MASK;
       break;
 
@@ -243,18 +140,6 @@ void st_validate_state( struct st_context *st, enum st_pipeline pipeline )
       break;
 
    case ST_PIPELINE_COMPUTE: {
-      struct gl_program *old_cp = st->cp;
-      struct gl_program *new_cp = ctx->ComputeProgram._Current;
-
-      if (new_cp != old_cp) {
-         if (old_cp)
-            st->dirty |= old_cp->affected_states;
-         assert(new_cp);
-         st->dirty |= new_cp->affected_states;
-      }
-
-      st->compute_shader_may_be_dirty = false;
-
       /*
        * We add the ST_NEW_FB_STATE bit here as well, because glBindFramebuffer
        * acts as a barrier that breaks feedback loops between the framebuffer

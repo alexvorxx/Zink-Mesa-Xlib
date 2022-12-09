@@ -136,6 +136,11 @@ ValueFactory::allocate_registers(const exec_list *registers)
    return has_arrays;
 }
 
+int ValueFactory::new_register_index()
+{
+   return m_next_register_index++;
+}
+
 PRegister
 ValueFactory::allocate_pinned_register(int sel, int chan)
 {
@@ -144,6 +149,7 @@ ValueFactory::allocate_pinned_register(int sel, int chan)
 
    auto reg = new Register(sel, chan, pin_fully);
    reg->set_flag(Register::pin_start);
+   reg->set_flag(Register::ssa);
    m_pinned_registers.push_back(reg);
    return reg;
 }
@@ -157,6 +163,7 @@ ValueFactory::allocate_pinned_vec4(int sel, bool is_ssa)
    RegisterVec4 retval(sel, is_ssa, {0, 1, 2, 3}, pin_fully);
    for (int i = 0; i < 4; ++i) {
       retval[i]->set_flag(Register::pin_start);
+      retval[i]->set_flag(Register::ssa);
       m_pinned_registers.push_back(retval[i]);
    }
    return retval;
@@ -510,7 +517,7 @@ ValueFactory::dest_vec(const nir_dest& dst, int num_components)
    std::vector<PRegister, Allocator<PRegister>> retval;
    retval.reserve(num_components);
    for (int i = 0; i < num_components; ++i)
-      retval.push_back(dest(dst, i, num_components > 1 ? pin_chan : pin_free));
+      retval.push_back(dest(dst, i, num_components > 1 ? pin_none : pin_free));
    return retval;
 }
 

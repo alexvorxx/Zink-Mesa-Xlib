@@ -1381,6 +1381,8 @@ struct Instruction {
    }
 
    constexpr bool isVMEM() const noexcept { return isMTBUF() || isMUBUF() || isMIMG(); }
+
+   bool isTrans() const noexcept;
 };
 static_assert(sizeof(Instruction) == 16, "Unexpected padding");
 
@@ -2310,6 +2312,17 @@ void perfwarn(Program* program, bool cond, const char* msg, Instruction* instr =
 void collect_presched_stats(Program* program);
 void collect_preasm_stats(Program* program);
 void collect_postasm_stats(Program* program, const std::vector<uint32_t>& code);
+
+struct Instruction_cycle_info {
+   /* Latency until the result is ready (if not needing a waitcnt) */
+   unsigned latency;
+
+   /* How many cycles issuing this instruction takes (i.e. cycles till the next instruction can be
+    * issued)*/
+   unsigned issue_cycles;
+};
+
+Instruction_cycle_info get_cycle_info(const Program& program, const Instruction& instr);
 
 enum print_flags {
    print_no_ssa = 0x1,

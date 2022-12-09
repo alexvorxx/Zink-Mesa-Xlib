@@ -8,6 +8,7 @@ intel_hw_metrics = [
   'icl', 'ehl',
   'tglgt1', 'tglgt2', 'rkl', 'dg1', 'adl',
   'acmgt1', 'acmgt2', 'acmgt3',
+  'mtlgt2', 'mtlgt3',
 ]
 
 intel_hw_metrics_xml_files = []

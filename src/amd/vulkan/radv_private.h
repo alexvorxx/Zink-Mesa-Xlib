@@ -799,6 +799,18 @@ struct radv_notifier {
    thrd_t thread;
 };
 
+struct radv_rra_accel_struct_data {
+   VkEvent build_event;
+   uint64_t va;
+   uint64_t size;
+   VkBuffer buffer;
+   VkDeviceMemory memory;
+   VkAccelerationStructureTypeKHR type;
+   bool is_dead;
+};
+
+void radv_destroy_rra_accel_struct_data(VkDevice device, struct radv_rra_accel_struct_data *data);
+
 struct radv_rra_trace_data {
    int elapsed_frames;
    int trace_frame;
@@ -1124,7 +1136,9 @@ enum radv_dynamic_state_bits {
    RADV_DYNAMIC_DEPTH_CLAMP_ENABLE = 1ull << 40,
    RADV_DYNAMIC_COLOR_WRITE_MASK = 1ull << 41,
    RADV_DYNAMIC_COLOR_BLEND_ENABLE = 1ull << 42,
-   RADV_DYNAMIC_ALL = (1ull << 43) - 1,
+   RADV_DYNAMIC_RASTERIZATION_SAMPLES = 1ull << 43,
+   RADV_DYNAMIC_LINE_RASTERIZATION_MODE = 1ull << 44,
+   RADV_DYNAMIC_ALL = (1ull << 45) - 1,
 };
 
 enum radv_cmd_dirty_bits {
@@ -1173,13 +1187,15 @@ enum radv_cmd_dirty_bits {
    RADV_CMD_DIRTY_DYNAMIC_DEPTH_CLAMP_ENABLE = 1ull << 40,
    RADV_CMD_DIRTY_DYNAMIC_COLOR_WRITE_MASK = 1ull << 41,
    RADV_CMD_DIRTY_DYNAMIC_COLOR_BLEND_ENABLE = 1ull << 42,
-   RADV_CMD_DIRTY_DYNAMIC_ALL = (1ull << 43) - 1,
-   RADV_CMD_DIRTY_PIPELINE = 1ull << 43,
-   RADV_CMD_DIRTY_INDEX_BUFFER = 1ull << 44,
-   RADV_CMD_DIRTY_FRAMEBUFFER = 1ull << 45,
-   RADV_CMD_DIRTY_VERTEX_BUFFER = 1ull << 46,
-   RADV_CMD_DIRTY_STREAMOUT_BUFFER = 1ull << 47,
-   RADV_CMD_DIRTY_GUARDBAND = 1ull << 48,
+   RADV_CMD_DIRTY_DYNAMIC_RASTERIZATION_SAMPLES = 1ull << 43,
+   RADV_CMD_DIRTY_DYNAMIC_LINE_RASTERIZATION_MODE = 1ull << 44,
+   RADV_CMD_DIRTY_DYNAMIC_ALL = (1ull << 45) - 1,
+   RADV_CMD_DIRTY_PIPELINE = 1ull << 45,
+   RADV_CMD_DIRTY_INDEX_BUFFER = 1ull << 46,
+   RADV_CMD_DIRTY_FRAMEBUFFER = 1ull << 47,
+   RADV_CMD_DIRTY_VERTEX_BUFFER = 1ull << 48,
+   RADV_CMD_DIRTY_STREAMOUT_BUFFER = 1ull << 49,
+   RADV_CMD_DIRTY_GUARDBAND = 1ull << 50,
 };
 
 enum radv_cmd_flush_bits {
@@ -1403,6 +1419,10 @@ struct radv_dynamic_state {
    uint32_t color_write_mask;
 
    uint32_t color_blend_enable;
+
+   VkSampleCountFlagBits rasterization_samples;
+
+   VkLineRasterizationModeEXT line_rasterization_mode;
 };
 
 extern const struct radv_dynamic_state default_dynamic_state;
@@ -1488,6 +1508,8 @@ struct radv_rendering_state {
    VkRect2D area;
    uint32_t layer_count;
    uint32_t view_mask;
+   uint32_t color_samples;
+   uint32_t ds_samples;
    uint32_t max_samples;
    struct radv_sample_locations_state sample_locations;
    uint32_t color_att_count;
@@ -1747,7 +1769,7 @@ void si_write_scissors(struct radeon_cmdbuf *cs, int count, const VkRect2D *scis
                        const VkViewport *viewports);
 
 void si_write_guardband(struct radeon_cmdbuf *cs, int count, const VkViewport *viewports,
-                        unsigned rast_prim, float line_width);
+                        unsigned rast_prim, unsigned polygon_mode, float line_width);
 
 uint32_t si_get_ia_multi_vgt_param(struct radv_cmd_buffer *cmd_buffer, bool instanced_draw,
                                    bool indirect_draw, bool count_from_stream_output,
@@ -1969,11 +1991,8 @@ extern const VkFormat radv_fs_key_format_exemplars[NUM_META_FS_KEYS];
 unsigned radv_format_meta_fs_key(struct radv_device *device, VkFormat format);
 
 struct radv_multisample_state {
-   uint32_t db_eqaa;
-   uint32_t pa_sc_mode_cntl_0;
-   uint32_t pa_sc_mode_cntl_1;
-   uint32_t pa_sc_aa_config;
-   unsigned num_samples;
+   bool sample_shading_enable;
+   float min_sample_shading;
 };
 
 struct radv_vrs_state {
@@ -2084,7 +2103,6 @@ struct radv_graphics_pipeline {
    uint64_t dynamic_states;
    struct radv_multisample_state ms;
    struct radv_vrs_state vrs;
-   uint32_t spi_baryc_cntl;
    unsigned esgs_ring_size;
    unsigned gsvs_ring_size;
    uint32_t vtx_base_sgpr;
@@ -2103,6 +2121,8 @@ struct radv_graphics_pipeline {
    uint32_t vb_desc_usage_mask;
    uint32_t vb_desc_alloc_size;
    uint32_t vgt_tf_param;
+   uint32_t pa_sc_mode_cntl_1;
+   uint32_t db_render_control;
 
    /* Last pre-PS API stage */
    gl_shader_stage last_vgt_api_stage;
@@ -3054,6 +3074,24 @@ static inline bool
 radv_rast_prim_is_points_or_lines(unsigned rast_prim)
 {
    return radv_rast_prim_is_point(rast_prim) || radv_rast_prim_is_line(rast_prim);
+}
+
+static inline bool
+radv_polygon_mode_is_point(unsigned polygon_mode)
+{
+   return polygon_mode == V_028814_X_DRAW_POINTS;
+}
+
+static inline bool
+radv_polygon_mode_is_line(unsigned polygon_mode)
+{
+   return polygon_mode == V_028814_X_DRAW_LINES;
+}
+
+static inline bool
+radv_polygon_mode_is_points_or_lines(unsigned polygon_mode)
+{
+   return radv_polygon_mode_is_point(polygon_mode) || radv_polygon_mode_is_line(polygon_mode);
 }
 
 static inline unsigned

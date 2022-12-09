@@ -204,7 +204,7 @@ rustfmt:
   # like FDO_DISTRIBUTION_TAG for *the* image, there is no way to
   # depend on more than one image per job. So, the job container is
   # built as part of the CI in the boot2container project.
-  image: registry.freedesktop.org/mupuf/valve-infra/mesa-trigger:2022-11-08.1
+  image: registry.freedesktop.org/mupuf/valve-infra/mesa-trigger:2022-12-08.1
   timeout: 1h 40m
   variables:
     # No need by default to pull the whole repo

@@ -219,10 +219,8 @@ lp_scene_begin_rasterization(struct lp_scene *scene)
 void
 lp_scene_end_rasterization(struct lp_scene *scene)
 {
-   int i;
-
    /* Unmap color buffers */
-   for (i = 0; i < scene->fb.nr_cbufs; i++) {
+   for (unsigned i = 0; i < scene->fb.nr_cbufs; i++) {
       if (scene->cbufs[i].map) {
          struct pipe_surface *cbuf = scene->fb.cbufs[i];
          if (llvmpipe_resource_is_texture(cbuf->texture)) {
@@ -290,7 +288,7 @@ lp_scene_end_rasterization(struct lp_scene *scene)
     */
    j = 0;
    for (struct shader_ref *ref = scene->frag_shaders; ref; ref = ref->next) {
-      for (i = 0; i < ref->count; i++) {
+      for (int i = 0; i < ref->count; i++) {
          if (LP_DEBUG & DEBUG_SETUP)
             debug_printf("shader %d: %p\n", j, (void *) ref->variant[i]);
          j++;

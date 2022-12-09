@@ -191,6 +191,7 @@ anv_shader_stage_to_nir(struct anv_device *device,
    const nir_shader_compiler_options *nir_options =
       compiler->nir_options[stage];
 
+   const bool rt_enabled = ANV_SUPPORT_RT && pdevice->info.has_ray_tracing;
    const struct spirv_to_nir_options spirv_options = {
       .caps = {
          .demote_to_helper_invocation = true,
@@ -227,8 +228,9 @@ anv_shader_stage_to_nir(struct anv_device *device,
          .post_depth_coverage = true,
          .runtime_descriptor_array = true,
          .float_controls = true,
-         .ray_query = ANV_SUPPORT_RT && pdevice->info.has_ray_tracing,
-         .ray_tracing = ANV_SUPPORT_RT && pdevice->info.has_ray_tracing,
+         .ray_cull_mask = rt_enabled,
+         .ray_query = rt_enabled,
+         .ray_tracing = rt_enabled,
          .shader_clock = true,
          .shader_viewport_index_layer = true,
          .stencil_export = true,
@@ -414,24 +416,6 @@ static void
 populate_sampler_prog_key(const struct intel_device_info *devinfo,
                           struct brw_sampler_prog_key_data *key)
 {
-   /* Almost all multisampled textures are compressed.  The only time when we
-    * don't compress a multisampled texture is for 16x MSAA with a surface
-    * width greater than 8k which is a bit of an edge case.  Since the sampler
-    * just ignores the MCS parameter to ld2ms when MCS is disabled, it's safe
-    * to tell the compiler to always assume compression.
-    */
-   key->compressed_multisample_layout_mask = ~0;
-
-   /* SkyLake added support for 16x MSAA.  With this came a new message for
-    * reading from a 16x MSAA surface with compression.  The new message was
-    * needed because now the MCS data is 64 bits instead of 32 or lower as is
-    * the case for 8x, 4x, and 2x.  The key->msaa_16 bit-field controls which
-    * message we use.  Fortunately, the 16x message works for 8x, 4x, and 2x
-    * so we can just use it unconditionally.  This may not be quite as
-    * efficient but it saves us from recompiling.
-    */
-   key->msaa_16 = ~0;
-
    for (int i = 0; i < BRW_MAX_SAMPLERS; i++) {
       /* Assume color sampler, no swizzling. (Works for BDW+) */
       key->swizzles[i] = SWIZZLE_XYZW;

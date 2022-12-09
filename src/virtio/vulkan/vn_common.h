@@ -109,6 +109,8 @@ enum vn_perf {
    VN_PERF_NO_ASYNC_QUEUE_SUBMIT = 1ull << 2,
    VN_PERF_NO_EVENT_FEEDBACK = 1ull << 3,
    VN_PERF_NO_FENCE_FEEDBACK = 1ull << 4,
+   VN_PERF_NO_MEMORY_SUBALLOC = 1ull << 5,
+   VN_PERF_NO_CMD_BATCHING = 1ull << 6,
 };
 
 typedef uint64_t vn_object_id;

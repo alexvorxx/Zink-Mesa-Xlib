@@ -202,8 +202,14 @@ AluGroup::add_vec_instructions(AluInstr *instr)
       if (dest && (dest->pin() == pin_free || dest->pin() == pin_group)) {
 
          int free_mask = 0xf;
+         for (auto p : dest->parents()) {
+            auto alu = p->as_alu();
+            if (alu)
+               free_mask &= alu->allowed_dest_chan_mask();
+         }
+
          for (auto u : dest->uses()) {
-            free_mask &= u->allowed_dest_chan_mask();
+            free_mask &= u->allowed_src_chan_mask();
             if (!free_mask)
                return false;
          }

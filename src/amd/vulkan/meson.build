@@ -100,13 +100,6 @@ libradv_files = files(
   'vk_format.h',
 )
 
-files_drirc = files('00-radv-defaults.conf')
-
-# Only install the drirc file if we build with support for parsing drirc files
-if use_xmlconfig
-  install_data(files_drirc, install_dir : join_paths(get_option('datadir'), 'drirc.d'))
-endif
-
 if not with_platform_windows
   libradv_files += files(
     'winsys/amdgpu/radv_amdgpu_bo.c',

@@ -626,7 +626,9 @@ BEGIN_TEST(to_hw_instr.extract)
       EXT(2, 8)
       //! v1: %_:v[0] = @v_shr 24, %_:v[1]
       EXT(3, 8)
-      //! v1: %_:v[0] = @v_bfe %_:v[1], 0, 16
+      //~gfx(7|8|9)_.*! v1: %_:v[0] = @v_bfe %_:v[1], 0, 16
+      //~gfx11_unsigned! v1: %_:v[0] = v_cvt_u32_u16 %_:v[1]
+      //~gfx11_signed! v1: %_:v[0] = v_cvt_i32_i16 %_:v[1]
       EXT(0, 16)
       //! v1: %_:v[0] = @v_shr 16, %_:v[1]
       EXT(1, 16)
@@ -839,26 +841,54 @@ BEGIN_TEST(to_hw_instr.swap_linear_vgpr)
    finish_to_hw_instr_test();
 END_TEST
 
-BEGIN_TEST(to_hw_instr.pack2x16_alignbyte_constant)
+BEGIN_TEST(to_hw_instr.pack2x16_constant)
    PhysReg v0_lo{256};
    PhysReg v0_hi{256};
+   PhysReg v1_lo{257};
    PhysReg v1_hi{257};
    v0_hi.reg_b += 2;
    v1_hi.reg_b += 2;
 
-   if (!setup_cs(NULL, GFX10))
-      return;
+   for (amd_gfx_level lvl : {GFX10, GFX11}) {
+      if (!setup_cs(NULL, lvl))
+         continue;
 
-   /* prevent usage of v_pack_b32_f16 */
-   program->blocks[0].fp_mode.denorm16_64 = fp_denorm_flush;
+      /* prevent usage of v_pack_b32_f16 */
+      program->blocks[0].fp_mode.denorm16_64 = fp_denorm_flush;
 
-   //>> p_unit_test 0
-   //! v1: %_:v[0] = v_alignbyte_b32 0x3800, %_:v[1][16:32], 2
-   bld.pseudo(aco_opcode::p_unit_test, Operand::zero());
-   bld.pseudo(aco_opcode::p_parallelcopy, Definition(v0_lo, v2b), Definition(v0_hi, v2b),
-              Operand(v1_hi, v2b), Operand::c16(0x3800));
+      //>> p_unit_test 0
+      //! v1: %_:v[0] = v_alignbyte_b32 0x3800, %_:v[1][16:32], 2
+      bld.pseudo(aco_opcode::p_unit_test, Operand::zero());
+      bld.pseudo(aco_opcode::p_parallelcopy, Definition(v0_lo, v2b), Definition(v0_hi, v2b),
+                 Operand(v1_hi, v2b), Operand::c16(0x3800));
 
-   //! s_endpgm
+      //! p_unit_test 1
+      //! v2b: %_:v[0][0:16] = v_lshrrev_b32 16, %_:v[1][16:32]
+      bld.pseudo(aco_opcode::p_unit_test, Operand::c32(1));
+      bld.pseudo(aco_opcode::p_parallelcopy, Definition(v0_lo, v2b), Definition(v0_hi, v2b),
+                 Operand(v1_hi, v2b), Operand::zero(2));
 
-   finish_to_hw_instr_test();
+      //! p_unit_test 2
+      //~gfx10! v2b: %_:v[0][0:16] = v_and_b32 0xffff, %_:v[1][0:16]
+      //~gfx11! v1: %_:v[0] = v_cvt_u32_u16 %_:v[1][0:16]
+      bld.pseudo(aco_opcode::p_unit_test, Operand::c32(2));
+      bld.pseudo(aco_opcode::p_parallelcopy, Definition(v0_lo, v2b), Definition(v0_hi, v2b),
+                 Operand(v1_lo, v2b), Operand::zero(2));
+
+      //! p_unit_test 3
+      //! v2b: %_:v[0][16:32] = v_and_b32 0xffff0000, %_:v[1][16:32]
+      bld.pseudo(aco_opcode::p_unit_test, Operand::c32(3));
+      bld.pseudo(aco_opcode::p_parallelcopy, Definition(v0_lo, v2b), Definition(v0_hi, v2b),
+                 Operand::zero(2), Operand(v1_hi, v2b));
+
+      //! p_unit_test 4
+      //! v2b: %_:v[0][16:32] = v_lshlrev_b32 16, %_:v[1][0:16]
+      bld.pseudo(aco_opcode::p_unit_test, Operand::c32(4));
+      bld.pseudo(aco_opcode::p_parallelcopy, Definition(v0_lo, v2b), Definition(v0_hi, v2b),
+                 Operand::zero(2), Operand(v1_lo, v2b));
+
+      //! s_endpgm
+
+      finish_to_hw_instr_test();
+   }
 END_TEST

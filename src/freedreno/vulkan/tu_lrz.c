@@ -675,18 +675,18 @@ tu6_calculate_lrz_state(struct tu_cmd_buffer *cmd,
 
 
    /* See comment in tu_pipeline about disabling LRZ write for blending. */
-   if ((cmd->state.pipeline->dynamic_state_mask & BIT(TU_DYNAMIC_STATE_LOGIC_OP)) &&
-       cmd->state.logic_op_enabled && cmd->state.rop_reads_dst) {
-      if (gras_lrz_cntl.lrz_write)
-         perf_debug(cmd->device, "disabling lrz write due to dynamic logic op");
-      gras_lrz_cntl.lrz_write = false;
-   }
+   if (gras_lrz_cntl.lrz_write && cmd->state.pipeline->dynamic_state_mask &
+         (BIT(TU_DYNAMIC_STATE_LOGIC_OP) |
+          BIT(TU_DYNAMIC_STATE_BLEND_ENABLE))) {
+       if (cmd->state.logic_op_enabled && cmd->state.rop_reads_dst) {
+          perf_debug(cmd->device, "disabling lrz write due to dynamic logic op");
+          gras_lrz_cntl.lrz_write = false;
+       }
 
-   if ((cmd->state.pipeline->dynamic_state_mask & BIT(TU_DYNAMIC_STATE_BLEND_ENABLE)) &&
-       cmd->state.blend_enable) {
-      if (gras_lrz_cntl.lrz_write)
-         perf_debug(cmd->device, "disabling lrz write due to dynamic blend");
-      gras_lrz_cntl.lrz_write = false;
+       if (cmd->state.blend_enable) {
+          perf_debug(cmd->device, "disabling lrz write due to dynamic blend");
+          gras_lrz_cntl.lrz_write = false;
+       }
    }
 
    if ((cmd->state.pipeline->dynamic_state_mask & BIT(TU_DYNAMIC_STATE_BLEND))) {

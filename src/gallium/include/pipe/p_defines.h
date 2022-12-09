@@ -1028,7 +1028,7 @@ enum pipe_texture_transfer_mode {
  * return a bitmask of the supported priorities.  If the driver does not
  * support prioritized contexts, it can return 0.
  *
- * Note that these match __DRI2_RENDERER_HAS_CONTEXT_PRIORITY_*
+ * Note that these match __EGL_CONTEXT_PRIORITY_*_BIT.
  */
 #define PIPE_CONTEXT_PRIORITY_LOW     (1 << 0)
 #define PIPE_CONTEXT_PRIORITY_MEDIUM  (1 << 1)

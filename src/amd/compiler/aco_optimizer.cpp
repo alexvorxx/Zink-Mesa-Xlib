@@ -1255,11 +1255,13 @@ is_op_canonicalized(opt_ctx& ctx, Operand op)
 }
 
 bool
-is_scratch_offset_valid(opt_ctx& ctx, Instruction* instr, int32_t offset)
+is_scratch_offset_valid(opt_ctx& ctx, Instruction* instr, int64_t offset0, int64_t offset1)
 {
    bool negative_unaligned_scratch_offset_bug = ctx.program->gfx_level == GFX10;
    int32_t min = ctx.program->dev.scratch_global_offset_min;
    int32_t max = ctx.program->dev.scratch_global_offset_max;
+
+   int64_t offset = offset0 + offset1;
 
    bool has_vgpr_offset = instr && !instr->operands[0].isUndefined();
    if (negative_unaligned_scratch_offset_bug && has_vgpr_offset && offset < 0 && offset % 4)
@@ -1467,15 +1469,28 @@ label_instruction(opt_ctx& ctx, aco_ptr<Instruction>& instr)
          while (info.is_temp())
             info = ctx.info[info.temp.id()];
 
-         if (i <= 1 && parse_base_offset(ctx, instr.get(), i, &base, &offset, false) &&
+         /* The hardware probably does: 'scratch_base + u2u64(saddr) + i2i64(offset)'. This means
+          * we can't combine the addition if the unsigned addition overflows and offset is
+          * positive. In theory, there is also issues if
+          * 'ilt(offset, 0) && ige(saddr, 0) && ilt(saddr + offset, 0)', but that just
+          * replaces an already out-of-bounds access with a larger one since 'saddr + offset'
+          * would be larger than INT32_MAX.
+          */
+         if (i <= 1 && parse_base_offset(ctx, instr.get(), i, &base, &offset, true) &&
              base.regClass() == instr->operands[i].regClass() &&
-             is_scratch_offset_valid(ctx, instr.get(), scratch.offset + (int32_t)offset)) {
+             is_scratch_offset_valid(ctx, instr.get(), scratch.offset, (int32_t)offset)) {
+            instr->operands[i].setTemp(base);
+            scratch.offset += (int32_t)offset;
+            continue;
+         } else if (i <= 1 && parse_base_offset(ctx, instr.get(), i, &base, &offset, false) &&
+                    base.regClass() == instr->operands[i].regClass() && (int32_t)offset < 0 &&
+                    is_scratch_offset_valid(ctx, instr.get(), scratch.offset, (int32_t)offset)) {
             instr->operands[i].setTemp(base);
             scratch.offset += (int32_t)offset;
             continue;
          } else if (i <= 1 && info.is_constant_or_literal(32) &&
                     ctx.program->gfx_level >= GFX10_3 &&
-                    is_scratch_offset_valid(ctx, NULL, scratch.offset + (int32_t)info.val)) {
+                    is_scratch_offset_valid(ctx, NULL, scratch.offset, (int32_t)info.val)) {
             /* GFX10.3+ can disable both SADDR and ADDR. */
             instr->operands[i] = Operand(instr->operands[i].regClass());
             scratch.offset += (int32_t)info.val;
@@ -2622,26 +2637,60 @@ combine_add_or_then_and_lshl(opt_ctx& ctx, aco_ptr<Instruction>& instr)
 }
 
 bool
-combine_minmax(opt_ctx& ctx, aco_ptr<Instruction>& instr, aco_opcode opposite, aco_opcode minmax3)
+combine_minmax(opt_ctx& ctx, aco_ptr<Instruction>& instr, aco_opcode opposite, aco_opcode op3src,
+               aco_opcode minmax)
 {
    /* TODO: this can handle SDWA min/max instructions by using opsel */
-   if (combine_three_valu_op(ctx, instr, instr->opcode, minmax3, "012", 1 | 2))
-      return true;
 
-   /* min(-max(a, b), c) -> min3(c, -a, -b) *
-    * max(-min(a, b), c) -> max3(c, -a, -b) */
+   /* min(min(a, b), c) -> min3(a, b, c)
+    * max(max(a, b), c) -> max3(a, b, c)
+    * gfx11: min(-min(a, b), c) -> maxmin(-a, -b, c)
+    * gfx11: max(-max(a, b), c) -> minmax(-a, -b, c)
+    */
    for (unsigned swap = 0; swap < 2; swap++) {
       Operand operands[3];
       bool neg[3], abs[3], clamp, precise;
       uint8_t opsel = 0, omod = 0;
       bool inbetween_neg;
-      if (match_op3_for_vop3(ctx, instr->opcode, opposite, instr.get(), swap, "012", operands, neg,
-                             abs, &opsel, &clamp, &omod, &inbetween_neg, NULL, NULL, &precise) &&
-          inbetween_neg) {
+      if (match_op3_for_vop3(ctx, instr->opcode, instr->opcode, instr.get(), swap, "120", operands,
+                             neg, abs, &opsel, &clamp, &omod, &inbetween_neg, NULL, NULL,
+                             &precise) &&
+          (!inbetween_neg ||
+           (minmax != aco_opcode::num_opcodes && ctx.program->gfx_level >= GFX11))) {
          ctx.uses[instr->operands[swap].tempId()]--;
-         neg[1] = !neg[1];
-         neg[2] = !neg[2];
-         create_vop3_for_op3(ctx, minmax3, instr, operands, neg, abs, opsel, clamp, omod);
+         if (inbetween_neg) {
+            neg[0] = !neg[0];
+            neg[1] = !neg[1];
+            create_vop3_for_op3(ctx, minmax, instr, operands, neg, abs, opsel, clamp, omod);
+         } else {
+            create_vop3_for_op3(ctx, op3src, instr, operands, neg, abs, opsel, clamp, omod);
+         }
+         return true;
+      }
+   }
+
+   /* min(-max(a, b), c) -> min3(-a, -b, c)
+    * max(-min(a, b), c) -> max3(-a, -b, c)
+    * gfx11: min(max(a, b), c) -> maxmin(a, b, c)
+    * gfx11: max(min(a, b), c) -> minmax(a, b, c)
+    */
+   for (unsigned swap = 0; swap < 2; swap++) {
+      Operand operands[3];
+      bool neg[3], abs[3], clamp, precise;
+      uint8_t opsel = 0, omod = 0;
+      bool inbetween_neg;
+      if (match_op3_for_vop3(ctx, instr->opcode, opposite, instr.get(), swap, "120", operands, neg,
+                             abs, &opsel, &clamp, &omod, &inbetween_neg, NULL, NULL, &precise) &&
+          (inbetween_neg ||
+           (minmax != aco_opcode::num_opcodes && ctx.program->gfx_level >= GFX11))) {
+         ctx.uses[instr->operands[swap].tempId()]--;
+         if (inbetween_neg) {
+            neg[0] = !neg[0];
+            neg[1] = !neg[1];
+            create_vop3_for_op3(ctx, op3src, instr, operands, neg, abs, opsel, clamp, omod);
+         } else {
+            create_vop3_for_op3(ctx, minmax, instr, operands, neg, abs, opsel, clamp, omod);
+         }
          return true;
       }
    }
@@ -2959,7 +3008,7 @@ combine_add_bcnt(opt_ctx& ctx, aco_ptr<Instruction>& instr)
 
 bool
 get_minmax_info(aco_opcode op, aco_opcode* min, aco_opcode* max, aco_opcode* min3, aco_opcode* max3,
-                aco_opcode* med3, bool* some_gfx9_only)
+                aco_opcode* med3, aco_opcode* minmax, bool* some_gfx9_only)
 {
    switch (op) {
 #define MINMAX(type, gfx9)                                                                         \
@@ -2970,9 +3019,21 @@ get_minmax_info(aco_opcode op, aco_opcode* min, aco_opcode* max, aco_opcode* min
       *med3 = aco_opcode::v_med3_##type;                                                           \
       *min3 = aco_opcode::v_min3_##type;                                                           \
       *max3 = aco_opcode::v_max3_##type;                                                           \
+      *minmax = op == *min ? aco_opcode::v_maxmin_##type : aco_opcode::v_minmax_##type;            \
       *some_gfx9_only = gfx9;                                                                      \
       return true;
-#define MINMAX_E64(type, gfx9)                                                                     \
+#define MINMAX_INT16(type, gfx9)                                                                   \
+   case aco_opcode::v_min_##type:                                                                  \
+   case aco_opcode::v_max_##type:                                                                  \
+      *min = aco_opcode::v_min_##type;                                                             \
+      *max = aco_opcode::v_max_##type;                                                             \
+      *med3 = aco_opcode::v_med3_##type;                                                           \
+      *min3 = aco_opcode::v_min3_##type;                                                           \
+      *max3 = aco_opcode::v_max3_##type;                                                           \
+      *minmax = aco_opcode::num_opcodes;                                                           \
+      *some_gfx9_only = gfx9;                                                                      \
+      return true;
+#define MINMAX_INT16_E64(type, gfx9)                                                               \
    case aco_opcode::v_min_##type##_e64:                                                            \
    case aco_opcode::v_max_##type##_e64:                                                            \
       *min = aco_opcode::v_min_##type##_e64;                                                       \
@@ -2980,17 +3041,19 @@ get_minmax_info(aco_opcode op, aco_opcode* min, aco_opcode* max, aco_opcode* min
       *med3 = aco_opcode::v_med3_##type;                                                           \
       *min3 = aco_opcode::v_min3_##type;                                                           \
       *max3 = aco_opcode::v_max3_##type;                                                           \
+      *minmax = aco_opcode::num_opcodes;                                                           \
       *some_gfx9_only = gfx9;                                                                      \
       return true;
       MINMAX(f32, false)
       MINMAX(u32, false)
       MINMAX(i32, false)
       MINMAX(f16, true)
-      MINMAX(u16, true)
-      MINMAX(i16, true)
-      MINMAX_E64(u16, true)
-      MINMAX_E64(i16, true)
-#undef MINMAX_E64
+      MINMAX_INT16(u16, true)
+      MINMAX_INT16(i16, true)
+      MINMAX_INT16_E64(u16, true)
+      MINMAX_INT16_E64(i16, true)
+#undef MINMAX_INT16_E64
+#undef MINMAX_INT16
 #undef MINMAX
    default: return false;
    }
@@ -4315,12 +4378,13 @@ combine_instruction(opt_ctx& ctx, aco_ptr<Instruction>& instr)
       ctx.mad_infos.emplace_back(nullptr, 0);
       ctx.info[instr->definitions[0].tempId()].set_mad(instr.get(), ctx.mad_infos.size() - 1);
    } else {
-      aco_opcode min, max, min3, max3, med3;
+      aco_opcode min, max, min3, max3, med3, minmax;
       bool some_gfx9_only;
-      if (get_minmax_info(instr->opcode, &min, &max, &min3, &max3, &med3, &some_gfx9_only) &&
+      if (get_minmax_info(instr->opcode, &min, &max, &min3, &max3, &med3, &minmax,
+                          &some_gfx9_only) &&
           (!some_gfx9_only || ctx.program->gfx_level >= GFX9)) {
          if (combine_minmax(ctx, instr, instr->opcode == min ? max : min,
-                            instr->opcode == min ? min3 : max3)) {
+                            instr->opcode == min ? min3 : max3, minmax)) {
          } else {
             combine_clamp(ctx, instr, min, max, med3);
          }

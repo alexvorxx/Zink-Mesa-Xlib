@@ -256,7 +256,7 @@ FragmentShader::do_allocate_reserved_registers()
    }
 
    if (m_sv_values.test(es_helper_invocation)) {
-      m_helper_invocation = value_factory().allocate_pinned_register(next_register++, 0);
+      m_helper_invocation = value_factory().temp_register(0, false);
    }
 
    return next_register;

@@ -478,7 +478,7 @@ radv_device_init_meta(struct radv_device *device)
          goto fail_fmask_copy;
    }
 
-   if (radv_enable_rt(device->physical_device, false)) {
+   if (device->vk.enabled_extensions.KHR_acceleration_structure) {
       result = radv_device_init_accel_struct_build_state(device);
       if (result != VK_SUCCESS)
          goto fail_accel_struct_build;

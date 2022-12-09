@@ -60,6 +60,7 @@
 #include <xcb/sync.h>
 
 #include "loader_dri3_helper.h"
+#include "GL/internal/mesa_interface.h"
 
 struct dri3_display
 {
@@ -92,6 +93,7 @@ struct dri3_screen {
    const __DRIimageExtension *image;
    const __DRIimageDriverExtension *image_driver;
    const __DRIcoreExtension *core;
+   const __DRImesaCoreExtension *mesa;
    const __DRI2flushExtension *f;
    const __DRI2configQueryExtension *config;
    const __DRItexBufferExtension *texBuffer;

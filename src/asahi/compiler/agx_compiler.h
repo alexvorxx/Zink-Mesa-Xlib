@@ -442,6 +442,7 @@ agx_size_for_bits(unsigned bits)
 {
    switch (bits) {
    case 1:
+   case 8:
    case 16: return AGX_SIZE_16;
    case 32: return AGX_SIZE_32;
    case 64: return AGX_SIZE_64;
@@ -808,6 +809,7 @@ bool agx_lower_resinfo(nir_shader *s);
 bool agx_nir_lower_array_texture(nir_shader *s);
 bool agx_nir_opt_preamble(nir_shader *s, unsigned *preamble_size);
 bool agx_nir_lower_load_mask(nir_shader *shader);
+bool agx_nir_lower_ubo(nir_shader *shader);
 
 #ifdef __cplusplus
 } /* extern C */

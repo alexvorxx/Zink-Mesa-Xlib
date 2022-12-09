@@ -269,7 +269,7 @@ NineDevice9_ctor( struct NineDevice9 *This,
     if (!This->cso_sw) { return E_OUTOFMEMORY; }
 
     /* Create first, it messes up our state. */
-    This->hud = hud_create(This->context.cso, NULL, NULL); /* NULL result is fine */
+    This->hud = hud_create(This->context.cso, NULL, NULL, NULL); /* NULL result is fine */
 
     This->allocator = nine_allocator_create(This, pCTX->memfd_virtualsizelimit);
 

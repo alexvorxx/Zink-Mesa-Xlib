@@ -124,6 +124,7 @@ static inline void
 radv_aco_convert_pipe_key(struct aco_stage_input *aco_info,
                           const struct radv_pipeline_key *radv)
 {
+   radv_aco_convert_ps_epilog_key(&aco_info->ps.epilog, &radv->ps.epilog);
    ASSIGN_FIELD(optimisations_disabled);
    ASSIGN_FIELD(image_2d_view_of_3d);
    ASSIGN_FIELD(vs.instance_rate_inputs);
@@ -134,9 +135,7 @@ radv_aco_convert_pipe_key(struct aco_stage_input *aco_info,
    ASSIGN_FIELD_CP(vs.vertex_attribute_strides);
    ASSIGN_FIELD_CP(vs.vertex_binding_align);
    ASSIGN_FIELD(tcs.tess_input_vertices);
-   ASSIGN_FIELD(ps.col_format);
    ASSIGN_FIELD(ps.alpha_to_coverage_via_mrtz);
-   ASSIGN_FIELD(ps.mrt0_is_dual_src);
 }
 
 static inline void

@@ -176,6 +176,11 @@ with_shared_glapi = with_shared_glapi and with_any_opengl
 
 system_has_kms_drm = ['openbsd', 'netbsd', 'freebsd', 'gnu/kfreebsd', 'dragonfly', 'linux', 'sunos', 'android'].contains(host_machine.system())
 
+with_freedreno_kgsl = get_option('freedreno-kgsl')
+if with_freedreno_kgsl
+  system_has_kms_drm = false
+endif
+
 dri_drivers = get_option('dri-drivers')
 if dri_drivers.length() != 0
   error('Mesa\'s main branch no longer has any "classic" drivers, use the "amber" branch instead.')
@@ -235,11 +240,15 @@ foreach gallium_driver : gallium_drivers
 endforeach
 
 with_gallium = gallium_drivers.length() != 0
-with_gallium_kmsro = with_gallium_v3d or with_gallium_vc4 or with_gallium_etnaviv or with_gallium_panfrost or with_gallium_lima or with_gallium_freedreno or with_gallium_asahi
-
-if not system_has_kms_drm
-   with_gallium_kmsro = false
-endif
+with_gallium_kmsro = system_has_kms_drm and [
+  with_gallium_asahi,
+  with_gallium_etnaviv,
+  with_gallium_freedreno,
+  with_gallium_lima,
+  with_gallium_panfrost,
+  with_gallium_v3d,
+  with_gallium_vc4,
+].contains(true)
 
 with_dri = false
 if with_gallium and system_has_kms_drm
@@ -279,7 +288,6 @@ with_freedreno_vk = _vulkan_drivers.contains('freedreno')
 with_panfrost_vk = _vulkan_drivers.contains('panfrost')
 with_swrast_vk = _vulkan_drivers.contains('swrast')
 with_virtio_vk = _vulkan_drivers.contains('virtio-experimental')
-with_freedreno_kgsl = get_option('freedreno-kgsl')
 with_freedreno_virtio = get_option('freedreno-virtio')
 with_broadcom_vk = _vulkan_drivers.contains('broadcom')
 with_imagination_vk = _vulkan_drivers.contains('imagination-experimental')
@@ -665,8 +673,13 @@ elif not with_platform_x11
   else
     _vdpau = 'disabled'
   endif
-elif not (with_gallium_r300 or with_gallium_r600 or with_gallium_radeonsi or
-          with_gallium_nouveau or with_gallium_d3d12_video)
+elif not [
+           with_gallium_d3d12_video,
+           with_gallium_nouveau,
+           with_gallium_r300,
+           with_gallium_r600,
+           with_gallium_radeonsi,
+         ].contains(true)
   if _vdpau == 'enabled'
     error('VDPAU state tracker requires at least one of the following gallium drivers: r300, r600, radeonsi, nouveau, d3d12 (with option gallium-d3d12-video).')
   else
@@ -789,7 +802,13 @@ elif _va == 'false'
   _va = 'disabled'
   warning('gallium-va option "false" deprecated, please use "disabled" instead.')
 endif
-if not (with_gallium_r600 or with_gallium_radeonsi or with_gallium_nouveau or with_gallium_d3d12_video or with_gallium_virgl)
+if not [
+         with_gallium_d3d12_video,
+         with_gallium_nouveau,
+         with_gallium_r600,
+         with_gallium_radeonsi,
+         with_gallium_virgl,
+       ].contains(true)
   if _va == 'enabled'
     error('VA state tracker requires at least one of the following gallium drivers: r600, radeonsi, nouveau, d3d12 (with option gallium-d3d12-video), virgl.')
   else
@@ -852,10 +871,18 @@ with_gallium_st_nine =  get_option('gallium-nine')
 if with_gallium_st_nine
   if not with_gallium_softpipe
     error('The nine state tracker requires gallium softpipe/llvmpipe.')
-  elif not (with_gallium_radeonsi or with_gallium_nouveau or with_gallium_r600
-            or with_gallium_r300 or with_gallium_svga or with_gallium_i915
-            or with_gallium_iris or with_gallium_crocus or with_gallium_zink
-            or with_gallium_freedreno)
+  elif not [
+             with_gallium_crocus,
+             with_gallium_freedreno,
+             with_gallium_i915,
+             with_gallium_iris,
+             with_gallium_nouveau,
+             with_gallium_r300,
+             with_gallium_r600,
+             with_gallium_radeonsi,
+             with_gallium_svga,
+             with_gallium_zink,
+           ].contains(true)
     error('The nine state tracker requires at least one non-swrast gallium driver.')
   endif
   if not with_dri3

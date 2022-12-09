@@ -78,8 +78,12 @@ gather_intrinsic_store_output_info(const nir_shader *nir, const nir_intrinsic_in
       output_usage_mask = info->gs.output_usage_mask;
       break;
    case MESA_SHADER_FRAGMENT:
-      if (idx >= FRAG_RESULT_DATA0)
+      if (idx >= FRAG_RESULT_DATA0) {
          info->ps.colors_written |= 0xf << (4 * (idx - FRAG_RESULT_DATA0));
+
+         if (idx == FRAG_RESULT_DATA0)
+            info->ps.color0_written = write_mask;
+      }
       break;
    default:
       break;
@@ -212,6 +216,9 @@ gather_intrinsic_info(const nir_shader *nir, const nir_intrinsic_instr *instr,
       break;
    case nir_intrinsic_load_rt_dynamic_callable_stack_base_amd:
       info->cs.uses_dynamic_rt_callable_stack = true;
+      break;
+   case nir_intrinsic_bvh64_intersect_ray_amd:
+      info->cs.uses_rt = true;
       break;
    default:
       break;
@@ -563,6 +570,10 @@ gather_shader_info_fs(const nir_shader *nir, const struct radv_pipeline_key *pip
 
    info->ps.has_epilog = pipeline_key->ps.has_epilog;
 
+   info->ps.writes_mrt0_alpha =
+      (pipeline_key->ps.alpha_to_coverage_via_mrtz && (info->ps.color0_written & 0x8)) &&
+      (info->ps.writes_z || info->ps.writes_stencil || info->ps.writes_sample_mask);
+
    nir_foreach_shader_in_variable(var, nir) {
       unsigned attrib_count = glsl_count_attribute_slots(var->type, false);
       int idx = var->data.location;
@@ -611,8 +622,12 @@ gather_shader_info_cs(struct radv_device *device, const nir_shader *nir,
    unsigned req_subgroup_size = subgroup_size;
    bool require_full_subgroups = pipeline_key->cs.require_full_subgroups;
 
+   unsigned default_wave_size = device->physical_device->cs_wave_size;
+   if (info->cs.uses_rt)
+      default_wave_size = device->physical_device->rt_wave_size;
+
    if (!subgroup_size)
-      subgroup_size = device->physical_device->cs_wave_size;
+      subgroup_size = default_wave_size;
 
    unsigned local_size =
       nir->info.workgroup_size[0] * nir->info.workgroup_size[1] * nir->info.workgroup_size[2];
@@ -620,8 +635,8 @@ gather_shader_info_cs(struct radv_device *device, const nir_shader *nir,
    /* Games don't always request full subgroups when they should, which can cause bugs if cswave32
     * is enabled.
     */
-   if (device->physical_device->cs_wave_size == 32 && nir->info.uses_wide_subgroup_intrinsics &&
-       !req_subgroup_size && local_size % RADV_SUBGROUP_SIZE == 0)
+   if (default_wave_size == 32 && nir->info.uses_wide_subgroup_intrinsics && !req_subgroup_size &&
+       local_size % RADV_SUBGROUP_SIZE == 0)
       require_full_subgroups = true;
 
    if (require_full_subgroups && !req_subgroup_size) {

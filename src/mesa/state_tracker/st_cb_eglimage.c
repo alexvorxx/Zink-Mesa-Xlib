@@ -171,14 +171,13 @@ st_get_egl_image(struct gl_context *ctx, GLeglImageOES image_handle,
 {
    struct st_context *st = st_context(ctx);
    struct pipe_screen *screen = st->screen;
-   struct st_manager *smapi =
-      (struct st_manager *) st->iface.st_context_private;
+   struct pipe_frontend_screen *fscreen = st->frontend_screen;
 
-   if (!smapi || !smapi->get_egl_image)
+   if (!fscreen || !fscreen->get_egl_image)
       return false;
 
    memset(out, 0, sizeof(*out));
-   if (!smapi->get_egl_image(smapi, (void *) image_handle, out)) {
+   if (!fscreen->get_egl_image(fscreen, (void *) image_handle, out)) {
       /* image_handle does not refer to a valid EGL image object */
       _mesa_error(ctx, GL_INVALID_VALUE, "%s(image handle not found)", error);
       return false;
@@ -422,10 +421,9 @@ static GLboolean
 st_validate_egl_image(struct gl_context *ctx, GLeglImageOES image_handle)
 {
    struct st_context *st = st_context(ctx);
-   struct st_manager *smapi =
-      (struct st_manager *) st->iface.st_context_private;
+   struct pipe_frontend_screen *fscreen = st->frontend_screen;
 
-   return smapi->validate_egl_image(smapi, (void *)image_handle);
+   return fscreen->validate_egl_image(fscreen, (void *)image_handle);
 }
 
 void

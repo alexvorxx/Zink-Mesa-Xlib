@@ -18,6 +18,9 @@
 #include "vn_image.h"
 #include "vn_render_pass.h"
 
+static void
+vn_cmd_submit(struct vn_command_buffer *cmd);
+
 #define VN_CMD_ENQUEUE(cmd_name, commandBuffer, ...)                         \
    do {                                                                      \
       struct vn_command_buffer *_cmd =                                       \
@@ -28,6 +31,9 @@
          vn_encode_##cmd_name(&_cmd->cs, 0, commandBuffer, ##__VA_ARGS__);   \
       else                                                                   \
          _cmd->state = VN_COMMAND_BUFFER_STATE_INVALID;                      \
+                                                                             \
+      if (VN_PERF(NO_CMD_BATCHING))                                          \
+         vn_cmd_submit(_cmd);                                                \
    } while (0)
 
 static bool
@@ -639,6 +645,14 @@ vn_DestroyCommandPool(VkDevice device,
    vk_free(alloc, pool);
 }
 
+static void
+vn_cmd_reset(struct vn_command_buffer *cmd)
+{
+   vn_cs_encoder_reset(&cmd->cs);
+   cmd->state = VN_COMMAND_BUFFER_STATE_INITIAL;
+   cmd->draw_cmd_batched = 0;
+}
+
 VkResult
 vn_ResetCommandPool(VkDevice device,
                     VkCommandPool commandPool,
@@ -650,8 +664,7 @@ vn_ResetCommandPool(VkDevice device,
 
    list_for_each_entry_safe(struct vn_command_buffer, cmd,
                             &pool->command_buffers, head) {
-      vn_cs_encoder_reset(&cmd->cs);
-      cmd->state = VN_COMMAND_BUFFER_STATE_INITIAL;
+      vn_cmd_reset(cmd);
    }
 
    vn_async_vkResetCommandPool(dev->instance, device, commandPool, flags);
@@ -763,9 +776,7 @@ vn_ResetCommandBuffer(VkCommandBuffer commandBuffer,
    struct vn_command_buffer *cmd =
       vn_command_buffer_from_handle(commandBuffer);
 
-   vn_cs_encoder_reset(&cmd->cs);
-   cmd->state = VN_COMMAND_BUFFER_STATE_INITIAL;
-   cmd->draw_cmd_batched = 0;
+   vn_cmd_reset(cmd);
 
    vn_async_vkResetCommandBuffer(cmd->device->instance, commandBuffer, flags);
 
@@ -2041,8 +2052,21 @@ vn_CmdPushDescriptorSetKHR(VkCommandBuffer commandBuffer,
                            uint32_t descriptorWriteCount,
                            const VkWriteDescriptorSet *pDescriptorWrites)
 {
+   struct vn_command_buffer *cmd =
+      vn_command_buffer_from_handle(commandBuffer);
+   struct vn_update_descriptor_sets *update =
+      vn_update_descriptor_sets_parse_writes(
+         descriptorWriteCount, pDescriptorWrites, &cmd->allocator, layout);
+   if (!update) {
+      cmd->state = VN_COMMAND_BUFFER_STATE_INVALID;
+      vn_log(cmd->device->instance, "descriptor set push ignored due to OOM");
+      return;
+   }
+
    VN_CMD_ENQUEUE(vkCmdPushDescriptorSetKHR, commandBuffer, pipelineBindPoint,
-                  layout, set, descriptorWriteCount, pDescriptorWrites);
+                  layout, set, update->write_count, update->writes);
+
+   vk_free(&cmd->allocator, update);
 }
 
 void

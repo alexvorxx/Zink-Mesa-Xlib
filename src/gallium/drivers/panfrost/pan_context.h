@@ -107,12 +107,6 @@ struct panfrost_query {
         bool msaa;
 };
 
-struct pipe_fence_handle {
-        struct pipe_reference reference;
-        uint32_t syncobj;
-        bool signaled;
-};
-
 struct panfrost_streamout_target {
         struct pipe_stream_output_target base;
         uint32_t offset;
@@ -232,6 +226,9 @@ struct panfrost_context {
 
         /* Mask of active render targets */
         uint8_t fb_rt_mask;
+
+        int in_sync_fd;
+        uint32_t in_sync_obj;
 };
 
 /* Corresponds to the CSO */

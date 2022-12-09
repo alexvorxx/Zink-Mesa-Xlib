@@ -290,8 +290,14 @@ tu_cs_alloc(struct tu_cs *cs,
    assert(cs->mode == TU_CS_MODE_SUB_STREAM);
    assert(size && size <= 1024);
 
-   if (!count)
+   if (!count) {
+      /* If you allocated no memory, you'd better not use the iova for anything
+       * (but it's left aligned for sanity).
+       */
+      memory->map = NULL;
+      memory->iova = 0xdead0000;
       return VK_SUCCESS;
+   }
 
    /* TODO: smarter way to deal with alignment? */
 

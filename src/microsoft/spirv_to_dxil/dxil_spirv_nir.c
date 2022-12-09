@@ -630,6 +630,12 @@ dxil_spirv_nir_passes(nir_shader *nir,
                      .use_layer_id_sysval = true,
                  });
 
+      /* This will lower load_helper to a memoized is_helper if needed; otherwise, load_helper
+       * will stay, but trivially translatable to IsHelperLane(), which will be known to be
+       * constant across the invocation since no demotion would have been used.
+       */
+      NIR_PASS_V(nir, nir_lower_discard_or_demote, nir->info.use_legacy_math_rules);
+
       NIR_PASS_V(nir, dxil_nir_lower_discard_and_terminate);
       NIR_PASS_V(nir, nir_lower_returns);
       NIR_PASS_V(nir, dxil_nir_lower_sample_pos);

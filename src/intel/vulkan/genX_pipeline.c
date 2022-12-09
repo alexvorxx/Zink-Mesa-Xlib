@@ -25,7 +25,7 @@
 
 #include "genxml/gen_macros.h"
 #include "genxml/genX_pack.h"
-#include "genxml/gen_rt_pack.h"
+#include "genxml/genX_rt_pack.h"
 
 #include "common/intel_l3_config.h"
 #include "common/intel_sample_positions.h"
@@ -1488,23 +1488,11 @@ emit_3dstate_ps(struct anv_graphics_pipeline *pipeline,
    const struct brw_wm_prog_data *wm_prog_data = get_wm_prog_data(pipeline);
 
    anv_batch_emit(&pipeline->base.batch, GENX(3DSTATE_PS), ps) {
-      ps._8PixelDispatchEnable      = wm_prog_data->dispatch_8;
-      ps._16PixelDispatchEnable     = wm_prog_data->dispatch_16;
-      ps._32PixelDispatchEnable     = wm_prog_data->dispatch_32;
-
-      /* From the Sky Lake PRM 3DSTATE_PS::32 Pixel Dispatch Enable:
-       *
-       *    "When NUM_MULTISAMPLES = 16 or FORCE_SAMPLE_COUNT = 16, SIMD32
-       *    Dispatch must not be enabled for PER_PIXEL dispatch mode."
-       *
-       * Since 16x MSAA is first introduced on SKL, we don't need to apply
-       * the workaround on any older hardware.
-       */
-      if (!wm_prog_data->persample_dispatch &&
-          ms != NULL && ms->rasterization_samples == 16) {
-         assert(ps._8PixelDispatchEnable || ps._16PixelDispatchEnable);
-         ps._32PixelDispatchEnable = false;
-      }
+      brw_fs_get_dispatch_enables(devinfo, wm_prog_data,
+                                  ms != NULL ? ms->rasterization_samples : 1,
+                                  &ps._8PixelDispatchEnable,
+                                  &ps._16PixelDispatchEnable,
+                                  &ps._32PixelDispatchEnable);
 
       ps.KernelStartPointer0 = fs_bin->kernel.offset +
                                brw_wm_prog_data_prog_offset(wm_prog_data, ps, 0);
@@ -1990,28 +1978,28 @@ genX(ray_tracing_pipeline_emit)(struct anv_ray_tracing_pipeline *pipeline)
 
       switch (group->type) {
       case VK_RAY_TRACING_SHADER_GROUP_TYPE_GENERAL_KHR: {
-         struct GFX_RT_GENERAL_SBT_HANDLE sh = {};
+         struct GENX(RT_GENERAL_SBT_HANDLE) sh = {};
          sh.General = anv_shader_bin_get_bsr(group->general, 32);
-         GFX_RT_GENERAL_SBT_HANDLE_pack(NULL, group->handle, &sh);
+         GENX(RT_GENERAL_SBT_HANDLE_pack)(NULL, group->handle, &sh);
          break;
       }
 
       case VK_RAY_TRACING_SHADER_GROUP_TYPE_TRIANGLES_HIT_GROUP_KHR: {
-         struct GFX_RT_TRIANGLES_SBT_HANDLE sh = {};
+         struct GENX(RT_TRIANGLES_SBT_HANDLE) sh = {};
          if (group->closest_hit)
             sh.ClosestHit = anv_shader_bin_get_bsr(group->closest_hit, 32);
          if (group->any_hit)
             sh.AnyHit = anv_shader_bin_get_bsr(group->any_hit, 24);
-         GFX_RT_TRIANGLES_SBT_HANDLE_pack(NULL, group->handle, &sh);
+         GENX(RT_TRIANGLES_SBT_HANDLE_pack)(NULL, group->handle, &sh);
          break;
       }
 
       case VK_RAY_TRACING_SHADER_GROUP_TYPE_PROCEDURAL_HIT_GROUP_KHR: {
-         struct GFX_RT_PROCEDURAL_SBT_HANDLE sh = {};
+         struct GENX(RT_PROCEDURAL_SBT_HANDLE) sh = {};
          if (group->closest_hit)
             sh.ClosestHit = anv_shader_bin_get_bsr(group->closest_hit, 32);
          sh.Intersection = anv_shader_bin_get_bsr(group->intersection, 24);
-         GFX_RT_PROCEDURAL_SBT_HANDLE_pack(NULL, group->handle, &sh);
+         GENX(RT_PROCEDURAL_SBT_HANDLE_pack)(NULL, group->handle, &sh);
          break;
       }
 

@@ -34,9 +34,11 @@
 
 #include "util/macros.h"
 #include "util/format/u_format.h"
+#include "util/libsync.h"
 #include "util/u_inlines.h"
 #include "util/u_upload_mgr.h"
 #include "util/u_memory.h"
+#include "util/u_surface.h"
 #include "util/u_vbuf.h"
 #include "util/half_float.h"
 #include "util/u_helpers.h"
@@ -47,6 +49,7 @@
 #include "util/u_math.h"
 #include "util/u_debug_cb.h"
 
+#include "pan_fence.h"
 #include "pan_screen.h"
 #include "pan_util.h"
 #include "decode.h"
@@ -566,6 +569,7 @@ static void
 panfrost_destroy(struct pipe_context *pipe)
 {
         struct panfrost_context *panfrost = pan_context(pipe);
+        struct panfrost_device *dev = pan_device(pipe->screen);
 
         _mesa_hash_table_destroy(panfrost->writers, NULL);
 
@@ -578,6 +582,11 @@ panfrost_destroy(struct pipe_context *pipe)
         panfrost_pool_cleanup(&panfrost->descs);
         panfrost_pool_cleanup(&panfrost->shaders);
 
+        drmSyncobjDestroy(dev->fd, panfrost->in_sync_obj);
+        if (panfrost->in_sync_fd != -1)
+                close(panfrost->in_sync_fd);
+
+        drmSyncobjDestroy(dev->fd, panfrost->syncobj);
         ralloc_free(pipe);
 }
 
@@ -856,6 +865,29 @@ panfrost_memory_barrier(struct pipe_context *pctx, unsigned flags)
         panfrost_flush_all_batches(pan_context(pctx), "Memory barrier");
 }
 
+static void
+panfrost_create_fence_fd(struct pipe_context *pctx,
+                         struct pipe_fence_handle **pfence,
+                         int fd, enum pipe_fd_type type)
+{
+        *pfence = panfrost_fence_from_fd(pan_context(pctx), fd, type);
+}
+
+static void
+panfrost_fence_server_sync(struct pipe_context *pctx,
+                           struct pipe_fence_handle *f)
+{
+        struct panfrost_device *dev = pan_device(pctx->screen);
+        struct panfrost_context *ctx = pan_context(pctx);
+        int fd = -1, ret;
+
+        ret = drmSyncobjExportSyncFile(dev->fd, f->syncobj, &fd);
+        assert(!ret);
+
+        sync_accumulate("panfrost", &ctx->in_sync_fd, fd);
+        close(fd);
+}
+
 struct pipe_context *
 panfrost_create_context(struct pipe_screen *screen, void *priv, unsigned flags)
 {
@@ -869,6 +901,9 @@ panfrost_create_context(struct pipe_screen *screen, void *priv, unsigned flags)
 
         gallium->set_framebuffer_state = panfrost_set_framebuffer_state;
         gallium->set_debug_callback = u_default_set_debug_callback;
+
+        gallium->create_fence_fd = panfrost_create_fence_fd;
+        gallium->fence_server_sync = panfrost_fence_server_sync;
 
         gallium->flush = panfrost_flush;
         gallium->clear = panfrost_clear;
@@ -959,6 +994,11 @@ panfrost_create_context(struct pipe_screen *screen, void *priv, unsigned flags)
          */
         ret = drmSyncobjCreate(dev->fd, DRM_SYNCOBJ_CREATE_SIGNALED, &ctx->syncobj);
         assert(!ret && ctx->syncobj);
+
+        /* Sync object/FD used for NATIVE_FENCE_FD. */
+        ctx->in_sync_fd = -1;
+        ret = drmSyncobjCreate(dev->fd, 0, &ctx->in_sync_obj);
+        assert(!ret);
 
         return gallium;
 }

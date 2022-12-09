@@ -35,7 +35,7 @@
 #include "common/intel_l3_config.h"
 #include "genxml/gen_macros.h"
 #include "genxml/genX_pack.h"
-#include "genxml/gen_rt_pack.h"
+#include "genxml/genX_rt_pack.h"
 #include "common/intel_guardband.h"
 #include "compiler/brw_prim.h"
 
@@ -1064,6 +1064,28 @@ transition_color_buffer(struct anv_cmd_buffer *cmd_buffer,
    if (base_layer >= anv_image_aux_layers(image, aspect, base_level))
       return;
 
+   enum isl_aux_usage initial_aux_usage =
+      anv_layout_to_aux_usage(devinfo, image, aspect, 0, initial_layout);
+   enum isl_aux_usage final_aux_usage =
+      anv_layout_to_aux_usage(devinfo, image, aspect, 0, final_layout);
+   enum anv_fast_clear_type initial_fast_clear =
+      anv_layout_to_fast_clear_type(devinfo, image, aspect, initial_layout);
+   enum anv_fast_clear_type final_fast_clear =
+      anv_layout_to_fast_clear_type(devinfo, image, aspect, final_layout);
+
+   /* We must override the anv_layout_to_* functions because they are unaware
+    * of acquire/release direction.
+    */
+   if (private_binding_acquire) {
+      initial_aux_usage = isl_mod_info->aux_usage;
+      initial_fast_clear = isl_mod_info->supports_clear_color ?
+         initial_fast_clear : ANV_FAST_CLEAR_NONE;
+   } else if (private_binding_release) {
+      final_aux_usage = isl_mod_info->aux_usage;
+      final_fast_clear = isl_mod_info->supports_clear_color ?
+         final_fast_clear : ANV_FAST_CLEAR_NONE;
+   }
+
    assert(image->planes[plane].primary_surface.isl.tiling != ISL_TILING_LINEAR);
 
    /* The following layouts are equivalent for non-linear images. */
@@ -1079,7 +1101,42 @@ transition_color_buffer(struct anv_cmd_buffer *cmd_buffer,
        * data.
        */
       must_init_fast_clear_state = true;
-      must_init_aux_surface = true;
+
+      if (image->planes[plane].aux_usage == ISL_AUX_USAGE_MCS ||
+          devinfo->has_illegal_ccs_values) {
+
+         must_init_aux_surface = true;
+
+      } else {
+         assert(image->planes[plane].aux_usage == ISL_AUX_USAGE_CCS_E);
+
+         /* We can start using the CCS immediately without ambiguating. The
+          * two conditions that enable this are:
+          *
+          * 1) The device treats all possible CCS values as legal. In other
+          *    words, we can't confuse the hardware with random bits in the
+          *    CCS.
+          *
+          * 2) We enable compression on all writable image layouts. The CCS
+          *    will receive all writes and will therefore always be in sync
+          *    with the main surface.
+          *
+          *    If we were to disable compression on some writable layouts, the
+          *    CCS could get out of sync with the main surface and the app
+          *    could lose the data it wrote previously. For example, this
+          *    could happen if an app: transitions from UNDEFINED w/o
+          *    ambiguating -> renders with AUX_NONE -> samples with AUX_CCS.
+          *
+          * The second condition is asserted below, but could be moved
+          * elsewhere for more coverage (we're only checking transitions from
+          * an undefined layout).
+          */
+         assert(vk_image_layout_is_read_only(final_layout, aspect) ||
+                (final_aux_usage != ISL_AUX_USAGE_NONE));
+
+         must_init_aux_surface = false;
+      }
+
    } else if (private_binding_acquire) {
       /* The fast clear state lives in a driver-private bo, and therefore the
        * external/foreign queue is unaware of it.
@@ -1226,28 +1283,6 @@ transition_color_buffer(struct anv_cmd_buffer *cmd_buffer,
                           ISL_AUX_OP_FAST_CLEAR, NULL, false);
       }
       return;
-   }
-
-   enum isl_aux_usage initial_aux_usage =
-      anv_layout_to_aux_usage(devinfo, image, aspect, 0, initial_layout);
-   enum isl_aux_usage final_aux_usage =
-      anv_layout_to_aux_usage(devinfo, image, aspect, 0, final_layout);
-   enum anv_fast_clear_type initial_fast_clear =
-      anv_layout_to_fast_clear_type(devinfo, image, aspect, initial_layout);
-   enum anv_fast_clear_type final_fast_clear =
-      anv_layout_to_fast_clear_type(devinfo, image, aspect, final_layout);
-
-   /* We must override the anv_layout_to_* functions because they are unaware of
-    * acquire/release direction.
-    */
-   if (private_binding_acquire) {
-      initial_aux_usage = isl_mod_info->aux_usage;
-      initial_fast_clear = isl_mod_info->supports_clear_color ?
-         initial_fast_clear : ANV_FAST_CLEAR_NONE;
-   } else if (private_binding_release) {
-      final_aux_usage = isl_mod_info->aux_usage;
-      final_fast_clear = isl_mod_info->supports_clear_color ?
-         final_fast_clear : ANV_FAST_CLEAR_NONE;
    }
 
    /* The current code assumes that there is no mixing of CCS_E and CCS_D.
@@ -1808,6 +1843,45 @@ genX(emit_apply_pipe_flushes)(struct anv_batch *batch,
                               uint32_t current_pipeline,
                               enum anv_pipe_bits bits)
 {
+#if GFX_VER >= 12
+   /* From the TGL PRM, Volume 2a, "PIPE_CONTROL":
+    *
+    *     "SW must follow below programming restrictions when programming
+    *      PIPE_CONTROL command [for ComputeCS]:
+    *      ...
+    *      Following bits must not be set when programmed for ComputeCS:
+    *      - "Render Target Cache Flush Enable", "Depth Cache Flush Enable"
+    *         and "Tile Cache Flush Enable"
+    *      - "Depth Stall Enable", Stall at Pixel Scoreboard and
+    *         "PSD Sync Enable".
+    *      - "OVR Tile 0 Flush", "TBIMR Force Batch Closure",
+    *         "AMFS Flush Enable", "VF Cache Invalidation Enable" and
+    *         "Global Snapshot Count Reset"."
+    *
+    * XXX: According to spec this should not be a concern for a regular
+    * RCS in GPGPU mode, but during testing it was found that at least
+    * "VF Cache Invalidation Enable" bit is ignored in such case.
+    * This can cause us to miss some important invalidations
+    * (e.g. from CmdPipelineBarriers) and have incoherent data.
+    *
+    * There is also a Wa_1606932921 "RCS is not waking up fixed function clock
+    * when specific 3d related bits are programmed in pipecontrol in
+    * compute mode" that suggests us not to use "RT Cache Flush" in GPGPU mode.
+    *
+    * The other bits are not confirmed to cause problems, but included here
+    * just to be safe, as they're also not really relevant in the GPGPU mode,
+    * and having them doesn't seem to cause any regressions.
+    *
+    * So if we're currently in GPGPU mode, we hide some bits from
+    * this flush, and will flush them only when we'll be able to.
+    * Similar thing with GPGPU-only bits.
+    */
+   enum anv_pipe_bits defer_bits = bits &
+      (current_pipeline == GPGPU ? ANV_PIPE_GFX_BITS: ANV_PIPE_GPGPU_BITS);
+
+   bits &= ~defer_bits;
+#endif
+
    /*
     * From Sandybridge PRM, volume 2, "1.7.2 End-of-Pipe Synchronization":
     *
@@ -2070,6 +2144,10 @@ genX(emit_apply_pipe_flushes)(struct anv_batch *batch,
 
       bits &= ~ANV_PIPE_INVALIDATE_BITS;
    }
+
+#if GFX_VER >= 12
+   bits |= defer_bits;
+#endif
 
    return bits;
 }
@@ -3431,10 +3509,13 @@ cmd_buffer_emit_scissor(struct anv_cmd_buffer *cmd_buffer)
 
       uint32_t y_min = MAX2(s->offset.y, MIN2(vp->y, vp->y + vp->height));
       uint32_t x_min = MAX2(s->offset.x, vp->x);
-      uint32_t y_max = MIN2(s->offset.y + s->extent.height - 1,
+      int64_t y_max = MIN2(s->offset.y + s->extent.height - 1,
                        MAX2(vp->y, vp->y + vp->height) - 1);
-      uint32_t x_max = MIN2(s->offset.x + s->extent.width - 1,
+      int64_t x_max = MIN2(s->offset.x + s->extent.width - 1,
                        vp->x + vp->width - 1);
+
+      y_max = clamp_int64(y_max, 0, INT16_MAX >> 1);
+      x_max = clamp_int64(x_max, 0, INT16_MAX >> 1);
 
       /* Do this math using int64_t so overflow gets clamped correctly. */
       if (cmd_buffer->vk.level == VK_COMMAND_BUFFER_LEVEL_PRIMARY) {
@@ -5432,7 +5513,7 @@ genX(cmd_buffer_ray_query_globals)(struct anv_cmd_buffer *cmd_buffer)
    brw_rt_compute_scratch_layout(&layout, device->info,
                                  stack_ids_per_dss, 1 << 10);
 
-   struct GFX_RT_DISPATCH_GLOBALS rtdg = {
+   struct GENX(RT_DISPATCH_GLOBALS) rtdg = {
       .MemBaseAddress = (struct anv_address) {
          /* The ray query HW computes offsets from the top of the buffer, so
           * let the address at the end of the buffer.
@@ -5448,7 +5529,7 @@ genX(cmd_buffer_ray_query_globals)(struct anv_cmd_buffer *cmd_buffer)
          .bo = cmd_buffer->state.ray_query_shadow_bo,
       },
    };
-   GFX_RT_DISPATCH_GLOBALS_pack(NULL, state.map, &rtdg);
+   GENX(RT_DISPATCH_GLOBALS_pack)(NULL, state.map, &rtdg);
 
    return state;
 #else
@@ -5608,26 +5689,170 @@ calc_local_trace_size(uint8_t local_shift[3], const uint32_t global[3])
    local_shift[0] += 3 - total_shift;
 }
 
-static struct GFX_RT_SHADER_TABLE
+static struct GENX(RT_SHADER_TABLE)
 vk_sdar_to_shader_table(const VkStridedDeviceAddressRegionKHR *region)
 {
-   return (struct GFX_RT_SHADER_TABLE) {
+   return (struct GENX(RT_SHADER_TABLE)) {
       .BaseAddress = anv_address_from_u64(region->deviceAddress),
       .Stride = region->stride,
    };
 }
 
+struct trace_params {
+   /* If is_sbt_indirect, use indirect_sbts_addr to build RT_DISPATCH_GLOBALS
+    * with mi_builder.
+    */
+   bool is_sbt_indirect;
+   const VkStridedDeviceAddressRegionKHR *raygen_sbt;
+   const VkStridedDeviceAddressRegionKHR *miss_sbt;
+   const VkStridedDeviceAddressRegionKHR *hit_sbt;
+   const VkStridedDeviceAddressRegionKHR *callable_sbt;
+
+   /* A pointer to a VkTraceRaysIndirectCommand2KHR structure */
+   uint64_t indirect_sbts_addr;
+
+   /* If is_indirect, use launch_size_addr to program the dispatch size. */
+   bool is_launch_size_indirect;
+   uint32_t launch_size[3];
+
+   /* A pointer a uint32_t[3] */
+   uint64_t launch_size_addr;
+};
+
+static struct anv_state
+cmd_buffer_emit_rt_dispatch_globals(struct anv_cmd_buffer *cmd_buffer,
+                                    struct trace_params *params)
+{
+   assert(!params->is_sbt_indirect);
+   assert(params->miss_sbt != NULL);
+   assert(params->hit_sbt != NULL);
+   assert(params->callable_sbt != NULL);
+
+   struct anv_cmd_ray_tracing_state *rt = &cmd_buffer->state.rt;
+
+   struct anv_state rtdg_state =
+      anv_cmd_buffer_alloc_dynamic_state(cmd_buffer,
+                                         BRW_RT_PUSH_CONST_OFFSET +
+                                         sizeof(struct anv_push_constants),
+                                         64);
+
+   struct GENX(RT_DISPATCH_GLOBALS) rtdg = {
+      .MemBaseAddress     = (struct anv_address) {
+         .bo = rt->scratch.bo,
+         .offset = rt->scratch.layout.ray_stack_start,
+      },
+      .CallStackHandler   = anv_shader_bin_get_bsr(
+         cmd_buffer->device->rt_trivial_return, 0),
+      .AsyncRTStackSize   = rt->scratch.layout.ray_stack_stride / 64,
+      .NumDSSRTStacks     = rt->scratch.layout.stack_ids_per_dss,
+      .MaxBVHLevels       = BRW_RT_MAX_BVH_LEVELS,
+      .Flags              = RT_DEPTH_TEST_LESS_EQUAL,
+      .HitGroupTable      = vk_sdar_to_shader_table(params->hit_sbt),
+      .MissGroupTable     = vk_sdar_to_shader_table(params->miss_sbt),
+      .SWStackSize        = rt->scratch.layout.sw_stack_size / 64,
+      .LaunchWidth        = params->launch_size[0],
+      .LaunchHeight       = params->launch_size[1],
+      .LaunchDepth        = params->launch_size[2],
+      .CallableGroupTable = vk_sdar_to_shader_table(params->callable_sbt),
+   };
+   GENX(RT_DISPATCH_GLOBALS_pack)(NULL, rtdg_state.map, &rtdg);
+
+   return rtdg_state;
+}
+
+static struct mi_value
+mi_build_sbt_entry(struct mi_builder *b,
+                   uint64_t addr_field_addr,
+                   uint64_t stride_field_addr)
+{
+   return mi_ior(b,
+                 mi_iand(b, mi_mem64(anv_address_from_u64(addr_field_addr)),
+                            mi_imm(0xffffffffff)),
+                 mi_ishl_imm(b, mi_mem32(anv_address_from_u64(stride_field_addr)),
+                                48));
+}
+
+static struct anv_state
+cmd_buffer_emit_rt_dispatch_globals_indirect(struct anv_cmd_buffer *cmd_buffer,
+                                             struct trace_params *params)
+{
+   struct anv_cmd_ray_tracing_state *rt = &cmd_buffer->state.rt;
+
+   struct anv_state rtdg_state =
+      anv_cmd_buffer_alloc_dynamic_state(cmd_buffer,
+                                         BRW_RT_PUSH_CONST_OFFSET +
+                                         sizeof(struct anv_push_constants),
+                                         64);
+
+   struct GENX(RT_DISPATCH_GLOBALS) rtdg = {
+      .MemBaseAddress     = (struct anv_address) {
+         .bo = rt->scratch.bo,
+         .offset = rt->scratch.layout.ray_stack_start,
+      },
+      .CallStackHandler   = anv_shader_bin_get_bsr(
+         cmd_buffer->device->rt_trivial_return, 0),
+      .AsyncRTStackSize   = rt->scratch.layout.ray_stack_stride / 64,
+      .NumDSSRTStacks     = rt->scratch.layout.stack_ids_per_dss,
+      .MaxBVHLevels       = BRW_RT_MAX_BVH_LEVELS,
+      .Flags              = RT_DEPTH_TEST_LESS_EQUAL,
+      .SWStackSize        = rt->scratch.layout.sw_stack_size / 64,
+   };
+   GENX(RT_DISPATCH_GLOBALS_pack)(NULL, rtdg_state.map, &rtdg);
+
+   struct anv_address rtdg_addr =
+      anv_state_pool_state_address(
+         &cmd_buffer->device->dynamic_state_pool,
+         rtdg_state);
+
+   struct mi_builder b;
+   mi_builder_init(&b, cmd_buffer->device->info, &cmd_buffer->batch);
+
+   /* Fill the MissGroupTable, HitGroupTable & CallableGroupTable fields of
+    * RT_DISPATCH_GLOBALS using the mi_builder.
+    */
+   mi_store(&b,
+            mi_mem64(
+               anv_address_add(
+                  rtdg_addr,
+                  GENX(RT_DISPATCH_GLOBALS_MissGroupTable_start) / 8)),
+            mi_build_sbt_entry(&b,
+                               params->indirect_sbts_addr +
+                               offsetof(VkTraceRaysIndirectCommand2KHR,
+                                        missShaderBindingTableAddress),
+                               params->indirect_sbts_addr +
+                               offsetof(VkTraceRaysIndirectCommand2KHR,
+                                        missShaderBindingTableStride)));
+   mi_store(&b,
+            mi_mem64(
+               anv_address_add(
+                  rtdg_addr,
+                  GENX(RT_DISPATCH_GLOBALS_HitGroupTable_start) / 8)),
+            mi_build_sbt_entry(&b,
+                               params->indirect_sbts_addr +
+                               offsetof(VkTraceRaysIndirectCommand2KHR,
+                                        hitShaderBindingTableAddress),
+                               params->indirect_sbts_addr +
+                               offsetof(VkTraceRaysIndirectCommand2KHR,
+                                        hitShaderBindingTableStride)));
+   mi_store(&b,
+            mi_mem64(
+               anv_address_add(
+                  rtdg_addr,
+                  GENX(RT_DISPATCH_GLOBALS_CallableGroupTable_start) / 8)),
+            mi_build_sbt_entry(&b,
+                               params->indirect_sbts_addr +
+                               offsetof(VkTraceRaysIndirectCommand2KHR,
+                                        callableShaderBindingTableAddress),
+                               params->indirect_sbts_addr +
+                               offsetof(VkTraceRaysIndirectCommand2KHR,
+                                        callableShaderBindingTableStride)));
+
+   return rtdg_state;
+}
+
 static void
 cmd_buffer_trace_rays(struct anv_cmd_buffer *cmd_buffer,
-                      const VkStridedDeviceAddressRegionKHR *raygen_sbt,
-                      const VkStridedDeviceAddressRegionKHR *miss_sbt,
-                      const VkStridedDeviceAddressRegionKHR *hit_sbt,
-                      const VkStridedDeviceAddressRegionKHR *callable_sbt,
-                      bool is_indirect,
-                      uint32_t launch_width,
-                      uint32_t launch_height,
-                      uint32_t launch_depth,
-                      uint64_t launch_size_addr)
+                      struct trace_params *params)
 {
    struct anv_device *device = cmd_buffer->device;
    struct anv_cmd_ray_tracing_state *rt = &cmd_buffer->state.rt;
@@ -5637,8 +5862,10 @@ cmd_buffer_trace_rays(struct anv_cmd_buffer *cmd_buffer,
       return;
 
    /* If we have a known degenerate launch size, just bail */
-   if (!is_indirect &&
-       (launch_width == 0 || launch_height == 0 || launch_depth == 0))
+   if (!params->is_launch_size_indirect &&
+       (params->launch_size[0] == 0 ||
+        params->launch_size[1] == 0 ||
+        params->launch_size[2] == 0))
       return;
 
    genX(cmd_buffer_config_l3)(cmd_buffer, pipeline->base.l3_config);
@@ -5662,34 +5889,14 @@ cmd_buffer_trace_rays(struct anv_cmd_buffer *cmd_buffer,
 
    /* Allocate and set up our RT_DISPATCH_GLOBALS */
    struct anv_state rtdg_state =
-      anv_cmd_buffer_alloc_dynamic_state(cmd_buffer,
-                                         BRW_RT_PUSH_CONST_OFFSET +
-                                         sizeof(struct anv_push_constants),
-                                         64);
+      params->is_sbt_indirect ?
+      cmd_buffer_emit_rt_dispatch_globals_indirect(cmd_buffer, params) :
+      cmd_buffer_emit_rt_dispatch_globals(cmd_buffer, params);
 
-   struct GFX_RT_DISPATCH_GLOBALS rtdg = {
-      .MemBaseAddress = (struct anv_address) {
-         .bo = rt->scratch.bo,
-         .offset = rt->scratch.layout.ray_stack_start,
-      },
-      .CallStackHandler =
-         anv_shader_bin_get_bsr(cmd_buffer->device->rt_trivial_return, 0),
-      .AsyncRTStackSize = rt->scratch.layout.ray_stack_stride / 64,
-      .NumDSSRTStacks = rt->scratch.layout.stack_ids_per_dss,
-      .MaxBVHLevels = BRW_RT_MAX_BVH_LEVELS,
-      .Flags = RT_DEPTH_TEST_LESS_EQUAL,
-      .HitGroupTable = vk_sdar_to_shader_table(hit_sbt),
-      .MissGroupTable = vk_sdar_to_shader_table(miss_sbt),
-      .SWStackSize = rt->scratch.layout.sw_stack_size / 64,
-      .LaunchWidth = launch_width,
-      .LaunchHeight = launch_height,
-      .LaunchDepth = launch_depth,
-      .CallableGroupTable = vk_sdar_to_shader_table(callable_sbt),
-   };
-   GFX_RT_DISPATCH_GLOBALS_pack(NULL, rtdg_state.map, &rtdg);
-
+   assert(rtdg_state.alloc_size >= (BRW_RT_PUSH_CONST_OFFSET +
+                                    sizeof(struct anv_push_constants)));
+   assert(GENX(RT_DISPATCH_GLOBALS_length) * 4 <= BRW_RT_PUSH_CONST_OFFSET);
    /* Push constants go after the RT_DISPATCH_GLOBALS */
-   assert(GFX_RT_DISPATCH_GLOBALS_length * 4 <= BRW_RT_PUSH_CONST_OFFSET);
    memcpy(rtdg_state.map + BRW_RT_PUSH_CONST_OFFSET,
           &cmd_buffer->state.rt.base.push_constants,
           sizeof(struct anv_push_constants));
@@ -5700,7 +5907,7 @@ cmd_buffer_trace_rays(struct anv_cmd_buffer *cmd_buffer,
 
    uint8_t local_size_log2[3];
    uint32_t global_size[3] = {};
-   if (is_indirect) {
+   if (params->is_launch_size_indirect) {
       /* Pick a local size that's probably ok.  We assume most TraceRays calls
        * will use a two-dimensional dispatch size.  Worst case, our initial
        * dispatch will be a little slower than it has to be.
@@ -5713,21 +5920,20 @@ cmd_buffer_trace_rays(struct anv_cmd_buffer *cmd_buffer,
       mi_builder_init(&b, cmd_buffer->device->info, &cmd_buffer->batch);
 
       struct mi_value launch_size[3] = {
-         mi_mem32(anv_address_from_u64(launch_size_addr + 0)),
-         mi_mem32(anv_address_from_u64(launch_size_addr + 4)),
-         mi_mem32(anv_address_from_u64(launch_size_addr + 8)),
+         mi_mem32(anv_address_from_u64(params->launch_size_addr + 0)),
+         mi_mem32(anv_address_from_u64(params->launch_size_addr + 4)),
+         mi_mem32(anv_address_from_u64(params->launch_size_addr + 8)),
       };
 
-      /* Store the original launch size into RT_DISPATCH_GLOBALS
-       *
-       * TODO: Pull values from genX_bits.h once RT_DISPATCH_GLOBALS gets
-       * moved into a genX version.
-       */
-      mi_store(&b, mi_mem32(anv_address_add(rtdg_addr, 52)),
+      /* Store the original launch size into RT_DISPATCH_GLOBALS */
+      mi_store(&b, mi_mem32(anv_address_add(rtdg_addr,
+                                            GENX(RT_DISPATCH_GLOBALS_LaunchWidth_start) / 8)),
                mi_value_ref(&b, launch_size[0]));
-      mi_store(&b, mi_mem32(anv_address_add(rtdg_addr, 56)),
+      mi_store(&b, mi_mem32(anv_address_add(rtdg_addr,
+                                            GENX(RT_DISPATCH_GLOBALS_LaunchHeight_start) / 8)),
                mi_value_ref(&b, launch_size[1]));
-      mi_store(&b, mi_mem32(anv_address_add(rtdg_addr, 60)),
+      mi_store(&b, mi_mem32(anv_address_add(rtdg_addr,
+                                            GENX(RT_DISPATCH_GLOBALS_LaunchDepth_start) / 8)),
                mi_value_ref(&b, launch_size[2]));
 
       /* Compute the global dispatch size */
@@ -5752,15 +5958,14 @@ cmd_buffer_trace_rays(struct anv_cmd_buffer *cmd_buffer,
       mi_store(&b, mi_reg32(GPGPU_DISPATCHDIMY), launch_size[1]);
       mi_store(&b, mi_reg32(GPGPU_DISPATCHDIMZ), launch_size[2]);
    } else {
-      uint32_t launch_size[3] = { launch_width, launch_height, launch_depth };
-      calc_local_trace_size(local_size_log2, launch_size);
+      calc_local_trace_size(local_size_log2, params->launch_size);
 
       for (unsigned i = 0; i < 3; i++) {
          /* We have to be a bit careful here because DIV_ROUND_UP adds to the
           * numerator value may overflow.  Cast to uint64_t to avoid this.
           */
          uint32_t local_size = 1 << local_size_log2[i];
-         global_size[i] = DIV_ROUND_UP((uint64_t)launch_size[i], local_size);
+         global_size[i] = DIV_ROUND_UP((uint64_t)params->launch_size[i], local_size);
       }
    }
 
@@ -5799,8 +6004,8 @@ cmd_buffer_trace_rays(struct anv_cmd_buffer *cmd_buffer,
       brw_cs_get_dispatch_info(device->info, cs_prog_data, NULL);
 
    anv_batch_emit(&cmd_buffer->batch, GENX(COMPUTE_WALKER), cw) {
-      cw.IndirectParameterEnable        = is_indirect;
-      cw.PredicateEnable                = false;
+      cw.IndirectParameterEnable        = params->is_launch_size_indirect;
+      cw.PredicateEnable                = cmd_buffer->state.conditional_render_enabled;
       cw.SIMDSize                       = dispatch.simd_size / 16;
       cw.LocalXMaximum                  = (1 << local_size_log2[0]) - 1;
       cw.LocalYMaximum                  = (1 << local_size_log2[1]) - 1;
@@ -5828,8 +6033,13 @@ cmd_buffer_trace_rays(struct anv_cmd_buffer *cmd_buffer,
 
       struct brw_rt_raygen_trampoline_params trampoline_params = {
          .rt_disp_globals_addr = anv_address_physical(rtdg_addr),
-         .raygen_bsr_addr = raygen_sbt->deviceAddress,
-         .is_indirect = is_indirect,
+         .raygen_bsr_addr =
+            params->is_sbt_indirect ?
+            (params->indirect_sbts_addr +
+             offsetof(VkTraceRaysIndirectCommand2KHR,
+                      raygenShaderRecordAddress)) :
+            params->raygen_sbt->deviceAddress,
+         .is_indirect = params->is_sbt_indirect,
          .local_group_size_log2 = {
             local_size_log2[0],
             local_size_log2[1],
@@ -5853,15 +6063,21 @@ genX(CmdTraceRaysKHR)(
     uint32_t                                    depth)
 {
    ANV_FROM_HANDLE(anv_cmd_buffer, cmd_buffer, commandBuffer);
+   struct trace_params params = {
+      .is_sbt_indirect         = false,
+      .raygen_sbt              = pRaygenShaderBindingTable,
+      .miss_sbt                = pMissShaderBindingTable,
+      .hit_sbt                 = pHitShaderBindingTable,
+      .callable_sbt            = pCallableShaderBindingTable,
+      .is_launch_size_indirect = false,
+      .launch_size             = {
+         width,
+         height,
+         depth,
+      },
+   };
 
-   cmd_buffer_trace_rays(cmd_buffer,
-                         pRaygenShaderBindingTable,
-                         pMissShaderBindingTable,
-                         pHitShaderBindingTable,
-                         pCallableShaderBindingTable,
-                         false /* is_indirect */,
-                         width, height, depth,
-                         0 /* launch_size_addr */);
+   cmd_buffer_trace_rays(cmd_buffer, &params);
 }
 
 void
@@ -5874,16 +6090,36 @@ genX(CmdTraceRaysIndirectKHR)(
     VkDeviceAddress                             indirectDeviceAddress)
 {
    ANV_FROM_HANDLE(anv_cmd_buffer, cmd_buffer, commandBuffer);
+   struct trace_params params = {
+      .is_sbt_indirect         = false,
+      .raygen_sbt              = pRaygenShaderBindingTable,
+      .miss_sbt                = pMissShaderBindingTable,
+      .hit_sbt                 = pHitShaderBindingTable,
+      .callable_sbt            = pCallableShaderBindingTable,
+      .is_launch_size_indirect = true,
+      .launch_size_addr        = indirectDeviceAddress,
+   };
 
-   cmd_buffer_trace_rays(cmd_buffer,
-                         pRaygenShaderBindingTable,
-                         pMissShaderBindingTable,
-                         pHitShaderBindingTable,
-                         pCallableShaderBindingTable,
-                         true /* is_indirect */,
-                         0, 0, 0, /* width, height, depth, */
-                         indirectDeviceAddress);
+   cmd_buffer_trace_rays(cmd_buffer, &params);
 }
+
+void
+genX(CmdTraceRaysIndirect2KHR)(
+    VkCommandBuffer                             commandBuffer,
+    VkDeviceAddress                             indirectDeviceAddress)
+{
+   ANV_FROM_HANDLE(anv_cmd_buffer, cmd_buffer, commandBuffer);
+   struct trace_params params = {
+      .is_sbt_indirect         = true,
+      .indirect_sbts_addr      = indirectDeviceAddress,
+      .is_launch_size_indirect = true,
+      .launch_size_addr        = indirectDeviceAddress +
+                                 offsetof(VkTraceRaysIndirectCommand2KHR, width),
+   };
+
+   cmd_buffer_trace_rays(cmd_buffer, &params);
+}
+
 #endif /* GFX_VERx10 >= 125 */
 
 static void

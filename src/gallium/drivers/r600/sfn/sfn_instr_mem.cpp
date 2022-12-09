@@ -111,6 +111,11 @@ GDSInstr::emit_atomic_counter(nir_intrinsic_instr *intr, Shader& shader)
    }
 }
 
+uint8_t GDSInstr::allowed_src_chan_mask() const
+{
+   return m_src.free_chan_mask();
+}
+
 static ESDOp
 get_opcode(const nir_intrinsic_op opcode)
 {

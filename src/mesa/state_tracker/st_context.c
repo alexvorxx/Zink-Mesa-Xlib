@@ -71,35 +71,6 @@
 
 DEBUG_GET_ONCE_BOOL_OPTION(mesa_mvp_dp4, "MESA_MVP_DP4", FALSE)
 
-static uint64_t
-st_get_active_states(struct gl_context *ctx)
-{
-   struct gl_program *vp = ctx->VertexProgram._Current;
-   struct gl_program *tcp = ctx->TessCtrlProgram._Current;
-   struct gl_program *tep = ctx->TessEvalProgram._Current;
-   struct gl_program *gp = ctx->GeometryProgram._Current;
-   struct gl_program *fp = ctx->FragmentProgram._Current;
-   struct gl_program *cp = ctx->ComputeProgram._Current;
-   uint64_t active_shader_states = 0;
-
-   if (vp)
-      active_shader_states |= vp->affected_states;
-   if (tcp)
-      active_shader_states |= tcp->affected_states;
-   if (tep)
-      active_shader_states |= tep->affected_states;
-   if (gp)
-      active_shader_states |= gp->affected_states;
-   if (fp)
-      active_shader_states |= fp->affected_states;
-   if (cp)
-      active_shader_states |= cp->affected_states;
-
-   /* Mark non-shader-resource shader states as "always active". */
-   return active_shader_states | ~ST_ALL_SHADER_RESOURCES;
-}
-
-
 void
 st_invalidate_buffers(struct st_context *st)
 {
@@ -137,9 +108,6 @@ st_invalidate_state(struct gl_context *ctx)
       /* These set a subset of flags set by _NEW_BUFFERS, so we only have to
        * check them when _NEW_BUFFERS isn't set.
        */
-      if (new_state & _NEW_PROGRAM)
-         st->dirty |= ST_NEW_RASTERIZER;
-
       if (new_state & _NEW_FOG)
          st->dirty |= ST_NEW_FS_STATE;
    }
@@ -181,14 +149,6 @@ st_invalidate_state(struct gl_context *ctx)
          st->dirty |= ST_NEW_TES_STATE | ST_NEW_TES_CONSTANTS;
       else
          st->dirty |= ST_NEW_VS_STATE | ST_NEW_VS_CONSTANTS;
-   }
-
-   /* Which shaders are dirty will be determined manually. */
-   if (new_state & _NEW_PROGRAM) {
-      st->gfx_shaders_may_be_dirty = true;
-      st->compute_shader_may_be_dirty = true;
-      /* This will mask out unused shader resources. */
-      st->active_states = st_get_active_states(ctx);
    }
 
    if (new_state & _NEW_TEXTURE_OBJECT) {
@@ -805,6 +765,7 @@ st_create_context_priv(struct gl_context *ctx, struct pipe_context *pipe,
    ctx->Const.DriverSupportedPrimMask = screen->get_param(screen, PIPE_CAP_SUPPORTED_PRIM_MODES) |
                                         /* patches is always supported */
                                         BITFIELD_BIT(PIPE_PRIM_PATCHES);
+   st->active_states = _mesa_get_active_states(ctx);
 
    return st;
 }
@@ -814,11 +775,10 @@ st_set_background_context(struct gl_context *ctx,
                           struct util_queue_monitoring *queue_info)
 {
    struct st_context *st = ctx->st;
-   struct st_manager *smapi =
-      (struct st_manager *) st->iface.st_context_private;
+   struct pipe_frontend_screen *fscreen = st->frontend_screen;
 
-   assert(smapi->set_background_context);
-   smapi->set_background_context(&st->iface, queue_info);
+   assert(fscreen->set_background_context);
+   fscreen->set_background_context(st, queue_info);
 }
 
 static void

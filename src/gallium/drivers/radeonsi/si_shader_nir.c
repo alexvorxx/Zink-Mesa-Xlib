@@ -240,6 +240,16 @@ static bool si_lower_intrinsics(nir_shader *nir)
                                         NULL);
 }
 
+const nir_lower_subgroups_options si_nir_subgroups_options = {
+   .subgroup_size = 64,
+   .ballot_bit_size = 64,
+   .ballot_components = 1,
+   .lower_to_scalar = true,
+   .lower_subgroup_masks = true,
+   .lower_vote_trivial = false,
+   .lower_vote_eq = true,
+};
+
 /**
  * Perform "lowering" operations on the NIR that are run once when the shader
  * selector is created.
@@ -269,16 +279,7 @@ static void si_lower_nir(struct si_screen *sscreen, struct nir_shader *nir)
 
    NIR_PASS_V(nir, si_lower_intrinsics);
 
-   const nir_lower_subgroups_options subgroups_options = {
-      .subgroup_size = 64,
-      .ballot_bit_size = 64,
-      .ballot_components = 1,
-      .lower_to_scalar = true,
-      .lower_subgroup_masks = true,
-      .lower_vote_trivial = false,
-      .lower_vote_eq = true,
-   };
-   NIR_PASS_V(nir, nir_lower_subgroups, &subgroups_options);
+   NIR_PASS_V(nir, nir_lower_subgroups, &si_nir_subgroups_options);
 
    NIR_PASS_V(nir, nir_lower_discard_or_demote,
               (sscreen->debug_flags & DBG(FS_CORRECT_DERIVS_AFTER_KILL)) ||
@@ -296,6 +297,17 @@ static void si_lower_nir(struct si_screen *sscreen, struct nir_shader *nir)
        nir->info.stage == MESA_SHADER_TESS_EVAL ||
        nir->info.stage == MESA_SHADER_GEOMETRY)
       NIR_PASS_V(nir, nir_lower_io_to_scalar, nir_var_shader_out);
+
+   if (nir->info.stage == MESA_SHADER_GEOMETRY) {
+      unsigned flags = nir_lower_gs_intrinsics_per_stream;
+      if (sscreen->use_ngg) {
+         flags |= nir_lower_gs_intrinsics_count_primitives |
+            nir_lower_gs_intrinsics_count_vertices_per_primitive |
+            nir_lower_gs_intrinsics_overwrite_incomplete;
+      }
+
+      NIR_PASS_V(nir, nir_lower_gs_intrinsics, flags);
+   }
 
    if (nir->info.stage == MESA_SHADER_COMPUTE) {
       if (nir->info.cs.derivative_group == DERIVATIVE_GROUP_QUADS) {

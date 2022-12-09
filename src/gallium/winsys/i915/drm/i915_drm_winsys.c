@@ -19,7 +19,8 @@
 static void
 i915_drm_get_device_id(int fd, unsigned int *device_id)
 {
-   assert(intel_gem_get_param(fd, I915_PARAM_CHIPSET_ID, (int *)&device_id));
+   ASSERTED bool ret = intel_gem_get_param(fd, I915_PARAM_CHIPSET_ID, (int *)device_id);
+   assert(ret);
 }
 
 static int

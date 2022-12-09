@@ -102,6 +102,27 @@ rogue_get_isp_samples_per_tile_xy(const struct pvr_device_info *dev_info,
    }
 }
 
+static inline void
+rogue_get_zls_tile_size_xy(const struct pvr_device_info *dev_info,
+                           uint32_t *const x_out,
+                           uint32_t *const y_out)
+{
+   uint32_t version = 0;
+   bool has_version;
+
+   has_version =
+      !PVR_FEATURE_VALUE(dev_info, simple_parameter_format_version, &version);
+
+   *x_out = PVR_GET_FEATURE_VALUE(dev_info, tile_size_x, 0U);
+   *y_out = PVR_GET_FEATURE_VALUE(dev_info, tile_size_y, 0U);
+
+   if (PVR_HAS_FEATURE(dev_info, simple_internal_parameter_format) &&
+       has_version && version == 2) {
+      *x_out *= 2;
+      *y_out *= 2;
+   }
+}
+
 static inline uint32_t
 rogue_get_max_output_regs_per_pixel(const struct pvr_device_info *dev_info)
 {

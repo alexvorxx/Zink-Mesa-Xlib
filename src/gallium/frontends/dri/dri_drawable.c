@@ -38,18 +38,19 @@
 #include "util/u_memory.h"
 #include "util/u_inlines.h"
 
+#include "state_tracker/st_context.h"
+
 static uint32_t drifb_ID = 0;
 
 static bool
-dri_st_framebuffer_validate(struct st_context_iface *stctx,
-                            struct st_framebuffer_iface *stfbi,
+dri_st_framebuffer_validate(struct st_context *st,
+                            struct pipe_frontend_drawable *pdrawable,
                             const enum st_attachment_type *statts,
                             unsigned count,
                             struct pipe_resource **out)
 {
-   struct dri_context *ctx = (struct dri_context *)stctx->st_manager_private;
-   struct dri_drawable *drawable =
-      (struct dri_drawable *) stfbi->st_manager_private;
+   struct dri_context *ctx = (struct dri_context *)st->frontend_context;
+   struct dri_drawable *drawable = (struct dri_drawable *)pdrawable;
    struct dri_screen *screen = drawable->screen;
    unsigned statt_mask, new_mask;
    bool new_stamp;
@@ -110,13 +111,12 @@ dri_st_framebuffer_validate(struct st_context_iface *stctx,
 }
 
 static bool
-dri_st_framebuffer_flush_front(struct st_context_iface *stctx,
-                               struct st_framebuffer_iface *stfbi,
+dri_st_framebuffer_flush_front(struct st_context *st,
+                               struct pipe_frontend_drawable *pdrawable,
                                enum st_attachment_type statt)
 {
-   struct dri_context *ctx = (struct dri_context *)stctx->st_manager_private;
-   struct dri_drawable *drawable =
-      (struct dri_drawable *) stfbi->st_manager_private;
+   struct dri_context *ctx = (struct dri_context *)st->frontend_context;
+   struct dri_drawable *drawable = (struct dri_drawable *)pdrawable;
 
    /* XXX remove this and just set the correct one on the framebuffer */
    return drawable->flush_frontbuffer(ctx, drawable, statt);
@@ -126,12 +126,11 @@ dri_st_framebuffer_flush_front(struct st_context_iface *stctx,
  * The gallium frontend framebuffer interface flush_swapbuffers callback
  */
 static bool
-dri_st_framebuffer_flush_swapbuffers(struct st_context_iface *stctx,
-                                     struct st_framebuffer_iface *stfbi)
+dri_st_framebuffer_flush_swapbuffers(struct st_context *st,
+                                     struct pipe_frontend_drawable *pdrawable)
 {
-   struct dri_context *ctx = (struct dri_context *)stctx->st_manager_private;
-   struct dri_drawable *drawable =
-      (struct dri_drawable *) stfbi->st_manager_private;
+   struct dri_context *ctx = (struct dri_context *)st->frontend_context;
+   struct dri_drawable *drawable = (struct dri_drawable *)pdrawable;
 
    if (drawable->flush_swapbuffers)
       drawable->flush_swapbuffers(ctx, drawable);
@@ -163,18 +162,17 @@ dri_create_drawable(struct dri_screen *screen, const struct gl_config *visual,
 
    dri_fill_st_visual(&drawable->stvis, screen, visual);
 
-   /* setup the st_framebuffer_iface */
+   /* setup the pipe_frontend_drawable */
    drawable->base.visual = &drawable->stvis;
    drawable->base.flush_front = dri_st_framebuffer_flush_front;
    drawable->base.validate = dri_st_framebuffer_validate;
    drawable->base.flush_swapbuffers = dri_st_framebuffer_flush_swapbuffers;
-   drawable->base.st_manager_private = (void *) drawable;
 
    drawable->screen = screen;
 
    p_atomic_set(&drawable->base.stamp, 1);
    drawable->base.ID = p_atomic_inc_return(&drifb_ID);
-   drawable->base.state_manager = &screen->base;
+   drawable->base.fscreen = &screen->base;
 
    return drawable;
 fail:
@@ -252,12 +250,11 @@ dri_set_tex_buffer2(__DRIcontext *pDRICtx, GLint target,
                     GLint format, __DRIdrawable *dPriv)
 {
    struct dri_context *ctx = dri_context(pDRICtx);
-   struct st_context_iface *st = ctx->st;
+   struct st_context *st = ctx->st;
    struct dri_drawable *drawable = dri_drawable(dPriv);
    struct pipe_resource *pt;
 
-   if (st->thread_finish)
-      st->thread_finish(st);
+   _mesa_glthread_finish(st->ctx);
 
    dri_drawable_validate_att(ctx, drawable, ST_ATTACHMENT_FRONT_LEFT);
 
@@ -292,9 +289,7 @@ dri_set_tex_buffer2(__DRIcontext *pDRICtx, GLint target,
 
       drawable->update_tex_buffer(drawable, ctx, pt);
 
-      ctx->st->teximage(ctx->st,
-            (target == GL_TEXTURE_2D) ? ST_TEXTURE_2D : ST_TEXTURE_RECT,
-            0, internal_format, pt, false);
+      st_context_teximage(ctx->st, target, 0, internal_format, pt, false);
    }
 }
 
@@ -418,14 +413,13 @@ static void
 notify_before_flush_cb(void* _args)
 {
    struct notify_before_flush_cb_args *args = (struct notify_before_flush_cb_args *) _args;
-   struct st_context_iface *st = args->ctx->st;
+   struct st_context *st = args->ctx->st;
    struct pipe_context *pipe = st->pipe;
 
    /* Wait for glthread to finish because we can't use pipe_context from
     * multiple threads.
     */
-   if (st->thread_finish)
-      st->thread_finish(st);
+   _mesa_glthread_finish(st->ctx);
 
    if (args->drawable->stvis.samples > 1 &&
        (args->reason == __DRI2_THROTTLE_SWAPBUFFER ||
@@ -478,7 +472,7 @@ dri_flush(__DRIcontext *cPriv,
 {
    struct dri_context *ctx = dri_context(cPriv);
    struct dri_drawable *drawable = dri_drawable(dPriv);
-   struct st_context_iface *st;
+   struct st_context *st;
    unsigned flush_flags;
    struct notify_before_flush_cb_args args = { 0 };
 
@@ -488,8 +482,7 @@ dri_flush(__DRIcontext *cPriv,
    }
 
    st = ctx->st;
-   if (st->thread_finish)
-      st->thread_finish(st);
+   _mesa_glthread_finish(st->ctx);
 
    if (drawable) {
       /* prevent recursion */
@@ -531,7 +524,7 @@ dri_flush(__DRIcontext *cPriv,
       struct pipe_screen *screen = drawable->screen->base.screen;
       struct pipe_fence_handle *new_fence = NULL;
 
-      st->flush(st, flush_flags, &new_fence, args.ctx ? notify_before_flush_cb : NULL, &args);
+      st_context_flush(st, flush_flags, &new_fence, args.ctx ? notify_before_flush_cb : NULL, &args);
 
       /* throttle on the previous fence */
       if (drawable->throttle_fence) {
@@ -541,7 +534,7 @@ dri_flush(__DRIcontext *cPriv,
       drawable->throttle_fence = new_fence;
    }
    else if (flags & (__DRI2_FLUSH_DRAWABLE | __DRI2_FLUSH_CONTEXT)) {
-      st->flush(st, flush_flags, NULL, args.ctx ? notify_before_flush_cb : NULL, &args);
+      st_context_flush(st, flush_flags, NULL, args.ctx ? notify_before_flush_cb : NULL, &args);
    }
 
    if (drawable) {
@@ -566,7 +559,7 @@ dri_flush(__DRIcontext *cPriv,
       p_atomic_inc(&drawable->base.stamp);
    }
 
-   st->invalidate_state(st, ST_INVALIDATE_FB_STATE);
+   st_context_invalidate_state(st, ST_INVALIDATE_FB_STATE);
 }
 
 /**

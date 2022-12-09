@@ -64,6 +64,10 @@ nir_ssa_def *
 ac_nir_load_arg(nir_builder *b, const struct ac_shader_args *ac_args, struct ac_arg arg);
 
 nir_ssa_def *
+ac_nir_unpack_arg(nir_builder *b, const struct ac_shader_args *ac_args, struct ac_arg arg,
+                  unsigned rshift, unsigned bitwidth);
+
+nir_ssa_def *
 ac_nir_calc_io_offset(nir_builder *b,
                       nir_intrinsic_instr *intrin,
                       nir_ssa_def *base_stride,

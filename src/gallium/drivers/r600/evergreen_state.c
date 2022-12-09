@@ -1069,11 +1069,7 @@ static void evergreen_set_color_surface_buffer(struct r600_context *rctx,
 	endian = r600_colorformat_endian_swap(format, FALSE);
 
 	desc = util_format_description(pformat);
-	for (i = 0; i < 4; i++) {
-		if (desc->channel[i].type != UTIL_FORMAT_TYPE_VOID) {
-			break;
-		}
-	}
+	i = util_format_get_first_non_void_channel(pformat);
 	ntype = V_028C70_NUMBER_UNORM;
 	if (desc->colorspace == UTIL_FORMAT_COLORSPACE_SRGB)
 		ntype = V_028C70_NUMBER_SRGB;
@@ -1179,11 +1175,7 @@ static void evergreen_set_color_surface_common(struct r600_context *rctx,
 	}
 	nbanks = eg_num_banks(rscreen->b.info.r600_num_banks);
 	desc = util_format_description(pformat);
-	for (i = 0; i < 4; i++) {
-		if (desc->channel[i].type != UTIL_FORMAT_TYPE_VOID) {
-			break;
-		}
-	}
+	i = util_format_get_first_non_void_channel(pformat);
 	color->attrib = S_028C74_TILE_SPLIT(tile_split)|
 		S_028C74_NUM_BANKS(nbanks) |
 		S_028C74_BANK_WIDTH(bankw) |

@@ -278,6 +278,9 @@ index("bool", "synchronous")
 # Value ID to identify SSA value loaded/stored on the stack
 index("unsigned", "value_id")
 
+# Whether to sign-extend offsets in address arithmatic (else zero extend)
+index("bool", "sign_extend")
+
 intrinsic("nop", flags=[CAN_ELIMINATE])
 
 intrinsic("convert_alu_types", dest_comp=0, src_comp=[0],
@@ -1329,6 +1332,9 @@ store("global_amd", [1, 1], indices=[BASE, ACCESS, ALIGN_MUL, ALIGN_OFFSET, WRIT
 # Same as shared_atomic_add, but with GDS. src[] = {store_val, gds_addr, m0}
 intrinsic("gds_atomic_add_amd",  src_comp=[1, 1, 1], dest_comp=1, indices=[BASE])
 
+# src[] = { descriptor, add_value }
+intrinsic("buffer_atomic_add_amd", src_comp=[4, 1], dest_comp=1, indices=[BASE])
+
 # src[] = { sample_id, num_samples }
 intrinsic("load_sample_positions_amd", src_comp=[1, 1], dest_comp=2, flags=[CAN_ELIMINATE, CAN_REORDER])
 
@@ -1468,16 +1474,26 @@ intrinsic("execute_closest_hit_amd", src_comp=[1, 1, 1, 1, 1, 1])
 #   0. Ray Tmax
 intrinsic("execute_miss_amd", src_comp=[1])
 
+# Used for saving and restoring hit attribute variables.
+# BASE=dword index
+intrinsic("load_hit_attrib_amd", dest_comp=1, bit_sizes=[32], indices=[BASE])
+intrinsic("store_hit_attrib_amd", src_comp=[1], indices=[BASE])
+
 # Load forced VRS rates.
 intrinsic("load_force_vrs_rates_amd", dest_comp=1, bit_sizes=[32], flags=[CAN_ELIMINATE, CAN_REORDER])
 
 intrinsic("load_scalar_arg_amd", dest_comp=0, bit_sizes=[32], indices=[BASE, ARG_UPPER_BOUND_U32_AMD], flags=[CAN_ELIMINATE, CAN_REORDER])
 intrinsic("load_vector_arg_amd", dest_comp=0, bit_sizes=[32], indices=[BASE, ARG_UPPER_BOUND_U32_AMD], flags=[CAN_ELIMINATE, CAN_REORDER])
 
-# src[] = { 64-bit base address, 32-bit offset }.
+# src[] = { 32/64-bit base address, 32-bit offset }.
 intrinsic("load_smem_amd", src_comp=[1, 1], dest_comp=0, bit_sizes=[32],
                            indices=[ALIGN_MUL, ALIGN_OFFSET],
                            flags=[CAN_ELIMINATE, CAN_REORDER])
+
+# src[] = { descriptor, offset }
+intrinsic("load_smem_buffer_amd", src_comp=[4, 1], dest_comp=0, bit_sizes=[32],
+                                  indices=[ALIGN_MUL, ALIGN_OFFSET],
+                                  flags=[CAN_ELIMINATE, CAN_REORDER])
 
 # src[] = { offset }.
 intrinsic("load_shared2_amd", [1], dest_comp=2, indices=[OFFSET0, OFFSET1, ST64], flags=[CAN_ELIMINATE])
@@ -1591,12 +1607,34 @@ store("local_pixel_agx", [1], [BASE, WRITE_MASK, FORMAT], [CAN_REORDER])
 intrinsic("block_image_store_agx", [1, 1], bit_sizes=[32, 16],
           indices=[FORMAT, IMAGE_DIM], flags=[CAN_REORDER])
 
+# Formatted loads. The format is the pipe_format in memory (see
+# agx_internal_formats.h for the supported list). This accesses:
+#
+#     address + extend(index) << (format shift + shift)
+#
+# The nir_intrinsic_base() index encodes the shift. The sign_extend index
+# determines whether sign- or zero-extension is used for the index.
+#
+# All loads on AGX uses these hardware instructions, so while these are
+# logically load_global_agx (etc), the _global is omitted as it adds nothing.
+#
+# src[] = { address, index }.
+load("agx", [1, 1], [ACCESS, BASE, FORMAT, SIGN_EXTEND], [CAN_ELIMINATE])
+load("constant_agx", [1, 1], [ACCESS, BASE, FORMAT, SIGN_EXTEND],
+     [CAN_ELIMINATE, CAN_REORDER])
+
 # Logical complement of load_front_face, mapping to an AGX system value
 system_value("back_face_agx", 1, bit_sizes=[1, 32])
 
 # Loads the texture descriptor base for indexed (non-bindless) textures. On G13,
 # the referenced array has stride 24.
 system_value("texture_base_agx", 1, bit_sizes=[64])
+
+# Load the base address of an indexed UBO/VBO (for lowering UBOs/VBOs)
+intrinsic("load_ubo_base_agx", src_comp=[1], dest_comp=1, bit_sizes=[64],
+          flags=[CAN_ELIMINATE, CAN_REORDER])
+intrinsic("load_vbo_base_agx", src_comp=[1], dest_comp=1, bit_sizes=[64],
+          flags=[CAN_ELIMINATE, CAN_REORDER])
 
 # Intel-specific query for loading from the brw_image_param struct passed
 # into the shader as a uniform.  The variable is a deref to the image

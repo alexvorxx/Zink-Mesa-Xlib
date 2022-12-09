@@ -24,6 +24,7 @@ variables:
   IGALIA_FARM: "online"
   ANHOLT_FARM: "online"
   VALVE_FARM: "online"
+  AUSTRIANCODER_FARM: "online"  # only etnaviv GPUs
 
 default:
   before_script:

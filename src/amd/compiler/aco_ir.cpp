@@ -981,4 +981,11 @@ dealloc_vgprs(Program* program)
    return true;
 }
 
+bool
+Instruction::isTrans() const noexcept
+{
+   return instr_info.classes[(int)opcode] == instr_class::valu_transcendental32 ||
+          instr_info.classes[(int)opcode] == instr_class::valu_double_transcendental;
+}
+
 } // namespace aco

@@ -33,13 +33,12 @@
 #include "frontend/api.h"
 #include "dri_util.h"
 
-struct pipe_surface;
-struct st_framebuffer;
 struct dri_context;
+struct dri_screen;
 
 struct dri_drawable
 {
-   struct st_framebuffer_iface base;
+   struct pipe_frontend_drawable base;
    struct st_visual stvis;
 
    struct dri_screen *screen;

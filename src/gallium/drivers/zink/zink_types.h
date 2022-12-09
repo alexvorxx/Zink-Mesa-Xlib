@@ -690,12 +690,10 @@ struct zink_shader {
 
    union {
       struct {
-         struct zink_shader *generated; // a generated shader that this shader "owns"
-      } tes;
-
-      struct {
+         struct zink_shader *generated_tcs; // a generated shader that this shader "owns"; only valid in the tes stage
+         struct zink_shader *generated_gs; // a generated shader that this shader "owns"
          bool is_generated; // if this is a driver-created shader (e.g., tcs)
-      } tcs;
+      } non_fs;
 
       struct {
          nir_variable *fbfetch; //for fs output
@@ -811,6 +809,8 @@ struct zink_gfx_push_constant {
    unsigned framebuffer_is_layered;
    float default_inner_level[2];
    float default_outer_level[4];
+   uint32_t line_stipple_pattern;
+   float viewport_scale[2];
 };
 
 /* The order of the enums MUST match the order of the zink_gfx_push_constant
@@ -822,6 +822,8 @@ enum zink_gfx_push_constant_member {
    ZINK_GFX_PUSHCONST_FRAMEBUFFER_IS_LAYERED,
    ZINK_GFX_PUSHCONST_DEFAULT_INNER_LEVEL,
    ZINK_GFX_PUSHCONST_DEFAULT_OUTER_LEVEL,
+   ZINK_GFX_PUSHCONST_LINE_STIPPLE_PATTERN,
+   ZINK_GFX_PUSHCONST_VIEWPORT_SCALE,
    ZINK_GFX_PUSHCONST_MAX
 };
 
@@ -1297,6 +1299,8 @@ struct zink_screen {
       bool always_feedback_loop_zs;
       bool needs_sanitised_layer;
       bool track_renderpasses;
+      bool no_linestipple;
+      bool no_hw_gl_point;
       unsigned z16_unscaled_bias;
       unsigned z24_unscaled_bias;
    } driver_workarounds;

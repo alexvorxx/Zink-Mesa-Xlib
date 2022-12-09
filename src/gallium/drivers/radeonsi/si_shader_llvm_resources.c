@@ -55,7 +55,7 @@ static LLVMValueRef si_llvm_bound_index(struct si_shader_context *ctx, LLVMValue
 
 static LLVMValueRef load_const_buffer_desc_fast_path(struct si_shader_context *ctx)
 {
-   LLVMValueRef ptr = ac_get_arg(&ctx->ac, ctx->const_and_shader_buffers);
+   LLVMValueRef ptr = ac_get_arg(&ctx->ac, ctx->args->const_and_shader_buffers);
    struct si_shader_selector *sel = ctx->shader->selector;
 
    /* Do the bounds checking with a descriptor, because
@@ -103,7 +103,7 @@ static LLVMValueRef load_ubo(struct ac_shader_abi *abi, LLVMValueRef index)
       LLVMBuildAdd(ctx->ac.builder, index, LLVMConstInt(ctx->ac.i32, SI_NUM_SHADER_BUFFERS, 0), "");
 
    return ac_build_load_to_sgpr(&ctx->ac,
-                                ac_get_ptr_arg(&ctx->ac, &ctx->args, ctx->const_and_shader_buffers),
+                                ac_get_ptr_arg(&ctx->ac, &ctx->args->ac, ctx->args->const_and_shader_buffers),
                                 index);
 }
 
@@ -114,14 +114,14 @@ static LLVMValueRef load_ssbo(struct ac_shader_abi *abi, LLVMValueRef index, boo
    /* Fast path if the shader buffer is in user SGPRs. */
    if (LLVMIsConstant(index) &&
        LLVMConstIntGetZExtValue(index) < ctx->shader->selector->cs_num_shaderbufs_in_user_sgprs)
-      return ac_get_arg(&ctx->ac, ctx->cs_shaderbuf[LLVMConstIntGetZExtValue(index)]);
+      return ac_get_arg(&ctx->ac, ctx->args->cs_shaderbuf[LLVMConstIntGetZExtValue(index)]);
 
    index = si_llvm_bound_index(ctx, index, ctx->num_shader_buffers);
    index = LLVMBuildSub(ctx->ac.builder, LLVMConstInt(ctx->ac.i32, SI_NUM_SHADER_BUFFERS - 1, 0),
                         index, "");
 
    return ac_build_load_to_sgpr(&ctx->ac,
-                                ac_get_ptr_arg(&ctx->ac, &ctx->args, ctx->const_and_shader_buffers),
+                                ac_get_ptr_arg(&ctx->ac, &ctx->args->ac, ctx->args->const_and_shader_buffers),
                                 index);
 }
 
@@ -256,7 +256,7 @@ static LLVMValueRef si_nir_load_sampler_desc(struct ac_shader_abi *abi, unsigned
    assert(desc_type <= AC_DESC_BUFFER);
 
    if (bindless) {
-      struct ac_llvm_pointer list = ac_get_ptr_arg(&ctx->ac, &ctx->args, ctx->bindless_samplers_and_images);
+      struct ac_llvm_pointer list = ac_get_ptr_arg(&ctx->ac, &ctx->args->ac, ctx->args->bindless_samplers_and_images);
 
       /* dynamic_index is the bindless handle */
       if (image) {
@@ -288,7 +288,7 @@ static LLVMValueRef si_nir_load_sampler_desc(struct ac_shader_abi *abi, unsigned
    if (const_index >= num_slots)
       const_index = base_index;
 
-   struct ac_llvm_pointer list = ac_get_ptr_arg(&ctx->ac, &ctx->args, ctx->samplers_and_images);
+   struct ac_llvm_pointer list = ac_get_ptr_arg(&ctx->ac, &ctx->args->ac, ctx->args->samplers_and_images);
    LLVMValueRef index = LLVMConstInt(ctx->ac.i32, const_index, false);
 
    if (dynamic_index) {
@@ -311,7 +311,7 @@ static LLVMValueRef si_nir_load_sampler_desc(struct ac_shader_abi *abi, unsigned
       if (!dynamic_index &&
           const_index < ctx->shader->selector->cs_num_images_in_user_sgprs &&
           (desc_type == AC_DESC_IMAGE || desc_type == AC_DESC_BUFFER)) {
-         LLVMValueRef rsrc = ac_get_arg(&ctx->ac, ctx->cs_image[const_index]);
+         LLVMValueRef rsrc = ac_get_arg(&ctx->ac, ctx->args->cs_image[const_index]);
 
          if (desc_type == AC_DESC_IMAGE)
             rsrc = fixup_image_desc(ctx, rsrc, write);

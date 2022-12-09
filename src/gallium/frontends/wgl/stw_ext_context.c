@@ -227,7 +227,7 @@ wglCreateContextAttribsARB(HDC hDC, HGLRC hShareContext, const int *attribList)
          return 0;
 
       struct stw_context *stw_ctx = stw_create_context_attribs(hDC, layerPlane, share_stw,
-                                                               stw_dev->smapi,
+                                                               stw_dev->fscreen,
                                                                majorVersion, minorVersion,
                                                                contextFlags, profileMask, pfi,
                                                                resetStrategy);

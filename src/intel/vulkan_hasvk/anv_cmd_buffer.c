@@ -374,27 +374,6 @@ anv_cmd_buffer_bind_descriptor_set(struct anv_cmd_buffer *cmd_buffer,
    if (pipe_state->descriptors[set_index] != set ||
          anv_descriptor_set_is_push(set)) {
       pipe_state->descriptors[set_index] = set;
-
-      /* Those stages don't have access to HW binding tables.
-       * This means that we have to upload the descriptor set
-       * as an 64-bit address in the push constants.
-       */
-      bool update_desc_sets = stages & (VK_SHADER_STAGE_TASK_BIT_NV |
-                                        VK_SHADER_STAGE_MESH_BIT_NV);
-
-      if (update_desc_sets) {
-         struct anv_push_constants *push = &pipe_state->push_constants;
-
-         struct anv_address addr = anv_descriptor_set_address(set);
-         push->desc_sets[set_index] = anv_address_physical(addr);
-
-         if (addr.bo) {
-            anv_reloc_list_add_bo(cmd_buffer->batch.relocs,
-                                  cmd_buffer->batch.alloc,
-                                  addr.bo);
-         }
-      }
-
       dirty_stages |= stages;
    }
 
@@ -612,16 +591,10 @@ anv_cmd_buffer_cs_push_constants(struct anv_cmd_buffer *cmd_buffer)
       cmd_buffer->device->info->ver < 8 ? 32 : 64;
    const unsigned aligned_total_push_constants_size =
       ALIGN(total_push_constants_size, push_constant_alignment);
-   struct anv_state state;
-   if (devinfo->verx10 >= 125) {
-      state = anv_state_stream_alloc(&cmd_buffer->general_state_stream,
-                                     aligned_total_push_constants_size,
-                                     push_constant_alignment);
-   } else {
-      state = anv_cmd_buffer_alloc_dynamic_state(cmd_buffer,
-                                                 aligned_total_push_constants_size,
-                                                 push_constant_alignment);
-   }
+   struct anv_state state =
+      anv_cmd_buffer_alloc_dynamic_state(cmd_buffer,
+                                         aligned_total_push_constants_size,
+                                         push_constant_alignment);
 
    void *dst = state.map;
    const void *src = (char *)data + (range->start * 32);
@@ -658,9 +631,7 @@ void anv_CmdPushConstants(
 {
    ANV_FROM_HANDLE(anv_cmd_buffer, cmd_buffer, commandBuffer);
 
-   if (stageFlags & (VK_SHADER_STAGE_ALL_GRAPHICS |
-                     VK_SHADER_STAGE_TASK_BIT_NV |
-                     VK_SHADER_STAGE_MESH_BIT_NV)) {
+   if (stageFlags & VK_SHADER_STAGE_ALL_GRAPHICS) {
       struct anv_cmd_pipeline_state *pipe_state =
          &cmd_buffer->state.gfx.base;
 

@@ -898,6 +898,16 @@ static int convert_rgb_to_alpha(
 	if (sched_inst->GlobalReaders.Abort)
 		return 0;
 
+	/* Even though we checked that we can convert to alpha previously, it is
+	 * possible that another rgb source of the reader instructions was already
+	 * converted to alpha and we thus have no longer free alpha sources.
+	 */
+	for(i = 0; i < sched_inst->GlobalReaders.ReaderCount; i++) {
+		struct rc_reader reader = sched_inst->GlobalReaders.Readers[i];
+		if (reader.Inst->U.P.Alpha.Src[2].Used)
+			return 0;
+	}
+
 	if (!pair_inst->RGB.WriteMask)
 		return 0;
 

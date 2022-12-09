@@ -446,7 +446,7 @@ class Parser(object):
         return 'GFX%s_%s' % (self.gen, name)
 
     def gen_guard(self):
-        return self.gen_prefix("PACK_H")
+        return self.gen_prefix("{0}_PACK_H".format(self.platform))
 
     def start_element(self, name, attrs):
         if name == "genxml":

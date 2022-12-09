@@ -976,8 +976,10 @@ split_copy(lower_context* ctx, unsigned offset, Definition* def, Operand* op,
    def_reg.reg_b += offset;
    op_reg.reg_b += offset;
 
-   /* 64-bit VGPR copies (implemented with v_lshrrev_b64) are slow before GFX10 */
-   if (ctx->program->gfx_level < GFX10 && src.def.regClass().type() == RegType::vgpr)
+   /* 64-bit VGPR copies (implemented with v_lshrrev_b64) are slow before GFX10, and on GFX11
+    * v_lshrrev_b64 doesn't get dual issued. */
+   if ((ctx->program->gfx_level < GFX10 || ctx->program->gfx_level >= GFX11) &&
+       src.def.regClass().type() == RegType::vgpr)
       max_size = MIN2(max_size, 4);
    unsigned max_align = src.def.regClass().type() == RegType::vgpr ? 4 : 16;
 
@@ -1451,8 +1453,8 @@ do_pack_2x16(lower_context* ctx, Builder& bld, Definition def, Operand lo, Opera
 
    /* a single alignbyte can be sufficient: hi can be a 32-bit integer constant */
    if (lo.physReg().byte() == 2 && hi.physReg().byte() == 0 &&
-       (!hi.isConstant() || !Operand::c32(hi.constantValue()).isLiteral() ||
-        ctx->program->gfx_level >= GFX10)) {
+       (!hi.isConstant() || (hi.constantValue() && (!Operand::c32(hi.constantValue()).isLiteral() ||
+                                                    ctx->program->gfx_level >= GFX10)))) {
       if (hi.isConstant())
          bld.vop3(aco_opcode::v_alignbyte_b32, def, Operand::c32(hi.constantValue()), lo,
                   Operand::c32(2u));
@@ -1470,18 +1472,22 @@ do_pack_2x16(lower_context* ctx, Builder& bld, Definition def, Operand lo, Opera
          bld.vop2(aco_opcode::v_lshlrev_b32, def_hi, Operand::c32(16u), hi);
       else
          bld.vop2(aco_opcode::v_and_b32, def_hi, Operand::c32(~0xFFFFu), hi);
-      bld.vop2(aco_opcode::v_or_b32, def, Operand::c32(lo.constantValue()),
-               Operand(def.physReg(), v1));
+      if (lo.constantValue())
+         bld.vop2(aco_opcode::v_or_b32, def, Operand::c32(lo.constantValue()),
+                  Operand(def.physReg(), v1));
       return;
    }
    if (hi.isConstant()) {
       /* move lo and zero high bits */
       if (lo.physReg().byte() == 2)
          bld.vop2(aco_opcode::v_lshrrev_b32, def_lo, Operand::c32(16u), lo);
+      else if (ctx->program->gfx_level >= GFX11)
+         bld.vop1(aco_opcode::v_cvt_u32_u16, def, lo);
       else
          bld.vop2(aco_opcode::v_and_b32, def_lo, Operand::c32(0xFFFFu), lo);
-      bld.vop2(aco_opcode::v_or_b32, def, Operand::c32(hi.constantValue() << 16u),
-               Operand(def.physReg(), v1));
+      if (hi.constantValue())
+         bld.vop2(aco_opcode::v_or_b32, def, Operand::c32(hi.constantValue() << 16u),
+                  Operand(def.physReg(), v1));
       return;
    }
 
@@ -2237,6 +2243,9 @@ lower_to_hw_instr(Program* program)
                   if (offset == (32 - bits) && op.regClass() != s1) {
                      bld.vop2(signext ? aco_opcode::v_ashrrev_i32 : aco_opcode::v_lshrrev_b32, dst,
                               Operand::c32(offset), op);
+                  } else if (offset == 0 && bits == 16 && ctx.program->gfx_level >= GFX11) {
+                     bld.vop1(signext ? aco_opcode::v_cvt_i32_i16 : aco_opcode::v_cvt_u32_u16, dst,
+                              op);
                   } else {
                      bld.vop3(signext ? aco_opcode::v_bfe_i32 : aco_opcode::v_bfe_u32, dst, op,
                               Operand::c32(offset), Operand::c32(bits));

@@ -3036,14 +3036,8 @@ uint32_t r600_translate_texformat(struct pipe_screen *screen,
 		goto out_unknown;
 	}
 
-	/* Find the first non-VOID channel. */
-	for (i = 0; i < 4; i++) {
-		if (desc->channel[i].type != UTIL_FORMAT_TYPE_VOID) {
-			break;
-		}
-	}
-
-	if (i == 4)
+	i = util_format_get_first_non_void_channel(format);
+	if (i == -1)
 		goto out_unknown;
 
 	/* uniform formats */

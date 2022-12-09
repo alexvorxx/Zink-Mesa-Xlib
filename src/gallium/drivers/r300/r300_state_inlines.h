@@ -340,7 +340,7 @@ static inline uint16_t
 r300_translate_vertex_data_type(enum pipe_format format) {
     uint32_t result = 0;
     const struct util_format_description *desc;
-    unsigned i;
+    int i = util_format_get_first_non_void_channel(format);
 
     if (!format)
         format = PIPE_FORMAT_R32_FLOAT;
@@ -349,13 +349,6 @@ r300_translate_vertex_data_type(enum pipe_format format) {
 
     if (desc->layout != UTIL_FORMAT_LAYOUT_PLAIN) {
         return R300_INVALID_FORMAT;
-    }
-
-    /* Find the first non-VOID channel. */
-    for (i = 0; i < 4; i++) {
-        if (desc->channel[i].type != UTIL_FORMAT_TYPE_VOID) {
-            break;
-        }
     }
 
     switch (desc->channel[i].type) {

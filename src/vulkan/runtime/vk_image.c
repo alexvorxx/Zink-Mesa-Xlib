@@ -40,22 +40,6 @@
 #include "vk_util.h"
 #include "vulkan/wsi/wsi_common.h"
 
-static VkExtent3D
-sanitize_image_extent(const VkImageType imageType,
-                      const VkExtent3D imageExtent)
-{
-   switch (imageType) {
-   case VK_IMAGE_TYPE_1D:
-      return (VkExtent3D) { imageExtent.width, 1, 1 };
-   case VK_IMAGE_TYPE_2D:
-      return (VkExtent3D) { imageExtent.width, imageExtent.height, 1 };
-   case VK_IMAGE_TYPE_3D:
-      return imageExtent;
-   default:
-      unreachable("invalid image type");
-   }
-}
-
 void
 vk_image_init(struct vk_device *device,
               struct vk_image *image,
@@ -79,8 +63,7 @@ vk_image_init(struct vk_device *device,
    image->create_flags = pCreateInfo->flags;
    image->image_type = pCreateInfo->imageType;
    vk_image_set_format(image, pCreateInfo->format);
-   image->extent = sanitize_image_extent(pCreateInfo->imageType,
-                                         pCreateInfo->extent);
+   image->extent = vk_image_sanitize_extent(image, pCreateInfo->extent);
    image->mip_levels = pCreateInfo->mipLevels;
    image->array_layers = pCreateInfo->arrayLayers;
    image->samples = pCreateInfo->samples;

@@ -423,7 +423,7 @@ TexInstr::replace_source(PRegister old_src, PVirtualValue new_src)
 }
 
 uint8_t
-TexInstr::allowed_dest_chan_mask() const
+TexInstr::allowed_src_chan_mask() const
 {
    return m_src.free_chan_mask();
 }
@@ -1162,14 +1162,16 @@ LowerTexToBackend::finalize(nir_tex_instr *tex,
 nir_ssa_def *
 LowerTexToBackend::prep_src(std::array<nir_ssa_def *, 4>& coord, int& used_coord_mask)
 {
+   int max_coord = 0;
    for (int i = 0; i < 4; ++i) {
-      if (coord[i])
+      if (coord[i]) {
          used_coord_mask |= 1 << i;
-      else
+         max_coord = i;
+      } else
          coord[i] = get_undef();
    }
 
-   return nir_vec(b, coord.data(), 4);
+   return nir_vec(b, coord.data(), max_coord + 1);
 }
 
 nir_ssa_def *

@@ -713,23 +713,64 @@ BEGIN_TEST(optimize.add3)
 END_TEST
 
 BEGIN_TEST(optimize.minmax)
-   for (unsigned i = GFX9; i <= GFX10; i++) {
-      //>> v1: %a = p_startpgm
-      if (!setup_cs("v1", (amd_gfx_level)i))
+   for (unsigned i = GFX10_3; i <= GFX11; i++) {
+      //>> v1: %a, v1: %b, v1: %c = p_startpgm
+      if (!setup_cs("v1 v1 v1", (amd_gfx_level)i))
          continue;
 
-      //! v1: %res0 = v_max3_f32 0, -0, %a
-      //! p_unit_test 0, %res0
-      Temp xor0 = fneg(inputs[0]);
-      Temp min = bld.vop2(aco_opcode::v_min_f32, bld.def(v1), Operand::zero(), xor0);
-      Temp xor1 = fneg(min);
-      writeout(0, bld.vop2(aco_opcode::v_max_f32, bld.def(v1), Operand::zero(), xor1));
+      Temp a = inputs[0];
+      Temp b = inputs[1];
+      Temp c = inputs[2];
 
-      //! v1: %res1 = v_max3_f32 0, -0, -%a
+      //! v1: %res0 = v_min3_f32 %a, %b, %c
+      //! p_unit_test 0, %res0
+      writeout(0, fmin(c, fmin(a, b)));
+
+      //! v1: %res1 = v_max3_f32 %a, %b, %c
       //! p_unit_test 1, %res1
-      min = bld.vop2(aco_opcode::v_min_f32, bld.def(v1), Operand::zero(), Operand(inputs[0]));
-      xor1 = fneg(min);
-      writeout(1, bld.vop2(aco_opcode::v_max_f32, bld.def(v1), Operand::zero(), xor1));
+      writeout(1, fmax(c, fmax(a, b)));
+
+      //! v1: %res2 = v_min3_f32 -%a, -%b, %c
+      //! p_unit_test 2, %res2
+      writeout(2, fmin(c, fneg(fmax(a, b))));
+
+      //! v1: %res3 = v_max3_f32 -%a, -%b, %c
+      //! p_unit_test 3, %res3
+      writeout(3, fmax(c, fneg(fmin(a, b))));
+
+      //! v1: %res4 = v_max3_f32 -%a, %b, %c
+      //! p_unit_test 4, %res4
+      writeout(4, fmax(c, fneg(fmin(a, fneg(b)))));
+
+      //~gfx10_3! v1: %res5_tmp = v_max_f32 %a, %b
+      //~gfx10_3! v1: %res5 = v_min_f32 %c, %res5_tmp
+      //~gfx11! v1: %res5 = v_maxmin_f32 %a, %b, %c
+      //! p_unit_test 5, %res5
+      writeout(5, fmin(c, fmax(a, b)));
+
+      //~gfx10_3! v1: %res6_tmp = v_min_f32 %a, %b
+      //~gfx10_3! v1: %res6 = v_max_f32 %c, %res6_tmp
+      //~gfx11! v1: %res6 = v_minmax_f32 %a, %b, %c
+      //! p_unit_test 6, %res6
+      writeout(6, fmax(c, fmin(a, b)));
+
+      //~gfx10_3! v1: %res7_tmp = v_min_f32 %a, %b
+      //~gfx10_3! v1: %res7 = v_min_f32 %c, -%res7_tmp
+      //~gfx11! v1: %res7 = v_maxmin_f32 -%a, -%b, %c
+      //! p_unit_test 7, %res7
+      writeout(7, fmin(c, fneg(fmin(a, b))));
+
+      //~gfx10_3! v1: %res8_tmp = v_max_f32 %a, %b
+      //~gfx10_3! v1: %res8 = v_max_f32 %c, -%res8_tmp
+      //~gfx11! v1: %res8 = v_minmax_f32 -%a, -%b, %c
+      //! p_unit_test 8, %res8
+      writeout(8, fmax(c, fneg(fmax(a, b))));
+
+      //~gfx10_3! v1: %res9_tmp = v_max_f32 %a, -%b
+      //~gfx10_3! v1: %res9 = v_max_f32 %c, -%res9_tmp
+      //~gfx11! v1: %res9 = v_minmax_f32 -%a, %b, %c
+      //! p_unit_test 9, %res9
+      writeout(9, fmax(c, fneg(fmax(a, fneg(b)))));
 
       finish_opt_test();
    }

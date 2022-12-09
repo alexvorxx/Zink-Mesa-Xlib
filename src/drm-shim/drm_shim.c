@@ -638,6 +638,17 @@ readlink(const char *path, char *buf, size_t size)
    return strlen(buf) + 1;
 }
 
+#if __USE_FORTIFY_LEVEL > 0 && !defined _CLANG_FORTIFY_DISABLE
+/* Identical to readlink, but with buffer overflow check */
+PUBLIC ssize_t
+__readlink_chk(const char *path, char *buf, size_t size, size_t buflen)
+{
+   if (size > buflen)
+      abort();
+   return readlink(path, buf, size);
+}
+#endif
+
 /* Handles libdrm's realpath to figure out what kind of device we have. */
 PUBLIC char *
 realpath(const char *path, char *resolved_path)

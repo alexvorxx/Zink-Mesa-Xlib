@@ -587,7 +587,10 @@ zink_create_rasterizer_state(struct pipe_context *pctx,
 
    state->base = *rs_state;
    state->base.line_stipple_factor++;
-   state->hw_state.line_stipple_enable = rs_state->line_stipple_enable;
+
+   state->hw_state.line_stipple_enable =
+      rs_state->line_stipple_enable &&
+      !screen->driver_workarounds.no_linestipple;
 
    assert(rs_state->depth_clip_far == rs_state->depth_clip_near);
    state->hw_state.depth_clip = rs_state->depth_clip_near;
@@ -598,8 +601,15 @@ zink_create_rasterizer_state(struct pipe_context *pctx,
    assert(rs_state->fill_front <= PIPE_POLYGON_MODE_POINT);
    if (rs_state->fill_back != rs_state->fill_front)
       debug_printf("BUG: vulkan doesn't support different front and back fill modes\n");
-   state->hw_state.polygon_mode = rs_state->fill_front; // same values
-   state->cull_mode = rs_state->cull_face; // same bits
+
+   if (rs_state->fill_front == PIPE_POLYGON_MODE_POINT &&
+       screen->driver_workarounds.no_hw_gl_point) {
+      state->hw_state.polygon_mode = VK_POLYGON_MODE_FILL;
+      state->cull_mode = VK_CULL_MODE_NONE;
+   } else {
+      state->hw_state.polygon_mode = rs_state->fill_front; // same values
+      state->cull_mode = rs_state->cull_face; // same bits
+   }
 
    state->front_face = rs_state->front_ccw ?
                        VK_FRONT_FACE_COUNTER_CLOCKWISE :
@@ -666,6 +676,11 @@ zink_bind_rasterizer_state(struct pipe_context *pctx, void *cso)
             zink_set_last_vertex_key(ctx)->clip_halfz = ctx->rast_state->base.clip_halfz;
          ctx->vp_state_changed = true;
       }
+
+      bool lower_gl_point = screen->driver_workarounds.no_hw_gl_point;
+      lower_gl_point &= ctx->rast_state->base.fill_front == PIPE_POLYGON_MODE_POINT;
+      if (zink_get_gs_key(ctx)->lower_gl_point != lower_gl_point)
+         zink_set_gs_key(ctx)->lower_gl_point = lower_gl_point;
 
       if (ctx->gfx_pipeline_state.dyn_state1.front_face != ctx->rast_state->front_face) {
          ctx->gfx_pipeline_state.dyn_state1.front_face = ctx->rast_state->front_face;

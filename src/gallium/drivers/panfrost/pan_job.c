@@ -640,6 +640,7 @@ panfrost_batch_submit_ioctl(struct panfrost_batch *batch,
         struct pipe_context *gallium = (struct pipe_context *) ctx;
         struct panfrost_device *dev = pan_device(gallium->screen);
         struct drm_panfrost_submit submit = {0,};
+        uint32_t in_syncs[2];
         uint32_t *bo_handles;
         int ret;
 
@@ -654,10 +655,22 @@ panfrost_batch_submit_ioctl(struct panfrost_batch *batch,
         submit.out_sync = out_sync;
         submit.jc = first_job_desc;
         submit.requirements = reqs;
-        if (in_sync) {
-                submit.in_syncs = (u64)(uintptr_t)(&in_sync);
-                submit.in_sync_count = 1;
+
+        if (in_sync)
+                in_syncs[submit.in_sync_count++] = in_sync;
+
+        if (ctx->in_sync_fd >= 0) {
+                ret = drmSyncobjImportSyncFile(dev->fd, ctx->in_sync_obj,
+                                               ctx->in_sync_fd);
+                assert(!ret);
+
+                in_syncs[submit.in_sync_count++] = ctx->in_sync_obj;
+                close(ctx->in_sync_fd);
+                ctx->in_sync_fd = -1;
         }
+
+        if (submit.in_sync_count)
+                submit.in_syncs = (uintptr_t)in_syncs;
 
         bo_handles = calloc(panfrost_pool_num_bos(&batch->pool) +
                             panfrost_pool_num_bos(&batch->invisible_pool) +

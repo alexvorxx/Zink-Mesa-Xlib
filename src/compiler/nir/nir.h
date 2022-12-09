@@ -1215,7 +1215,7 @@ typedef struct {
     *
     * Ignored if dest.is_ssa is true
     */
-   unsigned write_mask : NIR_MAX_VEC_COMPONENTS;
+   nir_component_mask_t write_mask;
 } nir_alu_dest;
 
 /** NIR sized and unsized types
@@ -5447,6 +5447,7 @@ bool nir_lower_gs_intrinsics(nir_shader *shader, nir_lower_gs_intrinsics_flags o
 typedef struct {
    bool payload_to_shared_for_atomics : 1;
    bool payload_to_shared_for_small_types : 1;
+   uint32_t payload_offset_in_bytes;
 } nir_lower_task_shader_options;
 
 bool nir_lower_task_shader(nir_shader *shader, nir_lower_task_shader_options options);

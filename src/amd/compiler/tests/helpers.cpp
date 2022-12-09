@@ -345,6 +345,16 @@ Temp fsat(Temp src, Builder b)
                     Operand::c32(0x3f800000u), src);
 }
 
+Temp fmin(Temp src0, Temp src1, Builder b)
+{
+   return b.vop2(aco_opcode::v_min_f32, b.def(v1), src0, src1);
+}
+
+Temp fmax(Temp src0, Temp src1, Builder b)
+{
+   return b.vop2(aco_opcode::v_max_f32, b.def(v1), src0, src1);
+}
+
 Temp ext_ushort(Temp src, unsigned idx, Builder b)
 {
    return b.pseudo(aco_opcode::p_extract, b.def(src.regClass()), src, Operand::c32(idx),

@@ -42,6 +42,7 @@
 #include "pvr_types.h"
 #include "pvr_winsys.h"
 #include "util/compiler.h"
+#include "util/format/format_utils.h"
 #include "util/macros.h"
 #include "util/u_math.h"
 #include "vk_alloc.h"
@@ -1344,6 +1345,7 @@ static void pvr_frag_state_stream_init(struct pvr_render_ctx *ctx,
       isp_aa_mode = pvr_cr_isp_aa_mode_type(job->samples);
 
    uint32_t *stream_ptr = (uint32_t *)state->fw_stream;
+   enum PVRX(CR_ZLOADFORMAT_TYPE) zload_format;
    uint32_t pixel_ctl;
    uint32_t isp_ctl;
 
@@ -1372,48 +1374,73 @@ static void pvr_frag_state_stream_init(struct pvr_render_ctx *ctx,
    }
    stream_ptr += pvr_cmd_length(CR_ISP_OCLQRY_BASE);
 
-   /* FIXME: Some additional set up needed to support depth and stencil
-    * load/store operations.
+   /* FIXME: Some additional set up needed to support depth/stencil load/store
+    * operations.
     */
    pvr_csb_pack ((uint64_t *)stream_ptr, CR_ISP_ZLSCTL, value) {
-      uint32_t aligned_width =
-         ALIGN_POT(job->depth_physical_width, ROGUE_IPF_TILE_SIZE_PIXELS);
-      uint32_t aligned_height =
-         ALIGN_POT(job->depth_physical_height, ROGUE_IPF_TILE_SIZE_PIXELS);
+      if (job->has_depth_attachment) {
+         uint32_t aligned_width =
+            ALIGN_POT(job->ds.physical_width, ROGUE_IPF_TILE_SIZE_PIXELS);
+         uint32_t aligned_height =
+            ALIGN_POT(job->ds.physical_height, ROGUE_IPF_TILE_SIZE_PIXELS);
 
-      pvr_get_isp_num_tiles_xy(dev_info,
-                               job->samples,
-                               aligned_width,
-                               aligned_height,
-                               &value.zlsextent_x_z,
-                               &value.zlsextent_y_z);
-      value.zlsextent_x_z -= 1;
-      value.zlsextent_y_z -= 1;
+         pvr_get_isp_num_tiles_xy(dev_info,
+                                  job->samples,
+                                  aligned_width,
+                                  aligned_height,
+                                  &value.zlsextent_x_z,
+                                  &value.zlsextent_y_z);
+         value.zlsextent_x_z -= 1;
+         value.zlsextent_y_z -= 1;
 
-      if (job->depth_memlayout == PVR_MEMLAYOUT_TWIDDLED) {
-         value.loadtwiddled = true;
-         value.storetwiddled = true;
+         if (job->ds.memlayout == PVR_MEMLAYOUT_TWIDDLED) {
+            value.loadtwiddled = true;
+            value.storetwiddled = true;
+         }
+
+         switch (job->ds.vk_format) {
+         case VK_FORMAT_D16_UNORM:
+            value.zloadformat = PVRX(CR_ZLOADFORMAT_TYPE_16BITINT);
+            value.zstoreformat = PVRX(CR_ZSTOREFORMAT_TYPE_16BITINT);
+            break;
+
+         case VK_FORMAT_D32_SFLOAT:
+            value.zloadformat = PVRX(CR_ZLOADFORMAT_TYPE_F32Z);
+            value.zstoreformat = PVRX(CR_ZSTOREFORMAT_TYPE_F32Z);
+            break;
+
+         case VK_FORMAT_D24_UNORM_S8_UINT:
+            value.zloadformat = PVRX(CR_ZLOADFORMAT_TYPE_24BITINT);
+            value.zstoreformat = PVRX(CR_ZSTOREFORMAT_TYPE_24BITINT);
+            break;
+
+         default:
+            unreachable("Unsupported depth format");
+         }
+
+         zload_format = value.zloadformat;
+      } else {
+         zload_format = PVRX(CR_ZLOADFORMAT_TYPE_F32Z);
       }
-
-      /* FIXME: This is suitable for the single depth format the driver
-       * currently supports, but may need updating to handle other depth
-       * formats.
-       */
-      assert(job->depth_vk_format == VK_FORMAT_D32_SFLOAT);
-      value.zloadformat = PVRX(CR_ZLOADFORMAT_TYPE_F32Z);
-      value.zstoreformat = PVRX(CR_ZSTOREFORMAT_TYPE_F32Z);
    }
    stream_ptr += pvr_cmd_length(CR_ISP_ZLSCTL);
 
    pvr_csb_pack ((uint64_t *)stream_ptr, CR_ISP_ZLOAD_BASE, value) {
-      value.addr = job->depth_addr;
+      if (job->has_depth_attachment)
+         value.addr = job->ds.addr;
    }
    stream_ptr += pvr_cmd_length(CR_ISP_ZLOAD_BASE);
 
    pvr_csb_pack ((uint64_t *)stream_ptr, CR_ISP_STENCIL_LOAD_BASE, value) {
-      value.addr = job->stencil_addr;
+      if (job->has_stencil_attachment) {
+         value.addr = job->ds.addr;
 
-      /* FIXME: May need to set value.enable to true. */
+         /* This should be set iff we only have a stencil attachment; all
+          * currently supported formats with a stencil component also contain
+          * depth.
+          */
+         value.enable = false;
+      }
    }
    stream_ptr += pvr_cmd_length(CR_ISP_STENCIL_LOAD_BASE);
 
@@ -1452,11 +1479,28 @@ static void pvr_frag_state_stream_init(struct pvr_render_ctx *ctx,
    stream_ptr++;
 
    pvr_csb_pack (stream_ptr, CR_ISP_BGOBJDEPTH, value) {
-      /* FIXME: This is suitable for the single depth format the driver
-       * currently supports, but may need updating to handle other depth
-       * formats.
+      const float depth_clear = job->ds_clear_value.depth;
+
+      /* This is valid even when we don't have a depth attachment because:
+       *  - zload_format is set to a sensible default above, and
+       *  - job->depth_clear_value is set to a sensible default in that case.
        */
-      value.value = fui(job->depth_clear_value);
+      switch (zload_format) {
+      case PVRX(CR_ZLOADFORMAT_TYPE_F32Z):
+         value.value = fui(depth_clear);
+         break;
+
+      case PVRX(CR_ZLOADFORMAT_TYPE_16BITINT):
+         value.value = _mesa_float_to_unorm(depth_clear, 16);
+         break;
+
+      case PVRX(CR_ZLOADFORMAT_TYPE_24BITINT):
+         value.value = _mesa_float_to_unorm(depth_clear, 24);
+         break;
+
+      default:
+         unreachable("Unsupported depth format");
+      }
    }
    stream_ptr += pvr_cmd_length(CR_ISP_BGOBJDEPTH);
 
@@ -1465,10 +1509,12 @@ static void pvr_frag_state_stream_init(struct pvr_render_ctx *ctx,
 
       value.mask = true;
 
-      /* FIXME: Hard code this for now as we don't currently support any
-       * stencil image formats.
-       */
-      value.stencil = 0xFF;
+      if (job->has_stencil_attachment &&
+          job->ds.vk_format != VK_FORMAT_D24_UNORM_S8_UINT) {
+         unreachable("Unsupported stencil format");
+      }
+
+      value.stencil = job->ds_clear_value.stencil & 0xFF;
    }
    stream_ptr += pvr_cmd_length(CR_ISP_BGOBJVALS);
 
@@ -1484,6 +1530,14 @@ static void pvr_frag_state_stream_init(struct pvr_render_ctx *ctx,
        * is just one of them.
        */
       value.process_empty_tiles = job->process_empty_tiles;
+
+      /* For integer depth formats we'll convert the specified floating point
+       * depth bias values and specify them as integers. In this mode a depth
+       * bias factor of 1.0 equates to 1 ULP of increase to the depth value.
+       */
+      value.dbias_is_int = PVR_HAS_ERN(dev_info, 42307) &&
+                           (job->ds.vk_format == VK_FORMAT_D16_UNORM ||
+                            job->ds.vk_format == VK_FORMAT_D24_UNORM_S8_UINT);
    }
    /* FIXME: When pvr_setup_tiles_in_flight() is refactored it might be
     * possible to fully pack CR_ISP_CTL above rather than having to OR in part
@@ -1540,18 +1594,20 @@ static void pvr_frag_state_stream_init(struct pvr_render_ctx *ctx,
 
    if (PVR_HAS_FEATURE(dev_info, zls_subtile)) {
       pvr_csb_pack (stream_ptr, CR_ISP_ZLS_PIXELS, value) {
-         value.x = job->depth_stride - 1;
-         value.y = job->depth_height - 1;
+         if (job->has_depth_attachment) {
+            value.x = job->ds.stride - 1;
+            value.y = job->ds.height - 1;
+         }
       }
       stream_ptr += pvr_cmd_length(CR_ISP_ZLS_PIXELS);
    }
 
    /* zls_stride */
-   *stream_ptr = job->depth_layer_size;
+   *stream_ptr = job->has_depth_attachment ? job->ds.layer_size : 0;
    stream_ptr++;
 
    /* sls_stride */
-   *stream_ptr = job->depth_layer_size;
+   *stream_ptr = job->has_stencil_attachment ? job->ds.layer_size : 0;
    stream_ptr++;
 
    if (PVR_HAS_FEATURE(dev_info, gpu_multicore_support)) {
@@ -1612,10 +1668,10 @@ pvr_render_job_ws_fragment_state_init(struct pvr_render_ctx *ctx,
    /* FIXME: move to its own function? */
    state->flags = 0;
 
-   if (job->depth_addr.addr)
+   if (job->has_depth_attachment)
       state->flags |= PVR_WINSYS_FRAG_FLAG_DEPTH_BUFFER_PRESENT;
 
-   if (job->stencil_addr.addr)
+   if (job->has_stencil_attachment)
       state->flags |= PVR_WINSYS_FRAG_FLAG_STENCIL_BUFFER_PRESENT;
 
    if (job->disable_compute_overlap)

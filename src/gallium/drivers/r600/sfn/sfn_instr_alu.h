@@ -179,7 +179,8 @@ public:
 
    AluInstr *as_alu() override { return this; }
 
-   uint8_t allowed_dest_chan_mask() const override;
+   uint8_t allowed_src_chan_mask() const override;
+   uint8_t allowed_dest_chan_mask() const;
 
 private:
    friend class AluGroup;

@@ -225,7 +225,7 @@ debian-release:
   script:
     - .gitlab-ci/meson/build.sh
 
-alpine-build-testing:
+.alpine-build-testing:
   extends:
     - .meson-build
     - .use-alpine/x86_build

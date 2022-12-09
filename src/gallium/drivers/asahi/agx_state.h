@@ -34,6 +34,7 @@
 #include "asahi/lib/agx_device.h"
 #include "asahi/lib/pool.h"
 #include "asahi/lib/agx_tilebuffer.h"
+#include "asahi/lib/agx_nir_lower_vbo.h"
 #include "asahi/compiler/agx_compile.h"
 #include "asahi/layout/layout.h"
 #include "compiler/nir/nir_lower_blend.h"
@@ -142,6 +143,8 @@ struct agx_blend {
 
 struct asahi_shader_key {
    struct agx_shader_key base;
+   struct agx_vbufs vbuf;
+
    struct agx_blend blend;
    unsigned nr_cbufs;
 
@@ -241,6 +244,7 @@ struct agx_rasterizer {
    struct pipe_rasterizer_state base;
    uint8_t cull[AGX_CULL_LENGTH];
    uint8_t line_width;
+   uint8_t polygon_mode;
 };
 
 struct agx_query {

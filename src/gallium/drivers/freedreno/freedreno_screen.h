@@ -57,7 +57,6 @@ enum fd_gmem_reason {
    FD_GMEM_BLEND_ENABLED = BIT(3),
    FD_GMEM_LOGICOP_ENABLED = BIT(4),
    FD_GMEM_FB_READ = BIT(5),
-   FD_GMEM_MSAA_CLEAR = BIT(6),
 };
 
 struct fd_screen {

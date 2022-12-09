@@ -2123,6 +2123,24 @@ enum anv_pipe_bits {
    ANV_PIPE_INSTRUCTION_CACHE_INVALIDATE_BIT | \
    ANV_PIPE_AUX_TABLE_INVALIDATE_BIT)
 
+/* PIPE_CONTROL bits that should be set only in 3D RCS mode.
+ * For more details see genX(emit_apply_pipe_flushes).
+ */
+#define ANV_PIPE_GFX_BITS ( \
+   ANV_PIPE_RENDER_TARGET_CACHE_FLUSH_BIT | \
+   ANV_PIPE_DEPTH_CACHE_FLUSH_BIT | \
+   ANV_PIPE_TILE_CACHE_FLUSH_BIT | \
+   ANV_PIPE_DEPTH_STALL_BIT | \
+   ANV_PIPE_STALL_AT_SCOREBOARD_BIT | \
+   (GFX_VERx10 >= 125 ? ANV_PIPE_PSS_STALL_SYNC_BIT : 0) | \
+   ANV_PIPE_VF_CACHE_INVALIDATE_BIT)
+
+/* PIPE_CONTROL bits that should be set only in Media/GPGPU RCS mode.
+ * For more details see genX(emit_apply_pipe_flushes).
+ */
+#define ANV_PIPE_GPGPU_BITS ( \
+   (GFX_VERx10 >= 125 ? ANV_PIPE_UNTYPED_DATAPORT_CACHE_FLUSH_BIT : 0))
+
 enum intel_ds_stall_flag
 anv_pipe_flush_bit_to_ds_stall_flag(enum anv_pipe_bits bits);
 
@@ -2244,6 +2262,7 @@ anv_pipe_invalidate_bits_for_access_flags(struct anv_device *device,
          pipe_bits |= ANV_PIPE_VF_CACHE_INVALIDATE_BIT;
          break;
       case VK_ACCESS_2_UNIFORM_READ_BIT:
+      case VK_ACCESS_2_SHADER_BINDING_TABLE_READ_BIT_KHR:
          /* We transitioning a buffer to be used as uniform data. Because
           * uniform is accessed through the data port & sampler, we need to
           * invalidate the texture cache (sampler) & constant cache (data
@@ -2945,20 +2964,6 @@ anv_shader_bin_unref(struct anv_device *device, struct anv_shader_bin *shader)
 {
    vk_pipeline_cache_object_unref(&shader->base);
 }
-
-#define anv_shader_bin_get_bsr(bin, local_arg_offset) ({             \
-   assert((local_arg_offset) % 8 == 0);                              \
-   const struct brw_bs_prog_data *prog_data =                        \
-      brw_bs_prog_data_const(bin->prog_data);                        \
-   assert(prog_data->simd_size == 8 || prog_data->simd_size == 16);  \
-                                                                     \
-   (struct GFX_BINDLESS_SHADER_RECORD) {                             \
-      .OffsetToLocalArguments = (local_arg_offset) / 8,              \
-      .BindlessShaderDispatchMode =                                  \
-         prog_data->simd_size == 16 ? RT_SIMD16 : RT_SIMD8,          \
-      .KernelStartPointer = bin->kernel.offset,                      \
-   };                                                                \
-})
 
 struct anv_pipeline_executable {
    gl_shader_stage stage;

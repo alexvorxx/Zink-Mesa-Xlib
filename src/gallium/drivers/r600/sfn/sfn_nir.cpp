@@ -642,6 +642,7 @@ static bool
 optimize_once(nir_shader *shader)
 {
    bool progress = false;
+   NIR_PASS(progress, shader, nir_lower_alu_to_scalar, r600_lower_to_scalar_instr_filter, NULL);
    NIR_PASS(progress, shader, nir_lower_vars_to_ssa);
    NIR_PASS(progress, shader, nir_copy_prop);
    NIR_PASS(progress, shader, nir_opt_dce);
@@ -772,6 +773,9 @@ r600_finalize_nir(pipe_screen *screen, void *shader)
 
    NIR_PASS_V(nir, r600_lower_shared_io);
    NIR_PASS_V(nir, r600_nir_lower_atomics);
+
+   if (rs->b.gfx_level == CAYMAN)
+      NIR_PASS_V(nir, r600_legalize_image_load_store);
 
    while (optimize_once(nir))
       ;

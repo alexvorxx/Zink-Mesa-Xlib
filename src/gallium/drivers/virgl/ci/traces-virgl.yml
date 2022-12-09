@@ -60,7 +60,7 @@ traces:
       checksum: 2eb71553403ad8e0171abc9dc25e5bc1
   itoral-gl-terrain-demo/demo-v2.trace:
     gl-virgl:
-      checksum: 37780a6eaa38a55700e8207e89009f56
+      checksum: 716d4fe36a6212b161285fed8a423ee8
   neverball/neverball-v2.trace:
     gl-virgl:
       checksum: 0b8ae7dd4f7f26c3278ded8a5694b983
@@ -87,7 +87,7 @@ traces:
       checksum: f4af4067b37c00861fa5911e4c0a6629
   supertuxkart/supertuxkart-mansion-egl-gles-v2.trace:
     gl-virgl:
-      checksum: cc7092975dd6c9064aa54cd7f18053b6
+      checksum: 4ac8b872bfa701632d76801a3f77c5db
   xonotic/xonotic-keybench-high-v2.trace:
     gl-virgl:
       checksum: f3b184bf8858a6ebccd09e7ca032197e
@@ -114,7 +114,7 @@ traces:
       label: [crash]
   godot/Material Testers.x86_64_2020.04.08_13.38_frame799.rdc:
     gl-virgl:
-      checksum: 232eb48d6689c0117e3cc1660af7f32d
+      checksum: 0258b50142f47396b4ad1d9d6d6331cf
   ror/ror-default.trace:
     gl-virgl:
       label: [crash]

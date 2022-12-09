@@ -172,6 +172,10 @@ files_mesa_util = files(
 
 files_drirc = files('00-mesa-defaults.conf')
 
+if with_amd_vk
+  files_drirc += files('00-radv-defaults.conf')
+endif
+
 if with_tests
   prog_xmllint = find_program('xmllint', required : false, native : true)
   if prog_xmllint.found()
@@ -191,10 +195,10 @@ files_xmlconfig = files(
 
 files_xmlconfig += custom_target(
   'driconf_static.h',
-  input: ['driconf_static.py', '00-mesa-defaults.conf'],
+  input: ['driconf_static.py'] + files_drirc,
   output: 'driconf_static.h',
   command: [
-    prog_python, '@INPUT0@', '@INPUT1@', '@OUTPUT@'
+    prog_python, '@INPUT@', '@OUTPUT@',
   ],
 )
 

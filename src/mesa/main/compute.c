@@ -296,8 +296,7 @@ prepare_compute(struct gl_context *ctx)
       _mesa_update_state(ctx);
 
    if ((st->dirty | ctx->NewDriverState) & st->active_states &
-       ST_PIPELINE_COMPUTE_STATE_MASK ||
-       st->compute_shader_may_be_dirty)
+       ST_PIPELINE_COMPUTE_STATE_MASK)
       st_validate_state(st, ST_PIPELINE_COMPUTE);
 
 }

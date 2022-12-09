@@ -792,16 +792,8 @@ anv_cmd_buffer_alloc_binding_table(struct anv_cmd_buffer *cmd_buffer,
    cmd_buffer->bt_next.map += bt_size;
    cmd_buffer->bt_next.alloc_size -= bt_size;
 
-   if (cmd_buffer->device->info->verx10 >= 125) {
-      /* We're using 3DSTATE_BINDING_TABLE_POOL_ALLOC to change the binding
-       * table address independently from surface state base address.  We no
-       * longer need any sort of offsetting.
-       */
-      *state_offset = 0;
-   } else {
-      assert(bt_block->offset < 0);
-      *state_offset = -bt_block->offset;
-   }
+   assert(bt_block->offset < 0);
+   *state_offset = -bt_block->offset;
 
    return state;
 }

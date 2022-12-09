@@ -21,6 +21,8 @@
  * DEALINGS IN THE SOFTWARE.
  */
 
+#include "GL/internal/mesa_interface.h"
+#include "git_sha1.h"
 #include "util/format/u_format.h"
 #include "util/u_memory.h"
 #include "util/u_inlines.h"
@@ -470,8 +472,7 @@ kopper_allocate_textures(struct dri_context *ctx,
    /* Wait for glthread to finish because we can't use pipe_context from
     * multiple threads.
     */
-   if (ctx->st->thread_finish)
-      ctx->st->thread_finish(ctx->st);
+   _mesa_glthread_finish(ctx->st->ctx);
 
    /* First get the buffers from the loader */
    if (image) {
@@ -681,8 +682,7 @@ kopper_flush_frontbuffer(struct dri_context *ctx,
    /* Wait for glthread to finish because we can't use pipe_context from
     * multiple threads.
     */
-   if (ctx->st->thread_finish)
-      ctx->st->thread_finish(ctx->st);
+   _mesa_glthread_finish(ctx->st->ctx);
 
    if (drawable) {
       /* prevent recursion */
@@ -703,13 +703,12 @@ kopper_flush_frontbuffer(struct dri_context *ctx,
    if (ptex) {
       ctx->st->pipe->flush_resource(ctx->st->pipe, drawable->textures[ST_ATTACHMENT_FRONT_LEFT]);
       struct pipe_screen *screen = drawable->screen->base.screen;
-      struct st_context_iface *st;
+      struct st_context *st;
       struct pipe_fence_handle *new_fence = NULL;
-      st = ctx->st;
-      if (st->thread_finish)
-         st->thread_finish(st);
 
-      st->flush(st, ST_FLUSH_FRONT, &new_fence, NULL, NULL);
+      st = ctx->st;
+
+      st_context_flush(st, ST_FLUSH_FRONT, &new_fence, NULL, NULL);
       if (drawable) {
          drawable->flushing = false;
       }
@@ -776,8 +775,7 @@ kopper_update_tex_buffer(struct dri_drawable *drawable,
    /* Wait for glthread to finish because we can't use pipe_context from
     * multiple threads.
     */
-   if (ctx->st->thread_finish)
-      ctx->st->thread_finish(ctx->st);
+   _mesa_glthread_finish(ctx->st->ctx);
 
    get_drawable_info(drawable, &x, &y, &w, &h);
 
@@ -824,7 +822,6 @@ kopper_create_drawable(struct dri_screen *screen, const struct gl_config *visual
 
    // relocate references to the old struct
    drawable->base.visual = &drawable->stvis;
-   drawable->base.st_manager_private = (void *) drawable;
 
    // and fill in the vtable
    drawable->allocate_textures = kopper_allocate_textures;
@@ -860,8 +857,7 @@ kopperSwapBuffers(__DRIdrawable *dPriv)
    /* Wait for glthread to finish because we can't use pipe_context from
     * multiple threads.
     */
-   if (ctx->st->thread_finish)
-      ctx->st->thread_finish(ctx->st);
+   _mesa_glthread_finish(ctx->st->ctx);
 
    drawable->texture_stamp = drawable->lastStamp - 1;
 
@@ -935,8 +931,7 @@ kopperQueryBufferAge(__DRIdrawable *dPriv)
    /* Wait for glthread to finish because we can't use pipe_context from
     * multiple threads.
     */
-   if (ctx->st->thread_finish)
-      ctx->st->thread_finish(ctx->st);
+   _mesa_glthread_finish(ctx->st->ctx);
 
    return zink_kopper_query_buffer_age(ctx->st->pipe, ptex);
 }
@@ -949,19 +944,22 @@ const __DRIkopperExtension driKopperExtension = {
    .queryBufferAge             = kopperQueryBufferAge,
 };
 
-static const struct __DRIBackendVtableExtensionRec galliumvk_vtable = {
-   .base = { __DRI_BACKEND_VTABLE, 1 },
-   .InitScreen = kopper_init_screen,
+static const struct __DRImesaCoreExtensionRec mesaCoreExtension = {
+   .base = { __DRI_MESA, 1 },
+   .version_string = MESA_INTERFACE_VERSION_STRING,
+   .createNewScreen = driCreateNewScreen2,
+   .createContext = driCreateContextAttribs,
+   .initScreen = kopper_init_screen,
 };
 
 const __DRIextension *galliumvk_driver_extensions[] = {
    &driCoreExtension.base,
+   &mesaCoreExtension.base,
    &driSWRastExtension.base,
    &driDRI2Extension.base,
    &driImageDriverExtension.base,
    &driKopperExtension.base,
    &gallium_config_options.base,
-   &galliumvk_vtable.base,
    NULL
 };
 

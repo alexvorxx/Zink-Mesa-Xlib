@@ -303,7 +303,6 @@ private:
    bool read_input(std::istream& is);
    virtual bool read_prop(std::istream& is) = 0;
 
-   bool emit_if_start(nir_if *if_stmt);
    bool emit_control_flow(ControlFlowInstr::CFType type);
    bool emit_store_scratch(nir_intrinsic_instr *intr);
    bool emit_load_scratch(nir_intrinsic_instr *intr);

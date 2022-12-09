@@ -741,7 +741,7 @@ static int si_get_video_param(struct pipe_screen *screen, enum pipe_video_profil
             return false;
          return true;
       case PIPE_VIDEO_FORMAT_AV1:
-         if (sscreen->info.family < CHIP_NAVI21)
+         if (sscreen->info.family < CHIP_NAVI21 || sscreen->info.family == CHIP_NAVI24)
             return false;
          return true;
       default:

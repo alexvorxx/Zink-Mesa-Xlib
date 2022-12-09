@@ -1768,6 +1768,24 @@ anv_image_ccs_op(struct anv_cmd_buffer *cmd_buffer,
    if (clear_value)
       surf.clear_color = *clear_value;
 
+   char *flush_reason = NULL;
+   switch (ccs_op) {
+   case ISL_AUX_OP_FAST_CLEAR:
+      flush_reason = "ccs op start: fast clear";
+      break;
+   case ISL_AUX_OP_FULL_RESOLVE:
+      flush_reason = "ccs op start: full resolve";
+      break;
+   case ISL_AUX_OP_PARTIAL_RESOLVE:
+      flush_reason = "ccs op start: partial resolve";
+      break;
+   case ISL_AUX_OP_AMBIGUATE:
+      flush_reason = "ccs op start: ambiguate";
+      break;
+   default:
+      unreachable("Unsupported CCS operation");
+   }
+
    /* From the Sky Lake PRM Vol. 7, "Render Target Fast Clear":
     *
     *    "After Render target fast clear, pipe-control with color cache
@@ -1793,7 +1811,7 @@ anv_image_ccs_op(struct anv_cmd_buffer *cmd_buffer,
                                 ANV_PIPE_DATA_CACHE_FLUSH_BIT : 0) |
                              ANV_PIPE_PSS_STALL_SYNC_BIT |
                              ANV_PIPE_END_OF_PIPE_SYNC_BIT,
-                             "before fast clear ccs");
+                             flush_reason);
 
    switch (ccs_op) {
    case ISL_AUX_OP_FAST_CLEAR:
@@ -1833,7 +1851,7 @@ anv_image_ccs_op(struct anv_cmd_buffer *cmd_buffer,
                                 ANV_PIPE_DEPTH_STALL_BIT : 0) |
                              ANV_PIPE_PSS_STALL_SYNC_BIT |
                              ANV_PIPE_END_OF_PIPE_SYNC_BIT,
-                             "after fast clear ccs");
+                             "ccs op finish");
 
    anv_blorp_batch_finish(&batch);
 }

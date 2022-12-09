@@ -1276,6 +1276,7 @@ agx_get_param(struct pipe_screen* pscreen, enum pipe_cap param)
    case PIPE_CAP_TEXTURE_HALF_FLOAT_LINEAR:
    case PIPE_CAP_SHADER_ARRAY_COMPONENTS:
    case PIPE_CAP_PACKED_UNIFORMS:
+   case PIPE_CAP_QUADS_FOLLOW_PROVOKING_VERTEX_CONVENTION:
       return 1;
 
    case PIPE_CAP_VS_INSTANCEID:
@@ -1317,7 +1318,7 @@ agx_get_param(struct pipe_screen* pscreen, enum pipe_cap param)
    case PIPE_CAP_TEXTURE_BUFFER_OFFSET_ALIGNMENT:
       return 64;
 
-   case PIPE_CAP_VERTEX_BUFFER_STRIDE_4BYTE_ALIGNED_ONLY:
+   case PIPE_CAP_VERTEX_ATTRIB_ELEMENT_ALIGNED_ONLY:
       return 1;
 
    case PIPE_CAP_MAX_TEXTURE_2D_SIZE:
@@ -1326,18 +1327,16 @@ agx_get_param(struct pipe_screen* pscreen, enum pipe_cap param)
    case PIPE_CAP_MAX_TEXTURE_CUBE_LEVELS:
       return 13;
 
-   case PIPE_CAP_FS_COORD_ORIGIN_LOWER_LEFT:
-      return 0;
-
    case PIPE_CAP_FS_COORD_ORIGIN_UPPER_LEFT:
    case PIPE_CAP_FS_COORD_PIXEL_CENTER_HALF_INTEGER:
-   case PIPE_CAP_FS_COORD_PIXEL_CENTER_INTEGER:
    case PIPE_CAP_TGSI_TEXCOORD:
    case PIPE_CAP_FS_FACE_IS_INTEGER_SYSVAL:
    case PIPE_CAP_FS_POSITION_IS_SYSVAL:
    case PIPE_CAP_SEAMLESS_CUBE_MAP:
    case PIPE_CAP_SEAMLESS_CUBE_MAP_PER_TEXTURE:
       return true;
+   case PIPE_CAP_FS_COORD_ORIGIN_LOWER_LEFT:
+   case PIPE_CAP_FS_COORD_PIXEL_CENTER_INTEGER:
    case PIPE_CAP_FS_POINT_IS_SYSVAL:
       return false;
 
@@ -1368,10 +1367,23 @@ agx_get_param(struct pipe_screen* pscreen, enum pipe_cap param)
    case PIPE_CAP_FLATSHADE:
    case PIPE_CAP_TWO_SIDED_COLOR:
    case PIPE_CAP_ALPHA_TEST:
+   case PIPE_CAP_GL_CLAMP:
    case PIPE_CAP_POINT_SIZE_FIXED:
    case PIPE_CAP_CLIP_PLANES:
    case PIPE_CAP_NIR_IMAGES_AS_DEREF:
       return 0;
+
+   case PIPE_CAP_SUPPORTED_PRIM_MODES:
+   case PIPE_CAP_SUPPORTED_PRIM_MODES_WITH_RESTART:
+      return BITFIELD_BIT(PIPE_PRIM_POINTS) |
+             BITFIELD_BIT(PIPE_PRIM_LINES) |
+             BITFIELD_BIT(PIPE_PRIM_LINE_STRIP) |
+             BITFIELD_BIT(PIPE_PRIM_LINE_LOOP) |
+             BITFIELD_BIT(PIPE_PRIM_TRIANGLES) |
+             BITFIELD_BIT(PIPE_PRIM_TRIANGLE_STRIP) |
+             BITFIELD_BIT(PIPE_PRIM_TRIANGLE_FAN) |
+             BITFIELD_BIT(PIPE_PRIM_QUADS) |
+             BITFIELD_BIT(PIPE_PRIM_QUAD_STRIP);
 
    default:
       return u_pipe_screen_get_param_defaults(pscreen, param);
@@ -1561,18 +1573,8 @@ agx_is_format_supported(struct pipe_screen* pscreen,
          return false;
    }
 
-   /* TODO: formats */
-   if (usage & PIPE_BIND_VERTEX_BUFFER) {
-      switch (format) {
-      case PIPE_FORMAT_R32_FLOAT:
-      case PIPE_FORMAT_R32G32_FLOAT:
-      case PIPE_FORMAT_R32G32B32_FLOAT:
-      case PIPE_FORMAT_R32G32B32A32_FLOAT:
-         break;
-      default:
-         return false;
-      }
-   }
+   if ((usage & PIPE_BIND_VERTEX_BUFFER) && !agx_vbo_supports_format(format))
+      return false;
 
    if (usage & PIPE_BIND_DEPTH_STENCIL) {
       switch (format) {

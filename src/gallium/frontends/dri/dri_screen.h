@@ -50,7 +50,7 @@ struct pipe_loader_device;
 struct dri_screen
 {
    /* st_api */
-   struct st_manager base;
+   struct pipe_frontend_screen base;
 
    /* dri */
    /* Current screen's number */

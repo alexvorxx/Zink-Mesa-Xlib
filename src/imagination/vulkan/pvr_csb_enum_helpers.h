@@ -145,4 +145,25 @@ static inline enum PVRX(TEXSTATE_CMP_MODE) pvr_texstate_cmpmode(VkCompareOp op)
    return (enum PVRX(TEXSTATE_CMP_MODE))op;
 }
 
+/******************************************************************************
+   VDMCTRL
+ ******************************************************************************/
+
+/* clang-format off */
+static inline uint32_t
+pvr_vdmctrl_index_size_nr_bytes(enum PVRX(VDMCTRL_INDEX_SIZE) index_size)
+/* clang-format on */
+{
+   switch (index_size) {
+   case PVRX(VDMCTRL_INDEX_SIZE_B8):
+      return 1;
+   case PVRX(VDMCTRL_INDEX_SIZE_B16):
+      return 2;
+   case PVRX(VDMCTRL_INDEX_SIZE_B32):
+      return 4;
+   default:
+      return 0;
+   }
+}
+
 #endif /* PVR_CSB_ENUM_HELPERS_H */

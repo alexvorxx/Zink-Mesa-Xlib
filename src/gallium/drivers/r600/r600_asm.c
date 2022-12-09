@@ -2657,12 +2657,7 @@ void r600_vertex_data_type(enum pipe_format pformat,
 		goto out_unknown;
 	}
 
-	/* Find the first non-VOID channel. */
-	for (i = 0; i < 4; i++) {
-		if (desc->channel[i].type != UTIL_FORMAT_TYPE_VOID) {
-			break;
-		}
-	}
+	i = util_format_get_first_non_void_channel(pformat);
 
 	*endian = r600_endian_swap(desc->channel[i].size);
 

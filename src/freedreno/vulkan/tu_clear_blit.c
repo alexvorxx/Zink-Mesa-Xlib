@@ -3038,8 +3038,9 @@ blit_can_resolve(VkFormat format)
 
    /* blit event can only do resolve for simple cases:
     * averaging samples as unsigned integers or choosing only one sample
+    * Note this is allowed for SRGB formats, but results differ from 2D draw resolve
     */
-   if (vk_format_is_snorm(format) || vk_format_is_srgb(format))
+   if (vk_format_is_snorm(format))
       return false;
 
    /* can't do formats with larger channel sizes

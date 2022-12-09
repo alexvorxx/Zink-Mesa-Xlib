@@ -38,7 +38,7 @@
 
 struct pipe_context;
 struct pipe_fence;
-struct st_context_iface;
+struct st_context;
 struct dri_drawable;
 struct dri_screen;
 
@@ -74,7 +74,7 @@ struct dri_context
    } dri2;
 
    /* gallium */
-   struct st_context_iface *st;
+   struct st_context *st;
    struct pp_queue_t *pp;
    struct hud_context *hud;
 };

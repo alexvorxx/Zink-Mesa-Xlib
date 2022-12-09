@@ -81,7 +81,9 @@ instr_cost(nir_instr *instr, const void *data)
    case nir_instr_type_intrinsic:
       switch (nir_instr_as_intrinsic(instr)->intrinsic) {
       case nir_intrinsic_load_global:
+      case nir_intrinsic_load_agx:
       case nir_intrinsic_load_global_constant:
+      case nir_intrinsic_load_constant_agx:
       case nir_intrinsic_load_ubo:
          return 10.0;
       default:

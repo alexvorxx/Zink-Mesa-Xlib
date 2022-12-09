@@ -185,15 +185,14 @@ get_device_extensions(const struct anv_physical_device *device,
    const bool has_syncobj_wait =
       (device->sync_syncobj_type.features & VK_SYNC_FEATURE_CPU_WAIT) != 0;
 
+   const bool rt_enabled = ANV_SUPPORT_RT && device->info.has_ray_tracing;
    const bool nv_mesh_shading_enabled =
       debug_get_bool_option("ANV_EXPERIMENTAL_NV_MESH_SHADER", false);
 
    *ext = (struct vk_device_extension_table) {
       .KHR_8bit_storage                      = true,
       .KHR_16bit_storage                     = true,
-      .KHR_acceleration_structure            = device->info.has_ray_tracing,
-      .KHR_acceleration_structure            = ANV_SUPPORT_RT &&
-                                               device->info.has_ray_tracing,
+      .KHR_acceleration_structure            = rt_enabled,
       .KHR_bind_memory2                      = true,
       .KHR_buffer_device_address             = true,
       .KHR_copy_commands2                    = true,
@@ -244,10 +243,9 @@ get_device_extensions(const struct anv_physical_device *device,
          driQueryOptionb(&device->instance->dri_options, "vk_khr_present_wait") ||
          wsi_common_vk_instance_supports_present_wait(&device->instance->vk),
       .KHR_push_descriptor                   = true,
-      .KHR_ray_query                         =
-         ANV_SUPPORT_RT && device->info.has_ray_tracing,
-      .KHR_ray_tracing_pipeline              =
-         ANV_SUPPORT_RT && device->info.has_ray_tracing,
+      .KHR_ray_query                         = rt_enabled,
+      .KHR_ray_tracing_maintenance1          = rt_enabled,
+      .KHR_ray_tracing_pipeline              = rt_enabled,
       .KHR_relaxed_block_layout              = true,
       .KHR_sampler_mirror_clamp_to_edge      = true,
       .KHR_sampler_ycbcr_conversion          = true,
@@ -1366,6 +1364,8 @@ void anv_GetPhysicalDeviceFeatures2(
    };
    anv_get_physical_device_features_1_3(pdevice, &core_1_3);
 
+   const bool rt_enabled = ANV_SUPPORT_RT && pdevice->info.has_ray_tracing;
+
    vk_foreach_struct(ext, pFeatures->pNext) {
       if (vk_get_physical_device_core_1_1_feature_ext(ext, &core_1_1))
          continue;
@@ -1385,13 +1385,12 @@ void anv_GetPhysicalDeviceFeatures2(
 
       case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ACCELERATION_STRUCTURE_FEATURES_KHR: {
          VkPhysicalDeviceAccelerationStructureFeaturesKHR *features = (void *)ext;
-         features->accelerationStructure =
-            ANV_SUPPORT_RT && pdevice->info.has_ray_tracing;
+         features->accelerationStructure = rt_enabled;
          features->accelerationStructureCaptureReplay = false; /* TODO */
          features->accelerationStructureIndirectBuild = false; /* TODO */
          features->accelerationStructureHostCommands = false;
          features->descriptorBindingAccelerationStructureUpdateAfterBind =
-            ANV_SUPPORT_RT && pdevice->info.has_ray_tracing;
+            rt_enabled;
          break;
       }
 
@@ -1591,17 +1590,24 @@ void anv_GetPhysicalDeviceFeatures2(
 
       case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_QUERY_FEATURES_KHR: {
          VkPhysicalDeviceRayQueryFeaturesKHR *features = (void *)ext;
-         features->rayQuery = ANV_SUPPORT_RT && pdevice->info.has_ray_tracing;
+         features->rayQuery = rt_enabled;
+         break;
+      }
+
+      case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_MAINTENANCE_1_FEATURES_KHR: {
+         VkPhysicalDeviceRayTracingMaintenance1FeaturesKHR *features = (void *)ext;
+         features->rayTracingMaintenance1 = rt_enabled;
+         features->rayTracingPipelineTraceRaysIndirect2 = rt_enabled;
          break;
       }
 
       case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_PIPELINE_FEATURES_KHR: {
          VkPhysicalDeviceRayTracingPipelineFeaturesKHR *features = (void *)ext;
-         features->rayTracingPipeline = pdevice->info.has_ray_tracing;
+         features->rayTracingPipeline = rt_enabled;
          features->rayTracingPipelineShaderGroupHandleCaptureReplay = false;
          features->rayTracingPipelineShaderGroupHandleCaptureReplayMixed = false;
-         features->rayTracingPipelineTraceRaysIndirect = true;
-         features->rayTraversalPrimitiveCulling = true;
+         features->rayTracingPipelineTraceRaysIndirect = rt_enabled;
+         features->rayTraversalPrimitiveCulling = rt_enabled;
          break;
       }
 

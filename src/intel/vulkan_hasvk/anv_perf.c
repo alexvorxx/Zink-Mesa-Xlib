@@ -138,8 +138,7 @@ anv_device_perf_open(struct anv_device *device, uint64_t metric_id)
     * Temporary disable this option on Gfx12.5+, kernel doesn't appear to
     * support it.
     */
-   if (intel_perf_has_global_sseu(device->physical->perf) &&
-       device->info->verx10 < 125) {
+   if (intel_perf_has_global_sseu(device->physical->perf)) {
       properties[p++] = DRM_I915_PERF_PROP_GLOBAL_SSEU;
       properties[p++] = (uintptr_t) &device->physical->perf->sseu;
    }

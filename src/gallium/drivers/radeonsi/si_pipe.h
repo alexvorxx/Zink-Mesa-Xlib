@@ -225,6 +225,7 @@ enum
    DBG_VM,
    DBG_CACHE_STATS,
    DBG_IB,
+   DBG_VERTEX_ELEMENTS,
 
    /* Driver options: */
    DBG_NO_WC,

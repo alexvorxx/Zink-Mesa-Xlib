@@ -36,6 +36,14 @@ ac_nir_load_arg(nir_builder *b, const struct ac_shader_args *ac_args, struct ac_
       return nir_load_vector_arg_amd(b, num_components, .base = arg.arg_index);
 }
 
+nir_ssa_def *
+ac_nir_unpack_arg(nir_builder *b, const struct ac_shader_args *ac_args, struct ac_arg arg,
+                  unsigned rshift, unsigned bitwidth)
+{
+   nir_ssa_def *value = ac_nir_load_arg(b, ac_args, arg);
+   return nir_ubfe_imm(b, value, rshift, bitwidth);
+}
+
 /**
  * This function takes an I/O intrinsic like load/store_input,
  * and emits a sequence that calculates the full offset of that instruction,

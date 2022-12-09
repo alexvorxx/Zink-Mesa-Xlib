@@ -640,10 +640,10 @@ done:
 
    /* restore states not restored by cso */
    if (hud->st) {
-      hud->st->invalidate_state(hud->st,
-                                ST_INVALIDATE_FS_SAMPLER_VIEWS |
-                                ST_INVALIDATE_VS_CONSTBUF0 |
-                                ST_INVALIDATE_VERTEX_BUFFERS);
+      hud->st_invalidate_state(hud->st,
+                               ST_INVALIDATE_FS_SAMPLER_VIEWS |
+                               ST_INVALIDATE_VS_CONSTBUF0 |
+                               ST_INVALIDATE_VERTEX_BUFFERS);
    }
 
    pipe_surface_reference(&surf, NULL);
@@ -1673,7 +1673,8 @@ hud_unset_draw_context(struct hud_context *hud)
 
 static bool
 hud_set_draw_context(struct hud_context *hud, struct cso_context *cso,
-                     struct st_context_iface *st)
+                     void *st,
+                     void (*st_invalidate_state)(void *st, unsigned flags))
 {
    struct pipe_context *pipe = cso_get_pipe_context(cso);
 
@@ -1681,6 +1682,7 @@ hud_set_draw_context(struct hud_context *hud, struct cso_context *cso,
    hud->pipe = pipe;
    hud->cso = cso;
    hud->st = st;
+   hud->st_invalidate_state = st_invalidate_state;
 
    struct pipe_sampler_view view_templ;
    u_sampler_view_default_template(
@@ -1854,8 +1856,8 @@ hud_set_record_context(struct hud_context *hud, struct pipe_context *pipe)
  * record queries in one context and draw them in another.
  */
 struct hud_context *
-hud_create(struct cso_context *cso, struct st_context_iface *st,
-           struct hud_context *share)
+hud_create(struct cso_context *cso, struct hud_context *share,
+           void *st, void (*st_invalidate_state)(void *st, unsigned flags))
 {
    const char *share_env = debug_get_option("GALLIUM_HUD_SHARE", NULL);
    unsigned record_ctx = 0, draw_ctx = 0;
@@ -1879,7 +1881,7 @@ hud_create(struct cso_context *cso, struct st_context_iface *st,
 
       if (context_id == draw_ctx) {
          assert(!share->pipe);
-         hud_set_draw_context(share, cso, st);
+         hud_set_draw_context(share, cso, st, st_invalidate_state);
       }
 
       return share;
@@ -2002,7 +2004,7 @@ hud_create(struct cso_context *cso, struct st_context_iface *st,
    if (record_ctx == 0)
       hud_set_record_context(hud, cso_get_pipe_context(cso));
    if (draw_ctx == 0)
-      hud_set_draw_context(hud, cso, st);
+      hud_set_draw_context(hud, cso, st, st_invalidate_state);
 
    hud_parse_env_var(hud, screen, env);
    return hud;

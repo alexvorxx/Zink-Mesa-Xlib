@@ -52,6 +52,17 @@ struct radv_shader_args;
 struct radv_vs_input_state;
 struct radv_shader_args;
 
+struct radv_ps_epilog_key {
+   uint32_t spi_shader_col_format;
+
+   /* Bitmasks, each bit represents one of the 8 MRTs. */
+   uint8_t color_is_int8;
+   uint8_t color_is_int10;
+   uint8_t enable_mrt_output_nan_fixup;
+
+   bool mrt0_is_dual_src;
+};
+
 struct radv_pipeline_key {
    uint32_t has_multiview_view_index : 1;
    uint32_t optimisations_disabled : 1;
@@ -85,16 +96,13 @@ struct radv_pipeline_key {
    } tcs;
 
    struct {
-      uint32_t col_format;
-      uint32_t is_int8;
-      uint32_t is_int10;
+      struct radv_ps_epilog_key epilog;
+
       uint32_t cb_target_mask;
       uint8_t num_samples;
       bool sample_shading_enable;
-      bool mrt0_is_dual_src;
 
       bool lower_discard_to_demote;
-      uint8_t enable_mrt_output_nan_fixup;
       bool force_vrs_enabled;
 
       /* Used to export alpha through MRTZ for alpha-to-coverage (GFX11+). */
@@ -300,6 +308,7 @@ struct radv_shader_info {
       bool writes_z;
       bool writes_stencil;
       bool writes_sample_mask;
+      bool writes_mrt0_alpha;
       bool has_pcoord;
       bool prim_id_input;
       bool layer_input;
@@ -333,6 +342,7 @@ struct radv_shader_info {
       bool has_epilog;
       unsigned spi_ps_input;
       unsigned colors_written;
+      uint8_t color0_written;
    } ps;
    struct {
       bool uses_grid_size;
@@ -346,6 +356,7 @@ struct radv_shader_info {
       bool uses_sbt;
       bool uses_ray_launch_size;
       bool uses_dynamic_rt_callable_stack;
+      bool uses_rt;
    } cs;
    struct {
       uint64_t tes_inputs_read;
@@ -401,18 +412,6 @@ struct radv_vs_prolog_key {
    bool is_ngg;
    bool wave32;
    gl_shader_stage next_stage;
-};
-
-struct radv_ps_epilog_key {
-   uint32_t spi_shader_col_format;
-
-   /* Bitmasks, each bit represents one of the 8 MRTs. */
-   uint8_t color_is_int8;
-   uint8_t color_is_int10;
-   uint8_t enable_mrt_output_nan_fixup;
-
-   bool mrt0_is_dual_src;
-   bool wave32;
 };
 
 enum radv_shader_binary_type { RADV_BINARY_TYPE_LEGACY, RADV_BINARY_TYPE_RTLD };

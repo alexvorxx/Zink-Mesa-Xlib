@@ -43,30 +43,12 @@
 static inline void pvr_init_primary_compute_pds_program(
    struct pvr_pds_compute_shader_program *program)
 {
-   *program = (struct pvr_pds_compute_shader_program) {
-      .local_input_regs = {
-         0,
-         PVR_PDS_COMPUTE_INPUT_REG_UNUSED,
-         PVR_PDS_COMPUTE_INPUT_REG_UNUSED,
-      },
-
-      /* Workgroup id is in reg0. */
-      .work_group_input_regs = {
-         0,
-         PVR_PDS_COMPUTE_INPUT_REG_UNUSED,
-         PVR_PDS_COMPUTE_INPUT_REG_UNUSED,
-      },
-
-      .global_input_regs = {
-         PVR_PDS_COMPUTE_INPUT_REG_UNUSED,
-         PVR_PDS_COMPUTE_INPUT_REG_UNUSED,
-         PVR_PDS_COMPUTE_INPUT_REG_UNUSED,
-      },
-
-      .barrier_coefficient = PVR_PDS_COMPUTE_INPUT_REG_UNUSED,
-      .flattened_work_groups = true,
-      .kick_usc = true,
-   };
+   pvr_pds_compute_shader_program_init(program);
+   program->local_input_regs[0] = 0;
+   /* Workgroup id is in reg0. */
+   program->work_group_input_regs[0] = 0;
+   program->flattened_work_groups = true;
+   program->kick_usc = true;
 }
 
 static VkResult pvr_create_compute_secondary_prog(

@@ -114,27 +114,7 @@ TCSShader::process_stage_intrinsic(nir_intrinsic_instr *instr)
 bool
 TCSShader::store_tess_factor(nir_intrinsic_instr *instr)
 {
-   bool two_parts = nir_src_num_components(instr->src[0]) == 4;
-
-   auto value0 = value_factory().temp_vec4(pin_group, {0, 1, 7, 7});
-   emit_instruction(new AluInstr(
-      op1_mov, value0[0], value_factory().src(instr->src[0], 0), AluInstr::write));
-   emit_instruction(new AluInstr(op1_mov,
-                                 value0[1],
-                                 value_factory().src(instr->src[0], 1),
-                                 two_parts ? AluInstr::write : AluInstr::last_write));
-
-   if (two_parts) {
-      auto value1 = value_factory().temp_vec4(pin_group, {2, 3, 7, 7});
-      emit_instruction(new AluInstr(
-         op1_mov, value1[0], value_factory().src(instr->src[0], 2), AluInstr::write));
-      emit_instruction(new AluInstr(op1_mov,
-                                    value1[1],
-                                    value_factory().src(instr->src[0], 3),
-                                    AluInstr::last_write));
-      emit_instruction(new WriteTFInstr(value1));
-   }
-
+   auto value0 = value_factory().src_vec4(instr->src[0], pin_group, {0, 1, 7, 7});
    emit_instruction(new WriteTFInstr(value0));
    return true;
 }

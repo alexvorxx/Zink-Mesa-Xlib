@@ -161,7 +161,7 @@ ExportInstr::from_string_impl(std::istream& is, ValueFactory& vf)
 }
 
 uint8_t
-ExportInstr::allowed_dest_chan_mask() const
+ExportInstr::allowed_src_chan_mask() const
 {
    return value().free_chan_mask();
 }
@@ -622,6 +622,13 @@ WriteTFInstr::from_string(std::istream& is, ValueFactory& vf) -> Pointer
 
    return new WriteTFInstr(value);
 }
+
+uint8_t
+WriteTFInstr::allowed_src_chan_mask() const
+{
+   return value().free_chan_mask();
+}
+
 
 bool
 WriteTFInstr::do_ready() const

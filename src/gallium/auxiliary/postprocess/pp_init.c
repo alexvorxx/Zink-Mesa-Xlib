@@ -40,7 +40,8 @@
 /** Initialize the post-processing queue. */
 struct pp_queue_t *
 pp_init(struct pipe_context *pipe, const unsigned int *enabled,
-        struct cso_context *cso, struct st_context_iface *st)
+        struct cso_context *cso, void *st,
+        void (*st_invalidate_state)(void *st, unsigned flags))
 {
    unsigned int num_filters = 0;
    unsigned int curpos = 0, i, tmp_req = 0;
@@ -78,7 +79,7 @@ pp_init(struct pipe_context *pipe, const unsigned int *enabled,
       goto error;
    }
 
-   ppq->p = pp_init_prog(ppq, pipe, cso, st);
+   ppq->p = pp_init_prog(ppq, pipe, cso, st, st_invalidate_state);
    if (ppq->p == NULL) {
       pp_debug("pp_init_prog returned NULL.\n");
       goto error;

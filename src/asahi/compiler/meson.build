@@ -25,6 +25,7 @@ libasahi_agx_files = files(
   'agx_liveness.c',
   'agx_nir_lower_texture.c',
   'agx_nir_lower_load_mask.c',
+  'agx_nir_lower_ubo.c',
   'agx_nir_opt_preamble.c',
   'agx_lower_64bit.c',
   'agx_lower_resinfo.c',

@@ -182,8 +182,6 @@ struct agx_shader_info {
 };
 
 #define AGX_MAX_RTS (8)
-#define AGX_MAX_ATTRIBS (16)
-#define AGX_MAX_VBUFS (16)
 
 enum agx_format {
    AGX_FORMAT_I8 = 0,
@@ -203,56 +201,6 @@ enum agx_format {
    AGX_NUM_FORMATS,
 };
 
-/* Returns the number of bits at the bottom of the address required to be zero.
- * That is, returns the base-2 logarithm of the minimum alignment for an
- * agx_format, where the minimum alignment is 2^n where n is the result of this
- * function. The offset argument to device_load is left-shifted by this amount
- * in the hardware */
-
-static inline unsigned
-agx_format_shift(enum agx_format format)
-{
-   switch (format) {
-   case AGX_FORMAT_I8:
-   case AGX_FORMAT_U8NORM:
-   case AGX_FORMAT_S8NORM:
-   case AGX_FORMAT_SRGBA8:
-      return 0;
-
-   case AGX_FORMAT_I16:
-   case AGX_FORMAT_F16:
-   case AGX_FORMAT_U16NORM:
-   case AGX_FORMAT_S16NORM:
-      return 1;
-
-   case AGX_FORMAT_I32:
-   case AGX_FORMAT_RGB10A2:
-   case AGX_FORMAT_RG11B10F:
-   case AGX_FORMAT_RGB9E5:
-      return 2;
-
-   default:
-      unreachable("invalid format");
-   }
-}
-
-struct agx_attribute {
-   uint32_t divisor;
-
-   unsigned buf : 5;
-   unsigned src_offset : 16;
-   unsigned nr_comps_minus_1 : 2;
-   enum agx_format format : 4;
-   unsigned padding : 5;
-};
-
-struct agx_vs_shader_key {
-   unsigned num_vbufs;
-   unsigned vbuf_strides[AGX_MAX_VBUFS];
-
-   struct agx_attribute attributes[AGX_MAX_ATTRIBS];
-};
-
 struct agx_fs_shader_key {
    /* Normally, access to the tilebuffer must be guarded by appropriate fencing
     * instructions to ensure correct results in the presence of out-of-order
@@ -269,7 +217,6 @@ struct agx_fs_shader_key {
 
 struct agx_shader_key {
    union {
-      struct agx_vs_shader_key vs;
       struct agx_fs_shader_key fs;
    };
 };

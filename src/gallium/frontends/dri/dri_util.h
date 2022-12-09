@@ -47,11 +47,6 @@ struct dri_screen;
 
 #define __DRI_BACKEND_VTABLE "DRI_DriverVtable"
 
-typedef struct __DRIBackendVtableExtensionRec {
-    __DRIextension base;
-    const __DRIconfig **(*InitScreen)(struct dri_screen *screen);
-} __DRIBackendVtableExtension;
-
 struct __DRIconfigRec {
     struct gl_config modes;
 };
@@ -107,6 +102,20 @@ struct __DriverContextConfig {
 #define __DRIVER_CONTEXT_ATTRIB_RELEASE_BEHAVIOR (1 << 2)
 #define __DRIVER_CONTEXT_ATTRIB_NO_ERROR         (1 << 3)
 #define __DRIVER_CONTEXT_ATTRIB_PROTECTED        (1 << 4)
+
+__DRIscreen *
+driCreateNewScreen2(int scrn, int fd,
+                    const __DRIextension **loader_extensions,
+                    const __DRIextension **driver_extensions,
+                    const __DRIconfig ***driver_configs, void *data);
+__DRIcontext *
+driCreateContextAttribs(__DRIscreen *psp, int api,
+                        const __DRIconfig *config,
+                        __DRIcontext *shared,
+                        unsigned num_attribs,
+                        const uint32_t *attribs,
+                        unsigned *error,
+                        void *data);
 
 extern uint32_t
 driGLFormatToImageFormat(mesa_format format);

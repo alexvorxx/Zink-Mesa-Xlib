@@ -29,7 +29,9 @@
  */
 
 #include <xf86drm.h>
+#include "git_sha1.h"
 #include "GL/mesa_glinterop.h"
+#include "GL/internal/mesa_interface.h"
 #include "util/disk_cache.h"
 #include "util/u_memory.h"
 #include "util/u_inlines.h"
@@ -453,7 +455,7 @@ handle_in_fence(struct dri_context *ctx, __DRIimage *img)
 }
 
 /*
- * Backend functions for st_framebuffer interface.
+ * Backend functions for pipe_frontend_drawable.
  */
 
 static void
@@ -479,8 +481,7 @@ dri2_allocate_textures(struct dri_context *ctx,
    /* Wait for glthread to finish because we can't use pipe_context from
     * multiple threads.
     */
-   if (ctx->st->thread_finish)
-      ctx->st->thread_finish(ctx->st);
+   _mesa_glthread_finish(ctx->st->ctx);
 
    /* First get the buffers from the loader */
    if (image) {
@@ -783,8 +784,7 @@ dri2_flush_frontbuffer(struct dri_context *ctx,
    /* Wait for glthread to finish because we can't use pipe_context from
     * multiple threads.
     */
-   if (ctx->st->thread_finish)
-      ctx->st->thread_finish(ctx->st);
+   _mesa_glthread_finish(ctx->st->ctx);
 
    if (drawable->stvis.samples > 1) {
       /* Resolve the buffer used for front rendering. */
@@ -835,7 +835,7 @@ dri2_flush_swapbuffers(struct dri_context *ctx,
 {
    const __DRIimageLoaderExtension *image = drawable->screen->image.loader;
 
-   if (image && image->base.version >= 3 && image->flushSwapBuffers) {
+   if (image && image->flushSwapBuffers) {
       image->flushSwapBuffers(opaque_dri_drawable(drawable),
                               drawable->loaderPrivate);
    }
@@ -1795,8 +1795,7 @@ dri2_blit_image(__DRIcontext *context, __DRIimage *dst, __DRIimage *src,
    /* Wait for glthread to finish because we can't use pipe_context from
     * multiple threads.
     */
-   if (ctx->st->thread_finish)
-      ctx->st->thread_finish(ctx->st);
+   _mesa_glthread_finish(ctx->st->ctx);
 
    handle_in_fence(ctx, dst);
 
@@ -1822,11 +1821,11 @@ dri2_blit_image(__DRIcontext *context, __DRIimage *dst, __DRIimage *src,
 
    if (flush_flag == __BLIT_FLAG_FLUSH) {
       pipe->flush_resource(pipe, dst->texture);
-      ctx->st->flush(ctx->st, 0, NULL, NULL, NULL);
+      st_context_flush(ctx->st, 0, NULL, NULL, NULL);
    } else if (flush_flag == __BLIT_FLAG_FINISH) {
       screen = ctx->screen->base.screen;
       pipe->flush_resource(pipe, dst->texture);
-      ctx->st->flush(ctx->st, 0, &fence, NULL, NULL);
+      st_context_flush(ctx->st, 0, &fence, NULL, NULL);
       (void) screen->fence_finish(screen, NULL, fence, PIPE_TIMEOUT_INFINITE);
       screen->fence_reference(screen, &fence, NULL);
    }
@@ -1853,8 +1852,7 @@ dri2_map_image(__DRIcontext *context, __DRIimage *image,
    /* Wait for glthread to finish because we can't use pipe_context from
     * multiple threads.
     */
-   if (ctx->st->thread_finish)
-      ctx->st->thread_finish(ctx->st);
+   _mesa_glthread_finish(ctx->st->ctx);
 
    handle_in_fence(ctx, image);
 
@@ -1886,8 +1884,7 @@ dri2_unmap_image(__DRIcontext *context, __DRIimage *image, void *data)
    /* Wait for glthread to finish because we can't use pipe_context from
     * multiple threads.
     */
-   if (ctx->st->thread_finish)
-      ctx->st->thread_finish(ctx->st);
+   _mesa_glthread_finish(ctx->st->ctx);
 
    pipe_texture_unmap(pipe, (struct pipe_transfer *)data);
 }
@@ -2395,44 +2392,38 @@ release_pipe:
    return NULL;
 }
 
-/**
- * DRI driver virtual function table.
- *
- * DRI versions differ in their implementation of init_screen and swap_buffers.
- */
-static const struct __DRIBackendVtableExtensionRec galliumdrm_vtable = {
-   .base = { __DRI_BACKEND_VTABLE, 1 },
-   .InitScreen = dri2_init_screen,
+static const struct __DRImesaCoreExtensionRec mesaCoreExtension = {
+   .base = { __DRI_MESA, 1 },
+   .version_string = MESA_INTERFACE_VERSION_STRING,
+   .createNewScreen = driCreateNewScreen2,
+   .createContext = driCreateContextAttribs,
+   .initScreen = dri2_init_screen,
 };
 
 /* This is the table of extensions that the loader will dlsym() for. */
 const __DRIextension *galliumdrm_driver_extensions[] = {
     &driCoreExtension.base,
+    &mesaCoreExtension.base,
     &driImageDriverExtension.base,
     &driDRI2Extension.base,
     &gallium_config_options.base,
-    &galliumdrm_vtable.base,
     NULL
 };
 
-/**
- * DRI driver virtual function table.
- *
- * KMS/DRM version of the DriverAPI above sporting a different InitScreen
- * hook. The latter is used to explicitly initialise the kms_swrast driver
- * rather than selecting the approapriate driver as suggested by the loader.
- */
-static const struct __DRIBackendVtableExtensionRec dri_swrast_kms_vtable = {
-   .base = { __DRI_BACKEND_VTABLE, 1 },
-   .InitScreen = dri_swrast_kms_init_screen,
+static const struct __DRImesaCoreExtensionRec swkmsMesaCoreExtension = {
+   .base = { __DRI_MESA, 1 },
+   .version_string = MESA_INTERFACE_VERSION_STRING,
+   .createNewScreen = driCreateNewScreen2,
+   .createContext = driCreateContextAttribs,
+   .initScreen = dri_swrast_kms_init_screen,
 };
 
 const __DRIextension *dri_swrast_kms_driver_extensions[] = {
     &driCoreExtension.base,
+    &swkmsMesaCoreExtension.base,
     &driImageDriverExtension.base,
     &swkmsDRI2Extension.base,
     &gallium_config_options.base,
-    &dri_swrast_kms_vtable.base,
     NULL
 };
 

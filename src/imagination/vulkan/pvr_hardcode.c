@@ -76,7 +76,7 @@ static const struct pvr_hard_coding_data {
          size_t shader_size;
 
          /* Note that the bo field will be unused. */
-         const struct pvr_compute_pipeline_shader_state shader_info;
+         const struct pvr_compute_shader_state shader_info;
 
          const struct pvr_hard_code_compute_build_info build_info;
       } compute;
@@ -185,7 +185,7 @@ pvr_get_hard_coding_data(const struct pvr_device_info *const dev_info)
 
 VkResult pvr_hard_code_compute_pipeline(
    struct pvr_device *const device,
-   struct pvr_compute_pipeline_shader_state *const shader_state_out,
+   struct pvr_compute_shader_state *const shader_state_out,
    struct pvr_hard_code_compute_build_info *const build_info_out)
 {
    const uint32_t cache_line_size =

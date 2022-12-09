@@ -38,7 +38,7 @@
  * This should eventually be deleted as the compiler becomes more capable.
  */
 
-struct pvr_compute_pipeline_shader_state;
+struct pvr_compute_shader_state;
 struct pvr_device;
 struct pvr_fragment_shader_state;
 struct pvr_hard_coding_data;
@@ -80,7 +80,7 @@ bool pvr_hard_code_shader_required(const struct pvr_device_info *const dev_info)
 
 VkResult pvr_hard_code_compute_pipeline(
    struct pvr_device *const device,
-   struct pvr_compute_pipeline_shader_state *const shader_state_out,
+   struct pvr_compute_shader_state *const shader_state_out,
    struct pvr_hard_code_compute_build_info *const build_info_out);
 
 /* Returns a mask of MESA_SHADER_* (gl_shader_stage) indicating which stage

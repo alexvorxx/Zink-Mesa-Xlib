@@ -52,15 +52,13 @@ anv_descriptor_data_for_type(const struct anv_physical_device *device,
    case VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER:
       data = ANV_DESCRIPTOR_SURFACE_STATE |
              ANV_DESCRIPTOR_SAMPLER_STATE;
-      if (device->has_bindless_images || device->has_bindless_samplers)
+      if (device->has_bindless_samplers)
          data |= ANV_DESCRIPTOR_SAMPLED_IMAGE;
       break;
 
    case VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE:
    case VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER:
       data = ANV_DESCRIPTOR_SURFACE_STATE;
-      if (device->has_bindless_images)
-         data |= ANV_DESCRIPTOR_SAMPLED_IMAGE;
       break;
 
    case VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT:
@@ -70,10 +68,7 @@ anv_descriptor_data_for_type(const struct anv_physical_device *device,
    case VK_DESCRIPTOR_TYPE_STORAGE_IMAGE:
    case VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER:
       data = ANV_DESCRIPTOR_SURFACE_STATE;
-      if (device->info.ver < 9)
-         data |= ANV_DESCRIPTOR_IMAGE_PARAM;
-      if (device->has_bindless_images)
-         data |= ANV_DESCRIPTOR_STORAGE_IMAGE;
+      data |= ANV_DESCRIPTOR_IMAGE_PARAM;
       break;
 
    case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER:
@@ -252,14 +247,8 @@ anv_descriptor_data_supports_bindless(const struct anv_physical_device *pdevice,
    }
 
    if (data & ANV_DESCRIPTOR_SAMPLED_IMAGE) {
-      assert(pdevice->has_bindless_images || pdevice->has_bindless_samplers);
-      return sampler ? pdevice->has_bindless_samplers :
-                       pdevice->has_bindless_images;
-   }
-
-   if (data & ANV_DESCRIPTOR_STORAGE_IMAGE) {
-      assert(pdevice->has_bindless_images);
-      return true;
+      assert(pdevice->has_bindless_samplers);
+      return sampler && pdevice->has_bindless_samplers;
    }
 
    return false;

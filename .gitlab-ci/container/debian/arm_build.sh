@@ -51,7 +51,7 @@ apt-get -y install \
 	libxshmfence-dev \
 	libxxf86vm-dev \
 	llvm-11-dev \
-	meson \
+	ninja-build \
 	pkg-config \
 	python3-mako \
 	python3-pil \
@@ -69,6 +69,9 @@ apt-get install -y --no-remove -t buster \
         android-sdk-ext4-utils
 
 pip3 install git+http://gitlab.freedesktop.org/freedesktop/ci-templates@ffe4d1b10aab7534489f0c4bbc4c5899df17d3f2
+
+# We need at least 0.61.4 for proper Rust; 0.62 for modern meson env2mfile
+pip3 install meson==0.63.3
 
 arch=armhf
 . .gitlab-ci/container/cross_build.sh

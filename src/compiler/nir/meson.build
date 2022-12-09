@@ -437,7 +437,7 @@ if with_tests
     ),
     suite : ['compiler', 'nir'],
     # TODO: Use a negative filter for gtest instead of the expect failure here.
-    should_fail : meson.get_cross_property('xfail', '').contains('load_store_vectorizer'),
+    should_fail : meson.get_external_property('xfail', '').contains('load_store_vectorizer'),
     protocol : gtest_test_protocol,
   )
 

@@ -376,6 +376,8 @@ tu_physical_device_finish(struct tu_physical_device *device)
    if (device->has_set_iova)
       util_vma_heap_finish(&device->vma);
 
+   disk_cache_destroy(device->vk.disk_cache);
+
    vk_free(&device->instance->vk.alloc, (void *)device->name);
 
    vk_physical_device_finish(&device->vk);

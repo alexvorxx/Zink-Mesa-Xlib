@@ -2071,8 +2071,7 @@ vec4_visitor::nir_emit_texture(nir_tex_instr *instr)
    if (instr->op == nir_texop_txf_ms ||
        instr->op == nir_texop_samples_identical) {
       assert(coord_type != NULL);
-      if (devinfo->ver >= 7 &&
-          key_tex->compressed_multisample_layout_mask & (1 << texture)) {
+      if (devinfo->ver >= 7) {
          mcs = emit_mcs_fetch(coord_type, coordinate, texture_reg);
       } else {
          mcs = brw_imm_ud(0u);

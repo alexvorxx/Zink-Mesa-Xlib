@@ -260,7 +260,6 @@ radv_CreateAccelerationStructureKHR(VkDevice _device,
    accel->size = pCreateInfo->size;
    accel->bo = buffer->bo;
    accel->va = va;
-   accel->type = pCreateInfo->type;
 
    *pAccelerationStructure = radv_acceleration_structure_to_handle(accel);
    return VK_SUCCESS;

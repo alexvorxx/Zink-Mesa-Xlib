@@ -342,10 +342,12 @@ VkResult pvr_bo_alloc(struct pvr_device *device,
                       uint64_t flags,
                       struct pvr_bo **const pvr_bo_out)
 {
-   const uint32_t ws_flags = pvr_bo_alloc_to_winsys_flags(flags);
    struct pvr_bo *pvr_bo;
    pvr_dev_addr_t addr;
    VkResult result;
+
+   if (PVR_IS_DEBUG_SET(ZERO_BOS))
+      flags |= PVR_BO_ALLOC_FLAG_ZERO_ON_ALLOC;
 
    pvr_bo = pvr_bo_alloc_bo(device);
    if (!pvr_bo)
@@ -355,7 +357,7 @@ VkResult pvr_bo_alloc(struct pvr_device *device,
                                            size,
                                            alignment,
                                            PVR_WINSYS_BO_TYPE_GPU,
-                                           ws_flags,
+                                           pvr_bo_alloc_to_winsys_flags(flags),
                                            &pvr_bo->bo);
    if (result != VK_SUCCESS)
       goto err_free_bo;

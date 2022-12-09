@@ -236,7 +236,7 @@ op("texture_load",
 # sources are base, index
 op("device_load",
       encoding_32 = (0x05, 0x7F, 6, 8),
-      srcs = 2, imms = [FORMAT, MASK, SCOREBOARD], can_reorder = False)
+      srcs = 2, imms = [FORMAT, MASK, SHIFT, SCOREBOARD], can_reorder = False)
 
 # sources are value, index
 # TODO: Consider permitting the short form

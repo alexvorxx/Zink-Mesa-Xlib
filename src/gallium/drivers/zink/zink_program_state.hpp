@@ -395,7 +395,7 @@ get_gfx_pipeline_stage_eq_func(struct zink_gfx_program *prog, bool optimal_keys)
 {
    unsigned vertex_stages = prog->stages_present & BITFIELD_MASK(MESA_SHADER_FRAGMENT);
    if (vertex_stages & BITFIELD_BIT(MESA_SHADER_TESS_CTRL)) {
-      if (prog->shaders[MESA_SHADER_TESS_CTRL]->tcs.is_generated)
+      if (prog->shaders[MESA_SHADER_TESS_CTRL]->non_fs.is_generated)
          vertex_stages &= ~BITFIELD_BIT(MESA_SHADER_TESS_CTRL);
    }
    if (vertex_stages & BITFIELD_BIT(MESA_SHADER_TESS_CTRL)) {

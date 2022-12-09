@@ -129,9 +129,6 @@ pan_device(struct pipe_screen *p)
         return &(pan_screen(p)->dev);
 }
 
-struct pipe_fence_handle *
-panfrost_fence_create(struct panfrost_context *ctx);
-
 int
 panfrost_get_driver_query_info(struct pipe_screen *pscreen, unsigned index,
                                struct pipe_driver_query_info *info);

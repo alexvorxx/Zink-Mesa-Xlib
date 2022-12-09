@@ -101,7 +101,7 @@ st_feedback_draw_vbo(struct gl_context *ctx,
    struct st_context *st = st_context(ctx);
    struct pipe_context *pipe = st->pipe;
    struct draw_context *draw = st_get_draw_context(st);
-   const struct gl_vertex_program *vp;
+   struct gl_vertex_program *vp;
    struct st_common_variant *vp_variant;
    struct pipe_vertex_buffer vbuffers[PIPE_MAX_SHADER_INPUTS];
    unsigned num_vbuffers = 0;
@@ -130,8 +130,8 @@ st_feedback_draw_vbo(struct gl_context *ctx,
    memcpy(&key, &st->vp_variant->key, sizeof(key));
    key.is_draw_shader = true;
 
-   vp = (struct gl_vertex_program *)st->vp;
-   vp_variant = st_get_common_variant(st, st->vp, &key);
+   vp = (struct gl_vertex_program *)ctx->VertexProgram._Current;
+   vp_variant = st_get_common_variant(st, &vp->Base, &key);
 
    /*
     * Set up the draw module's state.
@@ -148,9 +148,7 @@ st_feedback_draw_vbo(struct gl_context *ctx,
 
    /* Must setup these after state validation! */
    /* Setup arrays */
-   bool uses_user_vertex_buffers;
-   st_setup_arrays(st, vp, vp_variant, &velements, vbuffers, &num_vbuffers,
-                   &uses_user_vertex_buffers);
+   st_setup_arrays(st, vp, vp_variant, &velements, vbuffers, &num_vbuffers);
    /* Setup current values as userspace arrays */
    st_setup_current_user(st, vp, vp_variant, &velements, vbuffers, &num_vbuffers);
 
@@ -186,7 +184,7 @@ st_feedback_draw_vbo(struct gl_context *ctx,
    }
 
    /* set constant buffer 0 */
-   struct gl_program_parameter_list *params = st->vp->Parameters;
+   struct gl_program_parameter_list *params = vp->Base.Parameters;
 
    /* Update the constants which come from fixed-function state, such as
     * transformation matrices, fog factors, etc.

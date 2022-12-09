@@ -1,5 +1,5 @@
 <?xml version='1.0' encoding='utf-8'?>
-<genxml name="RT" gen="">
+<genxml name="RT" gen="12.5">
   <struct name="BINDLESS_SHADER_RECORD" length="2">
     <field name="Offset To Local Arguments" start="0" end="2" type="uint" />
     <field name="Bindless Shader Dispatch Mode" start="4" end="4" type="uint">
