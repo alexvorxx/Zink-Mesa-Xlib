@@ -179,12 +179,16 @@ static bool
 vtn_mode_is_cross_invocation(struct vtn_builder *b,
                              enum vtn_variable_mode mode)
 {
+   /* TODO: add TCS here once nir_remove_unused_io_vars() can handle vector indexing. */
+   bool cross_invocation_outputs = b->shader->info.stage == MESA_SHADER_MESH;
    return mode == vtn_variable_mode_ssbo ||
           mode == vtn_variable_mode_ubo ||
           mode == vtn_variable_mode_phys_ssbo ||
           mode == vtn_variable_mode_push_constant ||
           mode == vtn_variable_mode_workgroup ||
-          mode == vtn_variable_mode_cross_workgroup;
+          mode == vtn_variable_mode_cross_workgroup ||
+          (cross_invocation_outputs && mode == vtn_variable_mode_output) ||
+          (b->shader->info.stage == MESA_SHADER_TASK && mode == vtn_variable_mode_task_payload);
 }
 
 static bool

@@ -154,3 +154,24 @@ vk_common_CmdBindVertexBuffers(VkCommandBuffer commandBuffer,
    disp->CmdBindVertexBuffers2(commandBuffer, firstBinding, bindingCount,
                                pBuffers, pOffsets, NULL, NULL);
 }
+
+VKAPI_ATTR void VKAPI_CALL
+vk_common_CmdDispatch(VkCommandBuffer commandBuffer,
+                      uint32_t groupCountX,
+                      uint32_t groupCountY,
+                      uint32_t groupCountZ)
+{
+   VK_FROM_HANDLE(vk_command_buffer, cmd_buffer, commandBuffer);
+   const struct vk_device_dispatch_table *disp =
+      &cmd_buffer->base.device->dispatch_table;
+
+   disp->CmdDispatchBase(commandBuffer, 0, 0, 0,
+                         groupCountX, groupCountY, groupCountZ);
+}
+
+VKAPI_ATTR void VKAPI_CALL
+vk_common_CmdSetDeviceMask(VkCommandBuffer commandBuffer, uint32_t deviceMask)
+{
+   /* Nothing to do here since we only support a single device */
+   assert(deviceMask == 0x1);
+}

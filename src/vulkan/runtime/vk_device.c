@@ -423,6 +423,21 @@ vk_common_GetDeviceQueue2(VkDevice _device,
 }
 
 VKAPI_ATTR void VKAPI_CALL
+vk_common_GetDeviceGroupPeerMemoryFeatures(
+   VkDevice device,
+   uint32_t heapIndex,
+   uint32_t localDeviceIndex,
+   uint32_t remoteDeviceIndex,
+   VkPeerMemoryFeatureFlags *pPeerMemoryFeatures)
+{
+   assert(localDeviceIndex == 0 && remoteDeviceIndex == 0);
+   *pPeerMemoryFeatures = VK_PEER_MEMORY_FEATURE_COPY_SRC_BIT |
+                          VK_PEER_MEMORY_FEATURE_COPY_DST_BIT |
+                          VK_PEER_MEMORY_FEATURE_GENERIC_SRC_BIT |
+                          VK_PEER_MEMORY_FEATURE_GENERIC_DST_BIT;
+}
+
+VKAPI_ATTR void VKAPI_CALL
 vk_common_GetBufferMemoryRequirements(VkDevice _device,
                                       VkBuffer buffer,
                                       VkMemoryRequirements *pMemoryRequirements)

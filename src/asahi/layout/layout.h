@@ -111,6 +111,11 @@ struct ail_layout {
    uint32_t level_offsets_B[AIL_MAX_MIP_LEVELS];
 
    /**
+    * For the compressed buffer, offsets of mip levels within a layer.
+    */
+   uint32_t level_offsets_compressed_B[AIL_MAX_MIP_LEVELS];
+
+   /**
     * If tiling is TWIDDLED, the tile size used for each mip level within a
     * layer. Calculating tile sizes is the sole responsibility of
     * ail_initialized_twiddled.

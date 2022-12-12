@@ -83,6 +83,7 @@ union pipe_query_result;
 struct u_log_context;
 struct u_upload_mgr;
 struct util_debug_callback;
+struct u_vbuf;
 
 /**
  * Gallium rendering context.  Basically:
@@ -95,6 +96,7 @@ struct pipe_context {
 
    void *priv;  /**< context private data (for DRI for example) */
    void *draw;  /**< private, for draw module (temporary?) */
+   struct u_vbuf *vbuf; /**< for cso_context, don't use in drivers */
 
    /**
     * Stream uploaders created by the driver. All drivers, gallium frontends, and

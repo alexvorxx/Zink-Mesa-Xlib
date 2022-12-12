@@ -1393,20 +1393,6 @@ v3dv_GetPhysicalDeviceFeatures2(VkPhysicalDevice physicalDevice,
    }
 }
 
-VKAPI_ATTR void VKAPI_CALL
-v3dv_GetDeviceGroupPeerMemoryFeatures(VkDevice device,
-                                      uint32_t heapIndex,
-                                      uint32_t localDeviceIndex,
-                                      uint32_t remoteDeviceIndex,
-                                      VkPeerMemoryFeatureFlags *pPeerMemoryFeatures)
-{
-   assert(localDeviceIndex == 0 && remoteDeviceIndex == 0);
-   *pPeerMemoryFeatures = VK_PEER_MEMORY_FEATURE_COPY_SRC_BIT |
-                          VK_PEER_MEMORY_FEATURE_COPY_DST_BIT |
-                          VK_PEER_MEMORY_FEATURE_GENERIC_SRC_BIT |
-                          VK_PEER_MEMORY_FEATURE_GENERIC_DST_BIT;
-}
-
 uint32_t
 v3dv_physical_device_vendor_id(struct v3dv_physical_device *dev)
 {

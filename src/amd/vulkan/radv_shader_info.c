@@ -64,9 +64,6 @@ gather_intrinsic_store_output_info(const nir_shader *nir, const nir_intrinsic_in
    unsigned write_mask = nir_intrinsic_write_mask(instr);
    uint8_t *output_usage_mask = NULL;
 
-   if (instr->src[0].ssa->bit_size == 64)
-      write_mask = util_widen_mask(write_mask, 2);
-
    switch (nir->info.stage) {
    case MESA_SHADER_VERTEX:
       output_usage_mask = info->vs.output_usage_mask;
@@ -93,6 +90,11 @@ gather_intrinsic_store_output_info(const nir_shader *nir, const nir_intrinsic_in
       for (unsigned i = 0; i < num_slots; i++) {
          output_usage_mask[idx + i] |= ((write_mask >> (i * 4)) & 0xf) << component;
       }
+   }
+
+   if (nir->info.stage == MESA_SHADER_GEOMETRY) {
+      uint8_t gs_streams = nir_intrinsic_io_semantics(instr).gs_streams;
+      info->gs.output_streams[idx] |= gs_streams << (component * 2);
    }
 }
 
@@ -459,12 +461,10 @@ gather_shader_info_gs(const nir_shader *nir, struct radv_shader_info *info)
    nir_foreach_shader_out_variable(var, nir) {
       unsigned num_components = glsl_get_component_slots(var->type);
       unsigned stream = var->data.stream;
-      unsigned idx = var->data.location;
 
       assert(stream < 4);
 
       info->gs.num_stream_output_components[stream] += num_components;
-      info->gs.output_streams[idx] = stream | (stream << 2) | (stream << 4) | (stream << 6);
    }
 }
 

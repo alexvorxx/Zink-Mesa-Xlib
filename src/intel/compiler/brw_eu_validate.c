@@ -221,68 +221,12 @@ src1_has_scalar_region(const struct intel_device_info *devinfo,
           brw_inst_src1_hstride(devinfo, inst) == BRW_HORIZONTAL_STRIDE_0;
 }
 
-static unsigned
-num_sources_from_inst(const struct brw_isa_info *isa,
-                      const brw_inst *inst)
-{
-   const struct intel_device_info *devinfo = isa->devinfo;
-   const struct opcode_desc *desc =
-      brw_opcode_desc(isa, brw_inst_opcode(isa, inst));
-   unsigned math_function;
-
-   if (brw_inst_opcode(isa, inst) == BRW_OPCODE_MATH) {
-      math_function = brw_inst_math_function(devinfo, inst);
-   } else if (devinfo->ver < 6 &&
-              brw_inst_opcode(isa, inst) == BRW_OPCODE_SEND) {
-      if (brw_inst_sfid(devinfo, inst) == BRW_SFID_MATH) {
-         /* src1 must be a descriptor (including the information to determine
-          * that the SEND is doing an extended math operation), but src0 can
-          * actually be null since it serves as the source of the implicit GRF
-          * to MRF move.
-          *
-          * If we stop using that functionality, we'll have to revisit this.
-          */
-         return 2;
-      } else {
-         /* Send instructions are allowed to have null sources since they use
-          * the base_mrf field to specify which message register source.
-          */
-         return 0;
-      }
-   } else {
-      assert(desc->nsrc < 4);
-      return desc->nsrc;
-   }
-
-   switch (math_function) {
-   case BRW_MATH_FUNCTION_INV:
-   case BRW_MATH_FUNCTION_LOG:
-   case BRW_MATH_FUNCTION_EXP:
-   case BRW_MATH_FUNCTION_SQRT:
-   case BRW_MATH_FUNCTION_RSQ:
-   case BRW_MATH_FUNCTION_SIN:
-   case BRW_MATH_FUNCTION_COS:
-   case BRW_MATH_FUNCTION_SINCOS:
-   case GFX8_MATH_FUNCTION_INVM:
-   case GFX8_MATH_FUNCTION_RSQRTM:
-      return 1;
-   case BRW_MATH_FUNCTION_FDIV:
-   case BRW_MATH_FUNCTION_POW:
-   case BRW_MATH_FUNCTION_INT_DIV_QUOTIENT_AND_REMAINDER:
-   case BRW_MATH_FUNCTION_INT_DIV_QUOTIENT:
-   case BRW_MATH_FUNCTION_INT_DIV_REMAINDER:
-      return 2;
-   default:
-      unreachable("not reached");
-   }
-}
-
 static struct string
 invalid_values(const struct brw_isa_info *isa, const brw_inst *inst)
 {
    const struct intel_device_info *devinfo = isa->devinfo;
 
-   unsigned num_sources = num_sources_from_inst(isa, inst);
+   unsigned num_sources = brw_num_sources_from_inst(isa, inst);
    struct string error_msg = { .str = NULL, .len = 0 };
 
    switch ((enum brw_execution_size) brw_inst_exec_size(devinfo, inst)) {
@@ -354,7 +298,7 @@ sources_not_null(const struct brw_isa_info *isa,
                  const brw_inst *inst)
 {
    const struct intel_device_info *devinfo = isa->devinfo;
-   unsigned num_sources = num_sources_from_inst(isa, inst);
+   unsigned num_sources = brw_num_sources_from_inst(isa, inst);
    struct string error_msg = { .str = NULL, .len = 0 };
 
    /* Nothing to test. 3-src instructions can only have GRF sources, and
@@ -408,7 +352,7 @@ inst_uses_src_acc(const struct brw_isa_info *isa,
    }
 
    /* FIXME: support 3-src instructions */
-   unsigned num_sources = num_sources_from_inst(isa, inst);
+   unsigned num_sources = brw_num_sources_from_inst(isa, inst);
    assert(num_sources < 3);
 
    return src0_is_acc(devinfo, inst) || (num_sources > 1 && src1_is_acc(devinfo, inst));
@@ -542,7 +486,7 @@ execution_type(const struct brw_isa_info *isa, const brw_inst *inst)
 {
    const struct intel_device_info *devinfo = isa->devinfo;
 
-   unsigned num_sources = num_sources_from_inst(isa, inst);
+   unsigned num_sources = brw_num_sources_from_inst(isa, inst);
    enum brw_reg_type src0_exec_type, src1_exec_type;
 
    /* Execution data type is independent of destination data type, except in
@@ -643,7 +587,7 @@ is_half_float_conversion(const struct brw_isa_info *isa,
 
    enum brw_reg_type dst_type = brw_inst_dst_type(devinfo, inst);
 
-   unsigned num_sources = num_sources_from_inst(isa, inst);
+   unsigned num_sources = brw_num_sources_from_inst(isa, inst);
    enum brw_reg_type src0_type = brw_inst_src0_type(devinfo, inst);
 
    if (dst_type != src0_type &&
@@ -679,7 +623,7 @@ is_mixed_float(const struct brw_isa_info *isa, const brw_inst *inst)
       return false;
 
    /* FIXME: support 3-src instructions */
-   unsigned num_sources = num_sources_from_inst(isa, inst);
+   unsigned num_sources = brw_num_sources_from_inst(isa, inst);
    assert(num_sources < 3);
 
    enum brw_reg_type dst_type = brw_inst_dst_type(devinfo, inst);
@@ -707,7 +651,7 @@ is_byte_conversion(const struct brw_isa_info *isa,
 
    enum brw_reg_type dst_type = brw_inst_dst_type(devinfo, inst);
 
-   unsigned num_sources = num_sources_from_inst(isa, inst);
+   unsigned num_sources = brw_num_sources_from_inst(isa, inst);
    enum brw_reg_type src0_type = brw_inst_src0_type(devinfo, inst);
 
    if (dst_type != src0_type &&
@@ -734,7 +678,7 @@ general_restrictions_based_on_operand_types(const struct brw_isa_info *isa,
 
    const struct opcode_desc *desc =
       brw_opcode_desc(isa, brw_inst_opcode(isa, inst));
-   unsigned num_sources = num_sources_from_inst(isa, inst);
+   unsigned num_sources = brw_num_sources_from_inst(isa, inst);
    unsigned exec_size = 1 << brw_inst_exec_size(devinfo, inst);
    struct string error_msg = { .str = NULL, .len = 0 };
 
@@ -1019,7 +963,7 @@ general_restrictions_on_region_parameters(const struct brw_isa_info *isa,
 
    const struct opcode_desc *desc =
       brw_opcode_desc(isa, brw_inst_opcode(isa, inst));
-   unsigned num_sources = num_sources_from_inst(isa, inst);
+   unsigned num_sources = brw_num_sources_from_inst(isa, inst);
    unsigned exec_size = 1 << brw_inst_exec_size(devinfo, inst);
    struct string error_msg = { .str = NULL, .len = 0 };
 
@@ -1181,7 +1125,7 @@ special_restrictions_for_mixed_float_mode(const struct brw_isa_info *isa,
    struct string error_msg = { .str = NULL, .len = 0 };
 
    const unsigned opcode = brw_inst_opcode(isa, inst);
-   const unsigned num_sources = num_sources_from_inst(isa, inst);
+   const unsigned num_sources = brw_num_sources_from_inst(isa, inst);
    if (num_sources >= 3)
       return error_msg;
 
@@ -1462,7 +1406,7 @@ region_alignment_rules(const struct brw_isa_info *isa,
    const struct intel_device_info *devinfo = isa->devinfo;
    const struct opcode_desc *desc =
       brw_opcode_desc(isa, brw_inst_opcode(isa, inst));
-   unsigned num_sources = num_sources_from_inst(isa, inst);
+   unsigned num_sources = brw_num_sources_from_inst(isa, inst);
    unsigned exec_size = 1 << brw_inst_exec_size(devinfo, inst);
    uint64_t dst_access_mask[32], src0_access_mask[32], src1_access_mask[32];
    struct string error_msg = { .str = NULL, .len = 0 };
@@ -1776,7 +1720,7 @@ vector_immediate_restrictions(const struct brw_isa_info *isa,
 {
    const struct intel_device_info *devinfo = isa->devinfo;
 
-   unsigned num_sources = num_sources_from_inst(isa, inst);
+   unsigned num_sources = brw_num_sources_from_inst(isa, inst);
    struct string error_msg = { .str = NULL, .len = 0 };
 
    if (num_sources == 3 || num_sources == 0)
@@ -1840,7 +1784,7 @@ special_requirements_for_handling_double_precision_data_types(
 {
    const struct intel_device_info *devinfo = isa->devinfo;
 
-   unsigned num_sources = num_sources_from_inst(isa, inst);
+   unsigned num_sources = brw_num_sources_from_inst(isa, inst);
    struct string error_msg = { .str = NULL, .len = 0 };
 
    if (num_sources == 3 || num_sources == 0)

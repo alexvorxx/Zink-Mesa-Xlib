@@ -1968,11 +1968,11 @@ nir_lower_shader_calls(nir_shader *shader,
    for (unsigned i = 0; i < num_calls; i++) {
       nir_instr *resume_instr = lower_resume(resume_shaders[i], i);
       replace_resume_with_halt(resume_shaders[i], resume_instr);
-      nir_opt_remove_phis(resume_shaders[i]);
       /* Remove the dummy blocks added by flatten_resume_if_ladder() */
       nir_opt_if(resume_shaders[i], nir_opt_if_optimize_phi_true_false);
       nir_opt_dce(resume_shaders[i]);
       nir_opt_dead_cf(resume_shaders[i]);
+      nir_opt_remove_phis(resume_shaders[i]);
    }
 
    for (unsigned i = 0; i < num_calls; i++)

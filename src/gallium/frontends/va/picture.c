@@ -702,7 +702,7 @@ handleVAStatsStatisticsBufferType(VADriverContextP ctx, vlVaContext *context, vl
       buf->derived_surface.resource = pipe_buffer_create(drv->pipe->screen, PIPE_BIND_VERTEX_BUFFER,
                                             PIPE_USAGE_STREAM, buf->size);
 
-   context->target->associated_data = buf->derived_surface.resource;
+   context->target->statistics_data = buf->derived_surface.resource;
 
    return VA_STATUS_SUCCESS;
 }

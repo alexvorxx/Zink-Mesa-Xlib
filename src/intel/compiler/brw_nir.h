@@ -164,18 +164,6 @@ bool brw_nir_should_vectorize_mem(unsigned align_mul, unsigned align_offset,
                                   nir_intrinsic_instr *high,
                                   void *data);
 
-void brw_nir_setup_glsl_uniforms(void *mem_ctx, nir_shader *shader,
-                                 const struct gl_program *prog,
-                                 struct brw_stage_prog_data *stage_prog_data,
-                                 bool is_scalar);
-
-void brw_nir_setup_arb_uniforms(void *mem_ctx, nir_shader *shader,
-                                struct gl_program *prog,
-                                struct brw_stage_prog_data *stage_prog_data);
-
-void brw_nir_lower_gl_images(nir_shader *shader,
-                             const struct gl_program *prog);
-
 void brw_nir_analyze_ubo_ranges(const struct brw_compiler *compiler,
                                 nir_shader *nir,
                                 const struct brw_vs_prog_key *vs_key,
@@ -203,7 +191,6 @@ nir_shader *brw_nir_create_passthrough_tcs(void *mem_ctx,
 #define BRW_NIR_FRAG_OUTPUT_LOCATION_MASK INTEL_MASK(31, 1)
 
 bool brw_nir_move_interpolation_to_top(nir_shader *nir);
-bool brw_nir_demote_sample_qualifiers(nir_shader *nir);
 nir_ssa_def *brw_nir_load_global_const(nir_builder *b,
                                        nir_intrinsic_instr *load_uniform,
                                        nir_ssa_def *base_addr,

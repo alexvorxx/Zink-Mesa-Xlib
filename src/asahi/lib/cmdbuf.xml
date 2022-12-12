@@ -280,6 +280,7 @@
   <struct name="Sampler" size="8">
     <field name="Minimum LOD" size="10" start="0" type="lod" default="0.0"/>
     <field name="Maximum LOD" size="10" start="10" type="lod" default="INFINITY"/>
+    <field name="Maximum anisotropy" size="3" start="20" type="uint" default="1" modifier="log2"/>
     <field name="Magnify linear" size="1" start="23" type="bool"/>
     <field name="Minify linear" size="1" start="25" type="bool"/>
     <field name="Mip filter" size="2" start="27" type="Mip filter"/>
@@ -420,7 +421,8 @@
   </struct>
 
   <struct name="Fragment occlusion query" size="4">
-    <field name="Offset" size="18" start="14" type="uint"/>
+    <!-- 64-bit index into occlusion result buffer -->
+    <field name="Index" size="15" start="17" type="uint"/>
   </struct>
 
   <struct name="Fragment occlusion query 2" size="4">
@@ -896,12 +898,20 @@
     <field name="Depth width" start="170:0" size="15" type="uint" default="1" modifier="minus(1)"/>
     <field name="Depth height" start="170:15" size="15" type="uint" default="1" modifier="minus(1)"/>
     <field name="Depth buffer 1" start="172:7" size="33" type="address" modifier="shr(7)"/>
+    <!-- Normally 0, 0x38001 with layered -->
+    <field name="Depth unknown 1" start="176:0" size="32" type="hex"/>
     <field name="Depth acceleration buffer 1" start="178:7" size="33" type="address" modifier="shr(7)"/>
     <field name="Depth buffer 2" start="182:7" size="33" type="address" modifier="shr(7)"/>
     <field name="Depth acceleration buffer 2" start="188:7" size="33" type="address" modifier="shr(7)"/>
+    <!-- Normally 0, 0x38001 with layered -->
+    <field name="Depth unknown 2" start="186:0" size="32" type="hex"/>
     <field name="Stencil buffer 1" start="192:7" size="33" type="address" modifier="shr(7)"/>
+    <!-- Normally 0, 0x10001 with layered -->
+    <field name="Stencil unknown 1" start="196:0" size="32" type="hex"/>
     <field name="Stencil acceleration buffer 1" start="198:7" size="33" type="address" modifier="shr(7)"/>
     <field name="Stencil buffer 2" start="202:7" size="33" type="address" modifier="shr(7)"/>
+    <!-- Normally 0, 0x10001 with layered -->
+    <field name="Stencil unknown 2" start="206:0" size="32" type="hex"/>
     <field name="Stencil acceleration buffer 2" start="208:7" size="33" type="address" modifier="shr(7)"/>
     <!-- Proportional to tile width * tile height * sample count -->
     <field name="Unk 212" start="212:0" size="32" default="0x4" type="hex"/>

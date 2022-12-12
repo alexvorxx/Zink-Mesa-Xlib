@@ -620,13 +620,13 @@ static void radeon_enc_encode_bitstream(struct pipe_video_codec *encoder,
       return;
    }
 
-   if (vid_buf->base.associated_data) {
-      enc->get_buffer(vid_buf->base.associated_data, &enc->stats, NULL);
+   if (vid_buf->base.statistics_data) {
+      enc->get_buffer(vid_buf->base.statistics_data, &enc->stats, NULL);
       if (enc->stats->size < sizeof(rvcn_encode_stats_type_0_t)) {
          RVID_ERR("Encoder statistics output buffer is too small.\n");
          enc->stats = NULL;
       }
-      vid_buf->base.associated_data = NULL;
+      vid_buf->base.statistics_data = NULL;
    }
    else
       enc->stats = NULL;

@@ -3957,19 +3957,6 @@ cmd_buffer_dispatch(struct v3dv_cmd_buffer *cmd_buffer,
 }
 
 VKAPI_ATTR void VKAPI_CALL
-v3dv_CmdDispatch(VkCommandBuffer commandBuffer,
-                 uint32_t groupCountX,
-                 uint32_t groupCountY,
-                 uint32_t groupCountZ)
-{
-   V3DV_FROM_HANDLE(v3dv_cmd_buffer, cmd_buffer, commandBuffer);
-
-   cmd_buffer_emit_pre_dispatch(cmd_buffer);
-   cmd_buffer_dispatch(cmd_buffer, 0, 0, 0,
-                       groupCountX, groupCountY, groupCountZ);
-}
-
-VKAPI_ATTR void VKAPI_CALL
 v3dv_CmdDispatchBase(VkCommandBuffer commandBuffer,
                      uint32_t baseGroupX,
                      uint32_t baseGroupY,
@@ -4047,11 +4034,4 @@ v3dv_CmdDispatchIndirect(VkCommandBuffer commandBuffer,
 
    cmd_buffer_emit_pre_dispatch(cmd_buffer);
    cmd_buffer_dispatch_indirect(cmd_buffer, buffer, offset);
-}
-
-VKAPI_ATTR void VKAPI_CALL
-v3dv_CmdSetDeviceMask(VkCommandBuffer commandBuffer, uint32_t deviceMask)
-{
-   /* Nothing to do here since we only support a single device */
-   assert(deviceMask == 0x1);
 }

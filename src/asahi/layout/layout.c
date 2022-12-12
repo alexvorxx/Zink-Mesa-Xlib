@@ -198,6 +198,8 @@ ail_initialize_compression(struct ail_layout *layout)
       if (width_px < 16 && height_px < 16)
          break;
 
+      layout->level_offsets_compressed_B[l] = compbuf_B;
+
       /* The compression buffer seems to have 8 bytes per 16 x 16 pixel block. */
       unsigned cmpw_el = DIV_ROUND_UP(util_next_power_of_two(width_px), 16);
       unsigned cmph_el = DIV_ROUND_UP(util_next_power_of_two(height_px), 16);

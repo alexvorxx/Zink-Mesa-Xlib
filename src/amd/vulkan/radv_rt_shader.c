@@ -1023,7 +1023,7 @@ struct rt_traversal_vars {
    nir_variable *bvh_base;
    nir_variable *stack;
    nir_variable *top_stack;
-   nir_variable *stack_base;
+   nir_variable *stack_low_watermark;
    nir_variable *current_node;
    nir_variable *previous_node;
    nir_variable *instance_top_node;
@@ -1051,8 +1051,8 @@ init_traversal_vars(nir_builder *b)
       nir_variable_create(b->shader, nir_var_shader_temp, glsl_uint_type(), "traversal_stack_ptr");
    ret.top_stack = nir_variable_create(b->shader, nir_var_shader_temp, glsl_uint_type(),
                                        "traversal_top_stack_ptr");
-   ret.stack_base =
-      nir_variable_create(b->shader, nir_var_shader_temp, glsl_uint_type(), "traversal_stack_base");
+   ret.stack_low_watermark = nir_variable_create(b->shader, nir_var_shader_temp, glsl_uint_type(),
+                                                 "traversal_stack_low_watermark");
    ret.current_node =
       nir_variable_create(b->shader, nir_var_shader_temp, glsl_uint_type(), "current_node;");
    ret.previous_node =
@@ -1327,7 +1327,7 @@ build_traversal_shader(struct radv_device *device,
 
       nir_store_var(&b, trav_vars.stack,
                     nir_imul_imm(&b, nir_load_local_invocation_index(&b), sizeof(uint32_t)), 1);
-      nir_store_var(&b, trav_vars.stack_base, nir_load_var(&b, trav_vars.stack), 1);
+      nir_store_var(&b, trav_vars.stack_low_watermark, nir_load_var(&b, trav_vars.stack), 1);
       nir_store_var(&b, trav_vars.current_node, nir_imm_int(&b, RADV_BVH_ROOT_NODE), 0x1);
       nir_store_var(&b, trav_vars.previous_node, nir_imm_int(&b, RADV_BVH_INVALID_NODE), 0x1);
       nir_store_var(&b, trav_vars.instance_top_node, nir_imm_int(&b, RADV_BVH_INVALID_NODE), 0x1);
@@ -1344,7 +1344,7 @@ build_traversal_shader(struct radv_device *device,
          .bvh_base = nir_build_deref_var(&b, trav_vars.bvh_base),
          .stack = nir_build_deref_var(&b, trav_vars.stack),
          .top_stack = nir_build_deref_var(&b, trav_vars.top_stack),
-         .stack_base = nir_build_deref_var(&b, trav_vars.stack_base),
+         .stack_low_watermark = nir_build_deref_var(&b, trav_vars.stack_low_watermark),
          .current_node = nir_build_deref_var(&b, trav_vars.current_node),
          .previous_node = nir_build_deref_var(&b, trav_vars.previous_node),
          .instance_top_node = nir_build_deref_var(&b, trav_vars.instance_top_node),
@@ -1371,6 +1371,7 @@ build_traversal_shader(struct radv_device *device,
          .vars = trav_vars_args,
          .stack_stride = device->physical_device->rt_wave_size * sizeof(uint32_t),
          .stack_entries = MAX_STACK_ENTRY_COUNT,
+         .stack_base = 0,
          .stack_store_cb = store_stack_entry,
          .stack_load_cb = load_stack_entry,
          .aabb_cb = (pCreateInfo->flags & VK_PIPELINE_CREATE_RAY_TRACING_SKIP_AABBS_BIT_KHR)

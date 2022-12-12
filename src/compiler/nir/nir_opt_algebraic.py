@@ -1924,6 +1924,10 @@ optimizations.extend([
    (('bfm', ('umin', 'width', ('iadd', 32, ('ineg', ('iand', 31, 'offset')))), 'offset'),
     ('bfm', 'width', 'offset')),
 
+   # open-coded BFM
+   (('iadd@32', ('ishl', 1, a), -1), ('bfm', a, 0), 'options->lower_bitfield_insert_to_bitfield_select || options->lower_bitfield_insert'),
+   (('ishl', ('bfm', a, 0), b), ('bfm', a, b)),
+
    # Section 8.8 (Integer Functions) of the GLSL 4.60 spec says:
    #
    #    If bits is zero, the result will be zero.

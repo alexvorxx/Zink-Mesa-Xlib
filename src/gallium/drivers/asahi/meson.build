@@ -22,6 +22,7 @@ files_asahi = files(
   'agx_batch.c',
   'agx_blit.c',
   'agx_pipe.c',
+  'agx_query.c',
   'agx_state.c',
   'agx_uniforms.c',
   'magic.c',

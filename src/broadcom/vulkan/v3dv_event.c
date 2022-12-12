@@ -24,6 +24,8 @@
 #include "v3dv_private.h"
 #include "compiler/nir/nir_builder.h"
 
+#include "vk_common_entrypoints.h"
+
 static nir_shader *
 get_set_event_cs()
 {
@@ -510,7 +512,7 @@ cmd_buffer_emit_set_event(struct v3dv_cmd_buffer *cmd_buffer,
                          VK_SHADER_STAGE_COMPUTE_BIT,
                          4, 1, &value);
 
-   v3dv_CmdDispatch(commandBuffer, 1, 1, 1);
+   vk_common_CmdDispatch(commandBuffer, 1, 1, 1);
 
    v3dv_cmd_buffer_meta_state_pop(cmd_buffer, 0, false);
 }
@@ -540,7 +542,7 @@ cmd_buffer_emit_wait_event(struct v3dv_cmd_buffer *cmd_buffer,
                          VK_SHADER_STAGE_COMPUTE_BIT,
                          0, 4, &offset);
 
-   v3dv_CmdDispatch(commandBuffer, 1, 1, 1);
+   vk_common_CmdDispatch(commandBuffer, 1, 1, 1);
 
    v3dv_cmd_buffer_meta_state_pop(cmd_buffer, 0, false);
 }

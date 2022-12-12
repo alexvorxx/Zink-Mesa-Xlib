@@ -846,10 +846,3 @@ void anv_CmdPushDescriptorSetWithTemplateKHR(
    anv_cmd_buffer_bind_descriptor_set(cmd_buffer, template->bind_point,
                                       layout, _set, set, NULL, NULL);
 }
-
-void anv_CmdSetDeviceMask(
-    VkCommandBuffer                             commandBuffer,
-    uint32_t                                    deviceMask)
-{
-   /* No-op */
-}

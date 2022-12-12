@@ -9655,12 +9655,6 @@ radv_CmdDispatchBase(VkCommandBuffer commandBuffer, uint32_t base_x, uint32_t ba
 }
 
 VKAPI_ATTR void VKAPI_CALL
-radv_CmdDispatch(VkCommandBuffer commandBuffer, uint32_t x, uint32_t y, uint32_t z)
-{
-   radv_CmdDispatchBase(commandBuffer, 0, 0, 0, x, y, z);
-}
-
-VKAPI_ATTR void VKAPI_CALL
 radv_CmdDispatchIndirect(VkCommandBuffer commandBuffer, VkBuffer _buffer, VkDeviceSize offset)
 {
    RADV_FROM_HANDLE(radv_cmd_buffer, cmd_buffer, commandBuffer);
@@ -10483,12 +10477,6 @@ radv_CmdWaitEvents2(VkCommandBuffer commandBuffer, uint32_t eventCount, const Vk
    }
 
    radv_barrier(cmd_buffer, pDependencyInfos, RGP_BARRIER_EXTERNAL_CMD_WAIT_EVENTS);
-}
-
-VKAPI_ATTR void VKAPI_CALL
-radv_CmdSetDeviceMask(VkCommandBuffer commandBuffer, uint32_t deviceMask)
-{
-   /* No-op */
 }
 
 /* VK_EXT_conditional_rendering */

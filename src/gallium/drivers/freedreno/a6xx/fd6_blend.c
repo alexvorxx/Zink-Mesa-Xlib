@@ -170,9 +170,9 @@ fd6_blend_state_create(struct pipe_context *pctx,
    STATIC_ASSERT((4 * PIPE_MAX_COLOR_BUFS) == (8 * sizeof(so->all_mrt_write_mask)));
    so->all_mrt_write_mask = 0;
 
-   unsigned nr = cso->independent_blend_enable ? cso->max_rt : 0;
-   for (unsigned i = 0; i <= nr; i++) {
-      const struct pipe_rt_blend_state *rt = &cso->rt[i];
+   for (unsigned i = 0; i <= cso->max_rt; i++) {
+      const struct pipe_rt_blend_state *rt =
+         &cso->rt[cso->independent_blend_enable ? i : 0];
 
       so->reads_dest |= rt->blend_enable;
 

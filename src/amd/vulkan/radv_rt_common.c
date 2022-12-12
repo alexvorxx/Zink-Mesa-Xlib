@@ -551,7 +551,7 @@ radv_build_ray_traversal(struct radv_device *device, nir_builder *b,
             /* Early exit if we never overflowed the stack, to avoid having to backtrack to
              * the root for no reason. */
             nir_push_if(b, nir_ilt(b, nir_load_deref(b, args->vars.stack),
-                                   nir_imm_int(b, args->stack_stride)));
+                                   nir_imm_int(b, args->stack_base + args->stack_stride)));
             {
                nir_store_var(b, incomplete, nir_imm_bool(b, false), 0x1);
                nir_jump(b, nir_jump_break);
@@ -580,7 +580,7 @@ radv_build_ray_traversal(struct radv_device *device, nir_builder *b,
             }
             nir_pop_if(b, NULL);
 
-            nir_push_if(b, nir_ige(b, nir_load_deref(b, args->vars.stack_base),
+            nir_push_if(b, nir_ige(b, nir_load_deref(b, args->vars.stack_low_watermark),
                                    nir_load_deref(b, args->vars.stack)));
             {
                nir_ssa_def *prev = nir_load_deref(b, args->vars.previous_node);
@@ -720,11 +720,12 @@ radv_build_ray_traversal(struct radv_device *device, nir_builder *b,
                                      nir_iadd_imm(b, stack, args->stack_stride), 1);
 
                      if (i == 1) {
-                        nir_ssa_def *new_base =
+                        nir_ssa_def *new_watermark =
                            nir_iadd_imm(b, nir_load_deref(b, args->vars.stack),
                                         -args->stack_entries * args->stack_stride);
-                        new_base = nir_imax(b, nir_load_deref(b, args->vars.stack_base), new_base);
-                        nir_store_deref(b, args->vars.stack_base, new_base, 0x1);
+                        new_watermark = nir_imax(
+                           b, nir_load_deref(b, args->vars.stack_low_watermark), new_watermark);
+                        nir_store_deref(b, args->vars.stack_low_watermark, new_watermark, 0x1);
                      }
 
                      nir_pop_if(b, NULL);

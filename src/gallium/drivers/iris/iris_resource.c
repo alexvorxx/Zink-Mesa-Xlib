@@ -1914,43 +1914,54 @@ iris_replace_buffer_storage(struct pipe_context *ctx,
    iris_bo_unreference(old_bo);
 }
 
-static void
-iris_invalidate_resource(struct pipe_context *ctx,
-                         struct pipe_resource *resource)
+/**
+ * Discard a buffer's contents and replace it's backing storage with a
+ * fresh, idle buffer if necessary.
+ *
+ * Returns true if the storage can be considered idle.
+ */
+static bool
+iris_invalidate_buffer(struct iris_context *ice, struct iris_resource *res)
 {
-   struct iris_screen *screen = (void *) ctx->screen;
-   struct iris_context *ice = (void *) ctx;
-   struct iris_resource *res = (void *) resource;
+   struct iris_screen *screen = (void *) ice->ctx.screen;
 
-   if (resource->target != PIPE_BUFFER)
-      return;
+   if (res->base.b.target != PIPE_BUFFER)
+      return false;
 
-   /* If it's already invalidated, don't bother doing anything. */
+   /* If it's already invalidated, don't bother doing anything.
+    * We consider the storage to be idle, because either it was freshly
+    * allocated (and not busy), or a previous call here was what cleared
+    * the range, and that call replaced the storage with an idle buffer.
+    */
    if (res->valid_buffer_range.start > res->valid_buffer_range.end)
-      return;
+      return true;
 
    if (!resource_is_busy(ice, res)) {
       /* The resource is idle, so just mark that it contains no data and
        * keep using the same underlying buffer object.
        */
       util_range_set_empty(&res->valid_buffer_range);
-      return;
+      return true;
    }
 
    /* Otherwise, try and replace the backing storage with a new BO. */
 
    /* We can't reallocate memory we didn't allocate in the first place. */
    if (res->bo->gem_handle && res->bo->real.userptr)
-      return;
+      return false;
+
+   /* Nor can we allocate buffers we imported or exported. */
+   if (iris_bo_is_external(res->bo))
+      return false;
 
    struct iris_bo *old_bo = res->bo;
    struct iris_bo *new_bo =
-      iris_bo_alloc(screen->bufmgr, res->bo->name, resource->width0,
-                    iris_buffer_alignment(resource->width0),
+      iris_bo_alloc(screen->bufmgr, res->bo->name, res->base.b.width0,
+                    iris_buffer_alignment(res->base.b.width0),
                     iris_memzone_for_address(old_bo->address),
                     old_bo->real.protected ? BO_ALLOC_PROTECTED : 0);
    if (!new_bo)
-      return;
+      return false;
 
    /* Swap out the backing storage */
    res->bo = new_bo;
@@ -1963,6 +1974,19 @@ iris_invalidate_resource(struct pipe_context *ctx,
    util_range_set_empty(&res->valid_buffer_range);
 
    iris_bo_unreference(old_bo);
+
+   /* The new buffer is idle. */
+   return true;
+}
+
+static void
+iris_invalidate_resource(struct pipe_context *ctx,
+                         struct pipe_resource *resource)
+{
+   struct iris_context *ice = (void *) ctx;
+   struct iris_resource *res = (void *) resource;
+
+   iris_invalidate_buffer(ice, res);
 }
 
 static void
@@ -2045,7 +2069,9 @@ iris_map_copy_region(struct iris_transfer *map)
       xfer->layer_stride = isl_surf_get_array_pitch(surf);
    }
 
-   if (!(xfer->usage & PIPE_MAP_DISCARD_RANGE)) {
+   if ((xfer->usage & PIPE_MAP_READ) ||
+       (res->base.b.target == PIPE_BUFFER &&
+        !(xfer->usage & PIPE_MAP_DISCARD_RANGE))) {
       iris_copy_region(map->blorp, map->batch, map->staging, 0, extra, 0, 0,
                        xfer->resource, xfer->level, box);
       /* Ensure writes to the staging BO land before we map it below. */
@@ -2183,7 +2209,7 @@ iris_map_s8(struct iris_transfer *map)
     * invalidate is set, since we'll be writing the whole rectangle from our
     * temporary buffer back out.
     */
-   if (!(xfer->usage & PIPE_MAP_DISCARD_RANGE)) {
+   if (xfer->usage & PIPE_MAP_READ) {
       uint8_t *untiled_s8_map = map->ptr;
       uint8_t *tiled_s8_map = res->offset +
          iris_bo_map(map->dbg, res->bo, (xfer->usage | MAP_RAW) & MAP_FLAGS);
@@ -2286,7 +2312,7 @@ iris_map_tiled_memcpy(struct iris_transfer *map)
 
    const bool has_swizzling = false;
 
-   if (!(xfer->usage & PIPE_MAP_DISCARD_RANGE)) {
+   if (xfer->usage & PIPE_MAP_READ) {
       char *src = res->offset +
          iris_bo_map(map->dbg, res->bo, (xfer->usage | MAP_RAW) & MAP_FLAGS);
 
@@ -2357,6 +2383,41 @@ can_promote_to_async(const struct iris_resource *res,
                                  box->x + box->width);
 }
 
+static bool
+prefer_cpu_access(const struct iris_resource *res,
+                  const struct pipe_box *box,
+                  enum pipe_map_flags usage,
+                  unsigned level,
+                  bool map_would_stall)
+{
+   const enum iris_mmap_mode mmap_mode = iris_bo_mmap_mode(res->bo);
+
+   /* We must be able to map it. */
+   if (mmap_mode == IRIS_MMAP_NONE)
+      return false;
+
+   const bool write = usage & PIPE_MAP_WRITE;
+   const bool read = usage & PIPE_MAP_READ;
+
+   /* We want to avoid uncached reads because they are slow. */
+   if (read && mmap_mode != IRIS_MMAP_WB)
+      return false;
+
+   /* We want to avoid stalling.  We can't avoid stalling for reads, though,
+    * because the destination of a GPU staging copy would be busy and stall
+    * in the exact same manner.  So don't consider it for those.
+    */
+   if (map_would_stall && !read)
+      return false;
+
+   /* Use the GPU for writes if it would compress the data. */
+   if (write && isl_aux_usage_has_compression(res->aux.usage))
+      return false;
+
+   /* Writes & Cached CPU reads are fine as long as the primary is valid. */
+   return !iris_has_invalid_primary(res, level, 1, box->z, box->depth);
+}
+
 static void *
 iris_transfer_map(struct pipe_context *ctx,
                   struct pipe_resource *resource,
@@ -2369,11 +2430,35 @@ iris_transfer_map(struct pipe_context *ctx,
    struct iris_resource *res = (struct iris_resource *)resource;
    struct isl_surf *surf = &res->surf;
 
+   /* From GL_AMD_pinned_memory issues:
+    *
+    *     4) Is glMapBuffer on a shared buffer guaranteed to return the
+    *        same system address which was specified at creation time?
+    *
+    *        RESOLVED: NO. The GL implementation might return a different
+    *        virtual mapping of that memory, although the same physical
+    *        page will be used.
+    *
+    * So don't ever use staging buffers.
+    */
+   if (res->base.is_user_ptr)
+      usage |= PIPE_MAP_PERSISTENT;
+
+   /* Promote discarding a range to discarding the entire buffer where
+    * possible.  This may allow us to replace the backing storage entirely
+    * and let us do an unsynchronized map when we otherwise wouldn't.
+    */
+   if (resource->target == PIPE_BUFFER &&
+       (usage & PIPE_MAP_DISCARD_RANGE) &&
+       box->x == 0 && box->width == resource->width0) {
+      usage |= PIPE_MAP_DISCARD_WHOLE_RESOURCE;
+   }
+
    if (usage & PIPE_MAP_DISCARD_WHOLE_RESOURCE) {
       /* Replace the backing storage with a fresh buffer for non-async maps */
-      if (!(usage & (PIPE_MAP_UNSYNCHRONIZED |
-                     TC_TRANSFER_MAP_NO_INVALIDATE)))
-         iris_invalidate_resource(ctx, resource);
+      if (!(usage & (PIPE_MAP_UNSYNCHRONIZED | TC_TRANSFER_MAP_NO_INVALIDATE))
+          && iris_invalidate_buffer(ice, res))
+         usage |= PIPE_MAP_UNSYNCHRONIZED;
 
       /* If we can discard the whole resource, we can discard the range. */
       usage |= PIPE_MAP_DISCARD_RANGE;
@@ -2433,37 +2518,11 @@ iris_transfer_map(struct pipe_context *ctx,
    xfer->box = *box;
    *ptransfer = xfer;
 
-   map->dest_had_defined_contents =
-      util_ranges_intersect(&res->valid_buffer_range, box->x,
-                            box->x + box->width);
-
    if (usage & PIPE_MAP_WRITE)
       util_range_add(&res->base.b, &res->valid_buffer_range, box->x, box->x + box->width);
 
-   if (iris_bo_mmap_mode(res->bo) != IRIS_MMAP_NONE) {
-      /* GPU copies are not useful for buffer reads.  Instead of stalling to
-       * read from the original buffer, we'd simply copy it to a temporary...
-       * then stall (a bit longer) to read from that buffer.
-       *
-       * Images are less clear-cut.  Resolves can be destructive, removing
-       * some of the underlying compression, so we'd rather blit the data to
-       * a linear temporary and map that, to avoid the resolve.
-       */
-      if (!(usage & PIPE_MAP_DISCARD_RANGE) &&
-          !iris_has_invalid_primary(res, level, 1, box->z, box->depth)) {
-         usage |= PIPE_MAP_DIRECTLY;
-      }
-
-      /* We can map directly if it wouldn't stall, there's no compression,
-       * and we aren't doing an uncached read.
-       */
-      if (!map_would_stall &&
-          !isl_aux_usage_has_compression(res->aux.usage) &&
-          !((usage & PIPE_MAP_READ) &&
-            iris_bo_mmap_mode(res->bo) != IRIS_MMAP_WB)) {
-         usage |= PIPE_MAP_DIRECTLY;
-      }
-   }
+   if (prefer_cpu_access(res, box, usage, level, map_would_stall))
+      usage |= PIPE_MAP_DIRECTLY;
 
    /* TODO: Teach iris_map_tiled_memcpy about Tile4... */
    if (res->surf.tiling == ISL_TILING_4)

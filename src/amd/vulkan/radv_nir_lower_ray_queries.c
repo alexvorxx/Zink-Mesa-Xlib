@@ -142,7 +142,7 @@ struct ray_query_traversal_vars {
    rq_variable *bvh_base;
    rq_variable *stack;
    rq_variable *top_stack;
-   rq_variable *stack_base;
+   rq_variable *stack_low_watermark;
    rq_variable *current_node;
    rq_variable *previous_node;
    rq_variable *instance_top_node;
@@ -202,8 +202,8 @@ init_ray_query_traversal_vars(void *ctx, nir_shader *shader, unsigned array_leng
       rq_variable_create(ctx, shader, array_length, glsl_uint_type(), VAR_NAME("_stack"));
    result.top_stack =
       rq_variable_create(ctx, shader, array_length, glsl_uint_type(), VAR_NAME("_top_stack"));
-   result.stack_base =
-      rq_variable_create(ctx, shader, array_length, glsl_uint_type(), VAR_NAME("_stack_base"));
+   result.stack_low_watermark = rq_variable_create(ctx, shader, array_length, glsl_uint_type(),
+                                                   VAR_NAME("_stack_low_watermark"));
    result.current_node =
       rq_variable_create(ctx, shader, array_length, glsl_uint_type(), VAR_NAME("_current_node"));
    result.previous_node =
@@ -405,13 +405,13 @@ lower_rq_initialize(nir_builder *b, nir_ssa_def *index, nir_intrinsic_instr *ins
 
       if (vars->stack) {
          rq_store_var(b, index, vars->trav.stack, nir_imm_int(b, 0), 0x1);
-         rq_store_var(b, index, vars->trav.stack_base, nir_imm_int(b, 0), 0x1);
+         rq_store_var(b, index, vars->trav.stack_low_watermark, nir_imm_int(b, 0), 0x1);
       } else {
          nir_ssa_def *base_offset =
             nir_imul_imm(b, nir_load_local_invocation_index(b), sizeof(uint32_t));
          base_offset = nir_iadd_imm(b, base_offset, vars->shared_base);
          rq_store_var(b, index, vars->trav.stack, base_offset, 0x1);
-         rq_store_var(b, index, vars->trav.stack_base, base_offset, 0x1);
+         rq_store_var(b, index, vars->trav.stack_low_watermark, base_offset, 0x1);
       }
    }
    nir_push_else(b, NULL);
@@ -633,7 +633,7 @@ lower_rq_proceed(nir_builder *b, nir_ssa_def *index, struct ray_query_vars *vars
       .bvh_base = rq_deref_var(b, index, vars->trav.bvh_base),
       .stack = rq_deref_var(b, index, vars->trav.stack),
       .top_stack = rq_deref_var(b, index, vars->trav.top_stack),
-      .stack_base = rq_deref_var(b, index, vars->trav.stack_base),
+      .stack_low_watermark = rq_deref_var(b, index, vars->trav.stack_low_watermark),
       .current_node = rq_deref_var(b, index, vars->trav.current_node),
       .previous_node = rq_deref_var(b, index, vars->trav.previous_node),
       .instance_top_node = rq_deref_var(b, index, vars->trav.instance_top_node),
@@ -665,12 +665,14 @@ lower_rq_proceed(nir_builder *b, nir_ssa_def *index, struct ray_query_vars *vars
    if (vars->stack) {
       args.stack_stride = 1;
       args.stack_entries = MAX_SCRATCH_STACK_ENTRY_COUNT;
+      args.stack_base = 0;
    } else {
       uint32_t workgroup_size = b->shader->info.workgroup_size[0] *
                                 b->shader->info.workgroup_size[1] *
                                 b->shader->info.workgroup_size[2];
       args.stack_stride = workgroup_size * 4;
       args.stack_entries = MAX_SHARED_STACK_ENTRY_COUNT;
+      args.stack_base = vars->shared_base;
    }
 
    nir_push_if(b, rq_load_var(b, index, vars->incomplete));

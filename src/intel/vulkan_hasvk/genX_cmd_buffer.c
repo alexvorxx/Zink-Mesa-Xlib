@@ -4512,15 +4512,6 @@ anv_cmd_buffer_push_base_group_id(struct anv_cmd_buffer *cmd_buffer,
    }
 }
 
-void genX(CmdDispatch)(
-    VkCommandBuffer                             commandBuffer,
-    uint32_t                                    x,
-    uint32_t                                    y,
-    uint32_t                                    z)
-{
-   genX(CmdDispatchBase)(commandBuffer, 0, 0, 0, x, y, z);
-}
-
 static inline void
 emit_gpgpu_walker(struct anv_cmd_buffer *cmd_buffer,
                   const struct anv_compute_pipeline *pipeline, bool indirect,

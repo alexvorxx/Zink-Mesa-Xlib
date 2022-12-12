@@ -5281,15 +5281,6 @@ anv_cmd_buffer_push_base_group_id(struct anv_cmd_buffer *cmd_buffer,
    }
 }
 
-void genX(CmdDispatch)(
-    VkCommandBuffer                             commandBuffer,
-    uint32_t                                    x,
-    uint32_t                                    y,
-    uint32_t                                    z)
-{
-   genX(CmdDispatchBase)(commandBuffer, 0, 0, 0, x, y, z);
-}
-
 #if GFX_VERx10 >= 125
 
 static inline void

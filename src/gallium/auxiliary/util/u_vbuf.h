@@ -85,13 +85,12 @@ void u_vbuf_set_vertex_buffers(struct u_vbuf *mgr,
                                unsigned unbind_num_trailing_slots,
                                bool take_ownership,
                                const struct pipe_vertex_buffer *bufs);
-void u_vbuf_draw_vbo(struct u_vbuf *mgr, const struct pipe_draw_info *info,
+void u_vbuf_draw_vbo(struct pipe_context *pipe,
+                     const struct pipe_draw_info *info,
                      unsigned drawid_offset,
                      const struct pipe_draw_indirect_info *indirect,
-                     /*const struct pipe_draw_start_count_bias *draws,
-                     unsigned num_draws);*/
-                     const struct pipe_draw_start_count_bias draw);
-
+                     const struct pipe_draw_start_count_bias *draws,
+                     unsigned num_draws);
 void u_vbuf_get_minmax_index(struct pipe_context *pipe,
                              const struct pipe_draw_info *info,
                              const struct pipe_draw_start_count_bias *draw,

@@ -594,9 +594,3 @@ panvk_CmdDispatchIndirect(VkCommandBuffer commandBuffer,
 {
    panvk_stub();
 }
-
-void
-panvk_CmdSetDeviceMask(VkCommandBuffer commandBuffer, uint32_t deviceMask)
-{
-   panvk_stub();
-}

@@ -7541,18 +7541,6 @@ radv_GetMemoryFdPropertiesKHR(VkDevice _device, VkExternalMemoryHandleTypeFlagBi
    }
 }
 
-VKAPI_ATTR void VKAPI_CALL
-radv_GetDeviceGroupPeerMemoryFeatures(VkDevice device, uint32_t heapIndex,
-                                      uint32_t localDeviceIndex, uint32_t remoteDeviceIndex,
-                                      VkPeerMemoryFeatureFlags *pPeerMemoryFeatures)
-{
-   assert(localDeviceIndex == remoteDeviceIndex);
-
-   *pPeerMemoryFeatures =
-      VK_PEER_MEMORY_FEATURE_COPY_SRC_BIT | VK_PEER_MEMORY_FEATURE_COPY_DST_BIT |
-      VK_PEER_MEMORY_FEATURE_GENERIC_SRC_BIT | VK_PEER_MEMORY_FEATURE_GENERIC_DST_BIT;
-}
-
 static const VkTimeDomainEXT radv_time_domains[] = {
    VK_TIME_DOMAIN_DEVICE_EXT,
    VK_TIME_DOMAIN_CLOCK_MONOTONIC_EXT,

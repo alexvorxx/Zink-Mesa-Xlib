@@ -168,6 +168,11 @@ struct pipe_video_buffer
     * destroy the associated data
     */
    void (*destroy_associated_data)(void *associated_data);
+
+   /*
+    * encoded frame statistics for this particular picture
+    */
+   void *statistics_data;
 };
 
 #ifdef __cplusplus

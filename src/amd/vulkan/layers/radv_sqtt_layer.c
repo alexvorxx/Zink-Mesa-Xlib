@@ -484,7 +484,7 @@ sqtt_CmdDrawIndexedIndirectCount(VkCommandBuffer commandBuffer, VkBuffer buffer,
 VKAPI_ATTR void VKAPI_CALL
 sqtt_CmdDispatch(VkCommandBuffer commandBuffer, uint32_t x, uint32_t y, uint32_t z)
 {
-   EVENT_MARKER(Dispatch, commandBuffer, x, y, z);
+   EVENT_MARKER_ALIAS(DispatchBase, Dispatch, commandBuffer, 0, 0, 0, x, y, z);
 }
 
 VKAPI_ATTR void VKAPI_CALL

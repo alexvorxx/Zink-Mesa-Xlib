@@ -213,7 +213,7 @@ GL 4.4, GLSL 4.40 -- all DONE: freedreno/a6xx, i965/gen8+, nvc0, r600, radeonsi,
 GL 4.5, GLSL 4.50 -- all DONE: freedreno/a6xx, nvc0, r600, radeonsi, llvmpipe, zink
 
   GL_ARB_ES3_1_compatibility                            DONE (freedreno/a6xx, i965/hsw+, softpipe, virgl)
-  GL_ARB_clip_control                                   DONE (freedreno, i965, nv50, softpipe, virgl, lima, d3d12)
+  GL_ARB_clip_control                                   DONE (freedreno, i965, nv50, softpipe, virgl, lima, d3d12, panfrost)
   GL_ARB_conditional_render_inverted                    DONE (freedreno, i965, nv50, softpipe, virgl, panfrost, d3d12)
   GL_ARB_cull_distance                                  DONE (freedreno/a6xx, i965, nv50, softpipe, virgl)
   GL_ARB_derivative_control                             DONE (freedreno/a3xx+, i965, nv50, softpipe, virgl)

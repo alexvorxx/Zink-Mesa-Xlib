@@ -28,6 +28,7 @@
 
 #include "util/format_rgb9e5.h"
 #include "vk_format.h"
+#include "vk_common_entrypoints.h"
 
 enum { DEPTH_CLEAR_SLOW, DEPTH_CLEAR_FAST };
 
@@ -679,7 +680,7 @@ clear_htile_mask(struct radv_cmd_buffer *cmd_buffer, const struct radv_image *im
    radv_CmdPushConstants(radv_cmd_buffer_to_handle(cmd_buffer), state->clear_htile_mask_p_layout,
                          VK_SHADER_STAGE_COMPUTE_BIT, 0, 8, constants);
 
-   radv_CmdDispatch(radv_cmd_buffer_to_handle(cmd_buffer), block_count, 1, 1);
+   vk_common_CmdDispatch(radv_cmd_buffer_to_handle(cmd_buffer), block_count, 1, 1);
 
    radv_buffer_finish(&dst_buffer);
 

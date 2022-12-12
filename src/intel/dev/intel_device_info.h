@@ -127,6 +127,7 @@ struct intel_device_info
 
    bool has_pln;
    bool has_64bit_float;
+   bool has_64bit_float_via_math_pipe;
    bool has_64bit_int;
    bool has_integer_dword_mul;
    bool has_compr4;

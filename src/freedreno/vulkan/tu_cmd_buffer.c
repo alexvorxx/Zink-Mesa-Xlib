@@ -5713,15 +5713,6 @@ tu_CmdDispatchBase(VkCommandBuffer commandBuffer,
 }
 
 VKAPI_ATTR void VKAPI_CALL
-tu_CmdDispatch(VkCommandBuffer commandBuffer,
-               uint32_t x,
-               uint32_t y,
-               uint32_t z)
-{
-   tu_CmdDispatchBase(commandBuffer, 0, 0, 0, x, y, z);
-}
-
-VKAPI_ATTR void VKAPI_CALL
 tu_CmdDispatchIndirect(VkCommandBuffer commandBuffer,
                        VkBuffer _buffer,
                        VkDeviceSize offset)
@@ -6005,13 +5996,6 @@ tu_CmdWaitEvents2(VkCommandBuffer commandBuffer,
 
    tu_barrier(cmd, pDependencyInfos);
 }
-
-VKAPI_ATTR void VKAPI_CALL
-tu_CmdSetDeviceMask(VkCommandBuffer commandBuffer, uint32_t deviceMask)
-{
-   /* No-op */
-}
-
 
 VKAPI_ATTR void VKAPI_CALL
 tu_CmdBeginConditionalRenderingEXT(VkCommandBuffer commandBuffer,

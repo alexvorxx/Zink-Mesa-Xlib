@@ -877,6 +877,7 @@ if with_gallium_st_nine
              with_gallium_i915,
              with_gallium_iris,
              with_gallium_nouveau,
+             with_gallium_panfrost,
              with_gallium_r300,
              with_gallium_r600,
              with_gallium_radeonsi,

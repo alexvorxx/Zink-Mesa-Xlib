@@ -694,18 +694,7 @@ AluInstr::split(ValueFactory& vf)
 
    m_dest->del_parent(this);
 
-   int start_slot = 0;
-   bool is_dot = m_opcode == op2_dot || opcode() == op2_dot_ieee;
-   auto last_opcode = m_opcode;
-
-   if (is_dot) {
-      start_slot = m_dest->chan();
-      last_opcode = m_opcode == op2_dot ? op2_mul : op2_mul_ieee;
-   }
-
-
-   for (int k = 0; k < m_alu_slots; ++k) {
-      int s = k + start_slot;
+   for (int s = 0; s < m_alu_slots; ++s) {
 
       PRegister dst = m_dest->chan() == s ? m_dest : vf.dummy_dest(s);
       if (dst->pin() != pin_chgr) {
@@ -731,10 +720,7 @@ AluInstr::split(ValueFactory& vf)
          src.push_back(old_src);
       }
 
-      auto opcode = k < m_alu_slots -1 ? m_opcode : last_opcode;
-
-
-      auto instr = new AluInstr(opcode, dst, src, {}, 1);
+      auto instr = new AluInstr(m_opcode, dst, src, {}, 1);
       instr->set_blockid(block_id(), index());
 
       if (s == 0 || !m_alu_flags.test(alu_64bit_op)) {
@@ -1253,8 +1239,6 @@ emit_unpack_32_2x16_split_y(const nir_alu_instr& alu, Shader& shader);
 static bool
 emit_dot(const nir_alu_instr& alu, int nelm, Shader& shader);
 static bool
-emit_dot4(const nir_alu_instr& alu, Shader& shader);
-static bool
 emit_create_vec(const nir_alu_instr& instr, unsigned nc, Shader& shader);
 
 static bool
@@ -1540,7 +1524,7 @@ AluInstr::from_nir(nir_alu_instr *alu, Shader& shader)
    case nir_op_fdot3:
       return emit_dot(*alu, 3, shader);
    case nir_op_fdot4:
-      return emit_dot4(*alu, shader);
+      return emit_dot(*alu, 4, shader);
 
    case nir_op_feq32:
    case nir_op_feq:
@@ -2479,49 +2463,18 @@ emit_dot(const nir_alu_instr& alu, int n, Shader& shader)
    const nir_alu_src& src0 = alu.src[0];
    const nir_alu_src& src1 = alu.src[1];
 
-   auto dest = value_factory.dest(alu.dest.dest, 0, pin_chan);
+   auto dest = value_factory.dest(alu.dest.dest, 0, pin_free);
 
-   AluInstr::SrcValues srcs(2 * n);
+   AluInstr::SrcValues srcs(8);
 
    for (int i = 0; i < n; ++i) {
       srcs[2 * i] = value_factory.src(src0, i);
       srcs[2 * i + 1] = value_factory.src(src1, i);
    }
 
-   auto op =
-      unlikely(shader.has_flag(Shader::sh_legacy_math_rules)) ? op2_dot : op2_dot_ieee;
-   AluInstr *ir = new AluInstr(op, dest, srcs, AluInstr::last_write, n);
-
-   if (src0.negate)
-      ir->set_alu_flag(alu_src0_neg);
-   if (src0.abs)
-      ir->set_alu_flag(alu_src0_abs);
-   if (src1.negate)
-      ir->set_alu_flag(alu_src1_neg);
-   if (src1.abs)
-      ir->set_alu_flag(alu_src1_abs);
-
-   if (alu.dest.saturate)
-      ir->set_alu_flag(alu_dst_clamp);
-
-   shader.emit_instruction(ir);
-   return true;
-}
-
-static bool
-emit_dot4(const nir_alu_instr& alu, Shader& shader)
-{
-   auto& value_factory = shader.value_factory();
-   const nir_alu_src& src0 = alu.src[0];
-   const nir_alu_src& src1 = alu.src[1];
-
-   auto dest = value_factory.dest(alu.dest.dest, 0, pin_free);
-
-   AluInstr::SrcValues srcs(8);
-
-   for (int i = 0; i < 4; ++i) {
-      srcs[2 * i] = value_factory.src(src0, i);
-      srcs[2 * i + 1] = value_factory.src(src1, i);
+   for (int i = n; i < 4; ++i) {
+      srcs[2 * i] = value_factory.zero();
+      srcs[2 * i + 1] = value_factory.zero();
    }
 
    auto op =
@@ -2543,7 +2496,6 @@ emit_dot4(const nir_alu_instr& alu, Shader& shader)
    shader.emit_instruction(ir);
    return true;
 }
-
 
 static bool
 emit_fdph(const nir_alu_instr& alu, Shader& shader)

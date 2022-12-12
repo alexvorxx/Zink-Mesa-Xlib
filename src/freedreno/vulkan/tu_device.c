@@ -3152,22 +3152,6 @@ tu_GetMemoryFdPropertiesKHR(VkDevice _device,
 }
 
 VKAPI_ATTR void VKAPI_CALL
-tu_GetDeviceGroupPeerMemoryFeatures(
-   VkDevice device,
-   uint32_t heapIndex,
-   uint32_t localDeviceIndex,
-   uint32_t remoteDeviceIndex,
-   VkPeerMemoryFeatureFlags *pPeerMemoryFeatures)
-{
-   assert(localDeviceIndex == remoteDeviceIndex);
-
-   *pPeerMemoryFeatures = VK_PEER_MEMORY_FEATURE_COPY_SRC_BIT |
-                          VK_PEER_MEMORY_FEATURE_COPY_DST_BIT |
-                          VK_PEER_MEMORY_FEATURE_GENERIC_SRC_BIT |
-                          VK_PEER_MEMORY_FEATURE_GENERIC_DST_BIT;
-}
-
-VKAPI_ATTR void VKAPI_CALL
 tu_GetPhysicalDeviceMultisamplePropertiesEXT(
    VkPhysicalDevice                            physicalDevice,
    VkSampleCountFlagBits                       samples,

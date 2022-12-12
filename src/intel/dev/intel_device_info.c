@@ -1095,6 +1095,7 @@ static const struct intel_device_info intel_device_info_dg2_g12 = {
    .has_local_mem = false,                                      \
    .apply_hwconfig = true,                                      \
    .has_64bit_float = true,                                     \
+   .has_64bit_float_via_math_pipe = true,                       \
    .has_integer_dword_mul = false,                              \
    .has_coarse_pixel_primitive_and_cb = true,                   \
    .has_mesh_shading = true,                                    \

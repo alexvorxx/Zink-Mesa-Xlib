@@ -29,6 +29,7 @@
 #include "util/u_helpers.h"
 #include "util/u_draw.h"
 #include "util/u_memory.h"
+#include "util/u_viewport.h"
 #include "pipe/p_defines.h"
 #include "pipe/p_state.h"
 #include "gallium/auxiliary/util/u_blend.h"
@@ -749,8 +750,9 @@ panfrost_emit_viewport(struct panfrost_batch *batch)
         float vp_maxx = vp->translate[0] + fabsf(vp->scale[0]);
         float vp_miny = vp->translate[1] - fabsf(vp->scale[1]);
         float vp_maxy = vp->translate[1] + fabsf(vp->scale[1]);
-        float minz = (vp->translate[2] - fabsf(vp->scale[2]));
-        float maxz = (vp->translate[2] + fabsf(vp->scale[2]));
+
+        float minz, maxz;
+        util_viewport_zmin_zmax(vp, rast->clip_halfz, &minz, &maxz);
 
         /* Scissor to the intersection of viewport and to the scissor, clamped
          * to the framebuffer */

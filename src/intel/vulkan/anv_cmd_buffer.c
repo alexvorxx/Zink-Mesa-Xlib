@@ -1012,13 +1012,6 @@ void anv_CmdPushDescriptorSetWithTemplateKHR(
                                       layout, _set, set, NULL, NULL);
 }
 
-void anv_CmdSetDeviceMask(
-    VkCommandBuffer                             commandBuffer,
-    uint32_t                                    deviceMask)
-{
-   /* No-op */
-}
-
 void anv_CmdSetRayTracingPipelineStackSizeKHR(
     VkCommandBuffer                             commandBuffer,
     uint32_t                                    pipelineStackSize)
