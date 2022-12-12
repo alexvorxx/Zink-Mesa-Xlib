@@ -743,6 +743,33 @@ dump_const_state(struct ir3_shader_variant *so, FILE *out)
    }
 }
 
+static uint8_t
+find_input_reg_id(struct ir3_shader_variant *so, uint32_t input_idx)
+{
+   uint8_t reg = so->inputs[input_idx].regid;
+   if (so->type != MESA_SHADER_FRAGMENT || !so->ir || VALIDREG(reg))
+      return reg;
+
+   /* In FS we don't know into which register the input is loaded
+    * until the shader is scanned for the input load instructions.
+    */
+   foreach_block (block, &so->ir->block_list) {
+      foreach_instr_safe (instr, &block->instr_list) {
+         if (instr->opc == OPC_FLAT_B || instr->opc == OPC_BARY_F ||
+             instr->opc == OPC_LDLV) {
+            if (instr->srcs[0]->flags & IR3_REG_IMMED) {
+               unsigned inloc = instr->srcs[0]->uim_val;
+               if (inloc == so->inputs[input_idx].inloc) {
+                  return instr->dsts[0]->num;
+               }
+            }
+         }
+      }
+   }
+
+   return INVALID_REG;
+}
+
 void
 ir3_shader_disasm(struct ir3_shader_variant *so, uint32_t *bin, FILE *out)
 {
@@ -805,7 +832,8 @@ ir3_shader_disasm(struct ir3_shader_variant *so, uint32_t *bin, FILE *out)
 
    fprintf(out, "; %s: inputs:", type);
    for (i = 0; i < so->inputs_count; i++) {
-      uint8_t regid = so->inputs[i].regid;
+      uint8_t regid = find_input_reg_id(so, i);
+
       fprintf(out, " r%d.%c (%s slot=%d cm=%x,il=%u,b=%u)", (regid >> 2),
               "xyzw"[regid & 0x3], input_name(so, i), so -> inputs[i].slot,
               so->inputs[i].compmask, so->inputs[i].inloc, so->inputs[i].bary);
