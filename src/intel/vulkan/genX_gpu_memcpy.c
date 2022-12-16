@@ -60,6 +60,9 @@ emit_common_so_memcpy(struct anv_batch *batch, struct anv_device *device,
       vfi.VertexElementIndex = 0;
    }
    anv_batch_emit(batch, GENX(3DSTATE_VF_SGVS), sgvs);
+#if GFX_VER >= 11
+   anv_batch_emit(batch, GENX(3DSTATE_VF_SGVS_2), sgvs);
+#endif
 
    /* Disable all shader stages */
    anv_batch_emit(batch, GENX(3DSTATE_VS), vs);

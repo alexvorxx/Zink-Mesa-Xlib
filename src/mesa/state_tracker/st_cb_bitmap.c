@@ -281,8 +281,8 @@ restore_render_state(struct gl_context *ctx)
    st->state.num_sampler_views[PIPE_SHADER_FRAGMENT] = 0;
 
    ctx->Array.NewVertexElements = true;
-   st->dirty |= ST_NEW_VERTEX_ARRAYS |
-                ST_NEW_FS_SAMPLER_VIEWS;
+   ctx->NewDriverState |= ST_NEW_VERTEX_ARRAYS |
+                          ST_NEW_FS_SAMPLER_VIEWS;
 }
 
 
@@ -342,7 +342,7 @@ draw_bitmap_quad(struct gl_context *ctx, GLint x, GLint y, GLfloat z,
    restore_render_state(ctx);
 
    /* We uploaded modified constants, need to invalidate them. */
-   st->dirty |= ST_NEW_FS_CONSTANTS;
+   ctx->NewDriverState |= ST_NEW_FS_CONSTANTS;
 }
 
 
@@ -633,10 +633,7 @@ st_Bitmap(struct gl_context *ctx, GLint x, GLint y,
     * for bitmap drawing uses no constants and the FS constants are
     * explicitly uploaded in the draw_bitmap_quad() function.
     */
-   if ((st->dirty | ctx->NewDriverState) & st->active_states &
-       ~ST_NEW_CONSTANTS & ST_PIPELINE_RENDER_STATE_MASK) {
-      st_validate_state(st, ST_PIPELINE_META);
-   }
+   st_validate_state(st, ST_PIPELINE_META_STATE_MASK & ~ST_NEW_CONSTANTS);
 
    struct pipe_sampler_view *view = NULL;
 

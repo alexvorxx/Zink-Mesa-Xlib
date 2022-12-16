@@ -87,6 +87,7 @@ struct agx_stage {
    struct agx_sampler_view *textures[PIPE_MAX_SHADER_SAMPLER_VIEWS];
 
    unsigned sampler_count, texture_count;
+   uint32_t valid_samplers;
 };
 
 struct agx_batch {

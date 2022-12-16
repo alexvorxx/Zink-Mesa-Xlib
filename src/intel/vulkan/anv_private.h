@@ -1433,6 +1433,12 @@ struct anv_batch_bo {
 struct anv_batch {
    const VkAllocationCallbacks *                alloc;
 
+   /**
+    * Sum of all the anv_batch_bo sizes allocated for this command buffer.
+    * Used to increase allocation size for long command buffers.
+    */
+   size_t                                       total_batch_size;
+
    struct anv_address                           start_addr;
 
    void *                                       start;
@@ -1444,7 +1450,7 @@ struct anv_batch {
    /* This callback is called (with the associated user data) in the event
     * that the batch runs out of space.
     */
-   VkResult (*extend_cb)(struct anv_batch *, void *);
+   VkResult (*extend_cb)(struct anv_batch *, uint32_t, void *);
    void *                                       user_data;
 
    /**
@@ -1458,8 +1464,15 @@ struct anv_batch {
 };
 
 void *anv_batch_emit_dwords(struct anv_batch *batch, int num_dwords);
+VkResult anv_batch_emit_ensure_space(struct anv_batch *batch, uint32_t size);
 void anv_batch_emit_batch(struct anv_batch *batch, struct anv_batch *other);
 struct anv_address anv_batch_address(struct anv_batch *batch, void *batch_location);
+
+static inline struct anv_address
+anv_batch_current_address(struct anv_batch *batch)
+{
+   return anv_batch_address(batch, batch->next);
+}
 
 static inline void
 anv_batch_set_storage(struct anv_batch *batch, struct anv_address addr,
@@ -1900,7 +1913,7 @@ struct anv_descriptor_pool {
 
 size_t
 anv_descriptor_set_layout_size(const struct anv_descriptor_set_layout *layout,
-                               uint32_t var_desc_count);
+                               bool host_only, uint32_t var_desc_count);
 
 uint32_t
 anv_descriptor_set_layout_descriptor_buffer_size(const struct anv_descriptor_set_layout *set_layout,
@@ -2745,7 +2758,7 @@ struct anv_cmd_buffer {
    struct u_vector                              dynamic_bos;
 
    /**
-    *
+    * Structure holding tracepoints recorded in the command buffer.
     */
    struct u_trace                               trace;
 };

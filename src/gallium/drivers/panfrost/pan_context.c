@@ -323,14 +323,19 @@ panfrost_bind_sampler_states(
         unsigned start_slot, unsigned num_sampler,
         void **sampler)
 {
-        assert(start_slot == 0);
-
         struct panfrost_context *ctx = pan_context(pctx);
         ctx->dirty_shader[shader] |= PAN_DIRTY_STAGE_SAMPLER;
 
-        ctx->sampler_count[shader] = sampler ? num_sampler : 0;
-        if (sampler)
-                memcpy(ctx->samplers[shader], sampler, num_sampler * sizeof (void *));
+        for (unsigned i = 0; i < num_sampler; i++) {
+                unsigned p = start_slot + i;
+                ctx->samplers[shader][p] = sampler ? sampler[i] : NULL;
+                if (ctx->samplers[shader][p])
+                        ctx->valid_samplers[shader] |= BITFIELD_BIT(p);
+                else
+                        ctx->valid_samplers[shader] &= ~BITFIELD_BIT(p);
+        }
+
+        ctx->sampler_count[shader] = util_last_bit(ctx->valid_samplers[shader]);
 }
 
 static void

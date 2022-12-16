@@ -257,7 +257,8 @@ cso_init_vbuf(struct cso_context *cso, unsigned flags)
       cso->vbuf = u_vbuf_create(cso->base.pipe, &caps);
       cso->base.pipe->vbuf = cso->vbuf;
       cso->always_use_vbuf = caps.fallback_always;
-      cso->vbuf_current = caps.fallback_always ? cso->vbuf : NULL;
+      cso->vbuf_current = cso->base.pipe->vbuf =
+         caps.fallback_always ? cso->vbuf : NULL;
    }
 }
 

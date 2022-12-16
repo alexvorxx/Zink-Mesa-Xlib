@@ -109,7 +109,7 @@ struct ac_shader_abi {
 
    LLVMValueRef (*emit_fbfetch)(struct ac_shader_abi *abi);
 
-   LLVMValueRef (*intrinsic_load)(struct ac_shader_abi *abi, nir_intrinsic_op op);
+   LLVMValueRef (*intrinsic_load)(struct ac_shader_abi *abi, nir_intrinsic_instr *intrin);
 
    /* Whether to clamp the shadow reference value to [0,1]on GFX8. Radeonsi currently
     * uses it due to promoting D16 to D32, but radv needs it off. */

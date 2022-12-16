@@ -595,6 +595,10 @@
    DRI_CONF_OPT_B(radv_enable_unified_heap_on_apu, def, \
                   "Enable an unified heap with DEVICE_LOCAL on integrated GPUs")
 
+#define DRI_CONF_RADV_TEX_NON_UNIFORM(def) \
+   DRI_CONF_OPT_B(radv_tex_non_uniform, def, \
+                  "Always mark texture sample operations as non-uniform.")
+
 /**
  * \brief ANV specific configuration options
  */

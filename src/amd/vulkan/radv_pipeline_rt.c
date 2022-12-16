@@ -272,7 +272,6 @@ radv_rt_pipeline_create(VkDevice _device, VkPipelineCache _cache,
       goto fail;
    }
 
-   radv_hash_rt_shaders(hash, &local_create_info, radv_get_hash_flags(device, keep_statistic_info));
    struct vk_shader_module module = {.base.type = VK_OBJECT_TYPE_SHADER_MODULE};
 
    VkPipelineShaderStageCreateInfo stage = {
@@ -301,6 +300,9 @@ radv_rt_pipeline_create(VkDevice _device, VkPipelineCache _cache,
    struct radv_pipeline_key key = radv_generate_rt_pipeline_key(rt_pipeline, pCreateInfo->flags);
    UNUSED gl_shader_stage last_vgt_api_stage = MESA_SHADER_NONE;
 
+   radv_hash_rt_shaders(hash, &local_create_info, &key,
+                        radv_get_hash_flags(device, keep_statistic_info));
+
    /* First check if we can get things from the cache before we take the expensive step of
     * generating the nir. */
    result = radv_create_shaders(
@@ -321,7 +323,7 @@ radv_rt_pipeline_create(VkDevice _device, VkPipelineCache _cache,
          goto pipeline_fail;
       }
 
-      shader = create_rt_shader(device, &local_create_info, rt_pipeline->stack_sizes);
+      shader = create_rt_shader(device, &local_create_info, rt_pipeline->stack_sizes, &key);
       module.nir = shader;
       result = radv_create_shaders(&rt_pipeline->base.base, pipeline_layout, device, cache, &key,
                                    &stage, 1, pCreateInfo->flags, hash, creation_feedback,
@@ -418,8 +420,9 @@ radv_CreateRayTracingPipelinesKHR(VkDevice _device, VkDeferredOperationKHR defer
    for (; i < count; ++i)
       pPipelines[i] = VK_NULL_HANDLE;
 
+   /* Work around Portal RTX not handling VK_OPERATION_NOT_DEFERRED_KHR correctly. */
    if (result == VK_SUCCESS && deferredOperation != VK_NULL_HANDLE)
-      return VK_OPERATION_NOT_DEFERRED_KHR;
+      return VK_OPERATION_DEFERRED_KHR;
 
    return result;
 }

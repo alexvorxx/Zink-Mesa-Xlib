@@ -699,11 +699,11 @@ void si_build_wrapper_function(struct si_shader_context *ctx, struct ac_llvm_poi
       LLVMBuildRet(builder, ret);
 }
 
-static LLVMValueRef si_llvm_load_intrinsic(struct ac_shader_abi *abi, nir_intrinsic_op op)
+static LLVMValueRef si_llvm_load_intrinsic(struct ac_shader_abi *abi, nir_intrinsic_instr *intrin)
 {
    struct si_shader_context *ctx = si_shader_context_from_abi(abi);
 
-   switch (op) {
+   switch (intrin->intrinsic) {
    case nir_intrinsic_load_ring_tess_offchip_amd:
       return ctx->tess_offchip_ring;
 
@@ -901,10 +901,6 @@ bool si_llvm_translate_nir(struct si_shader_context *ctx, struct si_shader *shad
           (ctx->stage == MESA_SHADER_VERTEX || ctx->stage == MESA_SHADER_TESS_EVAL) &&
           shader->key.ge.as_ngg && !shader->key.ge.as_es && !shader->key.ge.opt.ngg_culling)
          ac_build_s_barrier(&ctx->ac, ctx->stage);
-
-      /* NGG GS: handle GS_STATE_PIPELINE_STATS_EMU */
-      if (ctx->stage == MESA_SHADER_GEOMETRY && shader->key.ge.as_ngg)
-         gfx10_ngg_gs_emit_begin(ctx);
 
       LLVMValueRef thread_enabled = NULL;
 

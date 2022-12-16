@@ -52,6 +52,7 @@
 #include "st_draw.h"
 #include "st_program.h"
 #include "st_cb_rasterpos.h"
+#include "st_util.h"
 #include "draw/draw_context.h"
 #include "draw/draw_pipe.h"
 #include "vbo/vbo.h"
@@ -250,7 +251,7 @@ st_RasterPos(struct gl_context *ctx, const GLfloat v[4])
    draw_set_rasterize_stage(st->draw, st->rastpos_stage);
 
    /* make sure everything's up to date */
-   st_validate_state(st, ST_PIPELINE_RENDER);
+   st_validate_state(st, ST_PIPELINE_RENDER_STATE_MASK);
 
    /* This will get set only if rastpos_point(), above, gets called */
    ctx->PopAttribState |= GL_CURRENT_BIT;
@@ -260,13 +261,23 @@ st_RasterPos(struct gl_context *ctx, const GLfloat v[4])
     * Just plug in position pointer now.
     */
    rs->VAO->VertexAttrib[VERT_ATTRIB_POS].Ptr = (GLubyte *) v;
-   rs->VAO->NewVertexBuffers = true;
+   ctx->NewDriverState |= ST_NEW_VERTEX_ARRAYS;
+
    /* Non-dynamic VAOs merge vertex buffers, which changes vertex elements. */
-   if (!rs->VAO->IsDynamic)
-      rs->VAO->NewVertexElements = true;
-   _mesa_set_draw_vao(ctx, rs->VAO, VERT_BIT_POS);
+   if (!rs->VAO->IsDynamic) {
+      ctx->Array.NewVertexElements = true;
+   }
+
+   /* Save the Draw VAO before we override it. */
+   struct gl_vertex_array_object *old_vao;
+   GLbitfield old_vp_input_filter;
+
+   _mesa_save_and_set_draw_vao(ctx, rs->VAO, VERT_BIT_POS,
+                               &old_vao, &old_vp_input_filter);
 
    st_feedback_draw_vbo(ctx, &rs->info, 0, &rs->draw, 1);
+
+   _mesa_restore_draw_vao(ctx, old_vao, old_vp_input_filter);
 
    /* restore draw's rasterization stage depending on rendermode */
    if (ctx->RenderMode == GL_FEEDBACK) {

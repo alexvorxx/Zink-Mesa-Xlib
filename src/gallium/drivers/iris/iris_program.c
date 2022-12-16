@@ -2940,7 +2940,8 @@ iris_finalize_nir(struct pipe_screen *_screen, void *nirptr)
 
    NIR_PASS_V(nir, iris_fix_edge_flags);
 
-   brw_preprocess_nir(screen->compiler, nir, NULL);
+   struct brw_nir_compiler_opts opts = {};
+   brw_preprocess_nir(screen->compiler, nir, &opts);
 
    NIR_PASS_V(nir, brw_nir_lower_storage_image, devinfo);
    NIR_PASS_V(nir, iris_lower_storage_image_derefs);

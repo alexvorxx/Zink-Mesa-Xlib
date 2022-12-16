@@ -71,20 +71,36 @@
 
 DEBUG_GET_ONCE_BOOL_OPTION(mesa_mvp_dp4, "MESA_MVP_DP4", FALSE)
 
+/* The list of state update functions. */
+st_update_func_t st_update_functions[ST_NUM_ATOMS];
+
+static void
+init_atoms_once(void)
+{
+   STATIC_ASSERT(ARRAY_SIZE(st_update_functions) <= 64);
+
+#define ST_STATE(FLAG, st_update) st_update_functions[FLAG##_INDEX] = st_update;
+#include "st_atom_list.h"
+#undef ST_STATE
+
+   if (util_get_cpu_caps()->has_popcnt)
+      st_update_functions[ST_NEW_VERTEX_ARRAYS_INDEX] = st_update_array_with_popcnt;
+}
+
 void
 st_invalidate_buffers(struct st_context *st)
 {
-   st->dirty |= ST_NEW_BLEND |
-                ST_NEW_DSA |
-                ST_NEW_FB_STATE |
-                ST_NEW_SAMPLE_STATE |
-                ST_NEW_SAMPLE_SHADING |
-                ST_NEW_FS_STATE |
-                ST_NEW_POLY_STIPPLE |
-                ST_NEW_VIEWPORT |
-                ST_NEW_RASTERIZER |
-                ST_NEW_SCISSOR |
-                ST_NEW_WINDOW_RECTANGLES;
+   st->ctx->NewDriverState |= ST_NEW_BLEND |
+                              ST_NEW_DSA |
+                              ST_NEW_FB_STATE |
+                              ST_NEW_SAMPLE_STATE |
+                              ST_NEW_SAMPLE_SHADING |
+                              ST_NEW_FS_STATE |
+                              ST_NEW_POLY_STIPPLE |
+                              ST_NEW_VIEWPORT |
+                              ST_NEW_RASTERIZER |
+                              ST_NEW_SCISSOR |
+                              ST_NEW_WINDOW_RECTANGLES;
 }
 
 
@@ -92,7 +108,8 @@ static inline bool
 st_vp_uses_current_values(const struct gl_context *ctx)
 {
    const uint64_t inputs = ctx->VertexProgram._Current->info.inputs_read;
-   return _mesa_draw_current_bits(ctx) & inputs;
+
+   return ~_mesa_get_enabled_vertex_arrays(ctx) & inputs;
 }
 
 
@@ -109,58 +126,58 @@ st_invalidate_state(struct gl_context *ctx)
        * check them when _NEW_BUFFERS isn't set.
        */
       if (new_state & _NEW_FOG)
-         st->dirty |= ST_NEW_FS_STATE;
+         ctx->NewDriverState |= ST_NEW_FS_STATE;
    }
 
    if (new_state & (_NEW_LIGHT_STATE |
                     _NEW_POINT))
-      st->dirty |= ST_NEW_RASTERIZER;
+      ctx->NewDriverState |= ST_NEW_RASTERIZER;
 
    if ((new_state & _NEW_LIGHT_STATE) &&
        (st->lower_flatshade || st->lower_two_sided_color))
-      st->dirty |= ST_NEW_FS_STATE;
+      ctx->NewDriverState |= ST_NEW_FS_STATE;
 
    if (new_state & _NEW_PROJECTION &&
        st_user_clip_planes_enabled(ctx))
-      st->dirty |= ST_NEW_CLIP_STATE;
+      ctx->NewDriverState |= ST_NEW_CLIP_STATE;
 
    if (new_state & _NEW_PIXEL)
-      st->dirty |= ST_NEW_PIXEL_TRANSFER;
+      ctx->NewDriverState |= ST_NEW_PIXEL_TRANSFER;
 
    if (new_state & _NEW_CURRENT_ATTRIB && st_vp_uses_current_values(ctx)) {
-      st->dirty |= ST_NEW_VERTEX_ARRAYS;
+      ctx->NewDriverState |= ST_NEW_VERTEX_ARRAYS;
       /* glColor3f -> glColor4f changes the vertex format. */
       ctx->Array.NewVertexElements = true;
    }
 
    /* Update the vertex shader if ctx->Light._ClampVertexColor was changed. */
    if (st->clamp_vert_color_in_shader && (new_state & _NEW_LIGHT_STATE)) {
-      st->dirty |= ST_NEW_VS_STATE;
+      ctx->NewDriverState |= ST_NEW_VS_STATE;
       if (st->ctx->API == API_OPENGL_COMPAT && ctx->Version >= 32) {
-         st->dirty |= ST_NEW_GS_STATE | ST_NEW_TES_STATE;
+         ctx->NewDriverState |= ST_NEW_GS_STATE | ST_NEW_TES_STATE;
       }
    }
 
    /* Update the vertex shader if ctx->Point was changed. */
    if (st->lower_point_size && new_state & _NEW_POINT) {
       if (ctx->GeometryProgram._Current)
-         st->dirty |= ST_NEW_GS_STATE | ST_NEW_GS_CONSTANTS;
+         ctx->NewDriverState |= ST_NEW_GS_STATE | ST_NEW_GS_CONSTANTS;
       else if (ctx->TessEvalProgram._Current)
-         st->dirty |= ST_NEW_TES_STATE | ST_NEW_TES_CONSTANTS;
+         ctx->NewDriverState |= ST_NEW_TES_STATE | ST_NEW_TES_CONSTANTS;
       else
-         st->dirty |= ST_NEW_VS_STATE | ST_NEW_VS_CONSTANTS;
+         ctx->NewDriverState |= ST_NEW_VS_STATE | ST_NEW_VS_CONSTANTS;
    }
 
    if (new_state & _NEW_TEXTURE_OBJECT) {
-      st->dirty |= st->active_states &
-                   (ST_NEW_SAMPLER_VIEWS |
-                    ST_NEW_SAMPLERS |
-                    ST_NEW_IMAGE_UNITS);
+      ctx->NewDriverState |= st->active_states &
+                             (ST_NEW_SAMPLER_VIEWS |
+                              ST_NEW_SAMPLERS |
+                              ST_NEW_IMAGE_UNITS);
       if (ctx->FragmentProgram._Current) {
          struct gl_program *fp = ctx->FragmentProgram._Current;
 
          if (fp->ExternalSamplersUsed || fp->ati_fs)
-            st->dirty |= ST_NEW_FS_STATE;
+            ctx->NewDriverState |= ST_NEW_FS_STATE;
       }
    }
 }
@@ -331,7 +348,6 @@ st_context_free_zombie_objects(struct st_context *st)
 static void
 st_destroy_context_priv(struct st_context *st, bool destroy_pipe)
 {
-   st_destroy_atoms(st);
    st_destroy_draw(st);
    st_destroy_clear(st);
    st_destroy_bitmap(st);
@@ -448,7 +464,6 @@ st_create_context_priv(struct gl_context *ctx, struct pipe_context *pipe,
    st->ctx = ctx;
    st->screen = screen;
    st->pipe = pipe;
-   st->dirty = ST_ALL_STATES_MASK;
 
    st->can_bind_const_buffer_as_vertex =
       screen->get_param(screen, PIPE_CAP_CAN_BIND_CONST_BUFFER_AS_VERTEX);
@@ -476,7 +491,9 @@ st_create_context_priv(struct gl_context *ctx, struct pipe_context *pipe,
    st->cso_context = cso_create_context(pipe, cso_flags);
    ctx->cso_context = st->cso_context;
 
-   st_init_atoms(st);
+   static once_flag flag = ONCE_FLAG_INIT;
+   call_once(&flag, init_atoms_once);
+
    st_init_clear(st);
    {
       enum pipe_texture_transfer_mode val = screen->get_param(screen, PIPE_CAP_TEXTURE_TRANSFER_MODES);

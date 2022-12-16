@@ -3314,6 +3314,9 @@ nir_tex_instr_result_size(const nir_tex_instr *instr)
    case nir_texop_descriptor_amd:
       return instr->sampler_dim == GLSL_SAMPLER_DIM_BUF ? 4 : 8;
 
+   case nir_texop_sampler_descriptor_amd:
+      return 4;
+
    default:
       if (instr->is_shadow && instr->is_new_style_shadow)
          return 1;
@@ -3331,6 +3334,7 @@ nir_tex_instr_is_query(const nir_tex_instr *instr)
    case nir_texop_texture_samples:
    case nir_texop_query_levels:
    case nir_texop_descriptor_amd:
+   case nir_texop_sampler_descriptor_amd:
       return true;
    case nir_texop_tex:
    case nir_texop_txb:

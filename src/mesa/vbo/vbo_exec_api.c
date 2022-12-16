@@ -211,6 +211,9 @@ vbo_exec_copy_to_current(struct vbo_exec_context *exec)
                 i == VBO_ATTRIB_MAT_BACK_SHININESS)
                ctx->NewState |= _NEW_FF_VERT_PROGRAM;
          } else {
+            if (i == VBO_ATTRIB_EDGEFLAG)
+               _mesa_update_edgeflag_state_vao(ctx);
+
             ctx->NewState |= _NEW_CURRENT_ATTRIB;
             ctx->PopAttribState |= GL_CURRENT_BIT;
          }

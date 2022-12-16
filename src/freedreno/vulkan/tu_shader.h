@@ -18,6 +18,9 @@ struct tu_inline_ubo
    unsigned base;
    unsigned offset;
 
+   /* If true, push the base address instead */
+   bool push_address;
+
    /* Push it to this location in the const file, in vec4s */
    unsigned const_offset_vec4;
 

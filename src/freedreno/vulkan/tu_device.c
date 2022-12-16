@@ -254,6 +254,7 @@ get_device_extensions(const struct tu_physical_device *device,
       .KHR_pipeline_library = true,
       .EXT_graphics_pipeline_library = true,
       .EXT_post_depth_coverage = true,
+      .EXT_descriptor_buffer = true,
    };
 }
 
@@ -980,6 +981,15 @@ tu_GetPhysicalDeviceFeatures2(VkPhysicalDevice physicalDevice,
          features->presentWait = pdevice->vk.supported_extensions.KHR_present_wait;
          break;
       }
+      case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_BUFFER_FEATURES_EXT: {
+         VkPhysicalDeviceDescriptorBufferFeaturesEXT *features =
+            (VkPhysicalDeviceDescriptorBufferFeaturesEXT *)ext;
+         features->descriptorBuffer = true;
+         features->descriptorBufferCaptureReplay = pdevice->has_set_iova;
+         features->descriptorBufferImageLayoutIgnored = true;
+         features->descriptorBufferPushDescriptors = true;
+         break;
+      }
 
       default:
          break;
@@ -1449,6 +1459,52 @@ tu_GetPhysicalDeviceProperties2(VkPhysicalDevice physicalDevice,
          VkPhysicalDeviceExtendedDynamicState3PropertiesEXT *properties =
             (VkPhysicalDeviceExtendedDynamicState3PropertiesEXT *)ext;
          properties->dynamicPrimitiveTopologyUnrestricted = true;
+         break;
+      }
+      case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_BUFFER_PROPERTIES_EXT: {
+         VkPhysicalDeviceDescriptorBufferPropertiesEXT *properties =
+            (VkPhysicalDeviceDescriptorBufferPropertiesEXT *)ext;
+         properties->combinedImageSamplerDescriptorSingleArray = true;
+         properties->bufferlessPushDescriptors = true;
+         properties->allowSamplerImageViewPostSubmitCreation = true;
+         properties->descriptorBufferOffsetAlignment = A6XX_TEX_CONST_DWORDS * 4;
+         properties->maxDescriptorBufferBindings = MAX_SETS;
+         properties->maxResourceDescriptorBufferBindings = MAX_SETS;
+         properties->maxSamplerDescriptorBufferBindings = MAX_SETS;
+         properties->maxEmbeddedImmutableSamplerBindings = MAX_SETS;
+         properties->maxEmbeddedImmutableSamplers = max_descriptor_set_size;
+         properties->bufferCaptureReplayDescriptorDataSize = 0;
+         properties->imageCaptureReplayDescriptorDataSize = 0;
+         properties->imageViewCaptureReplayDescriptorDataSize = 0;
+         properties->samplerCaptureReplayDescriptorDataSize = 0;
+         properties->accelerationStructureCaptureReplayDescriptorDataSize = 0;
+
+         /* Note: these sizes must match descriptor_size() */
+         properties->samplerDescriptorSize = A6XX_TEX_CONST_DWORDS * 4;
+         properties->combinedImageSamplerDescriptorSize = 2 * A6XX_TEX_CONST_DWORDS * 4;
+         properties->sampledImageDescriptorSize = A6XX_TEX_CONST_DWORDS * 4;
+         properties->storageImageDescriptorSize = A6XX_TEX_CONST_DWORDS * 4;
+         properties->uniformTexelBufferDescriptorSize = A6XX_TEX_CONST_DWORDS * 4;
+         properties->robustUniformTexelBufferDescriptorSize = A6XX_TEX_CONST_DWORDS * 4;
+         properties->storageTexelBufferDescriptorSize = A6XX_TEX_CONST_DWORDS * 4;
+         properties->robustStorageTexelBufferDescriptorSize = A6XX_TEX_CONST_DWORDS * 4;
+         properties->uniformBufferDescriptorSize = A6XX_TEX_CONST_DWORDS * 4;
+         properties->robustUniformBufferDescriptorSize = A6XX_TEX_CONST_DWORDS * 4;
+         properties->storageBufferDescriptorSize = 
+            pdevice->info->a6xx.storage_16bit ?
+            2 * A6XX_TEX_CONST_DWORDS * 4 :
+            A6XX_TEX_CONST_DWORDS * 4;
+         properties->robustStorageBufferDescriptorSize =
+            properties->storageBufferDescriptorSize;
+         properties->inputAttachmentDescriptorSize =
+            (pdevice->instance->debug_flags & TU_DEBUG_DYNAMIC) ?
+            A6XX_TEX_CONST_DWORDS * 4 : 0;
+
+         properties->maxSamplerDescriptorBufferRange = ~0ull;
+         properties->maxResourceDescriptorBufferRange = ~0ull;
+         properties->samplerDescriptorBufferAddressSpaceSize = ~0ull;
+         properties->resourceDescriptorBufferAddressSpaceSize = ~0ull;
+         properties->descriptorBufferAddressSpaceSize = ~0ull;
          break;
       }
       default:
@@ -2691,6 +2747,8 @@ tu_BindBufferMemory2(VkDevice device,
                      uint32_t bindInfoCount,
                      const VkBindBufferMemoryInfo *pBindInfos)
 {
+   TU_FROM_HANDLE(tu_device, dev, device);
+
    for (uint32_t i = 0; i < bindInfoCount; ++i) {
       TU_FROM_HANDLE(tu_device_memory, mem, pBindInfos[i].memory);
       TU_FROM_HANDLE(tu_buffer, buffer, pBindInfos[i].buffer);
@@ -2698,6 +2756,10 @@ tu_BindBufferMemory2(VkDevice device,
       if (mem) {
          buffer->bo = mem->bo;
          buffer->iova = mem->bo->iova + pBindInfos[i].memoryOffset;
+         if (buffer->vk.usage &
+             (VK_BUFFER_USAGE_SAMPLER_DESCRIPTOR_BUFFER_BIT_EXT |
+              VK_BUFFER_USAGE_RESOURCE_DESCRIPTOR_BUFFER_BIT_EXT))
+            tu_bo_allow_dump(dev, mem->bo);
       } else {
          buffer->bo = NULL;
       }

@@ -1000,6 +1000,24 @@ enum gl_access_qualifier
 
    /** Execute instruction also in helpers. */
    ACCESS_INCLUDE_HELPERS = (1 << 8),
+
+   /**
+    * Whether the address bits are swizzled by the hw. This practically means
+    * that loads can't be vectorized and must be exactly 32 bits on some chips.
+    * The swizzle amount is determined by the descriptor.
+    */
+   ACCESS_IS_SWIZZLED_AMD = (1 << 9),
+
+   /**
+    * Whether an AMD-specific buffer intrinsic uses a format conversion.
+    *
+    * If unset, the intrinsic will access raw memory without any conversion.
+    *
+    * If set, the memory opcode performs a format conversion according to
+    * the format determined by the descriptor (in a manner identical to image
+    * buffers and sampler buffers).
+    */
+   ACCESS_USES_FORMAT_AMD = (1 << 10),
 };
 
 /**

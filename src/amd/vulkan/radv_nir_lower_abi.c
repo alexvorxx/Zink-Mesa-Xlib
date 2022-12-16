@@ -370,6 +370,9 @@ lower_abi_instr(nir_builder *b, nir_instr *instr, void *state)
                              nir_imm_int(b, RADV_NGG_QUERY_PRIM_XFB_OFFSET(nir_intrinsic_stream_id(intrin))),
                              nir_imm_int(b, 0x100));
       break;
+   case nir_intrinsic_atomic_add_gs_invocation_count_amd:
+      /* TODO: add gs invocation query emulation. */
+      break;
 
    case nir_intrinsic_load_streamout_config_amd:
       replacement = ac_nir_load_arg(b, &s->args->ac, s->args->ac.streamout_config);

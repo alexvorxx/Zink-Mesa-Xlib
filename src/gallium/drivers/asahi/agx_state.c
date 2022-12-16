@@ -426,11 +426,18 @@ agx_bind_sampler_states(struct pipe_context *pctx,
 {
    struct agx_context *ctx = agx_context(pctx);
 
-   ctx->stage[shader].sampler_count = states ? count : 0;
    ctx->stage[shader].dirty = ~0;
 
-   memcpy(&ctx->stage[shader].samplers[start], states,
-          sizeof(struct agx_sampler_state *) * count);
+   for (unsigned i = 0; i < count; i++) {
+      unsigned p = start + i;
+      ctx->stage[shader].samplers[p] = states ? states[i] : NULL;
+      if (ctx->stage[shader].samplers[p])
+         ctx->stage[shader].valid_samplers |= BITFIELD_BIT(p);
+      else
+         ctx->stage[shader].valid_samplers &= ~BITFIELD_BIT(p);
+   }
+
+   ctx->stage[shader].sampler_count = util_last_bit(ctx->stage[shader].valid_samplers);
 }
 
 /* Channels agree for RGBA but are weird for force 0/1 */

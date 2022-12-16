@@ -638,10 +638,12 @@ lower_inline_ubo(nir_builder *b, nir_instr *instr, void *cb_data)
    struct tu_const_state *const_state = &shader->const_state;
 
    unsigned base = UINT_MAX;
+   bool use_load = false;
    for (unsigned i = 0; i < const_state->num_inline_ubos; i++) {
       if (const_state->ubos[i].base == binding.desc_set &&
           const_state->ubos[i].offset == binding_layout->offset) {
          base = const_state->ubos[i].const_offset_vec4 * 4;
+         use_load = const_state->ubos[i].push_address;
          break;
       }
    }
@@ -659,12 +661,21 @@ lower_inline_ubo(nir_builder *b, nir_instr *instr, void *cb_data)
    nir_ssa_def *offset = intrin->src[1].ssa;
 
    b->cursor = nir_before_instr(instr);
-   nir_ssa_def *uniform =
-      nir_load_uniform(b, intrin->num_components,
-                       intrin->dest.ssa.bit_size,
-                       nir_ishr_imm(b, offset, 2), .base = base);
+   nir_ssa_def *val;
 
-   nir_ssa_def_rewrite_uses(&intrin->dest.ssa, uniform);
+   if (use_load) {
+      nir_ssa_def *base_addr =
+         nir_load_uniform(b, 2, 32, nir_imm_int(b, 0), .base = base);
+      val = nir_load_global_ir3(b, intrin->num_components,
+                                intrin->dest.ssa.bit_size,
+                                base_addr, nir_ishr_imm(b, offset, 2));
+   } else {
+      val = nir_load_uniform(b, intrin->num_components,
+                             intrin->dest.ssa.bit_size,
+                             nir_ishr_imm(b, offset, 2), .base = base);
+   }
+
+   nir_ssa_def_rewrite_uses(&intrin->dest.ssa, val);
    nir_instr_remove(instr);
    return true;
 }
@@ -767,13 +778,34 @@ tu_lower_io(nir_shader *shader, struct tu_device *dev,
          if (binding->size == 0)
             continue;
 
+         /* If we don't know the size at compile time due to a variable
+          * descriptor count, then with descriptor buffers we cannot know
+          * how much space the real inline uniform has. In this case we fall
+          * back to pushing the address and using ldg, which is slower than
+          * setting up a descriptor but setting up our own descriptor with
+          * descriptor_buffer is also painful and has to be done on the GPU
+          * and doesn't avoid the UBO getting pushed anyway and faulting if a
+          * out-of-bounds access is hidden behind an if and not dynamically
+          * executed. Given the small max size, there shouldn't be much reason
+          * to use variable size anyway.
+          */
+         bool push_address = desc_layout->has_variable_descriptors &&
+            b == desc_layout->binding_count - 1;
+
+         if (push_address) {
+            perf_debug(dev,
+                       "falling back to ldg for variable-sized inline "
+                       "uniform block");
+         }
+
          assert(const_state->num_inline_ubos < ARRAY_SIZE(const_state->ubos));
-         unsigned size_vec4 = DIV_ROUND_UP(binding->size, 16);
+         unsigned size_vec4 = push_address ? 1 : DIV_ROUND_UP(binding->size, 16);
          const_state->ubos[const_state->num_inline_ubos++] = (struct tu_inline_ubo) {
             .base = set,
             .offset = binding->offset,
             .const_offset_vec4 = reserved_consts_vec4,
             .size_vec4 = size_vec4,
+            .push_address = push_address,
          };
 
          reserved_consts_vec4 += align(size_vec4, dev->compiler->const_upload_unit);

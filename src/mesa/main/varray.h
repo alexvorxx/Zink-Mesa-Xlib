@@ -168,4 +168,11 @@ _mesa_init_varray(struct gl_context *ctx);
 extern void
 _mesa_free_varray_data(struct gl_context *ctx);
 
+void
+_mesa_update_edgeflag_state_explicit(struct gl_context *ctx,
+                                     bool per_vertex_enable);
+
+void
+_mesa_update_edgeflag_state_vao(struct gl_context *ctx);
+
 #endif

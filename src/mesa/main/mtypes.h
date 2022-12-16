@@ -1680,27 +1680,11 @@ struct gl_vertex_array_object
     */
    GLbitfield NonDefaultStateMask;
 
-   /**
-    * Mask of VERT_BIT_* enabled arrays past position/generic0 mapping
-    *
-    * The value is valid past calling _mesa_update_vao_derived_arrays.
-    * Note that _mesa_update_vao_derived_arrays is called when binding
-    * the VAO to Array._DrawVAO.
-    */
-   GLbitfield _EffEnabledVBO;
-
-   /** Same as _EffEnabledVBO, but for instance divisors. */
-   GLbitfield _EffEnabledNonZeroDivisor;
-
    /** Denotes the way the position/generic0 attribute is mapped */
    gl_attribute_map_mode _AttributeMapMode;
 
    /** "Enabled" with the position/generic0 attribute aliasing resolved */
    GLbitfield _EnabledWithMapMode;
-
-   /** Which states have been changed according to the gallium definitions. */
-   bool NewVertexBuffers;
-   bool NewVertexElements;
 
    /** The index buffer (also known as the element array buffer in OpenGL). */
    struct gl_buffer_object *IndexBufferObj;
@@ -1755,15 +1739,18 @@ struct gl_array_attrib
     * mode or display list draws.
     */
    struct gl_vertex_array_object *_DrawVAO;
+
    /**
-    * The VERT_BIT_* bits effectively enabled from the current _DrawVAO.
-    * This is always a subset of _mesa_get_vao_vp_inputs(_DrawVAO)
-    * but may omit those arrays that shall not be referenced by the current
-    * gl_vertex_program_state::_VPMode. For example, the generic attributes are
-    * masked out from the _DrawVAO's enabled arrays when a fixed function
-    * array draw is executed.
+    * Whether per-vertex edge flags are enabled and should be processed by
+    * the vertex shader.
     */
-   GLbitfield _DrawVAOEnabledAttribs;
+   bool _PerVertexEdgeFlagsEnabled;
+
+   /**
+    * Whether all edge flags are false, causing all points and lines generated
+    * by polygon mode to be not drawn. (i.e. culled)
+    */
+   bool _PolygonModeAlwaysCulls;
 
    /**
     * If gallium vertex buffers are dirty, this flag indicates whether gallium
@@ -1774,12 +1761,6 @@ struct gl_array_attrib
     * The driver should clear this when it's done.
     */
    bool NewVertexElements;
-
-   /**
-    * Initially or if the VAO referenced by _DrawVAO is deleted the _DrawVAO
-    * pointer is set to the _EmptyVAO which is just an empty VAO all the time.
-    */
-   struct gl_vertex_array_object *_EmptyVAO;
 
    /** Legal array datatypes and the API for which they have been computed */
    GLbitfield LegalTypesMask;

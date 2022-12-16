@@ -283,7 +283,6 @@ files_libmesa = files(
   'program/symbol_table.h',
   'state_tracker/st_atifs_to_nir.c',
   'state_tracker/st_atifs_to_nir.h',
-  'state_tracker/st_atom.c',
   'state_tracker/st_atom_array.cpp',
   'state_tracker/st_atom_atomicbuf.c',
   'state_tracker/st_atom_blend.c',

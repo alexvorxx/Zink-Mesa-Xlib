@@ -706,6 +706,21 @@ brw_nir_initialize_mue(nir_shader *nir,
    }
 }
 
+static void
+brw_nir_adjust_offset(nir_builder *b, nir_intrinsic_instr *intrin, uint32_t pitch)
+{
+   nir_src *index_src = nir_get_io_arrayed_index_src(intrin);
+   nir_src *offset_src = nir_get_io_offset_src(intrin);
+
+   assert(index_src->is_ssa);
+   b->cursor = nir_before_instr(&intrin->instr);
+   nir_ssa_def *offset =
+      nir_iadd(b,
+               offset_src->ssa,
+               nir_imul_imm(b, index_src->ssa, pitch));
+   nir_instr_rewrite_src(&intrin->instr, offset_src, nir_src_for_ssa(offset));
+}
+
 static bool
 brw_nir_adjust_offset_for_arrayed_indices_instr(nir_builder *b, nir_instr *instr, void *data)
 {
@@ -721,36 +736,22 @@ brw_nir_adjust_offset_for_arrayed_indices_instr(nir_builder *b, nir_instr *instr
     */
    switch (intrin->intrinsic) {
    case nir_intrinsic_load_per_vertex_output:
-   case nir_intrinsic_store_per_vertex_output: {
-      const bool is_load = intrin->intrinsic == nir_intrinsic_load_per_vertex_output;
-      nir_src *index_src = &intrin->src[is_load ? 0 : 1];
-      nir_src *offset_src = &intrin->src[is_load ? 1 : 2];
+   case nir_intrinsic_store_per_vertex_output:
+      brw_nir_adjust_offset(b, intrin, map->per_vertex_pitch_dw);
 
-      assert(index_src->is_ssa);
-      b->cursor = nir_before_instr(&intrin->instr);
-      nir_ssa_def *offset =
-         nir_iadd(b,
-                  offset_src->ssa,
-                  nir_imul_imm(b, index_src->ssa, map->per_vertex_pitch_dw));
-      nir_instr_rewrite_src(&intrin->instr, offset_src, nir_src_for_ssa(offset));
       return true;
-   }
 
    case nir_intrinsic_load_per_primitive_output:
    case nir_intrinsic_store_per_primitive_output: {
-      const bool is_load = intrin->intrinsic == nir_intrinsic_load_per_primitive_output;
-      nir_src *index_src = &intrin->src[is_load ? 0 : 1];
-      nir_src *offset_src = &intrin->src[is_load ? 1 : 2];
+      struct nir_io_semantics sem = nir_intrinsic_io_semantics(intrin);
+      uint32_t pitch;
+      if (sem.location == VARYING_SLOT_PRIMITIVE_INDICES)
+         pitch = num_mesh_vertices_per_primitive(b->shader->info.mesh.primitive_type);
+      else
+         pitch = map->per_primitive_pitch_dw;
 
-      assert(index_src->is_ssa);
-      b->cursor = nir_before_instr(&intrin->instr);
+      brw_nir_adjust_offset(b, intrin, pitch);
 
-      assert(index_src->is_ssa);
-      nir_ssa_def *offset =
-         nir_iadd(b,
-                  offset_src->ssa,
-                  nir_imul_imm(b, index_src->ssa, map->per_primitive_pitch_dw));
-      nir_instr_rewrite_src(&intrin->instr, offset_src, nir_src_for_ssa(offset));
       return true;
    }
 
@@ -920,6 +921,43 @@ adjust_handle_and_offset(const fs_builder &bld,
 }
 
 static void
+emit_urb_direct_vec4_write(const fs_builder &bld,
+                           unsigned urb_global_offset,
+                           const fs_reg &src,
+                           fs_reg urb_handle,
+                           unsigned src_comp_offset,
+                           unsigned dst_comp_offset,
+                           unsigned comps,
+                           unsigned mask)
+{
+   for (unsigned q = 0; q < bld.dispatch_width() / 8; q++) {
+      fs_builder bld8 = bld.group(8, q);
+
+      fs_reg payload_srcs[4];
+      unsigned length = 0;
+
+      for (unsigned i = 0; i < dst_comp_offset; i++)
+         payload_srcs[length++] = reg_undef;
+
+      for (unsigned c = 0; c < comps; c++)
+         payload_srcs[length++] = quarter(offset(src, bld, c + src_comp_offset), q);
+
+      fs_reg srcs[URB_LOGICAL_NUM_SRCS];
+      srcs[URB_LOGICAL_SRC_HANDLE] = urb_handle;
+      srcs[URB_LOGICAL_SRC_CHANNEL_MASK] = brw_imm_ud(mask << 16);
+      srcs[URB_LOGICAL_SRC_DATA] = fs_reg(VGRF, bld.shader->alloc.allocate(length),
+                                          BRW_REGISTER_TYPE_F);
+      bld8.LOAD_PAYLOAD(srcs[URB_LOGICAL_SRC_DATA], payload_srcs, length, 0);
+
+      fs_inst *inst = bld8.emit(SHADER_OPCODE_URB_WRITE_LOGICAL,
+                                reg_undef, srcs, ARRAY_SIZE(srcs));
+      inst->mlen = 2 + length;
+      inst->offset = urb_global_offset;
+      assert(inst->offset < 2048);
+   }
+}
+
+static void
 emit_urb_direct_writes(const fs_builder &bld, nir_intrinsic_instr *instr,
                        const fs_reg &src, fs_reg urb_handle)
 {
@@ -953,60 +991,14 @@ emit_urb_direct_writes(const fs_builder &bld, nir_intrinsic_instr *instr,
    unsigned urb_global_offset = offset_in_dwords / 4;
    adjust_handle_and_offset(bld, urb_handle, urb_global_offset);
 
-   if (first_mask > 0) {
-      for (unsigned q = 0; q < bld.dispatch_width() / 8; q++) {
-         fs_builder bld8 = bld.group(8, q);
-
-         fs_reg payload_srcs[4];
-         unsigned length = 0;
-
-         for (unsigned i = 0; i < comp_shift; i++)
-            payload_srcs[length++] = reg_undef;
-
-         for (unsigned c = 0; c < first_comps; c++)
-            payload_srcs[length++] = quarter(offset(src, bld, c), q);
-
-         fs_reg srcs[URB_LOGICAL_NUM_SRCS];
-         srcs[URB_LOGICAL_SRC_HANDLE] = urb_handle;
-         srcs[URB_LOGICAL_SRC_CHANNEL_MASK] = brw_imm_ud(first_mask << 16);
-         srcs[URB_LOGICAL_SRC_DATA] = fs_reg(VGRF, bld.shader->alloc.allocate(length),
-                                             BRW_REGISTER_TYPE_F);
-         bld8.LOAD_PAYLOAD(srcs[URB_LOGICAL_SRC_DATA], payload_srcs, length, 0);
-
-         fs_inst *inst = bld8.emit(SHADER_OPCODE_URB_WRITE_LOGICAL,
-                                   reg_undef, srcs, ARRAY_SIZE(srcs));
-         inst->mlen = 2 + length;
-         inst->offset = urb_global_offset;
-         assert(inst->offset < 2048);
-      }
-   }
+   if (first_mask > 0)
+      emit_urb_direct_vec4_write(bld, urb_global_offset, src, urb_handle, 0, comp_shift, first_comps, first_mask);
 
    if (second_mask > 0) {
       urb_global_offset++;
       adjust_handle_and_offset(bld, urb_handle, urb_global_offset);
 
-      for (unsigned q = 0; q < bld.dispatch_width() / 8; q++) {
-         fs_builder bld8 = bld.group(8, q);
-
-         fs_reg payload_srcs[4];
-         unsigned length = 0;
-
-         for (unsigned c = 0; c < second_comps; c++)
-            payload_srcs[length++] = quarter(offset(src, bld, c + first_comps), q);
-
-         fs_reg srcs[URB_LOGICAL_NUM_SRCS];
-         srcs[URB_LOGICAL_SRC_HANDLE] = urb_handle;
-         srcs[URB_LOGICAL_SRC_CHANNEL_MASK] = brw_imm_ud(second_mask << 16);
-         srcs[URB_LOGICAL_SRC_DATA] = fs_reg(VGRF, bld.shader->alloc.allocate(length),
-                                             BRW_REGISTER_TYPE_F);
-         bld8.LOAD_PAYLOAD(srcs[URB_LOGICAL_SRC_DATA], payload_srcs, length, 0);
-
-         fs_inst *inst = bld8.emit(SHADER_OPCODE_URB_WRITE_LOGICAL,
-                                   reg_undef, srcs, ARRAY_SIZE(srcs));
-         inst->mlen = 2 + length;
-         inst->offset = urb_global_offset;
-         assert(inst->offset < 2048);
-      }
+      emit_urb_direct_vec4_write(bld, urb_global_offset, src, urb_handle, first_comps, 0, second_comps, second_mask);
    }
 }
 

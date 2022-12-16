@@ -2203,6 +2203,7 @@ typedef enum {
    nir_texop_fragment_fetch_amd,      /**< Multisample fragment color texture fetch */
    nir_texop_fragment_mask_fetch_amd, /**< Multisample fragment mask texture fetch */
    nir_texop_descriptor_amd,     /**< Returns a buffer or image descriptor. */
+   nir_texop_sampler_descriptor_amd, /**< Returns a sampler descriptor. */
 } nir_texop;
 
 /** Represents a texture instruction */

@@ -723,7 +723,7 @@ radv_shader_spirv_to_nir(struct radv_device *device, const struct radv_pipeline_
       /* Only compute shaders currently support requiring a
        * specific subgroup size.
        */
-      assert(stage->stage == MESA_SHADER_COMPUTE);
+      assert(stage->stage >= MESA_SHADER_COMPUTE);
       subgroup_size = key->cs.compute_subgroup_size;
       ballot_bit_size = key->cs.compute_subgroup_size;
    }
@@ -834,6 +834,7 @@ radv_shader_spirv_to_nir(struct radv_device *device, const struct radv_pipeline_
                .func = radv_spirv_nir_debug,
                .private_data = &spirv_debug_data,
             },
+         .force_tex_non_uniform = key->tex_non_uniform,
       };
       nir = spirv_to_nir(spirv, stage->spirv.size / 4, spec_entries, num_spec_entries, stage->stage,
                          stage->entrypoint, &spirv_options,

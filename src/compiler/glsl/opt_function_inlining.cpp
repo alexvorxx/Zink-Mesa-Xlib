@@ -140,6 +140,12 @@ should_replace_variable(ir_variable *sig_param, ir_rvalue *param,
        sig_param->data.mode != ir_var_const_in)
       return false;
 
+   /* Some places in glsl_to_nir() expect images to always be copied to a temp
+    * first.
+    */
+   if (sig_param->type->without_array()->is_image() && !param->is_dereference())
+      return false;
+
    /* SSBO and shared vars might be passed to a built-in such as an atomic
     * memory function, where copying these to a temp before passing to the
     * atomic function is not valid so we must replace these instead. Also,

@@ -1847,7 +1847,7 @@ ngg_build_streamout_vertex(nir_builder *b, nir_xfb_info *info,
                            vtx_buffer_offsets[out->buffer],
                            zero, zero,
                            .base = out->offset,
-                           .slc_amd = true);
+                           .access = ACCESS_STREAM_CACHE_POLICY);
    }
 }
 
@@ -2076,8 +2076,8 @@ export_vertex_params_gfx11(nir_builder *b, nir_ssa_def *export_tid, nir_ssa_def 
       for (unsigned j = 0; j < 4; j++)
          comp[j] = outputs[i].chan[j] ? outputs[i].chan[j] : undef;
       nir_store_buffer_amd(b, nir_vec(b, comp, 4), attr_rsrc, voffset, soffset, vindex,
-                           .is_swizzled = true, .memory_modes = nir_var_shader_out,
-                           .access = ACCESS_COHERENT);
+                           .memory_modes = nir_var_shader_out,
+                           .access = ACCESS_COHERENT | ACCESS_IS_SWIZZLED_AMD);
    }
 
    nir_pop_if(b, NULL);
@@ -2389,105 +2389,6 @@ ngg_gs_clear_primflags(nir_builder *b, nir_ssa_def *num_vertices, unsigned strea
       nir_pop_if(b, if_break);
    }
    nir_pop_loop(b, loop);
-}
-
-static void
-ngg_gs_shader_query(nir_builder *b, lower_ngg_gs_state *s)
-{
-   bool has_gen_prim_query = s->options->has_gen_prim_query;
-   bool has_pipeline_stats_query = s->options->gfx_level < GFX11;
-
-   nir_ssa_def *pipeline_query_enabled = NULL;
-   nir_ssa_def *prim_gen_query_enabled = NULL;
-   nir_ssa_def *shader_query_enabled = NULL;
-   if (has_gen_prim_query) {
-      prim_gen_query_enabled = nir_load_prim_gen_query_enabled_amd(b);
-      if (has_pipeline_stats_query) {
-         pipeline_query_enabled = nir_load_pipeline_stat_query_enabled_amd(b);
-         shader_query_enabled = nir_ior(b, pipeline_query_enabled, prim_gen_query_enabled);
-      } else {
-         shader_query_enabled = prim_gen_query_enabled;
-      }
-   } else if (has_pipeline_stats_query) {
-      pipeline_query_enabled = nir_load_pipeline_stat_query_enabled_amd(b);
-      shader_query_enabled = pipeline_query_enabled;
-   } else {
-      /* has no query */
-      return;
-   }
-
-   nir_if *if_shader_query = nir_push_if(b, shader_query_enabled);
-
-   nir_ssa_def *active_threads_mask = nir_ballot(b, 1, s->options->wave_size, nir_imm_bool(b, true));
-   nir_ssa_def *num_active_threads = nir_bit_count(b, active_threads_mask);
-
-   /* Calculate the "real" number of emitted primitives from the emitted GS vertices and primitives.
-    * GS emits points, line strips or triangle strips.
-    * Real primitives are points, lines or triangles.
-    */
-   nir_ssa_def *num_prims_in_wave[4] = {0};
-   u_foreach_bit (i, b->shader->info.gs.active_stream_mask) {
-      assert(s->vertex_count[i] && s->primitive_count[i]);
-
-      nir_ssa_scalar vtx_cnt = nir_get_ssa_scalar(s->vertex_count[i], 0);
-      nir_ssa_scalar prm_cnt = nir_get_ssa_scalar(s->primitive_count[i], 0);
-
-      if (nir_ssa_scalar_is_const(vtx_cnt) && nir_ssa_scalar_is_const(prm_cnt)) {
-         unsigned gs_vtx_cnt = nir_ssa_scalar_as_uint(vtx_cnt);
-         unsigned gs_prm_cnt = nir_ssa_scalar_as_uint(prm_cnt);
-         unsigned total_prm_cnt = gs_vtx_cnt - gs_prm_cnt * (s->num_vertices_per_primitive - 1u);
-         if (total_prm_cnt == 0)
-            continue;
-
-         num_prims_in_wave[i] = nir_imul_imm(b, num_active_threads, total_prm_cnt);
-      } else {
-         nir_ssa_def *gs_vtx_cnt = vtx_cnt.def;
-         nir_ssa_def *gs_prm_cnt = prm_cnt.def;
-         if (s->num_vertices_per_primitive > 1)
-            gs_prm_cnt = nir_iadd(b, nir_imul_imm(b, gs_prm_cnt, -1u * (s->num_vertices_per_primitive - 1)), gs_vtx_cnt);
-         num_prims_in_wave[i] = nir_reduce(b, gs_prm_cnt, .reduction_op = nir_op_iadd);
-      }
-   }
-
-   /* Store the query result to query result using an atomic add. */
-   nir_if *if_first_lane = nir_push_if(b, nir_elect(b, 1));
-   {
-      if (has_pipeline_stats_query) {
-         nir_if *if_pipeline_query = nir_push_if(b, pipeline_query_enabled);
-         {
-            nir_ssa_def *count = NULL;
-
-            /* Add all streams' number to the same counter. */
-            for (int i = 0; i < 4; i++) {
-               if (num_prims_in_wave[i]) {
-                  if (count)
-                     count = nir_iadd(b, count, num_prims_in_wave[i]);
-                  else
-                     count = num_prims_in_wave[i];
-               }
-            }
-
-            if (count)
-               nir_atomic_add_gs_emit_prim_count_amd(b, count);
-         }
-         nir_pop_if(b, if_pipeline_query);
-      }
-
-      if (has_gen_prim_query) {
-         nir_if *if_prim_gen_query = nir_push_if(b, prim_gen_query_enabled);
-         {
-            /* Add to the counter for this stream. */
-            for (int i = 0; i < 4; i++) {
-               if (num_prims_in_wave[i])
-                  nir_atomic_add_gen_prim_count_amd(b, num_prims_in_wave[i], .stream_id = i);
-            }
-         }
-         nir_pop_if(b, if_prim_gen_query);
-      }
-   }
-   nir_pop_if(b, if_first_lane);
-
-   nir_pop_if(b, if_shader_query);
 }
 
 static bool
@@ -3379,7 +3280,13 @@ ac_nir_lower_ngg_gs(nir_shader *shader, const ac_nir_lower_ngg_options *options)
 
    /* Emit shader queries */
    b->cursor = nir_after_cf_list(&if_gs_thread->then_list);
-   ngg_gs_shader_query(b, &state);
+   ac_nir_gs_shader_query(b,
+                          state.options->has_gen_prim_query,
+                          state.options->gfx_level < GFX11,
+                          state.num_vertices_per_primitive,
+                          state.options->wave_size,
+                          state.vertex_count,
+                          state.primitive_count);
 
    b->cursor = nir_after_cf_list(&impl->body);
 

@@ -5342,9 +5342,10 @@ static bool
 emit_loop(struct ntd_context *ctx, nir_loop *loop)
 {
    nir_block *first_block = nir_loop_first_block(loop);
+   nir_block *last_block = nir_loop_last_block(loop);
 
-   assert(nir_loop_last_block(loop)->successors[0]);
-   assert(!nir_loop_last_block(loop)->successors[1]);
+   assert(last_block->successors[0]);
+   assert(!last_block->successors[1]);
 
    if (!emit_branch(ctx, first_block->index))
       return false;
@@ -5352,7 +5353,12 @@ emit_loop(struct ntd_context *ctx, nir_loop *loop)
    if (!emit_cf_list(ctx, &loop->body))
       return false;
 
-   if (!emit_branch(ctx, first_block->index))
+   /* If the loop's last block doesn't explicitly jump somewhere, then there's
+    * an implicit continue that should take it back to the first loop block
+    */
+   nir_instr *last_instr = nir_block_last_instr(last_block);
+   if ((!last_instr || last_instr->type != nir_instr_type_jump) &&
+       !emit_branch(ctx, first_block->index))
       return false;
 
    return true;
@@ -5958,9 +5964,9 @@ allocate_sysvalues(struct ntd_context *ctx)
 {
    unsigned driver_location = 0;
    nir_foreach_variable_with_modes(var, ctx->shader, nir_var_shader_in)
-      driver_location++;
+      driver_location = MAX2(driver_location, var->data.driver_location + 1);
    nir_foreach_variable_with_modes(var, ctx->shader, nir_var_system_value)
-      driver_location++;
+      driver_location = MAX2(driver_location, var->data.driver_location + 1);
 
    if (ctx->shader->info.stage == MESA_SHADER_FRAGMENT &&
        ctx->shader->info.inputs_read &&

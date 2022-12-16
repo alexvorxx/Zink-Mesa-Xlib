@@ -106,6 +106,30 @@ st_point_size_per_vertex(struct gl_context *ctx)
    return false;
 }
 
+static inline void
+st_validate_state(struct st_context *st, uint64_t pipeline_state_mask)
+{
+   struct gl_context *ctx = st->ctx;
+
+   /* Inactive states are shader states not used by shaders at the moment. */
+   uint64_t dirty = ctx->NewDriverState & st->active_states & pipeline_state_mask;
+
+   if (dirty) {
+      ctx->NewDriverState &= ~dirty;
+
+      uint32_t dirty_lo = dirty;
+      uint32_t dirty_hi = dirty >> 32;
+
+      /* Update states. Don't use u_bit_scan64 because 64-bit ffs (x86 BSF)
+       * is slower on x86_64 and emulated on i386.
+       */
+      while (dirty_lo)
+         st_update_functions[u_bit_scan(&dirty_lo)](st);
+      while (dirty_hi)
+         st_update_functions[32 + u_bit_scan(&dirty_hi)](st);
+   }
+}
+
 #ifdef __cplusplus
 }
 #endif

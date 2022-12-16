@@ -157,6 +157,7 @@ visit_intrinsic(nir_shader *shader, nir_intrinsic_instr *instr)
    case nir_intrinsic_load_sample_positions_amd:
    case nir_intrinsic_load_rasterization_samples_amd:
    case nir_intrinsic_load_ring_gsvs_amd:
+   case nir_intrinsic_load_ring_gs2vs_offset_amd:
    case nir_intrinsic_load_streamout_config_amd:
    case nir_intrinsic_load_streamout_write_index_amd:
    case nir_intrinsic_load_streamout_offset_amd:

@@ -3725,7 +3725,7 @@ struct iris_vertex_element_state {
 };
 
 /**
- * The pipe->create_vertex_elements() driver hook.
+ * The pipe->create_vertex_elements_state() driver hook.
  *
  * This translates pipe_vertex_element to our 3DSTATE_VERTEX_ELEMENTS
  * and 3DSTATE_VF_INSTANCING commands. The vertex_elements and vf_instancing

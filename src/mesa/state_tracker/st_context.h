@@ -249,13 +249,8 @@ struct st_context
          PIPE_MAX_SAMPLE_LOCATION_GRID_SIZE * 32];
    } state;
 
-   uint64_t dirty; /**< dirty states */
-
    /** This masks out unused shader resources. Only valid in draw calls. */
    uint64_t active_states;
-
-   GLboolean vertdata_edgeflags;
-   GLboolean edgeflag_culls_prims;
 
    /**
     * The number of currently active queries (excluding timer queries).
@@ -512,6 +507,10 @@ st_api_destroy_drawable(struct pipe_frontend_drawable *drawable);
 
 void
 st_screen_destroy(struct pipe_frontend_screen *fscreen);
+
+typedef void (*st_update_func_t)(struct st_context *st);
+
+extern st_update_func_t st_update_functions[ST_NUM_ATOMS];
 
 #ifdef __cplusplus
 }

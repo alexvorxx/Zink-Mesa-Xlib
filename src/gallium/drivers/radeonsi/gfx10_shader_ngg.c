@@ -124,35 +124,6 @@ void gfx10_ngg_export_vertex(struct ac_shader_abi *abi)
    si_llvm_build_vs_exports(ctx, outputs, num_outputs);
 }
 
-void gfx10_ngg_gs_emit_begin(struct si_shader_context *ctx)
-{
-   LLVMBuilderRef builder = ctx->ac.builder;
-   LLVMValueRef tmp;
-
-   if (ctx->screen->info.gfx_level < GFX11) {
-      tmp = si_is_gs_thread(ctx);
-      ac_build_ifcc(&ctx->ac, tmp, 15090);
-         {
-            tmp = GET_FIELD(ctx, GS_STATE_PIPELINE_STATS_EMU);
-            tmp = LLVMBuildTrunc(builder, tmp, ctx->ac.i1, "");
-            ac_build_ifcc(&ctx->ac, tmp, 5109); /* if (GS_PIPELINE_STATS_EMU) */
-            LLVMValueRef args[] = {
-               ctx->ac.i32_1,
-               ngg_get_emulated_counters_buf(ctx),
-               LLVMConstInt(ctx->ac.i32,
-                            si_query_pipestat_end_dw_offset(ctx->screen, PIPE_STAT_QUERY_GS_INVOCATIONS) * 4,
-                            false),
-               ctx->ac.i32_0,                            /* soffset */
-               ctx->ac.i32_0,                            /* cachepolicy */
-            };
-
-            ac_build_intrinsic(&ctx->ac, "llvm.amdgcn.raw.buffer.atomic.add.i32", ctx->ac.i32, args, 5, 0);
-            ac_build_endif(&ctx->ac, 5109);
-         }
-      ac_build_endif(&ctx->ac, 15090);
-   }
-}
-
 static void clamp_gsprims_to_esverts(unsigned *max_gsprims, unsigned max_esverts,
                                      unsigned min_verts_per_prim, bool use_adjacency)
 {

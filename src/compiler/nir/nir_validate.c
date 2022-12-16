@@ -789,6 +789,17 @@ validate_intrinsic_instr(nir_intrinsic_instr *instr, validate_state *state)
       break;
    }
 
+   case nir_intrinsic_store_buffer_amd:
+      if (nir_intrinsic_access(instr) & ACCESS_USES_FORMAT_AMD) {
+         unsigned writemask = nir_intrinsic_write_mask(instr);
+
+         /* Make sure the writemask is derived from the component count. */
+         validate_assert(state,
+                         writemask ==
+                         BITFIELD_MASK(nir_src_num_components(instr->src[0])));
+      }
+      break;
+
    default:
       break;
    }
@@ -902,6 +913,7 @@ validate_tex_instr(nir_tex_instr *instr, validate_state *state)
                                 glsl_type_is_sampler(deref->type));
          switch (instr->op) {
          case nir_texop_descriptor_amd:
+         case nir_texop_sampler_descriptor_amd:
             break;
          case nir_texop_lod:
             validate_assert(state, nir_alu_type_get_base_type(instr->dest_type) == nir_type_float);

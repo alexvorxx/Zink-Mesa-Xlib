@@ -196,6 +196,7 @@ struct panfrost_context {
 
         struct panfrost_sampler_state *samplers[PIPE_SHADER_TYPES][PIPE_MAX_SAMPLERS];
         unsigned sampler_count[PIPE_SHADER_TYPES];
+        uint32_t valid_samplers[PIPE_SHADER_TYPES];
 
         struct panfrost_sampler_view *sampler_views[PIPE_SHADER_TYPES][PIPE_MAX_SHADER_SAMPLER_VIEWS];
         unsigned sampler_view_count[PIPE_SHADER_TYPES];

@@ -46,6 +46,7 @@ struct tu_descriptor_state
    struct tu_descriptor_set *sets[MAX_SETS];
    struct tu_descriptor_set push_set;
    uint32_t dynamic_descriptors[MAX_DYNAMIC_BUFFERS_SIZE];
+   uint64_t set_iova[MAX_SETS + 1];
    uint32_t max_sets_bound;
    bool dynamic_bound;
 };
@@ -120,13 +121,20 @@ enum tu_cmd_access_mask {
     */
    TU_ACCESS_CP_WRITE = 1 << 12,
 
+   /* Descriptors are read through UCHE but are also prefetched via
+    * CP_LOAD_STATE6 and the prefetched descriptors need to be invalidated
+    * when they change.
+    */
+   TU_ACCESS_BINDLESS_DESCRIPTOR_READ = 1 << 13,
+
    TU_ACCESS_READ =
       TU_ACCESS_UCHE_READ |
       TU_ACCESS_CCU_COLOR_READ |
       TU_ACCESS_CCU_DEPTH_READ |
       TU_ACCESS_CCU_COLOR_INCOHERENT_READ |
       TU_ACCESS_CCU_DEPTH_INCOHERENT_READ |
-      TU_ACCESS_SYSMEM_READ,
+      TU_ACCESS_SYSMEM_READ |
+      TU_ACCESS_BINDLESS_DESCRIPTOR_READ,
 
    TU_ACCESS_WRITE =
       TU_ACCESS_UCHE_WRITE |
@@ -203,6 +211,7 @@ enum tu_cmd_flush_bits {
    TU_CMD_FLAG_WAIT_MEM_WRITES = 1 << 6,
    TU_CMD_FLAG_WAIT_FOR_IDLE = 1 << 7,
    TU_CMD_FLAG_WAIT_FOR_ME = 1 << 8,
+   TU_CMD_FLAG_BINDLESS_DESCRIPTOR_INVALIDATE = 1 << 9,
 
    TU_CMD_FLAG_ALL_FLUSH =
       TU_CMD_FLAG_CCU_FLUSH_DEPTH |
@@ -217,6 +226,7 @@ enum tu_cmd_flush_bits {
       TU_CMD_FLAG_CCU_INVALIDATE_DEPTH |
       TU_CMD_FLAG_CCU_INVALIDATE_COLOR |
       TU_CMD_FLAG_CACHE_INVALIDATE |
+      TU_CMD_FLAG_BINDLESS_DESCRIPTOR_INVALIDATE |
       /* Treat CP_WAIT_FOR_ME as a "cache" that needs to be invalidated when a
        * a command that needs CP_WAIT_FOR_ME is executed. This means we may
        * insert an extra WAIT_FOR_ME before an indirect command requiring it
@@ -527,6 +537,8 @@ struct tu_cmd_state
    struct tu_vs_params last_vs_params;
 
    struct tu_primitive_params last_prim_params;
+
+   uint64_t descriptor_buffer_iova[MAX_SETS];
 };
 
 struct tu_cmd_buffer

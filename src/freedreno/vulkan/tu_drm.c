@@ -515,6 +515,14 @@ tu_bo_map(struct tu_device *dev, struct tu_bo *bo)
 }
 
 void
+tu_bo_allow_dump(struct tu_device *dev, struct tu_bo *bo)
+{
+   mtx_lock(&dev->bo_mutex);
+   dev->bo_list[bo->bo_list_idx].flags |= MSM_SUBMIT_BO_DUMP;
+   mtx_unlock(&dev->bo_mutex);
+}
+
+void
 tu_bo_finish(struct tu_device *dev, struct tu_bo *bo)
 {
    assert(bo->gem_handle);

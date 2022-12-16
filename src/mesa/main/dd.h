@@ -182,8 +182,7 @@ struct dd_function_table {
                                   struct pipe_draw_vertex_state_info info,
                                   const struct pipe_draw_start_count_bias *draws,
                                   const uint8_t *mode,
-                                  unsigned num_draws,
-                                  bool per_vertex_edgeflags);
+                                  unsigned num_draws);
    /*@}*/
 
    struct pipe_vertex_state *

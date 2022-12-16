@@ -7270,9 +7270,9 @@ visit_load_buffer(isel_context* ctx, nir_intrinsic_instr* intrin)
    Temp s_offset = bld.as_uniform(get_ssa_temp(ctx, intrin->src[2].ssa));
    Temp idx = idxen ? as_vgpr(ctx, get_ssa_temp(ctx, intrin->src[3].ssa)) : Temp();
 
-   bool swizzled = nir_intrinsic_is_swizzled(intrin);
-   bool slc = nir_intrinsic_slc_amd(intrin);
+   bool swizzled = nir_intrinsic_access(intrin) & ACCESS_IS_SWIZZLED_AMD;
    bool glc = nir_intrinsic_access(intrin) & ACCESS_COHERENT;
+   bool slc = nir_intrinsic_access(intrin) & ACCESS_STREAM_CACHE_POLICY;
 
    unsigned const_offset = nir_intrinsic_base(intrin);
    unsigned elem_size_bytes = intrin->dest.ssa.bit_size / 8u;
@@ -7299,9 +7299,9 @@ visit_store_buffer(isel_context* ctx, nir_intrinsic_instr* intrin)
    Temp s_offset = bld.as_uniform(get_ssa_temp(ctx, intrin->src[3].ssa));
    Temp idx = idxen ? as_vgpr(ctx, get_ssa_temp(ctx, intrin->src[4].ssa)) : Temp();
 
-   bool swizzled = nir_intrinsic_is_swizzled(intrin);
+   bool swizzled = nir_intrinsic_access(intrin) & ACCESS_IS_SWIZZLED_AMD;
    bool glc = nir_intrinsic_access(intrin) & ACCESS_COHERENT;
-   bool slc = nir_intrinsic_slc_amd(intrin);
+   bool slc = nir_intrinsic_access(intrin) & ACCESS_STREAM_CACHE_POLICY;
 
    unsigned const_offset = nir_intrinsic_base(intrin);
    unsigned write_mask = nir_intrinsic_write_mask(intrin);

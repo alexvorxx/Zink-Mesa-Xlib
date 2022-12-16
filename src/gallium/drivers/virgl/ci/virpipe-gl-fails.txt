@@ -3,8 +3,6 @@ dEQP-GLES2.functional.clipping.line.wide_line_clip_viewport_corner,Fail
 dEQP-GLES2.functional.clipping.point.wide_point_clip,Fail
 dEQP-GLES2.functional.clipping.point.wide_point_clip_viewport_center,Fail
 dEQP-GLES2.functional.clipping.point.wide_point_clip_viewport_corner,Fail
-dEQP-GLES3.functional.draw_buffers_indexed.random.max_implementation_draw_buffers.8,Fail
-dEQP-GLES3.functional.draw_buffers_indexed.random.max_required_draw_buffers.9,Fail
 dEQP-GLES31.functional.primitive_bounding_box.wide_points.global_state.vertex_tessellation_fragment.default_framebuffer_bbox_equal,Fail
 dEQP-GLES31.functional.primitive_bounding_box.wide_points.global_state.vertex_tessellation_fragment.default_framebuffer_bbox_larger,Fail
 dEQP-GLES31.functional.primitive_bounding_box.wide_points.global_state.vertex_tessellation_fragment.fbo_bbox_equal,Fail

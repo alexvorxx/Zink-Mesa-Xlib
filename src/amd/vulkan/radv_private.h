@@ -369,6 +369,7 @@ struct radv_instance {
    bool disable_sinking_load_input_fs;
    bool flush_before_query_copy;
    bool enable_unified_heap_on_apu;
+   bool tex_non_uniform;
 };
 
 VkResult radv_init_wsi(struct radv_physical_device *physical_device);
@@ -1965,7 +1966,7 @@ void radv_hash_shaders(unsigned char *hash, const struct radv_pipeline_stage *st
                        const struct radv_pipeline_key *key, uint32_t flags);
 
 void radv_hash_rt_shaders(unsigned char *hash, const VkRayTracingPipelineCreateInfoKHR *pCreateInfo,
-                          uint32_t flags);
+                          const struct radv_pipeline_key *key, uint32_t flags);
 
 uint32_t radv_get_hash_flags(const struct radv_device *device, bool stats);
 

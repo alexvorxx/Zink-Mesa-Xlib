@@ -2844,7 +2844,8 @@ vtn_handle_texture(struct vtn_builder *b, SpvOp opcode,
       vtn_fail("unexpected nir_texop_tex_prefetch");
       break;
    case nir_texop_descriptor_amd:
-      vtn_fail("unexpected nir_texop_descriptor_amd");
+   case nir_texop_sampler_descriptor_amd:
+      vtn_fail("unexpected nir_texop_*descriptor_amd");
       break;
    }
 
@@ -3103,6 +3104,9 @@ vtn_handle_texture(struct vtn_builder *b, SpvOp opcode,
 
    if (operands & SpvImageOperandsNontemporalMask)
       access |= ACCESS_STREAM_CACHE_POLICY;
+
+   if (sampler && b->options->force_tex_non_uniform)
+      access |= ACCESS_NON_UNIFORM;
 
    if (sampled_val->propagated_non_uniform)
       access |= ACCESS_NON_UNIFORM;
