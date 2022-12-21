@@ -3,6 +3,31 @@
 
 ======================================================
 
+Tips for improving stability
+---------------
+
+How to improve stability with Turnip + Zink in Exagear? 
+
+If your game in Exagear freezes or crashes with errors **"GL_OUT_OF_MEMORY"**, **"ZINK: vkMapMemory failed"** etc, try these solutions.
+
+- Use the most stable version of **Mesa Zink from 11.06.22** (https://github.com/alexvorxx/mesa-zink-11.06.22).
+
+- Use environment variables **ZINK_DESCRIPTORS=lazy** and **ZINK_DEBUG=compact**. Zink has a problem with descriptor sets, these commands partially fix it. **ZINK_DEBUG=compact** forces to use a maximum of 4 descriptor sets. **ZINK_DESCRIPTORS=lazy** disables caching and attempt to use the least amount of CPU. It improves performance and stability.
+
+- For some Direct3D games open **winecfg** and change version of Windows to Windows 98. Then open **regedit**, go to the **[HKEY_CURRENT_USER/Software/Wine/Direct3D]** and add parameter **"strict_shader_math"=dword:00000003**. Turnip has problems with rendering of some textures or compiling shaders, but Windows 98 skips some textures and shaders. Thanks for this method to GIORGI (aka Alien), OnlyFuns and Luis Gaming Test.
+
+- For Direct3D games use **WineD3D 7.2** - the most stable version.
+
+- For some Direct3D games open **regedit**, go to the **[HKEY_CURRENT_USER/Software/Wine/Direct3D]** and add parameter **"csmt"=dword:00000000**. A value **0** may improve stability but decrease performance. A values **1** or **3** may decrease stability but improve performance.
+
+https://www.phoronix.com/review/zink-sub-alloc/6
+
+https://docs.mesa3d.org/drivers/zink.html
+
+https://wiki.winehq.org/Useful_Registry_Keys
+
+https://4pda.to/forum/index.php?showtopic=992239&view=findpost&p=119392856
+
 Build dependencies
 ---------------
 
