@@ -537,15 +537,9 @@ VkResult genX(GetQueryPoolResults)(
          uint64_t *slot = query_slot(pool, firstQuery + i);
          uint32_t statistics = pool->pipeline_statistics;
          while (statistics) {
-            uint32_t stat = u_bit_scan(&statistics);
+            UNUSED uint32_t stat = u_bit_scan(&statistics);
             if (write_results) {
                uint64_t result = slot[idx * 2 + 2] - slot[idx * 2 + 1];
-
-               /* WaDividePSInvocationCountBy4:BDW */
-               if (device->info->ver == 8 &&
-                   (1 << stat) == VK_QUERY_PIPELINE_STATISTIC_FRAGMENT_SHADER_INVOCATIONS_BIT)
-                  result >>= 2;
-
                cpu_write_query_result(pData, flags, idx, result);
             }
             idx++;
@@ -1499,17 +1493,9 @@ void genX(CmdCopyQueryPoolResults)(
       case VK_QUERY_TYPE_PIPELINE_STATISTICS: {
          uint32_t statistics = pool->pipeline_statistics;
          while (statistics) {
-            uint32_t stat = u_bit_scan(&statistics);
-
+            UNUSED uint32_t stat = u_bit_scan(&statistics);
             result = compute_query_result(&b, anv_address_add(query_addr,
                                                               idx * 16 + 8));
-
-            /* WaDividePSInvocationCountBy4:BDW */
-            if (cmd_buffer->device->info->ver == 8 &&
-                (1 << stat) == VK_QUERY_PIPELINE_STATISTIC_FRAGMENT_SHADER_INVOCATIONS_BIT) {
-               result = mi_ushr32_imm(&b, result, 2);
-            }
-
             gpu_write_query_result(&b, dest_addr, flags, idx++, result);
          }
          assert(idx == util_bitcount(pool->pipeline_statistics));

@@ -2000,6 +2000,7 @@ nir_intrinsic_can_reorder(nir_intrinsic_instr *instr)
    if (nir_intrinsic_has_access(instr) &&
        nir_intrinsic_access(instr) & ACCESS_VOLATILE)
       return false;
+
    if (instr->intrinsic == nir_intrinsic_load_deref) {
       nir_deref_instr *deref = nir_src_as_deref(instr->src[0]);
       return nir_deref_mode_is_in_set(deref, nir_var_read_only_modes) ||
@@ -3301,6 +3302,7 @@ typedef enum {
    nir_divergence_view_index_uniform = (1 << 3),
    nir_divergence_single_frag_shading_rate_per_subgroup = (1 << 4),
    nir_divergence_multiple_workgroup_per_compute_subgroup = (1 << 5),
+   nir_divergence_shader_record_ptr_uniform = (1 << 6),
 } nir_divergence_options;
 
 typedef enum {
@@ -5040,6 +5042,9 @@ bool nir_lower_subgroups(nir_shader *shader,
 
 bool nir_lower_system_values(nir_shader *shader);
 
+nir_ssa_def *
+nir_build_lowered_load_helper_invocation(struct nir_builder *b);
+
 typedef struct nir_lower_compute_system_values_options {
    bool has_base_global_invocation_id:1;
    bool has_base_workgroup_id:1;
@@ -5312,6 +5317,11 @@ typedef struct nir_lower_image_options {
     * If true, lower cube size operations.
     */
    bool lower_cube_size;
+
+   /**
+    * Lower multi sample image load and samples_identical to use fragment_mask_load.
+    */
+   bool lower_to_fragment_mask_load_amd;
 } nir_lower_image_options;
 
 bool nir_lower_image(nir_shader *nir,
@@ -5488,7 +5498,7 @@ struct nir_fold_tex_srcs_options {
 
 struct nir_fold_16bit_tex_image_options {
    nir_rounding_mode rounding_mode;
-   bool fold_tex_dest;
+   nir_alu_type fold_tex_dest_types;
    bool fold_image_load_store_data;
    bool fold_image_srcs;
    unsigned fold_srcs_options_count;

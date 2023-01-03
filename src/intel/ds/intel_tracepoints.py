@@ -84,6 +84,8 @@ def define_tracepoints(args):
                           Arg(type='enum isl_format', name='src_fmt', var='src_fmt', c_format='%s', to_prim_type='isl_format_get_short_name({})'),
                           ])
 
+    begin_end_tp('generate_draws')
+
     begin_end_tp('draw',
                  tp_args=[Arg(type='uint32_t', var='count', c_format='%u')])
     begin_end_tp('draw_multi',

@@ -105,11 +105,7 @@ lower_system_value_instr(nir_builder *b, nir_instr *instr, void *_state)
 
    case nir_intrinsic_load_helper_invocation:
       if (b->shader->options->lower_helper_invocation) {
-         nir_ssa_def *tmp;
-         tmp = nir_ishl(b, nir_imm_int(b, 1),
-                           nir_load_sample_id_no_per_sample(b));
-         tmp = nir_iand(b, nir_load_sample_mask_in(b), tmp);
-         return nir_inot(b, nir_i2b(b, tmp));
+         return nir_build_lowered_load_helper_invocation(b);
       } else {
          return NULL;
       }
@@ -243,6 +239,16 @@ lower_system_value_instr(nir_builder *b, nir_instr *instr, void *_state)
    default:
       return NULL;
    }
+}
+
+nir_ssa_def *
+nir_build_lowered_load_helper_invocation(nir_builder *b)
+{
+   nir_ssa_def *tmp;
+   tmp = nir_ishl(b, nir_imm_int(b, 1),
+                  nir_load_sample_id_no_per_sample(b));
+   tmp = nir_iand(b, nir_load_sample_mask_in(b), tmp);
+   return nir_inot(b, nir_i2b(b, tmp));
 }
 
 bool

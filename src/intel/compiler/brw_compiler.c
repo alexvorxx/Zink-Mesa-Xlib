@@ -75,7 +75,8 @@
    .divergence_analysis_options =                                             \
       (nir_divergence_single_prim_per_subgroup |                              \
        nir_divergence_single_patch_per_tcs_subgroup |                         \
-       nir_divergence_single_patch_per_tes_subgroup)
+       nir_divergence_single_patch_per_tes_subgroup |                         \
+       nir_divergence_shader_record_ptr_uniform)
 
 static const struct nir_shader_compiler_options scalar_nir_options = {
    COMMON_OPTIONS,

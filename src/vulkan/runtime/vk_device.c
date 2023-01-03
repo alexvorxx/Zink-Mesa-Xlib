@@ -139,11 +139,13 @@ vk_device_init(struct vk_device *device,
 
    device->physical = physical_device;
 
-   device->dispatch_table = *dispatch_table;
+   if (dispatch_table) {
+      device->dispatch_table = *dispatch_table;
 
-   /* Add common entrypoints without overwriting driver-provided ones. */
-   vk_device_dispatch_table_from_entrypoints(
-      &device->dispatch_table, &vk_common_device_entrypoints, false);
+      /* Add common entrypoints without overwriting driver-provided ones. */
+      vk_device_dispatch_table_from_entrypoints(
+         &device->dispatch_table, &vk_common_device_entrypoints, false);
+   }
 
    for (uint32_t i = 0; i < pCreateInfo->enabledExtensionCount; i++) {
       int idx;

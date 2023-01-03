@@ -26,15 +26,15 @@
 #define __AIL_LAYOUT_H_
 
 #include "util/format/u_format.h"
-#include "util/u_math.h"
 #include "util/macros.h"
+#include "util/u_math.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-#define AIL_CACHELINE 0x80
-#define AIL_PAGESIZE  0x4000
+#define AIL_CACHELINE      0x80
+#define AIL_PAGESIZE       0x4000
 #define AIL_MAX_MIP_LEVELS 16
 
 enum ail_tiling {
@@ -183,9 +183,9 @@ ail_get_linear_pixel_B(struct ail_layout *layout, ASSERTED unsigned level,
    assert(level == 0 && "Strided linear mipmapped textures are unsupported");
    assert(z_px == 0 && "Strided linear 3D textures are unsupported");
    assert(util_format_get_blockwidth(layout->format) == 1 &&
-         "Strided linear block formats unsupported");
+          "Strided linear block formats unsupported");
    assert(util_format_get_blockheight(layout->format) == 1 &&
-         "Strided linear block formats unsupported");
+          "Strided linear block formats unsupported");
    assert(layout->sample_count_sa == 1 &&
           "Strided linear multisampling unsupported");
 
@@ -201,17 +201,13 @@ ail_is_compressed(struct ail_layout *layout)
 
 void ail_make_miptree(struct ail_layout *layout);
 
-void
-ail_detile(void *_tiled, void *_linear,
-           struct ail_layout *tiled_layout, unsigned level,
-           unsigned linear_pitch_B, unsigned sx_px, unsigned sy_px,
-           unsigned width_px, unsigned height_px);
+void ail_detile(void *_tiled, void *_linear, struct ail_layout *tiled_layout,
+                unsigned level, unsigned linear_pitch_B, unsigned sx_px,
+                unsigned sy_px, unsigned width_px, unsigned height_px);
 
-void
-ail_tile(void *_tiled, void *_linear,
-         struct ail_layout *tiled_layout, unsigned level,
-         unsigned linear_pitch_B,
-         unsigned sx_px, unsigned sy_px, unsigned width_px, unsigned height_px);
+void ail_tile(void *_tiled, void *_linear, struct ail_layout *tiled_layout,
+              unsigned level, unsigned linear_pitch_B, unsigned sx_px,
+              unsigned sy_px, unsigned width_px, unsigned height_px);
 
 #ifdef __cplusplus
 } /* extern C */

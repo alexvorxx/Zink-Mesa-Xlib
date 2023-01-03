@@ -60,6 +60,7 @@
 #include "util/hash_table.h"
 #include "util/list.h"
 #include "util/perf/u_trace.h"
+#include "util/set.h"
 #include "util/sparse_array.h"
 #include "util/u_atomic.h"
 #include "util/u_vector.h"
@@ -1009,6 +1010,15 @@ struct anv_physical_device {
 
     bool                                        always_flush_cache;
 
+    /**
+     * True if the generated indirect draw optimization is turned on.
+     *
+     * This optimization is currently only available on Gfx11+ to avoid
+     * dealing with the annoying Gfx8/9 tracking of vertex buffer for the VF
+     * cache workaround.
+     */
+    bool                                        generated_indirect_draws;
+
     struct {
       uint32_t                                  family_count;
       struct anv_queue_family                   families[ANV_MAX_QUEUE_FAMILIES];
@@ -1075,6 +1085,7 @@ struct anv_instance {
     bool                                        sample_mask_out_opengl_behaviour;
     bool                                        fp64_workaround_enabled;
     float                                       lower_depth_range_rate;
+    unsigned                                    generated_indirect_threshold;
 };
 
 VkResult anv_init_wsi(struct anv_physical_device *physical_device);
@@ -1192,6 +1203,13 @@ struct anv_device {
     struct anv_bo *                             workaround_bo;
     struct anv_address                          workaround_address;
 
+    /**
+     * Workarounds for game bugs.
+     */
+    struct {
+       struct set *                             doom64_images;
+    } workarounds;
+
     struct anv_bo *                             trivial_batch_bo;
     struct anv_state                            null_surface_state;
 
@@ -1240,6 +1258,15 @@ struct anv_device {
     struct anv_shader_bin                      *rt_trivial_return;
 
     enum anv_rt_bvh_build_method                bvh_build_method;
+
+    /** Draw generation shader
+     *
+     * Generates direct draw calls out of indirect parameters. Used to
+     * workaround slowness with indirect draw calls.
+     */
+    struct anv_shader_bin                      *generated_draw_kernel;
+    struct anv_shader_bin                      *generated_draw_count_kernel;
+    const struct intel_l3_config               *generated_draw_l3_config;
 
     pthread_mutex_t                             mutex;
     pthread_cond_t                              queue_submit;
@@ -1360,8 +1387,8 @@ VkResult anv_queue_submit(struct vk_queue *queue,
 VkResult anv_queue_submit_simple_batch(struct anv_queue *queue,
                                        struct anv_batch *batch);
 
-void* anv_gem_mmap(struct anv_device *device,
-                   uint32_t gem_handle, uint64_t offset, uint64_t size, uint32_t flags);
+void* anv_gem_mmap(struct anv_device *device, struct anv_bo *bo,
+                   uint64_t offset, uint64_t size, uint32_t flags);
 void anv_gem_munmap(struct anv_device *device, void *p, uint64_t size);
 uint32_t anv_gem_create(struct anv_device *device, uint64_t size);
 void anv_gem_close(struct anv_device *device, uint32_t gem_handle);
@@ -1394,9 +1421,6 @@ void anv_vma_free(struct anv_device *device,
                   uint64_t address, uint64_t size);
 
 struct anv_reloc_list {
-   uint32_t                                     num_relocs;
-   uint32_t                                     array_length;
-   struct anv_bo **                             reloc_bos;
    uint32_t                                     dep_words;
    BITSET_WORD *                                deps;
 };
@@ -1465,6 +1489,7 @@ struct anv_batch {
 
 void *anv_batch_emit_dwords(struct anv_batch *batch, int num_dwords);
 VkResult anv_batch_emit_ensure_space(struct anv_batch *batch, uint32_t size);
+void anv_batch_advance(struct anv_batch *batch, uint32_t size);
 void anv_batch_emit_batch(struct anv_batch *batch, struct anv_batch *other);
 struct anv_address anv_batch_address(struct anv_batch *batch, void *batch_location);
 
@@ -1894,21 +1919,28 @@ anv_descriptor_set_address(struct anv_descriptor_set *set)
 struct anv_descriptor_pool {
    struct vk_object_base base;
 
-   uint32_t size;
-   uint32_t next;
-   uint32_t free_list;
-
    struct anv_bo *bo;
    struct util_vma_heap bo_heap;
 
    struct anv_state_stream surface_state_stream;
    void *surface_state_free_list;
 
+   /** List of anv_descriptor_set. */
    struct list_head desc_sets;
 
+   /** Heap over host_mem */
+   struct util_vma_heap host_heap;
+
+   /** Allocated size of host_mem */
+   uint32_t host_mem_size;
+
+   /**
+    * VK_DESCRIPTOR_POOL_CREATE_HOST_ONLY_BIT_EXT. If set, then
+    * surface_state_stream is unused.
+    */
    bool host_only;
 
-   char data[0];
+   char host_mem[0];
 };
 
 size_t
@@ -2126,7 +2158,8 @@ enum anv_pipe_bits {
 #define ANV_PIPE_STALL_BITS ( \
    ANV_PIPE_STALL_AT_SCOREBOARD_BIT | \
    ANV_PIPE_DEPTH_STALL_BIT | \
-   ANV_PIPE_CS_STALL_BIT)
+   ANV_PIPE_CS_STALL_BIT | \
+   ANV_PIPE_PSS_STALL_SYNC_BIT)
 
 #define ANV_PIPE_INVALIDATE_BITS ( \
    ANV_PIPE_STATE_CACHE_INVALIDATE_BIT | \
@@ -2538,12 +2571,15 @@ struct anv_cmd_graphics_state {
    VkShaderStageFlags push_constant_stages;
 
    uint32_t primitive_topology;
+   bool used_task_shader;
 
    struct anv_buffer *index_buffer;
    uint32_t index_type; /**< 3DSTATE_INDEX_BUFFER.IndexFormat */
    uint32_t index_offset;
 
    struct vk_sample_locations_state sample_locations;
+
+   bool object_preemption;
 };
 
 enum anv_depth_reg_mode {
@@ -2676,6 +2712,7 @@ struct anv_cmd_buffer {
    struct anv_device *                          device;
    struct anv_queue_family *                    queue_family;
 
+   /** Batch where the main commands live */
    struct anv_batch                             batch;
 
    /* Pointer to the location in the batch where MI_BATCH_BUFFER_END was
@@ -2747,6 +2784,28 @@ struct anv_cmd_buffer {
     * Used to increase allocation size for long command buffers.
     */
    uint32_t                                     total_batch_size;
+
+   /** Batch generating part of the anv_cmd_buffer::batch */
+   struct anv_batch                             generation_batch;
+
+   /**
+    * Location in anv_cmd_buffer::batch at which we left some space to insert
+    * a MI_BATCH_BUFFER_START into the generation_batch if needed.
+    */
+   struct anv_address                           generation_jump_addr;
+
+   /**
+    * Location in anv_cmd_buffer::batch at which the generation batch should
+    * jump back to.
+    */
+   struct anv_address                           generation_return_addr;
+
+   /** List of anv_batch_bo used for generation
+    *
+    * We have to keep this separated of the anv_cmd_buffer::batch_bos that is
+    * used for a chaining optimization.
+    */
+   struct list_head                             generation_batch_bos;
 
    /**
     * A vector of anv_bo pointers for chunks of memory used by the command
@@ -2858,6 +2917,13 @@ anv_cmd_buffer_alloc_blorp_binding_table(struct anv_cmd_buffer *cmd_buffer,
 void anv_cmd_buffer_dump(struct anv_cmd_buffer *cmd_buffer);
 
 void anv_cmd_emit_conditional_render_predicate(struct anv_cmd_buffer *cmd_buffer);
+
+static inline unsigned
+anv_cmd_buffer_get_view_count(struct anv_cmd_buffer *cmd_buffer)
+{
+   struct anv_cmd_graphics_state *gfx = &cmd_buffer->state.gfx;
+   return MAX2(1, util_bitcount(gfx->view_mask));
+}
 
 enum anv_bo_sync_state {
    /** Indicates that this is a new (or newly reset fence) */
@@ -3045,6 +3111,7 @@ struct anv_graphics_pipeline {
 
    bool                                         kill_pixel;
    bool                                         force_fragment_thread_dispatch;
+   bool                                         uses_xfb;
 
    uint32_t                                     vb_used;
    struct anv_pipeline_vertex_binding {
@@ -3682,13 +3749,7 @@ anv_can_sample_with_hiz(const struct intel_device_info * const devinfo,
    if (image->vk.image_type == VK_IMAGE_TYPE_3D)
       return false;
 
-   /* Allow this feature on BDW even though it is disabled in the BDW devinfo
-    * struct. There's documentation which suggests that this feature actually
-    * reduces performance on BDW, but it has only been observed to help so
-    * far. Sampling fast-cleared blocks on BDW must also be handled with care
-    * (see depth_stencil_attachment_compute_aux_usage() for more info).
-    */
-   if (devinfo->ver != 8 && !devinfo->has_sample_with_hiz)
+   if (!devinfo->has_sample_with_hiz)
       return false;
 
    return image->vk.samples == 1;
@@ -4116,6 +4177,18 @@ struct anv_memcpy_state {
    struct anv_vb_cache_range vb_bound;
    struct anv_vb_cache_range vb_dirty;
 };
+
+VkResult
+anv_device_init_generated_indirect_draws(struct anv_device *device);
+void
+anv_device_finish_generated_indirect_draws(struct anv_device *device);
+
+static inline bool anv_use_generated_draws(const struct anv_device *device,
+                                           uint32_t count)
+{
+   return device->physical->generated_indirect_draws &&
+          count >= device->physical->instance->generated_indirect_threshold;
+}
 
 struct anv_utrace_flush_copy {
    /* Needs to be the first field */

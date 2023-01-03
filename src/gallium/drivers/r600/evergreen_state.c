@@ -4133,8 +4133,8 @@ static void evergreen_set_shader_buffers(struct pipe_context *ctx,
 	unsigned i, idx;
 	unsigned old_mask;
 
-	if (shader != PIPE_SHADER_FRAGMENT &&
-	    shader != PIPE_SHADER_COMPUTE && count == 0)
+	if ((shader != PIPE_SHADER_FRAGMENT &&
+        shader != PIPE_SHADER_COMPUTE) || count == 0)
 		return;
 
 	if (shader == PIPE_SHADER_FRAGMENT)

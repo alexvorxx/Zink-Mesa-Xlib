@@ -876,7 +876,8 @@ bool
 isl_format_supports_ccs_e(const struct intel_device_info *devinfo,
                           enum isl_format format)
 {
-   if (intel_device_info_is_mtl(devinfo))
+   /* Wa_14017353530: Disable compression on MTL until B0 */
+   if (intel_device_info_is_mtl(devinfo) && devinfo->revision < 4)
       return false;
 
    /* Wa_22011186057: Disable compression on ADL-P A0 */

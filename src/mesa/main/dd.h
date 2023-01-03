@@ -154,7 +154,6 @@ struct dd_function_table {
     * - info->min_index (if index_bounds_valid is false)
     * - info->max_index (if index_bounds_valid is false)
     * - info->drawid (if increment_draw_id is true)
-    * - info->index.gl_bo (if index_size && !has_user_indices)
     */
    void (*DrawGallium)(struct gl_context *ctx,
                        struct pipe_draw_info *info,

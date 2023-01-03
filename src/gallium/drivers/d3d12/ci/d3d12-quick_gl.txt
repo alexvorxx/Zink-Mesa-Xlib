@@ -1281,12 +1281,7 @@ spec/ext_framebuffer_multisample/no-color 8 depth-computed separate: skip
 spec/ext_framebuffer_multisample/no-color 8 stencil separate: skip
 spec/ext_framebuffer_multisample/point-smooth 32: skip
 spec/ext_framebuffer_multisample/polygon-smooth 32: skip
-spec/ext_framebuffer_multisample/polygon-stipple 16: crash
-spec/ext_framebuffer_multisample/polygon-stipple 2: crash
 spec/ext_framebuffer_multisample/polygon-stipple 32: skip
-spec/ext_framebuffer_multisample/polygon-stipple 4: crash
-spec/ext_framebuffer_multisample/polygon-stipple 6: crash
-spec/ext_framebuffer_multisample/polygon-stipple 8: crash
 spec/ext_framebuffer_multisample/sample-alpha-to-coverage 32 color: skip
 spec/ext_framebuffer_multisample/sample-alpha-to-coverage 32 depth: skip
 spec/ext_framebuffer_multisample/sample-alpha-to-one 16: fail
@@ -1930,9 +1925,9 @@ wgl/wgl-sanity: skip
 summary:
        name:  results
        ----  --------
-       pass:    19459
+       pass:    19464
        fail:      467
-      crash:       11
+      crash:        6
        skip:     1432
     timeout:        0
        warn:       10

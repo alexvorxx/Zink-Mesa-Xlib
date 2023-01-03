@@ -370,6 +370,7 @@ struct radv_instance {
    bool flush_before_query_copy;
    bool enable_unified_heap_on_apu;
    bool tex_non_uniform;
+   char *app_layer;
 };
 
 VkResult radv_init_wsi(struct radv_physical_device *physical_device);
@@ -761,6 +762,8 @@ struct radv_queue_state {
    struct radeon_cmdbuf *initial_preamble_cs;
    struct radeon_cmdbuf *initial_full_flush_preamble_cs;
    struct radeon_cmdbuf *continue_preamble_cs;
+   struct radeon_cmdbuf *gang_wait_preamble_cs;
+   struct radeon_cmdbuf *gang_wait_postamble_cs;
 };
 
 struct radv_queue {
@@ -770,6 +773,7 @@ struct radv_queue {
    enum radeon_ctx_priority priority;
    struct radv_queue_state state;
    struct radv_queue_state *ace_internal_state;
+   struct radeon_winsys_bo *gang_sem_bo;
 };
 
 #define RADV_BORDER_COLOR_COUNT       4096
@@ -822,11 +826,27 @@ struct radv_rra_trace_data {
    bool validate_as;
 };
 
+enum radv_dispatch_table {
+   RADV_DEVICE_DISPATCH_TABLE,
+   RADV_APP_DISPATCH_TABLE,
+   RADV_RGP_DISPATCH_TABLE,
+   RADV_RRA_DISPATCH_TABLE,
+   RADV_DISPATCH_TABLE_COUNT,
+};
+
+struct radv_layer_dispatch_tables {
+   struct vk_device_dispatch_table app;
+   struct vk_device_dispatch_table rgp;
+   struct vk_device_dispatch_table rra;
+};
+
 struct radv_device {
    struct vk_device vk;
 
    struct radv_instance *instance;
    struct radeon_winsys *ws;
+
+   struct radv_layer_dispatch_tables layer_dispatch;
 
    struct radeon_winsys_ctx *hw_ctx[RADV_NUM_HW_CTX];
    struct radv_meta_state meta_state;
@@ -1577,7 +1597,6 @@ struct radv_cmd_state {
    uint64_t index_va;
    int32_t last_index_type;
 
-   int32_t last_primitive_reset_en;
    uint32_t last_primitive_reset_index;
    enum radv_cmd_flush_bits flush_bits;
    unsigned active_occlusion_queries;

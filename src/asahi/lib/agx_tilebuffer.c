@@ -3,9 +3,9 @@
  * SPDX-License-Identifier: MIT
  */
 
+#include "agx_tilebuffer.h"
 #include <assert.h>
 #include "util/format/u_format.h"
-#include "agx_tilebuffer.h"
 #include "agx_formats.h"
 #include "agx_usc.h"
 
@@ -18,11 +18,13 @@
 static struct agx_tile_size
 agx_select_tile_size(unsigned bytes_per_pixel)
 {
+   /* clang-format off */
    struct agx_tile_size sizes[] = {
       { 32, 32 },
       { 32, 16 },
       { 16, 16 }
    };
+   /* clang-format on */
 
    for (unsigned i = 0; i < ARRAY_SIZE(sizes); ++i) {
       struct agx_tile_size size = sizes[i];
@@ -31,17 +33,14 @@ agx_select_tile_size(unsigned bytes_per_pixel)
          return size;
    }
 
-   unreachable("No supported tile size meets the bytes per pixel requirement"); 
+   unreachable("No supported tile size meets the bytes per pixel requirement");
 }
 
 struct agx_tilebuffer_layout
-agx_build_tilebuffer_layout(enum pipe_format *formats,
-                            uint8_t nr_cbufs,
+agx_build_tilebuffer_layout(enum pipe_format *formats, uint8_t nr_cbufs,
                             uint8_t nr_samples)
 {
-   struct agx_tilebuffer_layout tib = {
-      .nr_samples = nr_samples
-   };
+   struct agx_tilebuffer_layout tib = {.nr_samples = nr_samples};
 
    uint32_t offset_B = 0;
 
@@ -57,8 +56,9 @@ agx_build_tilebuffer_layout(enum pipe_format *formats,
 
       tib.offset_B[rt] = offset_B;
 
-      unsigned nr = util_format_get_nr_components(physical_fmt) == 1 ?
-                    util_format_get_nr_components(formats[rt]) : 1;
+      unsigned nr = util_format_get_nr_components(physical_fmt) == 1
+                       ? util_format_get_nr_components(formats[rt])
+                       : 1;
 
       unsigned size_B = align_B * nr;
       offset_B += size_B;
@@ -93,8 +93,8 @@ agx_shared_layout_from_tile_size(struct agx_tile_size t)
 uint32_t
 agx_tilebuffer_total_size(struct agx_tilebuffer_layout *tib)
 {
-   return tib->sample_size_B * tib->nr_samples *
-          tib->tile_size.width * tib->tile_size.height;
+   return tib->sample_size_B * tib->nr_samples * tib->tile_size.width *
+          tib->tile_size.height;
 }
 
 void

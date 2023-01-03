@@ -1033,12 +1033,15 @@ get_back_bo(struct dri2_egl_surface *dri2_surf)
    while (dri2_surf->back == NULL) {
       for (int i = 0; i < ARRAY_SIZE(dri2_surf->color_buffers); i++) {
          /* Get an unlocked buffer, preferably one with a dri_buffer
-          * already allocated. */
+          * already allocated and with minimum age.
+          */
          if (dri2_surf->color_buffers[i].locked)
             continue;
-         if (dri2_surf->back == NULL)
-            dri2_surf->back = &dri2_surf->color_buffers[i];
-         else if (dri2_surf->back->dri_image == NULL)
+
+         if (!dri2_surf->back ||
+             !dri2_surf->back->dri_image ||
+             (dri2_surf->color_buffers[i].age > 0 &&
+              dri2_surf->color_buffers[i].age < dri2_surf->back->age))
             dri2_surf->back = &dri2_surf->color_buffers[i];
       }
 
@@ -2351,13 +2354,16 @@ swrast_update_buffers(struct dri2_egl_surface *dri2_surf)
    /* There might be a buffer release already queued that wasn't processed */
    wl_display_dispatch_queue_pending(dri2_dpy->wl_dpy, dri2_surf->wl_queue);
 
-   /* try get free buffer already created */
+   /* Try to get free buffer already created and with minimum age */
    for (int i = 0; i < ARRAY_SIZE(dri2_surf->color_buffers); i++) {
-      if (!dri2_surf->color_buffers[i].locked &&
-          dri2_surf->color_buffers[i].wl_buffer) {
-          dri2_surf->back = &dri2_surf->color_buffers[i];
-          break;
-      }
+      if (dri2_surf->color_buffers[i].locked ||
+          !dri2_surf->color_buffers[i].wl_buffer)
+         continue;
+
+      if (!dri2_surf->back ||
+          (dri2_surf->color_buffers[i].age > 0 &&
+           dri2_surf->color_buffers[i].age < dri2_surf->back->age))
+         dri2_surf->back = &dri2_surf->color_buffers[i];
    }
 
    /* else choose any another free location */

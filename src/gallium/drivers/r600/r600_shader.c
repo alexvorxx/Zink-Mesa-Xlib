@@ -395,7 +395,7 @@ int r600_pipe_shader_create(struct pipe_context *ctx,
 			   shader->shader.bc.ncf,
 			   shader->shader.bc.nstack);
 
-	if (!sel->nir_blob && sel->nir) {
+	if (!sel->nir_blob && sel->nir && sel->ir_type != PIPE_SHADER_IR_TGSI) {
 		struct blob blob;
 		blob_init(&blob);
 		nir_serialize(&blob, sel->nir, false);

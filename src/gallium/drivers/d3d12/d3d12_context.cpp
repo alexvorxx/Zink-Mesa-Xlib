@@ -102,6 +102,7 @@ d3d12_context_destroy(struct pipe_context *pctx)
    pipe_resource_reference(&ctx->pstipple.texture, nullptr);
    pipe_sampler_view_reference(&ctx->pstipple.sampler_view, nullptr);
    util_dynarray_fini(&ctx->recently_destroyed_bos);
+   util_dynarray_fini(&ctx->ended_queries);
    FREE(ctx->pstipple.sampler_cso);
 
    u_suballocator_destroy(&ctx->query_allocator);

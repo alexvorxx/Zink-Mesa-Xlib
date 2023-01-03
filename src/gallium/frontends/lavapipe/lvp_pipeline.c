@@ -441,9 +441,9 @@ lvp_shader_compile_to_ir(struct lvp_pipeline *pipeline,
 
    if (stage == MESA_SHADER_FRAGMENT)
       lvp_lower_input_attachments(nir, false);
+   NIR_PASS_V(nir, nir_lower_system_values);
    NIR_PASS_V(nir, nir_lower_is_helper_invocation);
    NIR_PASS_V(nir, lower_demote);
-   NIR_PASS_V(nir, nir_lower_system_values);
    NIR_PASS_V(nir, nir_lower_compute_system_values, NULL);
 
    NIR_PASS_V(nir, nir_remove_dead_variables,
@@ -489,7 +489,7 @@ lvp_shader_compile_to_ir(struct lvp_pipeline *pipeline,
    /* Skip if there are potentially conflicting rounding modes */
    struct nir_fold_16bit_tex_image_options fold_16bit_options = {
       .rounding_mode = nir_rounding_mode_undef,
-      .fold_tex_dest = true,
+      .fold_tex_dest_types = nir_type_float | nir_type_uint | nir_type_int,
    };
    NIR_PASS_V(nir, nir_fold_16bit_tex_image, &fold_16bit_options);
 

@@ -3,8 +3,8 @@
  * SPDX-License-Identifier: MIT
  */
 
-#include "agx_compiler.h"
 #include "compiler/nir/nir_builder.h"
+#include "agx_compiler.h"
 
 /*
  * Lower load_interpolated_input instructions with unused components of their
@@ -27,7 +27,7 @@ pass(struct nir_builder *b, nir_instr *instr, UNUSED void *data)
 
    b->cursor = nir_before_instr(instr);
    unsigned bit_size = nir_dest_bit_size(intr->dest);
-   nir_ssa_def *comps[4] = { NULL };
+   nir_ssa_def *comps[4] = {NULL};
 
    for (unsigned c = 0; c < intr->num_components; ++c) {
       if (mask & BITFIELD_BIT(c)) {
@@ -76,8 +76,6 @@ pass(struct nir_builder *b, nir_instr *instr, UNUSED void *data)
 bool
 agx_nir_lower_load_mask(nir_shader *shader)
 {
-   return nir_shader_instructions_pass(shader, pass,
-                                       nir_metadata_block_index |
-                                       nir_metadata_dominance,
-                                       NULL);
+   return nir_shader_instructions_pass(
+      shader, pass, nir_metadata_block_index | nir_metadata_dominance, NULL);
 }

@@ -6563,7 +6563,6 @@
     <field name="Generic Media State Clear" start="48" end="48" type="bool" />
     <field name="PSS Stall Sync Enable" start="49" end="49" type="bool" />
     <field name="TLB Invalidate" start="50" end="50" type="bool" />
-    <field name="Global Snapshot Count Reset" start="51" end="51" type="bool" />
     <field name="Command Streamer Stall Enable" start="52" end="52" type="bool" />
     <field name="Store Data Index" start="53" end="53" type="uint" />
     <field name="Protected Memory Enable" start="54" end="54" type="bool" />
@@ -7414,7 +7413,9 @@
       <value name="Mid-cmdbuffer Preemption" value="0" />
       <value name="Object Level Preemption" value="1" />
     </field>
+    <field name="Disable Preemption and High Priority Pausing due to 3DPRIMITIVE Command" start="10" end="10" type="bool" />
     <field name="Replay Mode Mask" start="16" end="16" type="bool" />
+    <field name="Disable Preemption and High Priority Pausing due to 3DPRIMITIVE Command Mask" start="26" end="26" type="bool" />
   </register>
   <register name="CS_DEBUG_MODE2" length="1" num="0x20d8">
     <field name="3D Rendering Instruction Disable" start="0" end="0" type="bool" />

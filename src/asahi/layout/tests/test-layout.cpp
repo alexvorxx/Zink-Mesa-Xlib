@@ -58,3 +58,37 @@ TEST(Linear, SmokeTestBuffer)
 
    EXPECT_EQ(layout.size_B, ALIGN_POT(81946, AIL_CACHELINE));
 }
+
+TEST(Miptree, AllMipLevels)
+{
+   struct ail_layout layout = {
+      .width_px = 1024,
+      .height_px = 1024,
+      .depth_px = 1,
+      .sample_count_sa = 1,
+      .levels = 11,
+      .tiling = AIL_TILING_TWIDDLED,
+      .format = PIPE_FORMAT_R8G8B8A8_UINT,
+   };
+
+   ail_make_miptree(&layout);
+
+   EXPECT_EQ(layout.size_B, 0x555680);
+}
+
+TEST(Miptree, SomeMipLevels)
+{
+   struct ail_layout layout = {
+      .width_px = 1024,
+      .height_px = 1024,
+      .depth_px = 1,
+      .sample_count_sa = 1,
+      .levels = 4,
+      .tiling = AIL_TILING_TWIDDLED,
+      .format = PIPE_FORMAT_R8G8B8A8_UINT,
+   };
+
+   ail_make_miptree(&layout);
+
+   EXPECT_EQ(layout.size_B, 0x555680);
+}

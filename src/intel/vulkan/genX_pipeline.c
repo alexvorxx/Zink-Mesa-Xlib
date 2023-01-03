@@ -27,6 +27,7 @@
 #include "genxml/genX_pack.h"
 #include "genxml/genX_rt_pack.h"
 
+#include "common/intel_genX_state.h"
 #include "common/intel_l3_config.h"
 #include "common/intel_sample_positions.h"
 #include "nir/nir_xfb_info.h"
@@ -1114,6 +1115,8 @@ emit_3dstate_streamout(struct anv_graphics_pipeline *pipeline,
    };
 
    if (xfb_info) {
+      pipeline->uses_xfb = true;
+
       so.SOFunctionEnable = true;
       so.SOStatisticsEnable = true;
 
@@ -1522,11 +1525,8 @@ emit_3dstate_ps(struct anv_graphics_pipeline *pipeline,
    const struct brw_wm_prog_data *wm_prog_data = get_wm_prog_data(pipeline);
 
    anv_batch_emit(&pipeline->base.batch, GENX(3DSTATE_PS), ps) {
-      brw_fs_get_dispatch_enables(devinfo, wm_prog_data,
-                                  ms != NULL ? ms->rasterization_samples : 1,
-                                  &ps._8PixelDispatchEnable,
-                                  &ps._16PixelDispatchEnable,
-                                  &ps._32PixelDispatchEnable);
+      intel_set_ps_dispatch_state(&ps, devinfo, wm_prog_data,
+                                  ms != NULL ? ms->rasterization_samples : 1);
 
       ps.KernelStartPointer0 = fs_bin->kernel.offset +
                                brw_wm_prog_data_prog_offset(wm_prog_data, ps, 0);
@@ -1806,7 +1806,7 @@ emit_mesh_state(struct anv_graphics_pipeline *pipeline)
       mesh.LocalXMaximum                     = mesh_dispatch.group_size - 1;
       mesh.EmitLocalIDX                      = true;
 
-      mesh.MaximumPrimitiveCount             = mesh_prog_data->map.max_primitives - 1;
+      mesh.MaximumPrimitiveCount             = MAX2(mesh_prog_data->map.max_primitives, 1) - 1;
       mesh.OutputTopology                    = output_topology;
       mesh.PerVertexDataPitch                = mesh_prog_data->map.per_vertex_pitch_dw / 8;
       mesh.PerPrimitiveDataPresent           = mesh_prog_data->map.per_primitive_pitch_dw > 0;

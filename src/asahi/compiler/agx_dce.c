@@ -42,7 +42,8 @@ agx_dce(agx_context *ctx)
       }
 
       agx_foreach_instr_global_safe_rev(ctx, I) {
-         if (!agx_opcodes_info[I->op].can_eliminate) continue;
+         if (!agx_opcodes_info[I->op].can_eliminate)
+            continue;
 
          bool needed = false;
 
@@ -54,7 +55,7 @@ agx_dce(agx_context *ctx)
              */
             if ((I->dest[d].type == AGX_INDEX_NORMAL) &&
                 !BITSET_TEST(seen, I->dest[d].value))
-                  I->dest[d] = agx_null();
+               I->dest[d] = agx_null();
 
             /* If the destination is actually needed, the instruction is too */
             needed |= (I->dest[d].type != AGX_INDEX_NULL);

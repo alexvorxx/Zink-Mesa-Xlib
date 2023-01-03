@@ -145,7 +145,7 @@ if [ -n "$HWCI_START_WESTON" ]; then
   export XDG_RUNTIME_DIR=/run/user
   mkdir -p $XDG_RUNTIME_DIR
 
-  weston -Bheadless-backend.so -Swayland-0 &
+  weston -Bheadless-backend.so --use-gl -Swayland-0 &
   export WAYLAND_DISPLAY=wayland-0
   sleep 1
 fi

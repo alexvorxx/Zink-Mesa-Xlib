@@ -66,6 +66,11 @@ static const struct {
       INTEL_DS_QUEUE_STAGE_CMD_BUFFER,
    },
    {
+      "generate-draws",
+      false,
+      INTEL_DS_QUEUE_STAGE_GENERATE_DRAWS,
+   },
+   {
       "stall",
       false,
       INTEL_DS_QUEUE_STAGE_STALL,
@@ -417,6 +422,7 @@ CREATE_DUAL_EVENT_CALLBACK(draw_mesh_indirect, INTEL_DS_QUEUE_STAGE_DRAW_MESH)
 CREATE_DUAL_EVENT_CALLBACK(draw_mesh_indirect_count, INTEL_DS_QUEUE_STAGE_DRAW_MESH)
 CREATE_DUAL_EVENT_CALLBACK(xfb, INTEL_DS_QUEUE_STAGE_CMD_BUFFER)
 CREATE_DUAL_EVENT_CALLBACK(compute, INTEL_DS_QUEUE_STAGE_COMPUTE)
+CREATE_DUAL_EVENT_CALLBACK(generate_draws, INTEL_DS_QUEUE_STAGE_GENERATE_DRAWS)
 
 void
 intel_ds_begin_stall(struct intel_ds_device *device,

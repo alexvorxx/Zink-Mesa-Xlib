@@ -220,7 +220,8 @@ dzn_image_create(struct dzn_device *device,
                                VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT |
                                VK_IMAGE_USAGE_TRANSFER_SRC_BIT)))
          image->desc.Flags |= D3D12_RESOURCE_FLAG_DENY_SHADER_RESOURCE;
-   }
+   } else if (image->vk.usage & VK_IMAGE_USAGE_STORAGE_BIT)
+      image->desc.Flags |= D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS;
 
    /* Images with TRANSFER_DST can be cleared or passed as a blit/resolve
     * destination. Both operations require the RT or DS cap flags.
@@ -238,9 +239,6 @@ dzn_image_create(struct dzn_device *device,
          image->desc.Flags |= D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS;
       }
    }
-
-   if (image->vk.usage & VK_IMAGE_USAGE_STORAGE_BIT)
-      image->desc.Flags |= D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS;
 
    *out = dzn_image_to_handle(image);
    return VK_SUCCESS;
@@ -934,6 +932,14 @@ dzn_image_view_prepare_srv_desc(struct dzn_image_view *iview)
 
       for (uint32_t i = 0; i < ARRAY_SIZE(swz); i++)
          swz[i] = bgra4_remap[swz[i]];
+   } else if (iview->vk.aspects & VK_IMAGE_ASPECT_STENCIL_BIT) {
+      /* D3D puts stencil in G, not R. Requests for R should be routed to G and vice versa. */
+      for (uint32_t i = 0; i < ARRAY_SIZE(swz); i++) {
+         if (swz[i] == D3D12_SHADER_COMPONENT_MAPPING_FROM_MEMORY_COMPONENT_0)
+            swz[i] = D3D12_SHADER_COMPONENT_MAPPING_FROM_MEMORY_COMPONENT_1;
+         else if (swz[i] == D3D12_SHADER_COMPONENT_MAPPING_FROM_MEMORY_COMPONENT_1)
+            swz[i] = D3D12_SHADER_COMPONENT_MAPPING_FROM_MEMORY_COMPONENT_0;
+      }
    }
 
    iview->srv_desc.Shader4ComponentMapping =

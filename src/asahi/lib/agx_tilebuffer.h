@@ -6,8 +6,8 @@
 #ifndef __AGX_TILEBUFFER_H
 #define __AGX_TILEBUFFER_H
 
-#include <stdint.h>
 #include <stdbool.h>
+#include <stdint.h>
 #include "util/format/u_formats.h"
 
 #ifdef __cplusplus
@@ -43,16 +43,16 @@ struct agx_tilebuffer_layout {
 };
 
 struct agx_tilebuffer_layout
-agx_build_tilebuffer_layout(enum pipe_format *formats, uint8_t nr_cbufs, uint8_t nr_samples);
+agx_build_tilebuffer_layout(enum pipe_format *formats, uint8_t nr_cbufs,
+                            uint8_t nr_samples);
 
-bool
-agx_nir_lower_tilebuffer(struct nir_shader *shader, struct agx_tilebuffer_layout *tib);
+bool agx_nir_lower_tilebuffer(struct nir_shader *shader,
+                              struct agx_tilebuffer_layout *tib);
 
-void
-agx_usc_tilebuffer(struct agx_usc_builder *b, struct agx_tilebuffer_layout *tib);
+void agx_usc_tilebuffer(struct agx_usc_builder *b,
+                        struct agx_tilebuffer_layout *tib);
 
-uint32_t
-agx_tilebuffer_total_size(struct agx_tilebuffer_layout *tib);
+uint32_t agx_tilebuffer_total_size(struct agx_tilebuffer_layout *tib);
 
 enum pipe_format
 agx_tilebuffer_physical_format(struct agx_tilebuffer_layout *tib, unsigned rt);

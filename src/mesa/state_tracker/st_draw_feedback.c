@@ -173,9 +173,6 @@ st_feedback_draw_vbo(struct gl_context *ctx,
       if (info->has_user_indices) {
          mapped_indices = info->index.user;
       } else {
-         info->index.resource = info->index.gl_bo->buffer;
-         if (!info->index.resource)
-            return; /* glBufferData wasn't called on the buffer */
          mapped_indices = pipe_buffer_map(pipe, info->index.resource,
                                           PIPE_MAP_READ, &ib_transfer);
       }

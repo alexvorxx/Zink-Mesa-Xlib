@@ -685,23 +685,33 @@ loader_dri3_wait_for_sbc(struct loader_dri3_drawable *draw,
 static int
 dri3_find_back(struct loader_dri3_drawable *draw, bool prefer_a_different)
 {
+   struct loader_dri3_buffer *buffer;
    int b;
-   int num_to_consider;
    int max_num;
+   int best_id = -1;
+   uint64_t best_swap = 0;
 
    mtx_lock(&draw->mtx);
-   /* Increase the likelyhood of reusing current buffer */
-   dri3_flush_present_events(draw);
+
+   if (!prefer_a_different) {
+      /* Increase the likelyhood of reusing current buffer */
+      dri3_flush_present_events(draw);
+
+      /* Reuse current back buffer if it's idle */
+      buffer = draw->buffers[draw->cur_back];
+      if (buffer && !buffer->busy) {
+         best_id = draw->cur_back;
+         goto unlock;
+      }
+   }
 
    /* Check whether we need to reuse the current back buffer as new back.
     * In that case, wait until it's not busy anymore.
     */
    if (!loader_dri3_have_image_blit(draw) && draw->cur_blit_source != -1) {
-      num_to_consider = 1;
       max_num = 1;
       draw->cur_blit_source = -1;
    } else {
-      num_to_consider = draw->cur_num_back;
       max_num = draw->max_num_back;
    }
 
@@ -715,28 +725,38 @@ dri3_find_back(struct loader_dri3_drawable *draw, bool prefer_a_different)
     * to wait for the copy to finish.
     */
    int current_back_id = draw->cur_back;
-   for (;;) {
-      for (b = 0; b < num_to_consider; b++) {
-         int id = LOADER_DRI3_BACK_ID((b + draw->cur_back) % draw->cur_num_back);
-         struct loader_dri3_buffer *buffer = draw->buffers[id];
+   do {
+      /* Find idle buffer with lowest buffer age, or first unallocated slot */
+      for (b = 0; b < max_num; b++) {
+         int id = LOADER_DRI3_BACK_ID((b + draw->cur_back) % draw->max_num_back);
 
-         if (!buffer || (!buffer->busy &&
-                         (!prefer_a_different || id != current_back_id))) {
-            draw->cur_back = id;
-            mtx_unlock(&draw->mtx);
-            return id;
+         buffer = draw->buffers[id];
+         if (buffer) {
+            if (!buffer->busy &&
+                (!prefer_a_different || id != current_back_id) &&
+                (best_id == -1 || buffer->last_swap > best_swap)) {
+               best_id = id;
+               best_swap = buffer->last_swap;
+            }
+         } else if (best_id == -1 || (!best_swap && id < best_id)) {
+            best_id = id;
          }
       }
 
-      if (num_to_consider < max_num) {
-         num_to_consider = ++draw->cur_num_back;
-      } else if (prefer_a_different) {
-         prefer_a_different = false;
-      } else if (!dri3_wait_for_event_locked(draw, NULL)) {
-         mtx_unlock(&draw->mtx);
-         return -1;
-      }
+      /* Prefer re-using the same buffer over blocking */
+      if (prefer_a_different && best_id == -1 &&
+          !draw->buffers[LOADER_DRI3_BACK_ID(current_back_id)]->busy)
+         best_id = current_back_id;
+   } while (best_id == -1 && dri3_wait_for_event_locked(draw, NULL));
+
+   if (best_id != -1) {
+      draw->cur_back = best_id;
+      draw->cur_num_back = MAX2(draw->cur_num_back, best_id + 1);
    }
+
+unlock:
+   mtx_unlock(&draw->mtx);
+   return best_id;
 }
 
 static xcb_gcontext_t

@@ -37,8 +37,7 @@ agx_print_sized(char prefix, unsigned value, enum agx_size size, FILE *fp)
       return;
    case AGX_SIZE_64:
       assert((value & 1) == 0);
-      fprintf(fp, "%c%u:%c%u", prefix, value >> 1,
-            prefix, (value >> 1) + 1);
+      fprintf(fp, "%c%u:%c%u", prefix, value >> 1, prefix, (value >> 1) + 1);
       return;
    }
 
@@ -143,9 +142,9 @@ agx_print_instr(agx_instr *I, FILE *fp)
          print_comma = true;
 
       agx_print_index(I->src[s],
-            agx_opcodes_info[I->op].is_float &&
-            !(s >= 2 && I->op == AGX_OPCODE_FCMPSEL),
-            fp);
+                      agx_opcodes_info[I->op].is_float &&
+                         !(s >= 2 && I->op == AGX_OPCODE_FCMPSEL),
+                      fp);
    }
 
    if (I->mask) {

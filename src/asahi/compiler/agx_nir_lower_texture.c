@@ -23,10 +23,10 @@
  * SOFTWARE.
  */
 
-#include "agx_compiler.h"
 #include "compiler/nir/nir.h"
 #include "compiler/nir/nir_builder.h"
 #include "compiler/nir/nir_builtin_builder.h"
+#include "agx_compiler.h"
 
 static nir_ssa_def *
 steal_tex_src(nir_tex_instr *tex, nir_tex_src_type type_)
@@ -89,11 +89,11 @@ lower_array_texture(nir_builder *b, nir_instr *instr, UNUSED void *data)
     * vec6 16-bit coordinate tuple, which would be inconvenient in NIR for
     * little benefit (a minor optimization, I guess).
     */
-   nir_ssa_def *sample_array =
-      (ms_idx && layer) ? nir_pack_32_2x16_split(b, ms_idx, layer) :
-      ms_idx            ? nir_u2u32(b, ms_idx) :
-      layer             ? nir_u2u32(b, layer) :
-      NULL;
+   nir_ssa_def *sample_array = (ms_idx && layer)
+                                  ? nir_pack_32_2x16_split(b, ms_idx, layer)
+                               : ms_idx ? nir_u2u32(b, ms_idx)
+                               : layer  ? nir_u2u32(b, layer)
+                                        : NULL;
 
    /* Combine into the final 32-bit tuple */
    if (sample_array != NULL) {
@@ -109,7 +109,7 @@ lower_array_texture(nir_builder *b, nir_instr *instr, UNUSED void *data)
 bool
 agx_nir_lower_array_texture(nir_shader *s)
 {
-   return nir_shader_instructions_pass(s, lower_array_texture,
-                                       nir_metadata_block_index |
-                                       nir_metadata_dominance, NULL);
+   return nir_shader_instructions_pass(
+      s, lower_array_texture, nir_metadata_block_index | nir_metadata_dominance,
+      NULL);
 }

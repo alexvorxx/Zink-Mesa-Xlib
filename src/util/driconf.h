@@ -599,6 +599,12 @@
    DRI_CONF_OPT_B(radv_tex_non_uniform, def, \
                   "Always mark texture sample operations as non-uniform.")
 
+#define DRI_CONF_RADV_RT(def) \
+   DRI_CONF_OPT_B(radv_rt, def, \
+                  "Expose support for VK_KHR_ray_tracing_pipeline")
+
+#define DRI_CONF_RADV_APP_LAYER() DRI_CONF_OPT_S_NODEF(radv_app_layer, "Select an application layer.")
+
 /**
  * \brief ANV specific configuration options
  */
@@ -614,5 +620,9 @@
 #define DRI_CONF_ANV_FP64_WORKAROUND_ENABLED(def) \
    DRI_CONF_OPT_B(fp64_workaround_enabled, def, \
                   "Use softpf64 when the shader uses float64, but the device doesn't support that type")
+
+#define DRI_CONF_ANV_GENERATED_INDIRECT_THRESHOLD(def) \
+   DRI_CONF_OPT_I(generated_indirect_threshold, def, 0, INT32_MAX, \
+                  "Indirect threshold count above which we start generating commands")
 
 #endif

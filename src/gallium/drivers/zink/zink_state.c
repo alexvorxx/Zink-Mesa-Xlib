@@ -617,7 +617,8 @@ zink_create_rasterizer_state(struct pipe_context *pctx,
 
    state->hw_state.line_mode = VK_LINE_RASTERIZATION_MODE_DEFAULT_EXT;
    if (rs_state->line_rectangular) {
-      if (rs_state->line_smooth)
+      if (rs_state->line_smooth &&
+          !screen->driver_workarounds.no_linesmooth)
          state->hw_state.line_mode = VK_LINE_RASTERIZATION_MODE_RECTANGULAR_SMOOTH_EXT;
       else
          state->hw_state.line_mode = VK_LINE_RASTERIZATION_MODE_RECTANGULAR_EXT;

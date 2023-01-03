@@ -7,8 +7,8 @@
 #include "layout.h"
 
 /*
- * Test uncompressed texture sizes. All test cases in this file are extracted from
- * texture structure dumps in Metal.
+ * Test uncompressed texture sizes. All test cases in this file are extracted
+ * from texture structure dumps in Metal.
  */
 struct sizetest {
    enum pipe_format format;
@@ -17,6 +17,7 @@ struct sizetest {
    uint32_t size;
 };
 
+/* clang-format off */
 /* Sort: `sort -t"," -k1,1 -k2,5n | uniq` */
 static struct sizetest sizetests[] = {
    { PIPE_FORMAT_R8_UNORM, 1, 1, 1, 1, 0x80 },
@@ -4746,6 +4747,7 @@ static struct sizetest sizetests[] = {
    { PIPE_FORMAT_Z32_FLOAT, 4097, 15, 2, 1, 0x100000 },
    { PIPE_FORMAT_Z32_FLOAT, 4097, 15, 2, 13, 0x158000 },
 };
+/* clang-format on */
 
 TEST(UncompTwiddled, SizeTests)
 {
@@ -4764,9 +4766,10 @@ TEST(UncompTwiddled, SizeTests)
 
       ail_make_miptree(&layout);
 
-      EXPECT_EQ(layout.size_B, test.size) <<
-         test.width << "x" << test.height << "x" << test.depth << " " << (int)test.levels <<
-         "L " << util_format_short_name(test.format) <<
-         " uncompressed texture has wrong allocation size, off by " << ((int)layout.size_B - (int)test.size);
+      EXPECT_EQ(layout.size_B, test.size)
+         << test.width << "x" << test.height << "x" << test.depth << " "
+         << (int)test.levels << "L " << util_format_short_name(test.format)
+         << " uncompressed texture has wrong allocation size, off by "
+         << ((int)layout.size_B - (int)test.size);
    }
 }

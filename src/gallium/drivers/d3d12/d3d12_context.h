@@ -248,6 +248,7 @@ struct d3d12_context {
    ID3D12GraphicsCommandList *state_fixup_cmdlist;
 
    struct list_head active_queries;
+   struct util_dynarray ended_queries;
    bool queries_disabled;
 
    struct d3d12_descriptor_pool *sampler_pool;

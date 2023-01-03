@@ -887,7 +887,7 @@ v3dv_cmd_buffer_emit_set_query_availability(struct v3dv_cmd_buffer *cmd_buffer,
                          0, sizeof(push_data), &push_data);
    cmd_buffer_emit_dispatch_queries(cmd_buffer, count);
 
-   v3dv_cmd_buffer_meta_state_pop(cmd_buffer, 0, false);
+   v3dv_cmd_buffer_meta_state_pop(cmd_buffer, false);
 }
 
 static void
@@ -936,7 +936,7 @@ cmd_buffer_emit_reset_occlusion_query_pool(struct v3dv_cmd_buffer *cmd_buffer,
 
    cmd_buffer_emit_dispatch_queries(cmd_buffer, count);
 
-   v3dv_cmd_buffer_meta_state_pop(cmd_buffer, 0, false);
+   v3dv_cmd_buffer_meta_state_pop(cmd_buffer, false);
 
    /* Ensure future work in the graphics queue using the queries doesn't start
     * before the reset completed.
@@ -1217,7 +1217,7 @@ cmd_buffer_emit_copy_query_pool_results(struct v3dv_cmd_buffer *cmd_buffer,
 
    cmd_buffer_emit_dispatch_queries(cmd_buffer, count);
 
-   v3dv_cmd_buffer_meta_state_pop(cmd_buffer, 0, false);
+   v3dv_cmd_buffer_meta_state_pop(cmd_buffer, false);
 }
 
 static void

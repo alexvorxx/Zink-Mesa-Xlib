@@ -369,7 +369,8 @@ nir_ssa_def *
 nir_type_convert(nir_builder *b,
                  nir_ssa_def *src,
                  nir_alu_type src_type,
-                 nir_alu_type dest_type);
+                 nir_alu_type dest_type,
+                 nir_rounding_mode rnd);
 
 static inline nir_ssa_def *
 nir_convert_to_bit_size(nir_builder *b,
@@ -377,7 +378,8 @@ nir_convert_to_bit_size(nir_builder *b,
                     nir_alu_type type,
                     unsigned bit_size)
 {
-   return nir_type_convert(b, src, type, (nir_alu_type) (type | bit_size));
+   return nir_type_convert(b, src, type, (nir_alu_type) (type | bit_size),
+                           nir_rounding_mode_undef);
 }
 
 static inline nir_ssa_def *
@@ -407,55 +409,62 @@ nir_f2fN(nir_builder *b, nir_ssa_def *src, unsigned bit_size)
 static inline nir_ssa_def *
 nir_f2b(nir_builder *b, nir_ssa_def *src)
 {
-   return nir_type_convert(b, src, nir_type_float, nir_type_bool1);
+   return nir_type_convert(b, src, nir_type_float, nir_type_bool1,
+                           nir_rounding_mode_undef);
 }
 
 static inline nir_ssa_def *
 nir_i2b(nir_builder *b, nir_ssa_def *src)
 {
-   return nir_type_convert(b, src, nir_type_int, nir_type_bool1);
+   return nir_ine(b, src, nir_imm_intN_t(b, 0, src->bit_size));
 }
 
 static inline nir_ssa_def *
 nir_b2iN(nir_builder *b, nir_ssa_def *src, uint32_t bit_size)
 {
    return nir_type_convert(b, src, nir_type_bool,
-         (nir_alu_type) (nir_type_int | bit_size));
+                           (nir_alu_type) (nir_type_int | bit_size),
+                           nir_rounding_mode_undef);
 }
 
 static inline nir_ssa_def *
 nir_b2fN(nir_builder *b, nir_ssa_def *src, uint32_t bit_size)
 {
    return nir_type_convert(b, src, nir_type_bool,
-         (nir_alu_type) (nir_type_float | bit_size));
+                           (nir_alu_type) (nir_type_float | bit_size),
+                           nir_rounding_mode_undef);
 }
 
 static inline nir_ssa_def *
 nir_i2fN(nir_builder *b, nir_ssa_def *src, unsigned bit_size)
 {
    return nir_type_convert(b, src, nir_type_int,
-         (nir_alu_type) (nir_type_float | bit_size));
+                           (nir_alu_type) (nir_type_float | bit_size),
+                           nir_rounding_mode_undef);
 }
 
 static inline nir_ssa_def *
 nir_u2fN(nir_builder *b, nir_ssa_def *src, unsigned bit_size)
 {
    return nir_type_convert(b, src, nir_type_uint,
-         (nir_alu_type) (nir_type_float | bit_size));
+                           (nir_alu_type) (nir_type_float | bit_size),
+                           nir_rounding_mode_undef);
 }
 
 static inline nir_ssa_def *
 nir_f2uN(nir_builder *b, nir_ssa_def *src, unsigned bit_size)
 {
    return nir_type_convert(b, src, nir_type_float,
-         (nir_alu_type) (nir_type_uint | bit_size));
+                           (nir_alu_type) (nir_type_uint | bit_size),
+                           nir_rounding_mode_undef);
 }
 
 static inline nir_ssa_def *
 nir_f2iN(nir_builder *b, nir_ssa_def *src, unsigned bit_size)
 {
    return nir_type_convert(b, src, nir_type_float,
-         (nir_alu_type) (nir_type_int | bit_size));
+                           (nir_alu_type) (nir_type_int | bit_size),
+                           nir_rounding_mode_undef);
 }
 
 static inline nir_ssa_def *

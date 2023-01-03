@@ -349,6 +349,7 @@ enum dxil_shader_model
 static VkResult
 dzn_pipeline_compile_shader(struct dzn_device *device,
                             nir_shader *nir,
+                            uint32_t input_clip_size,
                             D3D12_SHADER_BYTECODE *slot)
 {
    struct dzn_instance *instance =
@@ -358,6 +359,7 @@ dzn_pipeline_compile_shader(struct dzn_device *device,
    struct nir_to_dxil_options opts = {
       .environment = DXIL_ENVIRONMENT_VULKAN,
       .shader_model_max = dzn_get_shader_model(pdev),
+      .input_clip_size = input_clip_size,
 #ifdef _WIN32
       .validator_version_max = dxil_get_validator_version(instance->dxil_validator),
 #endif
@@ -848,6 +850,12 @@ dzn_graphics_pipeline_compile_shaders(struct dzn_device *device,
 
          if (stage == MESA_SHADER_FRAGMENT)
             _mesa_sha1_update(&dxil_hash_ctx, &force_sample_rate_shading, sizeof(force_sample_rate_shading));
+         else {
+            gl_shader_stage prev_stage = util_last_bit(active_stage_mask & BITFIELD_MASK(stage)) - 1;
+            uint32_t prev_stage_output_clip_size = prev_stage == MESA_SHADER_NONE ? 0 :
+               pipeline->templates.shaders[prev_stage].nir->info.clip_distance_array_size;
+            _mesa_sha1_update(&dxil_hash_ctx, &prev_stage_output_clip_size, sizeof(prev_stage_output_clip_size));
+         }
 
          _mesa_sha1_update(&dxil_hash_ctx, stages[stage].spirv_hash, sizeof(stages[stage].spirv_hash));
          _mesa_sha1_update(&dxil_hash_ctx, bindings_hash, sizeof(bindings_hash));
@@ -899,21 +907,24 @@ dzn_graphics_pipeline_compile_shaders(struct dzn_device *device,
       if (pipeline->templates.shaders[stage].bc)
          continue;
 
+      gl_shader_stage prev_stage =
+         util_last_bit(active_stage_mask & BITFIELD_MASK(stage)) - 1;
+      uint32_t prev_stage_output_clip_size = 0;
       if (stage == MESA_SHADER_FRAGMENT) {
-         gl_shader_stage prev_stage =
-            util_last_bit(active_stage_mask & BITFIELD_MASK(MESA_SHADER_FRAGMENT)) - 1;
          /* Disable rasterization if the last geometry stage doesn't
           * write the position.
           */
          if (prev_stage == MESA_SHADER_NONE ||
              !(pipeline->templates.shaders[prev_stage].nir->info.outputs_written & VARYING_BIT_POS))
             continue;
+      } else if (prev_stage != MESA_SHADER_NONE) {
+         prev_stage_output_clip_size = pipeline->templates.shaders[prev_stage].nir->info.clip_distance_array_size;
       }
 
       D3D12_SHADER_BYTECODE *slot =
          dzn_pipeline_get_gfx_shader_slot(out, stage);
 
-      ret = dzn_pipeline_compile_shader(device, pipeline->templates.shaders[stage].nir, slot);
+      ret = dzn_pipeline_compile_shader(device, pipeline->templates.shaders[stage].nir, prev_stage_output_clip_size, slot);
       if (ret != VK_SUCCESS)
          return ret;
 
@@ -1046,7 +1057,7 @@ to_prim_topology_type(VkPrimitiveTopology in)
 }
 
 static D3D12_PRIMITIVE_TOPOLOGY
-to_prim_topology(VkPrimitiveTopology in, unsigned patch_control_points)
+to_prim_topology(VkPrimitiveTopology in, unsigned patch_control_points, bool support_triangle_fan)
 {
    switch (in) {
    case VK_PRIMITIVE_TOPOLOGY_POINT_LIST: return D3D_PRIMITIVE_TOPOLOGY_POINTLIST;
@@ -1057,7 +1068,8 @@ to_prim_topology(VkPrimitiveTopology in, unsigned patch_control_points)
    case VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST: return D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
    case VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP: return D3D_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP;
    /* Triangle fans are emulated using an intermediate index buffer. */
-   case VK_PRIMITIVE_TOPOLOGY_TRIANGLE_FAN: return D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
+   case VK_PRIMITIVE_TOPOLOGY_TRIANGLE_FAN: return support_triangle_fan ?
+      D3D_PRIMITIVE_TOPOLOGY_TRIANGLEFAN : D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
    case VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST_WITH_ADJACENCY: return D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST_ADJ;
    case VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP_WITH_ADJACENCY: return D3D_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP_ADJ;
    case VK_PRIMITIVE_TOPOLOGY_PATCH_LIST:
@@ -1073,6 +1085,8 @@ dzn_graphics_pipeline_translate_ia(struct dzn_device *device,
                                    D3D12_PIPELINE_STATE_STREAM_DESC *out,
                                    const VkGraphicsPipelineCreateInfo *in)
 {
+   struct dzn_physical_device *pdev =
+      container_of(device->vk.physical, struct dzn_physical_device, vk);
    const VkPipelineInputAssemblyStateCreateInfo *in_ia =
       in->pInputAssemblyState;
    bool has_tes = false;
@@ -1089,9 +1103,10 @@ dzn_graphics_pipeline_translate_ia(struct dzn_device *device,
 
    d3d12_gfx_pipeline_state_stream_new_desc(out, PRIMITIVE_TOPOLOGY, D3D12_PRIMITIVE_TOPOLOGY_TYPE, prim_top_type);
    *prim_top_type = to_prim_topology_type(in_ia->topology);
-   pipeline->ia.triangle_fan = in_ia->topology == VK_PRIMITIVE_TOPOLOGY_TRIANGLE_FAN;
+   pipeline->ia.triangle_fan = in_ia->topology == VK_PRIMITIVE_TOPOLOGY_TRIANGLE_FAN && !pdev->options15.TriangleFanSupported;
    pipeline->ia.topology =
-      to_prim_topology(in_ia->topology, in_tes ? in_tes->patchControlPoints : 0);
+      to_prim_topology(in_ia->topology, in_tes ? in_tes->patchControlPoints : 0,
+                       pdev->options15.TriangleFanSupported);
 
    if (in_ia->primitiveRestartEnable) {
       d3d12_gfx_pipeline_state_stream_new_desc(out, IB_STRIP_CUT_VALUE, D3D12_INDEX_BUFFER_STRIP_CUT_VALUE, ib_strip_cut);
@@ -2138,7 +2153,7 @@ dzn_compute_pipeline_compile_shader(struct dzn_device *device,
       }
    }
 
-   ret = dzn_pipeline_compile_shader(device, nir, shader);
+   ret = dzn_pipeline_compile_shader(device, nir, 0, shader);
    if (ret != VK_SUCCESS)
       goto out;
 

@@ -26,7 +26,7 @@ static bool
 agx_begin_query(struct pipe_context *pctx, struct pipe_query *pquery)
 {
    struct agx_context *ctx = agx_context(pctx);
-   struct agx_query *query = (struct agx_query *) pquery;
+   struct agx_query *query = (struct agx_query *)pquery;
 
    switch (query->type) {
    case PIPE_QUERY_OCCLUSION_COUNTER:
@@ -40,7 +40,8 @@ agx_begin_query(struct pipe_context *pctx, struct pipe_query *pquery)
        * avoid the flush.
        */
       if (query->writer)
-         agx_flush_batch_for_reason(ctx, query->writer, "Occlusion overwritten");
+         agx_flush_batch_for_reason(ctx, query->writer,
+                                    "Occlusion overwritten");
 
       assert(query->writer == NULL);
 
@@ -56,7 +57,7 @@ static bool
 agx_end_query(struct pipe_context *pctx, struct pipe_query *pquery)
 {
    struct agx_context *ctx = agx_context(pctx);
-   struct agx_query *query = (struct agx_query *) pquery;
+   struct agx_query *query = (struct agx_query *)pquery;
 
    switch (query->type) {
    case PIPE_QUERY_OCCLUSION_COUNTER:
@@ -72,12 +73,10 @@ agx_end_query(struct pipe_context *pctx, struct pipe_query *pquery)
 }
 
 static bool
-agx_get_query_result(struct pipe_context *pctx,
-                     struct pipe_query *pquery,
-                     bool wait,
-                     union pipe_query_result *vresult)
+agx_get_query_result(struct pipe_context *pctx, struct pipe_query *pquery,
+                     bool wait, union pipe_query_result *vresult)
 {
-   struct agx_query *query = (struct agx_query *) pquery;
+   struct agx_query *query = (struct agx_query *)pquery;
    struct agx_context *ctx = agx_context(pctx);
 
    switch (query->type) {
@@ -134,10 +133,11 @@ agx_get_oq_index(struct agx_batch *batch, struct agx_query *query)
    /* Allocate if needed */
    if (query->writer == NULL) {
       query->writer = batch;
-      query->writer_index = util_dynarray_num_elements(&batch->occlusion_queries,
-                                                       struct agx_query *);
+      query->writer_index = util_dynarray_num_elements(
+         &batch->occlusion_queries, struct agx_query *);
 
-      util_dynarray_append(&batch->occlusion_queries, struct agx_query *, query);
+      util_dynarray_append(&batch->occlusion_queries, struct agx_query *,
+                           query);
    }
 
    assert(query->writer == batch);
@@ -150,7 +150,7 @@ agx_get_oq_index(struct agx_batch *batch, struct agx_query *query)
 void
 agx_finish_batch_occlusion_queries(struct agx_batch *batch)
 {
-   uint64_t *results = (uint64_t *) batch->occlusion_buffer.cpu;
+   uint64_t *results = (uint64_t *)batch->occlusion_buffer.cpu;
 
    util_dynarray_foreach(&batch->occlusion_queries, struct agx_query *, it) {
       struct agx_query *query = *it;

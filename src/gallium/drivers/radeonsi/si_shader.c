@@ -1886,6 +1886,8 @@ struct nir_shader *si_get_nir_shader(struct si_shader *shader, struct si_shader_
    if (sel->stage == MESA_SHADER_FRAGMENT && key->ps.mono.point_smoothing)
       NIR_PASS(progress, nir, nir_lower_point_smooth);
 
+   NIR_PASS(progress, nir, si_nir_lower_resource, shader, args);
+
    bool is_last_vgt_stage =
       (sel->stage == MESA_SHADER_VERTEX ||
        sel->stage == MESA_SHADER_TESS_EVAL ||

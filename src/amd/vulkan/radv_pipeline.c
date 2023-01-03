@@ -1535,7 +1535,8 @@ static void
 radv_graphics_pipeline_import_lib(struct radv_graphics_pipeline *pipeline,
                                   struct vk_graphics_pipeline_state *state,
                                   struct radv_pipeline_layout *layout,
-                                  struct radv_graphics_lib_pipeline *lib)
+                                  struct radv_graphics_lib_pipeline *lib,
+                                  bool link_optimize)
 {
    /* There should be no common blocks between a lib we import and the current
     * pipeline we're building.
@@ -1555,35 +1556,37 @@ radv_graphics_pipeline_import_lib(struct radv_graphics_pipeline *pipeline,
       pipeline->base.retained_shaders[s] = lib->base.base.retained_shaders[s];
    }
 
-   /* Import the compiled shaders. */
-   for (uint32_t s = 0; s < ARRAY_SIZE(lib->base.base.shaders); s++) {
-      if (!lib->base.base.shaders[s])
-         continue;
+   if (!link_optimize) {
+      /* Import the compiled shaders. */
+      for (uint32_t s = 0; s < ARRAY_SIZE(lib->base.base.shaders); s++) {
+         if (!lib->base.base.shaders[s])
+            continue;
 
-      pipeline->base.shaders[s] = radv_shader_ref(lib->base.base.shaders[s]);
+         pipeline->base.shaders[s] = radv_shader_ref(lib->base.base.shaders[s]);
 
-      /* Hold a pointer to the slab BO to indicate the shader is already uploaded. */
-      pipeline->base.shaders[s]->bo = lib->base.base.slab_bo;
-   }
+         /* Hold a pointer to the slab BO to indicate the shader is already uploaded. */
+         pipeline->base.shaders[s]->bo = lib->base.base.slab_bo;
+      }
 
-   /* Import the GS copy shader if present. */
-   if (lib->base.base.gs_copy_shader) {
-      assert(!pipeline->base.gs_copy_shader);
-      pipeline->base.gs_copy_shader = radv_shader_ref(lib->base.base.gs_copy_shader);
+      /* Import the GS copy shader if present. */
+      if (lib->base.base.gs_copy_shader) {
+         assert(!pipeline->base.gs_copy_shader);
+         pipeline->base.gs_copy_shader = radv_shader_ref(lib->base.base.gs_copy_shader);
 
-      /* Hold a pointer to the slab BO to indicate the shader is already uploaded. */
-      pipeline->base.gs_copy_shader->bo = lib->base.base.slab_bo;
-   }
+         /* Hold a pointer to the slab BO to indicate the shader is already uploaded. */
+         pipeline->base.gs_copy_shader->bo = lib->base.base.slab_bo;
+      }
 
-   /* Refcount the slab BO to make sure it's not freed when the library is destroyed. */
-   if (lib->base.base.slab) {
-      p_atomic_inc(&lib->base.base.slab->ref_count);
-   }
+      /* Refcount the slab BO to make sure it's not freed when the library is destroyed. */
+      if (lib->base.base.slab) {
+         p_atomic_inc(&lib->base.base.slab->ref_count);
+      }
 
-   /* Import the PS epilog if present. */
-   if (lib->base.ps_epilog) {
-      assert(!pipeline->ps_epilog);
-      pipeline->ps_epilog = radv_shader_part_ref(lib->base.ps_epilog);
+      /* Import the PS epilog if present. */
+      if (lib->base.ps_epilog) {
+         assert(!pipeline->ps_epilog);
+         pipeline->ps_epilog = radv_shader_part_ref(lib->base.ps_epilog);
+      }
    }
 
    /* Import the pipeline layout. */
@@ -2207,6 +2210,10 @@ radv_remove_color_exports(const struct radv_pipeline_key *pipeline_key, nir_shad
 {
    bool fixup_derefs = false;
 
+   /* Do not remove color exports when a PS epilog is used because the format isn't known. */
+   if (pipeline_key->ps.has_epilog)
+      return;
+
    /* Do not remove color exports when the write mask is dynamic. */
    if (pipeline_key->dynamic_color_write_mask)
       return;
@@ -2607,10 +2614,7 @@ radv_pipeline_link_fs(struct radv_pipeline_stage *fs_stage,
 {
    assert(fs_stage->nir->info.stage == MESA_SHADER_FRAGMENT);
 
-   if (!pipeline_key->ps.has_epilog) {
-      /* Only remove color exports when the format is known. */
-      radv_remove_color_exports(pipeline_key, fs_stage->nir);
-   }
+   radv_remove_color_exports(pipeline_key, fs_stage->nir);
 
    nir_foreach_shader_out_variable(var, fs_stage->nir) {
       var->data.driver_location = var->data.location + var->data.index;
@@ -3086,7 +3090,6 @@ lower_bit_size_callback(const nir_instr *instr, void *_)
       case nir_op_bit_count:
       case nir_op_find_lsb:
       case nir_op_ufind_msb:
-      case nir_op_i2b1:
          return 32;
       case nir_op_ilt:
       case nir_op_ige:
@@ -3597,7 +3600,9 @@ radv_postprocess_nir(struct radv_pipeline *pipeline,
    assert(stage->info.wave_size && stage->info.workgroup_size);
 
    if (stage->stage == MESA_SHADER_FRAGMENT) {
-      NIR_PASS(_, stage->nir, nir_opt_cse);
+      if (!pipeline_key->optimisations_disabled) {
+         NIR_PASS(_, stage->nir, nir_opt_cse);
+      }
       NIR_PASS(_, stage->nir, radv_lower_fs_intrinsics, stage, pipeline_key);
    }
 
@@ -3611,7 +3616,9 @@ radv_postprocess_nir(struct radv_pipeline *pipeline,
     * thus a cheaper and likely to fail check is run first.
     */
    if (nir_has_non_uniform_access(stage->nir, lower_non_uniform_access_types)) {
-      NIR_PASS(_, stage->nir, nir_opt_non_uniform_access);
+      if (!pipeline_key->optimisations_disabled) {
+         NIR_PASS(_, stage->nir, nir_opt_non_uniform_access);
+      }
 
       if (!radv_use_llvm_for_stage(device, stage->stage)) {
          nir_lower_non_uniform_access_options options = {
@@ -3640,15 +3647,17 @@ radv_postprocess_nir(struct radv_pipeline *pipeline,
          nir_var_mem_ubo | nir_var_mem_ssbo | nir_var_mem_push_const;
    }
 
-   bool progress = false;
-   NIR_PASS(progress, stage->nir, nir_opt_load_store_vectorize, &vectorize_opts);
-   if (progress) {
-      NIR_PASS(_, stage->nir, nir_copy_prop);
-      NIR_PASS(_, stage->nir, nir_opt_shrink_stores,
-               !device->instance->disable_shrink_image_store);
+   if (!pipeline_key->optimisations_disabled) {
+      bool progress = false;
+      NIR_PASS(progress, stage->nir, nir_opt_load_store_vectorize, &vectorize_opts);
+      if (progress) {
+         NIR_PASS(_, stage->nir, nir_copy_prop);
+         NIR_PASS(_, stage->nir, nir_opt_shrink_stores,
+                  !device->instance->disable_shrink_image_store);
 
-      /* Gather info again, to update whether 8/16-bit are used. */
-      nir_shader_gather_info(stage->nir, nir_shader_get_entrypoint(stage->nir));
+         /* Gather info again, to update whether 8/16-bit are used. */
+         nir_shader_gather_info(stage->nir, nir_shader_get_entrypoint(stage->nir));
+      }
    }
 
    NIR_PASS(_, stage->nir, radv_nir_lower_ycbcr_textures, pipeline_layout);
@@ -3659,7 +3668,9 @@ radv_postprocess_nir(struct radv_pipeline *pipeline,
    NIR_PASS_V(stage->nir, radv_nir_apply_pipeline_layout, device, pipeline_layout,
               &stage->info, &stage->args);
 
-   NIR_PASS(_, stage->nir, nir_opt_shrink_vectors);
+   if (!pipeline_key->optimisations_disabled) {
+      NIR_PASS(_, stage->nir, nir_opt_shrink_vectors);
+   }
 
    NIR_PASS(_, stage->nir, nir_lower_alu_width, opt_vectorize_callback, device);
 
@@ -3667,12 +3678,15 @@ radv_postprocess_nir(struct radv_pipeline *pipeline,
    NIR_PASS(_, stage->nir, nir_lower_int64);
 
    nir_move_options sink_opts = nir_move_const_undef | nir_move_copies;
-   if (stage->stage != MESA_SHADER_FRAGMENT || !pipeline_key->disable_sinking_load_input_fs)
-      sink_opts |= nir_move_load_input;
 
-   NIR_PASS(_, stage->nir, nir_opt_sink, sink_opts);
-   NIR_PASS(_, stage->nir, nir_opt_move,
-            nir_move_load_input | nir_move_const_undef | nir_move_copies);
+   if (!pipeline_key->optimisations_disabled) {
+      if (stage->stage != MESA_SHADER_FRAGMENT || !pipeline_key->disable_sinking_load_input_fs)
+         sink_opts |= nir_move_load_input;
+
+      NIR_PASS(_, stage->nir, nir_opt_sink, sink_opts);
+      NIR_PASS(_, stage->nir, nir_opt_move,
+               nir_move_load_input | nir_move_const_undef | nir_move_copies);
+   }
 
    /* Lower I/O intrinsics to memory instructions. */
    bool io_to_mem = radv_lower_io_to_mem(device, stage);
@@ -3731,7 +3745,7 @@ radv_postprocess_nir(struct radv_pipeline *pipeline,
       };
       struct nir_fold_16bit_tex_image_options fold_16bit_options = {
          .rounding_mode = nir_rounding_mode_rtne,
-         .fold_tex_dest = true,
+         .fold_tex_dest_types = nir_type_float | nir_type_uint | nir_type_int,
          .fold_image_load_store_data = true,
          .fold_image_srcs = !radv_use_llvm_for_stage(device, stage->stage),
          .fold_srcs_options_count = separate_g16 ? 2 : 1,
@@ -3739,7 +3753,9 @@ radv_postprocess_nir(struct radv_pipeline *pipeline,
       };
       NIR_PASS(_, stage->nir, nir_fold_16bit_tex_image, &fold_16bit_options);
 
-      NIR_PASS(_, stage->nir, nir_opt_vectorize, opt_vectorize_callback, device);
+      if (!pipeline_key->optimisations_disabled) {
+         NIR_PASS(_, stage->nir, nir_opt_vectorize, opt_vectorize_callback, device);
+      }
    }
 
    /* cleanup passes */
@@ -3748,12 +3764,14 @@ radv_postprocess_nir(struct radv_pipeline *pipeline,
    NIR_PASS(_, stage->nir, nir_copy_prop);
    NIR_PASS(_, stage->nir, nir_opt_dce);
 
-   sink_opts |= nir_move_comparisons | nir_move_load_ubo | nir_move_load_ssbo;
-   NIR_PASS(_, stage->nir, nir_opt_sink, sink_opts);
+   if (!pipeline_key->optimisations_disabled) {
+      sink_opts |= nir_move_comparisons | nir_move_load_ubo | nir_move_load_ssbo;
+      NIR_PASS(_, stage->nir, nir_opt_sink, sink_opts);
 
-   nir_move_options move_opts = nir_move_const_undef | nir_move_load_ubo |
-                                nir_move_load_input | nir_move_comparisons | nir_move_copies;
-   NIR_PASS(_, stage->nir, nir_opt_move, move_opts);
+      nir_move_options move_opts = nir_move_const_undef | nir_move_load_ubo |
+                                   nir_move_load_input | nir_move_comparisons | nir_move_copies;
+      NIR_PASS(_, stage->nir, nir_opt_move, move_opts);
+   }
 }
 
 static bool
@@ -5372,7 +5390,7 @@ radv_graphics_pipeline_init(struct radv_graphics_pipeline *pipeline, struct radv
 
    /* If we have libraries, import them first. */
    if (libs_info) {
-      ASSERTED const bool link_optimize =
+      const bool link_optimize =
          (pCreateInfo->flags & VK_PIPELINE_CREATE_LINK_TIME_OPTIMIZATION_BIT_EXT) != 0;
 
       for (uint32_t i = 0; i < libs_info->libraryCount; i++) {
@@ -5387,7 +5405,8 @@ radv_graphics_pipeline_init(struct radv_graphics_pipeline *pipeline, struct radv
           */
          assert(!link_optimize || gfx_pipeline_lib->base.base.retain_shaders);
 
-         radv_graphics_pipeline_import_lib(pipeline, &state, &pipeline_layout, gfx_pipeline_lib);
+         radv_graphics_pipeline_import_lib(pipeline, &state, &pipeline_layout, gfx_pipeline_lib,
+                                           link_optimize);
 
          imported_flags |= gfx_pipeline_lib->lib_flags;
       }
@@ -5573,13 +5592,16 @@ radv_graphics_lib_pipeline_init(struct radv_graphics_lib_pipeline *pipeline,
 
    /* If we have libraries, import them first. */
    if (libs_info) {
+      const bool link_optimize =
+         (pCreateInfo->flags & VK_PIPELINE_CREATE_LINK_TIME_OPTIMIZATION_BIT_EXT) != 0;
+
       for (uint32_t i = 0; i < libs_info->libraryCount; i++) {
          RADV_FROM_HANDLE(radv_pipeline, pipeline_lib, libs_info->pLibraries[i]);
          struct radv_graphics_lib_pipeline *gfx_pipeline_lib =
             radv_pipeline_to_graphics_lib(pipeline_lib);
 
          radv_graphics_pipeline_import_lib(&pipeline->base, state, pipeline_layout,
-                                           gfx_pipeline_lib);
+                                           gfx_pipeline_lib, link_optimize);
 
          pipeline->lib_flags |= gfx_pipeline_lib->lib_flags;
 

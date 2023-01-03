@@ -20,8 +20,7 @@ struct agx_usc_builder {
 };
 
 static struct agx_usc_builder
-agx_alloc_usc_control(struct agx_pool *pool,
-                      unsigned num_reg_bindings)
+agx_alloc_usc_control(struct agx_pool *pool, unsigned num_reg_bindings)
 {
    STATIC_ASSERT(AGX_USC_UNIFORM_HIGH_LENGTH == AGX_USC_UNIFORM_LENGTH);
    STATIC_ASSERT(AGX_USC_TEXTURE_LENGTH == AGX_USC_UNIFORM_LENGTH);
@@ -43,7 +42,7 @@ agx_alloc_usc_control(struct agx_pool *pool,
 #endif
    };
 
-   b.head = (uint8_t *) b.T.cpu;
+   b.head = (uint8_t *)b.T.cpu;
 
    return b;
 }
@@ -52,15 +51,16 @@ static bool
 agx_usc_builder_validate(struct agx_usc_builder *b, size_t size)
 {
 #ifndef NDEBUG
-   assert(((b->head - (uint8_t *) b->T.cpu) + size) <= b->size);
+   assert(((b->head - (uint8_t *)b->T.cpu) + size) <= b->size);
 #endif
 
    return true;
 }
 
-#define agx_usc_pack(b, struct_name, template) \
-   for (bool it = agx_usc_builder_validate((b), AGX_USC_##struct_name##_LENGTH); \
-        it; it = false, (b)->head += AGX_USC_##struct_name##_LENGTH) \
+#define agx_usc_pack(b, struct_name, template)                                 \
+   for (bool it =                                                              \
+           agx_usc_builder_validate((b), AGX_USC_##struct_name##_LENGTH);      \
+        it; it = false, (b)->head += AGX_USC_##struct_name##_LENGTH)           \
       agx_pack((b)->head, USC_##struct_name, template)
 
 static void

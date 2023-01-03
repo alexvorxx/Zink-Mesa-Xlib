@@ -2921,18 +2921,10 @@ Converter::visit(nir_alu_instr *insn)
       mkOp2(OP_MERGE, TYPE_U64, newDefs[0], loadImm(NULL, 0), tmp);
       break;
    }
-   case nir_op_f2b32:
-   case nir_op_i2b32: {
+   case nir_op_f2b32: {
       DEFAULT_CHECKS;
       LValues &newDefs = convert(&insn->dest);
-      Value *src1;
-      if (typeSizeof(sTypes[0]) == 8) {
-         src1 = loadImm(getSSA(8), 0.0);
-      } else {
-         src1 = zero;
-      }
-      CondCode cc = op == nir_op_f2b32 ? CC_NEU : CC_NE;
-      mkCmp(OP_SET, cc, TYPE_U32, newDefs[0], sTypes[0], getSrc(&insn->src[0]), src1);
+      mkCmp(OP_SET, CC_NEU, TYPE_U32, newDefs[0], sTypes[0], getSrc(&insn->src[0]), zero);
       break;
    }
    case nir_op_b2i8:

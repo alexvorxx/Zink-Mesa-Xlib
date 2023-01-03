@@ -796,7 +796,7 @@ OSMesaMakeCurrent(OSMesaContext osmesa, void *buffer, GLenum type,
                               osmesa->pp_enabled,
                               osmesa->st->cso_context,
                               osmesa->st,
-                              (void*)st_context_invalidate_state);
+                              st_context_invalidate_state);
 
          pp_init_fbos(osmesa->pp, width, height);
       }

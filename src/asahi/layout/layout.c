@@ -63,6 +63,7 @@ ail_min_mip_below(unsigned x, unsigned y)
 static inline struct ail_tile
 ail_get_max_tile_size(unsigned blocksize_B)
 {
+   /* clang-format off */
    switch (blocksize_B) {
    case  1: return (struct ail_tile) { 128, 128 };
    case  2: return (struct ail_tile) { 128,  64 };
@@ -71,6 +72,7 @@ ail_get_max_tile_size(unsigned blocksize_B)
    case 16: return (struct ail_tile) {  32,  32 };
    default: unreachable("Invalid blocksize");
    }
+   /* clang-format on */
 }
 
 /*
@@ -110,9 +112,8 @@ ail_initialize_twiddled(struct ail_layout *layout)
     * power-of-two miptree is used when either the width or the height is
     * smaller than a single large tile.
     */
-   unsigned pot_level =
-      MIN2(ail_min_mip_below(w_el, tilesize_el.width_el),
-           ail_min_mip_below(h_el, tilesize_el.height_el));
+   unsigned pot_level = MIN2(ail_min_mip_below(w_el, tilesize_el.width_el),
+                             ail_min_mip_below(h_el, tilesize_el.height_el));
 
    /* First allocate the large miptree. All tiles in the large miptree are of
     * size tilesize_el and have their dimensions given by stx/sty/sarea.
@@ -156,18 +157,23 @@ ail_initialize_twiddled(struct ail_layout *layout)
       layout->level_offsets_B[l] = offset_B;
       offset_B = ALIGN_POT(offset_B + (blocksize_B * size_el), AIL_CACHELINE);
 
-      unsigned tilesize_el = MIN2(potw_el, poth_el);
-      layout->tilesize_el[l] = (struct ail_tile) { tilesize_el, tilesize_el };
+      /* The tilesize is based on the true mipmap level size, not the POT
+       * rounded size */
+      unsigned tilesize_el =
+         util_next_power_of_two(u_minify(MIN2(w_el, h_el), l));
+      layout->tilesize_el[l] = (struct ail_tile){tilesize_el, tilesize_el};
 
       potw_el = u_minify(potw_el, 1);
       poth_el = u_minify(poth_el, 1);
    }
 
-   /* Align layer size if we have mipmaps and one miptree is larger than one page */
+   /* Align layer size if we have mipmaps and one miptree is larger than one
+    * page */
    layout->page_aligned_layers = layout->levels != 1 && offset_B > AIL_PAGESIZE;
 
    /* Single-layer images are not padded unless they are Z/S */
-   if (layout->depth_px == 1 && !util_format_is_depth_or_stencil(layout->format))
+   if (layout->depth_px == 1 &&
+       !util_format_is_depth_or_stencil(layout->format))
       layout->page_aligned_layers = false;
 
    if (layout->page_aligned_layers)
@@ -181,7 +187,8 @@ ail_initialize_twiddled(struct ail_layout *layout)
 static void
 ail_initialize_compression(struct ail_layout *layout)
 {
-   assert(!util_format_is_compressed(layout->format) && "Compressed pixel formats not supported");
+   assert(!util_format_is_compressed(layout->format) &&
+          "Compressed pixel formats not supported");
    assert(util_format_get_blockwidth(layout->format) == 1);
    assert(util_format_get_blockheight(layout->format) == 1);
    assert(layout->width_px >= 16 && "Small textures are never compressed");
@@ -224,18 +231,26 @@ ail_make_miptree(struct ail_layout *layout)
       assert(layout->sample_count_sa == 1 &&
              "Multisampled linear layouts not supported");
       assert(util_format_get_blockwidth(layout->format) == 1 &&
-            "Strided linear block formats unsupported");
+             "Strided linear block formats unsupported");
       assert(util_format_get_blockheight(layout->format) == 1 &&
-            "Strided linear block formats unsupported");
+             "Strided linear block formats unsupported");
    } else {
       assert(layout->linear_stride_B == 0 && "Invalid nonlinear layout");
       assert(layout->depth_px >= 1 && "Invalid dimensions");
       assert(layout->levels >= 1 && "Invalid dimensions");
-      assert(layout->sample_count_sa >= 1 && "Invalid samplt count");
+      assert(layout->sample_count_sa >= 1 && "Invalid sample count");
+   }
+
+   /* Hardware strides are based on the maximum number of levels, so always
+    * allocate them all.
+    */
+   if (layout->levels > 1) {
+      layout->levels =
+         util_logbase2(MAX2(layout->width_px, layout->height_px)) + 1;
    }
 
    assert(util_format_get_blockdepth(layout->format) == 1 &&
-         "Deep formats unsupported");
+          "Deep formats unsupported");
 
    switch (layout->tiling) {
    case AIL_TILING_LINEAR:

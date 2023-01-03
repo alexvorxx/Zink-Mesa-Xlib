@@ -268,7 +268,8 @@ zink_create_gfx_pipeline(struct zink_screen *screen,
    assert(state->rast_prim != PIPE_PRIM_MAX);
 
    VkPipelineRasterizationLineStateCreateInfoEXT rast_line_state;
-   if (screen->info.have_EXT_line_rasterization) {
+   if (screen->info.have_EXT_line_rasterization &&
+       !state->shader_keys.key[MESA_SHADER_FRAGMENT].key.fs.lower_line_smooth) {
       rast_line_state.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_LINE_STATE_CREATE_INFO_EXT;
       rast_line_state.pNext = rast_state.pNext;
       rast_line_state.stippledLineEnable = VK_FALSE;

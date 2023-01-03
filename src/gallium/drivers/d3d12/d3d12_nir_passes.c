@@ -129,7 +129,7 @@ lower_load_face(nir_builder *b, struct nir_instr *instr, nir_variable *var)
 
    b->cursor = nir_before_instr(&intr->instr);
 
-   nir_ssa_def *load = nir_load_var(b, var);
+   nir_ssa_def *load = nir_ine_imm(b, nir_load_var(b, var), 0);
 
    nir_ssa_def_rewrite_uses(&intr->dest.ssa, load);
    nir_instr_remove(instr);
@@ -141,7 +141,7 @@ d3d12_forward_front_face(nir_shader *nir)
    assert(nir->info.stage == MESA_SHADER_FRAGMENT);
 
    nir_variable *var = nir_variable_create(nir, nir_var_shader_in,
-                                           glsl_bool_type(),
+                                           glsl_uint_type(),
                                            "gl_FrontFacing");
    var->data.location = VARYING_SLOT_VAR12;
    var->data.interpolation = INTERP_MODE_FLAT;

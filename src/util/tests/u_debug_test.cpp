@@ -183,3 +183,34 @@ TEST(u_debug, debug_get_num_option)
       EXPECT_EQ(debug_get_num_option("MESA_UNIT_TEST_NUM_VARIABLE_2", 100), 100);
    }
 }
+
+DEBUG_GET_ONCE_NUM_OPTION(num_once_test_0, "MESA_UNIT_TEST_DEBUG_GET_ONCE_NUM_VARIABLE_0", -33)
+
+DEBUG_GET_ONCE_NUM_OPTION(num_once_test_1, "MESA_UNIT_TEST_DEBUG_GET_ONCE_NUM_VARIABLE_1", 0)
+
+DEBUG_GET_ONCE_NUM_OPTION(num_once_test_2, "MESA_UNIT_TEST_DEBUG_GET_ONCE_NUM_VARIABLE_2", 0)
+
+TEST(u_debug, DEBUG_GET_ONCE_NUM_OPTION_Macro)
+{
+   {
+      EXPECT_EQ(debug_get_option_num_once_test_0(), -33);
+   }
+
+   {
+      static char env_str[] = "MESA_UNIT_TEST_DEBUG_GET_ONCE_NUM_VARIABLE_1=9223372036854775807";
+      putenv(env_str);
+      EXPECT_EQ(debug_get_option_num_once_test_1(), INT64_MAX);
+   }
+
+   {
+      static char env_str[] = "MESA_UNIT_TEST_DEBUG_GET_ONCE_NUM_VARIABLE_1=9223372036854775806";
+      putenv(env_str);
+      EXPECT_EQ(debug_get_option_num_once_test_1(), INT64_MAX);
+   }
+
+   {
+      static char env_str[] = "MESA_UNIT_TEST_DEBUG_GET_ONCE_NUM_VARIABLE_2=-9223372036854775808";
+      putenv(env_str);
+      EXPECT_EQ(debug_get_option_num_once_test_2(), INT64_MIN);
+   }
+}

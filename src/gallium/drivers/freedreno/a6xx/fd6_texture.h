@@ -60,7 +60,7 @@ struct PACKED fd6_bcolor_entry {
 };
 
 #define FD6_BORDER_COLOR_SIZE sizeof(struct fd6_bcolor_entry)
-#define FD6_MAX_BORDER_COLORS 128
+#define FD6_MAX_BORDER_COLORS 256
 
 struct fd6_sampler_stateobj {
    struct pipe_sampler_state base;

@@ -32,6 +32,7 @@
 #include "pipe/p_state.h"
 #include "util/list.h"
 #include "hud/font.h"
+#include "hud/hud_context.h"
 #include "cso_cache/cso_context.h"
 
 enum hud_counter {
@@ -53,8 +54,8 @@ struct hud_context {
    struct cso_context *cso;
 
    /* For notifying st_context to rebind states that we clobbered. */
-   void *st;
-   void (*st_invalidate_state)(void *st, unsigned flags);
+   struct st_context *st;
+   hud_st_invalidate_state_func st_invalidate_state;
 
    struct hud_batch_query_context *batch_query;
    struct list_head pane_list;

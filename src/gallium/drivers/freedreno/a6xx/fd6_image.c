@@ -79,7 +79,8 @@ fd6_ssbo_descriptor(struct fd_context *ctx,
 }
 
 static void
-fd6_emit_image_descriptor(struct fd_context *ctx, struct fd_ringbuffer *ring, const struct pipe_image_view *buf, bool ibo)
+fd6_emit_image_descriptor(struct fd_context *ctx, struct fd_ringbuffer *ring,
+                          const struct pipe_image_view *buf, bool ibo)
 {
    struct fd_resource *rsc = fd_resource(buf->resource);
    if (!rsc) {

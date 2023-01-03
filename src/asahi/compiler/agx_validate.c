@@ -14,10 +14,10 @@
  * Software.
  *
  * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
- * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTAagxLITY,
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
  * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
  * THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIAagxLITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
  * SOFTWARE.
  */
@@ -27,7 +27,10 @@
 /* Validatation doesn't make sense in release builds */
 #ifndef NDEBUG
 
-#define agx_validate_assert(stmt) if (!(stmt)) { return false; }
+#define agx_validate_assert(stmt)                                              \
+   if (!(stmt)) {                                                              \
+      return false;                                                            \
+   }
 
 /*
  * If a block contains phi nodes, they must come at the start of the block. If a
@@ -99,9 +102,8 @@ agx_validate_sources(agx_instr *I)
          agx_validate_assert(!src.cache);
          agx_validate_assert(!src.discard);
 
-         bool ldst =
-            (I->op == AGX_OPCODE_DEVICE_LOAD) ||
-            (I->op == AGX_OPCODE_UNIFORM_STORE);
+         bool ldst = (I->op == AGX_OPCODE_DEVICE_LOAD) ||
+                     (I->op == AGX_OPCODE_UNIFORM_STORE);
 
          /* Immediates are encoded as 8-bit (16-bit for memory load/store). For
           * integers, they extend to 16-bit. For floating point, they are 8-bit
@@ -131,7 +133,7 @@ agx_validate_defs(agx_instr *I, BITSET_WORD *defs)
    }
 
    agx_foreach_ssa_dest(I, d) {
-      /* Static single assignment */ 
+      /* Static single assignment */
       if (BITSET_TEST(defs, I->dest[d].value))
          return false;
 
@@ -162,9 +164,9 @@ agx_validate(agx_context *ctx, const char *after)
 
       agx_foreach_instr_global(ctx, I) {
          if (!agx_validate_defs(I, defs)) {
-               fprintf(stderr, "Invalid defs after %s\n", after);
-               agx_print_instr(I, stdout);
-               fail = true;
+            fprintf(stderr, "Invalid defs after %s\n", after);
+            agx_print_instr(I, stdout);
+            fail = true;
          }
       }
 
@@ -173,9 +175,9 @@ agx_validate(agx_context *ctx, const char *after)
 
    agx_foreach_instr_global(ctx, I) {
       if (!agx_validate_sources(I)) {
-            fprintf(stderr, "Invalid sources form after %s\n", after);
-            agx_print_instr(I, stdout);
-            fail = true;
+         fprintf(stderr, "Invalid sources form after %s\n", after);
+         agx_print_instr(I, stdout);
+         fail = true;
       }
    }
 

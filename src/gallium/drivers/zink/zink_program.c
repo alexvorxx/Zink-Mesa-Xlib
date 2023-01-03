@@ -1851,7 +1851,19 @@ zink_set_primitive_emulation_keys(struct zink_context *ctx)
       zink_set_gs_key(ctx)->lower_line_stipple = lower_line_stipple;
    }
 
-   if (lower_line_stipple || zink_get_gs_key(ctx)->lower_gl_point) {
+   bool lower_line_smooth = screen->driver_workarounds.no_linesmooth &&
+                            ctx->rast_state->base.line_smooth &&
+                            !ctx->num_so_targets;
+
+   if (zink_get_fs_key(ctx)->lower_line_smooth != lower_line_smooth) {
+      assert(zink_get_gs_key(ctx)->lower_line_smooth ==
+             zink_get_fs_key(ctx)->lower_line_smooth);
+      zink_set_fs_key(ctx)->lower_line_smooth = lower_line_smooth;
+      zink_set_gs_key(ctx)->lower_line_smooth = lower_line_smooth;
+   }
+
+   if (lower_line_stipple || lower_line_smooth ||
+       zink_get_gs_key(ctx)->lower_gl_point) {
       enum pipe_shader_type prev_vertex_stage =
          ctx->gfx_stages[MESA_SHADER_TESS_EVAL] ?
             MESA_SHADER_TESS_EVAL : MESA_SHADER_VERTEX;

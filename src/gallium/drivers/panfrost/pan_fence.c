@@ -26,8 +26,8 @@
  * SOFTWARE.
  */
 
-#include "pan_context.h"
 #include "pan_fence.h"
+#include "pan_context.h"
 #include "pan_screen.h"
 
 #include "util/os_time.h"
@@ -38,117 +38,112 @@ panfrost_fence_reference(struct pipe_screen *pscreen,
                          struct pipe_fence_handle **ptr,
                          struct pipe_fence_handle *fence)
 {
-        struct panfrost_device *dev = pan_device(pscreen);
-        struct pipe_fence_handle *old = *ptr;
+   struct panfrost_device *dev = pan_device(pscreen);
+   struct pipe_fence_handle *old = *ptr;
 
-        if (pipe_reference(&old->reference, &fence->reference)) {
-                drmSyncobjDestroy(dev->fd, old->syncobj);
-                free(old);
-        }
+   if (pipe_reference(&old->reference, &fence->reference)) {
+      drmSyncobjDestroy(dev->fd, old->syncobj);
+      free(old);
+   }
 
-        *ptr = fence;
+   *ptr = fence;
 }
 
 bool
-panfrost_fence_finish(struct pipe_screen *pscreen,
-                      struct pipe_context *ctx,
-                      struct pipe_fence_handle *fence,
-                      uint64_t timeout)
+panfrost_fence_finish(struct pipe_screen *pscreen, struct pipe_context *ctx,
+                      struct pipe_fence_handle *fence, uint64_t timeout)
 {
-        struct panfrost_device *dev = pan_device(pscreen);
-        int ret;
+   struct panfrost_device *dev = pan_device(pscreen);
+   int ret;
 
-        if (fence->signaled)
-                return true;
+   if (fence->signaled)
+      return true;
 
-        uint64_t abs_timeout = os_time_get_absolute_timeout(timeout);
-        if (abs_timeout == OS_TIMEOUT_INFINITE)
-                abs_timeout = INT64_MAX;
+   uint64_t abs_timeout = os_time_get_absolute_timeout(timeout);
+   if (abs_timeout == OS_TIMEOUT_INFINITE)
+      abs_timeout = INT64_MAX;
 
-        ret = drmSyncobjWait(dev->fd, &fence->syncobj,
-                             1,
-                             abs_timeout, DRM_SYNCOBJ_WAIT_FLAGS_WAIT_ALL,
-                             NULL);
+   ret = drmSyncobjWait(dev->fd, &fence->syncobj, 1, abs_timeout,
+                        DRM_SYNCOBJ_WAIT_FLAGS_WAIT_ALL, NULL);
 
-        fence->signaled = (ret >= 0);
-        return fence->signaled;
+   fence->signaled = (ret >= 0);
+   return fence->signaled;
 }
 
 int
-panfrost_fence_get_fd(struct pipe_screen *screen,
-                      struct pipe_fence_handle *f)
+panfrost_fence_get_fd(struct pipe_screen *screen, struct pipe_fence_handle *f)
 {
-        struct panfrost_device *dev = pan_device(screen);
-        int fd = -1;
+   struct panfrost_device *dev = pan_device(screen);
+   int fd = -1;
 
-        drmSyncobjExportSyncFile(dev->fd, f->syncobj, &fd);
-        return fd;
+   drmSyncobjExportSyncFile(dev->fd, f->syncobj, &fd);
+   return fd;
 }
 
 struct pipe_fence_handle *
 panfrost_fence_from_fd(struct panfrost_context *ctx, int fd,
                        enum pipe_fd_type type)
 {
-        struct panfrost_device *dev = pan_device(ctx->base.screen);
-        int ret;
+   struct panfrost_device *dev = pan_device(ctx->base.screen);
+   int ret;
 
-        struct pipe_fence_handle *f = calloc(1, sizeof(*f));
-        if (!f)
-                return NULL;
+   struct pipe_fence_handle *f = calloc(1, sizeof(*f));
+   if (!f)
+      return NULL;
 
-        if (type == PIPE_FD_TYPE_NATIVE_SYNC) {
-                ret = drmSyncobjCreate(dev->fd, 0, &f->syncobj);
-                if (ret) {
-                        fprintf(stderr, "create syncobj failed\n");
-                        goto err_free_fence;
-                }
+   if (type == PIPE_FD_TYPE_NATIVE_SYNC) {
+      ret = drmSyncobjCreate(dev->fd, 0, &f->syncobj);
+      if (ret) {
+         fprintf(stderr, "create syncobj failed\n");
+         goto err_free_fence;
+      }
 
-                ret = drmSyncobjImportSyncFile(dev->fd, f->syncobj, fd);
-                if (ret) {
-                        fprintf(stderr, "import syncfile failed\n");
-                        goto err_destroy_syncobj;
-                }
-        } else {
-                assert(type == PIPE_FD_TYPE_SYNCOBJ);
-                ret = drmSyncobjFDToHandle(dev->fd, fd, &f->syncobj);
-                if (ret) {
-                        fprintf(stderr, "import syncobj FD failed\n");
-                        goto err_free_fence;
-                }
-        }
+      ret = drmSyncobjImportSyncFile(dev->fd, f->syncobj, fd);
+      if (ret) {
+         fprintf(stderr, "import syncfile failed\n");
+         goto err_destroy_syncobj;
+      }
+   } else {
+      assert(type == PIPE_FD_TYPE_SYNCOBJ);
+      ret = drmSyncobjFDToHandle(dev->fd, fd, &f->syncobj);
+      if (ret) {
+         fprintf(stderr, "import syncobj FD failed\n");
+         goto err_free_fence;
+      }
+   }
 
-        pipe_reference_init(&f->reference, 1);
+   pipe_reference_init(&f->reference, 1);
 
-        return f;
+   return f;
 
 err_destroy_syncobj:
-        drmSyncobjDestroy(dev->fd, f->syncobj);
+   drmSyncobjDestroy(dev->fd, f->syncobj);
 err_free_fence:
-        free(f);
-        return NULL;
+   free(f);
+   return NULL;
 }
 
 struct pipe_fence_handle *
 panfrost_fence_create(struct panfrost_context *ctx)
 {
-        struct panfrost_device *dev = pan_device(ctx->base.screen);
-        int fd = -1, ret;
+   struct panfrost_device *dev = pan_device(ctx->base.screen);
+   int fd = -1, ret;
 
-        /* Snapshot the last rendering out fence. We'd rather have another
-         * syncobj instead of a sync file, but this is all we get.
-         * (HandleToFD/FDToHandle just gives you another syncobj ID for the
-         * same syncobj).
-         */
-        ret = drmSyncobjExportSyncFile(dev->fd, ctx->syncobj, &fd);
-        if (ret || fd == -1) {
-                fprintf(stderr, "export failed\n");
-                return NULL;
-        }
+   /* Snapshot the last rendering out fence. We'd rather have another
+    * syncobj instead of a sync file, but this is all we get.
+    * (HandleToFD/FDToHandle just gives you another syncobj ID for the
+    * same syncobj).
+    */
+   ret = drmSyncobjExportSyncFile(dev->fd, ctx->syncobj, &fd);
+   if (ret || fd == -1) {
+      fprintf(stderr, "export failed\n");
+      return NULL;
+   }
 
-        struct pipe_fence_handle *f =
-                panfrost_fence_from_fd(ctx, fd, PIPE_FD_TYPE_NATIVE_SYNC);
+   struct pipe_fence_handle *f =
+      panfrost_fence_from_fd(ctx, fd, PIPE_FD_TYPE_NATIVE_SYNC);
 
-        close(fd);
+   close(fd);
 
-        return f;
+   return f;
 }

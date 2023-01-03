@@ -21,9 +21,9 @@
  * USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
 #
+#include "magic.h"
 #include <stdint.h>
 #include "agx_state.h"
-#include "magic.h"
 
 /* The structures managed in this file appear to be software defined (either in
  * the macOS kernel driver or in the AGX firmware) */
@@ -32,7 +32,8 @@
 static uint64_t
 demo_unk6(struct agx_pool *pool)
 {
-   struct agx_ptr ptr = agx_pool_alloc_aligned(pool, 0x4000 * sizeof(uint64_t), 64);
+   struct agx_ptr ptr =
+      agx_pool_alloc_aligned(pool, 0x4000 * sizeof(uint64_t), 64);
    uint64_t *buf = ptr.cpu;
    memset(buf, 0, sizeof(*buf));
 
@@ -120,7 +121,8 @@ asahi_pack_iogpu_attachment(void *out, struct agx_resource *rsrc,
 }
 
 static unsigned
-asahi_pack_iogpu_attachments(void *out, struct pipe_framebuffer_state *framebuffer)
+asahi_pack_iogpu_attachments(void *out,
+                             struct pipe_framebuffer_state *framebuffer)
 {
    unsigned total_attachment_size = asahi_size_attachments(framebuffer);
    struct agx_iogpu_attachment_packed *attachments = out;
@@ -133,42 +135,34 @@ asahi_pack_iogpu_attachments(void *out, struct pipe_framebuffer_state *framebuff
    }
 
    if (framebuffer->zsbuf) {
-         struct agx_resource *rsrc = agx_resource(framebuffer->zsbuf->texture);
+      struct agx_resource *rsrc = agx_resource(framebuffer->zsbuf->texture);
 
+      asahi_pack_iogpu_attachment(attachments + (nr++), rsrc,
+                                  total_attachment_size);
+
+      if (rsrc->separate_stencil) {
          asahi_pack_iogpu_attachment(attachments + (nr++),
-                                     rsrc, total_attachment_size);
-
-         if (rsrc->separate_stencil) {
-            asahi_pack_iogpu_attachment(attachments + (nr++),
-                                        rsrc->separate_stencil,
-                                        total_attachment_size);
-         }
+                                     rsrc->separate_stencil,
+                                     total_attachment_size);
+      }
    }
 
    return nr;
 }
 
 unsigned
-demo_cmdbuf(uint64_t *buf, size_t size,
-            struct agx_pool *pool,
-            struct pipe_framebuffer_state *framebuffer,
-            uint64_t encoder_ptr,
-            uint64_t encoder_id,
-            uint64_t scissor_ptr,
-            uint64_t depth_bias_ptr,
-            uint64_t occlusion_ptr,
-            uint32_t pipeline_clear,
-            uint32_t pipeline_load,
-            uint32_t pipeline_store,
-            bool clear_pipeline_textures,
-            unsigned clear_buffers,
-            double clear_depth,
-            unsigned clear_stencil)
+demo_cmdbuf(uint64_t *buf, size_t size, struct agx_pool *pool,
+            struct pipe_framebuffer_state *framebuffer, uint64_t encoder_ptr,
+            uint64_t encoder_id, uint64_t scissor_ptr, uint64_t depth_bias_ptr,
+            uint64_t occlusion_ptr, uint32_t pipeline_clear,
+            uint32_t pipeline_load, uint32_t pipeline_store,
+            bool clear_pipeline_textures, unsigned clear_buffers,
+            double clear_depth, unsigned clear_stencil)
 {
    bool should_clear_depth = clear_buffers & PIPE_CLEAR_DEPTH;
    bool should_clear_stencil = clear_buffers & PIPE_CLEAR_STENCIL;
 
-   uint32_t *map = (uint32_t *) buf;
+   uint32_t *map = (uint32_t *)buf;
    memset(map, 0, 518 * 4);
 
    uint64_t deflake_buffer = demo_zero(pool, 0x7e0);
@@ -187,7 +181,8 @@ demo_cmdbuf(uint64_t *buf, size_t size,
       cfg.deflake_2 = deflake_2;
       cfg.deflake_3 = deflake_buffer;
 
-      cfg.clear_pipeline_bind = 0xffff8002 | (clear_pipeline_textures ? 0x210 : 0);
+      cfg.clear_pipeline_bind =
+         0xffff8002 | (clear_pipeline_textures ? 0x210 : 0);
       cfg.clear_pipeline = pipeline_clear;
 
       /* store pipeline used when entire frame completes */
@@ -223,8 +218,7 @@ demo_cmdbuf(uint64_t *buf, size_t size,
 
          if (zsres->separate_stencil) {
             sres = zsres->separate_stencil;
-            stencil_buffer = agx_map_surface_resource(zsbuf,
-                                                      sres);
+            stencil_buffer = agx_map_surface_resource(zsbuf, sres);
          }
 
          if (zres) {
@@ -235,7 +229,8 @@ demo_cmdbuf(uint64_t *buf, size_t size,
             cfg.depth_buffer_3 = depth_buffer;
 
             if (ail_is_compressed(&zres->layout)) {
-               uint64_t accel_buffer = depth_buffer + zres->layout.metadata_offset_B;
+               uint64_t accel_buffer =
+                  depth_buffer + zres->layout.metadata_offset_B;
                cfg.depth_acceleration_buffer_1 = accel_buffer;
                cfg.depth_acceleration_buffer_2 = accel_buffer;
                cfg.depth_acceleration_buffer_3 = accel_buffer;
@@ -253,7 +248,8 @@ demo_cmdbuf(uint64_t *buf, size_t size,
             cfg.stencil_buffer_3 = stencil_buffer;
 
             if (ail_is_compressed(&sres->layout)) {
-               uint64_t accel_buffer = stencil_buffer + sres->layout.metadata_offset_B;
+               uint64_t accel_buffer =
+                  stencil_buffer + sres->layout.metadata_offset_B;
                cfg.stencil_acceleration_buffer_1 = accel_buffer;
                cfg.stencil_acceleration_buffer_2 = accel_buffer;
                cfg.stencil_acceleration_buffer_3 = accel_buffer;
@@ -309,13 +305,13 @@ demo_cmdbuf(uint64_t *buf, size_t size,
    unsigned offset_unk = (484 * 4);
    unsigned offset_attachments = (496 * 4);
 
-   unsigned nr_attachments =
-      asahi_pack_iogpu_attachments(map + (offset_attachments / 4) + 4,
-                                   framebuffer);
+   unsigned nr_attachments = asahi_pack_iogpu_attachments(
+      map + (offset_attachments / 4) + 4, framebuffer);
 
    map[(offset_attachments / 4) + 3] = nr_attachments;
 
-   unsigned total_size = offset_attachments + (AGX_IOGPU_ATTACHMENT_LENGTH * nr_attachments) + 16;
+   unsigned total_size =
+      offset_attachments + (AGX_IOGPU_ATTACHMENT_LENGTH * nr_attachments) + 16;
 
    agx_pack(map, IOGPU_HEADER, cfg) {
       cfg.total_size = total_size;
@@ -329,7 +325,8 @@ demo_cmdbuf(uint64_t *buf, size_t size,
 }
 
 static struct agx_map_header
-demo_map_header(uint64_t cmdbuf_id, uint64_t encoder_id, unsigned cmdbuf_size, unsigned count)
+demo_map_header(uint64_t cmdbuf_id, uint64_t encoder_id, unsigned cmdbuf_size,
+                unsigned count)
 {
    /* Structure: header followed by resource groups. For now, we use a single
     * resource group for every resource. This could be optimized.
@@ -338,7 +335,7 @@ demo_map_header(uint64_t cmdbuf_id, uint64_t encoder_id, unsigned cmdbuf_size, u
    length += count * sizeof(struct agx_map_entry);
    assert(length < 0x10000);
 
-   return (struct agx_map_header) {
+   return (struct agx_map_header){
       .cmdbuf_id = cmdbuf_id,
       .segment_count = 1,
       .length = length,
@@ -356,20 +353,22 @@ demo_mem_map(void *map, size_t size, unsigned *handles, unsigned count,
              uint64_t cmdbuf_id, uint64_t encoder_id, unsigned cmdbuf_size)
 {
    struct agx_map_header *header = map;
-   struct agx_map_entry *entries = (struct agx_map_entry *) (((uint8_t *) map) + sizeof(*header));
-   struct agx_map_entry *end = (struct agx_map_entry *) (((uint8_t *) map) + size);
+   struct agx_map_entry *entries =
+      (struct agx_map_entry *)(((uint8_t *)map) + sizeof(*header));
+   struct agx_map_entry *end =
+      (struct agx_map_entry *)(((uint8_t *)map) + size);
 
    /* Header precedes the entry */
    *header = demo_map_header(cmdbuf_id, encoder_id, cmdbuf_size, count);
 
    /* Add an entry for each BO mapped */
    for (unsigned i = 0; i < count; ++i) {
-	   assert((entries + i) < end);
-      entries[i] = (struct agx_map_entry) {
-         .resource_id = { handles[i] },
-         .resource_unk = { 0x20 },
-         .resource_flags = { 0x1 },
-         .resource_count = 1
+      assert((entries + i) < end);
+      entries[i] = (struct agx_map_entry){
+         .resource_id = {handles[i]},
+         .resource_unk = {0x20},
+         .resource_flags = {0x1},
+         .resource_count = 1,
       };
    }
 }

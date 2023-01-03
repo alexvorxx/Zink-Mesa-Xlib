@@ -6,8 +6,8 @@
 
 #include "agx_state.h"
 
-#define foreach_batch(ctx, idx) \
-        BITSET_FOREACH_SET(idx, ctx->batches.active, AGX_MAX_BATCHES)
+#define foreach_batch(ctx, idx)                                                \
+   BITSET_FOREACH_SET(idx, ctx->batches.active, AGX_MAX_BATCHES)
 
 static unsigned
 agx_batch_idx(struct agx_batch *batch)
@@ -42,10 +42,12 @@ agx_batch_init(struct agx_context *ctx,
       batch->bo_list.set = rzalloc_array(ctx, BITSET_WORD, 128);
       batch->bo_list.word_count = 128;
    } else {
-      memset(batch->bo_list.set, 0, batch->bo_list.word_count * sizeof(BITSET_WORD));
+      memset(batch->bo_list.set, 0,
+             batch->bo_list.word_count * sizeof(BITSET_WORD));
    }
 
-   batch->encoder = agx_bo_create(dev, 0x80000, AGX_MEMORY_TYPE_FRAMEBUFFER, "Encoder");
+   batch->encoder =
+      agx_bo_create(dev, 0x80000, AGX_MEMORY_TYPE_FRAMEBUFFER, "Encoder");
    batch->encoder_current = batch->encoder->ptr.cpu;
    batch->encoder_end = batch->encoder_current + batch->encoder->size;
 
@@ -183,7 +185,8 @@ agx_flush_all(struct agx_context *ctx, const char *reason)
 }
 
 void
-agx_flush_batch_for_reason(struct agx_context *ctx, struct agx_batch *batch, const char *reason)
+agx_flush_batch_for_reason(struct agx_context *ctx, struct agx_batch *batch,
+                           const char *reason)
 {
    if (reason)
       perf_debug_ctx(ctx, "Flushing due to: %s\n", reason);
@@ -192,10 +195,8 @@ agx_flush_batch_for_reason(struct agx_context *ctx, struct agx_batch *batch, con
 }
 
 static void
-agx_flush_readers_except(struct agx_context *ctx,
-                         struct agx_resource *rsrc,
-                         struct agx_batch *except,
-                         const char *reason)
+agx_flush_readers_except(struct agx_context *ctx, struct agx_resource *rsrc,
+                         struct agx_batch *except, const char *reason)
 {
    unsigned idx;
 
@@ -213,10 +214,8 @@ agx_flush_readers_except(struct agx_context *ctx,
 }
 
 static void
-agx_flush_writer_except(struct agx_context *ctx,
-                        struct agx_resource *rsrc,
-                        struct agx_batch *except,
-                        const char *reason)
+agx_flush_writer_except(struct agx_context *ctx, struct agx_resource *rsrc,
+                        struct agx_batch *except, const char *reason)
 {
    struct hash_entry *ent = _mesa_hash_table_search(ctx->writer, rsrc);
 
@@ -241,13 +240,15 @@ agx_any_batch_uses_resource(struct agx_context *ctx, struct agx_resource *rsrc)
 }
 
 void
-agx_flush_readers(struct agx_context *ctx, struct agx_resource *rsrc, const char *reason)
+agx_flush_readers(struct agx_context *ctx, struct agx_resource *rsrc,
+                  const char *reason)
 {
    agx_flush_readers_except(ctx, rsrc, NULL, reason);
 }
 
 void
-agx_flush_writer(struct agx_context *ctx, struct agx_resource *rsrc, const char *reason)
+agx_flush_writer(struct agx_context *ctx, struct agx_resource *rsrc,
+                 const char *reason)
 {
    agx_flush_writer_except(ctx, rsrc, NULL, reason);
 }

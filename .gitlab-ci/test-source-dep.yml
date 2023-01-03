@@ -311,7 +311,7 @@
       - src/panfrost/vulkan/*
       when: on_success
     - changes:
-      - src/panfrost/bifrost/**/*
+      - src/panfrost/compiler/**/*
       when: on_success
 
 .broadcom-common-rules:

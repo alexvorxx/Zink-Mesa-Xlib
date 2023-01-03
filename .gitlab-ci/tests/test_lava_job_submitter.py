@@ -298,9 +298,7 @@ def test_parse_job_result_from_log(message, expectation, mock_proxy):
     reason="Slow and sketchy test. Needs a LAVA log raw file at /tmp/log.yaml"
 )
 def test_full_yaml_log(mock_proxy, frozen_time):
-    import itertools
     import random
-    from datetime import datetime
 
     import yaml
 
@@ -326,21 +324,23 @@ def test_full_yaml_log(mock_proxy, frozen_time):
 
     def load_lines() -> list:
         with open("/tmp/log.yaml", "r") as f:
-            data = yaml.safe_load(f)
-            chain = itertools.chain(data)
+            # data = yaml.safe_load(f)
+            data = f.readlines()
+            stream = chain(data)
             try:
                 while True:
-                    data_chunk = [next(chain) for _ in range(random.randint(0, 50))]
+                    data_chunk = [next(stream) for _ in range(random.randint(0, 50))]
+                    serial_message = "".join(data_chunk)
                     # Suppose that the first message timestamp is the same of
                     # log fetch RPC call
                     time_travel_from_log_chunk(data_chunk)
-                    yield False, []
+                    yield False, "[]"
                     # Travel to the same datetime of the last fetched log line
                     # in the chunk
                     time_travel_from_log_chunk(data_chunk)
-                    yield False, data_chunk
+                    yield False, serial_message
             except StopIteration:
-                yield True, data_chunk
+                yield True, serial_message
                 return
 
     proxy = mock_proxy()

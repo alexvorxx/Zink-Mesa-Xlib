@@ -731,31 +731,29 @@ radv_ace_internal_finalize(struct radv_cmd_buffer *cmd_buffer)
    /* Emit pending cache flush. */
    radv_ace_internal_cache_flush(cmd_buffer);
 
-   /* Clear the ACE semaphore if it exists.
+   /* Clear the GFX<->ACE semaphores if they exist.
     * This is necessary in case the same cmd buffer is submitted again in the future.
     */
    if (cmd_buffer->ace_internal.sem.va) {
-      struct radeon_cmdbuf *main_cs = cmd_buffer->cs;
+      struct radeon_cmdbuf *cs = cmd_buffer->cs;
       uint64_t gfx2ace_va = cmd_buffer->ace_internal.sem.va;
       uint64_t ace2gfx_va = cmd_buffer->ace_internal.sem.va + 4;
 
-      /* ACE: write 1 to the ACE->GFX semaphore. */
-      si_cs_emit_write_event_eop(ace_cs, cmd_buffer->device->physical_device->rad_info.gfx_level,
-                                 true, V_028A90_BOTTOM_OF_PIPE_TS, 0, EOP_DST_SEL_MEM,
-                                 EOP_DATA_SEL_VALUE_32BIT, ace2gfx_va, 1,
-                                 cmd_buffer->gfx9_eop_bug_va);
+      /* ACE: write 0 to the GFX->ACE semaphore. */
+      radeon_emit(ace_cs, PKT3(PKT3_WRITE_DATA, 3, 0));
+      radeon_emit(ace_cs, S_370_DST_SEL(V_370_MEM) | S_370_WR_CONFIRM(1) | S_370_ENGINE_SEL(V_370_ME));
+      radeon_emit(ace_cs, gfx2ace_va);
+      radeon_emit(ace_cs, gfx2ace_va >> 32);
+      radeon_emit(ace_cs, 0);
 
-      /* Wait for ACE to finish, otherwise we may risk writing 0 to the semaphore
-       * when ACE is still waiting for it. This may not happen in practice, but
-       * better safe than sorry.
-       */
-      radv_cp_wait_mem(main_cs, WAIT_REG_MEM_GREATER_OR_EQUAL, ace2gfx_va, 1, 0xffffffff);
-
-      /* GFX: clear GFX->ACE and ACE->GFX semaphores. */
-      radv_emit_clear_data(cmd_buffer, V_370_ME, gfx2ace_va, 8);
+      /* GFX: write 0 to the ACE->GFX semaphore. */
+      radeon_emit(cs, PKT3(PKT3_WRITE_DATA, 3, 0));
+      radeon_emit(cs, S_370_DST_SEL(V_370_MEM) | S_370_WR_CONFIRM(1) | S_370_ENGINE_SEL(V_370_ME));
+      radeon_emit(cs, ace2gfx_va);
+      radeon_emit(cs, ace2gfx_va >> 32);
+      radeon_emit(cs, 0);
    }
 
-   device->ws->cs_add_buffers(ace_cs, cmd_buffer->cs);
    return device->ws->cs_finalize(ace_cs);
 }
 
@@ -4892,7 +4890,7 @@ radv_upload_graphics_shader_descriptors(struct radv_cmd_buffer *cmd_buffer)
 
    radv_flush_streamout_descriptors(cmd_buffer);
 
-   VkShaderStageFlags stages = VK_SHADER_STAGE_ALL_GRAPHICS | VK_SHADER_STAGE_MESH_BIT_EXT;
+   VkShaderStageFlags stages = VK_SHADER_STAGE_ALL_GRAPHICS;
    radv_flush_descriptors(cmd_buffer, stages, &pipeline->base, VK_PIPELINE_BIND_POINT_GRAPHICS);
    radv_flush_constants(cmd_buffer, stages, &pipeline->base, VK_PIPELINE_BIND_POINT_GRAPHICS);
    radv_flush_ngg_query_state(cmd_buffer);
@@ -5505,7 +5503,6 @@ radv_BeginCommandBuffer(VkCommandBuffer commandBuffer, const VkCommandBufferBegi
    vk_command_buffer_begin(&cmd_buffer->vk, pBeginInfo);
 
    memset(&cmd_buffer->state, 0, sizeof(cmd_buffer->state));
-   cmd_buffer->state.last_primitive_reset_en = -1;
    cmd_buffer->state.last_index_type = -1;
    cmd_buffer->state.last_num_instances = -1;
    cmd_buffer->state.last_vertex_offset = -1;
@@ -7014,11 +7011,6 @@ radv_CmdExecuteCommands(VkCommandBuffer commandBuffer, uint32_t commandBufferCou
          primary->state.emitted_compute_pipeline = secondary->state.emitted_compute_pipeline;
       }
 
-      /* Only re-emit the draw packets when needed. */
-      if (secondary->state.last_primitive_reset_en != -1) {
-         primary->state.last_primitive_reset_en = secondary->state.last_primitive_reset_en;
-      }
-
       if (secondary->state.last_primitive_reset_index) {
          primary->state.last_primitive_reset_index = secondary->state.last_primitive_reset_index;
       }
@@ -8058,9 +8050,13 @@ radv_emit_indirect_taskmesh_draw_packets(struct radv_cmd_buffer *cmd_buffer,
                                      info->count_buffer->offset + info->count_buffer_offset;
    uint64_t workaround_cond_va = 0;
 
-   if (count_va) {
+   if (num_views > 1)
+      ace_predication_size += num_views * 3; /* SET_SH_REG size (view index SGPR) */
+
+   if (count_va)
       radv_cs_add_buffer(ws, cmd_buffer->ace_internal.cs, info->count_buffer->bo);
 
+   if (cmd_buffer->device->physical_device->rad_info.has_taskmesh_indirect0_bug && count_va) {
       /* MEC firmware bug workaround.
        * When the count buffer contains zero, DISPATCH_TASKMESH_INDIRECT_MULTI_ACE hangs.
        * - We must ensure that DISPATCH_TASKMESH_INDIRECT_MULTI_ACE
@@ -8630,61 +8626,66 @@ ALWAYS_INLINE static bool
 radv_before_taskmesh_draw(struct radv_cmd_buffer *cmd_buffer, const struct radv_draw_info *info,
                           uint32_t drawCount)
 {
-   struct radv_descriptor_state *descriptors_state =
-      radv_get_descriptors_state(cmd_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS);
+   /* For direct draws, this makes sure we don't draw anything.
+    * For indirect draws, this is necessary to prevent a GPU hang (on MEC version < 100).
+    */
+   if (unlikely(!info->count))
+      return false;
+
+   struct radv_graphics_pipeline *pipeline = cmd_buffer->state.graphics_pipeline;
+   struct radv_physical_device *pdevice = cmd_buffer->device->physical_device;
+   struct radeon_cmdbuf *ace_cs = cmd_buffer->ace_internal.cs;
+   struct radv_shader *task_shader = radv_get_shader(&pipeline->base, MESA_SHADER_TASK);
+
+   assert(!task_shader || ace_cs);
+
+   const VkShaderStageFlags stages = VK_SHADER_STAGE_MESH_BIT_EXT | VK_SHADER_STAGE_FRAGMENT_BIT | (task_shader ? VK_SHADER_STAGE_TASK_BIT_EXT : 0);
    const bool pipeline_is_dirty =
       cmd_buffer->state.dirty & RADV_CMD_DIRTY_PIPELINE &&
       cmd_buffer->state.graphics_pipeline != cmd_buffer->state.emitted_graphics_pipeline;
-   const bool push_dirty = descriptors_state->push_dirty;
-   const uint32_t desc_dirty = descriptors_state->dirty;
+   const bool need_task_semaphore = task_shader && radv_flush_gfx2ace_semaphore(cmd_buffer);
 
-   const bool gfx_result = radv_before_draw(cmd_buffer, info, drawCount);
-   struct radv_graphics_pipeline *pipeline = cmd_buffer->state.graphics_pipeline;
-   struct radv_shader *task_shader = radv_get_shader(&pipeline->base, MESA_SHADER_TASK);
+   ASSERTED const unsigned cdw_max =
+      radeon_check_space(cmd_buffer->device->ws, cmd_buffer->cs, 4096 + 128 * (drawCount - 1));
+   ASSERTED const unsigned ace_cdw_max = !ace_cs ? 0 :
+      radeon_check_space(cmd_buffer->device->ws, ace_cs, 4096 + 128 * (drawCount - 1));
 
-   /* If there is no task shader, no need to do anything special. */
-   if (!task_shader)
-      return gfx_result;
+   if (cmd_buffer->state.dirty & RADV_CMD_DIRTY_FRAMEBUFFER)
+      radv_emit_fb_mip_change_flush(cmd_buffer);
 
-   /* Need to check the count even for indirect draws to work around
-    * an issue with DISPATCH_TASKMESH_INDIRECT_MULTI_ACE.
-    */
-   if (!info->count || !gfx_result)
-      return false;
-
-   const bool need_task_semaphore = radv_flush_gfx2ace_semaphore(cmd_buffer);
-   struct radv_physical_device *pdevice = cmd_buffer->device->physical_device;
-   struct radeon_cmdbuf *ace_cs = cmd_buffer->ace_internal.cs;
-   struct radeon_winsys *ws = cmd_buffer->device->ws;
-
-   assert(ace_cs);
-   ASSERTED const unsigned ace_cdw_max =
-      radeon_check_space(ws, ace_cs, 4096 + 128 * (drawCount - 1));
-
-   if (need_task_semaphore)
-      radv_wait_gfx2ace_semaphore(cmd_buffer);
-
-   if (pipeline_is_dirty) {
+   radv_emit_all_graphics_states(cmd_buffer, info, pipeline_is_dirty);
+   if (task_shader && pipeline_is_dirty) {
       radv_pipeline_emit_hw_cs(pdevice, ace_cs, task_shader);
       radv_pipeline_emit_compute_state(pdevice, ace_cs, task_shader);
    }
 
-   radv_ace_internal_cache_flush(cmd_buffer);
+   si_emit_cache_flush(cmd_buffer);
 
-   /* Restore dirty state of descriptors
-    * They were marked non-dirty in radv_before_draw,
-    * but they need to be re-emitted now to the ACE cmdbuf.
-    */
-   descriptors_state->push_dirty = push_dirty;
-   descriptors_state->dirty = desc_dirty;
+   if (task_shader) {
+      radv_ace_internal_cache_flush(cmd_buffer);
 
-   /* Flush descriptors and push constants for task shaders. */
-   radv_flush_descriptors(cmd_buffer, VK_SHADER_STAGE_TASK_BIT_EXT, &pipeline->base,
-                          VK_PIPELINE_BIND_POINT_GRAPHICS);
-   radv_flush_constants(cmd_buffer, VK_SHADER_STAGE_TASK_BIT_EXT, &pipeline->base,
-                        VK_PIPELINE_BIND_POINT_GRAPHICS);
+      if (need_task_semaphore) {
+         radv_wait_gfx2ace_semaphore(cmd_buffer);
+      }
+   }
 
-   assert(ace_cs->cdw <= ace_cdw_max);
+   radv_flush_descriptors(cmd_buffer, stages, &pipeline->base, VK_PIPELINE_BIND_POINT_GRAPHICS);
+   radv_flush_constants(cmd_buffer, stages, &pipeline->base, VK_PIPELINE_BIND_POINT_GRAPHICS);
+
+   radv_describe_draw(cmd_buffer);
+   if (likely(!info->indirect)) {
+      struct radv_cmd_state *state = &cmd_buffer->state;
+      if (unlikely(state->last_num_instances != 1)) {
+         struct radeon_cmdbuf *cs = cmd_buffer->cs;
+         radeon_emit(cs, PKT3(PKT3_NUM_INSTANCES, 0, false));
+         radeon_emit(cs, 1);
+         state->last_num_instances = 1;
+      }
+   }
+
+   assert(cmd_buffer->cs->cdw <= cdw_max);
+   assert(!ace_cs || ace_cs->cdw <= ace_cdw_max);
+
    return true;
 }
 

@@ -195,7 +195,7 @@ d3d12_video_decoder_decode_bitstream(struct pipe_video_codec *codec,
    assert(pD3D12Dec->m_spD3D12VideoDevice);
    assert(pD3D12Dec->m_spDecodeCommandQueue);
    assert(pD3D12Dec->m_pD3D12Screen);
-   struct d3d12_video_buffer *pD3D12VideoBuffer = (struct d3d12_video_buffer *) target;
+   ASSERTED struct d3d12_video_buffer *pD3D12VideoBuffer = (struct d3d12_video_buffer *) target;
    assert(pD3D12VideoBuffer);
 
    ///
@@ -444,7 +444,7 @@ d3d12_video_decoder_end_frame(struct pipe_video_codec *codec,
 
    d3d12InputArguments.CompressedBitstream.pBuffer = pD3D12Dec->m_curFrameCompressedBitstreamBuffer.Get();
    d3d12InputArguments.CompressedBitstream.Offset = 0u;
-   constexpr uint64_t d3d12BitstreamOffsetAlignment =
+   ASSERTED constexpr uint64_t d3d12BitstreamOffsetAlignment =
       128u;   // specified in
               // https://docs.microsoft.com/en-us/windows/win32/api/d3d12video/ne-d3d12video-d3d12_video_decode_tier
    assert((d3d12InputArguments.CompressedBitstream.Offset == 0) ||

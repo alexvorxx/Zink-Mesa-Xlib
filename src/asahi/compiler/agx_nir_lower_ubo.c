@@ -4,8 +4,8 @@
  */
 
 #include <assert.h>
-#include "agx_compiler.h"
 #include "compiler/nir/nir_builder.h"
+#include "agx_compiler.h"
 #include "agx_internal_formats.h"
 
 static bool
@@ -26,13 +26,11 @@ pass(struct nir_builder *b, nir_instr *instr, UNUSED void *data)
    unsigned dest_size = nir_dest_bit_size(intr->dest);
    assert((dest_size == 16 || dest_size == 32) && "other sizes lowered");
 
-   nir_ssa_def *value =
-      nir_load_constant_agx(b, intr->num_components, dest_size,
-                            nir_load_ubo_base_agx(b, ubo_index),
-                            nir_udiv_imm(b, offset, (dest_size / 8)),
-                            .format = (dest_size == 32) ?
-                                      AGX_INTERNAL_FORMAT_I32 :
-                                      AGX_INTERNAL_FORMAT_I16);
+   nir_ssa_def *value = nir_load_constant_agx(
+      b, intr->num_components, dest_size, nir_load_ubo_base_agx(b, ubo_index),
+      nir_udiv_imm(b, offset, (dest_size / 8)),
+      .format =
+         (dest_size == 32) ? AGX_INTERNAL_FORMAT_I32 : AGX_INTERNAL_FORMAT_I16);
 
    nir_ssa_def_rewrite_uses(&intr->dest.ssa, value);
    return true;
@@ -41,8 +39,6 @@ pass(struct nir_builder *b, nir_instr *instr, UNUSED void *data)
 bool
 agx_nir_lower_ubo(nir_shader *shader)
 {
-   return nir_shader_instructions_pass(shader, pass,
-                                       nir_metadata_block_index |
-                                       nir_metadata_dominance,
-                                       NULL);
+   return nir_shader_instructions_pass(
+      shader, pass, nir_metadata_block_index | nir_metadata_dominance, NULL);
 }

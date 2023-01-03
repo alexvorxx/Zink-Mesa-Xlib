@@ -69,7 +69,8 @@ FragmentShader::do_get_shader_info(r600_shader *sh_info)
    sh_info->rat_base = m_rat_base;
    sh_info->uses_kill = m_uses_discard;
    sh_info->gs_prim_id_input = m_gs_prim_id_input;
-   sh_info->ps_prim_id_input = m_ps_prim_id_input && chip_class() >= ISA_CC_EVERGREEN;
+   if (chip_class() >= ISA_CC_EVERGREEN)
+      sh_info->ps_prim_id_input = m_ps_prim_id_input;
    sh_info->nsys_inputs = m_nsys_inputs;
    sh_info->uses_helper_invocation = m_helper_invocation != nullptr;
 }

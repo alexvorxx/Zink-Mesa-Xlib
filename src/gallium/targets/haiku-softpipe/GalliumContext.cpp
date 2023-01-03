@@ -204,13 +204,13 @@ GalliumContext::CreateContext(HGLWinsysContext *wsContext)
 	assert(!context->st->frontend_context);
 	context->st->frontend_context = (void*)context;
 
-	struct st_context *stContext = (struct st_context*)context->st;
+	struct st_context *stContext = context->st;
 
 	// Init Gallium3D Post Processing
 	// TODO: no pp filters are enabled yet through postProcessEnable
 	context->postProcess = pp_init(stContext->pipe, context->postProcessEnable,
 		stContext->cso_context, stContext,
-                (void*)st_context_invalidate_state);
+		st_context_invalidate_state);
 
 	context_id contextNext = -1;
 	Lock();

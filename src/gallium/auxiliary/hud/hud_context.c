@@ -1673,8 +1673,8 @@ hud_unset_draw_context(struct hud_context *hud)
 
 static bool
 hud_set_draw_context(struct hud_context *hud, struct cso_context *cso,
-                     void *st,
-                     void (*st_invalidate_state)(void *st, unsigned flags))
+                     struct st_context *st,
+                     hud_st_invalidate_state_func st_invalidate_state)
 {
    struct pipe_context *pipe = cso_get_pipe_context(cso);
 
@@ -1857,7 +1857,8 @@ hud_set_record_context(struct hud_context *hud, struct pipe_context *pipe)
  */
 struct hud_context *
 hud_create(struct cso_context *cso, struct hud_context *share,
-           void *st, void (*st_invalidate_state)(void *st, unsigned flags))
+           struct st_context *st,
+           hud_st_invalidate_state_func st_invalidate_state)
 {
    const char *share_env = debug_get_option("GALLIUM_HUD_SHARE", NULL);
    unsigned record_ctx = 0, draw_ctx = 0;

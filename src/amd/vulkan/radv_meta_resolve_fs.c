@@ -895,6 +895,7 @@ radv_cmd_buffer_resolve_rendering_fs(struct radv_cmd_buffer *cmd_buffer)
 
    /* Resolves happen before rendering ends, so we have to make the attachment shader-readable */
    barrier.src_stage_mask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
+   barrier.dst_stage_mask = VK_PIPELINE_STAGE_2_RESOLVE_BIT;
    barrier.src_access_mask = VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT;
    barrier.dst_access_mask = VK_ACCESS_2_INPUT_ATTACHMENT_READ_BIT;
    radv_emit_resolve_barrier(cmd_buffer, &barrier);
@@ -968,6 +969,7 @@ radv_depth_stencil_resolve_rendering_fs(struct radv_cmd_buffer *cmd_buffer,
 
    /* Resolves happen before rendering ends, so we have to make the attachment shader-readable */
    barrier.src_stage_mask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
+   barrier.dst_stage_mask = VK_PIPELINE_STAGE_2_RESOLVE_BIT;
    barrier.src_access_mask = VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
    barrier.dst_access_mask = VK_ACCESS_2_INPUT_ATTACHMENT_READ_BIT;
    radv_emit_resolve_barrier(cmd_buffer, &barrier);

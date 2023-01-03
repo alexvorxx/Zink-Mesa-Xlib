@@ -524,6 +524,7 @@ spec/arb_tessellation_shader/execution/variable-indexing/tcs-patch-output-array-
 spec/arb_tessellation_shader/execution/variable-indexing/tcs-patch-output-array-vec3-index-wr: crash
 spec/arb_tessellation_shader/execution/variable-indexing/tcs-patch-output-array-vec4-index-wr: crash
 spec/arb_tessellation_shader/execution/variable-indexing/tcs-patch-vec4-index-wr: crash
+spec/arb_tessellation_shader/execution/variable-indexing/tcs-patch-vec4-swiz-index-wr: crash
 spec/arb_tessellation_shader/execution/variable-indexing/tes-both-input-array-float-index-rd: crash
 spec/arb_tessellation_shader/execution/variable-indexing/tes-both-input-array-vec2-index-rd: crash
 spec/arb_tessellation_shader/execution/variable-indexing/tes-both-input-array-vec3-index-rd: crash
@@ -970,8 +971,6 @@ spec/glsl-1.10/execution/fs-discard-deep-branch: warn
 spec/glsl-1.10/preprocessor/extension-defined-test: skip
 spec/glsl-1.10/preprocessor/extension-if-1: skip
 spec/glsl-1.30/execution/interpolation/interpolation-mixed: fail
-spec/glsl-1.50/execution/geometry/clip-distance-bulk-copy: crash
-spec/glsl-1.50/execution/geometry/clip-distance-itemized-copy: crash
 spec/glsl-1.50/execution/geometry/primitive-id-out: fail
 spec/glsl-1.50/execution/gs-also-uses-smooth-flat-noperspective: fail
 spec/glsl-1.50/execution/primitive-id-no-gs: fail
@@ -3011,9 +3010,9 @@ spec/oes_viewport_array/viewport-gs-writes-out-of-range: skip
 summary:
        name:  results
        ----  --------
-       pass:    17231
+       pass:    17232
        fail:       20
-      crash:       40
+      crash:       39
        skip:     2925
     timeout:        0
        warn:       25

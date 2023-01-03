@@ -142,9 +142,10 @@ anv_gem_mmap_legacy(struct anv_device *device, uint32_t gem_handle,
  * Wrapper around DRM_IOCTL_I915_GEM_MMAP. Returns MAP_FAILED on error.
  */
 void*
-anv_gem_mmap(struct anv_device *device, uint32_t gem_handle,
+anv_gem_mmap(struct anv_device *device, struct anv_bo *bo,
              uint64_t offset, uint64_t size, uint32_t flags)
 {
+   uint32_t gem_handle = bo->gem_handle;
    void *map;
    if (device->physical->info.has_mmap_offset)
       map = anv_gem_mmap_offset(device, gem_handle, offset, size, flags);

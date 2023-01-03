@@ -94,6 +94,8 @@
 #include <stdio.h>
 #include <pthread.h>
 
+#define INTEL_AUX_MAP_FORMAT_BITS_MASK   0xfff0000000000000ull
+
 static const bool aux_map_debug = false;
 
 /**
@@ -111,6 +113,12 @@ enum intel_aux_map_format {
     * 64KB granularity format on GFX12 devices
     */
    INTEL_AUX_MAP_GFX12_64KB = 0,
+
+   /**
+    * 1MB granularity format on GFX125 devices
+    */
+   INTEL_AUX_MAP_GFX125_1MB,
+
    INTEL_AUX_MAP_LAST,
 };
 
@@ -152,6 +160,13 @@ static const struct aux_format_info aux_formats[] = {
       .l1_page_size = 8 * 1024,
       .l1_index_mask = 0xff,
       .l1_index_offset = 16,
+   },
+   [INTEL_AUX_MAP_GFX125_1MB] = {
+      .main_page_size = 1024 * 1024,
+      .main_to_aux_ratio = 256,
+      .l1_page_size = 2 * 1024,
+      .l1_index_mask = 0xf,
+      .l1_index_offset = 20,
    },
 };
 
@@ -216,8 +231,12 @@ get_format(enum intel_aux_map_format format)
 static enum intel_aux_map_format
 select_format(const struct intel_device_info *devinfo)
 {
-   return devinfo->verx10 ==
-         120 ? INTEL_AUX_MAP_GFX12_64KB : INTEL_AUX_MAP_LAST;
+   if (devinfo->verx10 >= 125)
+      return INTEL_AUX_MAP_GFX125_1MB;
+   else if (devinfo->verx10 == 120)
+      return INTEL_AUX_MAP_GFX12_64KB;
+   else
+      return INTEL_AUX_MAP_LAST;
 }
 
 static bool
@@ -429,12 +448,17 @@ uint64_t
 intel_aux_map_format_bits(enum isl_tiling tiling, enum isl_format format,
                           uint8_t plane)
 {
+   /* gfx12.5+ uses tile-4 rather than y-tiling, and gfx12.5+ also uses
+    * compression info from the surface state and ignores the aux-map format
+    * bits metadata.
+    */
+   if (!isl_tiling_is_any_y(tiling))
+      return 0;
+
    if (aux_map_debug)
       fprintf(stderr, "AUX-MAP entry %s, bpp_enc=%d\n",
               isl_format_get_name(format),
               isl_format_get_aux_map_encoding(format));
-
-   assert(isl_tiling_is_any_y(tiling));
 
    uint64_t format_bits =
       ((uint64_t)isl_format_get_aux_map_encoding(format) << 58) |

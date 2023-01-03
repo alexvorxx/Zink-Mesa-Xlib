@@ -1842,18 +1842,6 @@ dzn_cmd_buffer_blit_prepare_src_view(struct dzn_cmd_buffer *cmdbuf,
       },
    };
 
-   if (aspect == VK_IMAGE_ASPECT_STENCIL_BIT) {
-      iview_info.components.r = VK_COMPONENT_SWIZZLE_G;
-      iview_info.components.g = VK_COMPONENT_SWIZZLE_G;
-      iview_info.components.b = VK_COMPONENT_SWIZZLE_G;
-      iview_info.components.a = VK_COMPONENT_SWIZZLE_G;
-   } else if (aspect == VK_IMAGE_ASPECT_STENCIL_BIT) {
-      iview_info.components.r = VK_COMPONENT_SWIZZLE_R;
-      iview_info.components.g = VK_COMPONENT_SWIZZLE_R;
-      iview_info.components.b = VK_COMPONENT_SWIZZLE_R;
-      iview_info.components.a = VK_COMPONENT_SWIZZLE_R;
-   }
-
    switch (img->vk.image_type) {
    case VK_IMAGE_TYPE_1D:
       iview_info.viewType = img->vk.array_layers > 1 ?
@@ -3368,6 +3356,19 @@ dzn_CmdClearAttachments(VkCommandBuffer commandBuffer,
    }
 }
 
+static D3D12_RESOLVE_MODE
+dzn_get_resolve_mode(VkResolveModeFlags mode)
+{
+   switch (mode) {
+   case VK_RESOLVE_MODE_AVERAGE_BIT: return D3D12_RESOLVE_MODE_AVERAGE;
+   case VK_RESOLVE_MODE_MAX_BIT: return D3D12_RESOLVE_MODE_MAX;
+   case VK_RESOLVE_MODE_MIN_BIT: return D3D12_RESOLVE_MODE_MIN;
+   /* TODO */
+   case VK_RESOLVE_MODE_SAMPLE_ZERO_BIT: return D3D12_RESOLVE_MODE_MIN;
+   default: return D3D12_RESOLVE_MODE_AVERAGE;
+   }
+}
+
 static void
 dzn_cmd_buffer_resolve_rendering_attachment(struct dzn_cmd_buffer *cmdbuf,
                                             const struct dzn_rendering_attachment *att,
@@ -3378,6 +3379,10 @@ dzn_cmd_buffer_resolve_rendering_attachment(struct dzn_cmd_buffer *cmdbuf,
 
    if (!src || !dst)
       return;
+
+   struct dzn_device *device = container_of(cmdbuf->vk.base.device, struct dzn_device, vk);
+   struct dzn_physical_device *pdev =
+      container_of(device->vk.physical, struct dzn_physical_device, vk);
 
    VkImageLayout src_layout = att->layout;
    VkImageLayout dst_layout = att->resolve.layout;
@@ -3418,10 +3423,21 @@ dzn_cmd_buffer_resolve_rendering_attachment(struct dzn_cmd_buffer *cmdbuf,
          uint32_t dst_subres =
             dzn_image_range_get_subresource_index(dst_img, &dst_range, aspect, level, layer);
 
-         ID3D12GraphicsCommandList1_ResolveSubresource(cmdbuf->cmdlist,
-                                                       dst_img->res, dst_subres,
-                                                       src_img->res, src_subres,
-                                                       dst->srv_desc.Format);
+         if (cmdbuf->cmdlist8 &&
+             pdev->options2.ProgrammableSamplePositionsTier > D3D12_PROGRAMMABLE_SAMPLE_POSITIONS_TIER_NOT_SUPPORTED) {
+            ID3D12GraphicsCommandList8_ResolveSubresourceRegion(cmdbuf->cmdlist8,
+                                                                dst_img->res, dst_subres,
+                                                                0, 0,
+                                                                src_img->res, src_subres,
+                                                                NULL,
+                                                                dst->srv_desc.Format,
+                                                                dzn_get_resolve_mode(att->resolve.mode));
+         } else {
+            ID3D12GraphicsCommandList1_ResolveSubresource(cmdbuf->cmdlist,
+                                                          dst_img->res, dst_subres,
+                                                          src_img->res, src_subres,
+                                                          dst->srv_desc.Format);
+         }
       }
    }
 

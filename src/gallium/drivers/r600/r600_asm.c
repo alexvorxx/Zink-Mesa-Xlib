@@ -818,6 +818,8 @@ static int merge_inst_groups(struct r600_bytecode *bc, struct r600_bytecode_alu 
 	int have_mova = 0, have_rel = 0;
 	int max_slots = bc->gfx_level == CAYMAN ? 4 : 5;
 
+   bool has_dot = false;
+
 	r = assign_alu_units(bc, alu_prev, prev);
 	if (r)
 		return r;
@@ -828,6 +830,8 @@ static int merge_inst_groups(struct r600_bytecode *bc, struct r600_bytecode_alu 
 			      return 0;
 		      if (is_alu_once_inst(prev[i]))
 			      return 0;
+				has_dot |= prev[i]->op == ALU_OP2_DOT || prev[i]->op == ALU_OP2_DOT_IEEE;
+
 
                       if (prev[i]->op == ALU_OP1_INTERP_LOAD_P0)
                          interp_xz |= 3;
@@ -840,6 +844,8 @@ static int merge_inst_groups(struct r600_bytecode *bc, struct r600_bytecode_alu 
 			if (slots[i]->pred_sel)
 				return 0;
 			if (is_alu_once_inst(slots[i]))
+				return 0;
+         has_dot |= slots[i]->op == ALU_OP2_DOT || slots[i]->op == ALU_OP2_DOT_IEEE;
 				return 0;
                         if (slots[i]->op == ALU_OP1_INTERP_LOAD_P0)
                            interp_xz |= 3;
@@ -889,7 +895,7 @@ static int merge_inst_groups(struct r600_bytecode *bc, struct r600_bytecode_alu 
 			result[i] = prev[i];
 			continue;
 		} else if (prev[i] && slots[i]) {
-			if (max_slots == 5 && result[4] == NULL && prev[4] == NULL && slots[4] == NULL) {
+			if (max_slots == 5 && !has_dot && result[4] == NULL && prev[4] == NULL && slots[4] == NULL) {
 				/* Trans unit is still free try to use it. */
 				if (is_alu_any_unit_inst(bc, slots[i]) && !alu_uses_lds(slots[i])) {
 					result[i] = prev[i];

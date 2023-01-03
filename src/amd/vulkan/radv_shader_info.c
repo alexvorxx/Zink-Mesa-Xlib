@@ -531,7 +531,11 @@ gather_shader_info_fs(const nir_shader *nir, const struct radv_pipeline_key *pip
    info->ps.num_interp = nir->num_inputs - num_per_primitive_inputs;
    info->ps.num_prim_interp = num_per_primitive_inputs;
    info->ps.can_discard = nir->info.fs.uses_discard;
-   info->ps.early_fragment_test = nir->info.fs.early_fragment_tests;
+   info->ps.early_fragment_test = nir->info.fs.early_fragment_tests ||
+                                  (nir->info.fs.early_and_late_fragment_tests &&
+                                   nir->info.fs.depth_layout == FRAG_DEPTH_LAYOUT_NONE &&
+                                   nir->info.fs.stencil_front_layout == FRAG_STENCIL_LAYOUT_NONE &&
+                                   nir->info.fs.stencil_back_layout == FRAG_STENCIL_LAYOUT_NONE);
    info->ps.post_depth_coverage = nir->info.fs.post_depth_coverage;
    info->ps.depth_layout = nir->info.fs.depth_layout;
    info->ps.uses_sample_shading = nir->info.fs.uses_sample_shading;

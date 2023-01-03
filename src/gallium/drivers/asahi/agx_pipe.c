@@ -23,35 +23,35 @@
  * OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE
  * USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
-#include <stdio.h>
 #include <errno.h>
+#include <stdio.h>
+#include "asahi/compiler/agx_compile.h"
 #include "asahi/layout/layout.h"
-#include "pipe/p_defines.h"
-#include "pipe/p_state.h"
-#include "pipe/p_context.h"
-#include "pipe/p_screen.h"
-#include "util/u_memory.h"
-#include "util/u_screen.h"
-#include "util/u_inlines.h"
-#include "util/format/u_format.h"
-#include "util/u_upload_mgr.h"
-#include "util/half_float.h"
-#include "frontend/winsys_handle.h"
+#include "asahi/lib/agx_formats.h"
+#include "asahi/lib/decode.h"
 #include "frontend/sw_winsys.h"
+#include "frontend/winsys_handle.h"
+#include "gallium/auxiliary/renderonly/renderonly.h"
+#include "gallium/auxiliary/util/u_debug_cb.h"
+#include "gallium/auxiliary/util/u_framebuffer.h"
+#include "gallium/auxiliary/util/u_surface.h"
 #include "gallium/auxiliary/util/u_transfer.h"
 #include "gallium/auxiliary/util/u_transfer_helper.h"
-#include "gallium/auxiliary/util/u_surface.h"
-#include "gallium/auxiliary/util/u_framebuffer.h"
-#include "gallium/auxiliary/util/u_debug_cb.h"
-#include "gallium/auxiliary/renderonly/renderonly.h"
+#include "pipe/p_context.h"
+#include "pipe/p_defines.h"
+#include "pipe/p_screen.h"
+#include "pipe/p_state.h"
+#include "util/format/u_format.h"
+#include "util/half_float.h"
+#include "util/u_drm.h"
+#include "util/u_inlines.h"
+#include "util/u_memory.h"
+#include "util/u_screen.h"
+#include "util/u_upload_mgr.h"
 #include "agx_device.h"
 #include "agx_public.h"
 #include "agx_state.h"
 #include "magic.h"
-#include "asahi/compiler/agx_compile.h"
-#include "asahi/lib/decode.h"
-#include "asahi/lib/agx_formats.h"
-#include "util/u_drm.h"
 
 /* drm_fourcc cannot be built on macOS */
 #ifndef __APPLE__
@@ -74,6 +74,7 @@
 #define DRM_FORMAT_MOD_APPLE_TWIDDLED_COMPRESSED (3)
 #endif
 
+/* clang-format off */
 static const struct debug_named_value agx_debug_options[] = {
    {"trace",     AGX_DBG_TRACE,    "Trace the command stream"},
    {"deqp",      AGX_DBG_DEQP,     "Hacks for dEQP"},
@@ -86,6 +87,7 @@ static const struct debug_named_value agx_debug_options[] = {
    {"nocompress",AGX_DBG_NOCOMPRESS,"Disable lossless compression"},
    DEBUG_NAMED_VALUE_END
 };
+/* clang-format on */
 
 uint64_t agx_best_modifiers[] = {
    DRM_FORMAT_MOD_APPLE_TWIDDLED_COMPRESSED,
@@ -115,12 +117,11 @@ ail_modifier_to_tiling(uint64_t modifier)
 }
 
 static void
-agx_resource_setup(struct agx_device *dev,
-                   struct agx_resource *nresource)
+agx_resource_setup(struct agx_device *dev, struct agx_resource *nresource)
 {
    struct pipe_resource *templ = &nresource->base;
 
-   nresource->layout = (struct ail_layout) {
+   nresource->layout = (struct ail_layout){
       .tiling = ail_modifier_to_tiling(nresource->modifier),
       .format = templ->format,
       .width_px = templ->width0,
@@ -134,8 +135,7 @@ agx_resource_setup(struct agx_device *dev,
 static struct pipe_resource *
 agx_resource_from_handle(struct pipe_screen *pscreen,
                          const struct pipe_resource *templat,
-                         struct winsys_handle *whandle,
-                         unsigned usage)
+                         struct winsys_handle *whandle, unsigned usage)
 {
    struct agx_device *dev = agx_device(pscreen);
    struct agx_resource *rsc;
@@ -147,8 +147,9 @@ agx_resource_from_handle(struct pipe_screen *pscreen,
    if (!rsc)
       return NULL;
 
-   rsc->modifier = whandle->modifier == DRM_FORMAT_MOD_INVALID ?
-                   DRM_FORMAT_MOD_LINEAR : whandle->modifier;
+   rsc->modifier = whandle->modifier == DRM_FORMAT_MOD_INVALID
+                      ? DRM_FORMAT_MOD_LINEAR
+                      : whandle->modifier;
 
    /* We need strides to be aligned. ail asserts this, but we want to fail
     * gracefully so the app can handle the error.
@@ -167,11 +168,11 @@ agx_resource_from_handle(struct pipe_screen *pscreen,
 
    rsc->bo = agx_bo_import(dev, whandle->handle);
    /* Sometimes an import can fail e.g. on an invalid buffer fd, out of
-   * memory space to mmap it etc.
-   */
+    * memory space to mmap it etc.
+    */
    if (!rsc->bo) {
-            FREE(rsc);
-            return NULL;
+      FREE(rsc);
+      return NULL;
    }
 
    agx_resource_setup(dev, rsc);
@@ -187,9 +188,9 @@ agx_resource_from_handle(struct pipe_screen *pscreen,
 
 #ifndef __APPLE__
    if (dev->ro) {
-            rsc->scanout =
-                  renderonly_create_gpu_import_for_resource(prsc, dev->ro, NULL);
-            /* failure is expected in some cases.. */
+      rsc->scanout =
+         renderonly_create_gpu_import_for_resource(prsc, dev->ro, NULL);
+      /* failure is expected in some cases.. */
    }
 #endif
 
@@ -197,10 +198,8 @@ agx_resource_from_handle(struct pipe_screen *pscreen,
 }
 
 static bool
-agx_resource_get_handle(struct pipe_screen *pscreen,
-                        struct pipe_context *ctx,
-                        struct pipe_resource *pt,
-                        struct winsys_handle *handle,
+agx_resource_get_handle(struct pipe_screen *pscreen, struct pipe_context *ctx,
+                        struct pipe_resource *pt, struct winsys_handle *handle,
                         unsigned usage)
 {
    struct agx_device *dev = agx_device(pscreen);
@@ -245,13 +244,12 @@ agx_resource_get_handle(struct pipe_screen *pscreen,
    return true;
 }
 
-
 static bool
-agx_resource_get_param(struct pipe_screen *pscreen,
-                       struct pipe_context *pctx, struct pipe_resource *prsc,
-                       unsigned plane, unsigned layer, unsigned level,
-                       enum pipe_resource_param param,
-                       unsigned usage, uint64_t *value)
+agx_resource_get_param(struct pipe_screen *pscreen, struct pipe_context *pctx,
+                       struct pipe_resource *prsc, unsigned plane,
+                       unsigned layer, unsigned level,
+                       enum pipe_resource_param param, unsigned usage,
+                       uint64_t *value)
 {
    struct agx_resource *rsrc = (struct agx_resource *)prsc;
    struct pipe_resource *cur;
@@ -317,7 +315,8 @@ static bool
 agx_twiddled_allowed(const struct agx_resource *pres)
 {
    /* Certain binds force linear */
-   if (pres->base.bind & (PIPE_BIND_DISPLAY_TARGET | PIPE_BIND_SCANOUT | PIPE_BIND_LINEAR))
+   if (pres->base.bind &
+       (PIPE_BIND_DISPLAY_TARGET | PIPE_BIND_SCANOUT | PIPE_BIND_LINEAR))
       return false;
 
    /* Buffers must be linear, and it does not make sense to twiddle 1D */
@@ -336,11 +335,9 @@ agx_compression_allowed(const struct agx_resource *pres)
       return false;
 
    /* Limited to renderable */
-   if (pres->base.bind & ~(PIPE_BIND_SAMPLER_VIEW |
-                           PIPE_BIND_RENDER_TARGET |
-                           PIPE_BIND_DEPTH_STENCIL |
-                           PIPE_BIND_SHARED |
-                           PIPE_BIND_SCANOUT))
+   if (pres->base.bind &
+       ~(PIPE_BIND_SAMPLER_VIEW | PIPE_BIND_RENDER_TARGET |
+         PIPE_BIND_DEPTH_STENCIL | PIPE_BIND_SHARED | PIPE_BIND_SCANOUT))
       return false;
 
    /* We use the PBE for compression via staging blits, so we can only compress
@@ -358,7 +355,8 @@ agx_compression_allowed(const struct agx_resource *pres)
     * arrayed linear staging resources, which the hardware doesn't support. This
     * could be worked around with more sophisticated blit code.
     */
-   if (pres->base.target != PIPE_TEXTURE_2D && pres->base.target != PIPE_TEXTURE_RECT)
+   if (pres->base.target != PIPE_TEXTURE_2D &&
+       pres->base.target != PIPE_TEXTURE_RECT)
       return false;
 
    /* Small textures cannot (should not?) be compressed */
@@ -373,12 +371,13 @@ agx_select_modifier_from_list(const struct agx_resource *pres,
                               const uint64_t *modifiers, int count)
 {
    if (agx_twiddled_allowed(pres) && agx_compression_allowed(pres) &&
-       drm_find_modifier(DRM_FORMAT_MOD_APPLE_TWIDDLED_COMPRESSED, modifiers, count))
+       drm_find_modifier(DRM_FORMAT_MOD_APPLE_TWIDDLED_COMPRESSED, modifiers,
+                         count))
       return DRM_FORMAT_MOD_APPLE_TWIDDLED_COMPRESSED;
 
    if (agx_twiddled_allowed(pres) &&
        drm_find_modifier(DRM_FORMAT_MOD_APPLE_TWIDDLED, modifiers, count))
-         return DRM_FORMAT_MOD_APPLE_TWIDDLED;
+      return DRM_FORMAT_MOD_APPLE_TWIDDLED;
 
    if (agx_linear_allowed(pres) &&
        drm_find_modifier(DRM_FORMAT_MOD_LINEAR, modifiers, count))
@@ -418,7 +417,8 @@ agx_resource_create_with_modifiers(struct pipe_screen *screen,
    nresource->base.screen = screen;
 
    if (modifiers) {
-      nresource->modifier = agx_select_modifier_from_list(nresource, modifiers, count);
+      nresource->modifier =
+         agx_select_modifier_from_list(nresource, modifiers, count);
 
       /* There may not be a matching modifier, bail if so */
       if (nresource->modifier == DRM_FORMAT_MOD_INVALID) {
@@ -441,7 +441,7 @@ agx_resource_create_with_modifiers(struct pipe_screen *screen,
 
    pipe_reference_init(&nresource->base.reference, 1);
 
-   struct sw_winsys *winsys = ((struct agx_screen *) screen)->winsys;
+   struct sw_winsys *winsys = ((struct agx_screen *)screen)->winsys;
 
    ail_make_miptree(&nresource->layout);
 
@@ -451,35 +451,35 @@ agx_resource_create_with_modifiers(struct pipe_screen *screen,
       assert(util_format_get_blockheight(templ->format) == 1);
 
       unsigned width = templ->width0;
-      unsigned stride = templ->width0 * util_format_get_blocksize(templ->format);
+      unsigned stride =
+         templ->width0 * util_format_get_blocksize(templ->format);
       unsigned size = nresource->layout.size_B;
       unsigned effective_rows = DIV_ROUND_UP(size, stride);
 
       struct pipe_resource scanout_tmpl = {
-            .target = nresource->base.target,
-            .format = templ->format,
-            .width0 = width,
-            .height0 = effective_rows,
-            .depth0 = 1,
-            .array_size = 1,
+         .target = nresource->base.target,
+         .format = templ->format,
+         .width0 = width,
+         .height0 = effective_rows,
+         .depth0 = 1,
+         .array_size = 1,
       };
 
-      nresource->scanout = renderonly_scanout_for_resource(&scanout_tmpl,
-                                                   dev->ro,
-                                                   &handle);
+      nresource->scanout =
+         renderonly_scanout_for_resource(&scanout_tmpl, dev->ro, &handle);
 
       if (!nresource->scanout) {
-            fprintf(stderr, "Failed to create scanout resource\n");
-            free(nresource);
-            return NULL;
+         fprintf(stderr, "Failed to create scanout resource\n");
+         free(nresource);
+         return NULL;
       }
       assert(handle.type == WINSYS_HANDLE_TYPE_FD);
       nresource->bo = agx_bo_import(dev, handle.handle);
       close(handle.handle);
 
       if (!nresource->bo) {
-            free(nresource);
-            return NULL;
+         free(nresource);
+         return NULL;
       }
 
       return &nresource->base;
@@ -494,14 +494,9 @@ agx_resource_create_with_modifiers(struct pipe_screen *screen,
          height = ALIGN_POT(height, 64);
       }
 
-      nresource->dt = winsys->displaytarget_create(winsys,
-                      templ->bind,
-                      templ->format,
-                      width,
-                      height,
-                      64,
-                      NULL /*map_front_private*/,
-                      &nresource->dt_stride);
+      nresource->dt = winsys->displaytarget_create(
+         winsys, templ->bind, templ->format, width, height, 64,
+         NULL /*map_front_private*/, &nresource->dt_stride);
 
       if (nresource->layout.tiling == AIL_TILING_LINEAR)
          nresource->layout.linear_stride_B = nresource->dt_stride;
@@ -515,20 +510,20 @@ agx_resource_create_with_modifiers(struct pipe_screen *screen,
    /* Guess a label based on the bind */
    unsigned bind = templ->bind;
 
-   const char *label =
-      (bind & PIPE_BIND_INDEX_BUFFER) ? "Index buffer" :
-      (bind & PIPE_BIND_SCANOUT) ? "Scanout" :
-      (bind & PIPE_BIND_DISPLAY_TARGET) ? "Display target" :
-      (bind & PIPE_BIND_SHARED) ? "Shared resource" :
-      (bind & PIPE_BIND_RENDER_TARGET) ? "Render target" :
-      (bind & PIPE_BIND_DEPTH_STENCIL) ? "Depth/stencil buffer" :
-      (bind & PIPE_BIND_SAMPLER_VIEW) ? "Texture" :
-      (bind & PIPE_BIND_VERTEX_BUFFER) ? "Vertex buffer" :
-      (bind & PIPE_BIND_CONSTANT_BUFFER) ? "Constant buffer" :
-      (bind & PIPE_BIND_GLOBAL) ? "Global memory" :
-      (bind & PIPE_BIND_SHADER_BUFFER) ? "Shader buffer" :
-      (bind & PIPE_BIND_SHADER_IMAGE) ? "Shader image" :
-      "Other resource";
+   const char *label = (bind & PIPE_BIND_INDEX_BUFFER)     ? "Index buffer"
+                       : (bind & PIPE_BIND_SCANOUT)        ? "Scanout"
+                       : (bind & PIPE_BIND_DISPLAY_TARGET) ? "Display target"
+                       : (bind & PIPE_BIND_SHARED)         ? "Shared resource"
+                       : (bind & PIPE_BIND_RENDER_TARGET)  ? "Render target"
+                       : (bind & PIPE_BIND_DEPTH_STENCIL)
+                          ? "Depth/stencil buffer"
+                       : (bind & PIPE_BIND_SAMPLER_VIEW)    ? "Texture"
+                       : (bind & PIPE_BIND_VERTEX_BUFFER)   ? "Vertex buffer"
+                       : (bind & PIPE_BIND_CONSTANT_BUFFER) ? "Constant buffer"
+                       : (bind & PIPE_BIND_GLOBAL)          ? "Global memory"
+                       : (bind & PIPE_BIND_SHADER_BUFFER)   ? "Shader buffer"
+                       : (bind & PIPE_BIND_SHADER_IMAGE)    ? "Shader image"
+                                                            : "Other resource";
 
    nresource->bo = agx_bo_create(dev, nresource->layout.size_B,
                                  AGX_MEMORY_TYPE_FRAMEBUFFER, label);
@@ -549,11 +544,10 @@ agx_resource_create(struct pipe_screen *screen,
 }
 
 static void
-agx_resource_destroy(struct pipe_screen *screen,
-                     struct pipe_resource *prsrc)
+agx_resource_destroy(struct pipe_screen *screen, struct pipe_resource *prsrc)
 {
    struct agx_resource *rsrc = (struct agx_resource *)prsrc;
-   struct agx_screen *agx_screen = (struct agx_screen*)screen;
+   struct agx_screen *agx_screen = (struct agx_screen *)screen;
 
    if (rsrc->dt) {
       /* display target */
@@ -569,7 +563,6 @@ agx_resource_destroy(struct pipe_screen *screen,
    agx_bo_unreference(rsrc->bo);
    FREE(rsrc);
 }
-
 
 /*
  * transfer
@@ -608,10 +601,9 @@ agx_shadow(struct agx_context *ctx, struct agx_resource *rsrc)
  * complete. This may require flushing batches.
  */
 static void
-agx_prepare_for_map(struct agx_context *ctx,
-                    struct agx_resource *rsrc,
+agx_prepare_for_map(struct agx_context *ctx, struct agx_resource *rsrc,
                     unsigned level,
-                    unsigned usage,  /* a combination of PIPE_MAP_x */
+                    unsigned usage, /* a combination of PIPE_MAP_x */
                     const struct pipe_box *box)
 {
    /* Upgrade DISCARD_RANGE to WHOLE_RESOURCE if the whole resource is
@@ -620,9 +612,8 @@ agx_prepare_for_map(struct agx_context *ctx,
    if ((usage & PIPE_MAP_DISCARD_RANGE) &&
        !(rsrc->base.flags & PIPE_RESOURCE_FLAG_MAP_PERSISTENT) &&
        rsrc->base.last_level == 0 &&
-       util_texrange_covers_whole_level(&rsrc->base, 0, box->x, box->y,
-                                        box->z, box->width, box->height,
-                                        box->depth)) {
+       util_texrange_covers_whole_level(&rsrc->base, 0, box->x, box->y, box->z,
+                                        box->width, box->height, box->depth)) {
 
       usage |= PIPE_MAP_DISCARD_WHOLE_RESOURCE;
    }
@@ -656,7 +647,6 @@ agx_prepare_for_map(struct agx_context *ctx,
    agx_flush_readers(ctx, rsrc, "Unsynchronized write");
 }
 
-
 /* Most of the time we can do CPU-side transfers, but sometimes we need to use
  * the 3D pipe for this. Let's wrap u_blitter to blit to/from staging textures.
  * Code adapted from panfrost */
@@ -668,7 +658,7 @@ agx_alloc_staging(struct agx_context *ctx, struct agx_resource *rsc,
    struct pipe_context *pctx = &ctx->base;
    struct pipe_resource tmpl = rsc->base;
 
-   tmpl.width0  = box->width;
+   tmpl.width0 = box->width;
    tmpl.height0 = box->height;
 
    /* for array textures, box->depth is the array_size, otherwise for 3d
@@ -689,15 +679,9 @@ agx_alloc_staging(struct agx_context *ctx, struct agx_resource *rsc,
    struct pipe_resource *pstaging =
       pctx->screen->resource_create(pctx->screen, &tmpl);
    if (!pstaging)
-            return NULL;
+      return NULL;
 
    return agx_resource(pstaging);
-}
-
-static enum pipe_format
-agx_blit_format(enum pipe_format fmt)
-{
-   return fmt;
 }
 
 static void
@@ -707,13 +691,13 @@ agx_blit_from_staging(struct pipe_context *pctx, struct agx_transfer *trans)
    struct pipe_blit_info blit = {0};
 
    blit.dst.resource = dst;
-   blit.dst.format   = agx_blit_format(dst->format);
-   blit.dst.level    = trans->base.level;
-   blit.dst.box      = trans->base.box;
+   blit.dst.format = dst->format;
+   blit.dst.level = trans->base.level;
+   blit.dst.box = trans->base.box;
    blit.src.resource = trans->staging.rsrc;
-   blit.src.format   = agx_blit_format(trans->staging.rsrc->format);
-   blit.src.level    = 0;
-   blit.src.box      = trans->staging.box;
+   blit.src.format = trans->staging.rsrc->format;
+   blit.src.level = 0;
+   blit.src.box = trans->staging.box;
    blit.mask = util_format_get_mask(blit.src.format);
    blit.filter = PIPE_TEX_FILTER_NEAREST;
 
@@ -727,13 +711,13 @@ agx_blit_to_staging(struct pipe_context *pctx, struct agx_transfer *trans)
    struct pipe_blit_info blit = {0};
 
    blit.src.resource = src;
-   blit.src.format   = agx_blit_format(src->format);
-   blit.src.level    = trans->base.level;
-   blit.src.box      = trans->base.box;
+   blit.src.format = src->format;
+   blit.src.level = trans->base.level;
+   blit.src.box = trans->base.box;
    blit.dst.resource = trans->staging.rsrc;
-   blit.dst.format   = agx_blit_format(trans->staging.rsrc->format);
-   blit.dst.level    = 0;
-   blit.dst.box      = trans->staging.box;
+   blit.dst.format = trans->staging.rsrc->format;
+   blit.dst.level = 0;
+   blit.dst.box = trans->staging.box;
    blit.mask = util_format_get_mask(blit.dst.format);
    blit.filter = PIPE_TEX_FILTER_NEAREST;
 
@@ -741,10 +725,9 @@ agx_blit_to_staging(struct pipe_context *pctx, struct agx_transfer *trans)
 }
 
 static void *
-agx_transfer_map(struct pipe_context *pctx,
-                 struct pipe_resource *resource,
+agx_transfer_map(struct pipe_context *pctx, struct pipe_resource *resource,
                  unsigned level,
-                 unsigned usage,  /* a combination of PIPE_MAP_x */
+                 unsigned usage, /* a combination of PIPE_MAP_x */
                  const struct pipe_box *box,
                  struct pipe_transfer **out_transfer)
 {
@@ -787,9 +770,9 @@ agx_transfer_map(struct pipe_context *pctx,
 
       assert(transfer->staging.rsrc != NULL);
 
-      if ((usage & PIPE_MAP_READ) && BITSET_TEST(rsrc->data_valid, level)) {
-            agx_blit_to_staging(pctx, transfer);
-            agx_flush_writer(ctx, staging, "GPU read staging blit");
+      if ((usage & PIPE_MAP_READ) && agx_resource_valid(rsrc, level)) {
+         agx_blit_to_staging(pctx, transfer);
+         agx_flush_writer(ctx, staging, "GPU read staging blit");
       }
 
       return staging->bo->ptr.cpu;
@@ -799,17 +782,16 @@ agx_transfer_map(struct pipe_context *pctx,
       transfer->base.stride =
          util_format_get_stride(rsrc->layout.format, box->width);
 
-      transfer->base.layer_stride =
-         util_format_get_2d_size(rsrc->layout.format, transfer->base.stride,
-                                 box->height);
+      transfer->base.layer_stride = util_format_get_2d_size(
+         rsrc->layout.format, transfer->base.stride, box->height);
 
       transfer->map = calloc(transfer->base.layer_stride, box->depth);
 
-      if ((usage & PIPE_MAP_READ) && BITSET_TEST(rsrc->data_valid, level)) {
+      if ((usage & PIPE_MAP_READ) && agx_resource_valid(rsrc, level)) {
          for (unsigned z = 0; z < box->depth; ++z) {
             uint8_t *map = agx_map_texture_cpu(rsrc, level, box->z + z);
-            uint8_t *dst = (uint8_t *) transfer->map +
-                           transfer->base.layer_stride * z;
+            uint8_t *dst =
+               (uint8_t *)transfer->map + transfer->base.layer_stride * z;
 
             ail_detile(map, dst, &rsrc->layout, level, transfer->base.stride,
                        box->x, box->y, box->width, box->height);
@@ -818,52 +800,49 @@ agx_transfer_map(struct pipe_context *pctx,
 
       return transfer->map;
    } else {
-      assert (rsrc->modifier == DRM_FORMAT_MOD_LINEAR);
+      assert(rsrc->modifier == DRM_FORMAT_MOD_LINEAR);
 
       transfer->base.stride = ail_get_linear_stride_B(&rsrc->layout, level);
       transfer->base.layer_stride = rsrc->layout.layer_stride_B;
 
       /* Be conservative for direct writes */
       if ((usage & PIPE_MAP_WRITE) &&
-          (usage & (PIPE_MAP_DIRECTLY | PIPE_MAP_PERSISTENT | PIPE_MAP_COHERENT)))
-      {
+          (usage &
+           (PIPE_MAP_DIRECTLY | PIPE_MAP_PERSISTENT | PIPE_MAP_COHERENT))) {
          BITSET_SET(rsrc->data_valid, level);
       }
 
-      uint32_t offset = ail_get_linear_pixel_B(&rsrc->layout, level, box->x,
-                                               box->y, box->z);
+      uint32_t offset =
+         ail_get_linear_pixel_B(&rsrc->layout, level, box->x, box->y, box->z);
 
-      return ((uint8_t *) rsrc->bo->ptr.cpu) + offset;
+      return ((uint8_t *)rsrc->bo->ptr.cpu) + offset;
    }
 }
 
 static void
-agx_transfer_unmap(struct pipe_context *pctx,
-                   struct pipe_transfer *transfer)
+agx_transfer_unmap(struct pipe_context *pctx, struct pipe_transfer *transfer)
 {
    /* Gallium expects writeback here, so we tile */
 
    struct agx_transfer *trans = agx_transfer(transfer);
    struct pipe_resource *prsrc = transfer->resource;
-   struct agx_resource *rsrc = (struct agx_resource *) prsrc;
+   struct agx_resource *rsrc = (struct agx_resource *)prsrc;
 
    if (trans->staging.rsrc && (transfer->usage & PIPE_MAP_WRITE)) {
-         agx_blit_from_staging(pctx, trans);
-         agx_flush_readers(agx_context(pctx), agx_resource(trans->staging.rsrc),
-                           "GPU write staging blit");
-         pipe_resource_reference(&trans->staging.rsrc, NULL);
+      agx_blit_from_staging(pctx, trans);
+      agx_flush_readers(agx_context(pctx), agx_resource(trans->staging.rsrc),
+                        "GPU write staging blit");
    } else if (trans->map && (transfer->usage & PIPE_MAP_WRITE)) {
       assert(rsrc->modifier == DRM_FORMAT_MOD_APPLE_TWIDDLED);
 
       for (unsigned z = 0; z < transfer->box.depth; ++z) {
-         uint8_t *map = agx_map_texture_cpu(rsrc, transfer->level,
-               transfer->box.z + z);
-         uint8_t *src = (uint8_t *) trans->map +
-                        transfer->layer_stride * z;
+         uint8_t *map =
+            agx_map_texture_cpu(rsrc, transfer->level, transfer->box.z + z);
+         uint8_t *src = (uint8_t *)trans->map + transfer->layer_stride * z;
 
-         ail_tile(map, src, &rsrc->layout, transfer->level,
-                  transfer->stride, transfer->box.x, transfer->box.y,
-                  transfer->box.width, transfer->box.height);
+         ail_tile(map, src, &rsrc->layout, transfer->level, transfer->stride,
+                  transfer->box.x, transfer->box.y, transfer->box.width,
+                  transfer->box.height);
       }
    }
 
@@ -875,6 +854,7 @@ agx_transfer_unmap(struct pipe_context *pctx,
 
    /* Free the transfer */
    free(trans->map);
+   pipe_resource_reference(&trans->staging.rsrc, NULL);
    pipe_resource_reference(&transfer->resource, NULL);
    FREE(transfer);
 }
@@ -883,7 +863,8 @@ agx_transfer_unmap(struct pipe_context *pctx,
  * clear/copy
  */
 static void
-agx_clear(struct pipe_context *pctx, unsigned buffers, const struct pipe_scissor_state *scissor_state,
+agx_clear(struct pipe_context *pctx, unsigned buffers,
+          const struct pipe_scissor_state *scissor_state,
           const union pipe_color_union *color, double depth, unsigned stencil)
 {
    struct agx_context *ctx = agx_context(pctx);
@@ -914,11 +895,11 @@ agx_clear(struct pipe_context *pctx, unsigned buffers, const struct pipe_scissor
    /* Slow clears draw a fullscreen rectangle */
    if (slowclear) {
       agx_blitter_save(ctx, ctx->blitter, false /* render cond */);
-      util_blitter_clear(ctx->blitter, ctx->framebuffer.width,
-                         ctx->framebuffer.height,
-                         util_framebuffer_get_num_layers(&ctx->framebuffer),
-                         slowclear, color, depth, stencil,
-                         util_framebuffer_get_num_samples(&ctx->framebuffer) > 1);
+      util_blitter_clear(
+         ctx->blitter, ctx->framebuffer.width, ctx->framebuffer.height,
+         util_framebuffer_get_num_layers(&ctx->framebuffer), slowclear, color,
+         depth, stencil,
+         util_framebuffer_get_num_samples(&ctx->framebuffer) > 1);
    }
 
    batch->clear |= fastclear;
@@ -927,8 +908,7 @@ agx_clear(struct pipe_context *pctx, unsigned buffers, const struct pipe_scissor
 }
 
 static void
-agx_flush_resource(struct pipe_context *ctx,
-                   struct pipe_resource *resource)
+agx_flush_resource(struct pipe_context *ctx, struct pipe_resource *resource)
 {
    agx_flush_writer(agx_context(ctx), agx_resource(resource), "flush_resource");
 }
@@ -937,8 +917,7 @@ agx_flush_resource(struct pipe_context *ctx,
  * context
  */
 static void
-agx_flush(struct pipe_context *pctx,
-          struct pipe_fence_handle **fence,
+agx_flush(struct pipe_context *pctx, struct pipe_fence_handle **fence,
           unsigned flags)
 {
    struct agx_context *ctx = agx_context(pctx);
@@ -963,7 +942,7 @@ agx_flush_batch(struct agx_context *ctx, struct agx_batch *batch)
    }
 
    /* Finalize the encoder */
-   uint8_t stop[5 + 64] = { 0x00, 0x00, 0x00, 0xc0, 0x00 };
+   uint8_t stop[5 + 64] = {0x00, 0x00, 0x00, 0xc0, 0x00};
    memcpy(batch->encoder_current, stop, sizeof(stop));
 
    uint64_t pipeline_background = agx_build_meta(batch, false, false);
@@ -984,8 +963,8 @@ agx_flush_batch(struct agx_context *ctx, struct agx_batch *batch)
       }
    }
 
-   struct agx_resource *zbuf = batch->key.zsbuf ?
-      agx_resource(batch->key.zsbuf->texture) : NULL;
+   struct agx_resource *zbuf =
+      batch->key.zsbuf ? agx_resource(batch->key.zsbuf->texture) : NULL;
 
    if (zbuf) {
       unsigned level = batch->key.zsbuf->u.tex.level;
@@ -1001,8 +980,8 @@ agx_flush_batch(struct agx_context *ctx, struct agx_batch *batch)
     */
    uint64_t scissor = agx_pool_upload_aligned(&batch->pool, batch->scissor.data,
                                               batch->scissor.size, 64);
-   uint64_t zbias   = agx_pool_upload_aligned(&batch->pool, batch->depth_bias.data,
-                                              batch->depth_bias.size, 64);
+   uint64_t zbias = agx_pool_upload_aligned(
+      &batch->pool, batch->depth_bias.data, batch->depth_bias.size, 64);
 
    /* BO list for a given batch consists of:
     *  - BOs for the batch's pools
@@ -1013,21 +992,21 @@ agx_flush_batch(struct agx_context *ctx, struct agx_batch *batch)
    agx_batch_add_bo(batch, batch->encoder);
 
    /* Occlusion queries are allocated as a contiguous pool */
-   unsigned oq_count = util_dynarray_num_elements(&batch->occlusion_queries,
-                                                  struct agx_query *);
+   unsigned oq_count =
+      util_dynarray_num_elements(&batch->occlusion_queries, struct agx_query *);
    size_t oq_size = oq_count * sizeof(uint64_t);
 
    if (oq_size) {
-      batch->occlusion_buffer = agx_pool_alloc_aligned(&batch->pool, oq_size, 64);
+      batch->occlusion_buffer =
+         agx_pool_alloc_aligned(&batch->pool, oq_size, 64);
       memset(batch->occlusion_buffer.cpu, 0, oq_size);
    } else {
       batch->occlusion_buffer.gpu = 0;
    }
 
-   unsigned handle_count =
-      agx_batch_num_bo(batch) +
-      agx_pool_num_bos(&batch->pool) +
-      agx_pool_num_bos(&batch->pipeline_pool);
+   unsigned handle_count = agx_batch_num_bo(batch) +
+                           agx_pool_num_bos(&batch->pool) +
+                           agx_pool_num_bos(&batch->pipeline_pool);
 
    uint32_t *handles = calloc(sizeof(uint32_t), handle_count);
    unsigned handle = 0, handle_i = 0;
@@ -1048,22 +1027,12 @@ agx_flush_batch(struct agx_context *ctx, struct agx_batch *batch)
    unsigned cmdbuf_id = agx_get_global_id(dev);
    unsigned encoder_id = agx_get_global_id(dev);
 
-   unsigned cmdbuf_size = demo_cmdbuf(dev->cmdbuf.ptr.cpu,
-               dev->cmdbuf.size,
-               &batch->pool,
-               &batch->key,
-               batch->encoder->ptr.gpu,
-               encoder_id,
-               scissor,
-               zbias,
-               batch->occlusion_buffer.gpu,
-               pipeline_background,
-               pipeline_background_partial,
-               pipeline_store,
-               clear_pipeline_textures,
-               batch->clear,
-               batch->clear_depth,
-               batch->clear_stencil);
+   unsigned cmdbuf_size = demo_cmdbuf(
+      dev->cmdbuf.ptr.cpu, dev->cmdbuf.size, &batch->pool, &batch->key,
+      batch->encoder->ptr.gpu, encoder_id, scissor, zbias,
+      batch->occlusion_buffer.gpu, pipeline_background,
+      pipeline_background_partial, pipeline_store, clear_pipeline_textures,
+      batch->clear, batch->clear_depth, batch->clear_stencil);
 
    /* Generate the mapping table from the BO list */
    demo_mem_map(dev->memmap.ptr.cpu, dev->memmap.size, handles, handle_count,
@@ -1117,8 +1086,7 @@ agx_invalidate_resource(struct pipe_context *pctx,
 }
 
 static struct pipe_context *
-agx_create_context(struct pipe_screen *screen,
-                   void *priv, unsigned flags)
+agx_create_context(struct pipe_screen *screen, void *priv, unsigned flags)
 {
    struct agx_context *ctx = rzalloc(NULL, struct agx_context);
    struct pipe_context *pctx = &ctx->base;
@@ -1169,24 +1137,23 @@ agx_create_context(struct pipe_screen *screen,
 }
 
 static void
-agx_flush_frontbuffer(struct pipe_screen *_screen,
-                      struct pipe_context *pctx,
-                      struct pipe_resource *prsrc,
-                      unsigned level, unsigned layer,
-                      void *context_private, struct pipe_box *box)
+agx_flush_frontbuffer(struct pipe_screen *_screen, struct pipe_context *pctx,
+                      struct pipe_resource *prsrc, unsigned level,
+                      unsigned layer, void *context_private,
+                      struct pipe_box *box)
 {
-   struct agx_resource *rsrc = (struct agx_resource *) prsrc;
-   struct agx_screen *agx_screen = (struct agx_screen*)_screen;
+   struct agx_resource *rsrc = (struct agx_resource *)prsrc;
+   struct agx_screen *agx_screen = (struct agx_screen *)_screen;
    struct sw_winsys *winsys = agx_screen->winsys;
 
    /* Dump the framebuffer */
-   assert (rsrc->dt);
+   assert(rsrc->dt);
    void *map = winsys->displaytarget_map(winsys, rsrc->dt, PIPE_USAGE_DEFAULT);
    assert(map != NULL);
 
    if (rsrc->modifier == DRM_FORMAT_MOD_APPLE_TWIDDLED) {
-      ail_detile(rsrc->bo->ptr.cpu, map, &rsrc->layout, 0, rsrc->dt_stride,
-                 0, 0, rsrc->base.width0, rsrc->base.height0);
+      ail_detile(rsrc->bo->ptr.cpu, map, &rsrc->layout, 0, rsrc->dt_stride, 0,
+                 0, rsrc->base.width0, rsrc->base.height0);
    } else {
       assert(rsrc->modifier == DRM_FORMAT_MOD_LINEAR);
       memcpy(map, rsrc->bo->ptr.cpu, rsrc->dt_stride * rsrc->base.height0);
@@ -1196,30 +1163,31 @@ agx_flush_frontbuffer(struct pipe_screen *_screen,
 }
 
 static const char *
-agx_get_vendor(struct pipe_screen* pscreen)
+agx_get_vendor(struct pipe_screen *pscreen)
 {
-   return "Asahi";
+   return "Mesa";
 }
 
 static const char *
-agx_get_device_vendor(struct pipe_screen* pscreen)
+agx_get_device_vendor(struct pipe_screen *pscreen)
 {
    return "Apple";
 }
 
 static const char *
-agx_get_name(struct pipe_screen* pscreen)
+agx_get_name(struct pipe_screen *pscreen)
 {
    return "Apple M1 (G13G B0)";
 }
 
 static int
-agx_get_param(struct pipe_screen* pscreen, enum pipe_cap param)
+agx_get_param(struct pipe_screen *pscreen, enum pipe_cap param)
 {
    bool is_deqp = agx_device(pscreen)->debug & AGX_DBG_DEQP;
 
    switch (param) {
    case PIPE_CAP_NPOT_TEXTURES:
+   case PIPE_CAP_SHADER_STENCIL_EXPORT:
    case PIPE_CAP_MIXED_COLOR_DEPTH_BITS:
    case PIPE_CAP_FRAGMENT_SHADER_TEXTURE_LOD:
    case PIPE_CAP_VERTEX_COLOR_UNCLAMPED:
@@ -1254,6 +1222,7 @@ agx_get_param(struct pipe_screen* pscreen, enum pipe_cap param)
    case PIPE_CAP_OCCLUSION_QUERY:
    case PIPE_CAP_PRIMITIVE_RESTART:
    case PIPE_CAP_PRIMITIVE_RESTART_FIXED_INDEX:
+   case PIPE_CAP_ANISOTROPIC_FILTER:
       return true;
 
    case PIPE_CAP_SAMPLER_VIEW_TARGET:
@@ -1268,13 +1237,15 @@ agx_get_param(struct pipe_screen* pscreen, enum pipe_cap param)
    case PIPE_CAP_SHADER_ARRAY_COMPONENTS:
    case PIPE_CAP_PACKED_UNIFORMS:
    case PIPE_CAP_QUADS_FOLLOW_PROVOKING_VERTEX_CONVENTION:
-      return 1;
-
    case PIPE_CAP_VS_INSTANCEID:
    case PIPE_CAP_VERTEX_ELEMENT_INSTANCE_DIVISOR:
+      return 1;
+
    case PIPE_CAP_TEXTURE_MULTISAMPLE:
    case PIPE_CAP_SURFACE_SAMPLE_COUNT:
    case PIPE_CAP_SAMPLE_SHADING:
+   case PIPE_CAP_SEAMLESS_CUBE_MAP:
+   case PIPE_CAP_SEAMLESS_CUBE_MAP_PER_TEXTURE:
       return is_deqp;
 
    case PIPE_CAP_COPY_BETWEEN_COMPRESSED_AND_PLAIN_FORMATS:
@@ -1290,7 +1261,7 @@ agx_get_param(struct pipe_screen* pscreen, enum pipe_cap param)
    case PIPE_CAP_STREAM_OUTPUT_PAUSE_RESUME:
    case PIPE_CAP_STREAM_OUTPUT_INTERLEAVE_BUFFERS:
       return is_deqp ? 1 : 0;
- 
+
    case PIPE_CAP_MAX_TEXTURE_ARRAY_LAYERS:
       return 256;
 
@@ -1323,8 +1294,6 @@ agx_get_param(struct pipe_screen* pscreen, enum pipe_cap param)
    case PIPE_CAP_TGSI_TEXCOORD:
    case PIPE_CAP_FS_FACE_IS_INTEGER_SYSVAL:
    case PIPE_CAP_FS_POSITION_IS_SYSVAL:
-   case PIPE_CAP_SEAMLESS_CUBE_MAP:
-   case PIPE_CAP_SEAMLESS_CUBE_MAP_PER_TEXTURE:
       return true;
    case PIPE_CAP_FS_COORD_ORIGIN_LOWER_LEFT:
    case PIPE_CAP_FS_COORD_PIXEL_CENTER_INTEGER:
@@ -1366,15 +1335,13 @@ agx_get_param(struct pipe_screen* pscreen, enum pipe_cap param)
 
    case PIPE_CAP_SUPPORTED_PRIM_MODES:
    case PIPE_CAP_SUPPORTED_PRIM_MODES_WITH_RESTART:
-      return BITFIELD_BIT(PIPE_PRIM_POINTS) |
-             BITFIELD_BIT(PIPE_PRIM_LINES) |
+      return BITFIELD_BIT(PIPE_PRIM_POINTS) | BITFIELD_BIT(PIPE_PRIM_LINES) |
              BITFIELD_BIT(PIPE_PRIM_LINE_STRIP) |
              BITFIELD_BIT(PIPE_PRIM_LINE_LOOP) |
              BITFIELD_BIT(PIPE_PRIM_TRIANGLES) |
              BITFIELD_BIT(PIPE_PRIM_TRIANGLE_STRIP) |
              BITFIELD_BIT(PIPE_PRIM_TRIANGLE_FAN) |
-             BITFIELD_BIT(PIPE_PRIM_QUADS) |
-             BITFIELD_BIT(PIPE_PRIM_QUAD_STRIP);
+             BITFIELD_BIT(PIPE_PRIM_QUADS) | BITFIELD_BIT(PIPE_PRIM_QUAD_STRIP);
 
    default:
       return u_pipe_screen_get_param_defaults(pscreen, param);
@@ -1382,8 +1349,7 @@ agx_get_param(struct pipe_screen* pscreen, enum pipe_cap param)
 }
 
 static float
-agx_get_paramf(struct pipe_screen* pscreen,
-               enum pipe_capf param)
+agx_get_paramf(struct pipe_screen *pscreen, enum pipe_capf param)
 {
    switch (param) {
    case PIPE_CAPF_MIN_LINE_WIDTH:
@@ -1422,14 +1388,12 @@ agx_get_paramf(struct pipe_screen* pscreen,
 }
 
 static int
-agx_get_shader_param(struct pipe_screen* pscreen,
-                     enum pipe_shader_type shader,
+agx_get_shader_param(struct pipe_screen *pscreen, enum pipe_shader_type shader,
                      enum pipe_shader_cap param)
 {
    bool is_no16 = agx_device(pscreen)->debug & AGX_DBG_NO16;
 
-   if (shader != PIPE_SHADER_VERTEX &&
-       shader != PIPE_SHADER_FRAGMENT)
+   if (shader != PIPE_SHADER_VERTEX && shader != PIPE_SHADER_FRAGMENT)
       return 0;
 
    /* this is probably not totally correct.. but it's a start: */
@@ -1513,30 +1477,21 @@ agx_get_shader_param(struct pipe_screen* pscreen,
 }
 
 static int
-agx_get_compute_param(struct pipe_screen *pscreen,
-                      enum pipe_shader_ir ir_type,
-                      enum pipe_compute_cap param,
-                      void *ret)
+agx_get_compute_param(struct pipe_screen *pscreen, enum pipe_shader_ir ir_type,
+                      enum pipe_compute_cap param, void *ret)
 {
    return 0;
 }
 
 static bool
-agx_is_format_supported(struct pipe_screen* pscreen,
-                        enum pipe_format format,
-                        enum pipe_texture_target target,
-                        unsigned sample_count,
-                        unsigned storage_sample_count,
-                        unsigned usage)
+agx_is_format_supported(struct pipe_screen *pscreen, enum pipe_format format,
+                        enum pipe_texture_target target, unsigned sample_count,
+                        unsigned storage_sample_count, unsigned usage)
 {
-   assert(target == PIPE_BUFFER ||
-          target == PIPE_TEXTURE_1D ||
-          target == PIPE_TEXTURE_1D_ARRAY ||
-          target == PIPE_TEXTURE_2D ||
-          target == PIPE_TEXTURE_2D_ARRAY ||
-          target == PIPE_TEXTURE_RECT ||
-          target == PIPE_TEXTURE_3D ||
-          target == PIPE_TEXTURE_CUBE ||
+   assert(target == PIPE_BUFFER || target == PIPE_TEXTURE_1D ||
+          target == PIPE_TEXTURE_1D_ARRAY || target == PIPE_TEXTURE_2D ||
+          target == PIPE_TEXTURE_2D_ARRAY || target == PIPE_TEXTURE_RECT ||
+          target == PIPE_TEXTURE_3D || target == PIPE_TEXTURE_CUBE ||
           target == PIPE_TEXTURE_CUBE_ARRAY);
 
    if (sample_count > 1)
@@ -1589,9 +1544,8 @@ agx_is_format_supported(struct pipe_screen* pscreen,
 }
 
 static void
-agx_query_dmabuf_modifiers(struct pipe_screen *screen,
-                           enum pipe_format format, int max,
-                           uint64_t *modifiers,
+agx_query_dmabuf_modifiers(struct pipe_screen *screen, enum pipe_format format,
+                           int max, uint64_t *modifiers,
                            unsigned int *external_only, int *out_count)
 {
    int i;
@@ -1613,9 +1567,8 @@ agx_query_dmabuf_modifiers(struct pipe_screen *screen,
 }
 
 static bool
-agx_is_dmabuf_modifier_supported(struct pipe_screen *screen,
-                                 uint64_t modifier, enum pipe_format format,
-                                 bool *external_only)
+agx_is_dmabuf_modifier_supported(struct pipe_screen *screen, uint64_t modifier,
+                                 enum pipe_format format, bool *external_only)
 {
    if (external_only)
       *external_only = false;
@@ -1637,24 +1590,20 @@ agx_destroy_screen(struct pipe_screen *screen)
 }
 
 static void
-agx_fence_reference(struct pipe_screen *screen,
-                    struct pipe_fence_handle **ptr,
+agx_fence_reference(struct pipe_screen *screen, struct pipe_fence_handle **ptr,
                     struct pipe_fence_handle *fence)
 {
 }
 
 static bool
-agx_fence_finish(struct pipe_screen *screen,
-                 struct pipe_context *ctx,
-                 struct pipe_fence_handle *fence,
-                 uint64_t timeout)
+agx_fence_finish(struct pipe_screen *screen, struct pipe_context *ctx,
+                 struct pipe_fence_handle *fence, uint64_t timeout)
 {
    return true;
 }
 
 static const void *
-agx_get_compiler_options(struct pipe_screen *pscreen,
-                         enum pipe_shader_ir ir,
+agx_get_compiler_options(struct pipe_screen *pscreen, enum pipe_shader_ir ir,
                          enum pipe_shader_type shader)
 {
    return &agx_nir_options;
@@ -1670,7 +1619,7 @@ agx_resource_set_stencil(struct pipe_resource *prsrc,
 static struct pipe_resource *
 agx_resource_get_stencil(struct pipe_resource *prsrc)
 {
-   return (struct pipe_resource *) agx_resource(prsrc)->separate_stencil;
+   return (struct pipe_resource *)agx_resource(prsrc)->separate_stencil;
 }
 
 static enum pipe_format
@@ -1680,14 +1629,14 @@ agx_resource_get_internal_format(struct pipe_resource *prsrc)
 }
 
 static const struct u_transfer_vtbl transfer_vtbl = {
-   .resource_create          = agx_resource_create,
-   .resource_destroy         = agx_resource_destroy,
-   .transfer_map             = agx_transfer_map,
-   .transfer_unmap           = agx_transfer_unmap,
-   .transfer_flush_region    = agx_transfer_flush_region,
-   .get_internal_format      = agx_resource_get_internal_format,
-   .set_stencil              = agx_resource_set_stencil,
-   .get_stencil              = agx_resource_get_stencil,
+   .resource_create = agx_resource_create,
+   .resource_destroy = agx_resource_destroy,
+   .transfer_map = agx_transfer_map,
+   .transfer_unmap = agx_transfer_unmap,
+   .transfer_flush_region = agx_transfer_flush_region,
+   .get_internal_format = agx_resource_get_internal_format,
+   .set_stencil = agx_resource_set_stencil,
+   .get_stencil = agx_resource_get_stencil,
 };
 
 struct pipe_screen *
@@ -1753,11 +1702,10 @@ agx_screen_create(int fd, struct renderonly *ro, struct sw_winsys *winsys)
 
    screen->resource_create = u_transfer_helper_resource_create;
    screen->resource_destroy = u_transfer_helper_resource_destroy;
-   screen->transfer_helper = u_transfer_helper_create(&transfer_vtbl,
-                                                      U_TRANSFER_HELPER_SEPARATE_Z32S8 |
-                                                      U_TRANSFER_HELPER_SEPARATE_STENCIL |
-                                                      U_TRANSFER_HELPER_MSAA_MAP |
-                                                      U_TRANSFER_HELPER_Z24_IN_Z32F);
+   screen->transfer_helper = u_transfer_helper_create(
+      &transfer_vtbl,
+      U_TRANSFER_HELPER_SEPARATE_Z32S8 | U_TRANSFER_HELPER_SEPARATE_STENCIL |
+         U_TRANSFER_HELPER_MSAA_MAP | U_TRANSFER_HELPER_Z24_IN_Z32F);
 
    return screen;
 }

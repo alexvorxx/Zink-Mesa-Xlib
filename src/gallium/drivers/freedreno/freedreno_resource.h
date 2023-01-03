@@ -217,8 +217,10 @@ resource_busy(struct fd_resource *rsc, unsigned op)
 
 int __fd_resource_wait(struct fd_context *ctx, struct fd_resource *rsc,
                        unsigned op, const char *func);
-#define fd_resource_wait(ctx, rsc, op)                                         \
-   __fd_resource_wait(ctx, rsc, op, __func__)
+#define fd_resource_wait(ctx, rsc, op) ({                                      \
+   MESA_TRACE_FUNC();                                                          \
+   __fd_resource_wait(ctx, rsc, op, __func__);                                 \
+})
 
 static inline void
 fd_resource_lock(struct fd_resource *rsc)

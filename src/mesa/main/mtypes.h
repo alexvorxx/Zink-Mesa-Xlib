@@ -319,20 +319,26 @@ struct gl_colorbuffer_attrib
    GLboolean sRGBEnabled;  /**< Framebuffer sRGB blending/updating requested */
 };
 
+union gl_vertex_format_user {
+   struct {
+      GLenum16 Type;        /**< datatype: GL_FLOAT, GL_INT, etc */
+      bool Bgra;            /**< true if GL_BGRA, else GL_RGBA */
+      GLubyte Size:5;       /**< components per element (1,2,3,4) */
+      GLubyte Normalized:1; /**< GL_ARB_vertex_program */
+      GLubyte Integer:1;    /**< Integer-valued? */
+      GLubyte Doubles:1;    /**< double values are not converted to floats */
+   };
+   uint32_t All;
+};
 
 /**
  * Vertex format to describe a vertex element.
  */
 struct gl_vertex_format
 {
-   GLenum16 Type;        /**< datatype: GL_FLOAT, GL_INT, etc */
-   GLenum16 Format;      /**< default: GL_RGBA, but may be GL_BGRA */
+   union gl_vertex_format_user User;
    enum pipe_format _PipeFormat:16; /**< pipe_format for Gallium */
-   GLubyte Size:5;       /**< components per element (1,2,3,4) */
-   GLubyte Normalized:1; /**< GL_ARB_vertex_program */
-   GLubyte Integer:1;    /**< Integer-valued? */
-   GLubyte Doubles:1;    /**< double values are not converted to floats */
-   GLubyte _ElementSize; /**< Size of each element in bytes */
+   GLushort _ElementSize; /**< Size of each element in bytes */
 };
 
 
@@ -2708,6 +2714,7 @@ struct gl_framebuffer
 
    GLbitfield _IntegerBuffers;  /**< Which color buffers are integer valued */
    GLbitfield _BlendForceAlphaToOne;  /**< Which color buffers need blend factor adjustment */
+   GLbitfield _IsRGB;  /**< Which color buffers have an RGB base format? */
    GLbitfield _FP32Buffers; /**< Which color buffers are FP32 */
 
    /* ARB_color_buffer_float */

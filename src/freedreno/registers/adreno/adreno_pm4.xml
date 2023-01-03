@@ -246,8 +246,8 @@ xsi:schemaLocation="http://nouveau.freedesktop.org/ rules-ng.xsd">
 		indirect buffer dispatch.  prefetch parser uses this packet
 		type to determine whether to pre-fetch the IB
 	</doc>
-	<value name="CP_PREEMPT_ENABLE" value="0x1c"/>
-	<value name="CP_PREEMPT_TOKEN" value="0x1e"/>
+	<value name="CP_PREEMPT_ENABLE" value="0x1c" variants="A5XX"/>
+	<value name="CP_PREEMPT_TOKEN" value="0x1e" variants="A5XX"/>
 	<value name="CP_INDIRECT_BUFFER" value="0x3f"/>
 	<doc>
 		Takes the same arguments as CP_INDIRECT_BUFFER, but jumps to
@@ -484,7 +484,7 @@ xsi:schemaLocation="http://nouveau.freedesktop.org/ rules-ng.xsd">
 	<!-- Enable/Disable A5x local preemption model -->
 	<value name="CP_PREEMPT_ENABLE_LOCAL" value="0x6a" variants="A5XX"/>
 	<!-- Yield token on a5xx similar to CP_PREEMPT on a4xx -->
-	<value name="CP_CONTEXT_SWITCH_YIELD" value="0x6b" variants="A5XX"/>
+	<value name="CP_CONTEXT_SWITCH_YIELD" value="0x6b" variants="A5XX-"/>
 	<!-- Inform CP about current render mode (needed for a5xx preemption) -->
 	<value name="CP_SET_RENDER_MODE" value="0x6c" variants="A5XX"/>
 	<value name="CP_COMPUTE_CHECKPOINT" value="0x6e" variants="A5XX"/>
@@ -544,8 +544,16 @@ xsi:schemaLocation="http://nouveau.freedesktop.org/ rules-ng.xsd">
 	<value name="IN_INCR_UPDT_CONST" value="0x56" variants="A2XX"/>
 	<value name="IN_INCR_UPDT_INSTR" value="0x57" variants="A2XX"/>
 
+	<!-- internal jumptable entries on a6xx+, possibly a5xx: -->
+
 	<!-- jmptable entry used to handle type4 packet on a5xx+: -->
 	<value name="PKT4" value="0x04" variants="A5XX-"/>
+	<!-- called when ROQ is empty, "returns" from an IB or merged sequence of IBs -->
+	<value name="IN_IB_END" value="0x0a" variants="A6XX-"/>
+	<!-- handles IFPC save/restore -->
+	<value name="IN_GMU_INTERRUPT" value="0x0b" variants="A6XX-"/>
+	<!-- preemption/context-swtich routine -->
+	<value name="IN_PREEMPT" value="0x0f" variants="A6XX-"/>
 
 	<!-- TODO do these exist on A5xx? -->
 	<value name="CP_SCRATCH_WRITE" value="0x4c" variants="A6XX"/>
@@ -555,6 +563,11 @@ xsi:schemaLocation="http://nouveau.freedesktop.org/ rules-ng.xsd">
 	<value name="CP_WAIT_TWO_REGS" value="0x70" variants="A6XX"/>
 	<value name="CP_MEMCPY" value="0x75" variants="A6XX"/>
 	<value name="CP_SET_BIN_DATA5_OFFSET" value="0x2e" variants="A6XX"/>
+	<doc>
+                Write CP_CONTEXT_SWITCH_*_INFO from CP to the following dwords,
+                and forcibly switch to the indicated context.
+	</doc>
+	<value name="CP_CONTEXT_SWITCH" value="0x54" variants="A6XX"/>
 	<!-- Note, kgsl calls this CP_SET_AMBLE: -->
 	<value name="CP_SET_CTXSWITCH_IB" value="0x55" variants="A6XX"/>
 
@@ -593,6 +606,9 @@ xsi:schemaLocation="http://nouveau.freedesktop.org/ rules-ng.xsd">
 	</doc>
 	<value name="CP_START_BIN" value="0x50" variants="A6XX"/>
 	<value name="CP_END_BIN" value="0x51" variants="A6XX"/>
+
+	<doc> Make next dword 1 to disable preemption, 0 to re-enable it. </doc>
+	<value name="CP_PREEMPT_DISABLE" value="0x6c" variants="A6XX"/>
 
 	<value name="CP_WAIT_TIMESTAMP" value="0x14" variants="A7XX-"/>
 	<value name="CP_THREAD_CONTROL" value="0x17" variants="A7XX-"/>

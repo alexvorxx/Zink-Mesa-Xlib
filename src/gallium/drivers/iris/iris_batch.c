@@ -234,7 +234,7 @@ iris_init_batch(struct iris_context *ice,
          INTEL_BATCH_DECODE_FLOATS;
 
       intel_batch_decode_ctx_init(&batch->decoder, &screen->compiler->isa,
-                                  &screen->devinfo,
+                                  screen->devinfo,
                                   stderr, decode_flags, NULL,
                                   decode_get_bo, decode_get_state_size, batch);
       batch->decoder.dynamic_base = IRIS_MEMZONE_DYNAMIC_START;
@@ -272,7 +272,7 @@ static int
 iris_create_engines_context(struct iris_context *ice, int priority)
 {
    struct iris_screen *screen = (void *) ice->ctx.screen;
-   const struct intel_device_info *devinfo = &screen->devinfo;
+   const struct intel_device_info *devinfo = screen->devinfo;
    int fd = iris_bufmgr_get_fd(screen->bufmgr);
 
    struct intel_query_engine_info *engines_info = intel_engine_get_info(fd);
@@ -518,7 +518,7 @@ iris_batch_reset(struct iris_batch *batch)
 {
    struct iris_screen *screen = batch->screen;
    struct iris_bufmgr *bufmgr = screen->bufmgr;
-   const struct intel_device_info *devinfo = &screen->devinfo;
+   const struct intel_device_info *devinfo = screen->devinfo;
 
    u_trace_fini(&batch->trace);
 
@@ -687,7 +687,7 @@ finish_seqno(struct iris_batch *batch)
 static void
 iris_finish_batch(struct iris_batch *batch)
 {
-   const struct intel_device_info *devinfo = &batch->screen->devinfo;
+   const struct intel_device_info *devinfo = batch->screen->devinfo;
 
    if (devinfo->ver == 12 && batch->name == IRIS_BATCH_RENDER) {
       /* We re-emit constants at the beginning of every batch as a hardware
@@ -981,7 +981,7 @@ submit_batch(struct iris_batch *batch)
    }
 
    int ret = 0;
-   if (!batch->screen->devinfo.no_hw &&
+   if (!batch->screen->devinfo->no_hw &&
        intel_ioctl(batch->screen->fd, DRM_IOCTL_I915_GEM_EXECBUFFER2, &execbuf))
       ret = -errno;
 

@@ -803,8 +803,14 @@ zink_draw(struct pipe_context *pctx,
                          &ctx->tess_levels[0]);
    }
    if (zink_get_fs_key(ctx)->lower_line_stipple ||
-       zink_get_gs_key(ctx)->lower_gl_point) {
-      assert(zink_get_fs_key(ctx)->lower_line_stipple == zink_get_gs_key(ctx)->lower_line_stipple);
+       zink_get_gs_key(ctx)->lower_gl_point ||
+       zink_get_fs_key(ctx)->lower_line_smooth) {
+
+      assert(zink_get_gs_key(ctx)->lower_line_stipple ==
+             zink_get_fs_key(ctx)->lower_line_stipple);
+
+      assert(zink_get_gs_key(ctx)->lower_line_smooth ==
+             zink_get_fs_key(ctx)->lower_line_smooth);
 
       float viewport_scale[2] = {
          ctx->vp_state.viewport_states[0].scale[0],
@@ -823,6 +829,15 @@ zink_draw(struct pipe_context *pctx,
                               VK_SHADER_STAGE_ALL_GRAPHICS,
                               offsetof(struct zink_gfx_push_constant, line_stipple_pattern),
                               sizeof(uint32_t), &stipple);
+
+      if (ctx->gfx_pipeline_state.shader_keys.key[MESA_SHADER_FRAGMENT].key.fs.lower_line_smooth) {
+         float line_width = ctx->rast_state->base.line_width;
+         VKCTX(CmdPushConstants)(batch->state->cmdbuf,
+                                 ctx->curr_program->base.layout,
+                                 VK_SHADER_STAGE_ALL_GRAPHICS,
+                                 offsetof(struct zink_gfx_push_constant, line_width),
+                                 sizeof(uint32_t), &line_width);
+      }
    }
 
    if (have_streamout) {

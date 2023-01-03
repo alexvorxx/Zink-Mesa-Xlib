@@ -579,6 +579,9 @@ struct iris_shader_state {
 
    /** Bitfield of which shader storage buffers are writable. */
    uint32_t writable_ssbos;
+
+   /** Array of aux usages used for our shader's images in the current draw */
+   enum isl_aux_usage image_aux_usage[PIPE_MAX_SHADER_IMAGES];
 };
 
 /**
@@ -1078,8 +1081,9 @@ void iris_predraw_resolve_framebuffer(struct iris_context *ice,
 void iris_predraw_flush_buffers(struct iris_context *ice,
                                 struct iris_batch *batch,
                                 gl_shader_stage stage);
-void iris_postdraw_update_resolve_tracking(struct iris_context *ice,
-                                           struct iris_batch *batch);
+void iris_postdraw_update_resolve_tracking(struct iris_context *ice);
+void iris_postdraw_update_image_resolve_tracking(struct iris_context *ice,
+                                                 gl_shader_stage stage);
 void iris_cache_flush_for_render(struct iris_batch *batch,
                                  struct iris_bo *bo,
                                  enum isl_aux_usage aux_usage);

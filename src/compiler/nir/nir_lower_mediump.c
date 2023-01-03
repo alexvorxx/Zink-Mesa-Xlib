@@ -901,7 +901,7 @@ fold_16bit_load_data(nir_builder *b, nir_intrinsic_instr *instr,
 
 static bool
 fold_16bit_tex_dest(nir_tex_instr *tex, unsigned exec_mode,
-                    nir_rounding_mode rdm)
+                    nir_alu_type allowed_types, nir_rounding_mode rdm)
 {
    /* Skip sparse residency */
    if (tex->is_sparse)
@@ -916,6 +916,9 @@ fold_16bit_tex_dest(nir_tex_instr *tex, unsigned exec_mode,
        tex->op != nir_texop_tg4 &&
        tex->op != nir_texop_tex_prefetch &&
        tex->op != nir_texop_fragment_fetch_amd)
+      return false;
+
+   if (!(nir_alu_type_get_base_type(tex->dest_type) & allowed_types))
       return false;
 
    if (!fold_16bit_destination(&tex->dest.ssa, tex->dest_type, exec_mode, rdm))
@@ -1086,8 +1089,9 @@ fold_16bit_tex_image(nir_builder *b, nir_instr *instr, void *params)
    } else if (instr->type == nir_instr_type_tex) {
       nir_tex_instr *tex = nir_instr_as_tex(instr);
 
-      if (options->fold_tex_dest)
-         progress |= fold_16bit_tex_dest(tex, exec_mode, options->rounding_mode);
+      if (options->fold_tex_dest_types)
+         progress |= fold_16bit_tex_dest(tex, exec_mode, options->fold_tex_dest_types,
+                                         options->rounding_mode);
 
       for (unsigned i = 0; i < options->fold_srcs_options_count; i++) {
          progress |= fold_16bit_tex_srcs(b, tex, &options->fold_srcs_options[i]);

@@ -91,6 +91,7 @@ virtio_bo_cpu_prep_guest(struct fd_bo *bo)
 static int
 virtio_bo_cpu_prep(struct fd_bo *bo, struct fd_pipe *pipe, uint32_t op)
 {
+   MESA_TRACE_FUNC();
    int ret;
 
    /*
@@ -107,13 +108,13 @@ virtio_bo_cpu_prep(struct fd_bo *bo, struct fd_pipe *pipe, uint32_t op)
    /* If buffer is not shared, then it is not shared with host,
     * so we don't need to worry about implicit sync in host:
     */
-   if (!bo->shared)
+   if (!(bo->alloc_flags & FD_BO_SHARED))
       goto out;
 
    /* If buffer is shared, but we are using explicit sync, no
     * need to fallback to implicit sync in host:
     */
-   if (pipe && to_virtio_pipe(pipe)->no_implicit_sync)
+   if (pipe && pipe->no_implicit_sync)
       goto out;
 
    struct msm_ccmd_gem_cpu_prep_req req = {
@@ -136,12 +137,6 @@ virtio_bo_cpu_prep(struct fd_bo *bo, struct fd_pipe *pipe, uint32_t op)
 
 out:
    return ret;
-}
-
-static void
-virtio_bo_cpu_fini(struct fd_bo *bo)
-{
-   /* no-op */
 }
 
 static int
@@ -199,6 +194,7 @@ virtio_bo_set_name(struct fd_bo *bo, const char *fmt, va_list ap)
 static void
 bo_upload(struct fd_bo *bo, unsigned off, void *src, unsigned len)
 {
+   MESA_TRACE_FUNC();
    unsigned req_len = sizeof(struct msm_ccmd_gem_upload_req) + align(len, 4);
    struct virtio_bo *virtio_bo = to_virtio_bo(bo);
 
@@ -282,13 +278,14 @@ virtio_bo_destroy(struct fd_bo *bo)
       virtio_dev_free_iova(bo->dev, bo->iova, bo->size);
    }
 
+   fd_bo_fini_common(bo);
+
    free(virtio_bo);
 }
 
 static const struct fd_bo_funcs funcs = {
    .offset = virtio_bo_offset,
    .cpu_prep = virtio_bo_cpu_prep,
-   .cpu_fini = virtio_bo_cpu_fini,
    .madvise = virtio_bo_madvise,
    .iova = virtio_bo_iova,
    .set_name = virtio_bo_set_name,
@@ -366,8 +363,8 @@ fail:
 }
 
 /* allocate a buffer object: */
-static struct fd_bo *
-virtio_bo_new_impl(struct fd_device *dev, uint32_t size, uint32_t flags)
+struct fd_bo *
+virtio_bo_new(struct fd_device *dev, uint32_t size, uint32_t flags)
 {
    struct virtio_device *virtio_dev = to_virtio_device(dev);
    struct drm_virtgpu_resource_create_blob args = {
@@ -442,39 +439,4 @@ fail:
       virtio_dev_free_iova(dev, req.iova, size);
    }
    return NULL;
-}
-
-struct fd_bo *
-virtio_bo_new(struct fd_device *dev, uint32_t size, uint32_t flags)
-{
-   struct fd_bo *bo = virtio_bo_new_impl(dev, size, flags);
-
-   if (bo && (flags == RING_FLAGS) && (size == SUBALLOC_SIZE)) {
-      struct virtio_device *virtio_dev = to_virtio_device(dev);
-
-      /*
-       * Swap the bo with an earlier pre-allocated one, since we know
-       * this one will be immediately mmap'd and want to avoid the
-       * latency hit of waiting for the host to catch up.
-       */
-      simple_mtx_lock(&virtio_dev->eb_lock);
-      list_addtail(&bo->list, &virtio_dev->prealloc_list);
-      bo = list_first_entry(&virtio_dev->prealloc_list, struct fd_bo, list);
-      list_delinit(&bo->list);
-      simple_mtx_unlock(&virtio_dev->eb_lock);
-   }
-
-   return bo;
-}
-
-void virtio_bo_setup_prealloc(struct fd_device *dev)
-{
-   struct virtio_device *virtio_dev = to_virtio_device(dev);
-
-   for (int i = 0; i < 16; i++) {
-      struct fd_bo *bo = virtio_bo_new_impl(dev, SUBALLOC_SIZE, RING_FLAGS);
-      if (!bo)
-         break;
-      list_addtail(&bo->list, &virtio_dev->prealloc_list);
-   }
 }

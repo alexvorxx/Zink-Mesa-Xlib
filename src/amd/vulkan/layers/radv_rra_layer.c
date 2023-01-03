@@ -91,13 +91,13 @@ radv_rra_handle_trace(VkQueue _queue)
 VKAPI_ATTR VkResult VKAPI_CALL
 rra_QueuePresentKHR(VkQueue _queue, const VkPresentInfoKHR *pPresentInfo)
 {
-   VkResult result = wsi_QueuePresentKHR(_queue, pPresentInfo);
+   RADV_FROM_HANDLE(radv_queue, queue, _queue);
+   VkResult result = queue->device->layer_dispatch.rra.QueuePresentKHR(_queue, pPresentInfo);
    if (result != VK_SUCCESS)
       return result;
 
    radv_rra_handle_trace(_queue);
 
-   RADV_FROM_HANDLE(radv_queue, queue, _queue);
    struct hash_table *accel_structs = queue->device->rra_trace.accel_structs;
 
    hash_table_foreach (accel_structs, entry) {
@@ -175,13 +175,13 @@ rra_CreateAccelerationStructureKHR(VkDevice _device,
                                    const VkAllocationCallbacks *pAllocator,
                                    VkAccelerationStructureKHR *pAccelerationStructure)
 {
-   VkResult result =
-      radv_CreateAccelerationStructureKHR(_device, pCreateInfo, pAllocator, pAccelerationStructure);
+   RADV_FROM_HANDLE(radv_device, device, _device);
+   VkResult result = device->layer_dispatch.rra.CreateAccelerationStructureKHR(
+      _device, pCreateInfo, pAllocator, pAccelerationStructure);
 
    if (result != VK_SUCCESS)
       return result;
 
-   RADV_FROM_HANDLE(radv_device, device, _device);
    RADV_FROM_HANDLE(radv_acceleration_structure, structure, *pAccelerationStructure);
    simple_mtx_lock(&device->rra_trace.data_mtx);
 
@@ -218,7 +218,8 @@ fail_event:
 fail_data:
    free(data);
 fail_as:
-   radv_DestroyAccelerationStructureKHR(_device, *pAccelerationStructure, pAllocator);
+   device->layer_dispatch.rra.DestroyAccelerationStructureKHR(_device, *pAccelerationStructure,
+                                                              pAllocator);
    *pAccelerationStructure = VK_NULL_HANDLE;
 exit:
    simple_mtx_unlock(&device->rra_trace.data_mtx);
@@ -279,8 +280,9 @@ rra_CmdBuildAccelerationStructuresKHR(
    const VkAccelerationStructureBuildRangeInfoKHR *const *ppBuildRangeInfos)
 {
    RADV_FROM_HANDLE(radv_cmd_buffer, cmd_buffer, commandBuffer);
+   cmd_buffer->device->layer_dispatch.rra.CmdBuildAccelerationStructuresKHR(
+      commandBuffer, infoCount, pInfos, ppBuildRangeInfos);
 
-   radv_CmdBuildAccelerationStructuresKHR(commandBuffer, infoCount, pInfos, ppBuildRangeInfos);
    simple_mtx_lock(&cmd_buffer->device->rra_trace.data_mtx);
    for (uint32_t i = 0; i < infoCount; ++i) {
       RADV_FROM_HANDLE(radv_acceleration_structure, structure, pInfos[i].dstAccelerationStructure);
@@ -299,8 +301,8 @@ VKAPI_ATTR void VKAPI_CALL
 rra_CmdCopyAccelerationStructureKHR(VkCommandBuffer commandBuffer,
                                     const VkCopyAccelerationStructureInfoKHR *pInfo)
 {
-   radv_CmdCopyAccelerationStructureKHR(commandBuffer, pInfo);
    RADV_FROM_HANDLE(radv_cmd_buffer, cmd_buffer, commandBuffer);
+   cmd_buffer->device->layer_dispatch.rra.CmdCopyAccelerationStructureKHR(commandBuffer, pInfo);
 
    simple_mtx_lock(&cmd_buffer->device->rra_trace.data_mtx);
 
@@ -320,8 +322,9 @@ VKAPI_ATTR void VKAPI_CALL
 rra_CmdCopyMemoryToAccelerationStructureKHR(VkCommandBuffer commandBuffer,
                                             const VkCopyMemoryToAccelerationStructureInfoKHR *pInfo)
 {
-   radv_CmdCopyMemoryToAccelerationStructureKHR(commandBuffer, pInfo);
    RADV_FROM_HANDLE(radv_cmd_buffer, cmd_buffer, commandBuffer);
+   cmd_buffer->device->layer_dispatch.rra.CmdCopyMemoryToAccelerationStructureKHR(commandBuffer,
+                                                                                  pInfo);
 
    simple_mtx_lock(&cmd_buffer->device->rra_trace.data_mtx);
 
@@ -358,5 +361,5 @@ rra_DestroyAccelerationStructureKHR(VkDevice _device, VkAccelerationStructureKHR
 
    simple_mtx_unlock(&device->rra_trace.data_mtx);
 
-   radv_DestroyAccelerationStructureKHR(_device, _structure, pAllocator);
+   device->layer_dispatch.rra.DestroyAccelerationStructureKHR(_device, _structure, pAllocator);
 }

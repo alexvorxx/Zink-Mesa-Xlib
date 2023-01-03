@@ -39,9 +39,9 @@ agx_minifloat_decode(uint8_t imm)
    unsigned mantissa = (imm & 0xF);
 
    if (exp)
-      return ldexpf(sign * (float) (mantissa | 0x10), exp - 7);
+      return ldexpf(sign * (float)(mantissa | 0x10), exp - 7);
    else
-      return ldexpf(sign * ((float) mantissa), -6);
+      return ldexpf(sign * ((float)mantissa), -6);
 }
 
 /* Encodes a float. Results are only valid if the float can be represented

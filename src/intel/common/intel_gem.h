@@ -41,6 +41,8 @@ extern "C" {
 #include "intel_engine.h"
 #include "util/macros.h"
 
+#define RCS_TIMESTAMP 0x2358
+
 static inline uint64_t
 intel_canonical_address(uint64_t v)
 {

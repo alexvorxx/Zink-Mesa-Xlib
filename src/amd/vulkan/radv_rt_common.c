@@ -35,7 +35,8 @@ radv_enable_rt(const struct radv_physical_device *pdevice, bool rt_pipelines)
       return false;
 
    if (rt_pipelines)
-      return pdevice->instance->perftest_flags & RADV_PERFTEST_RT;
+      return (pdevice->instance->perftest_flags & RADV_PERFTEST_RT) ||
+             driQueryOptionb(&pdevice->instance->dri_options, "radv_rt");
 
    return true;
 }

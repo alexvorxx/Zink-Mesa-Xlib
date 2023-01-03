@@ -1125,7 +1125,8 @@ panvk_create_cmdbuf(struct vk_command_pool *vk_pool,
    if (!cmdbuf)
       return vk_error(device, VK_ERROR_OUT_OF_HOST_MEMORY);
 
-   VkResult result = vk_command_buffer_init(&pool->vk, &cmdbuf->vk, NULL, 0);
+   VkResult result = vk_command_buffer_init(&pool->vk, &cmdbuf->vk,
+                                            &panvk_per_arch(cmd_buffer_ops), 0);
    if (result != VK_SUCCESS) {
       vk_free(&device->vk.alloc, cmdbuf);
       return result;

@@ -964,7 +964,7 @@ static void
 _fd_fence_ref(struct pipe_screen *pscreen, struct pipe_fence_handle **ptr,
               struct pipe_fence_handle *pfence)
 {
-   fd_fence_ref(ptr, pfence);
+   fd_pipe_fence_ref(ptr, pfence);
 }
 
 static void
@@ -1184,8 +1184,8 @@ fd_screen_create(struct fd_device *dev, struct renderonly *ro,
    pscreen->get_timestamp = fd_screen_get_timestamp;
 
    pscreen->fence_reference = _fd_fence_ref;
-   pscreen->fence_finish = fd_fence_finish;
-   pscreen->fence_get_fd = fd_fence_get_fd;
+   pscreen->fence_finish = fd_pipe_fence_finish;
+   pscreen->fence_get_fd = fd_pipe_fence_get_fd;
 
    pscreen->query_dmabuf_modifiers = fd_screen_query_dmabuf_modifiers;
    pscreen->is_dmabuf_modifier_supported =

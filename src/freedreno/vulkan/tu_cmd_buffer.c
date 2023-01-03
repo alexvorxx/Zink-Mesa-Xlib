@@ -2085,7 +2085,6 @@ tu6_emit_descriptor_sets(struct tu_cmd_buffer *cmd,
          tu_cs_draw_state(&cmd->sub_cs, &state_cs,
                           4 + 4 * descriptors_state->max_sets_bound +
                              (descriptors_state->dynamic_bound ? 6 : 0));
-      cmd->state.dirty |= TU_CMD_DIRTY_DESC_SETS_LOAD;
       cs = &state_cs;
    } else {
       assert(bind_point == VK_PIPELINE_BIND_POINT_COMPUTE);
@@ -2094,7 +2093,6 @@ tu6_emit_descriptor_sets(struct tu_cmd_buffer *cmd,
       hlsq_bindless_base_reg = REG_A6XX_HLSQ_CS_BINDLESS_BASE(0);
       hlsq_invalidate_value = A6XX_HLSQ_INVALIDATE_CMD_CS_BINDLESS(0x1f);
 
-      cmd->state.dirty |= TU_CMD_DIRTY_COMPUTE_DESC_SETS_LOAD;
       cs = &cmd->cs;
    }
 
@@ -2122,6 +2120,22 @@ tu6_emit_descriptor_sets(struct tu_cmd_buffer *cmd,
          tu_cs_emit_pkt7(&cmd->draw_cs, CP_SET_DRAW_STATE, 3);
          tu_cs_emit_draw_state(&cmd->draw_cs, TU_DRAW_STATE_DESC_SETS, cmd->state.desc_sets);
       }
+   }
+}
+
+/* We lazily emit the draw state for desciptor sets at draw time, so that we can
+ * batch together multiple tu_CmdBindDescriptorSets() calls.  ANGLE and zink
+ * will often emit multiple bind calls in a draw.
+ */
+static void
+tu_dirty_desc_sets(struct tu_cmd_buffer *cmd,
+                   VkPipelineBindPoint pipelineBindPoint)
+{
+   if (pipelineBindPoint == VK_PIPELINE_BIND_POINT_COMPUTE) {
+      cmd->state.dirty |= TU_CMD_DIRTY_COMPUTE_DESC_SETS;
+   } else {
+      assert(pipelineBindPoint == VK_PIPELINE_BIND_POINT_GRAPHICS);
+      cmd->state.dirty |= TU_CMD_DIRTY_DESC_SETS;
    }
 }
 
@@ -2189,9 +2203,28 @@ tu_CmdBindDescriptorSets(VkCommandBuffer commandBuffer,
                        i++, dst_desc += A6XX_TEX_CONST_DWORDS) {
                      /* Note: A6XX_TEX_CONST_5_DEPTH is always 0 */
                      uint64_t va = dst_desc[4] | ((uint64_t)dst_desc[5] << 32);
+                     uint32_t desc_offset =
+                        (dst_desc[2] &
+                         A6XX_TEX_CONST_2_STARTOFFSETTEXELS__MASK) >>
+                        A6XX_TEX_CONST_2_STARTOFFSETTEXELS__SHIFT;
+
+                     /* Without the ability to cast 16-bit as 32-bit, there is
+                      * only one descriptor whose texels are 32 bits (4
+                      * bytes). With casting, there are two descriptors, the
+                      * first being 16-bit and the second being 32-bit.
+                      */
+                     unsigned offset_shift =
+                        binding->size == 4 * A6XX_TEX_CONST_DWORDS || i == 1 ? 2 : 1;
+
+                     va += desc_offset << offset_shift;
                      va += offset;
+                     unsigned new_offset = (va & 0x3f) >> offset_shift;
+                     va &= ~0x3full;
                      dst_desc[4] = va;
                      dst_desc[5] = va >> 32;
+                     dst_desc[2] =
+                        (dst_desc[2] & ~A6XX_TEX_CONST_2_STARTOFFSETTEXELS__MASK) |
+                        A6XX_TEX_CONST_2_STARTOFFSETTEXELS(new_offset);
                   }
                }
 
@@ -2220,7 +2253,7 @@ tu_CmdBindDescriptorSets(VkCommandBuffer commandBuffer,
       descriptors_state->dynamic_bound = true;
    }
 
-   tu6_emit_descriptor_sets(cmd, pipelineBindPoint);
+   tu_dirty_desc_sets(cmd, pipelineBindPoint);
 }
 
 VKAPI_ATTR void VKAPI_CALL
@@ -2265,7 +2298,7 @@ tu_CmdSetDescriptorBufferOffsetsEXT(
          cmd->state.dirty |= TU_CMD_DIRTY_SHADER_CONSTS;
    }
 
-   tu6_emit_descriptor_sets(cmd, pipelineBindPoint);
+   tu_dirty_desc_sets(cmd, pipelineBindPoint);
 }
 
 VKAPI_ATTR void VKAPI_CALL
@@ -2288,7 +2321,7 @@ tu_CmdBindDescriptorBufferEmbeddedSamplersEXT(
 
    descriptors_state->set_iova[set] = set_layout->embedded_samplers->iova | 3;
 
-   tu6_emit_descriptor_sets(cmd, pipelineBindPoint);
+   tu_dirty_desc_sets(cmd, pipelineBindPoint);
 }
 
 static enum VkResult
@@ -2626,7 +2659,7 @@ tu_CmdBindPipeline(VkCommandBuffer commandBuffer,
    assert(pipelineBindPoint == VK_PIPELINE_BIND_POINT_GRAPHICS);
 
    cmd->state.pipeline = pipeline;
-   cmd->state.dirty |= TU_CMD_DIRTY_DESC_SETS_LOAD | TU_CMD_DIRTY_SHADER_CONSTS |
+   cmd->state.dirty |= TU_CMD_DIRTY_DESC_SETS | TU_CMD_DIRTY_SHADER_CONSTS |
                        TU_CMD_DIRTY_LRZ | TU_CMD_DIRTY_VS_PARAMS;
 
    if (pipeline->output.feedback_loop_may_involve_textures &&
@@ -4905,7 +4938,7 @@ tu6_draw_common(struct tu_cmd_buffer *cmd,
 
    /* Early exit if there is nothing to emit, saves CPU cycles */
    uint32_t dirty = cmd->state.dirty;
-   if (!(dirty & ~TU_CMD_DIRTY_COMPUTE_DESC_SETS_LOAD))
+   if (!(dirty & ~TU_CMD_DIRTY_COMPUTE_DESC_SETS))
       return VK_SUCCESS;
 
    bool dirty_lrz =
@@ -5002,6 +5035,9 @@ tu6_draw_common(struct tu_cmd_buffer *cmd,
                                     cmd->state.patch_control_points);
    }
 
+   if (dirty & TU_CMD_DIRTY_DESC_SETS)
+      tu6_emit_descriptor_sets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS);
+
    /* for the first draw in a renderpass, re-emit all the draw states
     *
     * and if a draw-state disabling path (CmdClearAttachments 3D fallback) was
@@ -5042,7 +5078,7 @@ tu6_draw_common(struct tu_cmd_buffer *cmd,
            emit_patch_control_points = false;
       uint32_t draw_state_count =
          ((dirty & TU_CMD_DIRTY_SHADER_CONSTS) ? 1 : 0) +
-         ((dirty & TU_CMD_DIRTY_DESC_SETS_LOAD) ? 1 : 0) +
+         ((dirty & TU_CMD_DIRTY_DESC_SETS) ? 1 : 0) +
          ((dirty & TU_CMD_DIRTY_VERTEX_BUFFERS) ? 1 : 0) +
          ((dirty & TU_CMD_DIRTY_VS_PARAMS) ? 1 : 0) +
          (dirty_lrz ? 1 : 0);
@@ -5071,8 +5107,10 @@ tu6_draw_common(struct tu_cmd_buffer *cmd,
 
       if (dirty & TU_CMD_DIRTY_SHADER_CONSTS)
          tu_cs_emit_draw_state(cs, TU_DRAW_STATE_CONST, cmd->state.shader_const);
-      if (dirty & TU_CMD_DIRTY_DESC_SETS_LOAD)
+      if (dirty & TU_CMD_DIRTY_DESC_SETS) {
+         /* tu6_emit_descriptor_sets emitted the cmd->state.desc_sets draw state. */
          tu_cs_emit_draw_state(cs, TU_DRAW_STATE_DESC_SETS_LOAD, pipeline->load_state);
+      }
       if (dirty & TU_CMD_DIRTY_VERTEX_BUFFERS)
          tu_cs_emit_draw_state(cs, TU_DRAW_STATE_VB, cmd->state.vertex_buffers);
       if (emit_binding_stride) {
@@ -5101,7 +5139,7 @@ tu6_draw_common(struct tu_cmd_buffer *cmd,
     * bits to preserve instead. The only things not emitted here are
     * compute-related state.
     */
-   cmd->state.dirty &= TU_CMD_DIRTY_COMPUTE_DESC_SETS_LOAD;
+   cmd->state.dirty &= TU_CMD_DIRTY_COMPUTE_DESC_SETS;
    return VK_SUCCESS;
 }
 
@@ -5711,10 +5749,12 @@ tu_dispatch(struct tu_cmd_buffer *cmd,
 
    tu_emit_compute_driver_params(cmd, cs, pipeline, info);
 
-   if (cmd->state.dirty & TU_CMD_DIRTY_COMPUTE_DESC_SETS_LOAD)
+   if (cmd->state.dirty & TU_CMD_DIRTY_COMPUTE_DESC_SETS) {
+      tu6_emit_descriptor_sets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE);
       tu_cs_emit_state_ib(cs, pipeline->load_state);
+   }
 
-   cmd->state.dirty &= ~TU_CMD_DIRTY_COMPUTE_DESC_SETS_LOAD;
+   cmd->state.dirty &= ~TU_CMD_DIRTY_COMPUTE_DESC_SETS;
 
    tu_cs_emit_pkt7(cs, CP_SET_MARKER, 1);
    tu_cs_emit(cs, A6XX_CP_SET_MARKER_0_MODE(RM6_COMPUTE));

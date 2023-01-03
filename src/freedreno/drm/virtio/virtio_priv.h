@@ -81,11 +81,6 @@ struct virtio_device {
    struct util_vma_heap address_space;
    simple_mtx_t address_space_lock;
 
-   /**
-    * Pre-allocated cmdstream buffers to avoid stalling on mmap.
-    */
-   struct list_head prealloc_list;
-
    uint32_t reqbuf_len;
    uint32_t reqbuf_cnt;
    uint8_t reqbuf[0x4000];
@@ -136,12 +131,6 @@ struct virtio_pipe {
    struct slab_parent_pool ring_pool;
 
    /**
-    * If we *ever* see an in-fence-fd, assume that userspace is
-    * not relying on implicit fences.
-    */
-   bool no_implicit_sync;
-
-   /**
     * We know that the kernel allocated fence seqno's sequentially per-
     * submitqueue in a range 1..INT_MAX, which is incremented *after* any
     * point where the submit ioctl could be restarted.  So we just *guess*
@@ -187,7 +176,6 @@ FD_DEFINE_CAST(fd_bo, virtio_bo);
 struct fd_bo *virtio_bo_new(struct fd_device *dev, uint32_t size, uint32_t flags);
 struct fd_bo *virtio_bo_from_handle(struct fd_device *dev, uint32_t size,
                                     uint32_t handle);
-void virtio_bo_setup_prealloc(struct fd_device *dev);
 
 /*
  * Internal helpers:

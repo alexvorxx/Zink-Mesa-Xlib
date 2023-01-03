@@ -21,8 +21,8 @@
  * SOFTWARE.
  */
 
-#include "agx_compiler.h"
 #include "agx_builder.h"
+#include "agx_compiler.h"
 
 /* SSA-based register allocator */
 
@@ -119,15 +119,15 @@ find_regs(BITSET_WORD *used_regs, unsigned count, unsigned align, unsigned max)
 static void
 reserve_live_in(struct ra_ctx *rctx)
 {
-      int i;
-      BITSET_FOREACH_SET(i, rctx->block->live_in, rctx->shader->alloc) {
-         /* Skip values defined in loops when processing the loop header */
-         if (!BITSET_TEST(rctx->visited, i))
-            continue;
+   int i;
+   BITSET_FOREACH_SET(i, rctx->block->live_in, rctx->shader->alloc) {
+      /* Skip values defined in loops when processing the loop header */
+      if (!BITSET_TEST(rctx->visited, i))
+         continue;
 
-         for (unsigned j = 0; j < rctx->ncomps[i]; ++j)
-            BITSET_SET(rctx->used_regs, rctx->ssa_to_reg[i] + j);
-      }
+      for (unsigned j = 0; j < rctx->ncomps[i]; ++j)
+         BITSET_SET(rctx->used_regs, rctx->ssa_to_reg[i] + j);
+   }
 }
 
 static void
@@ -251,7 +251,7 @@ pick_regs(struct ra_ctx *rctx, agx_instr *I, unsigned d)
 static void
 agx_ra_assign_local(struct ra_ctx *rctx)
 {
-   BITSET_DECLARE(used_regs, AGX_NUM_REGS) = { 0 };
+   BITSET_DECLARE(used_regs, AGX_NUM_REGS) = {0};
 
    agx_block *block = rctx->block;
    uint8_t *ssa_to_reg = rctx->ssa_to_reg;
@@ -365,7 +365,7 @@ agx_insert_parallel_copies(agx_context *ctx, agx_block *block)
          assert(src.type == AGX_INDEX_REGISTER);
          assert(dest.size == src.size);
 
-         copies[i++] = (struct agx_copy) {
+         copies[i++] = (struct agx_copy){
             .dest = dest.value,
             .src = src,
          };
@@ -407,14 +407,14 @@ agx_ra(agx_context *ctx)
     * to a NIR invariant, so we do not need special handling for this.
     */
    agx_foreach_block(ctx, block) {
-      agx_ra_assign_local(&(struct ra_ctx) {
+      agx_ra_assign_local(&(struct ra_ctx){
          .shader = ctx,
          .block = block,
          .ssa_to_reg = ssa_to_reg,
          .src_to_collect = src_to_collect,
          .ncomps = ncomps,
          .visited = visited,
-         .bound = AGX_NUM_REGS
+         .bound = AGX_NUM_REGS,
       });
    }
 
@@ -437,7 +437,8 @@ agx_ra(agx_context *ctx)
 
       agx_foreach_ssa_dest(ins, d) {
          unsigned v = ssa_to_reg[ins->dest[d].value];
-         ins->dest[d] = agx_replace_index(ins->dest[d], agx_register(v, ins->dest[d].size));
+         ins->dest[d] =
+            agx_replace_index(ins->dest[d], agx_register(v, ins->dest[d].size));
       }
    }
 
@@ -455,12 +456,13 @@ agx_ra(agx_context *ctx)
 
          /* Move the sources */
          agx_foreach_src(ins, i) {
-            if (agx_is_null(ins->src[i])) continue;
+            if (agx_is_null(ins->src[i]))
+               continue;
             assert(ins->src[i].size == ins->src[0].size);
 
-            copies[n++] = (struct agx_copy) {
+            copies[n++] = (struct agx_copy){
                .dest = base + (i * width),
-               .src = ins->src[i]
+               .src = ins->src[i],
             };
          }
 
@@ -482,9 +484,9 @@ agx_ra(agx_context *ctx)
             if (ins->dest[i].type != AGX_INDEX_REGISTER)
                continue;
 
-            copies[n++] = (struct agx_copy) {
+            copies[n++] = (struct agx_copy){
                .dest = ins->dest[i].value,
-               .src = agx_register(base + (i * width), ins->dest[i].size)
+               .src = agx_register(base + (i * width), ins->dest[i].size),
             };
          }
 
@@ -494,8 +496,6 @@ agx_ra(agx_context *ctx)
          agx_remove_instruction(ins);
          continue;
       }
-
-
    }
 
    /* Insert parallel copies lowering phi nodes */

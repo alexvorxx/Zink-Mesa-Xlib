@@ -739,6 +739,17 @@ class BitSizeValidator(object):
       if isinstance(val, Expression):
          for src in val.sources:
             self.validate_replace(src, search)
+      elif isinstance(val, Variable):
+          # These catch problems when someone copies and pastes the search
+          # into the replacement.
+          assert not val.is_constant, \
+              'Replacement variables must not be marked constant.'
+
+          assert val.cond_index == -1, \
+              'Replacement variables must not have a condition.'
+
+          assert not val.required_type, \
+              'Replacement variables must not have a required type.'
 
    def validate(self, search, replace):
       self.is_search = True

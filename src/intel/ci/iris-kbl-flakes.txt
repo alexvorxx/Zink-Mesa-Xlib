@@ -18,3 +18,6 @@ glx@glx-multi-context-ib-1
 spec@egl_chromium_sync_control@conformance
 # piglit: error: SBC did not change after second SwapBuffers: 0
 spec@egl_chromium_sync_control@conformance@eglGetSyncValuesCHROMIUM_msc_and_sbc_test
+
+# See the https://gitlab.freedesktop.org/mesa/mesa/-/issues/7547
+spec@egl 1.4@largest possible eglcreatepbuffersurface and then glclear

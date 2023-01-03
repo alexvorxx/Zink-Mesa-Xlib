@@ -30,16 +30,16 @@ struct agx_meta_key {
 };
 
 struct agx_meta_shader {
+   struct agx_meta_key key;
    struct agx_shader_info info;
    struct agx_bo *bo;
    uint32_t ptr;
 };
 
-struct agx_meta_shader *
-agx_get_meta_shader(struct agx_meta_cache *cache, struct agx_meta_key *key);
+struct agx_meta_shader *agx_get_meta_shader(struct agx_meta_cache *cache,
+                                            struct agx_meta_key *key);
 
-void
-agx_meta_init(struct agx_meta_cache *cache, struct agx_device *dev,
-              void *memctx);
+void agx_meta_init(struct agx_meta_cache *cache, struct agx_device *dev,
+                   void *memctx);
 
 #endif

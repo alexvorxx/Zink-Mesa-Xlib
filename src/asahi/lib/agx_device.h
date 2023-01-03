@@ -24,23 +24,23 @@
 #ifndef __AGX_DEVICE_H
 #define __AGX_DEVICE_H
 
-#include "util/sparse_array.h"
 #include "util/simple_mtx.h"
-#include "io.h"
+#include "util/sparse_array.h"
 #include "agx_formats.h"
+#include "io.h"
 
 #if __APPLE__
-#include <mach/mach.h>
 #include <IOKit/IOKitLib.h>
+#include <mach/mach.h>
 #endif
 
 enum agx_dbg {
    AGX_DBG_TRACE = BITFIELD_BIT(0),
-   AGX_DBG_DEQP  = BITFIELD_BIT(1),
-   AGX_DBG_NO16  = BITFIELD_BIT(2),
-   AGX_DBG_DIRTY  = BITFIELD_BIT(3),
-   AGX_DBG_PRECOMPILE  = BITFIELD_BIT(4),
-   AGX_DBG_PERF  = BITFIELD_BIT(5),
+   AGX_DBG_DEQP = BITFIELD_BIT(1),
+   AGX_DBG_NO16 = BITFIELD_BIT(2),
+   AGX_DBG_DIRTY = BITFIELD_BIT(3),
+   AGX_DBG_PRECOMPILE = BITFIELD_BIT(4),
+   AGX_DBG_PERF = BITFIELD_BIT(5),
    AGX_DBG_NOCOMPRESS = BITFIELD_BIT(6),
 };
 
@@ -94,11 +94,9 @@ struct agx_device {
    } bo_cache;
 };
 
-bool
-agx_open_device(void *memctx, struct agx_device *dev);
+bool agx_open_device(void *memctx, struct agx_device *dev);
 
-void
-agx_close_device(struct agx_device *dev);
+void agx_close_device(struct agx_device *dev);
 
 static inline struct agx_bo *
 agx_lookup_bo(struct agx_device *dev, uint32_t handle)
@@ -106,22 +104,17 @@ agx_lookup_bo(struct agx_device *dev, uint32_t handle)
    return util_sparse_array_get(&dev->bo_map, handle);
 }
 
-struct agx_bo
-agx_shmem_alloc(struct agx_device *dev, size_t size, bool cmdbuf);
+struct agx_bo agx_shmem_alloc(struct agx_device *dev, size_t size, bool cmdbuf);
 
-void
-agx_shmem_free(struct agx_device *dev, unsigned handle);
+void agx_shmem_free(struct agx_device *dev, unsigned handle);
 
-uint64_t
-agx_get_global_id(struct agx_device *dev);
+uint64_t agx_get_global_id(struct agx_device *dev);
 
-struct agx_command_queue
-agx_create_command_queue(struct agx_device *dev);
+struct agx_command_queue agx_create_command_queue(struct agx_device *dev);
 
-void
-agx_submit_cmdbuf(struct agx_device *dev, unsigned cmdbuf, unsigned mappings, uint64_t scalar);
+void agx_submit_cmdbuf(struct agx_device *dev, unsigned cmdbuf,
+                       unsigned mappings, uint64_t scalar);
 
-void
-agx_wait_queue(struct agx_command_queue queue);
+void agx_wait_queue(struct agx_command_queue queue);
 
 #endif

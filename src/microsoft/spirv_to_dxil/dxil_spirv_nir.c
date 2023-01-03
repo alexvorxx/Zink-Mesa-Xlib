@@ -571,6 +571,9 @@ dxil_spirv_nir_link(nir_shader *nir, nir_shader *prev_stage_nir)
       prev_stage_nir->info.outputs_written =
          dxil_reassign_driver_locations(prev_stage_nir, nir_var_shader_out,
                                         nir->info.inputs_read);
+
+      if (nir->info.stage == MESA_SHADER_FRAGMENT)
+         nir->info.clip_distance_array_size = prev_stage_nir->info.clip_distance_array_size;
    }
 
    glsl_type_singleton_decref();
@@ -740,7 +743,6 @@ dxil_spirv_nir_passes(nir_shader *nir,
    NIR_PASS_V(nir, dxil_nir_split_clip_cull_distance);
    NIR_PASS_V(nir, dxil_nir_lower_loads_stores_to_dxil);
    NIR_PASS_V(nir, dxil_nir_split_typed_samplers);
-   NIR_PASS_V(nir, dxil_nir_lower_bool_input);
    NIR_PASS_V(nir, dxil_nir_lower_ubo_array_one_to_static);
    NIR_PASS_V(nir, nir_opt_dce);
    NIR_PASS_V(nir, nir_remove_dead_derefs);

@@ -27,6 +27,7 @@
 #include "genxml/genX_pack.h"
 #include "genxml/genX_rt_pack.h"
 
+#include "common/intel_genX_state.h"
 #include "common/intel_l3_config.h"
 #include "common/intel_sample_positions.h"
 #include "nir/nir_xfb_info.h"
@@ -1677,11 +1678,8 @@ emit_3dstate_ps(struct anv_graphics_pipeline *pipeline,
 #endif
 
    anv_batch_emit(&pipeline->base.batch, GENX(3DSTATE_PS), ps) {
-      brw_fs_get_dispatch_enables(devinfo, wm_prog_data,
-                                  ms != NULL ? ms->rasterization_samples : 1,
-                                  &ps._8PixelDispatchEnable,
-                                  &ps._16PixelDispatchEnable,
-                                  &ps._32PixelDispatchEnable);
+      intel_set_ps_dispatch_state(&ps, devinfo, wm_prog_data,
+                                  ms != NULL ? ms->rasterization_samples : 1);
 
       ps.KernelStartPointer0 = fs_bin->kernel.offset +
                                brw_wm_prog_data_prog_offset(wm_prog_data, ps, 0);

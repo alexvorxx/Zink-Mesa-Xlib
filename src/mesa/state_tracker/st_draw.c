@@ -91,8 +91,6 @@ prepare_draw(struct st_context *st, struct gl_context *ctx, uint64_t state_mask)
     * running on. The main thread can move between CCXs.
     */
    if (unlikely(st->pin_thread_counter != ST_L3_PINNING_DISABLED &&
-                /* no glthread */
-                !ctx->GLThread.enabled &&
                 /* do it occasionally */
                 ++st->pin_thread_counter % 512 == 0)) {
       st->pin_thread_counter = 0;
@@ -119,36 +117,14 @@ prepare_indexed_draw(/* pass both st and ctx to reduce dereferences */
                      const struct pipe_draw_start_count_bias *draws,
                      unsigned num_draws)
 {
-   if (info->index_size) {
-      /* Get index bounds for user buffers. */
-      if (!info->index_bounds_valid &&
-          st->draw_needs_minmax_index) {
-         /* Return if this fails, which means all draws have count == 0. */
-         if (!vbo_get_minmax_indices_gallium(ctx, info, draws, num_draws))
-            return false;
+   /* Get index bounds for user buffers. */
+   if (info->index_size && !info->index_bounds_valid &&
+       st->draw_needs_minmax_index) {
+      /* Return if this fails, which means all draws have count == 0. */
+      if (!vbo_get_minmax_indices_gallium(ctx, info, draws, num_draws))
+         return false;
 
-         info->index_bounds_valid = true;
-      }
-
-      if (!info->has_user_indices) {
-         if (st->pipe->draw_vbo == tc_draw_vbo) {
-            /* Fast path for u_threaded_context. This eliminates the atomic
-             * increment for the index buffer refcount when adding it into
-             * the threaded batch buffer.
-             */
-            info->index.resource =
-               _mesa_get_bufferobj_reference(ctx, info->index.gl_bo);
-            info->take_index_buffer_ownership = true;
-         } else {
-            info->index.resource = info->index.gl_bo->buffer;
-         }
-
-         /* Return if the bound element array buffer doesn't have any backing
-          * storage. (nothing to do)
-          */
-         if (unlikely(!info->index.resource))
-            return false;
-      }
+      info->index_bounds_valid = true;
    }
    return true;
 }
@@ -254,13 +230,27 @@ st_indirect_draw_vbo(struct gl_context *ctx,
       break;
    }
 
+   assert(st->has_multi_draw_indirect || !indirect_draw_count);
+
    if (info.index_size) {
       struct gl_buffer_object *bufobj = ctx->Array.VAO->IndexBufferObj;
 
       /* indices are always in a real VBO */
       assert(bufobj);
 
-      info.index.resource = bufobj->buffer;
+      if (st->pipe->draw_vbo == tc_draw_vbo &&
+          (draw_count == 1 || st->has_multi_draw_indirect)) {
+         /* Fast path for u_threaded_context to eliminate atomics. */
+         info.index.resource = _mesa_get_bufferobj_reference(ctx, bufobj);
+         info.take_index_buffer_ownership = true;
+      } else {
+         info.index.resource = bufobj->buffer;
+      }
+
+      /* No index buffer storage allocated - nothing to do. */
+      if (!info.index.resource)
+         return;
+
       draw.start = 0;
 
       unsigned index_size_shift = util_logbase2(info.index_size);
@@ -279,7 +269,6 @@ st_indirect_draw_vbo(struct gl_context *ctx,
    if (!st->has_multi_draw_indirect) {
       int i;
 
-      assert(!indirect_draw_count);
       indirect.draw_count = 1;
       for (i = 0; i < draw_count; i++) {
          cso_draw_vbo(st->cso_context, &info, i, &indirect, &draw, 1);

@@ -92,18 +92,11 @@ struct ac_shader_abi {
    /**
     * Load a descriptor associated to a sampler.
     *
-    * \param descriptor_set the descriptor set index (only for Vulkan)
-    * \param base_index the base index of the sampler variable
-    * \param constant_index constant part of an array index (or 0, if the
-    *                       sampler variable is not an array)
-    * \param index non-constant part of an array index (may be NULL)
+    * \param index of the descriptor
     * \param desc_type the type of descriptor to load
-    * \param image whether the descriptor is loaded for an image operation
     */
-   LLVMValueRef (*load_sampler_desc)(struct ac_shader_abi *abi, unsigned descriptor_set,
-                                     unsigned base_index, unsigned constant_index,
-                                     LLVMValueRef index, enum ac_descriptor_type desc_type,
-                                     bool image, bool write, bool bindless);
+   LLVMValueRef (*load_sampler_desc)(struct ac_shader_abi *abi, LLVMValueRef index,
+                                     enum ac_descriptor_type desc_type);
 
    LLVMValueRef (*load_sample_position)(struct ac_shader_abi *abi, LLVMValueRef sample_id);
 
@@ -134,6 +127,9 @@ struct ac_shader_abi {
    /* Whether to detect divergent textures/samplers index and apply
     * waterfall to avoid incorrect rendering. */
    bool use_waterfall_for_divergent_tex_samplers;
+
+   /* Whether to disable anisotropic filtering. */
+   bool disable_aniso_single_level;
 
    /* Number of all interpolated inputs */
    unsigned num_interp;

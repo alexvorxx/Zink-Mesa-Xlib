@@ -244,27 +244,6 @@ assign_alu_dest(struct lp_build_nir_context *bld_base,
       assign_reg(bld_base, &dest->dest.reg, dest->write_mask, vals);
 }
 
-
-static LLVMValueRef
-int_to_bool32(struct lp_build_nir_context *bld_base,
-              uint32_t src_bit_size,
-              bool is_unsigned,
-              LLVMValueRef val)
-{
-   LLVMBuilderRef builder = bld_base->base.gallivm->builder;
-   struct lp_build_context *int_bld =
-      get_int_bld(bld_base, is_unsigned, src_bit_size);
-   LLVMValueRef result = lp_build_compare(bld_base->base.gallivm,
-                                          int_bld->type, PIPE_FUNC_NOTEQUAL,
-                                          val, int_bld->zero);
-   if (src_bit_size == 16)
-      result = LLVMBuildSExt(builder, result, bld_base->int_bld.vec_type, "");
-   else if (src_bit_size == 64)
-      result = LLVMBuildTrunc(builder, result, bld_base->int_bld.vec_type, "");
-   return result;
-}
-
-
 static LLVMValueRef
 flt_to_bool32(struct lp_build_nir_context *bld_base,
               uint32_t src_bit_size,
@@ -963,9 +942,6 @@ do_alu_action(struct lp_build_nir_context *bld_base,
       break;
    case nir_op_ftrunc:
       result = lp_build_trunc(get_flt_bld(bld_base, src_bit_size[0]), src[0]);
-      break;
-   case nir_op_i2b32:
-      result = int_to_bool32(bld_base, src_bit_size[0], false, src[0]);
       break;
    case nir_op_i2f16:
       result = LLVMBuildSIToFP(builder, src[0],

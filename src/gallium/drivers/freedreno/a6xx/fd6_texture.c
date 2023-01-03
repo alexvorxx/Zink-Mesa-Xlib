@@ -235,11 +235,10 @@ get_bcolor_offset(struct fd_context *ctx, const struct pipe_sampler_state *sampl
    }
 
    unsigned idx = fd6_ctx->bcolor_cache->entries;
-
-   assert(idx < FD6_MAX_BORDER_COLORS);
-
-   if (idx >= FD6_MAX_BORDER_COLORS)
+   if (idx >= FD6_MAX_BORDER_COLORS) {
+      mesa_loge("too many border colors");
       return 0;
+   }
 
    entries[idx] = key;
 

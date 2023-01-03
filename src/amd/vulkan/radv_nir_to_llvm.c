@@ -285,14 +285,10 @@ radv_load_ssbo(struct ac_shader_abi *abi, LLVMValueRef buffer_ptr, bool write, b
 }
 
 static LLVMValueRef
-radv_get_sampler_desc(struct ac_shader_abi *abi, unsigned descriptor_set, unsigned base_index,
-                      unsigned constant_index, LLVMValueRef index,
-                      enum ac_descriptor_type desc_type, bool image, bool write, bool bindless)
+radv_get_sampler_desc(struct ac_shader_abi *abi, LLVMValueRef index,
+                      enum ac_descriptor_type desc_type)
 {
    struct radv_shader_context *ctx = radv_shader_context_from_abi(abi);
-
-   if (image && desc_type == AC_DESC_FMASK)
-      return NULL;
 
    /* 3 plane formats always have same size and format for plane 1 & 2, so
     * use the tail from plane 1 so that we can store only the first 16 bytes

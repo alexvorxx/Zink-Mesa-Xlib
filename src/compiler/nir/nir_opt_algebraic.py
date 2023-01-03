@@ -136,7 +136,6 @@ optimizations = [
    (('iabs', ('iabs', a)), ('iabs', a)),
    (('iabs', ('ineg', a)), ('iabs', a)),
    (('f2b', ('fneg', a)), ('f2b', a)),
-   (('i2b', ('ineg', a)), ('i2b', a)),
    (('~fadd', a, 0.0), a),
    # a+0.0 is 'a' unless 'a' is denormal or -0.0. If it's only used by a
    # floating point instruction, they should flush any input denormals and we
@@ -553,6 +552,11 @@ optimizations.extend([
    (('fneu', ('fneg', a), -1.0), ('fneu', 1.0, a)),
    (('feq', -1.0, ('fneg', a)), ('feq', a, 1.0)),
 
+   (('ieq', ('ineg', a), 0),  ('ieq', a, 0)),
+   (('ine', ('ineg', a), 0),  ('ine', a, 0)),
+   (('ieq', ('iabs', a), 0),  ('ieq', a, 0)),
+   (('ine', ('iabs', a), 0),  ('ine', a, 0)),
+
    # b < fsat(NaN) -> b < 0 -> false, and b < Nan -> false.
    (('flt', '#b(is_gt_0_and_lt_1)', ('fsat(is_used_once)', a)), ('flt', b, a)),
 
@@ -715,7 +719,6 @@ optimizations.extend([
    (('bcsel', ('ilt', a, b), b, a), ('imax', a, b)),
    (('bcsel', ('ige', a, b), b, a), ('imin', a, b)),
    (('bcsel', ('ige', b, a), b, a), ('imax', a, b)),
-   (('bcsel', ('i2b', a), b, c), ('bcsel', ('ine', a, 0), b, c)),
    (('bcsel', ('inot', a), b, c), ('bcsel', a, c, b)),
    (('bcsel', a, ('bcsel', a, b, c), d), ('bcsel', a, b, d)),
    (('bcsel', a, b, ('bcsel', a, c, d)), ('bcsel', a, b, d)),
@@ -898,6 +901,10 @@ optimizations.extend([
    # This is how SpvOpFOrdNotEqual might be implemented.  If both values are
    # numbers, then it can be replaced with fneu.
    (('ior', ('flt', 'a(is_a_number)', 'b(is_a_number)'), ('flt', b, a)), ('fneu', a, b)),
+
+   # Other patterns may optimize the resulting iand tree further.
+   (('umin', ('iand', a, '#b(is_pos_power_of_two)'), ('iand', c, b)),
+    ('iand', ('iand', a, b), ('iand', c, b))),
 ])
 
 # Float sizes
@@ -1074,6 +1081,19 @@ optimizations.extend([
 
    (('ine', ('ineg', ('b2i', 'a@1')), ('ineg', ('b2i', 'b@1'))), ('ine', a, b)),
    (('b2i', ('ine', 'a@1', 'b@1')), ('b2i', ('ixor', a, b))),
+
+   (('ishl', ('b2i32', ('ine', ('iand', 'a@32', '#b(is_pos_power_of_two)'), 0)), '#c'),
+    ('bcsel', ('ige', ('iand', c, 31), ('find_lsb', b)),
+              ('ishl', ('iand', a, b), ('iadd', ('iand', c, 31), ('ineg', ('find_lsb', b)))),
+              ('ushr', ('iand', a, b), ('iadd', ('ineg', ('iand', c, 31)), ('find_lsb', b)))
+    )
+   ),
+
+   (('b2i32', ('ine', ('iand', 'a@32', '#b(is_pos_power_of_two)'), 0)),
+    ('ushr', ('iand', a, b), ('find_lsb', b)), '!options->lower_bitops'),
+
+   (('ior',  ('b2i', a), ('iand', b, 1)), ('iand', ('ior', ('b2i', a), b), 1)),
+   (('iand', ('b2i', a), ('iand', b, 1)), ('iand', ('b2i', a), b)),
 
    # This pattern occurs coutresy of __flt64_nonnan in the soft-fp64 code.
    # The first part of the iand comes from the !__feq64_nonnan.
@@ -1266,6 +1286,12 @@ optimizations.extend([
    (('iand', ('ior', a, b), b), b),
    (('iand', ('iand', a, b), b), ('iand', a, b)),
 
+   # It is common for sequences of (x & 1) to occur in large trees.  Replacing
+   # an expression like ((a & 1) & (b & 1)) with ((a & b) & 1) allows the "&
+   # 1" to eventually bubble up to the top of the tree.
+   (('iand', ('iand(is_used_once)', a, b), ('iand(is_used_once)', a, c)),
+    ('iand', a, ('iand', b, c))),
+
    (('iand@64', a, '#b(is_lower_half_zero)'),
     ('pack_64_2x32_split', 0,
                            ('iand', ('unpack_64_2x32_split_y', a), ('unpack_64_2x32_split_y', b)))),
@@ -1364,9 +1390,6 @@ optimizations.extend([
    (('fsin', a), lowered_sincos(0.5), 'options->lower_sincos'),
    (('fcos', a), lowered_sincos(0.75), 'options->lower_sincos'),
    # Boolean simplifications
-   (('i2b16(is_used_by_if)', a), ('ine16', a, 0)),
-   (('i2b32(is_used_by_if)', a), ('ine32', a, 0)),
-   (('i2b1(is_used_by_if)', a), ('ine', a, 0)),
    (('ieq', a, True), a),
    (('ine(is_not_used_by_if)', a, True), ('inot', a)),
    (('ine', a, False), a),
@@ -1401,9 +1424,7 @@ optimizations.extend([
     ('ineg', ('b2i', ('iand', a, b)))),
    (('ior', ('ineg', ('b2i','a@1')), ('ineg', ('b2i', 'b@1'))),
     ('ineg', ('b2i', ('ior', a, b)))),
-   (('ieq', ('ineg', ('b2i', 'a@1')), 0), ('inot', a)),
    (('ieq', ('ineg', ('b2i', 'a@1')), -1), a),
-   (('ine', ('ineg', ('b2i', 'a@1')), 0), a),
    (('ine', ('ineg', ('b2i', 'a@1')), -1), ('inot', a)),
    (('ige', ('ineg', ('b2i', 'a@1')), 0), ('inot', a)),
    (('ilt', ('ineg', ('b2i', 'a@1')), 0), a),
@@ -1420,14 +1441,15 @@ optimizations.extend([
     ('ineg', ('b2i', ('ior', a, b)))),
    (('umin', ('ineg', ('b2i', 'a@1')), ('ineg', ('b2i', 'b@1'))),
     ('ineg', ('b2i', ('iand', a, b)))),
+   (('umax', ('b2i', 'a@1'), ('b2i', 'b@1')), ('b2i', ('ior',  a, b))),
+   (('umin', ('b2i', 'a@1'), ('b2i', 'b@1')), ('b2i', ('iand', a, b))),
+
+   (('ine', ('umin', ('ineg', ('b2i', 'a@1')), b), 0), ('iand', a, ('ine', b, 0))),
+   (('ine', ('umax', ('ineg', ('b2i', 'a@1')), b), 0), ('ior' , a, ('ine', b, 0))),
 
    # Conversions
-   (('i2b16', ('b2i', 'a@16')), a),
-   (('i2b32', ('b2i', 'a@32')), a),
    (('f2i', ('ftrunc', a)), ('f2i', a)),
    (('f2u', ('ftrunc', a)), ('f2u', a)),
-   (('i2b', ('ineg', a)), ('i2b', a)),
-   (('i2b', ('iabs', a)), ('i2b', a)),
    (('inot', ('f2b1', a)), ('feq', a, 0.0)),
 
    # Conversions from 16 bits to 32 bits and back can always be removed
@@ -1939,8 +1961,8 @@ optimizations.extend([
 
    (('ubfe', a, 0, '#b'), ('iand', a, ('ushr', 0xffffffff, ('ineg', b)))),
 
-   (('b2i32', ('i2b', ('ubfe', a, b, 1))), ('ubfe', a, b, 1)),
-   (('b2i32', ('i2b', ('ibfe', a, b, 1))), ('ubfe', a, b, 1)), # ubfe in the replacement is correct
+   (('b2i32', ('ine', ('ubfe', a, b, 1), 0)), ('ubfe', a, b, 1)),
+   (('b2i32', ('ine', ('ibfe', a, b, 1), 0)), ('ubfe', a, b, 1)), # ubfe in the replacement is correct
    (('ine', ('ibfe(is_used_once)', a, '#b', '#c'), 0), ('ine', ('iand', a, ('ishl', ('ushr', 0xffffffff, ('ineg', c)), b)), 0)),
    (('ieq', ('ibfe(is_used_once)', a, '#b', '#c'), 0), ('ieq', ('iand', a, ('ishl', ('ushr', 0xffffffff, ('ineg', c)), b)), 0)),
    (('ine', ('ubfe(is_used_once)', a, '#b', '#c'), 0), ('ine', ('iand', a, ('ishl', ('ushr', 0xffffffff, ('ineg', c)), b)), 0)),
@@ -2166,13 +2188,11 @@ for left, right in itertools.combinations_with_replacement(invert.keys(), 2):
    optimizations.append((('inot', ('iand(is_used_once)', (left, a, b), (right, c, d))),
                          ('ior', (invert[left], a, b), (invert[right], c, d))))
 
-# Optimize x2bN(b2x(x)) -> x
+# Optimize f2bN(b2f(x)) -> x
 for size in type_sizes('bool'):
     aN = 'a@' + str(size)
     f2bN = 'f2b' + str(size)
-    i2bN = 'i2b' + str(size)
     optimizations.append(((f2bN, ('b2f', aN)), a))
-    optimizations.append(((i2bN, ('b2i', aN)), a))
 
 # Optimize x2yN(b2x(x)) -> b2y
 for x, y in itertools.product(['f', 'u', 'i'], ['f', 'u', 'i']):

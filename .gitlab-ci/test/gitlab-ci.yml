@@ -135,6 +135,8 @@ rustfmt:
     # improve it even more (see https://docs.mesa3d.org/ci/bare-metal.html for
     # setup).
     - echo -e "\e[0Ksection_start:$(date +%s):artifacts_download[collapsed=true]\r\e[0KDownloading artifacts from minio"
+    # Note: Build dir (and thus install) may be dirty due to GIT_STRATEGY
+    - rm -rf install
     - wget ${FDO_HTTP_CACHE_URI:-}https://${PIPELINE_ARTIFACTS_BASE}/${MINIO_ARTIFACT_NAME}.tar.zst -S --progress=dot:giga -O- | tar --zstd -x
     - echo -e "\e[0Ksection_end:$(date +%s):artifacts_download\r\e[0K"
   artifacts:
@@ -210,7 +212,7 @@ rustfmt:
     # No need by default to pull the whole repo
     GIT_STRATEGY: none
     # boot2container initrd configuration parameters.
-    B2C_KERNEL_URL: 'https://gitlab.freedesktop.org/mupuf/valve-infra/-/package_files/144/download'  # 5.17.1
+    B2C_KERNEL_URL: 'https://gitlab.freedesktop.org/mupuf/valve-infra/-/package_files/519/download'  # Linux 6.1
     B2C_INITRAMFS_URL: 'https://gitlab.freedesktop.org/mupuf/boot2container/-/releases/v0.9.8/downloads/initramfs.linux_amd64.cpio.xz'
     B2C_JOB_SUCCESS_REGEX: '\[.*\]: Execution is over, pipeline status: 0\r$'
     B2C_JOB_WARN_REGEX: '\*ERROR\* ring .* timeout, but soft recovered'
@@ -239,9 +241,14 @@ rustfmt:
     GENERATE_ENV_SCRIPT: "${CI_COMMON_SCRIPTS}/generate-env.sh"
     B2C_JOB_TEMPLATE: "${CI_B2C_ARTIFACTS}/b2c.yml.jinja2.jinja2"
     JOB_FOLDER: "job_folder"
+
   before_script:
     # We don't want the tarball unpacking of .test, but will take the JWT bits.
     - !reference [default, before_script]
+
+    # temporary overrides to allow others to use harbor.freedesktop.org
+    - export IMAGE_UNDER_TEST=${IMAGE_UNDER_TEST/harbor/registry}
+
     - |
       set -x
 

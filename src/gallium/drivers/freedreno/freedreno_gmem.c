@@ -671,11 +671,18 @@ flush_ring(struct fd_batch *batch)
    if (FD_DBG(NOHW))
       return;
 
-   fd_submit_flush(batch->submit, batch->in_fence_fd,
-                   batch->fence ? &batch->fence->submit_fence : NULL);
-
+   bool use_fence_fd = false;
    if (batch->fence)
-      fd_fence_set_batch(batch->fence, NULL);
+      use_fence_fd = batch->fence->use_fence_fd;
+
+   struct fd_fence *fence =
+         fd_submit_flush(batch->submit, batch->in_fence_fd, use_fence_fd);
+
+   if (batch->fence) {
+      fd_pipe_fence_set_submit_fence(batch->fence, fence);
+   } else {
+      fd_fence_del(fence);
+   }
 }
 
 void

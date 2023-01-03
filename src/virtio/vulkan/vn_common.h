@@ -168,10 +168,7 @@ vn_log_result(struct vn_instance *instance,
               const char *where);
 
 #define VN_REFCOUNT_INIT(val)                                                \
-   (struct vn_refcount)                                                      \
-   {                                                                         \
-      .count = (val),                                                        \
-   }
+   (struct vn_refcount) { .count = (val), }
 
 static inline int
 vn_refcount_load_relaxed(const struct vn_refcount *ref)

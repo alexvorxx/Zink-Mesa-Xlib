@@ -22,8 +22,8 @@
  * SOFTWARE.
  */
 
-#include "agx_compiler.h"
 #include "agx_builder.h"
+#include "agx_compiler.h"
 
 /*
  * Emits code for
@@ -114,13 +114,10 @@ split_32bit_copy(struct copy_ctx *ctx, struct agx_copy *entry)
 }
 
 void
-agx_emit_parallel_copies(agx_builder *b,
-                         struct agx_copy *copies,
+agx_emit_parallel_copies(agx_builder *b, struct agx_copy *copies,
                          unsigned num_copies)
 {
-   struct copy_ctx _ctx = {
-      .entry_count = num_copies
-   };
+   struct copy_ctx _ctx = {.entry_count = num_copies};
 
    struct copy_ctx *ctx = &_ctx;
 
@@ -274,8 +271,10 @@ agx_emit_parallel_copies(agx_builder *b,
       for (unsigned j = 0; j < ctx->entry_count; j++) {
          struct agx_copy *blocking = &ctx->entries[j];
          if (blocking->src.value >= entry->dest &&
-             blocking->src.value < entry->dest + agx_size_align_16(entry->src.size)) {
-            blocking->src.value = entry->src.value + (blocking->src.value - entry->dest);
+             blocking->src.value <
+                entry->dest + agx_size_align_16(entry->src.size)) {
+            blocking->src.value =
+               entry->src.value + (blocking->src.value - entry->dest);
          }
       }
 

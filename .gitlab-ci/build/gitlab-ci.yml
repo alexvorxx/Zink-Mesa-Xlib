@@ -189,6 +189,7 @@ debian-build-testing:
     - .gitlab-ci/run-shellcheck.sh
     - .gitlab-ci/run-yamllint.sh
     - .gitlab-ci/meson/build.sh
+    - EXTRA_OPTION="${EXTRA_OPTION} -D b_lto=true" .gitlab-ci/meson/build.sh
     - .gitlab-ci/run-shader-db.sh
 
 # Test a release build with -Werror so new warnings don't sneak in.
@@ -225,7 +226,7 @@ debian-release:
   script:
     - .gitlab-ci/meson/build.sh
 
-.alpine-build-testing:
+alpine-build-testing:
   extends:
     - .meson-build
     - .use-alpine/x86_build
@@ -394,6 +395,9 @@ debian-armhf:
       -D llvm=disabled
       -D valgrind=false
     MINIO_ARTIFACT_NAME: mesa-armhf
+    # The strip command segfaults, failing to strip the binary and leaving
+    # tempfiles in our artifacts.
+    ARTIFACTS_DEBUG_SYMBOLS: 1
   script:
     - .gitlab-ci/meson/build.sh
     - .gitlab-ci/prepare-artifacts.sh

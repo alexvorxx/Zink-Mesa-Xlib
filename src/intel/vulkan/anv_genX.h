@@ -81,6 +81,9 @@ void genX(cmd_buffer_emit_hashing_mode)(struct anv_cmd_buffer *cmd_buffer,
 
 void genX(flush_pipeline_select_3d)(struct anv_cmd_buffer *cmd_buffer);
 void genX(flush_pipeline_select_gpgpu)(struct anv_cmd_buffer *cmd_buffer);
+void genX(emit_pipeline_select)(struct anv_batch *batch, uint32_t pipeline);
+
+void genX(apply_task_urb_workaround)(struct anv_cmd_buffer *cmd_buffer);
 
 enum anv_pipe_bits
 genX(emit_apply_pipe_flushes)(struct anv_batch *batch,
@@ -192,3 +195,9 @@ genX(ray_tracing_pipeline_emit)(struct anv_ray_tracing_pipeline *pipeline);
       .KernelStartPointer = bin->kernel.offset,                      \
    };                                                                \
 })
+
+void
+genX(batch_set_preemption)(struct anv_batch *batch, bool value);
+
+void
+genX(cmd_buffer_set_preemption)(struct anv_cmd_buffer *cmd_buffer, bool value);

@@ -21,22 +21,23 @@
  * SOFTWARE.
  */
 
-#include "agx_pack.h"
 #include "agx_formats.h"
 #include "agx_internal_formats.h"
+#include "agx_pack.h"
 
-#define T true
-#define F false
+#define T                     true
+#define F                     false
 #define AGX_INTERNAL_FORMAT__ PIPE_FORMAT_NONE
 
-#define AGX_FMT(pipe, channels_, type_, is_renderable, internal_fmt) \
-   [PIPE_FORMAT_ ## pipe] = { \
-      .channels = AGX_CHANNELS_ ## channels_, \
-      .type = AGX_TEXTURE_TYPE_ ## type_, \
-      .renderable = is_renderable, \
-      .internal = (enum pipe_format) AGX_INTERNAL_FORMAT_ ## internal_fmt,\
+#define AGX_FMT(pipe, channels_, type_, is_renderable, internal_fmt)           \
+   [PIPE_FORMAT_##pipe] = {                                                    \
+      .channels = AGX_CHANNELS_##channels_,                                    \
+      .type = AGX_TEXTURE_TYPE_##type_,                                        \
+      .renderable = is_renderable,                                             \
+      .internal = (enum pipe_format)AGX_INTERNAL_FORMAT_##internal_fmt,        \
    }
 
+/* clang-format off */
 const struct agx_pixel_format_entry agx_pixel_format[PIPE_FORMAT_COUNT] = {
    AGX_FMT(R8_UNORM,                R8,            UNORM,  T, U8NORM),
    AGX_FMT(R8G8_UNORM,              R8G8,          UNORM,  T, U8NORM),
@@ -115,6 +116,9 @@ const struct agx_pixel_format_entry agx_pixel_format[PIPE_FORMAT_COUNT] = {
    AGX_FMT(Z32_FLOAT_S8X24_UINT,    R32,           FLOAT,  F, _),
    AGX_FMT(S8_UINT,                 R8,            UINT,   F, _),
 
+   /* The stencil part of Z32F + S8 is just S8 */
+   AGX_FMT(X32_S8X24_UINT,          R8,            UINT,   F, _),
+
    /* These must be lowered by u_transfer_helper to Z32F + S8 */
    AGX_FMT(Z24X8_UNORM,             R32,           FLOAT,  F, _),
    AGX_FMT(Z24_UNORM_S8_UINT,       R32,           FLOAT,  F, _),
@@ -190,3 +194,4 @@ const struct agx_pixel_format_entry agx_pixel_format[PIPE_FORMAT_COUNT] = {
    AGX_FMT(BPTC_RGBA_UNORM,         BC7,           UNORM,  F, _),
    AGX_FMT(BPTC_SRGBA,              BC7,           UNORM,  F, _),
 };
+/* clang-format on */

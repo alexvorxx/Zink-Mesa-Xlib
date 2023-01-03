@@ -6,9 +6,9 @@
 #ifndef __AGX_NIR_FORMAT_HELPERS_H
 #define __AGX_NIR_FORMAT_HELPERS_H
 
+#include "util/format/u_formats.h"
 #include "nir_builder.h"
 #include "nir_format_convert.h"
-#include "util/format/u_formats.h"
 
 static inline nir_ssa_def *
 nir_sign_extend_if_sint(nir_builder *b, nir_ssa_def *x, enum pipe_format format)
@@ -17,7 +17,7 @@ nir_sign_extend_if_sint(nir_builder *b, nir_ssa_def *x, enum pipe_format format)
       return x;
 
    const struct util_format_description *desc = util_format_description(format);
-   unsigned bits[4] = { 0 };
+   unsigned bits[4] = {0};
 
    for (unsigned i = 0; i < desc->nr_channels; ++i) {
       assert(desc->channel[i].type == UTIL_FORMAT_TYPE_SIGNED);

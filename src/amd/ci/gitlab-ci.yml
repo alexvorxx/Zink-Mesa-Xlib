@@ -17,7 +17,7 @@
   variables:
     GPU_VERSION: radeonsi-stoney
     DRIVER_NAME: radeonsi
-    # 12 devices (2022-11-30)
+    # 12 devices, 10 up (2022-12-28)
     RUNNER_TAG: mesa-ci-x86-64-lava-acer-R721T-grunt
     DEVICE_TYPE: acer-R721T-grunt
 
@@ -47,7 +47,7 @@ radeonsi-stoney-gl:amd64:
   extends:
     - .lava-test:amd64
     - .radeonsi-stoney-test:amd64
-  parallel: 11
+  parallel: 9
   variables:
     DEQP_SUITE: radeonsi-stoney
     HWCI_START_XORG: 1
@@ -172,7 +172,7 @@ radeonsi-raven-va:amd64:
     MESA_SPIRV_LOG_LEVEL: error
     ACO_DEBUG: validateir,validatera
     MESA_VK_IGNORE_CONFORMANCE_WARNING: 1
-    B2C_JOB_VOLUME_EXCLUSIONS: "*.shader_cache,install/*,*/install/*,*/vkd3d-proton.cache*,vkd3d-proton.cache*"
+    B2C_JOB_VOLUME_EXCLUSIONS: "*.shader_cache,install/*,*/install/*,*/vkd3d-proton.cache*,vkd3d-proton.cache*,*.qpa"
     # Enable ETC2 emulation on non-native platforms (RENOIR,RDNA+, GFX6-8 dGPUs)
     radv_require_etc2: 'true'
 
@@ -265,7 +265,7 @@ radeonsi-raven-va:amd64:
     - .deqp-test-valve
   variables:
     DEQP_VER: vk
-    RADV_PERFTEST: nv_ms,ext_ms
+    RADV_PERFTEST: nv_ms
 
 # VKCTS never finishes on gfx7 due to all the GPU resets and hangs.
 # Hence, disable it for now.
@@ -333,6 +333,9 @@ vkcts-navi10-valve:
     - .test-manual-mr
   variables:
     GPU_VERSION: radv-navi10-aco
+    # Use Linux 5.17 to work around hitting __vm_enough_memory then hanging on Linux 6.1
+    # See https://gitlab.freedesktop.org/mesa/mesa/-/issues/7888 for details
+    B2C_KERNEL_URL: 'https://gitlab.freedesktop.org/mupuf/valve-infra/-/package_files/144/download'  # 5.17.1
 
 vkcts-navi21-valve:
   parallel: 2

@@ -41,8 +41,8 @@
 /** Initialize the internal details */
 struct pp_program *
 pp_init_prog(struct pp_queue_t *ppq, struct pipe_context *pipe,
-             struct cso_context *cso, void *st,
-             void (*st_invalidate_state)(void *st, unsigned flags))
+             struct cso_context *cso, struct st_context *st,
+             pp_st_invalidate_state_func st_invalidate_state)
 {
    struct pp_program *p;
 

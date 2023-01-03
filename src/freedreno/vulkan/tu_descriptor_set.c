@@ -1035,21 +1035,29 @@ write_buffer_descriptor_addr(const struct tu_device *device,
    }
 
    uint64_t va = buffer_info->address;
+   uint64_t base_va = va & ~0x3full;
+   unsigned offset = va & 0x3f;
    uint32_t range = buffer_info->range;
 
    for (unsigned i = 0; i < descriptors; i++) {
       if (storage_16bit && i == 0) {
          dst[0] = A6XX_TEX_CONST_0_TILE_MODE(TILE6_LINEAR) | A6XX_TEX_CONST_0_FMT(FMT6_16_UINT);
          dst[1] = DIV_ROUND_UP(range, 2);
+         dst[2] =
+            A6XX_TEX_CONST_2_STRUCTSIZETEXELS(1) |
+            A6XX_TEX_CONST_2_STARTOFFSETTEXELS(offset / 2) |
+            A6XX_TEX_CONST_2_TYPE(A6XX_TEX_BUFFER);
       } else {
          dst[0] = A6XX_TEX_CONST_0_TILE_MODE(TILE6_LINEAR) | A6XX_TEX_CONST_0_FMT(FMT6_32_UINT);
          dst[1] = DIV_ROUND_UP(range, 4);
+         dst[2] =
+            A6XX_TEX_CONST_2_STRUCTSIZETEXELS(1) |
+            A6XX_TEX_CONST_2_STARTOFFSETTEXELS(offset / 4) |
+            A6XX_TEX_CONST_2_TYPE(A6XX_TEX_BUFFER);
       }
-      dst[2] =
-         A6XX_TEX_CONST_2_BUFFER | A6XX_TEX_CONST_2_TYPE(A6XX_TEX_BUFFER);
       dst[3] = 0;
-      dst[4] = A6XX_TEX_CONST_4_BASE_LO(va);
-      dst[5] = A6XX_TEX_CONST_5_BASE_HI(va >> 32);
+      dst[4] = A6XX_TEX_CONST_4_BASE_LO(base_va);
+      dst[5] = A6XX_TEX_CONST_5_BASE_HI(base_va >> 32);
       for (int j = 6; j < A6XX_TEX_CONST_DWORDS; j++)
          dst[j] = 0;
       dst += A6XX_TEX_CONST_DWORDS;

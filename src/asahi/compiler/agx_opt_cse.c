@@ -79,14 +79,19 @@ instrs_equal(const void *_i1, const void *_i2)
 {
    const agx_instr *i1 = _i1, *i2 = _i2;
 
-   if (i1->op != i2->op) return false;
-   if (i1->nr_srcs != i2->nr_srcs) return false;
-   if (i1->nr_dests != i2->nr_dests) return false;
+   if (i1->op != i2->op)
+      return false;
+   if (i1->nr_srcs != i2->nr_srcs)
+      return false;
+   if (i1->nr_dests != i2->nr_dests)
+      return false;
 
    /* Explicitly skip everything but size and type */
    agx_foreach_dest(i1, d) {
-      if (i1->dest[d].type != i2->dest[d].type) return false;
-      if (i1->dest[d].size != i2->dest[d].size) return false;
+      if (i1->dest[d].type != i2->dest[d].type)
+         return false;
+      if (i1->dest[d].size != i2->dest[d].size)
+         return false;
    }
 
    agx_foreach_src(i1, s) {
@@ -96,15 +101,24 @@ instrs_equal(const void *_i1, const void *_i2)
          return false;
    }
 
-   if (i1->imm != i2->imm) return false;
-   if (i1->perspective != i2->perspective) return false;
-   if (i1->invert_cond != i2->invert_cond) return false;
-   if (i1->dim != i2->dim) return false;
-   if (i1->offset != i2->offset) return false;
-   if (i1->shadow != i2->shadow) return false;
-   if (i1->shift != i2->shift) return false;
-   if (i1->saturate != i2->saturate) return false;
-   if (i1->mask != i2->mask) return false;
+   if (i1->imm != i2->imm)
+      return false;
+   if (i1->perspective != i2->perspective)
+      return false;
+   if (i1->invert_cond != i2->invert_cond)
+      return false;
+   if (i1->dim != i2->dim)
+      return false;
+   if (i1->offset != i2->offset)
+      return false;
+   if (i1->shadow != i2->shadow)
+      return false;
+   if (i1->shift != i2->shift)
+      return false;
+   if (i1->saturate != i2->saturate)
+      return false;
+   if (i1->mask != i2->mask)
+      return false;
 
    return true;
 }

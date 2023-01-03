@@ -21,6 +21,7 @@
  * SOFTWARE.
  */
 
+#include "util/libsync.h"
 #include "util/slab.h"
 
 #include "freedreno_ringbuffer_sp.h"
@@ -48,6 +49,7 @@ query_param(struct fd_pipe *pipe, uint32_t param, uint64_t *value)
 static int
 query_queue_param(struct fd_pipe *pipe, uint32_t param, uint64_t *value)
 {
+   MESA_TRACE_FUNC();
    struct msm_ccmd_submitqueue_query_req req = {
          .hdr = MSM_CCMD(SUBMITQUEUE_QUERY, sizeof(req)),
          .queue_id = to_virtio_pipe(pipe)->queue_id,
@@ -118,6 +120,11 @@ virtio_pipe_get_param(struct fd_pipe *pipe, enum fd_param_id param,
 static int
 virtio_pipe_wait(struct fd_pipe *pipe, const struct fd_fence *fence, uint64_t timeout)
 {
+   MESA_TRACE_FUNC();
+
+   if (fence->use_fence_fd)
+      return sync_wait(fence->fence_fd, timeout / 1000000);
+
    struct msm_ccmd_wait_fence_req req = {
          .hdr = MSM_CCMD(WAIT_FENCE, sizeof(req)),
          .queue_id = to_virtio_pipe(pipe)->queue_id,
@@ -220,8 +227,6 @@ init_shmem(struct fd_device *dev)
       uint32_t offset = virtio_dev->shmem->rsp_mem_offset;
       virtio_dev->rsp_mem_len = fd_bo_size(virtio_dev->shmem_bo) - offset;
       virtio_dev->rsp_mem = &((uint8_t *)virtio_dev->shmem)[offset];
-
-      virtio_bo_setup_prealloc(dev);
    }
 
    simple_mtx_unlock(&virtio_dev->rsp_lock);

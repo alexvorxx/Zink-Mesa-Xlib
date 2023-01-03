@@ -1012,6 +1012,7 @@ enum pipe_cap
    PIPE_CAP_QUERY_TIMESTAMP_BITS,
    /** For EGL_EXT_protected_content */
    PIPE_CAP_DEVICE_PROTECTED_CONTEXT,
+   PIPE_CAP_ALLOW_GLTHREAD_BUFFER_SUBDATA_OPT,
 
    PIPE_CAP_LAST,
    /* XXX do not add caps after PIPE_CAP_LAST! */

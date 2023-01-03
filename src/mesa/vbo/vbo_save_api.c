@@ -318,14 +318,14 @@ compare_vao(gl_vertex_processing_mode mode,
       const struct gl_array_attributes *attrib = &vao->VertexAttrib[attr];
       if (attrib->RelativeOffset + vao->BufferBinding[0].Offset != off)
          return false;
-      if (attrib->Format.Type != tp)
+      if (attrib->Format.User.Type != tp)
          return false;
-      if (attrib->Format.Size != size[vbo_attr])
+      if (attrib->Format.User.Size != size[vbo_attr])
          return false;
-      assert(attrib->Format.Format == GL_RGBA);
-      assert(attrib->Format.Normalized == GL_FALSE);
-      assert(attrib->Format.Integer == vbo_attrtype_to_integer_flag(tp));
-      assert(attrib->Format.Doubles == vbo_attrtype_to_double_flag(tp));
+      assert(!attrib->Format.User.Bgra);
+      assert(attrib->Format.User.Normalized == GL_FALSE);
+      assert(attrib->Format.User.Integer == vbo_attrtype_to_integer_flag(tp));
+      assert(attrib->Format.User.Doubles == vbo_attrtype_to_double_flag(tp));
       assert(attrib->BufferBindingIndex == 0);
    }
 
@@ -881,7 +881,7 @@ compile_vertex_list(struct gl_context *ctx)
    /* The other info fields will be updated in vbo_save_playback_vertex_list */
    node->cold->info.index_size = 4;
    node->cold->info.instance_count = 1;
-   node->cold->info.index.gl_bo = node->cold->ib.obj;
+   node->cold->info.index.resource = node->cold->ib.obj->buffer;
    if (merged_prim_count == 1) {
       node->cold->info.mode = merged_prims[0].mode;
       node->start_count.start = merged_prims[0].start;

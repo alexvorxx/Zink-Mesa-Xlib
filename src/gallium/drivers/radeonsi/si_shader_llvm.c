@@ -724,6 +724,51 @@ static LLVMValueRef si_llvm_load_intrinsic(struct ac_shader_abi *abi, nir_intrin
    }
 }
 
+static LLVMValueRef si_llvm_load_sampler_desc(struct ac_shader_abi *abi, LLVMValueRef index,
+                                              enum ac_descriptor_type desc_type)
+{
+   struct si_shader_context *ctx = si_shader_context_from_abi(abi);
+   LLVMBuilderRef builder = ctx->ac.builder;
+
+   if (index && LLVMTypeOf(index) == ctx->ac.i32) {
+      bool is_vec4 = false;
+
+      switch (desc_type) {
+      case AC_DESC_IMAGE:
+         /* The image is at [0:7]. */
+         index = LLVMBuildMul(builder, index, LLVMConstInt(ctx->ac.i32, 2, 0), "");
+         break;
+      case AC_DESC_BUFFER:
+         /* The buffer is in [4:7]. */
+         index = ac_build_imad(&ctx->ac, index, LLVMConstInt(ctx->ac.i32, 4, 0), ctx->ac.i32_1);
+         is_vec4 = true;
+         break;
+      case AC_DESC_FMASK:
+         /* The FMASK is at [8:15]. */
+         assert(ctx->screen->info.gfx_level < GFX11);
+         index = ac_build_imad(&ctx->ac, index, LLVMConstInt(ctx->ac.i32, 2, 0), ctx->ac.i32_1);
+         break;
+      case AC_DESC_SAMPLER:
+         /* The sampler state is at [12:15]. */
+         index = ac_build_imad(&ctx->ac, index, LLVMConstInt(ctx->ac.i32, 4, 0),
+                               LLVMConstInt(ctx->ac.i32, 3, 0));
+         is_vec4 = true;
+         break;
+      default:
+         unreachable("invalid desc");
+      }
+
+      struct ac_llvm_pointer list = {
+         .value = ac_get_arg(&ctx->ac, ctx->args->samplers_and_images),
+         .pointee_type = is_vec4 ? ctx->ac.v4i32 : ctx->ac.v8i32,
+      };
+
+      return ac_build_load_to_sgpr(&ctx->ac, list, index);
+   }
+
+   return index;
+}
+
 bool si_llvm_translate_nir(struct si_shader_context *ctx, struct si_shader *shader,
                            struct nir_shader *nir, bool free_nir)
 {
@@ -741,8 +786,8 @@ bool si_llvm_translate_nir(struct si_shader_context *ctx, struct si_shader *shad
 
    ctx->abi.intrinsic_load = si_llvm_load_intrinsic;
    ctx->abi.export_vertex = gfx10_ngg_export_vertex;
+   ctx->abi.load_sampler_desc = si_llvm_load_sampler_desc;
 
-   si_llvm_init_resource_callbacks(ctx);
    si_llvm_create_main_func(ctx);
 
    if (ctx->stage <= MESA_SHADER_GEOMETRY &&
@@ -967,6 +1012,7 @@ bool si_llvm_translate_nir(struct si_shader_context *ctx, struct si_shader *shad
    ctx->abi.clamp_div_by_zero = ctx->screen->options.clamp_div_by_zero ||
                                 info->options & SI_PROFILE_CLAMP_DIV_BY_ZERO;
    ctx->abi.use_waterfall_for_divergent_tex_samplers = true;
+   ctx->abi.disable_aniso_single_level = true;
 
    unsigned num_outputs = info->num_outputs;
    /* need extra output to hold primitive id added by nir ngg lower */

@@ -89,7 +89,6 @@ lower_alu_instr(nir_builder *b, nir_alu_instr *alu)
    }
 
    case nir_op_f2u32: alu->op = nir_op_ffloor; break;
-   case nir_op_i2b1: alu->op = nir_op_f2b1; break;
 
    case nir_op_ilt: alu->op = nir_op_flt; break;
    case nir_op_ige: alu->op = nir_op_fge; break;

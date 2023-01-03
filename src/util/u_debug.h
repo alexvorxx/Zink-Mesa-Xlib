@@ -187,9 +187,6 @@ debug_disable_win32_error_dialogs(void);
 #endif /* !DEBUG */
 
 
-long
-debug_get_num_option(const char *name, long dfault);
-
 void
 debug_get_version_option(const char *name, unsigned *major, unsigned *minor);
 
@@ -310,8 +307,8 @@ struct debug_named_value
  *    ...
  * @endcode
  */
-#define DEBUG_NAMED_VALUE(__symbol) {#__symbol, (unsigned long)__symbol, NULL}
-#define DEBUG_NAMED_VALUE_WITH_DESCRIPTION(__symbol, __desc) {#__symbol, (unsigned long)__symbol, __desc}
+#define DEBUG_NAMED_VALUE(__symbol) {#__symbol, (uint64_t)__symbol, NULL}
+#define DEBUG_NAMED_VALUE_WITH_DESCRIPTION(__symbol, __desc) {#__symbol, (uint64_t)__symbol, __desc}
 #define DEBUG_NAMED_VALUE_END {NULL, 0, NULL}
 
 
@@ -320,14 +317,14 @@ struct debug_named_value
  */
 const char *
 debug_dump_enum(const struct debug_named_value *names,
-                unsigned long value);
+                uint64_t value);
 
 /**
  * Convert binary flags value to a string.
  */
 const char *
 debug_dump_flags(const struct debug_named_value *names,
-                 unsigned long value);
+                 uint64_t value);
 
 
 struct debug_control {
@@ -358,11 +355,26 @@ comma_separated_list_contains(const char *list, const char *s);
 const char *
 debug_get_option(const char *name, const char *dfault);
 
+const char *
+debug_get_option_cached(const char *name, const char *dfault);
+
+bool
+debug_parse_bool_option(const char *str, bool dfault);
+
 bool
 debug_get_bool_option(const char *name, bool dfault);
 
-long
-debug_get_num_option(const char *name, long dfault);
+int64_t
+debug_parse_num_option(const char *str, int64_t dfault);
+
+int64_t
+debug_get_num_option(const char *name, int64_t dfault);
+
+uint64_t
+debug_parse_flags_option(const char *name,
+                         const char *str,
+                         const struct debug_named_value *flags,
+                         uint64_t dfault);
 
 uint64_t
 debug_get_flags_option(const char *name,
@@ -376,7 +388,8 @@ debug_get_option_ ## suffix (void) \
    static bool initialized = false; \
    static const char * value; \
    if (unlikely(!p_atomic_read_relaxed(&initialized))) { \
-      value = debug_get_option(name, dfault); \
+      const char *str = debug_get_option_cached(name, dfault); \
+      p_atomic_set(&value, str); \
       p_atomic_set(&initialized, true); \
    } \
    return value; \
@@ -399,33 +412,39 @@ debug_get_option_ ## sufix (void) \
    static bool initialized = false; \
    static bool value; \
    if (unlikely(!p_atomic_read_relaxed(&initialized))) { \
-      value = debug_get_bool_option(name, dfault); \
+      const char *str = debug_get_option_cached(name, NULL); \
+      bool parsed_value = debug_parse_bool_option(str, dfault); \
+      p_atomic_set(&value, parsed_value); \
       p_atomic_set(&initialized, true); \
    } \
    return value; \
 }
 
 #define DEBUG_GET_ONCE_NUM_OPTION(sufix, name, dfault) \
-static long \
+static int64_t \
 debug_get_option_ ## sufix (void) \
 { \
    static bool initialized = false; \
-   static long value; \
+   static int64_t value; \
    if (unlikely(!p_atomic_read_relaxed(&initialized))) { \
-      value = debug_get_num_option(name, dfault); \
+      const char *str = debug_get_option_cached(name, NULL); \
+      int64_t parsed_value = debug_parse_num_option(str, dfault); \
+      p_atomic_set(&value, parsed_value); \
       p_atomic_set(&initialized, true); \
    } \
    return value; \
 }
 
 #define DEBUG_GET_ONCE_FLAGS_OPTION(sufix, name, flags, dfault) \
-static unsigned long \
+static uint64_t \
 debug_get_option_ ## sufix (void) \
 { \
    static bool initialized = false; \
-   static unsigned long value; \
+   static uint64_t value; \
    if (unlikely(!p_atomic_read_relaxed(&initialized))) { \
-      value = debug_get_flags_option(name, flags, dfault); \
+      const char *str = debug_get_option_cached(name, NULL); \
+      uint64_t parsed_value = debug_parse_flags_option(name, str, flags, dfault); \
+      p_atomic_set(&value, parsed_value); \
       p_atomic_set(&initialized, true); \
    } \
    return value; \

@@ -82,8 +82,9 @@ struct agx_push {
    };
 };
 
+/* All possible push types except VBO, plus up to 16 VBOs */
+#define AGX_MAX_PUSH_RANGES (AGX_PUSH_NUM_TYPES - 1 + 16)
 /* Arbitrary */
-#define AGX_MAX_PUSH_RANGES (16)
 #define AGX_MAX_VARYINGS (32)
 
 struct agx_varyings_vs {
@@ -172,8 +173,14 @@ struct agx_shader_info {
    /* Does the shader control the sample mask? */
    bool writes_sample_mask;
 
+   /* Depth layout, never equal to NONE */
+   enum gl_frag_depth_layout depth_layout;
+
    /* Is colour output omitted? */
    bool no_colour_output;
+
+   /* Shader is incompatible with triangle merging */
+   bool disable_tri_merging;
 
    /* Number of 16-bit registers used by the main shader and preamble
     * respectively.
@@ -221,15 +228,12 @@ struct agx_shader_key {
    };
 };
 
-void
-agx_preprocess_nir(nir_shader *nir);
+void agx_preprocess_nir(nir_shader *nir);
 
-void
-agx_compile_shader_nir(nir_shader *nir,
-      struct agx_shader_key *key,
-      struct util_debug_callback *debug,
-      struct util_dynarray *binary,
-      struct agx_shader_info *out);
+void agx_compile_shader_nir(nir_shader *nir, struct agx_shader_key *key,
+                            struct util_debug_callback *debug,
+                            struct util_dynarray *binary,
+                            struct agx_shader_info *out);
 
 static const nir_shader_compiler_options agx_nir_options = {
    .lower_fdiv = true,
@@ -268,8 +272,10 @@ static const nir_shader_compiler_options agx_nir_options = {
    .max_unroll_iterations = 32,
    .lower_uniforms_to_ubo = true,
    .force_indirect_unrolling_sampler = true,
-   .force_indirect_unrolling = (nir_var_shader_in | nir_var_shader_out | nir_var_function_temp),
-   .lower_int64_options = (nir_lower_int64_options) ~(nir_lower_iadd64 | nir_lower_imul_2x32_64),
+   .force_indirect_unrolling =
+      (nir_var_shader_in | nir_var_shader_out | nir_var_function_temp),
+   .lower_int64_options =
+      (nir_lower_int64_options) ~(nir_lower_iadd64 | nir_lower_imul_2x32_64),
    .lower_doubles_options = nir_lower_dmod,
 };
 

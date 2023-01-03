@@ -223,7 +223,13 @@ d3d12_end_batch(struct d3d12_context *ctx, struct d3d12_batch *batch)
       count_to_execute--;
    }
    screen->cmdqueue->ExecuteCommandLists(count_to_execute, to_execute);
+
    batch->fence = d3d12_create_fence(screen);
+
+   util_dynarray_foreach(&ctx->ended_queries, struct d3d12_query*, query) {
+      (*query)->fence_value = screen->fence_value;
+   }
+   util_dynarray_clear(&ctx->ended_queries);
 
    mtx_unlock(&screen->submit_mutex);
 }

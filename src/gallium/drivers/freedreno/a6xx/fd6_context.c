@@ -161,7 +161,7 @@ setup_state_map(struct fd_context *ctx)
                       BIT(FD6_GROUP_BLEND));
    fd_context_add_map(ctx, FD_DIRTY_BLEND_COLOR, BIT(FD6_GROUP_BLEND_COLOR));
    fd_context_add_map(ctx, FD_DIRTY_SSBO | FD_DIRTY_IMAGE | FD_DIRTY_PROG,
-                      BIT(FD6_GROUP_IBO));
+                      BIT(FD6_GROUP_IBO) | BIT(FD6_GROUP_FS_TEX));
    fd_context_add_map(ctx, FD_DIRTY_PROG,
                       BIT(FD6_GROUP_VS_TEX) | BIT(FD6_GROUP_HS_TEX) |
                          BIT(FD6_GROUP_DS_TEX) | BIT(FD6_GROUP_GS_TEX) |

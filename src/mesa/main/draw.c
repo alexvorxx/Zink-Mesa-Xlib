@@ -45,6 +45,7 @@
 
 #include "state_tracker/st_context.h"
 #include "state_tracker/st_draw.h"
+#include "util/u_threaded_context.h"
 
 typedef struct {
    GLuint count;
@@ -989,18 +990,18 @@ check_array_data(struct gl_context *ctx, struct gl_vertex_array_object *vao,
          data = ADD_POINTERS(_mesa_vertex_attrib_address(array, binding),
                              bo->Mappings[MAP_INTERNAL].Pointer);
       }
-      switch (array->Format.Type) {
+      switch (array->Format.User.Type) {
       case GL_FLOAT:
          {
             GLfloat *f = (GLfloat *) ((GLubyte *) data + binding->Stride * j);
             GLint k;
-            for (k = 0; k < array->Format.Size; k++) {
+            for (k = 0; k < array->Format.User.Size; k++) {
                if (util_is_inf_or_nan(f[k]) || f[k] >= 1.0e20F || f[k] <= -1.0e10F) {
                   printf("Bad array data:\n");
                   printf("  Element[%u].%u = %f\n", j, k, f[k]);
                   printf("  Array %u at %p\n", attrib, (void *) array);
                   printf("  Type 0x%x, Size %d, Stride %d\n",
-                         array->Format.Type, array->Format.Size,
+                         array->Format.User.Type, array->Format.User.Size,
                          binding->Stride);
                   printf("  Address/offset %p in Buffer Object %u\n",
                          array->Ptr, bo ? bo->Name : 0);
@@ -1114,7 +1115,7 @@ print_draw_arrays(struct gl_context *ctx,
       printf("attr %s: size %d stride %d  "
              "ptr %p  Bufobj %u\n",
              gl_vert_attrib_name((gl_vert_attrib) i),
-             array->Format.Size, binding->Stride,
+             array->Format.User.Size, binding->Stride,
              array->Ptr, bufObj ? bufObj->Name : 0);
 
       if (bufObj) {
@@ -1123,7 +1124,7 @@ print_draw_arrays(struct gl_context *ctx,
             _mesa_vertex_attrib_address(array, binding);
 
          unsigned multiplier;
-         switch (array->Format.Type) {
+         switch (array->Format.User.Type) {
          case GL_DOUBLE:
          case GL_INT64_ARB:
          case GL_UNSIGNED_INT64_ARB:
@@ -1137,7 +1138,7 @@ print_draw_arrays(struct gl_context *ctx,
          int *k = (int *) f;
          int i = 0;
          int n = (count - 1) * (binding->Stride / (4 * multiplier))
-            + array->Format.Size;
+            + array->Format.User.Size;
          if (n > 32)
             n = 32;
          printf("  Data at offset %d:\n", offset);
@@ -1636,14 +1637,23 @@ _mesa_validated_drawrangeelements(struct gl_context *ctx, GLenum mode,
       draw.start = 0;
    } else {
       uintptr_t start = (uintptr_t) indices;
-      if (unlikely(index_bo->Size < start)) {
+      if (unlikely(index_bo->Size < start || !index_bo->buffer)) {
          _mesa_warning(ctx, "Invalid indices offset 0x%" PRIxPTR
-                            " (indices buffer size is %ld bytes)."
-                            " Draw skipped.", start, index_bo->Size);
+                            " (indices buffer size is %ld bytes)"
+                            " or unallocated buffer (%u). Draw skipped.",
+                            start, index_bo->Size, !!index_bo->buffer);
          return;
       }
-      info.index.gl_bo = index_bo;
+
       draw.start = start >> index_size_shift;
+
+      if (ctx->st->pipe->draw_vbo == tc_draw_vbo) {
+         /* Fast path for u_threaded_context to eliminate atomics. */
+         info.index.resource = _mesa_get_bufferobj_reference(ctx, index_bo);
+         info.take_index_buffer_ownership = true;
+      } else {
+         info.index.resource = index_bo->buffer;
+      }
    }
    draw.index_bias = basevertex;
 
@@ -2004,10 +2014,21 @@ _mesa_validated_multidrawelements(struct gl_context *ctx, GLenum mode,
    info.view_mask = 0;
    info.restart_index = ctx->Array._RestartIndex[index_size_shift];
 
-   if (info.has_user_indices)
+   if (info.has_user_indices) {
       info.index.user = (void*)min_index_ptr;
-   else
-      info.index.gl_bo = index_bo;
+   } else {
+      if (ctx->st->pipe->draw_vbo == tc_draw_vbo) {
+         /* Fast path for u_threaded_context to eliminate atomics. */
+         info.index.resource = _mesa_get_bufferobj_reference(ctx, index_bo);
+         info.take_index_buffer_ownership = true;
+      } else {
+         info.index.resource = index_bo->buffer;
+      }
+
+      /* No index buffer storage allocated - nothing to do. */
+      if (!info.index.resource)
+         return;
+   }
 
    if (!fallback &&
        (!info.has_user_indices ||
@@ -2429,11 +2450,24 @@ _mesa_MultiDrawElementsIndirect(GLenum mode, GLenum type,
       /* Packed section end. */
       info.restart_index = ctx->Array._RestartIndex[index_size_shift];
 
+      struct gl_buffer_object *index_bo = ctx->Array.VAO->IndexBufferObj;
+
+      if (ctx->st->pipe->draw_vbo == tc_draw_vbo) {
+         /* Fast path for u_threaded_context to eliminate atomics. */
+         info.index.resource = _mesa_get_bufferobj_reference(ctx, index_bo);
+         info.take_index_buffer_ownership = true;
+      } else {
+         info.index.resource = index_bo->buffer;
+      }
+
+      /* No index buffer storage allocated - nothing to do. */
+      if (!info.index.resource)
+         return;
+
       const uint8_t *ptr = (const uint8_t *) indirect;
       for (unsigned i = 0; i < primcount; i++) {
          DrawElementsIndirectCommand *cmd = (DrawElementsIndirectCommand*)ptr;
 
-         info.index.gl_bo = ctx->Array.VAO->IndexBufferObj;
          info.start_instance = cmd->baseInstance;
          info.instance_count = cmd->primCount;
 

@@ -133,8 +133,11 @@ class Case(object):
         self.expr = None
         if case.expr is not None:
             self.expr = isa.expressions[case.expr]
-        self.fieldnames = re.findall(r"{([a-zA-Z0-9_]+)}", case.display)
+        self.fieldnames = re.findall(r"{([a-zA-Z0-9_:]+)}", case.display)
         self.append_forced(bitset)
+
+        # remove special fieldname properties e.g. :align=
+        self.fieldnames = list(map(lambda name: name.split(':')[0], self.fieldnames))
 
     # Handle fields which don't appear in display template but have
     # force="true"

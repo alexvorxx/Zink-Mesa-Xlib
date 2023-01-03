@@ -101,8 +101,6 @@ emit_mrt(struct fd_ringbuffer *ring, struct pipe_framebuffer_state *pfb,
       struct pipe_surface *psurf = pfb->cbufs[i];
       enum pipe_format pformat = psurf->format;
       rsc = fd_resource(psurf->texture);
-      if (!rsc->bo)
-         continue;
 
       uint32_t base = gmem ? gmem->cbuf_base[i] : 0;
       slice = fd_resource_slice(rsc, psurf->u.tex.level);
@@ -369,8 +367,6 @@ update_render_cntl(struct fd_batch *batch, struct pipe_framebuffer_state *pfb,
 
       struct pipe_surface *psurf = pfb->cbufs[i];
       struct fd_resource *rsc = fd_resource(psurf->texture);
-      if (!rsc->bo)
-         continue;
 
       if (fd_resource_ubwc_enabled(rsc, psurf->u.tex.level))
          mrts_ubwc_enable |= 1 << i;

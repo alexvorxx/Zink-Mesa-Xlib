@@ -2802,6 +2802,7 @@ nir_rewrite_image_intrinsic(nir_intrinsic_instr *intrin, nir_ssa_def *src,
    CASE(samples)
    CASE(load_raw_intel)
    CASE(store_raw_intel)
+   CASE(fragment_mask_load_amd)
 #undef CASE
    default:
       unreachable("Unhanded image intrinsic");
@@ -3185,10 +3186,6 @@ nir_alu_instr_is_comparison(const nir_alu_instr *instr)
    CASE_ALL_SIZES(nir_op_uge)
    CASE_ALL_SIZES(nir_op_ieq)
    CASE_ALL_SIZES(nir_op_ine)
-   case nir_op_i2b1:
-   case nir_op_i2b8:
-   case nir_op_i2b16:
-   case nir_op_i2b32:
    case nir_op_f2b1:
    case nir_op_f2b8:
    case nir_op_f2b16:

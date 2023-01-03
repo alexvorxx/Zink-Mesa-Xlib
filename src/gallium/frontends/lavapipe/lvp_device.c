@@ -127,6 +127,7 @@ static const struct vk_device_extension_table lvp_device_extensions_supported = 
    .KHR_shader_draw_parameters            = true,
    .KHR_shader_float16_int8               = true,
    .KHR_shader_integer_dot_product        = true,
+   .KHR_shader_non_semantic_info          = true,
    .KHR_shader_subgroup_extended_types    = true,
    .KHR_shader_terminate_invocation       = true,
    .KHR_spirv_1_4                         = true,

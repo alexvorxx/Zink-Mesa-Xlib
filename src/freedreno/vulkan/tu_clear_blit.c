@@ -460,7 +460,7 @@ build_blit_vs_shader(void)
    nir_ssa_def *vert1_pos = load_const(b, 4, 2);
    nir_ssa_def *vertex = nir_load_vertex_id(b);
 
-   nir_ssa_def *pos = nir_bcsel(b, nir_i2b1(b, vertex), vert1_pos, vert0_pos);
+   nir_ssa_def *pos = nir_bcsel(b, nir_i2b(b, vertex), vert1_pos, vert0_pos);
    pos = nir_vec4(b, nir_channel(b, pos, 0),
                      nir_channel(b, pos, 1),
                      nir_imm_float(b, 0.0),
@@ -479,7 +479,7 @@ build_blit_vs_shader(void)
    /* Only used with "z scale" blit path which uses a 3d texture */
    nir_ssa_def *z_coord = load_const(b, 8, 1);
 
-   nir_ssa_def *coords = nir_bcsel(b, nir_i2b1(b, vertex), vert1_coords, vert0_coords);
+   nir_ssa_def *coords = nir_bcsel(b, nir_i2b(b, vertex), vert1_coords, vert0_coords);
    coords = nir_vec3(b, nir_channel(b, coords, 0), nir_channel(b, coords, 1),
                      z_coord);
 
@@ -507,7 +507,7 @@ build_clear_vs_shader(void)
    nir_ssa_def *depth = load_const(b, 2, 1);
    nir_ssa_def *vertex = nir_load_vertex_id(b);
 
-   nir_ssa_def *pos = nir_bcsel(b, nir_i2b1(b, vertex), vert1_pos, vert0_pos);
+   nir_ssa_def *pos = nir_bcsel(b, nir_i2b(b, vertex), vert1_pos, vert0_pos);
    pos = nir_vec4(b, nir_channel(b, pos, 0),
                      nir_channel(b, pos, 1),
                      depth, nir_imm_float(b, 1.0));

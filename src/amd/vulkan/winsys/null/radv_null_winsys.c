@@ -159,6 +159,7 @@ radv_null_winsys_query_info(struct radeon_winsys *rws, struct radeon_info *info)
        info->family == CHIP_RAVEN2 || info->family == CHIP_RENOIR || info->gfx_level >= GFX10_3);
 
    info->has_scheduled_fence_dependency = true;
+   info->has_gang_submit = true;
 }
 
 static const char *

@@ -84,7 +84,7 @@ batch_init(struct fd_batch *batch)
     * immediately:
     */
    if (ctx->screen->gen < 6)
-      batch->fence = fd_fence_create(batch);
+      batch->fence = fd_pipe_fence_create(batch);
 
    batch->cleared = 0;
    batch->fast_cleared = 0;
@@ -199,9 +199,9 @@ batch_fini(struct fd_batch *batch)
 
    /* in case batch wasn't flushed but fence was created: */
    if (batch->fence)
-      fd_fence_set_batch(batch->fence, NULL);
+      fd_pipe_fence_set_batch(batch->fence, NULL);
 
-   fd_fence_ref(&batch->fence, NULL);
+   fd_pipe_fence_ref(&batch->fence, NULL);
 
    cleanup_submit(batch);
 
@@ -368,7 +368,7 @@ batch_flush(struct fd_batch *batch) assert_dt
    fd_screen_unlock(batch->ctx->screen);
 
    if (batch->fence)
-      fd_fence_ref(&batch->ctx->last_fence, batch->fence);
+      fd_pipe_fence_ref(&batch->ctx->last_fence, batch->fence);
 
    fd_gmem_render_tiles(batch);
 

@@ -65,7 +65,6 @@ typedef struct
    nir_variable *prim_exp_arg_var;
    nir_variable *es_accepted_var;
    nir_variable *gs_accepted_var;
-   nir_variable *num_es_threads_var;
    nir_variable *gs_vtx_indices_vars[3];
 
    nir_ssa_def *vtx_addr[3];
@@ -1543,18 +1542,6 @@ add_deferred_attribute_culling(nir_builder *b, nir_cf_list *original_extracted_c
       nir_ssa_def *num_live_vertices_in_workgroup = rep.num_repacked_invocations;
       nir_ssa_def *es_exporter_tid = rep.repacked_invocation_index;
 
-      if (nogs_state->num_es_threads_var) {
-         nir_ssa_def *num_live_vertices_in_wave = num_live_vertices_in_workgroup;
-         if (nogs_state->max_num_waves > 1) {
-            num_live_vertices_in_wave =
-               nir_isub(b, num_live_vertices_in_wave,
-                        nir_imul_imm(b, nir_load_subgroup_id(b), nogs_state->options->wave_size));
-            num_live_vertices_in_wave = nir_umin(b, num_live_vertices_in_wave,
-                                                 nir_imm_int(b, nogs_state->options->wave_size));
-         }
-         nir_store_var(b, nogs_state->num_es_threads_var, num_live_vertices_in_wave, 0x1);
-      }
-
       /* If all vertices are culled, set primitive count to 0 as well. */
       nir_ssa_def *num_exported_prims = nir_load_workgroup_num_input_primitives_amd(b);
       nir_ssa_def *fully_culled = nir_ieq_imm(b, num_live_vertices_in_workgroup, 0u);
@@ -1585,9 +1572,6 @@ add_deferred_attribute_culling(nir_builder *b, nir_cf_list *original_extracted_c
       }
       nir_pop_if(b, if_wave_0);
       nir_store_var(b, prim_exp_arg_var, emit_ngg_nogs_prim_exp_arg(b, nogs_state), 0x1u);
-
-      if (nogs_state->num_es_threads_var)
-         nir_store_var(b, nogs_state->num_es_threads_var, nir_load_merged_wave_info_amd(b), 0x1);
    }
    nir_pop_if(b, if_cull_en);
 
@@ -2097,10 +2081,6 @@ ac_nir_lower_ngg_nogs(nir_shader *shader, const ac_nir_lower_ngg_options *option
       options->can_cull ? nir_local_variable_create(impl, glsl_bool_type(), "es_accepted") : NULL;
    nir_variable *gs_accepted_var =
       options->can_cull ? nir_local_variable_create(impl, glsl_bool_type(), "gs_accepted") : NULL;
-   nir_variable *num_es_threads_var =
-      options->can_cull && options->gfx_level >= GFX11
-         ? nir_local_variable_create(impl, glsl_uint_type(), "num_es_threads")
-         : NULL;
 
    bool streamout_enabled = shader->xfb_info && !options->disable_streamout;
    bool has_user_edgeflags =
@@ -2124,7 +2104,6 @@ ac_nir_lower_ngg_nogs(nir_shader *shader, const ac_nir_lower_ngg_options *option
       .prim_exp_arg_var = prim_exp_arg_var,
       .es_accepted_var = es_accepted_var,
       .gs_accepted_var = gs_accepted_var,
-      .num_es_threads_var = num_es_threads_var,
       .max_num_waves = DIV_ROUND_UP(options->max_workgroup_size, options->wave_size),
       .has_user_edgeflags = has_user_edgeflags,
    };
@@ -2211,6 +2190,16 @@ ac_nir_lower_ngg_nogs(nir_shader *shader, const ac_nir_lower_ngg_options *option
    nir_ssa_def *es_thread =
       options->can_cull ? nir_load_var(b, es_accepted_var) : has_input_vertex(b);
 
+   /* Calculate the bit count here instead of below for lower SGPR usage and better ALU
+    * scheduling.
+    */
+   nir_ssa_def *num_es_threads = NULL;
+   if (state.options->gfx_level >= GFX11 && options->can_cull) {
+      nir_ssa_def *es_accepted_mask =
+         nir_ballot(b, 1, options->wave_size, nir_load_var(b, es_accepted_var));
+      num_es_threads = nir_bit_count(b, es_accepted_mask);
+   }
+
    nir_if *if_es_thread = nir_push_if(b, es_thread);
    {
       /* Run the actual shader */
@@ -2256,9 +2245,9 @@ ac_nir_lower_ngg_nogs(nir_shader *shader, const ac_nir_lower_ngg_options *option
 
          b->cursor = nir_after_cf_list(&impl->body);
 
-         nir_ssa_def *num_threads = options->can_cull ? nir_load_var(b, num_es_threads_var)
-                                                      : nir_load_merged_wave_info_amd(b);
-         export_vertex_params_gfx11(b, NULL, num_threads, num_outputs, outputs,
+         if (!num_es_threads)
+            num_es_threads = nir_load_merged_wave_info_amd(b);
+         export_vertex_params_gfx11(b, NULL, num_es_threads, num_outputs, outputs,
                                     options->vs_output_param_offset);
       }
    }
@@ -4175,7 +4164,7 @@ emit_ms_finale(nir_builder *b, lower_ngg_ms_state *s)
          else
             loaded_cull_flag = nir_u2u32(b, nir_load_shared(b, 1, 8, prim_idx_addr, .base = s->layout.lds.cull_flags_addr));
 
-         cull_flag = nir_i2b1(b, loaded_cull_flag);
+         cull_flag = nir_i2b(b, loaded_cull_flag);
       }
 
       nir_ssa_def *indices[3];

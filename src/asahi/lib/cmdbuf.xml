@@ -291,6 +291,7 @@
     <field name="Compare func" size="3" start="39" type="Compare func"/>
     <field name="Unk 3" size="1" start="42" type="hex" default="1"/>
     <field name="Border colour" size="2" start="55" type="Border colour"/>
+    <field name="Seamful cube maps" size="1" start="57" type="bool"/>
   </struct>
 
   <!--- Pointed to from the command buffer -->
@@ -416,7 +417,7 @@
     <!-- Or discards? -->
     <field name="No colour output" size="1" start="21" type="bool"/>
     <field name="Sample mask after depth/stencil" size="1" start="25" type="bool"/>
-    <field name="Lines or points" size="1" start="26" type="bool"/>
+    <field name="Disable tri merging" size="1" start="26" type="bool"/>
     <field name="Pass type" size="3" start="29" type="Pass type"/>
   </struct>
 
@@ -433,11 +434,15 @@
     <field name="W Clamp" size="32" start="0" type="float"/>
   </struct>
 
+  <enum name="PPP Vertex">
+    <value name="0" value="1"/>
+    <value name="2" value="3"/>
+  </enum>
+
   <struct name="Cull" size="4">
     <field name="Cull front" size="1" start="0" type="bool"/>
     <field name="Cull back" size="1" start="1" type="bool"/>
-    <field name="Unk GL 1" size="1" start="7" type="bool"/>
-    <field name="Unk GL 2" size="1" start="8" type="bool"/>
+    <field name="Flat shading vertex" size="2" start="7" type="PPP Vertex"/>
     <field name="Depth clip" size="1" start="10" type="bool"/>
     <field name="Depth clamp" size="1" start="11" type="bool"/>
     <field name="Front face CCW" size="1" start="16" type="bool"/>
@@ -677,8 +682,13 @@
     <field name="Output count 2" size="8" start="8" type="uint" default="0"/>
   </struct>
 
+  <enum name="VDM Vertex">
+    <value name="0" value="0"/>
+    <value name="2" value="2"/>
+  </enum>
+
   <struct name="VDM State Vertex Unknown" size="4">
-    <field name="Unknown" start="0" size="1" type="bool"/>
+    <field name="Flat shading control" start="0" size="2" type="VDM Vertex"/>
   </struct>
 
   <!--- Command to issue a direct non-indexed draw -->

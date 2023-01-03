@@ -1093,6 +1093,7 @@ static const struct intel_device_info intel_device_info_dg2_g12 = {
    XEHP_FEATURES(0, 1, 0),                                      \
    .num_subslices = dual_subslices(1),                          \
    .has_local_mem = false,                                      \
+   .has_aux_map = true,                                         \
    .apply_hwconfig = true,                                      \
    .has_64bit_float = true,                                     \
    .has_64bit_float_via_math_pipe = true,                       \
@@ -1849,6 +1850,22 @@ fixup_chv_device_info(struct intel_device_info *devinfo)
 }
 
 static void
+fixup_adl_device_info(struct intel_device_info *devinfo)
+{
+   assert(devinfo->platform == INTEL_PLATFORM_ADL);
+   const uint32_t eu_total = intel_device_info_eu_total(devinfo);
+
+   if (eu_total >= 32)
+      return;
+
+   /* Fixes issues with:
+    * dEQP-GLES31.functional.geometry_shading.layered.render_with_default_layer_cubemap
+    * when running on ADL-N platform.
+    */
+   devinfo->urb.max_entries[MESA_SHADER_GEOMETRY] = 1024;
+}
+
+static void
 init_max_scratch_ids(struct intel_device_info *devinfo)
 {
    /* Determine the max number of subslices that potentially might be used in
@@ -2015,6 +2032,9 @@ intel_i915_get_device_info_from_fd(int fd, struct intel_device_info *devinfo)
 
    if (devinfo->platform == INTEL_PLATFORM_CHV)
       fixup_chv_device_info(devinfo);
+
+   if (devinfo->platform == INTEL_PLATFORM_ADL)
+      fixup_adl_device_info(devinfo);
 
    /* Broadwell PRM says:
     *

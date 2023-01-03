@@ -274,11 +274,7 @@ init_render_queue_state(struct anv_queue *queue)
       .end = (void *) cmds + sizeof(cmds),
    };
 
-   anv_batch_emit(&batch, GENX(PIPELINE_SELECT), ps) {
-      ps.MaskBits = GFX_VER >= 12 ? 0x13 : 3;
-      ps.MediaSamplerDOPClockGateEnable = GFX_VER >= 12;
-      ps.PipelineSelection = _3D;
-   }
+   genX(emit_pipeline_select)(&batch, _3D);
 
 #if GFX_VER == 9
    anv_batch_write_reg(&batch, GENX(CACHE_MODE_1), cm1) {
@@ -490,14 +486,7 @@ init_compute_queue_state(struct anv_queue *queue)
    batch.start = batch.next = cmds;
    batch.end = (void *) cmds + sizeof(cmds);
 
-   anv_batch_emit(&batch, GENX(PIPELINE_SELECT), ps) {
-      ps.MaskBits = 3;
-#if GFX_VER >= 11
-      ps.MaskBits |= 0x10;
-      ps.MediaSamplerDOPClockGateEnable = true;
-#endif
-      ps.PipelineSelection = GPGPU;
-   }
+   genX(emit_pipeline_select)(&batch, GPGPU);
 
    init_common_queue_state(queue, &batch);
 
@@ -1005,4 +994,45 @@ VkResult genX(CreateSampler)(
    *pSampler = anv_sampler_to_handle(sampler);
 
    return VK_SUCCESS;
+}
+
+/* Wa_14015814527
+ *
+ * Check if task shader was utilized within cmd_buffer, if so
+ * commit empty URB states and null prim.
+ */
+void
+genX(apply_task_urb_workaround)(struct anv_cmd_buffer *cmd_buffer)
+{
+#if GFX_VERx10 != 125
+   return;
+#else
+   if (cmd_buffer->state.current_pipeline != _3D ||
+       !cmd_buffer->state.gfx.used_task_shader)
+      return;
+
+   cmd_buffer->state.gfx.used_task_shader = false;
+
+   /* Wa_14015821291 mentions that WA below is not required if we have
+    * a pipeline flush going on. It will get flushed during
+    * cmd_buffer_flush_state before draw.
+    */
+   if ((cmd_buffer->state.pending_pipe_bits & ANV_PIPE_CS_STALL_BIT))
+      return;
+
+   for (int i = 0; i <= MESA_SHADER_GEOMETRY; i++) {
+      anv_batch_emit(&cmd_buffer->batch, GENX(3DSTATE_URB_VS), urb) {
+         urb._3DCommandSubOpcode += i;
+      }
+   }
+
+   anv_batch_emit(&cmd_buffer->batch, GENX(3DSTATE_URB_ALLOC_MESH), zero);
+   anv_batch_emit(&cmd_buffer->batch, GENX(3DSTATE_URB_ALLOC_TASK), zero);
+
+   /* Issue 'nullprim' to commit the state. */
+   anv_batch_emit(&cmd_buffer->batch, GENX(PIPE_CONTROL), pc) {
+      pc.PostSyncOperation = WriteImmediateData;
+      pc.Address = cmd_buffer->device->workaround_address;
+   }
+#endif
 }

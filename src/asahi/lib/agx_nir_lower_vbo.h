@@ -6,17 +6,17 @@
 #ifndef __AGX_NIR_LOWER_VBO_H
 #define __AGX_NIR_LOWER_VBO_H
 
-#include <stdint.h>
 #include <stdbool.h>
-#include "nir.h"
+#include <stdint.h>
 #include "util/format/u_formats.h"
+#include "nir.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
 #define AGX_MAX_ATTRIBS (16)
-#define AGX_MAX_VBUFS (16)
+#define AGX_MAX_VBUFS   (16)
 
 /* See pipe_vertex_element for justification on the sizes. This structure should
  * be small so it can be embedded into a shader key.

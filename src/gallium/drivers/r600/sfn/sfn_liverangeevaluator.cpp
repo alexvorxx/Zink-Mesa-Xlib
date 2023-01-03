@@ -390,7 +390,8 @@ LiveRangeInstrVisitor::visit(GDSInstr *instr)
    record_read(instr->src(), LiveRangeEntry::use_unspecified);
    if (instr->resource_offset())
       record_read(instr->resource_offset(), LiveRangeEntry::use_unspecified);
-   record_write(instr->dest());
+   if (instr->dest())
+      record_write(instr->dest());
 }
 
 void

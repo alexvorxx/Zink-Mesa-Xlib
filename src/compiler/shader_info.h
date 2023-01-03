@@ -485,6 +485,13 @@ typedef struct shader_info {
           * shader.
           */
          unsigned advanced_blend_modes;
+
+         /**
+          * Defined by AMD_shader_early_and_late_fragment_tests.
+          */
+         bool early_and_late_fragment_tests:1;
+         enum gl_frag_stencil_layout stencil_front_layout:3;
+         enum gl_frag_stencil_layout stencil_back_layout:3;
       } fs;
 
       struct {

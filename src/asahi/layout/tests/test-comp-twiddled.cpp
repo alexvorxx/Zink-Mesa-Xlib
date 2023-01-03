@@ -17,6 +17,7 @@ struct sizetest {
    uint32_t size;
 };
 
+/* clang-format off */
 /* Sort: `sort -t"," -k1,1 -k2,5n | uniq` */
 static struct sizetest comptests[] = {
    { PIPE_FORMAT_R16G16B16A16_UNORM, 16, 16, 1, 1, 0x880 },
@@ -14309,6 +14310,7 @@ static struct sizetest comptests[] = {
    { PIPE_FORMAT_Z32_FLOAT, 4097, 4097, 2, 1, 0x8808000 },
    { PIPE_FORMAT_Z32_FLOAT, 4097, 4097, 2, 13, 0xb97d600 },
 };
+/* clang-format on */
 
 TEST(CompTwiddled, SizeTests)
 {
@@ -14327,9 +14329,10 @@ TEST(CompTwiddled, SizeTests)
 
       ail_make_miptree(&layout);
 
-      EXPECT_EQ(layout.size_B, test.size) <<
-         test.width << "x" << test.height << "x" << test.depth << " " << (int)test.levels <<
-         "L " << util_format_short_name(test.format) <<
-         " compressed texture has wrong allocation size, off by " << ((int)layout.size_B - (int)test.size);
+      EXPECT_EQ(layout.size_B, test.size)
+         << test.width << "x" << test.height << "x" << test.depth << " "
+         << (int)test.levels << "L " << util_format_short_name(test.format)
+         << " compressed texture has wrong allocation size, off by "
+         << ((int)layout.size_B - (int)test.size);
    }
 }

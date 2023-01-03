@@ -1446,7 +1446,9 @@ anv_device_alloc_bo(struct anv_device *device,
       size = align_u64(size, 64 * 1024);
 
       /* See anv_bo::_ccs_size */
-      ccs_size = align_u64(DIV_ROUND_UP(size, INTEL_AUX_MAP_GFX12_CCS_SCALE), 4096);
+      uint64_t aux_ratio =
+         intel_aux_get_main_to_aux_ratio(device->aux_map_ctx);
+      ccs_size = align_u64(DIV_ROUND_UP(size, aux_ratio), 4096);
    }
 
    uint32_t gem_handle;
@@ -1574,7 +1576,7 @@ anv_device_map_bo(struct anv_device *device,
    if (bo->map_wc)
       gem_flags |= I915_MMAP_WC;
 
-   void *map = anv_gem_mmap(device, bo->gem_handle, offset, size, gem_flags);
+   void *map = anv_gem_mmap(device, bo, offset, size, gem_flags);
    if (unlikely(map == MAP_FAILED))
       return vk_errorf(device, VK_ERROR_MEMORY_MAP_FAILED, "mmap failed: %m");
 

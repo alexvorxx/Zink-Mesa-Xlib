@@ -189,6 +189,10 @@ bool gfx10_ngg_calculate_subgroup_info(struct si_shader *shader);
 /* si_nir_lower_abi.c */
 bool si_nir_lower_abi(nir_shader *nir, struct si_shader *shader, struct si_shader_args *args);
 
+/* si_nir_lower_resource.c */
+bool si_nir_lower_resource(nir_shader *nir, struct si_shader *shader,
+                           struct si_shader_args *args);
+
 /* si_shader_llvm.c */
 bool si_compile_llvm(struct si_screen *sscreen, struct si_shader_binary *binary,
                      struct ac_shader_config *conf, struct ac_llvm_compiler *compiler,
@@ -252,9 +256,6 @@ void si_llvm_build_ps_epilog(struct si_shader_context *ctx, union si_shader_part
 void si_llvm_build_monolithic_ps(struct si_shader_context *ctx, struct si_shader *shader);
 void si_llvm_ps_build_end(struct si_shader_context *ctx);
 void si_llvm_init_ps_callbacks(struct si_shader_context *ctx);
-
-/* si_shader_llvm_resources.c */
-void si_llvm_init_resource_callbacks(struct si_shader_context *ctx);
 
 /* si_shader_llvm_vs.c */
 void si_llvm_clipvertex_to_clipdist(struct si_shader_context *ctx,

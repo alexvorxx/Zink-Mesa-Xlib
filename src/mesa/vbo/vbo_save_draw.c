@@ -54,8 +54,8 @@ copy_vao(struct gl_context *ctx, const struct gl_vertex_array_object *vao,
       const struct gl_array_attributes *attrib = &vao->VertexAttrib[i];
       unsigned current_index = shift + i;
       struct gl_array_attributes *currval = &vbo->current[current_index];
-      const GLubyte size = attrib->Format.Size;
-      const GLenum16 type = attrib->Format.Type;
+      const GLubyte size = attrib->Format.User.Size;
+      const GLenum16 type = attrib->Format.User.Type;
       fi_type tmp[8];
       int dmul_shift = 0;
 
@@ -85,8 +85,8 @@ copy_vao(struct gl_context *ctx, const struct gl_vertex_array_object *vao,
          ctx->PopAttribState |= pop_state;
       }
 
-      if (type != currval->Format.Type ||
-          (size >> dmul_shift) != currval->Format.Size)
+      if (type != currval->Format.User.Type ||
+          (size >> dmul_shift) != currval->Format.User.Size)
          vbo_set_vertex_format(&currval->Format, size >> dmul_shift, type);
 
       *data += size;
@@ -343,7 +343,7 @@ vbo_save_playback_vertex_list(struct gl_context *ctx, void *data, bool copy_to_c
    assert(ctx->NewState == 0);
 
    struct pipe_draw_info *info = (struct pipe_draw_info *) &node->cold->info;
-   void *gl_bo = info->index.gl_bo;
+
    if (node->modes) {
       ctx->Driver.DrawGalliumMultiMode(ctx, info,
                                        node->start_counts,
@@ -355,7 +355,6 @@ vbo_save_playback_vertex_list(struct gl_context *ctx, void *data, bool copy_to_c
       ctx->Driver.DrawGallium(ctx, info, 0, node->start_counts,
                               node->num_draws);
    }
-   info->index.gl_bo = gl_bo;
 
    _mesa_restore_draw_vao(ctx, old_vao, old_vp_input_filter);
 

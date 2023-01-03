@@ -225,8 +225,8 @@ vbo_exec_copy_to_current(struct vbo_exec_context *exec)
        * directly.
        */
       /* Size here is in components - not bytes */
-      if (exec->vtx.attr[i].type != vbo->current[i].Format.Type ||
-          (exec->vtx.attr[i].size >> dmul_shift) != vbo->current[i].Format.Size) {
+      if (exec->vtx.attr[i].type != vbo->current[i].Format.User.Type ||
+          (exec->vtx.attr[i].size >> dmul_shift) != vbo->current[i].Format.User.Size) {
          vbo_set_vertex_format(&vbo->current[i].Format,
                                exec->vtx.attr[i].size >> dmul_shift,
                                exec->vtx.attr[i].type);

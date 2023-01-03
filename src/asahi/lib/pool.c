@@ -23,9 +23,9 @@
  *
  */
 
+#include "pool.h"
 #include "agx_bo.h"
 #include "agx_device.h"
-#include "pool.h"
 
 /* Transient command stream pooling: command stream uploads try to simply copy
  * into whereever we left off. If there isn't space, we allocate a new entry
@@ -36,8 +36,8 @@
 static struct agx_bo *
 agx_pool_alloc_backing(struct agx_pool *pool, size_t bo_sz)
 {
-   struct agx_bo *bo = agx_bo_create(pool->dev, bo_sz, pool->create_flags,
-                                     "Pool");
+   struct agx_bo *bo =
+      agx_bo_create(pool->dev, bo_sz, pool->create_flags, "Pool");
 
    util_dynarray_append(&pool->bos, struct agx_bo *, bo);
    pool->transient_bo = bo;
@@ -48,7 +48,7 @@ agx_pool_alloc_backing(struct agx_pool *pool, size_t bo_sz)
 
 void
 agx_pool_init(struct agx_pool *pool, struct agx_device *dev,
-                   unsigned create_flags, bool prealloc)
+              unsigned create_flags, bool prealloc)
 {
    memset(pool, 0, sizeof(*pool));
    pool->dev = dev;
@@ -63,7 +63,7 @@ void
 agx_pool_cleanup(struct agx_pool *pool)
 {
    util_dynarray_foreach(&pool->bos, struct agx_bo *, bo) {
-	   agx_bo_unreference(*bo);
+      agx_bo_unreference(*bo);
    }
 
    util_dynarray_fini(&pool->bos);
@@ -91,7 +91,7 @@ agx_pool_alloc_aligned_with_bo(struct agx_pool *pool, size_t sz,
    /* If we don't fit, allocate a new backing */
    if (unlikely(bo == NULL || (offset + sz) >= POOL_SLAB_SIZE)) {
       bo = agx_pool_alloc_backing(pool,
-            ALIGN_POT(MAX2(POOL_SLAB_SIZE, sz), 4096));
+                                  ALIGN_POT(MAX2(POOL_SLAB_SIZE, sz), 4096));
       offset = 0;
    }
 

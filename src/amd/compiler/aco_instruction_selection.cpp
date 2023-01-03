@@ -199,8 +199,8 @@ emit_bpermute(isel_context* ctx, Builder& bld, Temp index, Temp data)
       index_op.setLateKill(true);
       input_data.setLateKill(true);
 
-      return bld.pseudo(aco_opcode::p_bpermute, bld.def(v1), bld.def(bld.lm), bld.def(bld.lm, vcc),
-                        index_op, input_data);
+      return bld.pseudo(aco_opcode::p_bpermute_gfx6, bld.def(v1), bld.def(bld.lm),
+                        bld.def(bld.lm, vcc), index_op, input_data);
    } else if (ctx->options->gfx_level >= GFX10 && ctx->program->wave_size == 64) {
 
       /* GFX10 wave64 mode: emulate full-wave bpermute */
@@ -219,12 +219,19 @@ emit_bpermute(isel_context* ctx, Builder& bld, Temp index, Temp data)
       input_data.setLateKill(true);
       same_half.setLateKill(true);
 
-      /* We need one pair of shared VGPRs:
-       * Note, that these have twice the allocation granularity of normal VGPRs */
-      ctx->program->config->num_shared_vgprs = 2 * ctx->program->dev.vgpr_alloc_granule;
+      if (ctx->options->gfx_level <= GFX10_3) {
+         /* We need one pair of shared VGPRs:
+          * Note, that these have twice the allocation granularity of normal VGPRs
+          */
+         ctx->program->config->num_shared_vgprs = 2 * ctx->program->dev.vgpr_alloc_granule;
 
-      return bld.pseudo(aco_opcode::p_bpermute, bld.def(v1), bld.def(s2), bld.def(s1, scc),
-                        index_x4, input_data, same_half);
+         return bld.pseudo(aco_opcode::p_bpermute_gfx10w64, bld.def(v1), bld.def(s2),
+                           bld.def(s1, scc), index_x4, input_data, same_half);
+      } else {
+         return bld.pseudo(aco_opcode::p_bpermute_gfx11w64, bld.def(v1), bld.def(s2),
+                           bld.def(s1, scc), Operand(v1.as_linear()), index_x4, input_data,
+                           same_half);
+      }
    } else {
       /* GFX8-9 or GFX10 wave32: bpermute works normally */
       Temp index_x4 = bld.vop2(aco_opcode::v_lshlrev_b32, bld.def(v1), Operand::c32(2u), index);
@@ -3471,8 +3478,7 @@ visit_alu_instr(isel_context* ctx, nir_alu_instr* instr)
          bld.pseudo(aco_opcode::p_create_vector, Definition(dst), tmp, Operand::zero());
       break;
    }
-   case nir_op_b2b1:
-   case nir_op_i2b1: {
+   case nir_op_b2b1: {
       Temp src = get_alu_src(ctx, instr->src[0]);
       assert(dst.regClass() == bld.lm);
 
@@ -5409,8 +5415,7 @@ emit_interp_mov_instr(isel_context* ctx, unsigned idx, unsigned component, unsig
 {
    Builder bld(ctx->program, ctx->block);
    if (ctx->options->gfx_level >= GFX11) {
-      // TODO: this ignores vertex_id
-      uint16_t dpp_ctrl = dpp_quad_perm(0, 0, 0, 0);
+      uint16_t dpp_ctrl = dpp_quad_perm(vertex_id, vertex_id, vertex_id, vertex_id);
       if (in_exec_divergent_or_in_loop(ctx)) {
          Operand prim_mask_op = bld.m0(prim_mask);
          prim_mask_op.setLateKill(true); /* we don't want the bld.lm definition to use m0 */
@@ -5429,7 +5434,7 @@ emit_interp_mov_instr(isel_context* ctx, unsigned idx, unsigned component, unsig
             emit_extract_vector(ctx, emit_wqm(bld, res, Temp(0, s1), true), 0, dst);
       }
    } else {
-      bld.vintrp(aco_opcode::v_interp_mov_f32, Definition(dst), Operand::c32(vertex_id),
+      bld.vintrp(aco_opcode::v_interp_mov_f32, Definition(dst), Operand::c32((vertex_id + 2) % 3),
                  bld.m0(prim_mask), idx, component);
    }
 }
@@ -5830,23 +5835,10 @@ visit_load_input(isel_context* ctx, nir_intrinsic_instr* instr)
 
       unsigned idx = nir_intrinsic_base(instr);
       unsigned component = nir_intrinsic_component(instr);
-      unsigned vertex_id = 2; /* P0 */
+      unsigned vertex_id = 0; /* P0 */
 
-      if (instr->intrinsic == nir_intrinsic_load_input_vertex) {
-         nir_const_value* src0 = nir_src_as_const_value(instr->src[0]);
-         switch (src0->u32) {
-         case 0:
-            vertex_id = 2; /* P0 */
-            break;
-         case 1:
-            vertex_id = 0; /* P10 */
-            break;
-         case 2:
-            vertex_id = 1; /* P20 */
-            break;
-         default: unreachable("invalid vertex index");
-         }
-      }
+      if (instr->intrinsic == nir_intrinsic_load_input_vertex)
+         vertex_id = nir_src_as_uint(instr->src[0]);
 
       if (instr->dest.ssa.num_components == 1 &&
           instr->dest.ssa.bit_size != 64) {
@@ -11192,6 +11184,8 @@ export_mrt(isel_context* ctx, const struct aco_export_mrt* mrt)
 
    bld.exp(aco_opcode::exp, mrt->out[0], mrt->out[1], mrt->out[2], mrt->out[3],
            mrt->enabled_channels, mrt->target, mrt->compr);
+
+   ctx->program->has_color_exports = true;
 }
 
 static bool
@@ -11386,6 +11380,8 @@ create_fs_null_export(isel_context* ctx)
    unsigned dest = ctx->options->gfx_level >= GFX11 ? V_008DFC_SQ_EXP_MRT : V_008DFC_SQ_EXP_NULL;
    bld.exp(aco_opcode::exp, Operand(v1), Operand(v1), Operand(v1), Operand(v1),
            /* enabled_mask */ 0, dest, /* compr */ false, /* done */ true, /* vm */ true);
+
+   ctx->program->has_color_exports = true;
 }
 
 static void
@@ -11461,6 +11457,8 @@ create_fs_dual_src_export_gfx11(isel_context* ctx, const struct aco_export_mrt* 
    exp->definitions[4] = bld.def(bld.lm, vcc);
    exp->definitions[5] = bld.def(s1, scc);
    ctx->block->instructions.emplace_back(std::move(exp));
+
+   ctx->program->has_color_exports = true;
 }
 
 static void
