@@ -1999,7 +1999,8 @@ radv_GetDeviceImageSparseMemoryRequirements(VkDevice device,
     * creating an image.
     * TODO: Avoid creating an image.
     */
-   result = radv_CreateImage(device, pInfo->pCreateInfo, NULL, &image);
+   result = radv_image_create(
+      device, &(struct radv_image_create_info){.vk_info = pInfo->pCreateInfo}, NULL, &image, true);
    assert(result == VK_SUCCESS);
 
    VkImageSparseMemoryRequirementsInfo2 info2 = {

@@ -519,7 +519,8 @@ select_best_modifier(const struct etna_screen * screen,
 
    best_modifier = base_modifier = priority_to_modifier[prio];
 
-   if (!VIV_FEATURE(screen, chipFeatures, FAST_CLEAR))
+   if (!DBG_ENABLED(ETNA_DBG_SHARED_TS) ||
+       !VIV_FEATURE(screen, chipFeatures, FAST_CLEAR))
       return best_modifier;
 
    /* Make a second pass to try and find the best TS modifier if any. */

@@ -265,7 +265,7 @@ emit_masked_swizzle(isel_context* ctx, Builder& bld, Temp src, unsigned mask)
          // DPP8 comes last, as it does not allow several modifiers like `abs` that are available with DPP16
          Builder::Result ret = bld.vop1_dpp8(aco_opcode::v_mov_b32, bld.def(v1), src);
          for (unsigned i = 0; i < 8; i++) {
-            ret.instr->dpp8().lane_sel[i] = (((i & and_mask) | or_mask) ^ xor_mask) & 0x7;
+            ret->dpp8().lane_sel[i] = (((i & and_mask) | or_mask) ^ xor_mask) & 0x7;
          }
          return ret;
       }
@@ -1016,7 +1016,7 @@ emit_idot_instruction(isel_context* ctx, nir_alu_instr* instr, aco_opcode op, Te
    Builder bld(ctx->program, ctx->block);
    bld.is_precise = instr->exact;
    VOP3P_instruction& vop3p =
-      bld.vop3p(op, Definition(dst), src[0], src[1], src[2], 0x0, 0x7).instr->vop3p();
+      bld.vop3p(op, Definition(dst), src[0], src[1], src[2], 0x0, 0x7)->vop3p();
    vop3p.clamp = clamp;
    u_foreach_bit (i, neg_lo)
       vop3p.neg_lo[i] = true;
@@ -1363,7 +1363,7 @@ uadd32_sat(Builder& bld, Definition dst, Temp src0, Temp src1)
    } else {
       add = bld.vop2_e64(aco_opcode::v_add_co_u32, dst, bld.def(bld.lm), src0, src1);
    }
-   add.instr->vop3().clamp = 1;
+   add->vop3().clamp = 1;
    return dst.getTemp();
 }
 
@@ -1382,7 +1382,7 @@ usub32_sat(Builder& bld, Definition dst, Temp src0, Temp src1)
    } else {
       sub = bld.vop2_e64(aco_opcode::v_sub_co_u32, dst, bld.def(bld.lm), src0, src1);
    }
-   sub.instr->vop3().clamp = 1;
+   sub->vop3().clamp = 1;
    return dst.getTemp();
 }
 
@@ -1978,8 +1978,7 @@ visit_alu_instr(isel_context* ctx, nir_alu_instr* instr)
             carry1 = bld.tmp(bld.lm);
             bld.vop2_e64(aco_opcode::v_addc_co_u32, Definition(dst1), Definition(carry1),
                          as_vgpr(ctx, src01), as_vgpr(ctx, src11), carry0)
-               .instr->vop3()
-               .clamp = 1;
+               ->vop3().clamp = 1;
          } else {
             Temp no_sat1 = bld.tmp(v1);
             carry1 = bld.vadd32(Definition(no_sat1), src01, src11, true, carry0).def(1).getTemp();
@@ -2221,8 +2220,7 @@ visit_alu_instr(isel_context* ctx, nir_alu_instr* instr)
             carry1 = bld.tmp(bld.lm);
             bld.vop2_e64(aco_opcode::v_subb_co_u32, Definition(dst1), Definition(carry1),
                          as_vgpr(ctx, src01), as_vgpr(ctx, src11), carry0)
-               .instr->vop3()
-               .clamp = 1;
+               ->vop3().clamp = 1;
          } else {
             Temp no_sat1 = bld.tmp(v1);
             carry1 = bld.vsub32(Definition(no_sat1), src01, src11, true, carry0).def(1).getTemp();
@@ -5152,7 +5150,7 @@ emit_single_mubuf_store(isel_context* ctx, Temp descriptor, Temp voffset, Temp s
                 offen, swizzled, idxen, /* addr64 */ false, /* disable_wqm */ false, glc,
                 /* dlc*/ false, slc);
 
-   r.instr->mubuf().sync = sync;
+   r->mubuf().sync = sync;
 }
 
 void
@@ -5402,7 +5400,7 @@ emit_interp_instr(isel_context* ctx, unsigned idx, unsigned component, Temp src,
                                              bld.m0(prim_mask), idx, component);
 
       if (ctx->program->dev.has_16bank_lds)
-         interp_p1.instr->operands[0].setLateKill(true);
+         interp_p1->operands[0].setLateKill(true);
 
       bld.vintrp(aco_opcode::v_interp_p2_f32, Definition(dst), coord2, bld.m0(prim_mask), interp_p1,
                  idx, component);
@@ -6022,7 +6020,7 @@ visit_load_push_constant(isel_context* ctx, nir_intrinsic_instr* instr)
    default: unreachable("unimplemented or forbidden load_push_constant.");
    }
 
-   bld.smem(op, Definition(vec), ptr, index).instr->smem().prevent_overflow = true;
+   bld.smem(op, Definition(vec), ptr, index)->smem().prevent_overflow = true;
 
    if (!aligned) {
       Operand byte_offset = index_cv ? Operand::c32((offset + index_cv->u32) % 4) : Operand(index);
@@ -6145,44 +6143,50 @@ static MIMG_instruction*
 emit_mimg(Builder& bld, aco_opcode op, Definition dst, Temp rsrc, Operand samp,
           std::vector<Temp> coords, unsigned wqm_mask = 0, Operand vdata = Operand(v1))
 {
-   /* Limit NSA instructions to 3 dwords on GFX10/11 to avoid stability/encoding issues. */
-   unsigned max_nsa_size = bld.program->gfx_level == GFX10_3 ? 13 : 5;
-   bool use_nsa = bld.program->gfx_level >= GFX10 && coords.size() <= max_nsa_size;
+   /* Limit NSA instructions to 3 dwords on GFX10 to avoid stability issues.
+    * On GFX11 the first 4 vaddr are single registers and the last contains the remaining
+    * vector.
+    */
+   size_t nsa_size = bld.program->gfx_level == GFX10     ? 5
+                     : bld.program->gfx_level == GFX10_3 ? 13
+                     : bld.program->gfx_level >= GFX11   ? 4
+                                                         : 0;
+   nsa_size = bld.program->gfx_level >= GFX11 || coords.size() <= nsa_size ? nsa_size : 0;
 
-   if (!use_nsa) {
-      Temp coord = coords[0];
-      if (coords.size() > 1) {
-         coord = bld.tmp(RegType::vgpr, coords.size());
+   for (unsigned i = 0; i < std::min(coords.size(), nsa_size); i++) {
+      coords[i] = as_vgpr(bld, coords[i]);
+      if (wqm_mask & (1u << i))
+         coords[i] = emit_wqm(bld, coords[i], bld.tmp(coords[i].regClass()), true);
+   }
 
+   if (nsa_size < coords.size()) {
+      Temp coord = coords[nsa_size];
+      if (coords.size() - nsa_size > 1) {
          aco_ptr<Pseudo_instruction> vec{create_instruction<Pseudo_instruction>(
-            aco_opcode::p_create_vector, Format::PSEUDO, coords.size(), 1)};
-         for (unsigned i = 0; i < coords.size(); i++)
-            vec->operands[i] = Operand(coords[i]);
+            aco_opcode::p_create_vector, Format::PSEUDO, coords.size() - nsa_size, 1)};
+
+         unsigned coord_size = 0;
+         for (unsigned i = nsa_size; i < coords.size(); i++) {
+            vec->operands[i - nsa_size] = Operand(coords[i]);
+            coord_size += coords[i].size();
+         }
+
+         coord = bld.tmp(RegType::vgpr, coord_size);
          vec->definitions[0] = Definition(coord);
          bld.insert(std::move(vec));
-      } else if (coord.type() == RegType::sgpr) {
-         coord = bld.copy(bld.def(v1), coord);
+      } else {
+         coord = as_vgpr(bld, coord);
       }
 
-      if (wqm_mask) {
+      if (wqm_mask >> nsa_size) {
          /* We don't need the bias, sample index, compare value or offset to be
           * computed in WQM but if the p_create_vector copies the coordinates, then it
           * needs to be in WQM. */
          coord = emit_wqm(bld, coord, bld.tmp(coord.regClass()), true);
       }
 
-      coords[0] = coord;
-      coords.resize(1);
-   } else {
-      for (unsigned i = 0; i < coords.size(); i++) {
-         if (wqm_mask & (1u << i))
-            coords[i] = emit_wqm(bld, coords[i], bld.tmp(coords[i].regClass()), true);
-      }
-
-      for (Temp& coord : coords) {
-         if (coord.type() == RegType::sgpr)
-            coord = bld.copy(bld.def(v1), coord);
-      }
+      coords[nsa_size] = coord;
+      coords.resize(nsa_size + 1);
    }
 
    aco_ptr<MIMG_instruction> mimg{
@@ -6212,19 +6216,23 @@ visit_bvh64_intersect_ray_amd(isel_context* ctx, nir_intrinsic_instr* instr)
    Temp dir = get_ssa_temp(ctx, instr->src[4].ssa);
    Temp inv_dir = get_ssa_temp(ctx, instr->src[5].ssa);
 
-   std::vector<Temp> args;
-   args.push_back(emit_extract_vector(ctx, node, 0, v1));
-   args.push_back(emit_extract_vector(ctx, node, 1, v1));
-   args.push_back(as_vgpr(ctx, tmax));
-   args.push_back(emit_extract_vector(ctx, origin, 0, v1));
-   args.push_back(emit_extract_vector(ctx, origin, 1, v1));
-   args.push_back(emit_extract_vector(ctx, origin, 2, v1));
-   args.push_back(emit_extract_vector(ctx, dir, 0, v1));
-   args.push_back(emit_extract_vector(ctx, dir, 1, v1));
-   args.push_back(emit_extract_vector(ctx, dir, 2, v1));
-   args.push_back(emit_extract_vector(ctx, inv_dir, 0, v1));
-   args.push_back(emit_extract_vector(ctx, inv_dir, 1, v1));
-   args.push_back(emit_extract_vector(ctx, inv_dir, 2, v1));
+   /* On GFX11 image_bvh64_intersect_ray has a special vaddr layout with NSA:
+    * There are five smaller vector groups:
+    * node_pointer, ray_extent, ray_origin, ray_dir, ray_inv_dir.
+    * These directly match the NIR intrinsic sources.
+    */
+   std::vector<Temp> args = {
+      node, tmax, origin, dir, inv_dir,
+   };
+
+   if (bld.program->gfx_level == GFX10_3) {
+      std::vector<Temp> scalar_args;
+      for (Temp tmp : args) {
+         for (unsigned i = 0; i < tmp.size(); i++)
+            scalar_args.push_back(emit_extract_vector(ctx, tmp, i, v1));
+      }
+      args = std::move(scalar_args);
+   }
 
    MIMG_instruction* mimg = emit_mimg(bld, aco_opcode::image_bvh64_intersect_ray, Definition(dst),
                                       resource, Operand(s4), args);
@@ -11508,7 +11516,7 @@ create_fs_exports(isel_context* ctx)
          out.is_int8 = (ctx->options->key.ps.epilog.color_is_int8 >> idx) & 1;
          out.is_int10 = (ctx->options->key.ps.epilog.color_is_int10 >> idx) & 1;
          out.enable_mrt_output_nan_fixup =
-            (ctx->options->key.ps.epilog.enable_mrt_output_nan_fixup >> idx) & 1;
+            (ctx->options->enable_mrt_output_nan_fixup >> idx) & 1;
 
          for (unsigned c = 0; c < 4; ++c) {
             if (out.write_mask & (1 << c)) {

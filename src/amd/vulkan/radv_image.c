@@ -1757,14 +1757,17 @@ static void
 radv_destroy_image(struct radv_device *device, const VkAllocationCallbacks *pAllocator,
                    struct radv_image *image)
 {
-   if ((image->vk.create_flags & VK_IMAGE_CREATE_SPARSE_BINDING_BIT) && image->bindings[0].bo)
+   if ((image->vk.create_flags & VK_IMAGE_CREATE_SPARSE_BINDING_BIT) && image->bindings[0].bo) {
+      radv_rmv_log_bo_destroy(device, image->bindings[0].bo);
       device->ws->buffer_destroy(device->ws, image->bindings[0].bo);
+   }
 
    if (image->owned_memory != VK_NULL_HANDLE) {
       RADV_FROM_HANDLE(radv_device_memory, mem, image->owned_memory);
       radv_free_memory(device, pAllocator, mem);
    }
 
+   radv_rmv_log_resource_destroy(device, (uint64_t)radv_image_to_handle(image));
    vk_image_finish(&image->vk);
    vk_free2(&device->vk.alloc, pAllocator, image);
 }
@@ -1833,7 +1836,7 @@ radv_select_modifier(const struct radv_device *dev, VkFormat format,
 
 VkResult
 radv_image_create(VkDevice _device, const struct radv_image_create_info *create_info,
-                  const VkAllocationCallbacks *alloc, VkImage *pImage)
+                  const VkAllocationCallbacks *alloc, VkImage *pImage, bool is_internal)
 {
    RADV_FROM_HANDLE(radv_device, device, _device);
    const VkImageCreateInfo *pCreateInfo = create_info->vk_info;
@@ -1937,6 +1940,7 @@ radv_image_create(VkDevice _device, const struct radv_image_create_info *create_
          radv_destroy_image(device, alloc, image);
          return vk_error(device, result);
       }
+      radv_rmv_log_bo_allocate(device, image->bindings[0].bo, image->size, true);
    }
 
    if (device->instance->debug_flags & RADV_DEBUG_IMG) {
@@ -1945,6 +1949,9 @@ radv_image_create(VkDevice _device, const struct radv_image_create_info *create_
 
    *pImage = radv_image_to_handle(image);
 
+   radv_rmv_log_image_create(device, pCreateInfo, is_internal, *pImage);
+   if (image->bindings[0].bo)
+      radv_rmv_log_image_bind(device, *pImage);
    return VK_SUCCESS;
 }
 
@@ -2420,7 +2427,7 @@ radv_CreateImage(VkDevice device, const VkImageCreateInfo *pCreateInfo,
    const struct wsi_image_create_info *wsi_info =
       vk_find_struct_const(pCreateInfo->pNext, WSI_IMAGE_CREATE_INFO_MESA);
    bool scanout = wsi_info && wsi_info->scanout;
-   bool prime_blit_src = wsi_info && wsi_info->buffer_blit_src;
+   bool prime_blit_src = wsi_info && wsi_info->blit_src;
 
    return radv_image_create(device,
                             &(struct radv_image_create_info){
@@ -2428,7 +2435,7 @@ radv_CreateImage(VkDevice device, const VkImageCreateInfo *pCreateInfo,
                                .scanout = scanout,
                                .prime_blit_src = prime_blit_src,
                             },
-                            pAllocator, pImage);
+                            pAllocator, pImage, false);
 }
 
 VKAPI_ATTR void VKAPI_CALL

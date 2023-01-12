@@ -128,12 +128,13 @@ find_memory_index(VkDevice _device, VkMemoryPropertyFlags flags)
 static VkResult
 rra_init_accel_struct_data_buffer(VkDevice vk_device, struct radv_rra_accel_struct_data *data)
 {
+   RADV_FROM_HANDLE(radv_device, device, vk_device);
    VkBufferCreateInfo buffer_create_info = {
       .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
       .size = data->size,
    };
 
-   VkResult result = radv_CreateBuffer(vk_device, &buffer_create_info, NULL, &data->buffer);
+   VkResult result = radv_create_buffer(device, &buffer_create_info, NULL, &data->buffer, true);
    if (result != VK_SUCCESS)
       return result;
 
@@ -153,7 +154,7 @@ rra_init_accel_struct_data_buffer(VkDevice vk_device, struct radv_rra_accel_stru
                                                          VK_MEMORY_PROPERTY_HOST_COHERENT_BIT |
                                                          VK_MEMORY_PROPERTY_HOST_CACHED_BIT),
    };
-   result = radv_AllocateMemory(vk_device, &alloc_info, NULL, &data->memory);
+   result = radv_alloc_memory(device, &alloc_info, NULL, &data->memory, true);
    if (result != VK_SUCCESS)
       goto fail_buffer;
 
@@ -200,8 +201,7 @@ rra_CreateAccelerationStructureKHR(VkDevice _device,
       .sType = VK_STRUCTURE_TYPE_EVENT_CREATE_INFO,
    };
 
-   result =
-      radv_CreateEvent(radv_device_to_handle(device), &eventCreateInfo, NULL, &data->build_event);
+   result = radv_create_event(device, &eventCreateInfo, NULL, &data->build_event, true);
    if (result != VK_SUCCESS)
       goto fail_data;
 

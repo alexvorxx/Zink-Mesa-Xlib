@@ -537,6 +537,11 @@ fd_batch_check_size(struct fd_batch *batch)
       return;
    }
 
+   if (batch->num_draws > 100000) {
+      fd_batch_flush(batch);
+      return;
+   }
+
    /* Place a reasonable upper bound on prim/draw stream buffer size: */
    const unsigned limit_bits = 8 * 8 * 1024 * 1024;
    if ((batch->prim_strm_bits > limit_bits) ||

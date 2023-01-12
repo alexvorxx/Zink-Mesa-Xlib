@@ -74,6 +74,7 @@ static const struct debug_named_value etna_debug_options[] = {
    {"nocache",        ETNA_DBG_NOCACHE,    "Disable shader cache"},
    {"linear_pe",      ETNA_DBG_LINEAR_PE, "Enable linear PE"},
    {"msaa",           ETNA_DBG_MSAA, "Enable MSAA support"},
+   {"shared_ts",      ETNA_DBG_SHARED_TS, "Enable TS sharing"},
    DEBUG_NAMED_VALUE_END
 };
 
@@ -126,7 +127,7 @@ etna_screen_get_name(struct pipe_screen *pscreen)
 static const char *
 etna_screen_get_vendor(struct pipe_screen *pscreen)
 {
-   return "etnaviv";
+   return "Mesa";
 }
 
 static const char *
@@ -653,7 +654,8 @@ etna_screen_query_dmabuf_modifiers(struct pipe_screen *pscreen,
    int mods_multiplier = 1;
    int i, j;
 
-   if (VIV_FEATURE(screen, chipFeatures, FAST_CLEAR)) {
+   if (DBG_ENABLED(ETNA_DBG_SHARED_TS) &&
+       VIV_FEATURE(screen, chipFeatures, FAST_CLEAR)) {
       /* If TS is supported expose the TS modifiers. GPUs with feature
        * CACHE128B256BPERLINE have both 128B and 256B color tile TS modes,
        * older cores support exactly one TS layout.

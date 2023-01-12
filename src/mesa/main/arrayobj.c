@@ -546,6 +546,8 @@ _mesa_update_vao_derived_arrays(struct gl_context *ctx,
    /* More than 4 updates turn the VAO to dynamic. */
    if (ctx->Const.AllowDynamicVAOFastPath && ++vao->NumUpdates > 4) {
       vao->IsDynamic = true;
+      /* IsDynamic changes how vertex elements map to vertex buffers. */
+      ctx->Array.NewVertexElements = true;
       return;
    }
 

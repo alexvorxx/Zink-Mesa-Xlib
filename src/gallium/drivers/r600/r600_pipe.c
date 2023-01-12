@@ -539,6 +539,9 @@ static int r600_get_param(struct pipe_screen* pscreen, enum pipe_cap param)
 			return EG_MAX_ATOMIC_BUFFERS;
 		return 0;
 
+	case PIPE_CAP_VALIDATE_ALL_DIRTY_STATES:
+		return 1;
+
 	default:
 		return u_pipe_screen_get_param_defaults(pscreen, param);
 	}

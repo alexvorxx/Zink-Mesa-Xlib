@@ -206,7 +206,6 @@ try_find_d3d12core_next_to_self(char *path, size_t path_arr_size)
    }
 
    if (GetFileAttributesA(path) == INVALID_FILE_ATTRIBUTES) {
-      mesa_logi("No D3D12Core.dll exists next to self\n");
       return NULL;
    }
 
@@ -280,6 +279,9 @@ dzn_instance_create(const VkInstanceCreateInfo *pCreateInfo,
    vk_instance_dispatch_table_from_entrypoints(&dispatch_table,
                                                &dzn_instance_entrypoints,
                                                true);
+   vk_instance_dispatch_table_from_entrypoints(&dispatch_table,
+                                               &wsi_instance_entrypoints,
+                                               false);
 
    VkResult result =
       vk_instance_init(&instance->vk, &instance_extensions,
@@ -514,7 +516,7 @@ dzn_physical_device_cache_caps(struct dzn_physical_device *pdev)
          .queueFlags = VK_QUEUE_GRAPHICS_BIT |
                        VK_QUEUE_COMPUTE_BIT |
                        VK_QUEUE_TRANSFER_BIT,
-         .queueCount = 1,
+         .queueCount = 4,
          .timestampValidBits = 64,
          .minImageTransferGranularity = { 0, 0, 0 },
       },
@@ -2070,7 +2072,7 @@ dzn_device_query_init(struct dzn_device *device)
    if (FAILED(ID3D12Device1_CreateCommittedResource(device->dev, &hprops,
                                                    D3D12_HEAP_FLAG_NONE,
                                                    &rdesc,
-                                                   D3D12_RESOURCE_STATE_GENERIC_READ,
+                                                   D3D12_RESOURCE_STATE_COMMON,
                                                    NULL,
                                                    &IID_ID3D12Resource,
                                                    (void **)&device->queries.refs)))
@@ -2144,11 +2146,18 @@ dzn_device_create(struct dzn_physical_device *pdev,
 {
    struct dzn_instance *instance = container_of(pdev->vk.instance, struct dzn_instance, vk);
 
+   uint32_t graphics_queue_count = 0;
    uint32_t queue_count = 0;
    for (uint32_t qf = 0; qf < pCreateInfo->queueCreateInfoCount; qf++) {
       const VkDeviceQueueCreateInfo *qinfo = &pCreateInfo->pQueueCreateInfos[qf];
       queue_count += qinfo->queueCount;
+      if (pdev->queue_families[qinfo->queueFamilyIndex].props.queueFlags & VK_QUEUE_GRAPHICS_BIT)
+         graphics_queue_count += qinfo->queueCount;
    }
+
+   /* Add a swapchain queue if there's no or too many graphics queues */
+   if (graphics_queue_count != 1)
+      queue_count++;
 
    VK_MULTIALLOC(ma);
    VK_MULTIALLOC_DECL(&ma, struct dzn_device, device, 1);
@@ -2177,6 +2186,11 @@ dzn_device_create(struct dzn_physical_device *pdev,
    vk_device_dispatch_table_from_entrypoints(&device->cmd_dispatch,
                                              &vk_common_device_entrypoints,
                                              false);
+
+   /* Override entrypoints with alternatives based on supported features. */
+   if (pdev->options12.EnhancedBarriersSupported) {
+      device->cmd_dispatch.CmdPipelineBarrier2 = dzn_CmdPipelineBarrier2_enhanced;
+   }
 
    VkResult result =
       vk_device_init(&device->vk, &pdev->vk, &dispatch_table, pCreateInfo, pAllocator);
@@ -2253,7 +2267,33 @@ dzn_device_create(struct dzn_physical_device *pdev,
             dzn_device_destroy(device, pAllocator);
             return result;
          }
+         if (graphics_queue_count == 1 &&
+             pdev->queue_families[qinfo->queueFamilyIndex].props.queueFlags & VK_QUEUE_GRAPHICS_BIT)
+            device->swapchain_queue = &queues[qindex - 1];
       }
+   }
+
+   if (!device->swapchain_queue) {
+      const float swapchain_queue_priority = 0.0f;
+      VkDeviceQueueCreateInfo swapchain_queue_info = {
+         .sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
+         .flags = 0,
+         .queueCount = 1,
+         .pQueuePriorities = &swapchain_queue_priority,
+      };
+      for (uint32_t qf = 0; qf < pdev->queue_family_count; qf++) {
+         if (pdev->queue_families[qf].props.queueFlags & VK_QUEUE_GRAPHICS_BIT) {
+            swapchain_queue_info.queueFamilyIndex = qf;
+            break;
+         }
+      }
+      result = dzn_queue_init(&queues[qindex], device, &swapchain_queue_info, 0);
+      if (result != VK_SUCCESS) {
+         dzn_device_destroy(device, pAllocator);
+         return result;
+      }
+      device->swapchain_queue = &queues[qindex++];
+      device->need_swapchain_blits = true;
    }
 
    assert(queue_count == qindex);
@@ -2368,6 +2408,9 @@ dzn_device_memory_destroy(struct dzn_device_memory *mem,
    if (mem->heap)
       ID3D12Heap_Release(mem->heap);
 
+   if (mem->swapchain_res)
+      ID3D12Resource_Release(mem->swapchain_res);
+
    vk_object_base_finish(&mem->base);
    vk_free2(&device->vk.alloc, pAllocator, mem);
 }
@@ -2447,7 +2490,6 @@ dzn_device_memory_create(struct dzn_device *device,
                                                       pAllocateInfo->memoryTypeIndex);
 
    /* TODO: Unsure about this logic??? */
-   mem->initial_state = D3D12_RESOURCE_STATE_COMMON;
    heap_desc.Properties.Type = D3D12_HEAP_TYPE_CUSTOM;
    heap_desc.Properties.MemoryPoolPreference =
       ((mem_type->propertyFlags & VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT) &&
@@ -2483,7 +2525,7 @@ dzn_device_memory_create(struct dzn_device *device,
       res_desc.Flags = D3D12_RESOURCE_FLAG_DENY_SHADER_RESOURCE;
       res_desc.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
       HRESULT hr = ID3D12Device1_CreatePlacedResource(device->dev, mem->heap, 0, &res_desc,
-                                                      mem->initial_state,
+                                                      D3D12_RESOURCE_STATE_COMMON,
                                                       NULL,
                                                       &IID_ID3D12Resource,
                                                       (void **)&mem->map_res);
@@ -2638,11 +2680,25 @@ dzn_buffer_create(struct dzn_device *device,
    buf->desc.SampleDesc.Quality = 0;
    buf->desc.Flags = D3D12_RESOURCE_FLAG_NONE;
    buf->desc.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
+   buf->valid_access =
+      D3D12_BARRIER_ACCESS_VERTEX_BUFFER |
+      D3D12_BARRIER_ACCESS_CONSTANT_BUFFER |
+      D3D12_BARRIER_ACCESS_INDEX_BUFFER |
+      D3D12_BARRIER_ACCESS_SHADER_RESOURCE |
+      D3D12_BARRIER_ACCESS_STREAM_OUTPUT |
+      D3D12_BARRIER_ACCESS_INDIRECT_ARGUMENT |
+      D3D12_BARRIER_ACCESS_PREDICATION |
+      D3D12_BARRIER_ACCESS_COPY_DEST |
+      D3D12_BARRIER_ACCESS_COPY_SOURCE |
+      D3D12_BARRIER_ACCESS_RAYTRACING_ACCELERATION_STRUCTURE_READ |
+      D3D12_BARRIER_ACCESS_RAYTRACING_ACCELERATION_STRUCTURE_WRITE;
 
    if (buf->usage &
        (VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
-        VK_BUFFER_USAGE_STORAGE_TEXEL_BUFFER_BIT))
+        VK_BUFFER_USAGE_STORAGE_TEXEL_BUFFER_BIT)) {
       buf->desc.Flags |= D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS;
+      buf->valid_access |= D3D12_BARRIER_ACCESS_UNORDERED_ACCESS;
+   }
 
    *out = dzn_buffer_to_handle(buf);
    return VK_SUCCESS;
@@ -2833,7 +2889,7 @@ dzn_BindBufferMemory2(VkDevice _device,
       if (FAILED(ID3D12Device1_CreatePlacedResource(device->dev, mem->heap,
                                                    pBindInfos[i].memoryOffset,
                                                    &buffer->desc,
-                                                   mem->initial_state,
+                                                   D3D12_RESOURCE_STATE_COMMON,
                                                    NULL,
                                                    &IID_ID3D12Resource,
                                                    (void **)&buffer->res)))

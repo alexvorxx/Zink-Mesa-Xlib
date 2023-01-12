@@ -49,7 +49,7 @@ zink_device_info = custom_target(
   input : ['zink_device_info.py'],
   output : ['zink_device_info.h', 'zink_device_info.c'],
   command : [
-    prog_python, '@INPUT@', '@OUTPUT@', join_paths(dir_source_root, 'src/vulkan/registry/vk.xml')
+    prog_python, '@INPUT@', '@OUTPUT@', vk_api_xml
   ]
 )
 
@@ -58,7 +58,7 @@ zink_instance = custom_target(
   input : ['zink_instance.py'],
   output : ['zink_instance.h', 'zink_instance.c'],
   command : [
-    prog_python, '@INPUT@', '@OUTPUT@', join_paths(dir_source_root, 'src/vulkan/registry/vk.xml')
+    prog_python, '@INPUT@', '@OUTPUT@', vk_api_xml
   ]
 )
 

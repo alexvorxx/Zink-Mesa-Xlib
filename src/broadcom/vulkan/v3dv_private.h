@@ -316,7 +316,6 @@ struct v3dv_pipeline_key {
    uint8_t topology;
    uint8_t logicop_func;
    bool msaa;
-   bool sample_coverage;
    bool sample_alpha_to_coverage;
    bool sample_alpha_to_one;
    uint8_t cbufs;

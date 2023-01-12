@@ -431,7 +431,7 @@ struct pvr_pds_vertex_shader_program {
 
    bool iterate_instance_id;
    uint32_t instance_id_register;
-   uint32_t instance_ID_modifier;
+   uint32_t instance_id_modifier;
    uint32_t base_instance;
 
    bool iterate_remap_id;

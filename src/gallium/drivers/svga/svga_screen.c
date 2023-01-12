@@ -1,5 +1,5 @@
 /**********************************************************
- * Copyright 2008-2009 VMware, Inc.  All rights reserved.
+ * Copyright 2008-2023 VMware, Inc.  All rights reserved.
  *
  * Permission is hereby granted, free of charge, to any person
  * obtaining a copy of this software and associated documentation
@@ -250,12 +250,7 @@ svga_get_param(struct pipe_screen *screen, enum pipe_cap param)
       return MIN2(util_logbase2(result.u) + 1, SVGA_MAX_TEXTURE_LEVELS);
 
    case PIPE_CAP_MAX_TEXTURE_CUBE_LEVELS:
-      /*
-       * No mechanism to query the host, and at least limited to 2048x2048 on
-       * certain hardware.
-       */
-      return MIN2(util_last_bit(screen->get_param(screen, PIPE_CAP_MAX_TEXTURE_2D_SIZE)),
-                  12 /* 2048x2048 */);
+      return util_last_bit(screen->get_param(screen, PIPE_CAP_MAX_TEXTURE_2D_SIZE));
 
    case PIPE_CAP_MAX_TEXTURE_ARRAY_LAYERS:
       return sws->have_sm5 ? SVGA3D_SM5_MAX_SURFACE_ARRAYSIZE :

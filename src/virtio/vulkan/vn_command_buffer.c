@@ -84,7 +84,7 @@ vn_cmd_get_tmp_data(struct vn_command_buffer *cmd, size_t size)
    return cmd->builder.tmp.data;
 }
 
-static VkImageMemoryBarrier *
+static inline VkImageMemoryBarrier *
 vn_cmd_get_image_memory_barriers(struct vn_command_buffer *cmd,
                                  uint32_t count)
 {
@@ -2052,21 +2052,30 @@ vn_CmdPushDescriptorSetKHR(VkCommandBuffer commandBuffer,
                            uint32_t descriptorWriteCount,
                            const VkWriteDescriptorSet *pDescriptorWrites)
 {
-   struct vn_command_buffer *cmd =
-      vn_command_buffer_from_handle(commandBuffer);
-   struct vn_update_descriptor_sets *update =
-      vn_update_descriptor_sets_parse_writes(
-         descriptorWriteCount, pDescriptorWrites, &cmd->allocator, layout);
-   if (!update) {
-      cmd->state = VN_COMMAND_BUFFER_STATE_INVALID;
-      vn_log(cmd->device->instance, "descriptor set push ignored due to OOM");
-      return;
+   if (vn_should_sanitize_descriptor_set_writes(descriptorWriteCount,
+                                                pDescriptorWrites, layout)) {
+      struct vn_command_buffer *cmd =
+         vn_command_buffer_from_handle(commandBuffer);
+      struct vn_update_descriptor_sets *update =
+         vn_update_descriptor_sets_parse_writes(
+            descriptorWriteCount, pDescriptorWrites, &cmd->allocator, layout);
+      if (!update) {
+         cmd->state = VN_COMMAND_BUFFER_STATE_INVALID;
+         vn_log(cmd->device->instance,
+                "descriptor set push ignored due to OOM");
+         return;
+      }
+
+      VN_CMD_ENQUEUE(vkCmdPushDescriptorSetKHR, commandBuffer,
+                     pipelineBindPoint, layout, set, update->write_count,
+                     update->writes);
+
+      vk_free(&cmd->allocator, update);
+   } else {
+      VN_CMD_ENQUEUE(vkCmdPushDescriptorSetKHR, commandBuffer,
+                     pipelineBindPoint, layout, set, descriptorWriteCount,
+                     pDescriptorWrites);
    }
-
-   VN_CMD_ENQUEUE(vkCmdPushDescriptorSetKHR, commandBuffer, pipelineBindPoint,
-                  layout, set, update->write_count, update->writes);
-
-   vk_free(&cmd->allocator, update);
 }
 
 void

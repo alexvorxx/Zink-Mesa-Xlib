@@ -222,13 +222,13 @@ a630_gles_asan:
 
 a630_skqp:
   extends:
-    - .skqp-test
+    - .baremetal-deqp-test
     - .a630-test
+    # SKQP tests both the GL and VK drivers.
     - .freedreno-turnip-rules
   variables:
-    # Possible skqp backends: gl, gles, unitTest and vk
-    SKQP_BACKENDS: gl gles vk unitTest  # space separated values
-    VK_DRIVER: freedreno
+    HWCI_START_XORG: 1
+    DEQP_SUITE: freedreno-a630-skqp
 
 a630_vk:
   extends:

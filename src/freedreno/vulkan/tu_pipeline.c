@@ -1084,7 +1084,7 @@ tu6_vpc_varying_mode(const struct ir3_shader_variant *fs,
       }
    }
 
-   return shift;
+   return util_bitcount(compmask) * 2;
 }
 
 static void

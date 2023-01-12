@@ -375,8 +375,12 @@ agx_wrap_from_pipe(enum pipe_tex_wrap in)
       return AGX_WRAP_MIRRORED_REPEAT;
    case PIPE_TEX_WRAP_CLAMP_TO_BORDER:
       return AGX_WRAP_CLAMP_TO_BORDER;
+   case PIPE_TEX_WRAP_CLAMP:
+      return AGX_WRAP_CLAMP_GL;
+   case PIPE_TEX_WRAP_MIRROR_CLAMP_TO_EDGE:
+      return AGX_WRAP_MIRRORED_CLAMP_TO_EDGE;
    default:
-      unreachable("todo: more wrap modes");
+      unreachable("Invalid wrap mode");
    }
 }
 
@@ -587,9 +591,8 @@ agx_pack_texture(void *out, struct agx_resource *rsrc,
 
    util_format_compose_swizzles(format_swizzle, view_swizzle, out_swizzle);
 
-   /* Must tile array textures */
-   assert((rsrc->layout.tiling != AIL_TILING_LINEAR) ||
-          (state->u.tex.last_layer == state->u.tex.first_layer));
+   unsigned first_layer =
+      (state->target == PIPE_BUFFER) ? 0 : state->u.tex.first_layer;
 
    /* Pack the descriptor into GPU memory */
    agx_pack(out, TEXTURE, cfg) {
@@ -612,7 +615,7 @@ agx_pack_texture(void *out, struct agx_resource *rsrc,
 
       if (ail_is_compressed(&rsrc->layout)) {
          cfg.compressed_1 = true;
-         cfg.compressed_2 = true;
+         cfg.extended = true;
       }
 
       if (include_bo) {
@@ -620,7 +623,8 @@ agx_pack_texture(void *out, struct agx_resource *rsrc,
 
          if (ail_is_compressed(&rsrc->layout)) {
             cfg.acceleration_buffer =
-               cfg.address + rsrc->layout.metadata_offset_B;
+               agx_map_texture_gpu(rsrc, 0) + rsrc->layout.metadata_offset_B +
+               (first_layer * rsrc->layout.compression_layer_stride_B);
          }
       }
 
@@ -634,7 +638,15 @@ agx_pack_texture(void *out, struct agx_resource *rsrc,
              (state->target == PIPE_TEXTURE_CUBE_ARRAY))
             layers /= 6;
 
-         cfg.depth = layers;
+         if (rsrc->layout.tiling == AIL_TILING_LINEAR &&
+             state->target == PIPE_TEXTURE_2D_ARRAY) {
+            cfg.depth_linear = layers;
+            cfg.layer_stride_linear = (rsrc->layout.layer_stride_B - 0x80);
+            cfg.extended = true;
+         } else {
+            assert((rsrc->layout.tiling != AIL_TILING_LINEAR) || (layers == 1));
+            cfg.depth = layers;
+         }
       }
 
       if (rsrc->base.nr_samples > 1)
@@ -969,8 +981,11 @@ agx_batch_upload_pbe(struct agx_batch *batch, unsigned rt)
 
       if (ail_is_compressed(&tex->layout)) {
          cfg.compressed_1 = true;
-         cfg.compressed_2 = true;
-         cfg.acceleration_buffer = cfg.buffer + tex->layout.metadata_offset_B;
+         cfg.extended = true;
+
+         cfg.acceleration_buffer =
+            agx_map_texture_gpu(tex, 0) + tex->layout.metadata_offset_B +
+            (layer * tex->layout.compression_layer_stride_B);
       }
 
       if (tex->base.nr_samples > 1)
@@ -1912,7 +1927,6 @@ agx_encode_state(struct agx_batch *batch, uint8_t *out, bool is_lines,
                                       : is_lines ? AGX_OBJECT_TYPE_LINE
                                                  : AGX_OBJECT_TYPE_TRIANGLE;
 
-   /* For now, we re-emit almost all state every draw.  TODO: perf */
    struct agx_ppp_update ppp = agx_new_ppp_update(
       pool, (struct AGX_PPP_HEADER){
                .fragment_control = fragment_control_dirty,
@@ -2157,12 +2171,16 @@ agx_draw_vbo(struct pipe_context *pctx, const struct pipe_draw_info *info,
              const struct pipe_draw_indirect_info *indirect,
              const struct pipe_draw_start_count_bias *draws, unsigned num_draws)
 {
+   struct agx_context *ctx = agx_context(pctx);
+
+   if (unlikely(!agx_render_condition_check(ctx)))
+      return;
+
    if (num_draws > 1) {
       util_draw_multi(pctx, info, drawid_offset, indirect, draws, num_draws);
       return;
    }
 
-   struct agx_context *ctx = agx_context(pctx);
    struct agx_batch *batch = agx_get_batch(ctx);
 
 #ifndef NDEBUG

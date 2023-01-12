@@ -882,7 +882,7 @@ transition_color_buffer(struct anv_cmd_buffer *cmd_buffer,
           layer_count != VK_REMAINING_ARRAY_LAYERS);
    /* Ensure the subresource range is valid. */
    UNUSED uint64_t last_level_num = base_level + level_count;
-   const uint32_t max_depth = anv_minify(image->vk.extent.depth, base_level);
+   const uint32_t max_depth = u_minify(image->vk.extent.depth, base_level);
    UNUSED const uint32_t image_layers = MAX2(image->vk.array_layers, max_depth);
    assert((uint64_t)base_layer + layer_count  <= image_layers);
    assert(last_level_num <= image->vk.mip_levels);
@@ -1225,7 +1225,7 @@ anv_cmd_buffer_init_attachments(struct anv_cmd_buffer *cmd_buffer,
    /* Reserve one for the NULL state. */
    unsigned num_states = 1 + color_att_count;
    const struct isl_device *isl_dev = &cmd_buffer->device->isl_dev;
-   const uint32_t ss_stride = align_u32(isl_dev->ss.size, isl_dev->ss.align);
+   const uint32_t ss_stride = align(isl_dev->ss.size, isl_dev->ss.align);
    gfx->att_states =
       anv_state_stream_alloc(&cmd_buffer->surface_state_stream,
                              num_states * ss_stride, isl_dev->ss.align);
@@ -1952,7 +1952,7 @@ cmd_buffer_barrier(struct anv_cmd_buffer *cmd_buffer,
       uint32_t base_layer, layer_count;
       if (image->vk.image_type == VK_IMAGE_TYPE_3D) {
          base_layer = 0;
-         layer_count = anv_minify(image->vk.extent.depth, range->baseMipLevel);
+         layer_count = u_minify(image->vk.extent.depth, range->baseMipLevel);
       } else {
          base_layer = range->baseArrayLayer;
          layer_count = vk_image_subresource_layer_count(&image->vk, range);
@@ -2306,7 +2306,7 @@ emit_binding_table(struct anv_cmd_buffer *cmd_buffer,
 
                /* Align the range for consistency */
                if (desc->type == VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC)
-                  range = align_u32(range, ANV_UBO_ALIGNMENT);
+                  range = align(range, ANV_UBO_ALIGNMENT);
 
                struct anv_address address =
                   anv_address_add(desc->buffer->address, offset);
@@ -2655,7 +2655,7 @@ get_push_range_bound_size(struct anv_cmd_buffer *cmd_buffer,
          uint32_t bound_range = MIN2(desc->range, desc->buffer->vk.size - offset);
 
          /* Align the range for consistency */
-         bound_range = align_u32(bound_range, ANV_UBO_ALIGNMENT);
+         bound_range = align(bound_range, ANV_UBO_ALIGNMENT);
 
          return bound_range;
       }
@@ -3043,17 +3043,6 @@ cmd_buffer_emit_depth_viewport(struct anv_cmd_buffer *cmd_buffer,
    }
 }
 
-static int64_t
-clamp_int64(int64_t x, int64_t min, int64_t max)
-{
-   if (x < min)
-      return min;
-   else if (x < max)
-      return x;
-   else
-      return max;
-}
-
 static void
 cmd_buffer_emit_scissor(struct anv_cmd_buffer *cmd_buffer)
 {
@@ -3099,17 +3088,17 @@ cmd_buffer_emit_scissor(struct anv_cmd_buffer *cmd_buffer)
       int64_t x_max = MIN2(s->offset.x + s->extent.width - 1,
                        vp->x + vp->width - 1);
 
-      y_max = clamp_int64(y_max, 0, INT16_MAX >> 1);
-      x_max = clamp_int64(x_max, 0, INT16_MAX >> 1);
+      y_max = CLAMP(y_max, 0, INT16_MAX >> 1);
+      x_max = CLAMP(x_max, 0, INT16_MAX >> 1);
 
       /* Do this math using int64_t so overflow gets clamped correctly. */
       if (cmd_buffer->vk.level == VK_COMMAND_BUFFER_LEVEL_PRIMARY) {
-         y_min = clamp_int64((uint64_t) y_min, gfx->render_area.offset.y, max);
-         x_min = clamp_int64((uint64_t) x_min, gfx->render_area.offset.x, max);
-         y_max = clamp_int64((uint64_t) y_max, 0,
+         y_min = CLAMP((uint64_t) y_min, gfx->render_area.offset.y, max);
+         x_min = CLAMP((uint64_t) x_min, gfx->render_area.offset.x, max);
+         y_max = CLAMP((uint64_t) y_max, 0,
                              gfx->render_area.offset.y +
                              gfx->render_area.extent.height - 1);
-         x_max = clamp_int64((uint64_t) x_max, 0,
+         x_max = CLAMP((uint64_t) x_max, 0,
                              gfx->render_area.offset.x +
                              gfx->render_area.extent.width - 1);
       }
@@ -5517,6 +5506,9 @@ cmd_buffer_mark_attachment_written(struct anv_cmd_buffer *cmd_buffer,
    struct anv_cmd_graphics_state *gfx = &cmd_buffer->state.gfx;
    const struct anv_image_view *iview = att->iview;
 
+   if (iview == NULL)
+      return;
+
    if (gfx->view_mask == 0) {
       genX(cmd_buffer_mark_image_written)(cmd_buffer, iview->image,
                                           aspect, att->aux_usage,
@@ -5631,9 +5623,6 @@ void genX(CmdEndRendering)(
 
    bool has_color_resolve = false;
    for (uint32_t i = 0; i < gfx->color_att_count; i++) {
-      if (gfx->color_att[i].iview == NULL)
-         continue;
-
       cmd_buffer_mark_attachment_written(cmd_buffer, &gfx->color_att[i],
                                          VK_IMAGE_ASPECT_COLOR_BIT);
 
@@ -5643,15 +5632,11 @@ void genX(CmdEndRendering)(
          has_color_resolve = true;
    }
 
-   if (gfx->depth_att.iview != NULL) {
-      cmd_buffer_mark_attachment_written(cmd_buffer, &gfx->depth_att,
-                                         VK_IMAGE_ASPECT_DEPTH_BIT);
-   }
+   cmd_buffer_mark_attachment_written(cmd_buffer, &gfx->depth_att,
+                                      VK_IMAGE_ASPECT_DEPTH_BIT);
 
-   if (gfx->stencil_att.iview != NULL) {
-      cmd_buffer_mark_attachment_written(cmd_buffer, &gfx->stencil_att,
-                                         VK_IMAGE_ASPECT_STENCIL_BIT);
-   }
+   cmd_buffer_mark_attachment_written(cmd_buffer, &gfx->stencil_att,
+                                      VK_IMAGE_ASPECT_STENCIL_BIT);
 
    if (has_color_resolve) {
       /* We are about to do some MSAA resolves.  We need to flush so that the
@@ -6032,16 +6017,33 @@ VkResult genX(CmdSetPerformanceStreamMarkerINTEL)(
 void genX(cmd_emit_timestamp)(struct anv_batch *batch,
                               struct anv_device *device,
                               struct anv_address addr,
-                              bool end_of_pipe) {
-   if (end_of_pipe) {
+                              enum anv_timestamp_capture_type type) {
+   switch (type) {
+   case ANV_TIMESTAMP_CAPTURE_TOP_OF_PIPE: {
+      struct mi_builder b;
+      mi_builder_init(&b, device->info, batch);
+      mi_store(&b, mi_mem64(addr), mi_reg64(TIMESTAMP));
+      break;
+   }
+
+   case ANV_TIMESTAMP_CAPTURE_END_OF_PIPE:
       anv_batch_emit(batch, GENX(PIPE_CONTROL), pc) {
          pc.PostSyncOperation   = WriteTimestamp;
          pc.Address             = addr;
          anv_debug_dump_pc(pc);
       }
-   } else {
-      struct mi_builder b;
-      mi_builder_init(&b, device->info, batch);
-      mi_store(&b, mi_mem64(addr), mi_reg64(TIMESTAMP));
+      break;
+
+   case ANV_TIMESTAMP_CAPTURE_AT_CS_STALL:
+      anv_batch_emit(batch, GENX(PIPE_CONTROL), pc) {
+         pc.CommandStreamerStallEnable = true;
+         pc.PostSyncOperation    = WriteTimestamp;
+         pc.Address              = addr;
+         anv_debug_dump_pc(pc);
+      }
+      break;
+
+   default:
+      unreachable("invalid");
    }
 }

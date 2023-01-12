@@ -253,7 +253,7 @@ zink_get_gfx_pipeline(struct zink_context *ctx,
           !ctx->gfx_pipeline_state.render_pass &&
           /* TODO: is sample shading even possible to handle with GPL? */
           !ctx->gfx_stages[MESA_SHADER_FRAGMENT]->nir->info.fs.uses_sample_shading &&
-          !zink_get_fs_key(ctx)->fbfetch_ms &&
+          !zink_get_fs_base_key(ctx)->fbfetch_ms &&
           !ctx->gfx_pipeline_state.force_persample_interp &&
           !ctx->gfx_pipeline_state.min_samples) {
          /* this is the graphics pipeline library path: find/construct all partial pipelines */

@@ -1654,7 +1654,7 @@ create_rt_shader(struct radv_device *device, const VkRayTracingPipelineCreateInf
    nir_pop_loop(&b, loop);
 
    if (radv_rt_pipeline_has_dynamic_stack_size(pCreateInfo))
-      b.shader->scratch_size = 16; /* To enable scratch. */
+      b.shader->scratch_size = 4; /* To enable scratch. */
    else
       b.shader->scratch_size += compute_rt_stack_size(pCreateInfo, stack_sizes);
 

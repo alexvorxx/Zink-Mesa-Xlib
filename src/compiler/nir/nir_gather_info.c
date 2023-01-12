@@ -870,6 +870,11 @@ gather_intrinsic_info(nir_intrinsic_instr *instr, nir_shader *shader,
       shader->info.uses_memory_barrier = true;
       break;
 
+   case nir_intrinsic_store_zs_agx:
+      shader->info.outputs_written |= BITFIELD64_BIT(FRAG_RESULT_DEPTH) |
+                                      BITFIELD64_BIT(FRAG_RESULT_STENCIL);
+      break;
+
    default:
       shader->info.uses_bindless |= intrinsic_is_bindless(instr);
       if (nir_intrinsic_writes_external_memory(instr))

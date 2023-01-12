@@ -432,6 +432,18 @@ parse_delay_alu(wait_ctx& ctx, alu_delay_info& delay, Instruction* instr)
       else if (wait >= alu_delay_wait::SALU_CYCLE_1)
          delay.salu_cycles = imm[i] - (uint32_t)alu_delay_wait::SALU_CYCLE_1 + 1;
    }
+
+   for (std::pair<const PhysReg, wait_entry>& e : ctx.gpr_map) {
+      wait_entry& entry = e.second;
+
+      if (delay.valu_instrs <= entry.delay.valu_instrs)
+         delay.valu_cycles = std::max(delay.valu_cycles, entry.delay.valu_cycles);
+      if (delay.trans_instrs <= entry.delay.trans_instrs)
+         delay.trans_cycles = std::max(delay.trans_cycles, entry.delay.trans_cycles);
+      if (delay.salu_cycles <= entry.delay.salu_cycles)
+         delay.salu_cycles = std::max(delay.salu_cycles, entry.delay.salu_cycles);
+   }
+
    return true;
 }
 
@@ -1084,6 +1096,33 @@ insert_wait_states(Program* program)
       handle_block(program, current, ctx);
 
       out_ctx[current.index] = std::move(ctx);
+   }
+
+   /* Combine s_delay_alu using the skip field. */
+   if (program->gfx_level >= GFX11) {
+      for (Block& block : program->blocks) {
+         int i = 0;
+         int prev_delay_alu = -1;
+         for (aco_ptr<Instruction>& instr : block.instructions) {
+            if (instr->opcode != aco_opcode::s_delay_alu) {
+               block.instructions[i++] = std::move(instr);
+               continue;
+            }
+
+            uint16_t imm = instr->sopp().imm;
+            int skip = i - prev_delay_alu - 1;
+            if (imm >> 7 || prev_delay_alu < 0 || skip >= 6) {
+               if (imm >> 7 == 0)
+                  prev_delay_alu = i;
+               block.instructions[i++] = std::move(instr);
+               continue;
+            }
+
+            block.instructions[prev_delay_alu]->sopp().imm |= (skip << 4) | (imm << 7);
+            prev_delay_alu = -1;
+         }
+         block.instructions.resize(i);
+      }
    }
 }
 

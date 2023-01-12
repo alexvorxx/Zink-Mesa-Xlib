@@ -1853,7 +1853,8 @@ uint64_t *v3d_compile(const struct v3d_compiler *compiler,
                  */
                 if (c->compilation_result == V3D_COMPILATION_SUCCEEDED) {
                         if (c->spills == 0 ||
-                            strategies[strat].min_threads == 4) {
+                            strategies[strat].min_threads == 4 ||
+                            V3D_DBG(OPT_COMPILE_TIME)) {
                                 best_c = c;
                                 break;
                         } else if (c->spills + c->fills <

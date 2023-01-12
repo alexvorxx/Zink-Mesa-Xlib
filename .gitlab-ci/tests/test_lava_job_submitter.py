@@ -300,7 +300,7 @@ def test_parse_job_result_from_log(message, expectation, mock_proxy):
 def test_full_yaml_log(mock_proxy, frozen_time):
     import random
 
-    import yaml
+    from lavacli.utils import flow_yaml as lava_yaml
 
     def time_travel_from_log_chunk(data_chunk):
         if not data_chunk:
@@ -319,7 +319,7 @@ def test_full_yaml_log(mock_proxy, frozen_time):
         # the same of from the job submitter execution
         with open("/tmp/log.yaml", "r") as f:
             first_log = f.readline()
-            first_log_time = yaml.safe_load(first_log)[0]["dt"]
+            first_log_time = lava_yaml.load(first_log)[0]["dt"]
             frozen_time.move_to(first_log_time)
 
     def load_lines() -> list:

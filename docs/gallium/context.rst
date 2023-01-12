@@ -699,6 +699,11 @@ the box region, not the beginning of the resource. If transfer_map fails,
 the returned pointer to the buffer memory is NULL, and the pointer
 to the transfer object remains unchanged (i.e. it can be non-NULL).
 
+When mapping an MSAA surface, the samples are implicitly resolved to
+single-sampled for reads (returning the first sample for depth/stencil/integer,
+averaged for others).  See u_transfer_helper's U_TRANSFER_HELPER_MSAA_MAP for a
+way to get that behavior using a resolve blit.
+
 ``transfer_unmap`` remove the memory mapping for and destroy
 the transfer object. The pointer into the resource should be considered
 invalid and discarded.

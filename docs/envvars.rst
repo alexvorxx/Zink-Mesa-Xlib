@@ -30,11 +30,6 @@ LibGL environment variables
    if set to ``true``, do not use DrawArrays GLX protocol (for
    debugging)
 
-.. envvar:: LIBGL_SHOW_FPS
-
-   print framerate to stdout based on the number of ``glXSwapBuffers``
-   calls per second.
-
 .. envvar:: LIBGL_DRI2_DISABLE
 
    disable DRI2 if set to ``true``.
@@ -205,6 +200,12 @@ Core Mesa environment variables
 
    if set to ``true``, keeps hit/miss statistics for the shader cache.
    These statistics are printed when the app terminates.
+
+.. envvar:: MESA_DISK_CACHE_COMBINE_RW_WITH_RO_FOZ
+
+   if set to 1, enables simultaneous use of rw and ro fossilize db caches.
+   At first data will be retrieved from the read-only foz cache. If data
+   isn't found in the ro cache, then it will be retrieved from the rw cache.
 
 .. envvar:: MESA_GLSL
 
@@ -871,6 +872,19 @@ VC4 driver environment variables
    a comma-separated list of named flags, which do various things. Use
    ``VC4_DEBUG=help`` to print a list of available options.
 
+Shared Vulkan driver environment variables
+------------------------------------------
+
+.. envvar:: MESA_VK_MEMORY_TRACE
+   enable memory tracing and exporting RMV captures (requires the
+   ``scripts/setup.sh`` script in the Radeon Developer Tools folder to be
+   run beforehand). ``MESA_VK_MEMORY_TRACE=n`` dumps data
+   after n frames. Currently, only RADV implements this.
+.. envvar:: MESA_VK_MEMORY_TRACE_TRIGGER
+   enable trigger file-based memory tracing. (e.g.
+   ``export MESA_VK_MEMORY_TRACE_TRIGGER=/tmp/memory_trigger`` and then
+   ``touch /tmp/memory_trigger`` to capture a memory trace).
+   Running ``scripts/setup.sh`` beforehand is required.
 
 V3D/V3DV driver environment variables
 -------------------------------------
@@ -941,8 +955,6 @@ RADV driver environment variables
       disable NGG for GFX10 and GFX10.3
    ``nonggc``
       disable NGG culling on GPUs where it's enabled by default (GFX10.3+ only).
-   ``nooutoforder``
-      disable out-of-order rasterization
    ``notccompatcmask``
       disable TC-compat CMASK for MSAA surfaces
    ``noumr``
@@ -1443,12 +1455,10 @@ Asahi driver environment variables
 PowerVR driver environment variables
 ------------------------------------------------
 
-:envvar:`PVR_DEBUG`
-    A comma-separated list of debug options. Use `PVR_DEBUG=help` to
-    print a list of available options.
+.. envvar:: PVR_DEBUG
 
-Other Gallium drivers have their own environment variables. These may
-change frequently so the source code should be consulted for details.
+   A comma-separated list of debug options. Use `PVR_DEBUG=help` to
+   print a list of available options.
 
 i915 driver environment variables
 ---------------------------------
@@ -1471,3 +1481,8 @@ Freedreno driver environment variables
 .. envvar:: FD_MESA_DEBUG
 
    Debug flags for the Freedreno driver.
+
+----
+
+Other Gallium drivers have their own environment variables. These may
+change frequently so the source code should be consulted for details.

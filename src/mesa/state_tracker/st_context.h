@@ -206,6 +206,7 @@ struct st_context
    boolean draw_needs_minmax_index;
    boolean has_hw_atomics;
 
+   boolean validate_all_dirty_states;
 
    /* driver supports scissored clears */
    boolean can_scissor_clear;

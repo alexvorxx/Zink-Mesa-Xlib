@@ -86,21 +86,6 @@ v3d-rpi4-piglit:armhf:
     PIGLIT_PLATFORM: mixed_glx_egl
     PIGLIT_PROFILES: all
 
-.v3d-rpi4-test:armhf:
-  extends:
-    - .baremetal-test-armhf
-    - .v3d-rules
-  variables:
-    HWCI_TEST_SCRIPT: "/install/deqp-runner.sh"
-    BM_BOOTFS: /boot/raspberrypi_armhf
-    FLAKES_CHANNEL: "#videocore-ci"
-    GPU_VERSION: broadcom-rpi4
-    HWCI_KERNEL_MODULES: v3d,vc4
-  script:
-    - ./install/bare-metal/poe-powered.sh
-  tags:
-    - igalia-rpi4
-
 v3d-rpi4-traces:arm64:
   extends:
     - .piglit-traces-test

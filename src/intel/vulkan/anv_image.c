@@ -133,7 +133,7 @@ image_binding_grow(const struct anv_device *device,
       &image->bindings[binding].memory_range;
 
    if (has_implicit_offset) {
-      offset = align_u64(container->offset + container->size, alignment);
+      offset = align64(container->offset + container->size, alignment);
    } else {
       /* Offset must be validated because it comes from
        * VkImageDrmFormatModifierExplicitCreateInfoEXT.
@@ -599,7 +599,7 @@ add_aux_state_tracking_buffer(struct anv_device *device,
    if (image->planes[plane].aux_usage == ISL_AUX_USAGE_CCS_E) {
       if (image->vk.image_type == VK_IMAGE_TYPE_3D) {
          for (uint32_t l = 0; l < image->vk.mip_levels; l++)
-            state_size += anv_minify(image->vk.extent.depth, l) * 4;
+            state_size += u_minify(image->vk.extent.depth, l) * 4;
       } else {
          state_size += image->vk.mip_levels * image->vk.array_layers * 4;
       }
@@ -1942,8 +1942,8 @@ void anv_GetImageSubresourceLayout(
                                           0 /* logical_z_offset_px */,
                                           &offset_B, NULL, NULL);
       layout->offset += offset_B;
-      layout->size = layout->rowPitch * anv_minify(image->vk.extent.height,
-                                                   subresource->mipLevel) *
+      layout->size = layout->rowPitch * u_minify(image->vk.extent.height,
+                                                 subresource->mipLevel) *
                      image->vk.extent.depth;
    } else {
       layout->size = surface->memory_range.size;

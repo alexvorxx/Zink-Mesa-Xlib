@@ -355,7 +355,7 @@ st_feedback_draw_vbo(struct gl_context *ctx,
       struct pipe_image_view *img = &images[i];
 
       st_convert_image_from_unit(st, img, prog->sh.ImageUnits[i],
-                                 prog->sh.ImageAccess[i]);
+                                 prog->sh.image_access[i]);
 
       struct pipe_resource *res = img->resource;
       if (!res)

@@ -272,11 +272,11 @@ static void transform_TRUNC(struct radeon_compiler* c,
 	 
 	struct rc_src_register abs;
 	
-	if (c->is_r500) {
+	if (c->is_r500 || c->type == RC_FRAGMENT_PROGRAM) {
 		abs = absolute(inst->U.I.SrcReg[0]);
 	} else {
-		/* abs isn't free on r300/r400, so we want
-		 * to avoid doing it twice
+		/* abs isn't free on r300's and r400's vertex shader,
+		 *  so we want to avoid doing it twice
 		 */
 		int tmp = rc_find_free_temporary(c);
 

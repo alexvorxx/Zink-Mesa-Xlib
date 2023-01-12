@@ -61,6 +61,8 @@ struct radv_ps_epilog_key {
    uint8_t enable_mrt_output_nan_fixup;
 
    bool mrt0_is_dual_src;
+
+   uint8_t need_src_alpha; /* XXX: Remove this when color blend equations are dynamic! */
 };
 
 struct radv_pipeline_key {
@@ -100,7 +102,6 @@ struct radv_pipeline_key {
    struct {
       struct radv_ps_epilog_key epilog;
 
-      uint32_t cb_target_mask;
       uint8_t num_samples;
       bool sample_shading_enable;
 
@@ -110,6 +111,7 @@ struct radv_pipeline_key {
       /* Used to export alpha through MRTZ for alpha-to-coverage (GFX11+). */
       bool alpha_to_coverage_via_mrtz;
 
+      bool dynamic_ps_epilog;
       bool has_epilog;
    } ps;
 
@@ -517,6 +519,7 @@ struct radv_shader_part {
    uint32_t rsrc1;
    uint8_t num_preserved_sgprs;
    bool nontrivial_divisors;
+   uint32_t spi_shader_col_format;
 
    struct radv_shader_part_binary *binary;
 

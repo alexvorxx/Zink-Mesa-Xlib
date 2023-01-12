@@ -183,13 +183,13 @@ debian-build-testing:
       -D spirv-to-dxil=true
       -D osmesa=true
       -D tools=drm-shim,etnaviv,freedreno,glsl,intel,intel-ui,nir,nouveau,lima,panfrost,asahi
+      -D b_lto=true
     LLVM_VERSION: 13
   script:
     - .gitlab-ci/lava/lava-pytest.sh
     - .gitlab-ci/run-shellcheck.sh
     - .gitlab-ci/run-yamllint.sh
     - .gitlab-ci/meson/build.sh
-    - EXTRA_OPTION="${EXTRA_OPTION} -D b_lto=true" .gitlab-ci/meson/build.sh
     - .gitlab-ci/run-shader-db.sh
 
 # Test a release build with -Werror so new warnings don't sneak in.
@@ -362,7 +362,7 @@ debian-android:
       -D glx=dri
       -D gbm=enabled
       -D egl=enabled
-      -D platforms=x11
+      -D platforms=x11,wayland
       -D osmesa=false
     GALLIUM_ST: >
       -D dri3=enabled

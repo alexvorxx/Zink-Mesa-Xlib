@@ -505,4 +505,15 @@ uint16_t agx_get_oq_index(struct agx_batch *batch, struct agx_query *query);
 
 void agx_finish_batch_occlusion_queries(struct agx_batch *batch);
 
+bool agx_render_condition_check_inner(struct agx_context *ctx);
+
+static inline bool
+agx_render_condition_check(struct agx_context *ctx)
+{
+   if (likely(!ctx->cond_query))
+      return true;
+   else
+      return agx_render_condition_check_inner(ctx);
+}
+
 #endif

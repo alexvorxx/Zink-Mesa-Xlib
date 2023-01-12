@@ -30,9 +30,7 @@ static nir_ssa_def *
 tib_impl(nir_builder *b, nir_instr *instr, void *data)
 {
    struct agx_tilebuffer_layout *tib = data;
-
    nir_intrinsic_instr *intr = nir_instr_as_intrinsic(instr);
-   nir_ssa_def *sample_mask = nir_imm_intN_t(b, ALL_SAMPLES, 16); /* TODO */
 
    nir_io_semantics sem = nir_intrinsic_io_semantics(intr);
    unsigned rt = sem.location - FRAG_RESULT_DATA0;
@@ -53,7 +51,8 @@ tib_impl(nir_builder *b, nir_instr *instr, void *data)
       value = nir_trim_vector(b, intr->src[0].ssa, comps);
 
       nir_store_local_pixel_agx(
-         b, value, sample_mask, .base = tib->offset_B[rt],
+         b, value, nir_imm_intN_t(b, ALL_SAMPLES, 16),
+         .base = tib->offset_B[rt],
          .write_mask = nir_intrinsic_write_mask(intr) & BITFIELD_MASK(comps),
          .format = format);
 
@@ -74,8 +73,9 @@ tib_impl(nir_builder *b, nir_instr *instr, void *data)
          format = PIPE_FORMAT_R16_UINT;
 
       nir_ssa_def *res = nir_load_local_pixel_agx(
-         b, MIN2(intr->num_components, comps), f16 ? 16 : bit_size, sample_mask,
-         .base = tib->offset_B[rt], .format = format);
+         b, MIN2(intr->num_components, comps), f16 ? 16 : bit_size,
+         nir_imm_intN_t(b, ALL_SAMPLES, 16), .base = tib->offset_B[rt],
+         .format = format);
 
       /* Extend floats */
       if (f16 && nir_dest_bit_size(intr->dest) != 16) {

@@ -284,68 +284,12 @@ align_down_npot_u32(uint32_t v, uint32_t a)
    return v - (v % a);
 }
 
-static inline uint32_t
-align_down_u32(uint32_t v, uint32_t a)
-{
-   assert(a != 0 && a == (a & -a));
-   return v & ~(a - 1);
-}
-
-static inline uint32_t
-align_u32(uint32_t v, uint32_t a)
-{
-   assert(a != 0 && a == (a & -a));
-   return align_down_u32(v + a - 1, a);
-}
-
-static inline uint64_t
-align_down_u64(uint64_t v, uint64_t a)
-{
-   assert(a != 0 && a == (a & -a));
-   return v & ~(a - 1);
-}
-
-static inline uint64_t
-align_u64(uint64_t v, uint64_t a)
-{
-   return align_down_u64(v + a - 1, a);
-}
-
-static inline int32_t
-align_i32(int32_t v, int32_t a)
-{
-   assert(a != 0 && a == (a & -a));
-   return (v + a - 1) & ~(a - 1);
-}
-
 /** Alignment must be a power of 2. */
 static inline bool
 anv_is_aligned(uintmax_t n, uintmax_t a)
 {
    assert(a == (a & -a));
    return (n & (a - 1)) == 0;
-}
-
-static inline uint32_t
-anv_minify(uint32_t n, uint32_t levels)
-{
-   if (unlikely(n == 0))
-      return 0;
-   else
-      return MAX2(n >> levels, 1);
-}
-
-static inline float
-anv_clamp_f(float f, float min, float max)
-{
-   assert(min < max);
-
-   if (f > max)
-      return max;
-   else if (f < min)
-      return min;
-   else
-      return f;
 }
 
 static inline union isl_color_value
@@ -898,6 +842,12 @@ struct anv_memregion {
    uint64_t available;
 };
 
+enum anv_timestamp_capture_type {
+    ANV_TIMESTAMP_CAPTURE_TOP_OF_PIPE,
+    ANV_TIMESTAMP_CAPTURE_END_OF_PIPE,
+    ANV_TIMESTAMP_CAPTURE_AT_CS_STALL,
+};
+
 struct anv_physical_device {
     struct vk_physical_device                   vk;
 
@@ -987,7 +937,7 @@ struct anv_physical_device {
     int64_t                                     master_minor;
     struct intel_query_engine_info *            engine_info;
 
-    void (*cmd_emit_timestamp)(struct anv_batch *, struct anv_device *, struct anv_address, bool);
+    void (*cmd_emit_timestamp)(struct anv_batch *, struct anv_device *, struct anv_address, enum anv_timestamp_capture_type);
     struct intel_measure_device                 measure_device;
 };
 
@@ -2429,7 +2379,7 @@ anv_gfx8_9_vb_cache_range_needs_workaround(struct anv_vb_cache_range *bound,
 
    /* Align everything to a cache line */
    bound->start &= ~(64ull - 1ull);
-   bound->end = align_u64(bound->end, 64);
+   bound->end = align64(bound->end, 64);
 
    /* Compute the dirty range */
    dirty->start = MIN2(dirty->start, bound->start);

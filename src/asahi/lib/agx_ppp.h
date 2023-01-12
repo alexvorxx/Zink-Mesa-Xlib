@@ -24,6 +24,7 @@
 #define AGX_PPP_H
 
 #include "asahi/lib/agx_pack.h"
+#include "pool.h"
 
 /* Opaque structure representing a PPP update */
 struct agx_ppp_update {

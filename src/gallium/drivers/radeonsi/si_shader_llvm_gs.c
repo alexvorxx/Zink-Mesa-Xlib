@@ -449,7 +449,7 @@ struct si_shader *si_generate_gs_copy_shader(struct si_screen *sscreen,
       shader->info.vs_output_param_mask |= BITFIELD64_BIT(i);
    }
 
-   si_llvm_context_init(&ctx, sscreen, compiler, shader->wave_size);
+   si_llvm_context_init(&ctx, sscreen, compiler, shader->wave_size, false, false);
    ctx.shader = shader;
    ctx.stage = MESA_SHADER_VERTEX;
    ctx.so = *so;

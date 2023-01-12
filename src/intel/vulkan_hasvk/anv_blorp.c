@@ -1018,12 +1018,12 @@ void anv_CmdClearColorImage(
 
       for (uint32_t i = 0; i < level_count; i++) {
          const unsigned level = pRanges[r].baseMipLevel + i;
-         const unsigned level_width = anv_minify(image->vk.extent.width, level);
-         const unsigned level_height = anv_minify(image->vk.extent.height, level);
+         const unsigned level_width = u_minify(image->vk.extent.width, level);
+         const unsigned level_height = u_minify(image->vk.extent.height, level);
 
          if (image->vk.image_type == VK_IMAGE_TYPE_3D) {
             base_layer = 0;
-            layer_count = anv_minify(image->vk.extent.depth, level);
+            layer_count = u_minify(image->vk.extent.depth, level);
          }
 
          anv_cmd_buffer_mark_image_written(cmd_buffer, image,
@@ -1097,11 +1097,11 @@ void anv_CmdClearDepthStencilImage(
 
       for (uint32_t i = 0; i < level_count; i++) {
          const unsigned level = pRanges[r].baseMipLevel + i;
-         const unsigned level_width = anv_minify(image->vk.extent.width, level);
-         const unsigned level_height = anv_minify(image->vk.extent.height, level);
+         const unsigned level_width = u_minify(image->vk.extent.width, level);
+         const unsigned level_height = u_minify(image->vk.extent.height, level);
 
          if (image->vk.image_type == VK_IMAGE_TYPE_3D)
-            layer_count = anv_minify(image->vk.extent.depth, level);
+            layer_count = u_minify(image->vk.extent.depth, level);
 
          blorp_clear_depth_stencil(&batch, &depth, &stencil,
                                    level, base_layer, layer_count,
@@ -1883,8 +1883,8 @@ anv_image_ccs_op(struct anv_cmd_buffer *cmd_buffer,
                                 image->planes[plane].aux_usage,
                                 &surf);
 
-   uint32_t level_width = anv_minify(surf.surf->logical_level0_px.w, level);
-   uint32_t level_height = anv_minify(surf.surf->logical_level0_px.h, level);
+   uint32_t level_width = u_minify(surf.surf->logical_level0_px.w, level);
+   uint32_t level_height = u_minify(surf.surf->logical_level0_px.h, level);
 
    /* Blorp will store the clear color for us if we provide the clear color
     * address and we are doing a fast clear. So we save the clear value into

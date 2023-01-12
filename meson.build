@@ -448,8 +448,7 @@ if with_platform_x11
 endif
 if with_platform_windows
   c_args += '-DVK_USE_PLATFORM_WIN32_KHR'
-  #add this once aco and other places can build with it
-  #cpp_args += '-DVK_USE_PLATFORM_WIN32_KHR'
+  cpp_args += '-DVK_USE_PLATFORM_WIN32_KHR'
 endif
 if with_platform_android
   c_args += '-DVK_USE_PLATFORM_ANDROID_KHR'

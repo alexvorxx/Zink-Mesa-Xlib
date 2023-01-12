@@ -1376,7 +1376,7 @@ zink_resource_get_param(struct pipe_screen *pscreen, struct pipe_context *pctx,
    switch (param) {
    case PIPE_RESOURCE_PARAM_NPLANES:
       if (screen->info.have_EXT_image_drm_format_modifier)
-         *value = util_format_get_num_planes(res->drm_format);
+         *value = screen->base.get_dmabuf_modifier_planes(&screen->base, obj->modifier, res->internal_format);
       else
          *value = 1;
       break;
@@ -1562,7 +1562,6 @@ zink_resource_from_handle(struct pipe_screen *pscreen,
    struct pipe_resource *pres = resource_create(pscreen, &templ2, whandle, usage, &modifier, modifier_count, NULL);
    if (pres) {
       struct zink_resource *res = zink_resource(pres);
-      res->drm_format = whandle->format;
       if (pres->target != PIPE_BUFFER)
          res->valid = true;
       else
@@ -2373,6 +2372,7 @@ zink_screen_resource_init(struct pipe_screen *pscreen)
    pscreen->transfer_helper = u_transfer_helper_create(&transfer_vtbl,
       U_TRANSFER_HELPER_SEPARATE_Z32S8 | U_TRANSFER_HELPER_SEPARATE_STENCIL |
       U_TRANSFER_HELPER_INTERLEAVE_IN_PLACE |
+      U_TRANSFER_HELPER_MSAA_MAP |
       (!screen->have_D24_UNORM_S8_UINT ? U_TRANSFER_HELPER_Z24_IN_Z32F : 0));
 
    if (screen->info.have_KHR_external_memory_fd || screen->info.have_KHR_external_memory_win32) {

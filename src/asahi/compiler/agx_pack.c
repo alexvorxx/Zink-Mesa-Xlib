@@ -445,6 +445,15 @@ agx_pack_instr(struct util_dynarray *emission, struct util_dynarray *fixups,
       break;
    }
 
+   case AGX_OPCODE_WAIT: {
+      uint64_t raw =
+         agx_opcodes_info[I->op].encoding.exact | (I->scoreboard << 8);
+
+      unsigned size = 2;
+      memcpy(util_dynarray_grow_bytes(emission, 1, size), &raw, size);
+      break;
+   }
+
    case AGX_OPCODE_ITER:
    case AGX_OPCODE_LDCF: {
       bool flat = (I->op == AGX_OPCODE_LDCF);
@@ -505,9 +514,11 @@ agx_pack_instr(struct util_dynarray *emission, struct util_dynarray *fixups,
    }
 
    case AGX_OPCODE_DEVICE_LOAD:
+   case AGX_OPCODE_DEVICE_STORE:
    case AGX_OPCODE_UNIFORM_STORE: {
+      bool is_device_store = I->op == AGX_OPCODE_DEVICE_STORE;
       bool is_uniform_store = I->op == AGX_OPCODE_UNIFORM_STORE;
-      bool is_store = is_uniform_store;
+      bool is_store = is_device_store || is_uniform_store;
       bool has_base = !is_uniform_store;
 
       /* Uniform stores internally packed as 16-bit. Fix up the format, mask,
@@ -523,11 +534,13 @@ agx_pack_instr(struct util_dynarray *emission, struct util_dynarray *fixups,
          reg.size = AGX_SIZE_16;
       }
 
+      unsigned offset_src = (has_base ? 1 : 0) + (is_store ? 1 : 0);
+
       bool Rt, At = false, Ot;
       unsigned R = agx_pack_memory_reg(reg, &Rt);
-      unsigned A = has_base ? agx_pack_memory_base(I->src[0], &At) : 0;
-      unsigned O = agx_pack_memory_index(
-         I->src[(has_base ? 1 : 0) + (is_store ? 1 : 0)], &Ot);
+      unsigned A =
+         has_base ? agx_pack_memory_base(I->src[is_store ? 1 : 0], &At) : 0;
+      unsigned O = agx_pack_memory_index(I->src[offset_src], &Ot);
       unsigned u1 = is_uniform_store ? 0 : 1; // XXX
       unsigned u3 = 0;
       unsigned u4 = is_uniform_store ? 0 : 4; // XXX
@@ -541,7 +554,7 @@ agx_pack_instr(struct util_dynarray *emission, struct util_dynarray *fixups,
          agx_opcodes_info[I->op].encoding.exact |
          ((format & BITFIELD_MASK(3)) << 7) | ((R & BITFIELD_MASK(6)) << 10) |
          ((A & BITFIELD_MASK(4)) << 16) | ((O & BITFIELD_MASK(4)) << 20) |
-         (Ot ? (1 << 24) : 0) | (I->src[1].abs ? (1 << 25) : 0) |
+         (Ot ? (1 << 24) : 0) | (I->src[offset_src].abs ? (1 << 25) : 0) |
          (is_uniform_store ? (2 << 25) : 0) | (u1 << 26) | (At << 27) |
          (u3 << 28) | (I->scoreboard << 30) |
          (((uint64_t)((O >> 4) & BITFIELD_MASK(4))) << 32) |
@@ -577,7 +590,6 @@ agx_pack_instr(struct util_dynarray *emission, struct util_dynarray *fixups,
       unsigned q2 = 0;   // XXX
       unsigned q3 = 12;  // XXX
       unsigned kill = 0; // helper invocation kill bit
-      unsigned q5 = 0;   // XXX
       unsigned q6 = 0;   // XXX
 
       uint32_t extend = ((U & BITFIELD_MASK(5)) << 0) | (kill << 5) |
@@ -587,7 +599,6 @@ agx_pack_instr(struct util_dynarray *emission, struct util_dynarray *fixups,
                         (I->offset << 27) | ((S >> 6) << 28) | ((O >> 6) << 30);
 
       bool L = (extend != 0);
-      assert(I->scoreboard == 0 && "todo");
 
       uint64_t raw =
          0x31 | ((I->op == AGX_OPCODE_TEXTURE_LOAD) ? (1 << 6) : 0) |
@@ -600,7 +611,7 @@ agx_pack_instr(struct util_dynarray *emission, struct util_dynarray *fixups,
          (((uint64_t)q3) << 43) | (((uint64_t)I->mask) << 48) |
          (((uint64_t)I->lod_mode) << 52) |
          (((uint64_t)(S & BITFIELD_MASK(6))) << 56) | (((uint64_t)St) << 62) |
-         (((uint64_t)q5) << 63);
+         (((uint64_t)I->scoreboard) << 63);
 
       memcpy(util_dynarray_grow_bytes(emission, 1, 8), &raw, 8);
       if (L)
@@ -715,6 +726,11 @@ agx_pack_binary(agx_context *ctx, struct util_dynarray *emission)
 {
    struct util_dynarray fixups;
    util_dynarray_init(&fixups, ctx);
+
+   agx_foreach_instr_global_safe(ctx, I) {
+      if (I->op == AGX_OPCODE_LOGICAL_END)
+         agx_remove_instruction(I);
+   }
 
    agx_foreach_block(ctx, block) {
       /* Relative to the start of the binary, the block begins at the current

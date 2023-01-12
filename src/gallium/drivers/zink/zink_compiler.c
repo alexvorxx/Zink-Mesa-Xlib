@@ -810,10 +810,37 @@ lower_line_smooth_gs(nir_shader *shader)
 }
 
 static bool
-lower_line_smooth_fs(nir_shader *shader)
+lower_line_smooth_fs(nir_shader *shader, bool lower_stipple)
 {
    int dummy;
-   nir_lower_aaline_fs(shader, &dummy);
+   nir_builder b;
+
+   nir_variable *stipple_counter = NULL, *stipple_pattern = NULL;
+   if (lower_stipple) {
+      stipple_counter = nir_variable_create(shader, nir_var_shader_in,
+                                            glsl_float_type(),
+                                            "__stipple");
+      stipple_counter->data.interpolation = INTERP_MODE_NOPERSPECTIVE;
+      stipple_counter->data.driver_location = shader->num_inputs++;
+      stipple_counter->data.location =
+         MAX2(util_last_bit64(shader->info.inputs_read), VARYING_SLOT_VAR0);
+      shader->info.inputs_read |= BITFIELD64_BIT(stipple_counter->data.location);
+
+      stipple_pattern = nir_variable_create(shader, nir_var_shader_temp,
+                                            glsl_uint_type(),
+                                            "stipple_pattern");
+
+      // initialize stipple_pattern
+      nir_function_impl *entry = nir_shader_get_entrypoint(shader);
+      nir_builder_init(&b, entry);
+      b.cursor = nir_before_cf_list(&entry->body);
+      nir_ssa_def *pattern = nir_load_push_constant(&b, 1, 32,
+                                                   nir_imm_int(&b, ZINK_GFX_PUSHCONST_LINE_STIPPLE_PATTERN),
+                                                   .base = 1);
+      nir_store_var(&b, stipple_pattern, pattern, 1);
+   }
+
+   nir_lower_aaline_fs(shader, &dummy, stipple_counter, stipple_pattern);
    return true;
 }
 
@@ -2844,15 +2871,14 @@ zink_shader_compile(struct zink_screen *screen, struct zink_shader *zs, nir_shad
          }
          break;
       case MESA_SHADER_FRAGMENT:
-         if (zink_fs_key(key)->lower_line_stipple)
-            NIR_PASS_V(nir, lower_line_stipple_fs);
-
          if (zink_fs_key(key)->lower_line_smooth) {
-            NIR_PASS_V(nir, lower_line_smooth_fs);
+            NIR_PASS_V(nir, lower_line_smooth_fs,
+                       zink_fs_key(key)->lower_line_stipple);
             need_optimize = true;
-         }
+         } else if (zink_fs_key(key)->lower_line_stipple)
+               NIR_PASS_V(nir, lower_line_stipple_fs);
 
-         if (!zink_fs_key(key)->samples &&
+         if (!zink_fs_key_base(key)->samples &&
             nir->info.outputs_written & BITFIELD64_BIT(FRAG_RESULT_SAMPLE_MASK)) {
             /* VK will always use gl_SampleMask[] values even if sample count is 0,
             * so we need to skip this write here to mimic GL's behavior of ignoring it
@@ -2865,14 +2891,14 @@ zink_shader_compile(struct zink_screen *screen, struct zink_shader *zs, nir_shad
             NIR_PASS_V(nir, nir_remove_dead_variables, nir_var_shader_temp, NULL);
             need_optimize = true;
          }
-         if (zink_fs_key(key)->force_dual_color_blend && nir->info.outputs_written & BITFIELD64_BIT(FRAG_RESULT_DATA1)) {
+         if (zink_fs_key_base(key)->force_dual_color_blend && nir->info.outputs_written & BITFIELD64_BIT(FRAG_RESULT_DATA1)) {
             NIR_PASS_V(nir, lower_dual_blend);
          }
-         if (zink_fs_key(key)->coord_replace_bits) {
-            NIR_PASS_V(nir, nir_lower_texcoord_replace, zink_fs_key(key)->coord_replace_bits,
-                     false, zink_fs_key(key)->coord_replace_yinvert);
+         if (zink_fs_key_base(key)->coord_replace_bits) {
+            NIR_PASS_V(nir, nir_lower_texcoord_replace, zink_fs_key_base(key)->coord_replace_bits,
+                     false, zink_fs_key_base(key)->coord_replace_yinvert);
          }
-         if (zink_fs_key(key)->force_persample_interp || zink_fs_key(key)->fbfetch_ms) {
+         if (zink_fs_key_base(key)->force_persample_interp || zink_fs_key_base(key)->fbfetch_ms) {
             nir_foreach_shader_in_variable(var, nir)
                var->data.sample = true;
             nir->info.fs.uses_sample_qualifier = true;
@@ -2880,7 +2906,7 @@ zink_shader_compile(struct zink_screen *screen, struct zink_shader *zs, nir_shad
          }
          if (nir->info.fs.uses_fbfetch_output) {
             nir_variable *fbfetch = NULL;
-            NIR_PASS_V(nir, lower_fbfetch, &fbfetch, zink_fs_key(key)->fbfetch_ms);
+            NIR_PASS_V(nir, lower_fbfetch, &fbfetch, zink_fs_key_base(key)->fbfetch_ms);
             /* old variable must be deleted to avoid spirv errors */
             fbfetch->data.mode = nir_var_shader_temp;
             nir_fixup_deref_modes(nir);
@@ -3655,14 +3681,14 @@ match_tex_dests_instr(nir_builder *b, nir_instr *in, void *data)
    if (bit_size == dest_size && !rewrite_depth)
       return false;
    nir_ssa_def *dest = &tex->dest.ssa;
+   if (rewrite_depth) {
+      assert(!tex->is_new_style_shadow);
+      tex->dest.ssa.num_components = 1;
+      tex->is_new_style_shadow = true;
+   }
    if (bit_size != dest_size) {
       tex->dest.ssa.bit_size = bit_size;
       tex->dest_type = nir_get_nir_type_for_glsl_base_type(ret_type);
-      if (rewrite_depth) {
-         assert(!tex->is_new_style_shadow);
-         tex->dest.ssa.num_components = 1;
-         tex->is_new_style_shadow = true;
-      }
 
       if (is_int) {
          if (glsl_unsigned_base_type_of(ret_type) == ret_type)
@@ -3678,9 +3704,6 @@ match_tex_dests_instr(nir_builder *b, nir_instr *in, void *data)
       }
       nir_ssa_def_rewrite_uses_after(&tex->dest.ssa, dest, dest->parent_instr);
    } else if (rewrite_depth) {
-      assert(!tex->is_new_style_shadow);
-      tex->dest.ssa.num_components = 1;
-      tex->is_new_style_shadow = true;
       nir_ssa_def *vec[4] = {dest, dest, dest, dest};
       nir_ssa_def *splat = nir_vec(b, vec, num_components);
       nir_ssa_def_rewrite_uses_after(dest, splat, splat->parent_instr);

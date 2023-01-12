@@ -70,7 +70,8 @@ agx_batch_init(struct agx_context *ctx,
    }
 
    for (unsigned i = 0; i < key->nr_cbufs; ++i) {
-      agx_batch_writes(batch, agx_resource(key->cbufs[i]->texture));
+      if (key->cbufs[i])
+         agx_batch_writes(batch, agx_resource(key->cbufs[i]->texture));
    }
 
    unsigned batch_idx = agx_batch_idx(batch);

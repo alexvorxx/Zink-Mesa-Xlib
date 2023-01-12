@@ -36,7 +36,11 @@ ail_initialize_linear(struct ail_layout *layout)
 
    assert((layout->linear_stride_B % 16) == 0 && "Strides must be aligned");
 
-   layout->size_B = layout->linear_stride_B * layout->height_px;
+   /* Layer stride must be cache line aligned to pack linear 2D arrays */
+   layout->layer_stride_B =
+      ALIGN_POT(layout->linear_stride_B * layout->height_px, AIL_CACHELINE);
+
+   layout->size_B = layout->layer_stride_B * layout->depth_px;
 }
 
 /*
@@ -216,7 +220,8 @@ ail_initialize_compression(struct ail_layout *layout)
       height_px = DIV_ROUND_UP(height_px, 2);
    }
 
-   layout->size_B += compbuf_B * layout->depth_px;
+   layout->compression_layer_stride_B = compbuf_B;
+   layout->size_B += layout->compression_layer_stride_B * layout->depth_px;
 }
 
 void
@@ -224,9 +229,9 @@ ail_make_miptree(struct ail_layout *layout)
 {
    assert(layout->width_px >= 1 && "Invalid dimensions");
    assert(layout->height_px >= 1 && "Invalid dimensions");
+   assert(layout->depth_px >= 1 && "Invalid dimensions");
 
    if (layout->tiling == AIL_TILING_LINEAR) {
-      assert(layout->depth_px == 1 && "Invalid linear layout");
       assert(layout->levels == 1 && "Invalid linear layout");
       assert(layout->sample_count_sa == 1 &&
              "Multisampled linear layouts not supported");
@@ -236,7 +241,6 @@ ail_make_miptree(struct ail_layout *layout)
              "Strided linear block formats unsupported");
    } else {
       assert(layout->linear_stride_B == 0 && "Invalid nonlinear layout");
-      assert(layout->depth_px >= 1 && "Invalid dimensions");
       assert(layout->levels >= 1 && "Invalid dimensions");
       assert(layout->sample_count_sa >= 1 && "Invalid sample count");
    }

@@ -38,6 +38,7 @@
 
 #include "compiler/shader_enums.h"
 #include "hwdef/rogue_hw_defs.h"
+#include "pvr_clear.h"
 #include "pvr_csb.h"
 #include "pvr_device_info.h"
 #include "pvr_entrypoints.h"
@@ -45,6 +46,7 @@
 #include "pvr_job_render.h"
 #include "pvr_limits.h"
 #include "pvr_pds.h"
+#include "pvr_shader_factory.h"
 #include "pvr_types.h"
 #include "pvr_winsys.h"
 #include "rogue/rogue.h"
@@ -170,45 +172,6 @@ enum pvr_stage_allocation {
    PVR_STAGE_ALLOCATION_COUNT
 };
 
-#define PVR_STATIC_CLEAR_PDS_STATE_COUNT          \
-   (pvr_cmd_length(TA_STATE_PDS_SHADERBASE) +     \
-    pvr_cmd_length(TA_STATE_PDS_TEXUNICODEBASE) + \
-    pvr_cmd_length(TA_STATE_PDS_SIZEINFO1) +      \
-    pvr_cmd_length(TA_STATE_PDS_SIZEINFO2) +      \
-    pvr_cmd_length(TA_STATE_PDS_VARYINGBASE) +    \
-    pvr_cmd_length(TA_STATE_PDS_TEXTUREDATABASE))
-
-/* These can be used as offsets within a PVR_STATIC_CLEAR_PDS_STATE_COUNT dwords
- * sized array to get the respective state word.
- *
- * The values are based on the lengths of the state words.
- */
-enum pvr_static_clear_ppp_pds_state_type {
-   /* Words enabled by pres_pds_state_ptr0. */
-   PVR_STATIC_CLEAR_PPP_PDS_TYPE_SHADERBASE = 0,
-   PVR_STATIC_CLEAR_PPP_PDS_TYPE_TEXUNICODEBASE = 1,
-   PVR_STATIC_CLEAR_PPP_PDS_TYPE_SIZEINFO1 = 2,
-   PVR_STATIC_CLEAR_PPP_PDS_TYPE_SIZEINFO2 = 3,
-
-   /* Word enabled by pres_pds_state_ptr1. */
-   PVR_STATIC_CLEAR_PPP_PDS_TYPE_VARYINGBASE = 4,
-
-   /* Word enabled by pres_pds_state_ptr2. */
-   PVR_STATIC_CLEAR_PPP_PDS_TYPE_TEXTUREDATABASE = 5,
-};
-
-static_assert(PVR_STATIC_CLEAR_PPP_PDS_TYPE_TEXTUREDATABASE + 1 ==
-                 PVR_STATIC_CLEAR_PDS_STATE_COUNT,
-              "pvr_static_clear_ppp_pds_state_type might require fixing.");
-
-enum pvr_static_clear_variant_bits {
-   PVR_STATIC_CLEAR_DEPTH_BIT = BITFIELD_BIT(0),
-   PVR_STATIC_CLEAR_STENCIL_BIT = BITFIELD_BIT(1),
-   PVR_STATIC_CLEAR_COLOR_BIT = BITFIELD_BIT(2),
-};
-
-#define PVR_STATIC_CLEAR_VARIANT_COUNT (PVR_STATIC_CLEAR_COLOR_BIT << 1U)
-
 enum pvr_event_state {
    PVR_EVENT_STATE_SET_BY_HOST,
    PVR_EVENT_STATE_RESET_BY_HOST,
@@ -307,48 +270,6 @@ struct pvr_pds_upload {
    uint32_t code_size;
 };
 
-struct pvr_static_clear_ppp_base {
-   uint32_t wclamp;
-   uint32_t varying_word[3];
-   uint32_t ppp_ctrl;
-   uint32_t stream_out0;
-};
-
-struct pvr_static_clear_ppp_template {
-   /* Pre-packed control words. */
-   uint32_t header;
-   uint32_t ispb;
-
-   bool requires_pds_state;
-
-   /* Configurable control words.
-    * These are initialized and can be modified as needed before emitting them.
-    */
-   struct {
-      struct PVRX(TA_STATE_ISPCTL) ispctl;
-      struct PVRX(TA_STATE_ISPA) ispa;
-
-      /* In case the template requires_pds_state this needs to be a valid
-       * pointer to a pre-packed PDS state before emitting.
-       *
-       * Note: this is a pointer to an array of const uint32_t and not an array
-       * of pointers or a function pointer.
-       */
-      const uint32_t (*pds_state)[PVR_STATIC_CLEAR_PDS_STATE_COUNT];
-
-      struct PVRX(TA_REGION_CLIP0) region_clip0;
-      struct PVRX(TA_REGION_CLIP1) region_clip1;
-
-      struct PVRX(TA_OUTPUT_SEL) output_sel;
-   } config;
-};
-
-#define PVR_CLEAR_VDM_STATE_DWORD_COUNT                                        \
-   (pvr_cmd_length(VDMCTRL_VDM_STATE0) + pvr_cmd_length(VDMCTRL_VDM_STATE2) +  \
-    pvr_cmd_length(VDMCTRL_VDM_STATE3) + pvr_cmd_length(VDMCTRL_VDM_STATE4) +  \
-    pvr_cmd_length(VDMCTRL_VDM_STATE5) + pvr_cmd_length(VDMCTRL_INDEX_LIST0) + \
-    pvr_cmd_length(VDMCTRL_INDEX_LIST2))
-
 struct pvr_compute_query_shader {
    struct pvr_bo *usc_bo;
 
@@ -418,12 +339,30 @@ struct pvr_device {
       struct pvr_bo *vertices_bo;
       struct pvr_pds_upload pds;
 
+      struct pvr_bo *usc_multi_layer_vertex_shader_bo;
+
       struct pvr_static_clear_ppp_base ppp_base;
+      /* Indexable using VkImageAspectFlags. */
       struct pvr_static_clear_ppp_template
          ppp_templates[PVR_STATIC_CLEAR_VARIANT_COUNT];
 
       uint32_t vdm_words[PVR_CLEAR_VDM_STATE_DWORD_COUNT];
       uint32_t large_clear_vdm_words[PVR_CLEAR_VDM_STATE_DWORD_COUNT];
+
+      struct pvr_bo *usc_clear_attachment_programs;
+      struct pvr_bo *pds_clear_attachment_programs;
+      /* TODO: See if we can use PVR_CLEAR_ATTACHMENT_PROGRAM_COUNT to save some
+       * memory.
+       */
+      struct pvr_pds_clear_attachment_program_info {
+         pvr_dev_addr_t texture_program_offset;
+         pvr_dev_addr_t pixel_program_offset;
+
+         uint32_t texture_program_pds_temps_count;
+         /* Size in dwords. */
+         uint32_t texture_program_data_size;
+      } pds_clear_attachment_program_info
+         [PVR_CLEAR_ATTACHMENT_PROGRAM_COUNT_WITH_HOLES];
    } static_clear_state;
 
    struct {
@@ -1503,17 +1442,21 @@ VkResult pvr_cmd_buffer_alloc_mem(struct pvr_cmd_buffer *cmd_buffer,
                                   uint64_t size,
                                   uint32_t flags,
                                   struct pvr_bo **const pvr_bo_out);
+VkResult pvr_cmd_buffer_upload_pds(struct pvr_cmd_buffer *const cmd_buffer,
+                                   const uint32_t *data,
+                                   uint32_t data_size_dwords,
+                                   uint32_t data_alignment,
+                                   const uint32_t *code,
+                                   uint32_t code_size_dwords,
+                                   uint32_t code_alignment,
+                                   uint64_t min_alignment,
+                                   struct pvr_pds_upload *const pds_upload_out);
 
 void pvr_calculate_vertex_cam_size(const struct pvr_device_info *dev_info,
                                    const uint32_t vs_output_size,
                                    const bool raster_enable,
                                    uint32_t *const cam_size_out,
                                    uint32_t *const vs_max_instances_out);
-
-VkResult pvr_emit_ppp_from_template(
-   struct pvr_csb *const csb,
-   const struct pvr_static_clear_ppp_template *const template,
-   struct pvr_bo **const pvr_bo_out);
 
 VkResult
 pvr_copy_or_resolve_color_image_region(struct pvr_cmd_buffer *cmd_buffer,
@@ -1659,6 +1602,12 @@ void pvr_device_destroy_compute_query_programs(struct pvr_device *device);
 
 VkResult pvr_add_query_program(struct pvr_cmd_buffer *cmd_buffer,
                                const struct pvr_query_info *query_info);
+
+void pvr_reset_graphics_dirty_state(struct pvr_cmd_buffer *const cmd_buffer,
+                                    bool start_geom);
+
+const struct pvr_renderpass_hwsetup_subpass *
+pvr_get_hw_subpass(const struct pvr_render_pass *pass, const uint32_t subpass);
 
 #define PVR_FROM_HANDLE(__pvr_type, __name, __handle) \
    VK_FROM_HANDLE(__pvr_type, __name, __handle)

@@ -1517,6 +1517,10 @@ lp_setup_destroy(struct lp_setup_context *setup)
       pipe_resource_reference(&setup->ssbos[i].current.buffer, NULL);
    }
 
+   for (unsigned i = 0; i < ARRAY_SIZE(setup->images); i++) {
+      pipe_resource_reference(&setup->images[i].current.resource, NULL);
+   }
+
    /* free the scenes in the 'empty' queue */
    for (unsigned i = 0; i < setup->num_active_scenes; i++) {
       struct lp_scene *scene = setup->scenes[i];

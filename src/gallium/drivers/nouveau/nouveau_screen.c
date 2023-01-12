@@ -49,7 +49,7 @@ nouveau_screen_get_name(struct pipe_screen *pscreen)
 static const char *
 nouveau_screen_get_vendor(struct pipe_screen *pscreen)
 {
-   return "nouveau";
+   return "Mesa";
 }
 
 static const char *

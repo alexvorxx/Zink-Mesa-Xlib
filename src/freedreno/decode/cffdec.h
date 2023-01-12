@@ -81,6 +81,33 @@ struct cffdec_options {
    } ibs[4];
 };
 
+/**
+ * A helper to deal with 64b registers by accumulating the lo/hi 32b
+ * dwords.  Example usage:
+ *
+ *    struct regacc r = regacc(rnn);
+ *
+ *    for (dword in dwords) {
+ *       if (regacc_push(&r, regbase, dword)) {
+ *          printf("\t%08x"PRIx64", r.value);
+ *          dump_register_val(r.regbase, r.value, 0);
+ *       }
+ *       regbase++;
+ *    }
+ *
+ * It is expected that 64b regs will come in pairs of <lo, hi>.
+ */
+struct regacc {
+   uint32_t regbase;
+   uint64_t value;
+
+   /* private: */
+   struct rnn *rnn;
+   bool has_dword_lo;
+};
+struct regacc regacc(struct rnn *rnn);
+bool regacc_push(struct regacc *regacc, uint32_t regbase, uint32_t dword);
+
 void printl(int lvl, const char *fmt, ...);
 const char *pktname(unsigned opc);
 uint32_t regbase(const char *name);
@@ -91,7 +118,7 @@ uint32_t reg_val(uint32_t regbase);
 void reg_set(uint32_t regbase, uint32_t val);
 void reset_regs(void);
 void cffdec_init(const struct cffdec_options *options);
-void dump_register_val(uint32_t regbase, uint32_t dword, int level);
+void dump_register_val(struct regacc *r, int level);
 void dump_commands(uint32_t *dwords, uint32_t sizedwords, int level);
 
 /*

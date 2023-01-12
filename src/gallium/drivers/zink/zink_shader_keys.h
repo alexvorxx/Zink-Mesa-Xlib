@@ -66,16 +66,22 @@ struct zink_gs_key {
    unsigned size;
 };
 
-struct zink_fs_key {
+struct zink_fs_key_base {
    bool coord_replace_yinvert : 1;
    bool samples : 1;
    bool force_dual_color_blend : 1;
    bool force_persample_interp : 1;
    bool fbfetch_ms : 1;
+   uint8_t pad : 3;
+   uint8_t coord_replace_bits;
+};
+
+struct zink_fs_key {
+   struct zink_fs_key_base base;
+   /* non-optimal bits after this point */
    bool lower_line_stipple : 1;
    bool lower_line_smooth : 1;
-   uint8_t pad : 1;
-   uint8_t coord_replace_bits;
+   uint16_t pad2 : 14;
 };
 
 struct zink_tcs_key {
@@ -100,6 +106,7 @@ struct zink_shader_key {
       struct zink_tcs_key tcs;
       struct zink_gs_key gs;
       struct zink_fs_key fs;
+      struct zink_fs_key_base fs_base;
    } key;
    struct zink_shader_key_base base;
    unsigned inline_uniforms:1;
@@ -110,7 +117,7 @@ union zink_shader_key_optimal {
    struct {
       struct zink_vs_key_base vs_base;
       struct zink_tcs_key tcs;
-      struct zink_fs_key fs;
+      struct zink_fs_key_base fs;
    };
    struct {
       uint8_t vs_bits;
@@ -119,6 +126,13 @@ union zink_shader_key_optimal {
    };
    uint32_t val;
 };
+
+static inline const struct zink_fs_key_base *
+zink_fs_key_base(const struct zink_shader_key *key)
+{
+   assert(key);
+   return &key->key.fs.base;
+}
 
 static inline const struct zink_fs_key *
 zink_fs_key(const struct zink_shader_key *key)

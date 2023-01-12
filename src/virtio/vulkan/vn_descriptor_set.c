@@ -799,6 +799,88 @@ vn_update_descriptor_sets_alloc(uint32_t write_count,
    return update;
 }
 
+bool
+vn_should_sanitize_descriptor_set_writes(uint32_t write_count,
+                                         const VkWriteDescriptorSet *writes,
+                                         VkPipelineLayout pipeline_layout_handle)
+{
+   /* the encoder does not ignore
+    * VkWriteDescriptorSet::{pImageInfo,pBufferInfo,pTexelBufferView} when it
+    * should
+    *
+    * TODO make the encoder smarter
+    */
+   const struct vn_pipeline_layout *pipeline_layout =
+      vn_pipeline_layout_from_handle(pipeline_layout_handle);
+   for (uint32_t i = 0; i < write_count; i++) {
+      const struct vn_descriptor_set_layout *set_layout =
+         pipeline_layout
+            ? pipeline_layout->push_descriptor_set_layout
+            : vn_descriptor_set_from_handle(writes[i].dstSet)->layout;
+      const struct vn_descriptor_set_layout_binding *binding =
+         &set_layout->bindings[writes[i].dstBinding];
+      const VkWriteDescriptorSet *write = &writes[i];
+      const VkDescriptorImageInfo *imgs = write->pImageInfo;
+
+      switch (write->descriptorType) {
+      case VK_DESCRIPTOR_TYPE_SAMPLER:
+      case VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER:
+      case VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE:
+      case VK_DESCRIPTOR_TYPE_STORAGE_IMAGE:
+      case VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT:
+         if (write->pBufferInfo != NULL || write->pTexelBufferView != NULL)
+            return true;
+
+         for (uint32_t j = 0; j < write->descriptorCount; j++) {
+            switch (write->descriptorType) {
+            case VK_DESCRIPTOR_TYPE_SAMPLER:
+               if (imgs[j].imageView != VK_NULL_HANDLE)
+                  return true;
+               FALLTHROUGH;
+            case VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER:
+               if (binding->has_immutable_samplers &&
+                   imgs[j].sampler != VK_NULL_HANDLE)
+                  return true;
+               break;
+            case VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE:
+            case VK_DESCRIPTOR_TYPE_STORAGE_IMAGE:
+            case VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT:
+               if (imgs[j].sampler != VK_NULL_HANDLE)
+                  return true;
+               break;
+            default:
+               break;
+            }
+         }
+         break;
+      case VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER:
+      case VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER:
+         if (write->pImageInfo != NULL || write->pBufferInfo != NULL)
+            return true;
+
+         break;
+      case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER:
+      case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER:
+      case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC:
+      case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC:
+         if (write->pImageInfo != NULL || write->pTexelBufferView != NULL)
+            return true;
+
+         break;
+      case VK_DESCRIPTOR_TYPE_INLINE_UNIFORM_BLOCK:
+      case VK_DESCRIPTOR_TYPE_MUTABLE_EXT:
+      default:
+         if (write->pImageInfo != NULL || write->pBufferInfo != NULL ||
+             write->pTexelBufferView != NULL)
+            return true;
+
+         break;
+      }
+   }
+
+   return false;
+}
+
 struct vn_update_descriptor_sets *
 vn_update_descriptor_sets_parse_writes(uint32_t write_count,
                                        const VkWriteDescriptorSet *writes,
@@ -861,7 +943,7 @@ vn_update_descriptor_sets_parse_writes(uint32_t write_count,
             switch (write->descriptorType) {
             case VK_DESCRIPTOR_TYPE_SAMPLER:
                imgs[j].imageView = VK_NULL_HANDLE;
-               break;
+               FALLTHROUGH;
             case VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER:
                if (binding->has_immutable_samplers)
                   imgs[j].sampler = VK_NULL_HANDLE;

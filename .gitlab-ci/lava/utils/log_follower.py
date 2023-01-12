@@ -224,5 +224,5 @@ def fatal_err(msg):
     sys.exit(1)
 
 
-def hide_sensitive_data(yaml_data, hide_tag="HIDEME"):
+def hide_sensitive_data(yaml_data: str, hide_tag: str ="HIDEME"):
     return "".join(line for line in yaml_data.splitlines(True) if hide_tag not in line)

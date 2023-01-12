@@ -597,6 +597,7 @@ pseudo_propagate_temp(opt_ctx& ctx, aco_ptr<Instruction>& instr, Temp temp, unsi
 bool
 can_apply_sgprs(opt_ctx& ctx, aco_ptr<Instruction>& instr)
 {
+   assert(instr->isVALU());
    if (instr->isSDWA() && ctx.program->gfx_level < GFX9)
       return false;
    return instr->opcode != aco_opcode::v_readfirstlane_b32 &&
@@ -605,7 +606,20 @@ can_apply_sgprs(opt_ctx& ctx, aco_ptr<Instruction>& instr)
           instr->opcode != aco_opcode::v_writelane_b32 &&
           instr->opcode != aco_opcode::v_writelane_b32_e64 &&
           instr->opcode != aco_opcode::v_permlane16_b32 &&
-          instr->opcode != aco_opcode::v_permlanex16_b32;
+          instr->opcode != aco_opcode::v_permlanex16_b32 &&
+          instr->opcode != aco_opcode::v_interp_p1_f32 &&
+          instr->opcode != aco_opcode::v_interp_p2_f32 &&
+          instr->opcode != aco_opcode::v_interp_mov_f32 &&
+          instr->opcode != aco_opcode::v_interp_p1ll_f16 &&
+          instr->opcode != aco_opcode::v_interp_p1lv_f16 &&
+          instr->opcode != aco_opcode::v_interp_p2_legacy_f16 &&
+          instr->opcode != aco_opcode::v_interp_p2_f16 &&
+          instr->opcode != aco_opcode::v_interp_p10_f32_inreg &&
+          instr->opcode != aco_opcode::v_interp_p2_f32_inreg &&
+          instr->opcode != aco_opcode::v_interp_p10_f16_f32_inreg &&
+          instr->opcode != aco_opcode::v_interp_p2_f16_f32_inreg &&
+          instr->opcode != aco_opcode::v_interp_p10_rtz_f16_f32_inreg &&
+          instr->opcode != aco_opcode::v_interp_p2_rtz_f16_f32_inreg;
 }
 
 void
@@ -658,7 +672,6 @@ bool
 alu_can_accept_constant(aco_opcode opcode, unsigned operand)
 {
    switch (opcode) {
-   case aco_opcode::v_interp_p2_f32:
    case aco_opcode::v_mac_f32:
    case aco_opcode::v_writelane_b32:
    case aco_opcode::v_writelane_b32_e64:
@@ -677,7 +690,19 @@ alu_can_accept_constant(aco_opcode opcode, unsigned operand)
    case aco_opcode::p_bpermute_gfx10w64:
    case aco_opcode::p_bpermute_gfx11w64:
    case aco_opcode::p_interp_gfx11:
-   case aco_opcode::p_dual_src_export_gfx11: return false;
+   case aco_opcode::p_dual_src_export_gfx11:
+   case aco_opcode::v_interp_p1_f32:
+   case aco_opcode::v_interp_p2_f32:
+   case aco_opcode::v_interp_mov_f32:
+   case aco_opcode::v_interp_p1ll_f16:
+   case aco_opcode::v_interp_p1lv_f16:
+   case aco_opcode::v_interp_p2_legacy_f16:
+   case aco_opcode::v_interp_p10_f32_inreg:
+   case aco_opcode::v_interp_p2_f32_inreg:
+   case aco_opcode::v_interp_p10_f16_f32_inreg:
+   case aco_opcode::v_interp_p2_f16_f32_inreg:
+   case aco_opcode::v_interp_p10_rtz_f16_f32_inreg:
+   case aco_opcode::v_interp_p2_rtz_f16_f32_inreg: return false;
    default: return true;
    }
 }

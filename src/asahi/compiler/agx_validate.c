@@ -83,6 +83,7 @@ agx_validate_block_form(agx_block *block)
       case AGX_OPCODE_IF_FCMP:
       case AGX_OPCODE_ELSE_FCMP:
       case AGX_OPCODE_WHILE_FCMP:
+      case AGX_OPCODE_STOP:
          agx_validate_assert(state == AGX_BLOCK_STATE_CF);
          break;
       }
@@ -143,6 +144,48 @@ agx_validate_defs(agx_instr *I, BITSET_WORD *defs)
    return true;
 }
 
+/*
+ * Type check the dimensionality of sources and destinations. This occurs in two
+ * passes, first to gather all destination sizes, second to validate all source
+ * sizes. Depends on SSA form.
+ */
+static bool
+agx_validate_width(agx_context *ctx)
+{
+   bool succ = true;
+   uint8_t *width = calloc(ctx->alloc, sizeof(uint8_t));
+
+   agx_foreach_instr_global(ctx, I) {
+      agx_foreach_dest(I, d) {
+         if (I->dest[d].type != AGX_INDEX_NORMAL)
+            continue;
+
+         unsigned v = I->dest[d].value;
+         assert(width[v] == 0 && "broken SSA");
+
+         width[v] = agx_write_registers(I, d);
+      }
+   }
+
+   agx_foreach_instr_global(ctx, I) {
+      agx_foreach_ssa_src(I, s) {
+         unsigned v = I->src[s].value;
+         unsigned n = agx_read_registers(I, s);
+
+         if (width[v] != n) {
+            succ = false;
+            fprintf(stderr, "source %u, expected width %u, got width %u\n", s,
+                    n, width[v]);
+            agx_print_instr(I, stderr);
+            fprintf(stderr, "\n");
+         }
+      }
+   }
+
+   free(width);
+   return succ;
+}
+
 void
 agx_validate(agx_context *ctx, const char *after)
 {
@@ -179,6 +222,11 @@ agx_validate(agx_context *ctx, const char *after)
          agx_print_instr(I, stdout);
          fail = true;
       }
+   }
+
+   if (!agx_validate_width(ctx)) {
+      fprintf(stderr, "Invalid vectors after %s\n", after);
+      fail = true;
    }
 
    /* TODO: Validate more invariants */

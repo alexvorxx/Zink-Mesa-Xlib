@@ -443,9 +443,7 @@ spec@!opengl 1.1@teximage-colors gl_sluminance8_alpha8@GL_SLUMINANCE8_ALPHA8 tex
 spec@!opengl 1.1@teximage-colors gl_sluminance8_alpha8@GL_SLUMINANCE8_ALPHA8 texture with GL_RGBA and GL_UNSIGNED_SHORT,Fail
 spec@!opengl 1.1@teximage-colors gl_sluminance8_alpha8@GL_SLUMINANCE8_ALPHA8 texture with GL_RGBA and GL_UNSIGNED_SHORT_4_4_4_4,Fail
 spec@!opengl 1.1@teximage-colors gl_sluminance8_alpha8@GL_SLUMINANCE8_ALPHA8 texture with GL_RGBA and GL_UNSIGNED_SHORT_4_4_4_4_REV,Fail
-spec@arb_texture_buffer_object@texture-buffer-size-clamp,Fail
 spec@arb_texture_buffer_object@texture-buffer-size-clamp@r8ui_texture_buffer_size_via_image,Fail
-spec@arb_texture_buffer_object@texture-buffer-size-clamp@r8ui_texture_buffer_size_via_sampler,Fail
 spec@arb_texture_buffer_object@texture-buffer-size-clamp@rg8ui_texture_buffer_size_via_image,Fail
 spec@arb_texture_buffer_object@texture-buffer-size-clamp@rg8ui_texture_buffer_size_via_sampler,Fail
 spec@arb_texture_buffer_object@texture-buffer-size-clamp@rgba8ui_texture_buffer_size_via_image,Fail
@@ -473,9 +471,6 @@ spec@!opengl 1.1@read-front samples=6,Fail
 spec@!opengl 1.1@read-front samples=8,Fail
 spec@ext_framebuffer_blit@fbo-blit-check-limits,Fail
 
-# Zink bug (RADV doesn't support shaderBufferFloat64AtomicAdd)
-spec@nv_shader_atomic_float@execution@ssbo-atomicadd-float,Crash
-
 # ACO bugs (pass with LLVM)
 spec@nv_shader_atomic_int64@execution@shared-atomicmax-int,Crash
 spec@nv_shader_atomic_int64@execution@shared-atomicmax-uint,Crash
@@ -488,3 +483,10 @@ spec@nv_shader_atomic_int64@execution@ssbo-atomicmin-uint,Crash
 
 # Introduced with the uprev of piglit (70ce1dcacc92 - "ci: Update piglit with s3 support")
 spec@egl 1.4@egl-ext_egl_image_storage,Fail
+
+# Delta over NAVI10
+spec@!opengl 1.1@depthstencil-default_fb-blit samples=4,Fail
+spec@!opengl 1.1@depthstencil-default_fb-blit samples=6,Fail
+spec@!opengl 1.1@depthstencil-default_fb-blit samples=8,Fail
+spec@arb_pipeline_statistics_query@arb_pipeline_statistics_query-frag,Fail
+spec@arb_texture_buffer_object@texture-buffer-size-clamp,Crash

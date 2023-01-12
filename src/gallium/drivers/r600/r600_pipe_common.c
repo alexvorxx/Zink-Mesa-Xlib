@@ -716,7 +716,7 @@ static const struct debug_named_value common_debug_options[] = {
 
 static const char* r600_get_vendor(struct pipe_screen* pscreen)
 {
-	return "X.Org";
+	return "Mesa";
 }
 
 static const char* r600_get_device_vendor(struct pipe_screen* pscreen)

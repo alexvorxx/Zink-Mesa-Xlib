@@ -30,6 +30,7 @@
 
 #include "compiler/shader_enums.h"
 #include "rogue/rogue_build_data.h"
+#include "util/u_dynarray.h"
 
 /**
  * \file pvr_hardcode.h
@@ -128,5 +129,8 @@ void pvr_hard_code_get_idfwdf_program(
 void pvr_hard_code_get_passthrough_vertex_shader(
    const struct pvr_device_info *const dev_info,
    const struct rogue_shader_binary **const program_out);
+void pvr_hard_code_get_passthrough_rta_vertex_shader(
+   const struct pvr_device_info *const dev_info,
+   struct util_dynarray *program_out);
 
 #endif /* PVR_HARDCODE_SHADERS_H */

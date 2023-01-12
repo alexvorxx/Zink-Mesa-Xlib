@@ -52,9 +52,12 @@ agx_write_registers(agx_instr *I, unsigned d)
       assert(1 <= I->channels && I->channels <= 4);
       return I->channels * size;
 
-   case AGX_OPCODE_DEVICE_LOAD:
    case AGX_OPCODE_TEXTURE_LOAD:
    case AGX_OPCODE_TEXTURE_SAMPLE:
+      /* Even when masked out, these clobber 4 registers */
+      return 4 * size;
+
+   case AGX_OPCODE_DEVICE_LOAD:
    case AGX_OPCODE_LD_TILE:
       return util_bitcount(I->mask) * size;
 
@@ -83,6 +86,92 @@ agx_split_width(const agx_instr *I)
 
    assert(width != ~0 && "should have been DCE'd");
    return width;
+}
+
+unsigned
+agx_read_registers(agx_instr *I, unsigned s)
+{
+   unsigned size = agx_size_align_16(I->src[s].size);
+
+   switch (I->op) {
+   case AGX_OPCODE_SPLIT:
+      return I->nr_dests * agx_size_align_16(agx_split_width(I));
+
+   case AGX_OPCODE_DEVICE_STORE:
+   case AGX_OPCODE_ST_TILE:
+      if (s == 0)
+         return util_bitcount(I->mask) * size;
+      else
+         return size;
+
+   case AGX_OPCODE_ZS_EMIT:
+      if (s == 1) {
+         /* Depth (bit 0) is fp32, stencil (bit 1) is u16 in the hw but we pad
+          * up to u32 for simplicity
+          */
+         return 2 * (!!(I->zs & 1) + !!(I->zs & 2));
+      } else {
+         return 1;
+      }
+
+   case AGX_OPCODE_TEXTURE_LOAD:
+   case AGX_OPCODE_TEXTURE_SAMPLE:
+      if (s == 0) {
+         /* Coordinates. We internally handle sample index as 32-bit */
+         switch (I->dim) {
+         case AGX_DIM_1D:
+            return 2 * 1;
+         case AGX_DIM_1D_ARRAY:
+            return 2 * 2;
+         case AGX_DIM_2D:
+            return 2 * 2;
+         case AGX_DIM_2D_ARRAY:
+            return 2 * 3;
+         case AGX_DIM_2D_MS:
+            return 2 * 3;
+         case AGX_DIM_3D:
+            return 2 * 3;
+         case AGX_DIM_CUBE:
+            return 2 * 3;
+         case AGX_DIM_CUBE_ARRAY:
+            return 2 * 4;
+         case AGX_DIM_2D_MS_ARRAY:
+            return 2 * 4;
+         }
+
+         unreachable("Invalid texture dimension");
+      } else if (s == 1) {
+         /* LOD */
+         if (I->lod_mode == AGX_LOD_MODE_LOD_GRAD) {
+            switch (I->dim) {
+            case AGX_DIM_1D:
+            case AGX_DIM_1D_ARRAY:
+               return 2 * 2 * 1;
+            case AGX_DIM_2D:
+            case AGX_DIM_2D_ARRAY:
+            case AGX_DIM_2D_MS_ARRAY:
+            case AGX_DIM_2D_MS:
+               return 2 * 2 * 2;
+            case AGX_DIM_CUBE:
+            case AGX_DIM_CUBE_ARRAY:
+            case AGX_DIM_3D:
+               return 2 * 2 * 3;
+            }
+
+            unreachable("Invalid texture dimension");
+         } else {
+            return 1;
+         }
+      } else if (s == 4) {
+         /* Compare/offset */
+         return 2 * ((!!I->shadow) + (!!I->offset));
+      } else {
+         return size;
+      }
+
+   default:
+      return size;
+   }
 }
 
 static unsigned
@@ -456,7 +545,7 @@ agx_ra(agx_context *ctx)
 
          /* Move the sources */
          agx_foreach_src(ins, i) {
-            if (agx_is_null(ins->src[i]))
+            if (agx_is_null(ins->src[i]) || ins->src[i].type == AGX_INDEX_UNDEF)
                continue;
             assert(ins->src[i].size == ins->src[0].size);
 
@@ -507,7 +596,6 @@ agx_ra(agx_context *ctx)
       switch (I->op) {
       /* Pseudoinstructions for RA must be removed now */
       case AGX_OPCODE_PHI:
-      case AGX_OPCODE_LOGICAL_END:
       case AGX_OPCODE_PRELOAD:
          agx_remove_instruction(I);
          break;

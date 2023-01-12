@@ -131,37 +131,12 @@ glx_dri3_flush_drawable(struct loader_dri3_drawable *draw, unsigned flags)
    loader_dri3_flush(draw, flags, __DRI2_THROTTLE_SWAPBUFFER);
 }
 
-static void
-glx_dri3_show_fps(struct loader_dri3_drawable *draw, uint64_t current_ust)
-{
-   struct dri3_drawable *priv = loader_drawable_to_dri3_drawable(draw);
-   const uint64_t interval =
-      ((struct dri3_screen *) priv->base.psc)->show_fps_interval;
-
-   if (!interval)
-      return;
-
-   priv->frames++;
-
-   /* DRI3+Present together uses microseconds for UST. */
-   if (priv->previous_ust + interval * 1000000 <= current_ust) {
-      if (priv->previous_ust) {
-         fprintf(stderr, "libGL: FPS = %.2f\n",
-                 ((uint64_t) priv->frames * 1000000) /
-                 (double)(current_ust - priv->previous_ust));
-      }
-      priv->frames = 0;
-      priv->previous_ust = current_ust;
-   }
-}
-
 static const struct loader_dri3_vtable glx_dri3_vtable = {
    .set_drawable_size = glx_dri3_set_drawable_size,
    .in_current_context = glx_dri3_in_current_context,
    .get_dri_context = glx_dri3_get_dri_context,
    .get_dri_screen = glx_dri3_get_dri_screen,
    .flush_drawable = glx_dri3_flush_drawable,
-   .show_fps = glx_dri3_show_fps,
 };
 
 
@@ -1020,11 +995,6 @@ dri3_create_screen(int screen, struct glx_display * priv)
    }
 
    free(driverName);
-
-   tmp = getenv("LIBGL_SHOW_FPS");
-   psc->show_fps_interval = tmp ? atoi(tmp) : 0;
-   if (psc->show_fps_interval < 0)
-      psc->show_fps_interval = 0;
 
    InfoMessageF("Using DRI3 for screen %d\n", screen);
 

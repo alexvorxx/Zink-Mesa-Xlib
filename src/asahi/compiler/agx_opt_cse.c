@@ -23,53 +23,24 @@ HASH(uint32_t hash, unsigned data)
    return XXH32(&data, sizeof(data), hash);
 }
 
-static uint32_t
-hash_index(uint32_t hash, agx_index index)
-{
-   assert(!index.kill && "CSE is run early");
-   assert(!index.cache && "CSE is run early");
-   assert(!index.discard && "CSE is run early");
-
-   hash = HASH(hash, index.value);
-   hash = HASH(hash, index.abs);
-   hash = HASH(hash, index.neg);
-   hash = HASH(hash, index.size);
-   hash = HASH(hash, index.type);
-   return hash;
-}
-
-/* Hash an ALU instruction. */
+/* Hash an instruction. XXH32 isn't too speedy, so this is hotspot. */
 static uint32_t
 hash_instr(const void *data)
 {
    const agx_instr *I = data;
    uint32_t hash = 0;
 
-   hash = HASH(hash, I->op);
-   hash = HASH(hash, I->nr_dests);
-   hash = HASH(hash, I->nr_srcs);
-
    /* Explcitly skip destinations, except for size and type */
    agx_foreach_dest(I, d) {
-      hash = HASH(hash, I->dest[d].type);
-      hash = HASH(hash, I->dest[d].size);
+      hash = HASH(hash, ((uint32_t)I->dest[d].type) |
+                           (((uint32_t)I->dest[d].size) << 16));
    }
 
-   agx_foreach_src(I, s) {
-      hash = hash_index(hash, I->src[s]);
-   }
+   /* Hash the source array as-is */
+   hash = XXH32(I->src, sizeof(agx_index) * I->nr_srcs, hash);
 
-   /* Explicitly skip last, scoreboard, nest */
-
-   hash = HASH(hash, I->imm);
-   hash = HASH(hash, I->perspective);
-   hash = HASH(hash, I->invert_cond);
-   hash = HASH(hash, I->dim);
-   hash = HASH(hash, I->offset);
-   hash = HASH(hash, I->shadow);
-   hash = HASH(hash, I->shift);
-   hash = HASH(hash, I->saturate);
-   hash = HASH(hash, I->mask);
+   /* Hash everything else in the instruction starting from the opcode */
+   hash = XXH32(&I->op, sizeof(agx_instr) - offsetof(agx_instr, op), hash);
 
    return hash;
 }

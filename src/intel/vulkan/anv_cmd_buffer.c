@@ -295,9 +295,9 @@ anv_cmd_buffer_set_ray_query_buffer(struct anv_cmd_buffer *cmd_buffer,
    struct anv_device *device = cmd_buffer->device;
 
    uint64_t ray_shadow_size =
-      align_u64(brw_rt_ray_queries_shadow_stacks_size(device->info,
-                                                      pipeline->ray_queries),
-                4096);
+      align64(brw_rt_ray_queries_shadow_stacks_size(device->info,
+                                                    pipeline->ray_queries),
+              4096);
    if (ray_shadow_size > 0 &&
        (!cmd_buffer->state.ray_query_shadow_bo ||
         cmd_buffer->state.ray_query_shadow_bo->size < ray_shadow_size)) {

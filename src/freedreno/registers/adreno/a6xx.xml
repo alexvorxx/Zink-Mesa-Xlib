@@ -3340,9 +3340,20 @@ to upconvert to 32b float internally?
 	<reg64 offset="0xa9e4" name="SP_FS_TEX_CONST" type="address" align="64"/>
 	<reg64 offset="0xa9e6" name="SP_CS_TEX_CONST" type="address" align="64"/>
 
+	<enum name="a6xx_bindless_descriptor_size">
+		<doc>
+			This can alternatively be interpreted as a pitch shift, ie, the
+			descriptor size is 2 &lt;&lt; N dwords
+		</doc>
+		<value value="1" name="BINDLESS_DESCRIPTOR_16B"/>
+		<value value="3" name="BINDLESS_DESCRIPTOR_64B"/>
+	</enum>
+
 	<array offset="0xa9e8" name="SP_CS_BINDLESS_BASE" stride="2" length="5">
-		<!-- TODO: probably align=64 with 6 flags bits in the low bits ? -->
-		<reg64 offset="0" name="ADDR" type="address"/>
+		<reg64 offset="0" name="DESCRIPTOR">
+			<bitfield name="DESC_SIZE" low="0" high="1" type="a6xx_bindless_descriptor_size"/>
+			<bitfield name="ADDR" low="2" high="63" shr="2" type="address"/>
+		</reg64>
 	</array>
 
 	<!--
@@ -3379,8 +3390,10 @@ to upconvert to 32b float internally?
 	<reg32 offset="0xab05" name="SP_FS_INSTRLEN" low="0" high="27" type="uint"/>
 
 	<array offset="0xab10" name="SP_BINDLESS_BASE" stride="2" length="5">
-		<!-- TODO: probably align=64 with 6 flags bits in the low bits? -->
-		<reg64 offset="0" name="ADDR" type="address"/>
+		<reg64 offset="0" name="DESCRIPTOR">
+			<bitfield name="DESC_SIZE" low="0" high="1" type="a6xx_bindless_descriptor_size"/>
+			<bitfield name="ADDR" low="2" high="63" shr="2" type="address"/>
+		</reg64>
 	</array>
 
 	<!--
@@ -3623,8 +3636,10 @@ to upconvert to 32b float internally?
 
 	<!-- mirror of SP_CS_BINDLESS_BASE -->
 	<array offset="0xb9c0" name="HLSQ_CS_BINDLESS_BASE" stride="2" length="5">
-		<!-- 64 alignment, 2 low bits for unknown flags (always 0x3 when enabled?) -->
-		<reg64 offset="0" name="ADDR" type="waddress"/>
+		<reg64 offset="0" name="DESCRIPTOR">
+			<bitfield name="DESC_SIZE" low="0" high="1" type="a6xx_bindless_descriptor_size"/>
+			<bitfield name="ADDR" low="2" high="63" shr="2" type="address"/>
+		</reg64>
 	</array>
 
 	<!-- new in a6xx gen4, mirror of SP_CS_UNKNOWN_A9B1? -->
@@ -3702,8 +3717,10 @@ to upconvert to 32b float internally?
 
 	<!-- mirror of SP_BINDLESS_BASE -->
 	<array offset="0xbb20" name="HLSQ_BINDLESS_BASE" stride="2" length="5">
-		<!-- align 64 with two LSB for unknown flags (always 0x3 enabled) -->
-		<reg64 offset="0" name="ADDR" type="address"/>
+		<reg64 offset="0" name="DESCRIPTOR">
+			<bitfield name="DESC_SIZE" low="0" high="1" type="a6xx_bindless_descriptor_size"/>
+			<bitfield name="ADDR" low="2" high="63" shr="2" type="address"/>
+		</reg64>
 	</array>
 
 	<reg32 offset="0xbd80" name="HLSQ_2D_EVENT_CMD">
@@ -3859,7 +3876,7 @@ to upconvert to 32b float internally?
 		<bitfield name="STRUCTSIZETEXELS" low="4" high="15" type="uint"/>
 		<bitfield name="STARTOFFSETTEXELS" low="16" high="21" type="uint"/>
 
-                <!-- minimum pitch (for mipmap levels): log2(pitchalign / 64) -->
+		<!-- minimum pitch (for mipmap levels): log2(pitchalign / 64) -->
 		<bitfield name="PITCHALIGN" low="0" high="3" type="uint"/>
 		<doc>Pitch in bytes (so actually stride)</doc>
 		<bitfield name="PITCH" low="7" high="28" type="uint"/>

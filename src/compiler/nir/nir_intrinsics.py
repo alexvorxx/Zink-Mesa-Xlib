@@ -1616,7 +1616,7 @@ intrinsic("store_zs_agx", [1, 1, 1], indices=[BASE], flags=[])
 intrinsic("block_image_store_agx", [1, 1], bit_sizes=[32, 16],
           indices=[FORMAT, IMAGE_DIM], flags=[CAN_REORDER])
 
-# Formatted loads. The format is the pipe_format in memory (see
+# Formatted load/store. The format is the pipe_format in memory (see
 # agx_internal_formats.h for the supported list). This accesses:
 #
 #     address + extend(index) << (format shift + shift)
@@ -1624,13 +1624,16 @@ intrinsic("block_image_store_agx", [1, 1], bit_sizes=[32, 16],
 # The nir_intrinsic_base() index encodes the shift. The sign_extend index
 # determines whether sign- or zero-extension is used for the index.
 #
-# All loads on AGX uses these hardware instructions, so while these are
-# logically load_global_agx (etc), the _global is omitted as it adds nothing.
+# All loads and stores on AGX uses these hardware instructions, so while these are
+# logically load_global_agx/load_global_constant_agx/store_global_agx, the
+# _global is omitted as it adds nothing.
 #
 # src[] = { address, index }.
 load("agx", [1, 1], [ACCESS, BASE, FORMAT, SIGN_EXTEND], [CAN_ELIMINATE])
 load("constant_agx", [1, 1], [ACCESS, BASE, FORMAT, SIGN_EXTEND],
      [CAN_ELIMINATE, CAN_REORDER])
+# src[] = { value, address, index }.
+store("agx", [1, 1], [ACCESS, BASE, FORMAT, SIGN_EXTEND])
 
 # Logical complement of load_front_face, mapping to an AGX system value
 system_value("back_face_agx", 1, bit_sizes=[1, 32])

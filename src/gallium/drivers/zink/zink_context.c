@@ -1922,27 +1922,27 @@ zink_set_sampler_views(struct pipe_context *pctx,
                                          res->gfx_barrier);
             zink_batch_resource_usage_set(&ctx->batch, res, false, true);
          } else if (!res->obj->is_buffer) {
-             if (res->base.b.format != b->image_view->base.format)
-                /* mutable not set by default */
-                zink_resource_object_init_mutable(ctx, res);
-             if (res->obj != b->image_view->obj) {
-                struct pipe_surface *psurf = &b->image_view->base;
-                VkImageView iv = b->image_view->image_view;
-                zink_rebind_surface(ctx, &psurf);
-                b->image_view = zink_surface(psurf);
-                update |= iv != b->image_view->image_view;
-             } else  if (a != b)
-                update = true;
-             if (shader_type == MESA_SHADER_COMPUTE)
-                flush_pending_clears(ctx, res);
-             if (b->cube_array) {
-                ctx->di.cubes[shader_type] |= BITFIELD_BIT(start_slot + i);
-             }
-             check_for_layout_update(ctx, res, shader_type == MESA_SHADER_COMPUTE);
-             if (!a)
-                update = true;
-             zink_batch_resource_usage_set(&ctx->batch, res, false, false);
-             res->obj->unordered_write = false;
+            if (res->base.b.format != b->image_view->base.format)
+               /* mutable not set by default */
+               zink_resource_object_init_mutable(ctx, res);
+            if (res->obj != b->image_view->obj) {
+               struct pipe_surface *psurf = &b->image_view->base;
+               VkImageView iv = b->image_view->image_view;
+               zink_rebind_surface(ctx, &psurf);
+               b->image_view = zink_surface(psurf);
+               update |= iv != b->image_view->image_view;
+            } else  if (a != b)
+               update = true;
+            if (shader_type == MESA_SHADER_COMPUTE)
+               flush_pending_clears(ctx, res);
+            if (b->cube_array) {
+               ctx->di.cubes[shader_type] |= BITFIELD_BIT(start_slot + i);
+            }
+            check_for_layout_update(ctx, res, shader_type == MESA_SHADER_COMPUTE);
+            if (!a)
+               update = true;
+            zink_batch_resource_usage_set(&ctx->batch, res, false, false);
+            res->obj->unordered_write = false;
          }
          res->sampler_binds[shader_type] |= BITFIELD_BIT(start_slot + i);
          res->obj->unordered_read = false;
@@ -2305,8 +2305,8 @@ zink_update_fbfetch(struct zink_context *ctx)
       ctx->di.fbfetch.imageView = zink_csurface(ctx->fb_state.cbufs[0])->image_view;
 
       bool fbfetch_ms = ctx->fb_state.cbufs[0]->texture->nr_samples > 1;
-      if (zink_get_fs_key(ctx)->fbfetch_ms != fbfetch_ms)
-         zink_set_fs_key(ctx)->fbfetch_ms = fbfetch_ms;
+      if (zink_get_fs_base_key(ctx)->fbfetch_ms != fbfetch_ms)
+         zink_set_fs_base_key(ctx)->fbfetch_ms = fbfetch_ms;
    }
    ctx->di.fbfetch.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
    if (changed) {
@@ -2363,7 +2363,9 @@ begin_rendering(struct zink_context *ctx)
    unsigned clear_buffers = 0;
    ctx->gfx_pipeline_state.render_pass = NULL;
    zink_update_vk_sample_locations(ctx);
-   zink_render_update_swapchain(ctx);
+   bool has_swapchain = zink_render_update_swapchain(ctx);
+   if (has_swapchain)
+      zink_render_fixup_swapchain(ctx);
    bool has_depth = false;
    bool has_stencil = false;
    bool changed_layout = false;
@@ -2512,6 +2514,14 @@ begin_rendering(struct zink_context *ctx)
          return 0;
       ctx->dynamic_fb.attachments[i].imageView = iv;
    }
+   if (has_swapchain) {
+      struct zink_resource *res = zink_resource(ctx->fb_state.cbufs[0]->texture);
+      zink_render_fixup_swapchain(ctx);
+      assert(ctx->dynamic_fb.info.renderArea.extent.width <= res->base.b.width0);
+      assert(ctx->dynamic_fb.info.renderArea.extent.height <= res->base.b.height0);
+      assert(ctx->fb_state.width <= res->base.b.width0);
+      assert(ctx->fb_state.height <= res->base.b.height0);
+   }
    if (ctx->fb_state.zsbuf && zsbuf_used) {
       struct zink_surface *surf = zink_csurface(ctx->fb_state.zsbuf);
       VkImageView iv = zink_prep_fb_attachment(ctx, surf, ctx->fb_state.nr_cbufs);
@@ -2520,6 +2530,8 @@ begin_rendering(struct zink_context *ctx)
       ctx->dynamic_fb.attachments[PIPE_MAX_COLOR_BUFS+1].imageView = iv;
       ctx->dynamic_fb.attachments[PIPE_MAX_COLOR_BUFS+1].imageLayout = zink_resource(surf->base.texture)->layout;
    }
+   assert(ctx->fb_state.width >= ctx->dynamic_fb.info.renderArea.extent.width);
+   assert(ctx->fb_state.height >= ctx->dynamic_fb.info.renderArea.extent.height);
    ctx->gfx_pipeline_state.dirty |= rp_changed;
    ctx->gfx_pipeline_state.rp_state = rp_state;
 
@@ -4512,7 +4524,8 @@ zink_copy_image_buffer(struct zink_context *ctx, struct zink_resource *dst, stru
       int aspect = 1 << u_bit_scan(&aspects);
       region.imageSubresource.aspectMask = aspect;
 
-      /* this may or may not work with multisampled depth/stencil buffers depending on the driver implementation:
+      /* MSAA transfers should have already been handled by U_TRANSFER_HELPER_MSAA_MAP, since
+       * there's no way to resolve using this interface:
        *
        * srcImage must have a sample count equal to VK_SAMPLE_COUNT_1_BIT
        * - vkCmdCopyImageToBuffer spec
@@ -4520,6 +4533,7 @@ zink_copy_image_buffer(struct zink_context *ctx, struct zink_resource *dst, stru
        * dstImage must have a sample count equal to VK_SAMPLE_COUNT_1_BIT
        * - vkCmdCopyBufferToImage spec
        */
+      assert(img->base.b.nr_samples <= 1);
       if (buf2img)
          VKCTX(CmdCopyBufferToImage)(cmdbuf, buf->obj->buffer, img->obj->image, img->layout, 1, &region);
       else

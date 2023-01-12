@@ -59,7 +59,7 @@ void ac_llvm_context_init(struct ac_llvm_context *ctx, struct ac_llvm_compiler *
                           enum amd_gfx_level gfx_level, enum radeon_family family,
                           bool has_3d_cube_border_color_mipmap,
                           enum ac_float_mode float_mode, unsigned wave_size,
-                          unsigned ballot_mask_bits)
+                          unsigned ballot_mask_bits, bool exports_color_null, bool exports_mrtz)
 {
    ctx->context = LLVMContextCreate();
 
@@ -69,6 +69,8 @@ void ac_llvm_context_init(struct ac_llvm_context *ctx, struct ac_llvm_compiler *
    ctx->wave_size = wave_size;
    ctx->ballot_mask_bits = ballot_mask_bits;
    ctx->float_mode = float_mode;
+   ctx->exports_color_null = exports_color_null;
+   ctx->exports_mrtz = exports_mrtz;
    ctx->module = ac_create_module(compiler->tm, ctx->context);
    ctx->builder = ac_create_builder(ctx->context, float_mode);
 
@@ -2027,15 +2029,6 @@ void ac_build_export(struct ac_llvm_context *ctx, struct ac_export_args *a)
       args[7] = LLVMConstInt(ctx->i1, a->valid_mask, 0);
 
       ac_build_intrinsic(ctx, "llvm.amdgcn.exp.f32", ctx->voidt, args, 8, 0);
-   }
-
-   if (LLVM_VERSION_MAJOR >= 15 && a->target == V_008DFC_SQ_EXP_MRTZ) {
-      LLVMAddTargetDependentFunctionAttr(ctx->main_function.value, "amdgpu-depth-export", "1");
-   } else if (LLVM_VERSION_MAJOR >= 15 && a->target <= V_008DFC_SQ_EXP_NULL) {
-      /* We need this attribute even for NULL targets, so that an export is created for full-wave
-       * discards on GFX10+.
-       */
-      LLVMAddTargetDependentFunctionAttr(ctx->main_function.value, "amdgpu-color-export", "1");
    }
 }
 
@@ -4630,8 +4623,10 @@ struct ac_llvm_pointer ac_build_main(const struct ac_shader_args *args, struct a
                                       "preserve-sign,preserve-sign");
 
    if (LLVM_VERSION_MAJOR >= 15 && convention == AC_LLVM_AMDGPU_PS) {
-      LLVMAddTargetDependentFunctionAttr(main_function, "amdgpu-depth-export", "0");
-      LLVMAddTargetDependentFunctionAttr(main_function, "amdgpu-color-export", "0");
+      LLVMAddTargetDependentFunctionAttr(main_function, "amdgpu-depth-export",
+                                         ctx->exports_mrtz ? "1" : "0");
+      LLVMAddTargetDependentFunctionAttr(main_function, "amdgpu-color-export",
+                                         ctx->exports_color_null ? "1" : "0");
    }
 
    return ctx->main_function;

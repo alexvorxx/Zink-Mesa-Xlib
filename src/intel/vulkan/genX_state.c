@@ -756,7 +756,7 @@ vk_to_intel_tex_filter(VkFilter filter, bool anisotropyEnable)
 static uint32_t
 vk_to_intel_max_anisotropy(float ratio)
 {
-   return (anv_clamp_f(ratio, 2, 16) - 2) / 2;
+   return (CLAMP(ratio, 2, 16) - 2) / 2;
 }
 
 static const uint32_t vk_to_intel_mipmap_mode[] = {
@@ -949,11 +949,11 @@ VkResult genX(CreateSampler)(
          .MipModeFilter = mip_filter_mode,
          .MagModeFilter = vk_to_intel_tex_filter(mag_filter, pCreateInfo->anisotropyEnable),
          .MinModeFilter = vk_to_intel_tex_filter(min_filter, pCreateInfo->anisotropyEnable),
-         .TextureLODBias = anv_clamp_f(pCreateInfo->mipLodBias, -16, 15.996),
+         .TextureLODBias = CLAMP(pCreateInfo->mipLodBias, -16, 15.996),
          .AnisotropicAlgorithm =
             pCreateInfo->anisotropyEnable ? EWAApproximation : LEGACY,
-         .MinLOD = anv_clamp_f(pCreateInfo->minLod, 0, 14),
-         .MaxLOD = anv_clamp_f(pCreateInfo->maxLod, 0, 14),
+         .MinLOD = CLAMP(pCreateInfo->minLod, 0, 14),
+         .MaxLOD = CLAMP(pCreateInfo->maxLod, 0, 14),
          .ChromaKeyEnable = 0,
          .ChromaKeyIndex = 0,
          .ChromaKeyMode = 0,

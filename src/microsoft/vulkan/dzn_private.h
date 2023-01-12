@@ -271,6 +271,12 @@ struct dzn_device {
 #define DZN_QUERY_REFS_RES_SIZE (DZN_QUERY_REFS_ALL_ZEROS_OFFSET + DZN_QUERY_REFS_SECTION_SIZE)
       ID3D12Resource *refs;
    } queries;
+
+   /* Will be the app's graphics queue if there's exactly one, otherwise this will be 
+    * a dedicated graphics queue to host swapchain blits.
+    */
+   bool need_swapchain_blits;
+   struct dzn_queue *swapchain_queue;
 };
 
 void dzn_meta_finish(struct dzn_device *device);
@@ -290,9 +296,13 @@ struct dzn_device_memory {
 
    struct list_head link;
 
+   /* Swapchain image resource, NULL if the memory is not backed by
+    * a DXGI swapchain.
+    */
+   ID3D12Resource *swapchain_res;
+
    ID3D12Heap *heap;
    VkDeviceSize size;
-   D3D12_RESOURCE_STATES initial_state; /* initial state for this memory type */
 
    /* A buffer-resource spanning the entire heap, used for mapping memory */
    ID3D12Resource *map_res;
@@ -584,6 +594,7 @@ struct dzn_cmd_buffer {
       struct dzn_descriptor_heap_pool pool;
    } rtvs, dsvs;
 
+   bool enhanced_barriers;
    struct hash_table *transition_barriers;
 
    struct dzn_descriptor_heap_pool cbv_srv_uav_pool, sampler_pool;
@@ -594,6 +605,10 @@ struct dzn_cmd_buffer {
    ID3D12CommandAllocator *cmdalloc;
    ID3D12GraphicsCommandList1 *cmdlist;
    ID3D12GraphicsCommandList8 *cmdlist8;
+
+   D3D12_COMMAND_LIST_TYPE type;
+   D3D12_BARRIER_SYNC valid_sync;
+   D3D12_BARRIER_ACCESS valid_access;
 };
 
 struct dzn_descriptor_pool {
@@ -890,6 +905,8 @@ struct dzn_image {
    VkDeviceSize mem_offset;
    uint32_t castable_format_count;
    DXGI_FORMAT *castable_formats;
+
+   D3D12_BARRIER_ACCESS valid_access;
 };
 
 bool
@@ -927,6 +944,11 @@ D3D12_RESOURCE_STATES
 dzn_image_layout_to_state(const struct dzn_image *image,
                           VkImageLayout layout,
                           VkImageAspectFlagBits aspect);
+
+D3D12_BARRIER_LAYOUT
+dzn_vk_layout_to_d3d_layout(VkImageLayout layout,
+                            D3D12_COMMAND_LIST_TYPE type,
+                            VkImageAspectFlags aspect);
 
 uint32_t
 dzn_image_layers_get_subresource_index(const struct dzn_image *image,
@@ -971,6 +993,8 @@ struct dzn_buffer {
 
    VkBufferCreateFlags create_flags;
    VkBufferUsageFlags usage;
+
+   D3D12_BARRIER_ACCESS valid_access;
 };
 
 DXGI_FORMAT
@@ -1115,6 +1139,10 @@ dzn_query_pool_get_availability_offset(const struct dzn_query_pool *qpool, uint3
 
 uint32_t
 dzn_query_pool_get_result_size(const struct dzn_query_pool *qpool, uint32_t count);
+
+VKAPI_ATTR void VKAPI_CALL
+dzn_CmdPipelineBarrier2_enhanced(VkCommandBuffer commandBuffer,
+                                 const VkDependencyInfo *info);
 
 VK_DEFINE_HANDLE_CASTS(dzn_cmd_buffer, vk.base, VkCommandBuffer, VK_OBJECT_TYPE_COMMAND_BUFFER)
 VK_DEFINE_HANDLE_CASTS(dzn_device, vk.base, VkDevice, VK_OBJECT_TYPE_DEVICE)

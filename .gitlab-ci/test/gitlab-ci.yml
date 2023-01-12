@@ -109,11 +109,6 @@ rustfmt:
   variables:
     DEQP_VER: vk
 
-.skqp-test:
-  variables:
-    HWCI_START_XORG: 1
-    HWCI_TEST_SCRIPT: "/install/skqp-runner.sh"
-
 .fossilize-test:
   script:
     - ./install/fossilize-runner.sh
@@ -246,9 +241,6 @@ rustfmt:
     # We don't want the tarball unpacking of .test, but will take the JWT bits.
     - !reference [default, before_script]
 
-    # temporary overrides to allow others to use harbor.freedesktop.org
-    - export IMAGE_UNDER_TEST=${IMAGE_UNDER_TEST/harbor/registry}
-
     - |
       set -x
 
@@ -338,7 +330,7 @@ rustfmt:
     paths:
       - ${JOB_FOLDER}/results
     reports:
-      junit: ${JOB_FOLDER}/results/junit.xml
+      junit: ${JOB_FOLDER}/results/**/junit.xml
 
 .b2c-test-vk:
   extends:

@@ -50,6 +50,7 @@ apt-get -y install \
 	libxrandr-dev \
 	libxshmfence-dev \
 	libxxf86vm-dev \
+	libwayland-dev \
 	llvm-11-dev \
 	ninja-build \
 	pkg-config \
@@ -83,6 +84,8 @@ arch=armhf
 # dependencies where we want a specific version
 EXTRA_MESON_ARGS=
 . .gitlab-ci/container/build-libdrm.sh
+
+. .gitlab-ci/container/build-wayland.sh
 
 apt-get purge -y $STABLE_EPHEMERAL
 

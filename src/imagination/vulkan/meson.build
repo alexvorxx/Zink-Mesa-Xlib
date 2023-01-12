@@ -38,6 +38,7 @@ pvr_files = files(
   'winsys/pvr_winsys_helper.c',
   'pvr_blit.c',
   'pvr_bo.c',
+  'pvr_clear.c',
   'pvr_cmd_buffer.c',
   'pvr_csb.c',
   'pvr_descriptor_set.c',

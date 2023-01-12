@@ -561,7 +561,7 @@ enum pipe_resource_usage {
 /**
  * Primitive types:
  */
-enum pipe_prim_type {
+enum PACKED pipe_prim_type {
    PIPE_PRIM_POINTS,
    PIPE_PRIM_LINES,
    PIPE_PRIM_LINE_LOOP,
@@ -578,7 +578,7 @@ enum pipe_prim_type {
    PIPE_PRIM_TRIANGLE_STRIP_ADJACENCY,
    PIPE_PRIM_PATCHES,
    PIPE_PRIM_MAX,
-} ENUM_PACKED;
+};
 
 /**
  * Tessellator spacing types
@@ -728,6 +728,8 @@ enum pipe_conservative_raster_mode
 #define PIPE_IMAGE_ACCESS_WRITE      (1 << 1)
 #define PIPE_IMAGE_ACCESS_READ_WRITE (PIPE_IMAGE_ACCESS_READ | \
                                       PIPE_IMAGE_ACCESS_WRITE)
+#define PIPE_IMAGE_ACCESS_COHERENT   (1 << 2)
+#define PIPE_IMAGE_ACCESS_VOLATILE   (1 << 3)
 
 /**
  * Implementation capabilities/limits which are queried through
@@ -1014,6 +1016,7 @@ enum pipe_cap
    PIPE_CAP_DEVICE_PROTECTED_CONTEXT,
    PIPE_CAP_ALLOW_GLTHREAD_BUFFER_SUBDATA_OPT,
 
+   PIPE_CAP_VALIDATE_ALL_DIRTY_STATES,
    PIPE_CAP_LAST,
    /* XXX do not add caps after PIPE_CAP_LAST! */
 };

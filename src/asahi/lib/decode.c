@@ -393,8 +393,17 @@ agxdecode_usc(const uint8_t *map, UNUSED uint64_t *link, UNUSED bool verbose)
       return AGX_USC_TEXTURE_LENGTH;
    }
 
+   case AGX_USC_CONTROL_UNIFORM: {
+      agx_unpack(agxdecode_dump_stream, map, USC_UNIFORM, temp);
+      DUMP_UNPACKED(USC_UNIFORM, temp, "Uniform\n");
+
+      uint8_t *raw = agxdecode_fetch_gpu_mem(temp.buffer, 2 * temp.size_halfs);
+      hexdump(agxdecode_dump_stream, raw, 2 * temp.size_halfs, false);
+
+      return AGX_USC_UNIFORM_LENGTH;
+   }
+
       USC_CASE(FRAGMENT_PROPERTIES, "Fragment properties");
-      USC_CASE(UNIFORM, "Uniform");
       USC_CASE(UNIFORM_HIGH, "Uniform high");
       USC_CASE(SHARED, "Shared");
       USC_CASE(REGISTERS, "Registers");

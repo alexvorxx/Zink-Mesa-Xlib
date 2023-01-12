@@ -239,6 +239,12 @@ op("device_load",
       encoding_32 = (0x05, 0x7F, 6, 8),
       srcs = 2, imms = [FORMAT, MASK, SHIFT, SCOREBOARD], can_reorder = False)
 
+# sources are value, base, index
+# TODO: Consider permitting the short form
+op("device_store",
+      encoding_32 = (0x45 | (1 << 47), 0, 8, _),
+      dests = 0, srcs = 3, imms = [FORMAT, MASK, SHIFT, SCOREBOARD], can_eliminate = False)
+
 # sources are value, index
 # TODO: Consider permitting the short form
 op("uniform_store",
@@ -288,6 +294,7 @@ op("convert", (0x3E | L, 0x7F | L | (0x3 << 38), 6, _), srcs = 2, imms = [ROUND]
 op("iter", (0x21, 0xBF, 8, _), srcs = 2, imms = [CHANNELS, PERSPECTIVE])
 op("ldcf", (0xA1, 0xBF, 8, _), srcs = 1, imms = [CHANNELS])
 op("st_vary", None, dests = 0, srcs = 2, can_eliminate = False)
+op("no_varyings", (0x80000051, 0xFFFFFFFF, 4, _), dests = 0, can_eliminate = False)
 op("stop", (0x88, 0xFFFF, 2, _), dests = 0, can_eliminate = False)
 op("trap", (0x08, 0xFFFF, 2, _), dests = 0, can_eliminate = False)
 op("writeout", (0x48, 0xFF, 4, _), dests = 0, imms = [WRITEOUT], can_eliminate = False)

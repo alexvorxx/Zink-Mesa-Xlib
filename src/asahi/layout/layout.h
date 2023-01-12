@@ -125,6 +125,9 @@ struct ail_layout {
    /* Offset of the start of the compression metadata buffer */
    uint32_t metadata_offset_B;
 
+   /* Stride between subsequent layers in the compression metadata buffer */
+   uint32_t compression_layer_stride_B;
+
    /* Size of entire texture */
    uint32_t size_B;
 };
@@ -181,7 +184,6 @@ ail_get_linear_pixel_B(struct ail_layout *layout, ASSERTED unsigned level,
                        uint32_t x_px, uint32_t y_px, uint32_t z_px)
 {
    assert(level == 0 && "Strided linear mipmapped textures are unsupported");
-   assert(z_px == 0 && "Strided linear 3D textures are unsupported");
    assert(util_format_get_blockwidth(layout->format) == 1 &&
           "Strided linear block formats unsupported");
    assert(util_format_get_blockheight(layout->format) == 1 &&
@@ -189,7 +191,8 @@ ail_get_linear_pixel_B(struct ail_layout *layout, ASSERTED unsigned level,
    assert(layout->sample_count_sa == 1 &&
           "Strided linear multisampling unsupported");
 
-   return (y_px * ail_get_linear_stride_B(layout, level)) +
+   return ail_get_layer_offset_B(layout, z_px) +
+          (y_px * ail_get_linear_stride_B(layout, level)) +
           (x_px * util_format_get_blocksize(layout->format));
 }
 

@@ -580,6 +580,10 @@ fd_ringbuffer_sp_check_size(struct fd_ringbuffer *ring)
       return false;
    }
 
+   if (to_fd_submit_sp(submit)->nr_suballoc_bos > MAX_ARRAY_SIZE/2) {
+      return false;
+   }
+
    return true;
 }
 

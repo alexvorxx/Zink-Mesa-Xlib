@@ -68,11 +68,10 @@ agx_blitter_save(struct agx_context *ctx, struct blitter_context *blitter,
 void
 agx_blit(struct pipe_context *pipe, const struct pipe_blit_info *info)
 {
-   // if (info->render_condition_enable &&
-   //     !agx_render_condition_check(pan_context(pipe)))
-   //         return;
-
    struct agx_context *ctx = agx_context(pipe);
+
+   if (info->render_condition_enable && !agx_render_condition_check(ctx))
+      return;
 
    if (!util_blitter_is_blit_supported(ctx->blitter, info)) {
       fprintf(stderr, "\n");

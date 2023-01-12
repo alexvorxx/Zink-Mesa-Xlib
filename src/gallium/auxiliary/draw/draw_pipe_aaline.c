@@ -361,7 +361,7 @@ generate_aaline_fs_nir(struct aaline_stage *aaline)
    if (!aaline_fs.ir.nir)
       return FALSE;
 
-   nir_lower_aaline_fs(aaline_fs.ir.nir, &aaline->fs->generic_attrib);
+   nir_lower_aaline_fs(aaline_fs.ir.nir, &aaline->fs->generic_attrib, NULL, NULL);
    aaline->fs->aaline_fs = aaline->driver_create_fs_state(pipe, &aaline_fs);
    if (aaline->fs->aaline_fs == NULL)
       return FALSE;

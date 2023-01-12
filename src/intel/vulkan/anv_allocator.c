@@ -212,8 +212,8 @@ anv_state_table_grow(struct anv_state_table *table)
 {
    VkResult result = VK_SUCCESS;
 
-   uint32_t used = align_u32(table->state.next * ANV_STATE_ENTRY_SIZE,
-                             PAGE_SIZE);
+   uint32_t used = align(table->state.next * ANV_STATE_ENTRY_SIZE,
+                         PAGE_SIZE);
    uint32_t old_size = table->size;
 
    /* The block pool is always initialized to a nonzero size and this function
@@ -520,7 +520,7 @@ anv_block_pool_grow(struct anv_block_pool *pool, struct anv_block_state *state,
     * We align to a page size because it makes it easier to do our
     * calculations later in such a way that we state page-aigned.
     */
-   uint32_t total_used = align_u32(pool->state.next, PAGE_SIZE);
+   uint32_t total_used = align(pool->state.next, PAGE_SIZE);
 
    uint32_t old_size = pool->size;
 
@@ -1006,7 +1006,7 @@ anv_state_stream_alloc(struct anv_state_stream *stream,
 
    assert(alignment <= PAGE_SIZE);
 
-   uint32_t offset = align_u32(stream->next, alignment);
+   uint32_t offset = align(stream->next, alignment);
    if (offset + size > stream->block.alloc_size) {
       uint32_t block_size = stream->block_size;
       if (block_size < size)
@@ -1436,19 +1436,19 @@ anv_device_alloc_bo(struct anv_device *device,
    assert(bo_flags == (bo_flags & ANV_BO_CACHE_SUPPORTED_FLAGS));
 
    /* The kernel is going to give us whole pages anyway */
-   size = align_u64(size, 4096);
+   size = align64(size, 4096);
 
    uint64_t ccs_size = 0;
    if (device->info->has_aux_map && (alloc_flags & ANV_BO_ALLOC_IMPLICIT_CCS)) {
       /* Align the size up to the next multiple of 64K so we don't have any
        * AUX-TT entries pointing from a 64K page to itself.
        */
-      size = align_u64(size, 64 * 1024);
+      size = align64(size, 64 * 1024);
 
       /* See anv_bo::_ccs_size */
       uint64_t aux_ratio =
          intel_aux_get_main_to_aux_ratio(device->aux_map_ctx);
-      ccs_size = align_u64(DIV_ROUND_UP(size, aux_ratio), 4096);
+      ccs_size = align64(DIV_ROUND_UP(size, aux_ratio), 4096);
    }
 
    uint32_t gem_handle;

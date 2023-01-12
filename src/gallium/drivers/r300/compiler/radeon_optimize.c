@@ -88,11 +88,26 @@ static void copy_propagate_scan_read(void * data, struct rc_instruction * inst,
 		return;
 	}
 
+	/* R300/R400 is unhappy about propagating
+	 *  0: MOV temp[1], -none.1111;
+	 *  1: KIL temp[1];
+	 * to
+	 *  0: KIL -none.1111;
+	 *
+	 * R500 is fine with it.
+	 */
+	if (!reader_data->C->is_r500 && inst->U.I.Opcode == RC_OPCODE_KIL &&
+		reader_data->Writer->U.I.SrcReg[0].File == RC_FILE_NONE) {
+		reader_data->Abort = 1;
+		return;
+	}
+
 	/* These instructions cannot read from the constants file.
 	 * see radeonTransformTEX()
 	 */
 	if(reader_data->Writer->U.I.SrcReg[0].File != RC_FILE_TEMPORARY &&
 			reader_data->Writer->U.I.SrcReg[0].File != RC_FILE_INPUT &&
+			reader_data->Writer->U.I.SrcReg[0].File != RC_FILE_NONE &&
 				(inst->U.I.Opcode == RC_OPCODE_TEX ||
 				inst->U.I.Opcode == RC_OPCODE_TXB ||
 				inst->U.I.Opcode == RC_OPCODE_TXP ||

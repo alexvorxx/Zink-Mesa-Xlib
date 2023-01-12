@@ -75,6 +75,10 @@ agx_print_index(agx_index index, bool is_float, FILE *fp)
 
       break;
 
+   case AGX_INDEX_UNDEF:
+      fprintf(fp, "undef");
+      break;
+
    case AGX_INDEX_UNIFORM:
       agx_print_sized('u', index.value, index.size, fp);
       break;

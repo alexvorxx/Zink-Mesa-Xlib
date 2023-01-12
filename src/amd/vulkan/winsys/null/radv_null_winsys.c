@@ -68,7 +68,7 @@ static const struct {
    [CHIP_VANGOGH] = {0x163F, 8, false},
    [CHIP_NAVI22] = {0x73C0, 8, true},
    [CHIP_NAVI23] = {0x73E0, 8, true},
-   [CHIP_GFX1100] = {0xdead, 8, true}, /* TODO: fill with real info. */
+   [CHIP_GFX1100] = {0x73BF, 24, true},
 };
 
 static void
@@ -126,6 +126,8 @@ radv_null_winsys_query_info(struct radeon_winsys *rws, struct radeon_info *info)
       info->num_physical_sgprs_per_simd = 800;
    else
       info->num_physical_sgprs_per_simd = 512;
+
+   info->has_3d_cube_border_color_mipmap = true;
 
    if (info->family == CHIP_GFX1100 || info->family == CHIP_GFX1101)
       info->num_physical_wave64_vgprs_per_simd = 768;

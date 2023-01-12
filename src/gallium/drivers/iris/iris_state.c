@@ -636,7 +636,30 @@ emit_pipeline_select(struct iris_batch *batch, uint32_t pipeline)
       iris_emit_cmd(batch, GENX(3DSTATE_CC_STATE_POINTERS), t);
 #endif
 
+#if GFX_VER >= 12
+   /* From Tigerlake PRM, Volume 2a, PIPELINE_SELECT:
+    *
+    *   "Software must ensure Render Cache, Depth Cache and HDC Pipeline flush
+    *   are flushed through a stalling PIPE_CONTROL command prior to
+    *   programming of PIPELINE_SELECT command transitioning Pipeline Select
+    *   from 3D to GPGPU/Media.
+    *   Software must ensure HDC Pipeline flush and Generic Media State Clear
+    *   is issued through a stalling PIPE_CONTROL command prior to programming
+    *   of PIPELINE_SELECT command transitioning Pipeline Select from
+    *   GPGPU/Media to 3D."
+    *
+    * Note: Issuing PIPE_CONTROL_MEDIA_STATE_CLEAR causes GPU hangs, probably
+    * because PIPE was not in MEDIA mode?!
+    */
+   enum pipe_control_flags flags = PIPE_CONTROL_CS_STALL |
+                                   PIPE_CONTROL_FLUSH_HDC;
 
+   if (pipeline == GPGPU) {
+      flags |= PIPE_CONTROL_RENDER_TARGET_FLUSH |
+               PIPE_CONTROL_DEPTH_CACHE_FLUSH;
+   }
+   iris_emit_pipe_control_flush(batch, "PIPELINE_SELECT flush", flags);
+#else
    /* From "BXML » GT » MI » vol1a GPU Overview » [Instruction]
     * PIPELINE_SELECT [DevBWR+]":
     *
@@ -661,6 +684,7 @@ emit_pipeline_select(struct iris_batch *batch, uint32_t pipeline)
                                  PIPE_CONTROL_CONST_CACHE_INVALIDATE |
                                  PIPE_CONTROL_STATE_CACHE_INVALIDATE |
                                  PIPE_CONTROL_INSTRUCTION_INVALIDATE);
+#endif
 
    iris_emit_cmd(batch, GENX(PIPELINE_SELECT), sel) {
 #if GFX_VER >= 9

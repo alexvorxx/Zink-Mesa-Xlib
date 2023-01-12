@@ -3826,26 +3826,22 @@ emit_tex(struct ntv_context *ctx, nir_tex_instr *tex)
       return;
    }
    SpvId actual_dest_type;
-   if (dref && tex->op != nir_texop_tg4)
-      actual_dest_type = spirv_builder_type_float(&ctx->builder, 32);
-   else {
-      unsigned num_components = nir_dest_num_components(tex->dest);
-      switch (nir_alu_type_get_base_type(tex->dest_type)) {
-      case nir_type_int:
-         actual_dest_type = get_ivec_type(ctx, 32, num_components);
-         break;
+   unsigned num_components = nir_dest_num_components(tex->dest);
+   switch (nir_alu_type_get_base_type(tex->dest_type)) {
+   case nir_type_int:
+      actual_dest_type = get_ivec_type(ctx, 32, num_components);
+      break;
 
-      case nir_type_uint:
-         actual_dest_type = get_uvec_type(ctx, 32, num_components);
-         break;
+   case nir_type_uint:
+      actual_dest_type = get_uvec_type(ctx, 32, num_components);
+      break;
 
-      case nir_type_float:
-         actual_dest_type = get_fvec_type(ctx, 32, num_components);
-         break;
+   case nir_type_float:
+      actual_dest_type = get_fvec_type(ctx, 32, num_components);
+      break;
 
-      default:
-         unreachable("unexpected nir_alu_type");
-      }
+   default:
+      unreachable("unexpected nir_alu_type");
    }
 
    SpvId result;

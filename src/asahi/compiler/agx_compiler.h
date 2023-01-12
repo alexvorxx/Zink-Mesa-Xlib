@@ -47,6 +47,7 @@ enum agx_dbg {
    AGX_DBG_INTERNAL    = BITFIELD_BIT(4),
    AGX_DBG_NOVALIDATE  = BITFIELD_BIT(5),
    AGX_DBG_NOOPT       = BITFIELD_BIT(6),
+   AGX_DBG_WAIT        = BITFIELD_BIT(7),
 };
 /* clang-format on */
 
@@ -64,6 +65,7 @@ enum agx_index_type {
    AGX_INDEX_IMMEDIATE = 2,
    AGX_INDEX_UNIFORM = 3,
    AGX_INDEX_REGISTER = 4,
+   AGX_INDEX_UNDEF = 5,
 };
 
 enum agx_size { AGX_SIZE_16 = 0, AGX_SIZE_32 = 1, AGX_SIZE_64 = 2 };
@@ -145,6 +147,15 @@ agx_register(uint32_t imm, enum agx_size size)
       .value = imm,
       .size = size,
       .type = AGX_INDEX_REGISTER,
+   };
+}
+
+static inline agx_index
+agx_undef(enum agx_size size)
+{
+   return (agx_index){
+      .size = size,
+      .type = AGX_INDEX_UNDEF,
    };
 }
 
@@ -342,6 +353,8 @@ typedef struct {
    /* Output modifiers */
    bool saturate : 1;
    unsigned mask : 4;
+
+   unsigned padding : 11;
 } agx_instr;
 
 static inline void
@@ -395,7 +408,7 @@ typedef struct {
    unsigned alloc;
 
    /* I don't really understand how writeout ops work yet */
-   bool did_writeout;
+   bool did_writeout, did_sample_mask;
 
    /* Has r0l been zeroed yet due to control flow? */
    bool any_cf;
@@ -781,6 +794,7 @@ void agx_opt_cse(agx_context *ctx);
 void agx_dce(agx_context *ctx);
 void agx_ra(agx_context *ctx);
 void agx_lower_64bit_postra(agx_context *ctx);
+void agx_insert_waits(agx_context *ctx);
 void agx_pack_binary(agx_context *ctx, struct util_dynarray *emission);
 
 #ifndef NDEBUG
@@ -793,6 +807,7 @@ agx_validate(UNUSED agx_context *ctx, UNUSED const char *after_str)
 }
 #endif
 
+unsigned agx_read_registers(agx_instr *I, unsigned s);
 unsigned agx_write_registers(agx_instr *I, unsigned d);
 
 struct agx_copy {
@@ -817,6 +832,7 @@ bool agx_nir_lower_zs_emit(nir_shader *s);
 bool agx_nir_lower_array_texture(nir_shader *s);
 bool agx_nir_opt_preamble(nir_shader *s, unsigned *preamble_size);
 bool agx_nir_lower_load_mask(nir_shader *shader);
+bool agx_nir_lower_address(nir_shader *shader);
 bool agx_nir_lower_ubo(nir_shader *shader);
 
 #ifdef __cplusplus

@@ -92,7 +92,8 @@ etna_configure_sampler_ts(struct etna_sampler_ts *sts, struct pipe_sampler_view 
    struct etna_resource *rsc = etna_resource(pview->texture);
    struct etna_resource_level *lev = &rsc->levels[0];
 
-   if (lev->clear_value != sts->TS_SAMPLER_CLEAR_VALUE)
+   if ((lev->clear_value & 0xffffffff) != sts->TS_SAMPLER_CLEAR_VALUE ||
+       (lev->clear_value >> 32) != sts->TS_SAMPLER_CLEAR_VALUE2)
       dirty = true;
 
    assert(rsc->ts_bo && lev->ts_valid);

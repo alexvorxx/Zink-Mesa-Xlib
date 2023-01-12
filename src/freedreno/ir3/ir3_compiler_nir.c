@@ -4101,6 +4101,8 @@ pack_inlocs(struct ir3_context *ctx)
             unsigned j = inloc % 4;
 
             instr->srcs[0]->iim_val = so->inputs[i].inloc + j;
+            if (instr->opc == OPC_FLAT_B)
+               instr->srcs[1]->iim_val = instr->srcs[0]->iim_val;
          } else if (instr->opc == OPC_META_TEX_PREFETCH) {
             unsigned i = instr->prefetch.input_offset / 4;
             unsigned j = instr->prefetch.input_offset % 4;

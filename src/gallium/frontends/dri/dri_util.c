@@ -138,6 +138,8 @@ driCreateNewScreen2(int scrn, int fd,
 
     *driver_configs = mesa->initScreen(screen);
     if (*driver_configs == NULL) {
+        driDestroyOptionCache(&screen->optionCache);
+        driDestroyOptionInfo(&screen->optionInfo);
         free(screen);
         return NULL;
     }

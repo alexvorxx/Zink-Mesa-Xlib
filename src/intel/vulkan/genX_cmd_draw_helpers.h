@@ -72,19 +72,20 @@ emit_base_vertex_instance(struct anv_cmd_buffer *cmd_buffer,
 {
    if (base_vertex == 0 && base_instance == 0) {
       emit_base_vertex_instance_bo(cmd_buffer, ANV_NULL_ADDRESS);
-   } else {
-      struct anv_state id_state =
-         anv_cmd_buffer_alloc_dynamic_state(cmd_buffer, 8, 4);
-
-      ((uint32_t *)id_state.map)[0] = base_vertex;
-      ((uint32_t *)id_state.map)[1] = base_instance;
-
-      struct anv_address addr =
-         anv_state_pool_state_address(&cmd_buffer->device->dynamic_state_pool,
-                                      id_state);
-
-      emit_base_vertex_instance_bo(cmd_buffer, addr);
+      return;
    }
+
+   struct anv_state id_state =
+      anv_cmd_buffer_alloc_dynamic_state(cmd_buffer, 8, 4);
+
+   ((uint32_t *)id_state.map)[0] = base_vertex;
+   ((uint32_t *)id_state.map)[1] = base_instance;
+
+   struct anv_address addr =
+      anv_state_pool_state_address(&cmd_buffer->device->dynamic_state_pool,
+                                    id_state);
+
+   emit_base_vertex_instance_bo(cmd_buffer, addr);
 }
 
 static void

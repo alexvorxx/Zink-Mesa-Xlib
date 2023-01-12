@@ -261,6 +261,8 @@ fd_bo_heap_alloc(struct fd_bo_heap *heap, uint32_t size)
       heap->blocks[idx] = fd_bo_new(
             heap->dev, FD_BO_HEAP_BLOCK_SIZE, heap->flags,
             "heap-%x-block-%u", heap->flags, idx);
+      if (heap->flags == RING_FLAGS)
+         fd_bo_mark_for_dump(heap->blocks[idx]);
    }
    /* Take a reference to the backing obj: */
    fd_bo_ref(heap->blocks[idx]);

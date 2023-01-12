@@ -300,6 +300,7 @@ agx_linear_allowed(const struct agx_resource *pres)
     * works for 2D textures. Rectangle textures are a special case of 2D.
     */
    case PIPE_TEXTURE_2D:
+   case PIPE_TEXTURE_2D_ARRAY:
    case PIPE_TEXTURE_RECT:
       break;
 
@@ -870,6 +871,9 @@ agx_clear(struct pipe_context *pctx, unsigned buffers,
    struct agx_context *ctx = agx_context(pctx);
    struct agx_batch *batch = agx_get_batch(ctx);
 
+   if (unlikely(!agx_render_condition_check(ctx)))
+      return;
+
    unsigned fastclear = buffers & ~(batch->draw | batch->load);
    unsigned slowclear = buffers & ~fastclear;
 
@@ -1099,8 +1103,6 @@ agx_create_context(struct pipe_screen *screen, void *priv, unsigned flags)
 
    ctx->writer = _mesa_pointer_hash_table_create(ctx);
 
-   /* Upload fixed shaders (TODO: compile them?) */
-
    pctx->stream_uploader = u_upload_create_default(pctx);
    if (!pctx->stream_uploader) {
       FREE(pctx);
@@ -1214,7 +1216,9 @@ agx_get_param(struct pipe_screen *pscreen, enum pipe_cap param)
       return 0;
 
    case PIPE_CAP_MAX_RENDER_TARGETS:
-      return 1;
+   case PIPE_CAP_FBFETCH:
+   case PIPE_CAP_FBFETCH_COHERENT:
+      return 8;
 
    case PIPE_CAP_MAX_DUAL_SOURCE_RENDER_TARGETS:
       return 0;
@@ -1234,11 +1238,14 @@ agx_get_param(struct pipe_screen *pscreen, enum pipe_cap param)
    case PIPE_CAP_UMA:
    case PIPE_CAP_TEXTURE_FLOAT_LINEAR:
    case PIPE_CAP_TEXTURE_HALF_FLOAT_LINEAR:
+   case PIPE_CAP_TEXTURE_MIRROR_CLAMP_TO_EDGE:
    case PIPE_CAP_SHADER_ARRAY_COMPONENTS:
    case PIPE_CAP_PACKED_UNIFORMS:
    case PIPE_CAP_QUADS_FOLLOW_PROVOKING_VERTEX_CONVENTION:
    case PIPE_CAP_VS_INSTANCEID:
    case PIPE_CAP_VERTEX_ELEMENT_INSTANCE_DIVISOR:
+   case PIPE_CAP_CONDITIONAL_RENDER:
+   case PIPE_CAP_CONDITIONAL_RENDER_INVERTED:
       return 1;
 
    case PIPE_CAP_TEXTURE_MULTISAMPLE:
@@ -1327,7 +1334,6 @@ agx_get_param(struct pipe_screen *pscreen, enum pipe_cap param)
    case PIPE_CAP_FLATSHADE:
    case PIPE_CAP_TWO_SIDED_COLOR:
    case PIPE_CAP_ALPHA_TEST:
-   case PIPE_CAP_GL_CLAMP:
    case PIPE_CAP_POINT_SIZE_FIXED:
    case PIPE_CAP_CLIP_PLANES:
    case PIPE_CAP_NIR_IMAGES_AS_DEREF:
@@ -1411,7 +1417,7 @@ agx_get_shader_param(struct pipe_screen *pscreen, enum pipe_shader_type shader,
       return 16;
 
    case PIPE_SHADER_CAP_MAX_OUTPUTS:
-      return shader == PIPE_SHADER_FRAGMENT ? 4 : 16;
+      return shader == PIPE_SHADER_FRAGMENT ? 8 : 16;
 
    case PIPE_SHADER_CAP_MAX_TEMPS:
       return 256; /* GL_MAX_PROGRAM_TEMPORARIES_ARB */

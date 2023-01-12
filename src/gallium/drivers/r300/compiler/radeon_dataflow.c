@@ -511,17 +511,11 @@ static void add_reader_pair(
 
 static unsigned int get_readers_read_callback(
 	struct get_readers_callback_data * cb_data,
-	unsigned int has_rel_addr,
 	rc_register_file file,
 	unsigned int index,
 	unsigned int swizzle)
 {
 	unsigned int shared_mask, read_mask;
-
-	if (has_rel_addr) {
-		cb_data->ReaderData->Abort = 1;
-		return RC_MASK_NONE;
-	}
 
 	shared_mask = rc_src_reads_dst_mask(file, index, swizzle,
 		cb_data->DstFile, cb_data->DstIndex, cb_data->AliveWriteMask);
@@ -562,7 +556,6 @@ static void get_readers_pair_read_callback(
 	struct get_readers_callback_data * d = userdata;
 
 	shared_mask = get_readers_read_callback(d,
-				0 /*Pair Instructions don't use RelAddr*/,
 				src->File, src->Index, arg->Swizzle);
 
 	if (shared_mask == RC_MASK_NONE)
@@ -590,7 +583,7 @@ static void get_readers_normal_read_callback(
 	unsigned int shared_mask;
 
 	shared_mask = get_readers_read_callback(d,
-			src->RelAddr, src->File, src->Index, src->Swizzle);
+			src->File, src->Index, src->Swizzle);
 
 	if (shared_mask == RC_MASK_NONE)
 		return;

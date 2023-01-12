@@ -14,6 +14,20 @@
     - if: *is-scheduled-pipeline
       when: never
 
+# Rule for restricted traces jobs to only run for users with access to those
+# traces (both https://gitlab.freedesktop.org/gfx-ci/tracie/traces-db-private
+# for trace access, and minio bucket access for viewing result images from CI).
+#
+# This is a compromise, allowing some marked developers to have their MRs
+# blocked on regressions to non-redistributable traces, while not blocking
+# merges for other devs who would be unable to debug changes to them.
+.restricted-rules:
+  rules:
+    # If the triggerer has access to the restricted traces and if it is pre-merge
+    - if: '($GITLAB_USER_LOGIN !~ "/^(robclark|anholt|flto|cwabbott0|Danil|tomeu|okias|gallo)$/") &&
+           ($GITLAB_USER_LOGIN != "marge-bot" || $CI_COMMIT_BRANCH)'
+      when: never
+
 # Mesa core source file dependencies that may impact any test job
 # ---------------------------------------------------------------
 .core-rules:
@@ -226,10 +240,7 @@
 .freedreno-rules-restricted:
   stage: freedreno
   rules:
-    # If the triggerer has access to the restricted traces and if it is pre-merge
-    - if: '($GITLAB_USER_LOGIN !~ "/^(robclark|anholt|flto|cwabbott0|Danil|tomeu|okias|gallo)$/") &&
-           ($GITLAB_USER_LOGIN != "marge-bot" || $CI_COMMIT_BRANCH)'
-      when: never
+    - !reference [.restricted-rules, rules]
     - !reference [.freedreno-rules, rules]
 
 # Rules for GL driver performance tracking.  We want them to run as code is
@@ -554,6 +565,13 @@
 .zink-anv-rules:
   stage: layered-backends
   rules:
+    - !reference [.anv-rules, rules]
+    - !reference [.zink-common-rules, rules]
+
+.zink-anv-rules-restricted:
+  stage: layered-backends
+  rules:
+    - !reference [.restricted-rules, rules]
     - !reference [.anv-rules, rules]
     - !reference [.zink-common-rules, rules]
 

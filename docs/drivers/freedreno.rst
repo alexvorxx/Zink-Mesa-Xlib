@@ -26,6 +26,11 @@ Adreno is a mostly tile-mode renderer, but with the option to bypass tiling
 mostly write combined memory but with the ability to map some buffers as cache
 coherent with the CPU.
 
+.. toctree::
+   :glob:
+
+   freedreno/hw/*
+
 Hardware acronyms
 ^^^^^^^^^^^^^^^^^
 
@@ -212,10 +217,76 @@ you will need to ``CP_WAIT_FOR_IDLE`` after flushing and invalidating any
 necessary caches.
 
 Also, note that some registers are not banked at all, and will require a
-CP_WAIT_FOR_IDLE for any previous usage of the register to complete.
+``CP_WAIT_FOR_IDLE`` for any previous usage of the register to complete.
 
 In a2xx-a4xx, there weren't per-stage clusters, and instead there were two
 register banks that were flipped between per draw.
+
+Bindless/Bindful Descriptors (a6xx+)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Starting with a6xx++, cat5 (texture) and cat6 (image/ssbo/ubo) instructions are
+extended to support bindless descriptors.
+
+In the old bindful model, descriptors are separate for textures, samplers,
+UBOs, and IBOs (combined descriptor for images and SSBOs), with separate
+registers for the memory containing the array of descriptors, and/or different
+``STATE_TYPE`` and ``STATE_BLOCK`` for ``CP_LOAD_STATE``/``_FRAG``/``_GEOM``
+to pre-load the descriptors into cache.
+
+- textures - per-shader-stage
+   - registers: ``SP_xS_TEX_CONST``/``SP_xS_TEX_COUNT``
+   - state-type: ``ST6_CONSTANTS``
+   - state-block: ``SB6_xS_TEX``
+- samplers - per-shader-stage
+   - registers: ``SP_xS_TEX_SAMP``
+   - state-type: ``ST6_SHADER``
+   - state-block: ``SB6_xS_TEX``
+- UBOs - per-shader-stage
+   - registers: none
+   - state-type: ``ST6_UBO``
+   - state-block: ``SB6_xS_SHADER``
+- IBOs - global acress shader 3d stages, separate for compute shader
+   - registers: ``SP_IBO``/``SP_IBO_COUNT`` or ``SP_CS_IBO``/``SP_CS_IBO_COUNT``
+   - state-type: ``ST6_SHADER``
+   - state-block: ``ST6_IBO`` or ``ST6_CS_IBO`` for compute shaders
+   - Note, unlike per-shader-stage descriptors, ``CP_LOAD_STATE6`` is used,
+     as opposed to ``CP_LOAD_STATE6_GEOM`` or ``CP_LOAD_STATE6_FRAG``
+     depending on shader stage.
+
+.. note::
+   For the per-shader-stage registers and state-blocks the ``xS`` notation
+   refers to per-shader-stage names, ex. ``SP_FS_TEX_CONST`` or ``SB6_DS_TEX``
+
+Textures and IBOs (images) use *basically* the same 64byte descriptor format
+with some exceptions (for ex, for IBOs cubemaps are handles as 2d array).
+SSBOs are just untyped buffers, but otherwise use the same descriptors and
+instructions as images.  Samplers use a 16byte descriptor, and UBOs use an
+8byte descriptor which packs the size in the upper 15 bits of the UBO address.
+
+In the bindless model, descriptors are split into 5 desciptor sets, which are
+global across shader stages (but as with bindful IBO descriptors, separate for
+3d stages vs compute stage).  Each hw descriptor is an array of descriptors
+of configurable size (each descriptor set can be configured for a descriptor
+pitch of 8bytes or 64bytes).  Each descriptor can be of arbitrary format (ie.
+UBOs/IBOs/textures/samplers interleaved), it's interpretation by the hw is
+determined by the instruction that references the descriptor.  Each descriptor
+set can contain at least 2^^16 descriptors.
+
+The hw is configured with the base address of the descriptor set via an array
+of "BINDLESS_BASE" registers, ie ``SP_BINDLESS_BASE[n]``/``HLSQ_BINDLESS_BASE[n]``
+for 3d shader stages, or ``SP_CS_BINDLESS_BASE[n]``/``HLSQ_CS_BINDLESS_BASE[n]``
+for compute shaders, with the descriptor pitch encoded in the low bits.
+Which of the descriptor sets is referenced is encoded via three bits in the
+instruction.  The address of the descriptor is calculated as::
+
+   descriptor_addr = (BINDLESS_BASE[n] & ~0x3) +
+                     (idx * 4 * (2 << BINDLESS_BASE[n] & 0x3))
+
+
+.. note::
+   Turnip reserves one descriptor set for internal use and exposes the other
+   four for the application via the vulkan API.
 
 Software Architecture
 ---------------------
@@ -229,7 +300,7 @@ management and command stream generation.
 
    freedreno/*
 
-GPU hang debugging
+GPU devcoredump
 ^^^^^^^^^^^^^^^^^^
 
 A kernel message from DRM of "gpu fault" can mean any sort of error reported by
@@ -259,6 +330,41 @@ event. You can try running the workload with ``TU_DEBUG=flushall`` or
 You can also find what commands were queued up to each cluster in the
 ``regs-name: CP_MEMPOOL`` section.
 
+If ``ESTIMATED CRASH LOCATION`` doesn't exist you could find ``CP_SQE_STAT``,
+though going here is the last resort and likely won't be helpful.
+
+.. code-block::
+
+  indexed-registers:
+    - regs-name: CP_SQE_STAT
+      dwords: 51
+  	 PC: 00d7                                <-------------
+  	PKT: CP_LOAD_STATE6_FRAG
+  	$01: 70348003		$11: 00000000
+  	$02: 20000000		$12: 00000022
+
+The ``PC`` value is an instruction address in the current firmware.
+You would need to disassemble the firmware (/lib/firmware/qcom/aXXX_sqe.fw) via:
+
+.. code-block:: console
+
+  afuc-disasm -v a650_sqe.fw > a650_sqe.fw.disasm
+
+Now you should search for PC value in the disassembly, e.g.:
+
+.. code-block::
+
+  l018:	00d1: 08dd0001  add $addr, $06, 0x0001
+       	00d2: 981ff806  mov $data, $data
+       	00d3: 8a080001  mov $08, 0x0001 << 16
+       	00d4: 3108ffff  or $08, $08, 0xffff
+       	00d5: 9be8f805  and $data, $data, $08
+       	00d6: 9806e806  mov $addr, $06
+       	00d7: 9803f806  mov $data, $03           <------------- HERE
+       	00d8: d8000000  waitin
+       	00d9: 981f0806  mov $01, $data
+
+
 Command Stream Capture
 ^^^^^^^^^^^^^^^^^^^^^^
 
@@ -284,3 +390,185 @@ a heavyweight game.  Instead, to capture a command stream within a game, you
 probably want to cause a crash in the GPU during a farme of interest so that a
 single GPU core dump is generated.  Emitting ``0xdeadbeef`` in the CS should be
 enough to cause a fault.
+
+Capturing Hang RD
++++++++++++++++++
+
+Devcore file doesn't contain all submitted command streams, only the hanging one.
+Additionally it is geared towards analyzing the GPU state at the moment of the crash.
+
+Alternatively, it's possible to obtain the whole submission with all command
+streams via ``/sys/kernel/debug/dri/0/hangrd``:
+
+.. code-block:: console
+
+  sudo cat /sys/kernel/debug/dri/0/hangrd > logfile.rd // Do the cat _before_ the expected hang
+
+The format of hangrd is the same as in ordinary command stream capture.
+``rd_full`` also has the same effect on it.
+
+Replaying Command Stream
+^^^^^^^^^^^^^^^^^^^^^^^^
+
+`replay` tool allows capturing and replaying ``rd`` to reproduce GPU faults.
+Especially useful for transient GPU issues since it has much higher chances to
+reproduce them.
+
+Dumping rendering results or even just memory is currently unsupported.
+
+- Replaying command streams requires kernel with ``MSM_INFO_SET_IOVA`` support.
+- Requires ``rd`` capture to have full snapshots of the memory (``rd_full`` is enabled).
+
+Replaying is done via `replay` tool:
+
+.. code-block:: console
+
+  ./replay test_replay.rd
+
+More examples:
+
+.. code-block:: console
+
+  ./replay --first=start_submit_n --last=last_submit_n test_replay.rd
+
+.. code-block:: console
+
+  ./replay --override=0 --generator=./generate_rd test_replay.rd
+
+Editing Command Stream (a6xx+)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+While replaying a fault is useful in itself, modifying the capture to
+understand what causes the fault could be even more useful.
+
+``rddecompiler`` decompiles a single cmdstream from ``rd`` into compilable C source.
+Given the address space bounds the generated program creates a new ``rd`` which
+could be used to override cmdstream with 'replay'. Generated ``rd`` is not replayable
+on its own and depends on buffers provided by the source ``rd``.
+
+C source could be compiled using rdcompiler-meson.build as an example.
+
+The workflow would look like this:
+
+1. Find the cmdstream № you want to edit;
+2. Decompile it:
+
+.. code-block:: console
+
+  ./rddecompiler -s %cmd_stream_n% example.rd > generate_rd.c
+
+3. Edit the command stream;
+4. Compile it back, see rdcompiler-meson.build for the instructions;
+5. Plug the generator into cmdstream replay:
+
+.. code-block:: console
+
+  ./replay --override=%cmd_stream_№% --generator=~/generate_rd
+
+6. Repeat 3-5.
+
+GPU Hang Debugging
+^^^^^^^^^^^^^^^^^^
+
+Not a guide for how to do it but mostly an enumeration of methods.
+
+Useful ``TU_DEBUG`` (for Turnip) options to narrow down the hang cause:
+
+``sysmem``, ``gmem``, ``nobin``, ``forcebin``, ``noubwc``, ``nolrz``, ``flushall``, ``syncdraw``, ``rast_order``
+
+Useful ``FD_MESA_DEBUG`` (for Freedreno) options:
+
+``sysmem``, ``gmem``, ``nobin``, ``noubwc``, ``nolrz``, ``notile``, ``dclear``, ``ddraw``, ``flush``, ``inorder``, ``noblit``
+
+Useful ``IR3_SHADER_DEBUG`` options:
+
+``nouboopt``, ``spillall``, ``nopreamble``, ``nofp16``
+
+Use Graphics Flight Recorder to narrow down the place which hangs,
+use our own breadcrumbs implementation in case of unrecoverable hangs.
+
+In case of faults use RenderDoc to find the problematic command. If it's
+a draw call, edit shader in RenderDoc to find whether it culprit is a shader.
+If yes, bisect it.
+
+If editing the shader messes the assembly too much and the issue becomes unreproducible
+try editing the assembly itself via ``IR3_SHADER_OVERRIDE_PATH``.
+
+If fault or hang is transient try capturing an ``rd`` and replay it. If issue
+is reproduced - bisect the GPU packets until the culprit is found.
+
+Do the above if culprit is not a shader.
+
+The hang recovery mechanism in Kernel is not perfect, in case of unrecoverable
+hangs check whether the kernel is up to date and look for unmerged patches
+which could improve the recovery.
+
+GPU Breadcrumbs
++++++++++++++++
+
+Breadcrumbs described below are available only in Turnip.
+
+Freedreno has simpler breadcrumbs, in debug build writes breadcrumbs
+into ``CP_SCRATCH_REG[6]`` and per-tile breadcrumbs into ``CP_SCRATCH_REG[7]``,
+in this way they are available in the devcoredump. TODO: generalize Tunip's
+breadcrumbs implementation.
+
+This is a simple implementations of breadcrumbs tracking of GPU progress
+intended to be a last resort when debugging unrecoverable hangs.
+For best results use Vulkan traces to have a predictable place of hang.
+
+For ordinary hangs as a more user-friendly solution use GFR
+"Graphics Flight Recorder".
+
+Or breadcrumbs implementation aims to handle cases where nothing can be done
+after the hang. In-driver breadcrumbs also allow more precise tracking since
+we could target a single GPU packet.
+
+While breadcrumbs support gmem, try to reproduce the hang in a sysmem mode
+because it would require much less breadcrumb writes and syncs.
+
+Breadcrumbs settings:
+
+.. code-block:: console
+
+  TU_BREADCRUMBS=%IP%:%PORT%,break=%BREAKPOINT%:%BREAKPOINT_HITS%
+
+``BREAKPOINT``
+  The breadcrumb starting from which we require explicit ack.
+``BREAKPOINT_HITS``
+  How many times breakpoint should be reached for break to occur.
+  Necessary for a gmem mode and re-usable cmdbuffers in both of which
+  the same cmdstream could be executed several times.
+
+A typical work flow would be:
+
+- Start listening for breadcrumbs on a remote host:
+
+.. code-block:: console
+
+   nc -lvup $PORT | stdbuf -o0 xxd -pc -c 4 | awk -Wposix '{printf("%u:%u\n", "0x" $0, a[$0]++)}'
+
+- Start capturing command stream;
+- Replay the hanging trace with:
+
+.. code-block:: console
+
+   TU_BREADCRUMBS=$IP:$PORT,break=-1:0
+
+- Increase hangcheck period:
+
+.. code-block:: console
+
+   echo -n 60000 > /sys/kernel/debug/dri/0/hangcheck_period_ms
+
+- After GPU hang note the last breadcrumb and relaunch trace with:
+
+.. code-block:: console
+
+   TU_BREADCRUMBS=%IP%:%PORT%,break=%LAST_BREADCRUMB%:%HITS%
+
+- After the breakpoint is reached each breadcrumb would require
+  explicit ack from the user. This way it's possible to find
+  the last packet which did't hang.
+
+- Find the packet in the decoded cmdstream.

@@ -2176,6 +2176,8 @@ si_get_shader_part(struct si_screen *sscreen, struct si_shader_part **list,
    struct si_shader shader = {};
    shader.selector = &sel;
    bool wave32 = false;
+   bool exports_color_null = false;
+   bool exports_mrtz = false;
 
    switch (stage) {
    case MESA_SHADER_VERTEX:
@@ -2193,9 +2195,15 @@ si_get_shader_part(struct si_screen *sscreen, struct si_shader_part **list,
       if (prolog) {
          shader.key.ps.part.prolog = key->ps_prolog.states;
          wave32 = key->ps_prolog.wave32;
+         exports_color_null = key->ps_prolog.states.poly_stipple;
       } else {
          shader.key.ps.part.epilog = key->ps_epilog.states;
          wave32 = key->ps_epilog.wave32;
+         exports_color_null = key->ps_epilog.colors_written;
+         exports_mrtz = key->ps_epilog.writes_z || key->ps_epilog.writes_stencil ||
+                        key->ps_epilog.writes_samplemask;
+         if (!exports_mrtz && !exports_color_null)
+            exports_color_null = key->ps_epilog.uses_discard || sscreen->info.gfx_level < GFX10;
       }
       break;
    default:
@@ -2203,7 +2211,7 @@ si_get_shader_part(struct si_screen *sscreen, struct si_shader_part **list,
    }
 
    struct si_shader_context ctx;
-   si_llvm_context_init(&ctx, sscreen, compiler, wave32 ? 32 : 64);
+   si_llvm_context_init(&ctx, sscreen, compiler, wave32 ? 32 : 64, exports_color_null, exports_mrtz);
 
    ctx.shader = &shader;
    ctx.stage = stage;

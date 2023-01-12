@@ -171,6 +171,7 @@ struct aco_compiler_options {
    bool record_ir;
    bool record_stats;
    bool has_ls_vgpr_init_bug;
+   uint8_t enable_mrt_output_nan_fixup;
    bool wgp_mode;
    enum radeon_family family;
    enum amd_gfx_level gfx_level;

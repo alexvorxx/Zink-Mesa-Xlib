@@ -227,6 +227,8 @@ vk_device_finish(struct vk_device *device)
    /* Drivers should tear down their own queues */
    assert(list_is_empty(&device->queues));
 
+   vk_memory_trace_finish(device);
+
 #ifdef ANDROID
    if (device->swapchain_private) {
       hash_table_foreach(device->swapchain_private, entry)

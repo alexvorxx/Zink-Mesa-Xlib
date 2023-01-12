@@ -397,6 +397,11 @@ update_program(struct gl_context *ctx)
        tcp_changed || cp_changed) {
       /* This will mask out unused shader resources. */
       st->active_states = _mesa_get_active_states(ctx);
+
+      /* Some drivers need to clean up previous states too */
+      if (st->validate_all_dirty_states)
+         st->active_states |= dirty;
+
       return _NEW_PROGRAM;
    }
 

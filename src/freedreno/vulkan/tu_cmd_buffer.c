@@ -2164,7 +2164,7 @@ tu_CmdBindDescriptorSets(VkCommandBuffer commandBuffer,
       TU_FROM_HANDLE(tu_descriptor_set, set, pDescriptorSets[i]);
 
       descriptors_state->sets[idx] = set;
-      descriptors_state->set_iova[idx] = set->va | 3;
+      descriptors_state->set_iova[idx] = set->va | BINDLESS_DESCRIPTOR_64B;
 
       if (!set)
          continue;
@@ -2249,7 +2249,7 @@ tu_CmdBindDescriptorSets(VkCommandBuffer commandBuffer,
 
       memcpy(dynamic_desc_set.map, descriptors_state->dynamic_descriptors,
              layout->dynamic_offset_size);
-      descriptors_state->set_iova[MAX_SETS] = dynamic_desc_set.iova | 3;
+      descriptors_state->set_iova[MAX_SETS] = dynamic_desc_set.iova | BINDLESS_DESCRIPTOR_64B;
       descriptors_state->dynamic_bound = true;
    }
 
@@ -2292,7 +2292,8 @@ tu_CmdSetDescriptorBufferOffsetsEXT(
       struct tu_descriptor_set_layout *set_layout = layout->set[idx].layout;
 
       descriptors_state->set_iova[idx] =
-         (cmd->state.descriptor_buffer_iova[pBufferIndices[i]] + pOffsets[i]) | 3;
+         (cmd->state.descriptor_buffer_iova[pBufferIndices[i]] + pOffsets[i]) |
+         BINDLESS_DESCRIPTOR_64B;
 
       if (set_layout->has_inline_uniforms)
          cmd->state.dirty |= TU_CMD_DIRTY_SHADER_CONSTS;
@@ -2319,7 +2320,8 @@ tu_CmdBindDescriptorBufferEmbeddedSamplersEXT(
    descriptors_state->max_sets_bound =
       MAX2(descriptors_state->max_sets_bound, set + 1);
 
-   descriptors_state->set_iova[set] = set_layout->embedded_samplers->iova | 3;
+   descriptors_state->set_iova[set] = set_layout->embedded_samplers->iova |
+         BINDLESS_DESCRIPTOR_64B;
 
    tu_dirty_desc_sets(cmd, pipelineBindPoint);
 }

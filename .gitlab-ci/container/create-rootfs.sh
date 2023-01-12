@@ -106,6 +106,7 @@ apt-get -y install --no-install-recommends \
     wget \
     xinit \
     xserver-xorg-core \
+    xwayland \
     zstd
 
 

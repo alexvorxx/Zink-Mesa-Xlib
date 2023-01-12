@@ -62,10 +62,46 @@ lower(nir_function_impl *impl, nir_block *block)
    return progress;
 }
 
+static bool
+lower_discard_to_z(nir_builder *b, nir_instr *instr, UNUSED void *data)
+{
+   if (instr->type != nir_instr_type_intrinsic)
+      return false;
+
+   nir_intrinsic_instr *intr = nir_instr_as_intrinsic(instr);
+   if (intr->intrinsic != nir_intrinsic_discard &&
+       intr->intrinsic != nir_intrinsic_discard_if)
+      return false;
+
+   b->cursor = nir_before_instr(instr);
+
+   if (intr->intrinsic == nir_intrinsic_discard_if)
+      nir_push_if(b, intr->src[0].ssa);
+
+   bool stencil_written =
+      b->shader->info.outputs_written & BITFIELD64_BIT(FRAG_RESULT_STENCIL);
+
+   nir_store_zs_agx(b, nir_imm_intN_t(b, ALL_SAMPLES, 16),
+                    nir_imm_float(b, NAN),
+                    stencil_written ? nir_imm_intN_t(b, 0, 16)
+                                    : nir_ssa_undef(b, 1, 16) /* stencil */,
+                    .base = BASE_Z | (stencil_written ? BASE_S : 0));
+
+   if (intr->intrinsic == nir_intrinsic_discard_if)
+      nir_push_else(b, NULL);
+
+   nir_instr_remove(instr);
+   return false;
+}
+
 bool
 agx_nir_lower_zs_emit(nir_shader *s)
 {
    bool any_progress = false;
+
+   if (!(s->info.outputs_written & (BITFIELD64_BIT(FRAG_RESULT_STENCIL) |
+                                    BITFIELD64_BIT(FRAG_RESULT_DEPTH))))
+      return false;
 
    nir_foreach_function(function, s) {
       if (!function->impl)
@@ -87,5 +123,9 @@ agx_nir_lower_zs_emit(nir_shader *s)
       any_progress |= progress;
    }
 
+   any_progress |= nir_shader_instructions_pass(
+      s, lower_discard_to_z, nir_metadata_block_index | nir_metadata_dominance,
+      NULL);
+   s->info.fs.uses_discard = false;
    return any_progress;
 }

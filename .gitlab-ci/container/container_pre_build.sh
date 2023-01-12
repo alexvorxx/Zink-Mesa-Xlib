@@ -45,4 +45,6 @@ export MAKEFLAGS="-j${FDO_CI_CONCURRENT:-4}"
 echo -e "retry_connrefused = on\n" \
         "read_timeout = 300\n" \
         "tries = 4\n" \
+	"retry_on_host_error = on\n" \
+	"retry_on_http_error = 429,500,502,503,504\n" \
         "wait_retry = 32" >> /etc/wgetrc

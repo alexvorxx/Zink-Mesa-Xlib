@@ -510,6 +510,10 @@ struct pipe_sampler_view
 /**
  * A description of a buffer or texture image that can be bound to a shader
  * stage.
+ *
+ * Note that pipe_image_view::access comes from the frontend API, while
+ * shader_access comes from the shader and may contain additional information
+ * (ie. coherent/volatile may be set on shader_access but not on access)
  */
 struct pipe_image_view
 {

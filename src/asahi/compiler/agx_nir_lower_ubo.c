@@ -22,15 +22,11 @@ pass(struct nir_builder *b, nir_instr *instr, UNUSED void *data)
 
    nir_ssa_def *ubo_index = nir_ssa_for_src(b, intr->src[0], 1);
    nir_ssa_def *offset = nir_ssa_for_src(b, *nir_get_io_offset_src(intr), 1);
-
-   unsigned dest_size = nir_dest_bit_size(intr->dest);
-   assert((dest_size == 16 || dest_size == 32) && "other sizes lowered");
-
-   nir_ssa_def *value = nir_load_constant_agx(
-      b, intr->num_components, dest_size, nir_load_ubo_base_agx(b, ubo_index),
-      nir_udiv_imm(b, offset, (dest_size / 8)),
-      .format =
-         (dest_size == 32) ? AGX_INTERNAL_FORMAT_I32 : AGX_INTERNAL_FORMAT_I16);
+   nir_ssa_def *address =
+      nir_iadd(b, nir_load_ubo_base_agx(b, ubo_index), nir_u2u64(b, offset));
+   nir_ssa_def *value = nir_load_global_constant(
+      b, address, nir_intrinsic_align(intr), intr->num_components,
+      nir_dest_bit_size(intr->dest));
 
    nir_ssa_def_rewrite_uses(&intr->dest.ssa, value);
    return true;

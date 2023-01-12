@@ -127,14 +127,16 @@ bool si_compile_llvm(struct si_screen *sscreen, struct si_shader_binary *binary,
 }
 
 void si_llvm_context_init(struct si_shader_context *ctx, struct si_screen *sscreen,
-                          struct ac_llvm_compiler *compiler, unsigned wave_size)
+                          struct ac_llvm_compiler *compiler, unsigned wave_size,
+                          bool exports_color_null, bool exports_mrtz)
 {
    memset(ctx, 0, sizeof(*ctx));
    ctx->screen = sscreen;
    ctx->compiler = compiler;
 
    ac_llvm_context_init(&ctx->ac, compiler, sscreen->info.gfx_level, sscreen->info.family,
-                        sscreen->info.has_3d_cube_border_color_mipmap, AC_FLOAT_MODE_DEFAULT_OPENGL, wave_size, 64);
+                        sscreen->info.has_3d_cube_border_color_mipmap, AC_FLOAT_MODE_DEFAULT_OPENGL,
+                        wave_size, 64, exports_color_null, exports_mrtz);
 }
 
 void si_llvm_create_func(struct si_shader_context *ctx, const char *name, LLVMTypeRef *return_types,
@@ -1101,7 +1103,12 @@ bool si_llvm_compile_shader(struct si_screen *sscreen, struct ac_llvm_compiler *
    struct si_shader_selector *sel = shader->selector;
    struct si_shader_context ctx;
 
-   si_llvm_context_init(&ctx, sscreen, compiler, shader->wave_size);
+   bool exports_color_null = sel->info.colors_written;
+   bool exports_mrtz = sel->info.writes_z || sel->info.writes_stencil || sel->info.writes_samplemask;
+   if (!exports_mrtz && !exports_color_null)
+      exports_color_null = si_shader_uses_discard(shader) || sscreen->info.gfx_level < GFX10;
+
+   si_llvm_context_init(&ctx, sscreen, compiler, shader->wave_size, exports_color_null, exports_mrtz);
    ctx.so = *so;
    ctx.args = args;
 

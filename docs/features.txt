@@ -39,12 +39,12 @@ Feature                                                 Status
 GL 3.0, GLSL 1.30 --- all DONE: freedreno, i965, nv50, nvc0, r600, radeonsi, llvmpipe, softpipe, virgl, zink, d3d12, panfrost
 
   glBindFragDataLocation, glGetFragDataLocation         DONE
-  GL_NV_conditional_render (Conditional rendering)      DONE ()
+  GL_NV_conditional_render (Conditional rendering)      DONE (asahi)
   GL_ARB_map_buffer_range (Map buffer subranges)        DONE (v3d, vc4, lima, asahi)
   GL_ARB_color_buffer_float (Clamping controls)         DONE (v3d, vc4, lima, asahi)
   GL_ARB_texture_float (Float textures, renderbuffers)  DONE (v3d, asahi)
   GL_EXT_packed_float                                   DONE (v3d, asahi)
-  GL_EXT_texture_shared_exponent                        DONE (v3d)
+  GL_EXT_texture_shared_exponent                        DONE (v3d, asahi)
   GL_ARB_depth_buffer_float (Float depth buffers)       DONE (v3d, asahi)
   GL_ARB_framebuffer_object (Framebuffer objects)       DONE (v3d, vc4, asahi)
   GL_ARB_half_float_pixel                               DONE (all drivers)
@@ -61,10 +61,10 @@ GL 3.0, GLSL 1.30 --- all DONE: freedreno, i965, nv50, nvc0, r600, radeonsi, llv
   glGetStringi command                                  DONE
   glTexParameterI, glGetTexParameterI commands          DONE
   glVertexAttribI commands                              DONE
-  Depth format cube textures                            DONE ()
+  Depth format cube textures                            DONE (asahi)
   GLX_ARB_create_context (GLX 1.4 is required)          DONE (v3d, vc4, asahi)
   Multisample anti-aliasing                             DONE (freedreno/a5xx+, freedreno (*), llvmpipe (*), softpipe (*)))
-  8 draw buffers                                        DONE (panfrost/t760+)
+  8 draw buffers                                        DONE (panfrost/t760+, asahi)
 
 (*) freedreno (a2xx-a4xx), llvmpipe, and softpipe have fake Multisample anti-aliasing support
 
@@ -206,7 +206,7 @@ GL 4.4, GLSL 4.40 -- all DONE: freedreno/a6xx, i965/gen8+, nvc0, r600, radeonsi,
   - input/output block locations                        DONE
   GL_ARB_multi_bind                                     DONE (all drivers)
   GL_ARB_query_buffer_object                            DONE (freedreno/a6xx, i965/hsw+, virgl)
-  GL_ARB_texture_mirror_clamp_to_edge                   DONE (freedreno, i965, nv50, softpipe, virgl, v3d, panfrost)
+  GL_ARB_texture_mirror_clamp_to_edge                   DONE (freedreno, i965, nv50, softpipe, virgl, v3d, panfrost, asahi)
   GL_ARB_texture_stencil8                               DONE (freedreno, i965/hsw+, nv50, softpipe, virgl, v3d, panfrost, d3d12, asahi)
   GL_ARB_vertex_type_10f_11f_11f_rev                    DONE (freedreno, i965, nv50, softpipe, virgl, panfrost, d3d12, asahi)
 
@@ -477,7 +477,7 @@ Vulkan 1.3 -- all DONE: anv, radv, tu, lvp, vn
   VK_KHR_dynamic_rendering                              DONE (anv, dzn, lvp, radv, tu, vn)
   VK_KHR_format_feature_flags2                          DONE (anv, lvp, radv, tu, v3dv, vn)
   VK_KHR_maintenance4                                   DONE (anv, lvp, radv, tu, v3dv, vn)
-  VK_KHR_shader_integer_dot_product                     DONE (anv, lvp, radv, tu, vn)
+  VK_KHR_shader_integer_dot_product                     DONE (anv, lvp, radv, tu, v3dv, vn)
   VK_KHR_shader_non_semantic_info                       DONE (anv, radv, tu, v3dv, vn)
   VK_KHR_shader_terminate_invocation                    DONE (anv, lvp, radv, tu, vn)
   VK_KHR_synchronization2                               DONE (anv, lvp, panvk, radv, v3dv, tu, vn)

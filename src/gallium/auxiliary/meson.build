@@ -508,6 +508,20 @@ libgallium = static_library(
   build_by_default : false
 )
 
+if with_tests
+  test('gallium-aux',
+    executable(
+      'gallium-aux',
+      'util/u_surface_test.cpp',
+      include_directories : [inc_include, inc_src, inc_mapi, inc_mesa, inc_gallium, inc_gallium_aux],
+      link_with: libgallium,
+      dependencies : [idep_gtest],
+    ),
+    suite: 'gallium',
+    protocol : gtest_test_protocol,
+  )
+endif
+
 libgalliumvl_stub = static_library(
   'galliumvl_stub',
   'vl/vl_stubs.c',

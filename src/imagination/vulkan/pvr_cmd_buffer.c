@@ -419,16 +419,15 @@ pvr_cmd_buffer_upload_usc(struct pvr_cmd_buffer *const cmd_buffer,
    return VK_SUCCESS;
 }
 
-static VkResult
-pvr_cmd_buffer_upload_pds(struct pvr_cmd_buffer *const cmd_buffer,
-                          const uint32_t *data,
-                          uint32_t data_size_dwords,
-                          uint32_t data_alignment,
-                          const uint32_t *code,
-                          uint32_t code_size_dwords,
-                          uint32_t code_alignment,
-                          uint64_t min_alignment,
-                          struct pvr_pds_upload *const pds_upload_out)
+VkResult pvr_cmd_buffer_upload_pds(struct pvr_cmd_buffer *const cmd_buffer,
+                                   const uint32_t *data,
+                                   uint32_t data_size_dwords,
+                                   uint32_t data_alignment,
+                                   const uint32_t *code,
+                                   uint32_t code_size_dwords,
+                                   uint32_t code_alignment,
+                                   uint64_t min_alignment,
+                                   struct pvr_pds_upload *const pds_upload_out)
 {
    struct pvr_device *const device = cmd_buffer->device;
    VkResult result;
@@ -1637,9 +1636,8 @@ VkResult pvr_cmd_buffer_end_sub_cmd(struct pvr_cmd_buffer *cmd_buffer)
    return VK_SUCCESS;
 }
 
-static void
-pvr_reset_graphics_dirty_state(struct pvr_cmd_buffer *const cmd_buffer,
-                               bool start_geom)
+void pvr_reset_graphics_dirty_state(struct pvr_cmd_buffer *const cmd_buffer,
+                                    bool start_geom)
 {
    struct vk_dynamic_graphics_state *const dynamic_state =
       &cmd_buffer->vk.dynamic_graphics_state;
@@ -2166,7 +2164,7 @@ static VkResult pvr_init_render_targets(struct pvr_device *device,
    return VK_SUCCESS;
 }
 
-static const struct pvr_renderpass_hwsetup_subpass *
+const struct pvr_renderpass_hwsetup_subpass *
 pvr_get_hw_subpass(const struct pvr_render_pass *pass, const uint32_t subpass)
 {
    const struct pvr_renderpass_hw_map *map =
@@ -2365,6 +2363,20 @@ pvr_cmd_buffer_set_clear_values(struct pvr_cmd_buffer *cmd_buffer,
    return VK_SUCCESS;
 }
 
+/**
+ * \brief Indicates whether to use the large or normal clear state words.
+ *
+ * If the current render area can fit within a quarter of the max framebuffer
+ * that the device is capable of, we can use the normal clear state words,
+ * otherwise the large clear state words are needed.
+ *
+ * The requirement of a quarter of the max framebuffer comes from the index
+ * count used in the normal clear state words and the vertices uploaded at
+ * device creation.
+ *
+ * \param[in] cmd_buffer The command buffer for the clear.
+ * \return true if large clear state words are required.
+ */
 static bool
 pvr_is_large_clear_required(const struct pvr_cmd_buffer *const cmd_buffer)
 {
@@ -2409,7 +2421,7 @@ static VkResult pvr_cs_write_load_op(struct pvr_cmd_buffer *cmd_buffer,
 {
    const struct pvr_device *device = cmd_buffer->device;
    struct pvr_static_clear_ppp_template template =
-      device->static_clear_state.ppp_templates[PVR_STATIC_CLEAR_COLOR_BIT];
+      device->static_clear_state.ppp_templates[VK_IMAGE_ASPECT_COLOR_BIT];
    uint32_t pds_state[PVR_STATIC_CLEAR_PDS_STATE_COUNT];
    struct pvr_pds_upload shareds_update_program;
    struct pvr_bo *pvr_bo;
@@ -6022,7 +6034,7 @@ static void pvr_insert_transparent_obj(struct pvr_cmd_buffer *const cmd_buffer,
     * in parallel so writing the template in place could cause problems.
     */
    struct pvr_static_clear_ppp_template clear =
-      device->static_clear_state.ppp_templates[PVR_STATIC_CLEAR_COLOR_BIT];
+      device->static_clear_state.ppp_templates[VK_IMAGE_ASPECT_COLOR_BIT];
    uint32_t pds_state[PVR_STATIC_CLEAR_PDS_STATE_COUNT] = { 0 };
    struct pvr_csb *csb = &sub_cmd->control_stream;
    struct pvr_bo *ppp_bo;

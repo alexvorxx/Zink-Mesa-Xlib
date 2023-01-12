@@ -132,6 +132,8 @@ agx_optimizer_inline_imm(agx_instr **defs, agx_instr *I, unsigned srcs,
          continue;
       if (I->op == AGX_OPCODE_ZS_EMIT && s != 0)
          continue;
+      if (I->op == AGX_OPCODE_DEVICE_STORE && s != 2)
+         continue;
 
       if (float_src) {
          bool fp16 = (def->dest[0].size == AGX_SIZE_16);
@@ -194,16 +196,18 @@ agx_optimizer_copyprop(agx_instr **defs, agx_instr *I)
            I->op == AGX_OPCODE_TEXTURE_SAMPLE ||
            (I->op == AGX_OPCODE_DEVICE_LOAD &&
             (s != 0 || def->src[0].value >= 256)) ||
+           (I->op == AGX_OPCODE_DEVICE_STORE &&
+            (s != 1 || def->src[0].value >= 256)) ||
            I->op == AGX_OPCODE_PHI || I->op == AGX_OPCODE_ZS_EMIT ||
            I->op == AGX_OPCODE_ST_TILE || I->op == AGX_OPCODE_LD_TILE ||
            I->op == AGX_OPCODE_BLOCK_IMAGE_STORE ||
-           /*I->op == AGX_OPCODE_DEVICE_STORE ||*/
            I->op == AGX_OPCODE_UNIFORM_STORE || I->op == AGX_OPCODE_ST_VARY))
          continue;
 
       /* ALU instructions cannot take 64-bit */
       if (def->src[0].size == AGX_SIZE_64 &&
-          !(I->op == AGX_OPCODE_DEVICE_LOAD && s == 0))
+          !(I->op == AGX_OPCODE_DEVICE_LOAD && s == 0) &&
+          !(I->op == AGX_OPCODE_DEVICE_STORE && s == 1))
          continue;
 
       agx_replace_src(I, s, def->src[0]);

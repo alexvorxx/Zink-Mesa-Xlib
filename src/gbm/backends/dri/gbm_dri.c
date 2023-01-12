@@ -333,15 +333,12 @@ static int
 dri_screen_create_for_driver(struct gbm_dri_device *dri, char *driver_name)
 {
    bool swrast = driver_name == NULL; /* If it's pure swrast, not just swkms. */
-   int ret = 0;
 
    dri->driver_name = swrast ? strdup("swrast") : driver_name;
-   if (dri->driver_name == NULL)
-      return -1;
 
    const __DRIextension **extensions = dri_open_driver(dri);
    if (!extensions)
-      return -1;
+      goto fail;
 
    bool bind_ok;
    if (!swrast) {
@@ -353,33 +350,26 @@ dri_screen_create_for_driver(struct gbm_dri_device *dri, char *driver_name)
                                        ARRAY_SIZE(gbm_swrast_device_extensions),
                                        extensions);
    }
+
    if (!bind_ok) {
-      dlclose(dri->driver);
       fprintf(stderr, "failed to bind extensions\n");
-      return -1;
+      goto close_driver;
    }
 
    dri->driver_extensions = extensions;
-
-   if (ret) {
-      fprintf(stderr, "failed to load driver: %s\n", dri->driver_name);
-      return ret;
-   }
-
    dri->loader_extensions = gbm_dri_screen_extensions;
    dri->screen = dri->mesa->createNewScreen(0, swrast ? -1 : dri->base.v0.fd,
                                             dri->loader_extensions,
                                             dri->driver_extensions,
                                             &dri->driver_configs, dri);
    if (dri->screen == NULL)
-      return -1;
+      goto close_driver;
 
    if (!swrast) {
       extensions = dri->core->getExtensions(dri->screen);
       if (!loader_bind_extensions(dri, dri_core_extensions,
                                   ARRAY_SIZE(dri_core_extensions),
                                   extensions)) {
-         ret = -1;
          goto free_screen;
       }
    }
@@ -392,7 +382,12 @@ dri_screen_create_for_driver(struct gbm_dri_device *dri, char *driver_name)
 free_screen:
    dri->core->destroyScreen(dri->screen);
 
-   return ret;
+close_driver:
+   dlclose(dri->driver);
+
+fail:
+   free(dri->driver_name);
+   return -1;
 }
 
 static int

@@ -44,21 +44,14 @@
  *
  * Requires kernel with MSM_INFO_SET_IOVA support.
  *
- * This tool is intended for reproduction of various GPU issues:
- * - GPU hangs, note that command stream obtained from hangrd
- *   may not reproduce (rarely) the hang, since the buffers are
- *   snapshotted at the moment of the hang and not at the start
- *   of the hanging command stream.
- * - TODO: Misrendering, would require marking framebuffer images
- *   at each renderpass in order to fetch and decode them.
- *
- * It possible to override a single cmdstream using external cmdstream
- * generator. Example usage to override 13th cmdstream:
- *  ./replay --override=13 --generator=~/cmdstream_gen
+ * TODO: Misrendering, would require marking framebuffer images
+ *       at each renderpass in order to fetch and decode them.
  *
  * Code from Freedreno/Turnip is not re-used here since the relevant
  * pieces may introduce additional allocations which cannot be allowed
  * during the replay.
+ *
+ * For how-to see freedreno.rst
  */
 
 static const char *exename = NULL;

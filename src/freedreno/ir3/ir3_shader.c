@@ -750,6 +750,8 @@ find_input_reg_id(struct ir3_shader_variant *so, uint32_t input_idx)
    if (so->type != MESA_SHADER_FRAGMENT || !so->ir || VALIDREG(reg))
       return reg;
 
+   reg = INVALID_REG;
+
    /* In FS we don't know into which register the input is loaded
     * until the shader is scanned for the input load instructions.
     */
@@ -758,16 +760,27 @@ find_input_reg_id(struct ir3_shader_variant *so, uint32_t input_idx)
          if (instr->opc == OPC_FLAT_B || instr->opc == OPC_BARY_F ||
              instr->opc == OPC_LDLV) {
             if (instr->srcs[0]->flags & IR3_REG_IMMED) {
-               unsigned inloc = instr->srcs[0]->uim_val;
-               if (inloc == so->inputs[input_idx].inloc) {
+               unsigned inloc = so->inputs[input_idx].inloc;
+               unsigned instr_inloc = instr->srcs[0]->uim_val;
+               unsigned size = util_bitcount(so->inputs[input_idx].compmask);
+
+               if (instr_inloc == inloc) {
                   return instr->dsts[0]->num;
+               }
+
+               if (instr_inloc > inloc && instr_inloc < (inloc + size)) {
+                  reg = MIN2(reg, instr->dsts[0]->num);
+               }
+
+               if (instr->dsts[0]->flags & IR3_REG_EI) {
+                  return reg;
                }
             }
          }
       }
    }
 
-   return INVALID_REG;
+   return reg;
 }
 
 void

@@ -2,30 +2,7 @@
  * SGI FREE SOFTWARE LICENSE B (Version 2.0, Sept. 18, 2008)
  * Copyright (C) 1991-2000 Silicon Graphics, Inc. All Rights Reserved.
  *
- * Permission is hereby granted, free of charge, to any person obtaining a
- * copy of this software and associated documentation files (the "Software"),
- * to deal in the Software without restriction, including without limitation
- * the rights to use, copy, modify, merge, publish, distribute, sublicense,
- * and/or sell copies of the Software, and to permit persons to whom the
- * Software is furnished to do so, subject to the following conditions:
- *
- * The above copyright notice including the dates of first publication and
- * either this permission notice or a reference to
- * http://oss.sgi.com/projects/FreeB/
- * shall be included in all copies or substantial portions of the Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
- * OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
- * SILICON GRAPHICS, INC. BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY,
- * WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF
- * OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
- * SOFTWARE.
- *
- * Except as contained in this notice, the name of Silicon Graphics, Inc.
- * shall not be used in advertising or otherwise to promote the sale, use or
- * other dealings in this Software without prior written authorization from
- * Silicon Graphics, Inc.
+ * SPDX-License-Identifier: SGI-B-2.0
  */
 
 /**
@@ -730,8 +707,6 @@ static GLboolean
 getFBConfigs(struct glx_screen *psc, struct glx_display *priv, int screen)
 {
    xGLXGetFBConfigsReq *fb_req;
-   xGLXGetFBConfigsSGIXReq *sgi_req;
-   xGLXVendorPrivateWithReplyReq *vpreq;
    xGLXGetFBConfigsReply reply;
    Display *dpy = priv->dpy;
 
@@ -744,24 +719,10 @@ getFBConfigs(struct glx_screen *psc, struct glx_display *priv, int screen)
    LockDisplay(dpy);
 
    psc->configs = NULL;
-   if (priv->minorVersion >= 3) {
-      GetReq(GLXGetFBConfigs, fb_req);
-      fb_req->reqType = priv->codes.major_opcode;
-      fb_req->glxCode = X_GLXGetFBConfigs;
-      fb_req->screen = screen;
-   }
-   else if (strstr(psc->serverGLXexts, "GLX_SGIX_fbconfig") != NULL) {
-      GetReqExtra(GLXVendorPrivateWithReply,
-                  sz_xGLXGetFBConfigsSGIXReq -
-                  sz_xGLXVendorPrivateWithReplyReq, vpreq);
-      sgi_req = (xGLXGetFBConfigsSGIXReq *) vpreq;
-      sgi_req->reqType = priv->codes.major_opcode;
-      sgi_req->glxCode = X_GLXVendorPrivateWithReply;
-      sgi_req->vendorCode = X_GLXvop_GetFBConfigsSGIX;
-      sgi_req->screen = screen;
-   }
-   else
-      goto out;
+   GetReq(GLXGetFBConfigs, fb_req);
+   fb_req->reqType = priv->codes.major_opcode;
+   fb_req->glxCode = X_GLXGetFBConfigs;
+   fb_req->screen = screen;
 
    if (!_XReply(dpy, (xReply *) & reply, 0, False))
       goto out;
@@ -899,13 +860,11 @@ __glXInitialize(Display * dpy)
    dpyPriv->codes = *codes;
    dpyPriv->dpy = dpy;
 
-   /* This GLX implementation requires X_GLXQueryExtensionsString
-    * and X_GLXQueryServerString, which are new in GLX 1.1.
-    */
+   /* This GLX implementation requires GLX 1.3 */
    if (!QueryVersion(dpy, dpyPriv->codes.major_opcode,
 		     &majorVersion, &dpyPriv->minorVersion)
        || (majorVersion != 1)
-       || (majorVersion == 1 && dpyPriv->minorVersion < 1)) {
+       || (majorVersion == 1 && dpyPriv->minorVersion < 3)) {
       free(dpyPriv);
       return NULL;
    }
@@ -970,7 +929,7 @@ __glXInitialize(Display * dpy)
       return NULL;
    }
 
-   __glX_send_client_info(dpyPriv);
+   glxSendClientInfo(dpyPriv, -1);
 
    /* Grab the lock again and add the dispay private, unless somebody
     * beat us to initializing on this display in the meantime. */

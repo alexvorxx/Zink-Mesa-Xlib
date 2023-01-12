@@ -548,8 +548,8 @@ zink_draw(struct pipe_context *pctx,
    }
    ctx->gfx_pipeline_state.gfx_prim_mode = mode;
 
-   if (lines_changed || rast_state_changed ||
-       ctx->gfx_pipeline_state.modules_changed)
+   if (!screen->optimal_keys &&
+       (lines_changed || rast_state_changed || ctx->gfx_pipeline_state.modules_changed))
       zink_set_primitive_emulation_keys(ctx);
 
    if (index_size) {
@@ -802,41 +802,44 @@ zink_draw(struct pipe_context *pctx,
                          offsetof(struct zink_gfx_push_constant, default_inner_level), sizeof(float) * 6,
                          &ctx->tess_levels[0]);
    }
-   if (zink_get_fs_key(ctx)->lower_line_stipple ||
-       zink_get_gs_key(ctx)->lower_gl_point ||
-       zink_get_fs_key(ctx)->lower_line_smooth) {
 
-      assert(zink_get_gs_key(ctx)->lower_line_stipple ==
-             zink_get_fs_key(ctx)->lower_line_stipple);
+   if (!screen->optimal_keys) {
+      if (zink_get_fs_key(ctx)->lower_line_stipple ||
+          zink_get_gs_key(ctx)->lower_gl_point ||
+          zink_get_fs_key(ctx)->lower_line_smooth) {
 
-      assert(zink_get_gs_key(ctx)->lower_line_smooth ==
-             zink_get_fs_key(ctx)->lower_line_smooth);
+         assert(zink_get_gs_key(ctx)->lower_line_stipple ==
+                zink_get_fs_key(ctx)->lower_line_stipple);
 
-      float viewport_scale[2] = {
-         ctx->vp_state.viewport_states[0].scale[0],
-         ctx->vp_state.viewport_states[0].scale[1]
-      };
-      VKCTX(CmdPushConstants)(batch->state->cmdbuf,
-                              ctx->curr_program->base.layout,
-                              VK_SHADER_STAGE_ALL_GRAPHICS,
-                              offsetof(struct zink_gfx_push_constant, viewport_scale),
-                              sizeof(float) * 2, &viewport_scale);
+         assert(zink_get_gs_key(ctx)->lower_line_smooth ==
+                zink_get_fs_key(ctx)->lower_line_smooth);
 
-      uint32_t stipple = ctx->rast_state->base.line_stipple_pattern;
-      stipple |= ctx->rast_state->base.line_stipple_factor << 16;
-      VKCTX(CmdPushConstants)(batch->state->cmdbuf,
-                              ctx->curr_program->base.layout,
-                              VK_SHADER_STAGE_ALL_GRAPHICS,
-                              offsetof(struct zink_gfx_push_constant, line_stipple_pattern),
-                              sizeof(uint32_t), &stipple);
-
-      if (ctx->gfx_pipeline_state.shader_keys.key[MESA_SHADER_FRAGMENT].key.fs.lower_line_smooth) {
-         float line_width = ctx->rast_state->base.line_width;
+         float viewport_scale[2] = {
+            ctx->vp_state.viewport_states[0].scale[0],
+            ctx->vp_state.viewport_states[0].scale[1]
+         };
          VKCTX(CmdPushConstants)(batch->state->cmdbuf,
                                  ctx->curr_program->base.layout,
                                  VK_SHADER_STAGE_ALL_GRAPHICS,
-                                 offsetof(struct zink_gfx_push_constant, line_width),
-                                 sizeof(uint32_t), &line_width);
+                                 offsetof(struct zink_gfx_push_constant, viewport_scale),
+                                 sizeof(float) * 2, &viewport_scale);
+
+         uint32_t stipple = ctx->rast_state->base.line_stipple_pattern;
+         stipple |= ctx->rast_state->base.line_stipple_factor << 16;
+         VKCTX(CmdPushConstants)(batch->state->cmdbuf,
+                                 ctx->curr_program->base.layout,
+                                 VK_SHADER_STAGE_ALL_GRAPHICS,
+                                 offsetof(struct zink_gfx_push_constant, line_stipple_pattern),
+                                 sizeof(uint32_t), &stipple);
+
+         if (ctx->gfx_pipeline_state.shader_keys.key[MESA_SHADER_FRAGMENT].key.fs.lower_line_smooth) {
+            float line_width = ctx->rast_state->base.line_width;
+            VKCTX(CmdPushConstants)(batch->state->cmdbuf,
+                                    ctx->curr_program->base.layout,
+                                    VK_SHADER_STAGE_ALL_GRAPHICS,
+                                    offsetof(struct zink_gfx_push_constant, line_width),
+                                    sizeof(uint32_t), &line_width);
+         }
       }
    }
 

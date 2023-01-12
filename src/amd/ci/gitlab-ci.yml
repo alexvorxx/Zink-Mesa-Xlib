@@ -17,7 +17,7 @@
   variables:
     GPU_VERSION: radeonsi-stoney
     DRIVER_NAME: radeonsi
-    # 12 devices, 10 up (2022-12-28)
+    # 12 devices (2023-01-10)
     RUNNER_TAG: mesa-ci-x86-64-lava-acer-R721T-grunt
     DEVICE_TYPE: acer-R721T-grunt
 
@@ -47,7 +47,7 @@ radeonsi-stoney-gl:amd64:
   extends:
     - .lava-test:amd64
     - .radeonsi-stoney-test:amd64
-  parallel: 9
+  parallel: 11
   variables:
     DEQP_SUITE: radeonsi-stoney
     HWCI_START_XORG: 1
@@ -96,15 +96,14 @@ radeonsi-stoney-traces:amd64:
     DRIVER_NAME: radeonsi
     GPU_VERSION: amd-raven
     VK_DRIVER: radeon
+    HWCI_START_XORG: 1
 
 amd-raven-skqp:amd64:
   extends:
     - .lava-test:amd64
     - .amd-raven-test:amd64
-    - .skqp-test
   variables:
-    # Possible skqp backends: gl, gles, unitTest and vk
-    SKQP_BACKENDS: gl gles vk unitTest  # space separated values
+    DEQP_SUITE: amd-raven-skqp
 
 .radv-traces:
   extends:
@@ -364,56 +363,33 @@ vkcts-vangogh-valve:
   variables:
     GPU_VERSION: radv-vangogh-aco
 
-############### gles/GLCTS
-.glcts-test-valve:
+############### Combined Zink testing (GL, GLES, Piglit)
+.radv-zink-test-valve:
   extends:
     - .b2c-test-radv-gl
-    - .deqp-test-valve
     - .test-manual-mr
   variables:
-    DEQP_VER: gl46
-
-glcts-navi10-valve:
-  extends:
-    - .glcts-test-valve
-    - .navi10-test-valve
-    - .test-manual-mr
-  variables:
-    GPU_VERSION: zink-radv
-
-.gles-test-valve:
-  extends:
-    - .b2c-test-radv-gl
-    - .deqp-test-valve
-    - .test-manual-mr
-  variables:
-    DEQP_SUITE: zink-radv
-
-gles-navi10-valve:
-  extends:
-    - .gles-test-valve
-    - .navi10-test-valve
-    - .test-manual-mr
-  variables:
-    GPU_VERSION: zink-radv
-
-############### piglit
-.piglit-test-valve:
-  extends:
-    - .b2c-test-radv-gl
-  variables:
-    B2C_JOB_SUCCESS_REGEX: '^\+ PIGLIT_EXITCODE=0\r$'
-    B2C_TEST_SCRIPT: ./install/piglit/piglit-runner.sh
     PIGLIT_PROFILES: all
     PIGLIT_PLATFORM: gbm
+    B2C_TEST_SCRIPT: ./install/valve/gl_combined_testing.sh
+    B2C_JOB_SUCCESS_REGEX: 'Execution is over, pipeline status: 0'
 
-piglit-navi10-valve:
+radv-zink-navi10-valve:
   extends:
-    - .piglit-test-valve
+    - .radv-zink-test-valve
     - .navi10-test-valve
     - .test-manual-mr
   variables:
-    GPU_VERSION: zink-radv
+    GPU_VERSION: zink-radv-navi10
+
+radv-zink-vangogh-valve:
+  parallel: 2
+  extends:
+    - .radv-zink-test-valve
+    - .vangogh-test-valve
+    - .test-manual-mr
+  variables:
+    GPU_VERSION: zink-radv-vangogh
 
 ############### Fossilize
 radv-fossils:

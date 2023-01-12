@@ -118,9 +118,47 @@ ac_nir_lower_indirect_derefs(nir_shader *shader,
    return progress;
 }
 
+struct shader_outputs {
+   nir_ssa_def *data[VARYING_SLOT_MAX][4];
+   nir_ssa_def *data_16bit_lo[16][4];
+   nir_ssa_def *data_16bit_hi[16][4];
+
+   nir_alu_type (*type_16bit_lo)[4];
+   nir_alu_type (*type_16bit_hi)[4];
+};
+
+static nir_ssa_def **
+get_output_and_type(struct shader_outputs *outputs, unsigned slot, bool high_16bits,
+                    nir_alu_type **types)
+{
+   nir_ssa_def **data;
+   nir_alu_type *type;
+
+   /* Only VARYING_SLOT_VARn_16BIT slots need output type to convert 16bit output
+    * to 32bit. Vulkan is not allowed to streamout output less than 32bit.
+    */
+   if (slot < VARYING_SLOT_VAR0_16BIT) {
+      data = outputs->data[slot];
+      type = NULL;
+   } else {
+      unsigned index = slot - VARYING_SLOT_VAR0_16BIT;
+
+      if (high_16bits) {
+         data = outputs->data_16bit_hi[index];
+         type = outputs->type_16bit_hi[index];
+      } else {
+         data = outputs->data_16bit_lo[index];
+         type = outputs->type_16bit_lo[index];
+      }
+   }
+
+   *types = type;
+   return data;
+}
+
 static void
 emit_streamout(nir_builder *b, unsigned stream, nir_xfb_info *info,
-               nir_ssa_def *const outputs[64][4])
+               struct shader_outputs *outputs)
 {
    nir_ssa_def *so_vtx_count = nir_ubfe_imm(b, nir_load_streamout_config_amd(b), 16, 7);
    nir_ssa_def *tid = nir_load_subgroup_invocation(b);
@@ -146,13 +184,26 @@ emit_streamout(nir_builder *b, unsigned stream, nir_xfb_info *info,
       if (stream != info->buffer_to_stream[output->buffer])
          continue;
 
+      nir_alu_type *output_type;
+      nir_ssa_def **output_data =
+         get_output_and_type(outputs, output->location, output->high_16bits, &output_type);
+
       nir_ssa_def *vec[4] = {undef, undef, undef, undef};
       uint8_t mask = 0;
       u_foreach_bit(j, output->component_mask) {
-         nir_ssa_def *src = outputs[output->location][j];
-         if (src) {
+         nir_ssa_def *data = output_data[j];
+
+         if (data) {
+            if (data->bit_size < 32) {
+               /* we need output type to convert non-32bit output to 32bit */
+               assert(output_type);
+
+               nir_alu_type base_type = nir_alu_type_get_base_type(output_type[j]);
+               data = nir_convert_to_bit_size(b, data, base_type, 32);
+            }
+
             unsigned comp = j - output->component_offset;
-            vec[comp] = src;
+            vec[comp] = data;
             mask |= 1 << comp;
          }
       }
@@ -174,13 +225,8 @@ emit_streamout(nir_builder *b, unsigned stream, nir_xfb_info *info,
 nir_shader *
 ac_nir_create_gs_copy_shader(const nir_shader *gs_nir,
                              bool disable_streamout,
-                             size_t num_outputs,
-                             const uint8_t *output_usage_mask,
-                             const uint8_t *output_streams,
-                             const uint8_t *output_semantics)
+                             ac_nir_gs_output_info *output_info)
 {
-   assert(num_outputs <= 64);
-
    nir_builder b = nir_builder_init_simple_shader(
       MESA_SHADER_VERTEX, gs_nir->options, "gs_copy");
 
@@ -205,45 +251,91 @@ ac_nir_create_gs_copy_shader(const nir_shader *gs_nir,
          nir_push_if(&b, nir_ieq_imm(&b, stream_id, stream));
 
       uint32_t offset = 0;
-      uint64_t output_mask = 0;
-      nir_ssa_def *outputs[64][4] = {{0}};
-      for (unsigned i = 0; i < num_outputs; i++) {
-         unsigned mask = output_usage_mask[i];
-         if (!mask)
-            continue;
+      struct shader_outputs outputs = {
+         .type_16bit_lo = output_info->types_16bit_lo,
+         .type_16bit_hi = output_info->types_16bit_hi,
+      };
 
-         gl_varying_slot location = output_semantics ? output_semantics[i] : i;
-
-         u_foreach_bit (j, mask) {
-            if (((output_streams[i] >> (j * 2)) & 0x3) != stream)
+      u_foreach_bit64 (i, gs_nir->info.outputs_written) {
+         u_foreach_bit (j, output_info->usage_mask[i]) {
+            if (((output_info->streams[i] >> (j * 2)) & 0x3) != stream)
                continue;
 
-            outputs[location][j] =
+            outputs.data[i][j] =
                nir_load_buffer_amd(&b, 1, 32, gsvs_ring, vtx_offset, zero, zero,
                                    .base = offset,
                                    .access = ACCESS_COHERENT | ACCESS_STREAM_CACHE_POLICY);
 
             offset += gs_nir->info.gs.vertices_out * 16 * 4;
          }
+      }
 
-         output_mask |= 1ull << i;
+      u_foreach_bit (i, gs_nir->info.outputs_written_16bit) {
+         for (unsigned j = 0; j < 4; j++) {
+            bool has_lo_16bit = (output_info->usage_mask_16bit_lo[i] & (1 << j)) &&
+               ((output_info->streams_16bit_lo[i] >> (j * 2)) & 0x3) == stream;
+            bool has_hi_16bit = (output_info->usage_mask_16bit_hi[i] & (1 << j)) &&
+               ((output_info->streams_16bit_hi[i] >> (j * 2)) & 0x3) == stream;
+            if (!has_lo_16bit && !has_hi_16bit)
+               continue;
+
+            nir_ssa_def *data =
+               nir_load_buffer_amd(&b, 1, 32, gsvs_ring, vtx_offset, zero, zero,
+                                   .base = offset,
+                                   .access = ACCESS_COHERENT | ACCESS_STREAM_CACHE_POLICY);
+
+            if (has_lo_16bit)
+               outputs.data_16bit_lo[i][j] = nir_unpack_32_2x16_split_x(&b, data);
+
+            if (has_hi_16bit)
+               outputs.data_16bit_hi[i][j] = nir_unpack_32_2x16_split_y(&b, data);
+
+            offset += gs_nir->info.gs.vertices_out * 16 * 4;
+         }
       }
 
       if (stream_id)
-         emit_streamout(&b, stream, info, outputs);
+         emit_streamout(&b, stream, info, &outputs);
 
       if (stream == 0) {
-         u_foreach_bit64 (i, output_mask) {
-            gl_varying_slot location = output_semantics ? output_semantics[i] : i;
+         u_foreach_bit64 (i, gs_nir->info.outputs_written) {
+            unsigned location = output_info->slot_to_location ?
+               output_info->slot_to_location[i] : i;
 
             for (unsigned j = 0; j < 4; j++) {
-               if (outputs[location][j]) {
-                  nir_store_output(&b, outputs[location][j], zero,
-                                   .base = i,
+               if (outputs.data[i][j]) {
+                  nir_store_output(&b, outputs.data[i][j], zero,
+                                   .base = location,
                                    .component = j,
                                    .write_mask = 1,
-                                   .src_type = nir_type_uint32,
-                                   .io_semantics = {.location = location, .num_slots = 1});
+                                   .io_semantics = {.location = i, .num_slots = 1});
+               }
+            }
+         }
+
+         u_foreach_bit (i, gs_nir->info.outputs_written_16bit) {
+            unsigned location = output_info->slot_to_location_16bit ?
+               output_info->slot_to_location_16bit[i] : VARYING_SLOT_VAR0_16BIT + i;
+
+            for (unsigned j = 0; j < 4; j++) {
+               if (outputs.data_16bit_lo[i][j]) {
+                  nir_store_output(&b, outputs.data_16bit_lo[i][j], zero,
+                                   .base = location,
+                                   .component = j,
+                                   .write_mask = 1,
+                                   .io_semantics = {.location = i, .num_slots = 1});
+               }
+
+               if (outputs.data_16bit_hi[i][j]) {
+                  nir_store_output(&b, outputs.data_16bit_hi[i][j], zero,
+                                   .base = location,
+                                   .component = j,
+                                   .write_mask = 1,
+                                   .io_semantics = {
+                                      .location = i,
+                                      .high_16bits = true,
+                                      .num_slots = 1
+                                   });
                }
             }
          }
@@ -262,7 +354,7 @@ ac_nir_create_gs_copy_shader(const nir_shader *gs_nir,
 }
 
 static void
-gather_outputs(nir_builder *b, nir_function_impl *impl, nir_ssa_def *outputs[64][4])
+gather_outputs(nir_builder *b, nir_function_impl *impl, struct shader_outputs *outputs)
 {
    /* Assume:
     * - the shader used nir_lower_io_to_temporaries
@@ -280,10 +372,19 @@ gather_outputs(nir_builder *b, nir_function_impl *impl, nir_ssa_def *outputs[64]
 
          assert(nir_src_is_const(intrin->src[1]) && !nir_src_as_uint(intrin->src[1]));
 
-         unsigned slot = nir_intrinsic_io_semantics(intrin).location;
+         nir_alu_type type = nir_intrinsic_src_type(intrin);
+         nir_io_semantics sem = nir_intrinsic_io_semantics(intrin);
+
+         nir_alu_type *output_type;
+         nir_ssa_def **output_data =
+            get_output_and_type(outputs, sem.location, sem.high_16bits, &output_type);
+
          u_foreach_bit (i, nir_intrinsic_write_mask(intrin)) {
             unsigned comp = nir_intrinsic_component(intrin) + i;
-            outputs[slot][comp] = nir_channel(b, intrin->src[0].ssa, i);
+            output_data[comp] = nir_channel(b, intrin->src[0].ssa, i);
+
+            if (output_type)
+               output_type[comp] = type;
          }
       }
    }
@@ -323,10 +424,15 @@ ac_nir_lower_legacy_vs(nir_shader *nir, int primitive_id_location, bool disable_
        * > The size of each component of an output variable must be at least 32-bits.
        * We lower 64-bit outputs.
        */
-      nir_ssa_def *outputs[64][4] = {{0}};
-      gather_outputs(&b, impl, outputs);
+      nir_alu_type output_types_16bit_lo[16][4];
+      nir_alu_type output_types_16bit_hi[16][4];
+      struct shader_outputs outputs = {
+         .type_16bit_lo = output_types_16bit_lo,
+         .type_16bit_hi = output_types_16bit_hi,
+      };
+      gather_outputs(&b, impl, &outputs);
 
-      emit_streamout(&b, 0, nir->xfb_info, outputs);
+      emit_streamout(&b, 0, nir->xfb_info, &outputs);
       preserved = nir_metadata_none;
    }
 

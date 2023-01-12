@@ -216,4 +216,8 @@ etna_transfer(struct pipe_transfer *p)
 struct pipe_context *
 etna_context_create(struct pipe_screen *pscreen, void *priv, unsigned flags);
 
+void
+etna_context_add_flush_resource(struct etna_context *ctx,
+                                struct pipe_resource *rsc);
+
 #endif

@@ -2076,6 +2076,22 @@ instruction_restrictions(const struct brw_isa_info *isa,
                   "If the destination is the null register, the {Switch} "
                   "instruction option must be used.");
       }
+
+      ERROR_IF(brw_inst_cond_modifier(devinfo, inst) == BRW_CONDITIONAL_NONE,
+               "CMP (or CMPN) must have a condition.");
+   }
+
+   if (brw_inst_opcode(isa, inst) == BRW_OPCODE_SEL) {
+      if (devinfo->ver < 6) {
+         ERROR_IF(brw_inst_cond_modifier(devinfo, inst) != BRW_CONDITIONAL_NONE,
+                  "SEL must not have a condition modifier");
+         ERROR_IF(brw_inst_pred_control(devinfo, inst) == BRW_PREDICATE_NONE,
+                  "SEL must be predicated");
+      } else {
+         ERROR_IF((brw_inst_cond_modifier(devinfo, inst) != BRW_CONDITIONAL_NONE) ==
+                  (brw_inst_pred_control(devinfo, inst) != BRW_PREDICATE_NONE),
+                  "SEL must either be predicated or have a condition modifiers");
+      }
    }
 
    if (brw_inst_opcode(isa, inst) == BRW_OPCODE_MUL) {
@@ -2261,6 +2277,145 @@ instruction_restrictions(const struct brw_isa_info *isa,
                "Only one of src0 or src1 operand may be an accumulator "
                "register (acc#).");
 
+   }
+
+   if (brw_inst_opcode(isa, inst) == BRW_OPCODE_OR ||
+       brw_inst_opcode(isa, inst) == BRW_OPCODE_AND ||
+       brw_inst_opcode(isa, inst) == BRW_OPCODE_XOR ||
+       brw_inst_opcode(isa, inst) == BRW_OPCODE_NOT) {
+      if (devinfo->ver >= 8) {
+         /* While the behavior of the negate source modifier is defined as
+          * logical not, the behavior of abs source modifier is not
+          * defined. Disallow it to be safe.
+          */
+         ERROR_IF(brw_inst_src0_abs(devinfo, inst),
+                  "Behavior of abs source modifier in logic ops is undefined.");
+         ERROR_IF(brw_inst_opcode(isa, inst) != BRW_OPCODE_NOT &&
+                  brw_inst_src1_reg_file(devinfo, inst) != BRW_IMMEDIATE_VALUE &&
+                  brw_inst_src1_abs(devinfo, inst),
+                  "Behavior of abs source modifier in logic ops is undefined.");
+
+         /* Page 479 (page 495 of the PDF) of the Broadwell PRM volume 2a says:
+          *
+          *    Source modifier is not allowed if source is an accumulator.
+          *
+          * The same text also appears for OR, NOT, and XOR instructions.
+          */
+         ERROR_IF((brw_inst_src0_abs(devinfo, inst) ||
+                   brw_inst_src0_negate(devinfo, inst)) &&
+                  src0_is_acc(devinfo, inst),
+                  "Source modifier is not allowed if source is an accumulator.");
+         ERROR_IF(brw_num_sources_from_inst(isa, inst) > 1 &&
+                  (brw_inst_src1_abs(devinfo, inst) ||
+                   brw_inst_src1_negate(devinfo, inst)) &&
+                  src1_is_acc(devinfo, inst),
+                  "Source modifier is not allowed if source is an accumulator.");
+      }
+
+      /* Page 479 (page 495 of the PDF) of the Broadwell PRM volume 2a says:
+       *
+       *    This operation does not produce sign or overflow conditions. Only
+       *    the .e/.z or .ne/.nz conditional modifiers should be used.
+       *
+       * The same text also appears for OR, NOT, and XOR instructions.
+       *
+       * Per the comment around nir_op_imod in brw_fs_nir.cpp, we have
+       * determined this to not be true. The only conditions that seem
+       * absolutely sketchy are O, R, and U.  Some OpenGL shaders from Doom
+       * 2016 have been observed to generate and.g and operate correctly.
+       */
+      const enum brw_conditional_mod cmod =
+         brw_inst_cond_modifier(devinfo, inst);
+      ERROR_IF(cmod == BRW_CONDITIONAL_O ||
+               cmod == BRW_CONDITIONAL_R ||
+               cmod == BRW_CONDITIONAL_U,
+               "O, R, and U conditional modifiers should not be used.");
+   }
+
+   if (brw_inst_opcode(isa, inst) == BRW_OPCODE_BFI2) {
+      ERROR_IF(brw_inst_cond_modifier(devinfo, inst) != BRW_CONDITIONAL_NONE,
+               "BFI2 cannot have conditional modifier");
+
+      ERROR_IF(brw_inst_saturate(devinfo, inst),
+               "BFI2 cannot have saturate modifier");
+
+      enum brw_reg_type dst_type;
+
+      if (brw_inst_access_mode(devinfo, inst) == BRW_ALIGN_1)
+         dst_type = brw_inst_3src_a1_dst_type(devinfo, inst);
+      else
+         dst_type = brw_inst_3src_a16_dst_type(devinfo, inst);
+
+      ERROR_IF(dst_type != BRW_REGISTER_TYPE_D &&
+               dst_type != BRW_REGISTER_TYPE_UD,
+               "BFI2 destination type must be D or UD");
+
+      for (unsigned s = 0; s < 3; s++) {
+         enum brw_reg_type src_type;
+
+         if (brw_inst_access_mode(devinfo, inst) == BRW_ALIGN_1) {
+            switch (s) {
+            case 0: src_type = brw_inst_3src_a1_src0_type(devinfo, inst); break;
+            case 1: src_type = brw_inst_3src_a1_src1_type(devinfo, inst); break;
+            case 2: src_type = brw_inst_3src_a1_src2_type(devinfo, inst); break;
+            default: unreachable("invalid src");
+            }
+         } else {
+            src_type = brw_inst_3src_a16_src_type(devinfo, inst);
+         }
+
+         ERROR_IF(src_type != dst_type,
+                  "BFI2 source type must match destination type");
+      }
+   }
+
+   if (brw_inst_opcode(isa, inst) == BRW_OPCODE_CSEL) {
+      ERROR_IF(brw_inst_pred_control(devinfo, inst) != BRW_PREDICATE_NONE,
+               "CSEL cannot be predicated");
+
+      /* CSEL is CMP and SEL fused into one. The condition modifier, which
+       * does not actually modify the flags, controls the built-in comparison.
+       */
+      ERROR_IF(brw_inst_cond_modifier(devinfo, inst) == BRW_CONDITIONAL_NONE,
+               "CSEL must have a condition.");
+
+      enum brw_reg_type dst_type;
+
+      if (brw_inst_access_mode(devinfo, inst) == BRW_ALIGN_1)
+         dst_type = brw_inst_3src_a1_dst_type(devinfo, inst);
+      else
+         dst_type = brw_inst_3src_a16_dst_type(devinfo, inst);
+
+      if (devinfo->ver < 8) {
+         ERROR_IF(devinfo->ver < 8, "CSEL not supported before Gfx8");
+      } else if (devinfo->ver <= 9) {
+         ERROR_IF(dst_type != BRW_REGISTER_TYPE_F,
+                  "CSEL destination type must be F");
+      } else {
+         ERROR_IF(dst_type != BRW_REGISTER_TYPE_F &&
+                  dst_type != BRW_REGISTER_TYPE_HF &&
+                  dst_type != BRW_REGISTER_TYPE_D &&
+                  dst_type != BRW_REGISTER_TYPE_W,
+                  "CSEL destination type must be F, HF, D, or W");
+      }
+
+      for (unsigned s = 0; s < 3; s++) {
+         enum brw_reg_type src_type;
+
+         if (brw_inst_access_mode(devinfo, inst) == BRW_ALIGN_1) {
+            switch (s) {
+            case 0: src_type = brw_inst_3src_a1_src0_type(devinfo, inst); break;
+            case 1: src_type = brw_inst_3src_a1_src1_type(devinfo, inst); break;
+            case 2: src_type = brw_inst_3src_a1_src2_type(devinfo, inst); break;
+            default: unreachable("invalid src");
+            }
+         } else {
+            src_type = brw_inst_3src_a16_src_type(devinfo, inst);
+         }
+
+         ERROR_IF(src_type != dst_type,
+                  "CSEL source type must match destination type");
+      }
    }
 
    return error_msg;

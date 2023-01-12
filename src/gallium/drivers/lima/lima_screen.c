@@ -84,7 +84,7 @@ lima_screen_get_name(struct pipe_screen *pscreen)
 static const char *
 lima_screen_get_vendor(struct pipe_screen *pscreen)
 {
-   return "lima";
+   return "Mesa";
 }
 
 static const char *

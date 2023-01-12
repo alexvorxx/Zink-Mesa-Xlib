@@ -461,8 +461,13 @@ etna_clear_rs(struct pipe_context *pctx, unsigned buffers, const struct pipe_sci
     */
    if (buffers & PIPE_CLEAR_COLOR) {
       for (int idx = 0; idx < ctx->framebuffer_s.nr_cbufs; ++idx) {
+         struct etna_surface *surf = etna_surface(ctx->framebuffer_s.cbufs[idx]);
+
          etna_blit_clear_color_rs(pctx, ctx->framebuffer_s.cbufs[idx],
                                &color[idx]);
+
+         if (!etna_resource(surf->prsc)->explicit_flush)
+            etna_context_add_flush_resource(ctx, surf->prsc);
       }
    }
 

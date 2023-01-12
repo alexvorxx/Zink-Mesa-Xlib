@@ -8,7 +8,6 @@
 from datetime import datetime, timedelta
 
 import pytest
-import yaml
 from lava.exceptions import MesaCIKnownIssueException, MesaCITimeoutError
 from lava.utils import (
     GitlabSection,
@@ -18,7 +17,7 @@ from lava.utils import (
     hide_sensitive_data,
 )
 
-from ..lava.helpers import create_lava_yaml_msg, does_not_raise
+from ..lava.helpers import create_lava_yaml_msg, does_not_raise, lava_yaml, yaml_dump
 
 GITLAB_SECTION_SCENARIOS = {
     "start collapsed": (
@@ -157,9 +156,9 @@ SENSITIVE_DATA_SCENARIOS = {
     ids=SENSITIVE_DATA_SCENARIOS.keys(),
 )
 def test_hide_sensitive_data(input, expectation, tag):
-    yaml_data = yaml.safe_dump(input)
+    yaml_data = yaml_dump(input)
     yaml_result = hide_sensitive_data(yaml_data, tag)
-    result = yaml.safe_load(yaml_result)
+    result = lava_yaml.load(yaml_result)
 
     assert result == expectation
 

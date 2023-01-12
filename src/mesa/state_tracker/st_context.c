@@ -639,6 +639,10 @@ st_create_context_priv(struct gl_context *ctx, struct pipe_context *pipe,
                                PIPE_SHADER_CAP_MAX_HW_ATOMIC_COUNTERS)
       ? true : false;
 
+   st->validate_all_dirty_states =
+      screen->get_param(screen, PIPE_CAP_VALIDATE_ALL_DIRTY_STATES)
+      ? true : false;
+
    util_throttle_init(&st->throttle,
                       screen->get_param(screen,
                                         PIPE_CAP_MAX_TEXTURE_UPLOAD_MEMORY_BUDGET));

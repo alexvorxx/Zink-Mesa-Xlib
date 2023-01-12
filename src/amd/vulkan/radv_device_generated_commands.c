@@ -963,9 +963,9 @@ radv_device_init_dgc_prepare_state(struct radv_device *device)
       .layout = device->meta_state.dgc_prepare.p_layout,
    };
 
-   result = radv_CreateComputePipelines(
-      radv_device_to_handle(device), device->meta_state.cache, 1,
-      &pipeline_info, &device->meta_state.alloc, &device->meta_state.dgc_prepare.pipeline);
+   result = radv_compute_pipeline_create(radv_device_to_handle(device), device->meta_state.cache,
+                                         &pipeline_info, &device->meta_state.alloc,
+                                         &device->meta_state.dgc_prepare.pipeline, true);
    if (result != VK_SUCCESS)
       goto cleanup;
 
@@ -1122,8 +1122,8 @@ radv_prepare_dgc(struct radv_cmd_buffer *cmd_buffer,
    if (!layout->push_constant_mask)
       const_size = 0;
 
-   unsigned scissor_size = (8 + 2 * cmd_buffer->state.dynamic.scissor.count) * 4;
-   if (!layout->binds_state || !cmd_buffer->state.dynamic.scissor.count ||
+   unsigned scissor_size = (8 + 2 * cmd_buffer->state.dynamic.vk.vp.scissor_count) * 4;
+   if (!layout->binds_state || !cmd_buffer->state.dynamic.vk.vp.scissor_count ||
        !cmd_buffer->device->physical_device->rad_info.has_gfx9_scissor_bug)
       scissor_size = 0;
 

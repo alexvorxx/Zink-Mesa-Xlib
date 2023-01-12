@@ -3545,10 +3545,9 @@ VkResult anv_CreateDevice(
 
    device->workaround_address = (struct anv_address) {
       .bo = device->workaround_bo,
-      .offset = align_u32(
-         intel_debug_write_identifiers(device->workaround_bo->map,
-                                       device->workaround_bo->size,
-                                       "Anv") + 8, 8),
+      .offset = align(intel_debug_write_identifiers(device->workaround_bo->map,
+                                                    device->workaround_bo->size,
+                                                    "Anv") + 8, 8),
    };
 
    device->workarounds.doom64_images = NULL;
@@ -3565,7 +3564,7 @@ VkResult anv_CreateDevice(
 
    if (device->vk.enabled_extensions.KHR_ray_query) {
       uint32_t ray_queries_size =
-         align_u32(brw_rt_ray_queries_hw_stacks_size(device->info), 4096);
+         align(brw_rt_ray_queries_hw_stacks_size(device->info), 4096);
 
       result = anv_device_alloc_bo(device, "ray queries",
                                    ray_queries_size,
@@ -3968,7 +3967,7 @@ VkResult anv_AllocateMemory(
    assert(pAllocateInfo->allocationSize > 0);
 
    VkDeviceSize aligned_alloc_size =
-      align_u64(pAllocateInfo->allocationSize, 4096);
+      align64(pAllocateInfo->allocationSize, 4096);
 
    if (aligned_alloc_size > MAX_MEMORY_ALLOCATION_SIZE)
       return vk_error(device, VK_ERROR_OUT_OF_DEVICE_MEMORY);
@@ -4398,7 +4397,7 @@ VkResult anv_MapMemory(
    uint64_t map_size = (offset + size) - map_offset;
 
    /* Let's map whole pages */
-   map_size = align_u64(map_size, 4096);
+   map_size = align64(map_size, 4096);
 
    void *map;
    VkResult result = anv_device_map_bo(device, mem->bo, map_offset,
@@ -4657,7 +4656,7 @@ anv_get_buffer_memory_requirements(struct anv_device *device,
    if (device->robust_buffer_access &&
        (usage & VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT ||
         usage & VK_BUFFER_USAGE_STORAGE_BUFFER_BIT))
-      pMemoryRequirements->memoryRequirements.size = align_u64(size, 4);
+      pMemoryRequirements->memoryRequirements.size = align64(size, 4);
 
    pMemoryRequirements->memoryRequirements.memoryTypeBits = memory_types;
 

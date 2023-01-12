@@ -276,7 +276,9 @@ if __name__ == "__main__":
 
         token = read_token(args.token)
 
-        gl = gitlab.Gitlab(url="https://gitlab.freedesktop.org", private_token=token)
+        gl = gitlab.Gitlab(url="https://gitlab.freedesktop.org",
+                           private_token=token,
+                           retry_transient_errors=True)
 
         cur_project = get_gitlab_project(gl, "mesa")
 

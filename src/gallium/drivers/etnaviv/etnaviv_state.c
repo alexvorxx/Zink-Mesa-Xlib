@@ -803,14 +803,8 @@ etna_record_flush_resources(struct etna_context *ctx)
    if (fb->nr_cbufs > 0) {
       struct etna_surface *surf = etna_surface(fb->cbufs[0]);
 
-      if (!etna_resource(surf->prsc)->explicit_flush) {
-         bool found;
-
-         _mesa_set_search_or_add(ctx->flush_resources, surf->prsc, &found);
-
-         if (!found)
-            pipe_reference(NULL, &surf->prsc->reference);
-      }
+      if (!etna_resource(surf->prsc)->explicit_flush)
+         etna_context_add_flush_resource(ctx, surf->prsc);
    }
 
    return true;

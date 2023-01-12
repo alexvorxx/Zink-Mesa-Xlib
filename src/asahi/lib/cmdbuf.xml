@@ -214,13 +214,19 @@
     <field name="Levels" size="4" start="104" type="uint" modifier="minus(1)"/>
     <field name="Layers" size="14" start="108" type="uint" modifier="minus(1)" default="1"/>
     <field name="Page-aligned layers" size="1" start="124" type="bool"/>
-    <field name="Compressed 2" size="1" start="127" type="bool"/>
+
+    <!-- Read the next word (set for compression or linear 2D arrays) -->
+    <field name="Extended" size="1" start="127" type="bool"/>
 
     <!-- If layout is linear. Off by 4? -->
     <field name="Stride" size="24" start="104" type="hex"/>
 
     <!-- If layout is compressed -->
     <field name="Acceleration buffer" size="64" start="128" type="address" modifier="shr(4)"/>
+
+    <!-- If layout is linear, stride has the minus 1 encoded -->
+    <field name="Depth (linear)" size="11" start="128" type="uint" modifier="minus(1)" default="1"/>
+    <field name="Layer stride (linear)" size="27" start="139" type="uint" modifier="shr(7)"/>
   </struct>
 
   <struct name="Texture" size="24">
@@ -252,10 +258,16 @@
     <!-- Note that 3D/arrays cannot be linear. -->
     <field name="Depth" size="14" start="110" type="uint" modifier="minus(1)" default="1"/>
     <field name="Page-aligned layers" size="1" start="126" type="bool"/>
-    <field name="Compressed 2" size="1" start="127" type="bool"/>
+
+    <!-- Read the next word (set for compression or linear 2D arrays) -->
+    <field name="Extended" size="1" start="127" type="bool"/>
 
     <!-- If layout is compressed -->
     <field name="Acceleration buffer" size="64" start="128" type="address" modifier="shr(4)"/>
+
+    <!-- If layout is linear, stride has the minus 1 encoded -->
+    <field name="Depth (linear)" size="11" start="128" type="uint" modifier="minus(1)" default="1"/>
+    <field name="Layer stride (linear)" size="27" start="139" type="uint" modifier="shr(7)"/>
   </struct>
 
   <enum name="Wrap">
@@ -263,6 +275,8 @@
     <value name="Repeat" value="1"/>
     <value name="Mirrored repeat" value="2"/>
     <value name="Clamp to border" value="3"/>
+    <value name="Clamp (GL)" value="4"/>
+    <value name="Mirrored clamp to edge" value="5"/>
   </enum>
 
   <enum name="Mip filter">
@@ -446,12 +460,14 @@
     <field name="Depth clip" size="1" start="10" type="bool"/>
     <field name="Depth clamp" size="1" start="11" type="bool"/>
     <field name="Front face CCW" size="1" start="16" type="bool"/>
+    <field name="Rasterizer discard" size="1" start="17" type="bool"/>
   </struct>
 
   <struct name="Cull 2" size="4">
-    <field name="Unknown 2" size="32" start="0" type="hex" default="0xa0"/>
+    <field name="Unknown 2" size="8" start="0" type="hex" default="0xa0"/>
     <field name="Draw clipped edges" size="1" start="9" type="bool"/>
     <field name="Primitive MSAA" size="1" start="15" type="bool"/>
+    <field name="Rasterizer discard" size="1" start="17" type="bool"/>
   </struct>
 
   <struct name="Varying 0" size="4">
@@ -689,6 +705,8 @@
 
   <struct name="VDM State Vertex Unknown" size="4">
     <field name="Flat shading control" start="0" size="2" type="VDM Vertex"/>
+    <field name="Unknown 4" size="1" start="4" type="bool"/>
+    <field name="Unknown 5" size="1" start="5" type="bool"/>
   </struct>
 
   <!--- Command to issue a direct non-indexed draw -->

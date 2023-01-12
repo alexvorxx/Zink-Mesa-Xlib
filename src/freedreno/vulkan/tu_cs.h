@@ -457,6 +457,7 @@ struct tu_reg_value {
    bool bo_write;
    uint32_t bo_offset;
    uint32_t bo_shift;
+   uint32_t bo_low;
 };
 
 #define fd_reg_pair tu_reg_value
@@ -479,6 +480,7 @@ struct tu_reg_value {
          if (regs[i].bo) {                                      \
             uint64_t v = regs[i].bo->iova + regs[i].bo_offset;  \
             v >>= regs[i].bo_shift;                             \
+            v <<= regs[i].bo_low;                               \
             v |= regs[i].value;                                 \
                                                                 \
             *p++ = v;                                           \
