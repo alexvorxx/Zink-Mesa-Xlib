@@ -134,6 +134,12 @@ enum zink_blit_flags {
    ZINK_BLIT_NO_COND_RENDER = 1 << 4,
 };
 
+enum zink_context_modes {
+   ZINK_CONTEXT_THREADED = 1 << 1,
+   ZINK_CONTEXT_BASE = 1 << 2,
+   ZINK_CONTEXT_AUTO = 1 << 3,
+};
+
 /* descriptor types; also the ordering of the sets
  * ...except that ZINK_DESCRIPTOR_BASE_TYPES is actually ZINK_DESCRIPTOR_TYPE_UNIFORMS,
  * and all base type values are thus +1 to get the set id (using screen->desc_set_id[idx])
