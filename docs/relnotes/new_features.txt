@@ -1,9 +1,0 @@
-VK_EXT_descriptor_buffer on RADV
-VK_AMD_shader_early_and_late_fragment_tests on RADV
-VK_AMD_shader_explicit_vertex_parameter on RADV/RDNA3
-VK_EXT_swapchain_colorspace on RADV
-Enabled VK_EXT_mesh_shader by default on RADV/RDNA2
-Implemented more VK_EXT_dynamic_state3 features on RADV
-Various raytracing, graphics pipeline library and RDNA3 improvements on RADV
-Radeon Memory Visualizer support with RADV.
-VK_KHR_shader_integer_dot_product on V3DV

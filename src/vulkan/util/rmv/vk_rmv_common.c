@@ -92,9 +92,9 @@ vk_rmv_handle_present_locked(struct vk_device *device)
    }
 #endif
 
-   int32_t new_frame_index = p_atomic_add_return(&trace_data->cur_frame_idx, 1);
-   frame_trigger =
-      (new_frame_index % trace_data->trace_frame_idx == 0) && trace_data->trace_frame_idx != -1;
+   frame_trigger = trace_data->cur_frame_idx == trace_data->trace_frame_idx;
+   if (trace_data->cur_frame_idx <= trace_data->trace_frame_idx)
+      trace_data->cur_frame_idx++;
 
    if (file_trigger || frame_trigger)
       vk_dump_rmv_capture(trace_data);

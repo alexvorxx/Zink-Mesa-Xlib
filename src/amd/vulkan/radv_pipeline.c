@@ -248,6 +248,8 @@ radv_get_hash_flags(const struct radv_device *device, bool stats)
       hash_flags |= RADV_HASH_SHADER_SPLIT_FMA;
    if (device->instance->debug_flags & RADV_DEBUG_NO_FMASK)
       hash_flags |= RADV_HASH_SHADER_NO_FMASK;
+   if (device->physical_device->use_ngg_streamout)
+      hash_flags |= RADV_HASH_SHADER_NGG_STREAMOUT;
    return hash_flags;
 }
 

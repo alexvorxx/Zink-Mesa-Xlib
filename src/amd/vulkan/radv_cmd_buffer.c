@@ -6233,7 +6233,7 @@ radv_CmdBindPipeline(VkCommandBuffer commandBuffer, VkPipelineBindPoint pipeline
 
       if (cmd_buffer->device->physical_device->rad_info.rbplus_allowed &&
           (!cmd_buffer->state.emitted_graphics_pipeline ||
-           cmd_buffer->state.emitted_graphics_pipeline->col_format_non_compacted != graphics_pipeline->col_format_non_compacted)) {
+           cmd_buffer->state.col_format_non_compacted != graphics_pipeline->col_format_non_compacted)) {
          cmd_buffer->state.col_format_non_compacted = graphics_pipeline->col_format_non_compacted;
          cmd_buffer->state.dirty |= RADV_CMD_DIRTY_RBPLUS;
       }

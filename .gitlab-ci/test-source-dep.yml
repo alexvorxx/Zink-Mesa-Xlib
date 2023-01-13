@@ -581,6 +581,12 @@
     - !reference [.turnip-rules, rules]
     - !reference [.zink-common-rules, rules]
 
+.zink-radv-rules:
+  stage: layered-backends
+  rules:
+    - !reference [.radv-rules, rules]
+    - !reference [.zink-common-rules, rules]
+
 # Unfortunately YAML doesn't let us concatenate arrays, so we have to do the
 # rules duplication manually
 .windows-build-rules:

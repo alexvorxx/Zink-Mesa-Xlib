@@ -1702,6 +1702,14 @@ agx_optimize_nir(nir_shader *nir, unsigned *preamble_size)
    NIR_PASS_V(nir, nir_lower_int64);
 
    NIR_PASS_V(nir, agx_nir_opt_preamble, preamble_size);
+
+   /* Forming preambles may dramatically reduce the instruction count
+    * in certain blocks, causing some if-else statements to become
+    * trivial. We want to peephole select those, given that control flow
+    * prediction instructions are costly.
+    */
+   NIR_PASS_V(nir, nir_opt_peephole_select, 64, false, true);
+
    NIR_PASS_V(nir, nir_opt_algebraic_late);
    NIR_PASS_V(nir, nir_opt_constant_folding);
 

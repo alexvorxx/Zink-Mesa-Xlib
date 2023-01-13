@@ -184,6 +184,34 @@ vk_common_SetDebugUtilsObjectTagEXT(
    return VK_SUCCESS;
 }
 
+static void
+vk_common_cmd_buffer_append_debug_label(struct vk_command_buffer *command_buffer,
+                                        const VkDebugUtilsLabelEXT *pLabelInfo)
+{
+   struct vk_device *device = command_buffer->base.device;
+
+   util_dynarray_append(&command_buffer->labels, VkDebugUtilsLabelEXT,
+                        *pLabelInfo);
+   VkDebugUtilsLabelEXT *current_label =
+      util_dynarray_top_ptr(&command_buffer->labels, VkDebugUtilsLabelEXT);
+   current_label->pLabelName =
+      vk_strdup(&device->alloc, current_label->pLabelName,
+                VK_SYSTEM_ALLOCATION_SCOPE_OBJECT);
+}
+
+static void
+vk_common_cmd_buffer_pop_debug_label(struct vk_command_buffer *command_buffer)
+{
+   struct vk_device *device = command_buffer->base.device;
+
+   if (command_buffer->labels.size == 0)
+      return;
+
+   VkDebugUtilsLabelEXT previous_label =
+      util_dynarray_pop(&command_buffer->labels, VkDebugUtilsLabelEXT);
+   vk_free(&device->alloc, (void *)previous_label.pLabelName);
+}
+
 VKAPI_ATTR void VKAPI_CALL
 vk_common_CmdBeginDebugUtilsLabelEXT(
    VkCommandBuffer _commandBuffer,
@@ -195,10 +223,9 @@ vk_common_CmdBeginDebugUtilsLabelEXT(
     * should remove it first.
     */
    if (!command_buffer->region_begin)
-      (void)util_dynarray_pop(&command_buffer->labels, VkDebugUtilsLabelEXT);
+      vk_common_cmd_buffer_pop_debug_label(command_buffer);
 
-   util_dynarray_append(&command_buffer->labels, VkDebugUtilsLabelEXT,
-                        *pLabelInfo);
+   vk_common_cmd_buffer_append_debug_label(command_buffer, pLabelInfo);
    command_buffer->region_begin = true;
 }
 
@@ -211,9 +238,9 @@ vk_common_CmdEndDebugUtilsLabelEXT(VkCommandBuffer _commandBuffer)
     * should remove it first.
     */
    if (!command_buffer->region_begin)
-      (void)util_dynarray_pop(&command_buffer->labels, VkDebugUtilsLabelEXT);
+      vk_common_cmd_buffer_pop_debug_label(command_buffer);
 
-   (void)util_dynarray_pop(&command_buffer->labels, VkDebugUtilsLabelEXT);
+   vk_common_cmd_buffer_pop_debug_label(command_buffer);
    command_buffer->region_begin = true;
 }
 
@@ -230,8 +257,7 @@ vk_common_CmdInsertDebugUtilsLabelEXT(
    if (!command_buffer->region_begin)
       (void)util_dynarray_pop(&command_buffer->labels, VkDebugUtilsLabelEXT);
 
-   util_dynarray_append(&command_buffer->labels, VkDebugUtilsLabelEXT,
-                        *pLabelInfo);
+   vk_common_cmd_buffer_append_debug_label(command_buffer, pLabelInfo);
    command_buffer->region_begin = false;
 }
 

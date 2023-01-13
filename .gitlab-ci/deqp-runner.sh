@@ -230,6 +230,11 @@ if [ -n "$FLAKES_CHANNEL" ]; then
          --branch-title "${CI_MERGE_REQUEST_TITLE:-$CI_COMMIT_TITLE}"
 fi
 
+# Compress results.csv to save on bandwidth during the upload of artifacts to
+# GitLab. This reduces the size in a VKCTS run from 135 to 7.6MB, and takes
+# 0.17s on a Ryzen 5950X (16 threads, 0.95s when limited to 1 thread).
+zstd --rm -T0 -8qc $RESULTS/results.csv -o $RESULTS/results.csv.zst
+
 echo -e "\e[0Ksection_end:$(date +%s):test_post_process\r\e[0K"
 
 exit $DEQP_EXITCODE

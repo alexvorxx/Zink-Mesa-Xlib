@@ -115,3 +115,36 @@ zink-freedreno-a630-traces:
   variables:
     PIGLIT_REPLAY_DEVICE_NAME: "zink-a630"
     ZINK_DEBUG: rp
+
+############### Combined testing (GL, GLES, Piglit) on RADV
+.radv-zink-test-valve:
+  extends:
+    - .zink-radv-rules
+    - .zink-test
+    - .test-radv
+    - .b2c-test-gl
+  variables:
+    PIGLIT_PROFILES: all
+    PIGLIT_PLATFORM: gbm
+    B2C_TEST_SCRIPT: ./install/valve/gl_combined_testing.sh
+    B2C_JOB_SUCCESS_REGEX: 'Execution is over, pipeline status: 0'
+
+    # Disable reporting, since DUTs don't have internet access
+    FLAKES_CHANNEL: ""
+
+zink-radv-navi10-valve:
+  extends:
+    - .radv-zink-test-valve
+    - .navi10-test-valve
+    - .test-manual-mr
+  variables:
+    GPU_VERSION: zink-radv-navi10
+
+zink-radv-vangogh-valve:
+  parallel: 2
+  extends:
+    - .radv-zink-test-valve
+    - .vangogh-test-valve
+    - .test-manual-mr
+  variables:
+    GPU_VERSION: zink-radv-vangogh

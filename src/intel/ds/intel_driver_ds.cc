@@ -195,11 +195,14 @@ send_descriptors(IntelRenderpassDataSource::TraceContext &ctx,
    PERFETTO_LOG("Sending renderstage descriptors");
 
    device->event_id = 0;
+   device->current_app_event_iid = device->start_app_event_iids;
    u_vector_foreach(queue, &device->queues) {
       for (uint32_t s = 0; s < ARRAY_SIZE(queue->stages); s++) {
-         queue->stages[s].start_ns = 0;
+         queue->stages[s].start_ns[0] = 0;
       }
    }
+
+   _mesa_hash_table_clear(device->app_events, NULL);
 
    {
       auto packet = ctx.NewTracePacket();
@@ -261,22 +264,56 @@ static void
 begin_event(struct intel_ds_queue *queue, uint64_t ts_ns,
             enum intel_ds_queue_stage stage_id)
 {
+   uint32_t level = queue->stages[stage_id].level;
    /* If we haven't managed to calibrate the alignment between GPU and CPU
     * timestamps yet, then skip this trace, otherwise perfetto won't know
     * what to do with it.
     */
    if (!queue->device->sync_gpu_ts) {
-      queue->stages[stage_id].start_ns = 0;
+      queue->stages[stage_id].start_ns[level] = 0;
       return;
    }
 
-   queue->stages[stage_id].start_ns = ts_ns;
+   if (level >= (ARRAY_SIZE(queue->stages[stage_id].start_ns) - 1))
+      return;
+
+   queue->stages[stage_id].start_ns[level] = ts_ns;
+   queue->stages[stage_id].level++;
+}
+
+static uint64_t
+add_app_event(IntelRenderpassDataSource::TraceContext &tctx,
+              struct intel_ds_device *device,
+              const char *app_event)
+{
+   struct hash_entry *entry =
+      _mesa_hash_table_search(device->app_events, app_event);
+   if (entry)
+      return (uint64_t) entry->data;
+
+   /* Allocate a new iid for the string */
+   uint64_t iid = device->current_app_event_iid++;
+   _mesa_hash_table_insert(device->app_events, app_event, (void*)(uintptr_t)iid);
+
+   /* Send the definition of iid/string to perfetto */
+   {
+      auto packet = tctx.NewTracePacket();
+      auto interned_data = packet->set_interned_data();
+
+      auto desc = interned_data->add_gpu_specifications();
+      desc->set_iid(iid);
+      desc->set_name(app_event);
+   }
+
+   return iid;
 }
 
 static void
 end_event(struct intel_ds_queue *queue, uint64_t ts_ns,
           enum intel_ds_queue_stage stage_id,
-          uint32_t submission_id, const void* payload = nullptr,
+          uint32_t submission_id,
+          const char *app_event,
+          const void* payload = nullptr,
           trace_payload_as_extra_func payload_as_extra = nullptr)
 {
    struct intel_ds_device *device = queue->device;
@@ -288,13 +325,16 @@ end_event(struct intel_ds_queue *queue, uint64_t ts_ns,
    if (!device->sync_gpu_ts)
       return;
 
+   if (queue->stages[stage_id].level == 0)
+      return;
+
+   uint32_t level = --queue->stages[stage_id].level;
    struct intel_ds_stage *stage = &queue->stages[stage_id];
-   uint64_t start_ns = stage->start_ns;
+   uint64_t start_ns = stage->start_ns[level];
 
    if (!start_ns)
       return;
 
-   uint64_t evt_id = device->event_id++;
 
    IntelRenderpassDataSource::Trace([=](IntelRenderpassDataSource::TraceContext tctx) {
       if (auto state = tctx.GetIncrementalState(); state->was_cleared) {
@@ -303,6 +343,15 @@ end_event(struct intel_ds_queue *queue, uint64_t ts_ns,
       }
 
       sync_timestamp(tctx, queue->device);
+
+      uint64_t evt_id = device->event_id++;
+
+      /* If this is an application event, we might need to generate a new
+       * stage_iid if not already seen. Otherwise, it's a driver event and we
+       * have use the internal stage_iid.
+       */
+      uint64_t stage_iid = app_event ?
+         add_app_event(tctx, queue->device, app_event) : stage->stage_iid;
 
       auto packet = tctx.NewTracePacket();
 
@@ -315,7 +364,7 @@ end_event(struct intel_ds_queue *queue, uint64_t ts_ns,
       event->set_gpu_id(queue->device->gpu_id);
 
       event->set_hw_queue_iid(stage->queue_iid);
-      event->set_stage_iid(stage->stage_iid);
+      event->set_stage_iid(stage_iid);
       event->set_context(queue->device->iid);
       event->set_event_id(evt_id);
       event->set_duration(ts_ns - start_ns);
@@ -326,7 +375,7 @@ end_event(struct intel_ds_queue *queue, uint64_t ts_ns,
       }
    });
 
-   stage->start_ns = 0;
+   stage->start_ns[level] = 0;
 }
 
 static void
@@ -397,16 +446,14 @@ extern "C" {
       const struct intel_ds_flush_data *flush =                         \
          (const struct intel_ds_flush_data *) flush_data;               \
       end_event(flush->queue, ts_ns, stage, flush->submission_id,       \
-                payload,                                                \
+                NULL, payload,                                          \
                 (trace_payload_as_extra_func)                           \
                 &trace_payload_as_extra_intel_end_##event_name);        \
    }                                                                    \
 
-
 CREATE_DUAL_EVENT_CALLBACK(batch, INTEL_DS_QUEUE_STAGE_CMD_BUFFER)
 CREATE_DUAL_EVENT_CALLBACK(cmd_buffer, INTEL_DS_QUEUE_STAGE_CMD_BUFFER)
 CREATE_DUAL_EVENT_CALLBACK(render_pass, INTEL_DS_QUEUE_STAGE_RENDER_PASS)
-CREATE_DUAL_EVENT_CALLBACK(dyn_render_pass, INTEL_DS_QUEUE_STAGE_RENDER_PASS)
 CREATE_DUAL_EVENT_CALLBACK(blorp, INTEL_DS_QUEUE_STAGE_BLORP)
 CREATE_DUAL_EVENT_CALLBACK(draw, INTEL_DS_QUEUE_STAGE_DRAW)
 CREATE_DUAL_EVENT_CALLBACK(draw_indexed, INTEL_DS_QUEUE_STAGE_DRAW)
@@ -423,6 +470,30 @@ CREATE_DUAL_EVENT_CALLBACK(draw_mesh_indirect_count, INTEL_DS_QUEUE_STAGE_DRAW_M
 CREATE_DUAL_EVENT_CALLBACK(xfb, INTEL_DS_QUEUE_STAGE_CMD_BUFFER)
 CREATE_DUAL_EVENT_CALLBACK(compute, INTEL_DS_QUEUE_STAGE_COMPUTE)
 CREATE_DUAL_EVENT_CALLBACK(generate_draws, INTEL_DS_QUEUE_STAGE_GENERATE_DRAWS)
+CREATE_DUAL_EVENT_CALLBACK(trace_copy, INTEL_DS_QUEUE_STAGE_BLORP)
+
+void
+intel_ds_begin_cmd_buffer_annotation(struct intel_ds_device *device,
+                                     uint64_t ts_ns,
+                                     const void *flush_data,
+                                     const struct trace_intel_begin_cmd_buffer_annotation *payload)
+{
+   const struct intel_ds_flush_data *flush =
+      (const struct intel_ds_flush_data *) flush_data;
+   begin_event(flush->queue, ts_ns, INTEL_DS_QUEUE_STAGE_CMD_BUFFER);
+}
+
+void
+intel_ds_end_cmd_buffer_annotation(struct intel_ds_device *device,
+                                   uint64_t ts_ns,
+                                   const void *flush_data,
+                                   const struct trace_intel_end_cmd_buffer_annotation *payload)
+{
+   const struct intel_ds_flush_data *flush =
+      (const struct intel_ds_flush_data *) flush_data;
+   end_event(flush->queue, ts_ns, INTEL_DS_QUEUE_STAGE_CMD_BUFFER,
+             flush->submission_id, payload->str, NULL, NULL);
+}
 
 void
 intel_ds_begin_stall(struct intel_ds_device *device,
@@ -443,8 +514,8 @@ intel_ds_end_stall(struct intel_ds_device *device,
 {
    const struct intel_ds_flush_data *flush =
       (const struct intel_ds_flush_data *) flush_data;
-   end_event(flush->queue, ts_ns, INTEL_DS_QUEUE_STAGE_STALL, flush->submission_id,
-             payload,
+   end_event(flush->queue, ts_ns, INTEL_DS_QUEUE_STAGE_STALL,
+             flush->submission_id, NULL, payload,
              (trace_payload_as_extra_func)custom_trace_payload_as_extra_end_stall);
 }
 
@@ -504,10 +575,10 @@ intel_driver_ds_init_once(void)
 }
 
 static once_flag intel_driver_ds_once_flag = ONCE_FLAG_INIT;
+static uint64_t iid = 1;
 
 static uint64_t get_iid()
 {
-   static uint64_t iid = 1;
    return iid++;
 }
 
@@ -516,6 +587,7 @@ intel_driver_ds_init(void)
 {
    call_once(&intel_driver_ds_once_flag,
              intel_driver_ds_init_once);
+   intel_gpu_tracepoint_config_variable();
 }
 
 void
@@ -535,12 +607,18 @@ intel_ds_device_init(struct intel_ds_device *device,
    device->iid = get_iid();
    device->api = api;
    u_vector_init(&device->queues, 4, sizeof(struct intel_ds_queue));
+
+   /* Reserve iids for the application generated events */
+   device->start_app_event_iids = 1ull << 32;
+   device->app_events =
+      _mesa_hash_table_create(NULL, _mesa_hash_string, _mesa_key_string_equal);
 }
 
 void
 intel_ds_device_fini(struct intel_ds_device *device)
 {
    u_trace_context_fini(&device->trace_context);
+   _mesa_hash_table_destroy(device->app_events, NULL);
    u_vector_finish(&device->queues);
 }
 

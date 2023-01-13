@@ -53,11 +53,17 @@ class Tracepoint(object):
         assert isinstance(args, list)
         assert name not in TRACEPOINTS
 
+
         self.name = name
         self.args = args
         if tp_struct is None:
            tp_struct = args
         self.tp_struct = tp_struct
+        self.has_variable_arg = False
+        for arg in self.tp_struct:
+            if arg.length_arg != None:
+                self.has_variable_arg = True
+                break
         self.tp_print = tp_print
         self.tp_perfetto = tp_perfetto
         self.tp_markers = tp_markers
@@ -97,7 +103,7 @@ class TracepointArgStruct():
 class TracepointArg(object):
     """Class that represents either an argument being passed or a field in a struct
     """
-    def __init__(self, type, var, c_format, name=None, to_prim_type=None):
+    def __init__(self, type, var, c_format, name=None, to_prim_type=None, length_arg=None, copy_func=None):
         """Parameters:
 
         - type: argument's C type.
@@ -107,6 +113,7 @@ class TracepointArg(object):
           be displayed in output or perfetto, otherwise var will be used.
         - to_prim_type: (optional) C function to convert from arg's type to a type
           compatible with c_format.
+        - length_arg: whether this argument is a variable length array
         """
         assert isinstance(type, str)
         assert isinstance(var, str)
@@ -119,6 +126,8 @@ class TracepointArg(object):
            name = var
         self.name = name
         self.to_prim_type = to_prim_type
+        self.length_arg = length_arg
+        self.copy_func = copy_func
 
 
 HEADERS = []
@@ -215,7 +224,7 @@ void ${trace_toggle_name}_config_variable(void);
  */
 struct trace_${trace_name} {
 %    for arg in trace.tp_struct:
-   ${arg.type} ${arg.name};
+   ${arg.type} ${arg.name}${"[0]" if arg.length_arg else ""};
 %    endfor
 %    if len(trace.args) == 0:
 #ifdef __cplusplus
@@ -455,10 +464,25 @@ void __trace_${trace_name}(
    struct trace_${trace_name} entry;
    UNUSED struct trace_${trace_name} *__entry =
       enabled_traces & U_TRACE_TYPE_REQUIRE_QUEUING ?
+ % if trace.has_variable_arg:
+      (struct trace_${trace_name} *)u_trace_appendv(ut, ${cs_param_value + ","} &__tp_${trace_name},
+                                                    0
+  % for arg in trace.tp_struct:
+   % if arg.length_arg is not None:
+                                                    + ${arg.length_arg}
+   % endif
+  % endfor
+                                                    ) :
+ % else:
       (struct trace_${trace_name} *)u_trace_append(ut, ${cs_param_value + ","} &__tp_${trace_name}) :
+ % endif
       &entry;
  % for arg in trace.tp_struct:
+  % if arg.length_arg is None:
    __entry->${arg.name} = ${arg.var};
+  % else:
+   ${arg.copy_func}(__entry->${arg.name}, ${arg.var}, ${arg.length_arg});
+  % endif
  % endfor
  % if trace.tp_markers is not None:
    if (enabled_traces & U_TRACE_TYPE_MARKERS)

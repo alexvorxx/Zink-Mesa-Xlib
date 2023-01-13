@@ -7,3 +7,5 @@ spec@!opengl 1.0@rasterpos
 
 # need to handle non-fbfetch feedback loops
 spec@arb_texture_barrier@arb_texture_barrier-blending-in-shader*
+
+spec@!opengl 1.1@depthstencil-default_fb-blit samples=4

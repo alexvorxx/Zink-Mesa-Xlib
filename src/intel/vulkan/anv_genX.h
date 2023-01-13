@@ -97,6 +97,8 @@ void genX(emit_so_memcpy_init)(struct anv_memcpy_state *state,
 
 void genX(emit_so_memcpy_fini)(struct anv_memcpy_state *state);
 
+void genX(emit_so_memcpy_end)(struct anv_memcpy_state *state);
+
 void genX(emit_so_memcpy)(struct anv_memcpy_state *state,
                           struct anv_address dst, struct anv_address src,
                           uint32_t size);

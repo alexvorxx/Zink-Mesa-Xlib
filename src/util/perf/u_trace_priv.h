@@ -54,9 +54,23 @@ struct u_tracepoint {
 };
 
 /**
- * Append a tracepoint, returning pointer that can be filled with trace
- * payload.
+ * Append a tracepoint followed by some amount of memory specified by
+ * variable_sz, returning pointer that can be filled with trace payload.
  */
-void * u_trace_append(struct u_trace *ut, void *cs, const struct u_tracepoint *tp);
+void * u_trace_appendv(struct u_trace *ut, void *cs,
+                       const struct u_tracepoint *tp, unsigned variable_sz);
+
+/**
+ * Append a trace event, returning pointer to buffer of tp->payload_sz
+ * to be filled in with trace payload.  Called by generated tracepoint
+ * functions.
+ */
+static inline void *
+u_trace_append(struct u_trace *ut, void *cs, const struct u_tracepoint *tp)
+{
+   return u_trace_appendv(ut, cs, tp, 0);
+}
+
+
 
 #endif  /* _U_TRACE_PRIV_H */

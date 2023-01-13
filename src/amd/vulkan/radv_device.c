@@ -6503,6 +6503,22 @@ radv_BindImageMemory2(VkDevice _device, uint32_t bindInfoCount,
       RADV_FROM_HANDLE(radv_device_memory, mem, pBindInfos[i].memory);
       RADV_FROM_HANDLE(radv_image, image, pBindInfos[i].image);
 
+      /* Ignore this struct on Android, we cannot access swapchain structures there. */
+#ifdef RADV_USE_WSI_PLATFORM
+      const VkBindImageMemorySwapchainInfoKHR *swapchain_info =
+         vk_find_struct_const(pBindInfos[i].pNext, BIND_IMAGE_MEMORY_SWAPCHAIN_INFO_KHR);
+
+      if (swapchain_info && swapchain_info->swapchain != VK_NULL_HANDLE) {
+         struct radv_image *swapchain_img =
+            radv_image_from_handle(wsi_common_get_image(
+                                   swapchain_info->swapchain, swapchain_info->imageIndex));
+
+         image->bindings[0].bo = swapchain_img->bindings[0].bo;
+         image->bindings[0].offset = swapchain_img->bindings[0].offset;
+         continue;
+      }
+#endif
+
       if (mem->alloc_size) {
          VkImageMemoryRequirementsInfo2 info = {
             .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_REQUIREMENTS_INFO_2,

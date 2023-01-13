@@ -2413,7 +2413,7 @@ radv_image_queue_family_mask(const struct radv_image *image,
 }
 
 VKAPI_ATTR VkResult VKAPI_CALL
-radv_CreateImage(VkDevice device, const VkImageCreateInfo *pCreateInfo,
+radv_CreateImage(VkDevice _device, const VkImageCreateInfo *pCreateInfo,
                  const VkAllocationCallbacks *pAllocator, VkImage *pImage)
 {
 #ifdef ANDROID
@@ -2421,7 +2421,22 @@ radv_CreateImage(VkDevice device, const VkImageCreateInfo *pCreateInfo,
       vk_find_struct_const(pCreateInfo->pNext, NATIVE_BUFFER_ANDROID);
 
    if (gralloc_info)
-      return radv_image_from_gralloc(device, pCreateInfo, gralloc_info, pAllocator, pImage);
+      return radv_image_from_gralloc(_device, pCreateInfo, gralloc_info, pAllocator, pImage);
+#endif
+
+#ifdef RADV_USE_WSI_PLATFORM
+   /* Ignore swapchain creation info on Android. Since we don't have an implementation in Mesa,
+    * we're guaranteed to access an Android object incorrectly.
+    */
+   RADV_FROM_HANDLE(radv_device, device, _device);
+   const VkImageSwapchainCreateInfoKHR *swapchain_info =
+      vk_find_struct_const(pCreateInfo->pNext, IMAGE_SWAPCHAIN_CREATE_INFO_KHR);
+   if (swapchain_info && swapchain_info->swapchain != VK_NULL_HANDLE) {
+      return wsi_common_create_swapchain_image(device->physical_device->vk.wsi_device,
+                                               pCreateInfo,
+                                               swapchain_info->swapchain,
+                                               pImage);
+   }
 #endif
 
    const struct wsi_image_create_info *wsi_info =
@@ -2429,7 +2444,7 @@ radv_CreateImage(VkDevice device, const VkImageCreateInfo *pCreateInfo,
    bool scanout = wsi_info && wsi_info->scanout;
    bool prime_blit_src = wsi_info && wsi_info->blit_src;
 
-   return radv_image_create(device,
+   return radv_image_create(_device,
                             &(struct radv_image_create_info){
                                .vk_info = pCreateInfo,
                                .scanout = scanout,

@@ -1158,7 +1158,7 @@ etna_compile_shader(struct etna_shader_variant *v)
        */
       NIR_PASS_V(s, nir_lower_int_to_float);
       NIR_PASS_V(s, nir_opt_algebraic);
-      NIR_PASS_V(s, nir_lower_bool_to_float);
+      NIR_PASS_V(s, nir_lower_bool_to_float, true);
    } else {
       NIR_PASS_V(s, nir_lower_bool_to_int32);
    }

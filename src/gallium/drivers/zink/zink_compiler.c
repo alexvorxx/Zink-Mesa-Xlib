@@ -1365,10 +1365,15 @@ get_slot_components(nir_variable *var, unsigned slot, unsigned so_slot)
 
    /* arrays here are already fully unrolled from their structs, so slot handling is implicit */
    unsigned num_components = glsl_get_components(glsl_without_array(type));
-   const struct glsl_type *arraytype = orig_type;
-   while (glsl_type_is_array(arraytype) && !glsl_type_is_struct_or_ifc(glsl_without_array(arraytype))) {
-      num_components *= glsl_array_size(arraytype);
-      arraytype = glsl_get_array_element(arraytype);
+   /* special handling: clip/cull distance are arrays with vector semantics */
+   if (var->data.location == VARYING_SLOT_CLIP_DIST0 || var->data.location == VARYING_SLOT_CULL_DIST0) {
+      num_components = glsl_array_size(type);
+      if (slot_idx)
+         /* this is the second vec4 */
+         num_components %= 4;
+      else
+         /* this is the first vec4 */
+         num_components = MIN2(num_components, 4);
    }
    assert(num_components);
    /* gallium handles xfb in terms of 32bit units */
@@ -1495,8 +1500,6 @@ update_so_info(struct zink_shader *zs, const struct pipe_stream_output_info *so_
 
             /* if all the components the variable exports to this slot aren't captured, skip consolidation */
             unsigned num_components = get_slot_components(var, slot, var->data.location);
-            if (glsl_type_is_array(var->type) && !glsl_type_is_struct_or_ifc(glsl_without_array(var->type)))
-               num_components /= glsl_array_size(var->type);
             if (num_components != packed_components[slot])
                goto out;
 

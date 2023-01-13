@@ -114,4 +114,9 @@ if [ -n "$FLAKES_CHANNEL" ]; then
          --branch-title "${CI_MERGE_REQUEST_TITLE:-$CI_COMMIT_TITLE}"
 fi
 
+# Compress results.csv to save on bandwidth during the upload of artifacts to
+# GitLab. This reduces a full piglit run to 550 KB, down from 6 MB, and takes
+# 55ms on my Ryzen 5950X (with or without parallelism).
+zstd --rm -T0 -8qc $RESULTS/results.csv -o $RESULTS/results.csv.zst
+
 exit $PIGLIT_EXITCODE

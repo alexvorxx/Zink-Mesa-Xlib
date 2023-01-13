@@ -23,7 +23,10 @@
 
 #include "anv_private.h"
 
+#include "ds/intel_tracepoints.h"
 #include "perf/intel_perf.h"
+
+#include "vulkan/runtime/vk_common_entrypoints.h"
 
 static uint32_t
 command_buffers_count_utraces(struct anv_device *device,
@@ -158,6 +161,7 @@ anv_device_utrace_flush_cmd_buffers(struct anv_queue *queue,
          }
       }
       anv_genX(device->info, emit_so_memcpy_fini)(&flush->memcpy_state);
+      anv_genX(device->info, emit_so_memcpy_end)(&flush->memcpy_state);
 
       u_trace_flush(&flush->ds.trace, flush, true);
 
@@ -331,3 +335,30 @@ anv_pipe_flush_bit_to_ds_stall_flag(enum anv_pipe_bits bits)
 
    return ret;
 }
+
+void anv_CmdBeginDebugUtilsLabelEXT(
+   VkCommandBuffer _commandBuffer,
+   const VkDebugUtilsLabelEXT *pLabelInfo)
+{
+   VK_FROM_HANDLE(anv_cmd_buffer, cmd_buffer, _commandBuffer);
+
+   vk_common_CmdBeginDebugUtilsLabelEXT(_commandBuffer, pLabelInfo);
+
+   trace_intel_begin_cmd_buffer_annotation(&cmd_buffer->trace);
+}
+
+void anv_CmdEndDebugUtilsLabelEXT(VkCommandBuffer _commandBuffer)
+{
+   VK_FROM_HANDLE(anv_cmd_buffer, cmd_buffer, _commandBuffer);
+
+   if (cmd_buffer->vk.labels.size > 0) {
+      const VkDebugUtilsLabelEXT *label =
+         util_dynarray_top_ptr(&cmd_buffer->vk.labels, VkDebugUtilsLabelEXT);
+
+      trace_intel_end_cmd_buffer_annotation(&cmd_buffer->trace,
+                                            strlen(label->pLabelName),
+                                            label->pLabelName);
+   }
+
+   vk_common_CmdEndDebugUtilsLabelEXT(_commandBuffer);
+ }

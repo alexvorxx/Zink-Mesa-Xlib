@@ -525,6 +525,7 @@ static const nir_shader_compiler_options r500_vs_compiler_options = {
 static const nir_shader_compiler_options r500_fs_compiler_options = {
    COMMON_NIR_OPTIONS,
    .lower_fpow = true, /* POW is only in the VS */
+   .has_fused_comp_and_csel = true,
 
    /* Have HW loops support and 512 max instr count, but don't unroll *too*
     * hard.
@@ -545,6 +546,7 @@ static const nir_shader_compiler_options r300_fs_compiler_options = {
    COMMON_NIR_OPTIONS,
    .lower_fpow = true, /* POW is only in the VS */
    .lower_sincos = true,
+   .has_fused_comp_and_csel = true,
 
     /* No HW loops support, so set it equal to ALU instr max */
    .max_unroll_iterations = 64,

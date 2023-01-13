@@ -1645,26 +1645,32 @@ ntt_emit_alu(struct ntt_compile *c, nir_alu_instr *instr)
          break;
 
       case nir_op_fcsel:
-         /* NIR fcsel is src0 != 0 ? src1 : src2.
-          * TGSI CMP is src0 < 0 ? src1 : src2.
-          *
-          * However, fcsel so far as I can find only appears on bools-as-floats
-          * (1.0 or 0.0), so we can just negate it for the TGSI op.  It's
-          * important to not have an abs here, as i915g has to make extra
-          * instructions to do the abs.
+         /* If CMP isn't supported, then the flags that enable NIR to generate
+          * this opcode should also not be set.
           */
-         if (c->options->lower_cmp) {
-            /* If the HW doesn't support TGSI CMP (r300 VS), then lower it to a
-             * LRP on the boolean 1.0/0.0 value, instead of requiring the
-             * backend to turn the src0 into 1.0/0.0 first.
-             *
-             * We don't use this in general because some hardware (i915 FS) the
-             * LRP gets expanded to MUL/MAD.
-             */
-            ntt_LRP(c, dst, src[0], src[1], src[2]);
-         } else {
-            ntt_CMP(c, dst, ureg_negate(src[0]), src[1], src[2]);
-         }
+         assert(!c->options->lower_cmp);
+
+         /* Implement this as CMP(-abs(src0), src1, src2). */
+         ntt_CMP(c, dst, ureg_negate(ureg_abs(src[0])), src[1], src[2]);
+         break;
+
+      case nir_op_fcsel_gt:
+         /* If CMP isn't supported, then the flags that enable NIR to generate
+          * these opcodes should also not be set.
+          */
+         assert(!c->options->lower_cmp);
+
+         ntt_CMP(c, dst, ureg_negate(src[0]), src[1], src[2]);
+         break;
+
+      case nir_op_fcsel_ge:
+         /* If CMP isn't supported, then the flags that enable NIR to generate
+          * these opcodes should also not be set.
+          */
+         assert(!c->options->lower_cmp);
+
+         /* Implement this as if !(src0 < 0.0) was identical to src0 >= 0.0. */
+         ntt_CMP(c, dst, src[0], src[2], src[1]);
          break;
 
          /* It would be nice if we could get this left as scalar in NIR, since
@@ -3923,7 +3929,8 @@ const void *nir_to_tgsi_options(struct nir_shader *s,
       NIR_PASS_V(s, nir_lower_bool_to_int32);
    } else {
       NIR_PASS_V(s, nir_lower_int_to_float);
-      NIR_PASS_V(s, nir_lower_bool_to_float);
+      NIR_PASS_V(s, nir_lower_bool_to_float,
+                 !options->lower_cmp && !options->lower_fabs);
       /* bool_to_float generates MOVs for b2f32 that we want to clean up. */
       NIR_PASS_V(s, nir_copy_prop);
       NIR_PASS_V(s, nir_opt_dce);

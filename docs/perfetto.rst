@@ -39,7 +39,7 @@ The exact supported features vary per driver:
      - ``gpu.renderstages.msm``
    * - Intel
      - ``gpu.counters.i915``
-     - ``gpu.renderstages.i915``
+     - ``gpu.renderstages.intel``
    * - Panfrost
      - ``gpu.counters.panfrost``
      -

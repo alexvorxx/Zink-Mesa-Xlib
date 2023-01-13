@@ -253,7 +253,11 @@ genX(emit_so_memcpy_fini)(struct anv_memcpy_state *state)
 {
    genX(emit_apply_pipe_flushes)(state->batch, state->device, _3D,
                                  ANV_PIPE_END_OF_PIPE_SYNC_BIT);
+}
 
+void
+genX(emit_so_memcpy_end)(struct anv_memcpy_state *state)
+{
    anv_batch_emit(state->batch, GENX(MI_BATCH_BUFFER_END), end);
 
    if ((state->batch->next - state->batch->start) & 4)

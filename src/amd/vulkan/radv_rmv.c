@@ -896,10 +896,11 @@ radv_rmv_log_event_create(struct radv_device *device, VkEvent _event, VkEventCre
 
    vk_rmv_emit_token(&device->vk.memory_trace_data, VK_RMV_TOKEN_TYPE_RESOURCE_CREATE,
                      &create_token);
-   if (event->map)
-      vk_rmv_log_cpu_map(&device->vk, event->bo->va, false);
    log_resource_bind_locked(device, (uint64_t)_event, event->bo, 0, 8);
    simple_mtx_unlock(&device->vk.memory_trace_data.token_mtx);
+
+   if (event->map)
+      vk_rmv_log_cpu_map(&device->vk, event->bo->va, false);
 }
 
 void
