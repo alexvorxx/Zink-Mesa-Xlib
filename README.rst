@@ -58,7 +58,7 @@ For details, see README of the respective repositories.
 Build Mesa Turnip
 ---------------
 
-Build Mesa Turnip using Mesa repository (https://gitlab.freedesktop.org/mesa/mesa/).
+Build Mesa Turnip using Mesa repository (https://gitlab.freedesktop.org/mesa/mesa).
 
 Go to the folder with Mesa code and run the commands:
 
