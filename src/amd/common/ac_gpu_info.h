@@ -73,10 +73,13 @@ struct radeon_info {
 
    /* Identification. */
    /* PCI info: domain:bus:dev:func */
-   uint32_t pci_domain;
-   uint32_t pci_bus;
-   uint32_t pci_dev;
-   uint32_t pci_func;
+   struct {
+      uint32_t domain;
+      uint32_t bus;
+      uint32_t dev;
+      uint32_t func;
+      bool valid;
+   } pci;
 
    uint32_t pci_id;
    uint32_t pci_rev_id;
@@ -245,6 +248,7 @@ struct radeon_info {
 };
 
 bool ac_query_gpu_info(int fd, void *dev_p, struct radeon_info *info);
+bool ac_query_pci_bus_info(int fd, struct radeon_info *info);
 
 void ac_compute_driver_uuid(char *uuid, size_t size);
 

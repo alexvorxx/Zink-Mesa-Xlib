@@ -3,3 +3,7 @@ dEQP-VK.transform_feedback.primitives_generated_query.copy.host_reset.pgq_32bit_
 dEQP-VK.transform_feedback.primitives_generated_query.copy.queue_reset.pgq_32bit_xfb_64bit.geom.xfb.no_rast.line_strip.pgq_default_xfb_0.single_draw,Fail
 dEQP-VK.transform_feedback.primitives_generated_query.get.host_reset.64bit.geom.xfb.rast.triangle_fan.pgq_default_xfb_1.single_draw,Fail
 dEQP-VK.transform_feedback.primitives_generated_query.get.queue_reset.64bit.geom.xfb.no_rast.line_list_with_adjacency.pgq_1_xfb_0.single_draw,Fail
+dEQP-VK.transform_feedback.primitives_generated_query.copy.host_reset.pgq_32bit_xfb_64bit.geom.xfb.rast.triangle_strip_with_adjacency.pgq_default_xfb_default.single_draw,Fail
+dEQP-VK.transform_feedback.primitives_generated_query.copy.queue_reset.pgq_32bit_xfb_64bit.geom.xfb.rast.point_list.pgq_0_xfb_1.single_draw,Fail
+dEQP-VK.transform_feedback.primitives_generated_query.get.host_reset.pgq_32bit_xfb_64bit.geom.xfb.no_rast.line_strip.pgq_default_xfb_0.single_draw,Fail
+dEQP-VK.transform_feedback.primitives_generated_query.get.queue_reset.64bit.geom.xfb.rast.triangle_fan.pgq_default_xfb_1.single_draw,Fail

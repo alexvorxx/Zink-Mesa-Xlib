@@ -878,7 +878,6 @@ void r3xx_compile_vertex_program(struct r300_vertex_program_compiler *c)
 	/* Lists of instruction transformations. */
 	struct radeon_program_transformation alu_rewrite_r500[] = {
 		{ &r300_transform_vertex_alu, NULL },
-		{ &r300_transform_trig_scale_vertex, NULL },
 		{ NULL, NULL }
 	};
 

@@ -160,6 +160,22 @@ static void pvr_submit_info_ext_stream_init(
       submit_info->fw_ext_stream_len = 0;
 }
 
+static void
+pvr_submit_info_flags_init(const struct pvr_device_info *const dev_info,
+                           const struct pvr_sub_cmd_compute *const sub_cmd,
+                           uint32_t *const flags)
+{
+   *flags = 0;
+
+   if (sub_cmd->uses_barrier)
+      *flags |= PVR_WINSYS_COMPUTE_FLAG_PREVENT_ALL_OVERLAP;
+
+   if (PVR_HAS_FEATURE(dev_info, gpu_multicore_support) &&
+       sub_cmd->uses_atomic_ops) {
+      *flags |= PVR_WINSYS_COMPUTE_FLAG_SINGLE_CORE;
+   }
+}
+
 static void pvr_compute_job_ws_submit_info_init(
    struct pvr_compute_ctx *ctx,
    struct pvr_sub_cmd_compute *sub_cmd,
@@ -185,14 +201,7 @@ static void pvr_compute_job_ws_submit_info_init(
 
    pvr_submit_info_stream_init(ctx, sub_cmd, submit_info);
    pvr_submit_info_ext_stream_init(ctx, submit_info);
-
-   if (sub_cmd->uses_barrier)
-      submit_info->flags |= PVR_WINSYS_COMPUTE_FLAG_PREVENT_ALL_OVERLAP;
-
-   if (PVR_HAS_FEATURE(dev_info, gpu_multicore_support) &&
-       sub_cmd->uses_atomic_ops) {
-      submit_info->flags |= PVR_WINSYS_COMPUTE_FLAG_SINGLE_CORE;
-   }
+   pvr_submit_info_flags_init(dev_info, sub_cmd, &submit_info->flags);
 }
 
 VkResult pvr_compute_job_submit(struct pvr_compute_ctx *ctx,

@@ -36,6 +36,7 @@ typedef struct {
    const struct radv_pipeline_key *pl_key;
    bool use_llvm;
    uint32_t address32_hi;
+   nir_ssa_def *gsvs_ring[4];
 } lower_abi_state;
 
 static nir_ssa_def *
@@ -130,7 +131,13 @@ lower_abi_instr(nir_builder *b, nir_instr *instr, void *state)
          break;
       }
 
-      replacement = load_ring(b, RING_GSVS_VS, s);
+      if (stage == MESA_SHADER_VERTEX)
+         replacement = load_ring(b, RING_GSVS_VS, s);
+      else
+         replacement = s->gsvs_ring[nir_intrinsic_stream_id(intrin)];
+      break;
+   case nir_intrinsic_load_ring_gs2vs_offset_amd:
+      replacement = ac_nir_load_arg(b, &s->args->ac, s->args->ac.gs2vs_offset);
       break;
    case nir_intrinsic_load_ring_es2gs_offset_amd:
       replacement = ac_nir_load_arg(b, &s->args->ac, s->args->ac.es2gs_offset);
@@ -451,6 +458,34 @@ lower_abi_instr(nir_builder *b, nir_instr *instr, void *state)
    return true;
 }
 
+static nir_ssa_def *
+load_gsvs_ring(nir_builder *b, lower_abi_state *s, unsigned stream_id)
+{
+   nir_ssa_def *ring = load_ring(b, RING_GSVS_GS, s);
+   unsigned stream_offset = 0;
+   unsigned stride = 0;
+   for (unsigned i = 0; i <= stream_id; i++) {
+      stride = 4 * s->info->gs.num_stream_output_components[i] * s->info->gs.vertices_out;
+      if (i < stream_id)
+         stream_offset += stride * s->info->wave_size;
+   }
+
+   /* Limit on the stride field for <= GFX7. */
+   assert(stride < (1 << 14));
+
+   if (stream_offset) {
+      nir_ssa_def *addr =
+         nir_pack_64_2x32_split(b, nir_channel(b, ring, 0), nir_channel(b, ring, 1));
+      addr = nir_iadd_imm(b, addr, stream_offset);
+      ring = nir_vector_insert_imm(b, ring, nir_unpack_64_2x32_split_x(b, addr), 0);
+      ring = nir_vector_insert_imm(b, ring, nir_unpack_64_2x32_split_y(b, addr), 1);
+   }
+
+   ring = nir_vector_insert_imm(
+      b, ring, nir_ior_imm(b, nir_channel(b, ring, 1), S_008F04_STRIDE(stride)), 1);
+   return nir_vector_insert_imm(b, ring, nir_imm_int(b, s->info->wave_size), 2);
+}
+
 void
 radv_nir_lower_abi(nir_shader *shader, enum amd_gfx_level gfx_level,
                    const struct radv_shader_info *info, const struct radv_shader_args *args,
@@ -464,6 +499,17 @@ radv_nir_lower_abi(nir_shader *shader, enum amd_gfx_level gfx_level,
       .use_llvm = use_llvm,
       .address32_hi = address32_hi,
    };
+
+   if (shader->info.stage == MESA_SHADER_GEOMETRY && !info->is_ngg) {
+      nir_function_impl *impl = nir_shader_get_entrypoint(shader);
+
+      nir_builder b;
+      nir_builder_init(&b, impl);
+      b.cursor = nir_before_cf_list(&impl->body);
+
+      u_foreach_bit (i, shader->info.gs.active_stream_mask)
+         state.gsvs_ring[i] = load_gsvs_ring(&b, &state, i);
+   }
 
    nir_shader_instructions_pass(shader, lower_abi_instr,
                                 nir_metadata_dominance | nir_metadata_block_index, &state);

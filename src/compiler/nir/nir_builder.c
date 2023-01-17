@@ -216,6 +216,110 @@ nir_build_alu_src_arr(nir_builder *build, nir_op op, nir_ssa_def **srcs)
 }
 
 nir_ssa_def *
+nir_build_tex_deref_instr(nir_builder *build, nir_texop op,
+                          nir_deref_instr *texture,
+                          nir_deref_instr *sampler,
+                          unsigned num_extra_srcs,
+                          const nir_tex_src *extra_srcs)
+{
+   assert(texture != NULL);
+   assert(glsl_type_is_texture(texture->type) ||
+          glsl_type_is_sampler(texture->type));
+
+   const unsigned num_srcs = 1 + (sampler != NULL) + num_extra_srcs;
+
+   nir_tex_instr *tex = nir_tex_instr_create(build->shader, num_srcs);
+   tex->op = op;
+   tex->sampler_dim = glsl_get_sampler_dim(texture->type);
+   tex->is_array = glsl_sampler_type_is_array(texture->type);
+   tex->is_shadow = false;
+
+   switch (op) {
+   case nir_texop_txs:
+   case nir_texop_texture_samples:
+   case nir_texop_query_levels:
+   case nir_texop_txf_ms_mcs_intel:
+   case nir_texop_fragment_mask_fetch_amd:
+   case nir_texop_descriptor_amd:
+      tex->dest_type = nir_type_int32;
+      break;
+   case nir_texop_lod:
+      tex->dest_type = nir_type_float32;
+      break;
+   case nir_texop_samples_identical:
+      tex->dest_type = nir_type_bool1;
+      break;
+   default:
+      assert(!nir_tex_instr_is_query(tex));
+      tex->dest_type = nir_get_nir_type_for_glsl_base_type(
+         glsl_get_sampler_result_type(texture->type));
+      break;
+   }
+
+   unsigned src_idx = 0;
+   tex->src[src_idx++] = (nir_tex_src) {
+      .src_type = nir_tex_src_texture_deref,
+      .src = nir_src_for_ssa(&texture->dest.ssa),
+   };
+   if (sampler != NULL) {
+      assert(glsl_type_is_sampler(sampler->type));
+      tex->src[src_idx++] = (nir_tex_src) {
+         .src_type = nir_tex_src_sampler_deref,
+         .src = nir_src_for_ssa(&sampler->dest.ssa),
+      };
+   }
+   for (unsigned i = 0; i < num_extra_srcs; i++) {
+      switch (extra_srcs[i].src_type) {
+      case nir_tex_src_coord:
+         tex->coord_components = nir_src_num_components(extra_srcs[i].src);
+         assert(tex->coord_components == tex->is_array +
+                glsl_get_sampler_dim_coordinate_components(tex->sampler_dim));
+         break;
+
+      case nir_tex_src_lod:
+         assert(tex->sampler_dim == GLSL_SAMPLER_DIM_1D ||
+                tex->sampler_dim == GLSL_SAMPLER_DIM_2D ||
+                tex->sampler_dim == GLSL_SAMPLER_DIM_3D ||
+                tex->sampler_dim == GLSL_SAMPLER_DIM_CUBE);
+         break;
+
+      case nir_tex_src_ms_index:
+         assert(tex->sampler_dim == GLSL_SAMPLER_DIM_MS);
+         break;
+
+      case nir_tex_src_comparator:
+         /* Assume 1-component shadow for the builder helper */
+         tex->is_shadow = true;
+         tex->is_new_style_shadow = true;
+         break;
+
+      case nir_tex_src_texture_deref:
+      case nir_tex_src_sampler_deref:
+      case nir_tex_src_texture_offset:
+      case nir_tex_src_sampler_offset:
+      case nir_tex_src_texture_handle:
+      case nir_tex_src_sampler_handle:
+         unreachable("Texture and sampler must be provided directly as derefs");
+         break;
+
+      default:
+         break;
+      }
+
+      tex->src[src_idx++] = extra_srcs[i];
+   }
+   assert(src_idx == num_srcs);
+
+   nir_ssa_dest_init(&tex->instr, &tex->dest,
+                     nir_tex_instr_dest_size(tex),
+                     nir_alu_type_get_type_size(tex->dest_type),
+                     NULL);
+   nir_builder_instr_insert(build, &tex->instr);
+
+   return &tex->dest.ssa;
+}
+
+nir_ssa_def *
 nir_vec_scalars(nir_builder *build, nir_ssa_scalar *comp, unsigned num_components)
 {
    nir_op op = nir_op_vec(num_components);

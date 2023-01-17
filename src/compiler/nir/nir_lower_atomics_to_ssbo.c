@@ -153,6 +153,10 @@ lower_instr(nir_intrinsic_instr *instr, unsigned ssbo_offset, nir_builder *b, un
    if (offset_load)
       new_instr->src[1].ssa = nir_iadd(b, new_instr->src[1].ssa, offset_load);
 
+   if (nir_intrinsic_range_base(instr))
+      new_instr->src[1].ssa = nir_iadd(b, new_instr->src[1].ssa,
+                                       nir_imm_int(b, nir_intrinsic_range_base(instr)));
+
    if (new_instr->intrinsic == nir_intrinsic_load_ssbo) {
       nir_intrinsic_set_align(new_instr, 4, 0);
 

@@ -42,6 +42,7 @@
 #endif
 
 #include "vk_util.h"
+#include "vk_format.h"
 
 static void
 genX(emit_slice_hashing_state)(struct anv_device *device,
@@ -834,23 +835,28 @@ VkResult genX(CreateSampler)(
    unsigned sampler_reduction_mode = STD_FILTER;
    bool enable_sampler_reduction = false;
 
+   const struct vk_format_ycbcr_info *ycbcr_info = NULL;
    vk_foreach_struct_const(ext, pCreateInfo->pNext) {
       switch (ext->sType) {
       case VK_STRUCTURE_TYPE_SAMPLER_YCBCR_CONVERSION_INFO: {
          VkSamplerYcbcrConversionInfo *pSamplerConversion =
             (VkSamplerYcbcrConversionInfo *) ext;
-         ANV_FROM_HANDLE(anv_ycbcr_conversion, conversion,
-                         pSamplerConversion->conversion);
+         VK_FROM_HANDLE(vk_ycbcr_conversion, conversion,
+                        pSamplerConversion->conversion);
 
          /* Ignore conversion for non-YUV formats. This fulfills a requirement
           * for clients that want to utilize same code path for images with
           * external formats (VK_FORMAT_UNDEFINED) and "regular" RGBA images
           * where format is known.
           */
-         if (conversion == NULL || !conversion->format->can_ycbcr)
+         if (conversion == NULL)
             break;
 
-         sampler->n_planes = conversion->format->n_planes;
+         ycbcr_info = vk_format_get_ycbcr_info(conversion->format);
+         if (ycbcr_info == NULL)
+            break;
+
+         sampler->n_planes = ycbcr_info->n_planes;
          sampler->conversion = conversion;
          break;
       }
@@ -918,7 +924,7 @@ VkResult genX(CreateSampler)(
 
    for (unsigned p = 0; p < sampler->n_planes; p++) {
       const bool plane_has_chroma =
-         sampler->conversion && sampler->conversion->format->planes[p].has_chroma;
+         ycbcr_info && ycbcr_info->planes[p].has_chroma;
       const VkFilter min_filter =
          plane_has_chroma ? sampler->conversion->chroma_filter : pCreateInfo->minFilter;
       const VkFilter mag_filter =
@@ -928,9 +934,13 @@ VkResult genX(CreateSampler)(
       /* From Broadwell PRM, SAMPLER_STATE:
        *   "Mip Mode Filter must be set to MIPFILTER_NONE for Planar YUV surfaces."
        */
-      const bool isl_format_is_planar_yuv = sampler->conversion &&
-         isl_format_is_yuv(sampler->conversion->format->planes[0].isl_format) &&
-         isl_format_is_planar(sampler->conversion->format->planes[0].isl_format);
+      enum isl_format plane0_isl_format = sampler->conversion ?
+         anv_get_format(sampler->conversion->format)->planes[0].isl_format :
+         ISL_FORMAT_UNSUPPORTED;
+      const bool isl_format_is_planar_yuv =
+         plane0_isl_format != ISL_FORMAT_UNSUPPORTED &&
+         isl_format_is_yuv(plane0_isl_format) &&
+         isl_format_is_planar(plane0_isl_format);
 
       const uint32_t mip_filter_mode =
          isl_format_is_planar_yuv ?

@@ -387,13 +387,13 @@ static int si_get_param(struct pipe_screen *pscreen, enum pipe_cap param)
    case PIPE_CAP_VIDEO_MEMORY:
       return sscreen->info.vram_size_kb >> 10;
    case PIPE_CAP_PCI_GROUP:
-      return sscreen->info.pci_domain;
+      return sscreen->info.pci.domain;
    case PIPE_CAP_PCI_BUS:
-      return sscreen->info.pci_bus;
+      return sscreen->info.pci.bus;
    case PIPE_CAP_PCI_DEVICE:
-      return sscreen->info.pci_dev;
+      return sscreen->info.pci.dev;
    case PIPE_CAP_PCI_FUNCTION:
-      return sscreen->info.pci_func;
+      return sscreen->info.pci.func;
 
    default:
       return u_pipe_screen_get_param_defaults(pscreen, param);

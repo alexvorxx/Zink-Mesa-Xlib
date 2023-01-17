@@ -363,6 +363,13 @@ radv_device_finish_accel_struct_build_state(struct radv_device *device)
    if (state->accel_struct_build.radix_sort)
       radix_sort_vk_destroy(state->accel_struct_build.radix_sort, radv_device_to_handle(device),
                             &state->alloc);
+
+   radv_DestroyBuffer(radv_device_to_handle(device), state->accel_struct_build.null.buffer,
+                      &state->alloc);
+   radv_FreeMemory(radv_device_to_handle(device), state->accel_struct_build.null.memory,
+                   &state->alloc);
+   radv_DestroyAccelerationStructureKHR(radv_device_to_handle(device),
+                                        state->accel_struct_build.null.accel_struct, &state->alloc);
 }
 
 static VkResult
@@ -437,6 +444,117 @@ radix_sort_fill_buffer(VkCommandBuffer commandBuffer,
 
    radv_fill_buffer(cmd_buffer, NULL, NULL, buffer_info->devaddr + buffer_info->offset + offset,
                     size, data);
+}
+
+VkResult
+radv_device_init_null_accel_struct(struct radv_device *device)
+{
+   VkDevice _device = radv_device_to_handle(device);
+
+   uint32_t bvh_offset = ALIGN(sizeof(struct radv_accel_struct_header), 64);
+   uint32_t size = bvh_offset + sizeof(struct radv_bvh_box32_node);
+
+   VkResult result;
+
+   VkBuffer buffer = VK_NULL_HANDLE;
+   VkDeviceMemory memory = VK_NULL_HANDLE;
+   VkAccelerationStructureKHR accel_struct = VK_NULL_HANDLE;
+
+   VkBufferCreateInfo buffer_create_info = {
+      .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
+      .size = size,
+      .usage = VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_STORAGE_BIT_KHR,
+      .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
+   };
+
+   result = radv_CreateBuffer(_device, &buffer_create_info, &device->meta_state.alloc, &buffer);
+   if (result != VK_SUCCESS)
+      return result;
+
+   VkBufferMemoryRequirementsInfo2 info = {
+      .sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_REQUIREMENTS_INFO_2,
+      .buffer = buffer,
+   };
+   VkMemoryRequirements2 mem_req = {
+      .sType = VK_STRUCTURE_TYPE_MEMORY_REQUIREMENTS_2,
+   };
+   radv_GetBufferMemoryRequirements2(_device, &info, &mem_req);
+
+   VkMemoryAllocateInfo alloc_info = {
+      .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
+      .allocationSize = mem_req.memoryRequirements.size,
+      .memoryTypeIndex =
+         radv_find_memory_index(device->physical_device, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+                                                            VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT |
+                                                            VK_MEMORY_PROPERTY_HOST_COHERENT_BIT),
+   };
+
+   result = radv_AllocateMemory(_device, &alloc_info, &device->meta_state.alloc, &memory);
+   if (result != VK_SUCCESS)
+      return result;
+
+   VkBindBufferMemoryInfo bind_info = {
+      .sType = VK_STRUCTURE_TYPE_BIND_BUFFER_MEMORY_INFO,
+      .buffer = buffer,
+      .memory = memory,
+   };
+
+   result = radv_BindBufferMemory2(_device, 1, &bind_info);
+   if (result != VK_SUCCESS)
+      return result;
+
+   void *data;
+   result = radv_MapMemory(_device, memory, 0, size, 0, &data);
+   if (result != VK_SUCCESS)
+      return result;
+
+   struct radv_accel_struct_header header = {
+      .bvh_offset = bvh_offset,
+   };
+   memcpy(data, &header, sizeof(struct radv_accel_struct_header));
+
+   struct radv_bvh_box32_node root = {
+      .children =
+         {
+            RADV_BVH_INVALID_NODE,
+            RADV_BVH_INVALID_NODE,
+            RADV_BVH_INVALID_NODE,
+            RADV_BVH_INVALID_NODE,
+         },
+   };
+
+   for (uint32_t child = 0; child < 4; child++) {
+      root.coords[child] = (radv_aabb){
+         .min.x = NAN,
+         .min.y = NAN,
+         .min.z = NAN,
+         .max.x = NAN,
+         .max.y = NAN,
+         .max.z = NAN,
+      };
+   }
+
+   memcpy((uint8_t *)data + bvh_offset, &root, sizeof(struct radv_bvh_box32_node));
+
+   radv_UnmapMemory(_device, memory);
+
+   VkAccelerationStructureCreateInfoKHR create_info = {
+      .sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_CREATE_INFO_KHR,
+      .buffer = buffer,
+      .size = size,
+      .type = VK_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL_KHR,
+   };
+
+   result = radv_CreateAccelerationStructureKHR(_device, &create_info, &device->meta_state.alloc,
+                                                &accel_struct);
+   if (result != VK_SUCCESS)
+      return result;
+
+   device->meta_state.accel_struct_build.null.buffer = buffer;
+   device->meta_state.accel_struct_build.null.memory = memory;
+   device->meta_state.accel_struct_build.null.accel_struct = accel_struct;
+
+   return VK_SUCCESS;
 }
 
 static VkResult
@@ -790,7 +908,7 @@ ploc_build_internal(VkCommandBuffer commandBuffer, uint32_t infoCount,
                             cmd_buffer->device->meta_state.accel_struct_build.ploc_p_layout,
                             VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(consts), &consts);
       vk_common_CmdDispatch(commandBuffer,
-                            MAX2(DIV_ROUND_UP(bvh_states[i].node_count, 64), 1), 1, 1);
+                            MAX2(DIV_ROUND_UP(bvh_states[i].node_count, PLOC_WORKGROUP_SIZE), 1), 1, 1);
    }
 }
 

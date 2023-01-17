@@ -3742,8 +3742,11 @@ zink_flush(struct pipe_context *pctx,
       ctx->rp_changed |= fbfetch_outputs > 0;
    }
 
-   if (ctx->needs_present && (flags & PIPE_FLUSH_END_OF_FRAME)) {
-      if (ctx->needs_present->obj->image)
+   if (flags & PIPE_FLUSH_END_OF_FRAME) {
+#ifdef HAVE_RENDERDOC_APP_H
+      p_atomic_inc(&screen->renderdoc_frame);
+#endif
+      if (ctx->needs_present && ctx->needs_present->obj->image)
          zink_screen(ctx->base.screen)->image_barrier(ctx, ctx->needs_present, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR, 0, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT);
       ctx->needs_present = NULL;
    }

@@ -581,6 +581,27 @@ static void set_custom_cu_en_mask(struct radeon_info *info)
    }
 }
 
+bool ac_query_pci_bus_info(int fd, struct radeon_info *info)
+{
+   drmDevicePtr devinfo;
+
+   /* Get PCI info. */
+   int r = drmGetDevice2(fd, 0, &devinfo);
+   if (r) {
+      fprintf(stderr, "amdgpu: drmGetDevice2 failed.\n");
+      info->pci.valid = false;
+      return false;
+   }
+   info->pci.domain = devinfo->businfo.pci->domain;
+   info->pci.bus = devinfo->businfo.pci->bus;
+   info->pci.dev = devinfo->businfo.pci->dev;
+   info->pci.func = devinfo->businfo.pci->func;
+   info->pci.valid = true;
+
+   drmFreeDevice(&devinfo);
+   return true;
+}
+
 bool ac_query_gpu_info(int fd, void *dev_p, struct radeon_info *info)
 {
    struct amdgpu_gpu_info amdinfo;
@@ -589,7 +610,6 @@ bool ac_query_gpu_info(int fd, void *dev_p, struct radeon_info *info)
    uint32_t vce_version = 0, vce_feature = 0, uvd_version = 0, uvd_feature = 0;
    int r, i, j;
    amdgpu_device_handle dev = dev_p;
-   drmDevicePtr devinfo;
 
    STATIC_ASSERT(AMDGPU_HW_IP_GFX == AMD_IP_GFX);
    STATIC_ASSERT(AMDGPU_HW_IP_COMPUTE == AMD_IP_COMPUTE);
@@ -600,18 +620,6 @@ bool ac_query_gpu_info(int fd, void *dev_p, struct radeon_info *info)
    STATIC_ASSERT(AMDGPU_HW_IP_VCN_DEC == AMD_IP_VCN_DEC);
    STATIC_ASSERT(AMDGPU_HW_IP_VCN_ENC == AMD_IP_VCN_ENC);
    STATIC_ASSERT(AMDGPU_HW_IP_VCN_JPEG == AMD_IP_VCN_JPEG);
-
-   /* Get PCI info. */
-   r = drmGetDevice2(fd, 0, &devinfo);
-   if (r) {
-      fprintf(stderr, "amdgpu: drmGetDevice2 failed.\n");
-      return false;
-   }
-   info->pci_domain = devinfo->businfo.pci->domain;
-   info->pci_bus = devinfo->businfo.pci->bus;
-   info->pci_dev = devinfo->businfo.pci->dev;
-   info->pci_func = devinfo->businfo.pci->func;
-   drmFreeDevice(&devinfo);
 
    assert(info->drm_major == 3);
    info->is_amdgpu = true;
@@ -1399,10 +1407,14 @@ void ac_compute_device_uuid(struct radeon_info *info, char *uuid, size_t size)
     * required would get rid of part of the little entropy we have.
     * */
    memset(uuid, 0, size);
-   uint_uuid[0] = info->pci_domain;
-   uint_uuid[1] = info->pci_bus;
-   uint_uuid[2] = info->pci_dev;
-   uint_uuid[3] = info->pci_func;
+   if (!info->pci.valid) {
+      fprintf(stderr,
+              "ac_compute_device_uuid's output is based on invalid pci bus info.\n");
+   }
+   uint_uuid[0] = info->pci.domain;
+   uint_uuid[1] = info->pci.bus;
+   uint_uuid[2] = info->pci.dev;
+   uint_uuid[3] = info->pci.func;
 }
 
 void ac_print_gpu_info(struct radeon_info *info, FILE *f)
@@ -1457,8 +1469,11 @@ void ac_print_gpu_info(struct radeon_info *info, FILE *f)
    }
 
    fprintf(f, "Identification:\n");
-   fprintf(f, "    pci (domain:bus:dev.func): %04x:%02x:%02x.%x\n", info->pci_domain, info->pci_bus,
-           info->pci_dev, info->pci_func);
+   if (info->pci.valid)
+      fprintf(f, "    pci (domain:bus:dev.func): %04x:%02x:%02x.%x\n", info->pci.domain, info->pci.bus,
+              info->pci.dev, info->pci.func);
+   else
+      fprintf(f, "    pci (domain:bus:dev.func): unknown\n");
    fprintf(f, "    pci_id = 0x%x\n", info->pci_id);
    fprintf(f, "    pci_rev_id = 0x%x\n", info->pci_rev_id);
    fprintf(f, "    family = %i\n", info->family);

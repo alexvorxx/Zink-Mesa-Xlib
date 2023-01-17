@@ -490,13 +490,14 @@ kill_undefined_varyings(struct nir_builder *b,
       return false;
 
    nir_variable *var = nir_intrinsic_get_var(intr, 0);
-   if (!var)
+   if (!var || var->data.mode != nir_var_shader_in)
       return false;
 
-   /* Ignore builtins for now, some of them get default values
+   /* Ignore most builtins for now, some of them get default values
     * when not written from previous stages.
     */
-   if (var->data.location < VARYING_SLOT_VAR0)
+   if (var->data.location < VARYING_SLOT_VAR0 &&
+       var->data.location != VARYING_SLOT_POS)
       return false;
 
    uint32_t loc = var->data.patch ?
@@ -504,14 +505,22 @@ kill_undefined_varyings(struct nir_builder *b,
    uint64_t written = var->data.patch ?
                       prev_stage_nir->info.patch_outputs_written :
                       prev_stage_nir->info.outputs_written;
-   if (BITFIELD64_BIT(loc) & written)
+   if (BITFIELD64_RANGE(loc, glsl_varying_count(var->type)) & written)
       return false;
 
    b->cursor = nir_after_instr(instr);
-   nir_ssa_def *undef =
-      nir_ssa_undef(b, nir_dest_num_components(intr->dest),
-                    nir_dest_bit_size(intr->dest));
-   nir_ssa_def_rewrite_uses(&intr->dest.ssa, undef);
+   /* Note: zero is used instead of undef, because optimization is not run here, but is
+    * run later on. If we load an undef here, and that undef ends up being used to store
+    * to position later on, that can cause some or all of the components in that position
+    * write to be removed, which is problematic especially in the case of all components,
+    * since that would remove the store instruction, and would make it tricky to satisfy
+    * the DXIL requirements of writing all position components.
+    */
+   unsigned int swizzle[NIR_MAX_VEC_COMPONENTS] = { 0 };
+   nir_ssa_def *zero =
+      nir_swizzle(b, nir_imm_intN_t(b, 0, nir_dest_bit_size(intr->dest)),
+                     swizzle, nir_dest_num_components(intr->dest));
+   nir_ssa_def_rewrite_uses(&intr->dest.ssa, zero);
    nir_instr_remove(instr);
    return true;
 }
@@ -555,7 +564,7 @@ kill_unused_outputs(struct nir_builder *b,
    unsigned loc = var->data.patch ?
                   var->data.location - VARYING_SLOT_PATCH0 :
                   var->data.location;
-   if (!(BITFIELD64_BIT(loc) & kill_mask))
+   if (!(BITFIELD64_RANGE(loc, glsl_varying_count(var->type)) & kill_mask))
       return false;
 
    nir_instr_remove(instr);
@@ -794,8 +803,7 @@ dxil_spirv_nir_passes(nir_shader *nir,
    // Force sample-rate shading if we're asked to.
    if (conf->force_sample_rate_shading) {
       assert(nir->info.stage == MESA_SHADER_FRAGMENT);
-      nir_foreach_shader_in_variable(var, nir)
-         var->data.sample = true;
+      nir->info.fs.uses_sample_shading = true;
    }
 
    if (conf->zero_based_vertex_instance_id) {

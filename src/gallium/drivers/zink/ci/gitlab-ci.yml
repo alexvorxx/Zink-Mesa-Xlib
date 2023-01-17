@@ -112,6 +112,7 @@ zink-freedreno-a630-traces:
     - a630-traces
     - .zink-turnip-rules
     - .zink-trace-test
+    - .test-manual-mr
   variables:
     PIGLIT_REPLAY_DEVICE_NAME: "zink-a630"
     ZINK_DEBUG: rp

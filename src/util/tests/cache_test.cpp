@@ -126,6 +126,24 @@ cache_exists(struct disk_cache *cache)
    return result != NULL;
 }
 
+static void *
+poll_disk_cache_get(struct disk_cache *cache,
+                    const cache_key key,
+                    size_t *size)
+{
+   void *result;
+
+   for (int iter = 0; iter < 1000; ++iter) {
+      result = disk_cache_get(cache, key, size);
+      if (result)
+         return result;
+
+      usleep(1000);
+   }
+
+   return NULL;
+}
+
 #define CACHE_TEST_TMP "./cache-test-tmp"
 
 static void
@@ -989,6 +1007,158 @@ TEST_F(Cache, Combined)
    free(result);
 
    disk_cache_destroy(cache_multifile);
+
+   int err = rmrf_local(CACHE_TEST_TMP);
+   EXPECT_EQ(err, 0) << "Removing " CACHE_TEST_TMP " again";
+#endif
+}
+
+TEST_F(Cache, List)
+{
+   const char *driver_id = "make_check";
+   char blob[] = "This is a RO blob";
+   uint8_t blob_key[20];
+   char foz_rw_idx_file[1024];
+   char foz_ro_idx_file[1024];
+   char foz_rw_file[1024];
+   char foz_ro_file[1024];
+   char *result;
+   size_t size;
+
+#ifndef ENABLE_SHADER_CACHE
+   GTEST_SKIP() << "ENABLE_SHADER_CACHE not defined.";
+#else
+   setenv("MESA_DISK_CACHE_SINGLE_FILE", "true", 1);
+
+#ifdef SHADER_CACHE_DISABLE_BY_DEFAULT
+   setenv("MESA_SHADER_CACHE_DISABLE", "false", 1);
+#endif /* SHADER_CACHE_DISABLE_BY_DEFAULT */
+
+   test_disk_cache_create(mem_ctx, CACHE_DIR_NAME_SF, driver_id);
+
+   /* Create ro files for testing */
+   /* Create Fossilize writable cache. */
+   struct disk_cache *cache_sf_wr =
+      disk_cache_create("list_test", driver_id, 0);
+
+   disk_cache_compute_key(cache_sf_wr, blob, sizeof(blob), blob_key);
+
+   /* Ensure that disk_cache_get returns nothing before anything is added. */
+   result = (char *)disk_cache_get(cache_sf_wr, blob_key, &size);
+   EXPECT_EQ(result, nullptr)
+      << "disk_cache_get with non-existent item (pointer)";
+   EXPECT_EQ(size, 0) << "disk_cache_get with non-existent item (size)";
+
+   /* Put blob entry to the cache. */
+   disk_cache_put(cache_sf_wr, blob_key, blob, sizeof(blob), NULL);
+   disk_cache_wait_for_idle(cache_sf_wr);
+
+   result = (char *)disk_cache_get(cache_sf_wr, blob_key, &size);
+   EXPECT_STREQ(blob, result) << "disk_cache_get of existing item (pointer)";
+   EXPECT_EQ(size, sizeof(blob)) << "disk_cache_get of existing item (size)";
+   free(result);
+
+   /* Rename file foz_cache.foz -> ro_cache.foz */
+   sprintf(foz_rw_file, "%s/foz_cache.foz", cache_sf_wr->path);
+   sprintf(foz_ro_file, "%s/ro_cache.foz", cache_sf_wr->path);
+   EXPECT_EQ(rename(foz_rw_file, foz_ro_file), 0)
+      << "foz_cache.foz renaming failed";
+
+   /* Rename file foz_cache_idx.foz -> ro_cache_idx.foz */
+   sprintf(foz_rw_idx_file, "%s/foz_cache_idx.foz", cache_sf_wr->path);
+   sprintf(foz_ro_idx_file, "%s/ro_cache_idx.foz", cache_sf_wr->path);
+   EXPECT_EQ(rename(foz_rw_idx_file, foz_ro_idx_file), 0)
+      << "foz_cache_idx.foz renaming failed";
+
+   disk_cache_destroy(cache_sf_wr);
+
+   const char *list_filename = CACHE_TEST_TMP "/foz_dbs_list.txt";
+   setenv("MESA_DISK_CACHE_READ_ONLY_FOZ_DBS_DYNAMIC_LIST", list_filename, 1);
+
+   /* Create new empty file */
+   FILE *list_file = fopen(list_filename, "w");
+   fputs("ro_cache\n", list_file);
+   fclose(list_file);
+
+   /* Create Fossilize writable cache. */
+   struct disk_cache *cache_sf = disk_cache_create("list_test", driver_id, 0);
+
+   /* Blob entry must present because it shall be retrieved from the
+    * ro_cache.foz loaded from list at creation time */
+   result = (char *)disk_cache_get(cache_sf, blob_key, &size);
+   EXPECT_STREQ(blob, result) << "disk_cache_get of existing item (pointer)";
+   EXPECT_EQ(size, sizeof(blob)) << "disk_cache_get of existing item (size)";
+   free(result);
+
+   disk_cache_destroy(cache_sf);
+   remove(list_filename);
+
+   /* Test loading from a list populated at runtime */
+   /* Create new empty file */
+   list_file = fopen(list_filename, "w");
+   fclose(list_file);
+
+   /* Create Fossilize writable cache. */
+   cache_sf = disk_cache_create("list_test", driver_id, 0);
+
+   /* Ensure that disk_cache returns nothing before list file is populated */
+   result = (char *)disk_cache_get(cache_sf, blob_key, &size);
+   EXPECT_EQ(result, nullptr)
+      << "disk_cache_get with non-existent item (pointer)";
+   EXPECT_EQ(size, 0) << "disk_cache_get with non-existent item (size)";
+
+   /* Add ro_cache to list file for loading */
+   list_file = fopen(list_filename, "a");
+   fputs("ro_cache\n", list_file);
+   fclose(list_file);
+
+   /* Poll result to give time for updater to load ro cache */
+   result = (char *)poll_disk_cache_get(cache_sf, blob_key, &size);
+
+   /* Blob entry must present because it shall be retrieved from the
+    * ro_cache.foz loaded from list at runtime */
+   EXPECT_STREQ(blob, result) << "disk_cache_get of existing item (pointer)";
+   EXPECT_EQ(size, sizeof(blob)) << "disk_cache_get of existing item (size)";
+   free(result);
+
+   disk_cache_destroy(cache_sf);
+   remove(list_filename);
+
+   /* Test loading from a list with some invalid files */
+   /* Create new empty file */
+   list_file = fopen(list_filename, "w");
+   fclose(list_file);
+
+   /* Create Fossilize writable cache. */
+   cache_sf = disk_cache_create("list_test", driver_id, 0);
+
+   /* Ensure that disk_cache returns nothing before list file is populated */
+   result = (char *)disk_cache_get(cache_sf, blob_key, &size);
+   EXPECT_EQ(result, nullptr)
+      << "disk_cache_get with non-existent item (pointer)";
+   EXPECT_EQ(size, 0) << "disk_cache_get with non-existent item (size)";
+
+   /* Add non-existant list files for loading */
+   list_file = fopen(list_filename, "a");
+   fputs("no_cache\n", list_file);
+   fputs("no_cache2\n", list_file);
+   fputs("no_cache/no_cache3\n", list_file);
+   /* Add ro_cache to list file for loading */
+   fputs("ro_cache\n", list_file);
+   fclose(list_file);
+
+   /* Poll result to give time for updater to load ro cache */
+   result = (char *)poll_disk_cache_get(cache_sf, blob_key, &size);
+
+   /* Blob entry must present because it shall be retrieved from the
+    * ro_cache.foz loaded from list at runtime despite invalid files
+    * in the list */
+   EXPECT_STREQ(blob, result) << "disk_cache_get of existing item (pointer)";
+   EXPECT_EQ(size, sizeof(blob)) << "disk_cache_get of existing item (size)";
+   free(result);
+
+   disk_cache_destroy(cache_sf);
+   remove(list_filename);
 
    int err = rmrf_local(CACHE_TEST_TMP);
    EXPECT_EQ(err, 0) << "Removing " CACHE_TEST_TMP " again";

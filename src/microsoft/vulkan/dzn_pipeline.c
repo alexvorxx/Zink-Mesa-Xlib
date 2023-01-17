@@ -1171,6 +1171,8 @@ dzn_graphics_pipeline_translate_rast(struct dzn_graphics_pipeline *pipeline,
       in->pRasterizationState;
    const VkPipelineViewportStateCreateInfo *in_vp =
       in_rast->rasterizerDiscardEnable ? NULL : in->pViewportState;
+   const VkPipelineMultisampleStateCreateInfo *in_ms =
+      in_rast->rasterizerDiscardEnable ? NULL : in->pMultisampleState;
 
    if (in_vp) {
       pipeline->vp.count = in_vp->viewportCount;
@@ -1199,6 +1201,15 @@ dzn_graphics_pipeline_translate_rast(struct dzn_graphics_pipeline *pipeline,
       desc->SlopeScaledDepthBias = in_rast->depthBiasSlopeFactor;
       desc->DepthBiasClamp = in_rast->depthBiasClamp;
    }
+
+   /* The Vulkan conformance tests use different reference rasterizers for single-sampled
+    * and multi-sampled lines. The single-sampled lines can be bresenham lines, but multi-
+    * sampled need to be quadrilateral lines. This still isn't *quite* sufficient, because
+    * D3D only supports a line width of 1.4 (per spec), but Vulkan requires us to support
+    * 1.0 (and without claiming wide lines, that's all we can support).
+    */
+   if (in_ms && in_ms->rasterizationSamples > 1)
+      desc->MultisampleEnable = true;
 
    assert(in_rast->lineWidth == 1.0f);
 }
@@ -1403,7 +1414,7 @@ dzn_graphics_pipeline_translate_zsa(struct dzn_device *device,
 }
 
 static D3D12_BLEND
-translate_blend_factor(VkBlendFactor in, bool is_alpha)
+translate_blend_factor(VkBlendFactor in, bool is_alpha, bool support_alpha_blend_factor)
 {
    switch (in) {
    case VK_BLEND_FACTOR_ZERO: return D3D12_BLEND_ZERO;
@@ -1420,13 +1431,14 @@ translate_blend_factor(VkBlendFactor in, bool is_alpha)
    case VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA: return D3D12_BLEND_INV_SRC_ALPHA;
    case VK_BLEND_FACTOR_DST_ALPHA: return D3D12_BLEND_DEST_ALPHA;
    case VK_BLEND_FACTOR_ONE_MINUS_DST_ALPHA: return D3D12_BLEND_INV_DEST_ALPHA;
-   /* FIXME: no way to isolate the alpla and color constants */
    case VK_BLEND_FACTOR_CONSTANT_COLOR:
+      return is_alpha && support_alpha_blend_factor ? D3D12_BLEND_ALPHA_FACTOR : D3D12_BLEND_BLEND_FACTOR;
    case VK_BLEND_FACTOR_CONSTANT_ALPHA:
-      return D3D12_BLEND_BLEND_FACTOR;
+      return support_alpha_blend_factor ? D3D12_BLEND_ALPHA_FACTOR : D3D12_BLEND_BLEND_FACTOR;
    case VK_BLEND_FACTOR_ONE_MINUS_CONSTANT_COLOR:
+      return is_alpha && support_alpha_blend_factor ? D3D12_BLEND_INV_ALPHA_FACTOR : D3D12_BLEND_INV_BLEND_FACTOR;
    case VK_BLEND_FACTOR_ONE_MINUS_CONSTANT_ALPHA:
-      return D3D12_BLEND_INV_BLEND_FACTOR;
+      return support_alpha_blend_factor ? D3D12_BLEND_INV_ALPHA_FACTOR : D3D12_BLEND_INV_BLEND_FACTOR;
    case VK_BLEND_FACTOR_SRC1_COLOR:
       return is_alpha ? D3D12_BLEND_SRC1_ALPHA : D3D12_BLEND_SRC1_COLOR;
    case VK_BLEND_FACTOR_ONE_MINUS_SRC1_COLOR:
@@ -1490,6 +1502,12 @@ dzn_graphics_pipeline_translate_blend(struct dzn_graphics_pipeline *pipeline,
    if (!in_blend || !in_ms)
       return;
 
+   struct dzn_device *device =
+      container_of(pipeline->base.base.device, struct dzn_device, vk);
+   struct dzn_physical_device *pdev =
+      container_of(device->vk.physical, struct dzn_physical_device, vk);
+   bool support_alpha_blend_factor = pdev->options13.AlphaBlendFactorSupported;
+
    d3d12_gfx_pipeline_state_stream_new_desc(out, BLEND, D3D12_BLEND_DESC, desc);
    D3D12_LOGIC_OP logicop =
       in_blend->logicOpEnable ?
@@ -1514,15 +1532,15 @@ dzn_graphics_pipeline_translate_blend(struct dzn_graphics_pipeline *pipeline,
          desc->RenderTarget[i].LogicOp = logicop;
       } else {
          desc->RenderTarget[i].SrcBlend =
-            translate_blend_factor(in_blend->pAttachments[i].srcColorBlendFactor, false);
+            translate_blend_factor(in_blend->pAttachments[i].srcColorBlendFactor, false, support_alpha_blend_factor);
          desc->RenderTarget[i].DestBlend =
-            translate_blend_factor(in_blend->pAttachments[i].dstColorBlendFactor, false);
+            translate_blend_factor(in_blend->pAttachments[i].dstColorBlendFactor, false, support_alpha_blend_factor);
          desc->RenderTarget[i].BlendOp =
             translate_blend_op(in_blend->pAttachments[i].colorBlendOp);
          desc->RenderTarget[i].SrcBlendAlpha =
-            translate_blend_factor(in_blend->pAttachments[i].srcAlphaBlendFactor, true);
+            translate_blend_factor(in_blend->pAttachments[i].srcAlphaBlendFactor, true, support_alpha_blend_factor);
          desc->RenderTarget[i].DestBlendAlpha =
-            translate_blend_factor(in_blend->pAttachments[i].dstAlphaBlendFactor, true);
+            translate_blend_factor(in_blend->pAttachments[i].dstAlphaBlendFactor, true, support_alpha_blend_factor);
          desc->RenderTarget[i].BlendOpAlpha =
             translate_blend_op(in_blend->pAttachments[i].alphaBlendOp);
       }

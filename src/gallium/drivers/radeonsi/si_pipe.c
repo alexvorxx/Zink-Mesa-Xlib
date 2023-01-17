@@ -1362,23 +1362,23 @@ static struct pipe_screen *radeonsi_screen_create_impl(struct radeon_winsys *ws,
                             sscreen->debug_flags & DBG(DPBB));
 
    if (sscreen->dpbb_allowed) {
-      if (sscreen->info.has_dedicated_vram) {
-         if (sscreen->info.max_render_backends > 4) {
-            sscreen->pbb_context_states_per_bin = 1;
-            sscreen->pbb_persistent_states_per_bin = 1;
-         } else {
-            sscreen->pbb_context_states_per_bin = 3;
-            sscreen->pbb_persistent_states_per_bin = 8;
-         }
+      if (sscreen->info.has_dedicated_vram && sscreen->info.max_render_backends > 4) {
+         sscreen->pbb_context_states_per_bin = 1;
+         sscreen->pbb_persistent_states_per_bin = 1;
       } else {
          /* This is a workaround for:
           *    https://bugs.freedesktop.org/show_bug.cgi?id=110214
           * (an alternative is to insert manual BATCH_BREAK event when
           *  a context_roll is detected). */
-         sscreen->pbb_context_states_per_bin = sscreen->info.has_gfx9_scissor_bug ? 1 : 6;
-         /* Using 32 here can cause GPU hangs on RAVEN1 */
-         sscreen->pbb_persistent_states_per_bin = 16;
+         sscreen->pbb_context_states_per_bin = sscreen->info.has_gfx9_scissor_bug ? 1 : 3;
+         sscreen->pbb_persistent_states_per_bin = 8;
       }
+
+      if (!sscreen->info.has_gfx9_scissor_bug)
+         sscreen->pbb_context_states_per_bin =
+            debug_get_num_option("AMD_DEBUG_DPBB_CS", sscreen->pbb_context_states_per_bin);
+      sscreen->pbb_persistent_states_per_bin =
+         debug_get_num_option("AMD_DEBUG_DPBB_PS", sscreen->pbb_persistent_states_per_bin);
 
       assert(sscreen->pbb_context_states_per_bin >= 1 &&
              sscreen->pbb_context_states_per_bin <= 6);

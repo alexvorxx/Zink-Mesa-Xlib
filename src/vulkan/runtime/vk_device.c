@@ -106,6 +106,8 @@ collect_enabled_features(struct vk_device *device,
             device->enabled_features.robustBufferAccess2 = true;
          if (features->robustImageAccess2)
             device->enabled_features.robustImageAccess2 = true;
+         if (features->nullDescriptor)
+            device->enabled_features.nullDescriptor = true;
          break;
       }
 

@@ -1903,7 +1903,9 @@ ntt_emit_mem(struct ntt_compile *c, nir_intrinsic_instr *instr,
       break;
    case nir_var_uniform: { /* HW atomic buffers */
       nir_src src = instr->src[0];
-      uint32_t offset = ntt_extract_const_src_offset(&src) / 4;
+      uint32_t offset = (ntt_extract_const_src_offset(&src) +
+                         nir_intrinsic_range_base(instr)) / 4;
+
       memory = ureg_src_register(TGSI_FILE_HW_ATOMIC, offset);
       /* ntt_ureg_src_indirect, except dividing by 4 */
       if (nir_src_is_const(src)) {
@@ -2077,6 +2079,7 @@ ntt_emit_image_load_store(struct ntt_compile *c, nir_intrinsic_instr *instr)
    default:
       resource = ntt_ureg_src_indirect(c, ureg_src_register(TGSI_FILE_IMAGE, 0),
                                        instr->src[0], 2);
+      resource.Index += nir_intrinsic_range_base(instr);
    }
 
    struct ureg_dst dst;

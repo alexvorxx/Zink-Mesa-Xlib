@@ -67,7 +67,13 @@ clear_image_tlb(struct v3dv_cmd_buffer *cmd_buffer,
 {
    const VkOffset3D origin = { 0, 0, 0 };
    VkFormat fb_format;
-   if (!v3dv_meta_can_use_tlb(image, &origin, &fb_format))
+
+   /* From vkCmdClearColorImage spec:
+    *  "image must not use any of the formats that require a sampler YCBCR
+    *   conversion"
+    */
+   assert(image->plane_count == 1);
+   if (!v3dv_meta_can_use_tlb(image, 0, &origin, &fb_format))
       return false;
 
    uint32_t internal_type, internal_bpp;

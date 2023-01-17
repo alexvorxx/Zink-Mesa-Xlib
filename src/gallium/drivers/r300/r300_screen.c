@@ -232,13 +232,13 @@ static int r300_get_param(struct pipe_screen* pscreen, enum pipe_cap param)
         case PIPE_CAP_UMA:
                 return 0;
         case PIPE_CAP_PCI_GROUP:
-            return r300screen->info.pci_domain;
+            return r300screen->info.pci.domain;
         case PIPE_CAP_PCI_BUS:
-            return r300screen->info.pci_bus;
+            return r300screen->info.pci.bus;
         case PIPE_CAP_PCI_DEVICE:
-            return r300screen->info.pci_dev;
+            return r300screen->info.pci.dev;
         case PIPE_CAP_PCI_FUNCTION:
-            return r300screen->info.pci_func;
+            return r300screen->info.pci.func;
         default:
             return u_pipe_screen_get_param_defaults(pscreen, param);
     }

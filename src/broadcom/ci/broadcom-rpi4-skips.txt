@@ -28,6 +28,11 @@ dEQP-VK.api.external.fence.sync_fd.export_multiple_times_temporary
 dEQP-VK.api.external.semaphore.sync_fd.export_multiple_times_temporary
 dEQP-VK.api.external.semaphore.sync_fd.import_twice_temporary
 
+# Tests using a wrongly aligned offset when calling BindImageMemoryInfo
+# https://gitlab.khronos.org/Tracker/vk-gl-cts/-/issues/4223
+dEQP-VK.ycbcr.subresource_offset.g8_b8_r8_3plane_420_unorm
+dEQP-VK.ycbcr.subresource_offset.g8_b8r8_2plane_420_unorm
+
 # Slow tests (> 1 minute to run)
 dEQP-VK.api.object_management.max_concurrent.query_pool
 dEQP-VK.binding_model.buffer_device_address.set3.depth3.basessbo.convertcheckuv2.nostore.multi.std140.comp

@@ -2031,6 +2031,7 @@ update_writes(struct nir_builder *b, nir_instr *instr, void *_state)
       if (!channels[i])
          channels[i] = nir_imm_intN_t(b, 0, src->bit_size);
 
+   intr->num_components = 4;
    nir_instr_rewrite_src_ssa(instr, &intr->src[0], nir_vec(b, channels, 4));
    nir_intrinsic_set_component(intr, 0);
    nir_intrinsic_set_write_mask(intr, 0xf);

@@ -121,6 +121,8 @@ nir_options = {
    .lower_pack_half_2x16 = true,
    .lower_pack_unorm_4x8 = true,
    .lower_pack_snorm_4x8 = true,
+   .lower_pack_snorm_2x16 = true,
+   .lower_pack_unorm_2x16 = true,
    .lower_pack_64_2x32_split = true,
    .lower_pack_32_2x16_split = true,
    .lower_unpack_64_2x32_split = true,
@@ -5249,12 +5251,21 @@ emit_tex(struct ntd_context *ctx, nir_tex_instr *instr)
       store_dest(ctx, &instr->dest, 1, sample, nir_alu_type_get_base_type(instr->dest_type));
       return true;
 
-   case nir_texop_query_levels:
+   case nir_texop_query_levels: {
       params.lod_or_sample = dxil_module_get_int_const(&ctx->mod, 0, 32);
       sample = emit_texture_size(ctx, &params);
       const struct dxil_value *retval = dxil_emit_extractval(&ctx->mod, sample, 3);
       store_dest(ctx, &instr->dest, 0, retval, nir_alu_type_get_base_type(instr->dest_type));
       return true;
+   }
+
+   case nir_texop_texture_samples: {
+      params.lod_or_sample = int_undef;
+      sample = emit_texture_size(ctx, &params);
+      const struct dxil_value *retval = dxil_emit_extractval(&ctx->mod, sample, 3);
+      store_dest(ctx, &instr->dest, 0, retval, nir_alu_type_get_base_type(instr->dest_type));
+      return true;
+   }
 
    default:
       fprintf(stderr, "texture op: %d\n", instr->op);
@@ -5753,7 +5764,9 @@ emit_module(struct ntd_context *ctx, const struct nir_to_dxil_options *opts)
    }
 
    ctx->mod.info.has_per_sample_input =
-      BITSET_TEST(ctx->shader->info.system_values_read, SYSTEM_VALUE_SAMPLE_ID);
+      BITSET_TEST(ctx->shader->info.system_values_read, SYSTEM_VALUE_SAMPLE_ID) ||
+      ctx->shader->info.fs.uses_sample_shading ||
+      ctx->shader->info.fs.uses_sample_qualifier;
    if (!ctx->mod.info.has_per_sample_input && ctx->shader->info.stage == MESA_SHADER_FRAGMENT) {
       nir_foreach_variable_with_modes(var, ctx->shader, nir_var_shader_in | nir_var_system_value) {
          if (var->data.sample) {
@@ -6021,9 +6034,8 @@ allocate_sysvalues(struct ntd_context *ctx)
       driver_location = MAX2(driver_location, var->data.driver_location + 1);
 
    if (ctx->shader->info.stage == MESA_SHADER_FRAGMENT &&
-       ctx->shader->info.inputs_read &&
        !BITSET_TEST(ctx->shader->info.system_values_read, SYSTEM_VALUE_SAMPLE_ID)) {
-      bool need_sample_id = true;
+      bool need_sample_id = ctx->shader->info.fs.uses_sample_shading;
 
       /* "var->data.sample = true" sometimes just mean, "I want per-sample
        * shading", which explains why we can end up with vars having flat
@@ -6032,10 +6044,17 @@ allocate_sysvalues(struct ntd_context *ctx)
        * to make DXIL validation happy.
        */
       nir_foreach_variable_with_modes(var, ctx->shader, nir_var_shader_in) {
-         if (!var->data.sample || var->data.interpolation != INTERP_MODE_FLAT) {
+         bool var_can_be_sample_rate = !var->data.centroid && var->data.interpolation != INTERP_MODE_FLAT;
+         /* If there's an input that will actually force sample-rate shading, then we don't
+          * need SV_SampleIndex. */
+         if (var->data.sample && var_can_be_sample_rate) {
             need_sample_id = false;
             break;
          }
+         /* If there's an input that wants to be sample-rate, but can't be, then we might
+          * need SV_SampleIndex. */
+         if (var->data.sample && !var_can_be_sample_rate)
+            need_sample_id = true;
       }
 
       if (need_sample_id)

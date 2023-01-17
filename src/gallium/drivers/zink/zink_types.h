@@ -61,6 +61,9 @@
 #include "zink_shader_keys.h"
 #include "vk_dispatch_table.h"
 
+#ifdef HAVE_RENDERDOC_APP_H
+#include "renderdoc_app.h"
+#endif
 
 /* the descriptor binding id for fbfetch/input attachment */
 #define ZINK_FBFETCH_BINDING 5
@@ -1318,6 +1321,17 @@ struct zink_screen {
    VkDebugUtilsMessengerEXT debugUtilsCallbackHandle;
 
    uint32_t cur_custom_border_color_samplers;
+
+   unsigned screen_id;
+
+#ifdef HAVE_RENDERDOC_APP_H
+   RENDERDOC_API_1_0_0 *renderdoc_api;
+   unsigned renderdoc_capture_start;
+   unsigned renderdoc_capture_end;
+   unsigned renderdoc_frame;
+   bool renderdoc_capturing;
+   bool renderdoc_capture_all;
+#endif
 
    struct vk_dispatch_table vk;
 

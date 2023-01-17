@@ -522,13 +522,13 @@ static int r600_get_param(struct pipe_screen* pscreen, enum pipe_cap param)
 	case PIPE_CAP_MULTISAMPLE_Z_RESOLVE:
 		return rscreen->b.gfx_level >= R700;
 	case PIPE_CAP_PCI_GROUP:
-		return rscreen->b.info.pci_domain;
+		return rscreen->b.info.pci.domain;
 	case PIPE_CAP_PCI_BUS:
-		return rscreen->b.info.pci_bus;
+		return rscreen->b.info.pci.bus;
 	case PIPE_CAP_PCI_DEVICE:
-		return rscreen->b.info.pci_dev;
+		return rscreen->b.info.pci.dev;
 	case PIPE_CAP_PCI_FUNCTION:
-		return rscreen->b.info.pci_func;
+		return rscreen->b.info.pci.func;
 
 	case PIPE_CAP_MAX_COMBINED_HW_ATOMIC_COUNTERS:
 		if (rscreen->b.family >= CHIP_CEDAR && rscreen->has_atomics)

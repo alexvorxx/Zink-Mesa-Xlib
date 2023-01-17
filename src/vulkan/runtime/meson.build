@@ -90,6 +90,8 @@ vulkan_runtime_files = files(
   'vk_sync_timeline.c',
   'vk_sync_timeline.h',
   'vk_synchronization2.c',
+  'vk_ycbcr_conversion.c',
+  'vk_ycbcr_conversion.h',
 )
 
 vulkan_runtime_deps = [

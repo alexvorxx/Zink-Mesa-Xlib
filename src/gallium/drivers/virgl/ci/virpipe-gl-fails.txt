@@ -51,7 +51,6 @@ KHR-GL43.shader_storage_buffer_object.basic-atomic-case1,Fail
 KHR-GL43.shader_storage_buffer_object.basic-atomic-case2,Fail
 KHR-GL43.shader_subroutine.ssbo_atomic_image_load_store,Fail
 
-KHR-Single-GL43.arrays_of_arrays_gl.AtomicUsage,Fail
 KHR-Single-GL43.arrays_of_arrays_gl.InteractionArgumentAliasing1,Fail
 KHR-Single-GL43.arrays_of_arrays_gl.InteractionArgumentAliasing2,Fail
 KHR-Single-GL43.arrays_of_arrays_gl.InteractionArgumentAliasing3,Fail
@@ -66,11 +65,6 @@ KHR-Single-GL43.arrays_of_arrays_gl.SubroutineArgumentAliasing3,Fail
 KHR-Single-GL43.arrays_of_arrays_gl.SubroutineArgumentAliasing4,Fail
 KHR-Single-GL43.arrays_of_arrays_gl.SubroutineFunctionCalls1,Fail
 KHR-Single-GL43.arrays_of_arrays_gl.SubroutineFunctionCalls2,Fail
-
-# virglrenderer translates TGSI IMAGE declaration "WR" ("image is not readonly")
-# into the writeonly qualifier, which works for gles (where each image is either
-# RO or WO) but not for desktop GL.
-KHR-GL43.shading_language_420pack.binding_image_array,Fail
 
 KHR-GL43.shading_language_420pack.binding_images,Fail
 KHR-GL43.texture_view.view_sampling,Fail

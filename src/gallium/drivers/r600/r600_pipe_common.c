@@ -1276,8 +1276,8 @@ bool r600_common_screen_init(struct r600_common_screen *rscreen,
 
 	if (rscreen->debug_flags & DBG_INFO) {
 		printf("pci (domain:bus:dev.func): %04x:%02x:%02x.%x\n",
-		       rscreen->info.pci_domain, rscreen->info.pci_bus,
-		       rscreen->info.pci_dev, rscreen->info.pci_func);
+		       rscreen->info.pci.domain, rscreen->info.pci.bus,
+		       rscreen->info.pci.dev, rscreen->info.pci.func);
 		printf("pci_id = 0x%x\n", rscreen->info.pci_id);
 		printf("family = %i (%s)\n", rscreen->info.family,
 		       r600_get_family_name(rscreen));

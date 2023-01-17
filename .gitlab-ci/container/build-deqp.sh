@@ -7,7 +7,7 @@ git config --global user.email "mesa@example.com"
 git config --global user.name "Mesa CI"
 git clone \
     https://github.com/KhronosGroup/VK-GL-CTS.git \
-    -b vulkan-cts-1.3.3.0 \
+    -b vulkan-cts-1.3.3.1 \
     --depth 1 \
     /VK-GL-CTS
 pushd /VK-GL-CTS
@@ -17,6 +17,10 @@ pushd /VK-GL-CTS
 # a CVE. See https://zlib.net/
 # FIXME: Remove this patch when uprev to 1.3.4.0+
 wget -O- https://github.com/KhronosGroup/VK-GL-CTS/commit/6bb2e7d64261bedb503947b1b251b1eeeb49be73.patch |
+    git am -
+
+# Apply a patch to fix a bug in 1.3.3.0 that affects some new formats
+wget -O- https://github.com/KhronosGroup/VK-GL-CTS/commit/4fa2b40411921b304f5dad8d106b212ad5b0f172.patch |
     git am -
 
 # --insecure is due to SSL cert failures hitting sourceforge for zlib and

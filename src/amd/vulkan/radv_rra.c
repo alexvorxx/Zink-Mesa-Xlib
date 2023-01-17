@@ -171,7 +171,7 @@ rra_dump_asic_info(struct radeon_info *rad_info, FILE *output)
       .mem_ops_per_clk = ac_memory_ops_per_clock(rad_info->vram_type),
       .bus_width = rad_info->memory_bus_width,
 
-      .device_id = rad_info->pci_dev,
+      .device_id = rad_info->pci.dev,
       .rev_id = rad_info->pci_rev_id,
    };
 

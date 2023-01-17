@@ -53,6 +53,8 @@
 
 extern struct pipe_context* zink_xlib_context;
 
+static int num_screens = 0;
+
 #if DETECT_OS_WINDOWS
 #include <io.h>
 #define VK_LIBNAME "vulkan-1.dll"
@@ -1388,6 +1390,11 @@ zink_destroy_screen(struct pipe_screen *pscreen)
 {
    struct zink_screen *screen = zink_screen(pscreen);
 
+#ifdef HAVE_RENDERDOC_APP_H
+   if (screen->renderdoc_capture_all && p_atomic_dec_zero(&num_screens))
+      screen->renderdoc_api->EndFrameCapture(RENDERDOC_DEVICEPOINTER_FROM_VKINSTANCE(screen->instance), NULL);
+#endif
+
    hash_table_foreach(&screen->dts, entry)
       zink_kopper_deinit_displaytarget(screen, entry->data);
    simple_mtx_destroy(&screen->dt_lock);
@@ -2009,6 +2016,44 @@ populate_format_props(struct zink_screen *screen)
 
    if (screen->info.feats.features.sparseResidencyImage2D)
       screen->need_2D_sparse = !screen->base.get_sparse_texture_virtual_page_size(&screen->base, PIPE_TEXTURE_1D, false, PIPE_FORMAT_R32_FLOAT, 0, 16, NULL, NULL, NULL);
+}
+
+static void
+setup_renderdoc(struct zink_screen *screen)
+{
+#ifdef HAVE_RENDERDOC_APP_H
+   void *renderdoc = dlopen("librenderdoc.so", RTLD_NOW | RTLD_NOLOAD);
+   /* not loaded */
+   if (!renderdoc)
+      return;
+
+   pRENDERDOC_GetAPI get_api = dlsym(renderdoc, "RENDERDOC_GetAPI");
+   if (!get_api)
+      return;
+
+   /* need synchronous dispatch for renderdoc coherency */
+   screen->threaded = false;
+   get_api(eRENDERDOC_API_Version_1_0_0, (void*)&screen->renderdoc_api);
+   screen->renderdoc_api->SetActiveWindow(RENDERDOC_DEVICEPOINTER_FROM_VKINSTANCE(screen->instance), NULL);
+
+   const char *capture_id = debug_get_option("ZINK_RENDERDOC", NULL);
+   if (!capture_id)
+      return;
+   int count = sscanf(capture_id, "%u:%u", &screen->renderdoc_capture_start, &screen->renderdoc_capture_end);
+   if (count != 2) {
+      count = sscanf(capture_id, "%u", &screen->renderdoc_capture_start);
+      if (!count) {
+         if (!strcmp(capture_id, "all")) {
+            screen->renderdoc_capture_all = true;
+         } else {
+            printf("`ZINK_RENDERDOC` usage: ZINK_RENDERDOC=all|frame_no[:end_frame_no]\n");
+            abort();
+         }
+      }
+      screen->renderdoc_capture_end = screen->renderdoc_capture_start;
+   }
+   p_atomic_set(&screen->renderdoc_frame, 1);
+#endif
 }
 
 bool
@@ -2669,6 +2714,7 @@ zink_internal_create_screen(const struct pipe_screen_config *config)
       goto fail;
    }
 
+   setup_renderdoc(screen);
    if (screen->threaded && !util_queue_init(&screen->flush_queue, "zfq", 8, 1, UTIL_QUEUE_INIT_RESIZE_IF_FULL, screen)) {
       mesa_loge("zink: Failed to create flush queue.\n");
       goto fail;
@@ -2943,6 +2989,8 @@ zink_internal_create_screen(const struct pipe_screen_config *config)
                           !screen->driver_workarounds.no_hw_gl_point;
    if (!screen->optimal_keys)
       screen->info.have_EXT_graphics_pipeline_library = false;
+
+   screen->screen_id = p_atomic_inc_return(&num_screens);
 
    return screen;
 

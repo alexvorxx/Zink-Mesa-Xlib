@@ -3475,9 +3475,19 @@ radv_postprocess_nir(struct radv_pipeline *pipeline,
    if (lowered_ngg)
       radv_lower_ngg(device, stage, pipeline_key);
 
-   if (stage->stage == last_vgt_api_stage && stage->stage != MESA_SHADER_GEOMETRY && !lowered_ngg)
-      NIR_PASS_V(stage->nir, ac_nir_lower_legacy_vs,
-                 stage->info.outinfo.export_prim_id ? VARYING_SLOT_PRIMITIVE_ID : -1, false);
+   if (stage->stage == last_vgt_api_stage && !lowered_ngg) {
+      if (stage->stage != MESA_SHADER_GEOMETRY) {
+         NIR_PASS_V(stage->nir, ac_nir_lower_legacy_vs,
+                    stage->info.outinfo.export_prim_id ? VARYING_SLOT_PRIMITIVE_ID : -1, false);
+
+      } else {
+         ac_nir_gs_output_info gs_out_info = {
+            .streams = stage->info.gs.output_streams,
+            .usage_mask = stage->info.gs.output_usage_mask,
+         };
+         NIR_PASS_V(stage->nir, ac_nir_lower_legacy_gs, false, false, &gs_out_info);
+      }
+   }
 
    NIR_PASS(_, stage->nir, nir_opt_idiv_const, 8);
 

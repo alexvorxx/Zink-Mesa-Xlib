@@ -112,19 +112,6 @@ rra_QueuePresentKHR(VkQueue _queue, const VkPresentInfoKHR *pPresentInfo)
    return VK_SUCCESS;
 }
 
-static uint32_t
-find_memory_index(VkDevice _device, VkMemoryPropertyFlags flags)
-{
-   RADV_FROM_HANDLE(radv_device, device, _device);
-   VkPhysicalDeviceMemoryProperties *mem_properties = &device->physical_device->memory_properties;
-   for (uint32_t i = 0; i < mem_properties->memoryTypeCount; ++i) {
-      if (mem_properties->memoryTypes[i].propertyFlags == flags) {
-         return i;
-      }
-   }
-   unreachable("invalid memory properties");
-}
-
 static VkResult
 rra_init_accel_struct_data_buffer(VkDevice vk_device, struct radv_rra_accel_struct_data *data)
 {
@@ -150,9 +137,10 @@ rra_init_accel_struct_data_buffer(VkDevice vk_device, struct radv_rra_accel_stru
       .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
       .pNext = &flags_info,
       .allocationSize = requirements.size,
-      .memoryTypeIndex = find_memory_index(vk_device, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
-                                                         VK_MEMORY_PROPERTY_HOST_COHERENT_BIT |
-                                                         VK_MEMORY_PROPERTY_HOST_CACHED_BIT),
+      .memoryTypeIndex =
+         radv_find_memory_index(device->physical_device, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+                                                            VK_MEMORY_PROPERTY_HOST_COHERENT_BIT |
+                                                            VK_MEMORY_PROPERTY_HOST_CACHED_BIT),
    };
    result = radv_alloc_memory(device, &alloc_info, NULL, &data->memory, true);
    if (result != VK_SUCCESS)

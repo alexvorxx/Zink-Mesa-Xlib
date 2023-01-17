@@ -52,7 +52,6 @@
 #include "disassemble.h"
 
 static const struct debug_named_value midgard_debug_options[] = {
-   {"msgs", MIDGARD_DBG_MSGS, "Print debug messages"},
    {"shaders", MIDGARD_DBG_SHADERS, "Dump shaders in NIR and MIR"},
    {"shaderdb", MIDGARD_DBG_SHADERDB, "Prints shader-db statistics"},
    {"inorder", MIDGARD_DBG_INORDER, "Disables out-of-order scheduling"},
@@ -65,11 +64,6 @@ DEBUG_GET_ONCE_FLAGS_OPTION(midgard_debug, "MIDGARD_MESA_DEBUG",
 
 int midgard_debug = 0;
 
-#define DBG(fmt, ...)                                                          \
-   do {                                                                        \
-      if (midgard_debug & MIDGARD_DBG_MSGS)                                    \
-         fprintf(stderr, "%s:%d: " fmt, __func__, __LINE__, ##__VA_ARGS__);    \
-   } while (0)
 static midgard_block *
 create_empty_block(compiler_context *ctx)
 {
@@ -303,6 +297,15 @@ mdg_should_scalarize(const nir_instr *instr, const void *_unused)
    case nir_op_imul_high:
    case nir_op_pack_half_2x16:
    case nir_op_unpack_half_2x16:
+
+   /* The LUT unit is scalar */
+   case nir_op_fsqrt:
+   case nir_op_frcp:
+   case nir_op_frsq:
+   case nir_op_fsin_mdg:
+   case nir_op_fcos_mdg:
+   case nir_op_fexp2:
+   case nir_op_flog2:
       return true;
    default:
       return false;
@@ -418,9 +421,6 @@ optimise_nir(nir_shader *nir, unsigned quirks, bool is_blend, bool is_blit)
    /* Run after opts so it can hit more */
    if (!is_blend)
       NIR_PASS(progress, nir, nir_fuse_io_16);
-
-   /* Must be run at the end to prevent creation of fsin/fcos ops */
-   NIR_PASS(progress, nir, midgard_nir_scale_trig);
 
    do {
       progress = false;
@@ -865,8 +865,8 @@ emit_alu(compiler_context *ctx, nir_alu_instr *instr)
       ALU_CASE_RTZ(i2f16, i2f_rte);
       ALU_CASE_RTZ(u2f16, u2f_rte);
 
-      ALU_CASE(fsin, fsinpi);
-      ALU_CASE(fcos, fcospi);
+      ALU_CASE(fsin_mdg, fsinpi);
+      ALU_CASE(fcos_mdg, fcospi);
 
       /* We'll get 0 in the second arg, so:
        * ~a = ~(a | 0) = nor(a, 0) */
@@ -1128,52 +1128,7 @@ emit_alu(compiler_context *ctx, nir_alu_instr *instr)
       ins.is_pack = true;
    }
 
-   if ((opcode_props & UNITS_ALL) == UNIT_VLUT) {
-      /* To avoid duplicating the lookup tables (probably), true LUT
-       * instructions can only operate as if they were scalars. Lower
-       * them here by changing the component. */
-
-      unsigned orig_mask = ins.mask;
-
-      unsigned swizzle_back[MIR_VEC_COMPONENTS];
-      memcpy(&swizzle_back, ins.swizzle[0], sizeof(swizzle_back));
-
-      midgard_instruction ins_split[MIR_VEC_COMPONENTS];
-      unsigned ins_count = 0;
-
-      for (int i = 0; i < nr_components; ++i) {
-         /* Mask the associated component, dropping the
-          * instruction if needed */
-
-         ins.mask = 1 << i;
-         ins.mask &= orig_mask;
-
-         for (unsigned j = 0; j < ins_count; ++j) {
-            if (swizzle_back[i] == ins_split[j].swizzle[0][0]) {
-               ins_split[j].mask |= ins.mask;
-               ins.mask = 0;
-               break;
-            }
-         }
-
-         if (!ins.mask)
-            continue;
-
-         for (unsigned j = 0; j < MIR_VEC_COMPONENTS; ++j)
-            ins.swizzle[0][j] =
-               swizzle_back[i]; /* Pull from the correct component */
-
-         ins_split[ins_count] = ins;
-
-         ++ins_count;
-      }
-
-      for (unsigned i = 0; i < ins_count; ++i) {
-         emit_mir_instruction(ctx, ins_split[i]);
-      }
-   } else {
-      emit_mir_instruction(ctx, ins);
-   }
+   emit_mir_instruction(ctx, ins);
 }
 
 #undef ALU_CASE
@@ -1880,8 +1835,7 @@ emit_intrinsic(compiler_context *ctx, nir_intrinsic_instr *instr)
       } else if (ctx->stage == MESA_SHADER_VERTEX) {
          emit_attr_read(ctx, reg, offset, nr_comp, t);
       } else {
-         DBG("Unknown load\n");
-         assert(0);
+         unreachable("Unknown load");
       }
 
       break;
@@ -2070,8 +2024,7 @@ emit_intrinsic(compiler_context *ctx, nir_intrinsic_instr *instr)
 
          emit_mir_instruction(ctx, st);
       } else {
-         DBG("Unknown store\n");
-         assert(0);
+         unreachable("Unknown store");
       }
 
       break;
@@ -2227,9 +2180,7 @@ midgard_tex_format(enum glsl_sampler_dim dim)
       return 0;
 
    default:
-      DBG("Unknown sampler dim type\n");
-      assert(0);
-      return 0;
+      unreachable("Unknown sampler dim type");
    }
 }
 
@@ -2590,8 +2541,7 @@ emit_instr(compiler_context *ctx, struct nir_instr *instr)
       break;
 
    default:
-      DBG("Unhandled instruction type\n");
-      break;
+      unreachable("Unhandled instruction type");
    }
 }
 

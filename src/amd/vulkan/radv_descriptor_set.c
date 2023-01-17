@@ -1245,8 +1245,14 @@ write_sampler_descriptor(unsigned *dst, VkSampler _sampler)
 }
 
 static ALWAYS_INLINE void
-write_accel_struct(void *ptr, VkDeviceAddress va)
+write_accel_struct(struct radv_device *device, void *ptr, VkDeviceAddress va)
 {
+   if (!va) {
+      RADV_FROM_HANDLE(radv_acceleration_structure, accel_struct,
+                       device->meta_state.accel_struct_build.null.accel_struct);
+      va = accel_struct->va;
+   }
+
    memcpy(ptr, &va, sizeof(va));
 }
 
@@ -1344,7 +1350,8 @@ radv_update_descriptor_sets_impl(struct radv_device *device, struct radv_cmd_buf
          case VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR: {
             RADV_FROM_HANDLE(radv_acceleration_structure, accel_struct,
                              accel_structs->pAccelerationStructures[j]);
-            write_accel_struct(ptr, accel_struct ? accel_struct->va : 0);
+
+            write_accel_struct(device, ptr, accel_struct ? accel_struct->va : 0);
             break;
          }
          default:
@@ -1640,7 +1647,7 @@ radv_update_descriptor_set_with_template_impl(struct radv_device *device,
          case VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR: {
             RADV_FROM_HANDLE(radv_acceleration_structure, accel_struct,
                              *(const VkAccelerationStructureKHR *)pSrc);
-            write_accel_struct(pDst, accel_struct ? accel_struct->va : 0);
+            write_accel_struct(device, pDst, accel_struct ? accel_struct->va : 0);
             break;
          }
          default:
@@ -1826,7 +1833,7 @@ radv_GetDescriptorEXT(VkDevice _device, const VkDescriptorGetInfoEXT *pDescripto
       break;
    }
    case VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR:
-      write_accel_struct(pDescriptor, pDescriptorInfo->data.accelerationStructure);
+      write_accel_struct(device, pDescriptor, pDescriptorInfo->data.accelerationStructure);
       break;
    }
    default:

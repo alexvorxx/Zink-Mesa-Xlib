@@ -98,6 +98,8 @@ static bool do_winsys_init(struct amdgpu_winsys *ws,
    if (!ac_query_gpu_info(fd, ws->dev, &ws->info))
       goto fail;
 
+   ac_query_pci_bus_info(fd, &ws->info);
+
    /* TODO: Enable this once the kernel handles it efficiently. */
    if (ws->info.has_dedicated_vram)
       ws->info.has_local_buffers = false;

@@ -3765,6 +3765,16 @@ typedef struct nir_shader_compiler_options {
     * fragment task is far more than vertex one, so better left it disabled.
     */
    bool lower_varying_from_uniform;
+
+   /** store the variable offset into the instrinsic range_base instead
+    *  of adding it to the image index.
+    */
+   bool lower_image_offset_to_range_base;
+
+   /** store the variable offset into the instrinsic range_base instead
+    *  of adding it to the atomic source
+    */
+   bool lower_atomic_offset_to_range_base;
 } nir_shader_compiler_options;
 
 typedef struct nir_shader {

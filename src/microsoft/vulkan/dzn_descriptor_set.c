@@ -794,6 +794,9 @@ dzn_descriptor_heap_finish(struct dzn_descriptor_heap *heap)
 
    if (heap->dev)
       ID3D12Device_Release(heap->dev);
+
+   if (heap->dev11)
+      ID3D12Device11_Release(heap->dev11);
 }
 
 static VkResult
@@ -803,11 +806,19 @@ dzn_descriptor_heap_init(struct dzn_descriptor_heap *heap,
                          uint32_t desc_count,
                          bool shader_visible)
 {
+   struct dzn_physical_device *pdev =
+      container_of(device->vk.physical, struct dzn_physical_device, vk);
+
    heap->desc_count = desc_count;
    heap->type = type;
    heap->dev = device->dev;
-   ID3D12Device1_AddRef(heap->dev);
    heap->desc_sz = ID3D12Device1_GetDescriptorHandleIncrementSize(device->dev, type);
+
+   if (pdev->options14.AdvancedTextureOpsSupported &&
+       FAILED(IUnknown_QueryInterface(heap->dev, &IID_ID3D12Device11, (void **)&heap->dev11)))
+      return vk_error(device,
+                      shader_visible ?
+                      VK_ERROR_OUT_OF_DEVICE_MEMORY : VK_ERROR_OUT_OF_HOST_MEMORY);
 
    D3D12_DESCRIPTOR_HEAP_DESC desc = {
       .Type = type,
@@ -831,6 +842,8 @@ dzn_descriptor_heap_init(struct dzn_descriptor_heap *heap,
       D3D12_GPU_DESCRIPTOR_HANDLE gpu_handle = dzn_ID3D12DescriptorHeap_GetGPUDescriptorHandleForHeapStart(heap->heap);
       heap->gpu_base = gpu_handle.ptr;
    }
+
+   ID3D12Device1_AddRef(heap->dev);
 
    return VK_SUCCESS;
 }
@@ -856,8 +869,12 @@ dzn_descriptor_heap_write_sampler_desc(struct dzn_descriptor_heap *heap,
                                        uint32_t desc_offset,
                                        const struct dzn_sampler *sampler)
 {
-   ID3D12Device1_CreateSampler(heap->dev, &sampler->desc,
-                               dzn_descriptor_heap_get_cpu_handle(heap, desc_offset));
+   if (heap->dev11)
+      ID3D12Device11_CreateSampler2(heap->dev11, &sampler->desc,
+                                    dzn_descriptor_heap_get_cpu_handle(heap, desc_offset));
+   else
+      ID3D12Device1_CreateSampler(heap->dev, (D3D12_SAMPLER_DESC *)&sampler->desc,
+                                  dzn_descriptor_heap_get_cpu_handle(heap, desc_offset));
 }
 
 void
@@ -946,7 +963,7 @@ dzn_descriptor_heap_write_buffer_desc(struct dzn_descriptor_heap *heap,
          .ViewDimension = D3D12_UAV_DIMENSION_BUFFER,
          .Buffer = {
             .FirstElement = info->offset / sizeof(uint32_t),
-            .NumElements = (UINT)size / sizeof(uint32_t),
+            .NumElements = (UINT)DIV_ROUND_UP(size, sizeof(uint32_t)),
             .Flags = D3D12_BUFFER_UAV_FLAG_RAW,
          },
       };
@@ -958,7 +975,7 @@ dzn_descriptor_heap_write_buffer_desc(struct dzn_descriptor_heap *heap,
          .Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING,
          .Buffer = {
             .FirstElement = info->offset / sizeof(uint32_t),
-            .NumElements = (UINT)size / sizeof(uint32_t),
+            .NumElements = (UINT)DIV_ROUND_UP(size, sizeof(uint32_t)),
             .Flags = D3D12_BUFFER_SRV_FLAG_RAW,
          },
       };

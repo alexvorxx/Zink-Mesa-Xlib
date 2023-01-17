@@ -201,11 +201,64 @@ Core Mesa environment variables
    if set to ``true``, keeps hit/miss statistics for the shader cache.
    These statistics are printed when the app terminates.
 
+.. envvar:: MESA_DISK_CACHE_SINGLE_FILE
+
+   if set to 1, enables the single file Fossilize DB on-disk shader
+   cache implementation instead of the default multi-file cache
+   implementation. This implementation reduces the overall disk usage by
+   the shader cache and also allows for loading of precompiled cache
+   DBs via :envvar:`MESA_DISK_CACHE_READ_ONLY_FOZ_DBS` or
+   :envvar:`MESA_DISK_CACHE_READ_ONLY_FOZ_DBS_DYNAMIC_LIST`. This
+   implementation does not support cache size limits via
+   :envvar:`MESA_SHADER_CACHE_MAX_SIZE`. If
+   :envvar:`MESA_SHADER_CACHE_DIR` is not set, the cache will be stored
+   in ``$XDG_CACHE_HOME/mesa_shader_cache_sf`` (if that variable is set)
+   or else within ``.cache/mesa_shader_cache_sf`` within the user's home
+   directory.
+
+.. envvar:: MESA_DISK_CACHE_READ_ONLY_FOZ_DBS
+
+   if set with envvar:`MESA_DISK_CACHE_SINGLE_FILE` enabled, references
+   a string of comma separated file paths to read only Fossilize DB
+   shader caches for loading at initialization. The file paths are
+   relative to the cache directory and do not include suffixes,
+   referencing both the cache DB and its index file. E.g.
+   MESA_DISK_CACHE_SINGLE_FILE=filename1 refers to filename1.foz and
+   filename1_idx.foz. A limit of 8 DBs can be loaded and this limit is
+   shared with :envvar:`MESA_DISK_CACHE_READ_ONLY_FOZ_DBS_DYNAMIC_LIST.`
+
+.. envvar:: MESA_DISK_CACHE_DATABASE
+
+   if set to 1, enables the Mesa-DB single file on-disk shader cache
+   implementation instead of the default multi-file cache implementation.
+   Like :envvar:`MESA_DISK_CACHE_SINGLE_FILE`, Mesa-DB reduces overall
+   disk usage but Mesa-DB supports cache size limits via
+   :envvar:`MESA_SHADER_CACHE_MAX_SIZE`. If
+   :envvar:`MESA_SHADER_CACHE_DIR` is not set, the cache will be stored
+   in ``$XDG_CACHE_HOME/mesa_shader_cache_db`` (if that variable is set)
+   or else within ``.cache/mesa_shader_cache_db`` within the user's home
+   directory.
+
+.. envvar:: MESA_DISK_CACHE_READ_ONLY_FOZ_DBS_DYNAMIC_LIST
+
+   if set with :envvar:`MESA_DISK_CACHE_SINGLE_FILE` enabled, references
+   a text file that contains a new-line separated list of read only
+   Fossilize DB shader caches to load. The list file is modifiable at
+   runtime to allow for loading read only caches after initialization
+   unlike :envvar:`MESA_DISK_CACHE_READ_ONLY_FOZ_DBS`. This variable
+   takes an absolute path to the list file. The list file must exist at
+   initialization for updating to occur. Cache files in the list take
+   relative paths to the current cache directory like
+   :envvar:`MESA_DISK_CACHE_READ_ONLY_FOZ_DBS`. A limit of 8 DBs can be
+   loaded and this limit is shared with
+   :envvar:`MESA_DISK_CACHE_READ_ONLY_FOZ_DBS`.
+
 .. envvar:: MESA_DISK_CACHE_COMBINE_RW_WITH_RO_FOZ
 
-   if set to 1, enables simultaneous use of rw and ro fossilize db caches.
-   At first data will be retrieved from the read-only foz cache. If data
-   isn't found in the ro cache, then it will be retrieved from the rw cache.
+   if set to 1, enables simultaneous use of :abbr:`RW (read-write)` and
+   :abbr:`RW (read-write)` Fossilize DB caches. At first, data will be
+   retrieved from the RO Fossilize cache. If data isn't found in the RO
+   cache, then it will be retrieved from the RW cache.
 
 .. envvar:: MESA_GLSL
 

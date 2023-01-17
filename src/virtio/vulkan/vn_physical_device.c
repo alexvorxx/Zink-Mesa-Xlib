@@ -218,9 +218,7 @@ vn_physical_device_init_features(struct vn_physical_device *physical_dev)
 
    /* clang-format off */
 
-   /* TODO allow sparse resource along with sync feedback
-    *
-    * vkQueueBindSparse relies on explicit sync primitives. To intercept the
+   /* vkQueueBindSparse relies on explicit sync primitives. To intercept the
     * timeline semaphores within each bind info to write the feedback buffer,
     * we have to split the call into bindInfoCount number of calls while
     * inserting vkQueueSubmit to wait on the signal timeline semaphores before
@@ -230,17 +228,15 @@ vn_physical_device_init_features(struct vn_physical_device *physical_dev)
     * Those would make the code overly complex, so we disable sparse binding
     * for simplicity.
     */
-   if (!VN_PERF(NO_FENCE_FEEDBACK)) {
-      VN_SET_CORE_VALUE(vk10_feats, sparseBinding, false);
-      VN_SET_CORE_VALUE(vk10_feats, sparseResidencyBuffer, false);
-      VN_SET_CORE_VALUE(vk10_feats, sparseResidencyImage2D, false);
-      VN_SET_CORE_VALUE(vk10_feats, sparseResidencyImage3D, false);
-      VN_SET_CORE_VALUE(vk10_feats, sparseResidency2Samples, false);
-      VN_SET_CORE_VALUE(vk10_feats, sparseResidency4Samples, false);
-      VN_SET_CORE_VALUE(vk10_feats, sparseResidency8Samples, false);
-      VN_SET_CORE_VALUE(vk10_feats, sparseResidency16Samples, false);
-      VN_SET_CORE_VALUE(vk10_feats, sparseResidencyAliased, false);
-   }
+   VN_SET_CORE_VALUE(vk10_feats, sparseBinding, false);
+   VN_SET_CORE_VALUE(vk10_feats, sparseResidencyBuffer, false);
+   VN_SET_CORE_VALUE(vk10_feats, sparseResidencyImage2D, false);
+   VN_SET_CORE_VALUE(vk10_feats, sparseResidencyImage3D, false);
+   VN_SET_CORE_VALUE(vk10_feats, sparseResidency2Samples, false);
+   VN_SET_CORE_VALUE(vk10_feats, sparseResidency4Samples, false);
+   VN_SET_CORE_VALUE(vk10_feats, sparseResidency8Samples, false);
+   VN_SET_CORE_VALUE(vk10_feats, sparseResidency16Samples, false);
+   VN_SET_CORE_VALUE(vk10_feats, sparseResidencyAliased, false);
 
    if (renderer_version < VK_API_VERSION_1_2) {
       /* Vulkan 1.1 */
@@ -540,11 +536,9 @@ vn_physical_device_init_properties(struct vn_physical_device *physical_dev)
 
    /* clang-format off */
 
-   /* TODO allow sparse resource along with sync feedback */
-   if (!VN_PERF(NO_FENCE_FEEDBACK)) {
-      VN_SET_CORE_VALUE(vk10_props, limits.sparseAddressSpaceSize, 0);
-      VN_SET_CORE_VALUE(vk10_props, sparseProperties, (VkPhysicalDeviceSparseProperties){ 0 });
-   }
+   VN_SET_CORE_VALUE(vk10_props, limits.sparseAddressSpaceSize, 0);
+   VN_SET_CORE_VALUE(vk10_props, sparseProperties, (VkPhysicalDeviceSparseProperties){ 0 });
+
    if (renderer_version < VK_API_VERSION_1_2) {
       /* Vulkan 1.1 */
       VN_SET_CORE_ARRAY(vk11_props, deviceUUID, local_props.id);
@@ -704,6 +698,14 @@ vn_physical_device_init_properties(struct vn_physical_device *physical_dev)
          ver = ver - VK_VERSION_PATCH(ver) +
                VK_VERSION_PATCH(vk10_props->apiVersion);
       }
+
+      /* Clamp to 1.2 if we disabled VK_KHR_synchronization2 since it
+       * is required for 1.3.
+       * See vn_physical_device_get_passthrough_extensions()
+       */
+      if (!physical_dev->base.base.supported_extensions.KHR_synchronization2)
+         ver = MIN2(VK_API_VERSION_1_2, ver);
+
       vk10_props->apiVersion = ver;
    }
 
@@ -926,19 +928,6 @@ vn_physical_device_init_external_semaphore_handles(
          VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_SYNC_FD_BIT;
    }
 #endif
-
-   if (!(physical_dev->renderer_sync_fd_semaphore_features &
-         VK_EXTERNAL_SEMAPHORE_FEATURE_IMPORTABLE_BIT)) {
-      /* Disable VK_KHR_synchronization2, because
-       * out implementation requires semaphore sync fd import.
-       */
-      physical_dev->base.base.supported_extensions.KHR_synchronization2 =
-         false;
-
-      /* Clamp to 1.2 because 1.3 requires VK_KHR_synchronization2. */
-      physical_dev->properties.vulkan_1_0.apiVersion = MIN2(
-         VK_API_VERSION_1_2, physical_dev->properties.vulkan_1_0.apiVersion);
-   }
 }
 
 static void
@@ -966,8 +955,15 @@ vn_physical_device_get_native_extensions(
 
    /* we have a very poor implementation */
    if (instance->experimental.globalFencing) {
-      exts->KHR_external_fence_fd = true;
-      exts->KHR_external_semaphore_fd = true;
+      if ((physical_dev->renderer_sync_fd_fence_features &
+           VK_EXTERNAL_FENCE_FEATURE_EXPORTABLE_BIT))
+         exts->KHR_external_fence_fd = true;
+
+      if ((physical_dev->renderer_sync_fd_semaphore_features &
+           VK_EXTERNAL_SEMAPHORE_FEATURE_IMPORTABLE_BIT) &&
+          (physical_dev->renderer_sync_fd_semaphore_features &
+           VK_EXTERNAL_SEMAPHORE_FEATURE_EXPORTABLE_BIT))
+         exts->KHR_external_semaphore_fd = true;
    }
 #endif
 
@@ -976,9 +972,14 @@ vn_physical_device_get_native_extensions(
       exts->EXT_external_memory_dma_buf = true;
    }
 
+   /* Semaphore sync fd import required for WSI to skip scrubbing
+    * the wsi/external wait semaphores.
+    */
 #ifdef VN_USE_WSI_PLATFORM
    if (renderer_exts->EXT_image_drm_format_modifier &&
-       renderer_exts->EXT_queue_family_foreign) {
+       renderer_exts->EXT_queue_family_foreign &&
+       (physical_dev->renderer_sync_fd_semaphore_features &
+        VK_EXTERNAL_SEMAPHORE_FEATURE_IMPORTABLE_BIT)) {
       exts->KHR_incremental_present = true;
       exts->KHR_swapchain = true;
       exts->KHR_swapchain_mutable_format = true;
@@ -1060,7 +1061,12 @@ vn_physical_device_get_passthrough_extensions(
       .KHR_shader_integer_dot_product = true,
       .KHR_shader_non_semantic_info = true,
       .KHR_shader_terminate_invocation = true,
-      .KHR_synchronization2 = true,
+      /* Our implementation requires semaphore sync fd import
+       * for VK_KHR_synchronization2.
+       */
+      .KHR_synchronization2 =
+         physical_dev->renderer_sync_fd_semaphore_features &
+         VK_EXTERNAL_SEMAPHORE_FEATURE_IMPORTABLE_BIT,
       .KHR_zero_initialize_workgroup_memory = true,
       .EXT_4444_formats = true,
       .EXT_extended_dynamic_state = true,
@@ -1279,6 +1285,10 @@ vn_physical_device_init(struct vn_physical_device *physical_dev)
    if (result != VK_SUCCESS)
       return result;
 
+   vn_physical_device_init_external_memory(physical_dev);
+   vn_physical_device_init_external_fence_handles(physical_dev);
+   vn_physical_device_init_external_semaphore_handles(physical_dev);
+
    vn_physical_device_init_supported_extensions(physical_dev);
 
    /* TODO query all caps with minimal round trips */
@@ -1290,10 +1300,6 @@ vn_physical_device_init(struct vn_physical_device *physical_dev)
       goto fail;
 
    vn_physical_device_init_memory_properties(physical_dev);
-
-   vn_physical_device_init_external_memory(physical_dev);
-   vn_physical_device_init_external_fence_handles(physical_dev);
-   vn_physical_device_init_external_semaphore_handles(physical_dev);
 
    result = vn_wsi_init(physical_dev);
    if (result != VK_SUCCESS)
@@ -2110,24 +2116,13 @@ vn_GetPhysicalDeviceSparseImageFormatProperties2(
    uint32_t *pPropertyCount,
    VkSparseImageFormatProperties2 *pProperties)
 {
-   struct vn_physical_device *physical_dev =
-      vn_physical_device_from_handle(physicalDevice);
 
-   /* TODO allow sparse resource along with sync feedback
-    *
-    * If VK_IMAGE_CREATE_SPARSE_RESIDENCY_BIT is not supported for the given
+   /* If VK_IMAGE_CREATE_SPARSE_RESIDENCY_BIT is not supported for the given
     * arguments, pPropertyCount will be set to zero upon return, and no data
     * will be written to pProperties.
     */
-   if (!VN_PERF(NO_FENCE_FEEDBACK)) {
-      *pPropertyCount = 0;
-      return;
-   }
-
-   /* TODO per-device cache */
-   vn_call_vkGetPhysicalDeviceSparseImageFormatProperties2(
-      physical_dev->instance, physicalDevice, pFormatInfo, pPropertyCount,
-      pProperties);
+   *pPropertyCount = 0;
+   return;
 }
 
 void

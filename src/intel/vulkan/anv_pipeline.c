@@ -36,6 +36,7 @@
 #include "compiler/brw_nir.h"
 #include "compiler/brw_nir_rt.h"
 #include "anv_nir.h"
+#include "nir/nir_vulkan.h"
 #include "nir/nir_xfb_info.h"
 #include "spirv/nir_spirv.h"
 #include "vk_pipeline.h"
@@ -765,6 +766,28 @@ anv_pipeline_stage_get_nir(struct anv_pipeline *pipeline,
    return NULL;
 }
 
+static const struct vk_ycbcr_conversion *
+lookup_ycbcr_conversion(const void *_pipeline_layout, uint32_t set,
+                        uint32_t binding, uint32_t array_index)
+{
+   const struct anv_pipeline_layout *pipeline_layout = _pipeline_layout;
+
+   assert(set < MAX_SETS);
+   assert(binding < pipeline_layout->set[set].layout->binding_count);
+   const struct anv_descriptor_set_binding_layout *bind_layout =
+      &pipeline_layout->set[set].layout->binding[binding];
+
+   if (bind_layout->immutable_samplers == NULL)
+      return NULL;
+
+   array_index = MIN2(array_index, bind_layout->array_size - 1);
+
+   const struct anv_sampler *sampler =
+      bind_layout->immutable_samplers[array_index];
+
+   return sampler ? sampler->conversion : NULL;
+}
+
 static void
 shared_type_info(const struct glsl_type *type, unsigned *size, unsigned *align)
 {
@@ -815,7 +838,7 @@ anv_pipeline_lower_nir(struct anv_pipeline *pipeline,
       NIR_PASS(_, nir, nir_lower_compute_system_values, &options);
    }
 
-   NIR_PASS(_, nir, anv_nir_lower_ycbcr_textures, layout);
+   NIR_PASS(_, nir, nir_vk_lower_ycbcr_tex, lookup_ycbcr_conversion, layout);
 
    if (pipeline->type == ANV_PIPELINE_GRAPHICS) {
       struct anv_graphics_pipeline *gfx_pipeline =

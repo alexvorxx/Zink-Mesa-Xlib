@@ -37,6 +37,7 @@ etna_compiler_create(const char *renderer, const struct etna_specs *specs)
 
    compiler->options = (nir_shader_compiler_options) {
       .lower_fpow = true,
+      .lower_fround_even = true,
       .lower_ftrunc = true,
       .fuse_ffma16 = true,
       .fuse_ffma32 = true,

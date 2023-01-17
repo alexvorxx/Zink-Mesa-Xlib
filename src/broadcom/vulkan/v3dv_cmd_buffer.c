@@ -1157,16 +1157,17 @@ cmd_buffer_state_set_attachment_clear_color(struct v3dv_cmd_buffer *cmd_buffer,
                                             const VkClearColorValue *color)
 {
    assert(attachment_idx < cmd_buffer->state.pass->attachment_count);
-
    const struct v3dv_render_pass_attachment *attachment =
       &cmd_buffer->state.pass->attachments[attachment_idx];
 
    uint32_t internal_type, internal_bpp;
    const struct v3dv_format *format =
       v3dv_X(cmd_buffer->device, get_format)(attachment->desc.format);
+   /* We don't allow multi-planar formats for render pass attachments */
+   assert(format->plane_count == 1);
 
    v3dv_X(cmd_buffer->device, get_internal_type_bpp_for_output_format)
-      (format->rt_type, &internal_type, &internal_bpp);
+      (format->planes[0].rt_type, &internal_type, &internal_bpp);
 
    uint32_t internal_size = 4 << internal_bpp;
 

@@ -254,7 +254,7 @@ build_depth_stencil_resolve_fragment_shader(struct radv_device *dev, int samples
    enum glsl_base_type img_base_type = index == DEPTH_RESOLVE ? GLSL_TYPE_FLOAT : GLSL_TYPE_UINT;
    const struct glsl_type *vec4 = glsl_vec4_type();
    const struct glsl_type *sampler_type =
-      glsl_sampler_type(GLSL_SAMPLER_DIM_2D, false, false, img_base_type);
+      glsl_sampler_type(GLSL_SAMPLER_DIM_MS, false, false, img_base_type);
 
    nir_builder b = radv_meta_init_shader(dev, MESA_SHADER_FRAGMENT, "meta_resolve_fs_%s-%s-%d",
                                          index == DEPTH_RESOLVE ? "depth" : "stencil",
@@ -273,62 +273,29 @@ build_depth_stencil_resolve_fragment_shader(struct radv_device *dev, int samples
 
    nir_ssa_def *img_coord = nir_channels(&b, pos_int, 0x3);
 
-   nir_ssa_def *input_img_deref = &nir_build_deref_var(&b, input_img)->dest.ssa;
-
-   nir_alu_type type = index == DEPTH_RESOLVE ? nir_type_float32 : nir_type_uint32;
-
-   nir_tex_instr *tex = nir_tex_instr_create(b.shader, 3);
-   tex->sampler_dim = GLSL_SAMPLER_DIM_MS;
-   tex->op = nir_texop_txf_ms;
-   tex->src[0].src_type = nir_tex_src_coord;
-   tex->src[0].src = nir_src_for_ssa(img_coord);
-   tex->src[1].src_type = nir_tex_src_ms_index;
-   tex->src[1].src = nir_src_for_ssa(nir_imm_int(&b, 0));
-   tex->src[2].src_type = nir_tex_src_texture_deref;
-   tex->src[2].src = nir_src_for_ssa(input_img_deref);
-   tex->dest_type = type;
-   tex->is_array = false;
-   tex->coord_components = 2;
-
-   nir_ssa_dest_init(&tex->instr, &tex->dest, 4, 32, "tex");
-   nir_builder_instr_insert(&b, &tex->instr);
-
-   nir_ssa_def *outval = &tex->dest.ssa;
+   nir_deref_instr *input_img_deref = nir_build_deref_var(&b, input_img);
+   nir_ssa_def *outval = nir_txf_ms_deref(&b, input_img_deref, img_coord, nir_imm_int(&b, 0));
 
    if (resolve_mode != VK_RESOLVE_MODE_SAMPLE_ZERO_BIT) {
       for (int i = 1; i < samples; i++) {
-         nir_tex_instr *tex_add = nir_tex_instr_create(b.shader, 3);
-         tex_add->sampler_dim = GLSL_SAMPLER_DIM_MS;
-         tex_add->op = nir_texop_txf_ms;
-         tex_add->src[0].src_type = nir_tex_src_coord;
-         tex_add->src[0].src = nir_src_for_ssa(img_coord);
-         tex_add->src[1].src_type = nir_tex_src_ms_index;
-         tex_add->src[1].src = nir_src_for_ssa(nir_imm_int(&b, i));
-         tex_add->src[2].src_type = nir_tex_src_texture_deref;
-         tex_add->src[2].src = nir_src_for_ssa(input_img_deref);
-         tex_add->dest_type = type;
-         tex_add->is_array = false;
-         tex_add->coord_components = 2;
-
-         nir_ssa_dest_init(&tex_add->instr, &tex_add->dest, 4, 32, "tex");
-         nir_builder_instr_insert(&b, &tex_add->instr);
+         nir_ssa_def *si = nir_txf_ms_deref(&b, input_img_deref, img_coord, nir_imm_int(&b, i));
 
          switch (resolve_mode) {
          case VK_RESOLVE_MODE_AVERAGE_BIT:
             assert(index == DEPTH_RESOLVE);
-            outval = nir_fadd(&b, outval, &tex_add->dest.ssa);
+            outval = nir_fadd(&b, outval, si);
             break;
          case VK_RESOLVE_MODE_MIN_BIT:
             if (index == DEPTH_RESOLVE)
-               outval = nir_fmin(&b, outval, &tex_add->dest.ssa);
+               outval = nir_fmin(&b, outval, si);
             else
-               outval = nir_umin(&b, outval, &tex_add->dest.ssa);
+               outval = nir_umin(&b, outval, si);
             break;
          case VK_RESOLVE_MODE_MAX_BIT:
             if (index == DEPTH_RESOLVE)
-               outval = nir_fmax(&b, outval, &tex_add->dest.ssa);
+               outval = nir_fmax(&b, outval, si);
             else
-               outval = nir_umax(&b, outval, &tex_add->dest.ssa);
+               outval = nir_umax(&b, outval, si);
             break;
          default:
             unreachable("invalid resolve mode");

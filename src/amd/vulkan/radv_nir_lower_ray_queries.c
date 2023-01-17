@@ -391,34 +391,26 @@ lower_rq_initialize(nir_builder *b, nir_ssa_def *index, nir_intrinsic_instr *ins
 
    nir_ssa_def *accel_struct = instr->src[1].ssa;
 
-   nir_push_if(b, nir_ine_imm(b, accel_struct, 0));
-   {
-      nir_ssa_def *bvh_offset = nir_build_load_global(
-         b, 1, 32,
-         nir_iadd_imm(b, accel_struct, offsetof(struct radv_accel_struct_header, bvh_offset)),
-         .access = ACCESS_NON_WRITEABLE);
-      nir_ssa_def *bvh_base = nir_iadd(b, accel_struct, nir_u2u64(b, bvh_offset));
-      bvh_base = build_addr_to_node(b, bvh_base);
+   nir_ssa_def *bvh_offset = nir_build_load_global(
+      b, 1, 32,
+      nir_iadd_imm(b, accel_struct, offsetof(struct radv_accel_struct_header, bvh_offset)),
+      .access = ACCESS_NON_WRITEABLE);
+   nir_ssa_def *bvh_base = nir_iadd(b, accel_struct, nir_u2u64(b, bvh_offset));
+   bvh_base = build_addr_to_node(b, bvh_base);
 
-      rq_store_var(b, index, vars->root_bvh_base, bvh_base, 0x1);
-      rq_store_var(b, index, vars->trav.bvh_base, bvh_base, 1);
+   rq_store_var(b, index, vars->root_bvh_base, bvh_base, 0x1);
+   rq_store_var(b, index, vars->trav.bvh_base, bvh_base, 1);
 
-      if (vars->stack) {
-         rq_store_var(b, index, vars->trav.stack, nir_imm_int(b, 0), 0x1);
-         rq_store_var(b, index, vars->trav.stack_low_watermark, nir_imm_int(b, 0), 0x1);
-      } else {
-         nir_ssa_def *base_offset =
-            nir_imul_imm(b, nir_load_local_invocation_index(b), sizeof(uint32_t));
-         base_offset = nir_iadd_imm(b, base_offset, vars->shared_base);
-         rq_store_var(b, index, vars->trav.stack, base_offset, 0x1);
-         rq_store_var(b, index, vars->trav.stack_low_watermark, base_offset, 0x1);
-      }
+   if (vars->stack) {
+      rq_store_var(b, index, vars->trav.stack, nir_imm_int(b, 0), 0x1);
+      rq_store_var(b, index, vars->trav.stack_low_watermark, nir_imm_int(b, 0), 0x1);
+   } else {
+      nir_ssa_def *base_offset =
+         nir_imul_imm(b, nir_load_local_invocation_index(b), sizeof(uint32_t));
+      base_offset = nir_iadd_imm(b, base_offset, vars->shared_base);
+      rq_store_var(b, index, vars->trav.stack, base_offset, 0x1);
+      rq_store_var(b, index, vars->trav.stack_low_watermark, base_offset, 0x1);
    }
-   nir_push_else(b, NULL);
-   {
-      rq_store_var(b, index, vars->root_bvh_base, nir_imm_int64(b, 0), 0x1);
-   }
-   nir_pop_if(b, NULL);
 
    rq_store_var(b, index, vars->trav.current_node, nir_imm_int(b, RADV_BVH_ROOT_NODE), 0x1);
    rq_store_var(b, index, vars->trav.previous_node, nir_imm_int(b, RADV_BVH_INVALID_NODE), 0x1);

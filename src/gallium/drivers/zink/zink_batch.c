@@ -461,6 +461,26 @@ zink_start_batch(struct zink_context *ctx, struct zink_batch *batch)
       batch->last_batch_usage = &last_state->usage;
    }
 
+#ifdef HAVE_RENDERDOC_APP_H
+   if (VKCTX(CmdInsertDebugUtilsLabelEXT) && screen->renderdoc_api) {
+      VkDebugUtilsLabelEXT capture_label;
+      /* Magic fallback which lets us bridge the Wine barrier over to Linux RenderDoc. */
+      capture_label.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_LABEL_EXT;
+      capture_label.pNext = NULL;
+      capture_label.pLabelName = "vr-marker,frame_end,type,application";
+      memset(capture_label.color, 0, sizeof(capture_label.color));
+      VKCTX(CmdInsertDebugUtilsLabelEXT)(batch->state->barrier_cmdbuf, &capture_label);
+      VKCTX(CmdInsertDebugUtilsLabelEXT)(batch->state->cmdbuf, &capture_label);
+   }
+
+   unsigned renderdoc_frame = p_atomic_read(&screen->renderdoc_frame);
+   if (!(ctx->flags & ZINK_CONTEXT_COPY_ONLY) && screen->renderdoc_api && !screen->renderdoc_capturing &&
+        ((screen->renderdoc_capture_all && screen->screen_id == 1) || (renderdoc_frame >= screen->renderdoc_capture_start && renderdoc_frame <= screen->renderdoc_capture_end))) {
+      screen->renderdoc_api->StartFrameCapture(RENDERDOC_DEVICEPOINTER_FROM_VKINSTANCE(screen->instance), NULL);
+      screen->renderdoc_capturing = true;
+   }
+#endif
+
    if (!ctx->queries_disabled)
       zink_resume_queries(ctx, batch);
 
@@ -689,6 +709,12 @@ zink_end_batch(struct zink_context *ctx, struct zink_batch *batch)
       submit_queue(bs, NULL, 0);
       post_submit(bs, NULL, 0);
    }
+#ifdef HAVE_RENDERDOC_APP_H
+   if (!(ctx->flags & ZINK_CONTEXT_COPY_ONLY) && screen->renderdoc_capturing && p_atomic_read(&screen->renderdoc_frame) > screen->renderdoc_capture_end) {
+      screen->renderdoc_api->EndFrameCapture(RENDERDOC_DEVICEPOINTER_FROM_VKINSTANCE(screen->instance), NULL);
+      screen->renderdoc_capturing = false;
+   }
+#endif
 }
 
 static int

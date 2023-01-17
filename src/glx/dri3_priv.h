@@ -67,15 +67,7 @@ struct dri3_display
    __GLXDRIdisplay base;
 
    const __DRIextension **loader_extensions;
-
-   /* DRI3 bits */
-   int dri3Major;
-   int dri3Minor;
-
-   /* Present bits */
-   int hasPresent;
-   int presentMajor;
-   int presentMinor;
+   int has_multibuffer;
 };
 
 struct dri3_screen {

@@ -111,8 +111,7 @@ dri2_destroy_context(struct glx_context *context)
 }
 
 static Bool
-dri2_bind_context(struct glx_context *context, struct glx_context *old,
-		  GLXDrawable draw, GLXDrawable read)
+dri2_bind_context(struct glx_context *context, GLXDrawable draw, GLXDrawable read)
 {
    struct dri2_screen *psc = (struct dri2_screen *) context->psc;
    struct dri2_drawable *pdraw, *pread;
@@ -140,7 +139,7 @@ dri2_bind_context(struct glx_context *context, struct glx_context *old,
 }
 
 static void
-dri2_unbind_context(struct glx_context *context, struct glx_context *new)
+dri2_unbind_context(struct glx_context *context)
 {
    struct dri2_screen *psc = (struct dri2_screen *) context->psc;
 

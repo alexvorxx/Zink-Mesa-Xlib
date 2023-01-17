@@ -194,44 +194,7 @@ static void
 visit_emit_vertex_with_counter(struct ac_shader_abi *abi, unsigned stream, LLVMValueRef vertexidx,
                                LLVMValueRef *addrs)
 {
-   unsigned offset = 0;
    struct radv_shader_context *ctx = radv_shader_context_from_abi(abi);
-
-   for (unsigned i = 0; i < AC_LLVM_MAX_OUTPUTS; ++i) {
-      unsigned output_usage_mask = ctx->shader_info->gs.output_usage_mask[i];
-      uint8_t output_stream = ctx->shader_info->gs.output_streams[i];
-      LLVMValueRef *out_ptr = &addrs[i * 4];
-      bool *is_16bit_ptr = &abi->is_16bit[i * 4];
-      int length = util_last_bit(output_usage_mask);
-
-      if (!(ctx->output_mask & (1ull << i)))
-         continue;
-
-      for (unsigned j = 0; j < length; j++) {
-         if (((output_stream >> (j * 2)) & 0x3) != stream)
-            continue;
-         if (!(output_usage_mask & (1 << j)))
-            continue;
-
-         LLVMTypeRef type = is_16bit_ptr[j] ? ctx->ac.f16 : ctx->ac.f32;
-         LLVMValueRef out_val = LLVMBuildLoad2(ctx->ac.builder, type, out_ptr[j], "");
-         LLVMValueRef voffset =
-            LLVMConstInt(ctx->ac.i32, offset * ctx->shader->info.gs.vertices_out, false);
-
-         offset++;
-
-         voffset = LLVMBuildAdd(ctx->ac.builder, voffset, vertexidx, "");
-         voffset = LLVMBuildMul(ctx->ac.builder, voffset, LLVMConstInt(ctx->ac.i32, 4, false), "");
-
-         out_val = ac_to_integer(&ctx->ac, out_val);
-         out_val = LLVMBuildZExtOrBitCast(ctx->ac.builder, out_val, ctx->ac.i32, "");
-
-         ac_build_buffer_store_dword(&ctx->ac, ctx->gsvs_ring[stream], out_val, NULL, voffset,
-                                     ac_get_arg(&ctx->ac, ctx->args->ac.gs2vs_offset),
-                                     ac_glc | ac_slc | ac_swizzled);
-      }
-   }
-
    ac_build_sendmsg(&ctx->ac, AC_SENDMSG_GS_OP_EMIT | AC_SENDMSG_GS | (stream << 8),
                     ctx->gs_wave_id);
 }

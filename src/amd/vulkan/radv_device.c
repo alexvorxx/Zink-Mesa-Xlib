@@ -338,6 +338,18 @@ radv_physical_device_init_mem_types(struct radv_physical_device *device)
    }
 }
 
+uint32_t
+radv_find_memory_index(struct radv_physical_device *pdevice, VkMemoryPropertyFlags flags)
+{
+   VkPhysicalDeviceMemoryProperties *mem_properties = &pdevice->memory_properties;
+   for (uint32_t i = 0; i < mem_properties->memoryTypeCount; ++i) {
+      if (mem_properties->memoryTypes[i].propertyFlags == flags) {
+         return i;
+      }
+   }
+   unreachable("invalid memory properties");
+}
+
 static const char *
 radv_get_compiler_string(struct radv_physical_device *pdevice)
 {

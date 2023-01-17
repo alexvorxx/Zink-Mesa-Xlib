@@ -58,26 +58,13 @@ build_fmask_copy_compute_shader(struct radv_device *dev, int samples)
                                          nir_ssa_undef(&b, 1, 32),
                                          nir_ssa_undef(&b, 1, 32));
 
-   nir_ssa_def *input_img_deref = &nir_build_deref_var(&b, input_img)->dest.ssa;
-
-   /* Fetch the mask for this fragment. */
-   nir_tex_instr *frag_mask_fetch = nir_tex_instr_create(b.shader, 3);
-   frag_mask_fetch->sampler_dim = GLSL_SAMPLER_DIM_MS;
-   frag_mask_fetch->op = nir_texop_fragment_mask_fetch_amd;
-   frag_mask_fetch->src[0].src_type = nir_tex_src_coord;
-   frag_mask_fetch->src[0].src = nir_src_for_ssa(src_coord);
-   frag_mask_fetch->src[1].src_type = nir_tex_src_lod;
-   frag_mask_fetch->src[1].src = nir_src_for_ssa(nir_imm_int(&b, 0));
-   frag_mask_fetch->src[2].src_type = nir_tex_src_texture_deref;
-   frag_mask_fetch->src[2].src = nir_src_for_ssa(input_img_deref);
-   frag_mask_fetch->dest_type = nir_type_uint32;
-   frag_mask_fetch->is_array = false;
-   frag_mask_fetch->coord_components = 2;
-
-   nir_ssa_dest_init(&frag_mask_fetch->instr, &frag_mask_fetch->dest, 1, 32, "frag_mask_fetch");
-   nir_builder_instr_insert(&b, &frag_mask_fetch->instr);
-
-   nir_ssa_def *frag_mask = &frag_mask_fetch->dest.ssa;
+   nir_tex_src frag_mask_srcs[] = {{
+      .src_type = nir_tex_src_coord,
+      .src = nir_src_for_ssa(src_coord),
+   }};
+   nir_ssa_def *frag_mask = nir_build_tex_deref_instr(&b, nir_texop_fragment_mask_fetch_amd,
+                                                      nir_build_deref_var(&b, input_img), NULL,
+                                                      ARRAY_SIZE(frag_mask_srcs), frag_mask_srcs);
 
    /* Get the maximum sample used in this fragment. */
    nir_ssa_def *max_sample_index = nir_imm_int(&b, 0);
@@ -95,25 +82,17 @@ build_fmask_copy_compute_shader(struct radv_device *dev, int samples)
    {
       nir_ssa_def *sample_id = nir_load_var(&b, counter);
 
-      nir_tex_instr *frag_fetch = nir_tex_instr_create(b.shader, 4);
-      frag_fetch->sampler_dim = GLSL_SAMPLER_DIM_MS;
-      frag_fetch->op = nir_texop_fragment_fetch_amd;
-      frag_fetch->src[0].src_type = nir_tex_src_coord;
-      frag_fetch->src[0].src = nir_src_for_ssa(src_coord);
-      frag_fetch->src[1].src_type = nir_tex_src_lod;
-      frag_fetch->src[1].src = nir_src_for_ssa(nir_imm_int(&b, 0));
-      frag_fetch->src[2].src_type = nir_tex_src_texture_deref;
-      frag_fetch->src[2].src = nir_src_for_ssa(input_img_deref);
-      frag_fetch->src[3].src_type = nir_tex_src_ms_index;
-      frag_fetch->src[3].src = nir_src_for_ssa(sample_id);
-      frag_fetch->dest_type = nir_type_float32;
-      frag_fetch->is_array = false;
-      frag_fetch->coord_components = 2;
+      nir_tex_src frag_fetch_srcs[] = {{
+         .src_type = nir_tex_src_coord,
+         .src = nir_src_for_ssa(src_coord),
+      }, {
+         .src_type = nir_tex_src_ms_index,
+         .src = nir_src_for_ssa(sample_id),
+      }};
+      nir_ssa_def *outval = nir_build_tex_deref_instr(&b, nir_texop_fragment_fetch_amd,
+                                                      nir_build_deref_var(&b, input_img), NULL,
+                                                      ARRAY_SIZE(frag_fetch_srcs), frag_fetch_srcs);
 
-      nir_ssa_dest_init(&frag_fetch->instr, &frag_fetch->dest, 4, 32, "frag_fetch");
-      nir_builder_instr_insert(&b, &frag_fetch->instr);
-
-      nir_ssa_def *outval = &frag_fetch->dest.ssa;
       nir_image_deref_store(&b, &nir_build_deref_var(&b, output_img)->dest.ssa, dst_coord,
                             sample_id, outval, nir_imm_int(&b, 0),
                             .image_dim = GLSL_SAMPLER_DIM_MS);

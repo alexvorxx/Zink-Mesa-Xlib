@@ -58,7 +58,6 @@
 static const struct debug_named_value panfrost_debug_options[] = {
    {"perf",       PAN_DBG_PERF,     "Enable performance warnings"},
    {"trace",      PAN_DBG_TRACE,    "Trace the command stream"},
-   {"deqp",       PAN_DBG_DEQP,     "Hacks for dEQP"},
    {"dirty",      PAN_DBG_DIRTY,    "Always re-emit all state"},
    {"sync",       PAN_DBG_SYNC,     "Wait for each job's completion and abort on GPU faults"},
    {"nofp16",     PAN_DBG_NOFP16,    "Disable 16-bit support"},
@@ -66,7 +65,6 @@ static const struct debug_named_value panfrost_debug_options[] = {
    {"noafbc",     PAN_DBG_NO_AFBC,  "Disable AFBC support"},
    {"nocrc",      PAN_DBG_NO_CRC,   "Disable transaction elimination"},
    {"msaa16",     PAN_DBG_MSAA16,   "Enable MSAA 8x and 16x support"},
-   {"indirect",   PAN_DBG_INDIRECT, "Use experimental compute kernel for indirect draws"},
    {"linear",     PAN_DBG_LINEAR,   "Force linear textures"},
    {"nocache",    PAN_DBG_NO_CACHE, "Disable BO cache"},
    {"dump",       PAN_DBG_DUMP,     "Dump all graphics memory"},
@@ -101,7 +99,7 @@ panfrost_get_param(struct pipe_screen *screen, enum pipe_cap param)
    struct panfrost_device *dev = pan_device(screen);
 
    /* Our GL 3.x implementation is WIP */
-   bool is_gl3 = dev->debug & (PAN_DBG_GL3 | PAN_DBG_DEQP);
+   bool is_gl3 = dev->debug & PAN_DBG_GL3;
 
    /* Native MRT is introduced with v5 */
    bool has_mrt = (dev->arch >= 5);
@@ -135,6 +133,7 @@ panfrost_get_param(struct pipe_screen *screen, enum pipe_cap param)
       return 1;
 
    case PIPE_CAP_OCCLUSION_QUERY:
+   case PIPE_CAP_PRIMITIVE_RESTART:
    case PIPE_CAP_PRIMITIVE_RESTART_FIXED_INDEX:
       return true;
 
@@ -312,8 +311,8 @@ panfrost_get_param(struct pipe_screen *screen, enum pipe_cap param)
    /* Removed in v9 (Valhall). PRIMTIIVE_RESTART_FIXED_INDEX is of course
     * still supported as it is core GLES3.0 functionality
     */
-   case PIPE_CAP_PRIMITIVE_RESTART:
-      return dev->arch <= 7;
+   case PIPE_CAP_EMULATE_NONFIXED_PRIMITIVE_RESTART:
+      return dev->arch >= 9;
 
    case PIPE_CAP_FLATSHADE:
    case PIPE_CAP_TWO_SIDED_COLOR:
@@ -377,7 +376,6 @@ panfrost_get_shader_param(struct pipe_screen *screen,
 {
    struct panfrost_device *dev = pan_device(screen);
    bool is_nofp16 = dev->debug & PAN_DBG_NOFP16;
-   bool is_deqp = dev->debug & PAN_DBG_DEQP;
 
    switch (shader) {
    case PIPE_SHADER_VERTEX:
@@ -455,9 +453,8 @@ panfrost_get_shader_param(struct pipe_screen *screen,
    case PIPE_SHADER_CAP_FP16_CONST_BUFFERS:
       return dev->arch >= 6 && !is_nofp16;
    case PIPE_SHADER_CAP_INT16:
-      /* XXX: Advertise this CAP when a proper fix to lower_precision
-       * lands. GLSL IR validation failure in glmark2 -bterrain */
-      return dev->arch >= 6 && !is_nofp16 && is_deqp;
+      /* Blocked on https://gitlab.freedesktop.org/mesa/mesa/-/issues/6075 */
+      return false;
 
    case PIPE_SHADER_CAP_INT64_ATOMICS:
    case PIPE_SHADER_CAP_DROUND_SUPPORTED:

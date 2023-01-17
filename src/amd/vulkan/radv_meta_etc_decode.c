@@ -210,45 +210,15 @@ build_shader(struct radv_device *dev)
       nir_variable_create(b.shader, nir_var_shader_temp, glsl_vec4_type(), "payload");
    nir_push_if(&b, is_3d);
    {
-      nir_ssa_def *tex_deref = &nir_build_deref_var(&b, input_img_3d)->dest.ssa;
-
-      nir_tex_instr *tex = nir_tex_instr_create(b.shader, 3);
-      tex->sampler_dim = GLSL_SAMPLER_DIM_3D;
-      tex->op = nir_texop_txf;
-      tex->src[0].src_type = nir_tex_src_coord;
-      tex->src[0].src = nir_src_for_ssa(src_coord);
-      tex->src[1].src_type = nir_tex_src_lod;
-      tex->src[1].src = nir_src_for_ssa(nir_imm_int(&b, 0));
-      tex->src[2].src_type = nir_tex_src_texture_deref;
-      tex->src[2].src = nir_src_for_ssa(tex_deref);
-      tex->dest_type = nir_type_uint32;
-      tex->is_array = false;
-      tex->coord_components = 3;
-
-      nir_ssa_dest_init(&tex->instr, &tex->dest, 4, 32, "tex");
-      nir_builder_instr_insert(&b, &tex->instr);
-      nir_store_var(&b, payload_var, &tex->dest.ssa, 0xf);
+      nir_ssa_def *color = nir_txf_deref(&b, nir_build_deref_var(&b, input_img_3d), src_coord,
+                                         nir_imm_int(&b, 0));
+      nir_store_var(&b, payload_var, color, 0xf);
    }
    nir_push_else(&b, NULL);
    {
-      nir_ssa_def *tex_deref = &nir_build_deref_var(&b, input_img_2d)->dest.ssa;
-
-      nir_tex_instr *tex = nir_tex_instr_create(b.shader, 3);
-      tex->sampler_dim = GLSL_SAMPLER_DIM_2D;
-      tex->op = nir_texop_txf;
-      tex->src[0].src_type = nir_tex_src_coord;
-      tex->src[0].src = nir_src_for_ssa(src_coord);
-      tex->src[1].src_type = nir_tex_src_lod;
-      tex->src[1].src = nir_src_for_ssa(nir_imm_int(&b, 0));
-      tex->src[2].src_type = nir_tex_src_texture_deref;
-      tex->src[2].src = nir_src_for_ssa(tex_deref);
-      tex->dest_type = nir_type_uint32;
-      tex->is_array = true;
-      tex->coord_components = 3;
-
-      nir_ssa_dest_init(&tex->instr, &tex->dest, 4, 32, "tex");
-      nir_builder_instr_insert(&b, &tex->instr);
-      nir_store_var(&b, payload_var, &tex->dest.ssa, 0xf);
+      nir_ssa_def *color = nir_txf_deref(&b, nir_build_deref_var(&b, input_img_2d), src_coord,
+                                         nir_imm_int(&b, 0));
+      nir_store_var(&b, payload_var, color, 0xf);
    }
    nir_pop_if(&b, NULL);
 

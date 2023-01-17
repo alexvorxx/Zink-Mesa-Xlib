@@ -240,16 +240,16 @@ dzn_image_create(struct dzn_device *device,
     * destination. Both operations require the RT or DS cap flags.
     */
    if ((image->vk.usage & VK_IMAGE_USAGE_TRANSFER_DST_BIT) &&
-       image->vk.tiling == VK_IMAGE_TILING_OPTIMAL &&
-       (image->desc.Flags & (D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET |
-                             D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL)) == D3D12_RESOURCE_FLAG_NONE) {
+       image->vk.tiling == VK_IMAGE_TILING_OPTIMAL) {
 
       D3D12_FEATURE_DATA_FORMAT_SUPPORT dfmt_info =
          dzn_physical_device_get_format_support(pdev, pCreateInfo->format);
       if (dfmt_info.Support1 & D3D12_FORMAT_SUPPORT1_RENDER_TARGET) {
          image->desc.Flags |= D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET;
          image->valid_access |= D3D12_BARRIER_ACCESS_RENDER_TARGET;
-      } else if (dfmt_info.Support1 & D3D12_FORMAT_SUPPORT1_DEPTH_STENCIL) {
+      } else if ((dfmt_info.Support1 & D3D12_FORMAT_SUPPORT1_DEPTH_STENCIL) &&
+                 (image->desc.Flags & (D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET |
+                                       D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS)) == D3D12_RESOURCE_FLAG_NONE) {
          image->desc.Flags |= D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL;
          image->valid_access |= D3D12_BARRIER_ACCESS_DEPTH_STENCIL_WRITE;
       } else if (dfmt_info.Support1 & D3D12_FORMAT_SUPPORT1_TYPED_UNORDERED_ACCESS_VIEW) {
@@ -286,8 +286,11 @@ dzn_image_get_dxgi_format(VkFormat format,
              DXGI_FORMAT_D32_FLOAT : DXGI_FORMAT_R32_FLOAT;
 
    case PIPE_FORMAT_Z24X8_UNORM:
-      return usage == VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT ?
-             DXGI_FORMAT_D24_UNORM_S8_UINT : DXGI_FORMAT_R24_UNORM_X8_TYPELESS;
+      if (usage == VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT)
+         return DXGI_FORMAT_D24_UNORM_S8_UINT;
+      if (aspects & VK_IMAGE_ASPECT_DEPTH_BIT)
+         return DXGI_FORMAT_R24_UNORM_X8_TYPELESS;
+      return DXGI_FORMAT_R24G8_TYPELESS;
 
    case PIPE_FORMAT_Z24_UNORM_S8_UINT:
       if (usage == VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT)
@@ -295,12 +298,17 @@ dzn_image_get_dxgi_format(VkFormat format,
 
       if (aspects & VK_IMAGE_ASPECT_DEPTH_BIT)
          return DXGI_FORMAT_R24_UNORM_X8_TYPELESS;
-      else
+      else if (aspects & VK_IMAGE_ASPECT_STENCIL_BIT)
          return DXGI_FORMAT_X24_TYPELESS_G8_UINT;
+      else
+         return DXGI_FORMAT_R24G8_TYPELESS;
 
    case PIPE_FORMAT_X24S8_UINT:
-      return usage == VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT ?
-             DXGI_FORMAT_D24_UNORM_S8_UINT : DXGI_FORMAT_X24_TYPELESS_G8_UINT;
+      if (usage == VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT)
+         return DXGI_FORMAT_D24_UNORM_S8_UINT;
+      if (aspects & VK_IMAGE_ASPECT_STENCIL_BIT)
+         return DXGI_FORMAT_X24_TYPELESS_G8_UINT;
+      return DXGI_FORMAT_R24G8_TYPELESS;
 
    case PIPE_FORMAT_Z32_FLOAT_S8X24_UINT:
       if (usage == VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT)

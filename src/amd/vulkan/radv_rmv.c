@@ -276,6 +276,8 @@ append_trace_events(struct radv_device *device, int pipe_fd)
          read_ptr += length - sizeof(struct trace_event_header);
       }
    } while (true);
+
+   free(page);
 }
 
 static void
@@ -438,7 +440,7 @@ radv_rmv_fill_device_info(struct radv_physical_device *device, struct vk_rmv_dev
       strncpy(info->device_name, rad_info->marketing_name, sizeof(info->device_name) - 1);
    info->pcie_family_id = rad_info->family_id;
    info->pcie_revision_id = rad_info->pci_rev_id;
-   info->pcie_device_id = rad_info->pci_dev;
+   info->pcie_device_id = rad_info->pci.dev;
    info->minimum_shader_clock = 0;
    info->maximum_shader_clock = rad_info->max_gpu_freq_mhz;
    info->vram_type = memory_type_from_vram_type(rad_info->vram_type);

@@ -1263,6 +1263,11 @@ unop_horiz("cube_r600", 4, tfloat32, 3, tfloat32, """
 unop("fsin_amd", tfloat, "sinf(6.2831853 * src0)")
 unop("fcos_amd", tfloat, "cosf(6.2831853 * src0)")
 
+# Midgard specific sin and cos
+# These expect their inputs to be divided by pi.
+unop("fsin_mdg", tfloat, "sinf(3.141592653589793 * src0)")
+unop("fcos_mdg", tfloat, "cosf(3.141592653589793 * src0)")
+
 # AGX specific sin with input expressed in quadrants. Used in the lowering for
 # fsin/fcos. This corresponds to a sequence of 3 ALU ops in the backend (where
 # the angle is further decomposed by quadrant, sinc is computed, and the angle

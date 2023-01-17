@@ -347,6 +347,8 @@ struct radv_physical_device {
    struct radv_perfcounter_desc *perfcounters;
 };
 
+uint32_t radv_find_memory_index(struct radv_physical_device *pdevice, VkMemoryPropertyFlags flags);
+
 struct radv_instance {
    struct vk_instance vk;
 
@@ -695,6 +697,12 @@ struct radv_meta_state {
 
       struct radix_sort_vk *radix_sort;
       struct radix_sort_vk_sort_devaddr_info radix_sort_info;
+
+      struct {
+         VkBuffer buffer;
+         VkDeviceMemory memory;
+         VkAccelerationStructureKHR accel_struct;
+      } null;
    } accel_struct_build;
 
    struct {

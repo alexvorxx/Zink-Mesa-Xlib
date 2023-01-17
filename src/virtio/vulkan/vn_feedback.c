@@ -5,6 +5,7 @@
 
 #include "vn_feedback.h"
 
+#include "vn_command_buffer.h"
 #include "vn_device.h"
 #include "vn_physical_device.h"
 #include "vn_queue.h"
@@ -264,12 +265,74 @@ vn_feedback_pool_free(struct vn_feedback_pool *pool,
    simple_mtx_unlock(&pool->mutex);
 }
 
-/** See also vn_feedback_event_cmd_record2(). */
+static inline bool
+mask_is_32bit(uint64_t x)
+{
+   return (x & 0xffffffff00000000) == 0;
+}
+
+static void
+vn_build_buffer_memory_barrier(const VkDependencyInfo *dep_info,
+                               VkBufferMemoryBarrier *barrier1,
+                               VkPipelineStageFlags *src_stage_mask,
+                               VkPipelineStageFlags *dst_stage_mask)
+{
+
+   assert(dep_info->pNext == NULL);
+   assert(dep_info->memoryBarrierCount == 0);
+   assert(dep_info->bufferMemoryBarrierCount == 1);
+   assert(dep_info->imageMemoryBarrierCount == 0);
+
+   const VkBufferMemoryBarrier2 *barrier2 =
+      &dep_info->pBufferMemoryBarriers[0];
+   assert(barrier2->pNext == NULL);
+   assert(mask_is_32bit(barrier2->srcStageMask));
+   assert(mask_is_32bit(barrier2->srcAccessMask));
+   assert(mask_is_32bit(barrier2->dstStageMask));
+   assert(mask_is_32bit(barrier2->dstAccessMask));
+
+   *barrier1 = (VkBufferMemoryBarrier) {
+      .sType               = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
+      .pNext               = NULL,
+      .srcAccessMask       = barrier2->srcAccessMask,
+      .dstAccessMask       = barrier2->dstAccessMask,
+      .srcQueueFamilyIndex = barrier2->srcQueueFamilyIndex,
+      .dstQueueFamilyIndex = barrier2->dstQueueFamilyIndex,
+      .buffer              = barrier2->buffer,
+      .offset              = barrier2->offset,
+      .size                = barrier2->size,
+   };
+
+   *src_stage_mask = barrier2->srcStageMask;
+   *dst_stage_mask = barrier2->dstStageMask;
+}
+
+static void
+vn_cmd_buffer_memory_barrier(VkCommandBuffer cmd_handle,
+                             const VkDependencyInfo *dep_info,
+                             bool sync2)
+{
+   if (sync2)
+      vn_CmdPipelineBarrier2(cmd_handle, dep_info);
+   else {
+      VkBufferMemoryBarrier barrier1;
+      VkPipelineStageFlags src_stage_mask;
+      VkPipelineStageFlags dst_stage_mask;
+
+      vn_build_buffer_memory_barrier(dep_info, &barrier1, &src_stage_mask,
+                                     &dst_stage_mask);
+      vn_CmdPipelineBarrier(cmd_handle, src_stage_mask, dst_stage_mask,
+                            dep_info->dependencyFlags, 0, NULL, 1, &barrier1,
+                            0, NULL);
+   }
+}
+
 void
 vn_feedback_event_cmd_record(VkCommandBuffer cmd_handle,
                              VkEvent ev_handle,
-                             VkPipelineStageFlags stage_mask,
-                             VkResult status)
+                             VkPipelineStageFlags2 src_stage_mask,
+                             VkResult status,
+                             bool sync2)
 {
    /* For vkCmdSetEvent and vkCmdResetEvent feedback interception.
     *
@@ -282,56 +345,6 @@ vn_feedback_event_cmd_record(VkCommandBuffer cmd_handle,
     */
    struct vn_event *ev = vn_event_from_handle(ev_handle);
    struct vn_feedback_slot *slot = ev->feedback_slot;
-
-   if (!slot)
-      return;
-
-   STATIC_ASSERT(sizeof(*slot->status) == 4);
-
-   const VkBufferMemoryBarrier buf_barrier_before = {
-      .sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
-      .pNext = NULL,
-      .srcAccessMask =
-         VK_ACCESS_HOST_WRITE_BIT | VK_ACCESS_TRANSFER_WRITE_BIT,
-      .dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
-      .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-      .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-      .buffer = slot->buffer,
-      .offset = slot->offset,
-      .size = 4,
-   };
-   vn_CmdPipelineBarrier(cmd_handle,
-                         stage_mask | VK_PIPELINE_STAGE_HOST_BIT |
-                            VK_PIPELINE_STAGE_TRANSFER_BIT,
-                         VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, NULL, 1,
-                         &buf_barrier_before, 0, NULL);
-   vn_CmdFillBuffer(cmd_handle, slot->buffer, slot->offset, 4, status);
-
-   const VkBufferMemoryBarrier buf_barrier_after = {
-      .sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
-      .pNext = NULL,
-      .srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
-      .dstAccessMask = VK_ACCESS_HOST_READ_BIT | VK_ACCESS_HOST_WRITE_BIT,
-      .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-      .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-      .buffer = slot->buffer,
-      .offset = slot->offset,
-      .size = 4,
-   };
-   vn_CmdPipelineBarrier(cmd_handle, VK_PIPELINE_STAGE_TRANSFER_BIT,
-                         VK_PIPELINE_STAGE_HOST_BIT, 0, 0, NULL, 1,
-                         &buf_barrier_after, 0, NULL);
-}
-
-/** See also vn_feedback_event_cmd_record(). */
-void
-vn_feedback_event_cmd_record2(VkCommandBuffer cmd_h,
-                              VkEvent event_h,
-                              VkPipelineStageFlags2 src_stage_mask,
-                              VkResult status)
-{
-   struct vn_event *event = vn_event_from_handle(event_h);
-   struct vn_feedback_slot *slot = event->feedback_slot;
 
    if (!slot)
       return;
@@ -360,6 +373,9 @@ vn_feedback_event_cmd_record2(VkCommandBuffer cmd_h,
             },
          },
    };
+   vn_cmd_buffer_memory_barrier(cmd_handle, &dep_before, sync2);
+
+   vn_CmdFillBuffer(cmd_handle, slot->buffer, slot->offset, 4, status);
 
    const VkDependencyInfo dep_after = {
       .sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
@@ -382,10 +398,7 @@ vn_feedback_event_cmd_record2(VkCommandBuffer cmd_h,
             },
          },
    };
-
-   vn_CmdPipelineBarrier2(cmd_h, &dep_before);
-   vn_CmdFillBuffer(cmd_h, slot->buffer, slot->offset, 4, status);
-   vn_CmdPipelineBarrier2(cmd_h, &dep_after);
+   vn_cmd_buffer_memory_barrier(cmd_handle, &dep_after, sync2);
 }
 
 static VkResult

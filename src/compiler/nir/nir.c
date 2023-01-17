@@ -3342,6 +3342,9 @@ nir_tex_instr_is_query(const nir_tex_instr *instr)
    case nir_texop_txf_ms_fb:
    case nir_texop_txf_ms_mcs_intel:
    case nir_texop_tg4:
+   case nir_texop_samples_identical:
+   case nir_texop_fragment_mask_fetch_amd:
+   case nir_texop_fragment_fetch_amd:
       return false;
    default:
       unreachable("Invalid texture opcode");

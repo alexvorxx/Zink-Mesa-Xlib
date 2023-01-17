@@ -23,7 +23,6 @@
  * OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE
  * USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
-#include "agx_state.h"
 #include <errno.h>
 #include <stdio.h>
 #include "asahi/compiler/agx_compile.h"
@@ -47,6 +46,7 @@
 #include "util/u_memory.h"
 #include "util/u_prim.h"
 #include "util/u_transfer.h"
+#include "agx_state.h"
 
 static struct pipe_stream_output_target *
 agx_create_stream_output_target(struct pipe_context *pctx,
@@ -432,6 +432,7 @@ agx_create_sampler_state(struct pipe_context *pctx,
       cfg.wrap_r = agx_wrap_from_pipe(state->wrap_r);
       cfg.pixel_coordinates = state->unnormalized_coords;
       cfg.compare_func = agx_compare_funcs[state->compare_func];
+      cfg.compare_enable = state->compare_mode == PIPE_TEX_COMPARE_R_TO_TEXTURE;
 
       /* Only support seamless cube maps if we advertise GLES3. Works around a
        * mesa/st bug where seamless_cube_map is set in GLES2 contrary to the
@@ -1721,7 +1722,6 @@ agx_build_meta(struct agx_batch *batch, bool store, bool partial_render)
          cfg.wrap_r = AGX_WRAP_CLAMP_TO_EDGE;
          cfg.pixel_coordinates = true;
          cfg.compare_func = AGX_COMPARE_FUNC_ALWAYS;
-         cfg.unk_3 = 0;
       }
 
       agx_usc_pack(&b, SAMPLER, cfg) {

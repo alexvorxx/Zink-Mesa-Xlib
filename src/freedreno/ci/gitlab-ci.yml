@@ -134,19 +134,32 @@ a530-traces:
     # Increase the hangcheck timer for our spilling tests which bump up against
     # the .5s default.
     FREEDRENO_HANGCHECK_MS: 2000
+    GPU_VERSION: freedreno-a618
+    VK_DRIVER: freedreno
 
-a618_vk:
+.a618-test-kingoftown-r1:
   extends:
     - .a618-test
-    - .turnip-rules
-  parallel: 12
   variables:
     DEVICE_TYPE: sc7180-trogdor-kingoftown
     DTB: sc7180-trogdor-kingoftown-r1
     RUNNER_TAG: mesa-ci-x86-64-lava-sc7180-trogdor-kingoftown
-    VK_DRIVER: freedreno
+
+.a618-test-limozeen-nots-r5:
+  extends:
+    - .a618-test
+  variables:
+    DEVICE_TYPE: sc7180-trogdor-lazor-limozeen
+    DTB: sc7180-trogdor-lazor-limozeen-nots-r5
+    RUNNER_TAG: mesa-ci-x86-64-lava-sc7180-trogdor-lazor-limozeen
+
+a618_vk:
+  extends:
+    - .a618-test-kingoftown-r1
+    - .turnip-rules
+  parallel: 12
+  variables:
     DEQP_SUITE: freedreno-a618-vk
-    GPU_VERSION: freedreno-a618
     MESA_VK_IGNORE_CONFORMANCE_WARNING: 1
 
 a618_vk_full:
@@ -165,19 +178,49 @@ a618_vk_full:
 
 a618_gl:
   extends:
-    - .a618-test
+    - .a618-test-limozeen-nots-r5
     - .freedreno-rules
   parallel: 4
   variables:
-    DEVICE_TYPE: sc7180-trogdor-lazor-limozeen
-    DTB: sc7180-trogdor-lazor-limozeen-nots-r5
-    RUNNER_TAG: mesa-ci-x86-64-lava-sc7180-trogdor-lazor-limozeen
     DEQP_SUITE: freedreno-a618
-    GPU_VERSION: freedreno-a618
+
+# Run dEQP EGL window system tests separately with the window systems available.
+# X11 takes over the screen, wayland is run headless.
+a618_egl:
+  extends:
+    - .a618-test-limozeen-nots-r5
+    - .freedreno-rules
+  variables:
+    DEQP_VER: egl
+    HWCI_START_XORG: 1
+    HWCI_START_WESTON: 1
+    DEQP_SUITE: freedreno-a618-egl
+
+a618_skqp:
+  extends:
+    - .a618-test-limozeen-nots-r5
+    - .freedreno-rules
+    # SKQP tests both the GL and VK drivers.
+    - .freedreno-turnip-rules
+  variables:
+    HWCI_START_XORG: 1
+    DEQP_SUITE: freedreno-a618-skqp
+
+a618_piglit:
+  extends:
+    - .piglit-test
+    - .a618-test-limozeen-nots-r5
+    - .freedreno-rules
+    # Note that piglit has GL+VK integration testing.
+    - .freedreno-turnip-rules
+  variables:
+    HWCI_START_XORG: 1
+    PIGLIT_PROFILES: gpu
 
 .a630-test:
   extends:
     - .freedreno-test
+    - .test-manual-mr
   variables:
     FDO_CI_CONCURRENT: 10
     BM_KERNEL: /baremetal-files/cheza-kernel
@@ -225,7 +268,7 @@ a630_skqp:
     - .baremetal-deqp-test
     - .a630-test
     # SKQP tests both the GL and VK drivers.
-    - .freedreno-turnip-rules
+    #- .freedreno-turnip-rules
   variables:
     HWCI_START_XORG: 1
     DEQP_SUITE: freedreno-a630-skqp
@@ -234,7 +277,7 @@ a630_vk:
   extends:
     - .a630-test
     - .baremetal-deqp-test-freedreno-vk
-    - .turnip-rules
+    #- .turnip-rules
   variables:
     DEQP_SUITE: freedreno-a630-vk
 
@@ -256,7 +299,7 @@ a630_vk_asan:
     - .a630-test
     - .baremetal-deqp-test-freedreno-vk
     - .baremetal-arm64-asan-test
-    - .turnip-rules
+    #- .turnip-rules
   variables:
     DEQP_SUITE: freedreno-a630-vk-asan
     FDO_CI_CONCURRENT: 2 # We get OOMkills if we go too wide with asan enabled
@@ -267,7 +310,7 @@ a630_piglit:
     - .piglit-test
     - .a630-test
     # Note that piglit has GL+VK integration testing.
-    - .freedreno-turnip-rules
+    #- .freedreno-turnip-rules
   variables:
     HWCI_START_XORG: 1
     PIGLIT_PROFILES: gpu
@@ -287,7 +330,7 @@ a630-traces:
 a630-traces-restricted:
   extends:
     - a630-traces
-    - .freedreno-rules-restricted
+    #- .freedreno-rules-restricted
   variables:
     PIGLIT_REPLAY_DESCRIPTION_FILE: "/install/restricted-traces-freedreno.yml"
     PIGLIT_REPLAY_EXTRA_ARGS: --keep-image --db-path ${CI_PROJECT_DIR}/replayer-db/ --minio_bucket=mesa-tracie-private --jwt-file=${CI_JOB_JWT_FILE}
@@ -296,7 +339,7 @@ a630-traces-restricted:
 a630-traces-performance:
   extends:
     - a630-traces
-    - .freedreno-rules-performance
+    #- .freedreno-rules-performance
   variables:
     PIGLIT_REPLAY_SUBCOMMAND: "profile"
     PIGLIT_REPLAY_EXTRA_ARGS: "--db-path ${CI_PROJECT_DIR}/replayer-db/"

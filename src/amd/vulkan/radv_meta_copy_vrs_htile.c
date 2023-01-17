@@ -76,24 +76,8 @@ build_copy_vrs_htile_shader(struct radv_device *device, struct radeon_surf *surf
    input_vrs_img->data.descriptor_set = 0;
    input_vrs_img->data.binding = 0;
 
-   nir_ssa_def *input_vrs_img_deref = &nir_build_deref_var(&b, input_vrs_img)->dest.ssa;
-
    /* Load the VRS rates from the 2D image. */
-   nir_tex_instr *tex = nir_tex_instr_create(b.shader, 3);
-   tex->sampler_dim = GLSL_SAMPLER_DIM_2D;
-   tex->op = nir_texop_txf;
-   tex->src[0].src_type = nir_tex_src_coord;
-   tex->src[0].src = nir_src_for_ssa(global_id);
-   tex->src[1].src_type = nir_tex_src_lod;
-   tex->src[1].src = nir_src_for_ssa(nir_imm_int(&b, 0));
-   tex->src[2].src_type = nir_tex_src_texture_deref;
-   tex->src[2].src = nir_src_for_ssa(input_vrs_img_deref);
-   tex->dest_type = nir_type_float32;
-   tex->is_array = false;
-   tex->coord_components = 2;
-
-   nir_ssa_dest_init(&tex->instr, &tex->dest, 4, 32, "tex");
-   nir_builder_instr_insert(&b, &tex->instr);
+   nir_ssa_def *value = nir_txf_deref(&b, nir_build_deref_var(&b, input_vrs_img), global_id, NULL);
 
    /* Extract the X/Y rates and clamp them because the maximum supported VRS rate is 2x2 (1x1 in
     * hardware).
@@ -101,10 +85,10 @@ build_copy_vrs_htile_shader(struct radv_device *device, struct radeon_surf *surf
     * VRS rate X = min(value >> 2, 1)
     * VRS rate Y = min(value & 3, 1)
     */
-   nir_ssa_def *x_rate = nir_ushr_imm(&b, nir_channel(&b, &tex->dest.ssa, 0), 2);
+   nir_ssa_def *x_rate = nir_ushr_imm(&b, nir_channel(&b, value, 0), 2);
    x_rate = nir_umin(&b, x_rate, nir_imm_int(&b, 1));
 
-   nir_ssa_def *y_rate = nir_iand_imm(&b, nir_channel(&b, &tex->dest.ssa, 0), 3);
+   nir_ssa_def *y_rate = nir_iand_imm(&b, nir_channel(&b, value, 0), 3);
    y_rate = nir_umin(&b, y_rate, nir_imm_int(&b, 1));
 
    /* Compute the final VRS rate. */

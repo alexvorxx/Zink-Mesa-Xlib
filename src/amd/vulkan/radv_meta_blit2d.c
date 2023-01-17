@@ -454,29 +454,13 @@ build_nir_texel_fetch(struct nir_builder *b, struct radv_device *device, nir_ssa
       sample_idx = nir_load_sample_id(b);
    }
 
-   nir_ssa_def *tex_deref = &nir_build_deref_var(b, sampler)->dest.ssa;
+   nir_deref_instr *tex_deref = nir_build_deref_var(b, sampler);
 
-   nir_tex_instr *tex = nir_tex_instr_create(b->shader, is_multisampled ? 4 : 3);
-   tex->sampler_dim = dim;
-   tex->op = is_multisampled ? nir_texop_txf_ms : nir_texop_txf;
-   tex->src[0].src_type = nir_tex_src_coord;
-   tex->src[0].src = nir_src_for_ssa(is_3d ? tex_pos_3d : tex_pos);
-   tex->src[1].src_type = is_multisampled ? nir_tex_src_ms_index : nir_tex_src_lod;
-   tex->src[1].src = nir_src_for_ssa(is_multisampled ? sample_idx : nir_imm_int(b, 0));
-   tex->src[2].src_type = nir_tex_src_texture_deref;
-   tex->src[2].src = nir_src_for_ssa(tex_deref);
    if (is_multisampled) {
-      tex->src[3].src_type = nir_tex_src_lod;
-      tex->src[3].src = nir_src_for_ssa(nir_imm_int(b, 0));
+      return nir_txf_ms_deref(b, tex_deref, tex_pos, sample_idx);
+   } else {
+      return nir_txf_deref(b, tex_deref, is_3d ? tex_pos_3d : tex_pos, NULL);
    }
-   tex->dest_type = nir_type_uint32;
-   tex->is_array = false;
-   tex->coord_components = is_3d ? 3 : 2;
-
-   nir_ssa_dest_init(&tex->instr, &tex->dest, 4, 32, "tex");
-   nir_builder_instr_insert(b, &tex->instr);
-
-   return &tex->dest.ssa;
 }
 
 static nir_ssa_def *
@@ -496,23 +480,8 @@ build_nir_buffer_fetch(struct nir_builder *b, struct radv_device *device, nir_ss
    pos_y = nir_imul(b, pos_y, width);
    pos_x = nir_iadd(b, pos_x, pos_y);
 
-   nir_ssa_def *tex_deref = &nir_build_deref_var(b, sampler)->dest.ssa;
-
-   nir_tex_instr *tex = nir_tex_instr_create(b->shader, 2);
-   tex->sampler_dim = GLSL_SAMPLER_DIM_BUF;
-   tex->op = nir_texop_txf;
-   tex->src[0].src_type = nir_tex_src_coord;
-   tex->src[0].src = nir_src_for_ssa(pos_x);
-   tex->src[1].src_type = nir_tex_src_texture_deref;
-   tex->src[1].src = nir_src_for_ssa(tex_deref);
-   tex->dest_type = nir_type_uint32;
-   tex->is_array = false;
-   tex->coord_components = 1;
-
-   nir_ssa_dest_init(&tex->instr, &tex->dest, 4, 32, "tex");
-   nir_builder_instr_insert(b, &tex->instr);
-
-   return &tex->dest.ssa;
+   nir_deref_instr *tex_deref = nir_build_deref_var(b, sampler);
+   return nir_txf_deref(b, tex_deref, pos_x, NULL);
 }
 
 static const VkPipelineVertexInputStateCreateInfo normal_vi_create_info = {

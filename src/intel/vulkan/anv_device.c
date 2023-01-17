@@ -509,14 +509,23 @@ anv_physical_device_init_heaps(struct anv_physical_device *device, int fd)
 
       /* Big core GPUs share LLC with the CPU and thus one memory type can be
        * both cached and coherent at the same time.
+       *
+       * But some game engines can't handle single type well
+       * https://gitlab.freedesktop.org/mesa/mesa/-/issues/7360#note_1719438
+       *
+       * And Intel on Windows uses 3 types so it's better to add extra one here
        */
-      device->memory.type_count = 1;
+      device->memory.type_count = 2;
       device->memory.types[0] = (struct anv_memory_type) {
-         .propertyFlags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT |
-                          VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
-                          VK_MEMORY_PROPERTY_HOST_COHERENT_BIT |
-                          VK_MEMORY_PROPERTY_HOST_CACHED_BIT,
-         .heapIndex = 0,
+          .propertyFlags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+          .heapIndex = 0,
+      };
+      device->memory.types[1] = (struct anv_memory_type) {
+          .propertyFlags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT |
+                           VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+                           VK_MEMORY_PROPERTY_HOST_COHERENT_BIT |
+                           VK_MEMORY_PROPERTY_HOST_CACHED_BIT,
+          .heapIndex = 0,
       };
    } else {
       device->memory.heap_count = 1;

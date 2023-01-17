@@ -209,6 +209,7 @@ struct dzn_physical_device {
    D3D12_FEATURE_DATA_D3D12_OPTIONS2 options2;
    D3D12_FEATURE_DATA_D3D12_OPTIONS3 options3;
    D3D12_FEATURE_DATA_D3D12_OPTIONS12 options12;
+   D3D12_FEATURE_DATA_D3D12_OPTIONS13 options13;
    D3D12_FEATURE_DATA_D3D12_OPTIONS14 options14;
    D3D12_FEATURE_DATA_D3D12_OPTIONS15 options15;
    VkPhysicalDeviceMemoryProperties memory;
@@ -376,6 +377,7 @@ struct dzn_buffer_desc {
 
 struct dzn_descriptor_heap {
    ID3D12Device4 *dev;
+   ID3D12Device11 *dev11;
    ID3D12DescriptorHeap *heap;
    D3D12_DESCRIPTOR_HEAP_TYPE type;
    SIZE_T cpu_base;
@@ -1026,7 +1028,7 @@ struct dzn_buffer_view {
 
 struct dzn_sampler {
    struct vk_object_base base;
-   D3D12_SAMPLER_DESC desc;
+   D3D12_SAMPLER_DESC2 desc;
    D3D12_STATIC_BORDER_COLOR static_border_color;
 };
 

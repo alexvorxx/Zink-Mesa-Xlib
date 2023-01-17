@@ -14,12 +14,12 @@ variables:
    DEBIAN_X86_TEST_IMAGE_VK_PATH: "debian/x86_test-vk"
    DEBIAN_X86_TEST_IMAGE_PATH: ${DEBIAN_X86_TEST_IMAGE_GL_PATH}
 
-   DEBIAN_X86_TEST_GL_TAG: "2023-01-08-weston-xwayland"
-   DEBIAN_X86_TEST_VK_TAG: "2022-12-12-vkd3d-proton-uprev"
+   DEBIAN_X86_TEST_GL_TAG: "2023-01-12-cts"
+   DEBIAN_X86_TEST_VK_TAG: "2023-01-12-cts"
 
    ALPINE_X86_BUILD_TAG: "2023-01-10-robust-wget"
    FEDORA_X86_BUILD_TAG: "2023-01-10-robust-wget"
-   KERNEL_ROOTFS_TAG: "2023-01-10-virglrenderer"
+   KERNEL_ROOTFS_TAG: "2023-01-12-cts"
 
    WINDOWS_X64_VS_PATH: "windows/x64_vs"
    WINDOWS_X64_VS_TAG: "2022-10-20-upgrade-zlib"
@@ -28,4 +28,4 @@ variables:
    WINDOWS_X64_BUILD_TAG: "2023-01-03-ci-libva-2.17"
 
    WINDOWS_X64_TEST_PATH: "windows/x64_test"
-   WINDOWS_X64_TEST_TAG: "2023-01-03-piglit-waffle"
+   WINDOWS_X64_TEST_TAG: "2023-01-13-warp-update"

@@ -431,8 +431,7 @@ drisw_destroy_context(struct glx_context *context)
 }
 
 static int
-drisw_bind_context(struct glx_context *context, struct glx_context *old,
-                   GLXDrawable draw, GLXDrawable read)
+drisw_bind_context(struct glx_context *context, GLXDrawable draw, GLXDrawable read)
 {
    struct drisw_screen *psc = (struct drisw_screen *) context->psc;
    struct drisw_drawable *pdraw, *pread;
@@ -457,7 +456,7 @@ drisw_bind_context(struct glx_context *context, struct glx_context *old,
 }
 
 static void
-drisw_unbind_context(struct glx_context *context, struct glx_context *new)
+drisw_unbind_context(struct glx_context *context)
 {
    struct drisw_screen *psc = (struct drisw_screen *) context->psc;
 

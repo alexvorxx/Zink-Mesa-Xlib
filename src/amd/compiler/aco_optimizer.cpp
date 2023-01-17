@@ -1101,6 +1101,16 @@ can_apply_extract(opt_ctx& ctx, aco_ptr<Instruction>& instr, unsigned idx, ssa_i
       return true;
    } else if (instr->opcode == aco_opcode::v_cvt_f32_u32 && sel.size() == 1 && !sel.sign_extend()) {
       return true;
+   } else if (instr->opcode == aco_opcode::v_lshlrev_b32 && instr->operands[0].isConstant() &&
+              sel.offset() == 0 &&
+              ((sel.size() == 2 && instr->operands[0].constantValue() >= 16u) ||
+               (sel.size() == 1 && instr->operands[0].constantValue() >= 24u))) {
+      return true;
+   } else if (instr->opcode == aco_opcode::v_mul_u32_u24 && ctx.program->gfx_level >= GFX10 &&
+              !instr->usesModifiers() && sel.size() == 2 && !sel.sign_extend() &&
+              (instr->operands[!idx].is16bit() ||
+               instr->operands[!idx].constantValue() <= UINT16_MAX)) {
+      return true;
    } else if (idx < 2 && can_use_SDWA(ctx.program->gfx_level, instr, true) &&
               (tmp.type() == RegType::vgpr || ctx.program->gfx_level >= GFX9)) {
       if (instr->isSDWA() && instr->sdwa().sel[idx] != SubdwordSel::dword)
@@ -1157,6 +1167,18 @@ apply_extract(opt_ctx& ctx, aco_ptr<Instruction>& instr, unsigned idx, ssa_info&
                (sel.size() == 1 && instr->operands[0].constantValue() >= 24u))) {
       /* The undesireable upper bits are already shifted out. */
       return;
+   } else if (instr->opcode == aco_opcode::v_mul_u32_u24 && ctx.program->gfx_level >= GFX10 &&
+              !instr->usesModifiers() && sel.size() == 2 && !sel.sign_extend() &&
+              (instr->operands[!idx].is16bit() ||
+               instr->operands[!idx].constantValue() <= UINT16_MAX)) {
+      Instruction* mad =
+         create_instruction<VOP3_instruction>(aco_opcode::v_mad_u32_u16, Format::VOP3, 3, 1);
+      mad->definitions[0] = instr->definitions[0];
+      mad->operands[0] = instr->operands[0];
+      mad->operands[1] = instr->operands[1];
+      mad->operands[2] = Operand::zero();
+      mad->vop3().opsel = (sel.offset() / 2) << idx;
+      instr.reset(mad);
    } else if (can_use_SDWA(ctx.program->gfx_level, instr, true) &&
               (tmp.type() == RegType::vgpr || ctx.program->gfx_level >= GFX9)) {
       to_SDWA(ctx, instr);

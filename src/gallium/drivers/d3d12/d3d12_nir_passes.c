@@ -946,6 +946,8 @@ d3d12_disable_multisampling(nir_shader *s)
       var->data.sample = false;
    }
    BITSET_CLEAR(s->info.system_values_read, SYSTEM_VALUE_SAMPLE_ID);
+   s->info.fs.uses_sample_qualifier = false;
+   s->info.fs.uses_sample_shading = false;
    return progress;
 }
 

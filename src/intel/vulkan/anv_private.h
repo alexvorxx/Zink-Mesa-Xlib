@@ -88,6 +88,7 @@
 #include "vk_util.h"
 #include "vk_queue.h"
 #include "vk_log.h"
+#include "vk_ycbcr_conversion.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -3257,19 +3258,9 @@ struct anv_format_plane {
    enum isl_format isl_format:16;
    struct isl_swizzle swizzle;
 
-   /* Whether this plane contains chroma channels */
-   bool has_chroma;
-
-   /* For downscaling of YUV planes */
-   uint8_t denominator_scales[2];
-
-   /* How to map sampled ycbcr planes to a single 4 component element. */
-   struct isl_swizzle ycbcr_swizzle;
-
    /* What aspect is associated to this plane */
    VkImageAspectFlags aspect;
 };
-
 
 struct anv_format {
    struct anv_format_plane planes[3];
@@ -4024,24 +4015,12 @@ struct gfx8_border_color {
    uint32_t _pad[12];
 };
 
-struct anv_ycbcr_conversion {
-   struct vk_object_base base;
-
-   const struct anv_format *        format;
-   VkSamplerYcbcrModelConversion    ycbcr_model;
-   VkSamplerYcbcrRange              ycbcr_range;
-   VkComponentSwizzle               mapping[4];
-   VkChromaLocation                 chroma_offsets[2];
-   VkFilter                         chroma_filter;
-   bool                             chroma_reconstruction;
-};
-
 struct anv_sampler {
    struct vk_object_base        base;
 
    uint32_t                     state[3][4];
    uint32_t                     n_planes;
-   struct anv_ycbcr_conversion *conversion;
+   struct vk_ycbcr_conversion  *conversion;
 
    /* Blob of sampler state data which is guaranteed to be 32-byte aligned
     * and with a 32-byte stride for use as bindless samplers.
@@ -4230,9 +4209,6 @@ VK_DEFINE_NONDISP_HANDLE_CASTS(anv_query_pool, base, VkQueryPool,
                                VK_OBJECT_TYPE_QUERY_POOL)
 VK_DEFINE_NONDISP_HANDLE_CASTS(anv_sampler, base, VkSampler,
                                VK_OBJECT_TYPE_SAMPLER)
-VK_DEFINE_NONDISP_HANDLE_CASTS(anv_ycbcr_conversion, base,
-                               VkSamplerYcbcrConversion,
-                               VK_OBJECT_TYPE_SAMPLER_YCBCR_CONVERSION)
 VK_DEFINE_NONDISP_HANDLE_CASTS(anv_performance_configuration_intel, base,
                                VkPerformanceConfigurationINTEL,
                                VK_OBJECT_TYPE_PERFORMANCE_CONFIGURATION_INTEL)

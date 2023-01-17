@@ -1,5 +1,5 @@
 /*
- * Copyright © 2020 Jonathan Marek
+ * Copyright © 2020 Intel Corporation
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -20,37 +20,33 @@
  * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
  * IN THE SOFTWARE.
  */
+#ifndef VK_YCBCR_CONVERSION_H
+#define VK_YCBCR_CONVERSION_H
 
-#ifndef NIR_VULKAN_H
-#define NIR_VULKAN_H
-
-#include "nir.h"
-#include "nir_builder.h"
-#include "vulkan/vulkan_core.h"
+#include "vk_object.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-nir_ssa_def *
-nir_convert_ycbcr_to_rgb(nir_builder *b,
-                         VkSamplerYcbcrModelConversion model,
-                         VkSamplerYcbcrRange range,
-                         nir_ssa_def *raw_channels,
-                         uint32_t *bpcs);
+struct vk_ycbcr_conversion {
+   struct vk_object_base base;
 
-struct vk_ycbcr_conversion;
+   VkFormat format;
+   VkSamplerYcbcrModelConversion ycbcr_model;
+   VkSamplerYcbcrRange ycbcr_range;
+   VkComponentSwizzle mapping[4];
+   VkChromaLocation chroma_offsets[2];
+   VkFilter chroma_filter;
+   bool chroma_reconstruction;
+};
 
-typedef const struct vk_ycbcr_conversion *
-   (*nir_vk_ycbcr_conversion_lookup_cb)(const void *data, uint32_t set,
-                                        uint32_t binding, uint32_t array_index);
-
-bool nir_vk_lower_ycbcr_tex(nir_shader *nir,
-                            nir_vk_ycbcr_conversion_lookup_cb cb,
-                            const void *cb_data);
+VK_DEFINE_NONDISP_HANDLE_CASTS(vk_ycbcr_conversion, base,
+                               VkSamplerYcbcrConversion,
+                               VK_OBJECT_TYPE_SAMPLER_YCBCR_CONVERSION)
 
 #ifdef __cplusplus
-} /* extern "C" */
+}
 #endif
 
-#endif /* NIR_VULKAN_H */
+#endif /* VK_YCBCR_CONVERSION_H */

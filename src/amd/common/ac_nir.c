@@ -620,15 +620,14 @@ lower_legacy_gs_emit_vertex_with_counter(nir_builder *b, nir_intrinsic_instr *in
              ((s->info->streams[i] >> (j * 2)) & 0x3) != stream)
             continue;
 
-         unsigned base = offset * b->shader->info.gs.vertices_out;
+         unsigned base = offset * b->shader->info.gs.vertices_out * 4;
          offset++;
 
          /* no one set this output, skip the buffer store */
          if (!output)
             continue;
 
-         nir_ssa_def *voffset = nir_iadd_imm(b, vtxidx, base);
-         voffset = nir_ishl_imm(b, voffset, 2);
+         nir_ssa_def *voffset = nir_ishl_imm(b, vtxidx, 2);
 
          /* extend 8/16 bit to 32 bit, 64 bit has been lowered */
          nir_ssa_def *data = nir_u2uN(b, output, 32);
@@ -636,6 +635,7 @@ lower_legacy_gs_emit_vertex_with_counter(nir_builder *b, nir_intrinsic_instr *in
          nir_store_buffer_amd(b, data, gsvs_ring, voffset, soffset, nir_imm_int(b, 0),
                               .access = ACCESS_COHERENT | ACCESS_STREAM_CACHE_POLICY |
                                         ACCESS_IS_SWIZZLED_AMD,
+                              .base = base,
                               /* For ACO to not reorder this store around EmitVertex/EndPrimitve */
                               .memory_modes = nir_var_shader_out);
       }
