@@ -179,7 +179,6 @@ dzn_meta_blits_get_context(struct dzn_device *device,
 
 struct dzn_physical_device {
    struct vk_physical_device vk;
-   struct list_head link;
 
    struct vk_device_extension_table supported_extensions;
    struct vk_physical_device_dispatch_table dispatch;
@@ -204,8 +203,10 @@ struct dzn_physical_device {
    ID3D12Device10 *dev10;
    D3D_FEATURE_LEVEL feature_level;
    D3D_SHADER_MODEL shader_model;
+   D3D_ROOT_SIGNATURE_VERSION root_sig_version;
    D3D12_FEATURE_DATA_ARCHITECTURE1 architecture;
    D3D12_FEATURE_DATA_D3D12_OPTIONS options;
+   D3D12_FEATURE_DATA_D3D12_OPTIONS1 options1;
    D3D12_FEATURE_DATA_D3D12_OPTIONS2 options2;
    D3D12_FEATURE_DATA_D3D12_OPTIONS3 options3;
    D3D12_FEATURE_DATA_D3D12_OPTIONS12 options12;
@@ -220,7 +221,8 @@ struct dzn_physical_device {
 
 D3D12_FEATURE_DATA_FORMAT_SUPPORT
 dzn_physical_device_get_format_support(struct dzn_physical_device *pdev,
-                                       VkFormat format);
+                                       VkFormat format,
+                                       VkImageCreateFlags create_flags);
 
 uint32_t
 dzn_physical_device_get_mem_type_mask_for_resource(const struct dzn_physical_device *pdev,
@@ -450,7 +452,7 @@ struct dzn_cmd_buffer_query_range {
 };
 
 struct dzn_cmd_buffer_query_pool_state {
-   struct util_dynarray reset, collect, wait, signal;
+   struct util_dynarray reset, collect, signal, zero;
 };
 
 struct dzn_internal_resource {
@@ -552,6 +554,10 @@ struct dzn_cmd_buffer_state {
       struct dxil_spirv_vertex_runtime_data gfx;
       struct dxil_spirv_compute_runtime_data compute;
    } sysvals;
+   struct {
+      uint32_t num_views;
+      uint32_t view_mask;
+   } multiview;
 };
 
 struct dzn_cmd_buffer_rtv_key {
@@ -581,7 +587,6 @@ struct dzn_cmd_buffer {
    struct {
       struct hash_table *ht;
       struct util_dynarray reset;
-      struct util_dynarray wait;
       struct util_dynarray signal;
    } queries;
 
@@ -644,13 +649,35 @@ struct dzn_descriptor_set_layout_binding {
    };
 };
 
+#if D3D12_SDK_VERSION < 609
+typedef struct D3D12_STATIC_SAMPLER_DESC1
+{
+   D3D12_FILTER Filter;
+   D3D12_TEXTURE_ADDRESS_MODE AddressU;
+   D3D12_TEXTURE_ADDRESS_MODE AddressV;
+   D3D12_TEXTURE_ADDRESS_MODE AddressW;
+   FLOAT MipLODBias;
+   UINT MaxAnisotropy;
+   D3D12_COMPARISON_FUNC ComparisonFunc;
+   D3D12_STATIC_BORDER_COLOR BorderColor;
+   FLOAT MinLOD;
+   FLOAT MaxLOD;
+   UINT ShaderRegister;
+   UINT RegisterSpace;
+   D3D12_SHADER_VISIBILITY ShaderVisibility;
+   D3D12_SAMPLER_FLAGS Flags;
+} 	D3D12_STATIC_SAMPLER_DESC1;
+
+static const D3D_ROOT_SIGNATURE_VERSION D3D_ROOT_SIGNATURE_VERSION_1_2 = 0x3;
+#endif
+
 struct dzn_descriptor_set_layout {
    struct vk_descriptor_set_layout vk;
    uint32_t range_count[MAX_SHADER_VISIBILITIES][NUM_POOL_TYPES];
    const D3D12_DESCRIPTOR_RANGE1 *ranges[MAX_SHADER_VISIBILITIES][NUM_POOL_TYPES];
    uint32_t range_desc_count[NUM_POOL_TYPES];
    uint32_t static_sampler_count;
-   const D3D12_STATIC_SAMPLER_DESC *static_samplers;
+   const D3D12_STATIC_SAMPLER_DESC1 *static_samplers;
    uint32_t immutable_sampler_count;
    const struct dzn_sampler **immutable_samplers;
    struct {
@@ -843,6 +870,13 @@ struct dzn_graphics_pipeline {
       float constants[4];
    } blend;
 
+   bool rast_disabled_from_missing_position;
+
+   struct {
+      uint32_t view_mask;
+      bool native_view_instancing;
+   } multiview;
+
    struct {
       uintptr_t stream_buf[MAX_GFX_PIPELINE_STATE_STREAM_SIZE / sizeof(uintptr_t)];
       D3D12_PIPELINE_STATE_STREAM_DESC stream_desc;
@@ -997,6 +1031,7 @@ struct dzn_buffer {
    VkBufferUsageFlags usage;
 
    D3D12_BARRIER_ACCESS valid_access;
+   D3D12_GPU_VIRTUAL_ADDRESS gpuva;
 };
 
 DXGI_FORMAT
@@ -1089,12 +1124,9 @@ struct dzn_instance {
    struct {
       PFN_D3D12_SERIALIZE_VERSIONED_ROOT_SIGNATURE serialize_root_sig;
    } d3d12;
-   bool physical_devices_enumerated;
    uint32_t debug_flags;
 
    struct vk_sync_binary_type sync_binary_type;
-
-   struct list_head physical_devices;
 };
 
 struct dzn_event {

@@ -161,7 +161,7 @@ def generate_lava_yaml_payload(args) -> dict[str, Any]:
             x.rstrip() for x in init_sh if not x.startswith("#") and x.rstrip()
         ]
         run_steps.append(
-            f"wget -S --progress=dot:giga -O- {args.job_rootfs_overlay_url} | tar -xz -C /",
+            f"curl -L --retry 4 -f --retry-all-errors --retry-delay 60 {args.job_rootfs_overlay_url} | tar -xz -C /",
         )
 
     if args.jwt_file:
@@ -180,7 +180,7 @@ def generate_lava_yaml_payload(args) -> dict[str, Any]:
 
     run_steps += [
       'mkdir -p {}'.format(args.ci_project_dir),
-      'wget -S --progress=dot:giga -O- {} | tar --zstd -x -C {}'.format(args.build_url, args.ci_project_dir),
+      'curl {} | tar --zstd -x -C {}'.format(args.build_url, args.ci_project_dir),
 
       # Sleep a bit to give time for bash to dump shell xtrace messages into
       # console which may cause interleaving with LAVA_SIGNAL_STARTTC in some

@@ -101,6 +101,7 @@ get_nir_options_for_stage(struct radv_physical_device *device, gl_shader_stage s
       .has_dot_2x16 =
          device->rad_info.has_accelerated_dot_product && device->rad_info.gfx_level < GFX11,
       .has_find_msb_rev = true,
+      .has_pack_half_2x16_rtz = true,
       .use_scoped_barrier = true,
 #ifdef LLVM_AVAILABLE
       .has_fmulz = !device->use_llvm || LLVM_VERSION_MAJOR >= 12,
@@ -716,7 +717,7 @@ is_not_xfb_output(nir_variable *var, void *data)
 
 nir_shader *
 radv_shader_spirv_to_nir(struct radv_device *device, const struct radv_pipeline_stage *stage,
-                         const struct radv_pipeline_key *key)
+                         const struct radv_pipeline_key *key, bool is_internal)
 {
    unsigned subgroup_size = 64, ballot_bit_size = 64;
    if (key->cs.compute_subgroup_size) {
@@ -745,7 +746,7 @@ radv_shader_spirv_to_nir(struct radv_device *device, const struct radv_pipeline_
 
       bool dump_meta = device->instance->debug_flags & RADV_DEBUG_DUMP_META_SHADERS;
       if ((device->instance->debug_flags & RADV_DEBUG_DUMP_SPIRV) &&
-          (!device->app_shaders_internal || dump_meta))
+          (!is_internal || dump_meta))
          radv_print_spirv(stage->spirv.data, stage->spirv.size, stderr);
 
       uint32_t num_spec_entries = 0;
@@ -839,7 +840,7 @@ radv_shader_spirv_to_nir(struct radv_device *device, const struct radv_pipeline_
       nir = spirv_to_nir(spirv, stage->spirv.size / 4, spec_entries, num_spec_entries, stage->stage,
                          stage->entrypoint, &spirv_options,
                          &device->physical_device->nir_options[stage->stage]);
-      nir->info.internal |= device->app_shaders_internal;
+      nir->info.internal |= is_internal;
       assert(nir->info.stage == stage->stage);
       nir_validate_shader(nir, "after spirv_to_nir");
 

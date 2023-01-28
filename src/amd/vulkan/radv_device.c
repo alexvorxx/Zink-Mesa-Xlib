@@ -1086,6 +1086,7 @@ static const struct debug_control radv_debug_options[] = {
    {"nodma", RADV_DEBUG_NO_DMA_BLIT},
    {"epilogs", RADV_DEBUG_DUMP_EPILOGS},
    {"nofmask", RADV_DEBUG_NO_FMASK},
+   {"shadowregs", RADV_DEBUG_SHADOW_REGS},
    {NULL, 0}};
 
 const char *
@@ -1650,7 +1651,7 @@ radv_GetPhysicalDeviceFeatures2(VkPhysicalDevice physicalDevice,
          VkPhysicalDeviceShaderAtomicFloatFeaturesEXT *features =
             (VkPhysicalDeviceShaderAtomicFloatFeaturesEXT *)ext;
          features->shaderBufferFloat32Atomics = true;
-         features->shaderBufferFloat32AtomicAdd = false;
+         features->shaderBufferFloat32AtomicAdd = pdevice->rad_info.gfx_level >= GFX11;
          features->shaderBufferFloat64Atomics = true;
          features->shaderBufferFloat64AtomicAdd = false;
          features->shaderSharedFloat32Atomics = true;
@@ -1959,7 +1960,7 @@ radv_GetPhysicalDeviceFeatures2(VkPhysicalDevice physicalDevice,
          features->extendedDynamicState3DepthClampEnable = true;
          features->extendedDynamicState3ColorWriteMask = true;
          features->extendedDynamicState3RasterizationSamples = true;
-         features->extendedDynamicState3ColorBlendEquation = false; /* TODO: Zink */
+         features->extendedDynamicState3ColorBlendEquation = true;
          features->extendedDynamicState3SampleLocationsEnable = false; /* TODO */
          features->extendedDynamicState3LineRasterizationMode = true;
          features->extendedDynamicState3ExtraPrimitiveOverestimationSize = false;
@@ -3122,14 +3123,28 @@ radv_queue_init(struct radv_device *device, struct radv_queue *queue, int idx,
    if (result != VK_SUCCESS)
       return result;
 
-   queue->vk.driver_submit = radv_queue_submit;
+   queue->state.uses_shadow_regs =
+      device->uses_shadow_regs && queue->state.qf == RADV_QUEUE_GENERAL;
+   if (queue->state.uses_shadow_regs) {
+      result = radv_create_shadow_regs_preamble(device, &queue->state);
+      if (result != VK_SUCCESS)
+         goto fail;
+      result = radv_init_shadowed_regs_buffer_state(device, queue);
+      if (result != VK_SUCCESS)
+         goto fail;
+   }
 
+   queue->vk.driver_submit = radv_queue_submit;
    return VK_SUCCESS;
+fail:
+   vk_queue_finish(&queue->vk);
+   return result;
 }
 
 static void
 radv_queue_state_finish(struct radv_queue_state *queue, struct radv_device *device)
 {
+   radv_destroy_shadow_regs_preamble(queue, device->ws);
    if (queue->initial_full_flush_preamble_cs)
       device->ws->cs_destroy(queue->initial_full_flush_preamble_cs);
    if (queue->initial_preamble_cs)
@@ -3147,40 +3162,40 @@ radv_queue_state_finish(struct radv_queue_state *queue, struct radv_device *devi
       radv_rmv_log_command_buffer_bo_destroy(device, queue->scratch_bo);
    }
    if (queue->esgs_ring_bo) {
-      device->ws->buffer_destroy(device->ws, queue->esgs_ring_bo);
       radv_rmv_log_command_buffer_bo_destroy(device, queue->esgs_ring_bo);
+      device->ws->buffer_destroy(device->ws, queue->esgs_ring_bo);
    }
    if (queue->gsvs_ring_bo) {
-      device->ws->buffer_destroy(device->ws, queue->gsvs_ring_bo);
       radv_rmv_log_command_buffer_bo_destroy(device, queue->gsvs_ring_bo);
+      device->ws->buffer_destroy(device->ws, queue->gsvs_ring_bo);
    }
    if (queue->tess_rings_bo) {
-      device->ws->buffer_destroy(device->ws, queue->tess_rings_bo);
       radv_rmv_log_command_buffer_bo_destroy(device, queue->tess_rings_bo);
+      device->ws->buffer_destroy(device->ws, queue->tess_rings_bo);
    }
    if (queue->task_rings_bo) {
-      device->ws->buffer_destroy(device->ws, queue->task_rings_bo);
       radv_rmv_log_command_buffer_bo_destroy(device, queue->task_rings_bo);
+      device->ws->buffer_destroy(device->ws, queue->task_rings_bo);
    }
    if (queue->mesh_scratch_ring_bo) {
-      device->ws->buffer_destroy(device->ws, queue->mesh_scratch_ring_bo);
       radv_rmv_log_command_buffer_bo_destroy(device, queue->mesh_scratch_ring_bo);
+      device->ws->buffer_destroy(device->ws, queue->mesh_scratch_ring_bo);
    }
    if (queue->attr_ring_bo) {
-      device->ws->buffer_destroy(device->ws, queue->attr_ring_bo);
       radv_rmv_log_command_buffer_bo_destroy(device, queue->attr_ring_bo);
+      device->ws->buffer_destroy(device->ws, queue->attr_ring_bo);
    }
    if (queue->gds_bo) {
-      device->ws->buffer_make_resident(device->ws, queue->gds_bo, false);
       device->ws->buffer_destroy(device->ws, queue->gds_bo);
+      device->ws->buffer_make_resident(device->ws, queue->gds_bo, false);
    }
    if (queue->gds_oa_bo) {
-      device->ws->buffer_make_resident(device->ws, queue->gds_oa_bo, false);
       device->ws->buffer_destroy(device->ws, queue->gds_oa_bo);
+      device->ws->buffer_make_resident(device->ws, queue->gds_oa_bo, false);
    }
    if (queue->compute_scratch_bo) {
-      device->ws->buffer_destroy(device->ws, queue->compute_scratch_bo);
       radv_rmv_log_command_buffer_bo_destroy(device, queue->compute_scratch_bo);
+      device->ws->buffer_destroy(device->ws, queue->compute_scratch_bo);
    }
 }
 
@@ -3662,8 +3677,11 @@ init_dispatch_tables(struct radv_device *device, struct radv_physical_device *ph
    b.tables[RADV_RRA_DISPATCH_TABLE] = &device->layer_dispatch.rra;
    b.tables[RADV_RMV_DISPATCH_TABLE] = &device->layer_dispatch.rmv;
 
-   if (!strcmp(physical_device->instance->app_layer, "metroexodus"))
+   if (!strcmp(physical_device->instance->app_layer, "metroexodus")) {
       add_entrypoints(&b, &metro_exodus_device_entrypoints, RADV_APP_DISPATCH_TABLE);
+   } else if (!strcmp(physical_device->instance->app_layer, "rage2")) {
+      add_entrypoints(&b, &rage2_device_entrypoints, RADV_APP_DISPATCH_TABLE);
+   }
 
    if (radv_thread_trace_enabled())
       add_entrypoints(&b, &sqtt_device_entrypoints, RADV_RGP_DISPATCH_TABLE);
@@ -3805,7 +3823,8 @@ radv_CreateDevice(VkPhysicalDevice physicalDevice, const VkDeviceCreateInfo *pCr
          const VkPhysicalDeviceExtendedDynamicState3FeaturesEXT *features = (const void *)ext;
          if (features->extendedDynamicState3ColorBlendEnable ||
              features->extendedDynamicState3ColorWriteMask ||
-             features->extendedDynamicState3AlphaToCoverageEnable)
+             features->extendedDynamicState3AlphaToCoverageEnable ||
+             features->extendedDynamicState3ColorBlendEquation)
             ps_epilogs = true;
          break;
       }
@@ -3865,6 +3884,10 @@ radv_CreateDevice(VkPhysicalDevice physicalDevice, const VkDeviceCreateInfo *pCr
 
    device->overallocation_disallowed = overallocation_disallowed;
    mtx_init(&device->overallocation_mutex, mtx_plain);
+
+   if (physical_device->rad_info.mid_command_buffer_preemption_enabled ||
+       device->instance->debug_flags & RADV_DEBUG_SHADOW_REGS)
+      device->uses_shadow_regs = true;
 
    /* Create one context per queue priority. */
    for (unsigned i = 0; i < pCreateInfo->queueCreateInfoCount; i++) {
@@ -5056,6 +5079,8 @@ radv_update_preamble_cs(struct radv_queue_state *queue, struct radv_device *devi
       /* Emit initial configuration. */
       switch (queue->qf) {
       case RADV_QUEUE_GENERAL:
+         if (queue->uses_shadow_regs)
+            radv_emit_shadow_regs_preamble(cs, device, queue);
          radv_init_graphics_state(cs, device);
 
          if (esgs_ring_bo || gsvs_ring_bo || tess_rings_bo || task_rings_bo) {
@@ -5824,6 +5849,7 @@ radv_queue_submit_normal(struct radv_queue *queue, struct vk_queue_submit *submi
       .preamble_count = 1,
       .initial_preamble_cs = preambles,
       .continue_preamble_cs = queue->state.continue_preamble_cs,
+      .uses_shadow_regs = queue->state.uses_shadow_regs,
    };
 
    for (uint32_t j = 0, advance; j < cmd_buffer_count; j += advance) {
@@ -5831,6 +5857,7 @@ radv_queue_submit_normal(struct radv_queue *queue, struct vk_queue_submit *submi
       const bool last_submit = j + advance == cmd_buffer_count;
       bool submit_ace = false;
       unsigned num_submitted_cs = 0;
+      unsigned cs_idx = 0;
 
       if (queue->device->trace_bo)
          *queue->device->trace_id_ptr = 0;
@@ -5853,6 +5880,7 @@ radv_queue_submit_normal(struct radv_queue *queue, struct vk_queue_submit *submi
 
          can_patch &= !(cmd_buffer->usage_flags & VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT);
          cs_array[num_submitted_cs++] = cmd_buffer->cs;
+         cs_idx = num_submitted_cs - 1;
       }
 
       /* Add gang wait postambles to make sure the gang leader waits for the whole gang. */
@@ -5876,7 +5904,7 @@ radv_queue_submit_normal(struct radv_queue *queue, struct vk_queue_submit *submi
          goto fail;
 
       if (queue->device->trace_bo) {
-         radv_check_gpu_hangs(queue, cs_array[j]);
+         radv_check_gpu_hangs(queue, cs_array[cs_idx]);
       }
 
       if (queue->device->tma_bo) {
@@ -6921,6 +6949,7 @@ radv_initialise_color_surface(struct radv_device *device, struct radv_color_buff
    uint64_t va;
    const struct radv_image_plane *plane = &iview->image->planes[iview->plane_id];
    const struct radeon_surf *surf = &plane->surface;
+   uint8_t tile_swizzle = plane->surface.tile_swizzle;
 
    desc = vk_format_description(iview->vk.format);
 
@@ -6935,6 +6964,11 @@ radv_initialise_color_surface(struct radv_device *device, struct radv_color_buff
    uint32_t plane_id = iview->image->disjoint ? iview->plane_id : 0;
    va = radv_buffer_get_va(iview->image->bindings[plane_id].bo) +
       iview->image->bindings[plane_id].offset;
+
+   if (iview->nbc_view.valid) {
+      va += iview->nbc_view.base_address_offset;
+      tile_swizzle = iview->nbc_view.tile_swizzle;
+   }
 
    cb->cb_color_base = va >> 8;
 
@@ -6964,14 +6998,14 @@ radv_initialise_color_surface(struct radv_device *device, struct radv_color_buff
       }
 
       cb->cb_color_base += surf->u.gfx9.surf_offset >> 8;
-      cb->cb_color_base |= surf->tile_swizzle;
+      cb->cb_color_base |= tile_swizzle;
    } else {
       const struct legacy_surf_level *level_info = &surf->u.legacy.level[iview->vk.base_mip_level];
       unsigned pitch_tile_max, slice_tile_max, tile_mode_index;
 
       cb->cb_color_base += level_info->offset_256B;
       if (level_info->mode == RADEON_SURF_MODE_2D)
-         cb->cb_color_base |= surf->tile_swizzle;
+         cb->cb_color_base |= tile_swizzle;
 
       pitch_tile_max = level_info->nblk_x / 8 - 1;
       slice_tile_max = (level_info->nblk_x * level_info->nblk_y) / 64 - 1;
@@ -7010,7 +7044,7 @@ radv_initialise_color_surface(struct radv_device *device, struct radv_color_buff
        device->physical_device->rad_info.gfx_level <= GFX8)
       va += plane->surface.u.legacy.color.dcc_level[iview->vk.base_mip_level].dcc_offset;
 
-   unsigned dcc_tile_swizzle = surf->tile_swizzle;
+   unsigned dcc_tile_swizzle = tile_swizzle;
    dcc_tile_swizzle &= ((1 << surf->meta_alignment_log2) - 1) >> 8;
 
    cb->cb_dcc_base = va >> 8;
@@ -7018,8 +7052,8 @@ radv_initialise_color_surface(struct radv_device *device, struct radv_color_buff
 
    /* GFX10 field has the same base shift as the GFX6 field. */
    uint32_t max_slice = radv_surface_max_layer_count(iview) - 1;
-   cb->cb_color_view =
-      S_028C6C_SLICE_START(iview->vk.base_array_layer) | S_028C6C_SLICE_MAX_GFX10(max_slice);
+   uint32_t slice_start = iview->nbc_view.valid ? 0 : iview->vk.base_array_layer;
+   cb->cb_color_view = S_028C6C_SLICE_START(slice_start) | S_028C6C_SLICE_MAX_GFX10(max_slice);
 
    if (iview->image->info.samples > 1) {
       unsigned log_samples = util_logbase2(iview->image->info.samples);
@@ -7129,9 +7163,17 @@ radv_initialise_color_surface(struct radv_device *device, struct radv_color_buff
          vk_format_get_plane_width(iview->image->vk.format, iview->plane_id, iview->extent.width);
       unsigned height =
          vk_format_get_plane_height(iview->image->vk.format, iview->plane_id, iview->extent.height);
+      unsigned max_mip = iview->image->info.levels - 1;
 
       if (device->physical_device->rad_info.gfx_level >= GFX10) {
-         cb->cb_color_view |= S_028C6C_MIP_LEVEL_GFX10(iview->vk.base_mip_level);
+         unsigned base_level = iview->vk.base_mip_level;
+
+         if (iview->nbc_view.valid) {
+            base_level = iview->nbc_view.level;
+            max_mip = iview->nbc_view.num_levels - 1;
+         }
+
+         cb->cb_color_view |= S_028C6C_MIP_LEVEL_GFX10(base_level);
 
          cb->cb_color_attrib3 |=
             S_028EE0_MIP0_DEPTH(mip0_depth) | S_028EE0_RESOURCE_TYPE(surf->u.gfx9.resource_type) |
@@ -7143,7 +7185,7 @@ radv_initialise_color_surface(struct radv_device *device, struct radv_color_buff
       }
 
       cb->cb_color_attrib2 = S_028C68_MIP0_WIDTH(width - 1) | S_028C68_MIP0_HEIGHT(height - 1) |
-                             S_028C68_MAX_MIP(iview->image->info.levels - 1);
+                             S_028C68_MAX_MIP(max_mip);
    }
 }
 

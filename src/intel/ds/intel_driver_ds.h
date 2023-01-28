@@ -148,9 +148,6 @@ struct intel_ds_queue {
    /* Device this queue belongs to */
    struct intel_ds_device *device;
 
-   /* Unique queue ID across the device */
-   uint32_t queue_id;
-
    /* Unique name of the queue */
    char name[80];
 

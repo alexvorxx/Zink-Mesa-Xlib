@@ -1871,6 +1871,7 @@ static unsigned rvcn_dec_dynamic_dpb_t2_message(struct radeon_decoder *dec, rvcn
    }
 
    list_for_each_entry_safe(struct rvcn_dec_dynamic_dpb_t2, d, &dec->dpb_unref_list, list) {
+      dec->ws->fence_wait(dec->ws, dec->prev_fence, PIPE_DEFAULT_DECODER_FEEDBACK_TIMEOUT_NS);
       list_del(&d->list);
       si_vid_destroy_buffer(&d->dpb);
       FREE(d);
@@ -2736,7 +2737,8 @@ static void radeon_dec_destroy(struct pipe_video_codec *decoder)
       map_msg_fb_it_probs_buf(dec);
       rvcn_dec_message_destroy(dec);
       send_msg_buf(dec);
-      flush(dec, 0, NULL);
+      flush(dec, 0, &dec->destroy_fence);
+      dec->ws->fence_wait(dec->ws, dec->destroy_fence, PIPE_DEFAULT_DECODER_FEEDBACK_TIMEOUT_NS);
    }
 
    dec->ws->cs_destroy(&dec->cs);
@@ -2906,6 +2908,7 @@ static void radeon_dec_end_frame(struct pipe_video_codec *decoder, struct pipe_v
 
    dec->send_cmd(dec, target, picture);
    flush(dec, PIPE_FLUSH_ASYNC, picture->fence);
+   dec->prev_fence = *picture->fence;
    next_buffer(dec);
 }
 

@@ -43,18 +43,17 @@ option(
   value : false,
   description : 'Build against android-stub',
 )
-
 option(
-  'dri3',
+  'android-libbacktrace',
   type : 'combo',
   value : 'auto',
-  choices : ['auto', 'true', 'false', 'disabled', 'enabled'],
-  description : 'enable support for dri3'
+  choices : ['auto', 'true', 'false'],
+  description : 'Use Android\'s libbacktrace',
 )
 option(
-  'dri-drivers',
-  type : 'array',
-  description : 'DEPRECATED: List of dri drivers to build. If this is set to auto all drivers applicable to the target OS/architecture will be built'
+  'dri3',
+  type : 'feature',
+  description : 'enable support for dri3'
 )
 option(
   'dri-drivers-path',
@@ -87,9 +86,7 @@ option(
 )
 option(
   'gallium-vdpau',
-  type : 'combo',
-  value : 'auto',
-  choices : ['auto', 'true', 'false', 'enabled', 'disabled'],
+  type : 'feature',
   description : 'enable gallium vdpau frontend.',
 )
 option(
@@ -113,9 +110,7 @@ option(
 )
 option(
   'gallium-va',
-  type : 'combo',
-  value : 'auto',
-  choices : ['auto', 'true', 'false', 'enabled', 'disabled'],
+  type : 'feature',
   description : 'enable gallium va frontend.',
 )
 option(
@@ -126,9 +121,7 @@ option(
 )
 option(
   'gallium-xa',
-  type : 'combo',
-  value : 'auto',
-  choices : ['auto', 'true', 'false', 'enabled', 'disabled'],
+  type : 'feature',
   description : 'enable gallium xa frontend.',
 )
 option(
@@ -208,9 +201,7 @@ option(
 )
 option(
   'shader-cache',
-  type : 'combo',
-  value : 'auto',
-  choices : ['auto', 'true', 'false', 'enabled', 'disabled'],
+  type : 'feature',
   description : 'Build with on-disk shader cache support.',
 )
 option(
@@ -251,23 +242,17 @@ option(
 )
 option(
   'shared-glapi',
-  type : 'combo',
-  value : 'auto',
-  choices : ['auto', 'true', 'false', 'enabled', 'disabled'],
+  type : 'feature',
   description : 'Whether to build a shared or static glapi. Defaults to false on Windows, true elsewhere'
 )
 option(
   'gles1',
-  type : 'combo',
-  value : 'auto',
-  choices : ['auto', 'true', 'false', 'enabled', 'disabled'],
+  type : 'feature',
   description : 'Build support for OpenGL ES 1.x'
 )
 option(
   'gles2',
-  type : 'combo',
-  value : 'auto',
-  choices : ['auto', 'true', 'false', 'enabled', 'disabled'],
+  type : 'feature',
   description : 'Build support for OpenGL ES 2.x and 3.x'
 )
 option(
@@ -278,9 +263,7 @@ option(
 )
 option(
   'gbm',
-  type : 'combo',
-  value : 'auto',
-  choices : ['auto', 'true', 'false', 'enabled', 'disabled'],
+  type : 'feature',
   description : 'Build support for gbm platform'
 )
 option(
@@ -298,9 +281,7 @@ option(
 )
 option(
   'egl',
-  type : 'combo',
-  value : 'auto',
-  choices : ['auto', 'true', 'false', 'enabled', 'disabled'],
+  type : 'feature',
   description : 'Build support for EGL platform'
 )
 option(
@@ -335,16 +316,12 @@ option(
 )
 option(
   'llvm',
-  type : 'combo',
-  value : 'auto',
-  choices : ['auto', 'true', 'false', 'enabled', 'disabled'],
+  type : 'feature',
   description : 'Build with LLVM support.'
 )
 option(
   'shared-llvm',
-  type : 'combo',
-  value : 'auto',
-  choices : ['auto', 'true', 'false', 'enabled', 'disabled'],
+  type : 'feature',
   description : 'Whether to link LLVM shared or statically.'
 )
 option(
@@ -355,23 +332,17 @@ option(
 )
 option(
   'valgrind',
-  type : 'combo',
-  value : 'auto',
-  choices : ['auto', 'true', 'false', 'enabled', 'disabled'],
+  type : 'feature',
   description : 'Build with valgrind support'
 )
 option(
   'libunwind',
-  type : 'combo',
-  value : 'auto',
-  choices : ['auto', 'true', 'false', 'enabled', 'disabled'],
+  type : 'feature',
   description : 'Use libunwind for stack-traces'
 )
 option(
   'lmsensors',
-  type : 'combo',
-  value : 'auto',
-  choices : ['auto', 'true', 'false', 'enabled', 'disabled'],
+  type : 'feature',
   description : 'Enable HUD lmsensors support.'
 )
 option(
@@ -417,14 +388,6 @@ option(
   description : 'Build OSmesa.'
 )
 option(
-  'osmesa-bits',
-  type : 'combo',
-  value : 'unspecified',
-  choices : ['unspecified', '8', '16', '32'],
-  description : 'DEPRECATED: Number of channel bits for OSMesa.'
-)
-
-option(
   'tools',
   type : 'array',
   value : [],
@@ -433,16 +396,12 @@ option(
 )
 option(
   'power8',
-  type : 'combo',
-  value : 'auto',
-  choices : ['auto', 'true', 'false', 'enabled', 'disabled'],
+  type : 'feature',
   description : 'Enable power8 optimizations.',
 )
 option(
   'xlib-lease',
-  type : 'combo',
-  value : 'auto',
-  choices : ['auto', 'true', 'false', 'enabled', 'disabled'],
+  type : 'feature',
   description : 'Enable VK_EXT_acquire_xlib_display.'
 )
 option(
@@ -472,9 +431,7 @@ option(
 )
 option(
   'zstd',
-  type : 'combo',
-  choices : ['auto', 'true', 'false', 'enabled', 'disabled'],
-  value : 'auto',
+  type : 'feature',
   description : 'Use ZSTD instead of ZLIB in some cases.'
 )
 option(

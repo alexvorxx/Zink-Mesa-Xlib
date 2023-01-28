@@ -57,7 +57,7 @@ libosmesa = shared_library(
   dependencies : [
     dep_ws2_32, dep_selinux, dep_thread, dep_clock, dep_unwind, driver_swrast
   ],
-  name_prefix : host_machine.system() == 'windows' ? '' : 'lib',  # otherwise mingw will create libosmesa.dll
+  name_prefix : host_machine.system() == 'windows' ? '' : [],  # otherwise mingw will create libosmesa.dll
   soversion : host_machine.system() == 'windows' ? '' : '8',
   version : '8.0.0',
   darwin_versions : '9.0.0',

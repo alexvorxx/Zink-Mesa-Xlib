@@ -1790,7 +1790,7 @@ VkResult pvr_CreateDevice(VkPhysicalDevice physicalDevice,
       &pdevice->dev_info,
       &device->pixel_event_data_size_in_dwords);
 
-   device->global_queue_job_count = 0;
+   device->global_cmd_buffer_submit_count = 0;
    device->global_queue_present_count = 0;
 
    *pDevice = pvr_device_to_handle(device);

@@ -1914,8 +1914,6 @@ spec@!opengl 1.1@polygon-mode-offset@config 6: Expected white pixel on right edg
 spec@!opengl 1.1@polygon-mode-offset@config 6: Expected white pixel on top edge,Fail
 spec@!opengl 1.1@polygon-mode-offset,Fail
 spec@!opengl 1.1@polygon-offset,Fail
-spec@!opengl 1.1@read-front clear-front-first,Fail
-spec@!opengl 1.1@read-front,Fail
 spec@!opengl 1.1@streaming-texture-leak,Timeout
 spec@!opengl 1.1@texwrap 1d bordercolor,Fail
 spec@!opengl 1.1@texwrap 1d bordercolor@GL_RGBA8- border color only,Fail

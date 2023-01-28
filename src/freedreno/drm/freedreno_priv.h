@@ -411,6 +411,19 @@ struct fd_bo_funcs {
    int (*madvise)(struct fd_bo *bo, int willneed);
    uint64_t (*iova)(struct fd_bo *bo);
    void (*set_name)(struct fd_bo *bo, const char *fmt, va_list ap);
+
+   /**
+    * Optional hook that is called before ->destroy().  In the case of
+    * batch deletes (such as BO cache cleanup or cleaning up a submit)
+    * the ->finalize() hook will be called for all of the BOs being
+    * destroyed followed by dev->flush() and then bo->destroy().  This
+    * allows the backend to batch up processing.  (Ie. this is for
+    * virtio backend to batch ccmds to the host)
+    *
+    * In all cases, dev->flush() will happen after bo->finalize() and
+    * bo->destroy().
+    */
+   void (*finalize)(struct fd_bo *bo);
    void (*destroy)(struct fd_bo *bo);
 
    /**

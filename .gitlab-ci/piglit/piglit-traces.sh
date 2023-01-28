@@ -129,7 +129,7 @@ replay_minio_upload_images() {
             fi
             __MINIO_PATH="$PIGLIT_REPLAY_REFERENCE_IMAGES_BASE"
             __DESTINATION_FILE_PATH="${line##*-}"
-            if wget -q --method=HEAD "https://${__MINIO_PATH}/${__DESTINATION_FILE_PATH}" 2>/dev/null; then
+            if curl -L -s -X HEAD "https://${__MINIO_PATH}/${__DESTINATION_FILE_PATH}" 2>/dev/null; then
                 continue
             fi
         else

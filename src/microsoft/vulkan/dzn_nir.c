@@ -581,10 +581,20 @@ dzn_nir_blit_vs(void)
    out_coords->data.driver_location = 1;
 
    nir_ssa_def *vertex = nir_load_vertex_id(&b);
-   nir_ssa_def *base = nir_imul_imm(&b, vertex, 4 * sizeof(float));
+   nir_ssa_def *coords_arr[4] = {
+      nir_load_ubo(&b, 4, 32, params_desc, nir_imm_int(&b, 0),
+                   .align_mul = 16, .align_offset = 0, .range_base = 0, .range = ~0),
+      nir_load_ubo(&b, 4, 32, params_desc, nir_imm_int(&b, 16),
+                   .align_mul = 16, .align_offset = 0, .range_base = 0, .range = ~0),
+      nir_load_ubo(&b, 4, 32, params_desc, nir_imm_int(&b, 32),
+                   .align_mul = 16, .align_offset = 0, .range_base = 0, .range = ~0),
+      nir_load_ubo(&b, 4, 32, params_desc, nir_imm_int(&b, 48),
+                   .align_mul = 16, .align_offset = 0, .range_base = 0, .range = ~0),
+   };
    nir_ssa_def *coords =
-      nir_load_ubo(&b, 4, 32, params_desc, base,
-                   .align_mul = 16, .align_offset = 0, .range_base = 0, .range = ~0);
+      nir_bcsel(&b, nir_ieq_imm(&b, vertex, 0), coords_arr[0],
+                nir_bcsel(&b, nir_ieq_imm(&b, vertex, 1), coords_arr[1],
+                          nir_bcsel(&b, nir_ieq_imm(&b, vertex, 2), coords_arr[2], coords_arr[3])));
    nir_ssa_def *pos =
       nir_vec4(&b, nir_channel(&b, coords, 0), nir_channel(&b, coords, 1),
                nir_imm_float(&b, 0.0), nir_imm_float(&b, 1.0));

@@ -415,10 +415,8 @@ void si_begin_new_gfx_cs(struct si_context *ctx, bool first_cs)
 
    si_add_all_descriptors_to_bo_list(ctx);
 
-   if (first_cs || !ctx->shadowed_regs) {
-      si_shader_pointers_mark_dirty(ctx);
-      ctx->cs_shader_state.initialized = false;
-   }
+   si_shader_pointers_mark_dirty(ctx);
+   ctx->cs_shader_state.initialized = false;
 
    if (!ctx->has_graphics) {
       ctx->initial_gfx_cs_size = ctx->gfx_cs.current.cdw;
@@ -434,7 +432,7 @@ void si_begin_new_gfx_cs(struct si_context *ctx, bool first_cs)
    /* set all valid group as dirty so they get reemited on
     * next draw command
     */
-   si_pm4_reset_emitted(ctx, first_cs);
+   si_pm4_reset_emitted(ctx);
 
    /* The CS initialization should be emitted before everything else. */
    if (ctx->cs_preamble_state) {
@@ -460,7 +458,7 @@ void si_begin_new_gfx_cs(struct si_context *ctx, bool first_cs)
 
    /* CLEAR_STATE disables all colorbuffers, so only enable bound ones. */
    bool has_clear_state = ctx->screen->info.has_clear_state;
-   if (has_clear_state || ctx->shadowed_regs) {
+   if (has_clear_state) {
       ctx->framebuffer.dirty_cbufs =
             u_bit_consecutive(0, ctx->framebuffer.state.nr_cbufs);
       /* CLEAR_STATE disables the zbuffer, so only enable it if it's bound. */
@@ -508,22 +506,6 @@ void si_begin_new_gfx_cs(struct si_context *ctx, bool first_cs)
       si_mark_atom_dirty(ctx, &ctx->atoms.s.scissors);
       si_mark_atom_dirty(ctx, &ctx->atoms.s.viewports);
 
-      /* Invalidate various draw states so that they are emitted before
-       * the first draw call. */
-      si_invalidate_draw_constants(ctx);
-      ctx->last_index_size = -1;
-      ctx->last_primitive_restart_en = -1;
-      ctx->last_restart_index = SI_RESTART_INDEX_UNKNOWN;
-      ctx->last_prim = -1;
-      ctx->last_multi_vgt_param = -1;
-      ctx->last_vs_state = ~0;
-      ctx->last_gs_state = ~0;
-      ctx->last_ls = NULL;
-      ctx->last_tcs = NULL;
-      ctx->last_tes_sh_base = -1;
-      ctx->last_num_tcs_input_cp = -1;
-      ctx->last_ls_hs_config = -1; /* impossible value */
-
       if (has_clear_state) {
          si_set_tracked_regs_to_clear_state(ctx);
       } else {
@@ -535,6 +517,22 @@ void si_begin_new_gfx_cs(struct si_context *ctx, bool first_cs)
       /* 0xffffffff is an impossible value to register SPI_PS_INPUT_CNTL_n */
       memset(ctx->tracked_regs.spi_ps_input_cntl, 0xff, sizeof(uint32_t) * 32);
    }
+
+   /* Invalidate various draw states so that they are emitted before
+    * the first draw call. */
+   si_invalidate_draw_constants(ctx);
+   ctx->last_index_size = -1;
+   ctx->last_primitive_restart_en = -1;
+   ctx->last_restart_index = SI_RESTART_INDEX_UNKNOWN;
+   ctx->last_prim = -1;
+   ctx->last_multi_vgt_param = -1;
+   ctx->last_vs_state = ~0;
+   ctx->last_gs_state = ~0;
+   ctx->last_ls = NULL;
+   ctx->last_tcs = NULL;
+   ctx->last_tes_sh_base = -1;
+   ctx->last_num_tcs_input_cp = -1;
+   ctx->last_ls_hs_config = -1; /* impossible value */
 
    if (ctx->scratch_buffer) {
       si_context_add_resource_size(ctx, &ctx->scratch_buffer->b.b);

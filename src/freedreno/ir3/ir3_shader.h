@@ -1139,6 +1139,8 @@ ir3_find_output_regid(const struct ir3_shader_variant *so, unsigned slot)
    return regid(63, 0);
 }
 
+void print_raw(FILE *out, const BITSET_WORD *data, size_t size);
+
 void ir3_link_stream_out(struct ir3_shader_linkage *l,
                          const struct ir3_shader_variant *v);
 

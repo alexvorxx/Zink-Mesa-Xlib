@@ -421,7 +421,7 @@ struct ac_surf_nbc_view {
    uint32_t width;
    uint32_t height;
    uint32_t level;
-   uint32_t max_mip; /* Used for max_mip in the resource descriptor */
+   uint32_t num_levels; /* Used for max_mip in the resource descriptor */
    uint8_t tile_swizzle;
    uint64_t base_address_offset;
 };

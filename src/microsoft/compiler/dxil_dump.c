@@ -324,16 +324,27 @@ dump_attr_set_list(struct dxil_dumper *d, struct list_head *list)
          if (i > 0)
             _mesa_string_buffer_append_char(d->buf, ' ');
 
-         assert(attr->attrs[i].type == DXIL_ATTR_ENUM);
-         const char *value = "";
-         switch (attr->attrs[i].kind) {
-         case DXIL_ATTR_KIND_NONE: value = "none"; break;
-         case DXIL_ATTR_KIND_NO_UNWIND: value = "nounwind"; break;
-         case DXIL_ATTR_KIND_READ_NONE: value = "readnone"; break;
-         case DXIL_ATTR_KIND_READ_ONLY: value = "readonly"; break;
-         case DXIL_ATTR_KIND_NO_DUPLICATE: value = "noduplicate"; break;
+         if (attr->attrs[i].type == DXIL_ATTR_ENUM) {
+            const char *value = "";
+            switch (attr->attrs[i].key.kind) {
+            case DXIL_ATTR_KIND_NONE: value = "none"; break;
+            case DXIL_ATTR_KIND_NO_UNWIND: value = "nounwind"; break;
+            case DXIL_ATTR_KIND_READ_NONE: value = "readnone"; break;
+            case DXIL_ATTR_KIND_READ_ONLY: value = "readonly"; break;
+            case DXIL_ATTR_KIND_NO_DUPLICATE: value = "noduplicate"; break;
+            }
+            _mesa_string_buffer_append(d->buf, value);
+         } else if (attr->attrs[i].type == DXIL_ATTR_STRING) {
+            _mesa_string_buffer_append_char(d->buf, '"');
+            _mesa_string_buffer_append(d->buf, attr->attrs[i].key.str);
+            _mesa_string_buffer_append_char(d->buf, '"');
+         } else if (attr->attrs[i].type == DXIL_ATTR_STRING_VALUE) {
+            _mesa_string_buffer_append_char(d->buf, '"');
+            _mesa_string_buffer_append(d->buf, attr->attrs[i].key.str);
+            _mesa_string_buffer_append(d->buf, "\"=\"");
+            _mesa_string_buffer_append(d->buf, attr->attrs[i].value.str);
+            _mesa_string_buffer_append_char(d->buf, '"');
          }
-         _mesa_string_buffer_append(d->buf, value);
       }
       _mesa_string_buffer_append(d->buf, "}\n");
    }

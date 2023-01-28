@@ -614,7 +614,7 @@ crocus_get_timestamp(struct pipe_screen *pscreen)
    uint64_t result;
 
    if (!intel_gem_read_render_timestamp(crocus_bufmgr_get_fd(screen->bufmgr),
-                                        &result))
+                                        screen->devinfo.kmd_type, &result))
       return 0;
 
    result = intel_device_info_timebase_scale(&screen->devinfo, result);

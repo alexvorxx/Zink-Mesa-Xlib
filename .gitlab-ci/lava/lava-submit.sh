@@ -5,7 +5,8 @@ set -x
 
 # Try to use the kernel and rootfs built in mainline first, so we're more
 # likely to hit cache
-if wget -q --method=HEAD "https://${BASE_SYSTEM_MAINLINE_HOST_PATH}/done"; then
+if curl -s -X HEAD -L --retry 4 -f --retry-all-errors --retry-delay 60 \
+    "https://${BASE_SYSTEM_MAINLINE_HOST_PATH}/done"; then
 	BASE_SYSTEM_HOST_PATH="${BASE_SYSTEM_MAINLINE_HOST_PATH}"
 else
 	BASE_SYSTEM_HOST_PATH="${BASE_SYSTEM_FORK_HOST_PATH}"

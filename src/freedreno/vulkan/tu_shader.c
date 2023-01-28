@@ -90,7 +90,7 @@ tu_spirv_to_nir(struct tu_device *dev,
    if (result != VK_SUCCESS)
       return NULL;
 
-   if (unlikely(dev->physical_device->instance->debug_flags & TU_DEBUG_NIR)) {
+   if (TU_DEBUG(NIR)) {
       fprintf(stderr, "translated nir:\n");
       nir_print_shader(nir, stderr);
    }
@@ -361,7 +361,7 @@ build_bindless(struct tu_device *dev, nir_builder *b,
 
    /* input attachments use non bindless workaround */
    if (bind_layout->type == VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT &&
-       likely(!(dev->instance->debug_flags & TU_DEBUG_DYNAMIC))) {
+       !TU_DEBUG(DYNAMIC)) {
       const struct glsl_type *glsl_type = glsl_without_array(var->type);
       uint32_t idx = var->data.index * 2;
 

@@ -61,8 +61,6 @@ struct radv_ps_epilog_key {
    uint8_t enable_mrt_output_nan_fixup;
 
    bool mrt0_is_dual_src;
-
-   uint8_t need_src_alpha; /* XXX: Remove this when color blend equations are dynamic! */
 };
 
 struct radv_pipeline_key {
@@ -361,6 +359,7 @@ struct radv_shader_info {
       bool uses_ray_launch_size;
       bool uses_dynamic_rt_callable_stack;
       bool uses_rt;
+      bool uses_full_subgroups;
    } cs;
    struct {
       uint64_t tes_inputs_read;
@@ -544,7 +543,8 @@ struct radv_pipeline_stage;
 
 nir_shader *radv_shader_spirv_to_nir(struct radv_device *device,
                                      const struct radv_pipeline_stage *stage,
-                                     const struct radv_pipeline_key *key);
+                                     const struct radv_pipeline_key *key,
+                                     bool is_internal);
 
 void radv_nir_lower_abi(nir_shader *shader, enum amd_gfx_level gfx_level,
                         const struct radv_shader_info *info, const struct radv_shader_args *args,
@@ -566,6 +566,7 @@ VkResult radv_create_shaders(struct radv_pipeline *pipeline,
                              const VkPipelineCreationFeedbackCreateInfo *creation_feedback,
                              struct radv_pipeline_shader_stack_size **stack_sizes,
                              uint32_t *num_stack_sizes,
+                             VkGraphicsPipelineLibraryFlagBitsEXT lib_flags,
                              gl_shader_stage *last_vgt_api_stage);
 
 struct radv_shader_args;

@@ -811,7 +811,7 @@ vl_dri3_screen_create(Display *display, int screen)
    fcntl(fd, F_SETFD, FD_CLOEXEC);
    free(open_reply);
 
-   fd = loader_get_user_preferred_fd(fd, &scrn->is_different_gpu);
+   scrn->is_different_gpu = loader_get_user_preferred_fd(&fd, NULL);
 
    geom_cookie = xcb_get_geometry(scrn->conn, RootWindow(display, screen));
    geom_reply = xcb_get_geometry_reply(scrn->conn, geom_cookie, NULL);

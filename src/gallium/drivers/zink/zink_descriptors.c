@@ -1254,15 +1254,9 @@ consolidate_pool_alloc(struct zink_screen *screen, struct zink_descriptor_pool_m
    if (!mpool->overflowed_pools[mpool->overflow_idx].size)
       return;
 
-   unsigned old_size = mpool->overflowed_pools[!mpool->overflow_idx].size;
-   if (util_dynarray_resize(&mpool->overflowed_pools[!mpool->overflow_idx], struct zink_descriptor_pool*, sizes[0] + sizes[1])) {
-      /* attempt to consolidate all the overflow into one array to maximize reuse */
-      uint8_t *src = mpool->overflowed_pools[mpool->overflow_idx].data;
-      uint8_t *dst = mpool->overflowed_pools[!mpool->overflow_idx].data;
-      dst += old_size;
-      memcpy(dst, src, mpool->overflowed_pools[mpool->overflow_idx].size);
-      util_dynarray_clear(&mpool->overflowed_pools[mpool->overflow_idx]);
-   }
+   /* attempt to consolidate all the overflow into one array to maximize reuse */
+   util_dynarray_append_dynarray(&mpool->overflowed_pools[!mpool->overflow_idx], &mpool->overflowed_pools[mpool->overflow_idx]);
+   util_dynarray_clear(&mpool->overflowed_pools[mpool->overflow_idx]);
 }
 
 /* called when a batch state is reset, i.e., just before a batch state becomes the current state */
@@ -1323,7 +1317,9 @@ zink_batch_descriptor_init(struct zink_screen *screen, struct zink_batch_state *
       for (unsigned i = 0; i < ZINK_DESCRIPTOR_NON_BINDLESS_TYPES; i++) {
          if (!screen->db_size[i])
             continue;
-         unsigned bind = i == ZINK_DESCRIPTOR_TYPE_SAMPLER_VIEW ? ZINK_BIND_SAMPLER_DESCRIPTOR : ZINK_BIND_RESOURCE_DESCRIPTOR;
+         unsigned bind = ZINK_BIND_RESOURCE_DESCRIPTOR;
+         if (i == ZINK_DESCRIPTOR_TYPE_SAMPLER_VIEW)
+            bind |= ZINK_BIND_SAMPLER_DESCRIPTOR;
          if (screen->compact_descriptors && i == ZINK_DESCRIPTOR_TYPE_SAMPLER_VIEW)
             bind |= ZINK_BIND_RESOURCE_DESCRIPTOR;
          struct pipe_resource *pres = pipe_buffer_create(&screen->base, bind, 0, screen->db_size[i]);

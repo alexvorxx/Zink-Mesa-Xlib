@@ -1,6 +1,5 @@
 glx@glx_arb_sync_control@waitformsc
 glx@glx_arb_sync_control@swapbuffersmsc-divisor-zero
-glx@glx-copy-sub-buffer samples=2
 glx@glx-multithread-texture
 glx@glx-multithread-shader-compile
 spec@arb_draw_buffers@fbo-mrt-new-bind

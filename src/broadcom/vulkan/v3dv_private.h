@@ -36,6 +36,7 @@
 #include <vulkan/vk_icd.h>
 #include <vk_enum_to_str.h>
 
+#include "vk_descriptor_update_template.h"
 #include "vk_device.h"
 #include "vk_format.h"
 #include "vk_instance.h"
@@ -1708,12 +1709,6 @@ struct v3dv_cmd_buffer {
 
    struct v3dv_device *device;
 
-   /* Used at submit time to link command buffers in the submission that have
-    * spawned wait threads, so we can then wait on all of them to complete
-    * before we process any signal semaphores or fences.
-    */
-   struct list_head list_link;
-
    VkCommandBufferUsageFlags usage_flags;
 
    enum v3dv_cmd_buffer_status status;
@@ -2122,7 +2117,6 @@ struct v3dv_sampler {
 
    bool compare_enable;
    bool unnormalized_coordinates;
-   bool clamp_to_transparent_black_border;
 
    /* Prepacked per plane SAMPLER_STATE, that is referenced as part of the tmu
     * configuration. If needed it will be copied to the descriptor info during
@@ -2131,45 +2125,6 @@ struct v3dv_sampler {
    uint8_t plane_count;
    uint8_t sampler_state[V3DV_SAMPLER_STATE_LENGTH];
 };
-
-struct v3dv_descriptor_template_entry {
-   /* The type of descriptor in this entry */
-   VkDescriptorType type;
-
-   /* Binding in the descriptor set */
-   uint32_t binding;
-
-   /* Offset at which to write into the descriptor set binding */
-   uint32_t array_element;
-
-   /* Number of elements to write into the descriptor set binding */
-   uint32_t array_count;
-
-   /* Offset into the user provided data */
-   size_t offset;
-
-   /* Stride between elements into the user provided data */
-   size_t stride;
-};
-
-struct v3dv_descriptor_update_template {
-   struct vk_object_base base;
-
-   VkPipelineBindPoint bind_point;
-
-   /* The descriptor set this template corresponds to. This value is only
-    * valid if the template was created with the templateType
-    * VK_DESCRIPTOR_UPDATE_TEMPLATE_TYPE_DESCRIPTOR_SET.
-    */
-   uint8_t set;
-
-   /* Number of entries in this template */
-   uint32_t entry_count;
-
-   /* Entries of the template */
-   struct v3dv_descriptor_template_entry entries[0];
-};
-
 
 /* We keep two special values for the sampler idx that represents exactly when a
  * sampler is not needed/provided. The main use is that even if we don't have
@@ -2560,9 +2515,6 @@ VK_DEFINE_NONDISP_HANDLE_CASTS(v3dv_descriptor_set, base, VkDescriptorSet,
 VK_DEFINE_NONDISP_HANDLE_CASTS(v3dv_descriptor_set_layout, base,
                                VkDescriptorSetLayout,
                                VK_OBJECT_TYPE_DESCRIPTOR_SET_LAYOUT)
-VK_DEFINE_NONDISP_HANDLE_CASTS(v3dv_descriptor_update_template, base,
-                               VkDescriptorUpdateTemplate,
-                               VK_OBJECT_TYPE_DESCRIPTOR_UPDATE_TEMPLATE)
 VK_DEFINE_NONDISP_HANDLE_CASTS(v3dv_event, base, VkEvent, VK_OBJECT_TYPE_EVENT)
 VK_DEFINE_NONDISP_HANDLE_CASTS(v3dv_framebuffer, base, VkFramebuffer,
                                VK_OBJECT_TYPE_FRAMEBUFFER)

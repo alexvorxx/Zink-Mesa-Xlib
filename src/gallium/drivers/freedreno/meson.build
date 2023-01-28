@@ -19,6 +19,7 @@
 # SOFTWARE.
 
 files_libfreedreno = files(
+  'driinfo_freedreno.h',
   'freedreno_autotune.c',
   'freedreno_autotune.h',
   'freedreno_batch.c',
@@ -178,6 +179,8 @@ files_libfreedreno = files(
   'a5xx/fd5_texture.h',
   'a5xx/fd5_zsa.c',
   'a5xx/fd5_zsa.h',
+  'a6xx/fd6_barrier.c',
+  'a6xx/fd6_barrier.h',
   'a6xx/fd6_blend.c',
   'a6xx/fd6_blend.h',
   'a6xx/fd6_blitter.c',
@@ -215,6 +218,8 @@ files_libfreedreno = files(
   'ir3/ir3_cache.c',
   'ir3/ir3_cache.h',
   'ir3/ir3_const.h',
+  'ir3/ir3_descriptor.c',
+  'ir3/ir3_descriptor.h',
   'ir3/ir3_gallium.c',
   'ir3/ir3_gallium.h',
 )

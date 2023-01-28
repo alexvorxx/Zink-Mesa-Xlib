@@ -59,6 +59,7 @@ static inline void regfree(regex_t* r) {}
 #include "strndup.h"
 #include "u_process.h"
 #include "os_file.h"
+#include "os_misc.h"
 
 /* For systems like Hurd */
 #ifndef PATH_MAX
@@ -382,7 +383,7 @@ driParseOptionInfo(driOptionCache *info,
       /* Built-in default values should always be valid. */
       assert(checkValue(optval, optinfo));
 
-      char *envVal = getenv(name);
+      const char *envVal = os_get_option(name);
       if (envVal != NULL) {
          driOptionValue v;
 

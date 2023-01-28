@@ -228,7 +228,9 @@ static LLVMPassManagerRef ac_create_passmgr(LLVMTargetLibraryInfoRef target_libr
 
    if (check_ir)
       LLVMAddVerifierPass(passmgr);
+
    LLVMAddAlwaysInlinerPass(passmgr);
+
    /* Normally, the pass manager runs all passes on one function before
     * moving onto another. Adding a barrier no-op pass forces the pass
     * manager to run the inliner on all functions first, which makes sure
@@ -236,9 +238,13 @@ static LLVMPassManagerRef ac_create_passmgr(LLVMTargetLibraryInfoRef target_libr
     * function, so it removes useless work done on dead inline functions.
     */
    ac_llvm_add_barrier_noop_pass(passmgr);
-   /* This pass should eliminate all the load and store instructions. */
+
+   /* This pass eliminates all loads and stores on alloca'd pointers. */
    LLVMAddPromoteMemoryToRegisterPass(passmgr);
    LLVMAddScalarReplAggregatesPass(passmgr);
+   LLVMAddIPSCCPPass(passmgr);
+   if (LLVM_VERSION_MAJOR >= 16)
+      ac_add_sinking_pass(passmgr);
    LLVMAddLICMPass(passmgr);
    LLVMAddAggressiveDCEPass(passmgr);
    LLVMAddCFGSimplificationPass(passmgr);

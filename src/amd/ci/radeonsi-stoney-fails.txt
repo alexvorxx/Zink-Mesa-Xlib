@@ -236,3 +236,5 @@ spec@khr_texture_compression_astc@sliced-3d-miptree-gl srgb-fp,Fail
 spec@khr_texture_compression_astc@sliced-3d-miptree-gl srgb-fp@sRGB decode full precision,Fail
 spec@khr_texture_compression_astc@sliced-3d-miptree-gles srgb-fp,Fail
 spec@khr_texture_compression_astc@sliced-3d-miptree-gles srgb-fp@sRGB decode full precision,Fail
+
+spec@!opengl 1.1@line-smooth-stipple,Fail

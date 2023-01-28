@@ -161,8 +161,6 @@ sa_cpu_prep(struct fd_bo *bo, struct fd_pipe *pipe, uint32_t op)
    /* expire completed fences */
    fd_bo_state(bo);
 
-   assert(fd_bo_state(bo) == FD_BO_STATE_IDLE);
-
    return 0;
 }
 

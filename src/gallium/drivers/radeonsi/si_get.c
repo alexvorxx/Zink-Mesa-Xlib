@@ -644,8 +644,9 @@ static int si_get_video_param(struct pipe_screen *screen, enum pipe_video_profil
             return 0;
 
       case PIPE_VIDEO_CAP_ENC_HEVC_BLOCK_SIZES:
-         if (profile == PIPE_VIDEO_PROFILE_HEVC_MAIN ||
-             profile == PIPE_VIDEO_PROFILE_HEVC_MAIN_10) {
+         if (sscreen->info.family >= CHIP_RAVEN &&
+             (profile == PIPE_VIDEO_PROFILE_HEVC_MAIN ||
+              profile == PIPE_VIDEO_PROFILE_HEVC_MAIN_10)) {
             union pipe_h265_enc_cap_block_sizes pipe_block_sizes;
             pipe_block_sizes.value = 0;
 
@@ -851,6 +852,9 @@ static bool si_vid_is_format_supported(struct pipe_screen *screen, enum pipe_for
 
    /* Vp9 profile 2 supports 10 bit decoding using P016 */
    if (profile == PIPE_VIDEO_PROFILE_VP9_PROFILE2)
+      return (format == PIPE_FORMAT_P010) || (format == PIPE_FORMAT_P016);
+
+   if (profile == PIPE_VIDEO_PROFILE_AV1_MAIN)
       return (format == PIPE_FORMAT_P010) || (format == PIPE_FORMAT_P016);
 
    /* JPEG supports YUV400 and YUV444 */

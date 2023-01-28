@@ -289,6 +289,22 @@ setup_stream_out(struct fd_context *ctx, struct fd6_program_state *state,
    state->streamout_stateobj = ring;
 }
 
+static uint32_t
+sp_xs_config(struct ir3_shader_variant *v)
+{
+   if (!v)
+      return 0;
+
+   return A6XX_SP_VS_CONFIG_ENABLED |
+         COND(v->bindless_tex, A6XX_SP_VS_CONFIG_BINDLESS_TEX) |
+         COND(v->bindless_samp, A6XX_SP_VS_CONFIG_BINDLESS_SAMP) |
+         COND(v->bindless_ibo, A6XX_SP_VS_CONFIG_BINDLESS_IBO) |
+         COND(v->bindless_ubo, A6XX_SP_VS_CONFIG_BINDLESS_UBO) |
+         A6XX_SP_VS_CONFIG_NIBO(ir3_shader_nibo(v)) |
+         A6XX_SP_VS_CONFIG_NTEX(v->num_samp) |
+         A6XX_SP_VS_CONFIG_NSAMP(v->num_samp);
+}
+
 static void
 setup_config_stateobj(struct fd_context *ctx, struct fd6_program_state *state)
 {
@@ -318,37 +334,19 @@ setup_config_stateobj(struct fd_context *ctx, struct fd6_program_state *state)
                      A6XX_HLSQ_FS_CNTL_ENABLED);
 
    OUT_PKT4(ring, REG_A6XX_SP_VS_CONFIG, 1);
-   OUT_RING(ring, COND(state->vs, A6XX_SP_VS_CONFIG_ENABLED) |
-                     A6XX_SP_VS_CONFIG_NIBO(ir3_shader_nibo(state->vs)) |
-                     A6XX_SP_VS_CONFIG_NTEX(state->vs->num_samp) |
-                     A6XX_SP_VS_CONFIG_NSAMP(state->vs->num_samp));
+   OUT_RING(ring, sp_xs_config(state->vs));
 
    OUT_PKT4(ring, REG_A6XX_SP_HS_CONFIG, 1);
-   OUT_RING(ring, COND(state->hs,
-                       A6XX_SP_HS_CONFIG_ENABLED |
-                          A6XX_SP_HS_CONFIG_NIBO(ir3_shader_nibo(state->hs)) |
-                          A6XX_SP_HS_CONFIG_NTEX(state->hs->num_samp) |
-                          A6XX_SP_HS_CONFIG_NSAMP(state->hs->num_samp)));
+   OUT_RING(ring, sp_xs_config(state->hs));
 
    OUT_PKT4(ring, REG_A6XX_SP_DS_CONFIG, 1);
-   OUT_RING(ring, COND(state->ds,
-                       A6XX_SP_DS_CONFIG_ENABLED |
-                          A6XX_SP_DS_CONFIG_NIBO(ir3_shader_nibo(state->ds)) |
-                          A6XX_SP_DS_CONFIG_NTEX(state->ds->num_samp) |
-                          A6XX_SP_DS_CONFIG_NSAMP(state->ds->num_samp)));
+   OUT_RING(ring, sp_xs_config(state->ds));
 
    OUT_PKT4(ring, REG_A6XX_SP_GS_CONFIG, 1);
-   OUT_RING(ring, COND(state->gs,
-                       A6XX_SP_GS_CONFIG_ENABLED |
-                          A6XX_SP_GS_CONFIG_NIBO(ir3_shader_nibo(state->gs)) |
-                          A6XX_SP_GS_CONFIG_NTEX(state->gs->num_samp) |
-                          A6XX_SP_GS_CONFIG_NSAMP(state->gs->num_samp)));
+   OUT_RING(ring, sp_xs_config(state->gs));
 
    OUT_PKT4(ring, REG_A6XX_SP_FS_CONFIG, 1);
-   OUT_RING(ring, COND(state->fs, A6XX_SP_FS_CONFIG_ENABLED) |
-                     A6XX_SP_FS_CONFIG_NIBO(ir3_shader_nibo(state->fs)) |
-                     A6XX_SP_FS_CONFIG_NTEX(state->fs->num_samp) |
-                     A6XX_SP_FS_CONFIG_NSAMP(state->fs->num_samp));
+   OUT_RING(ring, sp_xs_config(state->fs));
 
    OUT_PKT4(ring, REG_A6XX_SP_IBO_COUNT, 1);
    OUT_RING(ring, ir3_shader_nibo(state->fs));
@@ -663,6 +661,14 @@ setup_stateobj(struct fd_ringbuffer *ring, struct fd_context *ctx,
       ir3_link_add(&l, VARYING_SLOT_CLIP_DIST1, clip1_regid,
                    clip_cull_mask >> 4, l.max_loc);
    }
+
+   /* The hw seems to be unhappy if the last geom shader has no outputs.
+    * Normally you'd at least see gl_Position writes, but if the last
+    * geom stage simply writes to an SSBO (for ex) and no other outputs,
+    * insert a dummy varying
+    */
+   if (!l.cnt)
+      ir3_link_add(&l, 0, regid(0, 0), 0x1, l.max_loc);
 
    /* If we have stream-out, we use the full shader for binning
     * pass, rather than the optimized binning pass one, so that we

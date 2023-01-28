@@ -71,8 +71,10 @@ upload_indices(struct gl_context *ctx, unsigned count, unsigned index_size,
 
    _mesa_glthread_upload(ctx, *indices, index_size * count,
                          &upload_offset, &upload_buffer, NULL, 0);
-   assert(upload_buffer);
    *indices = (const GLvoid*)(intptr_t)upload_offset;
+
+   if (!upload_buffer)
+      _mesa_marshal_InternalSetError(GL_OUT_OF_MEMORY);
 
    return upload_buffer;
 }
@@ -91,7 +93,10 @@ upload_multi_indices(struct gl_context *ctx, unsigned total_count,
 
    _mesa_glthread_upload(ctx, NULL, index_size * total_count,
                          &upload_offset, &upload_buffer, &upload_ptr, 0);
-   assert(upload_buffer);
+   if (!upload_buffer) {
+      _mesa_marshal_InternalSetError(GL_OUT_OF_MEMORY);
+      return NULL;
+   }
 
    for (unsigned i = 0, offset = 0; i < draw_count; i++) {
       if (count[i] == 0)
@@ -197,7 +202,13 @@ upload_vertices(struct gl_context *ctx, unsigned user_buffer_mask,
          _mesa_glthread_upload(ctx, (uint8_t*)ptr + start,
                                end - start, &upload_offset,
                                &upload_buffer, NULL, ctx->Const.VertexBufferOffsetIsInt32 ? 0 : start);
-         assert(upload_buffer);
+         if (!upload_buffer) {
+            for (unsigned i = 0; i < num_buffers; i++)
+               _mesa_reference_buffer_object(ctx, &buffers->buffer, NULL);
+
+            _mesa_marshal_InternalSetError(GL_OUT_OF_MEMORY);
+            return false;
+         }
 
          buffers[num_buffers].buffer = upload_buffer;
          buffers[num_buffers].offset = upload_offset - start;
@@ -252,7 +263,13 @@ upload_vertices(struct gl_context *ctx, unsigned user_buffer_mask,
       _mesa_glthread_upload(ctx, (uint8_t*)ptr + offset,
                             size, &upload_offset, &upload_buffer, NULL,
                             ctx->Const.VertexBufferOffsetIsInt32 ? 0 : offset);
-      assert(upload_buffer);
+      if (!upload_buffer) {
+         for (unsigned i = 0; i < num_buffers; i++)
+            _mesa_reference_buffer_object(ctx, &buffers->buffer, NULL);
+
+         _mesa_marshal_InternalSetError(GL_OUT_OF_MEMORY);
+         return false;
+      }
 
       buffers[num_buffers].buffer = upload_buffer;
       buffers[num_buffers].offset = upload_offset - offset;
@@ -438,15 +455,10 @@ draw_arrays(GLenum mode, GLint first, GLsizei count, GLsizei instance_count,
 
    /* Upload and draw. */
    struct glthread_attrib_binding buffers[VERT_ATTRIB_MAX];
-   if (!ctx->GLThread.SupportsBufferUploads ||
-       !upload_vertices(ctx, user_buffer_mask, first, count, baseinstance,
-                        instance_count, buffers)) {
-      _mesa_glthread_finish_before(ctx, "DrawArrays");
-      CALL_DrawArraysInstancedBaseInstance(ctx->CurrentServerDispatch,
-                                           (mode, first, count, instance_count,
-                                            baseinstance));
-      return;
-   }
+
+   if (!upload_vertices(ctx, user_buffer_mask, first, count, baseinstance,
+                        instance_count, buffers))
+      return; /* the error is set by upload_vertices */
 
    draw_arrays_async_user(ctx, mode, first, count, instance_count, baseinstance,
                           user_buffer_mask, buffers);
@@ -500,8 +512,9 @@ multi_draw_arrays_async(struct gl_context *ctx, GLenum mode,
                         GLsizei draw_count, unsigned user_buffer_mask,
                         const struct glthread_attrib_binding *buffers)
 {
-   int first_size = sizeof(GLint) * draw_count;
-   int count_size = sizeof(GLsizei) * draw_count;
+   int real_draw_count = MAX2(draw_count, 0);
+   int first_size = sizeof(GLint) * real_draw_count;
+   int count_size = sizeof(GLsizei) * real_draw_count;
    int buffers_size = util_bitcount(user_buffer_mask) * sizeof(buffers[0]);
    int cmd_size = sizeof(struct marshal_cmd_MultiDrawArraysUserBuf) +
                   first_size + count_size + buffers_size;
@@ -538,20 +551,21 @@ _mesa_marshal_MultiDrawArrays(GLenum mode, const GLint *first,
    GET_CURRENT_CONTEXT(ctx);
 
    struct glthread_vao *vao = ctx->GLThread.CurrentVAO;
-   unsigned user_buffer_mask = vao->UserPointerMask & vao->BufferEnabled;
+   unsigned user_buffer_mask =
+      draw_count <= 0 ? 0 : vao->UserPointerMask & vao->BufferEnabled;
 
    if (ctx->GLThread.ListMode)
       goto sync;
 
-   if (draw_count >= 0 &&
-       (ctx->API == API_OPENGL_CORE || !user_buffer_mask) &&
+   if ((ctx->API == API_OPENGL_CORE || !user_buffer_mask) &&
        multi_draw_arrays_async(ctx, mode, first, count, draw_count, 0, NULL)) {
       return;
    }
 
-   /* If the draw count is too high or negative, the queue can't be used. */
-   if (!ctx->GLThread.SupportsBufferUploads ||
-       draw_count < 0 || draw_count > MARSHAL_MAX_CMD_SIZE / 16)
+   assert(draw_count > 0);
+
+   /* If the draw count is too high, the queue can't be used. */
+   if (draw_count > MARSHAL_MAX_CMD_SIZE / 16)
       goto sync;
 
    unsigned min_index = ~0;
@@ -583,7 +597,7 @@ _mesa_marshal_MultiDrawArrays(GLenum mode, const GLint *first,
    struct glthread_attrib_binding buffers[VERT_ATTRIB_MAX];
    if (!upload_vertices(ctx, user_buffer_mask, min_index, num_vertices,
                         0, 1, buffers))
-      goto sync;
+      return; /* the error is set by upload_vertices */
 
    multi_draw_arrays_async(ctx, mode, first, count, draw_count,
                            user_buffer_mask, buffers);
@@ -905,29 +919,27 @@ draw_elements(GLenum mode, GLsizei count, GLenum type, const GLvoid *indices,
       return;
    }
 
-   if (!ctx->GLThread.SupportsBufferUploads)
-      goto sync;
-
    bool need_index_bounds = user_buffer_mask & ~vao->NonZeroDivisorMask;
    unsigned index_size = get_index_size(type);
 
    if (need_index_bounds && !index_bounds_valid) {
-      /* Sync if indices come from a buffer and vertices come from memory
-       * and index bounds are not valid.
-       *
-       * We would have to map the indices to compute the index bounds, and
-       * for that we would have to sync anyway.
-       */
-      if (!has_user_indices)
-         goto sync;
-
       /* Compute the index bounds. */
-      min_index = ~0;
-      max_index = 0;
-      vbo_get_minmax_index_mapped(count, index_size,
-                                  ctx->GLThread._RestartIndex[index_size - 1],
-                                  ctx->GLThread._PrimitiveRestart, indices,
-                                  &min_index, &max_index);
+      if (has_user_indices) {
+         min_index = ~0;
+         max_index = 0;
+         vbo_get_minmax_index_mapped(count, index_size,
+                                     ctx->GLThread._RestartIndex[index_size - 1],
+                                     ctx->GLThread._PrimitiveRestart, indices,
+                                     &min_index, &max_index);
+      } else {
+         /* Indices in a buffer. */
+         _mesa_glthread_finish_before(ctx, "DrawElements - need index bounds");
+         vbo_get_minmax_index(ctx, ctx->Array.VAO->IndexBufferObj,
+                              NULL, (intptr_t)indices, count, index_size,
+                              ctx->GLThread._PrimitiveRestart,
+                              ctx->GLThread._RestartIndex[index_size - 1],
+                              &min_index, &max_index);
+      }
       index_bounds_valid = true;
    }
 
@@ -940,15 +952,19 @@ draw_elements(GLenum mode, GLsizei count, GLenum type, const GLvoid *indices,
       goto sync;
 
    struct glthread_attrib_binding buffers[VERT_ATTRIB_MAX];
-   if (user_buffer_mask &&
-       !upload_vertices(ctx, user_buffer_mask, start_vertex, num_vertices,
-                        baseinstance, instance_count, buffers))
-      goto sync;
+   if (user_buffer_mask) {
+      if (!upload_vertices(ctx, user_buffer_mask, start_vertex, num_vertices,
+                           baseinstance, instance_count, buffers))
+         return; /* the error is set by upload_vertices */
+   }
 
    /* Upload indices. */
    struct gl_buffer_object *index_buffer = NULL;
-   if (has_user_indices)
+   if (has_user_indices) {
       index_buffer = upload_indices(ctx, count, index_size, &indices);
+      if (!index_buffer)
+         return; /* the error is set by upload_indices */
+   }
 
    /* Draw asynchronously. */
    draw_elements_async_user(ctx, mode, count, type, indices, instance_count,
@@ -1048,7 +1064,7 @@ _mesa_unmarshal_MultiDrawElementsUserBuf(struct gl_context *ctx,
    return cmd->cmd_base.cmd_size;
 }
 
-static ALWAYS_INLINE bool
+static void
 multi_draw_elements_async(struct gl_context *ctx, GLenum mode,
                           const GLsizei *count, GLenum type,
                           const GLvoid *const *indices, GLsizei draw_count,
@@ -1066,33 +1082,61 @@ multi_draw_elements_async(struct gl_context *ctx, GLenum mode,
    struct marshal_cmd_MultiDrawElementsUserBuf *cmd;
 
    /* Make sure cmd can fit the queue buffer */
-   if (cmd_size > MARSHAL_MAX_CMD_SIZE) {
-      return false;
+   if (cmd_size <= MARSHAL_MAX_CMD_SIZE) {
+      cmd = _mesa_glthread_allocate_command(ctx, DISPATCH_CMD_MultiDrawElementsUserBuf, cmd_size);
+      cmd->mode = MIN2(mode, 0xff); /* primitive types go from 0 to 14 */
+      cmd->type = MIN2(type, 0xffff);
+      cmd->draw_count = draw_count;
+      cmd->user_buffer_mask = user_buffer_mask;
+      cmd->index_buffer = index_buffer;
+      cmd->has_base_vertex = basevertex != NULL;
+
+      char *variable_data = (char*)(cmd + 1);
+      memcpy(variable_data, count, count_size);
+      variable_data += count_size;
+      memcpy(variable_data, indices, indices_size);
+      variable_data += indices_size;
+
+      if (basevertex) {
+         memcpy(variable_data, basevertex, basevertex_size);
+         variable_data += basevertex_size;
+      }
+
+      if (user_buffer_mask)
+         memcpy(variable_data, buffers, buffers_size);
+   } else {
+      /* The call is too large, so sync and execute the unmarshal code here. */
+      _mesa_glthread_finish_before(ctx, "DrawElements");
+
+      /* Bind uploaded buffers if needed. */
+      if (user_buffer_mask) {
+         _mesa_InternalBindVertexBuffers(ctx, buffers, user_buffer_mask,
+                                         false);
+      }
+      if (index_buffer) {
+         _mesa_InternalBindElementBuffer(ctx, index_buffer);
+      }
+
+      /* Draw. */
+      if (basevertex != NULL) {
+         CALL_MultiDrawElementsBaseVertex(ctx->CurrentServerDispatch,
+                                          (mode, count, type, indices, draw_count,
+                                           basevertex));
+      } else {
+         CALL_MultiDrawElements(ctx->CurrentServerDispatch,
+                                (mode, count, type, indices, draw_count));
+      }
+
+      /* Restore states. */
+      /* TODO: remove this after glthread takes over all uploading */
+      if (index_buffer) {
+         _mesa_InternalBindElementBuffer(ctx, NULL);
+      }
+      if (user_buffer_mask) {
+         _mesa_InternalBindVertexBuffers(ctx, buffers, user_buffer_mask,
+                                         true);
+      }
    }
-
-   cmd = _mesa_glthread_allocate_command(ctx, DISPATCH_CMD_MultiDrawElementsUserBuf, cmd_size);
-   cmd->mode = MIN2(mode, 0xff); /* primitive types go from 0 to 14 */
-   cmd->type = MIN2(type, 0xffff);
-   cmd->draw_count = draw_count;
-   cmd->user_buffer_mask = user_buffer_mask;
-   cmd->index_buffer = index_buffer;
-   cmd->has_base_vertex = basevertex != NULL;
-
-   char *variable_data = (char*)(cmd + 1);
-   memcpy(variable_data, count, count_size);
-   variable_data += count_size;
-   memcpy(variable_data, indices, indices_size);
-   variable_data += indices_size;
-
-   if (basevertex) {
-      memcpy(variable_data, basevertex, basevertex_size);
-      variable_data += basevertex_size;
-   }
-
-   if (user_buffer_mask)
-      memcpy(variable_data, buffers, buffers_size);
-
-   return true;
 }
 
 void GLAPIENTRY
@@ -1116,22 +1160,15 @@ _mesa_marshal_MultiDrawElementsBaseVertex(GLenum mode, const GLsizei *count,
        (ctx->API == API_OPENGL_CORE ||
         !is_index_type_valid(type) ||
         (!user_buffer_mask && !has_user_indices))) {
-      if (multi_draw_elements_async(ctx, mode, count, type, indices,
-                              draw_count, basevertex, NULL, 0, NULL))
-         return;
+      multi_draw_elements_async(ctx, mode, count, type, indices,
+                                draw_count, basevertex, NULL, 0, NULL);
+      return;
    }
 
    bool need_index_bounds = user_buffer_mask & ~vao->NonZeroDivisorMask;
 
-   /* If the draw count is too high or negative, the queue can't be used.
-    *
-    * Sync if indices come from a buffer and vertices come from memory
-    * and index bounds are not valid. We would have to map the indices
-    * to compute the index bounds, and for that we would have to sync anyway.
-    */
-   if (!ctx->GLThread.SupportsBufferUploads ||
-       draw_count < 0 || draw_count > MARSHAL_MAX_CMD_SIZE / 32 ||
-       (need_index_bounds && !has_user_indices))
+   /* If the draw count is negative, the queue can't be used. */
+   if (draw_count < 0)
       goto sync;
 
    unsigned index_size = get_index_size(type);
@@ -1144,6 +1181,8 @@ _mesa_marshal_MultiDrawElementsBaseVertex(GLenum mode, const GLsizei *count,
     * uploaded.
     */
    if (need_index_bounds) {
+      bool synced = false;
+
       /* Compute the index bounds. */
       for (unsigned i = 0; i < draw_count; i++) {
          GLsizei vertex_count = count[i];
@@ -1158,10 +1197,23 @@ _mesa_marshal_MultiDrawElementsBaseVertex(GLenum mode, const GLsizei *count,
             continue;
 
          unsigned min = ~0, max = 0;
-         vbo_get_minmax_index_mapped(vertex_count, index_size,
-                                     ctx->GLThread._RestartIndex[index_size - 1],
-                                     ctx->GLThread._PrimitiveRestart, indices[i],
-                                     &min, &max);
+         if (has_user_indices) {
+            vbo_get_minmax_index_mapped(vertex_count, index_size,
+                                        ctx->GLThread._RestartIndex[index_size - 1],
+                                        ctx->GLThread._PrimitiveRestart, indices[i],
+                                        &min, &max);
+         } else {
+            if (!synced) {
+               _mesa_glthread_finish_before(ctx, "MultiDrawElements - need index bounds");
+               synced = true;
+            }
+            vbo_get_minmax_index(ctx, ctx->Array.VAO->IndexBufferObj,
+                                 NULL, (intptr_t)indices[i], vertex_count,
+                                 index_size, ctx->GLThread._PrimitiveRestart,
+                                 ctx->GLThread._RestartIndex[index_size - 1],
+                                 &min, &max);
+         }
+
          if (basevertex) {
             min += basevertex[i];
             max += basevertex[i];
@@ -1179,11 +1231,6 @@ _mesa_marshal_MultiDrawElementsBaseVertex(GLenum mode, const GLsizei *count,
                                    basevertex, NULL, 0, NULL);
          return;
       }
-
-      /* If there is too much data to upload, sync and let the driver unroll
-       * indices. */
-      if (util_is_vbo_upload_ratio_too_large(total_count, num_vertices))
-         goto sync;
    } else if (has_user_indices) {
       /* Only compute total_count for the upload of indices. */
       for (unsigned i = 0; i < draw_count; i++) {
@@ -1211,10 +1258,11 @@ _mesa_marshal_MultiDrawElementsBaseVertex(GLenum mode, const GLsizei *count,
 
    /* Upload vertices. */
    struct glthread_attrib_binding buffers[VERT_ATTRIB_MAX];
-   if (user_buffer_mask &&
-       !upload_vertices(ctx, user_buffer_mask, min_index, num_vertices,
-                        0, 1, buffers))
-      goto sync;
+   if (user_buffer_mask) {
+      if (!upload_vertices(ctx, user_buffer_mask, min_index, num_vertices,
+                           0, 1, buffers))
+         return; /* the error is set by upload_vertices */
+   }
 
    /* Upload indices. */
    struct gl_buffer_object *index_buffer = NULL;
@@ -1224,6 +1272,9 @@ _mesa_marshal_MultiDrawElementsBaseVertex(GLenum mode, const GLsizei *count,
       index_buffer = upload_multi_indices(ctx, total_count, index_size,
                                           draw_count, count, indices,
                                           out_indices);
+      if (!index_buffer)
+         return; /* the error is set by upload_multi_indices */
+
       indices = out_indices;
    }
 
@@ -1234,7 +1285,7 @@ _mesa_marshal_MultiDrawElementsBaseVertex(GLenum mode, const GLsizei *count,
    return;
 
 sync:
-   _mesa_glthread_finish_before(ctx, "DrawElements");
+   _mesa_glthread_finish_before(ctx, "MultiDrawElements");
 
    if (basevertex) {
       CALL_MultiDrawElementsBaseVertex(ctx->CurrentServerDispatch,

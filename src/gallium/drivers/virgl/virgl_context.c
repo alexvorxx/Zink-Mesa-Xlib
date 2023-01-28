@@ -31,7 +31,7 @@
 #include "pipe/p_state.h"
 #include "nir/nir_to_tgsi.h"
 #include "util/format/u_format.h"
-#include "util/indices/u_primconvert.h"
+#include "indices/u_primconvert.h"
 #include "util/u_draw.h"
 #include "util/u_inlines.h"
 #include "util/u_memory.h"
@@ -728,9 +728,25 @@ static void *virgl_shader_encoder(struct pipe_context *ctx,
 
       nir_shader *s = nir_shader_clone(NULL, shader->ir.nir);
 
+      /* The host can't handle certain IO slots as separable, because we can't assign
+       * more than 32 IO locations explicitly, and with varyings and patches we already
+       * exhaust the possible ways of handling this for the varyings with generic names,
+       * so drop the flag in these cases */
+      const uint64_t drop_slots_for_separable_io = 0xffull << VARYING_SLOT_TEX0 |
+                                                        1 <<  VARYING_SLOT_FOGC |
+                                                        1 <<  VARYING_SLOT_BFC0 |
+                                                        1 <<  VARYING_SLOT_BFC1 |
+                                                        1 <<  VARYING_SLOT_COL0 |
+                                                        1 <<  VARYING_SLOT_COL1;
+      bool keep_separable_flags = true;
+      if (s->info.stage != MESA_SHADER_VERTEX)
+         keep_separable_flags &= !(s->info.inputs_read & drop_slots_for_separable_io);
+      if (s->info.stage != MESA_SHADER_FRAGMENT)
+         keep_separable_flags &= !(s->info.outputs_written & drop_slots_for_separable_io);
+
       /* Propagare the separable shader property to the host, unless
        * it is an internal shader - these are marked separable even though they are not. */
-      is_separable = s->info.separate_shader && !s->info.internal;
+      is_separable = s->info.separate_shader && !s->info.internal && keep_separable_flags;
       ntt_tokens = tokens = nir_to_tgsi_options(s, vctx->base.screen, &options); /* takes ownership */
    } else {
       tokens = shader->tokens;

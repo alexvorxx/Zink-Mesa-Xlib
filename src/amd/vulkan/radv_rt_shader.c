@@ -802,7 +802,7 @@ parse_rt_stage(struct radv_device *device, const VkPipelineShaderStageCreateInfo
 
    radv_pipeline_stage_init(sinfo, &rt_stage, vk_to_mesa_shader_stage(sinfo->stage));
 
-   nir_shader *shader = radv_shader_spirv_to_nir(device, &rt_stage, key);
+   nir_shader *shader = radv_shader_spirv_to_nir(device, &rt_stage, key, false);
 
    if (shader->info.stage == MESA_SHADER_RAYGEN || shader->info.stage == MESA_SHADER_CLOSEST_HIT ||
        shader->info.stage == MESA_SHADER_CALLABLE || shader->info.stage == MESA_SHADER_MISS) {

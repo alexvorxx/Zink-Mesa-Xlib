@@ -291,7 +291,7 @@ anv_device_utrace_init(struct anv_device *device)
       queue->ds =
          intel_ds_device_add_queue(&device->ds, "%s%u",
                                    intel_engines_class_to_string(queue->family->engine_class),
-                                   queue->index_in_family);
+                                   queue->vk.index_in_family);
    }
 }
 

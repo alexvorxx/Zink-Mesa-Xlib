@@ -37,10 +37,13 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/file.h>
-#include <sys/inotify.h>
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <unistd.h>
+
+#ifdef FOZ_DB_UTIL_DYNAMIC_LIST
+#include <sys/inotify.h>
+#endif
 
 #include "util/u_debug.h"
 
@@ -325,6 +328,7 @@ load_foz_dbs_ro(struct foz_db *foz_db, char *foz_dbs_ro)
    }
 }
 
+#ifdef FOZ_DB_UTIL_DYNAMIC_LIST
 static bool
 check_file_already_loaded(struct foz_db *foz_db,
                           FILE *db_file,
@@ -483,6 +487,7 @@ foz_dbs_list_updater_init(struct foz_db *foz_db, char *list_filename)
 
    return true;
 }
+#endif
 
 /* Here we open mesa cache foz dbs files. If the files exist we load the index
  * db into a hash table. The index db contains the offsets needed to later
@@ -525,10 +530,12 @@ foz_prepare(struct foz_db *foz_db, char *cache_path)
    if (foz_dbs_ro)
       load_foz_dbs_ro(foz_db, foz_dbs_ro);
 
+#ifdef FOZ_DB_UTIL_DYNAMIC_LIST
    char *foz_dbs_list =
       getenv("MESA_DISK_CACHE_READ_ONLY_FOZ_DBS_DYNAMIC_LIST");
    if (foz_dbs_list)
       foz_dbs_list_updater_init(foz_db, foz_dbs_list);
+#endif
 
    return true;
 
@@ -541,6 +548,7 @@ fail:
 void
 foz_destroy(struct foz_db *foz_db)
 {
+#ifdef FOZ_DB_UTIL_DYNAMIC_LIST
    struct foz_dbs_list_updater *updater = &foz_db->updater;
    if (updater->thrd) {
       inotify_rm_watch(updater->inotify_fd, updater->inotify_wd);
@@ -550,6 +558,7 @@ foz_destroy(struct foz_db *foz_db)
       thrd_join(updater->thrd, NULL);
       close(updater->inotify_fd);
    }
+#endif
 
    if (foz_db->db_idx)
       fclose(foz_db->db_idx);

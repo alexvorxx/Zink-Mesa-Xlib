@@ -27,7 +27,7 @@
 #include "nir.h"
 #include "nir_builder.h"
 #include "nir_serialize.h"
-#include "nir/nir_helpers.h"
+#include "nir_xfb_info.h"
 #include "si_pipe.h"
 #include "si_shader_internal.h"
 #include "sid.h"
@@ -70,7 +70,7 @@ bool si_is_multi_part_shader(struct si_shader *shader)
 /** Whether the shader runs on a merged HW stage (LSHS or ESGS) */
 bool si_is_merged_shader(struct si_shader *shader)
 {
-   if (shader->selector->stage > MESA_SHADER_GEOMETRY)
+   if (shader->selector->stage > MESA_SHADER_GEOMETRY || shader->is_gs_copy_shader)
       return false;
 
    return shader->key.ge.as_ngg || si_is_multi_part_shader(shader);
@@ -170,29 +170,6 @@ unsigned si_shader_io_get_unique_index(unsigned semantic, bool is_varying)
       return 53;
    case VARYING_SLOT_PRIMITIVE_ID:
       return 54;
-   }
-}
-
-static void si_dump_streamout(struct pipe_stream_output_info *so)
-{
-   unsigned i;
-
-   if (so->num_outputs) {
-      fprintf(stderr, "STREAMOUT\n");
-
-      fprintf(stderr, "  STRIDES: {");
-      for (i = 0; i < PIPE_MAX_SO_BUFFERS; i++)
-         fprintf(stderr, "%u%s", so->stride[i], i < 3 ? ", " : "");
-      fprintf(stderr, "}\n");
-   }
-
-   for (i = 0; i < so->num_outputs; i++) {
-      unsigned mask = ((1 << so->output[i].num_components) - 1) << so->output[i].start_component;
-      fprintf(stderr, "  %i: STREAM%u: BUF%i[%i..%i] <- OUT[%i].%s%s%s%s\n",
-              i, so->output[i].stream, so->output[i].output_buffer,
-              so->output[i].dst_offset, so->output[i].dst_offset + so->output[i].num_components - 1,
-              so->output[i].register_index, mask & 1 ? "x" : "", mask & 2 ? "y" : "",
-              mask & 4 ? "z" : "", mask & 8 ? "w" : "");
    }
 }
 
@@ -1789,8 +1766,11 @@ static void si_assign_param_offsets(nir_shader *nir, struct si_shader *shader)
    si_nir_assign_param_offsets(nir, shader, slot_remap);
 }
 
-struct nir_shader *si_get_nir_shader(struct si_shader *shader, struct si_shader_args *args,
-                                     bool *free_nir, uint64_t tcs_vgpr_only_inputs)
+struct nir_shader *si_get_nir_shader(struct si_shader *shader,
+                                     struct si_shader_args *args,
+                                     bool *free_nir,
+                                     uint64_t tcs_vgpr_only_inputs,
+                                     ac_nir_gs_output_info *output_info)
 {
    struct si_shader_selector *sel = shader->selector;
    const union si_shader_key *key = &shader->key;
@@ -1920,15 +1900,26 @@ struct nir_shader *si_get_nir_shader(struct si_shader *shader, struct si_shader_
 
    bool opt_offsets = si_lower_io_to_mem(shader, nir, tcs_vgpr_only_inputs);
 
-   /* Assign param export indices. */
-   if (is_last_vgt_stage)
+   if (is_last_vgt_stage) {
+      /* Assign param export indices. */
       si_assign_param_offsets(nir, shader);
 
-   /* Only lower last VGT NGG shader stage. */
-   if (sel->stage <= MESA_SHADER_GEOMETRY && key->ge.as_ngg && !key->ge.as_es) {
-      si_lower_ngg(shader, nir);
-      opt_offsets = true;
+      if (key->ge.as_ngg) {
+         /* Lower last VGT NGG shader stage. */
+         si_lower_ngg(shader, nir);
+         opt_offsets = true;
+      } else if (sel->stage == MESA_SHADER_VERTEX || sel->stage == MESA_SHADER_TESS_EVAL) {
+         /* Lower last VGT none-NGG VS/TES shader stage. */
+         int primitive_id_location =
+            shader->key.ge.mono.u.vs_export_prim_id ? sel->info.num_outputs : -1;
+
+         NIR_PASS_V(nir, ac_nir_lower_legacy_vs, primitive_id_location,
+                    key->ge.opt.remove_streamout);
+      }
    }
+
+   if (sel->stage == MESA_SHADER_GEOMETRY && !key->ge.as_ngg)
+      NIR_PASS_V(nir, ac_nir_lower_legacy_gs, false, sel->screen->use_ngg, output_info);
 
    NIR_PASS(progress2, nir, si_nir_lower_abi, shader, args);
 
@@ -1971,28 +1962,171 @@ void si_update_shader_binary_info(struct si_shader *shader, nir_shader *nir)
    shader->info.uses_vmem_sampler_or_bvh |= info.uses_vmem_sampler_or_bvh;
 }
 
+/* Generate code for the hardware VS shader stage to go with a geometry shader */
+static struct si_shader *
+si_nir_generate_gs_copy_shader(struct si_screen *sscreen,
+                               struct ac_llvm_compiler *compiler,
+                               struct si_shader *gs_shader,
+                               nir_shader *gs_nir,
+                               struct util_debug_callback *debug,
+                               ac_nir_gs_output_info *output_info)
+{
+   struct si_shader *shader;
+   struct si_shader_selector *gs_selector = gs_shader->selector;
+   struct si_shader_info *gsinfo = &gs_selector->info;
+   union si_shader_key *gskey = &gs_shader->key;
+
+   shader = CALLOC_STRUCT(si_shader);
+   if (!shader)
+      return NULL;
+
+   /* We can leave the fence as permanently signaled because the GS copy
+    * shader only becomes visible globally after it has been compiled. */
+   util_queue_fence_init(&shader->ready);
+
+   shader->selector = gs_selector;
+   shader->is_gs_copy_shader = true;
+   shader->wave_size = si_determine_wave_size(sscreen, shader);
+
+   STATIC_ASSERT(sizeof(shader->info.vs_output_param_offset[0]) == 1);
+   memset(shader->info.vs_output_param_offset, AC_EXP_PARAM_DEFAULT_VAL_0000,
+          sizeof(shader->info.vs_output_param_offset));
+
+   for (unsigned i = 0; i < gsinfo->num_outputs; i++) {
+      unsigned semantic = gsinfo->output_semantic[i];
+
+      /* Skip if no channel writes to stream 0. */
+      if (!nir_slot_is_varying(semantic) ||
+          (gsinfo->output_streams[i] & 0x03 &&
+           gsinfo->output_streams[i] & 0x0c &&
+           gsinfo->output_streams[i] & 0x30 &&
+           gsinfo->output_streams[i] & 0xc0))
+         continue;
+
+      shader->info.vs_output_param_offset[semantic] = shader->info.nr_param_exports++;
+      shader->info.vs_output_param_mask |= BITFIELD64_BIT(i);
+   }
+
+   nir_shader *nir =
+      ac_nir_create_gs_copy_shader(gs_nir,
+                                   gskey->ge.opt.remove_streamout,
+                                   output_info);
+
+   /* used in si_nir_clamp_vertex_color */
+   nir->info.outputs_written = gsinfo->base.outputs_written;
+   nir->info.outputs_written_16bit = gsinfo->base.outputs_written_16bit;
+   NIR_PASS_V(nir, si_nir_clamp_vertex_color);
+
+   struct si_shader_args args;
+   si_init_shader_args(shader, &args);
+
+   NIR_PASS_V(nir, si_nir_lower_abi, shader, &args);
+
+   si_nir_opts(gs_selector->screen, nir, false);
+
+   if (si_can_dump_shader(sscreen, MESA_SHADER_GEOMETRY)) {
+      fprintf(stderr, "GS Copy Shader:\n");
+      if (!(sscreen->debug_flags & DBG(NO_NIR)))
+         nir_print_shader(nir, stderr);
+   }
+
+   bool ok = false;
+   if (si_llvm_compile_shader(sscreen, compiler, shader, &args, debug, nir)) {
+      assert(!shader->config.scratch_bytes_per_wave);
+      ok = si_shader_binary_upload(sscreen, shader, 0);
+      si_shader_dump(sscreen, shader, debug, stderr, true);
+   }
+   ralloc_free(nir);
+
+   if (!ok) {
+      FREE(shader);
+      shader = NULL;
+   } else {
+      si_fix_resource_usage(sscreen, shader);
+   }
+   return shader;
+}
+
+struct si_gs_output_info {
+   uint8_t streams[64];
+   uint8_t streams_16bit_lo[16];
+   uint8_t streams_16bit_hi[16];
+
+   uint8_t usage_mask[64];
+   uint8_t usage_mask_16bit_lo[16];
+   uint8_t usage_mask_16bit_hi[16];
+
+   uint8_t slot_to_location[64];
+   uint8_t slot_to_location_16bit[16];
+
+   ac_nir_gs_output_info info;
+};
+
+static void
+si_init_gs_output_info(struct si_shader_info *info, struct si_gs_output_info *out_info)
+{
+   for (int i = 0; i < info->num_outputs; i++) {
+      unsigned slot = info->output_semantic[i];
+      if (slot < VARYING_SLOT_VAR0_16BIT) {
+         out_info->streams[slot] = info->output_streams[i];
+         out_info->usage_mask[slot] = info->output_usagemask[i];
+         out_info->slot_to_location[slot] = i;
+      } else {
+         unsigned index = slot - VARYING_SLOT_VAR0_16BIT;
+         /* TODO: 16bit need separated fields for lo/hi part. */
+         out_info->streams_16bit_lo[index] = info->output_streams[i];
+         out_info->streams_16bit_hi[index] = info->output_streams[i];
+         out_info->usage_mask_16bit_lo[index] = info->output_usagemask[i];
+         out_info->usage_mask_16bit_hi[index] = info->output_usagemask[i];
+         out_info->slot_to_location_16bit[index] = i;
+      }
+   }
+
+   ac_nir_gs_output_info *ac_info = &out_info->info;
+
+   ac_info->streams = out_info->streams;
+   ac_info->streams_16bit_lo = out_info->streams_16bit_lo;
+   ac_info->streams_16bit_hi = out_info->streams_16bit_hi;
+
+   ac_info->usage_mask = out_info->usage_mask;
+   ac_info->usage_mask_16bit_lo = out_info->usage_mask_16bit_lo;
+   ac_info->usage_mask_16bit_hi = out_info->usage_mask_16bit_hi;
+
+   /* TODO: construct 16bit slot per component store type. */
+   ac_info->types_16bit_lo = ac_info->types_16bit_hi = NULL;
+
+   ac_info->slot_to_location = out_info->slot_to_location;
+   ac_info->slot_to_location_16bit = out_info->slot_to_location_16bit;
+}
+
 bool si_compile_shader(struct si_screen *sscreen, struct ac_llvm_compiler *compiler,
                        struct si_shader *shader, struct util_debug_callback *debug)
 {
+   bool ret = true;
    struct si_shader_selector *sel = shader->selector;
+
+   /* We need this info only when legacy GS. */
+   struct si_gs_output_info legacy_gs_output_info;
+   if (sel->stage == MESA_SHADER_GEOMETRY && !shader->key.ge.as_ngg) {
+      memset(&legacy_gs_output_info, 0, sizeof(legacy_gs_output_info));
+      si_init_gs_output_info(&sel->info, &legacy_gs_output_info);
+   }
 
    struct si_shader_args args;
    si_init_shader_args(shader, &args);
 
    bool free_nir;
-   struct nir_shader *nir = si_get_nir_shader(shader, &args, &free_nir, 0);
-
-   struct pipe_stream_output_info so = {};
-   /* NGG streamout has been lowered to buffer store in nir. */
-   if (!sscreen->use_ngg_streamout && si_shader_uses_streamout(shader))
-      nir_gather_stream_output_info(nir, &so);
+   struct nir_shader *nir =
+      si_get_nir_shader(shader, &args, &free_nir, 0, &legacy_gs_output_info.info);
 
    /* Dump NIR before doing NIR->LLVM conversion in case the
     * conversion fails. */
    if (si_can_dump_shader(sscreen, sel->stage) &&
        !(sscreen->debug_flags & DBG(NO_NIR))) {
       nir_print_shader(nir, stderr);
-      si_dump_streamout(&so);
+
+      if (nir->xfb_info)
+         nir_print_xfb_info(nir->xfb_info, stderr);
    }
 
    /* Initialize vs_output_ps_input_cntl to default. */
@@ -2036,17 +2170,22 @@ bool si_compile_shader(struct si_screen *sscreen, struct ac_llvm_compiler *compi
     * with PS and NGG VS), but monolithic shaders should be compiled
     * by LLVM due to more complicated compilation.
     */
-   if (!si_llvm_compile_shader(sscreen, compiler, shader, &args, &so, debug, nir, free_nir))
-      return false;
+   if (!si_llvm_compile_shader(sscreen, compiler, shader, &args, debug, nir)) {
+      ret = false;
+      goto out;
+   }
 
    shader->config.float_mode = float_mode;
 
    /* The GS copy shader is compiled next. */
    if (sel->stage == MESA_SHADER_GEOMETRY && !shader->key.ge.as_ngg) {
-      shader->gs_copy_shader = si_generate_gs_copy_shader(sscreen, compiler, sel, &so, debug);
+      shader->gs_copy_shader =
+         si_nir_generate_gs_copy_shader(sscreen, compiler, shader, nir, debug,
+                                        &legacy_gs_output_info.info);
       if (!shader->gs_copy_shader) {
          fprintf(stderr, "radeonsi: can't create GS copy shader\n");
-         return false;
+         ret = false;
+         goto out;
       }
    }
 
@@ -2131,7 +2270,12 @@ bool si_compile_shader(struct si_screen *sscreen, struct ac_llvm_compiler *compi
 
    si_calculate_max_simd_waves(shader);
    si_shader_dump_stats_for_shader_db(sscreen, shader, debug);
-   return true;
+
+out:
+   if (free_nir)
+      ralloc_free(nir);
+
+   return ret;
 }
 
 /**

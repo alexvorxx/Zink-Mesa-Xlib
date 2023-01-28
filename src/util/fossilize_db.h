@@ -37,6 +37,10 @@
 #define FOZ_DB_UTIL 1
 #endif
 
+#ifdef HAVE_SYS_INOTIFY_H
+#define FOZ_DB_UTIL_DYNAMIC_LIST 1
+#endif
+
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>

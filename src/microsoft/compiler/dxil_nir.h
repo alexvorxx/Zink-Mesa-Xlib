@@ -76,6 +76,8 @@ bool dxil_nir_fix_io_uint_type(nir_shader *s, uint64_t in_mask, uint64_t out_mas
 bool dxil_nir_lower_discard_and_terminate(nir_shader* s);
 bool dxil_nir_ensure_position_writes(nir_shader *s);
 bool dxil_nir_lower_sample_pos(nir_shader *s);
+bool dxil_nir_lower_subgroup_id(nir_shader *s);
+bool dxil_nir_lower_num_subgroups(nir_shader *s);
 
 #ifdef __cplusplus
 }

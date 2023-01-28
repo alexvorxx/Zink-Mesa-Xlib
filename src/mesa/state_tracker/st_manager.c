@@ -1057,7 +1057,6 @@ st_api_get_current(void)
 
 static struct gl_framebuffer *
 st_framebuffer_reuse_or_create(struct st_context *st,
-                               struct gl_framebuffer *fb,
                                struct pipe_frontend_drawable *drawable)
 {
    struct gl_framebuffer *cur = NULL, *stfb = NULL;
@@ -1114,12 +1113,10 @@ st_api_make_current(struct st_context *st,
 
    if (st) {
       /* reuse or create the draw fb */
-      stdraw = st_framebuffer_reuse_or_create(st,
-            st->ctx->WinSysDrawBuffer, stdrawi);
+      stdraw = st_framebuffer_reuse_or_create(st, stdrawi);
       if (streadi != stdrawi) {
          /* do the same for the read fb */
-         stread = st_framebuffer_reuse_or_create(st,
-               st->ctx->WinSysReadBuffer, streadi);
+         stread = st_framebuffer_reuse_or_create(st, streadi);
       }
       else {
          stread = NULL;

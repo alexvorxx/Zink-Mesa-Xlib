@@ -26,6 +26,7 @@ inc_gallium_aux = include_directories('gallium/auxiliary')
 inc_amd_common = include_directories('amd/common')
 inc_tool = include_directories('tool')
 inc_virtio_gpu = include_directories('virtio/virtio-gpu')
+inc_frontends = include_directories('gallium/frontends')
 pps_datasources = []
 pps_includes = []
 

@@ -675,6 +675,7 @@ const struct dxil_type *
 dxil_get_overload_type(struct dxil_module *mod, enum overload_type overload)
 {
    switch (overload) {
+   case DXIL_I1: return get_int1_type(mod);
    case DXIL_I16: return get_int16_type(mod);
    case DXIL_I32: return get_int32_type(mod);
    case DXIL_I64: return get_int64_type(mod);
@@ -906,6 +907,16 @@ dxil_module_get_res_props_type(struct dxil_module *mod)
    const struct dxil_type *fields[2] = { int32_type, int32_type };
 
    return dxil_module_get_struct_type(mod, "dx.types.ResourceProperties", fields, 2);
+}
+
+const struct dxil_type *
+dxil_module_get_fouri32_type(struct dxil_module *mod)
+{
+   /* %dx.types.fouri32 = type { i32, i32, i32, i32 } */
+   const struct dxil_type *int32_type = dxil_module_get_int_type(mod, 32);
+   const struct dxil_type *fields[4] = { int32_type, int32_type, int32_type, int32_type };
+
+   return dxil_module_get_struct_type(mod, "dx.types.fouri32", fields, 4);
 }
 
 const struct dxil_type *
@@ -1303,17 +1314,36 @@ static bool
 emit_attrib_group(struct dxil_module *m, int id, uint32_t slot,
                   const struct dxil_attrib *attrs, size_t num_attrs)
 {
-   uint64_t record[64];
+   uint64_t record[128];
    record[0] = id;
    record[1] = slot;
    size_t size = 2;
 
    for (int i = 0; i < num_attrs; ++i) {
+      assert(size < ARRAY_SIZE(record) - 2);
+      record[size++] = attrs[i].type;
       switch (attrs[i].type) {
       case DXIL_ATTR_ENUM:
-         assert(size < ARRAY_SIZE(record) - 2);
+         record[size++] = attrs[i].key.kind;
+         break;
+      case DXIL_ATTR_ENUM_VALUE:
+         record[size++] = attrs[i].key.kind;
+         record[size++] = attrs[i].value.integer;
+         break;
+      case DXIL_ATTR_STRING:
+      case DXIL_ATTR_STRING_VALUE:
+         assert(size < ARRAY_SIZE(record) - strlen(attrs[i].key.str));
+         for (int j = 0; attrs[i].key.str[j]; ++j)
+            record[size++] = attrs[i].key.str[j];
          record[size++] = 0;
-         record[size++] = attrs[i].kind;
+
+         if (attrs[i].type == DXIL_ATTR_STRING)
+            break;
+
+         assert(size < ARRAY_SIZE(record) - strlen(attrs[i].value.str));
+         for (int j = 0; attrs[i].value.str[j]; ++j)
+            record[size++] = attrs[i].value.str[j];
+         record[size++] = 0;
          break;
 
       default:
@@ -2105,13 +2135,82 @@ add_function(struct dxil_module *m, const char *name,
    return func;
 }
 
+static bool attrs_equal(const struct dxil_attrib *a, const struct dxil_attrib *b)
+{
+   if (a->type != b->type)
+      return false;
+   switch (a->type) {
+   case DXIL_ATTR_ENUM:
+      return a->key.kind == b->key.kind;
+   case DXIL_ATTR_ENUM_VALUE:
+      return a->key.kind == b->key.kind && a->value.integer == b->value.integer;
+   case DXIL_ATTR_STRING:
+      return a->key.str == b->key.str || !strcmp(a->key.str, b->key.str);
+   case DXIL_ATTR_STRING_VALUE:
+      return (a->key.str == b->key.str || !strcmp(a->key.str, b->key.str)) &&
+         (a->value.str == b->value.str || !strcmp(a->value.str, b->value.str));
+   default:
+      unreachable("Invalid attr type");
+   }
+}
+
+static bool attr_sets_equal(unsigned num_attrs, const struct dxil_attrib *a, const struct dxil_attrib *b)
+{
+   for (unsigned i = 0; i < num_attrs; ++i) {
+      if (!attrs_equal(&a[i], &b[i]))
+         return false;
+   }
+   return true;
+}
+
+static unsigned
+dxil_get_string_attr_set(struct dxil_module *m,
+                         const char *const *attr_keys, const char *const *attr_values)
+{
+   if (!attr_keys)
+      return 0;
+
+   struct dxil_attrib attrs[2];
+   unsigned num_attrs = 0;
+   for (; num_attrs < ARRAY_SIZE(attrs) && attr_keys[num_attrs]; ++num_attrs) {
+      if (attr_values && attr_values[num_attrs])
+         attrs[num_attrs] = (struct dxil_attrib){ DXIL_ATTR_STRING_VALUE, {.str = attr_keys[num_attrs]}, {.str = attr_values[num_attrs]} };
+      else
+         attrs[num_attrs] = (struct dxil_attrib){ DXIL_ATTR_STRING, {.str = attr_keys[num_attrs]} };
+   }
+
+   if (num_attrs == 0)
+      return 0;
+
+   int index = 1;
+   struct attrib_set *as;
+   LIST_FOR_EACH_ENTRY(as, &m->attr_set_list, head) {
+      if (as->num_attrs == num_attrs && attr_sets_equal(num_attrs, as->attrs, attrs))
+         return index;
+      index++;
+   }
+
+   as = ralloc_size(m->ralloc_ctx, sizeof(struct attrib_set));
+   if (!as)
+      return 0;
+
+   memcpy(as->attrs, attrs, sizeof(attrs));
+   as->num_attrs = num_attrs;
+
+   list_addtail(&as->head, &m->attr_set_list);
+   assert(list_length(&m->attr_set_list) == index);
+   return index;
+}
+
 struct dxil_func_def *
 dxil_add_function_def(struct dxil_module *m, const char *name,
-                      const struct dxil_type *type, unsigned num_blocks)
+                      const struct dxil_type *type, unsigned num_blocks,
+                      const char *const *attr_keys, const char *const *attr_values)
 {
    struct dxil_func_def *def = ralloc_size(m->ralloc_ctx, sizeof(struct dxil_func_def));
 
-   def->func = add_function(m, name, type, false, 0);
+   unsigned attr_index = dxil_get_string_attr_set(m, attr_keys, attr_values);
+   def->func = add_function(m, name, type, false, attr_index);
    if (!def->func)
       return NULL;
 
@@ -2142,10 +2241,11 @@ get_attr_set(struct dxil_module *m, enum dxil_attr_kind attr)
       { DXIL_ATTR_ENUM, { attr } }
    };
 
+   unsigned num_attrs = attr == DXIL_ATTR_KIND_NONE ? 1 : 2;
    int index = 1;
    struct attrib_set *as;
    LIST_FOR_EACH_ENTRY(as, &m->attr_set_list, head) {
-      if (!memcmp(as->attrs, attrs, sizeof(attrs)))
+      if (as->num_attrs == num_attrs && attr_sets_equal(num_attrs, as->attrs, attrs))
          return index;
       index++;
    }
@@ -2155,9 +2255,7 @@ get_attr_set(struct dxil_module *m, enum dxil_attr_kind attr)
       return 0;
 
    memcpy(as->attrs, attrs, sizeof(attrs));
-   as->num_attrs = 1;
-   if (attr != DXIL_ATTR_KIND_NONE)
-      as->num_attrs++;
+   as->num_attrs = num_attrs;
 
    list_addtail(&as->head, &m->attr_set_list);
    assert(list_length(&m->attr_set_list) == index);

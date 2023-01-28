@@ -298,7 +298,7 @@ struct pvr_device {
    uint32_t queue_count;
 
    /* Running count of the number of job submissions across all queue. */
-   uint32_t global_queue_job_count;
+   uint32_t global_cmd_buffer_submit_count;
 
    /* Running count of the number of presentations across all queues. */
    uint32_t global_queue_present_count;
@@ -658,6 +658,9 @@ struct pvr_sub_cmd_gfx {
 
    /* Control stream builder object */
    struct pvr_csb control_stream;
+
+   /* Required iff pvr_sub_cmd_gfx_requires_split_submit() returns true. */
+   struct pvr_bo *terminate_ctrl_stream;
 
    uint32_t hw_render_idx;
 
@@ -1546,6 +1549,12 @@ pvr_stage_mask_dst(VkPipelineStageFlags2KHR stage_mask)
       return PVR_PIPELINE_STAGE_ALL_BITS;
 
    return pvr_stage_mask(stage_mask);
+}
+
+static inline bool pvr_sub_cmd_gfx_requires_split_submit(
+   const struct pvr_sub_cmd_gfx *const sub_cmd)
+{
+   return sub_cmd->job.run_frag && sub_cmd->framebuffer->layers > 1;
 }
 
 VkResult pvr_pds_fragment_program_create_and_upload(

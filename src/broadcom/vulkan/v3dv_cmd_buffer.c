@@ -66,7 +66,6 @@ cmd_buffer_init(struct v3dv_cmd_buffer *cmd_buffer,
 
    list_inithead(&cmd_buffer->private_objs);
    list_inithead(&cmd_buffer->jobs);
-   list_inithead(&cmd_buffer->list_link);
 
    cmd_buffer->state.subpass_idx = -1;
    cmd_buffer->state.meta.subpass_idx = -1;

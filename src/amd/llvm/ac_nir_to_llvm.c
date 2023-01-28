@@ -1126,6 +1126,7 @@ static bool visit_alu(struct ac_nir_context *ctx, const nir_alu_instr *instr)
    case nir_op_pack_half_2x16:
       result = emit_pack_2x16(&ctx->ac, src[0], ac_build_cvt_pkrtz_f16);
       break;
+   case nir_op_pack_half_2x16_rtz_split:
    case nir_op_pack_half_2x16_split:
       src[0] = ac_to_float(&ctx->ac, src[0]);
       src[1] = ac_to_float(&ctx->ac, src[1]);
@@ -2006,6 +2007,9 @@ static LLVMValueRef visit_atomic_ssbo(struct ac_nir_context *ctx, nir_intrinsic_
    case nir_intrinsic_ssbo_atomic_comp_swap:
       op = "cmpswap";
       break;
+   case nir_intrinsic_ssbo_atomic_fadd:
+      op = "fadd";
+      break;
    case nir_intrinsic_ssbo_atomic_fmin:
       op = "fmin";
       break;
@@ -2028,7 +2032,8 @@ static LLVMValueRef visit_atomic_ssbo(struct ac_nir_context *ctx, nir_intrinsic_
       if (instr->intrinsic == nir_intrinsic_ssbo_atomic_comp_swap) {
          params[arg_count++] = ac_llvm_extract_elem(&ctx->ac, get_src(ctx, instr->src[3]), 0);
       }
-      if (instr->intrinsic == nir_intrinsic_ssbo_atomic_fmin ||
+      if (instr->intrinsic == nir_intrinsic_ssbo_atomic_fadd ||
+          instr->intrinsic == nir_intrinsic_ssbo_atomic_fmin ||
           instr->intrinsic == nir_intrinsic_ssbo_atomic_fmax) {
          data = ac_to_float(&ctx->ac, data);
          return_type = LLVMTypeOf(data);
@@ -2044,7 +2049,8 @@ static LLVMValueRef visit_atomic_ssbo(struct ac_nir_context *ctx, nir_intrinsic_
 
       result = ac_build_intrinsic(&ctx->ac, name, return_type, params, arg_count, 0);
 
-      if (instr->intrinsic == nir_intrinsic_ssbo_atomic_fmin ||
+      if (instr->intrinsic == nir_intrinsic_ssbo_atomic_fadd ||
+          instr->intrinsic == nir_intrinsic_ssbo_atomic_fmin ||
           instr->intrinsic == nir_intrinsic_ssbo_atomic_fmax) {
          result = ac_to_integer(&ctx->ac, result);
       }
@@ -2209,8 +2215,10 @@ static LLVMValueRef visit_global_atomic(struct ac_nir_context *ctx,
    /* use "singlethread" sync scope to implement relaxed ordering */
    const char *sync_scope = "singlethread-one-as";
 
-   if (instr->intrinsic == nir_intrinsic_global_atomic_fmin ||
+   if (instr->intrinsic == nir_intrinsic_global_atomic_fadd ||
+       instr->intrinsic == nir_intrinsic_global_atomic_fmin ||
        instr->intrinsic == nir_intrinsic_global_atomic_fmax ||
+       instr->intrinsic == nir_intrinsic_global_atomic_fadd_amd ||
        instr->intrinsic == nir_intrinsic_global_atomic_fmin_amd ||
        instr->intrinsic == nir_intrinsic_global_atomic_fmax_amd) {
       data = ac_to_float(&ctx->ac, data);
@@ -2225,11 +2233,29 @@ static LLVMValueRef visit_global_atomic(struct ac_nir_context *ctx,
       LLVMValueRef data1 = get_src(ctx, instr->src[2]);
       result = ac_build_atomic_cmp_xchg(&ctx->ac, addr, data, data1, sync_scope);
       result = LLVMBuildExtractValue(ctx->ac.builder, result, 0, "");
-   } else if (instr->intrinsic == nir_intrinsic_global_atomic_fmin ||
+   } else if (instr->intrinsic == nir_intrinsic_global_atomic_fadd ||
+              instr->intrinsic == nir_intrinsic_global_atomic_fmin ||
               instr->intrinsic == nir_intrinsic_global_atomic_fmax ||
+              instr->intrinsic == nir_intrinsic_global_atomic_fadd_amd ||
               instr->intrinsic == nir_intrinsic_global_atomic_fmin_amd ||
               instr->intrinsic == nir_intrinsic_global_atomic_fmax_amd) {
-      const char *op = instr->intrinsic == nir_intrinsic_global_atomic_fmin ? "fmin" : "fmax";
+      const char *op = NULL;
+      switch (instr->intrinsic) {
+      case nir_intrinsic_global_atomic_fadd:
+      case nir_intrinsic_global_atomic_fadd_amd:
+         op = "fadd";
+         break;
+      case nir_intrinsic_global_atomic_fmin:
+      case nir_intrinsic_global_atomic_fmin_amd:
+         op = "fmin";
+         break;
+      case nir_intrinsic_global_atomic_fmax:
+      case nir_intrinsic_global_atomic_fmax_amd:
+         op = "fmax";
+         break;
+      default:
+         break;
+      }
       char name[64], type[8];
       LLVMValueRef params[2];
       int arg_count = 0;
@@ -2750,6 +2776,11 @@ static LLVMValueRef visit_image_atomic(struct ac_nir_context *ctx, const nir_int
    case nir_intrinsic_bindless_image_atomic_dec_wrap:
       atomic_name = "dec";
       atomic_subop = ac_atomic_dec_wrap;
+      break;
+   case nir_intrinsic_bindless_image_atomic_fadd:
+   case nir_intrinsic_image_deref_atomic_fadd:
+      atomic_name = "fadd";
+      atomic_subop = ac_atomic_fmin; /* Non-buffer fadd atomics are not supported. */
       break;
    case nir_intrinsic_bindless_image_atomic_fmin:
       atomic_name = "fmin";
@@ -3616,6 +3647,7 @@ static bool visit_intrinsic(struct ac_nir_context *ctx, nir_intrinsic_instr *ins
    case nir_intrinsic_global_atomic_xor:
    case nir_intrinsic_global_atomic_exchange:
    case nir_intrinsic_global_atomic_comp_swap:
+   case nir_intrinsic_global_atomic_fadd:
    case nir_intrinsic_global_atomic_fmin:
    case nir_intrinsic_global_atomic_fmax:
    case nir_intrinsic_global_atomic_add_amd:
@@ -3628,6 +3660,7 @@ static bool visit_intrinsic(struct ac_nir_context *ctx, nir_intrinsic_instr *ins
    case nir_intrinsic_global_atomic_xor_amd:
    case nir_intrinsic_global_atomic_exchange_amd:
    case nir_intrinsic_global_atomic_comp_swap_amd:
+   case nir_intrinsic_global_atomic_fadd_amd:
    case nir_intrinsic_global_atomic_fmin_amd:
    case nir_intrinsic_global_atomic_fmax_amd:
       result = visit_global_atomic(ctx, instr);
@@ -3642,6 +3675,7 @@ static bool visit_intrinsic(struct ac_nir_context *ctx, nir_intrinsic_instr *ins
    case nir_intrinsic_ssbo_atomic_xor:
    case nir_intrinsic_ssbo_atomic_exchange:
    case nir_intrinsic_ssbo_atomic_comp_swap:
+   case nir_intrinsic_ssbo_atomic_fadd:
    case nir_intrinsic_ssbo_atomic_fmin:
    case nir_intrinsic_ssbo_atomic_fmax:
       result = visit_atomic_ssbo(ctx, instr);
@@ -3697,6 +3731,7 @@ static bool visit_intrinsic(struct ac_nir_context *ctx, nir_intrinsic_instr *ins
    case nir_intrinsic_bindless_image_atomic_comp_swap:
    case nir_intrinsic_bindless_image_atomic_inc_wrap:
    case nir_intrinsic_bindless_image_atomic_dec_wrap:
+   case nir_intrinsic_bindless_image_atomic_fadd:
    case nir_intrinsic_bindless_image_atomic_fmin:
    case nir_intrinsic_bindless_image_atomic_fmax:
       result = visit_image_atomic(ctx, instr);

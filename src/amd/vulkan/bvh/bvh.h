@@ -158,7 +158,7 @@ struct radv_ir_header {
    int32_t min_bounds[3];
    int32_t max_bounds[3];
    uint32_t active_leaf_count;
-   /* Indirect dispatch dimensions for the internal node converter.
+   /* Indirect dispatch dimensions for the encoder.
     * ir_internal_node_count is the thread count in the X dimension,
     * while Y and Z are always set to 1. */
    uint32_t ir_internal_node_count;

@@ -993,13 +993,6 @@ bool si_get_external_symbol(enum amd_gfx_level gfx_level, void *data, const char
 void si_nir_scan_shader(struct si_screen *sscreen,  const struct nir_shader *nir,
                         struct si_shader_info *info);
 
-/* si_shader_llvm_gs.c */
-struct si_shader *si_generate_gs_copy_shader(struct si_screen *sscreen,
-                                             struct ac_llvm_compiler *compiler,
-                                             struct si_shader_selector *gs_selector,
-                                             const struct pipe_stream_output_info *so,
-                                             struct util_debug_callback *debug);
-
 /* si_shader_nir.c */
 extern const nir_lower_subgroups_options si_nir_subgroups_options;
 

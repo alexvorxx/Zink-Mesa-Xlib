@@ -226,7 +226,10 @@ zink_get_gfx_pipeline(struct zink_context *ctx,
    const int rp_idx = state->render_pass ? 1 : 0;
    /* shortcut for reusing previous pipeline across program changes */
    if (DYNAMIC_STATE == ZINK_DYNAMIC_VERTEX_INPUT || DYNAMIC_STATE == ZINK_DYNAMIC_VERTEX_INPUT2) {
-      if (prog->last_finalized_hash[rp_idx][idx] == state->final_hash && !prog->inline_variants && likely(prog->last_pipeline[rp_idx][idx])) {
+      if (prog->last_finalized_hash[rp_idx][idx] == state->final_hash &&
+          !prog->inline_variants && likely(prog->last_pipeline[rp_idx][idx]) &&
+          /* this data is too big to compare in the fast-path */
+          likely(!prog->shaders[MESA_SHADER_FRAGMENT]->fs.legacy_shadow_mask)) {
          state->pipeline = prog->last_pipeline[rp_idx][idx]->pipeline;
          return state->pipeline;
       }
@@ -251,6 +254,8 @@ zink_get_gfx_pipeline(struct zink_context *ctx,
       if (HAVE_LIB &&
           /* TODO: if there's ever a dynamic render extension with input attachments */
           !ctx->gfx_pipeline_state.render_pass &&
+          /* this is just terrible */
+          !zink_get_fs_base_key(ctx)->shadow_needs_shader_swizzle &&
           /* TODO: is sample shading even possible to handle with GPL? */
           !ctx->gfx_stages[MESA_SHADER_FRAGMENT]->nir->info.fs.uses_sample_shading &&
           !zink_get_fs_base_key(ctx)->fbfetch_ms &&
@@ -357,6 +362,10 @@ equals_gfx_pipeline_state(const void *a, const void *b)
    if (STAGE_MASK & STAGE_MASK_OPTIMAL) {
       if (sa->optimal_key != sb->optimal_key)
          return false;
+      if (STAGE_MASK & STAGE_MASK_OPTIMAL_SHADOW) {
+         if (sa->shadow != sb->shadow)
+            return false;
+      }
    } else {
       if (STAGE_MASK & BITFIELD_BIT(MESA_SHADER_TESS_CTRL)) {
          if (sa->modules[MESA_SHADER_TESS_CTRL] != sb->modules[MESA_SHADER_TESS_CTRL])
@@ -382,10 +391,13 @@ equals_gfx_pipeline_state(const void *a, const void *b)
 /* below is a bunch of code to pick the right equals_gfx_pipeline_state template for runtime */
 template <zink_pipeline_dynamic_state DYNAMIC_STATE, unsigned STAGE_MASK>
 static equals_gfx_pipeline_state_func
-get_optimal_gfx_pipeline_stage_eq_func(bool optimal_keys)
+get_optimal_gfx_pipeline_stage_eq_func(bool optimal_keys, bool shadow_needs_shader_swizzle)
 {
-   if (optimal_keys)
+   if (optimal_keys) {
+      if (shadow_needs_shader_swizzle)
+         return equals_gfx_pipeline_state<DYNAMIC_STATE, STAGE_MASK | STAGE_MASK_OPTIMAL | STAGE_MASK_OPTIMAL_SHADOW>;
       return equals_gfx_pipeline_state<DYNAMIC_STATE, STAGE_MASK | STAGE_MASK_OPTIMAL>;
+   }
    return equals_gfx_pipeline_state<DYNAMIC_STATE, STAGE_MASK>;
 }
 
@@ -393,6 +405,7 @@ template <zink_pipeline_dynamic_state DYNAMIC_STATE>
 static equals_gfx_pipeline_state_func
 get_gfx_pipeline_stage_eq_func(struct zink_gfx_program *prog, bool optimal_keys)
 {
+   bool shadow_needs_shader_swizzle = prog->shaders[MESA_SHADER_FRAGMENT]->fs.legacy_shadow_mask > 0;
    unsigned vertex_stages = prog->stages_present & BITFIELD_MASK(MESA_SHADER_FRAGMENT);
    if (vertex_stages & BITFIELD_BIT(MESA_SHADER_TESS_CTRL)) {
       if (prog->shaders[MESA_SHADER_TESS_CTRL]->non_fs.is_generated)
@@ -402,30 +415,30 @@ get_gfx_pipeline_stage_eq_func(struct zink_gfx_program *prog, bool optimal_keys)
       if (vertex_stages == BITFIELD_MASK(MESA_SHADER_FRAGMENT))
          /* all stages */
          return get_optimal_gfx_pipeline_stage_eq_func<DYNAMIC_STATE,
-                                                       BITFIELD_MASK(MESA_SHADER_COMPUTE)>(optimal_keys);
+                                                       BITFIELD_MASK(MESA_SHADER_COMPUTE)>(optimal_keys, shadow_needs_shader_swizzle);
       if (vertex_stages == BITFIELD_MASK(MESA_SHADER_GEOMETRY))
          /* tess only: includes generated tcs too */
          return get_optimal_gfx_pipeline_stage_eq_func<DYNAMIC_STATE,
-                                                       BITFIELD_MASK(MESA_SHADER_COMPUTE) & ~BITFIELD_BIT(MESA_SHADER_GEOMETRY)>(optimal_keys);
+                                                       BITFIELD_MASK(MESA_SHADER_COMPUTE) & ~BITFIELD_BIT(MESA_SHADER_GEOMETRY)>(optimal_keys, shadow_needs_shader_swizzle);
       if (vertex_stages == (BITFIELD_BIT(MESA_SHADER_VERTEX) | BITFIELD_BIT(MESA_SHADER_GEOMETRY)))
          /* geom only */
          return get_optimal_gfx_pipeline_stage_eq_func<DYNAMIC_STATE,
-                                                       BITFIELD_BIT(MESA_SHADER_VERTEX) | BITFIELD_BIT(MESA_SHADER_FRAGMENT) | BITFIELD_BIT(MESA_SHADER_GEOMETRY)>(optimal_keys);
+                                                       BITFIELD_BIT(MESA_SHADER_VERTEX) | BITFIELD_BIT(MESA_SHADER_FRAGMENT) | BITFIELD_BIT(MESA_SHADER_GEOMETRY)>(optimal_keys, shadow_needs_shader_swizzle);
    }
    if (vertex_stages == (BITFIELD_MASK(MESA_SHADER_FRAGMENT) & ~BITFIELD_BIT(MESA_SHADER_TESS_CTRL)))
       /* all stages but tcs */
       return get_optimal_gfx_pipeline_stage_eq_func<DYNAMIC_STATE,
-                                                    BITFIELD_MASK(MESA_SHADER_COMPUTE) & ~BITFIELD_BIT(MESA_SHADER_TESS_CTRL)>(optimal_keys);
+                                                    BITFIELD_MASK(MESA_SHADER_COMPUTE) & ~BITFIELD_BIT(MESA_SHADER_TESS_CTRL)>(optimal_keys, shadow_needs_shader_swizzle);
    if (vertex_stages == (BITFIELD_MASK(MESA_SHADER_GEOMETRY) & ~BITFIELD_BIT(MESA_SHADER_TESS_CTRL)))
       /* tess only: generated tcs */
       return get_optimal_gfx_pipeline_stage_eq_func<DYNAMIC_STATE,
-                                                    BITFIELD_MASK(MESA_SHADER_COMPUTE) & ~(BITFIELD_BIT(MESA_SHADER_GEOMETRY) | BITFIELD_BIT(MESA_SHADER_TESS_CTRL))>(optimal_keys);
+                                                    BITFIELD_MASK(MESA_SHADER_COMPUTE) & ~(BITFIELD_BIT(MESA_SHADER_GEOMETRY) | BITFIELD_BIT(MESA_SHADER_TESS_CTRL))>(optimal_keys, shadow_needs_shader_swizzle);
    if (vertex_stages == (BITFIELD_BIT(MESA_SHADER_VERTEX) | BITFIELD_BIT(MESA_SHADER_GEOMETRY)))
       /* geom only */
       return get_optimal_gfx_pipeline_stage_eq_func<DYNAMIC_STATE,
-                                                    BITFIELD_BIT(MESA_SHADER_VERTEX) | BITFIELD_BIT(MESA_SHADER_FRAGMENT) | BITFIELD_BIT(MESA_SHADER_GEOMETRY)>(optimal_keys);
+                                                    BITFIELD_BIT(MESA_SHADER_VERTEX) | BITFIELD_BIT(MESA_SHADER_FRAGMENT) | BITFIELD_BIT(MESA_SHADER_GEOMETRY)>(optimal_keys, shadow_needs_shader_swizzle);
    return get_optimal_gfx_pipeline_stage_eq_func<DYNAMIC_STATE,
-                                                  BITFIELD_BIT(MESA_SHADER_VERTEX) | BITFIELD_BIT(MESA_SHADER_FRAGMENT)>(optimal_keys);
+                                                 BITFIELD_BIT(MESA_SHADER_VERTEX) | BITFIELD_BIT(MESA_SHADER_FRAGMENT)>(optimal_keys, shadow_needs_shader_swizzle);
 }
 
 equals_gfx_pipeline_state_func

@@ -248,7 +248,6 @@ fs_inst::is_control_source(unsigned arg) const
 {
    switch (opcode) {
    case FS_OPCODE_UNIFORM_PULL_CONSTANT_LOAD:
-   case FS_OPCODE_UNIFORM_PULL_CONSTANT_LOAD_GFX7:
    case FS_OPCODE_VARYING_PULL_CONSTANT_LOAD_GFX4:
       return arg == 0;
 
@@ -305,9 +304,6 @@ fs_inst::is_payload(unsigned arg) const
    case SHADER_OPCODE_MEMORY_FENCE:
    case SHADER_OPCODE_BARRIER:
       return arg == 0;
-
-   case FS_OPCODE_UNIFORM_PULL_CONSTANT_LOAD_GFX7:
-      return arg == 1;
 
    case SHADER_OPCODE_SEND:
       return arg == 2 || arg == 3;
@@ -747,13 +743,13 @@ fs_inst::components_read(unsigned i) const
    case SHADER_OPCODE_A64_UNTYPED_READ_LOGICAL:
    case SHADER_OPCODE_A64_OWORD_BLOCK_READ_LOGICAL:
    case SHADER_OPCODE_A64_UNALIGNED_OWORD_BLOCK_READ_LOGICAL:
-      assert(src[2].file == IMM);
+      assert(src[A64_LOGICAL_ARG].file == IMM);
       return 1;
 
    case SHADER_OPCODE_A64_OWORD_BLOCK_WRITE_LOGICAL:
-      assert(src[2].file == IMM);
-      if (i == 1) { /* data to write */
-         const unsigned comps = src[2].ud / exec_size;
+      assert(src[A64_LOGICAL_ARG].file == IMM);
+      if (i == A64_LOGICAL_SRC) { /* data to write */
+         const unsigned comps = src[A64_LOGICAL_ARG].ud / exec_size;
          assert(comps > 0);
          return comps;
       } else {
@@ -775,41 +771,13 @@ fs_inst::components_read(unsigned i) const
       }
 
    case SHADER_OPCODE_A64_UNTYPED_WRITE_LOGICAL:
-      assert(src[2].file == IMM);
-      return i == 1 ? src[2].ud : 1;
+      assert(src[A64_LOGICAL_ARG].file == IMM);
+      return i == A64_LOGICAL_SRC ? src[A64_LOGICAL_ARG].ud : 1;
 
    case SHADER_OPCODE_A64_UNTYPED_ATOMIC_LOGICAL:
-   case SHADER_OPCODE_A64_UNTYPED_ATOMIC_INT16_LOGICAL:
-   case SHADER_OPCODE_A64_UNTYPED_ATOMIC_INT64_LOGICAL:
-      assert(src[2].file == IMM);
-      if (i == 1) {
-         /* Data source */
-         const unsigned op = src[2].ud;
-         switch (op) {
-         case BRW_AOP_INC:
-         case BRW_AOP_DEC:
-         case BRW_AOP_PREDEC:
-            return 0;
-         case BRW_AOP_CMPWR:
-            return 2;
-         default:
-            return 1;
-         }
-      } else {
-         return 1;
-      }
-
-   case SHADER_OPCODE_A64_UNTYPED_ATOMIC_FLOAT16_LOGICAL:
-   case SHADER_OPCODE_A64_UNTYPED_ATOMIC_FLOAT32_LOGICAL:
-   case SHADER_OPCODE_A64_UNTYPED_ATOMIC_FLOAT64_LOGICAL:
-      assert(src[2].file == IMM);
-      if (i == 1) {
-         /* Data source */
-         const unsigned op = src[2].ud;
-         return op == BRW_AOP_FCMPWR ? 2 : 1;
-      } else {
-         return 1;
-      }
+      assert(src[A64_LOGICAL_ARG].file == IMM);
+      return i == A64_LOGICAL_SRC ?
+             lsc_op_num_data_values(src[A64_LOGICAL_ARG].ud) : 1;
 
    case SHADER_OPCODE_BYTE_SCATTERED_READ_LOGICAL:
    case SHADER_OPCODE_DWORD_SCATTERED_READ_LOGICAL:
@@ -839,30 +807,11 @@ fs_inst::components_read(unsigned i) const
       if (i == SURFACE_LOGICAL_SRC_ADDRESS)
          return src[SURFACE_LOGICAL_SRC_IMM_DIMS].ud;
       /* Surface operation source. */
-      else if (i == SURFACE_LOGICAL_SRC_DATA && op == BRW_AOP_CMPWR)
-         return 2;
-      else if (i == SURFACE_LOGICAL_SRC_DATA &&
-               (op == BRW_AOP_INC || op == BRW_AOP_DEC || op == BRW_AOP_PREDEC))
-         return 0;
-      else
-         return 1;
+      else if (i == SURFACE_LOGICAL_SRC_DATA)
+         return lsc_op_num_data_values(op);
    }
    case FS_OPCODE_INTERPOLATE_AT_PER_SLOT_OFFSET:
       return (i == 0 ? 2 : 1);
-
-   case SHADER_OPCODE_UNTYPED_ATOMIC_FLOAT_LOGICAL: {
-      assert(src[SURFACE_LOGICAL_SRC_IMM_DIMS].file == IMM &&
-             src[SURFACE_LOGICAL_SRC_IMM_ARG].file == IMM);
-      const unsigned op = src[SURFACE_LOGICAL_SRC_IMM_ARG].ud;
-      /* Surface coordinates. */
-      if (i == SURFACE_LOGICAL_SRC_ADDRESS)
-         return src[SURFACE_LOGICAL_SRC_IMM_DIMS].ud;
-      /* Surface operation source. */
-      else if (i == SURFACE_LOGICAL_SRC_DATA && op == BRW_AOP_FCMPWR)
-         return 2;
-      else
-         return 1;
-   }
 
    case SHADER_OPCODE_URB_WRITE_LOGICAL:
       if (i == URB_LOGICAL_SRC_DATA)
@@ -909,12 +858,6 @@ fs_inst::size_read(int arg) const
    case FS_OPCODE_SET_SAMPLE_ID:
       if (arg == 1)
          return 1;
-      break;
-
-   case FS_OPCODE_UNIFORM_PULL_CONSTANT_LOAD_GFX7:
-      /* The payload is actually stored in src1 */
-      if (arg == 1)
-         return mlen * REG_SIZE;
       break;
 
    case FS_OPCODE_LINTERP:
@@ -2507,8 +2450,14 @@ fs_visitor::lower_constant_loads()
          const fs_reg dst = ubld.vgrf(BRW_REGISTER_TYPE_UD);
          const unsigned base = pull_index * 4;
 
-         ubld.emit(FS_OPCODE_UNIFORM_PULL_CONSTANT_LOAD,
-                   dst, brw_imm_ud(index), brw_imm_ud(base & ~(block_sz - 1)));
+         fs_reg srcs[PULL_UNIFORM_CONSTANT_SRCS];
+         srcs[PULL_UNIFORM_CONSTANT_SRC_SURFACE] = brw_imm_ud(index);
+         srcs[PULL_UNIFORM_CONSTANT_SRC_OFFSET]  = brw_imm_ud(base & ~(block_sz - 1));
+         srcs[PULL_UNIFORM_CONSTANT_SRC_SIZE]    = brw_imm_ud(block_sz);
+
+
+         ubld.emit(FS_OPCODE_UNIFORM_PULL_CONSTANT_LOAD, dst,
+                   srcs, PULL_UNIFORM_CONSTANT_SRCS);
 
          /* Rewrite the instruction to use the temporary VGRF. */
          inst->src[i].file = VGRF;
@@ -3723,106 +3672,6 @@ fs_visitor::insert_gfx4_send_dependency_workarounds()
 
    if (progress)
       invalidate_analysis(DEPENDENCY_INSTRUCTIONS);
-}
-
-/**
- * Turns the generic expression-style uniform pull constant load instruction
- * into a hardware-specific series of instructions for loading a pull
- * constant.
- *
- * The expression style allows the CSE pass before this to optimize out
- * repeated loads from the same offset, and gives the pre-register-allocation
- * scheduling full flexibility, while the conversion to native instructions
- * allows the post-register-allocation scheduler the best information
- * possible.
- *
- * Note that execution masking for setting up pull constant loads is special:
- * the channels that need to be written are unrelated to the current execution
- * mask, since a later instruction will use one of the result channels as a
- * source operand for all 8 or 16 of its channels.
- */
-void
-fs_visitor::lower_uniform_pull_constant_loads()
-{
-   foreach_block_and_inst (block, fs_inst, inst, cfg) {
-      if (inst->opcode != FS_OPCODE_UNIFORM_PULL_CONSTANT_LOAD)
-         continue;
-
-      const fs_reg& surface = inst->src[0];
-      const fs_reg& offset_B = inst->src[1];
-      assert(offset_B.file == IMM);
-
-      if (devinfo->has_lsc) {
-         const fs_builder ubld =
-            fs_builder(this, block, inst).group(8, 0).exec_all();
-
-         const fs_reg payload = ubld.vgrf(BRW_REGISTER_TYPE_UD);
-         ubld.MOV(payload, offset_B);
-
-         inst->sfid = GFX12_SFID_UGM;
-         inst->desc = lsc_msg_desc(devinfo, LSC_OP_LOAD,
-                                   1 /* simd_size */,
-                                   LSC_ADDR_SURFTYPE_BTI,
-                                   LSC_ADDR_SIZE_A32,
-                                   1 /* num_coordinates */,
-                                   LSC_DATA_SIZE_D32,
-                                   inst->size_written / 4,
-                                   true /* transpose */,
-                                   LSC_CACHE_LOAD_L1STATE_L3MOCS,
-                                   true /* has_dest */);
-
-         fs_reg ex_desc;
-         if (surface.file == IMM) {
-            ex_desc = brw_imm_ud(lsc_bti_ex_desc(devinfo, surface.ud));
-         } else {
-            /* We only need the first component for the payload so we can use
-             * one of the other components for the extended descriptor
-             */
-            ex_desc = component(payload, 1);
-            ubld.group(1, 0).SHL(ex_desc, surface, brw_imm_ud(24));
-         }
-
-         /* Update the original instruction. */
-         inst->opcode = SHADER_OPCODE_SEND;
-         inst->mlen = lsc_msg_desc_src0_len(devinfo, inst->desc);
-         inst->ex_mlen = 0;
-         inst->header_size = 0;
-         inst->send_has_side_effects = false;
-         inst->send_is_volatile = true;
-         inst->exec_size = 1;
-
-         /* Finally, the payload */
-         inst->resize_sources(3);
-         inst->src[0] = brw_imm_ud(0); /* desc */
-         inst->src[1] = ex_desc;
-         inst->src[2] = payload;
-
-         invalidate_analysis(DEPENDENCY_INSTRUCTIONS | DEPENDENCY_VARIABLES);
-      } else if (devinfo->ver >= 7) {
-         const fs_builder ubld = fs_builder(this, block, inst).exec_all();
-         const fs_reg payload = ubld.group(8, 0).vgrf(BRW_REGISTER_TYPE_UD);
-
-         ubld.group(8, 0).MOV(payload,
-                              retype(brw_vec8_grf(0, 0), BRW_REGISTER_TYPE_UD));
-         ubld.group(1, 0).MOV(component(payload, 2),
-                              brw_imm_ud(offset_B.ud / 16));
-
-         inst->opcode = FS_OPCODE_UNIFORM_PULL_CONSTANT_LOAD_GFX7;
-         inst->src[1] = payload;
-         inst->header_size = 1;
-         inst->mlen = 1;
-
-         invalidate_analysis(DEPENDENCY_INSTRUCTIONS | DEPENDENCY_VARIABLES);
-      } else {
-         /* Before register allocation, we didn't tell the scheduler about the
-          * MRF we use.  We know it's safe to use this MRF because nothing
-          * else does except for register spill/unspill, which generates and
-          * uses its MRF within a single IR instruction.
-          */
-         inst->base_mrf = FIRST_PULL_LOAD_MRF(devinfo->ver) + 1;
-         inst->mlen = 1;
-      }
-   }
 }
 
 bool
@@ -5215,7 +5064,6 @@ get_lowered_simd_width(const struct brw_compiler *compiler,
       return 8;
 
    case SHADER_OPCODE_UNTYPED_ATOMIC_LOGICAL:
-   case SHADER_OPCODE_UNTYPED_ATOMIC_FLOAT_LOGICAL:
    case SHADER_OPCODE_UNTYPED_SURFACE_READ_LOGICAL:
    case SHADER_OPCODE_UNTYPED_SURFACE_WRITE_LOGICAL:
    case SHADER_OPCODE_BYTE_SCATTERED_WRITE_LOGICAL:
@@ -5237,11 +5085,6 @@ get_lowered_simd_width(const struct brw_compiler *compiler,
       return inst->exec_size;
 
    case SHADER_OPCODE_A64_UNTYPED_ATOMIC_LOGICAL:
-   case SHADER_OPCODE_A64_UNTYPED_ATOMIC_INT16_LOGICAL:
-   case SHADER_OPCODE_A64_UNTYPED_ATOMIC_INT64_LOGICAL:
-   case SHADER_OPCODE_A64_UNTYPED_ATOMIC_FLOAT16_LOGICAL:
-   case SHADER_OPCODE_A64_UNTYPED_ATOMIC_FLOAT32_LOGICAL:
-   case SHADER_OPCODE_A64_UNTYPED_ATOMIC_FLOAT64_LOGICAL:
       return devinfo->has_lsc ? MIN2(16, inst->exec_size) : 8;
 
    case SHADER_OPCODE_URB_READ_LOGICAL:
@@ -7551,7 +7394,7 @@ brw_compile_fs(const struct brw_compiler *compiler,
    if (!v8->run_fs(allow_spilling, false /* do_rep_send */)) {
       params->error_str = ralloc_strdup(mem_ctx, v8->fail_msg);
       return NULL;
-   } else if (!INTEL_DEBUG(DEBUG_NO8)) {
+   } else if (INTEL_SIMD(FS, 8)) {
       simd8_cfg = v8->cfg;
       prog_data->base.dispatch_grf_start_reg = v8->payload().num_regs;
       prog_data->reg_blocks_8 = brw_register_blocks(v8->grf_used);
@@ -7565,7 +7408,7 @@ brw_compile_fs(const struct brw_compiler *compiler,
     * See: https://gitlab.freedesktop.org/mesa/mesa/-/issues/1917
     */
    if (devinfo->ver == 8 && prog_data->dual_src_blend &&
-       !INTEL_DEBUG(DEBUG_NO8)) {
+       INTEL_SIMD(FS, 8)) {
       assert(!params->use_rep_send);
       v8->limit_dispatch_width(8, "gfx8 workaround: "
                                "using SIMD8 when dual src blending.\n");
@@ -7585,7 +7428,7 @@ brw_compile_fs(const struct brw_compiler *compiler,
 
    if (!has_spilled &&
        v8->max_dispatch_width >= 16 &&
-       (!INTEL_DEBUG(DEBUG_NO16) || params->use_rep_send)) {
+       (INTEL_SIMD(FS, 16) || params->use_rep_send)) {
       /* Try a SIMD16 compile */
       v16 = std::make_unique<fs_visitor>(compiler, params->log_data, mem_ctx, &key->base,
                                          &prog_data->base, nir, 16,
@@ -7612,7 +7455,7 @@ brw_compile_fs(const struct brw_compiler *compiler,
    if (!has_spilled &&
        v8->max_dispatch_width >= 32 && !params->use_rep_send &&
        devinfo->ver >= 6 && !simd16_failed &&
-       !INTEL_DEBUG(DEBUG_NO32)) {
+       INTEL_SIMD(FS, 32)) {
       /* Try a SIMD32 compile */
       v32 = std::make_unique<fs_visitor>(compiler, params->log_data, mem_ctx, &key->base,
                                          &prog_data->base, nir, 32,

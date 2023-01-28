@@ -495,6 +495,7 @@ init_context(isel_context* ctx, nir_shader* shader)
                case nir_op_i2f16:
                case nir_op_i2f32:
                case nir_op_i2f64:
+               case nir_op_pack_half_2x16_rtz_split:
                case nir_op_pack_half_2x16_split:
                case nir_op_pack_unorm_2x16:
                case nir_op_pack_snorm_2x16:
@@ -638,6 +639,7 @@ init_context(isel_context* ctx, nir_shader* shader)
                case nir_intrinsic_ssbo_atomic_xor:
                case nir_intrinsic_ssbo_atomic_exchange:
                case nir_intrinsic_ssbo_atomic_comp_swap:
+               case nir_intrinsic_ssbo_atomic_fadd:
                case nir_intrinsic_ssbo_atomic_fmin:
                case nir_intrinsic_ssbo_atomic_fmax:
                case nir_intrinsic_global_atomic_add_amd:
@@ -650,6 +652,7 @@ init_context(isel_context* ctx, nir_shader* shader)
                case nir_intrinsic_global_atomic_xor_amd:
                case nir_intrinsic_global_atomic_exchange_amd:
                case nir_intrinsic_global_atomic_comp_swap_amd:
+               case nir_intrinsic_global_atomic_fadd_amd:
                case nir_intrinsic_global_atomic_fmin_amd:
                case nir_intrinsic_global_atomic_fmax_amd:
                case nir_intrinsic_bindless_image_atomic_add:
@@ -662,6 +665,7 @@ init_context(isel_context* ctx, nir_shader* shader)
                case nir_intrinsic_bindless_image_atomic_xor:
                case nir_intrinsic_bindless_image_atomic_exchange:
                case nir_intrinsic_bindless_image_atomic_comp_swap:
+               case nir_intrinsic_bindless_image_atomic_fadd:
                case nir_intrinsic_bindless_image_atomic_fmin:
                case nir_intrinsic_bindless_image_atomic_fmax:
                case nir_intrinsic_bindless_image_size:

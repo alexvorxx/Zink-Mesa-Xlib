@@ -87,6 +87,7 @@ radv_aco_convert_shader_info(struct aco_shader_info *aco_info,
    ASSIGN_FIELD(ps.num_interp);
    ASSIGN_FIELD(ps.spi_ps_input);
    ASSIGN_FIELD(cs.subgroup_size);
+   ASSIGN_FIELD(cs.uses_full_subgroups);
    aco_info->gfx9_gs_ring_lds_size = radv->gs_ring_info.lds_size;
 }
 

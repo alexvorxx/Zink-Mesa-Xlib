@@ -916,7 +916,6 @@ glx@glx-make-current,Crash
 
 glx@glx-multi-context-front,Fail
 glx@glx-multi-window-single-context,Fail
-glx@glx-swap-copy,Fail
 glx@glx-swap-pixmap-bad,Fail
 
 # X Error of failed request:  BadMatch (invalid parameter attributes)
@@ -1327,3 +1326,5 @@ spec@arb_texture_buffer_object@texture-buffer-size-clamp,Fail
 
 # https://gitlab.freedesktop.org/mesa/mesa/-/issues/7152
 spec@ext_transform_feedback@builtin-varyings gl_culldistance,Fail
+
+spec@!opengl 1.1@line-smooth-stipple,Fail

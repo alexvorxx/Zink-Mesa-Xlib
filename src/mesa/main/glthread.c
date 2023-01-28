@@ -107,9 +107,13 @@ _mesa_glthread_init_dispatch(struct gl_context *ctx,
 void
 _mesa_glthread_init(struct gl_context *ctx)
 {
+   struct pipe_screen *screen = ctx->screen;
    struct glthread_state *glthread = &ctx->GLThread;
-
    assert(!glthread->enabled);
+
+   if (!screen->get_param(screen, PIPE_CAP_MAP_UNSYNCHRONIZED_THREAD_SAFE) ||
+       !screen->get_param(screen, PIPE_CAP_ALLOW_MAPPED_BUFFERS_DURING_EXECUTION))
+      return;
 
    if (!util_queue_init(&glthread->queue, "gl", MARSHAL_MAX_BATCHES - 2,
                         1, 0, NULL)) {
@@ -143,10 +147,6 @@ _mesa_glthread_init(struct gl_context *ctx)
 
    glthread->enabled = true;
    glthread->stats.queue = &glthread->queue;
-
-   glthread->SupportsBufferUploads =
-      ctx->Const.BufferCreateMapUnsynchronizedThreadSafe &&
-      ctx->Const.AllowMappedBuffersDuringExecution;
 
    ctx->CurrentClientDispatch = ctx->MarshalExec;
 
@@ -189,6 +189,7 @@ _mesa_glthread_destroy(struct gl_context *ctx, const char *reason)
 
    _mesa_HashDeleteAll(glthread->VAOs, free_vao, NULL);
    _mesa_DeleteHashTable(glthread->VAOs);
+   _mesa_glthread_release_upload_buffer(ctx);
 
    ctx->GLThread.enabled = false;
    ctx->CurrentClientDispatch = ctx->CurrentServerDispatch;

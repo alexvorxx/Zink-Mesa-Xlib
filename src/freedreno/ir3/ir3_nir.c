@@ -146,7 +146,8 @@ ir3_optimize_loop(struct ir3_compiler *compiler, nir_shader *s)
       nir_load_store_vectorize_options vectorize_opts = {
          .modes = nir_var_mem_ubo | nir_var_mem_ssbo,
          .callback = ir3_nir_should_vectorize_mem,
-         .robust_modes = compiler->robust_buffer_access2 ? nir_var_mem_ubo | nir_var_mem_ssbo: 0,
+         .robust_modes = compiler->options.robust_buffer_access2 ?
+               nir_var_mem_ubo | nir_var_mem_ssbo : 0,
       };
       progress |= OPT(s, nir_opt_load_store_vectorize, &vectorize_opts);
 

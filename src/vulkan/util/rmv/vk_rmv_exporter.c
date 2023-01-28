@@ -1395,7 +1395,7 @@ rmt_dump_command_buffer_resource(struct vk_rmv_command_buffer_description *descr
 }
 
 static void
-rmt_dump_resource_create(struct vk_rmv_resource_create_token *token, uint64_t delta, FILE *output)
+rmt_dump_resource_create(struct vk_rmv_resource_create_token *token, FILE *output)
 {
    uint64_t data = 0;
    rmt_file_write_token_bits(&data, token->resource_id, 8, 39);
@@ -1440,7 +1440,7 @@ rmt_dump_resource_create(struct vk_rmv_resource_create_token *token, uint64_t de
 }
 
 static void
-rmt_dump_resource_bind(struct vk_rmv_resource_bind_token *token, uint64_t delta, FILE *output)
+rmt_dump_resource_bind(struct vk_rmv_resource_bind_token *token, FILE *output)
 {
    uint64_t data[3] = {0};
    rmt_file_write_token_bits(data, token->address & 0xFFFFFFFFFFFF, 8, 55);
@@ -1451,7 +1451,7 @@ rmt_dump_resource_bind(struct vk_rmv_resource_bind_token *token, uint64_t delta,
 }
 
 static void
-rmt_dump_resource_reference(struct vk_rmv_resource_reference_token *token, uint64_t delta,
+rmt_dump_resource_reference(struct vk_rmv_resource_reference_token *token,
                             FILE *output)
 {
    uint64_t data = 0;
@@ -1461,7 +1461,7 @@ rmt_dump_resource_reference(struct vk_rmv_resource_reference_token *token, uint6
 }
 
 static void
-rmt_dump_resource_destroy(struct vk_rmv_resource_destroy_token *token, uint64_t delta, FILE *output)
+rmt_dump_resource_destroy(struct vk_rmv_resource_destroy_token *token, FILE *output)
 {
    uint64_t data = 0;
    rmt_file_write_token_bits(&data, token->resource_id, 8, 39);
@@ -1476,7 +1476,7 @@ enum rmt_virtual_allocation_owner_type {
 };
 
 static void
-rmt_dump_virtual_alloc(struct vk_rmv_virtual_allocate_token *token, uint64_t delta, FILE *output)
+rmt_dump_virtual_alloc(struct vk_rmv_virtual_allocate_token *token, FILE *output)
 {
    uint64_t data[2] = {0};
    rmt_file_write_token_bits(data, token->page_count - 1, 8, 31);
@@ -1498,7 +1498,7 @@ rmt_dump_virtual_alloc(struct vk_rmv_virtual_allocate_token *token, uint64_t del
 }
 
 static void
-rmt_dump_virtual_free(struct vk_rmv_virtual_free_token *token, uint64_t delta, FILE *output)
+rmt_dump_virtual_free(struct vk_rmv_virtual_free_token *token, FILE *output)
 {
    uint64_t data = 0;
    rmt_file_write_token_bits(&data, token->address & 0xFFFFFFFFFFFF, 8, 56);
@@ -1511,7 +1511,7 @@ enum rmt_page_table_controller {
 };
 
 static void
-rmt_dump_page_table_update(struct vk_rmv_page_table_update_token *token, uint64_t delta,
+rmt_dump_page_table_update(struct vk_rmv_page_table_update_token *token,
                            FILE *output)
 {
    uint64_t virtual_page_idx = (token->virtual_address / 4096);
@@ -1541,7 +1541,7 @@ enum rmt_userdata_type {
 };
 
 static void
-rmt_dump_userdata(struct vk_rmv_userdata_token *token, uint64_t delta, FILE *output)
+rmt_dump_userdata(struct vk_rmv_userdata_token *token, FILE *output)
 {
    uint64_t data = 0;
    /* userdata type */
@@ -1555,7 +1555,7 @@ rmt_dump_userdata(struct vk_rmv_userdata_token *token, uint64_t delta, FILE *out
 }
 
 static void
-rmt_dump_misc(struct vk_rmv_misc_token *token, uint64_t delta, FILE *output)
+rmt_dump_misc(struct vk_rmv_misc_token *token, FILE *output)
 {
    uint64_t data = 0;
    rmt_file_write_token_bits(&data, token->type, 8, 11);
@@ -1563,7 +1563,7 @@ rmt_dump_misc(struct vk_rmv_misc_token *token, uint64_t delta, FILE *output)
 }
 
 static void
-rmt_dump_cpu_map(struct vk_rmv_cpu_map_token *token, uint64_t delta, FILE *output)
+rmt_dump_cpu_map(struct vk_rmv_cpu_map_token *token, FILE *output)
 {
    uint64_t data = 0;
    rmt_file_write_token_bits(&data, token->address & 0xFFFFFFFFFFFF, 8, 55);
@@ -1609,7 +1609,7 @@ rmt_dump_data(struct vk_memory_trace_data *data, FILE *output)
    uint64_t current_timestamp = 0;
    if (util_dynarray_num_elements(&data->tokens, struct vk_rmv_token))
       current_timestamp =
-         util_dynarray_element(&data->tokens, struct vk_rmv_token, 0)->timestamp / 1000;
+         util_dynarray_element(&data->tokens, struct vk_rmv_token, 0)->timestamp / RMT_TIMESTAMP_DIVISOR;
 
    long stream_start = ftell(output);
 
@@ -1645,34 +1645,34 @@ rmt_dump_data(struct vk_memory_trace_data *data, FILE *output)
 
       switch (token->type) {
       case VK_RMV_TOKEN_TYPE_VIRTUAL_ALLOCATE:
-         rmt_dump_virtual_alloc(&token->data.virtual_allocate, delta, output);
+         rmt_dump_virtual_alloc(&token->data.virtual_allocate, output);
          break;
       case VK_RMV_TOKEN_TYPE_VIRTUAL_FREE:
-         rmt_dump_virtual_free(&token->data.virtual_free, delta, output);
+         rmt_dump_virtual_free(&token->data.virtual_free, output);
          break;
       case VK_RMV_TOKEN_TYPE_PAGE_TABLE_UPDATE:
-         rmt_dump_page_table_update(&token->data.page_table_update, delta, output);
+         rmt_dump_page_table_update(&token->data.page_table_update, output);
          break;
       case VK_RMV_TOKEN_TYPE_RESOURCE_CREATE:
-         rmt_dump_resource_create(&token->data.resource_create, delta, output);
+         rmt_dump_resource_create(&token->data.resource_create, output);
          break;
       case VK_RMV_TOKEN_TYPE_RESOURCE_DESTROY:
-         rmt_dump_resource_destroy(&token->data.resource_destroy, delta, output);
+         rmt_dump_resource_destroy(&token->data.resource_destroy, output);
          break;
       case VK_RMV_TOKEN_TYPE_RESOURCE_BIND:
-         rmt_dump_resource_bind(&token->data.resource_bind, delta, output);
+         rmt_dump_resource_bind(&token->data.resource_bind, output);
          break;
       case VK_RMV_TOKEN_TYPE_RESOURCE_REFERENCE:
-         rmt_dump_resource_reference(&token->data.resource_reference, delta, output);
+         rmt_dump_resource_reference(&token->data.resource_reference, output);
          break;
       case VK_RMV_TOKEN_TYPE_USERDATA:
-         rmt_dump_userdata(&token->data.userdata, delta, output);
+         rmt_dump_userdata(&token->data.userdata, output);
          break;
       case VK_RMV_TOKEN_TYPE_MISC:
-         rmt_dump_misc(&token->data.misc, delta, output);
+         rmt_dump_misc(&token->data.misc, output);
          break;
       case VK_RMV_TOKEN_TYPE_CPU_MAP:
-         rmt_dump_cpu_map(&token->data.cpu_map, delta, output);
+         rmt_dump_cpu_map(&token->data.cpu_map, output);
          break;
       default:
          unreachable("invalid token type");

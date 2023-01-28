@@ -23,4 +23,5 @@ lima-mali450-piglit:arm64:
     - .lava-meson-gxl-s805x-libretech-ac
   variables:
     DEQP_SUITE: lima-mali450-piglit
+    PIGLIT_PLATFORM: gbm
   parallel: 2

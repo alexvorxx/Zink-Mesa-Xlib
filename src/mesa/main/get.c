@@ -192,6 +192,8 @@ enum value_extra {
    EXTRA_VERSION_43,
    EXTRA_API_GL,
    EXTRA_API_GL_CORE,
+   EXTRA_API_GL_COMPAT,
+   EXTRA_API_ES,
    EXTRA_API_ES2,
    EXTRA_API_ES3,
    EXTRA_API_ES31,
@@ -317,6 +319,13 @@ union value {
  * only if none of them are available.  If you need to check for "AND"
  * behavior, you would need to make a custom EXTRA_ enum.
  */
+
+static const int extra_new_buffers_compat_es[] = {
+   EXTRA_API_GL_COMPAT,
+   EXTRA_API_ES,
+   EXTRA_NEW_BUFFERS,
+   EXTRA_END
+};
 
 static const int extra_new_buffers[] = {
    EXTRA_NEW_BUFFERS,
@@ -1419,6 +1428,11 @@ check_extra(struct gl_context *ctx, const char *func, const struct value_desc *d
          if (_mesa_is_desktop_gl(ctx) && version >= 43)
             api_found = GL_TRUE;
          break;
+      case EXTRA_API_ES:
+         api_check = GL_TRUE;
+         if (_mesa_is_gles(ctx))
+            api_found = GL_TRUE;
+         break;
       case EXTRA_API_ES2:
          api_check = GL_TRUE;
          if (ctx->API == API_OPENGLES2)
@@ -1447,6 +1461,11 @@ check_extra(struct gl_context *ctx, const char *func, const struct value_desc *d
       case EXTRA_API_GL_CORE:
          api_check = GL_TRUE;
          if (ctx->API == API_OPENGL_CORE)
+            api_found = GL_TRUE;
+         break;
+      case EXTRA_API_GL_COMPAT:
+         api_check = GL_TRUE;
+         if (ctx->API == API_OPENGL_COMPAT)
             api_found = GL_TRUE;
          break;
       case EXTRA_NEW_BUFFERS:

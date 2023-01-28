@@ -19,6 +19,7 @@ vc4-rpi3:armhf:
   variables:
     HWCI_TEST_SCRIPT: "/install/deqp-runner.sh"
     DEQP_SUITE: broadcom-rpi3
+    PIGLIT_PLATFORM: gbm
 
 vc4-rpi3-egl:armhf:
   extends:
@@ -90,8 +91,7 @@ v3d-rpi4-traces:arm64:
   extends:
     - .piglit-traces-test
     - .baremetal-test-arm64
-    - .v3d-rules
-    - .test-manual-mr
+    - .v3d-manual-rules
   variables:
     BM_BOOTFS: /boot/raspberrypi_arm64
     GPU_VERSION: broadcom-rpi4

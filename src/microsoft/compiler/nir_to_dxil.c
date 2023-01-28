@@ -153,6 +153,7 @@ nir_options = {
       nir_lower_dround_even,
    .max_unroll_iterations = 32, /* arbitrary */
    .force_indirect_unrolling = (nir_var_shader_in | nir_var_shader_out | nir_var_function_temp),
+   .lower_device_index_to_zero = true,
 };
 
 const nir_shader_compiler_options*
@@ -329,10 +330,23 @@ enum dxil_intr {
    DXIL_INTR_OUTPUT_CONTROL_POINT_ID = 107,
    DXIL_INTR_PRIMITIVE_ID = 108,
 
+   DXIL_INTR_WAVE_IS_FIRST_LANE = 110,
+   DXIL_INTR_WAVE_GET_LANE_INDEX = 111,
+   DXIL_INTR_WAVE_GET_LANE_COUNT = 112,
+   DXIL_INTR_WAVE_ANY_TRUE = 113,
+   DXIL_INTR_WAVE_ALL_TRUE = 114,
+   DXIL_INTR_WAVE_ACTIVE_ALL_EQUAL = 115,
+   DXIL_INTR_WAVE_ACTIVE_BALLOT = 116,
+   DXIL_INTR_WAVE_READ_LANE_AT = 117,
+   DXIL_INTR_WAVE_READ_LANE_FIRST = 118,
+   DXIL_INTR_QUAD_READ_LANE_AT = 122,
+   DXIL_INTR_QUAD_OP = 123,
+
    DXIL_INTR_LEGACY_F32TOF16 = 130,
    DXIL_INTR_LEGACY_F16TOF32 = 131,
 
    DXIL_INTR_ATTRIBUTE_AT_VERTEX = 137,
+   DXIL_INTR_VIEW_ID = 138,
 
    DXIL_INTR_ANNOTATE_HANDLE = 216,
    DXIL_INTR_CREATE_HANDLE_FROM_BINDING = 217,
@@ -1815,6 +1829,11 @@ emit_metadata(struct ntd_context *ctx)
    } else if (ctx->mod.shader_kind == DXIL_COMPUTE_SHADER) {
       if (!emit_tag(ctx, DXIL_SHADER_TAG_NUM_THREADS, emit_threads(ctx)))
          return false;
+      if (ctx->mod.minor_version >= 6 &&
+          ctx->shader->info.subgroup_size >= SUBGROUP_SIZE_REQUIRE_8 &&
+          !emit_tag(ctx, DXIL_SHADER_TAG_WAVE_SIZE,
+                    dxil_get_metadata_int32(&ctx->mod, ctx->shader->info.subgroup_size)))
+          return false;
    }
 
    uint64_t flags = get_module_flags(ctx);
@@ -2091,6 +2110,7 @@ get_cast_op(nir_alu_instr *alu)
          return DXIL_CAST_FPEXT;
 
    /* int -> int */
+   case nir_op_i2i1:
    case nir_op_i2i16:
    case nir_op_i2i32:
    case nir_op_i2i64:
@@ -2101,6 +2121,7 @@ get_cast_op(nir_alu_instr *alu)
          return DXIL_CAST_SEXT;
 
    /* uint -> uint */
+   case nir_op_u2u1:
    case nir_op_u2u16:
    case nir_op_u2u32:
    case nir_op_u2u64:
@@ -2206,6 +2227,7 @@ get_overload(nir_alu_type alu_type, unsigned bit_size)
    case nir_type_int:
    case nir_type_uint:
       switch (bit_size) {
+      case 1: return DXIL_I1;
       case 16: return DXIL_I16;
       case 32: return DXIL_I32;
       case 64: return DXIL_I64;
@@ -2666,6 +2688,8 @@ emit_alu(struct ntd_context *ctx, nir_alu_instr *alu)
    case nir_op_unpack_half_2x16_split_y: return emit_f16tof32(ctx, alu, src[0], true);
    case nir_op_pack_half_2x16_split: return emit_f32tof16(ctx, alu, src[0], src[1]);
 
+   case nir_op_i2i1:
+   case nir_op_u2u1:
    case nir_op_b2i16:
    case nir_op_i2i16:
    case nir_op_f2i16:
@@ -2733,14 +2757,16 @@ emit_barrier_impl(struct ntd_context *ctx, nir_variable_mode modes, nir_scope ex
    if (execution_scope == NIR_SCOPE_WORKGROUP)
       flags |= DXIL_BARRIER_MODE_SYNC_THREAD_GROUP;
 
+   bool is_compute = ctx->mod.shader_kind == DXIL_COMPUTE_SHADER;
+
    if (modes & (nir_var_mem_ssbo | nir_var_mem_global | nir_var_image)) {
-      if (mem_scope > NIR_SCOPE_WORKGROUP)
+      if (mem_scope > NIR_SCOPE_WORKGROUP || !is_compute)
          flags |= DXIL_BARRIER_MODE_UAV_FENCE_GLOBAL;
       else
          flags |= DXIL_BARRIER_MODE_UAV_FENCE_THREAD_GROUP;
    }
 
-   if (modes & nir_var_mem_shared)
+   if ((modes & nir_var_mem_shared) && is_compute)
       flags |= DXIL_BARRIER_MODE_GROUPSHARED_MEM_FENCE;
 
    func = dxil_get_function(&ctx->mod, "dx.op.barrier", DXIL_NONE);
@@ -2894,10 +2920,11 @@ emit_load_local_workgroup_id(struct ntd_context *ctx,
 static const struct dxil_value *
 call_unary_external_function(struct ntd_context *ctx,
                              const char *name,
-                             int32_t dxil_intr)
+                             int32_t dxil_intr,
+                             enum overload_type overload)
 {
    const struct dxil_func *func =
-      dxil_get_function(&ctx->mod, name, DXIL_I32);
+      dxil_get_function(&ctx->mod, name, overload);
    if (!func)
       return false;
 
@@ -2914,9 +2941,10 @@ call_unary_external_function(struct ntd_context *ctx,
 static bool
 emit_load_unary_external_function(struct ntd_context *ctx,
                                   nir_intrinsic_instr *intr, const char *name,
-                                  int32_t dxil_intr)
+                                  int32_t dxil_intr,
+                                  enum overload_type overload)
 {
-   const struct dxil_value *value = call_unary_external_function(ctx, name, dxil_intr);
+   const struct dxil_value *value = call_unary_external_function(ctx, name, dxil_intr, overload);
    store_dest_value(ctx, &intr->dest, 0, value);
 
    return true;
@@ -2926,14 +2954,14 @@ static bool
 emit_load_sample_mask_in(struct ntd_context *ctx, nir_intrinsic_instr *intr)
 {
    const struct dxil_value *value = call_unary_external_function(ctx,
-      "dx.op.coverage", DXIL_INTR_COVERAGE);
+      "dx.op.coverage", DXIL_INTR_COVERAGE, DXIL_I32);
 
    /* Mask coverage with (1 << sample index). Note, done as an AND to handle extrapolation cases. */
    if (ctx->mod.info.has_per_sample_input) {
       value = dxil_emit_binop(&ctx->mod, DXIL_BINOP_AND, value,
          dxil_emit_binop(&ctx->mod, DXIL_BINOP_SHL,
             dxil_module_get_int32_const(&ctx->mod, 1),
-            call_unary_external_function(ctx, "dx.op.sampleIndex", DXIL_INTR_SAMPLE_INDEX), 0), 0);
+            call_unary_external_function(ctx, "dx.op.sampleIndex", DXIL_INTR_SAMPLE_INDEX, DXIL_I32), 0), 0);
    }
 
    store_dest_value(ctx, &intr->dest, 0, value);
@@ -4378,15 +4406,6 @@ emit_load_sample_pos_from_id(struct ntd_context *ctx, nir_intrinsic_instr *intr)
 }
 
 static bool
-emit_load_layer_id(struct ntd_context *ctx, nir_intrinsic_instr *intr)
-{
-   const struct dxil_value *layer_id = dxil_module_get_int32_const(&ctx->mod, 0);
-   /* TODO: Properly implement this once multi-view is supported */
-   store_dest_value(ctx, &intr->dest, 0, layer_id);
-   return true;
-}
-
-static bool
 emit_load_sample_id(struct ntd_context *ctx, nir_intrinsic_instr *intr)
 {
    assert(ctx->mod.info.has_per_sample_input ||
@@ -4394,9 +4413,135 @@ emit_load_sample_id(struct ntd_context *ctx, nir_intrinsic_instr *intr)
 
    if (ctx->mod.info.has_per_sample_input)
       return emit_load_unary_external_function(ctx, intr, "dx.op.sampleIndex",
-                                               DXIL_INTR_SAMPLE_INDEX);
+                                               DXIL_INTR_SAMPLE_INDEX, DXIL_I32);
 
    store_dest_value(ctx, &intr->dest, 0, dxil_module_get_int32_const(&ctx->mod, 0));
+   return true;
+}
+
+static bool
+emit_read_first_invocation(struct ntd_context *ctx, nir_intrinsic_instr *intr)
+{
+   ctx->mod.feats.wave_ops = 1;
+   const struct dxil_func *func = dxil_get_function(&ctx->mod, "dx.op.waveReadLaneFirst",
+                                                    get_overload(nir_type_uint, intr->dest.ssa.bit_size));
+   const struct dxil_value *args[] = {
+      dxil_module_get_int32_const(&ctx->mod, DXIL_INTR_WAVE_READ_LANE_FIRST),
+      get_src(ctx, intr->src, 0, nir_type_uint),
+   };
+   if (!func || !args[0] || !args[1])
+      return false;
+
+   const struct dxil_value *ret = dxil_emit_call(&ctx->mod, func, args, ARRAY_SIZE(args));
+   if (!ret)
+      return false;
+   store_dest_value(ctx, &intr->dest, 0, ret);
+   return true;
+}
+
+static bool
+emit_read_invocation(struct ntd_context *ctx, nir_intrinsic_instr *intr)
+{
+   ctx->mod.feats.wave_ops = 1;
+   bool quad = intr->intrinsic == nir_intrinsic_quad_broadcast;
+   const struct dxil_func *func = dxil_get_function(&ctx->mod, quad ? "dx.op.quadReadLaneAt" : "dx.op.waveReadLaneAt",
+                                                    get_overload(nir_type_uint, intr->dest.ssa.bit_size));
+   const struct dxil_value *args[] = {
+      dxil_module_get_int32_const(&ctx->mod, quad ? DXIL_INTR_QUAD_READ_LANE_AT : DXIL_INTR_WAVE_READ_LANE_AT),
+      get_src(ctx, &intr->src[0], 0, nir_type_uint),
+      get_src(ctx, &intr->src[1], 0, nir_type_uint),
+   };
+   if (!func || !args[0] || !args[1] || !args[2])
+      return false;
+
+   const struct dxil_value *ret = dxil_emit_call(&ctx->mod, func, args, ARRAY_SIZE(args));
+   if (!ret)
+      return false;
+   store_dest_value(ctx, &intr->dest, 0, ret);
+   return true;
+}
+
+static bool
+emit_vote_eq(struct ntd_context *ctx, nir_intrinsic_instr *intr)
+{
+   ctx->mod.feats.wave_ops = 1;
+   nir_alu_type alu_type = intr->intrinsic == nir_intrinsic_vote_ieq ? nir_type_int : nir_type_float;
+   const struct dxil_func *func = dxil_get_function(&ctx->mod, "dx.op.waveActiveAllEqual",
+                                                    get_overload(alu_type, intr->src[0].ssa->bit_size));
+   const struct dxil_value *args[] = {
+      dxil_module_get_int32_const(&ctx->mod, DXIL_INTR_WAVE_ACTIVE_ALL_EQUAL),
+      get_src(ctx, intr->src, 0, alu_type),
+   };
+   if (!func || !args[0] || !args[1])
+      return false;
+
+   const struct dxil_value *ret = dxil_emit_call(&ctx->mod, func, args, ARRAY_SIZE(args));
+   if (!ret)
+      return false;
+   store_dest_value(ctx, &intr->dest, 0, ret);
+   return true;
+}
+
+static bool
+emit_vote(struct ntd_context *ctx, nir_intrinsic_instr *intr)
+{
+   ctx->mod.feats.wave_ops = 1;
+   bool any = intr->intrinsic == nir_intrinsic_vote_any;
+   const struct dxil_func *func = dxil_get_function(&ctx->mod,
+                                                    any ? "dx.op.waveAnyTrue" : "dx.op.waveAllTrue",
+                                                    DXIL_NONE);
+   const struct dxil_value *args[] = {
+      dxil_module_get_int32_const(&ctx->mod, any ? DXIL_INTR_WAVE_ANY_TRUE : DXIL_INTR_WAVE_ALL_TRUE),
+      get_src(ctx, intr->src, 0, nir_type_bool),
+   };
+   if (!func || !args[0] || !args[1])
+      return false;
+
+   const struct dxil_value *ret = dxil_emit_call(&ctx->mod, func, args, ARRAY_SIZE(args));
+   if (!ret)
+      return false;
+   store_dest_value(ctx, &intr->dest, 0, ret);
+   return true;
+}
+
+static bool
+emit_ballot(struct ntd_context *ctx, nir_intrinsic_instr *intr)
+{
+   ctx->mod.feats.wave_ops = 1;
+   const struct dxil_func *func = dxil_get_function(&ctx->mod, "dx.op.waveActiveBallot", DXIL_NONE);
+   const struct dxil_value *args[] = {
+      dxil_module_get_int32_const(&ctx->mod, DXIL_INTR_WAVE_ACTIVE_BALLOT),
+      get_src(ctx, intr->src, 0, nir_type_bool),
+   };
+   if (!func || !args[0] || !args[1])
+      return false;
+
+   const struct dxil_value *ret = dxil_emit_call(&ctx->mod, func, args, ARRAY_SIZE(args));
+   if (!ret)
+      return false;
+   for (uint32_t i = 0; i < 4; ++i)
+      store_dest_value(ctx, &intr->dest, i, dxil_emit_extractval(&ctx->mod, ret, i));
+   return true;
+}
+
+static bool
+emit_quad_op(struct ntd_context *ctx, nir_intrinsic_instr *intr, enum dxil_quad_op_kind op)
+{
+   ctx->mod.feats.wave_ops = 1;
+   const struct dxil_func *func = dxil_get_function(&ctx->mod, "dx.op.quadOp",
+                                                    get_overload(nir_type_uint, intr->dest.ssa.bit_size));
+   const struct dxil_value *args[] = {
+      dxil_module_get_int32_const(&ctx->mod, DXIL_INTR_QUAD_OP),
+      get_src(ctx, intr->src, 0, nir_type_uint),
+      dxil_module_get_int8_const(&ctx->mod, op),
+   };
+   if (!func || !args[0] || !args[1] || !args[2])
+      return false;
+
+   const struct dxil_value *ret = dxil_emit_call(&ctx->mod, func, args, ARRAY_SIZE(args));
+   if (!ret)
+      return false;
+   store_dest_value(ctx, &intr->dest, 0, ret);
    return true;
 }
 
@@ -4433,7 +4578,7 @@ emit_intrinsic(struct ntd_context *ctx, nir_intrinsic_instr *intr)
       return emit_load_ubo_dxil(ctx, intr);
    case nir_intrinsic_load_primitive_id:
       return emit_load_unary_external_function(ctx, intr, "dx.op.primitiveID",
-                                               DXIL_INTR_PRIMITIVE_ID);
+                                               DXIL_INTR_PRIMITIVE_ID, DXIL_I32);
    case nir_intrinsic_load_sample_id:
    case nir_intrinsic_load_sample_id_no_per_sample:
       return emit_load_sample_id(ctx, intr);
@@ -4441,13 +4586,17 @@ emit_intrinsic(struct ntd_context *ctx, nir_intrinsic_instr *intr)
       switch (ctx->mod.shader_kind) {
       case DXIL_HULL_SHADER:
          return emit_load_unary_external_function(ctx, intr, "dx.op.outputControlPointID",
-                                                  DXIL_INTR_OUTPUT_CONTROL_POINT_ID);
+                                                  DXIL_INTR_OUTPUT_CONTROL_POINT_ID, DXIL_I32);
       case DXIL_GEOMETRY_SHADER:
          return emit_load_unary_external_function(ctx, intr, "dx.op.gsInstanceID",
-                                                  DXIL_INTR_GS_INSTANCE_ID);
+                                                  DXIL_INTR_GS_INSTANCE_ID, DXIL_I32);
       default:
          unreachable("Unexpected shader kind for invocation ID");
       }
+   case nir_intrinsic_load_view_index:
+      ctx->mod.feats.view_id = true;
+      return emit_load_unary_external_function(ctx, intr, "dx.op.viewID",
+                                               DXIL_INTR_VIEW_ID, DXIL_I32);
    case nir_intrinsic_load_sample_mask_in:
       return emit_load_sample_mask_in(ctx, intr);
    case nir_intrinsic_load_tess_coord:
@@ -4533,7 +4682,7 @@ emit_intrinsic(struct ntd_context *ctx, nir_intrinsic_instr *intr)
       return emit_image_atomic(ctx, intr, DXIL_ATOMIC_IMAX, nir_type_int);
    case nir_intrinsic_image_deref_atomic_umax:
    case nir_intrinsic_image_atomic_umax:
-      return emit_image_atomic(ctx, intr, DXIL_ATOMIC_IMAX, nir_type_uint);
+      return emit_image_atomic(ctx, intr, DXIL_ATOMIC_UMAX, nir_type_uint);
    case nir_intrinsic_image_deref_atomic_and:
    case nir_intrinsic_image_atomic_and:
       return emit_image_atomic(ctx, intr, DXIL_ATOMIC_AND, nir_type_uint);
@@ -4583,15 +4732,49 @@ emit_intrinsic(struct ntd_context *ctx, nir_intrinsic_instr *intr)
       return emit_vulkan_resource_index(ctx, intr);
    case nir_intrinsic_load_vulkan_descriptor:
       return emit_load_vulkan_descriptor(ctx, intr);
-   case nir_intrinsic_load_layer_id:
-      return emit_load_layer_id(ctx, intr);
 
    case nir_intrinsic_load_sample_pos_from_id:
       return emit_load_sample_pos_from_id(ctx, intr);
 
    case nir_intrinsic_is_helper_invocation:
       return emit_load_unary_external_function(
-         ctx, intr, "dx.op.isHelperLane", DXIL_INTR_IS_HELPER_LANE);
+         ctx, intr, "dx.op.isHelperLane", DXIL_INTR_IS_HELPER_LANE, DXIL_I32);
+   case nir_intrinsic_elect:
+      ctx->mod.feats.wave_ops = 1;
+      return emit_load_unary_external_function(
+         ctx, intr, "dx.op.waveIsFirstLane", DXIL_INTR_WAVE_IS_FIRST_LANE, DXIL_NONE);
+   case nir_intrinsic_load_subgroup_size:
+      ctx->mod.feats.wave_ops = 1;
+      return emit_load_unary_external_function(
+         ctx, intr, "dx.op.waveGetLaneCount", DXIL_INTR_WAVE_GET_LANE_COUNT, DXIL_NONE);
+   case nir_intrinsic_load_subgroup_invocation:
+      ctx->mod.feats.wave_ops = 1;
+      return emit_load_unary_external_function(
+         ctx, intr, "dx.op.waveGetLaneIndex", DXIL_INTR_WAVE_GET_LANE_INDEX, DXIL_NONE);
+
+   case nir_intrinsic_vote_feq:
+   case nir_intrinsic_vote_ieq:
+      return emit_vote_eq(ctx, intr);
+   case nir_intrinsic_vote_any:
+   case nir_intrinsic_vote_all:
+      return emit_vote(ctx, intr);
+
+   case nir_intrinsic_ballot:
+      return emit_ballot(ctx, intr);
+
+   case nir_intrinsic_read_first_invocation:
+      return emit_read_first_invocation(ctx, intr);
+   case nir_intrinsic_read_invocation:
+   case nir_intrinsic_shuffle:
+   case nir_intrinsic_quad_broadcast:
+      return emit_read_invocation(ctx, intr);
+
+   case nir_intrinsic_quad_swap_horizontal:
+      return emit_quad_op(ctx, intr, QUAD_READ_ACROSS_X);
+   case nir_intrinsic_quad_swap_vertical:
+      return emit_quad_op(ctx, intr, QUAD_READ_ACROSS_Y);
+   case nir_intrinsic_quad_swap_diagonal:
+      return emit_quad_op(ctx, intr, QUAD_READ_ACROSS_DIAGONAL);
 
    case nir_intrinsic_load_num_workgroups:
    case nir_intrinsic_load_workgroup_size:
@@ -5593,9 +5776,19 @@ emit_function(struct ntd_context *ctx, nir_function *func)
 
    nir_metadata_require(impl, nir_metadata_block_index);
 
+   const char *attr_keys[2] = { NULL };
+   const char *attr_values[2] = { NULL };
+   if (ctx->shader->info.float_controls_execution_mode &
+       (FLOAT_CONTROLS_DENORM_FLUSH_TO_ZERO_FP32 | FLOAT_CONTROLS_DENORM_PRESERVE_FP32))
+      attr_keys[0] = "fp32-denorm-mode";
+   if (ctx->shader->info.float_controls_execution_mode & FLOAT_CONTROLS_DENORM_FLUSH_TO_ZERO_FP32)
+      attr_values[0] = "ftz";
+   else if (ctx->shader->info.float_controls_execution_mode & FLOAT_CONTROLS_DENORM_PRESERVE_FP32)
+      attr_values[0] = "preserve";
+
    const struct dxil_type *void_type = dxil_module_get_void_type(&ctx->mod);
    const struct dxil_type *func_type = dxil_module_add_function_type(&ctx->mod, void_type, NULL, 0);
-   struct dxil_func_def *func_def = dxil_add_function_def(&ctx->mod, func->name, func_type, impl->num_blocks);
+   struct dxil_func_def *func_def = dxil_add_function_def(&ctx->mod, func->name, func_type, impl->num_blocks, attr_keys, attr_values);
    if (!func_def)
       return false;
 
@@ -5925,6 +6118,7 @@ void dxil_fill_validation_state(struct ntd_context *ctx,
    state->resources.v0 = (struct dxil_resource_v0*)ctx->resources.data;
    state->state.psv1.psv0.max_expected_wave_lane_count = UINT_MAX;
    state->state.psv1.shader_stage = (uint8_t)ctx->mod.shader_kind;
+   state->state.psv1.uses_view_id = (uint8_t)ctx->mod.feats.view_id;
    state->state.psv1.sig_input_elements = (uint8_t)ctx->mod.num_sig_inputs;
    state->state.psv1.sig_output_elements = (uint8_t)ctx->mod.num_sig_outputs;
    state->state.psv1.sig_patch_const_or_prim_elements = (uint8_t)ctx->mod.num_sig_patch_consts;
@@ -6084,7 +6278,7 @@ type_size_vec4(const struct glsl_type *type, bool bindless)
 
 static const unsigned dxil_validator_min_capable_version = DXIL_VALIDATOR_1_4;
 static const unsigned dxil_validator_max_capable_version = DXIL_VALIDATOR_1_7;
-static const unsigned dxil_min_shader_model = SHADER_MODEL_6_1;
+static const unsigned dxil_min_shader_model = SHADER_MODEL_6_0;
 static const unsigned dxil_max_shader_model = SHADER_MODEL_6_7;
 
 bool

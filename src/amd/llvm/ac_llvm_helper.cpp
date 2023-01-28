@@ -31,6 +31,7 @@
 #include <llvm/MC/MCSubtargetInfo.h>
 #include <llvm/Support/CommandLine.h>
 #include <llvm/Transforms/IPO.h>
+#include <llvm/Transforms/Scalar.h>
 
 #include <cstring>
 
@@ -45,44 +46,46 @@
 #include "ac_llvm_build.h"
 #include "util/macros.h"
 
+using namespace llvm;
+
 bool ac_is_llvm_processor_supported(LLVMTargetMachineRef tm, const char *processor)
 {
-   llvm::TargetMachine *TM = reinterpret_cast<llvm::TargetMachine *>(tm);
+   TargetMachine *TM = reinterpret_cast<TargetMachine *>(tm);
    return TM->getMCSubtargetInfo()->isCPUStringValid(processor);
 }
 
 void ac_reset_llvm_all_options_occurences()
 {
-   llvm::cl::ResetAllOptionOccurrences();
+   cl::ResetAllOptionOccurrences();
 }
 
 void ac_add_attr_dereferenceable(LLVMValueRef val, uint64_t bytes)
 {
-   llvm::Argument *A = llvm::unwrap<llvm::Argument>(val);
-   A->addAttr(llvm::Attribute::getWithDereferenceableBytes(A->getContext(), bytes));
+   Argument *A = unwrap<Argument>(val);
+   A->addAttr(Attribute::getWithDereferenceableBytes(A->getContext(), bytes));
 }
 
 void ac_add_attr_alignment(LLVMValueRef val, uint64_t bytes)
 {
-   llvm::Argument *A = llvm::unwrap<llvm::Argument>(val);
-   A->addAttr(llvm::Attribute::getWithAlignment(A->getContext(), llvm::Align(bytes)));
+   Argument *A = unwrap<Argument>(val);
+   A->addAttr(Attribute::getWithAlignment(A->getContext(), Align(bytes)));
 }
 
 bool ac_is_sgpr_param(LLVMValueRef arg)
 {
-   llvm::Argument *A = llvm::unwrap<llvm::Argument>(arg);
-   llvm::AttributeList AS = A->getParent()->getAttributes();
+   Argument *A = unwrap<Argument>(arg);
+   AttributeList AS = A->getParent()->getAttributes();
    unsigned ArgNo = A->getArgNo();
-   return AS.hasParamAttr(ArgNo, llvm::Attribute::InReg);
+   return AS.hasParamAttr(ArgNo, Attribute::InReg);
 }
 
 LLVMModuleRef ac_create_module(LLVMTargetMachineRef tm, LLVMContextRef ctx)
 {
-   llvm::TargetMachine *TM = reinterpret_cast<llvm::TargetMachine *>(tm);
+   TargetMachine *TM = reinterpret_cast<TargetMachine *>(tm);
    LLVMModuleRef module = LLVMModuleCreateWithNameInContext("mesa-shader", ctx);
 
-   llvm::unwrap(module)->setTargetTriple(TM->getTargetTriple().getTriple());
-   llvm::unwrap(module)->setDataLayout(TM->createDataLayout());
+   unwrap(module)->setTargetTriple(TM->getTargetTriple().getTriple());
+   unwrap(module)->setDataLayout(TM->createDataLayout());
    return module;
 }
 
@@ -90,7 +93,7 @@ LLVMBuilderRef ac_create_builder(LLVMContextRef ctx, enum ac_float_mode float_mo
 {
    LLVMBuilderRef builder = LLVMCreateBuilderInContext(ctx);
 
-   llvm::FastMathFlags flags;
+   FastMathFlags flags;
 
    switch (float_mode) {
    case AC_FLOAT_MODE_DEFAULT:
@@ -108,7 +111,7 @@ LLVMBuilderRef ac_create_builder(LLVMContextRef ctx, enum ac_float_mode float_mo
        */
       flags.setAllowReciprocal(); /* arcp */
 
-      llvm::unwrap(builder)->setFastMathFlags(flags);
+      unwrap(builder)->setFastMathFlags(flags);
       break;
    }
 
@@ -118,8 +121,8 @@ LLVMBuilderRef ac_create_builder(LLVMContextRef ctx, enum ac_float_mode float_mo
 void ac_enable_signed_zeros(struct ac_llvm_context *ctx)
 {
    if (ctx->float_mode == AC_FLOAT_MODE_DEFAULT_OPENGL) {
-      auto *b = llvm::unwrap(ctx->builder);
-      llvm::FastMathFlags flags = b->getFastMathFlags();
+      auto *b = unwrap(ctx->builder);
+      FastMathFlags flags = b->getFastMathFlags();
 
       /* This disables the optimization of (x + 0), which is used
        * to convert negative zero to positive zero.
@@ -132,8 +135,8 @@ void ac_enable_signed_zeros(struct ac_llvm_context *ctx)
 void ac_disable_signed_zeros(struct ac_llvm_context *ctx)
 {
    if (ctx->float_mode == AC_FLOAT_MODE_DEFAULT_OPENGL) {
-      auto *b = llvm::unwrap(ctx->builder);
-      llvm::FastMathFlags flags = b->getFastMathFlags();
+      auto *b = unwrap(ctx->builder);
+      FastMathFlags flags = b->getFastMathFlags();
 
       flags.setNoSignedZeros();
       b->setFastMathFlags(flags);
@@ -143,17 +146,17 @@ void ac_disable_signed_zeros(struct ac_llvm_context *ctx)
 LLVMTargetLibraryInfoRef ac_create_target_library_info(const char *triple)
 {
    return reinterpret_cast<LLVMTargetLibraryInfoRef>(
-      new llvm::TargetLibraryInfoImpl(llvm::Triple(triple)));
+      new TargetLibraryInfoImpl(Triple(triple)));
 }
 
 void ac_dispose_target_library_info(LLVMTargetLibraryInfoRef library_info)
 {
-   delete reinterpret_cast<llvm::TargetLibraryInfoImpl *>(library_info);
+   delete reinterpret_cast<TargetLibraryInfoImpl *>(library_info);
 }
 
 /* Implementation of raw_pwrite_stream that works on malloc()ed memory for
  * better compatibility with C code. */
-struct raw_memory_ostream : public llvm::raw_pwrite_stream {
+struct raw_memory_ostream : public raw_pwrite_stream {
    char *buffer;
    size_t written;
    size_t bufsize;
@@ -220,7 +223,7 @@ struct raw_memory_ostream : public llvm::raw_pwrite_stream {
  */
 struct ac_compiler_passes {
    raw_memory_ostream ostream;        /* ELF shader binary stream */
-   llvm::legacy::PassManager passmgr; /* list of passes */
+   legacy::PassManager passmgr; /* list of passes */
 };
 
 struct ac_compiler_passes *ac_create_llvm_passes(LLVMTargetMachineRef tm)
@@ -229,10 +232,10 @@ struct ac_compiler_passes *ac_create_llvm_passes(LLVMTargetMachineRef tm)
    if (!p)
       return NULL;
 
-   llvm::TargetMachine *TM = reinterpret_cast<llvm::TargetMachine *>(tm);
+   TargetMachine *TM = reinterpret_cast<TargetMachine *>(tm);
 
    if (TM->addPassesToEmitFile(p->passmgr, p->ostream, nullptr,
-                               llvm::CGFT_ObjectFile)) {
+                               CGFT_ObjectFile)) {
       fprintf(stderr, "amd: TargetMachine can't emit a file of this type!\n");
       delete p;
       return NULL;
@@ -249,80 +252,85 @@ void ac_destroy_llvm_passes(struct ac_compiler_passes *p)
 bool ac_compile_module_to_elf(struct ac_compiler_passes *p, LLVMModuleRef module,
                               char **pelf_buffer, size_t *pelf_size)
 {
-   p->passmgr.run(*llvm::unwrap(module));
+   p->passmgr.run(*unwrap(module));
    p->ostream.take(*pelf_buffer, *pelf_size);
    return true;
 }
 
 void ac_llvm_add_barrier_noop_pass(LLVMPassManagerRef passmgr)
 {
-   llvm::unwrap(passmgr)->add(llvm::createBarrierNoopPass());
+   unwrap(passmgr)->add(createBarrierNoopPass());
 }
 
 LLVMValueRef ac_build_atomic_rmw(struct ac_llvm_context *ctx, LLVMAtomicRMWBinOp op,
                                  LLVMValueRef ptr, LLVMValueRef val, const char *sync_scope)
 {
-   llvm::AtomicRMWInst::BinOp binop;
+   AtomicRMWInst::BinOp binop;
    switch (op) {
    case LLVMAtomicRMWBinOpXchg:
-      binop = llvm::AtomicRMWInst::Xchg;
+      binop = AtomicRMWInst::Xchg;
       break;
    case LLVMAtomicRMWBinOpAdd:
-      binop = llvm::AtomicRMWInst::Add;
+      binop = AtomicRMWInst::Add;
       break;
    case LLVMAtomicRMWBinOpSub:
-      binop = llvm::AtomicRMWInst::Sub;
+      binop = AtomicRMWInst::Sub;
       break;
    case LLVMAtomicRMWBinOpAnd:
-      binop = llvm::AtomicRMWInst::And;
+      binop = AtomicRMWInst::And;
       break;
    case LLVMAtomicRMWBinOpNand:
-      binop = llvm::AtomicRMWInst::Nand;
+      binop = AtomicRMWInst::Nand;
       break;
    case LLVMAtomicRMWBinOpOr:
-      binop = llvm::AtomicRMWInst::Or;
+      binop = AtomicRMWInst::Or;
       break;
    case LLVMAtomicRMWBinOpXor:
-      binop = llvm::AtomicRMWInst::Xor;
+      binop = AtomicRMWInst::Xor;
       break;
    case LLVMAtomicRMWBinOpMax:
-      binop = llvm::AtomicRMWInst::Max;
+      binop = AtomicRMWInst::Max;
       break;
    case LLVMAtomicRMWBinOpMin:
-      binop = llvm::AtomicRMWInst::Min;
+      binop = AtomicRMWInst::Min;
       break;
    case LLVMAtomicRMWBinOpUMax:
-      binop = llvm::AtomicRMWInst::UMax;
+      binop = AtomicRMWInst::UMax;
       break;
    case LLVMAtomicRMWBinOpUMin:
-      binop = llvm::AtomicRMWInst::UMin;
+      binop = AtomicRMWInst::UMin;
       break;
    case LLVMAtomicRMWBinOpFAdd:
-      binop = llvm::AtomicRMWInst::FAdd;
+      binop = AtomicRMWInst::FAdd;
       break;
    default:
       unreachable("invalid LLVMAtomicRMWBinOp");
       break;
    }
-   unsigned SSID = llvm::unwrap(ctx->context)->getOrInsertSyncScopeID(sync_scope);
-   return llvm::wrap(llvm::unwrap(ctx->builder)
-                        ->CreateAtomicRMW(binop, llvm::unwrap(ptr), llvm::unwrap(val),
+   unsigned SSID = unwrap(ctx->context)->getOrInsertSyncScopeID(sync_scope);
+   return wrap(unwrap(ctx->builder)
+                        ->CreateAtomicRMW(binop, unwrap(ptr), unwrap(val),
 #if LLVM_VERSION_MAJOR >= 13
-                                          llvm::MaybeAlign(0),
+                                          MaybeAlign(0),
 #endif
-                                          llvm::AtomicOrdering::SequentiallyConsistent, SSID));
+                                          AtomicOrdering::SequentiallyConsistent, SSID));
 }
 
 LLVMValueRef ac_build_atomic_cmp_xchg(struct ac_llvm_context *ctx, LLVMValueRef ptr,
                                       LLVMValueRef cmp, LLVMValueRef val, const char *sync_scope)
 {
-   unsigned SSID = llvm::unwrap(ctx->context)->getOrInsertSyncScopeID(sync_scope);
-   return llvm::wrap(llvm::unwrap(ctx->builder)
-                        ->CreateAtomicCmpXchg(llvm::unwrap(ptr), llvm::unwrap(cmp),
-                                              llvm::unwrap(val),
+   unsigned SSID = unwrap(ctx->context)->getOrInsertSyncScopeID(sync_scope);
+   return wrap(unwrap(ctx->builder)
+                        ->CreateAtomicCmpXchg(unwrap(ptr), unwrap(cmp),
+                                              unwrap(val),
 #if LLVM_VERSION_MAJOR >= 13
-                                              llvm::MaybeAlign(0),
+                                              MaybeAlign(0),
 #endif
-                                              llvm::AtomicOrdering::SequentiallyConsistent,
-                                              llvm::AtomicOrdering::SequentiallyConsistent, SSID));
+                                              AtomicOrdering::SequentiallyConsistent,
+                                              AtomicOrdering::SequentiallyConsistent, SSID));
+}
+
+void ac_add_sinking_pass(LLVMPassManagerRef PM)
+{
+  unwrap(PM)->add(createLoopSinkPass());
 }

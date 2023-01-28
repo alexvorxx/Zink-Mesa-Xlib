@@ -396,6 +396,7 @@ apply_layout_to_intrin(nir_builder *b, apply_layout_state *state, nir_intrinsic_
    case nir_intrinsic_load_ubo:
    case nir_intrinsic_load_ssbo:
    case nir_intrinsic_ssbo_atomic_add:
+   case nir_intrinsic_ssbo_atomic_fadd:
    case nir_intrinsic_ssbo_atomic_imin:
    case nir_intrinsic_ssbo_atomic_umin:
    case nir_intrinsic_ssbo_atomic_fmin:

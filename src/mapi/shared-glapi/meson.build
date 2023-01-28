@@ -57,7 +57,7 @@ libglapi = shared_library(
   dependencies : [dep_thread, dep_selinux, idep_mesautil],
   soversion : host_machine.system() == 'windows' ? '' : '0',
   version : '0.0.0',
-  name_prefix : 'lib',
+  name_prefix : host_machine.system() == 'windows' ? 'lib' : [],  # always use lib, but avoid warnings on !windows
   install : true,
 )
 libglapi_build_dir = meson.current_build_dir()

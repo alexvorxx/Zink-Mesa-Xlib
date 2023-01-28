@@ -30,6 +30,7 @@
 #include "freedreno_query_acc.h"
 #include "freedreno_state.h"
 
+#include "fd6_barrier.h"
 #include "fd6_blend.h"
 #include "fd6_blitter.h"
 #include "fd6_compute.h"
@@ -49,6 +50,10 @@ static void
 fd6_context_destroy(struct pipe_context *pctx) in_dt
 {
    struct fd6_context *fd6_ctx = fd6_context(fd_context(pctx));
+
+   fd6_descriptor_set_invalidate(&fd6_ctx->cs_descriptor_set);
+   for (unsigned i = 0; i < ARRAY_SIZE(fd6_ctx->descriptor_sets); i++)
+      fd6_descriptor_set_invalidate(&fd6_ctx->descriptor_sets[i]);
 
    if (fd6_ctx->streamout_disable_stateobj)
       fd_ringbuffer_del(fd6_ctx->streamout_disable_stateobj);
@@ -162,12 +167,6 @@ setup_state_map(struct fd_context *ctx)
    fd_context_add_map(ctx, FD_DIRTY_BLEND | FD_DIRTY_SAMPLE_MASK,
                       BIT(FD6_GROUP_BLEND));
    fd_context_add_map(ctx, FD_DIRTY_BLEND_COLOR, BIT(FD6_GROUP_BLEND_COLOR));
-   fd_context_add_map(ctx, FD_DIRTY_SSBO | FD_DIRTY_IMAGE | FD_DIRTY_PROG,
-                      BIT(FD6_GROUP_IBO) | BIT(FD6_GROUP_FS_TEX));
-   fd_context_add_map(ctx, FD_DIRTY_PROG,
-                      BIT(FD6_GROUP_VS_TEX) | BIT(FD6_GROUP_HS_TEX) |
-                         BIT(FD6_GROUP_DS_TEX) | BIT(FD6_GROUP_GS_TEX) |
-                         BIT(FD6_GROUP_FS_TEX));
    fd_context_add_map(ctx, FD_DIRTY_PROG | FD_DIRTY_CONST,
                       BIT(FD6_GROUP_CONST));
    fd_context_add_map(ctx, FD_DIRTY_STREAMOUT, BIT(FD6_GROUP_SO));
@@ -182,6 +181,28 @@ setup_state_map(struct fd_context *ctx)
                              BIT(FD6_GROUP_GS_TEX));
    fd_context_add_shader_map(ctx, PIPE_SHADER_FRAGMENT, FD_DIRTY_SHADER_TEX,
                              BIT(FD6_GROUP_FS_TEX));
+   fd_context_add_shader_map(ctx, PIPE_SHADER_COMPUTE, FD_DIRTY_SHADER_TEX,
+                             BIT(FD6_GROUP_CS_TEX));
+
+   fd_context_add_shader_map(ctx, PIPE_SHADER_VERTEX,
+                             FD_DIRTY_SHADER_SSBO | FD_DIRTY_SHADER_IMAGE,
+                             BIT(FD6_GROUP_VS_BINDLESS));
+   fd_context_add_shader_map(ctx, PIPE_SHADER_TESS_CTRL,
+                             FD_DIRTY_SHADER_SSBO | FD_DIRTY_SHADER_IMAGE,
+                             BIT(FD6_GROUP_HS_BINDLESS));
+   fd_context_add_shader_map(ctx, PIPE_SHADER_TESS_EVAL,
+                             FD_DIRTY_SHADER_SSBO | FD_DIRTY_SHADER_IMAGE,
+                             BIT(FD6_GROUP_DS_BINDLESS));
+   fd_context_add_shader_map(ctx, PIPE_SHADER_GEOMETRY,
+                             FD_DIRTY_SHADER_SSBO | FD_DIRTY_SHADER_IMAGE,
+                             BIT(FD6_GROUP_GS_BINDLESS));
+   /* NOTE: FD6_GROUP_FS_BINDLESS has a weak dependency on the program
+    * state (ie. it needs to be re-generated with fb-read descriptor
+    * patched in) but this special case is handled in fd6_emit_3d_state()
+    */
+   fd_context_add_shader_map(ctx, PIPE_SHADER_FRAGMENT,
+                             FD_DIRTY_SHADER_SSBO | FD_DIRTY_SHADER_IMAGE,
+                             BIT(FD6_GROUP_FS_BINDLESS));
 
    /* NOTE: scissor enabled bit is part of rasterizer state, but
     * fd_rasterizer_state_bind() will mark scissor dirty if needed:
@@ -229,7 +250,6 @@ fd6_context_create(struct pipe_screen *pscreen, void *priv,
    fd6_gmem_init(pctx);
    fd6_texture_init(pctx);
    fd6_prog_init(pctx);
-   fd6_emit_init(pctx);
    fd6_query_context_init(pctx);
 
    setup_state_map(&fd6_ctx->base);
@@ -242,6 +262,9 @@ fd6_context_create(struct pipe_screen *pscreen, void *priv,
 
    /* after fd_context_init() to override set_shader_images() */
    fd6_image_init(pctx);
+
+   /* after fd_context_init() to override memory_barrier/texture_barrier(): */
+   fd6_barrier_init(pctx);
 
    util_blitter_set_texture_multisample(fd6_ctx->base.blitter, true);
 

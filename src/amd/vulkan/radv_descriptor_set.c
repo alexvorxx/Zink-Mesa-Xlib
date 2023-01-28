@@ -67,6 +67,29 @@ has_equal_immutable_samplers(const VkSampler *samplers, uint32_t count)
    return true;
 }
 
+static uint32_t
+radv_descriptor_alignment(VkDescriptorType type)
+{
+   switch (type) {
+   case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER:
+   case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER:
+   case VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER:
+   case VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER:
+   case VK_DESCRIPTOR_TYPE_SAMPLER:
+   case VK_DESCRIPTOR_TYPE_INLINE_UNIFORM_BLOCK:
+   case VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR:
+      return 16;
+   case VK_DESCRIPTOR_TYPE_STORAGE_IMAGE:
+   case VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE:
+   case VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT:
+   case VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER:
+   case VK_DESCRIPTOR_TYPE_MUTABLE_EXT:
+      return 32;
+   default:
+      return 1;
+   }
+}
+
 static bool
 radv_mutable_descriptor_type_size_alignment(const VkMutableDescriptorTypeListVALVE *list,
                                             uint64_t *out_size, uint64_t *out_align)
@@ -76,7 +99,7 @@ radv_mutable_descriptor_type_size_alignment(const VkMutableDescriptorTypeListVAL
 
    for (uint32_t i = 0; i < list->descriptorTypeCount; i++) {
       uint32_t size = 0;
-      uint32_t align = 0;
+      uint32_t align = radv_descriptor_alignment(list->pDescriptorTypes[i]);
 
       switch (list->pDescriptorTypes[i]) {
       case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER:
@@ -85,15 +108,12 @@ radv_mutable_descriptor_type_size_alignment(const VkMutableDescriptorTypeListVAL
       case VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER:
       case VK_DESCRIPTOR_TYPE_SAMPLER:
          size = 16;
-         align = 16;
          break;
       case VK_DESCRIPTOR_TYPE_STORAGE_IMAGE:
          size = 32;
-         align = 32;
          break;
       case VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE:
          size = 64;
-         align = 32;
          break;
       default:
          return false;
@@ -199,155 +219,170 @@ radv_CreateDescriptorSetLayout(VkDevice _device, const VkDescriptorSetLayoutCrea
    uint32_t buffer_count = 0;
    uint32_t dynamic_offset_count = 0;
 
-   for (uint32_t j = 0; j < pCreateInfo->bindingCount; j++) {
-      const VkDescriptorSetLayoutBinding *binding = bindings + j;
-      uint32_t b = binding->binding;
-      uint32_t alignment = 0;
-      unsigned binding_buffer_count =
-         radv_descriptor_type_buffer_count(binding->descriptorType);
-      uint32_t descriptor_count = binding->descriptorCount;
-      bool has_ycbcr_sampler = false;
-
-      /* main image + fmask */
-      uint32_t max_sampled_image_descriptors = 2;
-
-      if (binding->descriptorType == VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER &&
-          binding->pImmutableSamplers) {
-         for (unsigned i = 0; i < binding->descriptorCount; ++i) {
-            struct radv_sampler_ycbcr_conversion *conversion =
-               radv_sampler_from_handle(binding->pImmutableSamplers[i])->ycbcr_sampler;
-
-            if (conversion) {
-               has_ycbcr_sampler = true;
-               max_sampled_image_descriptors = MAX2(max_sampled_image_descriptors,
-                                                    vk_format_get_plane_count(conversion->state.format));
-            }
-         }
-      }
-
-      switch (binding->descriptorType) {
-      case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC:
-      case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC:
-         assert(!(pCreateInfo->flags & VK_DESCRIPTOR_SET_LAYOUT_CREATE_PUSH_DESCRIPTOR_BIT_KHR));
-         set_layout->binding[b].dynamic_offset_count = 1;
-         set_layout->dynamic_shader_stages |= binding->stageFlags;
-         if (binding->stageFlags & RADV_RT_STAGE_BITS)
-            set_layout->dynamic_shader_stages |= VK_SHADER_STAGE_COMPUTE_BIT;
-         set_layout->binding[b].size = 0;
-         alignment = 1;
-         break;
-      case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER:
-      case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER:
-      case VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER:
-      case VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER:
-         set_layout->binding[b].size = 16;
-         alignment = 16;
-         break;
-      case VK_DESCRIPTOR_TYPE_STORAGE_IMAGE:
-         set_layout->binding[b].size = 32;
-         alignment = 32;
-         break;
-      case VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE:
-      case VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT:
-         /* main descriptor + fmask descriptor */
-         set_layout->binding[b].size = 64;
-         alignment = 32;
-         break;
-      case VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER:
-         /* main descriptor + fmask descriptor + sampler */
-         set_layout->binding[b].size = 96;
-         alignment = 32;
-         break;
-      case VK_DESCRIPTOR_TYPE_SAMPLER:
-         set_layout->binding[b].size = 16;
-         alignment = 16;
-         break;
-      case VK_DESCRIPTOR_TYPE_MUTABLE_EXT: {
+   uint32_t first_alignment = 32;
+   if (pCreateInfo->bindingCount > 0) {
+      uint32_t last_alignment =
+         radv_descriptor_alignment(bindings[pCreateInfo->bindingCount - 1].descriptorType);
+      if (bindings[pCreateInfo->bindingCount - 1].descriptorType ==
+          VK_DESCRIPTOR_TYPE_MUTABLE_EXT) {
          uint64_t mutable_size = 0, mutable_align = 0;
-         radv_mutable_descriptor_type_size_alignment(&mutable_info->pMutableDescriptorTypeLists[j],
-                                                     &mutable_size, &mutable_align);
-         assert(mutable_size && mutable_align);
-         set_layout->binding[b].size = mutable_size;
-         alignment = mutable_align;
-         break;
-      }
-      case VK_DESCRIPTOR_TYPE_INLINE_UNIFORM_BLOCK:
-         alignment = 16;
-         set_layout->binding[b].size = descriptor_count;
-         descriptor_count = 1;
-         break;
-      case VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR:
-         set_layout->binding[b].size = 16;
-         alignment = 16;
-         break;
-      default:
-         break;
+         radv_mutable_descriptor_type_size_alignment(
+            &mutable_info->pMutableDescriptorTypeLists[pCreateInfo->bindingCount - 1],
+            &mutable_size, &mutable_align);
+         last_alignment = mutable_align;
       }
 
-      set_layout->size = align(set_layout->size, alignment);
-      set_layout->binding[b].type = binding->descriptorType;
-      set_layout->binding[b].array_size = descriptor_count;
-      set_layout->binding[b].offset = set_layout->size;
-      set_layout->binding[b].buffer_offset = buffer_count;
-      set_layout->binding[b].dynamic_offset_offset = dynamic_offset_count;
+      first_alignment = last_alignment == 32 ? 16 : 32;
+   }
 
-      if (variable_flags && binding->binding < variable_flags->bindingCount &&
-          (variable_flags->pBindingFlags[binding->binding] &
-           VK_DESCRIPTOR_BINDING_VARIABLE_DESCRIPTOR_COUNT_BIT)) {
-         assert(
-            !binding->pImmutableSamplers); /* Terribly ill defined  how many samplers are valid */
-         assert(binding->binding == num_bindings - 1);
+   for (unsigned pass = 0; pass < 2; ++pass) {
+      for (uint32_t j = 0; j < pCreateInfo->bindingCount; j++) {
+         const VkDescriptorSetLayoutBinding *binding = bindings + j;
+         uint32_t b = binding->binding;
+         uint32_t alignment = radv_descriptor_alignment(binding->descriptorType);
+         unsigned binding_buffer_count = radv_descriptor_type_buffer_count(binding->descriptorType);
+         uint32_t descriptor_count = binding->descriptorCount;
+         bool has_ycbcr_sampler = false;
 
-         set_layout->has_variable_descriptors = true;
-      }
+         /* main image + fmask */
+         uint32_t max_sampled_image_descriptors = 2;
 
-      if ((binding->descriptorType == VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER ||
-           binding->descriptorType == VK_DESCRIPTOR_TYPE_SAMPLER) &&
-          binding->pImmutableSamplers) {
-         set_layout->binding[b].immutable_samplers_offset = samplers_offset;
-         set_layout->has_immutable_samplers = true;
+         if (binding->descriptorType == VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER &&
+             binding->pImmutableSamplers) {
+            for (unsigned i = 0; i < binding->descriptorCount; ++i) {
+               struct radv_sampler_ycbcr_conversion *conversion =
+                  radv_sampler_from_handle(binding->pImmutableSamplers[i])->ycbcr_sampler;
 
-         /* Do not optimize space for descriptor buffers and embedded samplers, otherwise the set
-          * layout size/offset are incorrect.
-          */
-         if (!(pCreateInfo->flags & (VK_DESCRIPTOR_SET_LAYOUT_CREATE_DESCRIPTOR_BUFFER_BIT_EXT |
-                                     VK_DESCRIPTOR_SET_LAYOUT_CREATE_EMBEDDED_IMMUTABLE_SAMPLERS_BIT_EXT))) {
-            set_layout->binding[b].immutable_samplers_equal =
-               has_equal_immutable_samplers(binding->pImmutableSamplers, binding->descriptorCount);
-         }
-
-         for (uint32_t i = 0; i < binding->descriptorCount; i++)
-            memcpy(samplers + 4 * i,
-                   &radv_sampler_from_handle(binding->pImmutableSamplers[i])->state, 16);
-
-         /* Don't reserve space for the samplers if they're not accessed. */
-         if (set_layout->binding[b].immutable_samplers_equal) {
-            if (binding->descriptorType == VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER &&
-                max_sampled_image_descriptors <= 2)
-               set_layout->binding[b].size -= 32;
-            else if (binding->descriptorType == VK_DESCRIPTOR_TYPE_SAMPLER)
-               set_layout->binding[b].size -= 16;
-         }
-         samplers += 4 * binding->descriptorCount;
-         samplers_offset += 4 * sizeof(uint32_t) * binding->descriptorCount;
-
-         if (has_ycbcr_sampler) {
-            ycbcr_sampler_offsets[b] = (const char *)ycbcr_samplers - (const char *)set_layout;
-            for (uint32_t i = 0; i < binding->descriptorCount; i++) {
-               if (radv_sampler_from_handle(binding->pImmutableSamplers[i])->ycbcr_sampler)
-                  ycbcr_samplers[i] =
-                     radv_sampler_from_handle(binding->pImmutableSamplers[i])->ycbcr_sampler->state;
-               else
-                  ycbcr_samplers[i].format = VK_FORMAT_UNDEFINED;
+               if (conversion) {
+                  has_ycbcr_sampler = true;
+                  max_sampled_image_descriptors =
+                     MAX2(max_sampled_image_descriptors,
+                          vk_format_get_plane_count(conversion->state.format));
+               }
             }
-            ycbcr_samplers += binding->descriptorCount;
          }
-      }
 
-      set_layout->size += descriptor_count * set_layout->binding[b].size;
-      buffer_count += descriptor_count * binding_buffer_count;
-      dynamic_offset_count += descriptor_count * set_layout->binding[b].dynamic_offset_count;
-      set_layout->shader_stages |= binding->stageFlags;
+         switch (binding->descriptorType) {
+         case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC:
+         case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC:
+            assert(!(pCreateInfo->flags & VK_DESCRIPTOR_SET_LAYOUT_CREATE_PUSH_DESCRIPTOR_BIT_KHR));
+            set_layout->binding[b].dynamic_offset_count = 1;
+            set_layout->dynamic_shader_stages |= binding->stageFlags;
+            if (binding->stageFlags & RADV_RT_STAGE_BITS)
+               set_layout->dynamic_shader_stages |= VK_SHADER_STAGE_COMPUTE_BIT;
+            set_layout->binding[b].size = 0;
+            break;
+         case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER:
+         case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER:
+         case VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER:
+         case VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER:
+            set_layout->binding[b].size = 16;
+            break;
+         case VK_DESCRIPTOR_TYPE_STORAGE_IMAGE:
+            set_layout->binding[b].size = 32;
+            break;
+         case VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE:
+         case VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT:
+            /* main descriptor + fmask descriptor */
+            set_layout->binding[b].size = 64;
+            break;
+         case VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER:
+            /* main descriptor + fmask descriptor + sampler */
+            set_layout->binding[b].size = 96;
+            break;
+         case VK_DESCRIPTOR_TYPE_SAMPLER:
+            set_layout->binding[b].size = 16;
+            break;
+         case VK_DESCRIPTOR_TYPE_MUTABLE_EXT: {
+            uint64_t mutable_size = 0, mutable_align = 0;
+            radv_mutable_descriptor_type_size_alignment(
+               &mutable_info->pMutableDescriptorTypeLists[j], &mutable_size, &mutable_align);
+            assert(mutable_size && mutable_align);
+            set_layout->binding[b].size = mutable_size;
+            alignment = mutable_align;
+            break;
+         }
+         case VK_DESCRIPTOR_TYPE_INLINE_UNIFORM_BLOCK:
+            set_layout->binding[b].size = descriptor_count;
+            descriptor_count = 1;
+            break;
+         case VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR:
+            set_layout->binding[b].size = 16;
+            break;
+         default:
+            break;
+         }
+
+         if ((pass == 0 && alignment != first_alignment) ||
+             (pass == 1 && alignment == first_alignment))
+            continue;
+
+         set_layout->size = align(set_layout->size, alignment);
+         set_layout->binding[b].type = binding->descriptorType;
+         set_layout->binding[b].array_size = descriptor_count;
+         set_layout->binding[b].offset = set_layout->size;
+         set_layout->binding[b].buffer_offset = buffer_count;
+         set_layout->binding[b].dynamic_offset_offset = dynamic_offset_count;
+
+         if (variable_flags && binding->binding < variable_flags->bindingCount &&
+             (variable_flags->pBindingFlags[binding->binding] &
+              VK_DESCRIPTOR_BINDING_VARIABLE_DESCRIPTOR_COUNT_BIT)) {
+            assert(
+               !binding->pImmutableSamplers); /* Terribly ill defined  how many samplers are valid */
+            assert(binding->binding == num_bindings - 1);
+
+            set_layout->has_variable_descriptors = true;
+         }
+
+         if ((binding->descriptorType == VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER ||
+              binding->descriptorType == VK_DESCRIPTOR_TYPE_SAMPLER) &&
+             binding->pImmutableSamplers) {
+            set_layout->binding[b].immutable_samplers_offset = samplers_offset;
+            set_layout->has_immutable_samplers = true;
+
+            /* Do not optimize space for descriptor buffers and embedded samplers, otherwise the set
+             * layout size/offset are incorrect.
+             */
+            if (!(pCreateInfo->flags &
+                  (VK_DESCRIPTOR_SET_LAYOUT_CREATE_DESCRIPTOR_BUFFER_BIT_EXT |
+                   VK_DESCRIPTOR_SET_LAYOUT_CREATE_EMBEDDED_IMMUTABLE_SAMPLERS_BIT_EXT))) {
+               set_layout->binding[b].immutable_samplers_equal = has_equal_immutable_samplers(
+                  binding->pImmutableSamplers, binding->descriptorCount);
+            }
+
+            for (uint32_t i = 0; i < binding->descriptorCount; i++)
+               memcpy(samplers + 4 * i,
+                      &radv_sampler_from_handle(binding->pImmutableSamplers[i])->state, 16);
+
+            /* Don't reserve space for the samplers if they're not accessed. */
+            if (set_layout->binding[b].immutable_samplers_equal) {
+               if (binding->descriptorType == VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER &&
+                   max_sampled_image_descriptors <= 2)
+                  set_layout->binding[b].size -= 32;
+               else if (binding->descriptorType == VK_DESCRIPTOR_TYPE_SAMPLER)
+                  set_layout->binding[b].size -= 16;
+            }
+            samplers += 4 * binding->descriptorCount;
+            samplers_offset += 4 * sizeof(uint32_t) * binding->descriptorCount;
+
+            if (has_ycbcr_sampler) {
+               ycbcr_sampler_offsets[b] = (const char *)ycbcr_samplers - (const char *)set_layout;
+               for (uint32_t i = 0; i < binding->descriptorCount; i++) {
+                  if (radv_sampler_from_handle(binding->pImmutableSamplers[i])->ycbcr_sampler)
+                     ycbcr_samplers[i] = radv_sampler_from_handle(binding->pImmutableSamplers[i])
+                                            ->ycbcr_sampler->state;
+                  else
+                     ycbcr_samplers[i].format = VK_FORMAT_UNDEFINED;
+               }
+               ycbcr_samplers += binding->descriptorCount;
+            }
+         }
+
+         set_layout->size += descriptor_count * set_layout->binding[b].size;
+         buffer_count += descriptor_count * binding_buffer_count;
+         dynamic_offset_count += descriptor_count * set_layout->binding[b].dynamic_offset_count;
+         set_layout->shader_stages |= binding->stageFlags;
+      }
    }
 
    free(bindings);
@@ -383,88 +418,103 @@ radv_GetDescriptorSetLayoutSupport(VkDevice device,
       variable_count->maxVariableDescriptorCount = 0;
    }
 
+   uint32_t first_alignment = 32;
+   if (pCreateInfo->bindingCount > 0) {
+      uint32_t last_alignment =
+         radv_descriptor_alignment(bindings[pCreateInfo->bindingCount - 1].descriptorType);
+      if (bindings[pCreateInfo->bindingCount - 1].descriptorType ==
+          VK_DESCRIPTOR_TYPE_MUTABLE_EXT) {
+         uint64_t mutable_size = 0, mutable_align = 0;
+         radv_mutable_descriptor_type_size_alignment(
+            &mutable_info->pMutableDescriptorTypeLists[pCreateInfo->bindingCount - 1],
+            &mutable_size, &mutable_align);
+         last_alignment = mutable_align;
+      }
+
+      first_alignment = last_alignment == 32 ? 16 : 32;
+   }
+
    bool supported = true;
    uint64_t size = 0;
-   for (uint32_t i = 0; i < pCreateInfo->bindingCount; i++) {
-      const VkDescriptorSetLayoutBinding *binding = bindings + i;
+   for (unsigned pass = 0; pass < 2; ++pass) {
+      for (uint32_t i = 0; i < pCreateInfo->bindingCount; i++) {
+         const VkDescriptorSetLayoutBinding *binding = bindings + i;
 
-      uint64_t descriptor_size = 0;
-      uint64_t descriptor_alignment = 1;
-      uint32_t descriptor_count = binding->descriptorCount;
-      switch (binding->descriptorType) {
-      case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC:
-      case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC:
-         break;
-      case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER:
-      case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER:
-      case VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER:
-      case VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER:
-         descriptor_size = 16;
-         descriptor_alignment = 16;
-         break;
-      case VK_DESCRIPTOR_TYPE_STORAGE_IMAGE:
-         descriptor_size = 32;
-         descriptor_alignment = 32;
-         break;
-      case VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE:
-      case VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT:
-         descriptor_size = 64;
-         descriptor_alignment = 32;
-         break;
-      case VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER:
-         if (!has_equal_immutable_samplers(binding->pImmutableSamplers, descriptor_count)) {
-            descriptor_size = 64;
-         } else {
-            descriptor_size = 96;
-         }
-         descriptor_alignment = 32;
-         break;
-      case VK_DESCRIPTOR_TYPE_SAMPLER:
-         if (!has_equal_immutable_samplers(binding->pImmutableSamplers, descriptor_count)) {
+         uint64_t descriptor_size = 0;
+         uint64_t descriptor_alignment = radv_descriptor_alignment(binding->descriptorType);
+         uint32_t descriptor_count = binding->descriptorCount;
+         switch (binding->descriptorType) {
+         case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC:
+         case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC:
+            break;
+         case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER:
+         case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER:
+         case VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER:
+         case VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER:
             descriptor_size = 16;
-            descriptor_alignment = 16;
+            break;
+         case VK_DESCRIPTOR_TYPE_STORAGE_IMAGE:
+            descriptor_size = 32;
+            break;
+         case VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE:
+         case VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT:
+            descriptor_size = 64;
+            break;
+         case VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER:
+            if (!has_equal_immutable_samplers(binding->pImmutableSamplers, descriptor_count)) {
+               descriptor_size = 64;
+            } else {
+               descriptor_size = 96;
+            }
+            break;
+         case VK_DESCRIPTOR_TYPE_SAMPLER:
+            if (!has_equal_immutable_samplers(binding->pImmutableSamplers, descriptor_count)) {
+               descriptor_size = 16;
+            }
+            break;
+         case VK_DESCRIPTOR_TYPE_INLINE_UNIFORM_BLOCK:
+            descriptor_size = descriptor_count;
+            descriptor_count = 1;
+            break;
+         case VK_DESCRIPTOR_TYPE_MUTABLE_EXT:
+            if (!radv_mutable_descriptor_type_size_alignment(
+                   &mutable_info->pMutableDescriptorTypeLists[i], &descriptor_size,
+                   &descriptor_alignment)) {
+               supported = false;
+            }
+            break;
+         case VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR:
+            descriptor_size = 16;
+            break;
+         default:
+            break;
          }
-         break;
-      case VK_DESCRIPTOR_TYPE_INLINE_UNIFORM_BLOCK:
-         descriptor_alignment = 16;
-         descriptor_size = descriptor_count;
-         descriptor_count = 1;
-         break;
-      case VK_DESCRIPTOR_TYPE_MUTABLE_EXT:
-         if (!radv_mutable_descriptor_type_size_alignment(
-                &mutable_info->pMutableDescriptorTypeLists[i], &descriptor_size,
-                &descriptor_alignment)) {
+
+         if ((pass == 0 && descriptor_alignment != first_alignment) ||
+             (pass == 1 && descriptor_alignment == first_alignment))
+            continue;
+
+         if (size && !align_u64(size, descriptor_alignment)) {
             supported = false;
          }
-         break;
-      case VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR:
-         descriptor_size = 16;
-         descriptor_alignment = 16;
-         break;
-      default:
-         break;
-      }
+         size = align_u64(size, descriptor_alignment);
 
-      if (size && !align_u64(size, descriptor_alignment)) {
-         supported = false;
-      }
-      size = align_u64(size, descriptor_alignment);
+         uint64_t max_count = INT32_MAX;
+         if (binding->descriptorType == VK_DESCRIPTOR_TYPE_INLINE_UNIFORM_BLOCK)
+            max_count = INT32_MAX - size;
+         else if (descriptor_size)
+            max_count = (INT32_MAX - size) / descriptor_size;
 
-      uint64_t max_count = INT32_MAX;
-      if (binding->descriptorType == VK_DESCRIPTOR_TYPE_INLINE_UNIFORM_BLOCK)
-         max_count = INT32_MAX - size;
-      else if (descriptor_size)
-         max_count = (INT32_MAX - size) / descriptor_size;
-
-      if (max_count < descriptor_count) {
-         supported = false;
+         if (max_count < descriptor_count) {
+            supported = false;
+         }
+         if (variable_flags && binding->binding < variable_flags->bindingCount && variable_count &&
+             (variable_flags->pBindingFlags[binding->binding] &
+              VK_DESCRIPTOR_BINDING_VARIABLE_DESCRIPTOR_COUNT_BIT)) {
+            variable_count->maxVariableDescriptorCount = MIN2(UINT32_MAX, max_count);
+         }
+         size += descriptor_count * descriptor_size;
       }
-      if (variable_flags && binding->binding < variable_flags->bindingCount && variable_count &&
-          (variable_flags->pBindingFlags[binding->binding] &
-           VK_DESCRIPTOR_BINDING_VARIABLE_DESCRIPTOR_COUNT_BIT)) {
-         variable_count->maxVariableDescriptorCount = MIN2(UINT32_MAX, max_count);
-      }
-      size += descriptor_count * descriptor_size;
    }
 
    free(bindings);
@@ -814,6 +864,7 @@ radv_create_descriptor_pool(struct radv_device *device,
       }
    }
 
+   uint64_t num_16byte_descriptors = 0;
    for (unsigned i = 0; i < pCreateInfo->poolSizeCount; ++i) {
       bo_count += radv_descriptor_type_buffer_count(pCreateInfo->pPoolSizes[i].type) *
          pCreateInfo->pPoolSizes[i].descriptorCount;
@@ -829,8 +880,10 @@ radv_create_descriptor_pool(struct radv_device *device,
       case VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER:
       case VK_DESCRIPTOR_TYPE_SAMPLER:
       case VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR:
+         bo_size += 16 * pCreateInfo->pPoolSizes[i].descriptorCount;
+         num_16byte_descriptors += pCreateInfo->pPoolSizes[i].descriptorCount;
+         break;
       case VK_DESCRIPTOR_TYPE_STORAGE_IMAGE:
-         /* 32 as we may need to align for images */
          bo_size += 32 * pCreateInfo->pPoolSizes[i].descriptorCount;
          break;
       case VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE:
@@ -850,6 +903,8 @@ radv_create_descriptor_pool(struct radv_device *device,
                /* 32 as we may need to align for images */
                mutable_size = align(mutable_size, 32);
                bo_size += mutable_size * pCreateInfo->pPoolSizes[i].descriptorCount;
+               if (mutable_size < 32)
+                  num_16byte_descriptors += pCreateInfo->pPoolSizes[i].descriptorCount;
             }
          } else {
             bo_size += 64 * pCreateInfo->pPoolSizes[i].descriptorCount;
@@ -864,6 +919,12 @@ radv_create_descriptor_pool(struct radv_device *device,
       default:
          break;
       }
+   }
+
+   if (num_16byte_descriptors) {
+      /* Reserve space to align before image descriptors. Our layout code ensures at most one gap
+       * per set. */
+      bo_size += 16 * MIN2(num_16byte_descriptors, pCreateInfo->maxSets);
    }
 
    uint64_t layouts_size = 0;

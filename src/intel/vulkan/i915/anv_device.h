@@ -1,7 +1,5 @@
-/**************************************************************************
- *
- * Copyright 2021 Advanced Micro Devices, Inc.
- * All Rights Reserved.
+/*
+ * Copyright © 2022 Intel Corporation
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -17,20 +15,25 @@
  * OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
  * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
  * THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
- * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
- * SOFTWARE.
- *
- **************************************************************************/
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+ * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+ * DEALINGS IN THE SOFTWARE.
+ */
 
-#ifndef GALLIUM_NIR_HELPERS
-#define GALLIUM_NIR_HELPERS
+#pragma once
 
-#include "nir.h"
-#include "pipe/p_state.h"
+#include "vulkan/vulkan_core.h"
+#include "vk_device.h"
 
-void
-nir_gather_stream_output_info(nir_shader *nir,
-                              struct pipe_stream_output_info *so);
+struct anv_device;
+struct anv_physical_device;
 
-#endif
+VkResult
+anv_i915_physical_device_get_parameters(struct anv_physical_device *device);
+
+VkResult
+anv_i915_device_setup_context(struct anv_device *device,
+                              const VkDeviceCreateInfo *pCreateInfo,
+                              const uint32_t num_queues);
+
+VkResult anv_i915_device_check_status(struct vk_device *vk_device);

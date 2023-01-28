@@ -235,7 +235,9 @@ d3d12_end_batch(struct d3d12_context *ctx, struct d3d12_batch *batch)
 
    mtx_lock(&screen->submit_mutex);
 
+#ifndef _GAMING_XBOX
    d3d12_process_batch_residency(screen, batch);
+#endif
 
    bool has_state_fixup = d3d12_context_state_resolve_submission(ctx, batch);
 

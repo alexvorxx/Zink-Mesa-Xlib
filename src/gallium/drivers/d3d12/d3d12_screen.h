@@ -124,6 +124,10 @@ struct d3d12_screen {
    bool have_load_at_vertex;
    bool support_shader_images;
    bool support_create_not_resident;
+
+#ifdef _GAMING_XBOX
+   UINT64 frame_token;
+#endif
 };
 
 static inline struct d3d12_screen *
@@ -135,8 +139,12 @@ d3d12_screen(struct pipe_screen *pipe)
 struct d3d12_dxgi_screen {
    struct d3d12_screen base;
 
+#ifndef _GAMING_XBOX
    struct IDXGIFactory4 *factory;
    struct IDXGIAdapter3 *adapter;
+#else
+   struct IDXGIAdapter *adapter;
+#endif
    wchar_t description[128];
 };
 

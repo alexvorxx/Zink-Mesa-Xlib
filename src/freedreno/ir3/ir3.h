@@ -420,6 +420,9 @@ struct ir3_instruction {
           */
          gl_system_value sysval;
       } input;
+      struct {
+         uint64_t value;
+      } raw;
    };
 
    /* For assigning jump offsets, we need instruction's position: */

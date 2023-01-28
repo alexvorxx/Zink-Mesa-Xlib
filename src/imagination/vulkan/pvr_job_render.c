@@ -1707,7 +1707,7 @@ static void pvr_render_job_ws_submit_info_init(
    submit_info->rt_data_idx = job->rt_dataset->rt_data_idx;
 
    submit_info->frame_num = ctx->device->global_queue_present_count;
-   submit_info->job_num = ctx->device->global_queue_job_count;
+   submit_info->job_num = ctx->device->global_cmd_buffer_submit_count;
 
    submit_info->barrier_geom = barrier_geom;
 

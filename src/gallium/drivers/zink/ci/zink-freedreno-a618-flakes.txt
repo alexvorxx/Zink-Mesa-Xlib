@@ -1,7 +1,10 @@
 # No GPU hang, looked like cache flushing fail.
-dEQP-GLES3.functional.fbo.blit.conversion.rgba4_to_rgb565
-dEQP-GLES3.functional.fbo.blit.conversion.rgba4_to_rgba16f
-dEQP-GLES3.functional.fbo.blit.conversion.r16f_to_srgb8_alpha8
+dEQP-GLES3.functional.fbo.blit.conversion.rgba4_to_.*
+dEQP-GLES3.functional.fbo.blit.conversion.r16f_to_.*
+dEQP-GLES3.functional.fbo.blit.conversion.r16i_to_.*
+dEQP-GLES3.functional.fbo.blit.conversion.r16ui_to.*
+dEQP-GLES3.functional.fbo.blit.conversion.rgb5_a1_to_.*
+dEQP-GLES3.functional.fbo.blit.conversion.rgb565_to_.*
 
 # No GPU hang, looks like one 2x2 quad was colored slightly off?
 dEQP-GLES3.functional.fbo.msaa.4_samples.depth_component16

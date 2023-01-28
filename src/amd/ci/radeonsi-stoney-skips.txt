@@ -32,7 +32,7 @@ spec@ext_external_objects@vk-pix-buf-update-errors
 spec@ext_external_objects_fd@semaphore-api-errors
 spec@ext_external_objects_fd@memory-object-api-errors
 spec@ext_external_objects@vk-vert-buf-reuse
-glx@glx-swap-copy
+
 # From https://github.com/marekolsak/marek-build/blob/master/run-piglit.sh#L36
 spec@!opengl 1.0@gl-1.0-blend-func
 spec@!opengl 1.2@tex3d-maxsize
@@ -76,13 +76,7 @@ glx@glx-copy-sub-buffer samples=6
 glx@glx-swap-event_event
 glx@glx-buffer-age
 glx@glx-buffer-age vblank_mode=0
-glx@glx-copy-sub-buffer
-glx@glx-copy-sub-buffer samples=2
-glx@glx-copy-sub-buffer samples=4
-glx@glx-copy-sub-buffer samples=6
-glx@glx-copy-sub-buffer samples=8
 glx@glx-multithread-buffer
 glx@glx-swap-event_async
 glx@glx-swap-event_event
 glx@glx-swap-event_interval
-spec@!opengl 1.0@gl-1.0-swapbuffers-behavior

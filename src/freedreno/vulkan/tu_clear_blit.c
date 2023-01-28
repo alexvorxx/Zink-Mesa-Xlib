@@ -3073,8 +3073,7 @@ tu_begin_load_store_cond_exec(struct tu_cmd_buffer *cmd,
 {
    tu_cond_exec_start(cs, CP_COND_REG_EXEC_0_MODE(PRED_TEST));
 
-   if (!unlikely(cmd->device->physical_device->instance->debug_flags &
-                 TU_DEBUG_LOG_SKIP_GMEM_OPS))
+   if (!TU_DEBUG(LOG_SKIP_GMEM_OPS))
       return;
 
    uint64_t result_iova;
@@ -3096,8 +3095,7 @@ tu_end_load_store_cond_exec(struct tu_cmd_buffer *cmd,
 {
    tu_cond_exec_end(cs);
 
-   if (!unlikely(cmd->device->physical_device->instance->debug_flags &
-                 TU_DEBUG_LOG_SKIP_GMEM_OPS))
+   if (!TU_DEBUG(LOG_SKIP_GMEM_OPS))
       return;
 
    uint64_t result_iova;
@@ -3294,7 +3292,7 @@ tu_attachment_store_unaligned(struct tu_cmd_buffer *cmd, uint32_t a)
    const VkRect2D *render_area = &cmd->state.render_area;
 
    /* Unaligned store is incredibly rare in CTS, we have to force it to test. */
-   if (unlikely(cmd->device->physical_device->instance->debug_flags & TU_DEBUG_UNALIGNED_STORE))
+   if (TU_DEBUG(UNALIGNED_STORE))
       return true;
 
    uint32_t x1 = render_area->offset.x;

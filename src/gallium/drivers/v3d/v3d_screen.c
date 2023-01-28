@@ -777,6 +777,20 @@ v3d_screen_query_dmabuf_modifiers(struct pipe_screen *pscreen,
         case PIPE_FORMAT_NV12:
                 /* Expose UIF, LINEAR and SAND128 */
                 break;
+        
+        case PIPE_FORMAT_R8_UNORM:
+        case PIPE_FORMAT_R8G8_UNORM:
+        case PIPE_FORMAT_R16_UNORM:
+        case PIPE_FORMAT_R16G16_UNORM:
+                /* Expose UIF, LINEAR and SAND128 */
+		if (!modifiers) break;
+                *count = MIN2(max, num_modifiers);
+                for (i = 0; i < *count; i++) {
+                        modifiers[i] = v3d_available_modifiers[i];
+                        if (external_only)
+                                external_only[i] = modifiers[i] == DRM_FORMAT_MOD_BROADCOM_SAND128;
+                }
+                return;
 
         default:
                 /* Expose UIF and LINEAR, but not SAND128 */
@@ -803,13 +817,20 @@ v3d_screen_is_dmabuf_modifier_supported(struct pipe_screen *pscreen,
                                         bool *external_only)
 {
         int i;
-        bool is_sand_col128 = (format == PIPE_FORMAT_NV12 || format == PIPE_FORMAT_P030) &&
-                (fourcc_mod_broadcom_mod(modifier) == DRM_FORMAT_MOD_BROADCOM_SAND128);
-
-        if (is_sand_col128) {
-                if (external_only)
-                        *external_only = true;
-                return true;
+        if (fourcc_mod_broadcom_mod(modifier) == DRM_FORMAT_MOD_BROADCOM_SAND128) {
+                switch(format) {
+                case PIPE_FORMAT_NV12:
+                case PIPE_FORMAT_P030:
+                case PIPE_FORMAT_R8_UNORM:
+                case PIPE_FORMAT_R8G8_UNORM:
+                case PIPE_FORMAT_R16_UNORM:
+                case PIPE_FORMAT_R16G16_UNORM:
+                        if (external_only)
+                                *external_only = true;
+                        return true;
+                default:
+                        return false;
+                }
         } else if (format == PIPE_FORMAT_P030) {
                 /* For PIPE_FORMAT_P030 we don't expose LINEAR or UIF. */
                 return false;

@@ -198,6 +198,7 @@ enum zink_resource_access {
 };
 
 
+/* zink heaps are based off of vulkan memory types, but are not a 1-to-1 mapping to vulkan memory type indices and have no direct relation to vulkan memory heaps*/
 enum zink_heap {
    ZINK_HEAP_DEVICE_LOCAL,
    ZINK_HEAP_DEVICE_LOCAL_SPARSE,
@@ -338,7 +339,6 @@ struct zink_blend_state {
    VkBool32 alpha_to_coverage;
    VkBool32 alpha_to_one;
 
-   bool need_blend_constants;
    bool dual_src_blend;
 };
 
@@ -553,7 +553,6 @@ struct zink_batch_state {
    struct zink_resource *swapchain;
    struct util_dynarray acquires;
    struct util_dynarray acquire_flags;
-   struct util_dynarray unref_semaphores;
 
    struct util_queue_fence flush_completed;
 
@@ -744,6 +743,7 @@ struct zink_shader {
       } non_fs;
 
       struct {
+         uint32_t legacy_shadow_mask; //is_new_style_shadow is false for these
          nir_variable *fbfetch; //for fs output
       } fs;
    };
@@ -810,6 +810,7 @@ struct zink_gfx_pipeline_state {
    uint32_t vertex_buffers_enabled_mask;
    uint32_t vertex_strides[PIPE_MAX_ATTRIBS];
    struct zink_vertex_elements_hw_state *element_state;
+   struct zink_fs_shadow_key *shadow;
    bool sample_locations_enabled;
    enum pipe_prim_type shader_rast_prim, rast_prim; /* reduced type or max for unknown */
    union {
@@ -888,7 +889,7 @@ struct zink_shader_module {
    bool has_nonseamless;
    uint8_t num_uniforms;
    uint8_t key_size;
-   uint8_t key[0]; /* | key | uniforms | */
+   uint8_t key[0]; /* | key | uniforms | shadow swizzle | */
 };
 
 struct zink_program {
@@ -913,6 +914,7 @@ struct zink_program {
 };
 
 #define STAGE_MASK_OPTIMAL (1<<16)
+#define STAGE_MASK_OPTIMAL_SHADOW (1<<17)
 typedef bool (*equals_gfx_pipeline_state_func)(const void *a, const void *b);
 
 struct zink_gfx_library_key {
@@ -1246,6 +1248,9 @@ struct zink_screen {
    struct util_queue flush_queue;
    struct zink_context *copy_context;
 
+   simple_mtx_t semaphores_lock;
+   struct util_dynarray semaphores;
+
    unsigned buffer_rebind_counter;
    unsigned image_rebind_counter;
    unsigned robust_ctx_count;
@@ -1280,8 +1285,8 @@ struct zink_screen {
       unsigned min_alloc_size;
       uint32_t next_bo_unique_id;
    } pb;
-   uint8_t heap_map[ZINK_HEAP_MAX][VK_MAX_MEMORY_TYPES];
-   uint8_t heap_count[ZINK_HEAP_MAX];
+   uint8_t heap_map[ZINK_HEAP_MAX][VK_MAX_MEMORY_TYPES];  // mapping from zink heaps to memory type indices
+   uint8_t heap_count[ZINK_HEAP_MAX];  // number of memory types per zink heap
    bool resizable_bar;
 
    uint64_t total_video_mem;
@@ -1355,7 +1360,6 @@ struct zink_screen {
 
    struct {
       bool broken_l4a4;
-      bool depth_clip_control_missing;
       bool implicit_sync;
       bool always_feedback_loop;
       bool always_feedback_loop_zs;
@@ -1364,6 +1368,7 @@ struct zink_screen {
       bool no_linestipple;
       bool no_linesmooth;
       bool no_hw_gl_point;
+      bool lower_robustImageAccess2;
       unsigned z16_unscaled_bias;
       unsigned z24_unscaled_bias;
    } driver_workarounds;
@@ -1406,7 +1411,7 @@ struct zink_surface {
    VkImageView *swapchain;
    unsigned swapchain_size;
    void *obj; //backing resource object; used to determine rebinds
-   void *dt; //current swapchain object; used to determine swapchain rebinds
+   void *dt_swapchain; //current swapchain object; used to determine swapchain rebinds
    uint32_t hash; //for surface caching
 };
 
@@ -1489,6 +1494,8 @@ struct zink_sampler_view {
       struct zink_buffer_view *buffer_view;
    };
    struct zink_surface *cube_array;
+   struct zink_surface *shadow;
+   struct zink_fs_shadow_swizzle swizzle;
 };
 
 struct zink_image_view {
@@ -1740,6 +1747,9 @@ struct zink_context {
 
       VkDescriptorImageInfo fbfetch;
 
+      /* the current state of the shadow swizzle data */
+      struct zink_fs_shadow_key shadow;
+
       struct zink_resource *descriptor_res[ZINK_DESCRIPTOR_BASE_TYPES][MESA_SHADER_STAGES][PIPE_MAX_SAMPLERS];
 
       struct {
@@ -1779,6 +1789,7 @@ struct zink_context {
    bool blend_state_changed : 1;
    bool sample_mask_changed : 1;
    bool rast_state_changed : 1;
+   bool line_width_changed : 1;
    bool dsa_state_changed : 1;
    bool stencil_ref_changed : 1;
    bool rasterizer_discard_changed : 1;

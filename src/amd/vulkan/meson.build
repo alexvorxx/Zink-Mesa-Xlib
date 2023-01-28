@@ -34,6 +34,7 @@ radv_entrypoints_gen_command += [
 
   # Application layer entrypoints
   '--device-prefix', 'metro_exodus',
+  '--device-prefix', 'rage2',
 ]
 
 radv_entrypoints = custom_target(
@@ -47,6 +48,7 @@ radv_entrypoints = custom_target(
 libradv_files = files(
   'bvh/bvh.h',
   'layers/radv_metro_exodus.c',
+  'layers/radv_rage2.c',
   'layers/radv_rmv_layer.c',
   'layers/radv_rra_layer.c',
   'layers/radv_sqtt_layer.c',
@@ -60,6 +62,7 @@ libradv_files = files(
   'radv_acceleration_structure.h',
   'radv_android.c',
   'radv_cmd_buffer.c',
+  'radv_cp_reg_shadowing.c',
   'radv_cs.h',
   'radv_debug.c',
   'radv_debug.h',
@@ -200,7 +203,7 @@ libvulkan_radeon = shared_library(
   ],
   link_depends : [libvulkan_radeon_link_depends,],
   gnu_symbol_visibility : 'hidden',
-  name_prefix : host_machine.system() == 'windows' ? '' : 'lib',
+  name_prefix : host_machine.system() == 'windows' ? '' : [],
   install : true,
 )
 
@@ -245,20 +248,18 @@ radeon_icd = custom_target(
   install : true,
 )
 
-if meson.version().version_compare('>= 0.58')
-  _dev_icdname = 'radeon_devenv_icd.@0@.json'.format(host_machine.cpu())
-  custom_target(
-    'radeon_devenv_icd',
-    input : [vk_icd_gen, vk_api_xml],
-    output : _dev_icdname,
-    command : [
-      prog_python, '@INPUT0@',
-      '--api-version', '1.3', '--xml', '@INPUT1@',
-      '--lib-path', meson.current_build_dir() / icd_file_name,
-      '--out', '@OUTPUT@',
-    ],
-    build_by_default : true,
-  )
+_dev_icdname = 'radeon_devenv_icd.@0@.json'.format(host_machine.cpu())
+_dev_icd = custom_target(
+  'radeon_devenv_icd',
+  input : [vk_icd_gen, vk_api_xml],
+  output : _dev_icdname,
+  command : [
+    prog_python, '@INPUT0@',
+    '--api-version', '1.3', '--xml', '@INPUT1@',
+    '--lib-path', meson.current_build_dir() / icd_file_name,
+    '--out', '@OUTPUT@',
+  ],
+  build_by_default : true,
+)
 
-  devenv.append('VK_ICD_FILENAMES', meson.current_build_dir() / _dev_icdname)
-endif
+devenv.append('VK_ICD_FILENAMES', _dev_icd.full_path())

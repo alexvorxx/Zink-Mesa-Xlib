@@ -1,9 +1,8 @@
 # Manual test rules for using anholt's shared g33.
 .anholt-g33-test:
   extends:
-    - .i915g-rules
+    - .i915g-manual-rules
     - .test-gl
-    - .test-manual-mr
   tags:
     - anholt-g33
   variables:
@@ -16,6 +15,7 @@ i915-g33:
     - .deqp-test
   variables:
     DEQP_SUITE: i915g
+    PIGLIT_PLATFORM: gbm
 
 i915-g33-traces:
   extends:

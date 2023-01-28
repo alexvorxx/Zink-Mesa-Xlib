@@ -423,7 +423,7 @@ Vulkan 1.1 -- all DONE: anv, lvp, radv, tu, vn
   VK_KHR_16bit_storage                                  DONE (anv/gen8+, lvp, radv, tu/a650, v3dv, vn)
   VK_KHR_bind_memory2                                   DONE (anv, lvp, radv, tu, v3dv, vn)
   VK_KHR_dedicated_allocation                           DONE (anv, lvp, radv, tu, v3dv, vn)
-  VK_KHR_descriptor_update_template                     DONE (anv, dzn, lvp, radv, tu, v3dv, vn)
+  VK_KHR_descriptor_update_template                     DONE (anv, dzn, lvp, panvk, radv, tu, v3dv, vn)
   VK_KHR_device_group                                   DONE (anv, lvp, tu, v3dv, vn)
   VK_KHR_device_group_creation                          DONE (anv, lvp, tu, v3dv, vn)
   VK_KHR_external_fence                                 DONE (anv, lvp, radv, tu, v3dv, vn)

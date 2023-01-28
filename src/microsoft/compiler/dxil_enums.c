@@ -90,9 +90,10 @@ enum dxil_resource_kind dxil_get_resource_kind(const struct glsl_type *type)
                             : DXIL_RESOURCE_KIND_TEXTURE1D;
          case GLSL_SAMPLER_DIM_2D:
          case GLSL_SAMPLER_DIM_EXTERNAL:
-         case GLSL_SAMPLER_DIM_SUBPASS:
             return is_array ? DXIL_RESOURCE_KIND_TEXTURE2D_ARRAY
                             : DXIL_RESOURCE_KIND_TEXTURE2D;
+         case GLSL_SAMPLER_DIM_SUBPASS:
+            return DXIL_RESOURCE_KIND_TEXTURE2D_ARRAY;
          case GLSL_SAMPLER_DIM_3D:
             return DXIL_RESOURCE_KIND_TEXTURE3D;
          case GLSL_SAMPLER_DIM_CUBE:
@@ -103,9 +104,10 @@ enum dxil_resource_kind dxil_get_resource_kind(const struct glsl_type *type)
          case GLSL_SAMPLER_DIM_BUF:
             return DXIL_RESOURCE_KIND_TYPED_BUFFER;
          case GLSL_SAMPLER_DIM_MS:
-         case GLSL_SAMPLER_DIM_SUBPASS_MS:
             return is_array ? DXIL_RESOURCE_KIND_TEXTURE2DMS_ARRAY
                             : DXIL_RESOURCE_KIND_TEXTURE2DMS;
+         case GLSL_SAMPLER_DIM_SUBPASS_MS:
+            return DXIL_RESOURCE_KIND_TEXTURE2DMS_ARRAY;
 
          default:
             debug_printf("type: %s\n", glsl_get_type_name(type));
@@ -153,6 +155,7 @@ enum dxil_primitive_topology dxil_get_primitive_topology(enum shader_prim topolo
 
 static const char *overload_str[DXIL_NUM_OVERLOADS] = {
    [DXIL_NONE] = "",
+   [DXIL_I1] = "i1",
    [DXIL_I16] = "i16",
    [DXIL_I32] = "i32",
    [DXIL_I64] = "i64",

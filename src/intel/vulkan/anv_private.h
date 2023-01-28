@@ -76,6 +76,7 @@
 #include "vk_device.h"
 #include "vk_drm_syncobj.h"
 #include "vk_enum_defines.h"
+#include "vk_format.h"
 #include "vk_framebuffer.h"
 #include "vk_graphics_state.h"
 #include "vk_image.h"
@@ -1049,8 +1050,6 @@ struct anv_queue {
 
    const struct anv_queue_family *           family;
 
-   uint32_t                                  index_in_family;
-
    uint32_t                                  exec_flags;
 
    /** Synchronization object for debug purposes (DEBUG_SYNC) */
@@ -1348,16 +1347,9 @@ uint32_t anv_gem_create_regions(struct anv_device *device, uint64_t anv_bo_size,
                                 struct drm_i915_gem_memory_class_instance *regions);
 uint32_t anv_gem_userptr(struct anv_device *device, void *mem, size_t size);
 int anv_gem_wait(struct anv_device *device, uint32_t gem_handle, int64_t *timeout_ns);
-int anv_gem_execbuffer(struct anv_device *device,
-                       struct drm_i915_gem_execbuffer2 *execbuf);
 int anv_gem_set_tiling(struct anv_device *device, uint32_t gem_handle,
                        uint32_t stride, uint32_t tiling);
-bool anv_gem_has_context_priority(int fd, VkQueueGlobalPriorityKHR priority);
-int anv_gem_set_context_param(int fd, uint32_t context, uint32_t param,
-                              uint64_t value);
 int anv_gem_get_tiling(struct anv_device *device, uint32_t gem_handle);
-int anv_gem_context_get_reset_stats(int fd, int context,
-                                    uint32_t *active, uint32_t *pending);
 int anv_gem_handle_to_fd(struct anv_device *device, uint32_t gem_handle);
 uint32_t anv_gem_fd_to_handle(struct anv_device *device, int fd);
 int anv_gem_set_caching(struct anv_device *device, uint32_t gem_handle, uint32_t caching);
@@ -2531,6 +2523,7 @@ struct anv_cmd_graphics_state {
    struct vk_sample_locations_state sample_locations;
 
    bool object_preemption;
+   bool has_uint_rt;
 };
 
 enum anv_depth_reg_mode {
@@ -2824,6 +2817,16 @@ anv_cmd_buffer_alloc_surface_state(struct anv_cmd_buffer *cmd_buffer);
 struct anv_state
 anv_cmd_buffer_alloc_dynamic_state(struct anv_cmd_buffer *cmd_buffer,
                                    uint32_t size, uint32_t alignment);
+
+void
+anv_cmd_buffer_chain_command_buffers(struct anv_cmd_buffer **cmd_buffers,
+                                     uint32_t num_cmd_buffers);
+void
+anv_cmd_buffer_exec_batch_debug(struct anv_queue *queue,
+                                uint32_t cmd_buffer_count,
+                                struct anv_cmd_buffer **cmd_buffers,
+                                struct anv_query_pool *perf_query_pool,
+                                uint32_t perf_query_pass);
 
 /**
  * A allocation tied to a command buffer.
@@ -3178,6 +3181,18 @@ anv_cmd_buffer_all_color_write_masked(const struct anv_cmd_buffer *cmd_buffer)
    }
 
    return true;
+}
+
+static inline void
+anv_cmd_graphic_state_update_has_uint_rt(struct anv_cmd_graphics_state *state)
+{
+   state->has_uint_rt = false;
+   for (unsigned a = 0; a < state->color_att_count; a++) {
+      if (vk_format_is_int(state->color_att[a].vk_format)) {
+         state->has_uint_rt = true;
+         break;
+      }
+   }
 }
 
 #define ANV_DECL_GET_GRAPHICS_PROG_DATA_FUNC(prefix, stage)             \

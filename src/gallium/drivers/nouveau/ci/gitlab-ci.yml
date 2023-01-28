@@ -41,7 +41,7 @@
     - google-nouveau-jetson-nano
 
 # 6 Jetson TK1 boards at anholt's house.
-.gk20a-gles:
+gk20a-gles:
   extends:
     - .gk20a-test
   parallel: 4
@@ -53,7 +53,7 @@
 gm20b-gles-full:
   extends:
     - .gm20b-test
-    - .test-manual-mr
+    - .nouveau-manual-rules
   timeout: 2h
   variables:
     HWCI_TEST_SCRIPT: "/install/deqp-runner.sh"

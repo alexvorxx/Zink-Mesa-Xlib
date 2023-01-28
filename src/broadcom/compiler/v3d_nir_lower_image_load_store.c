@@ -43,6 +43,13 @@
 bool
 v3d_gl_format_is_return_32(enum pipe_format format)
 {
+        /* We can get a NONE format in Vulkan because we support the
+         * shaderStorageImageReadWithoutFormat feature. We consider these to
+         * always use 32-bit precision.
+         */
+        if (format == PIPE_FORMAT_NONE)
+                return true;
+
         const struct util_format_description *desc =
                 util_format_description(format);
         const struct util_format_channel_description *chan = &desc->channel[0];

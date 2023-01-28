@@ -111,8 +111,7 @@ tu_lrz_init_state(struct tu_cmd_buffer *cmd,
                   const struct tu_image_view *view)
 {
    if (!view->image->lrz_height) {
-      assert((cmd->device->instance->debug_flags & TU_DEBUG_NOLRZ) ||
-             !vk_format_has_depth(att->format));
+      assert(TU_DEBUG(NOLRZ) || !vk_format_has_depth(att->format));
       return;
    }
 
@@ -161,7 +160,7 @@ tu_lrz_init_secondary(struct tu_cmd_buffer *cmd,
    if (!has_gpu_tracking)
       return;
 
-   if (cmd->device->instance->debug_flags & TU_DEBUG_NOLRZ)
+   if (TU_DEBUG(NOLRZ))
       return;
 
    if (!vk_format_has_depth(att->format))
@@ -575,8 +574,7 @@ tu6_calculate_lrz_state(struct tu_cmd_buffer *cmd,
    /* If depth test is disabled we shouldn't touch LRZ.
     * Same if there is no depth attachment.
     */
-   if (a == VK_ATTACHMENT_UNUSED || !z_test_enable ||
-       (cmd->device->instance->debug_flags & TU_DEBUG_NOLRZ))
+   if (a == VK_ATTACHMENT_UNUSED || !z_test_enable || TU_DEBUG(NOLRZ))
       return gras_lrz_cntl;
 
    if (!cmd->state.lrz.gpu_dir_tracking && !cmd->state.attachments) {
@@ -589,7 +587,7 @@ tu6_calculate_lrz_state(struct tu_cmd_buffer *cmd,
    gras_lrz_cntl.enable = true;
    gras_lrz_cntl.lrz_write =
       z_write_enable &&
-      !(pipeline->lrz.force_disable_mask & TU_LRZ_FORCE_DISABLE_WRITE);
+      !(pipeline->lrz.lrz_status & TU_LRZ_FORCE_DISABLE_WRITE);
    gras_lrz_cntl.z_test_enable = z_write_enable;
    gras_lrz_cntl.z_bounds_enable = z_bounds_enable;
    gras_lrz_cntl.fc_enable = cmd->state.lrz.fast_clear;
@@ -598,17 +596,20 @@ tu6_calculate_lrz_state(struct tu_cmd_buffer *cmd,
 
 
    /* See comment in tu_pipeline about disabling LRZ write for blending. */
+   bool reads_dest = !!(pipeline->lrz.lrz_status & TU_LRZ_READS_DEST);
    if (gras_lrz_cntl.lrz_write && cmd->state.pipeline->dynamic_state_mask &
          (BIT(TU_DYNAMIC_STATE_LOGIC_OP) |
           BIT(TU_DYNAMIC_STATE_BLEND_ENABLE))) {
        if (cmd->state.logic_op_enabled && cmd->state.rop_reads_dst) {
           perf_debug(cmd->device, "disabling lrz write due to dynamic logic op");
           gras_lrz_cntl.lrz_write = false;
+          reads_dest = true;
        }
 
        if (cmd->state.blend_enable) {
           perf_debug(cmd->device, "disabling lrz write due to dynamic blend");
           gras_lrz_cntl.lrz_write = false;
+          reads_dest = true;
        }
    }
 
@@ -631,6 +632,7 @@ tu6_calculate_lrz_state(struct tu_cmd_buffer *cmd,
                           enabled_mask, mask);
             }
             gras_lrz_cntl.lrz_write = false;
+            reads_dest = true;
             break;
          }
       }
@@ -649,6 +651,7 @@ tu6_calculate_lrz_state(struct tu_cmd_buffer *cmd,
             MASK(cmd->state.pipeline->blend.num_rts));
       }
       gras_lrz_cntl.lrz_write = false;
+      reads_dest = true;
    }
 
    /* LRZ is disabled until it is cleared, which means that one "wrong"
@@ -661,7 +664,7 @@ tu6_calculate_lrz_state(struct tu_cmd_buffer *cmd,
     * fragment tests.  We have to skip LRZ testing and updating, but as long as
     * the depth direction stayed the same we can continue with LRZ testing later.
     */
-   if (pipeline->lrz.force_disable_mask & TU_LRZ_FORCE_DISABLE_LRZ) {
+   if (pipeline->lrz.lrz_status & TU_LRZ_FORCE_DISABLE_LRZ) {
       if (cmd->state.lrz.prev_direction != TU_LRZ_UNKNOWN || !cmd->state.lrz.gpu_dir_tracking) {
          perf_debug(cmd->device, "Skipping LRZ due to FS");
          temporary_disable_lrz = true;
@@ -784,6 +787,32 @@ tu6_calculate_lrz_state(struct tu_cmd_buffer *cmd,
             temporary_disable_lrz = true;
          }
       }
+   }
+
+   /* Writing depth with blend enabled means we need to invalidate LRZ,
+    * because the written depth value could mean that a later draw with
+    * depth enabled (where we would otherwise write LRZ) could have
+    * fragments which don't pass the depth test due to this draw.  For
+    * example, consider this sequence of draws, with depth mode GREATER:
+    *
+    *   draw A:
+    *     z=0.1, fragments pass
+    *   draw B:
+    *     z=0.4, fragments pass
+    *     blend enabled (LRZ write disabled)
+    *     depth write enabled
+    *   draw C:
+    *     z=0.2, fragments don't pass
+    *     blend disabled
+    *     depth write enabled
+    *
+    * Normally looking at the state in draw C, we'd assume we could
+    * enable LRZ write.  But this would cause early-z/lrz to discard
+    * fragments from draw A which should be visible due to draw B.
+    */
+   if (reads_dest && z_write_enable && cmd->device->instance->conservative_lrz) {
+      perf_debug(cmd->device, "Invalidating LRZ due to blend+depthwrite");
+      disable_lrz = true;
    }
 
    if (disable_lrz)

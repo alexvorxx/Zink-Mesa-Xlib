@@ -3275,7 +3275,8 @@ ntt_no_indirects_mask(nir_shader *s, struct pipe_screen *screen)
 }
 
 static void
-ntt_optimize_nir(struct nir_shader *s, struct pipe_screen *screen)
+ntt_optimize_nir(struct nir_shader *s, struct pipe_screen *screen,
+                 const struct nir_to_tgsi_options *options)
 {
    bool progress;
    unsigned pipe_stage = pipe_shader_type_from_mesa(s->info.stage);
@@ -3321,7 +3322,7 @@ ntt_optimize_nir(struct nir_shader *s, struct pipe_screen *screen)
       /* Try to fold addressing math into ubo_vec4's base to avoid load_consts
        * and ALU ops for it.
        */
-      static const nir_opt_offsets_options offset_options = {
+      nir_opt_offsets_options offset_options = {
          .ubo_vec4_max = ~0,
 
          /* No const offset in TGSI for shared accesses. */
@@ -3331,6 +3332,10 @@ ntt_optimize_nir(struct nir_shader *s, struct pipe_screen *screen)
          .uniform_max = 0,
          .buffer_max = 0,
       };
+
+      if (options->ubo_vec4_max)
+         offset_options.ubo_vec4_max = options->ubo_vec4_max;
+
       NIR_PASS(progress, s, nir_opt_offsets, &offset_options);
    } while (progress);
 
@@ -3908,7 +3913,7 @@ const void *nir_to_tgsi_options(struct nir_shader *s,
    if (!screen->get_param(screen, PIPE_CAP_LOAD_CONSTBUF))
       NIR_PASS_V(s, nir_lower_ubo_vec4);
 
-   ntt_optimize_nir(s, screen);
+   ntt_optimize_nir(s, screen, options);
 
    NIR_PASS_V(s, nir_lower_indirect_derefs, no_indirects_mask, UINT32_MAX);
 

@@ -20,6 +20,7 @@
     # 12 devices (2023-01-10)
     RUNNER_TAG: mesa-ci-x86-64-lava-acer-R721T-grunt
     DEVICE_TYPE: acer-R721T-grunt
+    PIGLIT_PLATFORM: mixed_glx_egl
 
 .radv-stoney-test:amd64:
   extends:
@@ -264,7 +265,7 @@ vkcts-kabini-valve:
   extends:
     - .vkcts-test-valve
     - .kabini-test-valve
-    - .test-manual-mr  # Make sure this job is *always* run manually
+    - .radv-valve-manual-rules  # Make sure this job is *always* run manually
   timeout: 12h
   variables:
     GPU_VERSION: radv-kabini-aco
@@ -276,7 +277,7 @@ vkcts-kabini-valve:
 .vkcts-stoney-valve:
   extends:
     - .vkcts-test-valve
-    - .test-manual-mr
+    - .radv-valve-manual-rules
   parallel: 2
   # The thin clients can't manage a full run in less than an hour
   # currently.  Interpolation suggests four more thin clients (6
@@ -296,7 +297,7 @@ vkcts-kabini-valve:
   extends:
     - .vkcts-test-valve
     - .polaris10-test-valve
-    - .test-manual-mr
+    - .radv-valve-manual-rules
   variables:
     GPU_VERSION: radv-polaris10-aco
 
@@ -304,7 +305,7 @@ vkcts-vega10-valve:
   extends:
     - .vkcts-test-valve
     - .vega10-test-valve
-    - .test-manual-mr
+    - .radv-valve-manual-rules
   variables:
     GPU_VERSION: radv-vega10-aco
 
@@ -312,7 +313,7 @@ vkcts-renoir-valve:
   extends:
     - .vkcts-test-valve
     - .renoir-test-valve
-    - .test-manual-mr
+    - .radv-valve-manual-rules
   timeout: 2h 10m
   variables:
     GPU_VERSION: radv-renoir-aco
@@ -321,7 +322,7 @@ vkcts-navi10-valve:
   extends:
     - .vkcts-test-valve
     - .navi10-test-valve
-    - .test-manual-mr
+    - .radv-valve-manual-rules
   variables:
     GPU_VERSION: radv-navi10-aco
     # Use Linux 5.17 to work around hitting __vm_enough_memory then hanging on Linux 6.1
@@ -340,7 +341,7 @@ vkcts-navi21-llvm-valve:
   extends:
     - .vkcts-test-valve
     - .navi21-test-valve
-    - .test-manual-mr
+    - .radv-valve-manual-rules
   variables:
     GPU_VERSION: radv-navi21-llvm
     RADV_DEBUG: llvm,checkir
@@ -350,7 +351,7 @@ vkcts-vangogh-valve:
   extends:
     - .vkcts-test-valve
     - .vangogh-test-valve
-    - .test-manual-mr
+    - .radv-valve-manual-rules
   timeout: 2h 10m
   variables:
     GPU_VERSION: radv-vangogh-aco
@@ -397,7 +398,7 @@ radv-fossils:
   extends:
     - .vkd3d-test-valve
     - .kabini-test-valve
-    - .test-manual-mr
+    - .radv-valve-manual-rules
   variables:
     VKD3D_PROTON_RESULTS: radv-kabini-vkd3d
 
@@ -405,7 +406,7 @@ radv-fossils:
   extends:
     - .vkd3d-test-valve
     - .polaris10-test-valve
-    - .test-manual-mr
+    - .radv-valve-manual-rules
   variables:
     VKD3D_PROTON_RESULTS: radv-polaris10-vkd3d
 
@@ -413,7 +414,7 @@ vkd3d-vega10-valve:
   extends:
     - .vkd3d-test-valve
     - .vega10-test-valve
-    - .test-manual-mr
+    - .radv-valve-manual-rules
   variables:
     VKD3D_PROTON_RESULTS: radv-vega10-vkd3d
 
@@ -421,7 +422,7 @@ vkd3d-renoir-valve:
   extends:
     - .vkd3d-test-valve
     - .renoir-test-valve
-    - .test-manual-mr
+    - .radv-valve-manual-rules
   variables:
     VKD3D_PROTON_RESULTS: radv-renoir-vkd3d
 
@@ -429,7 +430,7 @@ vkd3d-navi10-valve:
   extends:
     - .vkd3d-test-valve
     - .navi10-test-valve
-    - .test-manual-mr
+    - .radv-valve-manual-rules
   variables:
     VKD3D_PROTON_RESULTS: radv-navi10-vkd3d
 
@@ -437,7 +438,7 @@ vkd3d-navi21-valve:
   extends:
     - .vkd3d-test-valve
     - .navi21-test-valve
-    - .test-manual-mr
+    - .radv-valve-manual-rules
   variables:
     VKD3D_PROTON_RESULTS: radv-navi21-vkd3d
 
@@ -445,6 +446,6 @@ vkd3d-vangogh-valve:
   extends:
     - .vkd3d-test-valve
     - .vangogh-test-valve
-    - .test-manual-mr
+    - .radv-valve-manual-rules
   variables:
     VKD3D_PROTON_RESULTS: radv-vangogh-vkd3d

@@ -114,6 +114,8 @@ struct radeon_decoder {
    struct radeon_winsys_ctx **jctx;
    unsigned cb_idx;
    unsigned njctx;
+   struct pipe_fence_handle *prev_fence;
+   struct pipe_fence_handle *destroy_fence;
 };
 
 void send_cmd_dec(struct radeon_decoder *dec, struct pipe_video_buffer *target,

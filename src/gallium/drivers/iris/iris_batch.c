@@ -275,7 +275,8 @@ iris_create_engines_context(struct iris_context *ice, int priority)
    const struct intel_device_info *devinfo = screen->devinfo;
    int fd = iris_bufmgr_get_fd(screen->bufmgr);
 
-   struct intel_query_engine_info *engines_info = intel_engine_get_info(fd);
+   struct intel_query_engine_info *engines_info;
+   engines_info = intel_engine_get_info(fd, screen->devinfo->kmd_type);
 
    if (!engines_info)
       return -1;

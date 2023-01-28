@@ -148,7 +148,7 @@ zink_create_gfx_pipeline(struct zink_screen *screen,
    viewport_state.pViewports = NULL;
    viewport_state.scissorCount = screen->info.have_EXT_extended_dynamic_state ? 0 : state->dyn_state1.num_viewports;
    viewport_state.pScissors = NULL;
-   if (!screen->driver_workarounds.depth_clip_control_missing && !hw_rast_state->clip_halfz)
+   if (screen->info.have_EXT_depth_clip_control && !hw_rast_state->clip_halfz)
       viewport_state.pNext = &clip;
 
    VkPipelineRasterizationStateCreateInfo rast_state = {0};
@@ -256,9 +256,11 @@ zink_create_gfx_pipeline(struct zink_screen *screen,
             dynamicStateEnables[state_count++] = VK_DYNAMIC_STATE_ALPHA_TO_COVERAGE_ENABLE_EXT;
             if (screen->info.feats.features.alphaToOne)
                dynamicStateEnables[state_count++] = VK_DYNAMIC_STATE_ALPHA_TO_ONE_ENABLE_EXT;
-            dynamicStateEnables[state_count++] = VK_DYNAMIC_STATE_COLOR_BLEND_ENABLE_EXT;
-            dynamicStateEnables[state_count++] = VK_DYNAMIC_STATE_COLOR_BLEND_EQUATION_EXT;
-            dynamicStateEnables[state_count++] = VK_DYNAMIC_STATE_COLOR_WRITE_MASK_EXT;
+            if (state->rendering_info.colorAttachmentCount) {
+               dynamicStateEnables[state_count++] = VK_DYNAMIC_STATE_COLOR_BLEND_ENABLE_EXT;
+               dynamicStateEnables[state_count++] = VK_DYNAMIC_STATE_COLOR_BLEND_EQUATION_EXT;
+               dynamicStateEnables[state_count++] = VK_DYNAMIC_STATE_COLOR_WRITE_MASK_EXT;
+            }
          }
       }
    }
@@ -337,6 +339,8 @@ zink_create_gfx_pipeline(struct zink_screen *screen,
       else
          warn_missing_feature(feedback_warn, "EXT_attachment_feedback_loop_layout");
    }
+   if (zink_descriptor_mode == ZINK_DESCRIPTOR_MODE_DB)
+      pci.flags |= VK_PIPELINE_CREATE_DESCRIPTOR_BUFFER_BIT_EXT;
    pci.layout = prog->base.layout;
    if (state->render_pass)
       pci.renderPass = state->render_pass->render_pass;
@@ -481,9 +485,11 @@ zink_create_gfx_pipeline_output(struct zink_screen *screen, struct zink_gfx_pipe
          dynamicStateEnables[state_count++] = VK_DYNAMIC_STATE_ALPHA_TO_COVERAGE_ENABLE_EXT;
          if (screen->info.feats.features.alphaToOne)
             dynamicStateEnables[state_count++] = VK_DYNAMIC_STATE_ALPHA_TO_ONE_ENABLE_EXT;
-         dynamicStateEnables[state_count++] = VK_DYNAMIC_STATE_COLOR_BLEND_ENABLE_EXT;
-         dynamicStateEnables[state_count++] = VK_DYNAMIC_STATE_COLOR_BLEND_EQUATION_EXT;
-         dynamicStateEnables[state_count++] = VK_DYNAMIC_STATE_COLOR_WRITE_MASK_EXT;
+         if (state->rendering_info.colorAttachmentCount) {
+            dynamicStateEnables[state_count++] = VK_DYNAMIC_STATE_COLOR_BLEND_ENABLE_EXT;
+            dynamicStateEnables[state_count++] = VK_DYNAMIC_STATE_COLOR_BLEND_EQUATION_EXT;
+            dynamicStateEnables[state_count++] = VK_DYNAMIC_STATE_COLOR_WRITE_MASK_EXT;
+         }
       }
    } else {
       if (state->blend_state) {
@@ -537,6 +543,8 @@ zink_create_gfx_pipeline_output(struct zink_screen *screen, struct zink_gfx_pipe
       else
          warn_missing_feature(feedback_warn, "EXT_attachment_feedback_loop_layout");
    }
+   if (zink_descriptor_mode == ZINK_DESCRIPTOR_MODE_DB)
+      pci.flags |= VK_PIPELINE_CREATE_DESCRIPTOR_BUFFER_BIT_EXT;
    pci.pColorBlendState = &blend_state;
    pci.pMultisampleState = &ms_state;
    pci.pDynamicState = &pipelineDynamicStateCreateInfo;
@@ -764,6 +772,8 @@ zink_create_gfx_pipeline_combined(struct zink_screen *screen, struct zink_gfx_pr
       pci.flags = VK_PIPELINE_CREATE_LINK_TIME_OPTIMIZATION_BIT_EXT;
    else
       pci.flags = VK_PIPELINE_CREATE_DISABLE_OPTIMIZATION_BIT;
+   if (zink_descriptor_mode == ZINK_DESCRIPTOR_MODE_DB)
+      pci.flags |= VK_PIPELINE_CREATE_DESCRIPTOR_BUFFER_BIT_EXT;
    pci.pNext = &libstate;
 
    VkPipeline pipeline;

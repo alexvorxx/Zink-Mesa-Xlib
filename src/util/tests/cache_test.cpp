@@ -1028,6 +1028,9 @@ TEST_F(Cache, List)
 #ifndef ENABLE_SHADER_CACHE
    GTEST_SKIP() << "ENABLE_SHADER_CACHE not defined.";
 #else
+#ifndef FOZ_DB_UTIL_DYNAMIC_LIST
+   GTEST_SKIP() << "FOZ_DB_UTIL_DYNAMIC_LIST not supported";
+#else
    setenv("MESA_DISK_CACHE_SINGLE_FILE", "true", 1);
 
 #ifdef SHADER_CACHE_DISABLE_BY_DEFAULT
@@ -1162,5 +1165,6 @@ TEST_F(Cache, List)
 
    int err = rmrf_local(CACHE_TEST_TMP);
    EXPECT_EQ(err, 0) << "Removing " CACHE_TEST_TMP " again";
-#endif
+#endif /* FOZ_DB_UTIL_DYNAMIC_LIST */
+#endif /* ENABLE_SHADER_CACHE */
 }

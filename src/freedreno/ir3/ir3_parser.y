@@ -294,6 +294,7 @@ struct ir3 * ir3_parse(struct ir3_shader_variant *v,
 	int tok;
 	int num;
 	uint32_t unum;
+	uint64_t u64;
 	double flt;
 	const char *str;
 	struct ir3_register *reg;
@@ -620,6 +621,8 @@ static void print_token(FILE *file, int type, YYSTYPE value)
 %token <tok> T_OP_BAR
 %token <tok> T_OP_FENCE
 
+%token <u64> T_RAW
+
 /* type qualifiers: */
 %token <tok> T_TYPE_F16
 %token <tok> T_TYPE_F32
@@ -805,6 +808,7 @@ instr:             iflags cat0_instr
 |                  iflags cat5_instr { fixup_cat5_s2en(); }
 |                  iflags cat6_instr
 |                  iflags cat7_instr
+|                  raw_instr
 |                  label
 
 label:             T_IDENTIFIER ':' { new_label($1); }
@@ -1280,6 +1284,8 @@ cat7_barrier:      T_OP_BAR                { new_instr(OPC_BAR); } cat7_scopes
 |                  T_OP_FENCE              { new_instr(OPC_FENCE); } cat7_scopes
 
 cat7_instr:        cat7_barrier
+
+raw_instr: T_RAW   {new_instr(OPC_META_RAW)->raw.value = $1;}
 
 src:               T_REGISTER     { $$ = new_src($1, 0); }
 |                  T_A0           { $$ = new_src((61 << 3), IR3_REG_HALF); }

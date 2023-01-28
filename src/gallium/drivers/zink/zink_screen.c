@@ -594,7 +594,8 @@ zink_get_param(struct pipe_screen *pscreen, enum pipe_cap param)
       return screen->info.feats.features.pipelineStatisticsQuery;
 
    case PIPE_CAP_ROBUST_BUFFER_ACCESS_BEHAVIOR:
-      return screen->info.feats.features.robustBufferAccess;
+      return screen->info.feats.features.robustBufferAccess &&
+             (screen->info.rb2_feats.robustImageAccess2 || screen->driver_workarounds.lower_robustImageAccess2);
 
    case PIPE_CAP_MULTI_DRAW_INDIRECT:
       return screen->info.feats.features.multiDrawIndirect;
@@ -621,6 +622,9 @@ zink_get_param(struct pipe_screen *pscreen, enum pipe_cap param)
 
    case PIPE_CAP_MAX_VERTEX_STREAMS:
       return screen->info.tf_props.maxTransformFeedbackStreams;
+
+   case PIPE_CAP_COMPUTE_SHADER_DERIVATIVES:
+      return screen->info.have_NV_compute_shader_derivatives;
 
    case PIPE_CAP_INT64:
    case PIPE_CAP_INT64_DIVMOD:
@@ -726,7 +730,7 @@ zink_get_param(struct pipe_screen *pscreen, enum pipe_cap param)
       return screen->info.props.limits.maxImageArrayLayers;
 
    case PIPE_CAP_DEPTH_CLIP_DISABLE:
-      return !screen->driver_workarounds.depth_clip_control_missing;
+      return screen->info.have_EXT_depth_clip_enable;
 
    case PIPE_CAP_SHADER_STENCIL_EXPORT:
       return screen->info.have_EXT_shader_stencil_export;
@@ -773,7 +777,7 @@ zink_get_param(struct pipe_screen *pscreen, enum pipe_cap param)
       return 1;
 
    case PIPE_CAP_BINDLESS_TEXTURE:
-      return screen->info.have_EXT_descriptor_indexing;
+      return zink_descriptor_mode != ZINK_DESCRIPTOR_MODE_DB && screen->info.have_EXT_descriptor_indexing;
 
    case PIPE_CAP_TEXTURE_BUFFER_OFFSET_ALIGNMENT:
       return screen->info.props.limits.minTexelBufferOffsetAlignment;
@@ -1437,6 +1441,10 @@ zink_destroy_screen(struct pipe_screen *pscreen)
 
    if (screen->threaded)
       util_queue_destroy(&screen->flush_queue);
+
+   simple_mtx_destroy(&screen->semaphores_lock);
+   while (util_dynarray_contains(&screen->semaphores, VkSemaphore))
+      VKSCR(DestroySemaphore)(screen->dev, util_dynarray_pop(&screen->semaphores, VkSemaphore), NULL);
 
    simple_mtx_destroy(&screen->queue_lock);
    VKSCR(DestroyDevice)(screen->dev, NULL);
@@ -2282,7 +2290,7 @@ zink_get_dmabuf_modifier_planes(struct pipe_screen *pscreen, uint64_t modifier, 
    for (unsigned i = 0; i < screen->modifier_props[format].drmFormatModifierCount; i++)
       if (screen->modifier_props[format].pDrmFormatModifierProperties[i].drmFormatModifier == modifier)
          return screen->modifier_props[format].pDrmFormatModifierProperties[i].drmFormatModifierPlaneCount;
-   return 0;
+   return util_format_get_num_planes(format);
 }
 
 static int
@@ -2522,7 +2530,6 @@ init_driver_workarounds(struct zink_screen *screen)
                                                          screen->info.gpl_props.graphicsPipelineLibraryFastLinking ||
                                                          screen->is_cpu);
    screen->driver_workarounds.broken_l4a4 = screen->info.driver_props.driverID == VK_DRIVER_ID_NVIDIA_PROPRIETARY;
-   screen->driver_workarounds.depth_clip_control_missing = !screen->info.have_EXT_depth_clip_control;
    if (screen->info.driver_props.driverID == VK_DRIVER_ID_AMD_PROPRIETARY)
       /* this completely breaks xfb somehow */
       screen->info.have_EXT_extended_dynamic_state2 = false;
@@ -2610,6 +2617,12 @@ init_driver_workarounds(struct zink_screen *screen)
       break;
    }
 
+   /* When robust contexts are advertised but robustImageAccess2 is not available */
+   screen->driver_workarounds.lower_robustImageAccess2 =
+      !screen->info.rb2_feats.robustImageAccess2 &&
+      screen->info.feats.features.robustBufferAccess &&
+      screen->info.rb_image_feats.robustImageAccess;
+
    /* once more testing has been done, use the #if 0 block */
    if (zink_debug & ZINK_DEBUG_RP)
       screen->driver_workarounds.track_renderpasses = true;
@@ -2640,6 +2653,27 @@ zink_get_disk_shader_cache(struct pipe_screen *_screen)
    struct zink_screen *screen = zink_screen(_screen);
 
    return screen->disk_cache;
+}
+
+VkSemaphore
+zink_create_semaphore(struct zink_screen *screen)
+{
+   VkSemaphoreCreateInfo sci = {
+      VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO,
+      NULL,
+      0
+   };
+   VkSemaphore sem = VK_NULL_HANDLE;
+   if (util_dynarray_contains(&screen->semaphores, VkSemaphore)) {
+      simple_mtx_lock(&screen->semaphores_lock);
+      if (util_dynarray_contains(&screen->semaphores, VkSemaphore))
+         sem = util_dynarray_pop(&screen->semaphores, VkSemaphore);
+      simple_mtx_unlock(&screen->semaphores_lock);
+   }
+   if (sem)
+      return sem;
+   VkResult ret = VKSCR(CreateSemaphore)(screen->dev, &sci, NULL, &sem);
+   return ret == VK_SUCCESS ? sem : VK_NULL_HANDLE;
 }
 
 static struct zink_screen *
@@ -2682,6 +2716,14 @@ zink_internal_create_screen(const struct pipe_screen_config *config)
 
    if (!zink_create_instance(screen))
       goto fail;
+
+   if (zink_debug & ZINK_DEBUG_VALIDATION) {
+      if (!screen->instance_info.have_layer_KHRONOS_validation &&
+          !screen->instance_info.have_layer_LUNARG_standard_validation) {
+         mesa_loge("Failed to load validation layer");
+         goto fail;
+      }
+   }
 
    vk_instance_dispatch_table_load(&screen->vk.instance,
                                    screen->vk_GetInstanceProcAddr,
@@ -2953,6 +2995,9 @@ zink_internal_create_screen(const struct pipe_screen_config *config)
 
    util_idalloc_mt_init_tc(&screen->buffer_ids);
 
+   simple_mtx_init(&screen->semaphores_lock, mtx_plain);
+   util_dynarray_init(&screen->semaphores, screen);
+
    util_vertex_state_cache_init(&screen->vertex_state_cache,
                                 zink_create_vertex_state, zink_vertex_state_destroy);
    screen->base.create_vertex_state = zink_cache_create_vertex_state;
@@ -2986,7 +3031,8 @@ zink_internal_create_screen(const struct pipe_screen_config *config)
                           !screen->driconf.inline_uniforms &&
                           !screen->driver_workarounds.no_linestipple &&
                           !screen->driver_workarounds.no_linesmooth &&
-                          !screen->driver_workarounds.no_hw_gl_point;
+                          !screen->driver_workarounds.no_hw_gl_point &&
+                          !screen->driver_workarounds.lower_robustImageAccess2;
    if (!screen->optimal_keys)
       screen->info.have_EXT_graphics_pipeline_library = false;
 

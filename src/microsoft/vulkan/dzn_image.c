@@ -90,18 +90,6 @@ dzn_image_create(struct dzn_device *device,
       return vk_error(device, VK_ERROR_OUT_OF_HOST_MEMORY);
    }
 
-   image->castable_formats = castable_formats;
-   image->castable_format_count = 0;
-   for (uint32_t i = 0; i < compat_format_count; i++) {
-      castable_formats[image->castable_format_count] =
-         dzn_image_get_dxgi_format(compat_formats[i], pCreateInfo->usage, 0);
-
-      if (castable_formats[image->castable_format_count] != DXGI_FORMAT_UNKNOWN)
-         image->castable_format_count++;
-   }
-
-   vk_free2(&device->vk.alloc, pAllocator, compat_formats);
-
 #if 0
     VkExternalMemoryHandleTypeFlags supported =
         VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_WIN32_BIT |
@@ -127,6 +115,20 @@ dzn_image_create(struct dzn_device *device,
    vk_image_init(&device->vk, &image->vk, pCreateInfo);
    enum pipe_format pfmt = vk_format_to_pipe_format(image->vk.format);
 
+   VkImageUsageFlags usage = image->vk.usage | image->vk.stencil_usage;
+
+   image->castable_formats = castable_formats;
+   image->castable_format_count = 0;
+   for (uint32_t i = 0; i < compat_format_count; i++) {
+      castable_formats[image->castable_format_count] =
+         dzn_image_get_dxgi_format(compat_formats[i], usage, 0);
+
+      if (castable_formats[image->castable_format_count] != DXGI_FORMAT_UNKNOWN)
+         image->castable_format_count++;
+   }
+
+   vk_free2(&device->vk.alloc, pAllocator, compat_formats);
+
    image->valid_access = D3D12_BARRIER_ACCESS_COPY_SOURCE | D3D12_BARRIER_ACCESS_COPY_DEST;
 
    if (image->vk.tiling == VK_IMAGE_TILING_LINEAR) {
@@ -151,7 +153,7 @@ dzn_image_create(struct dzn_device *device,
       assert(pCreateInfo->arrayLayers == 1);
       assert(pCreateInfo->samples == 1);
       assert(pCreateInfo->imageType != VK_IMAGE_TYPE_3D);
-      assert(!(pCreateInfo->usage & ~(VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT)));
+      assert(!(usage & ~(VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT)));
       D3D12_RESOURCE_DESC tmp_desc = {
          .Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D,
          .Alignment = D3D12_DEFAULT_RESOURCE_PLACEMENT_ALIGNMENT,
@@ -160,7 +162,7 @@ dzn_image_create(struct dzn_device *device,
          .DepthOrArraySize = 1,
          .MipLevels = 1,
          .Format =
-            dzn_image_get_dxgi_format(pCreateInfo->format, pCreateInfo->usage, 0),
+            dzn_image_get_dxgi_format(pCreateInfo->format, usage, 0),
          .SampleDesc = { .Count = 1, .Quality = 0 },
          .Layout = D3D12_TEXTURE_LAYOUT_UNKNOWN,
          .Flags = D3D12_RESOURCE_FLAG_NONE
@@ -185,7 +187,7 @@ dzn_image_create(struct dzn_device *device,
    } else {
       image->desc.Format =
          dzn_image_get_dxgi_format(pCreateInfo->format,
-                                   pCreateInfo->usage & ~VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT,
+                                   usage & ~VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT,
                                    0),
       image->desc.Dimension = (D3D12_RESOURCE_DIMENSION)(D3D12_RESOURCE_DIMENSION_TEXTURE1D + pCreateInfo->imageType);
       image->desc.Width = image->vk.extent.width;
@@ -214,24 +216,24 @@ dzn_image_create(struct dzn_device *device,
 
    image->desc.Flags = D3D12_RESOURCE_FLAG_NONE;
 
-   if (image->vk.usage & VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT) {
+   if (usage & VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT) {
       image->desc.Flags |= D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET;
       image->valid_access |= D3D12_BARRIER_ACCESS_RENDER_TARGET;
    }
 
-   if (image->vk.usage & VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT) {
+   if (usage & VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT) {
       image->desc.Flags |= D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL;
       image->valid_access |= D3D12_BARRIER_ACCESS_DEPTH_STENCIL_READ |
                              D3D12_BARRIER_ACCESS_DEPTH_STENCIL_WRITE;
 
-      if (!(image->vk.usage & (VK_IMAGE_USAGE_SAMPLED_BIT |
+      if (!(usage & (VK_IMAGE_USAGE_SAMPLED_BIT |
                                VK_IMAGE_USAGE_STORAGE_BIT |
                                VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT |
                                VK_IMAGE_USAGE_TRANSFER_SRC_BIT))) {
          image->desc.Flags |= D3D12_RESOURCE_FLAG_DENY_SHADER_RESOURCE;
          image->valid_access &= ~D3D12_BARRIER_ACCESS_SHADER_RESOURCE;
       }
-   } else if (image->vk.usage & VK_IMAGE_USAGE_STORAGE_BIT) {
+   } else if (usage & VK_IMAGE_USAGE_STORAGE_BIT) {
       image->desc.Flags |= D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS;
       image->valid_access |= D3D12_BARRIER_ACCESS_UNORDERED_ACCESS;
    }
@@ -239,11 +241,11 @@ dzn_image_create(struct dzn_device *device,
    /* Images with TRANSFER_DST can be cleared or passed as a blit/resolve
     * destination. Both operations require the RT or DS cap flags.
     */
-   if ((image->vk.usage & VK_IMAGE_USAGE_TRANSFER_DST_BIT) &&
+   if ((usage & VK_IMAGE_USAGE_TRANSFER_DST_BIT) &&
        image->vk.tiling == VK_IMAGE_TILING_OPTIMAL) {
 
       D3D12_FEATURE_DATA_FORMAT_SUPPORT dfmt_info =
-         dzn_physical_device_get_format_support(pdev, pCreateInfo->format);
+         dzn_physical_device_get_format_support(pdev, pCreateInfo->format, pCreateInfo->flags);
       if (dfmt_info.Support1 & D3D12_FORMAT_SUPPORT1_RENDER_TARGET) {
          image->desc.Flags |= D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET;
          image->valid_access |= D3D12_BARRIER_ACCESS_RENDER_TARGET;
@@ -259,7 +261,7 @@ dzn_image_create(struct dzn_device *device,
    }
 
    if (pCreateInfo->sharingMode == VK_SHARING_MODE_CONCURRENT &&
-       !(image->vk.usage & VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT))
+       !(image->desc.Flags & D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL))
       image->desc.Flags |= D3D12_RESOURCE_FLAG_ALLOW_SIMULTANEOUS_ACCESS;
 
    *out = dzn_image_to_handle(image);
@@ -1001,7 +1003,7 @@ dzn_image_view_prepare_srv_desc(struct dzn_image_view *iview)
    iview->srv_desc = (D3D12_SHADER_RESOURCE_VIEW_DESC) {
       .Format =
          dzn_image_get_dxgi_format(iview->vk.format,
-                                   iview->vk.image->usage & ~VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT,
+                                   iview->vk.usage & ~VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT,
                                    iview->vk.aspects),
    };
 
@@ -1172,8 +1174,6 @@ dzn_image_view_prepare_rtv_desc(struct dzn_image_view *iview)
    uint32_t plane_slice =
       (iview->vk.aspects & VK_IMAGE_ASPECT_PLANE_2_BIT) ? 2 :
       (iview->vk.aspects & VK_IMAGE_ASPECT_PLANE_1_BIT) ? 1 : 0;
-
-   assert(iview->vk.level_count == 1);
 
    iview->rtv_desc = (D3D12_RENDER_TARGET_VIEW_DESC) {
       .Format =

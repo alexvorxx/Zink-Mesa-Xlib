@@ -3094,7 +3094,7 @@ ac_surface_compute_nbc_view(struct ac_addrlib *addrlib, const struct radeon_info
       out->tile_swizzle = output.pipeBankXor;
       out->width = output.unalignedWidth;
       out->height = output.unalignedHeight;
-      out->max_mip = output.numMipLevels;
+      out->num_levels = output.numMipLevels;
       out->level = output.mipId;
       out->valid = true;
    } else {

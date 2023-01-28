@@ -177,10 +177,12 @@ agx_resource_from_handle(struct pipe_screen *pscreen,
 
    agx_resource_setup(dev, rsc);
 
-   if (rsc->layout.tiling == AIL_TILING_LINEAR)
+   if (rsc->layout.tiling == AIL_TILING_LINEAR) {
       rsc->layout.linear_stride_B = whandle->stride;
-   else if (whandle->stride != ail_get_wsi_stride_B(&rsc->layout, 0))
+   } else if (whandle->stride != ail_get_wsi_stride_B(&rsc->layout, 0)) {
+      FREE(rsc);
       return NULL;
+   }
 
    assert(whandle->offset == 0);
 

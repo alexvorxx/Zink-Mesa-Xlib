@@ -3674,6 +3674,9 @@ typedef struct nir_shader_compiler_options {
    /** Backend supports 32bit ufind_msb_rev and ifind_msb_rev. */
    bool has_find_msb_rev;
 
+   /** Backend supports pack_half_2x16_rtz_split. */
+   bool has_pack_half_2x16_rtz;
+
    /**
     * Is this the Intel vec4 backend?
     *

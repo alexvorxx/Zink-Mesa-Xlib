@@ -493,7 +493,10 @@ tu_cs_emit_debug_msg(struct tu_cs *cs, const char *fmt, ...)
 }
 
 void
-tu_cs_trace_start(void *cs, const char *fmt, ...)
+tu_cs_trace_start(struct u_trace_context *utctx,
+                  void *cs,
+                  const char *fmt,
+                  ...)
 {
    va_list args;
    va_start(args, fmt);
@@ -502,7 +505,7 @@ tu_cs_trace_start(void *cs, const char *fmt, ...)
 }
 
 void
-tu_cs_trace_end(void *cs, const char *fmt, ...)
+tu_cs_trace_end(struct u_trace_context *utctx, void *cs, const char *fmt, ...)
 {
    va_list args;
    va_start(args, fmt);

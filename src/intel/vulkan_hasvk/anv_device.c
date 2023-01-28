@@ -862,7 +862,9 @@ anv_physical_device_try_create(struct vk_instance *vk_instance,
 
    /* Check if we can read the GPU timestamp register from the CPU */
    uint64_t u64_ignore;
-   device->has_reg_timestamp = intel_gem_read_render_timestamp(fd, &u64_ignore);
+   device->has_reg_timestamp = intel_gem_read_render_timestamp(fd,
+                                                               device->info.kmd_type,
+                                                               &u64_ignore);
 
    device->always_flush_cache = INTEL_DEBUG(DEBUG_STALL) ||
       driQueryOptionb(&instance->dri_options, "always_flush_cache");
@@ -891,7 +893,7 @@ anv_physical_device_try_create(struct vk_instance *vk_instance,
       master_fd = open(primary_path, O_RDWR | O_CLOEXEC);
       if (master_fd >= 0) {
          /* fail if we don't have permission to even render on this device */
-         if (!intel_gem_can_render_on_fd(master_fd)) {
+         if (!intel_gem_can_render_on_fd(master_fd, device->info.kmd_type)) {
             close(master_fd);
             master_fd = -1;
          }
@@ -899,7 +901,7 @@ anv_physical_device_try_create(struct vk_instance *vk_instance,
    }
    device->master_fd = master_fd;
 
-   device->engine_info = intel_engine_get_info(fd);
+   device->engine_info = intel_engine_get_info(fd, device->info.kmd_type);
    anv_physical_device_init_queue_families(device);
 
    device->local_fd = fd;
@@ -4136,7 +4138,9 @@ VkResult anv_GetCalibratedTimestampsEXT(
    for (d = 0; d < timestampCount; d++) {
       switch (pTimestampInfos[d].timeDomain) {
       case VK_TIME_DOMAIN_DEVICE_EXT:
-         if (!intel_gem_read_render_timestamp(device->fd, &pTimestamps[d])) {
+         if (!intel_gem_read_render_timestamp(device->fd,
+                                              device->info->kmd_type,
+                                              &pTimestamps[d])) {
             return vk_device_set_lost(&device->vk, "Failed to read the "
                                       "TIMESTAMP register: %m");
          }

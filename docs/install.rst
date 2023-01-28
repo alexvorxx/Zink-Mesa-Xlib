@@ -35,7 +35,7 @@ you're willing to maintain support for other compiler get in touch.
 Third party/extra tools.
 ^^^^^^^^^^^^^^^^^^^^^^^^
 
--  `Python <https://www.python.org/>`__ - Python 3.7 or newer is required.
+-  `Python <https://www.python.org/>`__ - Python 3.6 or newer is required.
 -  `Python Mako module <https://www.makotemplates.org/>`__ - Python Mako
    module is required. Version 0.8.0 or later should work.
 -  Lex / Yacc - for building the Mesa IR and GLSL compiler.

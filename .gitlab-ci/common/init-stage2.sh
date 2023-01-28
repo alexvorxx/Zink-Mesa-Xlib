@@ -73,7 +73,8 @@ if [ "$HWCI_KVM" = "true" ]; then
         modprobe ${KVM_KERNEL_MODULE}
 
     mkdir -p /lava-files
-    wget -S --progress=dot:giga -O /lava-files/${KERNEL_IMAGE_NAME} \
+    curl -L --retry 4 -f --retry-all-errors --retry-delay 60 \
+	-o "/lava-files/${KERNEL_IMAGE_NAME}" \
         "${KERNEL_IMAGE_BASE_URL}/${KERNEL_IMAGE_NAME}"
 fi
 

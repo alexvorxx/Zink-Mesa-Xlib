@@ -510,7 +510,7 @@ tu_image_init(struct tu_device *device, struct tu_image *image,
    /* expect UBWC enabled if we asked for it */
    if (modifier == DRM_FORMAT_MOD_QCOM_COMPRESSED)
       assert(ubwc_enabled);
-   else if (device->physical_device->instance->debug_flags & TU_DEBUG_NOUBWC)
+   else if (TU_DEBUG(NOUBWC))
       ubwc_enabled = false;
 
    /* Non-UBWC tiled R8G8 is probably buggy since media formats are always
@@ -574,7 +574,7 @@ tu_image_init(struct tu_device *device, struct tu_image *image,
          return vk_error(device, VK_ERROR_INVALID_DRM_FORMAT_MODIFIER_PLANE_LAYOUT_EXT);
       }
 
-      if (device->instance->debug_flags & TU_DEBUG_LAYOUT)
+      if (TU_DEBUG(LAYOUT))
          fdl_dump_layout(layout);
 
       /* fdl6_layout can't take explicit offset without explicit pitch
@@ -593,7 +593,7 @@ tu_image_init(struct tu_device *device, struct tu_image *image,
    }
 
    const struct util_format_description *desc = util_format_description(image->layout[0].format);
-   if (util_format_has_depth(desc) && !(device->instance->debug_flags & TU_DEBUG_NOLRZ))
+   if (util_format_has_depth(desc) && !TU_DEBUG(NOLRZ))
    {
       /* Depth plane is the first one */
       struct fdl_layout *layout = &image->layout[0];
@@ -630,7 +630,7 @@ tu_image_init(struct tu_device *device, struct tu_image *image,
       /* Fast-clear buffer cannot be larger than 512 bytes (HW limitation) */
       bool has_lrz_fc = image->lrz_fc_size <= 512 &&
          device->physical_device->info->a6xx.enable_lrz_fast_clear &&
-         !unlikely(device->physical_device->instance->debug_flags & TU_DEBUG_NOLRZFC);
+         !TU_DEBUG(NOLRZFC);
 
       if (has_lrz_fc || device->physical_device->info->a6xx.has_lrz_dir_tracking) {
          image->lrz_fc_offset = image->total_size;

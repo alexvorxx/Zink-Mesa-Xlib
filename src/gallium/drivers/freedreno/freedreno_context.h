@@ -510,9 +510,6 @@ struct fd_context {
    void (*validate_format)(struct fd_context *ctx, struct fd_resource *rsc,
                            enum pipe_format format) dt;
 
-   /* handling for barriers: */
-   void (*framebuffer_barrier)(struct fd_context *ctx) dt;
-
    /* logger: */
    void (*record_timestamp)(struct fd_ringbuffer *ring, struct fd_bo *bo,
                             unsigned offset);
@@ -719,6 +716,13 @@ void fd_context_setup_common_vbos(struct fd_context *ctx);
 void fd_context_cleanup_common_vbos(struct fd_context *ctx);
 void fd_emit_string(struct fd_ringbuffer *ring, const char *string, int len);
 void fd_emit_string5(struct fd_ringbuffer *ring, const char *string, int len);
+__attribute__((format(printf, 3, 4))) void
+fd_cs_trace_msg(struct u_trace_context *utctx, void *cs, const char *fmt, ...);
+__attribute__((format(printf, 3, 4))) void
+fd_cs_trace_start(struct u_trace_context *utctx, void *cs, const char *fmt,
+                  ...);
+__attribute__((format(printf, 3, 4))) void
+fd_cs_trace_end(struct u_trace_context *utctx, void *cs, const char *fmt, ...);
 
 struct pipe_context *fd_context_init(struct fd_context *ctx,
                                      struct pipe_screen *pscreen,

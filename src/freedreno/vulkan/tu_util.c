@@ -15,6 +15,57 @@
 #include "tu_device.h"
 #include "tu_pass.h"
 
+static const struct debug_control tu_debug_options[] = {
+   { "startup", TU_DEBUG_STARTUP },
+   { "nir", TU_DEBUG_NIR },
+   { "nobin", TU_DEBUG_NOBIN },
+   { "sysmem", TU_DEBUG_SYSMEM },
+   { "gmem", TU_DEBUG_GMEM },
+   { "forcebin", TU_DEBUG_FORCEBIN },
+   { "layout", TU_DEBUG_LAYOUT },
+   { "noubwc", TU_DEBUG_NOUBWC },
+   { "nomultipos", TU_DEBUG_NOMULTIPOS },
+   { "nolrz", TU_DEBUG_NOLRZ },
+   { "nolrzfc", TU_DEBUG_NOLRZFC },
+   { "perf", TU_DEBUG_PERF },
+   { "perfc", TU_DEBUG_PERFC },
+   { "flushall", TU_DEBUG_FLUSHALL },
+   { "syncdraw", TU_DEBUG_SYNCDRAW },
+   { "rast_order", TU_DEBUG_RAST_ORDER },
+   { "unaligned_store", TU_DEBUG_UNALIGNED_STORE },
+   { "log_skip_gmem_ops", TU_DEBUG_LOG_SKIP_GMEM_OPS },
+   { "dynamic", TU_DEBUG_DYNAMIC },
+   { "bos", TU_DEBUG_BOS },
+   { NULL, 0 }
+};
+
+struct tu_env tu_env;
+
+static void
+tu_env_init_once(void)
+{
+    tu_env.debug = parse_debug_string(os_get_option("TU_DEBUG"),
+            tu_debug_options);
+
+#ifdef DEBUG
+   /* Enable startup debugging by default on debug drivers.  You almost always
+    * want to see your startup failures in that case, and it's hard to set
+    * this env var on android.
+    */
+   tu_env.debug |= TU_DEBUG_STARTUP;
+#endif
+
+   if (TU_DEBUG(STARTUP))
+      mesa_logi("TU_DEBUG=0x%x", tu_env.debug);
+}
+
+void
+tu_env_init(void)
+{
+   static once_flag once = ONCE_FLAG_INIT;
+   call_once(&once, tu_env_init_once);
+}
+
 void PRINTFLIKE(3, 4)
    __tu_finishme(const char *file, int line, const char *format, ...)
 {
@@ -126,7 +177,7 @@ tu_tiling_config_update_tile_layout(struct tu_framebuffer *fb,
    if (!pass->gmem_pixels[gmem_layout])
       return;
 
-   if (unlikely(dev->physical_device->instance->debug_flags & TU_DEBUG_FORCEBIN)) {
+   if (TU_DEBUG(FORCEBIN)) {
       /* start with 2x2 tiles */
       tiling->tile_count.width = 2;
       tiling->tile_count.height = 2;
@@ -255,10 +306,9 @@ tu_tiling_config_update_binning(struct tu_tiling_config *tiling, const struct tu
    if (tiling->binning_possible) {
       tiling->binning = (tiling->tile_count.width * tiling->tile_count.height) > 2;
 
-      if (unlikely(device->physical_device->instance->debug_flags & TU_DEBUG_FORCEBIN))
+      if (TU_DEBUG(FORCEBIN))
          tiling->binning = true;
-      if (unlikely(device->physical_device->instance->debug_flags &
-                   TU_DEBUG_NOBIN))
+      if (TU_DEBUG(NOBIN))
          tiling->binning = false;
    } else {
       tiling->binning = false;

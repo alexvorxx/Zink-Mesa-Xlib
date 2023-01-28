@@ -784,6 +784,11 @@ find_input_reg_id(struct ir3_shader_variant *so, uint32_t input_idx)
 }
 
 void
+print_raw(FILE *out, const BITSET_WORD *data, size_t size) {
+   fprintf(out, "raw 0x%X%X\n", data[0], data[1]);
+}
+
+void
 ir3_shader_disasm(struct ir3_shader_variant *so, uint32_t *bin, FILE *out)
 {
    struct ir3 *ir = so->ir;
@@ -832,6 +837,7 @@ ir3_shader_disasm(struct ir3_shader_variant *so, uint32_t *bin, FILE *out)
                  .gpu_id = fd_dev_gpu_id(ir->compiler->dev_id),
                  .show_errors = true,
                  .branch_labels = true,
+                 .no_match_cb = print_raw,
               });
 
    fprintf(out, "; %s: outputs:", type);

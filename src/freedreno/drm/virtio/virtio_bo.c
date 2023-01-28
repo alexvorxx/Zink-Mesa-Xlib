@@ -267,20 +267,14 @@ set_iova(struct fd_bo *bo, uint64_t iova)
 }
 
 static void
-virtio_bo_destroy(struct fd_bo *bo)
+virtio_bo_finalize(struct fd_bo *bo)
 {
-   struct virtio_bo *virtio_bo = to_virtio_bo(bo);
-
    /* Release iova by setting to zero: */
    if (bo->iova) {
       set_iova(bo, 0);
 
       virtio_dev_free_iova(bo->dev, bo->iova, bo->size);
    }
-
-   fd_bo_fini_common(bo);
-
-   free(virtio_bo);
 }
 
 static const struct fd_bo_funcs funcs = {
@@ -291,7 +285,8 @@ static const struct fd_bo_funcs funcs = {
    .set_name = virtio_bo_set_name,
    .upload = virtio_bo_upload,
    .prefer_upload = virtio_bo_prefer_upload,
-   .destroy = virtio_bo_destroy,
+   .finalize = virtio_bo_finalize,
+   .destroy = fd_bo_fini_common,
 };
 
 static struct fd_bo *
@@ -358,7 +353,8 @@ virtio_bo_from_handle(struct fd_device *dev, uint32_t size, uint32_t handle)
    return bo;
 
 fail:
-   virtio_bo_destroy(bo);
+   virtio_bo_finalize(bo);
+   fd_bo_fini_common(bo);
    return NULL;
 }
 

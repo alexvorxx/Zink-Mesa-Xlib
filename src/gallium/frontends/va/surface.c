@@ -538,52 +538,13 @@ vlVaQuerySurfaceAttributes(VADriverContextP ctx, VAConfigID config_id,
          }
       }
    }
-   if (config->profile == PIPE_VIDEO_PROFILE_AV1_MAIN &&
-         config->entrypoint == PIPE_VIDEO_ENTRYPOINT_BITSTREAM) {
+
+   if (config->rt_format & VA_RT_FORMAT_YUV420) {
       attribs[i].type = VASurfaceAttribPixelFormat;
       attribs[i].value.type = VAGenericValueTypeInteger;
       attribs[i].flags = VA_SURFACE_ATTRIB_GETTABLE | VA_SURFACE_ATTRIB_SETTABLE;
       attribs[i].value.value.i = VA_FOURCC_NV12;
       i++;
-      attribs[i].type = VASurfaceAttribPixelFormat;
-      attribs[i].value.type = VAGenericValueTypeInteger;
-      attribs[i].flags = VA_SURFACE_ATTRIB_GETTABLE | VA_SURFACE_ATTRIB_SETTABLE;
-      attribs[i].value.value.i = VA_FOURCC_P010;
-      i++;
-   } else {
-      if (config->rt_format & VA_RT_FORMAT_YUV420) {
-         attribs[i].type = VASurfaceAttribPixelFormat;
-         attribs[i].value.type = VAGenericValueTypeInteger;
-         attribs[i].flags = VA_SURFACE_ATTRIB_GETTABLE | VA_SURFACE_ATTRIB_SETTABLE;
-         attribs[i].value.value.i = VA_FOURCC_NV12;
-         i++;
-      }
-
-      if (config->profile == PIPE_VIDEO_PROFILE_JPEG_BASELINE) {
-         if (config->rt_format & VA_RT_FORMAT_YUV400) {
-            attribs[i].type = VASurfaceAttribPixelFormat;
-            attribs[i].value.type = VAGenericValueTypeInteger;
-            attribs[i].flags = VA_SURFACE_ATTRIB_GETTABLE | VA_SURFACE_ATTRIB_SETTABLE;
-            attribs[i].value.value.i = VA_FOURCC_Y800;
-            i++;
-         }
-
-         if (config->rt_format & VA_RT_FORMAT_YUV422) {
-            attribs[i].type = VASurfaceAttribPixelFormat;
-            attribs[i].value.type = VAGenericValueTypeInteger;
-            attribs[i].flags = VA_SURFACE_ATTRIB_GETTABLE | VA_SURFACE_ATTRIB_SETTABLE;
-            attribs[i].value.value.i = VA_FOURCC_YUY2;
-            i++;
-         }
-
-         if (config->rt_format & VA_RT_FORMAT_YUV444) {
-            attribs[i].type = VASurfaceAttribPixelFormat;
-            attribs[i].value.type = VAGenericValueTypeInteger;
-            attribs[i].flags = VA_SURFACE_ATTRIB_GETTABLE | VA_SURFACE_ATTRIB_SETTABLE;
-            attribs[i].value.value.i = VA_FOURCC_444P;
-            i++;
-         }
-      }
    }
 
    if (config->rt_format & VA_RT_FORMAT_YUV420_10 ||
@@ -599,6 +560,32 @@ vlVaQuerySurfaceAttributes(VADriverContextP ctx, VAConfigID config_id,
       attribs[i].flags = VA_SURFACE_ATTRIB_GETTABLE | VA_SURFACE_ATTRIB_SETTABLE;
       attribs[i].value.value.i = VA_FOURCC_P016;
       i++;
+   }
+
+   if (config->profile == PIPE_VIDEO_PROFILE_JPEG_BASELINE) {
+      if (config->rt_format & VA_RT_FORMAT_YUV400) {
+         attribs[i].type = VASurfaceAttribPixelFormat;
+         attribs[i].value.type = VAGenericValueTypeInteger;
+         attribs[i].flags = VA_SURFACE_ATTRIB_GETTABLE | VA_SURFACE_ATTRIB_SETTABLE;
+         attribs[i].value.value.i = VA_FOURCC_Y800;
+         i++;
+      }
+
+      if (config->rt_format & VA_RT_FORMAT_YUV422) {
+         attribs[i].type = VASurfaceAttribPixelFormat;
+         attribs[i].value.type = VAGenericValueTypeInteger;
+         attribs[i].flags = VA_SURFACE_ATTRIB_GETTABLE | VA_SURFACE_ATTRIB_SETTABLE;
+         attribs[i].value.value.i = VA_FOURCC_YUY2;
+         i++;
+      }
+
+      if (config->rt_format & VA_RT_FORMAT_YUV444) {
+         attribs[i].type = VASurfaceAttribPixelFormat;
+         attribs[i].value.type = VAGenericValueTypeInteger;
+         attribs[i].flags = VA_SURFACE_ATTRIB_GETTABLE | VA_SURFACE_ATTRIB_SETTABLE;
+         attribs[i].value.value.i = VA_FOURCC_444P;
+         i++;
+      }
    }
 
    attribs[i].type = VASurfaceAttribMemoryType;

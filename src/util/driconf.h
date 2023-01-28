@@ -516,6 +516,14 @@
                   "Force-enable reading back L8_SRGB textures")
 
 /**
+ * \brief freedreno specific configuration options
+ */
+
+#define DRI_CONF_DISABLE_CONSERVATIVE_LRZ(def) \
+   DRI_CONF_OPT_B(disable_conservative_lrz, def, \
+                  "Disable conservative LRZ")
+
+/**
  * \brief venus specific configuration options
  */
 #define DRI_CONF_VENUS_IMPLICIT_FENCING(def) \

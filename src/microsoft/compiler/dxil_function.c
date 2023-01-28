@@ -75,6 +75,7 @@ static struct  predefined_func_descr predefined_funcs[] = {
 {"dx.op.primitiveID", "i", "i", DXIL_ATTR_KIND_READ_NONE},
 {"dx.op.outputControlPointID", "i", "i", DXIL_ATTR_KIND_READ_NONE},
 {"dx.op.gsInstanceID", "i", "i", DXIL_ATTR_KIND_READ_NONE},
+{"dx.op.viewID", "i", "i", DXIL_ATTR_KIND_READ_NONE},
 {"dx.op.domainLocation", "f", "ii", DXIL_ATTR_KIND_READ_NONE},
 {"dx.op.legacyF16ToF32", "f", "ii", DXIL_ATTR_KIND_READ_ONLY},
 {"dx.op.legacyF32ToF16", "i", "if", DXIL_ATTR_KIND_READ_ONLY},
@@ -92,6 +93,17 @@ static struct  predefined_func_descr predefined_funcs[] = {
 {"dx.op.createHandleFromBinding", "@", "i#ib", DXIL_ATTR_KIND_READ_NONE},
 {"dx.op.annotateHandle", "@", "i@P", DXIL_ATTR_KIND_READ_NONE},
 {"dx.op.isHelperLane", "b", "i", DXIL_ATTR_KIND_READ_ONLY},
+{"dx.op.waveIsFirstLane", "b", "i", DXIL_ATTR_KIND_NO_UNWIND},
+{"dx.op.waveGetLaneIndex", "i", "i", DXIL_ATTR_KIND_READ_NONE},
+{"dx.op.waveGetLaneCount", "i", "i", DXIL_ATTR_KIND_READ_NONE},
+{"dx.op.waveReadLaneFirst", "O", "iO", DXIL_ATTR_KIND_NO_UNWIND},
+{"dx.op.waveReadLaneAt", "O", "iOi", DXIL_ATTR_KIND_NO_UNWIND},
+{"dx.op.waveAnyTrue", "b", "ib", DXIL_ATTR_KIND_NO_UNWIND},
+{"dx.op.waveAllTrue", "b", "ib", DXIL_ATTR_KIND_NO_UNWIND},
+{"dx.op.waveActiveAllEqual", "b", "iO", DXIL_ATTR_KIND_NO_UNWIND},
+{"dx.op.waveActiveBallot", "F", "ib", DXIL_ATTR_KIND_NO_UNWIND},
+{"dx.op.quadReadLaneAt", "O", "iOi", DXIL_ATTR_KIND_NO_UNWIND},
+{"dx.op.quadOp", "O", "iOc", DXIL_ATTR_KIND_NO_UNWIND},
 };
 
 struct func_descr {
@@ -202,6 +214,7 @@ get_type_from_string(struct dxil_module *mod, const char *param_descr,
          const struct dxil_type *target = get_type_from_string(mod, param_descr, overload, idx);
          return dxil_module_get_pointer_type(mod, target);
       }
+   case DXIL_FUNC_PARAM_FOURI32: return dxil_module_get_fouri32_type(mod);
    default:
       assert(0 && "unknown type identifier");
    }

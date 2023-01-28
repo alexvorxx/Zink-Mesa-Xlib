@@ -187,7 +187,6 @@ glx@glx-buffer-age vblank_mode=0,Fail
 
 glx@glx-make-current,Crash
 glx@glx-multi-window-single-context,Crash
-glx@glx-swap-copy,Fail
 glx@glx-swap-pixmap-bad,Fail
 glx@glx-tfp,Crash
 
@@ -228,6 +227,8 @@ spec@!opengl 1.1@depthstencil-default_fb-blit samples=8,Fail
 
 spec@!opengl 1.1@line-aa-width,Fail
 spec@!opengl 1.1@line-flat-clip-color,Fail
+spec@!opengl 1.1@line-smooth-coverage,Fail
+spec@!opengl 1.1@line-smooth-stipple,Fail
 
 spec@!opengl 1.1@polygon-mode-facing,Fail
 spec@!opengl 1.1@polygon-mode-offset,Fail
@@ -258,69 +259,6 @@ spec@!opengl 1.1@linestipple,Fail
 # At position 1, found prim GL_POINT instead of GL_FILL
 # (and more)
 spec@!opengl 1.1@polygon-mode,Fail
-
-spec@!opengl 1.1@read-front clear-front-first,Fail
-spec@!opengl 1.1@read-front samples=16,Fail
-spec@!opengl 1.1@read-front samples=2,Fail
-spec@!opengl 1.1@read-front samples=4,Fail
-spec@!opengl 1.1@read-front samples=6,Fail
-spec@!opengl 1.1@read-front samples=8,Fail
-spec@!opengl 1.1@read-front,Fail
-
-# depth texturing: zink is returning intensity shadow comparisons and depth samples, regardless of depth mode.
-# Check out the "splat" in zink_compiler.c around !is_new_style_shadow, and the swizzle rewrite for depth
-# textures in zink_create_sampler_view().
-spec@!opengl 2.0@depth-tex-modes-glsl,Fail
-spec@arb_depth_texture@depth-tex-modes,Fail
-spec@arb_fragment_program_shadow@tex-shadow1d,Fail
-spec@arb_fragment_program_shadow@tex-shadow2d,Fail
-spec@arb_fragment_program_shadow@tex-shadow2drect,Fail
-spec@arb_fragment_program_shadow@txp-shadow1d,Fail
-spec@arb_fragment_program_shadow@txp-shadow2d,Fail
-spec@arb_fragment_program_shadow@txp-shadow2drect,Fail
-spec@arb_shader_texture_lod@execution@arb_shader_texture_lod-texgradcube,Fail
-spec@arb_shader_texture_lod@execution@glsl-fs-shadow2dgradarb-01,Fail
-spec@arb_shader_texture_lod@execution@glsl-fs-shadow2dgradarb-03,Fail
-spec@arb_shader_texture_lod@execution@glsl-fs-shadow2dgradarb-07,Fail
-spec@arb_shader_texture_lod@execution@glsl-fs-shadow2dgradarb-08,Fail
-spec@arb_shader_texture_lod@execution@glsl-fs-shadow2dgradarb-cumulative,Fail
-spec@arb_texture_rectangle@glsl-fs-shadow2drect-01,Fail
-spec@arb_texture_rectangle@glsl-fs-shadow2drect-03,Fail
-spec@arb_texture_rectangle@glsl-fs-shadow2drect-07,Fail
-spec@arb_texture_rectangle@glsl-fs-shadow2drect-08,Fail
-spec@arb_texture_rectangle@glsl-fs-shadow2drect,Fail
-spec@arb_texture_rectangle@glsl-fs-shadow2drectproj,Fail
-spec@arb_texture_rg@execution@fs-shadow2d-red-01,Fail
-spec@arb_texture_rg@execution@fs-shadow2d-red-02,Fail
-spec@arb_texture_rg@execution@fs-shadow2d-red-03,Fail
-spec@ext_texture_array@glsl-fs-shadow1darray-01,Fail
-spec@ext_texture_array@glsl-fs-shadow1darray-03,Fail
-spec@ext_texture_array@glsl-fs-shadow1darray-07,Fail
-spec@ext_texture_array@glsl-fs-shadow1darray-08,Fail
-spec@ext_texture_array@glsl-fs-shadow1darray-bias,Fail
-spec@ext_texture_array@glsl-fs-shadow1darray,Fail
-spec@ext_texture_array@glsl-fs-shadow2darray-01,Fail
-spec@ext_texture_array@glsl-fs-shadow2darray-03,Fail
-spec@ext_texture_array@glsl-fs-shadow2darray-07,Fail
-spec@ext_texture_array@glsl-fs-shadow2darray-08,Fail
-spec@ext_texture_array@glsl-fs-shadow2darray,Fail
-spec@ext_texture_swizzle@depth_texture_mode_and_swizzle,Fail
-spec@glsl-1.10@execution@samplers@glsl-fs-shadow1d-01,Fail
-spec@glsl-1.10@execution@samplers@glsl-fs-shadow1d-03,Fail
-spec@glsl-1.10@execution@samplers@glsl-fs-shadow1d-07,Fail
-spec@glsl-1.10@execution@samplers@glsl-fs-shadow1d-08,Fail
-spec@glsl-1.10@execution@samplers@glsl-fs-shadow1d-bias,Fail
-spec@glsl-1.10@execution@samplers@glsl-fs-shadow1d,Fail
-spec@glsl-1.10@execution@samplers@glsl-fs-shadow1dproj-bias,Fail
-spec@glsl-1.10@execution@samplers@glsl-fs-shadow1dproj,Fail
-spec@glsl-1.10@execution@samplers@glsl-fs-shadow2d-01,Fail
-spec@glsl-1.10@execution@samplers@glsl-fs-shadow2d-03,Fail
-spec@glsl-1.10@execution@samplers@glsl-fs-shadow2d-07,Fail
-spec@glsl-1.10@execution@samplers@glsl-fs-shadow2d-08,Fail
-spec@glsl-1.10@execution@samplers@glsl-fs-shadow2d-bias,Fail
-spec@glsl-1.10@execution@samplers@glsl-fs-shadow2d,Fail
-spec@glsl-1.10@execution@samplers@glsl-fs-shadow2dproj-bias,Fail
-spec@glsl-1.10@execution@samplers@glsl-fs-shadow2dproj,Fail
 
 spec@!opengl 2.0@gl-2.0-edgeflag-immediate,Fail
 spec@!opengl 2.0@gl-2.0-edgeflag,Fail
@@ -727,7 +665,7 @@ spec@arb_shader_image_load_store@host-mem-barrier@Transform feedback/WaW/one bit
 spec@arb_shader_image_load_store@host-mem-barrier@Transform feedback/WaW/one bit barrier test/4x4,Fail
 spec@arb_shader_image_load_store@host-mem-barrier@Transform feedback/WaW/one bit barrier test/64x64,Fail
 
-spec@arb_tessellation_shader@execution@variable-indexing@tcs-patch-vec4-swiz-index-wr,Fail
+spec@arb_shader_texture_lod@execution@arb_shader_texture_lod-texgradcube,Fail
 
 # "../src/gallium/drivers/zink/zink_compiler.c:2071: assign_producer_var_io: Assertion `*reserved < MAX_VARYING' failed."
 spec@arb_tessellation_shader@execution@variable-indexing@tes-both-input-array-float-index-rd,Crash
@@ -800,12 +738,6 @@ spec@arb_texture_buffer_object@formats (vs- arb)@GL_LUMINANCE8,Fail
 spec@arb_texture_buffer_object@formats (vs- arb)@GL_LUMINANCE8I_EXT,Fail
 spec@arb_texture_buffer_object@formats (vs- arb)@GL_LUMINANCE8UI_EXT,Fail
 
-spec@arb_texture_cube_map@copyteximage cube samples=16,Fail
-spec@arb_texture_cube_map@copyteximage cube samples=2,Fail
-spec@arb_texture_cube_map@copyteximage cube samples=4,Fail
-spec@arb_texture_cube_map@copyteximage cube samples=6,Fail
-spec@arb_texture_cube_map@copyteximage cube samples=8,Fail
-
 spec@egl 1.4@eglterminate then unbind context,Fail
 
 spec@egl_khr_gl_image@egl_khr_gl_renderbuffer_image-clear-shared-image gl_depth_component24,Fail
@@ -842,17 +774,6 @@ spec@ext_framebuffer_multisample@interpolation 8 non-centroid-deriv-disabled,Fai
 spec@ext_framebuffer_multisample@interpolation 8 non-centroid-disabled,Fail
 
 spec@ext_packed_float@query-rgba-signed-components,Fail
-
-spec@ext_texture_array@copyteximage 1d_array samples=16,Fail
-spec@ext_texture_array@copyteximage 1d_array samples=2,Fail
-spec@ext_texture_array@copyteximage 1d_array samples=4,Fail
-spec@ext_texture_array@copyteximage 1d_array samples=6,Fail
-spec@ext_texture_array@copyteximage 1d_array samples=8,Fail
-spec@ext_texture_array@copyteximage 2d_array samples=16,Fail
-spec@ext_texture_array@copyteximage 2d_array samples=2,Fail
-spec@ext_texture_array@copyteximage 2d_array samples=4,Fail
-spec@ext_texture_array@copyteximage 2d_array samples=6,Fail
-spec@ext_texture_array@copyteximage 2d_array samples=8,Fail
 
 spec@ext_transform_feedback@tessellation triangle_fan flat_first,Fail
 

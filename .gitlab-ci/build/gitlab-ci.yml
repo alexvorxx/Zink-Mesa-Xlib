@@ -82,7 +82,8 @@ debian-testing:
     BUILDTYPE: "debugoptimized"
     EXTRA_OPTION: >
       -D spirv-to-dxil=true
-      -D valgrind=false
+      -D valgrind=disabled
+      -D perfetto=true
     MINIO_ARTIFACT_NAME: mesa-amd64
     LLVM_VERSION: "13"
   script:
@@ -100,7 +101,7 @@ debian-testing-asan:
       -Wno-error=stringop-truncation
     EXTRA_OPTION: >
       -D b_sanitize=address
-      -D valgrind=false
+      -D valgrind=disabled
       -D tools=dlclose-skip
     MINIO_ARTIFACT_NAME: ""
     ARTIFACTS_DEBUG_SYMBOLS: 1
@@ -137,7 +138,7 @@ debian-testing-msan:
     GALLIUM_DRIVERS: "swrast"
     BUILDTYPE: "debugoptimized"
     EXTRA_OPTION: >
-      -D valgrind=false
+      -D valgrind=disabled
   script:
     - .gitlab-ci/meson/build.sh
     - .gitlab-ci/prepare-artifacts.sh
@@ -313,6 +314,7 @@ debian-android:
   extends:
     - .meson-cross
     - .use-debian/android_build
+    - .ci-deqp-artifacts
   variables:
     UNWIND: "disabled"
     C_ARGS: >
@@ -322,6 +324,17 @@ debian-android:
       -Wno-error=initializer-overrides
       -Wno-error=missing-braces
       -Wno-error=sometimes-uninitialized
+      -Wno-error=unused-function
+      -Wno-error=implicit-const-int-float-conversion
+      -Wno-error=bitwise-instead-of-logical
+    CPP_ARGS: >
+      -Wno-error=deprecated-declarations
+      -Wno-error=non-virtual-dtor
+      -Wno-error=c99-designator
+      -Wno-error=unused-variable
+      -Wno-error=unused-but-set-variable
+      -Wno-error=self-assign
+      -Wno-error=bitwise-instead-of-logical
     DRI_LOADERS: >
       -D glx=disabled
       -D gbm=disabled
@@ -330,8 +343,9 @@ debian-android:
     EXTRA_OPTION: >
       -D android-stub=true
       -D llvm=disabled
-      -D platform-sdk-version=29
-      -D valgrind=false
+      -D platform-sdk-version=33
+      -D valgrind=disabled
+      -D android-libbacktrace=false
     GALLIUM_ST: >
       -D dri3=disabled
       -D gallium-vdpau=disabled
@@ -343,14 +357,17 @@ debian-android:
       -D gallium-rusticl=false
     LLVM_VERSION: ""
     PKG_CONFIG_LIBDIR: "/disable/non/android/system/pc/files"
+    ARTIFACTS_DEBUG_SYMBOLS: 1
+    MINIO_ARTIFACT_NAME: mesa-x86_64-android
   script:
-    - PKG_CONFIG_PATH=/usr/local/lib/aarch64-linux-android/pkgconfig/:/android-ndk-r21d/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/aarch64-linux-android/pkgconfig/ CROSS=aarch64-linux-android GALLIUM_DRIVERS=etnaviv,freedreno,lima,panfrost,vc4,v3d VULKAN_DRIVERS=freedreno,broadcom,virtio-experimental .gitlab-ci/meson/build.sh
+    - CROSS=aarch64-linux-android GALLIUM_DRIVERS=etnaviv,freedreno,lima,panfrost,vc4,v3d VULKAN_DRIVERS=freedreno,broadcom,virtio-experimental .gitlab-ci/meson/build.sh
     # x86_64 build:
     # Can't do Intel because gen_decoder.c currently requires libexpat, which
     # is not a dependency that AOSP wants to accept.  Can't do Radeon Gallium
     # drivers because they requires LLVM, which we don't have an Android build
     # of.
-    - PKG_CONFIG_PATH=/usr/local/lib/x86_64-linux-android/pkgconfig/:/android-ndk-r21d/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/x86_64-linux-android/pkgconfig/ CROSS=x86_64-linux-android GALLIUM_DRIVERS=iris VULKAN_DRIVERS=amd,intel .gitlab-ci/meson/build.sh
+    - CROSS=x86_64-linux-android GALLIUM_DRIVERS=iris,virgl VULKAN_DRIVERS=amd,intel .gitlab-ci/meson/build.sh
+    - .gitlab-ci/prepare-artifacts.sh
 
 .meson-cross:
   extends:
@@ -393,7 +410,7 @@ debian-armhf:
     CROSS: armhf
     EXTRA_OPTION: >
       -D llvm=disabled
-      -D valgrind=false
+      -D valgrind=disabled
     MINIO_ARTIFACT_NAME: mesa-armhf
     # The strip command segfaults, failing to strip the binary and leaving
     # tempfiles in our artifacts.
@@ -410,8 +427,9 @@ debian-arm64:
     VULKAN_DRIVERS: "freedreno,broadcom,panfrost,imagination-experimental"
     EXTRA_OPTION: >
       -D llvm=disabled
-      -D valgrind=false
+      -D valgrind=disabled
       -D imagination-srv=true
+      -D perfetto=true
     MINIO_ARTIFACT_NAME: mesa-arm64
   script:
     - .gitlab-ci/meson/build.sh
@@ -424,7 +442,7 @@ debian-arm64-asan:
     EXTRA_OPTION: >
       -D llvm=disabled
       -D b_sanitize=address
-      -D valgrind=false
+      -D valgrind=disabled
       -D tools=dlclose-skip
     ARTIFACTS_DEBUG_SYMBOLS: 1
     MINIO_ARTIFACT_NAME: mesa-arm64-asan
@@ -525,7 +543,7 @@ windows-vs2019:
       -D egl=disabled
       -D gbm=disabled
     EXTRA_OPTION: >
-      -D valgrind=false
+      -D valgrind=disabled
 
 debian-clover:
   extends: .debian-cl
@@ -650,7 +668,7 @@ debian-mingw32-x86_64:
       -D microsoft-clc=enabled
       -D static-libclc=all
       -D llvm=enabled
-      -D gallium-va=true
+      -D gallium-va=enabled
       -D video-codecs=h264dec,h264enc,h265dec,h265enc,vc1dec
     EXTRA_OPTION: >
       -D min-windows-version=7

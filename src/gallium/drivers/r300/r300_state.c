@@ -1951,9 +1951,11 @@ static void* r300_create_vs_state(struct pipe_context* pipe,
        static const struct nir_to_tgsi_options hwtcl_r300_options = {
            .lower_cmp = true,
            .lower_fabs = true,
+           .ubo_vec4_max = 0x00ff,
        };
        static const struct nir_to_tgsi_options hwtcl_r500_options = {
            .lower_cmp = true,
+           .ubo_vec4_max = 0x00ff,
        };
        const struct nir_to_tgsi_options *ntt_options;
        if (r300->screen->caps.has_tcl) {

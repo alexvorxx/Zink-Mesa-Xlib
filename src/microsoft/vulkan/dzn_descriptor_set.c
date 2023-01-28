@@ -210,7 +210,7 @@ dzn_descriptor_set_layout_create(struct dzn_device *device,
    VK_MULTIALLOC_DECL(&ma, struct dzn_descriptor_set_layout, set_layout, 1);
    VK_MULTIALLOC_DECL(&ma, D3D12_DESCRIPTOR_RANGE1,
                       ranges, total_ranges);
-   VK_MULTIALLOC_DECL(&ma, D3D12_STATIC_SAMPLER_DESC, static_samplers,
+   VK_MULTIALLOC_DECL(&ma, D3D12_STATIC_SAMPLER_DESC1, static_samplers,
                       static_sampler_count);
    VK_MULTIALLOC_DECL(&ma, const struct dzn_sampler *, immutable_samplers,
                       immutable_sampler_count);
@@ -291,7 +291,7 @@ dzn_descriptor_set_layout_create(struct dzn_device *device,
          /* Not all border colors are supported. */
          if (sampler->static_border_color != -1) {
             binfos[binding].static_sampler_idx = static_sampler_idx;
-            D3D12_STATIC_SAMPLER_DESC *desc = (D3D12_STATIC_SAMPLER_DESC *)
+            D3D12_STATIC_SAMPLER_DESC1 *desc = (D3D12_STATIC_SAMPLER_DESC1 *)
                &static_samplers[static_sampler_idx];
 
             desc->Filter = sampler->desc.Filter;
@@ -306,6 +306,7 @@ dzn_descriptor_set_layout_create(struct dzn_device *device,
             desc->MaxLOD = sampler->desc.MaxLOD;
             desc->ShaderRegister = binfos[binding].base_shader_register;
             desc->ShaderVisibility = translate_desc_visibility(ordered_bindings[i].stageFlags);
+            desc->Flags = sampler->desc.Flags;
             static_sampler_idx++;
          } else {
             has_static_sampler = false;
@@ -478,8 +479,8 @@ dzn_GetDescriptorSetLayoutSupport(VkDevice device,
    }
 
    pSupport->supported =
-      sampler_count <= (MAX_DESCS_PER_SAMPLER_HEAP / MAX_SETS) &&
-      other_desc_count <= (MAX_DESCS_PER_CBV_SRV_UAV_HEAP / MAX_SETS);
+      sampler_count <= MAX_DESCS_PER_SAMPLER_HEAP &&
+      other_desc_count <= MAX_DESCS_PER_CBV_SRV_UAV_HEAP;
 }
 
 static void
@@ -549,6 +550,7 @@ dzn_pipeline_layout_create(struct dzn_device *device,
                            const VkAllocationCallbacks *pAllocator,
                            VkPipelineLayout *out)
 {
+   struct dzn_physical_device *pdev = container_of(device->vk.physical, struct dzn_physical_device, vk);
    uint32_t binding_count = 0;
 
    for (uint32_t s = 0; s < pCreateInfo->setLayoutCount; s++) {
@@ -631,7 +633,9 @@ dzn_pipeline_layout_create(struct dzn_device *device,
       return vk_error(device, VK_ERROR_OUT_OF_HOST_MEMORY);
    }
 
-   D3D12_STATIC_SAMPLER_DESC *static_sampler_descs =
+   static_assert(sizeof(D3D12_STATIC_SAMPLER_DESC1) > sizeof(D3D12_STATIC_SAMPLER_DESC),
+                 "Allocating larger array and re-using for smaller struct");
+   D3D12_STATIC_SAMPLER_DESC1 *static_sampler_descs =
       vk_alloc2(&device->vk.alloc, pAllocator,
                 sizeof(*static_sampler_descs) * static_sampler_count, 8,
                 VK_SYSTEM_ALLOCATION_SCOPE_COMMAND);
@@ -692,17 +696,31 @@ dzn_pipeline_layout_create(struct dzn_device *device,
    root_param->ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
    root_dwords += root_param->Constants.Num32BitValues;
 
-   D3D12_STATIC_SAMPLER_DESC *static_sampler_ptr = static_sampler_descs;
-   for (uint32_t j = 0; j < pCreateInfo->setLayoutCount; j++) {
-      VK_FROM_HANDLE(dzn_descriptor_set_layout, set_layout, pCreateInfo->pSetLayouts[j]);
+   if (pdev->root_sig_version >= D3D_ROOT_SIGNATURE_VERSION_1_2) {
+      D3D12_STATIC_SAMPLER_DESC1 *static_sampler_ptr = static_sampler_descs;
+      for (uint32_t j = 0; j < pCreateInfo->setLayoutCount; j++) {
+         VK_FROM_HANDLE(dzn_descriptor_set_layout, set_layout, pCreateInfo->pSetLayouts[j]);
 
-      memcpy(static_sampler_ptr, set_layout->static_samplers,
-             set_layout->static_sampler_count * sizeof(*set_layout->static_samplers));
-      if (j > 0) {
-         for (uint32_t k = 0; k < set_layout->static_sampler_count; k++)
-            static_sampler_ptr[k].RegisterSpace = j;
+         memcpy(static_sampler_ptr, set_layout->static_samplers,
+                set_layout->static_sampler_count * sizeof(*set_layout->static_samplers));
+         if (j > 0) {
+            for (uint32_t k = 0; k < set_layout->static_sampler_count; k++)
+               static_sampler_ptr[k].RegisterSpace = j;
+         }
+         static_sampler_ptr += set_layout->static_sampler_count;
       }
-      static_sampler_ptr += set_layout->static_sampler_count;
+   } else {
+      D3D12_STATIC_SAMPLER_DESC *static_sampler_ptr = (void *)static_sampler_descs;
+      for (uint32_t j = 0; j < pCreateInfo->setLayoutCount; j++) {
+         VK_FROM_HANDLE(dzn_descriptor_set_layout, set_layout, pCreateInfo->pSetLayouts[j]);
+
+         for (uint32_t k = 0; k < set_layout->static_sampler_count; k++) {
+            memcpy(static_sampler_ptr, &set_layout->static_samplers[k],
+                     sizeof(*static_sampler_ptr));
+            static_sampler_ptr->RegisterSpace = j;
+            static_sampler_ptr++;
+         }
+      }
    }
 
    uint32_t push_constant_size = 0;
@@ -729,16 +747,30 @@ dzn_pipeline_layout_create(struct dzn_device *device,
    assert(root_dwords <= MAX_ROOT_DWORDS);
 
    D3D12_VERSIONED_ROOT_SIGNATURE_DESC root_sig_desc = {
-      .Version = D3D_ROOT_SIGNATURE_VERSION_1_1,
-      .Desc_1_1 = {
+      .Version = pdev->root_sig_version,
+   };
+   /* TODO Only enable this flag when needed (optimization) */
+   D3D12_ROOT_SIGNATURE_FLAGS root_flags = D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT;
+#if D3D12_SDK_VERSION >= 609
+   if (pdev->root_sig_version >= D3D_ROOT_SIGNATURE_VERSION_1_2) {
+      root_sig_desc.Desc_1_2 = (D3D12_ROOT_SIGNATURE_DESC2){
          .NumParameters = layout->root.param_count,
          .pParameters = layout->root.param_count ? root_params : NULL,
-         .NumStaticSamplers =static_sampler_count,
+         .NumStaticSamplers = static_sampler_count,
          .pStaticSamplers = static_sampler_descs,
-         /* TODO Only enable this flag when needed (optimization) */
-         .Flags = D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT,
-      },
-   };
+         .Flags = root_flags,
+      };
+   } else
+#endif
+   {
+      root_sig_desc.Desc_1_1 = (D3D12_ROOT_SIGNATURE_DESC1){
+            .NumParameters = layout->root.param_count,
+            .pParameters = layout->root.param_count ? root_params : NULL,
+            .NumStaticSamplers = static_sampler_count,
+            .pStaticSamplers = (void *)static_sampler_descs,
+            .Flags = root_flags,
+      };
+   }
 
    layout->root.sig = dzn_device_create_root_sig(device, &root_sig_desc);
    vk_free2(&device->vk.alloc, pAllocator, ranges);
@@ -953,7 +985,7 @@ dzn_descriptor_heap_write_buffer_desc(struct dzn_descriptor_heap *heap,
        info->type == VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC) {
       assert(!writeable);
       D3D12_CONSTANT_BUFFER_VIEW_DESC cbv_desc = {
-         .BufferLocation = ID3D12Resource_GetGPUVirtualAddress(info->buffer->res) + info->offset,
+         .BufferLocation = info->buffer->gpuva + info->offset,
          .SizeInBytes = ALIGN_POT(size, 256),
       };
       ID3D12Device1_CreateConstantBufferView(heap->dev, &cbv_desc, view_handle);

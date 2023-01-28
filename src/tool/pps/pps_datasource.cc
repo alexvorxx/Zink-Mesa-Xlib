@@ -14,6 +14,7 @@
 #include <condition_variable>
 #include <thread>
 #include <variant>
+#include <inttypes.h>
 
 // Minimum supported sampling period in nanoseconds
 #define MIN_SAMPLING_PERIOD_NS 50000
@@ -316,7 +317,7 @@ void GpuDataSource::trace(TraceContext &ctx)
          }
 
          if (!got_first_counters) {
-            PPS_LOG("Got first counters at gpu_ts=0x%016lx", gpu_timestamp);
+            PPS_LOG("Got first counters at gpu_ts=0x%016" PRIx64, gpu_timestamp);
             got_first_counters = true;
          }
 

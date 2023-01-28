@@ -252,6 +252,15 @@ pack_half_1x16(float x)
 }
 
 /**
+ * Evaluate one component of packHalf2x16, RTZ mode.
+ */
+static uint16_t
+pack_half_1x16_rtz(float x)
+{
+   return _mesa_float_to_float16_rtz(x);
+}
+
+/**
  * Evaluate one component of unpackHalf2x16.
  */
 static float

@@ -32,7 +32,7 @@
   tags:
     - $RUNNER_TAG
   after_script:
-    - wget -q "https://${JOB_RESULTS_PATH}" -O- | tar --zstd -x
+    - curl -L --retry 4 -f --retry-all-errors --retry-delay 60 -s "https://${JOB_RESULTS_PATH}" | tar --zstd -x
 
 .lava-test:armhf:
   variables:

@@ -126,19 +126,81 @@ nir_blend_factor_value(
 }
 
 static nir_ssa_def *
+nir_fsat_signed(nir_builder *b, nir_ssa_def *x)
+{
+   return nir_fclamp(b, x, nir_imm_floatN_t(b, -1.0, x->bit_size),
+                           nir_imm_floatN_t(b, +1.0, x->bit_size));
+}
+
+static nir_ssa_def *
+nir_fsat_to_format(nir_builder *b, nir_ssa_def *x, enum pipe_format format)
+{
+   if (util_format_is_unorm(format))
+      return nir_fsat(b, x);
+   else if (util_format_is_snorm(format))
+      return nir_fsat_signed(b, x);
+   else
+      return x;
+}
+
+/*
+ * The spec says we need to clamp blend factors. However, we don't want to clamp
+ * unnecessarily, as the clamp might not be optimized out. Check whether
+ * clamping a blend factor is needed.
+ */
+static bool
+should_clamp_factor(enum blend_factor factor, bool inverted, bool snorm)
+{
+   switch (factor) {
+   case BLEND_FACTOR_ZERO:
+      /* 0, 1 are in [0, 1] and [-1, 1] */
+      return false;
+
+   case BLEND_FACTOR_SRC_COLOR:
+   case BLEND_FACTOR_SRC1_COLOR:
+   case BLEND_FACTOR_DST_COLOR:
+   case BLEND_FACTOR_SRC_ALPHA:
+   case BLEND_FACTOR_SRC1_ALPHA:
+   case BLEND_FACTOR_DST_ALPHA:
+      /* Colours are already clamped. For unorm, the complement of something
+       * clamped is still clamped. But for snorm, this is not true. Clamp for
+       * snorm only.
+       */
+      return inverted && snorm;
+
+   case BLEND_FACTOR_CONSTANT_COLOR:
+   case BLEND_FACTOR_CONSTANT_ALPHA:
+      /* Constant colours are not yet clamped */
+      return true;
+
+   case BLEND_FACTOR_SRC_ALPHA_SATURATE:
+      /* For unorm, this is in bounds (and hence so is its complement). For
+       * snorm, it may not be.
+       */
+      return snorm;
+   }
+
+   unreachable("invalid blend factor");
+}
+
+static nir_ssa_def *
 nir_blend_factor(
    nir_builder *b,
    nir_ssa_def *raw_scalar,
    nir_ssa_def *src, nir_ssa_def *src1, nir_ssa_def *dst, nir_ssa_def *bconst,
    unsigned chan,
    enum blend_factor factor,
-   bool inverted)
+   bool inverted,
+   enum pipe_format format)
 {
    nir_ssa_def *f =
       nir_blend_factor_value(b, src, src1, dst, bconst, chan, factor);
 
    if (inverted)
       f = nir_fadd_imm(b, nir_fneg(b, f), 1.0);
+
+   if (should_clamp_factor(factor, inverted, util_format_is_snorm(format)))
+      f = nir_fsat_to_format(b, f, format);
 
    return nir_fmul(b, raw_scalar, f);
 }
@@ -163,37 +225,37 @@ static nir_ssa_def *
 nir_logicop_func(
    nir_builder *b,
    unsigned func,
-   nir_ssa_def *src, nir_ssa_def *dst)
+   nir_ssa_def *src, nir_ssa_def *dst, nir_ssa_def *bitmask)
 {
    switch (func) {
    case PIPE_LOGICOP_CLEAR:
       return nir_imm_ivec4(b, 0, 0, 0, 0);
    case PIPE_LOGICOP_NOR:
-      return nir_inot(b, nir_ior(b, src, dst));
+      return nir_ixor(b, nir_ior(b, src, dst), bitmask);
    case PIPE_LOGICOP_AND_INVERTED:
-      return nir_iand(b, nir_inot(b, src), dst);
+      return nir_iand(b, nir_ixor(b, src, bitmask), dst);
    case PIPE_LOGICOP_COPY_INVERTED:
-      return nir_inot(b, src);
+      return nir_ixor(b, src, bitmask);
    case PIPE_LOGICOP_AND_REVERSE:
-      return nir_iand(b, src, nir_inot(b, dst));
+      return nir_iand(b, src, nir_ixor(b, dst, bitmask));
    case PIPE_LOGICOP_INVERT:
-      return nir_inot(b, dst);
+      return nir_ixor(b, dst, bitmask);
    case PIPE_LOGICOP_XOR:
       return nir_ixor(b, src, dst);
    case PIPE_LOGICOP_NAND:
-      return nir_inot(b, nir_iand(b, src, dst));
+      return nir_ixor(b, nir_iand(b, src, dst), bitmask);
    case PIPE_LOGICOP_AND:
       return nir_iand(b, src, dst);
    case PIPE_LOGICOP_EQUIV:
-      return nir_inot(b, nir_ixor(b, src, dst));
+      return nir_ixor(b, nir_ixor(b, src, dst), bitmask);
    case PIPE_LOGICOP_NOOP:
       return dst;
    case PIPE_LOGICOP_OR_INVERTED:
-      return nir_ior(b, nir_inot(b, src), dst);
+      return nir_ior(b, nir_ixor(b, src, bitmask), dst);
    case PIPE_LOGICOP_COPY:
       return src;
    case PIPE_LOGICOP_OR_REVERSE:
-      return nir_ior(b, src, nir_inot(b, dst));
+      return nir_ior(b, src, nir_ixor(b, dst, bitmask));
    case PIPE_LOGICOP_OR:
       return nir_ior(b, src, dst);
    case PIPE_LOGICOP_SET:
@@ -215,6 +277,17 @@ nir_blend_logicop(
    enum pipe_format format = options->format[rt];
    const struct util_format_description *format_desc =
       util_format_description(format);
+
+   /* From section 17.3.9 ("Logical Operation") of the OpenGL 4.6 core spec:
+    *
+    *    Logical operation has no effect on a floating-point destination color
+    *    buffer, or when FRAMEBUFFER_SRGB is enabled and the value of
+    *    FRAMEBUFFER_ATTACHMENT_COLOR_ENCODING for the framebuffer attachment
+    *    corresponding to the destination buffer is SRGB (see section 9.2.3).
+    *    However, if logical operation is enabled, blending is still disabled.
+    */
+   if (util_format_is_float(format) || util_format_is_srgb(format))
+      return src;
 
    if (bit_size != 32) {
       src = nir_f2f32(b, src);
@@ -238,19 +311,18 @@ nir_blend_logicop(
       assert(util_format_is_pure_integer(format));
    }
 
-   nir_ssa_def *out = nir_logicop_func(b, options->logicop_func, src, dst);
+   nir_const_value mask[4];
+   for (int i = 0; i < 4; ++i)
+      mask[i] = nir_const_value_for_int(BITFIELD_MASK(bits[i]), 32);
 
-   if (bits[0] < 32) {
-       nir_const_value mask[4];
-       for (int i = 0; i < 4; ++i)
-           mask[i] = nir_const_value_for_int((1u << bits[i]) - 1, 32);
-
-       out = nir_iand(b, out, nir_build_imm(b, 4, 32, mask));
-   }
+   nir_ssa_def *out = nir_logicop_func(b, options->logicop_func, src, dst,
+                                       nir_build_imm(b, 4, 32, mask));
 
    if (util_format_is_unorm(format)) {
       out = nir_format_unorm_to_float(b, out, bits);
    } else if (util_format_is_snorm(format)) {
+      /* Sign extend before converting so the i2f in snorm_to_float works */
+      out = nir_format_sign_extend_ivec(b, out, bits);
       out = nir_format_snorm_to_float(b, out, bits);
    } else {
       assert(util_format_is_pure_integer(format));
@@ -262,11 +334,11 @@ nir_blend_logicop(
    return out;
 }
 
-static nir_ssa_def *
-nir_fsat_signed(nir_builder *b, nir_ssa_def *x)
+static bool
+channel_exists(const struct util_format_description *desc, unsigned i)
 {
-   return nir_fclamp(b, x, nir_imm_floatN_t(b, -1.0, x->bit_size),
-                           nir_imm_floatN_t(b, +1.0, x->bit_size));
+   return (i < desc->nr_channels) &&
+          desc->channel[i].type != UTIL_FORMAT_TYPE_VOID;
 }
 
 /* Given a blend state, the source color, and the destination color,
@@ -305,25 +377,29 @@ nir_blend(
     *     [-1, 1] respectively for an unsigned normalized or signed normalized
     *     color buffer prior to evaluating the blend equation. If the color
     *     buffer is floating-point, no clamping occurs.
+    *
+    * Blend factors are clamped at the time of their use to ensure we properly
+    * clamp negative constant colours with signed normalized formats and
+    * ONE_MINUS_CONSTANT_* factors. Notice that -1 is in [-1, 1] but 1 - (-1) =
+    * 2 is not in [-1, 1] and should be clamped to 1.
     */
-   if (util_format_is_unorm(format))
-      src = nir_fsat(b, src);
-   else if (util_format_is_snorm(format))
-      src = nir_fsat_signed(b, src);
+   src = nir_fsat_to_format(b, src, format);
+
+   if (src1)
+      src1 = nir_fsat_to_format(b, src1, format);
 
    /* DST_ALPHA reads back 1.0 if there is no alpha channel */
    const struct util_format_description *desc =
       util_format_description(format);
 
-   if (desc->nr_channels < 4) {
-      nir_ssa_def *zero = nir_imm_floatN_t(b, 0.0, dst->bit_size);
-      nir_ssa_def *one = nir_imm_floatN_t(b, 1.0, dst->bit_size);
+   nir_ssa_def *zero = nir_imm_floatN_t(b, 0.0, dst->bit_size);
+   nir_ssa_def *one = nir_imm_floatN_t(b, 1.0, dst->bit_size);
 
-      dst = nir_vec4(b, nir_channel(b, dst, 0),
-            desc->nr_channels > 1 ? nir_channel(b, dst, 1) : zero,
-            desc->nr_channels > 2 ? nir_channel(b, dst, 2) : zero,
-            desc->nr_channels > 3 ? nir_channel(b, dst, 3) : one);
-   }
+   dst = nir_vec4(b,
+         channel_exists(desc, 0) ? nir_channel(b, dst, 0) : zero,
+         channel_exists(desc, 1) ? nir_channel(b, dst, 1) : zero,
+         channel_exists(desc, 2) ? nir_channel(b, dst, 2) : zero,
+         channel_exists(desc, 3) ? nir_channel(b, dst, 3) : one);
 
    /* We blend per channel and recombine later */
    nir_ssa_def *channels[4];
@@ -340,12 +416,12 @@ nir_blend(
          psrc = nir_blend_factor(
                    b, psrc,
                    src, src1, dst, bconst, c,
-                   chan.src_factor, chan.invert_src_factor);
+                   chan.src_factor, chan.invert_src_factor, format);
 
          pdst = nir_blend_factor(
                    b, pdst,
                    src, src1, dst, bconst, c,
-                   chan.dst_factor, chan.invert_dst_factor);
+                   chan.dst_factor, chan.invert_dst_factor, format);
       }
 
       channels[c] = nir_blend_func(b, chan.func, psrc, pdst);
@@ -427,8 +503,9 @@ nir_lower_blend_store(nir_builder *b, nir_intrinsic_instr *store,
       blended = nir_blend(b, options, rt, src, options->src1, dst);
    }
 
-   /* Apply a colormask */
-   blended = nir_color_mask(b, options->rt[rt].colormask, blended, dst);
+   /* Apply a colormask if necessary */
+   if (options->rt[rt].colormask != BITFIELD_MASK(4))
+      blended = nir_color_mask(b, options->rt[rt].colormask, blended, dst);
 
    const unsigned num_components = glsl_get_vector_elements(var->type);
 
@@ -436,11 +513,10 @@ nir_lower_blend_store(nir_builder *b, nir_intrinsic_instr *store,
    blended = nir_trim_vector(b, blended, num_components);
 
    /* Grow or shrink the store destination as needed */
-   assert(nir_intrinsic_write_mask(store) ==
-          nir_component_mask(store->num_components));
    store->num_components = num_components;
    store->dest.ssa.num_components = num_components;
-   nir_intrinsic_set_write_mask(store, nir_component_mask(num_components));
+   nir_intrinsic_set_write_mask(store, nir_intrinsic_write_mask(store) &
+                                       nir_component_mask(num_components));
 
    /* Write out the final color instead of the input */
    nir_instr_rewrite_src_ssa(&store->instr, &store->src[1], blended);

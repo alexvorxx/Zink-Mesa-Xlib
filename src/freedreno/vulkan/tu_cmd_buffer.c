@@ -138,10 +138,10 @@ tu6_emit_flushes(struct tu_cmd_buffer *cmd_buffer,
    enum tu_cmd_flush_bits flushes = cache->flush_bits;
    cache->flush_bits = 0;
 
-   if (unlikely(cmd_buffer->device->physical_device->instance->debug_flags & TU_DEBUG_FLUSHALL))
+   if (TU_DEBUG(FLUSHALL))
       flushes |= TU_CMD_FLAG_ALL_FLUSH | TU_CMD_FLAG_ALL_INVALIDATE;
 
-   if (unlikely(cmd_buffer->device->physical_device->instance->debug_flags & TU_DEBUG_SYNCDRAW))
+   if (TU_DEBUG(SYNCDRAW))
       flushes |= TU_CMD_FLAG_WAIT_MEM_WRITES |
                  TU_CMD_FLAG_WAIT_FOR_IDLE |
                  TU_CMD_FLAG_WAIT_FOR_ME;
@@ -193,7 +193,7 @@ void
 tu_emit_cache_flush_renderpass(struct tu_cmd_buffer *cmd_buffer)
 {
    if (!cmd_buffer->state.renderpass_cache.flush_bits &&
-       likely(!cmd_buffer->device->physical_device->instance->debug_flags))
+       likely(!tu_env.debug))
       return;
    tu6_emit_flushes(cmd_buffer, &cmd_buffer->draw_cs,
                     &cmd_buffer->state.renderpass_cache);
@@ -682,7 +682,7 @@ static bool
 use_sysmem_rendering(struct tu_cmd_buffer *cmd,
                      struct tu_renderpass_result **autotune_result)
 {
-   if (unlikely(cmd->device->physical_device->instance->debug_flags & TU_DEBUG_SYSMEM))
+   if (TU_DEBUG(SYSMEM))
       return true;
 
    /* can't fit attachments into gmem */
@@ -716,7 +716,7 @@ use_sysmem_rendering(struct tu_cmd_buffer *cmd,
        !cmd->state.tiling->binning_possible)
       return true;
 
-   if (unlikely(cmd->device->physical_device->instance->debug_flags & TU_DEBUG_GMEM))
+   if (TU_DEBUG(GMEM))
       return false;
 
    bool use_sysmem = tu_autotune_use_bypass(&cmd->device->autotune,
@@ -1847,7 +1847,7 @@ tu_BeginCommandBuffer(VkCommandBuffer commandBuffer,
             vk_find_struct_const(pBeginInfo->pInheritanceInfo->pNext,
                                  COMMAND_BUFFER_INHERITANCE_RENDERING_INFO);
 
-         if (unlikely(cmd_buffer->device->instance->debug_flags & TU_DEBUG_DYNAMIC)) {
+         if (TU_DEBUG(DYNAMIC)) {
             rendering_info =
                vk_get_command_buffer_inheritance_rendering_info(cmd_buffer->vk.level,
                                                                 pBeginInfo);
@@ -4282,7 +4282,7 @@ tu_CmdBeginRenderPass2(VkCommandBuffer commandBuffer,
 {
    TU_FROM_HANDLE(tu_cmd_buffer, cmd, commandBuffer);
 
-   if (unlikely(cmd->device->instance->debug_flags & TU_DEBUG_DYNAMIC)) {
+   if (TU_DEBUG(DYNAMIC)) {
       vk_common_CmdBeginRenderPass2(commandBuffer, pRenderPassBegin,
                                     pSubpassBeginInfo);
       return;
@@ -4405,7 +4405,7 @@ tu_CmdBeginRendering(VkCommandBuffer commandBuffer,
       }
    }
 
-   if (unlikely(cmd->device->instance->debug_flags & TU_DEBUG_DYNAMIC)) {
+   if (TU_DEBUG(DYNAMIC)) {
       const VkRenderingSelfDependencyInfoMESA *self_dependency =
          vk_find_struct_const(pRenderingInfo->pNext, RENDERING_SELF_DEPENDENCY_INFO_MESA);
       if (self_dependency &&
@@ -4496,7 +4496,7 @@ tu_CmdNextSubpass2(VkCommandBuffer commandBuffer,
 {
    TU_FROM_HANDLE(tu_cmd_buffer, cmd, commandBuffer);
 
-   if (unlikely(cmd->device->instance->debug_flags & TU_DEBUG_DYNAMIC)) {
+   if (TU_DEBUG(DYNAMIC)) {
       vk_common_CmdNextSubpass2(commandBuffer, pSubpassBeginInfo,
                                 pSubpassEndInfo);
       return;
@@ -5860,7 +5860,7 @@ tu_CmdEndRenderPass2(VkCommandBuffer commandBuffer,
 {
    TU_FROM_HANDLE(tu_cmd_buffer, cmd_buffer, commandBuffer);
 
-   if (unlikely(cmd_buffer->device->instance->debug_flags & TU_DEBUG_DYNAMIC)) {
+   if (TU_DEBUG(DYNAMIC)) {
       vk_common_CmdEndRenderPass2(commandBuffer, pSubpassEndInfo);
       return;
    }

@@ -325,7 +325,7 @@ static char *drm_get_id_path_tag_for_fd(int fd)
    return tag;
 }
 
-int loader_get_user_preferred_fd(int default_fd, bool *different_device)
+bool loader_get_user_preferred_fd(int *fd_render_gpu, int *original_fd)
 {
    const char *dri_prime = getenv("DRI_PRIME");
    char *default_tag, *prime = NULL;
@@ -341,14 +341,12 @@ int loader_get_user_preferred_fd(int default_fd, bool *different_device)
       prime = loader_get_dri_config_device_id();
 #endif
 
-   if (prime == NULL) {
-      *different_device = false;
-      return default_fd;
-   } else {
+   if (prime == NULL)
+      goto no_prime_gpu_offloading;
+   else
       prime_is_vid_did = sscanf(prime, "%hx:%hx", &vendor_id, &device_id) == 2;
-   }
 
-   default_tag = drm_get_id_path_tag_for_fd(default_fd);
+   default_tag = drm_get_id_path_tag_for_fd(*fd_render_gpu);
    if (default_tag == NULL)
       goto err;
 
@@ -394,20 +392,30 @@ int loader_get_user_preferred_fd(int default_fd, bool *different_device)
    if (fd < 0)
       goto err;
 
-   close(default_fd);
-
-   *different_device = !!strcmp(default_tag, prime);
+   bool is_render_and_display_gpu_diff = !!strcmp(default_tag, prime);
+   if (original_fd) {
+      if (is_render_and_display_gpu_diff) {
+         *original_fd = *fd_render_gpu;
+         *fd_render_gpu = fd;
+      } else {
+         *original_fd = *fd_render_gpu;
+         close(fd);
+      }
+   } else {
+      close(*fd_render_gpu);
+      *fd_render_gpu = fd;
+   }
 
    free(default_tag);
    free(prime);
-   return fd;
-
+   return is_render_and_display_gpu_diff;
  err:
-   *different_device = false;
-
    free(default_tag);
    free(prime);
-   return default_fd;
+ no_prime_gpu_offloading:
+   if (original_fd)
+      *original_fd = *fd_render_gpu;
+   return false;
 }
 #else
 int
@@ -422,10 +430,10 @@ loader_get_render_node(dev_t device)
    return NULL;
 }
 
-int loader_get_user_preferred_fd(int default_fd, bool *different_device)
-{
-   *different_device = false;
-   return default_fd;
+bool loader_get_user_preferred_fd(int *fd_render_gpu, int *original_fd)
+   if (original_fd)
+      *original_fd = *fd_render_gpu;
+   return false;
 }
 #endif
 

@@ -62,10 +62,36 @@ struct gl_buffer_object;
 struct _mesa_HashTable;
 struct _glapi_table;
 
+/* Used by both glthread and gl_context. */
+union gl_vertex_format_user {
+   struct {
+      GLenum16 Type;        /**< datatype: GL_FLOAT, GL_INT, etc */
+      bool Bgra;            /**< true if GL_BGRA, else GL_RGBA */
+      uint8_t Size:5;       /**< components per element (1,2,3,4) */
+      bool Normalized:1;    /**< GL_ARB_vertex_program */
+      bool Integer:1;       /**< Integer-valued? */
+      bool Doubles:1;       /**< double values are not converted to floats */
+   };
+   uint32_t All;
+};
+
 struct glthread_attrib_binding {
    struct gl_buffer_object *buffer; /**< where non-VBO data was uploaded */
    int offset;                      /**< offset to uploaded non-VBO data */
    const void *original_pointer;    /**< restore this pointer after the draw */
+};
+
+struct glthread_attrib {
+   /* Per attrib: */
+   uint8_t ElementSize;       /**< max 32 */
+   uint8_t BufferIndex;       /**< Referring to Attrib[BufferIndex]. */
+   uint16_t RelativeOffset;   /**< max 0xffff in Mesa */
+
+   /* Per buffer binding: */
+   GLuint Divisor;
+   int16_t Stride;            /**< max 2048 */
+   int8_t EnabledAttribCount; /**< Number of enabled attribs using this buffer. */
+   const void *Pointer;
 };
 
 struct glthread_vao {
@@ -78,18 +104,7 @@ struct glthread_vao {
    GLbitfield UserPointerMask; /**< Bitmask of buffer bindings. */
    GLbitfield NonZeroDivisorMask; /**< Bitmask of buffer bindings. */
 
-   struct {
-      /* Per attrib: */
-      GLuint ElementSize;
-      GLuint RelativeOffset;
-      GLuint BufferIndex; /**< Referring to Attrib[BufferIndex]. */
-
-      /* Per buffer binding: */
-      GLsizei Stride;
-      GLuint Divisor;
-      int EnabledAttribCount; /**< Number of enabled attribs using this buffer. */
-      const void *Pointer;
-   } Attrib[VERT_ATTRIB_MAX];
+   struct glthread_attrib Attrib[VERT_ATTRIB_MAX];
 };
 
 /** A single batch of commands queued up for execution. */
@@ -189,9 +204,6 @@ struct glthread_state
    unsigned upload_offset;
    int upload_buffer_private_refcount;
 
-   /** Caps. */
-   GLboolean SupportsBufferUploads;
-
    /** Primitive restart state. */
    bool PrimitiveRestart;
    bool PrimitiveRestartFixedIndex;
@@ -274,6 +286,7 @@ void _mesa_glthread_init_dispatch7(struct gl_context *ctx,
 void _mesa_glthread_flush_batch(struct gl_context *ctx);
 void _mesa_glthread_finish(struct gl_context *ctx);
 void _mesa_glthread_finish_before(struct gl_context *ctx, const char *func);
+void _mesa_glthread_release_upload_buffer(struct gl_context *ctx);
 void _mesa_glthread_upload(struct gl_context *ctx, const void *data,
                            GLsizeiptr size, unsigned *out_offset,
                            struct gl_buffer_object **out_buffer,

@@ -688,10 +688,9 @@ struct radv_meta_state {
       VkPipeline lbvh_generate_ir_pipeline;
       VkPipelineLayout ploc_p_layout;
       VkPipeline ploc_pipeline;
-      VkPipelineLayout convert_leaf_p_layout;
-      VkPipeline convert_leaf_pipeline;
-      VkPipelineLayout convert_internal_p_layout;
-      VkPipeline convert_internal_pipeline;
+      VkPipeline ploc_extended_pipeline;
+      VkPipelineLayout encode_p_layout;
+      VkPipeline encode_pipeline;
       VkPipelineLayout copy_p_layout;
       VkPipeline copy_pipeline;
 
@@ -773,6 +772,16 @@ struct radv_queue_state {
    struct radeon_cmdbuf *continue_preamble_cs;
    struct radeon_cmdbuf *gang_wait_preamble_cs;
    struct radeon_cmdbuf *gang_wait_postamble_cs;
+
+   /* the uses_shadow_regs here will be set only for general queue */
+   bool uses_shadow_regs;
+   /* register state is saved in shadowed_regs buffer */
+   struct radeon_winsys_bo *shadowed_regs;
+   /* shadow regs preamble ib. This will be the first preamble ib.
+    * This ib has the packets to start register shadowing.
+    */
+   struct radeon_winsys_bo *shadow_regs_ib;
+   uint32_t shadow_regs_ib_size_dw;
 };
 
 struct radv_queue {
@@ -996,9 +1005,6 @@ struct radv_device {
    /* Whether per-vertex VRS is forced. */
    bool force_vrs_enabled;
 
-   /* Whether shaders created through application entrypoints are considered internal. */
-   bool app_shaders_internal;
-
    simple_mtx_t pstate_mtx;
    unsigned pstate_cnt;
 
@@ -1013,6 +1019,8 @@ struct radv_device {
    struct radeon_cmdbuf **perf_counter_lock_cs;
 
    bool uses_device_generated_commands;
+
+   bool uses_shadow_regs;
 };
 
 bool radv_device_set_pstate(struct radv_device *device, bool enable);
@@ -1185,7 +1193,8 @@ enum radv_dynamic_state_bits {
    RADV_DYNAMIC_COLOR_BLEND_ENABLE = 1ull << 42,
    RADV_DYNAMIC_RASTERIZATION_SAMPLES = 1ull << 43,
    RADV_DYNAMIC_LINE_RASTERIZATION_MODE = 1ull << 44,
-   RADV_DYNAMIC_ALL = (1ull << 45) - 1,
+   RADV_DYNAMIC_COLOR_BLEND_EQUATION = 1ull << 45,
+   RADV_DYNAMIC_ALL = (1ull << 46) - 1,
 };
 
 enum radv_cmd_dirty_bits {
@@ -1236,14 +1245,16 @@ enum radv_cmd_dirty_bits {
    RADV_CMD_DIRTY_DYNAMIC_COLOR_BLEND_ENABLE = 1ull << 42,
    RADV_CMD_DIRTY_DYNAMIC_RASTERIZATION_SAMPLES = 1ull << 43,
    RADV_CMD_DIRTY_DYNAMIC_LINE_RASTERIZATION_MODE = 1ull << 44,
-   RADV_CMD_DIRTY_DYNAMIC_ALL = (1ull << 45) - 1,
-   RADV_CMD_DIRTY_PIPELINE = 1ull << 45,
-   RADV_CMD_DIRTY_INDEX_BUFFER = 1ull << 46,
-   RADV_CMD_DIRTY_FRAMEBUFFER = 1ull << 47,
-   RADV_CMD_DIRTY_VERTEX_BUFFER = 1ull << 48,
-   RADV_CMD_DIRTY_STREAMOUT_BUFFER = 1ull << 49,
-   RADV_CMD_DIRTY_GUARDBAND = 1ull << 50,
-   RADV_CMD_DIRTY_RBPLUS = 1ull << 51,
+   RADV_CMD_DIRTY_DYNAMIC_COLOR_BLEND_EQUATION = 1ull << 45,
+   RADV_CMD_DIRTY_DYNAMIC_ALL = (1ull << 46) - 1,
+   RADV_CMD_DIRTY_PIPELINE = 1ull << 46,
+   RADV_CMD_DIRTY_INDEX_BUFFER = 1ull << 47,
+   RADV_CMD_DIRTY_FRAMEBUFFER = 1ull << 48,
+   RADV_CMD_DIRTY_VERTEX_BUFFER = 1ull << 49,
+   RADV_CMD_DIRTY_STREAMOUT_BUFFER = 1ull << 50,
+   RADV_CMD_DIRTY_GUARDBAND = 1ull << 51,
+   RADV_CMD_DIRTY_RBPLUS = 1ull << 52,
+   RADV_CMD_DIRTY_NGG_QUERY = 1ull << 53,
 };
 
 enum radv_cmd_flush_bits {
@@ -1697,6 +1708,15 @@ void si_write_scissors(struct radeon_cmdbuf *cs, int count, const VkRect2D *scis
 void si_write_guardband(struct radeon_cmdbuf *cs, int count, const VkViewport *viewports,
                         unsigned rast_prim, unsigned polygon_mode, float line_width);
 
+VkResult radv_create_shadow_regs_preamble(const struct radv_device *device,
+                                          struct radv_queue_state *queue_state);
+void radv_destroy_shadow_regs_preamble(struct radv_queue_state *queue_state,
+                                       struct radeon_winsys *ws);
+void radv_emit_shadow_regs_preamble(struct radeon_cmdbuf *cs, const struct radv_device *device,
+                                    struct radv_queue_state *queue_state);
+VkResult radv_init_shadowed_regs_buffer_state(const struct radv_device *device,
+                                              struct radv_queue *queue);
+
 uint32_t si_get_ia_multi_vgt_param(struct radv_cmd_buffer *cmd_buffer, bool instanced_draw,
                                    bool indirect_draw, bool count_from_stream_output,
                                    uint32_t draw_vertex_count, unsigned topology,
@@ -2019,6 +2039,7 @@ struct radv_pipeline {
    struct radv_pipeline_slab *slab;
    struct radeon_winsys_bo *slab_bo;
 
+   bool is_internal;
    bool need_indirect_descriptor_sets;
    struct radv_shader *shaders[MESA_VULKAN_SHADER_STAGES];
    struct radv_shader *gs_copy_shader;
@@ -2049,56 +2070,58 @@ struct radv_pipeline {
 struct radv_graphics_pipeline {
    struct radv_pipeline base;
 
-   VkShaderStageFlags active_stages;
-
-   struct radv_dynamic_state dynamic_state;
-
-   struct radv_vs_input_state vs_input_state;
-
-   uint64_t dynamic_states;
-   struct radv_multisample_state ms;
-   struct radv_vrs_state vrs;
-   unsigned esgs_ring_size;
-   unsigned gsvs_ring_size;
-   uint32_t vtx_base_sgpr;
-   struct radv_ia_multi_vgt_param_helpers ia_multi_vgt_param;
-   uint8_t vtx_emit_num;
-   uint64_t needed_dynamic_state;
-   unsigned cb_blend_control[MAX_RTS];
-   unsigned sx_mrt_blend_opt[MAX_RTS];
-   uint32_t binding_stride[MAX_VBS];
-   uint8_t attrib_bindings[MAX_VERTEX_ATTRIBS];
-   uint32_t attrib_ends[MAX_VERTEX_ATTRIBS];
-   uint32_t attrib_index_offset[MAX_VERTEX_ATTRIBS];
-   uint8_t last_vertex_attrib_bit;
-   uint8_t next_vertex_stage : 8;
-   uint32_t vb_desc_usage_mask;
-   uint32_t vb_desc_alloc_size;
-   uint32_t pa_sc_mode_cntl_1;
-   uint32_t db_render_control;
-
-   /* Last pre-PS API stage */
-   gl_shader_stage last_vgt_api_stage;
-   struct radv_userdata_info *last_vgt_api_stage_locs;
-
-   /* Used for rbplus */
-   uint32_t col_format_non_compacted;
-
-   bool mrt0_is_dual_src;
-   uint8_t need_src_alpha;
-
    bool uses_drawid;
    bool uses_baseinstance;
    bool use_per_attribute_vb_descs;
    bool can_use_simple_input;
    bool uses_user_sample_locations;
-
+   bool need_null_export_workaround;
    /* Whether the pipeline forces per-vertex VRS (GFX10.3+). */
    bool force_vrs_per_vertex;
 
    /* Whether the pipeline uses NGG (GFX10+). */
    bool is_ngg;
    bool has_ngg_culling;
+   /* shortcuts for pipeline bind */
+   bool has_pv_sgpr;
+   bool has_streamout;
+   bool has_dynamic_samples;
+   bool has_sample_positions;
+
+   uint8_t vtx_emit_num;
+
+   unsigned esgs_ring_size;
+   unsigned gsvs_ring_size;
+   uint32_t vtx_base_sgpr;
+   uint64_t dynamic_states;
+   uint64_t needed_dynamic_state;
+
+   VkShaderStageFlags active_stages;
+
+   /* Used for rbplus */
+   uint32_t col_format_non_compacted;
+
+   struct radv_dynamic_state dynamic_state;
+
+   struct radv_vs_input_state vs_input_state;
+
+   struct radv_multisample_state ms;
+   struct radv_vrs_state vrs;
+   struct radv_ia_multi_vgt_param_helpers ia_multi_vgt_param;
+   uint32_t binding_stride[MAX_VBS];
+   uint8_t attrib_bindings[MAX_VERTEX_ATTRIBS];
+   uint32_t attrib_ends[MAX_VERTEX_ATTRIBS];
+   uint32_t attrib_index_offset[MAX_VERTEX_ATTRIBS];
+   uint32_t vb_desc_usage_mask;
+   uint32_t vb_desc_alloc_size;
+   uint8_t last_vertex_attrib_bit;
+   uint8_t next_vertex_stage;
+   uint32_t pa_sc_mode_cntl_1;
+   uint32_t db_render_control;
+
+   /* Last pre-PS API stage */
+   gl_shader_stage last_vgt_api_stage;
+   struct radv_userdata_info *last_vgt_api_stage_locs;
 
    /* Not NULL if graphics pipeline uses streamout. */
    struct radv_shader *streamout_shader;
@@ -2626,6 +2649,9 @@ struct radv_image_view {
     * This has a few differences for cube maps (e.g. type).
     */
    union radv_descriptor storage_descriptor;
+
+   /* Block-compressed image views on GFX10+. */
+   struct ac_surf_nbc_view nbc_view;
 };
 
 struct radv_image_create_info {
@@ -2822,6 +2848,7 @@ struct radv_shader_info;
 void radv_nir_shader_info_pass(struct radv_device *device, const struct nir_shader *nir,
                                const struct radv_pipeline_layout *layout,
                                const struct radv_pipeline_key *pipeline_key,
+                               const enum radv_pipeline_type pipeline_type,
                                struct radv_shader_info *info);
 
 void radv_nir_shader_info_init(struct radv_shader_info *info);
@@ -3205,6 +3232,160 @@ si_translate_blend_logic_op(VkLogicOp op)
       unreachable("Unhandled logic op");
    }
 }
+
+static inline uint32_t
+si_translate_blend_function(VkBlendOp op)
+{
+   switch (op) {
+   case VK_BLEND_OP_ADD:
+      return V_028780_COMB_DST_PLUS_SRC;
+   case VK_BLEND_OP_SUBTRACT:
+      return V_028780_COMB_SRC_MINUS_DST;
+   case VK_BLEND_OP_REVERSE_SUBTRACT:
+      return V_028780_COMB_DST_MINUS_SRC;
+   case VK_BLEND_OP_MIN:
+      return V_028780_COMB_MIN_DST_SRC;
+   case VK_BLEND_OP_MAX:
+      return V_028780_COMB_MAX_DST_SRC;
+   default:
+      return 0;
+   }
+}
+
+static inline uint32_t
+si_translate_blend_factor(enum amd_gfx_level gfx_level, VkBlendFactor factor)
+{
+   switch (factor) {
+   case VK_BLEND_FACTOR_ZERO:
+      return V_028780_BLEND_ZERO;
+   case VK_BLEND_FACTOR_ONE:
+      return V_028780_BLEND_ONE;
+   case VK_BLEND_FACTOR_SRC_COLOR:
+      return V_028780_BLEND_SRC_COLOR;
+   case VK_BLEND_FACTOR_ONE_MINUS_SRC_COLOR:
+      return V_028780_BLEND_ONE_MINUS_SRC_COLOR;
+   case VK_BLEND_FACTOR_DST_COLOR:
+      return V_028780_BLEND_DST_COLOR;
+   case VK_BLEND_FACTOR_ONE_MINUS_DST_COLOR:
+      return V_028780_BLEND_ONE_MINUS_DST_COLOR;
+   case VK_BLEND_FACTOR_SRC_ALPHA:
+      return V_028780_BLEND_SRC_ALPHA;
+   case VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA:
+      return V_028780_BLEND_ONE_MINUS_SRC_ALPHA;
+   case VK_BLEND_FACTOR_DST_ALPHA:
+      return V_028780_BLEND_DST_ALPHA;
+   case VK_BLEND_FACTOR_ONE_MINUS_DST_ALPHA:
+      return V_028780_BLEND_ONE_MINUS_DST_ALPHA;
+   case VK_BLEND_FACTOR_CONSTANT_COLOR:
+      return gfx_level >= GFX11 ? V_028780_BLEND_CONSTANT_COLOR_GFX11
+                                : V_028780_BLEND_CONSTANT_COLOR_GFX6;
+   case VK_BLEND_FACTOR_ONE_MINUS_CONSTANT_COLOR:
+      return gfx_level >= GFX11 ? V_028780_BLEND_ONE_MINUS_CONSTANT_COLOR_GFX11
+                                 : V_028780_BLEND_ONE_MINUS_CONSTANT_COLOR_GFX6;
+   case VK_BLEND_FACTOR_CONSTANT_ALPHA:
+      return gfx_level >= GFX11 ? V_028780_BLEND_CONSTANT_ALPHA_GFX11
+                                 : V_028780_BLEND_CONSTANT_ALPHA_GFX6;
+   case VK_BLEND_FACTOR_ONE_MINUS_CONSTANT_ALPHA:
+      return gfx_level >= GFX11 ? V_028780_BLEND_ONE_MINUS_CONSTANT_ALPHA_GFX11
+                                 : V_028780_BLEND_ONE_MINUS_CONSTANT_ALPHA_GFX6;
+   case VK_BLEND_FACTOR_SRC_ALPHA_SATURATE:
+      return V_028780_BLEND_SRC_ALPHA_SATURATE;
+   case VK_BLEND_FACTOR_SRC1_COLOR:
+      return gfx_level >= GFX11 ? V_028780_BLEND_SRC1_COLOR_GFX11 : V_028780_BLEND_SRC1_COLOR_GFX6;
+   case VK_BLEND_FACTOR_ONE_MINUS_SRC1_COLOR:
+      return gfx_level >= GFX11 ? V_028780_BLEND_INV_SRC1_COLOR_GFX11
+                                 : V_028780_BLEND_INV_SRC1_COLOR_GFX6;
+   case VK_BLEND_FACTOR_SRC1_ALPHA:
+      return gfx_level >= GFX11 ? V_028780_BLEND_SRC1_ALPHA_GFX11 : V_028780_BLEND_SRC1_ALPHA_GFX6;
+   case VK_BLEND_FACTOR_ONE_MINUS_SRC1_ALPHA:
+      return gfx_level >= GFX11 ? V_028780_BLEND_INV_SRC1_ALPHA_GFX11
+                                 : V_028780_BLEND_INV_SRC1_ALPHA_GFX6;
+   default:
+      return 0;
+   }
+}
+
+static inline uint32_t
+si_translate_blend_opt_factor(VkBlendFactor factor, bool is_alpha)
+{
+   switch (factor) {
+   case VK_BLEND_FACTOR_ZERO:
+      return V_028760_BLEND_OPT_PRESERVE_NONE_IGNORE_ALL;
+   case VK_BLEND_FACTOR_ONE:
+      return V_028760_BLEND_OPT_PRESERVE_ALL_IGNORE_NONE;
+   case VK_BLEND_FACTOR_SRC_COLOR:
+      return is_alpha ? V_028760_BLEND_OPT_PRESERVE_A1_IGNORE_A0
+                      : V_028760_BLEND_OPT_PRESERVE_C1_IGNORE_C0;
+   case VK_BLEND_FACTOR_ONE_MINUS_SRC_COLOR:
+      return is_alpha ? V_028760_BLEND_OPT_PRESERVE_A0_IGNORE_A1
+                      : V_028760_BLEND_OPT_PRESERVE_C0_IGNORE_C1;
+   case VK_BLEND_FACTOR_SRC_ALPHA:
+      return V_028760_BLEND_OPT_PRESERVE_A1_IGNORE_A0;
+   case VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA:
+      return V_028760_BLEND_OPT_PRESERVE_A0_IGNORE_A1;
+   case VK_BLEND_FACTOR_SRC_ALPHA_SATURATE:
+      return is_alpha ? V_028760_BLEND_OPT_PRESERVE_ALL_IGNORE_NONE
+                      : V_028760_BLEND_OPT_PRESERVE_NONE_IGNORE_A0;
+   default:
+      return V_028760_BLEND_OPT_PRESERVE_NONE_IGNORE_NONE;
+   }
+}
+
+static inline uint32_t
+si_translate_blend_opt_function(VkBlendOp op)
+{
+   switch (op) {
+   case VK_BLEND_OP_ADD:
+      return V_028760_OPT_COMB_ADD;
+   case VK_BLEND_OP_SUBTRACT:
+      return V_028760_OPT_COMB_SUBTRACT;
+   case VK_BLEND_OP_REVERSE_SUBTRACT:
+      return V_028760_OPT_COMB_REVSUBTRACT;
+   case VK_BLEND_OP_MIN:
+      return V_028760_OPT_COMB_MIN;
+   case VK_BLEND_OP_MAX:
+      return V_028760_OPT_COMB_MAX;
+   default:
+      return V_028760_OPT_COMB_BLEND_DISABLED;
+   }
+}
+
+static inline bool
+si_blend_factor_uses_dst(VkBlendFactor factor)
+{
+   return factor == VK_BLEND_FACTOR_DST_COLOR || factor == VK_BLEND_FACTOR_DST_ALPHA ||
+          factor == VK_BLEND_FACTOR_SRC_ALPHA_SATURATE ||
+          factor == VK_BLEND_FACTOR_ONE_MINUS_DST_ALPHA ||
+          factor == VK_BLEND_FACTOR_ONE_MINUS_DST_COLOR;
+}
+
+static inline bool
+radv_is_dual_src(VkBlendFactor factor)
+{
+   switch (factor) {
+   case VK_BLEND_FACTOR_SRC1_COLOR:
+   case VK_BLEND_FACTOR_ONE_MINUS_SRC1_COLOR:
+   case VK_BLEND_FACTOR_SRC1_ALPHA:
+   case VK_BLEND_FACTOR_ONE_MINUS_SRC1_ALPHA:
+      return true;
+   default:
+      return false;
+   }
+}
+
+static inline void
+radv_normalize_blend_factor(VkBlendOp op, VkBlendFactor *src_factor, VkBlendFactor *dst_factor)
+{
+   if (op == VK_BLEND_OP_MIN || op == VK_BLEND_OP_MAX) {
+      *src_factor = VK_BLEND_FACTOR_ONE;
+      *dst_factor = VK_BLEND_FACTOR_ONE;
+   }
+}
+
+void si_blend_remove_dst(VkBlendOp *func, VkBlendFactor *src_factor, VkBlendFactor *dst_factor,
+                         VkBlendFactor expected_dst, VkBlendFactor replacement_src);
+
+bool radv_can_enable_dual_src(const struct vk_color_blend_attachment_state *att);
 
 uint32_t radv_get_tess_output_topology(const struct radv_graphics_pipeline *pipeline,
                                        VkTessellationDomainOrigin domain_origin);

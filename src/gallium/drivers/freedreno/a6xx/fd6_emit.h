@@ -65,7 +65,11 @@ enum fd6_state_id {
    FD6_GROUP_SCISSOR,
    FD6_GROUP_BLEND_COLOR,
    FD6_GROUP_SO,
-   FD6_GROUP_IBO,
+   FD6_GROUP_VS_BINDLESS,
+   FD6_GROUP_HS_BINDLESS,
+   FD6_GROUP_DS_BINDLESS,
+   FD6_GROUP_GS_BINDLESS,
+   FD6_GROUP_FS_BINDLESS,
 
    /*
     * Virtual state-groups, which don't turn into a CP_SET_DRAW_STATE group
@@ -73,6 +77,13 @@ enum fd6_state_id {
 
    FD6_GROUP_PROG_KEY,  /* Set for any state which could change shader key */
    FD6_GROUP_NON_GROUP, /* placeholder group for state emit in IB2, keep last */
+
+   /*
+    * Note that since we don't interleave draws and grids in the same batch,
+    * the compute vs draw state groups can overlap:
+    */
+   FD6_GROUP_CS_TEX = FD6_GROUP_VS_TEX,
+   FD6_GROUP_CS_BINDLESS = FD6_GROUP_VS_BINDLESS,
 };
 
 #define ENABLE_ALL                                                             \
@@ -133,6 +144,7 @@ fd6_state_take_group(struct fd6_state *state, struct fd_ringbuffer *stateobj,
          [FD6_GROUP_PROG_BINNING] = CP_SET_DRAW_STATE__0_BINNING,
          [FD6_GROUP_PROG_INTERP] = ENABLE_DRAW,
          [FD6_GROUP_FS_TEX] = ENABLE_DRAW,
+         [FD6_GROUP_FS_BINDLESS] = ENABLE_DRAW,
    };
    assert(state->num_groups < ARRAY_SIZE(state->groups));
    struct fd6_state_group *g = &state->groups[state->num_groups++];
@@ -310,11 +322,6 @@ fd6_gl2spacing(enum gl_tess_spacing spacing)
    }
 }
 
-void fd6_emit_textures(struct fd_context *ctx, struct fd_ringbuffer *ring,
-                       enum pipe_shader_type type,
-                       struct fd_texture_stateobj *tex,
-                       const struct ir3_shader_variant *v) assert_dt;
-
 void fd6_emit_3d_state(struct fd_ringbuffer *ring,
                        struct fd6_emit *emit) assert_dt;
 
@@ -324,7 +331,6 @@ void fd6_emit_cs_state(struct fd_context *ctx, struct fd_ringbuffer *ring,
 void fd6_emit_restore(struct fd_batch *batch, struct fd_ringbuffer *ring);
 
 void fd6_emit_init_screen(struct pipe_screen *pscreen);
-void fd6_emit_init(struct pipe_context *pctx);
 
 static inline void
 fd6_emit_ib(struct fd_ringbuffer *ring, struct fd_ringbuffer *target)

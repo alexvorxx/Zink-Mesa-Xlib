@@ -1019,7 +1019,9 @@ fs_visitor::nir_emit_alu(const fs_builder &bld, nir_alu_instr *instr,
          }
       }
 
-      for (unsigned i = 0; i < 4; i++) {
+      unsigned last_bit = util_last_bit(instr->dest.write_mask);
+
+      for (unsigned i = 0; i < last_bit; i++) {
          if (!(instr->dest.write_mask & (1 << i)))
             continue;
 
@@ -1037,7 +1039,7 @@ fs_visitor::nir_emit_alu(const fs_builder &bld, nir_alu_instr *instr,
        * any swizzling.
        */
       if (need_extra_copy) {
-         for (unsigned i = 0; i < 4; i++) {
+         for (unsigned i = 0; i < last_bit; i++) {
             if (!(instr->dest.write_mask & (1 << i)))
                continue;
 
@@ -3779,12 +3781,10 @@ fs_visitor::nir_emit_cs_intrinsic(const fs_builder &bld,
    case nir_intrinsic_shared_atomic_xor:
    case nir_intrinsic_shared_atomic_exchange:
    case nir_intrinsic_shared_atomic_comp_swap:
-      nir_emit_shared_atomic(bld, brw_aop_for_nir_intrinsic(instr), instr);
-      break;
    case nir_intrinsic_shared_atomic_fmin:
    case nir_intrinsic_shared_atomic_fmax:
    case nir_intrinsic_shared_atomic_fcomp_swap:
-      nir_emit_shared_atomic_float(bld, brw_aop_for_nir_intrinsic(instr), instr);
+      nir_emit_surface_atomic(bld, instr, brw_imm_ud(GFX7_BTI_SLM));
       break;
 
    case nir_intrinsic_load_shared: {
@@ -4272,8 +4272,8 @@ fs_visitor::nir_emit_intrinsic(const fs_builder &bld, nir_intrinsic_instr *instr
                   fs_reg(), srcs, SURFACE_LOGICAL_NUM_SRCS);
       } else {
          unsigned num_srcs = info->num_srcs;
-         int op = brw_aop_for_nir_intrinsic(instr);
-         if (op == BRW_AOP_INC || op == BRW_AOP_DEC) {
+         int op = lsc_aop_for_nir_intrinsic(instr);
+         if (op == LSC_OP_ATOMIC_INC || op == LSC_OP_ATOMIC_DEC) {
             assert(num_srcs == 4);
             num_srcs = 3;
          }
@@ -4462,6 +4462,50 @@ fs_visitor::nir_emit_intrinsic(const fs_builder &bld, nir_intrinsic_instr *instr
       fs_reg fence_regs[4] = {};
 
       const fs_builder ubld = bld.group(8, 0);
+
+      /* A memory barrier with acquire semantics requires us to
+       * guarantee that memory operations of the specified storage
+       * class sequenced-after the barrier aren't reordered before the
+       * barrier, nor before any previous atomic operation
+       * sequenced-before the barrier which may be synchronizing this
+       * acquire barrier with a prior release sequence.
+       *
+       * In order to guarantee the latter we must make sure that any
+       * such previous operation has completed execution before
+       * invalidating the relevant caches, since otherwise some cache
+       * could be polluted by a concurrent thread after its
+       * invalidation but before the previous atomic completes, which
+       * could lead to a violation of the expected memory ordering if
+       * a subsequent memory read hits the polluted cacheline, which
+       * would return a stale value read from memory before the
+       * completion of the atomic sequenced-before the barrier.
+       *
+       * This ordering inversion can be avoided trivially if the
+       * operations we need to order are all handled by a single
+       * in-order cache, since the flush implied by the memory fence
+       * occurs after any pending operations have completed, however
+       * that doesn't help us when dealing with multiple caches
+       * processing requests out of order, in which case we need to
+       * explicitly stall the EU until any pending memory operations
+       * have executed.
+       *
+       * Note that that might be somewhat heavy handed in some cases.
+       * In particular when this memory fence was inserted by
+       * spirv_to_nir() lowering an atomic with acquire semantics into
+       * an atomic+barrier sequence we could do a better job by
+       * synchronizing with respect to that one atomic *only*, but
+       * that would require additional information not currently
+       * available to the backend.
+       *
+       * XXX - Use an alternative workaround on IVB and ICL, since
+       *       SYNC.ALLWR is only available on Gfx12+.
+       */
+      if (devinfo->ver >= 12 &&
+          (!nir_intrinsic_has_memory_scope(instr) ||
+           (nir_intrinsic_memory_semantics(instr) & NIR_MEMORY_ACQUIRE))) {
+         ubld.exec_all().group(1, 0).emit(
+            BRW_OPCODE_SYNC, ubld.null_reg_ud(), brw_imm_ud(TGL_SYNC_ALLWR));
+      }
 
       if (devinfo->has_lsc) {
          assert(devinfo->verx10 >= 125);
@@ -4732,9 +4776,13 @@ fs_visitor::nir_emit_intrinsic(const fs_builder &bld, nir_intrinsic_instr *instr
             const unsigned count = MIN2(instr->num_components - c,
                                         (block_sz - base % block_sz) / type_size);
 
-            ubld.emit(FS_OPCODE_UNIFORM_PULL_CONSTANT_LOAD,
-                      packed_consts, surf_index,
-                      brw_imm_ud(base & ~(block_sz - 1)));
+            fs_reg srcs[PULL_UNIFORM_CONSTANT_SRCS];
+            srcs[PULL_UNIFORM_CONSTANT_SRC_SURFACE] = surf_index;
+            srcs[PULL_UNIFORM_CONSTANT_SRC_OFFSET]  = brw_imm_ud(base & ~(block_sz - 1));
+            srcs[PULL_UNIFORM_CONSTANT_SRC_SIZE]    = brw_imm_ud(block_sz);
+
+            ubld.emit(FS_OPCODE_UNIFORM_PULL_CONSTANT_LOAD, packed_consts,
+                      srcs, PULL_UNIFORM_CONSTANT_SRCS);
 
             const fs_reg consts =
                retype(byte_offset(packed_consts, base & (block_sz - 1)),
@@ -4835,13 +4883,11 @@ fs_visitor::nir_emit_intrinsic(const fs_builder &bld, nir_intrinsic_instr *instr
    case nir_intrinsic_global_atomic_xor:
    case nir_intrinsic_global_atomic_exchange:
    case nir_intrinsic_global_atomic_comp_swap:
-      nir_emit_global_atomic(bld, brw_aop_for_nir_intrinsic(instr), instr);
-      break;
    case nir_intrinsic_global_atomic_fadd:
    case nir_intrinsic_global_atomic_fmin:
    case nir_intrinsic_global_atomic_fmax:
    case nir_intrinsic_global_atomic_fcomp_swap:
-      nir_emit_global_atomic_float(bld, brw_aop_for_nir_intrinsic(instr), instr);
+      nir_emit_global_atomic(bld, instr);
       break;
 
    case nir_intrinsic_load_global_const_block_intel: {
@@ -5009,13 +5055,12 @@ fs_visitor::nir_emit_intrinsic(const fs_builder &bld, nir_intrinsic_instr *instr
    case nir_intrinsic_ssbo_atomic_xor:
    case nir_intrinsic_ssbo_atomic_exchange:
    case nir_intrinsic_ssbo_atomic_comp_swap:
-      nir_emit_ssbo_atomic(bld, brw_aop_for_nir_intrinsic(instr), instr);
-      break;
    case nir_intrinsic_ssbo_atomic_fadd:
    case nir_intrinsic_ssbo_atomic_fmin:
    case nir_intrinsic_ssbo_atomic_fmax:
    case nir_intrinsic_ssbo_atomic_fcomp_swap:
-      nir_emit_ssbo_atomic_float(bld, brw_aop_for_nir_intrinsic(instr), instr);
+      nir_emit_surface_atomic(bld, instr,
+                              get_nir_ssbo_intrinsic_index(bld, instr));
       break;
 
    case nir_intrinsic_get_ssbo_size: {
@@ -5911,38 +5956,61 @@ expand_to_32bit(const fs_builder &bld, const fs_reg &src)
 }
 
 void
-fs_visitor::nir_emit_ssbo_atomic(const fs_builder &bld,
-                                 int op, nir_intrinsic_instr *instr)
+fs_visitor::nir_emit_surface_atomic(const fs_builder &bld,
+                                    nir_intrinsic_instr *instr,
+                                    fs_reg surface)
 {
+   enum lsc_opcode op = lsc_aop_for_nir_intrinsic(instr);
+   int num_data = lsc_op_num_data_values(op);
+
+   bool shared = surface.file == IMM && surface.ud == GFX7_BTI_SLM;
+
    /* The BTI untyped atomic messages only support 32-bit atomics.  If you
     * just look at the big table of messages in the Vol 7 of the SKL PRM, they
     * appear to exist.  However, if you look at Vol 2a, there are no message
     * descriptors provided for Qword atomic ops except for A64 messages.
+    *
+    * 16-bit float atomics are supported, however.
     */
    assert(nir_dest_bit_size(instr->dest) == 32 ||
           (nir_dest_bit_size(instr->dest) == 64 && devinfo->has_lsc) ||
-          (nir_dest_bit_size(instr->dest) == 16 && devinfo->has_lsc));
+          (nir_dest_bit_size(instr->dest) == 16 &&
+           (devinfo->has_lsc || lsc_opcode_is_atomic_float(op))));
 
-   fs_reg dest;
-   if (nir_intrinsic_infos[instr->intrinsic].has_dest)
-      dest = get_nir_dest(instr->dest);
+   fs_reg dest = get_nir_dest(instr->dest);
 
    fs_reg srcs[SURFACE_LOGICAL_NUM_SRCS];
-   srcs[SURFACE_LOGICAL_SRC_SURFACE] = get_nir_ssbo_intrinsic_index(bld, instr);
-   srcs[SURFACE_LOGICAL_SRC_ADDRESS] = get_nir_src(instr->src[1]);
+   srcs[SURFACE_LOGICAL_SRC_SURFACE] = surface;
    srcs[SURFACE_LOGICAL_SRC_IMM_DIMS] = brw_imm_ud(1);
    srcs[SURFACE_LOGICAL_SRC_IMM_ARG] = brw_imm_ud(op);
    srcs[SURFACE_LOGICAL_SRC_ALLOW_SAMPLE_MASK] = brw_imm_ud(1);
 
-   fs_reg data;
-   if (op != BRW_AOP_INC && op != BRW_AOP_DEC && op != BRW_AOP_PREDEC)
-      data = expand_to_32bit(bld, get_nir_src(instr->src[2]));
+   if (shared) {
+      /* SLM - Get the offset */
+      if (nir_src_is_const(instr->src[0])) {
+         srcs[SURFACE_LOGICAL_SRC_ADDRESS] =
+            brw_imm_ud(nir_intrinsic_base(instr) +
+                       nir_src_as_uint(instr->src[0]));
+      } else {
+         srcs[SURFACE_LOGICAL_SRC_ADDRESS] = vgrf(glsl_type::uint_type);
+         bld.ADD(srcs[SURFACE_LOGICAL_SRC_ADDRESS],
+                 retype(get_nir_src(instr->src[0]), BRW_REGISTER_TYPE_UD),
+                 brw_imm_ud(nir_intrinsic_base(instr)));
+      }
+   } else {
+      /* SSBOs */
+      srcs[SURFACE_LOGICAL_SRC_ADDRESS] = get_nir_src(instr->src[1]);
+   }
 
-   if (op == BRW_AOP_CMPWR) {
+   fs_reg data;
+   if (num_data >= 1)
+      data = expand_to_32bit(bld, get_nir_src(instr->src[shared ? 1 : 2]));
+
+   if (num_data >= 2) {
       fs_reg tmp = bld.vgrf(data.type, 2);
       fs_reg sources[2] = {
          data,
-         expand_to_32bit(bld, get_nir_src(instr->src[3]))
+         expand_to_32bit(bld, get_nir_src(instr->src[shared ? 2 : 3]))
       };
       bld.LOAD_PAYLOAD(tmp, sources, 2, 0);
       data = tmp;
@@ -5970,247 +6038,23 @@ fs_visitor::nir_emit_ssbo_atomic(const fs_builder &bld,
       default:
          unreachable("Unsupported bit size");
    }
-}
-
-void
-fs_visitor::nir_emit_ssbo_atomic_float(const fs_builder &bld,
-                                       int op, nir_intrinsic_instr *instr)
-{
-   fs_reg dest;
-   if (nir_intrinsic_infos[instr->intrinsic].has_dest)
-      dest = get_nir_dest(instr->dest);
-
-   fs_reg srcs[SURFACE_LOGICAL_NUM_SRCS];
-   srcs[SURFACE_LOGICAL_SRC_SURFACE] = get_nir_ssbo_intrinsic_index(bld, instr);
-   srcs[SURFACE_LOGICAL_SRC_ADDRESS] = get_nir_src(instr->src[1]);
-   srcs[SURFACE_LOGICAL_SRC_IMM_DIMS] = brw_imm_ud(1);
-   srcs[SURFACE_LOGICAL_SRC_IMM_ARG] = brw_imm_ud(op);
-   srcs[SURFACE_LOGICAL_SRC_ALLOW_SAMPLE_MASK] = brw_imm_ud(1);
-
-   fs_reg data = expand_to_32bit(bld, get_nir_src(instr->src[2]));
-   if (op == BRW_AOP_FCMPWR) {
-      fs_reg tmp = bld.vgrf(data.type, 2);
-      fs_reg sources[2] = {
-         data,
-         expand_to_32bit(bld, get_nir_src(instr->src[3]))
-      };
-      bld.LOAD_PAYLOAD(tmp, sources, 2, 0);
-      data = tmp;
-   }
-   srcs[SURFACE_LOGICAL_SRC_DATA] = data;
-
-   /* Emit the actual atomic operation */
-   switch (nir_dest_bit_size(instr->dest)) {
-      case 16: {
-         fs_reg dest32 = bld.vgrf(BRW_REGISTER_TYPE_UD);
-         bld.emit(SHADER_OPCODE_UNTYPED_ATOMIC_FLOAT_LOGICAL,
-                  retype(dest32, dest.type),
-                  srcs, SURFACE_LOGICAL_NUM_SRCS);
-         bld.MOV(retype(dest, BRW_REGISTER_TYPE_UW),
-                 retype(dest32, BRW_REGISTER_TYPE_UD));
-         break;
-      }
-
-      case 32:
-      case 64:
-         bld.emit(SHADER_OPCODE_UNTYPED_ATOMIC_FLOAT_LOGICAL,
-                  dest, srcs, SURFACE_LOGICAL_NUM_SRCS);
-         break;
-      default:
-         unreachable("Unsupported bit size");
-   }
-}
-
-void
-fs_visitor::nir_emit_shared_atomic(const fs_builder &bld,
-                                   int op, nir_intrinsic_instr *instr)
-{
-   fs_reg dest;
-   if (nir_intrinsic_infos[instr->intrinsic].has_dest)
-      dest = get_nir_dest(instr->dest);
-
-   fs_reg srcs[SURFACE_LOGICAL_NUM_SRCS];
-   srcs[SURFACE_LOGICAL_SRC_SURFACE] = brw_imm_ud(GFX7_BTI_SLM);
-   srcs[SURFACE_LOGICAL_SRC_IMM_DIMS] = brw_imm_ud(1);
-   srcs[SURFACE_LOGICAL_SRC_IMM_ARG] = brw_imm_ud(op);
-   srcs[SURFACE_LOGICAL_SRC_ALLOW_SAMPLE_MASK] = brw_imm_ud(1);
-
-   fs_reg data;
-   if (op != BRW_AOP_INC && op != BRW_AOP_DEC && op != BRW_AOP_PREDEC)
-      data = expand_to_32bit(bld, get_nir_src(instr->src[1]));
-   if (op == BRW_AOP_CMPWR) {
-      fs_reg tmp = bld.vgrf(data.type, 2);
-      fs_reg sources[2] = {
-         expand_to_32bit(bld, data),
-         expand_to_32bit(bld, get_nir_src(instr->src[2]))
-      };
-      bld.LOAD_PAYLOAD(tmp, sources, 2, 0);
-      data = tmp;
-   }
-   srcs[SURFACE_LOGICAL_SRC_DATA] = data;
-
-   /* Get the offset */
-   if (nir_src_is_const(instr->src[0])) {
-      srcs[SURFACE_LOGICAL_SRC_ADDRESS] =
-         brw_imm_ud(nir_intrinsic_base(instr) +
-                    nir_src_as_uint(instr->src[0]));
-   } else {
-      srcs[SURFACE_LOGICAL_SRC_ADDRESS] = vgrf(glsl_type::uint_type);
-      bld.ADD(srcs[SURFACE_LOGICAL_SRC_ADDRESS],
-	      retype(get_nir_src(instr->src[0]), BRW_REGISTER_TYPE_UD),
-	      brw_imm_ud(nir_intrinsic_base(instr)));
-   }
-
-   /* Emit the actual atomic operation operation */
-
-   switch (nir_dest_bit_size(instr->dest)) {
-      case 16: {
-         fs_reg dest32 = bld.vgrf(BRW_REGISTER_TYPE_UD);
-         bld.emit(SHADER_OPCODE_UNTYPED_ATOMIC_LOGICAL,
-                  retype(dest32, dest.type),
-                  srcs, SURFACE_LOGICAL_NUM_SRCS);
-         bld.MOV(retype(dest, BRW_REGISTER_TYPE_UW),
-                 retype(dest32, BRW_REGISTER_TYPE_UD));
-         break;
-      }
-
-      case 32:
-      case 64:
-         bld.emit(SHADER_OPCODE_UNTYPED_ATOMIC_LOGICAL,
-                  dest, srcs, SURFACE_LOGICAL_NUM_SRCS);
-         break;
-      default:
-         unreachable("Unsupported bit size");
-   }
-}
-
-void
-fs_visitor::nir_emit_shared_atomic_float(const fs_builder &bld,
-                                         int op, nir_intrinsic_instr *instr)
-{
-   fs_reg dest;
-   if (nir_intrinsic_infos[instr->intrinsic].has_dest)
-      dest = get_nir_dest(instr->dest);
-
-   fs_reg srcs[SURFACE_LOGICAL_NUM_SRCS];
-   srcs[SURFACE_LOGICAL_SRC_SURFACE] = brw_imm_ud(GFX7_BTI_SLM);
-   srcs[SURFACE_LOGICAL_SRC_IMM_DIMS] = brw_imm_ud(1);
-   srcs[SURFACE_LOGICAL_SRC_IMM_ARG] = brw_imm_ud(op);
-   srcs[SURFACE_LOGICAL_SRC_ALLOW_SAMPLE_MASK] = brw_imm_ud(1);
-
-   fs_reg data = expand_to_32bit(bld, get_nir_src(instr->src[1]));
-   if (op == BRW_AOP_FCMPWR) {
-      fs_reg tmp = bld.vgrf(data.type, 2);
-      fs_reg sources[2] = {
-         data,
-         expand_to_32bit(bld, get_nir_src(instr->src[2]))
-      };
-      bld.LOAD_PAYLOAD(tmp, sources, 2, 0);
-      data = tmp;
-   }
-   srcs[SURFACE_LOGICAL_SRC_DATA] = data;
-
-   /* Get the offset */
-   if (nir_src_is_const(instr->src[0])) {
-      srcs[SURFACE_LOGICAL_SRC_ADDRESS] =
-         brw_imm_ud(nir_intrinsic_base(instr) +
-                    nir_src_as_uint(instr->src[0]));
-   } else {
-      srcs[SURFACE_LOGICAL_SRC_ADDRESS] = vgrf(glsl_type::uint_type);
-      bld.ADD(srcs[SURFACE_LOGICAL_SRC_ADDRESS],
-	      retype(get_nir_src(instr->src[0]), BRW_REGISTER_TYPE_UD),
-	      brw_imm_ud(nir_intrinsic_base(instr)));
-   }
-
-   /* Emit the actual atomic operation operation */
-
-   switch (nir_dest_bit_size(instr->dest)) {
-      case 16: {
-         fs_reg dest32 = bld.vgrf(BRW_REGISTER_TYPE_UD);
-         bld.emit(SHADER_OPCODE_UNTYPED_ATOMIC_FLOAT_LOGICAL,
-                  retype(dest32, dest.type),
-                  srcs, SURFACE_LOGICAL_NUM_SRCS);
-         bld.MOV(retype(dest, BRW_REGISTER_TYPE_UW),
-                 retype(dest32, BRW_REGISTER_TYPE_UD));
-         break;
-      }
-
-      case 32:
-      case 64:
-         bld.emit(SHADER_OPCODE_UNTYPED_ATOMIC_FLOAT_LOGICAL,
-                  dest, srcs, SURFACE_LOGICAL_NUM_SRCS);
-         break;
-      default:
-         unreachable("Unsupported bit size");
-   }
-
 }
 
 void
 fs_visitor::nir_emit_global_atomic(const fs_builder &bld,
-                                   int op, nir_intrinsic_instr *instr)
+                                   nir_intrinsic_instr *instr)
 {
-   fs_reg dest;
-   if (nir_intrinsic_infos[instr->intrinsic].has_dest)
-      dest = get_nir_dest(instr->dest);
+   int op = lsc_aop_for_nir_intrinsic(instr);
 
-   fs_reg addr = get_nir_src(instr->src[0]);
-
-   fs_reg data;
-   if (op != BRW_AOP_INC && op != BRW_AOP_DEC && op != BRW_AOP_PREDEC)
-      data = expand_to_32bit(bld, get_nir_src(instr->src[1]));
-
-   if (op == BRW_AOP_CMPWR) {
-      fs_reg tmp = bld.vgrf(data.type, 2);
-      fs_reg sources[2] = {
-         data,
-         expand_to_32bit(bld, get_nir_src(instr->src[2]))
-      };
-      bld.LOAD_PAYLOAD(tmp, sources, 2, 0);
-      data = tmp;
-   }
-
-   fs_reg srcs[A64_LOGICAL_NUM_SRCS];
-   srcs[A64_LOGICAL_ADDRESS] = addr;
-   srcs[A64_LOGICAL_SRC] = data;
-   srcs[A64_LOGICAL_ARG] = brw_imm_ud(op);
-   srcs[A64_LOGICAL_ENABLE_HELPERS] = brw_imm_ud(0);
-
-   switch (nir_dest_bit_size(instr->dest)) {
-   case 16: {
-      fs_reg dest32 = bld.vgrf(BRW_REGISTER_TYPE_UD);
-      bld.emit(SHADER_OPCODE_A64_UNTYPED_ATOMIC_INT16_LOGICAL,
-               retype(dest32, dest.type),
-               srcs, A64_LOGICAL_NUM_SRCS);
-      bld.MOV(retype(dest, BRW_REGISTER_TYPE_UW), dest32);
-      break;
-   }
-   case 32:
-      bld.emit(SHADER_OPCODE_A64_UNTYPED_ATOMIC_LOGICAL, dest,
-               srcs, A64_LOGICAL_NUM_SRCS);
-      break;
-   case 64:
-      bld.emit(SHADER_OPCODE_A64_UNTYPED_ATOMIC_INT64_LOGICAL, dest,
-               srcs, A64_LOGICAL_NUM_SRCS);
-      break;
-   default:
-      unreachable("Unsupported bit size");
-   }
-}
-
-void
-fs_visitor::nir_emit_global_atomic_float(const fs_builder &bld,
-                                         int op, nir_intrinsic_instr *instr)
-{
-   assert(nir_intrinsic_infos[instr->intrinsic].has_dest);
    fs_reg dest = get_nir_dest(instr->dest);
 
    fs_reg addr = get_nir_src(instr->src[0]);
 
-   assert(op != BRW_AOP_INC && op != BRW_AOP_DEC && op != BRW_AOP_PREDEC);
-   fs_reg data = expand_to_32bit(bld, get_nir_src(instr->src[1]));
+   fs_reg data;
+   if (op != LSC_OP_ATOMIC_INC && op != LSC_OP_ATOMIC_DEC)
+      data = expand_to_32bit(bld, get_nir_src(instr->src[1]));
 
-   if (op == BRW_AOP_FCMPWR) {
+   if (op == LSC_OP_ATOMIC_CMPXCHG) {
       fs_reg tmp = bld.vgrf(data.type, 2);
       fs_reg sources[2] = {
          data,
@@ -6229,18 +6073,15 @@ fs_visitor::nir_emit_global_atomic_float(const fs_builder &bld,
    switch (nir_dest_bit_size(instr->dest)) {
    case 16: {
       fs_reg dest32 = bld.vgrf(BRW_REGISTER_TYPE_UD);
-      bld.emit(SHADER_OPCODE_A64_UNTYPED_ATOMIC_FLOAT16_LOGICAL,
+      bld.emit(SHADER_OPCODE_A64_UNTYPED_ATOMIC_LOGICAL,
                retype(dest32, dest.type),
                srcs, A64_LOGICAL_NUM_SRCS);
       bld.MOV(retype(dest, BRW_REGISTER_TYPE_UW), dest32);
       break;
    }
    case 32:
-      bld.emit(SHADER_OPCODE_A64_UNTYPED_ATOMIC_FLOAT32_LOGICAL, dest,
-               srcs, A64_LOGICAL_NUM_SRCS);
-      break;
    case 64:
-      bld.emit(SHADER_OPCODE_A64_UNTYPED_ATOMIC_FLOAT64_LOGICAL, dest,
+      bld.emit(SHADER_OPCODE_A64_UNTYPED_ATOMIC_LOGICAL, dest,
                srcs, A64_LOGICAL_NUM_SRCS);
       break;
    default:

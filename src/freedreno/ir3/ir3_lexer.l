@@ -96,6 +96,7 @@ static int parse_reg(const char *str)
 [0-9]+"."[0-9]+                   ir3_yylval.flt = strtod(yytext, NULL);       return T_FLOAT;
 [0-9]*                            ir3_yylval.num = strtoul(yytext, NULL, 0);    return T_INT;
 "0x"[0-9a-fA-F]*                  ir3_yylval.num = strtoul(yytext, NULL, 0);    return T_HEX;
+"raw 0x"[0-9a-fA-F]*              ir3_yylval.u64 = strtoull(yytext + 4, NULL, 0); return T_RAW;
 "@localsize"                      return TOKEN(T_A_LOCALSIZE);
 "@const"                          return TOKEN(T_A_CONST);
 "@buf"                            return TOKEN(T_A_BUF);

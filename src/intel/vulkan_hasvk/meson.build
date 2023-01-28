@@ -48,23 +48,21 @@ intel_hasvk_icd = custom_target(
   install : true,
 )
 
-if meson.version().version_compare('>= 0.58')
-  _dev_icdname = 'intel_hasvk_devenv_icd.@0@.json'.format(host_machine.cpu())
-  custom_target(
-    'intel_hasvk_devenv_icd',
-    input : [vk_icd_gen, vk_api_xml],
-    output : _dev_icdname,
-    command : [
-      prog_python, '@INPUT0@',
-      '--api-version', '1.3', '--xml', '@INPUT1@',
-      '--lib-path', meson.current_build_dir() / 'libvulkan_intel_hasvk.so',
-      '--out', '@OUTPUT@',
-    ],
-    build_by_default : true,
-  )
+_dev_icdname = 'intel_hasvk_devenv_icd.@0@.json'.format(host_machine.cpu())
+_dev_icd = custom_target(
+  'intel_hasvk_devenv_icd',
+  input : [vk_icd_gen, vk_api_xml],
+  output : _dev_icdname,
+  command : [
+    prog_python, '@INPUT0@',
+    '--api-version', '1.3', '--xml', '@INPUT1@',
+    '--lib-path', meson.current_build_dir() / 'libvulkan_intel_hasvk.so',
+    '--out', '@OUTPUT@',
+  ],
+  build_by_default : true,
+)
 
-  devenv.append('VK_ICD_FILENAMES', meson.current_build_dir() / _dev_icdname)
-endif
+devenv.append('VK_ICD_FILENAMES', _dev_icd.full_path())
 
 libanv_per_hw_ver_libs = []
 anv_per_hw_ver_files = files(

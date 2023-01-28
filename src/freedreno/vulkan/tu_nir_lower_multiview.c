@@ -99,7 +99,7 @@ tu_nir_lower_multiview(nir_shader *nir, uint32_t mask, struct tu_device *dev)
    /* In addition to the generic checks done by NIR, check that we don't
     * overflow VPC with the extra copies of gl_Position.
     */
-   if (likely(!(dev->physical_device->instance->debug_flags & TU_DEBUG_NOMULTIPOS)) &&
+   if (!TU_DEBUG(NOMULTIPOS) &&
        num_views <= max_views_for_multipos && num_outputs + (num_views - 1) <= 32 &&
        nir_can_lower_multiview(nir)) {
       /* It appears that the multiview mask is ignored when multi-position

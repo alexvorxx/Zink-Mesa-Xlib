@@ -51,12 +51,12 @@ STABLE_EPHEMERAL=" \
 
 apt-get install -y --no-remove --no-install-recommends \
       $STABLE_EPHEMERAL \
+      curl \
       libepoxy0 \
       libxcb-shm0 \
       pciutils \
       python3-lxml \
       python3-simplejson \
-      wget \
       xinit \
       xserver-xorg-video-amdgpu \
       xserver-xorg-video-ati
@@ -65,10 +65,6 @@ apt-get install -y --no-remove --no-install-recommends \
 apt-key add .gitlab-ci/container/debian/winehq.gpg.key
 apt-add-repository https://dl.winehq.org/wine-builds/debian/
 apt-get update -q
-
-# Needed for Valve's tracing jobs to collect information about the graphics
-# hardware on the test devices.
-pip3 install gfxinfo-mupuf==0.0.9
 
 # workaround wine needing 32-bit
 # https://bugs.winehq.org/show_bug.cgi?id=53393
@@ -105,7 +101,7 @@ wine64 \
 
 . .gitlab-ci/container/build-hang-detection.sh
 
-############### Build piglit
+############### Build piglit replayer
 
 PIGLIT_BUILD_TARGETS="piglit_replayer" . .gitlab-ci/container/build-piglit.sh
 

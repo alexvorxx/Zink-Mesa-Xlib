@@ -24,7 +24,7 @@
 .restricted-rules:
   rules:
     # If the triggerer has access to the restricted traces and if it is pre-merge
-    - if: '($GITLAB_USER_LOGIN !~ "/^(robclark|anholt|flto|cwabbott0|Danil|tomeu|okias|gallo)$/") &&
+    - if: '($GITLAB_USER_LOGIN !~ "/^(robclark|anholt|flto|cwabbott0|Danil|tomeu|okias|gallo|kwg|majanes|llanderwelin|zmike)$/") &&
            ($GITLAB_USER_LOGIN != "marge-bot" || $CI_COMMIT_BRANCH)'
       when: never
 
@@ -52,6 +52,36 @@
       - src/tool/**/*
       - src/util/**/*
       when: on_success
+
+# Same core dependencies for doing manual runs.
+.core-manual-rules:
+  rules:
+    # We only want manual jobs to show up when it's not marge's pre-merge CI
+    # run, otherwise she'll wait until her timeout.  The exception is
+    # performance jobs, see below.
+    - if: ('$GITLAB_USER_LOGIN == "marge-bot" &&
+           $CI_PIPELINE_SOURCE == "merge_request_event"' &&
+           $GITLAB_USER_LOGIN !~ "/performance$/")
+      when: never
+    - !reference [.no_scheduled_pipelines-rules, rules]
+    - changes:
+        *core_file_list
+      when: manual
+
+# Rules for performance jobs tracking.  We want perf jobs to run as code is
+# merged to main, but we don't want them to block marge.  So, they need to have
+# only when: never or when: manual, and a separate script maintained by
+# Collabora triggers the manual job after merge to main.  These "never" filters
+# need to come before any paths with "manual".
+.performance-rules:
+  rules:
+    - !reference [.no_scheduled_pipelines-rules, rules]
+    # Run only on pre-merge pipelines from Marge
+    - if: '$GITLAB_USER_LOGIN != "marge-bot" || $CI_COMMIT_BRANCH'
+      when: never
+  # Allow the merge to complete even before the job completes (since it won't
+  # even start until the separate script triggers on it).
+  allow_failure: true
 
 # Mesa source file dependencies that may impact any GL driver test job.
 .gl-rules:
@@ -86,6 +116,16 @@
       - src/gallium/winsys/*
       when: on_success
 
+.gl-manual-rules:
+  rules:
+    - !reference [.core-manual-rules, rules]
+    - changes:
+        *mesa_core_file_list
+      when: manual
+    - changes:
+        *gallium_core_file_list
+      when: manual
+
 # Source file dependencies that may impact any Vulkan driver build or test
 .vulkan-rules:
   rules:
@@ -93,6 +133,13 @@
     - changes: &vulkan_file_list
       - src/vulkan/**/*
       when: on_success
+
+.vulkan-manual-rules:
+  rules:
+    - !reference [.core-manual-rules, rules]
+    - changes:
+        *vulkan_file_list
+      when: manual
 
 .softpipe-rules:
   stage: software-renderer
@@ -123,6 +170,14 @@
       - src/gallium/frontends/lavapipe/**/*
       - src/gallium/winsys/sw/**/*
       when: on_success
+
+.lavapipe-manual-rules:
+  stage: software-renderer
+  rules:
+    - !reference [.vulkan-manual-rules, rules]
+    - !reference [.gl-manual-rules, rules]
+    - changes: *lavapipe_file_list
+      when: manual
 
 .llvmpipe-cl-rules:
   stage: software-renderer
@@ -211,6 +266,14 @@
       - src/freedreno/registers/**/*
       when: on_success
 
+.freedreno-common-manual-rules:
+  rules:
+    - !reference [.freedreno-farm-rules, rules]
+    - !reference [.core-manual-rules, rules]
+    - changes:
+        *freedreno_core_file_list
+      when: manual
+
 .freedreno-rules:
   stage: freedreno
   rules:
@@ -222,14 +285,32 @@
       - src/gallium/winsys/freedreno/**/*
       when: on_success
 
+.freedreno-manual-rules:
+  stage: freedreno
+  rules:
+    - !reference [.freedreno-common-manual-rules, rules]
+    - !reference [.gl-manual-rules, rules]
+    - changes:
+        *freedreno_gl_file_list
+      when: manual
+
 .turnip-rules:
   stage: freedreno
   rules:
     - !reference [.freedreno-common-rules, rules]
     - !reference [.vulkan-rules, rules]
-    - changes:
+    - changes: &freedreno_vulkan_file_list
       - src/freedreno/vulkan/**/*
       when: on_success
+
+.turnip-manual-rules:
+  stage: freedreno
+  rules:
+    - !reference [.freedreno-common-manual-rules, rules]
+    - !reference [.vulkan-manual-rules, rules]
+    - changes:
+        *freedreno_vulkan_file_list
+      when: manual
 
 # For piglit and skqp test jobs that run both GL and VK tests.
 .freedreno-turnip-rules:
@@ -243,48 +324,32 @@
     - !reference [.restricted-rules, rules]
     - !reference [.freedreno-rules, rules]
 
-# Rules for GL driver performance tracking.  We want them to run as code is
-# merged to main, but we don't want them to block marge.  So, they need to have
-# only when: never or when: manual, and a separate script maintained by
-# Collabora triggers the manual job after merge to main.
-.gl-rules-performance:
-  rules:
-    - !reference [.no_scheduled_pipelines-rules, rules]
-    # Run only on pre-merge pipelines from Marge
-    - if: '$GITLAB_USER_LOGIN != "marge-bot" || $CI_COMMIT_BRANCH'
-      when: never
-    - changes:
-        *mesa_core_file_list
-      when: manual
-    - changes:
-        *gallium_core_file_list
-      when: manual
-
-# Unfortunately YAML doesn't let us concatenate arrays, so we have to do the
-# rules duplication manually
 .freedreno-rules-performance:
   stage: freedreno
   rules:
-    - !reference [.freedreno-farm-rules, rules]
-    - !reference [.gl-rules-performance, rules]
-    - changes:
-        *freedreno_core_file_list
-      when: manual
-    - changes:
-        *freedreno_gl_file_list
-      when: manual
+    - !reference [.performance-rules, rules]
+    - !reference [.freedreno-manual-rules, rules]
 
 .nouveau-rules:
   stage: nouveau
   rules:
     - !reference [.anholt-farm-rules, rules]
     - !reference [.gl-rules, rules]
-    - changes:
+    - changes: &nouveau_file_list
       - src/nouveau/**/*
       - src/gallium/drivers/nouveau/**/*
       - src/gallium/winsys/kmsro/**/*
       - src/gallium/winsys/nouveau/**/*
       when: on_success
+
+.nouveau-manual-rules:
+  stage: nouveau
+  rules:
+    - !reference [.anholt-farm-rules, rules]
+    - !reference [.gl-manual-rules, rules]
+    - changes:
+        *nouveau_file_list
+      when: manual
 
 .panfrost-midgard-rules:
   stage: arm
@@ -306,6 +371,19 @@
       - src/panfrost/midgard/**/*
       when: on_success
 
+.panfrost-midgard-manual-rules:
+  stage: arm
+  rules:
+    - !reference [.collabora-farm-rules, rules]
+    - !reference [.gl-manual-rules, rules]
+    - changes: *panfrost_gallium_file_list
+      when: manual
+    - changes: *panfrost_common_file_list
+      when: manual
+    - changes:
+      - src/panfrost/midgard/**/*
+      when: manual
+
 .panfrost-bifrost-rules:
   stage: arm
   rules:
@@ -321,13 +399,32 @@
     - changes: &panfrost_vulkan_file_list
       - src/panfrost/vulkan/*
       when: on_success
-    - changes:
+    - changes: &panfrost_bifrost_file_list
       - src/panfrost/compiler/**/*
       when: on_success
 
+.panfrost-bifrost-manual-rules:
+  stage: arm
+  rules:
+    - !reference [.collabora-farm-rules, rules]
+    - !reference [.vulkan-manual-rules, rules]
+    - !reference [.gl-manual-rules, rules]
+    - changes:
+        *panfrost_common_file_list
+      when: manual
+    - changes:
+        *panfrost_gallium_file_list
+      when: manual
+    - changes:
+        *panfrost_vulkan_file_list
+      when: manual
+    - changes:
+        *panfrost_bifrost_file_list
+      when: manual
+
 .broadcom-common-rules:
   rules:
-    - changes:
+    - changes: &broadcom_file_list
       - src/broadcom/meson.build
       - src/broadcom/ci/**/*
       - src/broadcom/cle/**/*
@@ -357,11 +454,23 @@
     - !reference [.igalia-farm-rules, rules]
     - !reference [.gl-rules, rules]
     - !reference [.broadcom-common-rules, rules]
-    - changes:
+    - changes: &v3d_file_list
       - src/gallium/drivers/v3d/**/*
       - src/gallium/winsys/kmsro/**/*
       - src/gallium/winsys/v3d/**/*
       when: on_success
+
+.v3d-manual-rules:
+  stage: broadcom
+  rules:
+    - !reference [.igalia-farm-rules, rules]
+    - !reference [.gl-manual-rules, rules]
+    - changes:
+        *broadcom_file_list
+      when: manual
+    - changes:
+        *v3d_file_list
+      when: manual
 
 .v3dv-rules:
   stage: broadcom
@@ -405,6 +514,15 @@
     - !reference [.valve-farm-rules, rules]
     - !reference [.radv-rules, rules]
 
+.radv-valve-manual-rules:
+  stage: amd
+  rules:
+    - !reference [.valve-farm-rules, rules]
+    - !reference [.vulkan-manual-rules, rules]
+    - changes:
+        *radv_file_list
+      when: manual
+
 .virgl-rules:
   stage: layered-backends
   rules:
@@ -417,14 +535,12 @@
       - src/gallium/winsys/virgl/**/*
       when: on_success
 
-# Unfortunately we can't sed the on_success from another rules set, so we have
-# to do duplicate the files lists to set the job to manual (see
-# .gl-rules-performance)
 .virgl-iris-rules-performance:
   stage: layered-backends
   rules:
     - !reference [.collabora-farm-rules, rules]
-    - !reference [.gl-rules-performance, rules]
+    - !reference [.performance-rules, rules]
+    - !reference [.gl-manual-rules, rules]
     - changes:
         *llvmpipe_file_list
       when: manual
@@ -486,21 +602,37 @@
   stage: intel
   rules:
     - !reference [.gl-rules, rules]
-    - changes:
+    - changes: &i915g_file_list
       - src/gallium/drivers/i915/**/*
       - src/gallium/winsys/i915/**/*
       - src/intel/**/*
       when: on_success
 
+.i915g-manual-rules:
+  stage: intel
+  rules:
+    - !reference [.gl-manual-rules, rules]
+    - changes:
+        *i915g_file_list
+      when: manual
+
 .crocus-rules:
   stage: intel
   rules:
     - !reference [.gl-rules, rules]
-    - changes:
+    - changes: &crocus_file_list
       - src/gallium/drivers/crocus/**/*
       - src/gallium/winsys/crocus/**/*
       - src/intel/**/*
       when: on_success
+
+.crocus-manual-rules:
+  stage: intel
+  rules:
+    - !reference [.gl-manual-rules, rules]
+    - changes:
+        *crocus_file_list
+      when: manual
 
 .iris-rules:
   stage: intel
@@ -514,14 +646,25 @@
       - src/intel/**/*
       when: on_success
 
+.iris-manual-rules:
+  stage: intel
+  rules:
+    - !reference [.no_scheduled_pipelines-rules, rules]
+    - !reference [.collabora-farm-rules, rules]
+    - !reference [.gl-manual-rules, rules]
+    - changes:
+        *iris_file_list
+      when: manual
+
 # Unfortunately we can't sed the on_success from another rules set, so we have
 # to do duplicate the files lists to set the job to manual (see
-# .gl-rules-performance)
+# .performance-rules)
 .iris-rules-performance:
   stage: intel
   rules:
     - !reference [.collabora-farm-rules, rules]
-    - !reference [.gl-rules-performance, rules]
+    - !reference [.performance-rules, rules]
+    - !reference [.gl-manual-rules, rules]
     - changes:
         *iris_file_list
       when: manual
@@ -657,7 +800,7 @@
   rules:
     - !reference [.austriancoder-farm-rules, rules]
     - !reference [.gl-rules, rules]
-    - changes:
+    - changes: &etnaviv_file_list
       - src/etnaviv/**/*
       - src/gallium/drivers/etnaviv/**/*
       - src/gallium/winsys/etnaviv/**/*
@@ -665,6 +808,14 @@
       - src/gallium/winsys/kmsro/**/*
       - src/gallium/winsys/etnaviv/**/*
       when: on_success
+
+.etnaviv-manual-rules:
+  stage: intel
+  rules:
+    - !reference [.gl-manual-rules, rules]
+    - changes:
+        *etnaviv_file_list
+      when: manual
 
 # Rules for unusual architectures that only build a subset of drivers
 .ppc64el-rules:

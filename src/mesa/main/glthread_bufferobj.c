@@ -32,8 +32,6 @@
 static struct gl_buffer_object *
 new_upload_buffer(struct gl_context *ctx, GLsizeiptr size, uint8_t **ptr)
 {
-   assert(ctx->GLThread.SupportsBufferUploads);
-
    struct gl_buffer_object *obj =
       _mesa_bufferobj_alloc(ctx, -1);
    if (!obj)
@@ -60,6 +58,19 @@ new_upload_buffer(struct gl_context *ctx, GLsizeiptr size, uint8_t **ptr)
    }
 
    return obj;
+}
+
+void
+_mesa_glthread_release_upload_buffer(struct gl_context *ctx)
+{
+   struct glthread_state *glthread = &ctx->GLThread;
+
+   if (glthread->upload_buffer_private_refcount > 0) {
+      p_atomic_add(&glthread->upload_buffer->RefCount,
+                   -glthread->upload_buffer_private_refcount);
+      glthread->upload_buffer_private_refcount = 0;
+   }
+   _mesa_reference_buffer_object(ctx, &glthread->upload_buffer, NULL);
 }
 
 void
@@ -100,12 +111,8 @@ _mesa_glthread_upload(struct gl_context *ctx, const void *data,
          return;
       }
 
-      if (glthread->upload_buffer_private_refcount > 0) {
-         p_atomic_add(&glthread->upload_buffer->RefCount,
-                      -glthread->upload_buffer_private_refcount);
-         glthread->upload_buffer_private_refcount = 0;
-      }
-      _mesa_reference_buffer_object(ctx, &glthread->upload_buffer, NULL);
+      _mesa_glthread_release_upload_buffer(ctx);
+
       glthread->upload_buffer =
          new_upload_buffer(ctx, default_size, &glthread->upload_ptr);
       glthread->upload_offset = 0;
@@ -497,8 +504,7 @@ _mesa_marshal_BufferSubData_merged(GLuint target_or_name, GLintptr offset,
     *       If offset == 0 and size == buffer_size, it's better to discard
     *       the buffer storage, but we don't know the buffer size in glthread.
     */
-   if (ctx->GLThread.SupportsBufferUploads &&
-       ctx->Const.AllowGLThreadBufferSubDataOpt &&
+   if (ctx->Const.AllowGLThreadBufferSubDataOpt &&
        data && offset > 0 && size > 0) {
       struct gl_buffer_object *upload_buffer = NULL;
       unsigned upload_offset = 0;

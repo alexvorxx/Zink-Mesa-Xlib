@@ -161,20 +161,18 @@ powervr_mesa_icd = custom_target(
   install : true,
 )
 
-if meson.version().version_compare('>= 0.58')
-  _dev_icdname = 'powervr_mesa_devenv_icd.@0@.json'.format(host_machine.cpu())
-  custom_target(
-    'powervr_mesa_devenv_icd',
-    input : [vk_icd_gen, vk_api_xml],
-    output : _dev_icdname,
-    command : [
-      prog_python, '@INPUT0@',
-      '--api-version', '1.0', '--xml', '@INPUT1@',
-      '--lib-path', meson.current_build_dir() / 'libvulkan_powervr_mesa.so',
-      '--out', '@OUTPUT@',
-    ],
-    build_by_default : true,
-  )
+_dev_icdname = 'powervr_mesa_devenv_icd.@0@.json'.format(host_machine.cpu())
+_dev_icd = custom_target(
+  'powervr_mesa_devenv_icd',
+  input : [vk_icd_gen, vk_api_xml],
+  output : _dev_icdname,
+  command : [
+    prog_python, '@INPUT0@',
+    '--api-version', '1.0', '--xml', '@INPUT1@',
+    '--lib-path', meson.current_build_dir() / 'libvulkan_powervr_mesa.so',
+    '--out', '@OUTPUT@',
+  ],
+  build_by_default : true,
+)
 
-  devenv.append('VK_ICD_FILENAMES', meson.current_build_dir() / _dev_icdname)
-endif
+devenv.append('VK_ICD_FILENAMES', _dev_icd.full_path())

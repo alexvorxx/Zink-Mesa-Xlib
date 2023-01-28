@@ -154,7 +154,7 @@ fd_set_constant_buffer(struct pipe_context *pctx, enum pipe_shader_type shader,
    }
 }
 
-static void
+void
 fd_set_shader_buffers(struct pipe_context *pctx, enum pipe_shader_type shader,
                       unsigned start, unsigned count,
                       const struct pipe_shader_buffer *buffers,
@@ -164,7 +164,6 @@ fd_set_shader_buffers(struct pipe_context *pctx, enum pipe_shader_type shader,
    struct fd_shaderbuf_stateobj *so = &ctx->shaderbuf[shader];
    const unsigned modified_bits = u_bit_consecutive(start, count);
 
-   so->enabled_mask &= ~modified_bits;
    so->writable_mask &= ~modified_bits;
    so->writable_mask |= writable_bitmask << start;
 
@@ -194,6 +193,8 @@ fd_set_shader_buffers(struct pipe_context *pctx, enum pipe_shader_type shader,
          }
       } else {
          pipe_resource_reference(&buf->buffer, NULL);
+
+         so->enabled_mask &= ~BIT(n);
       }
    }
 

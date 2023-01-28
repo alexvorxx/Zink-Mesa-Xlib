@@ -134,29 +134,6 @@ batch_draw_tracking_for_dirty_bits(struct fd_batch *batch) assert_dt
       }
    }
 
-   /* Mark SSBOs */
-   if (ctx->dirty_shader[PIPE_SHADER_FRAGMENT] & FD_DIRTY_SHADER_SSBO) {
-      const struct fd_shaderbuf_stateobj *so =
-         &ctx->shaderbuf[PIPE_SHADER_FRAGMENT];
-
-      u_foreach_bit (i, so->enabled_mask & so->writable_mask)
-         resource_written(batch, so->sb[i].buffer);
-
-      u_foreach_bit (i, so->enabled_mask & ~so->writable_mask)
-         resource_read(batch, so->sb[i].buffer);
-   }
-
-   if (ctx->dirty_shader[PIPE_SHADER_FRAGMENT] & FD_DIRTY_SHADER_IMAGE) {
-      u_foreach_bit (i, ctx->shaderimg[PIPE_SHADER_FRAGMENT].enabled_mask) {
-         struct pipe_image_view *img =
-            &ctx->shaderimg[PIPE_SHADER_FRAGMENT].si[i];
-         if (img->access & PIPE_IMAGE_ACCESS_WRITE)
-            resource_written(batch, img->resource);
-         else
-            resource_read(batch, img->resource);
-      }
-   }
-
    u_foreach_bit (s, ctx->bound_shader_stages) {
       /* Mark constbuf as being read: */
       if (ctx->dirty_shader[s] & FD_DIRTY_SHADER_CONST) {
@@ -168,6 +145,28 @@ batch_draw_tracking_for_dirty_bits(struct fd_batch *batch) assert_dt
       if (ctx->dirty_shader[s] & FD_DIRTY_SHADER_TEX) {
          u_foreach_bit (i, ctx->tex[s].valid_textures)
             resource_read(batch, ctx->tex[s].textures[i]->texture);
+      }
+
+      /* Mark SSBOs as being read or written: */
+      if (ctx->dirty_shader[s] & FD_DIRTY_SHADER_SSBO) {
+         const struct fd_shaderbuf_stateobj *so = &ctx->shaderbuf[s];
+
+         u_foreach_bit (i, so->enabled_mask & so->writable_mask)
+            resource_written(batch, so->sb[i].buffer);
+
+         u_foreach_bit (i, so->enabled_mask & ~so->writable_mask)
+            resource_read(batch, so->sb[i].buffer);
+      }
+
+      /* Mark Images as being read or written: */
+      if (ctx->dirty_shader[s] & FD_DIRTY_SHADER_IMAGE) {
+         u_foreach_bit (i, ctx->shaderimg[s].enabled_mask) {
+            struct pipe_image_view *img = &ctx->shaderimg[s].si[i];
+            if (img->access & PIPE_IMAGE_ACCESS_WRITE)
+               resource_written(batch, img->resource);
+            else
+               resource_read(batch, img->resource);
+         }
       }
    }
 
@@ -563,6 +562,12 @@ fd_launch_grid(struct pipe_context *pctx,
 
    if (info->indirect)
       resource_read(batch, info->indirect);
+
+   /* If the saved batch has been flushed during the resource tracking,
+    * don't re-install it:
+    */
+   if (save_batch && save_batch->flushed)
+      fd_batch_reference_locked(&save_batch, NULL);
 
    fd_screen_unlock(ctx->screen);
 

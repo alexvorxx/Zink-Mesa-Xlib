@@ -66,3 +66,12 @@ dEQP-VK.draw.renderpass.linear_interpolation.offset_min_4_samples,Fail
 dEQP-VK.draw.renderpass.linear_interpolation.offset_min_8_samples,Fail
 dEQP-VK.draw.renderpass.linear_interpolation.offset_min_2_samples,Fail
 
+# sharding from 10 to 12 jobs
+dEQP-VK.draw.dynamic_rendering.linear_interpolation.offset_max_2_samples,Fail
+dEQP-VK.draw.dynamic_rendering.linear_interpolation.offset_max_16_samples,Fail
+dEQP-VK.drm_format_modifiers.export_import.r8g8b8a8_unorm,Crash
+dEQP-VK.drm_format_modifiers.export_import_fmt_features2.a4r4g4b4_unorm_pack16,Crash
+dEQP-VK.drm_format_modifiers.export_import_fmt_features2.b5g6r5_unorm_pack16,Crash
+dEQP-VK.drm_format_modifiers.export_import_fmt_features2.r32g32_sfloat,Crash
+dEQP-VK.drm_format_modifiers.export_import.a8b8g8r8_srgb_pack32,Crash
+dEQP-VK.drm_format_modifiers.export_import.r16g16_unorm,Crash

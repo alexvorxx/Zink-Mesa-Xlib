@@ -174,6 +174,8 @@ debian/android_build:
     - .use-debian/x86_build-base
   variables:
     MESA_IMAGE_TAG: &debian-android_build ${DEBIAN_BUILD_TAG}
+    ANDROID_SDK_VERSION: 33
+    ANDROID_NDK: android-ndk-r25b
 
 .use-debian/android_build:
   extends:
@@ -189,7 +191,7 @@ debian/android_build:
 debian/x86_test-base:
   extends: debian/x86_build-base
   variables:
-    KERNEL_URL: &kernel-rootfs-url "https://gitlab.freedesktop.org/gfx-ci/linux/-/archive/v6.0-for-mesa-ci-93bd820c433b/linux-v6.0-for-mesa-ci-93bd820c433b.tar.bz2"
+    KERNEL_URL: &kernel-rootfs-url "https://gitlab.freedesktop.org/gfx-ci/linux/-/archive/v6.1-for-mesa-ci-439f86d0051b/linux-v6.1-for-mesa-ci-439f86d0051b.tar.bz2"
     MESA_IMAGE_TAG: &debian-x86_test-base ${DEBIAN_BASE_TAG}
 
 .use-debian/x86_test-base:
@@ -233,6 +235,23 @@ debian/x86_test-vk:
     MESA_IMAGE_TAG: *debian-x86_test-vk
   needs:
     - debian/x86_test-vk
+
+# Debian 11 based x86 test image for Android
+debian/x86_test-android:
+  extends: .use-debian/x86_test-base
+  variables:
+    MESA_IMAGE_TAG: &debian-x86_test-android ${DEBIAN_X86_TEST_ANDROID_TAG}
+    ANDROID_NDK: android-ndk-r25b
+
+.use-debian/x86_test-android:
+  extends:
+    - .set-image-base-tag
+  variables:
+    MESA_BASE_TAG: *debian-x86_test-base
+    MESA_IMAGE_PATH: ${DEBIAN_X86_TEST_ANDROID_IMAGE_PATH}
+    MESA_IMAGE_TAG: *debian-x86_test-android
+  needs:
+    - debian/x86_test-android
 
 # Debian 11 based ARM build image
 debian/arm_build:

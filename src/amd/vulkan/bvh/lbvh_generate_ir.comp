@@ -72,7 +72,7 @@ main(void)
          break;
 
       /* We allocate nodes on demand with the atomic here to ensure children come before their
-       * parents, which is a requirement of the converter.
+       * parents, which is a requirement of the encoder.
        */
       uint32_t dst_idx =
          atomicAdd(DEREF(REF(radv_ir_header)(args.header)).ir_internal_node_count, 1);

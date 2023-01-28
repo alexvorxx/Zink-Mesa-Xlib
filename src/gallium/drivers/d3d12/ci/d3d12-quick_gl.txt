@@ -47,8 +47,6 @@ spec@arb_sample_shading@arb_sample_shading-builtin-gl-sample-mask-mrt-alpha-to-c
 spec@arb_seamless_cube_map@arb_seamless_cubemap,Fail
 spec@arb_shader_atomic_counters@semantics,Fail
 spec@arb_shader_atomic_counters@semantics@Tessellation control shader atomic built-in semantics,Fail
-spec@arb_shader_image_load_store@semantics,Fail
-spec@arb_shader_image_load_store@semantics@imageAtomicMax/Vertex shader/r32ui/image1D test,Fail
 spec@arb_shader_image_size@builtin,Crash
 spec@arb_texture_buffer_object@texture-buffer-size-clamp,Crash
 spec@arb_texture_buffer_object@texture-buffer-size-clamp@r8ui_texture_buffer_size_via_sampler,Fail

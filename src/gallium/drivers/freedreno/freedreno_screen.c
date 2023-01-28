@@ -62,6 +62,7 @@
 #include "common/freedreno_uuid.h"
 
 #include "a2xx/ir2.h"
+#include "ir3/ir3_descriptor.h"
 #include "ir3/ir3_gallium.h"
 #include "ir3/ir3_nir.h"
 
@@ -115,7 +116,7 @@ fd_screen_get_name(struct pipe_screen *pscreen)
 static const char *
 fd_screen_get_vendor(struct pipe_screen *pscreen)
 {
-   return "Mesa";
+   return "freedreno";
 }
 
 static const char *
@@ -718,7 +719,13 @@ fd_screen_get_shader_param(struct pipe_screen *pscreen,
                   (1 << PIPE_SHADER_IR_TGSI));
    case PIPE_SHADER_CAP_MAX_SHADER_BUFFERS:
    case PIPE_SHADER_CAP_MAX_SHADER_IMAGES:
-      if (is_a4xx(screen) || is_a5xx(screen) || is_a6xx(screen)) {
+      if (is_a6xx(screen)) {
+         if (param == PIPE_SHADER_CAP_MAX_SHADER_BUFFERS) {
+            return IR3_BINDLESS_SSBO_COUNT;
+         } else {
+            return IR3_BINDLESS_IMAGE_COUNT;
+         }
+      } else if (is_a4xx(screen) || is_a5xx(screen) || is_a6xx(screen)) {
          /* a5xx (and a4xx for that matter) has one state-block
           * for compute-shader SSBO's and another that is shared
           * by VS/HS/DS/GS/FS..  so to simplify things for now
@@ -1088,6 +1095,9 @@ fd_screen_create(struct fd_device *dev, struct renderonly *ro,
    /* parse driconf configuration now for device specific overrides: */
    driParseConfigFiles(config->options, config->options_info, 0, "msm",
                        NULL, fd_dev_name(screen->dev_id), NULL, 0, NULL, 0);
+
+   screen->conservative_lrz =
+         !driQueryOptionb(config->options, "disable_conservative_lrz");
 
    struct sysinfo si;
    sysinfo(&si);

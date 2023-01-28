@@ -51,7 +51,9 @@
 #include "nir_to_dxil.h"
 #include "git_sha1.h"
 
+#ifndef _GAMING_XBOX
 #include <directx/d3d12sdklayers.h>
+#endif
 
 #include <dxguids/dxguids.h>
 static GUID OpenGLOn12CreatorID = { 0x6bb3cd34, 0x0d19, 0x45ab, { 0x97, 0xed, 0xd7, 0x20, 0xba, 0x3d, 0xfc, 0x80 } };
@@ -783,7 +785,7 @@ d3d12_flush_frontbuffer(struct pipe_screen * pscreen,
       winsys->displaytarget_unmap(winsys, res->dt);
    }
 
-#ifdef _WIN32
+#if defined(_WIN32) && !defined(_GAMING_XBOX)
    // WindowFromDC is Windows-only, and this method requires an HWND, so only use it on Windows
    ID3D12SharingContract *sharing_contract;
    if (SUCCEEDED(screen->cmdqueue->QueryInterface(IID_PPV_ARGS(&sharing_contract)))) {
@@ -796,6 +798,7 @@ d3d12_flush_frontbuffer(struct pipe_screen * pscreen,
    winsys->displaytarget_display(winsys, res->dt, winsys_drawable_handle, sub_box);
 }
 
+#ifndef _GAMING_XBOX
 static ID3D12Debug *
 get_debug_interface(util_dl_library *d3d12_mod, ID3D12DeviceFactory *factory)
 {
@@ -845,6 +848,52 @@ enable_gpu_validation(util_dl_library *d3d12_mod, ID3D12DeviceFactory *factory)
       debug->Release();
    }
 }
+#endif
+
+#ifdef _GAMING_XBOX
+
+static ID3D12Device3 *
+create_device(util_dl_library *d3d12_mod, IUnknown *adapter)
+{
+   D3D12XBOX_PROCESS_DEBUG_FLAGS debugFlags =
+      D3D12XBOX_PROCESS_DEBUG_FLAG_ENABLE_COMMON_STATE_PROMOTION; /* For compatibility with desktop D3D12 */
+
+   if (d3d12_debug & D3D12_DEBUG_EXPERIMENTAL) {
+      debug_printf("D3D12: experimental shader models are not supported on GDKX\n");
+      return nullptr;
+   }
+
+   if (d3d12_debug & D3D12_DEBUG_GPU_VALIDATOR) {
+      debug_printf("D3D12: gpu validation is not supported on GDKX\n"); /* FIXME: Is this right? */
+      return nullptr;
+   }
+
+   if (d3d12_debug & D3D12_DEBUG_DEBUG_LAYER)
+      debugFlags |= D3D12XBOX_PROCESS_DEBUG_FLAG_DEBUG;
+
+   D3D12XBOX_CREATE_DEVICE_PARAMETERS params = {};
+   params.Version = D3D12_SDK_VERSION;
+   params.ProcessDebugFlags = debugFlags;
+   params.GraphicsCommandQueueRingSizeBytes = D3D12XBOX_DEFAULT_SIZE_BYTES;
+   params.GraphicsScratchMemorySizeBytes = D3D12XBOX_DEFAULT_SIZE_BYTES;
+   params.ComputeScratchMemorySizeBytes = D3D12XBOX_DEFAULT_SIZE_BYTES;
+
+   ID3D12Device3 *dev = nullptr;
+
+   typedef HRESULT(WINAPI * PFN_D3D12XBOXCREATEDEVICE)(IGraphicsUnknown *, const D3D12XBOX_CREATE_DEVICE_PARAMETERS *, REFIID, void **);
+   PFN_D3D12XBOXCREATEDEVICE D3D12XboxCreateDevice =
+      (PFN_D3D12XBOXCREATEDEVICE) util_dl_get_proc_address(d3d12_mod, "D3D12XboxCreateDevice");
+   if (!D3D12XboxCreateDevice) {
+      debug_printf("D3D12: failed to load D3D12XboxCreateDevice from D3D12 DLL\n");
+      return NULL;
+   }
+   if (FAILED(D3D12XboxCreateDevice((IGraphicsUnknown*) adapter, &params, IID_PPV_ARGS(&dev))))
+      debug_printf("D3D12: D3D12XboxCreateDevice failed\n");
+
+   return dev;
+}
+
+#else
 
 static ID3D12Device3 *
 create_device(util_dl_library *d3d12_mod, IUnknown *adapter, ID3D12DeviceFactory *factory)
@@ -891,6 +940,8 @@ create_device(util_dl_library *d3d12_mod, IUnknown *adapter, ID3D12DeviceFactory
 
    return dev;
 }
+
+#endif /* _GAMING_XBOX */
 
 static bool
 can_attribute_at_vertex(struct d3d12_screen *screen)
@@ -1209,7 +1260,17 @@ d3d12_init_screen_base(struct d3d12_screen *screen, struct sw_winsys *winsys, LU
    screen->base.interop_query_device_info = d3d12_interop_query_device_info;
    screen->base.interop_export_object = d3d12_interop_export_object;
 
-   screen->d3d12_mod = util_dl_open(UTIL_DL_PREFIX "d3d12" UTIL_DL_EXT);
+   screen->d3d12_mod = util_dl_open(
+      UTIL_DL_PREFIX
+#ifdef _GAMING_XBOX_SCARLETT
+      "d3d12_xs"
+#elif defined(_GAMING_XBOX)
+      "d3d12_x"
+#else
+      "d3d12"
+#endif
+      UTIL_DL_EXT
+   );
    if (!screen->d3d12_mod) {
       debug_printf("D3D12: failed to load D3D12.DLL\n");
       return false;
@@ -1250,6 +1311,7 @@ try_find_d3d12core_next_to_self(char *path, size_t path_arr_size)
 }
 #endif
 
+#ifndef _GAMING_XBOX
 static ID3D12DeviceFactory *
 try_create_device_factory(util_dl_library *d3d12_mod)
 {
@@ -1301,12 +1363,14 @@ try_create_device_factory(util_dl_library *d3d12_mod)
    (void)D3D12GetInterface(CLSID_D3D12DeviceFactory, IID_PPV_ARGS(&factory));
    return factory;
 }
+#endif
 
 bool
 d3d12_init_screen(struct d3d12_screen *screen, IUnknown *adapter)
 {
    assert(screen->base.destroy != nullptr);
 
+#ifndef _GAMING_XBOX
    ID3D12DeviceFactory *factory = try_create_device_factory(screen->d3d12_mod);
 
 #ifndef DEBUG
@@ -1321,6 +1385,9 @@ d3d12_init_screen(struct d3d12_screen *screen, IUnknown *adapter)
 
    if (factory)
       factory->Release();
+#else
+   screen->dev = create_device(screen->d3d12_mod, adapter);
+#endif
 
    if (!screen->dev) {
       debug_printf("D3D12: failed to create device\n");
@@ -1329,6 +1396,7 @@ d3d12_init_screen(struct d3d12_screen *screen, IUnknown *adapter)
 
    screen->adapter_luid = GetAdapterLuid(screen->dev);
 
+#ifndef _GAMING_XBOX
    ID3D12InfoQueue *info_queue;
    if (SUCCEEDED(screen->dev->QueryInterface(IID_PPV_ARGS(&info_queue)))) {
       D3D12_MESSAGE_SEVERITY severities[] = {
@@ -1349,6 +1417,7 @@ d3d12_init_screen(struct d3d12_screen *screen, IUnknown *adapter)
       info_queue->PushStorageFilter(&NewFilter);
       info_queue->Release();
    }
+#endif /* !_GAMING_XBOX */
 
    if (FAILED(screen->dev->CheckFeatureSupport(D3D12_FEATURE_D3D12_OPTIONS,
                                                &screen->opts,
@@ -1408,7 +1477,7 @@ d3d12_init_screen(struct d3d12_screen *screen, IUnknown *adapter)
 
    static const D3D_SHADER_MODEL valid_shader_models[] = {
       D3D_SHADER_MODEL_6_7, D3D_SHADER_MODEL_6_6, D3D_SHADER_MODEL_6_5, D3D_SHADER_MODEL_6_4,
-      D3D_SHADER_MODEL_6_3, D3D_SHADER_MODEL_6_2, D3D_SHADER_MODEL_6_1,
+      D3D_SHADER_MODEL_6_3, D3D_SHADER_MODEL_6_2, D3D_SHADER_MODEL_6_1, D3D_SHADER_MODEL_6_0,
    };
    for (UINT i = 0; i < ARRAY_SIZE(valid_shader_models); ++i) {
       D3D12_FEATURE_DATA_SHADER_MODEL shader_model = { valid_shader_models[i] };
@@ -1424,13 +1493,16 @@ d3d12_init_screen(struct d3d12_screen *screen, IUnknown *adapter)
    queue_desc.Flags = D3D12_COMMAND_QUEUE_FLAG_NONE;
    queue_desc.NodeMask = 0;
 
+#ifndef _GAMING_XBOX
    ID3D12Device9 *device9;
    if (SUCCEEDED(screen->dev->QueryInterface(&device9))) {
       if (FAILED(device9->CreateCommandQueue1(&queue_desc, OpenGLOn12CreatorID,
                                               IID_PPV_ARGS(&screen->cmdqueue))))
          return false;
       device9->Release();
-   } else {
+   } else
+#endif
+   {
       if (FAILED(screen->dev->CreateCommandQueue(&queue_desc,
                                                  IID_PPV_ARGS(&screen->cmdqueue))))
          return false;
@@ -1506,11 +1578,14 @@ d3d12_init_screen(struct d3d12_screen *screen, IUnknown *adapter)
 
    screen->have_load_at_vertex = can_attribute_at_vertex(screen);
    screen->support_shader_images = can_shader_image_load_all_formats(screen);
+
+#ifndef _GAMING_XBOX
    ID3D12Device8 *dev8;
    if (SUCCEEDED(screen->dev->QueryInterface(&dev8))) {
       dev8->Release();
       screen->support_create_not_resident = true;
    }
+#endif
 
    screen->nir_options = *dxil_get_nir_compiler_options();
 

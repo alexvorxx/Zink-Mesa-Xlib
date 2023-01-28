@@ -629,14 +629,13 @@ panfrost_walk_dmabuf_modifiers(struct pipe_screen *screen,
           test_modifier != pan_best_modifiers[i])
          continue;
 
-      count++;
-
       if (max > (int)count) {
          modifiers[count] = pan_best_modifiers[i];
 
          if (external_only)
             external_only[count] = false;
       }
+      count++;
    }
 
    *out_count = count;

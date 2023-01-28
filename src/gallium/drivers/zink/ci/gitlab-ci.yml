@@ -37,6 +37,10 @@ zink-lvp:
   variables:
     DEQP_SUITE: zink-lvp
     PIGLIT_NO_WINDOW: 1
+    # Enable validation (except for on piglit, see deqp-zink-lvp.toml), logging
+    # to stdout and aborting on unknown failures.
+    ZINK_DEBUG: validation
+    VK_LAYER_SETTINGS_PATH: ${CI_PROJECT_DIR}/install/zink-lvp-validation-settings.txt
   script:
     - xvfb-run --server-args='-noreset' sh -c "GALLIUM_DRIVER=zink VK_DRIVER=lvp install/deqp-runner.sh"
 
@@ -56,6 +60,10 @@ zink-anv-tgl:
     DEQP_SUITE: zink-anv-tgl
     PIGLIT_NO_WINDOW: 1
     HWCI_START_XORG: 1
+    # We use gbm because X can die:
+    # MESA: error: ZINK: vkQueueSubmit failed (VK_ERROR_DEVICE_LOST)
+    # Xorg: ../src/gallium/drivers/zink/zink_batch.c:599: zink_end_batch: Assertion `!ctx->batch_states' failed.
+    PIGLIT_PLATFORM: gbm
 
 # Manual full run when you want to double-check the full status.
 zink-anv-tgl-full:
@@ -112,7 +120,6 @@ zink-freedreno-a630-traces:
     - a630-traces
     - .zink-turnip-rules
     - .zink-trace-test
-    - .test-manual-mr
   variables:
     PIGLIT_REPLAY_DEVICE_NAME: "zink-a630"
     ZINK_DEBUG: rp
@@ -137,7 +144,7 @@ zink-radv-navi10-valve:
   extends:
     - .radv-zink-test-valve
     - .navi10-test-valve
-    - .test-manual-mr
+    - .radv-valve-manual-rules
   variables:
     GPU_VERSION: zink-radv-navi10
 
@@ -146,6 +153,6 @@ zink-radv-vangogh-valve:
   extends:
     - .radv-zink-test-valve
     - .vangogh-test-valve
-    - .test-manual-mr
+    - .radv-valve-manual-rules
   variables:
     GPU_VERSION: zink-radv-vangogh

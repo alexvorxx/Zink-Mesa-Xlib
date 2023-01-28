@@ -59,8 +59,9 @@ void
 zink_screen_init_compiler(struct zink_screen *screen);
 void
 zink_compiler_assign_io(struct zink_screen *screen, nir_shader *producer, nir_shader *consumer);
+/* pass very large shader key data with extra_data */
 VkShaderModule
-zink_shader_compile(struct zink_screen *screen, struct zink_shader *zs, nir_shader *nir, const struct zink_shader_key *key);
+zink_shader_compile(struct zink_screen *screen, struct zink_shader *zs, nir_shader *nir, const struct zink_shader_key *key, const void *extra_data);
 VkShaderModule
 zink_shader_spirv_compile(struct zink_screen *screen, struct zink_shader *zs, struct spirv_shader *spirv);
 struct zink_shader *

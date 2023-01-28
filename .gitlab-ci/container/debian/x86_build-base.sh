@@ -27,6 +27,7 @@ apt-get install -y --no-remove \
         $STABLE_EPHEMERAL \
         bison \
         ccache \
+	curl \
         dpkg-cross \
         findutils \
         flex \
@@ -67,7 +68,6 @@ apt-get install -y --no-remove \
         python3-requests \
         qemu-user \
         valgrind \
-        wget \
         x11proto-dri2-dev \
         x11proto-gl-dev \
         x11proto-randr-dev \

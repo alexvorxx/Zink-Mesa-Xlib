@@ -117,6 +117,7 @@ struct aco_shader_info {
    } ps;
    struct {
       uint8_t subgroup_size;
+      bool uses_full_subgroups;
    } cs;
 
    uint32_t gfx9_gs_ring_lds_size;

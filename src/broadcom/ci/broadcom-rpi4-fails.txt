@@ -373,3 +373,5 @@ dEQP-VK.compute.workgroup_memory_explicit_layout.zero_ext.block_with_offset,Cras
 # // 0x00000000 returned
 # // ERROR expected: EGL_BAD_CONFIG or EGL_BAD_PARAMETER, Got: EGL_BAD_NATIVE_PIXMAP
 wayland-dEQP-EGL.functional.negative_api.create_pixmap_surface,Fail
+
+spec@!opengl 1.1@line-smooth-stipple,Fail

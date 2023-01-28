@@ -197,6 +197,7 @@ enum dxil_interpolation_mode  {
 
 enum overload_type {
    DXIL_NONE,
+   DXIL_I1,
    DXIL_I16,
    DXIL_I32,
    DXIL_I64,
@@ -271,6 +272,7 @@ enum dxil_shader_tag {
    DXIL_SHADER_TAG_DS_STATE    = 2,
    DXIL_SHADER_TAG_HS_STATE    = 3,
    DXIL_SHADER_TAG_NUM_THREADS = 4,
+   DXIL_SHADER_TAG_WAVE_SIZE   = 11,
 };
 
 enum dxil_barrier_mode {
@@ -344,6 +346,12 @@ enum dxil_signature_element_extended_properties {
    DXIL_SIGNATURE_ELEMENT_GLOBAL_SYMBOL = 1,
    DXIL_SIGNATURE_ELEMENT_DYNAMIC_INDEX_COMPONENT_MASK = 2,
    DXIL_SIGNATURE_ELEMENT_USAGE_COMPONENT_MASK = 3,
+};
+
+enum dxil_quad_op_kind {
+   QUAD_READ_ACROSS_X = 0,
+   QUAD_READ_ACROSS_Y = 1,
+   QUAD_READ_ACROSS_DIAGONAL = 2,
 };
 
 #ifdef __cplusplus

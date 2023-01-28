@@ -2137,7 +2137,7 @@
     </field>
     <field name="Pixel Shader Kills Pixel" start="60" end="60" type="bool" />
     <field name="oMask Present to Render Target" start="61" end="61" type="bool" />
-    <field name="Pixel Shader Does not write to RT" start="62" end="62" type="bool" />
+    <field name="Pixel Shader Does not write to RT" start="62" end="62" type="mbz" />
     <field name="Pixel Shader Valid" start="63" end="63" type="bool" />
   </instruction>
   <instruction name="3DSTATE_PUSH_CONSTANT_ALLOC_DS" bias="2" length="2" engine="render">

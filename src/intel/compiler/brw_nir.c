@@ -1587,8 +1587,8 @@ brw_cmod_for_nir_comparison(nir_op op)
    }
 }
 
-uint32_t
-brw_aop_for_nir_intrinsic(const nir_intrinsic_instr *atomic)
+enum lsc_opcode
+lsc_aop_for_nir_intrinsic(const nir_intrinsic_instr *atomic)
 {
    switch (atomic->intrinsic) {
 #define AOP_CASE(atom) \
@@ -1619,22 +1619,22 @@ brw_aop_for_nir_intrinsic(const nir_intrinsic_instr *atomic)
       if (nir_src_is_const(atomic->src[src_idx])) {
          int64_t add_val = nir_src_as_int(atomic->src[src_idx]);
          if (add_val == 1)
-            return BRW_AOP_INC;
+            return LSC_OP_ATOMIC_INC;
          else if (add_val == -1)
-            return BRW_AOP_DEC;
+            return LSC_OP_ATOMIC_DEC;
       }
-      return BRW_AOP_ADD;
+      return LSC_OP_ATOMIC_ADD;
    }
 
-   AOP_CASE(imin):         return BRW_AOP_IMIN;
-   AOP_CASE(umin):         return BRW_AOP_UMIN;
-   AOP_CASE(imax):         return BRW_AOP_IMAX;
-   AOP_CASE(umax):         return BRW_AOP_UMAX;
-   AOP_CASE(and):          return BRW_AOP_AND;
-   AOP_CASE(or):           return BRW_AOP_OR;
-   AOP_CASE(xor):          return BRW_AOP_XOR;
-   AOP_CASE(exchange):     return BRW_AOP_MOV;
-   AOP_CASE(comp_swap):    return BRW_AOP_CMPWR;
+   AOP_CASE(imin):         return LSC_OP_ATOMIC_MIN;
+   AOP_CASE(umin):         return LSC_OP_ATOMIC_UMIN;
+   AOP_CASE(imax):         return LSC_OP_ATOMIC_MAX;
+   AOP_CASE(umax):         return LSC_OP_ATOMIC_UMAX;
+   AOP_CASE(and):          return LSC_OP_ATOMIC_AND;
+   AOP_CASE(or):           return LSC_OP_ATOMIC_OR;
+   AOP_CASE(xor):          return LSC_OP_ATOMIC_XOR;
+   AOP_CASE(exchange):     return LSC_OP_ATOMIC_STORE;
+   AOP_CASE(comp_swap):    return LSC_OP_ATOMIC_CMPXCHG;
 
 #undef AOP_CASE
 #define AOP_CASE(atom) \
@@ -1642,10 +1642,10 @@ brw_aop_for_nir_intrinsic(const nir_intrinsic_instr *atomic)
    case nir_intrinsic_shared_atomic_##atom:        \
    case nir_intrinsic_global_atomic_##atom
 
-   AOP_CASE(fmin):         return BRW_AOP_FMIN;
-   AOP_CASE(fmax):         return BRW_AOP_FMAX;
-   AOP_CASE(fcomp_swap):   return BRW_AOP_FCMPWR;
-   AOP_CASE(fadd):         return BRW_AOP_FADD;
+   AOP_CASE(fmin):         return LSC_OP_ATOMIC_FMIN;
+   AOP_CASE(fmax):         return LSC_OP_ATOMIC_FMAX;
+   AOP_CASE(fcomp_swap):   return LSC_OP_ATOMIC_FCMPXCHG;
+   AOP_CASE(fadd):         return LSC_OP_ATOMIC_FADD;
 
 #undef AOP_CASE
 

@@ -90,6 +90,11 @@ struct dxil_spirv_compute_runtime_data {
    uint32_t group_count_x;
    uint32_t group_count_y;
    uint32_t group_count_z;
+   uint32_t padding0;
+   /* Base */
+   uint32_t base_group_x;
+   uint32_t base_group_y;
+   uint32_t base_group_z;
 };
 
 #define DXIL_SPIRV_Y_FLIP_MASK BITFIELD_MASK(DXIL_SPIRV_MAX_VIEWPORT)
@@ -114,6 +119,7 @@ struct dxil_spirv_vertex_runtime_data {
    uint32_t draw_id;
    float viewport_width;
    float viewport_height;
+   uint32_t view_index;
 };
 
 enum dxil_spirv_yz_flip_mode {
@@ -145,6 +151,8 @@ struct dxil_spirv_runtime_conf {
    // Set true if vertex and instance ids have already been converted to
    // zero-based. Otherwise, runtime_data will be required to lower them.
    bool zero_based_vertex_instance_id;
+   // Set true if workgroup base is known to be zero
+   bool zero_based_compute_workgroup_id;
 
    struct {
       // mode != DXIL_SPIRV_YZ_FLIP_NONE only valid on vertex/geometry stages.
@@ -161,6 +169,11 @@ struct dxil_spirv_runtime_conf {
 
    // Force sample rate shading on a fragment shader
    bool force_sample_rate_shading;
+
+   // View index needs to be lowered to a UBO lookup
+   bool lower_view_index;
+   // View index also needs to be forwarded to RT layer output
+   bool lower_view_index_to_rt_layer;
 };
 
 struct dxil_spirv_debug_options {

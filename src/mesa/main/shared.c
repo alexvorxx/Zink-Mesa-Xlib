@@ -335,8 +335,10 @@ free_shared_state(struct gl_context *ctx, struct gl_shared_state *shared)
 
    /* Free the dummy/fallback texture objects */
    for (i = 0; i < NUM_TEXTURE_TARGETS; i++) {
-      if (shared->FallbackTex[i])
-         _mesa_delete_texture_object(ctx, shared->FallbackTex[i]);
+      for (unsigned j = 0; j < ARRAY_SIZE(shared->FallbackTex[0]); j++) {
+         if (shared->FallbackTex[i][j])
+            _mesa_delete_texture_object(ctx, shared->FallbackTex[i][j]);
+      }
    }
 
    /*

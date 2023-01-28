@@ -45,10 +45,9 @@ panfrost-t720-gles2:arm64:
 panfrost-t760-gles2:armhf:
   extends:
     - .lava-test:armhf
-    - .panfrost-midgard-rules
+    - .panfrost-midgard-manual-rules
     - .panfrost-test
     - .lava-rk3288-veyron-jaq
-    - .test-manual-mr
 
 .panfrost-t760-traces:armhf:
   extends:

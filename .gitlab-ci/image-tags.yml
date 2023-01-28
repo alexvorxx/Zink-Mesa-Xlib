@@ -1,9 +1,9 @@
 variables:
    DEBIAN_X86_BUILD_BASE_IMAGE: "debian/x86_build-base"
-   DEBIAN_BASE_TAG: "2023-01-10-robust-wget"
+   DEBIAN_BASE_TAG: "2023-01-26-virglrenderer"
 
    DEBIAN_X86_BUILD_IMAGE_PATH: "debian/x86_build"
-   DEBIAN_BUILD_TAG: "2023-01-09-lavacli"
+   DEBIAN_BUILD_TAG: "2023-01-24-android"
 
    DEBIAN_X86_BUILD_MINGW_IMAGE_PATH: "debian/x86_build-mingw"
    DEBIAN_BUILD_MINGW_TAG: "2023-01-03-ci-libva-2.17"
@@ -13,13 +13,15 @@ variables:
    DEBIAN_X86_TEST_IMAGE_GL_PATH: "debian/x86_test-gl"
    DEBIAN_X86_TEST_IMAGE_VK_PATH: "debian/x86_test-vk"
    DEBIAN_X86_TEST_IMAGE_PATH: ${DEBIAN_X86_TEST_IMAGE_GL_PATH}
+   DEBIAN_X86_TEST_ANDROID_IMAGE_PATH: "debian/x86_test-android"
+   DEBIAN_X86_TEST_ANDROID_TAG: "2023-01-24-test-android-2"
 
-   DEBIAN_X86_TEST_GL_TAG: "2023-01-12-cts"
+   DEBIAN_X86_TEST_GL_TAG: "2023-01-23-vkvalidate"
    DEBIAN_X86_TEST_VK_TAG: "2023-01-12-cts"
 
-   ALPINE_X86_BUILD_TAG: "2023-01-10-robust-wget"
-   FEDORA_X86_BUILD_TAG: "2023-01-10-robust-wget"
-   KERNEL_ROOTFS_TAG: "2023-01-12-cts"
+   ALPINE_X86_BUILD_TAG: "2023-01-20-all-in-1"
+   FEDORA_X86_BUILD_TAG: "2023-01-20-all-in-1"
+   KERNEL_ROOTFS_TAG: "2023-01-26-virglrenderer"
 
    WINDOWS_X64_VS_PATH: "windows/x64_vs"
    WINDOWS_X64_VS_TAG: "2022-10-20-upgrade-zlib"

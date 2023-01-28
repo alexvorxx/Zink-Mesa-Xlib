@@ -388,6 +388,10 @@ typedef enum {
     */
    OPC_META_PARALLEL_COPY = _OPC(-1, 5),
    OPC_META_PHI = _OPC(-1, 6),
+   /*
+    * A manually encoded opcode
+    */
+   OPC_META_RAW = _OPC(-1, 7)
 } opc_t;
 /* clang-format on */
 

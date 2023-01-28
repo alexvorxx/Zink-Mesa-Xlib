@@ -56,7 +56,7 @@ tu_device_get_cache_uuid(struct tu_physical_device *device, void *uuid)
     * shader hash instead, since the compiler is only created with the logical
     * device.
     */
-   uint64_t driver_flags = device->instance->debug_flags & TU_DEBUG_NOMULTIPOS;
+   uint64_t driver_flags = tu_env.debug & TU_DEBUG_NOMULTIPOS;
    uint16_t family = fd_dev_gpu_id(&device->dev_id);
 
    memset(uuid, 0, VK_UUID_SIZE);
@@ -145,7 +145,7 @@ get_device_extensions(const struct tu_physical_device *device,
       .KHR_maintenance3 = true,
       .KHR_maintenance4 = true,
       .KHR_multiview = true,
-      .KHR_performance_query = device->instance->debug_flags & TU_DEBUG_PERFC,
+      .KHR_performance_query = TU_DEBUG(PERFC),
       .KHR_pipeline_executable_properties = true,
       .KHR_push_descriptor = true,
       .KHR_relaxed_block_layout = true,
@@ -391,38 +391,6 @@ tu_destroy_physical_device(struct vk_physical_device *device)
    vk_free(&device->instance->alloc, device);
 }
 
-static const struct debug_control tu_debug_options[] = {
-   { "startup", TU_DEBUG_STARTUP },
-   { "nir", TU_DEBUG_NIR },
-   { "nobin", TU_DEBUG_NOBIN },
-   { "sysmem", TU_DEBUG_SYSMEM },
-   { "gmem", TU_DEBUG_GMEM },
-   { "forcebin", TU_DEBUG_FORCEBIN },
-   { "layout", TU_DEBUG_LAYOUT },
-   { "noubwc", TU_DEBUG_NOUBWC },
-   { "nomultipos", TU_DEBUG_NOMULTIPOS },
-   { "nolrz", TU_DEBUG_NOLRZ },
-   { "nolrzfc", TU_DEBUG_NOLRZFC },
-   { "perf", TU_DEBUG_PERF },
-   { "perfc", TU_DEBUG_PERFC },
-   { "flushall", TU_DEBUG_FLUSHALL },
-   { "syncdraw", TU_DEBUG_SYNCDRAW },
-   { "dontcare_as_load", TU_DEBUG_DONT_CARE_AS_LOAD },
-   { "rast_order", TU_DEBUG_RAST_ORDER },
-   { "unaligned_store", TU_DEBUG_UNALIGNED_STORE },
-   { "log_skip_gmem_ops", TU_DEBUG_LOG_SKIP_GMEM_OPS },
-   { "dynamic", TU_DEBUG_DYNAMIC },
-   { "bos", TU_DEBUG_BOS },
-   { NULL, 0 }
-};
-
-const char *
-tu_get_debug_option_name(int id)
-{
-   assert(id < ARRAY_SIZE(tu_debug_options) - 1);
-   return tu_debug_options[id].string;
-}
-
 static const driOptionDescription tu_dri_options[] = {
    DRI_CONF_SECTION_PERFORMANCE
       DRI_CONF_VK_X11_OVERRIDE_MIN_IMAGE_COUNT(0)
@@ -436,6 +404,10 @@ static const driOptionDescription tu_dri_options[] = {
       DRI_CONF_VK_WSI_FORCE_BGRA8_UNORM_FIRST(false)
       DRI_CONF_VK_DONT_CARE_AS_LOAD(false)
    DRI_CONF_SECTION_END
+
+   DRI_CONF_SECTION_MISCELLANEOUS
+      DRI_CONF_DISABLE_CONSERVATIVE_LRZ(false)
+   DRI_CONF_SECTION_END
 };
 
 static void
@@ -447,8 +419,10 @@ tu_init_dri_options(struct tu_instance *instance)
                        instance->vk.app_info.app_name, instance->vk.app_info.app_version,
                        instance->vk.app_info.engine_name, instance->vk.app_info.engine_version);
 
-   if (driQueryOptionb(&instance->dri_options, "vk_dont_care_as_load"))
-      instance->debug_flags |= TU_DEBUG_DONT_CARE_AS_LOAD;
+   instance->dont_care_as_load =
+         driQueryOptionb(&instance->dri_options, "vk_dont_care_as_load");
+   instance->conservative_lrz =
+         !driQueryOptionb(&instance->dri_options, "disable_conservative_lrz");
 }
 
 VKAPI_ATTR VkResult VKAPI_CALL
@@ -458,6 +432,8 @@ tu_CreateInstance(const VkInstanceCreateInfo *pCreateInfo,
 {
    struct tu_instance *instance;
    VkResult result;
+
+   tu_env_init();
 
    assert(pCreateInfo->sType == VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO);
 
@@ -493,18 +469,7 @@ tu_CreateInstance(const VkInstanceCreateInfo *pCreateInfo,
 #endif
    instance->vk.physical_devices.destroy = tu_destroy_physical_device;
 
-   instance->debug_flags =
-      parse_debug_string(os_get_option("TU_DEBUG"), tu_debug_options);
-
-#ifdef DEBUG
-   /* Enable startup debugging by default on debug drivers.  You almost always
-    * want to see your startup failures in that case, and it's hard to set
-    * this env var on android.
-    */
-   instance->debug_flags |= TU_DEBUG_STARTUP;
-#endif
-
-   if (instance->debug_flags & TU_DEBUG_STARTUP)
+   if (TU_DEBUG(STARTUP))
       mesa_logi("Created an instance");
 
    VG(VALGRIND_CREATE_MEMPOOL(instance, 0, false));
@@ -1496,8 +1461,7 @@ tu_GetPhysicalDeviceProperties2(VkPhysicalDevice physicalDevice,
             A6XX_TEX_CONST_DWORDS * 4;
          properties->robustStorageBufferDescriptorSize =
             properties->storageBufferDescriptorSize;
-         properties->inputAttachmentDescriptorSize =
-            (pdevice->instance->debug_flags & TU_DEBUG_DYNAMIC) ?
+         properties->inputAttachmentDescriptorSize = TU_DEBUG(DYNAMIC) ?
             A6XX_TEX_CONST_DWORDS * 4 : 0;
 
          properties->maxSamplerDescriptorBufferRange = ~0ull;
@@ -2077,7 +2041,7 @@ tu_CreateDevice(VkPhysicalDevice physicalDevice,
    u_rwlock_init(&device->dma_bo_lock);
    pthread_mutex_init(&device->submit_mutex, NULL);
 
-   if (device->instance->debug_flags & TU_DEBUG_BOS)
+   if (TU_DEBUG(BOS))
       device->bo_sizes = _mesa_hash_table_create(NULL, _mesa_hash_string, _mesa_key_string_equal);
 
 #ifndef TU_USE_KGSL
@@ -2119,6 +2083,8 @@ tu_CreateDevice(VkPhysicalDevice physicalDevice,
                               .robust_buffer_access2 = robust_buffer_access2,
                               .push_ubo_with_preamble = true,
                               .disable_cache = true,
+                              .bindless_fb_read_descriptor = -1,
+                              .bindless_fb_read_slot = -1,
                            });
    if (!device->compiler) {
       result = vk_startup_errorf(physical_device->instance,
@@ -2915,7 +2881,7 @@ tu_CreateFramebuffer(VkDevice _device,
 {
    TU_FROM_HANDLE(tu_device, device, _device);
 
-   if (unlikely(device->instance->debug_flags & TU_DEBUG_DYNAMIC))
+   if (TU_DEBUG(DYNAMIC))
       return vk_common_CreateFramebuffer(_device, pCreateInfo, pAllocator,
                                          pFramebuffer);
 
@@ -2977,7 +2943,7 @@ tu_DestroyFramebuffer(VkDevice _device,
 {
    TU_FROM_HANDLE(tu_device, device, _device);
 
-   if (unlikely(device->instance->debug_flags & TU_DEBUG_DYNAMIC)) {
+   if (TU_DEBUG(DYNAMIC)) {
       vk_common_DestroyFramebuffer(_device, _fb, pAllocator);
       return;
    }

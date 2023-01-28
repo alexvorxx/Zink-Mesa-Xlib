@@ -711,11 +711,6 @@ bool si_compute_copy_image(struct si_context *sctx, struct pipe_resource *dst, u
 
       dstx = util_format_get_nblocksx(src_format, dstx);
 
-      new_box = *src_box;
-      new_box.x = util_format_get_nblocksx(src_format, src_box->x);
-      new_box.width = util_format_get_nblocksx(src_format, src_box->width);
-      src_box = &new_box;
-
       src_format = dst_format = PIPE_FORMAT_R32_UINT;
 
       /* Interpreting 422 subsampled format (16 bpp) as 32 bpp

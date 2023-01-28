@@ -436,7 +436,6 @@ _mesa_initialize_texture_object( struct gl_context *ctx,
  * Allocate and initialize a new texture object.  But don't put it into the
  * texture object hash table.
  *
- * \param shared the shared GL state structure to contain the texture object
  * \param name integer name for the texture object
  * \param target either GL_TEXTURE_1D, GL_TEXTURE_2D, GL_TEXTURE_3D,
  * GL_TEXTURE_CUBE_MAP or GL_TEXTURE_RECTANGLE_NV.  zero is ok for the sake
@@ -975,14 +974,15 @@ _mesa_dirty_texobj(struct gl_context *ctx, struct gl_texture_object *texObj)
 
 /**
  * Return pointer to a default/fallback texture of the given type/target.
- * The texture is an RGBA texture with all texels = (0,0,0,1).
+ * The texture is an RGBA texture with all texels = (0,0,0,1) OR
+ * a depth texture that returns 0.
  * That's the value a GLSL sampler should get when sampling from an
  * incomplete texture.
  */
 struct gl_texture_object *
-_mesa_get_fallback_texture(struct gl_context *ctx, gl_texture_index tex)
+_mesa_get_fallback_texture(struct gl_context *ctx, gl_texture_index tex, bool is_depth)
 {
-   if (!ctx->Shared->FallbackTex[tex]) {
+   if (!ctx->Shared->FallbackTex[tex][is_depth]) {
       /* create fallback texture now */
       const GLsizei width = 1, height = 1;
       GLsizei depth = 1;
@@ -1068,9 +1068,14 @@ _mesa_get_fallback_texture(struct gl_context *ctx, gl_texture_index tex)
       texObj->Sampler.Attrib.state.min_mip_filter = PIPE_TEX_MIPFILTER_NONE;
       texObj->Sampler.Attrib.state.mag_img_filter = PIPE_TEX_FILTER_NEAREST;
 
-      texFormat = st_ChooseTextureFormat(ctx, target,
-                                         GL_RGBA, GL_RGBA,
-                                         GL_UNSIGNED_BYTE);
+      if (is_depth)
+         texFormat = st_ChooseTextureFormat(ctx, target,
+                                            GL_DEPTH_COMPONENT, GL_DEPTH_COMPONENT,
+                                            GL_NONE);
+      else
+         texFormat = st_ChooseTextureFormat(ctx, target,
+                                            GL_RGBA, GL_RGBA,
+                                            GL_UNSIGNED_BYTE);
 
       /* need a loop here just for cube maps */
       for (face = 0; face < numFaces; face++) {
@@ -1084,24 +1089,29 @@ _mesa_get_fallback_texture(struct gl_context *ctx, gl_texture_index tex)
                                     (dims > 1) ? height : 1,
                                     (dims > 2) ? depth : 1,
                                     0, /* border */
-                                    GL_RGBA, texFormat);
+                                    is_depth ? GL_DEPTH_COMPONENT : GL_RGBA, texFormat);
          _mesa_update_texture_object_swizzle(ctx, texObj);
-         st_TexImage(ctx, dims, texImage,
-                     GL_RGBA, GL_UNSIGNED_BYTE, texel,
-                     &ctx->DefaultPacking);
+         if (is_depth)
+            st_TexImage(ctx, dims, texImage,
+                        GL_DEPTH_COMPONENT, GL_FLOAT, texel,
+                        &ctx->DefaultPacking);
+         else
+            st_TexImage(ctx, dims, texImage,
+                        GL_RGBA, GL_UNSIGNED_BYTE, texel,
+                        &ctx->DefaultPacking);
       }
 
       _mesa_test_texobj_completeness(ctx, texObj);
       assert(texObj->_BaseComplete);
       assert(texObj->_MipmapComplete);
 
-      ctx->Shared->FallbackTex[tex] = texObj;
+      ctx->Shared->FallbackTex[tex][is_depth] = texObj;
 
       /* Complete the driver's operation in case another context will also
        * use the same fallback texture. */
       st_glFinish(ctx);
    }
-   return ctx->Shared->FallbackTex[tex];
+   return ctx->Shared->FallbackTex[tex][is_depth];
 }
 
 

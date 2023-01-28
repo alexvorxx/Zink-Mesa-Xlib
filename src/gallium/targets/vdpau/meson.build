@@ -77,7 +77,7 @@ foreach d : [[with_gallium_r300, 'r300'],
 endforeach
 
 meson.add_install_script(
-  install_megadrivers_py.path(),
+  install_megadrivers_py.full_path(),
   libvdpau_gallium.full_path(),
   vdpau_drivers_path,
   vdpau_drivers,

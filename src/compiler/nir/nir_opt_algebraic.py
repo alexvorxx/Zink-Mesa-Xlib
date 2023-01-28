@@ -1627,6 +1627,7 @@ optimizations.extend([
    # Lower pack/unpack
    (('pack_64_2x32_split', a, b), ('ior', ('u2u64', a), ('ishl', ('u2u64', b), 32)), 'options->lower_pack_64_2x32_split'),
    (('pack_32_2x16_split', a, b), ('ior', ('u2u32', a), ('ishl', ('u2u32', b), 16)), 'options->lower_pack_32_2x16_split'),
+   (('pack_half_2x16_split', a, b), ('pack_half_2x16_rtz_split', a, b), 'options->has_pack_half_2x16_rtz'),
    (('unpack_64_2x32_split_x', a), ('u2u32', a), 'options->lower_unpack_64_2x32_split'),
    (('unpack_64_2x32_split_y', a), ('u2u32', ('ushr', a, 32)), 'options->lower_unpack_64_2x32_split'),
    (('unpack_32_2x16_split_x', a), ('u2u16', a), 'options->lower_unpack_32_2x16_split'),
@@ -1659,8 +1660,15 @@ optimizations.extend([
    (('ushr', ('pack_half_2x16_split', 0, a), 16), ('pack_half_2x16_split', a, 0)),
    (('extract_u16', ('pack_half_2x16_split', 0, a), 1), ('pack_half_2x16_split', a, 0)),
 
+   (('ishl', ('pack_half_2x16_rtz_split', a, 0), 16), ('pack_half_2x16_rtz_split', 0, a)),
+   (('ushr', ('pack_half_2x16_rtz_split', 0, a), 16), ('pack_half_2x16_rtz_split', a, 0)),
+   (('extract_u16', ('pack_half_2x16_rtz_split', 0, a), 1), ('pack_half_2x16_rtz_split', a, 0)),
+
    (('iadd', ('pack_half_2x16_split', a, 0), ('pack_half_2x16_split', 0, b)), ('pack_half_2x16_split', a, b)),
    (('ior',  ('pack_half_2x16_split', a, 0), ('pack_half_2x16_split', 0, b)), ('pack_half_2x16_split', a, b)),
+
+   (('iadd', ('pack_half_2x16_rtz_split', a, 0), ('pack_half_2x16_rtz_split', 0, b)), ('pack_half_2x16_rtz_split', a, b)),
+   (('ior',  ('pack_half_2x16_rtz_split', a, 0), ('pack_half_2x16_rtz_split', 0, b)), ('pack_half_2x16_rtz_split', a, b)),
 
    (('extract_i8', ('pack_32_4x8_split', a, b, c, d), 0), ('i2i', a)),
    (('extract_i8', ('pack_32_4x8_split', a, b, c, d), 1), ('i2i', b)),
@@ -2474,6 +2482,26 @@ def bitfield_reverse_cp2077(u):
 
 optimizations += [(bitfield_reverse_ue4('x@32'), ('bitfield_reverse', 'x'), '!options->lower_bitfield_reverse')]
 optimizations += [(bitfield_reverse_cp2077('x@32'), ('bitfield_reverse', 'x'), '!options->lower_bitfield_reverse')]
+
+# VKD3D-Proton DXBC f32 to f16 conversion implements a float conversion using PackHalf2x16.
+# Because the spec does not specify a rounding mode or behaviour regarding infinity,
+# it emits a sequence to ensure D3D-like behaviour for infinity.
+# When we know the current backend already behaves like we need, we can eliminate the extra sequence.
+#
+# Input is f32, output is u32 that has the f16 packed into its low bits.
+def vkd3d_proton_packed_f2f16_rtz_lo(a, abs_a):
+    packed_half = ('pack_half_2x16_rtz_split', a, 0)
+    packed_half_minus1 = ('iadd', packed_half, 0xffffffff)
+    f32_was_not_inf = ('ine', abs_a, 0x7f800000)
+    f16_is_now_inf = ('ieq', ('iand', packed_half, 0x7fff), 0x7c00)
+    return ('bcsel', ('iand', f32_was_not_inf, f16_is_now_inf), packed_half_minus1, packed_half)
+
+optimizations += [
+   (vkd3d_proton_packed_f2f16_rtz_lo('x', ('fabs', 'x')), ('pack_half_2x16_rtz_split', 'x', 0)),
+   (vkd3d_proton_packed_f2f16_rtz_lo('x(is_not_negative)', 'x'), ('pack_half_2x16_rtz_split', 'x', 0)),
+   (vkd3d_proton_packed_f2f16_rtz_lo(('fneg', 'x'), ('fabs', 'x')), ('pack_half_2x16_rtz_split', ('fneg', 'x'), 0)),
+]
+
 
 # "all_equal(eq(a, b), vec(~0))" is the same as "all_equal(a, b)"
 # "any_nequal(neq(a, b), vec(0))" is the same as "any_nequal(a, b)"

@@ -30,6 +30,7 @@
 
 #include "util/macros.h"
 #include "compiler/shader_enums.h"
+#include "intel_kmd.h"
 
 #include "intel/common/intel_engine.h"
 
@@ -96,6 +97,8 @@ enum intel_platform {
  */
 struct intel_device_info
 {
+   enum intel_kmd_type kmd_type;
+
    /* Driver internal numbers used to differentiate platforms. */
    int ver;
    int verx10;
@@ -538,6 +541,14 @@ bool intel_get_device_info_from_pci_id(int pci_id,
  */
 bool intel_device_info_update_memory_info(struct intel_device_info *devinfo,
                                           int fd);
+
+void intel_device_info_topology_reset_masks(struct intel_device_info *devinfo);
+void intel_device_info_topology_update_counts(struct intel_device_info *devinfo);
+void intel_device_info_update_pixel_pipes(struct intel_device_info *devinfo, uint8_t *subslice_masks);
+void intel_device_info_update_l3_banks(struct intel_device_info *devinfo);
+void intel_device_info_update_cs_workgroup_threads(struct intel_device_info *devinfo);
+bool intel_device_info_compute_system_memory(struct intel_device_info *devinfo, bool update);
+void intel_device_info_update_after_hwconfig(struct intel_device_info *devinfo);
 
 #ifdef __cplusplus
 }

@@ -1,9 +1,8 @@
 # Manual test rules for using anholt's shared g41.
 .anholt-g41-test:
   extends:
-    - .crocus-rules
+    - .crocus-manual-rules
     - .test-gl
-    - .test-manual-mr
   tags:
     - anholt-g41
   variables:
@@ -13,9 +12,8 @@
 # Manual test rules for using anholt's shared hsw.
 .anholt-hsw-test:
   extends:
-    - .crocus-rules
+    - .crocus-manual-rules
     - .test-gl
-    - .test-manual-mr
   tags:
     - anholt-hsw
   variables:
@@ -28,6 +26,7 @@ crocus-g41:
     - .deqp-test
   variables:
     DEQP_SUITE: crocus-g41
+    PIGLIT_PLATFORM: gbm
 
 crocus-hsw:
   extends:
@@ -35,6 +34,7 @@ crocus-hsw:
     - .deqp-test
   variables:
     DEQP_SUITE: crocus-hsw
+    PIGLIT_PLATFORM: gbm
 
 crocus-g41-traces:
   extends:

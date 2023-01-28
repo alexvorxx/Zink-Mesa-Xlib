@@ -12,12 +12,12 @@ pushd /platform/crosvm
 git checkout "$CROSVM_VERSION"
 git submodule update --init
 
-VIRGLRENDERER_VERSION=3f2685355f71201f22b98c19aa778b43732c8435
+VIRGLRENDERER_VERSION=fe92a14ab251c2ef7e0640232f15197d3253a8eb
 rm -rf third_party/virglrenderer
 git clone --single-branch -b master --no-checkout https://gitlab.freedesktop.org/virgl/virglrenderer.git third_party/virglrenderer
 pushd third_party/virglrenderer
 git checkout "$VIRGLRENDERER_VERSION"
-meson build/ -Drender-server=true -Drender-server-worker=process -Dvenus-experimental=true $EXTRA_MESON_ARGS
+meson build/ -Drender-server-worker=process -Dvenus-experimental=true $EXTRA_MESON_ARGS
 ninja -C build install
 popd
 

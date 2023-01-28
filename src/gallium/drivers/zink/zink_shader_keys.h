@@ -32,7 +32,8 @@ struct zink_vs_key_base {
    bool clip_halfz : 1;
    bool push_drawid : 1;
    bool last_vertex_stage : 1;
-   uint8_t pad : 5;
+   bool robust_access : 1;
+   uint8_t pad : 4;
 };
 
 struct zink_vs_key {
@@ -66,13 +67,23 @@ struct zink_gs_key {
    unsigned size;
 };
 
+struct zink_fs_shadow_swizzle {
+   uint8_t s[4];
+};
+
+struct zink_fs_shadow_key {
+   uint32_t mask;
+   struct zink_fs_shadow_swizzle swizzle[32];
+};
+
 struct zink_fs_key_base {
    bool coord_replace_yinvert : 1;
    bool samples : 1;
    bool force_dual_color_blend : 1;
    bool force_persample_interp : 1;
    bool fbfetch_ms : 1;
-   uint8_t pad : 3;
+   bool shadow_needs_shader_swizzle : 1; //append zink_fs_shadow_key after the key data
+   uint8_t pad : 2;
    uint8_t coord_replace_bits;
 };
 
@@ -81,11 +92,20 @@ struct zink_fs_key {
    /* non-optimal bits after this point */
    bool lower_line_stipple : 1;
    bool lower_line_smooth : 1;
-   uint16_t pad2 : 14;
+   bool robust_access : 1;
+   uint16_t pad2 : 13;
 };
 
 struct zink_tcs_key {
    uint8_t patch_vertices;
+};
+
+/* when adding a new field, make sure
+ * ctx->compute_pipeline_state.key.size is set in zink_context_create.
+ */
+struct zink_cs_key {
+   bool robust_access : 1;
+   uint32_t pad : 31;
 };
 
 struct zink_shader_key_base {
@@ -107,6 +127,7 @@ struct zink_shader_key {
       struct zink_gs_key gs;
       struct zink_fs_key fs;
       struct zink_fs_key_base fs_base;
+      struct zink_cs_key cs;
    } key;
    struct zink_shader_key_base base;
    unsigned inline_uniforms:1;
@@ -168,6 +189,11 @@ zink_tcs_key(const struct zink_shader_key *key)
    return &key->key.tcs;
 }
 
-
+static inline const struct zink_cs_key *
+zink_cs_key(const struct zink_shader_key *key)
+{
+   assert(key);
+   return &key->key.cs;
+}
 
 #endif

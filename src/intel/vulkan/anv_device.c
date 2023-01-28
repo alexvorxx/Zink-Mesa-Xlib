@@ -55,9 +55,10 @@
 #include "vk_deferred_operation.h"
 #include "vk_drm_syncobj.h"
 #include "common/intel_aux_map.h"
-#include "common/intel_defines.h"
 #include "common/intel_uuid.h"
 #include "perf/intel_perf.h"
+
+#include "i915/anv_device.h"
 
 #include "genxml/gen7_pack.h"
 #include "genxml/genX_bits.h"
@@ -513,19 +514,28 @@ anv_physical_device_init_heaps(struct anv_physical_device *device, int fd)
        * But some game engines can't handle single type well
        * https://gitlab.freedesktop.org/mesa/mesa/-/issues/7360#note_1719438
        *
-       * And Intel on Windows uses 3 types so it's better to add extra one here
+       * The second memory type w/out HOST_CACHED_BIT will get write-combining.
+       * See anv_AllocateMemory()).
+       *
+       * The Intel Vulkan driver for Windows also advertises these memory types.
        */
-      device->memory.type_count = 2;
+      device->memory.type_count = 3;
       device->memory.types[0] = (struct anv_memory_type) {
-          .propertyFlags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-          .heapIndex = 0,
+         .propertyFlags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+         .heapIndex = 0,
       };
       device->memory.types[1] = (struct anv_memory_type) {
-          .propertyFlags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT |
-                           VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
-                           VK_MEMORY_PROPERTY_HOST_COHERENT_BIT |
-                           VK_MEMORY_PROPERTY_HOST_CACHED_BIT,
-          .heapIndex = 0,
+         .propertyFlags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT |
+                          VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+                          VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+         .heapIndex = 0,
+      };
+      device->memory.types[2] = (struct anv_memory_type) {
+         .propertyFlags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT |
+                          VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+                          VK_MEMORY_PROPERTY_HOST_COHERENT_BIT |
+                          VK_MEMORY_PROPERTY_HOST_CACHED_BIT,
+         .heapIndex = 0,
       };
    } else {
       device->memory.heap_count = 1;
@@ -763,68 +773,6 @@ anv_physical_device_init_queue_families(struct anv_physical_device *pdevice)
 }
 
 static VkResult
-anv_i915_physical_device_get_parameters(struct anv_physical_device *device)
-{
-   VkResult result = VK_SUCCESS;
-   int val, fd = device->local_fd;
-
-   if (!intel_gem_get_param(fd, I915_PARAM_HAS_WAIT_TIMEOUT, &val) || !val) {
-       result = vk_errorf(device, VK_ERROR_INITIALIZATION_FAILED,
-                          "kernel missing gem wait");
-       return result;
-   }
-
-   if (!intel_gem_get_param(fd, I915_PARAM_HAS_EXECBUF2, &val) || !val) {
-      result = vk_errorf(device, VK_ERROR_INITIALIZATION_FAILED,
-                         "kernel missing execbuf2");
-      return result;
-   }
-
-   if (!device->info.has_llc &&
-       (!intel_gem_get_param(fd, I915_PARAM_MMAP_VERSION, &val) || val < 1)) {
-       result = vk_errorf(device, VK_ERROR_INITIALIZATION_FAILED,
-                          "kernel missing wc mmap");
-       return result;
-   }
-
-   if (!intel_gem_get_param(fd, I915_PARAM_HAS_EXEC_SOFTPIN, &val) || !val) {
-      result = vk_errorf(device, VK_ERROR_INITIALIZATION_FAILED,
-                         "kernel missing softpin");
-      return result;
-   }
-
-   if (!intel_gem_get_param(fd, I915_PARAM_HAS_EXEC_FENCE_ARRAY, &val) || !val) {
-      result = vk_errorf(device, VK_ERROR_INITIALIZATION_FAILED,
-                         "kernel missing syncobj support");
-      return result;
-   }
-
-   if (intel_gem_get_param(fd, I915_PARAM_HAS_EXEC_ASYNC, &val))
-      device->has_exec_async = val;
-   if (intel_gem_get_param(fd, I915_PARAM_HAS_EXEC_CAPTURE, &val))
-      device->has_exec_capture = val;
-
-   /* Start with medium; sorted low to high */
-   const VkQueueGlobalPriorityKHR priorities[] = {
-         VK_QUEUE_GLOBAL_PRIORITY_LOW_KHR,
-         VK_QUEUE_GLOBAL_PRIORITY_MEDIUM_KHR,
-         VK_QUEUE_GLOBAL_PRIORITY_HIGH_KHR,
-         VK_QUEUE_GLOBAL_PRIORITY_REALTIME_KHR,
-   };
-   device->max_context_priority = VK_QUEUE_GLOBAL_PRIORITY_LOW_KHR;
-   for (unsigned i = 0; i < ARRAY_SIZE(priorities); i++) {
-      if (!anv_gem_has_context_priority(fd, priorities[i]))
-         break;
-      device->max_context_priority = priorities[i];
-   }
-
-   if (intel_gem_get_param(fd, I915_PARAM_HAS_EXEC_TIMELINE_FENCES, &val))
-      device->has_exec_timeline = val;
-
-   return result;
-}
-
-static VkResult
 anv_physical_device_get_parameters(struct anv_physical_device *device)
 {
    return anv_i915_physical_device_get_parameters(device);
@@ -924,7 +872,7 @@ anv_physical_device_try_create(struct vk_instance *vk_instance,
     * we'll need to edit genxml prior to enabling here.
     */
    device->has_protected_contexts = device->info.ver >= 12 &&
-      intel_gem_supports_protected_context(fd);
+      intel_gem_supports_protected_context(fd, device->info.kmd_type);
 
    result = anv_physical_device_init_heaps(device, fd);
    if (result != VK_SUCCESS)
@@ -971,7 +919,9 @@ anv_physical_device_try_create(struct vk_instance *vk_instance,
 
    /* Check if we can read the GPU timestamp register from the CPU */
    uint64_t u64_ignore;
-   device->has_reg_timestamp = intel_gem_read_render_timestamp(fd, &u64_ignore);
+   device->has_reg_timestamp = intel_gem_read_render_timestamp(fd,
+                                                               device->info.kmd_type,
+                                                               &u64_ignore);
 
    device->always_flush_cache = INTEL_DEBUG(DEBUG_STALL) ||
       driQueryOptionb(&instance->dri_options, "always_flush_cache");
@@ -1000,7 +950,7 @@ anv_physical_device_try_create(struct vk_instance *vk_instance,
       master_fd = open(primary_path, O_RDWR | O_CLOEXEC);
       if (master_fd >= 0) {
          /* fail if we don't have permission to even render on this device */
-         if (!intel_gem_can_render_on_fd(master_fd)) {
+         if (!intel_gem_can_render_on_fd(master_fd, device->info.kmd_type)) {
             close(master_fd);
             master_fd = -1;
          }
@@ -1008,7 +958,7 @@ anv_physical_device_try_create(struct vk_instance *vk_instance,
    }
    device->master_fd = master_fd;
 
-   device->engine_info = intel_engine_get_info(fd);
+   device->engine_info = intel_engine_get_info(fd, device->info.kmd_type);
    anv_physical_device_init_queue_families(device);
 
    anv_physical_device_init_perf(device, fd);
@@ -3172,88 +3122,6 @@ static struct intel_mapped_pinned_buffer_alloc aux_map_allocator = {
    .free = intel_aux_map_buffer_free,
 };
 
-static VkResult anv_device_check_status(struct vk_device *vk_device);
-
-static VkResult
-anv_device_setup_context(struct anv_device *device,
-                         const VkDeviceCreateInfo *pCreateInfo,
-                         const uint32_t num_queues)
-{
-   struct anv_physical_device *physical_device = device->physical;
-   VkResult result = VK_SUCCESS;
-
-   if (device->physical->engine_info) {
-      /* The kernel API supports at most 64 engines */
-      assert(num_queues <= 64);
-      enum intel_engine_class engine_classes[64];
-      int engine_count = 0;
-      for (uint32_t i = 0; i < pCreateInfo->queueCreateInfoCount; i++) {
-         const VkDeviceQueueCreateInfo *queueCreateInfo =
-            &pCreateInfo->pQueueCreateInfos[i];
-
-         assert(queueCreateInfo->queueFamilyIndex <
-                physical_device->queue.family_count);
-         struct anv_queue_family *queue_family =
-            &physical_device->queue.families[queueCreateInfo->queueFamilyIndex];
-
-         for (uint32_t j = 0; j < queueCreateInfo->queueCount; j++)
-            engine_classes[engine_count++] = queue_family->engine_class;
-      }
-      if (!intel_gem_create_context_engines(device->fd,
-                                            physical_device->engine_info,
-                                            engine_count, engine_classes,
-                                            (uint32_t *)&device->context_id))
-         result = vk_errorf(device, VK_ERROR_INITIALIZATION_FAILED,
-                            "kernel context creation failed");
-   } else {
-      assert(num_queues == 1);
-      if (!intel_gem_create_context(device->fd, &device->context_id))
-         result = vk_error(device, VK_ERROR_INITIALIZATION_FAILED);
-   }
-
-   if (result != VK_SUCCESS)
-      return result;
-
-   /* Here we tell the kernel not to attempt to recover our context but
-    * immediately (on the next batchbuffer submission) report that the
-    * context is lost, and we will do the recovery ourselves.  In the case
-    * of Vulkan, recovery means throwing VK_ERROR_DEVICE_LOST and letting
-    * the client clean up the pieces.
-    */
-   anv_gem_set_context_param(device->fd, device->context_id,
-                             I915_CONTEXT_PARAM_RECOVERABLE, false);
-
-   /* Check if client specified queue priority. */
-   const VkDeviceQueueGlobalPriorityCreateInfoKHR *queue_priority =
-      vk_find_struct_const(pCreateInfo->pQueueCreateInfos[0].pNext,
-                           DEVICE_QUEUE_GLOBAL_PRIORITY_CREATE_INFO_KHR);
-
-   VkQueueGlobalPriorityKHR priority =
-      queue_priority ? queue_priority->globalPriority :
-         VK_QUEUE_GLOBAL_PRIORITY_MEDIUM_KHR;
-
-   /* As per spec, the driver implementation may deny requests to acquire
-    * a priority above the default priority (MEDIUM) if the caller does not
-    * have sufficient privileges. In this scenario VK_ERROR_NOT_PERMITTED_KHR
-    * is returned.
-    */
-   if (physical_device->max_context_priority >= VK_QUEUE_GLOBAL_PRIORITY_MEDIUM_KHR) {
-      int err = anv_gem_set_context_param(device->fd, device->context_id,
-                                          I915_CONTEXT_PARAM_PRIORITY,
-                                          priority);
-      if (err != 0 && priority > VK_QUEUE_GLOBAL_PRIORITY_MEDIUM_KHR) {
-         result = vk_error(device, VK_ERROR_NOT_PERMITTED_KHR);
-         goto fail_context;
-      }
-   }
-
-   return result;
-
-fail_context:
-   intel_gem_destroy_context(device->fd, device->context_id);
-   return result;
-}
-
 VkResult anv_CreateDevice(
     VkPhysicalDevice                            physicalDevice,
     const VkDeviceCreateInfo*                   pCreateInfo,
@@ -3359,7 +3227,7 @@ VkResult anv_CreateDevice(
    }
 
    device->vk.command_buffer_ops = &anv_cmd_buffer_ops;
-   device->vk.check_status = anv_device_check_status;
+   device->vk.check_status = anv_i915_device_check_status;
    device->vk.create_sync_for_memory = anv_create_sync_for_memory;
    vk_device_set_drm_fd(&device->vk, device->fd);
 
@@ -3367,7 +3235,7 @@ VkResult anv_CreateDevice(
    for (uint32_t i = 0; i < pCreateInfo->queueCreateInfoCount; i++)
       num_queues += pCreateInfo->pQueueCreateInfos[i].queueCount;
 
-   result = anv_device_setup_context(device, pCreateInfo, num_queues);
+   result = anv_i915_device_setup_context(device, pCreateInfo, num_queues);
    if (result != VK_SUCCESS)
       goto fail_fd;
 
@@ -3617,9 +3485,7 @@ VkResult anv_CreateDevice(
     * to zero and they have a valid descriptor.
     */
    device->null_surface_state =
-      anv_state_pool_alloc(device->info->verx10 >= 125 ?
-                           &device->scratch_surface_state_pool :
-                           &device->internal_surface_state_pool,
+      anv_state_pool_alloc(&device->bindless_surface_state_pool,
                            device->isl_dev.ss.size,
                            device->isl_dev.ss.align);
    isl_null_fill_state(&device->isl_dev, device->null_surface_state.map,
@@ -3862,28 +3728,6 @@ VkResult anv_EnumerateInstanceLayerProperties(
    return vk_error(NULL, VK_ERROR_LAYER_NOT_PRESENT);
 }
 
-static VkResult
-anv_device_check_status(struct vk_device *vk_device)
-{
-   struct anv_device *device = container_of(vk_device, struct anv_device, vk);
-
-   uint32_t active, pending;
-   int ret = anv_gem_context_get_reset_stats(device->fd, device->context_id,
-                                             &active, &pending);
-   if (ret == -1) {
-      /* We don't know the real error. */
-      return vk_device_set_lost(&device->vk, "get_reset_stats failed: %m");
-   }
-
-   if (active) {
-      return vk_device_set_lost(&device->vk, "GPU hung on one of our command buffers");
-   } else if (pending) {
-      return vk_device_set_lost(&device->vk, "GPU hung with commands in-flight");
-   }
-
-   return VK_SUCCESS;
-}
-
 VkResult
 anv_device_wait(struct anv_device *device, struct anv_bo *bo,
                 int64_t timeout)
@@ -3982,7 +3826,7 @@ VkResult anv_AllocateMemory(
       return vk_error(device, VK_ERROR_OUT_OF_DEVICE_MEMORY);
 
    assert(pAllocateInfo->memoryTypeIndex < pdevice->memory.type_count);
-   struct anv_memory_type *mem_type =
+   const struct anv_memory_type *mem_type =
       &pdevice->memory.types[pAllocateInfo->memoryTypeIndex];
    assert(mem_type->heapIndex < pdevice->memory.heap_count);
    struct anv_memory_heap *mem_heap =
@@ -4077,9 +3921,10 @@ VkResult anv_AllocateMemory(
       alloc_flags |= ANV_BO_ALLOC_NO_LOCAL_MEM;
 
    /* If the allocated buffer might end up in local memory and it's host
-    * visible, make CPU writes are combined, it should be faster.
+    * visible and uncached, enable CPU write-combining. It should be faster.
     */
    if (!(alloc_flags & ANV_BO_ALLOC_NO_LOCAL_MEM) &&
+       (mem_type->propertyFlags & VK_MEMORY_PROPERTY_HOST_CACHED_BIT) == 0 &&
        (mem_type->propertyFlags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT))
       alloc_flags |= ANV_BO_ALLOC_WRITE_COMBINE;
 
@@ -4873,7 +4718,9 @@ VkResult anv_GetCalibratedTimestampsEXT(
    for (d = 0; d < timestampCount; d++) {
       switch (pTimestampInfos[d].timeDomain) {
       case VK_TIME_DOMAIN_DEVICE_EXT:
-         if (!intel_gem_read_render_timestamp(device->fd, &pTimestamps[d])) {
+         if (!intel_gem_read_render_timestamp(device->fd,
+                                              device->info->kmd_type,
+                                              &pTimestamps[d])) {
             return vk_device_set_lost(&device->vk, "Failed to read the "
                                       "TIMESTAMP register: %m");
          }

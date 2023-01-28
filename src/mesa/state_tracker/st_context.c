@@ -944,10 +944,12 @@ st_destroy_context(struct st_context *st)
     * context.
     */
    for (unsigned i = 0; i < NUM_TEXTURE_TARGETS; i++) {
-      struct gl_texture_object *stObj =
-         ctx->Shared->FallbackTex[i];
-      if (stObj) {
-         st_texture_release_context_sampler_view(st, stObj);
+      for (unsigned j = 0; j < ARRAY_SIZE(ctx->Shared->FallbackTex[0]); j++) {
+         struct gl_texture_object *stObj =
+            ctx->Shared->FallbackTex[i][j];
+         if (stObj) {
+            st_texture_release_context_sampler_view(st, stObj);
+         }
       }
    }
 

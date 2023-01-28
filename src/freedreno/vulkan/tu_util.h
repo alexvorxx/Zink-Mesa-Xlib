@@ -18,6 +18,42 @@
 
 #include "vk_util.h"
 
+#define TU_DEBUG(name) unlikely(tu_env.debug & TU_DEBUG_##name)
+
+enum tu_debug_flags
+{
+   TU_DEBUG_STARTUP = 1 << 0,
+   TU_DEBUG_NIR = 1 << 1,
+   TU_DEBUG_NOBIN = 1 << 3,
+   TU_DEBUG_SYSMEM = 1 << 4,
+   TU_DEBUG_FORCEBIN = 1 << 5,
+   TU_DEBUG_NOUBWC = 1 << 6,
+   TU_DEBUG_NOMULTIPOS = 1 << 7,
+   TU_DEBUG_NOLRZ = 1 << 8,
+   TU_DEBUG_PERFC = 1 << 9,
+   TU_DEBUG_FLUSHALL = 1 << 10,
+   TU_DEBUG_SYNCDRAW = 1 << 11,
+   /* bit 12 is available */
+   TU_DEBUG_GMEM = 1 << 13,
+   TU_DEBUG_RAST_ORDER = 1 << 14,
+   TU_DEBUG_UNALIGNED_STORE = 1 << 15,
+   TU_DEBUG_LAYOUT = 1 << 16,
+   TU_DEBUG_LOG_SKIP_GMEM_OPS = 1 << 17,
+   TU_DEBUG_PERF = 1 << 18,
+   TU_DEBUG_NOLRZFC = 1 << 19,
+   TU_DEBUG_DYNAMIC = 1 << 20,
+   TU_DEBUG_BOS = 1 << 21,
+};
+
+struct tu_env {
+    uint32_t debug;
+};
+
+extern struct tu_env tu_env;
+
+void
+tu_env_init(void);
+
 /* Whenever we generate an error, pass it through this function. Useful for
  * debugging, where we can break on it. Only call at error site, not when
  * propagating errors. Might be useful to plug in a stack trace here.
@@ -37,7 +73,7 @@ __vk_startup_errorf(struct tu_instance *instance,
  */
 #define vk_startup_errorf(instance, error, format, ...) \
    __vk_startup_errorf(instance, error, \
-                       instance->debug_flags & TU_DEBUG_STARTUP, \
+                       TU_DEBUG(STARTUP), \
                        __FILE__, __LINE__, format, ##__VA_ARGS__)
 
 void
@@ -391,7 +427,7 @@ void
 tu_dbg_log_gmem_load_store_skips(struct tu_device *device);
 
 #define perf_debug(device, fmt, ...) do {                               \
-   if (unlikely((device)->instance->debug_flags & TU_DEBUG_PERF))       \
+   if (TU_DEBUG(PERF))                                                  \
       mesa_log(MESA_LOG_WARN, (MESA_LOG_TAG), (fmt), ##__VA_ARGS__);    \
 } while(0)
 

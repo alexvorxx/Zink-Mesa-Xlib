@@ -359,18 +359,11 @@ public:
                            nir_intrinsic_instr *instr);
    void nir_emit_tes_intrinsic(const brw::fs_builder &bld,
                                nir_intrinsic_instr *instr);
-   void nir_emit_ssbo_atomic(const brw::fs_builder &bld,
-                             int op, nir_intrinsic_instr *instr);
-   void nir_emit_ssbo_atomic_float(const brw::fs_builder &bld,
-                                   int op, nir_intrinsic_instr *instr);
-   void nir_emit_shared_atomic(const brw::fs_builder &bld,
-                               int op, nir_intrinsic_instr *instr);
-   void nir_emit_shared_atomic_float(const brw::fs_builder &bld,
-                                     int op, nir_intrinsic_instr *instr);
+   void nir_emit_surface_atomic(const brw::fs_builder &bld,
+                                nir_intrinsic_instr *instr,
+                                fs_reg surface);
    void nir_emit_global_atomic(const brw::fs_builder &bld,
-                               int op, nir_intrinsic_instr *instr);
-   void nir_emit_global_atomic_float(const brw::fs_builder &bld,
-                                     int op, nir_intrinsic_instr *instr);
+                               nir_intrinsic_instr *instr);
    void nir_emit_texture(const brw::fs_builder &bld,
                          nir_tex_instr *instr);
    void nir_emit_jump(const brw::fs_builder &bld,
@@ -628,10 +621,6 @@ private:
    void generate_uniform_pull_constant_load(fs_inst *inst, struct brw_reg dst,
                                             struct brw_reg index,
                                             struct brw_reg offset);
-   void generate_uniform_pull_constant_load_gfx7(fs_inst *inst,
-                                                 struct brw_reg dst,
-                                                 struct brw_reg surf_index,
-                                                 struct brw_reg payload);
    void generate_varying_pull_constant_load_gfx4(fs_inst *inst,
                                                  struct brw_reg dst,
                                                  struct brw_reg index);

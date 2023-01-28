@@ -507,6 +507,160 @@ tex_key_equals(const void *_a, const void *_b)
    return memcmp(a, b, sizeof(struct fd6_texture_key)) == 0;
 }
 
+static void
+build_texture_state(struct fd_context *ctx, struct fd_ringbuffer *ring,
+                    enum pipe_shader_type type, struct fd_texture_stateobj *tex)
+   assert_dt
+{
+   unsigned opcode, tex_samp_reg, tex_const_reg, tex_count_reg;
+   enum a6xx_state_block sb;
+
+   switch (type) {
+   case PIPE_SHADER_VERTEX:
+      sb = SB6_VS_TEX;
+      opcode = CP_LOAD_STATE6_GEOM;
+      tex_samp_reg = REG_A6XX_SP_VS_TEX_SAMP;
+      tex_const_reg = REG_A6XX_SP_VS_TEX_CONST;
+      tex_count_reg = REG_A6XX_SP_VS_TEX_COUNT;
+      break;
+   case PIPE_SHADER_TESS_CTRL:
+      sb = SB6_HS_TEX;
+      opcode = CP_LOAD_STATE6_GEOM;
+      tex_samp_reg = REG_A6XX_SP_HS_TEX_SAMP;
+      tex_const_reg = REG_A6XX_SP_HS_TEX_CONST;
+      tex_count_reg = REG_A6XX_SP_HS_TEX_COUNT;
+      break;
+   case PIPE_SHADER_TESS_EVAL:
+      sb = SB6_DS_TEX;
+      opcode = CP_LOAD_STATE6_GEOM;
+      tex_samp_reg = REG_A6XX_SP_DS_TEX_SAMP;
+      tex_const_reg = REG_A6XX_SP_DS_TEX_CONST;
+      tex_count_reg = REG_A6XX_SP_DS_TEX_COUNT;
+      break;
+   case PIPE_SHADER_GEOMETRY:
+      sb = SB6_GS_TEX;
+      opcode = CP_LOAD_STATE6_GEOM;
+      tex_samp_reg = REG_A6XX_SP_GS_TEX_SAMP;
+      tex_const_reg = REG_A6XX_SP_GS_TEX_CONST;
+      tex_count_reg = REG_A6XX_SP_GS_TEX_COUNT;
+      break;
+   case PIPE_SHADER_FRAGMENT:
+      sb = SB6_FS_TEX;
+      opcode = CP_LOAD_STATE6_FRAG;
+      tex_samp_reg = REG_A6XX_SP_FS_TEX_SAMP;
+      tex_const_reg = REG_A6XX_SP_FS_TEX_CONST;
+      tex_count_reg = REG_A6XX_SP_FS_TEX_COUNT;
+      break;
+   case PIPE_SHADER_COMPUTE:
+      sb = SB6_CS_TEX;
+      opcode = CP_LOAD_STATE6_FRAG;
+      tex_samp_reg = REG_A6XX_SP_CS_TEX_SAMP;
+      tex_const_reg = REG_A6XX_SP_CS_TEX_CONST;
+      tex_count_reg = REG_A6XX_SP_CS_TEX_COUNT;
+      break;
+   default:
+      unreachable("bad state block");
+   }
+
+   if (tex->num_samplers > 0) {
+      struct fd_ringbuffer *state =
+         fd_ringbuffer_new_object(ctx->pipe, tex->num_samplers * 4 * 4);
+      for (unsigned i = 0; i < tex->num_samplers; i++) {
+         static const struct fd6_sampler_stateobj dummy_sampler = {};
+         const struct fd6_sampler_stateobj *sampler =
+            tex->samplers[i] ? fd6_sampler_stateobj(tex->samplers[i])
+                             : &dummy_sampler;
+         OUT_RING(state, sampler->texsamp0);
+         OUT_RING(state, sampler->texsamp1);
+         OUT_RING(state, sampler->texsamp2);
+         OUT_RING(state, sampler->texsamp3);
+      }
+
+      /* output sampler state: */
+      OUT_PKT7(ring, opcode, 3);
+      OUT_RING(ring, CP_LOAD_STATE6_0_DST_OFF(0) |
+                        CP_LOAD_STATE6_0_STATE_TYPE(ST6_SHADER) |
+                        CP_LOAD_STATE6_0_STATE_SRC(SS6_INDIRECT) |
+                        CP_LOAD_STATE6_0_STATE_BLOCK(sb) |
+                        CP_LOAD_STATE6_0_NUM_UNIT(tex->num_samplers));
+      OUT_RB(ring, state); /* SRC_ADDR_LO/HI */
+
+      OUT_PKT4(ring, tex_samp_reg, 2);
+      OUT_RB(ring, state); /* SRC_ADDR_LO/HI */
+
+      fd_ringbuffer_del(state);
+   }
+
+   unsigned num_textures = tex->num_textures;
+
+   if (num_textures > 0) {
+      struct fd_ringbuffer *state =
+         fd_ringbuffer_new_object(ctx->pipe, num_textures * 16 * 4);
+      for (unsigned i = 0; i < num_textures; i++) {
+         const struct fd6_pipe_sampler_view *view;
+
+         if (tex->textures[i]) {
+            view = fd6_pipe_sampler_view(tex->textures[i]);
+            if (unlikely(view->rsc_seqno !=
+                         fd_resource(view->base.texture)->seqno)) {
+               fd6_sampler_view_update(ctx,
+                                       fd6_pipe_sampler_view(tex->textures[i]));
+            }
+         } else {
+            static const struct fd6_pipe_sampler_view dummy_view = {};
+            view = &dummy_view;
+         }
+
+         OUT_RING(state, view->descriptor[0]);
+         OUT_RING(state, view->descriptor[1]);
+         OUT_RING(state, view->descriptor[2]);
+         OUT_RING(state, view->descriptor[3]);
+
+         if (view->ptr1) {
+            OUT_RELOC(state, view->ptr1->bo, view->descriptor[4],
+                      (uint64_t)view->descriptor[5] << 32, 0);
+         } else {
+            OUT_RING(state, view->descriptor[4]);
+            OUT_RING(state, view->descriptor[5]);
+         }
+
+         OUT_RING(state, view->descriptor[6]);
+
+         if (view->ptr2) {
+            OUT_RELOC(state, view->ptr2->bo, view->descriptor[7], 0, 0);
+         } else {
+            OUT_RING(state, view->descriptor[7]);
+            OUT_RING(state, view->descriptor[8]);
+         }
+
+         OUT_RING(state, view->descriptor[9]);
+         OUT_RING(state, view->descriptor[10]);
+         OUT_RING(state, view->descriptor[11]);
+         OUT_RING(state, view->descriptor[12]);
+         OUT_RING(state, view->descriptor[13]);
+         OUT_RING(state, view->descriptor[14]);
+         OUT_RING(state, view->descriptor[15]);
+      }
+
+      /* emit texture state: */
+      OUT_PKT7(ring, opcode, 3);
+      OUT_RING(ring, CP_LOAD_STATE6_0_DST_OFF(0) |
+                        CP_LOAD_STATE6_0_STATE_TYPE(ST6_CONSTANTS) |
+                        CP_LOAD_STATE6_0_STATE_SRC(SS6_INDIRECT) |
+                        CP_LOAD_STATE6_0_STATE_BLOCK(sb) |
+                        CP_LOAD_STATE6_0_NUM_UNIT(num_textures));
+      OUT_RB(ring, state); /* SRC_ADDR_LO/HI */
+
+      OUT_PKT4(ring, tex_const_reg, 2);
+      OUT_RB(ring, state); /* SRC_ADDR_LO/HI */
+
+      fd_ringbuffer_del(state);
+   }
+
+   OUT_PKT4(ring, tex_count_reg, 1);
+   OUT_RING(ring, num_textures);
+}
+
 struct fd6_texture_state *
 fd6_texture_state(struct fd_context *ctx, enum pipe_shader_type type,
                   struct fd_texture_stateobj *tex)
@@ -562,7 +716,7 @@ fd6_texture_state(struct fd_context *ctx, enum pipe_shader_type type,
    state->key = key;
    state->stateobj = fd_ringbuffer_new_object(ctx->pipe, 32 * 4);
 
-   fd6_emit_textures(ctx, state->stateobj, type, tex, NULL);
+   build_texture_state(ctx, state->stateobj, type, tex);
 
    /* NOTE: uses copy of key in state obj, because pointer passed by caller
     * is probably on the stack

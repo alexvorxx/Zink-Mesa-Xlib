@@ -103,8 +103,11 @@ enum radeon_value_id {
 };
 
 struct radeon_cmdbuf {
-   unsigned cdw;    /* Number of used dwords. */
-   unsigned max_dw; /* Maximum number of dwords. */
+   /* These are uint64_t to tell the compiler that buf can't alias them.
+    * If they're uint32_t the generated code needs to redundantly
+    * store and reload them between buf writes. */
+   uint64_t cdw;    /* Number of used dwords. */
+   uint64_t max_dw; /* Maximum number of dwords. */
    uint32_t *buf;   /* The base pointer of the chunk. */
 };
 
@@ -195,6 +198,7 @@ struct radv_winsys_submit_info {
    struct radeon_cmdbuf **cs_array;
    struct radeon_cmdbuf **initial_preamble_cs;
    struct radeon_cmdbuf *continue_preamble_cs;
+   bool uses_shadow_regs;
 };
 
 /* Kernel effectively allows 0-31. This sets some priorities for fixed

@@ -156,7 +156,7 @@ if dep_lua.found() and dep_libarchive.found()
       ['dEQP-GLES2.functional.texture.specification.basic_teximage2d.rgba16f_2d', ['--once']],
       ['dEQP-VK.draw.indirect_draw.indexed.indirect_draw_count.triangle_list', ['--frame', '0', '--once']],
       # Test a lua script to ensure we don't break scripting API
-      ['shadow', ['--script', files(join_paths(meson.current_source_dir(), 'scripts', 'parse-submits.lua'))]],
+      ['shadow', ['--script', files('scripts/parse-submits.lua')]],
     ]
     foreach cffdump_test: cffdump_tests
       name = cffdump_test[0]

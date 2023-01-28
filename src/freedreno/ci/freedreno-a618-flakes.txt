@@ -2,6 +2,8 @@
 # non-zero-length and not starting with '#', will regex match to
 # delete lines from the test list.  Be careful.
 
+gmem-dEQP-VK.binding_model.mutable_descriptor.single.switches.sampled_image_sampler.update_copy.nonmutable_source.normal_source.pool_expand_types.update_after_bind.no_array.frag
+
 # dEQP-EGL started flaking around 2021-04-19 on an innocent CI-related branch.
 dEQP-EGL.functional.color_clears.multi_context.gles2.rgb888_pbuffer
 dEQP-EGL.functional.color_clears.multi_context.gles2.rgb888_window
@@ -110,8 +112,6 @@ KHR-.*.shader_storage_buffer_object.advanced-unsizedArrayLength-fs-std140-matR
 
 glx@glx_arb_sync_control@swapbuffersmsc-divisor-zero
 glx@glx_arb_sync_control@waitformsc
-glx@glx-copy-sub-buffer.*
-glx@glx-swap-copy
 glx@glx-swap-event_interval
 glx@glx-visuals-depth
 glx@glx-visuals-stencil

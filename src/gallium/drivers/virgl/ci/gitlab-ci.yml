@@ -15,6 +15,7 @@ virpipe-on-gl:
   variables:
     DEQP_SUITE: virpipe-gl
     GPU_VERSION: virpipe-gl
+    PIGLIT_PLATFORM: x11_egl
   tags:
     - mesa-swrast
 
@@ -90,6 +91,7 @@ virgl-iris-traces:
   extends:
     - .virgl-iris-test
     - .virgl-rules
+    - .test-manual-mr
   variables:
     PIGLIT_REPLAY_EXTRA_ARGS: "--keep-image --download-caching-proxy-url=${FDO_HTTP_CACHE_URI}"
 
@@ -102,4 +104,13 @@ virgl-iris-traces-performance:
     PIGLIT_REPLAY_SUBCOMMAND: profile
     PIGLIT_REPLAY_LOOP_TIMES: 150
     PIGLIT_REPLAY_EXTRA_ARGS: "--download-caching-proxy-url=${FDO_HTTP_CACHE_URI}"
-  allow_failure: true
+
+android-virgl-llvmpipe:
+  extends:
+    - .test-android
+    - .virgl-rules
+  script:
+    - ./install/cuttlefish-runner.sh
+  artifacts:
+    paths:
+      - results/

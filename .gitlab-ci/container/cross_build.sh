@@ -15,6 +15,7 @@ apt-get update
 
 apt-get install -y --no-remove \
         $STABLE_EPHEMERAL \
+	curl \
         crossbuild-essential-$arch \
         libelf-dev:$arch \
         libexpat1-dev:$arch \
@@ -36,8 +37,7 @@ apt-get install -y --no-remove \
         libxrandr-dev:$arch \
         libxshmfence-dev:$arch \
         libxxf86vm-dev:$arch \
-        libwayland-dev:$arch \
-        wget
+        libwayland-dev:$arch
 
 if [[ $arch != "armhf" ]]; then
     # See the list of available architectures in https://apt.llvm.org/bullseye/dists/llvm-toolchain-bullseye-13/main/

@@ -421,7 +421,7 @@ if with_tests
     'nir_algebraic_parser',
     prog_python,
     args : [
-      join_paths(meson.current_source_dir(), 'tests/algebraic_parser_test.py')
+      files('tests/algebraic_parser_test.py')
     ],
     suite : ['compiler', 'nir'],
   )

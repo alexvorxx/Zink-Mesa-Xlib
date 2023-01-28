@@ -28,6 +28,9 @@
 #include "spirv_to_dxil.h"
 #include "nir.h"
 
+const struct spirv_to_nir_options*
+dxil_spirv_nir_get_spirv_options(void);
+
 void
 dxil_spirv_nir_prep(nir_shader *nir);
 

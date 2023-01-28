@@ -367,7 +367,7 @@ zink_init_zs_attachment(struct zink_context *ctx, struct zink_rt_attrib *rt)
                     (zink_fb_clear_enabled(ctx, PIPE_MAX_COLOR_BUFS) && (zink_fb_clear_element(fb_clear, 0)->zs.bits & PIPE_CLEAR_DEPTH));
 
    bool needs_write_s = (ctx->dsa_state && (util_writes_stencil(&ctx->dsa_state->base.stencil[0]) || util_writes_stencil(&ctx->dsa_state->base.stencil[1]))) || 
-				            rt->clear_stencil || (outputs_written & BITFIELD64_BIT(FRAG_RESULT_STENCIL)) ||
+                        rt->clear_stencil || (outputs_written & BITFIELD64_BIT(FRAG_RESULT_STENCIL)) ||
                         (zink_fb_clear_enabled(ctx, PIPE_MAX_COLOR_BUFS) && (zink_fb_clear_element(fb_clear, 0)->zs.bits & PIPE_CLEAR_STENCIL));
    rt->needs_write = needs_write_z | needs_write_s;
    rt->invalid = !zsbuf->valid;
@@ -642,7 +642,6 @@ begin_render_pass(struct zink_context *ctx)
 {
    struct zink_batch *batch = &ctx->batch;
    struct pipe_framebuffer_state *fb_state = &ctx->fb_state;
-   bool zsbuf_used = ctx->fb_state.zsbuf && zink_is_zsbuf_used(ctx);
 
    VkRenderPassBeginInfo rpbi = {0};
    rpbi.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
@@ -707,6 +706,7 @@ begin_render_pass(struct zink_context *ctx)
    /* this can be set if fbfetch is activated */
    ctx->rp_changed = false;
 #ifndef NDEBUG
+   bool zsbuf_used = ctx->fb_state.zsbuf && zink_is_zsbuf_used(ctx);
    const unsigned cresolve_offset = ctx->fb_state.nr_cbufs + !!zsbuf_used;
    for (int i = 0; i < ctx->fb_state.nr_cbufs; i++) {
       if (ctx->fb_state.cbufs[i]) {

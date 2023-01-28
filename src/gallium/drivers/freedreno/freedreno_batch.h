@@ -114,6 +114,9 @@ struct fd_batch {
     */
    const struct fd_gmem_stateobj *gmem_state;
 
+   /* Driver specific barrier/flush flags: */
+   unsigned barrier;
+
    /* A calculated "draw cost" value for the batch, which tries to
     * estimate the bandwidth-per-sample of all the draws according
     * to:

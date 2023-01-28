@@ -950,7 +950,6 @@ spec@arb_internalformat_query2@max dimensions related pname checks@GL_MAX_DEPTH,
 spec@arb_internalformat_query2@max dimensions related pname checks@GL_MAX_HEIGHT,Fail
 spec@arb_internalformat_query2@max dimensions related pname checks@GL_MAX_WIDTH,Fail
 spec@arb_occlusion_query2@render,Fail
-spec@arb_occlusion_query@occlusion_query,Fail
 spec@arb_occlusion_query@occlusion_query_conform,Fail
 spec@arb_occlusion_query@occlusion_query_conform@GetObjivAval_multi2,Fail
 spec@arb_occlusion_query@occlusion_query_meta_fragments,Fail
@@ -1222,3 +1221,6 @@ wayland-dEQP-EGL.functional.create_context.no_config,Fail
 # // 0x00000000 returned
 # // ERROR expected: EGL_BAD_CONFIG or EGL_BAD_PARAMETER, Got: EGL_BAD_NATIVE_PIXMAP
 wayland-dEQP-EGL.functional.negative_api.create_pixmap_surface,Fail
+
+spec@!opengl 1.1@line-smooth-stipple,Fail
+spec@glsl-1.10@execution@variable-indexing@vs-output-array-vec2-index-wr-no-unroll,Fail

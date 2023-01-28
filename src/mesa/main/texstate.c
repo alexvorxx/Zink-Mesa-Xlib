@@ -704,7 +704,7 @@ update_single_program_texture(struct gl_context *ctx, struct gl_program *prog,
     * Mesa implements this by creating a hidden texture object with a pixel of
     * that value.
     */
-   texObj = _mesa_get_fallback_texture(ctx, target_index);
+   texObj = _mesa_get_fallback_texture(ctx, target_index, !!(prog->ShadowSamplers & BITFIELD_BIT(unit)));
    assert(texObj);
 
    return texObj;
@@ -870,7 +870,7 @@ fix_missing_textures_for_atifs(struct gl_context *ctx,
 
       if (!ctx->Texture.Unit[unit]._Current) {
          struct gl_texture_object *texObj =
-            _mesa_get_fallback_texture(ctx, target_index);
+            _mesa_get_fallback_texture(ctx, target_index, false);
          _mesa_reference_texobj(&ctx->Texture.Unit[unit]._Current, texObj);
          BITSET_SET(enabled_texture_units, unit);
          ctx->Texture._MaxEnabledTexImageUnit =

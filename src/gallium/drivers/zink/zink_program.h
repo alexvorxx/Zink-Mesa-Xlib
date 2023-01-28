@@ -355,6 +355,15 @@ zink_set_fs_point_coord_key(struct zink_context *ctx)
    }
 }
 
+static inline void
+zink_set_fs_shadow_needs_shader_swizzle_key(struct zink_context *ctx, bool swizzle_update)
+{
+   const struct zink_fs_key_base *fs = zink_get_fs_base_key(ctx);
+   bool enable = ctx->gfx_stages[MESA_SHADER_FRAGMENT] && (ctx->gfx_stages[MESA_SHADER_FRAGMENT]->fs.legacy_shadow_mask & ctx->di.shadow.mask) > 0;
+   if (enable != fs->shadow_needs_shader_swizzle || (enable && swizzle_update))
+      zink_set_fs_base_key(ctx)->shadow_needs_shader_swizzle = enable;
+}
+
 void
 zink_set_primitive_emulation_keys(struct zink_context *ctx);
 

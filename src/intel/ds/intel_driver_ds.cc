@@ -155,7 +155,8 @@ sync_timestamp(IntelRenderpassDataSource::TraceContext &ctx,
 {
    uint64_t cpu_ts = perfetto::base::GetBootTimeNs().count();
    uint64_t gpu_ts;
-   intel_gem_read_render_timestamp(device->fd, &gpu_ts);
+   intel_gem_read_render_timestamp(device->fd, device->info.kmd_type,
+                                   &gpu_ts);
    gpu_ts = intel_device_info_timebase_scale(&device->info, gpu_ts);
 
    if (cpu_ts < device->next_clock_sync_ns)
@@ -634,7 +635,6 @@ intel_ds_device_add_queue(struct intel_ds_device *device,
    memset(queue, 0, sizeof(*queue));
 
    queue->device = device;
-   queue->queue_id = u_vector_length(&device->queues) - 1;
 
    va_start(ap, fmt_name);
    vsnprintf(queue->name, sizeof(queue->name), fmt_name, ap);

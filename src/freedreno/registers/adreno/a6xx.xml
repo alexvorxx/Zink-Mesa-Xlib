@@ -235,6 +235,9 @@ xsi:schemaLocation="http://nouveau.freedesktop.org/ rules-ng.xsd">
 	<value value="0x61" name="A6XX_HLSQ_FRONTEND_META"/>
 	<value value="0x62" name="A6XX_HLSQ_INDIRECT_META"/>
 	<value value="0x63" name="A6XX_HLSQ_BACKEND_META"/>
+	<value value="0x70" name="A6XX_SP_LB_6_DATA"/>
+	<value value="0x71" name="A6XX_SP_LB_7_DATA"/>
+	<value value="0x73" name="A6XX_HLSQ_INST_RAM_1"/>
 </enum>
 
 <enum name="a6xx_debugbus_id">
@@ -268,19 +271,32 @@ xsi:schemaLocation="http://nouveau.freedesktop.org/ rules-ng.xsd">
 	<value value="0x1f" name="A6XX_DBGBUS_HLSQ_SPTP"/>
 	<value value="0x20" name="A6XX_DBGBUS_RB_0"/>
 	<value value="0x21" name="A6XX_DBGBUS_RB_1"/>
+	<value value="0x22" name="A6XX_DBGBUS_RB_2"/>
 	<value value="0x24" name="A6XX_DBGBUS_UCHE_WRAPPER"/>
 	<value value="0x28" name="A6XX_DBGBUS_CCU_0"/>
 	<value value="0x29" name="A6XX_DBGBUS_CCU_1"/>
+	<value value="0x2a" name="A6XX_DBGBUS_CCU_2"/>
 	<value value="0x38" name="A6XX_DBGBUS_VFD_0"/>
 	<value value="0x39" name="A6XX_DBGBUS_VFD_1"/>
 	<value value="0x3a" name="A6XX_DBGBUS_VFD_2"/>
 	<value value="0x3b" name="A6XX_DBGBUS_VFD_3"/>
+	<value value="0x3c" name="A6XX_DBGBUS_VFD_4"/>
+	<value value="0x3d" name="A6XX_DBGBUS_VFD_5"/>
 	<value value="0x40" name="A6XX_DBGBUS_SP_0"/>
 	<value value="0x41" name="A6XX_DBGBUS_SP_1"/>
+	<value value="0x42" name="A6XX_DBGBUS_SP_2"/>
 	<value value="0x48" name="A6XX_DBGBUS_TPL1_0"/>
 	<value value="0x49" name="A6XX_DBGBUS_TPL1_1"/>
 	<value value="0x4a" name="A6XX_DBGBUS_TPL1_2"/>
 	<value value="0x4b" name="A6XX_DBGBUS_TPL1_3"/>
+	<value value="0x4c" name="A6XX_DBGBUS_TPL1_4"/>
+	<value value="0x4d" name="A6XX_DBGBUS_TPL1_5"/>
+	<value value="0x58" name="A6XX_DBGBUS_SPTP_0"/>
+	<value value="0x59" name="A6XX_DBGBUS_SPTP_1"/>
+	<value value="0x5a" name="A6XX_DBGBUS_SPTP_2"/>
+	<value value="0x5b" name="A6XX_DBGBUS_SPTP_3"/>
+	<value value="0x5c" name="A6XX_DBGBUS_SPTP_4"/>
+	<value value="0x5d" name="A6XX_DBGBUS_SPTP_5"/>
 </enum>
 
 <enum name="a6xx_cp_perfcounter_select">
@@ -989,6 +1005,7 @@ to upconvert to 32b float internally?
 	<reg32 offset="0x0821" name="CP_HW_FAULT"/>
 	<reg32 offset="0x0823" name="CP_INTERRUPT_STATUS"/>
 	<reg32 offset="0x0824" name="CP_PROTECT_STATUS"/>
+	<reg32 offset="0x0825" name="CP_STATUS_1"/>
 	<reg64 offset="0x0830" name="CP_SQE_INSTR_BASE"/>
 	<reg32 offset="0x0840" name="CP_MISC_CNTL"/>
 	<reg32 offset="0x0844" name="CP_APRIV_CNTL"/>
@@ -1098,6 +1115,7 @@ to upconvert to 32b float internally?
 	<reg32 offset="0x0B34" name="CP_LPAC_PROG_FIFO_SIZE"/>
 	<reg64 offset="0x0b82" name="CP_LPAC_SQE_INSTR_BASE"/>
 	<reg32 offset="0x0C01" name="VSC_ADDR_MODE_CNTL" type="a5xx_address_mode"/>
+	<reg32 offset="0x0018" name="RBBM_GPR0_CNTL"/>
 	<reg32 offset="0x0201" name="RBBM_INT_0_STATUS" type="A6XX_RBBM_INT_0_MASK"/>
 	<reg32 offset="0x0210" name="RBBM_STATUS">
 		<bitfield pos="23" name="GPU_BUSY_IGN_AHB" type="boolean"/>
@@ -1125,6 +1143,8 @@ to upconvert to 32b float internally?
 		<bitfield pos="1"  name="CP_AHB_BUSY_CP_MASTER" type="boolean"/>
 		<bitfield pos="0"  name="CP_AHB_BUSY_CX_MASTER" type="boolean"/>
 	</reg32>
+	<reg32 offset="0x0211" name="RBBM_STATUS1"/>
+	<reg32 offset="0x0212" name="RBBM_STATUS2"/>
 	<reg32 offset="0x0213" name="RBBM_STATUS3">
 		<bitfield pos="24" name="SMMU_STALLED_ON_FAULT" type="boolean"/>
 	</reg32>
@@ -1194,6 +1214,8 @@ to upconvert to 32b float internally?
 	<reg32 offset="0xF810" name="RBBM_SECVID_TSB_ADDR_MODE_CNTL" type="a5xx_address_mode"/>
 	<reg32 offset="0x00010" name="RBBM_VBIF_CLIENT_QOS_CNTL"/>
 	<reg32 offset="0x00011" name="RBBM_GBIF_CLIENT_QOS_CNTL"/>
+	<reg32 offset="0x00016" name="RBBM_GBIF_HALT"/>
+	<reg32 offset="0x00017" name="RBBM_GBIF_HALT_ACK"/>
 	<reg32 offset="0x0001c" name="RBBM_WAIT_FOR_GPU_IDLE_CMD">
 		<bitfield pos="0" name="WAIT_GPU_IDLE" type="boolean"/>
 	</reg32>
@@ -1377,6 +1399,7 @@ to upconvert to 32b float internally?
 		<bitfield high="7" low="0" name="PERFSEL"/>
 	</reg32>
 	<array offset="0x0E1C" name="UCHE_PERFCTR_UCHE_SEL" stride="1" length="12"/>
+	<reg32 offset="0x0e3a" name="UCHE_GBIF_GX_CONFIG"/>
 	<reg32 offset="0x0e3c" name="UCHE_CMDQ_CONFIG"/>
 
 	<reg32 offset="0x3000" name="VBIF_VERSION"/>

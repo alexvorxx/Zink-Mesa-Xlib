@@ -35,6 +35,7 @@
 #include "freedreno_resource.h"
 #include "freedreno_state.h"
 
+#include "fd6_barrier.h"
 #include "fd6_context.h"
 #include "fd6_draw.h"
 #include "fd6_emit.h"
@@ -325,6 +326,9 @@ fd6_draw_vbo(struct fd_context *ctx, const struct pipe_draw_info *info,
 
    if (emit.dirty_groups)
       fd6_emit_3d_state(ring, &emit);
+
+   if (ctx->batch->barrier)
+      fd6_barrier_flush(ctx->batch);
 
    /* for debug after a lock up, write a unique counter value
     * to scratch7 for each draw, to make it easier to match up

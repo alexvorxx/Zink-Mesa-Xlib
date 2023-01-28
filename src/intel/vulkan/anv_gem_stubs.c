@@ -92,13 +92,6 @@ anv_gem_wait(struct anv_device *device, uint32_t gem_handle, int64_t *timeout_ns
 }
 
 int
-anv_gem_execbuffer(struct anv_device *device,
-                   struct drm_i915_gem_execbuffer2 *execbuf)
-{
-   return 0;
-}
-
-int
 anv_gem_set_tiling(struct anv_device *device,
                    uint32_t gem_handle, uint32_t stride, uint32_t tiling)
 {
@@ -116,25 +109,6 @@ anv_gem_set_caching(struct anv_device *device, uint32_t gem_handle,
                     uint32_t caching)
 {
    return 0;
-}
-
-int
-anv_gem_set_context_param(int fd, uint32_t context, uint32_t param, uint64_t value)
-{
-   unreachable("Unused");
-}
-
-bool
-anv_gem_has_context_priority(int fd, VkQueueGlobalPriorityKHR priority)
-{
-   unreachable("Unused");
-}
-
-int
-anv_gem_context_get_reset_stats(int fd, int context,
-                                uint32_t *active, uint32_t *pending)
-{
-   unreachable("Unused");
 }
 
 int

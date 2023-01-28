@@ -118,7 +118,6 @@ struct si_shader_context {
    struct ac_llvm_context ac;
    struct si_shader *shader;
    struct si_screen *screen;
-   struct pipe_stream_output_info so;
 
    gl_shader_stage stage;
 
@@ -148,14 +147,15 @@ struct si_shader_context {
    LLVMValueRef gs_ngg_emit;
    struct ac_llvm_pointer gs_ngg_scratch;
    LLVMValueRef return_value;
-
-   LLVMValueRef gs_emitted_vertices;
 };
 
 static inline struct si_shader_context *si_shader_context_from_abi(struct ac_shader_abi *abi)
 {
    return container_of(abi, struct si_shader_context, abi);
 }
+
+struct ac_nir_gs_output_info;
+typedef struct ac_nir_gs_output_info ac_nir_gs_output_info;
 
 /* si_shader.c */
 bool si_is_multi_part_shader(struct si_shader *shader);
@@ -170,7 +170,8 @@ void si_get_vs_prolog_key(const struct si_shader_info *info, unsigned num_input_
                           const struct si_vs_prolog_bits *prolog_key,
                           struct si_shader *shader_out, union si_shader_part_key *key);
 struct nir_shader *si_get_nir_shader(struct si_shader *shader, struct si_shader_args *args,
-                                     bool *free_nir, uint64_t tcs_vgpr_only_inputs);
+                                     bool *free_nir, uint64_t tcs_vgpr_only_inputs,
+                                     ac_nir_gs_output_info *output_info);
 void si_get_tcs_epilog_key(struct si_shader *shader, union si_shader_part_key *key);
 bool si_need_ps_prolog(const union si_shader_part_key *key);
 void si_get_ps_prolog_key(struct si_shader *shader, union si_shader_part_key *key,
@@ -182,7 +183,6 @@ void si_fix_resource_usage(struct si_screen *sscreen, struct si_shader *shader);
 LLVMValueRef gfx10_get_thread_id_in_tg(struct si_shader_context *ctx);
 unsigned gfx10_ngg_get_vertices_per_prim(struct si_shader *shader);
 bool gfx10_ngg_export_prim_early(struct si_shader *shader);
-void gfx10_ngg_export_vertex(struct ac_shader_abi *abi);
 unsigned gfx10_ngg_get_scratch_dw_size(struct si_shader *shader);
 bool gfx10_ngg_calculate_subgroup_info(struct si_shader *shader);
 
@@ -229,9 +229,7 @@ bool si_llvm_translate_nir(struct si_shader_context *ctx, struct si_shader *shad
                            struct nir_shader *nir, bool free_nir);
 bool si_llvm_compile_shader(struct si_screen *sscreen, struct ac_llvm_compiler *compiler,
                             struct si_shader *shader, struct si_shader_args *args,
-                            const struct pipe_stream_output_info *so,
-                            struct util_debug_callback *debug, struct nir_shader *nir,
-                            bool free_nir);
+                            struct util_debug_callback *debug, struct nir_shader *nir);
 
 /* si_shader_llvm_gs.c */
 LLVMValueRef si_is_es_thread(struct si_shader_context *ctx);
@@ -261,15 +259,8 @@ void si_llvm_init_ps_callbacks(struct si_shader_context *ctx);
 /* si_shader_llvm_vs.c */
 void si_llvm_clipvertex_to_clipdist(struct si_shader_context *ctx,
                                     struct ac_export_args clipdist[2], LLVMValueRef clipvertex[4]);
-void si_llvm_streamout_store_output(struct si_shader_context *ctx, LLVMValueRef const *so_buffers,
-                                    LLVMValueRef const *so_write_offsets,
-                                    struct pipe_stream_output *stream_out,
-                                    struct si_shader_output_values *shader_out);
-void si_llvm_emit_streamout(struct si_shader_context *ctx, struct si_shader_output_values *outputs,
-                            unsigned noutput, unsigned stream);
 void si_llvm_build_vs_exports(struct si_shader_context *ctx,
                               struct si_shader_output_values *outputs, unsigned noutput);
-void si_llvm_vs_build_end(struct si_shader_context *ctx);
 void si_llvm_build_vs_prolog(struct si_shader_context *ctx, union si_shader_part_key *key);
 void si_llvm_init_vs_callbacks(struct si_shader_context *ctx);
 

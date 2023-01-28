@@ -16,7 +16,6 @@ EPHEMERAL="
         pkgconfig(gbm)
         pkgconfig(openssl)
         unzip
-        wget
         xz
         "
 
@@ -79,7 +78,8 @@ export              XORG_RELEASES=https://xorg.freedesktop.org/releases/individu
 
 export         XORGMACROS_VERSION=util-macros-1.19.0
 
-wget $XORG_RELEASES/util/$XORGMACROS_VERSION.tar.bz2
+curl -L --retry 4 -f --retry-all-errors --retry-delay 60 \
+    -O $XORG_RELEASES/util/$XORGMACROS_VERSION.tar.bz2
 tar -xvf $XORGMACROS_VERSION.tar.bz2 && rm $XORGMACROS_VERSION.tar.bz2
 cd $XORGMACROS_VERSION; ./configure; make install; cd ..
 rm -rf $XORGMACROS_VERSION

@@ -2806,8 +2806,8 @@ tu_hash_stage(struct mesa_sha1 *ctx,
 static void
 tu_hash_compiler(struct mesa_sha1 *ctx, const struct ir3_compiler *compiler)
 {
-   _mesa_sha1_update(ctx, &compiler->robust_buffer_access2,
-                     sizeof(compiler->robust_buffer_access2));
+   _mesa_sha1_update(ctx, &compiler->options.robust_buffer_access2,
+                     sizeof(compiler->options.robust_buffer_access2));
    _mesa_sha1_update(ctx, &ir3_shader_debug, sizeof(ir3_shader_debug));
 }
 
@@ -3889,7 +3889,7 @@ tu_pipeline_builder_parse_libraries(struct tu_pipeline_builder *builder,
           VK_GRAPHICS_PIPELINE_LIBRARY_FRAGMENT_SHADER_BIT_EXT) {
          pipeline->ds = library->ds;
          pipeline->lrz.fs = library->lrz.fs;
-         pipeline->lrz.force_disable_mask |= library->lrz.force_disable_mask;
+         pipeline->lrz.lrz_status |= library->lrz.lrz_status;
          pipeline->lrz.force_late_z |= library->lrz.force_late_z;
          library_dynamic_state |=
             BIT(VK_DYNAMIC_STATE_STENCIL_COMPARE_MASK) |
@@ -3905,7 +3905,7 @@ tu_pipeline_builder_parse_libraries(struct tu_pipeline_builder *builder,
           VK_GRAPHICS_PIPELINE_LIBRARY_FRAGMENT_OUTPUT_INTERFACE_BIT_EXT) {
          pipeline->blend = library->blend;
          pipeline->output = library->output;
-         pipeline->lrz.force_disable_mask |= library->lrz.force_disable_mask;
+         pipeline->lrz.lrz_status |= library->lrz.lrz_status;
          pipeline->lrz.force_late_z |= library->lrz.force_late_z;
          pipeline->prim_order = library->prim_order;
          library_dynamic_state |=
@@ -4450,10 +4450,10 @@ tu_pipeline_builder_parse_depth_stencil(struct tu_pipeline_builder *builder,
    if (builder->variants[MESA_SHADER_FRAGMENT]) {
       const struct ir3_shader_variant *fs = builder->variants[MESA_SHADER_FRAGMENT];
       if (fs->has_kill) {
-         pipeline->lrz.force_disable_mask |= TU_LRZ_FORCE_DISABLE_WRITE;
+         pipeline->lrz.lrz_status |= TU_LRZ_FORCE_DISABLE_WRITE;
       }
       if (fs->no_earlyz || fs->writes_pos) {
-         pipeline->lrz.force_disable_mask = TU_LRZ_FORCE_DISABLE_LRZ;
+         pipeline->lrz.lrz_status = TU_LRZ_FORCE_DISABLE_LRZ;
       }
    }
 }
@@ -4600,13 +4600,13 @@ tu_pipeline_builder_parse_multisample_and_color_blend(
        !(pipeline->dynamic_state_mask &
         (BIT(TU_DYNAMIC_STATE_LOGIC_OP) |
          BIT(TU_DYNAMIC_STATE_BLEND_ENABLE))))
-      pipeline->lrz.force_disable_mask |= TU_LRZ_FORCE_DISABLE_WRITE;
+      pipeline->lrz.lrz_status |= TU_LRZ_FORCE_DISABLE_WRITE | TU_LRZ_READS_DEST;
 
    if (!(pipeline->dynamic_state_mask &
          BIT(TU_DYNAMIC_STATE_COLOR_WRITE_ENABLE)) &&
        (pipeline->blend.color_write_enable & MASK(pipeline->blend.num_rts)) !=
        MASK(pipeline->blend.num_rts))
-      pipeline->lrz.force_disable_mask |= TU_LRZ_FORCE_DISABLE_WRITE;
+      pipeline->lrz.lrz_status |= TU_LRZ_FORCE_DISABLE_WRITE | TU_LRZ_READS_DEST;
 
    if (!(pipeline->dynamic_state_mask & BIT(TU_DYNAMIC_STATE_BLEND))) {
       for (int i = 0; i < blend_info->attachmentCount; i++) {
@@ -4619,7 +4619,7 @@ tu_pipeline_builder_parse_multisample_and_color_blend(
          unsigned mask = MASK(vk_format_get_nr_components(format));
          if (format != VK_FORMAT_UNDEFINED &&
              (blendAttachment.colorWriteMask & mask) != mask) {
-            pipeline->lrz.force_disable_mask |= TU_LRZ_FORCE_DISABLE_WRITE;
+            pipeline->lrz.lrz_status |= TU_LRZ_FORCE_DISABLE_WRITE | TU_LRZ_READS_DEST;
          }
       }
    }
@@ -4662,7 +4662,7 @@ tu_pipeline_builder_parse_rasterization_order(
    bool raster_order_attachment_access =
       pipeline->blend.raster_order_attachment_access ||
       pipeline->ds.raster_order_attachment_access ||
-      unlikely(builder->device->physical_device->instance->debug_flags & TU_DEBUG_RAST_ORDER);
+      TU_DEBUG(RAST_ORDER);
 
    /* VK_EXT_blend_operation_advanced would also require ordered access
     * when implemented in the future.
@@ -4957,7 +4957,7 @@ tu_pipeline_builder_init_graphics(
       const VkPipelineRenderingCreateInfo *rendering_info =
          vk_find_struct_const(create_info->pNext, PIPELINE_RENDERING_CREATE_INFO);
 
-      if (unlikely(dev->instance->debug_flags & TU_DEBUG_DYNAMIC) && !rendering_info)
+      if (TU_DEBUG(DYNAMIC) && !rendering_info)
          rendering_info = vk_get_pipeline_rendering_create_info(create_info);
 
       /* Get multiview_mask, which is only used for shaders */

@@ -41,6 +41,10 @@
 
 uint64_t intel_debug = 0;
 
+#define DEBUG_NO16                (1ull << 16)
+#define DEBUG_NO8                 (1ull << 20)
+#define DEBUG_NO32                (1ull << 39)
+
 static const struct debug_control debug_control[] = {
    { "tex",         DEBUG_TEXTURE},
    { "blit",        DEBUG_BLIT},
@@ -97,6 +101,27 @@ static const struct debug_control debug_control[] = {
    { NULL,    0 }
 };
 
+uint64_t intel_simd = 0;
+
+static const struct debug_control simd_control[] = {
+   { "fs8",    DEBUG_FS_SIMD8 },
+   { "fs16",   DEBUG_FS_SIMD16 },
+   { "fs32",   DEBUG_FS_SIMD32 },
+   { "cs8",    DEBUG_CS_SIMD8 },
+   { "cs16",   DEBUG_CS_SIMD16 },
+   { "cs32",   DEBUG_CS_SIMD32 },
+   { "ts8",    DEBUG_TS_SIMD8 },
+   { "ts16",   DEBUG_TS_SIMD16 },
+   { "ts32",   DEBUG_TS_SIMD32 },
+   { "ms8",    DEBUG_MS_SIMD8 },
+   { "ms16",   DEBUG_MS_SIMD16 },
+   { "ms32",   DEBUG_MS_SIMD32 },
+   { "rt8",    DEBUG_RT_SIMD8 },
+   { "rt16",   DEBUG_RT_SIMD16 },
+   { "rt32",   DEBUG_RT_SIMD32 },
+   { NULL,     0 }
+};
+
 uint64_t
 intel_debug_flag_for_shader_stage(gl_shader_stage stage)
 {
@@ -122,10 +147,57 @@ intel_debug_flag_for_shader_stage(gl_shader_stage stage)
    return flags[stage];
 }
 
+#define DEBUG_FS_SIMD  (DEBUG_FS_SIMD8  | DEBUG_FS_SIMD16  | DEBUG_FS_SIMD32)
+#define DEBUG_CS_SIMD  (DEBUG_CS_SIMD8  | DEBUG_CS_SIMD16  | DEBUG_CS_SIMD32)
+#define DEBUG_TS_SIMD  (DEBUG_TS_SIMD8  | DEBUG_TS_SIMD16  | DEBUG_TS_SIMD32)
+#define DEBUG_MS_SIMD  (DEBUG_MS_SIMD8  | DEBUG_MS_SIMD16  | DEBUG_MS_SIMD32)
+#define DEBUG_RT_SIMD  (DEBUG_RT_SIMD8  | DEBUG_RT_SIMD16  | DEBUG_RT_SIMD32)
+
+#define DEBUG_SIMD8_ALL \
+   (DEBUG_FS_SIMD8  | \
+    DEBUG_CS_SIMD8  | \
+    DEBUG_TS_SIMD8  | \
+    DEBUG_MS_SIMD8  | \
+    DEBUG_RT_SIMD8)
+
+#define DEBUG_SIMD16_ALL \
+   (DEBUG_FS_SIMD16 | \
+    DEBUG_CS_SIMD16 | \
+    DEBUG_TS_SIMD16 | \
+    DEBUG_MS_SIMD16 | \
+    DEBUG_RT_SIMD16)
+
+#define DEBUG_SIMD32_ALL \
+   (DEBUG_FS_SIMD32 | \
+    DEBUG_CS_SIMD32 | \
+    DEBUG_TS_SIMD32 | \
+    DEBUG_MS_SIMD32 | \
+    DEBUG_RT_SIMD32)
+
 static void
 brw_process_intel_debug_variable_once(void)
 {
    intel_debug = parse_debug_string(getenv("INTEL_DEBUG"), debug_control);
+   intel_simd = parse_debug_string(getenv("INTEL_SIMD_DEBUG"), simd_control);
+
+   if (!(intel_simd & DEBUG_FS_SIMD))
+      intel_simd |=   DEBUG_FS_SIMD;
+   if (!(intel_simd & DEBUG_CS_SIMD))
+      intel_simd |=   DEBUG_CS_SIMD;
+   if (!(intel_simd & DEBUG_TS_SIMD))
+      intel_simd |=   DEBUG_TS_SIMD;
+   if (!(intel_simd & DEBUG_MS_SIMD))
+      intel_simd |=   DEBUG_MS_SIMD;
+   if (!(intel_simd & DEBUG_RT_SIMD))
+      intel_simd |=   DEBUG_RT_SIMD;
+
+   if (intel_debug & DEBUG_NO8)
+      intel_simd &= ~DEBUG_SIMD8_ALL;
+   if (intel_debug & DEBUG_NO16)
+      intel_simd &= ~DEBUG_SIMD16_ALL;
+   if (intel_debug & DEBUG_NO32)
+      intel_simd &= ~DEBUG_SIMD32_ALL;
+   intel_debug &= ~(DEBUG_NO8 | DEBUG_NO16 | DEBUG_NO32);
 }
 
 void

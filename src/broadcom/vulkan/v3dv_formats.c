@@ -164,14 +164,16 @@ image_format_plane_features(struct v3dv_physical_device *pdevice,
 
    if (tiling != VK_IMAGE_TILING_LINEAR) {
       if (desc->layout == UTIL_FORMAT_LAYOUT_PLAIN && desc->is_array) {
-         flags |= VK_FORMAT_FEATURE_2_STORAGE_IMAGE_BIT;
+         flags |= VK_FORMAT_FEATURE_2_STORAGE_IMAGE_BIT |
+                  VK_FORMAT_FEATURE_2_STORAGE_READ_WITHOUT_FORMAT_BIT_KHR;
          if (desc->nr_channels == 1 && vk_format_is_int(vk_format))
             flags |= VK_FORMAT_FEATURE_2_STORAGE_IMAGE_ATOMIC_BIT;
       } else if (vk_format == VK_FORMAT_A2B10G10R10_UNORM_PACK32 ||
                  vk_format == VK_FORMAT_A2B10G10R10_UINT_PACK32 ||
                  vk_format == VK_FORMAT_B10G11R11_UFLOAT_PACK32) {
          /* To comply with shaderStorageImageExtendedFormats */
-         flags |= VK_FORMAT_FEATURE_2_STORAGE_IMAGE_BIT;
+         flags |= VK_FORMAT_FEATURE_2_STORAGE_IMAGE_BIT |
+                  VK_FORMAT_FEATURE_2_STORAGE_READ_WITHOUT_FORMAT_BIT_KHR;
       }
    }
 
@@ -279,8 +281,15 @@ buffer_format_features(VkFormat vk_format, const struct v3dv_format *v3dv_format
        desc->is_array) {
       flags |=  VK_FORMAT_FEATURE_2_VERTEX_BUFFER_BIT;
       if (v3dv_format->planes[0].tex_type != TEXTURE_DATA_FORMAT_NO) {
+         /* STORAGE_READ_WITHOUT_FORMAT can also be applied for buffers. From spec:
+          *   "VK_FORMAT_FEATURE_2_STORAGE_READ_WITHOUT_FORMAT_BIT specifies
+          *    that image views or buffer views created with this format can
+          *    be used as storage images for read operations without
+          *    specifying a format."
+          */
          flags |= VK_FORMAT_FEATURE_2_UNIFORM_TEXEL_BUFFER_BIT |
-                  VK_FORMAT_FEATURE_2_STORAGE_TEXEL_BUFFER_BIT;
+                  VK_FORMAT_FEATURE_2_STORAGE_TEXEL_BUFFER_BIT |
+                  VK_FORMAT_FEATURE_2_STORAGE_READ_WITHOUT_FORMAT_BIT_KHR;
       }
    } else if (vk_format == VK_FORMAT_A2B10G10R10_UNORM_PACK32) {
       flags |= VK_FORMAT_FEATURE_2_VERTEX_BUFFER_BIT |

@@ -23,6 +23,7 @@
  */
 
 #include "nir_builder.h"
+#include "nir_xfb_info.h"
 #include "si_pipe.h"
 
 
@@ -371,6 +372,10 @@ char *si_finalize_nir(struct pipe_screen *screen, void *nirptr)
 
    si_lower_nir(sscreen, nir);
    nir_shader_gather_info(nir, nir_shader_get_entrypoint(nir));
+
+   /* Update xfb info after we did medium io lowering. */
+   if (nir->xfb_info && nir->info.outputs_written_16bit)
+      nir_gather_xfb_info_from_intrinsics(nir);
 
    if (sscreen->options.inline_uniforms)
       nir_find_inlinable_uniforms(nir);

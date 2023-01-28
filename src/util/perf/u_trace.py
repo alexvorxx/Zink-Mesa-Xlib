@@ -420,10 +420,10 @@ static void __print_json_${trace_name}(FILE *out, const void *arg) {
  % endif
  % if trace.tp_markers is not None:
 
-__attribute__((format(printf, 2, 3))) void ${trace.tp_markers}(void *, const char *, ...);
+__attribute__((format(printf, 3, 4))) void ${trace.tp_markers}(struct u_trace_context *utctx, void *, const char *, ...);
 
-static void __emit_label_${trace_name}(void *cs, struct trace_${trace_name} *entry) {
-   ${trace.tp_markers}(cs, "${trace_name}("
+static void __emit_label_${trace_name}(struct u_trace_context *utctx, void *cs, struct trace_${trace_name} *entry) {
+   ${trace.tp_markers}(utctx, cs, "${trace_name}("
    % for idx,arg in enumerate(trace.tp_struct):
       "${"," if idx != 0 else ""}${arg.name}=${arg.c_format}"
    % endfor
@@ -486,7 +486,7 @@ void __trace_${trace_name}(
  % endfor
  % if trace.tp_markers is not None:
    if (enabled_traces & U_TRACE_TYPE_MARKERS)
-      __emit_label_${trace_name}(cs, __entry);
+      __emit_label_${trace_name}(ut->utctx, cs, __entry);
  % endif
 }
 

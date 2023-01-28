@@ -10,6 +10,7 @@ EPHEMERAL="
         automake
         bzip2
         cmake
+	curl
         git
         libtool
         libepoxy-dev
@@ -17,7 +18,6 @@ EPHEMERAL="
         make
         openssl-dev
         unzip
-        wget
         xz
 	zstd-dev
         "

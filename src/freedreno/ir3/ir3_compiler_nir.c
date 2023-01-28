@@ -3161,10 +3161,21 @@ emit_tex(struct ir3_context *ctx, nir_tex_instr *tex)
       compile_assert(ctx, ctx->so->type == MESA_SHADER_FRAGMENT);
 
       ctx->so->fb_read = true;
-      info.samp_tex = ir3_collect(
-         b, create_immed_typed(ctx->block, ctx->so->num_samp, TYPE_U16),
-         create_immed_typed(ctx->block, ctx->so->num_samp, TYPE_U16));
-      info.flags = IR3_INSTR_S2EN;
+      if (ctx->compiler->options.bindless_fb_read_descriptor >= 0) {
+         ctx->so->bindless_tex = true;
+
+         info.flags = IR3_INSTR_B | IR3_INSTR_A1EN;
+         info.base = ctx->compiler->options.bindless_fb_read_descriptor;
+         info.a1_val = ctx->compiler->options.bindless_fb_read_slot << 3;
+      } else {
+         /* Otherwise append a sampler to be patched into the texture
+          * state:
+          */
+         info.samp_tex = ir3_collect(
+               b, create_immed_typed(ctx->block, ctx->so->num_samp, TYPE_U16),
+               create_immed_typed(ctx->block, ctx->so->num_samp, TYPE_U16));
+         info.flags = IR3_INSTR_S2EN;
+      }
 
       ctx->so->num_samp++;
    } else {

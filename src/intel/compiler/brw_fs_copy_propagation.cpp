@@ -982,7 +982,6 @@ fs_visitor::try_constant_propagate(fs_inst *inst, acp_entry *entry)
       case SHADER_OPCODE_SAMPLEINFO_LOGICAL:
       case SHADER_OPCODE_IMAGE_SIZE_LOGICAL:
       case SHADER_OPCODE_UNTYPED_ATOMIC_LOGICAL:
-      case SHADER_OPCODE_UNTYPED_ATOMIC_FLOAT_LOGICAL:
       case SHADER_OPCODE_UNTYPED_SURFACE_READ_LOGICAL:
       case SHADER_OPCODE_UNTYPED_SURFACE_WRITE_LOGICAL:
       case SHADER_OPCODE_TYPED_ATOMIC_LOGICAL:
@@ -1109,9 +1108,11 @@ fs_visitor::opt_copy_propagation_local(void *copy_prop_ctx, bblock_t *block,
             if (inst->src[i].file == VGRF ||
                 (inst->src[i].file == FIXED_GRF &&
                  inst->src[i].is_contiguous())) {
+               const brw_reg_type t = i < inst->header_size ?
+                  BRW_REGISTER_TYPE_UD : inst->src[i].type;
                acp_entry *entry = rzalloc(copy_prop_ctx, acp_entry);
-               entry->dst = byte_offset(inst->dst, offset);
-               entry->src = inst->src[i];
+               entry->dst = byte_offset(retype(inst->dst, t), offset);
+               entry->src = retype(inst->src[i], t);
                entry->size_written = size_written;
                entry->size_read = inst->size_read(i);
                entry->opcode = inst->opcode;

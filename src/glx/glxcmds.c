@@ -1771,7 +1771,7 @@ _GLX_PUBLIC GLX_ALIAS(XVisualInfo *, glXGetVisualFromFBConfigSGIX,
 _GLX_PUBLIC GLX_ALIAS(GLXContext, glXCreateContextWithConfigSGIX,
                       (Display *dpy, GLXFBConfigSGIX fbconfig,
                        int renderType, GLXContext shareList, Bool direct),
-                      (dpy, config, renderType, shareList, direct),
+                      (dpy, fbconfig, renderType, shareList, direct),
                       glXCreateNewContext)
 
 _GLX_PUBLIC GLXFBConfigSGIX

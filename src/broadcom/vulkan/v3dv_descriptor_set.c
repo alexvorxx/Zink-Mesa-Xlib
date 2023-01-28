@@ -1385,66 +1385,6 @@ v3dv_GetDescriptorSetLayoutSupport(
    pSupport->supported = supported;
 }
 
-VkResult
-v3dv_CreateDescriptorUpdateTemplate(
-   VkDevice _device,
-   const VkDescriptorUpdateTemplateCreateInfo *pCreateInfo,
-   const VkAllocationCallbacks *pAllocator,
-   VkDescriptorUpdateTemplate *pDescriptorUpdateTemplate)
-{
-   V3DV_FROM_HANDLE(v3dv_device, device, _device);
-   struct v3dv_descriptor_update_template *template;
-
-   size_t size = sizeof(*template) +
-      pCreateInfo->descriptorUpdateEntryCount * sizeof(template->entries[0]);
-   template = vk_object_alloc(&device->vk, pAllocator, size,
-                              VK_OBJECT_TYPE_DESCRIPTOR_UPDATE_TEMPLATE);
-   if (template == NULL)
-      return vk_error(device, VK_ERROR_OUT_OF_HOST_MEMORY);
-
-   template->bind_point = pCreateInfo->pipelineBindPoint;
-
-   assert(pCreateInfo->templateType ==
-          VK_DESCRIPTOR_UPDATE_TEMPLATE_TYPE_DESCRIPTOR_SET);
-   template->set = pCreateInfo->set;
-
-   template->entry_count = pCreateInfo->descriptorUpdateEntryCount;
-   for (uint32_t i = 0; i < template->entry_count; i++) {
-      const VkDescriptorUpdateTemplateEntry *pEntry =
-         &pCreateInfo->pDescriptorUpdateEntries[i];
-
-      template->entries[i] = (struct v3dv_descriptor_template_entry) {
-         .type = pEntry->descriptorType,
-         .binding = pEntry->dstBinding,
-         .array_element = pEntry->dstArrayElement,
-         .array_count = pEntry->descriptorCount,
-         .offset = pEntry->offset,
-         .stride = pEntry->stride,
-      };
-   }
-
-   *pDescriptorUpdateTemplate =
-      v3dv_descriptor_update_template_to_handle(template);
-
-   return VK_SUCCESS;
-}
-
-void
-v3dv_DestroyDescriptorUpdateTemplate(
-   VkDevice _device,
-   VkDescriptorUpdateTemplate descriptorUpdateTemplate,
-   const VkAllocationCallbacks *pAllocator)
-{
-   V3DV_FROM_HANDLE(v3dv_device, device, _device);
-   V3DV_FROM_HANDLE(v3dv_descriptor_update_template, template,
-                    descriptorUpdateTemplate);
-
-   if (!template)
-      return;
-
-   vk_object_free(&device->vk, pAllocator, template);
-}
-
 void
 v3dv_UpdateDescriptorSetWithTemplate(
    VkDevice _device,
@@ -1454,11 +1394,11 @@ v3dv_UpdateDescriptorSetWithTemplate(
 {
    V3DV_FROM_HANDLE(v3dv_device, device, _device);
    V3DV_FROM_HANDLE(v3dv_descriptor_set, set, descriptorSet);
-   V3DV_FROM_HANDLE(v3dv_descriptor_update_template, template,
+   V3DV_FROM_HANDLE(vk_descriptor_update_template, template,
                     descriptorUpdateTemplate);
 
    for (int i = 0; i < template->entry_count; i++) {
-      const struct v3dv_descriptor_template_entry *entry =
+      const struct vk_descriptor_template_entry *entry =
          &template->entries[i];
 
       const struct v3dv_descriptor_set_binding_layout *binding_layout =

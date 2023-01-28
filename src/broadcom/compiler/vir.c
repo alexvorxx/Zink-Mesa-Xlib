@@ -1584,7 +1584,7 @@ v3d_attempt_compile(struct v3d_compile *c)
         }
 
         NIR_PASS(_, c->s, v3d_nir_lower_io, c);
-        NIR_PASS(_, c->s, v3d_nir_lower_txf_ms, c);
+        NIR_PASS(_, c->s, v3d_nir_lower_txf_ms);
         NIR_PASS(_, c->s, v3d_nir_lower_image_load_store);
 
         NIR_PASS(_, c->s, nir_opt_idiv_const, 8);

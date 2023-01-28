@@ -29,5 +29,3 @@ deqp_args = [
 piglit_folder = "/piglit"
 profile = "quick_shader"
 process_isolation = true
-  [piglit.env]
-  PIGLIT_PLATFORM = "gbm"
