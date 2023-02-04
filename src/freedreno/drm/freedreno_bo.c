@@ -41,6 +41,8 @@ set_name(struct fd_bo *bo, uint32_t name)
    _mesa_hash_table_insert(bo->dev->name_table, &bo->name, bo);
 }
 
+static struct fd_bo zombie;
+
 /* lookup a buffer, call w/ table_lock held: */
 static struct fd_bo *
 lookup_bo(struct hash_table *tbl, uint32_t key)
@@ -62,8 +64,7 @@ lookup_bo(struct hash_table *tbl, uint32_t key)
        * checking for refcnt==0.
        */
       if (bo->refcnt == 0) {
-         bo->handle = 0;
-         return NULL;
+         return &zombie;
       }
 
       /* found, incr refcnt and return: */
@@ -211,6 +212,12 @@ fd_bo_from_handle(struct fd_device *dev, uint32_t handle, uint32_t size)
 out_unlock:
    simple_mtx_unlock(&table_lock);
 
+   /* We've raced with the handle being closed, so the handle is no longer
+    * valid.  Friends don't let friends share handles.
+    */
+   if (bo == &zombie)
+      return NULL;
+
    return bo;
 }
 
@@ -221,6 +228,7 @@ fd_bo_from_dmabuf(struct fd_device *dev, int fd)
    uint32_t handle;
    struct fd_bo *bo;
 
+restart:
    simple_mtx_lock(&table_lock);
    ret = drmPrimeFDToHandle(dev->fd, fd, &handle);
    if (ret) {
@@ -243,6 +251,9 @@ fd_bo_from_dmabuf(struct fd_device *dev, int fd)
 out_unlock:
    simple_mtx_unlock(&table_lock);
 
+   if (bo == &zombie)
+      goto restart;
+
    return bo;
 }
 
@@ -261,6 +272,7 @@ fd_bo_from_name(struct fd_device *dev, uint32_t name)
    if (bo)
       goto out_unlock;
 
+restart:
    if (drmIoctl(dev->fd, DRM_IOCTL_GEM_OPEN, &req)) {
       ERROR_MSG("gem-open failed: %s", strerror(errno));
       goto out_unlock;
@@ -278,6 +290,9 @@ fd_bo_from_name(struct fd_device *dev, uint32_t name)
 
 out_unlock:
    simple_mtx_unlock(&table_lock);
+
+   if (bo == &zombie)
+      goto restart;
 
    return bo;
 }

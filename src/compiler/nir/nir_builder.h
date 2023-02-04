@@ -414,13 +414,6 @@ nir_f2fN(nir_builder *b, nir_ssa_def *src, unsigned bit_size)
 }
 
 static inline nir_ssa_def *
-nir_f2b(nir_builder *b, nir_ssa_def *src)
-{
-   return nir_type_convert(b, src, nir_type_float, nir_type_bool1,
-                           nir_rounding_mode_undef);
-}
-
-static inline nir_ssa_def *
 nir_i2b(nir_builder *b, nir_ssa_def *src)
 {
    return nir_ine(b, src, nir_imm_intN_t(b, 0, src->bit_size));

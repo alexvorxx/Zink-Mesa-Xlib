@@ -1112,7 +1112,7 @@ select_shader_variant(struct d3d12_selection_context *sel_ctx, d3d12_shader_sele
    {
       if (key.fs.polygon_stipple) {
          NIR_PASS_V(new_nir_variant, nir_lower_pstipple_fs,
-                    &pstipple_binding, 0, false);
+                    &pstipple_binding, 0, false, nir_type_bool1);
 
          nir_function_impl *impl = nir_shader_get_entrypoint(new_nir_variant);
          nir_shader_gather_info(new_nir_variant, impl);

@@ -671,13 +671,6 @@ static unsigned si_get_vs_vgpr_comp_cnt(struct si_screen *sscreen, struct si_sha
 
 unsigned si_get_shader_prefetch_size(struct si_shader *shader)
 {
-   /* Return 0 for some A0 chips only. Other chips don't need it. */
-   if ((shader->selector->screen->info.family == CHIP_GFX1100 ||
-        shader->selector->screen->info.family == CHIP_GFX1102 ||
-        shader->selector->screen->info.family == CHIP_GFX1103) &&
-       shader->selector->screen->info.chip_rev == 0)
-      return 0;
-
    /* inst_pref_size is calculated in cache line size granularity */
    assert(!(shader->bo->b.b.width0 & 0x7f));
    return MIN2(shader->bo->b.b.width0, 8064) / 128;
@@ -1528,6 +1521,7 @@ static void gfx10_shader_ngg(struct si_screen *sscreen, struct si_shader *shader
       shader->ge_cntl = S_03096C_PRIMS_PER_SUBGRP(shader->ngg.max_gsprims) |
                         S_03096C_VERTS_PER_SUBGRP(shader->ngg.hw_max_esverts) |
                         S_03096C_BREAK_PRIMGRP_AT_EOI(break_wave_at_eoi) |
+                        /* This should be <= 252 for performance. 256 works too but is slower. */
                         S_03096C_PRIM_GRP_SIZE_GFX11(
                            CLAMP(252 / MAX2(shader->ngg.prim_amp_factor, 1),
                                  1, 256));
@@ -1980,15 +1974,21 @@ static void si_shader_ps(struct si_screen *sscreen, struct si_shader *shader)
     * GFX10 supports pixel shaders without exports by setting both
     * the color and Z formats to SPI_SHADER_ZERO. The hw will skip export
     * instructions if any are present.
+    *
+    * RB+ depth-only rendering requires SPI_SHADER_32_R.
     */
    bool has_mrtz = info->writes_z || info->writes_stencil || info->writes_samplemask;
 
-   if (!spi_shader_col_format && !has_mrtz) {
-      if (sscreen->info.gfx_level >= GFX10) {
-         if (G_02880C_KILL_ENABLE(db_shader_control))
-            spi_shader_col_format = V_028714_SPI_SHADER_32_R;
-      } else {
+   if (!spi_shader_col_format) {
+      if (shader->key.ps.part.epilog.rbplus_depth_only_opt) {
          spi_shader_col_format = V_028714_SPI_SHADER_32_R;
+      } else if (!has_mrtz) {
+         if (sscreen->info.gfx_level >= GFX10) {
+            if (G_02880C_KILL_ENABLE(db_shader_control))
+               spi_shader_col_format = V_028714_SPI_SHADER_32_R;
+         } else {
+            spi_shader_col_format = V_028714_SPI_SHADER_32_R;
+         }
       }
    }
 
@@ -2278,14 +2278,22 @@ void si_ps_key_update_framebuffer(struct si_context *sctx)
    }
 }
 
-void si_ps_key_update_framebuffer_blend(struct si_context *sctx)
+void si_ps_key_update_framebuffer_blend_rasterizer(struct si_context *sctx)
 {
    struct si_shader_selector *sel = sctx->shader.ps.cso;
    union si_shader_key *key = &sctx->shader.ps.key;
    struct si_state_blend *blend = sctx->queued.named.blend;
+   struct si_state_rasterizer *rs = sctx->queued.named.rasterizer;
+   bool alpha_to_coverage = blend->alpha_to_coverage && rs->multisample_enable &&
+                            sctx->framebuffer.nr_samples >= 2;
 
    if (!sel)
       return;
+
+   key->ps.part.epilog.alpha_to_one = blend->alpha_to_one && rs->multisample_enable;
+   key->ps.part.epilog.alpha_to_coverage_via_mrtz =
+      sctx->gfx_level >= GFX11 && alpha_to_coverage &&
+      (sel->info.writes_z || sel->info.writes_stencil || sel->info.writes_samplemask);
 
    /* Select the shader color format based on whether
     * blending or alpha are needed.
@@ -2316,7 +2324,7 @@ void si_ps_key_update_framebuffer_blend(struct si_context *sctx)
    /* If alpha-to-coverage is enabled, we have to export alpha
     * even if there is no color buffer.
     */
-   if (!(key->ps.part.epilog.spi_shader_col_format & 0xf) && blend->alpha_to_coverage)
+   if (!(key->ps.part.epilog.spi_shader_col_format & 0xf) && alpha_to_coverage)
       key->ps.part.epilog.spi_shader_col_format |= V_028710_SPI_SHADER_32_AR;
 
    /* On GFX6 and GFX7 except Hawaii, the CB doesn't clamp outputs
@@ -2335,6 +2343,22 @@ void si_ps_key_update_framebuffer_blend(struct si_context *sctx)
       key->ps.part.epilog.color_is_int10 &= sel->info.colors_written;
    }
 
+   /* Enable RB+ for depth-only rendering. Registers must be programmed as follows:
+    *    CB_COLOR_CONTROL.MODE = CB_DISABLE
+    *    CB_COLOR0_INFO.FORMAT = COLOR_32
+    *    CB_COLOR0_INFO.NUMBER_TYPE = NUMBER_FLOAT
+    *    SPI_SHADER_COL_FORMAT.COL0_EXPORT_FORMAT = SPI_SHADER_32_R
+    *    SX_PS_DOWNCONVERT.MRT0 = SX_RT_EXPORT_32_R
+    *
+    * Also, the following conditions must be met.
+    */
+   key->ps.part.epilog.rbplus_depth_only_opt =
+      sctx->screen->info.rbplus_allowed &&
+      blend->cb_target_enabled_4bit == 0 && /* implies CB_DISABLE */
+      !alpha_to_coverage &&
+      !sel->info.base.writes_memory &&
+      !key->ps.part.epilog.spi_shader_col_format;
+
    /* Eliminate shader code computing output values that are unused.
     * This enables dead code elimination between shader parts.
     * Check if any output is eliminated.
@@ -2352,22 +2376,6 @@ void si_ps_key_update_framebuffer_blend(struct si_context *sctx)
       key->ps.opt.prefer_mono = 1;
    else
       key->ps.opt.prefer_mono = 0;
-}
-
-void si_ps_key_update_blend_rasterizer(struct si_context *sctx)
-{
-   union si_shader_key *key = &sctx->shader.ps.key;
-   struct si_state_blend *blend = sctx->queued.named.blend;
-   struct si_state_rasterizer *rs = sctx->queued.named.rasterizer;
-   struct si_shader_selector *ps = sctx->shader.ps.cso;
-
-   if (!ps)
-      return;
-
-   key->ps.part.epilog.alpha_to_one = blend->alpha_to_one && rs->multisample_enable;
-   key->ps.part.epilog.alpha_to_coverage_via_mrtz =
-      sctx->gfx_level >= GFX11 && blend->alpha_to_coverage && rs->multisample_enable &&
-      (ps->info.writes_z || ps->info.writes_stencil || ps->info.writes_samplemask);
 }
 
 void si_ps_key_update_rasterizer(struct si_context *sctx)
@@ -3376,6 +3384,18 @@ static void si_update_common_shader_state(struct si_context *sctx, struct si_sha
    sctx->do_update_shaders = true;
 }
 
+static void si_update_last_vgt_stage_state(struct si_context *sctx,
+                                           /* hw_vs refers to the last VGT stage */
+                                           struct si_shader_selector *old_hw_vs,
+                                           struct si_shader *old_hw_vs_variant)
+{
+   si_update_vs_viewport_state(sctx);
+   si_update_streamout_state(sctx);
+   si_update_clip_regs(sctx, old_hw_vs, old_hw_vs_variant, si_get_vs(sctx)->cso,
+                       si_get_vs(sctx)->current);
+   si_update_rasterized_prim(sctx);
+}
+
 static void si_bind_vs_shader(struct pipe_context *ctx, void *state)
 {
    struct si_context *sctx = (struct si_context *)ctx;
@@ -3396,11 +3416,7 @@ static void si_bind_vs_shader(struct pipe_context *ctx, void *state)
 
    si_update_common_shader_state(sctx, sel, PIPE_SHADER_VERTEX);
    si_select_draw_vbo(sctx);
-   si_update_vs_viewport_state(sctx);
-   si_update_streamout_state(sctx);
-   si_update_clip_regs(sctx, old_hw_vs, old_hw_vs_variant, si_get_vs(sctx)->cso,
-                       si_get_vs(sctx)->current);
-   si_update_rasterized_prim(sctx);
+   si_update_last_vgt_stage_state(sctx, old_hw_vs, old_hw_vs_variant);
    si_vs_key_update_inputs(sctx);
 
    if (sctx->screen->dpbb_allowed) {
@@ -3489,11 +3505,7 @@ static void si_bind_gs_shader(struct pipe_context *ctx, void *state)
       if (sctx->ia_multi_vgt_param_key.u.uses_tess)
          si_update_tess_uses_prim_id(sctx);
    }
-   si_update_vs_viewport_state(sctx);
-   si_update_streamout_state(sctx);
-   si_update_clip_regs(sctx, old_hw_vs, old_hw_vs_variant, si_get_vs(sctx)->cso,
-                       si_get_vs(sctx)->current);
-   si_update_rasterized_prim(sctx);
+   si_update_last_vgt_stage_state(sctx, old_hw_vs, old_hw_vs_variant);
 }
 
 static void si_bind_tcs_shader(struct pipe_context *ctx, void *state)
@@ -3554,11 +3566,7 @@ static void si_bind_tes_shader(struct pipe_context *ctx, void *state)
       si_shader_change_notify(sctx);
    if (enable_changed)
       sctx->last_tes_sh_base = -1; /* invalidate derived tess state */
-   si_update_vs_viewport_state(sctx);
-   si_update_streamout_state(sctx);
-   si_update_clip_regs(sctx, old_hw_vs, old_hw_vs_variant, si_get_vs(sctx)->cso,
-                       si_get_vs(sctx)->current);
-   si_update_rasterized_prim(sctx);
+   si_update_last_vgt_stage_state(sctx, old_hw_vs, old_hw_vs_variant);
 }
 
 void si_update_vrs_flat_shading(struct si_context *sctx)
@@ -3610,8 +3618,7 @@ static void si_bind_ps_shader(struct pipe_context *ctx, void *state)
    si_update_ps_colorbuf0_slot(sctx);
 
    si_ps_key_update_framebuffer(sctx);
-   si_ps_key_update_framebuffer_blend(sctx);
-   si_ps_key_update_blend_rasterizer(sctx);
+   si_ps_key_update_framebuffer_blend_rasterizer(sctx);
    si_ps_key_update_rasterizer(sctx);
    si_ps_key_update_dsa(sctx);
    si_ps_key_update_sample_shading(sctx);

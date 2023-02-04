@@ -39,6 +39,14 @@ ir3_nir_should_vectorize_mem(unsigned align_mul, unsigned align_offset,
 {
    unsigned byte_size = bit_size / 8;
 
+   /* Don't vectorize load_ssbo's that we could otherwise lower to isam,
+    * as the tex cache benefit outweighs the benefit of vectorizing
+    */
+   if ((low->intrinsic == nir_intrinsic_load_ssbo) &&
+       (nir_intrinsic_access(low) & ACCESS_CAN_REORDER)) {
+      return false;
+   }
+
    if (low->intrinsic != nir_intrinsic_load_ubo) {
       return bit_size <= 32 && align_mul >= byte_size &&
          align_offset % byte_size == 0 &&
@@ -574,6 +582,7 @@ ir3_nir_post_finalize(struct ir3_shader *shader)
 
    const nir_lower_image_options lower_image_opts = {
       .lower_cube_size = true,
+      .lower_image_samples_to_one = true
    };
    NIR_PASS_V(s, nir_lower_image, &lower_image_opts);
 
@@ -627,6 +636,8 @@ ir3_nir_lower_variant(struct ir3_shader_variant *so, nir_shader *s)
    }
 
    bool progress = false;
+
+   NIR_PASS_V(s, nir_lower_io_to_scalar, nir_var_mem_ssbo);
 
    if (so->key.has_gs || so->key.tessellation) {
       switch (so->type) {

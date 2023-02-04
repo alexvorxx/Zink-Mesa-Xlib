@@ -130,8 +130,8 @@ entry_size(const struct cache_entry *entry)
 
 void
 radv_hash_shaders(unsigned char *hash, const struct radv_pipeline_stage *stages,
-                  const struct radv_pipeline_layout *layout, const struct radv_pipeline_key *key,
-                  uint32_t flags)
+                  uint32_t stage_count, const struct radv_pipeline_layout *layout,
+                  const struct radv_pipeline_key *key, uint32_t flags)
 {
    struct mesa_sha1 ctx;
 
@@ -141,7 +141,7 @@ radv_hash_shaders(unsigned char *hash, const struct radv_pipeline_stage *stages,
    if (layout)
       _mesa_sha1_update(&ctx, layout->sha1, sizeof(layout->sha1));
 
-   for (unsigned s = 0; s < MESA_VULKAN_SHADER_STAGES; s++) {
+   for (unsigned s = 0; s < stage_count; s++) {
       if (!stages[s].entrypoint)
          continue;
 

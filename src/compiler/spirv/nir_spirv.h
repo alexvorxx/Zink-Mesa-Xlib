@@ -101,6 +101,18 @@ struct spirv_to_nir_options {
    nir_address_format temp_addr_format;
    nir_address_format constant_addr_format;
 
+   /** Minimum UBO alignment.
+    *
+    * This should match VkPhysicalDeviceLimits::minUniformBufferOffsetAlignment
+    */
+   uint32_t min_ubo_alignment;
+
+   /** Minimum SSBO alignment.
+    *
+    * This should match VkPhysicalDeviceLimits::minStorageBufferOffsetAlignment
+    */
+   uint32_t min_ssbo_alignment;
+
    const nir_shader *clc_shader;
 
    struct {

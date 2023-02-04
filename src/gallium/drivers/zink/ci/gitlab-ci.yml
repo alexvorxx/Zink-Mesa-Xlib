@@ -69,7 +69,7 @@ zink-anv-tgl:
 zink-anv-tgl-full:
   extends:
     - zink-anv-tgl
-    - .test-manual-mr
+    - .zink-anv-manual-rules
   variables:
     DEQP_SUITE: zink-anv-tgl-full
     JOB_TIMEOUT: 90
@@ -127,7 +127,6 @@ zink-freedreno-a630-traces:
 ############### Combined testing (GL, GLES, Piglit) on RADV
 .radv-zink-test-valve:
   extends:
-    - .zink-radv-rules
     - .zink-test
     - .test-radv
     - .b2c-test-gl
@@ -144,7 +143,7 @@ zink-radv-navi10-valve:
   extends:
     - .radv-zink-test-valve
     - .navi10-test-valve
-    - .radv-valve-manual-rules
+    - .zink-radv-manual-rules
   variables:
     GPU_VERSION: zink-radv-navi10
 
@@ -153,6 +152,6 @@ zink-radv-vangogh-valve:
   extends:
     - .radv-zink-test-valve
     - .vangogh-test-valve
-    - .radv-valve-manual-rules
+    - .zink-radv-manual-rules
   variables:
     GPU_VERSION: zink-radv-vangogh

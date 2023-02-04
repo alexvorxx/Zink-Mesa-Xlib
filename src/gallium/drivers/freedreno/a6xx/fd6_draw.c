@@ -502,15 +502,24 @@ fd6_clear(struct fd_context *ctx, unsigned buffers,
    const bool has_depth = pfb->zsbuf;
    unsigned color_buffers = buffers >> 2;
 
-   /* we need to do multisample clear on 3d pipe, so fallback to u_blitter: */
-   if (pfb->samples > 1)
-      return false;
-
    /* If we're clearing after draws, fallback to 3D pipe clears.  We could
     * use blitter clears in the draw batch but then we'd have to patch up the
     * gmem offsets. This doesn't seem like a useful thing to optimize for
     * however.*/
    if (ctx->batch->num_draws > 0)
+      return false;
+
+   if (has_depth && (buffers & PIPE_CLEAR_DEPTH)) {
+      struct fd_resource *zsbuf = fd_resource(pfb->zsbuf->texture);
+      if (zsbuf->lrz && !is_z32(pfb->zsbuf->format)) {
+         zsbuf->lrz_valid = true;
+         zsbuf->lrz_direction = FD_LRZ_UNKNOWN;
+         fd6_clear_lrz(ctx->batch, zsbuf, depth);
+      }
+   }
+
+   /* we need to do multisample clear on 3d pipe, so fallback to u_blitter: */
+   if (pfb->samples > 1)
       return false;
 
    u_foreach_bit (i, color_buffers)
@@ -521,15 +530,6 @@ fd6_clear(struct fd_context *ctx, unsigned buffers,
       ctx->batch->clear_stencil = stencil;
 
    ctx->batch->fast_cleared |= buffers;
-
-   if (has_depth && (buffers & PIPE_CLEAR_DEPTH)) {
-      struct fd_resource *zsbuf = fd_resource(pfb->zsbuf->texture);
-      if (zsbuf->lrz && !is_z32(pfb->zsbuf->format)) {
-         zsbuf->lrz_valid = true;
-         zsbuf->lrz_direction = FD_LRZ_UNKNOWN;
-         fd6_clear_lrz(ctx->batch, zsbuf, depth);
-      }
-   }
 
    return true;
 }

@@ -1055,7 +1055,7 @@ struct anv_queue {
    /** Synchronization object for debug purposes (DEBUG_SYNC) */
    struct vk_sync                           *sync;
 
-   struct intel_ds_queue *                   ds;
+   struct intel_ds_queue                     ds;
 };
 
 struct nir_xfb_info;

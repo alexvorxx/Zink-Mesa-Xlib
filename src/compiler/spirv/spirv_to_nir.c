@@ -6585,12 +6585,13 @@ spirv_to_nir(const uint32_t *words, size_t word_count,
       return NULL;
    }
 
-   /* Skip the SPIR-V header, handled at vtn_create_builder */
-   words+= 5;
-
    b->shader = nir_shader_create(b, stage, nir_options, NULL);
    b->shader->info.subgroup_size = options->subgroup_size;
    b->shader->info.float_controls_execution_mode = options->float_controls_execution_mode;
+   _mesa_sha1_compute(words, word_count * sizeof(uint32_t), b->shader->info.source_sha1);
+
+   /* Skip the SPIR-V header, handled at vtn_create_builder */
+   words+= 5;
 
    /* Handle all the preamble instructions */
    words = vtn_foreach_instruction(b, words, word_end,

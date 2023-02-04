@@ -541,8 +541,6 @@ void
 radv_pipeline_layout_add_set(struct radv_pipeline_layout *layout, uint32_t set_idx,
                              struct radv_descriptor_set_layout *set_layout)
 {
-   unsigned dynamic_offset_count = 0;
-
    if (layout->set[set_idx].layout)
       return;
 
@@ -551,13 +549,9 @@ radv_pipeline_layout_add_set(struct radv_pipeline_layout *layout, uint32_t set_i
    layout->set[set_idx].layout = set_layout;
    vk_descriptor_set_layout_ref(&set_layout->vk);
 
-   for (uint32_t b = 0; b < set_layout->binding_count; b++) {
-      dynamic_offset_count += set_layout->binding[b].array_size * set_layout->binding[b].dynamic_offset_count;
-   }
-
    layout->set[set_idx].dynamic_offset_start = layout->dynamic_offset_count;
 
-   layout->dynamic_offset_count += dynamic_offset_count;
+   layout->dynamic_offset_count += set_layout->dynamic_offset_count;
    layout->dynamic_shader_stages |= set_layout->dynamic_shader_stages;
 }
 
@@ -1311,7 +1305,7 @@ write_accel_struct(struct radv_device *device, void *ptr, VkDeviceAddress va)
    if (!va) {
       RADV_FROM_HANDLE(radv_acceleration_structure, accel_struct,
                        device->meta_state.accel_struct_build.null.accel_struct);
-      va = accel_struct->va;
+      va = radv_acceleration_structure_get_va(accel_struct);
    }
 
    memcpy(ptr, &va, sizeof(va));
@@ -1412,7 +1406,8 @@ radv_update_descriptor_sets_impl(struct radv_device *device, struct radv_cmd_buf
             RADV_FROM_HANDLE(radv_acceleration_structure, accel_struct,
                              accel_structs->pAccelerationStructures[j]);
 
-            write_accel_struct(device, ptr, accel_struct ? accel_struct->va : 0);
+            write_accel_struct(device, ptr,
+                               accel_struct ? radv_acceleration_structure_get_va(accel_struct) : 0);
             break;
          }
          default:
@@ -1708,7 +1703,8 @@ radv_update_descriptor_set_with_template_impl(struct radv_device *device,
          case VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR: {
             RADV_FROM_HANDLE(radv_acceleration_structure, accel_struct,
                              *(const VkAccelerationStructureKHR *)pSrc);
-            write_accel_struct(device, pDst, accel_struct ? accel_struct->va : 0);
+            write_accel_struct(device, pDst,
+                               accel_struct ? radv_acceleration_structure_get_va(accel_struct) : 0);
             break;
          }
          default:

@@ -1571,34 +1571,6 @@ fs_visitor::nir_emit_alu(const fs_builder &bld, nir_alu_instr *instr,
       inst = bld.emit(SHADER_OPCODE_RSQ, result, op[0]);
       break;
 
-   case nir_op_f2b32: {
-      uint32_t bit_size = nir_src_bit_size(instr->src[0].src);
-      if (bit_size == 64) {
-         /* two-argument instructions can't take 64-bit immediates */
-         fs_reg zero = vgrf(glsl_type::double_type);
-         fs_reg tmp = vgrf(glsl_type::double_type);
-
-         bld.MOV(zero, setup_imm_df(bld, 0.0));
-
-         /* A SIMD16 execution needs to be split in two instructions, so use
-          * a vgrf instead of the flag register as dst so instruction splitting
-          * works
-          */
-         bld.CMP(tmp, op[0], zero, BRW_CONDITIONAL_NZ);
-         bld.MOV(result, subscript(tmp, BRW_REGISTER_TYPE_UD, 0));
-      } else {
-         fs_reg zero;
-         if (bit_size == 32) {
-            zero = brw_imm_f(0.0f);
-         } else {
-            assert(bit_size == 16);
-            zero = retype(brw_imm_w(0), BRW_REGISTER_TYPE_HF);
-         }
-         bld.CMP(result, op[0], zero, BRW_CONDITIONAL_NZ);
-      }
-      break;
-   }
-
    case nir_op_ftrunc:
       inst = bld.RNDZ(result, op[0]);
       if (devinfo->ver < 6) {
@@ -4584,6 +4556,15 @@ fs_visitor::nir_emit_intrinsic(const fs_builder &bld, nir_intrinsic_instr *instr
 
       assert(fence_regs_count <= ARRAY_SIZE(fence_regs));
 
+      /* Be conservative in Gen11+ and always stall in a fence.  Since
+       * there are two different fences, and shader might want to
+       * synchronize between them.
+       *
+       * TODO: Use scope and visibility information for the barriers from NIR
+       * to make a better decision on whether we need to stall.
+       */
+      bool force_stall = devinfo->ver >= 11;
+
       /* There are four cases where we want to insert a stall:
        *
        *  1. If we're a nir_intrinsic_end_invocation_interlock.  This is
@@ -4599,10 +4580,12 @@ fs_visitor::nir_emit_intrinsic(const fs_builder &bld, nir_intrinsic_instr *instr
        *     scheduling barrier to keep the compiler from moving things
        *     around in an invalid way.
        *
-       *  4. On platforms with LSC.
+       *  4. On Gen11+ and platforms with LSC, we have multiple fence types,
+       *     without further information about the fence, we need to force a
+       *     stall.
        */
       if (instr->intrinsic == nir_intrinsic_end_invocation_interlock ||
-          fence_regs_count != 1 || devinfo->has_lsc) {
+          fence_regs_count != 1 || devinfo->has_lsc || force_stall) {
          ubld.exec_all().group(1, 0).emit(
             FS_OPCODE_SCHEDULING_FENCE, ubld.null_reg_ud(),
             fence_regs, fence_regs_count);
@@ -4622,11 +4605,6 @@ fs_visitor::nir_emit_intrinsic(const fs_builder &bld, nir_intrinsic_instr *instr
       bld.LOAD_PAYLOAD(dest, srcs, ARRAY_SIZE(srcs), 0);
       break;
    }
-
-   case nir_intrinsic_image_samples:
-      /* The driver does not support multi-sampled images. */
-      bld.MOV(retype(dest, BRW_REGISTER_TYPE_D), brw_imm_d(1));
-      break;
 
    case nir_intrinsic_load_reloc_const_intel: {
       uint32_t id = nir_intrinsic_param_idx(instr);

@@ -707,8 +707,7 @@ fd_bind_compute_state(struct pipe_context *pctx, void *state) in_dt
 {
    struct fd_context *ctx = fd_context(pctx);
    ctx->compute = state;
-   /* NOTE: Don't mark FD_DIRTY_PROG for compute specific state */
-   ctx->dirty_shader[PIPE_SHADER_COMPUTE] |= FD_DIRTY_SHADER_PROG;
+   fd_context_dirty_shader(ctx, PIPE_SHADER_COMPUTE, FD_DIRTY_SHADER_PROG);
 }
 
 /* TODO pipe_context::set_compute_resources() should DIAF and clover

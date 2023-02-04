@@ -469,12 +469,6 @@ emit_alu(struct ir3_context *ctx, nir_alu_instr *alu)
       dst[0] = create_cov(ctx, create_cov(ctx, src[0], 32, nir_op_f2f16_rtne),
                           16, nir_op_f2f32);
       break;
-   case nir_op_f2b1:
-      dst[0] = ir3_CMPS_F(
-         b, src[0], 0,
-         create_immed_typed(b, 0, type_float_size(bs[0])), 0);
-      dst[0]->cat2.condition = IR3_COND_NE;
-      break;
 
    case nir_op_b2b1:
       /* b2b1 will appear when translating from
@@ -2885,6 +2879,10 @@ get_tex_samp_tex_src(struct ir3_context *ctx, nir_tex_instr *tex)
       if (texture_idx >= 0) {
          texture = ir3_get_src(ctx, &tex->src[texture_idx].src)[0];
          texture = ir3_COV(ctx->block, texture, TYPE_U32, TYPE_U16);
+         if (tex->texture_index != 0) {
+            texture = ir3_ADD_U(b, texture, 0, create_immed_typed(b, tex->texture_index, TYPE_U16), 0);
+            texture->dsts[0]->flags |= IR3_REG_HALF;
+         }
       } else {
          /* TODO what to do for dynamic case? I guess we only need the
           * max index for astc srgb workaround so maybe not a problem
@@ -2900,6 +2898,10 @@ get_tex_samp_tex_src(struct ir3_context *ctx, nir_tex_instr *tex)
       if (sampler_idx >= 0) {
          sampler = ir3_get_src(ctx, &tex->src[sampler_idx].src)[0];
          sampler = ir3_COV(ctx->block, sampler, TYPE_U32, TYPE_U16);
+         if (tex->sampler_index != 0) {
+            sampler = ir3_ADD_U(b, sampler, 0, create_immed_typed(b, tex->sampler_index, TYPE_U16), 0);
+            sampler->dsts[0]->flags |= IR3_REG_HALF;
+         }
       } else {
          sampler = create_immed_typed(ctx->block, tex->sampler_index, TYPE_U16);
          info.samp_idx = tex->texture_index;

@@ -398,6 +398,17 @@ const struct panfrost_format GENX(panfrost_pipe_format)[PIPE_FORMAT_COUNT] = {
    FMT(R32G32B32A32_FIXED,      RGBA32_FIXED,    RGBA, L, V___),
    FMT(R11G11B10_FLOAT,         R11F_G11F_B10F,  RGB1, L, VTR_),
    FMT(R9G9B9E5_FLOAT,          R9F_G9F_B9F_E5F, RGB1, L, VT__),
+#if PAN_ARCH >= 6
+   /* SNORM is renderable on Bifrost (with blend shaders) */
+   FMT(R8_SNORM,                R8_SNORM,        R001, L, VTR_),
+   FMT(R16_SNORM,               R16_SNORM,       R001, L, VTR_),
+   FMT(R8G8_SNORM,              RG8_SNORM,       RG01, L, VTR_),
+   FMT(R16G16_SNORM,            RG16_SNORM,      RG01, L, VTR_),
+   FMT(R8G8B8_SNORM,            RGB8_SNORM,      RGB1, L, VTR_),
+   FMT(R8G8B8A8_SNORM,          RGBA8_SNORM,     RGBA, L, VTR_),
+   FMT(R16G16B16A16_SNORM,      RGBA16_SNORM,    RGBA, L, VTR_),
+#else
+   /* So far we haven't needed SNORM rendering on Midgard */
    FMT(R8_SNORM,                R8_SNORM,        R001, L, VT__),
    FMT(R16_SNORM,               R16_SNORM,       R001, L, VT__),
    FMT(R8G8_SNORM,              RG8_SNORM,       RG01, L, VT__),
@@ -405,6 +416,7 @@ const struct panfrost_format GENX(panfrost_pipe_format)[PIPE_FORMAT_COUNT] = {
    FMT(R8G8B8_SNORM,            RGB8_SNORM,      RGB1, L, VT__),
    FMT(R8G8B8A8_SNORM,          RGBA8_SNORM,     RGBA, L, VT__),
    FMT(R16G16B16A16_SNORM,      RGBA16_SNORM,    RGBA, L, VT__),
+#endif
    FMT(I8_SINT,                 R8I,             RRRR, L, VTR_),
    FMT(L8_SINT,                 R8I,             RRR1, L, VTR_),
    FMT(I8_UINT,                 R8UI,            RRRR, L, VTR_),

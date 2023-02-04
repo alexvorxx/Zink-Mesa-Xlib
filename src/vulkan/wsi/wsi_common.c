@@ -461,7 +461,7 @@ wsi_swapchain_is_present_mode_supported(struct wsi_device *wsi,
       bool supported = false;
       VkResult result;
 
-      result = iface->get_present_modes(surface, &present_mode_count, NULL);
+      result = iface->get_present_modes(surface, wsi, &present_mode_count, NULL);
       if (result != VK_SUCCESS)
          return supported;
 
@@ -469,7 +469,7 @@ wsi_swapchain_is_present_mode_supported(struct wsi_device *wsi,
       if (!present_modes)
          return supported;
 
-      result = iface->get_present_modes(surface, &present_mode_count,
+      result = iface->get_present_modes(surface, wsi, &present_mode_count,
                                         present_modes);
       if (result != VK_SUCCESS)
          goto fail;
@@ -875,7 +875,7 @@ wsi_GetPhysicalDeviceSurfacePresentModesKHR(VkPhysicalDevice physicalDevice,
    struct wsi_device *wsi_device = device->wsi_device;
    struct wsi_interface *iface = wsi_device->wsi[surface->platform];
 
-   return iface->get_present_modes(surface, pPresentModeCount,
+   return iface->get_present_modes(surface, wsi_device, pPresentModeCount,
                                    pPresentModes);
 }
 

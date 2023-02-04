@@ -93,6 +93,10 @@ const uint64_t D3D12_VIDEO_ENC_METADATA_BUFFERS_COUNT = debug_get_num_option("D3
 
 constexpr unsigned int D3D12_VIDEO_H264_MB_IN_PIXELS = 16;
 
+/* If enabled, the D3D12 encoder will honor the level/profile requested by pipe */
+/* If disabled, the D3D12 encoder will honor the level/profile suggested by the DX12 driver */
+const bool D3D12_VIDEO_ENC_HONOR_PROFILE_LEVEL_PIPE = debug_get_bool_option("D3D12_VIDEO_ENC_HONOR_PROFILE_LEVEL_PIPE", false);
+
 enum d3d12_video_decode_config_specific_flags
 {
    d3d12_video_decode_config_specific_flag_none              = 0,

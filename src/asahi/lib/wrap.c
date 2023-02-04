@@ -34,7 +34,7 @@
 #include "decode.h"
 #include "dyld_interpose.h"
 #include "hexdump.h"
-#include "io.h"
+#include "agx_iokit.h"
 #include "util.h"
 
 /*

@@ -637,4 +637,11 @@
    DRI_CONF_OPT_I(generated_indirect_threshold, def, 0, INT32_MAX, \
                   "Indirect threshold count above which we start generating commands")
 
+/**
+ * \brief DZN specific configuration options
+ */
+
+#define DRI_CONF_DZN_CLAIM_WIDE_LINES(def) \
+   DRI_CONF_OPT_B(dzn_claim_wide_lines, def, "Claim wide line support")
+
 #endif

@@ -114,7 +114,7 @@ static void si_emit_cb_render_state(struct si_context *sctx)
       if (sctx->gfx_level >= GFX11) {
          radeon_opt_set_context_reg(sctx, R_028424_CB_FDCC_CONTROL, SI_TRACKED_CB_DCC_CONTROL,
                                     S_028424_SAMPLE_MASK_TRACKER_DISABLE(oc_disable) |
-                                    S_028424_SAMPLE_MASK_TRACKER_WATERMARK(15));
+                                    S_028424_SAMPLE_MASK_TRACKER_WATERMARK(0));
       } else {
          radeon_opt_set_context_reg(
             sctx, R_028424_CB_DCC_CONTROL, SI_TRACKED_CB_DCC_CONTROL,
@@ -134,8 +134,10 @@ static void si_emit_cb_render_state(struct si_context *sctx)
       unsigned sx_ps_downconvert = 0;
       unsigned sx_blend_opt_epsilon = 0;
       unsigned sx_blend_opt_control = 0;
+      unsigned num_cbufs = util_last_bit(sctx->framebuffer.colorbuf_enabled_4bit &
+                                         blend->cb_target_enabled_4bit) / 4;
 
-      for (i = 0; i < sctx->framebuffer.state.nr_cbufs; i++) {
+      for (i = 0; i < num_cbufs; i++) {
          struct si_surface *surf = (struct si_surface *)sctx->framebuffer.state.cbufs[i];
          unsigned format, swap, spi_format, colormask;
          bool has_alpha, has_rgb;
@@ -193,28 +195,29 @@ static void si_emit_cb_render_state(struct si_context *sctx)
                 spi_format == V_028714_SPI_SHADER_UINT16_ABGR ||
                 spi_format == V_028714_SPI_SHADER_SINT16_ABGR) {
                sx_ps_downconvert |= V_028754_SX_RT_EXPORT_8_8_8_8 << (i * 4);
-               sx_blend_opt_epsilon |= V_028758_8BIT_FORMAT << (i * 4);
+               if (G_028C70_NUMBER_TYPE(surf->cb_color_info) != V_028C70_NUMBER_SRGB)
+                  sx_blend_opt_epsilon |= V_028758_8BIT_FORMAT_0_5 << (i * 4);
             }
             break;
 
          case V_028C70_COLOR_5_6_5:
             if (spi_format == V_028714_SPI_SHADER_FP16_ABGR) {
                sx_ps_downconvert |= V_028754_SX_RT_EXPORT_5_6_5 << (i * 4);
-               sx_blend_opt_epsilon |= V_028758_6BIT_FORMAT << (i * 4);
+               sx_blend_opt_epsilon |= V_028758_6BIT_FORMAT_0_5 << (i * 4);
             }
             break;
 
          case V_028C70_COLOR_1_5_5_5:
             if (spi_format == V_028714_SPI_SHADER_FP16_ABGR) {
                sx_ps_downconvert |= V_028754_SX_RT_EXPORT_1_5_5_5 << (i * 4);
-               sx_blend_opt_epsilon |= V_028758_5BIT_FORMAT << (i * 4);
+               sx_blend_opt_epsilon |= V_028758_5BIT_FORMAT_0_5 << (i * 4);
             }
             break;
 
          case V_028C70_COLOR_4_4_4_4:
             if (spi_format == V_028714_SPI_SHADER_FP16_ABGR) {
                sx_ps_downconvert |= V_028754_SX_RT_EXPORT_4_4_4_4 << (i * 4);
-               sx_blend_opt_epsilon |= V_028758_4BIT_FORMAT << (i * 4);
+               sx_blend_opt_epsilon |= V_028758_4BIT_FORMAT_0_5 << (i * 4);
             }
             break;
 
@@ -248,7 +251,7 @@ static void si_emit_cb_render_state(struct si_context *sctx)
          case V_028C70_COLOR_10_10_10_2:
             if (spi_format == V_028714_SPI_SHADER_FP16_ABGR) {
                sx_ps_downconvert |= V_028754_SX_RT_EXPORT_2_10_10_10 << (i * 4);
-               sx_blend_opt_epsilon |= V_028758_10BIT_FORMAT << (i * 4);
+               sx_blend_opt_epsilon |= V_028758_10BIT_FORMAT_0_5 << (i * 4);
             }
             break;
 
@@ -746,14 +749,13 @@ static void si_bind_blend_state(struct pipe_context *ctx, void *state)
        old_blend->blend_enable_4bit != blend->blend_enable_4bit)
       si_mark_atom_dirty(sctx, &sctx->atoms.s.db_render_state);
 
-   if (old_blend->cb_target_mask != blend->cb_target_mask ||
+   if (old_blend->cb_target_enabled_4bit != blend->cb_target_enabled_4bit ||
        old_blend->alpha_to_coverage != blend->alpha_to_coverage ||
        old_blend->alpha_to_one != blend->alpha_to_one ||
        old_blend->dual_src_blend != blend->dual_src_blend ||
        old_blend->blend_enable_4bit != blend->blend_enable_4bit ||
        old_blend->need_src_alpha_4bit != blend->need_src_alpha_4bit) {
-      si_ps_key_update_framebuffer_blend(sctx);
-      si_ps_key_update_blend_rasterizer(sctx);
+      si_ps_key_update_framebuffer_blend_rasterizer(sctx);
       si_update_ps_inputs_read_or_disabled(sctx);
       sctx->do_update_shaders = true;
    }
@@ -770,6 +772,15 @@ static void si_bind_blend_state(struct pipe_context *ctx, void *state)
          old_blend->commutative_4bit != blend->commutative_4bit ||
          old_blend->logicop_enable != blend->logicop_enable)))
       si_mark_atom_dirty(sctx, &sctx->atoms.s.msaa_config);
+
+   /* RB+ depth-only rendering. See the comment where we set rbplus_depth_only_opt for more
+    * information.
+    */
+   if (sctx->screen->info.rbplus_allowed &&
+       !!old_blend->cb_target_mask != !!blend->cb_target_mask) {
+      sctx->framebuffer.dirty_cbufs |= BITFIELD_BIT(0);
+      si_mark_atom_dirty(sctx, &sctx->atoms.s.framebuffer);
+   }
 
    if (likely(!radeon_uses_secure_bos(sctx->ws))) {
       if (unlikely(blend->allows_noop_optimization)) {
@@ -1202,7 +1213,7 @@ static void si_bind_rs_state(struct pipe_context *ctx, void *state)
        old_rs->clamp_fragment_color != rs->clamp_fragment_color ||
        old_rs->force_persample_interp != rs->force_persample_interp ||
        old_rs->polygon_mode_is_points != rs->polygon_mode_is_points) {
-      si_ps_key_update_blend_rasterizer(sctx);
+      si_ps_key_update_framebuffer_blend_rasterizer(sctx);
       si_ps_key_update_rasterizer(sctx);
       si_ps_key_update_framebuffer_rasterizer_sample_shading(sctx);
       si_update_ps_inputs_read_or_disabled(sctx);
@@ -2141,8 +2152,11 @@ static unsigned si_tex_mipfilter(unsigned filter)
    }
 }
 
-static unsigned si_tex_compare(unsigned compare)
+static unsigned si_tex_compare(unsigned mode, unsigned compare)
 {
+   if (mode == PIPE_TEX_COMPARE_NONE)
+      return V_008F30_SQ_TEX_DEPTH_COMPARE_NEVER;
+
    switch (compare) {
    default:
    case PIPE_FUNC_NEVER:
@@ -3183,7 +3197,7 @@ static void si_set_framebuffer_state(struct pipe_context *ctx,
    }
 
    si_ps_key_update_framebuffer(sctx);
-   si_ps_key_update_framebuffer_blend(sctx);
+   si_ps_key_update_framebuffer_blend_rasterizer(sctx);
    si_ps_key_update_framebuffer_rasterizer_sample_shading(sctx);
    si_update_ps_inputs_read_or_disabled(sctx);
    sctx->do_update_shaders = true;
@@ -3214,6 +3228,20 @@ static void si_emit_framebuffer_state(struct si_context *sctx)
 
       if (!(sctx->framebuffer.dirty_cbufs & (1 << i)))
          continue;
+
+      /* RB+ depth-only rendering. See the comment where we set rbplus_depth_only_opt for more
+       * information.
+       */
+      if (i == 0 &&
+          sctx->screen->info.rbplus_allowed &&
+          !sctx->queued.named.blend->cb_target_mask) {
+         radeon_set_context_reg(R_028C70_CB_COLOR0_INFO + i * 0x3C,
+                                (sctx->gfx_level >= GFX11 ?
+                                   S_028C70_FORMAT_GFX11(V_028C70_COLOR_32) :
+                                   S_028C70_FORMAT_GFX6(V_028C70_COLOR_32)) |
+                                S_028C70_NUMBER_TYPE(V_028C70_NUMBER_FLOAT));
+         continue;
+      }
 
       cb = (struct si_surface *)state->cbufs[i];
       if (!cb) {
@@ -3750,7 +3778,6 @@ static void si_emit_msaa_config(struct si_context *sctx)
       S_028A4C_TILE_WALK_ORDER_ENABLE(1) | S_028A4C_MULTI_SHADER_ENGINE_PRIM_DISCARD_ENABLE(1) |
       S_028A4C_FORCE_EOV_CNTDWN_ENABLE(1) | S_028A4C_FORCE_EOV_REZ_ENABLE(1);
    unsigned db_eqaa = S_028804_HIGH_QUALITY_INTERSECTIONS(1) | S_028804_INCOHERENT_EQAA_READS(1) |
-                      S_028804_INTERPOLATE_COMP_Z(sctx->gfx_level < GFX11) |
                       S_028804_STATIC_ANCHOR_ASSOCIATIONS(1);
    unsigned coverage_samples, z_samples;
    struct si_state_rasterizer *rs = sctx->queued.named.rasterizer;
@@ -3798,6 +3825,10 @@ static void si_emit_msaa_config(struct si_context *sctx)
     */
    coverage_samples = si_get_num_coverage_samples(sctx);
 
+   /* DCC_DECOMPRESS and ELIMINATE_FAST_CLEAR require MSAA_NUM_SAMPLES=0. */
+   if (sctx->gfx_level >= GFX11 && sctx->gfx11_force_msaa_num_samples_zero)
+      coverage_samples = 1;
+
    /* The DX10 diamond test is not required by GL and decreases line rasterization
     * performance, so don't use it.
     */
@@ -3831,7 +3862,7 @@ static void si_emit_msaa_config(struct si_context *sctx)
        sctx->smoothing_enabled) {
       if (sctx->framebuffer.state.zsbuf) {
          z_samples = sctx->framebuffer.state.zsbuf->texture->nr_samples;
-         z_samples = MAX2(1, z_samples);
+         z_samples = MIN2(MAX2(1, z_samples), coverage_samples);
       } else {
          z_samples = coverage_samples;
       }
@@ -3949,12 +3980,25 @@ void si_make_buffer_descriptor(struct si_screen *screen, struct si_resource *buf
    if (screen->info.gfx_level >= GFX10) {
       const struct gfx10_format *fmt = &ac_get_gfx10_format_table(&screen->info)[format];
 
-      /* OOB_SELECT chooses the out-of-bounds check:
+      /* OOB_SELECT chooses the out-of-bounds check.
+       *
+       * GFX10:
        *  - 0: (index >= NUM_RECORDS) || (offset >= STRIDE)
        *  - 1: index >= NUM_RECORDS
        *  - 2: NUM_RECORDS == 0
-       *  - 3: if SWIZZLE_ENABLE == 0: offset >= NUM_RECORDS
-       *       else: swizzle_address >= NUM_RECORDS
+       *  - 3: if SWIZZLE_ENABLE:
+       *          swizzle_address >= NUM_RECORDS
+       *       else:
+       *          offset >= NUM_RECORDS
+       *
+       * GFX11:
+       *  - 0: (index >= NUM_RECORDS) || (offset+payload > STRIDE)
+       *  - 1: index >= NUM_RECORDS
+       *  - 2: NUM_RECORDS == 0
+       *  - 3: if SWIZZLE_ENABLE && STRIDE:
+       *          (index >= NUM_RECORDS) || ( offset+payload > STRIDE)
+       *       else:
+       *          offset+payload > NUM_RECORDS
        */
       state[7] |= S_008F0C_FORMAT(fmt->img_format) |
                   S_008F0C_OOB_SELECT(V_008F0C_OOB_SELECT_STRUCTURED_WITH_OFFSET) |
@@ -4767,12 +4811,11 @@ static void *si_create_sampler_state(struct pipe_context *ctx,
    rstate->val[0] =
       (S_008F30_CLAMP_X(si_tex_wrap(state->wrap_s)) | S_008F30_CLAMP_Y(si_tex_wrap(state->wrap_t)) |
        S_008F30_CLAMP_Z(si_tex_wrap(state->wrap_r)) | S_008F30_MAX_ANISO_RATIO(max_aniso_ratio) |
-       S_008F30_DEPTH_COMPARE_FUNC(si_tex_compare(state->compare_func)) |
+       S_008F30_DEPTH_COMPARE_FUNC(si_tex_compare(state->compare_mode, state->compare_func)) |
        S_008F30_FORCE_UNNORMALIZED(state->unnormalized_coords) |
        S_008F30_ANISO_THRESHOLD(max_aniso_ratio >> 1) | S_008F30_ANISO_BIAS(max_aniso_ratio) |
        S_008F30_DISABLE_CUBE_WRAP(!state->seamless_cube_map) |
-       S_008F30_TRUNC_COORD(trunc_coord) |
-       S_008F30_COMPAT_MODE(sctx->gfx_level == GFX8 || sctx->gfx_level == GFX9));
+       S_008F30_TRUNC_COORD(trunc_coord));
    rstate->val[1] = (S_008F34_MIN_LOD(S_FIXED(CLAMP(state->min_lod, 0, 15), 8)) |
                      S_008F34_MAX_LOD(S_FIXED(CLAMP(state->max_lod, 0, 15), 8)) |
                      S_008F34_PERF_MIP(max_aniso_ratio ? max_aniso_ratio + 6 : 0));
@@ -4786,6 +4829,7 @@ static void *si_create_sampler_state(struct pipe_context *ctx,
    if (sscreen->info.gfx_level >= GFX10) {
       rstate->val[2] |= S_008F38_ANISO_OVERRIDE_GFX10(1);
    } else {
+      rstate->val[0] |= S_008F30_COMPAT_MODE(sctx->gfx_level >= GFX8);
       rstate->val[2] |= S_008F38_DISABLE_LSB_CEIL(sctx->gfx_level <= GFX8) |
                         S_008F38_FILTER_PREC_FIX(1) |
                         S_008F38_ANISO_OVERRIDE_GFX8(sctx->gfx_level >= GFX8);
@@ -5706,9 +5750,9 @@ void si_init_cs_preamble_state(struct si_context *sctx, bool uses_reg_shadowing)
 
       if (sctx->gfx_level >= GFX11) {
          /* ACCUM fields changed their meaning. */
-         vgt_tess_distribution = S_028B50_ACCUM_ISOLINE(255) |
-                                 S_028B50_ACCUM_TRI(255) |
-                                 S_028B50_ACCUM_QUAD(255) |
+         vgt_tess_distribution = S_028B50_ACCUM_ISOLINE(128) |
+                                 S_028B50_ACCUM_TRI(128) |
+                                 S_028B50_ACCUM_QUAD(128) |
                                  S_028B50_DONUT_SPLIT_GFX9(24) |
                                  S_028B50_TRAP_SPLIT(6);
       } else if (sctx->gfx_level >= GFX9) {
@@ -5894,6 +5938,15 @@ void si_init_cs_preamble_state(struct si_context *sctx, bool uses_reg_shadowing)
       si_pm4_set_reg(pm4, R_028620_PA_RATE_CNTL,
                      S_028620_VERTEX_RATE(2) | S_028620_PRIM_RATE(1));
 
+      uint64_t rb_mask = BITFIELD64_MASK(sctx->screen->info.max_render_backends);
+
+      si_pm4_cmd_add(pm4, PKT3(PKT3_EVENT_WRITE, 2, 0));
+      si_pm4_cmd_add(pm4, EVENT_TYPE(V_028A90_PIXEL_PIPE_STAT_CONTROL) | EVENT_INDEX(1));
+      si_pm4_cmd_add(pm4, PIXEL_PIPE_STATE_CNTL_COUNTER_ID(0) |
+                          PIXEL_PIPE_STATE_CNTL_STRIDE(2) |
+                          PIXEL_PIPE_STATE_CNTL_INSTANCE_EN_LO(rb_mask));
+      si_pm4_cmd_add(pm4, PIXEL_PIPE_STATE_CNTL_INSTANCE_EN_HI(rb_mask));
+
       /* We must wait for idle using an EOP event before changing the attribute ring registers.
        * Use the bottom-of-pipe EOP event, but increment the PWS counter instead of writing memory.
        */
@@ -5930,8 +5983,7 @@ void si_init_cs_preamble_state(struct si_context *sctx, bool uses_reg_shadowing)
       si_pm4_set_reg(pm4, R_031118_SPI_ATTRIBUTE_RING_BASE,
                      sscreen->attribute_ring->gpu_address >> 16);
       si_pm4_set_reg(pm4, R_03111C_SPI_ATTRIBUTE_RING_SIZE,
-                     S_03111C_MEM_SIZE(((sscreen->attribute_ring->bo_size /
-                                         sscreen->info.max_se) >> 16) - 1) |
+                     S_03111C_MEM_SIZE((sscreen->info.attribute_ring_size_per_se >> 16) - 1) |
                      S_03111C_BIG_PAGE(sscreen->info.discardable_allows_big_page) |
                      S_03111C_L1_POLICY(1));
    }

@@ -1052,6 +1052,7 @@ wsi_display_surface_get_formats2(VkIcdSurfaceBase *surface,
 
 static VkResult
 wsi_display_surface_get_present_modes(VkIcdSurfaceBase *surface,
+                                      struct wsi_device *wsi_device,
                                       uint32_t *present_mode_count,
                                       VkPresentModeKHR *present_modes)
 {

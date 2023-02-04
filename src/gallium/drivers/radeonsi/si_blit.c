@@ -467,6 +467,12 @@ static void si_blit_decompress_color(struct si_context *sctx, struct si_texture 
    if (need_dcc_decompress) {
       custom_blend = sctx->custom_blend_dcc_decompress;
 
+      /* DCC_DECOMPRESS and ELIMINATE_FAST_CLEAR require MSAA_NUM_SAMPLES=0. */
+      if (sctx->gfx_level >= GFX11) {
+         sctx->gfx11_force_msaa_num_samples_zero = true;
+         si_mark_atom_dirty(sctx, &sctx->atoms.s.msaa_config);
+      }
+
       assert(vi_dcc_enabled(tex, first_level));
 
       /* disable levels without DCC */
@@ -475,8 +481,10 @@ static void si_blit_decompress_color(struct si_context *sctx, struct si_texture 
             level_mask &= ~(1 << i);
       }
    } else if (tex->surface.fmask_size) {
+      assert(sctx->gfx_level < GFX11);
       custom_blend = sctx->custom_blend_fmask_decompress;
    } else {
+      assert(sctx->gfx_level < GFX11);
       custom_blend = sctx->custom_blend_eliminate_fastclear;
    }
 
@@ -541,6 +549,12 @@ static void si_blit_decompress_color(struct si_context *sctx, struct si_texture 
    sctx->decompression_enabled = false;
    si_make_CB_shader_coherent(sctx, tex->buffer.b.b.nr_samples, vi_dcc_enabled(tex, first_level),
                               tex->surface.u.gfx9.color.dcc.pipe_aligned);
+
+   /* Restore gfx11_force_msaa_num_samples_zero. */
+   if (sctx->gfx11_force_msaa_num_samples_zero) {
+      sctx->gfx11_force_msaa_num_samples_zero = false;
+      si_mark_atom_dirty(sctx, &sctx->atoms.s.msaa_config);
+   }
 
 expand_fmask:
    if (need_fmask_expand && tex->surface.fmask_offset && !tex->fmask_is_identity) {

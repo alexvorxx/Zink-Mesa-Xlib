@@ -190,7 +190,7 @@ disk_cache_type_create(const char *gpu_name,
    cache->max_size = max_size;
 
    if (cache->type == DISK_CACHE_DATABASE)
-      mesa_cache_db_set_size_limit(&cache->cache_db, cache->max_size);
+      mesa_cache_db_multipart_set_size_limit(&cache->cache_db, cache->max_size);
 
    /* 4 threads were chosen below because just about all modern CPUs currently
     * available that run Mesa have *at least* 4 cores. For these CPUs allowing
@@ -318,7 +318,7 @@ disk_cache_destroy(struct disk_cache *cache)
          foz_destroy(&cache->foz_db);
 
       if (cache->type == DISK_CACHE_DATABASE)
-         mesa_cache_db_close(&cache->cache_db);
+         mesa_cache_db_multipart_close(&cache->cache_db);
 
       disk_cache_destroy_mmap(cache);
    }
@@ -335,6 +335,11 @@ disk_cache_wait_for_idle(struct disk_cache *cache)
 void
 disk_cache_remove(struct disk_cache *cache, const cache_key key)
 {
+   if (cache->type == DISK_CACHE_DATABASE) {
+      mesa_cache_db_multipart_entry_remove(&cache->cache_db, key);
+      return;
+   }
+
    char *filename = disk_cache_get_cache_filename(cache, key);
    if (filename == NULL) {
       return;

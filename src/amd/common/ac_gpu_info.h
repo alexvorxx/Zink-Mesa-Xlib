@@ -68,6 +68,9 @@ struct radeon_info {
    uint32_t memory_freq_mhz_effective;
    uint32_t memory_bus_width;
    uint32_t memory_bandwidth_gbps;
+   uint32_t pcie_gen;
+   uint32_t pcie_num_lanes;
+   uint32_t pcie_bandwidth_mbps;
    uint32_t clock_crystal_freq;
    struct amd_ip_info ip[AMD_NUM_IP_TYPES];
 
@@ -197,6 +200,7 @@ struct radeon_info {
    bool has_sparse_vm_mappings;
    bool has_scheduled_fence_dependency;
    bool has_gang_submit;
+   bool has_pcie_bandwidth_info;
    bool has_stable_pstate;
    /* Whether SR-IOV is enabled or amdgpu.mcbp=1 was set on the kernel command line. */
    bool mid_command_buffer_preemption_enabled;
@@ -221,6 +225,7 @@ struct radeon_info {
    uint32_t max_vgpr_alloc;
    uint32_t wave64_vgpr_alloc_granularity;
    uint32_t max_scratch_waves;
+   uint32_t attribute_ring_size_per_se;
 
    /* Render backends (color + depth blocks). */
    uint32_t r300_num_gb_pipes;

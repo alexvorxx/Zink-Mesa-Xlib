@@ -71,13 +71,6 @@ struct radv_shader_context {
    uint64_t output_mask;
 };
 
-struct radv_shader_output_values {
-   LLVMValueRef values[4];
-   unsigned slot_name;
-   unsigned slot_index;
-   unsigned usage_mask;
-};
-
 static inline struct radv_shader_context *
 radv_shader_context_from_abi(struct ac_shader_abi *abi)
 {
@@ -667,16 +660,6 @@ si_llvm_init_export_args(struct radv_shader_context *ctx, LLVMValueRef *values,
       args->out[i] = ac_to_float(&ctx->ac, args->out[i]);
 }
 
-static void
-radv_export_param(struct radv_shader_context *ctx, unsigned index, LLVMValueRef *values,
-                  unsigned enabled_channels)
-{
-   struct ac_export_args args;
-
-   si_llvm_init_export_args(ctx, values, enabled_channels, V_008DFC_SQ_EXP_PARAM + index, 0, &args);
-   ac_build_export(&ctx->ac, &args);
-}
-
 static LLVMValueRef
 radv_load_output(struct radv_shader_context *ctx, unsigned index, unsigned chan)
 {
@@ -684,211 +667,6 @@ radv_load_output(struct radv_shader_context *ctx, unsigned index, unsigned chan)
    LLVMValueRef output = ctx->abi.outputs[idx];
    LLVMTypeRef type = ctx->abi.is_16bit[idx] ? ctx->ac.f16 : ctx->ac.f32;
    return LLVMBuildLoad2(ctx->ac.builder, type, output, "");
-}
-
-static void
-radv_build_param_exports(struct radv_shader_context *ctx, struct radv_shader_output_values *outputs,
-                         unsigned noutput, const struct radv_vs_output_info *outinfo,
-                         bool export_clip_dists)
-{
-   for (unsigned i = 0; i < noutput; i++) {
-      unsigned slot_name = outputs[i].slot_name;
-      unsigned usage_mask = outputs[i].usage_mask;
-
-      if (slot_name != VARYING_SLOT_LAYER && slot_name != VARYING_SLOT_PRIMITIVE_ID &&
-          slot_name != VARYING_SLOT_VIEWPORT && slot_name != VARYING_SLOT_CLIP_DIST0 &&
-          slot_name != VARYING_SLOT_CLIP_DIST1 && slot_name < VARYING_SLOT_VAR0)
-         continue;
-
-      if ((slot_name == VARYING_SLOT_CLIP_DIST0 || slot_name == VARYING_SLOT_CLIP_DIST1) &&
-          !export_clip_dists)
-         continue;
-
-      radv_export_param(ctx, outinfo->vs_output_param_offset[slot_name], outputs[i].values,
-                        usage_mask);
-   }
-}
-
-/* Generate export instructions for hardware VS shader stage or NGG GS stage
- * (position and parameter data only).
- */
-static void
-radv_llvm_export_vs(struct radv_shader_context *ctx, struct radv_shader_output_values *outputs,
-                    unsigned noutput, const struct radv_vs_output_info *outinfo,
-                    bool export_clip_dists)
-{
-   LLVMValueRef psize_value = NULL, layer_value = NULL, viewport_value = NULL;
-   LLVMValueRef primitive_shading_rate = NULL;
-   struct ac_export_args pos_args[4] = {0};
-   unsigned pos_idx, index;
-   int i;
-
-   /* Build position exports */
-   for (i = 0; i < noutput; i++) {
-      switch (outputs[i].slot_name) {
-      case VARYING_SLOT_POS:
-         si_llvm_init_export_args(ctx, outputs[i].values, 0xf, V_008DFC_SQ_EXP_POS, 0, &pos_args[0]);
-         break;
-      case VARYING_SLOT_PSIZ:
-         psize_value = outputs[i].values[0];
-         break;
-      case VARYING_SLOT_LAYER:
-         layer_value = outputs[i].values[0];
-         break;
-      case VARYING_SLOT_VIEWPORT:
-         viewport_value = outputs[i].values[0];
-         break;
-      case VARYING_SLOT_PRIMITIVE_SHADING_RATE:
-         primitive_shading_rate = outputs[i].values[0];
-         break;
-      case VARYING_SLOT_CLIP_DIST0:
-      case VARYING_SLOT_CLIP_DIST1:
-         index = 2 + outputs[i].slot_index;
-         si_llvm_init_export_args(ctx, outputs[i].values, 0xf, V_008DFC_SQ_EXP_POS + index, 0,
-                                  &pos_args[index]);
-         break;
-      default:
-         break;
-      }
-   }
-
-   /* We need to add the position output manually if it's missing. */
-   if (!pos_args[0].out[0]) {
-      pos_args[0].enabled_channels = 0xf; /* writemask */
-      pos_args[0].valid_mask = 0;         /* EXEC mask */
-      pos_args[0].done = 0;               /* last export? */
-      pos_args[0].target = V_008DFC_SQ_EXP_POS;
-      pos_args[0].compr = 0;              /* COMPR flag */
-      pos_args[0].out[0] = ctx->ac.f32_0; /* X */
-      pos_args[0].out[1] = ctx->ac.f32_0; /* Y */
-      pos_args[0].out[2] = ctx->ac.f32_0; /* Z */
-      pos_args[0].out[3] = ctx->ac.f32_1; /* W */
-   }
-
-   /* Add clip distance outputs manually if they're missing. */
-   uint8_t clip_cull_mask = outinfo->clip_dist_mask | outinfo->cull_dist_mask;
-   for (i = 2; i < 4; i++) {
-      uint8_t mask = 0xf << (i * 4 - 8);
-      if ((clip_cull_mask & mask) && !pos_args[i].out[0]) {
-         pos_args[i].enabled_channels = 0x0;
-         pos_args[i].valid_mask = 0;
-         pos_args[i].done = 0;
-         pos_args[i].target = V_008DFC_SQ_EXP_POS + i;
-         pos_args[i].compr = 0;
-         pos_args[i].out[0] = ctx->ac.f32_0;
-         pos_args[i].out[1] = ctx->ac.f32_0;
-         pos_args[i].out[2] = ctx->ac.f32_0;
-         pos_args[i].out[3] = ctx->ac.f32_0;
-      }
-   }
-
-   if (outinfo->writes_pointsize || outinfo->writes_layer || outinfo->writes_layer ||
-       outinfo->writes_viewport_index || outinfo->writes_primitive_shading_rate) {
-      pos_args[1].enabled_channels = ((outinfo->writes_pointsize == true ? 1 : 0) |
-                                      (outinfo->writes_primitive_shading_rate == true ? 2 : 0) |
-                                      (outinfo->writes_layer == true ? 4 : 0));
-      pos_args[1].valid_mask = 0;
-      pos_args[1].done = 0;
-      pos_args[1].target = V_008DFC_SQ_EXP_POS + 1;
-      pos_args[1].compr = 0;
-      pos_args[1].out[0] = ctx->ac.f32_0; /* X */
-      pos_args[1].out[1] = ctx->ac.f32_0; /* Y */
-      pos_args[1].out[2] = ctx->ac.f32_0; /* Z */
-      pos_args[1].out[3] = ctx->ac.f32_0; /* W */
-
-      if (outinfo->writes_pointsize == true)
-         pos_args[1].out[0] = psize_value;
-      if (outinfo->writes_layer == true)
-         pos_args[1].out[2] = layer_value;
-      if (outinfo->writes_viewport_index == true) {
-         if (ctx->options->gfx_level >= GFX9) {
-            /* GFX9 has the layer in out.z[10:0] and the viewport
-             * index in out.z[19:16].
-             */
-            LLVMValueRef v = viewport_value;
-            v = ac_to_integer(&ctx->ac, v);
-            v = LLVMBuildShl(ctx->ac.builder, v, LLVMConstInt(ctx->ac.i32, 16, false), "");
-            v = LLVMBuildOr(ctx->ac.builder, v, ac_to_integer(&ctx->ac, pos_args[1].out[2]), "");
-
-            pos_args[1].out[2] = ac_to_float(&ctx->ac, v);
-            pos_args[1].enabled_channels |= 1 << 2;
-         } else {
-            pos_args[1].out[3] = viewport_value;
-            pos_args[1].enabled_channels |= 1 << 3;
-         }
-      }
-
-      if (outinfo->writes_primitive_shading_rate) {
-         pos_args[1].out[1] = primitive_shading_rate;
-      }
-   }
-
-   /* GFX10 skip POS0 exports if EXEC=0 and DONE=0, causing a hang.
-    * Setting valid_mask=1 prevents it and has no other effect.
-    */
-   if (ctx->ac.gfx_level == GFX10)
-      pos_args[0].valid_mask = 1;
-
-   pos_idx = 0;
-   for (i = 0; i < 4; i++) {
-      if (!pos_args[i].out[0])
-         continue;
-
-      /* Specify the target we are exporting */
-      pos_args[i].target = V_008DFC_SQ_EXP_POS + pos_idx++;
-
-      if (pos_idx == outinfo->pos_exports)
-         /* Specify that this is the last export */
-         pos_args[i].done = 1;
-
-      ac_build_export(&ctx->ac, &pos_args[i]);
-   }
-
-   if (ctx->options->gfx_level >= GFX11)
-      return;
-
-   /* Build parameter exports */
-   radv_build_param_exports(ctx, outputs, noutput, outinfo, export_clip_dists);
-}
-
-static void
-radv_llvm_visit_export_vertex(struct ac_shader_abi *abi)
-{
-   struct radv_shader_context *ctx = radv_shader_context_from_abi(abi);
-   const struct radv_vs_output_info *outinfo = &ctx->shader_info->outinfo;
-   const bool export_clip_dists = outinfo->export_clip_dists;
-   struct radv_shader_output_values *outputs;
-   unsigned noutput = 0;
-
-   /* Allocate a temporary array for the output values. */
-   unsigned num_outputs = util_bitcount64(ctx->output_mask);
-   outputs = malloc(num_outputs * sizeof(outputs[0]));
-
-   for (unsigned i = 0; i < AC_LLVM_MAX_OUTPUTS; ++i) {
-      if (!(ctx->output_mask & (1ull << i)))
-         continue;
-
-      outputs[noutput].slot_name = i;
-      outputs[noutput].slot_index = i == VARYING_SLOT_CLIP_DIST1;
-
-      if (ctx->stage == MESA_SHADER_VERTEX) {
-         outputs[noutput].usage_mask = ctx->shader_info->vs.output_usage_mask[i];
-      } else if (ctx->stage == MESA_SHADER_TESS_EVAL) {
-         outputs[noutput].usage_mask = ctx->shader_info->tes.output_usage_mask[i];
-      } else if (ctx->stage == MESA_SHADER_GEOMETRY) {
-         outputs[noutput].usage_mask = ctx->shader_info->gs.output_usage_mask[i];
-      }
-
-      for (unsigned j = 0; j < 4; j++) {
-         outputs[noutput].values[j] = ac_to_float(&ctx->ac, radv_load_output(ctx, i, j));
-      }
-
-      noutput++;
-   }
-
-   radv_llvm_export_vs(ctx, outputs, noutput, outinfo, export_clip_dists);
-
-   free(outputs);
 }
 
 static bool
@@ -1245,8 +1023,6 @@ ac_translate_nir_to_llvm(struct ac_llvm_compiler *ac_llvm,
       ac_nir_fixup_ls_hs_input_vgprs(&ctx);
 
    if (is_ngg) {
-      ctx.abi.export_vertex = radv_llvm_visit_export_vertex;
-
       if (!info->is_ngg_passthrough)
          declare_esgs_ring(&ctx);
 
@@ -1280,10 +1056,7 @@ ac_translate_nir_to_llvm(struct ac_llvm_compiler *ac_llvm,
       if (shaders[shader_idx]->info.stage == MESA_SHADER_GEOMETRY && !ctx.shader_info->is_ngg) {
          ctx.abi.emit_vertex_with_counter = visit_emit_vertex_with_counter;
          ctx.abi.emit_primitive = visit_end_primitive;
-      } else if (shaders[shader_idx]->info.stage == MESA_SHADER_TESS_EVAL) {
-         ctx.abi.export_vertex = radv_llvm_visit_export_vertex;
       } else if (shaders[shader_idx]->info.stage == MESA_SHADER_VERTEX) {
-         ctx.abi.export_vertex = radv_llvm_visit_export_vertex;
          ctx.abi.load_inputs = radv_load_vs_inputs;
       }
 

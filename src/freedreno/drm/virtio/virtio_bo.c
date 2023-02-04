@@ -415,8 +415,10 @@ virtio_bo_new(struct fd_device *dev, uint32_t size, uint32_t flags)
    }
 
    simple_mtx_lock(&virtio_dev->eb_lock);
-   if (args.cmd)
+   if (args.cmd) {
+      virtio_execbuf_flush_locked(dev);
       req.hdr.seqno = ++virtio_dev->next_seqno;
+   }
    ret = virtio_ioctl(dev->fd, VIRTGPU_RESOURCE_CREATE_BLOB, &args);
    simple_mtx_unlock(&virtio_dev->eb_lock);
    if (ret)

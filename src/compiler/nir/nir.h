@@ -5335,6 +5335,12 @@ typedef struct nir_lower_image_options {
     * Lower multi sample image load and samples_identical to use fragment_mask_load.
     */
    bool lower_to_fragment_mask_load_amd;
+
+  /**
+   * Lower image_samples to a constant in case the driver doesn't support multisampled
+   * images.
+   */
+  bool lower_image_samples_to_one;
 } nir_lower_image_options;
 
 bool nir_lower_image(nir_shader *nir,
@@ -5534,6 +5540,9 @@ bool nir_lower_point_size(nir_shader *shader, float min, float max);
 
 void nir_lower_texcoord_replace(nir_shader *s, unsigned coord_replace,
                                 bool point_coord_is_sysval, bool yinvert);
+
+void nir_lower_texcoord_replace_late(nir_shader *s, unsigned coord_replace,
+                                     bool point_coord_is_sysval);
 
 typedef enum {
    nir_lower_interpolation_at_sample = (1 << 1),
@@ -5843,6 +5852,8 @@ nir_function_impl *nir_shader_get_preamble(nir_shader *shader);
 
 bool nir_lower_point_smooth(nir_shader *shader);
 bool nir_lower_poly_line_smooth(nir_shader *shader, unsigned num_smooth_aa_sample);
+
+bool nir_mod_analysis(nir_ssa_scalar val, nir_alu_type val_type, unsigned div, unsigned *mod);
 
 #include "nir_inline_helpers.h"
 

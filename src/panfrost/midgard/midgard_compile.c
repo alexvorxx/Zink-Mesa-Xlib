@@ -836,11 +836,6 @@ emit_alu(compiler_context *ctx, nir_alu_instr *instr)
       ALU_CASE_CMP(b2f16, iand);
       ALU_CASE_CMP(b2i32, iand);
 
-      /* Likewise, we don't have a dedicated f2b32 instruction, but
-       * we can do a "not equal to 0.0" test. */
-
-      ALU_CASE_CMP(f2b32, fne);
-
       ALU_CASE(frcp, frcp);
       ALU_CASE(frsq, frsqrt);
       ALU_CASE(fsqrt, fsqrt);

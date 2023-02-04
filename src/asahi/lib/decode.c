@@ -34,9 +34,11 @@
 
 #include "decode.h"
 #include "hexdump.h"
-#include "io.h"
+#ifdef  __APPLE__
+#include "agx_iokit.h"
+#endif
 
-static const char *agx_alloc_types[AGX_NUM_ALLOC] = {"mem", "map", "cmd"};
+UNUSED static const char *agx_alloc_types[AGX_NUM_ALLOC] = {"mem", "map", "cmd"};
 
 static void
 agx_disassemble(void *_code, size_t maxlen, FILE *fp)
@@ -118,6 +120,8 @@ agxdecode_mark_mapped(unsigned handle)
    /* Mark mapped for future consumption */
    bo->mapped = true;
 }
+
+#ifdef __APPLE__
 
 static void
 agxdecode_decode_segment_list(void *segment_list)
@@ -210,6 +214,8 @@ agxdecode_decode_segment_list(void *segment_list)
               nr_handles, hdr->total_resources, hdr->resource_group_count);
    }
 }
+
+#endif
 
 static inline void *
 __agxdecode_fetch_gpu_mem(const struct agx_bo *mem, uint64_t gpu_va,
@@ -658,6 +664,8 @@ agxdecode_gfx(uint32_t *cmdbuf, uint64_t encoder, bool verbose)
    }
 }
 
+#ifdef __APPLE__
+
 void
 agxdecode_cmdstream(unsigned cmdbuf_handle, unsigned map_handle, bool verbose)
 {
@@ -722,6 +730,8 @@ agxdecode_dump_mappings(unsigned map_handle)
       fprintf(agxdecode_dump_stream, "\n");
    }
 }
+
+#endif
 
 void
 agxdecode_track_alloc(struct agx_bo *alloc)

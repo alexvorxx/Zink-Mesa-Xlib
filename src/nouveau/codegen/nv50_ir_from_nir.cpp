@@ -2921,12 +2921,6 @@ Converter::visit(nir_alu_instr *insn)
       mkOp2(OP_MERGE, TYPE_U64, newDefs[0], loadImm(NULL, 0), tmp);
       break;
    }
-   case nir_op_f2b32: {
-      DEFAULT_CHECKS;
-      LValues &newDefs = convert(&insn->dest);
-      mkCmp(OP_SET, CC_NEU, TYPE_U32, newDefs[0], sTypes[0], getSrc(&insn->src[0]), zero);
-      break;
-   }
    case nir_op_b2i8:
    case nir_op_b2i16:
    case nir_op_b2i32: {

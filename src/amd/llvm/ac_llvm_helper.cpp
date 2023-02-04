@@ -33,6 +33,10 @@
 #include <llvm/Transforms/IPO.h>
 #include <llvm/Transforms/Scalar.h>
 
+#if LLVM_VERSION_MAJOR >= 15
+#include "llvm/CodeGen/SelectionDAGNodes.h"
+#endif
+
 #include <cstring>
 
 /* DO NOT REORDER THE HEADERS
@@ -47,6 +51,37 @@
 #include "util/macros.h"
 
 using namespace llvm;
+
+#if LLVM_VERSION_MAJOR >= 15
+class RunAtExitForStaticDestructors : public SDNode
+{
+public:
+   /* getSDVTList (protected) calls getValueTypeList (private), which contains static variables. */
+   RunAtExitForStaticDestructors(): SDNode(0, 0, DebugLoc(), getSDVTList(MVT::Other))
+   {
+   }
+};
+#endif
+
+void ac_llvm_run_atexit_for_destructors(void)
+{
+#if LLVM_VERSION_MAJOR >= 15
+   /* LLVM >= 16 registers static variable destructors on the first compile, which gcc
+    * implements by calling atexit there. Before that, u_queue registers its atexit
+    * handler to kill all threads. Since exit() runs atexit handlers in the reverse order,
+    * the LLVM destructors are called first while shader compiler threads may still be
+    * running, which crashes in LLVM in SelectionDAG.cpp.
+    *
+    * The solution is to run the code that declares the LLVM static variables first,
+    * so that atexit for LLVM is registered first and u_queue is registered after that,
+    * which ensures that all u_queue threads are terminated before LLVM destructors are
+    * called.
+    *
+    * This just executes the code that declares static variables.
+    */
+   RunAtExitForStaticDestructors();
+#endif
+}
 
 bool ac_is_llvm_processor_supported(LLVMTargetMachineRef tm, const char *processor)
 {

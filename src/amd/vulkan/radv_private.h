@@ -1362,8 +1362,6 @@ struct radv_dynamic_state {
    struct radv_sample_locations_state sample_location;
 };
 
-extern const struct radv_dynamic_state default_dynamic_state;
-
 const char *radv_get_debug_option_name(int id);
 
 const char *radv_get_perftest_option_name(int id);
@@ -1936,7 +1934,7 @@ void radv_pipeline_stage_init(const VkPipelineShaderStageCreateInfo *sinfo,
                               struct radv_pipeline_stage *out_stage, gl_shader_stage stage);
 
 void radv_hash_shaders(unsigned char *hash, const struct radv_pipeline_stage *stages,
-                       const struct radv_pipeline_layout *layout,
+                       uint32_t stage_count, const struct radv_pipeline_layout *layout,
                        const struct radv_pipeline_key *key, uint32_t flags);
 
 void radv_hash_rt_shaders(unsigned char *hash, const VkRayTracingPipelineCreateInfoKHR *pCreateInfo,
@@ -2059,12 +2057,6 @@ struct radv_pipeline {
    /* Pipeline layout info. */
    uint32_t push_constant_size;
    uint32_t dynamic_offset_count;
-
-   /* For graphics pipeline library */
-   bool retain_shaders;
-   struct {
-      nir_shader *nir;
-   } retained_shaders[MESA_VULKAN_SHADER_STAGES];
 };
 
 struct radv_graphics_pipeline {
@@ -2136,6 +2128,12 @@ struct radv_graphics_pipeline {
 
    /* Custom blend mode for internal operations. */
    unsigned custom_blend_mode;
+
+   /* For graphics pipeline library */
+   bool retain_shaders;
+   struct {
+      nir_shader *nir;
+   } retained_shaders[MESA_VULKAN_SHADER_STAGES];
 };
 
 struct radv_compute_pipeline {
@@ -2200,7 +2198,6 @@ struct radv_pipeline_stage {
       const struct vk_object_base *object;
       const char *data;
       uint32_t size;
-      unsigned char sha1[20];
    } spirv;
 
    const char *entrypoint;
@@ -2271,6 +2268,9 @@ VkResult radv_compute_pipeline_create(VkDevice _device, VkPipelineCache _cache,
                                       const VkComputePipelineCreateInfo *pCreateInfo,
                                       const VkAllocationCallbacks *pAllocator,
                                       VkPipeline *pPipeline, bool is_internal);
+
+bool radv_pipeline_capture_shader_stats(const struct radv_device *device,
+                                        VkPipelineCreateFlags flags);
 
 void radv_pipeline_destroy(struct radv_device *device, struct radv_pipeline *pipeline,
                            const VkAllocationCallbacks *allocator);

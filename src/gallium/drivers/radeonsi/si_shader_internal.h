@@ -30,12 +30,6 @@
 
 struct util_debug_callback;
 
-struct si_shader_output_values {
-   LLVMValueRef values[4];
-   ubyte vertex_streams;
-   ubyte semantic;
-};
-
 struct si_shader_args {
    struct ac_shader_args ac;
 
@@ -257,10 +251,6 @@ void si_llvm_ps_build_end(struct si_shader_context *ctx);
 void si_llvm_init_ps_callbacks(struct si_shader_context *ctx);
 
 /* si_shader_llvm_vs.c */
-void si_llvm_clipvertex_to_clipdist(struct si_shader_context *ctx,
-                                    struct ac_export_args clipdist[2], LLVMValueRef clipvertex[4]);
-void si_llvm_build_vs_exports(struct si_shader_context *ctx,
-                              struct si_shader_output_values *outputs, unsigned noutput);
 void si_llvm_build_vs_prolog(struct si_shader_context *ctx, union si_shader_part_key *key);
 void si_llvm_init_vs_callbacks(struct si_shader_context *ctx);
 

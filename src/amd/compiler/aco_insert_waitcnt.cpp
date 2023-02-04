@@ -551,21 +551,6 @@ kill(wait_imm& imm, alu_delay_info& delay, Instruction* instr, wait_ctx& ctx,
       imm.combine(ctx.barrier_imm[ffs(storage_gds) - 1]);
    }
 
-   if (ctx.program->early_rast && instr->opcode == aco_opcode::exp) {
-      if (instr->exp().dest >= V_008DFC_SQ_EXP_POS && instr->exp().dest < V_008DFC_SQ_EXP_PRIM) {
-
-         /* With early_rast, the HW will start clipping and rasterization after the 1st DONE pos
-          * export. Wait for all stores (and atomics) to complete, so PS can read them.
-          * TODO: This only really applies to DONE pos exports.
-          *       Consider setting the DONE bit earlier.
-          */
-         if (ctx.vs_cnt > 0)
-            imm.vs = 0;
-         if (ctx.vm_cnt > 0)
-            imm.vm = 0;
-      }
-   }
-
    if (instr->opcode == aco_opcode::p_barrier)
       perform_barrier(ctx, imm, instr->barrier().sync, semantic_acqrel);
    else

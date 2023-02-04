@@ -64,7 +64,7 @@ event_write(struct fd_context *ctx, struct fd_ringbuffer *ring,
    return 0;
 }
 
-static void
+void
 fd6_emit_flushes(struct fd_context *ctx, struct fd_ringbuffer *ring,
                  unsigned flushes)
 {
@@ -114,9 +114,18 @@ static void
 add_flushes(struct pipe_context *pctx, unsigned flushes)
    assert_dt
 {
+   struct fd_context *ctx = fd_context(pctx);
    struct fd_batch *batch = NULL;
 
-   fd_batch_reference(&batch, fd_context(pctx)->batch);
+   /* If there is an active compute/nondraw batch, that is the one
+    * we want to add the flushes to.  Ie. last op was a launch_grid,
+    * if the next one is a launch_grid then the barriers should come
+    * between them.  If the next op is a draw_vbo then the batch
+    * switch is a sufficient barrier so it doesn't really matter.
+    */
+   fd_batch_reference(&batch, ctx->batch_nondraw);
+   if (!batch)
+      fd_batch_reference(&batch, ctx->batch);
 
    /* A batch flush is already a sufficient barrier: */
    if (!batch)
@@ -168,7 +177,6 @@ fd6_memory_barrier(struct pipe_context *pctx, unsigned flags)
    unsigned flushes = 0;
 
    if (flags & (PIPE_BARRIER_SHADER_BUFFER |
-                PIPE_BARRIER_IMAGE |
                 PIPE_BARRIER_CONSTANT_BUFFER |
                 PIPE_BARRIER_VERTEX_BUFFER |
                 PIPE_BARRIER_INDEX_BUFFER |
@@ -177,6 +185,7 @@ fd6_memory_barrier(struct pipe_context *pctx, unsigned flags)
    }
 
    if (flags & (PIPE_BARRIER_TEXTURE |
+                PIPE_BARRIER_IMAGE |
                 PIPE_BARRIER_INDIRECT_BUFFER |
                 PIPE_BARRIER_UPDATE_BUFFER |
                 PIPE_BARRIER_UPDATE_TEXTURE)) {

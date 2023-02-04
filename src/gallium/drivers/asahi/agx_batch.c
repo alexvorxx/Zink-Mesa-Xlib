@@ -32,8 +32,8 @@ agx_batch_init(struct agx_context *ctx,
    util_copy_framebuffer_state(&batch->key, key);
    batch->seqnum = ++ctx->batches.seqnum;
 
-   agx_pool_init(&batch->pool, dev, AGX_MEMORY_TYPE_FRAMEBUFFER, true);
-   agx_pool_init(&batch->pipeline_pool, dev, AGX_MEMORY_TYPE_SHADER, true);
+   agx_pool_init(&batch->pool, dev, 0, true);
+   agx_pool_init(&batch->pipeline_pool, dev, AGX_BO_LOW_VA, true);
 
    /* These allocations can happen only once and will just be zeroed (not freed)
     * during batch clean up. The memory is owned by the context.
@@ -46,8 +46,7 @@ agx_batch_init(struct agx_context *ctx,
              batch->bo_list.word_count * sizeof(BITSET_WORD));
    }
 
-   batch->encoder =
-      agx_bo_create(dev, 0x80000, AGX_MEMORY_TYPE_FRAMEBUFFER, "Encoder");
+   batch->encoder = agx_bo_create(dev, 0x80000, 0, "Encoder");
    batch->encoder_current = batch->encoder->ptr.cpu;
    batch->encoder_end = batch->encoder_current + batch->encoder->size;
 

@@ -92,11 +92,9 @@ spec@ext_framebuffer_object@fbo-stencil-gl_stencil_index1-drawpixels,Fail
 spec@ext_framebuffer_object@fbo-stencil-gl_stencil_index16-drawpixels,Fail
 spec@ext_framebuffer_object@fbo-stencil-gl_stencil_index4-drawpixels,Fail
 spec@ext_framebuffer_object@fbo-stencil-gl_stencil_index8-drawpixels,Fail
-spec@ext_image_dma_buf_import@ext_image_dma_buf_import-sample_uyvy,Fail
 spec@ext_image_dma_buf_import@ext_image_dma_buf_import-sample_y210,Fail
 spec@ext_image_dma_buf_import@ext_image_dma_buf_import-sample_y212,Fail
 spec@ext_image_dma_buf_import@ext_image_dma_buf_import-sample_y216,Fail
-spec@ext_image_dma_buf_import@ext_image_dma_buf_import-sample_yuyv,Fail
 spec@ext_packed_depth_stencil@fbo-depthstencil-gl_depth24_stencil8-drawpixels-float-and-ushort,Fail
 spec@ext_packed_depth_stencil@fbo-stencil-gl_depth24_stencil8-drawpixels,Fail
 spec@glsl-1.30@execution@glsl-fs-continue-in-switch-in-do-while,Fail

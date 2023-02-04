@@ -78,6 +78,7 @@ create_render_pass2(struct zink_screen *screen, struct zink_render_pass_state *s
    pstate->num_cresolves = state->num_cresolves;
    pstate->num_zsresolves = state->num_zsresolves;
    pstate->fbfetch = 0;
+   pstate->msaa_samples = state->msaa_samples;
    for (int i = 0; i < state->num_cbufs; i++) {
       struct zink_rt_attrib *rt = state->rts + i;
       attachments[i].sType = VK_STRUCTURE_TYPE_ATTACHMENT_DESCRIPTION_2;
@@ -214,6 +215,15 @@ create_render_pass2(struct zink_screen *screen, struct zink_render_pass_state *s
       zsresolve.pDepthStencilResolveAttachment = &zs_resolve;
    } else
       subpass.pNext = NULL;
+
+   VkMultisampledRenderToSingleSampledInfoEXT msrtss = {
+      VK_STRUCTURE_TYPE_MULTISAMPLED_RENDER_TO_SINGLE_SAMPLED_INFO_EXT,
+      &subpass.pNext,
+      VK_TRUE,
+      state->msaa_samples,
+   };
+   if (state->msaa_samples)
+      subpass.pNext = &msrtss;
 
    VkRenderPassCreateInfo2 rpci = {0};
    rpci.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO_2;
@@ -466,6 +476,8 @@ get_render_pass(struct zink_context *ctx)
       }
       state.num_rts++;
    }
+   state.msaa_samples = screen->info.have_EXT_multisampled_render_to_single_sampled && ctx->transient_attachments ?
+                        ctx->gfx_pipeline_state.rast_samples + 1 : 0;
    state.num_cbufs = fb->nr_cbufs;
    assert(!state.num_cresolves || state.num_cbufs == state.num_cresolves);
 
@@ -751,7 +763,7 @@ zink_begin_render_pass(struct zink_context *ctx)
    setup_framebuffer(ctx);
    if (ctx->batch.in_rp)
       return 0;
-   /* TODO: use VK_EXT_multisampled_render_to_single_sampled */
+
    if (ctx->framebuffer->rp->state.msaa_expand_mask) {
       uint32_t rp_state = ctx->gfx_pipeline_state.rp_state;
       struct zink_render_pass *rp = ctx->gfx_pipeline_state.render_pass;
@@ -796,7 +808,7 @@ zink_end_render_pass(struct zink_context *ctx)
 {
    if (ctx->batch.in_rp) {
       VKCTX(CmdEndRenderPass)(ctx->batch.state->cmdbuf);
-      /* TODO: use VK_EXT_multisampled_render_to_single_sampled */
+
       for (unsigned i = 0; i < ctx->fb_state.nr_cbufs; i++) {
          struct zink_ctx_surface *csurf = (struct zink_ctx_surface*)ctx->fb_state.cbufs[i];
          if (csurf)

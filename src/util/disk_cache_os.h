@@ -34,6 +34,7 @@
 
 #include "util/fossilize_db.h"
 #include "util/mesa_cache_db.h"
+#include "util/mesa_cache_db_multipart.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -64,7 +65,7 @@ struct disk_cache {
 
    struct foz_db foz_db;
 
-   struct mesa_cache_db cache_db;
+   struct mesa_cache_db_multipart cache_db;
 
    enum disk_cache_type type;
 

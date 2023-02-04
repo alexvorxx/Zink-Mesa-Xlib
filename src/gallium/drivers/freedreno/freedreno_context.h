@@ -299,6 +299,10 @@ struct fd_context {
     */
    struct fd_batch *batch dt;
 
+   /* Current nondraw batch.  Rules are the same as for draw batch.
+    */
+   struct fd_batch *batch_nondraw dt;
+
    /* NULL if there has been rendering since last flush.  Otherwise
     * keeps a reference to the last fence so we can re-use it rather
     * than having to flush no-op batch.
@@ -319,6 +323,12 @@ struct fd_context {
     * be building up cmdstream.
     */
    int in_fence_fd dt;
+
+   /**
+    * If we *ever* see an in-fence-fd, assume that userspace is
+    * not relying on implicit fences.
+    */
+   bool no_implicit_sync;
 
    /* track last known reset status globally and per-context to
     * determine if more resets occurred since then.  If global reset
@@ -661,13 +671,6 @@ fd_context_all_clean(struct fd_context *ctx) assert_dt
    ctx->dirty = (enum fd_dirty_3d_state)0;
    ctx->gen_dirty = 0;
    for (unsigned i = 0; i < PIPE_SHADER_TYPES; i++) {
-      /* don't mark compute state as clean, since it is not emitted
-       * during normal draw call.  The places that call _all_dirty(),
-       * it is safe to mark compute state dirty as well, but the
-       * inverse is not true.
-       */
-      if (i == PIPE_SHADER_COMPUTE)
-         continue;
       ctx->dirty_shader[i] = (enum fd_dirty_shader_state)0;
    }
 }
@@ -711,6 +714,7 @@ void fd_context_switch_to(struct fd_context *ctx,
                           struct fd_batch *batch) assert_dt;
 struct fd_batch *fd_context_batch(struct fd_context *ctx) assert_dt;
 struct fd_batch *fd_context_batch_locked(struct fd_context *ctx) assert_dt;
+struct fd_batch *fd_context_batch_nondraw(struct fd_context *ctx) assert_dt;
 
 void fd_context_setup_common_vbos(struct fd_context *ctx);
 void fd_context_cleanup_common_vbos(struct fd_context *ctx);

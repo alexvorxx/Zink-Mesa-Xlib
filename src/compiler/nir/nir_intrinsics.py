@@ -275,6 +275,9 @@ index("unsigned", "value_id")
 # Whether to sign-extend offsets in address arithmatic (else zero extend)
 index("bool", "sign_extend")
 
+# Instruction specific flags
+index("unsigned", "flags")
+
 intrinsic("nop", flags=[CAN_ELIMINATE])
 
 intrinsic("convert_alu_types", dest_comp=0, src_comp=[0],
@@ -1420,10 +1423,6 @@ intrinsic("load_cull_any_enabled_amd", dest_comp=1, bit_sizes=[1], flags=[CAN_EL
 intrinsic("load_cull_small_prim_precision_amd", dest_comp=1, bit_sizes=[32], flags=[CAN_ELIMINATE, CAN_REORDER])
 # Initial edge flags in a Vertex Shader, packed into the format the HW needs for primitive export.
 intrinsic("load_initial_edgeflags_amd", src_comp=[], dest_comp=1, bit_sizes=[32], indices=[])
-# Exports the current invocation's vertex. This is a placeholder where all vertex attribute export instructions should be emitted.
-intrinsic("export_vertex_amd", src_comp=[], indices=[])
-# Exports the current invocation's primitive. src[] = {packed_primitive_data}.
-intrinsic("export_primitive_amd", src_comp=[1], indices=[])
 # Allocates export space for vertices and primitives. src[] = {num_vertices, num_primitives}.
 intrinsic("alloc_vertices_and_primitives_amd", src_comp=[1, 1], indices=[])
 # Overwrites VS input registers, for use with vertex compaction after culling. src = {vertex_id, instance_id}.
@@ -1545,6 +1544,12 @@ intrinsic("atomic_add_gs_invocation_count_amd", [1])
 system_value("lds_ngg_scratch_base_amd", 1)
 # LDS offset for NGG GS shader vertex emit
 system_value("lds_ngg_gs_out_vertex_base_amd", 1)
+
+# AMD GPU shader output export instruction
+# src[] = { export_value }
+# BASE = export target
+# FLAGS = AC_EXP_FLAG_*
+intrinsic("export_amd", [0], indices=[BASE, WRITE_MASK, FLAGS])
 
 # V3D-specific instrinc for tile buffer color reads.
 #

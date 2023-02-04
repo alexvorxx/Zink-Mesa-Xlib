@@ -1327,4 +1327,3 @@ spec@arb_texture_buffer_object@texture-buffer-size-clamp,Fail
 # https://gitlab.freedesktop.org/mesa/mesa/-/issues/7152
 spec@ext_transform_feedback@builtin-varyings gl_culldistance,Fail
 
-spec@!opengl 1.1@line-smooth-stipple,Fail

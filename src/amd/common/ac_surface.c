@@ -1878,6 +1878,12 @@ static int gfx9_compute_miptree(struct ac_addrlib *addrlib, const struct radeon_
 
          assert(xout.pipeBankXor <= u_bit_consecutive(0, sizeof(surf->tile_swizzle) * 8));
          surf->tile_swizzle = xout.pipeBankXor;
+
+         /* Gfx11 should shift it by 10 bits instead of 8, and drivers already shift it by 8 bits,
+          * so shift it by 2 bits here.
+          */
+         if (info->gfx_level >= GFX11)
+            surf->tile_swizzle <<= 2;
       }
 
       bool use_dcc = false;

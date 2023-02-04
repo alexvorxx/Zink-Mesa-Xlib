@@ -402,6 +402,8 @@ zink_create_compute_pipeline(struct zink_screen *screen, struct zink_compute_pro
    VkComputePipelineCreateInfo pci = {0};
    pci.sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO;
    pci.layout = comp->base.layout;
+   if (zink_descriptor_mode == ZINK_DESCRIPTOR_MODE_DB)
+      pci.flags |= VK_PIPELINE_CREATE_DESCRIPTOR_BUFFER_BIT_EXT;
 
    VkPipelineShaderStageCreateInfo stage = {0};
    stage.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
@@ -451,7 +453,8 @@ zink_create_gfx_pipeline_output(struct zink_screen *screen, struct zink_gfx_pipe
    blend_state.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
    if (state->rast_attachment_order)
       blend_state.flags |= VK_PIPELINE_COLOR_BLEND_STATE_CREATE_RASTERIZATION_ORDER_ATTACHMENT_ACCESS_BIT_EXT;
-   blend_state.attachmentCount = state->rendering_info.colorAttachmentCount;
+   if (!screen->have_full_ds3)
+      blend_state.attachmentCount = state->rendering_info.colorAttachmentCount;
    if (state->blend_state)
       blend_state.logicOp = state->blend_state->logicop_func;
 

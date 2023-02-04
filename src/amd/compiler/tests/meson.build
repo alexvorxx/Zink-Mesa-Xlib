@@ -29,6 +29,7 @@ aco_tests_files = files(
   'test_insert_waitcnt.cpp',
   'test_isel.cpp',
   'test_optimizer.cpp',
+  'test_reduce_assign.cpp',
   'test_regalloc.cpp',
   'test_optimizer_postRA.cpp',
   'test_sdwa.cpp',

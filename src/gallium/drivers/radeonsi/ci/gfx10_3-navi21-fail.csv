@@ -1,4 +1,4 @@
-# LLVM 15.0.1
+# LLVM 16.0.0
 
 # piglit failures
 glx@glx-make-current,Crash
@@ -81,8 +81,6 @@ spec@arb_shading_language_packing@execution@built-in-functions@vs-packhalf2x16,F
 spec@arb_tessellation_shader@execution@tcs-tes-levels-out-of-bounds-write,Crash
 spec@egl_ext_protected_content@conformance,Fail
 spec@ext_framebuffer_blit@fbo-blit-check-limits,Fail
-spec@ext_image_dma_buf_import@ext_image_dma_buf_import-sample_uyvy,Fail
-spec@ext_image_dma_buf_import@ext_image_dma_buf_import-sample_yuyv,Fail
 spec@glsl-1.20@compiler@invalid-vec4-array-to-vec3-array-conversion.vert,Fail
 spec@glsl-4.00@execution@conversion@frag-conversion-explicit-dmat2-mat2,Fail
 spec@glsl-4.00@execution@conversion@frag-conversion-explicit-dmat2x3-mat2x3,Fail
@@ -147,3 +145,5 @@ KHR-GL46.sparse_texture2_tests.StandardPageSizesTestCase,Fail
 KHR-GL46.sparse_texture2_tests.UncommittedRegionsAccess,Fail
 KHR-GL46.sparse_texture_clamp_tests.SparseTextureClampLookupColor,Fail
 KHR-GL46.sparse_texture_clamp_tests.SparseTextureClampLookupResidency,Fail
+KHR-GL46.shader_image_load_store.basic-allTargets-atomic,Fail
+KHR-Single-GL46.enhanced_layouts.xfb_capture_inactive_output_component,Fail

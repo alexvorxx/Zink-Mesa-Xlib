@@ -171,7 +171,7 @@ traces:
     freedreno-a630:
       checksum: 5c0c5da476775dfac94b79e7edb556ce
     zink-a630:
-      checksum: e9c21d9a253cbae19f09ddfa01d9622a
+      checksum: a8dea3dcb341c0f6c786a264dee51766
 
   filament/filament-default.trace:
     freedreno-a306:
@@ -386,18 +386,6 @@ traces:
       checksum: e5d2b54f49ba1c24279d5ff84e0f002b
     zink-a630:
       checksum: e5d2b54f49ba1c24279d5ff84e0f002b
-
-  itoral-gl-terrain-demo/demo-v2.trace:
-    freedreno-a306:
-      label: [unsupported]
-    freedreno-a530:
-      label: [unsupported]
-    freedreno-a630:
-      checksum: 9571117bf4eab6fe29b12f6c3d42d865
-      label: [skip, flakes]
-      text: unstable results
-    zink-a630:
-      checksum: ef3c16d0f962ccfd55ad27899c4d602b
 
   paraview/pv-manyspheres-v2.trace:
     freedreno-a306:

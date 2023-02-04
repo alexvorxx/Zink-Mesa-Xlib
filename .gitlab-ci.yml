@@ -18,7 +18,7 @@ variables:
   # Individual CI farm status, set to "offline" to disable jobs
   # running on a particular CI farm (ie. for outages, etc):
   FD_FARM: "online"
-  COLLABORA_FARM: "online"
+  COLLABORA_FARM: "offline"
   MICROSOFT_FARM: "online"
   LIMA_FARM: "online"
   IGALIA_FARM: "online"
@@ -197,7 +197,6 @@ lincheck-docs:
 # When to automatically run the CI for build jobs
 .build-rules:
   rules:
-    - !reference [.no_scheduled_pipelines-rules, rules]
     # If any files affecting the pipeline are changed, build/test jobs run
     # automatically once all dependency jobs have passed
     - changes: &all_paths
@@ -234,7 +233,6 @@ lincheck-docs:
 
 .container-rules:
   rules:
-    - !reference [.no_scheduled_pipelines-rules, rules]
     # Run pipeline by default in the main project if any CI pipeline
     # configuration files were changed, to ensure docker images are up to date
     - if: *is-post-merge

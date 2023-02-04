@@ -2880,14 +2880,6 @@ bi_emit_alu(bi_builder *b, nir_alu_instr *instr)
                 BI_MUX_INT_ZERO);
       break;
 
-   case nir_op_f2b16:
-      bi_mux_v2i16_to(b, dst, bi_imm_u16(0), bi_imm_u16(~0), s0,
-                      BI_MUX_FP_ZERO);
-      break;
-   case nir_op_f2b32:
-      bi_mux_i32_to(b, dst, bi_imm_u32(0), bi_imm_u32(~0), s0, BI_MUX_FP_ZERO);
-      break;
-
    case nir_op_ieq8:
    case nir_op_ine8:
    case nir_op_ilt8:

@@ -40,9 +40,21 @@ enum agx_alloc_type {
    AGX_NUM_ALLOC,
 };
 
-/* BO is shared across processes (imported or exported) and therefore cannot be
- * cached locally */
-#define AGX_BO_SHARED (1 << 0)
+enum agx_bo_flags {
+   /* BO is shared across processes (imported or exported) and therefore cannot
+    * be cached locally
+    */
+   AGX_BO_SHARED = 1 << 0,
+
+   /* BO must be allocated in the low 32-bits of VA space */
+   AGX_BO_LOW_VA = 1 << 1,
+
+   /* BO is executable */
+   AGX_BO_EXEC = 1 << 2,
+
+   /* BO should be mapped write-back on the CPU (else, write combine) */
+   AGX_BO_WRITEBACK = 1 << 3,
+};
 
 struct agx_ptr {
    /* If CPU mapped, CPU address. NULL if not mapped */
@@ -65,7 +77,7 @@ struct agx_bo {
    enum agx_alloc_type type;
 
    /* Creation attributes */
-   unsigned flags;
+   enum agx_bo_flags flags;
    size_t size;
 
    /* Mapping */
@@ -100,11 +112,18 @@ struct agx_bo {
 };
 
 struct agx_bo *agx_bo_create(struct agx_device *dev, unsigned size,
-                             unsigned flags, const char *label);
+                             enum agx_bo_flags flags, const char *label);
 
 void agx_bo_reference(struct agx_bo *bo);
 void agx_bo_unreference(struct agx_bo *bo);
 struct agx_bo *agx_bo_import(struct agx_device *dev, int fd);
 int agx_bo_export(struct agx_bo *bo);
+
+void agx_bo_free(struct agx_device *dev, struct agx_bo *bo);
+struct agx_bo *agx_bo_alloc(struct agx_device *dev, size_t size,
+                            enum agx_bo_flags flags);
+struct agx_bo *agx_bo_cache_fetch(struct agx_device *dev, size_t size,
+                                  uint32_t flags, const bool dontwait);
+void agx_bo_cache_evict_all(struct agx_device *dev);
 
 #endif

@@ -788,6 +788,8 @@ void ac_compute_late_alloc(const struct radeon_info *info, bool ngg, bool ngg_cu
        */
       if (ngg_culling)
          *late_alloc_wave64 = info->min_good_cu_per_sa * 10;
+      else if (info->gfx_level >= GFX11)
+         *late_alloc_wave64 = 63;
       else
          *late_alloc_wave64 = info->min_good_cu_per_sa * 4;
 

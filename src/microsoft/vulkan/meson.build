@@ -84,7 +84,7 @@ libvulkan_dzn = shared_library(
     inc_include, inc_src, inc_mapi, inc_mesa, inc_gallium, inc_gallium_aux,
     inc_compiler, inc_util
   ],
-  dependencies : [dzn_deps, idep_vulkan_wsi],
+  dependencies : [dzn_deps, idep_vulkan_wsi, idep_xmlconfig],
   c_args : dzn_flags,
   cpp_args : dzn_cpp_flags,
   gnu_symbol_visibility : 'hidden',

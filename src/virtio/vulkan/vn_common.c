@@ -27,6 +27,7 @@ static const struct debug_control vn_debug_options[] = {
    { "vtest", VN_DEBUG_VTEST },
    { "wsi", VN_DEBUG_WSI },
    { "no_abort", VN_DEBUG_NO_ABORT },
+   { "log_ctx_info", VN_DEBUG_LOG_CTX_INFO },
    { NULL, 0 },
    /* clang-format on */
 };

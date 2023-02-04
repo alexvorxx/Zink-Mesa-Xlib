@@ -1210,11 +1210,6 @@ ntq_emit_comparison(struct v3d_compile *c,
                 vir_set_pf(c, vir_SUB_dest(c, nop, src0, src1), V3D_QPU_PF_PUSHC);
                 break;
 
-        case nir_op_f2b32:
-                vir_set_pf(c, vir_FMOV_dest(c, nop, src0), V3D_QPU_PF_PUSHZ);
-                cond_invert = true;
-                break;
-
         default:
                 return false;
         }
@@ -1589,7 +1584,6 @@ ntq_emit_alu(struct v3d_compile *c, nir_alu_instr *instr)
                 break;
         }
 
-        case nir_op_f2b32:
         case nir_op_feq32:
         case nir_op_fneu32:
         case nir_op_fge32:

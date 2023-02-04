@@ -203,7 +203,7 @@ do_create_surface(struct pipe_context *pctx, struct pipe_resource *pres, const s
    /* create a new surface */
    struct zink_surface *surface = create_surface(pctx, pres, templ, ivci, actually);
    /* only transient surfaces have nr_samples set */
-   surface->base.nr_samples = 0;
+   surface->base.nr_samples = zink_screen(pctx->screen)->info.have_EXT_multisampled_render_to_single_sampled ? templ->nr_samples : 0;
    surface->hash = hash;
    surface->ivci = *ivci;
    return surface;
@@ -292,8 +292,7 @@ zink_create_surface(struct pipe_context *pctx,
 
    struct zink_ctx_surface *csurf = (struct zink_ctx_surface*)wrap_surface(pctx, psurf);
 
-   /* TODO: use VK_EXT_multisampled_render_to_single_sampled and skip this entirely */
-   if (templ->nr_samples) {
+   if (templ->nr_samples && !zink_screen(pctx->screen)->info.have_EXT_multisampled_render_to_single_sampled) {
       /* transient fb attachment: not cached */
       struct pipe_resource rtempl = *pres;
       rtempl.nr_samples = templ->nr_samples;
@@ -319,7 +318,7 @@ zink_destroy_surface(struct zink_screen *screen, struct pipe_surface *psurface)
 {
    struct zink_surface *surface = zink_surface(psurface);
    struct zink_resource *res = zink_resource(psurface->texture);
-   if (!psurface->nr_samples && !surface->is_swapchain) {
+   if ((!psurface->nr_samples || screen->info.have_EXT_multisampled_render_to_single_sampled) && !surface->is_swapchain) {
       simple_mtx_lock(&res->surface_mtx);
       if (psurface->reference.count) {
          /* a different context got a cache hit during deletion: this surface is alive again */

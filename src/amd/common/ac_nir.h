@@ -50,6 +50,12 @@ enum
    AC_EXP_PARAM_UNDEFINED = 255, /* deprecated, use AC_EXP_PARAM_DEFAULT_VAL_0000 instead */
 };
 
+enum {
+   AC_EXP_FLAG_COMPRESSED = (1 << 0),
+   AC_EXP_FLAG_DONE       = (1 << 1),
+   AC_EXP_FLAG_VALID_MASK = (1 << 2),
+};
+
 /* Maps I/O semantics to the actual location used by the lowering pass. */
 typedef unsigned (*ac_nir_map_io_driver_location)(unsigned semantic);
 
@@ -66,6 +72,27 @@ ac_nir_load_arg(nir_builder *b, const struct ac_shader_args *ac_args, struct ac_
 nir_ssa_def *
 ac_nir_unpack_arg(nir_builder *b, const struct ac_shader_args *ac_args, struct ac_arg arg,
                   unsigned rshift, unsigned bitwidth);
+
+void
+ac_nir_export_primitive(nir_builder *b, nir_ssa_def *prim);
+
+void
+ac_nir_export_position(nir_builder *b,
+                       enum amd_gfx_level gfx_level,
+                       uint32_t clip_cull_mask,
+                       bool no_param_export,
+                       bool force_vrs,
+                       uint64_t outputs_written,
+                       nir_ssa_def *(*outputs)[4]);
+
+void
+ac_nir_export_parameter(nir_builder *b,
+                        const uint8_t *param_offsets,
+                        uint64_t outputs_written,
+                        uint16_t outputs_written_16bit,
+                        nir_ssa_def *(*outputs)[4],
+                        nir_ssa_def *(*outputs_16bit_lo)[4],
+                        nir_ssa_def *(*outputs_16bit_hi)[4]);
 
 nir_ssa_def *
 ac_nir_calc_io_offset(nir_builder *b,
@@ -129,20 +156,23 @@ typedef struct {
 
    unsigned max_workgroup_size;
    unsigned wave_size;
+   uint32_t clipdist_enable_mask;
    const uint8_t *vs_output_param_offset; /* GFX11+ */
+   bool has_param_exports;
    bool can_cull;
    bool disable_streamout;
    bool has_gen_prim_query;
    bool has_xfb_prim_query;
+   bool kill_pointsize;
+   bool force_vrs;
 
    /* VS */
    unsigned num_vertices_per_primitive;
    bool early_prim_export;
    bool passthrough;
    bool use_edgeflags;
-   int primitive_id_location;
+   bool export_primitive_id;
    uint32_t instance_rate_inputs;
-   uint32_t clipdist_enable_mask;
    uint32_t user_clip_plane_enable_mask;
 
    /* GS */
@@ -157,6 +187,10 @@ ac_nir_lower_ngg_gs(nir_shader *shader, const ac_nir_lower_ngg_options *options)
 
 void
 ac_nir_lower_ngg_ms(nir_shader *shader,
+                    enum amd_gfx_level gfx_level,
+                    uint32_t clipdist_enable_mask,
+                    const uint8_t *vs_output_param_offset,
+                    bool has_param_exports,
                     bool *out_needs_scratch_ring,
                     unsigned wave_size,
                     bool multiview);
@@ -199,19 +233,29 @@ typedef struct ac_nir_gs_output_info {
    /* type for each 16bit slot component */
    nir_alu_type (*types_16bit_lo)[4];
    nir_alu_type (*types_16bit_hi)[4];
-
-   /* map varying slot to driver location */
-   const uint8_t *slot_to_location;
-   const uint8_t *slot_to_location_16bit;
 } ac_nir_gs_output_info;
 
 nir_shader *
 ac_nir_create_gs_copy_shader(const nir_shader *gs_nir,
+                             enum amd_gfx_level gfx_level,
+                             uint32_t clip_cull_mask,
+                             const uint8_t *param_offsets,
+                             bool has_param_exports,
                              bool disable_streamout,
+                             bool kill_pointsize,
+                             bool force_vrs,
                              ac_nir_gs_output_info *output_info);
 
 void
-ac_nir_lower_legacy_vs(nir_shader *nir, int primitive_id_location, bool disable_streamout);
+ac_nir_lower_legacy_vs(nir_shader *nir,
+                       enum amd_gfx_level gfx_level,
+                       uint32_t clip_cull_mask,
+                       const uint8_t *param_offsets,
+                       bool has_param_exports,
+                       bool export_primitive_id,
+                       bool disable_streamout,
+                       bool kill_pointsize,
+                       bool force_vrs);
 
 bool
 ac_nir_gs_shader_query(nir_builder *b,

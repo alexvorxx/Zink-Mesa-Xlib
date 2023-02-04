@@ -308,6 +308,31 @@ static bool lower_abi_instr(nir_builder *b, nir_instr *instr, struct lower_abi_s
       replacement =
          ac_nir_load_arg(b, &args->ac, args->ac.streamout_offset[nir_intrinsic_base(intrin)]);
       break;
+   case nir_intrinsic_load_force_vrs_rates_amd:
+      if (sel->screen->info.gfx_level >= GFX11) {
+         /* Bits [2:5] = VRS rate
+          *
+          * The range is [0, 15].
+          *
+          * If the hw doesn't support VRS 4x4, it will silently use 2x2 instead.
+          */
+         replacement = nir_imm_int(b, V_0283D0_VRS_SHADING_RATE_4X4 << 2);
+      } else {
+         /* Bits [2:3] = VRS rate X
+          * Bits [4:5] = VRS rate Y
+          *
+          * The range is [-2, 1]. Values:
+          *   1: 2x coarser shading rate in that direction.
+          *   0: normal shading rate
+          *  -1: 2x finer shading rate (sample shading, not directional)
+          *  -2: 4x finer shading rate (sample shading, not directional)
+          *
+          * Sample shading can't go above 8 samples, so both numbers can't be -2
+          * at the same time.
+          */
+         replacement = nir_imm_int(b, (1 << 2) | (1 << 4));
+      }
+      break;
    default:
       return false;
    }

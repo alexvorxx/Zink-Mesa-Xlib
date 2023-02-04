@@ -206,10 +206,11 @@ free_program_name(void)
 static void
 util_get_process_name_callback(void)
 {
-   program_name = __getProgramName();
-   if (program_name) {
+   const char *override_name = os_get_option("MESA_PROCESS_NAME");
+   program_name = override_name ? strdup(override_name) : __getProgramName();
+
+   if (program_name)
       atexit(free_program_name);
-   }
 }
 
 const char *
@@ -257,34 +258,6 @@ success:
 
 #endif
    return 0;
-}
-
-bool
-util_get_process_name_may_override(const char *env_name, char *procname, size_t size)
-{
-   const char *name;
-
-   /* First, check if the env var with env_name is set to
-    * override the normal process name query.
-    */
-   name = os_get_option(env_name);
-
-   if (!name) {
-      /* do normal query */
-      name = util_get_process_name();
-   }
-
-   assert(size > 0);
-   assert(procname);
-
-   if (name && procname && size > 0) {
-      strncpy(procname, name, size);
-      procname[size - 1] = '\0';
-      return true;
-   }
-   else {
-      return false;
-   }
 }
 
 bool

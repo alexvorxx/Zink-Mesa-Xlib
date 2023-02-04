@@ -75,3 +75,10 @@ dEQP-VK.drm_format_modifiers.export_import_fmt_features2.b5g6r5_unorm_pack16,Cra
 dEQP-VK.drm_format_modifiers.export_import_fmt_features2.r32g32_sfloat,Crash
 dEQP-VK.drm_format_modifiers.export_import.a8b8g8r8_srgb_pack32,Crash
 dEQP-VK.drm_format_modifiers.export_import.r16g16_unorm,Crash
+
+# Fixed upstream with
+# 52e160cb81 ("Fix tests that enable depth testing on undefined depth buffer")
+# 0f3177eb9e ("Fix tracking image layout in load_store_op_none tests")
+dEQP-VK.dynamic_rendering.suballocation.load_store_op_none.stencil_d32_sfloat_s8_uint_load_op_none_store_op_store,Crash
+dEQP-VK.dynamic_rendering.suballocation.load_store_op_none.stencil_d24_unorm_s8_uint_load_op_none_store_op_store,Crash
+dEQP-VK.dynamic_rendering.suballocation.load_store_op_none.stencil_d32_sfloat_s8_uint_load_op_none_store_op_dontcare,Crash

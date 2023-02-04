@@ -149,12 +149,7 @@ static const nir_opt_preamble_options preamble_options = {
    .instr_cost_cb = instr_cost,
    .rewrite_cost_cb = rewrite_cost,
    .avoid_instr_cb = avoid_instr,
-
-   /* Storage size 16-bit words. Should be 512, but we push some sysvals ad hoc
-    * in the backend compiler, so we need to reserve space. When we move UBO and
-    * VBO lowering to NIR, this can be bumped up to 512.
-    */
-   .preamble_storage_size = 256,
+   .preamble_storage_size = 512,
 };
 
 bool

@@ -203,6 +203,9 @@ setup_state_map(struct fd_context *ctx)
    fd_context_add_shader_map(ctx, PIPE_SHADER_FRAGMENT,
                              FD_DIRTY_SHADER_SSBO | FD_DIRTY_SHADER_IMAGE,
                              BIT(FD6_GROUP_FS_BINDLESS));
+   fd_context_add_shader_map(ctx, PIPE_SHADER_COMPUTE,
+                             FD_DIRTY_SHADER_SSBO | FD_DIRTY_SHADER_IMAGE,
+                             BIT(FD6_GROUP_CS_BINDLESS));
 
    /* NOTE: scissor enabled bit is part of rasterizer state, but
     * fd_rasterizer_state_bind() will mark scissor dirty if needed:

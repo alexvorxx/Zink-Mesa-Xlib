@@ -21,8 +21,15 @@
 
 dep_iokit = dependency('IOKit', required : false)
 
+if host_machine.system() == 'darwin'
+  agx_device = 'agx_device_macos.c'
+else
+  agx_device = 'agx_device.c'
+endif
+
 libasahi_lib_files = files(
-  'agx_device.c',
+  'agx_bo.c',
+  agx_device,
   'agx_formats.c',
   'agx_meta.c',
   'agx_tilebuffer.c',

@@ -629,18 +629,14 @@ d3d12_video_encoder_update_current_encoder_config_state_h264(struct d3d12_video_
    }
 
    // Set profile
-   auto targetProfile = d3d12_video_encoder_convert_profile_to_d3d12_enc_profile_h264(pD3D12Enc->base.profile);
-   if (pD3D12Enc->m_currentEncodeConfig.m_encoderProfileDesc.m_H264Profile != targetProfile) {
-      pD3D12Enc->m_currentEncodeConfig.m_ConfigDirtyFlags |= d3d12_video_encoder_config_dirty_flag_profile;
-   }
-   pD3D12Enc->m_currentEncodeConfig.m_encoderProfileDesc.m_H264Profile = targetProfile;
+   auto lastFrameProfile = pD3D12Enc->m_currentEncodeConfig.m_encoderProfileDesc.m_H264Profile;
+   pD3D12Enc->m_currentEncodeConfig.m_encoderProfileDesc.m_H264Profile =
+      d3d12_video_encoder_convert_profile_to_d3d12_enc_profile_h264(pD3D12Enc->base.profile);
 
    // Set level
-   auto targetLevel = d3d12_video_encoder_convert_level_h264(pD3D12Enc->base.level);
-   if (pD3D12Enc->m_currentEncodeConfig.m_encoderLevelDesc.m_H264LevelSetting != targetLevel) {
-      pD3D12Enc->m_currentEncodeConfig.m_ConfigDirtyFlags |= d3d12_video_encoder_config_dirty_flag_level;
-   }
-   pD3D12Enc->m_currentEncodeConfig.m_encoderLevelDesc.m_H264LevelSetting = targetLevel;
+   auto lastFrameLevel = pD3D12Enc->m_currentEncodeConfig.m_encoderLevelDesc.m_H264LevelSetting;
+   pD3D12Enc->m_currentEncodeConfig.m_encoderLevelDesc.m_H264LevelSetting =
+      d3d12_video_encoder_convert_level_h264(pD3D12Enc->base.level);
 
    // Set codec config
    bool is_supported = false;
@@ -718,7 +714,13 @@ d3d12_video_encoder_update_current_encoder_config_state_h264(struct d3d12_video_
                     "mismatches UMD suggested D3D12_VIDEO_ENCODER_PROFILE_H264: %d\n",
                     pD3D12Enc->m_currentEncodeConfig.m_encoderProfileDesc.m_H264Profile,
                     pD3D12Enc->m_currentEncodeCapabilities.m_encoderSuggestedProfileDesc.m_H264Profile);
+      if (!D3D12_VIDEO_ENC_HONOR_PROFILE_LEVEL_PIPE)
+         pD3D12Enc->m_currentEncodeConfig.m_encoderProfileDesc.m_H264Profile =
+            pD3D12Enc->m_currentEncodeCapabilities.m_encoderSuggestedProfileDesc.m_H264Profile;
    }
+
+   if (lastFrameProfile != pD3D12Enc->m_currentEncodeConfig.m_encoderProfileDesc.m_H264Profile)
+      pD3D12Enc->m_currentEncodeConfig.m_ConfigDirtyFlags |= d3d12_video_encoder_config_dirty_flag_profile;
 
    if (pD3D12Enc->m_currentEncodeConfig.m_encoderLevelDesc.m_H264LevelSetting !=
        pD3D12Enc->m_currentEncodeCapabilities.m_encoderLevelSuggestedDesc.m_H264LevelSetting) {
@@ -726,7 +728,13 @@ d3d12_video_encoder_update_current_encoder_config_state_h264(struct d3d12_video_
                     "mismatches UMD suggested D3D12_VIDEO_ENCODER_LEVELS_H264: %d\n",
                     pD3D12Enc->m_currentEncodeConfig.m_encoderLevelDesc.m_H264LevelSetting,
                     pD3D12Enc->m_currentEncodeCapabilities.m_encoderLevelSuggestedDesc.m_H264LevelSetting);
+      if (!D3D12_VIDEO_ENC_HONOR_PROFILE_LEVEL_PIPE)
+         pD3D12Enc->m_currentEncodeConfig.m_encoderLevelDesc.m_H264LevelSetting =
+            pD3D12Enc->m_currentEncodeCapabilities.m_encoderLevelSuggestedDesc.m_H264LevelSetting;
    }
+
+   if (lastFrameLevel != pD3D12Enc->m_currentEncodeConfig.m_encoderLevelDesc.m_H264LevelSetting)
+      pD3D12Enc->m_currentEncodeConfig.m_ConfigDirtyFlags |= d3d12_video_encoder_config_dirty_flag_level;
 
    if (pD3D12Enc->m_currentEncodeCapabilities.m_MaxSlicesInOutput >
        pD3D12Enc->m_currentEncodeCapabilities.m_currentResolutionSupportCaps.MaxSubregionsNumber) {

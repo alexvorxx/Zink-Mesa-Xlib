@@ -28,6 +28,30 @@
 #include "compiler/nir/nir_builtin_builder.h"
 #include "agx_compiler.h"
 
+#define AGX_TEXTURE_DESC_STRIDE 24
+
+static nir_ssa_def *
+texture_descriptor_ptr(nir_builder *b, nir_tex_instr *tex)
+{
+   /* For bindless, we store the descriptor pointer in the texture handle */
+   int handle_idx = nir_tex_instr_src_index(tex, nir_tex_src_texture_handle);
+   if (handle_idx >= 0)
+      return tex->src[handle_idx].src.ssa;
+
+   /* For non-bindless, compute from the texture index, offset, and table */
+   unsigned base_B = tex->texture_index * AGX_TEXTURE_DESC_STRIDE;
+   nir_ssa_def *offs = nir_imm_int(b, base_B);
+
+   int offs_idx = nir_tex_instr_src_index(tex, nir_tex_src_texture_offset);
+   if (offs_idx >= 0) {
+      nir_ssa_def *offset_src = tex->src[offs_idx].src.ssa;
+      offs = nir_iadd(b, offs,
+                      nir_imul_imm(b, offset_src, AGX_TEXTURE_DESC_STRIDE));
+   }
+
+   return nir_iadd(b, nir_load_texture_base_agx(b), nir_u2u64(b, offs));
+}
+
 static nir_ssa_def *
 steal_tex_src(nir_tex_instr *tex, nir_tex_src_type type_)
 {
@@ -41,13 +65,90 @@ steal_tex_src(nir_tex_instr *tex, nir_tex_src_type type_)
    return ssa;
 }
 
+static nir_ssa_def *
+agx_txs(nir_builder *b, nir_tex_instr *tex)
+{
+   nir_ssa_def *ptr = texture_descriptor_ptr(b, tex);
+   nir_ssa_def *comp[4] = {NULL};
+
+   nir_ssa_def *desc = nir_load_global_constant(b, ptr, 8, 4, 32);
+   nir_ssa_def *w0 = nir_channel(b, desc, 0);
+   nir_ssa_def *w1 = nir_channel(b, desc, 1);
+   nir_ssa_def *w3 = nir_channel(b, desc, 3);
+
+   /* Width minus 1: bits [28, 42) */
+   nir_ssa_def *width_m1 =
+      nir_ior(b, nir_ushr_imm(b, w0, 28),
+              nir_ishl_imm(b, nir_iand_imm(b, w1, BITFIELD_MASK(14 - 4)), 4));
+   /* Height minus 1: bits [42, 56) */
+   nir_ssa_def *height_m1 =
+      nir_iand_imm(b, nir_ushr_imm(b, w1, 42 - 32), BITFIELD_MASK(14));
+
+   /* Depth minus 1: bits [110, 124) */
+   nir_ssa_def *depth_m1 =
+      nir_iand_imm(b, nir_ushr_imm(b, w3, 110 - 96), BITFIELD_MASK(14));
+
+   /* First level: bits [56, 60) */
+   nir_ssa_def *lod =
+      nir_iand_imm(b, nir_ushr_imm(b, w1, 56 - 32), BITFIELD_MASK(4));
+
+   /* Add LOD offset to first level to get the interesting LOD */
+   int lod_idx = nir_tex_instr_src_index(tex, nir_tex_src_lod);
+   if (lod_idx >= 0)
+      lod = nir_iadd(
+         b, lod, nir_u2u32(b, nir_ssa_for_src(b, tex->src[lod_idx].src, 1)));
+
+   /* Add 1 to width-1, height-1 to get base dimensions */
+   nir_ssa_def *width = nir_iadd_imm(b, width_m1, 1);
+   nir_ssa_def *height = nir_iadd_imm(b, height_m1, 1);
+   nir_ssa_def *depth = nir_iadd_imm(b, depth_m1, 1);
+
+   /* How we finish depends on the size of the result */
+   unsigned nr_comps = nir_dest_num_components(tex->dest);
+   assert(nr_comps <= 3);
+
+   /* Adjust for LOD, do not adjust array size */
+   assert(!(nr_comps <= 1 && tex->is_array));
+   width = nir_imax(b, nir_ushr(b, width, lod), nir_imm_int(b, 1));
+
+   if (!(nr_comps == 2 && tex->is_array))
+      height = nir_imax(b, nir_ushr(b, height, lod), nir_imm_int(b, 1));
+
+   if (!(nr_comps == 3 && tex->is_array))
+      depth = nir_imax(b, nir_ushr(b, depth, lod), nir_imm_int(b, 1));
+
+   comp[0] = width;
+   comp[1] = height;
+   comp[2] = depth;
+
+   return nir_vec(b, comp, nr_comps);
+}
+
+static bool
+lower_txs(nir_builder *b, nir_instr *instr, UNUSED void *data)
+{
+   if (instr->type != nir_instr_type_tex)
+      return false;
+
+   nir_tex_instr *tex = nir_instr_as_tex(instr);
+   b->cursor = nir_before_instr(instr);
+
+   if (tex->op != nir_texop_txs)
+      return false;
+
+   nir_ssa_def *res = agx_txs(b, tex);
+   nir_ssa_def_rewrite_uses_after(&tex->dest.ssa, res, instr);
+   nir_instr_remove(instr);
+   return true;
+}
+
 /*
  * NIR indexes into array textures with unclamped floats (integer for txf). AGX
  * requires the index to be a clamped integer. Lower tex_src_coord into
  * tex_src_backend1 for array textures by type-converting and clamping.
  */
 static bool
-lower_array_texture(nir_builder *b, nir_instr *instr, UNUSED void *data)
+lower_regular_texture(nir_builder *b, nir_instr *instr, UNUSED void *data)
 {
    if (instr->type != nir_instr_type_tex)
       return false;
@@ -107,9 +208,37 @@ lower_array_texture(nir_builder *b, nir_instr *instr, UNUSED void *data)
 }
 
 bool
-agx_nir_lower_array_texture(nir_shader *s)
+agx_nir_lower_texture(nir_shader *s)
 {
-   return nir_shader_instructions_pass(
-      s, lower_array_texture, nir_metadata_block_index | nir_metadata_dominance,
-      NULL);
+   bool progress = false;
+
+   nir_lower_tex_options lower_tex_options = {
+      .lower_txp = ~0,
+      .lower_invalid_implicit_lod = true,
+
+      /* XXX: Metal seems to handle just like 3D txd, so why doesn't it work?
+       * TODO: Stop using this lowering
+       */
+      .lower_txd_cube_map = true,
+   };
+
+   nir_tex_src_type_constraints tex_constraints = {
+      [nir_tex_src_lod] = {true, 16},
+      [nir_tex_src_bias] = {true, 16},
+      [nir_tex_src_ms_index] = {true, 16},
+   };
+
+   NIR_PASS(progress, s, nir_lower_tex, &lower_tex_options);
+   NIR_PASS(progress, s, nir_legalize_16bit_sampler_srcs, tex_constraints);
+
+   /* Lower texture sources after legalizing types (as the lowering depends on
+    * 16-bit multisample indices) but before lowering queries (as the lowering
+    * generates txs for array textures).
+    */
+   NIR_PASS(progress, s, nir_shader_instructions_pass, lower_regular_texture,
+            nir_metadata_block_index | nir_metadata_dominance, NULL);
+   NIR_PASS(progress, s, nir_shader_instructions_pass, lower_txs,
+            nir_metadata_block_index | nir_metadata_dominance, NULL);
+
+   return progress;
 }

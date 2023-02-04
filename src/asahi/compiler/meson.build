@@ -31,7 +31,6 @@ libasahi_agx_files = files(
   'agx_nir_lower_ubo.c',
   'agx_nir_opt_preamble.c',
   'agx_lower_64bit.c',
-  'agx_lower_resinfo.c',
   'agx_lower_parallel_copy.c',
   'agx_lower_pseudo.c',
   'agx_pack.c',
@@ -39,7 +38,6 @@ libasahi_agx_files = files(
   'agx_opt_cse.c',
   'agx_optimizer.c',
   'agx_register_allocate.c',
-  'agx_uniforms.c',
   'agx_validate.c',
 )
 

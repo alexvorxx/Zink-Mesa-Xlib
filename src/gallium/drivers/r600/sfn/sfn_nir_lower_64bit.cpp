@@ -158,7 +158,6 @@ class LowerSplit64op : public NirLowerInstruction {
          switch (alu->op) {
          case nir_op_bcsel:
             return nir_dest_bit_size(alu->dest.dest) == 64;
-         case nir_op_f2b1:
          case nir_op_f2i32:
          case nir_op_f2u32:
          case nir_op_f2i64:
@@ -199,12 +198,6 @@ class LowerSplit64op : public NirLowerInstruction {
                          nir_unpack_64_2x32_split_y(b, nir_ssa_for_alu_src(b, alu, 1)),
                          nir_unpack_64_2x32_split_y(b, nir_ssa_for_alu_src(b, alu, 2)));
             return nir_pack_64_2x32_split(b, lo, hi);
-         }
-         case nir_op_f2b1: {
-            auto mask = nir_component_mask(nir_dest_num_components(alu->dest.dest));
-            return nir_fneu(b,
-                            nir_channels(b, nir_ssa_for_alu_src(b, alu, 0), mask),
-                            nir_imm_zero(b, nir_dest_num_components(alu->dest.dest), 64));
          }
          case nir_op_f2i32: {
             auto src = nir_ssa_for_alu_src(b, alu, 0);

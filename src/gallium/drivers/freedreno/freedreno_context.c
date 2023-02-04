@@ -334,6 +334,11 @@ fd_context_batch(struct fd_context *ctx)
 
    tc_assert_driver_thread(ctx->tc);
 
+   if (ctx->batch_nondraw) {
+      fd_batch_reference(&ctx->batch_nondraw, NULL);
+      fd_context_all_dirty(ctx);
+   }
+
    fd_batch_reference(&batch, ctx->batch);
 
    if (unlikely(!batch)) {
@@ -365,6 +370,28 @@ fd_context_batch_locked(struct fd_context *ctx)
          fd_batch_reference(&batch, NULL);
       }
    }
+
+   return batch;
+}
+
+/**
+ * Return a reference to the current non-draw (compute/blit) batch.
+ */
+struct fd_batch *
+fd_context_batch_nondraw(struct fd_context *ctx)
+{
+   struct fd_batch *batch = NULL;
+
+   tc_assert_driver_thread(ctx->tc);
+
+   fd_batch_reference(&batch, ctx->batch_nondraw);
+
+   if (unlikely(!batch)) {
+      batch = fd_bc_alloc_batch(ctx, true);
+      fd_batch_reference(&ctx->batch_nondraw, batch);
+      fd_context_all_dirty(ctx);
+   }
+   fd_context_switch_to(ctx, batch);
 
    return batch;
 }

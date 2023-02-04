@@ -342,8 +342,10 @@ struct radv_shader_info {
       uint8_t depth_layout;
       bool allow_flat_shading;
       bool has_epilog;
+      bool mrt0_is_dual_src;
       unsigned spi_ps_input;
       unsigned colors_written;
+      unsigned spi_shader_col_format;
       uint8_t color0_written;
    } ps;
    struct {
@@ -555,19 +557,15 @@ void radv_init_shader_arenas(struct radv_device *device);
 void radv_destroy_shader_arenas(struct radv_device *device);
 
 struct radv_pipeline_shader_stack_size;
+struct radv_compute_pipeline;
 
-VkResult radv_create_shaders(struct radv_pipeline *pipeline,
-                             struct radv_pipeline_layout *pipeline_layout,
-                             struct radv_device *device, struct radv_pipeline_cache *cache,
-                             const struct radv_pipeline_key *key,
-                             const VkPipelineShaderStageCreateInfo *pStages,
-                             uint32_t stageCount,
-                             const VkPipelineCreateFlags flags, const uint8_t *custom_hash,
-                             const VkPipelineCreationFeedbackCreateInfo *creation_feedback,
-                             struct radv_pipeline_shader_stack_size **stack_sizes,
-                             uint32_t *num_stack_sizes,
-                             VkGraphicsPipelineLibraryFlagBitsEXT lib_flags,
-                             gl_shader_stage *last_vgt_api_stage);
+VkResult radv_compute_pipeline_compile(
+   struct radv_compute_pipeline *pipeline, struct radv_pipeline_layout *pipeline_layout,
+   struct radv_device *device, struct radv_pipeline_cache *cache,
+   const struct radv_pipeline_key *pipeline_key, const VkPipelineShaderStageCreateInfo *pStage,
+   const VkPipelineCreateFlags flags, const uint8_t *custom_hash,
+   const VkPipelineCreationFeedbackCreateInfo *creation_feedback,
+   struct radv_pipeline_shader_stack_size **stack_sizes, uint32_t *num_stack_sizes);
 
 struct radv_shader_args;
 

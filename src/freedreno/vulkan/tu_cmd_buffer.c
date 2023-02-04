@@ -686,8 +686,7 @@ use_sysmem_rendering(struct tu_cmd_buffer *cmd,
       return true;
 
    /* can't fit attachments into gmem */
-   if (!cmd->state.pass->gmem_pixels[cmd->state.gmem_layout] ||
-       !cmd->state.tiling->possible)
+   if (!cmd->state.tiling->possible)
       return true;
 
    if (cmd->state.framebuffer->layers > 1)
@@ -4519,39 +4518,42 @@ tu_CmdNextSubpass2(VkCommandBuffer commandBuffer,
       cmd->state.dirty |= TU_CMD_DIRTY_LRZ;
    }
 
-   tu_cond_exec_start(cs, CP_COND_EXEC_0_RENDER_MODE_GMEM);
+   if (cmd->state.tiling->possible) {
+      tu_cond_exec_start(cs, CP_COND_EXEC_0_RENDER_MODE_GMEM);
 
-   if (subpass->resolve_attachments) {
-      tu6_emit_blit_scissor(cmd, cs, true);
+      if (subpass->resolve_attachments) {
+         tu6_emit_blit_scissor(cmd, cs, true);
 
-      for (unsigned i = 0; i < subpass->resolve_count; i++) {
-         uint32_t a = subpass->resolve_attachments[i].attachment;
-         if (a == VK_ATTACHMENT_UNUSED)
-            continue;
+         for (unsigned i = 0; i < subpass->resolve_count; i++) {
+            uint32_t a = subpass->resolve_attachments[i].attachment;
+            if (a == VK_ATTACHMENT_UNUSED)
+               continue;
 
-         uint32_t gmem_a = tu_subpass_get_attachment_to_resolve(subpass, i);
+            uint32_t gmem_a = tu_subpass_get_attachment_to_resolve(subpass, i);
 
-         tu_store_gmem_attachment(cmd, cs, a, gmem_a, fb->layers,
-                                  subpass->multiview_mask, false);
+            tu_store_gmem_attachment(cmd, cs, a, gmem_a, fb->layers,
+                                    subpass->multiview_mask, false);
 
-         if (!pass->attachments[a].gmem)
-            continue;
+            if (!pass->attachments[a].gmem)
+               continue;
 
-         /* check if the resolved attachment is needed by later subpasses,
-          * if it is, should be doing a GMEM->GMEM resolve instead of GMEM->MEM->GMEM..
-          */
-         perf_debug(cmd->device, "TODO: missing GMEM->GMEM resolve path\n");
-         tu_load_gmem_attachment(cmd, cs, a, false, true);
+            /* check if the resolved attachment is needed by later subpasses,
+            * if it is, should be doing a GMEM->GMEM resolve instead of GMEM->MEM->GMEM..
+            */
+            perf_debug(cmd->device, "TODO: missing GMEM->GMEM resolve path\n");
+            tu_load_gmem_attachment(cmd, cs, a, false, true);
+         }
       }
+
+      tu_cond_exec_end(cs);
+
+      tu_cond_exec_start(cs, CP_COND_EXEC_0_RENDER_MODE_SYSMEM);
    }
-
-   tu_cond_exec_end(cs);
-
-   tu_cond_exec_start(cs, CP_COND_EXEC_0_RENDER_MODE_SYSMEM);
 
    tu6_emit_sysmem_resolves(cmd, cs, subpass);
 
-   tu_cond_exec_end(cs);
+   if (cmd->state.tiling->possible)
+      tu_cond_exec_end(cs);
 
    /* Handle dependencies for the next subpass */
    tu_subpass_barrier(cmd, &cmd->state.subpass->start_barrier, false);

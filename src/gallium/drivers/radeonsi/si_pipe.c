@@ -148,8 +148,6 @@ bool si_init_compiler(struct si_screen *sscreen, struct ac_llvm_compiler *compil
       (sscreen->debug_flags & DBG(CHECK_IR) ? AC_TM_CHECK_IR : 0) |
       (create_low_opt_compiler ? AC_TM_CREATE_LOW_OPT : 0);
 
-   ac_init_llvm_once();
-
    if (!ac_init_llvm_compiler(compiler, sscreen->info.family, tm_options))
       return false;
 
@@ -1426,10 +1424,7 @@ static struct pipe_screen *radeonsi_screen_create_impl(struct radeon_winsys *ws,
    sscreen->ngg_subgroup_size = 128;
 
    if (sscreen->info.gfx_level >= GFX11) {
-      /* TODO: tweak this */
-      unsigned attr_ring_size_per_se = align(1400000, 64 * 1024);
-      unsigned attr_ring_size = attr_ring_size_per_se * sscreen->info.max_se;
-      assert(attr_ring_size <= 16 * 1024 * 1024); /* maximum size */
+      unsigned attr_ring_size = sscreen->info.attribute_ring_size_per_se * sscreen->info.max_se;
       sscreen->attribute_ring = si_aligned_buffer_create(&sscreen->b,
                                                          PIPE_RESOURCE_FLAG_UNMAPPABLE |
                                                          SI_RESOURCE_FLAG_32BIT |
@@ -1492,6 +1487,14 @@ struct pipe_screen *radeonsi_screen_create(int fd, const struct pipe_screen_conf
    version = drmGetVersion(fd);
    if (!version)
      return NULL;
+
+   /* LLVM must be initialized before util_queue because both u_queue and LLVM call atexit,
+    * and LLVM must call it first because its atexit handler executes C++ destructors,
+    * which must be done after our compiler threads using LLVM in u_queue are finished
+    * by their atexit handler. Since atexit handlers are called in the reverse order,
+    * LLVM must be initialized first, followed by u_queue.
+    */
+   ac_init_llvm_once();
 
    driParseConfigFiles(config->options, config->options_info, 0, "radeonsi",
                        NULL, NULL, NULL, 0, NULL, 0);

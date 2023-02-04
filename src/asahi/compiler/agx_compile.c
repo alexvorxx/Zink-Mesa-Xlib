@@ -23,12 +23,12 @@
  * SOFTWARE.
  */
 
-#include "agx_compile.h"
 #include "compiler/nir/nir_builder.h"
 #include "compiler/nir_types.h"
 #include "util/glheader.h"
 #include "util/u_debug.h"
 #include "agx_builder.h"
+#include "agx_compile.h"
 #include "agx_compiler.h"
 #include "agx_internal_formats.h"
 
@@ -652,15 +652,6 @@ agx_emit_load_frag_coord(agx_builder *b, agx_index dst,
    agx_emit_collect_to(b, dst, 4, dests);
 }
 
-static agx_instr *
-agx_blend_const(agx_builder *b, agx_index dst, unsigned comp)
-{
-   agx_index val = agx_indexed_sysval(b->shader, AGX_PUSH_BLEND_CONST,
-                                      AGX_SIZE_32, comp * 2, 4 * 2);
-
-   return agx_mov_to(b, dst, val);
-}
-
 /*
  * Demoting a helper invocation is logically equivalent to zeroing the sample
  * mask. Metal implement discard as such.
@@ -742,22 +733,6 @@ agx_emit_intrinsic(agx_builder *b, nir_intrinsic_instr *instr)
    case nir_intrinsic_load_back_face_agx:
       return agx_get_sr_to(b, dst, AGX_SR_BACKFACING);
 
-   case nir_intrinsic_load_texture_base_agx:
-      return agx_mov_to(b, dst,
-                        agx_indexed_sysval(b->shader, AGX_PUSH_TEXTURE_BASE,
-                                           AGX_SIZE_64, 0, 4));
-
-   case nir_intrinsic_load_ubo_base_agx:
-      return agx_mov_to(
-         b, dst,
-         agx_indexed_sysval(b->shader, AGX_PUSH_UBO_BASES, AGX_SIZE_64,
-                            nir_src_as_uint(instr->src[0]) * 4,
-                            b->shader->nir->info.num_ubos * 4));
-
-   case nir_intrinsic_load_vbo_base_agx:
-      return agx_mov_to(
-         b, dst, agx_vbo_base(b->shader, nir_src_as_uint(instr->src[0])));
-
    case nir_intrinsic_load_vertex_id:
       return agx_mov_to(b, dst, agx_abs(agx_vertex_id(b)));
 
@@ -772,15 +747,6 @@ agx_emit_intrinsic(agx_builder *b, nir_intrinsic_instr *instr)
 
    case nir_intrinsic_block_image_store_agx:
       return agx_emit_block_image_store(b, instr);
-
-   case nir_intrinsic_load_blend_const_color_r_float:
-      return agx_blend_const(b, dst, 0);
-   case nir_intrinsic_load_blend_const_color_g_float:
-      return agx_blend_const(b, dst, 1);
-   case nir_intrinsic_load_blend_const_color_b_float:
-      return agx_blend_const(b, dst, 2);
-   case nir_intrinsic_load_blend_const_color_a_float:
-      return agx_blend_const(b, dst, 3);
 
    default:
       fprintf(stderr, "Unhandled intrinsic %s\n",
@@ -896,8 +862,6 @@ agx_emit_alu(agx_builder *b, nir_alu_instr *instr)
       else
          return agx_not_to(b, dst, s0);
 
-   case nir_op_f2b1:
-      return agx_fcmpsel_to(b, dst, s0, i0, i0, i1, AGX_FCOND_EQ);
    case nir_op_b2b1:
       return agx_icmpsel_to(b, dst, s0, i0, i0, i1, AGX_ICOND_UEQ);
 
@@ -1916,8 +1880,15 @@ agx_preprocess_nir(nir_shader *nir)
 {
    NIR_PASS_V(nir, nir_lower_vars_to_ssa);
 
-   if (nir->info.stage == MESA_SHADER_VERTEX)
+   if (nir->info.stage == MESA_SHADER_VERTEX) {
       NIR_PASS_V(nir, nir_lower_point_size, 1.0, 0.0);
+   } else if (nir->info.stage == MESA_SHADER_FRAGMENT) {
+      /* Lower to maximum colour buffers, the excess stores will get cleaned up
+       * by tilebuffer lowering so they won't become real shader code. However,
+       * that depends on the shader key which we don't have at this point.
+       */
+      NIR_PASS_V(nir, nir_lower_fragcolor, 8);
+   }
 
    /* Lower large arrays to scratch and small arrays to csel */
    NIR_PASS_V(nir, nir_lower_vars_to_scratch, nir_var_function_temp, 16,
@@ -1952,32 +1923,7 @@ agx_preprocess_nir(nir_shader *nir)
 
    /* Clean up deref gunk after lowering I/O */
    NIR_PASS_V(nir, nir_opt_dce);
-
-   nir_lower_tex_options lower_tex_options = {
-      .lower_txp = ~0,
-      .lower_invalid_implicit_lod = true,
-
-      /* XXX: Metal seems to handle just like 3D txd, so why doesn't it work?
-       * TODO: Stop using this lowering
-       */
-      .lower_txd_cube_map = true,
-   };
-
-   nir_tex_src_type_constraints tex_constraints = {
-      [nir_tex_src_lod] = {true, 16},
-      [nir_tex_src_bias] = {true, 16},
-      [nir_tex_src_ms_index] = {true, 16},
-   };
-
-   NIR_PASS_V(nir, nir_lower_tex, &lower_tex_options);
-   NIR_PASS_V(nir, nir_legalize_16bit_sampler_srcs, tex_constraints);
-
-   /* Lower texture sources after legalizing types (as the lowering depends on
-    * 16-bit multisample indices) but before lowering queries (as the lowering
-    * generates txs for array textures).
-    */
-   NIR_PASS_V(nir, agx_nir_lower_array_texture);
-   NIR_PASS_V(nir, agx_lower_resinfo);
+   NIR_PASS_V(nir, agx_nir_lower_texture);
 
    nir->info.io_lowered = true;
 }
@@ -2015,6 +1961,7 @@ agx_compile_shader_nir(nir_shader *nir, struct agx_shader_key *key,
          out->depth_layout = layout;
    }
 
+   out->push_count = key->reserved_preamble;
    agx_optimize_nir(nir, &out->push_count);
 
    /* Implement conditional discard with real control flow like Metal */

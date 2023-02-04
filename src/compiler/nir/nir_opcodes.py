@@ -233,7 +233,7 @@ for src_t in [tint, tuint, tfloat, tbool]:
    elif src_t == tuint:
       dst_types = [tfloat, tuint]
    elif src_t == tfloat:
-      dst_types = [tint, tuint, tfloat, tbool]
+      dst_types = [tint, tuint, tfloat]
 
    for dst_t in dst_types:
       for dst_bit_size in type_sizes(dst_t):

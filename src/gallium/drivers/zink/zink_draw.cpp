@@ -480,6 +480,14 @@ zink_draw(struct pipe_context *pctx,
          lines_changed =
             (ctx->gfx_pipeline_state.rast_prim == PIPE_PRIM_LINES) !=
             (rast_prim == PIPE_PRIM_LINES);
+         static bool rect_warned = false;
+         if (DYNAMIC_STATE >= ZINK_DYNAMIC_STATE3 && rast_prim == PIPE_PRIM_LINES && !rect_warned && 
+             (VkLineRasterizationModeEXT)rast_state->hw_state.line_mode == VK_LINE_RASTERIZATION_MODE_RECTANGULAR_EXT) {
+            if (screen->info.line_rast_feats.rectangularLines)
+               rect_warned = true;
+            else
+               warn_missing_feature(rect_warned, "rectangularLines");
+         }
 
          ctx->gfx_pipeline_state.rast_prim = rast_prim;
          rast_prim_changed = true;
@@ -632,7 +640,7 @@ zink_draw(struct pipe_context *pctx,
       VKCTX(CmdSetProvokingVertexModeEXT)(batch->state->cmdbuf, rast_state->hw_state.pv_last ?
                                                                 VK_PROVOKING_VERTEX_MODE_LAST_VERTEX_EXT :
                                                                 VK_PROVOKING_VERTEX_MODE_FIRST_VERTEX_EXT);
-      VKCTX(CmdSetLineRasterizationModeEXT)(batch->state->cmdbuf, (VkLineRasterizationModeEXT)rast_state->hw_state.line_mode);
+      VKCTX(CmdSetLineRasterizationModeEXT)(batch->state->cmdbuf, rast_state->dynamic_line_mode);
       if (screen->info.dynamic_state3_feats.extendedDynamicState3LineStippleEnable)
          VKCTX(CmdSetLineStippleEnableEXT)(batch->state->cmdbuf, rast_state->hw_state.line_stipple_enable);
    }

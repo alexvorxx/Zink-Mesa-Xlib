@@ -578,6 +578,10 @@ gather_shader_info_fs(const nir_shader *nir, const struct radv_pipeline_key *pip
       (pipeline_key->ps.alpha_to_coverage_via_mrtz && (info->ps.color0_written & 0x8)) &&
       (info->ps.writes_z || info->ps.writes_stencil || info->ps.writes_sample_mask);
 
+   info->ps.mrt0_is_dual_src = pipeline_key->ps.epilog.mrt0_is_dual_src;
+
+   info->ps.spi_shader_col_format = pipeline_key->ps.epilog.spi_shader_col_format;
+
    nir_foreach_shader_in_variable(var, nir) {
       unsigned attrib_count = glsl_count_attribute_slots(var->type, false);
       int idx = var->data.location;

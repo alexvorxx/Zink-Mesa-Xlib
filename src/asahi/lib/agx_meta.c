@@ -169,6 +169,6 @@ void
 agx_meta_init(struct agx_meta_cache *cache, struct agx_device *dev,
               void *memctx)
 {
-   agx_pool_init(&cache->pool, dev, AGX_MEMORY_TYPE_SHADER, true);
+   agx_pool_init(&cache->pool, dev, AGX_BO_EXEC | AGX_BO_LOW_VA, true);
    cache->ht = _mesa_hash_table_create(memctx, key_hash, key_compare);
 }

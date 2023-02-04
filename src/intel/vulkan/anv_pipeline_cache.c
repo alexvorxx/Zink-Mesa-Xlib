@@ -123,10 +123,7 @@ anv_shader_bin_create(struct anv_device *device,
       .id = BRW_SHADER_RELOC_CONST_DATA_ADDR_LOW,
       .value = shader_data_addr,
    };
-   reloc_values[rv_count++] = (struct brw_shader_reloc_value) {
-      .id = BRW_SHADER_RELOC_CONST_DATA_ADDR_HIGH,
-      .value = shader_data_addr >> 32,
-   };
+   assert(shader_data_addr >> 32 == INSTRUCTION_STATE_POOL_MIN_ADDRESS >> 32);
    reloc_values[rv_count++] = (struct brw_shader_reloc_value) {
       .id = BRW_SHADER_RELOC_SHADER_START_OFFSET,
       .value = shader->kernel.offset,

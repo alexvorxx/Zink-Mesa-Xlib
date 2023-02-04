@@ -217,8 +217,14 @@ radv_amdgpu_cs_domain(const struct radeon_winsys *_ws)
 
    bool enough_vram = ws->info.all_vram_visible ||
                       p_atomic_read_relaxed(&ws->allocated_vram_vis) * 2 <= (uint64_t)ws->info.vram_vis_size_kb * 1024;
+
+   /* Bandwidth should be equivalent to at least PCIe 3.0 x8.
+    * If there is no PCIe info, assume there is enough bandwidth.
+    */
+   bool enough_bandwidth = !ws->info.has_pcie_bandwidth_info || ws->info.pcie_bandwidth_mbps >= 8 * 0.985 * 1024;
+
    bool use_sam =
-      (enough_vram && ws->info.has_dedicated_vram && !(ws->perftest & RADV_PERFTEST_NO_SAM)) ||
+      (enough_vram && enough_bandwidth && ws->info.has_dedicated_vram && !(ws->perftest & RADV_PERFTEST_NO_SAM)) ||
       (ws->perftest & RADV_PERFTEST_SAM);
    return use_sam ? RADEON_DOMAIN_VRAM : RADEON_DOMAIN_GTT;
 }

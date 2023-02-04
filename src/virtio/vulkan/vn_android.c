@@ -42,9 +42,13 @@ static struct vn_android_gralloc _vn_android_gralloc;
 static int
 vn_android_gralloc_init()
 {
+   /* We preload same-process gralloc hw module along with venus icd. When
+    * venus gets preloaded in Zygote, the unspecialized Zygote process
+    * defaults to no access to dri nodes. So we MUST NOT invoke any gralloc
+    * helpers here to avoid initializing cros gralloc driver.
+    */
    static const char CROS_GRALLOC_MODULE_NAME[] = "CrOS Gralloc";
    const gralloc_module_t *gralloc = NULL;
-   uint32_t front_rendering_usage = 0;
    int ret;
 
    /* get gralloc module for gralloc buffer info query */
@@ -61,17 +65,11 @@ vn_android_gralloc_init()
       return -1;
    }
 
+   /* check the helper without using it here as mentioned above */
    if (!gralloc->perform) {
       dlclose(gralloc->common.dso);
       vn_log(NULL, "missing required gralloc helper: perform");
       return -1;
-   }
-
-   if (gralloc->perform(gralloc, CROS_GRALLOC_DRM_GET_USAGE,
-                        CROS_GRALLOC_DRM_GET_USAGE_FRONT_RENDERING_BIT,
-                        &front_rendering_usage) == 0) {
-      assert(front_rendering_usage);
-      _vn_android_gralloc.front_rendering_usage = front_rendering_usage;
    }
 
    _vn_android_gralloc.module = gralloc;
@@ -85,9 +83,24 @@ vn_android_gralloc_fini()
    dlclose(_vn_android_gralloc.module->common.dso);
 }
 
+static void
+vn_android_gralloc_shared_present_usage_init_once()
+{
+   const gralloc_module_t *gralloc = _vn_android_gralloc.module;
+   uint32_t front_rendering_usage = 0;
+   if (gralloc->perform(gralloc, CROS_GRALLOC_DRM_GET_USAGE,
+                        CROS_GRALLOC_DRM_GET_USAGE_FRONT_RENDERING_BIT,
+                        &front_rendering_usage) == 0) {
+      assert(front_rendering_usage);
+      _vn_android_gralloc.front_rendering_usage = front_rendering_usage;
+   }
+}
+
 uint32_t
 vn_android_gralloc_get_shared_present_usage()
 {
+   static once_flag once = ONCE_FLAG_INIT;
+   call_once(&once, vn_android_gralloc_shared_present_usage_init_once);
    return _vn_android_gralloc.front_rendering_usage;
 }
 

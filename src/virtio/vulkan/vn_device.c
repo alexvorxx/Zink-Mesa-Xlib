@@ -481,6 +481,11 @@ vn_CreateDevice(VkPhysicalDevice physicalDevice,
       return vn_error(instance, result);
    }
 
+   if (VN_DEBUG(LOG_CTX_INFO)) {
+      vn_log(instance, "%s", physical_dev->properties.vulkan_1_0.deviceName);
+      vn_log(instance, "%s", physical_dev->properties.vulkan_1_2.driverInfo);
+   }
+
    *pDevice = vn_device_to_handle(dev);
 
    return VK_SUCCESS;

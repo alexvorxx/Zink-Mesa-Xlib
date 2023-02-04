@@ -65,98 +65,6 @@ static void radv_handle_image_transition(struct radv_cmd_buffer *cmd_buffer,
 
 static void radv_set_rt_stack_size(struct radv_cmd_buffer *cmd_buffer, uint32_t size);
 
-const struct radv_dynamic_state default_dynamic_state = {
-   .vk =
-      {
-         .ia =
-            {
-               .primitive_topology = 0u,
-               .primitive_restart_enable = 0u,
-            },
-         .vp =
-            {
-               .depth_clip_negative_one_to_one = 0u,
-               .viewport_count = 0,
-               .scissor_count = 0,
-            },
-         .ts =
-            {
-               .patch_control_points = 0,
-               .domain_origin = VK_TESSELLATION_DOMAIN_ORIGIN_UPPER_LEFT,
-            },
-         .rs =
-            {
-               .rasterizer_discard_enable = 0u,
-               .depth_clamp_enable = 0u,
-               .depth_clip_enable = 0u,
-               .depth_bias =
-                  {
-                     .enable = 0,
-                     .constant = 0.0f,
-                     .clamp = 0.0f,
-                     .slope = 0.0f,
-                  },
-               .polygon_mode = 0,
-               .cull_mode = 0,
-               .front_face = 0u,
-               .conservative_mode = VK_CONSERVATIVE_RASTERIZATION_MODE_DISABLED_EXT,
-               .provoking_vertex = VK_PROVOKING_VERTEX_MODE_FIRST_VERTEX_EXT,
-               .line =
-                  {
-                     .width = 1.0f,
-                     .mode = VK_LINE_RASTERIZATION_MODE_DEFAULT_EXT,
-                     .stipple =
-                        {
-                           .enable = 0u,
-                           .factor = 0u,
-                           .pattern = 0u,
-                        },
-                  },
-            },
-         .fsr =
-            {
-               .fragment_size = {1u, 1u},
-               .combiner_ops = {VK_FRAGMENT_SHADING_RATE_COMBINER_OP_KEEP_KHR,
-                                VK_FRAGMENT_SHADING_RATE_COMBINER_OP_KEEP_KHR},
-            },
-         .ds =
-            {
-               .depth =
-                  {
-                     .bounds_test =
-                        {
-                           .min = 0.0f,
-                           .max = 1.0f,
-                        },
-                  },
-               .stencil =
-                  {
-                     .front =
-                        {
-                           .reference = 0u,
-                           .compare_mask = ~0,
-                           .write_mask = ~0,
-                        },
-                     .back =
-                        {
-                           .reference = 0u,
-                           .compare_mask = ~0,
-                           .write_mask = ~0,
-                        },
-                  },
-            },
-         .ms = {
-            .rasterization_samples = VK_SAMPLE_COUNT_1_BIT,
-            .alpha_to_coverage_enable = 0u,
-            .sample_mask = 0u,
-         },
-         .cb = {
-            .logic_op_enable = 0u,
-            .blend_constants = {0.0f, 0.0f, 0.0f, 0.0f},
-         },
-      },
-};
-
 static void
 radv_bind_dynamic_state(struct radv_cmd_buffer *cmd_buffer, const struct radv_dynamic_state *src)
 {
@@ -279,7 +187,7 @@ radv_bind_dynamic_state(struct radv_cmd_buffer *cmd_buffer, const struct radv_dy
 
    RADV_CMP_COPY(vk.ts.patch_control_points, RADV_DYNAMIC_PATCH_CONTROL_POINTS);
    RADV_CMP_COPY(vk.ts.domain_origin, RADV_DYNAMIC_TESS_DOMAIN_ORIGIN);
- 
+
    RADV_CMP_COPY(vk.rs.line.width, RADV_DYNAMIC_LINE_WIDTH);
    RADV_CMP_COPY(vk.rs.depth_bias.constant, RADV_DYNAMIC_DEPTH_BIAS);
    RADV_CMP_COPY(vk.rs.depth_bias.clamp, RADV_DYNAMIC_DEPTH_BIAS);
@@ -327,7 +235,7 @@ radv_bind_dynamic_state(struct radv_cmd_buffer *cmd_buffer, const struct radv_dy
    RADV_CMP_COPY(vk.cb.logic_op, RADV_DYNAMIC_LOGIC_OP);
    RADV_CMP_COPY(vk.cb.color_write_enables, RADV_DYNAMIC_COLOR_WRITE_ENABLE);
    RADV_CMP_COPY(vk.cb.logic_op_enable, RADV_DYNAMIC_LOGIC_OP_ENABLE);
- 
+
    RADV_CMP_COPY(vk.fsr.fragment_size.width, RADV_DYNAMIC_FRAGMENT_SHADING_RATE);
    RADV_CMP_COPY(vk.fsr.fragment_size.height, RADV_DYNAMIC_FRAGMENT_SHADING_RATE);
    RADV_CMP_COPY(vk.fsr.combiner_ops[0], RADV_DYNAMIC_FRAGMENT_SHADING_RATE);
@@ -1800,28 +1708,30 @@ radv_emit_rbplus_state(struct radv_cmd_buffer *cmd_buffer)
              spi_format == V_028714_SPI_SHADER_UINT16_ABGR ||
              spi_format == V_028714_SPI_SHADER_SINT16_ABGR) {
             sx_ps_downconvert |= V_028754_SX_RT_EXPORT_8_8_8_8 << (i * 4);
-            sx_blend_opt_epsilon |= V_028758_8BIT_FORMAT << (i * 4);
+
+            if (G_028C70_NUMBER_TYPE(cb->cb_color_info) != V_028C70_NUMBER_SRGB)
+               sx_blend_opt_epsilon |= V_028758_8BIT_FORMAT_0_5 << (i * 4);
          }
          break;
 
       case V_028C70_COLOR_5_6_5:
          if (spi_format == V_028714_SPI_SHADER_FP16_ABGR) {
             sx_ps_downconvert |= V_028754_SX_RT_EXPORT_5_6_5 << (i * 4);
-            sx_blend_opt_epsilon |= V_028758_6BIT_FORMAT << (i * 4);
+            sx_blend_opt_epsilon |= V_028758_6BIT_FORMAT_0_5 << (i * 4);
          }
          break;
 
       case V_028C70_COLOR_1_5_5_5:
          if (spi_format == V_028714_SPI_SHADER_FP16_ABGR) {
             sx_ps_downconvert |= V_028754_SX_RT_EXPORT_1_5_5_5 << (i * 4);
-            sx_blend_opt_epsilon |= V_028758_5BIT_FORMAT << (i * 4);
+            sx_blend_opt_epsilon |= V_028758_5BIT_FORMAT_0_5 << (i * 4);
          }
          break;
 
       case V_028C70_COLOR_4_4_4_4:
          if (spi_format == V_028714_SPI_SHADER_FP16_ABGR) {
             sx_ps_downconvert |= V_028754_SX_RT_EXPORT_4_4_4_4 << (i * 4);
-            sx_blend_opt_epsilon |= V_028758_4BIT_FORMAT << (i * 4);
+            sx_blend_opt_epsilon |= V_028758_4BIT_FORMAT_0_5 << (i * 4);
          }
          break;
 
@@ -1854,7 +1764,7 @@ radv_emit_rbplus_state(struct radv_cmd_buffer *cmd_buffer)
       case V_028C70_COLOR_2_10_10_10:
          if (spi_format == V_028714_SPI_SHADER_FP16_ABGR) {
             sx_ps_downconvert |= V_028754_SX_RT_EXPORT_2_10_10_10 << (i * 4);
-            sx_blend_opt_epsilon |= V_028758_10BIT_FORMAT << (i * 4);
+            sx_blend_opt_epsilon |= V_028758_10BIT_FORMAT_0_5 << (i * 4);
          }
          break;
       case V_028C70_COLOR_5_9_9_9:
@@ -1985,7 +1895,8 @@ radv_emit_graphics_pipeline(struct radv_cmd_buffer *cmd_buffer)
       }
    }
 
-   radv_cs_add_buffer(cmd_buffer->device->ws, cmd_buffer->cs, pipeline->base.slab_bo);
+   if (pipeline->base.slab_bo)
+      radv_cs_add_buffer(cmd_buffer->device->ws, cmd_buffer->cs, pipeline->base.slab_bo);
 
    /* With graphics pipeline library, binaries are uploaded from a library and they hold a pointer
     * to the slab BO.
@@ -3518,7 +3429,7 @@ radv_emit_framebuffer_state(struct radv_cmd_buffer *cmd_buffer)
 
       if (cmd_buffer->device->physical_device->rad_info.gfx_level >= GFX11) {
          radeon_set_context_reg(cmd_buffer->cs, R_028424_CB_FDCC_CONTROL,
-                                S_028424_SAMPLE_MASK_TRACKER_WATERMARK(15));
+                                S_028424_SAMPLE_MASK_TRACKER_WATERMARK(0));
       } else {
         uint8_t watermark = gfx_level >= GFX10 ? 6 : 4;
 
@@ -4275,7 +4186,7 @@ radv_emit_msaa_state(struct radv_cmd_buffer *cmd_buffer)
    unsigned db_eqaa;
 
    db_eqaa = S_028804_HIGH_QUALITY_INTERSECTIONS(1) | S_028804_INCOHERENT_EQAA_READS(1) |
-             S_028804_INTERPOLATE_COMP_Z(1) | S_028804_STATIC_ANCHOR_ASSOCIATIONS(1);
+             S_028804_STATIC_ANCHOR_ASSOCIATIONS(1);
 
    if (pdevice->rad_info.gfx_level >= GFX9 &&
        d->vk.rs.conservative_mode != VK_CONSERVATIVE_RASTERIZATION_MODE_DISABLED_EXT) {
@@ -8490,6 +8401,12 @@ radv_get_ngg_culling_settings(struct radv_cmd_buffer *cmd_buffer, bool vp_y_inve
    const struct radv_graphics_pipeline *pipeline = cmd_buffer->state.graphics_pipeline;
    const struct radv_dynamic_state *d = &cmd_buffer->state.dynamic;
 
+   /* Disable shader culling entirely when conservative overestimate is used.
+    * The face culling algorithm can delete very tiny triangles (even if unintended).
+    */
+   if (d->vk.rs.conservative_mode == VK_CONSERVATIVE_RASTERIZATION_MODE_OVERESTIMATE_EXT)
+      return radv_nggc_none;
+
    /* Cull every triangle when rasterizer discard is enabled. */
    if (d->vk.rs.rasterizer_discard_enable)
       return radv_nggc_front_face | radv_nggc_back_face;
@@ -8511,12 +8428,10 @@ radv_get_ngg_culling_settings(struct radv_cmd_buffer *cmd_buffer, bool vp_y_inve
    if (d->vk.rs.cull_mode & VK_CULL_MODE_BACK_BIT)
       nggc_settings |= radv_nggc_back_face;
 
-   /* Small primitive culling is only valid when conservative overestimation is not used. It's also
-    * disabled for user sample locations because small primitive culling assumes a sample
-    * position at (0.5, 0.5). */
-   bool uses_conservative_overestimate =
-      d->vk.rs.conservative_mode == VK_CONSERVATIVE_RASTERIZATION_MODE_OVERESTIMATE_EXT;
-   if (!uses_conservative_overestimate && !pipeline->uses_user_sample_locations) {
+   /* Small primitive culling assumes a sample position at (0.5, 0.5)
+    * so don't enable it with user sample locations.
+    */
+   if (!pipeline->uses_user_sample_locations) {
       nggc_settings |= radv_nggc_small_primitives;
 
       /* small_prim_precision = num_samples / 2^subpixel_bits
@@ -10941,7 +10856,7 @@ radv_flush_vgt_streamout(struct radv_cmd_buffer *cmd_buffer)
    }
 
    radeon_emit(cs, PKT3(PKT3_EVENT_WRITE, 0, 0));
-   radeon_emit(cs, EVENT_TYPE(EVENT_TYPE_SO_VGTSTREAMOUT_FLUSH) | EVENT_INDEX(0));
+   radeon_emit(cs, EVENT_TYPE(V_028A90_SO_VGTSTREAMOUT_FLUSH) | EVENT_INDEX(0));
 
    radeon_emit(cs, PKT3(PKT3_WAIT_REG_MEM, 5, 0));
    radeon_emit(cs,

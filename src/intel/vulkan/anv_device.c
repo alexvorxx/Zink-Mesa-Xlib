@@ -308,6 +308,7 @@ get_device_extensions(const struct anv_physical_device *device,
       .EXT_index_type_uint8                  = true,
       .EXT_inline_uniform_block              = true,
       .EXT_line_rasterization                = true,
+      .EXT_load_store_op_none                = true,
       /* Enable the extension only if we have support on both the local &
        * system memory
        */

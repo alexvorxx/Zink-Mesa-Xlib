@@ -164,6 +164,8 @@ files_mesa_util = files(
   'xxhash.h',
   'mesa_cache_db.c',
   'mesa_cache_db.h',
+  'mesa_cache_db_multipart.c',
+  'mesa_cache_db_multipart.h',
 )
 
 files_drirc = files('00-mesa-defaults.conf')
@@ -408,6 +410,16 @@ if with_tests
     process_test_exe,
     suite : ['util'],
     env: ['BUILD_FULL_PATH='+process_test_exe_full_path]
+  )
+
+  test(
+    'process_with_overrides',
+    process_test_exe,
+    suite : ['util'],
+    env: [
+      'BUILD_FULL_PATH='+process_test_exe_full_path,
+      'MESA_PROCESS_NAME=hello',
+    ]
   )
 
   subdir('tests/hash_table')

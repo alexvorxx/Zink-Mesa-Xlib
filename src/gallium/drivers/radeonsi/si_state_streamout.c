@@ -236,7 +236,7 @@ static void si_flush_vgt_streamout(struct si_context *sctx)
    }
 
    radeon_emit(PKT3(PKT3_EVENT_WRITE, 0, 0));
-   radeon_emit(EVENT_TYPE(EVENT_TYPE_SO_VGTSTREAMOUT_FLUSH) | EVENT_INDEX(0));
+   radeon_emit(EVENT_TYPE(V_028A90_SO_VGTSTREAMOUT_FLUSH) | EVENT_INDEX(0));
 
    radeon_emit(PKT3(PKT3_WAIT_REG_MEM, 5, 0));
    radeon_emit(WAIT_REG_MEM_EQUAL); /* wait until the register is equal to the reference value */

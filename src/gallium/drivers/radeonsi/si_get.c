@@ -34,6 +34,18 @@
 #include "vl/vl_video_buffer.h"
 #include <sys/utsname.h>
 
+/* The capabilties reported by the kernel has priority
+   over the existing logic in si_get_video_param */
+#define QUERYABLE_KERNEL   (!!(sscreen->info.drm_minor >= 41))
+#define KERNEL_DEC_CAP(codec, attrib)    \
+   (codec > PIPE_VIDEO_FORMAT_UNKNOWN && codec <= PIPE_VIDEO_FORMAT_AV1) ? \
+   (sscreen->info.dec_caps.codec_info[codec - 1].valid ? \
+    sscreen->info.dec_caps.codec_info[codec - 1].attrib : 0) : 0
+#define KERNEL_ENC_CAP(codec, attrib)    \
+   (codec > PIPE_VIDEO_FORMAT_UNKNOWN && codec <= PIPE_VIDEO_FORMAT_AV1) ? \
+   (sscreen->info.enc_caps.codec_info[codec - 1].valid ? \
+    sscreen->info.enc_caps.codec_info[codec - 1].attrib : 0) : 0
+
 static const char *si_get_vendor(struct pipe_screen *pscreen)
 {
    return "AMD";
@@ -578,23 +590,23 @@ static int si_get_video_param(struct pipe_screen *screen, enum pipe_video_profil
       switch (param) {
       case PIPE_VIDEO_CAP_SUPPORTED:
          return (
-            (codec == PIPE_VIDEO_FORMAT_MPEG4_AVC &&
+             /* in case it is explicitly marked as not supported by the kernel */
+            (QUERYABLE_KERNEL ? KERNEL_ENC_CAP(codec, valid) : 1) &&
+            ((codec == PIPE_VIDEO_FORMAT_MPEG4_AVC &&
              (sscreen->info.family >= CHIP_RAVEN || si_vce_is_fw_version_supported(sscreen))) ||
             (profile == PIPE_VIDEO_PROFILE_HEVC_MAIN &&
              (sscreen->info.family >= CHIP_RAVEN || si_radeon_uvd_enc_supported(sscreen))) ||
-            (profile == PIPE_VIDEO_PROFILE_HEVC_MAIN_10 && sscreen->info.family >= CHIP_RENOIR));
+            (profile == PIPE_VIDEO_PROFILE_HEVC_MAIN_10 && sscreen->info.family >= CHIP_RENOIR)));
       case PIPE_VIDEO_CAP_NPOT_TEXTURES:
          return 1;
       case PIPE_VIDEO_CAP_MAX_WIDTH:
-         if (codec != PIPE_VIDEO_FORMAT_UNKNOWN &&
-               sscreen->info.enc_caps.codec_info[codec - 1].valid)
-            return sscreen->info.enc_caps.codec_info[codec - 1].max_width;
+         if (codec != PIPE_VIDEO_FORMAT_UNKNOWN && QUERYABLE_KERNEL)
+            return KERNEL_ENC_CAP(codec, max_width);
          else
             return (sscreen->info.family < CHIP_TONGA) ? 2048 : 4096;
       case PIPE_VIDEO_CAP_MAX_HEIGHT:
-         if (codec != PIPE_VIDEO_FORMAT_UNKNOWN &&
-               sscreen->info.enc_caps.codec_info[codec - 1].valid)
-            return sscreen->info.enc_caps.codec_info[codec - 1].max_height;
+         if (codec != PIPE_VIDEO_FORMAT_UNKNOWN && QUERYABLE_KERNEL)
+            return KERNEL_ENC_CAP(codec, max_height);
          else
             return (sscreen->info.family < CHIP_TONGA) ? 1152 : 2304;
       case PIPE_VIDEO_CAP_PREFERED_FORMAT:
@@ -685,12 +697,18 @@ static int si_get_video_param(struct pipe_screen *screen, enum pipe_video_profil
 
    switch (param) {
    case PIPE_VIDEO_CAP_SUPPORTED:
-      if (codec < PIPE_VIDEO_FORMAT_MPEG4_AVC &&
-          sscreen->info.family >= CHIP_NAVI24)
-         return false;
       if (codec != PIPE_VIDEO_FORMAT_JPEG &&
           !(sscreen->info.ip[AMD_IP_UVD].num_queues ||
             sscreen->info.has_video_hw.vcn_decode))
+         return false;
+      if (QUERYABLE_KERNEL &&
+          codec != PIPE_VIDEO_FORMAT_JPEG &&
+          codec != PIPE_VIDEO_FORMAT_HEVC &&
+          !(sscreen->info.family == CHIP_POLARIS10 ||
+            sscreen->info.family == CHIP_POLARIS11))
+         return KERNEL_DEC_CAP(codec, valid);
+      if (codec < PIPE_VIDEO_FORMAT_MPEG4_AVC &&
+          sscreen->info.family >= CHIP_NAVI24)
          return false;
 
       switch (codec) {
@@ -752,10 +770,9 @@ static int si_get_video_param(struct pipe_screen *screen, enum pipe_video_profil
    case PIPE_VIDEO_CAP_NPOT_TEXTURES:
       return 1;
    case PIPE_VIDEO_CAP_MAX_WIDTH:
-      if (codec != PIPE_VIDEO_FORMAT_UNKNOWN &&
-            sscreen->info.dec_caps.codec_info[codec - 1].valid) {
-         return sscreen->info.dec_caps.codec_info[codec - 1].max_width;
-      } else {
+      if (codec != PIPE_VIDEO_FORMAT_UNKNOWN && QUERYABLE_KERNEL)
+            return KERNEL_DEC_CAP(codec, max_width);
+      else {
          switch (codec) {
          case PIPE_VIDEO_FORMAT_HEVC:
          case PIPE_VIDEO_FORMAT_VP9:
@@ -767,10 +784,9 @@ static int si_get_video_param(struct pipe_screen *screen, enum pipe_video_profil
          }
       }
    case PIPE_VIDEO_CAP_MAX_HEIGHT:
-      if (codec != PIPE_VIDEO_FORMAT_UNKNOWN &&
-            sscreen->info.dec_caps.codec_info[codec - 1].valid) {
-         return sscreen->info.dec_caps.codec_info[codec - 1].max_height;
-      } else {
+      if (codec != PIPE_VIDEO_FORMAT_UNKNOWN && QUERYABLE_KERNEL)
+            return KERNEL_DEC_CAP(codec, max_height);
+      else {
          switch (codec) {
          case PIPE_VIDEO_FORMAT_HEVC:
          case PIPE_VIDEO_FORMAT_VP9:

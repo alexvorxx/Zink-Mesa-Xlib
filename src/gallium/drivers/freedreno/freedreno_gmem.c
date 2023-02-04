@@ -483,6 +483,25 @@ gmem_key_init(struct fd_batch *batch, bool assume_zs, bool no_scis_opt)
       key->zsbuf_cpp[0] = rsc->layout.cpp;
       if (rsc->stencil)
          key->zsbuf_cpp[1] = rsc->stencil->layout.cpp;
+
+      /* If we clear z or s but not both, and we are using z24s8 (ie.
+       * !separate_stencil) then we need to restore the other, even if
+       * batch_draw_tracking_for_dirty_bits() never saw a draw with
+       * depth or stencil enabled.
+       *
+       * This only applies to the fast-clear path, clears done with
+       * u_blitter will show up as a normal draw with depth and/or
+       * stencil enabled.
+       */
+      unsigned zsclear = batch->fast_cleared & (FD_BUFFER_DEPTH | FD_BUFFER_STENCIL);
+      if (zsclear) {
+         const struct util_format_description *desc =
+               util_format_description(pfb->zsbuf->format);
+         if (util_format_has_depth(desc) && !(zsclear & FD_BUFFER_DEPTH))
+            batch->restore |= FD_BUFFER_DEPTH;
+         if (util_format_has_stencil(desc) && !(zsclear & FD_BUFFER_STENCIL))
+            batch->restore |= FD_BUFFER_STENCIL;
+      }
    } else {
       /* we might have a zsbuf, but it isn't used */
       batch->restore &= ~(FD_BUFFER_DEPTH | FD_BUFFER_STENCIL);

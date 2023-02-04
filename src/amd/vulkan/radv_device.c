@@ -5541,11 +5541,8 @@ radv_update_preambles(struct radv_queue_state *queue, struct radv_device *device
          : 0;
 
    if (device->physical_device->rad_info.gfx_level >= GFX11) {
-      /* TODO: tweak this */
-      unsigned attr_ring_size_per_se = align(1400000, 64 * 1024);
-      unsigned attr_ring_size = attr_ring_size_per_se * device->physical_device->rad_info.max_se;
-      assert(attr_ring_size <= 16 * 1024 * 1024); /* maximum size */
-      needs.attr_ring_size = attr_ring_size;
+      needs.attr_ring_size = device->physical_device->rad_info.attribute_ring_size_per_se *
+                             device->physical_device->rad_info.max_se;
    }
 
    /* Return early if we already match these needs.

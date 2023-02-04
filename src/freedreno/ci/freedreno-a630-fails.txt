@@ -38,10 +38,6 @@ KHR-GL45.direct_state_access.renderbuffers_storage_multisample,Fail
 
 KHR-GL45.multi_bind.dispatch_bind_image_textures,Fail
 
-# Unhandled intrinsic type: image_samples
-KHR-GL45.shader_texture_image_samples_tests.image_functional_test,Crash
-
-
 # rendering errors in ~4x4 blocks around the bottom side of the diagonal for the quad
 bypass-dEQP-GLES31.functional.blend_equation_advanced.msaa.colorburn,Fail
 bypass-dEQP-GLES31.functional.blend_equation_advanced.msaa.colordodge,Fail
@@ -97,11 +93,6 @@ spec@!opengl 2.0@gl-2.0-edgeflag,Crash
 spec@!opengl 2.0@gl-2.0-edgeflag-immediate,Crash
 spec@!opengl 1.0@gl-1.0-edgeflag,Crash
 spec@!opengl 1.0@gl-1.0-edgeflag-quads,Crash
-
-
-spec@arb_arrays_of_arrays@execution@sampler@fs-nested-struct-arrays-nonconst-nested-array,Fail
-# Skips prior to exposing gl45, now fails for same reason as above test
-spec@arb_gl_spirv@execution@uniform@sampler2d-nonconst-nested-array,Fail
 
 spec@arb_depth_buffer_float@fbo-clear-formats stencil,Fail
 spec@arb_depth_buffer_float@fbo-clear-formats stencil@GL_DEPTH32F_STENCIL8,Fail

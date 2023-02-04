@@ -333,6 +333,7 @@ struct wsi_interface {
                             uint32_t* pSurfaceFormatCount,
                             VkSurfaceFormat2KHR* pSurfaceFormats);
    VkResult (*get_present_modes)(VkIcdSurfaceBase *surface,
+                                 struct wsi_device *wsi_device,
                                  uint32_t* pPresentModeCount,
                                  VkPresentModeKHR* pPresentModes);
    VkResult (*get_present_rectangles)(VkIcdSurfaceBase *surface,

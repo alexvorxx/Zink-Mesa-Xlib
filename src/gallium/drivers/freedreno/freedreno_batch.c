@@ -365,6 +365,9 @@ batch_flush(struct fd_batch *batch) assert_dt
    if (batch == batch->ctx->batch)
       fd_batch_reference_locked(&batch->ctx->batch, NULL);
 
+   if (batch == batch->ctx->batch_nondraw)
+      fd_batch_reference_locked(&batch->ctx->batch_nondraw, NULL);
+
    fd_screen_unlock(batch->ctx->screen);
 
    if (batch->fence)

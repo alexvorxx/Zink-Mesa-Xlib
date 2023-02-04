@@ -58,7 +58,6 @@
 #include "nir.h"
 
 
-#ifdef DEBUG
 int LP_DEBUG = 0;
 
 static const struct debug_named_value lp_debug_flags[] = {
@@ -82,7 +81,6 @@ static const struct debug_named_value lp_debug_flags[] = {
    { "accurate_a0", DEBUG_ACCURATE_A0 },
    DEBUG_NAMED_VALUE_END
 };
-#endif
 
 int LP_PERF = 0;
 static const struct debug_named_value lp_perf_flags[] = {
@@ -1041,9 +1039,7 @@ llvmpipe_create_screen(struct sw_winsys *winsys)
 
    glsl_type_singleton_init_or_ref();
 
-#ifdef DEBUG
    LP_DEBUG = debug_get_flags_option("LP_DEBUG", lp_debug_flags, 0 );
-#endif
 
    LP_PERF = debug_get_flags_option("LP_PERF", lp_perf_flags, 0 );
 

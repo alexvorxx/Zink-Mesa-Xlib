@@ -284,7 +284,7 @@ ir3_nir_opt_preamble(nir_shader *nir, struct ir3_shader_variant *v)
       .rewrite_cost_cb = rewrite_cost,
    };
 
-   unsigned size;
+   unsigned size = 0;
    bool progress = nir_opt_preamble(nir, &options, &size);
 
    if (!v->binning_pass)

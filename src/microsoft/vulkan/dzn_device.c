@@ -39,6 +39,8 @@
 #include "util/mesa-sha1.h"
 #include "util/u_dl.h"
 
+#include "util/driconf.h"
+
 #include "glsl_types.h"
 
 #include "dxil_validator.h"
@@ -1115,6 +1117,22 @@ dzn_enumerate_physical_devices(struct vk_instance *instance)
    return result;
 }
 
+static const driOptionDescription dzn_dri_options[] = {
+   DRI_CONF_SECTION_DEBUG
+      DRI_CONF_DZN_CLAIM_WIDE_LINES(false)
+   DRI_CONF_SECTION_END
+};
+
+static void
+dzn_init_dri_config(struct dzn_instance *instance)
+{
+   driParseOptionInfo(&instance->available_dri_options, dzn_dri_options,
+                      ARRAY_SIZE(dzn_dri_options));
+   driParseConfigFiles(&instance->dri_options, &instance->available_dri_options, 0, "dzn", NULL, NULL,
+                       instance->vk.app_info.app_name, instance->vk.app_info.app_version,
+                       instance->vk.app_info.engine_name, instance->vk.app_info.engine_version);
+}
+
 static VkResult
 dzn_instance_create(const VkInstanceCreateInfo *pCreateInfo,
                     const VkAllocationCallbacks *pAllocator,
@@ -1198,6 +1216,7 @@ dzn_instance_create(const VkInstanceCreateInfo *pCreateInfo,
       d3d12_enable_gpu_validation(instance->d3d12_mod, instance->factory);
 
    instance->sync_binary_type = vk_sync_binary_get_type(&dzn_sync_type);
+   dzn_init_dri_config(instance);
 
    *out = dzn_instance_to_handle(instance);
    return VK_SUCCESS;
@@ -1275,6 +1294,7 @@ dzn_GetPhysicalDeviceFeatures2(VkPhysicalDevice physicalDevice,
                                VkPhysicalDeviceFeatures2 *pFeatures)
 {
    VK_FROM_HANDLE(dzn_physical_device, pdev, physicalDevice);
+   struct dzn_instance *instance = container_of(pdev->vk.instance, struct dzn_instance, vk);
 
    pFeatures->features = (VkPhysicalDeviceFeatures) {
       .robustBufferAccess = true, /* This feature is mandatory */
@@ -1292,7 +1312,7 @@ dzn_GetPhysicalDeviceFeatures2(VkPhysicalDevice physicalDevice,
       .depthBiasClamp = true,
       .fillModeNonSolid = false,
       .depthBounds = dzn_physical_device_supports_depth_bounds(pdev),
-      .wideLines = false,
+      .wideLines = driQueryOptionb(&instance->dri_options, "dzn_claim_wide_lines"),
       .largePoints = false,
       .alphaToOne = false,
       .multiViewport = false,

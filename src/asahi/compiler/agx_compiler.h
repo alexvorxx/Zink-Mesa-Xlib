@@ -775,14 +775,6 @@ agx_builder_insert(agx_cursor *cursor, agx_instr *I)
    unreachable("Invalid cursor option");
 }
 
-/* Uniform file management */
-
-agx_index agx_indexed_sysval(agx_context *ctx, enum agx_push_type type,
-                             enum agx_size size, unsigned index,
-                             unsigned length);
-
-agx_index agx_vbo_base(agx_context *ctx, unsigned vbo);
-
 /* Routines defined for AIR */
 
 void agx_print_instr(agx_instr *I, FILE *fp);
@@ -827,9 +819,8 @@ void agx_emit_parallel_copies(agx_builder *b, struct agx_copy *copies,
 void agx_compute_liveness(agx_context *ctx);
 void agx_liveness_ins_update(BITSET_WORD *live, agx_instr *I);
 
-bool agx_lower_resinfo(nir_shader *s);
 bool agx_nir_lower_zs_emit(nir_shader *s);
-bool agx_nir_lower_array_texture(nir_shader *s);
+bool agx_nir_lower_texture(nir_shader *s);
 bool agx_nir_opt_preamble(nir_shader *s, unsigned *preamble_size);
 bool agx_nir_lower_load_mask(nir_shader *shader);
 bool agx_nir_lower_address(nir_shader *shader);

@@ -564,21 +564,17 @@ d3d12_video_encoder_update_current_encoder_config_state_hevc(struct d3d12_video_
       pD3D12Enc->m_currentEncodeConfig.m_FrameCroppingCodecConfig.bottom = hevcPic->seq.conf_win_bottom_offset;
    }
    // Set profile
-   auto targetProfile = d3d12_video_encoder_convert_profile_to_d3d12_enc_profile_hevc(pD3D12Enc->base.profile);
-   if (pD3D12Enc->m_currentEncodeConfig.m_encoderProfileDesc.m_HEVCProfile != targetProfile) {
-      pD3D12Enc->m_currentEncodeConfig.m_ConfigDirtyFlags |= d3d12_video_encoder_config_dirty_flag_profile;
-   }
-   pD3D12Enc->m_currentEncodeConfig.m_encoderProfileDesc.m_HEVCProfile = targetProfile;
+   auto lastFrameProfile = pD3D12Enc->m_currentEncodeConfig.m_encoderProfileDesc.m_HEVCProfile;
+   pD3D12Enc->m_currentEncodeConfig.m_encoderProfileDesc.m_HEVCProfile =
+     d3d12_video_encoder_convert_profile_to_d3d12_enc_profile_hevc(pD3D12Enc->base.profile);
 
    // Set level
-   auto targetLevel = d3d12_video_encoder_convert_level_hevc(hevcPic->seq.general_level_idc);
-   auto targetTier = (hevcPic->seq.general_tier_flag == 0) ? D3D12_VIDEO_ENCODER_TIER_HEVC_MAIN : D3D12_VIDEO_ENCODER_TIER_HEVC_HIGH;
-   if ( (pD3D12Enc->m_currentEncodeConfig.m_encoderLevelDesc.m_HEVCLevelSetting.Level != targetLevel)
-      || (pD3D12Enc->m_currentEncodeConfig.m_encoderLevelDesc.m_HEVCLevelSetting.Tier != targetTier)) {
-      pD3D12Enc->m_currentEncodeConfig.m_ConfigDirtyFlags |= d3d12_video_encoder_config_dirty_flag_level;
-   }
-   pD3D12Enc->m_currentEncodeConfig.m_encoderLevelDesc.m_HEVCLevelSetting.Tier = targetTier;
-   pD3D12Enc->m_currentEncodeConfig.m_encoderLevelDesc.m_HEVCLevelSetting.Level = targetLevel;
+   auto lastFrameLevel = pD3D12Enc->m_currentEncodeConfig.m_encoderLevelDesc.m_HEVCLevelSetting.Level;
+   auto lastFrameTier = pD3D12Enc->m_currentEncodeConfig.m_encoderLevelDesc.m_HEVCLevelSetting.Tier;
+   pD3D12Enc->m_currentEncodeConfig.m_encoderLevelDesc.m_HEVCLevelSetting.Level =
+       d3d12_video_encoder_convert_level_hevc(hevcPic->seq.general_level_idc);
+   pD3D12Enc->m_currentEncodeConfig.m_encoderLevelDesc.m_HEVCLevelSetting.Tier =
+       (hevcPic->seq.general_tier_flag == 0) ? D3D12_VIDEO_ENCODER_TIER_HEVC_MAIN : D3D12_VIDEO_ENCODER_TIER_HEVC_HIGH;
 
    // Set codec config
    bool is_supported = true;
@@ -656,7 +652,13 @@ d3d12_video_encoder_update_current_encoder_config_state_hevc(struct d3d12_video_
                     "mismatches UMD suggested D3D12_VIDEO_ENCODER_PROFILE_HEVC: %d\n",
                     pD3D12Enc->m_currentEncodeConfig.m_encoderProfileDesc.m_HEVCProfile,
                     pD3D12Enc->m_currentEncodeCapabilities.m_encoderSuggestedProfileDesc.m_HEVCProfile);
+      if (!D3D12_VIDEO_ENC_HONOR_PROFILE_LEVEL_PIPE)
+         pD3D12Enc->m_currentEncodeConfig.m_encoderProfileDesc.m_HEVCProfile =
+            pD3D12Enc->m_currentEncodeCapabilities.m_encoderSuggestedProfileDesc.m_HEVCProfile;
    }
+
+   if (lastFrameProfile != pD3D12Enc->m_currentEncodeConfig.m_encoderProfileDesc.m_HEVCProfile)
+      pD3D12Enc->m_currentEncodeConfig.m_ConfigDirtyFlags |= d3d12_video_encoder_config_dirty_flag_profile;
 
    if (pD3D12Enc->m_currentEncodeConfig.m_encoderLevelDesc.m_HEVCLevelSetting.Tier !=
        pD3D12Enc->m_currentEncodeCapabilities.m_encoderLevelSuggestedDesc.m_HEVCLevelSetting.Tier) {
@@ -664,6 +666,9 @@ d3d12_video_encoder_update_current_encoder_config_state_hevc(struct d3d12_video_
                     "mismatches UMD suggested D3D12_VIDEO_ENCODER_LEVELS_HEVC.Tier: %d\n",
                     pD3D12Enc->m_currentEncodeConfig.m_encoderLevelDesc.m_HEVCLevelSetting.Tier,
                     pD3D12Enc->m_currentEncodeCapabilities.m_encoderLevelSuggestedDesc.m_HEVCLevelSetting.Tier);
+      if (!D3D12_VIDEO_ENC_HONOR_PROFILE_LEVEL_PIPE)
+         pD3D12Enc->m_currentEncodeConfig.m_encoderLevelDesc.m_HEVCLevelSetting.Tier =
+            pD3D12Enc->m_currentEncodeCapabilities.m_encoderLevelSuggestedDesc.m_HEVCLevelSetting.Tier;
    }
 
    if (pD3D12Enc->m_currentEncodeConfig.m_encoderLevelDesc.m_HEVCLevelSetting.Level !=
@@ -672,7 +677,14 @@ d3d12_video_encoder_update_current_encoder_config_state_hevc(struct d3d12_video_
                     "mismatches UMD suggested D3D12_VIDEO_ENCODER_LEVELS_HEVC.Level: %d\n",
                     pD3D12Enc->m_currentEncodeConfig.m_encoderLevelDesc.m_HEVCLevelSetting.Level,
                     pD3D12Enc->m_currentEncodeCapabilities.m_encoderLevelSuggestedDesc.m_HEVCLevelSetting.Level);
+      if (!D3D12_VIDEO_ENC_HONOR_PROFILE_LEVEL_PIPE)
+         pD3D12Enc->m_currentEncodeConfig.m_encoderLevelDesc.m_HEVCLevelSetting.Level =
+            pD3D12Enc->m_currentEncodeCapabilities.m_encoderLevelSuggestedDesc.m_HEVCLevelSetting.Level;
    }
+
+   if ( (pD3D12Enc->m_currentEncodeConfig.m_encoderLevelDesc.m_HEVCLevelSetting.Level != lastFrameLevel)
+      || (pD3D12Enc->m_currentEncodeConfig.m_encoderLevelDesc.m_HEVCLevelSetting.Tier != lastFrameTier))
+      pD3D12Enc->m_currentEncodeConfig.m_ConfigDirtyFlags |= d3d12_video_encoder_config_dirty_flag_level;
 
    if (pD3D12Enc->m_currentEncodeCapabilities.m_MaxSlicesInOutput >
        pD3D12Enc->m_currentEncodeCapabilities.m_currentResolutionSupportCaps.MaxSubregionsNumber) {

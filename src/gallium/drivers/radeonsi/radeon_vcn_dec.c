@@ -1871,7 +1871,8 @@ static unsigned rvcn_dec_dynamic_dpb_t2_message(struct radeon_decoder *dec, rvcn
    }
 
    list_for_each_entry_safe(struct rvcn_dec_dynamic_dpb_t2, d, &dec->dpb_unref_list, list) {
-      dec->ws->fence_wait(dec->ws, dec->prev_fence, PIPE_DEFAULT_DECODER_FEEDBACK_TIMEOUT_NS);
+      if (dec->prev_fence)
+         dec->ws->fence_wait(dec->ws, dec->prev_fence, PIPE_DEFAULT_DECODER_FEEDBACK_TIMEOUT_NS);
       list_del(&d->list);
       si_vid_destroy_buffer(&d->dpb);
       FREE(d);
@@ -2908,7 +2909,8 @@ static void radeon_dec_end_frame(struct pipe_video_codec *decoder, struct pipe_v
 
    dec->send_cmd(dec, target, picture);
    flush(dec, PIPE_FLUSH_ASYNC, picture->fence);
-   dec->prev_fence = *picture->fence;
+   if (picture->fence)
+      dec->prev_fence = *picture->fence;
    next_buffer(dec);
 }
 
@@ -3173,7 +3175,8 @@ struct pipe_video_codec *radeon_create_decoder(struct pipe_context *context,
    case CHIP_GFX1100:
    case CHIP_GFX1101:
    case CHIP_GFX1102:
-   case CHIP_GFX1103:
+   case CHIP_GFX1103_R1:
+   case CHIP_GFX1103_R2:
       dec->jpg.direct_reg = true;
       dec->addr_gfx_mode = RDECODE_ARRAY_MODE_ADDRLIB_SEL_GFX11;
       dec->av1_version = RDECODE_AV1_VER_1;

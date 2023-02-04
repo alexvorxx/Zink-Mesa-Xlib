@@ -562,12 +562,20 @@ missing_enums_gfx81plus = {
   "SX_BLEND_OPT_EPSILON__MRT0_EPSILON": {
     "entries": [
       {"name": "EXACT", "value": 0},
-      {"name": "11BIT_FORMAT", "value": 1},
-      {"name": "10BIT_FORMAT", "value": 3},
-      {"name": "8BIT_FORMAT", "value": 6},
-      {"name": "6BIT_FORMAT", "value": 11},
-      {"name": "5BIT_FORMAT", "value": 13},
-      {"name": "4BIT_FORMAT", "value": 15}
+      # This determines whether epsilon is 0.5 or 0.75 in the unnormalized format
+      # that is used to determine whether a channel is equal to 0 for blending.
+      # 0.5 is exactly between 0 and the next representable value. 0.75 can be
+      # used for less precise blending.
+      {"name": "10BIT_FORMAT_0_5", "value": 2},  # (1.0 * 2^−11) * 1024 = 0.5
+      {"name": "10BIT_FORMAT_0_75", "value": 3}, # (1.5 * 2^−11) * 1024 = 0.75
+      {"name": "8BIT_FORMAT_0_5", "value": 6},   # (1.0 * 2^−9) * 256 = 0.5
+      {"name": "8BIT_FORMAT_0_75", "value": 7},  # (1.5 * 2^−9) * 256 = 0.75
+      {"name": "6BIT_FORMAT_0_5", "value": 10},  # (1.0 * 2^-7) * 64 = 0.5
+      {"name": "6BIT_FORMAT_0_75", "value": 11}, # (1.5 * 2^-7) * 64 = 0.75
+      {"name": "5BIT_FORMAT_0_5", "value": 12},  # (1.0 * 2^-6) * 32 = 0.5
+      {"name": "5BIT_FORMAT_0_75", "value": 13}, # (1.5 * 2^-6) * 32 = 0.75
+      {"name": "4BIT_FORMAT_0_5", "value": 14},  # (1.0 * 2^-5) * 16 = 0.5
+      {"name": "4BIT_FORMAT_0_75", "value": 15}, # (1.5 * 2^-5) * 16 = 0.75
     ]
   },
 }

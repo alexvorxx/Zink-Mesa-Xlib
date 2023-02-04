@@ -320,6 +320,7 @@ struct zink_rasterizer_state {
    float line_width;
    VkFrontFace front_face;
    VkCullModeFlags cull_mode;
+   VkLineRasterizationModeEXT dynamic_line_mode;
    struct zink_rasterizer_hw_state hw_state;
 };
 
@@ -388,7 +389,7 @@ struct zink_descriptor_template {
    uint16_t stride; //the stride between mem pointers
    uint16_t db_size; //the size of the entry in the buffer
    unsigned count; //the number of descriptors
-   uint8_t *mem; //the base host pointer to update from
+   size_t offset; //the offset of the base host pointer to update from
 };
 
 /* ctx->dd; created at context creation */
@@ -404,8 +405,18 @@ struct zink_descriptor_data {
    struct zink_descriptor_layout *dummy_dsl;
 
    VkDescriptorSetLayout bindless_layout;
-   VkDescriptorPool bindless_pool;
-   VkDescriptorSet bindless_set;
+   union {
+      struct {
+         VkDescriptorPool bindless_pool;
+         VkDescriptorSet bindless_set;
+      } t;
+      struct {
+         struct zink_resource *bindless_db;
+         uint8_t *bindless_db_map;
+         struct pipe_transfer *bindless_db_xfer;
+         uint32_t db_offsets[4];
+      } db;
+   };
 
    struct zink_program *pg[2]; //gfx, compute
 
@@ -593,6 +604,7 @@ struct zink_batch_state {
    bool have_timelines;
 
    bool has_barriers;
+   bool db_bound;
 };
 
 static inline struct zink_batch_state *
@@ -1049,7 +1061,8 @@ struct zink_render_pass_state {
    struct zink_rt_attrib rts[PIPE_MAX_COLOR_BUFS + 1];
    unsigned num_rts;
    uint32_t clears; //for extra verification and update flagging
-   uint32_t msaa_expand_mask;
+   uint16_t msaa_expand_mask;
+   uint16_t msaa_samples; //used with VK_EXT_multisampled_render_to_single_sampled
 };
 
 struct zink_pipeline_rt {
@@ -1058,7 +1071,8 @@ struct zink_pipeline_rt {
 };
 
 struct zink_render_pass_pipeline_state {
-   uint32_t num_attachments:22;
+   uint32_t num_attachments:14;
+   uint32_t msaa_samples : 8;
    uint32_t fbfetch:1;
    uint32_t color_read:1;
    uint32_t depth_read:1;
@@ -1421,7 +1435,6 @@ struct zink_surface {
 struct zink_ctx_surface {
    struct pipe_surface base;
    struct zink_surface *surf; //the actual surface
-   /* TODO: use VK_EXT_multisampled_render_to_single_sampled */
    struct zink_ctx_surface *transient; //for use with EXT_multisample_render_to_texture
    bool transient_init; //whether the transient surface has data
 };
@@ -1532,11 +1545,18 @@ struct zink_viewport_state {
    uint8_t num_viewports;
 };
 
+struct zink_descriptor_db_info {
+   unsigned offset;
+   unsigned size;
+   enum pipe_format format;
+   struct pipe_resource *pres;
+};
 
 struct zink_descriptor_surface {
    union {
       struct zink_surface *surface;
       struct zink_buffer_view *bufferview;
+      struct zink_descriptor_db_info db;
    };
    bool is_buffer;
 };
@@ -1647,7 +1667,7 @@ struct zink_context {
    } dynamic_fb;
    uint32_t fb_layer_mismatch; //bitmask
    unsigned depth_bias_scale_factor;
-   struct set rendering_state_cache;
+   struct set rendering_state_cache[6]; //[util_logbase2_ceil(msrtss samplecount)]
    struct set render_pass_state_cache;
    struct hash_table *render_pass_cache;
    VkExtent2D swapchain_size;
@@ -1746,6 +1766,7 @@ struct zink_context {
       };
 
       VkDescriptorImageInfo fbfetch;
+      uint8_t fbfetch_db[64]; //max size from gpuinfo
 
       /* the current state of the shadow swizzle data */
       struct zink_fs_shadow_key shadow;
@@ -1753,15 +1774,22 @@ struct zink_context {
       struct zink_resource *descriptor_res[ZINK_DESCRIPTOR_BASE_TYPES][MESA_SHADER_STAGES][PIPE_MAX_SAMPLERS];
 
       struct {
-         struct util_idalloc tex_slots;
-         struct util_idalloc img_slots;
-         struct hash_table tex_handles;
-         struct hash_table img_handles;
-         VkBufferView *buffer_infos; //tex, img
+         struct util_idalloc tex_slots; //img, buffer
+         struct util_idalloc img_slots; //img, buffer
+         struct hash_table tex_handles; //img, buffer
+         struct hash_table img_handles; //img, buffer
+         union {
+            struct {
+               VkBufferView *buffer_infos; //tex, img
+            } t;
+            struct {
+               VkDescriptorAddressInfoEXT *buffer_infos;
+            } db;
+         };
          VkDescriptorImageInfo *img_infos; //tex, img
-         struct util_dynarray updates;
-         struct util_dynarray resident;
-      } bindless[2];  //img, buffer
+         struct util_dynarray updates; //texture, img
+         struct util_dynarray resident; //texture, img
+      } bindless[2];
       union {
          bool bindless_dirty[2]; //tex, img
          uint16_t any_bindless_dirty;

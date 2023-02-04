@@ -1266,6 +1266,7 @@ anv_queue_submit_locked(struct anv_queue *queue,
          uint32_t next = n + 1;
          /* Can we chain the last buffer into the next one? */
          if (next < end &&
+             anv_cmd_buffer_is_chainable(cmd_buffers[n]) &&
              anv_cmd_buffer_is_chainable(cmd_buffers[next]) &&
              can_chain_query_pools
              (cmd_buffers[next]->perf_query_pool, perf_query_pool)) {
@@ -1341,14 +1342,14 @@ anv_queue_submit(struct vk_queue *vk_queue,
       return VK_SUCCESS;
    }
 
-   uint64_t start_ts = intel_ds_begin_submit(queue->ds);
+   uint64_t start_ts = intel_ds_begin_submit(&queue->ds);
 
    pthread_mutex_lock(&device->mutex);
    result = anv_queue_submit_locked(queue, submit);
    /* Take submission ID under lock */
    pthread_mutex_unlock(&device->mutex);
 
-   intel_ds_end_submit(queue->ds, start_ts);
+   intel_ds_end_submit(&queue->ds, start_ts);
 
    return result;
 }

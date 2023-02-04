@@ -499,6 +499,9 @@ lower_abi_instr(nir_builder *b, nir_instr *instr, void *state)
 
       break;
    }
+   case nir_intrinsic_load_force_vrs_rates_amd:
+      replacement = ac_nir_load_arg(b, &s->args->ac, s->args->ac.force_vrs_rates);
+      break;
    default:
       progress = false;
       break;

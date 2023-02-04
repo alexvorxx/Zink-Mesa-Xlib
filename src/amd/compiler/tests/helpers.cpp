@@ -175,6 +175,21 @@ void finish_opt_test()
    aco_print_program(program.get(), output);
 }
 
+void finish_setup_reduce_temp_test()
+{
+   finish_program(program.get());
+   if (!aco::validate_ir(program.get())) {
+      fail_test("Validation before setup_reduce_temp failed");
+      return;
+   }
+   aco::setup_reduce_temp(program.get());
+   if (!aco::validate_ir(program.get())) {
+      fail_test("Validation after setup_reduce_temp failed");
+      return;
+   }
+   aco_print_program(program.get(), output);
+}
+
 void finish_ra_test(ra_test_policy policy, bool lower)
 {
    finish_program(program.get());
@@ -382,7 +397,7 @@ void emit_divergent_if_else(Program* prog, aco::Builder& b, Operand cond, std::f
 
    if_block->kind |= block_kind_branch;
    invert->kind |= block_kind_invert;
-   endif_block->kind |= block_kind_merge;
+   endif_block->kind |= block_kind_merge | (if_block->kind & block_kind_top_level);
 
    /* Set up logical CF */
    then_logical->logical_preds.push_back(if_block->index);

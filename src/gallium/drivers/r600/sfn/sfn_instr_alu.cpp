@@ -1552,8 +1552,6 @@ AluInstr::from_nir(nir_alu_instr *alu, Shader& shader)
    case nir_op_b32csel:
       return emit_alu_op3(*alu, op3_cnde_int, shader, {0, 2, 1});
 
-   case nir_op_f2b32:
-      return emit_alu_comb_with_zero(*alu, op2_setne_dx10, shader);
    case nir_op_fabs:
       return emit_alu_op1(*alu, op1_mov, shader, {1 << alu_src0_abs});
    case nir_op_fadd:

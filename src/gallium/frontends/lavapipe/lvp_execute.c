@@ -283,10 +283,10 @@ update_inline_shader_state(struct rendering_state *state, enum pipe_shader_type 
       return;
    struct lvp_pipeline *pipeline = state->pipeline[is_compute];
    /* these buffers have already been flushed in llvmpipe, so they're safe to read */
-   nir_shader *base_nir = pipeline->pipeline_nir[stage];
+   nir_shader *base_nir = pipeline->pipeline_nir[stage]->nir;
    if (stage == PIPE_SHADER_TESS_EVAL && state->tess_ccw)
-      base_nir = pipeline->tess_ccw;
-   nir_shader *nir = nir_shader_clone(pipeline->pipeline_nir[stage], base_nir);
+      base_nir = pipeline->tess_ccw->nir;
+   nir_shader *nir = nir_shader_clone(pipeline->pipeline_nir[stage]->nir, base_nir);
    nir_function_impl *impl = nir_shader_get_entrypoint(nir);
    unsigned ssa_alloc = impl->ssa_alloc;
    unsigned count = pipeline->inlines[stage].count[0];
@@ -336,7 +336,7 @@ update_inline_shader_state(struct rendering_state *state, enum pipe_shader_type 
       /* not enough change; don't inline further */
       pipeline->inlines[stage].can_inline = 0;
       ralloc_free(nir);
-      pipeline->shader_cso[sh] = lvp_pipeline_compile(pipeline, nir_shader_clone(NULL, pipeline->pipeline_nir[stage]));
+      pipeline->shader_cso[sh] = lvp_pipeline_compile(pipeline, nir_shader_clone(NULL, pipeline->pipeline_nir[stage]->nir));
       shader_state = pipeline->shader_cso[sh];
    } else {
       shader_state = lvp_pipeline_compile(pipeline, nir);
@@ -573,9 +573,9 @@ static void handle_compute_pipeline(struct vk_cmd_queue_entry *cmd,
                                            state->access[MESA_SHADER_COMPUTE].buffers_written != pipeline->access[MESA_SHADER_COMPUTE].buffers_written;
    memcpy(&state->access[MESA_SHADER_COMPUTE], &pipeline->access[MESA_SHADER_COMPUTE], sizeof(struct lvp_access_info));
 
-   state->dispatch_info.block[0] = pipeline->pipeline_nir[MESA_SHADER_COMPUTE]->info.workgroup_size[0];
-   state->dispatch_info.block[1] = pipeline->pipeline_nir[MESA_SHADER_COMPUTE]->info.workgroup_size[1];
-   state->dispatch_info.block[2] = pipeline->pipeline_nir[MESA_SHADER_COMPUTE]->info.workgroup_size[2];
+   state->dispatch_info.block[0] = pipeline->pipeline_nir[MESA_SHADER_COMPUTE]->nir->info.workgroup_size[0];
+   state->dispatch_info.block[1] = pipeline->pipeline_nir[MESA_SHADER_COMPUTE]->nir->info.workgroup_size[1];
+   state->dispatch_info.block[2] = pipeline->pipeline_nir[MESA_SHADER_COMPUTE]->nir->info.workgroup_size[2];
    state->inlines_dirty[PIPE_SHADER_COMPUTE] = pipeline->inlines[MESA_SHADER_COMPUTE].can_inline;
    if (!pipeline->inlines[MESA_SHADER_COMPUTE].can_inline)
       state->pctx->bind_compute_state(state->pctx, pipeline->shader_cso[PIPE_SHADER_COMPUTE]);
@@ -641,6 +641,7 @@ static void handle_graphics_pipeline(struct vk_cmd_queue_entry *cmd,
 {
    LVP_FROM_HANDLE(lvp_pipeline, pipeline, cmd->u.bind_pipeline.pipeline);
    const struct vk_graphics_pipeline_state *ps = &pipeline->graphics_state;
+   lvp_pipeline_shaders_compile(pipeline);
 
    for (enum pipe_shader_type sh = PIPE_SHADER_VERTEX; sh < PIPE_SHADER_COMPUTE; sh++) {
       state->iv_dirty[sh] |= state->num_shader_images[sh] &&
@@ -1050,6 +1051,7 @@ static void handle_pipeline(struct vk_cmd_queue_entry *cmd,
                             struct rendering_state *state)
 {
    LVP_FROM_HANDLE(lvp_pipeline, pipeline, cmd->u.bind_pipeline.pipeline);
+   pipeline->used = true;
    if (pipeline->is_compute_pipeline) {
       handle_compute_pipeline(cmd, state);
       handle_pipeline_access(state, MESA_SHADER_COMPUTE);

@@ -1199,6 +1199,11 @@ driParseConfigFiles(driOptionCache *cache, const driOptionCache *info,
    initOptionCache(cache, info);
    struct OptConfData userData = {0};
 
+   if (!execname)
+      execname = os_get_option("MESA_DRICONF_EXECUTABLE_OVERRIDE");
+   if (!execname)
+      execname = util_get_process_name();
+
    userData.cache = cache;
    userData.screenNum = screenNum;
    userData.driverName = driverName;
@@ -1208,7 +1213,7 @@ driParseConfigFiles(driOptionCache *cache, const driOptionCache *info,
    userData.applicationVersion = applicationVersion;
    userData.engineName = engineName ? engineName : "";
    userData.engineVersion = engineVersion;
-   userData.execName = execname ? execname : util_get_process_name();
+   userData.execName = execname;
 
 #if WITH_XMLCONFIG
    char *home;

@@ -67,10 +67,6 @@ lower_alu_instr(nir_builder *b, nir_alu_instr *alu, bool has_fcsel_ne,
 
    case nir_op_b2f32: alu->op = nir_op_mov; break;
    case nir_op_b2i32: alu->op = nir_op_mov; break;
-   case nir_op_f2b1:
-      rep = nir_sne(b, nir_ssa_for_alu_src(b, alu, 0),
-                       nir_imm_float(b, 0));
-      break;
    case nir_op_b2b1: alu->op = nir_op_mov; break;
 
    case nir_op_flt: alu->op = nir_op_slt; break;

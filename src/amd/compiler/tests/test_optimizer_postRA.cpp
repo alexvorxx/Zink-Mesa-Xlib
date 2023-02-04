@@ -514,7 +514,7 @@ BEGIN_TEST(optimizer_postRA.dpp_across_cf)
 
    /* --- merge block --- */
    //! BB6
-   //! /* logical preds: BB1, BB4, / linear preds: BB4, BB5, / kind: uniform, merge, */
+   //! /* logical preds: BB1, BB4, / linear preds: BB4, BB5, / kind: uniform, top-level, merge, */
    //! s2: %0:exec = p_parallelcopy %saved_exec:s[84-85]
 
    //! v1: %res10:v[12] = v_add_f32 %a:v[0], %b:v[1] row_mirror bound_ctrl:1
@@ -593,7 +593,7 @@ BEGIN_TEST(optimizer_postRA.dpp_across_cf_overwritten)
 
    /* --- merge block --- */
    //! BB6
-   //! /* logical preds: BB1, BB4, / linear preds: BB4, BB5, / kind: uniform, merge, */
+   //! /* logical preds: BB1, BB4, / linear preds: BB4, BB5, / kind: uniform, top-level, merge, */
    //! s2: %0:exec = p_parallelcopy %saved_exec:s[84-85]
 
    //! v1: %result:v[12] = v_add_f32 %dpp_mov_tmp:v[12], %b:v[1]
@@ -665,7 +665,7 @@ BEGIN_TEST(optimizer_postRA.scc_nocmp_across_cf)
 
    /* --- merge block --- */
    //! BB6
-   //! /* logical preds: BB1, BB4, / linear preds: BB4, BB5, / kind: uniform, merge, */
+   //! /* logical preds: BB1, BB4, / linear preds: BB4, BB5, / kind: uniform, top-level, merge, */
    //! s2: %0:exec = p_parallelcopy %saved_exec:s[84-85]
 
    //! s2: %tmp_salu:s[8-9], s1: %br_scc:scc = s_and_b64 %a:s[2-3], 0x40018
@@ -748,7 +748,7 @@ BEGIN_TEST(optimizer_postRA.scc_nocmp_across_cf_partially_overwritten)
 
    /* --- merge block --- */
    //! BB6
-   //! /* logical preds: BB1, BB4, / linear preds: BB4, BB5, / kind: uniform, merge, */
+   //! /* logical preds: BB1, BB4, / linear preds: BB4, BB5, / kind: uniform, top-level, merge, */
    //! s2: %0:exec = p_parallelcopy %saved_exec:s[84-85]
 
    //! s1: %br_scc:scc = s_cmp_lg_u32 %tmp_salu:s[8-9], 0

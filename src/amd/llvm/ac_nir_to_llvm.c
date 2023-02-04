@@ -28,6 +28,7 @@
 #include "ac_llvm_util.h"
 #include "ac_shader_abi.h"
 #include "ac_shader_util.h"
+#include "ac_nir.h"
 #include "nir/nir.h"
 #include "nir/nir_deref.h"
 #include "sid.h"
@@ -274,13 +275,6 @@ static LLVMValueRef emit_b2f(struct ac_llvm_context *ctx, LLVMValueRef src0, uns
    default:
       unreachable("Unsupported bit size.");
    }
-}
-
-static LLVMValueRef emit_f2b(struct ac_llvm_context *ctx, LLVMValueRef src0)
-{
-   src0 = ac_to_float(ctx, src0);
-   LLVMValueRef zero = LLVMConstNull(LLVMTypeOf(src0));
-   return LLVMBuildFCmp(ctx->builder, LLVMRealUNE, src0, zero, "");
 }
 
 static LLVMValueRef emit_b2i(struct ac_llvm_context *ctx, LLVMValueRef src0, unsigned bitsize)
@@ -1095,9 +1089,6 @@ static bool visit_alu(struct ac_nir_context *ctx, const nir_alu_instr *instr)
    case nir_op_b2f32:
    case nir_op_b2f64:
       result = emit_b2f(&ctx->ac, src[0], instr->dest.dest.ssa.bit_size);
-      break;
-   case nir_op_f2b1:
-      result = emit_f2b(&ctx->ac, src[0]);
       break;
    case nir_op_b2i8:
    case nir_op_b2i16:
@@ -4137,12 +4128,6 @@ static bool visit_intrinsic(struct ac_nir_context *ctx, nir_intrinsic_instr *ins
       ctx->abi->tes_rel_patch_id_replaced = get_src(ctx, instr->src[3]);
       ctx->abi->tes_patch_id_replaced = get_src(ctx, instr->src[2]);
       break;
-   case nir_intrinsic_export_primitive_amd: {
-      struct ac_ngg_prim prim = {0};
-      prim.passthrough = get_src(ctx, instr->src[0]);
-      ac_build_export_prim(&ctx->ac, &prim);
-      break;
-   }
    case nir_intrinsic_gds_atomic_add_amd: {
       LLVMValueRef store_val = get_src(ctx, instr->src[0]);
       LLVMValueRef addr = get_src(ctx, instr->src[1]);
@@ -4171,9 +4156,6 @@ static bool visit_intrinsic(struct ac_nir_context *ctx, nir_intrinsic_instr *ins
       result = ac_build_intrinsic(&ctx->ac, name, return_type, args, 5, 0);
       break;
    }
-   case nir_intrinsic_export_vertex_amd:
-      ctx->abi->export_vertex(ctx->abi);
-      break;
    case nir_intrinsic_elect:
       result = LLVMBuildICmp(ctx->ac.builder, LLVMIntEQ, visit_first_invocation(ctx),
                              ac_get_thread_id(&ctx->ac), "");
@@ -4196,9 +4178,6 @@ static bool visit_intrinsic(struct ac_nir_context *ctx, nir_intrinsic_instr *ins
                                                    get_src(ctx, instr->src[2]),
                                                    ctx->ac.i1false,
                                                    ctx->ac.i1false}, 6, 0);
-      break;
-   case nir_intrinsic_load_force_vrs_rates_amd:
-      result = ac_get_arg(&ctx->ac, ctx->args->force_vrs_rates);
       break;
    case nir_intrinsic_load_scalar_arg_amd:
    case nir_intrinsic_load_vector_arg_amd: {
@@ -4297,6 +4276,27 @@ static bool visit_intrinsic(struct ac_nir_context *ctx, nir_intrinsic_instr *ins
                          args, ARRAY_SIZE(args), 0);
 
       result = ac_build_gather_values(&ctx->ac, global_count, instr->num_components);
+      break;
+   }
+   case nir_intrinsic_export_amd: {
+      unsigned flags = nir_intrinsic_flags(instr);
+      unsigned target = nir_intrinsic_base(instr);
+      unsigned write_mask = nir_intrinsic_write_mask(instr);
+
+      struct ac_export_args args = {
+         .target = target,
+         .enabled_channels = write_mask,
+         .compr = flags & AC_EXP_FLAG_COMPRESSED,
+         .done = flags & AC_EXP_FLAG_DONE,
+         .valid_mask = flags & AC_EXP_FLAG_VALID_MASK,
+      };
+
+      LLVMValueRef value = get_src(ctx, instr->src[0]);
+      int num_components = ac_get_llvm_num_components(value);
+      for (int i = 0; i < num_components; i++)
+         args.out[i] = ac_llvm_extract_elem(&ctx->ac, value, i);
+
+      ac_build_export(&ctx->ac, &args);
       break;
    }
    default:

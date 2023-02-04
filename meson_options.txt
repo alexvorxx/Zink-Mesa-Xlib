@@ -45,9 +45,7 @@ option(
 )
 option(
   'android-libbacktrace',
-  type : 'combo',
-  value : 'auto',
-  choices : ['auto', 'true', 'false'],
+  type : 'feature',
   description : 'Use Android\'s libbacktrace',
 )
 option(

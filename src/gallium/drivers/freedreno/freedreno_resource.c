@@ -702,6 +702,14 @@ fd_flush_resource(struct pipe_context *pctx, struct pipe_resource *prsc)
    struct fd_context *ctx = fd_context(pctx);
    struct fd_resource *rsc = fd_resource(prsc);
 
+   /* Flushing the resource is only required if we are relying on
+    * implicit-sync, in which case the rendering must be flushed
+    * to the kernel for the fence to be added to the backing GEM
+    * object.
+    */
+   if (ctx->no_implicit_sync)
+      return;
+
    flush_resource(ctx, rsc, PIPE_MAP_READ);
 
    /* If we had to flush a batch, make sure it makes it's way all the
@@ -1181,14 +1189,30 @@ enum fd_layout_type {
    UBWC,
 };
 
+static bool
+has_implicit_modifier(const uint64_t *modifiers, int count)
+{
+    return count == 0 ||
+           drm_find_modifier(DRM_FORMAT_MOD_INVALID, modifiers, count);
+}
+
+static bool
+has_explicit_modifier(const uint64_t *modifiers, int count)
+{
+    for (int i = 0; i < count; i++) {
+        if (modifiers[i] != DRM_FORMAT_MOD_INVALID)
+            return true;
+    }
+    return false;
+}
+
 static enum fd_layout_type
 get_best_layout(struct fd_screen *screen, struct pipe_resource *prsc,
                 const struct pipe_resource *tmpl, const uint64_t *modifiers,
                 int count)
 {
-   bool implicit_modifiers =
-      (count == 0 ||
-       drm_find_modifier(DRM_FORMAT_MOD_INVALID, modifiers, count));
+   const bool can_implicit = has_implicit_modifier(modifiers, count);
+   const bool can_explicit = has_explicit_modifier(modifiers, count);
 
    /* First, find all the conditions which would force us to linear */
    if (!screen->tile_mode)
@@ -1210,8 +1234,8 @@ get_best_layout(struct fd_screen *screen, struct pipe_resource *prsc,
    if (FD_DBG(NOTILE))
        return LINEAR;
 
-   /* Shared resources with implicit modifiers must always be linear */
-   if (implicit_modifiers && (tmpl->bind & PIPE_BIND_SHARED)) {
+   /* Shared resources without explicit modifiers must always be linear */
+   if (!can_explicit && (tmpl->bind & PIPE_BIND_SHARED)) {
       perf_debug("%" PRSC_FMT
                  ": forcing linear: shared resource + implicit modifiers",
                  PRSC_ARGS(prsc));
@@ -1229,7 +1253,7 @@ get_best_layout(struct fd_screen *screen, struct pipe_resource *prsc,
    if (tmpl->bind & PIPE_BIND_USE_FRONT_RENDERING)
       ubwc_ok = false;
 
-   if (ubwc_ok && !implicit_modifiers &&
+   if (ubwc_ok && !can_implicit &&
        !drm_find_modifier(DRM_FORMAT_MOD_QCOM_COMPRESSED, modifiers, count)) {
       perf_debug("%" PRSC_FMT
                  ": not using UBWC: not in acceptable modifier set",
@@ -1247,7 +1271,7 @@ get_best_layout(struct fd_screen *screen, struct pipe_resource *prsc,
     * TODO we should probably also limit TILED in a similar way to UBWC above,
     * once we have a public modifier token defined.
     */
-   if (implicit_modifiers ||
+   if (can_implicit ||
        drm_find_modifier(FD_FORMAT_MOD_QCOM_TILED, modifiers, count))
       return TILED;
 
@@ -1365,7 +1389,7 @@ fd_resource_create_with_modifiers(struct pipe_screen *pscreen,
     */
    if (screen->ro &&
        ((tmpl->bind & PIPE_BIND_SCANOUT) ||
-        !(count == 1 && modifiers[0] == DRM_FORMAT_MOD_INVALID))) {
+        has_explicit_modifier(modifiers, count))) {
       struct pipe_resource scanout_templat = *tmpl;
       struct renderonly_scanout *scanout;
       struct winsys_handle handle;

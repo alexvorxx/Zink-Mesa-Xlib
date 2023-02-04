@@ -155,27 +155,12 @@ util_ifloor(float f)
 
 /**
  * Round float to nearest int.
+ * the range of f should be [INT_MIN, INT_MAX]
  */
 static inline int
 util_iround(float f)
 {
-#if DETECT_CC_GCC && DETECT_ARCH_X86
-   int r;
-   __asm__ ("fistpl %0" : "=m" (r) : "t" (f) : "st");
-   return r;
-#elif DETECT_CC_MSVC && DETECT_ARCH_X86
-   int r;
-   _asm {
-      fld f
-      fistp r
-   }
-   return r;
-#else
-   if (f >= 0.0f)
-      return (int) (f + 0.5f);
-   else
-      return (int) (f - 0.5f);
-#endif
+   return (int)lrintf(f);
 }
 
 

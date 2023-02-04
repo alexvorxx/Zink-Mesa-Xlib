@@ -288,6 +288,8 @@ device_probe_device(_EGLDisplay *disp)
    if (dri2_dpy->fd_render_gpu < 0)
       return false;
 
+   dri2_dpy->fd_display_gpu = dri2_dpy->fd_render_gpu;
+
    dri2_dpy->driver_name = loader_get_driver_for_fd(dri2_dpy->fd_render_gpu);
    if (!dri2_dpy->driver_name)
       goto err_name;
@@ -316,7 +318,7 @@ err_load:
 
 err_name:
    close(dri2_dpy->fd_render_gpu);
-   dri2_dpy->fd_render_gpu = -1;
+   dri2_dpy->fd_render_gpu = dri2_dpy->fd_display_gpu = -1;
    return false;
 
 }
@@ -327,6 +329,7 @@ device_probe_device_sw(_EGLDisplay *disp)
    struct dri2_egl_display *dri2_dpy = dri2_egl_display(disp);
 
    dri2_dpy->fd_render_gpu = -1;
+   dri2_dpy->fd_display_gpu = -1;
    dri2_dpy->driver_name = strdup(disp->Options.Zink ? "zink" : "swrast");
    if (!dri2_dpy->driver_name)
       return false;

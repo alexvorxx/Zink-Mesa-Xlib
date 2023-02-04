@@ -301,7 +301,7 @@ bo_create_internal(struct zink_screen *screen,
 
    if (init_pb_cache) {
       bo->u.real.use_reusable_pool = true;
-      pb_cache_init_entry(&screen->pb.bo_cache, bo->cache_entry, &bo->base, heap);
+      pb_cache_init_entry(&screen->pb.bo_cache, bo->cache_entry, &bo->base, mem_type_idx);
    } else {
 #ifdef ZINK_USE_DMABUF
       list_inithead(&bo->u.real.exports);
@@ -625,6 +625,7 @@ zink_bo_create(struct zink_screen *screen, uint64_t size, unsigned alignment, en
          return NULL;
 
       bo = container_of(entry, struct zink_bo, u.slab.entry);
+      assert(bo->base.placement == mem_type_idx);
       pipe_reference_init(&bo->base.reference, 1);
       bo->base.size = size;
       assert(alignment <= 1 << bo->base.alignment_log2);
@@ -653,7 +654,8 @@ no_slab:
    if (use_reusable_pool) {
        /* Get a buffer from the cache. */
        bo = (struct zink_bo*)
-            pb_cache_reclaim_buffer(&screen->pb.bo_cache, size, alignment, 0, heap);
+            pb_cache_reclaim_buffer(&screen->pb.bo_cache, size, alignment, 0, mem_type_idx);
+       assert(!bo || bo->base.placement == mem_type_idx);
        if (bo)
           return &bo->base;
    }
@@ -668,6 +670,7 @@ no_slab:
       if (!bo)
          return NULL;
    }
+   assert(bo->base.placement == mem_type_idx);
 
    return &bo->base;
 }

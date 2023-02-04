@@ -1561,13 +1561,6 @@ ntt_emit_alu(struct ntt_compile *c, nir_alu_instr *instr)
                   ntt_64bit_1f(c));
          break;
 
-      case nir_op_f2b32:
-         if (src_64)
-            ntt_DSNE(c, dst, src[0], ureg_imm1f(c->ureg, 0));
-         else
-            ntt_FSNE(c, dst, src[0], ureg_imm1f(c->ureg, 0));
-         break;
-
       case nir_op_b2i32:
          ntt_AND(c, dst, src[0], ureg_imm1u(c->ureg, 1));
          break;

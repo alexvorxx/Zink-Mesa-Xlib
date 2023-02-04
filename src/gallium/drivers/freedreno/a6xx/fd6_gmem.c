@@ -40,6 +40,7 @@
 #include "freedreno_state.h"
 #include "freedreno_tracepoints.h"
 
+#include "fd6_barrier.h"
 #include "fd6_blitter.h"
 #include "fd6_context.h"
 #include "fd6_draw.h"
@@ -608,6 +609,8 @@ emit_common_fini(struct fd_batch *batch)
    struct fd_ringbuffer *ring = batch->gmem;
    struct fd_autotune *at = &batch->ctx->autotune;
    struct fd_batch_result *result = batch->autotune_result;
+
+   fd6_emit_flushes(batch->ctx, ring, batch->barrier);
 
    if (!result)
       return;

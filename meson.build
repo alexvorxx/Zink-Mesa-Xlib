@@ -779,8 +779,8 @@ if with_gallium_rusticl
     error('rusticl requires at least one gallium driver.')
   endif
 
-  if meson.version().version_compare('< 0.61.4')
-    error('rusticl requires meson 0.61.4 or newer')
+  if meson.version().version_compare('< 1.0.0')
+    error('rusticl requires meson 1.0.0 or newer')
   endif
 
   add_languages('rust', required: true)
@@ -818,14 +818,10 @@ if with_android_stub and not with_platform_android
   error('`-D android-stub=true` makes no sense without `-D platforms=android`')
 endif
 
-if get_option('android-libbacktrace') == 'auto'
-  with_libbacktrace = with_platform_android
-else
-  with_libbacktrace = get_option('android-libbacktrace') == 'true'
-  if with_libbacktrace and not with_platform_android
-    error('`-D android-libbacktrace=true` makes no sense without `-D platforms=android`')
-  endif
-endif
+with_libbacktrace = get_option('android-libbacktrace') \
+  .require(with_platform_android, error_message : '`-D android-libbacktrace=enabled` makes no sense without `-D platforms=android`') \
+  .disable_auto_if(not with_platform_android) \
+  .allowed()
 
 if with_libbacktrace
   cpp_args += '-DWITH_LIBBACKTRACE'
@@ -969,6 +965,7 @@ endif
 c_msvc_compat_args = []
 no_override_init_args = []
 cpp_msvc_compat_args = []
+ld_args_gc_sections = []
 if cc.get_argument_syntax() == 'msvc'
   _trial = [
     '/wd4018',  # signed/unsigned mismatch
@@ -1048,7 +1045,9 @@ else
   # own sections and GC the sections after linking.  This lets drivers
   # drop shared code unused by that specific driver (particularly
   # relevant for Vulkan drivers).
-  if cc.has_link_argument('-Wl,--gc-sections')
+  if cc.links('static char unused() { return 5; } int main() { return 0; }',
+              args : '-Wl,--gc-sections', name : 'gc-sections')
+    ld_args_gc_sections += '-Wl,--gc-sections'
     _trial_c += ['-ffunction-sections', '-fdata-sections']
     _trial_cpp += ['-ffunction-sections', '-fdata-sections']
   endif
@@ -1383,11 +1382,6 @@ endif
 ld_args_bsymbolic = []
 if cc.links('int main() { return 0; }', args : '-Wl,-Bsymbolic', name : 'Bsymbolic')
   ld_args_bsymbolic += '-Wl,-Bsymbolic'
-endif
-ld_args_gc_sections = []
-if cc.links('static char unused() { return 5; } int main() { return 0; }',
-            args : '-Wl,--gc-sections', name : 'gc-sections')
-  ld_args_gc_sections += '-Wl,--gc-sections'
 endif
 with_ld_version_script = false
 if cc.links('int main() { return 0; }',

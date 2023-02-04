@@ -42,6 +42,8 @@
 #include "util/u_atomic.h"
 #include "util/timespec.h"
 #include "util/ptralloc.h"
+#include "nir.h"
+#include "nir_builder.h"
 
 #if defined(VK_USE_PLATFORM_WAYLAND_KHR) || \
     defined(VK_USE_PLATFORM_WIN32_KHR) || \
@@ -1632,6 +1634,12 @@ VKAPI_ATTR VkResult VKAPI_CALL lvp_CreateDevice(
       return result;
    }
 
+   nir_builder b = nir_builder_init_simple_shader(MESA_SHADER_FRAGMENT, NULL, "dummy_frag");
+   struct pipe_shader_state shstate = {0};
+   shstate.type = PIPE_SHADER_IR_NIR;
+   shstate.ir.nir = b.shader;
+   device->noop_fs = device->queue.ctx->create_fs_state(device->queue.ctx, &shstate);
+
    *pDevice = lvp_device_to_handle(device);
 
    return VK_SUCCESS;
@@ -1643,6 +1651,8 @@ VKAPI_ATTR void VKAPI_CALL lvp_DestroyDevice(
    const VkAllocationCallbacks*                pAllocator)
 {
    LVP_FROM_HANDLE(lvp_device, device, _device);
+
+   device->queue.ctx->delete_fs_state(device->queue.ctx, device->noop_fs);
 
    if (device->queue.last_fence)
       device->pscreen->fence_reference(device->pscreen, &device->queue.last_fence, NULL);

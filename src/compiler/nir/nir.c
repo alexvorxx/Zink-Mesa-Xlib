@@ -3186,10 +3186,6 @@ nir_alu_instr_is_comparison(const nir_alu_instr *instr)
    CASE_ALL_SIZES(nir_op_uge)
    CASE_ALL_SIZES(nir_op_ieq)
    CASE_ALL_SIZES(nir_op_ine)
-   case nir_op_f2b1:
-   case nir_op_f2b8:
-   case nir_op_f2b16:
-   case nir_op_f2b32:
    case nir_op_inot:
       return true;
    default:

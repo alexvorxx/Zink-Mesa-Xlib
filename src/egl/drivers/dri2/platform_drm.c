@@ -714,6 +714,7 @@ dri2_initialize_drm(_EGLDisplay *disp)
          goto cleanup;
       }
    }
+   dri2_dpy->fd_display_gpu = dri2_dpy->fd_render_gpu;
    dri2_dpy->gbm_dri = gbm_dri_device(gbm);
 
    if (strcmp(gbm_device_get_backend_name(gbm), "drm") != 0) {

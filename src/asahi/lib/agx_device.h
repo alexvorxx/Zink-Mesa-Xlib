@@ -26,10 +26,12 @@
 
 #include "util/simple_mtx.h"
 #include "util/sparse_array.h"
+#include "agx_bo.h"
 #include "agx_formats.h"
-#include "io.h"
+#include "agx_bo.h"
 
 #if __APPLE__
+#include "agx_iokit.h"
 #include <IOKit/IOKitLib.h>
 #include <mach/mach.h>
 #endif
@@ -53,19 +55,24 @@ enum agx_dbg {
 /* Fencepost problem, hence the off-by-one */
 #define NR_BO_CACHE_BUCKETS (MAX_BO_CACHE_BUCKET - MIN_BO_CACHE_BUCKET + 1)
 
+#ifndef __APPLE__
+struct agx_command_queue {
+
+};
+#endif
+
 struct agx_device {
    void *memctx;
    uint32_t debug;
 
-   /* XXX What to bind to? I don't understand the IOGPU UABI */
-   struct agx_command_queue queue;
-   struct agx_bo cmdbuf, memmap;
    uint64_t next_global_id, last_global_id;
+   struct agx_command_queue queue;
 
-   /* Device handle */
 #if __APPLE__
    io_connect_t fd;
+   struct agx_bo cmdbuf, memmap;
 #else
+   /* Device handle */
    int fd;
 #endif
    struct renderonly *ro;

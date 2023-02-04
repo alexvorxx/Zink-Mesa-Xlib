@@ -235,4 +235,3 @@ wayland-dEQP-EGL.functional.negative_api.create_pixmap_surface,Fail
 # [...]
 wayland-dEQP-EGL.functional.wide_color.pbuffer_888_colorspace_default,Fail
 
-spec@!opengl 1.1@line-smooth-stipple,Fail

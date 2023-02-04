@@ -237,6 +237,8 @@ fd_pipe_fence_server_sync(struct pipe_context *pctx, struct pipe_fence_handle *f
    if (!fence->use_fence_fd)
       return;
 
+   ctx->no_implicit_sync = true;
+
    assert(fence->fence);
    if (sync_accumulate("freedreno", &ctx->in_fence_fd, fence->fence->fence_fd)) {
       /* error */

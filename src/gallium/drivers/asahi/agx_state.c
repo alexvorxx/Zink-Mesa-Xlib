@@ -31,6 +31,7 @@
 #include "asahi/lib/agx_ppp.h"
 #include "asahi/lib/agx_usc.h"
 #include "compiler/nir/nir.h"
+#include "compiler/nir/nir_serialize.h"
 #include "gallium/auxiliary/nir/tgsi_to_nir.h"
 #include "gallium/auxiliary/tgsi/tgsi_from_mesa.h"
 #include "gallium/auxiliary/util/u_blend.h"
@@ -47,6 +48,7 @@
 #include "util/u_prim.h"
 #include "util/u_transfer.h"
 #include "agx_state.h"
+#include "agx_disk_cache.h"
 
 static struct pipe_stream_output_target *
 agx_create_stream_output_target(struct pipe_context *pctx,
@@ -1263,13 +1265,6 @@ agx_compile_variant(struct agx_device *dev, struct agx_uncompiled_shader *so,
       memcpy(opts.rt, key->blend.rt, sizeof(opts.rt));
       NIR_PASS_V(nir, nir_lower_blend, &opts);
 
-      NIR_PASS_V(nir, nir_lower_fragcolor, key->nr_cbufs);
-
-      if (key->sprite_coord_enable) {
-         NIR_PASS_V(nir, nir_lower_texcoord_replace, key->sprite_coord_enable,
-                    false /* point coord is sysval */, false /* Y-invert */);
-      }
-
       if (key->clip_plane_enable) {
          NIR_PASS_V(nir, nir_lower_clip_fs, key->clip_plane_enable, false);
       }
@@ -1288,30 +1283,57 @@ agx_compile_variant(struct agx_device *dev, struct agx_uncompiled_shader *so,
          agx_build_tilebuffer_layout(key->rt_formats, key->nr_cbufs, 1);
 
       NIR_PASS_V(nir, agx_nir_lower_tilebuffer, &tib);
+
+      if (key->sprite_coord_enable) {
+         NIR_PASS_V(nir, nir_lower_texcoord_replace_late,
+                    key->sprite_coord_enable,
+                    false /* point coord is sysval */);
+      }
    }
 
    struct agx_shader_key base_key = {0};
+
+   NIR_PASS_V(nir, agx_nir_lower_sysvals, compiled,
+              &base_key.reserved_preamble);
+
    agx_compile_shader_nir(nir, &base_key, debug, &binary, &compiled->info);
 
    if (binary.size) {
-      compiled->bo =
-         agx_bo_create(dev, binary.size, AGX_MEMORY_TYPE_SHADER, "Executable");
+      compiled->bo = agx_bo_create(dev, binary.size,
+                                   AGX_BO_EXEC | AGX_BO_LOW_VA, "Executable");
+
       memcpy(compiled->bo->ptr.cpu, binary.data, binary.size);
    }
 
    ralloc_free(nir);
    util_dynarray_fini(&binary);
 
+   return compiled;
+}
+
+static struct agx_compiled_shader *
+agx_get_shader_variant(struct agx_screen *screen,
+                       struct agx_uncompiled_shader *so,
+                       struct util_debug_callback *debug,
+                       union asahi_shader_key *key)
+{
+   struct agx_compiled_shader *compiled =
+      agx_disk_cache_retrieve(screen, so, key);
+
+   if (!compiled) {
+      compiled = agx_compile_variant(&screen->dev, so, debug, key);
+      agx_disk_cache_store(screen->disk_cache, so, key, compiled);
+   }
+
    /* key may be destroyed after we return, so clone it before using it as a
     * hash table key. The clone is logically owned by the hash table.
     */
    union asahi_shader_key *cloned_key =
       ralloc(so->variants, union asahi_shader_key);
-   memcpy(cloned_key, key_, sizeof(union asahi_shader_key));
+   memcpy(cloned_key, key, sizeof(union asahi_shader_key));
+   _mesa_hash_table_insert(so->variants, cloned_key, compiled);
 
-   struct hash_entry *he =
-      _mesa_hash_table_insert(so->variants, cloned_key, compiled);
-   return he->data;
+   return compiled;
 }
 
 static void *
@@ -1340,6 +1362,12 @@ agx_create_shader_state(struct pipe_context *pctx,
       so->variants = _mesa_hash_table_create(NULL, asahi_fs_shader_key_hash,
                                              asahi_fs_shader_key_equal);
    }
+
+   struct blob blob;
+   blob_init(&blob);
+   nir_serialize(&blob, so->nir, true);
+   _mesa_sha1_compute(blob.data, blob.size, so->nir_sha1);
+   blob_finish(&blob);
 
    /* For shader-db, precompile a shader with a default key. This could be
     * improved but hopefully this is acceptable for now.
@@ -1392,8 +1420,8 @@ agx_update_shader(struct agx_context *ctx, struct agx_compiled_shader **out,
       return true;
    }
 
-   struct agx_device *dev = agx_device(ctx->base.screen);
-   *out = agx_compile_variant(dev, so, &ctx->base.debug, key);
+   struct agx_screen *screen = agx_screen(ctx->base.screen);
+   *out = agx_get_shader_variant(screen, so, &ctx->base.debug, key);
    return true;
 }
 
@@ -1549,7 +1577,7 @@ agx_build_pipeline(struct agx_batch *batch, struct agx_compiled_shader *cs,
    }
 
    struct agx_usc_builder b =
-      agx_alloc_usc_control(&batch->pipeline_pool, cs->info.push_ranges + 2);
+      agx_alloc_usc_control(&batch->pipeline_pool, cs->push_range_count + 2);
 
    if (nr_textures) {
       agx_usc_pack(&b, TEXTURE, cfg) {
@@ -1557,8 +1585,6 @@ agx_build_pipeline(struct agx_batch *batch, struct agx_compiled_shader *cs,
          cfg.count = nr_textures;
          cfg.buffer = T_tex.gpu;
       }
-
-      batch->textures = T_tex.gpu;
    }
 
    if (nr_samplers) {
@@ -1572,9 +1598,11 @@ agx_build_pipeline(struct agx_batch *batch, struct agx_compiled_shader *cs,
    /* Must only upload uniforms after uploading textures so we can implement the
     * AGX_PUSH_TEXTURE_BASE sysval correctly.
     */
-   for (unsigned i = 0; i < cs->info.push_ranges; ++i) {
-      agx_usc_uniform(&b, cs->info.push[i].base, cs->info.push[i].length,
-                      agx_push_location(batch, cs->info.push[i], stage));
+   uint64_t uniforms = agx_upload_uniforms(batch, T_tex.gpu, stage);
+
+   for (unsigned i = 0; i < cs->push_range_count; ++i) {
+      agx_usc_uniform(&b, cs->push[i].uniform, cs->push[i].length,
+                      uniforms + cs->push[i].offset);
    }
 
    if (stage == PIPE_SHADER_FRAGMENT)

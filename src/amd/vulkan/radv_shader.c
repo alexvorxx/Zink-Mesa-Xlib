@@ -842,6 +842,12 @@ radv_shader_spirv_to_nir(struct radv_device *device, const struct radv_pipeline_
                          &device->physical_device->nir_options[stage->stage]);
       nir->info.internal |= is_internal;
       assert(nir->info.stage == stage->stage);
+
+      /* Work around applications that declare shader_call_data variables inside ray generation
+       * shaders. */
+      if (nir->info.stage == MESA_SHADER_RAYGEN)
+         NIR_PASS(_, nir, nir_remove_dead_variables, nir_var_shader_call_data, NULL);
+
       nir_validate_shader(nir, "after spirv_to_nir");
 
       free(spec_entries);
@@ -1200,9 +1206,6 @@ radv_lower_view_index(nir_shader *nir, bool per_primitive)
 void
 radv_lower_io(struct radv_device *device, nir_shader *nir)
 {
-   if (nir->info.stage == MESA_SHADER_COMPUTE)
-      return;
-
    if (nir->info.stage == MESA_SHADER_FRAGMENT) {
       nir_assign_io_var_locations(nir, nir_var_shader_in, &nir->num_inputs, MESA_SHADER_FRAGMENT);
    }
@@ -1447,7 +1450,9 @@ void radv_lower_ngg(struct radv_device *device, struct radv_pipeline_stage *ngg_
    options.gfx_level = device->physical_device->rad_info.gfx_level;
    options.max_workgroup_size = info->workgroup_size;
    options.wave_size = info->wave_size;
+   options.clipdist_enable_mask = info->outinfo.clip_dist_mask | info->outinfo.cull_dist_mask;
    options.vs_output_param_offset = info->outinfo.vs_output_param_offset;
+   options.has_param_exports = info->outinfo.param_exports;
    options.can_cull = nir->info.stage != MESA_SHADER_GEOMETRY && info->has_ngg_culling;
    options.disable_streamout = !device->physical_device->use_ngg_streamout;
    options.has_gen_prim_query = info->has_ngg_prim_query;
@@ -1463,7 +1468,7 @@ void radv_lower_ngg(struct radv_device *device, struct radv_pipeline_stage *ngg_
       options.num_vertices_per_primitive = num_vertices_per_prim;
       options.early_prim_export = info->has_ngg_early_prim_export;
       options.passthrough = info->is_ngg_passthrough;
-      options.primitive_id_location = info->outinfo.export_prim_id ? VARYING_SLOT_PRIMITIVE_ID : -1;
+      options.export_primitive_id = info->outinfo.export_prim_id;
       options.instance_rate_inputs = pl_key->vs.instance_rate_inputs << VERT_ATTRIB_GENERIC0;
 
       NIR_PASS_V(nir, ac_nir_lower_ngg_nogs, &options);
@@ -1478,7 +1483,14 @@ void radv_lower_ngg(struct radv_device *device, struct radv_pipeline_stage *ngg_
       NIR_PASS_V(nir, ac_nir_lower_ngg_gs, &options);
    } else if (nir->info.stage == MESA_SHADER_MESH) {
       bool scratch_ring = false;
-      NIR_PASS_V(nir, ac_nir_lower_ngg_ms, &scratch_ring, info->wave_size, pl_key->has_multiview_view_index);
+      NIR_PASS_V(nir, ac_nir_lower_ngg_ms,
+                 options.gfx_level,
+                 options.clipdist_enable_mask,
+                 options.vs_output_param_offset,
+                 options.has_param_exports,
+                 &scratch_ring,
+                 info->wave_size,
+                 pl_key->has_multiview_view_index);
       ngg_stage->info.ms.needs_ms_scratch_ring = scratch_ring;
    } else {
       unreachable("invalid SW stage passed to radv_lower_ngg");

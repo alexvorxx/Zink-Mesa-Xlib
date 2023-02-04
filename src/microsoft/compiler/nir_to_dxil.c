@@ -2398,15 +2398,6 @@ emit_b2f64(struct ntd_context *ctx, nir_alu_instr *alu, const struct dxil_value 
 }
 
 static bool
-emit_f2b32(struct ntd_context *ctx, nir_alu_instr *alu, const struct dxil_value *val)
-{
-   assert(val);
-
-   const struct dxil_value *zero = dxil_module_get_float_const(&ctx->mod, 0.0f);
-   return emit_cmp(ctx, alu, DXIL_FCMP_UNE, val, zero);
-}
-
-static bool
 emit_f16tof32(struct ntd_context *ctx, nir_alu_instr *alu, const struct dxil_value *val, bool shift)
 {
    if (shift) {
@@ -2716,7 +2707,6 @@ emit_alu(struct ntd_context *ctx, nir_alu_instr *alu)
    case nir_op_u2u64:
       return emit_cast(ctx, alu, src[0]);
 
-   case nir_op_f2b32: return emit_f2b32(ctx, alu, src[0]);
    case nir_op_b2f16: return emit_b2f16(ctx, alu, src[0]);
    case nir_op_b2f32: return emit_b2f32(ctx, alu, src[0]);
    case nir_op_b2f64: return emit_b2f64(ctx, alu, src[0]);

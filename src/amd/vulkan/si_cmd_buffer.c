@@ -511,8 +511,8 @@ si_emit_graphics(struct radv_device *device, struct radeon_cmdbuf *cs)
    if (physical_device->rad_info.gfx_level >= GFX11) {
       /* ACCUM fields changed their meaning. */
       radeon_set_context_reg(cs, R_028B50_VGT_TESS_DISTRIBUTION,
-                                 S_028B50_ACCUM_ISOLINE(255) | S_028B50_ACCUM_TRI(255) |
-                                 S_028B50_ACCUM_QUAD(255) | S_028B50_DONUT_SPLIT_GFX9(24) |
+                                 S_028B50_ACCUM_ISOLINE(128) | S_028B50_ACCUM_TRI(128) |
+                                 S_028B50_ACCUM_QUAD(128) | S_028B50_DONUT_SPLIT_GFX9(24) |
                                  S_028B50_TRAP_SPLIT(6));
    } else if (physical_device->rad_info.gfx_level >= GFX9) {
       radeon_set_context_reg(cs, R_028B50_VGT_TESS_DISTRIBUTION,
@@ -999,7 +999,7 @@ si_cs_emit_write_event_eop(struct radeon_cmdbuf *cs, enum amd_gfx_level gfx_leve
        */
       if (gfx_level == GFX9 && !is_mec) {
          radeon_emit(cs, PKT3(PKT3_EVENT_WRITE, 2, 0));
-         radeon_emit(cs, EVENT_TYPE(EVENT_TYPE_ZPASS_DONE) | EVENT_INDEX(1));
+         radeon_emit(cs, EVENT_TYPE(V_028A90_ZPASS_DONE) | EVENT_INDEX(1));
          radeon_emit(cs, gfx9_eop_bug_va);
          radeon_emit(cs, gfx9_eop_bug_va >> 32);
       }

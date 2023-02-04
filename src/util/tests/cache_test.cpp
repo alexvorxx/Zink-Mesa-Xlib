@@ -121,6 +121,7 @@ cache_exists(struct disk_cache *cache)
    disk_cache_put(cache, key, data, sizeof(data), NULL);
    disk_cache_wait_for_idle(cache);
    void *result = disk_cache_get(cache, key, NULL);
+   disk_cache_remove(cache, key);
 
    free(result);
    return result != NULL;
@@ -761,6 +762,7 @@ TEST_F(Cache, Database)
 #ifndef ENABLE_SHADER_CACHE
    GTEST_SKIP() << "ENABLE_SHADER_CACHE not defined.";
 #else
+   setenv("MESA_DISK_CACHE_DATABASE_NUM_PARTS", "1", 1);
    setenv("MESA_DISK_CACHE_DATABASE", "true", 1);
 
    test_disk_cache_create(mem_ctx, CACHE_DIR_NAME_DB, driver_id);
@@ -786,6 +788,7 @@ TEST_F(Cache, Database)
    test_put_and_get_between_instances_with_eviction(driver_id);
 
    setenv("MESA_DISK_CACHE_DATABASE", "false", 1);
+   unsetenv("MESA_DISK_CACHE_DATABASE_NUM_PARTS");
 
    err = rmrf_local(CACHE_TEST_TMP);
    EXPECT_EQ(err, 0) << "Removing " CACHE_TEST_TMP " again";
@@ -1165,6 +1168,111 @@ TEST_F(Cache, List)
 
    int err = rmrf_local(CACHE_TEST_TMP);
    EXPECT_EQ(err, 0) << "Removing " CACHE_TEST_TMP " again";
+
+   unsetenv("MESA_DISK_CACHE_SINGLE_FILE");
+   unsetenv("MESA_DISK_CACHE_READ_ONLY_FOZ_DBS_DYNAMIC_LIST");
 #endif /* FOZ_DB_UTIL_DYNAMIC_LIST */
 #endif /* ENABLE_SHADER_CACHE */
+}
+
+static void
+test_multipart_eviction(const char *driver_id)
+{
+   const unsigned int entry_size = 512;
+   uint8_t blobs[7][entry_size];
+   cache_key keys[7];
+   unsigned int i;
+   char *result;
+   size_t size;
+
+   setenv("MESA_SHADER_CACHE_MAX_SIZE", "3K", 1);
+   setenv("MESA_DISK_CACHE_DATABASE_EVICTION_SCORE_2X_PERIOD", "1", 1);
+
+   struct disk_cache *cache = disk_cache_create("test", driver_id, 0);
+
+   unsigned int entry_file_size = entry_size;
+   entry_file_size -= sizeof(struct cache_entry_file_data);
+   entry_file_size -= mesa_cache_db_file_entry_size();
+   entry_file_size -= cache->driver_keys_blob_size;
+   entry_file_size -= 4 + 8; /* cache_item_metadata size + room for alignment */
+
+   /*
+    * 1. Allocate 3KB cache in 3 parts, each part is 1KB
+    * 2. Fill up cache with six 512K entries
+    * 3. Touch entries of the first part, which will bump last_access_time
+    *    of the first two cache entries
+    * 4. Insert seventh 512K entry that will cause eviction of the second part
+    * 5. Check that second entry of the second part gone due to eviction and
+    *    others present
+    */
+
+   /* Fill up cache with six 512K entries. */
+   for (i = 0; i < 6; i++) {
+      memset(blobs[i], i, entry_file_size);
+
+      disk_cache_compute_key(cache,  blobs[i], entry_file_size, keys[i]);
+      disk_cache_put(cache, keys[i], blobs[i], entry_file_size, NULL);
+      disk_cache_wait_for_idle(cache);
+
+      result = (char *) disk_cache_get(cache, keys[i], &size);
+      EXPECT_NE(result, nullptr) << "disk_cache_get with existent item (pointer)";
+      EXPECT_EQ(size, entry_file_size) << "disk_cache_get with existent item (size)";
+      free(result);
+
+      /* Ensure that cache entries will have distinct last_access_time
+       * during testing.
+       */
+      if (i % 2 == 0)
+         usleep(100000);
+   }
+
+   /* Touch entries of the first part. Second part becomes outdated */
+   for (i = 0; i < 2; i++) {
+      result = (char *) disk_cache_get(cache, keys[i], &size);
+      EXPECT_NE(result, nullptr) << "disk_cache_get with existent item (pointer)";
+      EXPECT_EQ(size, entry_file_size) << "disk_cache_get with existent item (size)";
+      free(result);
+   }
+
+   /* Insert seventh entry. */
+   memset(blobs[6], 6, entry_file_size);
+   disk_cache_compute_key(cache,  blobs[6], entry_file_size, keys[6]);
+   disk_cache_put(cache, keys[6], blobs[6], entry_file_size, NULL);
+   disk_cache_wait_for_idle(cache);
+
+   /* Check whether third entry of the second part gone and others present. */
+   for (i = 0; i < ARRAY_SIZE(blobs); i++) {
+      result = (char *) disk_cache_get(cache, keys[i], &size);
+      if (i == 2) {
+         EXPECT_EQ(result, nullptr) << "disk_cache_get with non-existent item (pointer)";
+      } else {
+         EXPECT_NE(result, nullptr) << "disk_cache_get with existent item (pointer)";
+         EXPECT_EQ(size, entry_file_size) << "disk_cache_get with existent item (size)";
+      }
+      free(result);
+   }
+
+   disk_cache_destroy(cache);
+}
+
+TEST_F(Cache, DatabaseMultipartEviction)
+{
+   const char *driver_id = "make_check_uncompressed";
+
+#ifndef ENABLE_SHADER_CACHE
+   GTEST_SKIP() << "ENABLE_SHADER_CACHE not defined.";
+#else
+   setenv("MESA_DISK_CACHE_DATABASE_NUM_PARTS", "3", 1);
+   setenv("MESA_DISK_CACHE_DATABASE", "true", 1);
+
+   test_disk_cache_create(mem_ctx, CACHE_DIR_NAME_DB, driver_id);
+
+   test_multipart_eviction(driver_id);
+
+   unsetenv("MESA_DISK_CACHE_DATABASE_NUM_PARTS");
+   unsetenv("MESA_DISK_CACHE_DATABASE");
+
+   int err = rmrf_local(CACHE_TEST_TMP);
+   EXPECT_EQ(err, 0) << "Removing " CACHE_TEST_TMP " again";
+#endif
 }

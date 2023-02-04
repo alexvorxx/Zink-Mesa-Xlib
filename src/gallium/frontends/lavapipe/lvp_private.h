@@ -179,6 +179,7 @@ struct lvp_device {
    struct lvp_instance *                       instance;
    struct lvp_physical_device *physical_device;
    struct pipe_screen *pscreen;
+   void *noop_fs;
    bool poison_mem;
 };
 
@@ -403,6 +404,27 @@ struct lvp_access_info {
    uint64_t buffers_written;
 };
 
+struct lvp_pipeline_nir {
+   int ref_cnt;
+   nir_shader *nir;
+};
+
+static inline void
+lvp_pipeline_nir_ref(struct lvp_pipeline_nir **dst, struct lvp_pipeline_nir *src)
+{
+   struct lvp_pipeline_nir *old_dst = *dst;
+   if (old_dst == src || (old_dst && src && old_dst->nir == src->nir))
+      return;
+
+   if (old_dst && p_atomic_dec_zero(&old_dst->ref_cnt)) {
+      ralloc_free(old_dst->nir);
+      ralloc_free(old_dst);
+   }
+   if (src)
+      p_atomic_inc(&src->ref_cnt);
+   *dst = src;
+}
+
 struct lvp_pipeline {
    struct vk_object_base base;
    struct lvp_device *                          device;
@@ -410,12 +432,11 @@ struct lvp_pipeline {
 
    struct lvp_access_info access[MESA_SHADER_STAGES];
 
-   void *mem_ctx;
    void *state_data;
    bool is_compute_pipeline;
    bool force_min_sample;
-   nir_shader *pipeline_nir[MESA_SHADER_STAGES];
-   nir_shader *tess_ccw;
+   struct lvp_pipeline_nir *pipeline_nir[MESA_SHADER_STAGES];
+   struct lvp_pipeline_nir *tess_ccw;
    void *shader_cso[PIPE_SHADER_TYPES];
    void *tess_ccw_cso;
    struct {
@@ -433,7 +454,13 @@ struct lvp_pipeline {
    bool line_rectangular;
    bool gs_output_lines;
    bool library;
+   bool noop_fs;
+   bool compiled;
+   bool used;
 };
+
+void
+lvp_pipeline_shaders_compile(struct lvp_pipeline *pipeline);
 
 struct lvp_event {
    struct vk_object_base base;

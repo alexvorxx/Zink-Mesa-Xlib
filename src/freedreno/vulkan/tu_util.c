@@ -119,8 +119,6 @@ tu_tiling_config_update_tile_layout(struct tu_framebuffer *fb,
 {
    const uint32_t tile_align_w = pass->tile_align_w;
    uint32_t tile_align_h = dev->physical_device->info->tile_align_h;
-   const uint32_t max_tile_width = dev->physical_device->info->tile_max_w;
-   const uint32_t max_tile_height = dev->physical_device->info->tile_max_h;
    struct tu_tiling_config *tiling = &fb->tiling[gmem_layout];
 
    /* From the Vulkan 1.3.232 spec, under VkFramebufferCreateInfo:
@@ -161,63 +159,73 @@ tu_tiling_config_update_tile_layout(struct tu_framebuffer *fb,
       assert(align(min_layer_stride, gmem_align) == min_layer_stride);
    }
 
-   /* start from 1 tile */
-   tiling->tile_count = (VkExtent2D) {
-      .width = 1,
-      .height = 1,
-   };
-   tiling->tile0 = (VkExtent2D) {
-      .width = util_align_npot(fb->width, tile_align_w),
-      .height = align(fb->height, tile_align_h),
-   };
-
    /* will force to sysmem, don't bother trying to have a valid tile config
     * TODO: just skip all GMEM stuff when sysmem is forced?
     */
-   if (!pass->gmem_pixels[gmem_layout])
+   if (!pass->gmem_pixels[gmem_layout]) {
+      tiling->possible = false;
+      /* Put in dummy values that will assertion fail in register setup using
+       * them, since you shouldn't be doing gmem work if gmem is not possible.
+       */
+      tiling->tile_count = (VkExtent2D) { 1, 1 };
+      tiling->tile0 = (VkExtent2D) { ~0, ~0 };
       return;
-
-   if (TU_DEBUG(FORCEBIN)) {
-      /* start with 2x2 tiles */
-      tiling->tile_count.width = 2;
-      tiling->tile_count.height = 2;
-      tiling->tile0.width = util_align_npot(DIV_ROUND_UP(fb->width, 2), tile_align_w);
-      tiling->tile0.height = align(DIV_ROUND_UP(fb->height, 2), tile_align_h);
    }
 
-   /* do not exceed max tile width */
-   while (tiling->tile0.width > max_tile_width) {
-      tiling->tile_count.width++;
-      tiling->tile0.width =
-         util_align_npot(DIV_ROUND_UP(fb->width, tiling->tile_count.width), tile_align_w);
+   tiling->possible = false;
+
+   uint32_t best_tile_count = ~0;
+   VkExtent2D tile_count;
+   VkExtent2D tile_size;
+   /* There aren't that many different tile widths possible, so just walk all
+    * of them finding which produces the lowest number of bins.
+    */
+   const uint32_t max_tile_width = MIN2(
+      dev->physical_device->info->tile_max_w, align(fb->width, tile_align_w));
+   const uint32_t max_tile_height =
+      MIN2(dev->physical_device->info->tile_max_h,
+           align(fb->height, tile_align_h));
+   for (tile_size.width = tile_align_w; tile_size.width <= max_tile_width;
+        tile_size.width += tile_align_w) {
+      tile_size.height = pass->gmem_pixels[gmem_layout] / (tile_size.width * layers);
+      tile_size.height = MIN2(tile_size.height, max_tile_height);
+      tile_size.height = ROUND_DOWN_TO(tile_size.height, tile_align_h);
+      if (!tile_size.height)
+         continue;
+
+      tile_count.width = DIV_ROUND_UP(fb->width, tile_size.width);
+      tile_count.height = DIV_ROUND_UP(fb->height, tile_size.height);
+
+      /* Drop the height of the tile down to split tiles more evenly across the
+       * screen for a given tile count.
+       */
+      tile_size.height =
+         align(DIV_ROUND_UP(fb->height, tile_count.height), tile_align_h);
+
+      /* Pick the layout with the minimum number of bins (lowest CP overhead
+       * and amount of cache flushing), but the most square tiles in the case
+       * of a tie (likely highest cache locality).
+       */
+      if (tile_count.width * tile_count.height < best_tile_count ||
+          (tile_count.width * tile_count.height == best_tile_count &&
+           abs((int)(tile_size.width - tile_size.height)) <
+              abs((int)(tiling->tile0.width - tiling->tile0.height)))) {
+         tiling->possible = true;
+         tiling->tile0 = tile_size;
+         tiling->tile_count = tile_count;
+         best_tile_count = tile_count.width * tile_count.height;
+      }
    }
 
-   /* do not exceed max tile height */
-   while (tiling->tile0.height > max_tile_height) {
-      tiling->tile_count.height++;
-      tiling->tile0.height =
-         util_align_npot(DIV_ROUND_UP(fb->height, tiling->tile_count.height), tile_align_h);
-   }
-
-   tiling->possible = true;
-
-   /* do not exceed gmem size */
-   while (tiling->tile0.width * tiling->tile0.height * layers > pass->gmem_pixels[gmem_layout]) {
-      if (tiling->tile0.width > MAX2(tile_align_w, tiling->tile0.height)) {
-         tiling->tile_count.width++;
-         tiling->tile0.width =
-            util_align_npot(DIV_ROUND_UP(fb->width, tiling->tile_count.width), tile_align_w);
-      } else {
-         tiling->tile_count.height++;
-         if (DIV_ROUND_UP(fb->height, tiling->tile_count.height) < tile_align_h) {
-            /* Tiling is impossible. This may happen when there is more than
-             * one layer.
-             */
-            tiling->possible = false;
-            return;
-         }
-         tiling->tile0.height =
-            align(DIV_ROUND_UP(fb->height, tiling->tile_count.height), tile_align_h);
+   /* If forcing binning, try to get at least 2 tiles in each direction. */
+   if (TU_DEBUG(FORCEBIN) && tiling->possible) {
+      if (tiling->tile_count.width == 1 && tiling->tile0.width != tile_align_w) {
+         tiling->tile0.width = align(DIV_ROUND_UP(tiling->tile0.width, 2), tile_align_w);
+         tiling->tile_count.width = 2;
+      }
+      if (tiling->tile_count.height == 1 && tiling->tile0.height != tile_align_h) {
+         tiling->tile0.height = align(DIV_ROUND_UP(tiling->tile0.height, 2), tile_align_h);
+         tiling->tile_count.height = 2;
       }
    }
 }

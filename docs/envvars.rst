@@ -86,6 +86,12 @@ Core Mesa environment variables
       print error and performance messages to stderr (or
       ``MESA_LOG_FILE``).
 
+.. envvar:: MESA_PROCESS_NAME
+
+   if set, overrides the process name string used internally for various
+   purposes (e.g. for driconf option matching, logging, artifact storage,
+   etc.).
+
 .. envvar:: MESA_LOG_FILE
 
    specifies a file name for logging all errors, warnings, etc., rather
@@ -167,6 +173,12 @@ Core Mesa environment variables
    features of the given language version if it's higher than what's
    normally reported. (for developers only)
 
+.. envvar:: MESA_DRICONF_EXECUTABLE_OVERRIDE
+
+   if set, overrides the "executable" string used specifically for driconf
+   option matching. This takes higher precedence over more general process
+   name override (e.g. MESA_PROCESS_NAME).
+
 .. envvar:: MESA_SHADER_CACHE_DISABLE
 
    if set to ``true``, disables the on-disk shader cache. If set to
@@ -238,6 +250,17 @@ Core Mesa environment variables
    in ``$XDG_CACHE_HOME/mesa_shader_cache_db`` (if that variable is set)
    or else within ``.cache/mesa_shader_cache_db`` within the user's home
    directory.
+
+.. envvar:: MESA_DISK_CACHE_DATABASE_NUM_PARTS
+
+   specifies number of mesa-db cache parts, default is 50.
+
+.. envvar:: MESA_DISK_CACHE_DATABASE_EVICTION_SCORE_2X_PERIOD
+
+   Mesa-DB cache eviction algorithm calculates weighted score for the
+   cache items. The weight is doubled based on the last access time of
+   cache entry. By default period of weight doubling is set to one month.
+   Period value is given in seconds.
 
 .. envvar:: MESA_DISK_CACHE_READ_ONLY_FOZ_DBS_DYNAMIC_LIST
 

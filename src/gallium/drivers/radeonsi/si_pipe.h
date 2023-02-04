@@ -1006,13 +1006,14 @@ struct si_context {
    unsigned wait_mem_number;
    uint16_t prefetch_L2_mask;
 
-   bool blitter_running;
-   bool suppress_update_ps_colorbuf0_slot;
+   bool blitter_running:1;
+   bool suppress_update_ps_colorbuf0_slot:1;
    bool is_noop:1;
    bool has_graphics:1;
    bool gfx_flush_in_progress : 1;
    bool gfx_last_ib_is_busy : 1;
    bool compute_is_busy : 1;
+   bool gfx11_force_msaa_num_samples_zero:1;
    int8_t pipeline_stats_enabled; /* -1 = unknown, 0 = disabled, 1 = enabled */
 
    unsigned num_gfx_cs_flushes;
@@ -1914,6 +1915,9 @@ static inline bool vi_tc_compat_htile_enabled(struct si_texture *tex, unsigned l
 
 static inline unsigned si_get_ps_iter_samples(struct si_context *sctx)
 {
+   if (sctx->gfx11_force_msaa_num_samples_zero)
+      return 1;
+
    if (sctx->ps_uses_fbfetch)
       return sctx->framebuffer.nr_color_samples;
 
