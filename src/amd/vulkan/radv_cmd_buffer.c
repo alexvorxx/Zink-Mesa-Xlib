@@ -264,6 +264,10 @@ radv_queue_family_to_ring(struct radv_physical_device *physical_device,
       return AMD_IP_COMPUTE;
    case RADV_QUEUE_TRANSFER:
       return AMD_IP_SDMA;
+   case RADV_QUEUE_VIDEO_DEC:
+      return radv_has_uvd(physical_device) ? AMD_IP_UVD : AMD_IP_VCN_DEC;
+   case RADV_QUEUE_VIDEO_ENC:
+      return AMD_IP_VCN_ENC;
    default:
       unreachable("Unknown queue family");
    }
@@ -492,8 +496,9 @@ radv_cmd_buffer_resize_upload_buf(struct radv_cmd_buffer *cmd_buffer, uint64_t m
 }
 
 bool
-radv_cmd_buffer_upload_alloc(struct radv_cmd_buffer *cmd_buffer, unsigned size,
-                             unsigned *out_offset, void **ptr)
+radv_cmd_buffer_upload_alloc_aligned(struct radv_cmd_buffer *cmd_buffer, unsigned size,
+                                     unsigned alignment,
+                                     unsigned *out_offset, void **ptr)
 {
    assert(size % 4 == 0);
 
@@ -508,6 +513,8 @@ radv_cmd_buffer_upload_alloc(struct radv_cmd_buffer *cmd_buffer, unsigned size,
    if ((size & (line_size - 1)) > gap)
       offset = align(offset, line_size);
 
+   if (alignment)
+      offset = align(offset, alignment);
    if (offset + size > cmd_buffer->upload.size) {
       if (!radv_cmd_buffer_resize_upload_buf(cmd_buffer, size))
          return false;
@@ -519,6 +526,13 @@ radv_cmd_buffer_upload_alloc(struct radv_cmd_buffer *cmd_buffer, unsigned size,
 
    cmd_buffer->upload.offset = offset + size;
    return true;
+}
+
+bool
+radv_cmd_buffer_upload_alloc(struct radv_cmd_buffer *cmd_buffer, unsigned size,
+                             unsigned *out_offset, void **ptr)
+{
+   return radv_cmd_buffer_upload_alloc_aligned(cmd_buffer, size, 0, out_offset, ptr);
 }
 
 bool
@@ -1641,6 +1655,8 @@ radv_emit_prefetch_L2(struct radv_cmd_buffer *cmd_buffer, struct radv_graphics_p
 static void
 radv_emit_rbplus_state(struct radv_cmd_buffer *cmd_buffer)
 {
+   assert(cmd_buffer->device->physical_device->rad_info.rbplus_allowed);
+
    const struct radv_dynamic_state *d = &cmd_buffer->state.dynamic;
    struct radv_rendering_state *render = &cmd_buffer->state.render;
 
@@ -1859,19 +1875,6 @@ radv_emit_graphics_pipeline(struct radv_cmd_buffer *cmd_buffer)
    }
 
    radeon_emit_array(cmd_buffer->cs, pipeline->base.cs.buf, pipeline->base.cs.cdw);
-
-   if (pipeline->has_ngg_culling &&
-       pipeline->last_vgt_api_stage != MESA_SHADER_GEOMETRY &&
-       !cmd_buffer->state.last_nggc_settings) {
-      /* The already emitted RSRC2 contains the LDS required for NGG culling.
-       * Culling is currently disabled, so re-emit RSRC2 to reduce LDS usage.
-       * API GS always needs LDS, so this isn't useful there.
-       */
-      struct radv_shader *v = pipeline->base.shaders[pipeline->last_vgt_api_stage];
-      radeon_set_sh_reg(cmd_buffer->cs, R_00B22C_SPI_SHADER_PGM_RSRC2_GS,
-                        (v->config.rsrc2 & C_00B22C_LDS_SIZE) |
-                        S_00B22C_LDS_SIZE(v->info.num_lds_blocks_when_not_culling));
-   }
 
    if (!cmd_buffer->state.emitted_graphics_pipeline ||
        cmd_buffer->state.emitted_graphics_pipeline->base.ctx_cs.cdw != pipeline->base.ctx_cs.cdw ||
@@ -4952,11 +4955,6 @@ static void
 radv_flush_force_vrs_state(struct radv_cmd_buffer *cmd_buffer)
 {
    struct radv_graphics_pipeline *pipeline = cmd_buffer->state.graphics_pipeline;
-   enum amd_gfx_level gfx_level = pipeline->base.device->physical_device->rad_info.gfx_level;
-   const unsigned stage = pipeline->last_vgt_api_stage;
-   struct radv_userdata_info *loc = &pipeline->last_vgt_api_stage_locs[AC_UD_FORCE_VRS_RATES];
-   uint32_t vrs_rates = 0;
-   uint32_t base_reg;
 
    if (!pipeline->force_vrs_per_vertex) {
       /* Un-set the SGPR index so we know to re-emit it later. */
@@ -4964,9 +4962,21 @@ radv_flush_force_vrs_state(struct radv_cmd_buffer *cmd_buffer)
       return;
    }
 
+   struct radv_userdata_info *loc;
+   uint32_t base_reg;
+
+   if (radv_pipeline_has_gs_copy_shader(&pipeline->base)) {
+      loc = &pipeline->base.gs_copy_shader->info.user_sgprs_locs.shader_data[AC_UD_FORCE_VRS_RATES];
+      base_reg = R_00B130_SPI_SHADER_USER_DATA_VS_0;
+   } else {
+      loc = &pipeline->last_vgt_api_stage_locs[AC_UD_FORCE_VRS_RATES];
+      base_reg = pipeline->base.user_data_0[pipeline->last_vgt_api_stage];
+   }
+
    assert(loc->sgpr_idx != -1);
 
-   base_reg = pipeline->base.user_data_0[stage];
+   enum amd_gfx_level gfx_level = pipeline->base.device->physical_device->rad_info.gfx_level;
+   uint32_t vrs_rates = 0;
 
    switch (cmd_buffer->device->force_vrs) {
    case RADV_FORCE_VRS_2x2:
@@ -5597,8 +5607,6 @@ radv_BeginCommandBuffer(VkCommandBuffer commandBuffer, const VkCommandBufferBegi
    cmd_buffer->state.last_sx_ps_downconvert = -1;
    cmd_buffer->state.last_sx_blend_opt_epsilon = -1;
    cmd_buffer->state.last_sx_blend_opt_control = -1;
-   cmd_buffer->state.last_nggc_settings = -1;
-   cmd_buffer->state.last_nggc_settings_sgpr_idx = -1;
    cmd_buffer->state.mesh_shading = false;
    cmd_buffer->state.last_vrs_rates = -1;
    cmd_buffer->state.last_vrs_rates_sgpr_idx = -1;
@@ -6029,7 +6037,8 @@ radv_EndCommandBuffer(VkCommandBuffer commandBuffer)
 
    radv_emit_mip_change_flush_default(cmd_buffer);
 
-   if (cmd_buffer->qf != RADV_QUEUE_TRANSFER) {
+   if (cmd_buffer->qf == RADV_QUEUE_GENERAL ||
+       cmd_buffer->qf == RADV_QUEUE_COMPUTE) {
       if (cmd_buffer->device->physical_device->rad_info.gfx_level == GFX6)
          cmd_buffer->state.flush_bits |=
             RADV_CMD_FLAG_CS_PARTIAL_FLUSH | RADV_CMD_FLAG_PS_PARTIAL_FLUSH | RADV_CMD_FLAG_WB_L2;
@@ -6069,7 +6078,8 @@ radv_EndCommandBuffer(VkCommandBuffer commandBuffer)
    /* Make sure CP DMA is idle at the end of IBs because the kernel
     * doesn't wait for it.
     */
-   si_cp_dma_wait_for_idle(cmd_buffer);
+   if (cmd_buffer->qf != RADV_QUEUE_VIDEO_DEC)
+      si_cp_dma_wait_for_idle(cmd_buffer);
 
    radv_describe_end_cmd_buffer(cmd_buffer);
 
@@ -6132,6 +6142,12 @@ radv_bind_vs_input_state(struct radv_cmd_buffer *cmd_buffer,
 
    cmd_buffer->state.dynamic_vs_input = *src;
 
+   if (cmd_buffer->device->physical_device->rad_info.gfx_level == GFX6 ||
+       cmd_buffer->device->physical_device->rad_info.gfx_level >= GFX10) {
+      cmd_buffer->state.vbo_misaligned_mask = 0;
+      cmd_buffer->state.vbo_misaligned_mask_invalid = src->attribute_mask;
+   }
+
    cmd_buffer->state.dirty |= RADV_CMD_DIRTY_DYNAMIC_VERTEX_INPUT;
 }
 
@@ -6190,6 +6206,7 @@ radv_CmdBindPipeline(VkCommandBuffer commandBuffer, VkPipelineBindPoint pipeline
       }
 
       cmd_buffer->state.mesh_shading = mesh_shading;
+      cmd_buffer->state.has_nggc = graphics_pipeline->has_ngg_culling;
       cmd_buffer->state.dirty |= RADV_CMD_DIRTY_PIPELINE | RADV_CMD_DIRTY_DYNAMIC_VERTEX_INPUT;
       cmd_buffer->push_constant_stages |= graphics_pipeline->active_stages;
 
@@ -7169,10 +7186,6 @@ radv_CmdExecuteCommands(VkCommandBuffer commandBuffer, uint32_t commandBufferCou
       if (secondary->state.last_index_type != -1) {
          primary->state.last_index_type = secondary->state.last_index_type;
       }
-
-      primary->state.last_nggc_settings = secondary->state.last_nggc_settings;
-      primary->state.last_nggc_settings_sgpr_idx = secondary->state.last_nggc_settings_sgpr_idx;
-      primary->state.last_nggc_skip = secondary->state.last_nggc_skip;
 
       primary->state.last_vrs_rates = secondary->state.last_vrs_rates;
       primary->state.last_vrs_rates_sgpr_idx = secondary->state.last_vrs_rates_sgpr_idx;
@@ -8365,36 +8378,6 @@ radv_need_late_scissor_emission(struct radv_cmd_buffer *cmd_buffer,
    return false;
 }
 
-ALWAYS_INLINE static bool
-radv_skip_ngg_culling(struct radv_cmd_buffer *cmd_buffer,
-                      const struct radv_graphics_pipeline *pipeline,
-                      const struct radv_draw_info *draw_info)
-{
-   const struct radv_dynamic_state *d = &cmd_buffer->state.dynamic;
-
-   /* If we have to draw only a few vertices, we get better latency if
-    * we disable NGG culling.
-    *
-    * When tessellation is used, what matters is the number of tessellated
-    * vertices, so let's always assume it's not a small draw.
-    */
-   if (pipeline->last_vgt_api_stage != MESA_SHADER_VERTEX)
-      return false;
-
-   if (!draw_info->indirect && draw_info->count < 128)
-      return true;
-
-   /* With graphics pipeline library, NGG culling is enabled unconditionally because we don't know
-    * the primitive topology at compile time, but we should still disable it dynamically for points
-    * or lines.
-    */
-   unsigned num_vertices_per_prim = si_conv_prim_to_gs_out(d->vk.ia.primitive_topology) + 1;
-   if (num_vertices_per_prim != 3)
-      return true;
-
-   return false;
-}
-
 ALWAYS_INLINE static uint32_t
 radv_get_ngg_culling_settings(struct radv_cmd_buffer *cmd_buffer, bool vp_y_inverted)
 {
@@ -8405,6 +8388,14 @@ radv_get_ngg_culling_settings(struct radv_cmd_buffer *cmd_buffer, bool vp_y_inve
     * The face culling algorithm can delete very tiny triangles (even if unintended).
     */
    if (d->vk.rs.conservative_mode == VK_CONSERVATIVE_RASTERIZATION_MODE_OVERESTIMATE_EXT)
+      return radv_nggc_none;
+
+   /* With graphics pipeline library, NGG culling is unconditionally compiled into shaders
+    * because we don't know the primitive topology at compile time, so we should
+    * disable it dynamically for points or lines.
+    */
+   const unsigned num_vertices_per_prim = si_conv_prim_to_gs_out(d->vk.ia.primitive_topology) + 1;
+   if (num_vertices_per_prim != 3)
       return radv_nggc_none;
 
    /* Cull every triangle when rasterizer discard is enabled. */
@@ -8448,49 +8439,11 @@ radv_get_ngg_culling_settings(struct radv_cmd_buffer *cmd_buffer, bool vp_y_inve
 }
 
 static void
-radv_emit_ngg_culling_state(struct radv_cmd_buffer *cmd_buffer, const struct radv_draw_info *draw_info)
+radv_emit_ngg_culling_state(struct radv_cmd_buffer *cmd_buffer)
 {
-   struct radv_graphics_pipeline *pipeline = cmd_buffer->state.graphics_pipeline;
+   const struct radv_graphics_pipeline *pipeline = cmd_buffer->state.graphics_pipeline;
    const unsigned stage = pipeline->last_vgt_api_stage;
-   const bool nggc_supported = pipeline->has_ngg_culling;
-
-   if (!nggc_supported && !cmd_buffer->state.last_nggc_settings) {
-      /* Current shader doesn't support culling and culling was already disabled:
-       * No further steps needed, just remember the SGPR's location is not set.
-       */
-      cmd_buffer->state.last_nggc_settings_sgpr_idx = -1;
-      return;
-   }
-
-   /* Check dirty flags:
-    * - Dirty pipeline: SGPR index may have changed (we have to re-emit if changed).
-    * - Dirty dynamic flags: culling settings may have changed.
-    */
-   const bool dirty =
-      cmd_buffer->state.dirty &
-      (RADV_CMD_DIRTY_PIPELINE |
-       RADV_CMD_DIRTY_DYNAMIC_CULL_MODE | RADV_CMD_DIRTY_DYNAMIC_FRONT_FACE |
-       RADV_CMD_DIRTY_DYNAMIC_RASTERIZER_DISCARD_ENABLE | RADV_CMD_DIRTY_DYNAMIC_VIEWPORT |
-       RADV_CMD_DIRTY_DYNAMIC_CONSERVATIVE_RAST_MODE | RADV_CMD_DIRTY_DYNAMIC_RASTERIZATION_SAMPLES);
-
-   /* Check small draw status:
-    * For small draw calls, we disable culling by setting the SGPR to 0.
-    */
-   const bool skip = radv_skip_ngg_culling(cmd_buffer, pipeline, draw_info);
-
-   /* See if anything changed. */
-   if (!dirty && skip == cmd_buffer->state.last_nggc_skip)
-      return;
-
-   /* Remember small draw state. */
-   cmd_buffer->state.last_nggc_skip = skip;
-   const struct radv_shader *v = pipeline->base.shaders[stage];
-   assert(v->info.has_ngg_culling == nggc_supported);
-
-   /* Find the user SGPR. */
    const uint32_t base_reg = pipeline->base.user_data_0[stage];
-   const int8_t nggc_sgpr_idx = pipeline->last_vgt_api_stage_locs[AC_UD_NGG_CULLING_SETTINGS].sgpr_idx;
-   assert(!nggc_supported || nggc_sgpr_idx != -1);
 
    /* Get viewport transform. */
    float vp_scale[2], vp_translate[2];
@@ -8499,16 +8452,10 @@ radv_emit_ngg_culling_state(struct radv_cmd_buffer *cmd_buffer, const struct rad
    bool vp_y_inverted = (-vp_scale[1] + vp_translate[1]) > (vp_scale[1] + vp_translate[1]);
 
    /* Get current culling settings. */
-   uint32_t nggc_settings = nggc_supported && !skip
-                            ? radv_get_ngg_culling_settings(cmd_buffer, vp_y_inverted)
-                            : radv_nggc_none;
+   uint32_t nggc_settings = radv_get_ngg_culling_settings(cmd_buffer, vp_y_inverted);
 
-   bool emit_viewport = nggc_settings &&
-                        (cmd_buffer->state.dirty & RADV_CMD_DIRTY_DYNAMIC_VIEWPORT ||
-                         cmd_buffer->state.last_nggc_settings_sgpr_idx != nggc_sgpr_idx ||
-                         !cmd_buffer->state.last_nggc_settings);
-
-   if (emit_viewport) {
+   if (cmd_buffer->state.dirty &
+       (RADV_CMD_DIRTY_PIPELINE | RADV_CMD_DIRTY_DYNAMIC_VIEWPORT | RADV_CMD_DIRTY_DYNAMIC_RASTERIZATION_SAMPLES)) {
       /* Correction for inverted Y */
       if (vp_y_inverted) {
          vp_scale[1] = -vp_scale[1];
@@ -8528,41 +8475,11 @@ radv_emit_ngg_culling_state(struct radv_cmd_buffer *cmd_buffer, const struct rad
       radeon_emit_array(cmd_buffer->cs, vp_reg_values, 4);
    }
 
-   bool emit_settings = nggc_supported &&
-                        (cmd_buffer->state.last_nggc_settings != nggc_settings ||
-                         cmd_buffer->state.last_nggc_settings_sgpr_idx != nggc_sgpr_idx);
+   const int8_t nggc_sgpr_idx =
+      pipeline->last_vgt_api_stage_locs[AC_UD_NGG_CULLING_SETTINGS].sgpr_idx;
+   assert(nggc_sgpr_idx != -1);
 
-   /* This needs to be emitted when culling is turned on
-    * and when it's already on but some settings change.
-    */
-   if (emit_settings) {
-      assert(nggc_sgpr_idx >= 0);
-      radeon_set_sh_reg(cmd_buffer->cs, base_reg + nggc_sgpr_idx * 4, nggc_settings);
-   }
-
-   /* These only need to be emitted when culling is turned on or off,
-    * but not when it stays on and just some settings change.
-    */
-   if (!!cmd_buffer->state.last_nggc_settings != !!nggc_settings) {
-      uint32_t rsrc2 = v->config.rsrc2;
-
-      if (!nggc_settings) {
-         /* Allocate less LDS when culling is disabled. (But GS always needs it.) */
-         if (stage != MESA_SHADER_GEOMETRY)
-            rsrc2 = (rsrc2 & C_00B22C_LDS_SIZE) | S_00B22C_LDS_SIZE(v->info.num_lds_blocks_when_not_culling);
-      }
-
-      /* When the pipeline is dirty and not yet emitted, don't write it here
-       * because radv_emit_graphics_pipeline will overwrite this register.
-       */
-      if (!(cmd_buffer->state.dirty & RADV_CMD_DIRTY_PIPELINE) ||
-          cmd_buffer->state.emitted_graphics_pipeline == pipeline) {
-         radeon_set_sh_reg(cmd_buffer->cs, R_00B22C_SPI_SHADER_PGM_RSRC2_GS, rsrc2);
-      }
-   }
-
-   cmd_buffer->state.last_nggc_settings = nggc_settings;
-   cmd_buffer->state.last_nggc_settings_sgpr_idx = nggc_sgpr_idx;
+   radeon_set_sh_reg(cmd_buffer->cs, base_reg + nggc_sgpr_idx * 4, nggc_settings);
 }
 
 static void
@@ -8592,7 +8509,8 @@ radv_emit_all_graphics_states(struct radv_cmd_buffer *cmd_buffer, const struct r
          if (cmd_buffer->state.graphics_pipeline->need_null_export_workaround &&
              !cmd_buffer->state.col_format_non_compacted)
             cmd_buffer->state.col_format_non_compacted = V_028714_SPI_SHADER_32_R;
-         cmd_buffer->state.dirty |= RADV_CMD_DIRTY_RBPLUS;
+         if (device->physical_device->rad_info.rbplus_allowed)
+            cmd_buffer->state.dirty |= RADV_CMD_DIRTY_RBPLUS;
       }
 
       if (ps_epilog)
@@ -8607,9 +8525,13 @@ radv_emit_all_graphics_states(struct radv_cmd_buffer *cmd_buffer, const struct r
       radv_flush_ngg_query_state(cmd_buffer);
    }
 
-   if (cmd_buffer->device->physical_device->use_ngg_culling &&
-       cmd_buffer->state.graphics_pipeline->is_ngg)
-      radv_emit_ngg_culling_state(cmd_buffer, info);
+   if ((cmd_buffer->state.dirty &
+        (RADV_CMD_DIRTY_PIPELINE | RADV_CMD_DIRTY_DYNAMIC_CULL_MODE |
+         RADV_CMD_DIRTY_DYNAMIC_FRONT_FACE | RADV_CMD_DIRTY_DYNAMIC_RASTERIZER_DISCARD_ENABLE |
+         RADV_CMD_DIRTY_DYNAMIC_VIEWPORT | RADV_CMD_DIRTY_DYNAMIC_CONSERVATIVE_RAST_MODE |
+         RADV_CMD_DIRTY_DYNAMIC_RASTERIZATION_SAMPLES | RADV_CMD_DIRTY_DYNAMIC_PRIMITIVE_TOPOLOGY)) &&
+       cmd_buffer->state.has_nggc)
+      radv_emit_ngg_culling_state(cmd_buffer);
 
    if ((cmd_buffer->state.dirty & (RADV_CMD_DIRTY_DYNAMIC_COLOR_WRITE_MASK |
                                    RADV_CMD_DIRTY_DYNAMIC_RASTERIZATION_SAMPLES |
@@ -9532,29 +9454,6 @@ radv_CmdExecuteGeneratedCommandsNV(VkCommandBuffer commandBuffer, VkBool32 isPre
    radv_after_draw(cmd_buffer);
 }
 
-struct radv_dispatch_info {
-   /**
-    * Determine the layout of the grid (in block units) to be used.
-    */
-   uint32_t blocks[3];
-
-   /**
-    * A starting offset for the grid. If unaligned is set, the offset
-    * must still be aligned.
-    */
-   uint32_t offsets[3];
-   /**
-    * Whether it's an unaligned compute dispatch.
-    */
-   bool unaligned;
-
-   /**
-    * Indirect compute parameters resource.
-    */
-   struct radeon_winsys_bo *indirect;
-   uint64_t va;
-};
-
 static void
 radv_emit_dispatch_packets(struct radv_cmd_buffer *cmd_buffer,
                            struct radv_compute_pipeline *pipeline,
@@ -9577,6 +9476,9 @@ radv_emit_dispatch_packets(struct radv_cmd_buffer *cmd_buffer,
       assert(cmd_buffer->device->physical_device->rad_info.gfx_level >= GFX10);
       dispatch_initiator |= S_00B800_CS_W32_EN(1);
    }
+
+   if (info->ordered)
+      dispatch_initiator &= ~S_00B800_ORDER_MODE(1);
 
    if (info->va) {
       if (info->indirect)
@@ -9795,7 +9697,7 @@ radv_dispatch(struct radv_cmd_buffer *cmd_buffer, const struct radv_dispatch_inf
    radv_cmd_buffer_after_draw(cmd_buffer, RADV_CMD_FLAG_CS_PARTIAL_FLUSH);
 }
 
-static void
+void
 radv_compute_dispatch(struct radv_cmd_buffer *cmd_buffer, const struct radv_dispatch_info *info)
 {
    radv_dispatch(cmd_buffer, info, cmd_buffer->state.compute_pipeline,
@@ -9840,19 +9742,6 @@ radv_unaligned_dispatch(struct radv_cmd_buffer *cmd_buffer, uint32_t x, uint32_t
    info.blocks[0] = x;
    info.blocks[1] = y;
    info.blocks[2] = z;
-   info.unaligned = 1;
-
-   radv_compute_dispatch(cmd_buffer, &info);
-}
-
-void
-radv_indirect_unaligned_dispatch(struct radv_cmd_buffer *cmd_buffer, struct radeon_winsys_bo *bo,
-                                 uint64_t va)
-{
-   struct radv_dispatch_info info = {0};
-
-   info.indirect = bo;
-   info.va = va;
    info.unaligned = 1;
 
    radv_compute_dispatch(cmd_buffer, &info);

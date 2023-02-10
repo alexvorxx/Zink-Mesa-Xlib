@@ -1079,7 +1079,7 @@ vir_has_uniform(struct qinst *inst)
 const struct v3d_compiler *v3d_compiler_init(const struct v3d_device_info *devinfo,
                                              uint32_t max_inline_uniform_buffers);
 void v3d_compiler_free(const struct v3d_compiler *compiler);
-void v3d_optimize_nir(struct v3d_compile *c, struct nir_shader *s, bool allow_copies);
+void v3d_optimize_nir(struct v3d_compile *c, struct nir_shader *s);
 
 uint64_t *v3d_compile(const struct v3d_compiler *compiler,
                       struct v3d_key *key,

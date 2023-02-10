@@ -247,7 +247,7 @@ v3dv_pipeline_get_nir_options(void)
    return &v3dv_nir_options;
 }
 
-static const struct vk_ycbcr_conversion *
+static const struct vk_ycbcr_conversion_state *
 lookup_ycbcr_conversion(const void *_pipeline_layout, uint32_t set,
                         uint32_t binding, uint32_t array_index)
 {
@@ -266,7 +266,7 @@ lookup_ycbcr_conversion(const void *_pipeline_layout, uint32_t set,
       const struct v3dv_sampler *immutable_samplers =
          v3dv_immutable_samplers(set_layout, bind_layout);
       const struct v3dv_sampler *sampler = &immutable_samplers[array_index];
-      return sampler->conversion;
+      return sampler->conversion ? &sampler->conversion->state : NULL;
    } else {
       return NULL;
    }
@@ -312,7 +312,7 @@ preprocess_nir(nir_shader *nir)
    NIR_PASS(_, nir, nir_split_var_copies);
    NIR_PASS(_, nir, nir_split_struct_vars, nir_var_function_temp);
 
-   v3d_optimize_nir(NULL, nir, true);
+   v3d_optimize_nir(NULL, nir);
 
    NIR_PASS(_, nir, nir_lower_explicit_io,
             nir_var_mem_push_const,
@@ -343,7 +343,7 @@ preprocess_nir(nir_shader *nir)
    NIR_PASS(_, nir, nir_lower_frexp);
 
    /* Get rid of split copies */
-   v3d_optimize_nir(NULL, nir, false);
+   v3d_optimize_nir(NULL, nir);
 }
 
 static nir_shader *
@@ -1682,11 +1682,11 @@ link_shaders(nir_shader *producer, nir_shader *consumer)
 
    nir_lower_io_arrays_to_elements(producer, consumer);
 
-   v3d_optimize_nir(NULL, producer, false);
-   v3d_optimize_nir(NULL, consumer, false);
+   v3d_optimize_nir(NULL, producer);
+   v3d_optimize_nir(NULL, consumer);
 
    if (nir_link_opt_varyings(producer, consumer))
-      v3d_optimize_nir(NULL, consumer, false);
+      v3d_optimize_nir(NULL, consumer);
 
    NIR_PASS(_, producer, nir_remove_dead_variables, nir_var_shader_out, NULL);
    NIR_PASS(_, consumer, nir_remove_dead_variables, nir_var_shader_in, NULL);
@@ -1695,8 +1695,8 @@ link_shaders(nir_shader *producer, nir_shader *consumer)
       NIR_PASS(_, producer, nir_lower_global_vars_to_local);
       NIR_PASS(_, consumer, nir_lower_global_vars_to_local);
 
-      v3d_optimize_nir(NULL, producer, false);
-      v3d_optimize_nir(NULL, consumer, false);
+      v3d_optimize_nir(NULL, producer);
+      v3d_optimize_nir(NULL, consumer);
 
       /* Optimizations can cause varyings to become unused.
        * nir_compact_varyings() depends on all dead varyings being removed so
@@ -3199,7 +3199,7 @@ pipeline_compile_compute(struct v3dv_pipeline *pipeline,
    p_stage->nir = pipeline_stage_get_nir(p_stage, pipeline, cache);
    assert(p_stage->nir);
 
-   v3d_optimize_nir(NULL, p_stage->nir, false);
+   v3d_optimize_nir(NULL, p_stage->nir);
    pipeline_lower_nir(pipeline, p_stage, pipeline->layout);
    lower_cs_shared(p_stage->nir);
 

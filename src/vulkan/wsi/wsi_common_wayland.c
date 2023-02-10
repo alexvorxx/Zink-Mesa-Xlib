@@ -1497,7 +1497,7 @@ wsi_wl_swapchain_acquire_next_image(struct wsi_swapchain *wsi_chain,
       struct timespec current_time;
       clock_gettime(CLOCK_MONOTONIC, &current_time);
       if (timespec_after(&current_time, &end_time))
-         return VK_NOT_READY;
+         return (info->timeout ? VK_TIMEOUT : VK_NOT_READY);
 
       /* Try to read events from the server. */
       ret = wl_display_prepare_read_queue(wsi_wl_surface->display->wl_display,

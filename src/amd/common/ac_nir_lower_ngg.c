@@ -487,6 +487,29 @@ has_input_primitive(nir_builder *b)
 }
 
 static void
+nogs_prim_gen_query(nir_builder *b, lower_ngg_nogs_state *s)
+{
+   if (!s->options->has_gen_prim_query)
+      return;
+
+   nir_if *if_shader_query = nir_push_if(b, nir_load_prim_gen_query_enabled_amd(b));
+   {
+      /* Activate only 1 lane and add the number of primitives to query result. */
+      nir_if *if_elected = nir_push_if(b, nir_elect(b, 1));
+      {
+         /* Number of input primitives in the current wave. */
+         nir_ssa_def *num_input_prims = nir_ubfe(b, nir_load_merged_wave_info_amd(b),
+                                                 nir_imm_int(b, 8), nir_imm_int(b, 8));
+
+         /* Add to stream 0 primitive generated counter. */
+         nir_atomic_add_gen_prim_count_amd(b, num_input_prims, .stream_id = 0);
+      }
+      nir_pop_if(b, if_elected);
+   }
+   nir_pop_if(b, if_shader_query);
+}
+
+static void
 emit_ngg_nogs_prim_export(nir_builder *b, lower_ngg_nogs_state *st, nir_ssa_def *arg)
 {
    nir_ssa_def *gs_thread =
@@ -523,23 +546,6 @@ emit_ngg_nogs_prim_export(nir_builder *b, lower_ngg_nogs_state *st, nir_ssa_def 
             mask = nir_ior(b, mask, nir_ishl_imm(b, edge, 9 + i * 10));
          }
          arg = nir_iand(b, arg, mask);
-      }
-
-      if (st->options->has_gen_prim_query) {
-         nir_if *if_shader_query = nir_push_if(b, nir_load_prim_gen_query_enabled_amd(b));
-         {
-            /* Number of active GS threads. Each has 1 output primitive. */
-            nir_ssa_def *num_gs_threads =
-               nir_bit_count(b, nir_ballot(b, 1, st->options->wave_size, nir_imm_bool(b, true)));
-            /* Activate only 1 lane and add the number of primitives to query result. */
-            nir_if *if_elected = nir_push_if(b, nir_elect(b, 1));
-            {
-               /* Add to stream 0 primitive generated counter. */
-               nir_atomic_add_gen_prim_count_amd(b, num_gs_threads, .stream_id = 0);
-            }
-            nir_pop_if(b, if_elected);
-         }
-         nir_pop_if(b, if_shader_query);
       }
 
       ac_nir_export_primitive(b, arg);
@@ -1378,8 +1384,6 @@ add_deferred_attribute_culling(nir_builder *b, nir_cf_list *original_extracted_c
       nir_local_variable_create(impl, glsl_uint_type(), "repacked_arg_2"),
       nir_local_variable_create(impl, glsl_uint_type(), "repacked_arg_3"),
    };
-
-   b->cursor = nir_before_cf_list(&impl->body);
 
    if (nogs_state->options->clipdist_enable_mask ||
        nogs_state->options->user_clip_plane_enable_mask) {
@@ -2273,6 +2277,11 @@ ac_nir_lower_ngg_nogs(nir_shader *shader, const ac_nir_lower_ngg_options *option
    b->cursor = nir_before_cf_list(&impl->body);
 
    ngg_nogs_init_vertex_indices_vars(b, impl, &state);
+
+   /* Emit primitives generated query code here, so that
+    * it executes before culling and isn't in the extracted CF.
+    */
+   nogs_prim_gen_query(b, &state);
 
    if (!options->can_cull) {
       /* Newer chips can use PRIMGEN_PASSTHRU_NO_MSG to skip gs_alloc_req for NGG passthrough. */

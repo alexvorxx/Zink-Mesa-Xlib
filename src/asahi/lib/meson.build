@@ -29,6 +29,7 @@ endif
 
 libasahi_lib_files = files(
   'agx_bo.c',
+  'agx_border.c',
   agx_device,
   'agx_formats.c',
   'agx_meta.c',

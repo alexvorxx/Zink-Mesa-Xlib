@@ -41,7 +41,7 @@ nir_convert_ycbcr_to_rgb(nir_builder *b,
 
 struct vk_ycbcr_conversion;
 
-typedef const struct vk_ycbcr_conversion *
+typedef const struct vk_ycbcr_conversion_state *
    (*nir_vk_ycbcr_conversion_lookup_cb)(const void *data, uint32_t set,
                                         uint32_t binding, uint32_t array_index);
 

@@ -135,6 +135,7 @@ enum zink_blit_flags {
    ZINK_BLIT_SAVE_FB = 1 << 2,
    ZINK_BLIT_SAVE_TEXTURES = 1 << 3,
    ZINK_BLIT_NO_COND_RENDER = 1 << 4,
+   ZINK_BLIT_SAVE_FS_CONST_BUF = 1 << 5,
 };
 
 enum zink_context_modes {
@@ -395,6 +396,7 @@ struct zink_descriptor_template {
 /* ctx->dd; created at context creation */
 struct zink_descriptor_data {
    bool bindless_bound;
+   bool bindless_init;
    bool has_fbfetch;
    bool push_state_changed[2]; //gfx, compute
    uint8_t state_changed[2]; //gfx, compute
@@ -404,7 +406,6 @@ struct zink_descriptor_data {
 
    struct zink_descriptor_layout *dummy_dsl;
 
-   VkDescriptorSetLayout bindless_layout;
    union {
       struct {
          VkDescriptorPool bindless_pool;
@@ -744,8 +745,22 @@ struct zink_shader {
    bool has_uniforms;
    struct spirv_shader *spirv;
 
+   struct {
+      struct util_queue_fence fence;
+      VkShaderModule mod;
+      VkDescriptorSetLayout dsl;
+      VkPipelineLayout layout;
+      VkPipeline gpl;
+      VkDescriptorSetLayoutBinding *bindings;
+      unsigned num_bindings;
+      struct zink_descriptor_template *db_template;
+      unsigned db_size;
+      unsigned *db_offset;
+   } precompile;
+
    simple_mtx_t lock;
    struct set *programs;
+   struct util_dynarray pipeline_libs;
 
    union {
       struct {
@@ -982,33 +997,48 @@ struct zink_gfx_pipeline_cache_entry {
    VkPipeline unoptimized_pipeline;
 };
 
+struct zink_gfx_lib_cache {
+   /* for hashing */
+   struct zink_shader *shaders[ZINK_GFX_SHADER_COUNT];
+   unsigned refcount;
+   bool removed; //once removed from cache
+
+   simple_mtx_t lock;
+   struct set libs; //zink_gfx_library_key -> VkPipeline
+};
+
 struct zink_gfx_program {
    struct zink_program base;
 
+   bool is_separable; //not a full program
    struct zink_context *ctx; //the owner context
 
    uint32_t stages_present; //mask of stages present in this program
    uint32_t stages_remaining; //mask of zink_shader remaining in this program
-   struct nir_shader *nir[ZINK_GFX_SHADER_COUNT];
-
-   VkShaderModule modules[ZINK_GFX_SHADER_COUNT]; // compute stage doesn't belong here
-   uint32_t module_hash[ZINK_GFX_SHADER_COUNT];
-
-   struct zink_shader *last_vertex_stage;
-
-   struct util_dynarray shader_cache[ZINK_GFX_SHADER_COUNT][2][2]; //normal, nonseamless cubes, inline uniforms
-   unsigned inlined_variant_count[ZINK_GFX_SHADER_COUNT];
+   uint32_t gfx_hash; //from ctx->gfx_hash
 
    struct zink_shader *shaders[ZINK_GFX_SHADER_COUNT];
-   struct hash_table pipelines[2][11]; // [dynamic, renderpass][number of draw modes we support]
+   struct zink_shader *last_vertex_stage;
+
+   /* full */
+   VkShaderModule modules[ZINK_GFX_SHADER_COUNT]; // compute stage doesn't belong here
+   uint32_t module_hash[ZINK_GFX_SHADER_COUNT];
+   struct nir_shader *nir[ZINK_GFX_SHADER_COUNT];
+   struct util_dynarray shader_cache[ZINK_GFX_SHADER_COUNT][2][2]; //normal, nonseamless cubes, inline uniforms
+   unsigned inlined_variant_count[ZINK_GFX_SHADER_COUNT];
    uint32_t default_variant_hash;
-   uint32_t last_variant_hash;
    uint8_t inline_variants; //which stages are using inlined uniforms
 
-   uint32_t last_finalized_hash[2][4]; //[dynamic, renderpass][primtype idx]
-   struct zink_gfx_pipeline_cache_entry *last_pipeline[2][4]; //[dynamic, renderpass][primtype idx]
+   /* separable */
+   struct zink_gfx_program *full_prog;
 
-   struct set libs; //zink_gfx_library_key -> VkPipeline
+   struct hash_table pipelines[2][11]; // [dynamic, renderpass][number of draw modes we support]
+   uint32_t last_variant_hash;
+
+   uint32_t last_finalized_hash[2][4]; //[dynamic, renderpass][primtype idx]
+   VkPipeline last_pipeline[2][4]; //[dynamic, renderpass][primtype idx]
+
+   struct zink_gfx_lib_cache *libs;
 };
 
 struct zink_compute_program {
@@ -1278,12 +1308,16 @@ struct zink_screen {
 
    int drm_fd;
 
-   struct hash_table framebuffer_cache;
-
    struct slab_parent_pool transfer_pool;
    struct disk_cache *disk_cache;
    struct util_queue cache_put_thread;
    struct util_queue cache_get_thread;
+
+   /* there are 5 gfx stages, but VS and FS are assumed to be always present,
+    * thus only 3 stages need to be considered, giving 2^3 = 8 program caches.
+    */
+   struct set pipeline_libs[8];
+   simple_mtx_t pipeline_libs_lock[8];
 
    simple_mtx_t desc_set_layouts_lock;
    struct hash_table desc_set_layouts[ZINK_DESCRIPTOR_BASE_TYPES];
@@ -1292,6 +1326,7 @@ struct zink_screen {
    struct util_live_shader_cache shaders;
 
    uint64_t db_size[ZINK_DESCRIPTOR_ALL_TYPES];
+   VkDescriptorSetLayout bindless_layout;
 
    struct {
       struct pb_cache bo_cache;

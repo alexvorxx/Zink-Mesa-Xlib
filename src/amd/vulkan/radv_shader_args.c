@@ -583,9 +583,7 @@ radv_declare_shader_args(enum amd_gfx_level gfx_level, const struct radv_pipelin
    allocate_user_sgprs(gfx_level, info, args, stage, has_previous_stage, previous_stage,
                        needs_view_index, has_ngg_query, has_ngg_provoking_vtx, key, &user_sgpr_info);
 
-   if (args->explicit_scratch_args) {
-      ac_add_arg(&args->ac, AC_ARG_SGPR, 2, AC_ARG_CONST_DESC_PTR, &args->ring_offsets);
-   }
+   ac_add_arg(&args->ac, AC_ARG_SGPR, 2, AC_ARG_CONST_DESC_PTR, &args->ac.ring_offsets);
    if (stage == MESA_SHADER_TASK) {
       ac_add_arg(&args->ac, AC_ARG_SGPR, 2, AC_ARG_CONST_DESC_PTR, &args->task_ring_offsets);
    }
@@ -791,7 +789,8 @@ radv_declare_shader_args(enum amd_gfx_level gfx_level, const struct radv_pipelin
          if (previous_stage == MESA_SHADER_TESS_EVAL && key->dynamic_patch_control_points)
             ac_add_arg(&args->ac, AC_ARG_SGPR, 1, AC_ARG_INT, &args->tes_num_patches);
 
-         if (info->force_vrs_per_vertex) {
+         /* Legacy GS force vrs is handled by GS copy shader. */
+         if (info->force_vrs_per_vertex && info->is_ngg) {
             ac_add_arg(&args->ac, AC_ARG_SGPR, 1, AC_ARG_INT, &args->ac.force_vrs_rates);
          }
 
@@ -972,7 +971,7 @@ void
 radv_declare_ps_epilog_args(enum amd_gfx_level gfx_level, const struct radv_ps_epilog_key *key,
                             struct radv_shader_args *args)
 {
-   ac_add_arg(&args->ac, AC_ARG_SGPR, 2, AC_ARG_CONST_DESC_PTR, &args->ring_offsets);
+   ac_add_arg(&args->ac, AC_ARG_SGPR, 2, AC_ARG_CONST_DESC_PTR, &args->ac.ring_offsets);
    if (gfx_level < GFX11)
       ac_add_arg(&args->ac, AC_ARG_SGPR, 1, AC_ARG_INT, &args->ac.scratch_offset);
 

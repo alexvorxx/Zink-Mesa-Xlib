@@ -33,9 +33,13 @@ struct fd_ringbuffer *fd6_build_user_consts(struct fd6_emit *emit) assert_dt;
 struct fd_ringbuffer *
 fd6_build_driver_params(struct fd6_emit *emit) assert_dt;
 
-void fd6_emit_cs_consts(const struct ir3_shader_variant *v,
-                        struct fd_ringbuffer *ring, struct fd_context *ctx,
-                        const struct pipe_grid_info *info) assert_dt;
+void fd6_emit_cs_driver_params(struct fd_context *ctx,
+                               struct fd_ringbuffer *ring,
+                               struct fd6_compute_state *cs,
+                               const struct pipe_grid_info *info) assert_dt;
+void fd6_emit_cs_user_consts(struct fd_context *ctx,
+                             struct fd_ringbuffer *ring,
+                             struct fd6_compute_state *cs) assert_dt;
 void fd6_emit_immediates(struct fd_screen *screen,
                          const struct ir3_shader_variant *v,
                          struct fd_ringbuffer *ring) assert_dt;

@@ -40,11 +40,7 @@
 static int anv_hal_open(const struct hw_module_t* mod, const char* id, struct hw_device_t** dev);
 static int anv_hal_close(struct hw_device_t *dev);
 
-static void UNUSED
-static_asserts(void)
-{
-   STATIC_ASSERT(HWVULKAN_DISPATCH_MAGIC == ICD_LOADER_MAGIC);
-}
+static_assert(HWVULKAN_DISPATCH_MAGIC == ICD_LOADER_MAGIC, "");
 
 PUBLIC struct hwvulkan_module_t HAL_MODULE_INFO_SYM = {
    .common = {

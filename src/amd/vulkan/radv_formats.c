@@ -697,13 +697,15 @@ radv_physical_device_get_format_properties(struct radv_physical_device *physical
    if (multiplanar || desc->layout == UTIL_FORMAT_LAYOUT_SUBSAMPLED) {
       uint64_t tiling = VK_FORMAT_FEATURE_2_TRANSFER_SRC_BIT |
                         VK_FORMAT_FEATURE_2_TRANSFER_DST_BIT |
-                        VK_FORMAT_FEATURE_2_SAMPLED_IMAGE_BIT |
-                        VK_FORMAT_FEATURE_2_COSITED_CHROMA_SAMPLES_BIT |
-                        VK_FORMAT_FEATURE_2_MIDPOINT_CHROMA_SAMPLES_BIT;
+                        VK_FORMAT_FEATURE_2_SAMPLED_IMAGE_BIT;
 
-      /* The subsampled formats have no support for linear filters. */
-      if (desc->layout != UTIL_FORMAT_LAYOUT_SUBSAMPLED) {
-         tiling |= VK_FORMAT_FEATURE_2_SAMPLED_IMAGE_YCBCR_CONVERSION_LINEAR_FILTER_BIT;
+      if (vk_format_get_ycbcr_info(format)) {
+         tiling |= VK_FORMAT_FEATURE_2_COSITED_CHROMA_SAMPLES_BIT |
+                   VK_FORMAT_FEATURE_2_MIDPOINT_CHROMA_SAMPLES_BIT;
+
+         /* The subsampled formats have no support for linear filters. */
+         if (desc->layout != UTIL_FORMAT_LAYOUT_SUBSAMPLED)
+            tiling |= VK_FORMAT_FEATURE_2_SAMPLED_IMAGE_YCBCR_CONVERSION_LINEAR_FILTER_BIT;
       }
 
       if (multiplanar)

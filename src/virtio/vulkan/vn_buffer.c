@@ -61,6 +61,7 @@ static const VkBufferCreateInfo cache_infos[] = {
                VK_BUFFER_USAGE_INDEX_BUFFER_BIT |
                VK_BUFFER_USAGE_VERTEX_BUFFER_BIT |
                VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT |
+               VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT |
                VK_BUFFER_USAGE_TRANSFORM_FEEDBACK_BUFFER_BIT_EXT |
                VK_BUFFER_USAGE_TRANSFORM_FEEDBACK_COUNTER_BUFFER_BIT_EXT |
                VK_BUFFER_USAGE_CONDITIONAL_RENDERING_BIT_EXT,
@@ -112,6 +113,9 @@ vn_buffer_cache_entries_create(struct vn_device *dev,
       }
       if (!app_exts->EXT_conditional_rendering)
          local_info.usage &= ~VK_BUFFER_USAGE_CONDITIONAL_RENDERING_BIT_EXT;
+      /* TODO check feature enablement instead */
+      if (!app_exts->KHR_buffer_device_address)
+         local_info.usage &= ~VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
 
       result = vn_CreateBuffer(dev_handle, &local_info, alloc, &buf_handle);
       if (result != VK_SUCCESS) {

@@ -386,6 +386,7 @@ public:
    fs_inst *emit_single_fb_write(const brw::fs_builder &bld,
                                  fs_reg color1, fs_reg color2,
                                  fs_reg src0_alpha, unsigned components);
+   void do_emit_fb_writes(int nr_color_regions, bool replicate_alpha);
    void emit_fb_writes();
    fs_inst *emit_non_coherent_fb_read(const brw::fs_builder &bld,
                                       const fs_reg &dst, unsigned target);
@@ -625,12 +626,6 @@ private:
                                                  struct brw_reg dst,
                                                  struct brw_reg index);
 
-   void generate_pixel_interpolator_query(fs_inst *inst,
-                                          struct brw_reg dst,
-                                          struct brw_reg src,
-                                          struct brw_reg msg_data,
-                                          unsigned msg_type);
-
    void generate_set_sample_id(fs_inst *inst,
                                struct brw_reg dst,
                                struct brw_reg src0,
@@ -725,6 +720,24 @@ namespace brw {
 
       delete[] components;
       return tmp;
+   }
+
+   inline fs_reg
+   dynamic_msaa_flags(const struct brw_wm_prog_data *wm_prog_data)
+   {
+      return fs_reg(UNIFORM, wm_prog_data->msaa_flags_param,
+                    BRW_REGISTER_TYPE_UD);
+   }
+
+   inline void
+   check_dynamic_msaa_flag(const fs_builder &bld,
+                           const struct brw_wm_prog_data *wm_prog_data,
+                           enum brw_wm_msaa_flags flag)
+   {
+      fs_inst *inst = bld.AND(bld.null_reg_ud(),
+                              dynamic_msaa_flags(wm_prog_data),
+                              brw_imm_ud(flag));
+      inst->conditional_mod = BRW_CONDITIONAL_NZ;
    }
 
    bool

@@ -57,6 +57,7 @@ enum intel_ds_stall_flag {
    INTEL_DS_CS_STALL_BIT                     = BITFIELD_BIT(12),
    INTEL_DS_UNTYPED_DATAPORT_CACHE_FLUSH_BIT = BITFIELD_BIT(13),
    INTEL_DS_PSS_STALL_SYNC_BIT               = BITFIELD_BIT(14),
+   INTEL_DS_END_OF_PIPE_BIT                  = BITFIELD_BIT(15),
 };
 
 /* Convert internal driver PIPE_CONTROL stall bits to intel_ds_stall_flag. */

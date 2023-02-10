@@ -665,8 +665,10 @@ Blitting
 These methods emulate classic blitter controls.
 
 These methods operate directly on ``pipe_resource`` objects, and stand
-apart from any 3D state in the context.  Blitting functionality may be
-moved to a separate abstraction at some point in the future.
+apart from any 3D state in the context. Each method is assumed to have an
+implicit memory barrier around itself. They do not need any explicit
+``memory_barrier``. Blitting functionality may be moved to a separate
+abstraction at some point in the future.
 
 ``resource_copy_region`` blits a region of a resource to a region of another
 resource, provided that both resources have the same format, or compatible

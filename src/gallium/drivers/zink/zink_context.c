@@ -45,7 +45,9 @@
 #include "util/format/u_format.h"
 #include "util/u_helpers.h"
 #include "util/u_inlines.h"
+#include "util/u_string.h"
 #include "util/u_thread.h"
+#include "util/perf/u_trace.h"
 #include "util/u_cpu_detect.h"
 #include "util/strndup.h"
 #include "nir.h"
@@ -1820,8 +1822,11 @@ zink_set_shader_images(struct pipe_context *pctx,
                res->image_bind_count[p_stage == MESA_SHADER_COMPUTE]++;
                update_res_bind_count(ctx, res, p_stage == MESA_SHADER_COMPUTE, false);
                unbind_shader_image(ctx, p_stage, start_slot + i);
+               image_view->surface = surface;
+            } else {
+               /* create_image_surface will always increment ref */
+               zink_surface_reference(zink_screen(ctx->base.screen), &surface, NULL);
             }
-            image_view->surface = surface;
             finalize_image_bind(ctx, res, p_stage == MESA_SHADER_COMPUTE);
             zink_batch_resource_usage_set(&ctx->batch, res,
                                           zink_resource_access_is_write(access), false);
@@ -4969,6 +4974,13 @@ zink_get_dummy_pipe_surface(struct zink_context *ctx, int samples_index)
 {
    if (!ctx->dummy_surface[samples_index]) {
       ctx->dummy_surface[samples_index] = zink_surface_create_null(ctx, PIPE_TEXTURE_2D, 1024, 1024, BITFIELD_BIT(samples_index));
+      /* This is possibly used with imageLoad which according to GL spec must return 0 */
+      if (!samples_index) {
+         union pipe_color_union color = {0};
+         struct pipe_box box;
+         u_box_2d(0, 0, 1024, 1024, &box);
+         ctx->base.clear_texture(&ctx->base, ctx->dummy_surface[samples_index]->texture, 0, &box, &color);
+      }
    }
    return ctx->dummy_surface[samples_index];
 }
@@ -5154,6 +5166,8 @@ zink_context_create(struct pipe_screen *pscreen, void *priv, unsigned flags)
    }
    ctx->gfx_pipeline_state.rendering_info.sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO;
    ctx->gfx_pipeline_state.rendering_info.pColorAttachmentFormats = ctx->gfx_pipeline_state.rendering_formats;
+   ctx->gfx_pipeline_state.feedback_loop = screen->driver_workarounds.always_feedback_loop;
+   ctx->gfx_pipeline_state.feedback_loop_zs = screen->driver_workarounds.always_feedback_loop_zs;
 
    const uint32_t data[] = {0};
    if (!is_copy_only) {
@@ -5451,4 +5465,43 @@ zink_update_barriers(struct zink_context *ctx, bool is_compute,
       if (!need_barriers->entries)
          break;
    }
+}
+
+/**
+ * Emits a debug marker in the cmd stream to be captured by perfetto during
+ * execution on the GPU.
+ */
+bool
+zink_cmd_debug_marker_begin(struct zink_context *ctx, const char *fmt, ...)
+{
+   struct zink_screen *screen = zink_screen(ctx->base.screen);
+
+   if (!screen->instance_info.have_EXT_debug_utils ||
+       !(u_trace_is_enabled(U_TRACE_TYPE_PERFETTO) || u_trace_is_enabled(U_TRACE_TYPE_MARKERS)))
+      return false;
+
+   char *name;
+   va_list va;
+   va_start(va, fmt);
+   int ret = vasprintf(&name, fmt, va);
+   va_end(va);
+
+   if (ret == -1)
+      return false;
+
+   VkDebugUtilsLabelEXT info = { 0 };
+   info.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_LABEL_EXT;
+   info.pLabelName = name;
+
+   VKCTX(CmdBeginDebugUtilsLabelEXT)(ctx->batch.state->cmdbuf, &info);
+
+   free(name);
+   return true;
+}
+
+void
+zink_cmd_debug_marker_end(struct zink_context *ctx, bool emitted)
+{
+   if (emitted)
+      VKCTX(CmdEndDebugUtilsLabelEXT)(ctx->batch.state->cmdbuf);
 }

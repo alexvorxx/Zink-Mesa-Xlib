@@ -394,10 +394,22 @@ u_trace_state_init_once(void)
    }
 }
 
-static void
+void
 u_trace_state_init(void)
 {
    util_call_once(&u_trace_state.once, u_trace_state_init_once);
+}
+
+bool
+u_trace_is_enabled(enum u_trace_type type)
+{
+   /* Active is only tracked in a given u_trace context, so if you're asking us
+    * if U_TRACE_TYPE_PERFETTO (_ENV | _ACTIVE) is enabled, then just check
+    * _ENV ("perfetto tracing is desired, but perfetto might not be running").
+    */
+   type &= ~U_TRACE_TYPE_PERFETTO_ACTIVE;
+
+   return (u_trace_state.enabled_traces & type) == type;
 }
 
 static void

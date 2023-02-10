@@ -1412,6 +1412,9 @@ bool ac_query_gpu_info(int fd, void *dev_p, struct radeon_info *info)
       /* The size must be aligned to 64K per SE and must be at most 16M in total. */
       info->attribute_ring_size_per_se = align(info->attribute_ring_size_per_se, 64 * 1024);
       assert(info->attribute_ring_size_per_se * info->max_se <= 16 * 1024 * 1024);
+
+      info->has_set_reg_pairs = info->pfp_fw_version >= SET_REG_PAIRS_PFP_VERSION;
+      info->has_set_sh_reg_pairs_n = info->pfp_fw_version >= SET_REG_PAIRS_PACKED_N_COUNT14_PFP_VERSION;
    }
 
    set_custom_cu_en_mask(info);
@@ -1600,6 +1603,8 @@ void ac_print_gpu_info(struct radeon_info *info, FILE *f)
    fprintf(f, "    mec_fw_feature = %i\n", info->mec_fw_feature);
    fprintf(f, "    pfp_fw_version = %i\n", info->pfp_fw_version);
    fprintf(f, "    pfp_fw_feature = %i\n", info->pfp_fw_feature);
+   fprintf(f, "    has_set_reg_pairs = %i\n", info->has_set_reg_pairs);
+   fprintf(f, "    has_set_sh_reg_pairs_n = %i\n", info->has_set_sh_reg_pairs_n);
 
    fprintf(f, "Multimedia info:\n");
    fprintf(f, "    vce_encode = %u\n", info->ip[AMD_IP_VCE].num_queues);

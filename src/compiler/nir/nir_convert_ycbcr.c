@@ -148,7 +148,7 @@ struct ycbcr_state {
    nir_ssa_def *image_size;
    nir_tex_instr *origin_tex;
    nir_deref_instr *tex_deref;
-   const struct vk_ycbcr_conversion *conversion;
+   const struct vk_ycbcr_conversion_state *conversion;
    const struct vk_format_ycbcr_info *format_ycbcr_info;
 };
 
@@ -202,7 +202,7 @@ implicit_downsampled_coords(struct ycbcr_state *state,
                             const struct vk_format_ycbcr_plane *format_plane)
 {
    nir_builder *b = state->builder;
-   const struct vk_ycbcr_conversion *conversion = state->conversion;
+   const struct vk_ycbcr_conversion_state *conversion = state->conversion;
    nir_ssa_def *image_size = get_texture_size(state, state->tex_deref);
    nir_ssa_def *comp[4] = { NULL, };
    int c;
@@ -231,7 +231,7 @@ create_plane_tex_instr_implicit(struct ycbcr_state *state,
                                 uint32_t plane)
 {
    nir_builder *b = state->builder;
-   const struct vk_ycbcr_conversion *conversion = state->conversion;
+   const struct vk_ycbcr_conversion_state *conversion = state->conversion;
    const struct vk_format_ycbcr_plane *format_plane =
       &state->format_ycbcr_info->planes[plane];
    nir_tex_instr *old_tex = state->origin_tex;
@@ -337,7 +337,7 @@ lower_ycbcr_tex_instr(nir_builder *b, nir_instr *instr, void *_state)
       array_index = nir_src_as_uint(deref->arr.index);
    }
 
-   const struct vk_ycbcr_conversion *conversion =
+   const struct vk_ycbcr_conversion_state *conversion =
       state->cb(state->cb_data, set, binding, array_index);
    if (conversion == NULL)
       return false;

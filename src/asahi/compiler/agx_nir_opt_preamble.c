@@ -25,51 +25,6 @@
 #include "compiler/nir/nir_builder.h"
 #include "agx_compiler.h"
 
-static bool
-nir_scalarize_preamble(struct nir_builder *b, nir_instr *instr,
-                       UNUSED void *data)
-{
-   if (instr->type != nir_instr_type_intrinsic)
-      return false;
-
-   nir_intrinsic_instr *intr = nir_instr_as_intrinsic(instr);
-   if (intr->intrinsic != nir_intrinsic_load_preamble &&
-       intr->intrinsic != nir_intrinsic_store_preamble)
-      return false;
-
-   bool is_load = (intr->intrinsic == nir_intrinsic_load_preamble);
-
-   nir_ssa_def *v = is_load
-                       ? &intr->dest.ssa
-                       : nir_ssa_for_src(b, intr->src[0],
-                                         nir_src_num_components(intr->src[0]));
-
-   if (v->num_components == 1)
-      return false;
-
-   /* Scalarize */
-   b->cursor = nir_before_instr(&intr->instr);
-   unsigned stride = MAX2(v->bit_size / 16, 1);
-   unsigned base = nir_intrinsic_base(intr);
-
-   if (is_load) {
-      nir_ssa_def *comps[NIR_MAX_VEC_COMPONENTS];
-      for (unsigned i = 0; i < v->num_components; ++i)
-         comps[i] =
-            nir_load_preamble(b, 1, v->bit_size, .base = base + (i * stride));
-
-      nir_ssa_def_rewrite_uses(v, nir_vec(b, comps, v->num_components));
-   } else {
-      for (unsigned i = 0; i < v->num_components; ++i)
-         nir_store_preamble(b, nir_channel(b, v, i),
-                            .base = base + (i * stride));
-
-      nir_instr_remove(instr);
-   }
-
-   return true;
-}
-
 static void
 def_size(nir_ssa_def *def, unsigned *size, unsigned *align)
 {
@@ -155,17 +110,5 @@ static const nir_opt_preamble_options preamble_options = {
 bool
 agx_nir_opt_preamble(nir_shader *nir, unsigned *preamble_size)
 {
-   bool progress = nir_opt_preamble(nir, &preamble_options, preamble_size);
-
-   /* If nir_opt_preamble made progress, the shader now has
-    * load_preamble/store_preamble intrinsics in it. These need to be
-    * scalarized for the backend to process them appropriately.
-    */
-   if (progress) {
-      nir_shader_instructions_pass(
-         nir, nir_scalarize_preamble,
-         nir_metadata_block_index | nir_metadata_dominance, NULL);
-   }
-
-   return progress;
+   return nir_opt_preamble(nir, &preamble_options, preamble_size);
 }

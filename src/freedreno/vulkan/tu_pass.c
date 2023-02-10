@@ -537,10 +537,19 @@ tu_render_pass_cond_config(struct tu_render_pass *pass)
    for (uint32_t i = 0; i < pass->attachment_count; i++) {
       struct tu_render_pass_attachment *att = &pass->attachments[i];
 
+      /* When there is no geometry in a tile, and there is no other operations to
+       * read/write the tile, we can skip load/store.
+       *
+       * The only other operations are clear and resolve, which disable
+       * conditional load/store.
+       */
       att->cond_load_allowed =
          (att->load || att->load_stencil) && !att->clear_mask && !att->will_be_resolved;
       att->cond_store_allowed =
          (att->store || att->store_stencil) && !att->clear_mask;
+
+      pass->has_cond_load_store |=
+         att->cond_load_allowed | att->cond_store_allowed;
    }
 }
 

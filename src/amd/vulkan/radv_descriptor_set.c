@@ -170,8 +170,8 @@ radv_CreateDescriptorSetLayout(VkDevice _device, const VkDescriptorSetLayoutCrea
       /* Store block of offsets first, followed by the conversion descriptors (padded to the struct
        * alignment) */
       size += num_bindings * sizeof(uint32_t);
-      size = ALIGN(size, alignof(struct radv_sampler_ycbcr_conversion_state));
-      size += ycbcr_sampler_count * sizeof(struct radv_sampler_ycbcr_conversion_state);
+      size = ALIGN(size, alignof(struct vk_ycbcr_conversion_state));
+      size += ycbcr_sampler_count * sizeof(struct vk_ycbcr_conversion_state);
    }
 
    /* We need to allocate decriptor set layouts off the device allocator with DEVICE scope because
@@ -187,7 +187,7 @@ radv_CreateDescriptorSetLayout(VkDevice _device, const VkDescriptorSetLayoutCrea
 
    /* We just allocate all the samplers at the end of the struct */
    uint32_t *samplers = (uint32_t *)&set_layout->binding[num_bindings];
-   struct radv_sampler_ycbcr_conversion_state *ycbcr_samplers = NULL;
+   struct vk_ycbcr_conversion_state *ycbcr_samplers = NULL;
    uint32_t *ycbcr_sampler_offsets = NULL;
 
    if (ycbcr_sampler_count > 0) {
@@ -197,8 +197,8 @@ radv_CreateDescriptorSetLayout(VkDevice _device, const VkDescriptorSetLayoutCrea
       uintptr_t first_ycbcr_sampler_offset =
          (uintptr_t)ycbcr_sampler_offsets + sizeof(uint32_t) * num_bindings;
       first_ycbcr_sampler_offset =
-         ALIGN(first_ycbcr_sampler_offset, alignof(struct radv_sampler_ycbcr_conversion_state));
-      ycbcr_samplers = (struct radv_sampler_ycbcr_conversion_state *)first_ycbcr_sampler_offset;
+         ALIGN(first_ycbcr_sampler_offset, alignof(struct vk_ycbcr_conversion_state));
+      ycbcr_samplers = (struct vk_ycbcr_conversion_state *)first_ycbcr_sampler_offset;
    } else
       set_layout->ycbcr_sampler_offsets_offset = 0;
 
@@ -250,7 +250,7 @@ radv_CreateDescriptorSetLayout(VkDevice _device, const VkDescriptorSetLayoutCrea
          if (binding->descriptorType == VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER &&
              binding->pImmutableSamplers) {
             for (unsigned i = 0; i < binding->descriptorCount; ++i) {
-               struct radv_sampler_ycbcr_conversion *conversion =
+               struct vk_ycbcr_conversion *conversion =
                   radv_sampler_from_handle(binding->pImmutableSamplers[i])->ycbcr_sampler;
 
                if (conversion) {
@@ -1761,49 +1761,6 @@ radv_GetDescriptorSetHostMappingVALVE(VkDevice _device, VkDescriptorSet descript
 {
    RADV_FROM_HANDLE(radv_descriptor_set, set, descriptorSet);
    *ppData = set->header.mapped_ptr;
-}
-
-VKAPI_ATTR VkResult VKAPI_CALL
-radv_CreateSamplerYcbcrConversion(VkDevice _device,
-                                  const VkSamplerYcbcrConversionCreateInfo *pCreateInfo,
-                                  const VkAllocationCallbacks *pAllocator,
-                                  VkSamplerYcbcrConversion *pYcbcrConversion)
-{
-   RADV_FROM_HANDLE(radv_device, device, _device);
-   struct radv_sampler_ycbcr_conversion *conversion = NULL;
-
-   conversion = vk_zalloc2(&device->vk.alloc, pAllocator, sizeof(*conversion), 8,
-                           VK_SYSTEM_ALLOCATION_SCOPE_OBJECT);
-
-   if (conversion == NULL)
-      return vk_error(device, VK_ERROR_OUT_OF_HOST_MEMORY);
-
-   vk_object_base_init(&device->vk, &conversion->base, VK_OBJECT_TYPE_SAMPLER_YCBCR_CONVERSION);
-
-   conversion->state.format = pCreateInfo->format;
-   conversion->state.ycbcr_model = pCreateInfo->ycbcrModel;
-   conversion->state.ycbcr_range = pCreateInfo->ycbcrRange;
-   conversion->state.components = pCreateInfo->components;
-   conversion->state.chroma_offsets[0] = pCreateInfo->xChromaOffset;
-   conversion->state.chroma_offsets[1] = pCreateInfo->yChromaOffset;
-   conversion->state.chroma_filter = pCreateInfo->chromaFilter;
-
-   *pYcbcrConversion = radv_sampler_ycbcr_conversion_to_handle(conversion);
-   return VK_SUCCESS;
-}
-
-VKAPI_ATTR void VKAPI_CALL
-radv_DestroySamplerYcbcrConversion(VkDevice _device, VkSamplerYcbcrConversion ycbcrConversion,
-                                   const VkAllocationCallbacks *pAllocator)
-{
-   RADV_FROM_HANDLE(radv_device, device, _device);
-   RADV_FROM_HANDLE(radv_sampler_ycbcr_conversion, ycbcr_conversion, ycbcrConversion);
-
-   if (!ycbcr_conversion)
-      return;
-
-   vk_object_base_finish(&ycbcr_conversion->base);
-   vk_free2(&device->vk.alloc, pAllocator, ycbcr_conversion);
 }
 
 /* VK_EXT_descriptor_buffer */

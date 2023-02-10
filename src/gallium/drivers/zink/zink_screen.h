@@ -34,6 +34,9 @@ extern "C" {
 extern uint32_t zink_debug;
 struct util_dl_library;
 
+void
+zink_init_screen_pipeline_libs(struct zink_screen *screen);
+
 
 /* update last_finished to account for batch_id wrapping */
 static inline void

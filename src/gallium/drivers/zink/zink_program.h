@@ -149,12 +149,14 @@ get_primtype_idx(enum pipe_prim_type mode)
 struct zink_gfx_program *
 zink_create_gfx_program(struct zink_context *ctx,
                         struct zink_shader **stages,
-                        unsigned vertices_per_patch);
+                        unsigned vertices_per_patch,
+                        uint32_t gfx_hash);
 
 void
 zink_destroy_gfx_program(struct zink_screen *screen,
                          struct zink_gfx_program *prog);
-
+void
+zink_gfx_lib_cache_unref(struct zink_screen *screen, struct zink_gfx_lib_cache *libs);
 void
 zink_program_init(struct zink_context *ctx);
 
@@ -223,7 +225,7 @@ zink_program_reference(struct zink_screen *screen,
 }
 
 VkPipelineLayout
-zink_pipeline_layout_create(struct zink_screen *screen, VkDescriptorSetLayout *dsl, unsigned num_dsl, bool is_compute);
+zink_pipeline_layout_create(struct zink_screen *screen, VkDescriptorSetLayout *dsl, unsigned num_dsl, bool is_compute, VkPipelineLayoutCreateFlags flags);
 
 void
 zink_program_update_compute_pipeline_state(struct zink_context *ctx, struct zink_compute_program *comp, const uint block[3]);
@@ -250,7 +252,7 @@ zink_set_fs_base_key(struct zink_context *ctx)
 }
 
 static inline const struct zink_fs_key_base *
-zink_get_fs_base_key(struct zink_context *ctx)
+zink_get_fs_base_key(const struct zink_context *ctx)
 {
    return zink_screen(ctx->base.screen)->optimal_keys ?
           &ctx->gfx_pipeline_state.shader_keys_optimal.key.fs :
@@ -266,7 +268,7 @@ zink_set_fs_key(struct zink_context *ctx)
 }
 
 static inline const struct zink_fs_key *
-zink_get_fs_key(struct zink_context *ctx)
+zink_get_fs_key(const struct zink_context *ctx)
 {
    assert(!zink_screen(ctx->base.screen)->optimal_keys);
    return &ctx->gfx_pipeline_state.shader_keys.key[MESA_SHADER_FRAGMENT].key.fs;
@@ -281,7 +283,7 @@ zink_set_gs_key(struct zink_context *ctx)
 }
 
 static inline const struct zink_gs_key *
-zink_get_gs_key(struct zink_context *ctx)
+zink_get_gs_key(const struct zink_context *ctx)
 {
    return &ctx->gfx_pipeline_state.shader_keys.key[MESA_SHADER_GEOMETRY].key.gs;
 }
@@ -300,7 +302,7 @@ zink_set_tcs_key_patches(struct zink_context *ctx, uint8_t patch_vertices)
 }
 
 static inline const struct zink_tcs_key *
-zink_get_tcs_key(struct zink_context *ctx)
+zink_get_tcs_key(const struct zink_context *ctx)
 {
    return zink_screen(ctx->base.screen)->optimal_keys ?
           &ctx->gfx_pipeline_state.shader_keys_optimal.key.tcs :
@@ -319,7 +321,7 @@ zink_set_vs_key(struct zink_context *ctx)
 }
 
 static inline const struct zink_vs_key *
-zink_get_vs_key(struct zink_context *ctx)
+zink_get_vs_key(const struct zink_context *ctx)
 {
    assert(!zink_screen(ctx->base.screen)->optimal_keys);
    return &ctx->gfx_pipeline_state.shader_keys.key[MESA_SHADER_VERTEX].key.vs;
@@ -335,7 +337,7 @@ zink_set_last_vertex_key(struct zink_context *ctx)
 }
 
 static inline const struct zink_vs_key_base *
-zink_get_last_vertex_key(struct zink_context *ctx)
+zink_get_last_vertex_key(const struct zink_context *ctx)
 {
    return zink_screen(ctx->base.screen)->optimal_keys ?
           &ctx->gfx_pipeline_state.shader_keys_optimal.key.vs_base :
@@ -346,12 +348,12 @@ static inline void
 zink_set_fs_point_coord_key(struct zink_context *ctx)
 {
    const struct zink_fs_key_base *fs = zink_get_fs_base_key(ctx);
-   bool disable = ctx->gfx_pipeline_state.rast_prim != PIPE_PRIM_POINTS || !ctx->rast_state->base.sprite_coord_enable;
+   bool disable = ctx->gfx_pipeline_state.rast_prim != PIPE_PRIM_POINTS;
    uint8_t coord_replace_bits = disable ? 0 : ctx->rast_state->base.sprite_coord_enable;
-   bool coord_replace_yinvert = disable ? false : !!ctx->rast_state->base.sprite_coord_mode;
-   if (fs->coord_replace_bits != coord_replace_bits || fs->coord_replace_yinvert != coord_replace_yinvert) {
+   bool point_coord_yinvert = disable ? false : !!ctx->rast_state->base.sprite_coord_mode;
+   if (fs->coord_replace_bits != coord_replace_bits || fs->point_coord_yinvert != point_coord_yinvert) {
       zink_set_fs_base_key(ctx)->coord_replace_bits = coord_replace_bits;
-      zink_set_fs_base_key(ctx)->coord_replace_yinvert = coord_replace_yinvert;
+      zink_set_fs_base_key(ctx)->point_coord_yinvert = point_coord_yinvert;
    }
 }
 
@@ -368,7 +370,7 @@ void
 zink_set_primitive_emulation_keys(struct zink_context *ctx);
 
 static inline const struct zink_shader_key_base *
-zink_get_shader_key_base(struct zink_context *ctx, gl_shader_stage pstage)
+zink_get_shader_key_base(const struct zink_context *ctx, gl_shader_stage pstage)
 {
    assert(!zink_screen(ctx->base.screen)->optimal_keys);
    return &ctx->gfx_pipeline_state.shader_keys.key[pstage].base;
@@ -380,6 +382,21 @@ zink_set_shader_key_base(struct zink_context *ctx, gl_shader_stage pstage)
    ctx->dirty_gfx_stages |= BITFIELD_BIT(pstage);
    assert(!zink_screen(ctx->base.screen)->optimal_keys);
    return &ctx->gfx_pipeline_state.shader_keys.key[pstage].base;
+}
+
+ALWAYS_INLINE static bool
+zink_can_use_pipeline_libs(const struct zink_context *ctx)
+{
+   return
+          /* TODO: if there's ever a dynamic render extension with input attachments */
+          !ctx->gfx_pipeline_state.render_pass &&
+          /* this is just terrible */
+          !zink_get_fs_base_key(ctx)->shadow_needs_shader_swizzle &&
+          /* TODO: is sample shading even possible to handle with GPL? */
+          !ctx->gfx_stages[MESA_SHADER_FRAGMENT]->nir->info.fs.uses_sample_shading &&
+          !zink_get_fs_base_key(ctx)->fbfetch_ms &&
+          !ctx->gfx_pipeline_state.force_persample_interp &&
+          !ctx->gfx_pipeline_state.min_samples;
 }
 
 bool

@@ -292,7 +292,7 @@ v3dv_descriptor_map_get_texture_shader_state(struct v3dv_device *device,
 
 static void
 sha1_update_ycbcr_conversion(struct mesa_sha1 *ctx,
-                             const struct vk_ycbcr_conversion *conversion)
+                             const struct vk_ycbcr_conversion_state *conversion)
 {
    SHA1_UPDATE_VALUE(ctx, conversion->format);
    SHA1_UPDATE_VALUE(ctx, conversion->ycbcr_model);
@@ -323,7 +323,7 @@ sha1_update_descriptor_set_binding_layout(struct mesa_sha1 *ctx,
       for (unsigned i = 0; i < layout->array_size; i++) {
          const struct v3dv_sampler *sampler = &immutable_samplers[i];
          if (sampler->conversion)
-            sha1_update_ycbcr_conversion(ctx, sampler->conversion);
+            sha1_update_ycbcr_conversion(ctx, &sampler->conversion->state);
       }
    }
 }

@@ -223,6 +223,9 @@ xsi:schemaLocation="http://nouveau.freedesktop.org/ rules-ng.xsd">
 	<reg32 name="SCRATCH_REG5" offset="0x175"/>
 	<reg32 name="SCRATCH_REG6" offset="0x176"/>
 	<reg32 name="SCRATCH_REG7" offset="0x177"/>
+
+	<!-- new in gen3+ -->
+	<reg32 name="PRED_REG" offset="0x17f"/>
 </domain>
 
 </database>

@@ -165,6 +165,8 @@ struct radeon_info {
    uint32_t mec_fw_feature;
    uint32_t pfp_fw_version;
    uint32_t pfp_fw_feature;
+   bool has_set_reg_pairs;
+   bool has_set_sh_reg_pairs_n;
 
    /* Multimedia info. */
    struct {
@@ -175,7 +177,7 @@ struct radeon_info {
    uint32_t vce_fw_version;
    uint32_t vce_harvest_config;
    struct video_caps_info {
-      struct {
+      struct video_codec_cap {
          uint32_t valid;
          uint32_t max_width;
          uint32_t max_height;

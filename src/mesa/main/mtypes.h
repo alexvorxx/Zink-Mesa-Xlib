@@ -946,6 +946,8 @@ struct gl_texture_object
    GLboolean External;
    GLubyte RequiredTextureImageUnits;
 
+   GLboolean NullTexture; /**< this texture is incomplete and should be passed to the driver as NULL */
+
    /** GL_EXT_memory_object */
    GLenum16 TextureTiling;
 

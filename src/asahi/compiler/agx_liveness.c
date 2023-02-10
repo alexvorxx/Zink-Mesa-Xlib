@@ -107,8 +107,8 @@ agx_compute_liveness(agx_context *ctx)
          /* Make live the corresponding source */
          agx_foreach_phi_in_block(blk, phi) {
             agx_index operand = phi->src[agx_predecessor_index(blk, *pred)];
-            assert(operand.type == AGX_INDEX_NORMAL);
-            BITSET_SET(live, operand.value);
+            if (operand.type == AGX_INDEX_NORMAL)
+               BITSET_SET(live, operand.value);
          }
 
          bool progress = false;

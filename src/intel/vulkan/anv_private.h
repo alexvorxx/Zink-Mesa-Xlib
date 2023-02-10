@@ -90,6 +90,7 @@
 #include "vk_queue.h"
 #include "vk_log.h"
 #include "vk_ycbcr_conversion.h"
+#include "vk_video.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -119,6 +120,7 @@ struct intel_perf_query_result;
 
 #include "anv_android.h"
 #include "anv_entrypoints.h"
+#include "anv_kmd_backend.h"
 #include "isl/isl.h"
 
 #include "dev/intel_debug.h"
@@ -895,7 +897,7 @@ struct anv_memory_heap {
 };
 
 struct anv_memregion {
-   struct drm_i915_gem_memory_class_instance region;
+   const struct intel_memory_class_instance *region;
    uint64_t size;
    uint64_t available;
 };
@@ -924,6 +926,8 @@ struct anv_physical_device {
      * the total system ram to try and avoid running out of RAM.
      */
     bool                                        supports_48bit_addresses;
+    bool                                        video_decode_enabled;
+
     struct brw_compiler *                       compiler;
     struct isl_device                           isl_dev;
     struct intel_perf_config *                    perf;
@@ -1050,6 +1054,8 @@ struct anv_queue {
 
    const struct anv_queue_family *           family;
 
+   struct intel_batch_decode_ctx *           decoder;
+
    uint32_t                                  exec_flags;
 
    /** Synchronization object for debug purposes (DEBUG_SYNC) */
@@ -1113,6 +1119,7 @@ struct anv_device {
 
     struct anv_physical_device *                physical;
     const struct intel_device_info *            info;
+    const struct anv_kmd_backend *              kmd_backend;
     struct isl_device                           isl_dev;
     uint32_t                                    context_id;
     int                                         fd;
@@ -1221,7 +1228,7 @@ struct anv_device {
     pthread_mutex_t                             mutex;
     pthread_cond_t                              queue_submit;
 
-    struct intel_batch_decode_ctx               decoder_ctx;
+    struct intel_batch_decode_ctx               decoder[ANV_MAX_QUEUE_FAMILIES];
     /*
      * When decoding a anv_cmd_buffer, we might need to search for BOs through
      * the cmd_buffer's list.
@@ -1340,11 +1347,7 @@ VkResult anv_queue_submit_simple_batch(struct anv_queue *queue,
 void* anv_gem_mmap(struct anv_device *device, struct anv_bo *bo,
                    uint64_t offset, uint64_t size, uint32_t flags);
 void anv_gem_munmap(struct anv_device *device, void *p, uint64_t size);
-uint32_t anv_gem_create(struct anv_device *device, uint64_t size);
 void anv_gem_close(struct anv_device *device, uint32_t gem_handle);
-uint32_t anv_gem_create_regions(struct anv_device *device, uint64_t anv_bo_size,
-                                uint32_t flags, uint32_t num_regions,
-                                struct drm_i915_gem_memory_class_instance *regions);
 uint32_t anv_gem_userptr(struct anv_device *device, void *mem, size_t size);
 int anv_gem_wait(struct anv_device *device, uint32_t gem_handle, int64_t *timeout_ns);
 int anv_gem_set_tiling(struct anv_device *device, uint32_t gem_handle,
@@ -1353,8 +1356,6 @@ int anv_gem_get_tiling(struct anv_device *device, uint32_t gem_handle);
 int anv_gem_handle_to_fd(struct anv_device *device, uint32_t gem_handle);
 uint32_t anv_gem_fd_to_handle(struct anv_device *device, int fd);
 int anv_gem_set_caching(struct anv_device *device, uint32_t gem_handle, uint32_t caching);
-int anv_i915_query(int fd, uint64_t query_id, void *buffer,
-                   int32_t *buffer_len);
 
 uint64_t anv_vma_alloc(struct anv_device *device,
                        uint64_t size, uint64_t align,
@@ -1863,6 +1864,7 @@ struct anv_descriptor_pool {
    struct vk_object_base base;
 
    struct anv_bo *bo;
+   void *host_bo;
    struct util_vma_heap bo_heap;
 
    struct anv_state_stream surface_state_stream;
@@ -1876,6 +1878,9 @@ struct anv_descriptor_pool {
 
    /** Allocated size of host_mem */
    uint32_t host_mem_size;
+
+   /** Allocated size of descriptor bo (should be equal to bo->size) */
+   uint32_t bo_mem_size;
 
    /**
     * VK_DESCRIPTOR_POOL_CREATE_HOST_ONLY_BIT_EXT. If set, then
@@ -2764,6 +2769,11 @@ struct anv_cmd_buffer {
     * Structure holding tracepoints recorded in the command buffer.
     */
    struct u_trace                               trace;
+
+   struct {
+      struct anv_video_session *vid;
+      struct anv_video_session_params *params;
+   } video;
 };
 
 extern const struct vk_command_buffer_ops anv_cmd_buffer_ops;
@@ -3540,6 +3550,8 @@ struct anv_image {
        */
       bool can_non_zero_fast_clear;
    } planes[3];
+
+   struct anv_image_memory_range vid_dmv_top_surface;
 };
 
 static inline bool
@@ -4081,6 +4093,35 @@ struct anv_acceleration_structure {
    struct anv_address                           address;
 };
 
+struct anv_vid_mem {
+   struct anv_device_memory *mem;
+   VkDeviceSize       offset;
+   VkDeviceSize       size;
+};
+
+#define ANV_VIDEO_MEM_REQS_H264 4
+#define ANV_MB_WIDTH 16
+#define ANV_MB_HEIGHT 16
+
+enum {
+   ANV_VID_MEM_H264_INTRA_ROW_STORE,
+   ANV_VID_MEM_H264_DEBLOCK_FILTER_ROW_STORE,
+   ANV_VID_MEM_H264_BSD_MPC_ROW_SCRATCH,
+   ANV_VID_MEM_H264_MPR_ROW_SCRATCH,
+   ANV_VID_MEM_H264_MAX,
+};
+
+struct anv_video_session {
+   struct vk_video_session vk;
+
+   /* the decoder needs some private memory allocations */
+   struct anv_vid_mem vid_mem[ANV_VID_MEM_H264_MAX];
+};
+
+struct anv_video_session_params {
+   struct vk_video_session_parameters vk;
+};
+
 void
 anv_dump_pipe_bits(enum anv_pipe_bits bits);
 
@@ -4227,6 +4268,12 @@ VK_DEFINE_NONDISP_HANDLE_CASTS(anv_sampler, base, VkSampler,
 VK_DEFINE_NONDISP_HANDLE_CASTS(anv_performance_configuration_intel, base,
                                VkPerformanceConfigurationINTEL,
                                VK_OBJECT_TYPE_PERFORMANCE_CONFIGURATION_INTEL)
+VK_DEFINE_NONDISP_HANDLE_CASTS(anv_video_session, vk.base,
+                               VkVideoSessionKHR,
+                               VK_OBJECT_TYPE_VIDEO_SESSION_KHR)
+VK_DEFINE_NONDISP_HANDLE_CASTS(anv_video_session_params, vk.base,
+                               VkVideoSessionParametersKHR,
+                               VK_OBJECT_TYPE_VIDEO_SESSION_PARAMETERS_KHR)
 
 #define anv_genX(devinfo, thing) ({             \
    __typeof(&gfx9_##thing) genX_thing;          \

@@ -207,6 +207,7 @@ struct st_context
    boolean has_hw_atomics;
 
    boolean validate_all_dirty_states;
+   boolean can_null_texture;
 
    /* driver supports scissored clears */
    boolean can_scissor_clear;
@@ -340,6 +341,11 @@ struct st_context
       bool layers;
       bool use_gs;
    } pbo;
+
+   struct {
+      struct gl_program **progs;
+      struct pipe_resource *bc1_endpoint_buf;
+   } texcompress_compute;
 
    /** for drawing with st_util_vertex */
    struct cso_velems_state util_velems;

@@ -1612,10 +1612,27 @@ patch_IF_ELSE(struct brw_codegen *p,
          brw_inst_set_jip(devinfo, if_inst, br * (else_inst - if_inst + 1));
 	 /* The IF instruction's UIP and ELSE's JIP should point to ENDIF */
          brw_inst_set_uip(devinfo, if_inst, br * (endif_inst - if_inst));
-         brw_inst_set_jip(devinfo, else_inst, br * (endif_inst - else_inst));
+
+         if (devinfo->ver >= 8 && devinfo->ver < 11) {
+            /* Set the ELSE instruction to use branch_ctrl with a join
+             * jump target pointing at the NOP inserted right before
+             * the ENDIF instruction in order to make sure it is
+             * executed in all cases, since attempting to do the same
+             * as on other generations could cause the EU to jump at
+             * the instruction immediately after the ENDIF due to
+             * Wa_220160235, which could cause the program to continue
+             * running with all channels disabled.
+             */
+            brw_inst_set_jip(devinfo, else_inst, br * (endif_inst - else_inst - 1));
+            brw_inst_set_branch_control(devinfo, else_inst, true);
+         } else {
+            brw_inst_set_jip(devinfo, else_inst, br * (endif_inst - else_inst));
+         }
+
          if (devinfo->ver >= 8) {
-            /* Since we don't set branch_ctrl, the ELSE's JIP and UIP both
-             * should point to ENDIF.
+            /* Since we don't set branch_ctrl on Gfx11+, the ELSE's
+             * JIP and UIP both should point to ENDIF on those
+             * platforms.
              */
             brw_inst_set_uip(devinfo, else_inst, br * (endif_inst - else_inst));
          }
@@ -1671,6 +1688,22 @@ brw_ENDIF(struct brw_codegen *p)
    brw_inst *if_inst = NULL;
    brw_inst *tmp;
    bool emit_endif = true;
+
+   assert(p->if_stack_depth > 0);
+
+   if (devinfo->ver >= 8 && devinfo->ver < 11 &&
+       brw_inst_opcode(p->isa, &p->store[p->if_stack[
+                             p->if_stack_depth - 1]]) == BRW_OPCODE_ELSE) {
+      /* Insert a NOP to be specified as join instruction within the
+       * ELSE block, which is valid for an ELSE instruction with
+       * branch_ctrl on.  The ELSE instruction will be set to jump
+       * here instead of to the ENDIF instruction, since attempting to
+       * do the latter would prevent the ENDIF from being executed in
+       * some cases due to Wa_220160235, which could cause the program
+       * to continue running with all channels disabled.
+       */
+      brw_NOP(p);
+   }
 
    /* In single program flow mode, we can express IF and ELSE instructions
     * equivalently as ADD instructions that operate on IP.  On platforms prior
@@ -3343,38 +3376,6 @@ brw_memory_fence(struct brw_codegen *p,
       gfx12_set_memory_fence_message(p, insn, sfid, desc);
    else
       brw_set_memory_fence_message(p, insn, sfid, commit_enable, bti);
-}
-
-void
-brw_pixel_interpolator_query(struct brw_codegen *p,
-                             struct brw_reg dest,
-                             struct brw_reg mrf,
-                             bool noperspective,
-                             bool coarse_pixel_rate,
-                             unsigned mode,
-                             struct brw_reg data,
-                             unsigned msg_length,
-                             unsigned response_length)
-{
-   const struct intel_device_info *devinfo = p->devinfo;
-   const uint16_t exec_size = brw_get_default_exec_size(p);
-   const unsigned slot_group = brw_get_default_group(p) / 16;
-   const unsigned simd_mode = (exec_size == BRW_EXECUTE_16);
-   const unsigned desc =
-      brw_message_desc(devinfo, msg_length, response_length, false) |
-      brw_pixel_interp_desc(devinfo, mode, noperspective, coarse_pixel_rate,
-                            simd_mode, slot_group);
-
-   /* brw_send_indirect_message will automatically use a direct send message
-    * if data is actually immediate.
-    */
-   brw_send_indirect_message(p,
-                             GFX7_SFID_PIXEL_INTERPOLATOR,
-                             dest,
-                             mrf,
-                             vec1(data),
-                             desc,
-                             false);
 }
 
 void

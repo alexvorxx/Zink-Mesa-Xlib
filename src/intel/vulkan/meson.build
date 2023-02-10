@@ -101,6 +101,7 @@ anv_per_hw_ver_files = files(
   'genX_pipeline.c',
   'genX_query.c',
   'genX_state.c',
+  'genX_video.c',
 )
 if with_intel_vk_rt
   anv_per_hw_ver_files += files('genX_acceleration_structure.c',)
@@ -134,6 +135,7 @@ libanv_files = files(
   'i915/anv_batch_chain.h',
   'i915/anv_device.c',
   'i915/anv_device.h',
+  'i915/anv_kmd_backend.c',
   'layers/anv_doom64.c',
   'layers/anv_hitman3.c',
   'anv_allocator.c',
@@ -148,6 +150,8 @@ libanv_files = files(
   'anv_generated_indirect_draws.c',
   'anv_genX.h',
   'anv_image.c',
+  'anv_kmd_backend.c',
+  'anv_kmd_backend.h',
   'anv_measure.c',
   'anv_measure.h',
   'anv_nir.h',
@@ -163,6 +167,7 @@ libanv_files = files(
   'anv_queue.c',
   'anv_util.c',
   'anv_utrace.c',
+  'anv_video.c',
   'anv_wsi.c',
 )
 

@@ -2144,7 +2144,7 @@ static LLVMValueRef get_global_address(struct ac_nir_context *ctx,
       LLVMTypeRef i8_ptr_type = LLVMPointerType(ctx->ac.i8, AC_ADDR_SPACE_GLOBAL);
       addr = LLVMBuildIntToPtr(ctx->ac.builder, addr, i8_ptr_type, "");
       addr = LLVMBuildGEP2(ctx->ac.builder, ctx->ac.i8, addr, &offset, 1, "");
-      return addr;
+      return LLVMBuildPointerCast(ctx->ac.builder, addr, ptr_type, "");
    } else {
       return LLVMBuildIntToPtr(ctx->ac.builder, addr, ptr_type, "");
    }
@@ -4182,7 +4182,12 @@ static bool visit_intrinsic(struct ac_nir_context *ctx, nir_intrinsic_instr *ins
    case nir_intrinsic_load_scalar_arg_amd:
    case nir_intrinsic_load_vector_arg_amd: {
       assert(nir_intrinsic_base(instr) < AC_MAX_ARGS);
-      result = ac_to_integer(&ctx->ac, LLVMGetParam(ctx->main_function, nir_intrinsic_base(instr)));
+      struct ac_arg arg;
+      arg.arg_index = nir_intrinsic_base(instr);
+      arg.used = true;
+      result = ac_to_integer(&ctx->ac, ac_get_arg(&ctx->ac, arg));
+      if (ac_get_elem_bits(&ctx->ac, LLVMTypeOf(result)) != 32)
+         result = LLVMBuildBitCast(ctx->ac.builder, result, get_def_type(ctx, &instr->dest.ssa), "");
       break;
    }
    case nir_intrinsic_load_smem_amd: {

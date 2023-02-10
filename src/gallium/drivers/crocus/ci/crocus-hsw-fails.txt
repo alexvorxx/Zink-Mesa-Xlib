@@ -10,6 +10,9 @@ spec@!opengl 1.0@gl-1.0-swapbuffers-behavior,Fail
 # Compat mode failure
 spec@!opengl 1.0@rasterpos,Fail
 
+spec@!opengl 1.1@line-smooth-coverage,Fail
+spec@!opengl 1.1@line-smooth-stipple,Fail
+
 spec@!opengl 1.1@linestipple,Fail
 spec@!opengl 1.1@linestipple@Factor 2x,Fail
 spec@!opengl 1.1@linestipple@Factor 3x,Fail
@@ -25,8 +28,6 @@ spec@!opengl 3.2@gl-3.2-adj-prims line cull-front pv-first,Fail
 spec@!opengl 3.2@gl-3.2-adj-prims pv-first,Fail
 
 spec@arb_direct_state_access@gettextureimage-formats init-by-rendering,Fail
-
-spec@arb_gpu_shader_fp64@execution@arb_gpu_shader_fp64-vs-non-uniform-control-flow-ssbo,Fail
 
 spec@arb_indirect_parameters@conditional-render,Fail
 spec@arb_indirect_parameters@conditional-render@Query result: Fail. Inverted mode: No.  Points drawn: 6,Fail
@@ -184,6 +185,10 @@ KHR-GL46.direct_state_access.textures_storage_multisample_3d_rgb32i,Fail
 KHR-GL46.direct_state_access.textures_storage_multisample_3d_rgba16i,Fail
 KHR-GL46.direct_state_access.textures_storage_multisample_3d_rgba32i,Fail
 KHR-GL46.direct_state_access.textures_storage_multisample_3d_rgba8i,Fail
+
+# glcts: ../src/compiler/nir/nir.h:127: nir_component_mask: Assertion `nir_num_components_valid(num_components)' failed.
+KHR-GL46.gpu_shader_fp64.fp64.state_query,Crash
+
 KHR-GL46.sample_shading.render.rgba8i.full,Fail
 KHR-GL46.sample_shading.render.rgba8i.half,Fail
 KHR-GL46.sample_shading.render.rgba8i.none,Fail

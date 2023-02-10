@@ -105,17 +105,11 @@ virtio_bo_cpu_prep(struct fd_bo *bo, struct fd_pipe *pipe, uint32_t op)
    if (ret)
       goto out;
 
-   /* If buffer is not shared, then it is not shared with host,
-    * so we don't need to worry about implicit sync in host:
+   /*
+    * The buffer could be shared with other things on the host side
+    * so have to poll the host.  But we only get here with the shared
+    * buffers plus implicit sync.  Hopefully that is rare enough.
     */
-   if (!(bo->alloc_flags & FD_BO_SHARED))
-      goto out;
-
-   /* If buffer is shared, but we are using explicit sync, no
-    * need to fallback to implicit sync in host:
-    */
-   if (pipe && pipe->no_implicit_sync)
-      goto out;
 
    struct msm_ccmd_gem_cpu_prep_req req = {
          .hdr = MSM_CCMD(GEM_CPU_PREP, sizeof(req)),

@@ -792,7 +792,7 @@ bool util_invert_mat4x4(float *out, const float *m);
 static inline float
 util_quantize_lod_bias(float lod)
 {
-   lod = CLAMP(lod, -16, 16);
+   lod = CLAMP(lod, -32, 31);
    return roundf(lod * 256) / 256;
 }
 

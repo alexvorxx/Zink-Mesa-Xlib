@@ -257,7 +257,7 @@ llvmpipe_create_context(struct pipe_screen *screen, void *priv,
    if (!llvmpipe->context)
       goto fail;
 
-#if LLVM_VERSION_MAJOR >= 15
+#if LLVM_VERSION_MAJOR == 15
    LLVMContextSetOpaquePointers(llvmpipe->context, false);
 #endif
 

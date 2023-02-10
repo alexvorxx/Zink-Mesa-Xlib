@@ -40,6 +40,21 @@ agx_const_buffer_ptr(struct agx_batch *batch, struct pipe_constant_buffer *cb)
 }
 
 static uint64_t
+agx_shader_buffer_ptr(struct agx_batch *batch, struct pipe_shader_buffer *sb)
+{
+   if (sb->buffer) {
+      struct agx_resource *rsrc = agx_resource(sb->buffer);
+
+      /* Assume SSBOs are written. TODO: Optimize read-only SSBOs */
+      agx_batch_writes(batch, rsrc);
+
+      return rsrc->bo->ptr.gpu + sb->buffer_offset;
+   } else {
+      return 0;
+   }
+}
+
+static uint64_t
 agx_vertex_buffer_ptr(struct agx_batch *batch, unsigned vbo)
 {
    struct pipe_vertex_buffer vb = batch->ctx->vertex_buffers[vbo];
@@ -66,6 +81,11 @@ agx_upload_uniforms(struct agx_batch *batch, uint64_t textures,
 
    u_foreach_bit(cb, st->cb_mask) {
       uniforms.ubo_base[cb] = agx_const_buffer_ptr(batch, &st->cb[cb]);
+   }
+
+   u_foreach_bit(cb, st->ssbo_mask) {
+      uniforms.ssbo_base[cb] = agx_shader_buffer_ptr(batch, &st->ssbo[cb]);
+      uniforms.ssbo_size[cb] = st->ssbo[cb].buffer_size;
    }
 
    if (stage == PIPE_SHADER_VERTEX) {

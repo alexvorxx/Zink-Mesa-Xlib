@@ -29,9 +29,7 @@
 extern "C" {
 #endif
 
-struct vk_ycbcr_conversion {
-   struct vk_object_base base;
-
+struct vk_ycbcr_conversion_state {
    VkFormat format;
    VkSamplerYcbcrModelConversion ycbcr_model;
    VkSamplerYcbcrRange ycbcr_range;
@@ -39,6 +37,11 @@ struct vk_ycbcr_conversion {
    VkChromaLocation chroma_offsets[2];
    VkFilter chroma_filter;
    bool chroma_reconstruction;
+};
+
+struct vk_ycbcr_conversion {
+   struct vk_object_base base;
+   struct vk_ycbcr_conversion_state state;
 };
 
 VK_DEFINE_NONDISP_HANDLE_CASTS(vk_ycbcr_conversion, base,

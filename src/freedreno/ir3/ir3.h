@@ -2012,7 +2012,7 @@ ir3_COV(struct ir3_block *block, struct ir3_instruction *src, type_t src_type,
 {
    struct ir3_instruction *instr = ir3_instr_create(block, OPC_MOV, 1, 1);
    unsigned dst_flags = (type_size(dst_type) < 32) ? IR3_REG_HALF : 0;
-   unsigned src_flags = (type_size(src_type) < 32) ? IR3_REG_HALF : 0;
+   ASSERTED unsigned src_flags = (type_size(src_type) < 32) ? IR3_REG_HALF : 0;
 
    assert((src->dsts[0]->flags & IR3_REG_HALF) == src_flags);
 

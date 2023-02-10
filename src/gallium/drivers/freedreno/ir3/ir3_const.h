@@ -585,15 +585,12 @@ ir3_emit_fs_consts(const struct ir3_shader_variant *v,
    emit_common_consts(v, ring, ctx, PIPE_SHADER_FRAGMENT);
 }
 
-/* emit compute-shader consts: */
 static inline void
-ir3_emit_cs_consts(const struct ir3_shader_variant *v,
-                   struct fd_ringbuffer *ring, struct fd_context *ctx,
-                   const struct pipe_grid_info *info) assert_dt
+ir3_emit_cs_driver_params(const struct ir3_shader_variant *v,
+                          struct fd_ringbuffer *ring, struct fd_context *ctx,
+                          const struct pipe_grid_info *info)
+   assert_dt
 {
-   assert(gl_shader_stage_is_compute(v->type));
-
-   emit_common_consts(v, ring, ctx, PIPE_SHADER_COMPUTE);
    emit_kernel_params(ctx, v, ring, info);
 
    /* a3xx/a4xx can inject these directly */
@@ -650,4 +647,17 @@ ir3_emit_cs_consts(const struct ir3_shader_variant *v,
          emit_const_user(ring, v, offset * 4, size, compute_params);
       }
    }
+}
+
+/* emit compute-shader consts: */
+static inline void
+ir3_emit_cs_consts(const struct ir3_shader_variant *v,
+                   struct fd_ringbuffer *ring, struct fd_context *ctx,
+                   const struct pipe_grid_info *info) assert_dt
+{
+   assert(gl_shader_stage_is_compute(v->type));
+
+   emit_common_consts(v, ring, ctx, PIPE_SHADER_COMPUTE);
+
+   ir3_emit_cs_driver_params(v, ring, ctx, info);
 }

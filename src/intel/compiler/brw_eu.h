@@ -1671,9 +1671,13 @@ brw_pixel_interp_desc(UNUSED const struct intel_device_info *devinfo,
                       unsigned msg_type,
                       bool noperspective,
                       bool coarse_pixel_rate,
-                      unsigned simd_mode,
-                      unsigned slot_group)
+                      unsigned exec_size,
+                      unsigned group)
 {
+   assert(exec_size == 8 || exec_size == 16);
+   const bool simd_mode = exec_size == 16;
+   const bool slot_group = group >= 16;
+
    assert(devinfo->ver >= 10 || !coarse_pixel_rate);
    return (SET_BITS(slot_group, 11, 11) |
            SET_BITS(msg_type, 13, 12) |

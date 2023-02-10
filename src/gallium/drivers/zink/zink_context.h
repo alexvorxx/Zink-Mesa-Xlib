@@ -253,6 +253,11 @@ zink_get_dummy_pipe_surface(struct zink_context *ctx, int samples_index);
 struct zink_surface *
 zink_get_dummy_surface(struct zink_context *ctx, int samples_index);
 
+bool
+zink_cmd_debug_marker_begin(struct zink_context *ctx, const char *fmt, ...);
+void
+zink_cmd_debug_marker_end(struct zink_context *ctx, bool emitted);
+
 void
 debug_describe_zink_buffer_view(char *buf, const struct zink_buffer_view *ptr);
 

@@ -160,6 +160,9 @@ struct ac_llvm_context {
    bool exports_mrtz;
 
    struct ac_llvm_pointer lds;
+
+   LLVMValueRef ring_offsets;
+   int ring_offsets_index;
 };
 
 void ac_llvm_context_init(struct ac_llvm_context *ctx, struct ac_llvm_compiler *compiler,
@@ -607,7 +610,10 @@ LLVMTypeRef ac_arg_type_to_pointee_type(struct ac_llvm_context *ctx, enum ac_arg
 static inline LLVMValueRef ac_get_arg(struct ac_llvm_context *ctx, struct ac_arg arg)
 {
    assert(arg.used);
-   return LLVMGetParam(ctx->main_function.value, arg.arg_index);
+   if (arg.arg_index == ctx->ring_offsets_index)
+      return ctx->ring_offsets;
+   int offset = arg.arg_index > ctx->ring_offsets_index ? -1 : 0;
+   return LLVMGetParam(ctx->main_function.value, arg.arg_index + offset);
 }
 
 static inline struct ac_llvm_pointer
@@ -615,7 +621,7 @@ ac_get_ptr_arg(struct ac_llvm_context *ctx, const struct ac_shader_args *args, s
 {
    struct ac_llvm_pointer ptr;
    ptr.pointee_type = ac_arg_type_to_pointee_type(ctx, args->args[arg.arg_index].type);
-   ptr.value = LLVMGetParam(ctx->main_function.value, arg.arg_index);
+   ptr.value = ac_get_arg(ctx, arg);
    return ptr;
 }
 

@@ -36,9 +36,7 @@ struct radv_shader_args {
    struct ac_shader_args ac;
 
    struct ac_arg descriptor_sets[MAX_SETS];
-   /* User data 0/1. GFX: descriptor list, Compute: scratch BO */
-   struct ac_arg ring_offsets;
-   /* User data 2/3. same as the descriptor list above but for task shaders. */
+   /* User data 2/3. same as ring_offsets but for task shaders. */
    struct ac_arg task_ring_offsets;
 
    /* Streamout */

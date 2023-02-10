@@ -196,8 +196,6 @@ ir3_compiler_create(struct fd_device *dev, const struct fd_dev_id *dev_id,
 
       compiler->tess_use_shared = dev_info->a6xx.tess_use_shared;
 
-      compiler->storage_16bit = dev_info->a6xx.storage_16bit;
-
       compiler->has_getfiberid = dev_info->a6xx.has_getfiberid;
 
       compiler->has_dp2acc = dev_info->a6xx.has_dp2acc;

@@ -1721,16 +1721,22 @@ opcode: CP_LOAD_STATE4 (30) (4 dwords)
 		<bitfield name="REG" low="0" high="17"/>
 		<!-- the bit to test -->
 		<bitfield name="BIT" low="20" high="24" type="uint"/>
-		<!-- execute CP_WAIT_FOR_ME beforehand -->
-		<bitfield name="WAIT_FOR_ME" pos="25" type="boolean"/>
-		<!--
-			Appears only in:
-				opcode: CP_REG_TEST (39) (4 dwords)
-						{ REG = 0 | BIT = 0 | WAIT_FOR_ME | UNK31 }
-			Seem to force CP_REG_TEST to write false
-		 -->
-		<bitfield name="UNK31" pos="31" type="boolean"/>
+		<!-- skip implied CP_WAIT_FOR_ME -->
+		<bitfield name="SKIP_WAIT_FOR_ME" pos="25" type="boolean"/>
+		<!-- the predicate bit to set (new in gen3+) -->
+		<bitfield name="PRED_BIT" low="26" high="30" type="uint"/>
+		<!-- update the predicate reg directly (new in gen3+) -->
+		<bitfield name="PRED_UPDATE" pos="31" type="boolean"/>
 	</reg32>
+
+        <!--
+		In PRED_UPDATE mode, the predicate reg is updated directly using two
+		more dwords, ignoring other bits:
+
+			PRED_REG = (PRED_REG & ~PRED_MASK) | (PRED_VAL & PRED_MASK);
+	-->
+	<reg32 offset="1" name="PRED_MASK" type="hex"/>
+	<reg32 offset="2" name="PRED_VAL" type="hex"/>
 </domain>
 
 <!-- I *think* this existed at least as far back as a4xx -->
@@ -1746,15 +1752,8 @@ opcode: CP_LOAD_STATE4 (30) (4 dwords)
 	<reg32 offset="0" name="0">
 		<bitfield name="REG0" low="0" high="17" type="hex"/>
 
-		<!--
-			Blob uses them for vkCmdClearAttachments in gmem mode. Examples:
-				opcode: CP_COND_REG_EXEC (47) (3 dwords)
-						{ REG0 = 0 | MODE = PRED_TEST | 0x140000 }
-				opcode: CP_COND_REG_EXEC (47) (3 dwords)
-						{ REG0 = 0 | MODE = PRED_TEST | 0x100000 }
-		-->
-		<bitfield name="UNK18" pos="18" varset="chip" variants="A6XX-" type="boolean"/>
-		<bitfield name="UNK20" pos="20" varset="chip" variants="A6XX-" type="boolean"/>
+		<!-- the predicate bit to test (new in gen3+) -->
+		<bitfield name="PRED_BIT" low="18" high="22" varset="chip" variants="A6XX-" type="uint"/>
 
 		<!--
 			Note: these bits have the same meaning, and use the same

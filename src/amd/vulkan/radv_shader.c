@@ -170,7 +170,7 @@ radv_can_dump_shader_stats(struct radv_device *device, nir_shader *nir)
 }
 
 void
-radv_optimize_nir(struct nir_shader *shader, bool optimize_conservatively, bool allow_copies)
+radv_optimize_nir(struct nir_shader *shader, bool optimize_conservatively)
 {
    bool progress;
 
@@ -180,11 +180,10 @@ radv_optimize_nir(struct nir_shader *shader, bool optimize_conservatively, bool 
       NIR_PASS(progress, shader, nir_split_array_vars, nir_var_function_temp);
       NIR_PASS(progress, shader, nir_shrink_vec_array_vars, nir_var_function_temp);
 
-      if (allow_copies) {
-         /* Only run this pass in the first call to
-          * radv_optimize_nir.  Later calls assume that we've
-          * lowered away any copy_deref instructions and we
-          *  don't want to introduce any more.
+      if (!shader->info.var_copies_lowered) {
+         /* Only run this pass if nir_lower_var_copies was not called
+          * yet. That would lower away any copy_deref instructions and we
+          * don't want to introduce any more.
           */
          NIR_PASS(progress, shader, nir_opt_find_array_copies);
       }
@@ -446,72 +445,6 @@ radv_lower_primitive_shading_rate(nir_shader *nir, enum amd_gfx_level gfx_level)
          progress = true;
          if (nir->info.stage == MESA_SHADER_VERTEX)
             break;
-      }
-      if (nir->info.stage == MESA_SHADER_VERTEX && progress)
-         break;
-   }
-
-   if (progress)
-      nir_metadata_preserve(impl, nir_metadata_block_index | nir_metadata_dominance);
-   else
-      nir_metadata_preserve(impl, nir_metadata_all);
-
-   return progress;
-}
-
-bool
-radv_force_primitive_shading_rate(nir_shader *nir, struct radv_device *device)
-{
-   nir_function_impl *impl = nir_shader_get_entrypoint(nir);
-   bool progress = false;
-
-   nir_builder b;
-   nir_builder_init(&b, impl);
-
-   nir_foreach_block_reverse(block, impl) {
-      nir_foreach_instr_reverse(instr, block) {
-         if (instr->type != nir_instr_type_intrinsic)
-            continue;
-
-         nir_intrinsic_instr *intr = nir_instr_as_intrinsic(instr);
-         if (intr->intrinsic != nir_intrinsic_store_deref)
-            continue;
-
-         nir_variable *var = nir_intrinsic_get_var(intr, 0);
-         if (var->data.mode != nir_var_shader_out ||
-             var->data.location != VARYING_SLOT_POS)
-            continue;
-
-         b.cursor = nir_after_instr(instr);
-
-         nir_ssa_scalar scalar_idx = nir_ssa_scalar_resolved(intr->src[1].ssa, 3);
-
-         /* Use coarse shading if the value of Pos.W can't be determined or if its value is != 1
-          * (typical for non-GUI elements).
-          */
-         if (!nir_ssa_scalar_is_const(scalar_idx) ||
-             nir_ssa_scalar_as_uint(scalar_idx) != 0x3f800000u) {
-
-            var = nir_variable_create(nir, nir_var_shader_out, glsl_int_type(), "vrs rate");
-            var->data.location = VARYING_SLOT_PRIMITIVE_SHADING_RATE;
-            var->data.interpolation = INTERP_MODE_NONE;
-
-            nir_ssa_def *vrs_rates = nir_load_force_vrs_rates_amd(&b);
-
-            nir_ssa_def *pos_w = nir_channel(&b, intr->src[1].ssa, 3);
-            nir_ssa_def *val = nir_bcsel(&b, nir_fneu(&b, pos_w, nir_imm_float(&b, 1.0f)),
-                                             vrs_rates, nir_imm_int(&b, 0));
-
-            nir_deref_instr *deref = nir_build_deref_var(&b, var);
-            nir_store_deref(&b, deref, val, 0x1);
-
-            /* Update outputs_written to reflect that the pass added a new output. */
-            nir->info.outputs_written |= BITFIELD64_BIT(VARYING_SLOT_PRIMITIVE_SHADING_RATE);
-
-            progress = true;
-            if (nir->info.stage == MESA_SHADER_VERTEX)
-               break;
-         }
       }
       if (nir->info.stage == MESA_SHADER_VERTEX && progress)
          break;
@@ -1044,7 +977,7 @@ radv_shader_spirv_to_nir(struct radv_device *device, const struct radv_pipeline_
    NIR_PASS(_, nir, nir_opt_shrink_stores, !device->instance->disable_shrink_image_store);
 
    if (!key->optimisations_disabled)
-      radv_optimize_nir(nir, false, true);
+      radv_optimize_nir(nir, false);
 
    /* We call nir_lower_var_copies() after the first radv_optimize_nir()
     * to remove any copies introduced by nir_opt_find_array_copies().
@@ -1124,7 +1057,7 @@ radv_shader_spirv_to_nir(struct radv_device *device, const struct radv_pipeline_
    if (ac_nir_lower_indirect_derefs(nir, device->physical_device->rad_info.gfx_level) &&
        !key->optimisations_disabled && nir->info.stage != MESA_SHADER_COMPUTE) {
       /* Optimize the lowered code before the linking optimizations. */
-      radv_optimize_nir(nir, false, false);
+      radv_optimize_nir(nir, false);
    }
 
 
@@ -1457,6 +1390,7 @@ void radv_lower_ngg(struct radv_device *device, struct radv_pipeline_stage *ngg_
    options.disable_streamout = !device->physical_device->use_ngg_streamout;
    options.has_gen_prim_query = info->has_ngg_prim_query;
    options.has_xfb_prim_query = info->has_ngg_xfb_query;
+   options.force_vrs = info->force_vrs_per_vertex;
 
    if (nir->info.stage == MESA_SHADER_VERTEX ||
        nir->info.stage == MESA_SHADER_TESS_EVAL) {
@@ -2828,7 +2762,6 @@ radv_get_max_waves(const struct radv_device *device, struct radv_shader *shader,
 {
    struct radeon_info *info = &device->physical_device->rad_info;
    enum amd_gfx_level gfx_level = info->gfx_level;
-   enum radeon_family family = info->family;
    uint8_t wave_size = shader->info.wave_size;
    struct ac_shader_config *conf = &shader->config;
    unsigned max_simd_waves;
@@ -2855,10 +2788,10 @@ radv_get_max_waves(const struct radv_device *device, struct radv_shader *shader,
    if (conf->num_vgprs) {
       unsigned physical_vgprs = info->num_physical_wave64_vgprs_per_simd * (64 / wave_size);
       unsigned vgprs = align(conf->num_vgprs, wave_size == 32 ? 8 : 4);
-      if (family == CHIP_GFX1100 || family == CHIP_GFX1101)
-         vgprs = util_align_npot(vgprs, wave_size == 32 ? 24 : 12);
-      else if (gfx_level == GFX10_3)
-         vgprs = align(vgprs, wave_size == 32 ? 16 : 8);
+      if (gfx_level >= GFX10_3) {
+         unsigned real_vgpr_gran = info->num_physical_wave64_vgprs_per_simd / 64;
+         vgprs = util_align_npot(vgprs, real_vgpr_gran * (wave_size == 32 ? 2 : 1));
+      }
       max_simd_waves = MIN2(max_simd_waves, physical_vgprs / vgprs);
    }
 

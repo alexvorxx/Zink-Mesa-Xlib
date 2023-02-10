@@ -234,6 +234,9 @@ void u_trace_context_process(struct u_trace_context *utctx, bool eof);
 void u_trace_init(struct u_trace *ut, struct u_trace_context *utctx);
 void u_trace_fini(struct u_trace *ut);
 
+void u_trace_state_init(void);
+bool u_trace_is_enabled(enum u_trace_type type);
+
 bool u_trace_has_points(struct u_trace *ut);
 
 struct u_trace_iterator

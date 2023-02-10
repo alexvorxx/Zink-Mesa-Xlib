@@ -637,14 +637,44 @@ fd_bo_cpu_prep(struct fd_bo *bo, struct fd_pipe *pipe, uint32_t op)
     */
    bo_flush(bo);
 
+   /* FD_BO_PREP_FLUSH is purely a frontend flag, and is not seen/handled
+    * by backend or kernel:
+    */
    op &= ~FD_BO_PREP_FLUSH;
 
    if (!op)
       return 0;
 
-   /* FD_BO_PREP_FLUSH is purely a frontend flag, and is not seen/handled
-    * by backend or kernel:
+   /* Wait on fences.. first grab a reference under the fence lock, and then
+    * wait and drop ref.
     */
+   simple_mtx_lock(&fence_lock);
+   unsigned nr = bo->nr_fences;
+   struct fd_fence *fences[nr];
+   for (unsigned i = 0; i < nr; i++)
+      fences[i] = fd_fence_ref_locked(bo->fences[i]);
+   simple_mtx_unlock(&fence_lock);
+
+   for (unsigned i = 0; i < nr; i++) {
+      fd_fence_wait(fences[i]);
+      fd_fence_del(fences[i]);
+   }
+
+   /* expire completed fences */
+   fd_bo_state(bo);
+
+   /* None shared buffers will not have any external usage (ie. fences
+    * that we are not aware of) so nothing more to do.
+    */
+   if (!(bo->alloc_flags & FD_BO_SHARED))
+      return 0;
+
+   /* If buffer is shared, but we are using explicit sync, no need to
+    * fallback to implicit sync:
+    */
+   if (pipe && pipe->no_implicit_sync)
+      return 0;
+
    return bo->funcs->cpu_prep(bo, pipe, op);
 }
 

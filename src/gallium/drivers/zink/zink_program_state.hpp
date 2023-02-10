@@ -66,71 +66,6 @@ get_pipeline_idx(enum pipe_prim_type mode, VkPrimitiveTopology vkmode)
    return vkmode;
 }
 
-/* vertex input pipeline library states with dynamic vertex input: only the topology matters */
-static struct zink_gfx_input_key *
-find_or_create_input_dynamic(struct zink_context *ctx, VkPrimitiveTopology vkmode)
-{
-   uint32_t hash = hash_gfx_input_dynamic(&ctx->gfx_pipeline_state.input);
-   struct set_entry *he = _mesa_set_search_pre_hashed(&ctx->gfx_inputs, hash, &ctx->gfx_pipeline_state.input);
-   if (!he) {
-      struct zink_gfx_input_key *ikey = rzalloc(ctx, struct zink_gfx_input_key);
-      ikey->idx = ctx->gfx_pipeline_state.idx;
-      ikey->pipeline = zink_create_gfx_pipeline_input(zink_screen(ctx->base.screen), &ctx->gfx_pipeline_state, NULL, vkmode);
-      he = _mesa_set_add_pre_hashed(&ctx->gfx_inputs, hash, ikey);
-   }
-   return (struct zink_gfx_input_key *)he->key;
-}
-
-/* vertex input pipeline library states without dynamic vertex input: everything is hashed */
-static struct zink_gfx_input_key *
-find_or_create_input(struct zink_context *ctx, VkPrimitiveTopology vkmode)
-{
-   uint32_t hash = hash_gfx_input(&ctx->gfx_pipeline_state.input);
-   struct set_entry *he = _mesa_set_search_pre_hashed(&ctx->gfx_inputs, hash, &ctx->gfx_pipeline_state.input);
-   if (!he) {
-      struct zink_gfx_input_key *ikey = rzalloc(ctx, struct zink_gfx_input_key);
-      if (ctx->gfx_pipeline_state.uses_dynamic_stride) {
-         memcpy(ikey, &ctx->gfx_pipeline_state.input, offsetof(struct zink_gfx_input_key, vertex_buffers_enabled_mask));
-         ikey->element_state = ctx->gfx_pipeline_state.element_state;
-      } else {
-         memcpy(ikey, &ctx->gfx_pipeline_state.input, offsetof(struct zink_gfx_input_key, pipeline));
-      }
-      ikey->pipeline = zink_create_gfx_pipeline_input(zink_screen(ctx->base.screen), &ctx->gfx_pipeline_state, ikey->element_state->binding_map, vkmode);
-      he = _mesa_set_add_pre_hashed(&ctx->gfx_inputs, hash, ikey);
-   }
-   return (struct zink_gfx_input_key*)he->key;
-}
-
-/* fragment output pipeline library states with dynamic state3 */
-static struct zink_gfx_output_key *
-find_or_create_output_ds3(struct zink_context *ctx)
-{
-   uint32_t hash = hash_gfx_output_ds3(&ctx->gfx_pipeline_state);
-   struct set_entry *he = _mesa_set_search_pre_hashed(&ctx->gfx_outputs, hash, &ctx->gfx_pipeline_state);
-   if (!he) {
-      struct zink_gfx_output_key *okey = rzalloc(ctx, struct zink_gfx_output_key);
-      memcpy(okey, &ctx->gfx_pipeline_state, sizeof(uint32_t));
-      okey->pipeline = zink_create_gfx_pipeline_output(zink_screen(ctx->base.screen), &ctx->gfx_pipeline_state);
-      he = _mesa_set_add_pre_hashed(&ctx->gfx_outputs, hash, okey);
-   }
-   return (struct zink_gfx_output_key*)he->key;
-}
-
-/* fragment output pipeline library states without dynamic state3 */
-static struct zink_gfx_output_key *
-find_or_create_output(struct zink_context *ctx)
-{
-   uint32_t hash = hash_gfx_output(&ctx->gfx_pipeline_state);
-   struct set_entry *he = _mesa_set_search_pre_hashed(&ctx->gfx_outputs, hash, &ctx->gfx_pipeline_state);
-   if (!he) {
-      struct zink_gfx_output_key *okey = rzalloc(ctx, struct zink_gfx_output_key);
-      memcpy(okey, &ctx->gfx_pipeline_state, offsetof(struct zink_gfx_output_key, pipeline));
-      okey->pipeline = zink_create_gfx_pipeline_output(zink_screen(ctx->base.screen), &ctx->gfx_pipeline_state);
-      he = _mesa_set_add_pre_hashed(&ctx->gfx_outputs, hash, okey);
-   }
-   return (struct zink_gfx_output_key*)he->key;
-}
-
 /*
    VUID-vkCmdBindVertexBuffers2-pStrides-06209
    If pStrides is not NULL each element of pStrides must be either 0 or greater than or equal
@@ -230,7 +165,7 @@ zink_get_gfx_pipeline(struct zink_context *ctx,
           !prog->inline_variants && likely(prog->last_pipeline[rp_idx][idx]) &&
           /* this data is too big to compare in the fast-path */
           likely(!prog->shaders[MESA_SHADER_FRAGMENT]->fs.legacy_shadow_mask)) {
-         state->pipeline = prog->last_pipeline[rp_idx][idx]->pipeline;
+         state->pipeline = prog->last_pipeline[rp_idx][idx];
          return state->pipeline;
       }
    }
@@ -251,35 +186,30 @@ zink_get_gfx_pipeline(struct zink_context *ctx,
       /* init the optimized background compile fence */
       util_queue_fence_init(&pc_entry->fence);
       entry = _mesa_hash_table_insert_pre_hashed(&prog->pipelines[rp_idx][idx], state->final_hash, pc_entry, pc_entry);
-      if (HAVE_LIB &&
-          /* TODO: if there's ever a dynamic render extension with input attachments */
-          !ctx->gfx_pipeline_state.render_pass &&
-          /* this is just terrible */
-          !zink_get_fs_base_key(ctx)->shadow_needs_shader_swizzle &&
-          /* TODO: is sample shading even possible to handle with GPL? */
-          !ctx->gfx_stages[MESA_SHADER_FRAGMENT]->nir->info.fs.uses_sample_shading &&
-          !zink_get_fs_base_key(ctx)->fbfetch_ms &&
-          !ctx->gfx_pipeline_state.force_persample_interp &&
-          !ctx->gfx_pipeline_state.min_samples) {
+      if (HAVE_LIB && zink_can_use_pipeline_libs(ctx)) {
          /* this is the graphics pipeline library path: find/construct all partial pipelines */
-         struct set_entry *he = _mesa_set_search(&prog->libs, &ctx->gfx_pipeline_state.optimal_key);
+         simple_mtx_lock(&prog->libs->lock);
+         struct set_entry *he = _mesa_set_search(&prog->libs->libs, &ctx->gfx_pipeline_state.optimal_key);
          struct zink_gfx_library_key *gkey;
-         if (he)
+         if (he) {
             gkey = (struct zink_gfx_library_key *)he->key;
-         else
+         } else {
+            assert(!prog->is_separable);
             gkey = zink_create_pipeline_lib(screen, prog, &ctx->gfx_pipeline_state);
+         }
+         simple_mtx_unlock(&prog->libs->lock);
          struct zink_gfx_input_key *ikey = DYNAMIC_STATE == ZINK_DYNAMIC_VERTEX_INPUT ?
-                                             find_or_create_input_dynamic(ctx, vkmode) :
-                                             find_or_create_input(ctx, vkmode);
+                                             zink_find_or_create_input_dynamic(ctx, vkmode) :
+                                             zink_find_or_create_input(ctx, vkmode);
          struct zink_gfx_output_key *okey = DYNAMIC_STATE >= ZINK_DYNAMIC_STATE3 && screen->have_full_ds3 ?
-                                             find_or_create_output_ds3(ctx) :
-                                             find_or_create_output(ctx);
+                                             zink_find_or_create_output_ds3(ctx) :
+                                             zink_find_or_create_output(ctx);
          /* partial pipelines are stored to the cache entry for async optimized pipeline compiles */
          pc_entry->ikey = ikey;
          pc_entry->gkey = gkey;
          pc_entry->okey = okey;
          /* create the non-optimized pipeline first using fast-linking to avoid stuttering */
-         pipeline = zink_create_gfx_pipeline_combined(screen, prog, ikey->pipeline, gkey->pipeline, okey->pipeline, false);
+         pipeline = zink_create_gfx_pipeline_combined(screen, prog, ikey->pipeline, &gkey->pipeline, 1, okey->pipeline, false);
       } else {
          /* optimize by default only when expecting precompiles in order to reduce stuttering */
          pipeline = zink_create_gfx_pipeline(screen, prog, state, state->element_state->binding_map, vkmode, !HAVE_LIB);
@@ -289,7 +219,7 @@ zink_get_gfx_pipeline(struct zink_context *ctx,
 
       zink_screen_update_pipeline_cache(screen, &prog->base, false);
       pc_entry->pipeline = pipeline;
-      if (HAVE_LIB)
+      if (HAVE_LIB && !prog->is_separable)
          /* trigger async optimized pipeline compile if this was the fast-linked unoptimized pipeline */
          zink_gfx_program_compile_queue(ctx, pc_entry);
    }
@@ -299,7 +229,7 @@ zink_get_gfx_pipeline(struct zink_context *ctx,
    /* update states for fastpath */
    if (DYNAMIC_STATE >= ZINK_DYNAMIC_VERTEX_INPUT) {
       prog->last_finalized_hash[rp_idx][idx] = state->final_hash;
-      prog->last_pipeline[rp_idx][idx] = cache_entry;
+      prog->last_pipeline[rp_idx][idx] = cache_entry->pipeline;
    }
    return state->pipeline;
 }

@@ -1107,6 +1107,13 @@ namespace {
                abort();
             }
 
+         case GFX7_SFID_PIXEL_INTERPOLATOR:
+            if (devinfo->ver >= 7)
+               return calculate_desc(info, EU_UNIT_PI, 2, 0, 0, 14 /* XXX */, 0,
+                                     0, 90 /* XXX */, 0, 0, 0, 0);
+            else
+               abort();
+
          case GFX12_SFID_UGM:
          case GFX12_SFID_TGM:
          case GFX12_SFID_SLM:

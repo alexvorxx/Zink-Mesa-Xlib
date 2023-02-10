@@ -21,3 +21,5 @@ dEQP-VK.memory.pipeline_barrier.all.65536_vertex_buffer_stride_2
 dEQP-VK.memory.pipeline_barrier.all.1048576_vertex_buffer_stride_2
 dEQP-VK.memory.pipeline_barrier.all.65536_vertex_buffer_stride_4
 dEQP-VK.memory.pipeline_barrier.all.1048576_vertex_buffer_stride_4
+
+dEQP-VK.pipeline.fast_linked_library.multisample_interpolation.sample_interpolate_at_ignores_centroid.128_128_1.samples_8

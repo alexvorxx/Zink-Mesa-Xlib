@@ -29,9 +29,7 @@
 
 #include "compiler/shader_enums.h"
 #include "nir/nir.h"
-#include "rogue_build_data.h"
-#include "rogue_nir_helpers.h"
-#include "rogue_operand.h"
+#include "rogue.h"
 #include "util/macros.h"
 
 #define __pvr_address_type uint64_t
@@ -45,17 +43,25 @@
 #undef __pvr_address_type
 
 /**
+ * \file rogue_build_data.c
+ *
+ * \brief Contains functions to collect build data for the driver.
+ */
+
+/* N.B. This will all be hoisted into the driver. */
+
+/**
  * \brief Allocates the coefficient registers that will contain the iterator
  * data for the fragment shader input varyings.
  *
  * \param[in] args The iterator argument data.
  * \return The total number of coefficient registers required by the iterators.
  */
-static size_t alloc_iterator_regs(struct rogue_iterator_args *args)
+static unsigned alloc_iterator_regs(struct rogue_iterator_args *args)
 {
-   size_t coeffs = 0;
+   unsigned coeffs = 0;
 
-   for (size_t u = 0; u < args->num_fpu_iterators; ++u) {
+   for (unsigned u = 0; u < args->num_fpu_iterators; ++u) {
       /* Ensure there aren't any gaps. */
       assert(args->base[u] == ~0);
 
@@ -77,10 +83,10 @@ static size_t alloc_iterator_regs(struct rogue_iterator_args *args)
  * \param[in] components The number of components in the varying.
  */
 static void reserve_iterator(struct rogue_iterator_args *args,
-                             size_t i,
+                             unsigned i,
                              enum glsl_interp_mode type,
                              bool f16,
-                             size_t components)
+                             unsigned components)
 {
    struct ROGUE_PDSINST_DOUT_FIELDS_DOUTI_SRC data = { 0 };
 
@@ -126,6 +132,18 @@ static void reserve_iterator(struct rogue_iterator_args *args,
    ++args->num_fpu_iterators;
 }
 
+static inline unsigned nir_count_variables_with_modes(const nir_shader *nir,
+                                                      nir_variable_mode mode)
+{
+   unsigned count = 0;
+
+   nir_foreach_variable_with_modes (var, nir, mode) {
+      ++count;
+   }
+
+   return count;
+}
+
 /**
  * \brief Collects the fragment shader I/O data to feed-back to the driver.
  *
@@ -134,13 +152,12 @@ static void reserve_iterator(struct rogue_iterator_args *args,
  * \param[in] common_data Common build data.
  * \param[in] fs_data Fragment-specific build data.
  * \param[in] nir NIR fragment shader.
- * \return true if successful, otherwise false.
  */
-static bool collect_io_data_fs(struct rogue_common_build_data *common_data,
+static void collect_io_data_fs(struct rogue_common_build_data *common_data,
                                struct rogue_fs_build_data *fs_data,
                                nir_shader *nir)
 {
-   size_t num_inputs = nir_count_variables_with_modes(nir, nir_var_shader_in);
+   unsigned num_inputs = nir_count_variables_with_modes(nir, nir_var_shader_in);
    assert(num_inputs < (ARRAY_SIZE(fs_data->iterator_args.fpu_iterators) - 1));
 
    /* Process inputs (if present). */
@@ -155,8 +172,8 @@ static bool collect_io_data_fs(struct rogue_common_build_data *common_data,
                        1);
 
       nir_foreach_shader_in_variable (var, nir) {
-         size_t i = (var->data.location - VARYING_SLOT_VAR0) + 1;
-         size_t components = glsl_get_components(var->type);
+         unsigned i = (var->data.location - VARYING_SLOT_VAR0) + 1;
+         unsigned components = glsl_get_components(var->type);
          enum glsl_interp_mode interp = var->data.interpolation;
          bool f16 = glsl_type_is_16bit(var->type);
 
@@ -173,12 +190,10 @@ static bool collect_io_data_fs(struct rogue_common_build_data *common_data,
 
       common_data->coeffs = alloc_iterator_regs(&fs_data->iterator_args);
       assert(common_data->coeffs);
-      assert(common_data->coeffs < ROGUE_MAX_REG_COEFF);
+      assert(common_data->coeffs <= rogue_reg_infos[ROGUE_REG_CLASS_COEFF].num);
    }
 
    /* TODO: Process outputs. */
-
-   return true;
 }
 
 /**
@@ -187,11 +202,11 @@ static bool collect_io_data_fs(struct rogue_common_build_data *common_data,
  * \param[in] inputs The vertex shader input data.
  * \return The total number of vertex input registers required.
  */
-static size_t alloc_vs_inputs(struct rogue_vertex_inputs *inputs)
+static unsigned alloc_vs_inputs(struct rogue_vertex_inputs *inputs)
 {
-   size_t vs_inputs = 0;
+   unsigned vs_inputs = 0;
 
-   for (size_t u = 0; u < inputs->num_input_vars; ++u) {
+   for (unsigned u = 0; u < inputs->num_input_vars; ++u) {
       /* Ensure there aren't any gaps. */
       assert(inputs->base[u] == ~0);
 
@@ -208,11 +223,11 @@ static size_t alloc_vs_inputs(struct rogue_vertex_inputs *inputs)
  * \param[in] outputs The vertex shader output data.
  * \return The total number of vertex outputs required.
  */
-static size_t alloc_vs_outputs(struct rogue_vertex_outputs *outputs)
+static unsigned alloc_vs_outputs(struct rogue_vertex_outputs *outputs)
 {
-   size_t vs_outputs = 0;
+   unsigned vs_outputs = 0;
 
-   for (size_t u = 0; u < outputs->num_output_vars; ++u) {
+   for (unsigned u = 0; u < outputs->num_output_vars; ++u) {
       /* Ensure there aren't any gaps. */
       assert(outputs->base[u] == ~0);
 
@@ -229,12 +244,12 @@ static size_t alloc_vs_outputs(struct rogue_vertex_outputs *outputs)
  * \param[in] outputs The vertex shader output data.
  * \return The number of varyings used.
  */
-static size_t count_vs_varyings(struct rogue_vertex_outputs *outputs)
+static unsigned count_vs_varyings(struct rogue_vertex_outputs *outputs)
 {
-   size_t varyings = 0;
+   unsigned varyings = 0;
 
    /* Skip the position. */
-   for (size_t u = 1; u < outputs->num_output_vars; ++u)
+   for (unsigned u = 1; u < outputs->num_output_vars; ++u)
       varyings += outputs->components[u];
 
    return varyings;
@@ -248,8 +263,8 @@ static size_t count_vs_varyings(struct rogue_vertex_outputs *outputs)
  * \param[in] components The number of components in the input.
  */
 static void reserve_vs_input(struct rogue_vertex_inputs *inputs,
-                             size_t i,
-                             size_t components)
+                             unsigned i,
+                             unsigned components)
 {
    assert(components >= 1 && components <= 4);
 
@@ -268,8 +283,8 @@ static void reserve_vs_input(struct rogue_vertex_inputs *inputs,
  * \param[in] components The number of components in the output.
  */
 static void reserve_vs_output(struct rogue_vertex_outputs *outputs,
-                              size_t i,
-                              size_t components)
+                              unsigned i,
+                              unsigned components)
 {
    assert(components >= 1 && components <= 4);
 
@@ -288,20 +303,19 @@ static void reserve_vs_output(struct rogue_vertex_outputs *outputs,
  * \param[in] common_data Common build data.
  * \param[in] vs_data Vertex-specific build data.
  * \param[in] nir NIR vertex shader.
- * \return true if successful, otherwise false.
  */
-static bool collect_io_data_vs(struct rogue_common_build_data *common_data,
+static void collect_io_data_vs(struct rogue_common_build_data *common_data,
                                struct rogue_vs_build_data *vs_data,
                                nir_shader *nir)
 {
    ASSERTED bool out_pos_present = false;
-   ASSERTED size_t num_outputs =
+   ASSERTED unsigned num_outputs =
       nir_count_variables_with_modes(nir, nir_var_shader_out);
 
    /* Process inputs. */
    nir_foreach_shader_in_variable (var, nir) {
-      size_t components = glsl_get_components(var->type);
-      size_t i = var->data.location - VERT_ATTRIB_GENERIC0;
+      unsigned components = glsl_get_components(var->type);
+      unsigned i = var->data.location - VERT_ATTRIB_GENERIC0;
 
       /* Check that inputs are F32. */
       /* TODO: Support other types. */
@@ -317,15 +331,16 @@ static bool collect_io_data_vs(struct rogue_common_build_data *common_data,
 
    vs_data->num_vertex_input_regs = alloc_vs_inputs(&vs_data->inputs);
    assert(vs_data->num_vertex_input_regs);
-   assert(vs_data->num_vertex_input_regs < ROGUE_MAX_REG_VERTEX_IN);
+   assert(vs_data->num_vertex_input_regs <
+          rogue_reg_infos[ROGUE_REG_CLASS_VTXIN].num);
 
    /* Process outputs. */
 
    /* We should always have at least a position variable. */
-   assert(num_outputs > 0 && "Invalid number of vertex shader outputs.");
+   assert(num_outputs > 0 && "Unsupported number of vertex shader outputs.");
 
    nir_foreach_shader_out_variable (var, nir) {
-      size_t components = glsl_get_components(var->type);
+      unsigned components = glsl_get_components(var->type);
 
       /* Check that outputs are F32. */
       /* TODO: Support other types. */
@@ -339,7 +354,7 @@ static bool collect_io_data_vs(struct rogue_common_build_data *common_data,
          reserve_vs_output(&vs_data->outputs, 0, components);
       } else if ((var->data.location >= VARYING_SLOT_VAR0) &&
                  (var->data.location <= VARYING_SLOT_VAR31)) {
-         size_t i = (var->data.location - VARYING_SLOT_VAR0) + 1;
+         unsigned i = (var->data.location - VARYING_SLOT_VAR0) + 1;
          reserve_vs_output(&vs_data->outputs, i, components);
       } else {
          unreachable("Unsupported vertex output type.");
@@ -351,11 +366,10 @@ static bool collect_io_data_vs(struct rogue_common_build_data *common_data,
 
    vs_data->num_vertex_outputs = alloc_vs_outputs(&vs_data->outputs);
    assert(vs_data->num_vertex_outputs);
-   assert(vs_data->num_vertex_outputs < ROGUE_MAX_VERTEX_OUTPUTS);
+   assert(vs_data->num_vertex_outputs <
+          rogue_reg_infos[ROGUE_REG_CLASS_VTXOUT].num);
 
    vs_data->num_varyings = count_vs_varyings(&vs_data->outputs);
-
-   return true;
 }
 
 /**
@@ -364,11 +378,11 @@ static bool collect_io_data_vs(struct rogue_common_build_data *common_data,
  * \param[in] ubo_data The UBO data.
  * \return The total number of coefficient registers required by the iterators.
  */
-static size_t alloc_ubos(struct rogue_ubo_data *ubo_data)
+static unsigned alloc_ubos(struct rogue_ubo_data *ubo_data)
 {
-   size_t shareds = 0;
+   unsigned shareds = 0;
 
-   for (size_t u = 0; u < ubo_data->num_ubo_entries; ++u) {
+   for (unsigned u = 0; u < ubo_data->num_ubo_entries; ++u) {
       /* Ensure there aren't any gaps. */
       assert(ubo_data->dest[u] == ~0);
 
@@ -388,11 +402,11 @@ static size_t alloc_ubos(struct rogue_ubo_data *ubo_data)
  * \param[in] size The size required by the UBO (in dwords).
  */
 static void reserve_ubo(struct rogue_ubo_data *ubo_data,
-                        size_t desc_set,
-                        size_t binding,
-                        size_t size)
+                        unsigned desc_set,
+                        unsigned binding,
+                        unsigned size)
 {
-   size_t i = ubo_data->num_ubo_entries;
+   unsigned i = ubo_data->num_ubo_entries;
    assert(i < ARRAY_SIZE(ubo_data->desc_set));
 
    ubo_data->desc_set[i] = desc_set;
@@ -407,16 +421,15 @@ static void reserve_ubo(struct rogue_ubo_data *ubo_data,
  *
  * \param[in] common_data Common build data.
  * \param[in] nir NIR shader.
- * \return true if successful, otherwise false.
  */
-static bool collect_ubo_data(struct rogue_common_build_data *common_data,
+static void collect_ubo_data(struct rogue_common_build_data *common_data,
                              nir_shader *nir)
 {
    /* Iterate over each UBO. */
    nir_foreach_variable_with_modes (var, nir, nir_var_mem_ubo) {
-      size_t desc_set = var->data.driver_location;
-      size_t binding = var->data.binding;
-      size_t ubo_size_regs = 0;
+      unsigned desc_set = var->data.driver_location;
+      unsigned binding = var->data.binding;
+      unsigned ubo_size_regs = 0;
 
       nir_function_impl *entry = nir_shader_get_entrypoint(nir);
       /* Iterate over each load_ubo that uses this UBO. */
@@ -430,21 +443,20 @@ static bool collect_ubo_data(struct rogue_common_build_data *common_data,
                continue;
 
             assert(nir_src_num_components(intr->src[0]) == 2);
-            assert(nir_intr_src_is_const(intr, 0));
 
-            size_t load_desc_set = nir_intr_src_comp_const(intr, 0, 0);
-            size_t load_binding = nir_intr_src_comp_const(intr, 0, 1);
+            unsigned load_desc_set = nir_src_comp_as_uint(intr->src[0], 0);
+            unsigned load_binding = nir_src_comp_as_uint(intr->src[0], 1);
 
             if (load_desc_set != desc_set || load_binding != binding)
                continue;
 
-            ASSERTED size_t size_bytes = nir_intrinsic_range(intr);
+            ASSERTED unsigned size_bytes = nir_intrinsic_range(intr);
             assert(size_bytes == ROGUE_REG_SIZE_BYTES);
 
-            size_t offset_bytes = nir_intrinsic_range_base(intr);
+            unsigned offset_bytes = nir_intrinsic_range_base(intr);
             assert(!(offset_bytes % ROGUE_REG_SIZE_BYTES));
 
-            size_t offset_regs = offset_bytes / ROGUE_REG_SIZE_BYTES;
+            unsigned offset_regs = offset_bytes / ROGUE_REG_SIZE_BYTES;
 
             /* TODO: Put offsets in a BITSET_DECLARE and check for gaps. */
 
@@ -460,9 +472,7 @@ static bool collect_ubo_data(struct rogue_common_build_data *common_data,
    }
 
    common_data->shareds = alloc_ubos(&common_data->ubo_data);
-   assert(common_data->shareds < ROGUE_MAX_REG_SHARED);
-
-   return true;
+   assert(common_data->shareds < rogue_reg_infos[ROGUE_REG_CLASS_SHARED].num);
 }
 
 /**
@@ -475,16 +485,15 @@ static bool collect_ubo_data(struct rogue_common_build_data *common_data,
  *
  * \param[in] ctx Shared multi-stage build context.
  * \param[in] nir NIR shader.
- * \return true if successful, otherwise false.
  */
-bool rogue_collect_io_data(struct rogue_build_ctx *ctx, nir_shader *nir)
+PUBLIC
+void rogue_collect_io_data(struct rogue_build_ctx *ctx, nir_shader *nir)
 {
    gl_shader_stage stage = nir->info.stage;
    struct rogue_common_build_data *common_data = &ctx->common_data[stage];
 
    /* Collect stage-agnostic data. */
-   if (!collect_ubo_data(common_data, nir))
-      return false;
+   collect_ubo_data(common_data, nir);
 
    /* Collect stage-specific data. */
    switch (stage) {
@@ -498,7 +507,7 @@ bool rogue_collect_io_data(struct rogue_build_ctx *ctx, nir_shader *nir)
       break;
    }
 
-   return false;
+   unreachable("Unsupported stage.");
 }
 
 /**
@@ -510,11 +519,12 @@ bool rogue_collect_io_data(struct rogue_build_ctx *ctx, nir_shader *nir)
  * \param[in] component The requested component.
  * \return The coefficient register index.
  */
-size_t rogue_coeff_index_fs(struct rogue_iterator_args *args,
-                            gl_varying_slot location,
-                            size_t component)
+PUBLIC
+unsigned rogue_coeff_index_fs(struct rogue_iterator_args *args,
+                              gl_varying_slot location,
+                              unsigned component)
 {
-   size_t i;
+   unsigned i;
 
    /* Special case: W coefficient. */
    if (location == ~0) {
@@ -542,11 +552,12 @@ size_t rogue_coeff_index_fs(struct rogue_iterator_args *args,
  * \param[in] component The requested component.
  * \return The vertex output index.
  */
-size_t rogue_output_index_vs(struct rogue_vertex_outputs *outputs,
-                             gl_varying_slot location,
-                             size_t component)
+PUBLIC
+unsigned rogue_output_index_vs(struct rogue_vertex_outputs *outputs,
+                               gl_varying_slot location,
+                               unsigned component)
 {
-   size_t i;
+   unsigned i;
 
    if (location == VARYING_SLOT_POS) {
       /* Always at location 0. */
@@ -575,16 +586,17 @@ size_t rogue_output_index_vs(struct rogue_vertex_outputs *outputs,
  * \param[in] offset_bytes The UBO offset in bytes.
  * \return The UBO offset shared register index.
  */
-size_t rogue_ubo_reg(struct rogue_ubo_data *ubo_data,
-                     size_t desc_set,
-                     size_t binding,
-                     size_t offset_bytes)
+PUBLIC
+unsigned rogue_ubo_reg(struct rogue_ubo_data *ubo_data,
+                       unsigned desc_set,
+                       unsigned binding,
+                       unsigned offset_bytes)
 {
-   size_t ubo_index = ~0;
-   size_t offset_regs;
+   unsigned ubo_index = ~0;
+   unsigned offset_regs;
 
    /* Find UBO located at (desc_set, binding). */
-   for (size_t u = 0; u < ubo_data->num_ubo_entries; ++u) {
+   for (unsigned u = 0; u < ubo_data->num_ubo_entries; ++u) {
       if (ubo_data->dest[u] == ~0)
          continue;
 

@@ -1471,10 +1471,10 @@ cmdstream[0]: 1023 dwords
 		gpuaddr:0000000001d90010
 0000000001d918e0:		0000: 70c28003 00000883 01d90010 00000000
 		opcode: CP_REG_TEST (39) (2 dwords)
-			{ REG = 0x883 | BIT = 0 | WAIT_FOR_ME }
+			{ REG = 0x883 | BIT = 0 | SKIP_WAIT_FOR_ME | PRED_BIT = 0 }
 0000000001d918f0:		0000: 70b90001 02000883
 		opcode: CP_COND_REG_EXEC (47) (3 dwords)
-			{ REG0 = 0 | MODE = PRED_TEST }
+			{ REG0 = 0 | PRED_BIT = 0 | MODE = PRED_TEST }
 			{ DWORDS = 7 }
 0000000001d918f8:		0000: 70c70002 10000000 00000007
 		opcode: CP_REG_TO_MEM (3e) (4 dwords)
@@ -1553,10 +1553,10 @@ cmdstream[0]: 1023 dwords
 		opcode: CP_SET_MODE (63) (2 dwords)
 0000000001d919d0:		0000: 70e30001 00000000
 		opcode: CP_REG_TEST (39) (2 dwords)
-			{ REG = 0x883 | BIT = 0 | WAIT_FOR_ME }
+			{ REG = 0x883 | BIT = 0 | SKIP_WAIT_FOR_ME | PRED_BIT = 0 }
 0000000001d919d8:		0000: 70b90001 02000883
 		opcode: CP_COND_REG_EXEC (47) (3 dwords)
-			{ REG0 = 0 | MODE = PRED_TEST }
+			{ REG0 = 0 | PRED_BIT = 0 | MODE = PRED_TEST }
 			{ DWORDS = 11 }
 0000000001d919e0:		0000: 70c70002 10000000 0000000b
 		opcode: CP_SET_BIN_DATA5 (2f) (8 dwords)
@@ -1703,10 +1703,10 @@ cmdstream[0]: 1023 dwords
 			:0,1,17,6
 0000000001d91aa4:		0000: 48088901 00000011
 		opcode: CP_REG_TEST (39) (2 dwords)
-			{ REG = 0xc38 | BIT = 0 | WAIT_FOR_ME }
+			{ REG = 0xc38 | BIT = 0 | SKIP_WAIT_FOR_ME | PRED_BIT = 0 }
 0000000001d91aac:		0000: 70b90001 02000c38
 		opcode: CP_COND_REG_EXEC (47) (3 dwords)
-			{ REG0 = 0 | MODE = PRED_TEST }
+			{ REG0 = 0 | PRED_BIT = 0 | MODE = PRED_TEST }
 			{ DWORDS = 4 }
 0000000001d91ab4:		0000: 70c70002 10000000 00000004
 		opcode: CP_INDIRECT_BUFFER (3f) (4 dwords)
@@ -6745,10 +6745,10 @@ cmdstream[0]: 1023 dwords
 			:0,1,18,3
 0000000001d91ad4:		0000: 48088901 00000012
 		opcode: CP_REG_TEST (39) (2 dwords)
-			{ REG = 0x883 | BIT = 0 | WAIT_FOR_ME }
+			{ REG = 0x883 | BIT = 0 | SKIP_WAIT_FOR_ME | PRED_BIT = 0 }
 0000000001d91adc:		0000: 70b90001 02000883
 		opcode: CP_COND_REG_EXEC (47) (3 dwords)
-			{ REG0 = 0 | MODE = PRED_TEST }
+			{ REG0 = 0 | PRED_BIT = 0 | MODE = PRED_TEST }
 			{ DWORDS = 2 }
 0000000001d91ae4:		0000: 70c70002 10000000 00000002
 		opcode: CP_SET_MARKER (65) (2 dwords)
@@ -6870,10 +6870,10 @@ cmdstream[0]: 1023 dwords
 		opcode: CP_SET_MODE (63) (2 dwords)
 0000000001d91b9c:		0000: 70e30001 00000000
 		opcode: CP_REG_TEST (39) (2 dwords)
-			{ REG = 0x883 | BIT = 0 | WAIT_FOR_ME }
+			{ REG = 0x883 | BIT = 0 | SKIP_WAIT_FOR_ME | PRED_BIT = 0 }
 0000000001d91ba4:		0000: 70b90001 02000883
 		opcode: CP_COND_REG_EXEC (47) (3 dwords)
-			{ REG0 = 0 | MODE = PRED_TEST }
+			{ REG0 = 0 | PRED_BIT = 0 | MODE = PRED_TEST }
 			{ DWORDS = 11 }
 0000000001d91bac:		0000: 70c70002 10000000 0000000b
 		opcode: CP_SET_BIN_DATA5 (2f) (8 dwords)
@@ -6944,10 +6944,10 @@ cmdstream[0]: 1023 dwords
 			:0,1,27,24
 0000000001d91c70:		0000: 48088901 0000001b
 		opcode: CP_REG_TEST (39) (2 dwords)
-			{ REG = 0xc39 | BIT = 0 | WAIT_FOR_ME }
+			{ REG = 0xc39 | BIT = 0 | SKIP_WAIT_FOR_ME | PRED_BIT = 0 }
 0000000001d91c78:		0000: 70b90001 02000c39
 		opcode: CP_COND_REG_EXEC (47) (3 dwords)
-			{ REG0 = 0 | MODE = PRED_TEST }
+			{ REG0 = 0 | PRED_BIT = 0 | MODE = PRED_TEST }
 			{ DWORDS = 4 }
 0000000001d91c80:		0000: 70c70002 10000000 00000004
 		opcode: CP_INDIRECT_BUFFER (3f) (4 dwords)
@@ -6961,10 +6961,10 @@ cmdstream[0]: 1023 dwords
 			:0,1,28,24
 0000000001d91ca0:		0000: 48088901 0000001c
 		opcode: CP_REG_TEST (39) (2 dwords)
-			{ REG = 0x883 | BIT = 0 | WAIT_FOR_ME }
+			{ REG = 0x883 | BIT = 0 | SKIP_WAIT_FOR_ME | PRED_BIT = 0 }
 0000000001d91ca8:		0000: 70b90001 02000883
 		opcode: CP_COND_REG_EXEC (47) (3 dwords)
-			{ REG0 = 0 | MODE = PRED_TEST }
+			{ REG0 = 0 | PRED_BIT = 0 | MODE = PRED_TEST }
 			{ DWORDS = 2 }
 0000000001d91cb0:		0000: 70c70002 10000000 00000002
 		opcode: CP_SET_MARKER (65) (2 dwords)
@@ -7039,10 +7039,10 @@ cmdstream[0]: 1023 dwords
 		opcode: CP_SET_MODE (63) (2 dwords)
 0000000001d91d68:		0000: 70e30001 00000000
 		opcode: CP_REG_TEST (39) (2 dwords)
-			{ REG = 0x883 | BIT = 0 | WAIT_FOR_ME }
+			{ REG = 0x883 | BIT = 0 | SKIP_WAIT_FOR_ME | PRED_BIT = 0 }
 0000000001d91d70:		0000: 70b90001 02000883
 		opcode: CP_COND_REG_EXEC (47) (3 dwords)
-			{ REG0 = 0 | MODE = PRED_TEST }
+			{ REG0 = 0 | PRED_BIT = 0 | MODE = PRED_TEST }
 			{ DWORDS = 11 }
 0000000001d91d78:		0000: 70c70002 10000000 0000000b
 		opcode: CP_SET_BIN_DATA5 (2f) (8 dwords)
@@ -7113,10 +7113,10 @@ cmdstream[0]: 1023 dwords
 			:0,1,37,34
 0000000001d91e3c:		0000: 48088901 00000025
 		opcode: CP_REG_TEST (39) (2 dwords)
-			{ REG = 0xc3a | BIT = 0 | WAIT_FOR_ME }
+			{ REG = 0xc3a | BIT = 0 | SKIP_WAIT_FOR_ME | PRED_BIT = 0 }
 0000000001d91e44:		0000: 70b90001 02000c3a
 		opcode: CP_COND_REG_EXEC (47) (3 dwords)
-			{ REG0 = 0 | MODE = PRED_TEST }
+			{ REG0 = 0 | PRED_BIT = 0 | MODE = PRED_TEST }
 			{ DWORDS = 4 }
 0000000001d91e4c:		0000: 70c70002 10000000 00000004
 		opcode: CP_INDIRECT_BUFFER (3f) (4 dwords)
@@ -7130,10 +7130,10 @@ cmdstream[0]: 1023 dwords
 			:0,1,38,34
 0000000001d91e6c:		0000: 48088901 00000026
 		opcode: CP_REG_TEST (39) (2 dwords)
-			{ REG = 0x883 | BIT = 0 | WAIT_FOR_ME }
+			{ REG = 0x883 | BIT = 0 | SKIP_WAIT_FOR_ME | PRED_BIT = 0 }
 0000000001d91e74:		0000: 70b90001 02000883
 		opcode: CP_COND_REG_EXEC (47) (3 dwords)
-			{ REG0 = 0 | MODE = PRED_TEST }
+			{ REG0 = 0 | PRED_BIT = 0 | MODE = PRED_TEST }
 			{ DWORDS = 2 }
 0000000001d91e7c:		0000: 70c70002 10000000 00000002
 		opcode: CP_SET_MARKER (65) (2 dwords)
@@ -7208,10 +7208,10 @@ cmdstream[0]: 1023 dwords
 		opcode: CP_SET_MODE (63) (2 dwords)
 0000000001d91f34:		0000: 70e30001 00000000
 		opcode: CP_REG_TEST (39) (2 dwords)
-			{ REG = 0x883 | BIT = 0 | WAIT_FOR_ME }
+			{ REG = 0x883 | BIT = 0 | SKIP_WAIT_FOR_ME | PRED_BIT = 0 }
 0000000001d91f3c:		0000: 70b90001 02000883
 		opcode: CP_COND_REG_EXEC (47) (3 dwords)
-			{ REG0 = 0 | MODE = PRED_TEST }
+			{ REG0 = 0 | PRED_BIT = 0 | MODE = PRED_TEST }
 			{ DWORDS = 11 }
 0000000001d91f44:		0000: 70c70002 10000000 0000000b
 		opcode: CP_SET_BIN_DATA5 (2f) (8 dwords)

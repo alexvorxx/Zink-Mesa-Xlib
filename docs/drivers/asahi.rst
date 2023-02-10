@@ -60,7 +60,12 @@ consist of a single 32-bit value or an aligned 16-bit register pair, depending
 on whether interpolation should happen at 32-bit or 16-bit. Vertex outputs are
 indexed starting from 0, with the *vertex position* always coming first, the
 32-bit user varyings coming next, then 16-bit user varyings, and finally *point
-size* at the end if present.
+size* and *clip distances* at the end if present. Note that *clip distances* are
+not accessible from the fragment shader; if the fragment shader needs to read
+the interpolated clip distance, the vertex shader must *also* write the clip
+distance values to a user varying for the fragment shader to interpolate. Also
+note there is no clip plane enable mask anywhere; that must lowered for APIs
+that require this (OpenGL but not Vulkan).
 
 .. list-table:: Ordering of vertex outputs with all outputs used
    :widths: 25 75
@@ -84,6 +89,12 @@ size* at the end if present.
      - Packed pair of 16-bit varyings n
    * - 4 + m + 1 + n + 1
      - Point size
+   * - 4 + m + 1 + n + 2 + 0
+     - Clip distance for plane 0
+   * -
+     - ...
+   * - 4 + m + 1 + n + 2 + 15
+     - Clip distance for plane 15
 
 Remapping
 `````````
@@ -92,7 +103,7 @@ Vertex outputs are remapped to varying slots to be interpolated.
 The output of remapping consists of the following items: the *W* fragment
 coordinate, the *Z* fragment coordinate, user varyings in the vertex
 output order. *Z* may be omitted, but *W* may not be. This remapping is
-configured by the "Linkage" packet.
+configured by the "Output select" word.
 
 .. list-table:: Ordering of remapped slots
    :widths: 25 75

@@ -40,6 +40,7 @@ int main(void)
    struct anv_state_pool state_pool;
 
    anv_device_set_physical(&device, &physical_device);
+   device.kmd_backend = anv_kmd_backend_get(INTEL_KMD_TYPE_STUB);
    pthread_mutex_init(&device.mutex, NULL);
    anv_bo_cache_init(&device.bo_cache, &device);
 

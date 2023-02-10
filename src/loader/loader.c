@@ -431,6 +431,7 @@ loader_get_render_node(dev_t device)
 }
 
 bool loader_get_user_preferred_fd(int *fd_render_gpu, int *original_fd)
+{
    if (original_fd)
       *original_fd = *fd_render_gpu;
    return false;

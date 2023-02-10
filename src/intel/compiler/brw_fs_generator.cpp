@@ -1611,31 +1611,6 @@ fs_generator::generate_varying_pull_constant_load_gfx4(fs_inst *inst,
                                  msg_type, simd_mode, return_format));
 }
 
-void
-fs_generator::generate_pixel_interpolator_query(fs_inst *inst,
-                                                struct brw_reg dst,
-                                                struct brw_reg src,
-                                                struct brw_reg msg_data,
-                                                unsigned msg_type)
-{
-   const bool has_payload = inst->src[0].file != BAD_FILE;
-   assert(msg_data.type == BRW_REGISTER_TYPE_UD);
-   assert(inst->size_written % REG_SIZE == 0);
-
-   struct brw_wm_prog_data *prog_data = brw_wm_prog_data(this->prog_data);
-
-   brw_pixel_interpolator_query(p,
-         retype(dst, BRW_REGISTER_TYPE_UW),
-         /* If we don't have a payload, what we send doesn't matter */
-         has_payload ? src : brw_vec8_grf(0, 0),
-         inst->pi_noperspective,
-         prog_data->per_coarse_pixel_dispatch,
-         msg_type,
-         msg_data,
-         has_payload ? 2 * inst->exec_size / 8 : 1,
-         inst->size_written / REG_SIZE);
-}
-
 /* Sets vstride=1, width=4, hstride=0 of register src1 during
  * the ADD instruction.
  */
@@ -2387,24 +2362,6 @@ fs_generator::generate_code(const cfg_t *cfg, int dispatch_width,
                disasm_info->use_tail = true;
             }
          }
-         break;
-
-      case FS_OPCODE_INTERPOLATE_AT_SAMPLE:
-         generate_pixel_interpolator_query(inst, dst, src[0], src[1],
-                                           GFX7_PIXEL_INTERPOLATOR_LOC_SAMPLE);
-         send_count++;
-         break;
-
-      case FS_OPCODE_INTERPOLATE_AT_SHARED_OFFSET:
-         generate_pixel_interpolator_query(inst, dst, src[0], src[1],
-                                           GFX7_PIXEL_INTERPOLATOR_LOC_SHARED_OFFSET);
-         send_count++;
-         break;
-
-      case FS_OPCODE_INTERPOLATE_AT_PER_SLOT_OFFSET:
-         generate_pixel_interpolator_query(inst, dst, src[0], src[1],
-                                           GFX7_PIXEL_INTERPOLATOR_LOC_PER_SLOT_OFFSET);
-         send_count++;
          break;
 
       case CS_OPCODE_CS_TERMINATE:

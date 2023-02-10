@@ -46,9 +46,11 @@ vk_common_CreateSamplerYcbcrConversion(VkDevice _device,
    if (!conversion)
       return VK_ERROR_OUT_OF_HOST_MEMORY;
 
-   conversion->format = pCreateInfo->format;
-   conversion->ycbcr_model = pCreateInfo->ycbcrModel;
-   conversion->ycbcr_range = pCreateInfo->ycbcrRange;
+   struct vk_ycbcr_conversion_state *state = &conversion->state;
+
+   state->format = pCreateInfo->format;
+   state->ycbcr_model = pCreateInfo->ycbcrModel;
+   state->ycbcr_range = pCreateInfo->ycbcrRange;
 
    /* Search for VkExternalFormatANDROID and resolve the format. */
    const VkExternalFormatANDROID *android_ext_info =
@@ -57,25 +59,25 @@ vk_common_CreateSamplerYcbcrConversion(VkDevice _device,
    /* We assume that Android externalFormat is just a VkFormat */
    if (android_ext_info && android_ext_info->externalFormat) {
       assert(pCreateInfo->format == VK_FORMAT_UNDEFINED);
-      conversion->format = android_ext_info->externalFormat;
+      state->format = android_ext_info->externalFormat;
    } else {
       /* The Vulkan 1.1.95 spec says:
        *
        *    "When creating an external format conversion, the value of
        *    components if ignored."
        */
-      conversion->mapping[0] = pCreateInfo->components.r;
-      conversion->mapping[1] = pCreateInfo->components.g;
-      conversion->mapping[2] = pCreateInfo->components.b;
-      conversion->mapping[3] = pCreateInfo->components.a;
+      state->mapping[0] = pCreateInfo->components.r;
+      state->mapping[1] = pCreateInfo->components.g;
+      state->mapping[2] = pCreateInfo->components.b;
+      state->mapping[3] = pCreateInfo->components.a;
    }
 
-   conversion->chroma_offsets[0] = pCreateInfo->xChromaOffset;
-   conversion->chroma_offsets[1] = pCreateInfo->yChromaOffset;
-   conversion->chroma_filter = pCreateInfo->chromaFilter;
+   state->chroma_offsets[0] = pCreateInfo->xChromaOffset;
+   state->chroma_offsets[1] = pCreateInfo->yChromaOffset;
+   state->chroma_filter = pCreateInfo->chromaFilter;
 
    const struct vk_format_ycbcr_info *ycbcr_info =
-      vk_format_get_ycbcr_info(conversion->format);
+      vk_format_get_ycbcr_info(state->format);
 
    bool has_chroma_subsampled = false;
    if (ycbcr_info) {
@@ -86,9 +88,9 @@ vk_common_CreateSamplerYcbcrConversion(VkDevice _device,
             has_chroma_subsampled = true;
       }
    }
-   conversion->chroma_reconstruction = has_chroma_subsampled &&
-      (conversion->chroma_offsets[0] == VK_CHROMA_LOCATION_COSITED_EVEN ||
-       conversion->chroma_offsets[1] == VK_CHROMA_LOCATION_COSITED_EVEN);
+   state->chroma_reconstruction = has_chroma_subsampled &&
+      (state->chroma_offsets[0] == VK_CHROMA_LOCATION_COSITED_EVEN ||
+       state->chroma_offsets[1] == VK_CHROMA_LOCATION_COSITED_EVEN);
 
    *pYcbcrConversion = vk_ycbcr_conversion_to_handle(conversion);
 

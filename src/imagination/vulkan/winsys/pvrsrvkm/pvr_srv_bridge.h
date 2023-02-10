@@ -107,14 +107,6 @@
    DRM_IOWR(DRM_COMMAND_BASE + DRM_SRVKM_INIT, struct drm_srvkm_init_data)
 
 /******************************************************************************
-   Bridge call specific defines
- ******************************************************************************/
-
-/* Flags for PVR_SRV_BRIDGE_RGXTQ_RGXSUBMITTRANSFER2 bridge call. */
-#define PVR_TRANSFER_PREP_FLAGS_START BITFIELD_BIT(5U)
-#define PVR_TRANSFER_PREP_FLAGS_END BITFIELD_BIT(6U)
-
-/******************************************************************************
    Misc defines
  ******************************************************************************/
 

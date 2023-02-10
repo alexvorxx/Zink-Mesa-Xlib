@@ -115,7 +115,7 @@ mesa_cache_db_entry_write(struct mesa_cache_db *db,
    return false;
 }
 
-bool
+static inline bool
 mesa_cache_db_entry_remove(struct mesa_cache_db *db,
                            const uint8_t *cache_key_160bit)
 {

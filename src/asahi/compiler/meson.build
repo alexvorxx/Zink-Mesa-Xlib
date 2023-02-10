@@ -33,6 +33,7 @@ libasahi_agx_files = files(
   'agx_lower_64bit.c',
   'agx_lower_parallel_copy.c',
   'agx_lower_pseudo.c',
+  'agx_lower_uniform_sources.c',
   'agx_pack.c',
   'agx_print.c',
   'agx_opt_cse.c',

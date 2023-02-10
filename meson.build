@@ -364,7 +364,7 @@ if with_platform_wayland
   #add this once aco and other places can build with it
   #cpp_args += '-DVK_USE_PLATFORM_WAYLAND_KHR'
 endif
-if with_platform_x11
+if with_platform_x11 and host_machine.system() != 'darwin'
   c_args += ['-DVK_USE_PLATFORM_XCB_KHR', '-DVK_USE_PLATFORM_XLIB_KHR']
   #add this once aco and other places can build with it
   #cpp_args += ['-DVK_USE_PLATFORM_XCB_KHR', '-DVK_USE_PLATFORM_XLIB_KHR']
@@ -1052,12 +1052,12 @@ else
     _trial_cpp += ['-ffunction-sections', '-fdata-sections']
   endif
 
-  # Variables that are only used for assertions are considered unused in release
-  # builds. Don't treat this as an error, since we build with -Werror even for
-  # release in CI.
-  if get_option('buildtype') == 'release'
-    _trial_c += ['-Wno-unused-variable', '-Wno-unused-but-set-variable']
-    _trial_cpp += ['-Wno-unused-variable', '-Wno-unused-but-set-variable']
+  # Variables that are only used for assertions are considered unused when assertions
+  # are disabled. Don't treat this as an error, since we build with -Werror even if
+  # assertions are disabled.
+  if get_option('b_ndebug') == 'true' or (get_option('buildtype') == 'release' and get_option('b_ndebug') == 'if-release')
+    _trial_c += ['-Wno-unused-variable', '-Wno-unused-but-set-variable', '/wd4189']
+    _trial_cpp += ['-Wno-unused-variable', '-Wno-unused-but-set-variable', '/wd4189']
   endif
 
   c_args += cc.get_supported_arguments(_trial_c)

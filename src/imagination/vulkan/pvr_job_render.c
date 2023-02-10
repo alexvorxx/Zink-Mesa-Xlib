@@ -1679,6 +1679,9 @@ static void pvr_frag_state_flags_init(const struct pvr_render_job *const job,
 
    if (job->get_vis_results)
       *flags |= PVR_WINSYS_FRAG_FLAG_GET_VIS_RESULTS;
+
+   if (job->requires_spm_scratch_buffer)
+      *flags |= PVR_WINSYS_FRAG_FLAG_SPMSCRATCHBUFFER;
 }
 
 static void

@@ -177,7 +177,8 @@ def define_tracepoints(args):
                    ['DEPTH_STALL',                   'depth_stall'],
                    ['CS_STALL',                      'cs_stall'],
                    ['UNTYPED_DATAPORT_CACHE_FLUSH',  'udp_flush'],
-                   ['PSS_STALL_SYNC',                'pss_stall']]
+                   ['PSS_STALL_SYNC',                'pss_stall'],
+                   ['END_OF_PIPE',               'eop']]
 
     begin_end_tp('stall',
                  tp_args=[ArgStruct(type='uint32_t', var='flags'),

@@ -50,6 +50,16 @@ tib_impl(nir_builder *b, nir_instr *instr, void *data)
       /* Trim to format as required by hardware */
       value = nir_trim_vector(b, intr->src[0].ssa, comps);
 
+      /* The hardware cannot extend for a 32-bit format. Extend ourselves. */
+      if (format == PIPE_FORMAT_R32_UINT && value->bit_size == 16) {
+         if (util_format_is_pure_sint(logical_format))
+            value = nir_i2i32(b, value);
+         else if (util_format_is_pure_uint(logical_format))
+            value = nir_u2u32(b, value);
+         else
+            value = nir_f2f32(b, value);
+      }
+
       nir_store_local_pixel_agx(
          b, value, nir_imm_intN_t(b, ALL_SAMPLES, 16),
          .base = tib->offset_B[rt],

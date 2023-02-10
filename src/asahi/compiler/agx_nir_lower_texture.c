@@ -78,8 +78,8 @@ agx_txs(nir_builder *b, nir_tex_instr *tex)
 
    /* Width minus 1: bits [28, 42) */
    nir_ssa_def *width_m1 =
-      nir_ior(b, nir_ushr_imm(b, w0, 28),
-              nir_ishl_imm(b, nir_iand_imm(b, w1, BITFIELD_MASK(14 - 4)), 4));
+      nir_extr_agx(b, w0, w1, nir_imm_int(b, 28), nir_imm_int(b, 14));
+
    /* Height minus 1: bits [42, 56) */
    nir_ssa_def *height_m1 =
       nir_iand_imm(b, nir_ushr_imm(b, w1, 42 - 32), BITFIELD_MASK(14));
@@ -116,6 +116,12 @@ agx_txs(nir_builder *b, nir_tex_instr *tex)
 
    if (!(nr_comps == 3 && tex->is_array))
       depth = nir_imax(b, nir_ushr(b, depth, lod), nir_imm_int(b, 1));
+
+   /* Cube maps have equal width and height, we save some instructions by only
+    * reading one. Dead code elimination will remove the redundant instructions.
+    */
+   if (tex->sampler_dim == GLSL_SAMPLER_DIM_CUBE)
+      height = width;
 
    comp[0] = width;
    comp[1] = height;

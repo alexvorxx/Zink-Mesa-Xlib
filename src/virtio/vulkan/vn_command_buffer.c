@@ -924,9 +924,6 @@ vn_cmd_submit(struct vn_command_buffer *cmd)
       return;
    }
 
-   if (unlikely(!instance->renderer->info.supports_blob_id_0))
-      vn_instance_wait_roundtrip(instance, cmd->cs.current_buffer_roundtrip);
-
    if (vn_instance_ring_submit(instance, &cmd->cs) != VK_SUCCESS) {
       cmd->state = VN_COMMAND_BUFFER_STATE_INVALID;
       return;

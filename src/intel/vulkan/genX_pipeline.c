@@ -1500,7 +1500,7 @@ emit_3dstate_wm(struct anv_graphics_pipeline *pipeline,
          wm_prog_data->uses_kill;
 
       wm.BarycentricInterpolationMode =
-         wm_prog_data->barycentric_interp_modes;
+         wm_prog_data_barycentric_modes(wm_prog_data, 0);
    }
 
    GENX(3DSTATE_WM_pack)(NULL, pipeline->gfx8.wm, &wm);
@@ -1526,7 +1526,8 @@ emit_3dstate_ps(struct anv_graphics_pipeline *pipeline,
 
    anv_batch_emit(&pipeline->base.batch, GENX(3DSTATE_PS), ps) {
       intel_set_ps_dispatch_state(&ps, devinfo, wm_prog_data,
-                                  ms != NULL ? ms->rasterization_samples : 1);
+                                  ms != NULL ? ms->rasterization_samples : 1,
+                                  0 /* msaa_flags */);
 
       ps.KernelStartPointer0 = fs_bin->kernel.offset +
                                brw_wm_prog_data_prog_offset(wm_prog_data, ps, 0);
@@ -1581,7 +1582,8 @@ emit_3dstate_ps_extra(struct anv_graphics_pipeline *pipeline,
       ps.PixelShaderValid              = true;
       ps.AttributeEnable               = wm_prog_data->num_varying_inputs > 0;
       ps.oMaskPresenttoRenderTarget    = wm_prog_data->uses_omask;
-      ps.PixelShaderIsPerSample        = wm_prog_data->persample_dispatch;
+      ps.PixelShaderIsPerSample        =
+         brw_wm_prog_data_is_persample(wm_prog_data, 0);
       ps.PixelShaderComputedDepthMode  = wm_prog_data->computed_depth_mode;
       ps.PixelShaderUsesSourceDepth    = wm_prog_data->uses_src_depth;
       ps.PixelShaderUsesSourceW        = wm_prog_data->uses_src_w;
@@ -1603,7 +1605,7 @@ emit_3dstate_ps_extra(struct anv_graphics_pipeline *pipeline,
       assert(!wm_prog_data->inner_coverage); /* Not available in SPIR-V */
       if (!wm_prog_data->uses_sample_mask)
          ps.InputCoverageMaskState = ICMS_NONE;
-      else if (wm_prog_data->per_coarse_pixel_dispatch)
+      else if (brw_wm_prog_data_is_coarse(wm_prog_data, 0))
          ps.InputCoverageMaskState  = ICMS_NORMAL;
       else if (wm_prog_data->post_depth_coverage)
          ps.InputCoverageMaskState = ICMS_DEPTH_COVERAGE;
@@ -1613,13 +1615,15 @@ emit_3dstate_ps_extra(struct anv_graphics_pipeline *pipeline,
 #if GFX_VER >= 11
       ps.PixelShaderRequiresSourceDepthandorWPlaneCoefficients =
          wm_prog_data->uses_depth_w_coefficients;
-      ps.PixelShaderIsPerCoarsePixel = wm_prog_data->per_coarse_pixel_dispatch;
+      ps.PixelShaderIsPerCoarsePixel =
+         brw_wm_prog_data_is_coarse(wm_prog_data, 0);
 #endif
 #if GFX_VERx10 >= 125
       /* TODO: We should only require this when the last geometry shader uses
        *       a fragment shading rate that is not constant.
        */
-      ps.EnablePSDependencyOnCPsizeChange = wm_prog_data->per_coarse_pixel_dispatch;
+      ps.EnablePSDependencyOnCPsizeChange =
+         brw_wm_prog_data_is_coarse(wm_prog_data, 0);
 #endif
    }
 }

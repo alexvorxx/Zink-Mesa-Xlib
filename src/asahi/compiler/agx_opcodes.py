@@ -213,6 +213,10 @@ op("bfeil",
       encoding_32 = (0x2E | L, 0x7F | L | (0x3 << 26), 8, _),
       srcs = 3, imms = [BFI_MASK])
 
+op("extr",
+      encoding_32 = (0x2E | (0x1 << 26), 0x7F | L | (0x3 << 26), 8, _),
+      srcs = 3, imms = [BFI_MASK])
+
 op("asr",
       encoding_32 = (0x2E | L | (0x1 << 26), 0x7F | L | (0x3 << 26), 8, _),
       srcs = 2)
@@ -303,6 +307,12 @@ op("writeout", (0x48, 0xFF, 4, _), dests = 0, imms = [WRITEOUT], can_eliminate =
 # TODO: Do we need the short encoding?
 op("block_image_store", (0xB1, 0xFF, 10, _), dests = 0, srcs = 2,
    imms = [FORMAT, DIM], can_eliminate = False)
+
+# Barriers
+op("threadgroup_barrier", (0x0068, 0xFFFF, 2, _), dests = 0, srcs = 0,
+   can_eliminate = False)
+op("memory_barrier", (0x96F5, 0xFFFF, 2, _), dests = 0, srcs = 0,
+   can_eliminate = False)
 
 # Convenient aliases.
 op("mov", _, srcs = 1)

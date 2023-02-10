@@ -2085,6 +2085,8 @@ tu_CreateDevice(VkPhysicalDevice physicalDevice,
                               .disable_cache = true,
                               .bindless_fb_read_descriptor = -1,
                               .bindless_fb_read_slot = -1,
+                              .storage_16bit =
+                                    physical_device->info->a6xx.storage_16bit
                            });
    if (!device->compiler) {
       result = vk_startup_errorf(physical_device->instance,

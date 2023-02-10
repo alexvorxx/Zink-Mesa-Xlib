@@ -1984,7 +1984,8 @@ tu6_emit_vertex_input(struct tu_cs *cs,
       const VkVertexInputAttributeDescription2EXT *attr = attrs[loc];
 
       if (attr) {
-         const struct tu_native_format format = tu6_format_vtx(attr->format);
+         const struct tu_native_format format = tu6_format_vtx(
+               tu_vk_format_to_pipe_format(attr->format));
          tu_cs_emit(cs, A6XX_VFD_DECODE_INSTR(0,
                           .idx = attr->binding,
                           .offset = attr->offset,

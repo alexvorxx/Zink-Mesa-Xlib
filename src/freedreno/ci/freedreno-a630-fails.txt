@@ -11,13 +11,6 @@ KHR-GL45.shading_language_420pack.binding_images,Fail
 KHR-GL45.compute_shader.conditional-dispatching,Fail
 KHR-GL45.buffer_storage.map_persistent_draw,Fail
 
-# Lots of errors like "[279] Check failed. Received: [3,0,0,2] instead of: [5,0,0,2]"
-KHR-GLES31.core.geometry_shader.layered_framebuffer.depth_support,Fail
-KHR-GL45.geometry_shader.layered_framebuffer.depth_support,Fail
-
-KHR-GLES31.core.geometry_shader.layered_framebuffer.stencil_support,Fail
-KHR-GL45.geometry_shader.layered_framebuffer.stencil_support,Fail
-
 # "Invalid value returned: expected:[1, 1, 1, 1] retrieved: [0, 0, 0, 0
 #  Invalid rendering result at esextcTessellationShaderBarrier.cpp:504"
 KHR-GLES31.core.tessellation_shader.tessellation_shader_tc_barriers.barrier_guarded_read_calls,Fail

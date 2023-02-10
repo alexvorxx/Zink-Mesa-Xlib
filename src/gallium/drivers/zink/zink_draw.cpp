@@ -1215,3 +1215,18 @@ zink_init_grid_functions(struct zink_context *ctx)
     */
    ctx->base.launch_grid = zink_invalid_launch_grid;
 }
+
+void
+zink_init_screen_pipeline_libs(struct zink_screen *screen)
+{
+   _mesa_set_init(&screen->pipeline_libs[0], screen, hash_gfx_program<0>, equals_gfx_program<0>);
+   _mesa_set_init(&screen->pipeline_libs[1], screen, hash_gfx_program<1>, equals_gfx_program<1>);
+   _mesa_set_init(&screen->pipeline_libs[2], screen, hash_gfx_program<2>, equals_gfx_program<2>);
+   _mesa_set_init(&screen->pipeline_libs[3], screen, hash_gfx_program<3>, equals_gfx_program<3>);
+   _mesa_set_init(&screen->pipeline_libs[4], screen, hash_gfx_program<4>, equals_gfx_program<4>);
+   _mesa_set_init(&screen->pipeline_libs[5], screen, hash_gfx_program<5>, equals_gfx_program<5>);
+   _mesa_set_init(&screen->pipeline_libs[6], screen, hash_gfx_program<6>, equals_gfx_program<6>);
+   _mesa_set_init(&screen->pipeline_libs[7], screen, hash_gfx_program<7>, equals_gfx_program<7>);
+   for (unsigned i = 0; i < ARRAY_SIZE(screen->pipeline_libs_lock); i++)
+      simple_mtx_init(&screen->pipeline_libs_lock[i], mtx_plain);
+}

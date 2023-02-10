@@ -897,7 +897,7 @@ emit_perfcntrs_pass_start(struct tu_cs *cs, uint32_t pass)
    tu_cs_emit(cs, A6XX_CP_REG_TEST_0_REG(
                         REG_A6XX_CP_SCRATCH_REG(PERF_CNTRS_REG)) |
                   A6XX_CP_REG_TEST_0_BIT(pass) |
-                  A6XX_CP_REG_TEST_0_WAIT_FOR_ME);
+                  A6XX_CP_REG_TEST_0_SKIP_WAIT_FOR_ME);
    tu_cond_exec_start(cs, CP_COND_REG_EXEC_0_MODE(PRED_TEST));
 }
 

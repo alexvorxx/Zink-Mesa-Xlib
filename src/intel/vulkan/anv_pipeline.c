@@ -546,7 +546,8 @@ populate_wm_prog_key(const struct anv_graphics_pipeline *pipeline,
     * code to workaround the issue that hardware disables alpha to coverage
     * when there is SampleMask output.
     */
-   key->alpha_to_coverage = ms != NULL && ms->alpha_to_coverage_enable;
+   key->alpha_to_coverage = ms != NULL && ms->alpha_to_coverage_enable ?
+      BRW_ALWAYS : BRW_NEVER;
 
    /* Vulkan doesn't support fixed-function alpha test */
    key->alpha_test_replicate_alpha = false;
@@ -556,9 +557,11 @@ populate_wm_prog_key(const struct anv_graphics_pipeline *pipeline,
        * harmless to compute it and then let dead-code take care of it.
        */
       if (ms->rasterization_samples > 1) {
-         key->persample_interp = ms->sample_shading_enable &&
-            (ms->min_sample_shading * ms->rasterization_samples) > 1;
-         key->multisample_fbo = true;
+         key->persample_interp =
+            (ms->sample_shading_enable &&
+             (ms->min_sample_shading * ms->rasterization_samples) > 1) ?
+            BRW_ALWAYS : BRW_NEVER;
+         key->multisample_fbo = BRW_ALWAYS;
       }
 
       if (device->physical->instance->sample_mask_out_opengl_behaviour)
@@ -769,7 +772,7 @@ anv_pipeline_stage_get_nir(struct anv_pipeline *pipeline,
    return NULL;
 }
 
-static const struct vk_ycbcr_conversion *
+static const struct vk_ycbcr_conversion_state *
 lookup_ycbcr_conversion(const void *_pipeline_layout, uint32_t set,
                         uint32_t binding, uint32_t array_index)
 {
@@ -788,7 +791,7 @@ lookup_ycbcr_conversion(const void *_pipeline_layout, uint32_t set,
    const struct anv_sampler *sampler =
       bind_layout->immutable_samplers[array_index];
 
-   return sampler ? sampler->conversion : NULL;
+   return sampler && sampler->conversion ? &sampler->conversion->state : NULL;
 }
 
 static void
@@ -2619,11 +2622,11 @@ anv_pipeline_init_ray_tracing_stages(struct anv_ray_tracing_pipeline *pipeline,
 }
 
 static bool
-anv_pipeline_load_cached_shaders(struct anv_ray_tracing_pipeline *pipeline,
-                                 struct vk_pipeline_cache *cache,
-                                 const VkRayTracingPipelineCreateInfoKHR *info,
-                                 struct anv_pipeline_stage *stages,
-                                 uint32_t *stack_max)
+anv_ray_tracing_pipeline_load_cached_shaders(struct anv_ray_tracing_pipeline *pipeline,
+                                             struct vk_pipeline_cache *cache,
+                                             const VkRayTracingPipelineCreateInfoKHR *info,
+                                             struct anv_pipeline_stage *stages,
+                                             uint32_t *stack_max)
 {
    uint32_t shaders = 0, cache_hits = 0;
    for (uint32_t i = 0; i < info->stageCount; i++) {
@@ -2687,7 +2690,8 @@ anv_pipeline_compile_ray_tracing(struct anv_ray_tracing_pipeline *pipeline,
    uint32_t stack_max[MESA_VULKAN_SHADER_STAGES] = {};
 
    if (!skip_cache_lookup &&
-       anv_pipeline_load_cached_shaders(pipeline, cache, info, stages, stack_max)) {
+       anv_ray_tracing_pipeline_load_cached_shaders(pipeline, cache, info,
+                                                    stages, stack_max)) {
       pipeline_feedback.flags |=
          VK_PIPELINE_CREATION_FEEDBACK_APPLICATION_PIPELINE_CACHE_HIT_BIT;
       goto done;

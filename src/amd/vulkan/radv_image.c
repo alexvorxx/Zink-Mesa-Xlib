@@ -48,6 +48,9 @@ radv_choose_tiling(struct radv_device *device, const VkImageCreateInfo *pCreateI
       return RADEON_SURF_MODE_LINEAR_ALIGNED;
    }
 
+   if (pCreateInfo->usage & (VK_IMAGE_USAGE_VIDEO_DECODE_DST_BIT_KHR | VK_IMAGE_USAGE_VIDEO_DECODE_DPB_BIT_KHR))
+      return RADEON_SURF_MODE_LINEAR_ALIGNED;
+
    /* MSAA resources must be 2D tiled. */
    if (pCreateInfo->samples > 1)
       return RADEON_SURF_MODE_2D;

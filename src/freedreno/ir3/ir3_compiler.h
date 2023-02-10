@@ -61,6 +61,9 @@ struct ir3_compiler_options {
     */
    int bindless_fb_read_descriptor;
    int bindless_fb_read_slot;
+
+   /* True if 16-bit descriptors are used for both 16-bit and 32-bit access. */
+   bool storage_16bit;
 };
 
 struct ir3_compiler {

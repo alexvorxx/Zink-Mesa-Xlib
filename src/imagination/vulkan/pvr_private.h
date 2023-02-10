@@ -47,6 +47,7 @@
 #include "pvr_limits.h"
 #include "pvr_pds.h"
 #include "pvr_shader_factory.h"
+#include "pvr_spm.h"
 #include "pvr_types.h"
 #include "pvr_winsys.h"
 #include "rogue/rogue.h"
@@ -372,6 +373,8 @@ struct pvr_device {
       struct pvr_bo *buffers[PVR_MAX_TILE_BUFFER_COUNT];
       uint32_t buffer_count;
    } tile_buffer_state;
+
+   struct pvr_spm_scratch_buffer_store spm_scratch_buffer_store;
 
    VkPhysicalDeviceFeatures features;
 
@@ -1291,6 +1294,8 @@ struct pvr_framebuffer {
 
    uint32_t render_targets_count;
    struct pvr_render_target *render_targets;
+
+   struct pvr_spm_scratch_buffer *scratch_buffer;
 };
 
 struct pvr_render_pass_attachment {

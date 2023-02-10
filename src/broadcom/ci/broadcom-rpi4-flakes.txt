@@ -14,8 +14,6 @@ spec@egl 1.4@largest possible eglcreatepbuffersurface and then glclear
 # This test works alone, but fails when executing all the tests together
 dEQP-GLES3.functional.texture.specification.teximage2d_pbo.rgba32ui_2d
 
-dEQP-VK.api.command_buffers.record_many_draws_secondary_2
-
 dEQP-VK.api.external.fence.opaque_fd.reset_permanent
 dEQP-VK.api.external.fence.opaque_fd.reset_temporary
 

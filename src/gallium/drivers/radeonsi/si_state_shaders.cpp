@@ -2286,6 +2286,7 @@ void si_ps_key_update_framebuffer_blend_rasterizer(struct si_context *sctx)
    struct si_state_rasterizer *rs = sctx->queued.named.rasterizer;
    bool alpha_to_coverage = blend->alpha_to_coverage && rs->multisample_enable &&
                             sctx->framebuffer.nr_samples >= 2;
+   unsigned need_src_alpha_4bit = blend->need_src_alpha_4bit;
 
    if (!sel)
       return;
@@ -2295,17 +2296,23 @@ void si_ps_key_update_framebuffer_blend_rasterizer(struct si_context *sctx)
       sctx->gfx_level >= GFX11 && alpha_to_coverage &&
       (sel->info.writes_z || sel->info.writes_stencil || sel->info.writes_samplemask);
 
+   /* If alpha-to-coverage isn't exported via MRTZ, set that we need to export alpha
+    * through MRT0.
+    */
+   if (alpha_to_coverage && !key->ps.part.epilog.alpha_to_coverage_via_mrtz)
+      need_src_alpha_4bit |= 0xf;
+
    /* Select the shader color format based on whether
     * blending or alpha are needed.
     */
    key->ps.part.epilog.spi_shader_col_format =
-      (blend->blend_enable_4bit & blend->need_src_alpha_4bit &
+      (blend->blend_enable_4bit & need_src_alpha_4bit &
        sctx->framebuffer.spi_shader_col_format_blend_alpha) |
-      (blend->blend_enable_4bit & ~blend->need_src_alpha_4bit &
+      (blend->blend_enable_4bit & ~need_src_alpha_4bit &
        sctx->framebuffer.spi_shader_col_format_blend) |
-      (~blend->blend_enable_4bit & blend->need_src_alpha_4bit &
+      (~blend->blend_enable_4bit & need_src_alpha_4bit &
        sctx->framebuffer.spi_shader_col_format_alpha) |
-      (~blend->blend_enable_4bit & ~blend->need_src_alpha_4bit &
+      (~blend->blend_enable_4bit & ~need_src_alpha_4bit &
        sctx->framebuffer.spi_shader_col_format);
    key->ps.part.epilog.spi_shader_col_format &= blend->cb_target_enabled_4bit;
 
@@ -2323,8 +2330,11 @@ void si_ps_key_update_framebuffer_blend_rasterizer(struct si_context *sctx)
 
    /* If alpha-to-coverage is enabled, we have to export alpha
     * even if there is no color buffer.
+    *
+    * Gfx11 exports alpha-to-coverage via MRTZ if MRTZ is present.
     */
-   if (!(key->ps.part.epilog.spi_shader_col_format & 0xf) && alpha_to_coverage)
+   if (!(key->ps.part.epilog.spi_shader_col_format & 0xf) && alpha_to_coverage &&
+       !key->ps.part.epilog.alpha_to_coverage_via_mrtz)
       key->ps.part.epilog.spi_shader_col_format |= V_028710_SPI_SHADER_32_AR;
 
    /* On GFX6 and GFX7 except Hawaii, the CB doesn't clamp outputs

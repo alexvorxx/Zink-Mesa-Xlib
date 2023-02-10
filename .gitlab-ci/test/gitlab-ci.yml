@@ -65,6 +65,11 @@ rustfmt:
       artifacts: false  # The Android build will be downloaded later
     - job: debian/x86_test-android
       artifacts: false
+  script:
+    - ./install/cuttlefish-runner.sh
+  artifacts:
+    paths:
+      - results/
 
 .vkd3d-proton-test:
   artifacts:

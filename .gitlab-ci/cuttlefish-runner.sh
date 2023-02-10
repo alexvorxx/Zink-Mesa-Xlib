@@ -15,7 +15,7 @@ chown root.kvm /dev/kvm
 
 cd /cuttlefish
 
-launch_cvd --verbosity=DEBUG --report_anonymous_usage_stats=n --cpus=8 --memory_mb=8192 --gpu_mode=drm_virgl --daemon --enable_minimal_mode=true --guest_enforce_security=false --use_overlay=false
+launch_cvd --verbosity=DEBUG --report_anonymous_usage_stats=n --cpus=8 --memory_mb=8192 --gpu_mode="$ANDROID_GPU_MODE" --daemon --enable_minimal_mode=true --guest_enforce_security=false --use_overlay=false
 sleep 1
 
 cd -
@@ -54,14 +54,13 @@ MESA_ANDROID_ARTIFACT_URL=https://${PIPELINE_ARTIFACTS_BASE}/${MINIO_ARTIFACT_NA
 curl -L --retry 4 -f --retry-all-errors --retry-delay 60 -o ${MINIO_ARTIFACT_NAME}.tar.zst ${MESA_ANDROID_ARTIFACT_URL}
 tar -xvf ${MINIO_ARTIFACT_NAME}.tar.zst
 
-GPU_VERSION=virgl-gl
 $ADB push install/all-skips.txt /data/.
 $ADB push install/$GPU_VERSION-flakes.txt /data/.
-$ADB push install/deqp-android-virgl.toml /data/.
+$ADB push install/deqp-$DEQP_SUITE.toml /data/.
 
 # remove 32 bits libs from /vendor/lib
 
-$ADB shell rm /vendor/lib/dri/virtio_gpu_dri.so
+$ADB shell rm /vendor/lib/dri/${ANDROID_DRIVER}_dri.so
 $ADB shell rm /vendor/lib/libglapi.so
 $ADB shell rm /vendor/lib/egl/libEGL_mesa.so
 
@@ -74,7 +73,7 @@ $ADB shell rm /vendor/lib/egl/libGLESv2_emulation.so
 
 # replace on /vendor/lib64
 
-$ADB push install/lib/dri/virtio_gpu_dri.so /vendor/lib64/dri/virtio_gpu_dri.so
+$ADB push install/lib/dri/${ANDROID_DRIVER}_dri.so /vendor/lib64/dri/${ANDROID_DRIVER}_dri.so
 $ADB push install/lib/libglapi.so /vendor/lib64/libglapi.so
 $ADB push install/lib/libEGL.so /vendor/lib64/egl/libEGL_mesa.so
 
@@ -88,11 +87,10 @@ $ADB shell rm /vendor/lib64/egl/libGLESv2_emulation.so
 # run tests
 
 RESULTS=/data/results
-DEQP_SUITE=/data/deqp-android-virgl.toml
 
 $ADB shell "mkdir /data/results; cd /data; strace -o /data/results/out.strace -f -s 1000 ./deqp-runner \
     suite \
-    --suite $DEQP_SUITE \
+    --suite /data/deqp-$DEQP_SUITE.toml \
     --output $RESULTS \
     --skips /data/all-skips.txt $DEQP_SKIPS \
     --flakes /data/$GPU_VERSION-flakes.txt \

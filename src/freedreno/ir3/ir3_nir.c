@@ -602,7 +602,7 @@ ir3_nir_post_finalize(struct ir3_shader *shader)
     * dwords.
     */
    if (compiler->gen >= 6)
-      OPT_V(s, ir3_nir_lower_ssbo_size, compiler->storage_16bit ? 1 : 2);
+      OPT_V(s, ir3_nir_lower_ssbo_size, compiler->options.storage_16bit ? 1 : 2);
 
    ir3_optimize_loop(compiler, s);
 }

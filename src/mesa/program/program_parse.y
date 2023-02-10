@@ -290,6 +290,11 @@ yylex(YYSTYPE *yylval_param, YYLTYPE *yylloc_param,
 }
 %}
 
+/* The directive: %destructor is called to clean up the stack
+ * after a parser error.
+ */
+%destructor { free($$); } IDENTIFIER USED_IDENTIFIER
+
 %%
 
 program: language optionSequence statementSequence END

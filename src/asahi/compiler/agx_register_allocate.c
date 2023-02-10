@@ -451,7 +451,6 @@ agx_insert_parallel_copies(agx_context *ctx, agx_block *block)
          agx_index src = phi->src[pred_index];
 
          assert(dest.type == AGX_INDEX_REGISTER);
-         assert(src.type == AGX_INDEX_REGISTER);
          assert(dest.size == src.size);
 
          copies[i++] = (struct agx_copy){

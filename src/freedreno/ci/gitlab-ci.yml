@@ -58,7 +58,9 @@ a306_gl:
   variables:
     HWCI_START_XORG: 1
 
-a306_piglit_gl:
+# Something happened and now this hangchecks and doesn't recover.  Unkown when
+# it started.
+.a306_piglit_gl:
   extends:
     - .a306_piglit
   variables:
@@ -130,6 +132,7 @@ a530-traces:
   extends:
     - .lava-test:arm64
   variables:
+    FLAKES_CHANNEL: "#freedreno-ci"
     BOOT_METHOD: depthcharge
     KERNEL_IMAGE_TYPE: ""
     # Increase the hangcheck timer for our spilling tests which bump up against

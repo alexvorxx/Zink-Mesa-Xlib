@@ -524,6 +524,7 @@ u_pipe_screen_get_param_defaults(struct pipe_screen *pscreen,
       return 64;
 
    case PIPE_CAP_VALIDATE_ALL_DIRTY_STATES:
+   case PIPE_CAP_NULL_TEXTURES:
       return 0;
 
    default:

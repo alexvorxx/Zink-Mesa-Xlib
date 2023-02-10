@@ -1203,6 +1203,16 @@ static VkResult pvr_sub_cmd_gfx_job_init(const struct pvr_device_info *dev_info,
    job->run_frag = true;
    job->geometry_terminate = true;
 
+   /* TODO: In some cases a PR can be removed by storing to the color attachment
+    * and have the background object load directly from it instead of using the
+    * scratch buffer. In those cases we can also set this to "false" and avoid
+    * extra fw overhead.
+    */
+   /* The scratch buffer is always needed and allocated to avoid data loss in
+    * case SPM is hit so set the flag unconditionally.
+    */
+   job->requires_spm_scratch_buffer = true;
+
    return VK_SUCCESS;
 }
 

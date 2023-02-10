@@ -3060,7 +3060,7 @@ v3dv_CreateSampler(VkDevice _device,
 
    if (ycbcr_conv_info) {
       VK_FROM_HANDLE(vk_ycbcr_conversion, conversion, ycbcr_conv_info->conversion);
-      ycbcr_info = vk_format_get_ycbcr_info(conversion->format);
+      ycbcr_info = vk_format_get_ycbcr_info(conversion->state.format);
       if (ycbcr_info) {
          sampler->plane_count = ycbcr_info->n_planes;
          sampler->conversion = conversion;

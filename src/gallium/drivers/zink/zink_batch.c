@@ -445,7 +445,7 @@ zink_batch_bind_db(struct zink_context *ctx)
       infos[i].usage = batch->state->dd.db[i]->obj->vkusage;
       assert(infos[i].usage);
    }
-   if (ctx->dd.bindless_layout) {
+   if (ctx->dd.bindless_init) {
       infos[ZINK_DESCRIPTOR_BINDLESS].sType = VK_STRUCTURE_TYPE_DESCRIPTOR_BUFFER_BINDING_INFO_EXT;
       infos[ZINK_DESCRIPTOR_BINDLESS].address = ctx->dd.db.bindless_db->obj->bda;
       infos[ZINK_DESCRIPTOR_BINDLESS].usage = ctx->dd.db.bindless_db->obj->vkusage;

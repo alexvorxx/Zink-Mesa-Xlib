@@ -59,6 +59,8 @@ anv_queue_init(struct anv_device *device, struct anv_queue *queue,
    queue->family = &pdevice->queue.families[queue->vk.queue_family_index];
    queue->exec_flags = exec_flags;
 
+   queue->decoder = &device->decoder[queue->vk.queue_family_index];
+
    return VK_SUCCESS;
 }
 

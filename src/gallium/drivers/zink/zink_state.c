@@ -407,8 +407,10 @@ zink_bind_blend_state(struct pipe_context *pctx, void *cso)
 
    if (state->blend_state != cso) {
       state->blend_state = cso;
-      state->blend_id = blend ? blend->hash : 0;
-      state->dirty |= !zink_screen(pctx->screen)->have_full_ds3;
+      if (!zink_screen(pctx->screen)->have_full_ds3) {
+         state->blend_id = blend ? blend->hash : 0;
+         state->dirty = true;
+      }
       bool force_dual_color_blend = zink_screen(pctx->screen)->driconf.dual_color_blend_by_location &&
                                     blend && blend->dual_src_blend && state->blend_state->attachments[0].blendEnable;
       if (force_dual_color_blend != zink_get_fs_base_key(ctx)->force_dual_color_blend)

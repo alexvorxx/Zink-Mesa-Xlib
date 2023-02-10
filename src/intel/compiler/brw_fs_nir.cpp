@@ -3189,6 +3189,8 @@ fs_visitor::emit_non_coherent_fb_read(const fs_builder &bld, const fs_reg &dst,
     * shouldn't be necessary to recompile based on whether the framebuffer is
     * CMS or UMS.
     */
+   assert(wm_key->multisample_fbo == BRW_ALWAYS ||
+          wm_key->multisample_fbo == BRW_NEVER);
    if (wm_key->multisample_fbo &&
        nir_system_values[SYSTEM_VALUE_SAMPLE_ID].file == BAD_FILE)
       nir_system_values[SYSTEM_VALUE_SAMPLE_ID] = emit_sampleid_setup();

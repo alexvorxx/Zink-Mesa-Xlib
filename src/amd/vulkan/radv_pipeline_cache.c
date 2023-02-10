@@ -69,7 +69,6 @@ radv_is_cache_disabled(struct radv_device *device)
     * when ACO_DEBUG is used. MESA_GLSL_CACHE_DISABLE is done elsewhere.
     */
    return (device->instance->debug_flags & RADV_DEBUG_NO_CACHE) ||
-          (device->instance->perftest_flags & RADV_PERFTEST_GPL) ||
           (device->physical_device->use_llvm ? 0 : aco_get_codegen_flags());
 }
 

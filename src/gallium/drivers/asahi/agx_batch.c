@@ -76,7 +76,8 @@ agx_batch_init(struct agx_context *ctx,
    unsigned batch_idx = agx_batch_idx(batch);
    BITSET_SET(ctx->batches.active, batch_idx);
 
-   agx_batch_init_state(batch);
+   if (key->width != AGX_COMPUTE_BATCH_WIDTH)
+      agx_batch_init_state(batch);
 }
 
 void
@@ -169,6 +170,16 @@ agx_get_batch(struct agx_context *ctx)
    }
 
    assert(util_framebuffer_state_equal(&ctx->framebuffer, &ctx->batch->key));
+   return ctx->batch;
+}
+
+struct agx_batch *
+agx_get_compute_batch(struct agx_context *ctx)
+{
+   agx_dirty_all(ctx);
+
+   struct pipe_framebuffer_state key = {.width = AGX_COMPUTE_BATCH_WIDTH};
+   ctx->batch = agx_get_batch_for_framebuffer(ctx, &key);
    return ctx->batch;
 }
 

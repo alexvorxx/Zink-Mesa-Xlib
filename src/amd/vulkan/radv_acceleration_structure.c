@@ -953,10 +953,15 @@ encode_nodes(VkCommandBuffer commandBuffer, uint32_t infoCount,
       radv_CmdPushConstants(commandBuffer,
                             cmd_buffer->device->meta_state.accel_struct_build.encode_p_layout,
                             VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(args), &args);
-      radv_indirect_unaligned_dispatch(cmd_buffer, NULL,
-                                       pInfos[i].scratchData.deviceAddress +
-                                          bvh_states[i].scratch.header_offset +
-                                          offsetof(struct radv_ir_header, ir_internal_node_count));
+
+      struct radv_dispatch_info dispatch = {
+         .unaligned = true,
+         .ordered = true,
+         .va = pInfos[i].scratchData.deviceAddress + bvh_states[i].scratch.header_offset +
+               offsetof(struct radv_ir_header, ir_internal_node_count),
+      };
+
+      radv_compute_dispatch(cmd_buffer, &dispatch);
    }
    /* This is the final access to the leaf nodes, no need to flush */
 }

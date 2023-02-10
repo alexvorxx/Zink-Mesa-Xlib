@@ -41,6 +41,7 @@ static const struct debug_control vn_perf_options[] = {
    { "no_fence_feedback", VN_PERF_NO_FENCE_FEEDBACK },
    { "no_memory_suballoc", VN_PERF_NO_MEMORY_SUBALLOC },
    { "no_cmd_batching", VN_PERF_NO_CMD_BATCHING },
+   { "no_timeline_sem_feedback", VN_PERF_NO_TIMELINE_SEM_FEEDBACK },
    { NULL, 0 },
    /* clang-format on */
 };
@@ -86,6 +87,8 @@ vn_trace_init(void)
 {
 #ifdef ANDROID
    atrace_init();
+#else
+   util_perfetto_init();
 #endif
 }
 

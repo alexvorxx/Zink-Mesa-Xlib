@@ -249,8 +249,12 @@ ail_make_miptree(struct ail_layout *layout)
     * allocate them all.
     */
    if (layout->levels > 1) {
-      layout->levels =
-         util_logbase2(MAX2(layout->width_px, layout->height_px)) + 1;
+      unsigned major_axis_px = MAX2(layout->width_px, layout->height_px);
+
+      if (layout->mipmapped_z)
+         major_axis_px = MAX2(major_axis_px, layout->depth_px);
+
+      layout->levels = util_logbase2(major_axis_px) + 1;
    }
 
    assert(util_format_get_blockdepth(layout->format) == 1 &&

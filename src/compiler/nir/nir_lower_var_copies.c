@@ -164,6 +164,8 @@ nir_lower_var_copies(nir_shader *shader)
 {
    bool progress = false;
 
+   shader->info.var_copies_lowered = true;
+
    nir_foreach_function(function, shader) {
       if (function->impl)
          progress |= lower_var_copies_impl(function->impl);

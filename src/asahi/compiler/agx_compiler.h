@@ -274,6 +274,8 @@ enum agx_convert {
 
 enum agx_lod_mode {
    AGX_LOD_MODE_AUTO_LOD = 0,
+   AGX_LOD_MODE_AUTO_LOD_BIAS_UNIFORM = 1,
+   AGX_LOD_MODE_LOD_MIN_UNIFORM = 2,
    AGX_LOD_MODE_AUTO_LOD_BIAS = 5,
    AGX_LOD_MODE_LOD_MIN = 6,
    AGX_LOD_MODE_LOD_GRAD = 4,
@@ -782,6 +784,7 @@ void agx_print_block(agx_block *block, FILE *fp);
 void agx_print_shader(agx_context *ctx, FILE *fp);
 void agx_optimizer(agx_context *ctx);
 void agx_lower_pseudo(agx_context *ctx);
+void agx_lower_uniform_sources(agx_context *ctx);
 void agx_opt_cse(agx_context *ctx);
 void agx_dce(agx_context *ctx);
 void agx_ra(agx_context *ctx);

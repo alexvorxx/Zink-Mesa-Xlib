@@ -66,6 +66,12 @@ pass(struct nir_builder *b, nir_instr *instr, void *data)
    case nir_intrinsic_load_blend_const_color_a_float:
       ptr = &u->fs.blend_constant[3];
       break;
+   case nir_intrinsic_load_ssbo_address:
+      ptr = &u->ssbo_base[nir_src_as_uint(intr->src[0])];
+      break;
+   case nir_intrinsic_get_ssbo_size:
+      ptr = &u->ssbo_size[nir_src_as_uint(intr->src[0])];
+      break;
    default:
       return false;
    }
@@ -125,10 +131,13 @@ lay_out_uniforms(struct agx_compiled_shader *shader, struct state *state)
       do {
          uint8_t size = state->element_size[range_start];
 
-         /* Find a range of constant element size. [range_start, range_end) */
+         /* Find a range of constant element size. [range_start, range_end).
+          * Ranges may be at most 64 halfs.
+          */
          unsigned range_end;
          for (range_end = range_start + 1;
-              range_end < end && state->element_size[range_end] == size;
+              range_end < end && state->element_size[range_end] == size &&
+              range_end < range_start + 64;
               ++range_end)
             ;
 
@@ -138,10 +147,10 @@ lay_out_uniforms(struct agx_compiled_shader *shader, struct state *state)
          assert((shader->push_range_count < ARRAY_SIZE(shader->push)) &&
                 "AGX_MAX_PUSH_RANGES must be an upper bound");
 
-         /* Offsets must be aligned to 8 bytes, this may require pushing a
+         /* Offsets must be aligned to 4 bytes, this may require pushing a
           * little more than intended (otherwise we would need extra copies)
           */
-         range_start = ROUND_DOWN_TO(range_start, 8 / 2);
+         range_start = ROUND_DOWN_TO(range_start, 4 / 2);
 
          shader->push[shader->push_range_count++] = (struct agx_push_range){
             .uniform = uniform,

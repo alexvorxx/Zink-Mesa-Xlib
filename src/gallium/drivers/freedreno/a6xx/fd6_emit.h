@@ -325,8 +325,9 @@ fd6_gl2spacing(enum gl_tess_spacing spacing)
 void fd6_emit_3d_state(struct fd_ringbuffer *ring,
                        struct fd6_emit *emit) assert_dt;
 
+struct fd6_compute_state;
 void fd6_emit_cs_state(struct fd_context *ctx, struct fd_ringbuffer *ring,
-                       struct ir3_shader_variant *cp) assert_dt;
+                       struct fd6_compute_state *cs) assert_dt;
 
 void fd6_emit_restore(struct fd_batch *batch, struct fd_ringbuffer *ring);
 

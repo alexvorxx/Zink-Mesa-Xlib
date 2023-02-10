@@ -1091,14 +1091,18 @@ _mesa_get_fallback_texture(struct gl_context *ctx, gl_texture_index tex, bool is
                                     0, /* border */
                                     is_depth ? GL_DEPTH_COMPONENT : GL_RGBA, texFormat);
          _mesa_update_texture_object_swizzle(ctx, texObj);
-         if (is_depth)
-            st_TexImage(ctx, dims, texImage,
-                        GL_DEPTH_COMPONENT, GL_FLOAT, texel,
-                        &ctx->DefaultPacking);
-         else
-            st_TexImage(ctx, dims, texImage,
-                        GL_RGBA, GL_UNSIGNED_BYTE, texel,
-                        &ctx->DefaultPacking);
+         if (ctx->st->can_null_texture && is_depth) {
+            texObj->NullTexture = GL_TRUE;
+         } else {
+            if (is_depth)
+               st_TexImage(ctx, dims, texImage,
+                           GL_DEPTH_COMPONENT, GL_FLOAT, texel,
+                           &ctx->DefaultPacking);
+            else
+               st_TexImage(ctx, dims, texImage,
+                           GL_RGBA, GL_UNSIGNED_BYTE, texel,
+                           &ctx->DefaultPacking);
+         }
       }
 
       _mesa_test_texobj_completeness(ctx, texObj);
@@ -1109,7 +1113,8 @@ _mesa_get_fallback_texture(struct gl_context *ctx, gl_texture_index tex, bool is
 
       /* Complete the driver's operation in case another context will also
        * use the same fallback texture. */
-      st_glFinish(ctx);
+      if (!ctx->st->can_null_texture || !is_depth)
+         st_glFinish(ctx);
    }
    return ctx->Shared->FallbackTex[tex][is_depth];
 }

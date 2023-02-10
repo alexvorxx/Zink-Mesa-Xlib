@@ -25,6 +25,7 @@
 #define FD_BO_NO_HARDPIN 1
 
 #include "fd6_const.h"
+#include "fd6_compute.h"
 #include "fd6_pack.h"
 
 #define emit_const_user fd6_emit_const_user
@@ -334,12 +335,20 @@ fd6_build_driver_params(struct fd6_emit *emit)
 }
 
 void
-fd6_emit_cs_consts(const struct ir3_shader_variant *v,
-                   struct fd_ringbuffer *ring, struct fd_context *ctx,
-                   const struct pipe_grid_info *info)
+fd6_emit_cs_driver_params(struct fd_context *ctx,
+                          struct fd_ringbuffer *ring,
+                          struct fd6_compute_state *cs,
+                          const struct pipe_grid_info *info)
 {
-   ir3_emit_cs_consts(v, ring, ctx, info);
-   fd6_emit_ubos(v, ring, &ctx->constbuf[PIPE_SHADER_COMPUTE]);
+   ir3_emit_cs_driver_params(cs->v, ring, ctx, info);
+}
+
+void
+fd6_emit_cs_user_consts(struct fd_context *ctx,
+                        struct fd_ringbuffer *ring,
+                        struct fd6_compute_state *cs)
+{
+   emit_user_consts(cs->v, ring, &ctx->constbuf[PIPE_SHADER_COMPUTE]);
 }
 
 void

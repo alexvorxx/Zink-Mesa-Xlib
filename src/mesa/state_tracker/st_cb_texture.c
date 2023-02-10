@@ -27,6 +27,7 @@
 
 #include <stdio.h>
 #include "main/bufferobj.h"
+#include "main/context.h"
 #include "main/enums.h"
 #include "main/errors.h"
 #include "main/fbobject.h"
@@ -65,10 +66,12 @@
 #include "state_tracker/st_gen_mipmap.h"
 #include "state_tracker/st_atom.h"
 #include "state_tracker/st_sampler_view.h"
+#include "state_tracker/st_texcompress_compute.h"
 #include "state_tracker/st_util.h"
 
 #include "pipe/p_context.h"
 #include "pipe/p_defines.h"
+#include "util/log.h"
 #include "util/u_inlines.h"
 #include "util/u_upload_mgr.h"
 #include "pipe/p_shader_tokens.h"
@@ -540,6 +543,18 @@ st_MapTextureImage(struct gl_context *ctx,
    }
 }
 
+static void
+log_unmap_time_delta(const struct pipe_box *box,
+                     const struct gl_texture_image *texImage,
+                     const char *pathname, int64_t start_us)
+{
+   assert(start_us >= 0);
+   mesa_logi("unmap %dx%d pixels of %s data for %s tex, %s path: "
+             "%"PRIi64" us\n", box->width, box->height,
+             util_format_short_name(texImage->TexFormat),
+             util_format_short_name(texImage->pt->format),
+             pathname, os_time_get() - start_us);
+}
 
 void
 st_UnmapTextureImage(struct gl_context *ctx,
@@ -556,6 +571,44 @@ st_UnmapTextureImage(struct gl_context *ctx,
 
       if (itransfer->box.depth != 0) {
          assert(itransfer->box.depth == 1);
+
+         /* Toggle logging for the different unmap paths. */
+         const bool log_unmap_time = false;
+         const int64_t unmap_start_us = log_unmap_time ? os_time_get() : 0;
+
+         if (_mesa_is_format_astc_2d(texImage->TexFormat) &&
+             util_format_is_compressed(texImage->pt->format)) {
+
+            /* DXT5 is the only supported transcode target from ASTC. */
+            assert(texImage->pt->format == PIPE_FORMAT_DXT5_RGBA ||
+                   texImage->pt->format == PIPE_FORMAT_DXT5_SRGBA);
+
+            /* Try a compute-based transcode. */
+            if (itransfer->box.x == 0 &&
+                itransfer->box.y == 0 &&
+                itransfer->box.width == texImage->Width &&
+                itransfer->box.height == texImage->Height &&
+                _mesa_has_compute_shaders(ctx) &&
+                st_compute_transcode_astc_to_dxt5(st,
+                   itransfer->temp_data,
+                   itransfer->temp_stride,
+                   texImage->TexFormat,
+                   texImage->pt,
+                   st_texture_image_resource_level(texImage),
+                   itransfer->box.z)) {
+
+               if (log_unmap_time) {
+                  log_unmap_time_delta(&itransfer->box, texImage, "GPU",
+                                       unmap_start_us);
+               }
+
+               /* Mark the unmap as complete. */
+               assert(itransfer->transfer == NULL);
+               memset(itransfer, 0, sizeof(struct st_texture_image_transfer));
+
+               return;
+            }
+         }
 
          struct pipe_transfer *transfer;
          GLubyte *map = st_texture_image_map(st, texImage,
@@ -668,6 +721,12 @@ st_UnmapTextureImage(struct gl_context *ctx,
          }
 
          st_texture_image_unmap(st, texImage, slice);
+
+         if (log_unmap_time) {
+            log_unmap_time_delta(&itransfer->box, texImage, "CPU",
+                                 unmap_start_us);
+         }
+
          memset(&itransfer->box, 0, sizeof(struct pipe_box));
       }
 
@@ -3085,7 +3144,7 @@ st_finalize_texture(struct gl_context *ctx,
 
    /* May need to create a new gallium texture:
     */
-   if (!tObj->pt) {
+   if (!tObj->pt && !tObj->NullTexture) {
       GLuint bindings = default_bindings(st, firstImageFormat);
 
       tObj->pt = st_texture_create(st,
@@ -3115,7 +3174,7 @@ st_finalize_texture(struct gl_context *ctx,
 
          /* Need to import images in main memory or held in other textures.
           */
-         if (stImage && tObj->pt != stImage->pt) {
+         if (stImage && !tObj->NullTexture && tObj->pt != stImage->pt) {
             GLuint height;
             GLuint depth;
 

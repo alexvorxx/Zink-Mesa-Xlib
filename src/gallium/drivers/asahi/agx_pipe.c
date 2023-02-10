@@ -124,6 +124,7 @@ agx_resource_setup(struct agx_device *dev, struct agx_resource *nresource)
 
    nresource->layout = (struct ail_layout){
       .tiling = ail_modifier_to_tiling(nresource->modifier),
+      .mipmapped_z = templ->target == PIPE_TEXTURE_3D,
       .format = templ->format,
       .width_px = templ->width0,
       .height_px = templ->height0,
@@ -394,6 +395,12 @@ agx_select_modifier_from_list(const struct agx_resource *pres,
 static uint64_t
 agx_select_best_modifier(const struct agx_resource *pres)
 {
+   /* Prefer linear for staging resources, which should be as fast as possible
+    * to write from the CPU.
+    */
+   if (agx_linear_allowed(pres) && pres->base.usage == PIPE_USAGE_STAGING)
+      return DRM_FORMAT_MOD_LINEAR;
+
    if (agx_twiddled_allowed(pres)) {
       if (agx_compression_allowed(pres))
          return DRM_FORMAT_MOD_APPLE_TWIDDLED_COMPRESSED;
@@ -529,7 +536,19 @@ agx_resource_create_with_modifiers(struct pipe_screen *screen,
                        : (bind & PIPE_BIND_SHADER_IMAGE)    ? "Shader image"
                                                             : "Other resource";
 
-   nresource->bo = agx_bo_create(dev, nresource->layout.size_B, 0, label);
+   uint32_t create_flags = 0;
+
+   /* Default to write-combine resources, but use writeback if that is expected
+    * to be beneficial.
+    */
+   if (nresource->base.usage == PIPE_USAGE_STAGING ||
+       (nresource->base.flags & PIPE_RESOURCE_FLAG_MAP_COHERENT)) {
+
+      create_flags |= AGX_BO_WRITEBACK;
+   }
+
+   nresource->bo =
+      agx_bo_create(dev, nresource->layout.size_B, create_flags, label);
 
    if (!nresource->bo) {
       FREE(nresource);
@@ -739,6 +758,10 @@ agx_transfer_map(struct pipe_context *pctx, struct pipe_resource *resource,
 
    /* Can't map tiled/compressed directly */
    if ((usage & PIPE_MAP_DIRECTLY) && rsrc->modifier != DRM_FORMAT_MOD_LINEAR)
+      return NULL;
+
+   /* Can't transfer out of bounds mip levels */
+   if (level >= rsrc->layout.levels)
       return NULL;
 
    agx_prepare_for_map(ctx, rsrc, level, usage, box);
@@ -1210,6 +1233,7 @@ agx_get_param(struct pipe_screen *pscreen, enum pipe_cap param)
    case PIPE_CAP_MIXED_FRAMEBUFFER_SIZES:
    case PIPE_CAP_FRAGMENT_SHADER_DERIVATIVES:
    case PIPE_CAP_FRAMEBUFFER_NO_ATTACHMENT:
+   case PIPE_CAP_SHADER_PACK_HALF_FLOAT:
       return 1;
 
    /* We could support ARB_clip_control by toggling the clip control bit for
@@ -1259,13 +1283,19 @@ agx_get_param(struct pipe_screen *pscreen, enum pipe_cap param)
    case PIPE_CAP_VERTEX_ELEMENT_INSTANCE_DIVISOR:
    case PIPE_CAP_CONDITIONAL_RENDER:
    case PIPE_CAP_CONDITIONAL_RENDER_INVERTED:
+   case PIPE_CAP_SEAMLESS_CUBE_MAP:
+   case PIPE_CAP_SEAMLESS_CUBE_MAP_PER_TEXTURE:
       return 1;
 
    case PIPE_CAP_TEXTURE_MULTISAMPLE:
    case PIPE_CAP_SURFACE_SAMPLE_COUNT:
    case PIPE_CAP_SAMPLE_SHADING:
-   case PIPE_CAP_SEAMLESS_CUBE_MAP:
-   case PIPE_CAP_SEAMLESS_CUBE_MAP_PER_TEXTURE:
+   case PIPE_CAP_TEXTURE_BUFFER_OBJECTS:
+   case PIPE_CAP_TEXTURE_BUFFER_SAMPLER:
+   case PIPE_CAP_IMAGE_LOAD_FORMATTED:
+   case PIPE_CAP_IMAGE_STORE_FORMATTED:
+   case PIPE_CAP_COMPUTE:
+   case PIPE_CAP_INT64:
       return is_deqp;
 
    case PIPE_CAP_COPY_BETWEEN_COMPRESSED_AND_PLAIN_FORMATS:
@@ -1283,7 +1313,7 @@ agx_get_param(struct pipe_screen *pscreen, enum pipe_cap param)
       return is_deqp ? 1 : 0;
 
    case PIPE_CAP_MAX_TEXTURE_ARRAY_LAYERS:
-      return 256;
+      return 2048;
 
    case PIPE_CAP_GLSL_FEATURE_LEVEL:
    case PIPE_CAP_GLSL_FEATURE_LEVEL_COMPATIBILITY:
@@ -1324,10 +1354,19 @@ agx_get_param(struct pipe_screen *pscreen, enum pipe_cap param)
       return 0xffff;
 
    case PIPE_CAP_TEXTURE_TRANSFER_MODES:
-      return 0;
+      return PIPE_TEXTURE_TRANSFER_BLIT;
 
    case PIPE_CAP_ENDIANNESS:
       return PIPE_ENDIAN_LITTLE;
+
+   case PIPE_CAP_MAX_TEXTURE_GATHER_COMPONENTS:
+      return is_deqp ? 4 : 0;
+   case PIPE_CAP_MIN_TEXTURE_GATHER_OFFSET:
+      return is_deqp ? -8 : 0;
+   case PIPE_CAP_MAX_TEXTURE_GATHER_OFFSET:
+      return is_deqp ? 7 : 0;
+   case PIPE_CAP_DRAW_INDIRECT:
+      return is_deqp;
 
    case PIPE_CAP_VIDEO_MEMORY: {
       uint64_t system_memory;
@@ -1351,6 +1390,9 @@ agx_get_param(struct pipe_screen *pscreen, enum pipe_cap param)
    case PIPE_CAP_CLIP_PLANES:
    case PIPE_CAP_NIR_IMAGES_AS_DEREF:
       return 0;
+
+   case PIPE_CAP_TEXTURE_BORDER_COLOR_QUIRK:
+      return PIPE_QUIRK_TEXTURE_BORDER_COLOR_SWIZZLE_FREEDRENO;
 
    case PIPE_CAP_SUPPORTED_PRIM_MODES:
    case PIPE_CAP_SUPPORTED_PRIM_MODES_WITH_RESTART:
@@ -1411,9 +1453,16 @@ agx_get_shader_param(struct pipe_screen *pscreen, enum pipe_shader_type shader,
                      enum pipe_shader_cap param)
 {
    bool is_no16 = agx_device(pscreen)->debug & AGX_DBG_NO16;
+   bool is_deqp = agx_device(pscreen)->debug & AGX_DBG_DEQP;
 
-   if (shader != PIPE_SHADER_VERTEX && shader != PIPE_SHADER_FRAGMENT)
+   if (shader != PIPE_SHADER_VERTEX && shader != PIPE_SHADER_FRAGMENT &&
+       !(shader == PIPE_SHADER_COMPUTE && is_deqp))
       return 0;
+
+   /* Don't allow side effects with vertex processing. The APIs don't require it
+    * and it may be problematic on our hardware.
+    */
+   bool allow_side_effects = (shader != PIPE_SHADER_VERTEX);
 
    /* this is probably not totally correct.. but it's a start: */
    switch (param) {
@@ -1479,10 +1528,14 @@ agx_get_shader_param(struct pipe_screen *pscreen, enum pipe_shader_type shader,
       return PIPE_SHADER_IR_NIR;
 
    case PIPE_SHADER_CAP_SUPPORTED_IRS:
-      return (1 << PIPE_SHADER_IR_NIR) | (1 << PIPE_SHADER_IR_NIR_SERIALIZED);
+      return (1 << PIPE_SHADER_IR_NIR);
 
    case PIPE_SHADER_CAP_MAX_SHADER_BUFFERS:
+      return (is_deqp && allow_side_effects) ? 16 : 0;
+
    case PIPE_SHADER_CAP_MAX_SHADER_IMAGES:
+      return (is_deqp && allow_side_effects) ? PIPE_MAX_SHADER_IMAGES : 0;
+
    case PIPE_SHADER_CAP_MAX_HW_ATOMIC_COUNTERS:
    case PIPE_SHADER_CAP_MAX_HW_ATOMIC_COUNTER_BUFFERS:
       return 0;
@@ -1499,6 +1552,66 @@ static int
 agx_get_compute_param(struct pipe_screen *pscreen, enum pipe_shader_ir ir_type,
                       enum pipe_compute_cap param, void *ret)
 {
+   if (!(agx_device(pscreen)->debug & AGX_DBG_DEQP))
+      return 0;
+
+#define RET(x)                                                                 \
+   do {                                                                        \
+      if (ret)                                                                 \
+         memcpy(ret, x, sizeof(x));                                            \
+      return sizeof(x);                                                        \
+   } while (0)
+
+   switch (param) {
+   case PIPE_COMPUTE_CAP_ADDRESS_BITS:
+      RET((uint32_t[]){64});
+
+   case PIPE_COMPUTE_CAP_IR_TARGET:
+      if (ret)
+         sprintf(ret, "agx");
+      return strlen("agx") * sizeof(char);
+
+   case PIPE_COMPUTE_CAP_GRID_DIMENSION:
+      RET((uint64_t[]){3});
+
+   case PIPE_COMPUTE_CAP_MAX_GRID_SIZE:
+      RET(((uint64_t[]){65535, 65535, 65535}));
+
+   case PIPE_COMPUTE_CAP_MAX_BLOCK_SIZE:
+      RET(((uint64_t[]){256, 256, 256}));
+
+   case PIPE_COMPUTE_CAP_MAX_THREADS_PER_BLOCK:
+      RET((uint64_t[]){256});
+
+   case PIPE_COMPUTE_CAP_MAX_GLOBAL_SIZE:
+      RET((uint64_t[]){1024 * 1024 * 512 /* Maybe get memory */});
+
+   case PIPE_COMPUTE_CAP_MAX_LOCAL_SIZE:
+      RET((uint64_t[]){32768});
+
+   case PIPE_COMPUTE_CAP_MAX_PRIVATE_SIZE:
+   case PIPE_COMPUTE_CAP_MAX_INPUT_SIZE:
+      RET((uint64_t[]){4096});
+
+   case PIPE_COMPUTE_CAP_MAX_MEM_ALLOC_SIZE:
+      RET((uint64_t[]){1024 * 1024 * 512 /* Maybe get memory */});
+
+   case PIPE_COMPUTE_CAP_MAX_CLOCK_FREQUENCY:
+      RET((uint32_t[]){800 /* MHz -- TODO */});
+
+   case PIPE_COMPUTE_CAP_MAX_COMPUTE_UNITS:
+      RET((uint32_t[]){4 /* TODO */});
+
+   case PIPE_COMPUTE_CAP_IMAGES_SUPPORTED:
+      RET((uint32_t[]){1});
+
+   case PIPE_COMPUTE_CAP_SUBGROUP_SIZE:
+      RET((uint32_t[]){32});
+
+   case PIPE_COMPUTE_CAP_MAX_VARIABLE_THREADS_PER_BLOCK:
+      RET((uint64_t[]){1024}); // TODO
+   }
+
    return 0;
 }
 
@@ -1513,7 +1626,9 @@ agx_is_format_supported(struct pipe_screen *pscreen, enum pipe_format format,
           target == PIPE_TEXTURE_3D || target == PIPE_TEXTURE_CUBE ||
           target == PIPE_TEXTURE_CUBE_ARRAY);
 
-   if (sample_count > 1)
+   bool is_deqp = agx_device(pscreen)->debug & AGX_DBG_DEQP;
+
+   if (sample_count > 1 && !(sample_count == 4 && is_deqp))
       return false;
 
    if (MAX2(sample_count, 1) != MAX2(storage_sample_count, 1))

@@ -182,7 +182,8 @@ create_bci(struct zink_screen *screen, const struct pipe_resource *templ, unsign
 
    if (bind & ZINK_BIND_DESCRIPTOR) {
       /* gallium sizes are all uint32_t, while the total size of this buffer may exceed that limit */
-      bci.size *= ZINK_DESCRIPTOR_BUFFER_MULTIPLIER;
+      if (templ->usage != ZINK_USAGE_BINDLESS)
+         bci.size *= ZINK_DESCRIPTOR_BUFFER_MULTIPLIER;
       bci.usage = 0;
       if (bind & ZINK_BIND_SAMPLER_DESCRIPTOR)
          bci.usage |= VK_BUFFER_USAGE_SAMPLER_DESCRIPTOR_BUFFER_BIT_EXT;
@@ -470,6 +471,10 @@ create_ici(struct zink_screen *screen, VkImageCreateInfo *ici, const struct pipe
       ici->flags |= VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT;
    ici->usage = 0;
    ici->queueFamilyIndexCount = 0;
+
+   /* assume we're going to be doing some CompressedTexSubImage */
+   if (util_format_is_compressed(templ->format) && (ici->flags & VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT))
+      ici->flags |= VK_IMAGE_CREATE_BLOCK_TEXEL_VIEW_COMPATIBLE_BIT;
 
    if (templ->flags & PIPE_RESOURCE_FLAG_SPARSE)
       ici->flags |= VK_IMAGE_CREATE_SPARSE_BINDING_BIT | VK_IMAGE_CREATE_SPARSE_RESIDENCY_BIT;

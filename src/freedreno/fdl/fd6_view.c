@@ -226,6 +226,10 @@ fdl6_view_init(struct fdl6_view *view, const struct fdl_layout **layouts,
       swap = WZYX;
    }
 
+   /* FMT6_Z24_UNORM_S8_UINT_AS_R8G8B8A8 is broken without UBWC on a630.  We
+    * don't need it without UBWC anyway because the purpose of the format is
+    * UBWC-compatibility.
+    */
    if (texture_format == FMT6_Z24_UNORM_S8_UINT_AS_R8G8B8A8 && !ubwc_enabled)
       texture_format = FMT6_8_8_8_8_UNORM;
 

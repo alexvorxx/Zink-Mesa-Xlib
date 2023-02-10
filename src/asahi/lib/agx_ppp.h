@@ -46,7 +46,7 @@ agx_ppp_update_size(struct AGX_PPP_HEADER *present)
    if (present->x)                                                             \
       size += AGX_##y##_LENGTH;
    PPP_CASE(fragment_control, FRAGMENT_CONTROL);
-   PPP_CASE(fragment_control_2, FRAGMENT_CONTROL_2);
+   PPP_CASE(fragment_control_2, FRAGMENT_CONTROL);
    PPP_CASE(fragment_front_face, FRAGMENT_FACE);
    PPP_CASE(fragment_front_face_2, FRAGMENT_FACE_2);
    PPP_CASE(fragment_front_stencil, FRAGMENT_STENCIL);

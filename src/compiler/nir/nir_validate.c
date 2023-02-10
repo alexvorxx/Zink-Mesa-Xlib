@@ -645,6 +645,12 @@ validate_intrinsic_instr(nir_intrinsic_instr *instr, validate_state *state)
       validate_assert(state, glsl_get_bare_type(dst->type) ==
                              glsl_get_bare_type(src->type));
       validate_assert(state, !nir_deref_mode_may_be(dst, nir_var_read_only_modes));
+      /* FIXME: now that we track if the var copies were lowered, it would be
+       * good to validate here that no new copy derefs were added. Right now
+       * we can't as there are some specific cases where copies are added even
+       * after the lowering. One example is the Intel compiler, that calls
+       * nir_lower_io_to_temporaries when linking some shader stages.
+       */
       break;
    }
 

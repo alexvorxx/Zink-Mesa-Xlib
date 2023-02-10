@@ -2346,12 +2346,12 @@ static bool
 iris_bufmgr_get_meminfo(struct iris_bufmgr *bufmgr,
                         struct intel_device_info *devinfo)
 {
-   bufmgr->sys.region.memory_class = devinfo->mem.sram.mem_class;
-   bufmgr->sys.region.memory_instance = devinfo->mem.sram.mem_instance;
+   bufmgr->sys.region.memory_class = devinfo->mem.sram.mem.klass;
+   bufmgr->sys.region.memory_instance = devinfo->mem.sram.mem.instance;
    bufmgr->sys.size = devinfo->mem.sram.mappable.size;
 
-   bufmgr->vram.region.memory_class = devinfo->mem.vram.mem_class;
-   bufmgr->vram.region.memory_instance = devinfo->mem.vram.mem_instance;
+   bufmgr->vram.region.memory_class = devinfo->mem.vram.mem.klass;
+   bufmgr->vram.region.memory_instance = devinfo->mem.vram.mem.instance;
    bufmgr->vram.size = devinfo->mem.vram.mappable.size;
 
    return true;

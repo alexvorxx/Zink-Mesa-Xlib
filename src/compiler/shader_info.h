@@ -297,6 +297,11 @@ typedef struct shader_info {
     */
    bool io_lowered:1;
 
+   /** Has nir_lower_var_copies called. To avoid calling any
+    * lowering/optimization that would introduce any copy_deref later.
+    */
+   bool var_copies_lowered:1;
+
    /* Whether the shader writes memory, including transform feedback. */
    bool writes_memory:1;
 

@@ -19,13 +19,8 @@
 #include "vn_physical_device.h"
 #include "vn_renderer.h"
 
-#define VN_INSTANCE_LARGE_RING_SIZE (64 * 1024)
-#define VN_INSTANCE_LARGE_RING_DIRECT_THRESHOLD                              \
-   (VN_INSTANCE_LARGE_RING_SIZE / 16)
-
-/* this must not exceed 2KiB for the ring to fit in a 4K page */
-#define VN_INSTANCE_RING_SIZE (2 * 1024)
-#define VN_INSTANCE_RING_DIRECT_THRESHOLD (VN_INSTANCE_RING_SIZE / 8)
+#define VN_INSTANCE_RING_SIZE (64 * 1024)
+#define VN_INSTANCE_RING_DIRECT_THRESHOLD (VN_INSTANCE_RING_SIZE / 16)
 
 /*
  * Instance extensions add instance-level or physical-device-level
@@ -117,13 +112,10 @@ vn_instance_init_renderer_versions(struct vn_instance *instance)
 static VkResult
 vn_instance_init_ring(struct vn_instance *instance)
 {
-   const size_t buf_size = instance->experimental.largeRing
-                              ? VN_INSTANCE_LARGE_RING_SIZE
-                              : VN_INSTANCE_RING_SIZE;
    /* 32-bit seqno for renderer roundtrips */
    const size_t extra_size = sizeof(uint32_t);
    struct vn_ring_layout layout;
-   vn_ring_get_layout(buf_size, extra_size, &layout);
+   vn_ring_get_layout(VN_INSTANCE_RING_SIZE, extra_size, &layout);
 
    instance->ring.shmem =
       vn_renderer_shmem_create(instance->renderer, layout.shmem_size);
@@ -171,59 +163,28 @@ vn_instance_init_ring(struct vn_instance *instance)
    return VK_SUCCESS;
 }
 
-static struct vn_renderer_shmem *
-vn_instance_get_reply_shmem_locked(struct vn_instance *instance,
-                                   size_t size,
-                                   void **ptr);
-
-static VkResult
+static void
 vn_instance_init_experimental_features(struct vn_instance *instance)
 {
    if (instance->renderer->info.vk_mesa_venus_protocol_spec_version !=
        100000) {
       if (VN_DEBUG(INIT))
          vn_log(instance, "renderer supports no experimental features");
-      return VK_SUCCESS;
+      return;
    }
 
    size_t struct_size = sizeof(instance->experimental);
-
-   /* prepare the reply shmem */
-   const size_t reply_size =
-      vn_sizeof_vkGetVenusExperimentalFeatureData100000MESA_reply(
-         &struct_size, &instance->experimental);
-   void *reply_ptr;
-   struct vn_renderer_shmem *reply_shmem =
-      vn_instance_get_reply_shmem_locked(instance, reply_size, &reply_ptr);
-   if (!reply_shmem)
-      return VK_ERROR_OUT_OF_HOST_MEMORY;
-
-   /* encode the command */
-   uint32_t local_data[16];
-   struct vn_cs_encoder local_enc =
-      VN_CS_ENCODER_INITIALIZER_LOCAL(local_data, sizeof(local_data));
-   vn_encode_vkGetVenusExperimentalFeatureData100000MESA(
-      &local_enc, VK_COMMAND_GENERATE_REPLY_BIT_EXT, &struct_size,
-      &instance->experimental);
-
-   VkResult result = vn_renderer_submit_simple_sync(
-      instance->renderer, local_data, vn_cs_encoder_get_len(&local_enc));
-   if (result != VK_SUCCESS) {
-      vn_renderer_shmem_unref(instance->renderer, reply_shmem);
-      return result;
-   }
-
-   struct vn_cs_decoder reply_dec =
-      VN_CS_DECODER_INITIALIZER(reply_ptr, reply_size);
-   vn_decode_vkGetVenusExperimentalFeatureData100000MESA_reply(
-      &reply_dec, &struct_size, &instance->experimental);
-   vn_renderer_shmem_unref(instance->renderer, reply_shmem);
+   vn_call_vkGetVenusExperimentalFeatureData100000MESA(
+      instance, &struct_size, &instance->experimental);
 
    /* if renderer supports multiple_timelines, the driver will use it and
     * globalFencing support can be assumed.
     */
    if (instance->renderer->info.supports_multiple_timelines)
       instance->experimental.globalFencing = VK_TRUE;
+
+   /* largeRing has been enforced by mandated render server config */
+   assert(instance->experimental.largeRing);
 
    if (VN_DEBUG(INIT)) {
       vn_log(instance,
@@ -237,8 +198,6 @@ vn_instance_init_experimental_features(struct vn_instance *instance)
              instance->experimental.largeRing,
              instance->experimental.syncFdFencing);
    }
-
-   return VK_SUCCESS;
 }
 
 static VkResult
@@ -475,14 +434,11 @@ vn_instance_submission_prepare(struct vn_instance_submission *submit,
    return VK_SUCCESS;
 }
 
-static bool
+static inline bool
 vn_instance_submission_can_direct(const struct vn_instance *instance,
                                   const struct vn_cs_encoder *cs)
 {
-   const size_t threshold = instance->experimental.largeRing
-                               ? VN_INSTANCE_LARGE_RING_DIRECT_THRESHOLD
-                               : VN_INSTANCE_RING_DIRECT_THRESHOLD;
-   return vn_cs_encoder_get_len(cs) <= threshold;
+   return vn_cs_encoder_get_len(cs) <= VN_INSTANCE_RING_DIRECT_THRESHOLD;
 }
 
 static struct vn_cs_encoder *
@@ -504,9 +460,6 @@ vn_instance_ring_cs_upload_locked(struct vn_instance *instance,
 
    vn_cs_encoder_write(upload, cs_size, cs_data, cs_size);
    vn_cs_encoder_commit(upload);
-
-   if (unlikely(!instance->renderer->info.supports_blob_id_0))
-      vn_instance_wait_roundtrip(instance, upload->current_buffer_roundtrip);
 
    return upload;
 }
@@ -592,20 +545,7 @@ vn_instance_get_reply_shmem_locked(struct vn_instance *instance,
       };
       vn_encode_vkSetReplyCommandStreamMESA(&local_enc, 0, &stream);
       vn_cs_encoder_commit(&local_enc);
-
-      /* vn_instance_init_experimental_features calls this before the ring is
-       * created
-       */
-      if (likely(instance->ring.id)) {
-         if (unlikely(!instance->renderer->info.supports_blob_id_0))
-            vn_instance_roundtrip(instance);
-
-         vn_instance_ring_submit_locked(instance, &local_enc, NULL, NULL);
-      } else {
-         vn_renderer_submit_simple(instance->renderer,
-                                   set_reply_command_stream_data,
-                                   vn_cs_encoder_get_len(&local_enc));
-      }
+      vn_instance_ring_submit_locked(instance, &local_enc, NULL, NULL);
    }
 
    /* TODO avoid this seek command and go lock-free? */
@@ -614,17 +554,7 @@ vn_instance_get_reply_shmem_locked(struct vn_instance *instance,
       seek_reply_command_stream_data, sizeof(seek_reply_command_stream_data));
    vn_encode_vkSeekReplyCommandStreamMESA(&local_enc, 0, offset);
    vn_cs_encoder_commit(&local_enc);
-
-   /* vn_instance_init_experimental_features calls this before the ring is
-    * created
-    */
-   if (likely(instance->ring.id)) {
-      vn_instance_ring_submit_locked(instance, &local_enc, NULL, NULL);
-   } else {
-      vn_renderer_submit_simple(instance->renderer,
-                                seek_reply_command_stream_data,
-                                vn_cs_encoder_get_len(&local_enc));
-   }
+   vn_instance_ring_submit_locked(instance, &local_enc, NULL, NULL);
 
    return shmem;
 }
@@ -701,14 +631,15 @@ vn_CreateInstance(const VkInstanceCreateInfo *pCreateInfo,
                   const VkAllocationCallbacks *pAllocator,
                   VkInstance *pInstance)
 {
+   vn_trace_init();
    VN_TRACE_FUNC();
+
    const VkAllocationCallbacks *alloc =
       pAllocator ? pAllocator : vk_default_allocator();
    struct vn_instance *instance;
    VkResult result;
 
    vn_env_init();
-   vn_trace_init();
 
    instance = vk_zalloc(alloc, sizeof(*instance), VN_DEFAULT_ALIGN,
                         VK_SYSTEM_ALLOCATION_SCOPE_INSTANCE);
@@ -755,13 +686,11 @@ vn_CreateInstance(const VkInstanceCreateInfo *pCreateInfo,
    vn_renderer_shmem_pool_init(instance->renderer,
                                &instance->reply_shmem_pool, 1u << 20);
 
-   result = vn_instance_init_experimental_features(instance);
-   if (result != VK_SUCCESS)
-      goto fail;
-
    result = vn_instance_init_ring(instance);
    if (result != VK_SUCCESS)
       goto fail;
+
+   vn_instance_init_experimental_features(instance);
 
    result = vn_instance_init_renderer_versions(instance);
    if (result != VK_SUCCESS)

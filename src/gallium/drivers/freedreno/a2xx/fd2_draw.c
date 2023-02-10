@@ -39,6 +39,14 @@
 #include "fd2_util.h"
 #include "fd2_zsa.h"
 
+static inline uint32_t
+pack_rgba(enum pipe_format format, const float *rgba)
+{
+   union util_color uc;
+   util_pack_color(rgba, format, &uc);
+   return uc.ui[0];
+}
+
 static void
 emit_cacheflush(struct fd_ringbuffer *ring)
 {
@@ -153,7 +161,7 @@ draw_impl(struct fd_context *ctx, const struct pipe_draw_info *info,
 
 static bool
 fd2_draw_vbo(struct fd_context *ctx, const struct pipe_draw_info *pinfo,
-			 unsigned drawid_offset,
+             unsigned drawid_offset,
              const struct pipe_draw_indirect_info *indirect,
              const struct pipe_draw_start_count_bias *pdraw,
              unsigned index_offset) assert_dt
@@ -191,7 +199,7 @@ fd2_draw_vbo(struct fd_context *ctx, const struct pipe_draw_info *pinfo,
       };
       /* clang-format on */
 
-		struct pipe_draw_start_count_bias draw = *pdraw;
+      struct pipe_draw_start_count_bias draw = *pdraw;
       unsigned count = draw.count;
       unsigned step = step_tbl[pinfo->mode];
       unsigned num_vertices = ctx->batch->num_vertices;

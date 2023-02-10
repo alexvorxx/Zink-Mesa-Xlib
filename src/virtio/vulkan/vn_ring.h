@@ -62,7 +62,6 @@ struct vn_ring_submit {
 struct vn_ring {
    struct vn_renderer *renderer;
 
-   /* TODO assume large ring support and use fixed size */
    uint32_t buffer_size;
    uint32_t buffer_mask;
 

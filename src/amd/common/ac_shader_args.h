@@ -75,6 +75,11 @@ struct ac_shader_args {
    uint16_t num_sgprs_returned;
    uint16_t num_vgprs_returned;
 
+   /* User data 0/1. GFX: descriptor list, Compute: scratch BO. These are the SGPRs used by RADV for
+    * scratch and have to be accessed using llvm.amdgcn.implicit.buffer.ptr for LLVM in that case.
+    */
+   struct ac_arg ring_offsets;
+
    /* VS */
    struct ac_arg base_vertex;
    struct ac_arg start_instance;

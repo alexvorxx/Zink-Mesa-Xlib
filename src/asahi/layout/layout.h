@@ -79,6 +79,12 @@ struct ail_layout {
    /** Number of miplevels. 1 if no mipmapping is used. */
    uint8_t levels;
 
+   /** Should this image be mipmapped along the Z-axis in addition to the X- and
+    * Y-axes? This should be set for API-level 3D images, but not 2D arrays or
+    * cubes.
+    */
+   bool mipmapped_z;
+
    /** Tiling mode used */
    enum ail_tiling tiling;
 

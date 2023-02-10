@@ -1389,8 +1389,8 @@ link_program(struct gl_context *ctx, struct gl_shader_program *shProg,
       }
       if (file) {
          fprintf(file, "[require]\nGLSL%s >= %u.%02u\n",
-                 shProg->IsES ? " ES" : "",
-                 shProg->data->Version / 100, shProg->data->Version % 100);
+                 shProg->IsES ? " ES" : "", shProg->GLSL_Version / 100,
+                 shProg->GLSL_Version % 100);
          if (shProg->SeparateShader)
             fprintf(file, "GL_ARB_separate_shader_objects\nSSO ENABLED\n");
          fprintf(file, "\n");
@@ -2671,12 +2671,11 @@ _mesa_copy_linked_program_data(const struct gl_shader_program *src,
 /**
  * ARB_separate_shader_objects: Compile & Link Program
  */
-GLuint GLAPIENTRY
-_mesa_CreateShaderProgramv(GLenum type, GLsizei count,
-                           const GLchar* const *strings)
+GLuint
+_mesa_CreateShaderProgramv_impl(struct gl_context *ctx,
+                                GLenum type, GLsizei count,
+                                const GLchar* const *strings)
 {
-   GET_CURRENT_CONTEXT(ctx);
-
    const GLuint shader = create_shader_err(ctx, type, "glCreateShaderProgramv");
    GLuint program = 0;
 
@@ -2728,6 +2727,17 @@ _mesa_CreateShaderProgramv(GLenum type, GLsizei count,
    return program;
 }
 
+/**
+ * ARB_separate_shader_objects: Compile & Link Program
+ */
+GLuint GLAPIENTRY
+_mesa_CreateShaderProgramv(GLenum type, GLsizei count,
+                           const GLchar* const *strings)
+{
+   GET_CURRENT_CONTEXT(ctx);
+
+   return _mesa_CreateShaderProgramv_impl(ctx, type, count, strings);
+}
 
 static void
 set_patch_vertices(struct gl_context *ctx, GLint value)

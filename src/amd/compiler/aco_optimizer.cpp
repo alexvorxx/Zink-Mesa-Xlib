@@ -1226,19 +1226,20 @@ check_sdwa_extract(opt_ctx& ctx, aco_ptr<Instruction>& instr)
 bool
 does_fp_op_flush_denorms(opt_ctx& ctx, aco_opcode op)
 {
-   if (ctx.program->gfx_level <= GFX8) {
-      switch (op) {
-      case aco_opcode::v_min_f32:
-      case aco_opcode::v_max_f32:
-      case aco_opcode::v_med3_f32:
-      case aco_opcode::v_min3_f32:
-      case aco_opcode::v_max3_f32:
-      case aco_opcode::v_min_f16:
-      case aco_opcode::v_max_f16: return false;
-      default: break;
-      }
+   switch (op) {
+   case aco_opcode::v_min_f32:
+   case aco_opcode::v_max_f32:
+   case aco_opcode::v_med3_f32:
+   case aco_opcode::v_min3_f32:
+   case aco_opcode::v_max3_f32:
+   case aco_opcode::v_min_f16:
+   case aco_opcode::v_max_f16: return ctx.program->gfx_level > GFX8;
+   case aco_opcode::v_cndmask_b32:
+   case aco_opcode::v_cndmask_b16:
+   case aco_opcode::v_mov_b32:
+   case aco_opcode::v_mov_b16: return false;
+   default: return true;
    }
-   return op != aco_opcode::v_cndmask_b32;
 }
 
 bool

@@ -550,6 +550,12 @@ anv_get_image_format_features2(const struct intel_device_info *devinfo,
    }
 
    assert(aspects & VK_IMAGE_ASPECT_ANY_COLOR_BIT_ANV);
+
+   if (vk_format == VK_FORMAT_G8_B8R8_2PLANE_420_UNORM) {
+      flags |= VK_FORMAT_FEATURE_2_VIDEO_DECODE_OUTPUT_BIT_KHR |
+               VK_FORMAT_FEATURE_2_VIDEO_DECODE_DPB_BIT_KHR;
+   }
+
    const struct anv_format_plane plane_format =
       anv_get_format_plane(devinfo, vk_format, 0, vk_tiling);
 
@@ -968,6 +974,9 @@ void anv_GetPhysicalDeviceFormatProperties2(
          props->bufferFeatures = buffer2;
          break;
       }
+      case VK_STRUCTURE_TYPE_VIDEO_PROFILE_LIST_INFO_KHR:
+         /* don't have any thing to use this for yet */
+         break;
       default:
          anv_debug_ignored_stype(ext->sType);
          break;
@@ -1004,6 +1013,12 @@ anv_get_image_format_properties(
       isl_mod_info = isl_drm_modifier_get_info(vk_mod_info->drmFormatModifier);
       if (isl_mod_info == NULL)
          goto unsupported;
+
+      /* only allow Y-tiling/Tile4 for video decode. */
+      if (info->usage & VK_IMAGE_USAGE_VIDEO_DECODE_DST_BIT_KHR) {
+         if (isl_mod_info->tiling != ISL_TILING_Y0 && isl_mod_info->tiling != ISL_TILING_4)
+            goto unsupported;
+      }
    }
 
    assert(format->vk_format == info->format);
@@ -1381,6 +1396,9 @@ VkResult anv_GetPhysicalDeviceImageFormatProperties2(
          break;
       case VK_STRUCTURE_TYPE_WSI_IMAGE_CREATE_INFO_MESA:
          from_wsi = true;
+         break;
+      case VK_STRUCTURE_TYPE_VIDEO_PROFILE_LIST_INFO_KHR:
+         /* Ignore but don't warn */
          break;
       default:
          anv_debug_ignored_stype(s->sType);

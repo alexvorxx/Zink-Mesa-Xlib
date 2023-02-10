@@ -808,6 +808,30 @@ add_aux_surface_if_supported(struct anv_device *device,
    return VK_SUCCESS;
 }
 
+static VkResult
+add_video_buffers(struct anv_device *device,
+                  struct anv_image *image,
+                  const struct VkVideoProfileListInfoKHR *profile_list)
+{
+   ASSERTED bool ok;
+   unsigned size = 0;
+
+   for (unsigned i = 0; i < profile_list->profileCount; i++) {
+      if (profile_list->pProfiles[i].videoCodecOperation == VK_VIDEO_CODEC_OPERATION_DECODE_H264_BIT_KHR) {
+         unsigned w_mb = DIV_ROUND_UP(image->vk.extent.width, ANV_MB_WIDTH);
+         unsigned h_mb = DIV_ROUND_UP(image->vk.extent.height, ANV_MB_HEIGHT);
+         size = w_mb * h_mb * 128;
+      }
+   }
+
+   if (size == 0)
+      return VK_SUCCESS;
+
+   ok = image_binding_grow(device, image, ANV_IMAGE_MEMORY_BINDING_PRIVATE,
+                           ANV_OFFSET_IMPLICIT, size, 65536, &image->vid_dmv_top_surface);
+   return ok;
+}
+
 /**
  * Initialize the anv_image::*_surface selected by \a aspect. Then update the
  * image's memory requirements (that is, the image's size and alignment).
@@ -1382,6 +1406,15 @@ anv_image_init(struct anv_device *device, struct anv_image *image,
 
    if (r != VK_SUCCESS)
       goto fail;
+
+   const VkVideoProfileListInfoKHR *video_profile =
+      vk_find_struct_const(pCreateInfo->pNext,
+                           VIDEO_PROFILE_LIST_INFO_KHR);
+   if (video_profile) {
+      r = add_video_buffers(device, image, video_profile);
+      if (r != VK_SUCCESS)
+         goto fail;
+   }
 
    r = alloc_private_binding(device, image, pCreateInfo);
    if (r != VK_SUCCESS)
@@ -2541,7 +2574,7 @@ anv_CreateImageView(VkDevice _device,
 
    if (conv_info) {
       VK_FROM_HANDLE(vk_ycbcr_conversion, conversion, conv_info->conversion);
-      conv_format = conversion->format;
+      conv_format = conversion->state.format;
    }
 
 #ifdef ANDROID

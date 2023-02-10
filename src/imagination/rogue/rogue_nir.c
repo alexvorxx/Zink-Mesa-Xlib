@@ -23,14 +23,15 @@
 
 #include "compiler/spirv/nir_spirv.h"
 #include "nir/nir.h"
-#include "nir/nir_schedule.h"
-#include "rogue_nir.h"
-#include "rogue_operand.h"
+#include "rogue.h"
+#include "util/macros.h"
+
+#include <stdbool.h>
 
 /**
  * \file rogue_nir.c
  *
- * \brief Contains NIR-specific functions.
+ * \brief Contains SPIR-V and NIR-specific functions.
  */
 
 /**
@@ -44,21 +45,8 @@ static const struct spirv_to_nir_options spirv_options = {
 };
 
 static const nir_shader_compiler_options nir_options = {
-   .lower_fsat = true,
    .fuse_ffma32 = true,
 };
-
-const struct spirv_to_nir_options *
-rogue_get_spirv_options(const struct rogue_compiler *compiler)
-{
-   return &spirv_options;
-}
-
-const nir_shader_compiler_options *
-rogue_get_compiler_options(const struct rogue_compiler *compiler)
-{
-   return &nir_options;
-}
 
 static int rogue_glsl_type_size(const struct glsl_type *type, bool bindless)
 {
@@ -72,22 +60,23 @@ static int rogue_glsl_type_size(const struct glsl_type *type, bool bindless)
  * \param[in] ctx Shared multi-stage build context.
  * \param[in] shader Rogue shader.
  * \param[in] stage Shader stage.
- * \return true if successful, otherwise false.
  */
-bool rogue_nir_passes(struct rogue_build_ctx *ctx,
-                      nir_shader *nir,
-                      gl_shader_stage stage)
+static void rogue_nir_passes(struct rogue_build_ctx *ctx,
+                             nir_shader *nir,
+                             gl_shader_stage stage)
 {
    bool progress;
+
+#if !defined(NDEBUG)
+   bool nir_debug_print_shader_prev = nir_debug_print_shader[nir->info.stage];
+   nir_debug_print_shader[nir->info.stage] = ROGUE_DEBUG(NIR_PASSES);
+#endif /* !defined(NDEBUG) */
 
    nir_validate_shader(nir, "after spirv_to_nir");
 
    /* Splitting. */
    NIR_PASS_V(nir, nir_split_var_copies);
    NIR_PASS_V(nir, nir_split_per_member_structs);
-
-   /* Ensure fs outputs are in the [0.0f...1.0f] range. */
-   NIR_PASS_V(nir, nir_lower_clamp_color_outputs);
 
    /* Replace references to I/O variables with intrinsics. */
    NIR_PASS_V(nir,
@@ -97,6 +86,7 @@ bool rogue_nir_passes(struct rogue_build_ctx *ctx,
               (nir_lower_io_options)0);
 
    /* Load inputs to scalars (single registers later). */
+   /* TODO: Fitrp can process multiple frag inputs at once, scalarise I/O. */
    NIR_PASS_V(nir, nir_lower_io_to_scalar, nir_var_shader_in);
 
    /* Optimize GL access qualifiers. */
@@ -114,6 +104,9 @@ bool rogue_nir_passes(struct rogue_build_ctx *ctx,
 
    /* Lower ALU operations to scalars. */
    NIR_PASS_V(nir, nir_lower_alu_to_scalar, NULL, NULL);
+
+   /* Lower load_consts to scalars. */
+   NIR_PASS_V(nir, nir_lower_load_const_to_scalar);
 
    /* Algebraic opts. */
    do {
@@ -145,19 +138,17 @@ bool rogue_nir_passes(struct rogue_build_ctx *ctx,
       NIR_PASS_V(nir, nir_opt_cse);
    } while (progress);
 
-   /* Replace SSA constant references with a register that loads the value. */
-   NIR_PASS_V(nir, rogue_nir_constreg);
    /* Remove unused constant registers. */
    NIR_PASS_V(nir, nir_opt_dce);
 
    /* Move loads to just before they're needed. */
-   NIR_PASS_V(nir, nir_opt_move, nir_move_load_ubo | nir_move_load_input);
-
-   /* Convert vecNs to movs so we can sequentially allocate them later. */
-   NIR_PASS_V(nir, nir_lower_vec_to_movs, NULL, NULL);
+   /* Disabled for now since we want to try and keep them vectorised and group
+    * them. */
+   /* TODO: Investigate this further. */
+   /* NIR_PASS_V(nir, nir_opt_move, nir_move_load_ubo | nir_move_load_input); */
 
    /* Out of SSA pass. */
-   NIR_PASS_V(nir, nir_convert_from_ssa, false);
+   /* NIR_PASS_V(nir, nir_convert_from_ssa, true); */
 
    /* TODO: Re-enable scheduling after register pressure tweaks. */
 #if 0
@@ -185,6 +176,57 @@ bool rogue_nir_passes(struct rogue_build_ctx *ctx,
    nir_sweep(nir);
 
    nir_validate_shader(nir, "after passes");
+   if (ROGUE_DEBUG(NIR)) {
+      fputs("after passes\n", stdout);
+      nir_print_shader(nir, stdout);
+   }
 
-   return true;
+#if !defined(NDEBUG)
+   nir_debug_print_shader[nir->info.stage] = nir_debug_print_shader_prev;
+#endif /* !defined(NDEBUG) */
+}
+
+/**
+ * \brief Converts a SPIR-V shader to NIR.
+ *
+ * \param[in] ctx Shared multi-stage build context.
+ * \param[in] entry Shader entry-point function name.
+ * \param[in] stage Shader stage.
+ * \param[in] spirv_size SPIR-V data length in DWORDs.
+ * \param[in] spirv_data SPIR-V data.
+ * \param[in] num_spec Number of SPIR-V specializations.
+ * \param[in] spec SPIR-V specializations.
+ * \return A nir_shader* if successful, or NULL if unsuccessful.
+ */
+PUBLIC
+nir_shader *rogue_spirv_to_nir(rogue_build_ctx *ctx,
+                               gl_shader_stage stage,
+                               const char *entry,
+                               unsigned spirv_size,
+                               const uint32_t *spirv_data,
+                               unsigned num_spec,
+                               struct nir_spirv_specialization *spec)
+{
+   nir_shader *nir;
+
+   nir = spirv_to_nir(spirv_data,
+                      spirv_size,
+                      spec,
+                      num_spec,
+                      stage,
+                      entry,
+                      &spirv_options,
+                      &nir_options);
+   if (!nir)
+      return NULL;
+
+   ralloc_steal(ctx, nir);
+
+   /* Apply passes. */
+   rogue_nir_passes(ctx, nir, stage);
+
+   /* Collect I/O data to pass back to the driver. */
+   rogue_collect_io_data(ctx, nir);
+
+   return nir;
 }

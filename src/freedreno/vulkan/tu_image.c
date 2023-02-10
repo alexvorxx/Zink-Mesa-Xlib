@@ -74,6 +74,14 @@ tu_format_for_aspect(enum pipe_format format, VkImageAspectFlags aspect_mask)
 {
    switch (format) {
    case PIPE_FORMAT_Z24_UNORM_S8_UINT:
+      /* VK_IMAGE_ASPECT_COLOR_BIT is used internally for blits (despite we
+       * also incorrectly advertise VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT for
+       * depth formats).  Return PIPE_FORMAT_Z24_UNORM_S8_UINT_AS_R8G8B8A8 in
+       * this case.
+       *
+       * Otherwise, return the appropriate pipe format and let fdl6_view_init
+       * take care of the rest.
+       */
       if (aspect_mask & VK_IMAGE_ASPECT_COLOR_BIT)
          return PIPE_FORMAT_Z24_UNORM_S8_UINT_AS_R8G8B8A8;
       if (aspect_mask & VK_IMAGE_ASPECT_STENCIL_BIT) {
@@ -345,9 +353,6 @@ ubwc_possible(struct tu_device *device,
     *
     * If we wish to get the border colors correct without knowing the format
     * when creating the sampler, we also have to use the A630 workaround.
-    *
-    * Additionally, the special AS_R8G8B8A8 format is broken without UBWC,
-    * so we have to fallback to 8_8_8_8_UNORM when UBWC is disabled
     */
    if (!use_z24uint_s8uint &&
        format == VK_FORMAT_D24_UNORM_S8_UINT &&

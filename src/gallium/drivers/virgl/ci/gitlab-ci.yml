@@ -109,8 +109,8 @@ android-virgl-llvmpipe:
   extends:
     - .test-android
     - .virgl-rules
-  script:
-    - ./install/cuttlefish-runner.sh
-  artifacts:
-    paths:
-      - results/
+  variables:
+    ANDROID_GPU_MODE: drm_virgl
+    ANDROID_DRIVER: virtio_gpu
+    GPU_VERSION: virgl-gl
+    DEQP_SUITE: android-virgl

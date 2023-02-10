@@ -191,3 +191,8 @@ spec@!opengl 1.0@gl-1.0-user-clip-all-planes,Fail
 spec@ext_transform_feedback@builtin-varyings gl_culldistance,Fail
 
 spec@!opengl 1.1@line-smooth-stipple,Fail
+
+# Happened during Collabora's LAVA farm downtime
+# Disablement: https://gitlab.freedesktop.org/mesa/mesa/-/merge_requests/21119
+# Enablement: https://gitlab.freedesktop.org/mesa/mesa/-/merge_requests/20903
+spec@ext_texture_lod_bias@lodbias,Fail

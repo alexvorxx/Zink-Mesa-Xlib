@@ -289,6 +289,7 @@
     <value name="Transparent black" value="0"/>
     <value name="Opaque black" value="1"/>
     <value name="Opaque white" value="2"/>
+    <value name="Custom" value="3"/>
   </enum>
 
   <struct name="Sampler" size="8">
@@ -306,6 +307,13 @@
     <field name="Compare enable" size="1" start="42" type="bool"/>
     <field name="Border colour" size="2" start="55" type="Border colour"/>
     <field name="Seamful cube maps" size="1" start="57" type="bool"/>
+  </struct>
+
+  <struct name="Border" size="16">
+    <field name="Channel 0" size="32" start="0:0" type="hex"/>
+    <field name="Channel 1" size="32" start="1:0" type="hex"/>
+    <field name="Channel 2" size="32" start="2:0" type="hex"/>
+    <field name="Channel 3" size="32" start="3:0" type="hex"/>
   </struct>
 
   <!--- Pointed to from the command buffer -->
@@ -407,16 +415,6 @@
     <field name="Compare" size="3" start="25" type="ZS Func"/>
   </struct>
 
-  <struct name="Fragment control" size="4">
-    <field name="Unk 1" size="1" start="9" type="hex" default="0x1"/>
-    <field name="Visibility mode" size="2" start="14" type="Visibility Mode"/>
-    <field name="Scissor enable" size="1" start="16" type="bool"/>
-    <field name="Depth bias enable" size="1" start="17" type="bool"/>
-    <field name="Stencil test enable" size="1" start="18" type="bool"/>
-    <field name="Two-sided stencil" size="1" start="19" type="bool"/>
-    <field name="Unk fill lines" size="1" start="26" type="hex" default="0x0"/> <!-- set when drawing LINES -->
-  </struct>
-
   <enum name="Pass type">
     <value name="Opaque" value="0"/>
     <value name="Translucent" value="1"/>
@@ -426,9 +424,13 @@
          Translucent punch through seems notably different though? -->
   </enum>
 
-  <struct name="Fragment control 2" size="4">
+  <struct name="Fragment control" size="4">
     <field name="Unk 1" size="1" start="9" type="bool" default="true"/>
-    <!-- Or discards? -->
+    <field name="Visibility mode" size="2" start="14" type="Visibility Mode"/>
+    <field name="Scissor enable" size="1" start="16" type="bool"/>
+    <field name="Depth bias enable" size="1" start="17" type="bool"/>
+    <field name="Stencil test enable" size="1" start="18" type="bool"/>
+    <field name="Two-sided stencil" size="1" start="19" type="bool"/>
     <field name="No colour output" size="1" start="21" type="bool"/>
     <field name="Sample mask after depth/stencil" size="1" start="25" type="bool"/>
     <field name="Disable tri merging" size="1" start="26" type="bool"/>
@@ -525,11 +527,21 @@
     <field name="Depth bias" size="16" start="16" type="uint"/>
   </struct>
 
+  <enum name="Sampler states">
+    <value name="0" value="0"/>
+    <value name="4 compact" value="1"/>
+    <value name="8 compact" value="2"/>
+    <value name="12 compact" value="3"/>
+    <value name="16 compact" value="4"/>
+    <value name="8 extended" value="6"/>
+    <value name="16 extended" value="7"/>
+  </enum>
+
   <struct name="Fragment shader" size="16">
     <field name="Unknown 0" size="1" start="0" type="hex" default="0"/>
     <field name="Uniform register count" size="3" start="1" type="uint" modifier="groups(64)"/>
     <field name="Texture state register count" size="5" start="4" type="uint" modifier="groups(8)"/>
-    <field name="Sampler state register count" size="3" start="9" type="uint" modifier="groups(4)"/>
+    <field name="Sampler state register count" size="3" start="9" type="Sampler states"/>
     <field name="Preshader register count" size="4" start="12" type="uint" modifier="groups(16)"/>
     <field name="CF binding count" size="7" start="16" type="uint"/>
     <field name="Unknown 1:0" size="2" start="1:0" type="hex"/>
@@ -560,17 +572,15 @@
   <struct name="USC Uniform" size="8">
     <field name="Tag" size="8" start="0:0" type="USC Control" default="Uniform"/>
     <field name="Start (halfs)" size="8" start="0:8" type="uint"/>
-    <!-- Exact split is unknown. -->
-    <field name="Size (halfs)" size="7" start="0:20" type="uint"/>
-    <field name="Buffer" size="36" start="0:27" type="address" modifier="shr(3)"/>
+    <field name="Size (halfs)" size="6" start="0:20" type="uint" modifier="groups(1)"/>
+    <field name="Buffer" size="38" start="0:26" type="address" modifier="shr(2)"/>
   </struct>
 
   <struct name="USC Uniform High" size="8">
     <field name="Tag" size="8" start="0:0" type="USC Control" default="Uniform High"/>
     <field name="Start (halfs)" size="8" start="0:8" type="uint"/>
-    <!-- Exact split is unknown. -->
-    <field name="Size (halfs)" size="7" start="0:20" type="uint"/>
-    <field name="Buffer" size="36" start="0:27" type="address" modifier="shr(3)"/>
+    <field name="Size (halfs)" size="6" start="0:20" type="uint" modifier="groups(1)"/>
+    <field name="Buffer" size="38" start="0:26" type="address" modifier="shr(2)"/>
   </struct>
 
   <struct name="USC Texture" size="8">
@@ -685,7 +695,7 @@
     <field name="Unknown 0" size="1" start="0" type="hex" default="0"/>
     <field name="Uniform register count" size="3" start="1" type="uint" modifier="groups(64)"/>
     <field name="Texture state register count" size="5" start="4" type="uint" modifier="groups(8)"/>
-    <field name="Sampler state register count" size="3" start="9" type="uint" modifier="groups(4)"/>
+    <field name="Sampler state register count" size="3" start="9" type="Sampler states"/>
     <field name="Preshader register count" size="4" start="12" type="uint" modifier="groups(16)"/>
   </struct>
 
@@ -778,7 +788,7 @@
   <struct name="Launch" size="36">
     <field name="Uniform register count" size="3" start="1" type="uint" modifier="groups(64)"/>
     <field name="Texture state register count" size="5" start="4" type="uint" modifier="groups(8)"/>
-    <field name="Sampler state register count" size="3" start="9" type="uint" modifier="groups(4)"/>
+    <field name="Sampler state register count" size="3" start="9" type="Sampler states"/>
     <field name="Preshader register count" size="4" start="12" type="uint" modifier="groups(16)"/>
     <field name="Block Type" size="3" start="29" type="CDM Block Type" default="Compute Kernel"/>
     <field name="Pipeline" size="32" start="1:0" type="address"/>
@@ -788,6 +798,7 @@
     <field name="Local size X" size="32" start="5:0" type="uint"/>
     <field name="Local size Y" size="32" start="6:0" type="uint"/>
     <field name="Local size Z" size="32" start="7:0" type="uint"/>
+    <!-- Might be its own command, block type = 3? -->
     <field name="Unk 2" size="32" start="8:0" type="hex" default="0x60000160"/>
   </struct>
 
@@ -887,12 +898,17 @@
     <field name="Unk 40" start="40:0" size="32" default="0x1c" type="hex"/>
     <field name="Encoder ID" start="41:0" size="32" type="hex"/>
     <field name="Unk 44" start="44:0" size="32" default="0xffffffff" type="hex"/>
-    <field name="Unk 48" start="48:0" size="32" default="0x40" type="hex"/>
-    <field name="Unk 56" start="56:0" size="32" default="6" type="hex"/>
+    <field name="Context switch program" start="48:0" size="32" type="address"/>
+
+    <!-- An enum that's purely macOS defined UAPI. Doesn't matter for us.
+    More info at https://gitlab.freedesktop.org/mesa/mesa/-/merge_requests/21062#note_1754715 -->
+    <field name="Context switch block size" start="56:0" size="4" default="2" type="hex"/>
     <field name="Spilling unk 1" start="57:3" size="1" type="bool"/>
-    <field name="Unk 58" start="58:0" size="32" default="0x62" type="hex"/>
+    <!-- Depends on grid size, as well as other factors. TODO: Decode. -->
+    <field name="Number of context switch buffers" start="58:0" size="32" default="1" type="uint"/>
     <field name="Spill Buffer Histogram" start="60:0" size="480" type="Spill Buffer Histogram"/>
-    <field name="Unk 75" start="75:0" size="32" default="0x10000" type="hex"/>
+    <!-- Lina's guess at the meaning -->
+    <field name="Enable context switching" start="75:16" size="1" default="true" type="bool"/>
     <field name="Unk 94" start="94:0" size="32" default="0xffffffff" type="hex"/>
     <field name="Unk 95" start="95:0" size="32" default="0xffffffff" type="hex"/>
   </struct>

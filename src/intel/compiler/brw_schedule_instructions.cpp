@@ -532,6 +532,10 @@ schedule_node::set_latency_gfx7(bool is_haswell)
          }
          break;
 
+      case GFX7_SFID_PIXEL_INTERPOLATOR:
+         latency = 50; /* TODO */
+         break;
+
       case GFX12_SFID_UGM:
       case GFX12_SFID_TGM:
       case GFX12_SFID_SLM:

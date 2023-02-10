@@ -56,6 +56,7 @@
 #include "st_program.h"
 #include "st_sampler_view.h"
 #include "st_shader_cache.h"
+#include "st_texcompress_compute.h"
 #include "st_texture.h"
 #include "st_util.h"
 #include "pipe/p_context.h"
@@ -354,6 +355,10 @@ st_destroy_context_priv(struct st_context *st, bool destroy_pipe)
    st_destroy_drawpix(st);
    st_destroy_drawtex(st);
    st_destroy_pbo_helpers(st);
+
+   if (st->transcode_astc)
+      st_destroy_texcompress_compute(st);
+
    st_destroy_bound_texture_handles(st);
    st_destroy_bound_image_handles(st);
 
@@ -642,6 +647,9 @@ st_create_context_priv(struct gl_context *ctx, struct pipe_context *pipe,
    st->validate_all_dirty_states =
       screen->get_param(screen, PIPE_CAP_VALIDATE_ALL_DIRTY_STATES)
       ? true : false;
+   st->can_null_texture =
+      screen->get_param(screen, PIPE_CAP_NULL_TEXTURES)
+      ? true : false;
 
    util_throttle_init(&st->throttle,
                       screen->get_param(screen,
@@ -764,6 +772,17 @@ st_create_context_priv(struct gl_context *ctx, struct pipe_context *pipe,
    if (ctx->Version == 0) {
       /* This can happen when a core profile was requested, but the driver
        * does not support some features of GL 3.1 or later.
+       */
+      st_destroy_context_priv(st, false);
+      return NULL;
+   }
+
+   if (_mesa_has_compute_shaders(ctx) &&
+       st->transcode_astc && !st_init_texcompress_compute(st)) {
+      /* Transcoding ASTC to DXT5 using compute shaders can provide a
+       * significant performance benefit over the CPU path. It isn't strictly
+       * necessary to fail if we can't use the compute shader path, but it's
+       * very convenient to do so. This should be rare.
        */
       st_destroy_context_priv(st, false);
       return NULL;

@@ -824,14 +824,14 @@ vn_physical_device_init_external_memory(
       physical_dev->external_memory.renderer_handle_type =
          VK_EXTERNAL_MEMORY_HANDLE_TYPE_DMA_BUF_BIT_EXT;
 
-      physical_dev->external_memory.supported_handle_types =
-         VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_FD_BIT |
-         VK_EXTERNAL_MEMORY_HANDLE_TYPE_DMA_BUF_BIT_EXT;
-
 #ifdef ANDROID
       physical_dev->external_memory.supported_handle_types |=
          VK_EXTERNAL_MEMORY_HANDLE_TYPE_ANDROID_HARDWARE_BUFFER_BIT_ANDROID;
-#endif
+#else  /* ANDROID */
+      physical_dev->external_memory.supported_handle_types =
+         VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_FD_BIT |
+         VK_EXTERNAL_MEMORY_HANDLE_TYPE_DMA_BUF_BIT_EXT;
+#endif /* ANDROID */
    }
 }
 
@@ -965,12 +965,12 @@ vn_physical_device_get_native_extensions(
            VK_EXTERNAL_SEMAPHORE_FEATURE_EXPORTABLE_BIT))
          exts->KHR_external_semaphore_fd = true;
    }
-#endif
-
+#else  /* ANDROID */
    if (can_external_mem) {
       exts->KHR_external_memory_fd = true;
       exts->EXT_external_memory_dma_buf = true;
    }
+#endif /* ANDROID */
 
    /* Semaphore sync fd import required for WSI to skip scrubbing
     * the wsi/external wait semaphores.

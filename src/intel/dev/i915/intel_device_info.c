@@ -338,12 +338,12 @@ intel_device_info_i915_query_regions(struct intel_device_info *devinfo, int fd, 
       switch (mem->region.memory_class) {
       case I915_MEMORY_CLASS_SYSTEM: {
          if (!update) {
-            devinfo->mem.sram.mem_class = mem->region.memory_class;
-            devinfo->mem.sram.mem_instance = mem->region.memory_instance;
+            devinfo->mem.sram.mem.klass = mem->region.memory_class;
+            devinfo->mem.sram.mem.instance = mem->region.memory_instance;
             devinfo->mem.sram.mappable.size = mem->probed_size;
          } else {
-            assert(devinfo->mem.sram.mem_class == mem->region.memory_class);
-            assert(devinfo->mem.sram.mem_instance == mem->region.memory_instance);
+            assert(devinfo->mem.sram.mem.klass == mem->region.memory_class);
+            assert(devinfo->mem.sram.mem.instance == mem->region.memory_instance);
             assert(devinfo->mem.sram.mappable.size == mem->probed_size);
          }
          /* The kernel uAPI only reports an accurate unallocated_size value
@@ -356,8 +356,8 @@ intel_device_info_i915_query_regions(struct intel_device_info *devinfo, int fd, 
       }
       case I915_MEMORY_CLASS_DEVICE:
          if (!update) {
-            devinfo->mem.vram.mem_class = mem->region.memory_class;
-            devinfo->mem.vram.mem_instance = mem->region.memory_instance;
+            devinfo->mem.vram.mem.klass = mem->region.memory_class;
+            devinfo->mem.vram.mem.instance = mem->region.memory_instance;
             if (mem->probed_cpu_visible_size > 0) {
                devinfo->mem.vram.mappable.size = mem->probed_cpu_visible_size;
                devinfo->mem.vram.unmappable.size =
@@ -371,8 +371,8 @@ intel_device_info_i915_query_regions(struct intel_device_info *devinfo, int fd, 
                devinfo->mem.vram.unmappable.size = 0;
             }
          } else {
-            assert(devinfo->mem.vram.mem_class == mem->region.memory_class);
-            assert(devinfo->mem.vram.mem_instance == mem->region.memory_instance);
+            assert(devinfo->mem.vram.mem.klass == mem->region.memory_class);
+            assert(devinfo->mem.vram.mem.instance == mem->region.memory_instance);
             assert((devinfo->mem.vram.mappable.size +
                     devinfo->mem.vram.unmappable.size) == mem->probed_size);
          }

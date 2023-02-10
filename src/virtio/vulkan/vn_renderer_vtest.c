@@ -1033,16 +1033,15 @@ vtest_init_protocol_version(struct vtest *vtest)
 static VkResult
 vtest_init(struct vtest *vtest)
 {
-   const char* socket_name = os_get_option("VTEST_SOCKET_NAME");
+   const char *socket_name = os_get_option("VTEST_SOCKET_NAME");
 
    util_sparse_array_init(&vtest->shmem_array, sizeof(struct vtest_shmem),
                           1024);
    util_sparse_array_init(&vtest->bo_array, sizeof(struct vtest_bo), 1024);
 
    mtx_init(&vtest->sock_mutex, mtx_plain);
-   vtest->sock_fd =
-      vtest_connect_socket(vtest->instance, socket_name ?
-         socket_name : VTEST_DEFAULT_SOCKET_NAME);
+   vtest->sock_fd = vtest_connect_socket(
+      vtest->instance, socket_name ? socket_name : VTEST_DEFAULT_SOCKET_NAME);
    if (vtest->sock_fd < 0)
       return VK_ERROR_INITIALIZATION_FAILED;
 
@@ -1060,9 +1059,8 @@ vtest_init(struct vtest *vtest)
       return result;
 
    /* see virtgpu_init_shmem_blob_mem */
-   vtest->shmem_blob_mem = vtest->capset.data.supports_blob_id_0
-                              ? VCMD_BLOB_TYPE_HOST3D
-                              : VCMD_BLOB_TYPE_GUEST;
+   assert(vtest->capset.data.supports_blob_id_0);
+   vtest->shmem_blob_mem = VCMD_BLOB_TYPE_HOST3D;
 
    vn_renderer_shmem_cache_init(&vtest->shmem_cache, &vtest->base,
                                 vtest_shmem_destroy_now);

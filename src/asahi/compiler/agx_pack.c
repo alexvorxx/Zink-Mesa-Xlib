@@ -94,15 +94,25 @@ agx_pack_sample_compare_offset(agx_index index)
 }
 
 static unsigned
-agx_pack_lod(agx_index index)
+agx_pack_lod(agx_index index, unsigned *lod_mode)
 {
-   /* Immediate zero */
-   if (index.type == AGX_INDEX_IMMEDIATE && index.value == 0)
+   /* For automatic LOD, the LOD field is unused. Assert as much. */
+   if ((*lod_mode) == AGX_LOD_MODE_AUTO_LOD) {
+      assert(index.type == AGX_INDEX_IMMEDIATE);
+      assert(index.value == 0);
       return 0;
+   }
 
-   /* Otherwise must be registers. Type implicitly specified by LOD mode. */
-   assert(index.type == AGX_INDEX_REGISTER);
-   assert(index.value < 0x100);
+   if (index.type == AGX_INDEX_UNIFORM) {
+      /* Translate LOD mode from register mode to uniform mode */
+      assert(((*lod_mode) & BITFIELD_BIT(2)) && "must start as reg mode");
+      *lod_mode = (*lod_mode) & ~BITFIELD_BIT(2);
+      assert(index.value < 0x200);
+   } else {
+      /* Otherwise must be registers */
+      assert(index.type == AGX_INDEX_REGISTER);
+      assert(index.value < 0x100);
+   }
 
    return index.value;
 }
@@ -577,13 +587,14 @@ agx_pack_instr(struct util_dynarray *emission, struct util_dynarray *fixups,
 
       bool Rt, Ct, St;
       unsigned Tt;
+      enum agx_lod_mode lod_mode = I->lod_mode;
 
       unsigned R = agx_pack_memory_reg(I->dest[0], &Rt);
       unsigned C = agx_pack_sample_coords(I->src[0], &Ct);
       unsigned T = agx_pack_texture(I->src[2], &Tt);
       unsigned S = agx_pack_sampler(I->src[3], &St);
       unsigned O = agx_pack_sample_compare_offset(I->src[4]);
-      unsigned D = agx_pack_lod(I->src[1]);
+      unsigned D = agx_pack_lod(I->src[1], &lod_mode);
 
       unsigned U = 0; // TODO: what is sampler ureg?
       unsigned q1 = I->shadow;
@@ -609,7 +620,7 @@ agx_pack_instr(struct util_dynarray *emission, struct util_dynarray *fixups,
          (((uint64_t)Tt) << 38) |
          (((uint64_t)(I->dim & BITFIELD_MASK(3))) << 40) |
          (((uint64_t)q3) << 43) | (((uint64_t)I->mask) << 48) |
-         (((uint64_t)I->lod_mode) << 52) |
+         (((uint64_t)lod_mode) << 52) |
          (((uint64_t)(S & BITFIELD_MASK(6))) << 56) | (((uint64_t)St) << 62) |
          (((uint64_t)I->scoreboard) << 63);
 

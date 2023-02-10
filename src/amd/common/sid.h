@@ -254,6 +254,31 @@
 #define PKT3_DISPATCH_TASKMESH_INDIRECT_MULTI_ACE  0xAD /* Indirect task+mesh shader dispatch [ACE side] */
 #define PKT3_EVENT_WRITE_ZPASS                     0xB1 /* GFX11+ & PFP version >= 1458 */
 #define   EVENT_WRITE_ZPASS_PFP_VERSION               1458
+/* All PAIRS packets require GFX11+ and PFP version >= 1448.
+ *
+ * SET_CONTEXT_REG_PAIRS:
+ * SET_SH_REG_PAIRS:
+ *   Format: header, (offset, value)^n.
+ *   Consecutive offsets must not be equal. Not recommended because the PACKED variants are better.
+ *
+ * SET_CONTEXT_REG_PAIRS_PACKED:
+ * SET_SH_REG_PAIRS_PACKED:
+ * SET_SH_REG_PAIRS_PACKED_N:
+ *   Format: header, count, (offset0 | (offset1 << 16), value0, value1)^(count / 2)
+ *   Consecutive offsets must not be equal. "count" is the register count and must be aligned to 2.
+ *   If the register count is odd, it's recommended to duplicate the first register in the last register.
+ *   The SH_*_PACKED* variants require register shadowing to be enabled. The *_N variant is
+ *   identical to the non-N variant, but is faster with the following limitation:
+ *   If PFP version >= 1463, "count" must be at most 14, else "count" must be at most 8. If "count"
+ *   is greater than the limit, use the non-N variant.
+ */
+#define PKT3_SET_CONTEXT_REG_PAIRS                 0xB8 /* GFX11+, PFP version >= 1448 */
+#define PKT3_SET_CONTEXT_REG_PAIRS_PACKED          0xB9 /* GFX11+, PFP version >= 1448 */
+#define PKT3_SET_SH_REG_PAIRS                      0xBA /* GFX11+, PFP version >= 1448 */
+#define PKT3_SET_SH_REG_PAIRS_PACKED               0xBB /* GFX11+, PFP version >= 1448 */
+#define PKT3_SET_SH_REG_PAIRS_PACKED_N             0xBD /* GFX11+, PFP version >= 1448 */
+#define   SET_REG_PAIRS_PFP_VERSION                   1448
+#define   SET_REG_PAIRS_PACKED_N_COUNT14_PFP_VERSION  1463
 
 #define PKT_TYPE_S(x)         (((unsigned)(x)&0x3) << 30)
 #define PKT_TYPE_G(x)         (((x) >> 30) & 0x3)

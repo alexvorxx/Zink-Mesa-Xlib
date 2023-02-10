@@ -357,6 +357,15 @@ loader_dri3_drawable_fini(struct loader_dri3_drawable *draw)
    for (i = 0; i < ARRAY_SIZE(draw->buffers); i++)
       dri3_free_render_buffer(draw, i);
 
+   if (draw->special_event) {
+      xcb_void_cookie_t cookie =
+         xcb_present_select_input_checked(draw->conn, draw->eid, draw->drawable,
+                                          XCB_PRESENT_EVENT_MASK_NO_EVENT);
+
+      xcb_discard_reply(draw->conn, cookie.sequence);
+      xcb_unregister_for_special_event(draw->conn, draw->special_event);
+   }
+
    if (draw->region)
       xcb_xfixes_destroy_region(draw->conn, draw->region);
 

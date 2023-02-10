@@ -27,8 +27,17 @@
 #include "util/anon_file.h"
 #include "anv_private.h"
 
-uint32_t
-anv_gem_create(struct anv_device *device, uint64_t size)
+void
+anv_gem_close(struct anv_device *device, uint32_t gem_handle)
+{
+   close(gem_handle);
+}
+
+static uint32_t
+stub_gem_create(struct anv_device *device,
+                const struct intel_memory_class_instance **regions,
+                uint16_t num_regions, uint64_t size,
+                enum anv_bo_alloc_flags alloc_flags)
 {
    int fd = os_create_anonymous_file(size, "fake bo");
    if (fd == -1)
@@ -37,20 +46,6 @@ anv_gem_create(struct anv_device *device, uint64_t size)
    assert(fd != 0);
 
    return fd;
-}
-
-void
-anv_gem_close(struct anv_device *device, uint32_t gem_handle)
-{
-   close(gem_handle);
-}
-
-uint32_t
-anv_gem_create_regions(struct anv_device *device, uint64_t anv_bo_size,
-                       uint32_t flags, uint32_t num_regions,
-                       struct drm_i915_gem_memory_class_instance *regions)
-{
-   return 0;
 }
 
 void*
@@ -123,9 +118,10 @@ anv_gem_fd_to_handle(struct anv_device *device, int fd)
    unreachable("Unused");
 }
 
-int
-anv_i915_query(int fd, uint64_t query_id, void *buffer,
-               int32_t *buffer_len)
+const struct anv_kmd_backend *anv_stub_kmd_backend_get(void)
 {
-   unreachable("Unused");
+   static const struct anv_kmd_backend stub_backend = {
+      .gem_create = stub_gem_create,
+   };
+   return &stub_backend;
 }

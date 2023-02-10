@@ -489,9 +489,6 @@ static void *si_create_blend_state_mode(struct pipe_context *ctx,
                         S_028B70_OFFSET_ROUND(0));
    }
 
-   if (state->alpha_to_coverage)
-      blend->need_src_alpha_4bit |= 0xf;
-
    blend->cb_target_mask = 0;
    blend->cb_target_enabled_4bit = 0;
 
@@ -4819,18 +4816,19 @@ static void *si_create_sampler_state(struct pipe_context *ctx,
    rstate->val[1] = (S_008F34_MIN_LOD(S_FIXED(CLAMP(state->min_lod, 0, 15), 8)) |
                      S_008F34_MAX_LOD(S_FIXED(CLAMP(state->max_lod, 0, 15), 8)) |
                      S_008F34_PERF_MIP(max_aniso_ratio ? max_aniso_ratio + 6 : 0));
-   rstate->val[2] = (S_008F38_LOD_BIAS(S_FIXED(CLAMP(state->lod_bias, -16, 16), 8)) |
-                     S_008F38_XY_MAG_FILTER(si_tex_filter(state->mag_img_filter, max_aniso)) |
+   rstate->val[2] = (S_008F38_XY_MAG_FILTER(si_tex_filter(state->mag_img_filter, max_aniso)) |
                      S_008F38_XY_MIN_FILTER(si_tex_filter(state->min_img_filter, max_aniso)) |
                      S_008F38_MIP_FILTER(si_tex_mipfilter(state->min_mip_filter)));
    rstate->val[3] = si_translate_border_color(sctx, state, &state->border_color,
                                               state->border_color_is_integer);
 
    if (sscreen->info.gfx_level >= GFX10) {
-      rstate->val[2] |= S_008F38_ANISO_OVERRIDE_GFX10(1);
+      rstate->val[2] |= S_008F38_LOD_BIAS(S_FIXED(CLAMP(state->lod_bias, -32, 31), 8)) |
+                        S_008F38_ANISO_OVERRIDE_GFX10(1);
    } else {
-      rstate->val[0] |= S_008F30_COMPAT_MODE(sctx->gfx_level >= GFX8);
-      rstate->val[2] |= S_008F38_DISABLE_LSB_CEIL(sctx->gfx_level <= GFX8) |
+      rstate->val[2] |= S_008F30_COMPAT_MODE(sctx->gfx_level >= GFX8) |
+                        S_008F38_LOD_BIAS(S_FIXED(CLAMP(state->lod_bias, -16, 15), 8)) |
+                        S_008F38_DISABLE_LSB_CEIL(sctx->gfx_level <= GFX8) |
                         S_008F38_FILTER_PREC_FIX(1) |
                         S_008F38_ANISO_OVERRIDE_GFX8(sctx->gfx_level >= GFX8);
    }

@@ -37,6 +37,17 @@ match_address(nir_ssa_scalar base, int8_t format_shift)
    };
 
    for (unsigned i = 0; i < ARRAY_SIZE(summands); ++i) {
+      /* We can add a small constant to the 64-bit base for free */
+      if (nir_ssa_scalar_is_const(summands[i])) {
+         return (struct match){
+            .base = summands[1 - i],
+            .offset = summands[i],
+            .shift = -format_shift,
+            .sign_extend = true,
+         };
+      }
+
+      /* Otherwise, we can only add an offset extended from 32-bits */
       if (!nir_ssa_scalar_is_alu(summands[i]))
          continue;
 

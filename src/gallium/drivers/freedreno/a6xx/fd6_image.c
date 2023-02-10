@@ -55,8 +55,7 @@ fd6_ssbo_descriptor(struct fd_context *ctx,
 {
    fdl6_buffer_view_init(
       descriptor,
-      ctx->screen->info->a6xx.storage_16bit ? PIPE_FORMAT_R16_UINT
-                                            : PIPE_FORMAT_R32_UINT,
+      PIPE_FORMAT_R32_UINT,
       swiz_identity, rsc_iova(buf->buffer, buf->buffer_offset),
       buf->buffer_size);
 }

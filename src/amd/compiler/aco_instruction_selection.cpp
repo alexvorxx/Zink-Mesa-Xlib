@@ -5335,9 +5335,8 @@ emit_interp_instr_gfx11(isel_context* ctx, unsigned idx, unsigned component, Tem
       prim_mask_op.setLateKill(true); /* we don't want the bld.lm definition to use m0 */
       Operand coord2_op(coord2);
       coord2_op.setLateKill(true); /* we re-use the destination reg in the middle */
-      bld.pseudo(aco_opcode::p_interp_gfx11, Definition(dst), bld.def(bld.lm), bld.def(s1, scc),
-                 Operand(v1.as_linear()), Operand::c32(idx), Operand::c32(component), coord1,
-                 coord2_op, prim_mask_op);
+      bld.pseudo(aco_opcode::p_interp_gfx11, Definition(dst), Operand(v1.as_linear()),
+                 Operand::c32(idx), Operand::c32(component), coord1, coord2_op, prim_mask_op);
       return;
    }
 
@@ -5416,9 +5415,9 @@ emit_interp_mov_instr(isel_context* ctx, unsigned idx, unsigned component, unsig
       if (in_exec_divergent_or_in_loop(ctx)) {
          Operand prim_mask_op = bld.m0(prim_mask);
          prim_mask_op.setLateKill(true); /* we don't want the bld.lm definition to use m0 */
-         bld.pseudo(aco_opcode::p_interp_gfx11, Definition(dst), bld.def(bld.lm), bld.def(s1, scc),
-                    Operand(v1.as_linear()), Operand::c32(idx), Operand::c32(component),
-                    Operand::c32(dpp_ctrl), prim_mask_op);
+         bld.pseudo(aco_opcode::p_interp_gfx11, Definition(dst), Operand(v1.as_linear()),
+                    Operand::c32(idx), Operand::c32(component), Operand::c32(dpp_ctrl),
+                    prim_mask_op);
       } else {
          Temp p =
             bld.ldsdir(aco_opcode::lds_param_load, bld.def(v1), bld.m0(prim_mask), idx, component);
@@ -11319,7 +11318,7 @@ add_startpgm(struct isel_context* ctx)
    /* Stash these in the program so that they can be accessed later when
     * handling spilling.
     */
-   ctx->program->private_segment_buffer = get_arg(ctx, ctx->args->ring_offsets);
+   ctx->program->private_segment_buffer = get_arg(ctx, ctx->args->ac.ring_offsets);
    if (ctx->program->gfx_level <= GFX10_3) {
       ctx->program->scratch_offset = get_arg(ctx, ctx->args->ac.scratch_offset);
 

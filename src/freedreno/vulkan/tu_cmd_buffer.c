@@ -734,13 +734,14 @@ use_sysmem_rendering(struct tu_cmd_buffer *cmd,
  */
 static void
 tu6_emit_cond_for_load_stores(struct tu_cmd_buffer *cmd, struct tu_cs *cs,
-                              uint32_t pipe, uint32_t slot, bool wfm)
+                              uint32_t pipe, uint32_t slot, bool skip_wfm)
 {
-   if (cmd->state.tiling->binning_possible) {
+   if (cmd->state.tiling->binning_possible &&
+       cmd->state.pass->has_cond_load_store) {
       tu_cs_emit_pkt7(cs, CP_REG_TEST, 1);
       tu_cs_emit(cs, A6XX_CP_REG_TEST_0_REG(REG_A6XX_VSC_STATE_REG(pipe)) |
                      A6XX_CP_REG_TEST_0_BIT(slot) |
-                     COND(wfm, A6XX_CP_REG_TEST_0_WAIT_FOR_ME));
+                     COND(skip_wfm, A6XX_CP_REG_TEST_0_SKIP_WAIT_FOR_ME));
    } else {
       /* COND_REG_EXECs are not emitted in non-binning case */
    }
@@ -855,8 +856,10 @@ tu6_emit_tile_load(struct tu_cmd_buffer *cmd, struct tu_cs *cs)
 {
    tu6_emit_blit_scissor(cmd, cs, true);
 
+   const bool cond_exec_allowed = cmd->state.tiling->binning &&
+                                  cmd->state.pass->has_cond_load_store;
    for (uint32_t i = 0; i < cmd->state.pass->attachment_count; ++i)
-      tu_load_gmem_attachment(cmd, cs, i, cmd->state.tiling->binning, false);
+      tu_load_gmem_attachment(cmd, cs, i, cond_exec_allowed, false);
 }
 
 static void
@@ -873,9 +876,11 @@ tu6_emit_tile_store(struct tu_cmd_buffer *cmd, struct tu_cs *cs)
 
    for (uint32_t a = 0; a < pass->attachment_count; ++a) {
       if (pass->attachments[a].gmem) {
+         const bool cond_exec_allowed = cmd->state.tiling->binning_possible &&
+                                        cmd->state.pass->has_cond_load_store;
          tu_store_gmem_attachment(cmd, cs, a, a,
                                   fb->layers, subpass->multiview_mask,
-                                  cmd->state.tiling->binning_possible);
+                                  cond_exec_allowed);
       }
    }
 

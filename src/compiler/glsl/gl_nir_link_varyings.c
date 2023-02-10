@@ -2219,7 +2219,7 @@ remove_unused_io_vars(nir_shader *producer, nir_shader *consumer,
          progress = true;
 
          if (mode == nir_var_shader_in) {
-            if (!prog->IsES && prog->data->Version <= 120) {
+            if (!prog->IsES && prog->GLSL_Version <= 120) {
                /* On page 25 (page 31 of the PDF) of the GLSL 1.20 spec:
                 *
                 *     Only those varying variables used (i.e. read) in

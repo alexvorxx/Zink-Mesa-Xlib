@@ -574,6 +574,10 @@ radv_physical_device_get_supported_extensions(const struct radv_physical_device 
       .KHR_timeline_semaphore = true,
       .KHR_uniform_buffer_standard_layout = true,
       .KHR_variable_pointers = true,
+      .KHR_video_queue = !!(device->instance->perftest_flags & RADV_PERFTEST_VIDEO_DECODE),
+      .KHR_video_decode_queue = !!(device->instance->perftest_flags & RADV_PERFTEST_VIDEO_DECODE),
+      .KHR_video_decode_h264 = VIDEO_CODEC_H264DEC && !!(device->instance->perftest_flags & RADV_PERFTEST_VIDEO_DECODE),
+      .KHR_video_decode_h265 = VIDEO_CODEC_H265DEC && !!(device->instance->perftest_flags & RADV_PERFTEST_VIDEO_DECODE),
       .KHR_vulkan_memory_model = true,
       .KHR_workgroup_memory_explicit_layout = true,
       .KHR_zero_initialize_workgroup_memory = true,
@@ -717,6 +721,18 @@ radv_physical_device_init_queue_table(struct radv_physical_device *pdevice)
        !(pdevice->instance->debug_flags & RADV_DEBUG_NO_COMPUTE_QUEUE)) {
       pdevice->vk_queue_to_radv[idx] = RADV_QUEUE_COMPUTE;
       idx++;
+   }
+
+   if (pdevice->instance->perftest_flags & RADV_PERFTEST_VIDEO_DECODE) {
+      if (pdevice->rad_info.ip[AMD_IP_VCN_DEC].num_queues > 0) {
+         pdevice->vk_queue_to_radv[idx] = RADV_QUEUE_VIDEO_DEC;
+         idx++;
+      }
+
+      if (radv_has_uvd(pdevice)) {
+         pdevice->vk_queue_to_radv[idx] = RADV_QUEUE_VIDEO_DEC;
+         idx++;
+      }
    }
    pdevice->num_queues = idx;
 }
@@ -989,6 +1005,8 @@ radv_physical_device_try_create(struct radv_instance *instance, drmDevicePtr drm
    /* We don't check the error code, but later check if it is initialized. */
    ac_init_perfcounters(&device->rad_info, false, false, &device->ac_perfcounters);
 
+   radv_init_physical_device_decoder(device);
+
    /* The WSI is structured as a layer on top of the driver, so this has
     * to be the last part of initialization (at least until we get other
     * semi-layers).
@@ -1111,6 +1129,7 @@ static const struct debug_control radv_perftest_options[] = {{"localbos", RADV_P
                                                              {"rtwave64", RADV_PERFTEST_RT_WAVE_64},
                                                              {"gpl", RADV_PERFTEST_GPL},
                                                              {"ngg_streamout", RADV_PERFTEST_NGG_STREAMOUT},
+                                                             {"video_decode", RADV_PERFTEST_VIDEO_DECODE},
                                                              {NULL, 0}};
 
 const char *
@@ -2838,6 +2857,14 @@ radv_get_physical_device_queue_family_properties(struct radv_physical_device *pd
        !(pdevice->instance->debug_flags & RADV_DEBUG_NO_COMPUTE_QUEUE))
       num_queue_families++;
 
+   if (pdevice->instance->perftest_flags & RADV_PERFTEST_VIDEO_DECODE) {
+      if (pdevice->rad_info.ip[AMD_IP_VCN_DEC].num_queues > 0)
+         num_queue_families++;
+
+      if (radv_has_uvd(pdevice))
+         num_queue_families++;
+   }
+
    if (pQueueFamilyProperties == NULL) {
       *pCount = num_queue_families;
       return;
@@ -2871,6 +2898,33 @@ radv_get_physical_device_queue_family_properties(struct radv_physical_device *pd
          idx++;
       }
    }
+
+   if (pdevice->instance->perftest_flags & RADV_PERFTEST_VIDEO_DECODE) {
+      if (pdevice->rad_info.ip[AMD_IP_VCN_DEC].num_queues > 0) {
+         if (*pCount > idx) {
+            *pQueueFamilyProperties[idx] = (VkQueueFamilyProperties){
+               .queueFlags = VK_QUEUE_VIDEO_DECODE_BIT_KHR,
+               .queueCount = pdevice->rad_info.ip[AMD_IP_VCN_DEC].num_queues,
+               .timestampValidBits = 64,
+               .minImageTransferGranularity = (VkExtent3D){1, 1, 1},
+            };
+            idx++;
+         }
+      }
+
+      if (radv_has_uvd(pdevice)) {
+         if (*pCount > idx) {
+            *pQueueFamilyProperties[idx] = (VkQueueFamilyProperties){
+               .queueFlags = VK_QUEUE_VIDEO_DECODE_BIT_KHR,
+               .queueCount = pdevice->rad_info.ip[AMD_IP_UVD].num_queues,
+               .timestampValidBits = 64,
+               .minImageTransferGranularity = (VkExtent3D){1, 1, 1},
+            };
+            idx++;
+         }
+      }
+   }
+
    *pCount = idx;
 }
 
@@ -2908,6 +2962,19 @@ radv_GetPhysicalDeviceQueueFamilyProperties2(VkPhysicalDevice physicalDevice, ui
             STATIC_ASSERT(ARRAY_SIZE(radv_global_queue_priorities) <= VK_MAX_GLOBAL_PRIORITY_SIZE_KHR);
             prop->priorityCount = ARRAY_SIZE(radv_global_queue_priorities);
             memcpy(&prop->priorities, radv_global_queue_priorities, sizeof(radv_global_queue_priorities));
+            break;
+         }
+         case VK_STRUCTURE_TYPE_QUEUE_FAMILY_QUERY_RESULT_STATUS_PROPERTIES_KHR: {
+            VkQueueFamilyQueryResultStatusPropertiesKHR *prop =
+               (VkQueueFamilyQueryResultStatusPropertiesKHR *)ext;
+            prop->queryResultStatusSupport = VK_FALSE;
+            break;
+         }
+         case VK_STRUCTURE_TYPE_QUEUE_FAMILY_VIDEO_PROPERTIES_KHR: {
+            VkQueueFamilyVideoPropertiesKHR *prop =
+               (VkQueueFamilyVideoPropertiesKHR *)ext;
+            if (pQueueFamilyProperties[i].queueFamilyProperties.queueFlags & VK_QUEUE_VIDEO_DECODE_BIT_KHR)
+               prop->videoCodecOperations = VK_VIDEO_CODEC_OPERATION_DECODE_H264_BIT_KHR | VK_VIDEO_CODEC_OPERATION_DECODE_H265_BIT_KHR;
             break;
          }
          default:
@@ -5496,7 +5563,8 @@ radv_update_preambles(struct radv_queue_state *queue, struct radv_device *device
                       struct vk_command_buffer *const *cmd_buffers, uint32_t cmd_buffer_count,
                       bool *use_perf_counters, bool *use_ace)
 {
-   if (queue->qf == RADV_QUEUE_TRANSFER)
+   if (queue->qf != RADV_QUEUE_GENERAL &&
+       queue->qf != RADV_QUEUE_COMPUTE)
       return VK_SUCCESS;
 
    /* Figure out the needs of the current submission.
@@ -7675,17 +7743,18 @@ radv_init_sampler(struct radv_device *device, struct radv_sampler *sampler,
    sampler->state[1] = (S_008F34_MIN_LOD(radv_float_to_ufixed(CLAMP(pCreateInfo->minLod, 0, 15), 8)) |
                         S_008F34_MAX_LOD(radv_float_to_ufixed(CLAMP(pCreateInfo->maxLod, 0, 15), 8)) |
                         S_008F34_PERF_MIP(max_aniso_ratio ? max_aniso_ratio + 6 : 0));
-   sampler->state[2] = (S_008F38_LOD_BIAS(radv_float_to_sfixed(CLAMP(pCreateInfo->mipLodBias, -16, 16), 8)) |
-                        S_008F38_XY_MAG_FILTER(radv_tex_filter(pCreateInfo->magFilter, max_aniso)) |
+   sampler->state[2] = (S_008F38_XY_MAG_FILTER(radv_tex_filter(pCreateInfo->magFilter, max_aniso)) |
                         S_008F38_XY_MIN_FILTER(radv_tex_filter(pCreateInfo->minFilter, max_aniso)) |
                         S_008F38_MIP_FILTER(radv_tex_mipfilter(pCreateInfo->mipmapMode)));
    sampler->state[3] = S_008F3C_BORDER_COLOR_TYPE(radv_tex_bordercolor(border_color));
 
    if (device->physical_device->rad_info.gfx_level >= GFX10) {
       sampler->state[2] |=
+         S_008F38_LOD_BIAS(radv_float_to_sfixed(CLAMP(pCreateInfo->mipLodBias, -32, 31), 8)) |
          S_008F38_ANISO_OVERRIDE_GFX10(device->instance->disable_aniso_single_level);
    } else {
       sampler->state[2] |=
+         S_008F38_LOD_BIAS(radv_float_to_sfixed(CLAMP(pCreateInfo->mipLodBias, -16, 15), 8)) |
          S_008F38_DISABLE_LSB_CEIL(device->physical_device->rad_info.gfx_level <= GFX8) |
          S_008F38_FILTER_PREC_FIX(1) |
          S_008F38_ANISO_OVERRIDE_GFX8(device->instance->disable_aniso_single_level &&
@@ -7721,8 +7790,7 @@ radv_CreateSampler(VkDevice _device, const VkSamplerCreateInfo *pCreateInfo,
    radv_init_sampler(device, sampler, pCreateInfo);
 
    sampler->ycbcr_sampler =
-      ycbcr_conversion ? radv_sampler_ycbcr_conversion_from_handle(ycbcr_conversion->conversion)
-                       : NULL;
+      ycbcr_conversion ? vk_ycbcr_conversion_from_handle(ycbcr_conversion->conversion) : NULL;
    *pSampler = radv_sampler_to_handle(sampler);
 
    return VK_SUCCESS;

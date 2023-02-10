@@ -72,6 +72,34 @@ float64_glsl_h = custom_target(
 
 float64_glsl_file = [files('float64.glsl')]
 
+cross_platform_settings_piece_all_h = custom_target(
+  'cross_platform_settings_piece_all.h',
+  input : [files_xxd, 'CrossPlatformSettings_piece_all.glsl'],
+  output : 'cross_platform_settings_piece_all.h',
+  command : [prog_python, '@INPUT@', '@OUTPUT@', '-n', 'cross_platform_settings_piece_all_header'],
+)
+
+bc1_glsl_h = custom_target(
+  'bc1_glsl.h',
+  input : [files_xxd, 'bc1.glsl'],
+  output : 'bc1_glsl.h',
+  command : [prog_python, '@INPUT@', '@OUTPUT@', '-n', 'bc1_source'],
+)
+
+bc4_glsl_h = custom_target(
+  'bc4_glsl.h',
+  input : [files_xxd, 'bc4.glsl'],
+  output : 'bc4_glsl.h',
+  command : [prog_python, '@INPUT@', '@OUTPUT@', '-n', 'bc4_source'],
+)
+
+etc2_rgba_stitch_glsl_h = custom_target(
+  'etc2_rgba_stitch_glsl.h',
+  input : [files_xxd, 'etc2_rgba_stitch.glsl'],
+  output : 'etc2_rgba_stitch_glsl.h',
+  command : [prog_python, '@INPUT@', '@OUTPUT@', '-n', 'etc2_rgba_stitch_source'],
+)
+
 files_libglsl = files(
   'ast.h',
   'ast_array_index.cpp',
@@ -214,7 +242,8 @@ libglsl = static_library(
   'glsl',
   [files_libglsl, glsl_parser, glsl_lexer_cpp, ir_expression_operation_h,
    ir_expression_operation_strings_h, ir_expression_operation_constant_h,
-   float64_glsl_h],
+   float64_glsl_h, cross_platform_settings_piece_all_h, bc1_glsl_h, bc4_glsl_h,
+   etc2_rgba_stitch_glsl_h],
   c_args : [c_msvc_compat_args, no_override_init_args],
   cpp_args : [cpp_msvc_compat_args],
   gnu_symbol_visibility : 'hidden',

@@ -253,7 +253,6 @@ struct radv_shader_info {
    bool has_ngg_early_prim_export;
    bool has_ngg_prim_query;
    bool has_ngg_xfb_query;
-   uint32_t num_lds_blocks_when_not_culling;
    uint32_t num_tess_patches;
    uint32_t esgs_itemsize; /* Only for VS or TES as ES */
    struct radv_vs_output_info outinfo;
@@ -530,9 +529,8 @@ struct radv_shader_part {
 
 struct radv_pipeline_layout;
 
-void radv_optimize_nir(struct nir_shader *shader, bool optimize_conservatively, bool allow_copies);
+void radv_optimize_nir(struct nir_shader *shader, bool optimize_conservatively);
 void radv_optimize_nir_algebraic(nir_shader *shader, bool opt_offsets);
-bool radv_nir_lower_ycbcr_textures(nir_shader *shader, const struct radv_pipeline_layout *layout);
 
 bool radv_nir_lower_ray_queries(nir_shader *shader, struct radv_device *device);
 
@@ -550,8 +548,7 @@ nir_shader *radv_shader_spirv_to_nir(struct radv_device *device,
 
 void radv_nir_lower_abi(nir_shader *shader, enum amd_gfx_level gfx_level,
                         const struct radv_shader_info *info, const struct radv_shader_args *args,
-                        const struct radv_pipeline_key *pl_key, bool use_llvm,
-                        uint32_t address32_hi);
+                        const struct radv_pipeline_key *pl_key, uint32_t address32_hi);
 
 void radv_init_shader_arenas(struct radv_device *device);
 void radv_destroy_shader_arenas(struct radv_device *device);
@@ -750,8 +747,6 @@ bool radv_consider_culling(const struct radv_physical_device *pdevice, struct ni
                            const struct radv_shader_info *info);
 
 void radv_get_nir_options(struct radv_physical_device *device);
-
-bool radv_force_primitive_shading_rate(nir_shader *nir, struct radv_device *device);
 
 bool radv_lower_fs_intrinsics(nir_shader *nir, const struct radv_pipeline_stage *fs_stage,
                               const struct radv_pipeline_key *key);

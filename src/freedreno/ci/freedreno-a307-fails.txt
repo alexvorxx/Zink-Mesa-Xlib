@@ -281,6 +281,10 @@ spec@arb_depth_texture@texwrap formats bordercolor@GL_DEPTH_COMPONENT32- border 
 spec@arb_direct_state_access@gettextureimage-formats init-by-rendering,Fail
 spec@arb_direct_state_access@transformfeedback-bufferbase,Fail
 spec@arb_direct_state_access@transformfeedback-bufferbase@general test,Fail
+
+spec@arb_enhanced_layouts@linker@component-layout@intrastage-vs,Fail
+spec@arb_enhanced_layouts@linker@component-layout@vs-to-fs,Fail
+
 spec@arb_framebuffer_object@arb_framebuffer_object-depth-stencil-blit depth_stencil gl_depth24_stencil8,Fail
 spec@arb_framebuffer_object@arb_framebuffer_object-depth-stencil-blit depth_stencil gl_depth32f_stencil8,Fail
 spec@arb_framebuffer_object@arb_framebuffer_object-depth-stencil-blit stencil gl_depth24_stencil8,Fail
@@ -383,6 +387,7 @@ spec@arb_transform_feedback2@change objects while paused (gles3),Fail
 spec@arb_transform_feedback3@gl_nextbuffer-gl_nextbuffer,Fail
 spec@arb_transform_feedback_instanced@draw-auto instanced,Fail
 spec@arb_uniform_buffer_object@rendering-array,Fail
+spec@arb_uniform_buffer_object@execution@std140-array-struct-array-struct,Fail
 spec@arb_vertex_buffer_object@vbo-subdata-many drawarrays,Crash
 spec@arb_vertex_buffer_object@vbo-subdata-many drawelements,Crash
 spec@arb_vertex_buffer_object@vbo-subdata-many drawrangeelements,Crash
@@ -488,6 +493,7 @@ spec@ext_transform_feedback@tessellation triangle_strip flat_last,Fail
 spec@ext_transform_feedback@tessellation triangle_strip monochrome,Fail
 spec@ext_transform_feedback@tessellation triangle_strip smooth,Fail
 spec@ext_transform_feedback@tessellation triangle_strip wireframe,Fail
+spec@glsl-1.10@execution@variable-indexing@vs-output-array-vec2-index-wr-no-unroll,Fail
 spec@glsl-1.10@execution@varying-packing@simple float array,Fail
 spec@glsl-1.10@execution@varying-packing@simple float arrays_of_arrays,Fail
 spec@glsl-1.10@execution@varying-packing@simple float separate,Fail
@@ -555,6 +561,12 @@ spec@khr_texture_compression_astc@sliced-3d-miptree-gl srgb-fp,Fail
 spec@khr_texture_compression_astc@sliced-3d-miptree-gl srgb-fp@sRGB decode full precision,Fail
 spec@khr_texture_compression_astc@sliced-3d-miptree-gles srgb-fp,Fail
 spec@khr_texture_compression_astc@sliced-3d-miptree-gles srgb-fp@sRGB decode full precision,Fail
+
+spec@mesa_shader_integer_functions@execution@built-in-functions@fs-bitcount,Fail
+spec@mesa_shader_integer_functions@execution@built-in-functions@fs-bitfieldreverse,Fail
+spec@mesa_shader_integer_functions@execution@built-in-functions@vs-bitcount,Fail
+spec@mesa_shader_integer_functions@execution@built-in-functions@vs-bitfieldreverse,Fail
+
 spec@nv_conditional_render@copytexsubimage,Fail
 spec@nv_copy_image@nv_copy_image-formats,Fail
 spec@nv_copy_image@nv_copy_image-formats@Source: GL_COMPRESSED_RED_RGTC1/Destination: GL_COMPRESSED_RED_RGTC1,Fail

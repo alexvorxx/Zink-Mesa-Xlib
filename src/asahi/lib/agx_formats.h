@@ -46,4 +46,9 @@ agx_is_valid_pixel_format(enum pipe_format format)
    return ((entry.channels | entry.type) != 0) || entry.renderable;
 }
 
+struct agx_border_packed;
+
+void agx_pack_border(struct agx_border_packed *out, const uint32_t in[4],
+                     enum pipe_format format);
+
 #endif

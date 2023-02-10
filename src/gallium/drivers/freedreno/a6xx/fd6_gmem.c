@@ -91,7 +91,7 @@ emit_mrt(struct fd_ringbuffer *ring, struct pipe_framebuffer_state *pfb,
       enum a3xx_color_swap swap = WZYX;
       bool sint = false, uint = false;
       struct fd_resource *rsc = NULL;
-      struct fdl_slice *slice = NULL;
+      ASSERTED struct fdl_slice *slice = NULL;
       uint32_t stride = 0;
       uint32_t array_stride = 0;
       uint32_t offset;
@@ -652,7 +652,7 @@ emit_conditional_ib(struct fd_batch *batch, const struct fd_tile *tile,
    OUT_PKT7(ring, CP_REG_TEST, 1);
    OUT_RING(ring, A6XX_CP_REG_TEST_0_REG(REG_A6XX_VSC_STATE_REG(tile->p)) |
                      A6XX_CP_REG_TEST_0_BIT(tile->n) |
-                     A6XX_CP_REG_TEST_0_WAIT_FOR_ME);
+                     A6XX_CP_REG_TEST_0_SKIP_WAIT_FOR_ME);
 
    OUT_PKT7(ring, CP_COND_REG_EXEC, 2);
    OUT_RING(ring, CP_COND_REG_EXEC_0_MODE(PRED_TEST));
@@ -1439,11 +1439,7 @@ prepare_tile_fini_ib(struct fd_batch *batch) assert_dt
 static void
 fd6_emit_tile(struct fd_batch *batch, const struct fd_tile *tile)
 {
-   if (!use_hw_binning(batch)) {
-      fd6_emit_ib(batch->gmem, batch->draw);
-   } else {
-      emit_conditional_ib(batch, tile, batch->draw);
-   }
+   fd6_emit_ib(batch->gmem, batch->draw);
 
    if (batch->tile_epilogue)
       fd6_emit_ib(batch->gmem, batch->tile_epilogue);

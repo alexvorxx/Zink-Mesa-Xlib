@@ -1026,10 +1026,9 @@ static void si_calculate_max_simd_waves(struct si_shader *shader)
        * For shader-db stats, set num_vgprs that the hw actually uses.
        */
       unsigned num_vgprs = conf->num_vgprs;
-      if (sscreen->info.family == CHIP_GFX1100 || sscreen->info.family == CHIP_GFX1101) {
-         num_vgprs = util_align_npot(num_vgprs, shader->wave_size == 32 ? 24 : 12);
-      } else if (sscreen->info.gfx_level == GFX10_3) {
-         num_vgprs = align(num_vgprs, shader->wave_size == 32 ? 16 : 8);
+      if (sscreen->info.gfx_level >= GFX10_3) {
+         unsigned real_vgpr_gran = sscreen->info.num_physical_wave64_vgprs_per_simd / 64;
+         num_vgprs = util_align_npot(num_vgprs, real_vgpr_gran * (shader->wave_size == 32 ? 2 : 1));
       } else {
          num_vgprs = align(num_vgprs, shader->wave_size == 32 ? 8 : 4);
       }

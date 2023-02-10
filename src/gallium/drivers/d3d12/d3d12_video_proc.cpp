@@ -185,7 +185,6 @@ d3d12_video_processor_process_frame(struct pipe_video_codec *codec,
 
     // Setup process frame arguments for current input texture.
 
-    unsigned curInputStreamIndex = pD3D12Proc->m_ProcessInputs.size();
     D3D12_VIDEO_PROCESS_INPUT_STREAM_ARGUMENTS1 InputArguments = {
         {
         { // D3D12_VIDEO_PROCESS_INPUT_STREAM InputStream[0];
@@ -227,7 +226,7 @@ d3d12_video_processor_process_frame(struct pipe_video_codec *codec,
             // } RECT;
             { process_properties->src_region.x0/*left*/, process_properties->src_region.y0/*top*/, process_properties->src_region.x1/*right*/, process_properties->src_region.y1/*bottom*/ },
             { process_properties->dst_region.x0/*left*/, process_properties->dst_region.y0/*top*/, process_properties->dst_region.x1/*right*/, process_properties->dst_region.y1/*bottom*/ }, // D3D12_RECT DestinationRectangle;
-            pD3D12Proc->m_inputStreamDescs[curInputStreamIndex].EnableOrientation ? d3d12_video_processor_convert_pipe_rotation(process_properties->orientation) : D3D12_VIDEO_PROCESS_ORIENTATION_DEFAULT, // D3D12_VIDEO_PROCESS_ORIENTATION Orientation;
+            pD3D12Proc->m_inputStreamDescs[0].EnableOrientation ? d3d12_video_processor_convert_pipe_rotation(process_properties->orientation) : D3D12_VIDEO_PROCESS_ORIENTATION_DEFAULT, // D3D12_VIDEO_PROCESS_ORIENTATION Orientation;
         },
         D3D12_VIDEO_PROCESS_INPUT_STREAM_FLAG_NONE,
         { // D3D12_VIDEO_PROCESS_INPUT_STREAM_RATE RateInfo;

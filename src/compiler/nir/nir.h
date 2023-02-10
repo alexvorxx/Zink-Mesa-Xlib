@@ -4639,6 +4639,12 @@ void nir_find_inlinable_uniforms(nir_shader *shader);
 void nir_inline_uniforms(nir_shader *shader, unsigned num_uniforms,
                          const uint32_t *uniform_values,
                          const uint16_t *uniform_dw_offsets);
+bool nir_collect_src_uniforms(const nir_src *src, int component,
+                              uint32_t *uni_offsets, uint8_t *num_offsets,
+                              unsigned max_num_bo, unsigned max_offset);
+void nir_add_inlinable_uniforms(const nir_src *cond, nir_loop_info *info,
+                                uint32_t *uni_offsets, uint8_t *num_offsets,
+                                unsigned max_num_bo, unsigned max_offset);
 
 bool nir_propagate_invariant(nir_shader *shader, bool invariant_prim);
 
@@ -4735,12 +4741,6 @@ typedef enum {
     * modes.
     */
    nir_lower_io_lower_64bit_to_32 = (1 << 0),
-
-   /* If set, this forces all non-flat fragment shader inputs to be
-    * interpolated as if with the "sample" qualifier.  This requires
-    * nir_shader_compiler_options::use_interpolated_input_intrinsics.
-    */
-   nir_lower_io_force_sample_interpolation = (1 << 1),
 } nir_lower_io_options;
 bool nir_lower_io(nir_shader *shader,
                   nir_variable_mode modes,

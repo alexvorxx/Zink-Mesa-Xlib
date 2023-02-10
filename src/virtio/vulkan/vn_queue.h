@@ -88,6 +88,38 @@ struct vn_semaphore {
    struct vn_sync_payload permanent;
    struct vn_sync_payload temporary;
 
+   struct {
+      /* non-NULL if VN_PERF_NO_TIMELINE_SEM_FEEDBACK is disabled */
+      struct vn_feedback_slot *slot;
+
+      /* Lists of allocated vn_feedback_src
+       * The pending_src_list tracks vn_feedback_src slots that have
+       * not been signaled since the last submission cleanup.
+       * The free_src_list tracks vn_feedback_src slots that have
+       * signaled and can be reused.
+       * On submission prepare, used vn_feedback_src are moved from
+       * the free list to the pending list. On submission cleanup,
+       * vn_feedback_src of any associated semaphores are checked
+       * and moved to the free list if they were signaled.
+       * vn_feedback_src slots are allocated on demand if the
+       * free_src_list is empty.
+       */
+      struct list_head pending_src_list;
+      struct list_head free_src_list;
+
+      /* Lock for accessing free/pending src lists */
+      simple_mtx_t src_lists_mtx;
+
+      /* Cached counter value to track if an async sem wait call is needed */
+      uint64_t signaled_counter;
+
+      /* Lock for checking if an async sem wait call is needed based on
+       * the current counter value and signaled_counter to ensure async
+       * wait order across threads.
+       */
+      simple_mtx_t async_wait_mtx;
+   } feedback;
+
    bool is_external;
 
    /* ring_idx of the last queue submission (only used for permanent

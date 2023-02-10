@@ -109,7 +109,9 @@ brw_nir_link_shaders(const struct brw_compiler *compiler,
                      nir_shader *producer, nir_shader *consumer);
 
 bool brw_nir_lower_cs_intrinsics(nir_shader *nir);
-bool brw_nir_lower_alpha_to_coverage(nir_shader *shader);
+bool brw_nir_lower_alpha_to_coverage(nir_shader *shader,
+                                     const struct brw_wm_prog_key *key,
+                                     const struct brw_wm_prog_data *prog_data);
 void brw_nir_lower_vs_inputs(nir_shader *nir,
                              bool edgeflag_is_last,
                              const uint8_t *vs_attrib_wa_flags);
@@ -186,8 +188,7 @@ bool brw_nir_clamp_per_vertex_loads(nir_shader *shader,
 
 void brw_nir_optimize(nir_shader *nir,
                       const struct brw_compiler *compiler,
-                      bool is_scalar,
-                      bool allow_copies);
+                      bool is_scalar);
 
 nir_shader *brw_nir_create_passthrough_tcs(void *mem_ctx,
                                            const struct brw_compiler *compiler,

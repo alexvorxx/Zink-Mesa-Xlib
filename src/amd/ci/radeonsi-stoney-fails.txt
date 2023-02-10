@@ -236,3 +236,8 @@ spec@khr_texture_compression_astc@sliced-3d-miptree-gles srgb-fp,Fail
 spec@khr_texture_compression_astc@sliced-3d-miptree-gles srgb-fp@sRGB decode full precision,Fail
 
 spec@!opengl 1.1@line-smooth-stipple,Fail
+
+# Happened during Collabora's LAVA farm downtime
+# Disablement: https://gitlab.freedesktop.org/mesa/mesa/-/merge_requests/21119
+# Enablement: https://gitlab.freedesktop.org/mesa/mesa/-/merge_requests/20903
+spec@ext_texture_lod_bias@lodbias,Fail

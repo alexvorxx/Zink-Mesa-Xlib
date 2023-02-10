@@ -44,9 +44,6 @@ struct vn_instance {
    mtx_t ring_idx_mutex;
    uint64_t ring_idx_used_mask;
 
-   /* XXX staged features to be merged to core venus protocol */
-   VkVenusExperimentalFeatures100000MESA experimental;
-
    struct {
       mtx_t mutex;
       struct vn_renderer_shmem *shmem;
@@ -60,6 +57,9 @@ struct vn_instance {
       mtx_t roundtrip_mutex;
       uint32_t roundtrip_next;
    } ring;
+
+   /* XXX staged features to be merged to core venus protocol */
+   VkVenusExperimentalFeatures100000MESA experimental;
 
    /* Between the driver and the app, VN_MAX_API_VERSION is what we advertise
     * and base.base.app_info.api_version is what the app requests.

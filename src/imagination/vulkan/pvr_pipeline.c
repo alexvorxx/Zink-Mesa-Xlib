@@ -42,7 +42,6 @@
 #include "pvr_shader.h"
 #include "pvr_types.h"
 #include "rogue/rogue.h"
-#include "rogue/rogue_build_data.h"
 #include "util/log.h"
 #include "util/macros.h"
 #include "util/ralloc.h"
@@ -1423,7 +1422,7 @@ pvr_graphics_pipeline_compile(struct pvr_device *const device,
    VkResult result;
 
    /* Setup shared build context. */
-   ctx = rogue_create_build_context(compiler);
+   ctx = rogue_build_context_create(compiler);
    if (!ctx)
       return vk_error(device, VK_ERROR_OUT_OF_HOST_MEMORY);
 
@@ -1507,8 +1506,8 @@ pvr_graphics_pipeline_compile(struct pvr_device *const device,
          return vk_error(device, VK_ERROR_OUT_OF_HOST_MEMORY);
       }
 
-      ctx->binary[stage] = pvr_rogue_to_binary(ctx, ctx->rogue[stage]);
-      if (!ctx->binary[stage]) {
+      pvr_rogue_to_binary(ctx, ctx->rogue[stage], &ctx->binary[stage]);
+      if (!ctx->binary[stage].size) {
          ralloc_free(ctx);
          return vk_error(device, VK_ERROR_OUT_OF_HOST_MEMORY);
       }
@@ -1527,8 +1526,8 @@ pvr_graphics_pipeline_compile(struct pvr_device *const device,
    }
 
    result = pvr_gpu_upload_usc(device,
-                               ctx->binary[MESA_SHADER_VERTEX]->data,
-                               ctx->binary[MESA_SHADER_VERTEX]->size,
+                               ctx->binary[MESA_SHADER_VERTEX].data,
+                               ctx->binary[MESA_SHADER_VERTEX].size,
                                cache_line_size,
                                &gfx_pipeline->shader_state.vertex.bo);
    if (result != VK_SUCCESS)
@@ -1547,8 +1546,8 @@ pvr_graphics_pipeline_compile(struct pvr_device *const device,
    }
 
    result = pvr_gpu_upload_usc(device,
-                               ctx->binary[MESA_SHADER_FRAGMENT]->data,
-                               ctx->binary[MESA_SHADER_FRAGMENT]->size,
+                               ctx->binary[MESA_SHADER_FRAGMENT].data,
+                               ctx->binary[MESA_SHADER_FRAGMENT].size,
                                cache_line_size,
                                &gfx_pipeline->shader_state.fragment.bo);
    if (result != VK_SUCCESS)

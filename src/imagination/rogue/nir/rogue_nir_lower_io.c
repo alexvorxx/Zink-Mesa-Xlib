@@ -21,14 +21,21 @@
  * SOFTWARE.
  */
 
-#include <assert.h>
-#include <stdint.h>
-
 #include "nir/nir.h"
 #include "nir/nir_builder.h"
 #include "nir/nir_search_helpers.h"
-#include "rogue_nir.h"
-#include "rogue_nir_helpers.h"
+#include "rogue.h"
+#include "util/macros.h"
+
+#include <assert.h>
+#include <stdbool.h>
+#include <stdint.h>
+
+/**
+ * \file rogue_nir_lower_io.c
+ *
+ * \brief Contains the rogue_nir_lower_io pass.
+ */
 
 static void lower_vulkan_resource_index(nir_builder *b,
                                         nir_intrinsic_instr *intr,
@@ -67,7 +74,7 @@ static void lower_load_ubo_to_scalar(nir_builder *b, nir_intrinsic_instr *intr)
    nir_ssa_def *loads[NIR_MAX_VEC_COMPONENTS];
 
    for (uint8_t i = 0; i < intr->num_components; i++) {
-      size_t scaled_range = nir_intrinsic_range(intr) / intr->num_components;
+      unsigned scaled_range = nir_intrinsic_range(intr) / intr->num_components;
       nir_intrinsic_instr *chan_intr =
          nir_intrinsic_instr_create(b->shader, intr->intrinsic);
       nir_ssa_dest_init(&chan_intr->instr,
@@ -155,6 +162,7 @@ static bool lower_impl(nir_function_impl *impl, void *layout)
    return progress;
 }
 
+PUBLIC
 bool rogue_nir_lower_io(nir_shader *shader, void *layout)
 {
    bool progress = false;

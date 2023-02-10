@@ -1527,7 +1527,7 @@ brw_blorp_get_blit_kernel_fs(struct blorp_batch *batch,
 
    struct brw_wm_prog_key wm_key;
    brw_blorp_init_wm_prog_key(&wm_key);
-   wm_key.multisample_fbo = key->rt_samples > 1;
+   wm_key.multisample_fbo = key->rt_samples > 1 ? BRW_ALWAYS : BRW_NEVER;
 
    program = blorp_compile_fs(blorp, mem_ctx, nir, &wm_key, false,
                               &prog_data);

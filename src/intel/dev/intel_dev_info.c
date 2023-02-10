@@ -56,7 +56,7 @@ print_regions_info(const struct intel_device_info *devinfo)
       fprintf(stdout, "   sram:\n");
       if (devinfo->mem.use_class_instance) {
          fprintf(stdout, "      class: %d; instance: %d\n",
-                 devinfo->mem.sram.mem_class, devinfo->mem.sram.mem_instance);
+                 devinfo->mem.sram.mem.klass, devinfo->mem.sram.mem.instance);
       }
       fprintf(stdout, "      mappable: %" PRId64 "; ",
               devinfo->mem.sram.mappable.size);
@@ -75,7 +75,7 @@ print_regions_info(const struct intel_device_info *devinfo)
       fprintf(stdout, "   vram:\n");
       if (devinfo->mem.use_class_instance) {
          fprintf(stdout, "      class: %d; instance: %d\n",
-                 devinfo->mem.vram.mem_class, devinfo->mem.vram.mem_instance);
+                 devinfo->mem.vram.mem.klass, devinfo->mem.vram.mem.instance);
       }
       fprintf(stdout, "      mappable: %" PRId64 "; ",
               devinfo->mem.vram.mappable.size);

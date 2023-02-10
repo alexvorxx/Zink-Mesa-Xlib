@@ -99,6 +99,13 @@ is_render_queue_cmd_buffer(const struct anv_cmd_buffer *cmd_buffer)
    return (queue_family->queueFlags & VK_QUEUE_GRAPHICS_BIT) != 0;
 }
 
+static bool
+is_video_queue_cmd_buffer(const struct anv_cmd_buffer *cmd_buffer)
+{
+   struct anv_queue_family *queue_family = cmd_buffer->queue_family;
+   return (queue_family->queueFlags & VK_QUEUE_VIDEO_DECODE_BIT_KHR) != 0;
+}
+
 ALWAYS_INLINE static void
 genX(emit_dummy_post_sync_op)(struct anv_cmd_buffer *cmd_buffer,
                               uint32_t vertex_count)
@@ -1855,7 +1862,10 @@ genX(cmd_buffer_apply_pipe_flushes)(struct anv_cmd_buffer *cmd_buffer)
       return;
 
    const bool trace_flush =
-      (bits & (ANV_PIPE_FLUSH_BITS | ANV_PIPE_STALL_BITS | ANV_PIPE_INVALIDATE_BITS)) != 0;
+      (bits & (ANV_PIPE_FLUSH_BITS |
+               ANV_PIPE_STALL_BITS |
+               ANV_PIPE_INVALIDATE_BITS |
+               ANV_PIPE_END_OF_PIPE_SYNC_BIT)) != 0;
    if (trace_flush)
       trace_intel_begin_stall(&cmd_buffer->trace);
 
@@ -1898,7 +1908,7 @@ genX(cmd_buffer_apply_pipe_flushes)(struct anv_cmd_buffer *cmd_buffer)
 }
 
 static void
-cmd_buffer_alloc_push_constants(struct anv_cmd_buffer *cmd_buffer)
+cmd_buffer_alloc_gfx_push_constants(struct anv_cmd_buffer *cmd_buffer)
 {
    VkShaderStageFlags stages =
       cmd_buffer->state.gfx.pipeline->active_stages;
@@ -2711,8 +2721,8 @@ cmd_buffer_emit_push_constant_all(struct anv_cmd_buffer *cmd_buffer,
 #endif
 
 static void
-cmd_buffer_flush_push_constants(struct anv_cmd_buffer *cmd_buffer,
-                                VkShaderStageFlags dirty_stages)
+cmd_buffer_flush_gfx_push_constants(struct anv_cmd_buffer *cmd_buffer,
+                                    VkShaderStageFlags dirty_stages)
 {
    VkShaderStageFlags flushed = 0;
    struct anv_cmd_graphics_state *gfx_state = &cmd_buffer->state.gfx;
@@ -3426,7 +3436,7 @@ genX(cmd_buffer_flush_gfx_state)(struct anv_cmd_buffer *cmd_buffer)
       /* If the pipeline changed, we may need to re-allocate push constant
        * space in the URB.
        */
-      cmd_buffer_alloc_push_constants(cmd_buffer);
+      cmd_buffer_alloc_gfx_push_constants(cmd_buffer);
    }
 
    /* Render targets live in the same binding table as fragment descriptors */
@@ -3455,7 +3465,7 @@ genX(cmd_buffer_flush_gfx_state)(struct anv_cmd_buffer *cmd_buffer)
        * descriptors or push constants is dirty.
        */
       dirty |= cmd_buffer->state.push_constants_dirty & pipeline->active_stages;
-      cmd_buffer_flush_push_constants(cmd_buffer,
+      cmd_buffer_flush_gfx_push_constants(cmd_buffer,
                                       dirty & VK_SHADER_STAGE_ALL_GRAPHICS);
 #if GFX_VERx10 >= 125
       cmd_buffer_flush_mesh_inline_data(
@@ -3551,6 +3561,9 @@ genX(BeginCommandBuffer)(
     */
    if (cmd_buffer->vk.level == VK_COMMAND_BUFFER_LEVEL_PRIMARY)
       cmd_buffer->usage_flags &= ~VK_COMMAND_BUFFER_USAGE_RENDER_PASS_CONTINUE_BIT;
+
+   if (is_video_queue_cmd_buffer(cmd_buffer))
+      return VK_SUCCESS;
 
    trace_intel_begin_cmd_buffer(&cmd_buffer->trace);
 
@@ -3717,6 +3730,11 @@ genX(EndCommandBuffer)(
 
    if (anv_batch_has_error(&cmd_buffer->batch))
       return cmd_buffer->batch.status;
+
+   if (is_video_queue_cmd_buffer(cmd_buffer)) {
+      anv_cmd_buffer_end_batch_buffer(cmd_buffer);
+      return VK_SUCCESS;
+   }
 
    anv_measure_endcommandbuffer(cmd_buffer);
 
@@ -3923,6 +3941,9 @@ cmd_buffer_barrier(struct anv_cmd_buffer *cmd_buffer,
     */
    VkAccessFlags2 src_flags = 0;
    VkAccessFlags2 dst_flags = 0;
+
+   if (is_video_queue_cmd_buffer(cmd_buffer))
+      return;
 
    for (uint32_t i = 0; i < dep_info->memoryBarrierCount; i++) {
       src_flags |= dep_info->pMemoryBarriers[i].srcAccessMask;
@@ -7716,6 +7737,17 @@ void genX(CmdSetEvent2)(
    ANV_FROM_HANDLE(anv_cmd_buffer, cmd_buffer, commandBuffer);
    ANV_FROM_HANDLE(anv_event, event, _event);
 
+   if (is_video_queue_cmd_buffer(cmd_buffer)) {
+      anv_batch_emit(&cmd_buffer->batch, GENX(MI_FLUSH_DW), flush) {
+         flush.PostSyncOperation = WriteImmediateData;
+         flush.Address = anv_state_pool_state_address(
+            &cmd_buffer->device->dynamic_state_pool,
+            event->state);
+         flush.ImmediateData = VK_EVENT_SET;
+      }
+      return;
+   }
+
    VkPipelineStageFlags2 src_stages = 0;
 
    for (uint32_t i = 0; i < pDependencyInfo->memoryBarrierCount; i++)
@@ -7751,6 +7783,17 @@ void genX(CmdResetEvent2)(
 {
    ANV_FROM_HANDLE(anv_cmd_buffer, cmd_buffer, commandBuffer);
    ANV_FROM_HANDLE(anv_event, event, _event);
+
+   if (is_video_queue_cmd_buffer(cmd_buffer)) {
+      anv_batch_emit(&cmd_buffer->batch, GENX(MI_FLUSH_DW), flush) {
+         flush.PostSyncOperation = WriteImmediateData;
+         flush.Address = anv_state_pool_state_address(
+            &cmd_buffer->device->dynamic_state_pool,
+            event->state);
+         flush.ImmediateData = VK_EVENT_RESET;
+      }
+      return;
+   }
 
    cmd_buffer->state.pending_pipe_bits |= ANV_PIPE_POST_SYNC_BIT;
    genX(cmd_buffer_apply_pipe_flushes)(cmd_buffer);

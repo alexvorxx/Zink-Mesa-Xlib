@@ -1580,7 +1580,7 @@ emit_3dstate_wm(struct anv_graphics_pipeline *pipeline,
 #endif
 
       wm.BarycentricInterpolationMode =
-         wm_prog_data->barycentric_interp_modes;
+         wm_prog_data_barycentric_modes(wm_prog_data, 0);
 
 #if GFX_VER < 8
       wm.PixelShaderComputedDepthMode  = wm_prog_data->computed_depth_mode;
@@ -1605,7 +1605,7 @@ emit_3dstate_wm(struct anv_graphics_pipeline *pipeline,
          wm.PixelShaderKillsPixel;
 
       if (ms != NULL && ms->rasterization_samples > 1) {
-         if (wm_prog_data->persample_dispatch) {
+         if (brw_wm_prog_data_is_persample(wm_prog_data, 0)) {
             wm.MultisampleDispatchMode = MSDISPMODE_PERSAMPLE;
          } else {
             wm.MultisampleDispatchMode = MSDISPMODE_PERPIXEL;
@@ -1671,7 +1671,8 @@ emit_3dstate_ps(struct anv_graphics_pipeline *pipeline,
 
    anv_batch_emit(&pipeline->base.batch, GENX(3DSTATE_PS), ps) {
       intel_set_ps_dispatch_state(&ps, devinfo, wm_prog_data,
-                                  ms != NULL ? ms->rasterization_samples : 1);
+                                  ms != NULL ? ms->rasterization_samples : 1,
+                                  0 /* msaa_flags */);
 
       ps.KernelStartPointer0 = fs_bin->kernel.offset +
                                brw_wm_prog_data_prog_offset(wm_prog_data, ps, 0);
@@ -1739,7 +1740,8 @@ emit_3dstate_ps_extra(struct anv_graphics_pipeline *pipeline,
       ps.PixelShaderValid              = true;
       ps.AttributeEnable               = wm_prog_data->num_varying_inputs > 0;
       ps.oMaskPresenttoRenderTarget    = wm_prog_data->uses_omask;
-      ps.PixelShaderIsPerSample        = wm_prog_data->persample_dispatch;
+      ps.PixelShaderIsPerSample        =
+         brw_wm_prog_data_is_persample(wm_prog_data, 0);
       ps.PixelShaderComputedDepthMode  = wm_prog_data->computed_depth_mode;
       ps.PixelShaderUsesSourceDepth    = wm_prog_data->uses_src_depth;
       ps.PixelShaderUsesSourceW        = wm_prog_data->uses_src_w;

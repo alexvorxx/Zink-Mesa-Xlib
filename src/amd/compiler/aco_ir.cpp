@@ -463,7 +463,6 @@ can_use_opsel(amd_gfx_level gfx_level, aco_opcode op, int idx)
    case aco_opcode::v_mad_i32_i16: return idx >= 0 && idx < 2;
    case aco_opcode::v_dot2_f16_f16:
    case aco_opcode::v_dot2_bf16_bf16: return idx == -1 || idx == 2;
-   // TODO: This matches what LLVM allows. We should see if this matches what the hardware allows.
    case aco_opcode::v_interp_p10_f16_f32_inreg:
    case aco_opcode::v_interp_p10_rtz_f16_f32_inreg: return idx == 0 || idx == 2;
    case aco_opcode::v_interp_p2_f16_f32_inreg:
@@ -475,8 +474,6 @@ can_use_opsel(amd_gfx_level gfx_level, aco_opcode op, int idx)
 bool
 instr_is_16bit(amd_gfx_level gfx_level, aco_opcode op)
 {
-   // TODO: VINTERP (v_interp_p2_f16_f32, v_interp_p2_rtz_f16_f32)
-
    /* partial register writes are GFX9+, only */
    if (gfx_level < GFX9)
       return false;

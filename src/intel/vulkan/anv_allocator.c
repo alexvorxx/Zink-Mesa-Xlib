@@ -1451,15 +1451,13 @@ anv_device_alloc_bo(struct anv_device *device,
       ccs_size = align64(DIV_ROUND_UP(size, aux_ratio), 4096);
    }
 
-   uint32_t gem_handle;
+   const struct intel_memory_class_instance *regions[2];
+   uint32_t nregions = 0;
 
    /* If we have vram size, we have multiple memory regions and should choose
     * one of them.
     */
    if (anv_physical_device_has_vram(device->physical)) {
-      struct drm_i915_gem_memory_class_instance regions[2];
-      uint32_t nregions = 0;
-
       /* This always try to put the object in local memory. Here
        * vram_non_mappable & vram_mappable actually are the same region.
        */
@@ -1472,21 +1470,18 @@ anv_device_alloc_bo(struct anv_device *device,
        * This ensures that if the buffer cannot live in mappable local memory,
        * it can be spilled to system memory.
        */
-      uint32_t flags = 0;
       if (!(alloc_flags & ANV_BO_ALLOC_NO_LOCAL_MEM) &&
           ((alloc_flags & ANV_BO_ALLOC_MAPPED) ||
-           (alloc_flags & ANV_BO_ALLOC_LOCAL_MEM_CPU_VISIBLE))) {
+           (alloc_flags & ANV_BO_ALLOC_LOCAL_MEM_CPU_VISIBLE)))
          regions[nregions++] = device->physical->sys.region;
-         if (device->physical->vram_non_mappable.size > 0)
-            flags |= I915_GEM_CREATE_EXT_FLAG_NEEDS_CPU_ACCESS;
-      }
-
-      gem_handle = anv_gem_create_regions(device, size + ccs_size,
-                                          flags, nregions, regions);
    } else {
-      gem_handle = anv_gem_create(device, size + ccs_size);
+      regions[nregions++] = device->physical->sys.region;
    }
 
+   uint32_t gem_handle = device->kmd_backend->gem_create(device, regions,
+                                                         nregions,
+                                                         size + ccs_size,
+                                                         alloc_flags);
    if (gem_handle == 0)
       return vk_error(device, VK_ERROR_OUT_OF_DEVICE_MEMORY);
 

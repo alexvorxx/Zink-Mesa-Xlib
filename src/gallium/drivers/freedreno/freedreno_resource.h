@@ -180,12 +180,6 @@ fd_resource(struct pipe_resource *ptex)
    return (struct fd_resource *)ptex;
 }
 
-static inline const struct fd_resource *
-fd_resource_const(const struct pipe_resource *ptex)
-{
-   return (const struct fd_resource *)ptex;
-}
-
 static inline struct fd_memory_object *
 fd_memory_object(struct pipe_memory_object *pmemobj)
 {
@@ -308,16 +302,6 @@ fd_resource_ubwc_offset(struct fd_resource *rsc, unsigned level, unsigned layer)
    uint32_t offset = fdl_ubwc_offset(&rsc->layout, level, layer);
    assert(offset < fd_bo_size(rsc->bo));
    return offset;
-}
-
-/* This might be a5xx specific, but higher mipmap levels are always linear: */
-static inline bool
-fd_resource_level_linear(const struct pipe_resource *prsc, int level)
-{
-   struct fd_screen *screen = fd_screen(prsc->screen);
-   assert(!is_a3xx(screen));
-
-   return fdl_level_linear(&fd_resource_const(prsc)->layout, level);
 }
 
 static inline uint32_t

@@ -315,7 +315,8 @@ genX(emit_shading_rate)(struct anv_batch *batch,
                         const struct vk_fragment_shading_rate_state *fsr)
 {
    const struct brw_wm_prog_data *wm_prog_data = get_wm_prog_data(pipeline);
-   const bool cps_enable = wm_prog_data && wm_prog_data->per_coarse_pixel_dispatch;
+   const bool cps_enable = wm_prog_data &&
+      brw_wm_prog_data_is_coarse(wm_prog_data, 0);
 
 #if GFX_VER == 11
    anv_batch_emit(batch, GENX(3DSTATE_CPS), cps) {

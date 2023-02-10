@@ -1220,7 +1220,7 @@ fs_visitor::emit_samplepos_setup()
    const fs_builder abld = bld.annotate("compute sample position");
    fs_reg pos = abld.vgrf(BRW_REGISTER_TYPE_F, 2);
 
-   if (!wm_prog_data->persample_dispatch) {
+   if (wm_prog_data->persample_dispatch == BRW_NEVER) {
       /* From ARB_sample_shading specification:
        * "When rendering to a non-multisample buffer, or if multisample
        *  rasterization is disabled, gl_SamplePosition will always be
@@ -1255,6 +1255,16 @@ fs_visitor::emit_samplepos_setup()
       abld.MUL(offset(pos, abld, i), tmp_f, brw_imm_f(1 / 16.0f));
    }
 
+   if (wm_prog_data->persample_dispatch == BRW_SOMETIMES) {
+      check_dynamic_msaa_flag(abld, wm_prog_data,
+                              BRW_WM_MSAA_FLAG_PERSAMPLE_DISPATCH);
+      for (unsigned i = 0; i < 2; i++) {
+         set_predicate(BRW_PREDICATE_NORMAL,
+                       bld.SEL(offset(pos, abld, i), offset(pos, abld, i),
+                               brw_imm_f(0.5f)));
+      }
+   }
+
    return pos;
 }
 
@@ -1263,12 +1273,13 @@ fs_visitor::emit_sampleid_setup()
 {
    assert(stage == MESA_SHADER_FRAGMENT);
    ASSERTED brw_wm_prog_key *key = (brw_wm_prog_key*) this->key;
+   struct brw_wm_prog_data *wm_prog_data = brw_wm_prog_data(this->prog_data);
    assert(devinfo->ver >= 6);
 
    const fs_builder abld = bld.annotate("compute sample id");
    fs_reg sample_id = abld.vgrf(BRW_REGISTER_TYPE_UD);
 
-   assert(key->multisample_fbo);
+   assert(key->multisample_fbo != BRW_NEVER);
 
    if (devinfo->ver >= 8) {
       /* Sample ID comes in as 4-bit numbers in g1.0:
@@ -1358,6 +1369,13 @@ fs_visitor::emit_sampleid_setup()
       abld.emit(FS_OPCODE_SET_SAMPLE_ID, sample_id, t1, t2);
    }
 
+   if (key->multisample_fbo == BRW_SOMETIMES) {
+      check_dynamic_msaa_flag(abld, wm_prog_data,
+                              BRW_WM_MSAA_FLAG_MULTISAMPLE_FBO);
+      set_predicate(BRW_PREDICATE_NORMAL,
+                    abld.SEL(sample_id, sample_id, brw_imm_ud(0)));
+   }
+
    return sample_id;
 }
 
@@ -1368,39 +1386,44 @@ fs_visitor::emit_samplemaskin_setup()
    struct brw_wm_prog_data *wm_prog_data = brw_wm_prog_data(this->prog_data);
    assert(devinfo->ver >= 6);
 
-   fs_reg mask = bld.vgrf(BRW_REGISTER_TYPE_D);
-
    /* The HW doesn't provide us with expected values. */
-   assert(!wm_prog_data->per_coarse_pixel_dispatch);
+   assert(wm_prog_data->coarse_pixel_dispatch != BRW_ALWAYS);
 
    fs_reg coverage_mask =
       fetch_payload_reg(bld, fs_payload().sample_mask_in_reg, BRW_REGISTER_TYPE_D);
 
-   if (wm_prog_data->persample_dispatch) {
-      /* gl_SampleMaskIn[] comes from two sources: the input coverage mask,
-       * and a mask representing which sample is being processed by the
-       * current shader invocation.
-       *
-       * From the OES_sample_variables specification:
-       * "When per-sample shading is active due to the use of a fragment input
-       *  qualified by "sample" or due to the use of the gl_SampleID or
-       *  gl_SamplePosition variables, only the bit for the current sample is
-       *  set in gl_SampleMaskIn."
-       */
-      const fs_builder abld = bld.annotate("compute gl_SampleMaskIn");
+   if (wm_prog_data->persample_dispatch == BRW_NEVER)
+      return coverage_mask;
 
-      if (nir_system_values[SYSTEM_VALUE_SAMPLE_ID].file == BAD_FILE)
-         nir_system_values[SYSTEM_VALUE_SAMPLE_ID] = emit_sampleid_setup();
+   /* gl_SampleMaskIn[] comes from two sources: the input coverage mask,
+    * and a mask representing which sample is being processed by the
+    * current shader invocation.
+    *
+    * From the OES_sample_variables specification:
+    * "When per-sample shading is active due to the use of a fragment input
+    *  qualified by "sample" or due to the use of the gl_SampleID or
+    *  gl_SamplePosition variables, only the bit for the current sample is
+    *  set in gl_SampleMaskIn."
+    */
+   const fs_builder abld = bld.annotate("compute gl_SampleMaskIn");
 
-      fs_reg one = vgrf(glsl_type::int_type);
-      fs_reg enabled_mask = vgrf(glsl_type::int_type);
-      abld.MOV(one, brw_imm_d(1));
-      abld.SHL(enabled_mask, one, nir_system_values[SYSTEM_VALUE_SAMPLE_ID]);
-      abld.AND(mask, enabled_mask, coverage_mask);
-   } else {
-      /* In per-pixel mode, the coverage mask is sufficient. */
-      mask = coverage_mask;
-   }
+   if (nir_system_values[SYSTEM_VALUE_SAMPLE_ID].file == BAD_FILE)
+      nir_system_values[SYSTEM_VALUE_SAMPLE_ID] = emit_sampleid_setup();
+
+   fs_reg one = vgrf(glsl_type::int_type);
+   fs_reg enabled_mask = vgrf(glsl_type::int_type);
+   abld.MOV(one, brw_imm_d(1));
+   abld.SHL(enabled_mask, one, nir_system_values[SYSTEM_VALUE_SAMPLE_ID]);
+   fs_reg mask = bld.vgrf(BRW_REGISTER_TYPE_D);
+   abld.AND(mask, enabled_mask, coverage_mask);
+
+   if (wm_prog_data->persample_dispatch == BRW_ALWAYS)
+      return mask;
+
+   check_dynamic_msaa_flag(abld, wm_prog_data,
+                           BRW_WM_MSAA_FLAG_PERSAMPLE_DISPATCH);
+   set_predicate(BRW_PREDICATE_NORMAL, abld.SEL(mask, mask, coverage_mask));
+
    return mask;
 }
 
@@ -1409,37 +1432,44 @@ fs_visitor::emit_shading_rate_setup()
 {
    assert(devinfo->ver >= 11);
 
-   const fs_builder abld = bld.annotate("compute fragment shading rate");
-   fs_reg rate = abld.vgrf(BRW_REGISTER_TYPE_UD);
-
    struct brw_wm_prog_data *wm_prog_data =
       brw_wm_prog_data(bld.shader->stage_prog_data);
 
    /* Coarse pixel shading size fields overlap with other fields of not in
     * coarse pixel dispatch mode, so report 0 when that's not the case.
     */
-   if (wm_prog_data->per_coarse_pixel_dispatch) {
-      /* The shading rates provided in the shader are the actual 2D shading
-       * rate while the SPIR-V built-in is the enum value that has the shading
-       * rate encoded as a bitfield.  Fortunately, the bitfield value is just
-       * the shading rate divided by two and shifted.
-       */
+   if (wm_prog_data->coarse_pixel_dispatch == BRW_NEVER)
+      return brw_imm_ud(0);
 
-      /* r1.0 - 0:7 ActualCoarsePixelShadingSize.X */
-      fs_reg actual_x = fs_reg(retype(brw_vec1_grf(1, 0), BRW_REGISTER_TYPE_UB));
-      /* r1.0 - 15:8 ActualCoarsePixelShadingSize.Y */
-      fs_reg actual_y = byte_offset(actual_x, 1);
+   const fs_builder abld = bld.annotate("compute fragment shading rate");
 
-      fs_reg int_rate_x = bld.vgrf(BRW_REGISTER_TYPE_UD);
-      fs_reg int_rate_y = bld.vgrf(BRW_REGISTER_TYPE_UD);
+   /* The shading rates provided in the shader are the actual 2D shading
+    * rate while the SPIR-V built-in is the enum value that has the shading
+    * rate encoded as a bitfield.  Fortunately, the bitfield value is just
+    * the shading rate divided by two and shifted.
+    */
 
-      abld.SHR(int_rate_y, actual_y, brw_imm_ud(1));
-      abld.SHR(int_rate_x, actual_x, brw_imm_ud(1));
-      abld.SHL(int_rate_x, int_rate_x, brw_imm_ud(2));
-      abld.OR(rate, int_rate_x, int_rate_y);
-   } else {
-      abld.MOV(rate, brw_imm_ud(0));
-   }
+   /* r1.0 - 0:7 ActualCoarsePixelShadingSize.X */
+   fs_reg actual_x = fs_reg(retype(brw_vec1_grf(1, 0), BRW_REGISTER_TYPE_UB));
+   /* r1.0 - 15:8 ActualCoarsePixelShadingSize.Y */
+   fs_reg actual_y = byte_offset(actual_x, 1);
+
+   fs_reg int_rate_x = bld.vgrf(BRW_REGISTER_TYPE_UD);
+   fs_reg int_rate_y = bld.vgrf(BRW_REGISTER_TYPE_UD);
+
+   abld.SHR(int_rate_y, actual_y, brw_imm_ud(1));
+   abld.SHR(int_rate_x, actual_x, brw_imm_ud(1));
+   abld.SHL(int_rate_x, int_rate_x, brw_imm_ud(2));
+
+   fs_reg rate = abld.vgrf(BRW_REGISTER_TYPE_UD);
+   abld.OR(rate, int_rate_x, int_rate_y);
+
+   if (wm_prog_data->coarse_pixel_dispatch == BRW_ALWAYS)
+      return rate;
+
+   check_dynamic_msaa_flag(abld, wm_prog_data,
+                           BRW_WM_MSAA_FLAG_COARSE_RT_WRITES);
+   set_predicate(BRW_PREDICATE_NORMAL, abld.SEL(rate, rate, brw_imm_ud(0)));
 
    return rate;
 }
@@ -7258,10 +7288,28 @@ brw_nir_populate_wm_prog_data(const nir_shader *shader,
    prog_data->computed_stencil =
       shader->info.outputs_written & BITFIELD64_BIT(FRAG_RESULT_STENCIL);
 
-   prog_data->persample_dispatch =
-      key->multisample_fbo &&
-      (key->persample_interp ||
-       shader->info.fs.uses_sample_shading);
+   prog_data->sample_shading =
+      shader->info.fs.uses_sample_shading ||
+      shader->info.outputs_read;
+
+   assert(key->multisample_fbo != BRW_NEVER ||
+          key->persample_interp == BRW_NEVER);
+
+   prog_data->persample_dispatch = key->persample_interp;
+   if (prog_data->sample_shading)
+      prog_data->persample_dispatch = BRW_ALWAYS;
+
+   /* We can only persample dispatch if we have a multisample FBO */
+   prog_data->persample_dispatch = MIN2(prog_data->persample_dispatch,
+                                        key->multisample_fbo);
+
+   /* Currently only the Vulkan API allows alpha_to_coverage to be dynamic. If
+    * persample_dispatch & multisample_fbo are not dynamic, Anv should be able
+    * to definitively tell whether alpha_to_coverage is on or off.
+    */
+   prog_data->alpha_to_coverage = key->alpha_to_coverage;
+   assert(prog_data->alpha_to_coverage != BRW_SOMETIMES ||
+          prog_data->persample_dispatch == BRW_SOMETIMES);
 
    if (devinfo->ver >= 6) {
       prog_data->uses_sample_mask =
@@ -7276,7 +7324,8 @@ brw_nir_populate_wm_prog_data(const nir_shader *shader,
        * per-sample dispatch.  If we need gl_SamplePosition and we don't have
        * persample dispatch, we hard-code it to 0.5.
        */
-      prog_data->uses_pos_offset = prog_data->persample_dispatch &&
+      prog_data->uses_pos_offset =
+         prog_data->persample_dispatch != BRW_NEVER &&
          (BITSET_TEST(shader->info.system_values_read,
                       SYSTEM_VALUE_SAMPLE_POS) ||
           BITSET_TEST(shader->info.system_values_read,
@@ -7297,13 +7346,16 @@ brw_nir_populate_wm_prog_data(const nir_shader *shader,
 
    /* You can't be coarse and per-sample */
    assert(!key->coarse_pixel || !key->persample_interp);
-   prog_data->per_coarse_pixel_dispatch =
-      key->coarse_pixel &&
-      !shader->info.fs.uses_sample_shading &&
-      !prog_data->uses_omask &&
-      !prog_data->uses_sample_mask &&
-      (prog_data->computed_depth_mode == BRW_PSCDEPTH_OFF) &&
-      !prog_data->computed_stencil;
+   prog_data->coarse_pixel_dispatch =
+      brw_sometimes_invert(prog_data->persample_dispatch);
+   if (!key->coarse_pixel ||
+       prog_data->uses_omask ||
+       prog_data->sample_shading ||
+       prog_data->uses_sample_mask ||
+       (prog_data->computed_depth_mode != BRW_PSCDEPTH_OFF) ||
+       prog_data->computed_stencil) {
+      prog_data->coarse_pixel_dispatch = BRW_NEVER;
+   }
 
    /* We choose to always enable VMask prior to XeHP, as it would cause
     * us to lose out on the eliminate_find_live_channel() optimization.
@@ -7311,16 +7363,16 @@ brw_nir_populate_wm_prog_data(const nir_shader *shader,
    prog_data->uses_vmask = devinfo->verx10 < 125 ||
                            shader->info.fs.needs_quad_helper_invocations ||
                            shader->info.fs.needs_all_helper_invocations ||
-                           prog_data->per_coarse_pixel_dispatch;
+                           prog_data->coarse_pixel_dispatch != BRW_NEVER;
 
    prog_data->uses_src_w =
       BITSET_TEST(shader->info.system_values_read, SYSTEM_VALUE_FRAG_COORD);
    prog_data->uses_src_depth =
       BITSET_TEST(shader->info.system_values_read, SYSTEM_VALUE_FRAG_COORD) &&
-      !prog_data->per_coarse_pixel_dispatch;
+      prog_data->coarse_pixel_dispatch != BRW_ALWAYS;
    prog_data->uses_depth_w_coefficients =
       BITSET_TEST(shader->info.system_values_read, SYSTEM_VALUE_FRAG_COORD) &&
-      prog_data->per_coarse_pixel_dispatch;
+      prog_data->coarse_pixel_dispatch != BRW_NEVER;
 
    calculate_urb_setup(devinfo, key, prog_data, shader, mue_map);
    brw_compute_flat_inputs(prog_data, shader);
@@ -7367,13 +7419,13 @@ brw_compile_fs(const struct brw_compiler *compiler,
     *  "If Pixel Shader outputs oMask, AlphaToCoverage is disabled in
     *   hardware, regardless of the state setting for this feature."
     */
-   if (devinfo->ver > 6 && key->alpha_to_coverage) {
+   if (devinfo->ver > 6 && key->alpha_to_coverage != BRW_NEVER) {
       /* Run constant fold optimization in order to get the correct source
        * offset to determine render target 0 store instruction in
        * emit_alpha_to_coverage pass.
        */
       NIR_PASS_V(nir, nir_opt_constant_folding);
-      NIR_PASS_V(nir, brw_nir_lower_alpha_to_coverage);
+      NIR_PASS_V(nir, brw_nir_lower_alpha_to_coverage, key, prog_data);
    }
 
    NIR_PASS_V(nir, brw_nir_move_interpolation_to_top);

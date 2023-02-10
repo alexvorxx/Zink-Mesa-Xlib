@@ -346,7 +346,8 @@ vn_device_feedback_pool_init(struct vn_device *dev)
    static const uint32_t pool_size = 4096;
    const VkAllocationCallbacks *alloc = &dev->base.base.alloc;
 
-   if (VN_PERF(NO_EVENT_FEEDBACK) && VN_PERF(NO_FENCE_FEEDBACK))
+   if (VN_PERF(NO_EVENT_FEEDBACK) && VN_PERF(NO_FENCE_FEEDBACK) &&
+       VN_PERF(NO_TIMELINE_SEM_FEEDBACK))
       return VK_SUCCESS;
 
    return vn_feedback_pool_init(dev, &dev->feedback_pool, pool_size, alloc);
@@ -355,7 +356,8 @@ vn_device_feedback_pool_init(struct vn_device *dev)
 static inline void
 vn_device_feedback_pool_fini(struct vn_device *dev)
 {
-   if (VN_PERF(NO_EVENT_FEEDBACK) && VN_PERF(NO_FENCE_FEEDBACK))
+   if (VN_PERF(NO_EVENT_FEEDBACK) && VN_PERF(NO_FENCE_FEEDBACK) &&
+       VN_PERF(NO_TIMELINE_SEM_FEEDBACK))
       return;
 
    vn_feedback_pool_fini(&dev->feedback_pool);

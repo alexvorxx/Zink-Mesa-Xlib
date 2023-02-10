@@ -22,6 +22,9 @@ dEQP-EGL.functional.render.*_window
 # Expected 15 15 15, observed 0 0 0
 glx@glx-multithread-texture
 
+# Timed out after piglit success result?
+glx@glx-visuals-depth
+
 # "../src/vulkan/wsi/wsi_common_x11.c:1387: Swapchain status changed to VK_ERROR_SURFACE_LOST_KHR
 #  XIO:  fatal IO error 11 (Resource temporarily unavailable) on X server ":0"
 #        after 130 requests (128 known processed) with 0 events remaining."
