@@ -18,6 +18,15 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
+libglsl_util = static_library(
+  'glsl_util',
+  glsl_util_files,
+  include_directories : [inc_include, inc_src, inc_mapi, inc_mesa, inc_gallium, inc_gallium_aux],
+  dependencies : dep_valgrind,
+  gnu_symbol_visibility : 'hidden',
+  build_by_default : false,
+)
+
 subdir('glcpp')
 
 bison_command = []
@@ -70,8 +79,6 @@ float64_glsl_h = custom_target(
   command : [prog_python, '@INPUT@', '@OUTPUT@', '-n', 'float64_source'],
 )
 
-float64_glsl_file = [files('float64.glsl')]
-
 cross_platform_settings_piece_all_h = custom_target(
   'cross_platform_settings_piece_all.h',
   input : [files_xxd, 'CrossPlatformSettings_piece_all.glsl'],
@@ -98,6 +105,13 @@ etc2_rgba_stitch_glsl_h = custom_target(
   input : [files_xxd, 'etc2_rgba_stitch.glsl'],
   output : 'etc2_rgba_stitch_glsl.h',
   command : [prog_python, '@INPUT@', '@OUTPUT@', '-n', 'etc2_rgba_stitch_source'],
+)
+
+astc_glsl_h = custom_target(
+  'astc_glsl.h',
+  input : [files_xxd, 'astc_decoder.glsl'],
+  output : 'astc_glsl.h',
+  command : [prog_python, '@INPUT@', '@OUTPUT@', '-n', 'astc_source'],
 )
 
 files_libglsl = files(
@@ -243,7 +257,7 @@ libglsl = static_library(
   [files_libglsl, glsl_parser, glsl_lexer_cpp, ir_expression_operation_h,
    ir_expression_operation_strings_h, ir_expression_operation_constant_h,
    float64_glsl_h, cross_platform_settings_piece_all_h, bc1_glsl_h, bc4_glsl_h,
-   etc2_rgba_stitch_glsl_h],
+   etc2_rgba_stitch_glsl_h, astc_glsl_h],
   c_args : [c_msvc_compat_args, no_override_init_args],
   cpp_args : [cpp_msvc_compat_args],
   gnu_symbol_visibility : 'hidden',

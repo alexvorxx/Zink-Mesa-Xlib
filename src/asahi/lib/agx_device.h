@@ -62,7 +62,6 @@ struct agx_command_queue {
 #endif
 
 struct agx_device {
-   void *memctx;
    uint32_t debug;
 
    uint64_t next_global_id, last_global_id;

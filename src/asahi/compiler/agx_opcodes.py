@@ -138,6 +138,7 @@ SR = enum("sr", {
    56: 'active_thread_index_in_quad',
    58: 'active_thread_index_in_subgroup',
    62: 'backfacing',
+   63: 'is_active_thread',
    80: 'thread_position_in_grid.x',
    81: 'thread_position_in_grid.y',
    82: 'thread_position_in_grid.z',

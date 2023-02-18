@@ -194,7 +194,7 @@ os_read_file(const char *filename, size_t *size)
    return buf;
 }
 
-#if DETECT_OS_LINUX
+#if DETECT_OS_LINUX && ALLOW_KCMP
 
 #include <sys/syscall.h>
 #include <unistd.h>

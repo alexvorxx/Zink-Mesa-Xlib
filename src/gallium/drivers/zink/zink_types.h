@@ -79,10 +79,6 @@
 /* enum zink_descriptor_type */
 #define ZINK_MAX_DESCRIPTOR_SETS 6
 #define ZINK_MAX_DESCRIPTORS_PER_TYPE (32 * ZINK_GFX_SHADER_COUNT)
-/* the number of typed descriptors that can fit in a given batch;
- * sized based on max values seen in drawoverhead
- */
-#define ZINK_DESCRIPTOR_BUFFER_MULTIPLIER 25000
 
 /* suballocator defines */
 #define NUM_SLAB_ALLOCATORS 3
@@ -226,6 +222,7 @@ enum zink_debug {
    ZINK_DEBUG_GPL = (1<<7),
    ZINK_DEBUG_SHADERDB = (1<<8),
    ZINK_DEBUG_RP = (1<<9),
+   ZINK_DEBUG_NORP = (1<<10),
 };
 
 
@@ -415,7 +412,8 @@ struct zink_descriptor_data {
          struct zink_resource *bindless_db;
          uint8_t *bindless_db_map;
          struct pipe_transfer *bindless_db_xfer;
-         uint32_t db_offsets[4];
+         uint32_t bindless_db_offsets[4];
+         unsigned max_db_size;
       } db;
    };
 
@@ -479,6 +477,8 @@ struct zink_descriptor_pool_multi {
 struct zink_batch_descriptor_data {
    /* pools have fbfetch initialized */
    bool has_fbfetch;
+   /* are descriptor buffers bound */
+   bool db_bound;
    /* real size of 'pools' */
    unsigned pool_size[ZINK_DESCRIPTOR_BASE_TYPES];
    /* this array is sized based on the max zink_descriptor_pool_key::id used by the batch; members may be NULL */
@@ -498,10 +498,10 @@ struct zink_batch_descriptor_data {
    /* mask of push descriptor usage */
    unsigned push_usage[2]; //gfx, compute
 
-   struct zink_resource *db[ZINK_DESCRIPTOR_NON_BINDLESS_TYPES]; //the descriptor buffer for a given type
-   uint8_t *db_map[ZINK_DESCRIPTOR_NON_BINDLESS_TYPES]; //the host map for the buffer
-   struct pipe_transfer *db_xfer[ZINK_DESCRIPTOR_NON_BINDLESS_TYPES]; //the transfer map for the buffer
-   uint64_t db_offset[ZINK_DESCRIPTOR_NON_BINDLESS_TYPES]; //the "next" offset that will be used when the buffer is updated
+   struct zink_resource *db; //the descriptor buffer for a given type
+   uint8_t *db_map; //the host map for the buffer
+   struct pipe_transfer *db_xfer; //the transfer map for the buffer
+   uint64_t db_offset; //the "next" offset that will be used when the buffer is updated
 };
 
 /** batch types */
@@ -605,7 +605,6 @@ struct zink_batch_state {
    bool have_timelines;
 
    bool has_barriers;
-   bool db_bound;
 };
 
 static inline struct zink_batch_state *
@@ -1326,6 +1325,7 @@ struct zink_screen {
    struct util_live_shader_cache shaders;
 
    uint64_t db_size[ZINK_DESCRIPTOR_ALL_TYPES];
+   unsigned base_descriptor_size;
    VkDescriptorSetLayout bindless_layout;
 
    struct {
@@ -1472,6 +1472,7 @@ struct zink_ctx_surface {
    struct zink_surface *surf; //the actual surface
    struct zink_ctx_surface *transient; //for use with EXT_multisample_render_to_texture
    bool transient_init; //whether the transient surface has data
+   bool needs_mutable;
 };
 
 /* use this cast for framebuffer surfaces */

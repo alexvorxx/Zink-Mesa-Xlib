@@ -360,6 +360,16 @@ CopyPropFwdVisitor::visit(AluInstr *instr)
    auto src = instr->psrc(0);
    auto dest = instr->dest();
 
+   /* Don't propagate an indirect load to more than one
+    * instruction, because we may have to split the address loads
+    * creating more instructions */
+   if (dest->uses().size() > 1) {
+      auto [addr, is_for_dest, index] = instr->indirect_addr();
+      if (addr && !is_for_dest)
+         return;
+   }
+
+
    auto ii = dest->uses().begin();
    auto ie = dest->uses().end();
 

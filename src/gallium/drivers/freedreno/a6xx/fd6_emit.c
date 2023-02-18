@@ -51,11 +51,7 @@
 #include "fd6_texture.h"
 #include "fd6_zsa.h"
 
-/* Helper to get tex stateobj.  Because resource rebind on other
- * contexts can race with us and cause the texture state to be
- * destroyed, a bit of extra care is needed to ensure we own the
- * state reference before dropping the tex reference.  This helper
- * handles that.
+/* Helper to get tex stateobj.
  */
 static struct fd_ringbuffer *
 tex_state(struct fd_context *ctx, enum pipe_shader_type type)
@@ -64,12 +60,7 @@ tex_state(struct fd_context *ctx, enum pipe_shader_type type)
    if (ctx->tex[type].num_textures == 0)
       return NULL;
 
-   struct fd6_texture_state *tex = fd6_texture_state(ctx, type, &ctx->tex[type]);
-   struct fd_ringbuffer *state = fd_ringbuffer_ref(tex->stateobj);
-
-   fd6_texture_state_reference(&tex, NULL);
-
-   return state;
+   return fd_ringbuffer_ref(fd6_texture_state(ctx, type, &ctx->tex[type])->stateobj);
 }
 
 static struct fd_ringbuffer *
@@ -116,16 +107,15 @@ build_vbo_state(struct fd6_emit *emit) assert_dt
 static enum a6xx_ztest_mode
 compute_ztest_mode(struct fd6_emit *emit, bool lrz_valid) assert_dt
 {
+   if (emit->prog->lrz_mask.z_mode != A6XX_INVALID_ZTEST)
+      return emit->prog->lrz_mask.z_mode;
+
    struct fd_context *ctx = emit->ctx;
    struct pipe_framebuffer_state *pfb = &ctx->batch->framebuffer;
    struct fd6_zsa_stateobj *zsa = fd6_zsa_stateobj(ctx->zsa);
    const struct ir3_shader_variant *fs = emit->fs;
 
-   if (fs->fs.early_fragment_tests)
-      return A6XX_EARLY_Z;
-
-   if (fs->no_earlyz || fs->writes_pos || !zsa->base.depth_enabled ||
-       fs->writes_stencilref) {
+   if (!zsa->base.depth_enabled) {
       return A6XX_LATE_Z;
    } else if ((fs->has_kill || zsa->alpha_test) &&
               (zsa->writes_zs || !pfb->zsbuf)) {
@@ -151,7 +141,6 @@ compute_lrz_state(struct fd6_emit *emit) assert_dt
 {
    struct fd_context *ctx = emit->ctx;
    struct pipe_framebuffer_state *pfb = &ctx->batch->framebuffer;
-   const struct ir3_shader_variant *fs = emit->fs;
    struct fd6_lrz_state lrz;
 
    if (!pfb->zsbuf) {
@@ -167,9 +156,10 @@ compute_lrz_state(struct fd6_emit *emit) assert_dt
 
    lrz = zsa->lrz;
 
+   lrz.val &= emit->prog->lrz_mask.val;
+
    /* normalize lrz state: */
-   if (reads_dest || fs->writes_pos || fs->no_earlyz || fs->has_kill ||
-       blend->base.alpha_to_coverage) {
+   if (reads_dest || blend->base.alpha_to_coverage) {
       lrz.write = false;
    }
 
@@ -231,12 +221,6 @@ compute_lrz_state(struct fd6_emit *emit) assert_dt
       memset(&lrz, 0, sizeof(lrz));
    }
 
-   if (fs->no_earlyz || fs->writes_pos) {
-      lrz.enable = false;
-      lrz.write = false;
-      lrz.test = false;
-   }
-
    lrz.z_mode = compute_ztest_mode(emit, rsc->lrz_valid);
 
    /* Once we start writing to the real depth buffer, we lock in the
@@ -264,8 +248,7 @@ build_lrz(struct fd6_emit *emit) assert_dt
    struct fd6_lrz_state lrz = compute_lrz_state(emit);
 
    /* If the LRZ state has not changed, we can skip the emit: */
-   if (!ctx->last.dirty &&
-       !memcmp(&fd6_ctx->last.lrz, &lrz, sizeof(lrz)))
+   if (!ctx->last.dirty && (fd6_ctx->last.lrz.val == lrz.val))
       return NULL;
 
    fd6_ctx->last.lrz = lrz;
@@ -530,6 +513,27 @@ fd6_emit_non_ring(struct fd_ringbuffer *ring, struct fd6_emit *emit) assert_dt
    }
 }
 
+static struct fd_ringbuffer*
+build_prim_mode(struct fd6_emit *emit, struct fd_context *ctx, bool gmem)
+   assert_dt
+{
+   struct fd_ringbuffer *ring =
+      fd_submit_new_ringbuffer(emit->ctx->batch->submit, 2 * 4, FD_RINGBUFFER_STREAMING);
+   uint32_t prim_mode = NO_FLUSH;
+   if (emit->fs->fs.uses_fbfetch_output) {
+      if (gmem) {
+         prim_mode = ctx->blend->blend_coherent ? FLUSH_PER_OVERLAP : NO_FLUSH;
+      } else {
+         prim_mode = FLUSH_PER_OVERLAP_AND_OVERWRITE;
+      }
+   } else {
+      prim_mode = NO_FLUSH;
+   }
+   OUT_REG(ring, A6XX_GRAS_SC_CNTL(.ccusinglecachelinesize = 2,
+                                   .single_prim_mode = prim_mode));
+   return ring;
+}
+
 void
 fd6_emit_3d_state(struct fd_ringbuffer *ring, struct fd6_emit *emit)
 {
@@ -661,6 +665,14 @@ fd6_emit_3d_state(struct fd_ringbuffer *ring, struct fd6_emit *emit)
          break;
       case FD6_GROUP_SO:
          fd6_emit_streamout(ring, emit);
+         break;
+      case FD6_GROUP_PRIM_MODE_SYSMEM:
+         state = build_prim_mode(emit, ctx, false);
+         fd6_state_take_group(&emit->state, state, FD6_GROUP_PRIM_MODE_SYSMEM);
+         break;
+      case FD6_GROUP_PRIM_MODE_GMEM:
+         state = build_prim_mode(emit, ctx, true);
+         fd6_state_take_group(&emit->state, state, FD6_GROUP_PRIM_MODE_GMEM);
          break;
       case FD6_GROUP_NON_GROUP:
          fd6_emit_non_ring(ring, emit);

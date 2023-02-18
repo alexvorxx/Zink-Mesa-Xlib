@@ -668,6 +668,12 @@ vec4_visitor::opt_algebraic()
 	 break;
 
       case BRW_OPCODE_MUL:
+	 if (inst->src[1].file != IMM)
+	    continue;
+
+	 if (brw_reg_type_is_floating_point(inst->src[1].type))
+	    break;
+
 	 if (inst->src[1].is_zero()) {
 	    inst->opcode = BRW_OPCODE_MOV;
 	    switch (inst->src[0].type) {

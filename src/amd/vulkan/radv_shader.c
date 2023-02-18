@@ -775,12 +775,6 @@ radv_shader_spirv_to_nir(struct radv_device *device, const struct radv_pipeline_
                          &device->physical_device->nir_options[stage->stage]);
       nir->info.internal |= is_internal;
       assert(nir->info.stage == stage->stage);
-
-      /* Work around applications that declare shader_call_data variables inside ray generation
-       * shaders. */
-      if (nir->info.stage == MESA_SHADER_RAYGEN)
-         NIR_PASS(_, nir, nir_remove_dead_variables, nir_var_shader_call_data, NULL);
-
       nir_validate_shader(nir, "after spirv_to_nir");
 
       free(spec_entries);
@@ -1727,7 +1721,7 @@ radv_postprocess_config(const struct radv_device *device, const struct ac_shader
                         struct ac_shader_config *config_out)
 {
    const struct radv_physical_device *pdevice = device->physical_device;
-   bool scratch_enabled = config_in->scratch_bytes_per_wave > 0;
+   bool scratch_enabled = config_in->scratch_bytes_per_wave > 0 || info->cs.is_rt_shader;
    bool trap_enabled = !!device->trap_handler_shader;
    unsigned vgpr_comp_cnt = 0;
    unsigned num_input_vgprs = args->ac.num_vgprs_used;
@@ -2032,10 +2026,21 @@ radv_open_rtld_binary(struct radv_device *device, const struct radv_shader *shad
 }
 #endif
 
-bool
+static bool
 radv_shader_binary_upload(struct radv_device *device, const struct radv_shader_binary *binary,
-                          struct radv_shader *shader, void *dest_ptr)
+                          struct radv_shader *shader)
 {
+   void *dest_ptr;
+
+   shader->alloc = radv_alloc_shader_memory(device, shader->code_size, shader);
+   if (!shader->alloc)
+      return false;
+
+   shader->bo = shader->alloc->arena->bo;
+   shader->va = radv_buffer_get_va(shader->bo) + shader->alloc->offset;
+
+   dest_ptr = shader->alloc->arena->ptr + shader->alloc->offset;
+
    if (binary->type == RADV_BINARY_TYPE_RTLD) {
 #if !defined(USE_LIBELF)
       return false;
@@ -2185,6 +2190,10 @@ radv_shader_create(struct radv_device *device, const struct radv_shader_binary *
          memcpy(shader->statistics, bin->data, bin->stats_size);
       }
    }
+
+   if (!radv_shader_binary_upload(device, binary, shader))
+      return NULL;
+
    return shader;
 }
 
@@ -2655,6 +2664,8 @@ void
 radv_shader_destroy(struct radv_device *device, struct radv_shader *shader)
 {
    assert(shader->ref_count == 0);
+
+   radv_free_shader_memory(device, shader->alloc);
 
    free(shader->spirv);
    free(shader->nir_string);

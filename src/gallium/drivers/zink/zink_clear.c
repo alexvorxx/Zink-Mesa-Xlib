@@ -425,7 +425,7 @@ create_clear_surface(struct pipe_context *pctx, struct pipe_resource *pres, unsi
 static void
 set_clear_fb(struct pipe_context *pctx, struct pipe_surface *psurf, struct pipe_surface *zsurf)
 {
-   struct pipe_framebuffer_state fb_state;
+   struct pipe_framebuffer_state fb_state = {0};
    fb_state.width = psurf ? psurf->width : zsurf->width;
    fb_state.height = psurf ? psurf->height : zsurf->height;
    fb_state.nr_cbufs = !!psurf;

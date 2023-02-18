@@ -119,7 +119,6 @@ agx_get_global_id(struct agx_device *dev)
 bool
 agx_open_device(void *memctx, struct agx_device *dev)
 {
-   dev->memctx = memctx;
    util_sparse_array_init(&dev->bo_map, sizeof(struct agx_bo), 512);
 
    simple_mtx_init(&dev->bo_cache.lock, mtx_plain);

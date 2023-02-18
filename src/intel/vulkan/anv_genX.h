@@ -85,6 +85,11 @@ void genX(emit_pipeline_select)(struct anv_batch *batch, uint32_t pipeline);
 
 void genX(apply_task_urb_workaround)(struct anv_cmd_buffer *cmd_buffer);
 
+void genX(emit_vertex_input)(struct anv_batch *batch,
+                             uint32_t *vertex_element_dws,
+                             const struct anv_graphics_pipeline *pipeline,
+                             const struct vk_vertex_input_state *vi);
+
 enum anv_pipe_bits
 genX(emit_apply_pipe_flushes)(struct anv_batch *batch,
                               struct anv_device *device,

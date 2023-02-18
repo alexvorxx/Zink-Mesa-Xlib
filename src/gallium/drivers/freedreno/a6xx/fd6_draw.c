@@ -182,12 +182,30 @@ get_program_state(struct fd_context *ctx, const struct pipe_draw_info *info)
    return fd6_ctx->prog;
 }
 
-static bool
-fd6_draw_vbo(struct fd_context *ctx, const struct pipe_draw_info *info,
-             unsigned drawid_offset,
-             const struct pipe_draw_indirect_info *indirect,
-             const struct pipe_draw_start_count_bias *draw,
-             unsigned index_offset) assert_dt
+static void
+flush_streamout(struct fd_context *ctx, struct fd6_emit *emit)
+   assert_dt
+{
+   if (!emit->streamout_mask)
+      return;
+
+   struct fd_ringbuffer *ring = ctx->batch->draw;
+
+   for (unsigned i = 0; i < PIPE_MAX_SO_BUFFERS; i++) {
+      if (emit->streamout_mask & (1 << i)) {
+         fd6_event_write(ctx->batch, ring, FLUSH_SO_0 + i, false);
+      }
+   }
+}
+
+static void
+fd6_draw_vbos(struct fd_context *ctx, const struct pipe_draw_info *info,
+              unsigned drawid_offset,
+              const struct pipe_draw_indirect_info *indirect,
+              const struct pipe_draw_start_count_bias *draws,
+              unsigned num_draws,
+              unsigned index_offset)
+   assert_dt
 {
    struct fd6_context *fd6_ctx = fd6_context(ctx);
    struct fd6_emit emit;
@@ -195,7 +213,7 @@ fd6_draw_vbo(struct fd_context *ctx, const struct pipe_draw_info *info,
    emit.ctx = ctx;
    emit.info = info;
    emit.indirect = indirect;
-   emit.draw = draw;
+   emit.draw = NULL;
    emit.rasterflat = ctx->rasterizer->flatshade;
    emit.sprite_coord_enable = ctx->rasterizer->sprite_coord_enable;
    emit.sprite_coord_mode = ctx->rasterizer->sprite_coord_mode;
@@ -205,12 +223,12 @@ fd6_draw_vbo(struct fd_context *ctx, const struct pipe_draw_info *info,
    emit.prog = NULL;
 
    if (!(ctx->prog.vs && ctx->prog.fs))
-      return false;
+      return;
 
    if ((info->mode == PIPE_PRIM_PATCHES) || ctx->prog.gs) {
       ctx->gen_dirty |= BIT(FD6_GROUP_PRIMITIVE_PARAMS);
    } else if (!indirect) {
-      fd6_vsc_update_sizes(ctx->batch, info, draw);
+      fd6_vsc_update_sizes(ctx->batch, info, &draws[0]);
    }
 
    /* If PROG state (which will mark PROG_KEY dirty) or any state that the
@@ -226,7 +244,7 @@ fd6_draw_vbo(struct fd_context *ctx, const struct pipe_draw_info *info,
 
    /* bail if compile failed: */
    if (!emit.prog)
-      return false;
+      return;
 
    fixup_draw_state(ctx, &emit);
 
@@ -239,14 +257,10 @@ fd6_draw_vbo(struct fd_context *ctx, const struct pipe_draw_info *info,
    emit.gs = fd6_emit_get_prog(&emit)->gs;
    emit.fs = fd6_emit_get_prog(&emit)->fs;
 
-   if (emit.vs->need_driver_params || fd6_ctx->has_dp_state)
+   if (emit.prog->num_driver_params || fd6_ctx->has_dp_state) {
+      emit.draw = &draws[0];
       emit.dirty_groups |= BIT(FD6_GROUP_DRIVER_PARAMS);
-   else if (emit.hs && emit.hs->need_driver_params)
-      emit.dirty_groups |= BIT(FD6_GROUP_DRIVER_PARAMS);
-   else if (emit.ds && emit.ds->need_driver_params)
-      emit.dirty_groups |= BIT(FD6_GROUP_DRIVER_PARAMS);
-   else if (emit.gs && emit.gs->need_driver_params)
-      emit.dirty_groups |= BIT(FD6_GROUP_DRIVER_PARAMS);
+   }
 
    /* If we are doing xfb, we need to emit the xfb state on every draw: */
    if (emit.prog->stream_output)
@@ -303,7 +317,7 @@ fd6_draw_vbo(struct fd_context *ctx, const struct pipe_draw_info *info,
       ctx->batch->tessellation = true;
    }
 
-   uint32_t index_start = info->index_size ? draw->index_bias : draw->start;
+   uint32_t index_start = info->index_size ? draws[0].index_bias : draws[0].start;
    if (ctx->last.dirty || (ctx->last.index_start != index_start)) {
       OUT_PKT4(ring, REG_A6XX_VFD_INDEX_OFFSET, 1);
       OUT_RING(ring, index_start); /* VFD_INDEX_OFFSET */
@@ -339,31 +353,64 @@ fd6_draw_vbo(struct fd_context *ctx, const struct pipe_draw_info *info,
    emit_marker6(ring, 7);
 
    if (indirect) {
+      assert(num_draws == 1);  /* only >1 for direct draws */
       if (indirect->count_from_stream_output) {
          draw_emit_xfb(ring, &draw0, info, indirect);
       } else {
          draw_emit_indirect(ring, &draw0, info, indirect, index_offset);
       }
    } else {
-      draw_emit(ring, &draw0, info, draw, index_offset);
+      draw_emit(ring, &draw0, info, &draws[0], index_offset);
+
+      if (unlikely(num_draws > 1)) {
+
+         /*
+          * Most state won't need to be re-emitted, other than xfb and
+          * driver-params:
+          */
+         emit.dirty_groups = 0;
+
+         if (emit.prog->num_driver_params)
+            emit.dirty_groups |= BIT(FD6_GROUP_DRIVER_PARAMS);
+
+         if (emit.prog->stream_output)
+            emit.dirty_groups |= BIT(FD6_GROUP_SO);
+
+         uint32_t last_index_start = ctx->last.index_start;
+
+         for (unsigned i = 1; i < num_draws; i++) {
+            flush_streamout(ctx, &emit);
+
+            fd6_vsc_update_sizes(ctx->batch, info, &draws[i]);
+
+            uint32_t index_start = info->index_size ? draws[i].index_bias : draws[i].start;
+            if (last_index_start != index_start) {
+               OUT_PKT4(ring, REG_A6XX_VFD_INDEX_OFFSET, 1);
+               OUT_RING(ring, index_start); /* VFD_INDEX_OFFSET */
+               last_index_start = index_start;
+            }
+
+            if (emit.dirty_groups) {
+               emit.state.num_groups = 0;
+               emit.draw = &draws[i];
+               fd6_emit_3d_state(ring, &emit);
+            }
+
+            assert(!index_offset); /* handled by util_draw_multi() */
+
+            draw_emit(ring, &draw0, info, &draws[i], 0);
+         }
+
+         ctx->last.index_start = last_index_start;
+      }
    }
 
    emit_marker6(ring, 7);
    fd_reset_wfi(ctx->batch);
 
-   if (emit.streamout_mask) {
-      struct fd_ringbuffer *ring = ctx->batch->draw;
-
-      for (unsigned i = 0; i < PIPE_MAX_SO_BUFFERS; i++) {
-         if (emit.streamout_mask & (1 << i)) {
-            fd6_event_write(ctx->batch, ring, FLUSH_SO_0 + i, false);
-         }
-      }
-   }
+   flush_streamout(ctx, &emit);
 
    fd_context_all_clean(ctx);
-
-   return true;
 }
 
 static void
@@ -538,6 +585,6 @@ void
 fd6_draw_init(struct pipe_context *pctx) disable_thread_safety_analysis
 {
    struct fd_context *ctx = fd_context(pctx);
-   ctx->draw_vbo = fd6_draw_vbo;
+   ctx->draw_vbos = fd6_draw_vbos;
    ctx->clear = fd6_clear;
 }

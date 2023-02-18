@@ -91,6 +91,8 @@ public:
    bool addr_for_src() const { return m_addr_for_src; }
    bool has_kill_op() const { return m_has_kill_op; }
 
+   void set_origin(AluInstr *o) { m_origin = o;}
+
 private:
    void forward_set_blockid(int id, int index) override;
    bool do_ready() const override;
@@ -115,6 +117,7 @@ private:
    bool m_addr_is_index{false};
    bool m_addr_for_src{false};
    bool m_has_kill_op{false};
+   AluInstr *m_origin{nullptr};
 };
 
 } // namespace r600

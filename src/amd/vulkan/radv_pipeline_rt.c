@@ -221,7 +221,7 @@ fail:
    return VK_ERROR_OUT_OF_HOST_MEMORY;
 }
 
-bool
+static bool
 radv_rt_pipeline_has_dynamic_stack_size(const VkRayTracingPipelineCreateInfoKHR *pCreateInfo)
 {
    if (!pCreateInfo->pDynamicState)
@@ -234,6 +234,66 @@ radv_rt_pipeline_has_dynamic_stack_size(const VkRayTracingPipelineCreateInfoKHR 
    }
 
    return false;
+}
+
+static unsigned
+compute_rt_stack_size(const VkRayTracingPipelineCreateInfoKHR *pCreateInfo,
+                      const struct radv_pipeline_shader_stack_size *stack_sizes)
+{
+   if (radv_rt_pipeline_has_dynamic_stack_size(pCreateInfo))
+      return -1u;
+
+   unsigned raygen_size = 0;
+   unsigned callable_size = 0;
+   unsigned chit_size = 0;
+   unsigned miss_size = 0;
+   unsigned non_recursive_size = 0;
+
+   for (unsigned i = 0; i < pCreateInfo->groupCount; ++i) {
+      non_recursive_size = MAX2(stack_sizes[i].non_recursive_size, non_recursive_size);
+
+      const VkRayTracingShaderGroupCreateInfoKHR *group_info = &pCreateInfo->pGroups[i];
+      uint32_t shader_id = VK_SHADER_UNUSED_KHR;
+      unsigned size = stack_sizes[i].recursive_size;
+
+      switch (group_info->type) {
+      case VK_RAY_TRACING_SHADER_GROUP_TYPE_GENERAL_KHR:
+         shader_id = group_info->generalShader;
+         break;
+      case VK_RAY_TRACING_SHADER_GROUP_TYPE_PROCEDURAL_HIT_GROUP_KHR:
+      case VK_RAY_TRACING_SHADER_GROUP_TYPE_TRIANGLES_HIT_GROUP_KHR:
+         shader_id = group_info->closestHitShader;
+         break;
+      default:
+         break;
+      }
+      if (shader_id == VK_SHADER_UNUSED_KHR)
+         continue;
+
+      const VkPipelineShaderStageCreateInfo *stage = &pCreateInfo->pStages[shader_id];
+      switch (stage->stage) {
+      case VK_SHADER_STAGE_RAYGEN_BIT_KHR:
+         raygen_size = MAX2(raygen_size, size);
+         break;
+      case VK_SHADER_STAGE_MISS_BIT_KHR:
+         miss_size = MAX2(miss_size, size);
+         break;
+      case VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR:
+         chit_size = MAX2(chit_size, size);
+         break;
+      case VK_SHADER_STAGE_CALLABLE_BIT_KHR:
+         callable_size = MAX2(callable_size, size);
+         break;
+      default:
+         unreachable("Invalid stage type in RT shader");
+      }
+   }
+   return raygen_size +
+          MIN2(pCreateInfo->maxPipelineRayRecursionDepth, 1) *
+             MAX2(MAX2(chit_size, miss_size), non_recursive_size) +
+          MAX2(0, (int)(pCreateInfo->maxPipelineRayRecursionDepth) - 1) *
+             MAX2(chit_size, miss_size) +
+          2 * callable_size;
 }
 
 static struct radv_pipeline_key
@@ -338,7 +398,7 @@ radv_rt_pipeline_create(VkDevice _device, VkPipelineCache _cache,
       goto shader_fail;
    }
 
-   rt_pipeline->dynamic_stack_size = radv_rt_pipeline_has_dynamic_stack_size(pCreateInfo);
+   rt_pipeline->stack_size = compute_rt_stack_size(pCreateInfo, rt_pipeline->stack_sizes);
 
    /* For General and ClosestHit shaders, we can use the shader ID directly as handle.
     * As (potentially different) AnyHit shaders are inlined, for Intersection shaders

@@ -356,7 +356,7 @@ st_destroy_context_priv(struct st_context *st, bool destroy_pipe)
    st_destroy_drawtex(st);
    st_destroy_pbo_helpers(st);
 
-   if (st->transcode_astc)
+   if (_mesa_has_compute_shaders(st->ctx) && st->transcode_astc)
       st_destroy_texcompress_compute(st);
 
    st_destroy_bound_texture_handles(st);

@@ -1197,51 +1197,6 @@ tu_GetDescriptorEXT(
    }
 }
 
-/* We don't have any mutable state in buffers, images, image views, or
- * samplers, so we shouldn't need to save/restore anything to get the same
- * descriptor back as long as the user uses the same iova.
- */
-
-VKAPI_ATTR VkResult VKAPI_CALL
-tu_GetBufferOpaqueCaptureDescriptorDataEXT(VkDevice device,
-                                           const VkBufferCaptureDescriptorDataInfoEXT *pInfo,
-                                           void *pData)
-{
-   return VK_SUCCESS;
-}
-
-VKAPI_ATTR VkResult VKAPI_CALL
-tu_GetImageOpaqueCaptureDescriptorDataEXT(VkDevice device,
-                                          const VkImageCaptureDescriptorDataInfoEXT *pInfo,
-                                          void *pData)
-{
-   return VK_SUCCESS;
-}
-
-VKAPI_ATTR VkResult VKAPI_CALL
-tu_GetImageViewOpaqueCaptureDescriptorDataEXT(VkDevice device,
-                                              const VkImageViewCaptureDescriptorDataInfoEXT *pInfo,
-                                              void *pData)
-{
-   return VK_SUCCESS;
-}
-
-VKAPI_ATTR VkResult VKAPI_CALL
-tu_GetSamplerOpaqueCaptureDescriptorDataEXT(VkDevice _device,
-                                            const VkSamplerCaptureDescriptorDataInfoEXT *pInfo,
-                                            void *pData)
-{
-   return VK_SUCCESS;
-}
-
-VKAPI_ATTR VkResult VKAPI_CALL
-tu_GetAccelerationStructureOpaqueCaptureDescriptorDataEXT(VkDevice device,
-                                                          const VkAccelerationStructureCaptureDescriptorDataInfoEXT *pInfo,
-                                                          void *pData)
-{
-   return VK_SUCCESS;
-}
-
 void
 tu_update_descriptor_sets(const struct tu_device *device,
                           VkDescriptorSet dstSetOverride,

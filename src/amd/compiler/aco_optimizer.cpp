@@ -1512,6 +1512,22 @@ label_instruction(opt_ctx& ctx, aco_ptr<Instruction>& instr)
          }
       }
 
+      else if (instr->isMTBUF()) {
+         MTBUF_instruction& mtbuf = instr->mtbuf();
+         while (info.is_temp())
+            info = ctx.info[info.temp.id()];
+
+         if (mtbuf.offen && mtbuf.idxen && i == 1 && info.is_vec() &&
+             info.instr->operands.size() == 2 && info.instr->operands[0].isTemp() &&
+             info.instr->operands[0].regClass() == v1 && info.instr->operands[1].isConstant() &&
+             mtbuf.offset + info.instr->operands[1].constantValue() < 4096) {
+            instr->operands[1] = info.instr->operands[0];
+            mtbuf.offset += info.instr->operands[1].constantValue();
+            mtbuf.offen = false;
+            continue;
+         }
+      }
+
       /* SCRATCH: propagate constants and combine additions */
       else if (instr->isScratch()) {
          FLAT_instruction& scratch = instr->scratch();

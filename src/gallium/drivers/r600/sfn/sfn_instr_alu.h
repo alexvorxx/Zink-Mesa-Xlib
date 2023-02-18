@@ -150,7 +150,7 @@ public:
    static const std::map<ECFAluOpCode, std::string> cf_map;
    static const std::map<AluBankSwizzle, std::string> bank_swizzle_map;
    static Instr::Pointer
-   from_string(std::istream& is, ValueFactory& value_factory, AluGroup *);
+   from_string(std::istream& is, ValueFactory& value_factory, AluGroup *, bool is_cayman);
    static bool from_nir(nir_alu_instr *alu, Shader& shader);
 
    int alu_slots() const { return m_alu_slots; }

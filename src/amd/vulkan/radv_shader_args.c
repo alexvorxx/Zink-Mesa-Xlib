@@ -185,8 +185,8 @@ allocate_user_sgprs(enum amd_gfx_level gfx_level, const struct radv_shader_info 
    switch (stage) {
    case MESA_SHADER_COMPUTE:
    case MESA_SHADER_TASK:
-      if (info->cs.uses_sbt)
-         user_sgpr_count += 2;
+      if (info->cs.is_rt_shader)
+         user_sgpr_count += 2; /* SBT descriptors */
       if (info->cs.uses_grid_size)
          user_sgpr_count += args->load_grid_size_from_user_sgpr ? 3 : 2;
       if (info->cs.uses_ray_launch_size)
@@ -597,7 +597,7 @@ radv_declare_shader_args(enum amd_gfx_level gfx_level, const struct radv_pipelin
    case MESA_SHADER_TASK:
       declare_global_input_sgprs(info, &user_sgpr_info, args);
 
-      if (info->cs.uses_sbt) {
+      if (info->cs.is_rt_shader) {
          ac_add_arg(&args->ac, AC_ARG_SGPR, 2, AC_ARG_CONST_PTR, &args->ac.sbt_descriptors);
       }
 

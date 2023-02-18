@@ -50,6 +50,11 @@
 #include "util/detect_cc.h"
 #include "util/detect_arch.h"
 
+#ifdef __HAIKU__
+#include <sys/param.h>
+#undef ALIGN
+#endif
+
 #ifdef __cplusplus
 extern "C" {
 #endif

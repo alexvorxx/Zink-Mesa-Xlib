@@ -23,13 +23,18 @@
 
 #include <stdint.h>
 #include <stddef.h>
+#include <string.h>
 #include <vulkan/vulkan_core.h>
 
 #include "c11/threads.h"
 #include "hwdef/rogue_hw_utils.h"
 #include "pvr_bo.h"
+#include "pvr_device_info.h"
+#include "pvr_pds.h"
 #include "pvr_private.h"
+#include "pvr_shader_factory.h"
 #include "pvr_spm.h"
+#include "pvr_static_shaders.h"
 #include "util/simple_mtx.h"
 #include "util/u_atomic.h"
 #include "vk_alloc.h"
@@ -235,4 +240,156 @@ VkResult pvr_spm_scratch_buffer_get_buffer(
    *buffer_out = buffer;
 
    return VK_SUCCESS;
+}
+
+VkResult pvr_device_init_spm_load_state(struct pvr_device *device)
+{
+   const struct pvr_device_info *dev_info = &device->pdevice->dev_info;
+   uint32_t pds_texture_aligned_offsets[PVR_SPM_LOAD_PROGRAM_COUNT];
+   uint32_t pds_kick_aligned_offsets[PVR_SPM_LOAD_PROGRAM_COUNT];
+   uint32_t usc_aligned_offsets[PVR_SPM_LOAD_PROGRAM_COUNT];
+   uint32_t pds_allocation_size = 0;
+   uint32_t usc_allocation_size = 0;
+   struct pvr_bo *pds_bo;
+   struct pvr_bo *usc_bo;
+   uint8_t *mem_ptr;
+   VkResult result;
+
+   static_assert(PVR_SPM_LOAD_PROGRAM_COUNT == ARRAY_SIZE(spm_load_collection),
+                 "Size mismatch");
+
+   /* TODO: We don't need to upload all the programs since the set contains
+    * programs for devices with 8 output regs as well. We can save some memory
+    * by not uploading them on devices without the feature.
+    * It's likely that once the compiler is hooked up we'll be using the shader
+    * cache and generate the shaders as needed so this todo will be unnecessary.
+    */
+
+   /* Upload USC shaders. */
+
+   for (uint32_t i = 0; i < ARRAY_SIZE(spm_load_collection); i++) {
+      usc_aligned_offsets[i] = usc_allocation_size;
+      usc_allocation_size += ALIGN_POT(spm_load_collection[i].size, 4);
+   }
+
+   result = pvr_bo_alloc(device,
+                         device->heaps.usc_heap,
+                         usc_allocation_size,
+                         4,
+                         PVR_BO_ALLOC_FLAG_CPU_MAPPED,
+                         &usc_bo);
+   if (result != VK_SUCCESS)
+      return result;
+
+   mem_ptr = (uint8_t *)usc_bo->bo->map;
+
+   for (uint32_t i = 0; i < ARRAY_SIZE(spm_load_collection); i++) {
+      memcpy(mem_ptr + usc_aligned_offsets[i],
+             spm_load_collection[i].code,
+             spm_load_collection[i].size);
+   }
+
+   pvr_bo_cpu_unmap(device, usc_bo);
+
+   /* Upload PDS programs. */
+
+   for (uint32_t i = 0; i < ARRAY_SIZE(spm_load_collection); i++) {
+      struct pvr_pds_pixel_shader_sa_program pds_texture_program = {
+         /* DMA for clear colors and tile buffer address parts. */
+         .num_texture_dma_kicks = 1,
+      };
+      struct pvr_pds_kickusc_program pds_kick_program = { 0 };
+
+      /* TODO: This looks a bit odd and isn't consistent with other code where
+       * we're getting the size of the PDS program. Can we improve this?
+       */
+      pvr_pds_set_sizes_pixel_shader_uniform_texture_code(&pds_texture_program);
+      pvr_pds_set_sizes_pixel_shader_sa_texture_data(&pds_texture_program,
+                                                     dev_info);
+
+      /* TODO: Looking at the pvr_pds_generate_...() functions and the run-time
+       * behavior the data size is always the same here. Should we try saving
+       * some memory by adjusting things based on that?
+       */
+      device->spm_load_state.load_program[i].pds_texture_program_data_size =
+         pds_texture_program.data_size;
+
+      pds_texture_aligned_offsets[i] = pds_allocation_size;
+      /* FIXME: Figure out the define for alignment of 16. */
+      pds_allocation_size += ALIGN_POT(pds_texture_program.code_size * 4, 16);
+
+      pvr_pds_set_sizes_pixel_shader(&pds_kick_program);
+
+      pds_kick_aligned_offsets[i] = pds_allocation_size;
+      /* FIXME: Figure out the define for alignment of 16. */
+      pds_allocation_size += ALIGN_POT(
+         (pds_kick_program.code_size + pds_kick_program.data_size) * 4,
+         16);
+   }
+
+   /* FIXME: Figure out the define for alignment of 16. */
+   result = pvr_bo_alloc(device,
+                         device->heaps.pds_heap,
+                         pds_allocation_size,
+                         16,
+                         PVR_BO_ALLOC_FLAG_CPU_MAPPED,
+                         &pds_bo);
+   if (result != VK_SUCCESS) {
+      pvr_bo_free(device, usc_bo);
+      return result;
+   }
+
+   mem_ptr = (uint8_t *)pds_bo->bo->map;
+
+   for (uint32_t i = 0; i < ARRAY_SIZE(spm_load_collection); i++) {
+      struct pvr_pds_pixel_shader_sa_program pds_texture_program = {
+         /* DMA for clear colors and tile buffer address parts. */
+         .num_texture_dma_kicks = 1,
+      };
+      const pvr_dev_addr_t usc_program_dev_addr =
+         PVR_DEV_ADDR_OFFSET(usc_bo->vma->dev_addr, usc_aligned_offsets[i]);
+      struct pvr_pds_kickusc_program pds_kick_program = { 0 };
+
+      pvr_pds_generate_pixel_shader_sa_code_segment(
+         &pds_texture_program,
+         (uint32_t *)(mem_ptr + pds_texture_aligned_offsets[i]));
+
+      pvr_pds_setup_doutu(&pds_kick_program.usc_task_control,
+                          usc_program_dev_addr.addr,
+                          spm_load_collection[i].info->temps_required,
+                          PVRX(PDSINST_DOUTU_SAMPLE_RATE_INSTANCE),
+                          false);
+
+      /* Generated both code and data. */
+      pvr_pds_generate_pixel_shader_program(
+         &pds_kick_program,
+         (uint32_t *)(mem_ptr + pds_kick_aligned_offsets[i]));
+
+      device->spm_load_state.load_program[i].pds_pixel_program_offset =
+         PVR_DEV_ADDR_OFFSET(pds_bo->vma->dev_addr,
+                             pds_kick_aligned_offsets[i]);
+      device->spm_load_state.load_program[i].pds_uniform_program_offset =
+         PVR_DEV_ADDR_OFFSET(pds_bo->vma->dev_addr,
+                             pds_texture_aligned_offsets[i]);
+
+      /* TODO: From looking at the pvr_pds_generate_...() functions, it seems
+       * like temps_used is always 1. Should we remove this and hard code it
+       * with a define in the PDS code?
+       */
+      device->spm_load_state.load_program[i].pds_texture_program_temps_count =
+         pds_texture_program.temps_used;
+   }
+
+   pvr_bo_cpu_unmap(device, pds_bo);
+
+   device->spm_load_state.usc_programs = usc_bo;
+   device->spm_load_state.pds_programs = pds_bo;
+
+   return VK_SUCCESS;
+}
+
+void pvr_device_finish_spm_load_state(struct pvr_device *device)
+{
+   pvr_bo_free(device, device->spm_load_state.pds_programs);
+   pvr_bo_free(device, device->spm_load_state.usc_programs);
 }

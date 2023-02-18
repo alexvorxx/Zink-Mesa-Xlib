@@ -367,6 +367,19 @@ struct pvr_device {
    } static_clear_state;
 
    struct {
+      struct pvr_bo *usc_programs;
+      struct pvr_bo *pds_programs;
+
+      struct {
+         pvr_dev_addr_t pds_pixel_program_offset;
+         pvr_dev_addr_t pds_uniform_program_offset;
+
+         uint32_t pds_texture_program_data_size;
+         uint32_t pds_texture_program_temps_count;
+      } load_program[PVR_SPM_LOAD_PROGRAM_COUNT];
+   } spm_load_state;
+
+   struct {
       simple_mtx_t mtx;
 
 #define PVR_MAX_TILE_BUFFER_COUNT 7U
@@ -1376,12 +1389,13 @@ struct pvr_render_pass {
    uint32_t max_tilebuffer_count;
 };
 
+/* Max render targets for the clears loads state in load op.
+ * To account for resolve attachments, double the color attachments.
+ */
+#define PVR_LOAD_OP_CLEARS_LOADS_MAX_RTS (PVR_MAX_COLOR_ATTACHMENTS * 2)
+
 struct pvr_load_op {
    bool is_hw_object;
-
-   uint32_t clear_mask;
-
-   bool load_depth;
 
    struct pvr_bo *usc_frag_prog_bo;
    uint32_t const_shareds_count;
@@ -1397,7 +1411,41 @@ struct pvr_load_op {
       const struct pvr_renderpass_hwsetup_render *hw_render;
       const struct pvr_render_subpass *subpass;
    };
+
+   /* TODO: We might not need to keep all of this around. Some stuff might just
+    * be for the compiler to ingest which we can then discard.
+    */
+   struct {
+      uint16_t rt_clear_mask;
+      uint16_t rt_load_mask;
+
+      uint16_t unresolved_msaa_mask;
+
+      /* The format to write to the output regs. */
+      VkFormat dest_vk_format[PVR_LOAD_OP_CLEARS_LOADS_MAX_RTS];
+
+#define PVR_NO_DEPTH_CLEAR_TO_REG (-1)
+      /* If >= 0, write a depth clear value to the specified pixel output. */
+      int32_t depth_clear_to_reg;
+   } clears_loads_state;
 };
+
+#define CHECK_MASK_SIZE(_struct_type, _field_name, _nr_bits)               \
+   static_assert(sizeof(((struct _struct_type *)NULL)->_field_name) * 8 >= \
+                    _nr_bits,                                              \
+                 #_field_name " mask of struct " #_struct_type " too small")
+
+CHECK_MASK_SIZE(pvr_load_op,
+                clears_loads_state.rt_clear_mask,
+                PVR_LOAD_OP_CLEARS_LOADS_MAX_RTS);
+CHECK_MASK_SIZE(pvr_load_op,
+                clears_loads_state.rt_load_mask,
+                PVR_LOAD_OP_CLEARS_LOADS_MAX_RTS);
+CHECK_MASK_SIZE(pvr_load_op,
+                clears_loads_state.unresolved_msaa_mask,
+                PVR_LOAD_OP_CLEARS_LOADS_MAX_RTS);
+
+#undef CHECK_MASK_SIZE
 
 uint32_t pvr_calc_fscommon_size_and_tiles_in_flight(
    const struct pvr_physical_device *pdevice,

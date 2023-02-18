@@ -321,7 +321,6 @@ fd_set_framebuffer_state(struct pipe_context *pctx,
 
       fd_batch_reference(&ctx->batch, NULL);
       fd_context_all_dirty(ctx);
-      ctx->update_active_queries = true;
 
       fd_batch_reference(&old_batch, NULL);
    } else if (ctx->batch) {
@@ -515,10 +514,16 @@ fd_blend_state_bind(struct pipe_context *pctx, void *hwcso) in_dt
                                  : false;
    bool new_is_dual =
       cso ? cso->rt[0].blend_enable && util_blend_state_is_dual(cso, 0) : false;
-   ctx->blend = hwcso;
    fd_context_dirty(ctx, FD_DIRTY_BLEND);
    if (old_is_dual != new_is_dual)
       fd_context_dirty(ctx, FD_DIRTY_BLEND_DUAL);
+
+   bool old_coherent = get_safe(ctx->blend, blend_coherent);
+   bool new_coherent = get_safe(cso, blend_coherent);
+   if (new_coherent != old_coherent) {
+      fd_context_dirty(ctx, FD_DIRTY_BLEND_COHERENT);
+   }
+   ctx->blend = hwcso;
    update_draw_cost(ctx);
 }
 

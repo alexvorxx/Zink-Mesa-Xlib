@@ -236,7 +236,7 @@ get_device_extensions(const struct anv_physical_device *device,
       .KHR_shader_clock                      = true,
       .KHR_shader_draw_parameters            = true,
       .KHR_shader_float16_int8               = device->info.ver >= 8,
-      .KHR_shader_float_controls             = device->info.ver >= 8,
+      .KHR_shader_float_controls             = true,
       .KHR_shader_integer_dot_product        = true,
       .KHR_shader_non_semantic_info          = true,
       .KHR_shader_subgroup_extended_types    = device->info.ver >= 8,
@@ -688,12 +688,16 @@ anv_physical_device_try_create(struct vk_instance *vk_instance,
    }
 
    bool is_alpha = true;
+   bool warn = !debug_get_bool_option("MESA_VK_IGNORE_CONFORMANCE_WARNING", false);
    if (devinfo.platform == INTEL_PLATFORM_HSW) {
-      mesa_logw("Haswell Vulkan support is incomplete");
+      if (warn)
+         mesa_logw("Haswell Vulkan support is incomplete");
    } else if (devinfo.platform == INTEL_PLATFORM_IVB) {
-      mesa_logw("Ivy Bridge Vulkan support is incomplete");
+      if (warn)
+         mesa_logw("Ivy Bridge Vulkan support is incomplete");
    } else if (devinfo.platform == INTEL_PLATFORM_BYT) {
-      mesa_logw("Bay Trail Vulkan support is incomplete");
+      if (warn)
+         mesa_logw("Bay Trail Vulkan support is incomplete");
    } else if (devinfo.ver == 8) {
       /* Gfx8 fully supported */
       is_alpha = false;
@@ -1880,7 +1884,7 @@ anv_get_physical_device_properties_1_2(struct anv_physical_device *pdevice,
    p->shaderSignedZeroInfNanPreserveFloat16  = true;
 
    p->shaderDenormFlushToZeroFloat32         = true;
-   p->shaderDenormPreserveFloat32            = true;
+   p->shaderDenormPreserveFloat32            = pdevice->info.ver >= 8;
    p->shaderRoundingModeRTEFloat32           = true;
    p->shaderRoundingModeRTZFloat32           = true;
    p->shaderSignedZeroInfNanPreserveFloat32  = true;
@@ -2685,28 +2689,6 @@ VkResult anv_CreateDevice(
 
    assert(pCreateInfo->sType == VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO);
 
-   /* Check enabled features */
-   bool robust_buffer_access = false;
-   if (pCreateInfo->pEnabledFeatures) {
-      if (pCreateInfo->pEnabledFeatures->robustBufferAccess)
-         robust_buffer_access = true;
-   }
-
-   vk_foreach_struct_const(ext, pCreateInfo->pNext) {
-      switch (ext->sType) {
-      case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2: {
-         const VkPhysicalDeviceFeatures2 *features = (const void *)ext;
-         if (features->features.robustBufferAccess)
-            robust_buffer_access = true;
-         break;
-      }
-
-      default:
-         /* Don't warn */
-         break;
-      }
-   }
-
    /* Check requested queues and fail if we are requested to create any
     * queues with flags we don't support.
     */
@@ -2844,8 +2826,6 @@ VkResult anv_CreateDevice(
     * the batch.
     */
    device->can_chain_batches = device->info->ver >= 8;
-
-   device->robust_buffer_access = robust_buffer_access;
 
    if (pthread_mutex_init(&device->mutex, NULL) != 0) {
       result = vk_error(device, VK_ERROR_INITIALIZATION_FAILED);
@@ -3908,7 +3888,7 @@ anv_get_buffer_memory_requirements(struct anv_device *device,
     * This would ensure that not internal padding would be needed for
     * 16-bit types.
     */
-   if (device->robust_buffer_access &&
+   if (device->vk.enabled_features.robustBufferAccess &&
        (usage & VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT ||
         usage & VK_BUFFER_USAGE_STORAGE_BUFFER_BIT))
       pMemoryRequirements->memoryRequirements.size = align64(size, 4);

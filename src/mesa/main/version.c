@@ -136,8 +136,8 @@ create_version_string(struct gl_context *ctx, const char *prefix)
 		     "%s%u.%u%s Mesa " PACKAGE_VERSION MESA_GIT_SHA1,
 		     prefix,
 		     ctx->Version / 10, ctx->Version % 10,
-		     (ctx->API == API_OPENGL_CORE) ? " (Core Profile)" :
-                     (ctx->API == API_OPENGL_COMPAT && ctx->Version >= 32) ?
+		     _mesa_is_desktop_gl_core(ctx) ? " (Core Profile)" :
+                     (_mesa_is_desktop_gl_compat(ctx) && ctx->Version >= 32) ?
                         " (Compatibility Profile)" : ""
 		     );
    }
@@ -650,7 +650,7 @@ _mesa_compute_version(struct gl_context *ctx)
    }
 
 done:
-   if (ctx->API == API_OPENGL_COMPAT && ctx->Version >= 31)
+   if (_mesa_is_desktop_gl_compat(ctx) && ctx->Version >= 31)
       ctx->Extensions.ARB_compatibility = GL_TRUE;
 
    /* Precompute valid primitive types for faster draw time validation. */
@@ -663,7 +663,7 @@ done:
                            (1 << GL_TRIANGLE_STRIP) |
                            (1 << GL_TRIANGLE_FAN);
 
-   if (ctx->API == API_OPENGL_COMPAT) {
+   if (_mesa_is_desktop_gl_compat(ctx)) {
       ctx->SupportedPrimMask |= (1 << GL_QUADS) |
                                (1 << GL_QUAD_STRIP) |
                                (1 << GL_POLYGON);
@@ -760,14 +760,13 @@ _mesa_get_shading_language_version(const struct gl_context *ctx,
       GLSL_VERSION("");
 
    /* GLSL es */
-   if ((ctx->API == API_OPENGLES2 && ctx->Version >= 32) ||
-        ctx->Extensions.ARB_ES3_2_compatibility)
+   if (_mesa_is_gles32(ctx) || ctx->Extensions.ARB_ES3_2_compatibility)
       GLSL_VERSION("320 es");
    if (_mesa_is_gles31(ctx) || ctx->Extensions.ARB_ES3_1_compatibility)
       GLSL_VERSION("310 es");
    if (_mesa_is_gles3(ctx) || ctx->Extensions.ARB_ES3_compatibility)
       GLSL_VERSION("300 es");
-   if (ctx->API == API_OPENGLES2 || ctx->Extensions.ARB_ES2_compatibility)
+   if (_mesa_is_gles2(ctx) || ctx->Extensions.ARB_ES2_compatibility)
       GLSL_VERSION("100");
 
 #undef GLSL_VERSION

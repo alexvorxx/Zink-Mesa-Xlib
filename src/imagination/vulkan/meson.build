@@ -83,6 +83,7 @@ pvr_deps = [
 
 pvr_flags = [
   no_override_init_args,
+  vk_wsi_args,
 ]
 
 if with_imagination_srv

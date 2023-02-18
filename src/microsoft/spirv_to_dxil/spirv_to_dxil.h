@@ -174,6 +174,9 @@ struct dxil_spirv_runtime_conf {
    bool lower_view_index;
    // View index also needs to be forwarded to RT layer output
    bool lower_view_index_to_rt_layer;
+
+   // Affects which features can be used by the shader
+   enum dxil_shader_model shader_model_max;
 };
 
 struct dxil_spirv_debug_options {
@@ -204,7 +207,6 @@ spirv_to_dxil(const uint32_t *words, size_t word_count,
               struct dxil_spirv_specialization *specializations,
               unsigned int num_specializations, dxil_spirv_shader_stage stage,
               const char *entry_point_name,
-              enum dxil_shader_model shader_model_max,
               enum dxil_validator_version validator_version_max,
               const struct dxil_spirv_debug_options *debug_options,
               const struct dxil_spirv_runtime_conf *conf,

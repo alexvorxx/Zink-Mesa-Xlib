@@ -618,6 +618,9 @@ LLVMValueRef ac_build_gather_values(struct ac_llvm_context *ctx, LLVMValueRef *v
 
 LLVMValueRef ac_build_concat(struct ac_llvm_context *ctx, LLVMValueRef a, LLVMValueRef b)
 {
+   if (!a)
+      return b;
+
    unsigned a_size = ac_get_llvm_num_components(a);
    unsigned b_size = ac_get_llvm_num_components(b);
 
@@ -1297,20 +1300,19 @@ static LLVMValueRef ac_build_buffer_load_common(struct ac_llvm_context *ctx, LLV
                                                 LLVMValueRef vindex, LLVMValueRef voffset,
                                                 LLVMValueRef soffset, unsigned num_channels,
                                                 LLVMTypeRef channel_type, unsigned cache_policy,
-                                                bool can_speculate, bool use_format,
-                                                bool structurized)
+                                                bool can_speculate, bool use_format)
 {
    LLVMValueRef args[5];
    int idx = 0;
    args[idx++] = LLVMBuildBitCast(ctx->builder, rsrc, ctx->v4i32, "");
-   if (structurized)
-      args[idx++] = vindex ? vindex : ctx->i32_0;
+   if (vindex)
+      args[idx++] = vindex;
    args[idx++] = voffset ? voffset : ctx->i32_0;
    args[idx++] = soffset ? soffset : ctx->i32_0;
    args[idx++] = LLVMConstInt(ctx->i32, get_load_cache_policy(ctx, cache_policy), 0);
    unsigned func =
       !ac_has_vec3_support(ctx->gfx_level, use_format) && num_channels == 3 ? 4 : num_channels;
-   const char *indexing_kind = structurized ? "struct" : "raw";
+   const char *indexing_kind = vindex ? "struct" : "raw";
    char name[256], type_name[8];
 
    /* D16 is only supported on gfx8+ */
@@ -1366,8 +1368,22 @@ LLVMValueRef ac_build_buffer_load(struct ac_llvm_context *ctx, LLVMValueRef rsrc
       return ac_build_gather_values(ctx, result, num_channels);
    }
 
-   return ac_build_buffer_load_common(ctx, rsrc, vindex, voffset, soffset, num_channels,
-                                      channel_type, cache_policy, can_speculate, false, false);
+   /* LLVM is unable to select instructions for num_channels > 4, so we
+    * workaround that by manually splitting larger buffer loads.
+    */
+   LLVMValueRef result = NULL;
+   for (unsigned i = 0, fetch_num_channels; i < num_channels; i += fetch_num_channels) {
+      fetch_num_channels = MIN2(4, num_channels - i);
+      LLVMValueRef fetch_voffset =
+            LLVMBuildAdd(ctx->builder, voffset,
+                         LLVMConstInt(ctx->i32, i * ac_get_type_size(channel_type), 0), "");
+      LLVMValueRef item =
+         ac_build_buffer_load_common(ctx, rsrc, vindex, fetch_voffset, soffset, fetch_num_channels,
+                                     channel_type, cache_policy, can_speculate, false);
+      result = ac_build_concat(ctx, result, item);
+   }
+
+   return result;
 }
 
 LLVMValueRef ac_build_buffer_load_format(struct ac_llvm_context *ctx, LLVMValueRef rsrc,
@@ -1411,32 +1427,32 @@ LLVMValueRef ac_build_buffer_load_format(struct ac_llvm_context *ctx, LLVMValueR
                              ac_llvm_extract_elem(ctx, res, 4));
    }
 
-   return ac_build_buffer_load_common(ctx, rsrc, vindex, voffset, ctx->i32_0, num_channels,
-                                      d16 ? ctx->f16 : ctx->f32, cache_policy, can_speculate, true,
-                                      true);
+   return ac_build_buffer_load_common(ctx, rsrc, vindex, voffset, ctx->i32_0,
+                                      num_channels, d16 ? ctx->f16 : ctx->f32, cache_policy,
+                                      can_speculate, true);
 }
 
 static LLVMValueRef ac_build_tbuffer_load(struct ac_llvm_context *ctx, LLVMValueRef rsrc,
                                           LLVMValueRef vindex, LLVMValueRef voffset,
                                           LLVMValueRef soffset, unsigned num_channels,
-                                          unsigned dfmt, unsigned nfmt, unsigned cache_policy,
-                                          bool can_speculate, bool structurized)
+                                          unsigned tbuffer_format, LLVMTypeRef channel_type,
+                                          unsigned cache_policy, bool can_speculate)
 {
    LLVMValueRef args[6];
    int idx = 0;
    args[idx++] = LLVMBuildBitCast(ctx->builder, rsrc, ctx->v4i32, "");
-   if (structurized)
-      args[idx++] = vindex ? vindex : ctx->i32_0;
+   if (vindex)
+      args[idx++] = vindex;
    args[idx++] = voffset ? voffset : ctx->i32_0;
    args[idx++] = soffset ? soffset : ctx->i32_0;
-   args[idx++] = LLVMConstInt(ctx->i32, ac_get_tbuffer_format(ctx->gfx_level, dfmt, nfmt), 0);
+   args[idx++] = LLVMConstInt(ctx->i32, tbuffer_format, 0);
    args[idx++] = LLVMConstInt(ctx->i32, get_load_cache_policy(ctx, cache_policy), 0);
    unsigned func =
       !ac_has_vec3_support(ctx->gfx_level, true) && num_channels == 3 ? 4 : num_channels;
-   const char *indexing_kind = structurized ? "struct" : "raw";
+   const char *indexing_kind = vindex ? "struct" : "raw";
    char name[256], type_name[8];
 
-   LLVMTypeRef type = func > 1 ? LLVMVectorType(ctx->i32, func) : ctx->i32;
+   LLVMTypeRef type = func > 1 ? LLVMVectorType(channel_type, func) : channel_type;
    ac_build_type_name_for_intr(type, type_name, sizeof(type_name));
 
    snprintf(name, sizeof(name), "llvm.amdgcn.%s.tbuffer.load.%s", indexing_kind, type_name);
@@ -1451,8 +1467,9 @@ LLVMValueRef ac_build_struct_tbuffer_load(struct ac_llvm_context *ctx, LLVMValue
                                           unsigned dfmt, unsigned nfmt, unsigned cache_policy,
                                           bool can_speculate)
 {
-   return ac_build_tbuffer_load(ctx, rsrc, vindex, voffset, soffset, num_channels, dfmt,
-                                nfmt, cache_policy, can_speculate, true);
+   unsigned fmt = ac_get_tbuffer_format(ctx->gfx_level, dfmt, nfmt);
+   return ac_build_tbuffer_load(ctx, rsrc, vindex, voffset, soffset, num_channels, fmt,
+                                ctx->i32, cache_policy, can_speculate);
 }
 
 LLVMValueRef ac_build_buffer_load_short(struct ac_llvm_context *ctx, LLVMValueRef rsrc,
@@ -1460,7 +1477,7 @@ LLVMValueRef ac_build_buffer_load_short(struct ac_llvm_context *ctx, LLVMValueRe
                                         unsigned cache_policy)
 {
    return ac_build_buffer_load_common(ctx, rsrc, NULL, voffset, soffset, 1, ctx->i16,
-                                      cache_policy, false, false, false);
+                                      cache_policy, false, false);
 }
 
 LLVMValueRef ac_build_buffer_load_byte(struct ac_llvm_context *ctx, LLVMValueRef rsrc,
@@ -1468,7 +1485,7 @@ LLVMValueRef ac_build_buffer_load_byte(struct ac_llvm_context *ctx, LLVMValueRef
                                        unsigned cache_policy)
 {
    return ac_build_buffer_load_common(ctx, rsrc, NULL, voffset, soffset, 1, ctx->i8, cache_policy,
-                                      false, false, false);
+                                      false, false);
 }
 
 /**
@@ -1594,7 +1611,7 @@ LLVMValueRef ac_build_opencoded_load_format(struct ac_llvm_context *ctx, unsigne
       unsigned num_channels = 1 << (MAX2(load_log_size, 2) - 2);
       loads[i] =
          ac_build_buffer_load_common(ctx, rsrc, vindex, voffset, tmp, num_channels, channel_type,
-                                     cache_policy, can_speculate, false, true);
+                                     cache_policy, can_speculate, false);
       if (load_log_size >= 2)
          loads[i] = ac_to_integer(ctx, loads[i]);
    }

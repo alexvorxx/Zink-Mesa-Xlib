@@ -846,8 +846,15 @@ radv_rmv_log_graphics_pipeline_create(struct radv_device *device, VkPipelineCrea
 
    vk_rmv_emit_token(&device->vk.memory_trace_data, VK_RMV_TOKEN_TYPE_RESOURCE_CREATE,
                      &create_token);
-   log_resource_bind_locked(device, (uint64_t)_pipeline, pipeline->slab_bo,
-                            pipeline->slab->alloc->offset, pipeline->slab->alloc->size);
+   for (unsigned s = 0; s < MESA_VULKAN_SHADER_STAGES; s++) {
+      struct radv_shader *shader = pipeline->shaders[s];
+
+      if (!shader)
+         continue;
+
+      log_resource_bind_locked(device, (uint64_t)_pipeline, shader->bo, shader->alloc->offset,
+                               shader->alloc->size);
+   }
    simple_mtx_unlock(&device->vk.memory_trace_data.token_mtx);
 }
 
@@ -874,8 +881,9 @@ radv_rmv_log_compute_pipeline_create(struct radv_device *device, VkPipelineCreat
 
    vk_rmv_emit_token(&device->vk.memory_trace_data, VK_RMV_TOKEN_TYPE_RESOURCE_CREATE,
                      &create_token);
-   log_resource_bind_locked(device, (uint64_t)_pipeline, pipeline->slab_bo,
-                            pipeline->slab->alloc->offset, pipeline->slab->alloc->size);
+   struct radv_shader *shader = pipeline->shaders[MESA_SHADER_COMPUTE];
+   log_resource_bind_locked(device, (uint64_t)_pipeline, shader->bo, shader->alloc->offset,
+                            shader->alloc->size);
    simple_mtx_unlock(&device->vk.memory_trace_data.token_mtx);
 }
 

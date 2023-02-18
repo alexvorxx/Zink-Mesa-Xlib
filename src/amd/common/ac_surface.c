@@ -1784,9 +1784,11 @@ static int gfx9_compute_miptree(struct ac_addrlib *addrlib, const struct radeon_
          /* Adjust pitch like we did for surf_pitch */
          surf->u.gfx9.pitch[i] = align(mip_info[i].pitch / surf->blk_w, alignment);
       }
+      surf->u.gfx9.base_mip_width = surf->u.gfx9.surf_pitch;
+   } else {
+      surf->u.gfx9.base_mip_width = mip_info[0].pitch;
    }
 
-   surf->u.gfx9.base_mip_width = mip_info[0].pitch;
    surf->u.gfx9.base_mip_height = mip_info[0].height;
 
    if (in->flags.depth) {

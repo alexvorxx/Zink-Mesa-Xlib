@@ -201,6 +201,22 @@ def test_fix_lava_gitlab_section_log(expected_message, messages):
     assert expected_message in fixed_messages
 
 
+@pytest.mark.parametrize(
+    "expected_message, messages",
+    GITLAB_SECTION_SPLIT_SCENARIOS.values(),
+    ids=GITLAB_SECTION_SPLIT_SCENARIOS.keys(),
+)
+def test_lava_gitlab_section_log_collabora(expected_message, messages, monkeypatch):
+    """Check if LogFollower does not change the message if we are running in Collabora farm."""
+    monkeypatch.setenv("RUNNER_TAG", "mesa-ci-x86_64-lava-test")
+    lf = LogFollower()
+    for message in messages:
+        lf.feed([create_lava_yaml_msg(msg=message)])
+    new_messages = lf.flush()
+    new_messages = tuple(new_messages) if len(new_messages) > 1 else new_messages[0]
+    assert new_messages == expected_message
+
+
 WATCHDOG_SCENARIOS = {
     "1 second before timeout": ({"seconds": -1}, does_not_raise()),
     "1 second after timeout": ({"seconds": 1}, pytest.raises(MesaCITimeoutError)),

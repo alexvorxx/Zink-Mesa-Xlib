@@ -64,7 +64,7 @@ static enum ROGUE_TEXSTATE_SWIZ pvr_get_hw_swizzle(VkComponentSwizzle comp,
 
 VkResult
 pvr_pack_tex_state(struct pvr_device *device,
-                   struct pvr_texture_state_info *info,
+                   const struct pvr_texture_state_info *info,
                    uint64_t state[static const ROGUE_NUM_TEXSTATE_IMAGE_WORDS])
 {
    const struct pvr_device_info *dev_info = &device->pdevice->dev_info;

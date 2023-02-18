@@ -741,23 +741,19 @@ static void
 radv_get_binning_settings(const struct radv_physical_device *pdevice,
                           struct radv_binning_settings *settings)
 {
-   if (pdevice->rad_info.has_dedicated_vram) {
-      if (pdevice->rad_info.max_render_backends > 4) {
-         settings->context_states_per_bin = 1;
-         settings->persistent_states_per_bin = 1;
-      } else {
-         settings->context_states_per_bin = 3;
-         settings->persistent_states_per_bin = 8;
-      }
-      settings->fpovs_per_batch = 63;
+   if (pdevice->rad_info.has_dedicated_vram &&
+       pdevice->rad_info.max_render_backends > 4) {
+      settings->context_states_per_bin = 1;
+      settings->persistent_states_per_bin = 1;
    } else {
-      /* The context states are affected by the scissor bug. */
-      settings->context_states_per_bin = 6;
+      settings->context_states_per_bin = 3;
       /* 32 causes hangs for RAVEN. */
-      settings->persistent_states_per_bin = 16;
-      settings->fpovs_per_batch = 63;
+      settings->persistent_states_per_bin = 8;
    }
 
+   settings->fpovs_per_batch = 63;
+
+   /* The context states are affected by the scissor bug. */
    if (pdevice->rad_info.has_gfx9_scissor_bug)
       settings->context_states_per_bin = 1;
 }
@@ -1257,9 +1253,8 @@ radv_CreateInstance(const VkInstanceCreateInfo *pCreateInfo,
    struct vk_instance_dispatch_table dispatch_table;
    vk_instance_dispatch_table_from_entrypoints(&dispatch_table, &radv_instance_entrypoints, true);
    vk_instance_dispatch_table_from_entrypoints(&dispatch_table, &wsi_instance_entrypoints, false);
-   struct vk_instance_extension_table extensions_supported = radv_instance_extensions_supported;
 
-   result = vk_instance_init(&instance->vk, &extensions_supported, &dispatch_table,
+   result = vk_instance_init(&instance->vk, &radv_instance_extensions_supported, &dispatch_table,
                              pCreateInfo, pAllocator);
    if (result != VK_SUCCESS) {
       vk_free(pAllocator, instance);
@@ -1628,7 +1623,7 @@ radv_GetPhysicalDeviceFeatures2(VkPhysicalDevice physicalDevice,
       case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_LINE_RASTERIZATION_FEATURES_EXT: {
          VkPhysicalDeviceLineRasterizationFeaturesEXT *features =
             (VkPhysicalDeviceLineRasterizationFeaturesEXT *)ext;
-         features->rectangularLines = false;
+         features->rectangularLines = true;
          features->bresenhamLines = true;
          features->smoothLines = false;
          features->stippledRectangularLines = false;
@@ -2161,7 +2156,7 @@ radv_GetPhysicalDeviceProperties(VkPhysicalDevice physicalDevice,
       .maxCombinedClipAndCullDistances = 8,
       .discreteQueuePriorities = 2,
       .pointSizeRange = {0.0, 8191.875},
-      .lineWidthRange = {0.0, 8191.875},
+      .lineWidthRange = {0.0, 8.0},
       .pointSizeGranularity = (1.0 / 8.0),
       .lineWidthGranularity = (1.0 / 8.0),
       .strictLines = false, /* FINISHME */
@@ -6824,6 +6819,14 @@ radv_create_buffer(struct radv_device *device, const VkBufferCreateInfo *pCreate
    struct radv_buffer *buffer;
 
    assert(pCreateInfo->sType == VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO);
+
+#ifdef ANDROID
+   /* reject buffers that are larger than maxBufferSize on Android, which
+    * might not have VK_KHR_maintenance4
+    */
+   if (pCreateInfo->size > RADV_MAX_MEMORY_ALLOCATION_SIZE)
+      return vk_error(device, VK_ERROR_OUT_OF_DEVICE_MEMORY);
+#endif
 
    buffer = vk_alloc2(&device->vk.alloc, pAllocator, sizeof(*buffer), 8,
                       VK_SYSTEM_ALLOCATION_SCOPE_OBJECT);

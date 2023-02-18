@@ -132,6 +132,10 @@ const struct ac_vtx_format_info *ac_get_vtx_format_info(enum amd_gfx_level level
                                                         enum radeon_family family,
                                                         enum pipe_format fmt);
 
+unsigned ac_get_safe_fetch_size(const enum amd_gfx_level gfx_level, const struct ac_vtx_format_info* vtx_info,
+                                const unsigned offset, const unsigned max_channels, const unsigned alignment,
+                                const unsigned num_channels);
+
 enum ac_image_dim ac_get_sampler_dim(enum amd_gfx_level gfx_level, enum glsl_sampler_dim dim,
                                      bool is_array);
 

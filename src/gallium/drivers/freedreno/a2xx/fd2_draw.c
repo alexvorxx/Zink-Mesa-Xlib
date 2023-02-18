@@ -176,6 +176,8 @@ fd2_draw_vbo(struct fd_context *ctx, const struct pipe_draw_info *pinfo,
    if (ctx->dirty & FD_DIRTY_VTXBUF)
       emit_vertexbufs(ctx);
 
+   fd_blend_tracking(ctx);
+
    if (fd_binning_enabled)
       fd2_emit_state_binning(ctx, ctx->dirty);
 
@@ -223,7 +225,22 @@ fd2_draw_vbo(struct fd_context *ctx, const struct pipe_draw_info *pinfo,
 
    fd_context_all_clean(ctx);
 
+   ctx->batch->num_vertices += pdraw->count * pinfo->instance_count;
+
    return true;
+}
+
+static void
+fd2_draw_vbos(struct fd_context *ctx, const struct pipe_draw_info *info,
+              unsigned drawid_offset,
+              const struct pipe_draw_indirect_info *indirect,
+              const struct pipe_draw_start_count_bias *draws,
+              unsigned num_draws,
+              unsigned index_offset)
+   assert_dt
+{
+   for (unsigned i = 0; i < num_draws; i++)
+      fd2_draw_vbo(ctx, info, drawid_offset, indirect, &draws[i], index_offset);
 }
 
 static void
@@ -649,6 +666,6 @@ void
 fd2_draw_init(struct pipe_context *pctx) disable_thread_safety_analysis
 {
    struct fd_context *ctx = fd_context(pctx);
-   ctx->draw_vbo = fd2_draw_vbo;
+   ctx->draw_vbos = fd2_draw_vbos;
    ctx->clear = fd2_clear;
 }

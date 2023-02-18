@@ -2168,6 +2168,7 @@ public:
    uint16_t min_waves = 0;
    unsigned workgroup_size; /* if known; otherwise UINT_MAX */
    bool wgp_mode;
+   bool rt_stack = false;
 
    bool needs_vcc = false;
 

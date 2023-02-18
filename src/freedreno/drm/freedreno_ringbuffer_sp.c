@@ -460,6 +460,7 @@ fd_submit_sp_new(struct fd_pipe *pipe, flush_submit_list_fn flush_submit_list)
    slab_create_child(&fd_submit->ring_pool, &pipe->ring_pool);
 
    fd_submit->flush_submit_list = flush_submit_list;
+   fd_submit->seqno = seqno_next(&pipe->submit_seqno);
 
    submit = &fd_submit->base;
    submit->funcs = &submit_funcs;
@@ -715,6 +716,7 @@ fd_ringbuffer_sp_new_object(struct fd_pipe *pipe, uint32_t size)
    fd_ring->u.pipe = pipe;
    fd_ring->ring_bo = fd_bo_ref(dev->suballoc_bo);
    fd_ring->base.refcnt = 1;
+   fd_ring->u.last_submit_seqno = 0;
 
    dev->suballoc_offset = fd_ring->offset + size;
 

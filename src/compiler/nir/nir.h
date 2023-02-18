@@ -4903,6 +4903,24 @@ bool nir_lower_explicit_io(nir_shader *shader,
                            nir_variable_mode modes,
                            nir_address_format);
 
+typedef struct {
+   uint8_t num_components;
+   uint8_t bit_size;
+   uint16_t align_mul;
+} nir_mem_access_size_align;
+
+typedef nir_mem_access_size_align
+   (*nir_lower_mem_access_bit_sizes_cb)(nir_intrinsic_op intrin,
+                                        uint8_t bytes,
+                                        uint32_t align_mul,
+                                        uint32_t align_offset,
+                                        bool offset_is_const,
+                                        const void *cb_data);
+
+bool nir_lower_mem_access_bit_sizes(nir_shader *shader,
+                                    nir_lower_mem_access_bit_sizes_cb cb,
+                                    const void *cb_data);
+
 typedef bool (*nir_should_vectorize_mem_func)(unsigned align_mul,
                                               unsigned align_offset,
                                               unsigned bit_size,
@@ -5574,8 +5592,14 @@ bool nir_shader_uses_view_index(nir_shader *shader);
 bool nir_can_lower_multiview(nir_shader *shader);
 bool nir_lower_multiview(nir_shader *shader, uint32_t view_mask);
 
-
-bool nir_lower_fp16_casts(nir_shader *shader);
+typedef enum {
+   nir_lower_fp16_rtz = (1 << 0),
+   nir_lower_fp16_rtne = (1 << 1),
+   nir_lower_fp16_ru = (1 << 2),
+   nir_lower_fp16_rd = (1 << 3),
+   nir_lower_fp16_all = 0xf,
+} nir_lower_fp16_cast_options;
+bool nir_lower_fp16_casts(nir_shader *shader, nir_lower_fp16_cast_options options);
 bool nir_normalize_cubemap_coords(nir_shader *shader);
 
 bool nir_shader_supports_implicit_lod(nir_shader *shader);

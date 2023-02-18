@@ -53,7 +53,7 @@ pub struct Program {
     pub src: CString,
     pub il: Vec<u8>,
     pub kernel_count: AtomicU32,
-    spec_constants: Mutex<Vec<spirv::SpecConstant>>,
+    spec_constants: Mutex<HashMap<u32, nir_const_value>>,
     build: Mutex<ProgramBuild>,
 }
 
@@ -144,7 +144,7 @@ impl Program {
             src: src,
             il: Vec::new(),
             kernel_count: AtomicU32::new(0),
-            spec_constants: Mutex::new(Vec::new()),
+            spec_constants: Mutex::new(HashMap::new()),
             build: Mutex::new(ProgramBuild {
                 builds: builds,
                 kernels: Vec::new(),
@@ -217,7 +217,7 @@ impl Program {
             src: CString::new("").unwrap(),
             il: Vec::new(),
             kernel_count: AtomicU32::new(0),
-            spec_constants: Mutex::new(Vec::new()),
+            spec_constants: Mutex::new(HashMap::new()),
             build: Mutex::new(ProgramBuild {
                 builds: builds,
                 kernels: kernels.into_iter().collect(),
@@ -250,7 +250,7 @@ impl Program {
             src: CString::new("").unwrap(),
             il: spirv.to_vec(),
             kernel_count: AtomicU32::new(0),
-            spec_constants: Mutex::new(Vec::new()),
+            spec_constants: Mutex::new(HashMap::new()),
             build: Mutex::new(ProgramBuild {
                 builds: builds,
                 kernels: Vec::new(),
@@ -518,7 +518,7 @@ impl Program {
             src: CString::new("").unwrap(),
             il: Vec::new(),
             kernel_count: AtomicU32::new(0),
-            spec_constants: Mutex::new(Vec::new()),
+            spec_constants: Mutex::new(HashMap::new()),
             build: Mutex::new(ProgramBuild {
                 builds: builds,
                 kernels: kernels.into_iter().collect(),
@@ -535,6 +535,15 @@ impl Program {
             let spirv = info.spirv.as_ref().unwrap();
             let mut bin = spirv.to_bin().to_vec();
             bin.extend_from_slice(name.as_bytes());
+
+            for (k, v) in self.spec_constants.lock().unwrap().iter() {
+                bin.extend_from_slice(&k.to_ne_bytes());
+                unsafe {
+                    // SAFETY: we fully initialize this union
+                    bin.extend_from_slice(&v.u64_.to_ne_bytes());
+                }
+            }
+
             Some(cache.gen_key(&bin))
         } else {
             None
@@ -571,7 +580,19 @@ impl Program {
     }
 
     pub fn to_nir(&self, kernel: &str, d: &Arc<Device>) -> NirShader {
+        let constants = self.spec_constants.lock().unwrap();
+        let mut spec_constants: Vec<_> = constants
+            .iter()
+            .map(|(&id, &value)| nir_spirv_specialization {
+                id: id,
+                value: value,
+                defined_on_module: true,
+            })
+            .collect();
+        drop(constants);
+
         let mut lock = self.build_info();
+
         let info = Self::dev_build_info(&mut lock, d);
         assert_eq!(info.status, CL_BUILD_SUCCESS as cl_build_status);
         info.spirv
@@ -582,7 +603,7 @@ impl Program {
                 d.screen
                     .nir_shader_compiler_options(pipe_shader_type::PIPE_SHADER_COMPUTE),
                 &d.lib_clc,
-                &mut [],
+                &mut spec_constants,
                 d.address_bits(),
             )
             .unwrap()
@@ -590,5 +611,32 @@ impl Program {
 
     pub fn is_binary(&self) -> bool {
         self.src.to_bytes().is_empty() && self.il.is_empty()
+    }
+
+    pub fn is_src(&self) -> bool {
+        !self.src.to_bytes().is_empty()
+    }
+
+    pub fn get_spec_constant_size(&self, spec_id: u32) -> u8 {
+        let lock = self.build_info();
+        let spirv = lock.builds.values().next().unwrap().spirv.as_ref().unwrap();
+        spirv
+            .spec_constant(spec_id)
+            .map_or(0, spirv::CLCSpecConstantType::size)
+    }
+
+    pub fn set_spec_constant(&self, spec_id: u32, data: &[u8]) {
+        let mut lock = self.spec_constants.lock().unwrap();
+        let mut val = nir_const_value::default();
+
+        match data.len() {
+            1 => val.u8_ = u8::from_ne_bytes(data.try_into().unwrap()),
+            2 => val.u16_ = u16::from_ne_bytes(data.try_into().unwrap()),
+            4 => val.u32_ = u32::from_ne_bytes(data.try_into().unwrap()),
+            8 => val.u64_ = u64::from_ne_bytes(data.try_into().unwrap()),
+            _ => unreachable!("Spec constant with invalid size!"),
+        };
+
+        lock.insert(spec_id, val);
     }
 }

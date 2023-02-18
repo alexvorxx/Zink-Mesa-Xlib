@@ -1681,4 +1681,858 @@ static struct {
    { NULL, 0, NULL },
 };
 
+static const uint8_t spm_load_1X_1_regs_shader_code[8] = { 0 };
+
+static const struct pvr_shader_factory_info spm_load_1X_1_regs_info = {
+   0, 0, 0,    0, 0,    0, spm_load_1X_1_regs_shader_code, 0, 0, NULL,
+   0, 0, NULL, 0, NULL, 0,
+};
+
+static const uint8_t spm_load_1X_2_regs_shader_code[8] = { 0 };
+
+static const struct pvr_shader_factory_info spm_load_1X_2_regs_info = {
+   0, 0, 0,    0, 0,    0, spm_load_1X_2_regs_shader_code, 0, 0, NULL,
+   0, 0, NULL, 0, NULL, 0,
+};
+
+static const uint8_t spm_load_1X_4_regs_shader_code[8] = { 0 };
+
+static const struct pvr_shader_factory_info spm_load_1X_4_regs_info = {
+   0, 0, 0,    0, 0,    0, spm_load_1X_4_regs_shader_code, 0, 0, NULL,
+   0, 0, NULL, 0, NULL, 0,
+};
+
+static const uint8_t spm_load_1X_1_buffers_shader_code[8] = { 0 };
+
+static const uint32_t spm_load_1X_1_buffers_const_dest[14] = { 0 };
+
+static const struct pvr_shader_factory_info spm_load_1X_1_buffers_info = {
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   spm_load_1X_1_buffers_shader_code,
+   0,
+   0,
+   NULL,
+   0,
+   0,
+   spm_load_1X_1_buffers_const_dest,
+   0,
+   NULL,
+   0,
+};
+
+static const uint8_t spm_load_1X_2_buffers_shader_code[8] = { 0 };
+
+static const uint32_t spm_load_1X_2_buffers_const_dest[14] = { 0 };
+
+static const struct pvr_shader_factory_info spm_load_1X_2_buffers_info = {
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   spm_load_1X_2_buffers_shader_code,
+   0,
+   0,
+   NULL,
+   0,
+   0,
+   spm_load_1X_2_buffers_const_dest,
+   0,
+   NULL,
+   0,
+};
+
+static const uint8_t spm_load_1X_3_buffers_shader_code[8] = { 0 };
+
+static const uint32_t spm_load_1X_3_buffers_const_dest[14] = { 0 };
+
+static const struct pvr_shader_factory_info spm_load_1X_3_buffers_info = {
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   spm_load_1X_3_buffers_shader_code,
+   0,
+   0,
+   NULL,
+   0,
+   0,
+   spm_load_1X_3_buffers_const_dest,
+   0,
+   NULL,
+   0,
+};
+
+static const uint8_t spm_load_1X_4_buffers_shader_code[8] = { 0 };
+
+static const uint32_t spm_load_1X_4_buffers_const_dest[14] = { 0 };
+
+static const struct pvr_shader_factory_info spm_load_1X_4_buffers_info = {
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   spm_load_1X_4_buffers_shader_code,
+   0,
+   0,
+   NULL,
+   0,
+   0,
+   spm_load_1X_4_buffers_const_dest,
+   0,
+   NULL,
+   0,
+};
+
+static const uint8_t spm_load_1X_5_buffers_shader_code[8] = { 0 };
+
+static const uint32_t spm_load_1X_5_buffers_const_dest[14] = { 0 };
+
+static const struct pvr_shader_factory_info spm_load_1X_5_buffers_info = {
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   spm_load_1X_5_buffers_shader_code,
+   0,
+   0,
+   NULL,
+   0,
+   0,
+   spm_load_1X_5_buffers_const_dest,
+   0,
+   NULL,
+   0,
+};
+
+static const uint8_t spm_load_1X_6_buffers_shader_code[8] = { 0 };
+
+static const uint32_t spm_load_1X_6_buffers_const_dest[14] = { 0 };
+
+static const struct pvr_shader_factory_info spm_load_1X_6_buffers_info = {
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   spm_load_1X_6_buffers_shader_code,
+   0,
+   0,
+   NULL,
+   0,
+   0,
+   spm_load_1X_6_buffers_const_dest,
+   0,
+   NULL,
+   0,
+};
+
+static const uint8_t spm_load_1X_7_buffers_shader_code[8] = { 0 };
+
+static const uint32_t spm_load_1X_7_buffers_const_dest[14] = { 0 };
+
+static const struct pvr_shader_factory_info spm_load_1X_7_buffers_info = {
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   spm_load_1X_7_buffers_shader_code,
+   0,
+   0,
+   NULL,
+   0,
+   0,
+   spm_load_1X_7_buffers_const_dest,
+   0,
+   NULL,
+   0,
+};
+
+static const uint8_t spm_load_2X_1_regs_shader_code[8] = { 0 };
+
+static const struct pvr_shader_factory_info spm_load_2X_1_regs_info = {
+   0, 0, 0,    0, 0,    0, spm_load_2X_1_regs_shader_code, 0, 0, NULL,
+   0, 0, NULL, 0, NULL, 0,
+};
+
+static const uint8_t spm_load_2X_2_regs_shader_code[8] = { 0 };
+
+static const struct pvr_shader_factory_info spm_load_2X_2_regs_info = {
+   0, 0, 0,    0, 0,    0, spm_load_2X_2_regs_shader_code, 0, 0, NULL,
+   0, 0, NULL, 0, NULL, 0,
+};
+
+static const uint8_t spm_load_2X_4_regs_shader_code[8] = { 0 };
+
+static const struct pvr_shader_factory_info spm_load_2X_4_regs_info = {
+   0, 0, 0,    0, 0,    0, spm_load_2X_4_regs_shader_code, 0, 0, NULL,
+   0, 0, NULL, 0, NULL, 0,
+};
+
+static const uint8_t spm_load_2X_1_buffers_shader_code[8] = { 0 };
+
+static const uint32_t spm_load_2X_1_buffers_const_dest[14] = { 0 };
+
+static const struct pvr_shader_factory_info spm_load_2X_1_buffers_info = {
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   spm_load_2X_1_buffers_shader_code,
+   0,
+   0,
+   NULL,
+   0,
+   0,
+   spm_load_2X_1_buffers_const_dest,
+   0,
+   NULL,
+   0,
+};
+
+static const uint8_t spm_load_2X_2_buffers_shader_code[8] = { 0 };
+
+static const uint32_t spm_load_2X_2_buffers_const_dest[14] = { 0 };
+
+static const struct pvr_shader_factory_info spm_load_2X_2_buffers_info = {
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   spm_load_2X_2_buffers_shader_code,
+   0,
+   0,
+   NULL,
+   0,
+   0,
+   spm_load_2X_2_buffers_const_dest,
+   0,
+   NULL,
+   0,
+};
+
+static const uint8_t spm_load_2X_3_buffers_shader_code[8] = { 0 };
+
+static const uint32_t spm_load_2X_3_buffers_const_dest[14] = { 0 };
+
+static const struct pvr_shader_factory_info spm_load_2X_3_buffers_info = {
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   spm_load_2X_3_buffers_shader_code,
+   0,
+   0,
+   NULL,
+   0,
+   0,
+   spm_load_2X_3_buffers_const_dest,
+   0,
+   NULL,
+   0,
+};
+
+static const uint8_t spm_load_2X_4_buffers_shader_code[8] = { 0 };
+
+static const uint32_t spm_load_2X_4_buffers_const_dest[14] = { 0 };
+
+static const struct pvr_shader_factory_info spm_load_2X_4_buffers_info = {
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   spm_load_2X_4_buffers_shader_code,
+   0,
+   0,
+   NULL,
+   0,
+   0,
+   spm_load_2X_4_buffers_const_dest,
+   0,
+   NULL,
+   0,
+};
+
+static const uint8_t spm_load_2X_5_buffers_shader_code[8] = { 0 };
+
+static const uint32_t spm_load_2X_5_buffers_const_dest[14] = { 0 };
+
+static const struct pvr_shader_factory_info spm_load_2X_5_buffers_info = {
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   spm_load_2X_5_buffers_shader_code,
+   0,
+   0,
+   NULL,
+   0,
+   0,
+   spm_load_2X_5_buffers_const_dest,
+   0,
+   NULL,
+   0,
+};
+
+static const uint8_t spm_load_2X_6_buffers_shader_code[8] = { 0 };
+
+static const uint32_t spm_load_2X_6_buffers_const_dest[14] = { 0 };
+
+static const struct pvr_shader_factory_info spm_load_2X_6_buffers_info = {
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   spm_load_2X_6_buffers_shader_code,
+   0,
+   0,
+   NULL,
+   0,
+   0,
+   spm_load_2X_6_buffers_const_dest,
+   0,
+   NULL,
+   0,
+};
+
+static const uint8_t spm_load_2X_7_buffers_shader_code[8] = { 0 };
+
+static const uint32_t spm_load_2X_7_buffers_const_dest[14] = { 0 };
+
+static const struct pvr_shader_factory_info spm_load_2X_7_buffers_info = {
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   spm_load_2X_7_buffers_shader_code,
+   0,
+   0,
+   NULL,
+   0,
+   0,
+   spm_load_2X_7_buffers_const_dest,
+   0,
+   NULL,
+   0,
+};
+
+static const uint8_t spm_load_4X_1_regs_shader_code[8] = { 0 };
+
+static const struct pvr_shader_factory_info spm_load_4X_1_regs_info = {
+   0, 0, 0,    0, 0,    0, spm_load_4X_1_regs_shader_code, 0, 0, NULL,
+   0, 0, NULL, 0, NULL, 0,
+};
+
+static const uint8_t spm_load_4X_2_regs_shader_code[8] = { 0 };
+
+static const struct pvr_shader_factory_info spm_load_4X_2_regs_info = {
+   0, 0, 0,    0, 0,    0, spm_load_4X_2_regs_shader_code, 0, 0, NULL,
+   0, 0, NULL, 0, NULL, 0,
+};
+
+static const uint8_t spm_load_4X_4_regs_shader_code[8] = { 0 };
+
+static const struct pvr_shader_factory_info spm_load_4X_4_regs_info = {
+   0, 0, 0,    0, 0,    0, spm_load_4X_4_regs_shader_code, 0, 0, NULL,
+   0, 0, NULL, 0, NULL, 0,
+};
+
+static const uint8_t spm_load_4X_1_buffers_shader_code[8] = { 0 };
+
+static const uint32_t spm_load_4X_1_buffers_const_dest[14] = { 0 };
+
+static const struct pvr_shader_factory_info spm_load_4X_1_buffers_info = {
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   spm_load_4X_1_buffers_shader_code,
+   0,
+   0,
+   NULL,
+   0,
+   0,
+   spm_load_4X_1_buffers_const_dest,
+   0,
+   NULL,
+   0,
+};
+
+static const uint8_t spm_load_4X_2_buffers_shader_code[8] = { 0 };
+
+static const uint32_t spm_load_4X_2_buffers_const_dest[14] = { 0 };
+
+static const struct pvr_shader_factory_info spm_load_4X_2_buffers_info = {
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   spm_load_4X_2_buffers_shader_code,
+   0,
+   0,
+   NULL,
+   0,
+   0,
+   spm_load_4X_2_buffers_const_dest,
+   0,
+   NULL,
+   0,
+};
+
+static const uint8_t spm_load_4X_3_buffers_shader_code[8] = { 0 };
+
+static const uint32_t spm_load_4X_3_buffers_const_dest[14] = { 0 };
+
+static const struct pvr_shader_factory_info spm_load_4X_3_buffers_info = {
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   spm_load_4X_3_buffers_shader_code,
+   0,
+   0,
+   NULL,
+   0,
+   0,
+   spm_load_4X_3_buffers_const_dest,
+   0,
+   NULL,
+   0,
+};
+
+static const uint8_t spm_load_4X_4_buffers_shader_code[8] = { 0 };
+
+static const uint32_t spm_load_4X_4_buffers_const_dest[14] = { 0 };
+
+static const struct pvr_shader_factory_info spm_load_4X_4_buffers_info = {
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   spm_load_4X_4_buffers_shader_code,
+   0,
+   0,
+   NULL,
+   0,
+   0,
+   spm_load_4X_4_buffers_const_dest,
+   0,
+   NULL,
+   0,
+};
+
+static const uint8_t spm_load_4X_5_buffers_shader_code[8] = { 0 };
+
+static const uint32_t spm_load_4X_5_buffers_const_dest[14] = { 0 };
+
+static const struct pvr_shader_factory_info spm_load_4X_5_buffers_info = {
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   spm_load_4X_5_buffers_shader_code,
+   0,
+   0,
+   NULL,
+   0,
+   0,
+   spm_load_4X_5_buffers_const_dest,
+   0,
+   NULL,
+   0,
+};
+
+static const uint8_t spm_load_4X_6_buffers_shader_code[8] = { 0 };
+
+static const uint32_t spm_load_4X_6_buffers_const_dest[14] = { 0 };
+
+static const struct pvr_shader_factory_info spm_load_4X_6_buffers_info = {
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   spm_load_4X_6_buffers_shader_code,
+   0,
+   0,
+   NULL,
+   0,
+   0,
+   spm_load_4X_6_buffers_const_dest,
+   0,
+   NULL,
+   0,
+};
+
+static const uint8_t spm_load_4X_7_buffers_shader_code[8] = { 0 };
+
+static const uint32_t spm_load_4X_7_buffers_const_dest[14] = { 0 };
+
+static const struct pvr_shader_factory_info spm_load_4X_7_buffers_info = {
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   spm_load_4X_7_buffers_shader_code,
+   0,
+   0,
+   NULL,
+   0,
+   0,
+   spm_load_4X_7_buffers_const_dest,
+   0,
+   NULL,
+   0,
+};
+
+static const uint8_t spm_load_8X_1_regs_shader_code[8] = { 0 };
+
+static const struct pvr_shader_factory_info spm_load_8X_1_regs_info = {
+   0, 0, 0,    0, 0,    0, spm_load_8X_1_regs_shader_code, 0, 0, NULL,
+   0, 0, NULL, 0, NULL, 0,
+};
+
+static const uint8_t spm_load_8X_2_regs_shader_code[8] = { 0 };
+
+static const struct pvr_shader_factory_info spm_load_8X_2_regs_info = {
+   0, 0, 0,    0, 0,    0, spm_load_8X_2_regs_shader_code, 0, 0, NULL,
+   0, 0, NULL, 0, NULL, 0,
+};
+
+static const uint8_t spm_load_8X_4_regs_shader_code[8] = { 0 };
+
+static const struct pvr_shader_factory_info spm_load_8X_4_regs_info = {
+   0, 0, 0,    0, 0,    0, spm_load_8X_4_regs_shader_code, 0, 0, NULL,
+   0, 0, NULL, 0, NULL, 0,
+};
+
+static const uint8_t spm_load_8X_1_buffers_shader_code[8] = { 0 };
+
+static const uint32_t spm_load_8X_1_buffers_const_dest[14] = { 0 };
+
+static const struct pvr_shader_factory_info spm_load_8X_1_buffers_info = {
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   spm_load_8X_1_buffers_shader_code,
+   0,
+   0,
+   NULL,
+   0,
+   0,
+   spm_load_8X_1_buffers_const_dest,
+   0,
+   NULL,
+   0,
+};
+
+static const uint8_t spm_load_8X_2_buffers_shader_code[8] = { 0 };
+
+static const uint32_t spm_load_8X_2_buffers_const_dest[14] = { 0 };
+
+static const struct pvr_shader_factory_info spm_load_8X_2_buffers_info = {
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   spm_load_8X_2_buffers_shader_code,
+   0,
+   0,
+   NULL,
+   0,
+   0,
+   spm_load_8X_2_buffers_const_dest,
+   0,
+   NULL,
+   0,
+};
+
+static const uint8_t spm_load_8X_3_buffers_shader_code[8] = { 0 };
+
+static const uint32_t spm_load_8X_3_buffers_const_dest[14] = { 0 };
+
+static const struct pvr_shader_factory_info spm_load_8X_3_buffers_info = {
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   spm_load_8X_3_buffers_shader_code,
+   0,
+   0,
+   NULL,
+   0,
+   0,
+   spm_load_8X_3_buffers_const_dest,
+   0,
+   NULL,
+   0,
+};
+
+static const uint8_t spm_load_8X_4_buffers_shader_code[8] = { 0 };
+
+static const uint32_t spm_load_8X_4_buffers_const_dest[14] = { 0 };
+
+static const struct pvr_shader_factory_info spm_load_8X_4_buffers_info = {
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   spm_load_8X_4_buffers_shader_code,
+   0,
+   0,
+   NULL,
+   0,
+   0,
+   spm_load_8X_4_buffers_const_dest,
+   0,
+   NULL,
+   0,
+};
+
+static const uint8_t spm_load_8X_5_buffers_shader_code[8] = { 0 };
+
+static const uint32_t spm_load_8X_5_buffers_const_dest[14] = { 0 };
+
+static const struct pvr_shader_factory_info spm_load_8X_5_buffers_info = {
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   spm_load_8X_5_buffers_shader_code,
+   0,
+   0,
+   NULL,
+   0,
+   0,
+   spm_load_8X_5_buffers_const_dest,
+   0,
+   NULL,
+   0,
+};
+
+static const uint8_t spm_load_8X_6_buffers_shader_code[8] = { 0 };
+
+static const uint32_t spm_load_8X_6_buffers_const_dest[14] = { 0 };
+
+static const struct pvr_shader_factory_info spm_load_8X_6_buffers_info = {
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   spm_load_8X_6_buffers_shader_code,
+   0,
+   0,
+   NULL,
+   0,
+   0,
+   spm_load_8X_6_buffers_const_dest,
+   0,
+   NULL,
+   0,
+};
+
+static const uint8_t spm_load_8X_7_buffers_shader_code[8] = { 0 };
+
+static const uint32_t spm_load_8X_7_buffers_const_dest[14] = { 0 };
+
+static const struct pvr_shader_factory_info spm_load_8X_7_buffers_info = {
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   spm_load_8X_7_buffers_shader_code,
+   0,
+   0,
+   NULL,
+   0,
+   0,
+   spm_load_8X_7_buffers_const_dest,
+   0,
+   NULL,
+   0,
+};
+static struct {
+   const uint8_t *code;
+   const uint32_t size;
+   const struct pvr_shader_factory_info *info;
+} const spm_load_collection[40] = {
+   { spm_load_1X_1_regs_shader_code,
+     sizeof(spm_load_1X_1_regs_shader_code),
+     &spm_load_1X_1_regs_info },
+   { spm_load_1X_2_regs_shader_code,
+     sizeof(spm_load_1X_2_regs_shader_code),
+     &spm_load_1X_2_regs_info },
+   { spm_load_1X_4_regs_shader_code,
+     sizeof(spm_load_1X_4_regs_shader_code),
+     &spm_load_1X_4_regs_info },
+   { spm_load_1X_1_buffers_shader_code,
+     sizeof(spm_load_1X_1_buffers_shader_code),
+     &spm_load_1X_1_buffers_info },
+   { spm_load_1X_2_buffers_shader_code,
+     sizeof(spm_load_1X_2_buffers_shader_code),
+     &spm_load_1X_2_buffers_info },
+   { spm_load_1X_3_buffers_shader_code,
+     sizeof(spm_load_1X_3_buffers_shader_code),
+     &spm_load_1X_3_buffers_info },
+   { spm_load_1X_4_buffers_shader_code,
+     sizeof(spm_load_1X_4_buffers_shader_code),
+     &spm_load_1X_4_buffers_info },
+   { spm_load_1X_5_buffers_shader_code,
+     sizeof(spm_load_1X_5_buffers_shader_code),
+     &spm_load_1X_5_buffers_info },
+   { spm_load_1X_6_buffers_shader_code,
+     sizeof(spm_load_1X_6_buffers_shader_code),
+     &spm_load_1X_6_buffers_info },
+   { spm_load_1X_7_buffers_shader_code,
+     sizeof(spm_load_1X_7_buffers_shader_code),
+     &spm_load_1X_7_buffers_info },
+   { spm_load_2X_1_regs_shader_code,
+     sizeof(spm_load_2X_1_regs_shader_code),
+     &spm_load_2X_1_regs_info },
+   { spm_load_2X_2_regs_shader_code,
+     sizeof(spm_load_2X_2_regs_shader_code),
+     &spm_load_2X_2_regs_info },
+   { spm_load_2X_4_regs_shader_code,
+     sizeof(spm_load_2X_4_regs_shader_code),
+     &spm_load_2X_4_regs_info },
+   { spm_load_2X_1_buffers_shader_code,
+     sizeof(spm_load_2X_1_buffers_shader_code),
+     &spm_load_2X_1_buffers_info },
+   { spm_load_2X_2_buffers_shader_code,
+     sizeof(spm_load_2X_2_buffers_shader_code),
+     &spm_load_2X_2_buffers_info },
+   { spm_load_2X_3_buffers_shader_code,
+     sizeof(spm_load_2X_3_buffers_shader_code),
+     &spm_load_2X_3_buffers_info },
+   { spm_load_2X_4_buffers_shader_code,
+     sizeof(spm_load_2X_4_buffers_shader_code),
+     &spm_load_2X_4_buffers_info },
+   { spm_load_2X_5_buffers_shader_code,
+     sizeof(spm_load_2X_5_buffers_shader_code),
+     &spm_load_2X_5_buffers_info },
+   { spm_load_2X_6_buffers_shader_code,
+     sizeof(spm_load_2X_6_buffers_shader_code),
+     &spm_load_2X_6_buffers_info },
+   { spm_load_2X_7_buffers_shader_code,
+     sizeof(spm_load_2X_7_buffers_shader_code),
+     &spm_load_2X_7_buffers_info },
+   { spm_load_4X_1_regs_shader_code,
+     sizeof(spm_load_4X_1_regs_shader_code),
+     &spm_load_4X_1_regs_info },
+   { spm_load_4X_2_regs_shader_code,
+     sizeof(spm_load_4X_2_regs_shader_code),
+     &spm_load_4X_2_regs_info },
+   { spm_load_4X_4_regs_shader_code,
+     sizeof(spm_load_4X_4_regs_shader_code),
+     &spm_load_4X_4_regs_info },
+   { spm_load_4X_1_buffers_shader_code,
+     sizeof(spm_load_4X_1_buffers_shader_code),
+     &spm_load_4X_1_buffers_info },
+   { spm_load_4X_2_buffers_shader_code,
+     sizeof(spm_load_4X_2_buffers_shader_code),
+     &spm_load_4X_2_buffers_info },
+   { spm_load_4X_3_buffers_shader_code,
+     sizeof(spm_load_4X_3_buffers_shader_code),
+     &spm_load_4X_3_buffers_info },
+   { spm_load_4X_4_buffers_shader_code,
+     sizeof(spm_load_4X_4_buffers_shader_code),
+     &spm_load_4X_4_buffers_info },
+   { spm_load_4X_5_buffers_shader_code,
+     sizeof(spm_load_4X_5_buffers_shader_code),
+     &spm_load_4X_5_buffers_info },
+   { spm_load_4X_6_buffers_shader_code,
+     sizeof(spm_load_4X_6_buffers_shader_code),
+     &spm_load_4X_6_buffers_info },
+   { spm_load_4X_7_buffers_shader_code,
+     sizeof(spm_load_4X_7_buffers_shader_code),
+     &spm_load_4X_7_buffers_info },
+   { spm_load_8X_1_regs_shader_code,
+     sizeof(spm_load_8X_1_regs_shader_code),
+     &spm_load_8X_1_regs_info },
+   { spm_load_8X_2_regs_shader_code,
+     sizeof(spm_load_8X_2_regs_shader_code),
+     &spm_load_8X_2_regs_info },
+   { spm_load_8X_4_regs_shader_code,
+     sizeof(spm_load_8X_4_regs_shader_code),
+     &spm_load_8X_4_regs_info },
+   { spm_load_8X_1_buffers_shader_code,
+     sizeof(spm_load_8X_1_buffers_shader_code),
+     &spm_load_8X_1_buffers_info },
+   { spm_load_8X_2_buffers_shader_code,
+     sizeof(spm_load_8X_2_buffers_shader_code),
+     &spm_load_8X_2_buffers_info },
+   { spm_load_8X_3_buffers_shader_code,
+     sizeof(spm_load_8X_3_buffers_shader_code),
+     &spm_load_8X_3_buffers_info },
+   { spm_load_8X_4_buffers_shader_code,
+     sizeof(spm_load_8X_4_buffers_shader_code),
+     &spm_load_8X_4_buffers_info },
+   { spm_load_8X_5_buffers_shader_code,
+     sizeof(spm_load_8X_5_buffers_shader_code),
+     &spm_load_8X_5_buffers_info },
+   { spm_load_8X_6_buffers_shader_code,
+     sizeof(spm_load_8X_6_buffers_shader_code),
+     &spm_load_8X_6_buffers_info },
+   { spm_load_8X_7_buffers_shader_code,
+     sizeof(spm_load_8X_7_buffers_shader_code),
+     &spm_load_8X_7_buffers_info },
+};
+
 #endif /* PVR_STATIC_SHADERS_H */

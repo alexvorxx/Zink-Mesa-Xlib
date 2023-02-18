@@ -1057,17 +1057,61 @@ brw_preprocess_nir(const struct brw_compiler *compiler, nir_shader *nir,
    brw_nir_optimize(nir, compiler, is_scalar);
 }
 
+static bool
+brw_nir_zero_inputs_instr(struct nir_builder *b, nir_instr *instr, void *data)
+{
+   if (instr->type != nir_instr_type_intrinsic)
+      return false;
+
+   nir_intrinsic_instr *intrin = nir_instr_as_intrinsic(instr);
+   if (intrin->intrinsic != nir_intrinsic_load_deref)
+      return false;
+
+   nir_deref_instr *deref = nir_src_as_deref(intrin->src[0]);
+   if (!nir_deref_mode_is(deref, nir_var_shader_in))
+      return false;
+
+   if (deref->deref_type != nir_deref_type_var)
+      return false;
+
+   nir_variable *var = deref->var;
+
+   uint64_t zero_inputs = *(uint64_t *)data;
+   if (!(BITFIELD64_BIT(var->data.location) & zero_inputs))
+      return false;
+
+   b->cursor = nir_before_instr(instr);
+
+   nir_ssa_def *zero = nir_imm_zero(b, 1, 32);
+
+   nir_ssa_def_rewrite_uses(&intrin->dest.ssa, zero);
+
+   nir_instr_remove(instr);
+
+   return true;
+}
+
+static bool
+brw_nir_zero_inputs(nir_shader *shader, uint64_t *zero_inputs)
+{
+   return nir_shader_instructions_pass(shader, brw_nir_zero_inputs_instr,
+         nir_metadata_block_index | nir_metadata_dominance, zero_inputs);
+}
+
 void
 brw_nir_link_shaders(const struct brw_compiler *compiler,
                      nir_shader *producer, nir_shader *consumer)
 {
    if (producer->info.stage == MESA_SHADER_MESH &&
        consumer->info.stage == MESA_SHADER_FRAGMENT) {
+      uint64_t fs_inputs = 0, ms_outputs = 0;
       /* gl_MeshPerPrimitiveNV[].gl_ViewportIndex, gl_PrimitiveID and gl_Layer
        * are per primitive, but fragment shader does not have them marked as
        * such. Add the annotation here.
        */
       nir_foreach_shader_in_variable(var, consumer) {
+         fs_inputs |= BITFIELD64_BIT(var->data.location);
+
          switch (var->data.location) {
             case VARYING_SLOT_LAYER:
             case VARYING_SLOT_PRIMITIVE_ID:
@@ -1078,6 +1122,16 @@ brw_nir_link_shaders(const struct brw_compiler *compiler,
                continue;
          }
       }
+
+      nir_foreach_shader_out_variable(var, producer)
+         ms_outputs |= BITFIELD64_BIT(var->data.location);
+
+      uint64_t zero_inputs = ~ms_outputs & fs_inputs;
+      zero_inputs &= BITFIELD64_BIT(VARYING_SLOT_LAYER) |
+                     BITFIELD64_BIT(VARYING_SLOT_VIEWPORT);
+
+      if (zero_inputs)
+         NIR_PASS(_, consumer, brw_nir_zero_inputs, &zero_inputs);
    }
 
    nir_lower_io_arrays_to_elements(producer, consumer);
@@ -1212,13 +1266,93 @@ bool combine_all_barriers(nir_intrinsic_instr *a,
    return true;
 }
 
+static nir_mem_access_size_align
+get_mem_access_size_align(nir_intrinsic_op intrin, uint8_t bytes,
+                          uint32_t align_mul, uint32_t align_offset,
+                          bool offset_is_const, const void *cb_data)
+{
+   assert(align_offset < align_mul);
+   const uint32_t align =
+      align_offset ? 1 << (ffs(align_offset) - 1) : align_mul;
+
+   switch (intrin) {
+   case nir_intrinsic_load_ssbo:
+   case nir_intrinsic_load_shared:
+   case nir_intrinsic_load_scratch:
+      /* The offset is constant so we can use a 32-bit load and just shift it
+       * around as needed.
+       */
+      if (align < 4 && offset_is_const) {
+         assert(util_is_power_of_two_nonzero(align_mul) && align_mul >= 4);
+         const unsigned pad = align_offset % 4;
+         const unsigned comps32 = DIV_ROUND_UP(bytes + pad, 4);
+         return (nir_mem_access_size_align) {
+            .bit_size = 32,
+            .num_components = comps32,
+            .align_mul = 4,
+         };
+      }
+      break;
+
+   case nir_intrinsic_load_task_payload:
+      if (bytes < 4 || align < 4) {
+         return (nir_mem_access_size_align) {
+            .bit_size = 32,
+            .num_components = 1,
+            .align_mul = 4,
+         };
+      }
+      break;
+
+   default:
+      break;
+   }
+
+   const bool is_load = nir_intrinsic_infos[intrin].has_dest;
+   const bool is_scratch = intrin == nir_intrinsic_load_scratch ||
+                           intrin == nir_intrinsic_store_scratch;
+
+   if (align < 4 || bytes < 4) {
+      /* Choose a byte, word, or dword */
+      bytes = MIN2(bytes, 4);
+      if (bytes == 3)
+         bytes = is_load ? 4 : 2;
+
+      if (is_scratch) {
+         /* The way scratch address swizzling works in the back-end, it
+          * happens at a DWORD granularity so we can't have a single load
+          * or store cross a DWORD boundary.
+          */
+         if ((align_offset % 4) + bytes > MIN2(align_mul, 4))
+            bytes = MIN2(align_mul, 4) - (align_offset % 4);
+
+         /* Must be a power of two */
+         if (bytes == 3)
+            bytes = 2;
+      }
+
+      return (nir_mem_access_size_align) {
+         .bit_size = bytes * 8,
+         .num_components = 1,
+         .align_mul = 1,
+      };
+   } else {
+      bytes = MIN2(bytes, 16);
+      return (nir_mem_access_size_align) {
+         .bit_size = 32,
+         .num_components = is_scratch ? 1 :
+                           is_load ? DIV_ROUND_UP(bytes, 4) : bytes / 4,
+         .align_mul = 4,
+      };
+   }
+}
+
 static void
 brw_vectorize_lower_mem_access(nir_shader *nir,
                                const struct brw_compiler *compiler,
                                bool is_scalar,
                                bool robust_buffer_access)
 {
-   const struct intel_device_info *devinfo = compiler->devinfo;
    bool progress = false;
 
    if (is_scalar) {
@@ -1238,7 +1372,7 @@ brw_vectorize_lower_mem_access(nir_shader *nir,
       OPT(nir_opt_load_store_vectorize, &options);
    }
 
-   OPT(brw_nir_lower_mem_access_bit_sizes, devinfo);
+   OPT(nir_lower_mem_access_bit_sizes, get_mem_access_size_align, NULL);
 
    while (progress) {
       progress = false;

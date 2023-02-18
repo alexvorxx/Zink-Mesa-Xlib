@@ -6797,6 +6797,15 @@ spirv_to_nir(const uint32_t *words, size_t word_count,
       }
    }
 
+   /* Work around applications that declare shader_call_data variables inside
+    * ray generation shaders.
+    *
+    * https://gitlab.freedesktop.org/mesa/mesa/-/issues/5326
+    */
+   if (stage == MESA_SHADER_RAYGEN)
+      NIR_PASS(_, b->shader, nir_remove_dead_variables, nir_var_shader_call_data,
+               NULL);
+
    /* Unparent the shader from the vtn_builder before we delete the builder */
    ralloc_steal(NULL, b->shader);
 

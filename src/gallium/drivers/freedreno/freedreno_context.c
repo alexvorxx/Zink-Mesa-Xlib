@@ -54,7 +54,7 @@ fd_context_flush(struct pipe_context *pctx, struct pipe_fence_handle **fencep,
     */
    fd_batch_reference(&batch, ctx->batch);
 
-   DBG("%p: flush: flags=%x, fencep=%p", batch, flags, fencep);
+   DBG("%p: %p: flush: flags=%x, fencep=%p", ctx, batch, flags, fencep);
 
    if (fencep && !batch) {
       batch = fd_context_batch(ctx);
@@ -229,7 +229,7 @@ fd_emit_string_marker(struct pipe_context *pctx, const char *string,
    if (!ctx->batch)
       return;
 
-   struct fd_batch *batch = fd_context_batch_locked(ctx);
+   struct fd_batch *batch = fd_context_batch(ctx);
 
    fd_batch_needs_flush(batch);
 
@@ -239,7 +239,6 @@ fd_emit_string_marker(struct pipe_context *pctx, const char *string,
       fd_emit_string(batch->draw, string, len);
    }
 
-   fd_batch_unlock_submit(batch);
    fd_batch_reference(&batch, NULL);
 }
 
@@ -349,27 +348,6 @@ fd_context_batch(struct fd_context *ctx)
       fd_context_all_dirty(ctx);
    }
    fd_context_switch_to(ctx, batch);
-
-   return batch;
-}
-
-/**
- * Return a locked reference to the current batch.  A batch with emit
- * lock held is protected against flushing while the lock is held.
- * The emit-lock should be acquired before screen-lock.  The emit-lock
- * should be held while emitting cmdstream.
- */
-struct fd_batch *
-fd_context_batch_locked(struct fd_context *ctx)
-{
-   struct fd_batch *batch = NULL;
-
-   while (!batch) {
-      batch = fd_context_batch(ctx);
-      if (!fd_batch_lock_submit(batch)) {
-         fd_batch_reference(&batch, NULL);
-      }
-   }
 
    return batch;
 }
@@ -727,7 +705,7 @@ fd_context_init(struct fd_context *ctx, struct pipe_screen *pscreen,
    list_inithead(&ctx->acc_active_queries);
 
    fd_screen_lock(ctx->screen);
-   ctx->seqno = ++screen->ctx_seqno;
+   ctx->seqno = seqno_next_u16(&screen->ctx_seqno);
    list_add(&ctx->node, &ctx->screen->context_list);
    fd_screen_unlock(ctx->screen);
 

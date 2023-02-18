@@ -572,3 +572,45 @@ A typical work flow would be:
   the last packet which did't hang.
 
 - Find the packet in the decoded cmdstream.
+
+Debugging random failures
+^^^^^^^^^^^^^^^^^^^^^^^^^
+
+In most cases random GPU faults and rendering artifacts are caused by some kind
+of undifined behaviour that falls under the following categories:
+
+- Usage of a stale reg value;
+- Usage of stale memory (e.g. expecting it to be zeroed when it is not);
+- Lack of the proper synchronization.
+
+Finding instances of stale reg reads
+++++++++++++++++++++++++++++++++++++
+
+Turnip has a debug option to stomp the registers with invalid values to catch
+the cases where stale data is read.
+
+.. code-block:: console
+
+  MESA_VK_ABORT_ON_DEVICE_LOSS=1 \
+  TU_DEBUG_STALE_REGS_RANGE=0x00000c00,0x0000be01 \
+  TU_DEBUG_STALE_REGS_FLAGS=cmdbuf,renderpass \
+  ./app
+
+.. envvar:: TU_DEBUG_STALE_REGS_RANGE
+
+  the reg range in which registers would be stomped. Add ``inverse`` to the
+  flags in order for this range to specify which registers NOT to stomp.
+
+.. envvar:: TU_DEBUG_STALE_REGS_FLAGS
+
+  ``cmdbuf``
+    stomp registers at the start of each command buffer.
+  ``renderpass``
+    stomp registers before each renderpass.
+  ``inverse``
+    changes `TU_DEBUG_STALE_REGS_RANGE` meaning to
+    "regs that should NOT be stompted".
+
+The best way to pinpoint the reg which causes a failure is to bisect the regs
+range. In case when a fail is caused by combination of several registers
+the `inverse` flag may be set to find the reg which prevents the failure.

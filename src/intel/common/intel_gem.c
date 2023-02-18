@@ -23,8 +23,8 @@
 #include "intel_gem.h"
 #include "drm-uapi/i915_drm.h"
 
-#include "intel_engine_i915.h"
-#include "intel_gem_i915.h"
+#include "i915/intel_engine.h"
+#include "i915/intel_gem.h"
 
 bool
 intel_gem_supports_syncobj_wait(int fd)

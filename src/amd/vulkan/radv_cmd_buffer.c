@@ -63,8 +63,6 @@ static void radv_handle_image_transition(struct radv_cmd_buffer *cmd_buffer,
                                          const VkImageSubresourceRange *range,
                                          struct radv_sample_locations_state *sample_locs);
 
-static void radv_set_rt_stack_size(struct radv_cmd_buffer *cmd_buffer, uint32_t size);
-
 static void
 radv_bind_dynamic_state(struct radv_cmd_buffer *cmd_buffer, const struct radv_dynamic_state *src)
 {
@@ -1898,22 +1896,21 @@ radv_emit_graphics_pipeline(struct radv_cmd_buffer *cmd_buffer)
       }
    }
 
-   if (pipeline->base.slab_bo)
-      radv_cs_add_buffer(cmd_buffer->device->ws, cmd_buffer->cs, pipeline->base.slab_bo);
+   if (pipeline->sqtt_shaders_reloc) {
+      /* Emit shaders relocation because RGP requires them to be contiguous in memory. */
+      radv_sqtt_emit_relocated_shaders(cmd_buffer, pipeline);
+   }
 
-   /* With graphics pipeline library, binaries are uploaded from a library and they hold a pointer
-    * to the slab BO.
-    */
    for (unsigned s = 0; s < MESA_VULKAN_SHADER_STAGES; s++) {
       struct radv_shader *shader = pipeline->base.shaders[s];
 
-      if (!shader || !shader->bo)
+      if (!shader)
          continue;
 
       radv_cs_add_buffer(cmd_buffer->device->ws, cmd_buffer->cs, shader->bo);
    }
 
-   if (pipeline->base.gs_copy_shader && pipeline->base.gs_copy_shader->bo) {
+   if (pipeline->base.gs_copy_shader) {
       radv_cs_add_buffer(cmd_buffer->device->ws, cmd_buffer->cs, pipeline->base.gs_copy_shader->bo);
    }
 
@@ -2121,8 +2118,12 @@ radv_get_pa_su_sc_mode_cntl(const struct radv_cmd_buffer *cmd_buffer)
                                                     VK_PROVOKING_VERTEX_MODE_LAST_VERTEX_EXT);
 
    if (gfx_level >= GFX10) {
-      pa_su_sc_mode_cntl |=
-         S_028814_KEEP_TOGETHER_ENABLE(d->vk.rs.polygon_mode != V_028814_X_DRAW_TRIANGLES);
+      /* Ensure that SC processes the primitive group in the same order as PA produced them.  Needed
+       * when either POLY_MODE or PERPENDICULAR_ENDCAP_ENA is set.
+       */
+      pa_su_sc_mode_cntl |= S_028814_KEEP_TOGETHER_ENABLE(
+         d->vk.rs.polygon_mode != V_028814_X_DRAW_TRIANGLES ||
+         d->vk.rs.line.mode == VK_LINE_RASTERIZATION_MODE_RECTANGULAR_EXT);
    }
 
    return pa_su_sc_mode_cntl;
@@ -4246,6 +4247,19 @@ radv_emit_msaa_state(struct radv_cmd_buffer *cmd_buffer)
 }
 
 static void
+radv_emit_line_rasterization_mode(struct radv_cmd_buffer *cmd_buffer)
+{
+   const struct radv_dynamic_state *d = &cmd_buffer->state.dynamic;
+
+   /* The DX10 diamond test is unnecessary with Vulkan and it decreases line rasterization
+    * performance.
+    */
+   radeon_set_context_reg(cmd_buffer->cs, R_028BDC_PA_SC_LINE_CNTL,
+                          S_028BDC_PERPENDICULAR_ENDCAP_ENA(
+                             d->vk.rs.line.mode == VK_LINE_RASTERIZATION_MODE_RECTANGULAR_EXT));
+}
+
+static void
 radv_cmd_buffer_flush_dynamic_state(struct radv_cmd_buffer *cmd_buffer, bool pipeline_is_dirty)
 {
    const uint64_t states =
@@ -4295,7 +4309,8 @@ radv_cmd_buffer_flush_dynamic_state(struct radv_cmd_buffer *cmd_buffer, bool pip
 
    if (states & (RADV_CMD_DIRTY_DYNAMIC_CULL_MODE | RADV_CMD_DIRTY_DYNAMIC_FRONT_FACE |
                  RADV_CMD_DIRTY_DYNAMIC_DEPTH_BIAS_ENABLE | RADV_CMD_DIRTY_DYNAMIC_POLYGON_MODE |
-                 RADV_CMD_DIRTY_DYNAMIC_PROVOKING_VERTEX_MODE))
+                 RADV_CMD_DIRTY_DYNAMIC_PROVOKING_VERTEX_MODE |
+                 RADV_CMD_DIRTY_DYNAMIC_LINE_RASTERIZATION_MODE))
       radv_emit_culling(cmd_buffer);
 
    if (states & (RADV_CMD_DIRTY_DYNAMIC_PROVOKING_VERTEX_MODE |
@@ -4358,6 +4373,9 @@ radv_cmd_buffer_flush_dynamic_state(struct radv_cmd_buffer *cmd_buffer, bool pip
                  RADV_CMD_DIRTY_DYNAMIC_COLOR_WRITE_MASK |
                  RADV_CMD_DIRTY_DYNAMIC_COLOR_BLEND_EQUATION))
       radv_emit_color_blend(cmd_buffer);
+
+   if (states & RADV_CMD_DIRTY_DYNAMIC_LINE_RASTERIZATION_MODE)
+      radv_emit_line_rasterization_mode(cmd_buffer);
 
    if (states & (RADV_CMD_DIRTY_DYNAMIC_RASTERIZATION_SAMPLES |
                  RADV_CMD_DIRTY_DYNAMIC_LINE_RASTERIZATION_MODE))
@@ -5304,7 +5322,7 @@ radv_src_access_flush(struct radv_cmd_buffer *cmd_buffer, VkAccessFlags2 src_fla
 
    u_foreach_bit64(b, src_flags)
    {
-      switch ((VkAccessFlags2)(1 << b)) {
+      switch ((VkAccessFlags2)BITFIELD64_BIT(b)) {
       case VK_ACCESS_2_SHADER_WRITE_BIT:
       case VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT:
          /* since the STORAGE bit isn't set we know that this is a meta operation.
@@ -5392,7 +5410,7 @@ radv_dst_access_flush(struct radv_cmd_buffer *cmd_buffer, VkAccessFlags2 dst_fla
 
    u_foreach_bit64(b, dst_flags)
    {
-      switch ((VkAccessFlags2)(1 << b)) {
+      switch ((VkAccessFlags2)BITFIELD64_BIT(b)) {
       case VK_ACCESS_2_INDIRECT_COMMAND_READ_BIT:
          /* SMEM loads are used to read compute dispatch size in shaders */
          if (!cmd_buffer->device->load_grid_size_from_user_sgpr)
@@ -5424,15 +5442,19 @@ radv_dst_access_flush(struct radv_cmd_buffer *cmd_buffer, VkAccessFlags2 dst_fla
          if (!image_is_coherent)
             flush_bits |= RADV_CMD_FLAG_INV_L2;
          break;
+      case VK_ACCESS_2_DESCRIPTOR_BUFFER_READ_BIT_EXT:
+         flush_bits |= RADV_CMD_FLAG_INV_SCACHE;
+         break;
       case VK_ACCESS_2_SHADER_BINDING_TABLE_READ_BIT_KHR:
       case VK_ACCESS_2_SHADER_READ_BIT:
       case VK_ACCESS_2_SHADER_STORAGE_READ_BIT:
-         flush_bits |= RADV_CMD_FLAG_INV_VCACHE;
          /* Unlike LLVM, ACO uses SMEM for SSBOs and we have to
           * invalidate the scalar cache. */
          if (!cmd_buffer->device->physical_device->use_llvm && !image)
             flush_bits |= RADV_CMD_FLAG_INV_SCACHE;
-
+         FALLTHROUGH;
+      case VK_ACCESS_2_SHADER_SAMPLED_READ_BIT:
+         flush_bits |= RADV_CMD_FLAG_INV_VCACHE;
          if (has_CB_meta || has_DB_meta)
             flush_bits |= RADV_CMD_FLAG_INV_L2_METADATA;
          if (!image_is_coherent)
@@ -6109,7 +6131,8 @@ radv_emit_compute_pipeline(struct radv_cmd_buffer *cmd_buffer,
    cmd_buffer->compute_scratch_waves_wanted =
       MAX2(cmd_buffer->compute_scratch_waves_wanted, pipeline->base.max_waves);
 
-   radv_cs_add_buffer(cmd_buffer->device->ws, cmd_buffer->cs, pipeline->base.slab_bo);
+   radv_cs_add_buffer(cmd_buffer->device->ws, cmd_buffer->cs,
+                      pipeline->base.shaders[MESA_SHADER_COMPUTE]->bo);
 
    if (unlikely(cmd_buffer->device->trace_bo))
       radv_save_pipeline(cmd_buffer, &pipeline->base);
@@ -6179,8 +6202,6 @@ radv_CmdBindPipeline(VkCommandBuffer commandBuffer, VkPipelineBindPoint pipeline
 
       cmd_buffer->state.rt_pipeline = rt_pipeline;
       cmd_buffer->push_constant_stages |= RADV_RT_STAGE_BITS;
-      if (rt_pipeline->dynamic_stack_size)
-         radv_set_rt_stack_size(cmd_buffer, cmd_buffer->state.rt_stack_size);
       break;
    }
    case VK_PIPELINE_BIND_POINT_GRAPHICS: {
@@ -9771,6 +9792,19 @@ radv_trace_rays(struct radv_cmd_buffer *cmd_buffer, const VkTraceRaysIndirectCom
    struct radv_compute_pipeline *pipeline = &cmd_buffer->state.rt_pipeline->base;
    uint32_t base_reg = pipeline->base.user_data_0[MESA_SHADER_COMPUTE];
 
+   /* Reserve scratch for stacks manually since it is not handled by the compute path. */
+   uint32_t scratch_bytes_per_wave = pipeline->base.scratch_bytes_per_wave;
+   uint32_t wave_size = pipeline->base.shaders[MESA_SHADER_COMPUTE]->info.wave_size;
+   uint32_t stack_size = cmd_buffer->state.rt_pipeline->stack_size;
+   if (stack_size == -1u)
+      stack_size = cmd_buffer->state.rt_stack_size; /* dynamic stack size */
+
+   /* The hardware register is specified as a multiple of 256 DWORDS. */
+   scratch_bytes_per_wave += align(stack_size * wave_size, 1024);
+
+   cmd_buffer->compute_scratch_size_per_wave_needed =
+      MAX2(cmd_buffer->compute_scratch_size_per_wave_needed, scratch_bytes_per_wave);
+
    struct radv_dispatch_info info = {0};
    info.unaligned = true;
 
@@ -9902,31 +9936,10 @@ radv_CmdTraceRaysIndirect2KHR(VkCommandBuffer commandBuffer, VkDeviceAddress ind
    radv_trace_rays(cmd_buffer, NULL, indirectDeviceAddress, radv_rt_mode_indirect2);
 }
 
-static void
-radv_set_rt_stack_size(struct radv_cmd_buffer *cmd_buffer, uint32_t size)
-{
-   unsigned wave_size = 0;
-   unsigned scratch_bytes_per_wave = 0;
-
-   if (cmd_buffer->state.rt_pipeline) {
-      scratch_bytes_per_wave = cmd_buffer->state.rt_pipeline->base.base.scratch_bytes_per_wave;
-      wave_size =
-         cmd_buffer->state.rt_pipeline->base.base.shaders[MESA_SHADER_COMPUTE]->info.wave_size;
-   }
-
-   /* The hardware register is specified as a multiple of 256 DWORDS. */
-   scratch_bytes_per_wave += align(size * wave_size, 1024);
-
-   cmd_buffer->compute_scratch_size_per_wave_needed =
-      MAX2(cmd_buffer->compute_scratch_size_per_wave_needed, scratch_bytes_per_wave);
-}
-
 VKAPI_ATTR void VKAPI_CALL
 radv_CmdSetRayTracingPipelineStackSizeKHR(VkCommandBuffer commandBuffer, uint32_t size)
 {
    RADV_FROM_HANDLE(radv_cmd_buffer, cmd_buffer, commandBuffer);
-
-   radv_set_rt_stack_size(cmd_buffer, size);
    cmd_buffer->state.rt_stack_size = size;
 }
 

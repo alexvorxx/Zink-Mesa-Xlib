@@ -1421,13 +1421,15 @@ iris_resource_from_handle(struct pipe_screen *pscreen,
          modifier = tiling_to_modifier(tiling);
       }
 
-      UNUSED const bool isl_surf_created_successfully =
+      const bool isl_surf_created_successfully =
          iris_resource_configure_main(screen, res, templ, modifier,
                                       whandle->stride);
-      assert(isl_surf_created_successfully);
+      if (!isl_surf_created_successfully)
+         goto fail;
 
-      UNUSED const bool ok = iris_resource_configure_aux(screen, res, true);
-      assert(ok);
+      if (!iris_resource_configure_aux(screen, res, true))
+         goto fail;
+
       /* The gallium dri layer will create a separate plane resource for the
        * aux image. iris_resource_finish_aux_import will merge the separate aux
        * parameters back into a single iris_resource.

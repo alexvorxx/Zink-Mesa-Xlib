@@ -328,7 +328,7 @@ cache_put_job(void *data, void *gdata, int thread_index)
 void
 zink_screen_update_pipeline_cache(struct zink_screen *screen, struct zink_program *pg, bool in_thread)
 {
-   if (!screen->disk_cache)
+   if (!screen->disk_cache || !pg->pipeline_cache)
       return;
 
    if (in_thread)
@@ -592,7 +592,7 @@ zink_get_param(struct pipe_screen *pscreen, enum pipe_cap param)
       return screen->info.have_EXT_provoking_vertex;
 
    case PIPE_CAP_TEXTURE_MIRROR_CLAMP_TO_EDGE:
-      return screen->info.have_KHR_sampler_mirror_clamp_to_edge;
+      return screen->info.have_KHR_sampler_mirror_clamp_to_edge || (screen->info.have_vulkan12 && screen->info.feats12.samplerMirrorClampToEdge);
 
    case PIPE_CAP_POLYGON_OFFSET_UNITS_UNSCALED:
       return 1;
@@ -2646,13 +2646,15 @@ init_driver_workarounds(struct zink_screen *screen)
       screen->info.rb_image_feats.robustImageAccess;
 
    /* once more testing has been done, use the #if 0 block */
-   if (zink_debug & ZINK_DEBUG_RP)
-      screen->driver_workarounds.track_renderpasses = true;
-#if 0
+   unsigned illegal = ZINK_DEBUG_RP | ZINK_DEBUG_NORP;
+   if ((zink_debug & illegal) == illegal) {
+      mesa_loge("Cannot specify ZINK_DEBUG=rp and ZINK_DEBUG=norp");
+      abort();
+   }
+
    /* these drivers benefit from renderpass optimization */
    switch (screen->info.driver_props.driverID) {
-   //* llvmpipe is broken: #7489
-   // case VK_DRIVER_ID_MESA_LLVMPIPE:
+   case VK_DRIVER_ID_MESA_LLVMPIPE:
    case VK_DRIVER_ID_MESA_TURNIP:
    case VK_DRIVER_ID_MESA_PANVK:
    case VK_DRIVER_ID_MESA_VENUS:
@@ -2666,7 +2668,10 @@ init_driver_workarounds(struct zink_screen *screen)
    default:
       break;
    }
-#endif
+   if (zink_debug & ZINK_DEBUG_RP)
+      screen->driver_workarounds.track_renderpasses = true;
+   else if (zink_debug & ZINK_DEBUG_NORP)
+      screen->driver_workarounds.track_renderpasses = false;
 }
 
 static struct disk_cache *
@@ -3059,6 +3064,7 @@ zink_internal_create_screen(const struct pipe_screen_config *config)
       }
       screen->db_size[ZINK_DESCRIPTOR_TYPE_UNIFORMS] = screen->info.db_props.robustUniformBufferDescriptorSize;
       screen->info.have_KHR_push_descriptor = false;
+      screen->base_descriptor_size = MAX4(screen->db_size[0], screen->db_size[1], screen->db_size[2], screen->db_size[3]);
    }
 
    simple_mtx_init(&screen->dt_lock, mtx_plain);

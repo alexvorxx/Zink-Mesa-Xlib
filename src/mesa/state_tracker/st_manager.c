@@ -221,6 +221,7 @@ st_framebuffer_validate(struct gl_framebuffer *stfb,
                         struct st_context *st)
 {
    struct pipe_resource *textures[ST_ATTACHMENT_COUNT];
+   struct pipe_resource *resolve = NULL;
    uint width, height;
    unsigned i;
    bool changed = false;
@@ -235,7 +236,7 @@ st_framebuffer_validate(struct gl_framebuffer *stfb,
    /* validate the fb */
    do {
       if (!stfb->drawable->validate(st, stfb->drawable, stfb->statts,
-                                 stfb->num_statts, textures))
+                                 stfb->num_statts, textures, &resolve))
          return;
 
       stfb->drawable_stamp = new_stamp;
@@ -282,6 +283,12 @@ st_framebuffer_validate(struct gl_framebuffer *stfb,
 
       pipe_resource_reference(&textures[i], NULL);
    }
+
+   changed |= resolve != stfb->resolve;
+   /* ref is removed here */
+   pipe_resource_reference(&stfb->resolve, NULL);
+   /* ref is taken here */
+   stfb->resolve = resolve;
 
    if (changed) {
       ++stfb->stamp;

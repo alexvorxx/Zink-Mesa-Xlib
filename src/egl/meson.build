@@ -106,6 +106,10 @@ if with_dri2
     'drivers/dri2/platform_device.c',
     'drivers/dri2/platform_surfaceless.c',
   )
+
+  c_args_for_egl += vk_wsi_args
+  cpp_args_for_egl += vk_wsi_args
+
   if with_platform_x11
     files_egl += files('drivers/dri2/platform_x11.c')
     if with_dri3
@@ -142,13 +146,13 @@ if with_dri2
     endif
   endif
 elif with_platform_haiku
-  incs_for_egl += inc_haikugl
   c_args_for_egl += [
     '-D_EGL_BUILT_IN_DRIVER_HAIKU',
   ]
   files_egl += files('drivers/haiku/egl_haiku.cpp')
-  link_for_egl += libgl
-  deps_for_egl += cpp.find_library('be')
+  incs_for_egl += [include_directories('../mapi', '../mesa', '../gallium/auxiliary', '../gallium/drivers', '../gallium/winsys', '../gallium/frontends/hgl', '../gallium/winsys/sw/hgl')]
+  link_for_egl += [libmesa, libgallium, libswhgl, libsthgl]
+  deps_for_egl += [cpp.find_library('be'), driver_swrast]
 elif with_platform_windows
   c_args_for_egl += [
     '-DEGLAPI=', '-DPUBLIC='

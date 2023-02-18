@@ -178,6 +178,7 @@ files_libnir = files(
   'nir_lower_is_helper_invocation.c',
   'nir_lower_multiview.c',
   'nir_lower_mediump.c',
+  'nir_lower_mem_access_bit_sizes.c',
   'nir_lower_memcpy.c',
   'nir_lower_memory_model.c',
   'nir_lower_non_uniform_access.c',
@@ -391,6 +392,12 @@ idep_nir = declare_dependency(
 )
 
 if with_tests
+  if cc.get_id() == 'msvc' and cc.version().version_compare('< 19.29')
+    msvc_designated_initializer = 'cpp_std=c++latest'
+  else
+    msvc_designated_initializer = 'cpp_std=c++20'
+  endif
+
   test(
     'nir_tests',
     executable(
@@ -412,6 +419,7 @@ if with_tests
         'tests/vars_tests.cpp',
       ),
       cpp_args : [cpp_msvc_compat_args],
+      override_options: [msvc_designated_initializer],
       gnu_symbol_visibility : 'hidden',
       include_directories : [inc_include, inc_src, inc_mapi, inc_mesa, inc_gallium, inc_gallium_aux],
       dependencies : [dep_thread, idep_gtest, idep_nir, idep_mesautil],

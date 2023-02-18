@@ -21,7 +21,11 @@
  * IN THE SOFTWARE.
  */
 
+#include <sys/mman.h>
+
 #include "anv_private.h"
+
+#include "i915/anv_batch_chain.h"
 
 #include "drm-uapi/i915_drm.h"
 
@@ -74,11 +78,86 @@ i915_gem_create(struct anv_device *device,
    return gem_create.handle;
 }
 
+static void
+i915_gem_close(struct anv_device *device, uint32_t handle)
+{
+   struct drm_gem_close close = {
+      .handle = handle,
+   };
+
+   intel_ioctl(device->fd, DRM_IOCTL_GEM_CLOSE, &close);
+}
+
+static void *
+i915_gem_mmap_offset(struct anv_device *device, struct anv_bo *bo,
+                     uint64_t size, uint32_t flags)
+{
+   struct drm_i915_gem_mmap_offset gem_mmap = {
+      .handle = bo->gem_handle,
+      .flags = flags,
+   };
+   if (intel_ioctl(device->fd, DRM_IOCTL_I915_GEM_MMAP_OFFSET, &gem_mmap))
+      return MAP_FAILED;
+
+   return mmap(NULL, size, PROT_READ | PROT_WRITE, MAP_SHARED,
+               device->fd, gem_mmap.offset);
+}
+
+static void *
+i915_gem_mmap_legacy(struct anv_device *device, struct anv_bo *bo, uint64_t offset,
+                      uint64_t size, uint32_t flags)
+{
+   struct drm_i915_gem_mmap gem_mmap = {
+      .handle = bo->gem_handle,
+      .offset = offset,
+      .size = size,
+      .flags = flags,
+   };
+   if (intel_ioctl(device->fd, DRM_IOCTL_I915_GEM_MMAP, &gem_mmap))
+      return MAP_FAILED;
+
+   return (void *)(uintptr_t) gem_mmap.addr_ptr;
+}
+
+static uint32_t
+mmap_calc_flags(struct anv_device *device, struct anv_bo *bo,
+                VkMemoryPropertyFlags property_flags)
+{
+   if (device->info->has_local_mem)
+      return I915_MMAP_OFFSET_FIXED;
+
+   uint32_t flags = 0;
+   if (!device->info->has_llc &&
+       (property_flags & VK_MEMORY_PROPERTY_HOST_COHERENT_BIT))
+      flags |= I915_MMAP_WC;
+   if (bo->map_wc)
+      flags |= I915_MMAP_WC;
+
+   if (likely(device->physical->info.has_mmap_offset))
+      flags = (flags & I915_MMAP_WC) ? I915_MMAP_OFFSET_WC : I915_MMAP_OFFSET_WB;
+   return flags;
+}
+
+static void *
+i915_gem_mmap(struct anv_device *device, struct anv_bo *bo, uint64_t offset,
+              uint64_t size, VkMemoryPropertyFlags property_flags)
+{
+   const uint32_t flags = mmap_calc_flags(device, bo, property_flags);
+
+   if (likely(device->physical->info.has_mmap_offset))
+      return i915_gem_mmap_offset(device, bo, size, flags);
+   return i915_gem_mmap_legacy(device, bo, offset, size, flags);
+}
+
 const struct anv_kmd_backend *
 anv_i915_kmd_backend_get(void)
 {
    static const struct anv_kmd_backend i915_backend = {
       .gem_create = i915_gem_create,
+      .gem_close = i915_gem_close,
+      .gem_mmap = i915_gem_mmap,
+      .execute_simple_batch = i915_execute_simple_batch,
+      .queue_exec_locked = i915_queue_exec_locked
    };
    return &i915_backend;
 }

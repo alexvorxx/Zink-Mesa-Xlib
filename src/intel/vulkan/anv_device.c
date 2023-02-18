@@ -349,6 +349,7 @@ get_device_extensions(const struct anv_physical_device *device,
       .EXT_tooling_info                      = true,
       .EXT_transform_feedback                = true,
       .EXT_vertex_attribute_divisor          = true,
+      .EXT_vertex_input_dynamic_state        = true,
       .EXT_ycbcr_image_arrays                = true,
 #ifdef ANDROID
       .ANDROID_external_memory_android_hardware_buffer = true,
@@ -769,7 +770,7 @@ anv_physical_device_init_queue_families(struct anv_physical_device *pdevice)
       /* Increase count below when other families are added as a reminder to
        * increase the ANV_MAX_QUEUE_FAMILIES value.
        */
-      STATIC_ASSERT(ANV_MAX_QUEUE_FAMILIES >= 3);
+      STATIC_ASSERT(ANV_MAX_QUEUE_FAMILIES >= 4);
    } else {
       /* Default to a single render queue */
       pdevice->queue.families[family_count++] = (struct anv_queue_family) {
@@ -1801,6 +1802,13 @@ void anv_GetPhysicalDeviceFeatures2(
          VkPhysicalDevicePresentWaitFeaturesKHR *features =
             (VkPhysicalDevicePresentWaitFeaturesKHR *) ext;
          features->presentWait = pdevice->vk.supported_extensions.KHR_present_wait;
+         break;
+      }
+
+      case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VERTEX_INPUT_DYNAMIC_STATE_FEATURES_EXT: {
+         VkPhysicalDeviceVertexInputDynamicStateFeaturesEXT *features =
+            (VkPhysicalDeviceVertexInputDynamicStateFeaturesEXT *) ext;
+         features->vertexInputDynamicState = true;
          break;
       }
 
@@ -3161,28 +3169,6 @@ VkResult anv_CreateDevice(
 
    assert(pCreateInfo->sType == VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO);
 
-   /* Check enabled features */
-   bool robust_buffer_access = false;
-   if (pCreateInfo->pEnabledFeatures) {
-      if (pCreateInfo->pEnabledFeatures->robustBufferAccess)
-         robust_buffer_access = true;
-   }
-
-   vk_foreach_struct_const(ext, pCreateInfo->pNext) {
-      switch (ext->sType) {
-      case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2: {
-         const VkPhysicalDeviceFeatures2 *features = (const void *)ext;
-         if (features->features.robustBufferAccess)
-            robust_buffer_access = true;
-         break;
-      }
-
-      default:
-         /* Don't warn */
-         break;
-      }
-   }
-
    /* Check requested queues and fail if we are requested to create any
     * queues with flags we don't support.
     */
@@ -3322,8 +3308,6 @@ VkResult anv_CreateDevice(
                       HIGH_HEAP_MIN_ADDRESS);
 
    list_inithead(&device->memory_objects);
-
-   device->robust_buffer_access = robust_buffer_access;
 
    if (pthread_mutex_init(&device->mutex, NULL) != 0) {
       result = vk_error(device, VK_ERROR_INITIALIZATION_FAILED);
@@ -4271,12 +4255,6 @@ VkResult anv_MapMemory(
                        "Memory object already mapped.");
    }
 
-   uint32_t gem_flags = 0;
-
-   if (!device->info->has_llc &&
-       (mem->type->propertyFlags & VK_MEMORY_PROPERTY_HOST_COHERENT_BIT))
-      gem_flags |= I915_MMAP_WC;
-
    /* GEM will fail to map if the offset isn't 4k-aligned.  Round down. */
    uint64_t map_offset;
    if (!device->physical->info.has_mmap_offset)
@@ -4290,8 +4268,8 @@ VkResult anv_MapMemory(
    map_size = align64(map_size, 4096);
 
    void *map;
-   VkResult result = anv_device_map_bo(device, mem->bo, map_offset,
-                                       map_size, gem_flags, &map);
+   VkResult result = anv_device_map_bo(device, mem->bo, map_offset, map_size,
+                                       mem->type->propertyFlags, &map);
    if (result != VK_SUCCESS)
       return result;
 
@@ -4543,7 +4521,7 @@ anv_get_buffer_memory_requirements(struct anv_device *device,
     * This would ensure that not internal padding would be needed for
     * 16-bit types.
     */
-   if (device->robust_buffer_access &&
+   if (device->vk.enabled_features.robustBufferAccess &&
        (usage & VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT ||
         usage & VK_BUFFER_USAGE_STORAGE_BUFFER_BIT))
       pMemoryRequirements->memoryRequirements.size = align64(size, 4);

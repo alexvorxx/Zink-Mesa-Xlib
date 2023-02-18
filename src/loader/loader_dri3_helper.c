@@ -478,16 +478,24 @@ loader_dri3_drawable_init(xcb_connection_t *conn,
    return 0;
 }
 
+/* XXX this belongs in presentproto */
+#ifndef PresentWindowDestroyed
+#define PresentWindowDestroyed (1 << 0)
+#endif
 /*
  * Process one Present event
  */
-static void
+static bool
 dri3_handle_present_event(struct loader_dri3_drawable *draw,
                           xcb_present_generic_event_t *ge)
 {
    switch (ge->evtype) {
    case XCB_PRESENT_CONFIGURE_NOTIFY: {
       xcb_present_configure_notify_event_t *ce = (void *) ge;
+      if (ce->pixmap_flags & PresentWindowDestroyed) {
+         free(ge);
+         return false;
+      }
 
       draw->width = ce->width;
       draw->height = ce->height;
@@ -563,6 +571,7 @@ dri3_handle_present_event(struct loader_dri3_drawable *draw,
    }
    }
    free(ge);
+   return true;
 }
 
 static bool
@@ -596,8 +605,7 @@ dri3_wait_for_event_locked(struct loader_dri3_drawable *draw,
    if (full_sequence)
       *full_sequence = ev->full_sequence;
    ge = (void *) ev;
-   dri3_handle_present_event(draw, ge);
-   return true;
+   return dri3_handle_present_event(draw, ge);
 }
 
 /** loader_dri3_wait_for_msc
@@ -980,7 +988,8 @@ dri3_flush_present_events(struct loader_dri3_drawable *draw)
       while ((ev = xcb_poll_for_special_event(draw->conn,
                                               draw->special_event)) != NULL) {
          xcb_present_generic_event_t *ge = (void *) ev;
-         dri3_handle_present_event(draw, ge);
+         if (!dri3_handle_present_event(draw, ge))
+            break;
       }
    }
 }

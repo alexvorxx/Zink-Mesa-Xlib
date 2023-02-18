@@ -1365,7 +1365,8 @@ bool r600_common_screen_init(struct r600_common_screen *rscreen,
 		.lower_fpow = true,
 		.lower_int64_options = ~0,
 		.lower_cs_local_index_to_id = true,
-		.lower_uniforms_to_ubo = true
+		.lower_uniforms_to_ubo = true,
+		.lower_image_offset_to_range_base = 1
 	};
 
 	rscreen->nir_options = nir_options;
@@ -1388,6 +1389,7 @@ bool r600_common_screen_init(struct r600_common_screen *rscreen,
 
 	if (rscreen->info.gfx_level < CAYMAN) {
 		rscreen->nir_options.lower_doubles_options = nir_lower_fp64_full_software;
+		rscreen->nir_options.lower_atomic_offset_to_range_base = true;
 	} else {
 		rscreen->nir_options.lower_doubles_options =
 			nir_lower_ddiv |

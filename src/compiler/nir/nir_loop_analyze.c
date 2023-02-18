@@ -33,11 +33,6 @@ typedef enum {
    basic_induction
 } nir_loop_variable_type;
 
-typedef struct nir_basic_induction_var {
-   nir_alu_instr *alu;                      /* The def of the alu-operation */
-   nir_ssa_def *def_outside_loop;           /* The phi-src outside the loop */
-} nir_basic_induction_var;
-
 typedef struct {
    /* A link for the work list */
    struct list_head process_link;
@@ -49,9 +44,6 @@ typedef struct {
 
    /* The type of this ssa_def */
    nir_loop_variable_type type;
-
-   /* If this is of type basic_induction */
-   struct nir_basic_induction_var *ind;
 
    /* True if variable is in an if branch */
    bool in_if_branch;
@@ -400,7 +392,6 @@ is_only_uniform_src(nir_src *src)
 static bool
 compute_induction_information(loop_info_state *state)
 {
-   bool found_induction_var = false;
    unsigned num_induction_vars = 0;
 
    list_for_each_entry_safe(nir_loop_variable, var, &state->process_list,
@@ -421,9 +412,7 @@ compute_induction_information(loop_info_state *state)
          continue;
 
       nir_phi_instr *phi = nir_instr_as_phi(var->def->parent_instr);
-      nir_basic_induction_var *biv = rzalloc(state, nir_basic_induction_var);
 
-      nir_src *init_src = NULL;
       nir_loop_variable *alu_src_var = NULL;
       nir_foreach_phi_src(src, phi) {
          nir_loop_variable *src_var = get_loop_var(src->src.ssa, state);
@@ -448,10 +437,9 @@ compute_induction_information(loop_info_state *state)
             }
          }
 
-         if (!src_var->in_loop && !biv->def_outside_loop) {
-            biv->def_outside_loop = src_var->def;
-            init_src = &src->src;
-         } else if (is_var_alu(src_var) && !biv->alu) {
+         if (!src_var->in_loop && !var->init_src) {
+            var->init_src = &src->src;
+         } else if (is_var_alu(src_var) && !var->update_src) {
             alu_src_var = src_var;
             nir_alu_instr *alu = nir_instr_as_alu(src_var->def->parent_instr);
 
@@ -466,60 +454,31 @@ compute_induction_information(loop_info_state *state)
                    */
                   if (alu->src[1-i].src.ssa == &phi->dest.ssa &&
                       alu_src_has_identity_swizzle(alu, 1 - i)) {
-                     nir_src *src = &alu->src[i].src;
-                     if (nir_src_is_const(*src))
-                        biv->alu = alu;
-                     else if (is_only_uniform_src(src)) {
-                        /* Update value of induction variable is a statement
-                         * contains only uniform and constant
-                         */
+                     if (is_only_uniform_src(&alu->src[i].src))
                         var->update_src = alu->src + i;
-                        biv->alu = alu;
-                     }
                   }
                }
             }
 
-            if (!biv->alu)
+            if (!var->update_src)
                break;
          } else {
-            biv->alu = NULL;
+            var->update_src = NULL;
             break;
          }
       }
 
-      if (biv->alu && biv->def_outside_loop) {
-         nir_instr *inst = biv->def_outside_loop->parent_instr;
-         if (inst->type == nir_instr_type_load_const)  {
-            /* Initial value of induction variable is a constant */
-            if (var->update_src) {
-               alu_src_var->update_src = var->update_src;
-               ralloc_free(biv);
-            } else {
-               alu_src_var->type = basic_induction;
-               alu_src_var->ind = biv;
-               var->type = basic_induction;
-               var->ind = biv;
+      if (var->update_src && var->init_src &&
+          is_only_uniform_src(var->init_src)) {
+         alu_src_var->init_src = var->init_src;
+         alu_src_var->update_src = var->update_src;
+         alu_src_var->type = basic_induction;
+         var->type = basic_induction;
 
-               found_induction_var = true;
-            }
-            num_induction_vars += 2;
-         } else if (is_only_uniform_src(init_src)) {
-            /* Initial value of induction variable is a uniform */
-            var->init_src = init_src;
-
-            alu_src_var->init_src = var->init_src;
-            alu_src_var->update_src = var->update_src;
-
-            num_induction_vars += 2;
-            ralloc_free(biv);
-         } else {
-            var->update_src = NULL;
-            ralloc_free(biv);
-         }
+         num_induction_vars += 2;
       } else {
+         var->init_src = NULL;
          var->update_src = NULL;
-         ralloc_free(biv);
       }
    }
 
@@ -534,7 +493,7 @@ compute_induction_information(loop_info_state *state)
 
       list_for_each_entry(nir_loop_variable, var, &state->process_list,
                           process_link) {
-         if (var->type == basic_induction || var->init_src || var->update_src) {
+         if (var->type == basic_induction) {
             nir_loop_induction_variable *ivar =
                &info->induction_vars[info->num_induction_vars++];
              ivar->def = var->def;
@@ -546,7 +505,7 @@ compute_induction_information(loop_info_state *state)
       assert(info->num_induction_vars <= num_induction_vars);
    }
 
-   return found_induction_var;
+   return num_induction_vars != 0;
 }
 
 static bool
@@ -1035,12 +994,21 @@ get_induction_and_limit_vars(nir_ssa_scalar cond,
    lhs = nir_ssa_scalar_chase_alu_src(cond, 0);
    rhs = nir_ssa_scalar_chase_alu_src(cond, 1);
 
-   if (get_loop_var(lhs.def, state)->type == basic_induction) {
+   nir_loop_variable *src0_lv = get_loop_var(lhs.def, state);
+   nir_loop_variable *src1_lv = get_loop_var(rhs.def, state);
+
+   if (src0_lv->type == basic_induction) {
+      if (!nir_src_is_const(*src0_lv->init_src))
+         return false;
+
       *ind = lhs;
       *limit = rhs;
       *limit_rhs = true;
       return true;
-   } else if (get_loop_var(rhs.def, state)->type == basic_induction) {
+   } else if (src1_lv->type == basic_induction) {
+      if (!nir_src_is_const(*src1_lv->init_src))
+         return false;
+
       *ind = rhs;
       *limit = lhs;
       *limit_rhs = false;
@@ -1205,37 +1173,31 @@ find_trip_count(loop_info_state *state, unsigned execution_mode)
        * Thats all thats needed to calculate the trip-count
        */
 
-      nir_basic_induction_var *ind_var =
-         get_loop_var(basic_ind.def, state)->ind;
+      nir_loop_variable *lv = get_loop_var(basic_ind.def, state);
 
       /* The basic induction var might be a vector but, because we guarantee
        * earlier that the phi source has a scalar swizzle, we can take the
        * component from basic_ind.
        */
-      nir_ssa_scalar initial_s = { ind_var->def_outside_loop, basic_ind.comp };
-      nir_ssa_scalar alu_s = { &ind_var->alu->dest.dest.ssa, basic_ind.comp };
+      nir_ssa_scalar initial_s = { lv->init_src->ssa, basic_ind.comp };
+      nir_ssa_scalar alu_s = {
+         lv->update_src->src.ssa,
+         lv->update_src->swizzle[basic_ind.comp]
+      };
+
+      /* We are not guaranteed by that at one of these sources is a constant.
+       * Try to find one.
+       */
+      if (!nir_ssa_scalar_is_const(initial_s) ||
+          !nir_ssa_scalar_is_const(alu_s))
+         continue;
 
       nir_const_value initial_val = nir_ssa_scalar_as_const_value(initial_s);
-
-      /* We are guaranteed by earlier code that at least one of these sources
-       * is a constant but we don't know which.
-       */
-      nir_const_value step_val;
-      memset(&step_val, 0, sizeof(step_val));
-      UNUSED bool found_step_value = false;
-      assert(nir_op_infos[ind_var->alu->op].num_inputs == 2);
-      for (unsigned i = 0; i < 2; i++) {
-         nir_ssa_scalar alu_src = nir_ssa_scalar_chase_alu_src(alu_s, i);
-         if (nir_ssa_scalar_is_const(alu_src)) {
-            found_step_value = true;
-            step_val = nir_ssa_scalar_as_const_value(alu_src);
-            break;
-         }
-      }
-      assert(found_step_value);
+      nir_const_value step_val = nir_ssa_scalar_as_const_value(alu_s);
 
       int iterations = calculate_iterations(initial_val, step_val, limit_val,
-                                            ind_var->alu, cond,
+                                            nir_instr_as_alu(lv->update_src->src.parent_instr),
+                                            cond,
                                             alu_op, limit_rhs,
                                             terminator->continue_from_then,
                                             execution_mode);

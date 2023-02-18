@@ -1768,23 +1768,11 @@ anv_image_ccs_op(struct anv_cmd_buffer *cmd_buffer,
    if (clear_value)
       surf.clear_color = *clear_value;
 
-   char *flush_reason = NULL;
-   switch (ccs_op) {
-   case ISL_AUX_OP_FAST_CLEAR:
-      flush_reason = "ccs op start: fast clear";
-      break;
-   case ISL_AUX_OP_FULL_RESOLVE:
-      flush_reason = "ccs op start: full resolve";
-      break;
-   case ISL_AUX_OP_PARTIAL_RESOLVE:
-      flush_reason = "ccs op start: partial resolve";
-      break;
-   case ISL_AUX_OP_AMBIGUATE:
-      flush_reason = "ccs op start: ambiguate";
-      break;
-   default:
-      unreachable("Unsupported CCS operation");
-   }
+   char flush_reason[64];
+   int ret =
+      snprintf(flush_reason, sizeof(flush_reason),
+               "ccs op start: %s", isl_aux_op_to_name(ccs_op));
+   assert(ret < sizeof(flush_reason));
 
    /* From the Sky Lake PRM Vol. 7, "Render Target Fast Clear":
     *

@@ -61,14 +61,7 @@ build_background_op(nir_builder *b, enum agx_meta_op op, unsigned rt,
    } else {
       assert(op == AGX_META_OP_CLEAR);
 
-      nir_ssa_def *comp[] = {
-         nir_load_preamble(b, 1, 32, (rt * 8) + 0),
-         nir_load_preamble(b, 1, 32, (rt * 8) + 2),
-         nir_load_preamble(b, 1, 32, (rt * 8) + 4),
-         nir_load_preamble(b, 1, 32, (rt * 8) + 6),
-      };
-
-      return nir_vec(b, comp, nr);
+      return nir_load_preamble(b, nr, 32, rt * 8);
    }
 }
 
@@ -166,9 +159,16 @@ key_compare(const void *a, const void *b)
 }
 
 void
-agx_meta_init(struct agx_meta_cache *cache, struct agx_device *dev,
-              void *memctx)
+agx_meta_init(struct agx_meta_cache *cache, struct agx_device *dev)
 {
    agx_pool_init(&cache->pool, dev, AGX_BO_EXEC | AGX_BO_LOW_VA, true);
-   cache->ht = _mesa_hash_table_create(memctx, key_hash, key_compare);
+   cache->ht = _mesa_hash_table_create(NULL, key_hash, key_compare);
+}
+
+void
+agx_meta_cleanup(struct agx_meta_cache *cache)
+{
+   agx_pool_cleanup(&cache->pool);
+   _mesa_hash_table_destroy(cache->ht, NULL);
+   cache->ht = NULL;
 }

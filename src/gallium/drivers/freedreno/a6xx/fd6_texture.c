@@ -40,12 +40,14 @@
 #include "fd6_screen.h"
 #include "fd6_texture.h"
 
+static void fd6_texture_state_destroy(struct fd6_texture_state *state);
+
 static void
 remove_tex_entry(struct fd6_context *fd6_ctx, struct hash_entry *entry)
 {
    struct fd6_texture_state *tex = entry->data;
    _mesa_hash_table_remove(fd6_ctx->tex_cache, entry);
-   fd6_texture_state_reference(&tex, NULL);
+   fd6_texture_state_destroy(tex);
 }
 
 static enum a6xx_tex_clamp
@@ -261,7 +263,7 @@ fd6_sampler_state_create(struct pipe_context *pctx,
       return NULL;
 
    so->base = *cso;
-   so->seqno = ++fd6_context(ctx)->tex_seqno;
+   so->seqno = seqno_next_u16(&fd6_context(ctx)->tex_seqno);
 
    if (cso->min_mip_filter == PIPE_TEX_MIPFILTER_LINEAR)
       miplinear = true;
@@ -393,7 +395,7 @@ fd6_sampler_view_update(struct fd_context *ctx,
       format = rsc->b.b.format;
    }
 
-   so->seqno = ++fd6_context(ctx)->tex_seqno;
+   so->seqno = seqno_next_u16(&fd6_context(ctx)->tex_seqno);
    so->ptr1 = rsc;
    so->rsc_seqno = rsc->seqno;
 
@@ -661,6 +663,31 @@ build_texture_state(struct fd_context *ctx, struct fd_ringbuffer *ring,
    OUT_RING(ring, num_textures);
 }
 
+/**
+ * Handle invalidates potentially coming from other contexts.  By
+ * flagging the invalidate rather than handling it immediately, we
+ * avoid needing to refcnt (with it's associated atomics) the tex
+ * state.  And furthermore, this avoids cross-ctx (thread) sharing
+ * of fd_ringbuffer's, avoiding their need for atomic refcnts.
+ */
+static void
+handle_invalidates(struct fd_context *ctx)
+   assert_dt
+{
+   struct fd6_context *fd6_ctx = fd6_context(ctx);
+
+   fd_screen_assert_locked(ctx->screen);
+
+   hash_table_foreach (fd6_ctx->tex_cache, entry) {
+      struct fd6_texture_state *state = entry->data;
+
+      if (state->invalidate)
+         remove_tex_entry(fd6_ctx, entry);
+   }
+
+   fd6_ctx->tex_cache_needs_invalidate = false;
+}
+
 struct fd6_texture_state *
 fd6_texture_state(struct fd_context *ctx, enum pipe_shader_type type,
                   struct fd_texture_stateobj *tex)
@@ -701,18 +728,20 @@ fd6_texture_state(struct fd_context *ctx, enum pipe_shader_type type,
 
    uint32_t hash = tex_key_hash(&key);
    fd_screen_lock(ctx->screen);
+
+   if (unlikely(fd6_ctx->tex_cache_needs_invalidate))
+      handle_invalidates(ctx);
+
    struct hash_entry *entry =
       _mesa_hash_table_search_pre_hashed(fd6_ctx->tex_cache, hash, &key);
 
    if (entry) {
-      fd6_texture_state_reference(&state, entry->data);
+      state = entry->data;
       goto out_unlock;
    }
 
    state = CALLOC_STRUCT(fd6_texture_state);
 
-   /* NOTE: one ref for tex_cache, and second ref for returned state: */
-   pipe_reference_init(&state->reference, 2);
    state->key = key;
    state->stateobj = fd_ringbuffer_new_object(ctx->pipe, 32 * 4);
 
@@ -729,14 +758,8 @@ out_unlock:
    return state;
 }
 
-void
-__fd6_texture_state_describe(char *buf, const struct fd6_texture_state *tex)
-{
-   sprintf(buf, "fd6_texture_state<%p>", tex);
-}
-
-void
-__fd6_texture_state_destroy(struct fd6_texture_state *state)
+static void
+fd6_texture_state_destroy(struct fd6_texture_state *state)
 {
    fd_ringbuffer_del(state->stateobj);
    free(state);
@@ -757,8 +780,9 @@ fd6_rebind_resource(struct fd_context *ctx, struct fd_resource *rsc) assert_dt
 
       for (unsigned i = 0; i < ARRAY_SIZE(state->key.view); i++) {
          if (rsc->seqno == state->key.view[i].rsc_seqno) {
-            remove_tex_entry(fd6_ctx, entry);
-            break;
+            struct fd6_texture_state *tex = entry->data;
+            tex->invalidate = true;
+            fd6_ctx->tex_cache_needs_invalidate = true;
          }
       }
    }

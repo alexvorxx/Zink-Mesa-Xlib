@@ -2,6 +2,7 @@ use crate::api::icd::*;
 use crate::api::platform::*;
 use crate::api::util::*;
 use crate::core::device::*;
+use crate::core::version::*;
 
 use mesa_rust_gen::*;
 use mesa_rust_util::ptr::*;
@@ -14,16 +15,13 @@ use std::ptr;
 use std::sync::Arc;
 use std::sync::Once;
 
-// TODO spec constants need to be implemented
-const SPIRV_SUPPORT_STRING: &str = "";
-//    "SPIR-V_1.0 SPIR-V_1.1 SPIR-V_1.2 SPIR-V_1.3 SPIR-V_1.4 SPIR-V_1.5";
-const SPIRV_SUPPORT: [cl_name_version; 0] = [
-/*    mk_cl_version_ext(1, 0, 0, b"SPIR-V"),
-    mk_cl_version_ext(1, 1, 0, b"SPIR-V"),
-    mk_cl_version_ext(1, 2, 0, b"SPIR-V"),
-    mk_cl_version_ext(1, 3, 0, b"SPIR-V"),
-    mk_cl_version_ext(1, 4, 0, b"SPIR-V"),
-    mk_cl_version_ext(1, 5, 0, b"SPIR-V"),*/
+const SPIRV_SUPPORT_STRING: &str = "SPIR-V_1.0 SPIR-V_1.1 SPIR-V_1.2 SPIR-V_1.3 SPIR-V_1.4";
+const SPIRV_SUPPORT: [cl_name_version; 5] = [
+    mk_cl_version_ext(1, 0, 0, "SPIR-V"),
+    mk_cl_version_ext(1, 1, 0, "SPIR-V"),
+    mk_cl_version_ext(1, 2, 0, "SPIR-V"),
+    mk_cl_version_ext(1, 3, 0, "SPIR-V"),
+    mk_cl_version_ext(1, 4, 0, "SPIR-V"),
 ];
 
 impl CLInfo<cl_device_info> for cl_device_id {

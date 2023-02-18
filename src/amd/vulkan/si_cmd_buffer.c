@@ -620,11 +620,6 @@ si_emit_graphics(struct radv_device *device, struct radeon_cmdbuf *cs)
       }
    }
 
-   /* The DX10 diamond test is unnecessary with Vulkan and it decreases line rasterization
-    * performance.
-    */
-   radeon_set_context_reg(cs, R_028BDC_PA_SC_LINE_CNTL, 0);
-
    if (physical_device->rad_info.gfx_level >= GFX11) {
       radeon_set_context_reg(cs, R_028C54_PA_SC_BINNER_CNTL_2, 0);
       radeon_set_context_reg(cs, R_028620_PA_RATE_CNTL,

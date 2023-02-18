@@ -237,17 +237,16 @@ pub fn create_program_with_il(
     il: *const ::std::os::raw::c_void,
     length: usize,
 ) -> CLResult<cl_program> {
-    let _c = context.get_arc()?;
+    let c = context.get_arc()?;
 
     // CL_INVALID_VALUE if il is NULL or if length is zero.
     if il.is_null() || length == 0 {
         return Err(CL_INVALID_VALUE);
     }
 
-    //    let spirv = unsafe { slice::from_raw_parts(il.cast(), length) };
-    // TODO SPIR-V
-    //    Ok(cl_program::from_arc(Program::from_spirv(c, spirv)))
-    Err(CL_INVALID_OPERATION)
+    // SAFETY: according to API spec
+    let spirv = unsafe { slice::from_raw_parts(il.cast(), length) };
+    Ok(cl_program::from_arc(Program::from_spirv(c, spirv)))
 }
 
 pub fn build_program(
@@ -417,29 +416,36 @@ pub fn link_program(
 
 pub fn set_program_specialization_constant(
     program: cl_program,
-    _spec_id: cl_uint,
-    _spec_size: usize,
+    spec_id: cl_uint,
+    spec_size: usize,
     spec_value: *const ::std::os::raw::c_void,
 ) -> CLResult<()> {
-    let _program = program.get_ref()?;
+    let program = program.get_ref()?;
 
     // CL_INVALID_PROGRAM if program is not a valid program object created from an intermediate
     // language (e.g. SPIR-V)
     // TODO: or if the intermediate language does not support specialization constants.
-    //    if program.il.is_empty() {
-    //        Err(CL_INVALID_PROGRAM)?
-    //    }
+    if program.il.is_empty() {
+        return Err(CL_INVALID_PROGRAM);
+    }
 
-    // TODO: CL_INVALID_VALUE if spec_size does not match the size of the specialization constant in the module,
+    if spec_size != program.get_spec_constant_size(spec_id).into() {
+        // CL_INVALID_VALUE if spec_size does not match the size of the specialization constant in
+        // the module,
+        return Err(CL_INVALID_VALUE);
+    }
 
     // or if spec_value is NULL.
     if spec_value.is_null() {
         return Err(CL_INVALID_VALUE);
     }
 
-    Err(CL_INVALID_OPERATION)
+    // SAFETY: according to API spec
+    program.set_spec_constant(spec_id, unsafe {
+        slice::from_raw_parts(spec_value.cast(), spec_size)
+    });
 
-    //• CL_INVALID_SPEC_ID if spec_id is not a valid specialization constant identifier.
+    Ok(())
 }
 
 pub fn set_program_release_callback(

@@ -345,6 +345,8 @@ struct st_context
    struct {
       struct gl_program **progs;
       struct pipe_resource *bc1_endpoint_buf;
+      struct pipe_sampler_view *astc_luts[5];
+      struct hash_table *astc_partition_tables;
    } texcompress_compute;
 
    /** for drawing with st_util_vertex */

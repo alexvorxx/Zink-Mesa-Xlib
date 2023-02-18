@@ -840,7 +840,7 @@ kopper_create_drawable(struct dri_screen *screen, const struct gl_config *visual
 }
 
 static int64_t
-kopperSwapBuffers(__DRIdrawable *dPriv)
+kopperSwapBuffers(__DRIdrawable *dPriv, uint32_t flush_flags)
 {
    struct dri_drawable *drawable = dri_drawable(dPriv);
    struct dri_context *ctx = dri_get_current();
@@ -861,7 +861,7 @@ kopperSwapBuffers(__DRIdrawable *dPriv)
    drawable->texture_stamp = drawable->lastStamp - 1;
 
    dri_flush(opaque_dri_context(ctx), opaque_dri_drawable(drawable),
-             __DRI2_FLUSH_DRAWABLE | __DRI2_FLUSH_CONTEXT,
+             __DRI2_FLUSH_DRAWABLE | __DRI2_FLUSH_CONTEXT | flush_flags,
              __DRI2_THROTTLE_SWAPBUFFER);
 
    kopper_copy_to_front(ctx->st->pipe, drawable, ptex);
@@ -881,7 +881,7 @@ kopperSwapBuffers(__DRIdrawable *dPriv)
 static void
 kopper_swap_buffers(struct dri_drawable *drawable)
 {
-   kopperSwapBuffers(opaque_dri_drawable(drawable));
+   kopperSwapBuffers(opaque_dri_drawable(drawable), 0);
 }
 
 static __DRIdrawable *

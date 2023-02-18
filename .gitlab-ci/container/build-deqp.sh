@@ -12,19 +12,22 @@ git clone \
     /VK-GL-CTS
 pushd /VK-GL-CTS
 
-# Apply a patch to update zlib link to an available version.
-# vulkan-cts-1.3.3.0 uses zlib 1.2.12 which was removed from zlib server due to
-# a CVE. See https://zlib.net/
-# FIXME: Remove this patch when uprev to 1.3.4.0+
-curl -L --retry 4 -f --retry-all-errors --retry-delay 60 \
-    "https://github.com/KhronosGroup/VK-GL-CTS/commit/6bb2e7d64261bedb503947b1b251b1eeeb49be73.patch" | git am -
+cts_commits_to_backport=(
+    # Update zlib link to an available version.
+    # vulkan-cts-1.3.3.0 uses zlib 1.2.12 which was removed from zlib server due to
+    # a CVE. See https://zlib.net/
+    # FIXME: Remove this patch when uprev to 1.3.4.0+
+    6bb2e7d64261bedb503947b1b251b1eeeb49be73
 
-# Apply a patch to fix a bug in 1.3.3.0 that affects some new formats
-curl -L --retry 4 -f --retry-all-errors --retry-delay 60 \
-    "https://github.com/KhronosGroup/VK-GL-CTS/commit/4fa2b40411921b304f5dad8d106b212ad5b0f172.patch" | git am -
+    # Fix a bug in 1.3.3.0 that affects some new formats
+    4fa2b40411921b304f5dad8d106b212ad5b0f172
+)
 
-# https://github.com/KhronosGroup/VK-GL-CTS/pull/360
-sed -i -e 's#http://zlib.net/zlib-1.2.12.tar.gz#http://zlib.net/fossils/zlib-1.2.12.tar.gz#g' external/fetch_sources.py
+for commit in "${cts_commits_to_backport[@]}"
+do
+  curl -L --retry 4 -f --retry-all-errors --retry-delay 60 \
+    "https://github.com/KhronosGroup/VK-GL-CTS/commit/$commit.patch" | git am -
+done
 
 # --insecure is due to SSL cert failures hitting sourceforge for zlib and
 # libpng (sigh).  The archives get their checksums checked anyway, and git

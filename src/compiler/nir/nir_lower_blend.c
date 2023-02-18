@@ -431,14 +431,15 @@ nir_blend(
 }
 
 static int
-color_index_for_var(const nir_variable *var)
+color_index_for_location(unsigned location)
 {
-   if (var->data.location != FRAG_RESULT_COLOR &&
-       var->data.location < FRAG_RESULT_DATA0)
-      return -1;
+   assert(location != FRAG_RESULT_COLOR &&
+          "gl_FragColor must be lowered before nir_lower_blend");
 
-   return (var->data.location == FRAG_RESULT_COLOR) ? 0 :
-          (var->data.location - FRAG_RESULT_DATA0);
+   if (location < FRAG_RESULT_DATA0)
+      return -1;
+   else
+      return location - FRAG_RESULT_DATA0;
 }
 
 /*
@@ -461,31 +462,44 @@ nir_blend_replace_rt(const nir_lower_blend_rt *rt)
 }
 
 static bool
-nir_lower_blend_store(nir_builder *b, nir_intrinsic_instr *store,
-                      const nir_lower_blend_options *options)
+nir_lower_blend_instr(nir_builder *b, nir_instr *instr, void *data)
 {
-   assert(store->intrinsic == nir_intrinsic_store_deref);
+   const nir_lower_blend_options *options = data;
+   if (instr->type != nir_instr_type_intrinsic)
+      return false;
 
-   nir_variable *var = nir_intrinsic_get_var(store, 0);
-   int rt = color_index_for_var(var);
+   nir_intrinsic_instr *store = nir_instr_as_intrinsic(instr);
+   if (store->intrinsic != nir_intrinsic_store_output)
+      return false;
+
+   nir_io_semantics sem = nir_intrinsic_io_semantics(store);
+   int rt = color_index_for_location(sem.location);
 
    /* No blend lowering requested on this RT */
    if (rt < 0 || options->format[rt] == PIPE_FORMAT_NONE)
       return false;
 
-   b->cursor = nir_before_instr(&store->instr);
+   b->cursor = nir_before_instr(instr);
 
    /* Grab the input color.  We always want 4 channels during blend.  Dead
     * code will clean up any channels we don't need.
     */
-   assert(store->src[1].is_ssa);
-   nir_ssa_def *src = nir_pad_vector(b, store->src[1].ssa, 4);
+   assert(store->src[0].is_ssa);
+   nir_ssa_def *src = nir_pad_vector(b, store->src[0].ssa, 4);
 
    /* Grab the previous fragment color */
-   var->data.fb_fetch_output = true;
-   b->shader->info.outputs_read |= BITFIELD64_BIT(var->data.location);
+   b->shader->info.outputs_read |= BITFIELD64_BIT(sem.location);
    b->shader->info.fs.uses_fbfetch_output = true;
-   nir_ssa_def *dst = nir_pad_vector(b, nir_load_var(b, var), 4);
+   sem.fb_fetch_output = true;
+
+   assert(nir_src_as_uint(store->src[1]) == 0 && "store_output invariant");
+
+   nir_ssa_def *dst =
+      nir_load_output(b, 4,
+                      nir_src_bit_size(store->src[0]),
+                      nir_imm_int(b, 0),
+                     .dest_type = nir_intrinsic_src_type(store),
+                     .io_semantics = sem);
 
    /* Blend the two colors per the passed options. We only call nir_blend if
     * blending is enabled with a blend mode other than replace (independent of
@@ -507,129 +521,31 @@ nir_lower_blend_store(nir_builder *b, nir_intrinsic_instr *store,
    if (options->rt[rt].colormask != BITFIELD_MASK(4))
       blended = nir_color_mask(b, options->rt[rt].colormask, blended, dst);
 
-   const unsigned num_components = glsl_get_vector_elements(var->type);
+   const unsigned num_components =
+      util_format_get_nr_components(options->format[rt]);
 
    /* Shave off any components we don't want to store */
    blended = nir_trim_vector(b, blended, num_components);
 
    /* Grow or shrink the store destination as needed */
    store->num_components = num_components;
-   store->dest.ssa.num_components = num_components;
    nir_intrinsic_set_write_mask(store, nir_intrinsic_write_mask(store) &
                                        nir_component_mask(num_components));
 
    /* Write out the final color instead of the input */
-   nir_instr_rewrite_src_ssa(&store->instr, &store->src[1], blended);
+   nir_instr_rewrite_src_ssa(instr, &store->src[0], blended);
    return true;
-}
-
-static bool
-nir_lower_blend_instr(nir_builder *b, nir_instr *instr, void *data)
-{
-   const nir_lower_blend_options *options = data;
-
-   switch (instr->type) {
-   case nir_instr_type_deref: {
-      /* Fix up output deref types, as needed */
-      nir_deref_instr *deref = nir_instr_as_deref(instr);
-      if (!nir_deref_mode_is(deref, nir_var_shader_out))
-         return false;
-
-      /* Indirects must be already lowered and output variables split */
-      assert(deref->deref_type == nir_deref_type_var);
-
-      if (deref->type == deref->var->type)
-         return false;
-
-      deref->type = deref->var->type;
-      return true;
-   }
-
-   case nir_instr_type_intrinsic: {
-      nir_intrinsic_instr *intrin = nir_instr_as_intrinsic(instr);
-      if (intrin->intrinsic != nir_intrinsic_load_deref &&
-          intrin->intrinsic != nir_intrinsic_store_deref)
-         return false;
-
-      nir_deref_instr *deref = nir_src_as_deref(intrin->src[0]);
-      if (!nir_deref_mode_is(deref, nir_var_shader_out))
-         return false;
-
-      assert(glsl_type_is_vector_or_scalar(deref->type));
-
-      if (intrin->intrinsic == nir_intrinsic_load_deref) {
-         /* We need to fix up framebuffer if num_components changed */
-         const unsigned num_components = glsl_get_vector_elements(deref->type);
-         if (intrin->num_components == num_components)
-            return false;
-
-         b->cursor = nir_after_instr(&intrin->instr);
-
-         assert(intrin->dest.is_ssa);
-         nir_ssa_def *val = nir_resize_vector(b, &intrin->dest.ssa,
-                                              num_components);
-         intrin->num_components = num_components,
-         nir_ssa_def_rewrite_uses_after(&intrin->dest.ssa, val,
-                                        val->parent_instr);
-         return true;
-      } else {
-         return nir_lower_blend_store(b, intrin, options);
-      }
-   }
-
-   default:
-      return false;
-   }
 }
 
 /** Lower blending to framebuffer fetch and some math
  *
- * This pass requires that indirects are lowered and output variables split
- * so that we have a single output variable for each RT.  We could go to the
- * effort of handling arrays (possibly of arrays) but, given that we need
- * indirects lowered anyway (we need constant indices to look up blend
- * functions and formats), we may as well require variables to be split.
- * This can be done by calling nir_lower_io_arrays_to_elements_no_indirect().
+ * This pass requires that shader I/O is lowered to explicit load/store
+ * instructions using nir_lower_io.
  */
 void
 nir_lower_blend(nir_shader *shader, const nir_lower_blend_options *options)
 {
    assert(shader->info.stage == MESA_SHADER_FRAGMENT);
-
-   /* Re-type any blended output variables to have the same number of
-    * components as the image format.  The GL 4.6 Spec says:
-    *
-    *    "If a fragment shader writes to none of gl_FragColor, gl_FragData,
-    *    nor any user-defined output variables, the values of the fragment
-    *    colors following shader execution are undefined, and may differ for
-    *    each fragment color.  If some, but not all elements of gl_FragData or
-    *    of theser-defined output variables are written, the values of
-    *    fragment colors corresponding to unwritten elements orariables are
-    *    similarly undefined."
-    *
-    * Note the phrase "following shader execution".  Those color values are
-    * then supposed to go into blending which may, depending on the blend
-    * mode, apply constraints that result in well-defined rendering.  It's
-    * fine if we have to pad out a value with undef but we then need to blend
-    * that garbage value to ensure correct results.
-    *
-    * This may also, depending on output format, be a small optimization
-    * allowing NIR to dead-code unused calculations.
-    */
-   nir_foreach_shader_out_variable(var, shader) {
-      int rt = color_index_for_var(var);
-
-      /* No blend lowering requested on this RT */
-      if (rt < 0 || options->format[rt] == PIPE_FORMAT_NONE)
-         continue;
-
-      const unsigned num_format_components =
-         util_format_get_nr_components(options->format[rt]);
-
-      /* Indirects must be already lowered and output variables split */
-      assert(glsl_type_is_vector_or_scalar(var->type));
-      var->type = glsl_replace_vector_type(var->type, num_format_components);
-   }
 
    nir_shader_instructions_pass(shader, nir_lower_blend_instr,
                                 nir_metadata_block_index |

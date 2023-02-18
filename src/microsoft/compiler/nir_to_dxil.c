@@ -348,6 +348,9 @@ enum dxil_intr {
    DXIL_INTR_ATTRIBUTE_AT_VERTEX = 137,
    DXIL_INTR_VIEW_ID = 138,
 
+   DXIL_INTR_RAW_BUFFER_LOAD = 139,
+   DXIL_INTR_RAW_BUFFER_STORE = 140,
+
    DXIL_INTR_ANNOTATE_HANDLE = 216,
    DXIL_INTR_CREATE_HANDLE_FROM_BINDING = 217,
 
@@ -729,6 +732,29 @@ emit_groupid_call(struct ntd_context *ctx, const struct dxil_value *comp)
 }
 
 static const struct dxil_value *
+emit_raw_bufferload_call(struct ntd_context *ctx,
+                         const struct dxil_value *handle,
+                         const struct dxil_value *coord[2],
+                         enum overload_type overload,
+                         unsigned component_count,
+                         unsigned alignment)
+{
+   const struct dxil_func *func = dxil_get_function(&ctx->mod, "dx.op.rawBufferLoad", overload);
+   if (!func)
+      return NULL;
+
+   const struct dxil_value *opcode = dxil_module_get_int32_const(&ctx->mod,
+                                                                 DXIL_INTR_RAW_BUFFER_LOAD);
+   const struct dxil_value *args[] = {
+      opcode, handle, coord[0], coord[1],
+      dxil_module_get_int8_const(&ctx->mod, (1 << component_count) - 1),
+      dxil_module_get_int32_const(&ctx->mod, alignment),
+   };
+
+   return dxil_emit_call(&ctx->mod, func, args, ARRAY_SIZE(args));
+}
+
+static const struct dxil_value *
 emit_bufferload_call(struct ntd_context *ctx,
                      const struct dxil_value *handle,
                      const struct dxil_value *coord[2],
@@ -743,6 +769,33 @@ emit_bufferload_call(struct ntd_context *ctx,
    const struct dxil_value *args[] = { opcode, handle, coord[0], coord[1] };
 
    return dxil_emit_call(&ctx->mod, func, args, ARRAY_SIZE(args));
+}
+
+static bool
+emit_raw_bufferstore_call(struct ntd_context *ctx,
+                          const struct dxil_value *handle,
+                          const struct dxil_value *coord[2],
+                          const struct dxil_value *value[4],
+                          const struct dxil_value *write_mask,
+                          enum overload_type overload,
+                          unsigned alignment)
+{
+   const struct dxil_func *func = dxil_get_function(&ctx->mod, "dx.op.rawBufferStore", overload);
+
+   if (!func)
+      return false;
+
+   const struct dxil_value *opcode = dxil_module_get_int32_const(&ctx->mod,
+                                                                 DXIL_INTR_RAW_BUFFER_STORE);
+   const struct dxil_value *args[] = {
+      opcode, handle, coord[0], coord[1],
+      value[0], value[1], value[2], value[3],
+      write_mask,
+      dxil_module_get_int32_const(&ctx->mod, alignment),
+   };
+
+   return dxil_emit_call_void(&ctx->mod, func,
+                              args, ARRAY_SIZE(args));
 }
 
 static bool
@@ -1925,6 +1978,8 @@ store_dest(struct ntd_context *ctx, nir_dest *dest, unsigned chan,
    case nir_type_float:
       if (nir_dest_bit_size(*dest) == 64)
          ctx->mod.feats.doubles = true;
+      if (nir_dest_bit_size(*dest) == 16)
+         ctx->mod.feats.native_low_precision = true;
       store_dest_value(ctx, dest, chan, value);
       break;
    case nir_type_uint:
@@ -1982,6 +2037,8 @@ get_src(struct ntd_context *ctx, nir_src *src, unsigned chan,
          assert(ctx->mod.feats.doubles);
          ctx->mod.feats.int64_ops = true;
       }
+      if (bit_size == 16)
+         ctx->mod.feats.native_low_precision = true;
       assert(dxil_value_type_bitsize_equal_to(value, bit_size));
       return bitcast_to_int(ctx,  bit_size, value);
       }
@@ -1996,6 +2053,8 @@ get_src(struct ntd_context *ctx, nir_src *src, unsigned chan,
          assert(ctx->mod.feats.int64_ops);
          ctx->mod.feats.doubles = true;
       }
+      if (bit_size == 16)
+         ctx->mod.feats.native_low_precision = true;
       assert(dxil_value_type_bitsize_equal_to(value, bit_size));
       return bitcast_to_float(ctx, bit_size, value);
 
@@ -2101,6 +2160,7 @@ get_cast_op(nir_alu_instr *alu)
 
    /* float -> float */
    case nir_op_f2f16_rtz:
+   case nir_op_f2f16:
    case nir_op_f2f32:
    case nir_op_f2f64:
       assert(dst_bits != src_bits);
@@ -2649,9 +2709,21 @@ emit_alu(struct ntd_context *ctx, nir_alu_instr *alu)
 
    case nir_op_fround_even: return emit_unary_intin(ctx, alu, DXIL_INTR_ROUND_NE, src[0]);
    case nir_op_frcp: {
-         const struct dxil_value *one = dxil_module_get_float_const(&ctx->mod, 1.0f);
-         return emit_binop(ctx, alu, DXIL_BINOP_SDIV, one, src[0]);
+      const struct dxil_value *one;
+      switch (alu->dest.dest.ssa.bit_size) {
+      case 16:
+         one = dxil_module_get_float16_const(&ctx->mod, 0x3C00);
+         break;
+      case 32:
+         one = dxil_module_get_float_const(&ctx->mod, 1.0f);
+         break;
+      case 64:
+         one = dxil_module_get_double_const(&ctx->mod, 1.0);
+         break;
+      default: unreachable("Invalid float size");
       }
+      return emit_binop(ctx, alu, DXIL_BINOP_SDIV, one, src[0]);
+   }
    case nir_op_fsat: return emit_unary_intin(ctx, alu, DXIL_INTR_SATURATE, src[0]);
    case nir_op_bit_count: return emit_unary_intin(ctx, alu, DXIL_INTR_COUNTBITS, src[0]);
    case nir_op_bitfield_reverse: return emit_unary_intin(ctx, alu, DXIL_INTR_BFREV, src[0]);
@@ -2689,6 +2761,7 @@ emit_alu(struct ntd_context *ctx, nir_alu_instr *alu)
    case nir_op_u2f16:
    case nir_op_i2f16:
    case nir_op_f2f16_rtz:
+   case nir_op_f2f16:
    case nir_op_b2i32:
    case nir_op_f2f32:
    case nir_op_f2i32:
@@ -3129,7 +3202,12 @@ emit_load_ssbo(struct ntd_context *ctx, nir_intrinsic_instr *intr)
       int32_undef
    };
 
-   const struct dxil_value *load = emit_bufferload_call(ctx, handle, coord, DXIL_I32);
+   const struct dxil_value *load = ctx->mod.minor_version >= 2 ?
+      emit_raw_bufferload_call(ctx, handle, coord,
+                               get_overload(nir_type_uint, nir_dest_bit_size(intr->dest)),
+                               nir_intrinsic_dest_components(intr),
+                               nir_intrinsic_align(intr)) :
+      emit_bufferload_call(ctx, handle, coord, get_overload(nir_type_uint, nir_dest_bit_size(intr->dest)));
    if (!load)
       return false;
 
@@ -3152,7 +3230,6 @@ emit_store_ssbo(struct ntd_context *ctx, nir_intrinsic_instr *intr)
    if (!handle || !offset)
       return false;
 
-   assert(nir_src_bit_size(intr->src[0]) == 32);
    unsigned num_components = nir_src_num_components(intr->src[0]);
    assert(num_components <= 4);
    const struct dxil_value *value[4];
@@ -3171,15 +3248,26 @@ emit_store_ssbo(struct ntd_context *ctx, nir_intrinsic_instr *intr)
       int32_undef
    };
 
-   for (int i = num_components; i < 4; ++i)
-      value[i] = int32_undef;
+   unsigned bit_size = nir_src_bit_size(intr->src[0]);
+   enum overload_type overload = get_overload(nir_type_uint, bit_size);
+   if (num_components < 4) {
+      const struct dxil_type *value_undef_type = dxil_module_get_int_type(&ctx->mod, bit_size);
+      const struct dxil_value *value_undef = dxil_module_get_undef(&ctx->mod, value_undef_type);
+      if (!value_undef)
+         return false;
+
+      for (int i = num_components; i < 4; ++i)
+         value[i] = value_undef;
+   }
 
    const struct dxil_value *write_mask =
       dxil_module_get_int8_const(&ctx->mod, (1u << num_components) - 1);
    if (!write_mask)
       return false;
 
-   return emit_bufferstore_call(ctx, handle, coord, value, write_mask, DXIL_I32);
+   return ctx->mod.minor_version >= 2 ?
+      emit_raw_bufferstore_call(ctx, handle, coord, value, write_mask, overload, nir_intrinsic_align(intr)) :
+      emit_bufferstore_call(ctx, handle, coord, value, write_mask, overload);
 }
 
 static bool

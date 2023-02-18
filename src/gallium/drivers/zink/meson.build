@@ -100,7 +100,7 @@ libzink = static_library(
     idep_nir_headers, idep_mesautil, idep_vulkan_util_headers,
     idep_vulkan_wsi_headers, idep_vulkan_util, dep_libdrm
   ],
-  c_args: zink_c_args,
+  c_args: [zink_c_args, vk_wsi_args],
 )
 
 driver_zink = declare_dependency(

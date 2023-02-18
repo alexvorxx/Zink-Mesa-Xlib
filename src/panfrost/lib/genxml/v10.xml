@@ -692,8 +692,8 @@
 
   <struct name="CEU SYNC_ADD32" size="2">
     <!-- Iter status is written at [Address + 4], 0 == NO_FAULT, 1 == FAULT -->
-    <field name="Check iter faults" size="1" start="0" type="bool"/>
-    <field name="Sync Update" size="1" start="2" type="bool"/>
+    <field name="Error propagate" size="1" start="0" type="bool"/>
+    <field name="Scope CSG" size="1" start="2" type="bool"/>
     <field name="Wait mask" size="16" start="16" type="hex"/>
     <field name="Data" size="8" start="32" type="uint"/>
     <field name="Address" size="8" start="40" type="uint"/>
@@ -703,8 +703,8 @@
 
   <struct name="CEU SYNC_SET32" size="2">
     <!-- Iter status is written at [Address + 4], 0 == NO_FAULT, 1 == FAULT -->
-    <field name="Check iter faults" size="1" start="0" type="bool"/>
-    <field name="Sync Update" size="1" start="2" type="bool"/>
+    <field name="Error propagate" size="1" start="0" type="bool"/>
+    <field name="Scope CSG" size="1" start="2" type="bool"/>
     <field name="Wait mask" size="16" start="16" type="hex"/>
     <field name="Data" size="8" start="32" type="uint"/>
     <field name="Address" size="8" start="40" type="uint"/>
@@ -724,9 +724,9 @@
 
   <struct name="CEU SYNC_ADD64" size="2">
     <!-- Iter status is written at [Address + 8], 0 == NO_FAULT, 1 == FAULT -->
-    <field name="Check iter faults" size="1" start="0" type="bool"/>
+    <field name="Error propagate" size="1" start="0" type="bool"/>
     <!-- Used for inter-queue synchronization (unblocking a queue waiting on a mem-based fence) -->
-    <field name="Sync Update" size="1" start="2" type="bool"/>
+    <field name="Scope CSG" size="1" start="2" type="bool"/>
     <field name="Wait mask" size="16" start="16" type="hex"/>
     <field name="Data" size="8" start="32" type="uint"/>
     <field name="Address" size="8" start="40" type="uint"/>
@@ -736,8 +736,8 @@
 
   <struct name="CEU SYNC_SET64" size="2">
     <!-- Iter status is written at [Address + 8], 0 == NO_FAULT, 1 == FAULT -->
-    <field name="Check iter faults" size="1" start="0" type="bool"/>
-    <field name="Sync Update" size="1" start="2" type="bool"/>
+    <field name="Error propagate" size="1" start="0" type="bool"/>
+    <field name="Scope CSG" size="1" start="2" type="bool"/>
     <field name="Wait mask" size="16" start="16" type="hex"/>
     <field name="Data" size="8" start="32" type="uint"/>
     <field name="Address" size="8" start="40" type="uint"/>
@@ -915,12 +915,6 @@
     <value name="FP32" value="3"/>
   </enum>
 
-  <enum name="Primitive Restart">
-    <value name="None" value="0"/>
-    <value name="Implicit" value="2"/>
-    <value name="Explicit" value="3"/>
-  </enum>
-
   <enum name="FIFO format">
     <value name="Auto" value="0"/>
     <value name="Basic" value="1"/>
@@ -937,7 +931,7 @@
     <field name="Low Depth Cull" size="1" start="0:16" type="bool" default="true"/>
     <field name="High Depth Cull" size="1" start="0:17" type="bool" default="true"/>
     <field name="Secondary Shader" size="1" start="0:18" type="bool"/>
-    <field name="Primitive restart" size="2" start="0:19" type="Primitive Restart"/>
+    <field name="Primitive restart" size="1" start="0:19" type="bool"/>
     <field name="Layer index enable" size="1" start="0:20" type="bool"/>
     <field name="Scissor array enable" size="1" start="0:21" type="bool"/>
     <field name="Position FIFO format" size="2" start="0:22" type="FIFO format"/>
@@ -954,7 +948,7 @@
     <field name="Low Depth Cull" size="1" start="0:16" type="bool" default="true"/>
     <field name="High Depth Cull" size="1" start="0:17" type="bool" default="true"/>
     <field name="Secondary Shader" size="1" start="0:18" type="bool"/>
-    <field name="Primitive restart" size="2" start="0:19" type="Primitive Restart"/>
+    <field name="Primitive restart" size="1" start="0:19" type="bool"/>
     <field name="Layer index enable" size="1" start="0:20" type="bool"/>
     <field name="Scissor array enable" size="1" start="0:21" type="bool"/>
 

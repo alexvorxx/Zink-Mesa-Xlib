@@ -171,4 +171,21 @@ fd_draw_emit(struct fd_batch *batch, struct fd_ringbuffer *ring,
            idx_buffer);
 }
 
+static inline void
+fd_blend_tracking(struct fd_context *ctx)
+   assert_dt
+{
+   if (ctx->dirty & FD_DIRTY_BLEND) {
+      struct fd_batch *batch = ctx->batch;
+      struct pipe_framebuffer_state *pfb = &batch->framebuffer;
+
+      if (ctx->blend->logicop_enable)
+         batch->gmem_reason |= FD_GMEM_LOGICOP_ENABLED;
+      for (unsigned i = 0; i < pfb->nr_cbufs; i++) {
+         if (ctx->blend->rt[i].blend_enable)
+            batch->gmem_reason |= FD_GMEM_BLEND_ENABLED;
+      }
+   }
+}
+
 #endif /* FREEDRENO_DRAW_H_ */

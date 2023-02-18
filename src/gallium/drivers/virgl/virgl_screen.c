@@ -199,9 +199,10 @@ virgl_get_param(struct pipe_screen *screen, enum pipe_cap param)
    case PIPE_CAP_NIR_IMAGES_AS_DEREF:
       return 0;
    case PIPE_CAP_QUERY_TIMESTAMP:
-      return 1;
    case PIPE_CAP_QUERY_TIME_ELAPSED:
-      return 1;
+      if (vscreen->caps.caps.v2.host_feature_check_version >= 15)
+         return vscreen->caps.caps.v1.bset.timer_query;
+      return 1; /* older versions had this always enabled */
    case PIPE_CAP_TGSI_TEXCOORD:
       return vscreen->caps.caps.v2.host_feature_check_version >= 10;
    case PIPE_CAP_MIN_MAP_BUFFER_ALIGNMENT:

@@ -390,6 +390,10 @@ r2d_setup_common(struct tu_cmd_buffer *cmd,
                  bool ubwc,
                  bool scissor)
 {
+   if (!cmd->state.pass && cmd->device->dbg_renderpass_stomp_cs) {
+      tu_cs_emit_call(cs, cmd->device->dbg_renderpass_stomp_cs);
+   }
+
    enum a6xx_format fmt = blit_base_format(dst_format, ubwc);
    fixup_dst_format(src_format, &dst_format, &fmt);
    enum a6xx_2d_ifmt ifmt = format_to_ifmt(dst_format);
@@ -1224,6 +1228,10 @@ r3d_setup(struct tu_cmd_buffer *cmd,
           bool ubwc,
           VkSampleCountFlagBits samples)
 {
+   if (!cmd->state.pass && cmd->device->dbg_renderpass_stomp_cs) {
+      tu_cs_emit_call(cs, cmd->device->dbg_renderpass_stomp_cs);
+   }
+
    enum a6xx_format fmt = blit_base_format(dst_format, ubwc);
    fixup_dst_format(src_format, &dst_format, &fmt);
 
@@ -2616,6 +2624,8 @@ tu_clear_sysmem_attachments(struct tu_cmd_buffer *cmd,
    tu_cs_emit_regs(cs, A6XX_RB_STENCILWRMASK(.wrmask = 0xff));
    tu_cs_emit_regs(cs, A6XX_RB_STENCILREF(.ref = s_clear_val));
 
+   tu_cs_emit_regs(cs, A6XX_GRAS_SC_CNTL(.ccusinglecachelinesize = 2));
+
    unsigned num_rts = util_bitcount(clear_rts);
    tu_cs_emit_pkt7(cs, CP_LOAD_STATE6_FRAG, 3 + 4 * num_rts);
    tu_cs_emit(cs, CP_LOAD_STATE6_0_DST_OFF(0) |
@@ -3042,6 +3052,7 @@ tu_emit_blit(struct tu_cmd_buffer *cmd,
    tu_cs_emit_regs(cs, A6XX_RB_BLIT_INFO(
       .unk0 = !resolve,
       .gmem = !resolve,
+      .depth = vk_format_is_depth_or_stencil(attachment->format),
       .sample_0 = vk_format_is_int(attachment->format) ||
          vk_format_is_depth_or_stencil(attachment->format)));
 
@@ -3075,6 +3086,9 @@ tu_emit_blit(struct tu_cmd_buffer *cmd,
          tu_cs_emit_regs(cs,
                         A6XX_RB_BLIT_BASE_GMEM(tu_attachment_gmem_offset(cmd, attachment, i)));
       }
+
+      tu_cs_emit_pkt4(cs, REG_A6XX_RB_UNKNOWN_88D0, 1);
+      tu_cs_emit(cs, 0);
 
       tu6_emit_event_write(cmd, cs, BLIT);
    }

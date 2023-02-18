@@ -3887,13 +3887,6 @@ emit_tex(struct ntv_context *ctx, nir_tex_instr *tex)
 
    if (tex->is_sparse)
       result = extract_sparse_load(ctx, result, actual_dest_type, &tex->dest.ssa);
-   if (dref && nir_dest_num_components(tex->dest) > 1 && tex->op != nir_texop_tg4) {
-      SpvId components[4] = { result, result, result, result };
-      result = spirv_builder_emit_composite_construct(&ctx->builder,
-                                                      dest_type,
-                                                      components,
-                                                      4);
-   }
 
    if (nir_dest_bit_size(tex->dest) != 32) {
       /* convert FP32 to FP16 */

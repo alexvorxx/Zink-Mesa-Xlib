@@ -135,7 +135,7 @@ blit_native(struct zink_context *ctx, const struct pipe_blit_info *info, bool *n
       return false;
 
    if (util_format_is_depth_or_stencil(info->dst.format) &&
-       info->dst.format != info->src.format)
+       (info->dst.format != info->src.format || info->filter == PIPE_TEX_FILTER_LINEAR))
       return false;
 
    /* vkCmdBlitImage must not be used for multisampled source or destination images. */

@@ -17704,7 +17704,7 @@ vn_sizeof_VkDrmFormatModifierPropertiesList2EXT_self_partial(const VkDrmFormatMo
 {
     size_t size = 0;
     /* skip val->{sType,pNext} */
-    /* WA1: size += vn_sizeof_uint32_t(&val->drmFormatModifierCount); */(void)0;
+    size += vn_sizeof_uint32_t(&val->drmFormatModifierCount);
     if (val->pDrmFormatModifierProperties) {
         size += vn_sizeof_array_size(val->drmFormatModifierCount);
         for (uint32_t i = 0; i < val->drmFormatModifierCount; i++)
@@ -17738,7 +17738,7 @@ static inline void
 vn_encode_VkDrmFormatModifierPropertiesList2EXT_self_partial(struct vn_cs_encoder *enc, const VkDrmFormatModifierPropertiesList2EXT *val)
 {
     /* skip val->{sType,pNext} */
-    /* WA1: vn_encode_uint32_t(enc, &val->drmFormatModifierCount); */(void)0;
+    vn_encode_uint32_t(enc, &val->drmFormatModifierCount);
     if (val->pDrmFormatModifierProperties) {
         vn_encode_array_size(enc, val->drmFormatModifierCount);
         for (uint32_t i = 0; i < val->drmFormatModifierCount; i++)

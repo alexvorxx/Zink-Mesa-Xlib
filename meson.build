@@ -54,6 +54,9 @@ pre_args = [
   '-DPACKAGE_VERSION="@0@"'.format(meson.project_version()),
   '-DPACKAGE_BUGREPORT="https://gitlab.freedesktop.org/mesa/mesa/-/issues"',
 ]
+# Arguments for c or cpp compiler, can be compiler options
+c_cpp_args = []
+
 c_args = []
 cpp_args = []
 
@@ -112,13 +115,15 @@ with_opengl = get_option('opengl')
 
 with_gles1 = get_option('gles1') \
   .require(with_shared_glapi, error_message : 'OpengGL ES 1.x requires shared-glapi') \
-  .require(with_opengl, error_message : 'building OpenGL ES 1.x without OpenGL is not supported.') \
   .allowed()
 
 with_gles2 = get_option('gles2') \
   .require(with_shared_glapi, error_message : 'OpengGL ES 2.x requires shared-glapi') \
-  .require(with_opengl, error_message : 'building OpenGL ES 2.x without OpenGL is not supported.') \
   .allowed()
+
+pre_args += '-DHAVE_OPENGL=@0@'.format(with_opengl ? '1' : '0')
+pre_args += '-DHAVE_OPENGL_ES_1=@0@'.format(with_gles1 ? '1' : '0')
+pre_args += '-DHAVE_OPENGL_ES_2=@0@'.format(with_gles2 ? '1' : '0')
 
 with_any_opengl = with_opengl or with_gles1 or with_gles2
 # Only build shared_glapi if at least one OpenGL API is enabled
@@ -317,7 +322,9 @@ with_platform_windows = _platforms.contains('windows')
 
 with_glx = get_option('glx')
 if with_glx == 'auto'
-  if with_platform_android
+  if not with_opengl
+    with_glx = 'disabled'
+  elif with_platform_android
     with_glx = 'disabled'
   elif with_dri
     with_glx = 'dri'
@@ -342,6 +349,10 @@ if with_glx == 'dri'
    endif
 endif
 
+if not with_opengl and with_glx != 'disabled'
+  error('Building GLX without OpenGL is not supported.') \
+endif
+
 if not (with_dri or with_gallium or with_glx != 'disabled')
   with_gles1 = false
   with_gles2 = false
@@ -359,38 +370,28 @@ with_xlib_lease = get_option('xlib-lease') \
   .require(with_platform_x11 and system_has_kms_drm, error_message : 'xlib-lease requires X11 and KMS/DRM support') \
   .allowed()
 
+vk_wsi_args = []
+
 if with_platform_wayland
-  c_args += '-DVK_USE_PLATFORM_WAYLAND_KHR'
-  #add this once aco and other places can build with it
-  #cpp_args += '-DVK_USE_PLATFORM_WAYLAND_KHR'
+  vk_wsi_args += '-DVK_USE_PLATFORM_WAYLAND_KHR'
 endif
-if with_platform_x11 and host_machine.system() != 'darwin'
-  c_args += ['-DVK_USE_PLATFORM_XCB_KHR', '-DVK_USE_PLATFORM_XLIB_KHR']
-  #add this once aco and other places can build with it
-  #cpp_args += ['-DVK_USE_PLATFORM_XCB_KHR', '-DVK_USE_PLATFORM_XLIB_KHR']
+if with_platform_x11
+  vk_wsi_args += ['-DVK_USE_PLATFORM_XCB_KHR', '-DVK_USE_PLATFORM_XLIB_KHR']
 endif
 if with_platform_windows
-  c_args += '-DVK_USE_PLATFORM_WIN32_KHR'
-  cpp_args += '-DVK_USE_PLATFORM_WIN32_KHR'
+  vk_wsi_args += '-DVK_USE_PLATFORM_WIN32_KHR'
 endif
 if with_platform_android
-  c_args += '-DVK_USE_PLATFORM_ANDROID_KHR'
-  cpp_args += '-DVK_USE_PLATFORM_ANDROID_KHR'
+  vk_wsi_args += '-DVK_USE_PLATFORM_ANDROID_KHR'
 endif
 if with_xlib_lease
-  c_args += '-DVK_USE_PLATFORM_XLIB_XRANDR_EXT'
-  #add this once aco and other places can build with it
-  #cpp_args += '-DVK_USE_PLATFORM_XLIB_XRANDR_EXT'
+  vk_wsi_args += '-DVK_USE_PLATFORM_XLIB_XRANDR_EXT'
 endif
 if system_has_kms_drm and not with_platform_android
-  c_args += '-DVK_USE_PLATFORM_DISPLAY_KHR'
-  cpp_args += '-DVK_USE_PLATFORM_DISPLAY_KHR'
+  vk_wsi_args += '-DVK_USE_PLATFORM_DISPLAY_KHR'
 endif
 if host_machine.system() == 'darwin'
-  c_args += '-DVK_USE_PLATFORM_MACOS_MVK'
-  cpp_args += '-DVK_USE_PLATFORM_MACOS_MVK'
-  c_args += '-DVK_USE_PLATFORM_METAL_EXT'
-  cpp_args += '-DVK_USE_PLATFORM_METAL_EXT'
+  vk_wsi_args += ['-DVK_USE_PLATFORM_MACOS_MVK', '-DVK_USE_PLATFORM_METAL_EXT']
 endif
 
 with_egl = get_option('egl') \
@@ -429,8 +430,7 @@ if with_platform_android and get_option('platform-sdk-version') >= 29
   # By default the NDK compiler, at least, emits emutls references instead of
   # ELF TLS, even when building targeting newer API levels.  Make it actually do
   # ELF TLS instead.
-  c_args += '-fno-emulated-tls'
-  cpp_args += '-fno-emulated-tls'
+  c_cpp_args += '-fno-emulated-tls'
 endif
 
 # -mtls-dialect=gnu2 speeds up non-initial-exec TLS significantly but requires
@@ -462,8 +462,7 @@ if not have_mtls_dialect
                 "movq y@GOTPCREL(%rip), %rdx\n"
                 "call *x@TLSCALL(%rax)\n"); }''', name: 'split TLSDESC')
           )
-      c_args += '-mtls-dialect=gnu2'
-      cpp_args += '-mtls-dialect=gnu2'
+      c_cpp_args += '-mtls-dialect=gnu2'
     endif
   endif
 endif
@@ -741,7 +740,8 @@ if _power8.allowed()
         }''',
         args : '-mpower8-vector',
         name : 'POWER8 intrinsics')
-      pre_args += ['-D_ARCH_PWR8', '-mpower8-vector']
+      pre_args += ['-D_ARCH_PWR8']
+      c_cpp_args += '-mpower8-vector'
     elif _power8.enabled()
       error('POWER8 intrinsic support required but not found.')
     endif
@@ -849,6 +849,16 @@ if with_platform_android
     '-DANDROID',
     '-DANDROID_API_LEVEL=' + get_option('platform-sdk-version').to_string()
   ]
+endif
+
+# On Android, seccomp kills the process on kernels without
+# CONFIG_KCMP/CONFIG_CHECKPOINT_RESTORE if it attemps to use KCMP.
+# Since we can't detect that, err on the side of caution and disable
+# KCMP by default on Android.
+if get_option('allow-kcmp') \
+    .disable_auto_if(with_platform_android) \
+    .allowed()
+  pre_args += '-DALLOW_KCMP'
 endif
 
 prog_python = import('python').find_installation('python3')
@@ -1195,8 +1205,7 @@ with_asm_arch = ''
 if host_machine.cpu_family() == 'x86'
   if system_has_kms_drm or host_machine.system() == 'gnu'
     with_asm_arch = 'x86'
-    pre_args += ['-DUSE_X86_ASM', '-DUSE_MMX_ASM', '-DUSE_3DNOW_ASM',
-                 '-DUSE_SSE_ASM']
+    pre_args += ['-DUSE_X86_ASM']
 
     if with_glx_read_only_text
       pre_args += ['-DGLX_X86_READONLY_TEXT']
@@ -2018,6 +2027,8 @@ if with_perfetto
 endif
 
 add_project_arguments(pre_args, language : ['c', 'cpp'])
+add_project_arguments(c_cpp_args, language : ['c', 'cpp'])
+
 add_project_arguments(c_args,   language : ['c'])
 add_project_arguments(cpp_args, language : ['cpp'])
 

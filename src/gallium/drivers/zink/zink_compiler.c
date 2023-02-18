@@ -4221,6 +4221,39 @@ type_images(nir_shader *nir, unsigned *sampler_mask)
    return progress;
 }
 
+/* attempt to assign io for separate shaders */
+static bool
+fixup_io_locations(nir_shader *nir)
+{
+   nir_variable_mode mode = nir->info.stage == MESA_SHADER_FRAGMENT ? nir_var_shader_in : nir_var_shader_out;
+   /* i/o interface blocks are required to be EXACT matches between stages:
+    * iterate over all locations and set locations incrementally
+    */
+   unsigned slot = 0;
+   for (unsigned i = 0; i < VARYING_SLOT_MAX; i++) {
+      if (nir_slot_is_sysval_output(i))
+         continue;
+      nir_variable *var = nir_find_variable_with_location(nir, mode, i);
+      if (!var) {
+         /* locations used between stages are not required to be contiguous */
+         if (i >= VARYING_SLOT_VAR0)
+            slot++;
+         continue;
+      }
+      unsigned size;
+      /* ensure variable is given enough slots */
+      if (nir_is_arrayed_io(var, nir->info.stage))
+         size = glsl_count_vec4_slots(glsl_get_array_element(var->type), false, false);
+      else
+         size = glsl_count_vec4_slots(var->type, false, false);
+      var->data.driver_location = slot;
+      slot += size;
+      /* ensure the consumed slots aren't double iterated */
+      i += size - 1;
+   }
+   return true;
+}
+
 struct zink_shader *
 zink_shader_create(struct zink_screen *screen, struct nir_shader *nir,
                    const struct pipe_stream_output_info *so_info)
@@ -4254,6 +4287,10 @@ zink_shader_create(struct zink_screen *screen, struct nir_shader *nir,
 
    if (nir->info.stage < MESA_SHADER_FRAGMENT)
       have_psiz = check_psiz(nir);
+
+   if (!gl_shader_stage_is_compute(nir->info.stage) && nir->info.separate_shader)
+      NIR_PASS_V(nir, fixup_io_locations);
+
    NIR_PASS_V(nir, lower_basevertex);
    NIR_PASS_V(nir, nir_lower_regs_to_ssa);
    NIR_PASS_V(nir, lower_baseinstance);
@@ -4496,11 +4533,21 @@ zink_shader_free(struct zink_screen *screen, struct zink_shader *shader)
          struct hash_table *ht = &prog->ctx->program_cache[idx];
          simple_mtx_lock(&prog->ctx->program_lock[idx]);
          struct hash_entry *he = _mesa_hash_table_search(ht, prog->shaders);
-         assert(he);
+         assert(he && he->data == prog);
          _mesa_hash_table_remove(ht, he);
          prog->base.removed = true;
          simple_mtx_unlock(&prog->ctx->program_lock[idx]);
          util_queue_fence_wait(&prog->base.cache_fence);
+
+         for (unsigned r = 0; r < ARRAY_SIZE(prog->pipelines); r++) {
+            for (int i = 0; i < ARRAY_SIZE(prog->pipelines[0]); ++i) {
+               hash_table_foreach(&prog->pipelines[r][i], entry) {
+                  struct zink_gfx_pipeline_cache_entry *pc_entry = entry->data;
+
+                  util_queue_fence_wait(&pc_entry->fence);
+               }
+            }
+         }
 
          while (util_dynarray_contains(&shader->pipeline_libs, struct zink_gfx_lib_cache*)) {
             struct zink_gfx_lib_cache *libs = util_dynarray_pop(&shader->pipeline_libs, struct zink_gfx_lib_cache*);

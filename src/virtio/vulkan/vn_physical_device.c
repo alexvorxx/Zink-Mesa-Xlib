@@ -1905,8 +1905,76 @@ vn_GetPhysicalDeviceFormatProperties2(VkPhysicalDevice physicalDevice,
       }
    }
 
+   /* translate VkDrmFormatModifierPropertiesEXT into
+    * VkDrmFormatModifierProperties2EXT
+    * TODO: remove once venus-protocol WA1 is fixed:
+    *   https://gitlab.freedesktop.org/olv/venus-protocol/-/merge_requests/22
+    *
+    * Assumes that the caller will send either the "List" variant or the
+    * "List2" variant, but never both. */
+   VkDrmFormatModifierPropertiesListEXT *modifier_list = NULL;
+   VkDrmFormatModifierPropertiesList2EXT local_modifier_list2;
+
+   VkBaseInStructure *prev = vn_find_prev_struct(
+      pFormatProperties,
+      VK_STRUCTURE_TYPE_DRM_FORMAT_MODIFIER_PROPERTIES_LIST_EXT);
+
+   if (prev) {
+      modifier_list = (void *)prev->pNext;
+
+#ifndef NDEBUG
+      const VkBaseInStructure *list2 = vk_find_struct_const(
+         pFormatProperties, DRM_FORMAT_MODIFIER_PROPERTIES_LIST_2_EXT);
+      assert(!list2);
+#endif
+
+      local_modifier_list2 = (VkDrmFormatModifierPropertiesList2EXT){
+         .sType = VK_STRUCTURE_TYPE_DRM_FORMAT_MODIFIER_PROPERTIES_LIST_2_EXT,
+         .pNext = modifier_list->pNext,
+         .drmFormatModifierCount = modifier_list->drmFormatModifierCount,
+      };
+      prev->pNext = (const void *)&local_modifier_list2;
+
+      if (modifier_list->pDrmFormatModifierProperties) {
+         local_modifier_list2.pDrmFormatModifierProperties = malloc(
+            local_modifier_list2.drmFormatModifierCount *
+            sizeof(*local_modifier_list2.pDrmFormatModifierProperties));
+         if (!local_modifier_list2.pDrmFormatModifierProperties) {
+            vn_log(physical_dev->instance,
+                   "failed vkGetPhysicalDeviceFormatProperties: out of host "
+                   "memory.");
+            return;
+         }
+      }
+   }
+
    vn_call_vkGetPhysicalDeviceFormatProperties2(
       physical_dev->instance, physicalDevice, format, pFormatProperties);
+
+   if (modifier_list) {
+      modifier_list->drmFormatModifierCount =
+         local_modifier_list2.drmFormatModifierCount;
+
+      if (modifier_list->pDrmFormatModifierProperties) {
+         for (uint32_t i = 0; i < modifier_list->drmFormatModifierCount;
+              i++) {
+            const VkDrmFormatModifierProperties2EXT *modifier_props2 =
+               &local_modifier_list2.pDrmFormatModifierProperties[i];
+
+            modifier_list->pDrmFormatModifierProperties[i] =
+               (VkDrmFormatModifierPropertiesEXT){
+                  .drmFormatModifier = modifier_props2->drmFormatModifier,
+                  .drmFormatModifierPlaneCount =
+                     modifier_props2->drmFormatModifierPlaneCount,
+                  .drmFormatModifierTilingFeatures =
+                     modifier_props2->drmFormatModifierTilingFeatures,
+               };
+         }
+      }
+
+      prev->pNext = (const void *)modifier_list;
+      free(local_modifier_list2.pDrmFormatModifierProperties);
+   }
 
    if (entry) {
       vn_physical_device_add_format_properties(

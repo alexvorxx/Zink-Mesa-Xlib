@@ -5398,10 +5398,22 @@ fs_visitor::nir_emit_intrinsic(const fs_builder &bld, nir_intrinsic_instr *instr
    case nir_intrinsic_read_invocation: {
       const fs_reg value = get_nir_src(instr->src[0]);
       const fs_reg invocation = get_nir_src(instr->src[1]);
+
       fs_reg tmp = bld.vgrf(value.type);
 
+      /* When for some reason the subgroup_size picked by NIR is larger than
+       * the dispatch size picked by the backend (this could happen in RT,
+       * FS), bound the invocation to the dispatch size.
+       */
+      fs_reg bound_invocation;
+      if (bld.dispatch_width() < bld.shader->nir->info.subgroup_size) {
+         bound_invocation = bld.vgrf(BRW_REGISTER_TYPE_UD);
+         bld.AND(bound_invocation, invocation, brw_imm_ud(dispatch_width - 1));
+      } else {
+         bound_invocation = invocation;
+      }
       bld.exec_all().emit(SHADER_OPCODE_BROADCAST, tmp, value,
-                          bld.emit_uniformize(invocation));
+                          bld.emit_uniformize(bound_invocation));
 
       bld.MOV(retype(dest, value.type), fs_reg(component(tmp, 0)));
       break;

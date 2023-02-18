@@ -26,7 +26,7 @@
 #include "util/macros.h"
 
 #include "intel_engine.h"
-#include "intel_engine_i915.h"
+#include "i915/intel_engine.h"
 
 struct intel_query_engine_info *
 intel_engine_get_info(int fd, enum intel_kmd_type type)

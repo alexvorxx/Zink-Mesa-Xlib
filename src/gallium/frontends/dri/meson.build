@@ -51,6 +51,7 @@ if with_gallium_zink and not with_platform_android
     libdri_c_args += '-DKOPPER_LIB_NAMES="libEGL and libGLX"'
   endif
   files_libdri += files('kopper.c')
+  libdri_c_args += vk_wsi_args
 endif
 
 if with_gallium_softpipe

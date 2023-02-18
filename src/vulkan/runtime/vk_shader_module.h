@@ -24,7 +24,7 @@
 #ifndef VK_SHADER_MODULE_H
 #define VK_SHADER_MODULE_H
 
-#include <vulkan/vulkan.h>
+#include <vulkan/vulkan_core.h>
 
 #include "compiler/shader_enums.h"
 #include "vk_object.h"

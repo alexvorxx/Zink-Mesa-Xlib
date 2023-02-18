@@ -102,6 +102,8 @@ anv_create_cmd_buffer(struct vk_command_pool *pool,
 
    cmd_buffer->vk.dynamic_graphics_state.ms.sample_locations =
       &cmd_buffer->state.gfx.sample_locations;
+   cmd_buffer->vk.dynamic_graphics_state.vi =
+      &cmd_buffer->state.gfx.vertex_input;
 
    cmd_buffer->batch.status = VK_SUCCESS;
    cmd_buffer->generation_batch.status = VK_SUCCESS;
@@ -384,7 +386,6 @@ void anv_CmdBindPipeline(
          return;
 
       cmd_buffer->state.gfx.pipeline = gfx_pipeline;
-      cmd_buffer->state.gfx.vb_dirty |= gfx_pipeline->vb_used;
       cmd_buffer->state.gfx.dirty |= ANV_CMD_DIRTY_PIPELINE;
 
       anv_foreach_stage(stage, gfx_pipeline->active_stages) {

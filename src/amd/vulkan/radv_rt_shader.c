@@ -1438,63 +1438,6 @@ build_traversal_shader(struct radv_device *device,
    return b.shader;
 }
 
-static unsigned
-compute_rt_stack_size(const VkRayTracingPipelineCreateInfoKHR *pCreateInfo,
-                      const struct radv_pipeline_shader_stack_size *stack_sizes)
-{
-   unsigned raygen_size = 0;
-   unsigned callable_size = 0;
-   unsigned chit_size = 0;
-   unsigned miss_size = 0;
-   unsigned non_recursive_size = 0;
-
-   for (unsigned i = 0; i < pCreateInfo->groupCount; ++i) {
-      non_recursive_size = MAX2(stack_sizes[i].non_recursive_size, non_recursive_size);
-
-      const VkRayTracingShaderGroupCreateInfoKHR *group_info = &pCreateInfo->pGroups[i];
-      uint32_t shader_id = VK_SHADER_UNUSED_KHR;
-      unsigned size = stack_sizes[i].recursive_size;
-
-      switch (group_info->type) {
-      case VK_RAY_TRACING_SHADER_GROUP_TYPE_GENERAL_KHR:
-         shader_id = group_info->generalShader;
-         break;
-      case VK_RAY_TRACING_SHADER_GROUP_TYPE_PROCEDURAL_HIT_GROUP_KHR:
-      case VK_RAY_TRACING_SHADER_GROUP_TYPE_TRIANGLES_HIT_GROUP_KHR:
-         shader_id = group_info->closestHitShader;
-         break;
-      default:
-         break;
-      }
-      if (shader_id == VK_SHADER_UNUSED_KHR)
-         continue;
-
-      const VkPipelineShaderStageCreateInfo *stage = &pCreateInfo->pStages[shader_id];
-      switch (stage->stage) {
-      case VK_SHADER_STAGE_RAYGEN_BIT_KHR:
-         raygen_size = MAX2(raygen_size, size);
-         break;
-      case VK_SHADER_STAGE_MISS_BIT_KHR:
-         miss_size = MAX2(miss_size, size);
-         break;
-      case VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR:
-         chit_size = MAX2(chit_size, size);
-         break;
-      case VK_SHADER_STAGE_CALLABLE_BIT_KHR:
-         callable_size = MAX2(callable_size, size);
-         break;
-      default:
-         unreachable("Invalid stage type in RT shader");
-      }
-   }
-   return raygen_size +
-          MIN2(pCreateInfo->maxPipelineRayRecursionDepth, 1) *
-             MAX2(MAX2(chit_size, miss_size), non_recursive_size) +
-          MAX2(0, (int)(pCreateInfo->maxPipelineRayRecursionDepth) - 1) *
-             MAX2(chit_size, miss_size) +
-          2 * callable_size;
-}
-
 static bool
 should_move_rt_instruction(nir_intrinsic_op intrinsic)
 {
@@ -1584,10 +1527,7 @@ create_rt_shader(struct radv_device *device, const VkRayTracingPipelineCreateInf
 
    struct rt_variables vars = create_rt_variables(b.shader, pCreateInfo, stack_sizes, key);
    load_sbt_entry(&b, &vars, nir_imm_int(&b, 0), SBT_RAYGEN, SBT_GENERAL_IDX);
-   if (radv_rt_pipeline_has_dynamic_stack_size(pCreateInfo))
-      nir_store_var(&b, vars.stack_ptr, nir_load_rt_dynamic_callable_stack_base_amd(&b), 0x1);
-   else
-      nir_store_var(&b, vars.stack_ptr, nir_imm_int(&b, 0), 0x1);
+   nir_store_var(&b, vars.stack_ptr, nir_load_rt_dynamic_callable_stack_base_amd(&b), 0x1);
 
    nir_store_var(&b, vars.launch_id, nir_load_global_invocation_id(&b, 32), 0x7);
    nir_ssa_def *launch_size_addr = nir_load_ray_launch_size_addr_amd(&b);
@@ -1657,11 +1597,6 @@ create_rt_shader(struct radv_device *device, const VkRayTracingPipelineCreateInf
    }
 
    nir_pop_loop(&b, loop);
-
-   if (radv_rt_pipeline_has_dynamic_stack_size(pCreateInfo))
-      b.shader->scratch_size = 4; /* To enable scratch. */
-   else
-      b.shader->scratch_size += compute_rt_stack_size(pCreateInfo, stack_sizes);
 
    /* Deal with all the inline functions. */
    nir_index_ssa_defs(nir_shader_get_entrypoint(b.shader));

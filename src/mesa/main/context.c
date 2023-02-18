@@ -914,7 +914,7 @@ _mesa_initialize_dispatch_tables(struct gl_context *ctx)
       _mesa_init_dispatch_save(ctx);
 
    vbo_init_dispatch_begin_end(ctx);
-   if (ctx->API == API_OPENGL_COMPAT)
+   if (_mesa_is_desktop_gl_compat(ctx))
       _mesa_init_dispatch_save_begin_end(ctx);
 }
 
@@ -1050,7 +1050,7 @@ _mesa_initialize_context(struct gl_context *ctx,
       }
       break;
    }
-   ctx->VertexProgram.PointSizeEnabled = ctx->API == API_OPENGLES2;
+   ctx->VertexProgram.PointSizeEnabled = _mesa_is_gles2(ctx);
    ctx->PointSizeIsSet = GL_TRUE;
 
    ctx->FirstTimeCurrent = GL_TRUE;
@@ -1402,8 +1402,8 @@ handle_first_current(struct gl_context *ctx)
        * that will erroneously allow this usage in a 3.0 forward-compatible
        * context too.
        */
-      ctx->_AttribZeroAliasesVertex = (ctx->API == API_OPENGLES
-                                       || (ctx->API == API_OPENGL_COMPAT
+      ctx->_AttribZeroAliasesVertex = (_mesa_is_gles1(ctx)
+                                       || (_mesa_is_desktop_gl_compat(ctx)
                                            && !is_forward_compatible_context));
    }
 

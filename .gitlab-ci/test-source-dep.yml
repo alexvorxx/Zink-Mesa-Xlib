@@ -44,7 +44,6 @@
       - src/drm-shim/**/*
       - src/gbm/**/*
       - src/gtest/**/*
-      - src/hgl/**/*
       - src/include/**/*
       # Some src/util and src/compiler files use headers from mesa/ (e.g.
       # mtypes.h).  We should clean that up.
@@ -685,6 +684,24 @@
   stage: intel
   rules:
     - !reference [.collabora-farm-rules, rules]
+    - !reference [.vulkan-manual-rules, rules]
+    - changes:
+      - src/intel/**/*
+      when: on_success
+
+.hasvk-rules:
+  stage: intel
+  rules:
+    - !reference [.anholt-farm-rules, rules]
+    - !reference [.vulkan-rules, rules]
+    - changes:
+      - src/intel/**/*
+      when: on_success
+
+.hasvk-manual-rules:
+  stage: intel
+  rules:
+    - !reference [.anholt-farm-rules, rules]
     - !reference [.vulkan-manual-rules, rules]
     - changes:
       - src/intel/**/*

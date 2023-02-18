@@ -2461,7 +2461,7 @@ lower_to_hw_instr(Program* program)
             }
             case aco_opcode::p_init_scratch: {
                assert(program->gfx_level >= GFX8 && program->gfx_level <= GFX10_3);
-               if (!program->config->scratch_bytes_per_wave)
+               if (!program->config->scratch_bytes_per_wave && !program->rt_stack)
                   break;
 
                Operand scratch_addr = instr->operands[0];

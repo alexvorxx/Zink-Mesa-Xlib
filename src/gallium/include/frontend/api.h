@@ -272,7 +272,8 @@ struct pipe_frontend_drawable
                     struct pipe_frontend_drawable *drawable,
                     const enum st_attachment_type *statts,
                     unsigned count,
-                    struct pipe_resource **out);
+                    struct pipe_resource **out,
+                    struct pipe_resource **resolve);
 
    bool (*flush_swapbuffers)(struct st_context *st,
                              struct pipe_frontend_drawable *drawable);

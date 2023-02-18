@@ -529,6 +529,65 @@ ac_get_vtx_format_info(enum amd_gfx_level level, enum radeon_family family, enum
    return &ac_get_vtx_format_info_table(level, family)[fmt];
 }
 
+/**
+ * Check whether the specified fetch size is safe to use with MTBUF.
+ *
+ * Split typed vertex buffer loads when necessary to avoid any
+ * alignment issues that trigger memory violations and eventually a GPU
+ * hang. This can happen if the stride (static or dynamic) is unaligned and
+ * also if the VBO offset is aligned to a scalar (eg. stride is 8 and VBO
+ * offset is 2 for R16G16B16A16_SNORM).
+ */
+static bool
+is_fetch_size_safe(const enum amd_gfx_level gfx_level, const struct ac_vtx_format_info* vtx_info,
+                   const unsigned offset, const unsigned alignment, const unsigned channels)
+{
+   if (!(vtx_info->has_hw_format & BITFIELD_BIT(channels - 1)))
+      return false;
+
+   unsigned vertex_byte_size = vtx_info->chan_byte_size * channels;
+   return (gfx_level >= GFX7 && gfx_level <= GFX9) ||
+          (offset % vertex_byte_size == 0 && MAX2(alignment, 1) % vertex_byte_size == 0);
+}
+
+/**
+ * Gets the number of channels that can be safely fetched by MTBUF (typed buffer load)
+ * instructions without triggering alignment-related issues.
+ */
+unsigned
+ac_get_safe_fetch_size(const enum amd_gfx_level gfx_level, const struct ac_vtx_format_info* vtx_info,
+                       const unsigned offset, const unsigned max_channels, const unsigned alignment,
+                       const unsigned num_channels)
+{
+   /* Packed formats can't be split. */
+   if (!vtx_info->chan_byte_size)
+      return vtx_info->num_channels;
+
+   /* Early exit if the specified number of channels is fine. */
+   if (is_fetch_size_safe(gfx_level, vtx_info, offset, alignment, num_channels))
+      return num_channels;
+
+   /* First, assume that more load instructions are worse and try using a larger data format. */
+   unsigned new_channels = num_channels + 1;
+   while (new_channels <= max_channels &&
+          !is_fetch_size_safe(gfx_level, vtx_info, offset, alignment, new_channels)) {
+      new_channels++;
+   }
+
+   /* Found a feasible load size. */
+   if (new_channels <= max_channels)
+      return new_channels;
+
+   /* Try decreasing load size (at the cost of more load instructions). */
+   new_channels = num_channels;
+   while (new_channels > 1 &&
+          !is_fetch_size_safe(gfx_level, vtx_info, offset, alignment, new_channels)) {
+      new_channels--;
+   }
+
+   return new_channels;
+}
+
 enum ac_image_dim ac_get_sampler_dim(enum amd_gfx_level gfx_level, enum glsl_sampler_dim dim,
                                      bool is_array)
 {

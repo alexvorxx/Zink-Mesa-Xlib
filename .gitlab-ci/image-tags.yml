@@ -3,7 +3,7 @@ variables:
    DEBIAN_BASE_TAG: "2023-01-28-rust-valgrind"
 
    DEBIAN_X86_BUILD_IMAGE_PATH: "debian/x86_build"
-   DEBIAN_BUILD_TAG: "2023-01-24-android"
+   DEBIAN_BUILD_TAG: "2023-02-14-pip"
 
    DEBIAN_X86_BUILD_MINGW_IMAGE_PATH: "debian/x86_build-mingw"
    DEBIAN_BUILD_MINGW_TAG: "2023-01-03-ci-libva-2.17"
@@ -14,20 +14,20 @@ variables:
    DEBIAN_X86_TEST_IMAGE_VK_PATH: "debian/x86_test-vk"
    DEBIAN_X86_TEST_IMAGE_PATH: ${DEBIAN_X86_TEST_IMAGE_GL_PATH}
    DEBIAN_X86_TEST_ANDROID_IMAGE_PATH: "debian/x86_test-android"
-   DEBIAN_X86_TEST_ANDROID_TAG: "2023-01-24-test-android-2"
 
-   DEBIAN_X86_TEST_GL_TAG: "2023-02-03-uprev-piglit"
-   DEBIAN_X86_TEST_VK_TAG: "2023-02-03-uprev-piglit"
+   DEBIAN_X86_TEST_ANDROID_TAG: "2023-02-17-deqp-build"
+   DEBIAN_X86_TEST_GL_TAG: "2023-02-17-deqp-build"
+   DEBIAN_X86_TEST_VK_TAG: "2023-02-17-deqp-build"
 
    ALPINE_X86_BUILD_TAG: "2023-01-20-all-in-1"
-   FEDORA_X86_BUILD_TAG: "2023-01-20-all-in-1"
-   KERNEL_ROOTFS_TAG: "2023-02-03-uprev-piglit"
+   FEDORA_X86_BUILD_TAG: "2023-02-09-f36"
+   KERNEL_ROOTFS_TAG: "2023-02-14-pip"
 
    WINDOWS_X64_VS_PATH: "windows/x64_vs"
    WINDOWS_X64_VS_TAG: "2022-10-20-upgrade-zlib"
 
    WINDOWS_X64_BUILD_PATH: "windows/x64_build"
-   WINDOWS_X64_BUILD_TAG: "2023-01-03-ci-libva-2.17"
+   WINDOWS_X64_BUILD_TAG: "2023-02-07-llvm-15"
 
    WINDOWS_X64_TEST_PATH: "windows/x64_test"
    WINDOWS_X64_TEST_TAG: "2023-01-13-warp-update"

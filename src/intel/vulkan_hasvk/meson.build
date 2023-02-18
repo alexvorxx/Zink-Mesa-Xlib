@@ -139,6 +139,7 @@ anv_deps = [
 anv_flags = [
   no_override_init_args,
   c_sse2_args,
+  vk_wsi_args,
 ]
 
 anv_cpp_flags = []

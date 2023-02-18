@@ -181,7 +181,7 @@ tu_tiling_config_update_tile_layout(struct tu_framebuffer *fb,
     * of them finding which produces the lowest number of bins.
     */
    const uint32_t max_tile_width = MIN2(
-      dev->physical_device->info->tile_max_w, align(fb->width, tile_align_w));
+      dev->physical_device->info->tile_max_w, util_align_npot(fb->width, tile_align_w));
    const uint32_t max_tile_height =
       MIN2(dev->physical_device->info->tile_max_h,
            align(fb->height, tile_align_h));
@@ -220,7 +220,7 @@ tu_tiling_config_update_tile_layout(struct tu_framebuffer *fb,
    /* If forcing binning, try to get at least 2 tiles in each direction. */
    if (TU_DEBUG(FORCEBIN) && tiling->possible) {
       if (tiling->tile_count.width == 1 && tiling->tile0.width != tile_align_w) {
-         tiling->tile0.width = align(DIV_ROUND_UP(tiling->tile0.width, 2), tile_align_w);
+         tiling->tile0.width = util_align_npot(DIV_ROUND_UP(tiling->tile0.width, 2), tile_align_w);
          tiling->tile_count.width = 2;
       }
       if (tiling->tile_count.height == 1 && tiling->tile0.height != tile_align_h) {

@@ -25,6 +25,10 @@ if not with_shared_glapi
   _c_args_wgl += '-D_GLAPI_NO_EXPORTS'
 endif
 
+if with_gallium_zink
+  _c_args_wgl += vk_wsi_args
+endif
+
 files_libwgl = files(
   'stw_context.c',
   'stw_device.c',

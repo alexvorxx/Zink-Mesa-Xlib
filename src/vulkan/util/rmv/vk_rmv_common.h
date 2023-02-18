@@ -29,7 +29,7 @@
 #include "util/simple_mtx.h"
 #include "util/u_debug.h"
 #include "util/u_dynarray.h"
-#include <vulkan/vulkan.h>
+#include <vulkan/vulkan_core.h>
 #include "vk_rmv_tokens.h"
 
 struct vk_memory_trace_data;

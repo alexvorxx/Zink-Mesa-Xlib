@@ -20,8 +20,6 @@
 
 # Mesa-local imports in the Python files must be declared here for correct
 # dependency tracking.
-vk_physical_device_features_gen_depend_files = [
-]
 
 vulkan_runtime_files = files(
   'vk_buffer.c',
@@ -160,7 +158,7 @@ vk_dispatch_trampolines = custom_target(
 
 vk_physical_device_features = custom_target(
   'vk_physical_device_features',
-  input : ['vk_physical_device_features.py', vk_api_xml],
+  input : [vk_physical_device_features_gen, vk_api_xml],
   output : ['vk_physical_device_features.c'],
   command : [
     prog_python, '@INPUT0@', '--xml', '@INPUT1@',
@@ -189,7 +187,7 @@ libvulkan_runtime = static_library(
   dependencies : vulkan_runtime_deps,
   # For glsl_type_singleton
   link_with : libcompiler,
-  c_args : [c_msvc_compat_args],
+  c_args : [c_msvc_compat_args, vk_wsi_args],
   gnu_symbol_visibility : 'hidden',
   build_by_default : false,
 )

@@ -874,6 +874,14 @@ v3d_screen_get_disk_shader_cache(struct pipe_screen *pscreen)
         return screen->disk_cache;
 }
 
+static int
+v3d_screen_get_fd(struct pipe_screen *pscreen)
+{
+        struct v3d_screen *screen = v3d_screen(pscreen);
+
+        return screen->fd;
+}
+
 struct pipe_screen *
 v3d_screen_create(int fd, const struct pipe_screen_config *config,
                   struct renderonly *ro)
@@ -884,6 +892,7 @@ v3d_screen_create(int fd, const struct pipe_screen_config *config,
         pscreen = &screen->base;
 
         pscreen->destroy = v3d_screen_destroy;
+        pscreen->get_screen_fd = v3d_screen_get_fd;
         pscreen->get_param = v3d_screen_get_param;
         pscreen->get_paramf = v3d_screen_get_paramf;
         pscreen->get_shader_param = v3d_screen_get_shader_param;

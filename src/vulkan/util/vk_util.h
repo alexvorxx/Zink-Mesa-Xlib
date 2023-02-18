@@ -35,7 +35,7 @@ extern "C" {
 
 /* common inlines and macros for vulkan drivers */
 
-#include <vulkan/vulkan.h>
+#include <vulkan/vulkan_core.h>
 
 struct vk_pnext_iterator {
    VkBaseOutStructure *pos;

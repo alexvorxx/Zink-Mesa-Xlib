@@ -233,6 +233,7 @@ nv50_screen_get_param(struct pipe_screen *pscreen, enum pipe_cap param)
    case PIPE_CAP_SAMPLER_VIEW_TARGET:
    case PIPE_CAP_CONDITIONAL_RENDER_INVERTED:
    case PIPE_CAP_CLIP_HALFZ:
+   case PIPE_CAP_MEMOBJ:
    case PIPE_CAP_POLYGON_OFFSET_CLAMP:
    case PIPE_CAP_QUERY_PIPELINE_STATISTICS:
    case PIPE_CAP_TEXTURE_FLOAT_LINEAR:
@@ -348,7 +349,6 @@ nv50_screen_get_param(struct pipe_screen *pscreen, enum pipe_cap param)
    case PIPE_CAP_BINDLESS_TEXTURE:
    case PIPE_CAP_NIR_SAMPLERS_AS_DEREF:
    case PIPE_CAP_QUERY_SO_OVERFLOW:
-   case PIPE_CAP_MEMOBJ:
    case PIPE_CAP_LOAD_CONSTBUF:
    case PIPE_CAP_TILE_RASTER_ORDER:
    case PIPE_CAP_FRAMEBUFFER_MSAA_CONSTRAINTS:

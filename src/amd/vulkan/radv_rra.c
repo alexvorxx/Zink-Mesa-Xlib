@@ -903,9 +903,16 @@ radv_rra_trace_init(struct radv_device *device)
    device->rra_trace.elapsed_frames = 0;
    device->rra_trace.trigger_file = radv_rra_trace_trigger_file();
    device->rra_trace.validate_as = radv_get_int_debug_option("RADV_RRA_TRACE_VALIDATE", 0) != 0;
+   device->rra_trace.copy_after_build =
+      radv_get_int_debug_option("RADV_RRA_TRACE_COPY_AFTER_BUILD", 0) != 0;
    device->rra_trace.accel_structs = _mesa_pointer_hash_table_create(NULL);
    device->rra_trace.accel_struct_vas = _mesa_hash_table_u64_create(NULL);
    simple_mtx_init(&device->rra_trace.data_mtx, mtx_plain);
+
+   device->rra_trace.copy_memory_index =
+      radv_find_memory_index(device->physical_device, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+                                                         VK_MEMORY_PROPERTY_HOST_COHERENT_BIT |
+                                                         VK_MEMORY_PROPERTY_HOST_CACHED_BIT);
 }
 
 void
@@ -938,6 +945,178 @@ accel_struct_entry_cmp(const void *a, const void *b)
    const struct radv_rra_accel_struct_data *s_b = entry_b->data;
 
    return s_a->va > s_b->va ? 1 : s_a->va < s_b->va ? -1 : 0;
+}
+
+struct rra_copy_context {
+   VkDevice device;
+   VkQueue queue;
+
+   VkCommandPool pool;
+   VkCommandBuffer cmd_buffer;
+   uint32_t family_index;
+
+   VkDeviceMemory memory;
+   VkBuffer buffer;
+   void *mapped_data;
+
+   struct hash_entry **entries;
+};
+
+static VkResult
+rra_copy_context_init(struct rra_copy_context *ctx)
+{
+   RADV_FROM_HANDLE(radv_device, device, ctx->device);
+   if (device->rra_trace.copy_after_build)
+      return VK_SUCCESS;
+
+   uint32_t max_size = 0;
+   uint32_t accel_struct_count = _mesa_hash_table_num_entries(device->rra_trace.accel_structs);
+   for (unsigned i = 0; i < accel_struct_count; i++) {
+      struct radv_rra_accel_struct_data *data = ctx->entries[i]->data;
+      max_size = MAX2(max_size, data->size);
+   }
+
+   VkCommandPoolCreateInfo pool_info = {
+      .sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
+      .queueFamilyIndex = ctx->family_index,
+   };
+
+   VkResult result = vk_common_CreateCommandPool(ctx->device, &pool_info, NULL, &ctx->pool);
+   if (result != VK_SUCCESS)
+      return result;
+
+   VkCommandBufferAllocateInfo cmdbuf_alloc_info = {
+      .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
+      .commandPool = ctx->pool,
+      .commandBufferCount = 1,
+   };
+
+   result = vk_common_AllocateCommandBuffers(ctx->device, &cmdbuf_alloc_info, &ctx->cmd_buffer);
+   if (result != VK_SUCCESS)
+      goto fail_pool;
+
+   VkBufferCreateInfo buffer_create_info = {
+      .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
+      .size = max_size,
+      .usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+   };
+
+   result = radv_CreateBuffer(ctx->device, &buffer_create_info, NULL, &ctx->buffer);
+   if (result != VK_SUCCESS)
+      goto fail_pool;
+
+   VkMemoryRequirements requirements;
+   vk_common_GetBufferMemoryRequirements(ctx->device, ctx->buffer, &requirements);
+
+   VkMemoryAllocateInfo alloc_info = {
+      .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
+      .allocationSize = requirements.size,
+      .memoryTypeIndex = device->rra_trace.copy_memory_index,
+   };
+
+   result = radv_AllocateMemory(ctx->device, &alloc_info, NULL, &ctx->memory);
+   if (result != VK_SUCCESS)
+      goto fail_buffer;
+
+   result =
+      radv_MapMemory(ctx->device, ctx->memory, 0, VK_WHOLE_SIZE, 0, (void **)&ctx->mapped_data);
+   if (result != VK_SUCCESS)
+      goto fail_memory;
+
+   result = vk_common_BindBufferMemory(ctx->device, ctx->buffer, ctx->memory, 0);
+   if (result != VK_SUCCESS)
+      goto fail_memory;
+
+   return result;
+fail_memory:
+   radv_FreeMemory(ctx->device, ctx->memory, NULL);
+fail_buffer:
+   radv_DestroyBuffer(ctx->device, ctx->buffer, NULL);
+fail_pool:
+   vk_common_DestroyCommandPool(ctx->device, ctx->pool, NULL);
+   return result;
+}
+
+static void
+rra_copy_context_finish(struct rra_copy_context *ctx)
+{
+   RADV_FROM_HANDLE(radv_device, device, ctx->device);
+   if (device->rra_trace.copy_after_build)
+      return;
+
+   vk_common_DestroyCommandPool(ctx->device, ctx->pool, NULL);
+   radv_DestroyBuffer(ctx->device, ctx->buffer, NULL);
+   radv_UnmapMemory(ctx->device, ctx->memory);
+   radv_FreeMemory(ctx->device, ctx->memory, NULL);
+}
+
+static void *
+rra_map_accel_struct_data(struct rra_copy_context *ctx, uint32_t i)
+{
+   struct radv_rra_accel_struct_data *data = ctx->entries[i]->data;
+   if (radv_GetEventStatus(ctx->device, data->build_event) != VK_EVENT_SET)
+      return NULL;
+
+   if (data->memory) {
+      void *mapped_data;
+      radv_MapMemory(ctx->device, data->memory, 0, VK_WHOLE_SIZE, 0, &mapped_data);
+      return mapped_data;
+   }
+
+   const struct radv_acceleration_structure *accel_struct = ctx->entries[i]->key;
+   VkResult result;
+
+   VkCommandBufferBeginInfo begin_info = {
+      .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
+   };
+   result = radv_BeginCommandBuffer(ctx->cmd_buffer, &begin_info);
+   if (result != VK_SUCCESS)
+      return NULL;
+
+   VkBufferCopy2 copy = {
+      .sType = VK_STRUCTURE_TYPE_BUFFER_COPY_2,
+      .srcOffset = accel_struct->offset,
+      .size = accel_struct->size,
+   };
+
+   VkCopyBufferInfo2 copy_info = {
+      .sType = VK_STRUCTURE_TYPE_COPY_BUFFER_INFO_2,
+      .srcBuffer = radv_buffer_to_handle(accel_struct->buffer),
+      .dstBuffer = ctx->buffer,
+      .regionCount = 1,
+      .pRegions = &copy,
+   };
+
+   radv_CmdCopyBuffer2(ctx->cmd_buffer, &copy_info);
+
+   result = radv_EndCommandBuffer(ctx->cmd_buffer);
+   if (result != VK_SUCCESS)
+      return NULL;
+
+   VkSubmitInfo submit_info = {
+      .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
+      .commandBufferCount = 1,
+      .pCommandBuffers = &ctx->cmd_buffer,
+   };
+
+   result = vk_common_QueueSubmit(ctx->queue, 1, &submit_info, VK_NULL_HANDLE);
+   if (result != VK_SUCCESS)
+      return NULL;
+
+   result = vk_common_QueueWaitIdle(ctx->queue);
+   if (result != VK_SUCCESS)
+      return NULL;
+
+   return ctx->mapped_data;
+}
+
+static void
+rra_unmap_accel_struct_data(struct rra_copy_context *ctx, uint32_t i)
+{
+   struct radv_rra_accel_struct_data *data = ctx->entries[i]->data;
+
+   if (data->memory)
+      radv_UnmapMemory(ctx->device, data->memory);
 }
 
 VkResult
@@ -996,14 +1175,25 @@ radv_rra_dump_trace(VkQueue vk_queue, char *filename)
 
    qsort(hash_entries, struct_count, sizeof(*hash_entries), accel_struct_entry_cmp);
 
+   struct rra_copy_context copy_ctx = {
+      .device = vk_device,
+      .queue = vk_queue,
+      .entries = hash_entries,
+      .family_index = queue->vk.queue_family_index,
+   };
+
+   result = rra_copy_context_init(&copy_ctx);
+   if (result != VK_SUCCESS) {
+      free(accel_struct_offsets);
+      free(hash_entries);
+      fclose(file);
+      return result;
+   }
+
    for (unsigned i = 0; i < struct_count; i++) {
       struct radv_rra_accel_struct_data *data = hash_entries[i]->data;
-      if (radv_GetEventStatus(vk_device, data->build_event) != VK_EVENT_SET)
-         continue;
-
-      void *mapped_data;
-      result = radv_MapMemory(vk_device, data->memory, 0, VK_WHOLE_SIZE, 0, &mapped_data);
-      if (result != VK_SUCCESS)
+      void *mapped_data = rra_map_accel_struct_data(&copy_ctx, i);
+      if (!mapped_data)
          continue;
 
       accel_struct_offsets[written_accel_struct_count] = (uint64_t)ftell(file);
@@ -1011,11 +1201,13 @@ radv_rra_dump_trace(VkQueue vk_queue, char *filename)
          rra_dump_acceleration_structure(data, mapped_data, device->rra_trace.accel_struct_vas,
                                          device->rra_trace.validate_as, file);
 
-      radv_UnmapMemory(vk_device, data->memory);
+      rra_unmap_accel_struct_data(&copy_ctx, i);
 
       if (result == VK_SUCCESS)
          written_accel_struct_count++;
    }
+
+   rra_copy_context_finish(&copy_ctx);
 
    uint64_t chunk_info_offset = (uint64_t)ftell(file);
    rra_dump_chunk_description(api_info_offset, 0, 8, "ApiInfo", RADV_RRA_CHUNK_ID_ASIC_API_INFO,

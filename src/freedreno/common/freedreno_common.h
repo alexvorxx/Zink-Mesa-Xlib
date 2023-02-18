@@ -24,6 +24,7 @@
 #ifndef FREEDRENO_COMMON_H_
 #define FREEDRENO_COMMON_H_
 
+#include "util/u_atomic.h"
 
 /**
  * Helper macro to get around c++ being cranky about an enum that is a bitmask
@@ -55,5 +56,32 @@
 #define COND(bool, val) ((bool) ? (val) : 0)
 
 #define BIT(bit) BITFIELD64_BIT(bit)
+
+/**
+ * Helper for allocating sequence #s where zero is a non-valid seqno
+ */
+typedef struct {
+   uint32_t counter;
+} seqno_t;
+
+static inline uint32_t
+seqno_next(seqno_t *seq)
+{
+   uint32_t n;
+   do {
+      n = p_atomic_inc_return(&seq->counter);
+   } while (n == 0);
+   return n;
+}
+
+static inline uint16_t
+seqno_next_u16(seqno_t *seq)
+{
+   uint16_t n;
+   do {
+      n = p_atomic_inc_return(&seq->counter);
+   } while (n == 0);
+   return n;
+}
 
 #endif /* FREEDRENO_COMMON_H_ */

@@ -356,7 +356,7 @@ struct radv_shader_info {
 
       uint8_t subgroup_size;
 
-      bool uses_sbt;
+      bool is_rt_shader;
       bool uses_ray_launch_size;
       bool uses_dynamic_rt_callable_stack;
       bool uses_rt;
@@ -485,7 +485,8 @@ union radv_shader_arena_block {
 struct radv_shader {
    uint32_t ref_count;
 
-   struct radeon_winsys_bo *bo; /* Not NULL if imported from a lib */
+   struct radeon_winsys_bo *bo;
+   union radv_shader_arena_block *alloc;
    uint64_t va;
 
    struct ac_shader_config config;
@@ -550,6 +551,9 @@ void radv_nir_lower_abi(nir_shader *shader, enum amd_gfx_level gfx_level,
                         const struct radv_shader_info *info, const struct radv_shader_args *args,
                         const struct radv_pipeline_key *pl_key, uint32_t address32_hi);
 
+bool radv_nir_lower_vs_inputs(nir_shader *shader, const struct radv_pipeline_stage *vs_stage,
+                              const struct radv_pipeline_key *key, uint32_t address32_hi);
+
 void radv_init_shader_arenas(struct radv_device *device);
 void radv_destroy_shader_arenas(struct radv_device *device);
 
@@ -574,9 +578,6 @@ struct radv_shader *radv_shader_nir_to_asm(
    struct radv_device *device, struct radv_pipeline_stage *stage, struct nir_shader *const *shaders,
    int shader_count, const struct radv_pipeline_key *key, bool keep_shader_info, bool keep_statistic_info,
    struct radv_shader_binary **binary_out);
-
-bool radv_shader_binary_upload(struct radv_device *device, const struct radv_shader_binary *binary,
-                               struct radv_shader *shader, void *dest_ptr);
 
 void radv_shader_part_binary_upload(const struct radv_shader_part_binary *binary, void *dest_ptr);
 

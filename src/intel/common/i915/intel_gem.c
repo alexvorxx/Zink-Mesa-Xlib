@@ -21,10 +21,10 @@
  * IN THE SOFTWARE.
  */
 
-#include "intel_gem_i915.h"
+#include "i915/intel_gem.h"
 
-#include "intel_gem.h"
-#include "intel_engine_i915.h"
+#include "common/intel_gem.h"
+#include "i915/intel_engine.h"
 
 #include "drm-uapi/i915_drm.h"
 

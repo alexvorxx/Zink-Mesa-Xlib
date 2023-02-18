@@ -189,9 +189,8 @@ crocus_resource_configure_main(const struct crocus_screen *screen,
 
       tiling_flags = 1 << res->mod_info->tiling;
    } else {
-      if (templ->bind & PIPE_BIND_RENDER_TARGET && devinfo->ver < 6) {
-         tiling_flags &= ~ISL_TILING_Y0_BIT;
-      }
+      if (templ->bind & PIPE_BIND_RENDER_TARGET && devinfo->ver < 6)
+         tiling_flags &= ISL_TILING_LINEAR_BIT | ISL_TILING_X_BIT;
       /* Use linear for staging buffers */
       if (templ->usage == PIPE_USAGE_STAGING ||
           templ->bind & (PIPE_BIND_LINEAR | PIPE_BIND_CURSOR) )

@@ -24,6 +24,7 @@
 
 /* for fd_get_driver/device_uuid() */
 #include "freedreno/common/freedreno_uuid.h"
+#include "freedreno/common/freedreno_stompable_regs.h"
 
 #include "tu_clear_blit.h"
 #include "tu_cmd_buffer.h"
@@ -177,11 +178,15 @@ get_device_extensions(const struct tu_physical_device *device,
        * If the instance only enables surface extensions that unconditionally support present wait,
        * we can also expose the extension that way. */
       .KHR_present_id =
-         driQueryOptionb(&device->instance->dri_options, "vk_khr_present_wait") ||
-         wsi_common_vk_instance_supports_present_wait(&device->instance->vk),
+         TU_HAS_SURFACE && (driQueryOptionb(&device->instance->dri_options,
+                                            "vk_khr_present_wait") ||
+                            wsi_common_vk_instance_supports_present_wait(
+                               &device->instance->vk)),
       .KHR_present_wait =
-         driQueryOptionb(&device->instance->dri_options, "vk_khr_present_wait") ||
-         wsi_common_vk_instance_supports_present_wait(&device->instance->vk),
+         TU_HAS_SURFACE && (driQueryOptionb(&device->instance->dri_options,
+                                            "vk_khr_present_wait") ||
+                            wsi_common_vk_instance_supports_present_wait(
+                               &device->instance->vk)),
 #ifndef TU_USE_KGSL
       .KHR_timeline_semaphore = true,
 #endif
@@ -1965,6 +1970,87 @@ tu_u_trace_submission_data_finish(
    vk_free(&device->vk.alloc, submission_data);
 }
 
+enum tu_reg_stomper_flags
+{
+   TU_DEBUG_REG_STOMP_INVERSE = 1 << 0,
+   TU_DEBUG_REG_STOMP_CMDBUF = 1 << 1,
+   TU_DEBUG_REG_STOMP_RENDERPASS = 1 << 2,
+};
+
+/* See freedreno.rst for usage tips */
+static const struct debug_named_value tu_reg_stomper_options[] = {
+   { "inverse", TU_DEBUG_REG_STOMP_INVERSE,
+     "By default the range specifies the regs to stomp, with 'inverse' it "
+     "specifies the regs NOT to stomp" },
+   { "cmdbuf", TU_DEBUG_REG_STOMP_CMDBUF,
+     "Stomp regs at the start of a cmdbuf" },
+   { "renderpass", TU_DEBUG_REG_STOMP_RENDERPASS,
+     "Stomp regs before a renderpass" },
+   { NULL, 0 }
+};
+
+static void
+tu_init_dbg_reg_stomper(struct tu_device *device)
+{
+   const char *stale_reg_range_str =
+      os_get_option("TU_DEBUG_STALE_REGS_RANGE");
+   if (!stale_reg_range_str)
+      return;
+
+   uint32_t first_reg, last_reg;
+
+   if (sscanf(stale_reg_range_str, "%x,%x", &first_reg, &last_reg) != 2) {
+      mesa_loge("Incorrect TU_DEBUG_STALE_REGS_RANGE");
+      return;
+   }
+
+   uint64_t debug_flags = debug_get_flags_option("TU_DEBUG_STALE_REGS_FLAGS",
+                                                 tu_reg_stomper_options,
+                                                 TU_DEBUG_REG_STOMP_CMDBUF);
+
+   struct tu_cs *cmdbuf_cs = calloc(1, sizeof(struct tu_cs));
+   tu_cs_init(cmdbuf_cs, device, TU_CS_MODE_GROW, 4096,
+              "cmdbuf reg stomp cs");
+   tu_cs_begin(cmdbuf_cs);
+
+   struct tu_cs *rp_cs = calloc(1, sizeof(struct tu_cs));
+   tu_cs_init(rp_cs, device, TU_CS_MODE_GROW, 4096, "rp reg stomp cs");
+   tu_cs_begin(rp_cs);
+
+   size_t reg_ranges_count = ARRAY_SIZE(a6xx_fd_cmdbuf_stompable_reg_ranges);
+   for (size_t i = 0; i < reg_ranges_count; i++) {
+      struct fd_stompable_reg_range reg_range =
+         a6xx_fd_cmdbuf_stompable_reg_ranges[i];
+      for (uint16_t reg = reg_range.start_reg; reg <= reg_range.end_reg;
+           reg++) {
+         if (debug_flags & TU_DEBUG_REG_STOMP_INVERSE) {
+            if (reg >= first_reg && reg <= last_reg)
+               continue;
+         } else {
+            if (reg < first_reg || reg > last_reg)
+               continue;
+         }
+
+         if (a6xx_fd_reg_do_not_stomp(true, reg))
+            continue;
+
+         if (debug_flags & TU_DEBUG_REG_STOMP_CMDBUF)
+            tu_cs_emit_write_reg(cmdbuf_cs, reg, 0xffffffff);
+
+         if ((debug_flags & TU_DEBUG_REG_STOMP_RENDERPASS) &&
+             a6xx_fd_reg_rp_stompable(true, reg)) {
+            tu_cs_emit_write_reg(rp_cs, reg, 0xffffffff);
+         }
+      }
+   }
+
+   tu_cs_end(cmdbuf_cs);
+   tu_cs_end(rp_cs);
+
+   device->dbg_cmdbuf_stomp_cs = cmdbuf_cs;
+   device->dbg_renderpass_stomp_cs = rp_cs;
+}
+
 VKAPI_ATTR VkResult VKAPI_CALL
 tu_CreateDevice(VkPhysicalDevice physicalDevice,
                 const VkDeviceCreateInfo *pCreateInfo,
@@ -2197,6 +2283,8 @@ tu_CreateDevice(VkPhysicalDevice physicalDevice,
       }
    }
 
+   tu_init_dbg_reg_stomper(device);
+
    /* Initialize a condition variable for timeline semaphore */
    pthread_condattr_t condattr;
    if (pthread_condattr_init(&condattr) != 0) {
@@ -2328,6 +2416,16 @@ tu_DestroyDevice(VkDevice _device, const VkAllocationCallbacks *pAllocator)
       free(device->perfcntrs_pass_cs_entries);
       tu_cs_finish(device->perfcntrs_pass_cs);
       free(device->perfcntrs_pass_cs);
+   }
+
+   if (device->dbg_cmdbuf_stomp_cs) {
+      tu_cs_finish(device->dbg_cmdbuf_stomp_cs);
+      free(device->dbg_cmdbuf_stomp_cs);
+   }
+
+   if (device->dbg_renderpass_stomp_cs) {
+      tu_cs_finish(device->dbg_renderpass_stomp_cs);
+      free(device->dbg_renderpass_stomp_cs);
    }
 
    tu_autotune_fini(&device->autotune, device);

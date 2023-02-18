@@ -1363,6 +1363,7 @@ tc_call_set_framebuffer_state(struct pipe_context *pipe, void *call, uint64_t *l
    for (unsigned i = 0; i < nr_cbufs; i++)
       tc_drop_surface_reference(p->cbufs[i]);
    tc_drop_surface_reference(p->zsbuf);
+   tc_drop_resource_reference(p->resolve);
    return call_size(tc_framebuffer);
 }
 
@@ -1425,6 +1426,8 @@ tc_set_framebuffer_state(struct pipe_context *_pipe,
    tc->in_renderpass = false;
    p->state.zsbuf = NULL;
    pipe_surface_reference(&p->state.zsbuf, fb->zsbuf);
+   p->state.resolve = NULL;
+   pipe_resource_reference(&p->state.resolve, fb->resolve);
 }
 
 struct tc_tess_state {

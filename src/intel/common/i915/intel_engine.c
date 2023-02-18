@@ -21,7 +21,7 @@
  * IN THE SOFTWARE.
  */
 
-#include "intel_engine_i915.h"
+#include "i915/intel_engine.h"
 
 #include <stdlib.h>
 

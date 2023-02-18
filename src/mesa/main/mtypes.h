@@ -2722,6 +2722,7 @@ struct gl_framebuffer
 
    /** Array of all renderbuffer attachments, indexed by BUFFER_* tokens. */
    struct gl_renderbuffer_attachment Attachment[BUFFER_COUNT];
+   struct pipe_resource *resolve; /**< color resolve attachment */
 
    /* In unextended OpenGL these vars are part of the GL_COLOR_BUFFER
     * attribute group and GL_PIXEL attribute group, respectively.

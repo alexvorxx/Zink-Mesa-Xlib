@@ -23,7 +23,7 @@
 
 #pragma once
 
-#include "intel_engine.h"
+#include "common/intel_engine.h"
 
 #include "drm-uapi/i915_drm.h"
 

@@ -307,6 +307,9 @@ struct tu_device
 
    struct breadcrumbs_context *breadcrumbs_ctx;
 
+   struct tu_cs *dbg_cmdbuf_stomp_cs;
+   struct tu_cs *dbg_renderpass_stomp_cs;
+
 #ifdef ANDROID
    const void *gralloc;
    enum {

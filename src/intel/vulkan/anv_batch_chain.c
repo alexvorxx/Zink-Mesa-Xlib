@@ -37,8 +37,6 @@
 
 #include "util/perf/u_trace.h"
 
-#include "i915/anv_batch_chain.h"
-
 /** \file anv_batch_chain.c
  *
  * This file contains functions related to anv_cmd_buffer as a data
@@ -1214,7 +1212,7 @@ anv_cmd_buffer_exec_batch_debug(struct anv_queue *queue,
  * pool resize only rarely happen, this will almost never be contended so
  * taking a lock isn't really an expensive operation in this case.
  */
-static VkResult
+static inline VkResult
 anv_queue_exec_locked(struct anv_queue *queue,
                       uint32_t wait_count,
                       const struct vk_sync_wait *waits,
@@ -1225,10 +1223,12 @@ anv_queue_exec_locked(struct anv_queue *queue,
                       struct anv_query_pool *perf_query_pool,
                       uint32_t perf_query_pass)
 {
-   return anv_i915_queue_exec_locked(queue, wait_count, waits,
-                                     cmd_buffer_count, cmd_buffers,
-                                     signal_count, signals,
-                                     perf_query_pool, perf_query_pass);
+   struct anv_device *device = queue->device;
+   return device->kmd_backend->queue_exec_locked(queue, wait_count, waits,
+                                                 cmd_buffer_count,
+                                                 cmd_buffers, signal_count,
+                                                 signals, perf_query_pool,
+                                                 perf_query_pass);
 }
 
 static inline bool
@@ -1389,7 +1389,8 @@ anv_queue_submit_simple_batch(struct anv_queue *queue,
                         batch_bo->offset, false);
    }
 
-   result = anv_i915_execute_simple_batch(queue, batch_bo, batch_size);
+   result = device->kmd_backend->execute_simple_batch(queue, batch_bo,
+                                                      batch_size);
 
    anv_bo_pool_free(&device->batch_bo_pool, batch_bo);
 

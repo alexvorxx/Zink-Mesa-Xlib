@@ -60,6 +60,7 @@ agx_batch_init(struct agx_context *ctx,
    batch->clear_depth = 0;
    batch->clear_stencil = 0;
    batch->varyings = 0;
+   batch->any_draws = false;
 
    /* We need to emit prim state at the start. Max collides with all. */
    batch->reduced_prim = PIPE_PRIM_MAX;

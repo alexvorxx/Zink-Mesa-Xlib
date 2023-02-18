@@ -287,19 +287,7 @@ fd6_build_driver_params(struct fd6_emit *emit)
 {
    struct fd_context *ctx = emit->ctx;
    struct fd6_context *fd6_ctx = fd6_context(ctx);
-   unsigned num_dp = 0;
-
-   if (emit->vs->need_driver_params)
-      num_dp++;
-
-   if (emit->gs && emit->gs->need_driver_params)
-      num_dp++;
-
-   if (emit->hs && emit->hs->need_driver_params)
-      num_dp++;
-
-   if (emit->ds && emit->ds->need_driver_params)
-      num_dp++;
+   unsigned num_dp = emit->prog->num_driver_params;
 
    if (!num_dp) {
       fd6_ctx->has_dp_state = false;

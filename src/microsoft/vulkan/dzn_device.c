@@ -74,6 +74,7 @@ static const struct vk_instance_extension_table instance_extensions = {
    .KHR_get_physical_device_properties2      = true,
 #ifdef DZN_USE_WSI_PLATFORM
    .KHR_surface                              = true,
+   .KHR_get_surface_capabilities2            = true,
 #endif
 #ifdef VK_USE_PLATFORM_WIN32_KHR
    .KHR_win32_surface                        = true,
@@ -95,6 +96,7 @@ static void
 dzn_physical_device_get_extensions(struct dzn_physical_device *pdev)
 {
    pdev->vk.supported_extensions = (struct vk_device_extension_table) {
+      .KHR_16bit_storage                     = pdev->options4.Native16BitShaderOpsSupported,
       .KHR_create_renderpass2                = true,
       .KHR_depth_stencil_resolve             = true,
       .KHR_descriptor_update_template        = true,
@@ -106,6 +108,8 @@ dzn_physical_device_get_extensions(struct dzn_physical_device *pdev)
       .KHR_maintenance3                      = true,
       .KHR_multiview                         = true,
       .KHR_shader_draw_parameters            = true,
+      .KHR_shader_float16_int8               = pdev->options4.Native16BitShaderOpsSupported,
+      .KHR_storage_buffer_storage_class      = true,
 #ifdef DZN_USE_WSI_PLATFORM
       .KHR_swapchain                         = true,
 #endif
@@ -432,6 +436,7 @@ dzn_physical_device_cache_caps(struct dzn_physical_device *pdev)
    ID3D12Device1_CheckFeatureSupport(pdev->dev, D3D12_FEATURE_D3D12_OPTIONS1, &pdev->options1, sizeof(pdev->options1));
    ID3D12Device1_CheckFeatureSupport(pdev->dev, D3D12_FEATURE_D3D12_OPTIONS2, &pdev->options2, sizeof(pdev->options2));
    ID3D12Device1_CheckFeatureSupport(pdev->dev, D3D12_FEATURE_D3D12_OPTIONS3, &pdev->options3, sizeof(pdev->options3));
+   ID3D12Device1_CheckFeatureSupport(pdev->dev, D3D12_FEATURE_D3D12_OPTIONS4, &pdev->options4, sizeof(pdev->options4));
    ID3D12Device1_CheckFeatureSupport(pdev->dev, D3D12_FEATURE_D3D12_OPTIONS12, &pdev->options12, sizeof(pdev->options12));
    ID3D12Device1_CheckFeatureSupport(pdev->dev, D3D12_FEATURE_D3D12_OPTIONS13, &pdev->options13, sizeof(pdev->options13));
    ID3D12Device1_CheckFeatureSupport(pdev->dev, D3D12_FEATURE_D3D12_OPTIONS14, &pdev->options14, sizeof(pdev->options14));
@@ -1356,8 +1361,8 @@ dzn_GetPhysicalDeviceFeatures2(VkPhysicalDevice physicalDevice,
 
    VkPhysicalDeviceVulkan11Features core_1_1 = {
       .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES,
-      .storageBuffer16BitAccess           = false,
-      .uniformAndStorageBuffer16BitAccess = false,
+      .storageBuffer16BitAccess           = pdev->options4.Native16BitShaderOpsSupported,
+      .uniformAndStorageBuffer16BitAccess = pdev->options4.Native16BitShaderOpsSupported,
       .storagePushConstant16              = false,
       .storageInputOutput16               = false,
       .multiview                          = true,
@@ -1379,7 +1384,7 @@ dzn_GetPhysicalDeviceFeatures2(VkPhysicalDevice physicalDevice,
       .storagePushConstant8               = false,
       .shaderBufferInt64Atomics           = false,
       .shaderSharedInt64Atomics           = false,
-      .shaderFloat16                      = false,
+      .shaderFloat16                      = pdev->options4.Native16BitShaderOpsSupported,
       .shaderInt8                         = false,
 
       .descriptorIndexing                                   = false,

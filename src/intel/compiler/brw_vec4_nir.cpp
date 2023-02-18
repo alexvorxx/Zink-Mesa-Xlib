@@ -35,6 +35,11 @@ namespace brw {
 void
 vec4_visitor::emit_nir_code()
 {
+   /* Globally set the rounding mode based on the float controls.  gen7 doesn't
+    * support 16-bit floats, and gen8 switches to scalar VS.  So we don't need
+    * to do any per-instruction mode switching the way the scalar FS handles.
+    */
+   emit_shader_float_controls_execution_mode();
    if (nir->num_uniforms > 0)
       nir_setup_uniforms();
 

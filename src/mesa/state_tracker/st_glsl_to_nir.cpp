@@ -408,8 +408,12 @@ st_nir_preprocess(struct st_context *st, struct gl_program *prog,
    }
 
    if (options->lower_to_scalar) {
-     NIR_PASS_V(nir, nir_lower_alu_to_scalar,
-                options->lower_to_scalar_filter, NULL);
+      NIR_PASS_V(nir, nir_remove_dead_variables,
+                 nir_var_function_temp | nir_var_shader_temp |
+                 nir_var_mem_shared, NULL);
+      NIR_PASS_V(nir, nir_opt_copy_prop_vars);
+      NIR_PASS_V(nir, nir_lower_alu_to_scalar,
+                 options->lower_to_scalar_filter, NULL);
    }
 
    /* before buffers and vars_to_ssa */

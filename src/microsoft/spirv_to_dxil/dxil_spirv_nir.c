@@ -44,6 +44,10 @@ spirv_to_nir_options = {
       .subgroup_shuffle = true,
       .subgroup_quad = true,
       .descriptor_array_dynamic_indexing = true,
+      .float_controls = true,
+      .float16 = true,
+      .int16 = true,
+      .storage_16bit = true,
    },
    .ubo_addr_format = nir_address_format_32bit_index_offset,
    .ssbo_addr_format = nir_address_format_32bit_index_offset,
@@ -54,7 +58,10 @@ spirv_to_nir_options = {
       * instead of vulkan_resource_index. This makes it much easier to
       * get the DXIL handle for the SSBO.
       */
-   .use_deref_buffer_array_length = true
+   .use_deref_buffer_array_length = true,
+
+   .min_ubo_alignment = 256, /* D3D12_CONSTANT_BUFFER_DATA_PLACEMENT_ALIGNMENT */
+   .min_ssbo_alignment = 16, /* D3D12_RAW_UAV_SRV_BYTE_ALIGNMENT */
 };
 
 const struct spirv_to_nir_options*
@@ -212,10 +219,15 @@ lower_shader_system_values(struct nir_builder *builder, nir_instr *instr,
       nir_address_format_bit_size(ubo_format),
       index, .desc_type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
 
+   unsigned num_components = nir_dest_num_components(intrin->dest);
+   unsigned alignment = (num_components == 3 ? 4 : num_components) *
+      nir_dest_bit_size(intrin->dest) / 8;
+   assert(offset % alignment == 0);
    nir_ssa_def *load_data = build_load_ubo_dxil(
       builder, nir_channel(builder, load_desc, 0),
       nir_imm_int(builder, offset),
-      nir_dest_num_components(intrin->dest), nir_dest_bit_size(intrin->dest));
+      num_components, nir_dest_bit_size(intrin->dest),
+      alignment);
 
    nir_ssa_def_rewrite_uses(&intrin->dest.ssa, load_data);
    nir_instr_remove(instr);
@@ -298,7 +310,8 @@ lower_load_push_constant(struct nir_builder *builder, nir_instr *instr,
    nir_ssa_def *load_data = build_load_ubo_dxil(
       builder, nir_channel(builder, load_desc, 0),
       nir_iadd_imm(builder, offset, base),
-      nir_dest_num_components(intrin->dest), nir_dest_bit_size(intrin->dest));
+      nir_dest_num_components(intrin->dest), nir_dest_bit_size(intrin->dest),
+      nir_intrinsic_align(intrin));
 
    nir_ssa_def_rewrite_uses(&intrin->dest.ssa, load_data);
    nir_instr_remove(instr);
@@ -387,7 +400,7 @@ lower_yz_flip(struct nir_builder *builder, nir_instr *instr,
       dyn_yz_flip_mask =
          build_load_ubo_dxil(builder,
                              nir_channel(builder, load_desc, 0),
-                             nir_imm_int(builder, offset), 1, 32);
+                             nir_imm_int(builder, offset), 1, 32, 4);
       *data->reads_sysval_ubo = true;
    }
 
@@ -684,7 +697,7 @@ write_pntc_with_pos(nir_builder *b, nir_instr *instr, void *_data)
    nir_ssa_def *transform = nir_channels(b,
                                          build_load_ubo_dxil(b,
                                                              nir_channel(b, load_desc, 0),
-                                                             nir_imm_int(b, offset), 4, 32),
+                                                             nir_imm_int(b, offset), 4, 32, 16),
                                          0x6);
    nir_ssa_def *point_center_in_clip = nir_fmul(b, nir_channels(b, pos, 0x3), nir_frcp(b, nir_channel(b, pos, 3)));
    nir_ssa_def *point_center =
@@ -979,6 +992,9 @@ dxil_spirv_nir_passes(nir_shader *nir,
    }
 
    NIR_PASS_V(nir, nir_opt_deref);
+   NIR_PASS_V(nir, dxil_nir_split_unaligned_loads_stores,
+              nir_var_mem_ubo | nir_var_mem_push_const |
+              nir_var_mem_ssbo);
 
    if (conf->read_only_images_as_srvs) {
       const nir_opt_access_options opt_access_options = {
@@ -1010,6 +1026,7 @@ dxil_spirv_nir_passes(nir_shader *nir,
       NIR_PASS_V(nir, nir_lower_vars_to_explicit_types, nir_var_mem_shared,
                  shared_var_info);
    }
+   NIR_PASS_V(nir, dxil_nir_split_unaligned_loads_stores, nir_var_mem_shared);
    NIR_PASS_V(nir, nir_lower_explicit_io, nir_var_mem_shared,
       nir_address_format_32bit_offset);
 
@@ -1040,6 +1057,7 @@ dxil_spirv_nir_passes(nir_shader *nir,
                             conf->push_constant_cbv.base_shader_register);
    }
 
+   NIR_PASS_V(nir, nir_lower_fp16_casts, nir_lower_fp16_all & ~nir_lower_fp16_rtz);
    NIR_PASS_V(nir, nir_lower_alu_to_scalar, NULL, NULL);
    NIR_PASS_V(nir, nir_opt_dce);
    NIR_PASS_V(nir, dxil_nir_lower_double_math);
@@ -1076,7 +1094,10 @@ dxil_spirv_nir_passes(nir_shader *nir,
 
    NIR_PASS_V(nir, dxil_nir_lower_atomics_to_dxil);
    NIR_PASS_V(nir, dxil_nir_split_clip_cull_distance);
-   NIR_PASS_V(nir, dxil_nir_lower_loads_stores_to_dxil);
+   const struct dxil_nir_lower_loads_stores_options loads_stores_options = {
+      .use_16bit_ssbo = conf->shader_model_max >= SHADER_MODEL_6_2,
+   };
+   NIR_PASS_V(nir, dxil_nir_lower_loads_stores_to_dxil, &loads_stores_options);
    NIR_PASS_V(nir, dxil_nir_split_typed_samplers);
    NIR_PASS_V(nir, dxil_nir_lower_ubo_array_one_to_static);
    NIR_PASS_V(nir, nir_opt_dce);

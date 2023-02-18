@@ -103,7 +103,7 @@ _mesa_Hint( GLenum target, GLenum mode )
 
       /* GL_SGIS_generate_mipmap */
       case GL_GENERATE_MIPMAP_HINT_SGIS:
-         if (ctx->API == API_OPENGL_CORE)
+         if (_mesa_is_desktop_gl_core(ctx))
             goto invalid_target;
          if (ctx->Hint.GenerateMipmap == mode)
             return;

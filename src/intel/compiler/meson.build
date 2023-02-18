@@ -91,7 +91,6 @@ libintel_compiler_files = files(
   'brw_nir_lower_cs_intrinsics.c',
   'brw_nir_lower_alpha_to_coverage.c',
   'brw_nir_lower_intersection_shader.c',
-  'brw_nir_lower_mem_access_bit_sizes.c',
   'brw_nir_lower_ray_queries.c',
   'brw_nir_lower_rt_intrinsics.c',
   'brw_nir_lower_scoped_barriers.c',

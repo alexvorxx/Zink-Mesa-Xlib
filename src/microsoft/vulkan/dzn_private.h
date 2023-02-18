@@ -181,7 +181,6 @@ dzn_meta_blits_get_context(struct dzn_device *device,
 struct dzn_physical_device {
    struct vk_physical_device vk;
 
-   struct vk_device_extension_table supported_extensions;
    struct vk_physical_device_dispatch_table dispatch;
 
    IUnknown *adapter;
@@ -210,6 +209,7 @@ struct dzn_physical_device {
    D3D12_FEATURE_DATA_D3D12_OPTIONS1 options1;
    D3D12_FEATURE_DATA_D3D12_OPTIONS2 options2;
    D3D12_FEATURE_DATA_D3D12_OPTIONS3 options3;
+   D3D12_FEATURE_DATA_D3D12_OPTIONS4 options4;
    D3D12_FEATURE_DATA_D3D12_OPTIONS12 options12;
    D3D12_FEATURE_DATA_D3D12_OPTIONS13 options13;
    D3D12_FEATURE_DATA_D3D12_OPTIONS14 options14;

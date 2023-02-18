@@ -772,6 +772,14 @@ panvk_pipeline_update_varying_slot(struct panvk_varyings_info *varyings,
    if (old_size < new_size)
       varyings->varying[loc].format = new_fmt;
 
+   /* Type (float or not) information is only known in the fragment shader, so
+    * override for that
+    */
+   if (input) {
+      assert(stage == MESA_SHADER_FRAGMENT && "no geom/tess on Bifrost");
+      varyings->varying[loc].format = new_fmt;
+   }
+
    varyings->buf_mask |= 1 << buf_id;
 }
 

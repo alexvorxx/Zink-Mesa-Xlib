@@ -53,7 +53,7 @@ agx_pool_init(struct agx_pool *pool, struct agx_device *dev,
    memset(pool, 0, sizeof(*pool));
    pool->dev = dev;
    pool->create_flags = create_flags;
-   util_dynarray_init(&pool->bos, dev->memctx);
+   util_dynarray_init(&pool->bos, NULL);
 
    if (prealloc)
       agx_pool_alloc_backing(pool, POOL_SLAB_SIZE);

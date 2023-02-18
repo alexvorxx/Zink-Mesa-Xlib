@@ -31,23 +31,6 @@ KHR-GL45.direct_state_access.renderbuffers_storage_multisample,Fail
 
 KHR-GL45.multi_bind.dispatch_bind_image_textures,Fail
 
-# rendering errors in ~4x4 blocks around the bottom side of the diagonal for the quad
-bypass-dEQP-GLES31.functional.blend_equation_advanced.msaa.colorburn,Fail
-bypass-dEQP-GLES31.functional.blend_equation_advanced.msaa.colordodge,Fail
-bypass-dEQP-GLES31.functional.blend_equation_advanced.msaa.darken,Fail
-bypass-dEQP-GLES31.functional.blend_equation_advanced.msaa.difference,Fail
-bypass-dEQP-GLES31.functional.blend_equation_advanced.msaa.exclusion,Fail
-bypass-dEQP-GLES31.functional.blend_equation_advanced.msaa.hardlight,Fail
-bypass-dEQP-GLES31.functional.blend_equation_advanced.msaa.hsl_color,Fail
-bypass-dEQP-GLES31.functional.blend_equation_advanced.msaa.hsl_hue,Fail
-bypass-dEQP-GLES31.functional.blend_equation_advanced.msaa.hsl_luminosity,Fail
-bypass-dEQP-GLES31.functional.blend_equation_advanced.msaa.hsl_saturation,Fail
-bypass-dEQP-GLES31.functional.blend_equation_advanced.msaa.lighten,Fail
-bypass-dEQP-GLES31.functional.blend_equation_advanced.msaa.multiply,Fail
-bypass-dEQP-GLES31.functional.blend_equation_advanced.msaa.overlay,Fail
-bypass-dEQP-GLES31.functional.blend_equation_advanced.msaa.screen,Fail
-bypass-dEQP-GLES31.functional.blend_equation_advanced.msaa.softlight,Fail
-
 # Fails when TU_DEBUG=forcebin is set
 gmem-dEQP-VK.spirv_assembly.instruction.graphics.variable_pointers.graphics.writes_two_buffers_geom,Fail
 gmem-dEQP-VK.spirv_assembly.instruction.graphics.variable_pointers.graphics.writes_two_buffers_vert,Fail

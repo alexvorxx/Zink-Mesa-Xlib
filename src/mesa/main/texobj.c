@@ -169,7 +169,7 @@ _mesa_get_current_tex_object(struct gl_context *ctx, GLenum target)
       case GL_TEXTURE_3D:
          return texUnit->CurrentTex[TEXTURE_3D_INDEX];
       case GL_PROXY_TEXTURE_3D:
-         return !(ctx->API == API_OPENGLES2 && !ctx->Extensions.OES_texture_3D)
+         return !(_mesa_is_gles2(ctx) && !ctx->Extensions.OES_texture_3D)
              ? ctx->Texture.ProxyTex[TEXTURE_3D_INDEX] : NULL;
       case GL_TEXTURE_CUBE_MAP_POSITIVE_X:
       case GL_TEXTURE_CUBE_MAP_NEGATIVE_X:
@@ -395,7 +395,7 @@ _mesa_initialize_texture_object( struct gl_context *ctx,
    obj->Sampler.Attrib.CompareFunc = GL_LEQUAL;       /* ARB_shadow */
    obj->Sampler.Attrib.state.compare_mode = PIPE_TEX_COMPARE_NONE;
    obj->Sampler.Attrib.state.compare_func = PIPE_FUNC_LEQUAL;
-   obj->Attrib.DepthMode = ctx->API == API_OPENGL_CORE ? GL_RED : GL_LUMINANCE;
+   obj->Attrib.DepthMode = _mesa_is_desktop_gl_core(ctx) ? GL_RED : GL_LUMINANCE;
    obj->StencilSampling = false;
    obj->Sampler.Attrib.CubeMapSeamless = GL_FALSE;
    obj->Sampler.Attrib.state.seamless_cube_map = false;
@@ -408,8 +408,8 @@ _mesa_initialize_texture_object( struct gl_context *ctx,
    obj->Sampler.Attrib.sRGBDecode = GL_DECODE_EXT;
    obj->Sampler.Attrib.ReductionMode = GL_WEIGHTED_AVERAGE_EXT;
    obj->Sampler.Attrib.state.reduction_mode = PIPE_TEX_REDUCTION_WEIGHTED_AVERAGE;
-   obj->BufferObjectFormat = ctx->API == API_OPENGL_COMPAT ? GL_LUMINANCE8 : GL_R8;
-   obj->_BufferObjectFormat = ctx->API == API_OPENGL_COMPAT
+   obj->BufferObjectFormat = _mesa_is_desktop_gl_compat(ctx) ? GL_LUMINANCE8 : GL_R8;
+   obj->_BufferObjectFormat = _mesa_is_desktop_gl_compat(ctx)
       ? MESA_FORMAT_L_UNORM8 : MESA_FORMAT_R_UNORM8;
    obj->Attrib.ImageFormatCompatibilityType = GL_IMAGE_FORMAT_COMPATIBILITY_BY_SIZE;
 
@@ -1605,7 +1605,7 @@ _mesa_tex_target_to_index(const struct gl_context *ctx, GLenum target)
       return TEXTURE_2D_INDEX;
    case GL_TEXTURE_3D:
       return (ctx->API != API_OPENGLES &&
-              !(ctx->API == API_OPENGLES2 && !ctx->Extensions.OES_texture_3D))
+              !(_mesa_is_gles2(ctx) && !ctx->Extensions.OES_texture_3D))
          ? TEXTURE_3D_INDEX : -1;
    case GL_TEXTURE_CUBE_MAP:
       return TEXTURE_CUBE_INDEX;
@@ -1763,7 +1763,7 @@ _mesa_lookup_or_create_texture(struct gl_context *ctx, GLenum target,
             finish_texture_init(ctx, target, newTexObj, targetIndex);
          }
       } else {
-         if (!no_error && ctx->API == API_OPENGL_CORE) {
+         if (!no_error && _mesa_is_desktop_gl_core(ctx)) {
             _mesa_error(ctx, GL_INVALID_OPERATION,
                         "%s(non-gen name)", caller);
             return NULL;

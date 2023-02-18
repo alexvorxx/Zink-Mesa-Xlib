@@ -855,8 +855,10 @@ dxil_module_get_resret_type(struct dxil_module *m, enum overload_type overload)
       { overload_type, overload_type, overload_type, overload_type, int32_type };
 
    switch (overload) {
+   case DXIL_I16: name = "dx.types.ResRet.i16"; break;
    case DXIL_I32: name = "dx.types.ResRet.i32"; break;
    case DXIL_I64: name = "dx.types.ResRet.i64"; break;
+   case DXIL_F16: name = "dx.types.ResRet.f16"; break;
    case DXIL_F32: name = "dx.types.ResRet.f32"; break;
    case DXIL_F64: name = "dx.types.ResRet.f64"; break;
    default:

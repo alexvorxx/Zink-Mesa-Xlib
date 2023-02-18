@@ -1296,7 +1296,7 @@ handle_bind_buffer_gen(struct gl_context *ctx,
 {
    struct gl_buffer_object *buf = *buf_handle;
 
-   if (unlikely(!no_error && !buf && (ctx->API == API_OPENGL_CORE))) {
+   if (unlikely(!no_error && !buf && _mesa_is_desktop_gl_core(ctx))) {
       _mesa_error(ctx, GL_INVALID_OPERATION, "%s(non-gen name)", caller);
       return false;
    }

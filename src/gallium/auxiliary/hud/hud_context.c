@@ -550,6 +550,7 @@ hud_draw_results(struct hud_context *hud, struct pipe_resource *tex)
    fb.zsbuf = NULL;
    fb.width = hud->fb_width;
    fb.height = hud->fb_height;
+   fb.resolve = NULL;
 
    viewport.scale[0] = 0.5f * hud->fb_width;
    viewport.scale[1] = 0.5f * hud->fb_height;

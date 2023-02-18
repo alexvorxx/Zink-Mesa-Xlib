@@ -1835,6 +1835,214 @@ static void pvr_descriptor_update_input_attachment(
    }
 }
 
+static void pvr_write_descriptor_set(struct pvr_device *device,
+                                     const VkWriteDescriptorSet *write_set)
+{
+   PVR_FROM_HANDLE(pvr_descriptor_set, set, write_set->dstSet);
+   uint32_t *map = set->pvr_bo->bo->map;
+   const struct pvr_descriptor_set_layout_binding *binding =
+      pvr_get_descriptor_binding(set->layout, write_set->dstBinding);
+
+   /* Binding should not be NULL. */
+   assert(binding);
+
+   /* Only need to update the descriptor if it is actually being used. If it
+    * was not used in any stage, then the shader_stage_mask would be 0 and we
+    * can skip this update.
+    */
+   if (binding->shader_stage_mask == 0)
+      return;
+
+   vk_foreach_struct_const (ext, write_set->pNext) {
+      pvr_debug_ignored_stype(ext->sType);
+   }
+
+   switch (write_set->descriptorType) {
+   case VK_DESCRIPTOR_TYPE_SAMPLER:
+      pvr_descriptor_update_sampler(device,
+                                    write_set,
+                                    set,
+                                    binding,
+                                    map,
+                                    0,
+                                    PVR_STAGE_ALLOCATION_COUNT);
+      break;
+
+   case VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER:
+      pvr_descriptor_update_sampler_texture(device,
+                                            write_set,
+                                            set,
+                                            binding,
+                                            map,
+                                            0,
+                                            PVR_STAGE_ALLOCATION_COUNT);
+      break;
+
+   case VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE:
+   case VK_DESCRIPTOR_TYPE_STORAGE_IMAGE:
+      pvr_descriptor_update_texture(device,
+                                    write_set,
+                                    set,
+                                    binding,
+                                    map,
+                                    0,
+                                    PVR_STAGE_ALLOCATION_COUNT);
+      break;
+
+   case VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER:
+   case VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER:
+      pvr_descriptor_update_buffer_view(device,
+                                        write_set,
+                                        set,
+                                        binding,
+                                        map,
+                                        0,
+                                        PVR_STAGE_ALLOCATION_COUNT);
+      break;
+
+   case VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT:
+      pvr_descriptor_update_input_attachment(device,
+                                             write_set,
+                                             set,
+                                             binding,
+                                             map,
+                                             0,
+                                             PVR_STAGE_ALLOCATION_COUNT);
+      break;
+
+   case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER:
+   case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER:
+   case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC:
+   case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC:
+      pvr_descriptor_update_buffer_info(device,
+                                        write_set,
+                                        set,
+                                        binding,
+                                        map,
+                                        0,
+                                        PVR_STAGE_ALLOCATION_COUNT);
+      break;
+
+   default:
+      unreachable("Unknown descriptor type");
+      break;
+   }
+}
+
+static void pvr_copy_descriptor_set(struct pvr_device *device,
+                                    const VkCopyDescriptorSet *copy_set)
+{
+   PVR_FROM_HANDLE(pvr_descriptor_set, src_set, copy_set->srcSet);
+   PVR_FROM_HANDLE(pvr_descriptor_set, dst_set, copy_set->dstSet);
+   const struct pvr_descriptor_set_layout_binding *src_binding =
+      pvr_get_descriptor_binding(src_set->layout, copy_set->srcBinding);
+   const struct pvr_descriptor_set_layout_binding *dst_binding =
+      pvr_get_descriptor_binding(dst_set->layout, copy_set->dstBinding);
+   struct pvr_descriptor_size_info size_info;
+   uint32_t *src_mem_ptr;
+   uint32_t *dst_mem_ptr;
+
+   switch (src_binding->type) {
+   case VK_DESCRIPTOR_TYPE_SAMPLER:
+      break;
+
+   case VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER:
+   case VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE:
+   case VK_DESCRIPTOR_TYPE_STORAGE_IMAGE:
+   case VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER:
+   case VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER:
+   case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER:
+   case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER:
+   case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC:
+   case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC:
+   case VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT: {
+      const uint32_t src_idx =
+         src_binding->descriptor_index + copy_set->srcArrayElement;
+      const uint32_t dst_idx =
+         dst_binding->descriptor_index + copy_set->dstArrayElement;
+
+      for (uint32_t j = 0; j < copy_set->descriptorCount; j++) {
+         assert(src_set->descriptors[src_idx + j].type == src_binding->type);
+
+         dst_set->descriptors[dst_idx + j] = src_set->descriptors[src_idx + j];
+      }
+
+      break;
+   }
+
+   default:
+      unreachable("Unknown descriptor type");
+      break;
+   }
+
+   /* Dynamic buffer descriptors don't have any data stored in the descriptor
+    * set memory. They only exist in the set->descriptors list which we've
+    * already updated above.
+    */
+   if (src_binding->type == VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC ||
+       src_binding->type == VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC) {
+      return;
+   }
+
+   src_mem_ptr = src_set->pvr_bo->bo->map;
+   dst_mem_ptr = dst_set->pvr_bo->bo->map;
+
+   /* From the Vulkan 1.3.232 spec VUID-VkCopyDescriptorSet-dstBinding-02632:
+    *
+    *    The type of dstBinding within dstSet must be equal to the type of
+    *    srcBinding within srcSet.
+    *
+    * So both bindings have the same descriptor size and we don't need to
+    * handle size differences.
+    */
+   pvr_descriptor_size_info_init(device, src_binding->type, &size_info);
+
+   assert(src_binding->shader_stage_mask == dst_binding->shader_stage_mask);
+
+   u_foreach_bit (stage, dst_binding->shader_stage_mask) {
+      uint16_t src_secondary_offset;
+      uint16_t dst_secondary_offset;
+      uint16_t src_primary_offset;
+      uint16_t dst_primary_offset;
+
+      /* Offset calculation functions expect descriptor_index to be
+       * binding relative not layout relative.
+       */
+      src_primary_offset =
+         pvr_get_descriptor_primary_offset(device,
+                                           src_set->layout,
+                                           src_binding,
+                                           stage,
+                                           copy_set->srcArrayElement);
+      dst_primary_offset =
+         pvr_get_descriptor_primary_offset(device,
+                                           dst_set->layout,
+                                           dst_binding,
+                                           stage,
+                                           copy_set->dstArrayElement);
+      src_secondary_offset =
+         pvr_get_descriptor_secondary_offset(device,
+                                             src_set->layout,
+                                             src_binding,
+                                             stage,
+                                             copy_set->srcArrayElement);
+      dst_secondary_offset =
+         pvr_get_descriptor_secondary_offset(device,
+                                             dst_set->layout,
+                                             dst_binding,
+                                             stage,
+                                             copy_set->dstArrayElement);
+
+      memcpy(dst_mem_ptr + dst_primary_offset,
+             src_mem_ptr + src_primary_offset,
+             size_info.primary * 4U * copy_set->descriptorCount);
+
+      memcpy(dst_mem_ptr + dst_secondary_offset,
+             src_mem_ptr + src_secondary_offset,
+             size_info.secondary * 4U * copy_set->descriptorCount);
+   }
+}
+
 void pvr_UpdateDescriptorSets(VkDevice _device,
                               uint32_t descriptorWriteCount,
                               const VkWriteDescriptorSet *pDescriptorWrites,
@@ -1843,99 +2051,9 @@ void pvr_UpdateDescriptorSets(VkDevice _device,
 {
    PVR_FROM_HANDLE(pvr_device, device, _device);
 
-   for (uint32_t i = 0; i < descriptorWriteCount; i++) {
-      const VkWriteDescriptorSet *write_set = &pDescriptorWrites[i];
-      PVR_FROM_HANDLE(pvr_descriptor_set, set, write_set->dstSet);
-      uint32_t *map = set->pvr_bo->bo->map;
-      const struct pvr_descriptor_set_layout_binding *binding =
-         pvr_get_descriptor_binding(set->layout, write_set->dstBinding);
+   for (uint32_t i = 0; i < descriptorWriteCount; i++)
+      pvr_write_descriptor_set(device, &pDescriptorWrites[i]);
 
-      /* Binding should not be NULL. */
-      assert(binding);
-
-      /* Only need to update the descriptor if it is actually being used. If it
-       * was not used in any stage, then the shader_stage_mask would be 0 and we
-       * can skip this update.
-       */
-      if (binding->shader_stage_mask == 0)
-         continue;
-
-      vk_foreach_struct_const (ext, write_set->pNext) {
-         pvr_debug_ignored_stype(ext->sType);
-      }
-
-      switch (write_set->descriptorType) {
-      case VK_DESCRIPTOR_TYPE_SAMPLER:
-         pvr_descriptor_update_sampler(device,
-                                       write_set,
-                                       set,
-                                       binding,
-                                       map,
-                                       0,
-                                       PVR_STAGE_ALLOCATION_COUNT);
-         break;
-
-      case VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER:
-         pvr_descriptor_update_sampler_texture(device,
-                                               write_set,
-                                               set,
-                                               binding,
-                                               map,
-                                               0,
-                                               PVR_STAGE_ALLOCATION_COUNT);
-         break;
-
-      case VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE:
-      case VK_DESCRIPTOR_TYPE_STORAGE_IMAGE:
-         pvr_descriptor_update_texture(device,
-                                       write_set,
-                                       set,
-                                       binding,
-                                       map,
-                                       0,
-                                       PVR_STAGE_ALLOCATION_COUNT);
-         break;
-
-      case VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER:
-      case VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER:
-         pvr_descriptor_update_buffer_view(device,
-                                           write_set,
-                                           set,
-                                           binding,
-                                           map,
-                                           0,
-                                           PVR_STAGE_ALLOCATION_COUNT);
-         break;
-
-      case VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT:
-         pvr_descriptor_update_input_attachment(device,
-                                                write_set,
-                                                set,
-                                                binding,
-                                                map,
-                                                0,
-                                                PVR_STAGE_ALLOCATION_COUNT);
-         break;
-
-      case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER:
-      case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER:
-      case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC:
-      case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC:
-         pvr_descriptor_update_buffer_info(device,
-                                           write_set,
-                                           set,
-                                           binding,
-                                           map,
-                                           0,
-                                           PVR_STAGE_ALLOCATION_COUNT);
-         break;
-
-      default:
-         unreachable("Unknown descriptor type");
-         break;
-      }
-   }
-
-   if (descriptorCopyCount > 0)
-      pvr_finishme("Descriptor copying support missing\n");
+   for (uint32_t i = 0; i < descriptorCopyCount; i++)
+      pvr_copy_descriptor_set(device, &pDescriptorCopies[i]);
 }

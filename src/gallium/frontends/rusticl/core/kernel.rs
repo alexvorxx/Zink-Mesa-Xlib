@@ -803,7 +803,14 @@ fn convert_spirv_to_nir(
     assert!(attributes_string_set.len() == 1);
     let args = args_set.into_iter().next().unwrap();
     let internal_args = internal_args_set.into_iter().next().unwrap();
-    let attributes_string = attributes_string_set.into_iter().next().unwrap();
+
+    // spec: For kernels not created from OpenCL C source and the clCreateProgramWithSource API call
+    // the string returned from this query [CL_KERNEL_ATTRIBUTES] will be empty.
+    let attributes_string = if p.is_src() {
+        attributes_string_set.into_iter().next().unwrap()
+    } else {
+        String::new()
+    };
 
     (nirs, args, internal_args, attributes_string)
 }

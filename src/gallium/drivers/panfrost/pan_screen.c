@@ -63,7 +63,7 @@ static const struct debug_named_value panfrost_debug_options[] = {
    {"nofp16",     PAN_DBG_NOFP16,    "Disable 16-bit support"},
    {"gl3",        PAN_DBG_GL3,      "Enable experimental GL 3.x implementation, up to 3.3"},
    {"noafbc",     PAN_DBG_NO_AFBC,  "Disable AFBC support"},
-   {"nocrc",      PAN_DBG_NO_CRC,   "Disable transaction elimination"},
+   {"crc",        PAN_DBG_CRC,      "Enable transaction elimination"},
    {"msaa16",     PAN_DBG_MSAA16,   "Enable MSAA 8x and 16x support"},
    {"linear",     PAN_DBG_LINEAR,   "Force linear textures"},
    {"nocache",    PAN_DBG_NO_CACHE, "Disable BO cache"},
@@ -792,6 +792,12 @@ panfrost_get_disk_shader_cache(struct pipe_screen *pscreen)
    return pan_screen(pscreen)->disk_cache;
 }
 
+static int
+panfrost_get_screen_fd(struct pipe_screen *pscreen)
+{
+   return pan_device(pscreen)->fd;
+}
+
 int
 panfrost_get_driver_query_info(struct pipe_screen *pscreen, unsigned index,
                                struct pipe_driver_query_info *info)
@@ -810,7 +816,8 @@ panfrost_get_driver_query_info(struct pipe_screen *pscreen, unsigned index,
 }
 
 struct pipe_screen *
-panfrost_create_screen(int fd, struct renderonly *ro)
+panfrost_create_screen(int fd, const struct pipe_screen_config *config,
+                       struct renderonly *ro)
 {
    /* Create the screen */
    struct panfrost_screen *screen = rzalloc(NULL, struct panfrost_screen);
@@ -839,6 +846,7 @@ panfrost_create_screen(int fd, struct renderonly *ro)
 
    screen->base.destroy = panfrost_destroy_screen;
 
+   screen->base.get_screen_fd = panfrost_get_screen_fd;
    screen->base.get_name = panfrost_get_name;
    screen->base.get_vendor = panfrost_get_vendor;
    screen->base.get_device_vendor = panfrost_get_device_vendor;

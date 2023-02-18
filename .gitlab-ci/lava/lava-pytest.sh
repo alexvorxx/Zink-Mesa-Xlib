@@ -26,6 +26,11 @@
 
 set -ex
 
+# Use this script in a python virtualenv for isolation
+python3 -m venv .venv
+. .venv/bin/activate
+python3 -m pip install -r ${CI_PROJECT_DIR}/.gitlab-ci/lava/requirements-test.txt
+
 TEST_DIR=${CI_PROJECT_DIR}/.gitlab-ci/tests
 
 PYTHONPATH="${TEST_DIR}:${PYTHONPATH}" python3 -m \

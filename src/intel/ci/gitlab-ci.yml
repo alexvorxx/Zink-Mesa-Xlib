@@ -47,6 +47,24 @@ anv-tgl-vk:
     VK_DRIVER: intel
   parallel: 12  # 15 - 3 (intel job + two zink)
 
+hasvk-hsw-full:
+  extends:
+    - .anholt-hsw-test
+    - .deqp-test
+    - .hasvk-manual-rules
+  variables:
+    GPU_VERSION: hasvk-hsw
+    DEQP_SUITE: hasvk-hsw
+    VK_DRIVER: intel_hasvk
+    MESA_VK_IGNORE_CONFORMANCE_WARNING: 1
+  timeout: 2h
+
+hasvk-hsw:
+  extends:
+    - hasvk-hsw-full
+  variables:
+    DEQP_FRACTION: 10
+
 ## Iris only
 # 5 boards
 .iris-apl-test:

@@ -109,10 +109,12 @@ update_dirty_vbs_for_gfx8_vb_flush(struct anv_cmd_buffer *cmd_buffer,
                                    uint32_t access_type)
 {
 #if GFX_VER == 9
+   const struct vk_dynamic_graphics_state *dyn =
+      &cmd_buffer->vk.dynamic_graphics_state;
    struct anv_graphics_pipeline *pipeline = cmd_buffer->state.gfx.pipeline;
    const struct brw_vs_prog_data *vs_prog_data = get_vs_prog_data(pipeline);
 
-   uint64_t vb_used = pipeline->vb_used;
+   uint64_t vb_used = dyn->vi->bindings_valid;
    if (vs_prog_data->uses_firstvertex ||
        vs_prog_data->uses_baseinstance)
       vb_used |= 1ull << ANV_SVGS_VB_INDEX;

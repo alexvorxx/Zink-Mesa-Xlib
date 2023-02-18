@@ -368,6 +368,17 @@ impl SPIRVBin {
         }
     }
 
+    pub fn spec_constant(&self, spec_id: u32) -> Option<clc_spec_constant_type> {
+        let info = self.info?;
+        let spec_constants =
+            unsafe { slice::from_raw_parts(info.spec_constants, info.num_spec_constants as usize) };
+
+        spec_constants
+            .iter()
+            .find(|sc| sc.id == spec_id)
+            .map(|sc| sc.type_)
+    }
+
     pub fn print(&self) {
         unsafe {
             clc_dump_spirv(&self.spirv, stderr_ptr());
@@ -427,5 +438,27 @@ impl SPIRVKernelArg {
             address_qualifier: address_qualifier,
             type_qualifier: clc_kernel_arg_type_qualifier(type_qualifier),
         })
+    }
+}
+
+pub trait CLCSpecConstantType {
+    fn size(self) -> u8;
+}
+
+impl CLCSpecConstantType for clc_spec_constant_type {
+    fn size(self) -> u8 {
+        match self {
+            Self::CLC_SPEC_CONSTANT_INT64
+            | Self::CLC_SPEC_CONSTANT_UINT64
+            | Self::CLC_SPEC_CONSTANT_DOUBLE => 8,
+            Self::CLC_SPEC_CONSTANT_INT32
+            | Self::CLC_SPEC_CONSTANT_UINT32
+            | Self::CLC_SPEC_CONSTANT_FLOAT => 4,
+            Self::CLC_SPEC_CONSTANT_INT16 | Self::CLC_SPEC_CONSTANT_UINT16 => 2,
+            Self::CLC_SPEC_CONSTANT_INT8
+            | Self::CLC_SPEC_CONSTANT_UINT8
+            | Self::CLC_SPEC_CONSTANT_BOOL => 1,
+            Self::CLC_SPEC_CONSTANT_UNKNOWN => 0,
+        }
     }
 }

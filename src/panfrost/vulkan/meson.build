@@ -134,7 +134,7 @@ libvulkan_panfrost = shared_library(
     idep_vulkan_wsi,
     idep_mesautil,
   ],
-  c_args : [no_override_init_args, panvk_flags],
+  c_args : [no_override_init_args, panvk_flags, vk_wsi_args],
   link_args : [ld_args_bsymbolic, ld_args_gc_sections],
   install : true,
 )

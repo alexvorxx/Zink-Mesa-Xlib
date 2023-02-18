@@ -75,4 +75,8 @@ VkResult pvr_spm_scratch_buffer_get_buffer(
 void pvr_spm_scratch_buffer_release(struct pvr_device *device,
                                     struct pvr_spm_scratch_buffer *buffer);
 
+/* The SPM load programs are needed for the SPM background object load op. */
+VkResult pvr_device_init_spm_load_state(struct pvr_device *device);
+void pvr_device_finish_spm_load_state(struct pvr_device *device);
+
 #endif /* PVR_SPM_H */

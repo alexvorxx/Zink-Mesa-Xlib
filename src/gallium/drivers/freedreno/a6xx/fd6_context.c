@@ -170,6 +170,8 @@ setup_state_map(struct fd_context *ctx)
    fd_context_add_map(ctx, FD_DIRTY_PROG | FD_DIRTY_CONST,
                       BIT(FD6_GROUP_CONST));
    fd_context_add_map(ctx, FD_DIRTY_STREAMOUT, BIT(FD6_GROUP_SO));
+   fd_context_add_map(ctx, FD_DIRTY_BLEND_COHERENT,
+      BIT(FD6_GROUP_PRIM_MODE_SYSMEM) | BIT(FD6_GROUP_PRIM_MODE_GMEM));
 
    fd_context_add_shader_map(ctx, PIPE_SHADER_VERTEX, FD_DIRTY_SHADER_TEX,
                              BIT(FD6_GROUP_VS_TEX));
@@ -206,6 +208,9 @@ setup_state_map(struct fd_context *ctx)
    fd_context_add_shader_map(ctx, PIPE_SHADER_COMPUTE,
                              FD_DIRTY_SHADER_SSBO | FD_DIRTY_SHADER_IMAGE,
                              BIT(FD6_GROUP_CS_BINDLESS));
+   fd_context_add_shader_map(ctx, PIPE_SHADER_FRAGMENT,
+                             FD_DIRTY_SHADER_PROG,
+                             BIT(FD6_GROUP_PRIM_MODE_SYSMEM) | BIT(FD6_GROUP_PRIM_MODE_GMEM));
 
    /* NOTE: scissor enabled bit is part of rasterizer state, but
     * fd_rasterizer_state_bind() will mark scissor dirty if needed:

@@ -79,12 +79,9 @@ meson.build @dbaker @eric
 /src/glx/*glvnd* @kbrenneman
 
 # Haiku
-/include/HaikuGL/ @kallisti5
 /src/egl/drivers/haiku/ @kallisti5
 /src/gallium/frontends/hgl/ @kallisti5
-/src/gallium/targets/haiku-softpipe/ @kallisti5
 /src/gallium/winsys/sw/hgl/ @kallisti5
-/src/hgl/ @kallisti5
 
 # Loader - DRI/classic
 /src/loader/ @xexaxo

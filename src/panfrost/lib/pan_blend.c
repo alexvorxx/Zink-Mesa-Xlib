@@ -627,9 +627,6 @@ GENX(pan_blend_create_shader)(const struct panfrost_device *dev,
    if (PAN_ARCH >= 6 && nir_alu_type_get_type_size(nir_type) == 8)
       nir_type = nir_alu_type_get_base_type(nir_type) | 16;
 
-   enum glsl_base_type glsl_type =
-      nir_get_glsl_base_type_for_nir_type(nir_type);
-
    nir_lower_blend_options options = {
       .logicop_enable = state->logicop_enable,
       .logicop_func = state->logicop_func,
@@ -674,23 +671,16 @@ GENX(pan_blend_create_shader)(const struct panfrost_device *dev,
                      nir_alu_type_get_type_size(src_types[i]);
    }
 
-   nir_variable *c_src = nir_variable_create(
-      b.shader, nir_var_shader_in,
-      glsl_vector_type(nir_get_glsl_base_type_for_nir_type(src_types[0]), 4),
-      "gl_Color");
-   c_src->data.location = VARYING_SLOT_COL0;
-   nir_variable *c_src1 = nir_variable_create(
-      b.shader, nir_var_shader_in,
-      glsl_vector_type(nir_get_glsl_base_type_for_nir_type(src_types[1]), 4),
-      "gl_Color1");
-   c_src1->data.location = VARYING_SLOT_VAR0;
-   c_src1->data.driver_location = 1;
-   nir_variable *c_out =
-      nir_variable_create(b.shader, nir_var_shader_out,
-                          glsl_vector_type(glsl_type, 4), "gl_FragColor");
-   c_out->data.location = FRAG_RESULT_DATA0;
+   nir_ssa_def *pixel = nir_load_barycentric_pixel(&b, 32, .interp_mode = 1);
+   nir_ssa_def *zero = nir_imm_int(&b, 0);
 
-   nir_ssa_def *s_src[] = {nir_load_var(&b, c_src), nir_load_var(&b, c_src1)};
+   nir_ssa_def *s_src[2];
+   for (unsigned i = 0; i < 2; ++i) {
+      s_src[i] = nir_load_interpolated_input(
+         &b, 4, nir_alu_type_get_type_size(src_types[i]), pixel, zero,
+         .io_semantics.location = i ? VARYING_SLOT_VAR0 : VARYING_SLOT_COL0,
+         .io_semantics.num_slots = 1, .base = i, .dest_type = src_types[i]);
+   }
 
    /* On Midgard, the blend shader is responsible for format conversion.
     * As the OpenGL spec requires integer conversions to saturate, we must
@@ -706,7 +696,11 @@ GENX(pan_blend_create_shader)(const struct panfrost_device *dev,
    }
 
    /* Build a trivial blend shader */
-   nir_store_var(&b, c_out, s_src[0], 0xFF);
+   nir_store_output(
+      &b, s_src[0], zero, .write_mask = BITFIELD_MASK(4), .src_type = nir_type,
+      .io_semantics.location = FRAG_RESULT_DATA0, .io_semantics.num_slots = 1);
+
+   b.shader->info.io_lowered = true;
 
    options.src1 = s_src[1];
 

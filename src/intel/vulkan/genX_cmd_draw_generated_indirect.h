@@ -215,6 +215,8 @@ genX(cmd_buffer_emit_generate_draws_pipeline)(struct anv_cmd_buffer *cmd_buffer)
     * In 3D mode, after programming push constant alloc command immediately
     * program push constant command(ZERO length) without any commit between
     * them.
+    *
+    * Note that Wa_16011448509 isn't needed here as all address bits are zero.
     */
    anv_batch_emit(&cmd_buffer->batch, GENX(3DSTATE_CONSTANT_ALL), c) {
       /* Update empty push constants for all stages (bitmask = 11111b) */
@@ -291,7 +293,8 @@ genX(cmd_buffer_emit_generated_push_data)(struct anv_cmd_buffer *cmd_buffer,
    struct anv_address push_data_addr = anv_state_pool_state_address(
       &cmd_buffer->device->dynamic_state_pool, push_data_state);
 
-#if GFX_VER >= 12
+   /* Don't use 3DSTATE_CONSTANT_ALL on Gfx12.0 due to Wa_16011448509 */
+#if GFX_VERx10 > 120
    const uint32_t num_dwords = GENX(3DSTATE_CONSTANT_ALL_length) +
       GENX(3DSTATE_CONSTANT_ALL_DATA_length);
    uint32_t *dw =

@@ -12,12 +12,10 @@
 # Manual test rules for using anholt's shared hsw.
 .anholt-hsw-test:
   extends:
-    - .crocus-manual-rules
     - .test-gl
   tags:
     - anholt-hsw
   variables:
-    GPU_VERSION: crocus-hsw
     FDO_CI_CONCURRENT: 12
 
 # System is dead at the moment. needs maintenance.
@@ -33,7 +31,9 @@ crocus-hsw:
   extends:
     - .anholt-hsw-test
     - .deqp-test
+    - .crocus-manual-rules
   variables:
+    GPU_VERSION: crocus-hsw
     DEQP_SUITE: crocus-hsw
     PIGLIT_PLATFORM: gbm
 
@@ -50,6 +50,7 @@ crocus-hsw-traces:
   extends:
     - .anholt-hsw-test
     - .piglit-traces-test
+    - .crocus-manual-rules
   variables:
     EGL_PLATFORM: "surfaceless"
     PIGLIT_REPLAY_DESCRIPTION_FILE: "${CI_PROJECT_DIR}/install/traces-crocus.yml"

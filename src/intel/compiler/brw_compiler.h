@@ -1600,6 +1600,7 @@ struct brw_tue_map {
 
 struct brw_mue_map {
    int32_t start_dw[VARYING_SLOT_MAX];
+   uint32_t per_primitive_indices_dw;
 
    uint32_t size_dw;
 
@@ -1624,6 +1625,7 @@ struct brw_task_prog_data {
 
 enum brw_mesh_index_format {
    BRW_INDEX_FORMAT_U32,
+   BRW_INDEX_FORMAT_U888X,
 };
 
 struct brw_mesh_prog_data {

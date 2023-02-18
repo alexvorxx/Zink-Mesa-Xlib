@@ -1076,6 +1076,13 @@ etna_get_disk_shader_cache(struct pipe_screen *pscreen)
    return compiler->disk_cache;
 }
 
+static int
+etna_screen_get_fd(struct pipe_screen *pscreen)
+{
+   struct etna_screen *screen = etna_screen(pscreen);
+   return etna_device_fd(screen->dev);
+}
+
 struct pipe_screen *
 etna_screen_create(struct etna_device *dev, struct etna_gpu *gpu,
                    struct renderonly *ro)
@@ -1091,7 +1098,6 @@ etna_screen_create(struct etna_device *dev, struct etna_gpu *gpu,
    screen->dev = dev;
    screen->gpu = gpu;
    screen->ro = ro;
-   screen->refcnt = 1;
 
    screen->drm_version = etnaviv_device_version(screen->dev);
    etna_mesa_debug = debug_get_option_etna_mesa_debug();
@@ -1218,6 +1224,7 @@ etna_screen_create(struct etna_device *dev, struct etna_gpu *gpu,
       screen->features[viv_chipMinorFeatures2] &= ~chipMinorFeatures2_LINEAR_PE;
 
    pscreen->destroy = etna_screen_destroy;
+   pscreen->get_screen_fd = etna_screen_get_fd;
    pscreen->get_param = etna_screen_get_param;
    pscreen->get_paramf = etna_screen_get_paramf;
    pscreen->get_shader_param = etna_screen_get_shader_param;

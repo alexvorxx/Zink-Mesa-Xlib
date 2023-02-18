@@ -208,6 +208,7 @@ fd_screen_get_param(struct pipe_screen *pscreen, enum pipe_cap param)
    case PIPE_CAP_NIR_COMPACT_ARRAYS:
    case PIPE_CAP_TEXTURE_MIRROR_CLAMP_TO_EDGE:
    case PIPE_CAP_GL_SPIRV:
+   case PIPE_CAP_FBFETCH_COHERENT:
       return 1;
 
    case PIPE_CAP_COPY_BETWEEN_COMPRESSED_AND_PLAIN_FORMATS:
@@ -988,10 +989,22 @@ fd_screen_get_driver_uuid(struct pipe_screen *pscreen, char *uuid)
    fd_get_driver_uuid(uuid);
 }
 
-struct pipe_screen *
-fd_screen_create(struct fd_device *dev, struct renderonly *ro,
-                 const struct pipe_screen_config *config)
+static int
+fd_screen_get_fd(struct pipe_screen *pscreen)
 {
+   struct fd_screen *screen = fd_screen(pscreen);
+   return fd_device_fd(screen->dev);
+}
+
+struct pipe_screen *
+fd_screen_create(int fd,
+                 const struct pipe_screen_config *config,
+                 struct renderonly *ro)
+{
+   struct fd_device *dev = fd_device_new_dup(fd);
+   if (!dev)
+      return NULL;
+
    struct fd_screen *screen = CALLOC_STRUCT(fd_screen);
    struct pipe_screen *pscreen;
    uint64_t val;
@@ -1012,7 +1025,6 @@ fd_screen_create(struct fd_device *dev, struct renderonly *ro,
 
    screen->dev = dev;
    screen->ro = ro;
-   screen->refcnt = 1;
 
    // maybe this should be in context?
    screen->pipe = fd_pipe_new(screen->dev, FD_PIPE_3D);
@@ -1176,6 +1188,7 @@ fd_screen_create(struct fd_device *dev, struct renderonly *ro,
    (void)simple_mtx_init(&screen->lock, mtx_plain);
 
    pscreen->destroy = fd_screen_destroy;
+   pscreen->get_screen_fd = fd_screen_get_fd;
    pscreen->get_param = fd_screen_get_param;
    pscreen->get_paramf = fd_screen_get_paramf;
    pscreen->get_shader_param = fd_screen_get_shader_param;

@@ -125,4 +125,45 @@ pvr_get_clear_attachment_program_index(uint32_t dword_count,
    return idx;
 }
 
+enum pvr_spm_load_const {
+   SPM_LOAD_CONST_TILE_BUFFER_1_UPPER,
+   SPM_LOAD_CONST_TILE_BUFFER_1_LOWER,
+   SPM_LOAD_CONST_TILE_BUFFER_2_UPPER,
+   SPM_LOAD_CONST_TILE_BUFFER_2_LOWER,
+   SPM_LOAD_CONST_TILE_BUFFER_3_UPPER,
+   SPM_LOAD_CONST_TILE_BUFFER_3_LOWER,
+   /* The following are only available if the core does not have the
+    * has_eight_output_registers feature. I.e. only available if the device has
+    * 4 output regs.
+    */
+   SPM_LOAD_CONST_TILE_BUFFER_4_UPPER,
+   SPM_LOAD_CONST_TILE_BUFFER_4_LOWER,
+   SPM_LOAD_CONST_TILE_BUFFER_5_UPPER,
+   SPM_LOAD_CONST_TILE_BUFFER_5_LOWER,
+   SPM_LOAD_CONST_TILE_BUFFER_6_UPPER,
+   SPM_LOAD_CONST_TILE_BUFFER_6_LOWER,
+   SPM_LOAD_CONST_TILE_BUFFER_7_UPPER,
+   SPM_LOAD_CONST_TILE_BUFFER_7_LOWER,
+};
+#define PVR_SPM_LOAD_DEST_UNUSED ~0
+
+#define PVR_SPM_LOAD_SAMPLES_COUNT 4U
+
+/* If output_regs == 8
+ *    reg_load_programs = 4            # 1, 2, 4, 8
+ *    tile_buffer_load_programs = 3    # 1, 2, 3
+ * else                                #output_regs == 4
+ *    reg_load_programs = 3            # 1, 2, 4
+ *    tile_buffer_load_programs = 7    # 1, 2, 3, 4, 5, 6, 7
+ *
+ * See PVR_SPM_LOAD_IN_BUFFERS_COUNT for where the amount of
+ * tile_buffer_load_programs comes from.
+ *
+ * Tot = sample_count * (reg_load_programs + tile_buffer_load_programs)
+ */
+/* FIXME: This is currently hard coded for the am62. The Chromebook has 8
+ * output regs so the count is different.
+ */
+#define PVR_SPM_LOAD_PROGRAM_COUNT (PVR_SPM_LOAD_SAMPLES_COUNT * (3 + 7))
+
 #endif /* PVR_SHADER_FACTORY_H */

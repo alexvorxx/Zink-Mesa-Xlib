@@ -27,7 +27,7 @@
 #include <stdint.h>
 #include <string.h>
 #include "util/os_time.h"
-#include <vulkan/vulkan.h>
+#include <vulkan/vulkan_core.h>
 
 /*
  * Implemented types of tokens.

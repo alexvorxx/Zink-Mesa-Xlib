@@ -881,7 +881,7 @@ emit_intrinsic_load_ubo_ldc(struct ir3_context *ctx, nir_intrinsic_instr *intr,
    ldc->dsts[0]->wrmask = MASK(ncomp);
    ldc->cat6.iim_val = ncomp;
    ldc->cat6.d = nir_intrinsic_component(intr);
-   ldc->cat6.type = TYPE_U32;
+   ldc->cat6.type = utype_dst(intr->dest);
 
    ir3_handle_bindless_cat6(ldc, intr->src[0]);
    if (ldc->flags & IR3_INSTR_B)

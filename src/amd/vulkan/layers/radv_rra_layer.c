@@ -98,6 +98,9 @@ rra_QueuePresentKHR(VkQueue _queue, const VkPresentInfoKHR *pPresentInfo)
 
    radv_rra_handle_trace(_queue);
 
+   if (!queue->device->rra_trace.copy_after_build)
+      return VK_SUCCESS;
+
    struct hash_table *accel_structs = queue->device->rra_trace.accel_structs;
 
    hash_table_foreach (accel_structs, entry) {
@@ -137,10 +140,7 @@ rra_init_accel_struct_data_buffer(VkDevice vk_device, struct radv_rra_accel_stru
       .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
       .pNext = &flags_info,
       .allocationSize = requirements.size,
-      .memoryTypeIndex =
-         radv_find_memory_index(device->physical_device, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
-                                                            VK_MEMORY_PROPERTY_HOST_COHERENT_BIT |
-                                                            VK_MEMORY_PROPERTY_HOST_CACHED_BIT),
+      .memoryTypeIndex = device->rra_trace.copy_memory_index,
    };
    result = radv_alloc_memory(device, &alloc_info, NULL, &data->memory, true);
    if (result != VK_SUCCESS)
@@ -174,7 +174,7 @@ rra_CreateAccelerationStructureKHR(VkDevice _device,
    RADV_FROM_HANDLE(radv_acceleration_structure, structure, *pAccelerationStructure);
    simple_mtx_lock(&device->rra_trace.data_mtx);
 
-   struct radv_rra_accel_struct_data *data = malloc(sizeof(struct radv_rra_accel_struct_data));
+   struct radv_rra_accel_struct_data *data = calloc(1, sizeof(struct radv_rra_accel_struct_data));
    if (!data) {
       result = VK_ERROR_OUT_OF_HOST_MEMORY;
       goto fail_as;
@@ -193,9 +193,11 @@ rra_CreateAccelerationStructureKHR(VkDevice _device,
    if (result != VK_SUCCESS)
       goto fail_data;
 
-   result = rra_init_accel_struct_data_buffer(_device, data);
-   if (result != VK_SUCCESS)
-      goto fail_event;
+   if (device->rra_trace.copy_after_build) {
+      result = rra_init_accel_struct_data_buffer(_device, data);
+      if (result != VK_SUCCESS)
+         goto fail_event;
+   }
 
    _mesa_hash_table_insert(device->rra_trace.accel_structs, structure, data);
 
@@ -217,7 +219,7 @@ exit:
 }
 
 static void
-copy_accel_struct_to_data(VkCommandBuffer commandBuffer,
+handle_accel_struct_write(VkCommandBuffer commandBuffer,
                           struct radv_acceleration_structure *accel_struct,
                           struct radv_rra_accel_struct_data *data)
 {
@@ -241,6 +243,15 @@ copy_accel_struct_to_data(VkCommandBuffer commandBuffer,
 
    vk_common_CmdSetEvent(commandBuffer, data->build_event, 0);
 
+   if (!data->va) {
+      data->va = radv_acceleration_structure_get_va(accel_struct);
+      _mesa_hash_table_u64_insert(cmd_buffer->device->rra_trace.accel_struct_vas, data->va,
+                                  accel_struct);
+   }
+
+   if (!data->buffer)
+      return;
+
    VkBufferCopy2 region = {
       .sType = VK_STRUCTURE_TYPE_BUFFER_COPY_2,
       .srcOffset = accel_struct->offset,
@@ -256,12 +267,6 @@ copy_accel_struct_to_data(VkCommandBuffer commandBuffer,
    };
 
    radv_CmdCopyBuffer2(commandBuffer, &copyInfo);
-
-   if (!data->va) {
-      data->va = radv_acceleration_structure_get_va(accel_struct);
-      _mesa_hash_table_u64_insert(cmd_buffer->device->rra_trace.accel_struct_vas, data->va,
-                                  accel_struct);
-   }
 }
 
 VKAPI_ATTR void VKAPI_CALL
@@ -283,7 +288,7 @@ rra_CmdBuildAccelerationStructuresKHR(
       assert(entry);
       struct radv_rra_accel_struct_data *data = entry->data;
 
-      copy_accel_struct_to_data(commandBuffer, structure, data);
+      handle_accel_struct_write(commandBuffer, structure, data);
    }
    simple_mtx_unlock(&cmd_buffer->device->rra_trace.data_mtx);
 }
@@ -304,7 +309,7 @@ rra_CmdCopyAccelerationStructureKHR(VkCommandBuffer commandBuffer,
    assert(entry);
    struct radv_rra_accel_struct_data *data = entry->data;
 
-   copy_accel_struct_to_data(commandBuffer, structure, data);
+   handle_accel_struct_write(commandBuffer, structure, data);
 
    simple_mtx_unlock(&cmd_buffer->device->rra_trace.data_mtx);
 }
@@ -326,7 +331,7 @@ rra_CmdCopyMemoryToAccelerationStructureKHR(VkCommandBuffer commandBuffer,
    assert(entry);
    struct radv_rra_accel_struct_data *data = entry->data;
 
-   copy_accel_struct_to_data(commandBuffer, structure, data);
+   handle_accel_struct_write(commandBuffer, structure, data);
 
    simple_mtx_unlock(&cmd_buffer->device->rra_trace.data_mtx);
 }
@@ -348,7 +353,11 @@ rra_DestroyAccelerationStructureKHR(VkDevice _device, VkAccelerationStructureKHR
 
    assert(entry);
    struct radv_rra_accel_struct_data *data = entry->data;
-   data->is_dead = true;
+
+   if (device->rra_trace.copy_after_build)
+      data->is_dead = true;
+   else
+      _mesa_hash_table_remove(device->rra_trace.accel_structs, entry);
 
    simple_mtx_unlock(&device->rra_trace.data_mtx);
 

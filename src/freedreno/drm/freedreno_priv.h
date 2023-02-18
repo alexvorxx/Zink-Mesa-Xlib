@@ -49,6 +49,7 @@
 #include "util/u_math.h"
 #include "util/vma.h"
 
+#include "freedreno_common.h"
 #include "freedreno_dev_info.h"
 #include "freedreno_drmif.h"
 #include "freedreno_ringbuffer.h"
@@ -347,6 +348,11 @@ struct fd_pipe {
    uint32_t last_submit_fence;
 
    uint32_t last_enqueue_fence;   /* just for debugging */
+
+   /**
+    * Counter for assigning each submit a unique seqno.
+    */
+   seqno_t submit_seqno;
 
    /**
     * If we *ever* see an in-fence-fd, assume that userspace is

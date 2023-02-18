@@ -10,7 +10,7 @@ use rusticl_opencl_gen::*;
 #[allow(non_camel_case_types)]
 pub struct _cl_platform_id {
     dispatch: &'static cl_icd_dispatch,
-    extensions: [cl_name_version; 1],
+    extensions: [cl_name_version; 2],
 }
 
 impl CLInfo<cl_platform_info> for cl_platform_id {
@@ -18,8 +18,7 @@ impl CLInfo<cl_platform_info> for cl_platform_id {
         let p = self.get_ref()?;
         Ok(match q {
             // TODO spirv
-            CL_PLATFORM_EXTENSIONS => cl_prop("cl_khr_icd"),
-            //            CL_PLATFORM_EXTENSIONS => cl_prop("cl_khr_icd cl_khr_il_program"),
+            CL_PLATFORM_EXTENSIONS => cl_prop("cl_khr_icd cl_khr_il_program"),
             CL_PLATFORM_EXTENSIONS_WITH_VERSION => {
                 cl_prop::<Vec<cl_name_version>>(p.extensions.to_vec())
             }
@@ -41,8 +40,7 @@ static PLATFORM: _cl_platform_id = _cl_platform_id {
     dispatch: &DISPATCH,
     extensions: [
         mk_cl_version_ext(1, 0, 0, "cl_khr_icd"),
-        // TODO spirv
-        //        mk_cl_version_ext(1, 0, 0, "cl_khr_il_program"),
+        mk_cl_version_ext(1, 0, 0, "cl_khr_il_program"),
     ],
 };
 

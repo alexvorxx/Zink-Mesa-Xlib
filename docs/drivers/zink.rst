@@ -291,6 +291,10 @@ variable:
     Do not reorder or optimize GL command streams
   ``gpl``
     Force using Graphics Pipeline Library for all shaders
+  ``rp``
+    Enable renderpass optimizations (for tiling GPUs)
+  ``norp``
+    Disable renderpass optimizations (for tiling GPUs)
 
 Vulkan Validation Layers
 ^^^^^^^^^^^^^^^^^^^^^^^^

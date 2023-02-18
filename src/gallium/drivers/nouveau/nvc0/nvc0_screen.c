@@ -275,6 +275,7 @@ nvc0_screen_get_param(struct pipe_screen *pscreen, enum pipe_cap param)
    case PIPE_CAP_DRAW_PARAMETERS:
    case PIPE_CAP_SHADER_PACK_HALF_FLOAT:
    case PIPE_CAP_MULTI_DRAW_INDIRECT:
+   case PIPE_CAP_MEMOBJ:
    case PIPE_CAP_MULTI_DRAW_INDIRECT_PARAMS:
    case PIPE_CAP_FS_FACE_IS_INTEGER_SYSVAL:
    case PIPE_CAP_QUERY_BUFFER_OBJECT:
@@ -383,7 +384,6 @@ nvc0_screen_get_param(struct pipe_screen *pscreen, enum pipe_cap param)
    case PIPE_CAP_NATIVE_FENCE_FD:
    case PIPE_CAP_SPARSE_BUFFER_PAGE_SIZE:
    case PIPE_CAP_NIR_SAMPLERS_AS_DEREF:
-   case PIPE_CAP_MEMOBJ:
    case PIPE_CAP_LOAD_CONSTBUF:
    case PIPE_CAP_TILE_RASTER_ORDER:
    case PIPE_CAP_MAX_COMBINED_SHADER_OUTPUT_RESOURCES:

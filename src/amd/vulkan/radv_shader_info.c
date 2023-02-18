@@ -224,7 +224,7 @@ gather_intrinsic_info(const nir_shader *nir, const nir_intrinsic_instr *instr,
       gather_intrinsic_store_output_info(nir, instr, info, consider_force_vrs);
       break;
    case nir_intrinsic_load_sbt_base_amd:
-      info->cs.uses_sbt = true;
+      info->cs.is_rt_shader = true;
       break;
    case nir_intrinsic_load_rt_dynamic_callable_stack_base_amd:
       info->cs.uses_dynamic_rt_callable_stack = true;
@@ -583,7 +583,7 @@ gather_shader_info_fs(const nir_shader *nir, const struct radv_pipeline_key *pip
 
    info->ps.spi_ps_input = radv_compute_spi_ps_input(pipeline_key, info);
 
-   info->ps.has_epilog = pipeline_key->ps.has_epilog;
+   info->ps.has_epilog = pipeline_key->ps.has_epilog && info->ps.colors_written;
 
    info->ps.writes_mrt0_alpha =
       (pipeline_key->ps.alpha_to_coverage_via_mrtz && (info->ps.color0_written & 0x8)) &&

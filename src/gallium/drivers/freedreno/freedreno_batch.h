@@ -64,11 +64,6 @@ struct fd_batch {
 
    struct fd_context *ctx;
 
-   /* emit_lock serializes cmdstream emission and flush.  Acquire before
-    * screen->lock.
-    */
-   simple_mtx_t submit_lock;
-
    /* do we need to mem2gmem before rendering.  We don't, if for example,
     * there was a glClear() that invalidated the entire previous buffer
     * contents.  Keep track of which buffer(s) are cleared, or needs
@@ -285,6 +280,7 @@ struct fd_batch_key *fd_batch_key_clone(void *mem_ctx,
 
 /* not called directly: */
 void __fd_batch_describe(char *buf, const struct fd_batch *batch) assert_dt;
+void __fd_batch_destroy_locked(struct fd_batch *batch);
 void __fd_batch_destroy(struct fd_batch *batch);
 
 /*
@@ -314,7 +310,7 @@ fd_batch_reference_locked(struct fd_batch **ptr, struct fd_batch *batch)
    if (pipe_reference_described(
           &(*ptr)->reference, &batch->reference,
           (debug_reference_descriptor)__fd_batch_describe))
-      __fd_batch_destroy(old_batch);
+      __fd_batch_destroy_locked(old_batch);
 
    *ptr = batch;
 }
@@ -323,35 +319,13 @@ static inline void
 fd_batch_reference(struct fd_batch **ptr, struct fd_batch *batch)
 {
    struct fd_batch *old_batch = *ptr;
-   struct fd_context *ctx = old_batch ? old_batch->ctx : NULL;
 
-   if (ctx)
-      fd_screen_lock(ctx->screen);
+   if (pipe_reference_described(
+          &(*ptr)->reference, &batch->reference,
+          (debug_reference_descriptor)__fd_batch_describe))
+      __fd_batch_destroy(old_batch);
 
-   fd_batch_reference_locked(ptr, batch);
-
-   if (ctx)
-      fd_screen_unlock(ctx->screen);
-}
-
-static inline void
-fd_batch_unlock_submit(struct fd_batch *batch)
-{
-   simple_mtx_unlock(&batch->submit_lock);
-}
-
-/**
- * Returns true if emit-lock was acquired, false if failed to acquire lock,
- * ie. batch already flushed.
- */
-static inline bool MUST_CHECK
-fd_batch_lock_submit(struct fd_batch *batch)
-{
-   simple_mtx_lock(&batch->submit_lock);
-   bool ret = !batch->flushed;
-   if (!ret)
-      fd_batch_unlock_submit(batch);
-   return ret;
+   *ptr = batch;
 }
 
 /**
@@ -374,8 +348,10 @@ fd_batch_update_queries(struct fd_batch *batch) assert_dt
 {
    struct fd_context *ctx = batch->ctx;
 
-   if (ctx->query_update_batch)
-      ctx->query_update_batch(batch, false);
+   if (!(ctx->dirty & FD_DIRTY_QUERY))
+      return;
+
+   ctx->query_update_batch(batch, false);
 }
 
 static inline void
@@ -383,8 +359,7 @@ fd_batch_finish_queries(struct fd_batch *batch) assert_dt
 {
    struct fd_context *ctx = batch->ctx;
 
-   if (ctx->query_update_batch)
-      ctx->query_update_batch(batch, true);
+   ctx->query_update_batch(batch, true);
 }
 
 static inline void

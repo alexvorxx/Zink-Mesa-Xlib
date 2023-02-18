@@ -358,9 +358,9 @@ agx_emit_load_vary_flat(agx_builder *b, agx_index dest,
    /* Get all coefficient registers up front. This ensures the driver emits a
     * single vectorized binding.
     */
-   agx_index cf =
-      agx_get_cf(b->shader, false, false,
-                 sem.location + nir_src_as_uint(*offset), 0, components);
+   agx_index cf = agx_get_cf(b->shader, false, false,
+                             sem.location + nir_src_as_uint(*offset),
+                             nir_intrinsic_component(instr), components);
    agx_index dests[4] = {agx_null()};
 
    for (unsigned i = 0; i < components; ++i) {
@@ -432,18 +432,9 @@ agx_emit_store_vary(agx_builder *b, nir_intrinsic_instr *instr)
                       agx_src_index(&instr->src[0]));
 }
 
-static agx_instr *
-agx_emit_local_store_pixel(agx_builder *b, nir_intrinsic_instr *instr)
+static void
+agx_write_sample_mask_1(agx_builder *b)
 {
-   /* TODO: Reverse-engineer interactions with MRT */
-   if (b->shader->key->fs.ignore_tib_dependencies) {
-      assert(b->shader->nir->info.internal && "only for clear shaders");
-   } else if (b->shader->did_writeout) {
-      agx_writeout(b, 0x0004);
-   } else {
-      agx_writeout(b, 0x000C);
-   }
-
    if (b->shader->nir->info.fs.uses_discard && !b->shader->did_sample_mask) {
       /* If the shader uses discard, the sample mask must be written by the
        * shader on all exeuction paths. If we've reached the end of the shader,
@@ -458,6 +449,21 @@ agx_emit_local_store_pixel(agx_builder *b, nir_intrinsic_instr *instr)
                 BITFIELD64_BIT(FRAG_RESULT_STENCIL))) &&
              "incompatible");
    }
+}
+
+static agx_instr *
+agx_emit_local_store_pixel(agx_builder *b, nir_intrinsic_instr *instr)
+{
+   /* TODO: Reverse-engineer interactions with MRT */
+   if (b->shader->key->fs.ignore_tib_dependencies) {
+      assert(b->shader->nir->info.internal && "only for clear shaders");
+   } else if (b->shader->did_writeout) {
+      agx_writeout(b, 0x0004);
+   } else {
+      agx_writeout(b, 0x000C);
+   }
+
+   agx_write_sample_mask_1(b);
 
    /* Compact the registers according to the mask */
    agx_index compacted[4] = {agx_null()};
@@ -762,6 +768,14 @@ agx_emit_intrinsic(agx_builder *b, nir_intrinsic_instr *instr)
 
    case nir_intrinsic_load_back_face_agx:
       return agx_get_sr_to(b, dst, AGX_SR_BACKFACING);
+
+   case nir_intrinsic_load_helper_invocation:
+      /* Compare special register to zero. We could lower this in NIR (letting
+       * us fold in an inot) but meh?
+       */
+      return agx_icmpsel_to(b, dst, agx_get_sr(b, 32, AGX_SR_IS_ACTIVE_THREAD),
+                            agx_zero(), agx_immediate(1), agx_zero(),
+                            AGX_ICOND_UEQ);
 
    case nir_intrinsic_load_vertex_id:
       return agx_mov_to(b, dst, agx_abs(agx_vertex_id(b)));
@@ -1762,7 +1776,10 @@ agx_remap_varyings_vs(nir_shader *nir, struct agx_varyings_vs *varyings)
    for (unsigned i = 0; i < ARRAY_SIZE(varyings->slots); ++i)
       varyings->slots[i] = ~0;
 
-   assert(nir->info.outputs_written & VARYING_BIT_POS);
+   /* gl_Position is implicitly written, although it may validly be absent in
+    * vertex programs run only for transform feedback. Those ignore their
+    * varyings so it doesn't matter what we do here as long as we don't fail.
+    */
    varyings->slots[VARYING_SLOT_POS] = base;
    base += 4;
 
@@ -1895,6 +1912,7 @@ agx_compile_function_nir(nir_shader *nir, nir_function_impl *impl,
     */
    agx_block *last_block = list_last_entry(&ctx->blocks, agx_block, link);
    agx_builder _b = agx_init_builder(ctx, agx_after_block(last_block));
+   agx_write_sample_mask_1(&_b);
    agx_logical_end(&_b);
    agx_stop(&_b);
 

@@ -3154,10 +3154,6 @@ midgard_compile_shader_nir(nir_shader *nir,
    NIR_PASS_V(nir, nir_lower_var_copies);
    NIR_PASS_V(nir, nir_lower_vars_to_ssa);
 
-   NIR_PASS_V(nir, pan_lower_framebuffer, inputs->rt_formats,
-              inputs->raw_fmt_mask, inputs->is_blend,
-              ctx->quirks & MIDGARD_BROKEN_BLEND_LOADS);
-
    NIR_PASS_V(nir, nir_lower_io, nir_var_shader_in | nir_var_shader_out,
               glsl_type_size, 0);
 
@@ -3176,6 +3172,10 @@ midgard_compile_shader_nir(nir_shader *nir,
    NIR_PASS_V(nir, pan_nir_lower_64bit_intrin);
 
    NIR_PASS_V(nir, midgard_nir_lower_global_load);
+
+   NIR_PASS_V(nir, pan_lower_framebuffer, inputs->rt_formats,
+              inputs->raw_fmt_mask, inputs->is_blend,
+              ctx->quirks & MIDGARD_BROKEN_BLEND_LOADS);
 
    /* Collect varyings after lowering I/O */
    pan_nir_collect_varyings(nir, info);

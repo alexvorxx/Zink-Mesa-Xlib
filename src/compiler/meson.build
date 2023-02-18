@@ -22,6 +22,8 @@ inc_compiler = include_directories('.')
 inc_glsl = include_directories('glsl')
 inc_spirv = include_directories('spirv')
 
+float64_glsl_file = files('glsl/float64.glsl')
+
 files_libcompiler = files(
   'builtin_type_macros.h',
   'glsl_types.cpp',
@@ -92,5 +94,7 @@ endif
 if with_clc
   subdir('clc')
 endif
-subdir('glsl')
+if with_gallium
+  subdir('glsl')
+endif
 subdir('isaspec')

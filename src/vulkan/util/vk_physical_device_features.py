@@ -28,6 +28,7 @@ from collections import OrderedDict, namedtuple
 import xml.etree.ElementTree as et
 
 from mako.template import Template
+from vk_extensions import get_all_required, filter_api
 
 TEMPLATE_C = Template(COPYRIGHT + """
 /* This file generated from ${filename}, don't edit directly. */
@@ -157,17 +158,16 @@ def get_pdev_features(doc):
 
     return None
 
-def get_features(doc):
+def filter_api(elem, api):
+    if 'api' not in elem.attrib:
+        return True
+
+    return api in elem.attrib['api'].split(',')
+
+def get_features(doc, api):
     features = OrderedDict()
 
-    provisional_structs = set()
-
-    # we want to ignore struct types that are part of provisional extensions
-    for _extension in doc.findall('./extensions/extension'):
-        if _extension.attrib.get('provisional') != 'true':
-            continue
-        for p in _extension.findall('./require/type'):
-            provisional_structs.add(p.attrib.get('name'))
+    required = get_all_required(doc, 'type', api)
 
     # parse all struct types where structextends VkPhysicalDeviceFeatures2
     for _type in doc.findall('./types/type'):
@@ -175,7 +175,7 @@ def get_features(doc):
             continue
         if _type.attrib.get('structextends') != 'VkPhysicalDeviceFeatures2,VkDeviceCreateInfo':
             continue
-        if _type.attrib.get('name') in provisional_structs:
+        if _type.attrib['name'] not in required:
             continue
 
         # find Vulkan structure type
@@ -187,6 +187,9 @@ def get_features(doc):
         flags = []
 
         for p in _type.findall('./member'):
+            if not filter_api(p, api):
+                continue
+
             m_name = p.find('./name').text
             if m_name == 'pNext':
                 pass
@@ -201,13 +204,13 @@ def get_features(doc):
 
     return features.values()
 
-def get_features_from_xml(xml_files):
+def get_features_from_xml(xml_files, api='vulkan'):
     pdev_features = None
     features = []
 
     for filename in xml_files:
         doc = et.parse(filename)
-        features += get_features(doc)
+        features += get_features(doc, api)
         if not pdev_features:
             pdev_features = get_pdev_features(doc)
 

@@ -1778,6 +1778,10 @@ VkResult pvr_CreateDevice(VkPhysicalDevice physicalDevice,
    if (result != VK_SUCCESS)
       goto err_pvr_finish_compute_idfwdf;
 
+   result = pvr_device_init_spm_load_state(device);
+   if (result != VK_SUCCESS)
+      goto err_pvr_finish_graphics_static_clear_state;
+
    pvr_device_init_tile_buffer_state(device);
 
    result = pvr_queues_create(device, pCreateInfo);
@@ -1810,6 +1814,9 @@ VkResult pvr_CreateDevice(VkPhysicalDevice physicalDevice,
 
 err_pvr_finish_tile_buffer_state:
    pvr_device_finish_tile_buffer_state(device);
+   pvr_device_finish_spm_load_state(device);
+
+err_pvr_finish_graphics_static_clear_state:
    pvr_device_finish_graphics_static_clear_state(device);
 
 err_pvr_finish_compute_idfwdf:
@@ -1860,6 +1867,7 @@ void pvr_DestroyDevice(VkDevice _device,
    pvr_spm_finish_scratch_buffer_store(device);
    pvr_queues_destroy(device);
    pvr_device_finish_tile_buffer_state(device);
+   pvr_device_finish_spm_load_state(device);
    pvr_device_finish_graphics_static_clear_state(device);
    pvr_device_finish_compute_idfwdf_state(device);
    pvr_device_destroy_compute_query_programs(device);

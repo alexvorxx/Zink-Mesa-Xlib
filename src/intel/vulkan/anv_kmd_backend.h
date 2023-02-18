@@ -25,11 +25,18 @@
 
 #include <stdint.h>
 
+#include "vulkan/vulkan_core.h"
+#include "vk_sync.h"
+
 #include "dev/intel_device_info.h"
 #include "dev/intel_kmd.h"
 
+struct anv_bo;
 enum anv_bo_alloc_flags;
+struct anv_cmd_buffer;
 struct anv_device;
+struct anv_queue;
+struct anv_query_pool;
 
 struct anv_kmd_backend {
    /*
@@ -40,6 +47,23 @@ struct anv_kmd_backend {
                           const struct intel_memory_class_instance **regions,
                           uint16_t num_regions, uint64_t size,
                           enum anv_bo_alloc_flags alloc_flags);
+   void (*gem_close)(struct anv_device *device, uint32_t handle);
+   /* Returns MAP_FAILED on error */
+   void *(*gem_mmap)(struct anv_device *device, struct anv_bo *bo,
+                     uint64_t offset, uint64_t size,
+                     VkMemoryPropertyFlags property_flags);
+   VkResult (*execute_simple_batch)(struct anv_queue *queue,
+                                    struct anv_bo *batch_bo,
+                                    uint32_t batch_bo_size);
+   VkResult (*queue_exec_locked)(struct anv_queue *queue,
+                                 uint32_t wait_count,
+                                 const struct vk_sync_wait *waits,
+                                 uint32_t cmd_buffer_count,
+                                 struct anv_cmd_buffer **cmd_buffers,
+                                 uint32_t signal_count,
+                                 const struct vk_sync_signal *signals,
+                                 struct anv_query_pool *perf_query_pool,
+                                 uint32_t perf_query_pass);
 };
 
 const struct anv_kmd_backend *anv_kmd_backend_get(enum intel_kmd_type type);

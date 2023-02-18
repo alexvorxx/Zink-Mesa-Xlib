@@ -766,8 +766,8 @@ get_programiv(struct gl_context *ctx, GLuint program, GLenum pname,
    /* Is transform feedback available in this context?
     */
    const bool has_xfb =
-      (ctx->API == API_OPENGL_COMPAT && ctx->Extensions.EXT_transform_feedback)
-      || ctx->API == API_OPENGL_CORE
+      (_mesa_is_desktop_gl_compat(ctx) && ctx->Extensions.EXT_transform_feedback)
+      || _mesa_is_desktop_gl_core(ctx)
       || _mesa_is_gles3(ctx);
 
    /* True if geometry shaders (of the form that was adopted into GLSL 1.50
@@ -779,9 +779,9 @@ get_programiv(struct gl_context *ctx, GLuint program, GLenum pname,
    /* Are uniform buffer objects available in this context?
     */
    const bool has_ubo =
-      (ctx->API == API_OPENGL_COMPAT &&
+      (_mesa_is_desktop_gl_compat(ctx) &&
        ctx->Extensions.ARB_uniform_buffer_object)
-      || ctx->API == API_OPENGL_CORE
+      || _mesa_is_desktop_gl_core(ctx)
       || _mesa_is_gles3(ctx);
 
    if (!shProg) {

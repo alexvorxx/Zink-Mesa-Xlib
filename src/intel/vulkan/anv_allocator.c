@@ -1381,7 +1381,7 @@ anv_bo_finish(struct anv_device *device, struct anv_bo *bo)
       anv_device_unmap_bo(device, bo, bo->map, bo->size);
 
    assert(bo->gem_handle != 0);
-   anv_gem_close(device, bo->gem_handle);
+   device->kmd_backend->gem_close(device, bo->gem_handle);
 }
 
 static VkResult
@@ -1499,13 +1499,15 @@ anv_device_alloc_bo(struct anv_device *device,
       .has_implicit_ccs = ccs_size > 0 ||
                           (device->info->verx10 >= 125 && !(alloc_flags & ANV_BO_ALLOC_NO_LOCAL_MEM)),
       .map_wc = alloc_flags & ANV_BO_ALLOC_WRITE_COMBINE,
+      .vram_only = nregions == 1 &&
+                   regions[0] == device->physical->vram_non_mappable.region,
    };
 
    if (alloc_flags & ANV_BO_ALLOC_MAPPED) {
       VkResult result = anv_device_map_bo(device, &new_bo, 0, size,
-                                          0 /* gem_flags */, &new_bo.map);
+                                          0 /* propertyFlags */, &new_bo.map);
       if (unlikely(result != VK_SUCCESS)) {
-         anv_gem_close(device, new_bo.gem_handle);
+         device->kmd_backend->gem_close(device, new_bo.gem_handle);
          return result;
       }
    }
@@ -1562,16 +1564,13 @@ anv_device_map_bo(struct anv_device *device,
                   struct anv_bo *bo,
                   uint64_t offset,
                   size_t size,
-                  uint32_t gem_flags,
+                  VkMemoryPropertyFlags property_flags,
                   void **map_out)
 {
    assert(!bo->from_host_ptr);
    assert(size > 0);
 
-   if (bo->map_wc)
-      gem_flags |= I915_MMAP_WC;
-
-   void *map = anv_gem_mmap(device, bo, offset, size, gem_flags);
+   void *map = anv_gem_mmap(device, bo, offset, size, property_flags);
    if (unlikely(map == MAP_FAILED))
       return vk_errorf(device, VK_ERROR_MEMORY_MAP_FAILED, "mmap failed: %m");
 
@@ -1768,7 +1767,7 @@ anv_device_import_bo(struct anv_device *device,
    } else {
       off_t size = lseek(fd, 0, SEEK_END);
       if (size == (off_t)-1) {
-         anv_gem_close(device, gem_handle);
+         device->kmd_backend->gem_close(device, gem_handle);
          pthread_mutex_unlock(&cache->mutex);
          return vk_error(device, VK_ERROR_INVALID_EXTERNAL_HANDLE);
       }

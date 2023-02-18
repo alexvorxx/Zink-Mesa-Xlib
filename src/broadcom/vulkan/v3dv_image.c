@@ -635,23 +635,26 @@ create_image_view(struct v3dv_device *device,
     * we want to re-interpret the format as RGBA8_UINT, then map our stencil
     * data reads to the R component and ignore the GBA channels that contain
     * the depth aspect data.
+    *
+    * FIXME: thwe code belows calls vk_component_mapping_to_pipe_swizzle
+    * only so it can then call util_format_compose_swizzles later. Maybe it
+    * makes sense to implement swizzle composition using VkSwizzle directly.
     */
    VkFormat format;
    uint8_t image_view_swizzle[4];
    if (pCreateInfo->format == VK_FORMAT_D24_UNORM_S8_UINT &&
        range->aspectMask == VK_IMAGE_ASPECT_STENCIL_BIT) {
       format = VK_FORMAT_R8G8B8A8_UINT;
-      image_view_swizzle[0] = PIPE_SWIZZLE_X;
-      image_view_swizzle[1] = PIPE_SWIZZLE_0;
-      image_view_swizzle[2] = PIPE_SWIZZLE_0;
-      image_view_swizzle[3] = PIPE_SWIZZLE_1;
+      uint8_t stencil_aspect_swizzle[4] = {
+         PIPE_SWIZZLE_X, PIPE_SWIZZLE_0, PIPE_SWIZZLE_0, PIPE_SWIZZLE_1,
+      };
+      uint8_t view_swizzle[4];
+      vk_component_mapping_to_pipe_swizzle(iview->vk.swizzle, view_swizzle);
+
+      util_format_compose_swizzles(stencil_aspect_swizzle, view_swizzle,
+                                   image_view_swizzle);
    } else {
       format = pCreateInfo->format;
-
-      /* FIXME: we are doing this vk to pipe swizzle mapping just to call
-       * util_format_compose_swizzles. Would be good to check if it would be
-       * better to reimplement the latter using vk component
-       */
       vk_component_mapping_to_pipe_swizzle(iview->vk.swizzle,
                                            image_view_swizzle);
    }

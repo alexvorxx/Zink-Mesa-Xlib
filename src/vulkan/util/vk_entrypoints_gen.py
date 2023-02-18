@@ -164,26 +164,6 @@ ${entrypoint_table('physical_device', physical_device_entrypoints, physical_devi
 ${entrypoint_table('device', device_entrypoints, device_prefixes)}
 """)
 
-def get_entrypoints_defines(doc):
-    """Maps entry points to extension defines."""
-    entrypoints_to_defines = {}
-
-    platform_define = {}
-    for platform in doc.findall('./platforms/platform'):
-        name = platform.attrib['name']
-        define = platform.attrib['protect']
-        platform_define[name] = define
-
-    for extension in doc.findall('./extensions/extension[@platform]'):
-        platform = extension.attrib['platform']
-        define = platform_define[platform]
-
-        for entrypoint in extension.findall('./require/command'):
-            fullname = entrypoint.attrib['name']
-            entrypoints_to_defines[fullname] = define
-
-    return entrypoints_to_defines
-
 
 def main():
     parser = argparse.ArgumentParser()

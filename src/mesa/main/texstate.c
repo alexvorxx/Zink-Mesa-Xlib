@@ -1047,7 +1047,7 @@ _mesa_init_texture(struct gl_context *ctx)
     * for most implementations and drivers that don't support seamless
     * cubemaps for GLES2 can still disable it.
     */
-   ctx->Texture.CubeMapSeamless = ctx->API == API_OPENGLES2;
+   ctx->Texture.CubeMapSeamless = _mesa_is_gles2(ctx);
 
    for (u = 0; u < ARRAY_SIZE(ctx->Texture.Unit); u++) {
       struct gl_texture_unit *texUnit = &ctx->Texture.Unit[u];

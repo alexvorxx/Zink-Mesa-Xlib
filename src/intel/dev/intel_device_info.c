@@ -1055,6 +1055,7 @@ static const struct intel_device_info intel_device_info_sg1 = {
    .has_lsc = true,                                             \
    .has_local_mem = true,                                       \
    .has_aux_map = false,                                        \
+   .urb.size = 768, /* For intel_stub_gpu */                    \
    .simulator_id = 29
 
 #define DG2_FEATURES                                            \

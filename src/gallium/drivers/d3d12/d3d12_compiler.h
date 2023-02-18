@@ -81,6 +81,10 @@ struct d3d12_varying_info {
 struct d3d12_image_format_conversion_info {
    enum pipe_format view_format, emulated_format;
 };
+struct d3d12_image_format_conversion_info_arr {
+   int n_images;
+   struct d3d12_image_format_conversion_info* image_format_conversion;
+};
 
 struct d3d12_shader_key {
    uint32_t hash;
@@ -104,44 +108,55 @@ struct d3d12_shader_key {
          enum pipe_format format_conversion[PIPE_MAX_ATTRIBS];
       } vs;
 
-      struct {
-         unsigned sprite_coord_enable:24;
-         unsigned sprite_origin_upper_left:1;
-         unsigned point_pos_stream_out:1;
-         unsigned writes_psize:1;
-         unsigned point_size_per_vertex:1;
-         unsigned aa_point:1;
-         unsigned stream_output_factor:3;
-         unsigned primitive_id:1;
-         unsigned triangle_strip:1;
+      union {
+         struct {
+            unsigned sprite_coord_enable:24;
+            unsigned sprite_origin_upper_left:1;
+            unsigned point_pos_stream_out:1;
+            unsigned writes_psize:1;
+            unsigned point_size_per_vertex:1;
+            unsigned aa_point:1;
+            unsigned stream_output_factor:3;
+            unsigned primitive_id:1;
+            unsigned triangle_strip:1;
+         };
+         uint64_t all;
       } gs;
 
       struct {
-         unsigned primitive_mode:2;
-         unsigned ccw:1;
-         unsigned point_mode:1;
-         unsigned spacing:2;
-         unsigned patch_vertices_in:5;
+         union {
+            struct {
+               uint32_t next_patch_inputs;
+               unsigned primitive_mode:2;
+               unsigned ccw:1;
+               unsigned point_mode:1;
+               unsigned spacing:2;
+               unsigned patch_vertices_in:5;
+            };
+            uint64_t all;
+         };
          struct d3d12_varying_info required_patch_outputs;
-         uint32_t next_patch_inputs;
       } hs;
 
       struct {
          unsigned tcs_vertices_out;
-         struct d3d12_varying_info required_patch_inputs;
          uint32_t prev_patch_outputs;
+         struct d3d12_varying_info required_patch_inputs;
       } ds;
 
-      struct {
-         unsigned missing_dual_src_outputs : 2;
-         unsigned frag_result_color_lowering : 4;
-         unsigned cast_to_uint : 1;
-         unsigned cast_to_int : 1;
-         unsigned provoking_vertex : 2;
-         unsigned manual_depth_range : 1;
-         unsigned polygon_stipple : 1;
-         unsigned remap_front_facing : 1;
-         unsigned multisample_disabled : 1;
+      union {
+         struct {
+            unsigned missing_dual_src_outputs : 2;
+            unsigned frag_result_color_lowering : 4;
+            unsigned cast_to_uint : 1;
+            unsigned cast_to_int : 1;
+            unsigned provoking_vertex : 2;
+            unsigned manual_depth_range : 1;
+            unsigned polygon_stipple : 1;
+            unsigned remap_front_facing : 1;
+            unsigned multisample_disabled : 1;
+         };
+         unsigned short all;
       } fs;
 
       struct {

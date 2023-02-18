@@ -1037,7 +1037,7 @@ load("shared", [1], [BASE, ALIGN_MUL, ALIGN_OFFSET], [CAN_ELIMINATE])
 # src[] = { offset }.
 load("task_payload", [1], [BASE, ALIGN_MUL, ALIGN_OFFSET], [CAN_ELIMINATE])
 # src[] = { offset }.
-load("push_constant", [1], [BASE, RANGE], [CAN_ELIMINATE, CAN_REORDER])
+load("push_constant", [1], [BASE, RANGE, ALIGN_MUL, ALIGN_OFFSET], [CAN_ELIMINATE, CAN_REORDER])
 # src[] = { offset }.
 load("constant", [1], [BASE, RANGE, ALIGN_MUL, ALIGN_OFFSET],
      [CAN_ELIMINATE, CAN_REORDER])
@@ -1278,9 +1278,13 @@ intrinsic("shared_atomic_comp_swap_dxil", src_comp=[1, 1, 1], dest_comp=1)
 # One notable divergence is sRGB, which is asymmetric: raw_input_pan requires
 # an sRGB->linear conversion, but linear values should be written to
 # raw_output_pan and the hardware handles linear->sRGB.
+#
+# store_raw_output_pan is used only for blend shaders, and writes out only a
+# single 128-bit chunk. To support multisampling, the BASE index specifies the
+# bas sample index written out.
 
 # src[] = { value }
-store("raw_output_pan", [], [])
+store("raw_output_pan", [], [IO_SEMANTICS, BASE])
 store("combined_output_pan", [1, 1, 1, 4], [IO_SEMANTICS, COMPONENT, SRC_TYPE, DEST_TYPE])
 load("raw_output_pan", [1], [IO_SEMANTICS], [CAN_ELIMINATE, CAN_REORDER])
 
@@ -1317,9 +1321,10 @@ store("tf_r600", [])
 intrinsic("optimization_barrier_vgpr_amd", dest_comp=0, src_comp=[0],
           flags=[CAN_ELIMINATE])
 
+# Untyped buffer load/store instructions of arbitrary length.
 # src[] = { descriptor, vector byte offset, scalar byte offset, index offset }
-# The index offset is multiplied by the stride in the descriptor. The vertex/scalar byte offsets
-# are in bytes.
+# The index offset is multiplied by the stride in the descriptor.
+# The vector/scalar offsets are in bytes, BASE is a constant byte offset.
 intrinsic("load_buffer_amd", src_comp=[4, 1, 1, 1], dest_comp=0, indices=[BASE, MEMORY_MODES, ACCESS], flags=[CAN_ELIMINATE])
 # src[] = { store value, descriptor, vector byte offset, scalar byte offset, index offset }
 intrinsic("store_buffer_amd", src_comp=[0, 4, 1, 1, 1], indices=[BASE, WRITE_MASK, MEMORY_MODES, ACCESS])

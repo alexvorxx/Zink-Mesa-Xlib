@@ -766,6 +766,7 @@ struct ir3_shader_variant {
       struct {
          bool early_fragment_tests : 1;
          bool color_is_dual_source : 1;
+         bool uses_fbfetch_output  : 1;
       } fs;
       struct {
          unsigned req_input_mem;

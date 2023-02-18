@@ -182,7 +182,7 @@ fd_resource_set_bo(struct fd_resource *rsc, struct fd_bo *bo)
    struct fd_screen *screen = fd_screen(rsc->b.b.screen);
 
    rsc->bo = bo;
-   rsc->seqno = p_atomic_inc_return(&screen->rsc_seqno);
+   rsc->seqno = seqno_next_u16(&screen->rsc_seqno);
 }
 
 int
@@ -310,7 +310,7 @@ fd_replace_buffer_storage(struct pipe_context *pctx, struct pipe_resource *pdst,
    fd_resource_tracking_reference(&dst->track, src->track);
    src->is_replacement = true;
 
-   dst->seqno = p_atomic_inc_return(&ctx->screen->rsc_seqno);
+   dst->seqno = seqno_next_u16(&ctx->screen->rsc_seqno);
 
    fd_screen_unlock(ctx->screen);
 }
@@ -461,7 +461,7 @@ fd_try_shadow_resource(struct fd_context *ctx, struct fd_resource *rsc,
    rsc->needs_ubwc_clear = temp;
 
    swap(rsc->layout, shadow->layout);
-   rsc->seqno = p_atomic_inc_return(&ctx->screen->rsc_seqno);
+   rsc->seqno = seqno_next_u16(&ctx->screen->rsc_seqno);
 
    /* at this point, the newly created shadow buffer is not referenced
     * by any batches, but the existing rsc (probably) is.  We need to

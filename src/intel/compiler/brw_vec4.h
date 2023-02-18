@@ -275,6 +275,8 @@ public:
 
    void resolve_ud_negate(src_reg *reg);
 
+   void emit_shader_float_controls_execution_mode();
+
    bool lower_minmax();
 
    src_reg get_timestamp();

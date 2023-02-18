@@ -292,13 +292,13 @@ alpine/x86_build:
   needs:
     - alpine/x86_build
 
-# Fedora 34 based x86 build image
+# Fedora 36 based x86 build image
 fedora/x86_build:
   extends:
     - .fdo.container-build@fedora
     - .container
   variables:
-    FDO_DISTRIBUTION_VERSION: 34
+    FDO_DISTRIBUTION_VERSION: 36
     MESA_IMAGE_TAG: &fedora-x86_build ${FEDORA_X86_BUILD_TAG}
 
 .use-fedora/x86_build:

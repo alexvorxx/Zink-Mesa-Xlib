@@ -26,20 +26,15 @@
 
 #include "anv_private.h"
 #include "anv_measure.h"
-#include "vk_format.h"
 #include "vk_render_pass.h"
 #include "vk_util.h"
-#include "util/fast_idiv_by_const.h"
 
 #include "common/intel_aux_map.h"
-#include "common/intel_l3_config.h"
 #include "genxml/gen_macros.h"
 #include "genxml/genX_pack.h"
 #include "genxml/genX_rt_pack.h"
 #include "common/intel_guardband.h"
 #include "compiler/brw_prim.h"
-
-#include "nir/nir_xfb_info.h"
 
 #include "ds/intel_tracepoints.h"
 
@@ -2733,7 +2728,7 @@ cmd_buffer_flush_gfx_push_constants(struct anv_cmd_buffer *cmd_buffer,
 #endif
 
    /* Compute robust pushed register access mask for each stage. */
-   if (cmd_buffer->device->robust_buffer_access) {
+   if (cmd_buffer->device->vk.enabled_features.robustBufferAccess) {
       anv_foreach_stage(stage, dirty_stages) {
          if (!anv_pipeline_has_stage(pipeline, stage))
             continue;
@@ -2820,8 +2815,15 @@ cmd_buffer_flush_gfx_push_constants(struct anv_cmd_buffer *cmd_buffer,
       /* The Constant Buffer Read Length field from 3DSTATE_CONSTANT_ALL
        * contains only 5 bits, so we can only use it for buffers smaller than
        * 32.
+       *
+       * According to Wa_16011448509, Gfx12.0 misinterprets some address bits
+       * in 3DSTATE_CONSTANT_ALL.  It should still be safe to use the command
+       * for disabling stages, where all address bits are zero.  However, we
+       * can't safely use it for general buffers with arbitrary addresses.
+       * Just fall back to the individual 3DSTATE_CONSTANT_XS commands in that
+       * case.
        */
-      if (max_push_range < 32) {
+      if (max_push_range < 32 && GFX_VERx10 > 120) {
          cmd_buffer_emit_push_constant_all(cmd_buffer, 1 << stage,
                                            buffers, buffer_count);
          continue;
@@ -2833,6 +2835,7 @@ cmd_buffer_flush_gfx_push_constants(struct anv_cmd_buffer *cmd_buffer,
 
 #if GFX_VER >= 12
    if (nobuffer_stages)
+      /* Wa_16011448509: all address bits are zero */
       cmd_buffer_emit_push_constant_all(cmd_buffer, nobuffer_stages, NULL, 0);
 #endif
 
@@ -3297,9 +3300,14 @@ genX(cmd_buffer_flush_gfx_state)(struct anv_cmd_buffer *cmd_buffer)
     */
    genX(cmd_buffer_apply_pipe_flushes)(cmd_buffer);
 
-   uint32_t vb_emit = cmd_buffer->state.gfx.vb_dirty & pipeline->vb_used;
-   if (cmd_buffer->state.gfx.dirty & ANV_CMD_DIRTY_PIPELINE)
-      vb_emit |= pipeline->vb_used;
+   /* Check what vertex buffers have been rebound against the set of bindings
+    * being used by the current set of vertex attributes.
+    */
+   uint32_t vb_emit = cmd_buffer->state.gfx.vb_dirty & dyn->vi->bindings_valid;
+   /* If the pipeline changed, the we have to consider all the valid bindings. */
+   if ((cmd_buffer->state.gfx.dirty & ANV_CMD_DIRTY_PIPELINE) ||
+       BITSET_TEST(dyn->dirty, MESA_VK_DYNAMIC_VI_BINDING_STRIDES))
+      vb_emit |= dyn->vi->bindings_valid;
 
    if (vb_emit) {
       const uint32_t num_buffers = __builtin_popcount(vb_emit);
@@ -6649,10 +6657,7 @@ genX(cmd_buffer_update_dirty_vbs_for_gfx8_vb_flush)(struct anv_cmd_buffer *cmd_b
       struct anv_vb_cache_range *bound = &cmd_buffer->state.gfx.ib_bound_range;
       struct anv_vb_cache_range *dirty = &cmd_buffer->state.gfx.ib_dirty_range;
 
-      if (bound->end > bound->start) {
-         dirty->start = MIN2(dirty->start, bound->start);
-         dirty->end = MAX2(dirty->end, bound->end);
-      }
+      anv_merge_vb_cache_range(dirty, bound);
    }
 
    uint64_t mask = vb_used;
@@ -6666,10 +6671,7 @@ genX(cmd_buffer_update_dirty_vbs_for_gfx8_vb_flush)(struct anv_cmd_buffer *cmd_b
       bound = &cmd_buffer->state.gfx.vb_bound_ranges[i];
       dirty = &cmd_buffer->state.gfx.vb_dirty_ranges[i];
 
-      if (bound->end > bound->start) {
-         dirty->start = MIN2(dirty->start, bound->start);
-         dirty->end = MAX2(dirty->end, bound->end);
-      }
+      anv_merge_vb_cache_range(dirty, bound);
    }
 }
 #endif /* GFX_VER == 9 */

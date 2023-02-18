@@ -66,16 +66,6 @@ struct fd_screen {
 
    simple_mtx_t lock;
 
-   /* it would be tempting to use pipe_reference here, but that
-    * really doesn't work well if it isn't the first member of
-    * the struct, so not quite so awesome to be adding refcnting
-    * further down the inheritance hierarchy:
-    */
-   int refcnt;
-
-   /* place for winsys to stash it's own stuff: */
-   void *winsys_priv;
-
    struct slab_parent_pool transfer_pool;
 
    uint64_t gmem_base;
@@ -149,8 +139,8 @@ struct fd_screen {
 
    bool reorder;
 
-   uint16_t rsc_seqno;
-   uint16_t ctx_seqno;
+   seqno_t rsc_seqno;
+   seqno_t ctx_seqno;
    struct util_idalloc_mt buffer_ids;
 
    unsigned num_supported_modifiers;
@@ -206,9 +196,9 @@ bool fd_screen_bo_get_handle(struct pipe_screen *pscreen, struct fd_bo *bo,
 struct fd_bo *fd_screen_bo_from_handle(struct pipe_screen *pscreen,
                                        struct winsys_handle *whandle);
 
-struct pipe_screen *fd_screen_create(struct fd_device *dev,
-                                     struct renderonly *ro,
-                                     const struct pipe_screen_config *config);
+struct pipe_screen *fd_screen_create(int fd,
+                                     const struct pipe_screen_config *config,
+                                     struct renderonly *ro);
 
 static inline boolean
 is_a20x(struct fd_screen *screen)

@@ -40,7 +40,7 @@ struct hash_table;
 
 struct fd_batch_cache {
    struct hash_table *ht;
-   unsigned cnt;
+   seqno_t cnt;
 
    /* set of active batches.. there is an upper limit on the number of
     * in-flight batches, for two reasons:

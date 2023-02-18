@@ -6179,8 +6179,15 @@ iris_upload_dirty_render_state(struct iris_context *ice,
       /* The Constant Buffer Read Length field from 3DSTATE_CONSTANT_ALL
        * contains only 5 bits, so we can only use it for buffers smaller than
        * 32.
+       *
+       * According to Wa_16011448509, Gfx12.0 misinterprets some address bits
+       * in 3DSTATE_CONSTANT_ALL.  It should still be safe to use the command
+       * for disabling stages, where all address bits are zero.  However, we
+       * can't safely use it for general buffers with arbitrary addresses.
+       * Just fall back to the individual 3DSTATE_CONSTANT_XS commands in that
+       * case.
        */
-      if (push_bos.max_length < 32) {
+      if (push_bos.max_length < 32 && GFX_VERx10 > 120) {
          emit_push_constant_packet_all(ice, batch, 1 << stage, &push_bos);
          continue;
       }
@@ -6190,6 +6197,7 @@ iris_upload_dirty_render_state(struct iris_context *ice,
 
 #if GFX_VER >= 12
    if (nobuffer_stages)
+      /* Wa_16011448509: all address bits are zero */
       emit_push_constant_packet_all(ice, batch, nobuffer_stages, NULL);
 #endif
 

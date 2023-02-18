@@ -954,6 +954,8 @@ to upconvert to 32b float internally?
 		know will definitely not be visible.
 	</doc>
 	<value value="0x2" name="A6XX_EARLY_LRZ_LATE_Z"/>
+	<doc>Not a real hw value, used internally by mesa</doc>
+	<value value="0x3" name="A6XX_INVALID_ZTEST"/>
 </enum>
 
 <domain name="A6XX" width="32">
@@ -1705,7 +1707,8 @@ to upconvert to 32b float internally?
 		<bitfield name="RASTER_DIRECTION" low="6" high="7" type="a6xx_raster_direction"/>
 		<bitfield name="SEQUENCED_THREAD_DISTRIBUTION" pos="8" type="a6xx_sequenced_thread_dist"/>
 		<!-- CCUSINGLECACHELINESIZE is ignored unless bit 9 is set -->
-		<bitfield name="UNK9" low="9" high="11"/>
+		<bitfield name="UNK9" pos="9" type="boolean"/>
+		<bitfield name="ROTATION" low="10" high="11" type="uint"/>
 		<bitfield name="EARLYVIZOUTEN" pos="12" type="boolean"/>
 	</reg32>
 

@@ -65,50 +65,6 @@ ngg_query_bool_setting(nir_builder *b, unsigned mask, lower_abi_state *s)
    return nir_test_mask(b, settings, mask);
 }
 
-static nir_ssa_def *
-lower_load_vs_input_from_prolog(nir_builder *b,
-                                nir_intrinsic_instr *intrin,
-                                lower_abi_state *s)
-{
-   nir_src *offset_src = nir_get_io_offset_src(intrin);
-   assert(nir_src_is_const(*offset_src));
-
-   const unsigned base = nir_intrinsic_base(intrin);
-   const unsigned base_offset = nir_src_as_uint(*offset_src);
-   const unsigned driver_location = base + base_offset - VERT_ATTRIB_GENERIC0;
-   const unsigned component = nir_intrinsic_component(intrin);
-   const unsigned bit_size = intrin->dest.ssa.bit_size;
-   const unsigned num_components = intrin->dest.ssa.num_components;
-
-   /* 64-bit inputs: they occupy twice as many 32-bit components.
-    * 16-bit inputs: they occupy a 32-bit component (not packed).
-    */
-   const unsigned arg_bit_size = MAX2(bit_size, 32);
-
-   unsigned num_input_args = 1;
-   nir_ssa_def *input_args[2] = {ac_nir_load_arg(b, &s->args->ac, s->args->vs_inputs[driver_location]), NULL};
-   if (component * 32 + arg_bit_size * num_components > 128) {
-      assert(bit_size == 64);
-
-      num_input_args++;
-      input_args[1] = ac_nir_load_arg(b, &s->args->ac, s->args->vs_inputs[driver_location + 1]);
-   }
-
-   nir_ssa_def *extracted = nir_extract_bits(b, input_args, num_input_args, component * 32,
-                                             num_components, arg_bit_size);
-
-   if (bit_size < arg_bit_size) {
-      assert(bit_size == 16);
-
-      if (nir_alu_type_get_base_type(nir_intrinsic_dest_type(intrin)) == nir_type_float)
-         return nir_f2f16(b, extracted);
-      else
-         return nir_u2u16(b, extracted);
-   }
-
-   return extracted;
-}
-
 static bool
 lower_abi_instr(nir_builder *b, nir_instr *instr, void *state)
 {
@@ -474,20 +430,6 @@ lower_abi_instr(nir_builder *b, nir_instr *instr, void *state)
    case nir_intrinsic_load_ordered_id_amd:
       replacement = nir_ubfe_imm(b, ac_nir_load_arg(b, &s->args->ac, s->args->ac.gs_tg_info), 0, 12);
       break;
-   case nir_intrinsic_load_input: {
-      /* Only VS inputs need to be lowered at this point. */
-      if (stage != MESA_SHADER_VERTEX)
-         return false;
-
-      if (s->info->vs.dynamic_inputs) {
-         replacement = lower_load_vs_input_from_prolog(b, intrin, s);
-      } else {
-         /* TODO: Lower non-dynamic inputs too. */
-         return false;
-      }
-
-      break;
-   }
    case nir_intrinsic_load_force_vrs_rates_amd:
       replacement = ac_nir_load_arg(b, &s->args->ac, s->args->ac.force_vrs_rates);
       break;

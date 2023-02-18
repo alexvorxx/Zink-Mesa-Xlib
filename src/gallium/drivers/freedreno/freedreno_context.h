@@ -164,9 +164,10 @@ enum fd_dirty_3d_state {
    FD_DIRTY_TEX = BIT(17),
    FD_DIRTY_IMAGE = BIT(18),
    FD_DIRTY_SSBO = BIT(19),
+   FD_DIRTY_QUERY = BIT(20),
 
    /* only used by a2xx.. possibly can be removed.. */
-   FD_DIRTY_TEXSTATE = BIT(20),
+   FD_DIRTY_TEXSTATE = BIT(21),
 
    /* fine grained state changes, for cases where state is not orthogonal
     * from hw perspective:
@@ -174,7 +175,8 @@ enum fd_dirty_3d_state {
    FD_DIRTY_RASTERIZER_DISCARD = BIT(24),
    FD_DIRTY_RASTERIZER_CLIP_PLANE_ENABLE = BIT(25),
    FD_DIRTY_BLEND_DUAL = BIT(26),
-#define NUM_DIRTY_BITS 27
+   FD_DIRTY_BLEND_COHERENT = BIT(27),
+#define NUM_DIRTY_BITS 28
 
    /* additional flag for state requires updated resource tracking: */
    FD_DIRTY_RESOURCE = BIT(31),
@@ -254,11 +256,6 @@ struct fd_context {
    float default_outer_level[4] dt;
    float default_inner_level[2] dt;
    uint8_t patch_vertices dt;
-
-   /* Whether we need to recheck the active_queries list next
-    * fd_batch_update_queries().
-    */
-   bool update_active_queries dt;
 
    /* Current state of pctx->set_active_query_state() (i.e. "should drawing
     * be counted against non-perfcounter queries")
@@ -491,11 +488,12 @@ struct fd_context {
    void (*emit_sysmem_fini)(struct fd_batch *batch) dt;
 
    /* draw: */
-   bool (*draw_vbo)(struct fd_context *ctx, const struct pipe_draw_info *info,
-                    unsigned drawid_offset,
-                    const struct pipe_draw_indirect_info *indirect,
-                    const struct pipe_draw_start_count_bias *draw,
-                    unsigned index_offset) dt;
+   void (*draw_vbos)(struct fd_context *ctx, const struct pipe_draw_info *info,
+                     unsigned drawid_offset,
+                     const struct pipe_draw_indirect_info *indirect,
+                     const struct pipe_draw_start_count_bias *draws,
+                     unsigned num_draws,
+                     unsigned index_offset) dt;
    bool (*clear)(struct fd_context *ctx, unsigned buffers,
                  const union pipe_color_union *color, double depth,
                  unsigned stencil) dt;
@@ -603,9 +601,9 @@ fd_stream_output_target(struct pipe_stream_output_target *target)
 static inline bool
 fd_context_dirty_resource(enum fd_dirty_3d_state dirty)
 {
-   return dirty & (FD_DIRTY_FRAMEBUFFER | FD_DIRTY_ZSA | FD_DIRTY_BLEND |
+   return dirty & (FD_DIRTY_FRAMEBUFFER | FD_DIRTY_ZSA |
                    FD_DIRTY_SSBO | FD_DIRTY_IMAGE | FD_DIRTY_VTXBUF |
-                   FD_DIRTY_TEX | FD_DIRTY_STREAMOUT);
+                   FD_DIRTY_TEX | FD_DIRTY_STREAMOUT | FD_DIRTY_QUERY);
 }
 
 /* Mark specified non-shader-stage related state as dirty: */

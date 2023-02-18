@@ -4054,24 +4054,32 @@ static bool visit_intrinsic(struct ac_nir_context *ctx, nir_intrinsic_instr *ins
          assert(instr->src[0].ssa->bit_size == 16 || instr->src[0].ssa->bit_size == 32);
          ac_build_buffer_store_format(&ctx->ac, descriptor, store_data, vidx, voffset, cache_policy);
       } else if (instr->intrinsic == nir_intrinsic_load_buffer_amd) {
-         LLVMTypeRef channel_type;
-         if (instr->dest.ssa.bit_size == 8)
-            channel_type = ctx->ac.i8;
-         else if (instr->dest.ssa.bit_size == 16)
-            channel_type = ctx->ac.i16;
-         else if (instr->dest.ssa.bit_size == 32)
-            channel_type = ctx->ac.i32;
-         else if (instr->dest.ssa.bit_size == 64)
-            channel_type = ctx->ac.i64;
-         else if (instr->dest.ssa.bit_size == 128)
-            channel_type = ctx->ac.i128;
-         else
-            unreachable("Unsupported channel type for load_buffer_amd");
+         /* LLVM is unable to select instructions for larger than 32-bit channel types.
+          * Workaround by using i32 and casting to the correct type later.
+          */
+         const unsigned fetch_num_components =
+            num_components * MAX2(32, instr->dest.ssa.bit_size) / 32;
+         LLVMTypeRef channel_type =
+            LLVMIntTypeInContext(ctx->ac.context, MIN2(32, instr->dest.ssa.bit_size));
 
-         result = ac_build_buffer_load(&ctx->ac, descriptor, num_components, vidx, voffset,
+         result = ac_build_buffer_load(&ctx->ac, descriptor, fetch_num_components, vidx, voffset,
                                        addr_soffset, channel_type, cache_policy, reorder, false);
 
-         result = ac_to_integer(&ctx->ac, ac_trim_vector(&ctx->ac, result, num_components));
+         /* Trim to needed vector components. */
+         result = ac_trim_vector(&ctx->ac, result, fetch_num_components);
+
+         /* Cast to larger than 32-bit sized components if needed. */
+         if (instr->dest.ssa.bit_size > 32) {
+            LLVMTypeRef cast_channel_type =
+               LLVMIntTypeInContext(ctx->ac.context, instr->dest.ssa.bit_size);
+            LLVMTypeRef cast_type =
+               num_components == 1 ? cast_channel_type :
+               LLVMVectorType(cast_channel_type, num_components);
+            result = LLVMBuildBitCast(ctx->ac.builder, result, cast_type, "");
+         }
+
+         /* Cast the result to an integer (or vector of integers). */
+         result = ac_to_integer(&ctx->ac, result);
       } else {
          unsigned writemask = nir_intrinsic_write_mask(instr);
          while (writemask) {
@@ -4302,6 +4310,27 @@ static bool visit_intrinsic(struct ac_nir_context *ctx, nir_intrinsic_instr *ins
          args.out[i] = ac_llvm_extract_elem(&ctx->ac, value, i);
 
       ac_build_export(&ctx->ac, &args);
+      break;
+   }
+   case nir_intrinsic_bvh64_intersect_ray_amd: {
+      LLVMValueRef desc = get_src(ctx, instr->src[0]);
+      LLVMValueRef node_id =
+         LLVMBuildBitCast(ctx->ac.builder, get_src(ctx, instr->src[1]), ctx->ac.i64, "");
+      LLVMValueRef t_max =
+         LLVMBuildBitCast(ctx->ac.builder, get_src(ctx, instr->src[2]), ctx->ac.f32, "");
+      LLVMValueRef origin =
+         LLVMBuildBitCast(ctx->ac.builder, get_src(ctx, instr->src[3]), ctx->ac.v3f32, "");
+      LLVMValueRef dir =
+         LLVMBuildBitCast(ctx->ac.builder, get_src(ctx, instr->src[4]), ctx->ac.v3f32, "");
+      LLVMValueRef inv_dir =
+         LLVMBuildBitCast(ctx->ac.builder, get_src(ctx, instr->src[5]), ctx->ac.v3f32, "");
+
+      LLVMValueRef args[6] = {
+         node_id, t_max, origin, dir, inv_dir, desc,
+      };
+
+      result = ac_build_intrinsic(&ctx->ac, "llvm.amdgcn.image.bvh.intersect.ray.i64.v3f32",
+                                  ctx->ac.v4i32, args, ARRAY_SIZE(args), 0);
       break;
    }
    default:

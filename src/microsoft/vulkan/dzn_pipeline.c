@@ -215,6 +215,8 @@ dzn_pipeline_get_nir_shader(struct dzn_device *device,
           return VK_SUCCESS;
    }
 
+   struct dzn_physical_device *pdev =
+      container_of(device->vk.physical, struct dzn_physical_device, vk);
    VK_FROM_HANDLE(vk_shader_module, module, stage_info->module);
    const struct spirv_to_nir_options *spirv_opts = dxil_spirv_nir_get_spirv_options();
 
@@ -245,6 +247,7 @@ dzn_pipeline_get_nir_shader(struct dzn_device *device,
       .force_sample_rate_shading = options->force_sample_rate_shading,
       .lower_view_index = options->lower_view_index,
       .lower_view_index_to_rt_layer = options->lower_view_index_to_rt_layer,
+      .shader_model_max = dzn_get_shader_model(pdev),
    };
 
    bool requires_runtime_data;

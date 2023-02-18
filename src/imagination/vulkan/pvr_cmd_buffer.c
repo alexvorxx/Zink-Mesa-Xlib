@@ -43,6 +43,7 @@
 #include "pvr_limits.h"
 #include "pvr_pds.h"
 #include "pvr_private.h"
+#include "pvr_tex_state.h"
 #include "pvr_types.h"
 #include "pvr_winsys.h"
 #include "util/bitscan.h"
@@ -51,6 +52,7 @@
 #include "util/list.h"
 #include "util/macros.h"
 #include "util/u_dynarray.h"
+#include "util/u_math.h"
 #include "util/u_pack_color.h"
 #include "vk_alloc.h"
 #include "vk_command_buffer.h"
@@ -601,6 +603,82 @@ err_csb_finish:
    return result;
 }
 
+struct pvr_combined_image_sampler_descriptor {
+   /* | TEXSTATE_IMAGE_WORD0 | TEXSTATE_{STRIDE_,}IMAGE_WORD1 | */
+   uint64_t image[ROGUE_NUM_TEXSTATE_IMAGE_WORDS];
+   union pvr_sampler_descriptor sampler;
+};
+
+#define CHECK_STRUCT_FIELD_SIZE(_struct_type, _field_name, _size)      \
+   static_assert(sizeof(((struct _struct_type *)NULL)->_field_name) == \
+                    (_size),                                           \
+                 "Size of '" #_field_name "' in '" #_struct_type       \
+                 "' differs from expected")
+
+CHECK_STRUCT_FIELD_SIZE(pvr_combined_image_sampler_descriptor,
+                        image,
+                        ROGUE_NUM_TEXSTATE_IMAGE_WORDS * sizeof(uint64_t));
+CHECK_STRUCT_FIELD_SIZE(pvr_combined_image_sampler_descriptor,
+                        image,
+                        PVR_IMAGE_DESCRIPTOR_SIZE * sizeof(uint32_t));
+CHECK_STRUCT_FIELD_SIZE(pvr_combined_image_sampler_descriptor,
+                        image,
+                        (pvr_cmd_length(TEXSTATE_IMAGE_WORD0) +
+                         pvr_cmd_length(TEXSTATE_IMAGE_WORD1)) *
+                           sizeof(uint32_t));
+CHECK_STRUCT_FIELD_SIZE(pvr_combined_image_sampler_descriptor,
+                        image,
+                        (pvr_cmd_length(TEXSTATE_IMAGE_WORD0) +
+                         pvr_cmd_length(TEXSTATE_STRIDE_IMAGE_WORD1)) *
+                           sizeof(uint32_t));
+
+#undef CHECK_STRUCT_FIELD_SIZE
+
+static VkResult pvr_setup_texture_state_words(
+   struct pvr_device *device,
+   struct pvr_combined_image_sampler_descriptor *descriptor,
+   const struct pvr_image_view *image_view)
+{
+   const struct pvr_image *image = vk_to_pvr_image(image_view->vk.image);
+   struct pvr_texture_state_info info = {
+      .format = image_view->vk.format,
+      .mem_layout = image->memlayout,
+      .type = image_view->vk.view_type,
+      .is_cube = image_view->vk.view_type == VK_IMAGE_VIEW_TYPE_CUBE ||
+                 image_view->vk.view_type == VK_IMAGE_VIEW_TYPE_CUBE_ARRAY,
+      .tex_state_type = PVR_TEXTURE_STATE_SAMPLE,
+      .extent = image_view->vk.extent,
+      .mip_levels = 1,
+      .sample_count = image_view->vk.image->samples,
+      .stride = image->physical_extent.width,
+      .addr = image->dev_addr,
+   };
+   const uint8_t *const swizzle = pvr_get_format_swizzle(info.format);
+   VkResult result;
+
+   memcpy(&info.swizzle, swizzle, sizeof(info.swizzle));
+
+   /* TODO: Can we use image_view->texture_state instead of generating here? */
+   result = pvr_pack_tex_state(device, &info, descriptor->image);
+   if (result != VK_SUCCESS)
+      return result;
+
+   descriptor->sampler = (union pvr_sampler_descriptor){ 0 };
+
+   pvr_csb_pack (&descriptor->sampler.data.sampler_word,
+                 TEXSTATE_SAMPLER,
+                 sampler) {
+      sampler.non_normalized_coords = true;
+      sampler.addrmode_v = PVRX(TEXSTATE_ADDRMODE_CLAMP_TO_EDGE);
+      sampler.addrmode_u = PVRX(TEXSTATE_ADDRMODE_CLAMP_TO_EDGE);
+      sampler.minfilter = PVRX(TEXSTATE_FILTER_POINT);
+      sampler.magfilter = PVRX(TEXSTATE_FILTER_POINT);
+      sampler.dadjust = PVRX(TEXSTATE_DADJUST_ZERO_UINT);
+   }
+
+   return VK_SUCCESS;
+}
+
 static VkResult
 pvr_load_op_constants_create_and_upload(struct pvr_cmd_buffer *cmd_buffer,
                                         const struct pvr_load_op *load_op,
@@ -612,29 +690,108 @@ pvr_load_op_constants_create_and_upload(struct pvr_cmd_buffer *cmd_buffer,
    const struct pvr_renderpass_hwsetup_render *hw_render = load_op->hw_render;
    const struct pvr_renderpass_colorinit *color_init =
       &hw_render->color_init[0];
-   const struct pvr_render_pass_attachment *attachment =
-      &pass->attachments[color_init->index];
    const VkClearValue *clear_value =
       &render_pass_info->clear_values[color_init->index];
-   uint32_t hw_clear_value[PVR_CLEAR_COLOR_ARRAY_SIZE];
+   uint32_t attachment_count;
    struct pvr_bo *clear_bo;
+   bool has_depth_clear;
+   bool has_depth_load;
    VkResult result;
 
-   pvr_finishme("Add missing load op data support");
+   /* These are only setup and never used for now. These will need to be
+    * uploaded into a buffer based on some compiler info.
+    */
+   /* TODO: Remove the above comment once the compiler is hooked up and we're
+    * setting up + uploading the buffer.
+    */
+   struct pvr_combined_image_sampler_descriptor
+      texture_states[PVR_LOAD_OP_CLEARS_LOADS_MAX_RTS];
+   uint32_t texture_count = 0;
+   uint32_t hw_clear_value[PVR_LOAD_OP_CLEARS_LOADS_MAX_RTS *
+                           PVR_CLEAR_COLOR_ARRAY_SIZE];
+   uint32_t next_clear_consts = 0;
 
-   assert(load_op->is_hw_object);
-   assert(hw_render->color_init_count == 1);
+   if (load_op->is_hw_object)
+      attachment_count = load_op->hw_render->color_init_count;
+   else
+      attachment_count = load_op->subpass->color_count;
 
-   assert(vk_format_get_blocksize(attachment->vk_format) <=
-          sizeof(hw_clear_value));
+   for (uint32_t i = 0; i < attachment_count; i++) {
+      struct pvr_image_view *image_view;
+      uint32_t attachment_idx;
 
-   /* FIXME: add support for VK_ATTACHMENT_LOAD_OP_LOAD. */
-   assert(color_init->op == VK_ATTACHMENT_LOAD_OP_CLEAR);
+      if (load_op->is_hw_object)
+         attachment_idx = load_op->hw_render->color_init[i].index;
+      else
+         attachment_idx = load_op->subpass->color_attachments[i];
 
-   /* FIXME: do this at the point we store the clear values? */
-   pvr_get_hw_clear_color(attachment->vk_format,
-                          clear_value->color,
-                          hw_clear_value);
+      image_view = render_pass_info->attachments[attachment_idx];
+
+      assert((load_op->clears_loads_state.rt_load_mask &
+              load_op->clears_loads_state.rt_clear_mask) == 0);
+      if (load_op->clears_loads_state.rt_load_mask & BITFIELD_BIT(i)) {
+         result = pvr_setup_texture_state_words(cmd_buffer->device,
+                                                &texture_states[texture_count],
+                                                image_view);
+         if (result != VK_SUCCESS)
+            return result;
+
+         texture_count++;
+      } else if (load_op->clears_loads_state.rt_clear_mask & BITFIELD_BIT(i)) {
+         const uint32_t accum_fmt_size =
+            pvr_get_pbe_accum_format_size_in_bytes(image_view->vk.format);
+
+         assert(next_clear_consts +
+                   vk_format_get_blocksize(image_view->vk.format) <=
+                ARRAY_SIZE(hw_clear_value));
+
+         /* FIXME: do this at the point we store the clear values? */
+         pvr_get_hw_clear_color(image_view->vk.format,
+                                clear_value->color,
+                                &hw_clear_value[next_clear_consts]);
+
+         next_clear_consts += DIV_ROUND_UP(accum_fmt_size, sizeof(uint32_t));
+      }
+   }
+
+   has_depth_load = load_op->clears_loads_state.rt_load_mask != 0;
+   has_depth_clear = load_op->clears_loads_state.depth_clear_to_reg != -1;
+
+   assert(!(has_depth_clear && has_depth_load));
+
+   if (has_depth_load) {
+      const struct pvr_render_pass_attachment *attachment;
+      const struct pvr_image_view *image_view;
+
+      assert(*load_op->subpass->depth_stencil_attachment !=
+             VK_ATTACHMENT_UNUSED);
+      assert(!load_op->is_hw_object);
+      attachment =
+         &pass->attachments[*load_op->subpass->depth_stencil_attachment];
+
+      image_view = render_pass_info->attachments[attachment->index];
+
+      result = pvr_setup_texture_state_words(cmd_buffer->device,
+                                             &texture_states[texture_count],
+                                             image_view);
+      if (result != VK_SUCCESS)
+         return result;
+
+      texture_count++;
+   } else if (has_depth_clear) {
+      const struct pvr_render_pass_attachment *attachment;
+      VkClearValue clear_value;
+
+      assert(*load_op->subpass->depth_stencil_attachment !=
+             VK_ATTACHMENT_UNUSED);
+      attachment =
+         &pass->attachments[*load_op->subpass->depth_stencil_attachment];
+
+      clear_value = render_pass_info->clear_values[attachment->index];
+
+      assert(next_clear_consts < ARRAY_SIZE(hw_clear_value));
+      hw_clear_value[next_clear_consts++] = fui(clear_value.depthStencil.depth);
+   }
 
    result = pvr_cmd_buffer_upload_general(cmd_buffer,
                                           &hw_clear_value[0],

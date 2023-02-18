@@ -25,18 +25,31 @@
 #include "radv_rt_common.h"
 #include "radv_acceleration_structure.h"
 
+#ifdef LLVM_AVAILABLE
+#include <llvm/Config/llvm-config.h>
+#endif
+
 static nir_ssa_def *build_node_to_addr(struct radv_device *device, nir_builder *b,
                                        nir_ssa_def *node, bool skip_type_and);
 
 bool
 radv_enable_rt(const struct radv_physical_device *pdevice, bool rt_pipelines)
 {
-   if ((pdevice->rad_info.gfx_level < GFX10_3 && !radv_emulate_rt(pdevice)) || pdevice->use_llvm)
+#ifdef LLVM_AVAILABLE
+   if (pdevice->use_llvm && LLVM_VERSION_MAJOR < 14)
+      return false;
+#endif
+
+   if (pdevice->rad_info.gfx_level < GFX10_3 && !radv_emulate_rt(pdevice))
       return false;
 
-   if (rt_pipelines)
+   if (rt_pipelines) {
+      if (pdevice->use_llvm)
+         return false;
+
       return (pdevice->instance->perftest_flags & RADV_PERFTEST_RT) ||
              driQueryOptionb(&pdevice->instance->dri_options, "radv_rt");
+   }
 
    return true;
 }

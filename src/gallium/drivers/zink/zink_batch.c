@@ -155,7 +155,6 @@ zink_reset_batch_state(struct zink_context *ctx, struct zink_batch_state *bs)
     */
    bs->fence.submitted = false;
    bs->has_barriers = false;
-   bs->db_bound = false;
    if (bs->fence.batch_id)
       zink_screen_update_last_finished(screen, bs->fence.batch_id);
    bs->submit_count++;
@@ -299,23 +298,20 @@ create_batch_state(struct zink_context *ctx)
       goto fail;
    }
 
+   VkCommandBuffer cmdbufs[2];
    VkCommandBufferAllocateInfo cbai = {0};
    cbai.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
    cbai.commandPool = bs->cmdpool;
    cbai.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-   cbai.commandBufferCount = 1;
+   cbai.commandBufferCount = 2;
 
-   result = VKSCR(AllocateCommandBuffers)(screen->dev, &cbai, &bs->cmdbuf);
+   result = VKSCR(AllocateCommandBuffers)(screen->dev, &cbai, cmdbufs);
    if (result != VK_SUCCESS) {
       mesa_loge("ZINK: vkAllocateCommandBuffers failed (%s)", vk_Result_to_str(result));
       goto fail;
    }
-
-   result = VKSCR(AllocateCommandBuffers)(screen->dev, &cbai, &bs->barrier_cmdbuf);
-   if (result != VK_SUCCESS) {
-      mesa_loge("ZINK: vkAllocateCommandBuffers failed (%s)", vk_Result_to_str(result));
-      goto fail;
-   }
+   bs->cmdbuf = cmdbufs[0];
+   bs->barrier_cmdbuf = cmdbufs[1];
 
 #define SET_CREATE_OR_FAIL(ptr) \
    if (!_mesa_set_init(ptr, bs, _mesa_hash_pointer, _mesa_key_pointer_equal)) \
@@ -437,23 +433,22 @@ zink_batch_bind_db(struct zink_context *ctx)
 {
    struct zink_screen *screen = zink_screen(ctx->base.screen);
    struct zink_batch *batch = &ctx->batch;
-   unsigned count = screen->compact_descriptors ? 3 : 5;
-   VkDescriptorBufferBindingInfoEXT infos[ZINK_DESCRIPTOR_ALL_TYPES] = {0};
-   for (unsigned i = 0; i < count; i++) {
-      infos[i].sType = VK_STRUCTURE_TYPE_DESCRIPTOR_BUFFER_BINDING_INFO_EXT;
-      infos[i].address = batch->state->dd.db[i]->obj->bda;
-      infos[i].usage = batch->state->dd.db[i]->obj->vkusage;
-      assert(infos[i].usage);
-   }
+   unsigned count = 1;
+   VkDescriptorBufferBindingInfoEXT infos[2] = {0};
+   infos[0].sType = VK_STRUCTURE_TYPE_DESCRIPTOR_BUFFER_BINDING_INFO_EXT;
+   infos[0].address = batch->state->dd.db->obj->bda;
+   infos[0].usage = batch->state->dd.db->obj->vkusage;
+   assert(infos[0].usage);
+
    if (ctx->dd.bindless_init) {
-      infos[ZINK_DESCRIPTOR_BINDLESS].sType = VK_STRUCTURE_TYPE_DESCRIPTOR_BUFFER_BINDING_INFO_EXT;
-      infos[ZINK_DESCRIPTOR_BINDLESS].address = ctx->dd.db.bindless_db->obj->bda;
-      infos[ZINK_DESCRIPTOR_BINDLESS].usage = ctx->dd.db.bindless_db->obj->vkusage;
-      assert(infos[ZINK_DESCRIPTOR_BINDLESS].usage);
+      infos[1].sType = VK_STRUCTURE_TYPE_DESCRIPTOR_BUFFER_BINDING_INFO_EXT;
+      infos[1].address = ctx->dd.db.bindless_db->obj->bda;
+      infos[1].usage = ctx->dd.db.bindless_db->obj->vkusage;
+      assert(infos[1].usage);
       count++;
    }
    VKSCR(CmdBindDescriptorBuffersEXT)(batch->state->cmdbuf, count, infos);
-   batch->state->db_bound = true;
+   batch->state->dd.db_bound = true;
 }
 
 /* called on context creation and after flushing an old batch */

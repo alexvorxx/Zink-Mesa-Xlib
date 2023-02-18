@@ -1,6 +1,6 @@
 # Please include a comment with the log message and a testcase triggering each
 # VUID at the bottom of the file.
-khronos_validation.message_id_filter = VUID-vkCmdDrawMultiEXT-colorAttachmentCount-06188,VUID-VkGraphicsPipelineCreateInfo-Geometry-07725,VUID-VkShaderModuleCreateInfo-pCode-01091,VUID-vkCmdCopyImage-srcImage-07743,VUID-vkCmdDrawMultiEXT-None-06479,VUID-vkCmdDrawMultiIndexedEXT-format-07753,VUID-vkCmdDrawMultiEXT-viewType-07752,VUID-vkCmdDispatch-viewType-07752,VUID-vkCmdDrawMultiEXT-magFilter-04553,VUID-vkCmdDrawMultiIndexedEXT-magFilter-04553,VUID-RuntimeSpirv-Location-06272,VUID-vkDestroyDevice-device-00378,VUID-vkCmdDrawMultiEXT-None-02699
+khronos_validation.message_id_filter = VUID-vkCmdDrawMultiEXT-colorAttachmentCount-06188,VUID-VkGraphicsPipelineCreateInfo-Geometry-07725,VUID-VkShaderModuleCreateInfo-pCode-01091,VUID-vkCmdCopyImage-srcImage-07743,VUID-vkCmdDrawMultiEXT-None-06479,VUID-vkCmdDrawMultiIndexedEXT-format-07753,VUID-vkCmdDrawMultiEXT-viewType-07752,VUID-vkCmdDispatch-viewType-07752,VUID-RuntimeSpirv-Location-06272,VUID-vkDestroyDevice-device-00378,VUID-vkCmdDrawMultiEXT-None-02699
 khronos_validation.report_flags = error
 khronos_validation.debug_action = VK_DBG_LAYER_ACTION_LOG_MSG,VK_DBG_LAYER_ACTION_BREAK
 VK_LAYER_ENABLES=VK_VALIDATION_FEATURE_ENABLE_DEBUG_PRINTF_EXT
@@ -148,23 +148,6 @@ khronos_validation.log_filename = stdout
 # (https://www.khronos.org/registry/vulkan/specs/1.3-extensions/html/vkspec.html#VUID-vkCmdDispatch-viewType-07752)
 #
 # https://gitlab.khronos.org/Tracker/vk-gl-cts/-/issues/4250
-
-# KHR-GL46.texture_border_clamp.Texture2DDC16Linear:
-#
-# VUID-vkCmdDrawMultiEXT-magFilter-04553 ] Object 0: handle = 0xa43473000000002d,
-# type = VK_OBJECT_TYPE_DESCRIPTOR_SET; Object 1: handle = 0xb991fa0000000024,
-# type = VK_OBJECT_TYPE_SAMPLER; Object 2: handle = 0xa7c5450000000023, type =
-# VK_OBJECT_TYPE_IMAGE_VIEW; | MessageID = 0x6823381d | vkCmdDrawMultiEXT:
-# Descriptor set VkDescriptorSet 0xa43473000000002d[] Sampler (VkSampler
-# 0xb991fa0000000024[]) is set to use VK_FILTER_LINEAR with compareEnable is set
-# to VK_FALSE, but image view's (VkImageView 0xa7c5450000000023[]) format
-# (VK_FORMAT_D16_UNORM) does not contain
-# VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT in its format features. The
-# Vulkan spec states: If a VkSampler created with magFilter or minFilter equal to
-# VK_FILTER_LINEAR and compareEnable equal to VK_FALSE is used to sample a
-# VkImageView as a result of this command, then the image view's format features
-# must contain VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT
-# (https://www.khronos.org/registry/vulkan/specs/1.3-extensions/html/vkspec.html#VUID-vkCmdDrawMultiEXT-magFilter-04553)
 
 #  KHR-Single-GL46.enhanced_layouts.varying_array_locations:
 #

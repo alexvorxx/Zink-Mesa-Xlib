@@ -483,8 +483,7 @@ impl Device {
         add_ext(1, 0, 0, "cl_khr_byte_addressable_store", "");
         add_ext(1, 0, 0, "cl_khr_global_int32_base_atomics", "");
         add_ext(1, 0, 0, "cl_khr_global_int32_extended_atomics", "");
-        // TODO spirv
-        // add_ext(1, 0, 0, "cl_khr_il_program", "");
+        add_ext(1, 0, 0, "cl_khr_il_program", "");
         add_ext(1, 0, 0, "cl_khr_local_int32_base_atomics", "");
         add_ext(1, 0, 0, "cl_khr_local_int32_extended_atomics", "");
 

@@ -27,8 +27,8 @@
 #include "util/anon_file.h"
 #include "anv_private.h"
 
-void
-anv_gem_close(struct anv_device *device, uint32_t gem_handle)
+static void
+stub_gem_close(struct anv_device *device, uint32_t gem_handle)
 {
    close(gem_handle);
 }
@@ -48,19 +48,51 @@ stub_gem_create(struct anv_device *device,
    return fd;
 }
 
-void*
-anv_gem_mmap(struct anv_device *device, struct anv_bo *bo,
-             uint64_t offset, uint64_t size, uint32_t flags)
+static void *
+stub_gem_mmap(struct anv_device *device, struct anv_bo *bo, uint64_t offset,
+              uint64_t size, VkMemoryPropertyFlags property_flags)
 {
-   /* Ignore flags, as they're specific to I915_GEM_MMAP. */
-   (void) flags;
+   return mmap(NULL, size, PROT_READ | PROT_WRITE, MAP_SHARED, bo->gem_handle,
+               offset);
+}
 
-   return mmap(NULL, size, PROT_READ | PROT_WRITE, MAP_SHARED,
-               bo->gem_handle, offset);
+static VkResult
+stub_execute_simple_batch(struct anv_queue *queue,
+                          struct anv_bo *batch_bo,
+                          uint32_t batch_bo_size)
+{
+   return VK_ERROR_UNKNOWN;
+}
+
+static VkResult
+stub_queue_exec_locked(struct anv_queue *queue,
+                       uint32_t wait_count,
+                       const struct vk_sync_wait *waits,
+                       uint32_t cmd_buffer_count,
+                       struct anv_cmd_buffer **cmd_buffers,
+                       uint32_t signal_count,
+                       const struct vk_sync_signal *signals,
+                       struct anv_query_pool *perf_query_pool,
+                       uint32_t perf_query_pass)
+{
+   return VK_ERROR_UNKNOWN;
+}
+
+void *
+anv_gem_mmap(struct anv_device *device, struct anv_bo *bo, uint64_t offset,
+             uint64_t size, VkMemoryPropertyFlags property_flags)
+{
+   void *map = device->kmd_backend->gem_mmap(device, bo, offset, size,
+                                             property_flags);
+
+   if (map != MAP_FAILED)
+      VG(VALGRIND_MALLOCLIKE_BLOCK(map, size, 0, 1));
+
+   return map;
 }
 
 /* This is just a wrapper around munmap, but it also notifies valgrind that
- * this map is no longer valid.  Pair this with anv_gem_mmap().
+ * this map is no longer valid.  Pair this with gem_mmap().
  */
 void
 anv_gem_munmap(struct anv_device *device, void *p, uint64_t size)
@@ -122,6 +154,10 @@ const struct anv_kmd_backend *anv_stub_kmd_backend_get(void)
 {
    static const struct anv_kmd_backend stub_backend = {
       .gem_create = stub_gem_create,
+      .gem_close = stub_gem_close,
+      .gem_mmap = stub_gem_mmap,
+      .execute_simple_batch = stub_execute_simple_batch,
+      .queue_exec_locked = stub_queue_exec_locked,
    };
    return &stub_backend;
 }

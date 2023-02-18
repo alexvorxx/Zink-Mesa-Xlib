@@ -25,6 +25,9 @@
 #define UTIL_MACROS_H
 
 #include <assert.h>
+#if defined(__HAIKU__)  && !defined(__cplusplus)
+#define static_assert _Static_assert
+#endif
 #include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>

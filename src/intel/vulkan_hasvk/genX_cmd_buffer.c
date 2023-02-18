@@ -2772,7 +2772,7 @@ cmd_buffer_flush_push_constants(struct anv_cmd_buffer *cmd_buffer,
    const struct anv_graphics_pipeline *pipeline = gfx_state->pipeline;
 
    /* Compute robust pushed register access mask for each stage. */
-   if (cmd_buffer->device->robust_buffer_access) {
+   if (cmd_buffer->device->vk.enabled_features.robustBufferAccess) {
       anv_foreach_stage(stage, dirty_stages) {
          if (!anv_pipeline_has_stage(pipeline, stage))
             continue;
@@ -4881,10 +4881,7 @@ genX(cmd_buffer_update_dirty_vbs_for_gfx8_vb_flush)(struct anv_cmd_buffer *cmd_b
       struct anv_vb_cache_range *bound = &cmd_buffer->state.gfx.ib_bound_range;
       struct anv_vb_cache_range *dirty = &cmd_buffer->state.gfx.ib_dirty_range;
 
-      if (bound->end > bound->start) {
-         dirty->start = MIN2(dirty->start, bound->start);
-         dirty->end = MAX2(dirty->end, bound->end);
-      }
+      anv_merge_vb_cache_range(dirty, bound);
    }
 
    uint64_t mask = vb_used;
@@ -4898,10 +4895,7 @@ genX(cmd_buffer_update_dirty_vbs_for_gfx8_vb_flush)(struct anv_cmd_buffer *cmd_b
       bound = &cmd_buffer->state.gfx.vb_bound_ranges[i];
       dirty = &cmd_buffer->state.gfx.vb_dirty_ranges[i];
 
-      if (bound->end > bound->start) {
-         dirty->start = MIN2(dirty->start, bound->start);
-         dirty->end = MAX2(dirty->end, bound->end);
-      }
+      anv_merge_vb_cache_range(dirty, bound);
    }
 }
 

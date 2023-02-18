@@ -162,6 +162,7 @@ struct agx_batch {
 
    /* PIPE_CLEAR_* bitmask */
    uint32_t clear, draw, load, resolve;
+   bool any_draws;
 
    uint64_t uploaded_clear_color[PIPE_MAX_COLOR_BUFS];
    double clear_depth;

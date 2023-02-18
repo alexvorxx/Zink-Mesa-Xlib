@@ -114,7 +114,7 @@ GL 3.3, GLSL 3.30 --- all DONE: freedreno, i965, nv50, nvc0, r600, radeonsi, llv
 GL 4.0, GLSL 4.00 --- all DONE: freedreno/a6xx, i965/gen7+, nvc0, r600, radeonsi, llvmpipe, virgl, zink, d3d12
 
   GL_ARB_draw_buffers_blend                             DONE (freedreno, i965/gen6+, nv50, softpipe, panfrost, v3d, asahi)
-  GL_ARB_draw_indirect                                  DONE (freedreno, i965/gen7+, softpipe, v3d)
+  GL_ARB_draw_indirect                                  DONE (freedreno, i965/gen7+, softpipe, v3d, asahi)
   GL_ARB_gpu_shader5                                    DONE (freedreno/a6xx, i965/gen7+)
   - 'precise' qualifier                                 DONE (softpipe)
   - Dynamically uniform sampler array indices           DONE (softpipe)
@@ -244,7 +244,7 @@ GLES3.1, GLSL ES 3.1 -- all DONE: freedreno/a5xx+, i965/hsw+, nvc0, r600, radeon
 
   GL_ARB_arrays_of_arrays                               DONE (all drivers that support GLSL 1.30)
   GL_ARB_compute_shader                                 DONE (freedreno/a5xx+, i965/gen7+)
-  GL_ARB_draw_indirect                                  DONE (freedreno, i965/gen7+)
+  GL_ARB_draw_indirect                                  DONE (freedreno, i965/gen7+, asahi)
   GL_ARB_explicit_uniform_location                      DONE (all drivers that support GLSL)
   GL_ARB_framebuffer_no_attachments                     DONE (freedreno, i965/gen7+, softpipe)
   GL_ARB_program_interface_query                        DONE (all drivers)
@@ -331,7 +331,7 @@ Khronos, ARB, and OES extensions that are not part of any OpenGL or OpenGL ES ve
   GL_EXT_sRGB_write_control                             DONE (all drivers that support GLES 3.0+)
   GL_EXT_texture_norm16                                 DONE (freedreno, i965, r600, radeonsi, nvc0i, softpipe, zink)
   GL_EXT_texture_sRGB_R8                                DONE (all drivers that support GLES 3.0+)
-  GL_KHR_blend_equation_advanced_coherent               DONE (i965/gen9+, panfrost, zink)
+  GL_KHR_blend_equation_advanced_coherent               DONE (freedreno/a6xx, i965/gen9+, panfrost, zink)
   GL_KHR_texture_compression_astc_hdr                   DONE (core only)
   GL_KHR_texture_compression_astc_sliced_3d             DONE (freedreno/a4xx+, i965/gen9+, r600, radeonsi, panfrost, softpipe, v3d, zink, lima)
   GL_OES_depth_texture_cube_map                         DONE (all drivers that support GLSL 1.30+)
@@ -590,7 +590,7 @@ Khronos extensions that are not part of any Vulkan version:
   VK_EXT_shader_module_identifier                       DONE (anv, radv, tu, v3dv)
   VK_EXT_transform_feedback                             DONE (anv, lvp, radv, tu, vn)
   VK_EXT_vertex_attribute_divisor                       DONE (anv, dzn, panvk, radv, lvp, tu, v3dv, vn)
-  VK_EXT_vertex_input_dynamic_state                     DONE (lvp, radv, tu)
+  VK_EXT_vertex_input_dynamic_state                     DONE (anv, lvp, radv, tu)
   VK_EXT_ycbcr_image_arrays                             DONE (anv, radv)
   VK_ANDROID_external_memory_android_hardware_buffer    DONE (anv, radv, vn)
   VK_ANDROID_native_buffer                              DONE (anv, radv, tu, v3dv, vn)

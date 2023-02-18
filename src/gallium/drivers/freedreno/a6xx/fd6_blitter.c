@@ -887,8 +887,7 @@ fd6_clear_texture(struct pipe_context *pctx, struct pipe_resource *prsc,
    fd_batch_resource_write(batch, rsc);
    fd_screen_unlock(ctx->screen);
 
-   ASSERTED bool ret = fd_batch_lock_submit(batch);
-   assert(ret);
+   assert(!batch->flushed);
 
    /* Marking the batch as needing flush must come after the batch
     * dependency tracking (resource_read()/resource_write()), as that
@@ -920,15 +919,13 @@ fd6_clear_texture(struct pipe_context *pctx, struct pipe_resource *prsc,
    fd_wfi(batch, batch->draw);
    fd6_cache_inv(batch, batch->draw);
 
-   fd_batch_unlock_submit(batch);
-
    fd_batch_flush(batch);
    fd_batch_reference(&batch, NULL);
 
    /* Acc query state will have been dirtied by our fd_batch_update_queries, so
     * the ctx->batch may need to turn its queries back on.
     */
-   ctx->update_active_queries = true;
+   fd_context_dirty(ctx, FD_DIRTY_QUERY);
 
    return;
 
@@ -1034,8 +1031,7 @@ handle_rgba_blit(struct fd_context *ctx,
 
    fd_screen_unlock(ctx->screen);
 
-   ASSERTED bool ret = fd_batch_lock_submit(batch);
-   assert(ret);
+   assert(!batch->flushed);
 
    /* Marking the batch as needing flush must come after the batch
     * dependency tracking (resource_read()/resource_write()), as that
@@ -1072,15 +1068,13 @@ handle_rgba_blit(struct fd_context *ctx,
    fd_wfi(batch, batch->draw);
    fd6_cache_inv(batch, batch->draw);
 
-   fd_batch_unlock_submit(batch);
-
    fd_batch_flush(batch);
    fd_batch_reference(&batch, NULL);
 
    /* Acc query state will have been dirtied by our fd_batch_update_queries, so
     * the ctx->batch may need to turn its queries back on.
     */
-   ctx->update_active_queries = true;
+   fd_context_dirty(ctx, FD_DIRTY_QUERY);
 
    return true;
 }

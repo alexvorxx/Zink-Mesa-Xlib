@@ -975,6 +975,8 @@ void anv_DestroyDescriptorPool(
       anv_descriptor_set_layout_unref(device, set->layout);
    }
 
+   util_vma_heap_finish(&pool->host_heap);
+
    if (pool->bo_mem_size) {
       if (pool->host_bo)
          vk_free(&device->vk.alloc, pool->host_bo);

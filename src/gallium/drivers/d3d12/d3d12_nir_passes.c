@@ -552,7 +552,7 @@ lower_instr(nir_intrinsic_instr *instr, nir_builder *b,
    nir_ssa_def *load =
       nir_load_ubo(b, instr->num_components, instr->dest.ssa.bit_size,
                    ubo_idx, ubo_offset,
-                   .align_mul = instr->dest.ssa.bit_size / 8,
+                   .align_mul = 16,
                    .align_offset = 0,
                    .range_base = 0,
                    .range = ~0,
@@ -706,7 +706,8 @@ lower_load_ubo_packed_impl(nir_builder *b, nir_instr *instr,
       build_load_ubo_dxil(b, buffer,
                           offset,
                           nir_dest_num_components(intr->dest),
-                          nir_dest_bit_size(intr->dest));
+                          nir_dest_bit_size(intr->dest),
+                          nir_intrinsic_align(intr));
    return result;
 }
 

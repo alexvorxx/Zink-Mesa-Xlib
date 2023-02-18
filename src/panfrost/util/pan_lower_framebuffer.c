@@ -510,7 +510,7 @@ pan_lower_fb_store(nir_shader *shader, nir_builder *b,
 {
    /* For stores, add conversion before */
    nir_ssa_def *unpacked =
-      nir_ssa_for_src(b, intr->src[1], intr->num_components);
+      nir_ssa_for_src(b, intr->src[0], intr->num_components);
    unpacked = nir_pad_vec4(b, unpacked);
 
    /* Re-order the components */
@@ -519,7 +519,8 @@ pan_lower_fb_store(nir_shader *shader, nir_builder *b,
 
    nir_ssa_def *packed = pan_pack(b, desc, unpacked);
 
-   nir_store_raw_output_pan(b, packed);
+   nir_store_raw_output_pan(b, packed,
+                            .io_semantics = nir_intrinsic_io_semantics(intr));
 }
 
 static nir_ssa_def *
@@ -533,12 +534,9 @@ pan_lower_fb_load(nir_shader *shader, nir_builder *b, nir_intrinsic_instr *intr,
                   const struct util_format_description *desc,
                   bool reorder_comps, int sample)
 {
-   nir_io_semantics sem = {
-      .location = nir_intrinsic_get_var(intr, 0)->data.location,
-   };
-
-   nir_ssa_def *packed = nir_load_raw_output_pan(
-      b, 4, 32, pan_sample_id(b, sample), .io_semantics = sem);
+   nir_ssa_def *packed =
+      nir_load_raw_output_pan(b, 4, 32, pan_sample_id(b, sample),
+                              .io_semantics = nir_intrinsic_io_semantics(intr));
 
    /* Convert the raw value */
    nir_ssa_def *unpacked = pan_unpack(b, desc, packed);
@@ -588,22 +586,17 @@ pan_lower_framebuffer(nir_shader *shader, const enum pipe_format *rt_fmts,
 
             nir_intrinsic_instr *intr = nir_instr_as_intrinsic(instr);
 
-            bool is_load = intr->intrinsic == nir_intrinsic_load_deref;
-            bool is_store = intr->intrinsic == nir_intrinsic_store_deref;
+            bool is_load = intr->intrinsic == nir_intrinsic_load_output;
+            bool is_store = intr->intrinsic == nir_intrinsic_store_output;
 
             if (!(is_load || (is_store && is_blend)))
                continue;
 
-            nir_variable *var = nir_intrinsic_get_var(intr, 0);
-
-            if (var->data.mode != nir_var_shader_out)
+            nir_io_semantics sem = nir_intrinsic_io_semantics(intr);
+            if (sem.location < FRAG_RESULT_DATA0)
                continue;
 
-            if (var->data.location < FRAG_RESULT_DATA0)
-               continue;
-
-            unsigned rt = var->data.location - FRAG_RESULT_DATA0;
-
+            unsigned rt = sem.location - FRAG_RESULT_DATA0;
             if (rt_fmts[rt] == PIPE_FORMAT_NONE)
                continue;
 

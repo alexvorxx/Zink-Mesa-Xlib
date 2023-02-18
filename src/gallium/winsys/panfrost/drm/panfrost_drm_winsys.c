@@ -30,6 +30,7 @@
 #include "util/os_file.h"
 #include "util/u_math.h"
 #include "util/u_memory.h"
+#include "util/u_screen.h"
 
 #include "drm-uapi/drm.h"
 #include "renderonly/renderonly.h"
@@ -113,12 +114,14 @@ free_scanout:
 struct pipe_screen *
 panfrost_drm_screen_create(int fd)
 {
-   return panfrost_create_screen(os_dupfd_cloexec(fd), NULL);
+   return u_pipe_screen_lookup_or_create(os_dupfd_cloexec(fd), NULL, NULL,
+                                         panfrost_create_screen);
 }
 
 struct pipe_screen *
 panfrost_drm_screen_create_renderonly(struct renderonly *ro)
 {
    ro->create_for_resource = panfrost_create_kms_dumb_buffer_for_resource;
-   return panfrost_create_screen(os_dupfd_cloexec(ro->gpu_fd), ro);
+   return u_pipe_screen_lookup_or_create(os_dupfd_cloexec(ro->gpu_fd), NULL,
+                                         ro, panfrost_create_screen);
 }

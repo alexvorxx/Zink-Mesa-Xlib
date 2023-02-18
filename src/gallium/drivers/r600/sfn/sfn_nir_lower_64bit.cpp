@@ -1445,7 +1445,7 @@ r600_lower_64bit_load_const(nir_builder *b, nir_load_const_instr *instr)
 }
 
 static bool
-r600_lower_64bit_to_vec2_instr(nir_builder *b, nir_instr *instr, void *data)
+r600_lower_64bit_to_vec2_instr(nir_builder *b, nir_instr *instr, UNUSED void *data)
 {
    switch (instr->type) {
    case nir_instr_type_load_const:

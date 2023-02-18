@@ -20,6 +20,7 @@ from typing import Optional, Union
 from lava.exceptions import MesaCITimeoutError
 from lava.utils.console_format import CONSOLE_LOG
 from lava.utils.gitlab_section import GitlabSection
+from lava.utils.lava_farm import LavaFarm, get_lava_farm
 from lava.utils.lava_log_hints import LAVALogHints
 from lava.utils.log_section import (
     DEFAULT_GITLAB_SECTION_TIMEOUTS,
@@ -38,6 +39,7 @@ class LogFollower:
     fallback_timeout: timedelta = FALLBACK_GITLAB_SECTION_TIMEOUT
     _buffer: list[str] = field(default_factory=list, init=False)
     log_hints: LAVALogHints = field(init=False)
+    lava_farm: LavaFarm = field(init=False, default=get_lava_farm())
 
     def __post_init__(self):
         section_is_created = bool(self.current_section)
@@ -124,6 +126,17 @@ class LogFollower:
 
         return False
 
+    def remove_trailing_whitespace(self, line: dict[str, str]) -> None:
+        msg: Optional[str] = line.get("msg")
+        if not msg:
+            return
+
+        messages = [msg] if isinstance(msg, str) else msg
+
+        for message in messages:
+            # LAVA logs brings raw messages, which includes newlines characters.
+            line["msg"]: str = message.rstrip("\n")
+
     def feed(self, new_lines: list[dict[str, str]]) -> bool:
         """Input data to be processed by LogFollower instance
         Returns true if the DUT (device under test) seems to be alive.
@@ -135,6 +148,8 @@ class LogFollower:
         is_job_healthy = False
 
         for line in new_lines:
+            self.remove_trailing_whitespace(line)
+
             if self.detect_kernel_dump_line(line):
                 continue
 
@@ -166,7 +181,7 @@ class LogFollower:
         elif line["lvl"] == "input":
             prefix = "$ "
             suffix = ""
-        elif line["lvl"] == "target":
+        elif line["lvl"] == "target" and self.lava_farm != LavaFarm.COLLABORA:
             # gl_section_fix_gen will output the stored line if it can't find a
             # match for the first split line
             # So we can recover it and put it back to the buffer
@@ -211,7 +226,7 @@ def fix_lava_gitlab_section_log():
 
 
 
-def print_log(msg):
+def print_log(msg: str) -> None:
     # Reset color from timestamp, since `msg` can tint the terminal color
     print(f"{CONSOLE_LOG['RESET']}{datetime.now()}: {msg}")
 
