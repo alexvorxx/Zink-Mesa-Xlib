@@ -1,3 +1,14 @@
+# wayland
+[[deqp]]
+deqp = "/deqp/modules/egl/deqp-egl-wayland"
+caselists = ["/deqp/mustpass/egl-master.txt"]
+deqp_args = [
+    "--deqp-surface-width=256", "--deqp-surface-height=256",
+    "--deqp-surface-type=pbuffer", "--deqp-visibility=hidden",
+    "--deqp-gl-config-name=rgba8888d24s8ms0",
+]
+prefix = "wayland-"
+
 # x11
 [[deqp]]
 deqp = "/deqp/modules/egl/deqp-egl"
@@ -7,15 +18,4 @@ deqp_args = [
     "--deqp-surface-type=pbuffer", "--deqp-visibility=hidden",
     "--deqp-gl-config-name=rgba8888d24s8ms0",
 ]
-
-# Disabled due to timeouts since wayland platform was enabled
-# See https://gitlab.freedesktop.org/mesa/mesa/-/merge_requests/20480#note_1702748
-#[[deqp]]
-#deqp = "/deqp/modules/egl/deqp-egl-wayland"
-#caselists = ["/deqp/mustpass/egl-master.txt"]
-#deqp_args = [
-#    "--deqp-surface-width=256", "--deqp-surface-height=256",
-#    "--deqp-surface-type=pbuffer", "--deqp-visibility=hidden",
-#    "--deqp-gl-config-name=rgba8888d24s8ms0",
-#]
-#prefix = "wayland-"
+prefix = "x11-"

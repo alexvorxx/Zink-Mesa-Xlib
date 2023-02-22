@@ -420,10 +420,23 @@ task_mesh_thread_payload::task_mesh_thread_payload(const fs_visitor &v)
    unsigned r = 0;
    assert(subgroup_id_.file != BAD_FILE);
    extended_parameter_0 = retype(brw_vec1_grf(0, 3), BRW_REGISTER_TYPE_UD);
-   urb_output = brw_ud1_grf(0, 6);
 
-   if (v.stage == MESA_SHADER_MESH)
+   urb_output = v.bld.vgrf(BRW_REGISTER_TYPE_UD);
+   /* In both mesh and task shader payload, lower 16 bits of g0.6 is
+    * an offset within Slice's Local URB, which says where shader is
+    * supposed to output its data.
+    */
+   v.bld.AND(urb_output, brw_ud1_grf(0, 6), brw_imm_ud(0xFFFF));
+
+   if (v.stage == MESA_SHADER_MESH) {
+      /* g0.7 is Task Shader URB Entry Offset, which contains both an offset
+       * within Slice's Local USB (bits 0:15) and a slice selector
+       * (bits 16:24). Slice selector can be non zero when mesh shader
+       * is spawned on slice other than the one where task shader was run.
+       * Bit 24 says that Slice ID is present and bits 16:23 is the Slice ID.
+       */
       task_urb_input = brw_ud1_grf(0, 7);
+   }
    r++;
 
    local_index = brw_uw8_grf(1, 0);

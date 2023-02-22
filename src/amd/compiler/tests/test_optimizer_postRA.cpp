@@ -409,6 +409,22 @@ BEGIN_TEST(optimizer_postRA.dpp)
    res7->vop3().abs[0] = true;
    writeout(7, Operand(res7, reg_v2));
 
+   //! v1: %tmp12:v[2] = v_mov_b32 -%a:v[0] row_mirror bound_ctrl:1
+   //! v1: %res12:v[2] = v_add_u32 %tmp12:v[2], %b:v[1]
+   //! p_unit_test 12, %res12:v[2]
+   auto tmp12 = bld.vop1_dpp(aco_opcode::v_mov_b32, bld.def(v1, reg_v2), a, dpp_row_mirror);
+   tmp12->dpp16().neg[0] = true;
+   Temp res12 = bld.vop2(aco_opcode::v_add_u32, bld.def(v1, reg_v2), Operand(tmp12, reg_v2), b);
+   writeout(12, Operand(res12, reg_v2));
+
+   //! v1: %tmp13:v[2] = v_mov_b32 -%a:v[0] row_mirror bound_ctrl:1
+   //! v1: %res13:v[2] = v_add_f16 %tmp13:v[2], %b:v[1]
+   //! p_unit_test 13, %res13:v[2]
+   auto tmp13 = bld.vop1_dpp(aco_opcode::v_mov_b32, bld.def(v1, reg_v2), a, dpp_row_mirror);
+   tmp13->dpp16().neg[0] = true;
+   Temp res13 = bld.vop2(aco_opcode::v_add_f16, bld.def(v1, reg_v2), Operand(tmp13, reg_v2), b);
+   writeout(13, Operand(res13, reg_v2));
+
    /* vcc */
    //! v1: %res8:v[2] = v_cndmask_b32 %a:v[0], %b:v[1], %c:vcc row_mirror bound_ctrl:1
    //! p_unit_test 8, %res8:v[2]

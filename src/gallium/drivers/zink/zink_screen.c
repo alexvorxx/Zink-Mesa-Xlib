@@ -2577,6 +2577,11 @@ init_driver_workarounds(struct zink_screen *screen)
       screen->driver_workarounds.no_linesmooth = true;
    }
 
+   screen->driver_workarounds.extra_swapchain_images = 0;
+   if (screen->info.driver_props.driverID == VK_DRIVER_ID_MESA_VENUS) {
+      screen->driver_workarounds.extra_swapchain_images = 1;
+   }
+
    /* This is a workarround for the lack of
     * gl_PointSize + glPolygonMode(..., GL_LINE), in the imagination
     * proprietary driver.
@@ -2883,9 +2888,6 @@ zink_internal_create_screen(const struct pipe_screen_config *config)
       screen->desc_set_id[ZINK_DESCRIPTOR_TYPE_IMAGE] = 4;
       screen->desc_set_id[ZINK_DESCRIPTOR_BINDLESS] = 5;
    }
-   if (zink_descriptor_mode == ZINK_DESCRIPTOR_MODE_AUTO) {
-      zink_descriptor_mode = ZINK_DESCRIPTOR_MODE_LAZY;
-   }
 
    if (screen->info.have_EXT_calibrated_timestamps && !check_have_device_time(screen))
       goto fail;
@@ -3021,35 +3023,70 @@ zink_internal_create_screen(const struct pipe_screen_config *config)
          screen->resizable_bar = true;
    }
 
-   if (zink_descriptor_mode == ZINK_DESCRIPTOR_MODE_DB) {
+   bool can_db = true;
+   {
       if (!screen->info.have_EXT_descriptor_buffer) {
-         mesa_loge("Cannot use db descriptor mode without EXT_descriptor_buffer");
-         goto fail;
+         if (zink_descriptor_mode == ZINK_DESCRIPTOR_MODE_DB) {
+            mesa_loge("Cannot use db descriptor mode without EXT_descriptor_buffer");
+            goto fail;
+         }
+         can_db = false;
       }
       if (!screen->resizable_bar) {
-         mesa_loge("Cannot use db descriptor mode without resizable bar");
-         goto fail;
+         if (zink_descriptor_mode == ZINK_DESCRIPTOR_MODE_DB) {
+            mesa_loge("Cannot use db descriptor mode without resizable bar");
+            goto fail;
+         }
+         can_db = false;
       }
       if (!screen->info.have_EXT_non_seamless_cube_map) {
-         mesa_loge("Cannot use db descriptor mode without EXT_non_seamless_cube_map");
-         goto fail;
+         if (zink_descriptor_mode == ZINK_DESCRIPTOR_MODE_DB) {
+            mesa_loge("Cannot use db descriptor mode without EXT_non_seamless_cube_map");
+            goto fail;
+         }
+         can_db = false;
       }
       if (!screen->info.rb2_feats.nullDescriptor) {
-         mesa_loge("Cannot use db descriptor mode without robustness2.nullDescriptor");
-         goto fail;
+         if (zink_descriptor_mode == ZINK_DESCRIPTOR_MODE_DB) {
+            mesa_loge("Cannot use db descriptor mode without robustness2.nullDescriptor");
+            goto fail;
+         }
+         can_db = false;
+      }
+      if (ZINK_FBFETCH_DESCRIPTOR_SIZE < screen->info.db_props.inputAttachmentDescriptorSize) {
+         if (zink_descriptor_mode == ZINK_DESCRIPTOR_MODE_DB) {
+            mesa_loge("Cannot use db descriptor mode with inputAttachmentDescriptorSize(%u) > %u", (unsigned)screen->info.db_props.inputAttachmentDescriptorSize, ZINK_FBFETCH_DESCRIPTOR_SIZE);
+            goto fail;
+         }
+         mesa_logw("zink: bug detected: inputAttachmentDescriptorSize(%u) > %u", (unsigned)screen->info.db_props.inputAttachmentDescriptorSize, ZINK_FBFETCH_DESCRIPTOR_SIZE);
+         can_db = false;
       }
       if (screen->compact_descriptors) {
-         /* TODO: bindless */
          if (screen->info.db_props.maxDescriptorBufferBindings < 3) {
-            mesa_loge("Cannot use db descriptor mode with compact descriptors with maxDescriptorBufferBindings < 3");
-            goto fail;
+            if (zink_descriptor_mode == ZINK_DESCRIPTOR_MODE_DB) {
+               mesa_loge("Cannot use db descriptor mode with compact descriptors with maxDescriptorBufferBindings < 3");
+               goto fail;
+            }
+            can_db = false;
          }
       } else {
          if (screen->info.db_props.maxDescriptorBufferBindings < 5) {
-            mesa_loge("Cannot use db descriptor mode with maxDescriptorBufferBindings < 5");
-            goto fail;
+            if (zink_descriptor_mode == ZINK_DESCRIPTOR_MODE_DB) {
+               mesa_loge("Cannot use db descriptor mode with maxDescriptorBufferBindings < 5");
+               goto fail;
+            }
+            can_db = false;
          }
       }
+   }
+   if (zink_descriptor_mode == ZINK_DESCRIPTOR_MODE_AUTO) {
+      /* descriptor buffer is not performant with virt yet */
+      if (screen->info.driver_props.driverID == VK_DRIVER_ID_MESA_VENUS)
+         zink_descriptor_mode = ZINK_DESCRIPTOR_MODE_LAZY;
+      else
+         zink_descriptor_mode = can_db ? ZINK_DESCRIPTOR_MODE_DB : ZINK_DESCRIPTOR_MODE_LAZY;
+   }
+   if (zink_descriptor_mode == ZINK_DESCRIPTOR_MODE_DB) {
       const uint32_t sampler_size = MAX2(screen->info.db_props.combinedImageSamplerDescriptorSize, screen->info.db_props.robustUniformTexelBufferDescriptorSize);
       const uint32_t image_size = MAX2(screen->info.db_props.storageImageDescriptorSize, screen->info.db_props.robustStorageTexelBufferDescriptorSize);
       if (screen->compact_descriptors) {

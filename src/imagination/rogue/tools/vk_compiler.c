@@ -192,7 +192,7 @@ int main(int argc, char *argv[])
    }
 
    /* Create build context. */
-   ctx = rogue_build_context_create(compiler);
+   ctx = rogue_build_context_create(compiler, NULL);
    if (!ctx) {
       fprintf(stderr, "Failed to set up build context.\n");
       goto err_destroy_compiler;

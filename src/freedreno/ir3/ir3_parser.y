@@ -542,6 +542,7 @@ static void print_token(FILE *file, int type, YYSTYPE value)
 %token <tok> T_OP_QSHUFFLE_H
 %token <tok> T_OP_QSHUFFLE_V
 %token <tok> T_OP_QSHUFFLE_DIAG
+%token <tok> T_OP_TCINV
 
 /* category 6: */
 %token <tok> T_OP_LDG
@@ -620,6 +621,11 @@ static void print_token(FILE *file, int type, YYSTYPE value)
 /* category 7: */
 %token <tok> T_OP_BAR
 %token <tok> T_OP_FENCE
+%token <tok> T_OP_SLEEP
+%token <tok> T_OP_ICINV
+%token <tok> T_OP_DCCLN
+%token <tok> T_OP_DCINV
+%token <tok> T_OP_DCFLU
 
 %token <u64> T_RAW
 
@@ -1093,6 +1099,7 @@ cat5_instr:        cat5_opc_dsxypp cat5_flags dst_reg ',' src_reg
 |                  cat5_opc cat5_flags cat5_type dst_reg ',' cat5_samp
 |                  cat5_opc cat5_flags cat5_type dst_reg ',' cat5_tex
 |                  cat5_opc cat5_flags cat5_type dst_reg
+|                  T_OP_TCINV { new_instr(OPC_TCINV); }
 
 cat6_typed:        '.' T_UNTYPED  { instr->cat6.typed = 0; }
 |                  '.' T_TYPED    { instr->cat6.typed = 1; }
@@ -1283,7 +1290,14 @@ cat7_scopes:
 cat7_barrier:      T_OP_BAR                { new_instr(OPC_BAR); } cat7_scopes
 |                  T_OP_FENCE              { new_instr(OPC_FENCE); } cat7_scopes
 
+cat7_data_cache:   T_OP_DCCLN              { new_instr(OPC_DCCLN); }
+|                  T_OP_DCINV              { new_instr(OPC_DCINV); }
+|                  T_OP_DCFLU              { new_instr(OPC_DCFLU); }
+
 cat7_instr:        cat7_barrier
+|                  cat7_data_cache
+|                  T_OP_SLEEP              { new_instr(OPC_SLEEP); }
+|                  T_OP_ICINV              { new_instr(OPC_ICINV); }
 
 raw_instr: T_RAW   {new_instr(OPC_META_RAW)->raw.value = $1;}
 

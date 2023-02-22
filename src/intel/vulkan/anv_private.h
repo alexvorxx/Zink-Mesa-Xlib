@@ -67,6 +67,7 @@
 #include "util/u_math.h"
 #include "util/vma.h"
 #include "util/xmlconfig.h"
+#include "vk_acceleration_structure.h"
 #include "vk_alloc.h"
 #include "vk_buffer.h"
 #include "vk_command_buffer.h"
@@ -107,7 +108,6 @@ struct anv_batch;
 struct anv_buffer;
 struct anv_buffer_view;
 struct anv_image_view;
-struct anv_acceleration_structure;
 struct anv_instance;
 
 struct intel_aux_map_context;
@@ -1779,7 +1779,7 @@ struct anv_descriptor {
 
       struct anv_buffer_view *buffer_view;
 
-      struct anv_acceleration_structure *accel_struct;
+      struct vk_acceleration_structure *accel_struct;
    };
 };
 
@@ -1941,7 +1941,7 @@ anv_descriptor_write_surface_state(struct anv_device *device,
 void
 anv_descriptor_set_write_acceleration_structure(struct anv_device *device,
                                                 struct anv_descriptor_set *set,
-                                                struct anv_acceleration_structure *accel,
+                                                struct vk_acceleration_structure *accel,
                                                 uint32_t binding,
                                                 uint32_t element);
 
@@ -4132,13 +4132,6 @@ static inline uint32_t khr_perf_query_preamble_offset(const struct anv_query_poo
    return pool->pass_size * pass + 8;
 }
 
-struct anv_acceleration_structure {
-   struct vk_object_base                        base;
-
-   VkDeviceSize                                 size;
-   struct anv_address                           address;
-};
-
 struct anv_vid_mem {
    struct anv_device_memory *mem;
    VkDeviceSize       offset;
@@ -4283,9 +4276,6 @@ VK_DEFINE_HANDLE_CASTS(anv_physical_device, vk.base, VkPhysicalDevice,
                        VK_OBJECT_TYPE_PHYSICAL_DEVICE)
 VK_DEFINE_HANDLE_CASTS(anv_queue, vk.base, VkQueue, VK_OBJECT_TYPE_QUEUE)
 
-VK_DEFINE_NONDISP_HANDLE_CASTS(anv_acceleration_structure, base,
-                               VkAccelerationStructureKHR,
-                               VK_OBJECT_TYPE_ACCELERATION_STRUCTURE_KHR)
 VK_DEFINE_NONDISP_HANDLE_CASTS(anv_buffer, vk.base, VkBuffer,
                                VK_OBJECT_TYPE_BUFFER)
 VK_DEFINE_NONDISP_HANDLE_CASTS(anv_buffer_view, base, VkBufferView,

@@ -24,6 +24,11 @@ dEQP-GLES2.functional.shaders.loops.*dynamic.*vertex
 KHR-GLES2.texture_3d.filtering.sizes.3x7x5_linear_mipmap_linear
 KHR-GLES2.texture_3d.filtering.sizes.4x8x8_linear_mipmap_linear
 
+# Hangs the runner
+# https://gitlab.freedesktop.org/mesa/mesa/-/issues/8343
+wayland-dEQP-EGL.functional.buffer_age.no_preserve.*
+wayland-dEQP-EGL.functional.swap_buffers_with_damage.*
+
 # Slow tests (> 1 minute to run)
 spec@ext_framebuffer_multisample@accuracy
 glx@glx-multithread-texture

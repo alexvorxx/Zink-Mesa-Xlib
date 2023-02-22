@@ -956,7 +956,7 @@ is_sfu(struct ir3_instruction *instr)
 static inline bool
 is_tex(struct ir3_instruction *instr)
 {
-   return (opc_cat(instr->opc) == 5);
+   return (opc_cat(instr->opc) == 5) && instr->opc != OPC_TCINV;
 }
 
 static inline bool

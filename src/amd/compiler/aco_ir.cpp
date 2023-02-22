@@ -865,6 +865,13 @@ get_inverse(aco_opcode op)
 }
 
 aco_opcode
+get_swapped(aco_opcode op)
+{
+   CmpInfo info;
+   return get_cmp_info(op, &info) ? info.swapped : aco_opcode::num_opcodes;
+}
+
+aco_opcode
 get_f32_cmp(aco_opcode op)
 {
    CmpInfo info;

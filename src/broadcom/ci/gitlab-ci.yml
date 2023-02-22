@@ -41,7 +41,6 @@ vc4-rpi3-egl:armhf:
   extends:
     - .vc4-rpi3-test:armhf
   variables:
-    HWCI_START_XORG: 1
     HWCI_START_WESTON: 1
     DEQP_SUITE: broadcom-rpi3-egl
 
@@ -77,7 +76,6 @@ v3d-rpi4-egl:armhf:
   extends:
     - .v3d-rpi4-test:armhf
   variables:
-    HWCI_START_XORG: 1
     HWCI_START_WESTON: 1
     DEQP_SUITE: broadcom-rpi4-egl
 

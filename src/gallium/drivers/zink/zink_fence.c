@@ -32,6 +32,11 @@
 #include "util/set.h"
 #include "util/u_memory.h"
 
+#ifdef _WIN32
+#include <windows.h>
+#include <vulkan/vulkan_win32.h>
+#endif
+
 static void
 destroy_fence(struct zink_screen *screen, struct zink_tc_fence *mfence)
 {

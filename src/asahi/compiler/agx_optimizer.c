@@ -132,7 +132,13 @@ agx_optimizer_inline_imm(agx_instr **defs, agx_instr *I, unsigned srcs,
          continue;
       if (I->op == AGX_OPCODE_ZS_EMIT && s != 0)
          continue;
-      if (I->op == AGX_OPCODE_DEVICE_STORE && s != 2)
+      if ((I->op == AGX_OPCODE_DEVICE_STORE ||
+           I->op == AGX_OPCODE_LOCAL_STORE || I->op == AGX_OPCODE_ATOMIC ||
+           I->op == AGX_OPCODE_LOCAL_ATOMIC) &&
+          s != 2)
+         continue;
+      if ((I->op == AGX_OPCODE_LOCAL_LOAD || I->op == AGX_OPCODE_DEVICE_LOAD) &&
+          s != 1)
          continue;
 
       if (float_src) {
@@ -190,7 +196,8 @@ agx_optimizer_copyprop(agx_instr **defs, agx_instr *I)
       /* ALU instructions cannot take 64-bit */
       if (def->src[0].size == AGX_SIZE_64 &&
           !(I->op == AGX_OPCODE_DEVICE_LOAD && s == 0) &&
-          !(I->op == AGX_OPCODE_DEVICE_STORE && s == 1))
+          !(I->op == AGX_OPCODE_DEVICE_STORE && s == 1) &&
+          !(I->op == AGX_OPCODE_ATOMIC && s == 1))
          continue;
 
       agx_replace_src(I, s, def->src[0]);

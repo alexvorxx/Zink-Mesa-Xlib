@@ -27,6 +27,7 @@
 
 
 #include "compiler/nir/nir.h"
+#include "util/u_helpers.h"
 #include "util/u_memory.h"
 #include "util/format/u_format.h"
 #include "util/format/u_format_s3tc.h"
@@ -282,6 +283,8 @@ softpipe_get_param(struct pipe_screen *screen, enum pipe_cap param)
    }
    case PIPE_CAP_UMA:
       return 0;
+   case PIPE_CAP_QUERY_MEMORY_INFO:
+      return 1;
    case PIPE_CAP_CONDITIONAL_RENDER_INVERTED:
       return 1;
    case PIPE_CAP_CLIP_HALFZ:
@@ -594,6 +597,7 @@ softpipe_create_screen(struct sw_winsys *winsys)
    screen->base.get_shader_param = softpipe_get_shader_param;
    screen->base.get_paramf = softpipe_get_paramf;
    screen->base.get_timestamp = u_default_get_timestamp;
+   screen->base.query_memory_info = util_sw_query_memory_info;
    screen->base.is_format_supported = softpipe_is_format_supported;
    screen->base.context_create = softpipe_create_context;
    screen->base.flush_frontbuffer = softpipe_flush_frontbuffer;

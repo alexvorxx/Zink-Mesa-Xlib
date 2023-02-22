@@ -499,6 +499,22 @@ nir_push_loop(nir_builder *build)
    return loop;
 }
 
+nir_loop *
+nir_push_continue(nir_builder *build, nir_loop *loop)
+{
+   if (loop) {
+      assert(nir_builder_is_inside_cf(build, &loop->cf_node));
+   } else {
+      nir_block *block = nir_cursor_current_block(build->cursor);
+      loop = nir_cf_node_as_loop(block->cf_node.parent);
+   }
+
+   nir_loop_add_continue_construct(loop);
+
+   build->cursor = nir_before_cf_list(&loop->continue_list);
+   return loop;
+}
+
 void
 nir_pop_loop(nir_builder *build, nir_loop *loop)
 {

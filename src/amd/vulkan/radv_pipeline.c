@@ -3830,16 +3830,18 @@ radv_pipeline_emit_hw_vs(struct radeon_cmdbuf *ctx_cs, struct radeon_cmdbuf *cs,
          S_02870C_POS3_EXPORT_FORMAT(outinfo->pos_exports > 3 ? V_02870C_SPI_SHADER_4COMP
                                                               : V_02870C_SPI_SHADER_NONE));
 
-   radeon_set_context_reg(ctx_cs, R_02881C_PA_CL_VS_OUT_CNTL,
-                          S_02881C_USE_VTX_POINT_SIZE(outinfo->writes_pointsize) |
-                             S_02881C_USE_VTX_RENDER_TARGET_INDX(outinfo->writes_layer) |
-                             S_02881C_USE_VTX_VIEWPORT_INDX(outinfo->writes_viewport_index) |
-                             S_02881C_USE_VTX_VRS_RATE(outinfo->writes_primitive_shading_rate) |
-                             S_02881C_VS_OUT_MISC_VEC_ENA(misc_vec_ena) |
-                             S_02881C_VS_OUT_MISC_SIDE_BUS_ENA(misc_vec_ena) |
-                             S_02881C_VS_OUT_CCDIST0_VEC_ENA((total_mask & 0x0f) != 0) |
-                             S_02881C_VS_OUT_CCDIST1_VEC_ENA((total_mask & 0xf0) != 0) |
-                             total_mask << 8 | clip_dist_mask);
+   radeon_set_context_reg(
+      ctx_cs, R_02881C_PA_CL_VS_OUT_CNTL,
+      S_02881C_USE_VTX_POINT_SIZE(outinfo->writes_pointsize) |
+         S_02881C_USE_VTX_RENDER_TARGET_INDX(outinfo->writes_layer) |
+         S_02881C_USE_VTX_VIEWPORT_INDX(outinfo->writes_viewport_index) |
+         S_02881C_USE_VTX_VRS_RATE(outinfo->writes_primitive_shading_rate) |
+         S_02881C_VS_OUT_MISC_VEC_ENA(misc_vec_ena) |
+         S_02881C_VS_OUT_MISC_SIDE_BUS_ENA(
+            misc_vec_ena || (pdevice->rad_info.gfx_level >= GFX10_3 && outinfo->pos_exports > 1)) |
+         S_02881C_VS_OUT_CCDIST0_VEC_ENA((total_mask & 0x0f) != 0) |
+         S_02881C_VS_OUT_CCDIST1_VEC_ENA((total_mask & 0xf0) != 0) | total_mask << 8 |
+         clip_dist_mask);
 
    if (pdevice->rad_info.gfx_level <= GFX8)
       radeon_set_context_reg(ctx_cs, R_028AB4_VGT_REUSE_OFF, outinfo->writes_viewport_index);
@@ -3955,16 +3957,18 @@ radv_pipeline_emit_hw_ngg(struct radeon_cmdbuf *ctx_cs, struct radeon_cmdbuf *cs
          S_02870C_POS3_EXPORT_FORMAT(outinfo->pos_exports > 3 ? V_02870C_SPI_SHADER_4COMP
                                                               : V_02870C_SPI_SHADER_NONE));
 
-   radeon_set_context_reg(ctx_cs, R_02881C_PA_CL_VS_OUT_CNTL,
-                          S_02881C_USE_VTX_POINT_SIZE(outinfo->writes_pointsize) |
-                             S_02881C_USE_VTX_RENDER_TARGET_INDX(outinfo->writes_layer) |
-                             S_02881C_USE_VTX_VIEWPORT_INDX(outinfo->writes_viewport_index) |
-                             S_02881C_USE_VTX_VRS_RATE(outinfo->writes_primitive_shading_rate) |
-                             S_02881C_VS_OUT_MISC_VEC_ENA(misc_vec_ena) |
-                             S_02881C_VS_OUT_MISC_SIDE_BUS_ENA(misc_vec_ena) |
-                             S_02881C_VS_OUT_CCDIST0_VEC_ENA((total_mask & 0x0f) != 0) |
-                             S_02881C_VS_OUT_CCDIST1_VEC_ENA((total_mask & 0xf0) != 0) |
-                             total_mask << 8 | clip_dist_mask);
+   radeon_set_context_reg(
+      ctx_cs, R_02881C_PA_CL_VS_OUT_CNTL,
+      S_02881C_USE_VTX_POINT_SIZE(outinfo->writes_pointsize) |
+         S_02881C_USE_VTX_RENDER_TARGET_INDX(outinfo->writes_layer) |
+         S_02881C_USE_VTX_VIEWPORT_INDX(outinfo->writes_viewport_index) |
+         S_02881C_USE_VTX_VRS_RATE(outinfo->writes_primitive_shading_rate) |
+         S_02881C_VS_OUT_MISC_VEC_ENA(misc_vec_ena) |
+         S_02881C_VS_OUT_MISC_SIDE_BUS_ENA(
+            misc_vec_ena || (pdevice->rad_info.gfx_level >= GFX10_3 && outinfo->pos_exports > 1)) |
+         S_02881C_VS_OUT_CCDIST0_VEC_ENA((total_mask & 0x0f) != 0) |
+         S_02881C_VS_OUT_CCDIST1_VEC_ENA((total_mask & 0xf0) != 0) | total_mask << 8 |
+         clip_dist_mask);
 
    radeon_set_context_reg(ctx_cs, R_028A84_VGT_PRIMITIVEID_EN,
                           S_028A84_PRIMITIVEID_EN(es_enable_prim_id) |

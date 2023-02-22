@@ -189,9 +189,6 @@ remap_patch_urb_offsets(nir_block *block, nir_builder *b,
                         const struct brw_vue_map *vue_map,
                         enum tess_primitive_mode tes_primitive_mode)
 {
-   const bool is_passthrough_tcs = b->shader->info.name &&
-      strcmp(b->shader->info.name, "passthrough TCS") == 0;
-
    nir_foreach_instr_safe(instr, block) {
       if (instr->type != nir_instr_type_intrinsic)
          continue;
@@ -203,8 +200,7 @@ remap_patch_urb_offsets(nir_block *block, nir_builder *b,
       if ((stage == MESA_SHADER_TESS_CTRL && is_output(intrin)) ||
           (stage == MESA_SHADER_TESS_EVAL && is_input(intrin))) {
 
-         if (!is_passthrough_tcs &&
-             remap_tess_levels(b, intrin, tes_primitive_mode))
+         if (remap_tess_levels(b, intrin, tes_primitive_mode))
             continue;
 
          int vue_slot = vue_map->varying_to_slot[intrin->const_index[0]];
@@ -1858,50 +1854,21 @@ brw_nir_create_passthrough_tcs(void *mem_ctx, const struct brw_compiler *compile
 {
    const nir_shader_compiler_options *options =
       compiler->nir_options[MESA_SHADER_TESS_CTRL];
-   nir_builder b = nir_builder_init_simple_shader(MESA_SHADER_TESS_CTRL,
-                                                  options, "passthrough TCS");
-   ralloc_steal(mem_ctx, b.shader);
-   nir_shader *nir = b.shader;
-   nir_variable *var;
-   nir_ssa_def *load;
-   nir_ssa_def *zero = nir_imm_int(&b, 0);
-   nir_ssa_def *invoc_id = nir_load_invocation_id(&b);
 
-   nir->info.inputs_read = key->outputs_written &
+   uint64_t inputs_read = key->outputs_written &
       ~(VARYING_BIT_TESS_LEVEL_INNER | VARYING_BIT_TESS_LEVEL_OUTER);
-   nir->info.outputs_written = key->outputs_written;
-   nir->info.tess.tcs_vertices_out = key->input_vertices;
-   nir->num_uniforms = 8 * sizeof(uint32_t);
 
-   var = nir_variable_create(nir, nir_var_uniform, glsl_vec4_type(), "hdr_0");
-   var->data.location = 0;
-   var = nir_variable_create(nir, nir_var_uniform, glsl_vec4_type(), "hdr_1");
-   var->data.location = 1;
+   unsigned locations[64];
+   unsigned num_locations = 0;
 
-   /* Write the patch URB header. */
-   for (int i = 0; i <= 1; i++) {
-      load = nir_load_uniform(&b, 4, 32, zero, .base = i * 4 * sizeof(uint32_t));
+   u_foreach_bit64(varying, inputs_read)
+      locations[num_locations++] = varying;
 
-      nir_store_output(&b, load, zero,
-                       .base = VARYING_SLOT_TESS_LEVEL_INNER - i,
-                       .write_mask = WRITEMASK_XYZW);
-   }
-
-   /* Copy inputs to outputs. */
-   uint64_t varyings = nir->info.inputs_read;
-
-   while (varyings != 0) {
-      const int varying = ffsll(varyings) - 1;
-
-      load = nir_load_per_vertex_input(&b, 4, 32, invoc_id, zero, .base = varying);
-
-      nir_store_per_vertex_output(&b, load, invoc_id, zero,
-                                  .base = varying,
-                                  .write_mask = WRITEMASK_XYZW);
-
-      varyings &= ~BITFIELD64_BIT(varying);
-   }
-
+   nir_shader *nir =
+      nir_create_passthrough_tcs_impl(options, locations, num_locations,
+                                      key->input_vertices);
+   nir->info.inputs_read = inputs_read;
+   nir->info.tess._primitive_mode = key->_tes_primitive_mode;
    nir_validate_shader(nir, "in brw_nir_create_passthrough_tcs");
 
    struct brw_nir_compiler_opts opts = {};

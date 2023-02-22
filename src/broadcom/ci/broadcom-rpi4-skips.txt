@@ -18,6 +18,11 @@ spec@glsl-3.*
 spec@glsl-4.*
 spec@glsl-es-3.20.*
 
+# Hangs the runner
+# https://gitlab.freedesktop.org/mesa/mesa/-/issues/8343
+wayland-dEQP-EGL.functional.buffer_age.no_preserve.*
+wayland-dEQP-EGL.functional.swap_buffers_with_damage.*
+
 # Broadcom waivers
 dEQP-VK.draw.inverted_depth_ranges.nodepthclamp_deltazero
 dEQP-VK.rasterization.depth_bias.d32_sfloat

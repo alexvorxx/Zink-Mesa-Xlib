@@ -2050,6 +2050,7 @@ static void ntq_emit_cf_list(struct vc4_compile *c, struct exec_list *list);
 static void
 ntq_emit_loop(struct vc4_compile *c, nir_loop *loop)
 {
+        assert(!nir_loop_has_continue_construct(loop));
         if (!c->vc4->screen->has_control_flow) {
                 fprintf(stderr,
                         "loop support requires updated kernel.\n");

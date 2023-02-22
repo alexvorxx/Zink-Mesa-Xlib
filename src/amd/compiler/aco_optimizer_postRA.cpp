@@ -511,6 +511,11 @@ try_combine_dpp(pr_opt_ctx& ctx, aco_ptr<Instruction>& instr)
       if (i && !can_swap_operands(instr, &instr->opcode))
          continue;
 
+      bool input_mods = instr_info.can_use_input_modifiers[(int)instr->opcode] &&
+                        instr_info.operand_size[(int)instr->opcode] == 32;
+      if (!dpp8 && (mov->dpp16().neg[0] || mov->dpp16().abs[0]) && !input_mods)
+         continue;
+
       if (!dpp8) /* anything else doesn't make sense in SSA */
          assert(mov->dpp16().row_mask == 0xf && mov->dpp16().bank_mask == 0xf);
 

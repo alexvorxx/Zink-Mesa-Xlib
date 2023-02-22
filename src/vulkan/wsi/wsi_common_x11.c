@@ -629,7 +629,7 @@ x11_surface_get_support(VkIcdSurfaceBase *icd_surface,
 }
 
 static uint32_t
-x11_get_min_image_count(const struct wsi_device *wsi_device)
+x11_get_min_image_count(const struct wsi_device *wsi_device, bool is_xwayland)
 {
    if (wsi_device->x11.override_minImageCount)
       return wsi_device->x11.override_minImageCount;
@@ -651,8 +651,11 @@ x11_get_min_image_count(const struct wsi_device *wsi_device)
     *
     * This is a tradeoff as it uses more memory than needed for non-fullscreen
     * and non-performance intensive applications.
+    *
+    * For Xwayland we report four images as describes in
+    *   wsi_wl_surface_get_capabilities
     */
-   return 3;
+   return is_xwayland ? 4 : 3;
 }
 
 static VkResult
@@ -662,6 +665,8 @@ x11_surface_get_capabilities(VkIcdSurfaceBase *icd_surface,
 {
    xcb_connection_t *conn = x11_surface_get_connection(icd_surface);
    xcb_window_t window = x11_surface_get_window(icd_surface);
+   struct wsi_x11_connection *wsi_conn =
+      wsi_x11_get_connection(wsi_device, conn);
    xcb_get_geometry_cookie_t geom_cookie;
    xcb_generic_error_t *err;
    xcb_get_geometry_reply_t *geom;
@@ -698,7 +703,7 @@ x11_surface_get_capabilities(VkIcdSurfaceBase *icd_surface,
                                       VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
    }
 
-   caps->minImageCount = x11_get_min_image_count(wsi_device);
+   caps->minImageCount = x11_get_min_image_count(wsi_device, wsi_conn->is_xwayland);
    /* There is no real maximum */
    caps->maxImageCount = 0;
 
@@ -1871,7 +1876,7 @@ x11_manage_fifo_queues(void *state)
          /* Assume this isn't a swapchain where we force 5 images, because those
           * don't end up with an acquire queue at the moment.
           */
-         unsigned min_image_count = x11_get_min_image_count(chain->base.wsi);
+         unsigned min_image_count = x11_get_min_image_count(chain->base.wsi, wsi_conn->is_xwayland);
 
          /* With drirc overrides some games have swapchain with less than
           * minimum number of images. */
@@ -2477,7 +2482,7 @@ x11_surface_create_swapchain(VkIcdSurfaceBase *icd_surface,
    else if (x11_needs_wait_for_fences(wsi_device, wsi_conn, present_mode))
       num_images = MAX2(num_images, 5);
    else if (wsi_device->x11.ensure_minImageCount)
-      num_images = MAX2(num_images, x11_get_min_image_count(wsi_device));
+      num_images = MAX2(num_images, x11_get_min_image_count(wsi_device, wsi_conn->is_xwayland));
 
    /* Check that we have a window up-front. It is an error to not have one. */
    xcb_window_t window = x11_surface_get_window(icd_surface);

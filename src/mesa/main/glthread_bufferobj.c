@@ -38,6 +38,7 @@ new_upload_buffer(struct gl_context *ctx, GLsizeiptr size, uint8_t **ptr)
       return NULL;
 
    obj->Immutable = true;
+   obj->GLThreadInternal = true;
 
    if (!_mesa_bufferobj_data(ctx, GL_ARRAY_BUFFER, size, NULL,
                           GL_WRITE_ONLY,
@@ -505,6 +506,7 @@ _mesa_marshal_BufferSubData_merged(GLuint target_or_name, GLintptr offset,
     *       the buffer storage, but we don't know the buffer size in glthread.
     */
    if (ctx->Const.AllowGLThreadBufferSubDataOpt &&
+       ctx->CurrentServerDispatch != ctx->ContextLost &&
        data && offset > 0 && size > 0) {
       struct gl_buffer_object *upload_buffer = NULL;
       unsigned upload_offset = 0;

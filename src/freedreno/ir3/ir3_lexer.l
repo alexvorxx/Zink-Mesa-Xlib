@@ -302,6 +302,7 @@ static int parse_reg(const char *str)
 "quad_shuffle.horiz"              return TOKEN(T_OP_QSHUFFLE_H);
 "quad_shuffle.vert"               return TOKEN(T_OP_QSHUFFLE_V);
 "quad_shuffle.diag"               return TOKEN(T_OP_QSHUFFLE_DIAG);
+"tcinv"                           return TOKEN(T_OP_TCINV);
 
                                   /* category 6: */
 "ldg"                             return TOKEN(T_OP_LDG);
@@ -381,6 +382,11 @@ static int parse_reg(const char *str)
                                   /* category 7: */
 "bar"                             return TOKEN(T_OP_BAR);
 "fence"                           return TOKEN(T_OP_FENCE);
+"sleep.l"                         return TOKEN(T_OP_SLEEP);
+"icinv"                           return TOKEN(T_OP_ICINV);
+"dccln.all"                       return TOKEN(T_OP_DCCLN);
+"dcinv.all"                       return TOKEN(T_OP_DCINV);
+"dcflu.all"                       return TOKEN(T_OP_DCFLU);
 
 "f16"                             return TOKEN(T_TYPE_F16);
 "f32"                             return TOKEN(T_TYPE_F32);

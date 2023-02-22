@@ -1064,6 +1064,22 @@ BEGIN_TEST(optimizer.dpp)
    res7->vop3().abs[0] = true;
    writeout(7, res7);
 
+   //! v1: %tmp11 = v_mov_b32 -%a row_mirror bound_ctrl:1
+   //! v1: %res11 = v_add_u32 %tmp11, %b
+   //! p_unit_test 11, %res11
+   auto tmp11 = bld.vop1_dpp(aco_opcode::v_mov_b32, bld.def(v1), a, dpp_row_mirror);
+   tmp11->dpp16().neg[0] = true;
+   Temp res11 = bld.vop2(aco_opcode::v_add_u32, bld.def(v1), tmp11, b);
+   writeout(11, res11);
+
+   //! v1: %tmp12 = v_mov_b32 -%a row_mirror bound_ctrl:1
+   //! v1: %res12 = v_add_f16 %tmp12, %b
+   //! p_unit_test 12, %res12
+   auto tmp12 = bld.vop1_dpp(aco_opcode::v_mov_b32, bld.def(v1), a, dpp_row_mirror);
+   tmp12->dpp16().neg[0] = true;
+   Temp res12 = bld.vop2(aco_opcode::v_add_f16, bld.def(v1), tmp12, b);
+   writeout(12, res12);
+
    /* vcc */
    //! v1: %res8 = v_cndmask_b32 %a, %b, %c:vcc row_mirror bound_ctrl:1
    //! p_unit_test 8, %res8

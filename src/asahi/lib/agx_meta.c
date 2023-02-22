@@ -19,7 +19,7 @@ agx_compile_meta_shader(struct agx_meta_cache *cache, nir_shader *shader,
 
    agx_preprocess_nir(shader);
    if (tib)
-      agx_nir_lower_tilebuffer(shader, tib);
+      agx_nir_lower_tilebuffer(shader, tib, NULL, NULL);
 
    struct agx_meta_shader *res = rzalloc(cache->ht, struct agx_meta_shader);
    agx_compile_shader_nir(shader, key, NULL, &binary, &res->info);

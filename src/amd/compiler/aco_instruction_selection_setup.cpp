@@ -167,6 +167,7 @@ sanitize_cf_list(nir_function_impl* impl, struct exec_list* cf_list)
       }
       case nir_cf_node_loop: {
          nir_loop* loop = nir_cf_node_as_loop(cf_node);
+         assert(!nir_loop_has_continue_construct(loop));
          progress |= sanitize_cf_list(impl, &loop->body);
          break;
       }

@@ -460,6 +460,21 @@ util_throttle_memory_usage(struct pipe_context *pipe,
    t->ring[t->flush_index].mem_usage += memory_size;
 }
 
+void
+util_sw_query_memory_info(struct pipe_screen *pscreen,
+                          struct pipe_memory_info *info)
+{
+   /* Provide query_memory_info from CPU reported memory */
+   uint64_t size;
+
+   if (!os_get_available_system_memory(&size))
+      return;
+   info->avail_staging_memory = size / 1024;
+   if (!os_get_total_physical_memory(&size))
+      return;
+   info->total_staging_memory = size / 1024;
+}
+
 bool
 util_lower_clearsize_to_dword(const void *clearValue, int *clearValueSize, uint32_t *clamped)
 {

@@ -27,9 +27,9 @@
 #include <string.h>
 
 #include "util/mesa-sha1.h"
-#include "radv_acceleration_structure.h"
 #include "radv_private.h"
 #include "sid.h"
+#include "vk_acceleration_structure.h"
 #include "vk_descriptors.h"
 #include "vk_format.h"
 #include "vk_util.h"
@@ -1303,9 +1303,9 @@ static ALWAYS_INLINE void
 write_accel_struct(struct radv_device *device, void *ptr, VkDeviceAddress va)
 {
    if (!va) {
-      RADV_FROM_HANDLE(radv_acceleration_structure, accel_struct,
+      RADV_FROM_HANDLE(vk_acceleration_structure, accel_struct,
                        device->meta_state.accel_struct_build.null.accel_struct);
-      va = radv_acceleration_structure_get_va(accel_struct);
+      va = vk_acceleration_structure_get_va(accel_struct);
    }
 
    memcpy(ptr, &va, sizeof(va));
@@ -1403,11 +1403,11 @@ radv_update_descriptor_sets_impl(struct radv_device *device, struct radv_cmd_buf
             }
             break;
          case VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR: {
-            RADV_FROM_HANDLE(radv_acceleration_structure, accel_struct,
+            RADV_FROM_HANDLE(vk_acceleration_structure, accel_struct,
                              accel_structs->pAccelerationStructures[j]);
 
             write_accel_struct(device, ptr,
-                               accel_struct ? radv_acceleration_structure_get_va(accel_struct) : 0);
+                               accel_struct ? vk_acceleration_structure_get_va(accel_struct) : 0);
             break;
          }
          default:
@@ -1701,10 +1701,10 @@ radv_update_descriptor_set_with_template_impl(struct radv_device *device,
                memcpy(pDst, templ->entry[i].immutable_samplers + 4 * j, 16);
             break;
          case VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR: {
-            RADV_FROM_HANDLE(radv_acceleration_structure, accel_struct,
+            RADV_FROM_HANDLE(vk_acceleration_structure, accel_struct,
                              *(const VkAccelerationStructureKHR *)pSrc);
             write_accel_struct(device, pDst,
-                               accel_struct ? radv_acceleration_structure_get_va(accel_struct) : 0);
+                               accel_struct ? vk_acceleration_structure_get_va(accel_struct) : 0);
             break;
          }
          default:

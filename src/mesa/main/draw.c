@@ -294,7 +294,8 @@ static GLboolean
 _mesa_validate_MultiDrawElements(struct gl_context *ctx,
                                  GLenum mode, const GLsizei *count,
                                  GLenum type, const GLvoid * const *indices,
-                                 GLsizei primcount)
+                                 GLsizei primcount,
+                                 struct gl_buffer_object *index_bo)
 {
    GLenum error;
 
@@ -336,7 +337,7 @@ _mesa_validate_MultiDrawElements(struct gl_context *ctx,
 
    /* Not using a VBO for indices, so avoid NULL pointer derefs later.
     */
-   if (!ctx->Array.VAO->IndexBufferObj) {
+   if (!index_bo) {
       for (int i = 0; i < primcount; i++) {
          if (!indices[i])
             return GL_FALSE;
@@ -1199,7 +1200,7 @@ _mesa_draw_arrays(struct gl_context *ctx, GLenum mode, GLint start,
    draw.start = start;
    draw.count = count;
 
-   ctx->Driver.DrawGallium(ctx, &info, 0, &draw, 1);
+   ctx->Driver.DrawGallium(ctx, &info, ctx->DrawID, &draw, 1);
 
    if (MESA_DEBUG_FLAGS & DEBUG_ALWAYS_FLUSH) {
       _mesa_flush(ctx);
@@ -1589,7 +1590,9 @@ dump_element_buffer(struct gl_context *ctx, GLenum type)
  * we've validated buffer bounds, etc.
  */
 static void
-_mesa_validated_drawrangeelements(struct gl_context *ctx, GLenum mode,
+_mesa_validated_drawrangeelements(struct gl_context *ctx,
+                                  struct gl_buffer_object *index_bo,
+                                  GLenum mode,
                                   bool index_bounds_valid,
                                   GLuint start, GLuint end,
                                   GLsizei count, GLenum type,
@@ -1611,7 +1614,6 @@ _mesa_validated_drawrangeelements(struct gl_context *ctx, GLenum mode,
    struct pipe_draw_info info;
    struct pipe_draw_start_count_bias draw;
    unsigned index_size_shift = get_index_size_shift(type);
-   struct gl_buffer_object *index_bo = ctx->Array.VAO->IndexBufferObj;
 
    if (index_bo && !indices_aligned(index_size_shift, indices))
       return;
@@ -1692,7 +1694,7 @@ _mesa_validated_drawrangeelements(struct gl_context *ctx, GLenum mode,
     * for the latter case elsewhere.
     */
 
-   ctx->Driver.DrawGallium(ctx, &info, 0, &draw, 1);
+   ctx->Driver.DrawGallium(ctx, &info, ctx->DrawID, &draw, 1);
 
    if (MESA_DEBUG_FLAGS & DEBUG_ALWAYS_FLUSH) {
       _mesa_flush(ctx);
@@ -1785,7 +1787,8 @@ _mesa_DrawRangeElementsBaseVertex(GLenum mode, GLuint start, GLuint end,
       end = ~0;
    }
 
-   _mesa_validated_drawrangeelements(ctx, mode, index_bounds_valid, start, end,
+   _mesa_validated_drawrangeelements(ctx, ctx->Array.VAO->IndexBufferObj,
+                                     mode, index_bounds_valid, start, end,
                                      count, type, indices, basevertex, 1, 0);
 }
 
@@ -1819,7 +1822,8 @@ _mesa_DrawElements(GLenum mode, GLsizei count, GLenum type,
        !_mesa_validate_DrawElements(ctx, mode, count, type))
       return;
 
-   _mesa_validated_drawrangeelements(ctx, mode, false, 0, ~0,
+   _mesa_validated_drawrangeelements(ctx, ctx->Array.VAO->IndexBufferObj,
+                                     mode, false, 0, ~0,
                                      count, type, indices, 0, 1, 0);
 }
 
@@ -1841,7 +1845,8 @@ _mesa_DrawElementsBaseVertex(GLenum mode, GLsizei count, GLenum type,
        !_mesa_validate_DrawElements(ctx, mode, count, type))
       return;
 
-   _mesa_validated_drawrangeelements(ctx, mode, false, 0, ~0,
+   _mesa_validated_drawrangeelements(ctx, ctx->Array.VAO->IndexBufferObj,
+                                     mode, false, 0, ~0,
                                      count, type, indices, basevertex, 1, 0);
 }
 
@@ -1864,7 +1869,8 @@ _mesa_DrawElementsInstanced(GLenum mode, GLsizei count, GLenum type,
                                              numInstances))
       return;
 
-   _mesa_validated_drawrangeelements(ctx, mode, false, 0, ~0,
+   _mesa_validated_drawrangeelements(ctx, ctx->Array.VAO->IndexBufferObj,
+                                     mode, false, 0, ~0,
                                      count, type, indices, 0, numInstances, 0);
 }
 
@@ -1889,7 +1895,8 @@ _mesa_DrawElementsInstancedBaseVertex(GLenum mode, GLsizei count,
                                              numInstances))
       return;
 
-   _mesa_validated_drawrangeelements(ctx, mode, false, 0, ~0,
+   _mesa_validated_drawrangeelements(ctx, ctx->Array.VAO->IndexBufferObj,
+                                     mode, false, 0, ~0,
                                      count, type, indices,
                                      basevertex, numInstances, 0);
 }
@@ -1916,7 +1923,8 @@ _mesa_DrawElementsInstancedBaseInstance(GLenum mode, GLsizei count,
                                              numInstances))
       return;
 
-   _mesa_validated_drawrangeelements(ctx, mode, false, 0, ~0,
+   _mesa_validated_drawrangeelements(ctx, ctx->Array.VAO->IndexBufferObj,
+                                     mode, false, 0, ~0,
                                      count, type, indices, 0, numInstances,
                                      baseInstance);
 }
@@ -1945,7 +1953,40 @@ _mesa_DrawElementsInstancedBaseVertexBaseInstance(GLenum mode,
                                              numInstances))
       return;
 
-   _mesa_validated_drawrangeelements(ctx, mode, false, 0, ~0,
+   _mesa_validated_drawrangeelements(ctx, ctx->Array.VAO->IndexBufferObj,
+                                     mode, false, 0, ~0,
+                                     count, type, indices, basevertex,
+                                     numInstances, baseInstance);
+}
+
+/**
+ * Same as glDrawElementsInstancedBaseVertexBaseInstance, but the index
+ * buffer is set by the indexBuf parameter instead of using the bound
+ * GL_ELEMENT_ARRAY_BUFFER if indexBuf != NULL.
+ */
+void GLAPIENTRY
+_mesa_DrawElementsUserBuf(GLintptr indexBuf, GLenum mode,
+                          GLsizei count, GLenum type,
+                          const GLvoid *indices, GLsizei numInstances,
+                          GLint basevertex, GLuint baseInstance)
+{
+   GET_CURRENT_CONTEXT(ctx);
+   FLUSH_FOR_DRAW(ctx);
+
+   if (ctx->NewState)
+      _mesa_update_state(ctx);
+
+   if (!_mesa_is_no_error_enabled(ctx) &&
+       !_mesa_validate_DrawElementsInstanced(ctx, mode, count, type,
+                                             numInstances))
+      return;
+
+   struct gl_buffer_object *index_bo =
+      indexBuf ? (struct gl_buffer_object*)indexBuf :
+                 ctx->Array.VAO->IndexBufferObj;
+
+   _mesa_validated_drawrangeelements(ctx, index_bo,
+                                     mode, false, 0, ~0,
                                      count, type, indices, basevertex,
                                      numInstances, baseInstance);
 }
@@ -1957,9 +1998,10 @@ _mesa_DrawElementsInstancedBaseVertexBaseInstance(GLenum mode,
  * This does the actual rendering after we've checked array indexes, etc.
  */
 static void
-_mesa_validated_multidrawelements(struct gl_context *ctx, GLenum mode,
-                                  const GLsizei *count, GLenum type,
-                                  const GLvoid * const *indices,
+_mesa_validated_multidrawelements(struct gl_context *ctx,
+                                  struct gl_buffer_object *index_bo,
+                                  GLenum mode, const GLsizei *count,
+                                  GLenum type, const GLvoid * const *indices,
                                   GLsizei primcount, const GLint *basevertex)
 {
    uintptr_t min_index_ptr, max_index_ptr;
@@ -1974,9 +2016,11 @@ _mesa_validated_multidrawelements(struct gl_context *ctx, GLenum mode,
    min_index_ptr = (uintptr_t) indices[0];
    max_index_ptr = 0;
    for (i = 0; i < primcount; i++) {
-      min_index_ptr = MIN2(min_index_ptr, (uintptr_t) indices[i]);
-      max_index_ptr = MAX2(max_index_ptr, (uintptr_t) indices[i] +
-                           (count[i] << index_size_shift));
+      if (count[i]) {
+         min_index_ptr = MIN2(min_index_ptr, (uintptr_t) indices[i]);
+         max_index_ptr = MAX2(max_index_ptr, (uintptr_t) indices[i] +
+                              (count[i] << index_size_shift));
+      }
    }
 
    /* Check if we can handle this thing as a bunch of index offsets from the
@@ -1987,7 +2031,8 @@ _mesa_validated_multidrawelements(struct gl_context *ctx, GLenum mode,
     */
    if (index_size_shift) {
       for (i = 0; i < primcount; i++) {
-         if ((((uintptr_t) indices[i] - min_index_ptr) &
+         if (count[i] &&
+             (((uintptr_t)indices[i] - min_index_ptr) &
               ((1 << index_size_shift) - 1)) != 0) {
             fallback = true;
             break;
@@ -1995,7 +2040,6 @@ _mesa_validated_multidrawelements(struct gl_context *ctx, GLenum mode,
       }
    }
 
-   struct gl_buffer_object *index_bo = ctx->Array.VAO->IndexBufferObj;
    struct pipe_draw_info info;
 
    info.mode = mode;
@@ -2099,13 +2143,15 @@ _mesa_MultiDrawElements(GLenum mode, const GLsizei *count, GLenum type,
    if (ctx->NewState)
       _mesa_update_state(ctx);
 
+   struct gl_buffer_object *index_bo = ctx->Array.VAO->IndexBufferObj;
+
    if (!_mesa_is_no_error_enabled(ctx) &&
        !_mesa_validate_MultiDrawElements(ctx, mode, count, type, indices,
-                                         primcount))
+                                         primcount, index_bo))
       return;
 
-   _mesa_validated_multidrawelements(ctx, mode, count, type, indices, primcount,
-                                     NULL);
+   _mesa_validated_multidrawelements(ctx, index_bo, mode, count, type,
+                                     indices, primcount, NULL);
 }
 
 
@@ -2122,13 +2168,46 @@ _mesa_MultiDrawElementsBaseVertex(GLenum mode,
    if (ctx->NewState)
       _mesa_update_state(ctx);
 
+   struct gl_buffer_object *index_bo = ctx->Array.VAO->IndexBufferObj;
+
    if (!_mesa_is_no_error_enabled(ctx) &&
        !_mesa_validate_MultiDrawElements(ctx, mode, count, type, indices,
-                                         primcount))
+                                         primcount, index_bo))
       return;
 
-   _mesa_validated_multidrawelements(ctx, mode, count, type, indices, primcount,
-                                     basevertex);
+   _mesa_validated_multidrawelements(ctx, index_bo, mode, count, type,
+                                     indices, primcount, basevertex);
+}
+
+
+/**
+ * Same as glMultiDrawElementsBaseVertex, but the index buffer is set by
+ * the indexBuf parameter instead of using the bound GL_ELEMENT_ARRAY_BUFFER
+ * if indexBuf != NULL.
+ */
+void GLAPIENTRY
+_mesa_MultiDrawElementsUserBuf(GLintptr indexBuf, GLenum mode,
+                               const GLsizei *count, GLenum type,
+                               const GLvoid * const * indices,
+                               GLsizei primcount, const GLint * basevertex)
+{
+   GET_CURRENT_CONTEXT(ctx);
+   FLUSH_FOR_DRAW(ctx);
+
+   if (ctx->NewState)
+      _mesa_update_state(ctx);
+
+   struct gl_buffer_object *index_bo =
+      indexBuf ? (struct gl_buffer_object*)indexBuf :
+                 ctx->Array.VAO->IndexBufferObj;
+
+   if (!_mesa_is_no_error_enabled(ctx) &&
+       !_mesa_validate_MultiDrawElements(ctx, mode, count, type, indices,
+                                         primcount, index_bo))
+      return;
+
+   _mesa_validated_multidrawelements(ctx, index_bo, mode, count, type,
+                                     indices, primcount, basevertex);
 }
 
 

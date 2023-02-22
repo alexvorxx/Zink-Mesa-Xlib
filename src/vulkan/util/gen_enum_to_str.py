@@ -89,6 +89,29 @@ C_TEMPLATE = Template(textwrap.dedent(u"""\
       % endif
     %endfor
 
+    % for enum in bitmasks:
+
+      % if enum.guard:
+#ifdef ${enum.guard}
+      % endif
+    const char *
+    vk_${enum.name[2:]}_to_str(${enum.name} input)
+    {
+        switch((int64_t)input) {
+    % for v in sorted(enum.values.keys()):
+        case ${v}:
+            return "${enum.values[v]}";
+    % endfor
+        default:
+            return "Unknown ${enum.name} value.";
+        }
+    }
+
+      % if enum.guard:
+#endif
+      % endif
+    %endfor
+
     size_t vk_structure_type_size(const struct VkBaseInStructure *item)
     {
         switch((int)item->sType) {
@@ -140,6 +163,16 @@ H_TEMPLATE = Template(textwrap.dedent(u"""\
     #endif
 
     % for enum in enums:
+      % if enum.guard:
+#ifdef ${enum.guard}
+      % endif
+    const char * vk_${enum.name[2:]}_to_str(${enum.name} input);
+      % if enum.guard:
+#endif
+      % endif
+    % endfor
+
+    % for enum in bitmasks:
       % if enum.guard:
 #ifdef ${enum.guard}
       % endif
@@ -248,6 +281,8 @@ def CamelCase_to_SHOUT_CASE(s):
    return (s[:1] + re.sub(r'(?<![A-Z])([A-Z])', r'_\1', s[1:])).upper()
 
 def compute_max_enum_name(s):
+    if s == "VkSwapchainImageUsageFlagBitsANDROID":
+        return "VK_SWAPCHAIN_IMAGE_USAGE_FLAG_BITS_MAX_ENUM"
     max_enum_name = CamelCase_to_SHOUT_CASE(s)
     last_prefix = max_enum_name.rsplit('_', 1)[-1]
     # Those special prefixes need to be always at the end
@@ -463,6 +498,9 @@ def parse_xml(enum_factory, ext_factory, struct_factory, bitmask_factory,
         if define:
             for value in ext_elem.findall('./require/type[@name]'):
                 enum = enum_factory.get(value.attrib['name'])
+                if enum is not None:
+                    enum.set_guard(define)
+                enum = bitmask_factory.get(value.attrib['name'])
                 if enum is not None:
                     enum.set_guard(define)
 

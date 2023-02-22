@@ -74,7 +74,20 @@ static inline bool rogue_lower_MOV(rogue_builder *b, rogue_alu_instr *mov)
        mov->dst[0].ref.reg->class == ROGUE_REG_CLASS_VTXOUT) {
       instr = &rogue_UVSW_WRITE(b, mov->dst[0].ref, mov->src[0].ref)->instr;
    } else {
-      instr = &rogue_MBYP(b, mov->dst[0].ref, mov->src[0].ref)->instr;
+      /* If we're moving an immediate value not in special constants,
+       * we need to do a bitwise bypass.
+       */
+      if (rogue_ref_is_imm(&mov->src[0].ref)) {
+         instr = &rogue_BYP0(b,
+                             rogue_ref_io(ROGUE_IO_FT0),
+                             mov->dst[0].ref,
+                             rogue_ref_io(ROGUE_IO_S0),
+                             rogue_ref_val(
+                                rogue_ref_get_imm(&mov->src[0].ref)->imm.u32))
+                     ->instr;
+      } else {
+         instr = &rogue_MBYP(b, mov->dst[0].ref, mov->src[0].ref)->instr;
+      }
    }
 
    rogue_merge_instr_comment(instr, &mov->instr, "mov");

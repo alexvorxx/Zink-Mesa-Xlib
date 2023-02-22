@@ -163,7 +163,7 @@ static void validate_dst(rogue_validation_state *state,
    if (rogue_ref_is_null(&dst->ref))
       validate_log(state, "Destination has not been set.");
 
-   if (!state->shader->is_grouped) {
+   if (!state->shader->is_grouped && stride != ~0U) {
       unsigned dst_size = stride + 1;
       if (repeat_mask & (1 << i))
          dst_size *= repeat;
@@ -201,7 +201,7 @@ static void validate_src(rogue_validation_state *state,
    if (rogue_ref_is_null(&src->ref))
       validate_log(state, "Source has not been set.");
 
-   if (!state->shader->is_grouped) {
+   if (!state->shader->is_grouped && stride != ~0U) {
       unsigned src_size = stride + 1;
       if (repeat_mask & (1 << i))
          src_size *= repeat;
@@ -369,6 +369,47 @@ static bool validate_ctrl_instr(rogue_validation_state *state,
    return info->ends_block;
 }
 
+static void validate_bitwise_instr(rogue_validation_state *state,
+                                   const rogue_bitwise_instr *bitwise)
+{
+   if (bitwise->op == ROGUE_BITWISE_OP_INVALID ||
+       bitwise->op >= ROGUE_BITWISE_OP_COUNT)
+      validate_log(state, "Unknown bitwise op 0x%x encountered.", bitwise->op);
+
+   const rogue_bitwise_op_info *info = &rogue_bitwise_op_infos[bitwise->op];
+
+   /* Initial check if instruction modifiers are valid. */
+   if (!rogue_mods_supported(bitwise->mod, info->supported_op_mods))
+      validate_log(state, "Unsupported bitwise op modifiers.");
+
+   /* Instruction repeat checks. */
+   if (bitwise->instr.repeat > 1 && !info->dst_repeat_mask &&
+       !info->src_repeat_mask) {
+      validate_log(state, "Repeat set for bitwise op without repeat support.");
+   }
+
+   /* Validate destinations and sources. */
+   for (unsigned i = 0; i < info->num_dsts; ++i) {
+      validate_dst(state,
+                   &bitwise->dst[i],
+                   info->supported_dst_types[i],
+                   i,
+                   info->dst_stride[i],
+                   bitwise->instr.repeat,
+                   info->dst_repeat_mask);
+   }
+
+   for (unsigned i = 0; i < info->num_srcs; ++i) {
+      validate_src(state,
+                   &bitwise->src[i],
+                   info->supported_src_types[i],
+                   i,
+                   info->src_stride[i],
+                   bitwise->instr.repeat,
+                   info->src_repeat_mask);
+   }
+}
+
 /* Returns true if instruction can end block. */
 static bool validate_instr(rogue_validation_state *state,
                            const rogue_instr *instr)
@@ -388,6 +429,10 @@ static bool validate_instr(rogue_validation_state *state,
 
    case ROGUE_INSTR_TYPE_CTRL:
       ends_block = validate_ctrl_instr(state, rogue_instr_as_ctrl(instr));
+      break;
+
+   case ROGUE_INSTR_TYPE_BITWISE:
+      validate_bitwise_instr(state, rogue_instr_as_bitwise(instr));
       break;
 
    default:

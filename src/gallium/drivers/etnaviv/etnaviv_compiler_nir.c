@@ -680,6 +680,7 @@ emit_cf_list(struct etna_compile *c, struct exec_list *list)
          emit_if(c, nir_cf_node_as_if(node));
          break;
       case nir_cf_node_loop:
+         assert(!nir_loop_has_continue_construct(nir_cf_node_as_loop(node)));
          emit_cf_list(c, &nir_cf_node_as_loop(node)->body);
          break;
       default:

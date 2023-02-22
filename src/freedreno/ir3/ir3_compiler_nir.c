@@ -3676,6 +3676,7 @@ emit_if(struct ir3_context *ctx, nir_if *nif)
 static void
 emit_loop(struct ir3_context *ctx, nir_loop *nloop)
 {
+   assert(!nir_loop_has_continue_construct(nloop));
    unsigned old_loop_id = ctx->loop_id;
    ctx->loop_id = ctx->so->loops + 1;
    ctx->loop_depth++;

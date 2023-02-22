@@ -75,10 +75,19 @@ union gl_vertex_format_user {
    uint32_t All;
 };
 
+#define MESA_PACK_VFORMAT(type, size, normalized, integer, doubles) \
+   (union gl_vertex_format_user){{ \
+      .Type = MIN2(type, 0xffff), /* 0xffff means invalid value */ \
+      .Bgra = size == GL_BGRA, \
+      .Size = size == GL_BGRA ? 4 : MIN2(size, 5), /* 5 means invalid value */ \
+      .Normalized = normalized, \
+      .Integer = integer, \
+      .Doubles = doubles \
+   }}
+
 struct glthread_attrib_binding {
    struct gl_buffer_object *buffer; /**< where non-VBO data was uploaded */
    int offset;                      /**< offset to uploaded non-VBO data */
-   const void *original_pointer;    /**< restore this pointer after the draw */
 };
 
 struct glthread_attrib {
@@ -86,6 +95,7 @@ struct glthread_attrib {
    uint8_t ElementSize;       /**< max 32 */
    uint8_t BufferIndex;       /**< Referring to Attrib[BufferIndex]. */
    uint16_t RelativeOffset;   /**< max 0xffff in Mesa */
+   union gl_vertex_format_user Format;
 
    /* Per buffer binding: */
    GLuint Divisor;
@@ -102,6 +112,7 @@ struct glthread_vao {
    GLbitfield BufferEnabled; /**< "Enabled" converted to buffer bindings. */
    GLbitfield BufferInterleaved; /**< Bitmask of buffers used by multiple attribs. */
    GLbitfield UserPointerMask; /**< Bitmask of buffer bindings. */
+   GLbitfield NonNullPointerMask; /**< Bitmask of buffer bindings with non-NULL user pointers. */
    GLbitfield NonZeroDivisorMask; /**< Bitmask of buffer bindings. */
 
    struct glthread_attrib Attrib[VERT_ATTRIB_MAX];
@@ -174,6 +185,7 @@ struct glthread_state
    /** Whether GLThread is enabled. */
    bool enabled;
    bool inside_begin_end;
+   bool draw_always_async;
 
    /** Display lists. */
    GLenum16 ListMode; /**< Zero if not inside display list, else list mode. */
@@ -251,6 +263,7 @@ struct glthread_state
    bool Blend;
    bool DepthTest;
    bool CullFace;
+   bool DebugOutputSynchronous;
    bool Lighting;
    bool PolygonStipple;
 
@@ -264,7 +277,7 @@ struct glthread_state
 };
 
 void _mesa_glthread_init(struct gl_context *ctx);
-void _mesa_glthread_destroy(struct gl_context *ctx, const char *reason);
+void _mesa_glthread_destroy(struct gl_context *ctx);
 
 void _mesa_glthread_init_dispatch0(struct gl_context *ctx,
                                    struct _glapi_table *table);
@@ -283,6 +296,8 @@ void _mesa_glthread_init_dispatch6(struct gl_context *ctx,
 void _mesa_glthread_init_dispatch7(struct gl_context *ctx,
                                    struct _glapi_table *table);
 
+void _mesa_glthread_enable(struct gl_context *ctx);
+void _mesa_glthread_disable(struct gl_context *ctx);
 void _mesa_glthread_flush_batch(struct gl_context *ctx);
 void _mesa_glthread_finish(struct gl_context *ctx);
 void _mesa_glthread_finish_before(struct gl_context *ctx, const char *func);
@@ -313,16 +328,18 @@ void _mesa_glthread_ClientState(struct gl_context *ctx, GLuint *vaobj,
 void _mesa_glthread_AttribDivisor(struct gl_context *ctx, const GLuint *vaobj,
                                   gl_vert_attrib attrib, GLuint divisor);
 void _mesa_glthread_AttribPointer(struct gl_context *ctx, gl_vert_attrib attrib,
-                                  GLint size, GLenum type, GLsizei stride,
-                                  const void *pointer);
+                                  union gl_vertex_format_user format,
+                                  GLsizei stride, const void *pointer);
 void _mesa_glthread_DSAAttribPointer(struct gl_context *ctx, GLuint vao,
                                      GLuint buffer, gl_vert_attrib attrib,
-                                     GLint size, GLenum type, GLsizei stride,
-                                     GLintptr offset);
+                                     union gl_vertex_format_user format,
+                                     GLsizei stride, GLintptr offset);
 void _mesa_glthread_AttribFormat(struct gl_context *ctx, GLuint attribindex,
-                                 GLint size, GLenum type,  GLuint relativeoffset);
+                                 union gl_vertex_format_user format,
+                                 GLuint relativeoffset);
 void _mesa_glthread_DSAAttribFormat(struct gl_context *ctx, GLuint vaobj,
-                                    GLuint attribindex, GLint size, GLenum type,
+                                    GLuint attribindex,
+                                    union gl_vertex_format_user format,
                                     GLuint relativeoffset);
 void _mesa_glthread_VertexBuffer(struct gl_context *ctx, GLuint bindingindex,
                                  GLuint buffer, GLintptr offset, GLsizei stride);
@@ -351,6 +368,10 @@ void _mesa_glthread_ClientAttribDefault(struct gl_context *ctx, GLbitfield mask)
 void _mesa_glthread_InterleavedArrays(struct gl_context *ctx, GLenum format,
                                       GLsizei stride, const GLvoid *pointer);
 void _mesa_glthread_ProgramChanged(struct gl_context *ctx);
+void _mesa_glthread_UnrollDrawElements(struct gl_context *ctx,
+                                       GLenum mode, GLsizei count, GLenum type,
+                                       const GLvoid *indices, GLint basevertex);
+void _mesa_glthread_unbind_uploaded_vbos(struct gl_context *ctx);
 
 #ifdef __cplusplus
 }

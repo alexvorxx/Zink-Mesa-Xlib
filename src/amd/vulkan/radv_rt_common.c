@@ -21,9 +21,9 @@
  * IN THE SOFTWARE.
  */
 
-#include "radv_debug.h"
 #include "radv_rt_common.h"
-#include "radv_acceleration_structure.h"
+#include "bvh/bvh.h"
+#include "radv_debug.h"
 
 #ifdef LLVM_AVAILABLE
 #include <llvm/Config/llvm-config.h>
@@ -660,8 +660,17 @@ radv_build_ray_traversal(struct radv_device *device, nir_builder *b,
                /* instance */
                nir_ssa_def *instance_node_addr =
                   build_node_to_addr(device, b, global_bvh_node, false);
+               nir_store_deref(b, args->vars.instance_addr, instance_node_addr, 1);
+
                nir_ssa_def *instance_data = nir_build_load_global(
                   b, 4, 32, instance_node_addr, .align_mul = 64, .align_offset = 0);
+
+               nir_ssa_def *wto_matrix[3];
+               nir_build_wto_matrix_load(b, instance_node_addr, wto_matrix);
+
+               nir_store_deref(b, args->vars.sbt_offset_and_flags, nir_channel(b, instance_data, 3),
+                               1);
+
                nir_ssa_def *instance_and_mask = nir_channel(b, instance_data, 2);
                nir_ssa_def *instance_mask = nir_ushr_imm(b, instance_and_mask, 24);
 
@@ -670,9 +679,6 @@ radv_build_ray_traversal(struct radv_device *device, nir_builder *b,
                   nir_jump(b, nir_jump_continue);
                }
                nir_pop_if(b, NULL);
-
-               nir_ssa_def *wto_matrix[3];
-               nir_build_wto_matrix_load(b, instance_node_addr, wto_matrix);
 
                nir_store_deref(b, args->vars.top_stack, nir_load_deref(b, args->vars.stack), 1);
                nir_store_deref(b, args->vars.bvh_base,
@@ -691,10 +697,6 @@ radv_build_ray_traversal(struct radv_device *device, nir_builder *b,
                                nir_build_vec3_mat_mult(b, args->dir, wto_matrix, false), 7);
                nir_store_deref(b, args->vars.inv_dir,
                                nir_fdiv(b, vec3ones, nir_load_deref(b, args->vars.dir)), 7);
-
-               nir_store_deref(b, args->vars.sbt_offset_and_flags, nir_channel(b, instance_data, 3),
-                               1);
-               nir_store_deref(b, args->vars.instance_addr, instance_node_addr, 1);
             }
             nir_pop_if(b, NULL);
          }

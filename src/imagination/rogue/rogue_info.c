@@ -50,6 +50,7 @@ const rogue_reg_info rogue_reg_infos[ROGUE_REG_CLASS_COUNT] = {
 
 const rogue_regalloc_info regalloc_info[ROGUE_REGALLOC_CLASS_COUNT] = {
    [ROGUE_REGALLOC_CLASS_TEMP_1] = { .class = ROGUE_REG_CLASS_TEMP, .stride = 1, },
+   [ROGUE_REGALLOC_CLASS_TEMP_2] = { .class = ROGUE_REG_CLASS_TEMP, .stride = 2, },
    [ROGUE_REGALLOC_CLASS_TEMP_4] = { .class = ROGUE_REG_CLASS_TEMP, .stride = 4, },
 };
 
@@ -256,6 +257,22 @@ const rogue_backend_op_info rogue_backend_op_infos[ROGUE_BACKEND_OP_COUNT] = {
       .supported_dst_types = { [0] = T(REG), },
       .supported_src_types = { [0] = T(REG), },
    },
+   /* .src[1] and .src[2] can actually be S0-5. */
+   [ROGUE_BACKEND_OP_LD] = { .str = "ld", .num_dsts = 1, .num_srcs = 3,
+      .phase_io = { .dst[0] = IO(S3), .src[2] = IO(S0), },
+      .supported_dst_types = { [0] = T(REG) | T(REGARRAY), },
+      .supported_src_types = {
+         [0] = T(DRC),
+         [1] = T(VAL),
+         [2] = T(REGARRAY),
+      },
+      .dst_stride = {
+         [0] = ~0U,
+      },
+      .src_stride = {
+         [2] = 1,
+      },
+   },
 	[ROGUE_BACKEND_OP_FITRP_PIXEL] = { .str = "fitrp.pixel", .num_dsts = 1, .num_srcs = 4,
       .phase_io = { .dst[0] = IO(S3), .src[1] = IO(S0), .src[2] = IO(S2), },
       .supported_op_mods = OM(SAT),
@@ -268,7 +285,7 @@ const rogue_backend_op_info rogue_backend_op_infos[ROGUE_BACKEND_OP_COUNT] = {
       },
       .src_stride = {
          [1] = 3,
-         [2] = 3,
+         [2] = ~0U,
       },
    },
 };
@@ -281,11 +298,29 @@ const rogue_backend_op_mod_info rogue_backend_op_mod_infos[ROGUE_BACKEND_OP_MOD_
 	[ROGUE_BACKEND_OP_MOD_SAT] = { .str = "sat", },
 };
 
+#define P(type) BITFIELD64_BIT(ROGUE_INSTR_PHASE_##type)
+#define PH(type) ROGUE_INSTR_PHASE_##type
+#define IO(io) ROGUE_IO_##io
+#define T(type) BITFIELD64_BIT(ROGUE_REF_TYPE_##type - 1)
 const rogue_bitwise_op_info rogue_bitwise_op_infos[ROGUE_BITWISE_OP_COUNT] = {
    [ROGUE_BITWISE_OP_INVALID] = { .str = "", },
-   [ROGUE_BITWISE_OP_BYP] = { .str = "byp", .num_dsts = 2, .num_srcs = 2, },
-   [ROGUE_BITWISE_OP_MOV2] = { .str = "mov2", .num_dsts = 2, .num_srcs = 2, },
+   [ROGUE_BITWISE_OP_BYP0] = { .str = "byp", .num_dsts = 2, .num_srcs = 2,
+      .supported_phases = P(0_BITMASK),
+      .phase_io[PH(0_BITMASK)] = { .dst[1] = IO(FT1), },
+      .supported_dst_types = {
+         [0] = T(REG) | T(REGARRAY) | T(IO),
+         [1] = T(REG) | T(REGARRAY) | T(IO),
+      },
+      .supported_src_types = {
+         [0] = T(REG) | T(REGARRAY) | T(IO),
+         [1] = T(REG) | T(REGARRAY) | T(IO) | T(VAL),
+      },
+   },
 };
+#undef T
+#undef IO
+#undef PH
+#undef P
 
 const rogue_io_info rogue_io_infos[ROGUE_IO_COUNT] = {
 	[ROGUE_IO_INVALID] = { .str = "!INVALID!", },
@@ -330,7 +365,7 @@ const rogue_alu_op_info rogue_alu_op_infos[ROGUE_ALU_OP_COUNT] = {
       .supported_src_mods = {
          [0] = SM(ABS) | SM(NEG),
       },
-      .supported_dst_types = { [0] = T(REG), },
+      .supported_dst_types = { [0] = T(REG) | T(REGARRAY), },
       .supported_src_types = {
          [0] = T(REG),
       },
@@ -376,6 +411,24 @@ const rogue_alu_op_info rogue_alu_op_infos[ROGUE_ALU_OP_COUNT] = {
    },
    /* TODO: Implement */
    [ROGUE_ALU_OP_TST] = { .str = "tst", .num_dsts = 2, .num_srcs = 2, },
+   [ROGUE_ALU_OP_ADD64] = { .str = "add64", .num_dsts = 3, .num_srcs = 5,
+      .supported_phases = P(0),
+      .phase_io[PH(0)] = { .dst[0] = IO(FT0), .dst[1] = IO(FTE), .src[0] = IO(S0), .src[1] = IO(S1), .src[2] = IO(S2), .src[3] = IO(IS0), },
+      .supported_src_mods = {
+         [0] = SM(ABS) | SM(NEG),
+         [1] = SM(ABS) | SM(NEG),
+         [2] = SM(ABS) | SM(NEG),
+         [3] = SM(ABS) | SM(NEG),
+      },
+      .supported_dst_types = { [0] = T(REG) | T(REGARRAY), [1] = T(REG) | T(REGARRAY) | T(IO), [2] = T(IO) },
+      .supported_src_types = {
+         [0] = T(REG) | T(REGARRAY),
+         [1] = T(REG) | T(REGARRAY),
+         [2] = T(REG) | T(REGARRAY) | T(IMM),
+         [3] = T(REG) | T(REGARRAY)| T(IO) | T(IMM),
+         [4] = T(IO),
+      },
+   },
    [ROGUE_ALU_OP_PCK_U8888] = { .str = "pck.u8888", .num_dsts = 1, .num_srcs = 1,
       .supported_phases = P(2_PCK),
       .phase_io[PH(2_PCK)] = { .dst[0] = IO(FT2), .src[0] = IO(IS3), },
@@ -388,7 +441,7 @@ const rogue_alu_op_info rogue_alu_op_infos[ROGUE_ALU_OP_COUNT] = {
    },
    /* This mov is "fake" since it can be lowered to a MBYP, make a new instruction for real mov (call it MOVD?). */
    [ROGUE_ALU_OP_MOV] = { .str = "mov", .num_dsts = 1, .num_srcs = 1,
-      .supported_dst_types = { [0] = T(REG), },
+      .supported_dst_types = { [0] = T(REG) | T(REGARRAY), },
       .supported_src_types = {
          [0] = T(REG) | T(IMM),
       },
@@ -399,7 +452,6 @@ const rogue_alu_op_info rogue_alu_op_infos[ROGUE_ALU_OP_COUNT] = {
 
    [ROGUE_ALU_OP_FMAX] = { .str = "fmax", .num_dsts = 1, .num_srcs = 2, }, /* TODO */
    [ROGUE_ALU_OP_FMIN] = { .str = "fmin", .num_dsts = 1, .num_srcs = 2, }, /* TODO */
-   [ROGUE_ALU_OP_SEL] = { .str = "sel", .num_dsts = 1, .num_srcs = 3, }, /* TODO */
 };
 #undef B
 #undef T

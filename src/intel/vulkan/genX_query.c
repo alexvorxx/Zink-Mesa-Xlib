@@ -1603,27 +1603,27 @@ genX(CmdWriteAccelerationStructuresPropertiesKHR)(
    mi_builder_init(&b, cmd_buffer->device->info, &cmd_buffer->batch);
 
    for (uint32_t i = 0; i < accelerationStructureCount; i++) {
-      ANV_FROM_HANDLE(anv_acceleration_structure, accel, pAccelerationStructures[i]);
+      ANV_FROM_HANDLE(vk_acceleration_structure, accel, pAccelerationStructures[i]);
       struct anv_address query_addr =
          anv_address_add(anv_query_address(pool, firstQuery + i), 8);
 
       switch (queryType) {
       case VK_QUERY_TYPE_ACCELERATION_STRUCTURE_COMPACTED_SIZE_KHR:
          genX(grl_postbuild_info_compacted_size)(cmd_buffer,
-                                                 anv_address_physical(accel->address),
+                                                 vk_acceleration_structure_get_va(accel),
                                                  anv_address_physical(query_addr));
          break;
 
       case VK_QUERY_TYPE_ACCELERATION_STRUCTURE_SIZE_KHR:
          genX(grl_postbuild_info_current_size)(cmd_buffer,
-                                               anv_address_physical(accel->address),
+                                               vk_acceleration_structure_get_va(accel),
                                                anv_address_physical(query_addr));
          break;
 
       case VK_QUERY_TYPE_ACCELERATION_STRUCTURE_SERIALIZATION_SIZE_KHR:
       case VK_QUERY_TYPE_ACCELERATION_STRUCTURE_SERIALIZATION_BOTTOM_LEVEL_POINTERS_KHR:
          genX(grl_postbuild_info_serialized_size)(cmd_buffer,
-                                                  anv_address_physical(accel->address),
+                                                  vk_acceleration_structure_get_va(accel),
                                                   anv_address_physical(query_addr));
          break;
 

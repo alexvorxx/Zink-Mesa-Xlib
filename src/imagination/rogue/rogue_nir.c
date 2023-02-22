@@ -41,7 +41,7 @@ static const struct spirv_to_nir_options spirv_options = {
    .environment = NIR_SPIRV_VULKAN,
 
    /* Buffer address: (descriptor_set, binding), offset. */
-   .ubo_addr_format = nir_address_format_vec2_index_32bit_offset,
+   .ubo_addr_format = nir_address_format_64bit_global,
 };
 
 static const nir_shader_compiler_options nir_options = {
@@ -108,6 +108,14 @@ static void rogue_nir_passes(struct rogue_build_ctx *ctx,
    /* Lower load_consts to scalars. */
    NIR_PASS_V(nir, nir_lower_load_const_to_scalar);
 
+   /* Additional I/O lowering. */
+   NIR_PASS_V(nir,
+              nir_lower_explicit_io,
+              nir_var_mem_ubo,
+              spirv_options.ubo_addr_format);
+   NIR_PASS_V(nir, nir_lower_io_to_scalar, nir_var_mem_ubo);
+   NIR_PASS_V(nir, rogue_nir_lower_io);
+
    /* Algebraic opts. */
    do {
       progress = false;
@@ -119,13 +127,6 @@ static void rogue_nir_passes(struct rogue_build_ctx *ctx,
       NIR_PASS(progress, nir, nir_opt_dce);
       NIR_PASS_V(nir, nir_opt_gcm, false);
    } while (progress);
-
-   /* Additional I/O lowering. */
-   NIR_PASS_V(nir,
-              nir_lower_explicit_io,
-              nir_var_mem_ubo,
-              spirv_options.ubo_addr_format);
-   NIR_PASS_V(nir, rogue_nir_lower_io, NULL);
 
    /* Late algebraic opts. */
    do {
@@ -168,6 +169,9 @@ static void rogue_nir_passes(struct rogue_build_ctx *ctx,
                                nir_var_shader_out,
                                &nir->num_outputs,
                                nir->info.stage);
+
+   /* Renumber SSA defs. */
+   nir_index_ssa_defs(nir_shader_get_entrypoint(nir));
 
    /* Gather info into nir shader struct. */
    nir_shader_gather_info(nir, nir_shader_get_entrypoint(nir));

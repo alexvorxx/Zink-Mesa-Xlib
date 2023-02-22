@@ -2979,6 +2979,7 @@ typedef struct {
    nir_cf_node cf_node;
 
    struct exec_list body; /** < list of nir_cf_node */
+   struct exec_list continue_list; /** < (optional) list of nir_cf_node */
 
    nir_loop_info *info;
    nir_loop_control control;
@@ -3212,6 +3213,40 @@ nir_loop_last_block(nir_loop *loop)
 {
    struct exec_node *tail = exec_list_get_tail(&loop->body);
    return nir_cf_node_as_block(exec_node_data(nir_cf_node, tail, node));
+}
+
+static inline bool
+nir_loop_has_continue_construct(const nir_loop *loop)
+{
+   return !exec_list_is_empty(&loop->continue_list);
+}
+
+static inline nir_block *
+nir_loop_first_continue_block(nir_loop *loop)
+{
+   assert(nir_loop_has_continue_construct(loop));
+   struct exec_node *head = exec_list_get_head(&loop->continue_list);
+   return nir_cf_node_as_block(exec_node_data(nir_cf_node, head, node));
+}
+
+static inline nir_block *
+nir_loop_last_continue_block(nir_loop *loop)
+{
+   assert(nir_loop_has_continue_construct(loop));
+   struct exec_node *tail = exec_list_get_tail(&loop->continue_list);
+   return nir_cf_node_as_block(exec_node_data(nir_cf_node, tail, node));
+}
+
+/**
+ * Return the target block of a nir_jump_continue statement
+ */
+static inline nir_block *
+nir_loop_continue_target(nir_loop *loop)
+{
+   if (nir_loop_has_continue_construct(loop))
+      return nir_loop_first_continue_block(loop);
+   else
+      return nir_loop_first_block(loop);
 }
 
 /**
@@ -5587,6 +5622,7 @@ bool nir_lower_discard_or_demote(nir_shader *shader,
 bool nir_lower_memory_model(nir_shader *shader);
 
 bool nir_lower_goto_ifs(nir_shader *shader);
+bool nir_lower_continue_constructs(nir_shader *shader);
 
 bool nir_shader_uses_view_index(nir_shader *shader);
 bool nir_can_lower_multiview(nir_shader *shader);

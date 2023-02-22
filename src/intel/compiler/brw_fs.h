@@ -412,8 +412,7 @@ public:
                              const fs_reg &urb_handle);
    void emit_task_mesh_load(const brw::fs_builder &bld,
                             nir_intrinsic_instr *instr,
-                            const fs_reg &urb_handle,
-                            bool mask);
+                            const fs_reg &urb_handle);
 
    void emit_barrier();
    void emit_tcs_barrier();

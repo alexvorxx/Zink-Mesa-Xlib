@@ -43,7 +43,7 @@
 #include <mach-o/dyld.h>
 #endif
 
-#if DETECT_OS_FREEBSD
+#if DETECT_OS_BSD
 #include <sys/types.h>
 #include <sys/sysctl.h>
 #endif
@@ -288,6 +288,32 @@ util_get_command_line(char *cmdline, size_t size)
       close(f);
       return true;
    }
+#elif DETECT_OS_BSD
+   int mib[] = {
+      CTL_KERN,
+#if DETECT_OS_NETBSD || DETECT_OS_OPENBSD
+      KERN_PROC_ARGS,
+      getpid(),
+      KERN_PROC_ARGV,
+#else
+      KERN_PROC,
+      KERN_PROC_ARGS,
+      getpid(),
+#endif
+   };
+
+   /* Like /proc/pid/cmdline each argument is separated by NUL byte */
+   if (sysctl(mib, ARRAY_SIZE(mib), cmdline, &size, NULL, 0) == -1) {
+      return false;
+   }
+
+   /* Replace NUL with space except terminating NUL */
+   for (size_t i = 0; i < (size - 1); i++) {
+      if (cmdline[i] == '\0')
+         cmdline[i] = ' ';
+   }
+
+   return true;
 #endif
 
    /* XXX to-do: implement this function for other operating systems */

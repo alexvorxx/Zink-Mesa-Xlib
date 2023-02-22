@@ -319,6 +319,7 @@ process_node(nir_cf_node *node, nir_loop_info *info,
 
    case nir_cf_node_loop: {
       nir_loop *loop = nir_cf_node_as_loop(node);
+      assert(!nir_loop_has_continue_construct(loop));
 
       /* Replace loop info, no nested loop info currently:
        *

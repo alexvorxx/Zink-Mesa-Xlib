@@ -30,6 +30,17 @@
  * \brief Main header.
  */
 
+#define __pvr_address_type pvr_dev_addr_t
+#define __pvr_get_address(pvr_dev_addr) (pvr_dev_addr).addr
+/* clang-format off */
+#define __pvr_make_address(addr_u64) PVR_DEV_ADDR(addr_u64)
+/* clang-format on */
+
+#include "pvr_types.h"
+#include "csbgen/rogue_hwdefs.h"
+#include "vulkan/pvr_limits.h"
+#include "vulkan/pvr_common.h"
+
 #include "compiler/nir/nir.h"
 #include "compiler/shader_enums.h"
 #include "compiler/spirv/nir_spirv.h"
@@ -107,6 +118,7 @@ static inline enum reg_bank rogue_reg_bank_encoding(enum rogue_reg_class class)
 
 enum rogue_regalloc_class {
    ROGUE_REGALLOC_CLASS_TEMP_1,
+   ROGUE_REGALLOC_CLASS_TEMP_2,
    ROGUE_REGALLOC_CLASS_TEMP_4,
 
    ROGUE_REGALLOC_CLASS_COUNT,
@@ -216,24 +228,6 @@ static inline bool rogue_reg_is_unused(rogue_reg *reg)
    return list_is_empty(&reg->uses) && list_is_empty(&reg->writes);
 }
 
-typedef struct rogue_regarray {
-   struct list_head link; /** Link in rogue_shader::regarrays. */
-   unsigned size; /** Number of registers in the array. */
-   rogue_regarray *parent;
-   rogue_reg **regs; /** Registers (allocated array if this is a parent, else
-                        pointer to inside parent regarray->regs). */
-   rogue_regarray **cached;
-} rogue_regarray;
-
-#define rogue_foreach_regarray(regarray, shader) \
-   list_for_each_entry (rogue_regarray, regarray, &(shader)->regarrays, link)
-
-#define rogue_foreach_regarray_safe(regarray, shader) \
-   list_for_each_entry_safe (rogue_regarray,          \
-                             regarray,                \
-                             &(shader)->regarrays,    \
-                             link)
-
 struct rogue_regarray_cache_key {
    union {
       struct {
@@ -260,6 +254,73 @@ static inline uint64_t rogue_regarray_cache_key(unsigned size,
                                              .size = size }
       .val;
 }
+
+typedef struct rogue_regarray {
+   struct list_head link; /** Link in rogue_shader::regarrays. */
+   unsigned size; /** Number of registers in the array. */
+   rogue_regarray *parent;
+   struct list_head children; /** List of subarrays with this regarray as their
+                                 parent. */
+   struct list_head child_link; /** Link in rogue_regarray::children. */
+   rogue_reg **regs; /** Registers (allocated array if this is a parent, else
+                        pointer to inside parent regarray->regs). */
+   rogue_regarray **cached;
+
+   struct list_head writes; /** List of all writes to this register array. */
+   struct list_head uses; /** List of all register array uses. */
+} rogue_regarray;
+
+#define rogue_foreach_regarray(regarray, shader) \
+   list_for_each_entry (rogue_regarray, regarray, &(shader)->regarrays, link)
+
+#define rogue_foreach_regarray_safe(regarray, shader) \
+   list_for_each_entry_safe (rogue_regarray,          \
+                             regarray,                \
+                             &(shader)->regarrays,    \
+                             link)
+
+#define rogue_foreach_subarray(subarray, regarray) \
+   assert(!regarray->parent);                      \
+   list_for_each_entry (rogue_regarray,            \
+                        subarray,                  \
+                        &(regarray)->children,     \
+                        child_link)
+
+#define rogue_foreach_subarray_safe(subarray, regarray) \
+   assert(!regarray->parent);                           \
+   list_for_each_entry_safe (rogue_regarray,            \
+                             subarray,                  \
+                             &(regarray)->children,     \
+                             child_link)
+
+typedef struct rogue_instr rogue_instr;
+
+typedef struct rogue_regarray_write {
+   rogue_instr *instr;
+   unsigned dst_index;
+   struct list_head link; /** Link in rogue_regarray::writes. */
+} rogue_regarray_write;
+
+#define rogue_foreach_regarray_write(write, regarray) \
+   list_for_each_entry (rogue_regarray_write, write, &(regarray)->writes, link)
+
+#define rogue_foreach_regarray_write_safe(write, regarray) \
+   list_for_each_entry_safe (rogue_regarray_write,         \
+                             write,                        \
+                             &(regarray)->writes,          \
+                             link)
+
+typedef struct rogue_regarray_use {
+   rogue_instr *instr;
+   unsigned src_index;
+   struct list_head link; /** Link in rogue_regarray::uses. */
+} rogue_regarray_use;
+
+#define rogue_foreach_regarray_use(use, regarray) \
+   list_for_each_entry (rogue_regarray_use, use, &(regarray)->uses, link)
+
+#define rogue_foreach_regarray_use_safe(use, regarray) \
+   list_for_each_entry_safe (rogue_regarray_use, use, &(regarray)->uses, link)
 
 /** Instruction phases, used in bitset. */
 enum rogue_instr_phase {
@@ -717,6 +778,11 @@ static inline bool rogue_ref_is_regarray(const rogue_ref *ref)
    return ref->type == ROGUE_REF_TYPE_REGARRAY;
 }
 
+static inline bool rogue_ref_is_reg_or_regarray(const rogue_ref *ref)
+{
+   return rogue_ref_is_reg(ref) || rogue_ref_is_regarray(ref);
+}
+
 static inline bool rogue_ref_is_io(const rogue_ref *ref)
 {
    return ref->type == ROGUE_REF_TYPE_IO;
@@ -791,6 +857,25 @@ static inline enum rogue_io rogue_ref_get_io(const rogue_ref *ref)
 {
    assert(rogue_ref_is_io(ref));
    return ref->io;
+}
+
+static inline bool rogue_ref_is_io_p0(const rogue_ref *ref)
+{
+   return rogue_ref_get_io(ref) == ROGUE_IO_P0;
+}
+
+static inline bool rogue_ref_is_io_none(const rogue_ref *ref)
+{
+   /* Special case - never assert. */
+   if (!rogue_ref_is_io(ref))
+      return false;
+
+   return rogue_ref_get_io(ref) == ROGUE_IO_NONE;
+}
+
+static inline unsigned rogue_ref_get_io_src_index(const rogue_ref *ref)
+{
+   return rogue_ref_get_io(ref) - ROGUE_IO_S0;
 }
 
 static inline unsigned rogue_ref_get_drc_index(const rogue_ref *ref)
@@ -896,12 +981,12 @@ typedef struct rogue_reg_use {
 
 typedef union rogue_dst_write {
    rogue_reg_write reg;
-   struct util_dynarray *regarray;
+   rogue_regarray_write regarray;
 } rogue_dst_write;
 
 typedef union rogue_src_use {
    rogue_reg_use reg;
-   struct util_dynarray *regarray;
+   rogue_regarray_use regarray;
 } rogue_src_use;
 
 typedef struct rogue_block_use {
@@ -927,6 +1012,8 @@ enum rogue_alu_op {
    ROGUE_ALU_OP_FMUL,
    ROGUE_ALU_OP_FMAD,
 
+   ROGUE_ALU_OP_ADD64,
+
    ROGUE_ALU_OP_TST,
 
    ROGUE_ALU_OP_PCK_U8888,
@@ -941,8 +1028,6 @@ enum rogue_alu_op {
 
    ROGUE_ALU_OP_FMAX,
    ROGUE_ALU_OP_FMIN,
-
-   ROGUE_ALU_OP_SEL,
 
    ROGUE_ALU_OP_COUNT,
 };
@@ -1075,9 +1160,9 @@ static inline bool rogue_ctrl_op_has_dsts(enum rogue_ctrl_op op)
    return info->has_dsts;
 }
 
-/* ALU instructions have at most 3 sources. */
-#define ROGUE_ALU_OP_MAX_SRCS 3
-#define ROGUE_ALU_OP_MAX_DSTS 2
+/* ALU instructions have at most 5 sources. */
+#define ROGUE_ALU_OP_MAX_SRCS 5
+#define ROGUE_ALU_OP_MAX_DSTS 3
 
 typedef struct rogue_alu_io_info {
    enum rogue_io dst[ROGUE_ALU_OP_MAX_DSTS];
@@ -1249,6 +1334,8 @@ enum rogue_backend_op {
    ROGUE_BACKEND_OP_UVSW_EMITTHENENDTASK,
    ROGUE_BACKEND_OP_UVSW_WRITETHENEMITTHENENDTASK,
 
+   ROGUE_BACKEND_OP_LD,
+
    /* ROGUE_BACKEND_OP_FITR, */
    /* ROGUE_BACKEND_OP_SAMPLE, */
    /* ROGUE_BACKEND_OP_CENTROID, */
@@ -1383,11 +1470,11 @@ enum rogue_bitwise_op {
    ROGUE_BITWISE_OP_INVALID = 0,
 
    /* Real instructions. */
-   ROGUE_BITWISE_OP_BYP,
+   ROGUE_BITWISE_OP_BYP0,
 
    /* Pseudo-instructions. */
    ROGUE_BITWISE_OP_PSEUDO,
-   ROGUE_BITWISE_OP_MOV2 = ROGUE_BITWISE_OP_PSEUDO,
+   ROGUE_BITWISE_OP_ = ROGUE_BITWISE_OP_PSEUDO,
 
    ROGUE_BITWISE_OP_COUNT,
 };
@@ -1400,6 +1487,9 @@ typedef struct rogue_bitwise_op_info {
 
    unsigned num_dsts;
    unsigned num_srcs;
+
+   uint64_t supported_phases;
+   rogue_alu_io_info phase_io[ROGUE_INSTR_PHASE_COUNT];
 
    uint64_t supported_op_mods;
    uint64_t supported_dst_mods[ROGUE_BITWISE_OP_MAX_DSTS];
@@ -1433,8 +1523,7 @@ typedef struct rogue_bitwise_instr {
 
    enum rogue_bitwise_op op;
 
-   /* TODO: op mods */
-   /* uint64_t mod; */
+   uint64_t mod;
 
    /* TODO NEXT: source/dest modifiers */
 
@@ -1668,6 +1757,27 @@ static inline void rogue_set_shader_name(rogue_shader *shader, const char *name)
    shader->name = ralloc_strdup(shader, name);
 }
 
+static inline bool rogue_reg_is_used(const rogue_shader *shader,
+                                     enum rogue_reg_class class,
+                                     unsigned index)
+{
+   return BITSET_TEST(shader->regs_used[class], index);
+}
+
+static inline void rogue_set_reg_use(rogue_shader *shader,
+                                     enum rogue_reg_class class,
+                                     unsigned index)
+{
+   BITSET_SET(shader->regs_used[class], index);
+}
+
+static inline void rogue_clear_reg_use(rogue_shader *shader,
+                                       enum rogue_reg_class class,
+                                       unsigned index)
+{
+   BITSET_CLEAR(shader->regs_used[class], index);
+}
+
 /**
  * \brief Allocates and initializes a new rogue_shader object.
  *
@@ -1712,6 +1822,40 @@ rogue_regarray *rogue_ssa_vec_regarray(rogue_shader *shader,
                                        unsigned start_index,
                                        unsigned component);
 
+rogue_regarray *rogue_regarray_cached(rogue_shader *shader,
+                                      unsigned size,
+                                      enum rogue_reg_class class,
+                                      uint32_t start_index);
+
+rogue_regarray *rogue_vec_regarray_cached(rogue_shader *shader,
+                                          unsigned size,
+                                          enum rogue_reg_class class,
+                                          uint32_t start_index,
+                                          uint8_t component);
+
+static inline bool rogue_regarray_is_unused(rogue_regarray *regarray)
+{
+   return list_is_empty(&regarray->uses) && list_is_empty(&regarray->writes);
+}
+
+static void rogue_regarray_delete(rogue_regarray *regarray)
+{
+   assert(rogue_regarray_is_unused(regarray));
+
+   if (!regarray->parent) {
+      for (unsigned u = 0; u < regarray->size; ++u)
+         rogue_reg_delete(regarray->regs[u]);
+   }
+
+   if (regarray->cached && *regarray->cached == regarray)
+      *regarray->cached = NULL;
+
+   list_del(&regarray->link);
+   if (regarray->parent)
+      list_del(&regarray->child_link);
+   ralloc_free(regarray);
+}
+
 static inline void rogue_reset_reg_usage(rogue_shader *shader,
                                          enum rogue_reg_class class)
 {
@@ -1737,6 +1881,17 @@ bool rogue_reg_rewrite(rogue_shader *shader,
                        rogue_reg *reg,
                        enum rogue_reg_class class,
                        unsigned index);
+
+bool rogue_regarray_set(rogue_shader *shader,
+                        rogue_regarray *regarray,
+                        enum rogue_reg_class class,
+                        unsigned base_index,
+                        bool set_regs);
+
+bool rogue_regarray_rewrite(rogue_shader *shader,
+                            rogue_regarray *regarray,
+                            enum rogue_reg_class class,
+                            unsigned base_index);
 
 /** Cursor for Rogue instructions/groups and basic blocks. */
 typedef struct rogue_cursor {
@@ -1975,33 +2130,23 @@ static inline void rogue_unlink_instr_write_reg(rogue_instr *instr,
    list_del(&write->link);
 }
 
-static inline void
-rogue_link_instr_write_regarray(rogue_instr *instr,
-                                struct util_dynarray **writearray,
-                                rogue_regarray *regarray,
-                                unsigned dst_index)
+static inline void rogue_link_instr_write_regarray(rogue_instr *instr,
+                                                   rogue_regarray_write *write,
+                                                   rogue_regarray *regarray,
+                                                   unsigned dst_index)
 {
-   assert(!*writearray);
-   *writearray = rzalloc_size(instr, sizeof(**writearray));
-   util_dynarray_init(*writearray, instr);
-   ASSERTED void *mem =
-      util_dynarray_resize(*writearray, rogue_reg_write, regarray->size);
-   assert(mem);
-
-   unsigned u = 0;
-   util_dynarray_foreach (*writearray, rogue_reg_write, write)
-      rogue_link_instr_write_reg(instr, write, regarray->regs[u++], dst_index);
+   write->instr = instr;
+   write->dst_index = dst_index;
+   list_addtail(&write->link, &regarray->writes);
 }
 
 static inline void
 rogue_unlink_instr_write_regarray(rogue_instr *instr,
-                                  struct util_dynarray **writearray)
+                                  rogue_regarray_write *write)
 {
-   util_dynarray_foreach (*writearray, rogue_reg_write, write)
-      rogue_unlink_instr_write_reg(instr, write);
-
-   ralloc_free(*writearray);
-   *writearray = NULL;
+   assert(write->instr == instr);
+   write->instr = NULL;
+   list_del(&write->link);
 }
 
 static inline void rogue_link_instr_use_reg(rogue_instr *instr,
@@ -2022,33 +2167,22 @@ static inline void rogue_unlink_instr_use_reg(rogue_instr *instr,
    list_del(&use->link);
 }
 
-static inline void
-rogue_link_instr_use_regarray(rogue_instr *instr,
-                              struct util_dynarray **usearray,
-                              rogue_regarray *regarray,
-                              unsigned src_index)
+static inline void rogue_link_instr_use_regarray(rogue_instr *instr,
+                                                 rogue_regarray_use *use,
+                                                 rogue_regarray *regarray,
+                                                 unsigned src_index)
 {
-   assert(!*usearray);
-   *usearray = rzalloc_size(instr, sizeof(**usearray));
-   util_dynarray_init(*usearray, instr);
-   ASSERTED void *mem =
-      util_dynarray_resize(*usearray, rogue_reg_use, regarray->size);
-   assert(mem);
-
-   unsigned u = 0;
-   util_dynarray_foreach (*usearray, rogue_reg_use, use)
-      rogue_link_instr_use_reg(instr, use, regarray->regs[u++], src_index);
+   use->instr = instr;
+   use->src_index = src_index;
+   list_addtail(&use->link, &regarray->uses);
 }
 
-static inline void
-rogue_unlink_instr_use_regarray(rogue_instr *instr,
-                                struct util_dynarray **usearray)
+static inline void rogue_unlink_instr_use_regarray(rogue_instr *instr,
+                                                   rogue_regarray_use *use)
 {
-   util_dynarray_foreach (*usearray, rogue_reg_use, use)
-      rogue_unlink_instr_use_reg(instr, use);
-
-   ralloc_free(*usearray);
-   *usearray = NULL;
+   assert(use->instr == instr);
+   use->instr = NULL;
+   list_del(&use->link);
 }
 
 static inline void rogue_link_instr_use_block(rogue_instr *instr,
@@ -2085,6 +2219,10 @@ static inline bool rogue_dst_reg_replace(rogue_reg_write *write,
 
    case ROGUE_INSTR_TYPE_CTRL:
       ref = &rogue_instr_as_ctrl(instr)->dst[dst_index].ref;
+      break;
+
+   case ROGUE_INSTR_TYPE_BITWISE:
+      ref = &rogue_instr_as_bitwise(instr)->dst[dst_index].ref;
       break;
 
    default:
@@ -2156,6 +2294,106 @@ static inline bool rogue_reg_replace(rogue_reg *old_reg, rogue_reg *new_reg)
 
    if (replaced)
       rogue_reg_delete(old_reg);
+
+   return replaced;
+}
+
+/* TODO: try and commonise this with the reg one! */
+static inline bool rogue_dst_regarray_replace(rogue_regarray_write *write,
+                                              rogue_regarray *new_regarray)
+{
+   unsigned dst_index = write->dst_index;
+   rogue_instr *instr = write->instr;
+   rogue_ref *ref;
+
+   switch (instr->type) {
+   case ROGUE_INSTR_TYPE_ALU:
+      ref = &rogue_instr_as_alu(instr)->dst[dst_index].ref;
+      break;
+
+   case ROGUE_INSTR_TYPE_BACKEND:
+      ref = &rogue_instr_as_backend(instr)->dst[dst_index].ref;
+      break;
+
+   case ROGUE_INSTR_TYPE_CTRL:
+      ref = &rogue_instr_as_ctrl(instr)->dst[dst_index].ref;
+      break;
+
+   case ROGUE_INSTR_TYPE_BITWISE:
+      ref = &rogue_instr_as_bitwise(instr)->dst[dst_index].ref;
+      break;
+
+   default:
+      unreachable("Unsupported instruction type.");
+      return false;
+   }
+
+   /* We don't want to be modifying regs. */
+   assert(rogue_ref_is_regarray(ref));
+
+   if (ref->regarray == new_regarray)
+      return false;
+
+   rogue_unlink_instr_write_regarray(instr, write);
+   *ref = rogue_ref_regarray(new_regarray);
+   rogue_link_instr_write_regarray(instr, write, new_regarray, dst_index);
+
+   return true;
+}
+
+static inline bool rogue_src_regarray_replace(rogue_regarray_use *use,
+                                              rogue_regarray *new_regarray)
+{
+   unsigned src_index = use->src_index;
+   rogue_instr *instr = use->instr;
+   rogue_ref *ref;
+
+   switch (instr->type) {
+   case ROGUE_INSTR_TYPE_ALU:
+      ref = &rogue_instr_as_alu(instr)->src[src_index].ref;
+      break;
+
+   case ROGUE_INSTR_TYPE_BACKEND:
+      ref = &rogue_instr_as_backend(instr)->src[src_index].ref;
+      break;
+
+   case ROGUE_INSTR_TYPE_CTRL:
+      ref = &rogue_instr_as_ctrl(instr)->src[src_index].ref;
+      break;
+
+   default:
+      unreachable("Unsupported instruction type.");
+      return false;
+   }
+
+   /* We don't want to be modifying reg. */
+   assert(rogue_ref_is_regarray(ref));
+
+   if (ref->regarray == new_regarray)
+      return false;
+
+   rogue_unlink_instr_use_regarray(instr, use);
+   *ref = rogue_ref_regarray(new_regarray);
+   rogue_link_instr_use_regarray(instr, use, new_regarray, src_index);
+
+   return true;
+}
+
+static inline bool rogue_regarray_replace(rogue_regarray *old_regarray,
+                                          rogue_regarray *new_regarray)
+{
+   bool replaced = true;
+
+   rogue_foreach_regarray_write_safe (write, old_regarray) {
+      replaced &= rogue_dst_regarray_replace(write, new_regarray);
+   }
+
+   rogue_foreach_regarray_use_safe (use, old_regarray) {
+      replaced &= rogue_src_regarray_replace(use, new_regarray);
+   }
+
+   /* N.B. The old regarray isn't automatically deleted here, this needs to be
+    * done manually. */
 
    return replaced;
 }
@@ -2243,6 +2481,16 @@ static inline unsigned rogue_instr_supported_phases(const rogue_instr *instr)
          return 0;
 
       supported_phases = BITFIELD_BIT(ROGUE_INSTR_PHASE_CTRL);
+      break;
+   }
+
+   case ROGUE_INSTR_TYPE_BITWISE: {
+      rogue_bitwise_instr *bitwise = rogue_instr_as_bitwise(instr);
+      if (bitwise->op >= ROGUE_BITWISE_OP_PSEUDO)
+         return 0;
+
+      const rogue_bitwise_op_info *info = &rogue_bitwise_op_infos[bitwise->op];
+      supported_phases = info->supported_phases;
       break;
    }
 
@@ -2525,9 +2773,13 @@ typedef struct rogue_build_ctx {
 
    rogue_common_build_data common_data[MESA_SHADER_FRAGMENT + 1];
    rogue_build_data stage_data;
+   struct pvr_pipeline_layout *pipeline_layout;
+   unsigned next_ssa_idx;
 } rogue_build_ctx;
 
-rogue_build_ctx *rogue_build_context_create(rogue_compiler *compiler);
+rogue_build_ctx *
+rogue_build_context_create(rogue_compiler *compiler,
+                           struct pvr_pipeline_layout *pipeline_layout);
 
 void rogue_collect_io_data(rogue_build_ctx *ctx, nir_shader *nir);
 
@@ -2555,7 +2807,7 @@ nir_shader *rogue_spirv_to_nir(rogue_build_ctx *ctx,
 /* Custom NIR passes. */
 void rogue_nir_pfo(nir_shader *shader);
 
-bool rogue_nir_lower_io(nir_shader *shader, void *layout);
+bool rogue_nir_lower_io(nir_shader *shader);
 
 rogue_shader *rogue_nir_to_rogue(rogue_build_ctx *ctx, const nir_shader *nir);
 

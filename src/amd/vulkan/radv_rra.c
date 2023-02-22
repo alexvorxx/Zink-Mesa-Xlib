@@ -21,8 +21,10 @@
  * IN THE SOFTWARE.
  */
 
+#include "bvh/bvh.h"
 #include "amd_family.h"
-#include "radv_acceleration_structure.h"
+#include "radv_private.h"
+#include "vk_acceleration_structure.h"
 #include "vk_common_entrypoints.h"
 
 #define RRA_MAGIC 0x204644525F444D41
@@ -1063,7 +1065,7 @@ rra_map_accel_struct_data(struct rra_copy_context *ctx, uint32_t i)
       return mapped_data;
    }
 
-   const struct radv_acceleration_structure *accel_struct = ctx->entries[i]->key;
+   const struct vk_acceleration_structure *accel_struct = ctx->entries[i]->key;
    VkResult result;
 
    VkCommandBufferBeginInfo begin_info = {
@@ -1081,7 +1083,7 @@ rra_map_accel_struct_data(struct rra_copy_context *ctx, uint32_t i)
 
    VkCopyBufferInfo2 copy_info = {
       .sType = VK_STRUCTURE_TYPE_COPY_BUFFER_INFO_2,
-      .srcBuffer = radv_buffer_to_handle(accel_struct->buffer),
+      .srcBuffer = accel_struct->buffer,
       .dstBuffer = ctx->buffer,
       .regionCount = 1,
       .pRegions = &copy,

@@ -166,6 +166,66 @@ agx_pack_memory_index(agx_index index, bool *flag)
    }
 }
 
+static uint16_t
+agx_pack_local_base(agx_index index, unsigned *flags)
+{
+   assert(index.size == AGX_SIZE_16);
+
+   if (index.type == AGX_INDEX_IMMEDIATE) {
+      assert(index.value == 0);
+      *flags = 2;
+      return 0;
+   } else if (index.type == AGX_INDEX_UNIFORM) {
+      *flags = 1 | ((index.value >> 8) << 1);
+      return index.value & BITFIELD_MASK(7);
+   } else {
+      assert_register_is_aligned(index);
+      *flags = 0;
+      return index.value;
+   }
+}
+
+static uint16_t
+agx_pack_local_index(agx_index index, bool *flag)
+{
+   assert(index.size == AGX_SIZE_16);
+
+   if (index.type == AGX_INDEX_IMMEDIATE) {
+      assert(index.value < 0x10000);
+      *flag = 1;
+      return index.value;
+   } else {
+      assert_register_is_aligned(index);
+      *flag = 0;
+      return index.value;
+   }
+}
+
+static unsigned
+agx_pack_atomic_source(agx_index index)
+{
+   assert(index.size == AGX_SIZE_32 && "no 64-bit atomics yet");
+   assert_register_is_aligned(index);
+   return index.value;
+}
+
+static unsigned
+agx_pack_atomic_dest(agx_index index, bool *flag)
+{
+   assert(index.size == AGX_SIZE_32 && "no 64-bit atomics yet");
+
+   /* Atomic destinstions are optional (e.g. for update with no return) */
+   if (index.type == AGX_INDEX_NULL) {
+      *flag = 0;
+      return 0;
+   }
+
+   /* But are otherwise registers */
+   assert_register_is_aligned(index);
+   *flag = 1;
+   return index.value;
+}
+
 /* ALU goes through a common path */
 
 static unsigned
@@ -580,6 +640,80 @@ agx_pack_instr(struct util_dynarray *emission, struct util_dynarray *fixups,
       break;
    }
 
+   case AGX_OPCODE_LOCAL_LOAD:
+   case AGX_OPCODE_LOCAL_STORE: {
+      bool is_load = I->op == AGX_OPCODE_LOCAL_LOAD;
+      bool L = true; /* TODO: when would you want short? */
+      unsigned At;
+      bool Rt, Ot;
+
+      unsigned R = agx_pack_memory_reg(is_load ? I->dest[0] : I->src[0], &Rt);
+      unsigned A = agx_pack_local_base(is_load ? I->src[0] : I->src[1], &At);
+      unsigned O = agx_pack_local_index(is_load ? I->src[1] : I->src[2], &Ot);
+
+      uint64_t raw =
+         agx_opcodes_info[I->op].encoding.exact | (Rt ? BITFIELD64_BIT(8) : 0) |
+         ((R & BITFIELD_MASK(6)) << 9) | (L ? BITFIELD64_BIT(15) : 0) |
+         ((A & BITFIELD_MASK(6)) << 16) | (At << 22) | (I->format << 24) |
+         ((O & BITFIELD64_MASK(6)) << 28) | (Ot ? BITFIELD64_BIT(34) : 0) |
+         (((uint64_t)I->mask) << 36) | (((uint64_t)(O >> 6)) << 48) |
+         (((uint64_t)(A >> 6)) << 58) | (((uint64_t)(R >> 6)) << 60);
+
+      unsigned size = L ? 8 : 6;
+      memcpy(util_dynarray_grow_bytes(emission, 1, size), &raw, size);
+      break;
+   }
+
+   case AGX_OPCODE_ATOMIC: {
+      bool At, Ot, Rt;
+      unsigned A = agx_pack_memory_base(I->src[1], &At);
+      unsigned O = agx_pack_memory_index(I->src[2], &Ot);
+      unsigned R = agx_pack_atomic_dest(I->dest[0], &Rt);
+      unsigned S = agx_pack_atomic_source(I->src[0]);
+
+      uint64_t raw =
+         agx_opcodes_info[I->op].encoding.exact |
+         (((uint64_t)I->atomic_opc) << 6) | ((R & BITFIELD_MASK(6)) << 10) |
+         ((A & BITFIELD_MASK(4)) << 16) | ((O & BITFIELD_MASK(4)) << 20) |
+         (Ot ? (1 << 24) : 0) | (I->src[2].abs ? (1 << 25) : 0) | (At << 27) |
+         (I->scoreboard << 30) |
+         (((uint64_t)((O >> 4) & BITFIELD_MASK(4))) << 32) |
+         (((uint64_t)((A >> 4) & BITFIELD_MASK(4))) << 36) |
+         (((uint64_t)(R >> 6)) << 40) | (Rt ? BITFIELD64_BIT(47) : 0) |
+         (((uint64_t)S) << 48) | (((uint64_t)(O >> 8)) << 56);
+
+      memcpy(util_dynarray_grow_bytes(emission, 1, 8), &raw, 8);
+      break;
+   }
+
+   case AGX_OPCODE_LOCAL_ATOMIC: {
+      bool L = true; /* TODO: Don't force */
+
+      unsigned At;
+      bool Rt = false, Ot;
+
+      bool Ra = I->dest[0].type != AGX_INDEX_NULL;
+      unsigned R = Ra ? agx_pack_memory_reg(I->dest[0], &Rt) : 0;
+      unsigned S = agx_pack_atomic_source(I->src[0]);
+      unsigned A = agx_pack_local_base(I->src[1], &At);
+      unsigned O = agx_pack_local_index(I->src[2], &Ot);
+
+      uint64_t raw =
+         agx_opcodes_info[I->op].encoding.exact | (Rt ? BITFIELD64_BIT(8) : 0) |
+         ((R & BITFIELD_MASK(6)) << 9) | (L ? BITFIELD64_BIT(15) : 0) |
+         ((A & BITFIELD_MASK(6)) << 16) | (At << 22) |
+         (((uint64_t)I->atomic_opc) << 24) | ((O & BITFIELD64_MASK(6)) << 28) |
+         (Ot ? BITFIELD64_BIT(34) : 0) | (Ra ? BITFIELD64_BIT(38) : 0) |
+         (((uint64_t)(O >> 6)) << 48) | (((uint64_t)(A >> 6)) << 58) |
+         (((uint64_t)(R >> 6)) << 60);
+
+      uint64_t raw2 = S;
+
+      memcpy(util_dynarray_grow_bytes(emission, 1, 8), &raw, 8);
+      memcpy(util_dynarray_grow_bytes(emission, 1, 2), &raw2, 2);
+      break;
+   }
+
    case AGX_OPCODE_TEXTURE_LOAD:
    case AGX_OPCODE_TEXTURE_SAMPLE: {
       assert(I->mask != 0);
@@ -601,12 +735,11 @@ agx_pack_instr(struct util_dynarray *emission, struct util_dynarray *fixups,
       unsigned q2 = 0;   // XXX
       unsigned q3 = 12;  // XXX
       unsigned kill = 0; // helper invocation kill bit
-      unsigned q6 = 0;   // XXX
 
       uint32_t extend = ((U & BITFIELD_MASK(5)) << 0) | (kill << 5) |
                         ((I->dim >> 3) << 7) | ((R >> 6) << 8) |
                         ((C >> 6) << 10) | ((D >> 6) << 12) | ((T >> 6) << 14) |
-                        ((O & BITFIELD_MASK(6)) << 16) | (q6 << 22) |
+                        ((O & BITFIELD_MASK(6)) << 16) | (I->gather << 23) |
                         (I->offset << 27) | ((S >> 6) << 28) | ((O >> 6) << 30);
 
       bool L = (extend != 0);

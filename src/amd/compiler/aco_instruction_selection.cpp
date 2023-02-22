@@ -10340,6 +10340,7 @@ static void end_uniform_if(isel_context* ctx, if_context* ic);
 static void
 visit_loop(isel_context* ctx, nir_loop* loop)
 {
+   assert(!nir_loop_has_continue_construct(loop));
    loop_context lc;
    begin_loop(ctx, &lc);
 

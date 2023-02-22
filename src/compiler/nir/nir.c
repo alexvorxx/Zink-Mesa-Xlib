@@ -672,6 +672,8 @@ nir_loop_create(nir_shader *shader)
    body->successors[0] = body;
    _mesa_set_add(body->predecessors, body);
 
+   exec_list_make_empty(&loop->continue_list);
+
    return loop;
 }
 
@@ -1992,23 +1994,28 @@ nir_block_cf_tree_next(nir_block *block)
       return nir_cf_node_cf_tree_first(cf_next);
 
    nir_cf_node *parent = block->cf_node.parent;
+   if (parent->type == nir_cf_node_function)
+      return NULL;
+
+   /* Is this the last block of a cf_node? Return the following block */
+   if (block == nir_cf_node_cf_tree_last(parent))
+      return nir_cf_node_as_block(nir_cf_node_next(parent));
 
    switch (parent->type) {
    case nir_cf_node_if: {
-      /* Are we at the end of the if? Go to the beginning of the else */
+      /* We are at the end of the if. Go to the beginning of the else */
       nir_if *if_stmt = nir_cf_node_as_if(parent);
-      if (block == nir_if_last_then_block(if_stmt))
-         return nir_if_first_else_block(if_stmt);
-
-      assert(block == nir_if_last_else_block(if_stmt));
+      assert(block == nir_if_last_then_block(if_stmt));
+      return nir_if_first_else_block(if_stmt);
    }
-   FALLTHROUGH;
 
-   case nir_cf_node_loop:
-      return nir_cf_node_as_block(nir_cf_node_next(parent));
-
-   case nir_cf_node_function:
-      return NULL;
+   case nir_cf_node_loop: {
+      /* We are at the end of the body and there is a continue construct */
+      nir_loop *loop = nir_cf_node_as_loop(parent);
+      assert(block == nir_loop_last_block(loop) &&
+             nir_loop_has_continue_construct(loop));
+      return nir_loop_first_continue_block(loop);
+   }
 
    default:
       unreachable("unknown cf node type");
@@ -2030,23 +2037,27 @@ nir_block_cf_tree_prev(nir_block *block)
       return nir_cf_node_cf_tree_last(cf_prev);
 
    nir_cf_node *parent = block->cf_node.parent;
+   if (parent->type == nir_cf_node_function)
+      return NULL;
+
+   /* Is this the first block of a cf_node? Return the previous block */
+   if (block == nir_cf_node_cf_tree_first(parent))
+      return nir_cf_node_as_block(nir_cf_node_prev(parent));
 
    switch (parent->type) {
    case nir_cf_node_if: {
-      /* Are we at the beginning of the else? Go to the end of the if */
+      /* We are at the beginning of the else. Go to the end of the if */
       nir_if *if_stmt = nir_cf_node_as_if(parent);
-      if (block == nir_if_first_else_block(if_stmt))
-         return nir_if_last_then_block(if_stmt);
-
-      assert(block == nir_if_first_then_block(if_stmt));
+      assert(block == nir_if_first_else_block(if_stmt));
+      return nir_if_last_then_block(if_stmt);
    }
-   FALLTHROUGH;
-
-   case nir_cf_node_loop:
-      return nir_cf_node_as_block(nir_cf_node_prev(parent));
-
-   case nir_cf_node_function:
-      return NULL;
+   case nir_cf_node_loop: {
+      /* We are at the beginning of the continue construct. */
+      nir_loop *loop = nir_cf_node_as_loop(parent);
+      assert(nir_loop_has_continue_construct(loop) &&
+             block == nir_loop_first_continue_block(loop));
+      return nir_loop_last_block(loop);
+   }
 
    default:
       unreachable("unknown cf node type");
@@ -2095,7 +2106,10 @@ nir_block *nir_cf_node_cf_tree_last(nir_cf_node *node)
 
    case nir_cf_node_loop: {
       nir_loop *loop = nir_cf_node_as_loop(node);
-      return nir_loop_last_block(loop);
+      if (nir_loop_has_continue_construct(loop))
+         return nir_loop_last_continue_block(loop);
+      else
+         return nir_loop_last_block(loop);
    }
 
    case nir_cf_node_block: {

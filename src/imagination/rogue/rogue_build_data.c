@@ -32,16 +32,6 @@
 #include "rogue.h"
 #include "util/macros.h"
 
-#define __pvr_address_type uint64_t
-#define __pvr_get_address(pvr_dev_addr) (pvr_dev_addr)
-#define __pvr_make_address(addr_u64) (addr_u64)
-
-#include "csbgen/rogue_pds.h"
-
-#undef __pvr_make_address
-#undef __pvr_get_address
-#undef __pvr_address_type
-
 /**
  * \file rogue_build_data.c
  *
@@ -373,109 +363,6 @@ static void collect_io_data_vs(struct rogue_common_build_data *common_data,
 }
 
 /**
- * \brief Allocates the shared registers that will contain the UBOs.
- *
- * \param[in] ubo_data The UBO data.
- * \return The total number of coefficient registers required by the iterators.
- */
-static unsigned alloc_ubos(struct rogue_ubo_data *ubo_data)
-{
-   unsigned shareds = 0;
-
-   for (unsigned u = 0; u < ubo_data->num_ubo_entries; ++u) {
-      /* Ensure there aren't any gaps. */
-      assert(ubo_data->dest[u] == ~0);
-
-      ubo_data->dest[u] = shareds;
-      shareds += ubo_data->size[u];
-   }
-
-   return shareds;
-}
-
-/**
- * \brief Reserves a UBO and calculates its data.
- *
- * \param[in] ubo_data The UBO data.
- * \param[in] desc_set The UBO descriptor set.
- * \param[in] binding The UBO binding.
- * \param[in] size The size required by the UBO (in dwords).
- */
-static void reserve_ubo(struct rogue_ubo_data *ubo_data,
-                        unsigned desc_set,
-                        unsigned binding,
-                        unsigned size)
-{
-   unsigned i = ubo_data->num_ubo_entries;
-   assert(i < ARRAY_SIZE(ubo_data->desc_set));
-
-   ubo_data->desc_set[i] = desc_set;
-   ubo_data->binding[i] = binding;
-   ubo_data->dest[i] = ~0;
-   ubo_data->size[i] = size;
-   ++ubo_data->num_ubo_entries;
-}
-
-/**
- * \brief Collects UBO data to feed-back to the driver.
- *
- * \param[in] common_data Common build data.
- * \param[in] nir NIR shader.
- */
-static void collect_ubo_data(struct rogue_common_build_data *common_data,
-                             nir_shader *nir)
-{
-   /* Iterate over each UBO. */
-   nir_foreach_variable_with_modes (var, nir, nir_var_mem_ubo) {
-      unsigned desc_set = var->data.driver_location;
-      unsigned binding = var->data.binding;
-      unsigned ubo_size_regs = 0;
-
-      nir_function_impl *entry = nir_shader_get_entrypoint(nir);
-      /* Iterate over each load_ubo that uses this UBO. */
-      nir_foreach_block (block, entry) {
-         nir_foreach_instr (instr, block) {
-            if (instr->type != nir_instr_type_intrinsic)
-               continue;
-
-            nir_intrinsic_instr *intr = nir_instr_as_intrinsic(instr);
-            if (intr->intrinsic != nir_intrinsic_load_ubo)
-               continue;
-
-            assert(nir_src_num_components(intr->src[0]) == 2);
-
-            unsigned load_desc_set = nir_src_comp_as_uint(intr->src[0], 0);
-            unsigned load_binding = nir_src_comp_as_uint(intr->src[0], 1);
-
-            if (load_desc_set != desc_set || load_binding != binding)
-               continue;
-
-            ASSERTED unsigned size_bytes = nir_intrinsic_range(intr);
-            assert(size_bytes == ROGUE_REG_SIZE_BYTES);
-
-            unsigned offset_bytes = nir_intrinsic_range_base(intr);
-            assert(!(offset_bytes % ROGUE_REG_SIZE_BYTES));
-
-            unsigned offset_regs = offset_bytes / ROGUE_REG_SIZE_BYTES;
-
-            /* TODO: Put offsets in a BITSET_DECLARE and check for gaps. */
-
-            /* Find the largest load offset. */
-            ubo_size_regs = MAX2(ubo_size_regs, offset_regs);
-         }
-      }
-
-      /* UBO size = largest offset + 1. */
-      ++ubo_size_regs;
-
-      reserve_ubo(&common_data->ubo_data, desc_set, binding, ubo_size_regs);
-   }
-
-   common_data->shareds = alloc_ubos(&common_data->ubo_data);
-   assert(common_data->shareds < rogue_reg_infos[ROGUE_REG_CLASS_SHARED].num);
-}
-
-/**
  * \brief Collects I/O data to feed-back to the driver.
  *
  * Collects the inputs/outputs/memory required, and feeds that back to the
@@ -491,9 +378,6 @@ void rogue_collect_io_data(struct rogue_build_ctx *ctx, nir_shader *nir)
 {
    gl_shader_stage stage = nir->info.stage;
    struct rogue_common_build_data *common_data = &ctx->common_data[stage];
-
-   /* Collect stage-agnostic data. */
-   collect_ubo_data(common_data, nir);
 
    /* Collect stage-specific data. */
    switch (stage) {
@@ -575,42 +459,4 @@ unsigned rogue_output_index_vs(struct rogue_vertex_outputs *outputs,
    assert(outputs->base[i] != ~0);
 
    return outputs->base[i] + component;
-}
-
-/**
- * \brief Returns the allocated shared register index for a given UBO offset.
- *
- * \param[in] ubo_data The UBO data.
- * \param[in] desc_set The UBO descriptor set.
- * \param[in] binding The UBO binding.
- * \param[in] offset_bytes The UBO offset in bytes.
- * \return The UBO offset shared register index.
- */
-PUBLIC
-unsigned rogue_ubo_reg(struct rogue_ubo_data *ubo_data,
-                       unsigned desc_set,
-                       unsigned binding,
-                       unsigned offset_bytes)
-{
-   unsigned ubo_index = ~0;
-   unsigned offset_regs;
-
-   /* Find UBO located at (desc_set, binding). */
-   for (unsigned u = 0; u < ubo_data->num_ubo_entries; ++u) {
-      if (ubo_data->dest[u] == ~0)
-         continue;
-
-      if (ubo_data->desc_set[u] != desc_set || ubo_data->binding[u] != binding)
-         continue;
-
-      ubo_index = u;
-      break;
-   }
-
-   assert(ubo_index != ~0);
-
-   assert(!(offset_bytes % ROGUE_REG_SIZE_BYTES));
-   offset_regs = offset_bytes / ROGUE_REG_SIZE_BYTES;
-
-   return ubo_data->dest[ubo_index] + offset_regs;
 }

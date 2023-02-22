@@ -2952,6 +2952,7 @@ ntt_emit_if(struct ntt_compile *c, nir_if *if_stmt)
 static void
 ntt_emit_loop(struct ntt_compile *c, nir_loop *loop)
 {
+   assert(!nir_loop_has_continue_construct(loop));
    ntt_BGNLOOP(c);
    ntt_emit_cf_list(c, &loop->body);
    ntt_ENDLOOP(c);

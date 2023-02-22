@@ -295,6 +295,7 @@ gather_vars_written(struct copy_prop_var_state *state,
 
    case nir_cf_node_loop: {
       nir_loop *loop = nir_cf_node_as_loop(cf_node);
+      assert(!nir_loop_has_continue_construct(loop));
 
       new_written = create_vars_written(state);
 
@@ -1472,6 +1473,7 @@ copy_prop_vars_cf_node(struct copy_prop_var_state *state,
 
    case nir_cf_node_loop: {
       nir_loop *loop = nir_cf_node_as_loop(cf_node);
+      assert(!nir_loop_has_continue_construct(loop));
 
       /* Invalidate before cloning the copies for the loop, since the loop
        * body can be executed more than once.

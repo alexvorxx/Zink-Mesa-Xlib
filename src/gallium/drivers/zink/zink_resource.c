@@ -36,7 +36,6 @@
 #ifdef VK_USE_PLATFORM_METAL_EXT
 #include "QuartzCore/CAMetalLayer.h"
 #endif
-#include "vulkan/wsi/wsi_common.h"
 
 #include "vk_format.h"
 #include "util/u_blitter.h"

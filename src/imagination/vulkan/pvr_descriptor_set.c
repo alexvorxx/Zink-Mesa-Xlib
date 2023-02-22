@@ -171,27 +171,22 @@ static void pvr_descriptor_size_info_init(
    }
 }
 
-static bool pvr_stage_matches_vk_flags(enum pvr_stage_allocation pvr_stage,
-                                       VkShaderStageFlags flags)
+static uint8_t vk_to_pvr_shader_stage_flags(VkShaderStageFlags vk_flags)
 {
-   VkShaderStageFlags flags_per_stage;
+   uint8_t flags = 0;
 
-   switch (pvr_stage) {
-   case PVR_STAGE_ALLOCATION_VERTEX_GEOMETRY:
-      flags_per_stage = VK_SHADER_STAGE_VERTEX_BIT |
-                        VK_SHADER_STAGE_GEOMETRY_BIT;
-      break;
-   case PVR_STAGE_ALLOCATION_FRAGMENT:
-      flags_per_stage = VK_SHADER_STAGE_FRAGMENT_BIT;
-      break;
-   case PVR_STAGE_ALLOCATION_COMPUTE:
-      flags_per_stage = VK_SHADER_STAGE_COMPUTE_BIT;
-      break;
-   default:
-      unreachable("Unrecognized allocation stage.");
-   }
+   static_assert(PVR_STAGE_ALLOCATION_COUNT <= 8, "Not enough bits for flags.");
 
-   return !!(flags_per_stage & flags);
+   if (vk_flags & (VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_GEOMETRY_BIT))
+      flags |= BITFIELD_BIT(PVR_STAGE_ALLOCATION_VERTEX_GEOMETRY);
+
+   if (vk_flags & VK_SHADER_STAGE_FRAGMENT_BIT)
+      flags |= BITFIELD_BIT(PVR_STAGE_ALLOCATION_FRAGMENT);
+
+   if (vk_flags & VK_SHADER_STAGE_COMPUTE_BIT)
+      flags |= BITFIELD_BIT(PVR_STAGE_ALLOCATION_COMPUTE);
+
+   return flags;
 }
 
 /* If allocator == NULL, the internal one will be used. */
@@ -506,7 +501,7 @@ VkResult pvr_CreateDescriptorSetLayout(
       const VkDescriptorSetLayoutBinding *const binding = &bindings[bind_num];
       struct pvr_descriptor_set_layout_binding *const internal_binding =
          &layout->bindings[bind_num];
-      VkShaderStageFlags shader_stages = 0;
+      uint8_t shader_stages = 0;
 
       internal_binding->type = binding->descriptorType;
       /* The binding_numbers can be non-contiguous so we ignore the user
@@ -522,7 +517,7 @@ VkResult pvr_CreateDescriptorSetLayout(
        * So do not use bindings->stageFlags, use shader_stages instead.
        */
       if (binding->descriptorCount) {
-         shader_stages = binding->stageFlags;
+         shader_stages = vk_to_pvr_shader_stage_flags(binding->stageFlags);
 
          internal_binding->descriptor_count = binding->descriptorCount;
          internal_binding->descriptor_index = layout->descriptor_count;
@@ -572,18 +567,16 @@ VkResult pvr_CreateDescriptorSetLayout(
       if (!shader_stages)
          continue;
 
-      internal_binding->shader_stages = shader_stages;
-      layout->shader_stages |= shader_stages;
+      internal_binding->shader_stage_mask = shader_stages;
+      layout->shader_stage_mask |= shader_stages;
 
       for (uint32_t stage = 0;
            stage < ARRAY_SIZE(layout->bindings[0].per_stage_offset_in_dwords);
            stage++) {
          const VkDescriptorType descriptor_type = binding->descriptorType;
 
-         if (!pvr_stage_matches_vk_flags(stage, shader_stages))
+         if (!(shader_stages & BITFIELD_BIT(stage)))
             continue;
-
-         internal_binding->shader_stage_mask |= (1U << stage);
 
          /* We allocate dynamics primary and secondaries separately so that we
           * can do a partial update of USC shared registers by just DMAing the
@@ -635,10 +628,8 @@ VkResult pvr_CreateDescriptorSetLayout(
            stage < ARRAY_SIZE(layout->bindings[0].per_stage_offset_in_dwords);
            stage++) {
          struct pvr_descriptor_size_info size_info;
-         const VkShaderStageFlags shader_stages =
-            internal_binding->shader_stages;
 
-         if (!pvr_stage_matches_vk_flags(stage, shader_stages))
+         if (!(internal_binding->shader_stage_mask & BITFIELD_BIT(stage)))
             continue;
 
          pvr_descriptor_size_info_init(device, descriptor_type, &size_info);
@@ -879,7 +870,7 @@ VkResult pvr_CreatePipelineLayout(VkDevice _device,
       return vk_error(device, VK_ERROR_OUT_OF_HOST_MEMORY);
 
    layout->set_count = pCreateInfo->setLayoutCount;
-   layout->shader_stages = 0;
+   layout->shader_stage_mask = 0;
    for (uint32_t stage = 0; stage < PVR_STAGE_ALLOCATION_COUNT; stage++) {
       uint32_t descriptor_counts
          [PVR_PIPELINE_LAYOUT_SUPPORTED_DESCRIPTOR_TYPE_COUNT] = { 0 };
@@ -898,7 +889,7 @@ VkResult pvr_CreatePipelineLayout(VkDevice _device,
                             pCreateInfo->pSetLayouts[set_num]);
 
             layout->set_layout[set_num] = set_layout;
-            layout->shader_stages |= set_layout->shader_stages;
+            layout->shader_stage_mask |= set_layout->shader_stage_mask;
          }
 
          const struct pvr_descriptor_set_layout_mem_layout *const mem_layout =

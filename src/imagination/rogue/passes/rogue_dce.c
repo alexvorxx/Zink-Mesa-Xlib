@@ -76,6 +76,9 @@ static bool rogue_dce_instrs(rogue_shader *shader)
       case ROGUE_INSTR_TYPE_CTRL:
          break;
 
+      case ROGUE_INSTR_TYPE_BITWISE:
+         break;
+
       default:
          unreachable("Unsupported instruction type.");
          return false;

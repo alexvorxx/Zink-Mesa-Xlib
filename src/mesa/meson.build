@@ -119,6 +119,7 @@ files_libmesa = files(
   'main/glthread.h',
   'main/glthread_bufferobj.c',
   'main/glthread_draw.c',
+  'main/glthread_draw_unroll.c',
   'main/glthread_get.c',
   'main/glthread_list.c',
   'main/glthread_marshal.h',

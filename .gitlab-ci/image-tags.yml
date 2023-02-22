@@ -17,7 +17,7 @@ variables:
 
    DEBIAN_X86_TEST_ANDROID_TAG: "2023-02-17-deqp-build"
    DEBIAN_X86_TEST_GL_TAG: "2023-02-17-deqp-build"
-   DEBIAN_X86_TEST_VK_TAG: "2023-02-17-deqp-build"
+   DEBIAN_X86_TEST_VK_TAG: "2023-02-20-uprev-vkd3d-proton"
 
    ALPINE_X86_BUILD_TAG: "2023-01-20-all-in-1"
    FEDORA_X86_BUILD_TAG: "2023-02-09-f36"

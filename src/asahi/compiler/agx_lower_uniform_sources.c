@@ -28,7 +28,12 @@ should_lower(enum agx_opcode op, agx_index uniform, unsigned src_index)
    case AGX_OPCODE_DEVICE_LOAD:
       return src_index != 0 || high;
    case AGX_OPCODE_DEVICE_STORE:
+   case AGX_OPCODE_ATOMIC:
       return src_index != 1 || high;
+   case AGX_OPCODE_LOCAL_LOAD:
+      return src_index != 0;
+   case AGX_OPCODE_LOCAL_STORE:
+      return src_index != 1;
    case AGX_OPCODE_ZS_EMIT:
    case AGX_OPCODE_ST_TILE:
    case AGX_OPCODE_LD_TILE:

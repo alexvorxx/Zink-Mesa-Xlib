@@ -1621,6 +1621,7 @@ opt_if_cf_list(nir_builder *b, struct exec_list *cf_list,
 
       case nir_cf_node_loop: {
          nir_loop *loop = nir_cf_node_as_loop(cf_node);
+         assert(!nir_loop_has_continue_construct(loop));
          progress |= opt_if_cf_list(b, &loop->body,
                                     options);
          progress |= opt_simplify_bcsel_of_phi(b, loop);
@@ -1666,6 +1667,7 @@ opt_if_regs_cf_list(struct exec_list *cf_list)
 
       case nir_cf_node_loop: {
          nir_loop *loop = nir_cf_node_as_loop(cf_node);
+         assert(!nir_loop_has_continue_construct(loop));
          progress |= opt_if_regs_cf_list(&loop->body);
          progress |= opt_peel_loop_initial_if(loop);
          break;
@@ -1704,6 +1706,7 @@ opt_if_safe_cf_list(nir_builder *b, struct exec_list *cf_list)
 
       case nir_cf_node_loop: {
          nir_loop *loop = nir_cf_node_as_loop(cf_node);
+         assert(!nir_loop_has_continue_construct(loop));
          progress |= opt_if_safe_cf_list(b, &loop->body);
          progress |= opt_split_alu_of_phi(b, loop);
          break;

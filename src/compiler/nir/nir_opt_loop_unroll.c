@@ -969,6 +969,7 @@ process_loops(nir_shader *sh, nir_cf_node *cf_node, bool *has_nested_loop_out,
    }
    case nir_cf_node_loop: {
       loop = nir_cf_node_as_loop(cf_node);
+      assert(!nir_loop_has_continue_construct(loop));
       progress |= process_loops_in_block(sh, &loop->body, &has_nested_loop);
 
       break;

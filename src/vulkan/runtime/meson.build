@@ -22,6 +22,8 @@
 # dependency tracking.
 
 vulkan_runtime_files = files(
+  'vk_acceleration_structure.c',
+  'vk_acceleration_structure.h',
   'vk_buffer.c',
   'vk_buffer.h',
   'vk_cmd_copy.c',

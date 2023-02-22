@@ -132,7 +132,7 @@ zink-freedreno-a630-traces:
   variables:
     PIGLIT_PROFILES: all
     PIGLIT_PLATFORM: gbm
-    ZINK_DESCRIPTORS: db
+    RADV_PERFTEST: gpl
     B2C_TEST_SCRIPT: ./install/valve/gl_combined_testing.sh
     B2C_JOB_SUCCESS_REGEX: 'Execution is over, pipeline status: 0'
 

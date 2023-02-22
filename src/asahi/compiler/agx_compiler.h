@@ -321,6 +321,7 @@ typedef struct {
       enum agx_icond icond;
       enum agx_fcond fcond;
       enum agx_round round;
+      enum agx_atomic_opc atomic_opc;
       enum agx_lod_mode lod_mode;
       struct agx_block *target;
    };
@@ -335,9 +336,10 @@ typedef struct {
    bool invert_cond : 1;
 
    /* TODO: Handle tex ops more efficient */
-   enum agx_dim dim : 4;
-   bool offset      : 1;
-   bool shadow      : 1;
+   enum agx_dim dim       : 4;
+   bool offset            : 1;
+   bool shadow            : 1;
+   enum agx_gather gather : 3;
 
    /* Final st_vary op */
    bool last : 1;
@@ -356,7 +358,7 @@ typedef struct {
    bool saturate : 1;
    unsigned mask : 4;
 
-   unsigned padding : 11;
+   unsigned padding : 8;
 } agx_instr;
 
 static inline void
@@ -473,21 +475,22 @@ agx_size_for_bits(unsigned bits)
 }
 
 static inline agx_index
+agx_nir_ssa_index(nir_ssa_def *ssa)
+{
+   return agx_get_index(ssa->index, agx_size_for_bits(ssa->bit_size));
+}
+
+static inline agx_index
 agx_src_index(nir_src *src)
 {
    assert(src->is_ssa);
-
-   return agx_get_index(src->ssa->index,
-                        agx_size_for_bits(nir_src_bit_size(*src)));
+   return agx_nir_ssa_index(src->ssa);
 }
 
 static inline agx_index
 agx_dest_index(nir_dest *dst)
 {
-   assert(dst->is_ssa);
-
-   return agx_get_index(dst->ssa.index,
-                        agx_size_for_bits(nir_dest_bit_size(*dst)));
+   return agx_nir_ssa_index(&dst->ssa);
 }
 
 static inline agx_index
@@ -828,6 +831,7 @@ bool agx_nir_opt_preamble(nir_shader *s, unsigned *preamble_size);
 bool agx_nir_lower_load_mask(nir_shader *shader);
 bool agx_nir_lower_address(nir_shader *shader);
 bool agx_nir_lower_ubo(nir_shader *shader);
+bool agx_nir_lower_shared_bitsize(nir_shader *shader);
 
 #ifdef __cplusplus
 } /* extern C */

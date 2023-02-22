@@ -1,5 +1,6 @@
 /*
  * Copyright © 2021 Bas Nieuwenhuizen
+ * Copyright © 2023 Valve Corporation
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -21,24 +22,22 @@
  * IN THE SOFTWARE.
  */
 
-#ifndef RADV_ACCELERATION_STRUCTURE_H
-#define RADV_ACCELERATION_STRUCTURE_H
+#ifndef VK_ACCELERATION_STRUCTURE_H
+#define VK_ACCELERATION_STRUCTURE_H
 
-#include "bvh/bvh.h"
+#include "vk_object.h"
 
-#include "radv_private.h"
-
-struct radv_acceleration_structure {
+struct vk_acceleration_structure {
    struct vk_object_base base;
 
-   struct radv_buffer *buffer;
+   VkBuffer buffer;
    uint64_t offset;
    uint64_t size;
 };
 
-uint64_t radv_acceleration_structure_get_va(struct radv_acceleration_structure *accel_struct);
+VkDeviceAddress vk_acceleration_structure_get_va(struct vk_acceleration_structure *accel_struct);
 
-VK_DEFINE_NONDISP_HANDLE_CASTS(radv_acceleration_structure, base, VkAccelerationStructureKHR,
+VK_DEFINE_NONDISP_HANDLE_CASTS(vk_acceleration_structure, base, VkAccelerationStructureKHR,
                                VK_OBJECT_TYPE_ACCELERATION_STRUCTURE_KHR)
 
 #endif

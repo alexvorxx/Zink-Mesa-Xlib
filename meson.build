@@ -154,6 +154,10 @@ if gallium_drivers.contains('auto')
       gallium_drivers = [
         'r300', 'r600', 'radeonsi', 'nouveau', 'virgl', 'swrast'
       ]
+    elif ['loongarch64'].contains(host_machine.cpu_family())
+      gallium_drivers = [
+        'r300', 'r600', 'radeonsi', 'nouveau', 'virgl', 'etnaviv', 'swrast'
+      ]
     else
       error('Unknown architecture @0@. Please pass -Dgallium-drivers to set driver options. Patches gladly accepted to fix this.'.format(
             host_machine.cpu_family()))
@@ -217,6 +221,8 @@ if _vulkan_drivers.contains('auto')
     elif ['arm', 'aarch64'].contains(host_machine.cpu_family())
       _vulkan_drivers = ['swrast']
     elif ['mips', 'mips64', 'riscv32', 'riscv64'].contains(host_machine.cpu_family())
+      _vulkan_drivers = ['amd', 'swrast']
+    elif ['loongarch64'].contains(host_machine.cpu_family())
       _vulkan_drivers = ['amd', 'swrast']
     else
       error('Unknown architecture @0@. Please pass -Dvulkan-drivers to set driver options. Patches gladly accepted to fix this.'.format(
@@ -1240,6 +1246,11 @@ elif host_machine.cpu_family() == 'mips64' and host_machine.endian() == 'little'
   if system_has_kms_drm
     with_asm_arch = 'mips64el'
     pre_args += ['-DUSE_MIPS64EL_ASM']
+  endif
+elif host_machine.cpu_family() == 'loongarch64'
+  if system_has_kms_drm
+    with_asm_arch = 'loongarch64'
+    pre_args += ['-DUSE_LOONGARCH64_ASM']
   endif
 endif
 

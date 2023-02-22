@@ -4055,7 +4055,7 @@ radv_CreateDevice(VkPhysicalDevice physicalDevice, const VkDeviceCreateInfo *pCr
 
    if (radv_thread_trace_enabled()) {
       if (device->physical_device->rad_info.gfx_level < GFX8 ||
-          device->physical_device->rad_info.gfx_level > GFX10_3) {
+          device->physical_device->rad_info.gfx_level > GFX11) {
          fprintf(stderr, "GPU hardware not supported: refer to "
                          "the RGP documentation for the list of "
                          "supported GPUs!\n");
@@ -4074,7 +4074,9 @@ radv_CreateDevice(VkPhysicalDevice physicalDevice, const VkDeviceCreateInfo *pCr
               radv_spm_trace_enabled() ? "enabled" : "disabled");
 
       if (radv_spm_trace_enabled()) {
-         if (device->physical_device->rad_info.gfx_level >= GFX10) {
+         /* TODO: add SPM counters for GFX11. */
+         if (device->physical_device->rad_info.gfx_level == GFX10 ||
+             device->physical_device->rad_info.gfx_level == GFX10_3) {
             if (!radv_spm_init(device)) {
                result = VK_ERROR_INITIALIZATION_FAILED;
                goto fail;

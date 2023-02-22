@@ -1883,6 +1883,7 @@ bool needs_exec_mask(const Instruction* instr);
 aco_opcode get_ordered(aco_opcode op);
 aco_opcode get_unordered(aco_opcode op);
 aco_opcode get_inverse(aco_opcode op);
+aco_opcode get_swapped(aco_opcode op);
 aco_opcode get_f32_cmp(aco_opcode op);
 aco_opcode get_vcmpx(aco_opcode op);
 unsigned get_cmp_bitsize(aco_opcode op);

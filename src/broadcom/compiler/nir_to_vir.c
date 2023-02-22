@@ -4246,6 +4246,8 @@ ntq_emit_uniform_loop(struct v3d_compile *c, nir_loop *loop)
 static void
 ntq_emit_loop(struct v3d_compile *c, nir_loop *loop)
 {
+        assert(!nir_loop_has_continue_construct(loop));
+
         /* Disable flags optimization for loop conditions. The problem here is
          * that we can have code like this:
          *

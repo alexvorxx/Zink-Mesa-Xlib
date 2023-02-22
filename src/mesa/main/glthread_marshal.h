@@ -94,52 +94,15 @@ _mesa_glthread_has_no_unpack_buffer(const struct gl_context *ctx)
    return ctx->GLThread.CurrentPixelUnpackBufferName == 0;
 }
 
-/**
- * Instead of conditionally handling marshaling immediate index data in draw
- * calls (deprecated and removed in GL core), we just disable threading.
- */
-static inline bool
-_mesa_glthread_has_non_vbo_vertices_or_indices(const struct gl_context *ctx)
+static inline void
+_mesa_glthread_update_draw_always_async(struct gl_context *ctx)
 {
-   const struct glthread_state *glthread = &ctx->GLThread;
-   struct glthread_vao *vao = glthread->CurrentVAO;
-
-   return ctx->API != API_OPENGL_CORE &&
-          (vao->CurrentElementBufferName == 0 ||
-           (vao->UserPointerMask & vao->BufferEnabled));
-}
-
-static inline bool
-_mesa_glthread_has_non_vbo_vertices(const struct gl_context *ctx)
-{
-   const struct glthread_state *glthread = &ctx->GLThread;
-   const struct glthread_vao *vao = glthread->CurrentVAO;
-
-   return ctx->API != API_OPENGL_CORE &&
-          (vao->UserPointerMask & vao->BufferEnabled);
-}
-
-static inline bool
-_mesa_glthread_has_non_vbo_vertices_or_indirect(const struct gl_context *ctx)
-{
-   const struct glthread_state *glthread = &ctx->GLThread;
-   const struct glthread_vao *vao = glthread->CurrentVAO;
-
-   return ctx->API != API_OPENGL_CORE &&
-          (glthread->CurrentDrawIndirectBufferName == 0 ||
-           (vao->UserPointerMask & vao->BufferEnabled));
-}
-
-static inline bool
-_mesa_glthread_has_non_vbo_vertices_or_indices_or_indirect(const struct gl_context *ctx)
-{
-   const struct glthread_state *glthread = &ctx->GLThread;
-   struct glthread_vao *vao = glthread->CurrentVAO;
-
-   return ctx->API != API_OPENGL_CORE &&
-          (glthread->CurrentDrawIndirectBufferName == 0 ||
-           vao->CurrentElementBufferName == 0 ||
-           (vao->UserPointerMask & vao->BufferEnabled));
+   /* Executing erroneous cases will just generate GL_INVALID_OPERATION. */
+   ctx->GLThread.draw_always_async =
+      ctx->API == API_OPENGL_CORE ||
+      ctx->CurrentServerDispatch == ctx->ContextLost ||
+      ctx->GLThread.inside_begin_end ||
+      ctx->GLThread.ListMode;
 }
 
 static inline unsigned
@@ -470,11 +433,12 @@ _mesa_glthread_Enable(struct gl_context *ctx, GLenum cap)
    case GL_PRIMITIVE_RESTART_FIXED_INDEX:
       _mesa_glthread_set_prim_restart(ctx, cap, true);
       break;
-   case GL_DEBUG_OUTPUT_SYNCHRONOUS_ARB:
-      _mesa_glthread_destroy(ctx, "Enable(DEBUG_OUTPUT_SYNCHRONOUS)");
-      break;
    case GL_BLEND:
       ctx->GLThread.Blend = true;
+      break;
+   case GL_DEBUG_OUTPUT_SYNCHRONOUS:
+      _mesa_glthread_disable(ctx);
+      ctx->GLThread.DebugOutputSynchronous = true;
       break;
    case GL_DEPTH_TEST:
       ctx->GLThread.DepthTest = true;
@@ -520,6 +484,10 @@ _mesa_glthread_Disable(struct gl_context *ctx, GLenum cap)
    case GL_CULL_FACE:
       ctx->GLThread.CullFace = false;
       break;
+   case GL_DEBUG_OUTPUT_SYNCHRONOUS:
+      ctx->GLThread.DebugOutputSynchronous = false;
+      _mesa_glthread_enable(ctx);
+      break;
    case GL_DEPTH_TEST:
       ctx->GLThread.DepthTest = false;
       break;
@@ -556,6 +524,8 @@ _mesa_glthread_IsEnabled(struct gl_context *ctx, GLenum cap)
       return ctx->GLThread.Blend;
    case GL_CULL_FACE:
       return ctx->GLThread.CullFace;
+   case GL_DEBUG_OUTPUT_SYNCHRONOUS:
+      return ctx->GLThread.DebugOutputSynchronous;
    case GL_DEPTH_TEST:
       return ctx->GLThread.DepthTest;
    case GL_LIGHTING:
@@ -879,8 +849,10 @@ _mesa_glthread_CallLists(struct gl_context *ctx, GLsizei n, GLenum type,
 static inline void
 _mesa_glthread_NewList(struct gl_context *ctx, GLuint list, GLenum mode)
 {
-   if (!ctx->GLThread.ListMode)
+   if (!ctx->GLThread.ListMode) {
       ctx->GLThread.ListMode = MIN2(mode, 0xffff);
+      _mesa_glthread_update_draw_always_async(ctx);
+   }
 }
 
 static inline void
@@ -890,6 +862,7 @@ _mesa_glthread_EndList(struct gl_context *ctx)
       return;
 
    ctx->GLThread.ListMode = 0;
+   _mesa_glthread_update_draw_always_async(ctx);
 
    /* Track the last display list change. */
    p_atomic_set(&ctx->GLThread.LastDListChangeBatchIndex, ctx->GLThread.next);
@@ -936,6 +909,20 @@ _mesa_glthread_DeleteFramebuffers(struct gl_context *ctx, GLsizei n,
             ctx->GLThread.CurrentReadFramebuffer = 0;
       }
    }
+}
+
+static inline void
+_mesa_glthread_Begin(struct gl_context *ctx)
+{
+   ctx->GLThread.inside_begin_end = true;
+   _mesa_glthread_update_draw_always_async(ctx);
+}
+
+static inline void
+_mesa_glthread_End(struct gl_context *ctx)
+{
+   ctx->GLThread.inside_begin_end = false;
+   _mesa_glthread_update_draw_always_async(ctx);
 }
 
 #endif /* MARSHAL_H */

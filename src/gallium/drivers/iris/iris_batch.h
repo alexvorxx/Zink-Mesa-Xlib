@@ -429,4 +429,11 @@ iris_batch_name_to_string(enum iris_batch_name name);
         batch <= &ice->batches[((struct iris_screen *)ice->ctx.screen)->devinfo->ver >= 12 ? IRIS_BATCH_BLITTER : IRIS_BATCH_COMPUTE]; \
         ++batch)
 
+void iris_batch_update_syncobjs(struct iris_batch *batch);
+unsigned iris_batch_num_fences(struct iris_batch *batch);
+
+void iris_dump_fence_list(struct iris_batch *batch);
+void iris_dump_bo_list(struct iris_batch *batch);
+void iris_batch_decode_batch(struct iris_batch *batch);
+
 #endif

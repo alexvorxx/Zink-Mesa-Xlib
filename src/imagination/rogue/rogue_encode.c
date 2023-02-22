@@ -181,6 +181,7 @@ typedef union rogue_instr_encoding {
    rogue_alu_instr_encoding alu;
    rogue_backend_instr_encoding backend;
    rogue_ctrl_instr_encoding ctrl;
+   rogue_bitwise_instr_encoding bitwise;
 } PACKED rogue_instr_encoding;
 
 #define SM(src_mod) ROGUE_ALU_SRC_MOD_##src_mod
@@ -255,6 +256,31 @@ static void rogue_encode_alu_instr(const rogue_alu_instr *alu,
       instr_encoding->alu.sngl.pck.pck.format = PCK_FMT_U8888;
       break;
 
+   case ROGUE_ALU_OP_ADD64:
+      instr_encoding->alu.op = ALUOP_INT32_64;
+
+      instr_encoding->alu.int32_64.int32_64_op = INT32_64_OP_ADD64_NMX;
+      instr_encoding->alu.int32_64.s2neg =
+         rogue_alu_src_mod_is_set(alu, 2, SM(NEG));
+      instr_encoding->alu.int32_64.s = 0;
+
+      if (instr_size == 2) {
+         instr_encoding->alu.int32_64.ext = 1;
+         instr_encoding->alu.int32_64.s2abs =
+            rogue_alu_src_mod_is_set(alu, 2, SM(ABS));
+         instr_encoding->alu.int32_64.s1abs =
+            rogue_alu_src_mod_is_set(alu, 1, SM(ABS));
+         instr_encoding->alu.int32_64.s0abs =
+            rogue_alu_src_mod_is_set(alu, 0, SM(ABS));
+         instr_encoding->alu.int32_64.s0neg =
+            rogue_alu_src_mod_is_set(alu, 0, SM(NEG));
+         instr_encoding->alu.int32_64.s1neg =
+            rogue_alu_src_mod_is_set(alu, 1, SM(NEG));
+         instr_encoding->alu.int32_64.cin =
+            rogue_ref_is_io_p0(&alu->src[4].ref);
+      }
+      break;
+
    default:
       unreachable("Unsupported alu op.");
    }
@@ -312,6 +338,42 @@ static void rogue_encode_backend_instr(const rogue_backend_instr *backend,
          rogue_ref_get_reg_index(&backend->dst[0].ref);
       break;
 
+   case ROGUE_BACKEND_OP_LD: {
+      instr_encoding->backend.op = BACKENDOP_DMA;
+      instr_encoding->backend.dma.dmaop = DMAOP_LD;
+      instr_encoding->backend.dma.ld.drc =
+         rogue_ref_get_drc_index(&backend->src[0].ref);
+      instr_encoding->backend.dma.ld.cachemode = CACHEMODE_LD_NORMAL;
+      instr_encoding->backend.dma.ld.srcseladd =
+         rogue_ref_get_io_src_index(&backend->src[2].ref);
+
+      bool imm_burstlen = rogue_ref_is_val(&backend->src[1].ref);
+      /* Only supporting immediate burst lengths for now. */
+      assert(imm_burstlen);
+
+      rogue_burstlen burstlen = {
+         ._ = imm_burstlen ? rogue_ref_get_val(&backend->src[1].ref) : 0
+      };
+
+      if (imm_burstlen) {
+         instr_encoding->backend.dma.ld.burstlen_2_0 = burstlen._2_0;
+      } else {
+         instr_encoding->backend.dma.ld.srcselbl =
+            rogue_ref_get_io_src_index(&backend->src[1].ref);
+      }
+
+      if (instr_size == 3) {
+         instr_encoding->backend.dma.ld.ext = 1;
+         instr_encoding->backend.dma.ld.slccachemode = SLCCACHEMODE_BYPASS;
+         instr_encoding->backend.dma.ld.notimmbl = !imm_burstlen;
+
+         if (imm_burstlen)
+            instr_encoding->backend.dma.ld.burstlen_3 = burstlen._3;
+      }
+
+      break;
+   }
+
    default:
       unreachable("Unsupported backend op.");
    }
@@ -333,7 +395,40 @@ static void rogue_encode_ctrl_instr(const rogue_ctrl_instr *ctrl,
    }
 }
 
-/* TODO: Add p2end where required. */
+static void rogue_encode_bitwise_instr(const rogue_bitwise_instr *bitwise,
+                                       unsigned instr_size,
+                                       rogue_instr_encoding *instr_encoding)
+{
+   switch (bitwise->op) {
+   case ROGUE_BITWISE_OP_BYP0: {
+      instr_encoding->bitwise.phase0 = 1;
+      instr_encoding->bitwise.ph0.shft = SHFT1_BYP;
+      instr_encoding->bitwise.ph0.cnt_byp = 1;
+
+      rogue_imm32 imm32;
+      if (rogue_ref_is_val(&bitwise->src[1].ref))
+         imm32._ = rogue_ref_get_val(&bitwise->src[1].ref);
+
+      if (instr_size > 1) {
+         instr_encoding->bitwise.ph0.ext = 1;
+         instr_encoding->bitwise.ph0.imm_7_0 = imm32._7_0;
+         instr_encoding->bitwise.ph0.imm_15_8 = imm32._15_8;
+      }
+
+      if (instr_size > 3) {
+         instr_encoding->bitwise.ph0.bm = 1;
+         instr_encoding->bitwise.ph0.imm_23_16 = imm32._23_16;
+         instr_encoding->bitwise.ph0.imm_31_24 = imm32._31_24;
+      }
+
+      break;
+   }
+
+   default:
+      unreachable("Invalid bitwise op.");
+   }
+}
+
 static void rogue_encode_instr_group_instrs(rogue_instr_group *group,
                                             struct util_dynarray *binary)
 {
@@ -364,6 +459,12 @@ static void rogue_encode_instr_group_instrs(rogue_instr_group *group,
          rogue_encode_ctrl_instr(rogue_instr_as_ctrl(instr),
                                  group->size.instrs[p],
                                  &instr_encoding);
+         break;
+
+      case ROGUE_INSTR_TYPE_BITWISE:
+         rogue_encode_bitwise_instr(rogue_instr_as_bitwise(instr),
+                                    group->size.instrs[p],
+                                    &instr_encoding);
          break;
 
       default:

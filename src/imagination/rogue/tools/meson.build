@@ -19,13 +19,16 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
+# FIXME: Remove idep_vulkan_runtime once
+# the compiler/driver interface is finalised.
 rogue_compiler = executable(
   'rogue_vk_compiler',
   'vk_compiler.c',
   link_with : [libpowervr_rogue],
-  dependencies : [idep_mesautil, idep_nir],
+  dependencies : [idep_mesautil, idep_nir, idep_vulkan_runtime, dep_csbgen],
   include_directories : [
     inc_mesa,
+    inc_imagination,
     inc_include,
     inc_src,
     inc_mapi,

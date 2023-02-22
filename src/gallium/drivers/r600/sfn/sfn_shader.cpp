@@ -774,6 +774,7 @@ Shader::emit_control_flow(ControlFlowInstr::CFType type)
 bool
 Shader::process_loop(nir_loop *node)
 {
+   assert(!nir_loop_has_continue_construct(node));
    SFN_TRACE_FUNC(SfnLog::flow, "LOOP");
    if (!emit_control_flow(ControlFlowInstr::cf_loop_begin))
       return false;

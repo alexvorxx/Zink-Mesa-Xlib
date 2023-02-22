@@ -261,7 +261,7 @@ radeonsi-raven-va:amd64:
 
 # VKCTS never finishes on gfx7 due to all the GPU resets and hangs.
 # Hence, disable it for now.
-vkcts-kabini-valve:
+.vkcts-kabini-valve:
   extends:
     - .vkcts-test-valve
     - .kabini-test-valve

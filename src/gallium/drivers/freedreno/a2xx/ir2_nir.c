@@ -1019,6 +1019,7 @@ loop_last_block(struct exec_list *list)
 static void
 emit_loop(struct ir2_context *ctx, nir_loop *nloop)
 {
+   assert(!nir_loop_has_continue_construct(nloop));
    ctx->loop_last_block[++ctx->loop_depth] = loop_last_block(&nloop->body);
    emit_cf_list(ctx, &nloop->body);
    ctx->loop_depth--;

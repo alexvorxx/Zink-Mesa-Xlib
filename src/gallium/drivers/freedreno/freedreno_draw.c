@@ -557,6 +557,9 @@ fd_launch_grid(struct pipe_context *pctx,
       &ctx->shaderbuf[PIPE_SHADER_COMPUTE];
    struct fd_batch *batch, *save_batch = NULL;
 
+   if (!fd_render_condition_check(pctx))
+      return;
+
    batch = fd_context_batch_nondraw(ctx);
    fd_batch_reference(&save_batch, ctx->batch);
    fd_batch_reference(&ctx->batch, batch);

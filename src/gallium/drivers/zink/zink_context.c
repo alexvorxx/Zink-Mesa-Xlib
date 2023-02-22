@@ -5319,7 +5319,6 @@ zink_context_create(struct pipe_screen *pscreen, void *priv, unsigned flags)
          }
       }
       if (zink_descriptor_mode == ZINK_DESCRIPTOR_MODE_DB) {
-         assert(sizeof(ctx->di.fbfetch_db) <= screen->info.db_props.inputAttachmentDescriptorSize);
          /* cache null fbfetch descriptor info */
          ctx->di.fbfetch.imageView = zink_get_dummy_surface(ctx, 0)->image_view;
          ctx->di.fbfetch.imageLayout = VK_IMAGE_LAYOUT_GENERAL;

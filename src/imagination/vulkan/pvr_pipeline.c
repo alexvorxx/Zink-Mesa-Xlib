@@ -538,6 +538,15 @@ size_t pvr_pds_get_max_descriptor_upload_const_map_size_in_bytes(void)
     *             (pvr_const_map_entry_literal32)
     *
     *  3. Size of DOUTU entry (pvr_const_map_entry_doutu_address)
+    *
+    *  4. Max. number of PDS address literals (8) * (
+    *         size of entry
+    *             (pvr_const_map_entry_descriptor_set_addrs_table)
+    *
+    *  5. Max. number of address literals with single buffer entry to DOUTD
+              size of entry
+                  (pvr_pds_const_map_entry_addr_literal_buffer) +
+              8 * size of entry (pvr_pds_const_map_entry_addr_literal)
     */
 
    /* FIXME: PVR_MAX_DESCRIPTOR_SETS is 4 and not 8. The comment above seems to
@@ -549,7 +558,9 @@ size_t pvr_pds_get_max_descriptor_upload_const_map_size_in_bytes(void)
            PVR_PDS_MAX_BUFFERS *
               (sizeof(struct pvr_const_map_entry_constant_buffer) +
                sizeof(struct pvr_const_map_entry_literal32)) +
-           sizeof(struct pvr_const_map_entry_doutu_address));
+           sizeof(struct pvr_const_map_entry_doutu_address) +
+           sizeof(struct pvr_pds_const_map_entry_addr_literal_buffer) +
+           8 * sizeof(struct pvr_pds_const_map_entry_addr_literal));
 }
 
 /* This is a const pointer to an array of PVR_PDS_MAX_BUFFERS pvr_pds_buffer
@@ -644,6 +655,7 @@ static VkResult pvr_pds_descriptor_program_create_and_upload(
    const struct pvr_explicit_constant_usage *const explicit_const_usage,
    const struct pvr_pipeline_layout *const layout,
    enum pvr_stage_allocation stage,
+   const struct pvr_sh_reg_layout *sh_reg_layout,
    struct pvr_stage_allocation_descriptor_state *const descriptor_state)
 {
    const size_t const_entries_size_in_bytes =
@@ -656,52 +668,73 @@ static VkResult pvr_pds_descriptor_program_create_and_upload(
    uint32_t *staging_buffer;
    VkResult result;
 
+   const bool old_path =
+      pvr_hard_code_shader_required(&device->pdevice->dev_info);
+
    assert(stage != PVR_STAGE_ALLOCATION_COUNT);
 
    *pds_info = (struct pvr_pds_info){ 0 };
 
-   result = pvr_pds_descriptor_program_setup_buffers(
-      device,
-      device->features.robustBufferAccess,
-      compile_time_consts_data,
-      ubo_data,
-      &program.buffers,
-      &program.buffer_count,
-      &descriptor_state->static_consts);
-   if (result != VK_SUCCESS)
-      return result;
+   if (old_path) {
+      result = pvr_pds_descriptor_program_setup_buffers(
+         device,
+         device->features.robustBufferAccess,
+         compile_time_consts_data,
+         ubo_data,
+         &program.buffers,
+         &program.buffer_count,
+         &descriptor_state->static_consts);
+      if (result != VK_SUCCESS)
+         return result;
 
-   if (layout->per_stage_reg_info[stage].primary_dynamic_size_in_dwords)
-      assert(!"Unimplemented");
+      if (layout->per_stage_reg_info[stage].primary_dynamic_size_in_dwords)
+         assert(!"Unimplemented");
 
-   for (uint32_t set_num = 0; set_num < layout->set_count; set_num++) {
-      const struct pvr_descriptor_set_layout_mem_layout *const reg_layout =
-         &layout->register_layout_in_dwords_per_stage[stage][set_num];
-      const uint32_t start_offset = explicit_const_usage->start_offset;
+      for (uint32_t set_num = 0; set_num < layout->set_count; set_num++) {
+         const struct pvr_descriptor_set_layout_mem_layout *const reg_layout =
+            &layout->register_layout_in_dwords_per_stage[stage][set_num];
+         const uint32_t start_offset = explicit_const_usage->start_offset;
 
-      /* TODO: Use compiler usage info to optimize this? */
+         /* TODO: Use compiler usage info to optimize this? */
 
-      /* Only dma primaries if they are actually required. */
-      if (reg_layout->primary_size) {
+         /* Only dma primaries if they are actually required. */
+         if (reg_layout->primary_size) {
+            program.descriptor_sets[program.descriptor_set_count++] =
+               (struct pvr_pds_descriptor_set){
+                  .descriptor_set = set_num,
+                  .size_in_dwords = reg_layout->primary_size,
+                  .destination = reg_layout->primary_offset + start_offset,
+                  .primary = true,
+               };
+         }
+
+         /* Only dma secondaries if they are actually required. */
+         if (!reg_layout->secondary_size)
+            continue;
+
          program.descriptor_sets[program.descriptor_set_count++] =
             (struct pvr_pds_descriptor_set){
                .descriptor_set = set_num,
-               .size_in_dwords = reg_layout->primary_size,
-               .destination = reg_layout->primary_offset + start_offset,
-               .primary = true,
+               .size_in_dwords = reg_layout->secondary_size,
+               .destination = reg_layout->secondary_offset + start_offset,
             };
       }
+   } else {
+      uint32_t addr_literals = 0;
 
-      /* Only dma secondaries if they are actually required. */
-      if (!reg_layout->secondary_size)
-         continue;
-
-      program.descriptor_sets[program.descriptor_set_count++] =
-         (struct pvr_pds_descriptor_set){
-            .descriptor_set = set_num,
-            .size_in_dwords = reg_layout->secondary_size,
-            .destination = reg_layout->secondary_offset + start_offset,
+      if (sh_reg_layout->descriptor_set_addrs_table.present) {
+         program.addr_literals[addr_literals] = (struct pvr_pds_addr_literal){
+            .type = PVR_PDS_ADDR_LITERAL_DESC_SET_ADDRS_TABLE,
+            .destination = sh_reg_layout->descriptor_set_addrs_table.offset,
          };
+         addr_literals++;
+      }
+
+      /* TODO: Add support for other allocation types. E.g. blend constants
+       * and push constants.
+       */
+
+      program.addr_literal_count = addr_literals;
    }
 
    entries_buffer = vk_alloc2(&device->vk.alloc,
@@ -1039,6 +1072,55 @@ static void pvr_pipeline_finish(struct pvr_pipeline *pipeline)
    vk_object_base_finish(&pipeline->base);
 }
 
+/* How many shared regs it takes to store a pvr_dev_addr_t.
+ * Each shared reg is 32 bits.
+ */
+#define PVR_DEV_ADDR_SIZE_IN_SH_REGS \
+   DIV_ROUND_UP(sizeof(pvr_dev_addr_t), sizeof(uint32_t))
+
+/**
+ * \brief Allocates shared registers.
+ *
+ * \return How many sh regs are required.
+ */
+static uint32_t
+pvr_pipeline_alloc_shareds(const struct pvr_device *device,
+                           const struct pvr_pipeline_layout *layout,
+                           enum pvr_stage_allocation stage,
+                           struct pvr_sh_reg_layout *const sh_reg_layout_out)
+{
+   ASSERTED const uint64_t reserved_shared_size =
+      device->pdevice->dev_runtime_info.reserved_shared_size;
+   ASSERTED const uint64_t max_coeff =
+      device->pdevice->dev_runtime_info.max_coeffs;
+
+   struct pvr_sh_reg_layout reg_layout = { 0 };
+   uint32_t next_free_sh_reg = 0;
+
+   reg_layout.descriptor_set_addrs_table.present =
+      !!(layout->shader_stage_mask & BITFIELD_BIT(stage));
+
+   if (reg_layout.descriptor_set_addrs_table.present) {
+      reg_layout.descriptor_set_addrs_table.offset = next_free_sh_reg;
+      next_free_sh_reg += PVR_DEV_ADDR_SIZE_IN_SH_REGS;
+   }
+
+   /* TODO: Add allocation for blend constants, push constants, and other buffer
+    * types.
+    */
+
+   *sh_reg_layout_out = reg_layout;
+
+   /* FIXME: We might need to take more things into consideration.
+    * See pvr_calc_fscommon_size_and_tiles_in_flight().
+    */
+   assert(next_free_sh_reg <= reserved_shared_size - max_coeff);
+
+   return next_free_sh_reg;
+}
+
+#undef PVR_DEV_ADDR_SIZE_IN_SH_REGS
+
 /******************************************************************************
    Compute pipeline functions
  ******************************************************************************/
@@ -1051,6 +1133,9 @@ static VkResult pvr_compute_pipeline_compile(
    const VkAllocationCallbacks *const allocator,
    struct pvr_compute_pipeline *const compute_pipeline)
 {
+   struct pvr_pipeline_layout *layout = compute_pipeline->base.layout;
+   struct pvr_sh_reg_layout *sh_reg_layout =
+      &layout->sh_reg_layout_per_stage[PVR_STAGE_ALLOCATION_COMPUTE];
    struct rogue_compile_time_consts_data compile_time_consts_data;
    uint32_t work_group_input_regs[PVR_WORKGROUP_DIMENSIONS];
    struct pvr_explicit_constant_usage explicit_const_usage;
@@ -1096,6 +1181,14 @@ static VkResult pvr_compute_pipeline_compile(
       explicit_const_usage = build_info.explicit_conts_usage;
 
    } else {
+      uint32_t sh_count;
+      sh_count = pvr_pipeline_alloc_shareds(device,
+                                            layout,
+                                            PVR_STAGE_ALLOCATION_COMPUTE,
+                                            sh_reg_layout);
+
+      compute_pipeline->shader_state.const_shared_reg_count = sh_count;
+
       /* FIXME: Compile and upload the shader. */
       /* FIXME: Initialize the shader state and setup build info. */
       abort();
@@ -1107,8 +1200,9 @@ static VkResult pvr_compute_pipeline_compile(
       &compile_time_consts_data,
       &ubo_data,
       &explicit_const_usage,
-      compute_pipeline->base.layout,
+      layout,
       PVR_STAGE_ALLOCATION_COMPUTE,
+      sh_reg_layout,
       &compute_pipeline->descriptor_state);
    if (result != VK_SUCCESS)
       goto err_free_shader;
@@ -1413,6 +1507,11 @@ pvr_graphics_pipeline_compile(struct pvr_device *const device,
    };
    static uint32_t hard_code_pipeline_n = 0;
 
+   struct pvr_pipeline_layout *layout = gfx_pipeline->base.layout;
+   struct pvr_sh_reg_layout *sh_reg_layout_vert =
+      &layout->sh_reg_layout_per_stage[PVR_STAGE_ALLOCATION_VERTEX_GEOMETRY];
+   struct pvr_sh_reg_layout *sh_reg_layout_frag =
+      &layout->sh_reg_layout_per_stage[PVR_STAGE_ALLOCATION_FRAGMENT];
    const VkPipelineVertexInputStateCreateInfo *const vertex_input_state =
       pCreateInfo->pVertexInputState;
    const uint32_t cache_line_size =
@@ -1421,8 +1520,25 @@ pvr_graphics_pipeline_compile(struct pvr_device *const device,
    struct rogue_build_ctx *ctx;
    VkResult result;
 
+   const bool old_path =
+      pvr_hard_code_shader_required(&device->pdevice->dev_info);
+
+   /* Vars needed for the new path. */
+   uint32_t sh_count[PVR_STAGE_ALLOCATION_COUNT] = { 0 };
+
+   if (!old_path)
+      for (enum pvr_stage_allocation pvr_stage =
+              PVR_STAGE_ALLOCATION_VERTEX_GEOMETRY;
+           pvr_stage < PVR_STAGE_ALLOCATION_COMPUTE;
+           ++pvr_stage)
+         sh_count[pvr_stage] = pvr_pipeline_alloc_shareds(
+            device,
+            layout,
+            pvr_stage,
+            &layout->sh_reg_layout_per_stage[pvr_stage]);
+
    /* Setup shared build context. */
-   ctx = rogue_build_context_create(compiler);
+   ctx = rogue_build_context_create(compiler, layout);
    if (!ctx)
       return vk_error(device, VK_ERROR_OUT_OF_HOST_MEMORY);
 
@@ -1523,6 +1639,18 @@ pvr_graphics_pipeline_compile(struct pvr_device *const device,
       pvr_vertex_state_init(gfx_pipeline,
                             &ctx->common_data[MESA_SHADER_VERTEX],
                             &ctx->stage_data.vs);
+
+      if (!old_path) {
+         struct pvr_vertex_shader_state *vertex_state =
+            &gfx_pipeline->shader_state.vertex;
+
+         /* FIXME: For now we just overwrite it but the compiler shouldn't be
+          * returning the sh count since the driver is in charge of allocating
+          * them.
+          */
+         vertex_state->stage_state.const_shared_reg_count =
+            sh_count[PVR_STAGE_ALLOCATION_VERTEX_GEOMETRY];
+      }
    }
 
    result = pvr_gpu_upload_usc(device,
@@ -1543,6 +1671,18 @@ pvr_graphics_pipeline_compile(struct pvr_device *const device,
    } else {
       pvr_fragment_state_init(gfx_pipeline,
                               &ctx->common_data[MESA_SHADER_FRAGMENT]);
+
+      if (!old_path) {
+         struct pvr_fragment_shader_state *fragment_state =
+            &gfx_pipeline->shader_state.fragment;
+
+         /* FIXME: For now we just overwrite it but the compiler shouldn't be
+          * returning the sh count since the driver is in charge of allocating
+          * them.
+          */
+         fragment_state->stage_state.const_shared_reg_count =
+            sh_count[PVR_STAGE_ALLOCATION_FRAGMENT];
+      }
    }
 
    result = pvr_gpu_upload_usc(device,
@@ -1595,8 +1735,9 @@ pvr_graphics_pipeline_compile(struct pvr_device *const device,
       &ctx->common_data[MESA_SHADER_VERTEX].compile_time_consts_data,
       &ctx->common_data[MESA_SHADER_VERTEX].ubo_data,
       &vert_explicit_const_usage,
-      gfx_pipeline->base.layout,
+      layout,
       PVR_STAGE_ALLOCATION_VERTEX_GEOMETRY,
+      sh_reg_layout_vert,
       &gfx_pipeline->shader_state.vertex.descriptor_state);
    if (result != VK_SUCCESS)
       goto err_free_vertex_attrib_program;
@@ -1617,8 +1758,9 @@ pvr_graphics_pipeline_compile(struct pvr_device *const device,
       &ctx->common_data[MESA_SHADER_FRAGMENT].compile_time_consts_data,
       &ctx->common_data[MESA_SHADER_FRAGMENT].ubo_data,
       &frag_explicit_const_usage,
-      gfx_pipeline->base.layout,
+      layout,
       PVR_STAGE_ALLOCATION_FRAGMENT,
+      sh_reg_layout_frag,
       &gfx_pipeline->shader_state.fragment.descriptor_state);
    if (result != VK_SUCCESS)
       goto err_free_vertex_descriptor_program;

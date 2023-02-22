@@ -6,9 +6,7 @@ traces-db:
 traces:
   AmnesiaTDD/Amnesia-f700-v2.trace:
     gl-zink-anv-tgl:
-      label: [crash, skip]
       checksum: 9cd992354bf22310199406ccd83ce458
-      text: "https://gitlab.freedesktop.org/mesa/mesa/-/issues/8138"
   Anna/Anna-f692-v2.trace:
     gl-zink-anv-tgl:
       label: [skip]

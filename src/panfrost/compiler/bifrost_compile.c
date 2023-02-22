@@ -4070,6 +4070,8 @@ emit_if(bi_context *ctx, nir_if *nif)
 static void
 emit_loop(bi_context *ctx, nir_loop *nloop)
 {
+   assert(!nir_loop_has_continue_construct(nloop));
+
    /* Remember where we are */
    bi_block *start_block = ctx->current_block;
 

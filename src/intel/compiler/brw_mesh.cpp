@@ -1113,7 +1113,10 @@ adjust_handle_and_offset(const fs_builder &bld,
 
    if (adjustment) {
       fs_builder ubld8 = bld.group(8, 0).exec_all();
-      ubld8.ADD(urb_handle, urb_handle, brw_imm_ud(adjustment));
+      /* Allocate new register to not overwrite the shared URB handle. */
+      fs_reg new_handle = ubld8.vgrf(BRW_REGISTER_TYPE_UD);
+      ubld8.ADD(new_handle, urb_handle, brw_imm_ud(adjustment));
+      urb_handle = new_handle;
       urb_global_offset -= adjustment;
    }
 }
@@ -1196,7 +1199,10 @@ emit_urb_indirect_vec4_write(const fs_builder &bld,
    for (unsigned q = 0; q < bld.dispatch_width() / 8; q++) {
       fs_builder bld8 = bld.group(8, q);
 
-      fs_reg off = bld8.vgrf(BRW_REGISTER_TYPE_UD, 1);
+      /* offset is always positive, so signedness doesn't matter */
+      assert(offset_src.type == BRW_REGISTER_TYPE_D ||
+             offset_src.type == BRW_REGISTER_TYPE_UD);
+      fs_reg off = bld8.vgrf(offset_src.type, 1);
       bld8.MOV(off, quarter(offset_src, q));
       bld8.ADD(off, off, brw_imm_ud(base));
       bld8.SHR(off, off, brw_imm_ud(2));
@@ -1273,7 +1279,10 @@ emit_urb_indirect_writes(const fs_builder &bld, nir_intrinsic_instr *instr,
       for (unsigned q = 0; q < bld.dispatch_width() / 8; q++) {
          fs_builder bld8 = bld.group(8, q);
 
-         fs_reg off = bld8.vgrf(BRW_REGISTER_TYPE_UD, 1);
+         /* offset is always positive, so signedness doesn't matter */
+         assert(offset_src.type == BRW_REGISTER_TYPE_D ||
+                offset_src.type == BRW_REGISTER_TYPE_UD);
+         fs_reg off = bld8.vgrf(offset_src.type, 1);
          bld8.MOV(off, quarter(offset_src, q));
          bld8.ADD(off, off, brw_imm_ud(c + base_in_dwords));
 
@@ -1378,7 +1387,10 @@ emit_urb_indirect_reads(const fs_builder &bld, nir_intrinsic_instr *instr,
       for (unsigned q = 0; q < bld.dispatch_width() / 8; q++) {
          fs_builder bld8 = bld.group(8, q);
 
-         fs_reg off = bld8.vgrf(BRW_REGISTER_TYPE_UD, 1);
+         /* offset is always positive, so signedness doesn't matter */
+         assert(offset_src.type == BRW_REGISTER_TYPE_D ||
+                offset_src.type == BRW_REGISTER_TYPE_UD);
+         fs_reg off = bld8.vgrf(offset_src.type, 1);
          bld8.MOV(off, quarter(offset_src, q));
          bld8.ADD(off, off, brw_imm_ud(base_in_dwords + c));
 
@@ -1420,13 +1432,8 @@ fs_visitor::emit_task_mesh_store(const fs_builder &bld, nir_intrinsic_instr *ins
    fs_reg src = get_nir_src(instr->src[0]);
    nir_src *offset_nir_src = nir_get_io_offset_src(instr);
 
-   fs_builder ubld8 = bld.group(8, 0).exec_all();
-   fs_reg h = ubld8.vgrf(BRW_REGISTER_TYPE_UD, 1);
-   ubld8.MOV(h, urb_handle);
-   ubld8.AND(h, h, brw_imm_ud(0xFFFF));
-
    if (nir_src_is_const(*offset_nir_src)) {
-      emit_urb_direct_writes(bld, instr, src, h);
+      emit_urb_direct_writes(bld, instr, src, urb_handle);
    } else {
       bool use_mod = false;
       unsigned mod;
@@ -1443,25 +1450,19 @@ fs_visitor::emit_task_mesh_store(const fs_builder &bld, nir_intrinsic_instr *ins
       }
 
       if (use_mod) {
-         emit_urb_indirect_writes_mod(bld, instr, src, get_nir_src(*offset_nir_src), h, mod);
+         emit_urb_indirect_writes_mod(bld, instr, src, get_nir_src(*offset_nir_src), urb_handle, mod);
       } else {
-         emit_urb_indirect_writes(bld, instr, src, get_nir_src(*offset_nir_src), h);
+         emit_urb_indirect_writes(bld, instr, src, get_nir_src(*offset_nir_src), urb_handle);
       }
    }
 }
 
 void
 fs_visitor::emit_task_mesh_load(const fs_builder &bld, nir_intrinsic_instr *instr,
-                                const fs_reg &urb_handle, bool mask)
+                                const fs_reg &urb_handle)
 {
    fs_reg dest = get_nir_dest(instr->dest);
    nir_src *offset_nir_src = nir_get_io_offset_src(instr);
-
-   fs_builder ubld8 = bld.group(8, 0).exec_all();
-   fs_reg h = ubld8.vgrf(BRW_REGISTER_TYPE_UD, 1);
-   ubld8.MOV(h, urb_handle);
-   if (mask)
-      ubld8.AND(h, h, brw_imm_ud(0xFFFF));
 
    /* TODO(mesh): for per_vertex and per_primitive, if we could keep around
     * the non-array-index offset, we could use to decide if we can perform
@@ -1469,9 +1470,9 @@ fs_visitor::emit_task_mesh_load(const fs_builder &bld, nir_intrinsic_instr *inst
     */
 
    if (nir_src_is_const(*offset_nir_src))
-      emit_urb_direct_reads(bld, instr, dest, h);
+      emit_urb_direct_reads(bld, instr, dest, urb_handle);
    else
-      emit_urb_indirect_reads(bld, instr, dest, get_nir_src(*offset_nir_src), h);
+      emit_urb_indirect_reads(bld, instr, dest, get_nir_src(*offset_nir_src), urb_handle);
 }
 
 void
@@ -1489,7 +1490,7 @@ fs_visitor::nir_emit_task_intrinsic(const fs_builder &bld,
 
    case nir_intrinsic_load_output:
    case nir_intrinsic_load_task_payload:
-      emit_task_mesh_load(bld, instr, payload.urb_output, true);
+      emit_task_mesh_load(bld, instr, payload.urb_output);
       break;
 
    default:
@@ -1515,11 +1516,11 @@ fs_visitor::nir_emit_mesh_intrinsic(const fs_builder &bld,
    case nir_intrinsic_load_per_vertex_output:
    case nir_intrinsic_load_per_primitive_output:
    case nir_intrinsic_load_output:
-      emit_task_mesh_load(bld, instr, payload.urb_output, true);
+      emit_task_mesh_load(bld, instr, payload.urb_output);
       break;
 
    case nir_intrinsic_load_task_payload:
-      emit_task_mesh_load(bld, instr, payload.task_urb_input, false);
+      emit_task_mesh_load(bld, instr, payload.task_urb_input);
       break;
 
    default:

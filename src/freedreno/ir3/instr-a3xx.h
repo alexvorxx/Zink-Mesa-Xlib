@@ -263,6 +263,7 @@ typedef enum {
    OPC_QUAD_SHUFFLE_HORIZ  = _OPC(5, 30),
    OPC_QUAD_SHUFFLE_VERT   = _OPC(5, 31),
    OPC_QUAD_SHUFFLE_DIAG   = _OPC(5, 32),
+   OPC_TCINV               = _OPC(5, 33),
    /* cat5 meta instructions, placed above the cat5 opc field's size */
    OPC_DSXPP_MACRO     = _OPC(5, 35),
    OPC_DSYPP_MACRO     = _OPC(5, 36),
@@ -360,6 +361,11 @@ typedef enum {
    /* category 7: */
    OPC_BAR             = _OPC(7, 0),
    OPC_FENCE           = _OPC(7, 1),
+   OPC_SLEEP           = _OPC(7, 2),
+   OPC_ICINV           = _OPC(7, 3),
+   OPC_DCCLN           = _OPC(7, 4),
+   OPC_DCINV           = _OPC(7, 5),
+   OPC_DCFLU           = _OPC(7, 6),
 
    /* meta instructions (category -1): */
    /* placeholder instr to mark shader inputs: */

@@ -29,6 +29,7 @@
 #include "macros.h"
 #include "main/dispatch.h" /* for _gloffset_COUNT */
 #include "api_exec_decl.h"
+#include "glthread_marshal.h"
 
 static void GLAPIENTRY
 _context_lost_GetSynciv(GLsync sync, GLenum pname, GLsizei bufSize,
@@ -104,6 +105,7 @@ _mesa_set_context_lost_dispatch(struct gl_context *ctx)
 
    ctx->CurrentServerDispatch = ctx->ContextLost;
    _glapi_set_dispatch(ctx->CurrentServerDispatch);
+   _mesa_glthread_update_draw_always_async(ctx);
 }
 
 /**

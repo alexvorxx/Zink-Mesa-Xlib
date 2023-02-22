@@ -33,8 +33,6 @@
  */
 
 /* Converts immediate values to constant register values. */
-/* TODO: For values that aren't in constant registers, either insert a bitwise
- * mov, or ask driver to put it into shared regs. */
 PUBLIC
 bool rogue_constreg(rogue_shader *shader)
 {
@@ -45,8 +43,10 @@ bool rogue_constreg(rogue_shader *shader)
 
    rogue_foreach_imm_use_safe (imm_use, shader) {
       unsigned index = rogue_constreg_lookup(*imm_use->imm);
+      /* Skip values that aren't in the special constant registers; they'll be
+       * replaced with immediate movs. */
       if (index == ROGUE_NO_CONST_REG)
-         unreachable("Immediate value not in constant registers.");
+         continue;
 
       rogue_reg *reg = rogue_const_reg(shader, index);
 

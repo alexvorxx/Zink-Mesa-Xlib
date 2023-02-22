@@ -2634,6 +2634,7 @@ visit_if(struct lp_build_nir_context *bld_base, nir_if *if_stmt)
 static void
 visit_loop(struct lp_build_nir_context *bld_base, nir_loop *loop)
 {
+   assert(!nir_loop_has_continue_construct(loop));
    bld_base->bgnloop(bld_base);
    visit_cf_list(bld_base, &loop->body);
    bld_base->endloop(bld_base);

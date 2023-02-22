@@ -68,9 +68,19 @@ static bool rogue_trim_regs(rogue_shader *shader)
       if (regarray->parent)
          continue;
 
-      for (unsigned u = 0; u < regarray->size; ++u)
-         progress |=
-            rogue_reg_set(shader, regarray->regs[u], class, index[class]++);
+      rogue_regarray_set(shader, regarray, class, index[class], true);
+
+      rogue_foreach_subarray (subarray, regarray) {
+         unsigned idx_offset =
+            subarray->regs[0]->index - regarray->regs[0]->index;
+         progress &= rogue_regarray_set(shader,
+                                        subarray,
+                                        class,
+                                        index[class] + idx_offset,
+                                        false);
+      }
+
+      index[class] += regarray->size;
    }
 
    rogue_foreach_reg (reg, shader, ROGUE_REG_CLASS_SSA) {

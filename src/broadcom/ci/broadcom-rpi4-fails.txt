@@ -354,6 +354,9 @@ spec@!opengl 1.0@depth-clear-precision-check@depth24,Fail
 spec@!opengl 2.0@max-samplers,Fail
 spec@!opengl 2.0@max-samplers border,Fail
 
+wayland-dEQP-EGL.functional.wide_color.window_888_colorspace_default,Fail
+wayland-dEQP-EGL.functional.wide_color.window_fp16_default_colorspace,Fail
+
 # https://gitlab.khronos.org/Tracker/vk-gl-cts/-/issues/3759
 dEQP-VK.pipeline.monolithic.color_write_enable_maxa.cwe_after_bind.attachments4_more0,Crash
 
@@ -362,16 +365,5 @@ dEQP-VK.compute.workgroup_memory_explicit_layout.copy_memory.two_invocations,Cra
 dEQP-VK.compute.workgroup_memory_explicit_layout.zero_ext.block,Crash
 dEQP-VK.compute.workgroup_memory_explicit_layout.zero_ext.other_block,Crash
 dEQP-VK.compute.workgroup_memory_explicit_layout.zero_ext.block_with_offset,Crash
-
-# EGL_BAD_DISPLAY is generated if display is not an EGL display connection
-# eglCreatePixmapSurface(0, 0x00000000, 0x00000000, { EGL_NONE });
-# // 0x00000000 returned
-# eglCreatePixmapSurface(0xffffffff, 0x00000000, 0x00000000, { EGL_NONE });
-# // 0x00000000 returned
-# EGL_BAD_CONFIG or EGL_BAD_PARAMETER is generated if config is not an EGL frame buffer configuration or if the PixmapSurface call is not supported
-# eglCreatePixmapSurface(0xb1f4d8, 0xffffffff, 0x00000000, { EGL_NONE });
-# // 0x00000000 returned
-# // ERROR expected: EGL_BAD_CONFIG or EGL_BAD_PARAMETER, Got: EGL_BAD_NATIVE_PIXMAP
-wayland-dEQP-EGL.functional.negative_api.create_pixmap_surface,Fail
 
 spec@!opengl 1.1@line-smooth-stipple,Fail

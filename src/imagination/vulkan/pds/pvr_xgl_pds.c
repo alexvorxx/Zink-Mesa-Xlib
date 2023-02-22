@@ -177,7 +177,7 @@ static ALWAYS_INLINE uint32_t pvr_pds_encode_doutu(uint32_t cc,
 
 static uint32_t
 pvr_encode_burst(struct pvr_pds_const_map_entry_write_state *entry_write_state,
-                 bool last_DMA,
+                 bool last_dma,
                  bool halt,
                  unsigned int const32,
                  unsigned int const64,
@@ -195,7 +195,7 @@ pvr_encode_burst(struct pvr_pds_const_map_entry_write_state *entry_write_state,
    literal_value |= PVR_ROGUE_PDSINST_DOUT_FIELDS_DOUTD_SRC1_CMODE_CACHED |
                     store;
 
-   if (last_DMA)
+   if (last_dma)
       literal_value |= PVR_ROGUE_PDSINST_DOUT_FIELDS_DOUTD_SRC1_LAST_EN;
 
    /* Create const map entry. */
@@ -216,7 +216,7 @@ pvr_encode_burst(struct pvr_pds_const_map_entry_write_state *entry_write_state,
 }
 
 #define pvr_encode_burst_cs(psDataEntry,        \
-                            last_DMA,           \
+                            last_dma,           \
                             halt,               \
                             const32,            \
                             const64,            \
@@ -224,7 +224,7 @@ pvr_encode_burst(struct pvr_pds_const_map_entry_write_state *entry_write_state,
                             destination)        \
    pvr_encode_burst(                            \
       psDataEntry,                              \
-      last_DMA,                                 \
+      last_dma,                                 \
       halt,                                     \
       const32,                                  \
       const64,                                  \
@@ -234,7 +234,7 @@ pvr_encode_burst(struct pvr_pds_const_map_entry_write_state *entry_write_state,
 
 static uint32_t pvr_encode_direct_write(
    struct pvr_pds_const_map_entry_write_state *entry_write_state,
-   bool last_DMA,
+   bool last_dma,
    bool halt,
    unsigned int const32,
    unsigned int const64,
@@ -277,7 +277,7 @@ static uint32_t pvr_encode_direct_write(
          PVR_ROGUE_PDSINST_DOUT_FIELDS_DOUTW_SRC1_BSIZE_ALL64;
    }
 
-   if (last_DMA) {
+   if (last_dma) {
       literal_entry->literal_value |=
          PVR_ROGUE_PDSINST_DOUT_FIELDS_DOUTW_SRC1_LAST_EN;
    }
@@ -745,9 +745,9 @@ void pvr_pds_generate_vertex_primary_program(
       struct pvr_const_map_entry_literal32 *literal_entry;
 
       struct pvr_pds_vertex_dma *vertex_dma = &input_program->dma_list[dma];
-      bool last_DMA = (++running_dma_count == total_dma_count);
+      bool last_dma = (++running_dma_count == total_dma_count);
 
-      pvr_debug_pds_note("Vertex Attribute DMA %d (last=%d)", dma, last_DMA);
+      pvr_debug_pds_note("Vertex Attribute DMA %d (last=%d)", dma, last_dma);
 
       /* The id we use to index into this dma. */
       if (vertex_dma->flags & PVR_PDS_VERTEX_DMA_FLAGS_INSTANCE_RATE) {
@@ -1060,7 +1060,7 @@ void pvr_pds_generate_vertex_primary_program(
        *	}
        */
 
-      if (last_DMA && (!PVR_HAS_FEATURE(dev_info, pds_ddmadt) ||
+      if (last_dma && (!PVR_HAS_FEATURE(dev_info, pds_ddmadt) ||
                        !use_robust_vertex_fetch)) {
          pvr_debug_pds_note("LAST DDMAD");
          control_word |= PVR_ROGUE_PDSINST_DDMAD_FIELDS_SRC3_LAST_EN;
@@ -1133,7 +1133,7 @@ void pvr_pds_generate_vertex_primary_program(
                                    ));
 
             /* Now the driver must have a dummy DDMAD marked as last. */
-            if (last_DMA) {
+            if (last_dma) {
                uint32_t dummy_dma_const = pvr_find_constant(const_usage,
                                                             RESERVE_64BIT,
                                                             "uDummyDMAConst");
@@ -1299,14 +1299,14 @@ void pvr_pds_generate_vertex_primary_program(
    }
 
    if (input_program->flags & PVR_PDS_VERTEX_FLAGS_VERTEX_ID_REQUIRED) {
-      bool last_DMA = (++running_dma_count == total_dma_count);
+      bool last_dma = (++running_dma_count == total_dma_count);
 
       PVR_PDS_MODE_TOGGLE(
          code,
          instruction,
          pvr_encode_direct_write(
             &entry_write_state,
-            last_DMA,
+            last_dma,
             false,
             R64_C(write_vertex_control),
             R64_T(0),
@@ -1317,14 +1317,14 @@ void pvr_pds_generate_vertex_primary_program(
    }
 
    if (input_program->flags & PVR_PDS_VERTEX_FLAGS_INSTANCE_ID_REQUIRED) {
-      bool last_DMA = (++running_dma_count == total_dma_count);
+      bool last_dma = (++running_dma_count == total_dma_count);
 
       PVR_PDS_MODE_TOGGLE(
          code,
          instruction,
          pvr_encode_direct_write(
             &entry_write_state,
-            last_DMA,
+            last_dma,
             false,
             R64_C(write_instance_control),
             R64_T(0),
@@ -1335,7 +1335,7 @@ void pvr_pds_generate_vertex_primary_program(
    }
 
    if (input_program->flags & PVR_PDS_VERTEX_FLAGS_BASE_INSTANCE_REQUIRED) {
-      bool last_DMA = (++running_dma_count == total_dma_count);
+      bool last_dma = (++running_dma_count == total_dma_count);
 
       if (input_program->flags & PVR_PDS_VERTEX_FLAGS_DRAW_INDIRECT_VARIANT) {
          /* Base instance comes from ptemp 1. */
@@ -1344,7 +1344,7 @@ void pvr_pds_generate_vertex_primary_program(
             instruction,
             pvr_encode_direct_write(
                &entry_write_state,
-               last_DMA,
+               last_dma,
                false,
                R64_C(write_base_instance_control),
                R64_P(PVR_INDIRECT_BASE_INSTANCE_PTEMP >> 1),
@@ -1361,7 +1361,7 @@ void pvr_pds_generate_vertex_primary_program(
             instruction,
             pvr_encode_direct_write(
                &entry_write_state,
-               last_DMA,
+               last_dma,
                false,
                R64_C(write_base_instance_control),
                R64_C(base_instance >> 1),
@@ -1373,7 +1373,7 @@ void pvr_pds_generate_vertex_primary_program(
    }
 
    if (input_program->flags & PVR_PDS_VERTEX_FLAGS_BASE_VERTEX_REQUIRED) {
-      bool last_DMA = (++running_dma_count == total_dma_count);
+      bool last_dma = (++running_dma_count == total_dma_count);
 
       if (input_program->flags & PVR_PDS_VERTEX_FLAGS_DRAW_INDIRECT_VARIANT) {
          /* Base vertex comes from ptemp 0 (initialized by PDS hardware). */
@@ -1382,7 +1382,7 @@ void pvr_pds_generate_vertex_primary_program(
             instruction,
             pvr_encode_direct_write(
                &entry_write_state,
-               last_DMA,
+               last_dma,
                false,
                R64_C(write_base_vertex_control),
                R64_P(0),
@@ -1399,7 +1399,7 @@ void pvr_pds_generate_vertex_primary_program(
             instruction,
             pvr_encode_direct_write(
                &entry_write_state,
-               last_DMA,
+               last_dma,
                false,
                R64_C(write_base_vertex_control),
                R64_C(base_vertex >> 1),
@@ -1411,7 +1411,7 @@ void pvr_pds_generate_vertex_primary_program(
    }
 
    if (input_program->flags & PVR_PDS_VERTEX_FLAGS_DRAW_INDEX_REQUIRED) {
-      bool last_DMA = (++running_dma_count == total_dma_count);
+      bool last_dma = (++running_dma_count == total_dma_count);
 
       if (input_program->flags & PVR_PDS_VERTEX_FLAGS_DRAW_INDIRECT_VARIANT) {
          /* Draw index comes from ptemp 3. */
@@ -1420,7 +1420,7 @@ void pvr_pds_generate_vertex_primary_program(
             instruction,
             pvr_encode_direct_write(
                &entry_write_state,
-               last_DMA,
+               last_dma,
                false,
                R64_C(pvr_write_draw_index_control),
                R64_P(1),
@@ -1437,7 +1437,7 @@ void pvr_pds_generate_vertex_primary_program(
             instruction,
             pvr_encode_direct_write(
                &entry_write_state,
-               last_DMA,
+               last_dma,
                false,
                R64_C(pvr_write_draw_index_control),
                R64_C(draw_index >> 1),
@@ -1514,6 +1514,13 @@ void pvr_pds_generate_descriptor_upload_program(
    num_consts64 = input_program->descriptor_set_count;
    total_dma_count = input_program->descriptor_set_count;
 
+   /* 1 DOUTD for buffer containing address literals. */
+   if (input_program->addr_literal_count > 0) {
+      num_consts32++;
+      num_consts64++;
+      total_dma_count++;
+   }
+
    pvr_init_pds_const_map_entry_write_state(info, &entry_write_state);
 
    for (unsigned int index = 0; index < input_program->buffer_count; index++) {
@@ -1543,6 +1550,67 @@ void pvr_pds_generate_descriptor_upload_program(
    next_const64 = 0;
    next_const32 = num_consts64 * 2;
 
+   if (input_program->addr_literal_count > 0) {
+      bool last_dma = (++running_dma_count == total_dma_count);
+      bool halt = last_dma && !input_program->secondary_program_present;
+
+      unsigned int size_in_dwords = input_program->addr_literal_count *
+                                    sizeof(uint64_t) / sizeof(uint32_t);
+      unsigned int destination = input_program->addr_literals[0].destination;
+
+      struct pvr_pds_const_map_entry_addr_literal_buffer
+         *addr_literal_buffer_entry;
+
+      addr_literal_buffer_entry = pvr_prepare_next_pds_const_map_entry(
+         &entry_write_state,
+         sizeof(*addr_literal_buffer_entry));
+
+      addr_literal_buffer_entry->type =
+         PVR_PDS_CONST_MAP_ENTRY_TYPE_ADDR_LITERAL_BUFFER;
+      addr_literal_buffer_entry->size = size_in_dwords * sizeof(uint32_t);
+      addr_literal_buffer_entry->const_offset = next_const64 * 2;
+
+      for (unsigned int i = 0; i < input_program->addr_literal_count; i++) {
+         struct pvr_pds_const_map_entry_addr_literal *addr_literal_entry;
+
+         /* Check that the destinations for the addr literals are contiguous.
+          * Not supporting non contiguous ranges as that would either require a
+          * single large buffer with wasted memory for DMA, or multiple buffers
+          * to DMA.
+          */
+         if (i > 0) {
+            const uint32_t current_addr_literal_destination =
+               input_program->addr_literals[i].destination;
+            const uint32_t previous_addr_literal_destination =
+               input_program->addr_literals[i - 1].destination;
+
+            /* 2 regs to store 64 bits address. */
+            assert(current_addr_literal_destination ==
+                   previous_addr_literal_destination + 2);
+         }
+
+         addr_literal_entry =
+            pvr_prepare_next_pds_const_map_entry(&entry_write_state,
+                                                 sizeof(*addr_literal_entry));
+
+         addr_literal_entry->type = PVR_PDS_CONST_MAP_ENTRY_TYPE_ADDR_LITERAL;
+         addr_literal_entry->addr_type = input_program->addr_literals[i].type;
+      }
+
+      PVR_PDS_MODE_TOGGLE(code_section,
+                          instruction,
+                          pvr_encode_burst_cs(&entry_write_state,
+                                              last_dma,
+                                              halt,
+                                              next_const32,
+                                              next_const64,
+                                              size_in_dwords,
+                                              destination));
+
+      next_const64++;
+      next_const32++;
+   }
+
    /* For each descriptor set perform a DOUTD. */
    for (unsigned int descriptor_index = 0;
         descriptor_index < input_program->descriptor_set_count;
@@ -1551,8 +1619,8 @@ void pvr_pds_generate_descriptor_upload_program(
       struct pvr_pds_descriptor_set *descriptor_set =
          &input_program->descriptor_sets[descriptor_index];
 
-      bool last_DMA = (++running_dma_count == total_dma_count);
-      bool halt = last_DMA && !input_program->secondary_program_present;
+      bool last_dma = (++running_dma_count == total_dma_count);
+      bool halt = last_dma && !input_program->secondary_program_present;
 
       descriptor_set_entry =
          pvr_prepare_next_pds_const_map_entry(&entry_write_state,
@@ -1566,7 +1634,7 @@ void pvr_pds_generate_descriptor_upload_program(
       PVR_PDS_MODE_TOGGLE(code_section,
                           instruction,
                           pvr_encode_burst_cs(&entry_write_state,
-                                              last_DMA,
+                                              last_dma,
                                               halt,
                                               next_const32,
                                               next_const64,
@@ -1580,8 +1648,8 @@ void pvr_pds_generate_descriptor_upload_program(
    for (unsigned int index = 0; index < input_program->buffer_count; index++) {
       struct pvr_pds_buffer *buffer = &input_program->buffers[index];
 
-      bool last_DMA = (++running_dma_count == total_dma_count);
-      bool halt = last_DMA && !input_program->secondary_program_present;
+      bool last_dma = (++running_dma_count == total_dma_count);
+      bool halt = last_dma && !input_program->secondary_program_present;
 
       switch (buffer->type) {
       case PVR_BUFFER_TYPE_PUSH_CONSTS: {
@@ -1680,7 +1748,7 @@ void pvr_pds_generate_descriptor_upload_program(
       PVR_PDS_MODE_TOGGLE(code_section,
                           instruction,
                           pvr_encode_burst_cs(&entry_write_state,
-                                              last_DMA,
+                                              last_dma,
                                               halt,
                                               next_const32,
                                               next_const64,

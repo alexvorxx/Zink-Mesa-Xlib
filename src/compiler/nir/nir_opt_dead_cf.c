@@ -373,6 +373,7 @@ dead_cf_list(struct exec_list *list, bool *list_ends_in_jump)
 
       case nir_cf_node_loop: {
          nir_loop *loop = nir_cf_node_as_loop(cur);
+         assert(!nir_loop_has_continue_construct(loop));
          bool dummy;
          progress |= dead_cf_list(&loop->body, &dummy);
 

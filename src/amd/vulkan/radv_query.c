@@ -28,14 +28,15 @@
 #include <stdbool.h>
 #include <string.h>
 
+#include "bvh/bvh.h"
 #include "nir/nir_builder.h"
 #include "util/u_atomic.h"
 #include "vulkan/vulkan_core.h"
-#include "radv_acceleration_structure.h"
 #include "radv_cs.h"
 #include "radv_meta.h"
 #include "radv_private.h"
 #include "sid.h"
+#include "vk_acceleration_structure.h"
 
 #define TIMESTAMP_NOT_READY UINT64_MAX
 
@@ -2181,8 +2182,8 @@ radv_CmdWriteAccelerationStructuresPropertiesKHR(
       radeon_check_space(cmd_buffer->device->ws, cs, 6 * accelerationStructureCount);
 
    for (uint32_t i = 0; i < accelerationStructureCount; ++i) {
-      RADV_FROM_HANDLE(radv_acceleration_structure, accel_struct, pAccelerationStructures[i]);
-      uint64_t va = radv_acceleration_structure_get_va(accel_struct);
+      RADV_FROM_HANDLE(vk_acceleration_structure, accel_struct, pAccelerationStructures[i]);
+      uint64_t va = vk_acceleration_structure_get_va(accel_struct);
 
       switch (queryType) {
       case VK_QUERY_TYPE_ACCELERATION_STRUCTURE_COMPACTED_SIZE_KHR:
