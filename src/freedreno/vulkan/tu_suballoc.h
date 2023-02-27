@@ -12,7 +12,7 @@
 
 #include "tu_common.h"
 
-#include "tu_drm.h"
+#include "tu_knl.h"
 
 /* externally-synchronized BO suballocator. */
 struct tu_suballocator

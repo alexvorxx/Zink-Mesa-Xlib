@@ -2928,7 +2928,7 @@ static void radeon_dec_jpeg_end_frame(struct pipe_video_codec *decoder, struct p
       return;
 
    dec->send_cmd(dec, target, picture);
-   dec->ws->cs_flush(&dec->jcs[dec->cb_idx], PIPE_FLUSH_ASYNC, picture->fence);
+   dec->ws->cs_flush(&dec->jcs[dec->cb_idx], PIPE_FLUSH_ASYNC, NULL);
    next_buffer(dec);
    dec->cb_idx = (dec->cb_idx+1) % dec->njctx;
 }

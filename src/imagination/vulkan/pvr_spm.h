@@ -42,15 +42,38 @@
 #include <stdint.h>
 #include <vulkan/vulkan_core.h>
 
+#include "hwdef/rogue_hw_defs.h"
+#include "pvr_limits.h"
 #include "util/simple_mtx.h"
 
+struct pvr_bo;
 struct pvr_device;
+struct pvr_framebuffer;
 struct pvr_render_pass;
+struct pvr_renderpass_hwsetup_render;
 struct pvr_spm_scratch_buffer;
 
 struct pvr_spm_scratch_buffer_store {
    simple_mtx_t mtx;
    struct pvr_spm_scratch_buffer *head_ref;
+};
+
+struct pvr_spm_eot_state {
+   uint32_t pbe_cs_words[PVR_MAX_COLOR_ATTACHMENTS]
+                        [ROGUE_NUM_PBESTATE_STATE_WORDS];
+   uint64_t pbe_reg_words[PVR_MAX_COLOR_ATTACHMENTS]
+                         [ROGUE_NUM_PBESTATE_REG_WORDS];
+
+   struct pvr_bo *usc_eot_program;
+
+   /* TODO: Make this struct pvr_pds_upload? It would pull in pvr_private.h
+    * though which causes a cycle since that includes pvr_spm.h .
+    */
+   /* This is only the data section upload. The code was uploaded at device
+    * creation.
+    */
+   uint64_t pixel_event_program_data_offset;
+   struct pvr_bo *pixel_event_program_data_upload;
 };
 
 void pvr_spm_init_scratch_buffer_store(struct pvr_device *device);
@@ -78,5 +101,13 @@ void pvr_spm_scratch_buffer_release(struct pvr_device *device,
 /* The SPM load programs are needed for the SPM background object load op. */
 VkResult pvr_device_init_spm_load_state(struct pvr_device *device);
 void pvr_device_finish_spm_load_state(struct pvr_device *device);
+
+VkResult
+pvr_spm_init_eot_state(struct pvr_device *device,
+                       struct pvr_spm_eot_state *spm_eot_state,
+                       const struct pvr_framebuffer *framebuffer,
+                       const struct pvr_renderpass_hwsetup_render *hw_render);
+void pvr_spm_finish_eot_state(struct pvr_device *device,
+                              struct pvr_spm_eot_state *spm_eot_state);
 
 #endif /* PVR_SPM_H */

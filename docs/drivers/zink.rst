@@ -295,6 +295,8 @@ variable:
     Enable renderpass optimizations (for tiling GPUs)
   ``norp``
     Disable renderpass optimizations (for tiling GPUs)
+  ``map``
+    Print info about mapped VRAM
 
 Vulkan Validation Layers
 ^^^^^^^^^^^^^^^^^^^^^^^^

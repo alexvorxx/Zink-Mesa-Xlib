@@ -148,7 +148,7 @@ nir_collect_src_uniforms(const nir_src *src, int component,
 
          /* Already recorded by other one */
          for (int i = 0; i < num_offsets[ubo]; i++) {
-            if (uni_offsets[ubo * MAX_NUM_BO + i] == offset)
+            if (uni_offsets[ubo * MAX_INLINABLE_UNIFORMS + i] == offset)
                return true;
          }
 
@@ -157,7 +157,7 @@ nir_collect_src_uniforms(const nir_src *src, int component,
             return false;
 
          /* Record the uniform offset. */
-         uni_offsets[ubo * MAX_NUM_BO + num_offsets[ubo]++] = offset;
+         uni_offsets[ubo * MAX_INLINABLE_UNIFORMS + num_offsets[ubo]++] = offset;
          return true;
       }
       return false;

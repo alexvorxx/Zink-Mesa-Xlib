@@ -64,6 +64,7 @@
 #define AMDGPU_IDS_FLAGS_FUSION 0x1
 #define AMDGPU_IDS_FLAGS_PREEMPTION 0x2
 #define AMDGPU_IDS_FLAGS_TMZ 0x4
+#define AMDGPU_IDS_FLAGS_CONFORMANT_TRUNC_COORD 0x8
 #define AMDGPU_INFO_FW_VCE 0x1
 #define AMDGPU_INFO_FW_UVD 0x2
 #define AMDGPU_INFO_FW_GFX_ME 0x04
@@ -1331,12 +1332,21 @@ bool ac_query_gpu_info(int fd, void *dev_p, struct radeon_info *info)
       info->wave64_vgpr_alloc_granularity = 4;
    }
 
-   if (info->family == CHIP_GFX1100 || info->family == CHIP_GFX1101)
-      info->num_physical_wave64_vgprs_per_simd = 768;
-   else if (info->gfx_level >= GFX10)
+   /* Some GPU info was broken before DRM 3.45.0. */
+   if (info->drm_minor >= 45 && device_info.num_shader_visible_vgprs) {
+      /* The Gfx10 VGPR count is in Wave32, so divide it by 2 for Wave64.
+       * Gfx6-9 numbers are in Wave64.
+       */
+      if (info->gfx_level >= GFX10)
+         info->num_physical_wave64_vgprs_per_simd = device_info.num_shader_visible_vgprs / 2;
+      else
+         info->num_physical_wave64_vgprs_per_simd = device_info.num_shader_visible_vgprs;
+   } else if (info->gfx_level >= GFX10) {
       info->num_physical_wave64_vgprs_per_simd = 512;
-   else
+   } else {
       info->num_physical_wave64_vgprs_per_simd = 256;
+   }
+
    info->num_simd_per_compute_unit = info->gfx_level >= GFX10 ? 2 : 4;
 
    /* BIG_PAGE is supported since gfx10.3 and requires VRAM. VRAM is only guaranteed
@@ -1415,6 +1425,13 @@ bool ac_query_gpu_info(int fd, void *dev_p, struct radeon_info *info)
 
       info->has_set_reg_pairs = info->pfp_fw_version >= SET_REG_PAIRS_PFP_VERSION;
       info->has_set_sh_reg_pairs_n = info->pfp_fw_version >= SET_REG_PAIRS_PACKED_N_COUNT14_PFP_VERSION;
+
+      info->conformant_trunc_coord =
+         info->drm_minor >= 52 &&
+         device_info.ids_flags & AMDGPU_IDS_FLAGS_CONFORMANT_TRUNC_COORD;
+   } else {
+      /* This should be non-zero for SI_FORCE_FAMILY not to crash. */
+      info->attribute_ring_size_per_se = 64 * 1024;
    }
 
    set_custom_cu_en_mask(info);
@@ -1567,6 +1584,7 @@ void ac_print_gpu_info(struct radeon_info *info, FILE *f)
    fprintf(f, "    never_send_perfcounter_stop = %i\n", info->never_send_perfcounter_stop);
    fprintf(f, "    discardable_allows_big_page = %i\n", info->discardable_allows_big_page);
    fprintf(f, "    has_taskmesh_indirect0_bug = %i\n", info->has_taskmesh_indirect0_bug);
+   fprintf(f, "    conformant_trunc_coord = %i\n", info->conformant_trunc_coord);
 
    fprintf(f, "Display features:\n");
    fprintf(f, "    use_display_dcc_unaligned = %u\n", info->use_display_dcc_unaligned);

@@ -925,6 +925,7 @@ validate_tex_instr(nir_tex_instr *instr, validate_state *state)
          case nir_texop_sampler_descriptor_amd:
             break;
          case nir_texop_lod:
+         case nir_texop_lod_bias_agx:
             validate_assert(state, nir_alu_type_get_base_type(instr->dest_type) == nir_type_float);
             break;
          case nir_texop_samples_identical:

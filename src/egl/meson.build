@@ -107,9 +107,6 @@ if with_dri2
     'drivers/dri2/platform_surfaceless.c',
   )
 
-  c_args_for_egl += vk_wsi_args
-  cpp_args_for_egl += vk_wsi_args
-
   if with_platform_x11
     files_egl += files('drivers/dri2/platform_x11.c')
     if with_dri3

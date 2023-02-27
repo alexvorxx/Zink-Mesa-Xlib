@@ -317,8 +317,8 @@ fd6_sampler_state_delete(struct pipe_context *pctx, void *hwcso)
    hash_table_foreach (fd6_ctx->tex_cache, entry) {
       struct fd6_texture_state *state = entry->data;
 
-      for (unsigned i = 0; i < ARRAY_SIZE(state->key.samp); i++) {
-         if (samp->seqno == state->key.samp[i].seqno) {
+      for (unsigned i = 0; i < ARRAY_SIZE(state->key.samp_seqno); i++) {
+         if (samp->seqno == state->key.samp_seqno[i]) {
             remove_tex_entry(fd6_ctx, entry);
             break;
          }
@@ -344,60 +344,35 @@ fd6_sampler_view_create(struct pipe_context *pctx, struct pipe_resource *prsc,
    so->base.texture = prsc;
    so->base.reference.count = 1;
    so->base.context = pctx;
-   so->needs_validate = true;
 
    return &so->base;
 }
 
 static void
-fd6_set_sampler_views(struct pipe_context *pctx, enum pipe_shader_type shader,
-                      unsigned start, unsigned nr,
-                      unsigned unbind_num_trailing_slots,
-                      bool take_ownership,
-                      struct pipe_sampler_view **views) in_dt
-{
-   struct fd_context *ctx = fd_context(pctx);
-
-   fd_set_sampler_views(pctx, shader, start, nr, unbind_num_trailing_slots,
-                        take_ownership, views);
-
-   if (!views)
-      return;
-
-   for (unsigned i = 0; i < nr; i++) {
-      struct fd6_pipe_sampler_view *so = fd6_pipe_sampler_view(views[i]);
-
-      if (!(so && so->needs_validate))
-         continue;
-
-      struct fd_resource *rsc = fd_resource(so->base.texture);
-
-      fd6_validate_format(ctx, rsc, so->base.format);
-      fd6_sampler_view_update(ctx, so);
-
-      so->needs_validate = false;
-   }
-}
-
-void
 fd6_sampler_view_update(struct fd_context *ctx,
                         struct fd6_pipe_sampler_view *so)
+   assert_dt
 {
    const struct pipe_sampler_view *cso = &so->base;
    struct pipe_resource *prsc = cso->texture;
    struct fd_resource *rsc = fd_resource(prsc);
    enum pipe_format format = cso->format;
 
-   fd6_validate_format(ctx, rsc, cso->format);
+   fd6_assert_valid_format(rsc, cso->format);
+
+   /* If texture has not had a layout change, then no update needed: */
+   if (so->rsc_seqno == rsc->seqno)
+      return;
+
+   so->seqno = seqno_next_u16(&fd6_context(ctx)->tex_seqno);
+   so->rsc_seqno = rsc->seqno;
 
    if (format == PIPE_FORMAT_X32_S8X24_UINT) {
       rsc = rsc->stencil;
       format = rsc->b.b.format;
    }
 
-   so->seqno = seqno_next_u16(&fd6_context(ctx)->tex_seqno);
    so->ptr1 = rsc;
-   so->rsc_seqno = rsc->seqno;
 
    if (cso->target == PIPE_BUFFER) {
       uint8_t swiz[4] = {cso->swizzle_r, cso->swizzle_g, cso->swizzle_b,
@@ -463,6 +438,35 @@ fd6_sampler_view_update(struct fd_context *ctx,
    }
 }
 
+static void
+fd6_set_sampler_views(struct pipe_context *pctx, enum pipe_shader_type shader,
+                      unsigned start, unsigned nr,
+                      unsigned unbind_num_trailing_slots,
+                      bool take_ownership,
+                      struct pipe_sampler_view **views)
+   in_dt
+{
+   struct fd_context *ctx = fd_context(pctx);
+
+   fd_set_sampler_views(pctx, shader, start, nr, unbind_num_trailing_slots,
+                        take_ownership, views);
+
+   if (!views)
+      return;
+
+   for (unsigned i = 0; i < nr; i++) {
+      struct fd6_pipe_sampler_view *so = fd6_pipe_sampler_view(views[i + start]);
+
+      if (!so)
+         continue;
+
+      struct fd_resource *rsc = fd_resource(so->base.texture);
+
+      fd6_validate_format(ctx, rsc, so->base.format);
+      fd6_sampler_view_update(ctx, so);
+   }
+}
+
 /* NOTE this can be called in either driver thread or frontend thread
  * depending on where the last unref comes from
  */
@@ -479,8 +483,8 @@ fd6_sampler_view_destroy(struct pipe_context *pctx,
    hash_table_foreach (fd6_ctx->tex_cache, entry) {
       struct fd6_texture_state *state = entry->data;
 
-      for (unsigned i = 0; i < ARRAY_SIZE(state->key.view); i++) {
-         if (view->seqno == state->key.view[i].seqno) {
+      for (unsigned i = 0; i < ARRAY_SIZE(state->key.view_seqno); i++) {
+         if (view->seqno == state->key.view_seqno[i]) {
             remove_tex_entry(fd6_ctx, entry);
             break;
          }
@@ -509,11 +513,12 @@ tex_key_equals(const void *_a, const void *_b)
    return memcmp(a, b, sizeof(struct fd6_texture_key)) == 0;
 }
 
-static void
-build_texture_state(struct fd_context *ctx, struct fd_ringbuffer *ring,
-                    enum pipe_shader_type type, struct fd_texture_stateobj *tex)
+static struct fd_ringbuffer *
+build_texture_state(struct fd_context *ctx, enum pipe_shader_type type,
+                    struct fd_texture_stateobj *tex)
    assert_dt
 {
+   struct fd_ringbuffer *ring = fd_ringbuffer_new_object(ctx->pipe, 32 * 4);
    unsigned opcode, tex_samp_reg, tex_const_reg, tex_count_reg;
    enum a6xx_state_block sb;
 
@@ -603,11 +608,9 @@ build_texture_state(struct fd_context *ctx, struct fd_ringbuffer *ring,
 
          if (tex->textures[i]) {
             view = fd6_pipe_sampler_view(tex->textures[i]);
-            if (unlikely(view->rsc_seqno !=
-                         fd_resource(view->base.texture)->seqno)) {
-               fd6_sampler_view_update(ctx,
-                                       fd6_pipe_sampler_view(tex->textures[i]));
-            }
+            struct fd_resource *rsc = fd_resource(view->base.texture);
+            fd6_assert_valid_format(rsc, view->base.format);
+            assert(view->rsc_seqno == rsc->seqno);
          } else {
             static const struct fd6_pipe_sampler_view dummy_view = {};
             view = &dummy_view;
@@ -661,6 +664,8 @@ build_texture_state(struct fd_context *ctx, struct fd_ringbuffer *ring,
 
    OUT_PKT4(ring, tex_count_reg, 1);
    OUT_RING(ring, num_textures);
+
+   return ring;
 }
 
 /**
@@ -676,7 +681,7 @@ handle_invalidates(struct fd_context *ctx)
 {
    struct fd6_context *fd6_ctx = fd6_context(ctx);
 
-   fd_screen_assert_locked(ctx->screen);
+   fd_screen_lock(ctx->screen);
 
    hash_table_foreach (fd6_ctx->tex_cache, entry) {
       struct fd6_texture_state *state = entry->data;
@@ -685,16 +690,35 @@ handle_invalidates(struct fd_context *ctx)
          remove_tex_entry(fd6_ctx, entry);
    }
 
+   fd_screen_unlock(ctx->screen);
+
+   for (unsigned type = 0; type < ARRAY_SIZE(ctx->tex); type++) {
+      struct fd_texture_stateobj *tex = &ctx->tex[type];
+
+      for (unsigned i = 0; i < tex->num_textures; i++) {
+         struct fd6_pipe_sampler_view *so =
+               fd6_pipe_sampler_view(tex->textures[i]);
+
+         if (!so)
+            continue;
+
+         fd6_sampler_view_update(ctx, so);
+      }
+   }
+
    fd6_ctx->tex_cache_needs_invalidate = false;
 }
 
 struct fd6_texture_state *
-fd6_texture_state(struct fd_context *ctx, enum pipe_shader_type type,
-                  struct fd_texture_stateobj *tex)
+fd6_texture_state(struct fd_context *ctx, enum pipe_shader_type type)
 {
+   struct fd_texture_stateobj *tex = &ctx->tex[type];
    struct fd6_context *fd6_ctx = fd6_context(ctx);
    struct fd6_texture_state *state = NULL;
    struct fd6_texture_key key;
+
+   if (unlikely(fd6_ctx->tex_cache_needs_invalidate))
+      handle_invalidates(ctx);
 
    memset(&key, 0, sizeof(key));
 
@@ -705,13 +729,7 @@ fd6_texture_state(struct fd_context *ctx, enum pipe_shader_type type,
       struct fd6_pipe_sampler_view *view =
          fd6_pipe_sampler_view(tex->textures[i]);
 
-      /* NOTE that if the backing rsc was uncompressed between the
-       * time that the CSO was originally created and now, the rsc
-       * seqno would have changed, so we don't have to worry about
-       * getting a bogus cache hit.
-       */
-      key.view[i].rsc_seqno = fd_resource(view->base.texture)->seqno;
-      key.view[i].seqno = view->seqno;
+      key.view_seqno[i] = view->seqno;
    }
 
    for (unsigned i = 0; i < tex->num_samplers; i++) {
@@ -721,7 +739,7 @@ fd6_texture_state(struct fd_context *ctx, enum pipe_shader_type type,
       struct fd6_sampler_stateobj *sampler =
          fd6_sampler_stateobj(tex->samplers[i]);
 
-      key.samp[i].seqno = sampler->seqno;
+      key.samp_seqno[i] = sampler->seqno;
    }
 
    key.type = type;
@@ -729,23 +747,31 @@ fd6_texture_state(struct fd_context *ctx, enum pipe_shader_type type,
    uint32_t hash = tex_key_hash(&key);
    fd_screen_lock(ctx->screen);
 
-   if (unlikely(fd6_ctx->tex_cache_needs_invalidate))
-      handle_invalidates(ctx);
-
    struct hash_entry *entry =
       _mesa_hash_table_search_pre_hashed(fd6_ctx->tex_cache, hash, &key);
 
    if (entry) {
       state = entry->data;
+      for (unsigned i = 0; i < tex->num_textures; i++) {
+         uint16_t seqno = tex->textures[i] ?
+               fd_resource(tex->textures[i]->texture)->seqno : 0;
+
+         assert(state->view_rsc_seqno[i] == seqno);
+      }
       goto out_unlock;
    }
 
    state = CALLOC_STRUCT(fd6_texture_state);
 
-   state->key = key;
-   state->stateobj = fd_ringbuffer_new_object(ctx->pipe, 32 * 4);
+   for (unsigned i = 0; i < tex->num_textures; i++) {
+      if (!tex->textures[i])
+         continue;
 
-   build_texture_state(ctx, state->stateobj, type, tex);
+      state->view_rsc_seqno[i] = fd_resource(tex->textures[i]->texture)->seqno;
+   }
+
+   state->key = key;
+   state->stateobj = build_texture_state(ctx, type, tex);
 
    /* NOTE: uses copy of key in state obj, because pointer passed by caller
     * is probably on the stack
@@ -778,8 +804,10 @@ fd6_rebind_resource(struct fd_context *ctx, struct fd_resource *rsc) assert_dt
    hash_table_foreach (fd6_ctx->tex_cache, entry) {
       struct fd6_texture_state *state = entry->data;
 
-      for (unsigned i = 0; i < ARRAY_SIZE(state->key.view); i++) {
-         if (rsc->seqno == state->key.view[i].rsc_seqno) {
+      STATIC_ASSERT(ARRAY_SIZE(state->view_rsc_seqno) == ARRAY_SIZE(state->key.view_seqno));
+
+      for (unsigned i = 0; i < ARRAY_SIZE(state->view_rsc_seqno); i++) {
+         if (rsc->seqno == state->view_rsc_seqno[i]) {
             struct fd6_texture_state *tex = entry->data;
             tex->invalidate = true;
             fd6_ctx->tex_cache_needs_invalidate = true;

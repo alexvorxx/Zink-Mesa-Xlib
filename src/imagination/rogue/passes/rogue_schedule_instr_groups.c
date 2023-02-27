@@ -287,9 +287,13 @@ static inline void rogue_instr_group_put(rogue_instr *instr,
    /* Set end flag. */
    group->header.end = instr->end;
 
+   /* Ensure we're not mixing and matching execution conditions! */
+   assert(group->header.exec_cond == ROGUE_EXEC_COND_INVALID ||
+          group->header.exec_cond == instr->exec_cond);
+
    /* Set conditional execution flag. */
-   /* TODO: Set this from the instruction. */
-   group->header.exec_cond = ROGUE_EXEC_COND_PE_TRUE;
+   group->header.exec_cond = instr->exec_cond;
+   instr->exec_cond = ROGUE_EXEC_COND_INVALID;
 
    /* Lower I/O to sources/destinations/ISS. */
    rogue_lower_instr_group_io(instr, group);
@@ -366,8 +370,10 @@ static void rogue_calc_dsts_size(rogue_instr_group *group)
 {
    const rogue_instr_group_io_sel *io_sel = &group->io_sel;
 
-   unsigned num_dsts = !rogue_ref_is_null(&io_sel->dsts[0]) +
-                       !rogue_ref_is_null(&io_sel->dsts[1]);
+   unsigned num_dsts = (!rogue_ref_is_null(&io_sel->dsts[0]) &&
+                        !rogue_ref_is_io_none(&io_sel->dsts[0])) +
+                       (!rogue_ref_is_null(&io_sel->dsts[1]) &&
+                        !rogue_ref_is_io_none(&io_sel->dsts[1]));
    unsigned bank_bits[ROGUE_ISA_DSTS] = { 0 };
    unsigned index_bits[ROGUE_ISA_DSTS] = { 0 };
 
@@ -537,6 +543,40 @@ static void rogue_calc_alu_instrs_size(rogue_instr_group *group,
       }
       break;
 
+   case ROGUE_ALU_OP_TST:
+      group->size.instrs[phase] = 1;
+
+      if (rogue_alu_op_mod_is_set(alu, OM(L)) ||
+          rogue_alu_op_mod_is_set(alu, OM(LE)) ||
+          !rogue_alu_op_mod_is_set(alu, OM(F32)) ||
+          rogue_alu_src_mod_is_set(alu, 0, SM(E1)) ||
+          rogue_alu_src_mod_is_set(alu, 0, SM(E2)) ||
+          rogue_alu_src_mod_is_set(alu, 0, SM(E3)) ||
+          !rogue_phase_occupied(ROGUE_INSTR_PHASE_2_PCK,
+                                group->header.phases)) {
+         group->size.instrs[phase] = 2;
+      }
+      break;
+
+   case ROGUE_ALU_OP_MOVC: {
+      group->size.instrs[phase] = 1;
+
+      bool e0 = rogue_alu_dst_mod_is_set(alu, 0, DM(E0));
+      bool e1 = rogue_alu_dst_mod_is_set(alu, 0, DM(E1));
+      bool e2 = rogue_alu_dst_mod_is_set(alu, 0, DM(E2));
+      bool e3 = rogue_alu_dst_mod_is_set(alu, 0, DM(E3));
+      bool eq = (e0 == e1) && (e0 == e2) && (e0 == e3);
+
+      if ((!rogue_phase_occupied(ROGUE_INSTR_PHASE_2_TST,
+                                 group->header.phases) &&
+           !rogue_phase_occupied(ROGUE_INSTR_PHASE_2_PCK,
+                                 group->header.phases)) ||
+          !rogue_ref_is_io_ftt(&alu->src[0].ref) || !eq) {
+         group->size.instrs[phase] = 2;
+      }
+      break;
+   }
+
    case ROGUE_ALU_OP_PCK_U8888:
       group->size.instrs[phase] = 2;
       break;
@@ -561,11 +601,28 @@ static void rogue_calc_alu_instrs_size(rogue_instr_group *group,
 #undef DM
 #undef SM
 
+#define OM(op_mod) BITFIELD64_BIT(ROGUE_BACKEND_OP_MOD_##op_mod)
+static bool rogue_backend_cachemode_is_set(const rogue_backend_instr *backend)
+{
+   return !!(backend->mod & (OM(BYPASS) | OM(FORCELINEFILL) | OM(WRITETHROUGH) |
+                             OM(WRITEBACK) | OM(LAZYWRITEBACK)));
+}
+
+static bool
+rogue_backend_slccachemode_is_set(const rogue_backend_instr *backend)
+{
+   return !!(backend->mod & (OM(SLCBYPASS) | OM(SLCWRITEBACK) |
+                             OM(SLCWRITETHROUGH) | OM(SLCNOALLOC)));
+}
+#undef OM
+
+#define OM(op_mod) ROGUE_BACKEND_OP_MOD_##op_mod
 static void rogue_calc_backend_instrs_size(rogue_instr_group *group,
                                            rogue_backend_instr *backend,
                                            enum rogue_instr_phase phase)
 {
    switch (backend->op) {
+   case ROGUE_BACKEND_OP_FITR_PIXEL:
    case ROGUE_BACKEND_OP_FITRP_PIXEL:
       group->size.instrs[phase] = 2;
       break;
@@ -584,27 +641,82 @@ static void rogue_calc_backend_instrs_size(rogue_instr_group *group,
    case ROGUE_BACKEND_OP_LD:
       group->size.instrs[phase] = 2;
 
-      /* TODO: or, if slccachemode is being overridden */
-      if (rogue_ref_is_val(&backend->src[1].ref))
+      if (rogue_ref_is_val(&backend->src[1].ref) ||
+          rogue_backend_slccachemode_is_set(backend)) {
          group->size.instrs[phase] = 3;
+      }
+      break;
+
+   case ROGUE_BACKEND_OP_ST:
+      group->size.instrs[phase] = 3;
+
+      if (rogue_backend_op_mod_is_set(backend, OM(TILED)) ||
+          rogue_backend_slccachemode_is_set(backend) ||
+          !rogue_ref_is_io_none(&backend->src[5].ref)) {
+         group->size.instrs[phase] = 4;
+      }
+      break;
+
+   case ROGUE_BACKEND_OP_SMP1D:
+   case ROGUE_BACKEND_OP_SMP2D:
+   case ROGUE_BACKEND_OP_SMP3D:
+      group->size.instrs[phase] = 2;
+
+      if (rogue_backend_op_mod_is_set(backend, OM(ARRAY))) {
+         group->size.instrs[phase] = 5;
+      } else if (rogue_backend_op_mod_is_set(backend, OM(WRT)) ||
+                 rogue_backend_op_mod_is_set(backend, OM(SCHEDSWAP)) ||
+                 rogue_backend_op_mod_is_set(backend, OM(F16)) ||
+                 rogue_backend_cachemode_is_set(backend) ||
+                 rogue_backend_slccachemode_is_set(backend)) {
+         group->size.instrs[phase] = 4;
+      } else if (rogue_backend_op_mod_is_set(backend, OM(TAO)) ||
+                 rogue_backend_op_mod_is_set(backend, OM(SOO)) ||
+                 rogue_backend_op_mod_is_set(backend, OM(SNO)) ||
+                 rogue_backend_op_mod_is_set(backend, OM(NNCOORDS)) ||
+                 rogue_backend_op_mod_is_set(backend, OM(DATA)) ||
+                 rogue_backend_op_mod_is_set(backend, OM(INFO)) ||
+                 rogue_backend_op_mod_is_set(backend, OM(BOTH)) ||
+                 rogue_backend_op_mod_is_set(backend, OM(PROJ)) ||
+                 rogue_backend_op_mod_is_set(backend, OM(PPLOD))) {
+         group->size.instrs[phase] = 3;
+      }
+      break;
+
+   case ROGUE_BACKEND_OP_IDF:
+      group->size.instrs[phase] = 2;
+      break;
+
+   case ROGUE_BACKEND_OP_EMITPIX:
+      group->size.instrs[phase] = 1;
       break;
 
    default:
       unreachable("Unsupported backend op.");
    }
 }
+#undef OM
 
 static void rogue_calc_ctrl_instrs_size(rogue_instr_group *group,
                                         rogue_ctrl_instr *ctrl,
                                         enum rogue_instr_phase phase)
 {
    switch (ctrl->op) {
-   case ROGUE_CTRL_OP_WDF:
+   case ROGUE_CTRL_OP_NOP:
+      group->size.instrs[phase] = 1;
+      break;
+
+   case ROGUE_CTRL_OP_WOP:
       group->size.instrs[phase] = 0;
       break;
 
-   case ROGUE_CTRL_OP_NOP:
-      group->size.instrs[phase] = 1;
+   case ROGUE_CTRL_OP_BR:
+   case ROGUE_CTRL_OP_BA:
+      group->size.instrs[phase] = 5;
+      break;
+
+   case ROGUE_CTRL_OP_WDF:
+      group->size.instrs[phase] = 0;
       break;
 
    default:
@@ -753,6 +865,8 @@ bool rogue_schedule_instr_groups(rogue_shader *shader, bool multi_instr_groups)
 
    rogue_lower_regs(shader);
 
+   rogue_instr_group *group;
+   bool grouping = false;
    unsigned g = 0;
    rogue_foreach_block (block, shader) {
       struct list_head instr_groups;
@@ -778,12 +892,20 @@ bool rogue_schedule_instr_groups(rogue_shader *shader, bool multi_instr_groups)
             unreachable("Unsupported instruction type.");
          }
 
-         rogue_instr_group *group = rogue_instr_group_create(block, group_alu);
-         group->index = g++;
+         if (!grouping) {
+            group = rogue_instr_group_create(block, group_alu);
+            group->index = g++;
+         }
 
+         assert(group_alu == group->header.alu);
          rogue_move_instr_to_group(instr, group);
-         rogue_finalise_instr_group(group);
-         list_addtail(&group->link, &instr_groups);
+
+         grouping = instr->group_next;
+
+         if (!grouping) {
+            rogue_finalise_instr_group(group);
+            list_addtail(&group->link, &instr_groups);
+         }
       }
 
       list_replace(&instr_groups, &block->instrs);

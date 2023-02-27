@@ -1,0 +1,2 @@
+VK_EXT_pipeline_library_group_handles on RADV
+VK_EXT_image_sliced_view_of_3d on RADV/GFX10+

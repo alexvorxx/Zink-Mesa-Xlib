@@ -74,10 +74,10 @@ struct pvr_hard_code_graphics_build_info {
    struct pvr_explicit_constant_usage frag_explicit_conts_usage;
 };
 
-/* Returns true if the shader for the currently running program requires hard
- * coded shaders.
+/* Returns true if the shader for the currently running program has a hard coded
+ * shader.
  */
-bool pvr_hard_code_shader_required(const struct pvr_device_info *const dev_info);
+bool pvr_has_hard_coded_shaders(const struct pvr_device_info *const dev_info);
 
 VkResult pvr_hard_code_compute_pipeline(
    struct pvr_device *const device,

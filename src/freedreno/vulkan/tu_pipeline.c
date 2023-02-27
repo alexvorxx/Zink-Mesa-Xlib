@@ -26,7 +26,7 @@
 #include "tu_cmd_buffer.h"
 #include "tu_cs.h"
 #include "tu_device.h"
-#include "tu_drm.h"
+#include "tu_knl.h"
 #include "tu_formats.h"
 #include "tu_lrz.h"
 #include "tu_pass.h"

@@ -414,9 +414,6 @@ gmem-dEQP-VK.pipeline.fast_linked_library.color_write_enable_maxa.cwe_after_bind
 gmem-dEQP-VK.pipeline.fast_linked_library.color_write_enable_maxa.cwe_after_bind.attachments6_more0,Crash
 gmem-dEQP-VK.pipeline.fast_linked_library.color_write_enable_maxa.cwe_after_bind.attachments6_more1,Crash
 
-# https://gitlab.freedesktop.org/mesa/mesa/-/issues/8219
-gmem-dEQP-VK.binding_model.descriptorset_random.sets4.runtimesize.noubo.nosbo.sampledimghigh.outimgonly.noiub.uab.frag.noia.0,Fail
-
 spill-dEQP-VK.subgroups.ballot_broadcast.compute.subgroupbroadcast_bool,Fail
 spill-dEQP-VK.subgroups.ballot_broadcast.compute.subgroupbroadcast_bool_requiredsubgroupsize128,Fail
 

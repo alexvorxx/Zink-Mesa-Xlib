@@ -654,10 +654,13 @@ static uint8_t v3dv_plane_from_aspect(VkImageAspectFlags aspect)
    case VK_IMAGE_ASPECT_STENCIL_BIT:
    case VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT:
    case VK_IMAGE_ASPECT_PLANE_0_BIT:
+   case VK_IMAGE_ASPECT_MEMORY_PLANE_0_BIT_EXT:
       return 0;
    case VK_IMAGE_ASPECT_PLANE_1_BIT:
+   case VK_IMAGE_ASPECT_MEMORY_PLANE_1_BIT_EXT:
       return 1;
    case VK_IMAGE_ASPECT_PLANE_2_BIT:
+   case VK_IMAGE_ASPECT_MEMORY_PLANE_2_BIT_EXT:
       return 2;
    default:
       unreachable("invalid image aspect");

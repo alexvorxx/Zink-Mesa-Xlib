@@ -475,10 +475,23 @@ static rogue_regarray *rogue_regarray_create(rogue_shader *shader,
          for (unsigned u = 0; u < common_regarray->size; ++u)
             common_regarray->regs[u]->regarray = regarray;
 
+         /* Steal its children. */
+         rogue_foreach_subarray_safe (subarray, common_regarray) {
+            unsigned parent_index = common_regarray->regs[0]->index;
+            unsigned child_index = subarray->regs[0]->index;
+            assert(child_index >= parent_index);
+
+            subarray->parent = regarray;
+            subarray->regs = &parent_regptr[child_index - parent_index];
+
+            list_del(&subarray->child_link);
+            list_addtail(&subarray->child_link, &regarray->children);
+         }
+
          common_regarray->parent = regarray;
          ralloc_free(common_regarray->regs);
          common_regarray->regs = parent_regptr;
-         list_addtail(&regarray->children, &common_regarray->child_link);
+         list_addtail(&common_regarray->child_link, &regarray->children);
       } else {
          /* We share registers with another regarray, and we are a subset of it.
           */
@@ -619,6 +632,7 @@ static inline void rogue_instr_init(rogue_instr *instr,
                                     rogue_block *block)
 {
    instr->type = type;
+   instr->exec_cond = ROGUE_EXEC_COND_PE_TRUE;
    instr->repeat = 1;
    instr->index = block->shader->next_instr++;
    instr->block = block;

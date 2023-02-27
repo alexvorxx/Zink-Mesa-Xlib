@@ -349,6 +349,10 @@ header_code = """
 
 #include <vulkan/vulkan_core.h>
 
+#ifdef VK_ENABLE_BETA_EXTENSIONS
+#include <vulkan/vulkan_beta.h>
+#endif
+
 #ifdef _WIN32
 #include <windows.h>
 #include <vulkan/vulkan_win32.h>

@@ -42,6 +42,7 @@ static const char scratch_rsrc_dword0_symbol[] = "SCRATCH_RSRC_DWORD0";
 static const char scratch_rsrc_dword1_symbol[] = "SCRATCH_RSRC_DWORD1";
 
 static void si_dump_shader_key(const struct si_shader *shader, FILE *f);
+static void si_fix_resource_usage(struct si_screen *sscreen, struct si_shader *shader);
 
 /* Get the number of all interpolated inputs */
 unsigned si_get_ps_num_interp(struct si_shader *ps)
@@ -1065,7 +1066,7 @@ void si_shader_dump_stats_for_shader_db(struct si_screen *screen, struct si_shad
       if (shader->gs_copy_shader)
          num_outputs = shader->gs_copy_shader->info.nr_param_exports;
       else if (shader->key.ge.as_es)
-         num_outputs = shader->selector->info.esgs_itemsize / 16;
+         num_outputs = shader->selector->info.esgs_vertex_stride / 16;
       else if (shader->key.ge.as_ls)
          num_outputs = shader->selector->info.lshs_vertex_stride / 16;
       else if (shader->selector->stage == MESA_SHADER_VERTEX ||
@@ -1561,7 +1562,7 @@ static bool si_lower_io_to_mem(struct si_shader *shader, nir_shader *nir,
          return true;
       } else if (key->ge.as_es) {
          NIR_PASS_V(nir, ac_nir_lower_es_outputs_to_mem, si_map_io_driver_location,
-                    sel->screen->info.gfx_level, sel->info.esgs_itemsize);
+                    sel->screen->info.gfx_level, sel->info.esgs_vertex_stride);
          return true;
       }
    } else if (nir->info.stage == MESA_SHADER_TESS_CTRL) {
@@ -1584,7 +1585,7 @@ static bool si_lower_io_to_mem(struct si_shader *shader, nir_shader *nir,
 
       if (key->ge.as_es) {
          NIR_PASS_V(nir, ac_nir_lower_es_outputs_to_mem, si_map_io_driver_location,
-                    sel->screen->info.gfx_level, sel->info.esgs_itemsize);
+                    sel->screen->info.gfx_level, sel->info.esgs_vertex_stride);
       }
 
       return true;
@@ -2338,7 +2339,8 @@ static struct si_shader_part *
 si_get_shader_part(struct si_screen *sscreen, struct si_shader_part **list,
                    gl_shader_stage stage, bool prolog, union si_shader_part_key *key,
                    struct ac_llvm_compiler *compiler, struct util_debug_callback *debug,
-                   void (*build)(struct si_shader_context *, union si_shader_part_key *),
+                   void (*build)(struct si_shader_context *, union si_shader_part_key *,
+                                 bool non_monolithic),
                    const char *name)
 {
    struct si_shader_part *result;
@@ -2406,7 +2408,7 @@ si_get_shader_part(struct si_screen *sscreen, struct si_shader_part **list,
    struct si_shader_args args;
    ctx.args = &args;
 
-   build(&ctx, key);
+   build(&ctx, key, true);
 
    /* Compile. */
    si_llvm_optimize_module(&ctx);
@@ -2780,7 +2782,7 @@ void si_multiwave_lds_size_workaround(struct si_screen *sscreen, unsigned *lds_s
       *lds_size = MAX2(*lds_size, 8);
 }
 
-void si_fix_resource_usage(struct si_screen *sscreen, struct si_shader *shader)
+static void si_fix_resource_usage(struct si_screen *sscreen, struct si_shader *shader)
 {
    unsigned min_sgprs = shader->info.num_input_sgprs + 2; /* VCC */
 

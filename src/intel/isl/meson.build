@@ -115,7 +115,7 @@ if with_sse41
     ],
     dependencies : idep_mesautil,
     link_args : ['-Wl,--exclude-libs=ALL'],
-    c_args : [no_override_init_args, '-msse2', sse41_args],
+    c_args : [no_override_init_args, c_sse2_arg, sse41_args],
     gnu_symbol_visibility : 'hidden',
     extra_files : ['isl_tiled_memcpy.c']
   )

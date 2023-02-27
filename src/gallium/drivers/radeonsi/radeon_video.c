@@ -62,7 +62,7 @@ bool si_vid_create_buffer(struct pipe_screen *screen, struct rvid_buffer *buffer
     * able to move buffers around individually, so request a
     * non-sub-allocated buffer.
     */
-   buffer->res = si_resource(pipe_buffer_create(screen, PIPE_BIND_SHARED, usage, size));
+   buffer->res = si_resource(pipe_buffer_create(screen, PIPE_BIND_CUSTOM, usage, size));
 
    return buffer->res != NULL;
 }
@@ -73,7 +73,7 @@ bool si_vid_create_tmz_buffer(struct pipe_screen *screen, struct rvid_buffer *bu
 {
    memset(buffer, 0, sizeof(*buffer));
    buffer->usage = usage;
-   buffer->res = si_resource(pipe_buffer_create(screen, PIPE_BIND_SHARED | PIPE_BIND_PROTECTED,
+   buffer->res = si_resource(pipe_buffer_create(screen, PIPE_BIND_CUSTOM | PIPE_BIND_PROTECTED,
                                                 usage, size));
    return buffer->res != NULL;
 }

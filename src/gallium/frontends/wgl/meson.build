@@ -25,8 +25,9 @@ if not with_shared_glapi
   _c_args_wgl += '-D_GLAPI_NO_EXPORTS'
 endif
 
+_wgl_deps = [idep_xmlconfig, driver_zink]
 if with_gallium_zink
-  _c_args_wgl += vk_wsi_args
+  _wgl_deps += idep_vulkan_wsi_defines
 endif
 
 files_libwgl = files(
@@ -63,5 +64,5 @@ libwgl = static_library(
   include_directories : [
     inc_include, inc_src, inc_gallium, inc_gallium_aux, inc_mapi, inc_mesa,
   ],
-  dependencies : [idep_xmlconfig, driver_zink],
+  dependencies : _wgl_deps,
 )

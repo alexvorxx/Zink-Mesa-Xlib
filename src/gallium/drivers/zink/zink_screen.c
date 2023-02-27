@@ -87,6 +87,8 @@ zink_debug_options[] = {
    { "gpl", ZINK_DEBUG_GPL, "Force using Graphics Pipeline Library for all shaders" },
    { "shaderdb", ZINK_DEBUG_SHADERDB, "Do stuff to make shader-db work" },
    { "rp", ZINK_DEBUG_RP, "Enable renderpass tracking/optimizations" },
+   { "norp", ZINK_DEBUG_NORP, "Disable renderpass tracking/optimizations" },
+   { "map", ZINK_DEBUG_MAP, "Track amount of mapped VRAM" },
    DEBUG_NAMED_VALUE_END
 };
 
@@ -1417,6 +1419,7 @@ zink_destroy_screen(struct pipe_screen *pscreen)
       zink_kopper_deinit_displaytarget(screen, entry->data);
    simple_mtx_destroy(&screen->dt_lock);
 
+   simple_mtx_destroy(&screen->copy_context_lock);
    if (screen->copy_context)
       screen->copy_context->base.destroy(&screen->copy_context->base);
 
@@ -2708,6 +2711,24 @@ zink_create_semaphore(struct zink_screen *screen)
    return ret == VK_SUCCESS ? sem : VK_NULL_HANDLE;
 }
 
+void
+zink_screen_lock_context(struct zink_screen *screen)
+{
+   simple_mtx_lock(&screen->copy_context_lock);
+   if (!screen->copy_context)
+      screen->copy_context = zink_context(screen->base.context_create(&screen->base, NULL, ZINK_CONTEXT_COPY_ONLY));
+   if (!screen->copy_context) {
+      mesa_loge("zink: failed to create copy context");
+      /* realistically there's nothing that can be done here */
+   }
+}
+
+void
+zink_screen_unlock_context(struct zink_screen *screen)
+{
+   simple_mtx_unlock(&screen->copy_context_lock);
+}
+
 static bool
 init_layouts(struct zink_screen *screen)
 {
@@ -3133,12 +3154,7 @@ zink_internal_create_screen(const struct pipe_screen_config *config)
    if (!zink_descriptor_layouts_init(screen))
       goto fail;
 
-
-   screen->copy_context = zink_context(screen->base.context_create(&screen->base, NULL, ZINK_CONTEXT_COPY_ONLY));
-   if (!screen->copy_context) {
-      mesa_loge("zink: failed to create copy context");
-      goto fail;
-   }
+   simple_mtx_init(&screen->copy_context_lock, mtx_plain);
 
    screen->optimal_keys = !screen->need_decompose_attrs &&
                           screen->info.have_EXT_non_seamless_cube_map &&

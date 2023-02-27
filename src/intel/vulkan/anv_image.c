@@ -2692,8 +2692,6 @@ anv_CreateImageView(VkDevice _device,
              * reads but for most writes.  Instead of hanging if someone gets
              * it wrong, we give them a NULL descriptor.
              */
-            assert(isl_format_supports_typed_writes(device->info,
-                                                    format.isl_format));
             isl_null_fill_state(&device->isl_dev,
                                 iview->planes[vplane].lowered_storage_surface_state.state.map,
                                 .size = {

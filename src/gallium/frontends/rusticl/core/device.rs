@@ -257,9 +257,9 @@ impl Device {
 
         // CL_DEVICE_MAX_PARAMETER_SIZE
         // For this minimum value, only a maximum of 128 arguments can be passed to a kernel
-        if ComputeParam::<u64>::compute_param(
-            screen,
-            pipe_compute_cap::PIPE_COMPUTE_CAP_MAX_INPUT_SIZE,
+        if screen.shader_param(
+            pipe_shader_type::PIPE_SHADER_COMPUTE,
+            pipe_shader_cap::PIPE_SHADER_CAP_MAX_CONST_BUFFER0_SIZE,
         ) < 128
         {
             return false;
@@ -535,8 +535,15 @@ impl Device {
     }
 
     pub fn const_max_size(&self) -> cl_ulong {
-        self.screen
-            .param(pipe_cap::PIPE_CAP_MAX_SHADER_BUFFER_SIZE_UINT) as u64
+        min(
+            self.max_mem_alloc(),
+            self.screen
+                .param(pipe_cap::PIPE_CAP_MAX_SHADER_BUFFER_SIZE_UINT) as u64,
+        )
+    }
+
+    pub fn const_max_count(&self) -> cl_uint {
+        self.shader_param(pipe_shader_cap::PIPE_SHADER_CAP_MAX_CONST_BUFFERS) as cl_uint
     }
 
     pub fn device_type(&self, internal: bool) -> cl_device_type {
@@ -704,10 +711,7 @@ impl Device {
     }
 
     pub fn param_max_size(&self) -> usize {
-        ComputeParam::<u64>::compute_param(
-            self.screen.as_ref(),
-            pipe_compute_cap::PIPE_COMPUTE_CAP_MAX_INPUT_SIZE,
-        ) as usize
+        self.shader_param(pipe_shader_cap::PIPE_SHADER_CAP_MAX_CONST_BUFFER0_SIZE) as usize
     }
 
     pub fn printf_buffer_size(&self) -> usize {

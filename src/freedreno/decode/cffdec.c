@@ -96,7 +96,8 @@ static struct {
     * IB level isn't considered triggered unless the lower #'d IB
     * level is.
     */
-   bool triggered;
+   bool triggered : 1;
+   bool base_seen : 1;
 } ibs[4];
 static int ib;
 
@@ -171,7 +172,11 @@ highlight_gpuaddr(uint64_t gpuaddr)
    if (!options->ibs[ib].base)
       return false;
 
-   if ((ib > 0) && options->ibs[ib - 1].base && !ibs[ib - 1].triggered)
+   if ((ib > 0) && options->ibs[ib - 1].base &&
+       !(ibs[ib - 1].triggered || ibs[ib - 1].base_seen))
+      return false;
+
+   if (ibs[ib].base_seen)
       return false;
 
    if (ibs[ib].triggered)
@@ -184,6 +189,11 @@ highlight_gpuaddr(uint64_t gpuaddr)
    uint64_t end = ibs[ib].base + 4 * ibs[ib].size;
 
    bool triggered = (start <= gpuaddr) && (gpuaddr <= end);
+
+   if (triggered && (ib < 2) && options->ibs[ib + 1].crash_found) {
+      ibs[ib].base_seen = true;
+      return false;
+   }
 
    ibs[ib].triggered |= triggered;
 
@@ -201,6 +211,8 @@ dump_hex(uint32_t *dwords, uint32_t sizedwords, int level)
 
    if (quiet(2))
       return;
+
+   bool highlight = highlight_gpuaddr(gpuaddr(dwords) + 4 * sizedwords - 1);
 
    for (i = 0; i < sizedwords; i += 8) {
       int zero = 1;
@@ -222,7 +234,6 @@ dump_hex(uint32_t *dwords, uint32_t sizedwords, int level)
          continue;
 
       uint64_t addr = gpuaddr(&dwords[i]);
-      bool highlight = highlight_gpuaddr(addr);
 
       if (highlight)
          printf("\x1b[0;1;31m");
@@ -2232,6 +2243,29 @@ cp_nop(uint32_t *dwords, uint32_t sizedwords, int level)
    printf("\n");
 }
 
+uint32_t *
+parse_cp_indirect(uint32_t *dwords, uint32_t sizedwords,
+                  uint64_t *ibaddr, uint32_t *ibsize)
+{
+   if (is_64b()) {
+      assert(sizedwords == 3);
+
+      /* a5xx+.. high 32b of gpu addr, then size: */
+      *ibaddr = dwords[0];
+      *ibaddr |= ((uint64_t)dwords[1]) << 32;
+      *ibsize = dwords[2];
+
+      return dwords + 3;
+   } else {
+      assert(sizedwords == 2);
+
+      *ibaddr = dwords[0];
+      *ibsize = dwords[1];
+
+      return dwords + 2;
+   }
+}
+
 static void
 cp_indirect(uint32_t *dwords, uint32_t sizedwords, int level)
 {
@@ -2240,15 +2274,7 @@ cp_indirect(uint32_t *dwords, uint32_t sizedwords, int level)
    uint32_t ibsize;
    uint32_t *ptr = NULL;
 
-   if (is_64b()) {
-      /* a5xx+.. high 32b of gpu addr, then size: */
-      ibaddr = dwords[0];
-      ibaddr |= ((uint64_t)dwords[1]) << 32;
-      ibsize = dwords[2];
-   } else {
-      ibaddr = dwords[0];
-      ibsize = dwords[1];
-   }
+   dwords = parse_cp_indirect(dwords, sizedwords, &ibaddr, &ibsize);
 
    if (!quiet(3)) {
       if (is_64b()) {
@@ -2279,7 +2305,7 @@ cp_indirect(uint32_t *dwords, uint32_t sizedwords, int level)
        * executed but never returns.  Account for this by checking if
        * the IB returned:
        */
-      highlight_gpuaddr(gpuaddr(&dwords[is_64b() ? 3 : 2]));
+      highlight_gpuaddr(gpuaddr(dwords));
 
       ib++;
       ibs[ib].base = ibaddr;
@@ -2897,19 +2923,14 @@ dump_commands(uint32_t *dwords, uint32_t sizedwords, int level)
             dump_hex(dwords, count, level + 1);
       } else if (pkt_is_type2(dwords[0])) {
          printl(3, "%snop\n", levels[level + 1]);
+         count = 1;
       } else {
+         printf("bad type! %08x\n", dwords[0]);
          /* for 5xx+ we can do a passable job of looking for start of next valid
           * packet: */
          if (options->gpu_id >= 500) {
-            while (dwords_left > 0) {
-               if (pkt_is_type7(dwords[0]) || pkt_is_type4(dwords[0]))
-                  break;
-               printf("bad type! %08x\n", dwords[0]);
-               dwords++;
-               dwords_left--;
-            }
+            count = find_next_packet(dwords, dwords_left);
          } else {
-            printf("bad type! %08x\n", dwords[0]);
             return;
          }
       }

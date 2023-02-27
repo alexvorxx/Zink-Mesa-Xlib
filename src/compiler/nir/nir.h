@@ -2205,6 +2205,7 @@ typedef enum {
    nir_texop_fragment_mask_fetch_amd, /**< Multisample fragment mask texture fetch */
    nir_texop_descriptor_amd,     /**< Returns a buffer or image descriptor. */
    nir_texop_sampler_descriptor_amd, /**< Returns a sampler descriptor. */
+   nir_texop_lod_bias_agx,       /**< Returns the sampler's LOD bias */
 } nir_texop;
 
 /** Represents a texture instruction */
@@ -4821,10 +4822,10 @@ typedef enum {
     * An address format which is a 64-bit global base address and a 32-bit
     * offset.
     *
-    * The address is comprised as a 32-bit vec4 where .xy are a uint64_t base
-    * address stored with the low bits in .x and high bits in .y, .z is
-    * undefined, and .w is an offset.  This is intended to match
-    * 64bit_bounded_global but without the bounds checking.
+    * This is identical to 64bit_bounded_global except that bounds checking
+    * is not applied when lowering to global access.  Even though the size is
+    * never used for an actual bounds check, it needs to be valid so we can
+    * lower deref_buffer_array_length properly.
     */
    nir_address_format_64bit_global_32bit_offset,
 
@@ -5101,6 +5102,7 @@ typedef struct nir_lower_subgroups_options {
    bool lower_quad_broadcast_dynamic_to_const:1;
    bool lower_elect:1;
    bool lower_read_invocation_to_cond:1;
+   bool lower_rotate_to_shuffle:1;
 } nir_lower_subgroups_options;
 
 bool nir_lower_subgroups(nir_shader *shader,

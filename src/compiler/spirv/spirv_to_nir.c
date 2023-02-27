@@ -2484,7 +2484,7 @@ vtn_mem_semantics_to_nir_var_modes(struct vtn_builder *b,
    return modes;
 }
 
-static nir_scope
+nir_scope
 vtn_scope_to_nir_scope(struct vtn_builder *b, SpvScope scope)
 {
    nir_scope nir_scope;
@@ -2846,6 +2846,9 @@ vtn_handle_texture(struct vtn_builder *b, SpvOp opcode,
    case nir_texop_descriptor_amd:
    case nir_texop_sampler_descriptor_amd:
       vtn_fail("unexpected nir_texop_*descriptor_amd");
+      break;
+   case nir_texop_lod_bias_agx:
+      vtn_fail("unexpected nir_texop_lod_bias_agx");
       break;
    }
 
@@ -4885,6 +4888,10 @@ vtn_handle_preamble_instruction(struct vtn_builder *b, SpvOp opcode,
          spv_check_supported(shader_viewport_mask_nv, cap);
          break;
 
+      case SpvCapabilityGroupNonUniformRotateKHR:
+         spv_check_supported(subgroup_rotate, cap);
+         break;
+
       default:
          vtn_fail("Unhandled capability: %s (%u)",
                   spirv_capability_to_string(cap), cap);
@@ -6234,6 +6241,7 @@ vtn_handle_body_instruction(struct vtn_builder *b, SpvOp opcode,
    case SpvOpSubgroupShuffleDownINTEL:
    case SpvOpSubgroupShuffleUpINTEL:
    case SpvOpSubgroupShuffleXorINTEL:
+   case SpvOpGroupNonUniformRotateKHR:
       vtn_handle_subgroup(b, opcode, w, count);
       break;
 

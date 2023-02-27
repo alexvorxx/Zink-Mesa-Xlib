@@ -34,7 +34,8 @@
 #include <dlfcn.h>
 #include <errno.h>
 #include <unistd.h>
-#include <vulkan/vulkan.h>
+#include <vulkan/vulkan_core.h>
+#include <vulkan/vulkan_wayland.h>
 #include <fcntl.h>
 #include <xf86drm.h>
 #include "drm-uapi/drm_fourcc.h"

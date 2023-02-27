@@ -504,7 +504,7 @@ si_emit_graphics(struct radv_device *device, struct radeon_cmdbuf *cs)
          /* This allows sample shading. */
          radeon_set_context_reg(
             cs, R_028848_PA_CL_VRS_CNTL,
-            S_028848_SAMPLE_ITER_COMBINER_MODE(V_028848_VRS_COMB_MODE_OVERRIDE));
+            S_028848_SAMPLE_ITER_COMBINER_MODE(V_028848_SC_VRS_COMB_MODE_OVERRIDE));
       }
    }
 

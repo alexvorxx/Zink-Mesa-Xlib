@@ -69,6 +69,8 @@ d3d12_context_destroy(struct pipe_context *pctx)
    struct d3d12_screen *screen = d3d12_screen(pctx->screen);
    mtx_lock(&screen->submit_mutex);
    list_del(&ctx->context_list_entry);
+   if (ctx->id != D3D12_CONTEXT_NO_ID)
+      screen->context_id_list[screen->context_id_count++] = ctx->id;
    mtx_unlock(&screen->submit_mutex);
 
 #ifdef _WIN32
@@ -2589,6 +2591,10 @@ d3d12_context_create(struct pipe_screen *pscreen, void *priv, unsigned flags)
 
    mtx_lock(&screen->submit_mutex);
    list_addtail(&ctx->context_list_entry, &screen->context_list);
+   if (screen->context_id_count > 0)
+      ctx->id = screen->context_id_list[--screen->context_id_count];
+   else
+      ctx->id = D3D12_CONTEXT_NO_ID;
    mtx_unlock(&screen->submit_mutex);
 
    if (flags & PIPE_CONTEXT_PREFER_THREADED)

@@ -1,6 +1,6 @@
 variables:
    DEBIAN_X86_BUILD_BASE_IMAGE: "debian/x86_build-base"
-   DEBIAN_BASE_TAG: "2023-01-28-rust-valgrind"
+   DEBIAN_BASE_TAG: "2023-02-23-virglrenderer"
 
    DEBIAN_X86_BUILD_IMAGE_PATH: "debian/x86_build"
    DEBIAN_BUILD_TAG: "2023-02-14-pip"
@@ -21,7 +21,7 @@ variables:
 
    ALPINE_X86_BUILD_TAG: "2023-01-20-all-in-1"
    FEDORA_X86_BUILD_TAG: "2023-02-09-f36"
-   KERNEL_ROOTFS_TAG: "2023-02-14-pip"
+   KERNEL_ROOTFS_TAG: "2023-02-23-virglrenderer"
 
    WINDOWS_X64_VS_PATH: "windows/x64_vs"
    WINDOWS_X64_VS_TAG: "2022-10-20-upgrade-zlib"

@@ -10,7 +10,7 @@
 
 #include "freedreno_pm4.h"
 
-#include "tu_drm.h"
+#include "tu_knl.h"
 
 /* For breadcrumbs we may open a network socket based on the envvar,
  * it's not something that should be enabled by default.

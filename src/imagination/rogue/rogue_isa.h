@@ -372,6 +372,33 @@ typedef struct rogue_mux {
 } PACKED rogue_mux;
 static_assert(sizeof(rogue_mux) == 1, "sizeof(rogue_mux) != 1");
 
+typedef struct rogue_idx_offset {
+   union {
+      struct {
+         unsigned bank : 3;
+         unsigned offset : 8;
+         unsigned : 5;
+      } PACKED;
+
+      uint16_t _;
+   } PACKED;
+} PACKED rogue_idx_offset;
+static_assert(sizeof(rogue_idx_offset) == 2, "sizeof(rogue_idx_offset) != 2");
+
+typedef struct rogue_idx_dim_offset {
+   union {
+      struct {
+         unsigned bank : 3;
+         unsigned dim_offset : 5;
+         unsigned : 8;
+      } PACKED;
+
+      uint16_t _;
+   } PACKED;
+} PACKED rogue_idx_dim_offset;
+static_assert(sizeof(rogue_idx_dim_offset) == 2,
+              "sizeof(rogue_idx_dim_offset) != 2");
+
 enum reg_bank {
    BANK_SPECIAL = 0b000,
    BANK_TEMP = 0b001,
@@ -381,6 +408,17 @@ enum reg_bank {
    BANK_COEFF_ALT = 0b101,
    BANK_IDX0 = 0b110,
    BANK_IDX1 = 0b111,
+};
+
+enum idx_bank {
+   IDX_BANK_TEMP = 0b000,
+   IDX_BANK_VTXIN = 0b001,
+   IDX_BANK_COEFF = 0b010,
+   IDX_BANK_SHARED = 0b011,
+   IDX_BANK_DC = 0b100,
+   IDX_BANK_IDX = 0b101,
+   IDX_BANK_COEFF_ALT = 0b110,
+   IDX_BANK_PIXOUT = 0b111,
 };
 
 enum is0 {
@@ -607,16 +645,33 @@ enum tstop {
    TSTOP_Z = 0b0000,
    TSTOP_GZ = 0b0001,
    TSTOP_GEZ = 0b0010,
-   TSTOP_IC = 0b0011,
-   TSTOP_EQ = 0b0100,
-   TSTOP_GT = 0b0101,
+   TSTOP_C = 0b0011,
+   TSTOP_E = 0b0100,
+   TSTOP_G = 0b0101,
    TSTOP_GE = 0b0110,
    TSTOP_NE = 0b0111,
-   TSTOP_LT = 0b1000,
+   TSTOP_L = 0b1000,
    TSTOP_LE = 0b1001,
 };
 
-typedef struct rogue_alu_mov_encoding {
+enum tsttype {
+   TSTTYPE_F32 = 0b000,
+   TSTTYPE_U16 = 0b001,
+   TSTTYPE_S16 = 0b010,
+   TSTTYPE_U8 = 0b011,
+   TSTTYPE_S8 = 0b100,
+   TSTTYPE_U32 = 0b101,
+   TSTTYPE_S32 = 0b110,
+};
+
+enum tstelem {
+   TST_E0 = 0b00,
+   TST_E1 = 0b01,
+   TST_E2 = 0b10,
+   TST_E3 = 0b11,
+};
+
+typedef struct rogue_alu_movc_encoding {
    /* Byte 0 */
    struct {
       unsigned movw0 : 2;
@@ -632,9 +687,24 @@ typedef struct rogue_alu_mov_encoding {
       unsigned maskw0 : 4;
       unsigned : 2;
    } PACKED;
-} PACKED rogue_alu_mov_encoding;
-static_assert(sizeof(rogue_alu_mov_encoding) == 2,
-              "sizeof(rogue_alu_mov_encoding) != 2");
+} PACKED rogue_alu_movc_encoding;
+static_assert(sizeof(rogue_alu_movc_encoding) == 2,
+              "sizeof(rogue_alu_movc_encoding) != 2");
+
+enum movw {
+   MOVW_FT0 = 0b00,
+   MOVW_FT1 = 0b01,
+   MOVW_FT2 = 0b10,
+   MOVW_FTE = 0b11,
+};
+
+enum maskw0 {
+   MASKW0_E0 = 0b0001,
+   MASKW0_E1 = 0b0010,
+   MASKW0_E2 = 0b0100,
+   MASKW0_E3 = 0b1000,
+   MASKW0_EALL = 0b1111,
+};
 
 typedef struct rogue_alu_int32_64_encoding {
    /* Byte 0 */
@@ -682,7 +752,7 @@ typedef struct rogue_alu_instr_encoding {
       rogue_alu_fdual_encoding fmul;
       rogue_alu_fmad_encoding fmad;
       rogue_alu_tst_encoding tst;
-      rogue_alu_mov_encoding mov;
+      rogue_alu_movc_encoding movc;
       rogue_alu_int32_64_encoding int32_64;
    } PACKED;
 } PACKED rogue_alu_instr_encoding;
@@ -695,7 +765,7 @@ enum aluop {
    ALUOP_SNGL = 0b100, /** Phase 0, 1, 2. */
    ALUOP_INT8_16 = 0b101, /** Phase 0. */
    ALUOP_FMAD = 0b110, /** Phase 0, 1. */
-   ALUOP_MOV = 0b110, /** Phase 2. */
+   ALUOP_MOVC = 0b110, /** Phase 2. */
    ALUOP_INT32_64 = 0b111, /** Phase 0. */
    ALUOP_TST = 0b111, /** Phase 2. */
 };
@@ -832,6 +902,56 @@ enum cachemode_ld {
    CACHEMODE_LD_FORCE_LINE_FILL = 0b10,
 };
 
+typedef struct rogue_backend_dma_st_encoding {
+   /* Byte 0 */
+   struct {
+      unsigned : 3;
+      unsigned drc : 1;
+      unsigned immbl : 1;
+      unsigned : 3;
+   } PACKED;
+
+   /* Byte 1 */
+   union {
+      struct {
+         unsigned cachemode : 2;
+         unsigned burstlen_2_0 : 3;
+         unsigned srcseladd : 3;
+      } PACKED;
+
+      struct {
+         unsigned : 2;
+         unsigned srcselbl : 3;
+         unsigned : 3;
+      } PACKED;
+   } PACKED;
+
+   /* Byte 2 */
+   struct {
+      unsigned burstlen_3 : 1;
+      unsigned : 1;
+      unsigned dsize : 2;
+      unsigned srcseldata : 3;
+      unsigned ext : 1;
+   } PACKED;
+
+   /* Byte 3 */
+   struct {
+      unsigned srcmask : 3;
+      unsigned slccachemode : 2;
+      unsigned nottiled : 1; /* N.B. default is 1 if ext = 0. */
+      unsigned : 2;
+   } PACKED;
+} PACKED rogue_backend_dma_st_encoding;
+static_assert(sizeof(rogue_backend_dma_st_encoding) == 4,
+              "sizeof(rogue_backend_dma_st_encoding) != 4");
+
+enum dsize {
+   DSIZE_8 = 0b00,
+   DSIZE_16 = 0b01,
+   DSIZE_BURSTLEN = 0b10,
+};
+
 enum cachemode_st {
    CACHEMODE_ST_WRITE_THROUGH = 0b00,
    CACHEMODE_ST_WRITE_BACK = 0b01,
@@ -845,6 +965,103 @@ enum slccachemode {
    SLCCACHEMODE_CACHED_READS = 0b11,
 };
 
+typedef struct rogue_backend_dma_smp_encoding {
+   /* Byte 0 */
+   struct {
+      unsigned : 3;
+      unsigned drc : 1;
+      unsigned fcnorm : 1;
+      unsigned : 3;
+   } PACKED;
+
+   /* Byte 1 */
+   struct {
+      unsigned lodm : 2;
+      unsigned chan : 2;
+      unsigned exta : 1;
+      unsigned dmn : 2;
+      unsigned extb : 1;
+   } PACKED;
+
+   /* Byte 2 */
+   struct {
+      unsigned tao : 1;
+      unsigned soo : 1;
+      unsigned sno : 1;
+      unsigned nncoords : 1;
+      unsigned sbmode : 2;
+      unsigned proj : 1;
+      unsigned pplod : 1;
+   } PACKED;
+
+   /* Byte 3 */
+   struct {
+      unsigned w : 1;
+      unsigned cachemode : 2;
+      unsigned swap : 1;
+      unsigned f16 : 1;
+      unsigned slccachemode : 2;
+      unsigned extc : 1;
+   } PACKED;
+
+   /* Byte 4 */
+   struct {
+      unsigned array : 1;
+      unsigned : 7;
+   } PACKED;
+} PACKED rogue_backend_dma_smp_encoding;
+static_assert(sizeof(rogue_backend_dma_smp_encoding) == 5,
+              "sizeof(rogue_backend_dma_smp_encoding) != 5");
+
+enum fcnorm {
+   FCNORM_INT_NOCONVFP = 0,
+   FCNORM_FIXED_CONVFP = 1,
+};
+
+enum lodm {
+   LODM_NORMAL = 0b00,
+   LODM_BIAS = 0b01,
+   LODM_REPLACE = 0b10,
+   LODM_GRADIENTS = 0b11,
+};
+
+enum smpchan {
+   SMPCHAN_1 = 0b00,
+   SMPCHAN_2 = 0b01,
+   SMPCHAN_3 = 0b10,
+   SMPCHAN_4 = 0b11,
+};
+
+enum dmn {
+   DMN_1D = 0b01,
+   DMN_2D = 0b10,
+   DMN_3D = 0b11,
+};
+
+enum sbmode {
+   SBMODE_NONE = 0b00,
+   SBMODE_DATA = 0b01,
+   SBMODE_INFO = 0b10,
+   SBMODE_BOTH = 0b11,
+};
+
+typedef struct rogue_backend_dma_idf_encoding {
+   /* Byte 0 */
+   struct {
+      unsigned : 3;
+      unsigned drc : 1;
+      unsigned : 4;
+   } PACKED;
+
+   /* Byte 1 */
+   struct {
+      unsigned srcseladd : 3;
+      unsigned : 5;
+   } PACKED;
+} PACKED rogue_backend_dma_idf_encoding;
+static_assert(sizeof(rogue_backend_dma_idf_encoding) == 2,
+              "sizeof(rogue_backend_dma_idf_encoding) != 2");
+
 typedef struct rogue_backend_dma_encoding {
    union {
       /* Byte 0 */
@@ -853,11 +1070,14 @@ typedef struct rogue_backend_dma_encoding {
          unsigned : 5;
       } PACKED;
 
+      rogue_backend_dma_smp_encoding smp;
+      rogue_backend_dma_idf_encoding idf;
       rogue_backend_dma_ld_encoding ld;
+      rogue_backend_dma_st_encoding st;
    } PACKED;
 } PACKED rogue_backend_dma_encoding;
-static_assert(sizeof(rogue_backend_dma_encoding) == 3,
-              "sizeof(rogue_backend_dma_encoding) != 3");
+static_assert(sizeof(rogue_backend_dma_encoding) == 5,
+              "sizeof(rogue_backend_dma_encoding) != 5");
 
 enum dmaop {
    DMAOP_IDF = 0b000,
@@ -881,8 +1101,8 @@ typedef struct rogue_backend_instr_encoding {
       rogue_backend_dma_encoding dma;
    } PACKED;
 } PACKED rogue_backend_instr_encoding;
-static_assert(sizeof(rogue_backend_instr_encoding) == 3,
-              "sizeof(rogue_backend_instr_encoding) != 3");
+static_assert(sizeof(rogue_backend_instr_encoding) == 5,
+              "sizeof(rogue_backend_instr_encoding) != 5");
 
 enum backendop {
    BACKENDOP_UVSW = 0b000,
@@ -1179,7 +1399,7 @@ typedef struct rogue_instr_group_header_encoding {
          unsigned ccext : 1;
          unsigned rpt : 2;
          unsigned atom : 1;
-         unsigned crel : 1;
+         unsigned : 1;
          unsigned alutype : 2;
          unsigned end : 1;
       } PACKED;

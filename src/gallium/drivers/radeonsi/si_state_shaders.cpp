@@ -771,7 +771,7 @@ static void si_emit_shader_es(struct si_context *sctx)
    radeon_begin(&sctx->gfx_cs);
    radeon_opt_set_context_reg(sctx, R_028AAC_VGT_ESGS_RING_ITEMSIZE,
                               SI_TRACKED_VGT_ESGS_RING_ITEMSIZE,
-                              shader->selector->info.esgs_itemsize / 4);
+                              shader->selector->info.esgs_vertex_stride / 4);
 
    if (shader->selector->stage == MESA_SHADER_TESS_EVAL)
       radeon_opt_set_context_reg(sctx, R_028B6C_VGT_TF_PARAM, SI_TRACKED_VGT_TF_PARAM,
@@ -843,7 +843,7 @@ void gfx9_get_gs_info(struct si_shader_selector *es, struct si_shader_selector *
    /* We can't allow using the whole LDS, because GS waves compete with
     * other shader stages for LDS space. */
    const unsigned max_lds_size = 8 * 1024;
-   const unsigned esgs_itemsize = es->info.esgs_itemsize / 4;
+   const unsigned esgs_itemsize = es->info.esgs_vertex_stride / 4;
    unsigned esgs_lds_size;
 
    /* All these are per subgroup: */
@@ -936,41 +936,41 @@ static void si_emit_shader_gs(struct si_context *sctx)
     * R_028A68_VGT_GSVS_RING_OFFSET_3 */
    radeon_opt_set_context_reg3(
       sctx, R_028A60_VGT_GSVS_RING_OFFSET_1, SI_TRACKED_VGT_GSVS_RING_OFFSET_1,
-      shader->ctx_reg.gs.vgt_gsvs_ring_offset_1, shader->ctx_reg.gs.vgt_gsvs_ring_offset_2,
-      shader->ctx_reg.gs.vgt_gsvs_ring_offset_3);
+      shader->gs.vgt_gsvs_ring_offset_1, shader->gs.vgt_gsvs_ring_offset_2,
+      shader->gs.vgt_gsvs_ring_offset_3);
 
    /* R_028AB0_VGT_GSVS_RING_ITEMSIZE */
    radeon_opt_set_context_reg(sctx, R_028AB0_VGT_GSVS_RING_ITEMSIZE,
                               SI_TRACKED_VGT_GSVS_RING_ITEMSIZE,
-                              shader->ctx_reg.gs.vgt_gsvs_ring_itemsize);
+                              shader->gs.vgt_gsvs_ring_itemsize);
 
    /* R_028B38_VGT_GS_MAX_VERT_OUT */
    radeon_opt_set_context_reg(sctx, R_028B38_VGT_GS_MAX_VERT_OUT, SI_TRACKED_VGT_GS_MAX_VERT_OUT,
-                              shader->ctx_reg.gs.vgt_gs_max_vert_out);
+                              shader->gs.vgt_gs_max_vert_out);
 
    /* R_028B5C_VGT_GS_VERT_ITEMSIZE, R_028B60_VGT_GS_VERT_ITEMSIZE_1
     * R_028B64_VGT_GS_VERT_ITEMSIZE_2, R_028B68_VGT_GS_VERT_ITEMSIZE_3 */
    radeon_opt_set_context_reg4(
       sctx, R_028B5C_VGT_GS_VERT_ITEMSIZE, SI_TRACKED_VGT_GS_VERT_ITEMSIZE,
-      shader->ctx_reg.gs.vgt_gs_vert_itemsize, shader->ctx_reg.gs.vgt_gs_vert_itemsize_1,
-      shader->ctx_reg.gs.vgt_gs_vert_itemsize_2, shader->ctx_reg.gs.vgt_gs_vert_itemsize_3);
+      shader->gs.vgt_gs_vert_itemsize, shader->gs.vgt_gs_vert_itemsize_1,
+      shader->gs.vgt_gs_vert_itemsize_2, shader->gs.vgt_gs_vert_itemsize_3);
 
    /* R_028B90_VGT_GS_INSTANCE_CNT */
    radeon_opt_set_context_reg(sctx, R_028B90_VGT_GS_INSTANCE_CNT, SI_TRACKED_VGT_GS_INSTANCE_CNT,
-                              shader->ctx_reg.gs.vgt_gs_instance_cnt);
+                              shader->gs.vgt_gs_instance_cnt);
 
    if (sctx->gfx_level >= GFX9) {
       /* R_028A44_VGT_GS_ONCHIP_CNTL */
       radeon_opt_set_context_reg(sctx, R_028A44_VGT_GS_ONCHIP_CNTL, SI_TRACKED_VGT_GS_ONCHIP_CNTL,
-                                 shader->ctx_reg.gs.vgt_gs_onchip_cntl);
+                                 shader->gs.vgt_gs_onchip_cntl);
       /* R_028A94_VGT_GS_MAX_PRIMS_PER_SUBGROUP */
       radeon_opt_set_context_reg(sctx, R_028A94_VGT_GS_MAX_PRIMS_PER_SUBGROUP,
                                  SI_TRACKED_VGT_GS_MAX_PRIMS_PER_SUBGROUP,
-                                 shader->ctx_reg.gs.vgt_gs_max_prims_per_subgroup);
+                                 shader->gs.vgt_gs_max_prims_per_subgroup);
       /* R_028AAC_VGT_ESGS_RING_ITEMSIZE */
       radeon_opt_set_context_reg(sctx, R_028AAC_VGT_ESGS_RING_ITEMSIZE,
                                  SI_TRACKED_VGT_ESGS_RING_ITEMSIZE,
-                                 shader->ctx_reg.gs.vgt_esgs_ring_itemsize);
+                                 shader->gs.vgt_esgs_ring_itemsize);
 
       if (shader->key.ge.part.gs.es->stage == MESA_SHADER_TESS_EVAL)
          radeon_opt_set_context_reg(sctx, R_028B6C_VGT_TF_PARAM, SI_TRACKED_VGT_TF_PARAM,
@@ -986,7 +986,7 @@ static void si_emit_shader_gs(struct si_context *sctx)
    if (sctx->screen->info.spi_cu_en_has_effect) {
       if (sctx->gfx_level >= GFX7) {
          ac_set_reg_cu_en(&sctx->gfx_cs, R_00B21C_SPI_SHADER_PGM_RSRC3_GS,
-                          shader->ctx_reg.gs.spi_shader_pgm_rsrc3_gs,
+                          shader->gs.spi_shader_pgm_rsrc3_gs,
                           C_00B21C_CU_EN, 0, &sctx->screen->info,
                           (void (*)(void*, unsigned, uint32_t))
                           (sctx->gfx_level >= GFX10 ? radeon_set_sh_reg_idx3_func : radeon_set_sh_reg_func));
@@ -994,7 +994,7 @@ static void si_emit_shader_gs(struct si_context *sctx)
       }
       if (sctx->gfx_level >= GFX10) {
          ac_set_reg_cu_en(&sctx->gfx_cs, R_00B204_SPI_SHADER_PGM_RSRC4_GS,
-                          shader->ctx_reg.gs.spi_shader_pgm_rsrc4_gs,
+                          shader->gs.spi_shader_pgm_rsrc4_gs,
                           C_00B204_CU_EN_GFX10, 16, &sctx->screen->info,
                           (void (*)(void*, unsigned, uint32_t))
                           (sctx->gfx_level >= GFX10 ? radeon_set_sh_reg_idx3_func : radeon_set_sh_reg_func));
@@ -1005,12 +1005,12 @@ static void si_emit_shader_gs(struct si_context *sctx)
       if (sctx->gfx_level >= GFX7) {
          radeon_opt_set_sh_reg_idx3(sctx, R_00B21C_SPI_SHADER_PGM_RSRC3_GS,
                                     SI_TRACKED_SPI_SHADER_PGM_RSRC3_GS,
-                                    shader->ctx_reg.gs.spi_shader_pgm_rsrc3_gs);
+                                    shader->gs.spi_shader_pgm_rsrc3_gs);
       }
       if (sctx->gfx_level >= GFX10) {
          radeon_opt_set_sh_reg_idx3(sctx, R_00B204_SPI_SHADER_PGM_RSRC4_GS,
                                     SI_TRACKED_SPI_SHADER_PGM_RSRC4_GS,
-                                    shader->ctx_reg.gs.spi_shader_pgm_rsrc4_gs);
+                                    shader->gs.spi_shader_pgm_rsrc4_gs);
       }
       radeon_end();
    }
@@ -1035,31 +1035,31 @@ static void si_shader_gs(struct si_screen *sscreen, struct si_shader *shader)
    pm4->atom.emit = si_emit_shader_gs;
 
    offset = num_components[0] * sel->info.base.gs.vertices_out;
-   shader->ctx_reg.gs.vgt_gsvs_ring_offset_1 = offset;
+   shader->gs.vgt_gsvs_ring_offset_1 = offset;
 
    if (max_stream >= 2)
       offset += num_components[1] * sel->info.base.gs.vertices_out;
-   shader->ctx_reg.gs.vgt_gsvs_ring_offset_2 = offset;
+   shader->gs.vgt_gsvs_ring_offset_2 = offset;
 
    if (max_stream >= 3)
       offset += num_components[2] * sel->info.base.gs.vertices_out;
-   shader->ctx_reg.gs.vgt_gsvs_ring_offset_3 = offset;
+   shader->gs.vgt_gsvs_ring_offset_3 = offset;
 
    if (max_stream >= 4)
       offset += num_components[3] * sel->info.base.gs.vertices_out;
-   shader->ctx_reg.gs.vgt_gsvs_ring_itemsize = offset;
+   shader->gs.vgt_gsvs_ring_itemsize = offset;
 
    /* The GSVS_RING_ITEMSIZE register takes 15 bits */
    assert(offset < (1 << 15));
 
-   shader->ctx_reg.gs.vgt_gs_max_vert_out = sel->info.base.gs.vertices_out;
+   shader->gs.vgt_gs_max_vert_out = sel->info.base.gs.vertices_out;
 
-   shader->ctx_reg.gs.vgt_gs_vert_itemsize = num_components[0];
-   shader->ctx_reg.gs.vgt_gs_vert_itemsize_1 = (max_stream >= 2) ? num_components[1] : 0;
-   shader->ctx_reg.gs.vgt_gs_vert_itemsize_2 = (max_stream >= 3) ? num_components[2] : 0;
-   shader->ctx_reg.gs.vgt_gs_vert_itemsize_3 = (max_stream >= 4) ? num_components[3] : 0;
+   shader->gs.vgt_gs_vert_itemsize = num_components[0];
+   shader->gs.vgt_gs_vert_itemsize_1 = (max_stream >= 2) ? num_components[1] : 0;
+   shader->gs.vgt_gs_vert_itemsize_2 = (max_stream >= 3) ? num_components[2] : 0;
+   shader->gs.vgt_gs_vert_itemsize_3 = (max_stream >= 4) ? num_components[3] : 0;
 
-   shader->ctx_reg.gs.vgt_gs_instance_cnt =
+   shader->gs.vgt_gs_instance_cnt =
       S_028B90_CNT(MIN2(gs_num_invocations, 127)) | S_028B90_ENABLE(gs_num_invocations > 0);
 
    /* Copy over fields from the GS copy shader to make them easily accessible from GS. */
@@ -1125,27 +1125,26 @@ static void si_shader_gs(struct si_screen *sscreen, struct si_shader *shader)
       si_pm4_set_reg(pm4, R_00B228_SPI_SHADER_PGM_RSRC1_GS, rsrc1);
       si_pm4_set_reg(pm4, R_00B22C_SPI_SHADER_PGM_RSRC2_GS, rsrc2);
 
-      shader->ctx_reg.gs.spi_shader_pgm_rsrc3_gs = S_00B21C_CU_EN(0xffff) |
-                                                   S_00B21C_WAVE_LIMIT(0x3F);
-      shader->ctx_reg.gs.spi_shader_pgm_rsrc4_gs =
-         (sscreen->info.gfx_level >= GFX11 ? S_00B204_CU_EN_GFX11(1) : S_00B204_CU_EN_GFX10(0xffff)) |
-         S_00B204_SPI_SHADER_LATE_ALLOC_GS_GFX10(0);
+      shader->gs.spi_shader_pgm_rsrc3_gs = S_00B21C_CU_EN(0xffff) |
+                                           S_00B21C_WAVE_LIMIT(0x3F);
+      shader->gs.spi_shader_pgm_rsrc4_gs = S_00B204_CU_EN_GFX10(0xffff) |
+                                           S_00B204_SPI_SHADER_LATE_ALLOC_GS_GFX10(0);
 
-      shader->ctx_reg.gs.vgt_gs_onchip_cntl =
+      shader->gs.vgt_gs_onchip_cntl =
          S_028A44_ES_VERTS_PER_SUBGRP(shader->gs_info.es_verts_per_subgroup) |
          S_028A44_GS_PRIMS_PER_SUBGRP(shader->gs_info.gs_prims_per_subgroup) |
          S_028A44_GS_INST_PRIMS_IN_SUBGRP(shader->gs_info.gs_inst_prims_in_subgroup);
-      shader->ctx_reg.gs.vgt_gs_max_prims_per_subgroup =
+      shader->gs.vgt_gs_max_prims_per_subgroup =
          S_028A94_MAX_PRIMS_PER_SUBGROUP(shader->gs_info.max_prims_per_subgroup);
-      shader->ctx_reg.gs.vgt_esgs_ring_itemsize = shader->key.ge.part.gs.es->info.esgs_itemsize / 4;
+      shader->gs.vgt_esgs_ring_itemsize = shader->key.ge.part.gs.es->info.esgs_vertex_stride / 4;
 
       if (es_stage == MESA_SHADER_TESS_EVAL)
          si_set_tesseval_regs(sscreen, shader->key.ge.part.gs.es, shader);
 
       polaris_set_vgt_vertex_reuse(sscreen, shader->key.ge.part.gs.es, shader);
    } else {
-      shader->ctx_reg.gs.spi_shader_pgm_rsrc3_gs = S_00B21C_CU_EN(0xffff) |
-                                                   S_00B21C_WAVE_LIMIT(0x3F);
+      shader->gs.spi_shader_pgm_rsrc3_gs = S_00B21C_CU_EN(0xffff) |
+                                           S_00B21C_WAVE_LIMIT(0x3F);
 
       si_pm4_set_reg(pm4, R_00B220_SPI_SHADER_PGM_LO_GS, va >> 8);
       pm4->reg_va_low_idx = pm4->ndw - 1;
@@ -1189,46 +1188,47 @@ static void gfx10_emit_shader_ngg_tail(struct si_context *sctx, struct si_shader
    radeon_begin(&sctx->gfx_cs);
    radeon_opt_set_context_reg(sctx, R_0287FC_GE_MAX_OUTPUT_PER_SUBGROUP,
                               SI_TRACKED_GE_MAX_OUTPUT_PER_SUBGROUP,
-                              shader->ctx_reg.ngg.ge_max_output_per_subgroup);
+                              shader->ngg.ge_max_output_per_subgroup);
    radeon_opt_set_context_reg(sctx, R_028B4C_GE_NGG_SUBGRP_CNTL, SI_TRACKED_GE_NGG_SUBGRP_CNTL,
-                              shader->ctx_reg.ngg.ge_ngg_subgrp_cntl);
+                              shader->ngg.ge_ngg_subgrp_cntl);
    radeon_opt_set_context_reg(sctx, R_028A84_VGT_PRIMITIVEID_EN, SI_TRACKED_VGT_PRIMITIVEID_EN,
-                              shader->ctx_reg.ngg.vgt_primitiveid_en);
+                              shader->ngg.vgt_primitiveid_en);
    if (sctx->gfx_level < GFX11) {
       radeon_opt_set_context_reg(sctx, R_028A44_VGT_GS_ONCHIP_CNTL, SI_TRACKED_VGT_GS_ONCHIP_CNTL,
-                                 shader->ctx_reg.ngg.vgt_gs_onchip_cntl);
+                                 shader->ngg.vgt_gs_onchip_cntl);
    }
    radeon_opt_set_context_reg(sctx, R_028B90_VGT_GS_INSTANCE_CNT, SI_TRACKED_VGT_GS_INSTANCE_CNT,
-                              shader->ctx_reg.ngg.vgt_gs_instance_cnt);
+                              shader->ngg.vgt_gs_instance_cnt);
    radeon_opt_set_context_reg(sctx, R_028AAC_VGT_ESGS_RING_ITEMSIZE,
                               SI_TRACKED_VGT_ESGS_RING_ITEMSIZE,
-                              shader->ctx_reg.ngg.vgt_esgs_ring_itemsize);
+                              shader->ngg.vgt_esgs_ring_itemsize);
    radeon_opt_set_context_reg(sctx, R_0286C4_SPI_VS_OUT_CONFIG, SI_TRACKED_SPI_VS_OUT_CONFIG,
-                              shader->ctx_reg.ngg.spi_vs_out_config);
+                              shader->ngg.spi_vs_out_config);
    radeon_opt_set_context_reg2(
       sctx, R_028708_SPI_SHADER_IDX_FORMAT, SI_TRACKED_SPI_SHADER_IDX_FORMAT,
-      shader->ctx_reg.ngg.spi_shader_idx_format, shader->ctx_reg.ngg.spi_shader_pos_format);
+      shader->ngg.spi_shader_idx_format, shader->ngg.spi_shader_pos_format);
    radeon_opt_set_context_reg(sctx, R_028818_PA_CL_VTE_CNTL, SI_TRACKED_PA_CL_VTE_CNTL,
-                              shader->ctx_reg.ngg.pa_cl_vte_cntl);
+                              shader->ngg.pa_cl_vte_cntl);
    radeon_opt_set_context_reg(sctx, R_028838_PA_CL_NGG_CNTL, SI_TRACKED_PA_CL_NGG_CNTL,
-                              shader->ctx_reg.ngg.pa_cl_ngg_cntl);
+                              shader->ngg.pa_cl_ngg_cntl);
 
    radeon_end_update_context_roll(sctx);
 
    /* These don't cause a context roll. */
    radeon_begin_again(&sctx->gfx_cs);
    radeon_opt_set_uconfig_reg(sctx, R_030980_GE_PC_ALLOC, SI_TRACKED_GE_PC_ALLOC,
-                              shader->ctx_reg.ngg.ge_pc_alloc);
+                              shader->ngg.ge_pc_alloc);
    if (sctx->screen->info.spi_cu_en_has_effect) {
       radeon_end();
       ac_set_reg_cu_en(&sctx->gfx_cs, R_00B21C_SPI_SHADER_PGM_RSRC3_GS,
-                       shader->ctx_reg.ngg.spi_shader_pgm_rsrc3_gs,
+                       shader->ngg.spi_shader_pgm_rsrc3_gs,
                        C_00B21C_CU_EN, 0, &sctx->screen->info,
                        (void (*)(void*, unsigned, uint32_t))
                        (sctx->gfx_level >= GFX10 ? radeon_set_sh_reg_idx3_func : radeon_set_sh_reg_func));
       ac_set_reg_cu_en(&sctx->gfx_cs, R_00B204_SPI_SHADER_PGM_RSRC4_GS,
-                       shader->ctx_reg.ngg.spi_shader_pgm_rsrc4_gs,
-                       C_00B204_CU_EN_GFX10, 16, &sctx->screen->info,
+                       shader->ngg.spi_shader_pgm_rsrc4_gs,
+                       sctx->gfx_level >= GFX11 ? C_00B204_CU_EN_GFX11 : C_00B204_CU_EN_GFX10, 16,
+                       &sctx->screen->info,
                        (void (*)(void*, unsigned, uint32_t))
                        (sctx->gfx_level >= GFX10 ? radeon_set_sh_reg_idx3_func : radeon_set_sh_reg_func));
       sctx->tracked_regs.reg_saved &= ~BITFIELD64_BIT(SI_TRACKED_SPI_SHADER_PGM_RSRC4_GS) &
@@ -1236,10 +1236,10 @@ static void gfx10_emit_shader_ngg_tail(struct si_context *sctx, struct si_shader
    } else {
       radeon_opt_set_sh_reg_idx3(sctx, R_00B21C_SPI_SHADER_PGM_RSRC3_GS,
                                  SI_TRACKED_SPI_SHADER_PGM_RSRC3_GS,
-                                 shader->ctx_reg.ngg.spi_shader_pgm_rsrc3_gs);
+                                 shader->ngg.spi_shader_pgm_rsrc3_gs);
       radeon_opt_set_sh_reg_idx3(sctx, R_00B204_SPI_SHADER_PGM_RSRC4_GS,
                                  SI_TRACKED_SPI_SHADER_PGM_RSRC4_GS,
-                                 shader->ctx_reg.ngg.spi_shader_pgm_rsrc4_gs);
+                                 shader->ngg.spi_shader_pgm_rsrc4_gs);
       radeon_end();
    }
 }
@@ -1275,7 +1275,7 @@ static void gfx10_emit_shader_ngg_notess_gs(struct si_context *sctx)
 
    radeon_begin(&sctx->gfx_cs);
    radeon_opt_set_context_reg(sctx, R_028B38_VGT_GS_MAX_VERT_OUT, SI_TRACKED_VGT_GS_MAX_VERT_OUT,
-                              shader->ctx_reg.ngg.vgt_gs_max_vert_out);
+                              shader->ngg.vgt_gs_max_vert_out);
    radeon_end_update_context_roll(sctx);
 
    gfx10_emit_shader_ngg_tail(sctx, shader);
@@ -1290,7 +1290,7 @@ static void gfx10_emit_shader_ngg_tess_gs(struct si_context *sctx)
 
    radeon_begin(&sctx->gfx_cs);
    radeon_opt_set_context_reg(sctx, R_028B38_VGT_GS_MAX_VERT_OUT, SI_TRACKED_VGT_GS_MAX_VERT_OUT,
-                              shader->ctx_reg.ngg.vgt_gs_max_vert_out);
+                              shader->ngg.vgt_gs_max_vert_out);
    radeon_opt_set_context_reg(sctx, R_028B6C_VGT_TF_PARAM, SI_TRACKED_VGT_TF_PARAM,
                               shader->vgt_tf_param);
    radeon_end_update_context_roll(sctx);
@@ -1439,25 +1439,25 @@ static void gfx10_shader_ngg(struct si_screen *sscreen, struct si_shader *shader
                      S_00B22C_OC_LDS_EN(es_stage == MESA_SHADER_TESS_EVAL) |
                      S_00B22C_LDS_SIZE(shader->config.lds_size));
 
-   shader->ctx_reg.ngg.spi_shader_pgm_rsrc3_gs = S_00B21C_CU_EN(cu_mask) |
-                                                 S_00B21C_WAVE_LIMIT(0x3F);
+   shader->ngg.spi_shader_pgm_rsrc3_gs = S_00B21C_CU_EN(cu_mask) |
+                                         S_00B21C_WAVE_LIMIT(0x3F);
    if (sscreen->info.gfx_level >= GFX11) {
-      shader->ctx_reg.ngg.spi_shader_pgm_rsrc4_gs =
+      shader->ngg.spi_shader_pgm_rsrc4_gs =
          S_00B204_CU_EN_GFX11(0x1) | S_00B204_SPI_SHADER_LATE_ALLOC_GS_GFX10(late_alloc_wave64) |
          S_00B204_INST_PREF_SIZE(si_get_shader_prefetch_size(shader));
    } else {
-      shader->ctx_reg.ngg.spi_shader_pgm_rsrc4_gs =
+      shader->ngg.spi_shader_pgm_rsrc4_gs =
          S_00B204_CU_EN_GFX10(0xffff) | S_00B204_SPI_SHADER_LATE_ALLOC_GS_GFX10(late_alloc_wave64);
    }
 
    nparams = MAX2(shader->info.nr_param_exports, 1);
-   shader->ctx_reg.ngg.spi_vs_out_config =
+   shader->ngg.spi_vs_out_config =
       S_0286C4_VS_EXPORT_COUNT(nparams - 1) |
       S_0286C4_NO_PC_EXPORT(shader->info.nr_param_exports == 0);
 
-   shader->ctx_reg.ngg.spi_shader_idx_format =
+   shader->ngg.spi_shader_idx_format =
       S_028708_IDX0_EXPORT_FORMAT(V_028708_SPI_SHADER_1COMP);
-   shader->ctx_reg.ngg.spi_shader_pos_format =
+   shader->ngg.spi_shader_pos_format =
       S_02870C_POS0_EXPORT_FORMAT(V_02870C_SPI_SHADER_4COMP) |
       S_02870C_POS1_EXPORT_FORMAT(shader->info.nr_pos_exports > 1 ? V_02870C_SPI_SHADER_4COMP
                                                                   : V_02870C_SPI_SHADER_NONE) |
@@ -1466,26 +1466,25 @@ static void gfx10_shader_ngg(struct si_screen *sscreen, struct si_shader *shader
       S_02870C_POS3_EXPORT_FORMAT(shader->info.nr_pos_exports > 3 ? V_02870C_SPI_SHADER_4COMP
                                                                   : V_02870C_SPI_SHADER_NONE);
 
-   shader->ctx_reg.ngg.vgt_primitiveid_en =
+   shader->ngg.vgt_primitiveid_en =
       S_028A84_PRIMITIVEID_EN(es_enable_prim_id) |
       S_028A84_NGG_DISABLE_PROVOK_REUSE(shader->key.ge.mono.u.vs_export_prim_id ||
                                         gs_sel->info.writes_primid);
 
    if (gs_stage == MESA_SHADER_GEOMETRY) {
-      shader->ctx_reg.ngg.vgt_esgs_ring_itemsize = es_sel->info.esgs_itemsize / 4;
-      shader->ctx_reg.ngg.vgt_gs_max_vert_out = gs_sel->info.base.gs.vertices_out;
+      shader->ngg.vgt_esgs_ring_itemsize = es_sel->info.esgs_vertex_stride / 4;
+      shader->ngg.vgt_gs_max_vert_out = gs_sel->info.base.gs.vertices_out;
    } else {
-      shader->ctx_reg.ngg.vgt_esgs_ring_itemsize = 1;
+      shader->ngg.vgt_esgs_ring_itemsize = 1;
    }
 
    if (es_stage == MESA_SHADER_TESS_EVAL)
       si_set_tesseval_regs(sscreen, es_sel, shader);
 
-   shader->ctx_reg.ngg.ge_max_output_per_subgroup =
+   shader->ngg.ge_max_output_per_subgroup =
       S_0287FC_MAX_VERTS_PER_SUBGROUP(shader->ngg.max_out_verts);
-   shader->ctx_reg.ngg.ge_ngg_subgrp_cntl = S_028B4C_PRIM_AMP_FACTOR(shader->ngg.prim_amp_factor) |
-                                            S_028B4C_THDS_PER_SUBGRP(0); /* for fast launch */
-   shader->ctx_reg.ngg.vgt_gs_instance_cnt =
+   shader->ngg.ge_ngg_subgrp_cntl = S_028B4C_PRIM_AMP_FACTOR(shader->ngg.prim_amp_factor);
+   shader->ngg.vgt_gs_instance_cnt =
       S_028B90_CNT(gs_num_invocations) | S_028B90_ENABLE(gs_num_invocations > 1) |
       S_028B90_EN_MAX_VERT_OUT_PER_GS_INSTANCE(shader->ngg.max_vert_out_per_gs_instance);
 
@@ -1493,7 +1492,7 @@ static void gfx10_shader_ngg(struct si_screen *sscreen, struct si_shader *shader
     * export to prevent drawing lines on internal edges of decomposed
     * primitives (such as quads) with polygon mode = lines.
     */
-   shader->ctx_reg.ngg.pa_cl_ngg_cntl =
+   shader->ngg.pa_cl_ngg_cntl =
       S_028838_INDEX_BUF_EDGE_FLAG_ENA(gfx10_edgeflags_have_effect(shader)) |
       /* Reuse for NGG. */
       S_028838_VERTEX_REUSE_DEPTH(sscreen->info.gfx_level >= GFX10_3 ? 30 : 0);
@@ -1514,8 +1513,8 @@ static void gfx10_shader_ngg(struct si_screen *sscreen, struct si_shader *shader
 
    unsigned oversub_pc_lines =
       late_alloc_wave64 ? (sscreen->info.pc_lines / 4) * oversub_pc_factor : 0;
-   shader->ctx_reg.ngg.ge_pc_alloc = S_030980_OVERSUB_EN(oversub_pc_lines > 0) |
-                                     S_030980_NUM_PC_LINES(oversub_pc_lines - 1);
+   shader->ngg.ge_pc_alloc = S_030980_OVERSUB_EN(oversub_pc_lines > 0) |
+                             S_030980_NUM_PC_LINES(oversub_pc_lines - 1);
 
    if (sscreen->info.gfx_level >= GFX11) {
       shader->ge_cntl = S_03096C_PRIMS_PER_SUBGRP(shader->ngg.max_gsprims) |
@@ -1530,7 +1529,7 @@ static void gfx10_shader_ngg(struct si_screen *sscreen, struct si_shader *shader
                         S_03096C_VERT_GRP_SIZE(shader->ngg.hw_max_esverts) |
                         S_03096C_BREAK_WAVE_AT_EOI(break_wave_at_eoi);
 
-      shader->ctx_reg.ngg.vgt_gs_onchip_cntl =
+      shader->ngg.vgt_gs_onchip_cntl =
          S_028A44_ES_VERTS_PER_SUBGRP(shader->ngg.hw_max_esverts) |
          S_028A44_GS_PRIMS_PER_SUBGRP(shader->ngg.max_gsprims) |
          S_028A44_GS_INST_PRIMS_IN_SUBGRP(shader->ngg.max_gsprims * gs_num_invocations);
@@ -1556,18 +1555,18 @@ static void gfx10_shader_ngg(struct si_screen *sscreen, struct si_shader *shader
    }
 
    if (window_space) {
-      shader->ctx_reg.ngg.pa_cl_vte_cntl = S_028818_VTX_XY_FMT(1) | S_028818_VTX_Z_FMT(1);
+      shader->ngg.pa_cl_vte_cntl = S_028818_VTX_XY_FMT(1) | S_028818_VTX_Z_FMT(1);
    } else {
-      shader->ctx_reg.ngg.pa_cl_vte_cntl =
+      shader->ngg.pa_cl_vte_cntl =
          S_028818_VTX_W0_FMT(1) | S_028818_VPORT_X_SCALE_ENA(1) | S_028818_VPORT_X_OFFSET_ENA(1) |
          S_028818_VPORT_Y_SCALE_ENA(1) | S_028818_VPORT_Y_OFFSET_ENA(1) |
          S_028818_VPORT_Z_SCALE_ENA(1) | S_028818_VPORT_Z_OFFSET_ENA(1);
    }
 
-   shader->ctx_reg.ngg.vgt_stages.u.ngg = 1;
-   shader->ctx_reg.ngg.vgt_stages.u.streamout = si_shader_uses_streamout(shader);
-   shader->ctx_reg.ngg.vgt_stages.u.ngg_passthrough = gfx10_is_ngg_passthrough(shader);
-   shader->ctx_reg.ngg.vgt_stages.u.gs_wave32 = shader->wave_size == 32;
+   shader->ngg.vgt_stages.u.ngg = 1;
+   shader->ngg.vgt_stages.u.streamout = si_shader_uses_streamout(shader);
+   shader->ngg.vgt_stages.u.ngg_passthrough = gfx10_is_ngg_passthrough(shader);
+   shader->ngg.vgt_stages.u.gs_wave32 = shader->wave_size == 32;
 }
 
 static void si_emit_shader_vs(struct si_context *sctx)
@@ -1578,24 +1577,24 @@ static void si_emit_shader_vs(struct si_context *sctx)
 
    radeon_begin(&sctx->gfx_cs);
    radeon_opt_set_context_reg(sctx, R_028A40_VGT_GS_MODE, SI_TRACKED_VGT_GS_MODE,
-                              shader->ctx_reg.vs.vgt_gs_mode);
+                              shader->vs.vgt_gs_mode);
    radeon_opt_set_context_reg(sctx, R_028A84_VGT_PRIMITIVEID_EN, SI_TRACKED_VGT_PRIMITIVEID_EN,
-                              shader->ctx_reg.vs.vgt_primitiveid_en);
+                              shader->vs.vgt_primitiveid_en);
 
    if (sctx->gfx_level <= GFX8) {
       radeon_opt_set_context_reg(sctx, R_028AB4_VGT_REUSE_OFF, SI_TRACKED_VGT_REUSE_OFF,
-                                 shader->ctx_reg.vs.vgt_reuse_off);
+                                 shader->vs.vgt_reuse_off);
    }
 
    radeon_opt_set_context_reg(sctx, R_0286C4_SPI_VS_OUT_CONFIG, SI_TRACKED_SPI_VS_OUT_CONFIG,
-                              shader->ctx_reg.vs.spi_vs_out_config);
+                              shader->vs.spi_vs_out_config);
 
    radeon_opt_set_context_reg(sctx, R_02870C_SPI_SHADER_POS_FORMAT,
                               SI_TRACKED_SPI_SHADER_POS_FORMAT,
-                              shader->ctx_reg.vs.spi_shader_pos_format);
+                              shader->vs.spi_shader_pos_format);
 
    radeon_opt_set_context_reg(sctx, R_028818_PA_CL_VTE_CNTL, SI_TRACKED_PA_CL_VTE_CNTL,
-                              shader->ctx_reg.vs.pa_cl_vte_cntl);
+                              shader->vs.pa_cl_vte_cntl);
 
    if (shader->selector->stage == MESA_SHADER_TESS_EVAL)
       radeon_opt_set_context_reg(sctx, R_028B6C_VGT_TF_PARAM, SI_TRACKED_VGT_TF_PARAM,
@@ -1621,7 +1620,7 @@ static void si_emit_shader_vs(struct si_context *sctx)
    if (sctx->gfx_level >= GFX10) {
       radeon_begin_again(&sctx->gfx_cs);
       radeon_opt_set_uconfig_reg(sctx, R_030980_GE_PC_ALLOC, SI_TRACKED_GE_PC_ALLOC,
-                                 shader->ctx_reg.vs.ge_pc_alloc);
+                                 shader->vs.ge_pc_alloc);
       radeon_end();
    }
 }
@@ -1667,17 +1666,17 @@ static void si_shader_vs(struct si_screen *sscreen, struct si_shader *shader,
       if (enable_prim_id)
          mode = V_028A40_GS_SCENARIO_A;
 
-      shader->ctx_reg.vs.vgt_gs_mode = S_028A40_MODE(mode);
-      shader->ctx_reg.vs.vgt_primitiveid_en = enable_prim_id;
+      shader->vs.vgt_gs_mode = S_028A40_MODE(mode);
+      shader->vs.vgt_primitiveid_en = enable_prim_id;
    } else {
-      shader->ctx_reg.vs.vgt_gs_mode =
+      shader->vs.vgt_gs_mode =
          ac_vgt_gs_mode(gs->info.base.gs.vertices_out, sscreen->info.gfx_level);
-      shader->ctx_reg.vs.vgt_primitiveid_en = 0;
+      shader->vs.vgt_primitiveid_en = 0;
    }
 
    if (sscreen->info.gfx_level <= GFX8) {
       /* Reuse needs to be set off if we write oViewport. */
-      shader->ctx_reg.vs.vgt_reuse_off = S_028AB4_REUSE_OFF(info->writes_viewport_index);
+      shader->vs.vgt_reuse_off = S_028AB4_REUSE_OFF(info->writes_viewport_index);
    }
 
    va = shader->bo->gpu_address;
@@ -1701,14 +1700,14 @@ static void si_shader_vs(struct si_screen *sscreen, struct si_shader *shader,
 
    /* VS is required to export at least one param. */
    nparams = MAX2(shader->info.nr_param_exports, 1);
-   shader->ctx_reg.vs.spi_vs_out_config = S_0286C4_VS_EXPORT_COUNT(nparams - 1);
+   shader->vs.spi_vs_out_config = S_0286C4_VS_EXPORT_COUNT(nparams - 1);
 
    if (sscreen->info.gfx_level >= GFX10) {
-      shader->ctx_reg.vs.spi_vs_out_config |=
+      shader->vs.spi_vs_out_config |=
          S_0286C4_NO_PC_EXPORT(shader->info.nr_param_exports == 0);
    }
 
-   shader->ctx_reg.vs.spi_shader_pos_format =
+   shader->vs.spi_shader_pos_format =
       S_02870C_POS0_EXPORT_FORMAT(V_02870C_SPI_SHADER_4COMP) |
       S_02870C_POS1_EXPORT_FORMAT(shader->info.nr_pos_exports > 1 ? V_02870C_SPI_SHADER_4COMP
                                                                   : V_02870C_SPI_SHADER_NONE) |
@@ -1721,8 +1720,8 @@ static void si_shader_vs(struct si_screen *sscreen, struct si_shader *shader,
                          shader->config.scratch_bytes_per_wave > 0,
                          &late_alloc_wave64, &cu_mask);
 
-   shader->ctx_reg.vs.ge_pc_alloc = S_030980_OVERSUB_EN(late_alloc_wave64 > 0) |
-                                    S_030980_NUM_PC_LINES(sscreen->info.pc_lines / 4 - 1);
+   shader->vs.ge_pc_alloc = S_030980_OVERSUB_EN(late_alloc_wave64 > 0) |
+                            S_030980_NUM_PC_LINES(sscreen->info.pc_lines / 4 - 1);
    shader->pa_cl_vs_out_cntl = si_get_vs_out_cntl(shader->selector, shader, false);
 
    oc_lds_en = shader->selector->stage == MESA_SHADER_TESS_EVAL ? 1 : 0;
@@ -1769,9 +1768,9 @@ static void si_shader_vs(struct si_screen *sscreen, struct si_shader *shader,
    si_pm4_set_reg(pm4, R_00B12C_SPI_SHADER_PGM_RSRC2_VS, rsrc2);
 
    if (window_space)
-      shader->ctx_reg.vs.pa_cl_vte_cntl = S_028818_VTX_XY_FMT(1) | S_028818_VTX_Z_FMT(1);
+      shader->vs.pa_cl_vte_cntl = S_028818_VTX_XY_FMT(1) | S_028818_VTX_Z_FMT(1);
    else
-      shader->ctx_reg.vs.pa_cl_vte_cntl =
+      shader->vs.pa_cl_vte_cntl =
          S_028818_VTX_W0_FMT(1) | S_028818_VPORT_X_SCALE_ENA(1) | S_028818_VPORT_X_OFFSET_ENA(1) |
          S_028818_VPORT_Y_SCALE_ENA(1) | S_028818_VPORT_Y_OFFSET_ENA(1) |
          S_028818_VPORT_Z_SCALE_ENA(1) | S_028818_VPORT_Z_OFFSET_ENA(1);
@@ -1810,21 +1809,21 @@ static void si_emit_shader_ps(struct si_context *sctx)
    radeon_begin(&sctx->gfx_cs);
    /* R_0286CC_SPI_PS_INPUT_ENA, R_0286D0_SPI_PS_INPUT_ADDR*/
    radeon_opt_set_context_reg2(sctx, R_0286CC_SPI_PS_INPUT_ENA, SI_TRACKED_SPI_PS_INPUT_ENA,
-                               shader->ctx_reg.ps.spi_ps_input_ena,
-                               shader->ctx_reg.ps.spi_ps_input_addr);
+                               shader->ps.spi_ps_input_ena,
+                               shader->ps.spi_ps_input_addr);
 
    radeon_opt_set_context_reg(sctx, R_0286E0_SPI_BARYC_CNTL, SI_TRACKED_SPI_BARYC_CNTL,
-                              shader->ctx_reg.ps.spi_baryc_cntl);
+                              shader->ps.spi_baryc_cntl);
    radeon_opt_set_context_reg(sctx, R_0286D8_SPI_PS_IN_CONTROL, SI_TRACKED_SPI_PS_IN_CONTROL,
-                              shader->ctx_reg.ps.spi_ps_in_control);
+                              shader->ps.spi_ps_in_control);
 
    /* R_028710_SPI_SHADER_Z_FORMAT, R_028714_SPI_SHADER_COL_FORMAT */
    radeon_opt_set_context_reg2(sctx, R_028710_SPI_SHADER_Z_FORMAT, SI_TRACKED_SPI_SHADER_Z_FORMAT,
-                               shader->ctx_reg.ps.spi_shader_z_format,
-                               shader->ctx_reg.ps.spi_shader_col_format);
+                               shader->ps.spi_shader_z_format,
+                               shader->ps.spi_shader_col_format);
 
    radeon_opt_set_context_reg(sctx, R_02823C_CB_SHADER_MASK, SI_TRACKED_CB_SHADER_MASK,
-                              shader->ctx_reg.ps.cb_shader_mask);
+                              shader->ps.cb_shader_mask);
    radeon_end_update_context_roll(sctx);
 }
 
@@ -1918,7 +1917,16 @@ static void si_shader_ps(struct si_screen *sscreen, struct si_shader *shader)
    if (info->base.fs.post_depth_coverage)
       db_shader_control |= S_02880C_PRE_SHADER_DEPTH_COVERAGE_ENABLE(1);
 
-   shader->ctx_reg.ps.db_shader_control = db_shader_control;
+   /* Bug workaround for smoothing (overrasterization) on GFX6. */
+   if (sscreen->info.gfx_level == GFX6 && shader->key.ps.mono.poly_line_smoothing) {
+      db_shader_control &= C_02880C_Z_ORDER;
+      db_shader_control |= S_02880C_Z_ORDER(V_02880C_LATE_Z);
+   }
+
+   if (sscreen->info.has_rbplus && !sscreen->info.rbplus_allowed)
+      db_shader_control |= S_02880C_DUAL_QUAD_DISABLE(1);
+
+   shader->ps.db_shader_control = db_shader_control;
 
    pm4 = si_get_shader_pm4_state(shader);
    if (!pm4)
@@ -1992,8 +2000,8 @@ static void si_shader_ps(struct si_screen *sscreen, struct si_shader *shader)
       }
    }
 
-   shader->ctx_reg.ps.spi_ps_input_ena = input_ena;
-   shader->ctx_reg.ps.spi_ps_input_addr = shader->config.spi_ps_input_addr;
+   shader->ps.spi_ps_input_ena = input_ena;
+   shader->ps.spi_ps_input_addr = shader->config.spi_ps_input_addr;
 
    unsigned num_interp = si_get_ps_num_interp(shader);
 
@@ -2008,14 +2016,14 @@ static void si_shader_ps(struct si_screen *sscreen, struct si_shader *shader)
        shader->key.ps.mono.point_smoothing)
       spi_ps_in_control |= S_0286D8_PARAM_GEN(1);
 
-   shader->ctx_reg.ps.num_interp = num_interp;
-   shader->ctx_reg.ps.spi_baryc_cntl = spi_baryc_cntl;
-   shader->ctx_reg.ps.spi_ps_in_control = spi_ps_in_control;
-   shader->ctx_reg.ps.spi_shader_z_format =
+   shader->ps.num_interp = num_interp;
+   shader->ps.spi_baryc_cntl = spi_baryc_cntl;
+   shader->ps.spi_ps_in_control = spi_ps_in_control;
+   shader->ps.spi_shader_z_format =
       ac_get_spi_shader_z_format(info->writes_z, info->writes_stencil, info->writes_samplemask,
                                  shader->key.ps.part.epilog.alpha_to_coverage_via_mrtz);
-   shader->ctx_reg.ps.spi_shader_col_format = spi_shader_col_format;
-   shader->ctx_reg.ps.cb_shader_mask = cb_shader_mask;
+   shader->ps.spi_shader_col_format = spi_shader_col_format;
+   shader->ps.cb_shader_mask = cb_shader_mask;
 
    va = shader->bo->gpu_address;
    si_pm4_set_reg(pm4, R_00B020_SPI_SHADER_PGM_LO_PS, va >> 8);
@@ -3619,7 +3627,7 @@ static void si_bind_ps_shader(struct pipe_context *ctx, void *state)
       if (!old_sel || old_sel->info.colors_written != sel->info.colors_written)
          si_mark_atom_dirty(sctx, &sctx->atoms.s.cb_render_state);
 
-      if (sctx->screen->has_out_of_order_rast &&
+      if (sctx->screen->info.has_out_of_order_rast &&
           (!old_sel || old_sel->info.base.writes_memory != sel->info.base.writes_memory ||
            old_sel->info.base.fs.early_fragment_tests !=
               sel->info.base.fs.early_fragment_tests))
@@ -3817,11 +3825,11 @@ bool si_update_gs_ring_buffers(struct si_context *sctx)
    unsigned max_size = ((unsigned)(63.999 * 1024 * 1024) & ~255) * num_se;
 
    /* Calculate the minimum size. */
-   unsigned min_esgs_ring_size = align(es->info.esgs_itemsize * gs_vertex_reuse * wave_size, alignment);
+   unsigned min_esgs_ring_size = align(es->info.esgs_vertex_stride * gs_vertex_reuse * wave_size, alignment);
 
    /* These are recommended sizes, not minimum sizes. */
    unsigned esgs_ring_size =
-      max_gs_waves * 2 * wave_size * es->info.esgs_itemsize * gs->info.gs_input_verts_per_prim;
+      max_gs_waves * 2 * wave_size * es->info.esgs_vertex_stride * gs->info.gs_input_verts_per_prim;
    unsigned gsvs_ring_size = max_gs_waves * 2 * wave_size * gs->info.max_gsvs_emit_size;
 
    min_esgs_ring_size = align(min_esgs_ring_size, alignment);

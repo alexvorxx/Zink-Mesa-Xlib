@@ -851,7 +851,7 @@
       when: on_success
 
 .etnaviv-manual-rules:
-  stage: intel
+  stage: etnaviv
   rules:
     - !reference [.gl-manual-rules, rules]
     - changes:

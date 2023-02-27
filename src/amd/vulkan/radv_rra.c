@@ -726,9 +726,7 @@ rra_dump_acceleration_structure(struct radv_rra_accel_struct_data *accel_struct,
 
    bool is_tlas = header->instance_count > 0;
 
-   uint64_t geometry_infos_offset =
-      header->compacted_size -
-      header->geometry_count * sizeof(struct radv_accel_struct_geometry_info);
+   uint64_t geometry_infos_offset = sizeof(struct radv_accel_struct_header);
 
    /* convert root node id to offset */
    uint32_t src_root_offset = (RADV_BVH_ROOT_NODE & ~7) << 3;

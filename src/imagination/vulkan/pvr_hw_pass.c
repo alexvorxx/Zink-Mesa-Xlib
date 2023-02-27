@@ -342,7 +342,7 @@ pvr_get_tile_buffer_size_per_core(const struct pvr_device *device)
 /**
  * Gets the amount of memory to allocate for a tile buffer on the current BVNC.
  */
-static uint32_t pvr_get_tile_buffer_size(const struct pvr_device *device)
+uint32_t pvr_get_tile_buffer_size(const struct pvr_device *device)
 {
    /* On a multicore system duplicate the buffer for each core. */
    return pvr_get_tile_buffer_size_per_core(device) *

@@ -45,21 +45,36 @@ if with_platform_x11
     dep_xcb_shm,
     dep_xshmfence,
   ]
-  vulkan_wsi_list += ['xcb', 'x11']
+  vulkan_wsi_list += '-DVK_USE_PLATFORM_XCB_KHR'
+  vulkan_wsi_list += '-DVK_USE_PLATFORM_XLIB_KHR'
 endif
 if with_platform_wayland
   vulkan_wsi_deps += dep_wayland_client
-  vulkan_wsi_list += ['wayland']
+  vulkan_wsi_list += '-DVK_USE_PLATFORM_WAYLAND_KHR'
 endif
 if system_has_kms_drm and not with_platform_android
   vulkan_wsi_deps += [dep_libdrm]
-  vulkan_wsi_list += ['drm']
+  vulkan_wsi_list += '-DVK_USE_PLATFORM_DISPLAY_KHR'
 endif
 if with_xlib_lease
   vulkan_wsi_deps += [dep_xlib_xrandr]
-  vulkan_wsi_list += ['xlib_xrandr']
+  vulkan_wsi_list += '-DVK_USE_PLATFORM_XLIB_XRANDR_EXT'
+endif
+if with_platform_android
+  vulkan_wsi_list += '-DVK_USE_PLATFORM_ANDROID_KHR'
+endif
+if with_platform_windows
+  vulkan_wsi_list += '-DVK_USE_PLATFORM_WIN32_KHR'
+endif
+if host_machine.system() == 'darwin'
+  vulkan_wsi_list += '-DVK_USE_PLATFORM_MACOS_MVK'
+  vulkan_wsi_list += '-DVK_USE_PLATFORM_METAL_EXT'
 endif
 
+idep_vulkan_wsi_defines = declare_dependency(
+  compile_args : vulkan_wsi_list,
+)
+vulkan_wsi_deps += idep_vulkan_wsi_defines
 
 subdir('util')
 subdir('runtime')

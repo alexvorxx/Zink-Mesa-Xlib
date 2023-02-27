@@ -311,6 +311,11 @@ mesa_stage_to_pvr(gl_shader_stage mesa_stage)
 
    unreachable("Unsupported gl_shader_stage.");
 }
+static bool descriptor_is_dynamic(VkDescriptorType type)
+{
+   return (type == VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC ||
+           type == VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC);
+}
 
 static void
 trans_nir_intrinsic_load_vulkan_descriptor(rogue_builder *b,
@@ -325,12 +330,9 @@ trans_nir_intrinsic_load_vulkan_descriptor(rogue_builder *b,
    struct pvr_pipeline_layout *pipeline_layout =
       b->shader->ctx->pipeline_layout;
 
-   /* Defaults for offline compiler. */
-   /* TODO: Load these from an offline pipeline description
-    * if using the offline compiler.
-    */
-   unsigned desc_set_table_sh_reg = 0;
-   unsigned flat_desc_idx = binding;
+   unsigned desc_set_table_sh_reg;
+   unsigned desc_set_offset;
+   unsigned desc_offset;
 
    if (pipeline_layout) {
       /* Fetch shared registers containing descriptor set table address. */
@@ -341,28 +343,45 @@ trans_nir_intrinsic_load_vulkan_descriptor(rogue_builder *b,
          pipeline_layout->sh_reg_layout_per_stage[pvr_stage]
             .descriptor_set_addrs_table.offset;
 
-      /* Lookup offsets for descriptor set and descriptor. */
+      /* Calculate offset for the descriptor set. */
       assert(desc_set < pipeline_layout->set_count);
+      desc_set_offset = desc_set * sizeof(pvr_dev_addr_t); /* Table is an array
+                                                              of addresses. */
 
-      unsigned binding_count =
-         pipeline_layout->set_layout[desc_set]->binding_count;
-      assert(binding < binding_count);
+      const struct pvr_descriptor_set_layout *set_layout =
+         pipeline_layout->set_layout[desc_set];
+      const struct pvr_descriptor_set_layout_mem_layout *mem_layout =
+         &set_layout->memory_layout_in_dwords_per_stage[pvr_stage];
 
-      flat_desc_idx = ~0U;
-      for (unsigned u = 0; u < binding_count; ++u) {
-         unsigned binding_number =
-            pipeline_layout->set_layout[desc_set]->bindings[u].binding_number;
+      /* Calculate offset for the descriptor/binding. */
+      assert(binding < set_layout->binding_count);
 
-         if (binding_number == binding) {
-            flat_desc_idx = pipeline_layout->set_layout[desc_set]
-                               ->bindings[u]
-                               .descriptor_index;
-            assert(pipeline_layout->set_layout[desc_set]->bindings[u].type ==
-                   desc_type);
-            break;
-         }
-      }
-      assert(flat_desc_idx != ~0U);
+      const struct pvr_descriptor_set_layout_binding *binding_layout =
+         pvr_get_descriptor_binding(set_layout, binding);
+      assert(binding_layout);
+
+      /* TODO: Handle secondaries. */
+      /* TODO: Handle bindings having multiple descriptors
+       * (VkDescriptorSetLayoutBinding->descriptorCount).
+       */
+
+      if (descriptor_is_dynamic(binding_layout->type))
+         desc_offset = set_layout->total_size_in_dwords;
+      else
+         desc_offset = mem_layout->primary_offset;
+
+      desc_offset +=
+         binding_layout->per_stage_offset_in_dwords[pvr_stage].primary;
+
+      desc_offset *= sizeof(uint32_t); /* DWORDs to bytes. */
+   } else {
+      /* Dummy defaults for offline compiler. */
+      /* TODO: Load these from an offline pipeline description
+       * if using the offline compiler.
+       */
+      desc_set_table_sh_reg = 0;
+      desc_set_offset = desc_set * sizeof(pvr_dev_addr_t);
+      desc_offset = binding * sizeof(pvr_dev_addr_t);
    }
 
    unsigned desc_set_table_addr_idx = b->shader->ctx->next_ssa_idx++;
@@ -386,8 +405,6 @@ trans_nir_intrinsic_load_vulkan_descriptor(rogue_builder *b,
           ->instr;
    rogue_add_instr_comment(instr, "desc_set_table_addr_hi");
 
-   /* TODO: Don't add offsets if the descriptor set/flat descriptor is 0. */
-
    /* Offset the descriptor set table address to access the descriptor set. */
    unsigned desc_set_table_addr_offset_idx = b->shader->ctx->next_ssa_idx++;
    rogue_regarray *desc_set_table_addr_offset_64 =
@@ -397,14 +414,27 @@ trans_nir_intrinsic_load_vulkan_descriptor(rogue_builder *b,
       rogue_ssa_vec_regarray(b->shader, 1, desc_set_table_addr_offset_idx, 1),
    };
 
+   unsigned desc_set_table_addr_offset_lo_idx = b->shader->ctx->next_ssa_idx++;
+   unsigned desc_set_table_addr_offset_hi_idx = b->shader->ctx->next_ssa_idx++;
+
+   rogue_reg *desc_set_table_addr_offset_lo =
+      rogue_ssa_reg(b->shader, desc_set_table_addr_offset_lo_idx);
+   rogue_reg *desc_set_table_addr_offset_hi =
+      rogue_ssa_reg(b->shader, desc_set_table_addr_offset_hi_idx);
+
+   rogue_MOV(b,
+             rogue_ref_reg(desc_set_table_addr_offset_lo),
+             rogue_ref_imm(desc_set_offset));
+   rogue_MOV(b, rogue_ref_reg(desc_set_table_addr_offset_hi), rogue_ref_imm(0));
+
    rogue_ADD64(b,
                rogue_ref_regarray(desc_set_table_addr_offset_2x32[0]),
                rogue_ref_regarray(desc_set_table_addr_offset_2x32[1]),
                rogue_ref_io(ROGUE_IO_NONE),
                rogue_ref_regarray(desc_set_table_addr_2x32[0]),
                rogue_ref_regarray(desc_set_table_addr_2x32[1]),
-               rogue_ref_imm(desc_set * 4), /* TODO: use UMADD64 instead */
-               rogue_ref_imm(0),
+               rogue_ref_reg(desc_set_table_addr_offset_lo),
+               rogue_ref_reg(desc_set_table_addr_offset_hi),
                rogue_ref_io(ROGUE_IO_NONE));
 
    unsigned desc_set_addr_idx = b->shader->ctx->next_ssa_idx++;
@@ -431,14 +461,27 @@ trans_nir_intrinsic_load_vulkan_descriptor(rogue_builder *b,
       rogue_ssa_vec_regarray(b->shader, 1, desc_addr_offset_idx, 1),
    };
 
+   unsigned desc_addr_offset_lo_idx = b->shader->ctx->next_ssa_idx++;
+   unsigned desc_addr_offset_hi_idx = b->shader->ctx->next_ssa_idx++;
+
+   rogue_reg *desc_addr_offset_val_lo =
+      rogue_ssa_reg(b->shader, desc_addr_offset_lo_idx);
+   rogue_reg *desc_addr_offset_val_hi =
+      rogue_ssa_reg(b->shader, desc_addr_offset_hi_idx);
+
+   rogue_MOV(b,
+             rogue_ref_reg(desc_addr_offset_val_lo),
+             rogue_ref_imm(desc_offset));
+   rogue_MOV(b, rogue_ref_reg(desc_addr_offset_val_hi), rogue_ref_imm(0));
+
    rogue_ADD64(b,
                rogue_ref_regarray(desc_addr_offset_2x32[0]),
                rogue_ref_regarray(desc_addr_offset_2x32[1]),
                rogue_ref_io(ROGUE_IO_NONE),
                rogue_ref_regarray(desc_set_addr_2x32[0]),
                rogue_ref_regarray(desc_set_addr_2x32[1]),
-               rogue_ref_imm(flat_desc_idx * 4), /* TODO: use UMADD64 instead */
-               rogue_ref_imm(0),
+               rogue_ref_reg(desc_addr_offset_val_lo),
+               rogue_ref_reg(desc_addr_offset_val_hi),
                rogue_ref_io(ROGUE_IO_NONE));
 
    unsigned desc_addr_idx = intr->dest.ssa.index;
@@ -612,6 +655,28 @@ static void trans_nir_alu(rogue_builder *b, nir_alu_instr *alu)
    unreachable("Unimplemented NIR ALU instruction.");
 }
 
+PUBLIC
+unsigned rogue_count_used_regs(const rogue_shader *shader,
+                               enum rogue_reg_class class)
+{
+   unsigned reg_count;
+   if (rogue_reg_infos[class].num) {
+      reg_count = __bitset_count(shader->regs_used[class],
+                                 BITSET_WORDS(rogue_reg_infos[class].num));
+   } else {
+      reg_count = list_length(&shader->regs[class]);
+   }
+
+#ifndef NDEBUG
+   /* Check that registers are contiguous. */
+   rogue_foreach_reg (reg, shader, class) {
+      assert(reg->index < reg_count);
+   }
+#endif /* NDEBUG */
+
+   return reg_count;
+}
+
 static inline void rogue_feedback_used_regs(rogue_build_ctx *ctx,
                                             const rogue_shader *shader)
 {
@@ -741,6 +806,7 @@ void rogue_shader_passes(rogue_shader *shader)
    ROGUE_PASS_V(shader, rogue_schedule_uvsw, false);
    ROGUE_PASS_V(shader, rogue_trim);
    ROGUE_PASS_V(shader, rogue_regalloc);
+   ROGUE_PASS_V(shader, rogue_lower_late_ops);
    ROGUE_PASS_V(shader, rogue_dce);
    ROGUE_PASS_V(shader, rogue_schedule_instr_groups, false);
 

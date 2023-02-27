@@ -1140,6 +1140,8 @@ static struct pipe_screen *radeonsi_screen_create_impl(struct radeon_winsys *ws,
                   sscreen->options.enable_sam,
                   sscreen->options.disable_sam);
 
+   sscreen->info.smart_access_memory = false; /* VRAM has slower CPU access */
+
    if (sscreen->info.gfx_level >= GFX9) {
       sscreen->se_tile_repeat = 32 * sscreen->info.max_se;
    } else {
@@ -1312,8 +1314,8 @@ static struct pipe_screen *radeonsi_screen_create_impl(struct radeon_winsys *ws,
       (sscreen->info.gfx_level == GFX6 && sscreen->info.pfp_fw_version >= 79 &&
        sscreen->info.me_fw_version >= 142);
 
-   sscreen->has_out_of_order_rast =
-      sscreen->info.has_out_of_order_rast && !(sscreen->debug_flags & DBG(NO_OUT_OF_ORDER));
+   if (sscreen->debug_flags & DBG(NO_OUT_OF_ORDER))
+      sscreen->info.has_out_of_order_rast = false;
 
    if (sscreen->info.gfx_level >= GFX11) {
       sscreen->use_ngg = true;

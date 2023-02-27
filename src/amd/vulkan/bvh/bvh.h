@@ -92,14 +92,16 @@ struct radv_accel_struct_header {
    uint32_t reserved;
    radv_aabb aabb;
 
-   /* Everything after this gets updated/copied from the CPU. */
+   /* Everything after this gets either updated/copied from the CPU or written by header.comp. */
    uint64_t compacted_size;
    uint64_t serialization_size;
    uint32_t copy_dispatch_size[3];
+   uint64_t size;
+
+   /* Everything after this gets updated/copied from the CPU. */
    uint32_t geometry_count;
    uint64_t instance_offset;
    uint64_t instance_count;
-   uint64_t size;
    uint32_t build_flags;
 };
 
@@ -109,13 +111,13 @@ struct radv_ir_node {
    float cost;
 };
 
-#define FINAL_TREE_PRESENT 0
-#define FINAL_TREE_NOT_PRESENT 1
-#define FINAL_TREE_UNKNOWN 2
+#define RADV_UNKNOWN_BVH_OFFSET 0xFFFFFFFF
+#define RADV_NULL_BVH_OFFSET    0xFFFFFFFE
+
 struct radv_ir_box_node {
    radv_ir_node base;
    uint32_t children[2];
-   uint32_t in_final_tree;
+   uint32_t bvh_offset;
 };
 
 struct radv_ir_aabb_node {
@@ -165,6 +167,7 @@ struct radv_ir_header {
    uint32_t dispatch_size_y;
    uint32_t dispatch_size_z;
    radv_global_sync_data sync_data;
+   uint32_t dst_node_offset;
 };
 
 struct radv_bvh_triangle_node {

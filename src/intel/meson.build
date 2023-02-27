@@ -21,7 +21,7 @@
 c_sse2_args = []
 c_sse2_arg = []
 if ['x86', 'x86_64'].contains(host_machine.cpu_family())
-  c_sse2_arg = ['-msse2']
+  c_sse2_arg = ['-msse2', '-mfpmath=sse']
   c_sse2_args = [c_sse2_arg, '-mstackrealign']
 endif
 inc_intel = include_directories('.')

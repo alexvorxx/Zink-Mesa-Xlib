@@ -356,8 +356,7 @@ fs_thread_payload::fs_thread_payload(const fs_visitor &v,
     sample_pos_reg(),
     sample_mask_in_reg(),
     depth_w_coef_reg(),
-    barycentric_coord_reg(),
-    local_invocation_id_reg()
+    barycentric_coord_reg()
 {
    if (v.devinfo->ver >= 6)
       setup_fs_payload_gfx6(*this, v, source_depth_to_render_target);

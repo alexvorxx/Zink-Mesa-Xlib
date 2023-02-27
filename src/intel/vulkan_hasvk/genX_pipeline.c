@@ -1597,7 +1597,8 @@ emit_3dstate_wm(struct anv_graphics_pipeline *pipeline,
        */
       wm.PixelShaderKillsPixel         = rp->depth_self_dependency ||
                                          rp->stencil_self_dependency ||
-                                         wm_prog_data->uses_kill;
+                                         wm_prog_data->uses_kill ||
+                                         wm_prog_data->uses_omask;
 
       pipeline->force_fragment_thread_dispatch =
          wm.PixelShaderComputedDepthMode != PSCDEPTH_OFF ||

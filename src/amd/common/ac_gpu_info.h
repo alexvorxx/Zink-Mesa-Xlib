@@ -39,7 +39,7 @@
 extern "C" {
 #endif
 
-#define AMD_MAX_SE         8
+#define AMD_MAX_SE         32
 #define AMD_MAX_SA_PER_SE  2
 
 struct amdgpu_gpu_info;
@@ -126,6 +126,22 @@ struct radeon_info {
    bool has_vrs_ds_export_bug;
    bool has_taskmesh_indirect0_bug;
 
+   /* conformant_trunc_coord is equal to TA_CNTL2.TRUNCATE_COORD_MODE, which exists since gfx11.
+    *
+    * If TA_CNTL2.TRUNCATE_COORD_MODE == 0, coordinate truncation is the same as gfx10 and older.
+    * If TA_CNTL2.TRUNCATE_COORD_MODE == 1, coordinate truncation is adjusted to be conformant
+    * if you also set TRUNC_COORD.
+    *
+    * Behavior:
+    *    truncate_coord_xy = TRUNC_COORD &&
+    *                        ((xy_filter == Point && !gather) || !TA_CNTL2.TRUNCATE_COORD_MODE);
+    *    truncate_coord_z = TRUNC_COORD && (z_filter == Point || !TA_CNTL2.TRUNCATE_COORD_MODE);
+    *    truncate_coord_layer = TRUNC_COORD && !TA_CNTL2.TRUNCATE_COORD_MODE;
+    *
+    * AnisoPoint is treated as Point.
+    */
+   bool conformant_trunc_coord;
+
    /* Display features. */
    /* There are 2 display DCC codepaths, because display expects unaligned DCC. */
    /* Disable RB and pipe alignment to skip the retile blit. (1 RB chips only) */
@@ -210,7 +226,7 @@ struct radeon_info {
    bool kernel_has_modifiers;
 
    /* Shader cores. */
-   uint32_t cu_mask[AMD_MAX_SE][AMD_MAX_SA_PER_SE];
+   uint16_t cu_mask[AMD_MAX_SE][AMD_MAX_SA_PER_SE];
    uint32_t r600_max_quad_pipes; /* wave size / 16 */
    uint32_t max_good_cu_per_sa;
    uint32_t min_good_cu_per_sa; /* min != max if SAs have different # of CUs */

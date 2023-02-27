@@ -79,6 +79,9 @@ struct PACKED agx_draw_uniforms {
    uint64_t ssbo_base[PIPE_MAX_SHADER_BUFFERS];
    uint32_t ssbo_size[PIPE_MAX_SHADER_BUFFERS];
 
+   /* LOD bias as float16 */
+   uint16_t lod_bias[PIPE_MAX_SAMPLERS];
+
    union {
       struct {
          /* Vertex buffer object bases, if present */
@@ -362,6 +365,9 @@ struct agx_sampler_state {
 
    /* Packed custom border colour, or zero if none is required */
    struct agx_border_packed border;
+
+   /* LOD bias packed as fp16, the form we'll pass to the shader */
+   uint16_t lod_bias_as_fp16;
 };
 
 struct agx_sampler_view {

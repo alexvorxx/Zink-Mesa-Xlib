@@ -110,6 +110,11 @@ zink_screen_handle_vkresult(struct zink_screen *screen, VkResult ret)
 VkSemaphore
 zink_create_semaphore(struct zink_screen *screen);
 
+void
+zink_screen_lock_context(struct zink_screen *screen);
+void
+zink_screen_unlock_context(struct zink_screen *screen);
+
 VkFormat
 zink_get_format(struct zink_screen *screen, enum pipe_format format);
 

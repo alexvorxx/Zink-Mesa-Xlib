@@ -630,9 +630,10 @@ GENX(pan_blend_create_shader)(const struct panfrost_device *dev,
    nir_lower_blend_options options = {
       .logicop_enable = state->logicop_enable,
       .logicop_func = state->logicop_func,
-      .rt[0].colormask = rt_state->equation.color_mask,
-      .format[0] = rt_state->format,
    };
+
+   options.rt[rt].colormask = rt_state->equation.color_mask;
+   options.format[rt] = rt_state->format;
 
    if (!rt_state->equation.blend_enable) {
       static const nir_lower_blend_channel replace = {
@@ -643,66 +644,59 @@ GENX(pan_blend_create_shader)(const struct panfrost_device *dev,
          .invert_dst_factor = false,
       };
 
-      options.rt[0].rgb = replace;
-      options.rt[0].alpha = replace;
+      options.rt[rt].rgb = replace;
+      options.rt[rt].alpha = replace;
    } else {
-      options.rt[0].rgb.func = rt_state->equation.rgb_func;
-      options.rt[0].rgb.src_factor = rt_state->equation.rgb_src_factor;
-      options.rt[0].rgb.invert_src_factor =
+      options.rt[rt].rgb.func = rt_state->equation.rgb_func;
+      options.rt[rt].rgb.src_factor = rt_state->equation.rgb_src_factor;
+      options.rt[rt].rgb.invert_src_factor =
          rt_state->equation.rgb_invert_src_factor;
-      options.rt[0].rgb.dst_factor = rt_state->equation.rgb_dst_factor;
-      options.rt[0].rgb.invert_dst_factor =
+      options.rt[rt].rgb.dst_factor = rt_state->equation.rgb_dst_factor;
+      options.rt[rt].rgb.invert_dst_factor =
          rt_state->equation.rgb_invert_dst_factor;
-      options.rt[0].alpha.func = rt_state->equation.alpha_func;
-      options.rt[0].alpha.src_factor = rt_state->equation.alpha_src_factor;
-      options.rt[0].alpha.invert_src_factor =
+      options.rt[rt].alpha.func = rt_state->equation.alpha_func;
+      options.rt[rt].alpha.src_factor = rt_state->equation.alpha_src_factor;
+      options.rt[rt].alpha.invert_src_factor =
          rt_state->equation.alpha_invert_src_factor;
-      options.rt[0].alpha.dst_factor = rt_state->equation.alpha_dst_factor;
-      options.rt[0].alpha.invert_dst_factor =
+      options.rt[rt].alpha.dst_factor = rt_state->equation.alpha_dst_factor;
+      options.rt[rt].alpha.invert_dst_factor =
          rt_state->equation.alpha_invert_dst_factor;
-   }
-
-   nir_alu_type src_types[] = {src0_type ?: nir_type_float32,
-                               src1_type ?: nir_type_float32};
-
-   /* HACK: workaround buggy TGSI shaders (u_blitter) */
-   for (unsigned i = 0; i < ARRAY_SIZE(src_types); ++i) {
-      src_types[i] = nir_alu_type_get_base_type(nir_type) |
-                     nir_alu_type_get_type_size(src_types[i]);
    }
 
    nir_ssa_def *pixel = nir_load_barycentric_pixel(&b, 32, .interp_mode = 1);
    nir_ssa_def *zero = nir_imm_int(&b, 0);
 
-   nir_ssa_def *s_src[2];
    for (unsigned i = 0; i < 2; ++i) {
-      s_src[i] = nir_load_interpolated_input(
-         &b, 4, nir_alu_type_get_type_size(src_types[i]), pixel, zero,
-         .io_semantics.location = i ? VARYING_SLOT_VAR0 : VARYING_SLOT_COL0,
-         .io_semantics.num_slots = 1, .base = i, .dest_type = src_types[i]);
-   }
+      nir_alu_type src_type =
+         (i == 1 ? src1_type : src0_type) ?: nir_type_float32;
 
-   /* On Midgard, the blend shader is responsible for format conversion.
-    * As the OpenGL spec requires integer conversions to saturate, we must
-    * saturate ourselves here. On Bifrost and later, the conversion
-    * hardware handles this automatically.
-    */
-   for (int i = 0; i < ARRAY_SIZE(s_src); ++i) {
+      /* HACK: workaround buggy TGSI shaders (u_blitter) */
+      src_type = nir_alu_type_get_base_type(nir_type) |
+                 nir_alu_type_get_type_size(src_type);
+
+      nir_ssa_def *src = nir_load_interpolated_input(
+         &b, 4, nir_alu_type_get_type_size(src_type), pixel, zero,
+         .io_semantics.location = i ? VARYING_SLOT_VAR0 : VARYING_SLOT_COL0,
+         .io_semantics.num_slots = 1, .base = i, .dest_type = src_type);
+
+      /* On Midgard, the blend shader is responsible for format conversion.
+       * As the OpenGL spec requires integer conversions to saturate, we must
+       * saturate ourselves here. On Bifrost and later, the conversion
+       * hardware handles this automatically.
+       */
       nir_alu_type T = nir_alu_type_get_base_type(nir_type);
       bool should_saturate = (PAN_ARCH <= 5) && (T != nir_type_float);
-      s_src[i] =
-         nir_convert_with_rounding(&b, s_src[i], src_types[i], nir_type,
-                                   nir_rounding_mode_undef, should_saturate);
+      src = nir_convert_with_rounding(&b, src, T, nir_type,
+                                      nir_rounding_mode_undef, should_saturate);
+
+      nir_store_output(&b, src, zero, .write_mask = BITFIELD_MASK(4),
+                       .src_type = nir_type,
+                       .io_semantics.location = FRAG_RESULT_DATA0 + rt,
+                       .io_semantics.num_slots = 1,
+                       .io_semantics.dual_source_blend_index = i);
    }
 
-   /* Build a trivial blend shader */
-   nir_store_output(
-      &b, s_src[0], zero, .write_mask = BITFIELD_MASK(4), .src_type = nir_type,
-      .io_semantics.location = FRAG_RESULT_DATA0, .io_semantics.num_slots = 1);
-
    b.shader->info.io_lowered = true;
-
-   options.src1 = s_src[1];
 
    NIR_PASS_V(b.shader, nir_lower_blend, &options);
    nir_shader_instructions_pass(
@@ -840,8 +834,9 @@ GENX(pan_blend_get_shader_locked)(const struct panfrost_device *dev,
       .blend.rt = shader->key.rt,
       .blend.nr_samples = key.nr_samples,
       .fixed_sysval_ubo = -1,
-      .rt_formats = {key.format},
    };
+
+   inputs.rt_formats[rt] = key.format;
 
 #if PAN_ARCH >= 6
    inputs.blend.bifrost_blend_desc =

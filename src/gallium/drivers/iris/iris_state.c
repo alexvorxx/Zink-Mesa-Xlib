@@ -2823,6 +2823,21 @@ iris_create_surface(struct pipe_context *ctx,
                                                &res->surf, view,
                                                &isl_surf, view, &offset_B,
                                                &tile_x_el, &tile_y_el);
+
+      /* On Broadwell, HALIGN and VALIGN are specified in pixels and are
+       * hard-coded to align to exactly the block size of the compressed
+       * texture. This means that, when reinterpreted as a non-compressed
+       * texture, the tile offsets may be anything.
+       *
+       * We need them to be multiples of 4 to be usable in RENDER_SURFACE_STATE,
+       * so force the state tracker to take fallback paths if they're not.
+       */
+#if GFX_VER == 8
+      if (tile_x_el % 4 != 0 || tile_y_el % 4 != 0) {
+         ok = false;
+      }
+#endif
+
       if (!ok) {
          free(surf);
          return NULL;
@@ -7109,6 +7124,13 @@ iris_upload_render_state(struct iris_context *ice,
    if (!batch->contains_draw_with_next_seqno) {
       iris_restore_render_saved_bos(ice, batch, draw);
       batch->contains_draw_with_next_seqno = true;
+   }
+
+   /* Wa_1306463417 - Send HS state for every primitive on gfx11.
+    * We implement this by setting TCS dirty on each draw.
+    */
+   if (GFX_VER == 11 && ice->shaders.prog[MESA_SHADER_TESS_CTRL]) {
+      ice->state.stage_dirty |= IRIS_STAGE_DIRTY_TCS;
    }
 
    iris_upload_dirty_render_state(ice, batch, draw);

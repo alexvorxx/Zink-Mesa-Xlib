@@ -233,8 +233,88 @@ lower_regular_texture(nir_builder *b, nir_instr *instr, UNUSED void *data)
    return true;
 }
 
+static nir_ssa_def *
+bias_for_tex(nir_builder *b, nir_tex_instr *tex)
+{
+   nir_instr *instr = nir_get_texture_size(b, tex)->parent_instr;
+   nir_tex_instr *query = nir_instr_as_tex(instr);
+
+   query->op = nir_texop_lod_bias_agx;
+   query->dest_type = nir_type_float16;
+
+   nir_ssa_dest_init(instr, &query->dest, 1, 16, NULL);
+   return &query->dest.ssa;
+}
+
+static bool
+lower_sampler_bias(nir_builder *b, nir_instr *instr, UNUSED void *data)
+{
+   if (instr->type != nir_instr_type_tex)
+      return false;
+
+   nir_tex_instr *tex = nir_instr_as_tex(instr);
+   b->cursor = nir_before_instr(instr);
+
+   switch (tex->op) {
+   case nir_texop_tex: {
+      tex->op = nir_texop_txb;
+      nir_tex_instr_add_src(tex, nir_tex_src_bias,
+                            nir_src_for_ssa(bias_for_tex(b, tex)));
+      return true;
+   }
+
+   case nir_texop_txb:
+   case nir_texop_txl: {
+      nir_tex_src_type src =
+         tex->op == nir_texop_txl ? nir_tex_src_lod : nir_tex_src_bias;
+
+      nir_ssa_def *orig = steal_tex_src(tex, src);
+      assert(orig != NULL && "invalid NIR");
+
+      if (orig->bit_size != 16)
+         orig = nir_f2f16(b, orig);
+
+      nir_tex_instr_add_src(
+         tex, src, nir_src_for_ssa(nir_fadd(b, orig, bias_for_tex(b, tex))));
+      return true;
+   }
+
+   case nir_texop_txd: {
+      /* For txd, the computed level-of-detail is log2(rho)
+       * where rho should scale proportionally to all
+       * derivatives. So scale derivatives by exp2(bias) to
+       * get level-of-detail log2(exp2(bias) * rho) = bias + log2(rho).
+       */
+      nir_ssa_def *scale = nir_fexp2(b, nir_f2f32(b, bias_for_tex(b, tex)));
+      nir_tex_src_type src[] = {nir_tex_src_ddx, nir_tex_src_ddy};
+
+      for (unsigned s = 0; s < ARRAY_SIZE(src); ++s) {
+         nir_ssa_def *orig = steal_tex_src(tex, src[s]);
+         assert(orig != NULL && "invalid");
+
+         nir_ssa_def *scaled = nir_fmul(b, nir_f2f32(b, orig), scale);
+         nir_tex_instr_add_src(tex, src[s], nir_src_for_ssa(scaled));
+      }
+
+      return true;
+   }
+
+   case nir_texop_txf:
+   case nir_texop_txf_ms:
+   case nir_texop_txs:
+   case nir_texop_tg4:
+   case nir_texop_texture_samples:
+   case nir_texop_samples_identical:
+      /* These operations do not use a sampler */
+      return false;
+
+   default:
+      unreachable("Unhandled texture operation");
+   }
+}
+
 bool
-agx_nir_lower_texture(nir_shader *s)
+agx_nir_lower_texture(nir_shader *s, bool support_lod_bias)
 {
    bool progress = false;
 
@@ -256,6 +336,15 @@ agx_nir_lower_texture(nir_shader *s)
    };
 
    NIR_PASS(progress, s, nir_lower_tex, &lower_tex_options);
+
+   /* Lower bias after nir_lower_tex (to get rid of txd) but before
+    * lower_regular_texture (which will shuffle around the sources)
+    */
+   if (support_lod_bias) {
+      NIR_PASS(progress, s, nir_shader_instructions_pass, lower_sampler_bias,
+               nir_metadata_block_index | nir_metadata_dominance, NULL);
+   }
+
    NIR_PASS(progress, s, nir_legalize_16bit_sampler_srcs, tex_constraints);
 
    /* Lower texture sources after legalizing types (as the lowering depends on

@@ -36,6 +36,11 @@
 #include "compiler/nir/nir_format_convert.h"
 #include "nir_lower_blend.h"
 
+struct ctx {
+   const nir_lower_blend_options *options;
+   nir_ssa_def *src1[8];
+};
+
 /* Given processed factors, combine them per a blend function */
 
 static nir_ssa_def *
@@ -364,8 +369,10 @@ nir_blend(
       bconst = nir_load_blend_const_color_rgba(b);
    }
 
-   if (src->bit_size == 16)
+   if (src->bit_size == 16) {
       bconst = nir_f2f16(b, bconst);
+      src1 = nir_f2f16(b, src1);
+   }
 
    /* Fixed-point framebuffers require their inputs clamped. */
    enum pipe_format format = options->format[rt];
@@ -464,7 +471,8 @@ nir_blend_replace_rt(const nir_lower_blend_rt *rt)
 static bool
 nir_lower_blend_instr(nir_builder *b, nir_instr *instr, void *data)
 {
-   const nir_lower_blend_options *options = data;
+   struct ctx *ctx = data;
+   const nir_lower_blend_options *options = ctx->options;
    if (instr->type != nir_instr_type_intrinsic)
       return false;
 
@@ -479,7 +487,16 @@ nir_lower_blend_instr(nir_builder *b, nir_instr *instr, void *data)
    if (rt < 0 || options->format[rt] == PIPE_FORMAT_NONE)
       return false;
 
-   b->cursor = nir_before_instr(instr);
+   /* Only process stores once. Pass flags are cleared by consume_dual_stores */
+   if (instr->pass_flags)
+      return false;
+
+   instr->pass_flags = 1;
+
+   /* Store are sunk to the bottom of the block to ensure that the dual
+    * source colour is already written.
+    */
+   b->cursor = nir_after_block(instr->block);
 
    /* Grab the input color.  We always want 4 channels during blend.  Dead
     * code will clean up any channels we don't need.
@@ -514,7 +531,7 @@ nir_lower_blend_instr(nir_builder *b, nir_instr *instr, void *data)
    } else if (!util_format_is_pure_integer(options->format[rt]) &&
               !nir_blend_replace_rt(&options->rt[rt])) {
       assert(!util_format_is_scaled(options->format[rt]));
-      blended = nir_blend(b, options, rt, src, options->src1, dst);
+      blended = nir_blend(b, options, rt, src, ctx->src1[rt], dst);
    }
 
    /* Apply a colormask if necessary */
@@ -534,6 +551,44 @@ nir_lower_blend_instr(nir_builder *b, nir_instr *instr, void *data)
 
    /* Write out the final color instead of the input */
    nir_instr_rewrite_src_ssa(instr, &store->src[0], blended);
+
+   /* Sink to bottom */
+   nir_instr_remove(instr);
+   nir_builder_instr_insert(b, instr);
+   return true;
+}
+
+/*
+ * Dual-source colours are only for blending, so when nir_lower_blend is used,
+ * the dual source store_output is for us (only). Remove dual stores so the
+ * backend doesn't have to deal with them, collecting the sources for blending.
+ */
+static bool
+consume_dual_stores(nir_builder *b, nir_instr *instr, void *data)
+{
+   nir_ssa_def **outputs = data;
+   if (instr->type != nir_instr_type_intrinsic)
+      return false;
+
+   nir_intrinsic_instr *store = nir_instr_as_intrinsic(instr);
+   if (store->intrinsic != nir_intrinsic_store_output)
+      return false;
+
+   /* While we're here, clear the pass flags for store_outputs, since we'll set
+    * them later.
+    */
+   instr->pass_flags = 0;
+
+   nir_io_semantics sem = nir_intrinsic_io_semantics(store);
+   if (sem.dual_source_blend_index == 0)
+      return false;
+
+   int rt = color_index_for_location(sem.location);
+   assert(rt >= 0 && rt < 8 && "bounds for dual-source blending");
+   assert(store->src[0].is_ssa && "must be SSA");
+
+   outputs[rt] = store->src[0].ssa;
+   nir_instr_remove(instr);
    return true;
 }
 
@@ -547,8 +602,14 @@ nir_lower_blend(nir_shader *shader, const nir_lower_blend_options *options)
 {
    assert(shader->info.stage == MESA_SHADER_FRAGMENT);
 
+   struct ctx ctx = {.options = options};
+   nir_shader_instructions_pass(shader, consume_dual_stores,
+                                nir_metadata_block_index |
+                                nir_metadata_dominance,
+                                ctx.src1);
+
    nir_shader_instructions_pass(shader, nir_lower_blend_instr,
                                 nir_metadata_block_index |
                                 nir_metadata_dominance,
-                                (void *)options);
+                                &ctx);
 }

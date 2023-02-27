@@ -120,4 +120,11 @@ struct ploc_args {
    uint32_t internal_node_offset;
 };
 
+struct header_args {
+   REF(radv_ir_header) src;
+   REF(radv_accel_struct_header) dst;
+   uint32_t bvh_offset;
+   uint32_t instance_count;
+};
+
 #endif

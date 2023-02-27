@@ -219,8 +219,8 @@ AluReadportReservation::cycle_vec(AluBankSwizzle swz, int src)
    static const int mapping[AluBankSwizzle::alu_vec_unknown][max_gpr_readports] = {
       {0, 1, 2},
       {0, 2, 1},
-      {1, 0, 2},
       {1, 2, 0},
+      {1, 0, 2},
       {2, 0, 1},
       {2, 1, 0}
    };

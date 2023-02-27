@@ -60,7 +60,7 @@ tex_state(struct fd_context *ctx, enum pipe_shader_type type)
    if (ctx->tex[type].num_textures == 0)
       return NULL;
 
-   return fd_ringbuffer_ref(fd6_texture_state(ctx, type, &ctx->tex[type])->stateobj);
+   return fd_ringbuffer_ref(fd6_texture_state(ctx, type)->stateobj);
 }
 
 static struct fd_ringbuffer *

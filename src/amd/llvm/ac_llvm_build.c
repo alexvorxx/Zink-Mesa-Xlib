@@ -3152,63 +3152,6 @@ LLVMValueRef ac_unpack_param(struct ac_llvm_context *ctx, LLVMValueRef param, un
    return value;
 }
 
-/* Adjust the sample index according to FMASK.
- *
- * For uncompressed MSAA surfaces, FMASK should return 0x76543210,
- * which is the identity mapping. Each nibble says which physical sample
- * should be fetched to get that sample.
- *
- * For example, 0x11111100 means there are only 2 samples stored and
- * the second sample covers 3/4 of the pixel. When reading samples 0
- * and 1, return physical sample 0 (determined by the first two 0s
- * in FMASK), otherwise return physical sample 1.
- *
- * The sample index should be adjusted as follows:
- *   addr[sample_index] = (fmask >> (addr[sample_index] * 4)) & 0xF;
- */
-void ac_apply_fmask_to_sample(struct ac_llvm_context *ac, LLVMValueRef fmask, LLVMValueRef *addr,
-                              bool is_array_tex)
-{
-   struct ac_image_args fmask_load = {0};
-   fmask_load.opcode = ac_image_load;
-   fmask_load.resource = fmask;
-   fmask_load.dmask = 0xf;
-   fmask_load.dim = is_array_tex ? ac_image_2darray : ac_image_2d;
-   fmask_load.attributes = AC_ATTR_INVARIANT_LOAD;
-
-   fmask_load.coords[0] = addr[0];
-   fmask_load.coords[1] = addr[1];
-   if (is_array_tex)
-      fmask_load.coords[2] = addr[2];
-   fmask_load.a16 = ac_get_elem_bits(ac, LLVMTypeOf(addr[0])) == 16;
-
-   LLVMValueRef fmask_value = ac_build_image_opcode(ac, &fmask_load);
-   fmask_value = LLVMBuildExtractElement(ac->builder, fmask_value, ac->i32_0, "");
-
-   /* Don't rewrite the sample index if WORD1.DATA_FORMAT of the FMASK
-    * resource descriptor is 0 (invalid).
-    */
-   LLVMValueRef tmp;
-   tmp = LLVMBuildBitCast(ac->builder, fmask, ac->v8i32, "");
-   tmp = LLVMBuildExtractElement(ac->builder, tmp, ac->i32_1, "");
-   tmp = LLVMBuildICmp(ac->builder, LLVMIntNE, tmp, ac->i32_0, "");
-   fmask_value =
-      LLVMBuildSelect(ac->builder, tmp, fmask_value, LLVMConstInt(ac->i32, 0x76543210, false), "");
-
-   /* Apply the formula. */
-   unsigned sample_chan = is_array_tex ? 3 : 2;
-   LLVMValueRef final_sample;
-   final_sample = LLVMBuildMul(ac->builder, addr[sample_chan],
-                               LLVMConstInt(LLVMTypeOf(addr[0]), 4, 0), "");
-   final_sample = LLVMBuildLShr(ac->builder, fmask_value,
-                                LLVMBuildZExt(ac->builder, final_sample, ac->i32, ""), "");
-   /* Mask the sample index by 0x7, because 0x8 means an unknown value
-    * with EQAA, so those will map to 0. */
-   addr[sample_chan] = LLVMBuildAnd(ac->builder, final_sample, LLVMConstInt(ac->i32, 0x7, 0), "");
-   if (fmask_load.a16)
-      addr[sample_chan] = LLVMBuildTrunc(ac->builder, final_sample, ac->i16, "");
-}
-
 static LLVMValueRef _ac_build_readlane(struct ac_llvm_context *ctx, LLVMValueRef src,
                                        LLVMValueRef lane, bool with_opt_barrier)
 {

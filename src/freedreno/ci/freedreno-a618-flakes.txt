@@ -189,3 +189,6 @@ spec@arb_depth_buffer_float@fbo-depthstencil-gl_depth32f_stencil8-blit
 # Flakes from aug-oct 2022.
 spec@ext_timer_query@time-elapsed
 spec@ext_texture_lod_bias@lodbias
+
+# recent flakes, first occurence 03-02-2023
+KHR-GL45.buffer_storage.map_persistent_dispatch

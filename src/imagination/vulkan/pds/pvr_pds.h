@@ -98,6 +98,8 @@ enum pvr_pds_vertex_attrib_program_type {
 
 enum pvr_pds_addr_literal_type {
    PVR_PDS_ADDR_LITERAL_DESC_SET_ADDRS_TABLE,
+   PVR_PDS_ADDR_LITERAL_PUSH_CONSTS,
+   PVR_PDS_ADDR_LITERAL_BLEND_CONSTANTS,
 };
 
 /*****************************************************************************

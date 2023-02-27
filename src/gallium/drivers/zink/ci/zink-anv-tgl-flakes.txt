@@ -25,6 +25,9 @@ glx@glx-multithread-texture
 # Timed out after piglit success result?
 glx@glx-visuals-depth
 
+# XIO:  fatal IO error 11 (Resource temporarily unavailable) on X server ":0"
+glx@glx-visuals-stencil
+
 # "../src/vulkan/wsi/wsi_common_x11.c:1387: Swapchain status changed to VK_ERROR_SURFACE_LOST_KHR
 #  XIO:  fatal IO error 11 (Resource temporarily unavailable) on X server ":0"
 #        after 130 requests (128 known processed) with 0 events remaining."

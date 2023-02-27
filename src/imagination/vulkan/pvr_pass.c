@@ -666,7 +666,6 @@ VkResult pvr_CreateRenderPass2(VkDevice _device,
             mrt_resources[last].reg.offset = 0U;
             mrt_resources[last].intermediate_size = 4U;
             mrt_resources[last].mrt_desc.intermediate_size = 4U;
-            mrt_resources[last].mrt_desc.component_alignment = 4U;
             mrt_resources[last].mrt_desc.priority = 0U;
             mrt_resources[last].mrt_desc.valid_mask[0U] = ~0;
             mrt_resources[last].mrt_desc.valid_mask[1U] = ~0;

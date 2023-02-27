@@ -24,6 +24,7 @@ libtu_files = files(
   'tu_dynamic_rendering.c',
   'tu_formats.c',
   'tu_image.c',
+  'tu_knl.c',
   'tu_lrz.c',
   'tu_nir_lower_multiview.c',
   'tu_pass.c',
@@ -66,13 +67,19 @@ if with_xlib_lease
   tu_deps += [dep_xlib_xrandr]
 endif
 
-if with_freedreno_kgsl
-  tu_flags += '-DTU_USE_KGSL'
-  # Even if libdrm is available we shouldn't use it in KGSL build
+if not system_has_kms_drm
+  # Even if libdrm is available we shouldn't use it in KGSL-only build
   tu_flags += '-UHAVE_LIBDRM'
-  libtu_files += files('tu_kgsl.c')
-else
-  libtu_files += files('tu_drm.c')
+endif
+
+if freedreno_kmds.contains('kgsl')
+  tu_flags += '-DTU_HAS_KGSL'
+  libtu_files += files('tu_knl_kgsl.c')
+endif
+
+if freedreno_kmds.contains('msm')
+  tu_flags += '-DTU_HAS_MSM'
+  libtu_files += files('tu_knl_drm_msm.c')
   tu_deps += dep_libdrm
 endif
 
@@ -127,7 +134,7 @@ libvulkan_freedreno = shared_library(
     idep_vulkan_wsi,
     idep_mesautil,
   ],
-  c_args : [no_override_init_args, tu_flags, vk_wsi_args],
+  c_args : [no_override_init_args, tu_flags],
   gnu_symbol_visibility : 'hidden',
   link_args : [ld_args_bsymbolic, ld_args_gc_sections, ld_args_build_id],
   install : true,

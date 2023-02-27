@@ -989,7 +989,8 @@ gfx10_make_texture_descriptor(struct radv_device *device, struct radv_image *ima
                               unsigned width, unsigned height, unsigned depth, float min_lod,
                               uint32_t *state, uint32_t *fmask_state,
                               VkImageCreateFlags img_create_flags,
-                              const struct ac_surf_nbc_view *nbc_view)
+                              const struct ac_surf_nbc_view *nbc_view,
+                              const VkImageViewSlicedCreateInfoEXT *sliced_3d)
 {
    const struct util_format_description *desc;
    enum pipe_swizzle swizzle[4];
@@ -1063,6 +1064,19 @@ gfx10_make_texture_descriptor(struct radv_device *device, struct radv_image *ima
       state[4] &= C_00A010_DEPTH;
       state[4] |= S_00A010_DEPTH(!is_storage_image ? depth - 1 : u_minify(depth, first_level) - 1);
       state[5] |= S_00A014_ARRAY_PITCH(is_storage_image);
+   } else if (sliced_3d) {
+      unsigned total = u_minify(depth, first_level);
+
+      assert(type == V_008F1C_SQ_RSRC_IMG_3D && is_storage_image);
+
+      unsigned first_slice = sliced_3d->sliceOffset;
+      unsigned slice_count = sliced_3d->sliceCount == VK_REMAINING_3D_SLICES_EXT ?
+                             MAX2(1, total - sliced_3d->sliceOffset) : sliced_3d->sliceCount;
+      unsigned last_slice = first_slice + slice_count - 1;
+
+      state[4] = 0;
+      state[4] |= S_00A010_DEPTH(last_slice) | S_00A010_BASE_ARRAY(first_slice);
+      state[5] |= S_00A014_ARRAY_PITCH(1);
    }
 
    unsigned max_mip =
@@ -1368,12 +1382,14 @@ radv_make_texture_descriptor(struct radv_device *device, struct radv_image *imag
                              unsigned last_level, unsigned first_layer, unsigned last_layer,
                              unsigned width, unsigned height, unsigned depth, float min_lod, uint32_t *state,
                              uint32_t *fmask_state, VkImageCreateFlags img_create_flags,
-                             const struct ac_surf_nbc_view *nbc_view)
+                             const struct ac_surf_nbc_view *nbc_view,
+                             const VkImageViewSlicedCreateInfoEXT *sliced_3d)
 {
    if (device->physical_device->rad_info.gfx_level >= GFX10) {
       gfx10_make_texture_descriptor(device, image, is_storage_image, view_type, vk_format, mapping,
                                     first_level, last_level, first_layer, last_layer, width, height,
-                                    depth, min_lod, state, fmask_state, img_create_flags, nbc_view);
+                                    depth, min_lod, state, fmask_state, img_create_flags, nbc_view,
+                                    sliced_3d);
    } else {
       si_make_texture_descriptor(device, image, is_storage_image, view_type, vk_format, mapping,
                                  first_level, last_level, first_layer, last_layer, width, height,
@@ -1393,7 +1409,7 @@ radv_query_opaque_metadata(struct radv_device *device, struct radv_image *image,
    radv_make_texture_descriptor(device, image, false, (VkImageViewType)image->vk.image_type,
                                 image->vk.format, &fixedmapping, 0, image->info.levels - 1, 0,
                                 image->info.array_size - 1, image->info.width, image->info.height,
-                                image->info.depth, 0.0f, desc, NULL, 0, NULL);
+                                image->info.depth, 0.0f, desc, NULL, 0, NULL, NULL);
 
    si_set_mutable_tex_desc_fields(device, image, &image->planes[0].surface.u.legacy.level[0], 0, 0,
                                   0, image->planes[0].surface.blk_w, false, false, false, false,
@@ -1995,7 +2011,8 @@ radv_image_view_make_descriptor(struct radv_image_view *iview, struct radv_devic
                                 bool is_storage_image, bool disable_compression,
                                 bool enable_compression, unsigned plane_id,
                                 unsigned descriptor_plane_id, VkImageCreateFlags img_create_flags,
-                                const struct ac_surf_nbc_view *nbc_view)
+                                const struct ac_surf_nbc_view *nbc_view,
+                                const VkImageViewSlicedCreateInfoEXT *sliced_3d)
 {
    struct radv_image *image = iview->image;
    struct radv_image_plane *plane = &image->planes[plane_id];
@@ -2036,7 +2053,7 @@ radv_image_view_make_descriptor(struct radv_image_view *iview, struct radv_devic
       vk_format_get_plane_height(image->vk.format, plane_id, iview->extent.height),
       iview->extent.depth, min_lod, descriptor->plane_descriptors[descriptor_plane_id],
       descriptor_plane_id || is_storage_image ? NULL : descriptor->fmask_descriptor,
-      img_create_flags, nbc_view);
+      img_create_flags, nbc_view, sliced_3d);
 
    const struct legacy_surf_level *base_level_info = NULL;
    if (device->physical_device->rad_info.gfx_level <= GFX9) {
@@ -2137,6 +2154,9 @@ radv_image_view_init(struct radv_image_view *iview, struct radv_device *device,
 
    if (min_lod_info)
       min_lod = min_lod_info->minLod;
+
+   const struct VkImageViewSlicedCreateInfoEXT *sliced_3d =
+      vk_find_struct_const(pCreateInfo->pNext, IMAGE_VIEW_SLICED_CREATE_INFO_EXT);
 
    bool from_client = extra_create_info && extra_create_info->from_client;
    vk_image_view_init(&device->vk, &iview->vk, !from_client, pCreateInfo);
@@ -2283,10 +2303,10 @@ radv_image_view_init(struct radv_image_view *iview, struct radv_device *device,
       VkFormat format = vk_format_get_plane_format(iview->vk.view_format, i);
       radv_image_view_make_descriptor(iview, device, format, &pCreateInfo->components, min_lod, false,
                                       disable_compression, enable_compression, iview->plane_id + i,
-                                      i, img_create_flags, &iview->nbc_view);
+                                      i, img_create_flags, &iview->nbc_view, NULL);
       radv_image_view_make_descriptor(iview, device, format, &pCreateInfo->components, min_lod, true,
                                       disable_compression, enable_compression, iview->plane_id + i,
-                                      i, img_create_flags, &iview->nbc_view);
+                                      i, img_create_flags, &iview->nbc_view, sliced_3d);
    }
 }
 

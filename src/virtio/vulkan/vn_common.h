@@ -102,6 +102,7 @@ enum vn_debug {
    VN_DEBUG_WSI = 1ull << 3,
    VN_DEBUG_NO_ABORT = 1ull << 4,
    VN_DEBUG_LOG_CTX_INFO = 1ull << 5,
+   VN_DEBUG_CACHE = 1ull << 6,
 };
 
 enum vn_perf {

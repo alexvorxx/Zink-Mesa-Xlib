@@ -106,6 +106,12 @@ void si_init_resource_fields(struct si_screen *sscreen, struct si_resource *res,
    else
       res->flags |= RADEON_FLAG_NO_INTERPROCESS_SHARING;
 
+   /* PIPE_BIND_CUSTOM is used by si_vid_create_buffer which wants
+    * non-suballocated buffers.
+    */
+   if (res->b.b.bind & PIPE_BIND_CUSTOM)
+      res->flags |= RADEON_FLAG_NO_SUBALLOC;
+
    if (res->b.b.bind & PIPE_BIND_PROTECTED ||
        /* Force scanout/depth/stencil buffer allocation to be encrypted */
        (sscreen->debug_flags & DBG(TMZ) &&

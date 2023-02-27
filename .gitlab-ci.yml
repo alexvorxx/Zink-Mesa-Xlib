@@ -182,7 +182,7 @@ test-docs-mr:
       when: on_success
     # Other cases default to never
 
-lincheck-docs:
+linkcheck-docs:
   extends: .docs-base
   # Cancel job if a newer commit is pushed to the same branch
   interruptible: true

@@ -161,21 +161,28 @@ is_r8g8(enum pipe_format format)
 }
 
 /**
- * Can a rsc be accessed tiled with the specified format, or does it need to
- * be linearized?
+ * Can a rsc as it is currently laid out be accessed as the specified format.
+ * Returns whether the access is ok or whether the rsc needs to be demoted
+ * to uncompressed tiled or linear.
  */
-bool
-fd6_valid_tiling(struct fd_resource *rsc, enum pipe_format format)
+enum fd6_format_status
+fd6_check_valid_format(struct fd_resource *rsc, enum pipe_format format)
 {
    enum pipe_format orig_format = rsc->b.b.format;
 
    if (orig_format == format)
-      return true;
+      return FORMAT_OK;
 
    if (rsc->layout.tile_mode && (is_r8g8(orig_format) != is_r8g8(format)))
-      return false;
+      return DEMOTE_TO_LINEAR;
 
-   return true;
+   if (!rsc->layout.ubwc)
+      return FORMAT_OK;
+
+   if (ok_ubwc_format(rsc->b.b.screen, format) && valid_format_cast(rsc, format))
+      return FORMAT_OK;
+
+   return DEMOTE_TO_TILED;
 }
 
 /**
@@ -187,33 +194,26 @@ void
 fd6_validate_format(struct fd_context *ctx, struct fd_resource *rsc,
                     enum pipe_format format)
 {
-   enum pipe_format orig_format = rsc->b.b.format;
-
    tc_assert_driver_thread(ctx->tc);
 
-   if (orig_format == format)
+   switch (fd6_check_valid_format(rsc, format)) {
+   case FORMAT_OK:
       return;
-
-   if (!fd6_valid_tiling(rsc, format)) {
+   case DEMOTE_TO_LINEAR:
       perf_debug_ctx(ctx,
                      "%" PRSC_FMT ": demoted to linear+uncompressed due to use as %s",
                      PRSC_ARGS(&rsc->b.b), util_format_short_name(format));
 
       fd_resource_uncompress(ctx, rsc, true);
       return;
+   case DEMOTE_TO_TILED:
+      perf_debug_ctx(ctx,
+                     "%" PRSC_FMT ": demoted to uncompressed due to use as %s",
+                     PRSC_ARGS(&rsc->b.b), util_format_short_name(format));
+
+      fd_resource_uncompress(ctx, rsc, false);
+      return;
    }
-
-   if (!rsc->layout.ubwc)
-      return;
-
-   if (ok_ubwc_format(rsc->b.b.screen, format) && valid_format_cast(rsc, format))
-      return;
-
-   perf_debug_ctx(ctx,
-                  "%" PRSC_FMT ": demoted to uncompressed due to use as %s",
-                  PRSC_ARGS(&rsc->b.b), util_format_short_name(format));
-
-   fd_resource_uncompress(ctx, rsc, false);
 }
 
 static void

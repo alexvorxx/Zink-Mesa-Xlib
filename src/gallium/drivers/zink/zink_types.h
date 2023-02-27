@@ -225,6 +225,7 @@ enum zink_debug {
    ZINK_DEBUG_SHADERDB = (1<<8),
    ZINK_DEBUG_RP = (1<<9),
    ZINK_DEBUG_NORP = (1<<10),
+   ZINK_DEBUG_MAP = (1<<11),
 };
 
 
@@ -1130,8 +1131,10 @@ struct zink_resource_object {
    VkAccessFlags access;
    bool unordered_read;
    bool unordered_write;
+   bool copies_valid;
 
    unsigned persistent_maps; //if nonzero, requires vkFlushMappedMemoryRanges during batch use
+   struct util_dynarray copies[16]; //regions being copied to; for barrier omission
 
    VkBuffer storage_buffer;
    simple_mtx_t view_lock;
@@ -1218,7 +1221,10 @@ struct zink_resource {
    uint16_t sampler_bind_count[2]; //gfx, compute
    uint16_t image_bind_count[2]; //gfx, compute
    uint16_t write_bind_count[2]; //gfx, compute
-   uint16_t bindless[2]; //tex, img
+   union {
+      uint16_t bindless[2]; //tex, img
+      uint32_t all_bindless;
+   };
    union {
       uint16_t bind_count[2]; //gfx, compute
       uint32_t all_binds;
@@ -1291,6 +1297,7 @@ struct zink_screen {
 
    VkFence fence;
    struct util_queue flush_queue;
+   simple_mtx_t copy_context_lock;
    struct zink_context *copy_context;
 
    simple_mtx_t semaphores_lock;
@@ -1343,6 +1350,7 @@ struct zink_screen {
    uint64_t total_video_mem;
    uint64_t clamp_video_mem;
    uint64_t total_mem;
+   uint64_t mapped_vram;
 
    VkInstance instance;
    struct zink_instance_info instance_info;

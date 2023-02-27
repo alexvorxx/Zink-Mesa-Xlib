@@ -4,6 +4,7 @@
 #include "zink_clear.h"
 #include "zink_program.h"
 #include "zink_resource.h"
+#include "zink_screen.h"
 
 #include "util/u_dump.h"
 #include "util/u_inlines.h"
@@ -723,6 +724,9 @@ copy_pool_results_to_buffer(struct zink_context *ctx, struct zink_query *query, 
    unsigned result_size = base_result_size * num_results;
    if (flags & VK_QUERY_RESULT_WITH_AVAILABILITY_BIT)
       result_size += type_size;
+
+   bool marker = zink_cmd_debug_marker_begin(ctx, "update_qbo(%s: id=%u, num_results=%d)", vk_QueryType_to_str(query->vkqtype), query_id, num_results);
+
    zink_batch_no_rp(ctx);
    /* if it's a single query that doesn't need special handling, we can copy it and be done */
    zink_batch_reference_resource_rw(batch, res, true);
@@ -732,6 +736,7 @@ copy_pool_results_to_buffer(struct zink_context *ctx, struct zink_query *query, 
    res->obj->unordered_read = res->obj->unordered_write = false;
    VKCTX(CmdCopyQueryPoolResults)(batch->state->cmdbuf, pool, query_id, num_results, res->obj->buffer,
                                   offset, base_result_size, flags);
+   zink_cmd_debug_marker_end(ctx, marker);
 }
 
 static void
@@ -1322,6 +1327,7 @@ zink_get_timestamp(struct pipe_screen *pscreen)
          mesa_loge("ZINK: vkGetCalibratedTimestampsEXT failed (%s)", vk_Result_to_str(result));
       }
    } else {
+      zink_screen_lock_context(screen);
       struct pipe_context *pctx = &screen->copy_context->base;
       struct pipe_query *pquery = pctx->create_query(pctx, PIPE_QUERY_TIMESTAMP, 0);
       if (!pquery)
@@ -1331,6 +1337,7 @@ zink_get_timestamp(struct pipe_screen *pscreen)
       pctx->end_query(pctx, pquery);
       pctx->get_query_result(pctx, pquery, true, &result);
       pctx->destroy_query(pctx, pquery);
+      zink_screen_unlock_context(screen);
       timestamp = result.u64;
    }
    timestamp_to_nanoseconds(screen, &timestamp);

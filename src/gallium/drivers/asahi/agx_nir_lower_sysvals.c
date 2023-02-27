@@ -33,61 +33,75 @@ struct state {
 static bool
 pass(struct nir_builder *b, nir_instr *instr, void *data)
 {
-   if (instr->type != nir_instr_type_intrinsic)
-      return false;
-
-   nir_intrinsic_instr *intr = nir_instr_as_intrinsic(instr);
    b->cursor = nir_before_instr(instr);
    struct state *state = data;
 
    /* For offsetof with dynamic array elements */
    struct agx_draw_uniforms *u = NULL;
    void *ptr = NULL;
+   nir_dest *dest;
 
-   switch (intr->intrinsic) {
-   case nir_intrinsic_load_vbo_base_agx:
-      ptr = &u->vs.vbo_base[nir_src_as_uint(intr->src[0])];
-      break;
-   case nir_intrinsic_load_ubo_base_agx:
-      ptr = &u->ubo_base[nir_src_as_uint(intr->src[0])];
-      break;
-   case nir_intrinsic_load_texture_base_agx:
-      ptr = &u->texture_base;
-      break;
-   case nir_intrinsic_load_blend_const_color_r_float:
-      ptr = &u->fs.blend_constant[0];
-      break;
-   case nir_intrinsic_load_blend_const_color_g_float:
-      ptr = &u->fs.blend_constant[1];
-      break;
-   case nir_intrinsic_load_blend_const_color_b_float:
-      ptr = &u->fs.blend_constant[2];
-      break;
-   case nir_intrinsic_load_blend_const_color_a_float:
-      ptr = &u->fs.blend_constant[3];
-      break;
-   case nir_intrinsic_load_ssbo_address:
-      ptr = &u->ssbo_base[nir_src_as_uint(intr->src[0])];
-      break;
-   case nir_intrinsic_get_ssbo_size:
-      ptr = &u->ssbo_size[nir_src_as_uint(intr->src[0])];
-      break;
-   default:
+   if (instr->type == nir_instr_type_intrinsic) {
+      nir_intrinsic_instr *intr = nir_instr_as_intrinsic(instr);
+      dest = &intr->dest;
+
+      switch (intr->intrinsic) {
+      case nir_intrinsic_load_vbo_base_agx:
+         ptr = &u->vs.vbo_base[nir_src_as_uint(intr->src[0])];
+         break;
+      case nir_intrinsic_load_ubo_base_agx:
+         ptr = &u->ubo_base[nir_src_as_uint(intr->src[0])];
+         break;
+      case nir_intrinsic_load_texture_base_agx:
+         ptr = &u->texture_base;
+         break;
+      case nir_intrinsic_load_blend_const_color_r_float:
+         ptr = &u->fs.blend_constant[0];
+         break;
+      case nir_intrinsic_load_blend_const_color_g_float:
+         ptr = &u->fs.blend_constant[1];
+         break;
+      case nir_intrinsic_load_blend_const_color_b_float:
+         ptr = &u->fs.blend_constant[2];
+         break;
+      case nir_intrinsic_load_blend_const_color_a_float:
+         ptr = &u->fs.blend_constant[3];
+         break;
+      case nir_intrinsic_load_ssbo_address:
+         ptr = &u->ssbo_base[nir_src_as_uint(intr->src[0])];
+         break;
+      case nir_intrinsic_get_ssbo_size:
+         ptr = &u->ssbo_size[nir_src_as_uint(intr->src[0])];
+         break;
+      default:
+         return false;
+      }
+   } else if (instr->type == nir_instr_type_tex) {
+      nir_tex_instr *tex = nir_instr_as_tex(instr);
+      dest = &tex->dest;
+
+      if (tex->op == nir_texop_lod_bias_agx) {
+         /* TODO: Dynamic indexing samplers? */
+         ptr = &u->lod_bias[tex->sampler_index];
+      } else {
+         return false;
+      }
+   } else {
       return false;
    }
 
-   assert(nir_dest_bit_size(intr->dest) >= 16 && "no 8-bit sysvals");
+   assert(nir_dest_bit_size(*dest) >= 16 && "no 8-bit sysvals");
 
-   unsigned dim = nir_dest_num_components(intr->dest);
-   unsigned element_size = nir_dest_bit_size(intr->dest) / 16;
+   unsigned dim = nir_dest_num_components(*dest);
+   unsigned element_size = nir_dest_bit_size(*dest) / 16;
    unsigned length = dim * element_size;
 
    unsigned offset = (uintptr_t)ptr;
    assert((offset % 2) == 0 && "all entries are aligned by ABI");
 
    nir_ssa_def *value =
-      nir_load_preamble(b, dim, nir_dest_bit_size(intr->dest), .base = offset);
-   nir_ssa_def_rewrite_uses(&intr->dest.ssa, value);
+      nir_load_preamble(b, dim, nir_dest_bit_size(*dest), .base = offset);
+   nir_ssa_def_rewrite_uses(&dest->ssa, value);
 
    BITSET_SET_RANGE(state->pushed, (offset / 2), (offset / 2) + length - 1);
 

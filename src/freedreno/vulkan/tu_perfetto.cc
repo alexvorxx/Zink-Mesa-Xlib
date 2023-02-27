@@ -13,7 +13,7 @@
 #include "tu_tracepoints.h"
 #include "tu_tracepoints_perfetto.h"
 
-/* we can't include tu_drm.h and tu_device.h */
+/* we can't include tu_knl.h and tu_device.h */
 extern "C" {
 int
 tu_device_get_gpu_timestamp(struct tu_device *dev,

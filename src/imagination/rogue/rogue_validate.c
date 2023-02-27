@@ -224,6 +224,23 @@ static void validate_src(rogue_validation_state *state,
    state->ctx.ref = NULL;
 }
 
+static bool validate_alu_op_mod_combo(uint64_t mods)
+{
+   rogue_foreach_mod_in_set (mod, mods) {
+      const rogue_alu_op_mod_info *info = &rogue_alu_op_mod_infos[mod];
+
+      /* Check if any excluded op mods have been included. */
+      if (info->exclude & mods)
+         return false;
+
+      /* Check if any required op mods have been missed. */
+      if (info->require && !(info->require & mods))
+         return false;
+   }
+
+   return true;
+}
+
 static void validate_alu_instr(rogue_validation_state *state,
                                const rogue_alu_instr *alu)
 {
@@ -232,15 +249,12 @@ static void validate_alu_instr(rogue_validation_state *state,
 
    const rogue_alu_op_info *info = &rogue_alu_op_infos[alu->op];
 
-   if (!rogue_alu_comp_is_none(alu) && alu->op != ROGUE_ALU_OP_TST)
-      validate_log(state, "ALU comparison set for non-test op.");
-
-   if (rogue_alu_comp_is_none(alu) && alu->op == ROGUE_ALU_OP_TST)
-      validate_log(state, "ALU comparison not set for test op.");
-
-   /* Initial check if instruction modifiers are valid. */
+   /* Check if instruction modifiers are valid. */
    if (!rogue_mods_supported(alu->mod, info->supported_op_mods))
       validate_log(state, "Unsupported ALU op modifiers.");
+
+   if (!validate_alu_op_mod_combo(alu->mod))
+      validate_log(state, "Unsupported ALU op modifier combination.");
 
    /* Instruction repeat checks. */
    if (alu->instr.repeat > 1 && !info->dst_repeat_mask &&
@@ -270,6 +284,23 @@ static void validate_alu_instr(rogue_validation_state *state,
    }
 }
 
+static bool validate_backend_op_mod_combo(uint64_t mods)
+{
+   rogue_foreach_mod_in_set (mod, mods) {
+      const rogue_backend_op_mod_info *info = &rogue_backend_op_mod_infos[mod];
+
+      /* Check if any excluded op mods have been included. */
+      if (info->exclude & mods)
+         return false;
+
+      /* Check if any required op mods have been missed. */
+      if (info->require && !(info->require & mods))
+         return false;
+   }
+
+   return true;
+}
+
 static void validate_backend_instr(rogue_validation_state *state,
                                    const rogue_backend_instr *backend)
 {
@@ -279,9 +310,12 @@ static void validate_backend_instr(rogue_validation_state *state,
 
    const rogue_backend_op_info *info = &rogue_backend_op_infos[backend->op];
 
-   /* Initial check if instruction modifiers are valid. */
+   /* Check if instruction modifiers are valid. */
    if (!rogue_mods_supported(backend->mod, info->supported_op_mods))
       validate_log(state, "Unsupported backend op modifiers.");
+
+   if (!validate_backend_op_mod_combo(backend->mod))
+      validate_log(state, "Unsupported backend op modifier combination.");
 
    /* Instruction repeat checks. */
    if (backend->instr.repeat > 1 && !info->dst_repeat_mask &&
@@ -311,6 +345,23 @@ static void validate_backend_instr(rogue_validation_state *state,
    }
 }
 
+static bool validate_ctrl_op_mod_combo(uint64_t mods)
+{
+   rogue_foreach_mod_in_set (mod, mods) {
+      const rogue_ctrl_op_mod_info *info = &rogue_ctrl_op_mod_infos[mod];
+
+      /* Check if any excluded op mods have been included. */
+      if (info->exclude & mods)
+         return false;
+
+      /* Check if any required op mods have been missed. */
+      if (info->require && !(info->require & mods))
+         return false;
+   }
+
+   return true;
+}
+
 /* Returns true if instruction can end block. */
 static bool validate_ctrl_instr(rogue_validation_state *state,
                                 const rogue_ctrl_instr *ctrl)
@@ -327,9 +378,12 @@ static bool validate_ctrl_instr(rogue_validation_state *state,
       validate_log(state,
                    "Ctrl op did not expect target block, but one provided.");
 
-   /* Initial check if instruction modifiers are valid. */
+   /* Check if instruction modifiers are valid. */
    if (!rogue_mods_supported(ctrl->mod, info->supported_op_mods))
       validate_log(state, "Unsupported CTRL op modifiers.");
+
+   if (!validate_ctrl_op_mod_combo(ctrl->mod))
+      validate_log(state, "Unsupported CTRL op modifier combination.");
 
    /* Instruction repeat checks. */
    if (ctrl->instr.repeat > 1 && !info->dst_repeat_mask &&
@@ -369,6 +423,23 @@ static bool validate_ctrl_instr(rogue_validation_state *state,
    return info->ends_block;
 }
 
+static bool validate_bitwise_op_mod_combo(uint64_t mods)
+{
+   rogue_foreach_mod_in_set (mod, mods) {
+      const rogue_bitwise_op_mod_info *info = &rogue_bitwise_op_mod_infos[mod];
+
+      /* Check if any excluded op mods have been included. */
+      if (info->exclude & mods)
+         return false;
+
+      /* Check if any required op mods have been missed. */
+      if (info->require && !(info->require & mods))
+         return false;
+   }
+
+   return true;
+}
+
 static void validate_bitwise_instr(rogue_validation_state *state,
                                    const rogue_bitwise_instr *bitwise)
 {
@@ -378,9 +449,12 @@ static void validate_bitwise_instr(rogue_validation_state *state,
 
    const rogue_bitwise_op_info *info = &rogue_bitwise_op_infos[bitwise->op];
 
-   /* Initial check if instruction modifiers are valid. */
+   /* Check if instruction modifiers are valid. */
    if (!rogue_mods_supported(bitwise->mod, info->supported_op_mods))
       validate_log(state, "Unsupported bitwise op modifiers.");
+
+   if (!validate_bitwise_op_mod_combo(bitwise->mod))
+      validate_log(state, "Unsupported bitwise op modifier combination.");
 
    /* Instruction repeat checks. */
    if (bitwise->instr.repeat > 1 && !info->dst_repeat_mask &&

@@ -2189,7 +2189,7 @@ agx_compile_function_nir(nir_shader *nir, nir_function_impl *impl,
  * lowered here to avoid duplicate work with shader variants.
  */
 void
-agx_preprocess_nir(nir_shader *nir)
+agx_preprocess_nir(nir_shader *nir, bool support_lod_bias)
 {
    NIR_PASS_V(nir, nir_lower_vars_to_ssa);
 
@@ -2233,7 +2233,7 @@ agx_preprocess_nir(nir_shader *nir)
 
    /* Clean up deref gunk after lowering I/O */
    NIR_PASS_V(nir, nir_opt_dce);
-   NIR_PASS_V(nir, agx_nir_lower_texture);
+   NIR_PASS_V(nir, agx_nir_lower_texture, support_lod_bias);
 
    nir_lower_idiv_options idiv_options = {
       .allow_fp16 = true,

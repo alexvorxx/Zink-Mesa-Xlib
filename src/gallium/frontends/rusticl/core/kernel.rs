@@ -1024,7 +1024,7 @@ impl Kernel {
                     let buf = Arc::new(
                         q.device
                             .screen
-                            .resource_create_buffer(printf_size, ResourceType::Normal)
+                            .resource_create_buffer(printf_size, ResourceType::Staging)
                             .unwrap(),
                     );
 

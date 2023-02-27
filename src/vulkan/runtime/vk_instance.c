@@ -396,8 +396,11 @@ enumerate_drm_physical_devices_locked(struct vk_instance *instance)
 static VkResult
 enumerate_physical_devices_locked(struct vk_instance *instance)
 {
-   if (instance->physical_devices.enumerate)
-      return instance->physical_devices.enumerate(instance);
+   if (instance->physical_devices.enumerate) {
+      VkResult result = instance->physical_devices.enumerate(instance);
+      if (result != VK_ERROR_INCOMPATIBLE_DRIVER)
+         return result;
+   }
 
    VkResult result = VK_SUCCESS;
 

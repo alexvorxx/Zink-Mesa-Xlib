@@ -98,7 +98,9 @@ def register_filter(gfx_level, name, offset, already_added):
             offset // 4 not in (0x23B0, 0x23B1, 0x237F) and
             # Remove conflicts (multiple definitions for the same offset)
             not already_added and
-            'PREF_PRI_ACCUM' not in name)
+            'PREF_PRI_ACCUM' not in name and
+            # only define SPI and COMPUTE registers in the 0xB000 range.
+            (offset // 0x1000 != 0xB or name.startswith('SPI') or name.startswith('COMPUTE')))
 
 # Mapping from field names to enum types
 enum_map = {
@@ -407,11 +409,11 @@ IMG_DATA_FORMAT_STENCIL = {
 
 VRSCombinerModeSC = {
  "entries": [
-  {"name": "VRS_COMB_MODE_PASSTHRU", "value": 0},
-  {"name": "VRS_COMB_MODE_OVERRIDE", "value": 1},
-  {"name": "VRS_COMB_MODE_MIN", "value": 2},
-  {"name": "VRS_COMB_MODE_MAX", "value": 3},
-  {"name": "VRS_COMB_MODE_SATURATE", "value": 4},
+  {"name": "SC_VRS_COMB_MODE_PASSTHRU", "value": 0},
+  {"name": "SC_VRS_COMB_MODE_OVERRIDE", "value": 1},
+  {"name": "SC_VRS_COMB_MODE_MIN", "value": 2},
+  {"name": "SC_VRS_COMB_MODE_MAX", "value": 3},
+  {"name": "SC_VRS_COMB_MODE_SATURATE", "value": 4},
  ]
 }
 
@@ -718,6 +720,34 @@ fields_missing = {
     "DB_RESERVED_REG_2": [["RESOURCE_LEVEL", 28, 31, None, True]],
     "VGT_DRAW_PAYLOAD_CNTL": [["EN_VRS_RATE", 6, 6]],
     "VGT_SHADER_STAGES_EN": [["PRIMGEN_PASSTHRU_NO_MSG", 26, 26]],
+  },
+  'gfx11': {
+    "VGT_DRAW_PAYLOAD_CNTL": [["EN_VRS_RATE", 6, 6]],
+    # Only GFX1103_R2:
+    "CB_COLOR0_FDCC_CONTROL": [["DISABLE_OVERRIDE_INCONSISTENT_KEYS", 25, 25],
+                               ["ENABLE_MAX_COMP_FRAG_OVERRIDE", 26, 26],
+                               ["MAX_COMP_FRAGS", 27, 29]],
+    "CB_COLOR1_FDCC_CONTROL": [["DISABLE_OVERRIDE_INCONSISTENT_KEYS", 25, 25],
+                               ["ENABLE_MAX_COMP_FRAG_OVERRIDE", 26, 26],
+                               ["MAX_COMP_FRAGS", 27, 29]],
+    "CB_COLOR2_FDCC_CONTROL": [["DISABLE_OVERRIDE_INCONSISTENT_KEYS", 25, 25],
+                               ["ENABLE_MAX_COMP_FRAG_OVERRIDE", 26, 26],
+                               ["MAX_COMP_FRAGS", 27, 29]],
+    "CB_COLOR3_FDCC_CONTROL": [["DISABLE_OVERRIDE_INCONSISTENT_KEYS", 25, 25],
+                               ["ENABLE_MAX_COMP_FRAG_OVERRIDE", 26, 26],
+                               ["MAX_COMP_FRAGS", 27, 29]],
+    "CB_COLOR4_FDCC_CONTROL": [["DISABLE_OVERRIDE_INCONSISTENT_KEYS", 25, 25],
+                               ["ENABLE_MAX_COMP_FRAG_OVERRIDE", 26, 26],
+                               ["MAX_COMP_FRAGS", 27, 29]],
+    "CB_COLOR5_FDCC_CONTROL": [["DISABLE_OVERRIDE_INCONSISTENT_KEYS", 25, 25],
+                               ["ENABLE_MAX_COMP_FRAG_OVERRIDE", 26, 26],
+                               ["MAX_COMP_FRAGS", 27, 29]],
+    "CB_COLOR6_FDCC_CONTROL": [["DISABLE_OVERRIDE_INCONSISTENT_KEYS", 25, 25],
+                               ["ENABLE_MAX_COMP_FRAG_OVERRIDE", 26, 26],
+                               ["MAX_COMP_FRAGS", 27, 29]],
+    "CB_COLOR7_FDCC_CONTROL": [["DISABLE_OVERRIDE_INCONSISTENT_KEYS", 25, 25],
+                               ["ENABLE_MAX_COMP_FRAG_OVERRIDE", 26, 26],
+                               ["MAX_COMP_FRAGS", 27, 29]],
   },
 }
 

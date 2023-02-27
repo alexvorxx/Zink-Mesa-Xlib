@@ -2353,12 +2353,6 @@ static LLVMValueRef visit_load_ubo_buffer(struct ac_nir_context *ctx, nir_intrin
    return exit_waterfall(ctx, &wctx, ret);
 }
 
-static unsigned type_scalar_size_bytes(const struct glsl_type *type)
-{
-   assert(glsl_type_is_vector_or_scalar(type) || glsl_type_is_matrix(type));
-   return glsl_type_is_boolean(type) ? 4 : glsl_get_bit_size(type) / 8;
-}
-
 static void visit_store_output(struct ac_nir_context *ctx, nir_intrinsic_instr *instr)
 {
    if (ctx->ac.postponed_kill) {
@@ -3241,27 +3235,6 @@ static LLVMValueRef barycentric_centroid(struct ac_nir_context *ctx, unsigned mo
    return LLVMBuildBitCast(ctx->ac.builder, interp_param, ctx->ac.v2i32, "");
 }
 
-static LLVMValueRef barycentric_at_sample(struct ac_nir_context *ctx, unsigned mode,
-                                          LLVMValueRef sample_id)
-{
-   if (ctx->abi->interp_at_sample_force_center)
-      return barycentric_center(ctx, mode);
-
-   LLVMValueRef halfval = LLVMConstReal(ctx->ac.f32, 0.5f);
-
-   /* fetch sample ID */
-   LLVMValueRef sample_pos = ctx->abi->load_sample_position(ctx->abi, sample_id);
-
-   LLVMValueRef src_c0 = LLVMBuildExtractElement(ctx->ac.builder, sample_pos, ctx->ac.i32_0, "");
-   src_c0 = LLVMBuildFSub(ctx->ac.builder, src_c0, halfval, "");
-   LLVMValueRef src_c1 = LLVMBuildExtractElement(ctx->ac.builder, sample_pos, ctx->ac.i32_1, "");
-   src_c1 = LLVMBuildFSub(ctx->ac.builder, src_c1, halfval, "");
-   LLVMValueRef coords[] = {src_c0, src_c1};
-   LLVMValueRef offset = ac_build_gather_values(&ctx->ac, coords, 2);
-
-   return barycentric_offset(ctx, mode, offset);
-}
-
 static LLVMValueRef barycentric_sample(struct ac_nir_context *ctx, unsigned mode)
 {
    LLVMValueRef interp_param = lookup_interp_param(ctx, mode, INTERP_SAMPLE);
@@ -3363,10 +3336,6 @@ static LLVMValueRef visit_load(struct ac_nir_context *ctx, nir_intrinsic_instr *
 
    /* No indirect indexing is allowed after this point. */
    assert(!indir_index);
-
-   if (ctx->stage == MESA_SHADER_FRAGMENT && is_output &&
-       nir_intrinsic_io_semantics(instr).fb_fetch_output)
-      return ctx->abi->emit_fbfetch(ctx->abi);
 
    if (ctx->stage == MESA_SHADER_VERTEX && !is_output)
       return ctx->abi->load_inputs(ctx->abi, base, component, count, 0, component_type);
@@ -3832,11 +3801,6 @@ static bool visit_intrinsic(struct ac_nir_context *ctx, nir_intrinsic_instr *ins
       result = barycentric_offset(ctx, nir_intrinsic_interp_mode(instr), offset);
       break;
    }
-   case nir_intrinsic_load_barycentric_at_sample: {
-      LLVMValueRef sample_id = get_src(ctx, instr->src[0]);
-      result = barycentric_at_sample(ctx, nir_intrinsic_interp_mode(instr), sample_id);
-      break;
-   }
    case nir_intrinsic_load_interpolated_input: {
       /* We assume any indirect loads have been lowered away */
       ASSERTED nir_const_value *offset = nir_src_as_const_value(instr->src[1]);
@@ -4168,16 +4132,6 @@ static bool visit_intrinsic(struct ac_nir_context *ctx, nir_intrinsic_instr *ins
       result = LLVMBuildICmp(ctx->ac.builder, LLVMIntEQ, visit_first_invocation(ctx),
                              ac_get_thread_id(&ctx->ac), "");
       break;
-   case nir_intrinsic_byte_permute_amd:
-      if (LLVM_VERSION_MAJOR < 13) {
-         assert("unimplemented byte_permute, LLVM 12 doesn't have amdgcn.perm");
-         break;
-      }
-      result = ac_build_intrinsic(&ctx->ac, "llvm.amdgcn.perm", ctx->ac.i32,
-                                  (LLVMValueRef[]){get_src(ctx, instr->src[0]),
-                                                   get_src(ctx, instr->src[1]),
-                                                   get_src(ctx, instr->src[2])}, 3, 0);
-      break;
    case nir_intrinsic_lane_permute_16_amd:
       result = ac_build_intrinsic(&ctx->ac, "llvm.amdgcn.permlane16", ctx->ac.i32,
                                   (LLVMValueRef[]){get_src(ctx, instr->src[0]),
@@ -4343,13 +4297,6 @@ static bool visit_intrinsic(struct ac_nir_context *ctx, nir_intrinsic_instr *ins
       ctx->ssa_defs[instr->dest.ssa.index] = result;
    }
    return true;
-}
-
-static LLVMValueRef get_sampler_desc(struct ac_nir_context *ctx,
-                                     enum ac_descriptor_type desc_type, const nir_instr *instr,
-                                     LLVMValueRef index, bool image, bool write)
-{
-   return ctx->abi->load_sampler_desc(ctx->abi, index, desc_type);
 }
 
 /* Disable anisotropic filtering if BASE_LEVEL == LAST_LEVEL.
@@ -4634,7 +4581,8 @@ static void visit_tex(struct ac_nir_context *ctx, nir_tex_instr *instr)
    /* Texture coordinates fixups */
    if (instr->coord_components > 1 && instr->sampler_dim == GLSL_SAMPLER_DIM_1D &&
        instr->is_array && instr->op != nir_texop_txf) {
-      args.coords[1] = apply_round_slice(&ctx->ac, args.coords[1]);
+      if (!ctx->abi->conformant_trunc_coord)
+         args.coords[1] = apply_round_slice(&ctx->ac, args.coords[1]);
    }
 
    if (instr->coord_components > 2 &&
@@ -4643,7 +4591,8 @@ static void visit_tex(struct ac_nir_context *ctx, nir_tex_instr *instr)
         instr->sampler_dim == GLSL_SAMPLER_DIM_SUBPASS_MS) &&
        instr->is_array && instr->op != nir_texop_txf && instr->op != nir_texop_txf_ms &&
        instr->op != nir_texop_fragment_fetch_amd && instr->op != nir_texop_fragment_mask_fetch_amd) {
-      args.coords[2] = apply_round_slice(&ctx->ac, args.coords[2]);
+      if (!ctx->abi->conformant_trunc_coord)
+         args.coords[2] = apply_round_slice(&ctx->ac, args.coords[2]);
    }
 
    if (ctx->ac.gfx_level == GFX9 && instr->sampler_dim == GLSL_SAMPLER_DIM_1D &&
@@ -4709,7 +4658,7 @@ static void visit_tex(struct ac_nir_context *ctx, nir_tex_instr *instr)
    }
 
    /* Set TRUNC_COORD=0 for textureGather(). */
-   if (instr->op == nir_texop_tg4) {
+   if (instr->op == nir_texop_tg4 && !ctx->abi->conformant_trunc_coord) {
       LLVMValueRef dword0 = LLVMBuildExtractElement(ctx->ac.builder, args.sampler, ctx->ac.i32_0, "");
       dword0 = LLVMBuildAnd(ctx->ac.builder, dword0, LLVMConstInt(ctx->ac.i32, C_008F30_TRUNC_COORD, 0), "");
       args.sampler = LLVMBuildInsertElement(ctx->ac.builder, args.sampler, dword0, ctx->ac.i32_0, "");
@@ -4839,66 +4788,6 @@ static bool visit_jump(struct ac_llvm_context *ctx, const nir_jump_instr *instr)
       return false;
    }
    return true;
-}
-
-static LLVMTypeRef glsl_base_to_llvm_type(struct ac_llvm_context *ac, enum glsl_base_type type)
-{
-   switch (type) {
-   case GLSL_TYPE_INT:
-   case GLSL_TYPE_UINT:
-   case GLSL_TYPE_BOOL:
-   case GLSL_TYPE_SUBROUTINE:
-      return ac->i32;
-   case GLSL_TYPE_INT8:
-   case GLSL_TYPE_UINT8:
-      return ac->i8;
-   case GLSL_TYPE_INT16:
-   case GLSL_TYPE_UINT16:
-      return ac->i16;
-   case GLSL_TYPE_FLOAT:
-      return ac->f32;
-   case GLSL_TYPE_FLOAT16:
-      return ac->f16;
-   case GLSL_TYPE_INT64:
-   case GLSL_TYPE_UINT64:
-      return ac->i64;
-   case GLSL_TYPE_DOUBLE:
-      return ac->f64;
-   default:
-      unreachable("unknown GLSL type");
-   }
-}
-
-static LLVMTypeRef glsl_to_llvm_type(struct ac_llvm_context *ac, const struct glsl_type *type)
-{
-   if (glsl_type_is_scalar(type)) {
-      return glsl_base_to_llvm_type(ac, glsl_get_base_type(type));
-   }
-
-   if (glsl_type_is_vector(type)) {
-      return LLVMVectorType(glsl_base_to_llvm_type(ac, glsl_get_base_type(type)),
-                            glsl_get_vector_elements(type));
-   }
-
-   if (glsl_type_is_matrix(type)) {
-      return LLVMArrayType(glsl_to_llvm_type(ac, glsl_get_column_type(type)),
-                           glsl_get_matrix_columns(type));
-   }
-
-   if (glsl_type_is_array(type)) {
-      return LLVMArrayType(glsl_to_llvm_type(ac, glsl_get_array_element(type)),
-                           glsl_get_length(type));
-   }
-
-   assert(glsl_type_is_struct_or_ifc(type));
-
-   LLVMTypeRef *const member_types = alloca(glsl_get_length(type) * sizeof(LLVMTypeRef));
-
-   for (unsigned i = 0; i < glsl_get_length(type); i++) {
-      member_types[i] = glsl_to_llvm_type(ac, glsl_get_struct_field(type, i));
-   }
-
-   return LLVMStructTypeInContext(ac->context, member_types, glsl_get_length(type), false);
 }
 
 static bool visit_cf_list(struct ac_nir_context *ctx, struct exec_list *list);

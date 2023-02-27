@@ -1016,16 +1016,13 @@ to upconvert to 32b float internally?
 	<!-- all the threshold values seem to be in units of quad-dwords: -->
 	<reg32 offset="0x08C1" name="CP_ROQ_THRESHOLDS_1">
 		<doc>
-			b0..7 seems to contain the size of buffered by not yet processed
-			RB level cmdstream.. it's possible that it is a low threshold
-			and b8..15 is a high threshold?
-
-			b16..23 identifies where IB1 data starts (and RB data ends?)
-
+			b0..7 identifies where MRB data starts (and RB data ends)
+			b8.15 identifies where VSD data starts (and MRB data ends)
+			b16..23 identifies where IB1 data starts (and RB data ends)
 			b24..31 identifies where IB2 data starts (and IB1 data ends)
 		</doc>
-		<bitfield name="RB_LO" low="0" high="7" shr="2"/>
-		<bitfield name="RB_HI" low="8" high="15" shr="2"/>
+		<bitfield name="MRB_START" low="0" high="7" shr="2"/>
+		<bitfield name="VSD_START" low="8" high="15" shr="2"/>
 		<bitfield name="IB1_START" low="16" high="23" shr="2"/>
 		<bitfield name="IB2_START" low="24" high="31" shr="2"/>
 	</reg32>
@@ -1092,22 +1089,46 @@ to upconvert to 32b float internally?
 	This is used by CP to read the draw stream and skip empty draws
 	-->
 	<reg64 offset="0x0934" name="CP_VSD_BASE"/>
+
+	<bitset name="a6xx_roq_stat" inline="yes">
+		<bitfield name="RPTR" low="0" high="9"/>
+		<bitfield name="WPTR" low="16" high="25"/>
+	</bitset>
+	<reg32 offset="0x0939" name="CP_ROQ_RB_STAT" type="a6xx_roq_stat"/>
+	<reg32 offset="0x093a" name="CP_ROQ_IB1_STAT" type="a6xx_roq_stat"/>
+	<reg32 offset="0x093b" name="CP_ROQ_IB2_STAT" type="a6xx_roq_stat"/>
+	<reg32 offset="0x093c" name="CP_ROQ_SDS_STAT" type="a6xx_roq_stat"/>
+	<reg32 offset="0x093d" name="CP_ROQ_MRB_STAT" type="a6xx_roq_stat"/>
+	<reg32 offset="0x093e" name="CP_ROQ_VSD_STAT" type="a6xx_roq_stat"/>
+
+	<reg32 offset="0x0943" name="CP_IB1_DWORDS"/>
+	<reg32 offset="0x0944" name="CP_IB2_DWORDS"/>
+	<reg32 offset="0x0945" name="CP_SDS_DWORDS"/>
 	<reg32 offset="0x0946" name="CP_MRB_DWORDS"/>
 	<reg32 offset="0x0947" name="CP_VSD_DWORDS"/>
-	<!--
-	There are probably similar registers for RB and SDS, teasing out SDS will
-	take a slightly better test case..
-	 -->
-	<reg32 offset="0x0949" name="CP_CSQ_IB1_STAT">
+
+	<reg32 offset="0x0948" name="CP_ROQ_AVAIL_RB">
 		<doc>number of remaining dwords incl current dword being consumed?</doc>
 		<bitfield name="REM" low="16" high="31"/>
 	</reg32>
-	<reg32 offset="0x094a" name="CP_CSQ_IB2_STAT">
+	<reg32 offset="0x0949" name="CP_ROQ_AVAIL_IB1">
 		<doc>number of remaining dwords incl current dword being consumed?</doc>
 		<bitfield name="REM" low="16" high="31"/>
 	</reg32>
-	<reg32 offset="0x094c" name="CP_MRQ_MRB_STAT">
+	<reg32 offset="0x094a" name="CP_ROQ_AVAIL_IB2">
+		<doc>number of remaining dwords incl current dword being consumed?</doc>
+		<bitfield name="REM" low="16" high="31"/>
+	</reg32>
+	<reg32 offset="0x094b" name="CP_ROQ_AVAIL_SDS">
+		<doc>number of remaining dwords incl current dword being consumed?</doc>
+		<bitfield name="REM" low="16" high="31"/>
+	</reg32>
+	<reg32 offset="0x094c" name="CP_ROQ_AVAIL_MRB">
 		<doc>number of dwords that have already been read but haven't been consumed by $addr</doc>
+		<bitfield name="REM" low="16" high="31"/>
+	</reg32>
+	<reg32 offset="0x094d" name="CP_ROQ_AVAIL_VSD">
+		<doc>number of remaining dwords incl current dword being consumed?</doc>
 		<bitfield name="REM" low="16" high="31"/>
 	</reg32>
 	<reg64 offset="0x0980" name="CP_ALWAYS_ON_COUNTER"/>

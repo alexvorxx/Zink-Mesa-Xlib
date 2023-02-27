@@ -251,6 +251,7 @@ ForEachMacros: [
   'rogue_foreach_instr_in_shader_safe',
   'rogue_foreach_instr_in_shader_rev',
   'rogue_foreach_instr_in_shader_safe_rev',
+  'rogue_foreach_mod_in_set',
   'rogue_foreach_reg',
   'rogue_foreach_reg_safe',
   'rogue_foreach_reg_use',

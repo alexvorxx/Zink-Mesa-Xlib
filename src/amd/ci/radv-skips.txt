@@ -5,7 +5,16 @@ dEQP-VK.info.device_extensions
 dEQP-VK.image.swapchain_mutable.*
 dEQP-VK.wsi.*
 
-# Exclude this test which timeout most of the time.
+# Exclude these memory tests that usually take more than 30s to complete.
+dEQP-VK.memory.mapping.dedicated_alloc.image.full.1048577.*
+dEQP-VK.memory.mapping.suballocation.full.variable.implicit_unmap
+dEQP-VK.memory.pipeline_barrier.all.1048576_vertex_buffer_stride_2
+dEQP-VK.memory.pipeline_barrier.all.1048576_vertex_buffer_stride_4
+dEQP-VK.memory.pipeline_barrier.all.65536_vertex_buffer_stride_2
+dEQP-VK.memory.pipeline_barrier.all.65536_vertex_buffer_stride_4
+dEQP-VK.memory.pipeline_barrier.host_read_host_write.1048576
+dEQP-VK.memory.pipeline_barrier.host_read_host_write.65536
+dEQP-VK.memory.pipeline_barrier.host_write_transfer_src.1048576
 dEQP-VK.memory.pipeline_barrier.transfer_src_transfer_dst.1048576
 
 # Exclude this test which fails on all GPUS except RDNA2+.

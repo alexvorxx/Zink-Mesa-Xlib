@@ -197,29 +197,59 @@ const rogue_reg_src_info rogue_reg_upper_src_infos[ROGUE_REG_SRC_VARIANTS] = {
    },
 };
 
+#define OM(op_mod) BITFIELD64_BIT(ROGUE_ALU_OP_MOD_##op_mod)
 const rogue_alu_op_mod_info rogue_alu_op_mod_infos[ROGUE_ALU_OP_MOD_COUNT] = {
-	[ROGUE_ALU_OP_MOD_LP] = { .str = "lp", },
-	[ROGUE_ALU_OP_MOD_SAT] = { .str = "sat", },
-	[ROGUE_ALU_OP_MOD_SCALE] = { .str = "scale", },
-	[ROGUE_ALU_OP_MOD_ROUNDZERO] = { .str = "roundzero", },
+   [ROGUE_ALU_OP_MOD_LP] = { .str = "lp", },
+   [ROGUE_ALU_OP_MOD_SAT] = { .str = "sat", },
+   [ROGUE_ALU_OP_MOD_SCALE] = { .str = "scale", },
+   [ROGUE_ALU_OP_MOD_ROUNDZERO] = { .str = "roundzero", },
+
+   [ROGUE_ALU_OP_MOD_Z] = { .str = "z", .exclude = OM(GZ) | OM(GEZ) | OM(C) | OM(E) | OM(G) | OM(GE) | OM(NE) | OM(L) | OM(LE) },
+   [ROGUE_ALU_OP_MOD_GZ] = { .str = "gz", .exclude = OM(Z) | OM(GEZ) | OM(C) | OM(E) | OM(G) | OM(GE) | OM(NE) | OM(L) | OM(LE) },
+   [ROGUE_ALU_OP_MOD_GEZ] = { .str = "gez", .exclude = OM(Z) | OM(GZ) | OM(C) | OM(E) | OM(G) | OM(GE) | OM(NE) | OM(L) | OM(LE) },
+   [ROGUE_ALU_OP_MOD_C] = { .str = "c", .exclude = OM(Z) | OM(GZ) | OM(GEZ) | OM(E) | OM(G) | OM(GE) | OM(NE) | OM(L) | OM(LE) },
+   [ROGUE_ALU_OP_MOD_E] = { .str = "e", .exclude = OM(Z) | OM(GZ) | OM(GEZ) | OM(C) | OM(G) | OM(GE) | OM(NE) | OM(L) | OM(LE) },
+   [ROGUE_ALU_OP_MOD_G] = { .str = "g", .exclude = OM(Z) | OM(GZ) | OM(GEZ) | OM(C) | OM(E) | OM(GE) | OM(NE) | OM(L) | OM(LE) },
+   [ROGUE_ALU_OP_MOD_GE] = { .str = "ge", .exclude = OM(Z) | OM(GZ) | OM(GEZ) | OM(C) | OM(E) | OM(G) | OM(NE) | OM(L) | OM(LE) },
+   [ROGUE_ALU_OP_MOD_NE] = { .str = "ne", .exclude = OM(Z) | OM(GZ) | OM(GEZ) | OM(C) | OM(E) | OM(G) | OM(GE) | OM(L) | OM(LE) },
+   [ROGUE_ALU_OP_MOD_L] = { .str = "l", .exclude = OM(Z) | OM(GZ) | OM(GEZ) | OM(C) | OM(E) | OM(G) | OM(GE) | OM(NE) | OM(LE) },
+   [ROGUE_ALU_OP_MOD_LE] = { .str = "le", .exclude = OM(Z) | OM(GZ) | OM(GEZ) | OM(C) | OM(E) | OM(G) | OM(GE) | OM(NE) | OM(L) },
+
+   [ROGUE_ALU_OP_MOD_F32] = { .str = "f32", .exclude = OM(U16) | OM(S16) | OM(U8) | OM(S8) | OM(U32) | OM(S32) },
+   [ROGUE_ALU_OP_MOD_U16] = { .str = "u16", .exclude = OM(F32) | OM(S16) | OM(U8) | OM(S8) | OM(U32) | OM(S32) },
+   [ROGUE_ALU_OP_MOD_S16] = { .str = "s16", .exclude = OM(F32) | OM(U16) | OM(U8) | OM(S8) | OM(U32) | OM(S32) },
+   [ROGUE_ALU_OP_MOD_U8] = { .str = "u8", .exclude = OM(F32) | OM(U16) | OM(S16) | OM(S8) | OM(U32) | OM(S32) },
+   [ROGUE_ALU_OP_MOD_S8] = { .str = "s8", .exclude = OM(F32) | OM(U16) | OM(S16) | OM(U8) | OM(U32) | OM(S32) },
+   [ROGUE_ALU_OP_MOD_U32] = { .str = "u32", .exclude = OM(F32) | OM(U16) | OM(S16) | OM(U8) | OM(S8) | OM(S32) },
+   [ROGUE_ALU_OP_MOD_S32] = { .str = "s32", .exclude = OM(F32) | OM(U16) | OM(S16) | OM(U8) | OM(S8) | OM(U32) },
 };
+#undef OM
 
 const rogue_alu_dst_mod_info rogue_alu_dst_mod_infos[ROGUE_ALU_DST_MOD_COUNT] = {
-	[ROGUE_ALU_DST_MOD_E0] = { .str = "e0", },
-	[ROGUE_ALU_DST_MOD_E1] = { .str = "e1", },
-	[ROGUE_ALU_DST_MOD_E2] = { .str = "e2", },
-	[ROGUE_ALU_DST_MOD_E3] = { .str = "e3", },
+   [ROGUE_ALU_DST_MOD_E0] = { .str = "e0", },
+   [ROGUE_ALU_DST_MOD_E1] = { .str = "e1", },
+   [ROGUE_ALU_DST_MOD_E2] = { .str = "e2", },
+   [ROGUE_ALU_DST_MOD_E3] = { .str = "e3", },
 };
 
 const rogue_alu_src_mod_info rogue_alu_src_mod_infos[ROGUE_ALU_SRC_MOD_COUNT] = {
-	[ROGUE_ALU_SRC_MOD_FLR] = { .str = "flr", },
-	[ROGUE_ALU_SRC_MOD_ABS] = { .str = "abs", },
-	[ROGUE_ALU_SRC_MOD_NEG] = { .str = "neg", },
+   [ROGUE_ALU_SRC_MOD_FLR] = { .str = "flr", },
+   [ROGUE_ALU_SRC_MOD_ABS] = { .str = "abs", },
+   [ROGUE_ALU_SRC_MOD_NEG] = { .str = "neg", },
+   [ROGUE_ALU_SRC_MOD_E0] = { .str = "e0", },
+   [ROGUE_ALU_SRC_MOD_E1] = { .str = "e1", },
+   [ROGUE_ALU_SRC_MOD_E2] = { .str = "e2", },
+   [ROGUE_ALU_SRC_MOD_E3] = { .str = "e3", },
 };
 
+#define OM(op_mod) BITFIELD64_BIT(ROGUE_CTRL_OP_MOD_##op_mod)
 const rogue_ctrl_op_mod_info rogue_ctrl_op_mod_infos[ROGUE_CTRL_OP_MOD_COUNT] = {
-	[ROGUE_CTRL_OP_MOD_END] = { .str = "end", },
+   [ROGUE_CTRL_OP_MOD_LINK] = { .str = "link", },
+   [ROGUE_CTRL_OP_MOD_ALLINST] = { .str = "allinst", .exclude = OM(ANYINST) },
+   [ROGUE_CTRL_OP_MOD_ANYINST] = { .str = "anyinst", .exclude = OM(ALLINST) },
+   [ROGUE_CTRL_OP_MOD_END] = { .str = "end", },
 };
+#undef OM
 
 #define OM(op_mod) BITFIELD64_BIT(ROGUE_CTRL_OP_MOD_##op_mod)
 #define T(type) BITFIELD64_BIT(ROGUE_REF_TYPE_##type - 1)
@@ -229,7 +259,14 @@ const rogue_ctrl_op_info rogue_ctrl_op_infos[ROGUE_CTRL_OP_COUNT] = {
 	[ROGUE_CTRL_OP_NOP] = { .str = "nop",
 		.supported_op_mods = OM(END),
 	},
-	[ROGUE_CTRL_OP_BA] = { .str = "ba", .has_target = true, .ends_block = true, },
+	[ROGUE_CTRL_OP_WOP] = { .str = "wop", },
+	[ROGUE_CTRL_OP_BR] = { .str = "br", .has_target = true, .ends_block = true,
+		.supported_op_mods = OM(LINK) | OM(ALLINST) | OM(ANYINST),
+   },
+	[ROGUE_CTRL_OP_BA] = { .str = "ba", .ends_block = true, .num_srcs = 1,
+		.supported_op_mods = OM(LINK) | OM(ALLINST) | OM(ANYINST),
+      .supported_src_types = { [0] = T(VAL), },
+   },
 	[ROGUE_CTRL_OP_WDF] = { .str = "wdf", .num_srcs = 1,
       .supported_src_types = { [0] = T(DRC), },
    },
@@ -257,9 +294,23 @@ const rogue_backend_op_info rogue_backend_op_infos[ROGUE_BACKEND_OP_COUNT] = {
       .supported_dst_types = { [0] = T(REG), },
       .supported_src_types = { [0] = T(REG), },
    },
+   [ROGUE_BACKEND_OP_IDF] = { .str = "idf", .num_srcs = 2,
+      .phase_io = { .src[1] = IO(S0), },
+      .supported_src_types = { [0] = T(DRC), [1] = T(REGARRAY), },
+      .src_stride = {
+         [1] = 1,
+      },
+   },
+
+   [ROGUE_BACKEND_OP_EMITPIX] = { .str = "emitpix", .num_srcs = 2,
+      .phase_io = { .src[0] = IO(S0), .src[1] = IO(S2), },
+      .supported_op_mods = OM(FREEP),
+      .supported_src_types = { [0] = T(REG), [1] = T(REG), },
+   },
    /* .src[1] and .src[2] can actually be S0-5. */
    [ROGUE_BACKEND_OP_LD] = { .str = "ld", .num_dsts = 1, .num_srcs = 3,
       .phase_io = { .dst[0] = IO(S3), .src[2] = IO(S0), },
+      .supported_op_mods = OM(BYPASS) | OM(FORCELINEFILL) | OM(SLCBYPASS) | OM(SLCNOALLOC),
       .supported_dst_types = { [0] = T(REG) | T(REGARRAY), },
       .supported_src_types = {
          [0] = T(DRC),
@@ -271,6 +322,39 @@ const rogue_backend_op_info rogue_backend_op_infos[ROGUE_BACKEND_OP_COUNT] = {
       },
       .src_stride = {
          [2] = 1,
+      },
+   },
+   /* .src[0] and .src[4] can actually be S0-5. */
+   [ROGUE_BACKEND_OP_ST] = { .str = "st", .num_srcs = 6,
+      .phase_io = { .src[0] = IO(S3), .src[4] = IO(S0), },
+      .supported_op_mods = OM(TILED) | OM(WRITETHROUGH) | OM(WRITEBACK) | OM(LAZYWRITEBACK) |
+         OM(SLCBYPASS) | OM(SLCWRITEBACK) | OM(SLCWRITETHROUGH) | OM(SLCNOALLOC),
+      .supported_src_types = {
+         [0] = T(REG) | T(REGARRAY),
+         [1] = T(VAL),
+         [2] = T(DRC),
+         [3] = T(VAL),
+         [4] = T(REGARRAY),
+         [5] = T(IO),
+      },
+      .src_stride = {
+         [4] = 1,
+      },
+   },
+	[ROGUE_BACKEND_OP_FITR_PIXEL] = { .str = "fitr.pixel", .num_dsts = 1, .num_srcs = 3,
+      .phase_io = { .dst[0] = IO(S3), .src[1] = IO(S0), },
+      .supported_op_mods = OM(SAT),
+      .supported_dst_types = { [0] = T(REG) | T(REGARRAY), },
+      .supported_src_types = {
+         [0] = T(DRC),
+         [1] = T(REGARRAY),
+         [2] = T(VAL),
+      },
+      .dst_stride = {
+         [0] = ~0U,
+      },
+      .src_stride = {
+         [1] = ~0U,
       },
    },
 	[ROGUE_BACKEND_OP_FITRP_PIXEL] = { .str = "fitrp.pixel", .num_dsts = 1, .num_srcs = 4,
@@ -288,15 +372,144 @@ const rogue_backend_op_info rogue_backend_op_infos[ROGUE_BACKEND_OP_COUNT] = {
          [2] = ~0U,
       },
    },
+	[ROGUE_BACKEND_OP_SMP1D] = { .str = "smp1d", .num_dsts = 1, .num_srcs = 6,
+      .phase_io = { .dst[0] = IO(S4), .src[1] = IO(S0), .src[2] = IO(S1), .src[3] = IO(S2), },
+      .supported_op_mods = OM(PROJ) | OM(FCNORM) | OM(NNCOORDS) | OM(BIAS) | OM(REPLACE) |
+         OM(GRADIENT) | OM(PPLOD) | OM(TAO) | OM(SOO) | OM(SNO) | OM(WRT) | OM(DATA) |
+         OM(INFO) | OM(BOTH) | OM(BYPASS) | OM(FORCELINEFILL) | OM(WRITETHROUGH) |
+         OM(WRITEBACK) | OM(LAZYWRITEBACK) | OM(SLCBYPASS) | OM(SLCWRITEBACK) |
+         OM(SLCWRITETHROUGH) | OM(SLCNOALLOC) | OM(ARRAY) | OM(INTEGER) | OM(SCHEDSWAP) |
+         OM(F16),
+      .supported_dst_types = { [0] = T(REG) | T(REGARRAY), },
+      .supported_src_types = {
+         [0] = T(DRC),
+         [1] = T(REGARRAY),
+         [2] = T(REG) | T(REGARRAY),
+         [3] = T(REGARRAY),
+         [4] = T(REGARRAY) | T(IO),
+         [5] = T(VAL),
+      },
+      /* TODO: This may depend on the other options set. */
+      .src_stride = {
+         [1] = 3,
+         [2] = ~0U,
+         [3] = 3,
+         [4] = 1,
+      },
+      .dst_stride = {
+         [0] = ~0U,
+      },
+   },
+	[ROGUE_BACKEND_OP_SMP2D] = { .str = "smp2d", .num_dsts = 1, .num_srcs = 6,
+      .phase_io = { .dst[0] = IO(S4), .src[1] = IO(S0), .src[2] = IO(S1), .src[3] = IO(S2), },
+      .supported_op_mods = OM(PROJ) | OM(FCNORM) | OM(NNCOORDS) | OM(BIAS) | OM(REPLACE) |
+         OM(GRADIENT) | OM(PPLOD) | OM(TAO) | OM(SOO) | OM(SNO) | OM(WRT) | OM(DATA) |
+         OM(INFO) | OM(BOTH) | OM(BYPASS) | OM(FORCELINEFILL) | OM(WRITETHROUGH) |
+         OM(WRITEBACK) | OM(LAZYWRITEBACK) | OM(SLCBYPASS) | OM(SLCWRITEBACK) |
+         OM(SLCWRITETHROUGH) | OM(SLCNOALLOC) | OM(ARRAY) | OM(INTEGER) | OM(SCHEDSWAP) |
+         OM(F16),
+      .supported_dst_types = { [0] = T(REG) | T(REGARRAY), },
+      .supported_src_types = {
+         [0] = T(DRC),
+         [1] = T(REGARRAY),
+         [2] = T(REG) | T(REGARRAY),
+         [3] = T(REGARRAY),
+         [4] = T(REGARRAY) | T(IO),
+         [5] = T(VAL),
+      },
+      /* TODO: This may depend on the other options set. */
+      .src_stride = {
+         [1] = 3,
+         [2] = ~0U,
+         [3] = 3,
+         [4] = 1,
+      },
+      .dst_stride = {
+         [0] = ~0U,
+      },
+   },
+	[ROGUE_BACKEND_OP_SMP3D] = { .str = "smp3d", .num_dsts = 1, .num_srcs = 6,
+      .phase_io = { .dst[0] = IO(S4), .src[1] = IO(S0), .src[2] = IO(S1), .src[3] = IO(S2), },
+      .supported_op_mods = OM(PROJ) | OM(FCNORM) | OM(NNCOORDS) | OM(BIAS) | OM(REPLACE) |
+         OM(GRADIENT) | OM(PPLOD) | OM(TAO) | OM(SOO) | OM(SNO) | OM(WRT) | OM(DATA) |
+         OM(INFO) | OM(BOTH) | OM(BYPASS) | OM(FORCELINEFILL) | OM(WRITETHROUGH) |
+         OM(WRITEBACK) | OM(LAZYWRITEBACK) | OM(SLCBYPASS) | OM(SLCWRITEBACK) |
+         OM(SLCWRITETHROUGH) | OM(SLCNOALLOC) | OM(ARRAY) | OM(INTEGER) | OM(SCHEDSWAP) |
+         OM(F16),
+      .supported_dst_types = { [0] = T(REG) | T(REGARRAY), },
+      .supported_src_types = {
+         [0] = T(DRC),
+         [1] = T(REGARRAY),
+         [2] = T(REG) | T(REGARRAY),
+         [3] = T(REGARRAY),
+         [4] = T(REGARRAY) | T(IO),
+         [5] = T(VAL),
+      },
+      /* TODO: This may depend on the other options set. */
+      .src_stride = {
+         [1] = 3,
+         [2] = ~0U,
+         [3] = 3,
+         [4] = 1,
+      },
+      .dst_stride = {
+         [0] = ~0U,
+      },
+   },
 };
 #undef B
 #undef T
 #undef OM
 #undef IO
 
+#define OM(op_mod) BITFIELD64_BIT(ROGUE_BACKEND_OP_MOD_##op_mod)
 const rogue_backend_op_mod_info rogue_backend_op_mod_infos[ROGUE_BACKEND_OP_MOD_COUNT] = {
-	[ROGUE_BACKEND_OP_MOD_SAT] = { .str = "sat", },
+   [ROGUE_BACKEND_OP_MOD_PROJ]  = { .str = "proj", },
+   [ROGUE_BACKEND_OP_MOD_FCNORM]  = { .str = "fcnorm", },
+   [ROGUE_BACKEND_OP_MOD_NNCOORDS]  = { .str = "nncoords", },
+   [ROGUE_BACKEND_OP_MOD_BIAS]  = { .str = "bias", .exclude = OM(REPLACE) | OM(GRADIENT) },
+   [ROGUE_BACKEND_OP_MOD_REPLACE]  = { .str = "replace", .exclude = OM(BIAS) | OM(GRADIENT) },
+   [ROGUE_BACKEND_OP_MOD_GRADIENT]  = { .str = "gradient", .exclude = OM(BIAS) | OM(REPLACE) },
+   [ROGUE_BACKEND_OP_MOD_PPLOD]  = { .str = "pplod", .require = OM(BIAS) | OM(REPLACE) },
+   [ROGUE_BACKEND_OP_MOD_TAO]  = { .str = "tao", },
+   [ROGUE_BACKEND_OP_MOD_SOO]  = { .str = "soo", },
+   [ROGUE_BACKEND_OP_MOD_SNO]  = { .str = "sno", },
+   [ROGUE_BACKEND_OP_MOD_WRT]  = { .str = "wrt", },
+   [ROGUE_BACKEND_OP_MOD_DATA]  = { .str = "data", .exclude = OM(INFO) | OM(BOTH) },
+   [ROGUE_BACKEND_OP_MOD_INFO]  = { .str = "info", .exclude = OM(DATA) | OM(BOTH) },
+   [ROGUE_BACKEND_OP_MOD_BOTH]  = { .str = "both", .exclude = OM(DATA) | OM(INFO) },
+   [ROGUE_BACKEND_OP_MOD_TILED] = { .str = "tiled", },
+   [ROGUE_BACKEND_OP_MOD_BYPASS]  = { .str = "bypass", .exclude = OM(FORCELINEFILL) | OM(WRITETHROUGH) | OM(WRITEBACK) | OM(LAZYWRITEBACK) },
+   [ROGUE_BACKEND_OP_MOD_FORCELINEFILL]  = { .str = "forcelinefill", .exclude = OM(BYPASS) | OM(WRITETHROUGH) | OM(WRITEBACK) | OM(LAZYWRITEBACK) },
+   [ROGUE_BACKEND_OP_MOD_WRITETHROUGH]  = { .str = "writethrough", .exclude = OM(BYPASS) | OM(FORCELINEFILL) | OM(WRITEBACK) | OM(LAZYWRITEBACK) },
+   [ROGUE_BACKEND_OP_MOD_WRITEBACK]  = { .str = "writeback", .exclude = OM(BYPASS) | OM(FORCELINEFILL) | OM(WRITETHROUGH) | OM(LAZYWRITEBACK) },
+   [ROGUE_BACKEND_OP_MOD_LAZYWRITEBACK]  = { .str = "lazywriteback", .exclude = OM(BYPASS) | OM(FORCELINEFILL) | OM(WRITETHROUGH) | OM(WRITEBACK) },
+   [ROGUE_BACKEND_OP_MOD_SLCBYPASS]  = { .str = "slcbypass", .exclude = OM(SLCWRITEBACK) | OM(SLCWRITETHROUGH) | OM(SLCNOALLOC) },
+   [ROGUE_BACKEND_OP_MOD_SLCWRITEBACK]  = { .str = "slcwriteback", .exclude = OM(SLCBYPASS) | OM(SLCWRITETHROUGH) | OM(SLCNOALLOC) },
+   [ROGUE_BACKEND_OP_MOD_SLCWRITETHROUGH]  = { .str = "slcwritethrough", .exclude = OM(SLCBYPASS) | OM(SLCWRITEBACK) | OM(SLCNOALLOC) },
+   [ROGUE_BACKEND_OP_MOD_SLCNOALLOC]  = { .str = "slcnoalloc", .exclude = OM(SLCBYPASS) | OM(SLCWRITEBACK) | OM(SLCWRITETHROUGH) },
+   [ROGUE_BACKEND_OP_MOD_ARRAY]  = { .str = "array", },
+   [ROGUE_BACKEND_OP_MOD_INTEGER]  = { .str = "integer", },
+   [ROGUE_BACKEND_OP_MOD_SCHEDSWAP]  = { .str = "schedswap", },
+   [ROGUE_BACKEND_OP_MOD_F16]  = { .str = "f16", },
+   [ROGUE_BACKEND_OP_MOD_SAT]  = { .str = "sat", },
+   [ROGUE_BACKEND_OP_MOD_FREEP] = { .str = "freep", },
 };
+#undef OM
+
+#define OM(op_mod) BITFIELD64_BIT(ROGUE_BITWISE_OP_MOD_##op_mod)
+const rogue_bitwise_op_mod_info
+   rogue_bitwise_op_mod_infos[ROGUE_BITWISE_OP_MOD_COUNT] = {
+      [ROGUE_BITWISE_OP_MOD_TWB] = { .str = "twb",
+                                     .exclude = OM(PWB) | OM(MTB) | OM(FTB) },
+      [ROGUE_BITWISE_OP_MOD_PWB] = { .str = "pwb",
+                                     .exclude = OM(TWB) | OM(MTB) | OM(FTB) },
+      [ROGUE_BITWISE_OP_MOD_MTB] = { .str = "mtb",
+                                     .exclude = OM(TWB) | OM(PWB) | OM(FTB) },
+      [ROGUE_BITWISE_OP_MOD_FTB] = { .str = "ftb",
+                                     .exclude = OM(TWB) | OM(PWB) | OM(MTB) },
+   };
+#undef OM
 
 #define P(type) BITFIELD64_BIT(ROGUE_INSTR_PHASE_##type)
 #define PH(type) ROGUE_INSTR_PHASE_##type
@@ -323,30 +536,31 @@ const rogue_bitwise_op_info rogue_bitwise_op_infos[ROGUE_BITWISE_OP_COUNT] = {
 #undef P
 
 const rogue_io_info rogue_io_infos[ROGUE_IO_COUNT] = {
-	[ROGUE_IO_INVALID] = { .str = "!INVALID!", },
-	[ROGUE_IO_S0] = { .str = "s0", },
-	[ROGUE_IO_S1] = { .str = "s1", },
-	[ROGUE_IO_S2] = { .str = "s2", },
-	[ROGUE_IO_S3] = { .str = "s3", },
-	[ROGUE_IO_S4] = { .str = "s4", },
-	[ROGUE_IO_S5] = { .str = "s5", },
-	[ROGUE_IO_W0] = { .str = "w0", },
-	[ROGUE_IO_W1] = { .str = "w1", },
-	[ROGUE_IO_IS0] = { .str = "is0", },
-	[ROGUE_IO_IS1] = { .str = "is1", },
-	[ROGUE_IO_IS2] = { .str = "is2", },
-	[ROGUE_IO_IS3] = { .str = "is3", },
-	[ROGUE_IO_IS4] = { .str = "is4/w0", },
-	[ROGUE_IO_IS5] = { .str = "is5/w1", },
-	[ROGUE_IO_FT0] = { .str = "ft0", },
-	[ROGUE_IO_FT1] = { .str = "ft1", },
-	[ROGUE_IO_FT2] = { .str = "ft2", },
-	[ROGUE_IO_FTE] = { .str = "fte", },
-	[ROGUE_IO_FT3] = { .str = "ft3", },
-	[ROGUE_IO_FT4] = { .str = "ft4", },
-	[ROGUE_IO_FT5] = { .str = "ft5", },
-	[ROGUE_IO_P0] = { .str = "p0", },
-	[ROGUE_IO_NONE] = { .str = "_", },
+   [ROGUE_IO_INVALID] = { .str = "!INVALID!", },
+   [ROGUE_IO_S0] = { .str = "s0", },
+   [ROGUE_IO_S1] = { .str = "s1", },
+   [ROGUE_IO_S2] = { .str = "s2", },
+   [ROGUE_IO_S3] = { .str = "s3", },
+   [ROGUE_IO_S4] = { .str = "s4", },
+   [ROGUE_IO_S5] = { .str = "s5", },
+   [ROGUE_IO_W0] = { .str = "w0", },
+   [ROGUE_IO_W1] = { .str = "w1", },
+   [ROGUE_IO_IS0] = { .str = "is0", },
+   [ROGUE_IO_IS1] = { .str = "is1", },
+   [ROGUE_IO_IS2] = { .str = "is2", },
+   [ROGUE_IO_IS3] = { .str = "is3", },
+   [ROGUE_IO_IS4] = { .str = "is4/w0", },
+   [ROGUE_IO_IS5] = { .str = "is5/w1", },
+   [ROGUE_IO_FT0] = { .str = "ft0", },
+   [ROGUE_IO_FT1] = { .str = "ft1", },
+   [ROGUE_IO_FT2] = { .str = "ft2", },
+   [ROGUE_IO_FTE] = { .str = "fte", },
+   [ROGUE_IO_FT3] = { .str = "ft3", },
+   [ROGUE_IO_FT4] = { .str = "ft4", },
+   [ROGUE_IO_FT5] = { .str = "ft5", },
+   [ROGUE_IO_FTT] = { .str = "ftt", },
+   [ROGUE_IO_P0] = { .str = "p0", },
+   [ROGUE_IO_NONE] = { .str = "_", },
 };
 
 #define SM(src_mod) BITFIELD64_BIT(ROGUE_ALU_SRC_MOD_##src_mod)
@@ -365,7 +579,7 @@ const rogue_alu_op_info rogue_alu_op_infos[ROGUE_ALU_OP_COUNT] = {
       .supported_src_mods = {
          [0] = SM(ABS) | SM(NEG),
       },
-      .supported_dst_types = { [0] = T(REG) | T(REGARRAY), },
+      .supported_dst_types = { [0] = T(REG) | T(REGARRAY) | T(IO), },
       .supported_src_types = {
          [0] = T(REG),
       },
@@ -409,8 +623,36 @@ const rogue_alu_op_info rogue_alu_op_infos[ROGUE_ALU_OP_COUNT] = {
          [2] = T(REG),
       },
    },
-   /* TODO: Implement */
-   [ROGUE_ALU_OP_TST] = { .str = "tst", .num_dsts = 2, .num_srcs = 2, },
+   /* TODO NEXT!: Validate - can/must only select element if non-32-bit type, element has to be same for both args if both args present, 16-bit must be 0 or 1, 32-bit must be 0-3 (can't have no element set)
+    * Also validate number of sources provided/nulled out based on test op */
+   [ROGUE_ALU_OP_TST] = { .str = "tst", .num_dsts = 2, .num_srcs = 2,
+      .supported_phases = P(2_TST),
+      .phase_io[PH(2_TST)] = { .src[0] = IO(IS1), .src[1] = IO(IS2), },
+      .supported_op_mods = OM(Z) | OM(GZ) | OM(GEZ) | OM(C) | OM(E) | OM(G) | OM(GE) | OM(NE) | OM(L) | OM(LE) |
+         OM(F32) | OM(U16) | OM(S16) | OM(U8) | OM(S8) | OM(U32) | OM(S32),
+      .supported_src_mods = {
+         [0] = SM(E0) | SM(E1) | SM(E2) | SM(E3),
+         [1] = SM(E0) | SM(E1) | SM(E2) | SM(E3),
+      },
+      .supported_dst_types = { [0] = T(IO), [1] = T(IO), }, /* FTT and either P0 or NONE */
+      .supported_src_types = {
+         [0] = T(REG) | T(IO),
+         [1] = T(REG) | T(IO),
+      },
+   },
+   [ROGUE_ALU_OP_MOVC] = { .str = "movc", .num_dsts = 2, .num_srcs = 3,
+      .supported_phases = P(2_MOV),
+      .phase_io[PH(2_MOV)] = { .dst[0] = IO(W0), .dst[1] = IO(W1), .src[1] = IO(FT0), .src[2] = IO(FTE), }, /* TODO: SRC ONES ARE TEMPORARY, SHOULD BE MADE TO MATCH THE TST ONES INSTEAD? */
+      .supported_dst_mods = {
+         [0] = DM(E0) | DM(E1) | DM(E2) | DM(E3),
+      },
+      .supported_dst_types = { [0] = T(REG), [1] = T(REG) | T(IO), },
+      .supported_src_types = {
+         [0] = T(IO),
+         [1] = T(REG) | T(IO),
+         [2] = T(REG) | T(IO),
+      },
+   },
    [ROGUE_ALU_OP_ADD64] = { .str = "add64", .num_dsts = 3, .num_srcs = 5,
       .supported_phases = P(0),
       .phase_io[PH(0)] = { .dst[0] = IO(FT0), .dst[1] = IO(FTE), .src[0] = IO(S0), .src[1] = IO(S1), .src[2] = IO(S2), .src[3] = IO(IS0), },
@@ -439,11 +681,18 @@ const rogue_alu_op_info rogue_alu_op_infos[ROGUE_ALU_OP_COUNT] = {
       },
       .src_repeat_mask = B(0),
    },
-   /* This mov is "fake" since it can be lowered to a MBYP, make a new instruction for real mov (call it MOVD?). */
    [ROGUE_ALU_OP_MOV] = { .str = "mov", .num_dsts = 1, .num_srcs = 1,
       .supported_dst_types = { [0] = T(REG) | T(REGARRAY), },
       .supported_src_types = {
          [0] = T(REG) | T(IMM),
+      },
+   },
+   [ROGUE_ALU_OP_CMOV] = { .str = "cmov", .num_dsts = 1, .num_srcs = 3,
+      .supported_dst_types = { [0] = T(REG), },
+      .supported_src_types = {
+         [0] = T(IO),
+         [1] = T(REG),
+         [2] = T(REG),
       },
    },
    [ROGUE_ALU_OP_FABS] = { .str = "fabs", .num_dsts = 1, .num_srcs = 1, },
@@ -462,18 +711,12 @@ const rogue_alu_op_info rogue_alu_op_infos[ROGUE_ALU_OP_COUNT] = {
 #undef DM
 #undef SM
 
-const char *const rogue_comp_test_str[ROGUE_COMP_TEST_COUNT] = {
-   [ROGUE_COMP_TEST_NONE] = "!INVALID!", [ROGUE_COMP_TEST_EQ] = "eq",
-   [ROGUE_COMP_TEST_GT] = "gt",          [ROGUE_COMP_TEST_GE] = "ge",
-   [ROGUE_COMP_TEST_NE] = "ne",          [ROGUE_COMP_TEST_LT] = "lt",
-   [ROGUE_COMP_TEST_LE] = "le",
-};
-
-const char *const rogue_comp_type_str[ROGUE_COMP_TYPE_COUNT] = {
-   [ROGUE_COMP_TYPE_NONE] = "!INVALID!", [ROGUE_COMP_TYPE_F32] = "f32",
-   [ROGUE_COMP_TYPE_U16] = "u16",        [ROGUE_COMP_TYPE_S16] = "s16",
-   [ROGUE_COMP_TYPE_U8] = "u8",          [ROGUE_COMP_TYPE_S8] = "s8",
-   [ROGUE_COMP_TYPE_U32] = "u32",        [ROGUE_COMP_TYPE_S32] = "s32",
+const char *rogue_exec_cond_str[ROGUE_EXEC_COND_COUNT] = {
+   [ROGUE_EXEC_COND_INVALID] = "!INVALID!",
+   [ROGUE_EXEC_COND_PE_TRUE] = "if(pe)",
+   [ROGUE_EXEC_COND_P0_TRUE] = "if(p0)",
+   [ROGUE_EXEC_COND_PE_ANY] = "any(pe)",
+   [ROGUE_EXEC_COND_P0_FALSE] = "if(!p0)",
 };
 
 const char *rogue_instr_type_str[ROGUE_INSTR_TYPE_COUNT] = {

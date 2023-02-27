@@ -1351,6 +1351,8 @@ anv_queue_submit(struct vk_queue *vk_queue,
 
    intel_ds_end_submit(&queue->ds, start_ts);
 
+   u_trace_context_process(&device->ds.trace_context, true);
+
    return result;
 }
 

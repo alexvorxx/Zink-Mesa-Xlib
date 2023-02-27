@@ -110,7 +110,7 @@ static const char *descriptor_names[] = { "VK SAMPLER",
    (PVR_DESC_IMAGE_SECONDARY_OFFSET_DEPTH(dev_info) + \
     PVR_DESC_IMAGE_SECONDARY_SIZE_DEPTH)
 
-static void pvr_descriptor_size_info_init(
+void pvr_descriptor_size_info_init(
    const struct pvr_device *device,
    VkDescriptorType type,
    struct pvr_descriptor_size_info *const size_info_out)
@@ -318,9 +318,15 @@ static void pvr_setup_in_memory_layout_sizes(
 
       layout->total_size_in_dwords += reg_usage[stage].secondary;
 
+      /* TODO: Should we align the dynamic ones to 4 as well? */
+
       layout->memory_layout_in_dwords_per_stage[stage].primary_dynamic_size =
          reg_usage[stage].primary_dynamic;
+      layout->total_dynamic_size_in_dwords += reg_usage[stage].primary_dynamic;
+
       layout->memory_layout_in_dwords_per_stage[stage].secondary_dynamic_size =
+         reg_usage[stage].secondary_dynamic;
+      layout->total_dynamic_size_in_dwords +=
          reg_usage[stage].secondary_dynamic;
    }
 }
@@ -578,9 +584,10 @@ VkResult pvr_CreateDescriptorSetLayout(
          if (!(shader_stages & BITFIELD_BIT(stage)))
             continue;
 
-         /* We allocate dynamics primary and secondaries separately so that we
-          * can do a partial update of USC shared registers by just DMAing the
-          * dynamic section and not having to re-DMA everything again.
+         /* We don't allocate any space for dynamic primaries and secondaries.
+          * They will be all be collected together in the pipeline layout.
+          * Having them all in one place makes updating them easier when the
+          * user updates the dynamic offsets.
           */
          if (descriptor_type != VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC &&
              descriptor_type != VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC) {
@@ -985,10 +992,25 @@ VkResult pvr_CreatePipelineLayout(VkDevice _device,
    }
 
    layout->push_constants_shader_stages = 0;
-   for (uint32_t i = 0; i < pCreateInfo->pushConstantRangeCount; ++i) {
+   for (uint32_t i = 0; i < pCreateInfo->pushConstantRangeCount; i++) {
       const VkPushConstantRange *range = &pCreateInfo->pPushConstantRanges[i];
 
       layout->push_constants_shader_stages |= range->stageFlags;
+
+      /* From the Vulkan spec. 1.3.237
+       * VUID-VkPipelineLayoutCreateInfo-pPushConstantRanges-00292 :
+       *
+       *    "Any two elements of pPushConstantRanges must not include the same
+       *     stage in stageFlags"
+       */
+      if (range->stageFlags & VK_SHADER_STAGE_VERTEX_BIT)
+         layout->vert_push_constants_offset = range->offset;
+
+      if (range->stageFlags & VK_SHADER_STAGE_FRAGMENT_BIT)
+         layout->frag_push_constants_offset = range->offset;
+
+      if (range->stageFlags & VK_SHADER_STAGE_COMPUTE_BIT)
+         layout->compute_push_constants_offset = range->offset;
    }
 
 #if defined(DEBUG)
@@ -1317,40 +1339,6 @@ VkResult pvr_FreeDescriptorSets(VkDevice _device,
    return VK_SUCCESS;
 }
 
-static int pvr_compare_layout_binding(const void *a, const void *b)
-{
-   uint32_t binding_a;
-   uint32_t binding_b;
-
-   binding_a = ((struct pvr_descriptor_set_layout_binding *)a)->binding_number;
-   binding_b = ((struct pvr_descriptor_set_layout_binding *)b)->binding_number;
-
-   if (binding_a < binding_b)
-      return -1;
-
-   if (binding_a > binding_b)
-      return 1;
-
-   return 0;
-}
-
-/* This function does not assume that the binding will always exist for a
- * particular binding_num. Caller should check before using the return pointer.
- */
-static struct pvr_descriptor_set_layout_binding *
-pvr_get_descriptor_binding(const struct pvr_descriptor_set_layout *layout,
-                           const uint32_t binding_num)
-{
-   struct pvr_descriptor_set_layout_binding binding;
-   binding.binding_number = binding_num;
-
-   return bsearch(&binding,
-                  layout->bindings,
-                  layout->binding_count,
-                  sizeof(binding),
-                  pvr_compare_layout_binding);
-}
-
 static void pvr_descriptor_update_buffer_info(
    const struct pvr_device *device,
    const VkWriteDescriptorSet *write_set,
@@ -1375,13 +1363,14 @@ static void pvr_descriptor_update_buffer_info(
          binding->descriptor_index + write_set->dstArrayElement + i;
       const pvr_dev_addr_t addr =
          PVR_DEV_ADDR_OFFSET(buffer->dev_addr, buffer_info->offset);
+      const uint32_t whole_range = buffer->vk.size - buffer_info->offset;
       uint32_t range = (buffer_info->range == VK_WHOLE_SIZE)
-                          ? (buffer->vk.size - buffer_info->offset)
-                          : (buffer_info->range);
+                          ? whole_range
+                          : buffer_info->range;
 
       set->descriptors[desc_idx].type = write_set->descriptorType;
       set->descriptors[desc_idx].buffer_dev_addr = addr;
-      set->descriptors[desc_idx].buffer_create_info_size = buffer->vk.size;
+      set->descriptors[desc_idx].buffer_whole_range = whole_range;
       set->descriptors[desc_idx].buffer_desc_range = range;
 
       if (is_dynamic)

@@ -1706,9 +1706,6 @@ mir_get_branch_cond(nir_src *src, bool *invert)
 static uint8_t
 output_load_rt_addr(compiler_context *ctx, nir_intrinsic_instr *instr)
 {
-   if (ctx->inputs->is_blend)
-      return MIDGARD_COLOR_RT0 + ctx->inputs->blend.rt;
-
    unsigned loc = nir_intrinsic_io_semantics(instr).location;
 
    if (loc >= FRAG_RESULT_DATA0)

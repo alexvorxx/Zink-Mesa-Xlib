@@ -114,9 +114,13 @@ struct tu_physical_device
 VK_DEFINE_HANDLE_CASTS(tu_physical_device, vk.base, VkPhysicalDevice,
                        VK_OBJECT_TYPE_PHYSICAL_DEVICE)
 
+struct tu_knl;
+
 struct tu_instance
 {
    struct vk_instance vk;
+
+   const struct tu_knl *knl;
 
    uint32_t api_version;
 

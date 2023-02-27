@@ -8796,15 +8796,6 @@ visit_intrinsic(isel_context* ctx, nir_intrinsic_instr* instr)
       emit_wqm(bld, wqm_tmp, dst);
       break;
    }
-   case nir_intrinsic_byte_permute_amd: {
-      Temp dst = get_ssa_temp(ctx, &instr->dest.ssa);
-      assert(dst.regClass() == v1);
-      assert(ctx->program->gfx_level >= GFX8);
-      bld.vop3(aco_opcode::v_perm_b32, Definition(dst), get_ssa_temp(ctx, instr->src[0].ssa),
-               as_vgpr(ctx, get_ssa_temp(ctx, instr->src[1].ssa)),
-               as_vgpr(ctx, get_ssa_temp(ctx, instr->src[2].ssa)));
-      break;
-   }
    case nir_intrinsic_lane_permute_16_amd: {
       Temp src = get_ssa_temp(ctx, instr->src[0].ssa);
       Temp dst = get_ssa_temp(ctx, &instr->dest.ssa);

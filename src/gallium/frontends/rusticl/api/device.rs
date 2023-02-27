@@ -97,7 +97,7 @@ impl CLInfo<cl_device_info> for cl_device_id {
             CL_DEVICE_MAX_CLOCK_FREQUENCY => cl_prop::<cl_uint>(dev.max_clock_freq()),
             CL_DEVICE_MAX_COMPUTE_UNITS => cl_prop::<cl_uint>(dev.max_compute_units()),
             // TODO atm implemented as mem_const
-            CL_DEVICE_MAX_CONSTANT_ARGS => cl_prop::<cl_uint>(1024),
+            CL_DEVICE_MAX_CONSTANT_ARGS => cl_prop::<cl_uint>(dev.const_max_count()),
             CL_DEVICE_MAX_CONSTANT_BUFFER_SIZE => cl_prop::<cl_ulong>(dev.const_max_size()),
             CL_DEVICE_MAX_GLOBAL_VARIABLE_SIZE => cl_prop::<usize>(0),
             CL_DEVICE_MAX_MEM_ALLOC_SIZE => cl_prop::<cl_ulong>(dev.max_mem_alloc()),

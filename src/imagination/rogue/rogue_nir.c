@@ -74,6 +74,8 @@ static void rogue_nir_passes(struct rogue_build_ctx *ctx,
 
    nir_validate_shader(nir, "after spirv_to_nir");
 
+   NIR_PASS_V(nir, nir_lower_vars_to_ssa);
+
    /* Splitting. */
    NIR_PASS_V(nir, nir_split_var_copies);
    NIR_PASS_V(nir, nir_split_per_member_structs);

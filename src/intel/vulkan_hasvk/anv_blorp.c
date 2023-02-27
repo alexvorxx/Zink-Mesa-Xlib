@@ -1486,7 +1486,12 @@ anv_image_copy_to_shadow(struct anv_cmd_buffer *cmd_buffer,
                          uint32_t base_layer, uint32_t layer_count)
 {
    struct blorp_batch batch;
-   anv_blorp_batch_init(cmd_buffer, &batch, 0);
+   anv_blorp_batch_init(cmd_buffer, &batch,
+                        /* If the sample count is set, we are in a render pass
+                         * and don't want blorp to overwrite depth/stencil
+                         * state
+                         */
+                        cmd_buffer->state.gfx.samples ? BLORP_BATCH_NO_EMIT_DEPTH_STENCIL : 0);
 
    /* We don't know who touched the main surface last so flush a bunch of
     * caches to ensure we get good data.

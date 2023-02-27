@@ -296,35 +296,6 @@ lower_res_intrinsic(nir_builder *b, nir_intrinsic_instr *intrin,
    return true;
 }
 
-static bool
-lower_get_ssbo_size(nir_builder *b, nir_intrinsic_instr *intrin,
-                    const struct apply_descriptors_ctx *ctx)
-{
-   b->cursor = nir_before_instr(&intrin->instr);
-
-   nir_address_format addr_format =
-      addr_format_for_desc_type(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, ctx);
-
-   assert(intrin->src[0].is_ssa);
-   nir_ssa_def *desc = build_buffer_addr_for_res_index(b, intrin->src[0].ssa,
-                                                          addr_format, ctx);
-
-   switch (addr_format) {
-   case nir_address_format_64bit_bounded_global:
-   case nir_address_format_64bit_global_32bit_offset: {
-      nir_ssa_def *size = nir_channel(b, desc, 2);
-      nir_ssa_def_rewrite_uses(&intrin->dest.ssa, size);
-      nir_instr_remove(&intrin->instr);
-      break;
-   }
-
-   default:
-      unreachable("Unsupported address format");
-   }
-
-   return true;
-}
-
 static void
 get_resource_deref_binding(nir_deref_instr *deref,
                            uint32_t *set, uint32_t *binding,
@@ -587,8 +558,6 @@ lower_intrinsic(nir_builder *b, nir_intrinsic_instr *intr,
    case nir_intrinsic_vulkan_resource_reindex:
    case nir_intrinsic_load_vulkan_descriptor:
       return lower_res_intrinsic(b, intr, ctx);
-   case nir_intrinsic_get_ssbo_size:
-      return lower_get_ssbo_size(b, intr, ctx);
    case nir_intrinsic_image_deref_store:
    case nir_intrinsic_image_deref_load:
    case nir_intrinsic_image_deref_atomic_add:

@@ -47,6 +47,7 @@ struct radv_physical_device;
 struct radv_device;
 struct radv_pipeline;
 struct radv_pipeline_cache;
+struct radv_pipeline_group_handle;
 struct radv_pipeline_key;
 struct radv_shader_args;
 struct radv_vs_input_state;
@@ -137,6 +138,7 @@ struct radv_nir_compiler_options {
    enum amd_gfx_level gfx_level;
    uint32_t address32_hi;
    bool has_3d_cube_border_color_mipmap;
+   bool conformant_trunc_coord;
 
    struct {
       void (*func)(void *private_data, enum aco_compiler_debug_level level, const char *message);
@@ -490,10 +492,12 @@ struct radv_shader {
    uint64_t va;
 
    struct ac_shader_config config;
-   uint8_t *code_ptr;
    uint32_t code_size;
    uint32_t exec_size;
    struct radv_shader_info info;
+
+   /* sqtt only */
+   void *code;
 
    /* debug only */
    char *spirv;
@@ -755,6 +759,7 @@ bool radv_lower_fs_intrinsics(nir_shader *nir, const struct radv_pipeline_stage 
 nir_shader *create_rt_shader(struct radv_device *device,
                              const VkRayTracingPipelineCreateInfoKHR *pCreateInfo,
                              struct radv_pipeline_shader_stack_size *stack_sizes,
+                             const struct radv_pipeline_group_handle *handles,
                              const struct radv_pipeline_key *key);
 
 #endif

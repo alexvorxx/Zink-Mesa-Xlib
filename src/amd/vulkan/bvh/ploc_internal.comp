@@ -137,7 +137,7 @@ push_node(uint32_t children[2])
 #if EXTENDED_SAH
    DEREF(dst_node).base.cost = cost * 0.5 + BVH_LEVEL_COST;
 #endif
-   DEREF(dst_node).in_final_tree = FINAL_TREE_UNKNOWN;
+   DEREF(dst_node).bvh_offset = RADV_UNKNOWN_BVH_OFFSET;
    return dst_id;
 }
 

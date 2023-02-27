@@ -38,6 +38,7 @@ llvmpipe-piglit-rusticl:
   variables:
     RUSTICL_ENABLE: "llvmpipe"
     DEQP_SUITE: llvmpipe-rusticl
+    DEQP_RUNNER_OPTIONS: "--timeout 120.0"
     GPU_VERSION: llvmpipe-rusticl
 
 llvmpipe-traces:

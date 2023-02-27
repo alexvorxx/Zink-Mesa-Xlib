@@ -2921,7 +2921,7 @@ VkResult anv_CreateDevice(
       .bo = device->workaround_bo,
       .offset = align(intel_debug_write_identifiers(device->workaround_bo->map,
                                                     device->workaround_bo->size,
-                                                    "Anv") + 8, 8),
+                                                    "hasvk"), 32),
    };
 
    device->workarounds.doom64_images = NULL;

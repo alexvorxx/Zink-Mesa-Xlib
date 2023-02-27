@@ -1314,6 +1314,9 @@ print_tex_instr(nir_tex_instr *instr, print_state *state)
    case nir_texop_sampler_descriptor_amd:
       fprintf(fp, "sampler_descriptor_amd ");
       break;
+   case nir_texop_lod_bias_agx:
+      fprintf(fp, "lod_bias_agx ");
+      break;
    default:
       unreachable("Invalid texture operation");
       break;

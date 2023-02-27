@@ -196,7 +196,7 @@ libvulkan_radeon = shared_library(
     idep_vulkan_runtime, idep_amdgfxregs_h, idep_xmlconfig,
     idep_vulkan_common_entrypoints_h, idep_vulkan_wsi_entrypoints_h
   ],
-  c_args : [no_override_init_args, vk_wsi_args, radv_flags, c_msvc_compat_args],
+  c_args : [no_override_init_args, radv_flags, c_msvc_compat_args],
   cpp_args : [radv_flags, cpp_msvc_compat_args],
   link_args : [
     ld_args_build_id, ld_args_bsymbolic, ld_args_gc_sections, libvulkan_radeon_ld_args,

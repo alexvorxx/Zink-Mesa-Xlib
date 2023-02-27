@@ -198,19 +198,16 @@ option(
                 'will be built'
 )
 
+# Note that currently turnip supports msm and kgsl, while the gallium driver
+# support msm and virtio.  This is a temporary situation with virtio support
+# for turnip and kgsl support for gallium planned/in-progress.
 option(
-  'freedreno-kgsl',
-  type : 'boolean',
-  value : false,
-  description : 'use kgsl backend for freedreno vulkan driver',
-)
-
-option(
-  'freedreno-virtio',
-  type : 'boolean',
-  value : false,
-  description : 'use experimental virtio backend for freedreno (currently ' +
-                'only gallium driver)',
+  'freedreno-kmds',
+  type : 'array',
+  value : ['msm'],
+  choices : ['msm', 'kgsl', 'virtio'],
+  description : 'List of kernel-mode drivers to enable for freedreno ' +
+                'gallium and vulkan driver',
 )
 
 option(

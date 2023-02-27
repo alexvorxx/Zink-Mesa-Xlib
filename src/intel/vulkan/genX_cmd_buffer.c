@@ -3266,6 +3266,19 @@ cmd_buffer_emit_streamout(struct anv_cmd_buffer *cmd_buffer)
 }
 
 ALWAYS_INLINE static void
+genX(emit_hs)(struct anv_cmd_buffer *cmd_buffer)
+{
+   struct anv_graphics_pipeline *pipeline = cmd_buffer->state.gfx.pipeline;
+   if (!anv_pipeline_has_stage(pipeline, MESA_SHADER_TESS_EVAL))
+      return;
+
+   uint32_t *dw =
+      anv_batch_emitn(&cmd_buffer->batch, GENX(3DSTATE_HS_length),
+                         GENX(3DSTATE_HS));
+   memcpy(dw, &pipeline->gfx8.hs, sizeof(pipeline->gfx8.hs));
+}
+
+ALWAYS_INLINE static void
 genX(cmd_buffer_flush_gfx_state)(struct anv_cmd_buffer *cmd_buffer)
 {
    struct anv_graphics_pipeline *pipeline = cmd_buffer->state.gfx.pipeline;
@@ -3376,6 +3389,11 @@ genX(cmd_buffer_flush_gfx_state)(struct anv_cmd_buffer *cmd_buffer)
                                 &pipeline->base);
       descriptors_dirty |= push_descriptor_dirty;
       cmd_buffer->state.push_descriptors_dirty &= ~push_descriptor_dirty;
+   }
+
+   /* Wa_1306463417 - Send HS state for every primitive on gfx11. */
+   if (cmd_buffer->state.gfx.dirty & ANV_CMD_DIRTY_PIPELINE || GFX_VER == 11) {
+      genX(emit_hs)(cmd_buffer);
    }
 
    if (!cmd_buffer->state.gfx.dirty && !descriptors_dirty &&
@@ -3529,6 +3547,27 @@ genX(cmd_buffer_flush_gfx_state)(struct anv_cmd_buffer *cmd_buffer)
 #define GFX_HAS_GENERATED_CMDS GFX_VER >= 11
 #if GFX_VER >= 11
 #include "genX_cmd_draw_generated_indirect.h"
+#endif
+
+#if GFX_HAS_GENERATED_CMDS
+ALWAYS_INLINE static bool
+anv_use_generated_draws(const struct anv_cmd_buffer *cmd_buffer, uint32_t count)
+{
+   const struct anv_device *device = cmd_buffer->device;
+
+#if GFX_VER == 11
+   /* Limit generated draws to pipelines without HS stage. This makes things
+    * simpler for implementing Wa_1306463417.
+    */
+   if (anv_pipeline_has_stage(cmd_buffer->state.gfx.pipeline,
+                             MESA_SHADER_TESS_CTRL)) {
+      return false;
+   }
+#endif
+
+   return device->physical->generated_indirect_draws &&
+          count >= device->physical->instance->generated_indirect_threshold;
+}
 #endif
 
 VkResult
@@ -4161,6 +4200,13 @@ void genX(CmdDrawMultiEXT)(
    }
 #else
    vk_foreach_multi_draw(draw, i, pVertexInfo, drawCount, stride) {
+
+      /* Wa_1306463417 - Send HS state for every primitive, first
+       * one was handled by cmd_buffer_flush_gfx_state.
+       */
+      if (i && GFX_VER == 11)
+         genX(emit_hs)(cmd_buffer);
+
       anv_batch_emit(&cmd_buffer->batch, GENX(3DPRIMITIVE_EXTENDED), prim) {
          prim.PredicateEnable          = cmd_buffer->state.conditional_render_enabled;
          prim.VertexAccessType         = SEQUENTIAL;
@@ -4361,6 +4407,13 @@ void genX(CmdDrawMultiIndexedEXT)(
    }
 #else
    vk_foreach_multi_draw_indexed(draw, i, pIndexInfo, drawCount, stride) {
+
+      /* Wa_1306463417 - Send HS state for every primitive, first
+       * one was handled by cmd_buffer_flush_gfx_state.
+       */
+      if (i && GFX_VER == 11)
+         genX(emit_hs)(cmd_buffer);
+
       anv_batch_emit(&cmd_buffer->batch, GENX(3DPRIMITIVE_EXTENDED), prim) {
          prim.PredicateEnable          = cmd_buffer->state.conditional_render_enabled;
          prim.VertexAccessType         = RANDOM;
@@ -4605,6 +4658,12 @@ emit_indirect_draws(struct anv_cmd_buffer *cmd_buffer,
 
       load_indirect_parameters(cmd_buffer, draw, indexed, i);
 
+      /* Wa_1306463417 - Send HS state for every primitive HS, first
+       * one was handled by cmd_buffer_flush_gfx_state.
+       */
+      if (i && GFX_VER == 11)
+         genX(emit_hs)(cmd_buffer);
+
       anv_batch_emit(&cmd_buffer->batch,
 #if GFX_VER < 11
                      GENX(3DPRIMITIVE),
@@ -4650,7 +4709,7 @@ void genX(CmdDrawIndirect)(
    trace_intel_begin_draw_indirect(&cmd_buffer->trace);
 
 #if GFX_HAS_GENERATED_CMDS
-   if (anv_use_generated_draws(cmd_buffer->device, drawCount)) {
+   if (anv_use_generated_draws(cmd_buffer, drawCount)) {
       genX(cmd_buffer_emit_indirect_generated_draws)(
          cmd_buffer,
          anv_address_add(buffer->address, offset),
@@ -4691,7 +4750,7 @@ void genX(CmdDrawIndexedIndirect)(
    trace_intel_begin_draw_indexed_indirect(&cmd_buffer->trace);
 
 #if GFX_HAS_GENERATED_CMDS
-   if (anv_use_generated_draws(cmd_buffer->device, drawCount)) {
+   if (anv_use_generated_draws(cmd_buffer, drawCount)) {
       genX(cmd_buffer_emit_indirect_generated_draws)(
          cmd_buffer,
          anv_address_add(buffer->address, offset),
@@ -4833,6 +4892,12 @@ emit_indirect_count_draws(struct anv_cmd_buffer *cmd_buffer,
 
       load_indirect_parameters(cmd_buffer, draw, indexed, i);
 
+      /* Wa_1306463417 - Send HS state for every primitive HS, first
+       * one was handled by cmd_buffer_flush_gfx_state.
+       */
+      if (i && GFX_VER == 11)
+         genX(emit_hs)(cmd_buffer);
+
       anv_batch_emit(&cmd_buffer->batch,
 #if GFX_VER < 11
                      GENX(3DPRIMITIVE),
@@ -4887,7 +4952,7 @@ void genX(CmdDrawIndirectCount)(
    stride = MAX2(stride, sizeof(VkDrawIndirectCommand));
 
 #if GFX_HAS_GENERATED_CMDS
-   if (anv_use_generated_draws(cmd_buffer->device, maxDrawCount)) {
+   if (anv_use_generated_draws(cmd_buffer, maxDrawCount)) {
       genX(cmd_buffer_emit_indirect_generated_draws_count)(
          cmd_buffer,
          indirect_data_address,
@@ -4944,7 +5009,7 @@ void genX(CmdDrawIndexedIndirectCount)(
    stride = MAX2(stride, sizeof(VkDrawIndexedIndirectCommand));
 
 #if GFX_HAS_GENERATED_CMDS
-   if (anv_use_generated_draws(cmd_buffer->device, maxDrawCount)) {
+   if (anv_use_generated_draws(cmd_buffer, maxDrawCount)) {
       genX(cmd_buffer_emit_indirect_generated_draws_count)(
          cmd_buffer,
          indirect_data_address,
@@ -6040,7 +6105,7 @@ mi_build_sbt_entry(struct mi_builder *b,
 {
    return mi_ior(b,
                  mi_iand(b, mi_mem64(anv_address_from_u64(addr_field_addr)),
-                            mi_imm(0xffffffffff)),
+                            mi_imm(BITFIELD64_BIT(49) - 1)),
                  mi_ishl_imm(b, mi_mem32(anv_address_from_u64(stride_field_addr)),
                                 48));
 }
@@ -6429,28 +6494,6 @@ genX(flush_pipeline_select)(struct anv_cmd_buffer *cmd_buffer,
     */
    if (pipeline == GPGPU)
       anv_batch_emit(&cmd_buffer->batch, GENX(3DSTATE_CC_STATE_POINTERS), t);
-
-   if (pipeline == _3D) {
-      /* There is a mid-object preemption workaround which requires you to
-       * re-emit MEDIA_VFE_STATE after switching from GPGPU to 3D.  However,
-       * even without preemption, we have issues with geometry flickering when
-       * GPGPU and 3D are back-to-back and this seems to fix it.  We don't
-       * really know why.
-       */
-      anv_batch_emit(&cmd_buffer->batch, GENX(MEDIA_VFE_STATE), vfe) {
-         vfe.MaximumNumberofThreads =
-            devinfo->max_cs_threads * devinfo->subslice_total - 1;
-         vfe.NumberofURBEntries     = 2;
-         vfe.URBEntryAllocationSize = 2;
-      }
-
-      /* We just emitted a dummy MEDIA_VFE_STATE so now that packet is
-       * invalid. Set the compute pipeline to dirty to force a re-emit of the
-       * pipeline in case we get back-to-back dispatch calls with the same
-       * pipeline and a PIPELINE_SELECT in between.
-       */
-      cmd_buffer->state.compute.pipeline_dirty = true;
-   }
 #endif
 
 #if GFX_VER >= 12
@@ -6505,6 +6548,37 @@ genX(flush_pipeline_select)(struct anv_cmd_buffer *cmd_buffer,
                              "flush and invalidate for PIPELINE_SELECT");
 #endif
    genX(cmd_buffer_apply_pipe_flushes)(cmd_buffer);
+
+#if GFX_VER == 9
+   if (pipeline == _3D) {
+      /* There is a mid-object preemption workaround which requires you to
+       * re-emit MEDIA_VFE_STATE after switching from GPGPU to 3D.  However,
+       * even without preemption, we have issues with geometry flickering when
+       * GPGPU and 3D are back-to-back and this seems to fix it.  We don't
+       * really know why.
+       *
+       * Also, from the Sky Lake PRM Vol 2a, MEDIA_VFE_STATE:
+       *
+       *    "A stalling PIPE_CONTROL is required before MEDIA_VFE_STATE unless
+       *    the only bits that are changed are scoreboard related ..."
+       *
+       * This is satisfied by applying pre-PIPELINE_SELECT pipe flushes above.
+       */
+      anv_batch_emit(&cmd_buffer->batch, GENX(MEDIA_VFE_STATE), vfe) {
+         vfe.MaximumNumberofThreads =
+            devinfo->max_cs_threads * devinfo->subslice_total - 1;
+         vfe.NumberofURBEntries     = 2;
+         vfe.URBEntryAllocationSize = 2;
+      }
+
+      /* We just emitted a dummy MEDIA_VFE_STATE so now that packet is
+       * invalid. Set the compute pipeline to dirty to force a re-emit of the
+       * pipeline in case we get back-to-back dispatch calls with the same
+       * pipeline and a PIPELINE_SELECT in between.
+       */
+      cmd_buffer->state.compute.pipeline_dirty = true;
+   }
+#endif
 
    genX(emit_pipeline_select)(&cmd_buffer->batch, pipeline);
 

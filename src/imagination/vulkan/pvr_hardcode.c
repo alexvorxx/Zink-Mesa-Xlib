@@ -56,22 +56,6 @@ enum pvr_hard_code_shader_type {
    PVR_HARD_CODE_SHADER_TYPE_GRAPHICS,
 };
 
-#define util_dynarray_append_mem(buf, size, mem) \
-   memcpy(util_dynarray_grow_bytes((buf), 1, size), mem, size)
-
-/* Table indicating which demo and for which device the compiler is capable of
- * generating valid shaders.
- */
-static struct {
-   const char *const name;
-   uint64_t bvncs[3];
-} compatiblity_table[] = {
-   {
-      .name = "triangle",
-      .bvncs = { PVR_GX6250_BVNC, PVR_AXE_1_16M_BVNC, },
-   },
-};
-
 static const struct pvr_hard_coding_data {
    const char *const name;
    uint64_t bvnc;
@@ -155,22 +139,20 @@ pvr_device_get_bvnc(const struct pvr_device_info *const dev_info)
    return PVR_BVNC_PACK(ident->b, ident->v, ident->n, ident->c);
 }
 
-bool pvr_hard_code_shader_required(const struct pvr_device_info *const dev_info)
+bool pvr_has_hard_coded_shaders(const struct pvr_device_info *const dev_info)
 {
    const char *const program = util_get_process_name();
    const uint64_t bvnc = pvr_device_get_bvnc(dev_info);
 
-   for (uint32_t i = 0; i < ARRAY_SIZE(compatiblity_table); i++) {
-      for (uint32_t j = 0; j < ARRAY_SIZE(compatiblity_table[0].bvncs); j++) {
-         if (bvnc != compatiblity_table[i].bvncs[j])
-            continue;
+   for (uint32_t i = 0; i < ARRAY_SIZE(hard_coding_table); i++) {
+      if (bvnc != hard_coding_table[i].bvnc)
+         continue;
 
-         if (strcmp(program, compatiblity_table[i].name) == 0)
-            return false;
-      }
+      if (strcmp(program, hard_coding_table[i].name) == 0)
+         return true;
    }
 
-   return true;
+   return false;
 }
 
 static const struct pvr_hard_coding_data *

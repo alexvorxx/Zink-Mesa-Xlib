@@ -346,7 +346,8 @@ static LLVMValueRef si_load_vs_input(struct ac_shader_abi *abi, unsigned driver_
  *   (InstanceID + StartInstance),
  *   (InstanceID / 2 + StartInstance)
  */
-void si_llvm_build_vs_prolog(struct si_shader_context *ctx, union si_shader_part_key *key)
+void si_llvm_build_vs_prolog(struct si_shader_context *ctx, union si_shader_part_key *key,
+                             UNUSED bool separate_prolog)
 {
    LLVMTypeRef *returns;
    LLVMValueRef ret, func;

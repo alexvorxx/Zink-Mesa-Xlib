@@ -410,7 +410,8 @@ fd6_set_shader_images(struct pipe_context *pctx, enum pipe_shader_type shader,
           * due to the extra caching (CCU) involved:
           */
          if (rsc->layout.ubwc) {
-            bool linear = fd6_valid_tiling(rsc, buf->format);
+            bool linear =
+                  fd6_check_valid_format(rsc, buf->format) == DEMOTE_TO_LINEAR;
 
             perf_debug_ctx(ctx,
                            "%" PRSC_FMT ": demoted to %suncompressed due to coherent/volatile use as %s",

@@ -1544,17 +1544,14 @@ bi_emit_ld_tile(bi_builder *b, nir_intrinsic_instr *instr)
    bi_index dest = bi_dest_index(&instr->dest);
    nir_alu_type T = nir_intrinsic_dest_type(instr);
    enum bi_register_format regfmt = bi_reg_fmt_for_nir(T);
-   unsigned rt = b->shader->inputs->blend.rt;
    unsigned size = nir_dest_bit_size(instr->dest);
    unsigned nr = instr->num_components;
 
    /* Get the render target */
-   if (!b->shader->inputs->is_blend) {
-      nir_io_semantics sem = nir_intrinsic_io_semantics(instr);
-      unsigned loc = sem.location;
-      assert(loc >= FRAG_RESULT_DATA0);
-      rt = (loc - FRAG_RESULT_DATA0);
-   }
+   nir_io_semantics sem = nir_intrinsic_io_semantics(instr);
+   unsigned loc = sem.location;
+   assert(loc >= FRAG_RESULT_DATA0);
+   unsigned rt = (loc - FRAG_RESULT_DATA0);
 
    bi_index desc =
       b->shader->inputs->is_blend

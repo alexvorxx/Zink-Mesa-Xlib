@@ -1401,6 +1401,7 @@ tc_set_framebuffer_state(struct pipe_context *_pipe,
              sizeof(void*) * (PIPE_MAX_COLOR_BUFS - nr_cbufs));
 
       tc->fb_resources[PIPE_MAX_COLOR_BUFS] = fb->zsbuf ? fb->zsbuf->texture : NULL;
+      tc->fb_resolve = fb->resolve;
       if (tc->seen_fb_state) {
          /* this is the end of a renderpass, so increment the renderpass info */
          tc_batch_increment_renderpass_info(tc, false);
@@ -4174,6 +4175,11 @@ tc_blit(struct pipe_context *_pipe, const struct pipe_blit_info *info)
    tc_set_resource_reference(&blit->info.dst.resource, info->dst.resource);
    tc_set_resource_reference(&blit->info.src.resource, info->src.resource);
    memcpy(&blit->info, info, sizeof(*info));
+   if (tc->options.parse_renderpass_info) {
+      tc->renderpass_info_recording->has_resolve = info->src.resource->nr_samples > 1 &&
+                                                   info->dst.resource->nr_samples <= 1 &&
+                                                   tc->fb_resolve == info->dst.resource;
+   }
 }
 
 struct tc_generate_mipmap {

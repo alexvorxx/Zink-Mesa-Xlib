@@ -79,6 +79,10 @@ agx_upload_uniforms(struct agx_batch *batch, uint64_t textures,
 
    struct agx_draw_uniforms uniforms = {.texture_base = textures};
 
+   u_foreach_bit(s, st->valid_samplers) {
+      uniforms.lod_bias[s] = st->samplers[s]->lod_bias_as_fp16;
+   }
+
    u_foreach_bit(cb, st->cb_mask) {
       uniforms.ubo_base[cb] = agx_const_buffer_ptr(batch, &st->cb[cb]);
    }

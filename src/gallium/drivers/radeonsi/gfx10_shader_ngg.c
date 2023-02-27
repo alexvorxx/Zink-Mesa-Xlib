@@ -26,34 +26,6 @@
 #include "si_shader_internal.h"
 #include "util/u_prim.h"
 
-static LLVMValueRef get_wave_id_in_tg(struct si_shader_context *ctx)
-{
-   return si_unpack_param(ctx, ctx->args->ac.merged_wave_info, 24, 4);
-}
-
-LLVMValueRef gfx10_get_thread_id_in_tg(struct si_shader_context *ctx)
-{
-   LLVMBuilderRef builder = ctx->ac.builder;
-   LLVMValueRef tmp;
-   tmp = LLVMBuildMul(builder, get_wave_id_in_tg(ctx),
-                      LLVMConstInt(ctx->ac.i32, ctx->ac.wave_size, false), "");
-   return LLVMBuildAdd(builder, tmp, ac_get_thread_id(&ctx->ac), "");
-}
-
-static LLVMValueRef ngg_get_query_buf(struct si_shader_context *ctx)
-{
-   return ac_build_load_to_sgpr(&ctx->ac,
-                                ac_get_ptr_arg(&ctx->ac, &ctx->args->ac, ctx->args->internal_bindings),
-                                LLVMConstInt(ctx->ac.i32, SI_GS_QUERY_BUF, false));
-}
-
-static LLVMValueRef ngg_get_emulated_counters_buf(struct si_shader_context *ctx)
-{
-   return ac_build_load_to_sgpr(&ctx->ac,
-                                ac_get_ptr_arg(&ctx->ac, &ctx->args->ac, ctx->args->internal_bindings),
-                                LLVMConstInt(ctx->ac.i32, SI_GS_QUERY_EMULATED_COUNTERS_BUF, false));
-}
-
 unsigned gfx10_ngg_get_vertices_per_prim(struct si_shader *shader)
 {
    const struct si_shader_info *info = &shader->selector->info;
@@ -168,7 +140,7 @@ retry_select_mode:
          max_out_verts_per_gsprim = gs_sel->info.base.gs.vertices_out;
       }
 
-      esvert_lds_size = es_sel->info.esgs_itemsize / 4;
+      esvert_lds_size = es_sel->info.esgs_vertex_stride / 4;
       gsprim_lds_size = (gs_sel->info.gsvs_vertex_size / 4 + 1) * max_out_verts_per_gsprim;
 
       if (gsprim_lds_size > target_lds_size && !force_multi_cycling) {

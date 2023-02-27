@@ -2411,6 +2411,14 @@ iris_bufmgr_create(struct intel_device_info *devinfo, int fd, bool bo_reuse)
    bufmgr->bo_reuse = bo_reuse;
    iris_bufmgr_get_meminfo(bufmgr, devinfo);
 
+   struct intel_query_engine_info *engine_info;
+   engine_info = intel_engine_get_info(bufmgr->fd, bufmgr->devinfo.kmd_type);
+   if (!engine_info)
+      goto error_engine_info;
+   bufmgr->devinfo.has_compute_engine = intel_engines_count(engine_info,
+                                                            INTEL_ENGINE_CLASS_COMPUTE);
+   free(engine_info);
+
    STATIC_ASSERT(IRIS_MEMZONE_SHADER_START == 0ull);
    const uint64_t _4GB = 1ull << 32;
    const uint64_t _2GB = 1ul << 31;
@@ -2471,8 +2479,7 @@ iris_bufmgr_create(struct intel_device_info *devinfo, int fd, bool bo_reuse)
                          iris_can_reclaim_slab,
                          iris_slab_alloc,
                          (void *) iris_slab_free)) {
-         free(bufmgr);
-         return NULL;
+         goto error_slabs_init;
       }
       min_slab_order = max_order + 1;
    }
@@ -2495,6 +2502,18 @@ iris_bufmgr_create(struct intel_device_info *devinfo, int fd, bool bo_reuse)
    iris_init_border_color_pool(bufmgr, &bufmgr->border_color_pool);
 
    return bufmgr;
+
+error_slabs_init:
+   for (unsigned i = 0; i < NUM_SLAB_ALLOCATORS; i++) {
+      if (!bufmgr->bo_slabs[i].groups)
+         break;
+
+      pb_slabs_deinit(&bufmgr->bo_slabs[i]);
+   }
+error_engine_info:
+   close(bufmgr->fd);
+   free(bufmgr);
+   return NULL;
 }
 
 static struct iris_bufmgr *

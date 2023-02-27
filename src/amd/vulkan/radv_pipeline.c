@@ -142,6 +142,7 @@ radv_pipeline_destroy(struct radv_device *device, struct radv_pipeline *pipeline
       struct radv_library_pipeline *library_pipeline = radv_pipeline_to_library(pipeline);
 
       ralloc_free(library_pipeline->ctx);
+      free(library_pipeline->group_handles);
    } else if (pipeline->type == RADV_PIPELINE_GRAPHICS_LIB) {
       struct radv_graphics_lib_pipeline *gfx_pipeline_lib =
          radv_pipeline_to_graphics_lib(pipeline);
@@ -516,7 +517,7 @@ gfx103_pipeline_init_vrs_state(struct radv_graphics_pipeline *pipeline,
        *    16-bit sample coverage mask isn't enough for MSAA8x and
        *    2x2 coarse shading isn't enough.
        */
-      vrs->pa_cl_vrs_cntl = S_028848_SAMPLE_ITER_COMBINER_MODE(V_028848_VRS_COMB_MODE_OVERRIDE);
+      vrs->pa_cl_vrs_cntl = S_028848_SAMPLE_ITER_COMBINER_MODE(V_028848_SC_VRS_COMB_MODE_OVERRIDE);
 
       /* Make sure sample shading is enabled even if only MSAA1x is
        * used because the SAMPLE_ITER combiner is in passthrough
@@ -526,7 +527,7 @@ gfx103_pipeline_init_vrs_state(struct radv_graphics_pipeline *pipeline,
       if (!G_028A4C_PS_ITER_SAMPLE(pipeline->pa_sc_mode_cntl_1))
          pipeline->pa_sc_mode_cntl_1 |= S_028A4C_PS_ITER_SAMPLE(1);
    } else {
-      vrs->pa_cl_vrs_cntl = S_028848_SAMPLE_ITER_COMBINER_MODE(V_028848_VRS_COMB_MODE_PASSTHRU);
+      vrs->pa_cl_vrs_cntl = S_028848_SAMPLE_ITER_COMBINER_MODE(V_028848_SC_VRS_COMB_MODE_PASSTHRU);
    }
 }
 
@@ -4622,7 +4623,7 @@ gfx103_pipeline_emit_vrs_state(struct radeon_cmdbuf *ctx_cs,
                                const struct vk_graphics_pipeline_state *state)
 {
    const struct radv_physical_device *pdevice = pipeline->base.device->physical_device;
-   uint32_t mode = V_028064_VRS_COMB_MODE_PASSTHRU;
+   uint32_t mode = V_028064_SC_VRS_COMB_MODE_PASSTHRU;
    uint8_t rate_x = 0, rate_y = 0;
    bool enable_vrs = radv_is_vrs_enabled(pipeline, state);
 
@@ -4630,7 +4631,7 @@ gfx103_pipeline_emit_vrs_state(struct radeon_cmdbuf *ctx_cs,
       /* When per-draw VRS is not enabled at all, try enabling VRS coarse shading 2x2 if the driver
        * determined that it's safe to enable.
        */
-      mode = V_028064_VRS_COMB_MODE_OVERRIDE;
+      mode = V_028064_SC_VRS_COMB_MODE_OVERRIDE;
       rate_x = rate_y = 1;
    } else if (!radv_is_static_vrs_enabled(pipeline, state) && pipeline->force_vrs_per_vertex &&
               get_vs_output_info(pipeline)->writes_primitive_shading_rate) {
@@ -4639,15 +4640,15 @@ gfx103_pipeline_emit_vrs_state(struct radeon_cmdbuf *ctx_cs,
        * in DX12 it's fully dynamic.
        */
       radeon_set_context_reg(ctx_cs, R_028848_PA_CL_VRS_CNTL,
-         S_028848_SAMPLE_ITER_COMBINER_MODE(V_028848_VRS_COMB_MODE_OVERRIDE) |
-         S_028848_VERTEX_RATE_COMBINER_MODE(V_028848_VRS_COMB_MODE_OVERRIDE));
+         S_028848_SAMPLE_ITER_COMBINER_MODE(V_028848_SC_VRS_COMB_MODE_OVERRIDE) |
+         S_028848_VERTEX_RATE_COMBINER_MODE(V_028848_SC_VRS_COMB_MODE_OVERRIDE));
 
       /* If the shader is using discard, turn off coarse shading because discard at 2x2 pixel
        * granularity degrades quality too much. MIN allows sample shading but not coarse shading.
        */
       struct radv_shader *ps = pipeline->base.shaders[MESA_SHADER_FRAGMENT];
 
-      mode = ps->info.ps.can_discard ? V_028064_VRS_COMB_MODE_MIN : V_028064_VRS_COMB_MODE_PASSTHRU;
+      mode = ps->info.ps.can_discard ? V_028064_SC_VRS_COMB_MODE_MIN : V_028064_SC_VRS_COMB_MODE_PASSTHRU;
    }
 
    if (pdevice->rad_info.gfx_level >= GFX11) {

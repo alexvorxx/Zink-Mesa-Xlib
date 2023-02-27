@@ -1239,6 +1239,12 @@ d3d12_init_screen_base(struct d3d12_screen *screen, struct sw_winsys *winsys, LU
    mtx_init(&screen->submit_mutex, mtx_plain);
 
    list_inithead(&screen->context_list);
+   screen->context_id_count = 16;
+
+   // Fill the array backwards, because we'll pop off the back to assign ids
+   for (unsigned i = 0; i < 16; ++i)
+      screen->context_id_list[i] = 15 - i;
+
    slab_create_parent(&screen->transfer_pool, sizeof(struct d3d12_transfer), 16);
 
    screen->base.get_vendor = d3d12_get_vendor;

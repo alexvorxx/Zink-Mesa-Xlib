@@ -826,7 +826,7 @@ void agx_compute_liveness(agx_context *ctx);
 void agx_liveness_ins_update(BITSET_WORD *live, agx_instr *I);
 
 bool agx_nir_lower_zs_emit(nir_shader *s);
-bool agx_nir_lower_texture(nir_shader *s);
+bool agx_nir_lower_texture(nir_shader *s, bool support_lod_bias);
 bool agx_nir_opt_preamble(nir_shader *s, unsigned *preamble_size);
 bool agx_nir_lower_load_mask(nir_shader *shader);
 bool agx_nir_lower_address(nir_shader *shader);

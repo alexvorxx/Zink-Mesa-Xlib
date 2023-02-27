@@ -449,6 +449,10 @@ intrinsic("quad_swap_horizontal", src_comp=[0], dest_comp=0, flags=[CAN_ELIMINAT
 intrinsic("quad_swap_vertical", src_comp=[0], dest_comp=0, flags=[CAN_ELIMINATE])
 intrinsic("quad_swap_diagonal", src_comp=[0], dest_comp=0, flags=[CAN_ELIMINATE])
 
+# Rotate operation from SPIR-V: SpvOpGroupNonUniformRotateKHR.
+intrinsic("rotate", src_comp=[0, 1], dest_comp=0, bit_sizes=src0,
+          indices=[EXECUTION_SCOPE, CLUSTER_SIZE], flags=[CAN_ELIMINATE]);
+
 intrinsic("reduce", src_comp=[0], dest_comp=0, bit_sizes=src0,
           indices=[REDUCTION_OP, CLUSTER_SIZE], flags=[CAN_ELIMINATE])
 intrinsic("inclusive_scan", src_comp=[0], dest_comp=0, bit_sizes=src0,
@@ -465,8 +469,6 @@ intrinsic("write_invocation_amd", src_comp=[0, 0, 1], dest_comp=0, bit_sizes=src
           flags=[CAN_ELIMINATE])
 # src = [ mask, addition ]
 intrinsic("mbcnt_amd", src_comp=[1, 1], dest_comp=1, bit_sizes=[32], flags=[CAN_ELIMINATE])
-# Compiled to v_perm_b32. src = [ in_bytes_hi, in_bytes_lo, selector ]
-intrinsic("byte_permute_amd", src_comp=[1, 1, 1], dest_comp=1, bit_sizes=[32], flags=[CAN_ELIMINATE, CAN_REORDER])
 # Compiled to v_permlane16_b32. src = [ value, lanesel_lo, lanesel_hi ]
 intrinsic("lane_permute_16_amd", src_comp=[1, 1, 1], dest_comp=1, bit_sizes=[32], flags=[CAN_ELIMINATE])
 
@@ -1465,6 +1467,7 @@ system_value("rt_dynamic_callable_stack_base_amd", 1)
 system_value("sbt_offset_amd", 1)
 system_value("sbt_stride_amd", 1)
 system_value("accel_struct_amd", 1, bit_sizes=[64])
+system_value("cull_mask_and_flags_amd", 1)
 
 #   0. SBT Index
 #   1. Ray Tmax
@@ -1506,6 +1509,9 @@ intrinsic("store_shared2_amd", [2, 1], indices=[OFFSET0, OFFSET1, ST64])
 
 # Vertex stride in LS-HS buffer
 system_value("lshs_vertex_stride_amd", 1)
+
+# Vertex stride in ES-GS buffer
+system_value("esgs_vertex_stride_amd", 1)
 
 # Per patch data offset in HS VRAM output buffer
 system_value("hs_out_patch_data_offset_amd", 1)

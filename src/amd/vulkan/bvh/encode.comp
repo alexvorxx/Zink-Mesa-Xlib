@@ -153,21 +153,22 @@ main()
    REF(radv_ir_box_node) src_node = INDEX(radv_ir_box_node, intermediate_internal_nodes, global_id);
    radv_ir_box_node src = DEREF(src_node);
 
-  uint32_t dst_node_offset = dst_internal_offset + global_id * SIZEOF(radv_bvh_box32_node);
-   if (global_id == DEREF(args.header).ir_internal_node_count - 1)
-      dst_node_offset = id_to_offset(RADV_BVH_ROOT_NODE);
-
-   REF(radv_bvh_box32_node) dst_node = REF(radv_bvh_box32_node)(OFFSET(args.output_bvh, dst_node_offset));
-   uint32_t node_id = pack_node_id(dst_node_offset, radv_bvh_node_box32);
+   bool is_root_node = global_id == DEREF(args.header).ir_internal_node_count - 1;
 
    for (;;) {
-      /* Make changes to the current node's in_final_tree value visible. */
+      /* Make changes to the current node's BVH offset value visible. */
       memoryBarrier(gl_ScopeDevice, gl_StorageSemanticsBuffer,
                     gl_SemanticsAcquireRelease | gl_SemanticsMakeAvailable | gl_SemanticsMakeVisible);
 
-      uint32_t in_final_tree = node_id == RADV_BVH_ROOT_NODE ? FINAL_TREE_PRESENT : DEREF(src_node).in_final_tree;
-      if (in_final_tree == FINAL_TREE_UNKNOWN)
+      uint32_t bvh_offset = is_root_node ? id_to_offset(RADV_BVH_ROOT_NODE) : DEREF(src_node).bvh_offset;
+      if (bvh_offset == RADV_UNKNOWN_BVH_OFFSET)
          continue;
+
+      if (bvh_offset == RADV_NULL_BVH_OFFSET)
+         break;
+
+      REF(radv_bvh_box32_node) dst_node = REF(radv_bvh_box32_node)(OFFSET(args.output_bvh, bvh_offset));
+      uint32_t node_id = pack_node_id(bvh_offset, radv_bvh_node_box32);
 
       uint32_t found_child_count = 0;
       uint32_t children[4] = {RADV_BVH_INVALID_NODE, RADV_BVH_INVALID_NODE,
@@ -221,8 +222,7 @@ main()
                children[collapsed_child_index] = children[found_child_count];
             }
 
-            if (in_final_tree == FINAL_TREE_PRESENT)
-               DEREF(child_node).in_final_tree = FINAL_TREE_NOT_PRESENT;
+            DEREF(child_node).bvh_offset = RADV_NULL_BVH_OFFSET;
          } else
             break;
       }
@@ -232,20 +232,22 @@ main()
          uint32_t offset = ir_id_to_offset(children[i]);
          uint32_t dst_offset;
 
-         if (offset < intermediate_leaf_nodes_size) {
+         if (type == radv_ir_node_internal) {
+#if COMPACT
+            dst_offset = atomicAdd(DEREF(args.header).dst_node_offset, SIZEOF(radv_bvh_box32_node));
+#else
+            uint32_t offset_in_internal_nodes = offset - intermediate_leaf_nodes_size;
+            uint32_t child_index = offset_in_internal_nodes / SIZEOF(radv_ir_box_node);
+            dst_offset = dst_internal_offset + child_index * SIZEOF(radv_bvh_box32_node);
+#endif
+
+            REF(radv_ir_box_node) child_node = REF(radv_ir_box_node)OFFSET(args.intermediate_bvh, offset);
+            DEREF(child_node).bvh_offset = dst_offset;
+         } else {
             uint32_t child_index = offset / intermediate_leaf_node_size;
             dst_offset = dst_leaf_offset + child_index * output_leaf_node_size;
 
             encode_leaf_node(type, args.intermediate_bvh + offset, args.output_bvh + dst_offset);
-         } else {
-            uint32_t offset_in_internal_nodes = offset - intermediate_leaf_nodes_size;
-            uint32_t child_index = offset_in_internal_nodes / SIZEOF(radv_ir_box_node);
-            dst_offset = dst_internal_offset + child_index * SIZEOF(radv_bvh_box32_node);
-
-            if (in_final_tree == FINAL_TREE_PRESENT) {
-               REF(radv_ir_box_node) child_node = REF(radv_ir_box_node)OFFSET(args.intermediate_bvh, offset);
-               DEREF(child_node).in_final_tree = FINAL_TREE_PRESENT;
-            }
          }
 
          radv_aabb child_aabb =
@@ -255,8 +257,7 @@ main()
 
          uint32_t child_id = pack_node_id(dst_offset, ir_type_to_bvh_type(type));
          children[i] = child_id;
-         if (in_final_tree == FINAL_TREE_PRESENT)
-            set_parent(child_id, node_id);
+         set_parent(child_id, node_id);
       }
 
       for (uint i = found_child_count; i < 4; ++i) {
@@ -266,7 +267,7 @@ main()
             }
       }
 
-      /* Make changes to the children's in_final_tree value available to the other invocations. */
+      /* Make changes to the children's BVH offset value available to the other invocations. */
       memoryBarrier(gl_ScopeDevice, gl_StorageSemanticsBuffer,
                     gl_SemanticsAcquireRelease | gl_SemanticsMakeAvailable | gl_SemanticsMakeVisible);
 
@@ -274,7 +275,7 @@ main()
       break;
    }
 
-   if (global_id == DEREF(args.header).ir_internal_node_count - 1) {
+   if (is_root_node) {
       REF(radv_accel_struct_header) header = REF(radv_accel_struct_header)(args.output_bvh - args.output_bvh_offset);
       DEREF(header).aabb = src.base.aabb;
       DEREF(header).bvh_offset = args.output_bvh_offset;

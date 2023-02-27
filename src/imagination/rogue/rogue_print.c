@@ -252,11 +252,6 @@ static inline void rogue_print_alu_instr(FILE *fp, const rogue_alu_instr *alu)
 
    fprintf(fp, "%s", info->str);
 
-   if (alu->op == ROGUE_ALU_OP_TST) {
-      fprintf(fp, "%s", rogue_comp_test_str[alu->comp_test]);
-      fprintf(fp, ".%s", rogue_comp_type_str[alu->comp_type]);
-   }
-
    rogue_print_alu_mods(fp, alu);
 
    for (unsigned i = 0; i < info->num_dsts; ++i) {
@@ -422,6 +417,9 @@ static inline void rogue_print_bitwise_instr(FILE *fp,
 PUBLIC
 void rogue_print_instr(FILE *fp, const rogue_instr *instr)
 {
+   if (instr->exec_cond > ROGUE_EXEC_COND_PE_TRUE)
+      fprintf(fp, "%s ", rogue_exec_cond_str[instr->exec_cond]);
+
    if (instr->repeat > 1)
       fprintf(fp, "(rpt%u) ", instr->repeat);
 
@@ -585,13 +583,16 @@ static inline void rogue_print_instr_group(FILE *fp,
    fprintf(fp, "%u", group->index);
    fputs(": ", fp);
 
+   if (group->header.exec_cond > ROGUE_EXEC_COND_PE_TRUE)
+      fprintf(fp, "%s ", rogue_exec_cond_str[group->header.exec_cond]);
+
    if (group->header.repeat > 1)
       fprintf(fp, "(rpt%u) ", group->header.repeat);
 
    fputs("{ ", fp);
 
    CYAN(fp);
-   fprintf(fp, "%s ", rogue_alu_str[group->header.alu]);
+   fprintf(fp, "%s", rogue_alu_str[group->header.alu]);
    RESET(fp);
 
    /* Print each instruction. */
@@ -599,6 +600,7 @@ static inline void rogue_print_instr_group(FILE *fp,
       const rogue_instr *instr = group->instrs[p];
       assert(instr);
 
+      fputs(" ", fp);
       rogue_print_instr_phase(fp, group->header.alu, p);
       fputs(": ", fp);
       rogue_print_instr(fp, instr);

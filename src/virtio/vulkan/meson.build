@@ -82,7 +82,6 @@ vn_deps = [
 
 vn_flags = [
   no_override_init_args,
-  vk_wsi_args,
 ]
 
 vn_libs = []

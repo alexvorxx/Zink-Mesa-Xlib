@@ -310,7 +310,7 @@ d3d12_video_decoder_dxva_picparams_from_pipe_picparams_vp9(
          dxvaStructure.ref_frame_coded_width[i]  = pipe_vp9->ref[i]->width;
          dxvaStructure.ref_frame_coded_height[i] = pipe_vp9->ref[i]->height;
       } else
-         dxvaStructure.ref_frame_map[i].bPicEntry = DXVA_VP9_INVALID_PICTURE_INDEX;
+         dxvaStructure.ref_frame_map[i].bPicEntry = DXVA_VP9_INVALID_PICTURE_ENTRY;
    }
 
    /* DXVA spec The enums and indices for ref_frame_sign_bias[] are defined */
@@ -319,7 +319,7 @@ d3d12_video_decoder_dxva_picparams_from_pipe_picparams_vp9(
    const uint8_t signbias_alt_index = 3;
 
    /* AssociatedFlag When Index7Bits does not contain an index to a valid uncompressed surface, the value shall be set to 127, to indicate that the index is invalid. */
-   memset(&dxvaStructure.frame_refs[0], DXVA_VP9_INVALID_PICTURE_INDEX, sizeof(dxvaStructure.frame_refs));
+   memset(&dxvaStructure.frame_refs[0], DXVA_VP9_INVALID_PICTURE_ENTRY, sizeof(dxvaStructure.frame_refs));
 
    if (pipe_vp9->ref[pipe_vp9->picture_parameter.pic_fields.last_ref_frame]) {
       /* AssociatedFlag When Index7Bits does not contain an index to a valid uncompressed surface, the value shall be set to 127, to indicate that the index is invalid. */

@@ -379,28 +379,6 @@ LLVMValueRef si_unpack_param(struct si_shader_context *ctx, struct ac_arg param,
    return unpack_llvm_param(ctx, value, rshift, bitwidth);
 }
 
-LLVMValueRef si_get_primitive_id(struct si_shader_context *ctx, unsigned swizzle)
-{
-   if (swizzle > 0)
-      return ctx->ac.i32_0;
-
-   switch (ctx->stage) {
-   case MESA_SHADER_VERTEX:
-      return ac_get_arg(&ctx->ac, ctx->args->ac.vs_prim_id);
-   case MESA_SHADER_TESS_CTRL:
-      return ac_get_arg(&ctx->ac, ctx->args->ac.tcs_patch_id);
-   case MESA_SHADER_TESS_EVAL:
-      return ctx->abi.tes_patch_id_replaced ?
-         ctx->abi.tes_patch_id_replaced :
-         ac_get_arg(&ctx->ac, ctx->args->ac.tes_patch_id);
-   case MESA_SHADER_GEOMETRY:
-      return ac_get_arg(&ctx->ac, ctx->args->ac.gs_prim_id);
-   default:
-      assert(0);
-      return ctx->ac.i32_0;
-   }
-}
-
 static void si_llvm_declare_compute_memory(struct si_shader_context *ctx)
 {
    struct si_shader_selector *sel = ctx->shader->selector;
@@ -774,8 +752,8 @@ static LLVMValueRef si_llvm_load_sampler_desc(struct ac_shader_abi *abi, LLVMVal
    return index;
 }
 
-bool si_llvm_translate_nir(struct si_shader_context *ctx, struct si_shader *shader,
-                           struct nir_shader *nir, bool free_nir)
+static bool si_llvm_translate_nir(struct si_shader_context *ctx, struct si_shader *shader,
+                                  struct nir_shader *nir, bool free_nir)
 {
    struct si_shader_selector *sel = shader->selector;
    const struct si_shader_info *info = &sel->info;
@@ -852,8 +830,6 @@ bool si_llvm_translate_nir(struct si_shader_context *ctx, struct si_shader *shad
       break;
 
    case MESA_SHADER_FRAGMENT: {
-      si_llvm_init_ps_callbacks(ctx);
-
       unsigned colors_read = ctx->shader->selector->info.colors_read;
       LLVMValueRef main_fn = ctx->main_fn.value;
 
@@ -881,8 +857,6 @@ bool si_llvm_translate_nir(struct si_shader_context *ctx, struct si_shader *shad
       }
 
       ctx->abi.num_interp = si_get_ps_num_interp(shader);
-      ctx->abi.interp_at_sample_force_center =
-         ctx->shader->key.ps.mono.interpolate_at_sample_force_center;
 
       ctx->abi.kill_ps_if_inf_interp =
          ctx->screen->options.no_infinite_interp &&
@@ -1024,6 +998,7 @@ bool si_llvm_translate_nir(struct si_shader_context *ctx, struct si_shader *shad
                                 info->options & SI_PROFILE_CLAMP_DIV_BY_ZERO;
    ctx->abi.use_waterfall_for_divergent_tex_samplers = true;
    ctx->abi.disable_aniso_single_level = true;
+   ctx->abi.conformant_trunc_coord = ctx->screen->info.conformant_trunc_coord;
 
    unsigned num_outputs = info->num_outputs;
    /* need extra output to hold primitive id added by nir lower */
@@ -1134,7 +1109,7 @@ bool si_llvm_compile_shader(struct si_screen *sscreen, struct ac_llvm_compiler *
       si_get_vs_prolog_key(&sel->info, shader->info.num_input_sgprs,
                            &shader->key.ge.part.vs.prolog, shader, &prolog_key);
       prolog_key.vs_prolog.is_monolithic = true;
-      si_llvm_build_vs_prolog(&ctx, &prolog_key);
+      si_llvm_build_vs_prolog(&ctx, &prolog_key, false);
       parts[0] = ctx.main_fn;
 
       si_build_wrapper_function(&ctx, parts, 2, 1, 0, main_arg_types, false);
@@ -1154,7 +1129,7 @@ bool si_llvm_compile_shader(struct si_screen *sscreen, struct ac_llvm_compiler *
          /* TCS epilog */
          union si_shader_part_key tcs_epilog_key;
          si_get_tcs_epilog_key(shader, &tcs_epilog_key);
-         si_llvm_build_tcs_epilog(&ctx, &tcs_epilog_key);
+         si_llvm_build_tcs_epilog(&ctx, &tcs_epilog_key, false);
          parts[3] = ctx.main_fn;
 
          struct si_shader shader_ls = {};
@@ -1190,7 +1165,7 @@ bool si_llvm_compile_shader(struct si_screen *sscreen, struct ac_llvm_compiler *
             si_get_vs_prolog_key(&ls->info, shader_ls.info.num_input_sgprs,
                                  &shader->key.ge.part.tcs.ls_prolog, shader, &vs_prolog_key);
             vs_prolog_key.vs_prolog.is_monolithic = true;
-            si_llvm_build_vs_prolog(&ctx, &vs_prolog_key);
+            si_llvm_build_vs_prolog(&ctx, &vs_prolog_key, false);
             parts[0] = ctx.main_fn;
          }
 
@@ -1214,7 +1189,7 @@ bool si_llvm_compile_shader(struct si_screen *sscreen, struct ac_llvm_compiler *
 
          memset(&epilog_key, 0, sizeof(epilog_key));
          epilog_key.tcs_epilog.states = shader->key.ge.part.tcs.epilog;
-         si_llvm_build_tcs_epilog(&ctx, &epilog_key);
+         si_llvm_build_tcs_epilog(&ctx, &epilog_key, false);
          parts[1] = ctx.main_fn;
 
          si_build_wrapper_function(&ctx, parts, 2, 0, 0, main_arg_types, false);
@@ -1266,7 +1241,7 @@ bool si_llvm_compile_shader(struct si_screen *sscreen, struct ac_llvm_compiler *
             si_get_vs_prolog_key(&es->info, shader_es.info.num_input_sgprs,
                                  &shader->key.ge.part.gs.vs_prolog, shader, &vs_prolog_key);
             vs_prolog_key.vs_prolog.is_monolithic = true;
-            si_llvm_build_vs_prolog(&ctx, &vs_prolog_key);
+            si_llvm_build_vs_prolog(&ctx, &vs_prolog_key, false);
             es_prolog = ctx.main_fn;
          }
 

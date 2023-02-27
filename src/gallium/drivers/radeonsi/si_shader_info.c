@@ -778,22 +778,21 @@ void si_nir_scan_shader(struct si_screen *sscreen, const struct nir_shader *nir,
    if (nir->info.stage == MESA_SHADER_VERTEX ||
        nir->info.stage == MESA_SHADER_TESS_CTRL ||
        nir->info.stage == MESA_SHADER_TESS_EVAL) {
-      info->esgs_itemsize = util_last_bit64(info->outputs_written) * 16;
-      info->lshs_vertex_stride = info->esgs_itemsize;
+      info->esgs_vertex_stride = util_last_bit64(info->outputs_written) * 16;
+      info->lshs_vertex_stride = info->esgs_vertex_stride;
 
       /* Add 1 dword to reduce LDS bank conflicts, so that each vertex
        * will start on a different bank. (except for the maximum 32*16).
        */
-      if (info->lshs_vertex_stride < 32 * 16)
-         info->lshs_vertex_stride += 4;
+      info->lshs_vertex_stride += 4;
 
       /* For the ESGS ring in LDS, add 1 dword to reduce LDS bank
-       * conflicts, i.e. each vertex will start at a different bank.
+       * conflicts, i.e. each vertex will start on a different bank.
        */
       if (sscreen->info.gfx_level >= GFX9)
-         info->esgs_itemsize += 4;
+         info->esgs_vertex_stride += 4;
 
-      assert(((info->esgs_itemsize / 4) & C_028AAC_ITEMSIZE) == 0);
+      assert(((info->esgs_vertex_stride / 4) & C_028AAC_ITEMSIZE) == 0);
 
       info->tcs_vgpr_only_inputs = ~info->base.tess.tcs_cross_invocation_inputs_read &
                                    ~info->base.inputs_read_indirectly &

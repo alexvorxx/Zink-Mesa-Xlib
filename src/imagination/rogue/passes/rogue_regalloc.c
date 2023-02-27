@@ -27,6 +27,7 @@
 #include "util/register_allocate.h"
 
 #include <stdbool.h>
+#include <stdlib.h>
 
 /**
  * \file rogue_regalloc.c
@@ -41,6 +42,36 @@ typedef struct rogue_live_range {
    unsigned end;
 } rogue_live_range;
 
+static void rogue_regarray_liveness(rogue_regarray *regarray,
+                                    rogue_live_range *live_range)
+{
+   assert(list_is_singular(&regarray->writes) ||
+          list_is_empty(&regarray->writes));
+   if (!list_is_empty(&regarray->writes)) {
+      rogue_regarray_write *write =
+         list_first_entry(&regarray->writes, rogue_regarray_write, link);
+      live_range->start = MIN2(live_range->start, write->instr->index);
+   }
+
+   rogue_foreach_regarray_use (use, regarray) {
+      live_range->end = MAX2(live_range->end, use->instr->index);
+   }
+}
+
+static void rogue_reg_liveness(rogue_reg *reg, rogue_live_range *live_range)
+{
+   assert(list_is_singular(&reg->writes) || list_is_empty(&reg->writes));
+   if (!list_is_empty(&reg->writes)) {
+      rogue_reg_write *write =
+         list_first_entry(&reg->writes, rogue_reg_write, link);
+      live_range->start = MIN2(live_range->start, write->instr->index);
+   }
+
+   rogue_foreach_reg_use (use, reg) {
+      live_range->end = MAX2(live_range->end, use->instr->index);
+   }
+}
+
 PUBLIC
 bool rogue_regalloc(rogue_shader *shader)
 {
@@ -49,65 +80,72 @@ bool rogue_regalloc(rogue_shader *shader)
 
    bool progress = false;
 
-   unsigned num_ssa_regs = list_length(&shader->regs[ROGUE_REG_CLASS_SSA]);
+   unsigned num_ssa_regs = rogue_count_used_regs(shader, ROGUE_REG_CLASS_SSA);
    if (!num_ssa_regs)
       return false;
 
-   /* Ensure that ssa regs are continuous from zero, and have no gaps. */
-   rogue_foreach_reg (reg, shader, ROGUE_REG_CLASS_SSA) {
-      assert(reg->index < num_ssa_regs);
-   }
-
-   /* If we already have some temps in use in the shader, we'll skip using them
-    * for allocation. */
-   unsigned num_temp_regs = list_length(&shader->regs[ROGUE_REG_CLASS_TEMP]);
+   assert(list_is_empty(&shader->regs[ROGUE_REG_CLASS_TEMP]));
    unsigned hw_temps = rogue_reg_infos[ROGUE_REG_CLASS_TEMP].num;
 
+   /* Setup regset and register classes. */
    struct ra_regs *ra_regs = ra_alloc_reg_set(shader, hw_temps, true);
 
    for (enum rogue_regalloc_class c = 0; c < ROGUE_REGALLOC_CLASS_COUNT; ++c) {
       ASSERTED struct ra_class *ra_class =
          ra_alloc_contig_reg_class(ra_regs, regalloc_info[c].stride);
       assert(c == ra_class_index(ra_class));
-   }
 
-   for (unsigned t = num_temp_regs; t < hw_temps; ++t)
-      for (enum rogue_regalloc_class c = 0; c < ROGUE_REGALLOC_CLASS_COUNT; ++c)
+      for (unsigned t = 0; t < hw_temps; ++t)
          if (!(t % regalloc_info[c].stride))
-            ra_class_add_reg(ra_get_class_from_index(ra_regs, c), t);
+            ra_class_add_reg(ra_class, t);
+   }
 
    ra_set_finalize(ra_regs, NULL);
 
+   /* TODO: Consider tracking this in the shader itself, i.e. one list for child
+    * regarrays, one for parents. Or, since children are already in a list in
+    * the parent, only have parent regarrays in the shader.
+    */
+
+   /* Count the parent regarrays. */
+   unsigned num_parent_regarrays = 0;
+   rogue_foreach_regarray (regarray, shader) {
+      if (regarray->parent || regarray->regs[0]->class != ROGUE_REG_CLASS_SSA)
+         continue;
+
+      ++num_parent_regarrays;
+   }
+
+   /* Construct list of parent regarrays. */
+   rogue_regarray **parent_regarrays =
+      rzalloc_array_size(ra_regs,
+                         sizeof(*parent_regarrays),
+                         num_parent_regarrays);
+
+   unsigned ra = 0;
+   rogue_foreach_regarray (regarray, shader) {
+      if (regarray->parent || regarray->regs[0]->class != ROGUE_REG_CLASS_SSA)
+         continue;
+
+      parent_regarrays[ra++] = regarray;
+   }
+
+   /* Prepare live ranges. */
    rogue_live_range *ssa_live_range =
-      rzalloc_array_size(shader, sizeof(*ssa_live_range), num_ssa_regs);
+      rzalloc_array_size(ra_regs, sizeof(*ssa_live_range), num_ssa_regs);
    for (unsigned u = 0; u < num_ssa_regs; ++u)
       ssa_live_range[u].start = ~0U;
 
    /* Populate live ranges for register arrays. */
-   rogue_foreach_regarray (regarray, shader) {
-      enum rogue_reg_class class = regarray->regs[0]->class;
-      if (class != ROGUE_REG_CLASS_SSA)
-         continue;
+   for (unsigned u = 0; u < num_parent_regarrays; ++u) {
+      rogue_regarray *regarray = parent_regarrays[u];
+      unsigned base_index = regarray->regs[0]->index;
+      rogue_live_range *live_range = &ssa_live_range[base_index];
 
-      for (unsigned u = 0; u < regarray->size; ++u) {
-         rogue_reg *reg = regarray->regs[u];
-         rogue_live_range *live_range = &ssa_live_range[reg->index];
+      rogue_regarray_liveness(regarray, live_range);
 
-         assert(list_is_singular(&regarray->writes) ||
-                list_is_empty(&regarray->writes));
-         if (!list_is_empty(&regarray->writes)) {
-            rogue_regarray_write *write =
-               list_first_entry(&regarray->writes, rogue_regarray_write, link);
-            live_range->start = MIN2(live_range->start, write->instr->index);
-         }
-
-         rogue_foreach_regarray_use (use, regarray) {
-            live_range->end = MAX2(live_range->end, use->instr->index);
-         }
-
-         /* Here dirty represents whether the register has been added to the
-          * regset yet or not. */
-         reg->dirty = false;
+      rogue_foreach_subarray (subarray, regarray) {
+         rogue_regarray_liveness(subarray, live_range);
       }
    }
 
@@ -117,21 +155,7 @@ bool rogue_regalloc(rogue_shader *shader)
          continue;
 
       rogue_live_range *live_range = &ssa_live_range[reg->index];
-
-      assert(list_is_singular(&reg->writes) || list_is_empty(&reg->writes));
-      if (!list_is_empty(&reg->writes)) {
-         rogue_reg_write *write =
-            list_first_entry(&reg->writes, rogue_reg_write, link);
-         live_range->start = MIN2(live_range->start, write->instr->index);
-      }
-
-      rogue_foreach_reg_use (use, reg) {
-         live_range->end = MAX2(live_range->end, use->instr->index);
-      }
-
-      /* Here dirty represents whether the register has been added to the regset
-       * yet or not. */
-      reg->dirty = false;
+      rogue_reg_liveness(reg, live_range);
    }
 
    struct ra_graph *ra_graph =
@@ -139,13 +163,9 @@ bool rogue_regalloc(rogue_shader *shader)
    ralloc_steal(ra_regs, ra_graph);
 
    /* Set register class for regarrays/vectors. */
-   rogue_foreach_regarray (regarray, shader) {
-      enum rogue_reg_class class = regarray->regs[0]->class;
-      if (class != ROGUE_REG_CLASS_SSA)
-         continue;
-
-      if (regarray->parent)
-         continue;
+   for (unsigned u = 0; u < num_parent_regarrays; ++u) {
+      rogue_regarray *regarray = parent_regarrays[u];
+      unsigned base_index = regarray->regs[0]->index;
 
       enum rogue_regalloc_class raclass;
 
@@ -157,23 +177,19 @@ bool rogue_regalloc(rogue_shader *shader)
          unreachable("Unsupported regarray size.");
 
       ra_set_node_class(ra_graph,
-                        regarray->regs[0]->index,
+                        base_index,
                         ra_get_class_from_index(ra_regs, raclass));
-
-      for (unsigned u = 0; u < regarray->size; ++u)
-         regarray->regs[u]->dirty = true;
    }
 
    /* Set register class for "standalone" registers. */
    rogue_foreach_reg (reg, shader, ROGUE_REG_CLASS_SSA) {
-      if (reg->dirty)
+      if (reg->regarray)
          continue;
 
       ra_set_node_class(ra_graph,
                         reg->index,
                         ra_get_class_from_index(ra_regs,
                                                 ROGUE_REGALLOC_CLASS_TEMP_1));
-      reg->dirty = true;
    }
 
    /* Build interference graph from overlapping live ranges. */
@@ -197,35 +213,28 @@ bool rogue_regalloc(rogue_shader *shader)
    if (!ra_allocate(ra_graph))
       unreachable("Register allocation failed.");
 
-   unsigned regarray_count = list_length(&shader->regarrays);
-   rogue_regarray **parent_regarrays =
-      rzalloc_array_size(shader, sizeof(*parent_regarrays), regarray_count);
-
-   unsigned num_parent_regarrays = 0;
-   rogue_foreach_regarray (regarray, shader) {
-      if (regarray->parent || regarray->regs[0]->class != ROGUE_REG_CLASS_SSA)
-         continue;
-
-      parent_regarrays[num_parent_regarrays++] = regarray;
-   }
-
+   /* Replace SSA regarray registers with allocated physical registers. */
    for (unsigned u = 0; u < num_parent_regarrays; ++u) {
       rogue_regarray *regarray = parent_regarrays[u];
 
-      unsigned start_index = regarray->regs[0]->index;
-      unsigned new_base_index = ra_get_node_reg(ra_graph, start_index);
+      unsigned base_index = regarray->regs[0]->index;
+      unsigned hw_base_index = ra_get_node_reg(ra_graph, base_index);
       enum rogue_regalloc_class ra_class =
-         ra_class_index(ra_get_node_class(ra_graph, start_index));
+         ra_class_index(ra_get_node_class(ra_graph, base_index));
       enum rogue_reg_class new_class = regalloc_info[ra_class].class;
 
       bool used = false;
-      for (unsigned r = 0; r < regarray->size; ++r)
-         used |= rogue_reg_is_used(shader, new_class, new_base_index + r);
+      for (unsigned r = 0; r < regarray->size; ++r) {
+         used |= rogue_reg_is_used(shader, new_class, hw_base_index + r);
+
+         if (used)
+            break;
+      }
 
       /* First time using new regarray, modify in place. */
       if (!used) {
          progress |=
-            rogue_regarray_rewrite(shader, regarray, new_class, new_base_index);
+            rogue_regarray_rewrite(shader, regarray, new_class, hw_base_index);
       } else {
          /* Regarray has already been used, replace references and delete. */
 
@@ -233,22 +242,8 @@ bool rogue_regalloc(rogue_shader *shader)
          rogue_regarray *new_regarray = rogue_regarray_cached(shader,
                                                               regarray->size,
                                                               new_class,
-                                                              new_base_index);
-         progress |= rogue_regarray_replace(regarray, new_regarray);
-
-         /* Replace subarrays. */
-         rogue_foreach_subarray_safe (subarray, regarray) {
-            unsigned idx_offset =
-               subarray->regs[0]->index - regarray->regs[0]->index;
-            new_regarray = rogue_regarray_cached(shader,
-                                                 subarray->size,
-                                                 new_class,
-                                                 new_base_index + idx_offset);
-            progress |= rogue_regarray_replace(subarray, new_regarray);
-            rogue_regarray_delete(subarray);
-         }
-
-         rogue_regarray_delete(regarray);
+                                                              hw_base_index);
+         progress |= rogue_regarray_replace(shader, regarray, new_regarray);
       }
    }
 
@@ -256,31 +251,31 @@ bool rogue_regalloc(rogue_shader *shader)
     * registers. */
    rogue_foreach_reg_safe (reg, shader, ROGUE_REG_CLASS_SSA) {
       assert(!reg->regarray);
-      unsigned new_index = ra_get_node_reg(ra_graph, reg->index);
+      unsigned hw_index = ra_get_node_reg(ra_graph, reg->index);
 
       enum rogue_regalloc_class ra_class =
          ra_class_index(ra_get_node_class(ra_graph, reg->index));
       enum rogue_reg_class new_class = regalloc_info[ra_class].class;
 
       /* First time using new register, modify in place. */
-      if (!rogue_reg_is_used(shader, new_class, new_index)) {
-         progress |= rogue_reg_rewrite(shader, reg, new_class, new_index);
+      if (!rogue_reg_is_used(shader, new_class, hw_index)) {
+         progress |= rogue_reg_rewrite(shader, reg, new_class, hw_index);
       } else {
          /* Register has already been used, replace references and delete. */
          assert(list_is_singular(&reg->writes)); /* SSA reg. */
-         rogue_reg *new_reg = rogue_temp_reg(shader, new_index);
+         rogue_reg *new_reg = rogue_temp_reg(shader, hw_index);
          progress |= rogue_reg_replace(reg, new_reg);
       }
    }
 
-   num_temp_regs = list_length(&shader->regs[ROGUE_REG_CLASS_TEMP]);
+#ifndef NDEBUG
    /* Ensure that temp regs are continuous from zero, and have no gaps. */
+   unsigned num_temp_regs = list_length(&shader->regs[ROGUE_REG_CLASS_TEMP]);
    rogue_foreach_reg (reg, shader, ROGUE_REG_CLASS_TEMP) {
       assert(reg->index < num_temp_regs);
    }
+#endif /* NDEBUG */
 
-   ralloc_free(parent_regarrays);
-   ralloc_free(ssa_live_range);
    ralloc_free(ra_regs);
    return progress;
 }

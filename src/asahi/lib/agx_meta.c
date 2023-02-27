@@ -17,7 +17,7 @@ agx_compile_meta_shader(struct agx_meta_cache *cache, nir_shader *shader,
    struct util_dynarray binary;
    util_dynarray_init(&binary, NULL);
 
-   agx_preprocess_nir(shader);
+   agx_preprocess_nir(shader, false);
    if (tib)
       agx_nir_lower_tilebuffer(shader, tib, NULL, NULL);
 

@@ -619,7 +619,6 @@ init_context(isel_context* ctx, nir_shader* shader)
                case nir_intrinsic_load_tess_coord:
                case nir_intrinsic_write_invocation_amd:
                case nir_intrinsic_mbcnt_amd:
-               case nir_intrinsic_byte_permute_amd:
                case nir_intrinsic_lane_permute_16_amd:
                case nir_intrinsic_load_instance_id:
                case nir_intrinsic_ssbo_atomic_add:

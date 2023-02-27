@@ -148,8 +148,37 @@ radv_hash_shaders(unsigned char *hash, const struct radv_pipeline_stage *stages,
 }
 
 void
+radv_hash_rt_stages(struct mesa_sha1 *ctx, const VkPipelineShaderStageCreateInfo *stages,
+                    unsigned stage_count)
+{
+   for (unsigned i = 0; i < stage_count; ++i) {
+      RADV_FROM_HANDLE(vk_shader_module, module, stages[i].module);
+      const VkSpecializationInfo *spec_info = stages[i].pSpecializationInfo;
+
+      const VkPipelineShaderStageModuleIdentifierCreateInfoEXT *iinfo = vk_find_struct_const(
+         stages[i].pNext, PIPELINE_SHADER_STAGE_MODULE_IDENTIFIER_CREATE_INFO_EXT);
+
+      if (module) {
+         _mesa_sha1_update(ctx, module->sha1, sizeof(module->sha1));
+      } else {
+         assert(iinfo);
+         assert(iinfo->identifierSize <= VK_MAX_SHADER_MODULE_IDENTIFIER_SIZE_EXT);
+         _mesa_sha1_update(ctx, iinfo->pIdentifier, iinfo->identifierSize);
+      }
+
+      _mesa_sha1_update(ctx, stages[i].pName, strlen(stages[i].pName));
+      if (spec_info && spec_info->mapEntryCount) {
+         _mesa_sha1_update(ctx, spec_info->pMapEntries,
+                           spec_info->mapEntryCount * sizeof spec_info->pMapEntries[0]);
+         _mesa_sha1_update(ctx, spec_info->pData, spec_info->dataSize);
+      }
+   }
+}
+
+void
 radv_hash_rt_shaders(unsigned char *hash, const VkRayTracingPipelineCreateInfoKHR *pCreateInfo,
-                     const struct radv_pipeline_key *key, uint32_t flags)
+                     const struct radv_pipeline_key *key,
+                     const struct radv_pipeline_group_handle *group_handles, uint32_t flags)
 {
    RADV_FROM_HANDLE(radv_pipeline_layout, layout, pCreateInfo->layout);
    struct mesa_sha1 ctx;
@@ -160,29 +189,10 @@ radv_hash_rt_shaders(unsigned char *hash, const VkRayTracingPipelineCreateInfoKH
 
    _mesa_sha1_update(&ctx, key, sizeof(*key));
 
-   for (uint32_t i = 0; i < pCreateInfo->stageCount; ++i) {
-      RADV_FROM_HANDLE(vk_shader_module, module, pCreateInfo->pStages[i].module);
-      const VkSpecializationInfo *spec_info = pCreateInfo->pStages[i].pSpecializationInfo;
+   radv_hash_rt_stages(&ctx, pCreateInfo->pStages, pCreateInfo->stageCount);
 
-      const VkPipelineShaderStageModuleIdentifierCreateInfoEXT *iinfo =
-         vk_find_struct_const(pCreateInfo->pStages[i].pNext,
-               PIPELINE_SHADER_STAGE_MODULE_IDENTIFIER_CREATE_INFO_EXT);
-
-      if (module) {
-         _mesa_sha1_update(&ctx, module->sha1, sizeof(module->sha1));
-      } else {
-         assert(iinfo);
-         assert(iinfo->identifierSize <= VK_MAX_SHADER_MODULE_IDENTIFIER_SIZE_EXT);
-         _mesa_sha1_update(&ctx, iinfo->pIdentifier, iinfo->identifierSize);
-      }
-
-      _mesa_sha1_update(&ctx, pCreateInfo->pStages[i].pName, strlen(pCreateInfo->pStages[i].pName));
-      if (spec_info && spec_info->mapEntryCount) {
-         _mesa_sha1_update(&ctx, spec_info->pMapEntries,
-                           spec_info->mapEntryCount * sizeof spec_info->pMapEntries[0]);
-         _mesa_sha1_update(&ctx, spec_info->pData, spec_info->dataSize);
-      }
-   }
+   _mesa_sha1_update(&ctx, group_handles,
+                     sizeof(struct radv_pipeline_group_handle) * pCreateInfo->groupCount);
 
    for (uint32_t i = 0; i < pCreateInfo->groupCount; i++) {
       _mesa_sha1_update(&ctx, &pCreateInfo->pGroups[i].type,

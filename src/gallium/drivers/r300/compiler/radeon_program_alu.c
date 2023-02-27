@@ -569,6 +569,13 @@ static void transform_SUB(struct radeon_compiler* c,
 	inst->U.I.SrcReg[1] = negate(inst->U.I.SrcReg[1]);
 }
 
+static void transform_KILP(struct radeon_compiler * c,
+	struct rc_instruction * inst)
+{
+	inst->U.I.SrcReg[0] = negate(builtin_one);
+	inst->U.I.Opcode = RC_OPCODE_KIL;
+}
+
 /**
  * Can be used as a transformation for @ref radeonClauseLocalTransform,
  * no userData necessary.
@@ -593,6 +600,7 @@ int radeonTransformALU(
 	case RC_OPCODE_DP2: transform_DP2(c, inst); return 1;
 	case RC_OPCODE_DST: transform_DST(c, inst); return 1;
 	case RC_OPCODE_FLR: transform_FLR(c, inst); return 1;
+	case RC_OPCODE_KILP: transform_KILP(c, inst); return 1;
 	case RC_OPCODE_LIT: transform_LIT(c, inst); return 1;
 	case RC_OPCODE_LRP: transform_LRP(c, inst); return 1;
 	case RC_OPCODE_POW: transform_POW(c, inst); return 1;
@@ -1078,63 +1086,6 @@ int radeonTransformDeriv(struct radeon_compiler* c,
 	inst->U.I.SrcReg[1].Negate = RC_MASK_XYZW;
 
 	return 1;
-}
-
-/**
- * IF Temp[0].x -> IF Temp[0].x
- * ...          -> ...
- * KILL         -> KIL -abs(Temp[0].x)
- * ...          -> ...
- * ENDIF        -> ENDIF
- *
- * === OR ===
- *
- * IF Temp[0].x -> IF Temp[0].x
- * ...          -> ...
- * ELSE         -> ELSE
- * ...	        -> ...
- * KILL	        -> KIL -abs(Temp[0].x)
- * ...          -> ...
- * ENDIF        -> ENDIF
- *
- * === OR ===
- *
- * KILL         -> KIL -none.1111
- *
- * This needs to be done in its own pass, because it might modify the
- * instructions before and after KILL.
- */
-void rc_transform_KILL(struct radeon_compiler * c, void *user)
-{
-	struct rc_instruction * inst;
-	for (inst = c->Program.Instructions.Next;
-			inst != &c->Program.Instructions; inst = inst->Next) {
-		struct rc_instruction * if_inst;
-		unsigned in_if = 0;
-
-		if (inst->U.I.Opcode != RC_OPCODE_KILP)
-			continue;
-
-		for (if_inst = inst->Prev; if_inst != &c->Program.Instructions;
-						if_inst = if_inst->Prev) {
-
-			if (if_inst->U.I.Opcode == RC_OPCODE_IF) {
-				in_if = 1;
-				break;
-			}
-		}
-
-		inst->U.I.Opcode = RC_OPCODE_KIL;
-
-		if (!in_if) {
-			inst->U.I.SrcReg[0] = negate(builtin_one);
-		} else {
-			/* This should work even if the KILP is inside the ELSE
-			 * block, because -0.0 is considered negative. */
-			inst->U.I.SrcReg[0] =
-				negate(absolute(if_inst->U.I.SrcReg[0]));
-		}
-	}
 }
 
 int rc_force_output_alpha_to_one(struct radeon_compiler *c,

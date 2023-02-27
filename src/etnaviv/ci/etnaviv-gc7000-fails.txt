@@ -28,7 +28,6 @@ dEQP-GLES2.functional.fbo.render.stencil_clear.tex2d_rgb_stencil_index8,Fail
 dEQP-GLES2.functional.fbo.render.stencil_clear.tex2d_rgba_stencil_index8,Fail
 dEQP-GLES2.functional.fragment_ops.random.3,Fail
 dEQP-GLES2.functional.fragment_ops.random.36,Fail
-dEQP-GLES2.functional.fragment_ops.random.89,Fail
 dEQP-GLES2.functional.rasterization.primitives.lines_wide,Fail
 dEQP-GLES2.functional.shaders.builtin_variable.fragcoord_w,Fail
 dEQP-GLES2.functional.shaders.builtin_variable.fragcoord_xyz,Fail

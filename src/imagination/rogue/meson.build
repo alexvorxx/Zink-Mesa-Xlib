@@ -44,6 +44,7 @@ libpowervr_rogue_files = files(
   'passes/rogue_constreg.c',
   'passes/rogue_copy_prop.c',
   'passes/rogue_dce.c',
+  'passes/rogue_lower_late_ops.c',
   'passes/rogue_lower_pseudo_ops.c',
   'passes/rogue_regalloc.c',
   'passes/rogue_schedule_instr_groups.c',

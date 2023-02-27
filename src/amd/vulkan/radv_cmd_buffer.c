@@ -2240,7 +2240,7 @@ radv_emit_fragment_shading_rate(struct radv_cmd_buffer *cmd_buffer)
          /* As the result of min(A, 1x1) or replace(A, 1x1) are always 1x1, set the vertex rate
           * combiner mode as passthrough.
           */
-         pipeline_comb_mode = V_028848_VRS_COMB_MODE_PASSTHRU;
+         pipeline_comb_mode = V_028848_SC_VRS_COMB_MODE_PASSTHRU;
          break;
       case VK_FRAGMENT_SHADING_RATE_COMBINER_OP_MAX_KHR:
          /* The result of max(A, 1x1) is always A. */
@@ -2261,11 +2261,11 @@ radv_emit_fragment_shading_rate(struct radv_cmd_buffer *cmd_buffer)
     * draw rate and the vertex rate.
     */
    if (cmd_buffer->state.mesh_shading) {
-      pa_cl_vrs_cntl |= S_028848_VERTEX_RATE_COMBINER_MODE(V_028848_VRS_COMB_MODE_PASSTHRU) |
+      pa_cl_vrs_cntl |= S_028848_VERTEX_RATE_COMBINER_MODE(V_028848_SC_VRS_COMB_MODE_PASSTHRU) |
                         S_028848_PRIMITIVE_RATE_COMBINER_MODE(pipeline_comb_mode);
    } else {
       pa_cl_vrs_cntl |= S_028848_VERTEX_RATE_COMBINER_MODE(pipeline_comb_mode) |
-                        S_028848_PRIMITIVE_RATE_COMBINER_MODE(V_028848_VRS_COMB_MODE_PASSTHRU);
+                        S_028848_PRIMITIVE_RATE_COMBINER_MODE(V_028848_SC_VRS_COMB_MODE_PASSTHRU);
    }
 
    /* HTILE_RATE_COMBINER_MODE controls the combiner mode between the primitive rate and the HTILE
@@ -5157,7 +5157,7 @@ gfx10_emit_ge_cntl(struct radv_cmd_buffer *cmd_buffer)
 
    ge_cntl = S_03096C_PRIM_GRP_SIZE_GFX10(primgroup_size) |
              S_03096C_VERT_GRP_SIZE(256) | /* disable vertex grouping */
-             S_03096C_PACKET_TO_ONE_PA(0) /* line stipple */ |
+             S_03096C_PACKET_TO_ONE_PA(0) /* this should only be set if LINE_STIPPLE_TEX_ENA == 1 */ |
              S_03096C_BREAK_WAVE_AT_EOI(break_wave_at_eoi);
 
    if (state->last_ge_cntl != ge_cntl) {

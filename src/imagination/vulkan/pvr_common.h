@@ -39,6 +39,7 @@
  * relevant for the driver/compiler interface (no Vulkan types).
  */
 
+#include "pvr_limits.h"
 #include "util/list.h"
 #include "vk_object.h"
 #include "vk_sync.h"
@@ -236,6 +237,7 @@ struct pvr_descriptor_set_layout {
 
    /* Count of dynamic buffers. */
    uint32_t dynamic_buffer_count;
+   uint32_t total_dynamic_size_in_dwords;
 
    uint32_t binding_count;
    struct pvr_descriptor_set_layout_binding *bindings;
@@ -285,7 +287,7 @@ struct pvr_descriptor {
          struct pvr_buffer_view *bview;
          pvr_dev_addr_t buffer_dev_addr;
          VkDeviceSize buffer_desc_range;
-         VkDeviceSize buffer_create_info_size;
+         VkDeviceSize buffer_whole_range;
       };
 
       struct {
@@ -319,10 +321,18 @@ struct pvr_event {
    struct vk_sync *sync;
 };
 
+#define PVR_MAX_DYNAMIC_BUFFERS                      \
+   (PVR_MAX_DESCRIPTOR_SET_UNIFORM_DYNAMIC_BUFFERS + \
+    PVR_MAX_DESCRIPTOR_SET_STORAGE_DYNAMIC_BUFFERS)
+
 struct pvr_descriptor_state {
    struct pvr_descriptor_set *descriptor_sets[PVR_MAX_DESCRIPTOR_SETS];
    uint32_t valid_mask;
+
+   uint32_t dynamic_offsets[PVR_MAX_DYNAMIC_BUFFERS];
 };
+
+#undef PVR_MAX_DYNAMIC_BUFFERS
 
 /**
  * \brief Indicates the layout of shared registers allocated by the driver.
@@ -339,6 +349,22 @@ struct pvr_sh_reg_layout {
       bool present;
       uint32_t offset;
    } descriptor_set_addrs_table;
+
+   /* If this is present, it will always take up 2 sh regs in size and contain
+    * the device address of the push constants buffer.
+    */
+   struct {
+      bool present;
+      uint32_t offset;
+   } push_consts;
+
+   /* If this is present, it will always take up 2 sh regs in size and contain
+    * the device address of the blend constants buffer.
+    */
+   struct {
+      bool present;
+      uint32_t offset;
+   } blend_consts;
 };
 
 struct pvr_pipeline_layout {
@@ -349,6 +375,9 @@ struct pvr_pipeline_layout {
    struct pvr_descriptor_set_layout *set_layout[PVR_MAX_DESCRIPTOR_SETS];
 
    VkShaderStageFlags push_constants_shader_stages;
+   uint32_t vert_push_constants_offset;
+   uint32_t frag_push_constants_offset;
+   uint32_t compute_push_constants_offset;
 
    /* Mask of enum pvr_stage_allocation. */
    uint8_t shader_stage_mask;
@@ -385,5 +414,39 @@ struct pvr_pipeline_layout {
       uint32_t secondary_dynamic_size_in_dwords;
    } per_stage_reg_info[PVR_STAGE_ALLOCATION_COUNT];
 };
+
+static int pvr_compare_layout_binding(const void *a, const void *b)
+{
+   uint32_t binding_a;
+   uint32_t binding_b;
+
+   binding_a = ((struct pvr_descriptor_set_layout_binding *)a)->binding_number;
+   binding_b = ((struct pvr_descriptor_set_layout_binding *)b)->binding_number;
+
+   if (binding_a < binding_b)
+      return -1;
+
+   if (binding_a > binding_b)
+      return 1;
+
+   return 0;
+}
+
+/* This function does not assume that the binding will always exist for a
+ * particular binding_num. Caller should check before using the return pointer.
+ */
+static struct pvr_descriptor_set_layout_binding *
+pvr_get_descriptor_binding(const struct pvr_descriptor_set_layout *layout,
+                           const uint32_t binding_num)
+{
+   struct pvr_descriptor_set_layout_binding binding;
+   binding.binding_number = binding_num;
+
+   return bsearch(&binding,
+                  layout->bindings,
+                  layout->binding_count,
+                  sizeof(binding),
+                  pvr_compare_layout_binding);
+}
 
 #endif /* PVR_COMMON_H */

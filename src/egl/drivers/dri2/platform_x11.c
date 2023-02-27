@@ -35,7 +35,9 @@
 #include <fcntl.h>
 #include <errno.h>
 #include <unistd.h>
-#include <vulkan/vulkan.h>
+#include <xcb/xcb.h>
+#include <vulkan/vulkan_core.h>
+#include <vulkan/vulkan_xcb.h>
 #ifdef HAVE_LIBDRM
 #include <xf86drm.h>
 #endif

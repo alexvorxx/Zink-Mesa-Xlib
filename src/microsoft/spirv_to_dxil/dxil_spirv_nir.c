@@ -53,13 +53,6 @@ spirv_to_nir_options = {
    .ssbo_addr_format = nir_address_format_32bit_index_offset,
    .shared_addr_format = nir_address_format_32bit_offset,
 
-   /* use_deref_buffer_array_length + nir_lower_explicit_io force
-      * get_ssbo_size to take in the return from load_vulkan_descriptor
-      * instead of vulkan_resource_index. This makes it much easier to
-      * get the DXIL handle for the SSBO.
-      */
-   .use_deref_buffer_array_length = true,
-
    .min_ubo_alignment = 256, /* D3D12_CONSTANT_BUFFER_DATA_PLACEMENT_ALIGNMENT */
    .min_ssbo_alignment = 16, /* D3D12_RAW_UAV_SRV_BYTE_ALIGNMENT */
 };

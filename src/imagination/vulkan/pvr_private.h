@@ -637,6 +637,12 @@ struct pvr_cmd_buffer_state {
    struct {
       uint8_t data[PVR_MAX_PUSH_CONSTANTS_SIZE];
       VkShaderStageFlags dirty_stages;
+      /* Indicates if the whole push constants buffer was uploaded. This avoids
+       * having to upload the same stuff twice when the push constant range
+       * covers both gfx and compute.
+       */
+      bool uploaded;
+      pvr_dev_addr_t dev_addr;
    } push_constants;
 
    /* Array size of barriers_needed is based on number of sync pipeline
@@ -985,6 +991,9 @@ struct pvr_framebuffer {
    struct pvr_render_target *render_targets;
 
    struct pvr_spm_scratch_buffer *scratch_buffer;
+
+   uint32_t spm_eot_state_count;
+   struct pvr_spm_eot_state *spm_eot_state_per_render;
 };
 
 struct pvr_render_pass_attachment {
@@ -1346,6 +1355,11 @@ void pvr_reset_graphics_dirty_state(struct pvr_cmd_buffer *const cmd_buffer,
 
 const struct pvr_renderpass_hwsetup_subpass *
 pvr_get_hw_subpass(const struct pvr_render_pass *pass, const uint32_t subpass);
+
+void pvr_descriptor_size_info_init(
+   const struct pvr_device *device,
+   VkDescriptorType type,
+   struct pvr_descriptor_size_info *const size_info_out);
 
 #define PVR_FROM_HANDLE(__pvr_type, __name, __handle) \
    VK_FROM_HANDLE(__pvr_type, __name, __handle)

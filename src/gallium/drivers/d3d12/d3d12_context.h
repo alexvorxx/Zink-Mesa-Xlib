@@ -158,8 +158,12 @@ struct dxil_validator;
 class ResourceStateManager;
 #endif
 
+#define D3D12_CONTEXT_NO_ID 0xffffffff
+
 struct d3d12_context {
    struct pipe_context base;
+
+   unsigned id;
    struct slab_child_pool transfer_pool;
    struct slab_child_pool transfer_pool_unsync;
    struct list_head context_list_entry;

@@ -59,6 +59,9 @@ struct d3d12_bo {
    int64_t last_used_timestamp;
    uint64_t last_used_fence;
    enum d3d12_residency_status residency_status;
+
+   unsigned local_context_state_mask;
+   d3d12_context_state_table_entry local_context_states[16];
 };
 
 struct d3d12_buffer {

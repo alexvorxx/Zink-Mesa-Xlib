@@ -85,7 +85,7 @@ intel_get_urb_config(const struct intel_device_info *devinfo,
     *    only 124KB (per bank). More detailed description available in "L3
     *    Cache" section of the B-Spec."
     */
-   if (devinfo->verx10 == 120) {
+   if (devinfo->verx10 == 120 && devinfo->has_compute_engine) {
       assert(devinfo->num_slices == 1);
       urb_size_kB -= 4 * devinfo->l3_banks;
    }

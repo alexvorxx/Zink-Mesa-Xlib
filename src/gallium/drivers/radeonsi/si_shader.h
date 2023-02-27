@@ -259,15 +259,20 @@ enum
  * in the shader via vs_state_bits in LS/HS.
  */
 /* bit gap */
-#define VS_STATE_LS_OUT_PATCH_SIZE__SHIFT    11
-#define VS_STATE_LS_OUT_PATCH_SIZE__MASK     0x1fff
 #define VS_STATE_LS_OUT_VERTEX_SIZE__SHIFT   24
-#define VS_STATE_LS_OUT_VERTEX_SIZE__MASK    0xff
+#define VS_STATE_LS_OUT_VERTEX_SIZE__MASK    0xff /* max 32 * 4 + 1 */
 
 /* These fields are only set in current_gs_state in si_context, and they are accessible
  * in the shader via vs_state_bits in legacy GS, the GS copy shader, and any NGG shader.
  */
 /* bit gap */
+/* Small prim filter precision = num_samples / quant_mode, which can only be equal to 1/2^n
+ * where n is between 4 and 12. Knowing that, we only need to store 4 bits of the FP32 exponent.
+ * Set it like this: value = (fui(num_samples / quant_mode) >> 23) & 0xf;
+ * Expand to FP32 like this: ((0x70 | value) << 23);
+ * With 0x70 = 112, we get 2^(112 + value - 127) = 2^(value - 15), which is always a negative
+ * exponent and it's equal to 1/2^(15 - value).
+ */
 #define GS_STATE_SMALL_PRIM_PRECISION_NO_AA__SHIFT 18
 #define GS_STATE_SMALL_PRIM_PRECISION_NO_AA__MASK  0xf
 #define GS_STATE_SMALL_PRIM_PRECISION__SHIFT    22
@@ -400,7 +405,7 @@ struct si_shader_info {
    ubyte culldist_mask;
 
    uint16_t lshs_vertex_stride;
-   uint16_t esgs_itemsize; /* vertex stride */
+   uint16_t esgs_vertex_stride;
    uint16_t gsvs_vertex_size;
    ubyte gs_input_verts_per_prim;
    unsigned max_gsvs_emit_size;
@@ -870,15 +875,6 @@ struct si_shader {
 
    bool uses_base_instance;
 
-   struct {
-      uint16_t ngg_emit_size; /* in dwords */
-      uint16_t hw_max_esverts;
-      uint16_t max_gsprims;
-      uint16_t max_out_verts;
-      uint16_t prim_amp_factor;
-      bool max_vert_out_per_gs_instance;
-   } ngg;
-
    /* Shader key + LLVM IR + disassembly + statistics.
     * Generated for debug contexts only.
     */
@@ -908,6 +904,14 @@ struct si_shader {
       } gs;
 
       struct {
+         /* Computed by gfx10_ngg_calculate_subgroup_info. */
+         uint16_t ngg_emit_size; /* in dwords */
+         uint16_t hw_max_esverts;
+         uint16_t max_gsprims;
+         uint16_t max_out_verts;
+         uint16_t prim_amp_factor;
+         bool max_vert_out_per_gs_instance;
+         /* Register values. */
          unsigned ge_max_output_per_subgroup;
          unsigned ge_ngg_subgrp_cntl;
          unsigned vgt_primitiveid_en;
@@ -947,9 +951,9 @@ struct si_shader {
          unsigned db_shader_control;
          unsigned num_interp;
       } ps;
-   } ctx_reg;
+   };
 
-   /*For save precompute registers value */
+   /* Precomputed register values. */
    unsigned vgt_tf_param;                /* VGT_TF_PARAM */
    unsigned vgt_vertex_reuse_block_cntl; /* VGT_VERTEX_REUSE_BLOCK_CNTL */
    unsigned pa_cl_vs_out_cntl;

@@ -161,6 +161,7 @@ traces:
     freedreno-a630:
       checksum: 2aebe86d6c0488b953bfaacd8000c01a
     zink-a630:
+      label: [skip, flakes]
       checksum: c167b29121b4bbba7675070b2ab1f51a
 
   minetest/minetest-v2.trace:

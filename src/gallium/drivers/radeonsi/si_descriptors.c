@@ -2170,37 +2170,30 @@ static void si_emit_global_shader_pointers(struct si_context *sctx, struct si_de
       radeon_emit_one_32bit_pointer(sctx, descs, R_00B030_SPI_SHADER_USER_DATA_PS_0);
       radeon_emit_one_32bit_pointer(sctx, descs, R_00B230_SPI_SHADER_USER_DATA_GS_0);
       radeon_emit_one_32bit_pointer(sctx, descs, R_00B430_SPI_SHADER_USER_DATA_HS_0);
-      radeon_end();
-      return;
    } else if (sctx->gfx_level >= GFX10) {
       radeon_emit_one_32bit_pointer(sctx, descs, R_00B030_SPI_SHADER_USER_DATA_PS_0);
       /* HW VS stage only used in non-NGG mode. */
       radeon_emit_one_32bit_pointer(sctx, descs, R_00B130_SPI_SHADER_USER_DATA_VS_0);
       radeon_emit_one_32bit_pointer(sctx, descs, R_00B230_SPI_SHADER_USER_DATA_GS_0);
       radeon_emit_one_32bit_pointer(sctx, descs, R_00B430_SPI_SHADER_USER_DATA_HS_0);
-      radeon_end();
-      return;
    } else if (sctx->gfx_level == GFX9 && sctx->shadowed_regs) {
       /* We can't use the COMMON registers with register shadowing. */
       radeon_emit_one_32bit_pointer(sctx, descs, R_00B030_SPI_SHADER_USER_DATA_PS_0);
       radeon_emit_one_32bit_pointer(sctx, descs, R_00B130_SPI_SHADER_USER_DATA_VS_0);
       radeon_emit_one_32bit_pointer(sctx, descs, R_00B330_SPI_SHADER_USER_DATA_ES_0);
       radeon_emit_one_32bit_pointer(sctx, descs, R_00B430_SPI_SHADER_USER_DATA_LS_0);
-      radeon_end();
-      return;
    } else if (sctx->gfx_level == GFX9) {
       /* Broadcast it to all shader stages. */
       radeon_emit_one_32bit_pointer(sctx, descs, R_00B530_SPI_SHADER_USER_DATA_COMMON_0);
-      radeon_end();
-      return;
+   } else {
+      radeon_emit_one_32bit_pointer(sctx, descs, R_00B030_SPI_SHADER_USER_DATA_PS_0);
+      radeon_emit_one_32bit_pointer(sctx, descs, R_00B130_SPI_SHADER_USER_DATA_VS_0);
+      radeon_emit_one_32bit_pointer(sctx, descs, R_00B330_SPI_SHADER_USER_DATA_ES_0);
+      radeon_emit_one_32bit_pointer(sctx, descs, R_00B230_SPI_SHADER_USER_DATA_GS_0);
+      radeon_emit_one_32bit_pointer(sctx, descs, R_00B430_SPI_SHADER_USER_DATA_HS_0);
+      radeon_emit_one_32bit_pointer(sctx, descs, R_00B530_SPI_SHADER_USER_DATA_LS_0);
    }
 
-   radeon_emit_one_32bit_pointer(sctx, descs, R_00B030_SPI_SHADER_USER_DATA_PS_0);
-   radeon_emit_one_32bit_pointer(sctx, descs, R_00B130_SPI_SHADER_USER_DATA_VS_0);
-   radeon_emit_one_32bit_pointer(sctx, descs, R_00B330_SPI_SHADER_USER_DATA_ES_0);
-   radeon_emit_one_32bit_pointer(sctx, descs, R_00B230_SPI_SHADER_USER_DATA_GS_0);
-   radeon_emit_one_32bit_pointer(sctx, descs, R_00B430_SPI_SHADER_USER_DATA_HS_0);
-   radeon_emit_one_32bit_pointer(sctx, descs, R_00B530_SPI_SHADER_USER_DATA_LS_0);
    radeon_end();
 }
 
@@ -2713,7 +2706,7 @@ void si_init_all_descriptors(struct si_context *sctx)
       if (is_2nd) {
          if (i == PIPE_SHADER_TESS_CTRL) {
             rel_dw_offset =
-               (hs_sgpr0 - R_00B430_SPI_SHADER_USER_DATA_LS_0) / 4;
+               (hs_sgpr0 - R_00B430_SPI_SHADER_USER_DATA_HS_0) / 4;
          } else if (sctx->gfx_level >= GFX10) { /* PIPE_SHADER_GEOMETRY */
             rel_dw_offset =
                (gs_sgpr0 - R_00B230_SPI_SHADER_USER_DATA_GS_0) / 4;
@@ -2733,7 +2726,7 @@ void si_init_all_descriptors(struct si_context *sctx)
       if (is_2nd) {
          if (i == PIPE_SHADER_TESS_CTRL) {
             rel_dw_offset =
-               (hs_sgpr0 + 4 - R_00B430_SPI_SHADER_USER_DATA_LS_0) / 4;
+               (hs_sgpr0 + 4 - R_00B430_SPI_SHADER_USER_DATA_HS_0) / 4;
          } else if (sctx->gfx_level >= GFX10) { /* PIPE_SHADER_GEOMETRY */
             rel_dw_offset =
                (gs_sgpr0 + 4 - R_00B230_SPI_SHADER_USER_DATA_GS_0) / 4;

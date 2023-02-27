@@ -1321,10 +1321,10 @@ do {                                                            \
                                                                 \
    if (save->active_sz[A] != N) {                               \
       bool had_dangling_ref = save->dangling_attr_ref;          \
-      fi_type *dest = save->vertex_store->buffer_in_ram;        \
       if (fixup_vertex(ctx, A, N * sz, T) &&                    \
           !had_dangling_ref && save->dangling_attr_ref &&       \
           A != VBO_ATTRIB_POS) {                                \
+         fi_type *dest = save->vertex_store->buffer_in_ram;     \
          /* Copy the new attr values to the already copied      \
           * vertices.                                           \
           */                                                    \

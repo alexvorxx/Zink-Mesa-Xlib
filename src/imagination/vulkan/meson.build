@@ -64,6 +64,8 @@ pvr_files = files(
   'pvr_spm.c',
   'pvr_tex_state.c',
   'pvr_wsi.c',
+
+  'usc/pvr_uscgen.c',
 )
 
 pvr_includes = [
@@ -83,7 +85,6 @@ pvr_deps = [
 
 pvr_flags = [
   no_override_init_args,
-  vk_wsi_args,
 ]
 
 if with_imagination_srv

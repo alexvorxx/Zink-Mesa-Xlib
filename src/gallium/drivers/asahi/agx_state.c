@@ -509,7 +509,9 @@ agx_create_sampler_state(struct pipe_context *pctx,
    struct agx_sampler_state *so = CALLOC_STRUCT(agx_sampler_state);
    so->base = *state;
 
-   assert(state->lod_bias == 0 && "todo: lod bias");
+   /* We report a max texture LOD bias of 16, so clamp appropriately */
+   float lod_bias = CLAMP(state->lod_bias, -16.0, 16.0);
+   so->lod_bias_as_fp16 = _mesa_float_to_half(lod_bias);
 
    agx_pack(&so->desc, SAMPLER, cfg) {
       cfg.minimum_lod = state->min_lod;
@@ -1529,7 +1531,7 @@ agx_create_shader_state(struct pipe_context *pctx,
    blob_finish(&blob);
 
    so->nir = nir;
-   agx_preprocess_nir(nir);
+   agx_preprocess_nir(nir, true);
 
    /* For shader-db, precompile a shader with a default key. This could be
     * improved but hopefully this is acceptable for now.
@@ -1605,7 +1607,7 @@ agx_create_compute_state(struct pipe_context *pctx,
    blob_finish(&blob);
 
    so->nir = nir;
-   agx_preprocess_nir(nir);
+   agx_preprocess_nir(nir, true);
    agx_get_shader_variant(agx_screen(pctx->screen), so, &pctx->debug, &key);
 
    /* We're done with the NIR, throw it away */

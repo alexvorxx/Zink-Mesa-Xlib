@@ -116,6 +116,14 @@ static inline rogue_block *rogue_push_block(rogue_builder *b)
                                rogue_ref src0,   \
                                rogue_ref src1);
 
+#define ROGUE_BUILDER_DEFINE_ALU23(op)           \
+   rogue_alu_instr *rogue_##op(rogue_builder *b, \
+                               rogue_ref dst0,   \
+                               rogue_ref dst1,   \
+                               rogue_ref src0,   \
+                               rogue_ref src1,   \
+                               rogue_ref src2);
+
 #define ROGUE_BUILDER_DEFINE_ALU35(op)           \
    rogue_alu_instr *rogue_##op(rogue_builder *b, \
                                rogue_ref dst0,   \
@@ -132,6 +140,11 @@ static inline rogue_block *rogue_push_block(rogue_builder *b)
 /* Backend instructions. */
 #define ROGUE_BUILDER_DEFINE_BACKEND00(op) \
    rogue_backend_instr *rogue_##op(rogue_builder *b);
+
+#define ROGUE_BUILDER_DEFINE_BACKEND02(op)           \
+   rogue_backend_instr *rogue_##op(rogue_builder *b, \
+                                   rogue_ref src0,   \
+                                   rogue_ref src1);
 
 #define ROGUE_BUILDER_DEFINE_BACKEND11(op)           \
    rogue_backend_instr *rogue_##op(rogue_builder *b, \
@@ -152,6 +165,25 @@ static inline rogue_block *rogue_push_block(rogue_builder *b)
                                    rogue_ref src1,   \
                                    rogue_ref src2,   \
                                    rogue_ref src3);
+
+#define ROGUE_BUILDER_DEFINE_BACKEND06(op)           \
+   rogue_backend_instr *rogue_##op(rogue_builder *b, \
+                                   rogue_ref src0,   \
+                                   rogue_ref src1,   \
+                                   rogue_ref src2,   \
+                                   rogue_ref src3,   \
+                                   rogue_ref src4,   \
+                                   rogue_ref src5);
+
+#define ROGUE_BUILDER_DEFINE_BACKEND16(op)           \
+   rogue_backend_instr *rogue_##op(rogue_builder *b, \
+                                   rogue_ref dst0,   \
+                                   rogue_ref src0,   \
+                                   rogue_ref src1,   \
+                                   rogue_ref src2,   \
+                                   rogue_ref src3,   \
+                                   rogue_ref src4,   \
+                                   rogue_ref src5);
 
 #include "rogue_backend_instrs.def"
 

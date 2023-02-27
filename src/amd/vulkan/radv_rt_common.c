@@ -672,9 +672,8 @@ radv_build_ray_traversal(struct radv_device *device, nir_builder *b,
                                1);
 
                nir_ssa_def *instance_and_mask = nir_channel(b, instance_data, 2);
-               nir_ssa_def *instance_mask = nir_ushr_imm(b, instance_and_mask, 24);
-
-               nir_push_if(b, nir_ieq_imm(b, nir_iand(b, instance_mask, args->cull_mask), 0));
+               nir_push_if(b, nir_ult(b, nir_iand(b, instance_and_mask, args->cull_mask),
+                                      nir_imm_int(b, 1 << 24)));
                {
                   nir_jump(b, nir_jump_continue);
                }

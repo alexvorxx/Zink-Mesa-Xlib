@@ -39,7 +39,7 @@ endif
 vklayer_mesa_device_select = shared_library(
   'VkLayer_MESA_device_select',
   vklayer_files,
-  c_args : [no_override_init_args, vklayer_flags, vk_wsi_args],
+  c_args : [no_override_init_args, vklayer_flags],
   gnu_symbol_visibility : 'hidden',
   dependencies : [
     idep_vulkan_util, idep_vulkan_wsi_headers, idep_mesautil, vklayer_deps,

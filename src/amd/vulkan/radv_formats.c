@@ -957,7 +957,7 @@ radv_translate_colorformat(VkFormat format)
 uint32_t
 radv_colorformat_endian_swap(uint32_t colorformat)
 {
-   if (0 /*SI_BIG_ENDIAN*/) {
+   if (0 /*UTIL_ARCH_BIG_ENDIAN*/) {
       switch (colorformat) {
          /* 8-bit buffers. */
       case V_028C70_COLOR_8:

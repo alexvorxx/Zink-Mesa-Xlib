@@ -37,6 +37,7 @@
 #include "git_sha1.h"
 #include "util/macros.h"
 #include "util/u_debug.h"
+#include "util/u_math.h"
 #include "c11/threads.h"
 
 uint64_t intel_debug = 0;
@@ -283,6 +284,16 @@ intel_debug_write_identifiers(void *_output,
    };
    memcpy(output, &end, sizeof(end));
    output += sizeof(end);
+
+   assert(output < output_end);
+
+   /* Add at least a full aligned uint64_t of zero padding at the end
+    * to make the identifiers easier to spot.
+    */
+   const unsigned unpadded_len = output - _output;
+   const unsigned padding = ALIGN(unpadded_len + 8, 8) - unpadded_len;
+   memset(output, 0, padding);
+   output += padding;
 
    assert(output < output_end);
 

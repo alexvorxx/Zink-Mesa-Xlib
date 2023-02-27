@@ -70,6 +70,52 @@ static unsigned rogue_calc_da(const rogue_instr_group *group)
    return da;
 }
 
+#define P(type) BITFIELD64_BIT(ROGUE_INSTR_PHASE_##type)
+static enum oporg rogue_calc_oporg(uint64_t alu_phases)
+{
+   bool P0 = !!(alu_phases & P(0));
+   bool P1 = !!(alu_phases & P(1));
+   bool P2 = !!(alu_phases & (P(2_PCK) | P(2_TST) | P(2_MOV)));
+   bool PBE = !!(alu_phases & P(BACKEND));
+
+   if (P0 && P1 && P2 && PBE)
+      return OPORG_P0_P1_P2_BE;
+   else if (P0 && !P1 && P2 && PBE)
+      return OPORG_P0_P2_BE;
+   else if (P0 && P1 && P2 && !PBE)
+      return OPORG_P0_P1_P2;
+   else if (P0 && !P1 && P2 && !PBE)
+      return OPORG_P0_P2;
+   else if (P0 && P1 && !P2 && !PBE)
+      return OPORG_P0_P1;
+   else if (!P0 && !P1 && !P2 && PBE)
+      return OPORG_BE;
+   else if (!P0 && !P1 && P2 && !PBE)
+      return OPORG_P2;
+   else if (P0 && !P1 && !P2 && !PBE)
+      return OPORG_P0;
+
+   unreachable("Invalid ALU phase combination.");
+}
+
+static enum opcnt rogue_calc_opcnt(uint64_t bitwise_phases)
+{
+   enum opcnt opcnt = 0;
+
+   if (bitwise_phases & P(0_BITMASK) || bitwise_phases & P(0_SHIFT1) ||
+       bitwise_phases & P(0_COUNT)) {
+      opcnt |= OPCNT_P0;
+   }
+
+   if (bitwise_phases & P(1_LOGICAL))
+      opcnt |= OPCNT_P1;
+
+   if (bitwise_phases & P(2_SHIFT2) || bitwise_phases & P(2_TEST))
+      opcnt |= OPCNT_P2;
+
+   return opcnt;
+}
+
 static void rogue_encode_instr_group_header(rogue_instr_group *group,
                                             struct util_dynarray *binary)
 {
@@ -116,51 +162,43 @@ static void rogue_encode_instr_group_header(rogue_instr_group *group,
    switch (group->header.alu) {
    case ROGUE_ALU_MAIN:
       h.alutype = ALUTYPE_MAIN;
-      /* TODO: Support multiple phase instructions. */
-#define P(type) BITFIELD64_BIT(ROGUE_INSTR_PHASE_##type)
-      if (group->header.phases & P(0))
-         h.oporg = OPORG_P0;
-      if (group->header.phases & P(2_PCK) || group->header.phases & P(2_TST) ||
-          group->header.phases & P(2_MOV))
-         h.oporg = OPORG_P2;
-      if (group->header.phases & P(BACKEND))
-         h.oporg = OPORG_BE;
-#undef P
+      h.oporg = rogue_calc_oporg(group->header.phases);
       break;
 
    case ROGUE_ALU_BITWISE:
       h.alutype = ALUTYPE_BITWISE;
-#define P(type) BITFIELD64_BIT(ROGUE_INSTR_PHASE_##type)
-      if (group->header.phases & P(0_BITMASK) ||
-          group->header.phases & P(0_SHIFT1) ||
-          group->header.phases & P(0_COUNT))
-         h.oporg |= OPCNT_P0;
-      if (group->header.phases & P(1_LOGICAL))
-         h.oporg |= OPCNT_P1;
-      if (group->header.phases & P(2_SHIFT2) ||
-          group->header.phases & P(2_TEST))
-         h.oporg |= OPCNT_P2;
-#undef P
+      h.opcnt = rogue_calc_opcnt(group->header.phases);
       break;
 
    case ROGUE_ALU_CONTROL:
       h.alutype = ALUTYPE_CONTROL;
+#define OM(op_mod) ROGUE_CTRL_OP_MOD_##op_mod
       const rogue_instr *instr = group->instrs[ROGUE_INSTR_PHASE_CTRL];
       const rogue_ctrl_instr *ctrl = rogue_instr_as_ctrl(instr);
       switch (ctrl->op) {
+      case ROGUE_CTRL_OP_NOP:
+         h.ctrlop = CTRLOP_NOP;
+         h.miscctl = rogue_ctrl_op_mod_is_set(ctrl, OM(END));
+         break;
+
+      case ROGUE_CTRL_OP_WOP:
+         h.ctrlop = CTRLOP_WOP;
+         break;
+
+      case ROGUE_CTRL_OP_BR:
+      case ROGUE_CTRL_OP_BA:
+         h.ctrlop = CTRLOP_BA;
+         break;
+
       case ROGUE_CTRL_OP_WDF:
          h.ctrlop = CTRLOP_WDF;
          h.miscctl = rogue_ref_get_drc_index(&ctrl->src[0].ref);
          break;
 
-      case ROGUE_CTRL_OP_NOP:
-         h.ctrlop = CTRLOP_NOP;
-         h.miscctl = rogue_ctrl_op_mod_is_set(ctrl, ROGUE_CTRL_OP_MOD_END);
-         break;
-
       default:
          unreachable("Unsupported ctrl op.");
       }
+#undef OM
       break;
 
    default:
@@ -169,13 +207,13 @@ static void rogue_encode_instr_group_header(rogue_instr_group *group,
 
    if (group->header.alu != ROGUE_ALU_CONTROL) {
       h.end = group->header.end;
-      /* h.crel = ; */ /* Unused for now */
       /* h.atom = ; */ /* Unused for now */
       h.rpt = group->header.repeat - 1;
    }
 
    util_dynarray_append_mem(binary, group->size.header, &h);
 }
+#undef P
 
 typedef union rogue_instr_encoding {
    rogue_alu_instr_encoding alu;
@@ -243,6 +281,141 @@ static void rogue_encode_alu_instr(const rogue_alu_instr *alu,
       }
       break;
 
+   case ROGUE_ALU_OP_TST: {
+      instr_encoding->alu.op = ALUOP_TST;
+      instr_encoding->alu.tst.pwen = rogue_ref_is_io_p0(&alu->dst[1].ref);
+
+      rogue_tstop tstop = { 0 };
+      if (rogue_alu_op_mod_is_set(alu, OM(Z)))
+         tstop._ = TSTOP_Z;
+      else if (rogue_alu_op_mod_is_set(alu, OM(GZ)))
+         tstop._ = TSTOP_GZ;
+      else if (rogue_alu_op_mod_is_set(alu, OM(GEZ)))
+         tstop._ = TSTOP_GEZ;
+      else if (rogue_alu_op_mod_is_set(alu, OM(C)))
+         tstop._ = TSTOP_C;
+      else if (rogue_alu_op_mod_is_set(alu, OM(E)))
+         tstop._ = TSTOP_E;
+      else if (rogue_alu_op_mod_is_set(alu, OM(G)))
+         tstop._ = TSTOP_G;
+      else if (rogue_alu_op_mod_is_set(alu, OM(GE)))
+         tstop._ = TSTOP_GE;
+      else if (rogue_alu_op_mod_is_set(alu, OM(NE)))
+         tstop._ = TSTOP_NE;
+      else if (rogue_alu_op_mod_is_set(alu, OM(L)))
+         tstop._ = TSTOP_L;
+      else if (rogue_alu_op_mod_is_set(alu, OM(LE)))
+         tstop._ = TSTOP_LE;
+      else
+         unreachable("Invalid comparison test.");
+
+      instr_encoding->alu.tst.tstop_2_0 = tstop._2_0;
+
+      if (instr_size == 2) {
+         instr_encoding->alu.tst.ext = 1;
+         instr_encoding->alu.tst.tstop_3 = tstop._3;
+
+         if (rogue_alu_src_mod_is_set(alu, 0, SM(E0)))
+            instr_encoding->alu.tst.elem = TST_E0;
+         else if (rogue_alu_src_mod_is_set(alu, 0, SM(E1)))
+            instr_encoding->alu.tst.elem = TST_E1;
+         else if (rogue_alu_src_mod_is_set(alu, 0, SM(E2)))
+            instr_encoding->alu.tst.elem = TST_E2;
+         else if (rogue_alu_src_mod_is_set(alu, 0, SM(E3)))
+            instr_encoding->alu.tst.elem = TST_E3;
+
+         instr_encoding->alu.tst.p2end =
+            !rogue_phase_occupied(ROGUE_INSTR_PHASE_2_PCK,
+                                  alu->instr.group->header.phases);
+
+         if (rogue_alu_op_mod_is_set(alu, OM(F32)))
+            instr_encoding->alu.tst.type = TSTTYPE_F32;
+         else if (rogue_alu_op_mod_is_set(alu, OM(U16)))
+            instr_encoding->alu.tst.type = TSTTYPE_U16;
+         else if (rogue_alu_op_mod_is_set(alu, OM(S16)))
+            instr_encoding->alu.tst.type = TSTTYPE_S16;
+         else if (rogue_alu_op_mod_is_set(alu, OM(U8)))
+            instr_encoding->alu.tst.type = TSTTYPE_U8;
+         else if (rogue_alu_op_mod_is_set(alu, OM(S8)))
+            instr_encoding->alu.tst.type = TSTTYPE_S8;
+         else if (rogue_alu_op_mod_is_set(alu, OM(U32)))
+            instr_encoding->alu.tst.type = TSTTYPE_U32;
+         else if (rogue_alu_op_mod_is_set(alu, OM(S32)))
+            instr_encoding->alu.tst.type = TSTTYPE_S32;
+         else
+            unreachable("Invalid comparison type.");
+      }
+      break;
+   }
+
+   case ROGUE_ALU_OP_MOVC: {
+      instr_encoding->alu.op = ALUOP_MOVC;
+
+      bool e0 = rogue_alu_dst_mod_is_set(alu, 0, DM(E0));
+      bool e1 = rogue_alu_dst_mod_is_set(alu, 0, DM(E1));
+      bool e2 = rogue_alu_dst_mod_is_set(alu, 0, DM(E2));
+      bool e3 = rogue_alu_dst_mod_is_set(alu, 0, DM(E3));
+      bool e_none = !e0 && !e1 && !e2 && !e3;
+
+      switch (rogue_ref_get_io(&alu->src[1].ref)) {
+      case ROGUE_IO_FT0:
+         instr_encoding->alu.movc.movw0 = MOVW_FT0;
+         break;
+      case ROGUE_IO_FT1:
+         instr_encoding->alu.movc.movw0 = MOVW_FT1;
+         break;
+      case ROGUE_IO_FT2:
+         instr_encoding->alu.movc.movw0 = MOVW_FT2;
+         break;
+      case ROGUE_IO_FTE:
+         instr_encoding->alu.movc.movw0 = MOVW_FTE;
+         break;
+      default:
+         unreachable("Invalid source.");
+      }
+
+      switch (rogue_ref_get_io(&alu->src[2].ref)) {
+      case ROGUE_IO_FT0:
+         instr_encoding->alu.movc.movw1 = MOVW_FT0;
+         break;
+      case ROGUE_IO_FT1:
+         instr_encoding->alu.movc.movw1 = MOVW_FT1;
+         break;
+      case ROGUE_IO_FT2:
+         instr_encoding->alu.movc.movw1 = MOVW_FT2;
+         break;
+      case ROGUE_IO_FTE:
+         instr_encoding->alu.movc.movw1 = MOVW_FTE;
+         break;
+      default:
+         unreachable("Invalid source.");
+      }
+
+      if (instr_size == 2) {
+         instr_encoding->alu.movc.ext = 1;
+         instr_encoding->alu.movc.p2end =
+            !rogue_phase_occupied(ROGUE_INSTR_PHASE_2_TST,
+                                  alu->instr.group->header.phases) &&
+            !rogue_phase_occupied(ROGUE_INSTR_PHASE_2_PCK,
+                                  alu->instr.group->header.phases);
+         instr_encoding->alu.movc.aw = !rogue_ref_is_io_ftt(&alu->src[0].ref);
+
+         if (e_none) {
+            instr_encoding->alu.movc.maskw0 = MASKW0_EALL;
+         } else {
+            if (e0)
+               instr_encoding->alu.movc.maskw0 |= MASKW0_E0;
+            if (e1)
+               instr_encoding->alu.movc.maskw0 |= MASKW0_E1;
+            if (e2)
+               instr_encoding->alu.movc.maskw0 |= MASKW0_E2;
+            if (e3)
+               instr_encoding->alu.movc.maskw0 |= MASKW0_E3;
+         }
+      }
+      break;
+   }
+
    case ROGUE_ALU_OP_PCK_U8888:
       instr_encoding->alu.op = ALUOP_SNGL;
       instr_encoding->alu.sngl.snglop = SNGLOP_PCK;
@@ -289,12 +462,57 @@ static void rogue_encode_alu_instr(const rogue_alu_instr *alu,
 #undef DM
 #undef SM
 
-#define OM(op_mod) BITFIELD64_BIT(ROGUE_BACKEND_OP_MOD_##op_mod)
+#define OM(op_mod) ROGUE_BACKEND_OP_MOD_##op_mod
+static unsigned rogue_backend_get_cachemode(const rogue_backend_instr *backend)
+{
+   if (rogue_backend_op_mod_is_set(backend, OM(BYPASS)))
+      return CACHEMODE_LD_BYPASS;
+   else if (rogue_backend_op_mod_is_set(backend, OM(FORCELINEFILL)))
+      return CACHEMODE_LD_FORCE_LINE_FILL;
+   else if (rogue_backend_op_mod_is_set(backend, OM(WRITETHROUGH)))
+      return CACHEMODE_ST_WRITE_THROUGH;
+   else if (rogue_backend_op_mod_is_set(backend, OM(WRITEBACK)))
+      return CACHEMODE_ST_WRITE_BACK;
+   else if (rogue_backend_op_mod_is_set(backend, OM(LAZYWRITEBACK)))
+      return CACHEMODE_ST_WRITE_BACK_LAZY;
+
+   /* Default cache mode. */
+   return CACHEMODE_LD_NORMAL; /* == CACHEMODE_ST_WRITE_THROUGH */
+}
+
+static unsigned
+rogue_backend_get_slccachemode(const rogue_backend_instr *backend)
+{
+   if (rogue_backend_op_mod_is_set(backend, OM(SLCBYPASS)))
+      return SLCCACHEMODE_BYPASS;
+   else if (rogue_backend_op_mod_is_set(backend, OM(SLCWRITEBACK)))
+      return SLCCACHEMODE_WRITE_BACK;
+   else if (rogue_backend_op_mod_is_set(backend, OM(SLCWRITETHROUGH)))
+      return SLCCACHEMODE_WRITE_THROUGH;
+   else if (rogue_backend_op_mod_is_set(backend, OM(SLCNOALLOC)))
+      return SLCCACHEMODE_CACHED_READS;
+
+   /* Default SLC cache mode. */
+   return SLCCACHEMODE_BYPASS;
+}
+
 static void rogue_encode_backend_instr(const rogue_backend_instr *backend,
                                        unsigned instr_size,
                                        rogue_instr_encoding *instr_encoding)
 {
    switch (backend->op) {
+   case ROGUE_BACKEND_OP_FITR_PIXEL:
+      instr_encoding->backend.op = BACKENDOP_FITR;
+      instr_encoding->backend.fitr.p = 0;
+      instr_encoding->backend.fitr.drc =
+         rogue_ref_get_drc_index(&backend->src[0].ref);
+      instr_encoding->backend.fitr.mode = FITR_MODE_PIXEL;
+      instr_encoding->backend.fitr.sat =
+         rogue_backend_op_mod_is_set(backend, OM(SAT));
+      instr_encoding->backend.fitr.count =
+         rogue_ref_get_val(&backend->src[2].ref);
+      break;
+
    case ROGUE_BACKEND_OP_FITRP_PIXEL:
       instr_encoding->backend.op = BACKENDOP_FITR;
       instr_encoding->backend.fitr.p = 1;
@@ -343,13 +561,10 @@ static void rogue_encode_backend_instr(const rogue_backend_instr *backend,
       instr_encoding->backend.dma.dmaop = DMAOP_LD;
       instr_encoding->backend.dma.ld.drc =
          rogue_ref_get_drc_index(&backend->src[0].ref);
-      instr_encoding->backend.dma.ld.cachemode = CACHEMODE_LD_NORMAL;
-      instr_encoding->backend.dma.ld.srcseladd =
-         rogue_ref_get_io_src_index(&backend->src[2].ref);
+      instr_encoding->backend.dma.ld.cachemode =
+         rogue_backend_get_cachemode(backend);
 
       bool imm_burstlen = rogue_ref_is_val(&backend->src[1].ref);
-      /* Only supporting immediate burst lengths for now. */
-      assert(imm_burstlen);
 
       rogue_burstlen burstlen = {
          ._ = imm_burstlen ? rogue_ref_get_val(&backend->src[1].ref) : 0
@@ -362,17 +577,191 @@ static void rogue_encode_backend_instr(const rogue_backend_instr *backend,
             rogue_ref_get_io_src_index(&backend->src[1].ref);
       }
 
+      instr_encoding->backend.dma.ld.srcseladd =
+         rogue_ref_get_io_src_index(&backend->src[2].ref);
+
       if (instr_size == 3) {
          instr_encoding->backend.dma.ld.ext = 1;
-         instr_encoding->backend.dma.ld.slccachemode = SLCCACHEMODE_BYPASS;
-         instr_encoding->backend.dma.ld.notimmbl = !imm_burstlen;
-
          if (imm_burstlen)
             instr_encoding->backend.dma.ld.burstlen_3 = burstlen._3;
+
+         instr_encoding->backend.dma.ld.slccachemode =
+            rogue_backend_get_slccachemode(backend);
+         instr_encoding->backend.dma.ld.notimmbl = !imm_burstlen;
       }
 
       break;
    }
+
+   case ROGUE_BACKEND_OP_ST: {
+      instr_encoding->backend.op = BACKENDOP_DMA;
+      instr_encoding->backend.dma.dmaop = DMAOP_ST;
+      instr_encoding->backend.dma.st.drc =
+         rogue_ref_get_drc_index(&backend->src[2].ref);
+
+      bool imm_burstlen = rogue_ref_is_val(&backend->src[3].ref);
+
+      instr_encoding->backend.dma.st.immbl = imm_burstlen;
+
+      if (imm_burstlen) {
+         rogue_burstlen burstlen = { ._ = rogue_ref_get_val(
+                                        &backend->src[3].ref) };
+         instr_encoding->backend.dma.st.burstlen_2_0 = burstlen._2_0;
+         instr_encoding->backend.dma.st.burstlen_3 = burstlen._3;
+      } else {
+         instr_encoding->backend.dma.st.srcselbl =
+            rogue_ref_get_io_src_index(&backend->src[3].ref);
+      }
+
+      instr_encoding->backend.dma.st.cachemode =
+         rogue_backend_get_cachemode(backend);
+      instr_encoding->backend.dma.st.srcseladd =
+         rogue_ref_get_io_src_index(&backend->src[4].ref);
+
+      instr_encoding->backend.dma.st.dsize =
+         rogue_ref_get_val(&backend->src[1].ref);
+      instr_encoding->backend.dma.st.srcseldata =
+         rogue_ref_get_io_src_index(&backend->src[0].ref);
+
+      if (instr_size == 4) {
+         instr_encoding->backend.dma.st.ext = 1;
+         instr_encoding->backend.dma.st.srcmask =
+            rogue_ref_get_io_src_index(&backend->src[5].ref);
+         instr_encoding->backend.dma.st.slccachemode =
+            rogue_backend_get_slccachemode(backend);
+         instr_encoding->backend.dma.st.nottiled =
+            !rogue_backend_op_mod_is_set(backend, OM(TILED));
+      }
+
+      break;
+   }
+
+   case ROGUE_BACKEND_OP_SMP1D:
+   case ROGUE_BACKEND_OP_SMP2D:
+   case ROGUE_BACKEND_OP_SMP3D:
+      instr_encoding->backend.op = BACKENDOP_DMA;
+      instr_encoding->backend.dma.dmaop = DMAOP_SMP;
+
+      instr_encoding->backend.dma.smp.drc =
+         rogue_ref_get_drc_index(&backend->src[0].ref);
+      instr_encoding->backend.dma.smp.fcnorm =
+         rogue_backend_op_mod_is_set(backend, OM(FCNORM));
+
+      if (rogue_backend_op_mod_is_set(backend, OM(BIAS)))
+         instr_encoding->backend.dma.smp.lodm = LODM_BIAS;
+      else if (rogue_backend_op_mod_is_set(backend, OM(REPLACE)))
+         instr_encoding->backend.dma.smp.lodm = LODM_REPLACE;
+      else if (rogue_backend_op_mod_is_set(backend, OM(GRADIENT)))
+         instr_encoding->backend.dma.smp.lodm = LODM_GRADIENTS;
+      else
+         instr_encoding->backend.dma.smp.lodm = LODM_NORMAL;
+
+      switch (rogue_ref_get_val(&backend->src[5].ref)) {
+      case 1:
+         instr_encoding->backend.dma.smp.chan = SMPCHAN_1;
+         break;
+
+      case 2:
+         instr_encoding->backend.dma.smp.chan = SMPCHAN_2;
+         break;
+
+      case 3:
+         instr_encoding->backend.dma.smp.chan = SMPCHAN_3;
+         break;
+
+      case 4:
+         instr_encoding->backend.dma.smp.chan = SMPCHAN_4;
+         break;
+
+      default:
+         unreachable("Unsupported number of channels.");
+      }
+
+      switch (backend->op) {
+      case ROGUE_BACKEND_OP_SMP1D:
+         instr_encoding->backend.dma.smp.dmn = DMN_1D;
+         break;
+
+      case ROGUE_BACKEND_OP_SMP2D:
+         instr_encoding->backend.dma.smp.dmn = DMN_2D;
+         break;
+
+      case ROGUE_BACKEND_OP_SMP3D:
+         instr_encoding->backend.dma.smp.dmn = DMN_3D;
+         break;
+
+      default:
+         unreachable("Unsupported sampler op.");
+      }
+
+      if (instr_size > 2) {
+         instr_encoding->backend.dma.smp.exta = 1;
+
+         instr_encoding->backend.dma.smp.tao =
+            rogue_backend_op_mod_is_set(backend, OM(TAO));
+         instr_encoding->backend.dma.smp.soo =
+            rogue_backend_op_mod_is_set(backend, OM(SOO));
+         instr_encoding->backend.dma.smp.sno =
+            rogue_backend_op_mod_is_set(backend, OM(SNO));
+         instr_encoding->backend.dma.smp.nncoords =
+            rogue_backend_op_mod_is_set(backend, OM(NNCOORDS));
+
+         if (rogue_backend_op_mod_is_set(backend, OM(DATA)))
+            instr_encoding->backend.dma.smp.sbmode = SBMODE_DATA;
+         else if (rogue_backend_op_mod_is_set(backend, OM(INFO)))
+            instr_encoding->backend.dma.smp.sbmode = SBMODE_INFO;
+         else if (rogue_backend_op_mod_is_set(backend, OM(BOTH)))
+            instr_encoding->backend.dma.smp.sbmode = SBMODE_BOTH;
+         else
+            instr_encoding->backend.dma.smp.sbmode = SBMODE_NONE;
+
+         instr_encoding->backend.dma.smp.proj =
+            rogue_backend_op_mod_is_set(backend, OM(PROJ));
+         instr_encoding->backend.dma.smp.pplod =
+            rogue_backend_op_mod_is_set(backend, OM(PPLOD));
+      }
+
+      if (instr_size > 3) {
+         instr_encoding->backend.dma.smp.extb = 1;
+
+         instr_encoding->backend.dma.smp.w =
+            rogue_backend_op_mod_is_set(backend, OM(WRT));
+
+         instr_encoding->backend.dma.smp.cachemode =
+            rogue_backend_get_cachemode(backend);
+
+         instr_encoding->backend.dma.smp.swap =
+            rogue_backend_op_mod_is_set(backend, OM(SCHEDSWAP));
+         instr_encoding->backend.dma.smp.f16 =
+            rogue_backend_op_mod_is_set(backend, OM(F16));
+
+         instr_encoding->backend.dma.smp.slccachemode =
+            rogue_backend_get_slccachemode(backend);
+      }
+
+      if (instr_size > 4) {
+         instr_encoding->backend.dma.smp.extc = 1;
+
+         instr_encoding->backend.dma.smp.array =
+            rogue_backend_op_mod_is_set(backend, OM(ARRAY));
+      }
+
+      break;
+
+   case ROGUE_BACKEND_OP_IDF:
+      instr_encoding->backend.op = BACKENDOP_DMA;
+      instr_encoding->backend.dma.dmaop = DMAOP_IDF;
+      instr_encoding->backend.dma.idf.drc =
+         rogue_ref_get_drc_index(&backend->src[0].ref);
+      instr_encoding->backend.dma.idf.srcseladd =
+         rogue_ref_get_io_src_index(&backend->src[1].ref);
+      break;
+
+   case ROGUE_BACKEND_OP_EMITPIX:
+      instr_encoding->backend.op = BACKENDOP_EMIT;
+      instr_encoding->backend.emitpix.freep =
+         rogue_backend_op_mod_is_set(backend, OM(FREEP));
+      break;
 
    default:
       unreachable("Unsupported backend op.");
@@ -380,6 +769,7 @@ static void rogue_encode_backend_instr(const rogue_backend_instr *backend,
 }
 #undef OM
 
+#define OM(op_mod) ROGUE_CTRL_OP_MOD_##op_mod
 static void rogue_encode_ctrl_instr(const rogue_ctrl_instr *ctrl,
                                     unsigned instr_size,
                                     rogue_instr_encoding *instr_encoding)
@@ -390,10 +780,42 @@ static void rogue_encode_ctrl_instr(const rogue_ctrl_instr *ctrl,
       memset(&instr_encoding->ctrl.nop, 0, sizeof(instr_encoding->ctrl.nop));
       break;
 
+   case ROGUE_CTRL_OP_BR:
+   case ROGUE_CTRL_OP_BA: {
+      bool branch_abs = (ctrl->op == ROGUE_CTRL_OP_BA);
+      rogue_offset32 offset;
+
+      instr_encoding->ctrl.ba.abs = branch_abs;
+      instr_encoding->ctrl.ba.allp =
+         rogue_ctrl_op_mod_is_set(ctrl, OM(ALLINST));
+      instr_encoding->ctrl.ba.anyp =
+         rogue_ctrl_op_mod_is_set(ctrl, OM(ANYINST));
+      instr_encoding->ctrl.ba.link = rogue_ctrl_op_mod_is_set(ctrl, OM(LINK));
+
+      if (branch_abs) {
+         offset._ = rogue_ref_get_val(&ctrl->src[0].ref);
+      } else {
+         rogue_instr_group *block_group =
+            list_entry(ctrl->target_block->instrs.next,
+                       rogue_instr_group,
+                       link);
+         offset._ = block_group->size.offset - (ctrl->instr.group->size.offset +
+                                                ctrl->instr.group->size.total);
+      }
+
+      instr_encoding->ctrl.ba.offset_7_1 = offset._7_1;
+      instr_encoding->ctrl.ba.offset_15_8 = offset._15_8;
+      instr_encoding->ctrl.ba.offset_23_16 = offset._23_16;
+      instr_encoding->ctrl.ba.offset_31_24 = offset._31_24;
+
+      break;
+   }
+
    default:
       unreachable("Unsupported ctrl op.");
    }
 }
+#undef OM
 
 static void rogue_encode_bitwise_instr(const rogue_bitwise_instr *bitwise,
                                        unsigned instr_size,

@@ -23,6 +23,7 @@
 
 #if defined(GLX_DIRECT_RENDERING) && !defined(GLX_USE_APPLEGL)
 
+#include <xcb/xcb.h>
 #include <xcb/xproto.h>
 #include <xcb/shm.h>
 #include <X11/Xlib.h>
@@ -33,7 +34,8 @@
 #include "drisw_priv.h"
 #include <X11/extensions/shmproto.h>
 #include <assert.h>
-#include <vulkan/vulkan.h>
+#include <vulkan/vulkan_core.h>
+#include <vulkan/vulkan_xcb.h>
 #include "util/u_debug.h"
 #include "kopper_interface.h"
 #include "loader_dri_helper.h"

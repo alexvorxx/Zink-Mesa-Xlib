@@ -465,7 +465,11 @@ void si_emit_initial_compute_regs(struct si_context *sctx, struct radeon_cmdbuf 
       radeon_emit(S_00B8AC_SA0_CU_EN(info->spi_cu_en) | S_00B8AC_SA1_CU_EN(info->spi_cu_en)); /* SE6 */
       radeon_emit(S_00B8AC_SA0_CU_EN(info->spi_cu_en) | S_00B8AC_SA1_CU_EN(info->spi_cu_en)); /* SE7 */
 
-      radeon_set_sh_reg(R_00B8BC_COMPUTE_DISPATCH_INTERLEAVE, 64);
+      /* How many threads should go to 1 SE before moving onto the next. Think of GL1 cache hits.
+       * Only these values are valid: 0 (disabled), 64, 128, 256, 512
+       * Recommendation: 64 = RT, 256 = non-RT (run benchmarks to be sure)
+       */
+      radeon_set_sh_reg(R_00B8BC_COMPUTE_DISPATCH_INTERLEAVE, S_00B8BC_INTERLEAVE(256));
    }
 
    radeon_end();

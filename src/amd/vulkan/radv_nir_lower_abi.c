@@ -281,6 +281,10 @@ lower_abi_instr(nir_builder *b, nir_instr *instr, void *state)
       replacement = nir_imm_int(b, io_num * 16);
       break;
    }
+   case nir_intrinsic_load_esgs_vertex_stride_amd:
+      /* TODO: pass the value of VGT_ESGS_RING_ITEMSIZE here and set the register to 1. */
+      replacement = nir_imm_int(b, 1);
+      break;
    case nir_intrinsic_load_hs_out_patch_data_offset_amd: {
       unsigned out_vertices_per_patch = b->shader->info.tess.tcs_vertices_out;
       unsigned num_tcs_outputs = stage == MESA_SHADER_TESS_CTRL ?

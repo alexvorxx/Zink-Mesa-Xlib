@@ -131,11 +131,6 @@ with_shared_glapi = with_shared_glapi and with_any_opengl
 
 system_has_kms_drm = ['openbsd', 'netbsd', 'freebsd', 'gnu/kfreebsd', 'dragonfly', 'linux', 'sunos', 'android'].contains(host_machine.system())
 
-with_freedreno_kgsl = get_option('freedreno-kgsl')
-if with_freedreno_kgsl
-  system_has_kms_drm = false
-endif
-
 gallium_drivers = get_option('gallium-drivers')
 if gallium_drivers.contains('auto')
   if system_has_kms_drm
@@ -193,6 +188,13 @@ foreach gallium_driver : gallium_drivers
   pre_args += '-DHAVE_@0@'.format(gallium_driver.to_upper())
 endforeach
 
+freedreno_kmds = get_option('freedreno-kmds')
+# If building only vulkan with only kgsl kmd support, there is no libdrm
+# dependency:
+if freedreno_kmds.length() == 1 and freedreno_kmds.contains('kgsl') and not with_gallium_freedreno
+  system_has_kms_drm = false
+endif
+
 with_gallium = gallium_drivers.length() != 0
 with_gallium_kmsro = system_has_kms_drm and [
   with_gallium_asahi,
@@ -244,7 +246,6 @@ with_freedreno_vk = _vulkan_drivers.contains('freedreno')
 with_panfrost_vk = _vulkan_drivers.contains('panfrost')
 with_swrast_vk = _vulkan_drivers.contains('swrast')
 with_virtio_vk = _vulkan_drivers.contains('virtio-experimental')
-with_freedreno_virtio = get_option('freedreno-virtio')
 with_broadcom_vk = _vulkan_drivers.contains('broadcom')
 with_imagination_vk = _vulkan_drivers.contains('imagination-experimental')
 with_imagination_srv = get_option('imagination-srv')
@@ -375,30 +376,6 @@ with_gbm = get_option('gbm') \
 with_xlib_lease = get_option('xlib-lease') \
   .require(with_platform_x11 and system_has_kms_drm, error_message : 'xlib-lease requires X11 and KMS/DRM support') \
   .allowed()
-
-vk_wsi_args = []
-
-if with_platform_wayland
-  vk_wsi_args += '-DVK_USE_PLATFORM_WAYLAND_KHR'
-endif
-if with_platform_x11
-  vk_wsi_args += ['-DVK_USE_PLATFORM_XCB_KHR', '-DVK_USE_PLATFORM_XLIB_KHR']
-endif
-if with_platform_windows
-  vk_wsi_args += '-DVK_USE_PLATFORM_WIN32_KHR'
-endif
-if with_platform_android
-  vk_wsi_args += '-DVK_USE_PLATFORM_ANDROID_KHR'
-endif
-if with_xlib_lease
-  vk_wsi_args += '-DVK_USE_PLATFORM_XLIB_XRANDR_EXT'
-endif
-if system_has_kms_drm and not with_platform_android
-  vk_wsi_args += '-DVK_USE_PLATFORM_DISPLAY_KHR'
-endif
-if host_machine.system() == 'darwin'
-  vk_wsi_args += ['-DVK_USE_PLATFORM_MACOS_MVK', '-DVK_USE_PLATFORM_METAL_EXT']
-endif
 
 with_egl = get_option('egl') \
   .require(host_machine.system() != 'darwin', error_message : 'EGL not supported on MacOS') \
@@ -550,7 +527,6 @@ endif
 _vdpau_drivers = [
   with_gallium_d3d12_video,
   with_gallium_nouveau,
-  with_gallium_r300,
   with_gallium_r600,
   with_gallium_radeonsi,
   with_gallium_virgl,
@@ -559,7 +535,7 @@ _vdpau_drivers = [
 vdpau = get_option('gallium-vdpau') \
   .require(system_has_kms_drm, error_message : 'VDPAU state tracker can only be build on unix-like OSes.') \
   .require(with_platform_x11, error_message : 'VDPAU state tracker requires X11 support.') \
-  .require(_vdpau_drivers.contains(true), error_message : 'VDPAU state tracker requires at least one of the following gallium drivers: r300, r600, radeonsi, nouveau, d3d12 (with option gallium-d3d12-video, virgl).') 
+  .require(_vdpau_drivers.contains(true), error_message : 'VDPAU state tracker requires at least one of the following gallium drivers: r600, radeonsi, nouveau, d3d12 (with option gallium-d3d12-video, virgl).') 
 
 dep_vdpau = dependency('vdpau', version : '>= 1.1', required : vdpau)
 if dep_vdpau.found()
@@ -1799,6 +1775,7 @@ else
 endif
 
 yacc_is_bison = true
+needs_flex_bison = with_any_opengl or with_freedreno_vk or with_intel_tools or with_gallium
 
 if build_machine.system() == 'windows'
   # Prefer the winflexbison versions, they're much easier to install and have
@@ -1810,7 +1787,7 @@ if build_machine.system() == 'windows'
     # _fileno functions)
     prog_flex = [prog_flex, '--wincompat']
   else
-    prog_flex = [find_program('flex', 'lex', required : with_any_opengl, disabler : true)]
+    prog_flex = [find_program('flex', 'lex', required : needs_flex_bison, disabler : true)]
   endif
   # Force flex to use const keyword in prototypes, as relies on __cplusplus or
   # __STDC__ macro to determine whether it's safe to use const keyword
@@ -1825,13 +1802,13 @@ if build_machine.system() == 'windows'
 
   prog_bison = find_program('win_bison', required : false)
   if not prog_bison.found()
-    prog_bison = find_program('bison', 'yacc', required : with_any_opengl, disabler : true)
+    prog_bison = find_program('bison', 'yacc', required : needs_flex_bison, disabler : true)
   endif
 else
   prog_bison = find_program('bison', required : false)
 
   if not prog_bison.found()
-    prog_bison = find_program('byacc', required : with_any_opengl, disabler : true)
+    prog_bison = find_program('byacc', required : needs_flex_bison, disabler : true)
     yacc_is_bison = false
   endif
 
@@ -1842,7 +1819,7 @@ else
     prog_bison = [prog_bison, '-Wno-deprecated']
   endif
 
-  prog_flex = find_program('flex', required : with_any_opengl, disabler : true)
+  prog_flex = find_program('flex', required : needs_flex_bison, disabler : true)
   prog_flex_cpp = prog_flex
 endif
 
@@ -2116,6 +2093,13 @@ summary(
     'includedir': get_option('includedir'),
   },
   section: 'Directories'
+)
+
+summary(
+  {
+    'c_cpp_args': c_cpp_args,
+  },
+  section: 'Common C and C++ arguments'
 )
 
 summary(

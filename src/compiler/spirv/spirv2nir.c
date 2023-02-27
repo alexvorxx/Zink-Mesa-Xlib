@@ -162,7 +162,6 @@ int main(int argc, char **argv)
 
    struct spirv_to_nir_options spirv_opts = {
       .environment = env,
-      .use_deref_buffer_array_length = env == NIR_SPIRV_OPENGL,
    };
 
    if (shader_stage == MESA_SHADER_KERNEL) {

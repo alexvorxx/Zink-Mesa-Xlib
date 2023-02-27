@@ -96,13 +96,6 @@ static LLVMValueRef si_get_gs_wave_id(struct si_shader_context *ctx)
       return ac_get_arg(&ctx->ac, ctx->args->ac.gs_wave_id);
 }
 
-static LLVMValueRef ngg_get_emulated_counters_buf(struct si_shader_context *ctx)
-{
-   return ac_build_load_to_sgpr(&ctx->ac,
-                                ac_get_ptr_arg(&ctx->ac, &ctx->args->ac, ctx->args->internal_bindings),
-                                LLVMConstInt(ctx->ac.i32, SI_GS_QUERY_EMULATED_COUNTERS_BUF, false));
-}
-
 void si_llvm_gs_build_end(struct si_shader_context *ctx)
 {
    if (ctx->screen->info.gfx_level >= GFX10)

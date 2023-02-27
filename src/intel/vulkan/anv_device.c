@@ -975,6 +975,8 @@ anv_physical_device_try_create(struct vk_instance *vk_instance,
    device->master_fd = master_fd;
 
    device->engine_info = intel_engine_get_info(fd, device->info.kmd_type);
+   device->info.has_compute_engine = intel_engines_count(device->engine_info,
+                                                         INTEL_ENGINE_CLASS_COMPUTE);
    anv_physical_device_init_queue_families(device);
 
    anv_physical_device_init_perf(device, fd);
@@ -3440,7 +3442,7 @@ VkResult anv_CreateDevice(
       .bo = device->workaround_bo,
       .offset = align(intel_debug_write_identifiers(device->workaround_bo->map,
                                                     device->workaround_bo->size,
-                                                    "Anv") + 8, 8),
+                                                    "Anv"), 32),
    };
 
    device->workarounds.doom64_images = NULL;

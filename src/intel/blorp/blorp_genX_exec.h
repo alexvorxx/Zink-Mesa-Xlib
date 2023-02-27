@@ -405,9 +405,8 @@ static void
 blorp_emit_vertex_buffers(struct blorp_batch *batch,
                           const struct blorp_params *params)
 {
-   struct GENX(VERTEX_BUFFER_STATE) vb[3];
-   uint32_t num_vbs = 2;
-   memset(vb, 0, sizeof(vb));
+   struct GENX(VERTEX_BUFFER_STATE) vb[2] = {};
+   const uint32_t num_vbs = ARRAY_SIZE(vb);
 
    struct blorp_address addrs[2] = {};
    uint32_t sizes[2];
