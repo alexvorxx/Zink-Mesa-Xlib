@@ -249,10 +249,14 @@ emit_masked_swizzle(isel_context* ctx, Builder& bld, Temp src, unsigned mask)
 
       uint16_t dpp_ctrl = 0xffff;
 
-      if (and_mask == 0x1f && or_mask < 4 && xor_mask < 4) {
+      /* DPP16 before DPP8 before v_permlane(x)16_b32
+       * because DPP16 supports modifiers and v_permlane
+       * can't be folded into valu instructions.
+       */
+      if ((and_mask & 0x1c) == 0x1c && or_mask < 4 && xor_mask < 4) {
          unsigned res[4] = {0, 1, 2, 3};
          for (unsigned i = 0; i < 4; i++)
-            res[i] = ((res[i] | or_mask) ^ xor_mask) & 0x3;
+            res[i] = (((res[i] & and_mask) | or_mask) ^ xor_mask) & 0x3;
          dpp_ctrl = dpp_quad_perm(res[0], res[1], res[2], res[3]);
       } else if (and_mask == 0x1f && !or_mask && xor_mask == 8) {
          dpp_ctrl = dpp_row_rr(8);
@@ -260,13 +264,29 @@ emit_masked_swizzle(isel_context* ctx, Builder& bld, Temp src, unsigned mask)
          dpp_ctrl = dpp_row_mirror;
       } else if (and_mask == 0x1f && !or_mask && xor_mask == 0x7) {
          dpp_ctrl = dpp_row_half_mirror;
+      } else if (ctx->options->gfx_level >= GFX11 && and_mask == 0x10 && or_mask < 0x10 &&
+                 xor_mask < 0x10) {
+         dpp_ctrl = dpp_row_share(or_mask ^ xor_mask);
+      } else if (ctx->options->gfx_level >= GFX11 && and_mask == 0x1f && !or_mask &&
+                 xor_mask < 0x10) {
+         dpp_ctrl = dpp_row_xmask(xor_mask);
       } else if (ctx->options->gfx_level >= GFX10 && (and_mask & 0x18) == 0x18 && or_mask < 8 &&
                  xor_mask < 8) {
-         // DPP8 comes last, as it does not allow several modifiers like `abs` that are available with DPP16
          Builder::Result ret = bld.vop1_dpp8(aco_opcode::v_mov_b32, bld.def(v1), src);
          for (unsigned i = 0; i < 8; i++) {
             ret->dpp8().lane_sel[i] = (((i & and_mask) | or_mask) ^ xor_mask) & 0x7;
          }
+         return ret;
+      } else if (ctx->options->gfx_level >= GFX10 && (and_mask & 0x10) == 0x10 && or_mask < 0x10) {
+         uint64_t lane_mask = 0;
+         for (unsigned i = 0; i < 16; i++)
+            lane_mask |= uint64_t(((i & and_mask) | or_mask) ^ (xor_mask & 0xf)) << i * 4;
+         aco_opcode opcode =
+            xor_mask & 0x10 ? aco_opcode::v_permlanex16_b32 : aco_opcode::v_permlane16_b32;
+         Temp op1 = bld.copy(bld.def(s1), Operand::c32(lane_mask & 0xffffffff));
+         Temp op2 = bld.copy(bld.def(s1), Operand::c32(lane_mask >> 32));
+         Builder::Result ret = bld.vop3(opcode, bld.def(v1), src, op1, op2);
+         ret->vop3().opsel = 0x3; /* set BOUND_CTRL/FETCH_INACTIVE */
          return ret;
       }
 
@@ -5276,10 +5296,13 @@ load_input_from_temps(isel_context* ctx, nir_intrinsic_instr* instr, Temp dst)
 void
 visit_store_output(isel_context* ctx, nir_intrinsic_instr* instr)
 {
-   if (ctx->stage == vertex_vs || ctx->stage == tess_eval_vs || ctx->stage == fragment_fs ||
-       ctx->stage == vertex_ngg || ctx->stage == tess_eval_ngg || ctx->stage == mesh_ngg ||
-       (ctx->stage == vertex_tess_control_hs && ctx->shader->info.stage == MESA_SHADER_VERTEX) ||
-       ctx->shader->info.stage == MESA_SHADER_GEOMETRY) {
+   /* LS pass output to TCS by temp if they have same in/out patch size. */
+   bool ls_need_output = ctx->stage == vertex_tess_control_hs &&
+      ctx->shader->info.stage == MESA_SHADER_VERTEX && ctx->tcs_in_out_eq;
+
+   bool ps_need_output = ctx->stage == fragment_fs;
+
+   if (ls_need_output || ps_need_output) {
       bool stored_to_temps = store_output_to_temps(ctx, instr);
       if (!stored_to_temps) {
          isel_err(instr->src[1].ssa->parent_instr, "Unimplemented output offset instruction");

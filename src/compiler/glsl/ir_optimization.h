@@ -75,7 +75,6 @@ bool lower_packing_builtins(exec_list *instructions,
                             bool has_shading_language_packing,
                             bool has_gpu_shader5,
                             bool has_half_float_packing);
-bool lower_vector_insert(exec_list *instructions, bool lower_nonconstant_index);
 bool lower_vector_derefs(gl_linked_shader *shader);
 void lower_named_interface_blocks(void *mem_ctx, gl_linked_shader *shader);
 void optimize_dead_builtin_variables(exec_list *instructions,

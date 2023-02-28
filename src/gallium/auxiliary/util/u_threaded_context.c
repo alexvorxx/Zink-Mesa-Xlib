@@ -207,10 +207,12 @@ tc_parse_draw(struct threaded_context *tc)
       info->cbuf_invalidate = 0;
       info->zsbuf_invalidate = false;
       info->has_draw = true;
+      info->has_query_ends |= tc->query_ended;
    }
 
    tc->in_renderpass = true;
    tc->seen_fb_state = true;
+   tc->query_ended = false;
 }
 
 static void *
@@ -596,6 +598,7 @@ _tc_sync(struct threaded_context *tc, UNUSED const char *info, UNUSED const char
          tc->renderpass_info_recording->data32[0] = 0;
       }
       tc->seen_fb_state = false;
+      tc->query_ended = false;
    }
 
    MESA_TRACE_END();
@@ -1120,6 +1123,7 @@ tc_end_query(struct pipe_context *_pipe, struct pipe_query *query)
    call->query = query;
 
    tq->flushed = false;
+   tc->query_ended = true;
 
    return true; /* we don't care about the return value for this call */
 }
@@ -3459,6 +3463,7 @@ out_of_memory:
    if (!(flags & PIPE_FLUSH_DEFERRED)) {
       tc_flush_queries(tc);
       tc->seen_fb_state = false;
+      tc->query_ended = false;
    }
    tc_set_driver_thread(tc);
    pipe->flush(pipe, fence, flags);
@@ -3674,7 +3679,8 @@ tc_draw_vbo(struct pipe_context *_pipe, const struct pipe_draw_info *info,
    struct threaded_context *tc = threaded_context(_pipe);
    unsigned index_size = info->index_size;
    bool has_user_indices = info->has_user_indices;
-   tc_parse_draw(tc);
+   if (tc->options.parse_renderpass_info)
+      tc_parse_draw(tc);
 
    if (unlikely(indirect)) {
       assert(!has_user_indices);
@@ -3994,7 +4000,8 @@ tc_draw_vertex_state(struct pipe_context *_pipe,
                      unsigned num_draws)
 {
    struct threaded_context *tc = threaded_context(_pipe);
-   tc_parse_draw(tc);
+   if (tc->options.parse_renderpass_info)
+      tc_parse_draw(tc);
 
    if (num_draws == 1) {
       /* Single draw. */

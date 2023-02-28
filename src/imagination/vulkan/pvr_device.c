@@ -49,11 +49,11 @@
 #include "pvr_hardcode.h"
 #include "pvr_job_render.h"
 #include "pvr_limits.h"
-#include "pvr_nop_usc.h"
 #include "pvr_pds.h"
 #include "pvr_private.h"
 #include "pvr_tex_state.h"
 #include "pvr_types.h"
+#include "pvr_uscgen.h"
 #include "pvr_winsys.h"
 #include "rogue/rogue.h"
 #include "util/build_id.h"
@@ -1525,15 +1525,19 @@ static VkResult pvr_device_init_nop_program(struct pvr_device *device)
    const uint32_t cache_line_size =
       rogue_get_slc_cache_line_size(&device->pdevice->dev_info);
    struct pvr_pds_kickusc_program program = { 0 };
+   struct util_dynarray nop_usc_bin;
    uint32_t staging_buffer_size;
    uint32_t *staging_buffer;
    VkResult result;
 
+   pvr_uscgen_nop(&nop_usc_bin);
+
    result = pvr_gpu_upload_usc(device,
-                               pvr_nop_usc_code,
-                               sizeof(pvr_nop_usc_code),
+                               util_dynarray_begin(&nop_usc_bin),
+                               nop_usc_bin.size,
                                cache_line_size,
                                &device->nop_program.usc);
+   util_dynarray_fini(&nop_usc_bin);
    if (result != VK_SUCCESS)
       return result;
 

@@ -506,14 +506,14 @@ emit_load_const(compiler_context *ctx, nir_load_const_instr *instr)
  * explicitly emit a move with the constant source */
 
 static void
-emit_explicit_constant(compiler_context *ctx, unsigned node, unsigned to)
+emit_explicit_constant(compiler_context *ctx, unsigned node)
 {
    void *constant_value =
       _mesa_hash_table_u64_search(ctx->ssa_constants, node + 1);
 
    if (constant_value) {
       midgard_instruction ins =
-         v_mov(SSA_FIXED_REGISTER(REGISTER_CONSTANT), to);
+         v_mov(SSA_FIXED_REGISTER(REGISTER_CONSTANT), node);
       attach_constants(ctx, &ins, constant_value, node + 1);
       emit_mir_instruction(ctx, ins);
    }
@@ -947,6 +947,9 @@ emit_alu(compiler_context *ctx, nir_alu_instr *instr)
       op = is_float ? (mixed ? midgard_alu_op_fcsel_v : midgard_alu_op_fcsel)
                     : (mixed ? midgard_alu_op_icsel_v : midgard_alu_op_icsel);
 
+      int index = nir_src_index(ctx, &instr->src[0].src);
+      emit_explicit_constant(ctx, index);
+
       break;
    }
 
@@ -1325,7 +1328,7 @@ emit_atomic(compiler_context *ctx, nir_intrinsic_instr *instr, bool is_shared,
    unsigned val_src = is_image ? 3 : 1;
    unsigned val = nir_src_index(ctx, &instr->src[val_src]);
    unsigned bitsize = nir_src_bit_size(instr->src[val_src]);
-   emit_explicit_constant(ctx, val, val);
+   emit_explicit_constant(ctx, val);
 
    midgard_instruction ins = {.type = TAG_LOAD_STORE_4,
                               .mask = 0xF,
@@ -1351,7 +1354,7 @@ emit_atomic(compiler_context *ctx, nir_intrinsic_instr *instr, bool is_shared,
    if (op == midgard_op_atomic_cmpxchg) {
       unsigned xchg_val_src = is_image ? 4 : 2;
       unsigned xchg_val = nir_src_index(ctx, &instr->src[xchg_val_src]);
-      emit_explicit_constant(ctx, xchg_val, xchg_val);
+      emit_explicit_constant(ctx, xchg_val);
 
       ins.src[2] = val;
       ins.src_types[2] = type | bitsize;
@@ -1457,7 +1460,7 @@ emit_image_op(compiler_context *ctx, nir_intrinsic_instr *instr, bool is_atomic)
    assert(dim != GLSL_SAMPLER_DIM_MS && "MSAA'd images not supported");
 
    unsigned coord_reg = nir_src_index(ctx, &instr->src[1]);
-   emit_explicit_constant(ctx, coord_reg, coord_reg);
+   emit_explicit_constant(ctx, coord_reg);
 
    nir_src *index = &instr->src[0];
    bool is_direct = nir_src_is_const(*index);
@@ -1471,7 +1474,7 @@ emit_image_op(compiler_context *ctx, nir_intrinsic_instr *instr, bool is_atomic)
    midgard_instruction ins;
    if (is_store) { /* emit st_image_* */
       unsigned val = nir_src_index(ctx, &instr->src[3]);
-      emit_explicit_constant(ctx, val, val);
+      emit_explicit_constant(ctx, val);
 
       nir_alu_type type = nir_intrinsic_src_type(instr);
       ins = st_image(type, val, PACK_LDST_ATTRIB_OFS(address));
@@ -1587,7 +1590,7 @@ emit_fragment_store(compiler_context *ctx, unsigned src, unsigned src_z,
 
    assert(!br);
 
-   emit_explicit_constant(ctx, src, src);
+   emit_explicit_constant(ctx, src);
 
    struct midgard_instruction ins = v_branch(false, false);
 
@@ -1608,13 +1611,13 @@ emit_fragment_store(compiler_context *ctx, unsigned src, unsigned src_z,
       ins.swizzle[0][i] = i;
 
    if (~src_z) {
-      emit_explicit_constant(ctx, src_z, src_z);
+      emit_explicit_constant(ctx, src_z);
       ins.src[2] = src_z;
       ins.src_types[2] = nir_type_uint32;
       ins.writeout |= PAN_WRITEOUT_Z;
    }
    if (~src_s) {
-      emit_explicit_constant(ctx, src_s, src_s);
+      emit_explicit_constant(ctx, src_s);
       ins.src[3] = src_s;
       ins.src_types[3] = nir_type_uint32;
       ins.writeout |= PAN_WRITEOUT_S;
@@ -1941,7 +1944,7 @@ emit_intrinsic(compiler_context *ctx, nir_intrinsic_instr *instr)
           * value in r2 for the blend shader to use. */
          if (~reg_2) {
             if (instr->src[4].is_ssa) {
-               emit_explicit_constant(ctx, reg_2, reg_2);
+               emit_explicit_constant(ctx, reg_2);
 
                unsigned out = make_compiler_temp(ctx);
 
@@ -1966,7 +1969,7 @@ emit_intrinsic(compiler_context *ctx, nir_intrinsic_instr *instr)
           * swizzle. If this is a constant source, we'll need to
           * emit that explicitly. */
 
-         emit_explicit_constant(ctx, reg, reg);
+         emit_explicit_constant(ctx, reg);
 
          offset = nir_intrinsic_base(instr) + nir_src_as_uint(instr->src[1]);
 
@@ -2034,7 +2037,7 @@ emit_intrinsic(compiler_context *ctx, nir_intrinsic_instr *instr)
    case nir_intrinsic_store_shared:
    case nir_intrinsic_store_scratch:
       reg = nir_src_index(ctx, &instr->src[0]);
-      emit_explicit_constant(ctx, reg, reg);
+      emit_explicit_constant(ctx, reg);
 
       unsigned seg;
       if (instr->intrinsic == nir_intrinsic_store_global)
@@ -2103,21 +2106,26 @@ emit_intrinsic(compiler_context *ctx, nir_intrinsic_instr *instr)
       emit_special(ctx, instr, 97);
       break;
 
-   /* Midgard doesn't seem to want special handling, though we do need to
-    * take care when scheduling to avoid incorrect reordering.
-    */
-   case nir_intrinsic_memory_barrier:
-   case nir_intrinsic_memory_barrier_buffer:
-   case nir_intrinsic_memory_barrier_image:
-   case nir_intrinsic_memory_barrier_shared:
-   case nir_intrinsic_group_memory_barrier:
-      schedule_barrier(ctx);
-      break;
-
    case nir_intrinsic_control_barrier:
       schedule_barrier(ctx);
       emit_control_barrier(ctx);
       schedule_barrier(ctx);
+      break;
+
+   case nir_intrinsic_scoped_barrier:
+      if (nir_intrinsic_execution_scope(instr) != NIR_SCOPE_NONE) {
+         schedule_barrier(ctx);
+         emit_control_barrier(ctx);
+         schedule_barrier(ctx);
+      } else if (nir_intrinsic_memory_scope(instr) != NIR_SCOPE_NONE) {
+         /* Midgard doesn't seem to want special handling, though we do need to
+          * take care when scheduling to avoid incorrect reordering.
+          *
+          * Note this is an "else if" since the handling for the execution scope
+          * case already covers the case when both scopes are present.
+          */
+         schedule_barrier(ctx);
+      }
       break;
 
       ATOMIC_CASE(ctx, instr, add, add);
@@ -2235,7 +2243,7 @@ set_tex_coord(compiler_context *ctx, nir_tex_instr *instr,
 
    unsigned coords = nir_src_index(ctx, &instr->src[coord_idx].src);
 
-   emit_explicit_constant(ctx, coords, coords);
+   emit_explicit_constant(ctx, coords);
 
    ins->src_types[1] = nir_tex_instr_src_type(instr, coord_idx) |
                        nir_src_bit_size(instr->src[coord_idx].src);
@@ -2306,7 +2314,7 @@ set_tex_coord(compiler_context *ctx, nir_tex_instr *instr,
       unsigned sample_or_ref =
          nir_src_index(ctx, &instr->src[ms_or_comparator_idx].src);
 
-      emit_explicit_constant(ctx, sample_or_ref, sample_or_ref);
+      emit_explicit_constant(ctx, sample_or_ref);
 
       if (ins->src[1] == ~0)
          ins->src[1] = make_compiler_temp_reg(ctx);
@@ -2427,7 +2435,7 @@ emit_texop_native(compiler_context *ctx, nir_tex_instr *instr,
          for (unsigned c = 0; c < MIR_VEC_COMPONENTS; ++c)
             ins.swizzle[2][c] = COMPONENT_X;
 
-         emit_explicit_constant(ctx, index, index);
+         emit_explicit_constant(ctx, index);
 
          break;
       };
@@ -2440,7 +2448,7 @@ emit_texop_native(compiler_context *ctx, nir_tex_instr *instr,
          for (unsigned c = 0; c < MIR_VEC_COMPONENTS; ++c)
             ins.swizzle[3][c] = (c > COMPONENT_Z) ? 0 : c;
 
-         emit_explicit_constant(ctx, index, index);
+         emit_explicit_constant(ctx, index);
          break;
       };
 

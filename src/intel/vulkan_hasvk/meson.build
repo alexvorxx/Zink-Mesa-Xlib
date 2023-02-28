@@ -84,7 +84,7 @@ foreach g : [['70', ['gfx7_cmd_buffer.c']],
       inc_include, inc_src, inc_mapi, inc_mesa, inc_gallium, inc_compiler, inc_intel,
     ],
     c_args : [
-      no_override_init_args, c_sse2_args,
+      no_override_init_args, sse2_args,
       '-DGFX_VERx10=@0@'.format(_gfx_ver),
     ],
     gnu_symbol_visibility : 'hidden',
@@ -138,7 +138,7 @@ anv_deps = [
 ]
 anv_flags = [
   no_override_init_args,
-  c_sse2_args,
+  sse2_args,
 ]
 
 anv_cpp_flags = []
@@ -243,7 +243,7 @@ if with_tests
       executable(
         t,
         ['tests/@0@.c'.format(t), anv_hasvk_entrypoints[0]],
-        c_args : [ c_sse2_args ],
+        c_args : [ sse2_args ],
         link_with : libvulkan_intel_hasvk_test,
         dependencies : [
           dep_libdrm, dep_thread, dep_m, dep_valgrind,

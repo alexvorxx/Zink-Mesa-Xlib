@@ -129,6 +129,8 @@ optimizations = [
     '!options->lower_bitops'),
    (('irem', a, '#b(is_neg_power_of_two)'), ('irem', a, ('iabs', b)), '!options->lower_bitops'),
 
+   (('~fmul', ('fsign', a), ('ffloor', ('fadd', ('fabs', a), 0.5))), ('ftrunc', ('fadd', a, ('fmul', ('fsign', a), 0.5))), '!options->lower_ftrunc || options->lower_ffloor'),
+
    (('~fneg', ('fneg', a)), a),
    (('ineg', ('ineg', a)), a),
    (('fabs', ('fneg', a)), ('fabs', a)),
@@ -400,6 +402,10 @@ optimizations.extend([
     ('bcsel', a, ('fmul', ('fadd', ('fmul', b, c), d), e), ('fmul', d, e))),
 
    (('fdph', a, b), ('fdot4', ('vec4', 'a.x', 'a.y', 'a.z', 1.0), b), 'options->lower_fdph'),
+
+   (('fdot4', a, 0.0), 0.0),
+   (('fdot3', a, 0.0), 0.0),
+   (('fdot2', a, 0.0), 0.0),
 
    (('fdot4', ('vec4', a, b,   c,   1.0), d), ('fdph',  ('vec3', a, b, c), d), '!options->lower_fdph'),
    (('fdot4', ('vec4', a, 0.0, 0.0, 0.0), b), ('fmul', a, b)),

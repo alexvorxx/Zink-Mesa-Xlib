@@ -40,7 +40,7 @@ tu_wsi_init(struct tu_physical_device *physical_device)
                             &physical_device->instance->vk.alloc,
                             physical_device->master_fd,
                             &physical_device->instance->dri_options,
-                            false);
+                            &(struct wsi_device_options){.sw_device = false});
    if (result != VK_SUCCESS)
       return result;
 

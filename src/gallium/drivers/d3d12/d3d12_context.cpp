@@ -396,6 +396,11 @@ d3d12_bind_blend_state(struct pipe_context *pctx, void *blend_state)
    if (new_state == NULL || old_state == NULL ||
        new_state->blend_factor_flags != old_state->blend_factor_flags)
       ctx->state_dirty |= D3D12_DIRTY_BLEND_COLOR;
+
+   if (new_state == NULL)
+      ctx->missing_dual_src_outputs = false;
+   else if (new_state != NULL && (old_state == NULL || old_state->is_dual_src != new_state->is_dual_src))
+      ctx->missing_dual_src_outputs = missing_dual_src_outputs(ctx);
 }
 
 static void
@@ -1124,8 +1129,11 @@ static void
 d3d12_bind_fs_state(struct pipe_context *pctx,
                     void *fss)
 {
-   bind_stage(d3d12_context(pctx), PIPE_SHADER_FRAGMENT,
+   struct d3d12_context* ctx = d3d12_context(pctx);
+   bind_stage(ctx, PIPE_SHADER_FRAGMENT,
               (struct d3d12_shader_selector *) fss);
+   ctx->has_flat_varyings = has_flat_varyings(ctx);
+   ctx->missing_dual_src_outputs = missing_dual_src_outputs(ctx);
 }
 
 static void
@@ -2504,6 +2512,9 @@ d3d12_context_create(struct pipe_screen *pscreen, void *priv, unsigned flags)
    ctx->base.get_device_reset_status = d3d12_get_reset_status;
 
    ctx->gfx_pipeline_state.sample_mask = ~0;
+
+   ctx->has_flat_varyings = false;
+   ctx->missing_dual_src_outputs = false;
 
    d3d12_context_surface_init(&ctx->base);
    d3d12_context_resource_init(&ctx->base);

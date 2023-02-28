@@ -115,9 +115,11 @@ struct vn_physical_device {
       VkExternalMemoryHandleTypeFlags supported_handle_types;
    } external_memory;
 
-   /* syncFdFencing allows driver to query renderer sync_fd features */
-   VkExternalFenceFeatureFlags renderer_sync_fd_fence_features;
-   VkExternalSemaphoreFeatureFlags renderer_sync_fd_semaphore_features;
+   struct {
+      bool fence_exportable;
+      bool semaphore_exportable;
+      bool semaphore_importable;
+   } renderer_sync_fd;
 
    VkExternalFenceHandleTypeFlags external_fence_handles;
    VkExternalSemaphoreHandleTypeFlags external_binary_semaphore_handles;

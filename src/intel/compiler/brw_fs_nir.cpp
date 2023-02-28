@@ -4346,38 +4346,49 @@ fs_visitor::nir_emit_intrinsic(const fs_builder &bld, nir_intrinsic_instr *instr
       break;
    }
 
-   case nir_intrinsic_scoped_barrier:
-      assert(nir_intrinsic_execution_scope(instr) == NIR_SCOPE_NONE);
-      FALLTHROUGH;
    case nir_intrinsic_group_memory_barrier:
    case nir_intrinsic_memory_barrier_shared:
    case nir_intrinsic_memory_barrier_buffer:
    case nir_intrinsic_memory_barrier_image:
    case nir_intrinsic_memory_barrier:
+   case nir_intrinsic_memory_barrier_atomic_counter:
+      unreachable("unexpected barrier, expecting only nir_intrinsic_scoped_barrier");
+
+   case nir_intrinsic_scoped_barrier:
    case nir_intrinsic_begin_invocation_interlock:
    case nir_intrinsic_end_invocation_interlock: {
       bool ugm_fence, slm_fence, tgm_fence, urb_fence;
-      const enum opcode opcode =
-         instr->intrinsic == nir_intrinsic_begin_invocation_interlock ?
-         SHADER_OPCODE_INTERLOCK : SHADER_OPCODE_MEMORY_FENCE;
+      enum opcode opcode;
+
+      /* Handling interlock intrinsics here will allow the logic for IVB
+       * render cache (see below) to be reused.
+       */
 
       switch (instr->intrinsic) {
       case nir_intrinsic_scoped_barrier: {
+         assert(nir_intrinsic_execution_scope(instr) == NIR_SCOPE_NONE);
          nir_variable_mode modes = nir_intrinsic_memory_modes(instr);
          ugm_fence = modes & (nir_var_mem_ssbo | nir_var_mem_global);
          slm_fence = modes & nir_var_mem_shared;
          tgm_fence = modes & nir_var_image;
          urb_fence = modes & (nir_var_shader_out | nir_var_mem_task_payload);
+         opcode = SHADER_OPCODE_MEMORY_FENCE;
          break;
       }
 
       case nir_intrinsic_begin_invocation_interlock:
-      case nir_intrinsic_end_invocation_interlock:
          /* For beginInvocationInterlockARB(), we will generate a memory fence
           * but with a different opcode so that generator can pick SENDC
           * instead of SEND.
-          *
-          * For endInvocationInterlockARB(), we need to insert a memory fence which
+          */
+         assert(stage == MESA_SHADER_FRAGMENT);
+         ugm_fence = tgm_fence = true;
+         slm_fence = urb_fence = false;
+         opcode = SHADER_OPCODE_INTERLOCK;
+         break;
+
+      case nir_intrinsic_end_invocation_interlock:
+         /* For endInvocationInterlockARB(), we need to insert a memory fence which
           * stalls in the shader until the memory transactions prior to that
           * fence are complete.  This ensures that the shader does not end before
           * any writes from its critical section have landed.  Otherwise, you can
@@ -4385,26 +4396,15 @@ fs_visitor::nir_emit_intrinsic(const fs_builder &bld, nir_intrinsic_instr *instr
           * stalls for previous FS invocation on its pixel to complete but
           * doesn't actually wait for the dataport memory transactions from that
           * thread to land before submitting its own.
-          *
-          * Handling them here will allow the logic for IVB render cache (see
-          * below) to be reused.
           */
          assert(stage == MESA_SHADER_FRAGMENT);
          ugm_fence = tgm_fence = true;
          slm_fence = urb_fence = false;
+         opcode = SHADER_OPCODE_MEMORY_FENCE;
          break;
 
       default:
-         ugm_fence = instr->intrinsic != nir_intrinsic_memory_barrier_shared &&
-                     instr->intrinsic != nir_intrinsic_memory_barrier_image;
-         slm_fence = instr->intrinsic == nir_intrinsic_group_memory_barrier ||
-                     instr->intrinsic == nir_intrinsic_memory_barrier ||
-                     instr->intrinsic == nir_intrinsic_memory_barrier_shared;
-         tgm_fence = instr->intrinsic == nir_intrinsic_group_memory_barrier ||
-                     instr->intrinsic == nir_intrinsic_memory_barrier ||
-                     instr->intrinsic == nir_intrinsic_memory_barrier_image;
-         urb_fence = instr->intrinsic == nir_intrinsic_memory_barrier;
-         break;
+         unreachable("invalid intrinsic");
       }
 
       if (nir->info.shared_size > 0) {

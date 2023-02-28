@@ -3391,8 +3391,9 @@ genX(cmd_buffer_flush_gfx_state)(struct anv_cmd_buffer *cmd_buffer)
       cmd_buffer->state.push_descriptors_dirty &= ~push_descriptor_dirty;
    }
 
-   /* Wa_1306463417 - Send HS state for every primitive on gfx11. */
-   if (cmd_buffer->state.gfx.dirty & ANV_CMD_DIRTY_PIPELINE || GFX_VER == 11) {
+   /* Wa_1306463417, Wa_16011107343 - Send HS state for every primitive. */
+   if (cmd_buffer->state.gfx.dirty & ANV_CMD_DIRTY_PIPELINE ||
+       (GFX_VER == 11 || GFX_VER == 12)) {
       genX(emit_hs)(cmd_buffer);
    }
 
@@ -3555,9 +3556,9 @@ anv_use_generated_draws(const struct anv_cmd_buffer *cmd_buffer, uint32_t count)
 {
    const struct anv_device *device = cmd_buffer->device;
 
-#if GFX_VER == 11
+#if GFX_VER == 11 || GFX_VER == 12
    /* Limit generated draws to pipelines without HS stage. This makes things
-    * simpler for implementing Wa_1306463417.
+    * simpler for implementing Wa_1306463417, Wa_16011107343.
     */
    if (anv_pipeline_has_stage(cmd_buffer->state.gfx.pipeline,
                              MESA_SHADER_TESS_CTRL)) {
@@ -4201,10 +4202,10 @@ void genX(CmdDrawMultiEXT)(
 #else
    vk_foreach_multi_draw(draw, i, pVertexInfo, drawCount, stride) {
 
-      /* Wa_1306463417 - Send HS state for every primitive, first
-       * one was handled by cmd_buffer_flush_gfx_state.
+      /* Wa_1306463417, Wa_16011107343 - Send HS state for every primitive,
+       * first one was handled by cmd_buffer_flush_gfx_state.
        */
-      if (i && GFX_VER == 11)
+      if (i && (GFX_VER == 11 || GFX_VER == 12))
          genX(emit_hs)(cmd_buffer);
 
       anv_batch_emit(&cmd_buffer->batch, GENX(3DPRIMITIVE_EXTENDED), prim) {
@@ -4408,10 +4409,10 @@ void genX(CmdDrawMultiIndexedEXT)(
 #else
    vk_foreach_multi_draw_indexed(draw, i, pIndexInfo, drawCount, stride) {
 
-      /* Wa_1306463417 - Send HS state for every primitive, first
-       * one was handled by cmd_buffer_flush_gfx_state.
+      /* Wa_1306463417, Wa_16011107343 - Send HS state for every primitive,
+       * first one was handled by cmd_buffer_flush_gfx_state.
        */
-      if (i && GFX_VER == 11)
+      if (i && (GFX_VER == 11 || GFX_VER == 12))
          genX(emit_hs)(cmd_buffer);
 
       anv_batch_emit(&cmd_buffer->batch, GENX(3DPRIMITIVE_EXTENDED), prim) {
@@ -4658,10 +4659,10 @@ emit_indirect_draws(struct anv_cmd_buffer *cmd_buffer,
 
       load_indirect_parameters(cmd_buffer, draw, indexed, i);
 
-      /* Wa_1306463417 - Send HS state for every primitive HS, first
-       * one was handled by cmd_buffer_flush_gfx_state.
+      /* Wa_1306463417, Wa_16011107343 - Send HS state for every primitive,
+       * first one was handled by cmd_buffer_flush_gfx_state.
        */
-      if (i && GFX_VER == 11)
+      if (i && (GFX_VER == 11 || GFX_VER == 12))
          genX(emit_hs)(cmd_buffer);
 
       anv_batch_emit(&cmd_buffer->batch,
@@ -4892,10 +4893,10 @@ emit_indirect_count_draws(struct anv_cmd_buffer *cmd_buffer,
 
       load_indirect_parameters(cmd_buffer, draw, indexed, i);
 
-      /* Wa_1306463417 - Send HS state for every primitive HS, first
-       * one was handled by cmd_buffer_flush_gfx_state.
+      /* Wa_1306463417, Wa_16011107343 - Send HS state for every primitive,
+       * first one was handled by cmd_buffer_flush_gfx_state.
        */
-      if (i && GFX_VER == 11)
+      if (i && (GFX_VER == 11 || GFX_VER == 12))
          genX(emit_hs)(cmd_buffer);
 
       anv_batch_emit(&cmd_buffer->batch,
@@ -7488,18 +7489,29 @@ void genX(CmdBeginRendering)(
    gfx->dirty |= ANV_CMD_DIRTY_PIPELINE;
 
 #if GFX_VER >= 11
-   /* The PIPE_CONTROL command description says:
-    *
-    *    "Whenever a Binding Table Index (BTI) used by a Render Target Message
-    *     points to a different RENDER_SURFACE_STATE, SW must issue a Render
-    *     Target Cache Flush by enabling this bit. When render target flush
-    *     is set due to new association of BTI, PS Scoreboard Stall bit must
-    *     be set in this packet."
-    */
-   anv_add_pending_pipe_bits(cmd_buffer,
-                             ANV_PIPE_RENDER_TARGET_CACHE_FLUSH_BIT |
-                             ANV_PIPE_STALL_AT_SCOREBOARD_BIT,
-                             "change RT");
+   bool has_color_att = false;
+   for (uint32_t i = 0; i < gfx->color_att_count; i++) {
+      if (pRenderingInfo->pColorAttachments[i].imageView != VK_NULL_HANDLE)
+         has_color_att = true;
+   }
+   if (has_color_att) {
+      /* The PIPE_CONTROL command description says:
+      *
+      *    "Whenever a Binding Table Index (BTI) used by a Render Target Message
+      *     points to a different RENDER_SURFACE_STATE, SW must issue a Render
+      *     Target Cache Flush by enabling this bit. When render target flush
+      *     is set due to new association of BTI, PS Scoreboard Stall bit must
+      *     be set in this packet."
+      *
+      * We assume that a new BeginRendering is always changing the RTs, which
+      * may not be true and cause excessive flushing.  We can trivially skip it
+      * in the case that there are no RTs (depth-only rendering), though.
+      */
+      anv_add_pending_pipe_bits(cmd_buffer,
+                              ANV_PIPE_RENDER_TARGET_CACHE_FLUSH_BIT |
+                              ANV_PIPE_STALL_AT_SCOREBOARD_BIT,
+                              "change RT");
+   }
 #endif
 
    cmd_buffer_emit_depth_stencil(cmd_buffer);

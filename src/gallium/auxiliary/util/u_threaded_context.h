@@ -446,7 +446,9 @@ struct tc_renderpass_info {
          bool has_draw : 1;
          /* whether a framebuffer resolve occurs on cbuf[0] */
          bool has_resolve : 1;
-         uint8_t pad : 2;
+         /* whether queries are ended during this renderpass */
+         bool has_query_ends : 1;
+         uint8_t pad : 1;
          /* 32 bits offset */
          /* bitmask of color buffers using fbfetch */
          uint8_t cbuf_fbfetch;
@@ -587,6 +589,8 @@ struct threaded_context {
    bool seen_fb_state;
    /* whether a renderpass is currently active */
    bool in_renderpass;
+   /* whether a query has ended more recently than a draw */
+   bool query_ended;
 
    bool seen_streamout_buffers;
    bool seen_shader_buffers[PIPE_SHADER_TYPES];

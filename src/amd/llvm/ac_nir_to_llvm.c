@@ -4916,30 +4916,12 @@ static bool visit_cf_list(struct ac_nir_context *ctx, struct exec_list *list)
    return true;
 }
 
-void ac_handle_shader_output_decl(struct ac_llvm_context *ctx, struct ac_shader_abi *abi,
-                                  struct nir_shader *nir, struct nir_variable *variable,
-                                  gl_shader_stage stage)
+static void ac_handle_shader_output_decl(struct ac_llvm_context *ctx, struct ac_shader_abi *abi,
+                                         struct nir_shader *nir, struct nir_variable *variable,
+                                         gl_shader_stage stage)
 {
    unsigned output_loc = variable->data.driver_location;
    unsigned attrib_count = glsl_count_attribute_slots(variable->type, false);
-
-   /* tess ctrl has it's own load/store paths for outputs */
-   if (stage == MESA_SHADER_TESS_CTRL)
-      return;
-
-   if (stage == MESA_SHADER_VERTEX || stage == MESA_SHADER_TESS_EVAL ||
-       stage == MESA_SHADER_GEOMETRY) {
-      int idx = variable->data.location + variable->data.index;
-      if (idx == VARYING_SLOT_CLIP_DIST0) {
-         int length = nir->info.clip_distance_array_size + nir->info.cull_distance_array_size;
-
-         if (length > 4)
-            attrib_count = 2;
-         else
-            attrib_count = 1;
-      }
-   }
-
    bool is_16bit = glsl_type_is_16bit(glsl_without_array(variable->type));
    LLVMTypeRef type = is_16bit ? ctx->f16 : ctx->f32;
    for (unsigned i = 0; i < attrib_count; ++i) {
@@ -5041,8 +5023,11 @@ bool ac_nir_translate(struct ac_llvm_context *ac, struct ac_shader_abi *abi,
 
    ctx.main_function = LLVMGetBasicBlockParent(LLVMGetInsertBlock(ctx.ac.builder));
 
-   /* TODO: remove this after RADV switches to lowered IO */
-   if (!nir->info.io_lowered) {
+   /* TODO: remove this after RADV switches to lowered IO.
+    *
+    * Only fragment shader still uses store output for RADV.
+    */
+   if (!nir->info.io_lowered && ctx.stage == MESA_SHADER_FRAGMENT) {
       nir_foreach_shader_out_variable(variable, nir)
       {
          ac_handle_shader_output_decl(&ctx.ac, ctx.abi, nir, variable, ctx.stage);

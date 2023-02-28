@@ -213,7 +213,6 @@ files_libglsl = files(
   'lower_tess_level.cpp',
   'lower_vec_index_to_cond_assign.cpp',
   'lower_vector_derefs.cpp',
-  'lower_vector_insert.cpp',
   'opt_algebraic.cpp',
   'opt_constant_folding.cpp',
   'opt_constant_propagation.cpp',

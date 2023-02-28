@@ -399,6 +399,8 @@ zink_draw(struct pipe_context *pctx,
       assert(index_size != 1 || screen->info.have_EXT_index_type_uint8);
    }
 
+   ctx->was_line_loop = dinfo->was_line_loop;
+
    bool have_streamout = !!ctx->num_so_targets;
    if (have_streamout) {
       zink_emit_xfb_counter_barrier(ctx);
@@ -434,7 +436,7 @@ zink_draw(struct pipe_context *pctx,
       res->obj->unordered_read = false;
    }
 
-   zink_query_update_gs_states(ctx, dinfo->was_line_loop);
+   zink_query_update_gs_states(ctx);
 
    if (unlikely(zink_debug & ZINK_DEBUG_SYNC)) {
       zink_batch_no_rp(ctx);
@@ -999,6 +1001,8 @@ zink_launch_grid(struct pipe_context *pctx, const struct pipe_grid_info *info)
 
    batch->work_count++;
    zink_batch_no_rp(ctx);
+   if (!ctx->queries_disabled)
+      zink_resume_cs_query(ctx);
    if (info->indirect) {
       VKCTX(CmdDispatchIndirect)(batch->state->cmdbuf, zink_resource(info->indirect)->obj->buffer, info->indirect_offset);
       zink_batch_reference_resource_rw(batch, zink_resource(info->indirect), false);

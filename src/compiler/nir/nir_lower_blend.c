@@ -357,6 +357,12 @@ nir_blend(
    unsigned rt,
    nir_ssa_def *src, nir_ssa_def *src1, nir_ssa_def *dst)
 {
+   /* Don't crash if src1 isn't written. It doesn't matter what dual colour we
+    * blend with in that case, as long as we don't dereference NULL.
+    */
+   if (!src1)
+      src1 = nir_imm_zero(b, 4, src->bit_size);
+
    /* Grab the blend constant ahead of time */
    nir_ssa_def *bconst;
    if (options->scalar_blend_const) {

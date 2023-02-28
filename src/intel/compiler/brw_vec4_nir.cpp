@@ -714,10 +714,11 @@ vec4_visitor::nir_emit_intrinsic(nir_intrinsic_instr *instr)
       break;
    }
 
-   case nir_intrinsic_scoped_barrier:
+   case nir_intrinsic_memory_barrier:
+      unreachable("expecting only nir_intrinsic_scoped_barrier");
+
+   case nir_intrinsic_scoped_barrier: {
       assert(nir_intrinsic_execution_scope(instr) == NIR_SCOPE_NONE);
-      FALLTHROUGH;
-   case nir_intrinsic_memory_barrier: {
       const vec4_builder bld =
          vec4_builder(this).at_end().annotate(current_annotation, base_ir);
       const dst_reg tmp = bld.vgrf(BRW_REGISTER_TYPE_UD);

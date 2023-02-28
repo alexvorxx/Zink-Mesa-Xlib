@@ -995,6 +995,7 @@ else
     '-Wmisleading-indentation',
     '-Wno-missing-field-initializers',
     '-Wno-format-truncation',
+    '-Wno-nonnull-compare',
     '-fno-math-errno',
     '-fno-trapping-math',
     '-Qunused-arguments',
@@ -1104,6 +1105,8 @@ if host_machine.system() == 'windows'
   endif
 endif
 
+sse2_arg = []
+sse2_args = []
 sse41_args = []
 with_sse41 = false
 if host_machine.cpu_family().startswith('x86')
@@ -1114,6 +1117,9 @@ if host_machine.cpu_family().startswith('x86')
     sse41_args = ['-msse4.1']
 
     if host_machine.cpu_family() == 'x86'
+      # x86_64 have sse2 by default, so sse2 args only for x86
+      sse2_arg = ['-msse2', '-mfpmath=sse']
+      sse2_args = [sse2_arg, '-mstackrealign']
       if get_option('sse2')
         # These settings make generated GCC code match MSVC and follow
         # GCC advice on https://gcc.gnu.org/wiki/FloatingPointMath#x86note
@@ -1126,7 +1132,10 @@ if host_machine.cpu_family().startswith('x86')
         # XXX: We could have SSE without -mstackrealign if we always used
         # __attribute__((force_align_arg_pointer)), but that's not
         # always the case.
-        c_args += ['-msse2', '-mfpmath=sse', '-mstackrealign']
+        c_cpp_args += sse2_args
+        # sse2_args are adopted into c_cpp_args to avoid duplicated sse2 command line args
+        sse2_arg = []
+        sse2_args = []
       else
         # GCC on x86 (not x86_64) with -msse* assumes a 16 byte aligned stack, but
         # that's not guaranteed

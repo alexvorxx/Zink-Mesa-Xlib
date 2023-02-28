@@ -145,6 +145,9 @@ struct wsi_device {
        * true.
        */
       bool xwaylandWaitReady;
+
+      /* adds an extra minImageCount when running under xwayland */
+      bool extra_xwayland_image;
    } x11;
 
    struct {
@@ -255,6 +258,11 @@ struct wsi_device {
 
 typedef PFN_vkVoidFunction (VKAPI_PTR *WSI_FN_GetPhysicalDeviceProcAddr)(VkPhysicalDevice physicalDevice, const char* pName);
 
+struct wsi_device_options {
+   bool sw_device;
+   bool extra_xwayland_image;
+};
+
 VkResult
 wsi_device_init(struct wsi_device *wsi,
                 VkPhysicalDevice pdevice,
@@ -262,7 +270,7 @@ wsi_device_init(struct wsi_device *wsi,
                 const VkAllocationCallbacks *alloc,
                 int display_fd,
                 const struct driOptionCache *dri_options,
-                bool sw_device);
+                const struct wsi_device_options *device_options);
 
 void
 wsi_device_finish(struct wsi_device *wsi,

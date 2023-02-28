@@ -161,6 +161,7 @@ static const struct vk_device_extension_table lvp_device_extensions_supported = 
    .EXT_graphics_pipeline_library         = true,
    .EXT_host_query_reset                  = true,
    .EXT_image_2d_view_of_3d               = true,
+   .EXT_image_sliced_view_of_3d           = true,
    .EXT_image_robustness                  = true,
    .EXT_index_type_uint8                  = true,
    .EXT_inline_uniform_block              = true,
@@ -831,7 +832,12 @@ VKAPI_ATTR void VKAPI_CALL lvp_GetPhysicalDeviceFeatures2(
          features->maintenance4 = true;
          break;
       }
-
+      case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_IMAGE_SLICED_VIEW_OF_3D_FEATURES_EXT: {
+         VkPhysicalDeviceImageSlicedViewOf3DFeaturesEXT *features =
+            (VkPhysicalDeviceImageSlicedViewOf3DFeaturesEXT *)ext;
+         features->imageSlicedViewOf3D = true;
+         break;
+      }
       case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SUBGROUP_SIZE_CONTROL_FEATURES: {
          VkPhysicalDeviceSubgroupSizeControlFeatures *features =
             (VkPhysicalDeviceSubgroupSizeControlFeatures *)ext;

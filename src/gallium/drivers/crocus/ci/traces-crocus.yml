@@ -174,7 +174,9 @@ traces:
     crocus-g41:
       label: [unsupported]
     crocus-hsw:
+      label: [skip, flakes]
       checksum: 884096b6dd40e2f500d0837501287fac
+      text: "https://gitlab.freedesktop.org/mesa/mesa/-/issues/7158"
   unvanquished/unvanquished-ultra.trace:
     crocus-g41:
       label: [unsupported]

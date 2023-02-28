@@ -667,6 +667,10 @@ print_instr_format_specific(enum amd_gfx_level gfx_level, const Instruction* ins
          fprintf(output, " row_bcast:15");
       } else if (dpp.dpp_ctrl == dpp_row_bcast31) {
          fprintf(output, " row_bcast:31");
+      } else if (dpp.dpp_ctrl >= dpp_row_share(0) && dpp.dpp_ctrl <= dpp_row_share(15)) {
+         fprintf(output, " row_share:%d", dpp.dpp_ctrl & 0xf);
+      } else if (dpp.dpp_ctrl >= dpp_row_xmask(0) && dpp.dpp_ctrl <= dpp_row_xmask(15)) {
+         fprintf(output, " row_xmask:%d", dpp.dpp_ctrl & 0xf);
       } else {
          fprintf(output, " dpp_ctrl:0x%.3x", dpp.dpp_ctrl);
       }

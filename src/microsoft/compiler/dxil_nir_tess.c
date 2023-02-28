@@ -27,6 +27,21 @@
 
 #include "dxil_nir.h"
 
+static bool
+is_memory_barrier_tcs_patch(const nir_intrinsic_instr *intr)
+{
+   if (intr->intrinsic == nir_intrinsic_scoped_barrier &&
+       nir_intrinsic_memory_modes(intr) & nir_var_shader_out) {
+      assert(nir_intrinsic_memory_modes(intr) == nir_var_shader_out);
+      assert(nir_intrinsic_memory_scope(intr) == NIR_SCOPE_WORKGROUP);
+      return true;
+   } else if (intr->intrinsic == nir_intrinsic_memory_barrier_tcs_patch) {
+      return true;
+   } else {
+      return false;
+   }
+}
+
 static void
 remove_hs_intrinsics(nir_function_impl *impl)
 {
@@ -36,7 +51,7 @@ remove_hs_intrinsics(nir_function_impl *impl)
             continue;
          nir_intrinsic_instr *intr = nir_instr_as_intrinsic(instr);
          if (intr->intrinsic != nir_intrinsic_store_output &&
-             intr->intrinsic != nir_intrinsic_memory_barrier_tcs_patch &&
+             !is_memory_barrier_tcs_patch(intr) &&
              intr->intrinsic != nir_intrinsic_control_barrier)
             continue;
          nir_instr_remove(instr);
@@ -85,7 +100,7 @@ prune_patch_function_to_intrinsic_and_srcs(nir_function_impl *impl)
          if (instr->type == nir_instr_type_intrinsic) {
             nir_intrinsic_instr *intr = nir_instr_as_intrinsic(instr);
             if (intr->intrinsic != nir_intrinsic_store_output &&
-                intr->intrinsic != nir_intrinsic_memory_barrier_tcs_patch)
+                !is_memory_barrier_tcs_patch(intr))
                continue;
          } else if (instr->type != nir_instr_type_jump)
             continue;
@@ -253,7 +268,11 @@ dxil_nir_split_tess_ctrl(nir_shader *nir, nir_function **patch_const_func)
             nir_ssa_def_rewrite_uses(&intr->dest.ssa, state.count);
             break;
          }
+         case nir_intrinsic_scoped_barrier:
          case nir_intrinsic_memory_barrier_tcs_patch:
+            if (!is_memory_barrier_tcs_patch(intr))
+               break;
+
             /* The GL tessellation spec says:
              * The barrier() function may only be called inside the main entry point of the tessellation control shader
              * and may not be called in potentially divergent flow control.  In particular, barrier() may not be called

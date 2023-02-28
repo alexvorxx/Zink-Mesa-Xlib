@@ -2742,6 +2742,13 @@ zink_batch_rp(struct zink_context *ctx)
    }
    update_tc_info(ctx, ctx->rp_tc_info_updated);
    ctx->rp_tc_info_updated = false;
+   bool maybe_has_query_ends = !ctx->tc || !zink_screen(ctx->base.screen)->driver_workarounds.track_renderpasses || ctx->dynamic_fb.tc_info.has_query_ends;
+   ctx->queries_in_rp = maybe_has_query_ends;
+   /* if possible, out-of-renderpass resume any queries that were stopped when previous rp ended */
+   if (!ctx->queries_disabled && !maybe_has_query_ends) {
+      zink_resume_queries(ctx, &ctx->batch);
+      zink_query_update_gs_states(ctx);
+   }
    unsigned clear_buffers;
    /* use renderpass for multisample-to-singlesample or fbfetch:
     * - msrtss is TODO
@@ -2753,6 +2760,11 @@ zink_batch_rp(struct zink_context *ctx)
    else
       clear_buffers = begin_rendering(ctx);
    assert(!ctx->rp_changed);
+   /* unable to previously determine that queries didn't split renderpasses: ensure queries start inside renderpass */
+   if (!ctx->queries_disabled && maybe_has_query_ends) {
+      zink_resume_queries(ctx, &ctx->batch);
+      zink_query_update_gs_states(ctx);
+   }
    if (in_rp || !ctx->batch.in_rp)
       return; //dead swapchain or continued renderpass
    if (ctx->render_condition.query)
@@ -2767,6 +2779,11 @@ zink_batch_no_rp(struct zink_context *ctx)
       return;
    if (ctx->render_condition.query)
       zink_stop_conditional_render(ctx);
+   /* suspend all queries that were started in a renderpass
+    * they can then be resumed upon beginning a new renderpass
+    */
+   if (!ctx->queries_disabled)
+      zink_query_renderpass_suspend(ctx);
    if (ctx->gfx_pipeline_state.render_pass)
       zink_end_render_pass(ctx);
    else {
@@ -3846,72 +3863,74 @@ zink_resource_buffer_needs_barrier(struct zink_resource *res, VkAccessFlags flag
 void
 zink_resource_buffer_barrier(struct zink_context *ctx, struct zink_resource *res, VkAccessFlags flags, VkPipelineStageFlags pipeline)
 {
-   VkMemoryBarrier bmb;
    if (!pipeline)
       pipeline = pipeline_access_stage(flags);
    if (!zink_resource_buffer_needs_barrier(res, flags, pipeline))
       return;
 
-   bmb.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
-   bmb.pNext = NULL;
-   bmb.srcAccessMask = res->obj->access;
-   bmb.dstAccessMask = flags;
-   if (!res->obj->access_stage)
-      bmb.srcAccessMask = 0;
-   bool is_write = zink_resource_access_is_write(flags);
-   VkCommandBuffer cmdbuf = is_write ? zink_get_cmdbuf(ctx, NULL, res) : zink_get_cmdbuf(ctx, res, NULL);
-   /* only barrier if we're changing layout or doing something besides read -> read */
-   VKCTX(CmdPipelineBarrier)(
-      cmdbuf,
-      res->obj->access_stage ? res->obj->access_stage : pipeline_access_stage(res->obj->access),
-      pipeline,
-      0,
-      1, &bmb,
-      0, NULL,
-      0, NULL
-   );
+   if (res->obj->access) {
+      VkMemoryBarrier bmb;
+      bmb.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
+      bmb.pNext = NULL;
+      bmb.srcAccessMask = res->obj->access;
+      bmb.dstAccessMask = flags;
+      assert(res->obj->access_stage);
+      bool is_write = zink_resource_access_is_write(flags);
+      VkCommandBuffer cmdbuf = is_write ? zink_get_cmdbuf(ctx, NULL, res) : zink_get_cmdbuf(ctx, res, NULL);
+
+      VKCTX(CmdPipelineBarrier)(
+         cmdbuf,
+         res->obj->access_stage ? res->obj->access_stage : pipeline_access_stage(res->obj->access),
+         pipeline,
+         0,
+         1, &bmb,
+         0, NULL,
+         0, NULL
+      );
+   }
 
    resource_check_defer_buffer_barrier(ctx, res, pipeline);
 
-   res->obj->access = bmb.dstAccessMask;
+   res->obj->access = flags;
    res->obj->access_stage = pipeline;
 }
 
 void
 zink_resource_buffer_barrier2(struct zink_context *ctx, struct zink_resource *res, VkAccessFlags flags, VkPipelineStageFlags pipeline)
 {
-   VkMemoryBarrier2 bmb;
    if (!pipeline)
       pipeline = pipeline_access_stage(flags);
    if (!zink_resource_buffer_needs_barrier(res, flags, pipeline))
       return;
-   bmb.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2;
-   bmb.pNext = NULL;
-   bmb.srcStageMask = res->obj->access_stage ? res->obj->access_stage : pipeline_access_stage(res->obj->access);
-   bmb.srcAccessMask = res->obj->access;
-   bmb.dstStageMask = pipeline;
-   bmb.dstAccessMask = flags;
-   if (!res->obj->access_stage)
-      bmb.srcAccessMask = 0;
-   bool is_write = zink_resource_access_is_write(flags);
-   VkCommandBuffer cmdbuf = is_write ? zink_get_cmdbuf(ctx, NULL, res) : zink_get_cmdbuf(ctx, res, NULL);
-   VkDependencyInfo dep = {
-      VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
-      NULL,
-      0,
-      1,
-      &bmb,
-      0,
-      NULL,
-      0,
-      NULL
-   };
-   /* only barrier if we're changing layout or doing something besides read -> read */
-   VKCTX(CmdPipelineBarrier2)(cmdbuf, &dep);
+
+   if (res->obj->access) {
+      VkMemoryBarrier2 bmb;
+      bmb.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2;
+      bmb.pNext = NULL;
+      bmb.srcStageMask = res->obj->access_stage ? res->obj->access_stage : pipeline_access_stage(res->obj->access);
+      bmb.srcAccessMask = res->obj->access;
+      bmb.dstStageMask = pipeline;
+      bmb.dstAccessMask = flags;
+      assert(res->obj->access_stage);
+      bool is_write = zink_resource_access_is_write(flags);
+      VkCommandBuffer cmdbuf = is_write ? zink_get_cmdbuf(ctx, NULL, res) : zink_get_cmdbuf(ctx, res, NULL);
+      VkDependencyInfo dep = {
+         VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
+         NULL,
+         0,
+         1,
+         &bmb,
+         0,
+         NULL,
+         0,
+         NULL
+      };
+      VKCTX(CmdPipelineBarrier2)(cmdbuf, &dep);
+   }
 
    resource_check_defer_buffer_barrier(ctx, res, pipeline);
 
-   res->obj->access = bmb.dstAccessMask;
+   res->obj->access = flags;
    res->obj->access_stage = pipeline;
 }
 

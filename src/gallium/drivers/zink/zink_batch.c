@@ -497,9 +497,6 @@ zink_start_batch(struct zink_context *ctx, struct zink_batch *batch)
    }
 #endif
 
-   if (!ctx->queries_disabled)
-      zink_resume_queries(ctx, batch);
-
    /* descriptor buffers must always be bound at the start of a batch */
    if (zink_descriptor_mode == ZINK_DESCRIPTOR_MODE_DB && !(ctx->flags & ZINK_CONTEXT_COPY_ONLY))
       zink_batch_bind_db(ctx);

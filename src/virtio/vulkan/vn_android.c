@@ -725,28 +725,6 @@ vn_AcquireImageANDROID(VkDevice device,
    struct vn_device *dev = vn_device_from_handle(device);
    VkResult result = VK_SUCCESS;
 
-   if (dev->instance->experimental.globalFencing == VK_FALSE) {
-      /* Fallback when VkVenusExperimentalFeatures100000MESA::globalFencing is
-       * VK_FALSE, out semaphore and fence are filled with already signaled
-       * payloads, and the native fence fd is waited inside until signaled.
-       */
-      if (nativeFenceFd >= 0) {
-         int ret = sync_wait(nativeFenceFd, -1);
-         /* Android loader expects the ICD to always close the fd */
-         close(nativeFenceFd);
-         if (ret)
-            return vn_error(dev->instance, VK_ERROR_SURFACE_LOST_KHR);
-      }
-
-      if (semaphore != VK_NULL_HANDLE)
-         vn_semaphore_signal_wsi(dev, vn_semaphore_from_handle(semaphore));
-
-      if (fence != VK_NULL_HANDLE)
-         vn_fence_signal_wsi(dev, vn_fence_from_handle(fence));
-
-      return VK_SUCCESS;
-   }
-
    int semaphore_fd = -1;
    int fence_fd = -1;
    if (nativeFenceFd >= 0) {
@@ -804,19 +782,18 @@ vn_AcquireImageANDROID(VkDevice device,
    return vn_result(dev->instance, result);
 }
 
-static VkResult
-vn_android_sync_fence_create(struct vn_queue *queue, bool external)
+static inline VkResult
+vn_android_sync_fence_create(struct vn_queue *queue)
 {
    struct vn_device *dev = queue->device;
 
    const VkExportFenceCreateInfo export_info = {
       .sType = VK_STRUCTURE_TYPE_EXPORT_FENCE_CREATE_INFO,
-      .pNext = NULL,
       .handleTypes = VK_EXTERNAL_FENCE_HANDLE_TYPE_SYNC_FD_BIT,
    };
    const VkFenceCreateInfo create_info = {
       .sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO,
-      .pNext = external ? &export_info : NULL,
+      .pNext = &export_info,
       .flags = 0,
    };
    return vn_CreateFence(vn_device_to_handle(dev), &create_info, NULL,
@@ -834,10 +811,6 @@ vn_QueueSignalReleaseImageANDROID(VkQueue _queue,
    struct vn_queue *queue = vn_queue_from_handle(_queue);
    struct vn_device *dev = queue->device;
    const VkAllocationCallbacks *alloc = &dev->base.base.alloc;
-   const bool has_sync_fd_fence_export =
-      dev->instance->experimental.globalFencing == VK_TRUE &&
-      (dev->physical_device->renderer_sync_fd_fence_features &
-       VK_EXTERNAL_FENCE_FEATURE_EXPORTABLE_BIT);
    VkDevice device = vn_device_to_handle(dev);
    VkPipelineStageFlags local_stage_masks[8];
    VkPipelineStageFlags *stage_masks = local_stage_masks;
@@ -851,7 +824,7 @@ vn_QueueSignalReleaseImageANDROID(VkQueue _queue,
 
    /* lazily create sync fence for Android wsi */
    if (queue->sync_fence == VK_NULL_HANDLE) {
-      result = vn_android_sync_fence_create(queue, has_sync_fd_fence_export);
+      result = vn_android_sync_fence_create(queue);
       if (result != VK_SUCCESS)
          return result;
    }
@@ -869,14 +842,9 @@ vn_QueueSignalReleaseImageANDROID(VkQueue _queue,
 
    const VkSubmitInfo submit_info = {
       .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
-      .pNext = NULL,
       .waitSemaphoreCount = waitSemaphoreCount,
       .pWaitSemaphores = pWaitSemaphores,
       .pWaitDstStageMask = stage_masks,
-      .commandBufferCount = 0,
-      .pCommandBuffers = NULL,
-      .signalSemaphoreCount = 0,
-      .pSignalSemaphores = NULL,
    };
    result = vn_QueueSubmit(_queue, 1, &submit_info, queue->sync_fence);
 
@@ -886,22 +854,12 @@ vn_QueueSignalReleaseImageANDROID(VkQueue _queue,
    if (result != VK_SUCCESS)
       return vn_error(dev->instance, result);
 
-   if (has_sync_fd_fence_export) {
-      const VkFenceGetFdInfoKHR fd_info = {
-         .sType = VK_STRUCTURE_TYPE_FENCE_GET_FD_INFO_KHR,
-         .pNext = NULL,
-         .fence = queue->sync_fence,
-         .handleType = VK_EXTERNAL_FENCE_HANDLE_TYPE_SYNC_FD_BIT,
-      };
-      result = vn_GetFenceFdKHR(device, &fd_info, &fd);
-   } else {
-      result =
-         vn_WaitForFences(device, 1, &queue->sync_fence, VK_TRUE, UINT64_MAX);
-      if (result != VK_SUCCESS)
-         return vn_error(dev->instance, result);
-
-      result = vn_ResetFences(device, 1, &queue->sync_fence);
-   }
+   const VkFenceGetFdInfoKHR fd_info = {
+      .sType = VK_STRUCTURE_TYPE_FENCE_GET_FD_INFO_KHR,
+      .fence = queue->sync_fence,
+      .handleType = VK_EXTERNAL_FENCE_HANDLE_TYPE_SYNC_FD_BIT,
+   };
+   result = vn_GetFenceFdKHR(device, &fd_info, &fd);
 
    if (result != VK_SUCCESS)
       return vn_error(dev->instance, result);
@@ -1154,32 +1112,6 @@ vn_android_get_drm_format_modifier_info(
 }
 
 VkResult
-vn_android_image_from_ahb(struct vn_device *dev,
-                          const VkImageCreateInfo *create_info,
-                          const VkAllocationCallbacks *alloc,
-                          struct vn_image **out_img)
-{
-   const VkExternalFormatANDROID *ext_info =
-      vk_find_struct_const(create_info->pNext, EXTERNAL_FORMAT_ANDROID);
-
-   VkImageCreateInfo local_info;
-   if (ext_info && ext_info->externalFormat) {
-      assert(create_info->format == VK_FORMAT_UNDEFINED);
-      assert(create_info->imageType == VK_IMAGE_TYPE_2D);
-      assert(create_info->usage == VK_IMAGE_USAGE_SAMPLED_BIT);
-      assert(create_info->tiling == VK_IMAGE_TILING_OPTIMAL);
-      assert(!(create_info->flags & VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT));
-
-      local_info = *create_info;
-      local_info.format =
-         vn_android_drm_format_to_vk_format(ext_info->externalFormat);
-      create_info = &local_info;
-   }
-
-   return vn_image_create_deferred(dev, create_info, alloc, out_img);
-}
-
-VkResult
 vn_android_device_import_ahb(struct vn_device *dev,
                              struct vn_device_memory *mem,
                              const VkMemoryAllocateInfo *alloc_info,
@@ -1387,48 +1319,6 @@ vn_GetMemoryAndroidHardwareBufferANDROID(
    return VK_SUCCESS;
 }
 
-struct vn_android_buffer_create_info {
-   VkBufferCreateInfo create;
-   VkExternalMemoryBufferCreateInfo external;
-   VkBufferOpaqueCaptureAddressCreateInfo address;
-};
-
-static const VkBufferCreateInfo *
-vn_android_fix_buffer_create_info(
-   const VkBufferCreateInfo *create_info,
-   struct vn_android_buffer_create_info *local_info)
-{
-   local_info->create = *create_info;
-   VkBaseOutStructure *dst = (void *)&local_info->create;
-
-   vk_foreach_struct_const(src, create_info->pNext) {
-      void *pnext = NULL;
-      switch (src->sType) {
-      case VK_STRUCTURE_TYPE_EXTERNAL_MEMORY_BUFFER_CREATE_INFO:
-         memcpy(&local_info->external, src, sizeof(local_info->external));
-         local_info->external.handleTypes =
-            VK_EXTERNAL_MEMORY_HANDLE_TYPE_DMA_BUF_BIT_EXT;
-         pnext = &local_info->external;
-         break;
-      case VK_STRUCTURE_TYPE_BUFFER_OPAQUE_CAPTURE_ADDRESS_CREATE_INFO:
-         memcpy(&local_info->address, src, sizeof(local_info->address));
-         pnext = &local_info->address;
-         break;
-      default:
-         break;
-      }
-
-      if (pnext) {
-         dst->pNext = pnext;
-         dst = pnext;
-      }
-   }
-
-   dst->pNext = NULL;
-
-   return &local_info->create;
-}
-
 VkResult
 vn_android_get_ahb_buffer_memory_type_bits(struct vn_device *dev,
                                            uint32_t *out_mem_type_bits)
@@ -1464,32 +1354,6 @@ vn_android_get_ahb_buffer_memory_type_bits(struct vn_device *dev,
       return result;
 
    *out_mem_type_bits = mem_type_bits;
-
-   return VK_SUCCESS;
-}
-
-VkResult
-vn_android_buffer_from_ahb(struct vn_device *dev,
-                           const VkBufferCreateInfo *create_info,
-                           const VkAllocationCallbacks *alloc,
-                           struct vn_buffer **out_buf)
-{
-   struct vn_android_buffer_create_info local_info;
-   VkResult result;
-
-   create_info = vn_android_fix_buffer_create_info(create_info, &local_info);
-   result = vn_buffer_create(dev, create_info, alloc, out_buf);
-   if (result != VK_SUCCESS)
-      return result;
-
-   /* AHB backed buffer layers on top of dma_buf, so here we must comine the
-    * queried type bits from both buffer memory requirement and dma_buf fd
-    * properties.
-    */
-   (*out_buf)->requirements.memory.memoryRequirements.memoryTypeBits &=
-      dev->buffer_cache.ahb_mem_type_bits;
-
-   assert((*out_buf)->requirements.memory.memoryRequirements.memoryTypeBits);
 
    return VK_SUCCESS;
 }

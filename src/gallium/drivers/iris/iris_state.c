@@ -7127,9 +7127,11 @@ iris_upload_render_state(struct iris_context *ice,
    }
 
    /* Wa_1306463417 - Send HS state for every primitive on gfx11.
+    * Wa_16011107343 (same for gfx12)
     * We implement this by setting TCS dirty on each draw.
     */
-   if (GFX_VER == 11 && ice->shaders.prog[MESA_SHADER_TESS_CTRL]) {
+   if ((GFX_VER == 11 || GFX_VER == 12) &&
+       ice->shaders.prog[MESA_SHADER_TESS_CTRL]) {
       ice->state.stage_dirty |= IRIS_STAGE_DIRTY_TCS;
    }
 

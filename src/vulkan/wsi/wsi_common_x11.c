@@ -652,10 +652,10 @@ x11_get_min_image_count(const struct wsi_device *wsi_device, bool is_xwayland)
     * This is a tradeoff as it uses more memory than needed for non-fullscreen
     * and non-performance intensive applications.
     *
-    * For Xwayland we report four images as describes in
+    * For Xwayland Venus reports four images as described in
     *   wsi_wl_surface_get_capabilities
     */
-   return is_xwayland ? 4 : 3;
+   return is_xwayland && wsi_device->x11.extra_xwayland_image ? 4 : 3;
 }
 
 static VkResult

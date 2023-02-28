@@ -238,6 +238,9 @@ struct d3d12_context {
    struct d3d12_shader_selector *gfx_stages[D3D12_GFX_SHADER_STAGES];
    struct d3d12_shader_selector *compute_state;
 
+   bool has_flat_varyings;
+   bool missing_dual_src_outputs;
+
    struct d3d12_gfx_pipeline_state gfx_pipeline_state;
    struct d3d12_compute_pipeline_state compute_pipeline_state;
    unsigned shader_dirty[PIPE_SHADER_TYPES];

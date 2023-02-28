@@ -86,7 +86,6 @@ link_shader(struct gl_context *ctx, struct gl_shader_program *prog)
                          ctx->Extensions.ARB_gpu_shader5);
 
       do_vec_index_to_cond_assign(ir);
-      lower_vector_insert(ir, true);
       if (options->MaxIfDepth == 0) {
          lower_discard(ir);
       }

@@ -55,7 +55,7 @@ _mesa_warning(struct gl_context *ctx, const char *fmt, ...)
 }
 
 void
-_mesa_problem(struct gl_context *ctx, const char *fmt, ...)
+_mesa_problem(const struct gl_context *ctx, const char *fmt, ...)
 {
     va_list vargs;
     (void) ctx;

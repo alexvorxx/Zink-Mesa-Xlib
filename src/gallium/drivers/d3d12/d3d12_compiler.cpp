@@ -96,6 +96,37 @@ compile_nir(struct d3d12_context *ctx, struct d3d12_shader_selector *sel,
    struct d3d12_screen *screen = d3d12_screen(ctx->base.screen);
    struct d3d12_shader *shader = rzalloc(sel, d3d12_shader);
    shader->key = *key;
+
+   if (key->required_varying_inputs != nullptr) {
+      shader->key.required_varying_inputs = ralloc(sel, struct d3d12_varying_info);
+      *shader->key.required_varying_inputs = *key->required_varying_inputs;
+   }
+   if (key->required_varying_outputs != nullptr) {
+      shader->key.required_varying_outputs = ralloc(sel, struct d3d12_varying_info);
+      *shader->key.required_varying_outputs = *key->required_varying_outputs;
+   }
+   
+
+   if (key->stage == PIPE_SHADER_TESS_CTRL &&
+         key->hs.required_patch_outputs != nullptr) {
+      shader->key.hs.required_patch_outputs = ralloc(sel, struct d3d12_varying_info);
+      *shader->key.hs.required_patch_outputs = *key->hs.required_patch_outputs;
+   }
+   if (shader->key.stage == PIPE_SHADER_TESS_EVAL &&
+         shader->key.ds.required_patch_inputs != nullptr) {
+      shader->key.ds.required_patch_inputs = ralloc(sel, struct d3d12_varying_info);
+      *shader->key.ds.required_patch_inputs = *key->ds.required_patch_inputs;
+   }
+
+   shader->output_vars_fs = nullptr;
+   shader->output_vars_gs = nullptr;
+   shader->output_vars_default = nullptr;
+
+   shader->input_vars_vs = nullptr;
+   shader->input_vars_default = nullptr;
+
+   shader->tess_eval_output_vars = nullptr;
+   shader->tess_ctrl_input_vars = nullptr;
    shader->nir = nir;
    sel->current = shader;
 
@@ -250,14 +281,17 @@ struct d3d12_selection_context {
    const unsigned *variable_workgroup_size;
 };
 
-static unsigned
+unsigned
 missing_dual_src_outputs(struct d3d12_context *ctx)
 {
-   if (!ctx->gfx_pipeline_state.blend->is_dual_src)
+   if (!ctx->gfx_pipeline_state.blend || !ctx->gfx_pipeline_state.blend->is_dual_src)
       return 0;
 
    struct d3d12_shader_selector *fs = ctx->gfx_stages[PIPE_SHADER_FRAGMENT];
-   nir_shader *s = fs->initial;
+   if (!fs)
+      return 0;
+
+   const nir_shader *s = fs->initial;
 
    unsigned indices_seen = 0;
    nir_foreach_function(function, s) {
@@ -457,7 +491,7 @@ get_provoking_vertex(struct d3d12_selection_context *sel_ctx, bool *alternate, c
    return flatshade_first ? 0 : u_prim_vertex_count(mode)->min - 1;
 }
 
-static bool
+bool
 has_flat_varyings(struct d3d12_context *ctx)
 {
    struct d3d12_shader_selector *fs = ctx->gfx_stages[PIPE_SHADER_FRAGMENT];
@@ -481,7 +515,7 @@ static bool
 needs_vertex_reordering(struct d3d12_selection_context *sel_ctx, const struct pipe_draw_info *dinfo)
 {
    struct d3d12_context *ctx = sel_ctx->ctx;
-   bool flat = has_flat_varyings(ctx);
+   bool flat = ctx->has_flat_varyings;
    bool xfb = ctx->gfx_pipeline_state.num_so_targets > 0;
 
    if (fill_mode_lowered(ctx, dinfo) != PIPE_POLYGON_MODE_FILL)
@@ -508,7 +542,7 @@ needs_vertex_reordering(struct d3d12_selection_context *sel_ctx, const struct pi
 }
 
 static nir_variable *
-create_varying_from_info(nir_shader *nir, struct d3d12_varying_info *info,
+create_varying_from_info(nir_shader *nir, const struct d3d12_varying_info *info,
                          unsigned slot, unsigned slot_frac, nir_variable_mode mode, bool patch)
 {
    nir_variable *var;
@@ -534,7 +568,7 @@ create_varying_from_info(nir_shader *nir, struct d3d12_varying_info *info,
 }
 
 void
-create_varyings_from_info(nir_shader *nir, struct d3d12_varying_info *info,
+create_varyings_from_info(nir_shader *nir, const struct d3d12_varying_info *info,
                           unsigned slot, nir_variable_mode mode, bool patch)
 {
    unsigned mask = info->slots[slot].location_frac_mask;
@@ -543,10 +577,11 @@ create_varyings_from_info(nir_shader *nir, struct d3d12_varying_info *info,
 }
 
 static void
-fill_varyings(struct d3d12_varying_info *info, nir_shader *s,
+fill_varyings(struct d3d12_varying_info *info, const nir_shader *s,
               nir_variable_mode modes, uint64_t mask, bool patch)
 {
-   memset(info, 0, sizeof(d3d12_varying_info));
+   info->max = 0;
+   info->mask = 0;
 
    nir_foreach_variable_with_modes(var, s, modes) {
       unsigned slot = var->data.location;
@@ -559,6 +594,11 @@ fill_varyings(struct d3d12_varying_info *info, nir_shader *s,
 
       if (!(mask & slot_bit))
          continue;
+
+      if ((info->mask & slot_bit) == 0) {
+         memset(info->slots + slot, 0, sizeof(info->slots[0]));
+         info->max = MAX2(info->max, slot);
+      }
 
       const struct glsl_type *type = var->type;
       if ((s->info.stage == MESA_SHADER_GEOMETRY ||
@@ -576,6 +616,13 @@ fill_varyings(struct d3d12_varying_info *info, nir_shader *s,
       info->mask |= slot_bit;
       info->slots[slot].location_frac_mask |= (1 << var->data.location_frac);
    }
+
+   for (uint32_t i = 0; i < info->max; ++i) {
+      if (((1llu << i) & info->mask) == 0) {
+         memset(info->slots + i, 0, sizeof(info->slots[0]));
+      }
+   }
+
 }
 
 static void
@@ -591,20 +638,54 @@ fill_flat_varyings(struct d3d12_gs_variant_key *key, d3d12_shader_selector *fs)
    }
 }
 
+bool
+d3d12_compare_varying_info(const d3d12_varying_info *expect, const d3d12_varying_info *have)
+{
+   if (expect == have)
+      return true;
+
+   if (expect == nullptr || have == nullptr)
+      return false;
+
+   if (expect->mask != have->mask
+      || expect->max != have->max)
+      return false;
+
+   if (!expect->mask)
+      return true;
+
+   /* 6 is a rough (wild) guess for a bulk memcmp cross-over point.  When there
+    * are a small number of slots present, individual   is much faster. */
+   if (util_bitcount64(expect->mask) < 6) {
+      uint64_t mask = expect->mask;
+      while (mask) {
+         int slot = u_bit_scan64(&mask);
+         if (memcmp(&expect->slots[slot], &have->slots[slot], sizeof(have->slots[slot])))
+            return false;
+      }
+
+      return true;
+   }
+
+   return !memcmp(expect->slots, have->slots, sizeof(expect->slots[0]) * expect->max);
+}
+
 static void
 validate_geometry_shader_variant(struct d3d12_selection_context *sel_ctx)
 {
    struct d3d12_context *ctx = sel_ctx->ctx;
-   d3d12_shader_selector *vs = ctx->gfx_stages[PIPE_SHADER_VERTEX];
-   d3d12_shader_selector *fs = ctx->gfx_stages[PIPE_SHADER_FRAGMENT];
-   struct d3d12_gs_variant_key key = {0};
-   bool variant_needed = false;
-
    d3d12_shader_selector *gs = ctx->gfx_stages[PIPE_SHADER_GEOMETRY];
 
    /* Nothing to do if there is a user geometry shader bound */
    if (gs != NULL && !gs->is_variant)
       return;
+
+   d3d12_shader_selector* vs = ctx->gfx_stages[PIPE_SHADER_VERTEX];
+   d3d12_shader_selector* fs = ctx->gfx_stages[PIPE_SHADER_FRAGMENT];
+
+   struct d3d12_gs_variant_key key{0};
+
+   bool variant_needed = false;
 
    /* Fill the geometry shader variant key */
    if (sel_ctx->fill_mode_lowered != PIPE_POLYGON_MODE_FILL) {
@@ -629,13 +710,13 @@ validate_geometry_shader_variant(struct d3d12_selection_context *sel_ctx)
    }
 
    if (variant_needed) {
-      fill_varyings(&key.varyings, vs->initial, nir_var_shader_out,
-                    vs->initial->info.outputs_written, false);
+      if (vs->initial_output_vars == nullptr) {
+         vs->initial_output_vars = ralloc(vs, struct d3d12_varying_info);
+         fill_varyings(vs->initial_output_vars, vs->initial, nir_var_shader_out,
+            vs->initial->info.outputs_written, false);
+      }
+      key.varyings = vs->initial_output_vars;
    }
-
-   /* Check if the currently bound geometry shader variant is correct */
-   if (gs && memcmp(&gs->gs_key, &key, sizeof(key)) == 0)
-      return;
 
    /* Find/create the proper variant and bind it */
    gs = variant_needed ? d3d12_get_gs_variant(ctx, &key) : NULL;
@@ -646,56 +727,32 @@ static void
 validate_tess_ctrl_shader_variant(struct d3d12_selection_context *sel_ctx)
 {
    struct d3d12_context *ctx = sel_ctx->ctx;
-   d3d12_shader_selector *vs = ctx->gfx_stages[PIPE_SHADER_VERTEX];
    d3d12_shader_selector *tcs = ctx->gfx_stages[PIPE_SHADER_TESS_CTRL];
-   d3d12_shader_selector *tes = ctx->gfx_stages[PIPE_SHADER_TESS_EVAL];
-   struct d3d12_tcs_variant_key key = {0};
 
    /* Nothing to do if there is a user tess ctrl shader bound */
    if (tcs != NULL && !tcs->is_variant)
       return;
 
+   d3d12_shader_selector *vs = ctx->gfx_stages[PIPE_SHADER_VERTEX];
+   d3d12_shader_selector *tes = ctx->gfx_stages[PIPE_SHADER_TESS_EVAL];
+   struct d3d12_tcs_variant_key key = {0};
+
    bool variant_needed = tes != nullptr;
 
    /* Fill the variant key */
    if (variant_needed) {
-      fill_varyings(&key.varyings, vs->initial, nir_var_shader_out,
-                    vs->initial->info.outputs_written, false);
+      if (vs->initial_output_vars == nullptr) {
+         vs->initial_output_vars = ralloc(vs, struct d3d12_varying_info);
+         fill_varyings(vs->initial_output_vars, vs->initial, nir_var_shader_out,
+            vs->initial->info.outputs_written, false);
+      }
+      key.varyings = vs->initial_output_vars;
       key.vertices_out = ctx->patch_vertices;
    }
-
-   /* Check if the currently bound tessellation control shader variant is correct */
-   if (tcs && memcmp(&tcs->tcs_key, &key, sizeof(key)) == 0)
-      return;
 
    /* Find/create the proper variant and bind it */
    tcs = variant_needed ? d3d12_get_tcs_variant(ctx, &key) : NULL;
    ctx->gfx_stages[PIPE_SHADER_TESS_CTRL] = tcs;
-}
-
-static bool
-d3d12_compare_varying_info(const d3d12_varying_info *expect, const d3d12_varying_info *have)
-{
-   if (expect->mask != have->mask)
-      return false;
-
-   if (!expect->mask)
-      return true;
-
-   /* 6 is a rough (wild) guess for a bulk memcmp cross-over point.  When there
-    * are a small number of slots present, individual memcmp is much faster. */
-   if (util_bitcount64(expect->mask) < 6) {
-      uint64_t mask = expect->mask;
-      while (mask) {
-         int slot = u_bit_scan64(&mask);
-         if (memcmp(&expect->slots[slot], &have->slots[slot], sizeof(have->slots[slot])))
-            return false;
-      }
-
-      return true;
-   }
-
-   return !memcmp(expect, have, sizeof(struct d3d12_varying_info));
 }
 
 static bool
@@ -706,19 +763,6 @@ d3d12_compare_shader_keys(struct d3d12_selection_context* sel_ctx, const d3d12_s
    assert(have);
 
    if (expect->hash != have->hash)
-      return false;
-
-   /* Because we only add varyings we check that a shader has at least the expected in-
-    * and outputs. */
-
-   if (!d3d12_compare_varying_info(&expect->required_varying_inputs,
-                                   &have->required_varying_inputs) ||
-       expect->next_varying_inputs != have->next_varying_inputs)
-      return false;
-
-   if (!d3d12_compare_varying_info(&expect->required_varying_outputs,
-                                   &have->required_varying_outputs) ||
-       expect->prev_varying_outputs != have->prev_varying_outputs)
       return false;
 
    if (expect->stage == PIPE_SHADER_GEOMETRY) {
@@ -755,12 +799,12 @@ d3d12_compare_shader_keys(struct d3d12_selection_context* sel_ctx, const d3d12_s
           expect->hs.point_mode != have->hs.point_mode ||
           expect->hs.spacing != have->hs.spacing ||
           expect->hs.patch_vertices_in != have->hs.patch_vertices_in ||
-          !d3d12_compare_varying_info(&expect->hs.required_patch_outputs, &have->hs.required_patch_outputs) ||
+          !d3d12_compare_varying_info(expect->hs.required_patch_outputs, have->hs.required_patch_outputs) ||
           expect->hs.next_patch_inputs != have->hs.next_patch_inputs)
          return false;
    } else if (expect->stage == PIPE_SHADER_TESS_EVAL) {
       if (expect->ds.tcs_vertices_out != have->ds.tcs_vertices_out ||
-          !d3d12_compare_varying_info(&expect->ds.required_patch_inputs, &have->ds.required_patch_inputs) ||
+          !d3d12_compare_varying_info(expect->ds.required_patch_inputs, have->ds.required_patch_inputs) ||
           expect->ds.prev_patch_outputs != have ->ds.prev_patch_outputs)
          return false;
    }
@@ -816,6 +860,19 @@ d3d12_compare_shader_keys(struct d3d12_selection_context* sel_ctx, const d3d12_s
    if (expect->stage == PIPE_SHADER_FRAGMENT && expect->fs.provoking_vertex != have->fs.provoking_vertex)
       return false;
 
+   /* Because we only add varyings we check that a shader has at least the expected in-
+    * and outputs. */
+
+   if (!d3d12_compare_varying_info(expect->required_varying_inputs,
+                                   have->required_varying_inputs) ||
+       expect->next_varying_inputs != have->next_varying_inputs)
+      return false;
+
+   if (!d3d12_compare_varying_info(expect->required_varying_outputs,
+                                   have->required_varying_outputs) ||
+       expect->prev_varying_outputs != have->prev_varying_outputs)
+      return false;
+
    return true;
 }
 
@@ -825,8 +882,10 @@ d3d12_shader_key_hash(const d3d12_shader_key *key)
    uint32_t hash;
 
    hash = (uint32_t)key->stage;
-   hash += key->required_varying_inputs.mask;
-   hash += key->required_varying_outputs.mask;
+   if (key->required_varying_inputs != nullptr)
+      hash += key->required_varying_inputs->mask + key->required_varying_inputs->max;
+   if (key->required_varying_outputs != nullptr)
+      hash += key->required_varying_outputs->mask + key->required_varying_outputs->max;
    hash += key->next_varying_inputs;
    hash += key->prev_varying_outputs;
    switch (key->stage) {
@@ -846,12 +905,14 @@ d3d12_shader_key_hash(const d3d12_shader_key *key)
       break;
    case PIPE_SHADER_TESS_CTRL:
       hash += key->hs.all;
-      hash += key->hs.required_patch_outputs.mask;
+      if (key->hs.required_patch_outputs)
+         hash += key->hs.required_patch_outputs->mask + key->hs.required_patch_outputs->max;
       break;
    case PIPE_SHADER_TESS_EVAL:
       hash += key->ds.tcs_vertices_out;
       hash += key->ds.prev_patch_outputs;
-      hash += key->ds.required_patch_inputs.mask;
+      if (key->ds.required_patch_inputs)
+         hash += key->ds.required_patch_inputs->mask + key->ds.required_patch_inputs->max;
       break;
    default:
       /* No type specific information to hash for other stages. */
@@ -878,11 +939,8 @@ d3d12_fill_shader_key(struct d3d12_selection_context *sel_ctx,
          VARYING_BIT_CLIP_DIST0 |
          VARYING_BIT_CLIP_DIST1;
 
-   key->hash = 0;
+   memset(key, 0, offsetof(d3d12_shader_key, vs));
    key->stage = stage;
-   key->required_varying_inputs.mask = 0;
-   key->required_varying_outputs.mask = 0;
-   memset(&key->next_varying_inputs, 0, offsetof(d3d12_shader_key, vs) - offsetof(d3d12_shader_key, next_varying_inputs));
 
    switch (stage)
    {
@@ -897,12 +955,12 @@ d3d12_fill_shader_key(struct d3d12_selection_context *sel_ctx,
       break;
    case PIPE_SHADER_TESS_CTRL:
       key->hs.all = 0;
-      key->hs.required_patch_outputs.mask = 0;
+      key->hs.required_patch_outputs = nullptr;
       break;
    case PIPE_SHADER_TESS_EVAL:
       key->ds.tcs_vertices_out = 0;
       key->ds.prev_patch_outputs = 0;
-      key->ds.required_patch_inputs.mask = 0;
+      key->ds.required_patch_inputs = nullptr;
       break;
    case PIPE_SHADER_COMPUTE:
       memset(key->cs.workgroup_size, 0, sizeof(key->cs.workgroup_size));
@@ -916,19 +974,45 @@ d3d12_fill_shader_key(struct d3d12_selection_context *sel_ctx,
    if (prev) {
       /* We require as inputs what the previous stage has written,
        * except certain system values */
-      if (stage == PIPE_SHADER_FRAGMENT || stage == PIPE_SHADER_GEOMETRY)
+
+      struct d3d12_varying_info **output_vars = nullptr;
+
+      switch (stage) {
+      case PIPE_SHADER_FRAGMENT:
+         system_out_values |= VARYING_BIT_POS | VARYING_BIT_PSIZ | VARYING_BIT_VIEWPORT | VARYING_BIT_LAYER;
+         output_vars = &prev->current->output_vars_fs;
+         break;
+      case PIPE_SHADER_GEOMETRY:
          system_out_values |= VARYING_BIT_POS;
-      if (stage == PIPE_SHADER_FRAGMENT)
-         system_out_values |= VARYING_BIT_PSIZ | VARYING_BIT_VIEWPORT | VARYING_BIT_LAYER;
+         output_vars = &prev->current->output_vars_gs;
+         break;
+      default:
+         output_vars = &prev->current->output_vars_default;
+         break;
+      }
+
       uint64_t mask = prev->current->nir->info.outputs_written & ~system_out_values;
-      fill_varyings(&key->required_varying_inputs, prev->current->nir,
-                    nir_var_shader_out, mask, false);
+
+      if (*output_vars == nullptr) {
+         *output_vars = ralloc(prev, struct d3d12_varying_info);
+         fill_varyings(*output_vars, prev->current->nir,
+                       nir_var_shader_out, mask, false);
+      }
+
+      key->required_varying_inputs = *output_vars;
+
       key->prev_varying_outputs = prev->current->nir->info.outputs_written;
 
       if (stage == PIPE_SHADER_TESS_EVAL) {
          uint32_t patch_mask = prev->current->nir->info.patch_outputs_written;
-         fill_varyings(&key->ds.required_patch_inputs, prev->current->nir,
-                       nir_var_shader_out, patch_mask, true);
+
+         if (prev->current->tess_eval_output_vars == nullptr) {
+            prev->current->tess_eval_output_vars = ralloc(prev, struct d3d12_varying_info);
+            fill_varyings(prev->current->tess_eval_output_vars, prev->current->nir,
+                          nir_var_shader_out, patch_mask, true);
+         }
+
+         key->ds.required_patch_inputs = prev->current->tess_eval_output_vars;
          key->ds.prev_patch_outputs = patch_mask;
       }
 
@@ -951,16 +1035,35 @@ d3d12_fill_shader_key(struct d3d12_selection_context *sel_ctx,
     * except certain system values */
    if (next) {
       if (!next->is_variant) {
-         if (stage == PIPE_SHADER_VERTEX)
+
+         struct d3d12_varying_info **output_vars = &next->current->input_vars_default;
+
+         if (stage == PIPE_SHADER_VERTEX) {
             system_generated_in_values |= VARYING_BIT_POS;
+            output_vars = &next->current->input_vars_vs;
+         }
          uint64_t mask = next->current->nir->info.inputs_read & ~system_generated_in_values;
-         fill_varyings(&key->required_varying_outputs, next->current->nir,
-                       nir_var_shader_in, mask, false);
+
+         
+         if (*output_vars == nullptr) {
+            *output_vars = ralloc(next, struct d3d12_varying_info);
+            fill_varyings(*output_vars, next->current->nir,
+                          nir_var_shader_in, mask, false);
+         }
+
+         key->required_varying_outputs = *output_vars;
+
 
          if (stage == PIPE_SHADER_TESS_CTRL) {
             uint32_t patch_mask = next->current->nir->info.patch_outputs_read;
-            fill_varyings(&key->hs.required_patch_outputs, prev->current->nir,
-                          nir_var_shader_in, patch_mask, true);
+
+            if (prev->current->tess_ctrl_input_vars == nullptr){
+               prev->current->tess_ctrl_input_vars = ralloc(next, struct d3d12_varying_info);
+               fill_varyings(prev->current->tess_ctrl_input_vars, prev->current->nir,
+                              nir_var_shader_in, patch_mask, true);
+            }
+
+            key->hs.required_patch_outputs = prev->current->tess_ctrl_input_vars;
             key->hs.next_patch_inputs = patch_mask;
          }
       }
@@ -1046,7 +1149,7 @@ d3d12_fill_shader_key(struct d3d12_selection_context *sel_ctx,
       }
    }
 
-   for (unsigned i = 0; i < sel_ctx->ctx->num_samplers[stage]; ++i) {
+   for (unsigned i = 0, e = sel_ctx->ctx->num_samplers[stage]; i < e; ++i) {
       if (!sel_ctx->ctx->samplers[stage][i] ||
           sel_ctx->ctx->samplers[stage][i]->filter == PIPE_TEX_FILTER_NEAREST)
          continue;
@@ -1232,19 +1335,21 @@ select_shader_variant(struct d3d12_selection_context *sel_ctx, d3d12_shader_sele
 
    /* Add the needed in and outputs, and re-sort */
    if (prev) {
-      uint64_t mask = key.required_varying_inputs.mask & ~new_nir_variant->info.inputs_read;
-      new_nir_variant->info.inputs_read |= mask;
-      while (mask) {
-         int slot = u_bit_scan64(&mask);
-         create_varyings_from_info(new_nir_variant, &key.required_varying_inputs, slot, nir_var_shader_in, false);
+      if (key.required_varying_inputs != nullptr) {
+         uint64_t mask = key.required_varying_inputs->mask & ~new_nir_variant->info.inputs_read;
+         new_nir_variant->info.inputs_read |= mask;
+         while (mask) {
+            int slot = u_bit_scan64(&mask);
+            create_varyings_from_info(new_nir_variant, key.required_varying_inputs, slot, nir_var_shader_in, false);
+         }
       }
 
       if (sel->stage == PIPE_SHADER_TESS_EVAL) {
-         uint32_t patch_mask = (uint32_t)key.ds.required_patch_inputs.mask & ~new_nir_variant->info.patch_inputs_read;
+         uint32_t patch_mask = (uint32_t)key.ds.required_patch_inputs->mask & ~new_nir_variant->info.patch_inputs_read;
          new_nir_variant->info.patch_inputs_read |= patch_mask;
          while (patch_mask) {
             int slot = u_bit_scan(&patch_mask);
-            create_varyings_from_info(new_nir_variant, &key.ds.required_patch_inputs, slot, nir_var_shader_in, true);
+            create_varyings_from_info(new_nir_variant, key.ds.required_patch_inputs, slot, nir_var_shader_in, true);
          }
       }
       dxil_reassign_driver_locations(new_nir_variant, nir_var_shader_in,
@@ -1253,19 +1358,22 @@ select_shader_variant(struct d3d12_selection_context *sel_ctx, d3d12_shader_sele
 
 
    if (next) {
-      uint64_t mask = key.required_varying_outputs.mask & ~new_nir_variant->info.outputs_written;
-      new_nir_variant->info.outputs_written |= mask;
-      while (mask) {
-         int slot = u_bit_scan64(&mask);
-         create_varyings_from_info(new_nir_variant, &key.required_varying_outputs, slot, nir_var_shader_out, false);
+      if (key.required_varying_outputs != nullptr) {
+         uint64_t mask = key.required_varying_outputs->mask & ~new_nir_variant->info.outputs_written;
+         new_nir_variant->info.outputs_written |= mask;
+         while (mask) {
+            int slot = u_bit_scan64(&mask);
+            create_varyings_from_info(new_nir_variant, key.required_varying_outputs, slot, nir_var_shader_out, false);
+         }
       }
 
-      if (sel->stage == PIPE_SHADER_TESS_CTRL) {
-         uint32_t patch_mask = (uint32_t)key.hs.required_patch_outputs.mask & ~new_nir_variant->info.patch_outputs_written;
+      if (sel->stage == PIPE_SHADER_TESS_CTRL &&
+            key.hs.required_patch_outputs != nullptr) {
+         uint32_t patch_mask = (uint32_t)key.hs.required_patch_outputs->mask & ~new_nir_variant->info.patch_outputs_written;
          new_nir_variant->info.patch_outputs_written |= patch_mask;
          while (patch_mask) {
             int slot = u_bit_scan(&patch_mask);
-            create_varyings_from_info(new_nir_variant, &key.hs.required_patch_outputs, slot, nir_var_shader_out, true);
+            create_varyings_from_info(new_nir_variant, key.hs.required_patch_outputs, slot, nir_var_shader_out, true);
          }
       }
       dxil_reassign_driver_locations(new_nir_variant, nir_var_shader_out,
@@ -1412,6 +1520,9 @@ d3d12_create_shader_impl(struct d3d12_context *ctx,
 
    /* Keep this initial shader as the blue print for possible variants */
    sel->initial = nir;
+   sel->initial_output_vars = nullptr;
+   sel->gs_key.varyings = nullptr;
+   sel->tcs_key.varyings = nullptr;
 
    /*
     * We must compile some shader here, because if the previous or a next shaders exists later
@@ -1531,7 +1642,7 @@ d3d12_select_shader_variants(struct d3d12_context *ctx, const struct pipe_draw_i
    sel_ctx.cull_mode_lowered = cull_mode_lowered(ctx, sel_ctx.fill_mode_lowered);
    sel_ctx.provoking_vertex = get_provoking_vertex(&sel_ctx, &sel_ctx.alternate_tri, dinfo);
    sel_ctx.needs_vertex_reordering = needs_vertex_reordering(&sel_ctx, dinfo);
-   sel_ctx.missing_dual_src_outputs = missing_dual_src_outputs(ctx);
+   sel_ctx.missing_dual_src_outputs = ctx->missing_dual_src_outputs;
    sel_ctx.frag_result_color_lowering = frag_result_color_lowering(ctx);
    sel_ctx.manual_depth_range = manual_depth_range(ctx);
 
@@ -1578,6 +1689,7 @@ d3d12_shader_free(struct d3d12_shader_selector *sel)
       free(shader->bytecode);
       shader = shader->next_variant;
    }
-   ralloc_free(sel->initial);
+
+   ralloc_free((void*)sel->initial);
    ralloc_free(sel);
 }

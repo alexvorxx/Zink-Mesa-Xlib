@@ -759,17 +759,13 @@ update_draw_indirect_with_sysvals(struct d3d12_context *ctx,
       ctx->gfx_stages[PIPE_SHADER_VERTEX] == nullptr)
       return false;
 
-   unsigned sysvals[] = {
-      SYSTEM_VALUE_VERTEX_ID_ZERO_BASE,
-      SYSTEM_VALUE_BASE_VERTEX,
-      SYSTEM_VALUE_FIRST_VERTEX,
-      SYSTEM_VALUE_BASE_INSTANCE,
-      SYSTEM_VALUE_DRAW_ID,
-   };
-   bool any = false;
-   for (unsigned sysval : sysvals) {
-      any |= (BITSET_TEST(ctx->gfx_stages[PIPE_SHADER_VERTEX]->initial->info.system_values_read, sysval));
-   }
+   auto sys_values_read = ctx->gfx_stages[PIPE_SHADER_VERTEX]->initial->info.system_values_read;
+   bool any =  BITSET_TEST(sys_values_read, SYSTEM_VALUE_VERTEX_ID_ZERO_BASE) ||
+               BITSET_TEST(sys_values_read, SYSTEM_VALUE_BASE_VERTEX) ||
+               BITSET_TEST(sys_values_read, SYSTEM_VALUE_FIRST_VERTEX) ||
+               BITSET_TEST(sys_values_read, SYSTEM_VALUE_BASE_INSTANCE) ||
+               BITSET_TEST(sys_values_read, SYSTEM_VALUE_DRAW_ID);
+
    if (!any)
       return false;
 

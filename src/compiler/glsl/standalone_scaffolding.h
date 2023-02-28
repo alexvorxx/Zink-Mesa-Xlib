@@ -38,7 +38,7 @@ extern "C" void
 _mesa_warning(struct gl_context *ctx, const char *fmtString, ... );
 
 extern "C" void
-_mesa_problem(struct gl_context *ctx, const char *fmtString, ... );
+_mesa_problem(const struct gl_context *ctx, const char *fmtString, ... );
 
 extern "C" void
 _mesa_reference_shader_program_data(struct gl_shader_program_data **ptr,

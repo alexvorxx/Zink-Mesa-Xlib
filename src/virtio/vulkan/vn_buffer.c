@@ -30,57 +30,29 @@ vn_buffer_create_info_can_be_cached(const VkBufferCreateInfo *create_info,
           (create_info->sharingMode == VK_SHARING_MODE_EXCLUSIVE);
 }
 
-static VkResult
-vn_buffer_get_max_buffer_size(struct vn_device *dev,
-                              uint64_t *out_max_buffer_size)
+static inline uint64_t
+vn_buffer_get_max_buffer_size(struct vn_physical_device *physical_dev)
 {
-   const VkAllocationCallbacks *alloc = &dev->base.base.alloc;
-   struct vn_physical_device *pdev = dev->physical_device;
-   VkDevice dev_handle = vn_device_to_handle(dev);
-   VkBuffer buf_handle;
-   VkBufferCreateInfo create_info = {
-      .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
-      .usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-      .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
-   };
-   uint64_t max_buffer_size = 0;
-   uint8_t begin = 0;
-   uint8_t end = 64;
-
-   if (pdev->features.vulkan_1_3.maintenance4) {
-      *out_max_buffer_size = pdev->properties.vulkan_1_3.maxBufferSize;
-      return VK_SUCCESS;
-   }
-
-   /* For drivers that don't support VK_KHR_maintenance4, we try to estimate
-    * the maxBufferSize using binary search.
-    * TODO remove all the search code after VK_KHR_maintenance4 becomes
-    * a requirement.
+   /* Without maintenance4, hardcode the min of supported drivers:
+    * - anv:  1ull << 30
+    * - radv: UINT32_MAX - 4
+    * - tu:   UINT32_MAX + 1
+    * - lvp:  UINT32_MAX
+    * - mali: UINT32_MAX
     */
-   while (begin < end) {
-      uint8_t mid = (begin + end) >> 1;
-      create_info.size = 1ull << mid;
-      if (vn_CreateBuffer(dev_handle, &create_info, alloc, &buf_handle) ==
-          VK_SUCCESS) {
-         vn_DestroyBuffer(dev_handle, buf_handle, alloc);
-         max_buffer_size = create_info.size;
-         begin = mid + 1;
-      } else {
-         end = mid;
-      }
-   }
-
-   *out_max_buffer_size = max_buffer_size;
-   return VK_SUCCESS;
+   static const uint64_t safe_max_buffer_size = 1ULL << 30;
+   return physical_dev->features.vulkan_1_3.maintenance4
+             ? physical_dev->properties.vulkan_1_3.maxBufferSize
+             : safe_max_buffer_size;
 }
 
 VkResult
 vn_buffer_cache_init(struct vn_device *dev)
 {
    uint32_t ahb_mem_type_bits = 0;
-   uint64_t max_buffer_size = 0;
    VkResult result;
 
+   /* TODO lazily initialize ahb buffer cache */
    if (dev->base.base.enabled_extensions
           .ANDROID_external_memory_android_hardware_buffer) {
       result =
@@ -89,14 +61,9 @@ vn_buffer_cache_init(struct vn_device *dev)
          return result;
    }
 
-   if (!VN_PERF(NO_ASYNC_BUFFER_CREATE)) {
-      result = vn_buffer_get_max_buffer_size(dev, &max_buffer_size);
-      if (result != VK_SUCCESS)
-         return result;
-   }
-
    dev->buffer_cache.ahb_mem_type_bits = ahb_mem_type_bits;
-   dev->buffer_cache.max_buffer_size = max_buffer_size;
+   dev->buffer_cache.max_buffer_size =
+      vn_buffer_get_max_buffer_size(dev->physical_device);
 
    simple_mtx_init(&dev->buffer_cache.mutex, mtx_plain);
    util_sparse_array_init(&dev->buffer_cache.entries,
@@ -304,6 +271,48 @@ vn_buffer_create(struct vn_device *dev,
    return VK_SUCCESS;
 }
 
+struct vn_buffer_create_info {
+   VkBufferCreateInfo create;
+   VkExternalMemoryBufferCreateInfo external;
+   VkBufferOpaqueCaptureAddressCreateInfo capture;
+};
+
+static const VkBufferCreateInfo *
+vn_buffer_fix_create_info(
+   const VkBufferCreateInfo *create_info,
+   const VkExternalMemoryHandleTypeFlagBits renderer_handle_type,
+   struct vn_buffer_create_info *local_info)
+{
+   local_info->create = *create_info;
+   VkBaseOutStructure *cur = (void *)&local_info->create;
+
+   vk_foreach_struct_const(src, create_info->pNext) {
+      void *next = NULL;
+      switch (src->sType) {
+      case VK_STRUCTURE_TYPE_EXTERNAL_MEMORY_BUFFER_CREATE_INFO:
+         memcpy(&local_info->external, src, sizeof(local_info->external));
+         local_info->external.handleTypes = renderer_handle_type;
+         next = &local_info->external;
+         break;
+      case VK_STRUCTURE_TYPE_BUFFER_OPAQUE_CAPTURE_ADDRESS_CREATE_INFO:
+         memcpy(&local_info->capture, src, sizeof(local_info->capture));
+         next = &local_info->capture;
+         break;
+      default:
+         break;
+      }
+
+      if (next) {
+         cur->pNext = next;
+         cur = next;
+      }
+   }
+
+   cur->pNext = NULL;
+
+   return &local_info->create;
+}
+
 VkResult
 vn_CreateBuffer(VkDevice device,
                 const VkBufferCreateInfo *pCreateInfo,
@@ -314,24 +323,36 @@ vn_CreateBuffer(VkDevice device,
    struct vn_device *dev = vn_device_from_handle(device);
    const VkAllocationCallbacks *alloc =
       pAllocator ? pAllocator : &dev->base.base.alloc;
-   struct vn_buffer *buf = NULL;
-   VkResult result;
+   const VkExternalMemoryHandleTypeFlagBits renderer_handle_type =
+      dev->physical_device->external_memory.renderer_handle_type;
 
+   struct vn_buffer_create_info local_info;
    const VkExternalMemoryBufferCreateInfo *external_info =
       vk_find_struct_const(pCreateInfo->pNext,
                            EXTERNAL_MEMORY_BUFFER_CREATE_INFO);
-   const bool ahb_info =
-      external_info &&
-      external_info->handleTypes ==
-         VK_EXTERNAL_MEMORY_HANDLE_TYPE_ANDROID_HARDWARE_BUFFER_BIT_ANDROID;
+   if (external_info && external_info->handleTypes &&
+       external_info->handleTypes != renderer_handle_type) {
+      pCreateInfo = vn_buffer_fix_create_info(
+         pCreateInfo, renderer_handle_type, &local_info);
+   }
 
-   if (ahb_info)
-      result = vn_android_buffer_from_ahb(dev, pCreateInfo, alloc, &buf);
-   else
-      result = vn_buffer_create(dev, pCreateInfo, alloc, &buf);
-
+   struct vn_buffer *buf;
+   VkResult result = vn_buffer_create(dev, pCreateInfo, alloc, &buf);
    if (result != VK_SUCCESS)
       return vn_error(dev->instance, result);
+
+   if (external_info &&
+       external_info->handleTypes ==
+          VK_EXTERNAL_MEMORY_HANDLE_TYPE_ANDROID_HARDWARE_BUFFER_BIT_ANDROID) {
+      /* AHB backed buffer layers on top of renderer external memory, so here
+       * we combine the queried type bits from both buffer memory requirement
+       * and renderer external memory properties.
+       */
+      buf->requirements.memory.memoryRequirements.memoryTypeBits &=
+         dev->buffer_cache.ahb_mem_type_bits;
+
+      assert(buf->requirements.memory.memoryRequirements.memoryTypeBits);
+   }
 
    *pBuffer = vn_buffer_to_handle(buf);
 

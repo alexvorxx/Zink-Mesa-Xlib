@@ -783,7 +783,9 @@ ir3_nir_lower_variant(struct ir3_shader_variant *so, nir_shader *s)
             .rounding_mode = nir_rounding_mode_rtz,
             .fold_tex_dest_types = nir_type_float,
             /* blob dumps have no half regs on pixel 2's ldib or stib, so only enable for a6xx+. */
-            .fold_image_load_store_data = so->compiler->gen >= 6,
+            .fold_image_dest_types = so->compiler->gen >= 6 ?
+                                        nir_type_float | nir_type_uint | nir_type_int : 0,
+            .fold_image_store_data = so->compiler->gen >= 6,
             .fold_srcs_options_count = 1,
             .fold_srcs_options = &fold_srcs_options,
          };

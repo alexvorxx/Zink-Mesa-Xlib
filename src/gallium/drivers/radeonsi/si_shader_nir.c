@@ -196,9 +196,10 @@ static void si_late_optimize_16bit_samplers(struct si_screen *sscreen, nir_shade
       },
    };
    struct nir_fold_16bit_tex_image_options fold_16bit_options = {
-      .rounding_mode = nir_rounding_mode_rtne,
-      .fold_tex_dest_types = nir_type_float | nir_type_uint | nir_type_int,
-      .fold_image_load_store_data = true,
+      .rounding_mode = nir_rounding_mode_rtz,
+      .fold_tex_dest_types = nir_type_float,
+      .fold_image_dest_types = nir_type_float,
+      .fold_image_store_data = true,
       .fold_srcs_options_count = has_g16 ? 2 : 1,
       .fold_srcs_options = fold_srcs_options,
    };

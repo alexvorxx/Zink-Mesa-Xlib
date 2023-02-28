@@ -953,3 +953,10 @@ spec@nv_copy_image@nv_copy_image-formats --samples=8@Source: GL_RGBA8_SNORM/Dest
 
 # See issue #7152
 spec@ext_transform_feedback@builtin-varyings gl_culldistance,Fail
+
+# https://gitlab.freedesktop.org/mesa/mesa/-/issues/8348
+KHR-GL46.tessellation_shader.tessellation_control_to_tessellation_evaluation.gl_tessLevel,Fail
+KHR-GL46.tessellation_shader.tessellation_shader_tessellation.TES,Fail
+spec@arb_tessellation_shader@execution@vs-tes-tessinner-tessouter-inputs-quads,Fail
+spec@arb_tessellation_shader@execution@vs-tes-tessinner-tessouter-inputs-quads-dlist,Fail
+spec@arb_tessellation_shader@execution@vs-tes-tessinner-tessouter-inputs-tris,Fail

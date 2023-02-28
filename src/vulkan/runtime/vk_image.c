@@ -453,6 +453,14 @@ vk_image_view_init(struct vk_device *device,
    image_view->extent =
       vk_image_mip_level_extent(image, image_view->base_mip_level);
 
+   /* By default storage uses the same as the image properties, but it can be
+    * overriden with VkImageViewSlicedCreateInfoEXT.
+    */
+   image_view->storage.slice_offset = 0;
+   image_view->storage.slice_count = image_view->extent.depth;
+
+   const VkImageViewSlicedCreateInfoEXT *sliced_info =
+      vk_find_struct_const(pCreateInfo, IMAGE_VIEW_SLICED_CREATE_INFO_EXT);
    assert(image_view->base_mip_level + image_view->level_count
           <= image->mip_levels);
    switch (image->image_type) {
@@ -464,6 +472,18 @@ vk_image_view_init(struct vk_device *device,
              <= image->array_layers);
       break;
    case VK_IMAGE_TYPE_3D:
+      if (sliced_info) {
+         unsigned total = image_view->extent.depth;
+         image_view->storage.slice_offset = sliced_info->sliceOffset;
+         assert(image_view->storage.slice_offset < total);
+         if (sliced_info->sliceCount == VK_REMAINING_3D_SLICES_EXT) {
+            image_view->storage.slice_count = total - image_view->storage.slice_offset;
+         } else {
+            image_view->storage.slice_count = sliced_info->sliceCount;
+         }
+         assert(image_view->storage.slice_offset + image_view->storage.slice_count
+                <= image->extent.depth);
+      }
       assert(image_view->base_array_layer + image_view->layer_count
              <= image_view->extent.depth);
       break;

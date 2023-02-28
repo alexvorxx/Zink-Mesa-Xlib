@@ -2522,7 +2522,7 @@ radv_GetPhysicalDeviceProperties2(VkPhysicalDevice physicalDevice,
          properties->primitiveOverestimationSize = 0;
          properties->maxExtraPrimitiveOverestimationSize = 0;
          properties->extraPrimitiveOverestimationSizeGranularity = 0;
-         properties->primitiveUnderestimation = false;
+         properties->primitiveUnderestimation = true;
          properties->conservativePointAndLineRasterization = false;
          properties->degenerateTrianglesRasterized = true;
          properties->degenerateLinesRasterized = false;

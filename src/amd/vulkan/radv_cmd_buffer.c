@@ -2458,25 +2458,24 @@ radv_emit_conservative_rast_mode(struct radv_cmd_buffer *cmd_buffer)
    const struct radv_dynamic_state *d = &cmd_buffer->state.dynamic;
 
    if (pdevice->rad_info.gfx_level >= GFX9) {
-      uint32_t pa_sc_conservative_rast = S_028C4C_NULL_SQUAD_AA_MASK_ENABLE(1);
+      uint32_t pa_sc_conservative_rast;
 
       if (d->vk.rs.conservative_mode != VK_CONSERVATIVE_RASTERIZATION_MODE_DISABLED_EXT) {
          pa_sc_conservative_rast = S_028C4C_PREZ_AA_MASK_ENABLE(1) | S_028C4C_POSTZ_AA_MASK_ENABLE(1) |
                                    S_028C4C_CENTROID_SAMPLE_OVERRIDE(1);
 
          if (d->vk.rs.conservative_mode == VK_CONSERVATIVE_RASTERIZATION_MODE_OVERESTIMATE_EXT) {
-            pa_sc_conservative_rast |=
-               S_028C4C_OVER_RAST_ENABLE(1) | S_028C4C_OVER_RAST_SAMPLE_SELECT(0) |
-               S_028C4C_UNDER_RAST_ENABLE(0) | S_028C4C_UNDER_RAST_SAMPLE_SELECT(1) |
-               S_028C4C_PBB_UNCERTAINTY_REGION_ENABLE(1);
+            pa_sc_conservative_rast |= S_028C4C_OVER_RAST_ENABLE(1) |
+                                       S_028C4C_UNDER_RAST_SAMPLE_SELECT(1) |
+                                       S_028C4C_PBB_UNCERTAINTY_REGION_ENABLE(1);
          } else {
             assert(d->vk.rs.conservative_mode ==
                    VK_CONSERVATIVE_RASTERIZATION_MODE_UNDERESTIMATE_EXT);
             pa_sc_conservative_rast |=
-               S_028C4C_OVER_RAST_ENABLE(0) | S_028C4C_OVER_RAST_SAMPLE_SELECT(1) |
-               S_028C4C_UNDER_RAST_ENABLE(1) | S_028C4C_UNDER_RAST_SAMPLE_SELECT(0) |
-               S_028C4C_PBB_UNCERTAINTY_REGION_ENABLE(0);
+               S_028C4C_OVER_RAST_SAMPLE_SELECT(1) | S_028C4C_UNDER_RAST_ENABLE(1);
          }
+      } else {
+         pa_sc_conservative_rast = S_028C4C_NULL_SQUAD_AA_MASK_ENABLE(1);
       }
 
       radeon_set_context_reg(cmd_buffer->cs, R_028C4C_PA_SC_CONSERVATIVE_RASTERIZATION_CNTL,
@@ -4195,7 +4194,7 @@ radv_emit_msaa_state(struct radv_cmd_buffer *cmd_buffer)
    if (pdevice->rad_info.gfx_level >= GFX9 &&
        d->vk.rs.conservative_mode != VK_CONSERVATIVE_RASTERIZATION_MODE_DISABLED_EXT) {
       /* Adjust MSAA state if conservative rasterization is enabled. */
-      db_eqaa |= S_028804_ENABLE_POSTZ_OVERRASTERIZATION(1) | S_028804_OVERRASTERIZATION_AMOUNT(4);
+      db_eqaa |= S_028804_OVERRASTERIZATION_AMOUNT(4);
       pa_sc_aa_config |= S_028BE0_AA_MASK_CENTROID_DTMN(1);
    }
 
@@ -4225,15 +4224,17 @@ radv_emit_msaa_state(struct radv_cmd_buffer *cmd_buffer)
       unsigned ps_iter_samples = radv_get_ps_iter_samples(cmd_buffer);
       unsigned log_z_samples = util_logbase2(z_samples);
       unsigned log_ps_iter_samples = util_logbase2(ps_iter_samples);
+      bool uses_underestimate =
+         d->vk.rs.conservative_mode == VK_CONSERVATIVE_RASTERIZATION_MODE_UNDERESTIMATE_EXT;
 
       db_eqaa |= S_028804_MAX_ANCHOR_SAMPLES(log_z_samples) |
                  S_028804_PS_ITER_SAMPLES(log_ps_iter_samples) |
                  S_028804_MASK_EXPORT_NUM_SAMPLES(log_samples) |
                  S_028804_ALPHA_TO_MASK_NUM_SAMPLES(log_samples);
 
-      pa_sc_aa_config |= S_028BE0_MSAA_NUM_SAMPLES(log_samples) |
+      pa_sc_aa_config |= S_028BE0_MSAA_NUM_SAMPLES(uses_underestimate ? 0 : log_samples) |
                          S_028BE0_MAX_SAMPLE_DIST(max_sample_dist) |
-                         S_028BE0_MSAA_EXPOSED_SAMPLES(log_samples) | /* CM_R_028BE0_PA_SC_AA_CONFIG */
+                         S_028BE0_MSAA_EXPOSED_SAMPLES(log_samples) |
                          S_028BE0_COVERED_CENTROID_IS_CENTER(pdevice->rad_info.gfx_level >= GFX10_3);
    }
 
@@ -6073,7 +6074,7 @@ radv_EndCommandBuffer(VkCommandBuffer commandBuffer)
       /* Flush noncoherent images on GFX9+ so we can assume they're clean on the start of a
        * command buffer.
        */
-      if (cmd_buffer->state.rb_noncoherent_dirty && can_skip_buffer_l2_flushes(cmd_buffer->device))
+      if (cmd_buffer->state.rb_noncoherent_dirty && !can_skip_buffer_l2_flushes(cmd_buffer->device))
          cmd_buffer->state.flush_bits |= radv_src_access_flush(
             cmd_buffer,
             VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT |
@@ -7212,6 +7213,8 @@ radv_CmdExecuteCommands(VkCommandBuffer commandBuffer, uint32_t commandBufferCou
       primary->state.last_vrs_rates_sgpr_idx = secondary->state.last_vrs_rates_sgpr_idx;
 
       primary->state.last_pa_sc_binner_cntl_0 = secondary->state.last_pa_sc_binner_cntl_0;
+
+      primary->state.rb_noncoherent_dirty |= secondary->state.rb_noncoherent_dirty;
    }
 
    /* After executing commands from secondary buffers we have to dirty
@@ -7934,6 +7937,25 @@ radv_emit_userdata_task(struct radv_cmd_buffer *cmd_buffer, uint32_t x, uint32_t
    radv_emit_userdata_task_ib_only(cmd_buffer, ib_va, first_task ? 8 : 0);
 }
 
+/* Bind an internal index buffer for GPUs that hang with 0-sized index buffers to handle robustness2
+ * which requires 0 for out-of-bounds access.
+ */
+static void
+radv_handle_zero_index_buffer_bug(struct radv_cmd_buffer *cmd_buffer, uint64_t *index_va,
+                                  uint32_t *remaining_indexes)
+{
+   const uint32_t zero = 0;
+   uint32_t offset;
+
+   if (!radv_cmd_buffer_upload_data(cmd_buffer, sizeof(uint32_t), &zero, &offset)) {
+      vk_command_buffer_set_error(&cmd_buffer->vk, VK_ERROR_OUT_OF_HOST_MEMORY);
+      return;
+   }
+
+   *index_va = radv_buffer_get_va(cmd_buffer->upload.upload_bo) + offset;
+   *remaining_indexes = 1;
+}
+
 ALWAYS_INLINE static void
 radv_emit_draw_packets_indexed(struct radv_cmd_buffer *cmd_buffer,
                                const struct radv_draw_info *info,
@@ -7954,17 +7976,16 @@ radv_emit_draw_packets_indexed(struct radv_cmd_buffer *cmd_buffer,
       if (vertexOffset) {
          radv_emit_userdata_vertex(cmd_buffer, info, *vertexOffset);
          vk_foreach_multi_draw_indexed(draw, i, minfo, drawCount, stride) {
-            const uint32_t remaining_indexes = MAX2(state->max_index_count, draw->firstIndex) - draw->firstIndex;
+            uint32_t remaining_indexes = MAX2(state->max_index_count, draw->firstIndex) - draw->firstIndex;
+            uint64_t index_va = state->index_va + draw->firstIndex * index_size;
 
-            /* Skip draw calls with 0-sized index buffers if the GPU can't handle them */
+            /* Handle draw calls with 0-sized index buffers if the GPU can't support them. */
             if (!remaining_indexes &&
                 cmd_buffer->device->physical_device->rad_info.has_zero_index_buffer_bug)
-               continue;
+               radv_handle_zero_index_buffer_bug(cmd_buffer, &index_va, &remaining_indexes);
 
             if (i > 0)
                radeon_set_sh_reg(cs, state->graphics_pipeline->vtx_base_sgpr + sizeof(uint32_t), i);
-
-            const uint64_t index_va = state->index_va + draw->firstIndex * index_size;
 
             if (!state->render.view_mask) {
                radv_cs_emit_draw_indexed_packet(cmd_buffer, index_va, remaining_indexes, draw->indexCount, false);
@@ -7978,12 +7999,13 @@ radv_emit_draw_packets_indexed(struct radv_cmd_buffer *cmd_buffer,
          }
       } else {
          vk_foreach_multi_draw_indexed(draw, i, minfo, drawCount, stride) {
-            const uint32_t remaining_indexes = MAX2(state->max_index_count, draw->firstIndex) - draw->firstIndex;
+            uint32_t remaining_indexes = MAX2(state->max_index_count, draw->firstIndex) - draw->firstIndex;
+            uint64_t index_va = state->index_va + draw->firstIndex * index_size;
 
-            /* Skip draw calls with 0-sized index buffers if the GPU can't handle them */
+            /* Handle draw calls with 0-sized index buffers if the GPU can't support them. */
             if (!remaining_indexes &&
                 cmd_buffer->device->physical_device->rad_info.has_zero_index_buffer_bug)
-               continue;
+               radv_handle_zero_index_buffer_bug(cmd_buffer, &index_va, &remaining_indexes);
 
             if (i > 0) {
                if (state->last_vertex_offset != draw->vertexOffset)
@@ -7992,8 +8014,6 @@ radv_emit_draw_packets_indexed(struct radv_cmd_buffer *cmd_buffer,
                   radeon_set_sh_reg(cs, state->graphics_pipeline->vtx_base_sgpr + sizeof(uint32_t), i);
             } else
                radv_emit_userdata_vertex(cmd_buffer, info, draw->vertexOffset);
-
-            const uint64_t index_va = state->index_va + draw->firstIndex * index_size;
 
             if (!state->render.view_mask) {
                radv_cs_emit_draw_indexed_packet(cmd_buffer, index_va, remaining_indexes, draw->indexCount, false);
@@ -8025,14 +8045,13 @@ radv_emit_draw_packets_indexed(struct radv_cmd_buffer *cmd_buffer,
 
          radv_emit_userdata_vertex(cmd_buffer, info, *vertexOffset);
          vk_foreach_multi_draw_indexed(draw, i, minfo, drawCount, stride) {
-            const uint32_t remaining_indexes = MAX2(state->max_index_count, draw->firstIndex) - draw->firstIndex;
+            uint32_t remaining_indexes = MAX2(state->max_index_count, draw->firstIndex) - draw->firstIndex;
+            uint64_t index_va = state->index_va + draw->firstIndex * index_size;
 
-            /* Skip draw calls with 0-sized index buffers if the GPU can't handle them */
+            /* Handle draw calls with 0-sized index buffers if the GPU can't support them. */
             if (!remaining_indexes &&
                 cmd_buffer->device->physical_device->rad_info.has_zero_index_buffer_bug)
-               continue;
-
-            const uint64_t index_va = state->index_va + draw->firstIndex * index_size;
+               radv_handle_zero_index_buffer_bug(cmd_buffer, &index_va, &remaining_indexes);
 
             if (!state->render.view_mask) {
                radv_cs_emit_draw_indexed_packet(cmd_buffer, index_va, remaining_indexes, draw->indexCount, can_eop && i < drawCount - 1);
@@ -8046,18 +8065,17 @@ radv_emit_draw_packets_indexed(struct radv_cmd_buffer *cmd_buffer,
          }
       } else {
          vk_foreach_multi_draw_indexed(draw, i, minfo, drawCount, stride) {
-            const uint32_t remaining_indexes = MAX2(state->max_index_count, draw->firstIndex) - draw->firstIndex;
+            uint32_t remaining_indexes = MAX2(state->max_index_count, draw->firstIndex) - draw->firstIndex;
+            uint64_t index_va = state->index_va + draw->firstIndex * index_size;
 
-            /* Skip draw calls with 0-sized index buffers if the GPU can't handle them */
+            /* Handle draw calls with 0-sized index buffers if the GPU can't support them. */
             if (!remaining_indexes &&
                 cmd_buffer->device->physical_device->rad_info.has_zero_index_buffer_bug)
-               continue;
+               radv_handle_zero_index_buffer_bug(cmd_buffer, &index_va, &remaining_indexes);
 
             const VkMultiDrawIndexedInfoEXT *next = (const VkMultiDrawIndexedInfoEXT*)(i < drawCount - 1 ? ((uint8_t*)draw + stride) : NULL);
             const bool offset_changes = next && next->vertexOffset != draw->vertexOffset;
             radv_emit_userdata_vertex(cmd_buffer, info, draw->vertexOffset);
-
-            const uint64_t index_va = state->index_va + draw->firstIndex * index_size;
 
             if (!state->render.view_mask) {
                radv_cs_emit_draw_indexed_packet(cmd_buffer, index_va, remaining_indexes, draw->indexCount, can_eop && !offset_changes && i < drawCount - 1);

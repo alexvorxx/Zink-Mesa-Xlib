@@ -43,7 +43,9 @@ enum dpp_ctrl {
     dpp_row_mirror = 0x140,
     dpp_row_half_mirror = 0x141,
     dpp_row_bcast15 = 0x142,
-    dpp_row_bcast31 = 0x143
+    dpp_row_bcast31 = 0x143,
+    _dpp_row_share = 0x150,
+    _dpp_row_xmask = 0x160,
 };
 
 inline dpp_ctrl
@@ -72,6 +74,20 @@ dpp_row_rr(unsigned amount)
 {
     assert(amount > 0 && amount < 16);
     return (dpp_ctrl)(((unsigned) _dpp_row_rr) | amount);
+}
+
+inline dpp_ctrl
+dpp_row_share(unsigned lane)
+{
+    assert(lane < 16);
+    return (dpp_ctrl)(((unsigned) _dpp_row_share) | lane);
+}
+
+inline dpp_ctrl
+dpp_row_xmask(unsigned mask)
+{
+    assert(mask < 16);
+    return (dpp_ctrl)(((unsigned) _dpp_row_xmask) | mask);
 }
 
 inline unsigned

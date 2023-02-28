@@ -163,28 +163,32 @@ vn_instance_init_ring(struct vn_instance *instance)
    return VK_SUCCESS;
 }
 
-static void
+static VkResult
 vn_instance_init_experimental_features(struct vn_instance *instance)
 {
    if (instance->renderer->info.vk_mesa_venus_protocol_spec_version !=
        100000) {
       if (VN_DEBUG(INIT))
          vn_log(instance, "renderer supports no experimental features");
-      return;
+      return VK_SUCCESS;
    }
 
    size_t struct_size = sizeof(instance->experimental);
    vn_call_vkGetVenusExperimentalFeatureData100000MESA(
       instance, &struct_size, &instance->experimental);
 
+   VkVenusExperimentalFeatures100000MESA *exp_feats = &instance->experimental;
+
    /* if renderer supports multiple_timelines, the driver will use it and
     * globalFencing support can be assumed.
     */
    if (instance->renderer->info.supports_multiple_timelines)
-      instance->experimental.globalFencing = VK_TRUE;
+      exp_feats->globalFencing = VK_TRUE;
 
-   /* largeRing has been enforced by mandated render server config */
-   assert(instance->experimental.largeRing);
+   if (!exp_feats->memoryResourceAllocationSize ||
+       !exp_feats->globalFencing || !exp_feats->largeRing ||
+       !exp_feats->syncFdFencing)
+      return VK_ERROR_INITIALIZATION_FAILED;
 
    if (VN_DEBUG(INIT)) {
       vn_log(instance,
@@ -198,6 +202,8 @@ vn_instance_init_experimental_features(struct vn_instance *instance)
              instance->experimental.largeRing,
              instance->experimental.syncFdFencing);
    }
+
+   return VK_SUCCESS;
 }
 
 static VkResult
@@ -690,7 +696,9 @@ vn_CreateInstance(const VkInstanceCreateInfo *pCreateInfo,
    if (result != VK_SUCCESS)
       goto fail;
 
-   vn_instance_init_experimental_features(instance);
+   result = vn_instance_init_experimental_features(instance);
+   if (result != VK_SUCCESS)
+      goto fail;
 
    result = vn_instance_init_renderer_versions(instance);
    if (result != VK_SUCCESS)

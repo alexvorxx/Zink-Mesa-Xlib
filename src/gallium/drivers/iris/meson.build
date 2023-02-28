@@ -65,7 +65,7 @@ foreach v : ['80', '90', '110', '120', '125']
     ['iris_blorp.c', 'iris_query.c', 'iris_state.c', gen_xml_pack],
     include_directories : [inc_include, inc_src, inc_mapi, inc_mesa, inc_gallium, inc_gallium_aux, inc_intel],
     c_args : [
-      no_override_init_args, c_sse2_args,
+      no_override_init_args, sse2_args,
       '-DGFX_VERx10=@0@'.format(v),
     ],
     gnu_symbol_visibility : 'hidden',
@@ -83,8 +83,8 @@ libiris = static_library(
     # these should not be necessary, but main/macros.h...
     inc_mesa, inc_mapi
   ],
-  c_args : [c_sse2_args],
-  cpp_args : [c_sse2_args],
+  c_args : [sse2_args],
+  cpp_args : [sse2_args],
   gnu_symbol_visibility : 'hidden',
   dependencies : [dep_libdrm, dep_valgrind, idep_genxml, idep_nir_headers,
                   idep_libintel_common, idep_intel_driver_ds, ],
