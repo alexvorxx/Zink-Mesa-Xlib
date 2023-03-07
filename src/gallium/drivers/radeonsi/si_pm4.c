@@ -63,13 +63,14 @@ static void si_pm4_set_reg_custom(struct si_pm4_state *state, unsigned reg, uint
 
    assert(state->ndw + 2 <= state->max_dw);
 
-   if (opcode != state->last_opcode || reg != (state->last_reg + 1)) {
+   if (opcode != state->last_opcode || reg != (state->last_reg + 1) || idx != state->last_idx) {
       si_pm4_cmd_begin(state, opcode);
       state->pm4[state->ndw++] = reg | (idx << 28);
    }
 
    assert(reg <= UINT16_MAX);
    state->last_reg = reg;
+   state->last_idx = idx;
    state->pm4[state->ndw++] = val;
    si_pm4_cmd_end(state, false);
 }
@@ -104,11 +105,19 @@ void si_pm4_set_reg(struct si_pm4_state *state, unsigned reg, uint32_t val)
    si_pm4_set_reg_custom(state, reg, val, opcode, 0);
 }
 
-void si_pm4_set_reg_idx3(struct si_pm4_state *state, unsigned reg, uint32_t val)
+void si_pm4_set_reg_idx3(struct si_screen *sscreen, struct si_pm4_state *state,
+                         unsigned reg, uint32_t val)
 {
    SI_CHECK_SHADOWED_REGS(reg, 1);
 
-   si_pm4_set_reg_custom(state, reg - SI_SH_REG_OFFSET, val, PKT3_SET_SH_REG_INDEX, 3);
+   si_pm4_set_reg_custom(state, reg - SI_SH_REG_OFFSET, val, PKT3_SET_SH_REG_INDEX,
+                         sscreen->info.gfx_level >= GFX10 ? 3 : 0);
+}
+
+void si_pm4_set_reg_va(struct si_pm4_state *state, unsigned reg, uint32_t val)
+{
+   si_pm4_set_reg(state, reg, val);
+   state->reg_va_low_idx = state->ndw - 1;
 }
 
 void si_pm4_clear_state(struct si_pm4_state *state)

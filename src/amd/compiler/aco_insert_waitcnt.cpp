@@ -372,7 +372,7 @@ check_instr(wait_ctx& ctx, wait_imm& wait, alu_delay_info& delay, Instruction* i
             continue;
 
          wait.combine(it->second.imm);
-         if (instr->isVALU() || instr->isSALU() || instr->isVINTERP_INREG())
+         if (instr->isVALU() || instr->isSALU())
             delay.combine(it->second.delay);
       }
    }
@@ -788,7 +788,7 @@ void
 gen_alu(Instruction* instr, wait_ctx& ctx)
 {
    Instruction_cycle_info cycle_info = get_cycle_info(*ctx.program, *instr);
-   bool is_valu = instr->isVALU() || instr->isVINTERP_INREG();
+   bool is_valu = instr->isVALU();
    bool is_trans = instr->isTrans();
    bool clear = instr->isEXP() || instr->isDS() || instr->isMIMG() || instr->isFlatLike() ||
                 instr->isMUBUF() || instr->isMTBUF();

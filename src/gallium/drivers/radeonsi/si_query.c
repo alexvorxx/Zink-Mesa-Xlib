@@ -617,7 +617,7 @@ static bool si_query_hw_prepare_buffer(struct si_context *sctx, struct si_query_
        query->b.type == PIPE_QUERY_OCCLUSION_PREDICATE ||
        query->b.type == PIPE_QUERY_OCCLUSION_PREDICATE_CONSERVATIVE) {
       unsigned max_rbs = screen->info.max_render_backends;
-      unsigned enabled_rb_mask = screen->info.enabled_rb_mask;
+      uint64_t enabled_rb_mask = screen->info.enabled_rb_mask;
       unsigned num_results;
       unsigned i, j;
 
@@ -625,7 +625,7 @@ static bool si_query_hw_prepare_buffer(struct si_context *sctx, struct si_query_
       num_results = qbuf->buf->b.b.width0 / query->result_size;
       for (j = 0; j < num_results; j++) {
          for (i = 0; i < max_rbs; i++) {
-            if (!(enabled_rb_mask & (1 << i))) {
+            if (!(enabled_rb_mask & (1ull << i))) {
                results[(i * 4) + 1] = 0x80000000;
                results[(i * 4) + 3] = 0x80000000;
             }

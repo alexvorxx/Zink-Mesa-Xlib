@@ -48,6 +48,7 @@ enum agx_dbg {
    AGX_DBG_NOVALIDATE  = BITFIELD_BIT(5),
    AGX_DBG_NOOPT       = BITFIELD_BIT(6),
    AGX_DBG_WAIT        = BITFIELD_BIT(7),
+   AGX_DBG_NOPREAMBLE  = BITFIELD_BIT(8),
 };
 /* clang-format on */
 
@@ -782,9 +783,9 @@ agx_builder_insert(agx_cursor *cursor, agx_instr *I)
 
 /* Routines defined for AIR */
 
-void agx_print_instr(agx_instr *I, FILE *fp);
-void agx_print_block(agx_block *block, FILE *fp);
-void agx_print_shader(agx_context *ctx, FILE *fp);
+void agx_print_instr(const agx_instr *I, FILE *fp);
+void agx_print_block(const agx_block *block, FILE *fp);
+void agx_print_shader(const agx_context *ctx, FILE *fp);
 void agx_optimizer(agx_context *ctx);
 void agx_lower_pseudo(agx_context *ctx);
 void agx_lower_uniform_sources(agx_context *ctx);
@@ -807,6 +808,7 @@ agx_validate(UNUSED agx_context *ctx, UNUSED const char *after_str)
 
 unsigned agx_read_registers(agx_instr *I, unsigned s);
 unsigned agx_write_registers(agx_instr *I, unsigned d);
+bool agx_allows_16bit_immediate(agx_instr *I);
 
 struct agx_copy {
    /* Base register destination of the copy */
@@ -832,6 +834,7 @@ bool agx_nir_lower_load_mask(nir_shader *shader);
 bool agx_nir_lower_address(nir_shader *shader);
 bool agx_nir_lower_ubo(nir_shader *shader);
 bool agx_nir_lower_shared_bitsize(nir_shader *shader);
+bool agx_nir_lower_frag_sidefx(nir_shader *s);
 
 #ifdef __cplusplus
 } /* extern C */

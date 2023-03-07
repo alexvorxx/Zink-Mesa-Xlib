@@ -201,10 +201,10 @@ u_box_test_intersection_1d(const struct pipe_box *a,
    int ax[2], bx[2];
 
    ax[0] = MIN2(a->x, a->x + a->width);
-   ax[1] = MAX2(a->x, a->x + a->width);
+   ax[1] = MAX2(a->x, a->x + a->width - 1);
 
    bx[0] = MIN2(b->x, b->x + b->width);
-   bx[1] = MAX2(b->x, b->x + b->width);
+   bx[1] = MAX2(b->x, b->x + b->width - 1);
 
    return ax[1] >= bx[0] && bx[1] >= ax[0];
 }
@@ -240,18 +240,18 @@ u_box_test_intersection_3d(const struct pipe_box *a,
    int ax[2], ay[2], ad[2], bx[2], by[2], bd[2];
 
    ax[0] = MIN2(a->x, a->x + a->width);
-   ax[1] = MAX2(a->x, a->x + a->width);
+   ax[1] = MAX2(a->x, a->x + a->width - 1);
    ay[0] = MIN2(a->y, a->y + a->height);
-   ay[1] = MAX2(a->y, a->y + a->height);
+   ay[1] = MAX2(a->y, a->y + a->height - 1);
    ad[0] = MIN2(a->z, a->z + a->depth);
-   ad[1] = MAX2(a->z, a->z + a->depth);
+   ad[1] = MAX2(a->z, a->z + a->depth - 1);
 
    bx[0] = MIN2(b->x, b->x + b->width);
-   bx[1] = MAX2(b->x, b->x + b->width);
+   bx[1] = MAX2(b->x, b->x + b->width - 1);
    by[0] = MIN2(b->y, b->y + b->height);
-   by[1] = MAX2(b->y, b->y + b->height);
+   by[1] = MAX2(b->y, b->y + b->height - 1);
    bd[0] = MIN2(b->z, b->z + b->depth);
-   bd[1] = MAX2(b->z, b->z + b->depth);
+   bd[1] = MAX2(b->z, b->z + b->depth - 1);
 
    return ax[1] >= bx[0] && bx[1] >= ax[0] &&
           ay[1] >= by[0] && by[1] >= ay[0] &&

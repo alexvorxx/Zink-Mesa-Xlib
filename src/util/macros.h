@@ -493,4 +493,12 @@ typedef int lock_cap_t;
 #define CONCAT3(a, b, c) PASTE3(a, b, c)
 #define CONCAT4(a, b, c, d) PASTE4(a, b, c, d)
 
+#if defined(__GNUC__)
+#define PRAGMA_POISON(X) DO_PRAGMA( GCC poison X )
+#elif defined(__clang__)
+#define PRAGMA_POISON(X) DO_PRAGMA( clang poison X )
+#else
+#define PRAGMA_POISON
+#endif
+
 #endif /* UTIL_MACROS_H */

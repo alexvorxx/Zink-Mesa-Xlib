@@ -103,9 +103,7 @@ agx_validate_sources(agx_instr *I)
          agx_validate_assert(!src.cache);
          agx_validate_assert(!src.discard);
 
-         bool ldst = (I->op == AGX_OPCODE_DEVICE_LOAD) ||
-                     (I->op == AGX_OPCODE_UNIFORM_STORE) ||
-                     (I->op == AGX_OPCODE_ATOMIC);
+         bool ldst = agx_allows_16bit_immediate(I);
 
          /* Immediates are encoded as 8-bit (16-bit for memory load/store). For
           * integers, they extend to 16-bit. For floating point, they are 8-bit

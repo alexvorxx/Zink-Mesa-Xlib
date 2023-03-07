@@ -31,7 +31,9 @@
 #include <xf86drm.h>
 
 #include "intel_device_info.h"
+#include "intel_wa.h"
 #include "i915/intel_device_info.h"
+#include "xe/intel_device_info.h"
 
 #include "util/u_debug.h"
 #include "util/log.h"
@@ -1317,7 +1319,16 @@ intel_get_device_info_from_pci_id(int pci_id,
    if (devinfo->display_ver == 0)
       devinfo->display_ver = devinfo->ver;
 
+   if (devinfo->has_mesh_shading) {
+      /* Half of push constant space matches the size used in the simplest
+       * primitive pipeline (VS + FS). Tweaking this affects performance.
+       */
+      devinfo->mesh_max_constant_urb_size_kb =
+            devinfo->max_constant_urb_size_kb / 2;
+   }
+
    intel_device_info_update_cs_workgroup_threads(devinfo);
+   intel_device_info_init_was(devinfo);
 
    return true;
 }
@@ -1534,7 +1545,22 @@ intel_get_device_info_from_fd(int fd, struct intel_device_info *devinfo)
       return true;
    }
 
-   intel_device_info_i915_get_info_from_fd(fd, devinfo);
+   bool ret;
+   switch (devinfo->kmd_type) {
+   case INTEL_KMD_TYPE_I915:
+      ret = intel_device_info_i915_get_info_from_fd(fd, devinfo);
+      break;
+   case INTEL_KMD_TYPE_XE:
+      ret = intel_device_info_xe_get_info_from_fd(fd, devinfo);
+      break;
+   default:
+      ret = false;
+      unreachable("Missing");
+   }
+   if (!ret) {
+      mesa_logw("Could not get intel_device_info.");
+      return false;
+   }
 
    if (devinfo->platform == INTEL_PLATFORM_ADL)
       fixup_adl_device_info(devinfo);
@@ -1561,8 +1587,19 @@ intel_get_device_info_from_fd(int fd, struct intel_device_info *devinfo)
 
 bool intel_device_info_update_memory_info(struct intel_device_info *devinfo, int fd)
 {
-   return intel_device_info_i915_query_regions(devinfo, fd, true) ||
-          intel_device_info_compute_system_memory(devinfo, true);
+   bool ret;
+
+   switch (devinfo->kmd_type) {
+   case INTEL_KMD_TYPE_I915:
+      ret = intel_device_info_i915_query_regions(devinfo, fd, true);
+      break;
+   case INTEL_KMD_TYPE_XE:
+      ret = intel_device_info_xe_query_regions(fd, devinfo, true);
+      break;
+   default:
+      ret = false;
+   }
+   return ret || intel_device_info_compute_system_memory(devinfo, true);
 }
 
 void
@@ -1573,4 +1610,17 @@ intel_device_info_update_after_hwconfig(struct intel_device_info *devinfo)
       devinfo->max_eus_per_subslice * devinfo->num_thread_per_eu;
 
    intel_device_info_update_cs_workgroup_threads(devinfo);
+}
+
+enum intel_wa_steppings
+intel_device_info_wa_stepping(struct intel_device_info *devinfo)
+{
+   if (intel_device_info_is_mtl(devinfo)) {
+      if (devinfo->revision < 4)
+         return INTEL_STEPPING_A0;
+      return INTEL_STEPPING_B0;
+   }
+
+   /* all other platforms support only released steppings */
+   return INTEL_STEPPING_RELEASE;
 }

@@ -714,11 +714,9 @@ vec4_visitor::nir_emit_intrinsic(nir_intrinsic_instr *instr)
       break;
    }
 
-   case nir_intrinsic_memory_barrier:
-      unreachable("expecting only nir_intrinsic_scoped_barrier");
-
    case nir_intrinsic_scoped_barrier: {
-      assert(nir_intrinsic_execution_scope(instr) == NIR_SCOPE_NONE);
+      if (nir_intrinsic_memory_scope(instr) == NIR_SCOPE_NONE)
+         break;
       const vec4_builder bld =
          vec4_builder(this).at_end().annotate(current_annotation, base_ir);
       const dst_reg tmp = bld.vgrf(BRW_REGISTER_TYPE_UD);
@@ -2022,20 +2020,14 @@ vec4_visitor::nir_emit_texture(nir_tex_instr *instr)
          break;
 
       case nir_tex_src_texture_offset: {
-         /* Emit code to evaluate the actual indexing expression */
-         src_reg src = get_nir_src(instr->src[i].src, 1);
-         src_reg temp(this, glsl_type::uint_type);
-         emit(ADD(dst_reg(temp), src, brw_imm_ud(texture)));
-         texture_reg = emit_uniformize(temp);
+         assert(texture_reg.is_zero());
+         texture_reg = emit_uniformize(get_nir_src(instr->src[i].src, 1));
          break;
       }
 
       case nir_tex_src_sampler_offset: {
-         /* Emit code to evaluate the actual indexing expression */
-         src_reg src = get_nir_src(instr->src[i].src, 1);
-         src_reg temp(this, glsl_type::uint_type);
-         emit(ADD(dst_reg(temp), src, brw_imm_ud(sampler)));
-         sampler_reg = emit_uniformize(temp);
+         assert(sampler_reg.is_zero());
+         sampler_reg = emit_uniformize(get_nir_src(instr->src[i].src, 1));
          break;
       }
 

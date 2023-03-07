@@ -76,7 +76,7 @@
   rules:
     - !reference [.no_scheduled_pipelines-rules, rules]
     # Run only on pre-merge pipelines from Marge
-    - if: '$GITLAB_USER_LOGIN != "marge-bot" || $CI_COMMIT_BRANCH'
+    - if: $MESA_CI_PERFORMANCE_ENABLED == null
       when: never
   # Allow the merge to complete even before the job completes (since it won't
   # even start until the separate script triggers on it).
@@ -329,6 +329,13 @@
     - !reference [.performance-rules, rules]
     - !reference [.freedreno-manual-rules, rules]
   allow_failure: true # see comment in .performance-rules, which we don't inherit this line from.
+  variables:
+    MINIO_ARTIFACT_NAME: "mesa-arm64-rel"
+  needs:
+    - job: debian/arm64_test
+    - job: debian-arm64-release
+      # The mesa binary is fetched from S3
+      artifacts: false
 
 .nouveau-rules:
   stage: nouveau
@@ -548,6 +555,14 @@
         *virgl_file_list
       when: manual
   allow_failure: true # see comment in .performance-rules, which we don't inherit this line from.
+  variables:
+    MINIO_ARTIFACT_NAME: "mesa-amd64-rel"
+  needs:
+    - kernel+rootfs_amd64
+    - debian-testing
+    - job: debian-release
+      # The release binary is fetched from S3
+      artifacts: false
 
 .venus-rules:
   stage: layered-backends
@@ -669,6 +684,14 @@
         *iris_file_list
       when: manual
   allow_failure: true # see comment in .performance-rules, which we don't inherit this line from.
+  variables:
+    MINIO_ARTIFACT_NAME: "mesa-amd64-rel"
+  needs:
+    - kernel+rootfs_amd64
+    - debian-testing
+    - job: debian-release
+      # The release binary is fetched from S3
+      artifacts: false
 
 .anv-rules:
   stage: intel

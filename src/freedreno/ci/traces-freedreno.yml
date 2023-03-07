@@ -254,14 +254,14 @@ traces:
       text: missing 3/4 of rendered image
       checksum: e7f01e62180b60aef8c67fc4977c90d1
     freedreno-a530:
-      checksum: 70c57b3aea1f18baacb234ecc35bf425
+      checksum: 71f46ff29ab058f89c745ddede5cc907
     freedreno-a630:
       label: [skip]
       text: |-
         One of the material textures appears brighter on freedreno than
         i965 in a way that is probably wrong.
     zink-a630:
-      checksum: 474fe595707f0e4f3e3474a5a6300ca9
+      checksum: 227516d3818969c68a1864aa942119c2
 
   gputest/pixmark-volplosion-v2.trace:
     freedreno-a306:
@@ -513,7 +513,7 @@ traces:
       label: [unsupported]
       text: needs GL 4.6
     freedreno-a630:
-      checksum: 2b96947d3eb3f623c4a387b2b7f80300
+      checksum: a2dbcd27c404a1bb0f7d60476d93d22c
     zink-a630:
       label: [crash]
       text: |-

@@ -8,9 +8,6 @@
  */
 
 #include <fcntl.h>
-#ifdef HAVE_LIBDRM
-#include <xf86drm.h>
-#endif
 
 #ifdef MAJOR_IN_MKDEV
 #include <sys/mkdev.h>
@@ -18,6 +15,8 @@
 #ifdef MAJOR_IN_SYSMACROS
 #include <sys/sysmacros.h>
 #endif
+
+#include "util/libdrm.h"
 
 #include "tu_device.h"
 #include "tu_knl.h"
@@ -158,7 +157,6 @@ tu_physical_device_try_create(struct vk_instance *vk_instance,
                               struct _drmDevice *drm_device,
                               struct vk_physical_device **out)
 {
-#ifdef HAVE_LIBDRM
    struct tu_instance *instance =
       container_of(vk_instance, struct tu_instance, vk);
 
@@ -252,7 +250,4 @@ out:
    drmFreeVersion(version);
 
    return result;
-#else
-   return VK_ERROR_INCOMPATIBLE_DRIVER;
-#endif
 }

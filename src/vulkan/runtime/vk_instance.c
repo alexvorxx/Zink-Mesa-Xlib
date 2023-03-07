@@ -23,9 +23,7 @@
 
 #include "vk_instance.h"
 
-#ifdef HAVE_LIBDRM
-#include <xf86drm.h>
-#endif
+#include "util/libdrm.h"
 
 #include "vk_alloc.h"
 #include "vk_common_entrypoints.h"
@@ -361,7 +359,6 @@ vk_instance_get_physical_device_proc_addr(const struct vk_instance *instance,
 static VkResult
 enumerate_drm_physical_devices_locked(struct vk_instance *instance)
 {
-#ifdef HAVE_LIBDRM
    /* TODO: Check for more devices ? */
    drmDevicePtr devices[8];
    int max_devices = drmGetDevices2(0, devices, ARRAY_SIZE(devices));
@@ -389,8 +386,6 @@ enumerate_drm_physical_devices_locked(struct vk_instance *instance)
 
    drmFreeDevices(devices, max_devices);
    return result;
-#endif
-   return VK_SUCCESS;
 }
 
 static VkResult

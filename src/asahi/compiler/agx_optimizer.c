@@ -123,6 +123,8 @@ agx_optimizer_inline_imm(agx_instr **defs, agx_instr *I, unsigned srcs,
          continue;
 
       uint8_t value = def->imm;
+      uint16_t value_u16 = def->imm;
+
       bool float_src = is_float;
 
       /* cmpselsrc takes integer immediates only */
@@ -152,6 +154,8 @@ agx_optimizer_inline_imm(agx_instr **defs, agx_instr *I, unsigned srcs,
          I->src[s] = agx_immediate_f(f);
       } else if (value == def->imm) {
          I->src[s] = agx_immediate(value);
+      } else if (value_u16 == def->imm && agx_allows_16bit_immediate(I)) {
+         I->src[s] = agx_abs(agx_immediate(value_u16));
       }
    }
 }

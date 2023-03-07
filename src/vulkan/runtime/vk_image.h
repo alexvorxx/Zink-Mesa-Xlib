@@ -279,9 +279,23 @@ struct vk_image_view {
    uint32_t base_array_layer;
    uint32_t layer_count;
 
+   /* VK_EXT_sliced_view_of_3d */
    struct {
-      uint32_t slice_offset;
-      uint32_t slice_count;
+      /* VkImageViewSlicedCreateInfoEXT::sliceOffset
+       *
+       * This field will be 0 for 1D and 2D images, 2D views of 3D images, or
+       * when no VkImageViewSlicedCreateInfoEXT is provided.
+       */
+      uint32_t z_slice_offset;
+
+      /* VkImageViewSlicedCreateInfoEXT::sliceCount
+       *
+       * This field will be 1 for 1D and 2D images or 2D views of 3D images.
+       * For 3D views, it will be VkImageViewSlicedCreateInfoEXT::sliceCount
+       * or image view depth (see vk_image_view::extent) when no
+       * VkImageViewSlicedCreateInfoEXT is provided.
+       */
+      uint32_t z_slice_count;
    } storage;
 
    /* VK_EXT_image_view_min_lod */

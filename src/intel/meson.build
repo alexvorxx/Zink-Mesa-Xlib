@@ -21,8 +21,8 @@
 inc_intel = include_directories('.')
 
 subdir('genxml')
-subdir('blorp')
 subdir('dev')
+subdir('blorp')
 subdir('isl')
 subdir('common')
 subdir('compiler')

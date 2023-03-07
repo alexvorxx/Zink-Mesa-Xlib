@@ -674,7 +674,12 @@
   </struct>
 
   <struct name="VDM Barrier">
-    <field name="Unknown" size="29" start="0" type="hex" default="0x1000960"/>
+    <field name="USC cache inval" size="1" start="3" type="bool" default="false"/>
+    <field name="Unk 5" size="1" start="5" type="bool" default="false"/>
+    <field name="Unk 6" size="1" start="6" type="bool" default="false"/>
+    <field name="Unk 8" size="1" start="8" type="bool" default="false"/>
+    <field name="Unk 11" size="1" start="11" type="bool" default="false"/>
+    <field name="Unk 20" size="1" start="20" type="bool" default="false"/>
     <field name="Block Type" size="3" start="29" type="VDM Block Type" default="Barrier"/>
   </struct>
 

@@ -2865,10 +2865,10 @@ dri2_teardown_wayland(struct dri2_egl_display *dri2_dpy)
       wl_shm_destroy(dri2_dpy->wl_shm);
    if (dri2_dpy->wl_registry)
       wl_registry_destroy(dri2_dpy->wl_registry);
-   if (dri2_dpy->wl_queue)
-      wl_event_queue_destroy(dri2_dpy->wl_queue);
    if (dri2_dpy->wl_dpy_wrapper)
       wl_proxy_wrapper_destroy(dri2_dpy->wl_dpy_wrapper);
+   if (dri2_dpy->wl_queue)
+      wl_event_queue_destroy(dri2_dpy->wl_queue);
 
    if (dri2_dpy->own_device)
       wl_display_disconnect(dri2_dpy->wl_dpy);

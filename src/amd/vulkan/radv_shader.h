@@ -47,7 +47,7 @@ struct radv_physical_device;
 struct radv_device;
 struct radv_pipeline;
 struct radv_pipeline_cache;
-struct radv_pipeline_group_handle;
+struct radv_ray_tracing_module;
 struct radv_pipeline_key;
 struct radv_shader_args;
 struct radv_vs_input_state;
@@ -508,11 +508,6 @@ struct radv_shader {
    uint32_t *statistics;
 };
 
-struct radv_trap_handler_shader {
-   struct radeon_winsys_bo *bo;
-   union radv_shader_arena_block *alloc;
-};
-
 struct radv_shader_part {
    uint32_t ref_count;
 
@@ -570,7 +565,7 @@ VkResult radv_compute_pipeline_compile(
    const struct radv_pipeline_key *pipeline_key, const VkPipelineShaderStageCreateInfo *pStage,
    const VkPipelineCreateFlags flags, const uint8_t *custom_hash,
    const VkPipelineCreationFeedbackCreateInfo *creation_feedback,
-   struct radv_pipeline_shader_stack_size **stack_sizes, uint32_t *num_stack_sizes);
+   struct radv_ray_tracing_module *rt_groups, uint32_t num_rt_groups);
 
 struct radv_shader_args;
 
@@ -596,10 +591,7 @@ radv_create_gs_copy_shader(struct radv_device *device, struct nir_shader *nir,
                            bool keep_shader_info, bool keep_statistic_info,
                            bool disable_optimizations);
 
-struct radv_trap_handler_shader *radv_create_trap_handler_shader(struct radv_device *device);
-uint64_t radv_trap_handler_shader_get_va(const struct radv_trap_handler_shader *trap);
-void radv_trap_handler_shader_destroy(struct radv_device *device,
-                                      struct radv_trap_handler_shader *trap);
+struct radv_shader *radv_create_trap_handler_shader(struct radv_device *device);
 
 struct radv_shader_part *radv_create_vs_prolog(struct radv_device *device,
                                                const struct radv_vs_prolog_key *key);
@@ -758,8 +750,7 @@ bool radv_lower_fs_intrinsics(nir_shader *nir, const struct radv_pipeline_stage 
 
 nir_shader *create_rt_shader(struct radv_device *device,
                              const VkRayTracingPipelineCreateInfoKHR *pCreateInfo,
-                             struct radv_pipeline_shader_stack_size *stack_sizes,
-                             const struct radv_pipeline_group_handle *handles,
+                             struct radv_ray_tracing_module *groups,
                              const struct radv_pipeline_key *key);
 
 #endif

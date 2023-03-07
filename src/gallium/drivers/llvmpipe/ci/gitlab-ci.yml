@@ -66,11 +66,15 @@ llvmpipe:
   variables:
     DEQP_SUITE: llvmpipe
     XDG_RUNTIME_DIR: /run/user
+    XVFB_SCRIPT: "install/deqp-runner.sh"
   extends: .llvmpipe-deqp-test
-  script:
-    - mkdir -p $XDG_RUNTIME_DIR
-    - LD_LIBRARY_PATH=`pwd`/install weston -Bheadless-backend.so -Swayland-0 &
-    - LD_LIBRARY_PATH=`pwd`/install WAYLAND_DISPLAY=wayland-0 xvfb-run --server-args='-noreset' install/deqp-runner.sh
+  script: |
+    . "$SCRIPTS_DIR"/setup-test-env.sh
+    section_start weston "weston: prepare"
+    mkdir -p $XDG_RUNTIME_DIR
+    LD_LIBRARY_PATH=`pwd`/install weston -Bheadless-backend.so -Swayland-0 &
+    section_end weston
+    LD_LIBRARY_PATH=`pwd`/install WAYLAND_DISPLAY=wayland-0 xvfb-run --server-args='-noreset' bash -c ". $SCRIPTS_DIR/setup-test-env.sh && ${XVFB_SCRIPT}"
 
 llvmpipe-deqp-asan:
   variables:

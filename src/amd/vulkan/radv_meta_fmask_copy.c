@@ -142,7 +142,7 @@ create_fmask_copy_pipeline(struct radv_device *device, int samples, VkPipeline *
    };
 
    result = radv_compute_pipeline_create(radv_device_to_handle(device), state->cache,
-                                         &vk_pipeline_info, NULL, pipeline, true);
+                                         &vk_pipeline_info, NULL, pipeline);
    ralloc_free(cs);
    return result;
 }

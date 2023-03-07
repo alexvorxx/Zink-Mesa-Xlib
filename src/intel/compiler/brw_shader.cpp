@@ -1081,7 +1081,7 @@ backend_instruction::writes_accumulator_implicitly(const struct intel_device_inf
             (opcode >= FS_OPCODE_DDX_COARSE && opcode <= FS_OPCODE_LINTERP))) ||
           (opcode == FS_OPCODE_LINTERP &&
            (!devinfo->has_pln || devinfo->ver <= 6)) ||
-          (eot && devinfo->ver >= 12); /* See Wa_14010017096. */
+          (eot && intel_needs_workaround(devinfo, 14010017096));
 }
 
 bool

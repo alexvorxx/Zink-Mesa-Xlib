@@ -173,6 +173,16 @@ zink_bo_usage_check_completion(struct zink_screen *screen, struct zink_bo *bo, e
    return true;
 }
 
+static inline bool
+zink_bo_usage_check_completion_fast(struct zink_screen *screen, struct zink_bo *bo, enum zink_resource_access access)
+{
+   if (access & ZINK_RESOURCE_ACCESS_READ && !zink_screen_usage_check_completion_fast(screen, bo->reads))
+      return false;
+   if (access & ZINK_RESOURCE_ACCESS_WRITE && !zink_screen_usage_check_completion_fast(screen, bo->writes))
+      return false;
+   return true;
+}
+
 static inline void
 zink_bo_usage_wait(struct zink_context *ctx, struct zink_bo *bo, enum zink_resource_access access)
 {

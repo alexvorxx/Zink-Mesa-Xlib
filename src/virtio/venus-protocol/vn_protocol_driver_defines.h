@@ -359,6 +359,12 @@ typedef enum VkCommandFlagBitsEXT {
     VK_COMMAND_GENERATE_REPLY_BIT_EXT = 0x00000001,
 } VkCommandFlagBitsEXT;
 
+typedef enum VkRingStatusFlagBitsMESA {
+    VK_RING_STATUS_NONE_MESA = 0,
+    VK_RING_STATUS_IDLE_BIT_MESA = 0x00000001,
+    VK_RING_STATUS_FATAL_BIT_MESA = 0x00000002,
+} VkRingStatusFlagBitsMESA;
+
 typedef VkFlags VkCommandFlagsEXT;
 
 typedef VkFlags VkCommandStreamExecutionFlagsMESA;
@@ -366,6 +372,8 @@ typedef VkFlags VkCommandStreamExecutionFlagsMESA;
 typedef VkFlags VkRingCreateFlagsMESA;
 
 typedef VkFlags VkRingNotifyFlagsMESA;
+
+typedef VkFlags VkRingStatusFlagsMESA;
 
 typedef struct VkCommandStreamDescriptionMESA {
     uint32_t resourceId;

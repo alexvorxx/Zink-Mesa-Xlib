@@ -1110,6 +1110,9 @@ write_texel_buffer_descriptor(struct radv_device *device, struct radv_cmd_buffer
 
    memcpy(dst, buffer_view->state, 4 * 4);
 
+   if (device->use_global_bo_list)
+      return;
+
    if (cmd_buffer)
       radv_cs_add_buffer(device->ws, cmd_buffer->cs, buffer_view->bo);
    else
@@ -1167,6 +1170,9 @@ write_buffer_descriptor_impl(struct radv_device *device, struct radv_cmd_buffer 
    }
 
    write_buffer_descriptor(device, dst, va, range);
+
+   if (device->use_global_bo_list)
+      return;
 
    if (!buffer) {
       if (!cmd_buffer)
@@ -1256,6 +1262,9 @@ write_image_descriptor_impl(struct radv_device *device, struct radv_cmd_buffer *
    RADV_FROM_HANDLE(radv_image_view, iview, image_info->imageView);
 
    write_image_descriptor(dst, size, descriptor_type, image_info);
+
+   if (device->use_global_bo_list)
+      return;
 
    if (!iview) {
       if (!cmd_buffer)

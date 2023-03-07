@@ -535,8 +535,8 @@ try_combine_dpp(pr_opt_ctx& ctx, aco_ptr<Instruction>& instr)
          DPP16_instruction* dpp = &instr->dpp16();
          if (i) {
             std::swap(dpp->operands[0], dpp->operands[1]);
-            std::swap(dpp->neg[0], dpp->neg[1]);
-            std::swap(dpp->abs[0], dpp->abs[1]);
+            dpp->neg[0].swap(dpp->neg[1]);
+            dpp->abs[0].swap(dpp->abs[1]);
          }
          dpp->operands[0] = mov->operands[0];
          dpp->dpp_ctrl = mov->dpp16().dpp_ctrl;
@@ -568,7 +568,7 @@ num_encoded_alu_operands(const aco_ptr<Instruction>& instr)
       else if (instr->opcode == aco_opcode::v_writelane_b32_e64 ||
                instr->opcode == aco_opcode::v_writelane_b32)
          return 2; /* potentially VOP3, but reads VDST as SRC2 */
-      else if (instr->isVOP3() || instr->isVOP3P())
+      else if (instr->isVOP3() || instr->isVOP3P() || instr->isVINTERP_INREG())
          return instr->operands.size();
    }
 

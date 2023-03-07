@@ -28,11 +28,13 @@
 #include <stdbool.h>
 #include <stdint.h>
 
+#include "util/bitset.h"
 #include "util/macros.h"
 #include "compiler/shader_enums.h"
 #include "intel_kmd.h"
 
 #include "intel/common/intel_engine.h"
+#include "intel/dev/intel_wa.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -369,6 +371,12 @@ struct intel_device_info
     */
    unsigned max_constant_urb_size_kb;
 
+   /* Maximum size that can be allocated to constants in mesh pipeline.
+    * This essentially applies to fragment shaders only, since mesh stages
+    * don't need to allocate space for push constants.
+    */
+   unsigned mesh_max_constant_urb_size_kb;
+
    /**
     * Size of the command streamer prefetch. This is important to know for
     * self modifying batches.
@@ -431,6 +439,8 @@ struct intel_device_info
          } mappable, unmappable;
       } sram, vram;
    } mem;
+
+   BITSET_DECLARE(workarounds, INTEL_WA_NUM);
    /** @} */
 };
 
@@ -559,6 +569,17 @@ void intel_device_info_update_l3_banks(struct intel_device_info *devinfo);
 void intel_device_info_update_cs_workgroup_threads(struct intel_device_info *devinfo);
 bool intel_device_info_compute_system_memory(struct intel_device_info *devinfo, bool update);
 void intel_device_info_update_after_hwconfig(struct intel_device_info *devinfo);
+
+#ifdef GFX_VER
+#define intel_needs_workaround(devinfo, id)         \
+   INTEL_WA_##id_GFX_VER &&                              \
+   BITSET_TEST(devinfo->workarounds, INTEL_WA_##id)
+#else
+#define intel_needs_workaround(devinfo, id) \
+   BITSET_TEST(devinfo->workarounds, INTEL_WA_##id)
+#endif
+
+enum intel_wa_steppings intel_device_info_wa_stepping(struct intel_device_info *devinfo);
 
 #ifdef __cplusplus
 }

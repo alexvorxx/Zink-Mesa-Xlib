@@ -385,10 +385,10 @@ struct fd_context {
    uint32_t gen_dirty;
 
    /* which state objects need to be re-emit'd: */
-   enum fd_dirty_3d_state dirty dt;
+   BITMASK_ENUM(fd_dirty_3d_state) dirty dt;
 
    /* per shader-stage dirty status: */
-   enum fd_dirty_shader_state dirty_shader[PIPE_SHADER_TYPES] dt;
+   BITMASK_ENUM(fd_dirty_shader_state) dirty_shader[PIPE_SHADER_TYPES] dt;
 
    void *compute dt;
    struct pipe_blend_state *blend dt;
@@ -608,7 +608,8 @@ fd_context_dirty_resource(enum fd_dirty_3d_state dirty)
 
 /* Mark specified non-shader-stage related state as dirty: */
 static inline void
-fd_context_dirty(struct fd_context *ctx, enum fd_dirty_3d_state dirty) assert_dt
+fd_context_dirty(struct fd_context *ctx, BITMASK_ENUM(fd_dirty_3d_state) dirty)
+   assert_dt
 {
    assert(util_is_power_of_two_nonzero(dirty));
    assert(ffs(dirty) <= ARRAY_SIZE(ctx->gen_dirty_map));
@@ -616,14 +617,15 @@ fd_context_dirty(struct fd_context *ctx, enum fd_dirty_3d_state dirty) assert_dt
    ctx->gen_dirty |= ctx->gen_dirty_map[ffs(dirty) - 1];
 
    if (fd_context_dirty_resource(dirty))
-      or_mask(dirty, FD_DIRTY_RESOURCE);
+      dirty |= FD_DIRTY_RESOURCE;
 
-   or_mask(ctx->dirty, dirty);
+   ctx->dirty |= dirty;
 }
 
 static inline void
 fd_context_dirty_shader(struct fd_context *ctx, enum pipe_shader_type shader,
-                        enum fd_dirty_shader_state dirty) assert_dt
+                        BITMASK_ENUM(fd_dirty_shader_state) dirty)
+   assert_dt
 {
    const enum fd_dirty_3d_state map[] = {
       FD_DIRTY_PROG, FD_DIRTY_CONST, FD_DIRTY_TEX,
@@ -642,7 +644,7 @@ fd_context_dirty_shader(struct fd_context *ctx, enum pipe_shader_type shader,
 
    ctx->gen_dirty |= ctx->gen_dirty_shader_map[shader][ffs(dirty) - 1];
 
-   or_mask(ctx->dirty_shader[shader], dirty);
+   ctx->dirty_shader[shader] |= dirty;
    fd_context_dirty(ctx, map[ffs(dirty) - 1]);
 }
 
@@ -693,7 +695,7 @@ fd_context_add_map(struct fd_context *ctx, enum fd_dirty_3d_state dirty,
  */
 static inline void
 fd_context_add_shader_map(struct fd_context *ctx, enum pipe_shader_type shader,
-                          enum fd_dirty_shader_state dirty, uint32_t gen_dirty)
+                          BITMASK_ENUM(fd_dirty_shader_state) dirty, uint32_t gen_dirty)
 {
    u_foreach_bit (b, dirty) {
       ctx->gen_dirty_shader_map[shader][b] |= gen_dirty;

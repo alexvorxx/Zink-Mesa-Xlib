@@ -54,6 +54,15 @@ enum agx_bo_flags {
 
    /* BO should be mapped write-back on the CPU (else, write combine) */
    AGX_BO_WRITEBACK = 1 << 3,
+
+   /* BO could potentially be shared (imported or exported) and therefore cannot
+    * be allocated as private
+    */
+   AGX_BO_SHAREABLE = 1 << 4,
+
+   /* BO is read-only from the GPU side
+    */
+   AGX_BO_READONLY = 1 << 5,
 };
 
 struct agx_ptr {
@@ -85,6 +94,9 @@ struct agx_bo {
 
    /* Index unique only up to type, process-local */
    uint32_t handle;
+
+   /* DMA-BUF fd clone for adding fences to imports/exports */
+   int prime_fd;
 
    /* Globally unique value (system wide) for tracing. Exists for resources,
     * command buffers, GPU submissions, segments, segmentent lists, encoders,

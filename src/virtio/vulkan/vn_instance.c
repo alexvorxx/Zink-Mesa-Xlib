@@ -315,7 +315,7 @@ vn_instance_wait_roundtrip(struct vn_instance *instance,
       const uint32_t cur = atomic_load_explicit(ptr, memory_order_acquire);
       if (roundtrip_seqno_ge(cur, roundtrip_seqno))
          break;
-      vn_relax(&iter, "roundtrip");
+      vn_relax(ring, &iter, "roundtrip");
    } while (true);
 }
 

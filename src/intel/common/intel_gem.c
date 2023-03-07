@@ -25,6 +25,7 @@
 
 #include "i915/intel_engine.h"
 #include "i915/intel_gem.h"
+#include "xe/intel_gem.h"
 
 bool
 intel_gem_supports_syncobj_wait(int fd)
@@ -103,6 +104,8 @@ intel_gem_read_render_timestamp(int fd,
    switch (kmd_type) {
    case INTEL_KMD_TYPE_I915:
       return i915_gem_read_render_timestamp(fd, value);
+   case INTEL_KMD_TYPE_XE:
+      return xe_gem_read_render_timestamp(fd, value);
    default:
       unreachable("Missing");
       return false;
@@ -122,6 +125,9 @@ intel_gem_supports_protected_context(int fd, enum intel_kmd_type kmd_type)
    switch (kmd_type) {
    case INTEL_KMD_TYPE_I915:
       return i915_gem_supports_protected_context(fd);
+   case INTEL_KMD_TYPE_XE:
+      /* TODO: so far Xe don't have support for protected contexts/engines */
+      return false;
    default:
       unreachable("Missing");
       return false;
@@ -140,6 +146,8 @@ intel_gem_can_render_on_fd(int fd, enum intel_kmd_type kmd_type)
    switch (kmd_type) {
    case INTEL_KMD_TYPE_I915:
       return i915_gem_can_render_on_fd(fd);
+   case INTEL_KMD_TYPE_XE:
+      return xe_gem_can_render_on_fd(fd);
    default:
       unreachable("Missing");
       return false;

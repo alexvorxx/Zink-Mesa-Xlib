@@ -698,7 +698,7 @@ BEGIN_TEST(optimize.add3)
    //! v1: %res1 = v_add_u32 %a, %tmp1
    //! p_unit_test 1, %res1
    tmp = bld.vop2_e64(aco_opcode::v_add_u32, bld.def(v1), inputs[1], inputs[2]);
-   tmp->vop3().clamp = true;
+   tmp->valu().clamp = true;
    writeout(1, bld.vop2(aco_opcode::v_add_u32, bld.def(v1), inputs[0], tmp));
 
    //! v1: %tmp2 = v_add_u32 %b, %c
@@ -706,7 +706,7 @@ BEGIN_TEST(optimize.add3)
    //! p_unit_test 2, %res2
    tmp = bld.vop2(aco_opcode::v_add_u32, bld.def(v1), inputs[1], inputs[2]);
    tmp = bld.vop2_e64(aco_opcode::v_add_u32, bld.def(v1), inputs[0], tmp);
-   tmp->vop3().clamp = true;
+   tmp->valu().clamp = true;
    writeout(2, tmp);
 
    finish_opt_test();
@@ -1038,7 +1038,7 @@ BEGIN_TEST(optimizer.dpp)
    //! p_unit_test 4, %res4
    Temp tmp4 = bld.vop1_dpp(aco_opcode::v_mov_b32, bld.def(v1), a, dpp_row_mirror);
    auto res4 = bld.vop2_e64(aco_opcode::v_add_f32, bld.def(v1), tmp4, b);
-   res4->vop3().neg[0] = true;
+   res4->valu().neg[0] = true;
    writeout(4, res4);
 
    //! v1: %tmp5 = v_mov_b32 %a row_mirror bound_ctrl:1
@@ -1046,7 +1046,7 @@ BEGIN_TEST(optimizer.dpp)
    //! p_unit_test 5, %res5
    Temp tmp5 = bld.vop1_dpp(aco_opcode::v_mov_b32, bld.def(v1), a, dpp_row_mirror);
    auto res5 = bld.vop2_e64(aco_opcode::v_add_f32, bld.def(v1), tmp5, b);
-   res5->vop3().clamp = true;
+   res5->valu().clamp = true;
    writeout(5, res5);
 
    //! v1: %res6 = v_add_f32 |%a|, %b row_mirror bound_ctrl:1
@@ -1054,14 +1054,14 @@ BEGIN_TEST(optimizer.dpp)
    auto tmp6 = bld.vop1_dpp(aco_opcode::v_mov_b32, bld.def(v1), a, dpp_row_mirror);
    tmp6->dpp16().neg[0] = true;
    auto res6 = bld.vop2_e64(aco_opcode::v_add_f32, bld.def(v1), tmp6, b);
-   res6->vop3().abs[0] = true;
+   res6->valu().abs[0] = true;
    writeout(6, res6);
 
    //! v1: %res7 = v_subrev_f32 %a, |%b| row_mirror bound_ctrl:1
    //! p_unit_test 7, %res7
    Temp tmp7 = bld.vop1_dpp(aco_opcode::v_mov_b32, bld.def(v1), a, dpp_row_mirror);
    auto res7 = bld.vop2_e64(aco_opcode::v_sub_f32, bld.def(v1), b, tmp7);
-   res7->vop3().abs[0] = true;
+   res7->valu().abs[0] = true;
    writeout(7, res7);
 
    //! v1: %tmp11 = v_mov_b32 -%a row_mirror bound_ctrl:1
@@ -1583,7 +1583,7 @@ BEGIN_TEST(optimize.mad_mix.fma.precision)
       Temp b16 = inputs[4];
 
       /* the optimization is precise for 32-bit on GFX9 */
-      //~gfx9! v1: %res0 = v_fma_mix_f32 lo(%a16), %b, %c
+      //~gfx9! v1: (precise)%res0 = v_fma_mix_f32 lo(%a16), %b, %c
       //~gfx10! v1: (precise)%res0_tmp = v_fma_mix_f32 lo(%a16), %b, -0
       //~gfx10! v1: %res0 = v_add_f32 %res0_tmp, %c
       //! p_unit_test 0, %res0
@@ -1834,5 +1834,116 @@ BEGIN_TEST(optimize.vop3p_constants)
 
          finish_opt_test();
       }
+   }
+END_TEST
+
+BEGIN_TEST(optimize.fmamix_two_literals)
+   /* This test has to recreate literals sometimes because we don't combine them at all if there's
+    * at least one uncombined use.
+    */
+   for (unsigned i = GFX10; i <= GFX10_3; i++) {
+      //>> v1: %a, v1: %b = p_startpgm
+      if (!setup_cs("v1 v1", (amd_gfx_level)i))
+         continue;
+
+      Temp a = inputs[0];
+      Temp b = inputs[1];
+
+      Temp c15 = bld.copy(bld.def(v1), Operand::c32(fui(1.5f)));
+      Temp c30 = bld.copy(bld.def(v1), Operand::c32(fui(3.0f)));
+      Temp c_denorm = bld.copy(bld.def(v1), Operand::c32(0x387fc000));
+
+      //! v1: %res0 = v_fma_mix_f32 %a, lo(0x42003e00), hi(0x42003e00)
+      //! p_unit_test 0, %res0
+      writeout(0, fma(a, c15, c30));
+
+      /* No need to use v_fma_mix_f32. */
+      //! v1: %res1 = v_fmaak_f32 %a, %b, 0x40400000
+      //! p_unit_test 1, %res1
+      writeout(1, fma(a, b, c30));
+
+      /* Separate mul/add can become v_fma_mix_f32 if it's not precise. */
+      //! v1: %res2 = v_fma_mix_f32 %a, lo(0x42003e00), hi(0x42003e00)
+      //! p_unit_test 2, %res2
+      writeout(2, fadd(fmul(a, c15), c30));
+
+      //~gfx10! v1: %c15 = p_parallelcopy 0x3fc00000
+      c15 = bld.copy(bld.def(v1), Operand::c32(fui(1.5f)));
+      c30 = bld.copy(bld.def(v1), Operand::c32(fui(3.0f)));
+
+      /* v_fma_mix_f32 is a fused mul/add, so it can't be used for precise separate mul/add. */
+      //~gfx10! v1: (precise)%res3 = v_madak_f32 %a, %c15, 0x40400000
+      //~gfx10_3! v1: (precise)%res3_tmp = v_mul_f32 %a, 0x3fc00000
+      //~gfx10_3! v1: %res3 = v_add_f32 %res3_tmp, 0x40400000
+      //! p_unit_test 3, %res3
+      writeout(3, fadd(bld.precise().vop2(aco_opcode::v_mul_f32, bld.def(v1), a, c15), c30));
+
+      //~gfx10! v1: (precise)%res4 = v_madak_f32 %1, %c16, 0x40400000
+      //~gfx10_3! v1: %res4_tmp = v_mul_f32 %a, 0x3fc00000
+      //~gfx10_3! v1: (precise)%res4 = v_add_f32 %res4_tmp, 0x40400000
+      //! p_unit_test 4, %res4
+      writeout(4, bld.precise().vop2(aco_opcode::v_add_f32, bld.def(v1), fmul(a, c15), c30));
+
+      /* Can't convert to fp16 if it will be flushed as a denormal. */
+      //! v1: %res5 = v_fma_mix_f32 %1, lo(0x3ff3e00), hi(0x3ff3e00)
+      //! p_unit_test 5, %res5
+      c15 = bld.copy(bld.def(v1), Operand::c32(fui(1.5f)));
+      writeout(5, fma(a, c15, c_denorm));
+
+      //>> BB1
+      //! /* logical preds: / linear preds: / kind: uniform, */
+      program->next_fp_mode.denorm16_64 = fp_denorm_flush;
+      bld.reset(program->create_and_insert_block());
+
+      //~gfx10; del c15
+      //! v1: %c15 = p_parallelcopy 0x3fc00000
+      //! v1: %res6 = v_fmaak_f32 %a, %c15, 0x387fc000
+      //! p_unit_test 6, %res6
+      c15 = bld.copy(bld.def(v1), Operand::c32(fui(1.5f)));
+      c_denorm = bld.copy(bld.def(v1), Operand::c32(0x387fc000));
+      writeout(6, fma(a, c15, c_denorm));
+
+      /* Can't accept more than 3 unique fp16 literals. */
+      //! v1: %c45 = p_parallelcopy 0x40900000
+      //! v1: %res7 = v_fma_mix_f32 lo(0x42003e00), hi(0x42003e00), %c45
+      //! p_unit_test 7, %res7
+      Temp c45 = bld.copy(bld.def(v1), Operand::c32(fui(4.5f)));
+      writeout(7, fma(c15, c30, c45));
+
+      /* Modifiers must be preserved. */
+      //! v1: %res8 = v_fma_mix_f32 -%a, lo(0x44804200), hi(0x44804200)
+      //! p_unit_test 8, %res8
+      writeout(8, fma(fneg(a), c30, c45));
+
+      //! v1: %res9 = v_fma_mix_f32 lo(0x44804200), |%a|, hi(0x44804200)
+      //! p_unit_test 9, %res9
+      writeout(9, fma(c30, fabs(a), c45));
+
+      //! v1: %res10 = v_fma_mix_f32 %a, lo(0x44804200), hi(0x44804200) clamp
+      //! p_unit_test 10, %res10
+      writeout(10, fsat(fma(a, c30, c45)));
+
+      /* Output modifiers are not supported by v_fma_mix_f32. */
+      c30 = bld.copy(bld.def(v1), Operand::c32(fui(3.0f)));
+      //; del c45
+      //! v1: %c45 = p_parallelcopy 0x40900000
+      //! v1: %res11 = v_fma_f32 %a, 0x40400000, %c45 *0.5
+      //! p_unit_test 11, %res11
+      c45 = bld.copy(bld.def(v1), Operand::c32(fui(4.5f)));
+      writeout(11, fmul(fma(a, c30, c45), bld.copy(bld.def(v1), Operand::c32(0x3f000000))));
+
+      /* Has a literal which can't be represented as fp16. */
+      //! v1: %c03 = p_parallelcopy 0x3e99999a
+      //! v1: %res12 = v_fmaak_f32 %a, %c03, 0x40400000
+      //! p_unit_test 12, %res12
+      Temp c03 = bld.copy(bld.def(v1), Operand::c32(fui(0.3f)));
+      writeout(12, fma(a, c03, c30));
+
+      /* We should still use fmaak/fmamk if the two literals are identical. */
+      //! v1: %res13 = v_fmaak_f32 0x40400000, %a, 0x40400000
+      //! p_unit_test 13, %res13
+      writeout(13, fma(a, c30, c30));
+
+      finish_opt_test();
    }
 END_TEST

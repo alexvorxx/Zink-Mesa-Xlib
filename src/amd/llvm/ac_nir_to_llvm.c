@@ -543,6 +543,7 @@ static bool visit_alu(struct ac_nir_context *ctx, const nir_alu_instr *instr)
    case nir_op_vec5:
    case nir_op_vec8:
    case nir_op_vec16:
+   case nir_op_unpack_32_4x8:
    case nir_op_unpack_32_2x16:
    case nir_op_unpack_64_2x32:
    case nir_op_unpack_64_4x16:
@@ -1223,6 +1224,9 @@ static bool visit_alu(struct ac_nir_context *ctx, const nir_alu_instr *instr)
       break;
    }
 
+   case nir_op_unpack_32_4x8:
+      result = LLVMBuildBitCast(ctx->ac.builder, src[0], ctx->ac.v4i8, "");
+      break;
    case nir_op_unpack_32_2x16: {
       result = LLVMBuildBitCast(ctx->ac.builder, src[0],
             ctx->ac.v2i16, "");
@@ -2320,34 +2324,17 @@ static LLVMValueRef visit_load_ubo_buffer(struct ac_nir_context *ctx, nir_intrin
    LLVMValueRef offset = get_src(ctx, instr->src[1]);
    int num_components = instr->num_components;
 
+   assert(instr->dest.ssa.bit_size >= 32 && instr->dest.ssa.bit_size % 32 == 0);
+
    if (ctx->abi->load_ubo)
       rsrc = ctx->abi->load_ubo(ctx->abi, rsrc);
 
-   /* Convert to a scalar 32-bit load. */
+   /* Convert to a 32-bit load. */
    if (instr->dest.ssa.bit_size == 64)
       num_components *= 2;
-   else if (instr->dest.ssa.bit_size == 16)
-      num_components = DIV_ROUND_UP(num_components, 2);
-   else if (instr->dest.ssa.bit_size == 8)
-      num_components = DIV_ROUND_UP(num_components, 4);
 
-   ret =
-      ac_build_buffer_load(&ctx->ac, rsrc, num_components, NULL, offset, NULL,
-                           ctx->ac.f32, 0, true, true);
-
-   /* Convert to the original type. */
-   if (instr->dest.ssa.bit_size == 64) {
-      ret = LLVMBuildBitCast(ctx->ac.builder, ret,
-                             LLVMVectorType(ctx->ac.i64, num_components / 2), "");
-   } else if (instr->dest.ssa.bit_size == 16) {
-      ret = LLVMBuildBitCast(ctx->ac.builder, ret,
-                             LLVMVectorType(ctx->ac.i16, num_components * 2), "");
-   } else if (instr->dest.ssa.bit_size == 8) {
-      ret = LLVMBuildBitCast(ctx->ac.builder, ret,
-                             LLVMVectorType(ctx->ac.i8, num_components * 4), "");
-   }
-
-   ret = ac_trim_vector(&ctx->ac, ret, instr->num_components);
+   ret = ac_build_buffer_load(&ctx->ac, rsrc, num_components, NULL, offset, NULL,
+                              ctx->ac.f32, 0, true, true);
    ret = LLVMBuildBitCast(ctx->ac.builder, ret, get_def_type(ctx, &instr->dest.ssa), "");
 
    return exit_waterfall(ctx, &wctx, ret);

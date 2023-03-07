@@ -107,7 +107,7 @@ agx_print_index(agx_index index, bool is_float, FILE *fp)
 }
 
 void
-agx_print_instr(agx_instr *I, FILE *fp)
+agx_print_instr(const agx_instr *I, FILE *fp)
 {
    assert(I->op < AGX_NUM_OPCODES);
    struct agx_opcode_info info = agx_opcodes_info[I->op];
@@ -210,7 +210,7 @@ agx_print_instr(agx_instr *I, FILE *fp)
 }
 
 void
-agx_print_block(agx_block *block, FILE *fp)
+agx_print_block(const agx_block *block, FILE *fp)
 {
    fprintf(fp, "block%u {\n", block->index);
 
@@ -237,7 +237,7 @@ agx_print_block(agx_block *block, FILE *fp)
 }
 
 void
-agx_print_shader(agx_context *ctx, FILE *fp)
+agx_print_shader(const agx_context *ctx, FILE *fp)
 {
    agx_foreach_block(ctx, block)
       agx_print_block(block, fp);

@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/usr/bin/env bash
 #
 # Copyright (C) 2022 Collabora Limited
 # Author: Guilherme Gallo <guilherme.gallo@collabora.com>

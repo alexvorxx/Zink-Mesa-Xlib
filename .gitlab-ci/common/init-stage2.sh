@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 
 # Make sure to kill itself and all the children process from this script on
 # exiting, since any console output may interfere with LAVA signals handling,
@@ -37,6 +37,7 @@ BACKGROUND_PIDS=
 # running tests.
 
 . /set-job-env-vars.sh
+. "$SCRIPTS_DIR"/setup-test-env.sh
 
 set -ex
 
@@ -160,7 +161,7 @@ fi
 
 RESULT=fail
 set +e
-sh -c "$HWCI_TEST_SCRIPT"
+bash -c ". $SCRIPTS_DIR/setup-test-env.sh && $HWCI_TEST_SCRIPT"
 EXIT_CODE=$?
 set -e
 

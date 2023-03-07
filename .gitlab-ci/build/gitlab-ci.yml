@@ -21,15 +21,14 @@
   # Use ccache transparently, and print stats before/after
   before_script:
     - !reference [default, before_script]
-    - export PATH="/usr/lib/ccache:$PATH"
-    - export CCACHE_BASEDIR="$PWD"
-    - echo -e "\e[0Ksection_start:$(date +%s):ccache_before[collapsed=true]\r\e[0Kccache stats before build"
-    - ccache --show-stats
-    - echo -e "\e[0Ksection_end:$(date +%s):ccache_before\r\e[0K"
+    - |
+      export PATH="/usr/lib/ccache:$PATH"
+      export CCACHE_BASEDIR="$PWD"
+      section_start ccache_before "ccache stats before build"
+      ccache --show-stats
+      section_end ccache_before
   after_script:
-    - echo -e "\e[0Ksection_start:$(date +%s):ccache_after[collapsed=true]\r\e[0Kccache stats after build"
-    - ccache --show-stats
-    - echo -e "\e[0Ksection_end:$(date +%s):ccache_after\r\e[0K"
+    - ccache --show-stats | grep "cache hit rate"
     - !reference [default, after_script]
 
 .build-windows:
@@ -186,12 +185,17 @@ debian-build-testing:
       -D tools=drm-shim,etnaviv,freedreno,glsl,intel,intel-ui,nir,nouveau,lima,panfrost,asahi
       -D b_lto=true
     LLVM_VERSION: 13
-  script:
-    - .gitlab-ci/lava/lava-pytest.sh
-    - .gitlab-ci/run-shellcheck.sh
-    - .gitlab-ci/run-yamllint.sh
-    - .gitlab-ci/meson/build.sh
-    - .gitlab-ci/run-shader-db.sh
+  script: |
+    section_start lava-pytest "lava-pytest"
+    .gitlab-ci/lava/lava-pytest.sh
+    section_switch shellcheck "shellcheck"
+    .gitlab-ci/run-shellcheck.sh
+    section_switch yamllint "yamllint"
+    .gitlab-ci/run-yamllint.sh
+    section_switch meson "meson"
+    .gitlab-ci/meson/build.sh
+    section_switch shader-db "shader-db"
+    .gitlab-ci/run-shader-db.sh
 
 # Test a release build with -Werror so new warnings don't sneak in.
 debian-release:
@@ -224,8 +228,10 @@ debian-release:
       -D tools=all
       -D intel-clc=enabled
       -D imagination-srv=true
+    MINIO_ARTIFACT_NAME: "mesa-amd64-rel"
   script:
     - .gitlab-ci/meson/build.sh
+    - 'if [ -n "$MESA_CI_PERFORMANCE_ENABLED" ]; then .gitlab-ci/prepare-artifacts.sh; fi'
 
 alpine-build-testing:
   extends:
@@ -457,6 +463,18 @@ debian-arm64-build-test:
       -Dtools=panfrost,imagination
   script:
     - .gitlab-ci/meson/build.sh
+
+debian-arm64-release:
+  extends:
+    - debian-arm64
+  variables:
+    MINIO_ARTIFACT_NAME: mesa-arm64-rel
+    BUILDTYPE: "release"
+    C_ARGS: >
+      -Wno-error=stringop-truncation
+  script:
+    - .gitlab-ci/meson/build.sh
+    - 'if [ -n "$MESA_CI_PERFORMANCE_ENABLED" ]; then .gitlab-ci/prepare-artifacts.sh; fi'
 
 debian-clang:
   extends: .meson-build

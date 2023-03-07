@@ -60,6 +60,10 @@ struct radeon_info {
    uint32_t num_cu;           /* only enabled CUs */
    uint32_t max_gpu_freq_mhz; /* also known as the shader clock */
    uint32_t max_gflops;
+   uint32_t sqc_inst_cache_size;
+   uint32_t sqc_scalar_cache_size;
+   uint32_t num_sqc_per_wgp;
+   uint32_t tcp_cache_size;
    uint32_t l1_cache_size;
    uint32_t l2_cache_size;
    uint32_t l3_cache_size_mb;
@@ -161,7 +165,6 @@ struct radeon_info {
    uint32_t address32_hi;
    bool has_dedicated_vram;
    bool all_vram_visible;
-   bool smart_access_memory;
    bool has_l2_uncached;
    bool r600_has_virtual_memory;
    uint32_t max_tcc_blocks;
@@ -257,7 +260,7 @@ struct radeon_info {
    uint32_t max_render_backends;  /* number of render backends incl. disabled ones */
    uint32_t num_tile_pipes; /* pipe count from PIPE_CONFIG */
    uint32_t pipe_interleave_bytes;
-   uint32_t enabled_rb_mask; /* GCN harvest config */
+   uint64_t enabled_rb_mask; /* bitmask of enabled physical RBs, up to max_render_backends bits */
    uint64_t max_alignment;   /* from addrlib */
    uint32_t pbb_max_alloc_count;
 

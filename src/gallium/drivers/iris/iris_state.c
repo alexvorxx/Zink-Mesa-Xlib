@@ -7130,7 +7130,7 @@ iris_upload_render_state(struct iris_context *ice,
     * Wa_16011107343 (same for gfx12)
     * We implement this by setting TCS dirty on each draw.
     */
-   if ((GFX_VER == 11 || GFX_VER == 12) &&
+   if ((GFX_VER == 11 || GFX_VERx10 == 120) &&
        ice->shaders.prog[MESA_SHADER_TESS_CTRL]) {
       ice->state.stage_dirty |= IRIS_STAGE_DIRTY_TCS;
    }

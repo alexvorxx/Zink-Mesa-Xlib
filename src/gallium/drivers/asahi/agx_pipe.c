@@ -29,6 +29,7 @@
 #include "asahi/layout/layout.h"
 #include "asahi/lib/agx_formats.h"
 #include "asahi/lib/decode.h"
+#include "drm-uapi/drm_fourcc.h"
 #include "frontend/sw_winsys.h"
 #include "frontend/winsys_handle.h"
 #include "gallium/auxiliary/renderonly/renderonly.h"
@@ -52,25 +53,17 @@
 #include "agx_disk_cache.h"
 #include "agx_public.h"
 #include "agx_state.h"
-#include "magic.h"
 
-/* drm_fourcc cannot be built on macOS */
-#ifndef __APPLE__
-#include "drm-uapi/drm_fourcc.h"
-#endif
-
-/* In case of macOS, pick some fake modifier values so we still build */
+/* Fake values, pending UAPI upstreaming */
 #ifndef DRM_FORMAT_MOD_LINEAR
 #define DRM_FORMAT_MOD_LINEAR 1
 #endif
 #ifndef DRM_FORMAT_MOD_INVALID
 #define DRM_FORMAT_MOD_INVALID ((1ULL << 56) - 1)
 #endif
-
 #ifndef DRM_FORMAT_MOD_APPLE_TWIDDLED
 #define DRM_FORMAT_MOD_APPLE_TWIDDLED (2)
 #endif
-
 #ifndef DRM_FORMAT_MOD_APPLE_TWIDDLED_COMPRESSED
 #define DRM_FORMAT_MOD_APPLE_TWIDDLED_COMPRESSED (3)
 #endif
@@ -86,6 +79,9 @@ static const struct debug_named_value agx_debug_options[] = {
 #endif
    {"precompile",AGX_DBG_PRECOMPILE,"Precompile shaders for shader-db"},
    {"nocompress",AGX_DBG_NOCOMPRESS,"Disable lossless compression"},
+   {"nocluster", AGX_DBG_NOCLUSTER,"Disable vertex clustering"},
+   {"sync",      AGX_DBG_SYNC,     "Synchronously wait for all submissions"},
+   {"stats",     AGX_DBG_STATS,    "Show command execution statistics"},
    DEBUG_NAMED_VALUE_END
 };
 /* clang-format on */
@@ -190,13 +186,11 @@ agx_resource_from_handle(struct pipe_screen *pscreen,
 
    ail_make_miptree(&rsc->layout);
 
-#ifndef __APPLE__
    if (dev->ro) {
       rsc->scanout =
          renderonly_create_gpu_import_for_resource(prsc, dev->ro, NULL);
       /* failure is expected in some cases.. */
    }
-#endif
 
    return prsc;
 }
@@ -547,6 +541,10 @@ agx_resource_create_with_modifiers(struct pipe_screen *screen,
       create_flags |= AGX_BO_WRITEBACK;
    }
 
+   /* Create buffers that might be shared with the SHAREABLE flag */
+   if (bind & (PIPE_BIND_SCANOUT | PIPE_BIND_DISPLAY_TARGET | PIPE_BIND_SHARED))
+      create_flags |= AGX_BO_SHAREABLE;
+
    nresource->bo =
       agx_bo_create(dev, nresource->layout.size_B, create_flags, label);
 
@@ -577,10 +575,8 @@ agx_resource_destroy(struct pipe_screen *screen, struct pipe_resource *prsrc)
       winsys->displaytarget_destroy(winsys, rsrc->dt);
    }
 
-#ifndef __APPLE__
    if (rsrc->scanout)
       renderonly_scanout_destroy(rsrc->scanout, agx_screen->dev.ro);
-#endif
 
    agx_bo_unreference(rsrc->bo);
    FREE(rsrc);
@@ -801,8 +797,11 @@ agx_transfer_map(struct pipe_context *pctx, struct pipe_resource *resource,
          agx_flush_writer(ctx, staging, "GPU read staging blit");
       }
 
+      agx_bo_mmap(staging->bo);
       return staging->bo->ptr.cpu;
    }
+
+   agx_bo_mmap(rsrc->bo);
 
    if (rsrc->modifier == DRM_FORMAT_MOD_APPLE_TWIDDLED) {
       transfer->base.stride =
@@ -1053,30 +1052,6 @@ agx_flush_batch(struct agx_context *ctx, struct agx_batch *batch)
    /* Size calculation should've been exact */
    assert(handle_i == handle_count);
 
-#ifdef __APPLE__
-   unsigned cmdbuf_id = agx_get_global_id(dev);
-   unsigned encoder_id = agx_get_global_id(dev);
-
-   unsigned cmdbuf_size = demo_cmdbuf(
-      dev->cmdbuf.ptr.cpu, dev->cmdbuf.size, &batch->pool, &batch->key,
-      batch->encoder->ptr.gpu, encoder_id, scissor, zbias,
-      batch->occlusion_buffer.gpu, pipeline_background,
-      pipeline_background_partial, pipeline_store, clear_pipeline_textures,
-      batch->clear, batch->clear_depth, batch->clear_stencil);
-
-   /* Generate the mapping table from the BO list */
-   demo_mem_map(dev->memmap.ptr.cpu, dev->memmap.size, handles, handle_count,
-                cmdbuf_id, encoder_id, cmdbuf_size);
-
-   free(handles);
-
-   agx_wait_queue(dev->queue);
-
-   if (dev->debug & AGX_DBG_TRACE) {
-      agxdecode_cmdstream(dev->cmdbuf.handle, dev->memmap.handle, true);
-      agxdecode_next_frame();
-   }
-#else
    /* TODO: Linux UAPI submission */
    (void)dev;
    (void)zbias;
@@ -1085,7 +1060,6 @@ agx_flush_batch(struct agx_context *ctx, struct agx_batch *batch)
    (void)pipeline_store;
    (void)pipeline_background;
    (void)pipeline_background_partial;
-#endif
 
    agx_batch_cleanup(ctx, batch);
 }
@@ -1104,6 +1078,8 @@ agx_destroy_context(struct pipe_context *pctx)
    util_unreference_framebuffer_state(&ctx->framebuffer);
 
    agx_meta_cleanup(&ctx->meta);
+
+   agx_bo_unreference(ctx->result_buf);
 
    ralloc_free(ctx);
 }
@@ -1173,6 +1149,11 @@ agx_create_context(struct pipe_screen *screen, void *priv, unsigned flags)
 
    ctx->blitter = util_blitter_create(pctx);
 
+   ctx->result_buf = agx_bo_create(
+      agx_device(screen), sizeof(union agx_batch_result) * AGX_MAX_BATCHES, 0,
+      "Batch result buffer");
+   assert(ctx->result_buf);
+
    return pctx;
 }
 
@@ -1217,7 +1198,9 @@ agx_get_device_vendor(struct pipe_screen *pscreen)
 static const char *
 agx_get_name(struct pipe_screen *pscreen)
 {
-   return "Apple M1 (G13G B0)";
+   struct agx_device *dev = agx_device(pscreen);
+
+   return dev->name;
 }
 
 static int
@@ -1260,9 +1243,8 @@ agx_get_param(struct pipe_screen *pscreen, enum pipe_cap param)
    case PIPE_CAP_FBFETCH:
    case PIPE_CAP_FBFETCH_COHERENT:
       return 8;
-
    case PIPE_CAP_MAX_DUAL_SOURCE_RENDER_TARGETS:
-      return 0;
+      return 1;
 
    case PIPE_CAP_OCCLUSION_QUERY:
    case PIPE_CAP_PRIMITIVE_RESTART:
@@ -1535,7 +1517,7 @@ agx_get_shader_param(struct pipe_screen *pscreen, enum pipe_shader_type shader,
       return (1 << PIPE_SHADER_IR_NIR);
 
    case PIPE_SHADER_CAP_MAX_SHADER_BUFFERS:
-      return (is_deqp && allow_side_effects) ? 16 : 0;
+      return (is_deqp && allow_side_effects) ? PIPE_MAX_SHADER_BUFFERS : 0;
 
    case PIPE_SHADER_CAP_MAX_SHADER_IMAGES:
       return (is_deqp && allow_side_effects) ? PIPE_MAX_SHADER_IMAGES : 0;
@@ -1638,6 +1620,13 @@ agx_is_format_supported(struct pipe_screen *pscreen, enum pipe_format format,
    if (MAX2(sample_count, 1) != MAX2(storage_sample_count, 1))
       return false;
 
+   if ((usage & PIPE_BIND_VERTEX_BUFFER) && !agx_vbo_supports_format(format))
+      return false;
+
+   /* For framebuffer_no_attachments, fake support for "none" images */
+   if (format == PIPE_FORMAT_NONE)
+      return true;
+
    if (usage & (PIPE_BIND_RENDER_TARGET | PIPE_BIND_SAMPLER_VIEW)) {
       enum pipe_format tex_format = format;
 
@@ -1656,9 +1645,6 @@ agx_is_format_supported(struct pipe_screen *pscreen, enum pipe_format format,
       if ((usage & PIPE_BIND_RENDER_TARGET) && !ent.renderable)
          return false;
    }
-
-   if ((usage & PIPE_BIND_VERTEX_BUFFER) && !agx_vbo_supports_format(format))
-      return false;
 
    if (usage & PIPE_BIND_DEPTH_STENCIL) {
       switch (format) {
@@ -1723,6 +1709,9 @@ static void
 agx_destroy_screen(struct pipe_screen *pscreen)
 {
    struct agx_screen *screen = agx_screen(pscreen);
+
+   if (screen->dev.ro)
+      screen->dev.ro->destroy(screen->dev.ro);
 
    u_transfer_helper_destroy(pscreen->transfer_helper);
    agx_close_device(&screen->dev);

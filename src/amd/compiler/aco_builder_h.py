@@ -517,9 +517,9 @@ public:
       int num_defs = carry_out ? 2 : 1;
       aco_ptr<Instruction> sub;
       if (vop3)
-        sub.reset(create_instruction<VOP3_instruction>(op, Format::VOP3, num_ops, num_defs));
+        sub.reset(create_instruction<VALU_instruction>(op, Format::VOP3, num_ops, num_defs));
       else
-        sub.reset(create_instruction<VOP2_instruction>(op, Format::VOP2, num_ops, num_defs));
+        sub.reset(create_instruction<VALU_instruction>(op, Format::VOP2, num_ops, num_defs));
       sub->operands[0] = a.op;
       sub->operands[1] = b.op;
       if (!borrow.op.isUndefined())
@@ -562,14 +562,14 @@ formats = [("pseudo", [Format.PSEUDO], 'Pseudo_instruction', list(itertools.prod
            ("branch", [Format.PSEUDO_BRANCH], 'Pseudo_branch_instruction', itertools.product([1], [0, 1])),
            ("barrier", [Format.PSEUDO_BARRIER], 'Pseudo_barrier_instruction', [(0, 0)]),
            ("reduction", [Format.PSEUDO_REDUCTION], 'Pseudo_reduction_instruction', [(3, 3)]),
-           ("vop1", [Format.VOP1], 'VOP1_instruction', [(0, 0), (1, 1), (2, 2)]),
+           ("vop1", [Format.VOP1], 'VALU_instruction', [(0, 0), (1, 1), (2, 2)]),
            ("vop1_sdwa", [Format.VOP1, Format.SDWA], 'SDWA_instruction', [(1, 1)]),
-           ("vop2", [Format.VOP2], 'VOP2_instruction', itertools.product([1, 2], [2, 3])),
+           ("vop2", [Format.VOP2], 'VALU_instruction', itertools.product([1, 2], [2, 3])),
            ("vop2_sdwa", [Format.VOP2, Format.SDWA], 'SDWA_instruction', itertools.product([1, 2], [2, 3])),
-           ("vopc", [Format.VOPC], 'VOPC_instruction', itertools.product([1, 2], [2])),
+           ("vopc", [Format.VOPC], 'VALU_instruction', itertools.product([1, 2], [2])),
            ("vopc_sdwa", [Format.VOPC, Format.SDWA], 'SDWA_instruction', itertools.product([1, 2], [2])),
-           ("vop3", [Format.VOP3], 'VOP3_instruction', [(1, 3), (1, 2), (1, 1), (2, 2)]),
-           ("vop3p", [Format.VOP3P], 'VOP3P_instruction', [(1, 2), (1, 3)]),
+           ("vop3", [Format.VOP3], 'VALU_instruction', [(1, 3), (1, 2), (1, 1), (2, 2)]),
+           ("vop3p", [Format.VOP3P], 'VALU_instruction', [(1, 2), (1, 3)]),
            ("vinterp_inreg", [Format.VINTERP_INREG], 'VINTERP_inreg_instruction', [(1, 3)]),
            ("vintrp", [Format.VINTRP], 'VINTRP_instruction', [(1, 2), (1, 3)]),
            ("vop1_dpp", [Format.VOP1, Format.DPP16], 'DPP16_instruction', [(1, 1)]),
@@ -578,9 +578,9 @@ formats = [("pseudo", [Format.PSEUDO], 'Pseudo_instruction', list(itertools.prod
            ("vop1_dpp8", [Format.VOP1, Format.DPP8], 'DPP8_instruction', [(1, 1)]),
            ("vop2_dpp8", [Format.VOP2, Format.DPP8], 'DPP8_instruction', itertools.product([1, 2], [2, 3])),
            ("vopc_dpp8", [Format.VOPC, Format.DPP8], 'DPP8_instruction', itertools.product([1, 2], [2])),
-           ("vop1_e64", [Format.VOP1, Format.VOP3], 'VOP3_instruction', itertools.product([1], [1])),
-           ("vop2_e64", [Format.VOP2, Format.VOP3], 'VOP3_instruction', itertools.product([1, 2], [2, 3])),
-           ("vopc_e64", [Format.VOPC, Format.VOP3], 'VOP3_instruction', itertools.product([1, 2], [2])),
+           ("vop1_e64", [Format.VOP1, Format.VOP3], 'VALU_instruction', itertools.product([1], [1])),
+           ("vop2_e64", [Format.VOP2, Format.VOP3], 'VALU_instruction', itertools.product([1, 2], [2, 3])),
+           ("vopc_e64", [Format.VOPC, Format.VOP3], 'VALU_instruction', itertools.product([1, 2], [2])),
            ("flat", [Format.FLAT], 'FLAT_instruction', [(0, 3), (1, 2)]),
            ("global", [Format.GLOBAL], 'FLAT_instruction', [(0, 3), (1, 2)]),
            ("scratch", [Format.SCRATCH], 'FLAT_instruction', [(0, 3), (1, 2)])]

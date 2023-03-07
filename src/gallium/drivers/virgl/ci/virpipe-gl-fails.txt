@@ -720,9 +720,4 @@ spec@!opengl 1.0@depth-clear-precision-check@depth32,Fail
 # https://gitlab.freedesktop.org/mesa/mesa/-/issues/7152
 spec@ext_transform_feedback@builtin-varyings gl_culldistance,Fail
 
-# https://gitlab.freedesktop.org/mesa/mesa/-/issues/7154
-spec@arb_enhanced_layouts@matching_fp64_types_1,Crash
-spec@arb_enhanced_layouts@matching_fp64_types_2,Crash
-spec@arb_enhanced_layouts@matching_fp64_types_3,Crash
-
 spec@!opengl 1.1@line-smooth-stipple,Fail

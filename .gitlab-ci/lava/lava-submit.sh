@@ -18,13 +18,14 @@ mkdir -p results/job-rootfs-overlay/
 cp artifacts/ci-common/capture-devcoredump.sh results/job-rootfs-overlay/
 cp artifacts/ci-common/init-*.sh results/job-rootfs-overlay/
 cp artifacts/ci-common/intel-gpu-freq.sh results/job-rootfs-overlay/
+cp "$SCRIPTS_DIR"/setup-test-env.sh results/job-rootfs-overlay/
 
 # Prepare env vars for upload.
 KERNEL_IMAGE_BASE_URL="https://${BASE_SYSTEM_HOST_PATH}" \
 	artifacts/ci-common/generate-env.sh > results/job-rootfs-overlay/set-job-env-vars.sh
-echo -e "\e[0Ksection_start:$(date +%s):variables[collapsed=true]\r\e[0KVariables passed through:"
+section_start variables "Variables passed through:"
 cat results/job-rootfs-overlay/set-job-env-vars.sh
-echo -e "\e[0Ksection_end:$(date +%s):variables\r\e[0K"
+section_end variables
 
 tar zcf job-rootfs-overlay.tar.gz -C results/job-rootfs-overlay/ .
 ci-fairy s3cp --token-file "${CI_JOB_JWT_FILE}" job-rootfs-overlay.tar.gz "https://${JOB_ROOTFS_OVERLAY_PATH}"

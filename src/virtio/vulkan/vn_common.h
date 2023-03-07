@@ -89,6 +89,7 @@ struct vn_command_buffer;
 
 struct vn_cs_encoder;
 struct vn_cs_decoder;
+struct vn_ring;
 
 struct vn_renderer;
 struct vn_renderer_shmem;
@@ -223,7 +224,7 @@ uint32_t
 vn_extension_get_spec_version(const char *name);
 
 void
-vn_relax(uint32_t *iter, const char *reason);
+vn_relax(const struct vn_ring *ring, uint32_t *iter, const char *reason);
 
 static_assert(sizeof(vn_object_id) >= sizeof(uintptr_t), "");
 

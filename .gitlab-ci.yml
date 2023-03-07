@@ -1,3 +1,10 @@
+workflow:
+  rules:
+    - if: $GITLAB_USER_LOGIN == "marge-bot" && $CI_COMMIT_BRANCH == null
+      variables:
+        MESA_CI_PERFORMANCE_ENABLED: 1
+    - when: always
+
 variables:
   FDO_UPSTREAM_REPO: mesa/mesa
   MESA_TEMPLATES_COMMIT: &ci-templates-commit d5aa3941aa03c2f716595116354fb81eb8012acb
@@ -28,10 +35,13 @@ variables:
 
 default:
   before_script:
-    - echo -e "\e[0Ksection_start:$(date +%s):unset_env_vars_section[collapsed=true]\r\e[0KUnsetting vulnerable environment variables"
-    - echo -n "${CI_JOB_JWT}" > "${CI_JOB_JWT_FILE}"
-    - unset CI_JOB_JWT
-    - echo -e "\e[0Ksection_end:$(date +%s):unset_env_vars_section\r\e[0K"
+    - >
+      export SCRIPTS_DIR=$(mktemp -d) &&
+      curl -L -s --retry 4 -f --retry-all-errors --retry-delay 60 -O --output-dir "${SCRIPTS_DIR}" "${CI_PROJECT_URL}/-/raw/${CI_COMMIT_SHA}/.gitlab-ci/setup-test-env.sh" &&
+      chmod +x ${SCRIPTS_DIR}/setup-test-env.sh &&
+      . ${SCRIPTS_DIR}/setup-test-env.sh &&
+      echo -n "${CI_JOB_JWT}" > "${CI_JOB_JWT_FILE}" &&
+      unset CI_JOB_JWT  # Unsetting vulnerable env variables
 
   after_script:
     - >
@@ -41,11 +51,10 @@ default:
       export CI_JOB_JWT="$(<${CI_JOB_JWT_FILE})" &&
       rm "${CI_JOB_JWT_FILE}"
 
-  # Retry build or test jobs up to twice when the gitlab-runner itself fails somehow.
+  # Retry when job fails. Failed jobs can be found in the Mesa CI Daily Reports:
+  # https://gitlab.freedesktop.org/mesa/mesa/-/issues/?sort=created_date&state=opened&label_name%5B%5D=CI%20daily
   retry:
-    max: 2
-    when:
-      - runner_system_failure
+    max: 1
 
 include:
   - project: 'freedesktop/ci-templates'

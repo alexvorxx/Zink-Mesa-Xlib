@@ -14,3 +14,4 @@ dEQP-VK.rasterization.primitives_multisample_2_bit.static_stipple.bresenham_line
 dEQP-VK.draw.renderpass.linear_interpolation.no_offset_8_samples
 
 dEQP-VK.pipeline.fast_linked_library.multisample_interpolation.sample_interpolate_at_ignores_centroid.128_128_1.samples_8
+dEQP-VK.pipeline.fast_linked_library.extended_dynamic_state.before_draw.line_stipple_enable

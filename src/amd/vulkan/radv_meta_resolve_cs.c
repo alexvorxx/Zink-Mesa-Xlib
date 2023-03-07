@@ -282,7 +282,7 @@ create_resolve_pipeline(struct radv_device *device, int samples, bool is_integer
    };
 
    result = radv_compute_pipeline_create(radv_device_to_handle(device), device->meta_state.cache,
-                                         &vk_pipeline_info, NULL, pipeline, true);
+                                         &vk_pipeline_info, NULL, pipeline);
    if (result != VK_SUCCESS)
       goto fail;
 
@@ -327,7 +327,7 @@ create_depth_stencil_resolve_pipeline(struct radv_device *device, int samples, i
    };
 
    result = radv_compute_pipeline_create(radv_device_to_handle(device), device->meta_state.cache,
-                                         &vk_pipeline_info, NULL, pipeline, true);
+                                         &vk_pipeline_info, NULL, pipeline);
    if (result != VK_SUCCESS)
       goto fail;
 

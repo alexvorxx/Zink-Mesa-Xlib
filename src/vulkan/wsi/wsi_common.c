@@ -914,6 +914,10 @@ wsi_CreateSwapchainKHR(VkDevice _device,
    else
      alloc = &device->alloc;
 
+   /* Ignore DEFERRED_MEMORY_ALLOCATION_BIT. Would require deep plumbing to be able to take advantage of it.
+    * bool deferred_allocation = pCreateInfo->flags & VK_SWAPCHAIN_CREATE_DEFERRED_MEMORY_ALLOCATION_BIT_EXT;
+    */
+
    VkResult result = iface->create_swapchain(surface, _device, wsi_device,
                                              pCreateInfo, alloc,
                                              &swapchain);
@@ -985,6 +989,29 @@ wsi_DestroySwapchainKHR(VkDevice _device,
      alloc = &device->alloc;
 
    swapchain->destroy(swapchain, alloc);
+}
+
+VKAPI_ATTR VkResult VKAPI_CALL
+wsi_ReleaseSwapchainImagesEXT(VkDevice _device,
+                              const VkReleaseSwapchainImagesInfoEXT *pReleaseInfo)
+{
+   VK_FROM_HANDLE(wsi_swapchain, swapchain, pReleaseInfo->swapchain);
+   VkResult result = swapchain->release_images(swapchain,
+                                               pReleaseInfo->imageIndexCount,
+                                               pReleaseInfo->pImageIndices);
+
+   if (result != VK_SUCCESS)
+      return result;
+
+   if (swapchain->wsi->set_memory_ownership) {
+      for (uint32_t i = 0; i < pReleaseInfo->imageIndexCount; i++) {
+         uint32_t image_index = pReleaseInfo->pImageIndices[i];
+         VkDeviceMemory mem = swapchain->get_wsi_image(swapchain, image_index)->memory;
+         swapchain->wsi->set_memory_ownership(swapchain->device, mem, false);
+      }
+   }
+
+   return VK_SUCCESS;
 }
 
 VkResult
@@ -1163,9 +1190,10 @@ wsi_AcquireNextImage2KHR(VkDevice _device,
 }
 
 static VkResult wsi_signal_present_id_timeline(struct wsi_swapchain *swapchain,
-                                               VkQueue queue, uint64_t present_id)
+                                               VkQueue queue, uint64_t present_id,
+                                               VkFence present_fence)
 {
-   assert(swapchain->present_id_timeline);
+   assert(swapchain->present_id_timeline || present_fence);
 
    const VkTimelineSemaphoreSubmitInfo timeline_info = {
       .sType = VK_STRUCTURE_TYPE_TIMELINE_SEMAPHORE_SUBMIT_INFO,
@@ -1180,7 +1208,8 @@ static VkResult wsi_signal_present_id_timeline(struct wsi_swapchain *swapchain,
       .pSignalSemaphores = &swapchain->present_id_timeline,
    };
 
-   return swapchain->wsi->QueueSubmit(queue, 1, &submit_info, VK_NULL_HANDLE);
+   uint32_t submit_count = present_id ? 1 : 0;
+   return swapchain->wsi->QueueSubmit(queue, submit_count, &submit_info, present_fence);
 }
 
 VkResult
@@ -1201,11 +1230,19 @@ wsi_common_queue_present(const struct wsi_device *wsi,
       vk_find_struct_const(pPresentInfo->pNext, PRESENT_REGIONS_KHR);
    const VkPresentIdKHR *present_ids =
       vk_find_struct_const(pPresentInfo->pNext, PRESENT_ID_KHR);
+   const VkSwapchainPresentFenceInfoEXT *present_fence_info =
+      vk_find_struct_const(pPresentInfo->pNext, SWAPCHAIN_PRESENT_FENCE_INFO_EXT);
+   const VkSwapchainPresentModeInfoEXT *present_mode_info =
+      vk_find_struct_const(pPresentInfo->pNext, SWAPCHAIN_PRESENT_MODE_INFO_EXT);
 
    for (uint32_t i = 0; i < pPresentInfo->swapchainCount; i++) {
       VK_FROM_HANDLE(wsi_swapchain, swapchain, pPresentInfo->pSwapchains[i]);
       uint32_t image_index = pPresentInfo->pImageIndices[i];
       VkResult result;
+
+      /* Update the present mode for this present and any subsequent present. */
+      if (present_mode_info && present_mode_info->pPresentModes && swapchain->set_present_mode)
+         swapchain->set_present_mode(swapchain, present_mode_info->pPresentModes[i]);
 
       if (swapchain->fences[image_index] == VK_NULL_HANDLE) {
          const VkFenceCreateInfo fence_info = {
@@ -1352,9 +1389,12 @@ wsi_common_queue_present(const struct wsi_device *wsi,
       uint64_t present_id = 0;
       if (present_ids && present_ids->pPresentIds)
          present_id = present_ids->pPresentIds[i];
+      VkFence present_fence = VK_NULL_HANDLE;
+      if (present_fence_info && present_fence_info->pFences)
+         present_fence = present_fence_info->pFences[i];
 
-      if (present_id) {
-         result = wsi_signal_present_id_timeline(swapchain, queue, present_id);
+      if (present_id || present_fence) {
+         result = wsi_signal_present_id_timeline(swapchain, queue, present_id, present_fence);
          if (result != VK_SUCCESS)
             goto fail_present;
       }

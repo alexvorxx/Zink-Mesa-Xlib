@@ -1,5 +1,7 @@
 #!/bin/bash
 
+. "$SCRIPTS_DIR"/setup-test-env.sh
+
 # Boot script for devices attached to a PoE switch, using NFS for the root
 # filesystem.
 

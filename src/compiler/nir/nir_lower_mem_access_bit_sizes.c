@@ -81,7 +81,8 @@ lower_mem_load(nir_builder *b, nir_intrinsic_instr *intrin,
    const unsigned num_components = intrin->dest.ssa.num_components;
    const unsigned bytes_read = num_components * (bit_size / 8);
    const uint32_t align_mul = nir_intrinsic_align_mul(intrin);
-   const uint32_t align_offset = nir_intrinsic_align_offset(intrin);
+   const uint32_t whole_align_offset = nir_intrinsic_align_offset(intrin);
+   const uint32_t whole_align = nir_intrinsic_align(intrin);
    nir_src *offset_src = nir_get_io_offset_src(intrin);
    const bool offset_is_const = nir_src_is_const(*offset_src);
    assert(offset_src->is_ssa);
@@ -89,14 +90,14 @@ lower_mem_load(nir_builder *b, nir_intrinsic_instr *intrin,
 
    nir_mem_access_size_align requested =
       mem_access_size_align_cb(intrin->intrinsic, bytes_read,
-                               align_mul, align_offset,
+                               align_mul, whole_align_offset,
                                offset_is_const, cb_data);
 
    assert(util_is_power_of_two_nonzero(align_mul));
-   assert(util_is_power_of_two_nonzero(requested.align_mul));
+   assert(util_is_power_of_two_nonzero(requested.align));
    if (requested.num_components == num_components &&
        requested.bit_size == bit_size &&
-       requested.align_mul <= align_mul)
+       requested.align <= whole_align)
       return false;
 
    /* Otherwise, we have to break it into chunks.  We could end up with as
@@ -107,48 +108,82 @@ lower_mem_load(nir_builder *b, nir_intrinsic_instr *intrin,
    unsigned chunk_start = 0;
    while (chunk_start < bytes_read) {
       const unsigned bytes_left = bytes_read - chunk_start;
-      uint32_t chunk_align_offset =
-         (align_offset + chunk_start) % align_mul;
+      const uint32_t chunk_align_offset =
+         (whole_align_offset + chunk_start) % align_mul;
+      const uint32_t chunk_align =
+         nir_combined_align(align_mul, chunk_align_offset);
       requested = mem_access_size_align_cb(intrin->intrinsic, bytes_left,
                                            align_mul, chunk_align_offset,
                                            offset_is_const, cb_data);
 
       unsigned chunk_bytes;
-      assert(util_is_power_of_two_nonzero(requested.align_mul));
-      if (align_mul < requested.align_mul) {
+      assert(util_is_power_of_two_nonzero(requested.align));
+      if (align_mul < requested.align) {
          /* For this case, we need to be able to shift the value so we assume
-          * there's at most one component.
+          * the alignment is less than the size of a single component.  This
+          * ensures that we don't need to upcast in order to shift.
           */
-         assert(requested.num_components == 1);
-         assert(requested.bit_size >= requested.align_mul * 8);
+         assert(requested.bit_size >= requested.align * 8);
 
-         uint64_t align_mask = requested.align_mul - 1;
+         uint64_t align_mask = requested.align - 1;
          nir_ssa_def *chunk_offset = nir_iadd_imm(b, offset, chunk_start);
          nir_ssa_def *pad = nir_iand_imm(b, chunk_offset, align_mask);
          chunk_offset = nir_iand_imm(b, chunk_offset, ~align_mask);
 
          nir_intrinsic_instr *load =
             dup_mem_intrinsic(b, intrin, chunk_offset,
-                              requested.align_mul, 0, NULL,
+                              requested.align, 0, NULL,
                               requested.num_components, requested.bit_size);
 
-         nir_ssa_def *shifted =
-            nir_ushr(b, &load->dest.ssa, nir_imul_imm(b, pad, 8));
+         unsigned max_pad = requested.align - chunk_align;
+         unsigned requested_bytes =
+            requested.num_components * requested.bit_size / 8;
+         chunk_bytes = MIN2(bytes_left, requested_bytes - max_pad);
 
-         chunk_bytes = MIN2(bytes_left, align_mul);
-         assert(num_chunks < ARRAY_SIZE(chunks));
-         chunks[num_chunks++] = nir_u2uN(b, shifted, chunk_bytes * 8);
-      } else if (chunk_align_offset % requested.align_mul) {
+         nir_ssa_def *shift = nir_imul_imm(b, pad, 8);
+         nir_ssa_def *shifted = nir_ushr(b, &load->dest.ssa, shift);
+
+         if (load->dest.ssa.num_components > 1) {
+            nir_ssa_def *rev_shift =
+               nir_isub_imm(b, load->dest.ssa.bit_size, shift);
+            nir_ssa_def *rev_shifted = nir_ishl(b, &load->dest.ssa, rev_shift);
+
+            nir_ssa_def *comps[NIR_MAX_VEC_COMPONENTS];
+            for (unsigned i = 1; i < load->dest.ssa.num_components; i++)
+               comps[i - 1] = nir_channel(b, rev_shifted, i);
+
+            comps[load->dest.ssa.num_components - 1] =
+               nir_imm_zero(b, 1, load->dest.ssa.bit_size);
+
+            rev_shifted = nir_vec(b, comps, load->dest.ssa.num_components);
+            shifted = nir_bcsel(b, nir_ieq_imm(b, shift, 0), &load->dest.ssa,
+                                   nir_ior(b, shifted, rev_shifted));
+         }
+
+         unsigned chunk_bit_size = MIN2(8 << (ffs(chunk_bytes) - 1), bit_size);
+         unsigned chunk_num_components = chunk_bytes / (chunk_bit_size / 8);
+
+         /* There's no guarantee that chunk_num_components is a valid NIR
+          * vector size, so just loop one chunk component at a time
+          */
+         for (unsigned i = 0; i < chunk_num_components; i++) {
+            assert(num_chunks < ARRAY_SIZE(chunks));
+            chunks[num_chunks++] =
+               nir_extract_bits(b, &shifted, 1, i * chunk_bit_size,
+                                1, chunk_bit_size);
+         }
+      } else if (chunk_align_offset % requested.align) {
          /* In this case, we know how much to adjust the offset */
-         uint32_t delta = chunk_align_offset % requested.align_mul;
-         nir_ssa_def *chunk_offset =
+         uint32_t delta = chunk_align_offset % requested.align;
+         nir_ssa_def *load_offset =
             nir_iadd_imm(b, offset, chunk_start - (int)delta);
 
-         chunk_align_offset = (chunk_align_offset - delta) % align_mul;
+         const uint32_t load_align_offset =
+            (chunk_align_offset - delta) % align_mul;
 
          nir_intrinsic_instr *load =
-            dup_mem_intrinsic(b, intrin, chunk_offset,
-                              align_mul, chunk_align_offset, NULL,
+            dup_mem_intrinsic(b, intrin, load_offset,
+                              align_mul, load_align_offset, NULL,
                               requested.num_components, requested.bit_size);
 
          assert(requested.bit_size >= 8);
@@ -207,7 +242,8 @@ lower_mem_store(nir_builder *b, nir_intrinsic_instr *intrin,
    const unsigned num_components = intrin->num_components;
    const unsigned bytes_written = num_components * byte_size;
    const uint32_t align_mul = nir_intrinsic_align_mul(intrin);
-   const uint32_t align_offset = nir_intrinsic_align_offset(intrin);
+   const uint32_t whole_align_offset = nir_intrinsic_align_offset(intrin);
+   const uint32_t whole_align = nir_intrinsic_align(intrin);
    nir_src *offset_src = nir_get_io_offset_src(intrin);
    const bool offset_is_const = nir_src_is_const(*offset_src);
    assert(offset_src->is_ssa);
@@ -218,14 +254,14 @@ lower_mem_store(nir_builder *b, nir_intrinsic_instr *intrin,
 
    nir_mem_access_size_align requested =
       mem_access_size_align_cb(intrin->intrinsic, bytes_written,
-                               align_mul, align_offset,
+                               align_mul, whole_align_offset,
                                offset_is_const, cb_data);
 
    assert(util_is_power_of_two_nonzero(align_mul));
-   assert(util_is_power_of_two_nonzero(requested.align_mul));
+   assert(util_is_power_of_two_nonzero(requested.align));
    if (requested.num_components == num_components &&
        requested.bit_size == bit_size &&
-       requested.align_mul <= align_mul &&
+       requested.align <= whole_align &&
        writemask == BITFIELD_MASK(num_components))
       return false;
 
@@ -251,7 +287,7 @@ lower_mem_store(nir_builder *b, nir_intrinsic_instr *intrin,
       /* The size of the current contiguous chunk in bytes */
       const uint32_t max_chunk_bytes = end - chunk_start;
       const uint32_t chunk_align_offset =
-         (align_offset + chunk_start) % align_mul;
+         (whole_align_offset + chunk_start) % align_mul;
 
       requested = mem_access_size_align_cb(intrin->intrinsic, max_chunk_bytes,
                                            align_mul, chunk_align_offset,
@@ -261,9 +297,9 @@ lower_mem_store(nir_builder *b, nir_intrinsic_instr *intrin,
          requested.num_components * (requested.bit_size / 8);
       assert(chunk_bytes <= max_chunk_bytes);
 
-      assert(util_is_power_of_two_nonzero(requested.align_mul));
-      assert(requested.align_mul <= align_mul);
-      assert((chunk_align_offset % requested.align_mul) == 0);
+      assert(util_is_power_of_two_nonzero(requested.align));
+      assert(requested.align <= align_mul);
+      assert((chunk_align_offset % requested.align) == 0);
 
       nir_ssa_def *packed = nir_extract_bits(b, &value, 1, chunk_start * 8,
                                              requested.num_components,
@@ -283,9 +319,45 @@ lower_mem_store(nir_builder *b, nir_intrinsic_instr *intrin,
 }
 
 struct lower_mem_access_state {
+   nir_variable_mode modes;
    nir_lower_mem_access_bit_sizes_cb cb;
    const void *cb_data;
 };
+
+static nir_variable_mode
+intrin_to_variable_mode(nir_intrinsic_op intrin)
+{
+   switch (intrin) {
+   case nir_intrinsic_load_ubo:
+      return nir_var_mem_ubo;
+
+   case nir_intrinsic_load_global:
+   case nir_intrinsic_store_global:
+      return nir_var_mem_global;
+
+   case nir_intrinsic_load_global_constant:
+      return nir_var_mem_constant;
+
+   case nir_intrinsic_load_ssbo:
+   case nir_intrinsic_store_ssbo:
+      return nir_var_mem_ssbo;
+
+   case nir_intrinsic_load_shared:
+   case nir_intrinsic_store_shared:
+      return nir_var_mem_shared;
+
+   case nir_intrinsic_load_scratch:
+   case nir_intrinsic_store_scratch:
+      return nir_var_shader_temp | nir_var_function_temp;
+
+   case nir_intrinsic_load_task_payload:
+   case nir_intrinsic_store_task_payload:
+      return nir_var_mem_task_payload;
+
+   default:
+      return 0;
+   }
+}
 
 static bool
 lower_mem_access_instr(nir_builder *b, nir_instr *instr, void *_data)
@@ -295,10 +367,14 @@ lower_mem_access_instr(nir_builder *b, nir_instr *instr, void *_data)
    if (instr->type != nir_instr_type_intrinsic)
       return false;
 
+   nir_intrinsic_instr *intrin = nir_instr_as_intrinsic(instr);
+   if (!(state->modes & intrin_to_variable_mode(intrin->intrinsic)))
+      return false;
+
    b->cursor = nir_after_instr(instr);
 
-   nir_intrinsic_instr *intrin = nir_instr_as_intrinsic(instr);
    switch (intrin->intrinsic) {
+   case nir_intrinsic_load_ubo:
    case nir_intrinsic_load_global:
    case nir_intrinsic_load_global_constant:
    case nir_intrinsic_load_ssbo:
@@ -321,10 +397,12 @@ lower_mem_access_instr(nir_builder *b, nir_instr *instr, void *_data)
 
 bool
 nir_lower_mem_access_bit_sizes(nir_shader *shader,
+                               nir_variable_mode modes,
                                nir_lower_mem_access_bit_sizes_cb cb,
                                const void *cb_data)
 {
    struct lower_mem_access_state state = {
+      .modes = modes,
       .cb = cb,
       .cb_data = cb_data
    };

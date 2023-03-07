@@ -185,7 +185,6 @@ struct glthread_state
    /** Whether GLThread is enabled. */
    bool enabled;
    bool inside_begin_end;
-   bool draw_always_async;
 
    /** Display lists. */
    GLenum16 ListMode; /**< Zero if not inside display list, else list mode. */

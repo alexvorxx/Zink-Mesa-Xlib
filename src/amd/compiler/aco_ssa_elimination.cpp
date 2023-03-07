@@ -461,21 +461,21 @@ try_optimize_branching_sequence(ssa_elimination_ctx& ctx, Block& block, const in
             return;
          } else if (!exec_val->isVOP3()) {
             aco_ptr<Instruction> tmp = std::move(exec_val);
-            exec_val.reset(create_instruction<VOPC_instruction>(
+            exec_val.reset(create_instruction<VALU_instruction>(
                tmp->opcode, tmp->format, tmp->operands.size(), tmp->definitions.size() + 1));
             std::copy(tmp->operands.cbegin(), tmp->operands.cend(), exec_val->operands.begin());
             std::copy(tmp->definitions.cbegin(), tmp->definitions.cend(),
                       exec_val->definitions.begin());
          } else {
             aco_ptr<Instruction> tmp = std::move(exec_val);
-            exec_val.reset(create_instruction<VOP3_instruction>(
+            exec_val.reset(create_instruction<VALU_instruction>(
                tmp->opcode, tmp->format, tmp->operands.size(), tmp->definitions.size() + 1));
             std::copy(tmp->operands.cbegin(), tmp->operands.cend(), exec_val->operands.begin());
             std::copy(tmp->definitions.cbegin(), tmp->definitions.cend(),
                       exec_val->definitions.begin());
 
-            VOP3_instruction& src = tmp->vop3();
-            VOP3_instruction& dst = exec_val->vop3();
+            VALU_instruction& src = tmp->valu();
+            VALU_instruction& dst = exec_val->valu();
             dst.opsel = src.opsel;
             dst.omod = src.omod;
             dst.clamp = src.clamp;

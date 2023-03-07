@@ -32,6 +32,8 @@ extern "C" {
 #endif
 
 extern uint32_t zink_debug;
+extern bool zink_tracing;
+
 struct util_dl_library;
 
 void
@@ -138,6 +140,11 @@ zink_screen_get_pipeline_cache(struct zink_screen *screen, struct zink_program *
 
 void
 zink_stub_function_not_loaded(void);
+
+bool
+zink_screen_debug_marker_begin(struct zink_screen *screen, const char *fmt, ...);
+void
+zink_screen_debug_marker_end(struct zink_screen *screen, bool emitted);
 
 #define warn_missing_feature(warned, feat) \
    do { \

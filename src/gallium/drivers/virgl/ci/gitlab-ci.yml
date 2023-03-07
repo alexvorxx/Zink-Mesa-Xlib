@@ -6,7 +6,7 @@
     GALLIVM_PERF: nopt
     FLAKES_CHANNEL: "#virgl-ci"
   script:
-    - xvfb-run --server-args='-noreset' sh -c "GALLIUM_DRIVER=virpipe install/deqp-runner.sh"
+    - xvfb-run --server-args='-noreset' bash -c ". $SCRIPTS_DIR/setup-test-env.sh && GALLIUM_DRIVER=virpipe install/deqp-runner.sh"
 
 virpipe-on-gl:
   extends:
@@ -64,6 +64,7 @@ virgl-traces:
   tags:
     - kvm
   script:
+    - . "$SCRIPTS_DIR"/setup-test-env.sh
     # Use all threads for rendering and only run one job at a time
     # Couldn't get GitLab CI to correctly substitute the variable in the yaml
     - LP_NUM_THREADS=${FDO_CI_CONCURRENT} FDO_CI_CONCURRENT=1 install/crosvm-runner.sh install/piglit/piglit-traces.sh

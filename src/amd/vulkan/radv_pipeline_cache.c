@@ -178,7 +178,7 @@ radv_hash_rt_stages(struct mesa_sha1 *ctx, const VkPipelineShaderStageCreateInfo
 void
 radv_hash_rt_shaders(unsigned char *hash, const VkRayTracingPipelineCreateInfoKHR *pCreateInfo,
                      const struct radv_pipeline_key *key,
-                     const struct radv_pipeline_group_handle *group_handles, uint32_t flags)
+                     const struct radv_ray_tracing_module *groups, uint32_t flags)
 {
    RADV_FROM_HANDLE(radv_pipeline_layout, layout, pCreateInfo->layout);
    struct mesa_sha1 ctx;
@@ -191,9 +191,6 @@ radv_hash_rt_shaders(unsigned char *hash, const VkRayTracingPipelineCreateInfoKH
 
    radv_hash_rt_stages(&ctx, pCreateInfo->pStages, pCreateInfo->stageCount);
 
-   _mesa_sha1_update(&ctx, group_handles,
-                     sizeof(struct radv_pipeline_group_handle) * pCreateInfo->groupCount);
-
    for (uint32_t i = 0; i < pCreateInfo->groupCount; i++) {
       _mesa_sha1_update(&ctx, &pCreateInfo->pGroups[i].type,
                         sizeof(pCreateInfo->pGroups[i].type));
@@ -205,6 +202,7 @@ radv_hash_rt_shaders(unsigned char *hash, const VkRayTracingPipelineCreateInfoKH
                         sizeof(pCreateInfo->pGroups[i].closestHitShader));
       _mesa_sha1_update(&ctx, &pCreateInfo->pGroups[i].intersectionShader,
                         sizeof(pCreateInfo->pGroups[i].intersectionShader));
+      _mesa_sha1_update(&ctx, &groups[i].handle, sizeof(struct radv_pipeline_group_handle));
    }
 
    const uint32_t pipeline_flags =
@@ -325,10 +323,11 @@ radv_pipeline_cache_add_entry(struct radv_pipeline_cache *cache, struct cache_en
 }
 
 bool
-radv_create_shaders_from_pipeline_cache(
-   struct radv_device *device, struct radv_pipeline_cache *cache, const unsigned char *sha1,
-   struct radv_pipeline *pipeline, struct radv_pipeline_shader_stack_size **stack_sizes,
-   uint32_t *num_stack_sizes, bool *found_in_application_cache)
+radv_create_shaders_from_pipeline_cache(struct radv_device *device,
+                                        struct radv_pipeline_cache *cache,
+                                        const unsigned char *sha1, struct radv_pipeline *pipeline,
+                                        struct radv_ray_tracing_module *rt_groups,
+                                        uint32_t num_rt_groups, bool *found_in_application_cache)
 {
    struct cache_entry *entry;
 
@@ -404,17 +403,11 @@ radv_create_shaders_from_pipeline_cache(
       pipeline->shaders[MESA_SHADER_COMPUTE] = NULL;
    }
 
-   if (num_stack_sizes) {
-      *num_stack_sizes = entry->num_stack_sizes;
-      if (entry->num_stack_sizes) {
-         *stack_sizes = malloc(entry->num_stack_sizes * sizeof(**stack_sizes));
-         memcpy(*stack_sizes, p, entry->num_stack_sizes * sizeof(**stack_sizes));
-      }
-   } else {
-      assert(!entry->num_stack_sizes);
+   assert(num_rt_groups == entry->num_stack_sizes);
+   for (int i = 0; i < num_rt_groups; ++i) {
+      memcpy(&rt_groups[i].stack_size, p, sizeof(struct radv_pipeline_shader_stack_size));
    }
-
-   p += entry->num_stack_sizes * sizeof(**stack_sizes);
+   p += entry->num_stack_sizes * sizeof(struct radv_pipeline_shader_stack_size);
 
    if (device->instance->debug_flags & RADV_DEBUG_NO_MEMORY_CACHE && cache == device->mem_cache)
       vk_free(&cache->alloc, entry);
@@ -433,8 +426,8 @@ void
 radv_pipeline_cache_insert_shaders(struct radv_device *device, struct radv_pipeline_cache *cache,
                                    const unsigned char *sha1, struct radv_pipeline *pipeline,
                                    struct radv_shader_binary *const *binaries,
-                                   const struct radv_pipeline_shader_stack_size *stack_sizes,
-                                   uint32_t num_stack_sizes)
+                                   const struct radv_ray_tracing_module *rt_groups,
+                                   uint32_t num_rt_groups)
 {
    if (!cache)
       cache = device->mem_cache;
@@ -464,7 +457,7 @@ radv_pipeline_cache_insert_shaders(struct radv_device *device, struct radv_pipel
       return;
    }
 
-   size_t size = sizeof(*entry) + sizeof(*stack_sizes) * num_stack_sizes;
+   size_t size = sizeof(*entry) + sizeof(struct radv_pipeline_shader_stack_size) * num_rt_groups;
    for (int i = 0; i < MESA_VULKAN_SHADER_STAGES; ++i)
       if (pipeline->shaders[i])
          size += binaries[i]->total_size;
@@ -492,11 +485,11 @@ radv_pipeline_cache_insert_shaders(struct radv_device *device, struct radv_pipel
       p += binaries[i]->total_size;
    }
 
-   if (num_stack_sizes) {
-      memcpy(p, stack_sizes, sizeof(*stack_sizes) * num_stack_sizes);
-      p += sizeof(*stack_sizes) * num_stack_sizes;
+   for (int i = 0; i < num_rt_groups; ++i) {
+      memcpy(p, &rt_groups->stack_size, sizeof(struct radv_pipeline_shader_stack_size));
+      p += sizeof(struct radv_pipeline_shader_stack_size);
    }
-   entry->num_stack_sizes = num_stack_sizes;
+   entry->num_stack_sizes = num_rt_groups;
 
    // Make valgrind happy by filling the alignment hole at the end.
    assert(p == (char *)entry + size_without_align);

@@ -1,6 +1,6 @@
 #!/bin/bash
 
-echo -e "\e[0Ksection_start:$(date +%s):test_setup[collapsed=true]\r\e[0Kpreparing test setup"
+section_start test_setup "deqp: preparing test setup"
 
 set -ex
 
@@ -129,13 +129,6 @@ report_load() {
     echo "# of CPU cores: $(cat /proc/cpuinfo | grep processor | wc -l)"
 }
 
-# wrapper to supress +x to avoid spamming the log
-quiet() {
-    set +x
-    "$@"
-    set -x
-}
-
 if [ "$GALLIUM_DRIVER" = "virpipe" ]; then
     # deqp is to use virpipe, and virgl_test_server llvmpipe
     export GALLIUM_DRIVER="$GALLIUM_DRIVER"
@@ -160,11 +153,7 @@ if [ -z "$DEQP_SUITE" ]; then
     fi
 fi
 
-set +x
-echo -e "\e[0Ksection_end:$(date +%s):test_setup\r\e[0K"
-
-echo -e "\e[0Ksection_start:$(date +%s):deqp[collapsed=false]\r\e[0Kdeqp-runner"
-set -x
+uncollapsed_section_switch deqp "deqp: deqp-runner"
 
 set +e
 if [ -z "$DEQP_SUITE" ]; then
@@ -197,11 +186,10 @@ fi
 DEQP_EXITCODE=$?
 
 set +x
-echo -e "\e[0Ksection_end:$(date +%s):deqp\r\e[0K"
 
 report_load
 
-echo -e "\e[0Ksection_start:$(date +%s):test_post_process[collapsed=true]\r\e[0Kpost-processing test results"
+section_switch test_post_process "deqp: post-processing test results"
 set -x
 
 # Remove all but the first 50 individual XML files uploaded as artifacts, to
@@ -243,6 +231,6 @@ fi
 # 0.17s on a Ryzen 5950X (16 threads, 0.95s when limited to 1 thread).
 zstd --rm -T0 -8qc $RESULTS/results.csv -o $RESULTS/results.csv.zst
 
-echo -e "\e[0Ksection_end:$(date +%s):test_post_process\r\e[0K"
+section_end test_post_process
 
 exit $DEQP_EXITCODE

@@ -139,8 +139,7 @@ radv_device_init_meta_itob_state(struct radv_device *device)
    };
 
    result = radv_compute_pipeline_create(radv_device_to_handle(device), device->meta_state.cache,
-                                         &vk_pipeline_info, NULL, &device->meta_state.itob.pipeline,
-                                         true);
+                                         &vk_pipeline_info, NULL, &device->meta_state.itob.pipeline);
    if (result != VK_SUCCESS)
       goto fail;
 
@@ -161,7 +160,7 @@ radv_device_init_meta_itob_state(struct radv_device *device)
 
    result = radv_compute_pipeline_create(radv_device_to_handle(device), device->meta_state.cache,
                                          &vk_pipeline_info_3d, NULL,
-                                         &device->meta_state.itob.pipeline_3d, true);
+                                         &device->meta_state.itob.pipeline_3d);
    if (result != VK_SUCCESS)
       goto fail;
 
@@ -299,8 +298,7 @@ radv_device_init_meta_btoi_state(struct radv_device *device)
    };
 
    result = radv_compute_pipeline_create(radv_device_to_handle(device), device->meta_state.cache,
-                                         &vk_pipeline_info, NULL, &device->meta_state.btoi.pipeline,
-                                         true);
+                                         &vk_pipeline_info, NULL, &device->meta_state.btoi.pipeline);
    if (result != VK_SUCCESS)
       goto fail;
 
@@ -321,7 +319,7 @@ radv_device_init_meta_btoi_state(struct radv_device *device)
 
    result = radv_compute_pipeline_create(radv_device_to_handle(device), device->meta_state.cache,
                                          &vk_pipeline_info_3d, NULL,
-                                         &device->meta_state.btoi.pipeline_3d, true);
+                                         &device->meta_state.btoi.pipeline_3d);
 
    ralloc_free(cs_3d);
    ralloc_free(cs);
@@ -458,7 +456,7 @@ radv_device_init_meta_btoi_r32g32b32_state(struct radv_device *device)
 
    result = radv_compute_pipeline_create(radv_device_to_handle(device), device->meta_state.cache,
                                          &vk_pipeline_info, NULL,
-                                         &device->meta_state.btoi_r32g32b32.pipeline, true);
+                                         &device->meta_state.btoi_r32g32b32.pipeline);
 
 fail:
    ralloc_free(cs);
@@ -558,7 +556,7 @@ create_itoi_pipeline(struct radv_device *device, int samples, VkPipeline *pipeli
    };
 
    result = radv_compute_pipeline_create(radv_device_to_handle(device), state->cache,
-                                         &vk_pipeline_info, NULL, pipeline, true);
+                                         &vk_pipeline_info, NULL, pipeline);
    ralloc_free(cs);
    return result;
 }
@@ -636,7 +634,7 @@ radv_device_init_meta_itoi_state(struct radv_device *device)
 
    result = radv_compute_pipeline_create(radv_device_to_handle(device), device->meta_state.cache,
                                          &vk_pipeline_info_3d, NULL,
-                                         &device->meta_state.itoi.pipeline_3d, true);
+                                         &device->meta_state.itoi.pipeline_3d);
    ralloc_free(cs_3d);
 
    return VK_SUCCESS;
@@ -781,7 +779,7 @@ radv_device_init_meta_itoi_r32g32b32_state(struct radv_device *device)
 
    result = radv_compute_pipeline_create(radv_device_to_handle(device), device->meta_state.cache,
                                          &vk_pipeline_info, NULL,
-                                         &device->meta_state.itoi_r32g32b32.pipeline, true);
+                                         &device->meta_state.itoi_r32g32b32.pipeline);
 
 fail:
    ralloc_free(cs);
@@ -860,7 +858,7 @@ create_cleari_pipeline(struct radv_device *device, int samples, VkPipeline *pipe
    };
 
    result = radv_compute_pipeline_create(radv_device_to_handle(device), device->meta_state.cache,
-                                         &vk_pipeline_info, NULL, pipeline, true);
+                                         &vk_pipeline_info, NULL, pipeline);
    ralloc_free(cs);
    return result;
 }
@@ -933,7 +931,7 @@ radv_device_init_meta_cleari_state(struct radv_device *device)
 
    result = radv_compute_pipeline_create(radv_device_to_handle(device), device->meta_state.cache,
                                          &vk_pipeline_info_3d, NULL,
-                                         &device->meta_state.cleari.pipeline_3d, true);
+                                         &device->meta_state.cleari.pipeline_3d);
    ralloc_free(cs_3d);
 
    return VK_SUCCESS;
@@ -1051,7 +1049,7 @@ radv_device_init_meta_cleari_r32g32b32_state(struct radv_device *device)
 
    result = radv_compute_pipeline_create(radv_device_to_handle(device), device->meta_state.cache,
                                          &vk_pipeline_info, NULL,
-                                         &device->meta_state.cleari_r32g32b32.pipeline, true);
+                                         &device->meta_state.cleari_r32g32b32.pipeline);
 
 fail:
    ralloc_free(cs);

@@ -40,7 +40,7 @@ build_background_op(nir_builder *b, enum agx_meta_op op, unsigned rt,
       nir_ssa_def *coord = nir_channels(b, fragcoord, 0x3);
 
       nir_tex_instr *tex = nir_tex_instr_create(b->shader, msaa ? 2 : 1);
-      /* The type doesn't matter as long as it matches the variable type */
+      /* The type doesn't matter as long as it matches the store */
       tex->dest_type = nir_type_uint32;
       tex->sampler_dim = msaa ? GLSL_SAMPLER_DIM_MS : GLSL_SAMPLER_DIM_2D;
       tex->op = nir_texop_tex;
@@ -85,13 +85,13 @@ agx_build_background_shader(struct agx_meta_cache *cache,
       bool msaa = key->tib.nr_samples > 1;
       assert(nr > 0);
 
-      nir_variable *out =
-         nir_variable_create(b.shader, nir_var_shader_out,
-                             glsl_vector_type(GLSL_TYPE_UINT, nr), "output");
-      out->data.location = FRAG_RESULT_DATA0 + rt;
+      nir_store_output(&b, build_background_op(&b, key->op[rt], rt, nr, msaa),
+                       nir_imm_int(&b, 0), .write_mask = BITFIELD_MASK(nr),
+                       .src_type = nir_type_uint32,
+                       .io_semantics.location = FRAG_RESULT_DATA0 + rt,
+                       .io_semantics.num_slots = 1);
 
-      nir_store_var(&b, out, build_background_op(&b, key->op[rt], rt, nr, msaa),
-                    0xFF);
+      b.shader->info.outputs_written |= BITFIELD64_BIT(FRAG_RESULT_DATA0 + rt);
    }
 
    return agx_compile_meta_shader(cache, b.shader, &compiler_key, &key->tib);

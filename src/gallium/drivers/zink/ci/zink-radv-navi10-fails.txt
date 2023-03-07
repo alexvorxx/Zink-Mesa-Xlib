@@ -1,7 +1,3 @@
-# CTS bug, see https://gitlab.khronos.org/Tracker/vk-gl-cts/-/issues/4108
-dEQP-GLES3.functional.shaders.texture_functions.textureprojlodoffset.sampler2dshadow_vertex,Fail
-dEQP-GLES3.functional.shaders.texture_functions.textureprojoffset.sampler2dshadow_vertex,Fail
-
 # kopper
 glx@glx-multi-window-single-context,Crash
 spec@egl_chromium_sync_control@conformance@eglGetSyncValuesCHROMIUM_ust_test,Fail
@@ -428,3 +424,7 @@ spec@egl 1.4@egl-ext_egl_image_storage,Fail
 
 # Introduced by a8d2b288eee3 ("ci/piglit: 2023-01-19 uprev")
 spec@!opengl 1.1@line-smooth-stipple,Fail
+
+# New CTS failures in 1.3.5.0
+KHR-GL46.polygon_offset_clamp.PolygonOffsetClampMinMax,Fail
+KHR-GL46.polygon_offset_clamp.PolygonOffsetClampZeroInfinity,Fail

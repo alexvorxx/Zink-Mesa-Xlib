@@ -77,7 +77,16 @@ agx_upload_uniforms(struct agx_batch *batch, uint64_t textures,
    struct agx_context *ctx = batch->ctx;
    struct agx_stage *st = &ctx->stage[stage];
 
-   struct agx_draw_uniforms uniforms = {.texture_base = textures};
+   struct agx_ptr root_ptr = agx_pool_alloc_aligned(
+      &batch->pool, sizeof(struct agx_draw_uniforms), 16);
+
+   struct agx_draw_uniforms uniforms = {
+      .tables =
+         {
+            [AGX_SYSVAL_TABLE_ROOT] = root_ptr.gpu,
+         },
+      .texture_base = textures,
+   };
 
    u_foreach_bit(s, st->valid_samplers) {
       uniforms.lod_bias[s] = st->samplers[s]->lod_bias_as_fp16;
@@ -101,5 +110,6 @@ agx_upload_uniforms(struct agx_batch *batch, uint64_t textures,
              sizeof(ctx->blend_color));
    }
 
-   return agx_pool_upload(&batch->pool, &uniforms, sizeof(uniforms));
+   memcpy(root_ptr.cpu, &uniforms, sizeof(uniforms));
+   return root_ptr.gpu;
 }

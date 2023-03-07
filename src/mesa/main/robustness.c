@@ -105,7 +105,6 @@ _mesa_set_context_lost_dispatch(struct gl_context *ctx)
 
    ctx->CurrentServerDispatch = ctx->ContextLost;
    _glapi_set_dispatch(ctx->CurrentServerDispatch);
-   _mesa_glthread_update_draw_always_async(ctx);
 }
 
 /**

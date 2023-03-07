@@ -68,7 +68,17 @@ agx_so_target(struct pipe_stream_output_target *target)
  * compiler. The layout is up to us and handled by our code lowering system
  * values to uniforms.
  */
+enum agx_sysval_table {
+   AGX_SYSVAL_TABLE_ROOT,
+   AGX_SYSVAL_TABLE_GRID,
+   AGX_NUM_SYSVAL_TABLES
+};
+
+/* Root system value table */
 struct PACKED agx_draw_uniforms {
+   /* Pointers to the system value tables themselves (for indirection) */
+   uint64_t tables[AGX_NUM_SYSVAL_TABLES];
+
    /* Pointer to binding table for texture descriptor, or 0 if none */
    uint64_t texture_base;
 
@@ -102,11 +112,14 @@ struct agx_push_range {
    /* Base 16-bit uniform to push to */
    uint16_t uniform;
 
-   /* Offset into agx_draw_uniforms to push in bytes */
+   /* Offset into the table to push in bytes */
    uint16_t offset;
 
+   /* Which table to push from */
+   uint8_t table;
+
    /* Number of consecutive 16-bit uniforms to push */
-   size_t length;
+   uint8_t length;
 };
 
 struct agx_compiled_shader {
@@ -127,6 +140,9 @@ struct agx_uncompiled_shader {
    const struct nir_shader *nir;
    uint8_t nir_sha1[20];
    struct hash_table *variants;
+
+   /* For compute kernels */
+   unsigned static_shared_mem;
 
    /* Set on VS, passed to FS for linkage */
    unsigned base_varying;
@@ -154,6 +170,9 @@ struct agx_stage {
 
    unsigned sampler_count, texture_count;
    uint32_t valid_samplers;
+};
+
+union agx_batch_result {
 };
 
 struct agx_batch {
@@ -198,6 +217,10 @@ struct agx_batch {
     */
    struct util_dynarray occlusion_queries;
    struct agx_ptr occlusion_buffer;
+
+   /* Result buffer where the kernel places command execution information */
+   union agx_batch_result *result;
+   size_t result_off;
 };
 
 struct agx_zsa {
@@ -279,6 +302,7 @@ struct agx_context {
    } batches;
 
    struct agx_batch *batch;
+   struct agx_bo *result_buf;
 
    struct pipe_vertex_buffer vertex_buffers[PIPE_MAX_ATTRIBS];
    uint32_t vb_mask;
@@ -295,6 +319,14 @@ struct agx_context {
    struct agx_streamout streamout;
    uint16_t sample_mask;
    struct pipe_framebuffer_state framebuffer;
+
+   /* During a launch_grid call, a GPU pointer to
+    *
+    *    uint32_t num_workgroups[3];
+    *
+    * When indirect dispatch is used, that's just the indirect dispatch buffer.
+    */
+   uint64_t grid_info;
 
    struct pipe_query *cond_query;
    bool cond_cond;

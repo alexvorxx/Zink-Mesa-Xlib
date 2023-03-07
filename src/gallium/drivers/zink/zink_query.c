@@ -526,6 +526,7 @@ zink_create_query(struct pipe_context *pctx,
    struct zink_batch *batch = &zink_context(pctx)->batch;
    batch->has_work = true;
    query->needs_reset = true;
+   query->predicate_dirty = true;
    if (query->type == PIPE_QUERY_TIMESTAMP) {
       query->active = true;
       /* defer pool reset until end_query since we're guaranteed to be threadsafe then */
@@ -759,12 +760,13 @@ copy_pool_results_to_buffer(struct zink_context *ctx, struct zink_query *query, 
    if (flags & VK_QUERY_RESULT_WITH_AVAILABILITY_BIT)
       result_size += type_size;
 
-   bool marker = zink_cmd_debug_marker_begin(ctx, "update_qbo(%s: id=%u, num_results=%d)", vk_QueryType_to_str(query->vkqtype), query_id, num_results);
+   bool marker = zink_cmd_debug_marker_begin(ctx, VK_NULL_HANDLE, "update_qbo(%s: id=%u, num_results=%d)", vk_QueryType_to_str(query->vkqtype), query_id, num_results);
 
    zink_batch_no_rp(ctx);
    /* if it's a single query that doesn't need special handling, we can copy it and be done */
    zink_batch_reference_resource_rw(batch, res, true);
-   zink_screen(ctx->base.screen)->buffer_barrier(ctx, res, VK_ACCESS_TRANSFER_WRITE_BIT, 0);
+   res->obj->access = VK_ACCESS_TRANSFER_WRITE_BIT;
+   res->obj->access_stage = VK_PIPELINE_STAGE_TRANSFER_BIT;
    util_range_add(&res->base.b, &res->valid_buffer_range, offset, offset + result_size);
    assert(query_id < NUM_QUERIES);
    res->obj->unordered_read = res->obj->unordered_write = false;
@@ -824,14 +826,25 @@ update_qbo(struct zink_context *ctx, struct zink_query *q)
    bool is_timestamp = q->type == PIPE_QUERY_TIMESTAMP;
    /* timestamp queries just write to offset 0 always */
    int num_queries = get_num_queries(q);
-   for (unsigned j = q->start_offset; j < num_starts; j++) {
-      unsigned cur_offset = q->curr_qbo->num_results * get_num_results(q) * sizeof(uint64_t);
-      for (unsigned i = 0; i < num_queries; i++) {
+   unsigned num_results = qbo->num_results;
+   for (unsigned i = 0; i < num_queries; i++) {
+      unsigned start_offset = q->start_offset;
+      while (start_offset < num_starts) {
+         unsigned num_merged_copies = 0;
+         VkQueryPool qp = starts[start_offset].vkq[i]->pool->query_pool;
+         unsigned base_id = starts[start_offset].vkq[i]->query_id;
+         /* iterate over all the starts to see how many can be merged */
+         for (unsigned j = start_offset; j < num_starts; j++, num_merged_copies++) {
+            if (starts[j].vkq[i]->pool->query_pool != qp || starts[j].vkq[i]->query_id != base_id + num_merged_copies)
+               break;
+         }
+         assert(num_merged_copies);
+         unsigned cur_offset = start_offset * get_num_results(q) * sizeof(uint64_t);
          unsigned offset = is_timestamp ? 0 : cur_offset;
-         copy_pool_results_to_buffer(ctx, q, starts[j].vkq[i]->pool->query_pool, starts[j].vkq[i]->query_id,
+         copy_pool_results_to_buffer(ctx, q, starts[start_offset].vkq[i]->pool->query_pool, starts[start_offset].vkq[i]->query_id,
                                     zink_resource(qbo->buffers[i]),
                                     offset,
-                                    1,
+                                    num_merged_copies,
                                     /*
                                        there is an implicit execution dependency from
                                        each such query command to all query commands previously submitted to the same queue. There
@@ -842,12 +855,12 @@ update_qbo(struct zink_context *ctx, struct zink_query *q)
                                     * - Chapter 18. Queries
                                     */
                                     VK_QUERY_RESULT_64_BIT | VK_QUERY_RESULT_WAIT_BIT);
-      }
-      if (!is_timestamp) {
-         q->curr_qbo->num_results++;
-         q->start_offset++;
+         if (!is_timestamp)
+            q->curr_qbo->num_results += num_merged_copies;
+         start_offset += num_merged_copies;
       }
    }
+   q->start_offset += q->curr_qbo->num_results - num_results;
 
 
    if (is_timestamp)
@@ -959,6 +972,8 @@ zink_begin_query(struct pipe_context *pctx,
       /* never directly start queries out of renderpass, always defer */
       list_addtail(&query->active_list, &ctx->suspended_queries);
       query->suspended = true;
+      if (query->type == PIPE_QUERY_PRIMITIVES_GENERATED)
+         ctx->primitives_generated_suspended = query->needs_rast_discard_workaround;
    }
 
    return true;
@@ -1129,6 +1144,8 @@ suspend_queries(struct zink_context *ctx, bool rp_only)
           */
          list_addtail(&query->active_list, &ctx->suspended_queries);
          query->suspended = true;
+         if (query->type == PIPE_QUERY_PRIMITIVES_GENERATED)
+            ctx->primitives_generated_suspended = query->needs_rast_discard_workaround;
       }
       suspend_query(ctx, query);
    }
@@ -1147,6 +1164,8 @@ zink_resume_queries(struct zink_context *ctx, struct zink_batch *batch)
    LIST_FOR_EACH_ENTRY_SAFE(query, next, &ctx->suspended_queries, active_list) {
       list_delinit(&query->active_list);
       query->suspended = false;
+      if (query->type == PIPE_QUERY_PRIMITIVES_GENERATED)
+         ctx->primitives_generated_suspended = false;
       if (query->needs_update && !ctx->batch.in_rp)
          update_qbo(ctx, query);
       begin_query(ctx, batch, query);
@@ -1227,7 +1246,7 @@ zink_set_active_query_state(struct pipe_context *pctx, bool enable)
    struct zink_batch *batch = &ctx->batch;
    if (ctx->queries_disabled)
       zink_suspend_queries(ctx, batch);
-   else
+   else if (ctx->batch.in_rp)
       zink_resume_queries(ctx, batch);
 }
 

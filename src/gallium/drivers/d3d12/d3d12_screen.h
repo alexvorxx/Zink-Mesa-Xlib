@@ -83,6 +83,9 @@ struct d3d12_screen {
    unsigned context_id_list[16];
    unsigned context_id_count;
 
+   struct set* varying_info_set;
+   mtx_t varying_info_mutex;
+
    struct slab_parent_pool transfer_pool;
    struct pb_manager *bufmgr;
    struct pb_manager *cache_bufmgr;

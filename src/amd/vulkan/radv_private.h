@@ -412,13 +412,15 @@ struct radv_pipeline_shader_stack_size;
 
 bool radv_create_shaders_from_pipeline_cache(
    struct radv_device *device, struct radv_pipeline_cache *cache, const unsigned char *sha1,
-   struct radv_pipeline *pipeline, struct radv_pipeline_shader_stack_size **stack_sizes,
-   uint32_t *num_stack_sizes, bool *found_in_application_cache);
+   struct radv_pipeline *pipeline, struct radv_ray_tracing_module *rt_groups,
+   uint32_t num_rt_groups, bool *found_in_application_cache);
 
-void radv_pipeline_cache_insert_shaders(
-   struct radv_device *device, struct radv_pipeline_cache *cache, const unsigned char *sha1,
-   struct radv_pipeline *pipeline, struct radv_shader_binary *const *binaries,
-   const struct radv_pipeline_shader_stack_size *stack_sizes, uint32_t num_stack_sizes);
+void radv_pipeline_cache_insert_shaders(struct radv_device *device,
+                                        struct radv_pipeline_cache *cache,
+                                        const unsigned char *sha1, struct radv_pipeline *pipeline,
+                                        struct radv_shader_binary *const *binaries,
+                                        const struct radv_ray_tracing_module *rt_groups,
+                                        uint32_t num_rt_groups);
 
 enum radv_blit_ds_layout {
    RADV_BLIT_DS_LAYOUT_TILE_ENABLE,
@@ -989,7 +991,7 @@ struct radv_device {
    struct radv_rra_trace_data rra_trace;
 
    /* Trap handler. */
-   struct radv_trap_handler_shader *trap_handler_shader;
+   struct radv_shader *trap_handler_shader;
    struct radeon_winsys_bo *tma_bo; /* Trap Memory Address */
    uint32_t *tma_ptr;
 
@@ -1989,7 +1991,7 @@ struct radv_event {
 #define RADV_HASH_SHADER_NO_FMASK              (1 << 19)
 #define RADV_HASH_SHADER_NGG_STREAMOUT         (1 << 20)
 
-struct radv_pipeline_group_handle;
+struct radv_ray_tracing_module;
 struct radv_pipeline_key;
 
 void radv_pipeline_stage_init(const VkPipelineShaderStageCreateInfo *sinfo,
@@ -2004,7 +2006,7 @@ void radv_hash_rt_stages(struct mesa_sha1 *ctx, const VkPipelineShaderStageCreat
 
 void radv_hash_rt_shaders(unsigned char *hash, const VkRayTracingPipelineCreateInfoKHR *pCreateInfo,
                           const struct radv_pipeline_key *key,
-                          const struct radv_pipeline_group_handle *group_handles, uint32_t flags);
+                          const struct radv_ray_tracing_module *groups, uint32_t flags);
 
 uint32_t radv_get_hash_flags(const struct radv_device *device, bool stats);
 
@@ -2204,6 +2206,11 @@ struct radv_compute_pipeline {
    bool cs_regalloc_hang_bug;
 };
 
+struct radv_ray_tracing_module {
+   struct radv_pipeline_group_handle handle;
+   struct radv_pipeline_shader_stack_size stack_size;
+};
+
 struct radv_library_pipeline {
    struct radv_pipeline base;
 
@@ -2213,13 +2220,13 @@ struct radv_library_pipeline {
    unsigned stage_count;
    VkPipelineShaderStageCreateInfo *stages;
    unsigned group_count;
-   VkRayTracingShaderGroupCreateInfoKHR *groups;
+   VkRayTracingShaderGroupCreateInfoKHR *group_infos;
    VkPipelineShaderStageModuleIdentifierCreateInfoEXT *identifiers;
    struct {
       uint8_t sha1[SHA1_DIGEST_LENGTH];
    } *hashes;
 
-   struct radv_pipeline_group_handle *group_handles;
+   struct radv_ray_tracing_module groups[];
 };
 
 struct radv_graphics_lib_pipeline {
@@ -2235,10 +2242,9 @@ struct radv_graphics_lib_pipeline {
 struct radv_ray_tracing_pipeline {
    struct radv_compute_pipeline base;
 
-   struct radv_pipeline_group_handle *group_handles;
-   struct radv_pipeline_shader_stack_size *stack_sizes;
    uint32_t group_count;
    uint32_t stack_size;
+   struct radv_ray_tracing_module groups[];
 };
 
 #define RADV_DECL_PIPELINE_DOWNCAST(pipe_type, pipe_enum)            \
@@ -2325,13 +2331,12 @@ void radv_pipeline_init(struct radv_device *device, struct radv_pipeline *pipeli
 VkResult radv_graphics_pipeline_create(VkDevice device, VkPipelineCache cache,
                                        const VkGraphicsPipelineCreateInfo *pCreateInfo,
                                        const struct radv_graphics_pipeline_create_info *extra,
-                                       const VkAllocationCallbacks *alloc, VkPipeline *pPipeline,
-                                       bool is_internal);
+                                       const VkAllocationCallbacks *alloc, VkPipeline *pPipeline);
 
 VkResult radv_compute_pipeline_create(VkDevice _device, VkPipelineCache _cache,
                                       const VkComputePipelineCreateInfo *pCreateInfo,
                                       const VkAllocationCallbacks *pAllocator,
-                                      VkPipeline *pPipeline, bool is_internal);
+                                      VkPipeline *pPipeline);
 
 bool radv_pipeline_capture_shader_stats(const struct radv_device *device,
                                         VkPipelineCreateFlags flags);

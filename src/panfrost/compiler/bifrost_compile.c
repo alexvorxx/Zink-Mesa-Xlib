@@ -1640,11 +1640,6 @@ bi_emit_intrinsic(bi_builder *b, nir_intrinsic_instr *instr)
       bi_emit_store(b, instr, BI_SEG_WLS);
       break;
 
-   case nir_intrinsic_control_barrier:
-      assert(b->shader->stage != MESA_SHADER_FRAGMENT);
-      bi_barrier(b);
-      break;
-
    case nir_intrinsic_scoped_barrier:
       if (nir_intrinsic_execution_scope(instr) != NIR_SCOPE_NONE) {
          assert(b->shader->stage != MESA_SHADER_FRAGMENT);
@@ -3509,19 +3504,10 @@ bi_emit_texc(bi_builder *b, nir_tex_instr *instr)
          break;
 
       case nir_tex_src_texture_offset:
-         if (instr->texture_index)
-            index =
-               bi_iadd_u32(b, index, bi_imm_u32(instr->texture_index), false);
-
          dregs[BIFROST_TEX_DREG_TEXTURE] = index;
-
          break;
 
       case nir_tex_src_sampler_offset:
-         if (instr->sampler_index)
-            index =
-               bi_iadd_u32(b, index, bi_imm_u32(instr->sampler_index), false);
-
          dregs[BIFROST_TEX_DREG_SAMPLER] = index;
          break;
 
@@ -3697,12 +3683,10 @@ bi_emit_tex_valhall(bi_builder *b, nir_tex_instr *instr)
          break;
 
       case nir_tex_src_texture_offset:
-         assert(instr->texture_index == 0);
          texture = index;
          break;
 
       case nir_tex_src_sampler_offset:
-         assert(instr->sampler_index == 0);
          sampler = index;
          break;
 
@@ -4512,6 +4496,7 @@ bi_optimize_nir(nir_shader *nir, unsigned gpu_id, bool is_blend)
       .lower_tg4_broadcom_swizzle = true,
       .lower_txd = true,
       .lower_invalid_implicit_lod = true,
+      .lower_index_to_offset = true,
    };
 
    NIR_PASS(progress, nir, pan_nir_lower_64bit_intrin);

@@ -55,6 +55,7 @@
 extern struct pipe_context* zink_xlib_context;
 
 static int num_screens = 0;
+bool zink_tracing = false;
 
 #if DETECT_OS_WINDOWS
 #include <io.h>
@@ -2671,7 +2672,7 @@ init_driver_workarounds(struct zink_screen *screen)
    case VK_DRIVER_ID_QUALCOMM_PROPRIETARY:
    case VK_DRIVER_ID_BROADCOM_PROPRIETARY:
    case VK_DRIVER_ID_ARM_PROPRIETARY:
-      screen->driver_workarounds.track_renderpasses = true;
+      screen->driver_workarounds.track_renderpasses = screen->info.primgen_feats.primitivesGeneratedQueryWithRasterizerDiscard || screen->info.have_EXT_color_write_enable;
       break;
    default:
       break;
@@ -3167,6 +3168,10 @@ zink_internal_create_screen(const struct pipe_screen_config *config)
       screen->info.have_EXT_graphics_pipeline_library = false;
 
    screen->screen_id = p_atomic_inc_return(&num_screens);
+   zink_tracing = screen->instance_info.have_EXT_debug_utils &&
+                  (u_trace_is_enabled(U_TRACE_TYPE_PERFETTO) || u_trace_is_enabled(U_TRACE_TYPE_MARKERS));
+
+   screen->frame_marker_emitted = zink_screen_debug_marker_begin(screen, "frame");
 
    return screen;
 
@@ -3215,4 +3220,36 @@ void zink_stub_function_not_loaded()
     */
    mesa_loge("ZINK: a Vulkan function was called without being loaded");
    abort();
+}
+
+bool
+zink_screen_debug_marker_begin(struct zink_screen *screen, const char *fmt, ...)
+{
+   if (!zink_tracing)
+      return false;
+
+   char *name;
+   va_list va;
+   va_start(va, fmt);
+   int ret = vasprintf(&name, fmt, va);
+   va_end(va);
+
+   if (ret == -1)
+      return false;
+
+   VkDebugUtilsLabelEXT info = { 0 };
+   info.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_LABEL_EXT;
+   info.pLabelName = name;
+
+   VKSCR(QueueBeginDebugUtilsLabelEXT)(screen->queue, &info);
+
+   free(name);
+   return true;
+}
+
+void
+zink_screen_debug_marker_end(struct zink_screen *screen, bool emitted)
+{
+   if (emitted)
+      VKSCR(QueueEndDebugUtilsLabelEXT)(screen->queue);
 }

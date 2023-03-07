@@ -48,17 +48,16 @@
 #include <GL/internal/dri_interface.h>
 #include <GL/internal/mesa_interface.h>
 #include "loader.h"
+#include "util/libdrm.h"
 #include "util/os_file.h"
 #include "util/os_misc.h"
 #include "git_sha1.h"
 
-#ifdef HAVE_LIBDRM
-#include <xf86drm.h>
 #define MAX_DRM_DEVICES 64
+
 #ifdef USE_DRICONF
 #include "util/xmlconfig.h"
 #include "util/driconf.h"
-#endif
 #endif
 
 #include "util/macros.h"
@@ -105,7 +104,6 @@ loader_open_device(const char *device_name)
 
 static char *loader_get_kernel_driver_name(int fd)
 {
-#if HAVE_LIBDRM
    char *driver;
    drmVersionPtr version = drmGetVersion(fd);
 
@@ -120,9 +118,6 @@ static char *loader_get_kernel_driver_name(int fd)
 
    drmFreeVersion(version);
    return driver;
-#else
-   return NULL;
-#endif
 }
 
 bool
@@ -135,7 +130,6 @@ is_kernel_i915(int fd)
    return is_i915;
 }
 
-#if defined(HAVE_LIBDRM)
 int
 loader_open_render_node(const char *name)
 {
@@ -417,28 +411,6 @@ bool loader_get_user_preferred_fd(int *fd_render_gpu, int *original_fd)
       *original_fd = *fd_render_gpu;
    return false;
 }
-#else
-int
-loader_open_render_node(const char *name)
-{
-   return -1;
-}
-
-char *
-loader_get_render_node(dev_t device)
-{
-   return NULL;
-}
-
-bool loader_get_user_preferred_fd(int *fd_render_gpu, int *original_fd)
-{
-   if (original_fd)
-      *original_fd = *fd_render_gpu;
-   return false;
-}
-#endif
-
-#if defined(HAVE_LIBDRM)
 
 static bool
 drm_get_pci_id_for_fd(int fd, int *vendor_id, int *chip_id)
@@ -461,7 +433,6 @@ drm_get_pci_id_for_fd(int fd, int *vendor_id, int *chip_id)
    drmFreeDevice(&device);
    return true;
 }
-#endif
 
 #ifdef __linux__
 static int loader_get_linux_pci_field(int maj, int min, const char *field)
@@ -509,22 +480,13 @@ loader_get_pci_id_for_fd(int fd, int *vendor_id, int *chip_id)
       return true;
 #endif
 
-#if HAVE_LIBDRM
    return drm_get_pci_id_for_fd(fd, vendor_id, chip_id);
-#endif
-   return false;
 }
 
 char *
 loader_get_device_name_for_fd(int fd)
 {
-   char *result = NULL;
-
-#if HAVE_LIBDRM
-   result = drmGetDeviceNameFromFd2(fd);
-#endif
-
-   return result;
+   return drmGetDeviceNameFromFd2(fd);
 }
 
 static char *
@@ -578,7 +540,7 @@ loader_get_driver_for_fd(int fd)
          return strdup(override);
    }
 
-#if defined(HAVE_LIBDRM) && defined(USE_DRICONF)
+#if defined(USE_DRICONF)
    driver = loader_get_dri_config_driver(fd);
    if (driver)
       return driver;

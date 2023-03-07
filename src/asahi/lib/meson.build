@@ -21,16 +21,10 @@
 
 dep_iokit = dependency('IOKit', required : false)
 
-if host_machine.system() == 'darwin'
-  agx_device = 'agx_device_macos.c'
-else
-  agx_device = 'agx_device.c'
-endif
-
 libasahi_lib_files = files(
   'agx_bo.c',
   'agx_border.c',
-  agx_device,
+  'agx_device.c',
   'agx_formats.c',
   'agx_meta.c',
   'agx_tilebuffer.c',
@@ -75,7 +69,7 @@ libasahi_lib = static_library(
   c_args : [no_override_init_args],
   gnu_symbol_visibility : 'hidden',
   link_with: [libasahi_decode],
-  dependencies: [dep_libdrm, dep_valgrind, idep_nir, dep_iokit],
+  dependencies: [dep_libdrm, dep_valgrind, idep_nir],
   build_by_default : false,
 )
 

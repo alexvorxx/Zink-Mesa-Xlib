@@ -872,7 +872,7 @@ radv_trap_handler_init(struct radv_device *device)
       return false;
    }
 
-   result = ws->buffer_make_resident(ws, device->trap_handler_shader->alloc->arena->bo, true);
+   result = ws->buffer_make_resident(ws, device->trap_handler_shader->bo, true);
    if (result != VK_SUCCESS)
       return false;
 
@@ -913,8 +913,8 @@ radv_trap_handler_finish(struct radv_device *device)
    struct radeon_winsys *ws = device->ws;
 
    if (unlikely(device->trap_handler_shader)) {
-      ws->buffer_make_resident(ws, device->trap_handler_shader->alloc->arena->bo, false);
-      radv_trap_handler_shader_destroy(device, device->trap_handler_shader);
+      ws->buffer_make_resident(ws, device->trap_handler_shader->bo, false);
+      radv_shader_unref(device, device->trap_handler_shader);
    }
 
    if (unlikely(device->tma_bo)) {

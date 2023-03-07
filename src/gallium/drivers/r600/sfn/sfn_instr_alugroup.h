@@ -58,6 +58,7 @@ public:
    bool end_group() const override { return true; }
 
    void set_scheduled() override;
+   bool replace_source(PRegister old_src, PVirtualValue new_src) override;
 
    void set_nesting_depth(int depth) { m_nesting_depth = depth; }
 
@@ -85,6 +86,8 @@ public:
    {
       m_readports_evaluator = rr;
    };
+
+   void update_readport_reserver();
 
    static bool has_t() { return s_max_slots == 5; }
 

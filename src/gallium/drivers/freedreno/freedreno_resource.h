@@ -137,7 +137,7 @@ struct fd_resource {
    /* bitmask of state this resource could potentially dirty when rebound,
     * see rebind_resource()
     */
-   enum fd_dirty_3d_state dirty;
+   BITMASK_ENUM(fd_dirty_3d_state) dirty;
 
    /* Sequence # incremented each time bo changes: */
    uint16_t seqno;
@@ -240,7 +240,7 @@ fd_resource_set_usage(struct pipe_resource *prsc, enum fd_dirty_3d_state usage)
    if (likely(rsc->dirty & usage))
       return;
    fd_resource_lock(rsc);
-   or_mask(rsc->dirty, usage);
+   rsc->dirty |= usage;
    fd_resource_unlock(rsc);
 }
 

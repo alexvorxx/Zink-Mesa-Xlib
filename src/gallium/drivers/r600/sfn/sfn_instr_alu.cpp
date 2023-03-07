@@ -390,8 +390,34 @@ AluInstr::can_copy_propagate() const
 bool
 AluInstr::replace_source(PRegister old_src, PVirtualValue new_src)
 {
+   if (!can_replace_source(old_src, new_src))
+      return false;
+
+   return do_replace_source(old_src, new_src);
+}
+
+bool AluInstr::do_replace_source(PRegister old_src, PVirtualValue new_src)
+{
    bool process = false;
 
+   for (unsigned i = 0; i < m_src.size(); ++i) {
+      if (old_src->equal_to(*m_src[i])) {
+         m_src[i] = new_src;
+         process = true;
+      }
+   }
+   if (process) {
+      auto r = new_src->as_register();
+      if (r)
+         r->add_use(this);
+      old_src->del_use(this);
+   }
+
+   return process;
+}
+
+bool AluInstr::can_replace_source(PRegister old_src, PVirtualValue new_src)
+{
    if (!check_readport_validation(old_src, new_src))
       return false;
 
@@ -420,56 +446,7 @@ AluInstr::replace_source(PRegister old_src, PVirtualValue new_src)
             return false;
       }
    }
-
-   /* If we have a parent group, we have to check the readports with the
-    * current constellation of the parent group
-    * REMARK: this is a bit fishy, because the parent group constellation
-    * has the fields for the old sourcess set, so we will reject more
-    * possibilities, but with this is becomes  conservative check, and this is
-    * fine.
-    * TODO: handle instructions that have to be greated as a group differently
-    * so we can get rid of this (mostly fp64 instructions that are multi-slot with
-    * more than just one dest value.*/
-   if (m_parent_group) {
-      AluReadportReservation read_port_check =
-         !m_parent_group ? AluReadportReservation() : m_parent_group->readport_reserer();
-
-      int nsrc = alu_ops.at(m_opcode).nsrc;
-      PVirtualValue src[3];
-
-      for (int s = 0; s < m_alu_slots; ++s) {
-         for (int i = 0; i < nsrc; ++i) {
-            auto old_s = m_src[i + nsrc * s];
-            src[i] = old_s->equal_to(*old_src) ? new_src : old_s;
-         }
-         AluBankSwizzle bs = alu_vec_012;
-         while (bs != alu_vec_unknown) {
-            AluReadportReservation rpc = read_port_check;
-            if (rpc.schedule_vec_src(src, nsrc, bs)) {
-               read_port_check = rpc;
-               break;
-            }
-            ++bs;
-         }
-         if (bs == alu_vec_unknown)
-            return false;
-      }
-      m_parent_group->set_readport_reserer(read_port_check);
-   }
-
-   for (unsigned i = 0; i < m_src.size(); ++i) {
-      if (old_src->equal_to(*m_src[i])) {
-         m_src[i] = new_src;
-         process = true;
-      }
-   }
-   if (process) {
-      auto r = new_src->as_register();
-      if (r)
-         r->add_use(this);
-      old_src->del_use(this);
-   }
-   return process;
+   return true;
 }
 
 void

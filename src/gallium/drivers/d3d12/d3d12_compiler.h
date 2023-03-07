@@ -35,6 +35,8 @@
 #include "nir.h"
 
 struct pipe_screen;
+struct d3d12_context;
+struct d3d12_screen;
 
 #ifdef __cplusplus
 extern "C" {
@@ -64,6 +66,14 @@ d3d12_get_compiler_options(struct pipe_screen *screen,
                            enum pipe_shader_ir ir,
                            enum pipe_shader_type shader);
 
+
+void
+d3d12_varying_cache_init(struct d3d12_screen *ctx);
+
+void
+d3d12_varying_cache_destroy(struct d3d12_screen *ctx);
+
+
 struct d3d12_varying_info {
    struct {
       const struct glsl_type *types[4];
@@ -76,6 +86,7 @@ struct d3d12_varying_info {
       } vars[4];
    } slots[VARYING_SLOT_MAX];
    uint64_t mask;
+   uint32_t hash;
    uint32_t max;
 };
 
@@ -261,8 +272,6 @@ struct d3d12_shader_selector {
       struct d3d12_tcs_variant_key tcs_key;
    };
 };
-
-struct d3d12_context;
 
 struct d3d12_shader_selector *
 d3d12_create_shader(struct d3d12_context *ctx,

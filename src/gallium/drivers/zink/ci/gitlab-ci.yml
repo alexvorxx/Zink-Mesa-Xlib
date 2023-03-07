@@ -41,8 +41,10 @@ zink-lvp:
     # to stdout and aborting on unknown failures.
     ZINK_DEBUG: validation
     VK_LAYER_SETTINGS_PATH: ${CI_PROJECT_DIR}/install/zink-lvp-validation-settings.txt
-  script:
-    - xvfb-run --server-args='-noreset' sh -c "GALLIUM_DRIVER=zink VK_DRIVER=lvp install/deqp-runner.sh"
+    XVFB_SCRIPT: "GALLIUM_DRIVER=zink VK_DRIVER=lvp install/deqp-runner.sh"
+  script: |
+    . "$SCRIPTS_DIR"/setup-test-env.sh
+    xvfb-run --server-args='-noreset' bash -c ". $SCRIPTS_DIR/setup-test-env.sh ${XVFB_SCRIPT}"
 
 .zink-anv-test:
   extends:

@@ -286,7 +286,7 @@ emit_masked_swizzle(isel_context* ctx, Builder& bld, Temp src, unsigned mask)
          Temp op1 = bld.copy(bld.def(s1), Operand::c32(lane_mask & 0xffffffff));
          Temp op2 = bld.copy(bld.def(s1), Operand::c32(lane_mask >> 32));
          Builder::Result ret = bld.vop3(opcode, bld.def(v1), src, op1, op2);
-         ret->vop3().opsel = 0x3; /* set BOUND_CTRL/FETCH_INACTIVE */
+         ret->valu().opsel = 0x3; /* set BOUND_CTRL/FETCH_INACTIVE */
          return ret;
       }
 
@@ -1035,8 +1035,8 @@ emit_idot_instruction(isel_context* ctx, nir_alu_instr* instr, aco_opcode op, Te
 
    Builder bld(ctx->program, ctx->block);
    bld.is_precise = instr->exact;
-   VOP3P_instruction& vop3p =
-      bld.vop3p(op, Definition(dst), src[0], src[1], src[2], 0x0, 0x7)->vop3p();
+   VALU_instruction& vop3p =
+      bld.vop3p(op, Definition(dst), src[0], src[1], src[2], 0x0, 0x7)->valu();
    vop3p.clamp = clamp;
    u_foreach_bit (i, neg_lo)
       vop3p.neg_lo[i] = true;
@@ -1363,7 +1363,7 @@ emit_floor_f64(isel_context* ctx, Builder& bld, Definition dst, Temp val)
    Temp v = bld.pseudo(aco_opcode::p_create_vector, bld.def(v2), dst0, dst1);
 
    Instruction* add = bld.vop3(aco_opcode::v_add_f64, Definition(dst), src0, v);
-   add->vop3().neg[1] = true;
+   add->valu().neg[1] = true;
 
    return add->definitions[0].getTemp();
 }
@@ -1383,7 +1383,7 @@ uadd32_sat(Builder& bld, Definition dst, Temp src0, Temp src1)
    } else {
       add = bld.vop2_e64(aco_opcode::v_add_co_u32, dst, bld.def(bld.lm), src0, src1);
    }
-   add->vop3().clamp = 1;
+   add->valu().clamp = 1;
    return dst.getTemp();
 }
 
@@ -1402,7 +1402,7 @@ usub32_sat(Builder& bld, Definition dst, Temp src0, Temp src1)
    } else {
       sub = bld.vop2_e64(aco_opcode::v_sub_co_u32, dst, bld.def(bld.lm), src0, src1);
    }
-   sub->vop3().clamp = 1;
+   sub->valu().clamp = 1;
    return dst.getTemp();
 }
 
@@ -1936,7 +1936,7 @@ visit_alu_instr(isel_context* ctx, nir_alu_instr* instr)
       if (dst.regClass() == v1 && instr->dest.dest.ssa.bit_size == 16) {
          Instruction* add_instr =
             emit_vop3p_instruction(ctx, instr, aco_opcode::v_pk_add_u16, dst);
-         add_instr->vop3p().clamp = 1;
+         add_instr->valu().clamp = 1;
          break;
       }
       Temp src0 = get_alu_src(ctx, instr->src[0]);
@@ -1957,7 +1957,7 @@ visit_alu_instr(isel_context* ctx, nir_alu_instr* instr)
             add_instr =
                bld.vop2_e64(aco_opcode::v_add_u16, Definition(dst), src0, as_vgpr(ctx, src1)).instr;
          }
-         add_instr->vop3().clamp = 1;
+         add_instr->valu().clamp = 1;
          break;
       } else if (dst.regClass() == v1) {
          uadd32_sat(bld, Definition(dst), src0, src1);
@@ -1998,7 +1998,8 @@ visit_alu_instr(isel_context* ctx, nir_alu_instr* instr)
             carry1 = bld.tmp(bld.lm);
             bld.vop2_e64(aco_opcode::v_addc_co_u32, Definition(dst1), Definition(carry1),
                          as_vgpr(ctx, src01), as_vgpr(ctx, src11), carry0)
-               ->vop3().clamp = 1;
+               ->valu()
+               .clamp = 1;
          } else {
             Temp no_sat1 = bld.tmp(v1);
             carry1 = bld.vadd32(Definition(no_sat1), src01, src11, true, carry0).def(1).getTemp();
@@ -2018,7 +2019,7 @@ visit_alu_instr(isel_context* ctx, nir_alu_instr* instr)
       if (dst.regClass() == v1 && instr->dest.dest.ssa.bit_size == 16) {
          Instruction* add_instr =
             emit_vop3p_instruction(ctx, instr, aco_opcode::v_pk_add_i16, dst);
-         add_instr->vop3p().clamp = 1;
+         add_instr->valu().clamp = 1;
          break;
       }
       Temp src0 = get_alu_src(ctx, instr->src[0]);
@@ -2039,11 +2040,11 @@ visit_alu_instr(isel_context* ctx, nir_alu_instr* instr)
       if (dst.regClass() == v2b) {
          Instruction* add_instr =
             bld.vop3(aco_opcode::v_add_i16, Definition(dst), src0, src1).instr;
-         add_instr->vop3().clamp = 1;
+         add_instr->valu().clamp = 1;
       } else if (dst.regClass() == v1) {
          Instruction* add_instr =
             bld.vop3(aco_opcode::v_add_i32, Definition(dst), src0, src1).instr;
-         add_instr->vop3().clamp = 1;
+         add_instr->valu().clamp = 1;
       } else {
          isel_err(&instr->instr, "Unimplemented NIR instr bit size");
       }
@@ -2178,7 +2179,7 @@ visit_alu_instr(isel_context* ctx, nir_alu_instr* instr)
    case nir_op_usub_sat: {
       if (dst.regClass() == v1 && instr->dest.dest.ssa.bit_size == 16) {
          Instruction* sub_instr = emit_vop3p_instruction(ctx, instr, aco_opcode::v_pk_sub_u16, dst);
-         sub_instr->vop3p().clamp = 1;
+         sub_instr->valu().clamp = 1;
          break;
       }
       Temp src0 = get_alu_src(ctx, instr->src[0]);
@@ -2200,7 +2201,7 @@ visit_alu_instr(isel_context* ctx, nir_alu_instr* instr)
             }
             sub_instr = bld.vop2_e64(op, Definition(dst), src0, as_vgpr(ctx, src1)).instr;
          }
-         sub_instr->vop3().clamp = 1;
+         sub_instr->valu().clamp = 1;
          break;
       } else if (dst.regClass() == v1) {
          usub32_sat(bld, Definition(dst), src0, as_vgpr(ctx, src1));
@@ -2240,7 +2241,8 @@ visit_alu_instr(isel_context* ctx, nir_alu_instr* instr)
             carry1 = bld.tmp(bld.lm);
             bld.vop2_e64(aco_opcode::v_subb_co_u32, Definition(dst1), Definition(carry1),
                          as_vgpr(ctx, src01), as_vgpr(ctx, src11), carry0)
-               ->vop3().clamp = 1;
+               ->valu()
+               .clamp = 1;
          } else {
             Temp no_sat1 = bld.tmp(v1);
             carry1 = bld.vsub32(Definition(no_sat1), src01, src11, true, carry0).def(1).getTemp();
@@ -2259,7 +2261,7 @@ visit_alu_instr(isel_context* ctx, nir_alu_instr* instr)
    case nir_op_isub_sat: {
       if (dst.regClass() == v1 && instr->dest.dest.ssa.bit_size == 16) {
          Instruction* sub_instr = emit_vop3p_instruction(ctx, instr, aco_opcode::v_pk_sub_i16, dst);
-         sub_instr->vop3p().clamp = 1;
+         sub_instr->valu().clamp = 1;
          break;
       }
       Temp src0 = get_alu_src(ctx, instr->src[0]);
@@ -2280,11 +2282,11 @@ visit_alu_instr(isel_context* ctx, nir_alu_instr* instr)
       if (dst.regClass() == v2b) {
          Instruction* sub_instr =
             bld.vop3(aco_opcode::v_sub_i16, Definition(dst), src0, src1).instr;
-         sub_instr->vop3().clamp = 1;
+         sub_instr->valu().clamp = 1;
       } else if (dst.regClass() == v1) {
          Instruction* sub_instr =
             bld.vop3(aco_opcode::v_sub_i32, Definition(dst), src0, src1).instr;
-         sub_instr->vop3().clamp = 1;
+         sub_instr->valu().clamp = 1;
       } else {
          isel_err(&instr->instr, "Unimplemented NIR instr bit size");
       }
@@ -2395,7 +2397,7 @@ visit_alu_instr(isel_context* ctx, nir_alu_instr* instr)
    case nir_op_fsub: {
       if (dst.regClass() == v1 && instr->dest.dest.ssa.bit_size == 16) {
          Instruction* add = emit_vop3p_instruction(ctx, instr, aco_opcode::v_pk_add_f16, dst);
-         VOP3P_instruction& sub = add->vop3p();
+         VALU_instruction& sub = add->valu();
          sub.neg_lo[1] = true;
          sub.neg_hi[1] = true;
          break;
@@ -2416,7 +2418,7 @@ visit_alu_instr(isel_context* ctx, nir_alu_instr* instr)
       } else if (dst.regClass() == v2) {
          Instruction* add = bld.vop3(aco_opcode::v_add_f64, Definition(dst), as_vgpr(ctx, src0),
                                      as_vgpr(ctx, src1));
-         add->vop3().neg[1] = true;
+         add->valu().neg[1] = true;
       } else {
          isel_err(&instr->instr, "Unimplemented NIR instr bit size");
       }
@@ -2585,8 +2587,8 @@ visit_alu_instr(isel_context* ctx, nir_alu_instr* instr)
          Instruction* vop3p =
             bld.vop3p(aco_opcode::v_pk_mul_f16, Definition(dst), src, Operand::c16(0x3C00),
                       instr->src[0].swizzle[0] & 1, instr->src[0].swizzle[1] & 1);
-         vop3p->vop3p().neg_lo[0] = true;
-         vop3p->vop3p().neg_hi[0] = true;
+         vop3p->valu().neg_lo[0] = true;
+         vop3p->valu().neg_hi[0] = true;
          break;
       }
       Temp src = get_alu_src(ctx, instr->src[0]);
@@ -2615,8 +2617,8 @@ visit_alu_instr(isel_context* ctx, nir_alu_instr* instr)
             bld.vop3p(aco_opcode::v_pk_max_f16, Definition(dst), src, src,
                       instr->src[0].swizzle[0] & 1 ? 3 : 0, instr->src[0].swizzle[1] & 1 ? 3 : 0)
                .instr;
-         vop3p->vop3p().neg_lo[1] = true;
-         vop3p->vop3p().neg_hi[1] = true;
+         vop3p->valu().neg_lo[1] = true;
+         vop3p->valu().neg_hi[1] = true;
          break;
       }
       Temp src = get_alu_src(ctx, instr->src[0]);
@@ -2624,12 +2626,12 @@ visit_alu_instr(isel_context* ctx, nir_alu_instr* instr)
          Instruction* mul = bld.vop2_e64(aco_opcode::v_mul_f16, Definition(dst),
                                          Operand::c16(0x3c00), as_vgpr(ctx, src))
                                .instr;
-         mul->vop3().abs[1] = true;
+         mul->valu().abs[1] = true;
       } else if (dst.regClass() == v1) {
          Instruction* mul = bld.vop2_e64(aco_opcode::v_mul_f32, Definition(dst),
                                          Operand::c32(0x3f800000u), as_vgpr(ctx, src))
                                .instr;
-         mul->vop3().abs[1] = true;
+         mul->valu().abs[1] = true;
       } else if (dst.regClass() == v2) {
          if (ctx->block->fp_mode.must_flush_denorms16_64)
             src = bld.vop3(aco_opcode::v_mul_f64, bld.def(v2), Operand::c64(0x3FF0000000000000),
@@ -2649,7 +2651,7 @@ visit_alu_instr(isel_context* ctx, nir_alu_instr* instr)
          Instruction* vop3p =
             bld.vop3p(aco_opcode::v_pk_mul_f16, Definition(dst), src, Operand::c16(0x3C00),
                       instr->src[0].swizzle[0] & 1, instr->src[0].swizzle[1] & 1);
-         vop3p->vop3p().clamp = true;
+         vop3p->valu().clamp = true;
          break;
       }
       Temp src = get_alu_src(ctx, instr->src[0]);
@@ -2664,7 +2666,7 @@ visit_alu_instr(isel_context* ctx, nir_alu_instr* instr)
          // TODO: confirm that this holds under any circumstances
       } else if (dst.regClass() == v2) {
          Instruction* add = bld.vop3(aco_opcode::v_add_f64, Definition(dst), src, Operand::zero());
-         add->vop3().clamp = true;
+         add->valu().clamp = true;
       } else {
          isel_err(&instr->instr, "Unimplemented NIR instr bit size");
       }
@@ -2814,13 +2816,13 @@ visit_alu_instr(isel_context* ctx, nir_alu_instr* instr)
             Instruction* sub =
                bld.vop3(aco_opcode::v_add_f64, bld.def(v2), tmp,
                         bld.pseudo(aco_opcode::p_create_vector, bld.def(v2), Operand::zero(), bfi));
-            sub->vop3().neg[1] = true;
+            sub->valu().neg[1] = true;
             tmp = sub->definitions[0].getTemp();
 
             Temp v = bld.pseudo(aco_opcode::p_create_vector, bld.def(v2), Operand::c32(-1u),
                                 Operand::c32(0x432fffffu));
             Instruction* vop3 = bld.vopc_e64(aco_opcode::v_cmp_gt_f64, bld.def(bld.lm), src0, v);
-            vop3->vop3().abs[0] = true;
+            vop3->valu().abs[0] = true;
             Temp cond = vop3->definitions[0].getTemp();
 
             Temp tmp_lo = bld.tmp(v1), tmp_hi = bld.tmp(v1);
@@ -3524,8 +3526,11 @@ visit_alu_instr(isel_context* ctx, nir_alu_instr* instr)
    case nir_op_unpack_64_2x32:
    case nir_op_unpack_32_2x16:
    case nir_op_unpack_64_4x16:
+   case nir_op_unpack_32_4x8:
       bld.copy(Definition(dst), get_alu_src(ctx, instr->src[0]));
-      emit_split_vector(ctx, dst, instr->op == nir_op_unpack_64_4x16 ? 4 : 2);
+      emit_split_vector(ctx, dst,
+                        instr->op == nir_op_unpack_32_4x8 ||
+                        instr->op == nir_op_unpack_64_4x16 ? 4 : 2);
       break;
    case nir_op_pack_64_2x32_split: {
       Temp src0 = get_alu_src(ctx, instr->src[0]);
@@ -3663,7 +3668,7 @@ visit_alu_instr(isel_context* ctx, nir_alu_instr* instr)
          f32 = bld.vop1(aco_opcode::v_cvt_f32_f16, bld.def(v1), f16);
          Temp smallest = bld.copy(bld.def(s1), Operand::c32(0x38800000u));
          Instruction* tmp0 = bld.vopc_e64(aco_opcode::v_cmp_lt_f32, bld.def(bld.lm), f32, smallest);
-         tmp0->vop3().abs[0] = true;
+         tmp0->valu().abs[0] = true;
          Temp tmp1 = bld.vopc(aco_opcode::v_cmp_lg_f32, bld.def(bld.lm), Operand::zero(), f32);
          cmp_res = bld.sop2(aco_opcode::s_nand_b64, bld.def(s2), bld.def(s1, scc),
                             tmp0->definitions[0].getTemp(), tmp1);
@@ -9240,8 +9245,8 @@ prepare_cube_coords(isel_context* ctx, std::vector<Temp>& coords, Temp* ddx, Tem
 
    ma = bld.vop3(aco_opcode::v_cubema_f32, bld.def(v1), coords[0], coords[1], coords[2]);
 
-   aco_ptr<VOP3_instruction> vop3a{
-      create_instruction<VOP3_instruction>(aco_opcode::v_rcp_f32, asVOP3(Format::VOP1), 1, 1)};
+   aco_ptr<VALU_instruction> vop3a{
+      create_instruction<VALU_instruction>(aco_opcode::v_rcp_f32, asVOP3(Format::VOP1), 1, 1)};
    vop3a->operands[0] = Operand(ma);
    vop3a->abs[0] = true;
    Temp invma = bld.tmp(v1);

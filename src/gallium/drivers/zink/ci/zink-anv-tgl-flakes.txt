@@ -53,21 +53,6 @@ spec@glsl-4.00@execution@built-in-functions@fs-inverse-dmat4
 # Around the time of running these tests there are some warnings from the kernel in dma_resv.c, and at least
 # some failures look like not waiting for rendering to complete.
 # Because those tests sometimes pass, keep them here
-wayland-dEQP-EGL.functional.color_clears.multi_context.gles1_gles2_gles3.rgb565_pbuffer,Fail
-wayland-dEQP-EGL.functional.color_clears.multi_context.gles1_gles2_gles3.rgb888_pbuffer,Fail
-wayland-dEQP-EGL.functional.color_clears.multi_context.gles1_gles2_gles3.rgba8888_pbuffer,Fail
-wayland-dEQP-EGL.functional.color_clears.multi_context.gles1_gles2.rgb565_pbuffer,Fail
-wayland-dEQP-EGL.functional.color_clears.multi_context.gles1_gles2.rgb888_pbuffer,Fail
-wayland-dEQP-EGL.functional.color_clears.multi_context.gles1_gles2.rgba8888_pbuffer,Fail
-wayland-dEQP-EGL.functional.color_clears.multi_context.gles1.rgb565_pbuffer,Fail
-wayland-dEQP-EGL.functional.color_clears.multi_context.gles1.rgb888_pbuffer,Fail
-wayland-dEQP-EGL.functional.color_clears.multi_context.gles1.rgba8888_pbuffer,Fail
-wayland-dEQP-EGL.functional.color_clears.multi_context.gles2.rgb565_pbuffer,Fail
-wayland-dEQP-EGL.functional.color_clears.multi_context.gles2.rgb888_pbuffer,Fail
-wayland-dEQP-EGL.functional.color_clears.multi_context.gles2.rgba8888_pbuffer,Fail
-wayland-dEQP-EGL.functional.color_clears.multi_context.gles3.rgb565_pbuffer,Fail
-wayland-dEQP-EGL.functional.color_clears.multi_context.gles3.rgb888_pbuffer,Fail
-wayland-dEQP-EGL.functional.color_clears.multi_context.gles3.rgba8888_pbuffer,Fail
 wayland-dEQP-EGL.functional.color_clears.multi_thread.gles1_gles2_gles3.rgb565_pbuffer,Fail
 wayland-dEQP-EGL.functional.color_clears.multi_thread.gles1_gles2_gles3.rgb888_pbuffer,Fail
 wayland-dEQP-EGL.functional.color_clears.multi_thread.gles1_gles2_gles3.rgba8888_pbuffer,Fail
@@ -93,15 +78,6 @@ wayland-dEQP-EGL.functional.color_clears.single_context.gles3.rgb565_pbuffer,Fai
 wayland-dEQP-EGL.functional.color_clears.single_context.gles3.rgb888_pbuffer,Fail
 wayland-dEQP-EGL.functional.color_clears.single_context.gles3.rgba8888_pbuffer,Fail
 wayland-dEQP-EGL.functional.negative_api.create_pixmap_surface,Fail
-wayland-dEQP-EGL.functional.render.multi_context.gles2_gles3.rgb565_pbuffer,Fail
-wayland-dEQP-EGL.functional.render.multi_context.gles2_gles3.rgb888_pbuffer,Fail
-wayland-dEQP-EGL.functional.render.multi_context.gles2_gles3.rgba8888_pbuffer,Fail
-wayland-dEQP-EGL.functional.render.multi_context.gles2.rgb565_pbuffer,Fail
-wayland-dEQP-EGL.functional.render.multi_context.gles2.rgb888_pbuffer,Fail
-wayland-dEQP-EGL.functional.render.multi_context.gles2.rgba8888_pbuffer,Fail
-wayland-dEQP-EGL.functional.render.multi_context.gles3.rgb565_pbuffer,Fail
-wayland-dEQP-EGL.functional.render.multi_context.gles3.rgb888_pbuffer,Fail
-wayland-dEQP-EGL.functional.render.multi_context.gles3.rgba8888_pbuffer,Fail
 wayland-dEQP-EGL.functional.render.multi_thread.gles2_gles3.rgb565_pbuffer,Fail
 wayland-dEQP-EGL.functional.render.multi_thread.gles2_gles3.rgb888_pbuffer,Fail
 wayland-dEQP-EGL.functional.render.multi_thread.gles2_gles3.rgba8888_pbuffer,Fail

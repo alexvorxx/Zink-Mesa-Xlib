@@ -32,6 +32,7 @@
 #include "pvr_csb.h"
 #include "pvr_csb_enum_helpers.h"
 #include "pvr_device_info.h"
+#include "pvr_formats.h"
 #include "pvr_hw_pass.h"
 #include "pvr_job_common.h"
 #include "pvr_pds.h"
@@ -39,6 +40,7 @@
 #include "pvr_shader_factory.h"
 #include "pvr_spm.h"
 #include "pvr_static_shaders.h"
+#include "pvr_tex_state.h"
 #include "pvr_types.h"
 #include "util/bitscan.h"
 #include "util/macros.h"
@@ -642,7 +644,8 @@ VkResult
 pvr_spm_init_eot_state(struct pvr_device *device,
                        struct pvr_spm_eot_state *spm_eot_state,
                        const struct pvr_framebuffer *framebuffer,
-                       const struct pvr_renderpass_hwsetup_render *hw_render)
+                       const struct pvr_renderpass_hwsetup_render *hw_render,
+                       uint32_t *emit_count_out)
 {
    const struct pvr_device_info *dev_info = &device->pdevice->dev_info;
    struct pvr_pds_upload pds_eot_program;
@@ -810,10 +813,10 @@ pvr_spm_init_eot_state(struct pvr_device *device,
    spm_eot_state->pixel_event_program_data_upload = pds_eot_program.pvr_bo;
    spm_eot_state->pixel_event_program_data_offset = pds_eot_program.data_offset;
 
+   *emit_count_out = mrt_setup.num_render_targets;
+
    return VK_SUCCESS;
 }
-
-#undef PVR_DEV_ADDR_ADVANCE
 
 void pvr_spm_finish_eot_state(struct pvr_device *device,
                               struct pvr_spm_eot_state *spm_eot_state)
@@ -821,3 +824,314 @@ void pvr_spm_finish_eot_state(struct pvr_device *device,
    pvr_bo_free(device, spm_eot_state->pixel_event_program_data_upload);
    pvr_bo_free(device, spm_eot_state->usc_eot_program);
 }
+
+static VkFormat pvr_get_format_from_dword_count(uint32_t dword_count)
+{
+   switch (dword_count) {
+   case 1:
+      return VK_FORMAT_R32_UINT;
+   case 2:
+      return VK_FORMAT_R32G32_UINT;
+   case 4:
+      return VK_FORMAT_R32G32B32A32_UINT;
+   default:
+      unreachable("Invalid dword_count");
+   }
+}
+
+static VkResult pvr_spm_setup_texture_state_words(
+   struct pvr_device *device,
+   uint32_t dword_count,
+   const VkExtent2D framebuffer_size,
+   uint32_t sample_count,
+   pvr_dev_addr_t scratch_buffer_addr,
+   uint64_t image_descriptor[static const ROGUE_NUM_TEXSTATE_IMAGE_WORDS],
+   uint64_t *mem_used_out)
+{
+   /* We can ignore the framebuffer's layer count since we only support
+    * writing to layer 0.
+    */
+   struct pvr_texture_state_info info = {
+      .format = pvr_get_format_from_dword_count(dword_count),
+      .mem_layout = PVR_MEMLAYOUT_LINEAR,
+
+      .type = VK_IMAGE_VIEW_TYPE_2D,
+      .tex_state_type = PVR_TEXTURE_STATE_STORAGE,
+      .extent = {
+         .width = framebuffer_size.width,
+         .height = framebuffer_size.height,
+      },
+
+      .mip_levels = 1,
+
+      .sample_count = sample_count,
+      .stride = framebuffer_size.width,
+
+      .addr = scratch_buffer_addr,
+   };
+   const uint64_t aligned_fb_width =
+      ALIGN_POT(framebuffer_size.width,
+                PVRX(CR_PBE_WORD0_MRT0_LINESTRIDE_ALIGNMENT));
+   const uint64_t fb_area = aligned_fb_width * framebuffer_size.height;
+   const uint8_t *format_swizzle;
+   VkResult result;
+
+   format_swizzle = pvr_get_format_swizzle(info.format);
+   memcpy(info.swizzle, format_swizzle, sizeof(info.swizzle));
+
+   result = pvr_pack_tex_state(device, &info, image_descriptor);
+   if (result != VK_SUCCESS)
+      return result;
+
+   *mem_used_out = fb_area * dword_count * sizeof(uint32_t) * sample_count;
+
+   return VK_SUCCESS;
+}
+
+/* FIXME: Can we dedup this with pvr_load_op_pds_data_create_and_upload() ? */
+static VkResult pvr_pds_bgnd_program_create_and_upload(
+   struct pvr_device *device,
+   uint32_t texture_program_data_size_in_dwords,
+   const struct pvr_bo *consts_buffer,
+   uint32_t const_shared_regs,
+   struct pvr_pds_upload *pds_upload_out)
+{
+   const struct pvr_device_info *dev_info = &device->pdevice->dev_info;
+   struct pvr_pds_pixel_shader_sa_program texture_program = { 0 };
+   uint32_t staging_buffer_size;
+   uint32_t *staging_buffer;
+   VkResult result;
+
+   pvr_csb_pack (&texture_program.texture_dma_address[0],
+                 PDSINST_DOUT_FIELDS_DOUTD_SRC0,
+                 doutd_src0) {
+      doutd_src0.sbase = consts_buffer->vma->dev_addr;
+   }
+
+   pvr_csb_pack (&texture_program.texture_dma_control[0],
+                 PDSINST_DOUT_FIELDS_DOUTD_SRC1,
+                 doutd_src1) {
+      doutd_src1.dest = PVRX(PDSINST_DOUTD_DEST_COMMON_STORE);
+      doutd_src1.bsize = const_shared_regs;
+   }
+
+   texture_program.num_texture_dma_kicks += 1;
+
+#if defined(DEBUG)
+   pvr_pds_set_sizes_pixel_shader_sa_texture_data(&texture_program, dev_info);
+   assert(texture_program_data_size_in_dwords == texture_program.data_size);
+#endif
+
+   staging_buffer_size = texture_program_data_size_in_dwords * sizeof(uint32_t);
+
+   staging_buffer = vk_alloc(&device->vk.alloc,
+                             staging_buffer_size,
+                             8,
+                             VK_SYSTEM_ALLOCATION_SCOPE_COMMAND);
+   if (!staging_buffer)
+      return vk_error(device, VK_ERROR_OUT_OF_HOST_MEMORY);
+
+   pvr_pds_generate_pixel_shader_sa_texture_state_data(&texture_program,
+                                                       staging_buffer,
+                                                       dev_info);
+
+   /* FIXME: Figure out the define for alignment of 16. */
+   result = pvr_gpu_upload_pds(device,
+                               &staging_buffer[0],
+                               texture_program_data_size_in_dwords,
+                               16,
+                               NULL,
+                               0,
+                               0,
+                               16,
+                               pds_upload_out);
+   if (result != VK_SUCCESS) {
+      vk_free(&device->vk.alloc, staging_buffer);
+      return result;
+   }
+
+   vk_free(&device->vk.alloc, staging_buffer);
+
+   return VK_SUCCESS;
+}
+
+VkResult
+pvr_spm_init_bgobj_state(struct pvr_device *device,
+                         struct pvr_spm_bgobj_state *spm_bgobj_state,
+                         const struct pvr_framebuffer *framebuffer,
+                         const struct pvr_renderpass_hwsetup_render *hw_render,
+                         uint32_t emit_count)
+{
+   const uint32_t spm_load_program_idx =
+      pvr_get_spm_load_program_index(hw_render->sample_count,
+                                     hw_render->tile_buffers_count,
+                                     hw_render->output_regs_count);
+   const VkExtent2D framebuffer_size = {
+      .width = framebuffer->width,
+      .height = framebuffer->height,
+   };
+   pvr_dev_addr_t next_scratch_buffer_addr =
+      framebuffer->scratch_buffer->bo->vma->dev_addr;
+   struct pvr_spm_per_load_program_state *load_program_state;
+   struct pvr_pds_upload pds_texture_data_upload;
+   const struct pvr_shader_factory_info *info;
+   union pvr_sampler_descriptor *descriptor;
+   uint64_t consts_buffer_size;
+   uint32_t dword_count;
+   uint32_t *mem_ptr;
+   VkResult result;
+
+   assert(spm_load_program_idx < ARRAY_SIZE(spm_load_collection));
+   info = spm_load_collection[spm_load_program_idx].info;
+
+   consts_buffer_size = info->const_shared_regs * sizeof(uint32_t);
+
+   result = pvr_bo_alloc(device,
+                         device->heaps.general_heap,
+                         consts_buffer_size,
+                         sizeof(uint32_t),
+                         PVR_BO_ALLOC_FLAG_CPU_MAPPED,
+                         &spm_bgobj_state->consts_buffer);
+   if (result != VK_SUCCESS)
+      return result;
+
+   mem_ptr = spm_bgobj_state->consts_buffer->bo->map;
+
+   if (info->driver_const_location_map) {
+      const uint32_t *const const_map = info->driver_const_location_map;
+
+      for (uint32_t i = 0; i < PVR_SPM_LOAD_CONST_COUNT; i += 2) {
+         pvr_dev_addr_t tile_buffer_addr;
+
+         if (const_map[i] == PVR_SPM_LOAD_DEST_UNUSED) {
+#if defined(DEBUG)
+            for (uint32_t j = i; j < PVR_SPM_LOAD_CONST_COUNT; j++)
+               assert(const_map[j] == PVR_SPM_LOAD_DEST_UNUSED);
+#endif
+            break;
+         }
+
+         tile_buffer_addr =
+            device->tile_buffer_state.buffers[i / 2]->vma->dev_addr;
+
+         assert(const_map[i] == const_map[i + 1] + 1);
+         mem_ptr[const_map[i]] = tile_buffer_addr.addr >> 32;
+         mem_ptr[const_map[i + 1]] = (uint32_t)tile_buffer_addr.addr;
+      }
+   }
+
+   /* TODO: The 32 comes from how the shaders are compiled. We should
+    * unhardcode it when this is hooked up to the compiler.
+    */
+   descriptor = (union pvr_sampler_descriptor *)(mem_ptr + 32);
+   *descriptor = (union pvr_sampler_descriptor){ 0 };
+
+   pvr_csb_pack (&descriptor->data.sampler_word, TEXSTATE_SAMPLER, sampler) {
+      sampler.non_normalized_coords = true;
+      sampler.addrmode_v = PVRX(TEXSTATE_ADDRMODE_CLAMP_TO_EDGE);
+      sampler.addrmode_u = PVRX(TEXSTATE_ADDRMODE_CLAMP_TO_EDGE);
+      sampler.minfilter = PVRX(TEXSTATE_FILTER_POINT);
+      sampler.magfilter = PVRX(TEXSTATE_FILTER_POINT);
+      sampler.maxlod = PVRX(TEXSTATE_CLAMP_MIN);
+      sampler.minlod = PVRX(TEXSTATE_CLAMP_MIN);
+      sampler.dadjust = PVRX(TEXSTATE_DADJUST_ZERO_UINT);
+   }
+
+   /* Even if we might have 8 output regs we can only pack and write 4 dwords
+    * using R32G32B32A32_UINT.
+    */
+   if (hw_render->tile_buffers_count > 0)
+      dword_count = 4;
+   else
+      dword_count = MIN2(hw_render->output_regs_count, 4);
+
+   for (uint32_t i = 0; i < emit_count; i++) {
+      uint64_t *mem_ptr_u64 = (uint64_t *)mem_ptr;
+      uint64_t mem_used = 0;
+
+      STATIC_ASSERT(ROGUE_NUM_TEXSTATE_IMAGE_WORDS * sizeof(uint64_t) /
+                       sizeof(uint32_t) ==
+                    PVR_IMAGE_DESCRIPTOR_SIZE);
+      mem_ptr_u64 += i * ROGUE_NUM_TEXSTATE_IMAGE_WORDS;
+
+      result = pvr_spm_setup_texture_state_words(device,
+                                                 dword_count,
+                                                 framebuffer_size,
+                                                 hw_render->sample_count,
+                                                 next_scratch_buffer_addr,
+                                                 mem_ptr_u64,
+                                                 &mem_used);
+      if (result != VK_SUCCESS)
+         goto err_free_consts_buffer;
+
+      PVR_DEV_ADDR_ADVANCE(next_scratch_buffer_addr, mem_used);
+   }
+
+   assert(spm_load_program_idx <
+          ARRAY_SIZE(device->spm_load_state.load_program));
+   load_program_state =
+      &device->spm_load_state.load_program[spm_load_program_idx];
+
+   result = pvr_pds_bgnd_program_create_and_upload(
+      device,
+      load_program_state->pds_texture_program_data_size,
+      spm_bgobj_state->consts_buffer,
+      info->const_shared_regs,
+      &pds_texture_data_upload);
+   if (result != VK_SUCCESS)
+      goto err_free_consts_buffer;
+
+   spm_bgobj_state->pds_texture_data_upload = pds_texture_data_upload.pvr_bo;
+
+   /* TODO: Is it worth to dedup this with pvr_pds_bgnd_pack_state() ? */
+
+   /* clang-format off */
+   pvr_csb_pack (&spm_bgobj_state->pds_reg_values[0],
+                 CR_PDS_BGRND0_BASE,
+                 value) {
+      /* clang-format on */
+      value.shader_addr = load_program_state->pds_pixel_program_offset;
+      value.texunicode_addr = load_program_state->pds_uniform_program_offset;
+   }
+
+   /* clang-format off */
+   pvr_csb_pack (&spm_bgobj_state->pds_reg_values[1],
+                 CR_PDS_BGRND1_BASE,
+                 value) {
+      /* clang-format on */
+      value.texturedata_addr =
+         PVR_DEV_ADDR(pds_texture_data_upload.data_offset);
+   }
+
+   /* clang-format off */
+   pvr_csb_pack (&spm_bgobj_state->pds_reg_values[2],
+                 CR_PDS_BGRND3_SIZEINFO,
+                 value) {
+      /* clang-format on */
+      value.usc_sharedsize =
+         DIV_ROUND_UP(info->const_shared_regs,
+                      PVRX(CR_PDS_BGRND3_SIZEINFO_USC_SHAREDSIZE_UNIT_SIZE));
+      value.pds_texturestatesize = DIV_ROUND_UP(
+         pds_texture_data_upload.data_size,
+         PVRX(CR_PDS_BGRND3_SIZEINFO_PDS_TEXTURESTATESIZE_UNIT_SIZE));
+      value.pds_tempsize =
+         DIV_ROUND_UP(load_program_state->pds_texture_program_temps_count,
+                      PVRX(CR_PDS_BGRND3_SIZEINFO_PDS_TEMPSIZE_UNIT_SIZE));
+   }
+
+   return VK_SUCCESS;
+
+err_free_consts_buffer:
+   pvr_bo_free(device, spm_bgobj_state->consts_buffer);
+
+   return result;
+}
+
+void pvr_spm_finish_bgobj_state(struct pvr_device *device,
+                                struct pvr_spm_bgobj_state *spm_bgobj_state)
+{
+   pvr_bo_free(device, spm_bgobj_state->pds_texture_data_upload);
+   pvr_bo_free(device, spm_bgobj_state->consts_buffer);
+}
+
+#undef PVR_DEV_ADDR_ADVANCE

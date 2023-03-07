@@ -444,7 +444,10 @@ draw_arrays(GLuint drawid, GLenum mode, GLint first, GLsizei count,
     * for possible GL errors.
     */
    if (!user_buffer_mask || count <= 0 || instance_count <= 0 ||
-       ctx->GLThread.draw_always_async) {
+       /* This will just generate GL_INVALID_OPERATION, as it should. */
+       ctx->GLThread.inside_begin_end ||
+       ctx->CurrentServerDispatch == ctx->ContextLost ||
+       ctx->GLThread.ListMode) {
       if (instance_count == 1 && baseinstance == 0 && drawid == 0) {
          int cmd_size = sizeof(struct marshal_cmd_DrawArrays);
          struct marshal_cmd_DrawArrays *cmd =
@@ -554,7 +557,8 @@ _mesa_marshal_MultiDrawArrays(GLenum mode, const GLint *first,
    struct glthread_attrib_binding buffers[VERT_ATTRIB_MAX];
    unsigned user_buffer_mask =
       ctx->API == API_OPENGL_CORE || draw_count <= 0 ||
-      ctx->GLThread.draw_always_async ? 0 : get_user_buffer_mask(ctx);
+      ctx->CurrentServerDispatch == ctx->ContextLost ||
+      ctx->GLThread.inside_begin_end ? 0 : get_user_buffer_mask(ctx);
 
    if (user_buffer_mask) {
       unsigned min_index = ~0;
@@ -856,9 +860,13 @@ draw_elements(GLuint drawid, GLenum mode, GLsizei count, GLenum type,
     * This is also an error path. Zero counts should still call the driver
     * for possible GL errors.
     */
-   if (ctx->GLThread.draw_always_async || count <= 0 || instance_count <= 0 ||
+   if (count <= 0 || instance_count <= 0 ||
        !is_index_type_valid(type) ||
-       (!user_buffer_mask && !has_user_indices)) {
+       (!user_buffer_mask && !has_user_indices) ||
+       ctx->CurrentServerDispatch == ctx->ContextLost ||
+       /* This will just generate GL_INVALID_OPERATION, as it should. */
+       ctx->GLThread.inside_begin_end ||
+       ctx->GLThread.ListMode) {
       if (instance_count == 1 && baseinstance == 0 && drawid == 0) {
          int cmd_size = sizeof(struct marshal_cmd_DrawElementsBaseVertex);
          struct marshal_cmd_DrawElementsBaseVertex *cmd =
@@ -1126,7 +1134,8 @@ _mesa_marshal_MultiDrawElementsBaseVertex(GLenum mode, const GLsizei *count,
     * a GL error, we don't upload anything.
     */
    if (draw_count > 0 && is_index_type_valid(type) &&
-       !ctx->GLThread.draw_always_async) {
+       ctx->CurrentServerDispatch != ctx->ContextLost &&
+       !ctx->GLThread.inside_begin_end) {
       user_buffer_mask = ctx->API == API_OPENGL_CORE ? 0 : get_user_buffer_mask(ctx);
       has_user_indices = vao->CurrentElementBufferName == 0;
    }
@@ -1361,6 +1370,19 @@ lower_draw_elements_indirect(struct gl_context *ctx, GLenum mode, GLenum type,
    unmap_draw_indirect_params(ctx);
 }
 
+static inline bool
+draw_indirect_async_allowed(struct gl_context *ctx, unsigned user_buffer_mask)
+{
+   return ctx->API != API_OPENGL_COMPAT ||
+          /* This will just generate GL_INVALID_OPERATION, as it should. */
+          ctx->GLThread.inside_begin_end ||
+          ctx->GLThread.ListMode ||
+          ctx->CurrentServerDispatch == ctx->ContextLost ||
+          /* If the DrawIndirect buffer is bound, it behaves like profile != compat
+           * if there are no user VBOs. */
+          (ctx->GLThread.CurrentDrawIndirectBufferName && !user_buffer_mask);
+}
+
 struct marshal_cmd_DrawArraysIndirect
 {
    struct marshal_cmd_base cmd_base;
@@ -1391,9 +1413,7 @@ _mesa_marshal_DrawArraysIndirect(GLenum mode, const GLvoid *indirect)
    unsigned user_buffer_mask =
       _mesa_is_gles31(ctx) ? 0 : vao->UserPointerMask & vao->BufferEnabled;
 
-   if (ctx->GLThread.draw_always_async ||
-       !ctx->GLThread.CurrentDrawIndirectBufferName ||
-       !user_buffer_mask) {
+   if (draw_indirect_async_allowed(ctx, user_buffer_mask)) {
       int cmd_size = sizeof(struct marshal_cmd_DrawArraysIndirect);
       struct marshal_cmd_DrawArraysIndirect *cmd;
 
@@ -1439,9 +1459,8 @@ _mesa_marshal_DrawElementsIndirect(GLenum mode, GLenum type, const GLvoid *indir
    unsigned user_buffer_mask =
       _mesa_is_gles31(ctx) ? 0 : vao->UserPointerMask & vao->BufferEnabled;
 
-   if (ctx->GLThread.draw_always_async || !is_index_type_valid(type) ||
-       !ctx->GLThread.CurrentDrawIndirectBufferName ||
-       !vao->CurrentElementBufferName || !user_buffer_mask) {
+   if (draw_indirect_async_allowed(ctx, user_buffer_mask) ||
+       !is_index_type_valid(type)) {
       int cmd_size = sizeof(struct marshal_cmd_DrawElementsIndirect);
       struct marshal_cmd_DrawElementsIndirect *cmd;
 
@@ -1492,9 +1511,8 @@ _mesa_marshal_MultiDrawArraysIndirect(GLenum mode, const GLvoid *indirect,
    unsigned user_buffer_mask =
       _mesa_is_gles31(ctx) ? 0 : vao->UserPointerMask & vao->BufferEnabled;
 
-   if (ctx->GLThread.draw_always_async ||
-       !ctx->GLThread.CurrentDrawIndirectBufferName ||
-       !user_buffer_mask) {
+   if (draw_indirect_async_allowed(ctx, user_buffer_mask) ||
+       primcount <= 0) {
       int cmd_size = sizeof(struct marshal_cmd_MultiDrawArraysIndirect);
       struct marshal_cmd_MultiDrawArraysIndirect *cmd;
 
@@ -1551,9 +1569,9 @@ _mesa_marshal_MultiDrawElementsIndirect(GLenum mode, GLenum type,
    unsigned user_buffer_mask =
       _mesa_is_gles31(ctx) ? 0 : vao->UserPointerMask & vao->BufferEnabled;
 
-   if (ctx->GLThread.draw_always_async || !is_index_type_valid(type) ||
-       !ctx->GLThread.CurrentDrawIndirectBufferName ||
-       !vao->CurrentElementBufferName || !user_buffer_mask) {
+   if (draw_indirect_async_allowed(ctx, user_buffer_mask) ||
+       primcount <= 0 ||
+       !is_index_type_valid(type)) {
       int cmd_size = sizeof(struct marshal_cmd_MultiDrawElementsIndirect);
       struct marshal_cmd_MultiDrawElementsIndirect *cmd;
 
@@ -1614,7 +1632,9 @@ _mesa_marshal_MultiDrawArraysIndirectCountARB(GLenum mode, GLintptr indirect,
    unsigned user_buffer_mask =
       _mesa_is_gles31(ctx) ? 0 : vao->UserPointerMask & vao->BufferEnabled;
 
-   if (ctx->GLThread.draw_always_async || !user_buffer_mask ||
+   if (draw_indirect_async_allowed(ctx, user_buffer_mask) ||
+       /* This will just generate GL_INVALID_OPERATION because Draw*IndirectCount
+        * functions forbid a user indirect buffer in the Compat profile. */
        !ctx->GLThread.CurrentDrawIndirectBufferName) {
       int cmd_size =
          sizeof(struct marshal_cmd_MultiDrawArraysIndirectCountARB);
@@ -1677,7 +1697,9 @@ _mesa_marshal_MultiDrawElementsIndirectCountARB(GLenum mode, GLenum type,
    unsigned user_buffer_mask =
       _mesa_is_gles31(ctx) ? 0 : vao->UserPointerMask & vao->BufferEnabled;
 
-   if (ctx->GLThread.draw_always_async || !user_buffer_mask ||
+   if (draw_indirect_async_allowed(ctx, user_buffer_mask) ||
+       /* This will just generate GL_INVALID_OPERATION because Draw*IndirectCount
+        * functions forbid a user indirect buffer in the Compat profile. */
        !ctx->GLThread.CurrentDrawIndirectBufferName ||
        !is_index_type_valid(type)) {
       int cmd_size = sizeof(struct marshal_cmd_MultiDrawElementsIndirectCountARB);

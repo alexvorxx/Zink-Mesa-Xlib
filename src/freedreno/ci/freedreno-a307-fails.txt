@@ -89,8 +89,6 @@ dEQP-GLES3.functional.shaders.derivate.fwidth.nicest.fbo_float.float_highp,Fail
 dEQP-GLES3.functional.shaders.derivate.fwidth.nicest.fbo_float.vec2_highp,Fail
 dEQP-GLES3.functional.shaders.derivate.fwidth.nicest.fbo_float.vec3_highp,Fail
 dEQP-GLES3.functional.shaders.derivate.fwidth.nicest.fbo_float.vec4_highp,Fail
-dEQP-GLES3.functional.shaders.texture_functions.textureprojlodoffset.sampler2dshadow_vertex,Fail
-dEQP-GLES3.functional.shaders.texture_functions.textureprojoffset.sampler2dshadow_vertex,Fail
 dEQP-GLES3.functional.state_query.rbo.renderbuffer_component_size_color,Fail
 dEQP-GLES3.functional.texture.mipmap.cube.max_level.linear_nearest,Fail
 dEQP-GLES3.functional.transform_feedback.array_element.interleaved.triangles.highp_mat2x4,Fail

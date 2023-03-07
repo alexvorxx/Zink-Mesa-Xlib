@@ -306,17 +306,22 @@ vkcts-vega10-valve:
     - .vkcts-test-valve
     - .vega10-test-valve
     - .radv-valve-manual-rules
+  timeout: 1h 15m
   variables:
     GPU_VERSION: radv-vega10-aco
+    B2C_TIMEOUT_BOOT_MINUTES: 70
+    B2C_TIMEOUT_OVERALL_MINUTES: 70
 
 vkcts-renoir-valve:
   extends:
     - .vkcts-test-valve
     - .renoir-test-valve
     - .radv-valve-manual-rules
-  timeout: 2h 10m
+  timeout: 2h 15m
   variables:
     GPU_VERSION: radv-renoir-aco
+    B2C_TIMEOUT_BOOT_MINUTES: 130
+    B2C_TIMEOUT_OVERALL_MINUTES: 130
 
 vkcts-navi10-valve:
   extends:

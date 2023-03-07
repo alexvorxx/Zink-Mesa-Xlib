@@ -708,6 +708,12 @@ radv_physical_device_get_format_properties(struct radv_physical_device *physical
             tiling |= VK_FORMAT_FEATURE_2_SAMPLED_IMAGE_YCBCR_CONVERSION_LINEAR_FILTER_BIT;
       }
 
+      if (physical_device->instance->perftest_flags & RADV_PERFTEST_VIDEO_DECODE) {
+          if (format == VK_FORMAT_G8_B8R8_2PLANE_420_UNORM ||
+              format == VK_FORMAT_G10X6_B10X6R10X6_2PLANE_420_UNORM_3PACK16)
+              tiling |= VK_FORMAT_FEATURE_2_VIDEO_DECODE_OUTPUT_BIT_KHR | VK_FORMAT_FEATURE_2_VIDEO_DECODE_DPB_BIT_KHR;
+      }
+
       if (multiplanar)
          tiling |= VK_FORMAT_FEATURE_2_DISJOINT_BIT;
 

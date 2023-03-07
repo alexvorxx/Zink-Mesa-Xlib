@@ -288,6 +288,7 @@ enum sqtt_memory_type
    SQTT_MEMORY_TYPE_DDR2 = 0x2,
    SQTT_MEMORY_TYPE_DDR3 = 0x3,
    SQTT_MEMORY_TYPE_DDR4 = 0x4,
+   SQTT_MEMORY_TYPE_DDR5 = 0x5,
    SQTT_MEMORY_TYPE_GDDR3 = 0x10,
    SQTT_MEMORY_TYPE_GDDR4 = 0x11,
    SQTT_MEMORY_TYPE_GDDR5 = 0x12,
@@ -379,17 +380,22 @@ static enum sqtt_memory_type ac_vram_type_to_sqtt_memory_type(uint32_t vram_type
       return SQTT_MEMORY_TYPE_DDR3;
    case AMD_VRAM_TYPE_DDR4:
       return SQTT_MEMORY_TYPE_DDR4;
+   case AMD_VRAM_TYPE_DDR5:
+      return SQTT_MEMORY_TYPE_DDR5;
+   case AMD_VRAM_TYPE_GDDR3:
+      return SQTT_MEMORY_TYPE_GDDR3;
+   case AMD_VRAM_TYPE_GDDR4:
+      return SQTT_MEMORY_TYPE_GDDR4;
    case AMD_VRAM_TYPE_GDDR5:
       return SQTT_MEMORY_TYPE_GDDR5;
-   case AMD_VRAM_TYPE_HBM:
-      return SQTT_MEMORY_TYPE_HBM;
    case AMD_VRAM_TYPE_GDDR6:
       return SQTT_MEMORY_TYPE_GDDR6;
-   case AMD_VRAM_TYPE_DDR5:
+   case AMD_VRAM_TYPE_HBM:
+      return SQTT_MEMORY_TYPE_HBM;
+   case AMD_VRAM_TYPE_LPDDR4:
+      return SQTT_MEMORY_TYPE_LPDDR4;
+   case AMD_VRAM_TYPE_LPDDR5:
       return SQTT_MEMORY_TYPE_LPDDR5;
-   case AMD_VRAM_TYPE_GDDR1:
-   case AMD_VRAM_TYPE_GDDR3:
-   case AMD_VRAM_TYPE_GDDR4:
    default:
       unreachable("Invalid vram type");
    }
@@ -456,7 +462,7 @@ static void ac_sqtt_fill_asic_info(struct radeon_info *rad_info,
    chunk->vram_bus_width = rad_info->memory_bus_width;
    chunk->vram_size = (uint64_t)rad_info->vram_size_kb * 1024;
    chunk->l2_cache_size = rad_info->l2_cache_size;
-   chunk->l1_cache_size = rad_info->l1_cache_size;
+   chunk->l1_cache_size = rad_info->tcp_cache_size;
    chunk->lds_size = rad_info->lds_size_per_workgroup;
    if (rad_info->gfx_level >= GFX10) {
       /* RGP expects the LDS size in CU mode. */

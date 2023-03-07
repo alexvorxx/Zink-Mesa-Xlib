@@ -8,9 +8,9 @@
     # Note: Build dir (and thus install) may be dirty due to GIT_STRATEGY
     - rm -rf install
     - tar -xf artifacts/install.tar
-    - echo -e "\e[0Ksection_start:$(date +%s):ldd_section[collapsed=true]\r\e[0KChecking ldd on driver build"
+    - section_start ldd_section "Checking ldd on driver build"
     - LD_LIBRARY_PATH=install/lib find install/lib -name "*.so" -print -exec ldd {} \;
-    - echo -e "\e[0Ksection_end:$(date +%s):ldd_section\r\e[0K"
+    - section_end ldd_section
   artifacts:
     when: always
     name: "mesa_${CI_JOB_NAME}"
@@ -108,9 +108,9 @@ rustfmt:
   variables:
     PIGLIT_REPLAY_EXTRA_ARGS: --keep-image --db-path ${CI_PROJECT_DIR}/replayer-db/ --minio_bucket=mesa-tracie-public --jwt-file=${CI_JOB_JWT_FILE}
   script:
-    - echo -e "\e[0Ksection_start:$(date +%s):variables[collapsed=true]\r\e[0KVariables passed through:"
+    - section_start variables "Variables passed through:"
     - install/common/generate-env.sh
-    - echo -e "\e[0Ksection_end:$(date +%s):variables\r\e[0K"
+    - section_end variables
     - install/piglit/piglit-traces.sh
 
 .deqp-test:
@@ -148,11 +148,12 @@ rustfmt:
     # instead of fd.o.  Set FDO_HTTP_CACHE_URI to an http cache for your test lab to
     # improve it even more (see https://docs.mesa3d.org/ci/bare-metal.html for
     # setup).
-    - echo -e "\e[0Ksection_start:$(date +%s):artifacts_download[collapsed=true]\r\e[0KDownloading artifacts from minio"
+    - section_start artifacts_download "Downloading artifacts from s3"
     # Note: Build dir (and thus install) may be dirty due to GIT_STRATEGY
     - rm -rf install
     - curl -L --retry 4 -f --retry-all-errors --retry-delay 60 ${FDO_HTTP_CACHE_URI:-}https://${PIPELINE_ARTIFACTS_BASE}/${MINIO_ARTIFACT_NAME}.tar.zst | tar --zstd -x
     - echo -e "\e[0Ksection_end:$(date +%s):artifacts_download\r\e[0K"
+    - section_end artifacts_download
   artifacts:
     when: always
     name: "mesa_${CI_JOB_NAME}"
@@ -220,7 +221,7 @@ rustfmt:
   # like FDO_DISTRIBUTION_TAG for *the* image, there is no way to
   # depend on more than one image per job. So, the job container is
   # built as part of the CI in the boot2container project.
-  image: registry.freedesktop.org/mupuf/valve-infra/mesa-trigger:2022-12-08.1
+  image: registry.freedesktop.org/mupuf/valve-infra/mesa-trigger:2023-02-27.1
   timeout: 1h 40m
   variables:
     # No need by default to pull the whole repo
@@ -283,7 +284,7 @@ rustfmt:
       [ -d "$CI_COMMON_SCRIPTS" ] || exit 1
 
 
-      B2C_TEST_SCRIPT="bash -c 'source ./set-job-env-vars.sh; tar xf ${INSTALL_TARBALL_NAME}; ${B2C_TEST_SCRIPT}'"
+      B2C_TEST_SCRIPT="bash -c 'source ./set-job-env-vars.sh; source ./setup-test-env.sh; tar xf ${INSTALL_TARBALL_NAME}; ${B2C_TEST_SCRIPT}'"
 
       # The Valve CI gateway receives jobs in a YAML format. Create a
       # job description from the CI environment.
@@ -324,6 +325,7 @@ rustfmt:
       echo "Variables passed through:"
       cat ${JOB_FOLDER}/set-job-env-vars.sh
       echo "export CI_JOB_JWT=${CI_JOB_JWT}" >> ${JOB_FOLDER}/set-job-env-vars.sh
+      cp ${SCRIPTS_DIR}/setup-test-env.sh ${JOB_FOLDER}/setup-test-env.sh
       set -x
 
       # Copy the mesa install tarball to the job folder, for later extraction

@@ -2122,19 +2122,9 @@ visit_intrinsic(struct lp_build_nir_context *bld_base,
    case nir_intrinsic_shared_atomic_fmax:
       visit_shared_atomic(bld_base, instr, result);
       break;
-   case nir_intrinsic_control_barrier:
-      visit_barrier(bld_base);
-      break;
    case nir_intrinsic_scoped_barrier:
       if (nir_intrinsic_execution_scope(instr) != NIR_SCOPE_NONE)
          visit_barrier(bld_base);
-      break;
-   case nir_intrinsic_group_memory_barrier:
-   case nir_intrinsic_memory_barrier:
-   case nir_intrinsic_memory_barrier_shared:
-   case nir_intrinsic_memory_barrier_buffer:
-   case nir_intrinsic_memory_barrier_image:
-   case nir_intrinsic_memory_barrier_tcs_patch:
       break;
    case nir_intrinsic_load_kernel_input:
       visit_load_kernel_input(bld_base, instr, result);

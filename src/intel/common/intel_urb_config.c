@@ -315,7 +315,7 @@ intel_get_mesh_urb_config(const struct intel_device_info *devinfo,
     * of entries, so we need to discount the space for constants for all of
     * them.  See 3DSTATE_URB_ALLOC_MESH and 3DSTATE_URB_ALLOC_TASK.
     */
-   const unsigned push_constant_kb = devinfo->max_constant_urb_size_kb;
+   const unsigned push_constant_kb = devinfo->mesh_max_constant_urb_size_kb;
    total_urb_kb -= push_constant_kb;
 
    /* TODO(mesh): Take push constant size as parameter instead of considering always

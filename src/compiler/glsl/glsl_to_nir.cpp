@@ -2767,20 +2767,20 @@ nir_visitor::visit(ir_barrier *)
 {
    if (shader->options->use_scoped_barrier) {
       if (shader->info.stage == MESA_SHADER_COMPUTE) {
-         nir_scoped_memory_barrier(&b, NIR_SCOPE_WORKGROUP, NIR_MEMORY_ACQ_REL,
-                                   nir_var_mem_shared);
+         nir_scoped_barrier(&b, NIR_SCOPE_WORKGROUP, NIR_SCOPE_WORKGROUP,
+                            NIR_MEMORY_ACQ_REL, nir_var_mem_shared);
       } else if (shader->info.stage == MESA_SHADER_TESS_CTRL) {
-         nir_scoped_memory_barrier(&b, NIR_SCOPE_WORKGROUP, NIR_MEMORY_ACQ_REL,
-                                   nir_var_shader_out);
+         nir_scoped_barrier(&b, NIR_SCOPE_WORKGROUP, NIR_SCOPE_WORKGROUP,
+                            NIR_MEMORY_ACQ_REL, nir_var_shader_out);
       }
    } else {
       if (shader->info.stage == MESA_SHADER_COMPUTE)
          nir_memory_barrier_shared(&b);
       else if (shader->info.stage == MESA_SHADER_TESS_CTRL)
          nir_memory_barrier_tcs_patch(&b);
-   }
 
-   nir_control_barrier(&b);
+      nir_control_barrier(&b);
+   }
 }
 
 nir_shader *

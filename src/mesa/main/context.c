@@ -711,7 +711,6 @@ init_attrib_groups(struct gl_context *ctx)
    ctx->NewDriverState = ST_ALL_STATES_MASK;
    ctx->ErrorValue = GL_NO_ERROR;
    ctx->ShareGroupReset = false;
-   ctx->VertexProgram._VaryingInputs = VERT_BIT_ALL;
    ctx->IntelBlackholeRender = debug_get_bool_option("INTEL_BLACKHOLE_DEFAULT", false);
 
    return GL_TRUE;

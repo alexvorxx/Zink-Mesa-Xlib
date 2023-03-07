@@ -79,6 +79,14 @@ panfrost-t860-gl:arm64:
     FDO_CI_CONCURRENT: 6
     DEQP_SUITE: panfrost-t860
 
+panfrost-t860-egl:arm64:
+  extends:
+    - .lava-test:arm64
+    - .lava-rk3399-gru-kevin
+  variables:
+    HWCI_START_WESTON: 1
+    DEQP_SUITE: panfrost-t860-egl
+
 .panfrost-t860-traces:arm64:
   extends:
     - .lava-piglit-traces:arm64

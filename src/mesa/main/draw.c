@@ -161,7 +161,6 @@ _mesa_restore_draw_vao(struct gl_context *ctx,
    ctx->VertexProgram._VPModeInputFilter = saved_vp_input_filter;
 
    /* Update states. */
-   _mesa_update_edgeflag_state_vao(ctx);
    ctx->NewDriverState |= ST_NEW_VERTEX_ARRAYS;
    ctx->Array.NewVertexElements = true;
 

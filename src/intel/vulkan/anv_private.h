@@ -1230,7 +1230,6 @@ struct anv_device {
      * workaround slowness with indirect draw calls.
      */
     struct anv_shader_bin                      *generated_draw_kernel;
-    struct anv_shader_bin                      *generated_draw_count_kernel;
     const struct intel_l3_config               *generated_draw_l3_config;
 
     pthread_mutex_t                             mutex;
@@ -2477,7 +2476,6 @@ anv_gfx8_9_vb_cache_range_needs_workaround(struct anv_vb_cache_range *bound,
       return false;
    }
 
-   assert(vb_address.bo);
    bound->start = intel_48b_address(anv_address_physical(vb_address));
    bound->end = bound->start + vb_size;
    assert(bound->end > bound->start); /* No overflow */
@@ -2778,6 +2776,11 @@ struct anv_cmd_buffer {
     * jump back to.
     */
    struct anv_address                           generation_return_addr;
+
+   /**
+    * Binding table allocation for generation shaders (only used on Gfx9).
+    */
+   struct anv_state                             generation_bt_state;
 
    /** List of anv_batch_bo used for generation
     *
@@ -3920,6 +3923,12 @@ struct anv_image_view {
       struct isl_view isl;
 
       /**
+       * A version of the image view for storage usage (can apply 3D image
+       * slicing).
+       */
+      struct isl_view isl_storage;
+
+      /**
        * RENDER_SURFACE_STATE when using image as a sampler surface with an
        * image layout of SHADER_READ_ONLY_OPTIMAL or
        * DEPTH_STENCIL_READ_ONLY_OPTIMAL.
@@ -4011,7 +4020,7 @@ anv_line_rasterization_mode(VkLineRasterizationModeEXT line_mode,
 
 /* Fill provoking vertex mode to packet. */
 #define ANV_SETUP_PROVOKING_VERTEX(cmd, mode)         \
-   switch (dyn->rs.provoking_vertex) {                \
+   switch (mode) {                                    \
    case VK_PROVOKING_VERTEX_MODE_FIRST_VERTEX_EXT:    \
       cmd.TriangleStripListProvokingVertexSelect = 0; \
       cmd.LineStripListProvokingVertexSelect = 0;     \
@@ -4059,25 +4068,6 @@ void anv_fill_buffer_surface_state(struct anv_device *device,
                                    struct anv_address address,
                                    uint32_t range, uint32_t stride);
 
-
-/* Haswell border color is a bit of a disaster.  Float and unorm formats use a
- * straightforward 32-bit float color in the first 64 bytes.  Instead of using
- * a nice float/integer union like Gfx8+, Haswell specifies the integer border
- * color as a separate entry /after/ the float color.  The layout of this entry
- * also depends on the format's bpp (with extra hacks for RG32), and overlaps.
- *
- * Since we don't know the format/bpp, we can't make any of the border colors
- * containing '1' work for all formats, as it would be in the wrong place for
- * some of them.  We opt to make 32-bit integers work as this seems like the
- * most common option.  Fortunately, transparent black works regardless, as
- * all zeroes is the same in every bit-size.
- */
-struct hsw_border_color {
-   float float32[4];
-   uint32_t _pad0[12];
-   uint32_t uint32[4];
-   uint32_t _pad1[108];
-};
 
 struct gfx8_border_color {
    union {

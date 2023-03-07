@@ -131,14 +131,8 @@ struct pvr_queue {
    struct pvr_compute_ctx *query_ctx;
    struct pvr_transfer_ctx *transfer_ctx;
 
-   struct vk_sync *completion[PVR_JOB_TYPE_MAX];
-
-   /* Used to setup a job dependency from jobs previously submitted, onto
-    * the next job per job type.
-    *
-    * Used to create dependencies for pipeline barriers.
-    */
-   struct vk_sync *job_dependancy[PVR_JOB_TYPE_MAX];
+   struct vk_sync *last_job_signal_sync[PVR_JOB_TYPE_MAX];
+   struct vk_sync *next_job_wait_sync[PVR_JOB_TYPE_MAX];
 };
 
 struct pvr_vertex_binding {
@@ -257,7 +251,7 @@ struct pvr_device {
       struct pvr_bo *usc_programs;
       struct pvr_bo *pds_programs;
 
-      struct {
+      struct pvr_spm_per_load_program_state {
          pvr_dev_addr_t pds_pixel_program_offset;
          pvr_dev_addr_t pds_uniform_program_offset;
 
@@ -279,6 +273,8 @@ struct pvr_device {
    VkPhysicalDeviceFeatures features;
 
    struct pvr_bo_store *bo_store;
+
+   struct vk_sync *presignaled_sync;
 };
 
 struct pvr_device_memory {
@@ -992,8 +988,9 @@ struct pvr_framebuffer {
 
    struct pvr_spm_scratch_buffer *scratch_buffer;
 
-   uint32_t spm_eot_state_count;
+   uint32_t render_count;
    struct pvr_spm_eot_state *spm_eot_state_per_render;
+   struct pvr_spm_bgobj_state *spm_bgobj_state_per_render;
 };
 
 struct pvr_render_pass_attachment {

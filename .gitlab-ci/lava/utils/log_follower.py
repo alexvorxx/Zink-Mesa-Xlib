@@ -40,6 +40,7 @@ class LogFollower:
     _buffer: list[str] = field(default_factory=list, init=False)
     log_hints: LAVALogHints = field(init=False)
     lava_farm: LavaFarm = field(init=False, default=get_lava_farm())
+    _merge_next_line: str = field(default_factory=str, init=False)
 
     def __post_init__(self):
         section_is_created = bool(self.current_section)
@@ -127,15 +128,50 @@ class LogFollower:
         return False
 
     def remove_trailing_whitespace(self, line: dict[str, str]) -> None:
+        """
+        Removes trailing whitespace from the end of the `msg` value in the log line dictionary.
+
+        Args:
+            line: A dictionary representing a single log line.
+
+        Note:
+            LAVA treats carriage return characters as a line break, so each carriage return in an output console
+            is mapped to a console line in LAVA. This method removes trailing `\r\n` characters from log lines.
+        """
         msg: Optional[str] = line.get("msg")
         if not msg:
-            return
+            return False
 
         messages = [msg] if isinstance(msg, str) else msg
 
         for message in messages:
-            # LAVA logs brings raw messages, which includes newlines characters.
-            line["msg"]: str = message.rstrip("\n")
+            # LAVA logs brings raw messages, which includes newlines characters as \r\n.
+            line["msg"]: str = re.sub(r"\r\n$", "", message)
+
+    def merge_carriage_return_lines(self, line: dict[str, str]) -> bool:
+        """
+        Merges lines that end with a carriage return character into a single line.
+
+        Args:
+            line: A dictionary representing a single log line.
+
+        Returns:
+            A boolean indicating whether the current line has been merged with the next line.
+
+        Note:
+            LAVA treats carriage return characters as a line break, so each carriage return in an output console
+            is mapped to a console line in LAVA.
+        """
+        if line["msg"].endswith("\r"):
+            self._merge_next_line += line["msg"]
+            return True
+
+        if self._merge_next_line:
+            line["msg"] = self._merge_next_line + line["msg"]
+            self._merge_next_line = ""
+
+        return False
+
 
     def feed(self, new_lines: list[dict[str, str]]) -> bool:
         """Input data to be processed by LogFollower instance
@@ -151,6 +187,9 @@ class LogFollower:
             self.remove_trailing_whitespace(line)
 
             if self.detect_kernel_dump_line(line):
+                continue
+
+            if self.merge_carriage_return_lines(line):
                 continue
 
             # At least we are fed with a non-kernel dump log, it seems that the

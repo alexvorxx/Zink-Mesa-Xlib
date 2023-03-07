@@ -164,21 +164,6 @@ if with_platform_android
   radv_deps += dep_android
 endif
 
-# When static linking LLVM, all its symbols are public API.
-# That may cause symbol collision, so explicitly demote everything.
-libvulkan_radeon_ld_args = []
-libvulkan_radeon_link_depends = []
-
-if with_ld_version_script
-  if with_platform_android
-    libvulkan_radeon_ld_args += ['-Wl,--version-script', join_paths(meson.current_source_dir(), 'vulkan-android.sym')]
-    libvulkan_radeon_link_depends += files('vulkan-android.sym')
-  else
-    libvulkan_radeon_ld_args += ['-Wl,--version-script', join_paths(meson.current_source_dir(), 'vulkan.sym')]
-    libvulkan_radeon_link_depends += files('vulkan.sym')
-  endif
-endif
-
 radv_build_id = get_option('radv-build-id')
 if radv_build_id != ''
   radv_flags += '-DRADV_BUILD_ID_OVERRIDE="' + radv_build_id + '"'
@@ -204,9 +189,9 @@ libvulkan_radeon = shared_library(
   c_args : [no_override_init_args, radv_flags, c_msvc_compat_args],
   cpp_args : [radv_flags, cpp_msvc_compat_args],
   link_args : [
-    ld_args_build_id, ld_args_bsymbolic, ld_args_gc_sections, libvulkan_radeon_ld_args,
+    ld_args_build_id, ld_args_bsymbolic, ld_args_gc_sections, vulkan_icd_link_args,
   ],
-  link_depends : [libvulkan_radeon_link_depends,],
+  link_depends : vulkan_icd_link_depends,
   gnu_symbol_visibility : 'hidden',
   name_prefix : host_machine.system() == 'windows' ? '' : [],
   install : true,

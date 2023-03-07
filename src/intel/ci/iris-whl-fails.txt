@@ -12,3 +12,7 @@ dEQP-GLES3.functional.texture.compressed.astc.void_extent_ldr.6x6,Fail
 dEQP-GLES3.functional.texture.compressed.astc.void_extent_ldr.8x5,Fail
 dEQP-GLES3.functional.texture.compressed.astc.void_extent_ldr.8x6,Fail
 dEQP-GLES3.functional.texture.compressed.astc.void_extent_ldr.8x8,Fail
+
+# New CTS failures in 1.3.5.0
+KHR-GL46.polygon_offset_clamp.PolygonOffsetClampMinMax,Fail
+KHR-GL46.polygon_offset_clamp.PolygonOffsetClampZeroInfinity,Fail

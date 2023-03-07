@@ -49,7 +49,6 @@ bool do_algebraic(exec_list *instructions, bool native_integers,
 bool do_constant_folding(exec_list *instructions);
 bool do_constant_variable(exec_list *instructions);
 bool do_constant_variable_unlinked(exec_list *instructions);
-bool do_copy_propagation_elements(exec_list *instructions);
 bool do_constant_propagation(exec_list *instructions);
 bool do_dead_code(exec_list *instructions);
 bool do_dead_code_local(exec_list *instructions);

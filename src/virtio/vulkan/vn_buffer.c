@@ -91,6 +91,18 @@ vn_buffer_cache_fini(struct vn_device *dev)
       vn_buffer_cache_debug_dump(&dev->buffer_cache);
 }
 
+static inline VkDeviceSize
+vn_buffer_get_aligned_memory_requirement_size(VkDeviceSize size,
+                                              const VkMemoryRequirements *req)
+{
+   /* TODO remove comment after mandating VK_KHR_maintenance4
+    *
+    * This is based on below implementation defined behavior:
+    *    req.size <= align64(info.size, req.alignment)
+    */
+   return align64(size, req->alignment);
+}
+
 static struct vn_buffer_cache_entry *
 vn_buffer_get_cached_memory_requirements(
    struct vn_buffer_cache *cache,
@@ -118,13 +130,9 @@ vn_buffer_get_cached_memory_requirements(
       if (entry->valid) {
          *out = entry->requirements;
 
-         /* TODO remove comment after mandating VK_KHR_maintenance4
-          *
-          * This is based on below implementation defined behavior:
-          *    req.size <= align64(info.size, req.alignment)
-          */
-         out->memory.memoryRequirements.size = align64(
-            create_info->size, out->memory.memoryRequirements.alignment);
+         out->memory.memoryRequirements.size =
+            vn_buffer_get_aligned_memory_requirement_size(
+               create_info->size, &out->memory.memoryRequirements);
 
          p_atomic_inc(&cache->debug.cache_hit_count);
       } else {
@@ -163,6 +171,12 @@ vn_buffer_cache_entry_init(struct vn_buffer_cache *cache,
 
 unlock:
    simple_mtx_unlock(&cache->mutex);
+
+   /* ensure invariance of the memory requirement size */
+   req->memoryRequirements.size =
+      vn_buffer_get_aligned_memory_requirement_size(
+         req->memoryRequirements.size,
+         &entry->requirements.memory.memoryRequirements);
 }
 
 static void

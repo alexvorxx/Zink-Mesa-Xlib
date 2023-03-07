@@ -150,6 +150,20 @@ AluReadportReservation::schedule_trans_instruction(const AluInstr& alu,
    return visitor2.success;
 }
 
+void AluReadportReservation::print(std::ostream& os) const
+{
+   os << "AluReadportReservation\n";
+   for (int i = 0; i < max_chan_channels; ++i) {
+      os << "  chan " << i << ":";
+      for (int j = 0; j < max_gpr_readports; ++j) {
+         os << m_hw_gpr[j][i] << " ";
+      }
+      os << "\n";
+   }
+   os << "\n";
+
+}
+
 AluReadportReservation::AluReadportReservation()
 {
    for (int i = 0; i < max_chan_channels; ++i) {

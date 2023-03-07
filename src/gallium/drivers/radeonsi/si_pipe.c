@@ -555,24 +555,20 @@ static struct pipe_context *si_create_context(struct pipe_screen *screen, unsign
       goto fail;
    }
 
-   /* Initialize public allocators. */
-   /* Unify uploaders as follows:
-    * - dGPUs with Smart Access Memory: there is only one uploader instance writing to VRAM.
+   /* Initialize public allocators. Unify uploaders as follows:
+    * - dGPUs: The const uploader writes to VRAM and the stream uploader writes to RAM.
     * - APUs: There is only one uploader instance writing to RAM. VRAM has the same perf on APUs.
-    * - Other chips: The const uploader writes to VRAM and the stream uploader writes to RAM.
     */
-   bool smart_access_memory = sscreen->info.smart_access_memory;
    bool is_apu = !sscreen->info.has_dedicated_vram;
    sctx->b.stream_uploader =
-      u_upload_create(&sctx->b, 1024 * 1024, 0,
-                      smart_access_memory && !is_apu ? PIPE_USAGE_DEFAULT : PIPE_USAGE_STREAM,
+      u_upload_create(&sctx->b, 1024 * 1024, 0, PIPE_USAGE_STREAM,
                       SI_RESOURCE_FLAG_32BIT); /* same flags as const_uploader */
    if (!sctx->b.stream_uploader) {
       fprintf(stderr, "radeonsi: can't create stream_uploader\n");
       goto fail;
    }
 
-   if (smart_access_memory || is_apu) {
+   if (is_apu) {
       sctx->b.const_uploader = sctx->b.stream_uploader;
    } else {
       sctx->b.const_uploader =
@@ -1136,11 +1132,7 @@ static struct pipe_screen *radeonsi_screen_create_impl(struct radeon_winsys *ws,
    }
 
    sscreen->ws = ws;
-   ws->query_info(ws, &sscreen->info,
-                  sscreen->options.enable_sam,
-                  sscreen->options.disable_sam);
-
-   sscreen->info.smart_access_memory = false; /* VRAM has slower CPU access */
+   ws->query_info(ws, &sscreen->info);
 
    if (sscreen->info.gfx_level >= GFX9) {
       sscreen->se_tile_repeat = 32 * sscreen->info.max_se;

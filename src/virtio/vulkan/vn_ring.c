@@ -8,10 +8,6 @@
 #include "vn_cs.h"
 #include "vn_renderer.h"
 
-enum vn_ring_status_flag {
-   VN_RING_STATUS_IDLE = 1u << 0,
-};
-
 static uint32_t
 vn_ring_load_head(const struct vn_ring *ring)
 {
@@ -34,8 +30,14 @@ vn_ring_store_tail(struct vn_ring *ring)
 static uint32_t
 vn_ring_load_status(const struct vn_ring *ring)
 {
-   /* this must be called and ordered after vn_ring_store_tail */
+   /* must be called and ordered after vn_ring_store_tail for idle status */
    return atomic_load_explicit(ring->shared.status, memory_order_seq_cst);
+}
+
+bool
+vn_ring_fatal(const struct vn_ring *ring)
+{
+   return vn_ring_load_status(ring) & VK_RING_STATUS_FATAL_BIT_MESA;
 }
 
 static void
@@ -97,7 +99,7 @@ vn_ring_wait_seqno(const struct vn_ring *ring, uint32_t seqno)
       const uint32_t head = vn_ring_load_head(ring);
       if (vn_ring_ge_seqno(ring, head, seqno))
          return head;
-      vn_relax(&iter, "ring seqno");
+      vn_relax(ring, &iter, "ring seqno");
    } while (true);
 }
 
@@ -130,7 +132,7 @@ vn_ring_wait_space(const struct vn_ring *ring, uint32_t size)
       /* see the reasoning in vn_ring_wait_seqno */
       uint32_t iter = 0;
       do {
-         vn_relax(&iter, "ring space");
+         vn_relax(ring, &iter, "ring space");
          if (vn_ring_has_space(ring, size, &head))
             return head;
       } while (true);
@@ -240,7 +242,11 @@ vn_ring_submit(struct vn_ring *ring,
    }
 
    vn_ring_store_tail(ring);
-   const bool notify = vn_ring_load_status(ring) & VN_RING_STATUS_IDLE;
+   const VkRingStatusFlagsMESA status = vn_ring_load_status(ring);
+   if (status & VK_RING_STATUS_FATAL_BIT_MESA) {
+      vn_log(NULL, "vn_ring_submit abort on fatal");
+      abort();
+   }
 
    vn_ring_retire_submits(ring, cur_seqno);
 
@@ -248,7 +254,9 @@ vn_ring_submit(struct vn_ring *ring,
    list_addtail(&submit->head, &ring->submits);
 
    *seqno = submit->seqno;
-   return notify;
+
+   /* notify renderer to wake up ring if idle */
+   return status & VK_RING_STATUS_IDLE_BIT_MESA;
 }
 
 /**

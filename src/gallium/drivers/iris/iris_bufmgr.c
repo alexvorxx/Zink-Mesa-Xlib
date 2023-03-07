@@ -65,6 +65,8 @@
 #include "iris_bufmgr.h"
 #include "iris_context.h"
 #include "string.h"
+#include "iris_kmd_backend.h"
+#include "i915/iris_bufmgr.h"
 
 #include "drm-uapi/i915_drm.h"
 
@@ -165,7 +167,7 @@ struct bo_export {
 };
 
 struct iris_memregion {
-   struct drm_i915_gem_memory_class_instance region;
+   struct intel_memory_class_instance *region;
    uint64_t size;
 };
 
@@ -232,6 +234,7 @@ struct iris_bufmgr {
    int next_screen_id;
 
    struct intel_device_info devinfo;
+   const struct iris_kmd_backend *kmd_backend;
    bool bo_reuse:1;
    bool use_global_vm:1;
 
@@ -429,21 +432,6 @@ vma_free(struct iris_bufmgr *bufmgr,
    util_vma_heap_free(&bufmgr->vma_allocator[memzone], address, size);
 }
 
-static bool
-iris_bo_busy_gem(struct iris_bo *bo)
-{
-   assert(iris_bo_is_real(bo));
-
-   struct iris_bufmgr *bufmgr = bo->bufmgr;
-   struct drm_i915_gem_busy busy = { .handle = bo->gem_handle };
-
-   int ret = intel_ioctl(bufmgr->fd, DRM_IOCTL_I915_GEM_BUSY, &busy);
-   if (ret == 0) {
-      return busy.busy;
-   }
-   return false;
-}
-
 /* A timeout of 0 just checks for busyness. */
 static int
 iris_bo_wait_syncobj(struct iris_bo *bo, int64_t timeout_ns)
@@ -515,31 +503,43 @@ bool
 iris_bo_busy(struct iris_bo *bo)
 {
    bool busy;
-   if (iris_bo_is_external(bo))
-      busy = iris_bo_busy_gem(bo);
-   else
-      busy = iris_bo_busy_syncobj(bo);
+
+   switch (iris_bufmgr_get_device_info(bo->bufmgr)->kmd_type) {
+   case INTEL_KMD_TYPE_I915:
+      if (iris_bo_is_external(bo))
+         busy = iris_i915_bo_busy_gem(bo);
+      else
+         busy = iris_bo_busy_syncobj(bo);
+      break;
+   default:
+      unreachable("missing");
+      busy = true;
+   }
 
    bo->idle = !busy;
 
    return busy;
 }
 
-int
-iris_bo_madvise(struct iris_bo *bo, int state)
+/**
+ * Specify the volatility of the buffer.
+ * \param bo Buffer to create a name for
+ * \param state The purgeable status
+ *
+ * Use IRIS_MADVICE_DONT_NEED to mark the buffer as purgeable, and it will be
+ * reclaimed under memory pressure. If you subsequently require the buffer,
+ * then you must pass IRIS_MADVICE_WILL_NEED to mark the buffer as required.
+ *
+ * Returns true if the buffer was retained, or false if it was discarded
+ * whilst marked as IRIS_MADVICE_DONT_NEED.
+ */
+static inline bool
+iris_bo_madvise(struct iris_bo *bo, enum iris_madvice state)
 {
    /* We can't madvise suballocated BOs. */
    assert(iris_bo_is_real(bo));
 
-   struct drm_i915_gem_madvise madv = {
-      .handle = bo->gem_handle,
-      .madv = state,
-      .retained = 1,
-   };
-
-   intel_ioctl(bo->bufmgr->fd, DRM_IOCTL_I915_GEM_MADVISE, &madv);
-
-   return madv.retained;
+   return bo->bufmgr->kmd_backend->bo_madvise(bo, state);
 }
 
 static struct iris_bo *
@@ -903,7 +903,7 @@ alloc_bo_from_cache(struct iris_bufmgr *bufmgr,
       list_del(&cur->head);
 
       /* Tell the kernel we need this BO.  If it still exists, we're done! */
-      if (iris_bo_madvise(cur, I915_MADV_WILLNEED)) {
+      if (iris_bo_madvise(cur, IRIS_MADVICE_WILL_NEED)) {
          bo = cur;
          break;
       }
@@ -954,6 +954,19 @@ alloc_bo_from_cache(struct iris_bufmgr *bufmgr,
    return bo;
 }
 
+static int
+i915_gem_set_domain(struct iris_bufmgr *bufmgr, uint32_t handle,
+                    uint32_t read_domains, uint32_t write_domains)
+{
+   struct drm_i915_gem_set_domain sd = {
+      .handle = handle,
+      .read_domains = read_domains,
+      .write_domain = write_domains,
+   };
+   return intel_ioctl(iris_bufmgr_get_fd(bufmgr),
+                      DRM_IOCTL_I915_GEM_SET_DOMAIN, &sd);
+}
+
 static struct iris_bo *
 alloc_fresh_bo(struct iris_bufmgr *bufmgr, uint64_t bo_size, unsigned flags)
 {
@@ -963,100 +976,46 @@ alloc_fresh_bo(struct iris_bufmgr *bufmgr, uint64_t bo_size, unsigned flags)
 
    bo->real.heap = flags_to_heap(bufmgr, flags);
 
-   /* If we have vram size, we have multiple memory regions and should choose
-    * one of them.
-    */
-   if (bufmgr->vram.size > 0 || flags & BO_ALLOC_PROTECTED) {
-      /* All new BOs we get from the kernel are zeroed, so we don't need to
-       * worry about that here.
-       */
-      struct drm_i915_gem_create_ext create = {
-         .size = bo_size,
-      };
+   const struct intel_memory_class_instance *regions[2];
+   uint16_t num_regions = 0;
 
-      struct drm_i915_gem_memory_class_instance regions[2];
-      struct drm_i915_gem_create_ext_memory_regions ext_regions = {
-         .base = { .name = I915_GEM_CREATE_EXT_MEMORY_REGIONS },
-         .num_regions = 0,
-         .regions = (uintptr_t)regions,
-      };
-
-      if (bufmgr->vram.size > 0) {
-         switch (bo->real.heap) {
-         case IRIS_HEAP_DEVICE_LOCAL_PREFERRED:
-            /* For vram allocations, still use system memory as a fallback. */
-            regions[ext_regions.num_regions++] = bufmgr->vram.region;
-            regions[ext_regions.num_regions++] = bufmgr->sys.region;
-            break;
-         case IRIS_HEAP_DEVICE_LOCAL:
-            regions[ext_regions.num_regions++] = bufmgr->vram.region;
-            break;
-         case IRIS_HEAP_SYSTEM_MEMORY:
-            regions[ext_regions.num_regions++] = bufmgr->sys.region;
-            break;
-         case IRIS_HEAP_MAX:
-            unreachable("invalid heap for BO");
-         }
-
-         intel_gem_add_ext(&create.extensions,
-                           I915_GEM_CREATE_EXT_MEMORY_REGIONS,
-                           &ext_regions.base);
-
-         if (!intel_vram_all_mappable(&bufmgr->devinfo) &&
-             bo->real.heap == IRIS_HEAP_DEVICE_LOCAL_PREFERRED) {
-            create.flags |= I915_GEM_CREATE_EXT_FLAG_NEEDS_CPU_ACCESS;
-         }
+   if (bufmgr->vram.size > 0) {
+      switch (bo->real.heap) {
+      case IRIS_HEAP_DEVICE_LOCAL_PREFERRED:
+         /* For vram allocations, still use system memory as a fallback. */
+         regions[num_regions++] = bufmgr->vram.region;
+         regions[num_regions++] = bufmgr->sys.region;
+         break;
+      case IRIS_HEAP_DEVICE_LOCAL:
+         regions[num_regions++] = bufmgr->vram.region;
+         break;
+      case IRIS_HEAP_SYSTEM_MEMORY:
+         regions[num_regions++] = bufmgr->sys.region;
+         break;
+      case IRIS_HEAP_MAX:
+         unreachable("invalid heap for BO");
       }
-
-      /* Protected param */
-      struct drm_i915_gem_create_ext_protected_content protected_param = {
-         .flags = 0,
-      };
-      if (flags & BO_ALLOC_PROTECTED) {
-         intel_gem_add_ext(&create.extensions,
-                           I915_GEM_CREATE_EXT_PROTECTED_CONTENT,
-                           &protected_param.base);
-      }
-
-      /* It should be safe to use GEM_CREATE_EXT without checking, since we are
-       * in the side of the branch where discrete memory is available. So we
-       * can assume GEM_CREATE_EXT is supported already.
-       */
-      if (intel_ioctl(bufmgr->fd, DRM_IOCTL_I915_GEM_CREATE_EXT, &create) != 0) {
-         free(bo);
-         return NULL;
-      }
-      bo->gem_handle = create.handle;
    } else {
-      struct drm_i915_gem_create create = { .size = bo_size };
-
-      /* All new BOs we get from the kernel are zeroed, so we don't need to
-       * worry about that here.
-       */
-      if (intel_ioctl(bufmgr->fd, DRM_IOCTL_I915_GEM_CREATE, &create) != 0) {
-         free(bo);
-         return NULL;
-      }
-      bo->gem_handle = create.handle;
+      regions[num_regions++] = bufmgr->sys.region;
    }
 
+   bo->gem_handle = bufmgr->kmd_backend->gem_create(bufmgr, regions,
+                                                    num_regions, bo_size,
+                                                    bo->real.heap, flags);
+   if (bo->gem_handle == 0) {
+      free(bo);
+      return NULL;
+   }
    bo->bufmgr = bufmgr;
    bo->size = bo_size;
    bo->idle = true;
 
-   if (bufmgr->vram.size == 0) {
+   if (bufmgr->vram.size == 0)
       /* Calling set_domain() will allocate pages for the BO outside of the
        * struct mutex lock in the kernel, which is more efficient than waiting
        * to create them during the first execbuf that uses the BO.
        */
-      struct drm_i915_gem_set_domain sd = {
-         .handle = bo->gem_handle,
-         .read_domains = I915_GEM_DOMAIN_CPU,
-         .write_domain = 0,
-      };
-
-      intel_ioctl(bo->bufmgr->fd, DRM_IOCTL_I915_GEM_SET_DOMAIN, &sd);
-   }
+      i915_gem_set_domain(bufmgr, bo->gem_handle, I915_GEM_DOMAIN_CPU, 0);
 
    return bo;
 }
@@ -1161,11 +1120,7 @@ iris_bo_alloc(struct iris_bufmgr *bufmgr,
     */
    if ((flags & BO_ALLOC_COHERENT) &&
        !bufmgr->devinfo.has_llc && bufmgr->devinfo.has_caching_uapi) {
-      struct drm_i915_gem_caching arg = {
-         .handle = bo->gem_handle,
-         .caching = 1,
-      };
-      if (intel_ioctl(bufmgr->fd, DRM_IOCTL_I915_GEM_SET_CACHING, &arg) != 0)
+      if (bufmgr->kmd_backend->bo_set_caching(bo, true) != 0)
          goto err_free;
 
       bo->real.reusable = false;
@@ -1207,11 +1162,7 @@ iris_bo_create_userptr(struct iris_bufmgr *bufmgr, const char *name,
 
    if (!bufmgr->devinfo.has_userptr_probe) {
       /* Check the buffer for validity before we try and use it in a batch */
-      struct drm_i915_gem_set_domain sd = {
-         .handle = bo->gem_handle,
-         .read_domains = I915_GEM_DOMAIN_CPU,
-      };
-      if (intel_ioctl(bufmgr->fd, DRM_IOCTL_I915_GEM_SET_DOMAIN, &sd))
+      if (i915_gem_set_domain(bufmgr, bo->gem_handle, I915_GEM_DOMAIN_CPU, 0))
          goto err_close;
    }
 
@@ -1394,7 +1345,7 @@ bo_free(struct iris_bo *bo)
    if (!bo->real.userptr && bo->real.map)
       bo_unmap(bo);
 
-   if (bo->idle) {
+   if (bo->idle || !iris_bo_busy(bo)) {
       bo_close(bo);
    } else {
       /* Defer closing the GEM BO and returning the VMA for reuse until the
@@ -1482,7 +1433,7 @@ bo_unreference_final(struct iris_bo *bo, time_t time)
    if (bo->real.reusable)
       bucket = bucket_for_size(bufmgr, bo->size, bo->real.heap);
    /* Put the buffer into our internal cache for reuse if we can. */
-   if (bucket && iris_bo_madvise(bo, I915_MADV_DONTNEED)) {
+   if (bucket && iris_bo_madvise(bo, IRIS_MADVICE_DONT_NEED)) {
       bo->real.free_time = time;
       bo->name = NULL;
 
@@ -1692,24 +1643,6 @@ iris_bo_map(struct util_debug_callback *dbg,
    return map;
 }
 
-static int
-iris_bo_wait_gem(struct iris_bo *bo, int64_t timeout_ns)
-{
-   assert(iris_bo_is_real(bo));
-
-   struct iris_bufmgr *bufmgr = bo->bufmgr;
-   struct drm_i915_gem_wait wait = {
-      .bo_handle = bo->gem_handle,
-      .timeout_ns = timeout_ns,
-   };
-
-   int ret = intel_ioctl(bufmgr->fd, DRM_IOCTL_I915_GEM_WAIT, &wait);
-   if (ret != 0)
-      return -errno;
-
-   return 0;
-}
-
 /**
  * Waits on a BO for the given amount of time.
  *
@@ -1742,10 +1675,17 @@ iris_bo_wait(struct iris_bo *bo, int64_t timeout_ns)
 {
    int ret;
 
-   if (iris_bo_is_external(bo))
-      ret = iris_bo_wait_gem(bo, timeout_ns);
-   else
-      ret = iris_bo_wait_syncobj(bo, timeout_ns);
+   switch (iris_bufmgr_get_device_info(bo->bufmgr)->kmd_type) {
+   case INTEL_KMD_TYPE_I915:
+      if (iris_bo_is_external(bo))
+         ret = iris_i915_bo_wait_gem(bo, timeout_ns);
+      else
+         ret = iris_bo_wait_syncobj(bo, timeout_ns);
+      break;
+   default:
+      unreachable("missing");
+      ret = -1;
+   }
 
    bo->idle = ret == 0;
 
@@ -2346,12 +2286,10 @@ static bool
 iris_bufmgr_get_meminfo(struct iris_bufmgr *bufmgr,
                         struct intel_device_info *devinfo)
 {
-   bufmgr->sys.region.memory_class = devinfo->mem.sram.mem.klass;
-   bufmgr->sys.region.memory_instance = devinfo->mem.sram.mem.instance;
+   bufmgr->sys.region = &devinfo->mem.sram.mem;
    bufmgr->sys.size = devinfo->mem.sram.mappable.size;
 
-   bufmgr->vram.region.memory_class = devinfo->mem.vram.mem.klass;
-   bufmgr->vram.region.memory_instance = devinfo->mem.vram.mem.instance;
+   bufmgr->vram.region = &devinfo->mem.vram.mem;
    bufmgr->vram.size = devinfo->mem.vram.mappable.size;
 
    return true;
@@ -2396,6 +2334,8 @@ iris_bufmgr_create(struct intel_device_info *devinfo, int fd, bool bo_reuse)
     * fd so that its namespace does not clash with another.
     */
    bufmgr->fd = os_dupfd_cloexec(fd);
+   if (bufmgr->fd == -1)
+      goto error_dup;
 
    p_atomic_set(&bufmgr->refcount, 1);
 
@@ -2410,6 +2350,7 @@ iris_bufmgr_create(struct intel_device_info *devinfo, int fd, bool bo_reuse)
    devinfo = &bufmgr->devinfo;
    bufmgr->bo_reuse = bo_reuse;
    iris_bufmgr_get_meminfo(bufmgr, devinfo);
+   bufmgr->kmd_backend = iris_kmd_backend_get(devinfo->kmd_type);
 
    struct intel_query_engine_info *engine_info;
    engine_info = intel_engine_get_info(bufmgr->fd, bufmgr->devinfo.kmd_type);
@@ -2512,6 +2453,7 @@ error_slabs_init:
    }
 error_engine_info:
    close(bufmgr->fd);
+error_dup:
    free(bufmgr);
    return NULL;
 }

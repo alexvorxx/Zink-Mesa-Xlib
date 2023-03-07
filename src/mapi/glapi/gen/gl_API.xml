@@ -1156,7 +1156,7 @@
     </function>
 
     <function name="Begin" deprecated="3.1" exec="beginend"
-              marshal_call_after="_mesa_glthread_Begin(ctx);">
+              marshal_call_after="ctx->GLThread.inside_begin_end = true;">
         <param name="mode" type="GLenum"/>
         <glx rop="4"/>
     </function>
@@ -1371,7 +1371,7 @@
     </function>
 
     <function name="End" deprecated="3.1" exec="beginend"
-              marshal_call_after="_mesa_glthread_End(ctx);">
+              marshal_call_after="ctx->GLThread.inside_begin_end = false;">
         <glx rop="23"/>
     </function>
 

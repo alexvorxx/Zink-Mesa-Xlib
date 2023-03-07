@@ -1920,8 +1920,13 @@ cmd_buffer_alloc_gfx_push_constants(struct anv_cmd_buffer *cmd_buffer)
    if (stages == cmd_buffer->state.gfx.push_constant_stages)
       return;
 
-   const unsigned push_constant_kb =
-      cmd_buffer->device->info->max_constant_urb_size_kb;
+   unsigned push_constant_kb;
+
+   const struct intel_device_info *devinfo = cmd_buffer->device->info;
+   if (anv_pipeline_is_mesh(cmd_buffer->state.gfx.pipeline))
+      push_constant_kb = devinfo->mesh_max_constant_urb_size_kb;
+   else
+      push_constant_kb = devinfo->max_constant_urb_size_kb;
 
    const unsigned num_stages =
       util_bitcount(stages & VK_SHADER_STAGE_ALL_GRAPHICS);
@@ -3393,7 +3398,7 @@ genX(cmd_buffer_flush_gfx_state)(struct anv_cmd_buffer *cmd_buffer)
 
    /* Wa_1306463417, Wa_16011107343 - Send HS state for every primitive. */
    if (cmd_buffer->state.gfx.dirty & ANV_CMD_DIRTY_PIPELINE ||
-       (GFX_VER == 11 || GFX_VER == 12)) {
+       (GFX_VER == 11 || GFX_VERx10 == 120)) {
       genX(emit_hs)(cmd_buffer);
    }
 
@@ -3545,18 +3550,14 @@ genX(cmd_buffer_flush_gfx_state)(struct anv_cmd_buffer *cmd_buffer)
       genX(cmd_buffer_flush_dynamic_state)(cmd_buffer);
 }
 
-#define GFX_HAS_GENERATED_CMDS GFX_VER >= 11
-#if GFX_VER >= 11
 #include "genX_cmd_draw_generated_indirect.h"
-#endif
 
-#if GFX_HAS_GENERATED_CMDS
 ALWAYS_INLINE static bool
 anv_use_generated_draws(const struct anv_cmd_buffer *cmd_buffer, uint32_t count)
 {
    const struct anv_device *device = cmd_buffer->device;
 
-#if GFX_VER == 11 || GFX_VER == 12
+#if GFX_VER == 11 || GFX_VERx10 == 120
    /* Limit generated draws to pipelines without HS stage. This makes things
     * simpler for implementing Wa_1306463417, Wa_16011107343.
     */
@@ -3569,7 +3570,6 @@ anv_use_generated_draws(const struct anv_cmd_buffer *cmd_buffer, uint32_t count)
    return device->physical->generated_indirect_draws &&
           count >= device->physical->instance->generated_indirect_threshold;
 }
-#endif
 
 VkResult
 genX(BeginCommandBuffer)(
@@ -3786,9 +3786,7 @@ genX(EndCommandBuffer)(
 
    anv_measure_endcommandbuffer(cmd_buffer);
 
-#if GFX_HAS_GENERATED_CMDS
    genX(cmd_buffer_flush_generated_draws)(cmd_buffer);
-#endif
 
    /* Turn on object level preemption if it is disabled to have it in known
     * state at the beginning of new command buffer.
@@ -3868,9 +3866,7 @@ genX(CmdExecuteCommands)(
     */
    genX(cmd_buffer_apply_pipe_flushes)(primary);
 
-#if GFX_HAS_GENERATED_CMDS
    genX(cmd_buffer_flush_generated_draws)(primary);
-#endif
 
    for (uint32_t i = 0; i < commandBufferCount; i++) {
       ANV_FROM_HANDLE(anv_cmd_buffer, secondary, pCmdBuffers[i]);
@@ -4061,10 +4057,8 @@ cmd_buffer_barrier(struct anv_cmd_buffer *cmd_buffer,
       anv_pipe_flush_bits_for_access_flags(cmd_buffer->device, src_flags) |
       anv_pipe_invalidate_bits_for_access_flags(cmd_buffer->device, dst_flags);
 
-#if GFX_HAS_GENERATED_CMDS
    if (dst_flags & VK_ACCESS_INDIRECT_COMMAND_READ_BIT)
       genX(cmd_buffer_flush_generated_draws)(cmd_buffer);
-#endif
 
    anv_add_pending_pipe_bits(cmd_buffer, bits, reason);
 }
@@ -4205,7 +4199,7 @@ void genX(CmdDrawMultiEXT)(
       /* Wa_1306463417, Wa_16011107343 - Send HS state for every primitive,
        * first one was handled by cmd_buffer_flush_gfx_state.
        */
-      if (i && (GFX_VER == 11 || GFX_VER == 12))
+      if (i && (GFX_VER == 11 || GFX_VERx10 == 120))
          genX(emit_hs)(cmd_buffer);
 
       anv_batch_emit(&cmd_buffer->batch, GENX(3DPRIMITIVE_EXTENDED), prim) {
@@ -4221,10 +4215,13 @@ void genX(CmdDrawMultiEXT)(
          prim.ExtendedParameter1       = firstInstance;
          prim.ExtendedParameter2       = i;
       }
-#if GFX_VERx10 == 125
-   genX(emit_dummy_post_sync_op)(cmd_buffer, draw->vertexCount);
-#endif
    }
+#endif
+
+#if GFX_VERx10 == 125
+   genX(emit_dummy_post_sync_op)(cmd_buffer,
+                                 drawCount == 0 ? 0 :
+                                 pVertexInfo[drawCount - 1].vertexCount);
 #endif
 
    update_dirty_vbs_for_gfx8_vb_flush(cmd_buffer, SEQUENTIAL);
@@ -4412,7 +4409,7 @@ void genX(CmdDrawMultiIndexedEXT)(
       /* Wa_1306463417, Wa_16011107343 - Send HS state for every primitive,
        * first one was handled by cmd_buffer_flush_gfx_state.
        */
-      if (i && (GFX_VER == 11 || GFX_VER == 12))
+      if (i && (GFX_VER == 11 || GFX_VERx10 == 120))
          genX(emit_hs)(cmd_buffer);
 
       anv_batch_emit(&cmd_buffer->batch, GENX(3DPRIMITIVE_EXTENDED), prim) {
@@ -4429,10 +4426,13 @@ void genX(CmdDrawMultiIndexedEXT)(
          prim.ExtendedParameter1       = firstInstance;
          prim.ExtendedParameter2       = i;
       }
-#if GFX_VERx10 == 125
-      genX(emit_dummy_post_sync_op)(cmd_buffer, draw->indexCount);
-#endif
    }
+#endif
+
+#if GFX_VERx10 == 125
+   genX(emit_dummy_post_sync_op)(cmd_buffer,
+                                 drawCount == 0 ? 0 :
+                                 pIndexInfo[drawCount - 1].indexCount);
 #endif
 
    update_dirty_vbs_for_gfx8_vb_flush(cmd_buffer, RANDOM);
@@ -4662,7 +4662,7 @@ emit_indirect_draws(struct anv_cmd_buffer *cmd_buffer,
       /* Wa_1306463417, Wa_16011107343 - Send HS state for every primitive,
        * first one was handled by cmd_buffer_flush_gfx_state.
        */
-      if (i && (GFX_VER == 11 || GFX_VER == 12))
+      if (i && (GFX_VER == 11 || GFX_VERx10 == 120))
          genX(emit_hs)(cmd_buffer);
 
       anv_batch_emit(&cmd_buffer->batch,
@@ -4681,10 +4681,11 @@ emit_indirect_draws(struct anv_cmd_buffer *cmd_buffer,
       }
 
 #if GFX_VERx10 == 125
-   genX(emit_dummy_post_sync_op)(cmd_buffer, 1);
+      genX(emit_dummy_post_sync_op)(cmd_buffer, 1);
 #endif
 
-      update_dirty_vbs_for_gfx8_vb_flush(cmd_buffer, SEQUENTIAL);
+      update_dirty_vbs_for_gfx8_vb_flush(cmd_buffer,
+                                         indexed ? RANDOM : SEQUENTIAL);
 
       offset += indirect_data_stride;
    }
@@ -4709,12 +4710,12 @@ void genX(CmdDrawIndirect)(
                         drawCount);
    trace_intel_begin_draw_indirect(&cmd_buffer->trace);
 
-#if GFX_HAS_GENERATED_CMDS
    if (anv_use_generated_draws(cmd_buffer, drawCount)) {
       genX(cmd_buffer_emit_indirect_generated_draws)(
          cmd_buffer,
          anv_address_add(buffer->address, offset),
          MAX2(stride, sizeof(VkDrawIndirectCommand)),
+         ANV_NULL_ADDRESS /* count_addr */,
          drawCount,
          false /* indexed */);
    } else {
@@ -4722,11 +4723,6 @@ void genX(CmdDrawIndirect)(
                           anv_address_add(buffer->address, offset),
                           stride, drawCount, false /* indexed */);
    }
-#else
-   emit_indirect_draws(cmd_buffer,
-                       anv_address_add(buffer->address, offset),
-                       stride, drawCount, false /* indexed */);
-#endif
 
    trace_intel_end_draw_indirect(&cmd_buffer->trace, drawCount);
 }
@@ -4750,12 +4746,12 @@ void genX(CmdDrawIndexedIndirect)(
                         drawCount);
    trace_intel_begin_draw_indexed_indirect(&cmd_buffer->trace);
 
-#if GFX_HAS_GENERATED_CMDS
    if (anv_use_generated_draws(cmd_buffer, drawCount)) {
       genX(cmd_buffer_emit_indirect_generated_draws)(
          cmd_buffer,
          anv_address_add(buffer->address, offset),
          MAX2(stride, sizeof(VkDrawIndexedIndirectCommand)),
+         ANV_NULL_ADDRESS /* count_addr */,
          drawCount,
          true /* indexed */);
    } else {
@@ -4763,11 +4759,6 @@ void genX(CmdDrawIndexedIndirect)(
                           anv_address_add(buffer->address, offset),
                           stride, drawCount, true /* indexed */);
    }
-#else
-   emit_indirect_draws(cmd_buffer,
-                       anv_address_add(buffer->address, offset),
-                       stride, drawCount, true /* indexed */);
-#endif
 
    trace_intel_end_draw_indexed_indirect(&cmd_buffer->trace, drawCount);
 }
@@ -4896,7 +4887,7 @@ emit_indirect_count_draws(struct anv_cmd_buffer *cmd_buffer,
       /* Wa_1306463417, Wa_16011107343 - Send HS state for every primitive,
        * first one was handled by cmd_buffer_flush_gfx_state.
        */
-      if (i && (GFX_VER == 11 || GFX_VER == 12))
+      if (i && (GFX_VER == 11 || GFX_VERx10 == 120))
          genX(emit_hs)(cmd_buffer);
 
       anv_batch_emit(&cmd_buffer->batch,
@@ -4952,9 +4943,8 @@ void genX(CmdDrawIndirectCount)(
       anv_address_add(count_buffer->address, countBufferOffset);
    stride = MAX2(stride, sizeof(VkDrawIndirectCommand));
 
-#if GFX_HAS_GENERATED_CMDS
    if (anv_use_generated_draws(cmd_buffer, maxDrawCount)) {
-      genX(cmd_buffer_emit_indirect_generated_draws_count)(
+      genX(cmd_buffer_emit_indirect_generated_draws)(
          cmd_buffer,
          indirect_data_address,
          stride,
@@ -4969,14 +4959,6 @@ void genX(CmdDrawIndirectCount)(
                                 maxDrawCount,
                                 false /* indexed */);
    }
-#else
-   emit_indirect_count_draws(cmd_buffer,
-                             indirect_data_address,
-                             stride,
-                             count_address,
-                             maxDrawCount,
-                             false /* indexed */);
-#endif
 
    trace_intel_end_draw_indirect_count(&cmd_buffer->trace, maxDrawCount);
 }
@@ -5009,9 +4991,8 @@ void genX(CmdDrawIndexedIndirectCount)(
       anv_address_add(count_buffer->address, countBufferOffset);
    stride = MAX2(stride, sizeof(VkDrawIndexedIndirectCommand));
 
-#if GFX_HAS_GENERATED_CMDS
    if (anv_use_generated_draws(cmd_buffer, maxDrawCount)) {
-      genX(cmd_buffer_emit_indirect_generated_draws_count)(
+      genX(cmd_buffer_emit_indirect_generated_draws)(
          cmd_buffer,
          indirect_data_address,
          stride,
@@ -5026,14 +5007,6 @@ void genX(CmdDrawIndexedIndirectCount)(
                                 maxDrawCount,
                                 true /* indexed */);
    }
-#else
-   emit_indirect_count_draws(cmd_buffer,
-                             indirect_data_address,
-                             stride,
-                             count_address,
-                             maxDrawCount,
-                             true /* indexed */);
-#endif
 
    trace_intel_end_draw_indexed_indirect_count(&cmd_buffer->trace, maxDrawCount);
 
@@ -8079,7 +8052,7 @@ genX(batch_emit_dummy_post_sync_op)(struct anv_batch *batch,
         primitive_topology == _3DPRIM_POINTLIST_BF ||
         primitive_topology == _3DPRIM_LINESTRIP_CONT ||
         primitive_topology == _3DPRIM_LINESTRIP_BF ||
-        primitive_topology == _3DPRIM_LINESTRIP_CONT_BF) ||
+        primitive_topology == _3DPRIM_LINESTRIP_CONT_BF) &&
        (vertex_count == 1 || vertex_count == 2)) {
       anv_batch_emit(batch, GENX(PIPE_CONTROL), pc) {
          pc.PostSyncOperation = WriteImmediateData;

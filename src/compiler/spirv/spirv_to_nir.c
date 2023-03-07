@@ -203,7 +203,8 @@ _vtn_fail(struct vtn_builder *b, const char *file, unsigned line,
       vtn_dump_shader(b, dump_path, "fail");
 
 #ifndef NDEBUG
-   os_break();
+   if (!b->options->skip_os_break_in_debug_build)
+      os_break();
 #endif
 
    vtn_longjmp(b->fail_jump, 1);
@@ -2462,12 +2463,8 @@ vtn_mem_semantics_to_nir_var_modes(struct vtn_builder *b,
    }
 
    nir_variable_mode modes = 0;
-   if (semantics & SpvMemorySemanticsUniformMemoryMask) {
-      modes |= nir_var_uniform |
-               nir_var_mem_ubo |
-               nir_var_mem_ssbo |
-               nir_var_mem_global;
-   }
+   if (semantics & SpvMemorySemanticsUniformMemoryMask)
+      modes |= nir_var_mem_ssbo | nir_var_mem_global;
    if (semantics & SpvMemorySemanticsImageMemoryMask)
       modes |= nir_var_image;
    if (semantics & SpvMemorySemanticsWorkgroupMemoryMask)

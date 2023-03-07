@@ -1,6 +1,5 @@
 /*
- * Copyright (c) 2020 Intel Corporation
- * Copyright (c) 2020 Collabora Ltd
+ * Copyright © 2023 Intel Corporation
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -21,41 +20,38 @@
  * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
  * IN THE SOFTWARE.
  */
+#include "i915/iris_bufmgr.h"
 
-/*
- * Lower scoped barriers embedding a control barrier (execusion_scope != NONE)
- * to scoped_barriers-without-control-barrier + control_barrier.
- */
+#include "common/intel_gem.h"
+#include "iris/iris_bufmgr.h"
 
-#include "brw_nir.h"
-#include "compiler/nir/nir_builder.h"
+#include "drm-uapi/i915_drm.h"
 
-static bool
-lower_instr(nir_builder *b, nir_instr *instr, UNUSED void *cb_data)
+bool iris_i915_bo_busy_gem(struct iris_bo *bo)
 {
-   if (instr->type != nir_instr_type_intrinsic)
+   assert(iris_bo_is_real(bo));
+
+   struct iris_bufmgr *bufmgr = bo->bufmgr;
+   struct drm_i915_gem_busy busy = { .handle = bo->gem_handle };
+
+   if (intel_ioctl(iris_bufmgr_get_fd(bufmgr), DRM_IOCTL_I915_GEM_BUSY, &busy))
       return false;
 
-   nir_intrinsic_instr *intr = nir_instr_as_intrinsic(instr);
-
-   if (intr->intrinsic != nir_intrinsic_scoped_barrier ||
-       nir_intrinsic_execution_scope(intr) == NIR_SCOPE_NONE)
-      return false;
-
-   if (nir_intrinsic_execution_scope(intr) == NIR_SCOPE_WORKGROUP) {
-      b->cursor = nir_after_instr(&intr->instr);
-      nir_control_barrier(b);
-   }
-
-   nir_intrinsic_set_execution_scope(intr, NIR_SCOPE_NONE);
-   return true;
+   return busy.busy;
 }
 
-bool
-brw_nir_lower_scoped_barriers(nir_shader *nir)
+int iris_i915_bo_wait_gem(struct iris_bo *bo, int64_t timeout_ns)
 {
-   return nir_shader_instructions_pass(nir, lower_instr,
-                                       nir_metadata_block_index |
-                                       nir_metadata_dominance,
-                                       NULL);
+   assert(iris_bo_is_real(bo));
+
+   struct iris_bufmgr *bufmgr = bo->bufmgr;
+   struct drm_i915_gem_wait wait = {
+      .bo_handle = bo->gem_handle,
+      .timeout_ns = timeout_ns,
+   };
+
+   if (intel_ioctl(iris_bufmgr_get_fd(bufmgr), DRM_IOCTL_I915_GEM_WAIT, &wait))
+      return -errno;
+
+   return 0;
 }

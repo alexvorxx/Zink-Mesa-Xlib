@@ -956,8 +956,8 @@ brw_preprocess_nir(const struct brw_compiler *compiler, nir_shader *nir,
       .lower_txf_offset = true,
       .lower_rect_offset = true,
       .lower_txd_cube_map = true,
-      .lower_txd_3d = devinfo->verx10 >= 125,    /* Wa_1209978020 */
-      .lower_txd_array = devinfo->verx10 >= 125, /* Wa_1209978020 */
+      .lower_txd_3d = intel_needs_workaround(devinfo, 18012201914),
+      .lower_txd_array = intel_needs_workaround(devinfo, 18012201914),
       .lower_txb_shadow_clamp = true,
       .lower_txd_shadow_clamp = true,
       .lower_txd_offset_clamp = true,
@@ -1243,10 +1243,15 @@ brw_nir_should_vectorize_mem(unsigned align_mul, unsigned align_offset,
 }
 
 static
-bool combine_all_barriers(nir_intrinsic_instr *a,
-                          nir_intrinsic_instr *b,
-                          void *data)
+bool combine_all_memory_barriers(nir_intrinsic_instr *a,
+                                 nir_intrinsic_instr *b,
+                                 void *data)
 {
+   /* Only combine pure memory barriers */
+   if ((nir_intrinsic_execution_scope(a) != NIR_SCOPE_NONE) ||
+       (nir_intrinsic_execution_scope(b) != NIR_SCOPE_NONE))
+      return false;
+
    /* Translation to backend IR will get rid of modes we don't care about, so
     * no harm in always combining them.
     *
@@ -1267,9 +1272,7 @@ get_mem_access_size_align(nir_intrinsic_op intrin, uint8_t bytes,
                           uint32_t align_mul, uint32_t align_offset,
                           bool offset_is_const, const void *cb_data)
 {
-   assert(align_offset < align_mul);
-   const uint32_t align =
-      align_offset ? 1 << (ffs(align_offset) - 1) : align_mul;
+   const uint32_t align = nir_combined_align(align_mul, align_offset);
 
    switch (intrin) {
    case nir_intrinsic_load_ssbo:
@@ -1281,11 +1284,11 @@ get_mem_access_size_align(nir_intrinsic_op intrin, uint8_t bytes,
       if (align < 4 && offset_is_const) {
          assert(util_is_power_of_two_nonzero(align_mul) && align_mul >= 4);
          const unsigned pad = align_offset % 4;
-         const unsigned comps32 = DIV_ROUND_UP(bytes + pad, 4);
+         const unsigned comps32 = MIN2(DIV_ROUND_UP(bytes + pad, 4), 4);
          return (nir_mem_access_size_align) {
             .bit_size = 32,
             .num_components = comps32,
-            .align_mul = 4,
+            .align = 4,
          };
       }
       break;
@@ -1295,7 +1298,7 @@ get_mem_access_size_align(nir_intrinsic_op intrin, uint8_t bytes,
          return (nir_mem_access_size_align) {
             .bit_size = 32,
             .num_components = 1,
-            .align_mul = 4,
+            .align = 4,
          };
       }
       break;
@@ -1330,7 +1333,7 @@ get_mem_access_size_align(nir_intrinsic_op intrin, uint8_t bytes,
       return (nir_mem_access_size_align) {
          .bit_size = bytes * 8,
          .num_components = 1,
-         .align_mul = 1,
+         .align = 1,
       };
    } else {
       bytes = MIN2(bytes, 16);
@@ -1338,7 +1341,7 @@ get_mem_access_size_align(nir_intrinsic_op intrin, uint8_t bytes,
          .bit_size = 32,
          .num_components = is_scratch ? 1 :
                            is_load ? DIV_ROUND_UP(bytes, 4) : bytes / 4,
-         .align_mul = 4,
+         .align = 4,
       };
    }
 }
@@ -1368,7 +1371,15 @@ brw_vectorize_lower_mem_access(nir_shader *nir,
       OPT(nir_opt_load_store_vectorize, &options);
    }
 
-   OPT(nir_lower_mem_access_bit_sizes, get_mem_access_size_align, NULL);
+   OPT(nir_lower_mem_access_bit_sizes,
+       nir_var_mem_ssbo |
+       nir_var_mem_constant |
+       nir_var_mem_task_payload |
+       nir_var_shader_temp |
+       nir_var_function_temp |
+       nir_var_mem_global |
+       nir_var_mem_shared,
+       get_mem_access_size_align, NULL);
 
    while (progress) {
       progress = false;
@@ -1411,8 +1422,7 @@ brw_postprocess_nir(nir_shader *nir, const struct brw_compiler *compiler,
 
    OPT(nir_lower_bit_size, lower_bit_size_callback, (void *)compiler);
 
-   OPT(brw_nir_lower_scoped_barriers);
-   OPT(nir_opt_combine_memory_barriers, combine_all_barriers, NULL);
+   OPT(nir_opt_combine_barriers, combine_all_memory_barriers, NULL);
 
    do {
       progress = false;
@@ -1597,6 +1607,7 @@ brw_nir_apply_sampler_key(nir_shader *nir,
       .lower_txd_clamp_bindless_sampler = true,
       .lower_txd_clamp_if_sampler_index_not_lt_16 = true,
       .lower_invalid_implicit_lod = true,
+      .lower_index_to_offset = true,
    };
 
    /* Iron Lake and prior require lowering of all rectangle textures */

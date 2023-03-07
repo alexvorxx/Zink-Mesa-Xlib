@@ -2,13 +2,9 @@
 KHR-GL45.transform_feedback.draw_xfb_stream_instanced_test,Fail
 
 KHR-GL45.gpu_shader_fp64.fp64.max_uniform_components,Fail
-KHR-GL45.gpu_shader_fp64.builtin.mod_dvec2,Fail
-KHR-GL45.gpu_shader_fp64.builtin.mod_dvec3,Fail
-KHR-GL45.gpu_shader_fp64.builtin.mod_dvec4,Fail
 KHR-GL45.shader_subroutine.control_flow_and_returned_subroutine_values_used_as_subroutine_input,Fail
 KHR-GL45.shader_image_load_store.basic-allFormats-store,Fail
 KHR-GL45.shading_language_420pack.binding_images,Fail
-KHR-GL45.buffer_storage.map_persistent_draw,Fail
 
 # "Invalid value returned: expected:[1, 1, 1, 1] retrieved: [0, 0, 0, 0
 #  Invalid rendering result at esextcTessellationShaderBarrier.cpp:504"
@@ -349,7 +345,6 @@ dEQP-VK.pipeline.monolithic.color_write_enable_maxa.cwe_after_bind.attachments6_
 dEQP-VK.pipeline.monolithic.color_write_enable_maxa.cwe_after_bind.attachments6_more1,Crash
 dEQP-VK.pipeline.pipeline_library.color_write_enable_maxa.cwe_after_bind.attachments4_more0,Crash
 dEQP-VK.pipeline.pipeline_library.color_write_enable_maxa.cwe_after_bind.attachments4_more1,Crash
-dEQP-VK.pipeline.pipeline_library.color_write_enable_maxa.cwe_after_bind.attachments4_more3,Crash
 dEQP-VK.pipeline.pipeline_library.color_write_enable_maxa.cwe_after_bind.attachments5_more0,Crash
 dEQP-VK.pipeline.pipeline_library.color_write_enable_maxa.cwe_after_bind.attachments5_more1,Crash
 dEQP-VK.pipeline.pipeline_library.color_write_enable_maxa.cwe_after_bind.attachments5_more3,Crash
@@ -408,3 +403,44 @@ wayland-dEQP-EGL.functional.wide_color.window_fp16_default_colorspace,Fail
 SRGBReadWritePixels,Fail
 
 spec@!opengl 1.1@line-smooth-stipple,Fail
+
+# New CTS failures in 1.3.5.0
+KHR-GL45.polygon_offset_clamp.PolygonOffsetClampMinMax,Fail
+KHR-GL45.polygon_offset_clamp.PolygonOffsetClampZeroInfinity,Fail
+dEQP-VK.binding_model.descriptor_buffer.multiple.graphics_vert_buffers1_sets3,Crash
+dEQP-VK.image.queue_transfer.2d.16x15x1.r8g8b8a8_srgb,Fail
+dEQP-VK.image.queue_transfer.2d.16x15x16.a1r5g5b5_unorm_pack16,Fail
+dEQP-VK.image.queue_transfer.2d.16x15x16.r5g5b5a1_unorm_pack16,Fail
+dEQP-VK.image.queue_transfer.2d.16x15x16.r8g8_uint,Fail
+dEQP-VK.image.queue_transfer.2d.4x3x1.r32g32_sfloat,Fail
+dEQP-VK.image.queue_transfer.2d.4x3x1.r8_unorm,Fail
+dEQP-VK.image.queue_transfer.2d.4x3x1.r8g8b8a8_uint,Fail
+dEQP-VK.image.queue_transfer.2d.4x3x2.a8b8g8r8_sint_pack32,Fail
+dEQP-VK.image.queue_transfer.2d.4x3x2.r16_sint,Fail
+dEQP-VK.image.queue_transfer.2d.4x3x2.r5g6b5_unorm_pack16,Fail
+dEQP-VK.image.queue_transfer.2d.64x31x1.b5g5r5a1_unorm_pack16,Fail
+dEQP-VK.image.queue_transfer.2d.64x31x1.r16g16_sfloat,Fail
+dEQP-VK.image.queue_transfer.2d.64x31x1.r8g8_srgb,Fail
+dEQP-VK.image.queue_transfer.2d_array.16x15x1.a2b10g10r10_uint_pack32,Fail
+dEQP-VK.image.queue_transfer.2d_array.16x15x1.r16_unorm,Fail
+dEQP-VK.image.queue_transfer.2d_array.16x15x16.b8g8r8a8_uint,Fail
+dEQP-VK.image.queue_transfer.2d_array.16x15x16.r5g5b5a1_unorm_pack16,Fail
+dEQP-VK.image.queue_transfer.2d_array.4x3x1.a2r10g10b10_unorm_pack32,Fail
+dEQP-VK.image.queue_transfer.2d_array.4x3x1.a8b8g8r8_srgb_pack32,Fail
+dEQP-VK.image.queue_transfer.2d_array.4x3x1.r32g32_uint,Fail
+dEQP-VK.image.queue_transfer.2d_array.64x31x1.r8g8b8a8_snorm,Fail
+dEQP-VK.image.queue_transfer.3d.4x3x1.r32_uint,Fail
+dEQP-VK.image.queue_transfer.3d.4x3x1.r5g5b5a1_unorm_pack16,Fail
+dEQP-VK.image.queue_transfer.3d.64x31x1.b8g8r8a8_uint,Fail
+dEQP-VK.image.queue_transfer.3d.64x31x1.r16g16b16a16_uint,Fail
+gmem-dEQP-VK.image.queue_transfer.2d_array.16x15x1.r32g32_sfloat,Fail
+gmem-dEQP-VK.image.queue_transfer.2d_array.4x3x2.a8b8g8r8_sint_pack32,Fail
+gmem-dEQP-VK.image.queue_transfer.2d_array.64x31x1.r8_snorm,Fail
+gmem-dEQP-VK.image.queue_transfer.3d.16x15x16.r8_uint,Fail
+gmem-dEQP-VK.image.queue_transfer.3d.4x3x2.a8b8g8r8_uint_pack32,Fail
+gmem-dEQP-VK.image.queue_transfer.3d.4x3x2.b4g4r4a4_unorm_pack16,Fail
+gmem-dEQP-VK.image.queue_transfer.3d.64x31x1.b8g8r8a8_srgb,Fail
+gmem-dEQP-VK.pipeline.pipeline_library.descriptor_limits.fragment_shader.input_attachments_6,Fail
+stale-regs-dEQP-VK.image.queue_transfer.3d.16x15x1.a8b8g8r8_snorm_pack32,Fail
+stale-regs-dEQP-VK.image.queue_transfer.3d.16x15x16.r8_uint,Fail
+stale-regs-dEQP-VK.pipeline.monolithic.descriptor_limits.fragment_shader.input_attachments_6,Fail

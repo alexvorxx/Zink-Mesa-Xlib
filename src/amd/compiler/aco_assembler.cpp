@@ -780,7 +780,7 @@ emit_instruction(asm_context& ctx, std::vector<uint32_t>& out, Instruction* inst
        * except abs/neg is ignored). src2 cannot be literal and src0/src1 must be VGPR.
        */
       if (instr->isVOP3()) {
-         VOP3_instruction& vop3 = instr->vop3();
+         VALU_instruction& vop3 = instr->valu();
 
          if (instr->isVOP2()) {
             opcode = opcode + 0x100;
@@ -840,7 +840,7 @@ emit_instruction(asm_context& ctx, std::vector<uint32_t>& out, Instruction* inst
          out.push_back(encoding);
 
       } else if (instr->isVOP3P()) {
-         VOP3P_instruction& vop3 = instr->vop3p();
+         VALU_instruction& vop3 = instr->valu();
 
          uint32_t encoding;
          if (ctx.gfx_level == GFX9) {

@@ -958,9 +958,8 @@ unsigned ac_compute_ngg_workgroup_size(unsigned es_verts, unsigned gs_inst_prims
    return CLAMP(workgroup_size, 1, 256);
 }
 
-void ac_set_reg_cu_en(void *cs, unsigned reg_offset, uint32_t value, uint32_t clear_mask,
-                      unsigned value_shift, const struct radeon_info *info,
-                      void set_sh_reg(void*, unsigned, uint32_t))
+uint32_t ac_apply_cu_en(uint32_t value, uint32_t clear_mask, unsigned value_shift,
+                        const struct radeon_info *info)
 {
    /* Register field position and mask. */
    uint32_t cu_en_mask = ~clear_mask;
@@ -970,10 +969,8 @@ void ac_set_reg_cu_en(void *cs, unsigned reg_offset, uint32_t value, uint32_t cl
 
    /* AND the field by spi_cu_en. */
    uint32_t spi_cu_en = info->spi_cu_en >> value_shift;
-   uint32_t new_value = (value & ~cu_en_mask) |
-                        (((cu_en & spi_cu_en) << cu_en_shift) & cu_en_mask);
-
-   set_sh_reg(cs, reg_offset, new_value);
+   return (value & ~cu_en_mask) |
+          (((cu_en & spi_cu_en) << cu_en_shift) & cu_en_mask);
 }
 
 /* Return the register value and tune bytes_per_wave to increase scratch performance. */

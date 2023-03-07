@@ -1,4 +1,6 @@
-#!/bin/bash
+#!/usr/bin/env bash
+
+section_switch meson-configure "meson: configure"
 
 set -e
 set -o xtrace
@@ -81,11 +83,17 @@ meson setup _build \
       ${EXTRA_OPTION}
 cd _build
 meson configure
+
+uncollapsed_section_switch meson-build "meson: build"
+
 if command -V mold &> /dev/null ; then
     mold --run ninja
 else
     ninja
 fi
+
+
+uncollapsed_section_switch meson-test "meson: test"
 LC_ALL=C.UTF-8 meson test --num-processes ${FDO_CI_CONCURRENT:-4} --print-errorlogs ${MESON_TEST_ARGS}
 if command -V mold &> /dev/null ; then
     mold --run ninja install
@@ -93,3 +101,4 @@ else
     ninja install
 fi
 cd ..
+section_end meson-test

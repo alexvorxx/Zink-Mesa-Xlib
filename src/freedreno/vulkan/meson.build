@@ -67,11 +67,6 @@ if with_xlib_lease
   tu_deps += [dep_xlib_xrandr]
 endif
 
-if not system_has_kms_drm
-  # Even if libdrm is available we shouldn't use it in KGSL-only build
-  tu_flags += '-UHAVE_LIBDRM'
-endif
-
 if freedreno_kmds.contains('kgsl')
   tu_flags += '-DTU_HAS_KGSL'
   libtu_files += files('tu_knl_kgsl.c')
@@ -136,7 +131,8 @@ libvulkan_freedreno = shared_library(
   ],
   c_args : [no_override_init_args, tu_flags],
   gnu_symbol_visibility : 'hidden',
-  link_args : [ld_args_bsymbolic, ld_args_gc_sections, ld_args_build_id],
+  link_args : [vulkan_icd_link_args, ld_args_bsymbolic, ld_args_gc_sections, ld_args_build_id],
+  link_depends : vulkan_icd_link_depends,
   install : true,
 )
 

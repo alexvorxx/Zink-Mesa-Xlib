@@ -965,7 +965,7 @@ radv_device_init_dgc_prepare_state(struct radv_device *device)
 
    result = radv_compute_pipeline_create(radv_device_to_handle(device), device->meta_state.cache,
                                          &pipeline_info, &device->meta_state.alloc,
-                                         &device->meta_state.dgc_prepare.pipeline, true);
+                                         &device->meta_state.dgc_prepare.pipeline);
    if (result != VK_SUCCESS)
       goto cleanup;
 

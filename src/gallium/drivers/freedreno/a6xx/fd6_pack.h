@@ -57,36 +57,36 @@ struct fd_reg_pair {
 
 #define __ONE_REG(i, ...)                                                      \
    do {                                                                        \
-      const struct fd_reg_pair regs[] = {__VA_ARGS__};                         \
-      /* NOTE: allow regs[0].reg==0, this happens in OUT_PKT() */              \
-      if (i < ARRAY_SIZE(regs) && (i == 0 || regs[i].reg > 0)) {               \
-         __assert_eq(regs[0].reg + i, regs[i].reg);                            \
-         if (regs[i].bo) {                                                     \
-            uint64_t *p64 = (uint64_t *)p;                                     \
-            *p64 = (__reloc_iova(regs[i].bo, regs[i].bo_offset, 0,             \
-                                -regs[i].bo_shift) << regs[i].bo_low) |        \
-                   regs[i].value;                                              \
-            p += 2;                                                            \
-            fd_ringbuffer_attach_bo(ring, regs[i].bo);                         \
+      const struct fd_reg_pair __regs[] = {__VA_ARGS__};                       \
+      /* NOTE: allow __regs[0].reg==0, this happens in OUT_PKT() */            \
+      if (i < ARRAY_SIZE(__regs) && (i == 0 || __regs[i].reg > 0)) {           \
+         __assert_eq(__regs[0].reg + i, __regs[i].reg);                        \
+         if (__regs[i].bo) {                                                   \
+            uint64_t *__p64 = (uint64_t *)__p;                                 \
+            *__p64 = (__reloc_iova(__regs[i].bo, __regs[i].bo_offset, 0,       \
+                                -__regs[i].bo_shift) << __regs[i].bo_low) |    \
+                   __regs[i].value;                                            \
+            __p += 2;                                                          \
+            fd_ringbuffer_attach_bo(ring, __regs[i].bo);                       \
          } else {                                                              \
-            *p++ = regs[i].value;                                              \
-            if (regs[i].is_address)                                            \
-               *p++ = regs[i].value >> 32;                                     \
+            *__p++ = __regs[i].value;                                          \
+            if (__regs[i].is_address)                                          \
+               *__p++ = __regs[i].value >> 32;                                 \
          }                                                                     \
       }                                                                        \
    } while (0)
 
 #define OUT_REG(ring, ...)                                                     \
    do {                                                                        \
-      const struct fd_reg_pair regs[] = {__VA_ARGS__};                         \
-      unsigned count = ARRAY_SIZE(regs);                                       \
+      const struct fd_reg_pair __regs[] = {__VA_ARGS__};                       \
+      unsigned count = ARRAY_SIZE(__regs);                                     \
                                                                                \
-      STATIC_ASSERT(ARRAY_SIZE(regs) > 0);                                     \
-      STATIC_ASSERT(ARRAY_SIZE(regs) <= 16);                                   \
+      STATIC_ASSERT(ARRAY_SIZE(__regs) > 0);                                   \
+      STATIC_ASSERT(ARRAY_SIZE(__regs) <= 16);                                 \
                                                                                \
       BEGIN_RING(ring, count + 1);                                             \
-      uint32_t *p = ring->cur;                                                 \
-      *p++ = pm4_pkt4_hdr(regs[0].reg, count);                                 \
+      uint32_t *__p = ring->cur;                                               \
+      *__p++ = pm4_pkt4_hdr(__regs[0].reg, count);                             \
                                                                                \
       __ONE_REG(0, __VA_ARGS__);                                               \
       __ONE_REG(1, __VA_ARGS__);                                               \
@@ -104,19 +104,19 @@ struct fd_reg_pair {
       __ONE_REG(13, __VA_ARGS__);                                              \
       __ONE_REG(14, __VA_ARGS__);                                              \
       __ONE_REG(15, __VA_ARGS__);                                              \
-      ring->cur = p;                                                           \
+      ring->cur = __p;                                                         \
    } while (0)
 
 #define OUT_PKT(ring, opcode, ...)                                             \
    do {                                                                        \
-      const struct fd_reg_pair regs[] = {__VA_ARGS__};                         \
-      unsigned count = ARRAY_SIZE(regs);                                       \
+      const struct fd_reg_pair __regs[] = {__VA_ARGS__};                       \
+      unsigned count = ARRAY_SIZE(__regs);                                     \
                                                                                \
-      STATIC_ASSERT(ARRAY_SIZE(regs) <= 16);                                   \
+      STATIC_ASSERT(ARRAY_SIZE(__regs) <= 16);                                 \
                                                                                \
       BEGIN_RING(ring, count + 1);                                             \
-      uint32_t *p = ring->cur;                                                 \
-      *p++ = pm4_pkt7_hdr(opcode, count);                                      \
+      uint32_t *__p = ring->cur;                                               \
+      *__p++ = pm4_pkt7_hdr(opcode, count);                                    \
                                                                                \
       __ONE_REG(0, __VA_ARGS__);                                               \
       __ONE_REG(1, __VA_ARGS__);                                               \
@@ -134,7 +134,7 @@ struct fd_reg_pair {
       __ONE_REG(13, __VA_ARGS__);                                              \
       __ONE_REG(14, __VA_ARGS__);                                              \
       __ONE_REG(15, __VA_ARGS__);                                              \
-      ring->cur = p;                                                           \
+      ring->cur = __p;                                                         \
    } while (0)
 
 /* similar to OUT_PKT() but appends specified # of dwords
@@ -143,15 +143,15 @@ struct fd_reg_pair {
  */
 #define OUT_PKTBUF(ring, opcode, dwords, sizedwords, ...)                      \
    do {                                                                        \
-      const struct fd_reg_pair regs[] = {__VA_ARGS__};                         \
-      unsigned count = ARRAY_SIZE(regs);                                       \
+      const struct fd_reg_pair __regs[] = {__VA_ARGS__};                       \
+      unsigned count = ARRAY_SIZE(__regs);                                     \
                                                                                \
-      STATIC_ASSERT(ARRAY_SIZE(regs) <= 16);                                   \
+      STATIC_ASSERT(ARRAY_SIZE(__regs) <= 16);                                 \
       count += sizedwords;                                                     \
                                                                                \
       BEGIN_RING(ring, count + 1);                                             \
-      uint32_t *p = ring->cur;                                                 \
-      *p++ = pm4_pkt7_hdr(opcode, count);                                      \
+      uint32_t *__p = ring->cur;                                               \
+      *__p++ = pm4_pkt7_hdr(opcode, count);                                    \
                                                                                \
       __ONE_REG(0, __VA_ARGS__);                                               \
       __ONE_REG(1, __VA_ARGS__);                                               \
@@ -169,9 +169,9 @@ struct fd_reg_pair {
       __ONE_REG(13, __VA_ARGS__);                                              \
       __ONE_REG(14, __VA_ARGS__);                                              \
       __ONE_REG(15, __VA_ARGS__);                                              \
-      memcpy(p, dwords, 4 * sizedwords);                                       \
-      p += sizedwords;                                                         \
-      ring->cur = p;                                                           \
+      memcpy(__p, dwords, 4 * sizedwords);                                     \
+      __p += sizedwords;                                                       \
+      ring->cur = __p;                                                         \
    } while (0)
 
 #endif /* FD6_PACK_H */

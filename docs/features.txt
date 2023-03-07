@@ -93,13 +93,13 @@ GL 3.2, GLSL 1.50 --- all DONE: freedreno, i965, nv50, nvc0, r600, radeonsi, llv
   GL_ARB_seamless_cube_map (Seamless cubemaps)          DONE (panfrost, asahi)
   GL_ARB_texture_multisample (Multisample textures)     DONE (freedreno/a5xx+, v3d, vc4, panfrost)
   GL_ARB_depth_clamp (Frag depth clamp)                 DONE (panfrost, asahi)
-  GL_ARB_sync (Fence objects)                           DONE (v3d, vc4, panfrost, lima)
+  GL_ARB_sync (Fence objects)                           DONE (v3d, vc4, panfrost, lima, asahi)
   GLX_ARB_create_context_profile                        DONE
 
 
 GL 3.3, GLSL 3.30 --- all DONE: freedreno, i965, nv50, nvc0, r600, radeonsi, llvmpipe, softpipe, virgl, zink, d3d12
 
-  GL_ARB_blend_func_extended                            DONE (freedreno/a3xx, freedreno/a6xx, panfrost, lima)
+  GL_ARB_blend_func_extended                            DONE (freedreno/a3xx, freedreno/a6xx, panfrost, lima, asahi)
   GL_ARB_explicit_attrib_location                       DONE (all drivers that support GLSL)
   GL_ARB_occlusion_query2                               DONE (v3d, panfrost, asahi)
   GL_ARB_sampler_objects                                DONE (all drivers)
@@ -117,8 +117,8 @@ GL 4.0, GLSL 4.00 --- all DONE: freedreno/a6xx, i965/gen7+, nvc0, r600, radeonsi
   GL_ARB_draw_indirect                                  DONE (freedreno, i965/gen7+, softpipe, v3d, asahi)
   GL_ARB_gpu_shader5                                    DONE (freedreno/a6xx, i965/gen7+)
   - 'precise' qualifier                                 DONE (softpipe)
-  - Dynamically uniform sampler array indices           DONE (softpipe)
-  - Dynamically uniform UBO array indices               DONE (freedreno, softpipe)
+  - Dynamically uniform sampler array indices           DONE (softpipe, asahi)
+  - Dynamically uniform UBO array indices               DONE (freedreno, softpipe, asahi)
   - Implicit signed -> unsigned conversions             DONE (softpipe, asahi)
   - Fused multiply-add                                  DONE (softpipe, asahi)
   - Packing/bitfield/conversion functions               DONE (freedreno, softpipe, panfrost, asahi)

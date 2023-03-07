@@ -96,6 +96,7 @@ struct ac_llvm_context {
    LLVMTypeRef f16;
    LLVMTypeRef f32;
    LLVMTypeRef f64;
+   LLVMTypeRef v4i8;
    LLVMTypeRef v2i16;
    LLVMTypeRef v4i16;
    LLVMTypeRef v2f16;

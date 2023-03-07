@@ -231,7 +231,7 @@ can_use_SDWA(amd_gfx_level gfx_level, const aco_ptr<Instruction>& instr, bool pr
       return true;
 
    if (instr->isVOP3()) {
-      VOP3_instruction& vop3 = instr->vop3();
+      VALU_instruction& vop3 = instr->valu();
       if (instr->format == Format::VOP3)
          return false;
       if (vop3.clamp && instr->isVOPC() && gfx_level != GFX8)
@@ -303,9 +303,9 @@ convert_to_SDWA(amd_gfx_level gfx_level, aco_ptr<Instruction>& instr)
    SDWA_instruction& sdwa = instr->sdwa();
 
    if (tmp->isVOP3()) {
-      VOP3_instruction& vop3 = tmp->vop3();
-      memcpy(sdwa.neg, vop3.neg, sizeof(sdwa.neg));
-      memcpy(sdwa.abs, vop3.abs, sizeof(sdwa.abs));
+      VALU_instruction& vop3 = tmp->valu();
+      std::copy(std::cbegin(vop3.neg), std::cend(vop3.neg), std::begin(sdwa.neg));
+      std::copy(std::cbegin(vop3.abs), std::cend(vop3.abs), std::begin(sdwa.abs));
       sdwa.omod = vop3.omod;
       sdwa.clamp = vop3.clamp;
    }
@@ -343,7 +343,7 @@ can_use_DPP(const aco_ptr<Instruction>& instr, bool pre_ra, bool dpp8)
    if (instr->operands.size() && instr->operands[0].isLiteral())
       return false;
 
-   if (instr->isSDWA() || instr->isVOP3P())
+   if (instr->isSDWA() || instr->isVINTERP_INREG() || instr->isVOP3P())
       return false;
 
    if (!pre_ra && (instr->isVOPC() || instr->definitions.size() > 1) &&
@@ -354,7 +354,7 @@ can_use_DPP(const aco_ptr<Instruction>& instr, bool pre_ra, bool dpp8)
       return false;
 
    if (instr->isVOP3()) {
-      const VOP3_instruction* vop3 = &instr->vop3();
+      const VALU_instruction* vop3 = &instr->valu();
       if (vop3->clamp || vop3->omod || vop3->opsel)
          return false;
       if (dpp8)
@@ -405,9 +405,9 @@ convert_to_DPP(aco_ptr<Instruction>& instr, bool dpp8)
       dpp->bank_mask = 0xf;
 
       if (tmp->isVOP3()) {
-         const VOP3_instruction* vop3 = &tmp->vop3();
-         memcpy(dpp->neg, vop3->neg, sizeof(dpp->neg));
-         memcpy(dpp->abs, vop3->abs, sizeof(dpp->abs));
+         const VALU_instruction* vop3 = &tmp->valu();
+         std::copy(std::cbegin(vop3->neg), std::cend(vop3->neg), std::begin(dpp->neg));
+         std::copy(std::cbegin(vop3->abs), std::cend(vop3->abs), std::begin(dpp->abs));
       }
    }
 

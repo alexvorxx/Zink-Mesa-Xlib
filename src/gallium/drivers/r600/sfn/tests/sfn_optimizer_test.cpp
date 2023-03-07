@@ -373,6 +373,52 @@ BLOCK_END
    check(sh, expect);
 };
 
+
+TEST_F(TestShaderFromNir, OptimizeIntoGroup)
+{
+   const char *input =
+R"(VS
+CHIPCLASS CAYMAN
+INPUT LOC:0 NAME:15
+OUTPUT LOC:0 NAME:0 MASK:15
+REGISTERS R0.x R1.x R2.x
+SHADER
+BLOCK_START
+  ALU MOV S4.x : R0.x {W}
+  ALU MOV S5.y : R1.x {W}
+  ALU MOV S6.z : R2.x {WL}
+  ALU_GROUP_BEGIN
+    ALU CUBE S7.x@chgr{s} : S6.z S5.y {W}
+    ALU CUBE S7.y@chgr{s} : S6.z S4.x {W}
+    ALU CUBE S7.z@chgr{s} : S4.x S6.z {W}
+    ALU CUBE S7.w@chgr{s} : S5.y S6.z {WL}
+  ALU_GROUP_END
+  EXPORT_DONE PARAM 0 S7.xyzw
+BLOCK_END)";
+
+   const char *expect =
+R"(VS
+CHIPCLASS CAYMAN
+INPUT LOC:0 NAME:15
+OUTPUT LOC:0 NAME:0 MASK:15
+REGISTERS R0.x R1.x R2.x
+SHADER
+BLOCK_START
+  ALU_GROUP_BEGIN
+    ALU CUBE S7.x@chgr{s} : R2.x@chan R1.x@chan {W}
+    ALU CUBE S7.y@chgr{s} : R2.x@chan R0.x@chan {W}
+    ALU CUBE S7.z@chgr{s} : R0.x@chan R2.x@chan {W}
+    ALU CUBE S7.w@chgr{s} : R1.x@chan R2.x@chan {WL}
+  ALU_GROUP_END
+  EXPORT_DONE PARAM 0 S7.xyzw
+BLOCK_END
+)";
+   auto sh = from_string(input);
+   optimize(*sh);
+   check(sh, expect);
+};
+
+
 void
 TestShaderFromNir::check(Shader *s, const char *expect_orig)
 {

@@ -80,6 +80,7 @@ if with_tests
         'spirv/tests/helpers.h',
         'spirv/tests/avail_vis.cpp',
         'spirv/tests/volatile.cpp',
+        'spirv/tests/control_flow_tests.cpp',
       ),
       c_args : [c_msvc_compat_args, no_override_init_args],
       gnu_symbol_visibility : 'hidden',

@@ -10,6 +10,7 @@
 
 #include "vn_device.h"
 
+#include "util/disk_cache.h"
 #include "venus-protocol/vn_protocol_driver_device.h"
 
 #include "vn_android.h"
@@ -348,6 +349,52 @@ vn_device_feedback_pool_fini(struct vn_device *dev)
    vn_feedback_pool_fini(&dev->feedback_pool);
 }
 
+static void
+vn_device_update_shader_cache_id(struct vn_device *dev)
+{
+   /* venus utilizes the host side shader cache.
+    * This is a WA to generate shader cache files containing headers
+    * with a unique cache id that will change based on host driver
+    * identifiers. This allows fossilize replay to detect if the host
+    * side shader cach is no longer up to date.
+    * The shader cache is destroyed after creating the necessary files
+    * and not utilized by venus.
+    */
+#if !defined(ANDROID) && defined(ENABLE_SHADER_CACHE)
+   const VkPhysicalDeviceProperties *vulkan_1_0_props =
+      &dev->physical_device->properties.vulkan_1_0;
+   struct mesa_sha1 sha1_ctx;
+   uint8_t sha1[SHA1_DIGEST_LENGTH];
+
+   _mesa_sha1_init(&sha1_ctx);
+   _mesa_sha1_update(&sha1_ctx, vulkan_1_0_props->pipelineCacheUUID,
+                     sizeof(vulkan_1_0_props->pipelineCacheUUID));
+   _mesa_sha1_update(&sha1_ctx, &vulkan_1_0_props->vendorID,
+                     sizeof(vulkan_1_0_props->vendorID));
+   _mesa_sha1_update(&sha1_ctx, &vulkan_1_0_props->deviceID,
+                     sizeof(vulkan_1_0_props->deviceID));
+   _mesa_sha1_final(&sha1_ctx, sha1);
+
+   char uuid[VK_UUID_SIZE];
+   _mesa_sha1_format(uuid, sha1);
+
+   struct disk_cache *cache = disk_cache_create("venus", uuid, 0);
+   if (!cache)
+      return;
+
+   /* The entry header is what contains the cache id / timestamp so we
+    * need to create a fake entry.
+    */
+   uint8_t key[20];
+   char data[] = "Fake Shader";
+
+   disk_cache_compute_key(cache, data, sizeof(data), key);
+   disk_cache_put(cache, key, data, sizeof(data), NULL);
+
+   disk_cache_destroy(cache);
+#endif
+}
+
 static VkResult
 vn_device_init(struct vn_device *dev,
                struct vn_physical_device *physical_dev,
@@ -405,6 +452,11 @@ vn_device_init(struct vn_device *dev,
    result = vn_device_init_queues(dev, create_info);
    if (result != VK_SUCCESS)
       goto out_cmd_pools_fini;
+
+   /* This is a WA to allow fossilize replay to detect if the host side shader
+    * cache is no longer up to date.
+    */
+   vn_device_update_shader_cache_id(dev);
 
    return VK_SUCCESS;
 

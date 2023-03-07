@@ -228,6 +228,9 @@ wsi_win32_surface_get_capabilities2(VkIcdSurfaceBase *surface,
 {
    assert(caps->sType == VK_STRUCTURE_TYPE_SURFACE_CAPABILITIES_2_KHR);
 
+   const VkSurfacePresentModeEXT *present_mode =
+      (const VkSurfacePresentModeEXT *)vk_find_struct_const(info_next, SURFACE_PRESENT_MODE_EXT);
+
    VkResult result =
       wsi_win32_surface_get_capabilities(surface, wsi_device,
                                       &caps->surfaceCapabilities);
@@ -237,6 +240,34 @@ wsi_win32_surface_get_capabilities2(VkIcdSurfaceBase *surface,
       case VK_STRUCTURE_TYPE_SURFACE_PROTECTED_CAPABILITIES_KHR: {
          VkSurfaceProtectedCapabilitiesKHR *protected_cap = (VkSurfaceProtectedCapabilitiesKHR *)ext;
          protected_cap->supportsProtected = VK_FALSE;
+         break;
+      }
+
+      case VK_STRUCTURE_TYPE_SURFACE_PRESENT_SCALING_CAPABILITIES_EXT: {
+         /* Unsupported. */
+         VkSurfacePresentScalingCapabilitiesEXT *scaling =
+            (VkSurfacePresentScalingCapabilitiesEXT *)ext;
+         scaling->supportedPresentScaling = 0;
+         scaling->supportedPresentGravityX = 0;
+         scaling->supportedPresentGravityY = 0;
+         scaling->minScaledImageExtent = caps->surfaceCapabilities.minImageExtent;
+         scaling->maxScaledImageExtent = caps->surfaceCapabilities.maxImageExtent;
+         break;
+      }
+
+      case VK_STRUCTURE_TYPE_SURFACE_PRESENT_MODE_COMPATIBILITY_EXT: {
+         /* Unsupported, just report the input present mode. */
+         VkSurfacePresentModeCompatibilityEXT *compat =
+            (VkSurfacePresentModeCompatibilityEXT *)ext;
+         if (compat->pPresentModes) {
+            if (compat->presentModeCount) {
+               assert(present_mode);
+               compat->pPresentModes[0] = present_mode->presentMode;
+               compat->presentModeCount = 1;
+            }
+         } else {
+            compat->presentModeCount = 1;
+         }
          break;
       }
 
@@ -571,6 +602,27 @@ wsi_win32_get_wsi_image(struct wsi_swapchain *drv_chain,
 }
 
 static VkResult
+wsi_win32_release_images(struct wsi_swapchain *drv_chain,
+                         uint32_t count, const uint32_t *indices)
+{
+   struct wsi_win32_swapchain *chain =
+      (struct wsi_win32_swapchain *)drv_chain;
+
+   if (chain->status == VK_ERROR_SURFACE_LOST_KHR)
+      return chain->status;
+
+   for (uint32_t i = 0; i < count; i++) {
+      uint32_t index = indices[i];
+      assert(index < chain->base.image_count);
+      assert(chain->images[index].state == WSI_IMAGE_DRAWING);
+      chain->images[index].state = WSI_IMAGE_IDLE;
+   }
+
+   return VK_SUCCESS;
+}
+
+
+static VkResult
 wsi_win32_acquire_next_image(struct wsi_swapchain *drv_chain,
                              const VkAcquireNextImageInfoKHR *info,
                              uint32_t *image_index)
@@ -788,6 +840,7 @@ wsi_win32_surface_create_swapchain(
    chain->base.destroy = wsi_win32_swapchain_destroy;
    chain->base.get_wsi_image = wsi_win32_get_wsi_image;
    chain->base.acquire_next_image = wsi_win32_acquire_next_image;
+   chain->base.release_images = wsi_win32_release_images;
    chain->base.queue_present = wsi_win32_queue_present;
    chain->base.present_mode = wsi_swapchain_get_present_mode(wsi_device, create_info);
    chain->extent = create_info->imageExtent;

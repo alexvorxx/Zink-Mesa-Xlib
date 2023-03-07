@@ -179,10 +179,7 @@ pvr_submit_info_flags_init(const struct pvr_device_info *const dev_info,
 static void pvr_compute_job_ws_submit_info_init(
    struct pvr_compute_ctx *ctx,
    struct pvr_sub_cmd_compute *sub_cmd,
-   struct vk_sync *barrier,
-   struct vk_sync **waits,
-   uint32_t wait_count,
-   uint32_t *stage_flags,
+   struct vk_sync *wait,
    struct pvr_winsys_compute_submit_info *submit_info)
 {
    const struct pvr_device *const device = ctx->device;
@@ -193,11 +190,7 @@ static void pvr_compute_job_ws_submit_info_init(
    submit_info->frame_num = device->global_queue_present_count;
    submit_info->job_num = device->global_cmd_buffer_submit_count;
 
-   submit_info->barrier = barrier;
-
-   submit_info->waits = waits;
-   submit_info->wait_count = wait_count;
-   submit_info->stage_flags = stage_flags;
+   submit_info->wait = wait;
 
    pvr_submit_info_stream_init(ctx, sub_cmd, submit_info);
    pvr_submit_info_ext_stream_init(ctx, submit_info);
@@ -206,22 +199,13 @@ static void pvr_compute_job_ws_submit_info_init(
 
 VkResult pvr_compute_job_submit(struct pvr_compute_ctx *ctx,
                                 struct pvr_sub_cmd_compute *sub_cmd,
-                                struct vk_sync *barrier,
-                                struct vk_sync **waits,
-                                uint32_t wait_count,
-                                uint32_t *stage_flags,
+                                struct vk_sync *wait,
                                 struct vk_sync *signal_sync)
 {
    struct pvr_winsys_compute_submit_info submit_info;
    struct pvr_device *device = ctx->device;
 
-   pvr_compute_job_ws_submit_info_init(ctx,
-                                       sub_cmd,
-                                       barrier,
-                                       waits,
-                                       wait_count,
-                                       stage_flags,
-                                       &submit_info);
+   pvr_compute_job_ws_submit_info_init(ctx, sub_cmd, wait, &submit_info);
 
    if (PVR_IS_DEBUG_SET(DUMP_CONTROL_STREAM)) {
       pvr_csb_dump(&sub_cmd->control_stream,

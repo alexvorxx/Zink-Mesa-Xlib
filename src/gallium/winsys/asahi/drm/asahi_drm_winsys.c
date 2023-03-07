@@ -23,8 +23,8 @@
  */
 
 #include <errno.h>
-#include <unistd.h>
 #include <fcntl.h>
+#include <unistd.h>
 
 #include "util/format/u_format.h"
 #include "util/os_file.h"
@@ -32,10 +32,10 @@
 #include "util/u_memory.h"
 #include "util/u_screen.h"
 
+#include "asahi/agx_public.h"
 #include "drm-uapi/drm.h"
 #include "renderonly/renderonly.h"
 #include "asahi_drm_public.h"
-#include "asahi/agx_public.h"
 
 static struct pipe_screen *
 asahi_screen_create(int fd, const struct pipe_screen_config *config,
@@ -47,13 +47,13 @@ asahi_screen_create(int fd, const struct pipe_screen_config *config,
 struct pipe_screen *
 asahi_drm_screen_create(int fd)
 {
-   return u_pipe_screen_lookup_or_create(os_dupfd_cloexec(fd), NULL,
-                                         NULL, asahi_screen_create);
+   return u_pipe_screen_lookup_or_create(os_dupfd_cloexec(fd), NULL, NULL,
+                                         asahi_screen_create);
 }
 
 struct pipe_screen *
 asahi_drm_screen_create_renderonly(struct renderonly *ro)
 {
-   return u_pipe_screen_lookup_or_create(os_dupfd_cloexec(ro->gpu_fd), NULL,
-                                         ro, asahi_screen_create);
+   return u_pipe_screen_lookup_or_create(os_dupfd_cloexec(ro->gpu_fd), NULL, ro,
+                                         asahi_screen_create);
 }

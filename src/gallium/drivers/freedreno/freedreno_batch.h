@@ -102,7 +102,7 @@ struct fd_batch {
     * color_logic_Op (since those functions are disabled when by-
     * passing GMEM.
     */
-   enum fd_gmem_reason gmem_reason;
+   BITMASK_ENUM(fd_gmem_reason) gmem_reason;
 
    /* At submit time, once we've decided that this batch will use GMEM
     * rendering, the appropriate gmem state is looked up:

@@ -166,9 +166,8 @@ unsigned ac_compute_esgs_workgroup_size(enum amd_gfx_level gfx_level, unsigned w
 unsigned ac_compute_ngg_workgroup_size(unsigned es_verts, unsigned gs_inst_prims,
                                        unsigned max_vtx_out, unsigned prim_amp_factor);
 
-void ac_set_reg_cu_en(void *cs, unsigned reg_offset, uint32_t value, uint32_t clear_mask,
-                      unsigned value_shift, const struct radeon_info *info,
-                      void set_sh_reg(void*, unsigned, uint32_t));
+uint32_t ac_apply_cu_en(uint32_t value, uint32_t clear_mask, unsigned value_shift,
+                        const struct radeon_info *info);
 
 void ac_get_scratch_tmpring_size(const struct radeon_info *info,
                                  unsigned bytes_per_wave, unsigned *max_seen_bytes_per_wave,

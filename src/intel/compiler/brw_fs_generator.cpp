@@ -1754,7 +1754,8 @@ fs_generator::generate_code(const cfg_t *cfg, int dispatch_width,
        *
        * Clear accumulator register before end of thread.
        */
-      if (inst->eot && is_accum_used && devinfo->ver >= 12) {
+      if (inst->eot && is_accum_used &&
+          intel_needs_workaround(devinfo, 14010017096)) {
          brw_set_default_exec_size(p, BRW_EXECUTE_16);
          brw_set_default_mask_control(p, BRW_MASK_DISABLE);
          brw_set_default_predicate_control(p, BRW_PREDICATE_NONE);

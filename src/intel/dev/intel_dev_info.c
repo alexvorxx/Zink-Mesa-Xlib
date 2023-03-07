@@ -21,11 +21,12 @@
  * IN THE SOFTWARE.
  */
 
+#include <getopt.h>
+#include <inttypes.h>
+#include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <stdarg.h>
 #include <string.h>
-#include <inttypes.h>
 
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -90,13 +91,62 @@ print_regions_info(const struct intel_device_info *devinfo)
    }
 }
 
+#define INTEL_WA( X ) "WA_"#X
+static void
+print_wa_info(const struct intel_device_info *devinfo)
+{
+   static const char* all_wa[] = { INTEL_ALL_WA };
+   fprintf(stdout, "   required workarounds:\n");
+   for (enum intel_workaround_id id = 0; id < INTEL_WA_NUM; ++id) {
+      if (BITSET_TEST(devinfo->workarounds, id)) {
+         fprintf(stdout, "      %s\n", all_wa[id]);
+      }
+   }
+   fprintf(stdout, "\n");
+}
+#undef INTEL_WA
+
 int
 main(int argc, char *argv[])
 {
    drmDevicePtr devices[8];
-   int max_devices;
-   bool print_hwconfig = argc > 1 && strcmp(argv[1], "--hwconfig") == 0;
+   int max_devices, i;
+   char c;
+   bool help = false, print_hwconfig = false, all = false, print_workarounds = false;
+   const struct option opts[] = {
+      { "help",         no_argument,  (int *) &help,              true },
+      { "hwconfig",     no_argument,  (int *) &print_hwconfig,    true },
+      { "workarounds",  no_argument,  (int *) &print_workarounds, true },
+      { "all",          no_argument,  (int *) &all,               true },
+   };
+   while ((c = getopt_long(argc, argv, "ha", opts, &i)) != -1) {
+      switch (c) {
+      case 'h':
+         help = true;
+         break;
+      case 'a':
+         all = true;
+         break;
+      default:
+         break;
+      }
+   }
 
+   if (help) {
+      fprintf(stdout,
+              "Usage: intel_dev_info [OPTION]\n"
+              "Print device info for the current system.\n"
+              "      --help / h     display this help and exit\n"
+              "      --hwconfig     print the hwconfig table\n"
+              "      --workarounds  print the list of hardware workarounds for the system\n"
+              "      --all / -a     print all optional details\n");
+      exit(0);
+   }
+
+   if (all) {
+      print_workarounds = true;
+      print_hwconfig = true;
+   }
    max_devices = drmGetDevices2(0, devices, ARRAY_SIZE(devices));
    if (max_devices < 1)
       return error("Not device found");
@@ -175,6 +225,8 @@ main(int argc, char *argv[])
               devinfo.timestamp_frequency, 1000000000.0 / devinfo.timestamp_frequency);
 
       print_regions_info(&devinfo);
+      if (print_workarounds)
+         print_wa_info(&devinfo);
    }
 
    return EXIT_SUCCESS;

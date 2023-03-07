@@ -1254,7 +1254,7 @@ search_phi_bcsel(nir_ssa_scalar scalar, nir_ssa_scalar *buf, unsigned buf_size, 
          unsigned total_added = 0;
          nir_foreach_phi_src(src, phi) {
             num_sources_left--;
-            unsigned added = search_phi_bcsel(nir_get_ssa_scalar(src->src.ssa, 0),
+            unsigned added = search_phi_bcsel(nir_get_ssa_scalar(src->src.ssa, scalar.comp),
                buf + total_added, buf_size - num_sources_left, visited);
             assert(added <= buf_size);
             buf_size -= added;
@@ -1437,7 +1437,7 @@ nir_unsigned_upper_bound_impl(nir_shader *shader, struct hash_table *range_ht,
       case nir_intrinsic_exclusive_scan: {
          nir_op op = nir_intrinsic_reduction_op(intrin);
          if (op == nir_op_umin || op == nir_op_umax || op == nir_op_imin || op == nir_op_imax)
-            res = nir_unsigned_upper_bound_impl(shader, range_ht, nir_get_ssa_scalar(intrin->src[0].ssa, 0),
+            res = nir_unsigned_upper_bound_impl(shader, range_ht, nir_get_ssa_scalar(intrin->src[0].ssa, scalar.comp),
                                                 config, stack_depth + 1);
          break;
       }
@@ -1453,13 +1453,13 @@ nir_unsigned_upper_bound_impl(nir_shader *shader, struct hash_table *range_ht,
       case nir_intrinsic_quad_swap_diagonal:
       case nir_intrinsic_quad_swizzle_amd:
       case nir_intrinsic_masked_swizzle_amd:
-         res = nir_unsigned_upper_bound_impl(shader, range_ht, nir_get_ssa_scalar(intrin->src[0].ssa, 0),
+         res = nir_unsigned_upper_bound_impl(shader, range_ht, nir_get_ssa_scalar(intrin->src[0].ssa, scalar.comp),
                                              config, stack_depth + 1);
          break;
       case nir_intrinsic_write_invocation_amd: {
-         uint32_t src0 = nir_unsigned_upper_bound_impl(shader, range_ht, nir_get_ssa_scalar(intrin->src[0].ssa, 0),
+         uint32_t src0 = nir_unsigned_upper_bound_impl(shader, range_ht, nir_get_ssa_scalar(intrin->src[0].ssa, scalar.comp),
                                                        config, stack_depth + 1);
-         uint32_t src1 = nir_unsigned_upper_bound_impl(shader, range_ht, nir_get_ssa_scalar(intrin->src[1].ssa, 0),
+         uint32_t src1 = nir_unsigned_upper_bound_impl(shader, range_ht, nir_get_ssa_scalar(intrin->src[1].ssa, scalar.comp),
                                                        config, stack_depth + 1);
          res = MAX2(src0, src1);
          break;
@@ -1501,7 +1501,7 @@ nir_unsigned_upper_bound_impl(nir_shader *shader, struct hash_table *range_ht,
       } else {
          nir_foreach_phi_src(src, nir_instr_as_phi(scalar.def->parent_instr)) {
             res = MAX2(res, nir_unsigned_upper_bound_impl(
-               shader, range_ht, nir_get_ssa_scalar(src->src.ssa, 0), config, stack_depth + 1));
+               shader, range_ht, nir_get_ssa_scalar(src->src.ssa, scalar.comp), config, stack_depth + 1));
          }
       }
 

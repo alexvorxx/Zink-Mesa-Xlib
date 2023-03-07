@@ -943,6 +943,12 @@ gfx9_border_color_swizzle(const struct util_format_description *desc)
 {
    unsigned bc_swizzle = V_008F20_BC_SWIZZLE_XYZW;
 
+   if (desc->format == PIPE_FORMAT_S8_UINT) {
+      /* Swizzle of 8-bit stencil format is defined as _x__ but the hw expects XYZW. */
+      assert(desc->swizzle[1] == PIPE_SWIZZLE_X);
+      return bc_swizzle;
+   }
+
    if (desc->swizzle[3] == PIPE_SWIZZLE_X) {
       /* For the pre-defined border color values (white, opaque
        * black, transparent black), the only thing that matters is
@@ -971,6 +977,9 @@ gfx9_border_color_swizzle(const struct util_format_description *desc)
 bool
 vi_alpha_is_on_msb(struct radv_device *device, VkFormat format)
 {
+   if (device->physical_device->rad_info.gfx_level >= GFX11)
+      return false;
+
    const struct util_format_description *desc = vk_format_description(format);
 
    if (device->physical_device->rad_info.gfx_level >= GFX10 && desc->nr_channels == 1)

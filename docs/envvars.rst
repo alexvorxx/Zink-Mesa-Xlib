@@ -730,6 +730,10 @@ Gallium environment variables
 
    control default visibility, defaults to true.
 
+.. envvar:: GALLIUM_HUD_OPACITY
+
+   control background opacity as an integer percentage (1-100), defaults to 66%.
+
 .. envvar:: GALLIUM_HUD_TOGGLE_SIGNAL
 
    toggle visibility via user specified signal. Especially useful to

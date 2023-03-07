@@ -328,6 +328,7 @@ lower_alu_instr_width(nir_builder *b, nir_instr *instr, void *_data)
    case nir_op_unpack_64_2x32:
    case nir_op_unpack_64_4x16:
    case nir_op_unpack_32_2x16:
+   case nir_op_unpack_32_4x8:
    case nir_op_unpack_double_2x32_dxil:
       return NULL;
 

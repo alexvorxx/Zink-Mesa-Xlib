@@ -188,7 +188,7 @@ radv_device_init_meta_copy_vrs_htile_state(struct radv_device *device,
 
    result =
       radv_compute_pipeline_create(radv_device_to_handle(device), state->cache, &pipeline_info,
-                                   NULL, &state->copy_vrs_htile_pipeline, true);
+                                   NULL, &state->copy_vrs_htile_pipeline);
 fail:
    ralloc_free(cs);
    return result;

@@ -25,6 +25,7 @@ libasahi_agx_files = files(
   'agx_liveness.c',
   'agx_insert_waits.c',
   'agx_nir_lower_address.c',
+  'agx_nir_lower_frag_sidefx.c',
   'agx_nir_lower_zs_emit.c',
   'agx_nir_lower_texture.c',
   'agx_nir_lower_load_mask.c',
@@ -37,10 +38,22 @@ libasahi_agx_files = files(
   'agx_lower_uniform_sources.c',
   'agx_pack.c',
   'agx_print.c',
+  'agx_ir.c',
   'agx_opt_cse.c',
   'agx_optimizer.c',
   'agx_register_allocate.c',
   'agx_validate.c',
+)
+
+agx_nir_algebraic_c = custom_target(
+  'agx_nir_algebraic.c',
+  input : 'agx_nir_algebraic.py',
+  output : 'agx_nir_algebraic.c',
+  command : [
+    prog_python, '@INPUT@', '-p', dir_compiler_nir,
+  ],
+  capture : true,
+  depend_files : nir_algebraic_depends,
 )
 
 agx_opcodes_h = custom_target(
@@ -82,7 +95,7 @@ idep_agx_builder_h = declare_dependency(
 
 libasahi_compiler = static_library(
   'asahi_compiler',
-  [libasahi_agx_files, agx_opcodes_c],
+  [libasahi_agx_files, agx_opcodes_c, agx_nir_algebraic_c],
   include_directories : [inc_include, inc_src, inc_mesa, inc_gallium, inc_gallium_aux, inc_mapi],
   dependencies: [idep_nir, idep_agx_opcodes_h, idep_agx_builder_h, idep_agx_pack],
   c_args : [no_override_init_args],

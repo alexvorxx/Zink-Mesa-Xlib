@@ -363,7 +363,10 @@ optimise_nir(nir_shader *nir, unsigned quirks, bool is_blend, bool is_blit)
 
    /* Midgard image ops coordinates are 16-bit instead of 32-bit */
    NIR_PASS(progress, nir, midgard_nir_lower_image_bitsize);
-   NIR_PASS(progress, nir, midgard_nir_lower_helper_writes);
+
+   if (nir->info.stage == MESA_SHADER_FRAGMENT)
+      NIR_PASS(progress, nir, nir_lower_helper_writes, true);
+
    NIR_PASS(progress, nir, pan_lower_helper_invocation);
    NIR_PASS(progress, nir, pan_lower_sample_pos);
 
@@ -2104,12 +2107,6 @@ emit_intrinsic(compiler_context *ctx, nir_intrinsic_instr *instr)
 
    case nir_intrinsic_load_sample_id:
       emit_special(ctx, instr, 97);
-      break;
-
-   case nir_intrinsic_control_barrier:
-      schedule_barrier(ctx);
-      emit_control_barrier(ctx);
-      schedule_barrier(ctx);
       break;
 
    case nir_intrinsic_scoped_barrier:

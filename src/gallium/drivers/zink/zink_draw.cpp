@@ -814,6 +814,26 @@ zink_draw(struct pipe_context *pctx,
       VKCTX(CmdBeginTransformFeedbackEXT)(batch->state->cmdbuf, 0, ctx->num_so_targets, counter_buffers, counter_buffer_offsets);
    }
 
+   bool marker = false;
+   if (unlikely(zink_tracing && ctx->blitting)) {
+      VkViewport viewport = {
+         ctx->vp_state.viewport_states[0].translate[0] - ctx->vp_state.viewport_states[0].scale[0],
+         ctx->vp_state.viewport_states[0].translate[1] - ctx->vp_state.viewport_states[0].scale[1],
+         MAX2(ctx->vp_state.viewport_states[0].scale[0] * 2, 1),
+         ctx->vp_state.viewport_states[0].scale[1] * 2,
+         CLAMP(ctx->rast_state->base.clip_halfz ?
+               ctx->vp_state.viewport_states[0].translate[2] :
+               ctx->vp_state.viewport_states[0].translate[2] - ctx->vp_state.viewport_states[0].scale[2],
+               0, 1),
+         CLAMP(ctx->vp_state.viewport_states[0].translate[2] + ctx->vp_state.viewport_states[0].scale[2],
+               0, 1)
+      };
+      marker = zink_cmd_debug_marker_begin(ctx, VK_NULL_HANDLE, "u_blitter(%s->%s, %dx%d)",
+                                           util_format_short_name(ctx->sampler_views[MESA_SHADER_FRAGMENT][0]->format),
+                                           util_format_short_name(ctx->fb_state.cbufs[0]->format),
+                                           viewport.width, viewport.height);
+   }
+
    bool needs_drawid = reads_drawid && zink_get_last_vertex_key(ctx)->push_drawid;
    work_count += num_draws;
    if (index_size > 0) {
@@ -870,6 +890,9 @@ zink_draw(struct pipe_context *pctx,
          draw<HAS_MULTIDRAW>(ctx, dinfo, draws, num_draws, drawid_offset, needs_drawid);
       }
    }
+
+   if (unlikely(zink_tracing && ctx->blitting))
+      zink_cmd_debug_marker_end(ctx, marker);
 
    if (have_streamout) {
       for (unsigned i = 0; i < ctx->num_so_targets; i++) {

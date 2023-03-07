@@ -93,7 +93,6 @@ libintel_compiler_files = files(
   'brw_nir_lower_intersection_shader.c',
   'brw_nir_lower_ray_queries.c',
   'brw_nir_lower_rt_intrinsics.c',
-  'brw_nir_lower_scoped_barriers.c',
   'brw_nir_lower_shader_calls.c',
   'brw_nir_lower_shading_rate_output.c',
   'brw_nir_lower_storage_image.c',
@@ -163,7 +162,7 @@ libintel_compiler = static_library(
   c_args : [no_override_init_args],
   override_options: ['cpp_std=c++17'],
   gnu_symbol_visibility : 'hidden',
-  dependencies : [idep_nir_headers, idep_mesautil],
+  dependencies : [idep_nir_headers, idep_mesautil, idep_intel_dev],
   build_by_default : false,
 )
 
@@ -173,12 +172,12 @@ if with_intel_clc
     'intel_clc',
     ['intel_clc.c'],
     link_with : [
-      libintel_compiler, libintel_common, libintel_dev, libisl,
+      libintel_compiler, libintel_common,libisl,
     ],
     include_directories : [inc_include, inc_src, inc_mapi, inc_mesa, inc_gallium, inc_intel],
     c_args : [pre_args, no_override_init_args],
     link_args : [ld_args_build_id],
-    dependencies : [idep_nir, idep_clc, idep_mesautil],
+    dependencies : [idep_nir, idep_clc, idep_mesautil, idep_intel_dev],
     native : true,
   )
 endif
@@ -205,10 +204,10 @@ if with_tests
       ir_expression_operation_h,
       include_directories : [inc_include, inc_src, inc_mapi, inc_mesa, inc_gallium, inc_intel],
       link_with : [
-        libintel_compiler, libintel_common, libintel_dev, libisl,
+        libintel_compiler, libintel_common, libisl
       ],
       override_options: ['cpp_std=c++17'],
-      dependencies : [idep_gtest, idep_nir, idep_mesautil],
+      dependencies : [idep_gtest, idep_nir, idep_mesautil, idep_intel_dev],
     ),
     suite : ['intel'],
     protocol : gtest_test_protocol,

@@ -59,8 +59,3 @@ dEQP-VK.graphicsfuzz.while-inside-switch
 dEQP-VK.graphicsfuzz.spv-stable-maze-O-dead-code
 dEQP-VK.graphicsfuzz.spv-stable-maze-O-memory-accesses
 dEQP-VK.spirv_assembly.instruction.graphics.16bit_storage.uniform_32struct_to_16struct.uniform_buffer_block_geom
-
-# Tests bugs with GPL (soft hangs). Not all them actually hang but it's easier
-# to just skip the subset. All of them should be fixed with recent CTS.
-dEQP-VK.pipeline.pipeline_library.graphics_library.fast.*
-dEQP-VK.pipeline.pipeline_library.graphics_library.optimize.*

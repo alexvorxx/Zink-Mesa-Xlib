@@ -1293,7 +1293,7 @@ emit_3dstate_hs_ds(struct anv_graphics_pipeline *pipeline,
    hs.DispatchMode = tcs_prog_data->base.dispatch_mode;
    hs.IncludePrimitiveID = tcs_prog_data->include_primitive_id;
 
-   GENX(3DSTATE_HS_pack)(NULL, pipeline->gfx8.hs, &hs);
+   GENX(3DSTATE_HS_pack)(&pipeline->base.batch, pipeline->gfx8.hs, &hs);
 
    anv_batch_emit(&pipeline->base.batch, GENX(3DSTATE_DS), ds) {
       ds.Enable = true;

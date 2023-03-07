@@ -745,6 +745,8 @@ d3d12_destroy_screen(struct d3d12_screen *screen)
    slab_destroy_parent(&screen->transfer_pool);
    mtx_destroy(&screen->submit_mutex);
    mtx_destroy(&screen->descriptor_pool_mutex);
+   d3d12_varying_cache_destroy(screen);
+   mtx_destroy(&screen->varying_info_mutex);
    if (screen->d3d12_mod)
       util_dl_close(screen->d3d12_mod);
    glsl_type_singleton_decref();
@@ -1244,6 +1246,9 @@ d3d12_init_screen_base(struct d3d12_screen *screen, struct sw_winsys *winsys, LU
    // Fill the array backwards, because we'll pop off the back to assign ids
    for (unsigned i = 0; i < 16; ++i)
       screen->context_id_list[i] = 15 - i;
+
+   d3d12_varying_cache_init(screen);
+   mtx_init(&screen->varying_info_mutex, mtx_plain);
 
    slab_create_parent(&screen->transfer_pool, sizeof(struct d3d12_transfer), 16);
 

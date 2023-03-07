@@ -158,6 +158,7 @@ agx_pack_memory_index(agx_index index, bool *flag)
       return index.value;
    } else {
       assert(index.type == AGX_INDEX_REGISTER);
+      assert(index.size == AGX_SIZE_32);
       assert((index.value & 1) == 0);
       assert(index.value < 0x100);
 

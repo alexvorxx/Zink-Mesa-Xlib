@@ -329,6 +329,7 @@ ir3_finalize_nir(struct ir3_compiler *compiler, nir_shader *s)
       .lower_rect = 0,
       .lower_tg4_offsets = true,
       .lower_invalid_implicit_lod = true,
+      .lower_index_to_offset = true,
    };
 
    if (compiler->gen >= 4) {

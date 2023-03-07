@@ -174,6 +174,12 @@ void
 zink_update_barriers(struct zink_context *ctx, bool is_compute,
                      struct pipe_resource *index, struct pipe_resource *indirect, struct pipe_resource *indirect_draw_count);
 
+
+bool
+zink_cmd_debug_marker_begin(struct zink_context *ctx, VkCommandBuffer cmdbuf, const char *fmt, ...);
+void
+zink_cmd_debug_marker_end(struct zink_context *ctx, bool emitted);
+
 #ifdef __cplusplus
 }
 #endif
@@ -254,11 +260,6 @@ struct pipe_surface *
 zink_get_dummy_pipe_surface(struct zink_context *ctx, int samples_index);
 struct zink_surface *
 zink_get_dummy_surface(struct zink_context *ctx, int samples_index);
-
-bool
-zink_cmd_debug_marker_begin(struct zink_context *ctx, const char *fmt, ...);
-void
-zink_cmd_debug_marker_end(struct zink_context *ctx, bool emitted);
 
 void
 debug_describe_zink_buffer_view(char *buf, const struct zink_buffer_view *ptr);

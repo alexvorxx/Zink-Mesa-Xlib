@@ -21,6 +21,7 @@
  * IN THE SOFTWARE.
  */
 
+#include "anv_private.h"
 #include "genX_grl.h"
 
 static struct anv_shader_bin *

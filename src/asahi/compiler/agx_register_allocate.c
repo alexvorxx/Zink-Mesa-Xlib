@@ -119,7 +119,9 @@ agx_read_registers(agx_instr *I, unsigned s)
    case AGX_OPCODE_TEXTURE_LOAD:
    case AGX_OPCODE_TEXTURE_SAMPLE:
       if (s == 0) {
-         /* Coordinates. We internally handle sample index as 32-bit */
+         /* Coordinates. We handle layer + sample index as 32-bit even when only
+          * the lower 16-bits are present.
+          */
          switch (I->dim) {
          case AGX_DIM_1D:
             return 2 * 1;
@@ -138,7 +140,7 @@ agx_read_registers(agx_instr *I, unsigned s)
          case AGX_DIM_CUBE_ARRAY:
             return 2 * 4;
          case AGX_DIM_2D_MS_ARRAY:
-            return 2 * 4;
+            return 2 * 3;
          }
 
          unreachable("Invalid texture dimension");

@@ -94,7 +94,16 @@ invocation_0_must_be_active(struct lp_build_nir_context *bld_base)
    return true;
 }
 
-/** Returns a scalar value of the first active invocation in the exec_mask. */
+/**
+ * Returns a scalar value of the first active invocation in the exec_mask.
+ *
+ * Note that gallivm doesn't generally jump when exec_mask is 0 (such as if/else
+ * branches thare are all false, or portions of a loop after a break/continue
+ * has ended the last invocation that had been active in the loop).  In that
+ * case, we return a 0 value so that unconditional LLVMBuildExtractElement of
+ * the first_active_invocation (such as in memory loads, texture unit index
+ * lookups, etc) will use a valid index
+ */
 static LLVMValueRef first_active_invocation(struct lp_build_nir_context *bld_base)
 {
    struct gallivm_state *gallivm = bld_base->base.gallivm;
@@ -114,11 +123,12 @@ static LLVMValueRef first_active_invocation(struct lp_build_nir_context *bld_bas
    bitmask = LLVMBuildBitCast(builder, bitmask, LLVMIntTypeInContext(gallivm->context, uint_bld->type.length), "exec_bitmask");
    bitmask = LLVMBuildZExt(builder, bitmask, bld_base->int_bld.elem_type, "");
 
-   /* We know that exec mask always has a set bit (otherwise we would have
-    * jumped), so we can set is_zero_poison to true.
-    */
-   return lp_build_intrinsic_binary(builder, "llvm.cttz.i32", bld_base->int_bld.elem_type, bitmask,
-                                    LLVMConstInt(LLVMInt1TypeInContext(gallivm->context), true, false));
+   LLVMValueRef any_active = LLVMBuildICmp(builder, LLVMIntNE, bitmask, lp_build_const_int32(gallivm, 0), "any_active");
+
+   LLVMValueRef first_active = lp_build_intrinsic_binary(builder, "llvm.cttz.i32", bld_base->int_bld.elem_type, bitmask,
+                                                         LLVMConstInt(LLVMInt1TypeInContext(gallivm->context), false, false));
+
+   return LLVMBuildSelect(builder, any_active, first_active, lp_build_const_int32(gallivm, 0), "first_active_or_0");
 }
 
 static LLVMValueRef
@@ -834,12 +844,8 @@ static void emit_load_kernel_arg(struct lp_build_nir_context *bld_base,
    LLVMTypeRef ptr_type = LLVMPointerType(bld_broad->elem_type, 0);
    kernel_args_ptr = LLVMBuildBitCast(builder, kernel_args_ptr, ptr_type, "");
 
-   if (!invocation_0_must_be_active(bld_base)) {
-      mesa_logw_once("Treating load_kernel_arg in control flow as uniform, results may be incorrect.");
-   }
-
    if (offset_is_uniform) {
-      offset = LLVMBuildExtractElement(builder, offset, lp_build_const_int32(gallivm, 0), "");
+      offset = LLVMBuildExtractElement(builder, offset, first_active_invocation(bld_base), "");
 
       for (unsigned c = 0; c < nc; c++) {
          LLVMValueRef this_offset = LLVMBuildAdd(builder, offset, offset_bit_size == 64 ? lp_build_const_int64(gallivm, c) : lp_build_const_int32(gallivm, c), "");
@@ -847,6 +853,8 @@ static void emit_load_kernel_arg(struct lp_build_nir_context *bld_base,
          LLVMValueRef scalar = lp_build_pointer_get2(builder, bld_broad->elem_type, kernel_args_ptr, this_offset);
          result[c] = lp_build_broadcast_scalar(bld_broad, scalar);
       }
+   } else {
+      unreachable("load_kernel_arg must have a uniform offset.");
    }
 }
 
@@ -897,11 +905,14 @@ static LLVMValueRef lp_vec_add_offset_ptr(struct lp_build_nir_context *bld_base,
                                           LLVMValueRef ptr,
                                           LLVMValueRef offset)
 {
+   unsigned pointer_size = 8 * sizeof(void *);
    struct gallivm_state *gallivm = bld_base->base.gallivm;
    LLVMBuilderRef builder = gallivm->builder;
    struct lp_build_context *uint_bld = &bld_base->uint_bld;
-   LLVMValueRef result = LLVMBuildPtrToInt(builder, ptr, bld_base->uint64_bld.vec_type, "");
-   offset = LLVMBuildZExt(builder, offset, bld_base->uint64_bld.vec_type, "");
+   struct lp_build_context *ptr_bld = get_int_bld(bld_base, true, pointer_size);
+   LLVMValueRef result = LLVMBuildPtrToInt(builder, ptr, ptr_bld->vec_type, "");
+   if (pointer_size == 64)
+      offset = LLVMBuildZExt(builder, offset, ptr_bld->vec_type, "");
    result = LLVMBuildAdd(builder, offset, result, "");
    return global_addr_to_ptr_vec(gallivm, result, uint_bld->type.length, bit_size);
 }
@@ -922,6 +933,9 @@ static void emit_load_global(struct lp_build_nir_context *bld_base,
 
    res_bld = get_int_bld(bld_base, true, bit_size);
 
+   /* Note, we don't use first_active_invocation here, since we aren't
+    * guaranteed that there is actually an active invocation.
+    */
    if (offset_is_uniform && invocation_0_must_be_active(bld_base)) {
       /* If the offset is uniform, then use the address from invocation 0 to
        * load, and broadcast to all invocations.
@@ -1159,8 +1173,8 @@ static void emit_load_ubo(struct lp_build_nir_context *bld_base,
    LLVMTypeRef ptr_type = LLVMPointerType(bld_broad->elem_type, 0);
    consts_ptr = LLVMBuildBitCast(builder, consts_ptr, ptr_type, "");
 
-   if (offset_is_uniform && invocation_0_must_be_active(bld_base)) {
-      offset = LLVMBuildExtractElement(builder, offset, lp_build_const_int32(gallivm, 0), "");
+   if (offset_is_uniform) {
+      offset = LLVMBuildExtractElement(builder, offset, first_active_invocation(bld_base), "");
       struct lp_build_context *load_bld = get_int_bld(bld_base, true, bit_size);
       switch (bit_size) {
       case 8:
@@ -1296,15 +1310,19 @@ static void emit_load_mem(struct lp_build_nir_context *bld_base,
 
    offset = LLVMBuildAShr(gallivm->builder, offset, lp_build_const_int_vec(gallivm, uint_bld->type, shift_val), "");
 
-   /* If the address is uniform, then use the address from invocation 0 to load,
-    * and broadcast to all invocations.
+   /* If the address is uniform, then use the address from the first active
+    * invocation 0 to load, and broadcast to all invocations.  We can't do
+    * computed first active invocation for shared accesses (index == NULL),
+    * though, since those don't do bounds checking and we could use an invalid
+    * offset if exec_mask == 0.
     */
-   if (index_and_offset_are_uniform && invocation_0_must_be_active(bld_base)) {
+   if (index_and_offset_are_uniform && (invocation_0_must_be_active(bld_base) || index)) {
       LLVMValueRef ssbo_limit;
+      LLVMValueRef first_active = first_active_invocation(bld_base);
       LLVMValueRef mem_ptr = mem_access_base_pointer(bld_base, load_bld, bit_size, index,
-                                                     lp_build_const_int32(gallivm, 0), &ssbo_limit);
+                                                     first_active, &ssbo_limit);
 
-      offset = LLVMBuildExtractElement(gallivm->builder, offset, lp_build_const_int32(gallivm, 0), "");
+      offset = LLVMBuildExtractElement(gallivm->builder, offset, first_active, "");
 
       for (unsigned c = 0; c < nc; c++) {
          LLVMValueRef chan_offset = LLVMBuildAdd(builder, offset, lp_build_const_int32(gallivm, c), "");
@@ -1406,7 +1424,9 @@ static void emit_store_mem(struct lp_build_nir_context *bld_base,
    offset = lp_build_shr_imm(uint_bld, offset, shift_val);
 
    /* If the address is uniform, then just store the value from the first
-    * channel instead of making LLVM unroll the invocation loop.
+    * channel instead of making LLVM unroll the invocation loop.  Note that we
+    * don't use first_active_uniform(), since we aren't guaranteed that there is
+    * actually an active invocation.
     */
    if (index_and_offset_are_uniform && invocation_0_must_be_active(bld_base)) {
       LLVMValueRef ssbo_limit;

@@ -524,6 +524,7 @@ pvr_get_image_format_features2(const struct pvr_format *pvr_format,
       case VK_FORMAT_R32G32B32A32_UINT:
       case VK_FORMAT_R32G32B32A32_SINT:
       case VK_FORMAT_R32G32B32A32_SFLOAT:
+      case VK_FORMAT_B10G11R11_UFLOAT_PACK32:
          flags |= VK_FORMAT_FEATURE_2_STORAGE_IMAGE_BIT;
          break;
       default:

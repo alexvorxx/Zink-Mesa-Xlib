@@ -31,7 +31,8 @@
 extern "C" {
 #endif
 
-// forward defines
+/* forward definitions */
+struct si_screen;
 struct si_context;
 
 /* State atoms are callbacks which write a sequence of packets into a GPU
@@ -47,6 +48,7 @@ struct si_pm4_state {
    uint16_t last_pm4;
    uint16_t ndw;        /* number of dwords in pm4 */
    uint8_t last_opcode;
+   uint8_t last_idx;
 
    /* For shader states only */
    bool is_shader;
@@ -64,7 +66,9 @@ struct si_pm4_state {
 
 void si_pm4_cmd_add(struct si_pm4_state *state, uint32_t dw);
 void si_pm4_set_reg(struct si_pm4_state *state, unsigned reg, uint32_t val);
-void si_pm4_set_reg_idx3(struct si_pm4_state *state, unsigned reg, uint32_t val);
+void si_pm4_set_reg_va(struct si_pm4_state *state, unsigned reg, uint32_t val);
+void si_pm4_set_reg_idx3(struct si_screen *sscreen, struct si_pm4_state *state,
+                         unsigned reg, uint32_t val);
 
 void si_pm4_clear_state(struct si_pm4_state *state);
 void si_pm4_free_state(struct si_context *sctx, struct si_pm4_state *state, unsigned idx);

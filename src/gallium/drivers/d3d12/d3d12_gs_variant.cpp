@@ -465,8 +465,7 @@ hash_gs_variant_key(const void *key)
 static bool
 equals_gs_variant_key(const void *a, const void *b)
 {
-   return memcmp(a, b, offsetof(d3d12_gs_variant_key, varyings)) == 0
-      &&  d3d12_compare_varying_info(((d3d12_gs_variant_key*)a)->varyings, ((d3d12_gs_variant_key*)b)->varyings);
+   return memcmp(a, b, sizeof(d3d12_gs_variant_key)) == 0;
 }
 
 void
@@ -504,10 +503,6 @@ create_geometry_shader_variant(struct d3d12_context *ctx, struct d3d12_gs_varian
    if (gs) {
       gs->is_variant = true;
       gs->gs_key = *key;
-      if (key->varyings) {
-         gs->gs_key.varyings = ralloc(gs, struct d3d12_varying_info);
-         *gs->gs_key.varyings = *key->varyings;
-      }
    }
 
    return gs;

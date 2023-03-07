@@ -2,3 +2,12 @@
 # Likely fixed by VK-GL-CTS a3ac66a77e14 ("Zero initialize XFB counter buffer")
 dEQP-VK.rasterization.provoking_vertex.transform_feedback.first.line_strip_with_adjacency,Fail
 dEQP-VK.rasterization.provoking_vertex.transform_feedback.per_pipeline.triangle_strip_with_adjacency,Fail
+
+# New CTS failures in 1.3.5.0
+dEQP-VK.api.info.format_properties.g10x6_b10x6r10x6_2plane_420_unorm_3pack16,Fail
+dEQP-VK.conditional_rendering.conditional_ignore.clear_condition_host_memory_expect_noop_inverted,Fail
+dEQP-VK.conditional_rendering.conditional_ignore.clear_condition_host_memory_secondary_buffer_inherited_expect_noop_inverted,Fail
+dEQP-VK.conditional_rendering.conditional_ignore.clear_condition_local_memory_expect_noop,Fail
+dEQP-VK.conditional_rendering.conditional_ignore.clear_condition_local_memory_secondary_buffer_inherited_expect_noop_inverted,Fail
+dEQP-VK.pipeline.fast_linked_library.extended_dynamic_state.cmd_buffer_start.depth_clamp_enable,Fail
+dEQP-VK.pipeline.pipeline_library.extended_dynamic_state.cmd_buffer_start.depth_clamp_enable,Fail

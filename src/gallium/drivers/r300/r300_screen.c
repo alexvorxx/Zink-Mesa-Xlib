@@ -822,7 +822,7 @@ struct pipe_screen* r300_screen_create(struct radeon_winsys *rws,
         return NULL;
     }
 
-    rws->query_info(rws, &r300screen->info, false, false);
+    rws->query_info(rws, &r300screen->info);
 
     r300_init_debug(r300screen);
     r300_parse_chipset(r300screen->info.pci_id, &r300screen->caps);

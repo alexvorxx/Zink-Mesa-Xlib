@@ -2447,7 +2447,7 @@ radv_create_gs_copy_shader(struct radv_device *device, struct nir_shader *shader
                          keep_statistic_info, binary_out);
 }
 
-struct radv_trap_handler_shader *
+struct radv_shader *
 radv_create_trap_handler_shader(struct radv_device *device)
 {
    gl_shader_stage stage = MESA_SHADER_COMPUTE;
@@ -2455,11 +2455,6 @@ radv_create_trap_handler_shader(struct radv_device *device)
    struct radv_shader_binary *binary = NULL;
    struct radv_shader_info info = {0};
    struct radv_pipeline_key key = {0};
-   struct radv_trap_handler_shader *trap;
-
-   trap = malloc(sizeof(struct radv_trap_handler_shader));
-   if (!trap)
-      return NULL;
 
    nir_builder b = radv_meta_init_shader(device, stage, "meta_trap_handler");
 
@@ -2473,35 +2468,10 @@ radv_create_trap_handler_shader(struct radv_device *device)
 
    shader =
       shader_compile(device, &b.shader, 1, stage, &info, &args, &key, true, false, false, &binary);
-
-   trap->alloc = radv_alloc_shader_memory(device, shader->code_size, NULL);
-
-   trap->bo = trap->alloc->arena->bo;
-   char *dest_ptr = trap->alloc->arena->ptr + trap->alloc->offset;
-
-   struct radv_shader_binary_legacy *bin = (struct radv_shader_binary_legacy *)binary;
-   memcpy(dest_ptr, bin->data, bin->code_size);
-
    ralloc_free(b.shader);
-   free(shader);
    free(binary);
 
-   return trap;
-}
-
-uint64_t radv_trap_handler_shader_get_va(const struct radv_trap_handler_shader *trap)
-{
-   return radv_buffer_get_va(trap->alloc->arena->bo) + trap->alloc->offset;
-}
-
-void
-radv_trap_handler_shader_destroy(struct radv_device *device, struct radv_trap_handler_shader *trap)
-{
-   if (!trap)
-      return;
-
-   radv_free_shader_memory(device, trap->alloc);
-   free(trap);
+   return shader;
 }
 
 static void radv_aco_build_shader_part(void **bin,

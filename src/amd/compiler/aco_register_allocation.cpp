@@ -504,7 +504,7 @@ get_subdword_operand_stride(amd_gfx_level gfx_level, const aco_ptr<Instruction>&
    }
 
    assert(rc.bytes() <= 2);
-   if (instr->isVALU() || instr->isVINTERP_INREG()) {
+   if (instr->isVALU()) {
       if (can_use_SDWA(gfx_level, instr, false))
          return rc.bytes();
       if (can_use_opsel(gfx_level, instr->opcode, idx))
@@ -539,11 +539,11 @@ add_subdword_operand(ra_ctx& ctx, aco_ptr<Instruction>& instr, unsigned idx, uns
       return;
 
    assert(rc.bytes() <= 2);
-   if (instr->isVALU() || instr->isVINTERP_INREG()) {
+   if (instr->isVALU()) {
       /* check if we can use opsel */
       if (instr->format == Format::VOP3) {
          assert(byte == 2);
-         instr->vop3().opsel |= 1 << idx;
+         instr->valu().opsel |= 1 << idx;
          return;
       }
       if (instr->isVINTERP_INREG()) {
@@ -552,9 +552,9 @@ add_subdword_operand(ra_ctx& ctx, aco_ptr<Instruction>& instr, unsigned idx, uns
          return;
       }
       if (instr->isVOP3P()) {
-         assert(byte == 2 && !(instr->vop3p().opsel_lo & (1 << idx)));
-         instr->vop3p().opsel_lo |= 1 << idx;
-         instr->vop3p().opsel_hi |= 1 << idx;
+         assert(byte == 2 && !(instr->valu().opsel_lo & (1 << idx)));
+         instr->valu().opsel_lo |= 1 << idx;
+         instr->valu().opsel_hi |= 1 << idx;
          return;
       }
       if (instr->opcode == aco_opcode::v_cvt_f32_ubyte0) {
@@ -616,7 +616,7 @@ get_subdword_definition_info(Program* program, const aco_ptr<Instruction>& instr
          return std::make_pair(4, rc.size() * 4u);
    }
 
-   if (instr->isVALU() || instr->isVINTRP() || instr->isVINTERP_INREG()) {
+   if (instr->isVALU() || instr->isVINTRP()) {
       assert(rc.bytes() <= 2);
 
       if (can_use_SDWA(gfx_level, instr, false))
@@ -684,7 +684,7 @@ add_subdword_definition(Program* program, aco_ptr<Instruction>& instr, PhysReg r
    if (instr->isPseudo())
       return;
 
-   if (instr->isVALU() || instr->isVINTERP_INREG()) {
+   if (instr->isVALU()) {
       amd_gfx_level gfx_level = program->gfx_level;
       assert(instr->definitions[0].bytes() <= 2);
 
@@ -695,7 +695,7 @@ add_subdword_definition(Program* program, aco_ptr<Instruction>& instr, PhysReg r
       if (instr->format == Format::VOP3) {
          assert(reg.byte() == 2);
          assert(can_use_opsel(gfx_level, instr->opcode, -1));
-         instr->vop3().opsel |= (1 << 3); /* dst in high half */
+         instr->valu().opsel |= (1 << 3); /* dst in high half */
          return;
       } else if (instr->isVINTERP_INREG()) {
          assert(reg.byte() == 2);
@@ -2632,11 +2632,8 @@ optimize_encoding_vop2(Program* program, ra_ctx& ctx, RegisterFile& register_fil
          return;
    }
 
-   static_assert(sizeof(VOP2_instruction) <= sizeof(VOP3_instruction),
-                 "Invalid direct instruction cast.");
-   static_assert(sizeof(VOP2_instruction) <= sizeof(VOP3P_instruction),
-                 "Invalid direct instruction cast.");
    instr->format = Format::VOP2;
+   instr->valu().opsel_hi = 0;
    switch (instr->opcode) {
    case aco_opcode::v_mad_f32: instr->opcode = aco_opcode::v_mac_f32; break;
    case aco_opcode::v_fma_f32: instr->opcode = aco_opcode::v_fmac_f32; break;
@@ -3119,7 +3116,7 @@ register_allocation(Program* program, std::vector<IDSet>& live_out_per_block, ra
                   mov.reset(create_instruction<SOP1_instruction>(aco_opcode::s_mov_b32,
                                                                  Format::SOP1, 1, 1));
                else
-                  mov.reset(create_instruction<VOP1_instruction>(aco_opcode::v_mov_b32,
+                  mov.reset(create_instruction<VALU_instruction>(aco_opcode::v_mov_b32,
                                                                  Format::VOP1, 1, 1));
                mov->operands[0] = instr->operands[0];
                mov->definitions[0] = Definition(tmp);
@@ -3135,7 +3132,7 @@ register_allocation(Program* program, std::vector<IDSet>& live_out_per_block, ra
             /* change the instruction to VOP3 to enable an arbitrary register pair as dst */
             aco_ptr<Instruction> tmp = std::move(instr);
             Format format = asVOP3(tmp->format);
-            instr.reset(create_instruction<VOP3_instruction>(
+            instr.reset(create_instruction<VALU_instruction>(
                tmp->opcode, format, tmp->operands.size(), tmp->definitions.size()));
             std::copy(tmp->operands.begin(), tmp->operands.end(), instr->operands.begin());
             std::copy(tmp->definitions.begin(), tmp->definitions.end(), instr->definitions.begin());

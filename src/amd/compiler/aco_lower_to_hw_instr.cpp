@@ -655,7 +655,7 @@ emit_reduction(lower_context* ctx, aco_opcode op, ReduceOp reduce_op, unsigned c
                         Operand(PhysReg{tmp + i}, v1), Operand::c32(0xffffffffu),
                         Operand::c32(0xffffffffu))
                   .instr;
-            perm->vop3().opsel = 1; /* FI (Fetch Inactive) */
+            perm->valu().opsel = 1; /* FI (Fetch Inactive) */
          }
          bld.sop1(Builder::s_mov, Definition(exec, bld.lm), Operand::c64(UINT64_MAX));
 
@@ -789,7 +789,7 @@ emit_reduction(lower_context* ctx, aco_opcode op, ReduceOp reduce_op, unsigned c
                         Operand(PhysReg{tmp + i}, v1), Operand::c32(0xffffffffu),
                         Operand::c32(0xffffffffu))
                   .instr;
-            perm->vop3().opsel = 1; /* FI (Fetch Inactive) */
+            perm->valu().opsel = 1; /* FI (Fetch Inactive) */
          }
          emit_op(ctx, tmp, tmp, vtmp, PhysReg{0}, reduce_op, src.size());
 
@@ -1110,7 +1110,7 @@ emit_v_mov_b16(Builder& bld, Definition dst, Operand op)
          /* v_add_f16 is smaller because it can use 16bit fp inline constants. */
          Instruction* instr = bld.vop2_e64(aco_opcode::v_add_f16, dst, op, Operand::zero());
          if (dst.physReg().byte() == 2)
-            instr->vop3().opsel = 0x8;
+            instr->valu().opsel = 0x8;
          return;
       }
       op = Operand::c32((int32_t)(int16_t)op.constantValue());
@@ -1122,9 +1122,9 @@ emit_v_mov_b16(Builder& bld, Definition dst, Operand op)
       // TODO: this can use VOP1 for vgpr0-127 with assembler support
       Instruction* instr = bld.vop1_e64(aco_opcode::v_mov_b16, dst, op);
       if (op.physReg().byte() == 2)
-         instr->vop3().opsel |= 0x1;
+         instr->valu().opsel |= 0x1;
       if (dst.physReg().byte() == 2)
-         instr->vop3().opsel |= 0x8;
+         instr->valu().opsel |= 0x8;
    }
 }
 
@@ -1226,12 +1226,12 @@ copy_constant(lower_context* ctx, Builder& bld, Definition dst, Operand op)
          if (dst.physReg().byte() == 2) {
             Operand def_lo(dst.physReg().advance(-2), v2b);
             Instruction* instr = bld.vop3(aco_opcode::v_pack_b32_f16, dst, def_lo, op);
-            instr->vop3().opsel = 0;
+            instr->valu().opsel = 0;
          } else {
             assert(dst.physReg().byte() == 0);
             Operand def_hi(dst.physReg().advance(2), v2b);
             Instruction* instr = bld.vop3(aco_opcode::v_pack_b32_f16, dst, op, def_hi);
-            instr->vop3().opsel = 2;
+            instr->valu().opsel = 2;
          }
       } else if (can_use_perm) {
          uint8_t swiz[] = {4, 5, 6, 7};
@@ -1307,11 +1307,11 @@ addsub_subdword_gfx11(Builder& bld, Definition dst, Operand src0, Operand src1, 
    Instruction* instr =
       bld.vop3(sub ? aco_opcode::v_sub_u16_e64 : aco_opcode::v_add_u16_e64, dst, src0, src1).instr;
    if (src0.physReg().byte() == 2)
-      instr->vop3().opsel |= 0x1;
+      instr->valu().opsel |= 0x1;
    if (src1.physReg().byte() == 2)
-      instr->vop3().opsel |= 0x2;
+      instr->valu().opsel |= 0x2;
    if (dst.physReg().byte() == 2)
-      instr->vop3().opsel |= 0x8;
+      instr->valu().opsel |= 0x8;
 }
 
 bool
@@ -1555,7 +1555,7 @@ do_pack_2x16(lower_context* ctx, Builder& bld, Definition def, Operand lo, Opera
    if (can_use_pack) {
       Instruction* instr = bld.vop3(aco_opcode::v_pack_b32_f16, def, lo, hi);
       /* opsel: 0 = select low half, 1 = select high half. [0] = src0, [1] = src1 */
-      instr->vop3().opsel = hi.physReg().byte() | (lo.physReg().byte() >> 1);
+      instr->valu().opsel = hi.physReg().byte() | (lo.physReg().byte() >> 1);
       return;
    }
 
@@ -2675,7 +2675,7 @@ lower_to_hw_instr(Program* program)
                         can_remove = false;
                   } else if (inst->isSALU()) {
                      num_scalar++;
-                  } else if (inst->isVALU() || inst->isVINTRP() || inst->isVINTERP_INREG()) {
+                  } else if (inst->isVALU() || inst->isVINTRP()) {
                      num_vector++;
                      /* VALU which writes SGPRs are always executed on GFX10+ */
                      if (ctx.program->gfx_level >= GFX10) {

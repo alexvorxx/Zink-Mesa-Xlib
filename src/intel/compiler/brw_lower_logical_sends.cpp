@@ -1062,14 +1062,15 @@ lower_sampler_logical_send_gfx7(const fs_builder &bld, fs_inst *inst, opcode op,
 
    if (min_lod.file != BAD_FILE) {
       /* Account for all of the missing coordinate sources */
-      if (op == SHADER_OPCODE_TXD && devinfo->verx10 >= 125) {
+      if (op == SHADER_OPCODE_TXD &&
+          intel_needs_workaround(devinfo, 18012201914)) {
          /* On DG2 and newer platforms, sample_d can only be used with 1D and
           * 2D surfaces, so the maximum number of gradient components is 2.
           * In spite of this limitation, the Bspec lists a mysterious R
           * component before the min_lod, so the maximum coordinate components
           * is 3.
           *
-          * Wa_1209978020
+          * Wa_18012201914
           */
          length += 3 - coord_components;
          length += (2 - grad_components) * 2;

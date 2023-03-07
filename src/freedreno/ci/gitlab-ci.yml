@@ -237,6 +237,10 @@ a618_piglit:
   script:
     - ./install/bare-metal/cros-servo.sh
 
+.a630-full:
+  tags:
+    - google-freedreno-cheza-long
+
 a630_gl:
   extends:
     - .baremetal-deqp-test
@@ -294,6 +298,7 @@ a630_vk_full:
   timeout: 2h
   extends:
     - a630_vk
+    - .a630-full
     - .turnip-manual-rules
   parallel: 2
   variables:

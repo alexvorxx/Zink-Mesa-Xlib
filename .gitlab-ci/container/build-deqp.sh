@@ -6,28 +6,26 @@ set -ex
 git config --global user.email "mesa@example.com"
 git config --global user.name "Mesa CI"
 git clone \
-    https://github.com/helen-fornazier/VK-GL-CTS.git \
-    -b vulkan-cts-1.3.3.1_mesa-android-2023-01-19 \
+    https://github.com/KhronosGroup/VK-GL-CTS.git \
+    -b vulkan-cts-1.3.5.0 \
     --depth 1 \
     /VK-GL-CTS
 pushd /VK-GL-CTS
 
-cts_commits_to_backport=(
-    # Update zlib link to an available version.
-    # vulkan-cts-1.3.3.0 uses zlib 1.2.12 which was removed from zlib server due to
-    # a CVE. See https://zlib.net/
-    # FIXME: Remove this patch when uprev to 1.3.4.0+
-    6bb2e7d64261bedb503947b1b251b1eeeb49be73
-
-    # Fix a bug in 1.3.3.0 that affects some new formats
-    4fa2b40411921b304f5dad8d106b212ad5b0f172
-)
+cts_commits_to_backport=()
 
 for commit in "${cts_commits_to_backport[@]}"
 do
   curl -L --retry 4 -f --retry-all-errors --retry-delay 60 \
     "https://github.com/KhronosGroup/VK-GL-CTS/commit/$commit.patch" | git am -
 done
+
+# Fix surfaceless build.
+git am < $OLDPWD/.gitlab-ci/container/0001-Fix-build-for-the-surfaceless-and-null-WS-target-pla.patch
+
+# Android specific patches.
+git am < $OLDPWD/.gitlab-ci/container/0001-Allow-running-on-Android-from-the-command-line.patch
+git am < $OLDPWD/.gitlab-ci/container/0002-Android-prints-to-stdout-instead-of-logcat.patch
 
 # --insecure is due to SSL cert failures hitting sourceforge for zlib and
 # libpng (sigh).  The archives get their checksums checked anyway, and git

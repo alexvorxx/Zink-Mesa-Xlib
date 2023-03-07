@@ -19,6 +19,9 @@
 # SOFTWARE.
 
 files_libiris = files(
+  'i915/iris_bufmgr.c',
+  'i915/iris_bufmgr.h',
+  'i915/iris_kmd_backend.c',
   'driinfo_iris.h',
   'iris_batch.c',
   'iris_batch.h',
@@ -39,6 +42,8 @@ files_libiris = files(
   'iris_formats.c',
   'iris_genx_macros.h',
   'iris_genx_protos.h',
+  'iris_kmd_backend.c',
+  'iris_kmd_backend.h',
   'iris_measure.c',
   'iris_measure.h',
   'iris_monitor.c',
@@ -87,9 +92,9 @@ libiris = static_library(
   cpp_args : [sse2_args],
   gnu_symbol_visibility : 'hidden',
   dependencies : [dep_libdrm, dep_valgrind, idep_genxml, idep_nir_headers,
-                  idep_libintel_common, idep_intel_driver_ds, ],
+                  idep_libintel_common, idep_intel_driver_ds, idep_intel_dev],
   link_with : [
-    iris_per_hw_ver_libs, libintel_compiler, libintel_dev, libisl,
+    iris_per_hw_ver_libs, libintel_compiler, libisl,
     libblorp, libintel_perf
   ],
 )

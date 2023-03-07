@@ -1322,7 +1322,6 @@ add_resource_bind(struct zink_context *ctx, struct zink_resource *res, unsigned 
 {
    struct zink_screen *screen = zink_screen(ctx->base.screen);
    assert((res->base.b.bind & bind) == 0);
-   zink_screen(ctx->base.screen)->image_barrier(ctx, res, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, 0, 0);
    res->base.b.bind |= bind;
    struct zink_resource_object *old_obj = res->obj;
    if (bind & ZINK_BIND_DMABUF && !res->modifiers_count && screen->info.have_EXT_image_drm_format_modifier) {
@@ -1340,8 +1339,6 @@ add_resource_bind(struct zink_context *ctx, struct zink_resource *res, unsigned 
    staging.obj = old_obj;
    staging.all_binds = 0;
    res->layout = VK_IMAGE_LAYOUT_UNDEFINED;
-   res->obj->access = 0;
-   res->obj->access_stage = 0;
    res->obj = new_obj;
    for (unsigned i = 0; i <= res->base.b.last_level; i++) {
       struct pipe_box box = {0, 0, 0,
@@ -2219,7 +2216,153 @@ zink_resource_copy_box_intersects(struct zink_resource *res, unsigned level, con
 void
 zink_resource_copy_box_add(struct zink_resource *res, unsigned level, const struct pipe_box *box)
 {
+   if (res->obj->copies_valid) {
+      struct pipe_box *b = res->obj->copies[level].data;
+      unsigned num_boxes = util_dynarray_num_elements(&res->obj->copies[level], struct pipe_box);
+      for (unsigned i = 0; i < num_boxes; i++) {
+         switch (res->base.b.target) {
+         case PIPE_BUFFER:
+         case PIPE_TEXTURE_1D:
+            /* no-op included region */
+            if (b->x <= box->x && b->x + b->width >= box->x + box->width)
+               return;
+
+            /* try to merge adjacent regions */
+            if (b->x == box->x + box->width) {
+               b->x -= box->width;
+               return;
+            }
+            if (b->x + b->width == box->x) {
+               b->width += box->width;
+               return;
+            }
+
+            /* try to merge into region */
+            if (box->x <= b->x && box->x + box->width >= b->x + b->width) {
+               *b = *box;
+               return;
+            }
+            break;
+
+         case PIPE_TEXTURE_1D_ARRAY:
+         case PIPE_TEXTURE_2D:
+            /* no-op included region */
+            if (b->x <= box->x && b->x + b->width >= box->x + box->width &&
+                b->y <= box->y && b->y + b->height >= box->y + box->height)
+               return;
+
+            /* try to merge adjacent regions */
+            if (b->y == box->y && b->height == box->height) {
+               if (b->x == box->x + box->width) {
+                  b->x -= box->width;
+                  return;
+               }
+               if (b->x + b->width == box->x) {
+                  b->width += box->width;
+                  return;
+               }
+            } else if (b->x == box->x && b->width == box->width) {
+               if (b->y == box->y + box->height) {
+                  b->y -= box->height;
+                  return;
+               }
+               if (b->y + b->height == box->y) {
+                  b->height += box->height;
+                  return;
+               }
+            }
+
+            /* try to merge into region */
+            if (box->x <= b->x && box->x + box->width >= b->x + b->width &&
+                box->y <= b->y && box->y + box->height >= b->y + b->height) {
+               *b = *box;
+               return;
+            }
+            break;
+
+         default:
+            /* no-op included region */
+            if (b->x <= box->x && b->x + b->width >= box->x + box->width &&
+                b->y <= box->y && b->y + b->height >= box->y + box->height &&
+                b->z <= box->z && b->z + b->depth >= box->z + box->depth)
+               return;
+
+               /* try to merge adjacent regions */
+            if (b->z == box->z && b->depth == box->depth) {
+               if (b->y == box->y && b->height == box->height) {
+                  if (b->x == box->x + box->width) {
+                     b->x -= box->width;
+                     return;
+                  }
+                  if (b->x + b->width == box->x) {
+                     b->width += box->width;
+                     return;
+                  }
+               } else if (b->x == box->x && b->width == box->width) {
+                  if (b->y == box->y + box->height) {
+                     b->y -= box->height;
+                     return;
+                  }
+                  if (b->y + b->height == box->y) {
+                     b->height += box->height;
+                     return;
+                  }
+               }
+            } else if (b->x == box->x && b->width == box->width) {
+               if (b->y == box->y && b->height == box->height) {
+                  if (b->z == box->z + box->depth) {
+                     b->z -= box->depth;
+                     return;
+                  }
+                  if (b->z + b->depth == box->z) {
+                     b->depth += box->depth;
+                     return;
+                  }
+               } else if (b->z == box->z && b->depth == box->depth) {
+                  if (b->y == box->y + box->height) {
+                     b->y -= box->height;
+                     return;
+                  }
+                  if (b->y + b->height == box->y) {
+                     b->height += box->height;
+                     return;
+                  }
+               }
+            } else if (b->y == box->y && b->height == box->height) {
+               if (b->z == box->z && b->depth == box->depth) {
+                  if (b->x == box->x + box->width) {
+                     b->x -= box->width;
+                     return;
+                  }
+                  if (b->x + b->width == box->x) {
+                     b->width += box->width;
+                     return;
+                  }
+               } else if (b->x == box->x && b->width == box->width) {
+                  if (b->z == box->z + box->depth) {
+                     b->z -= box->depth;
+                     return;
+                  }
+                  if (b->z + b->depth == box->z) {
+                     b->depth += box->depth;
+                     return;
+                  }
+               }
+            }
+
+            /* try to merge into region */
+            if (box->x <= b->x && box->x + box->width >= b->x + b->width &&
+                box->y <= b->y && box->y + box->height >= b->y + b->height &&
+                box->z <= b->z && box->z + box->depth >= b->z + b->depth)
+               return;
+
+            break;
+         }
+      }
+   }
    util_dynarray_append(&res->obj->copies[level], struct pipe_box, *box);
+   if (util_dynarray_num_elements(&res->obj->copies[level], struct pipe_box) > 100)
+      mesa_logw("zink: PERF WARNING! > 100 copy boxes detected for %p\n", res);
    res->obj->copies_valid = true;
 }
 

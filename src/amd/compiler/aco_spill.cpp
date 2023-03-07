@@ -326,7 +326,7 @@ do_reload(spill_ctx& ctx, Temp tmp, Temp new_name, uint32_t spill_id)
 
       aco_ptr<Instruction> res;
       if (instr->isVOP1()) {
-         res.reset(create_instruction<VOP1_instruction>(
+         res.reset(create_instruction<VALU_instruction>(
             instr->opcode, instr->format, instr->operands.size(), instr->definitions.size()));
       } else if (instr->isSOP1()) {
          res.reset(create_instruction<SOP1_instruction>(

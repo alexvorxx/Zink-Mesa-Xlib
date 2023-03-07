@@ -31,10 +31,10 @@
 #include <mach/mach.h>
 
 #include "util/compiler.h"
+#include "agx_iokit.h"
 #include "decode.h"
 #include "dyld_interpose.h"
 #include "hexdump.h"
-#include "agx_iokit.h"
 #include "util.h"
 
 /*

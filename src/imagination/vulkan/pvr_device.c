@@ -133,6 +133,7 @@ static void pvr_physical_device_get_supported_extensions(
    *extensions = (struct vk_device_extension_table){
       .KHR_external_memory = true,
       .KHR_external_memory_fd = true,
+      .KHR_timeline_semaphore = true,
 #if defined(PVR_USE_WSI_PLATFORM)
       .KHR_swapchain = true,
 #endif
@@ -612,12 +613,12 @@ void pvr_GetPhysicalDeviceFeatures2(VkPhysicalDevice physicalDevice,
          PVR_HAS_FEATURE(&pdevice->dev_info, robust_buffer_access),
       .fullDrawIndexUint32 = true,
       .imageCubeArray = true,
-      .independentBlend = true,
+      .independentBlend = false,
       .geometryShader = false,
       .tessellationShader = false,
       .sampleRateShading = true,
       .dualSrcBlend = false,
-      .logicOp = true,
+      .logicOp = false,
       .multiDrawIndirect = true,
       .drawIndirectFirstInstance = true,
       .depthClamp = true,
@@ -626,13 +627,13 @@ void pvr_GetPhysicalDeviceFeatures2(VkPhysicalDevice physicalDevice,
       .depthBounds = false,
       .wideLines = true,
       .largePoints = true,
-      .alphaToOne = true,
+      .alphaToOne = false,
       .multiViewport = false,
       .samplerAnisotropy = false,
       .textureCompressionETC2 = true,
       .textureCompressionASTC_LDR = PVR_HAS_FEATURE(&pdevice->dev_info, astc),
       .textureCompressionBC = false,
-      .occlusionQueryPrecise = true,
+      .occlusionQueryPrecise = false,
       .pipelineStatisticsQuery = false,
       .vertexPipelineStoresAndAtomics = true,
       .fragmentStoresAndAtomics = true,
@@ -646,8 +647,8 @@ void pvr_GetPhysicalDeviceFeatures2(VkPhysicalDevice physicalDevice,
       .shaderSampledImageArrayDynamicIndexing = true,
       .shaderStorageBufferArrayDynamicIndexing = true,
       .shaderStorageImageArrayDynamicIndexing = true,
-      .shaderClipDistance = true,
-      .shaderCullDistance = true,
+      .shaderClipDistance = false,
+      .shaderCullDistance = false,
       .shaderFloat64 = false,
       .shaderInt64 = true,
       .shaderInt16 = true,
@@ -667,7 +668,18 @@ void pvr_GetPhysicalDeviceFeatures2(VkPhysicalDevice physicalDevice,
    };
 
    vk_foreach_struct (ext, pFeatures->pNext) {
-      pvr_debug_ignored_stype(ext->sType);
+      switch (ext->sType) {
+      case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_TIMELINE_SEMAPHORE_FEATURES: {
+         VkPhysicalDeviceTimelineSemaphoreFeatures *pFeature =
+            (VkPhysicalDeviceTimelineSemaphoreFeatures *)ext;
+         pFeature->timelineSemaphore = VK_TRUE;
+         break;
+      }
+      default: {
+         pvr_debug_ignored_stype(ext->sType);
+         break;
+      }
+      }
    }
 }
 
@@ -1043,7 +1055,18 @@ void pvr_GetPhysicalDeviceProperties2(VkPhysicalDevice physicalDevice,
           VK_UUID_SIZE);
 
    vk_foreach_struct (ext, pProperties->pNext) {
-      pvr_debug_ignored_stype(ext->sType);
+      switch (ext->sType) {
+      case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_TIMELINE_SEMAPHORE_PROPERTIES: {
+         VkPhysicalDeviceTimelineSemaphoreProperties *pProperties =
+            (VkPhysicalDeviceTimelineSemaphoreProperties *)ext;
+         pProperties->maxTimelineSemaphoreValueDifference = UINT64_MAX;
+         break;
+      }
+      default: {
+         pvr_debug_ignored_stype(ext->sType);
+         break;
+      }
+      }
    }
 }
 
@@ -1742,6 +1765,13 @@ VkResult pvr_CreateDevice(VkPhysicalDevice physicalDevice,
    if (!device->ws) {
       result = VK_ERROR_INITIALIZATION_FAILED;
       goto err_close_master_fd;
+   }
+
+   if (device->ws->features.supports_threaded_submit) {
+      /* Queue submission can be blocked if the kernel CCBs become full,
+       * so enable threaded submit to not block the submitter.
+       */
+      vk_device_enable_threaded_submit(&device->vk);
    }
 
    device->ws->ops->get_heaps_info(device->ws, &device->heaps);
@@ -2646,6 +2676,7 @@ VkResult pvr_CreateFramebuffer(VkDevice _device,
 {
    PVR_FROM_HANDLE(pvr_render_pass, pass, pCreateInfo->renderPass);
    PVR_FROM_HANDLE(pvr_device, device, _device);
+   struct pvr_spm_bgobj_state *spm_bgobj_state_per_render;
    struct pvr_spm_eot_state *spm_eot_state_per_render;
    struct pvr_render_target *render_targets;
    struct pvr_framebuffer *framebuffer;
@@ -2672,6 +2703,10 @@ VkResult pvr_CreateFramebuffer(VkDevice _device,
    vk_multialloc_add(&ma,
                      &spm_eot_state_per_render,
                      __typeof__(*spm_eot_state_per_render),
+                     pass->hw_setup->render_count);
+   vk_multialloc_add(&ma,
+                     &spm_bgobj_state_per_render,
+                     __typeof__(*spm_bgobj_state_per_render),
                      pass->hw_setup->render_count);
 
    if (!vk_multialloc_zalloc2(&ma,
@@ -2719,20 +2754,42 @@ VkResult pvr_CreateFramebuffer(VkDevice _device,
       goto err_finish_render_targets;
 
    for (uint32_t i = 0; i < pass->hw_setup->render_count; i++) {
+      uint32_t emit_count;
+
       result = pvr_spm_init_eot_state(device,
                                       &spm_eot_state_per_render[i],
                                       framebuffer,
-                                      &pass->hw_setup->renders[i]);
-      if (result != VK_SUCCESS) {
-         for (uint32_t j = 0; j < i; j++)
-            pvr_spm_finish_eot_state(device, &spm_eot_state_per_render[j]);
+                                      &pass->hw_setup->renders[i],
+                                      &emit_count);
+      if (result != VK_SUCCESS)
+         goto err_finish_eot_state;
 
-         goto err_finish_render_targets;
-      }
+      result = pvr_spm_init_bgobj_state(device,
+                                        &spm_bgobj_state_per_render[i],
+                                        framebuffer,
+                                        &pass->hw_setup->renders[i],
+                                        emit_count);
+      if (result != VK_SUCCESS)
+         goto err_finish_bgobj_state;
+
+      continue;
+
+err_finish_bgobj_state:
+      pvr_spm_finish_eot_state(device, &spm_eot_state_per_render[i]);
+
+      for (uint32_t j = 0; j < i; j++)
+         pvr_spm_finish_bgobj_state(device, &spm_bgobj_state_per_render[j]);
+
+err_finish_eot_state:
+      for (uint32_t j = 0; j < i; j++)
+         pvr_spm_finish_eot_state(device, &spm_eot_state_per_render[j]);
+
+      goto err_finish_render_targets;
    }
 
+   framebuffer->render_count = pass->hw_setup->render_count;
    framebuffer->spm_eot_state_per_render = spm_eot_state_per_render;
-   framebuffer->spm_eot_state_count = pass->hw_setup->render_count;
+   framebuffer->spm_bgobj_state_per_render = spm_bgobj_state_per_render;
 
    *pFramebuffer = pvr_framebuffer_to_handle(framebuffer);
 
@@ -2761,7 +2818,10 @@ void pvr_DestroyFramebuffer(VkDevice _device,
    if (!framebuffer)
       return;
 
-   for (uint32_t i = 0; i < framebuffer->spm_eot_state_count; i++) {
+   for (uint32_t i = 0; i < framebuffer->render_count; i++) {
+      pvr_spm_finish_bgobj_state(device,
+                                 &framebuffer->spm_bgobj_state_per_render[i]);
+
       pvr_spm_finish_eot_state(device,
                                &framebuffer->spm_eot_state_per_render[i]);
    }

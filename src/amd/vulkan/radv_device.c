@@ -471,6 +471,7 @@ static const struct vk_instance_extension_table radv_instance_extensions_support
    .KHR_get_surface_capabilities2 = true,
    .KHR_surface = true,
    .KHR_surface_protected_capabilities = true,
+   .EXT_surface_maintenance1 = true,
    .EXT_swapchain_colorspace = true,
 #endif
 #ifdef VK_USE_PLATFORM_WAYLAND_KHR
@@ -631,7 +632,7 @@ radv_physical_device_get_supported_extensions(const struct radv_physical_device 
 #endif
       .EXT_pipeline_creation_cache_control = true,
       .EXT_pipeline_creation_feedback = true,
-      .EXT_pipeline_library_group_handles = true,
+      .EXT_pipeline_library_group_handles = radv_enable_rt(device, true),
       .EXT_post_depth_coverage = device->rad_info.gfx_level >= GFX10,
       .EXT_primitive_topology_list_restart = true,
       .EXT_primitives_generated_query = true,
@@ -657,6 +658,9 @@ radv_physical_device_get_supported_extensions(const struct radv_physical_device 
       .EXT_shader_subgroup_vote = true,
       .EXT_shader_viewport_index_layer = true,
       .EXT_subgroup_size_control = true,
+#ifdef RADV_USE_WSI_PLATFORM
+      .EXT_swapchain_maintenance1 = true,
+#endif
       .EXT_texel_buffer_alignment = true,
       .EXT_transform_feedback = true,
       .EXT_vertex_attribute_divisor = true,
@@ -2022,6 +2026,14 @@ radv_GetPhysicalDeviceFeatures2(VkPhysicalDevice physicalDevice,
          features->imageSlicedViewOf3D = true;
          break;
       }
+#ifdef RADV_USE_WSI_PLATFORM
+      case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SWAPCHAIN_MAINTENANCE_1_FEATURES_EXT: {
+         VkPhysicalDeviceSwapchainMaintenance1FeaturesEXT *features =
+               (VkPhysicalDeviceSwapchainMaintenance1FeaturesEXT *)ext;
+         features->swapchainMaintenance1 = true;
+         break;
+      }
+#endif
       default:
          break;
       }
@@ -5628,7 +5640,7 @@ radv_update_preambles(struct radv_queue_state *queue, struct radv_device *device
          ? MIN2(needs.compute_scratch_waves, UINT32_MAX / needs.compute_scratch_size_per_wave)
          : 0;
 
-   if (device->physical_device->rad_info.gfx_level >= GFX11) {
+   if (device->physical_device->rad_info.gfx_level >= GFX11 && queue->qf == RADV_QUEUE_GENERAL) {
       needs.attr_ring_size = device->physical_device->rad_info.attribute_ring_size_per_se *
                              device->physical_device->rad_info.max_se;
    }
