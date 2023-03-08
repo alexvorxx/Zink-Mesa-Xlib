@@ -27,6 +27,7 @@
 #ifndef ACO_SHADER_INFO_H
 #define ACO_SHADER_INFO_H
 
+#include "ac_shader_args.h"
 #include "shader_enums.h"
 
 #ifdef __cplusplus
@@ -52,7 +53,8 @@ struct aco_vs_input_state {
    uint8_t formats[ACO_MAX_VERTEX_ATTRIBS];
 };
 
-struct aco_vs_prolog_key {
+struct aco_vs_prolog_info {
+   struct ac_arg inputs;
    struct aco_vs_input_state state;
    unsigned num_attributes;
    uint32_t misaligned_mask;
@@ -121,6 +123,9 @@ struct aco_shader_info {
    } cs;
 
    uint32_t gfx9_gs_ring_lds_size;
+
+   bool is_gs_copy_shader;
+   bool is_trap_handler_shader;
 };
 
 enum aco_compiler_debug_level {
@@ -128,7 +133,10 @@ enum aco_compiler_debug_level {
    ACO_COMPILER_DEBUG_LEVEL_ERROR,
 };
 
-struct aco_ps_epilog_key {
+struct aco_ps_epilog_info {
+   struct ac_arg inputs[8];
+   struct ac_arg pc;
+
    uint32_t spi_shader_col_format;
 
    /* Bitmasks, each bit represents one of the 8 MRTs. */
@@ -157,7 +165,7 @@ struct aco_stage_input {
    } tcs;
 
    struct {
-      struct aco_ps_epilog_key epilog;
+      struct aco_ps_epilog_info epilog;
 
       /* Used to export alpha through MRTZ for alpha-to-coverage (GFX11+). */
       bool alpha_to_coverage_via_mrtz;
@@ -172,6 +180,7 @@ struct aco_compiler_options {
    bool record_ir;
    bool record_stats;
    bool has_ls_vgpr_init_bug;
+   bool load_grid_size_from_user_sgpr;
    uint8_t enable_mrt_output_nan_fixup;
    bool wgp_mode;
    enum radeon_family family;

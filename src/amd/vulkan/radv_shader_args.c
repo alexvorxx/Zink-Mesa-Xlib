@@ -364,8 +364,10 @@ declare_vs_input_vgprs(enum amd_gfx_level gfx_level, const struct radv_shader_in
    if (info->vs.dynamic_inputs) {
       assert(info->vs.use_per_attribute_vb_descs);
       unsigned num_attributes = util_last_bit(info->vs.input_slot_usage_mask);
-      for (unsigned i = 0; i < num_attributes; i++)
+      for (unsigned i = 0; i < num_attributes; i++) {
          ac_add_arg(&args->ac, AC_ARG_VGPR, 4, AC_ARG_INT, &args->vs_inputs[i]);
+         args->ac.args[args->vs_inputs[i].arg_index].pending_vmem = true;
+      }
       /* Ensure the main shader doesn't use less vgprs than the prolog. The prolog requires one
        * VGPR more than the number of shader arguments in the case of non-trivial divisors on GFX8.
        */

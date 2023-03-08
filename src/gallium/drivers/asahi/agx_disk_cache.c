@@ -25,6 +25,7 @@
 #include <assert.h>
 #include <stdio.h>
 
+#include "asahi/compiler/agx_debug.h"
 #include "compiler/shader_enums.h"
 #include "util/blob.h"
 #include "util/build_id.h"
@@ -150,6 +151,9 @@ void
 agx_disk_cache_init(struct agx_screen *screen)
 {
 #ifdef ENABLE_SHADER_CACHE
+   if (agx_compiler_debug || screen->dev.debug)
+      return;
+
    const char *renderer = screen->pscreen.get_name(&screen->pscreen);
 
    const struct build_id_note *note =

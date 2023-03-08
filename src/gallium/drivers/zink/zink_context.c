@@ -3773,6 +3773,9 @@ zink_resource_image_barrier(struct zink_context *ctx, struct zink_resource *res,
 
    resource_check_defer_image_barrier(ctx, res, new_layout, pipeline);
 
+   if (is_write)
+      res->obj->last_write = imb.dstAccessMask;
+
    res->obj->access = imb.dstAccessMask;
    res->obj->access_stage = pipeline;
    res->layout = new_layout;
@@ -3820,6 +3823,9 @@ zink_resource_image_barrier2(struct zink_context *ctx, struct zink_resource *res
 
    resource_check_defer_image_barrier(ctx, res, new_layout, pipeline);
 
+   if (is_write)
+      res->obj->last_write = imb.dstAccessMask;
+
    res->obj->access = imb.dstAccessMask;
    res->obj->access_stage = pipeline;
    res->layout = new_layout;
@@ -3827,18 +3833,51 @@ zink_resource_image_barrier2(struct zink_context *ctx, struct zink_resource *res
       zink_resource_copies_reset(res);
 }
 
+bool
+zink_check_transfer_dst_barrier(struct zink_resource *res, unsigned level, const struct pipe_box *box)
+{
+   /* always barrier against previous non-transfer writes */
+   bool non_transfer_write = res->obj->last_write && res->obj->last_write != VK_ACCESS_TRANSFER_WRITE_BIT;
+   /* must barrier if clobbering a previous write */
+   bool transfer_clobber = res->obj->last_write == VK_ACCESS_TRANSFER_WRITE_BIT && zink_resource_copy_box_intersects(res, level, box);
+   return non_transfer_write || transfer_clobber;
+}
+
 void
 zink_resource_image_transfer_dst_barrier(struct zink_context *ctx, struct zink_resource *res, unsigned level, const struct pipe_box *box)
 {
+   if (res->obj->copies_need_reset)
+      zink_resource_copies_reset(res);
    /* skip TRANSFER_DST barrier if no intersection from previous copies */
-   if (res->layout != VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL || zink_resource_copy_box_intersects(res, level, box)) {
+   if (res->layout != VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL ||
+       zink_screen(ctx->base.screen)->driver_workarounds.broken_cache_semantics ||
+       zink_resource_copy_box_intersects(res, level, box)) {
       zink_screen(ctx->base.screen)->image_barrier(ctx, res, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_ACCESS_TRANSFER_WRITE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT);
    } else {
       res->obj->access = VK_ACCESS_TRANSFER_WRITE_BIT;
+      res->obj->last_write = VK_ACCESS_TRANSFER_WRITE_BIT;
       res->obj->access_stage = VK_PIPELINE_STAGE_TRANSFER_BIT;
    }
    zink_resource_copy_box_add(res, level, box);
+}
 
+void
+zink_resource_buffer_transfer_dst_barrier(struct zink_context *ctx, struct zink_resource *res, unsigned offset, unsigned size)
+{
+   if (res->obj->copies_need_reset)
+      zink_resource_copies_reset(res);
+   struct pipe_box box = {offset, 0, 0, size, 0, 0};
+   /* must barrier if something read the valid buffer range */
+   bool valid_read = res->obj->access && util_ranges_intersect(&res->valid_buffer_range, offset, offset + size) && !unordered_res_exec(ctx, res, true);
+   if (zink_screen(ctx->base.screen)->driver_workarounds.broken_cache_semantics ||
+       zink_check_transfer_dst_barrier(res, 0, &box) || valid_read) {
+      zink_screen(ctx->base.screen)->buffer_barrier(ctx, res, VK_ACCESS_TRANSFER_WRITE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT);
+   } else {
+      res->obj->access = VK_ACCESS_TRANSFER_WRITE_BIT;
+      res->obj->last_write = VK_ACCESS_TRANSFER_WRITE_BIT;
+      res->obj->access_stage = VK_PIPELINE_STAGE_TRANSFER_BIT;
+   }
+   zink_resource_copy_box_add(res, 0, &box);
 }
 
 VkPipelineStageFlags
@@ -3939,8 +3978,13 @@ zink_resource_buffer_barrier(struct zink_context *ctx, struct zink_resource *res
 
    resource_check_defer_buffer_barrier(ctx, res, pipeline);
 
+   if (is_write)
+      res->obj->last_write = flags;
+
    res->obj->access = flags;
    res->obj->access_stage = pipeline;
+   if (pipeline != VK_PIPELINE_STAGE_TRANSFER_BIT && is_write)
+      zink_resource_copies_reset(res);
 }
 
 void
@@ -3993,8 +4037,13 @@ zink_resource_buffer_barrier2(struct zink_context *ctx, struct zink_resource *re
 
    resource_check_defer_buffer_barrier(ctx, res, pipeline);
 
+   if (is_write)
+      res->obj->last_write = flags;
+
    res->obj->access = flags;
    res->obj->access_stage = pipeline;
+   if (pipeline != VK_PIPELINE_STAGE_TRANSFER_BIT && is_write)
+      zink_resource_copies_reset(res);
 }
 
 bool
@@ -4722,7 +4771,7 @@ zink_copy_buffer(struct zink_context *ctx, struct zink_resource *dst, struct zin
    struct zink_batch *batch = &ctx->batch;
    util_range_add(&dst->base.b, &dst->valid_buffer_range, dst_offset, dst_offset + size);
    zink_screen(ctx->base.screen)->buffer_barrier(ctx, src, VK_ACCESS_TRANSFER_READ_BIT, 0);
-   zink_screen(ctx->base.screen)->buffer_barrier(ctx, dst, VK_ACCESS_TRANSFER_WRITE_BIT, 0);
+   zink_resource_buffer_transfer_dst_barrier(ctx, dst, dst_offset, size);
    VkCommandBuffer cmdbuf = zink_get_cmdbuf(ctx, src, dst);
    zink_batch_reference_resource_rw(batch, src, false);
    zink_batch_reference_resource_rw(batch, dst, true);
@@ -4756,7 +4805,7 @@ zink_copy_image_buffer(struct zink_context *ctx, struct zink_resource *dst, stru
       if (zink_is_swapchain(img))
          needs_present_readback = zink_kopper_acquire_readback(ctx, img);
       zink_screen(ctx->base.screen)->image_barrier(ctx, img, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, 0, 0);
-      zink_screen(ctx->base.screen)->buffer_barrier(ctx, buf, VK_ACCESS_TRANSFER_WRITE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT);
+      zink_resource_buffer_transfer_dst_barrier(ctx, buf, dstx, src_box->width);
       util_range_add(&dst->base.b, &dst->valid_buffer_range, dstx, dstx + src_box->width);
    }
 
@@ -5107,6 +5156,7 @@ zink_context_replace_buffer_storage(struct pipe_context *pctx, struct pipe_resou
    /* don't be too creative */
    zink_resource_object_reference(screen, &d->obj, s->obj);
    d->valid_buffer_range = s->valid_buffer_range;
+   zink_resource_copies_reset(d);
    /* force counter buffer reset */
    d->so_valid = false;
    if (num_rebinds && rebind_buffer(ctx, d, rebind_mask, num_rebinds) < num_rebinds)

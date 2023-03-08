@@ -1752,6 +1752,8 @@ ngg_build_streamout_buffer_info(nir_builder *b,
                                 nir_ssa_def *buffer_offsets_ret[4],
                                 nir_ssa_def *emit_prim_ret[4])
 {
+   nir_ssa_def *undef = nir_ssa_undef(b, 1, 32);
+
    /* For radeonsi which pass this value by arg when VS. Streamout need accurate
     * num-vert-per-prim for writing correct amount of data to buffer.
     */
@@ -1785,7 +1787,7 @@ ngg_build_streamout_buffer_info(nir_builder *b,
             workgroup_buffer_sizes[buffer] =
                nir_bcsel(b, buffer_valid, inc_buffer_size, nir_imm_int(b, 0));
          } else
-            workgroup_buffer_sizes[buffer] = nir_ssa_undef(b, 1, 32);
+            workgroup_buffer_sizes[buffer] = undef;
       }
 
       nir_ssa_def *ordered_id = nir_load_ordered_id_amd(b);
@@ -1801,6 +1803,9 @@ ngg_build_streamout_buffer_info(nir_builder *b,
       nir_ssa_def *emit_prim[4];
       memcpy(emit_prim, gen_prim, 4 * sizeof(nir_ssa_def *));
 
+      nir_ssa_def *any_overflow = nir_imm_bool(b, false);
+      nir_ssa_def *overflow_amount[4] = {undef, undef, undef, undef};
+
       for (unsigned buffer = 0; buffer < 4; buffer++) {
          if (!(info->buffers_written & BITFIELD_BIT(buffer)))
             continue;
@@ -1810,6 +1815,10 @@ ngg_build_streamout_buffer_info(nir_builder *b,
          nir_ssa_def *remain_size = nir_isub(b, buffer_size, buffer_offset);
          nir_ssa_def *remain_prim = nir_idiv(b, remain_size, prim_stride_ret[buffer]);
          nir_ssa_def *overflow = nir_ilt(b, buffer_size, buffer_offset);
+
+         any_overflow = nir_ior(b, any_overflow, overflow);
+         overflow_amount[buffer] = nir_imax(b, nir_imm_int(b, 0),
+                                            nir_isub(b, buffer_offset, buffer_size));
 
          unsigned stream = info->buffer_to_stream[buffer];
          /* when previous workgroup overflow, we can't emit any primitive */
@@ -1822,9 +1831,16 @@ ngg_build_streamout_buffer_info(nir_builder *b,
          nir_store_shared(b, buffer_offset, scratch_base, .base = buffer * 4);
       }
 
-      /* No need to fixup the global buffer offset once we overflowed,
-       * because following workgroups overflow for sure.
+      /* We have to fix up the streamout offsets if we overflowed because they determine
+       * the vertex count for DrawTransformFeedback.
        */
+      nir_if *if_any_overflow = nir_push_if(b, any_overflow);
+      {
+         nir_build_xfb_counter_sub_amd(b, nir_vec(b, overflow_amount, 4),
+                                       /* mask of buffers to update */
+                                       .write_mask = info->buffers_written);
+      }
+      nir_pop_if(b, if_any_overflow);
 
       /* Save to LDS for being accessed by other waves in this workgroup. */
       for (unsigned stream = 0; stream < 4; stream++) {

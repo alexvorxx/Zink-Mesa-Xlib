@@ -716,6 +716,12 @@ fd_gmem_render_tiles(struct fd_batch *batch)
 
    ctx->submit_count++;
 
+   /* Sometimes we need to flush a batch just to get a fence, with no
+    * clears or draws.. in this case promote to nondraw:
+    */
+   if (!(batch->fast_cleared || batch->num_draws))
+      sysmem = true;
+
    if (!batch->nondraw) {
 #if HAVE_PERFETTO
       /* For non-draw batches, we don't really have a good place to

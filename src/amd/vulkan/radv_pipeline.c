@@ -3101,11 +3101,10 @@ ycbcr_conversion_lookup(const void *data, uint32_t set, uint32_t binding, uint32
    return ycbcr_samplers + array_index;
 }
 
-static void
+void
 radv_postprocess_nir(struct radv_pipeline *pipeline,
                      const struct radv_pipeline_layout *pipeline_layout,
-                     const struct radv_pipeline_key *pipeline_key,
-                     unsigned last_vgt_api_stage,
+                     const struct radv_pipeline_key *pipeline_key, unsigned last_vgt_api_stage,
                      struct radv_pipeline_stage *stage)
 {
    struct radv_device *device = pipeline->device;
@@ -3359,7 +3358,7 @@ radv_pipeline_create_ps_epilog(struct radv_graphics_pipeline *pipeline,
    return true;
 }
 
-static bool
+bool
 radv_pipeline_capture_shaders(const struct radv_device *device, VkPipelineCreateFlags flags)
 {
    return (flags & VK_PIPELINE_CREATE_CAPTURE_INTERNAL_REPRESENTATIONS_BIT_KHR) ||
@@ -5369,15 +5368,14 @@ radv_compute_pipeline_init(struct radv_compute_pipeline *pipeline,
    radv_compute_generate_pm4(pipeline);
 }
 
-VkResult
+static VkResult
 radv_compute_pipeline_compile(struct radv_compute_pipeline *pipeline,
                               struct radv_pipeline_layout *pipeline_layout,
                               struct radv_device *device, struct radv_pipeline_cache *cache,
                               const struct radv_pipeline_key *pipeline_key,
                               const VkPipelineShaderStageCreateInfo *pStage,
-                              const VkPipelineCreateFlags flags, const uint8_t *custom_hash,
-                              const VkPipelineCreationFeedbackCreateInfo *creation_feedback,
-                              struct radv_ray_tracing_module *rt_groups, uint32_t num_rt_groups)
+                              const VkPipelineCreateFlags flags,
+                              const VkPipelineCreationFeedbackCreateInfo *creation_feedback)
 {
    struct radv_shader_binary *binaries[MESA_VULKAN_SHADER_STAGES] = {NULL};
    unsigned char hash[20];
@@ -5393,19 +5391,15 @@ radv_compute_pipeline_compile(struct radv_compute_pipeline *pipeline,
 
    radv_pipeline_stage_init(pStage, &cs_stage, MESA_SHADER_COMPUTE);
 
-   if (custom_hash) {
-      memcpy(hash, custom_hash, 20);
-   } else {
-      radv_hash_shaders(hash, &cs_stage, 1, pipeline_layout, pipeline_key,
-                        radv_get_hash_flags(device, keep_statistic_info));
-   }
+   radv_hash_shaders(hash, &cs_stage, 1, pipeline_layout, pipeline_key,
+                     radv_get_hash_flags(device, keep_statistic_info));
 
    pipeline->base.pipeline_hash = *(uint64_t *)hash;
 
    bool found_in_application_cache = true;
    if (!keep_executable_info &&
-       radv_create_shaders_from_pipeline_cache(device, cache, hash, &pipeline->base, rt_groups,
-                                               num_rt_groups, &found_in_application_cache)) {
+       radv_create_shaders_from_pipeline_cache(device, cache, hash, &pipeline->base, NULL, 0,
+                                               &found_in_application_cache)) {
       if (found_in_application_cache)
          pipeline_feedback.flags |=
             VK_PIPELINE_CREATION_FEEDBACK_APPLICATION_PIPELINE_CACHE_HIT_BIT;
@@ -5471,8 +5465,7 @@ radv_compute_pipeline_compile(struct radv_compute_pipeline *pipeline,
    }
 
    if (!keep_executable_info) {
-      radv_pipeline_cache_insert_shaders(device, cache, hash, &pipeline->base, binaries, rt_groups,
-                                         num_rt_groups);
+      radv_pipeline_cache_insert_shaders(device, cache, hash, &pipeline->base, binaries, NULL, 0);
    }
 
    free(binaries[MESA_SHADER_COMPUTE]);
@@ -5521,9 +5514,9 @@ radv_compute_pipeline_create(VkDevice _device, VkPipelineCache _cache,
 
    struct radv_pipeline_key key = radv_generate_compute_pipeline_key(pipeline, pCreateInfo);
 
-   result = radv_compute_pipeline_compile(pipeline, pipeline_layout, device, cache, &key,
-                                          &pCreateInfo->stage, pCreateInfo->flags, NULL,
-                                          creation_feedback, NULL, 0);
+   result =
+      radv_compute_pipeline_compile(pipeline, pipeline_layout, device, cache, &key,
+                                    &pCreateInfo->stage, pCreateInfo->flags, creation_feedback);
    if (result != VK_SUCCESS) {
       radv_pipeline_destroy(device, &pipeline->base, pAllocator);
       return result;

@@ -64,7 +64,8 @@ struct ac_shader_args {
       enum ac_arg_regfile file;
       uint8_t offset;
       uint8_t size;
-      bool skip;
+      bool skip : 1;
+      bool pending_vmem : 1; /* Loaded from VMEM and needs waitcnt before use. */
    } args[AC_MAX_ARGS];
 
    uint16_t arg_count;

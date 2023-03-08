@@ -468,6 +468,7 @@ SAMPLE_instruction: SAMPLE_OP maskedDstReg ',' swizzleSrcReg ',' texImageUnit ',
                      != shadow_tex))) {
             yyerror(& @8, state,
                     "multiple targets used on one texture image unit");
+            free($$);
             YYERROR;
          }
 
@@ -519,6 +520,7 @@ TXD_instruction: TXD_OP maskedDstReg ',' swizzleSrcReg ',' swizzleSrcReg ',' swi
                      != shadow_tex))) {
             yyerror(& @12, state,
                "multiple targets used on one texture image unit");
+            free($$);
             YYERROR;
          }
 
@@ -684,6 +686,7 @@ extSwizSel: INTEGER
 
       if (strlen($1) > 1) {
          yyerror(& @1, state, "invalid extended swizzle selector");
+         free($1);
          YYERROR;
       }
 
@@ -2065,6 +2068,7 @@ ALIAS_statement: ALIAS IDENTIFIER '=' USED_IDENTIFIER
          YYERROR;
       } else {
          _mesa_symbol_table_add_symbol(state->st, $2, target);
+         free($2);
       }
       (void)yynerrs;
    }

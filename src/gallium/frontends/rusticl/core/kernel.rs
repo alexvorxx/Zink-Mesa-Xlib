@@ -940,6 +940,18 @@ impl Kernel {
                 KernelArgValue::Constant(c) => input.extend_from_slice(c),
                 KernelArgValue::MemObject(mem) => {
                     let res = mem.get_res_of_dev(&q.device)?;
+                    // If resource is a buffer and mem a 2D image, the 2d image was created from a
+                    // buffer. Use strides and dimensions of 2d image
+                    let app_img_info =
+                        if res.as_ref().is_buffer() && mem.mem_type == CL_MEM_OBJECT_IMAGE2D {
+                            Some(AppImgInfo::new(
+                                mem.image_desc.row_pitch()? / mem.image_elem_size as u32,
+                                mem.image_desc.width()?,
+                                mem.image_desc.height()?,
+                            ))
+                        } else {
+                            None
+                        };
                     if mem.is_buffer() {
                         if q.device.address_bits() == 64 {
                             input.extend_from_slice(&mem.offset.to_ne_bytes());
@@ -950,13 +962,13 @@ impl Kernel {
                     } else {
                         let format = mem.image_format.to_pipe_format().unwrap();
                         let (formats, orders) = if arg.kind == KernelArgType::Image {
-                            iviews.push(res.pipe_image_view(format, false));
+                            iviews.push(res.pipe_image_view(format, false, app_img_info.as_ref()));
                             (&mut img_formats, &mut img_orders)
                         } else if arg.kind == KernelArgType::RWImage {
-                            iviews.push(res.pipe_image_view(format, true));
+                            iviews.push(res.pipe_image_view(format, true, app_img_info.as_ref()));
                             (&mut img_formats, &mut img_orders)
                         } else {
-                            sviews.push((res.clone(), format));
+                            sviews.push((res.clone(), format, app_img_info));
                             (&mut tex_formats, &mut tex_orders)
                         };
 
@@ -1060,7 +1072,7 @@ impl Kernel {
 
             let mut sviews: Vec<_> = sviews
                 .iter()
-                .map(|(s, f)| ctx.create_sampler_view(s, *f))
+                .map(|(s, f, aii)| ctx.create_sampler_view(s, *f, aii.as_ref()))
                 .collect();
             let samplers: Vec<_> = samplers
                 .iter()

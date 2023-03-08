@@ -30,6 +30,7 @@
 #include "util/u_debug.h"
 #include "agx_builder.h"
 #include "agx_compiler.h"
+#include "agx_debug.h"
 #include "agx_internal_formats.h"
 #include "agx_nir.h"
 
@@ -51,13 +52,14 @@ static const struct debug_named_value agx_debug_options[] = {
 };
 /* clang-format on */
 
-DEBUG_GET_ONCE_FLAGS_OPTION(agx_debug, "AGX_MESA_DEBUG", agx_debug_options, 0)
+DEBUG_GET_ONCE_FLAGS_OPTION(agx_compiler_debug, "AGX_MESA_DEBUG",
+                            agx_debug_options, 0)
 
-int agx_debug = 0;
+int agx_compiler_debug = 0;
 
 #define DBG(fmt, ...)                                                          \
    do {                                                                        \
-      if (agx_debug & AGX_DBG_MSGS)                                            \
+      if (agx_compiler_debug & AGX_DBG_MSGS)                                   \
          fprintf(stderr, "%s:%d: " fmt, __func__, __LINE__, ##__VA_ARGS__);    \
    } while (0)
 
@@ -1931,7 +1933,7 @@ agx_optimize_nir(nir_shader *nir, unsigned *preamble_size)
       } while (progress);
    }
 
-   if (likely(!(agx_debug & AGX_DBG_NOPREAMBLE)))
+   if (likely(!(agx_compiler_debug & AGX_DBG_NOPREAMBLE)))
       NIR_PASS_V(nir, agx_nir_opt_preamble, preamble_size);
 
    /* Forming preambles may dramatically reduce the instruction count
@@ -2079,8 +2081,8 @@ agx_fp32_varying_mask(nir_shader *nir)
 static bool
 agx_should_dump(nir_shader *nir, unsigned agx_dbg_bit)
 {
-   return (agx_debug & agx_dbg_bit) &&
-          !(nir->info.internal && !(agx_debug & AGX_DBG_INTERNAL));
+   return (agx_compiler_debug & agx_dbg_bit) &&
+          !(nir->info.internal && !(agx_compiler_debug & AGX_DBG_INTERNAL));
 }
 
 static unsigned
@@ -2123,7 +2125,7 @@ agx_compile_function_nir(nir_shader *nir, nir_function_impl *impl,
 
    agx_validate(ctx, "IR translation");
 
-   if (likely(!(agx_debug & AGX_DBG_NOOPT))) {
+   if (likely(!(agx_compiler_debug & AGX_DBG_NOOPT))) {
       /* Dead code eliminate before instruction combining so use counts are
        * right */
       agx_dce(ctx);
@@ -2303,7 +2305,7 @@ agx_compile_shader_nir(nir_shader *nir, struct agx_shader_key *key,
                        struct util_dynarray *binary,
                        struct agx_shader_info *out)
 {
-   agx_debug = debug_get_option_agx_debug();
+   agx_compiler_debug = debug_get_option_agx_compiler_debug();
 
    memset(out, 0, sizeof *out);
 

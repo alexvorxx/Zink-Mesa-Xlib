@@ -179,6 +179,12 @@ u_pipe_screen_get_param_defaults(struct pipe_screen *pscreen,
       /* GL_EXT_texture_buffer minimum value. */
       return 65536;
 
+   case PIPE_CAP_LINEAR_IMAGE_PITCH_ALIGNMENT:
+      return 0;
+
+   case PIPE_CAP_LINEAR_IMAGE_BASE_ADDRESS_ALIGNMENT:
+      return 0;
+
    case PIPE_CAP_MAX_VIEWPORTS:
       return 1;
 

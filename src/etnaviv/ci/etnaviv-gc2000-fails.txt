@@ -296,7 +296,6 @@ dEQP-GLES2.functional.texture.vertex.cube.filtering.nearest_mipmap_nearest_linea
 dEQP-GLES2.functional.texture.vertex.cube.filtering.nearest_mipmap_nearest_linear_mirror,Fail
 dEQP-GLES2.functional.texture.vertex.cube.filtering.nearest_mipmap_nearest_linear_repeat,Fail
 dEQP-GLES2.functional.uniform_api.random.0,Fail
-dEQP-GLES2.functional.uniform_api.random.94,Fail
 fast_color_clear@fcc-read-after-clear blit tex,Fail
 fast_color_clear@fcc-read-after-clear copy rb,Fail
 fast_color_clear@fcc-read-after-clear copy tex,Fail

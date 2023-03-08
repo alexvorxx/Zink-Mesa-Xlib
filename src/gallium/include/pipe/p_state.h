@@ -487,7 +487,8 @@ struct pipe_sampler_view
    /* Put the refcount on its own cache line to prevent "False sharing". */
    EXCLUSIVE_CACHELINE(struct pipe_reference reference);
 
-   enum pipe_format format:15;      /**< typed PIPE_FORMAT_x */
+   enum pipe_format format:14;      /**< typed PIPE_FORMAT_x */
+   bool is_tex2d_from_buf:1;       /**< true if union is tex2d_from_buf */
    enum pipe_texture_target target:5; /**< PIPE_TEXTURE_x */
    unsigned swizzle_r:3;         /**< PIPE_SWIZZLE_x for red component */
    unsigned swizzle_g:3;         /**< PIPE_SWIZZLE_x for green component */
@@ -506,6 +507,12 @@ struct pipe_sampler_view
          unsigned offset;   /**< offset in bytes */
          unsigned size;     /**< size of the readable sub-range in bytes */
       } buf;
+      struct {
+         unsigned offset;  /**< offset in pixels */
+         uint16_t row_stride; /**< size of the image row_stride in pixels */
+         uint16_t width;      /**< width of image provided by application */
+         uint16_t height;     /**< height of image provided by application */
+      } tex2d_from_buf;      /**< used in cl extension cl_khr_image2d_from_buffer */
    } u;
 };
 
@@ -524,7 +531,6 @@ struct pipe_image_view
    enum pipe_format format;      /**< typed PIPE_FORMAT_x */
    uint16_t access;              /**< PIPE_IMAGE_ACCESS_x */
    uint16_t shader_access;       /**< PIPE_IMAGE_ACCESS_x */
-
    union {
       struct {
          unsigned first_layer:16;     /**< first layer to use for array textures */
@@ -535,6 +541,12 @@ struct pipe_image_view
          unsigned offset;   /**< offset in bytes */
          unsigned size;     /**< size of the accessible sub-range in bytes */
       } buf;
+      struct {
+         unsigned offset;   /**< offset in pixels */
+         uint16_t row_stride;     /**< size of the image row_stride in pixels */
+         uint16_t width;     /**< width of image provided by application */
+         uint16_t height;     /**< height of image provided by application */
+      } tex2d_from_buf;      /**< used in cl extension cl_khr_image2d_from_buffer */
    } u;
 };
 

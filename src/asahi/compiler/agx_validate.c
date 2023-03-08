@@ -23,6 +23,7 @@
  */
 
 #include "agx_compiler.h"
+#include "agx_debug.h"
 
 /* Validatation doesn't make sense in release builds */
 #ifndef NDEBUG
@@ -190,7 +191,7 @@ agx_validate(agx_context *ctx, const char *after)
 {
    bool fail = false;
 
-   if (agx_debug & AGX_DBG_NOVALIDATE)
+   if (agx_compiler_debug & AGX_DBG_NOVALIDATE)
       return;
 
    agx_foreach_block(ctx, block) {

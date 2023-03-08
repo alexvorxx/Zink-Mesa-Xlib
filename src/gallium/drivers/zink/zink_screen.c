@@ -2681,6 +2681,16 @@ init_driver_workarounds(struct zink_screen *screen)
       screen->driver_workarounds.track_renderpasses = true;
    else if (zink_debug & ZINK_DEBUG_NORP)
       screen->driver_workarounds.track_renderpasses = false;
+
+   /* these drivers can't optimize non-overlapping copy ops */
+   switch (screen->info.driver_props.driverID) {
+   case VK_DRIVER_ID_MESA_TURNIP:
+   case VK_DRIVER_ID_QUALCOMM_PROPRIETARY:
+      screen->driver_workarounds.broken_cache_semantics = true;
+      break;
+   default:
+      break;
+   }
 }
 
 static struct disk_cache *

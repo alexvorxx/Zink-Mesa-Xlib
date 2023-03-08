@@ -38,22 +38,6 @@
 extern "C" {
 #endif
 
-/* clang-format off */
-enum agx_dbg {
-   AGX_DBG_MSGS        = BITFIELD_BIT(0),
-   AGX_DBG_SHADERS     = BITFIELD_BIT(1),
-   AGX_DBG_SHADERDB    = BITFIELD_BIT(2),
-   AGX_DBG_VERBOSE     = BITFIELD_BIT(3),
-   AGX_DBG_INTERNAL    = BITFIELD_BIT(4),
-   AGX_DBG_NOVALIDATE  = BITFIELD_BIT(5),
-   AGX_DBG_NOOPT       = BITFIELD_BIT(6),
-   AGX_DBG_WAIT        = BITFIELD_BIT(7),
-   AGX_DBG_NOPREAMBLE  = BITFIELD_BIT(8),
-};
-/* clang-format on */
-
-extern int agx_debug;
-
 /* r0-r127 inclusive, as pairs of 16-bits, gives 256 registers */
 #define AGX_NUM_REGS (256)
 

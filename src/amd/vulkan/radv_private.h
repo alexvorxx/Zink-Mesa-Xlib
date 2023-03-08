@@ -122,6 +122,11 @@ extern "C"
 #define RADV_SUPPORT_ANDROID_HARDWARE_BUFFER 0
 #endif
 
+#if defined(VK_USE_PLATFORM_WAYLAND_KHR) || defined(VK_USE_PLATFORM_XCB_KHR) ||                    \
+   defined(VK_USE_PLATFORM_XLIB_KHR) || defined(VK_USE_PLATFORM_DISPLAY_KHR)
+#define RADV_USE_WSI_PLATFORM
+#endif
+
 #ifdef _WIN32
 #define RADV_SUPPORT_CALIBRATED_TIMESTAMPS 0
 #else
@@ -2338,6 +2343,7 @@ VkResult radv_compute_pipeline_create(VkDevice _device, VkPipelineCache _cache,
                                       const VkAllocationCallbacks *pAllocator,
                                       VkPipeline *pPipeline);
 
+bool radv_pipeline_capture_shaders(const struct radv_device *device, VkPipelineCreateFlags flags);
 bool radv_pipeline_capture_shader_stats(const struct radv_device *device,
                                         VkPipelineCreateFlags flags);
 

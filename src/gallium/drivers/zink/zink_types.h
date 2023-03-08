@@ -1127,10 +1127,13 @@ struct zink_resource_object {
    struct pipe_reference reference;
 
    VkPipelineStageFlagBits access_stage;
-   VkAccessFlags access;
+   VkAccessFlagBits access;
+   VkAccessFlagBits last_write;
+
    bool unordered_read;
    bool unordered_write;
    bool copies_valid;
+   bool copies_need_reset; //for use with batch state resets
 
    unsigned persistent_maps; //if nonzero, requires vkFlushMappedMemoryRanges during batch use
    struct util_dynarray copies[16]; //regions being copied to; for barrier omission
@@ -1421,6 +1424,10 @@ struct zink_screen {
 
    struct {
       bool broken_l4a4;
+      /* https://gitlab.khronos.org/vulkan/vulkan/-/issues/3306
+       * HI TURNIP
+       */
+      bool broken_cache_semantics;
       bool implicit_sync;
       bool always_feedback_loop;
       bool always_feedback_loop_zs;

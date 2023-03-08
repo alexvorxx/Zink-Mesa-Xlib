@@ -162,6 +162,12 @@ The integer capabilities:
 * ``PIPE_CAP_TEXTURE_BUFFER_OFFSET_ALIGNMENT``: Describes the required
   alignment for pipe_sampler_view::u.buf.offset, in bytes.
   If a driver does not support offset/size, it should return 0.
+* ``PIPE_CAP_LINEAR_IMAGE_PITCH_ALIGNMENT``: Describes the row pitch alignment
+  size that pipe_sampler_view::u.tex2d_from_buf must be multiple of, in pixels.
+  If a driver does not support images created from buffers, it should return 0.
+* ``PIPE_CAP_LINEAR_IMAGE_BASE_ADDRESS_ALIGNMENT``: Describes the minimum alignment
+  in pixels of the offset of a host pointer for images created from buffers.
+  If a driver does not support images created from buffers, it should return 0.
 * ``PIPE_CAP_BUFFER_SAMPLER_VIEW_RGBA_ONLY``: Whether the driver only
   supports R, RG, RGB and RGBA formats for PIPE_BUFFER sampler views.
   When this is the case it should be assumed that the swizzle parameters

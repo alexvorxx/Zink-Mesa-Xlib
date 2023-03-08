@@ -2522,6 +2522,44 @@ update_surface_state_addrs(struct u_upload_mgr *mgr,
    return true;
 }
 
+/* We should only use this function when it's needed to fill out
+ * surf with information provided by the pipe_(image|sampler)_view.
+ * This is only necessary for CL extension cl_khr_image2d_from_buffer.
+ * This is the reason why ISL_SURF_DIM_2D is hardcoded on dim field.
+ */
+static void
+fill_surf_for_tex2d_from_buffer(struct isl_device *isl_dev,
+                                enum isl_format format,
+                                unsigned width,
+                                unsigned height,
+                                unsigned row_stride,
+                                isl_surf_usage_flags_t usage,
+                                struct isl_surf *surf)
+{
+   const struct isl_format_layout *fmtl = isl_format_get_layout(format);
+   const unsigned cpp = format == ISL_FORMAT_RAW ? 1 : fmtl->bpb / 8;
+
+   const struct isl_surf_init_info init_info = {
+      .dim = ISL_SURF_DIM_2D,
+      .format = format,
+      .width = width,
+      .height = height,
+      .depth = 1,
+      .levels = 1,
+      .array_len = 1,
+      .samples = 1,
+      .min_alignment_B = 4,
+      .row_pitch_B = row_stride * cpp,
+      .usage = usage,
+      .tiling_flags = ISL_TILING_LINEAR_BIT,
+   };
+
+   const bool isl_surf_created_successfully =
+      isl_surf_init_s(isl_dev, surf, &init_info);
+
+   assert(isl_surf_created_successfully);
+}
+
 static void
 fill_surface_state(struct isl_device *isl_dev,
                    void *map,
@@ -2682,6 +2720,25 @@ iris_create_sampler_view(struct pipe_context *ctx,
 
       fill_surface_states(&screen->isl_dev, &isv->surface_state, isv->res,
                           &isv->res->surf, &isv->view, 0, 0, 0);
+   } else if (isv->base.is_tex2d_from_buf) {
+      /* In case it's a 2d image created from a buffer, we should
+       * use fill_surface_states function with image parameters provided
+       * by the CL application
+       */
+      isv->view.base_array_layer = 0;
+      isv->view.array_len = 1;
+
+      /* Create temp_surf and fill with values provided by CL application */
+      struct isl_surf temp_surf;
+      fill_surf_for_tex2d_from_buffer(&screen->isl_dev, fmt.fmt,
+                                      isv->base.u.tex2d_from_buf.width,
+                                      isv->base.u.tex2d_from_buf.height,
+                                      isv->base.u.tex2d_from_buf.row_stride,
+                                      usage,
+                                      &temp_surf);
+
+      fill_surface_states(&screen->isl_dev, &isv->surface_state, isv->res,
+                          &temp_surf, &isv->view, 0, 0, 0);
    } else {
       fill_buffer_surface_state(&screen->isl_dev, isv->res,
                                 isv->surface_state.cpu,
@@ -2996,6 +3053,37 @@ iris_set_shader_images(struct pipe_context *ctx,
             isl_surf_fill_image_param(&screen->isl_dev,
                                       &image_params[start_slot + i],
                                       &res->surf, &view);
+         } else if (img->access & PIPE_IMAGE_ACCESS_TEX2D_FROM_BUFFER) {
+            /* In case it's a 2d image created from a buffer, we should
+             * use fill_surface_states function with image parameters provided
+             * by the CL application
+             */
+            isl_surf_usage_flags_t usage =  ISL_SURF_USAGE_STORAGE_BIT;
+            struct isl_view view = {
+               .format = isl_fmt,
+               .base_level = 0,
+               .levels = 1,
+               .base_array_layer = 0,
+               .array_len = 1,
+               .swizzle = ISL_SWIZZLE_IDENTITY,
+               .usage = usage,
+            };
+
+            /* Create temp_surf and fill with values provided by CL application */
+            struct isl_surf temp_surf;
+            enum isl_format fmt = iris_image_view_get_format(ice, img);
+            fill_surf_for_tex2d_from_buffer(&screen->isl_dev, fmt,
+                                            img->u.tex2d_from_buf.width,
+                                            img->u.tex2d_from_buf.height,
+                                            img->u.tex2d_from_buf.row_stride,
+                                            usage,
+                                            &temp_surf);
+
+            fill_surface_states(&screen->isl_dev, &iv->surface_state, res,
+                                &temp_surf, &view, 0, 0, 0);
+            isl_surf_fill_image_param(&screen->isl_dev,
+                                      &image_params[start_slot + i],
+                                      &temp_surf, &view);
          } else {
             util_range_add(&res->base.b, &res->valid_buffer_range, img->u.buf.offset,
                            img->u.buf.offset + img->u.buf.size);

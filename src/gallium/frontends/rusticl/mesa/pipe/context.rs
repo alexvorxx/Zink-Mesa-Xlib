@@ -123,6 +123,41 @@ impl PipeContext {
         }
     }
 
+    pub fn clear_image_buffer(
+        &self,
+        res: &PipeResource,
+        pattern: &[u32],
+        origin: &[usize; 3],
+        region: &[usize; 3],
+        strides: (usize, usize),
+        pixel_size: usize,
+    ) {
+        let (row_pitch, slice_pitch) = strides;
+        for z in 0..region[2] {
+            for y in 0..region[1] {
+                let pitch = [pixel_size, row_pitch, slice_pitch];
+                // Convoluted way of doing (origin + [0, y, z]) * pitch
+                let offset = (0..3)
+                    .map(|i| ((origin[i] + [0, y, z][i]) * pitch[i]) as u32)
+                    .sum();
+
+                // SAFETY: clear_buffer arguments are specified
+                // in bytes, so pattern.len() dimension value
+                // should be multiplied by pixel_size
+                unsafe {
+                    self.pipe.as_ref().clear_buffer.unwrap()(
+                        self.pipe.as_ptr(),
+                        res.pipe(),
+                        offset,
+                        (region[0] * pixel_size) as u32,
+                        pattern.as_ptr().cast(),
+                        (pattern.len() * pixel_size) as i32,
+                    )
+                };
+            }
+        }
+    }
+
     pub fn clear_texture(&self, res: &PipeResource, pattern: &[u32], bx: &pipe_box) {
         unsafe {
             self.pipe.as_ref().clear_texture.unwrap()(
@@ -374,14 +409,18 @@ impl PipeContext {
         &self,
         res: &PipeResource,
         format: pipe_format,
+        app_img_info: Option<&AppImgInfo>,
     ) -> *mut pipe_sampler_view {
-        let template = res.pipe_sampler_view_template(format);
+        let template = res.pipe_sampler_view_template(format, app_img_info);
+
         unsafe {
-            self.pipe.as_ref().create_sampler_view.unwrap()(
+            let s_view = self.pipe.as_ref().create_sampler_view.unwrap()(
                 self.pipe.as_ptr(),
                 res.pipe(),
                 &template,
-            )
+            );
+
+            s_view
         }
     }
 

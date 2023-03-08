@@ -117,8 +117,12 @@ void
 zink_resource_image_barrier2(struct zink_context *ctx, struct zink_resource *res, VkImageLayout new_layout, VkAccessFlags flags, VkPipelineStageFlags pipeline);
 bool
 zink_resource_needs_barrier(struct zink_resource *res, VkImageLayout layout, VkAccessFlags flags, VkPipelineStageFlags pipeline);
+bool
+zink_check_transfer_dst_barrier(struct zink_resource *res, unsigned level, const struct pipe_box *box);
 void
 zink_resource_image_transfer_dst_barrier(struct zink_context *ctx, struct zink_resource *res, unsigned level, const struct pipe_box *box);
+void
+zink_resource_buffer_transfer_dst_barrier(struct zink_context *ctx, struct zink_resource *res, unsigned offset, unsigned size);
 void
 zink_update_descriptor_refs(struct zink_context *ctx, bool compute);
 void

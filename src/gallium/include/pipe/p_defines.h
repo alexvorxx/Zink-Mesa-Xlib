@@ -724,12 +724,13 @@ enum pipe_conservative_raster_mode
 /**
  * pipe_image_view access flags.
  */
-#define PIPE_IMAGE_ACCESS_READ       (1 << 0)
-#define PIPE_IMAGE_ACCESS_WRITE      (1 << 1)
-#define PIPE_IMAGE_ACCESS_READ_WRITE (PIPE_IMAGE_ACCESS_READ | \
-                                      PIPE_IMAGE_ACCESS_WRITE)
-#define PIPE_IMAGE_ACCESS_COHERENT   (1 << 2)
-#define PIPE_IMAGE_ACCESS_VOLATILE   (1 << 3)
+#define PIPE_IMAGE_ACCESS_READ               (1 << 0)
+#define PIPE_IMAGE_ACCESS_WRITE              (1 << 1)
+#define PIPE_IMAGE_ACCESS_READ_WRITE         (PIPE_IMAGE_ACCESS_READ | \
+                                              PIPE_IMAGE_ACCESS_WRITE)
+#define PIPE_IMAGE_ACCESS_COHERENT           (1 << 2)
+#define PIPE_IMAGE_ACCESS_VOLATILE           (1 << 3)
+#define PIPE_IMAGE_ACCESS_TEX2D_FROM_BUFFER  (1 << 4)
 
 /**
  * Implementation capabilities/limits which are queried through
@@ -807,6 +808,8 @@ enum pipe_cap
    PIPE_CAP_BUFFER_SAMPLER_VIEW_RGBA_ONLY,
    PIPE_CAP_TGSI_TEXCOORD,
    PIPE_CAP_TEXTURE_BUFFER_SAMPLER,
+   PIPE_CAP_LINEAR_IMAGE_PITCH_ALIGNMENT,
+   PIPE_CAP_LINEAR_IMAGE_BASE_ADDRESS_ALIGNMENT,
    PIPE_CAP_TEXTURE_TRANSFER_MODES,
    PIPE_CAP_QUERY_PIPELINE_STATISTICS,
    PIPE_CAP_TEXTURE_BORDER_COLOR_QUIRK,

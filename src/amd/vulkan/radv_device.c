@@ -440,11 +440,6 @@ radv_NV_device_generated_commands_enabled(const struct radv_physical_device *dev
           driQueryOptionb(&device->instance->dri_options, "radv_dgc");
 }
 
-#if defined(VK_USE_PLATFORM_WAYLAND_KHR) || defined(VK_USE_PLATFORM_XCB_KHR) ||                    \
-   defined(VK_USE_PLATFORM_XLIB_KHR) || defined(VK_USE_PLATFORM_DISPLAY_KHR)
-#define RADV_USE_WSI_PLATFORM
-#endif
-
 #ifdef ANDROID
 #define RADV_API_VERSION VK_MAKE_VERSION(1, 1, VK_HEADER_VERSION)
 #else

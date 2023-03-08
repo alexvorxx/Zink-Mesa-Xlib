@@ -500,6 +500,10 @@ impl Device {
         if self.image_supported() {
             add_ext(1, 0, 0, "", "__opencl_c_images");
 
+            if self.image2d_from_buffer_supported() {
+                add_ext(1, 0, 0, "cl_khr_image2d_from_buffer", "");
+            }
+
             if self.image_read_write_supported() {
                 add_ext(1, 0, 0, "", "__opencl_c_read_write_images");
             }
@@ -610,8 +614,14 @@ impl Device {
             .param(pipe_cap::PIPE_CAP_MAX_TEXTURE_ARRAY_LAYERS) as usize
     }
 
+    pub fn image_pitch_alignment(&self) -> cl_uint {
+        self.screen
+            .param(pipe_cap::PIPE_CAP_LINEAR_IMAGE_PITCH_ALIGNMENT) as u32
+    }
+
     pub fn image_base_address_alignment(&self) -> cl_uint {
-        0
+        self.screen
+            .param(pipe_cap::PIPE_CAP_LINEAR_IMAGE_BASE_ADDRESS_ALIGNMENT) as u32
     }
 
     pub fn image_buffer_size(&self) -> usize {
@@ -621,6 +631,10 @@ impl Device {
 
     pub fn image_read_count(&self) -> cl_uint {
         self.shader_param(pipe_shader_cap::PIPE_SHADER_CAP_MAX_SAMPLER_VIEWS) as cl_uint
+    }
+
+    pub fn image2d_from_buffer_supported(&self) -> bool {
+        self.image_pitch_alignment() != 0 && self.image_base_address_alignment() != 0
     }
 
     pub fn image_supported(&self) -> bool {

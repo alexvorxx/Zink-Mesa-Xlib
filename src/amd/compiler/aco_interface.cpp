@@ -26,8 +26,6 @@
 
 #include "aco_ir.h"
 
-#include "vulkan/radv_shader_args.h"
-
 #include "util/memstream.h"
 
 #include <array>
@@ -113,7 +111,7 @@ get_disasm_string(aco::Program* program, std::vector<uint32_t>& code,
 
 static std::string
 aco_postprocess_shader(const struct aco_compiler_options* options,
-                       const struct radv_shader_args *args,
+                       const struct aco_shader_info *info,
                        std::unique_ptr<aco::Program>& program)
 {
    std::string llvm_ir;
@@ -122,7 +120,7 @@ aco_postprocess_shader(const struct aco_compiler_options* options,
       aco_print_program(program.get(), stderr);
 
    aco::live live_vars;
-   if (!args->is_trap_handler_shader) {
+   if (!info->is_trap_handler_shader) {
       /* Phi lowering */
       aco::lower_phis(program.get());
       aco::dominator_tree(program.get());
@@ -167,7 +165,7 @@ aco_postprocess_shader(const struct aco_compiler_options* options,
    if ((aco::debug_flags & aco::DEBUG_LIVE_INFO) && options->dump_shader)
       aco_print_program(program.get(), stderr, live_vars, aco::print_live_vars | aco::print_kill);
 
-   if (!args->is_trap_handler_shader) {
+   if (!info->is_trap_handler_shader) {
       if (!options->key.optimisations_disabled && !(aco::debug_flags & aco::DEBUG_NO_SCHED))
          aco::schedule_program(program.get(), live_vars);
       validate(program.get());
@@ -213,7 +211,7 @@ void
 aco_compile_shader(const struct aco_compiler_options* options,
                    const struct aco_shader_info* info,
                    unsigned shader_count, struct nir_shader* const* shaders,
-                   const struct radv_shader_args *args,
+                   const struct ac_shader_args *args,
                    aco_callback *build_binary,
                    void **binary)
 {
@@ -230,12 +228,12 @@ aco_compile_shader(const struct aco_compiler_options* options,
    program->debug.private_data = options->debug.private_data;
 
    /* Instruction Selection */
-   if (args->is_trap_handler_shader)
+   if (info->is_trap_handler_shader)
       aco::select_trap_handler_shader(program.get(), shaders[0], &config, options, info, args);
    else
       aco::select_program(program.get(), shader_count, shaders, &config, options, info, args);
 
-   std::string llvm_ir = aco_postprocess_shader(options, args, program);
+   std::string llvm_ir = aco_postprocess_shader(options, info, program);
 
    /* assembly */
    std::vector<uint32_t> code;
@@ -270,11 +268,9 @@ aco_compile_shader(const struct aco_compiler_options* options,
 
 void
 aco_compile_vs_prolog(const struct aco_compiler_options* options,
-                      const struct aco_shader_info* info,
-                      const struct aco_vs_prolog_key* key,
-                      const struct radv_shader_args* args,
-                      aco_shader_part_callback *build_prolog,
-                      void **binary)
+                      const struct aco_shader_info* info, const struct aco_vs_prolog_info* pinfo,
+                      const struct ac_shader_args* args, aco_shader_part_callback* build_prolog,
+                      void** binary)
 {
    aco::init();
 
@@ -287,7 +283,7 @@ aco_compile_vs_prolog(const struct aco_compiler_options* options,
 
    /* create IR */
    unsigned num_preserved_sgprs;
-   aco::select_vs_prolog(program.get(), key, &config, options, info, args, &num_preserved_sgprs);
+   aco::select_vs_prolog(program.get(), pinfo, &config, options, info, args, &num_preserved_sgprs);
    aco::insert_NOPs(program.get());
 
    if (options->dump_shader)
@@ -316,10 +312,8 @@ aco_compile_vs_prolog(const struct aco_compiler_options* options,
 
 void
 aco_compile_ps_epilog(const struct aco_compiler_options* options,
-                      const struct aco_shader_info* info,
-                      const struct aco_ps_epilog_key* key,
-                      const struct radv_shader_args* args,
-                      aco_shader_part_callback* build_epilog,
+                      const struct aco_shader_info* info, const struct aco_ps_epilog_info* pinfo,
+                      const struct ac_shader_args* args, aco_shader_part_callback* build_epilog,
                       void** binary)
 {
    aco::init();
@@ -335,9 +329,9 @@ aco_compile_ps_epilog(const struct aco_compiler_options* options,
    program->debug.private_data = options->debug.private_data;
 
    /* Instruction selection */
-   aco::select_ps_epilog(program.get(), key, &config, options, info, args);
+   aco::select_ps_epilog(program.get(), pinfo, &config, options, info, args);
 
-   aco_postprocess_shader(options, args, program);
+   aco_postprocess_shader(options, info, program);
 
    /* assembly */
    std::vector<uint32_t> code;

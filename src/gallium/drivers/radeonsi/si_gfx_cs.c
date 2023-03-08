@@ -103,8 +103,12 @@ void si_flush_gfx_cs(struct si_context *ctx, unsigned flags, struct pipe_fence_h
           * idle when we leave the IB, otherwise another process
           * might overwrite it while our shaders are busy.
           */
-         if (sscreen->use_ngg_streamout)
-            wait_flags |= SI_CONTEXT_PS_PARTIAL_FLUSH;
+         if (sscreen->use_ngg_streamout) {
+            if (ctx->gfx_level >= GFX11)
+               wait_flags |= SI_CONTEXT_VS_PARTIAL_FLUSH;
+            else
+               wait_flags |= SI_CONTEXT_PS_PARTIAL_FLUSH;
+         }
       }
    }
 
@@ -209,32 +213,37 @@ static void si_begin_gfx_cs_debug(struct si_context *ctx)
 
 static void si_add_gds_to_buffer_list(struct si_context *sctx)
 {
-   if (sctx->screen->gds) {
+   if (sctx->screen->gds)
       sctx->ws->cs_add_buffer(&sctx->gfx_cs, sctx->screen->gds, RADEON_USAGE_READWRITE, 0);
-      if (sctx->screen->gds_oa) {
-         sctx->ws->cs_add_buffer(&sctx->gfx_cs, sctx->screen->gds_oa, RADEON_USAGE_READWRITE, 0);
-      }
-   }
+   if (sctx->screen->gds_oa)
+      sctx->ws->cs_add_buffer(&sctx->gfx_cs, sctx->screen->gds_oa, RADEON_USAGE_READWRITE, 0);
 }
 
 void si_allocate_gds(struct si_context *sctx)
 {
    struct radeon_winsys *ws = sctx->ws;
 
-   if (sctx->screen->gds && sctx->screen->gds_oa)
-      return;
-
    assert(sctx->screen->use_ngg_streamout);
 
-   /* We need 256B (64 dw) of GDS, otherwise streamout hangs. */
-   simple_mtx_lock(&sctx->screen->gds_mutex);
-   if (!sctx->screen->gds)
-      sctx->screen->gds = ws->buffer_create(ws, 256, 4, RADEON_DOMAIN_GDS, RADEON_FLAG_DRIVER_INTERNAL);
-   if (!sctx->screen->gds_oa)
-      sctx->screen->gds_oa = ws->buffer_create(ws, 1, 1, RADEON_DOMAIN_OA, RADEON_FLAG_DRIVER_INTERNAL);
-   simple_mtx_unlock(&sctx->screen->gds_mutex);
+   if (sctx->screen->gds_oa)
+      return;
 
-   assert(sctx->screen->gds && sctx->screen->gds_oa);
+   assert(!sctx->screen->gds && !sctx->screen->gds_oa);
+
+   /* Gfx11 only uses GDS OA, not GDS memory.
+    * Gfx10 needs 256B (64 dw) of GDS, otherwise streamout hangs.
+    */
+   simple_mtx_lock(&sctx->screen->gds_mutex);
+   if (!sctx->screen->gds_oa) {
+      sctx->screen->gds_oa = ws->buffer_create(ws, 1, 1, RADEON_DOMAIN_OA, RADEON_FLAG_DRIVER_INTERNAL);
+      assert(sctx->screen->gds_oa);
+
+      if (sctx->gfx_level < GFX11) {
+         sctx->screen->gds = ws->buffer_create(ws, 256, 4, RADEON_DOMAIN_GDS, RADEON_FLAG_DRIVER_INTERNAL);
+         assert(sctx->screen->gds);
+      }
+   }
+   simple_mtx_unlock(&sctx->screen->gds_mutex);
 
    si_add_gds_to_buffer_list(sctx);
 }

@@ -1951,6 +1951,8 @@ overwrite:
          zink_resource_usage_wait(ctx, res, ZINK_RESOURCE_ACCESS_WRITE);
       res->obj->access = 0;
       res->obj->access_stage = 0;
+      res->obj->last_write = 0;
+      zink_resource_copies_reset(res);
    }
 
    if (!ptr) {
@@ -2375,6 +2377,7 @@ zink_resource_copies_reset(struct zink_resource *res)
    for (unsigned i = 0; i < max_level; i++)
       util_dynarray_clear(&res->obj->copies[i]);
    res->obj->copies_valid = false;
+   res->obj->copies_need_reset = false;
 }
 
 static void

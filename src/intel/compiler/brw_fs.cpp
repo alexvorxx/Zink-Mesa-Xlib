@@ -38,6 +38,7 @@
 #include "brw_dead_control_flow.h"
 #include "brw_private.h"
 #include "dev/intel_debug.h"
+#include "dev/intel_wa.h"
 #include "compiler/glsl_types.h"
 #include "compiler/nir/nir_builder.h"
 #include "program/prog_parameter.h"
@@ -6233,7 +6234,7 @@ needs_dummy_fence(const intel_device_info *devinfo, fs_inst *inst)
    return false;
 }
 
-/* Wa_14017989577
+/* Wa_14015360517
  *
  * The first instruction of any kernel should have non-zero emask.
  * Make sure this happens by introducing a dummy mov instruction.
@@ -6241,7 +6242,7 @@ needs_dummy_fence(const intel_device_info *devinfo, fs_inst *inst)
 void
 fs_visitor::emit_dummy_mov_instruction()
 {
-   if (devinfo->verx10 < 120)
+   if (!intel_needs_workaround(devinfo, 14015360517))
       return;
 
    struct backend_instruction *first_inst =
@@ -6623,7 +6624,7 @@ fs_visitor::run_vs()
    fixup_3src_null_dest();
    emit_dummy_memory_fence_before_eot();
 
-   /* Wa_14017989577 */
+   /* Wa_14015360517 */
    emit_dummy_mov_instruction();
 
    allocate_registers(true /* allow_spilling */);
@@ -6749,7 +6750,7 @@ fs_visitor::run_tcs()
    fixup_3src_null_dest();
    emit_dummy_memory_fence_before_eot();
 
-   /* Wa_14017989577 */
+   /* Wa_14015360517 */
    emit_dummy_mov_instruction();
 
    allocate_registers(true /* allow_spilling */);
@@ -6781,7 +6782,7 @@ fs_visitor::run_tes()
    fixup_3src_null_dest();
    emit_dummy_memory_fence_before_eot();
 
-   /* Wa_14017989577 */
+   /* Wa_14015360517 */
    emit_dummy_mov_instruction();
 
    allocate_registers(true /* allow_spilling */);
@@ -6829,7 +6830,7 @@ fs_visitor::run_gs()
    fixup_3src_null_dest();
    emit_dummy_memory_fence_before_eot();
 
-   /* Wa_14017989577 */
+   /* Wa_14015360517 */
    emit_dummy_mov_instruction();
 
    allocate_registers(true /* allow_spilling */);
@@ -6932,7 +6933,7 @@ fs_visitor::run_fs(bool allow_spilling, bool do_rep_send)
       fixup_3src_null_dest();
       emit_dummy_memory_fence_before_eot();
 
-      /* Wa_14017989577 */
+      /* Wa_14015360517 */
       emit_dummy_mov_instruction();
 
       allocate_registers(allow_spilling);
@@ -6972,7 +6973,7 @@ fs_visitor::run_cs(bool allow_spilling)
    fixup_3src_null_dest();
    emit_dummy_memory_fence_before_eot();
 
-   /* Wa_14017989577 */
+   /* Wa_14015360517 */
    emit_dummy_mov_instruction();
 
    allocate_registers(allow_spilling);
@@ -7004,7 +7005,7 @@ fs_visitor::run_bs(bool allow_spilling)
    fixup_3src_null_dest();
    emit_dummy_memory_fence_before_eot();
 
-   /* Wa_14017989577 */
+   /* Wa_14015360517 */
    emit_dummy_mov_instruction();
 
    allocate_registers(allow_spilling);
@@ -7037,7 +7038,7 @@ fs_visitor::run_task(bool allow_spilling)
    fixup_3src_null_dest();
    emit_dummy_memory_fence_before_eot();
 
-   /* Wa_14017989577 */
+   /* Wa_14015360517 */
    emit_dummy_mov_instruction();
 
    allocate_registers(allow_spilling);
@@ -7070,7 +7071,7 @@ fs_visitor::run_mesh(bool allow_spilling)
    fixup_3src_null_dest();
    emit_dummy_memory_fence_before_eot();
 
-   /* Wa_14017989577 */
+   /* Wa_14015360517 */
    emit_dummy_mov_instruction();
 
    allocate_registers(allow_spilling);

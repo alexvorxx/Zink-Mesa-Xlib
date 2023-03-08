@@ -4171,6 +4171,9 @@ static bool visit_intrinsic(struct ac_nir_context *ctx, nir_intrinsic_instr *ins
    }
    case nir_intrinsic_ordered_xfb_counter_add_amd: {
       /* must be called in a single lane of a workgroup. */
+      /* TODO: Add RADV support. */
+      bool use_gds_registers = ctx->ac.gfx_level >= GFX11 &&
+                               ctx->ac.float_mode == AC_FLOAT_MODE_DEFAULT_OPENGL;
       LLVMTypeRef gdsptr = LLVMPointerType(ctx->ac.i32, AC_ADDR_SPACE_GDS);
       LLVMValueRef gdsbase = LLVMBuildIntToPtr(ctx->ac.builder, ctx->ac.i32_0, gdsptr, "");
 
@@ -4180,13 +4183,22 @@ static bool visit_intrinsic(struct ac_nir_context *ctx, nir_intrinsic_instr *ins
        *
        * This is the expected code:
        *    ds_ordered_count release=0 done=0   // lock mutex
-       *    ds_add_rtn_u32 dwords_written0
-       *    ds_add_rtn_u32 dwords_written1
-       *    ds_add_rtn_u32 dwords_written2
-       *    ds_add_rtn_u32 dwords_written3
+       *    if (gfx_level >= GFX11) {
+       *       ds_add_gs_reg_rtn GDS_STRMOUT_DWORDS_WRITTEN_0
+       *       ds_add_gs_reg_rtn GDS_STRMOUT_DWORDS_WRITTEN_1
+       *       ds_add_gs_reg_rtn GDS_STRMOUT_DWORDS_WRITTEN_2
+       *       ds_add_gs_reg_rtn GDS_STRMOUT_DWORDS_WRITTEN_3
+       *    } else {
+       *       ds_add_rtn_u32 dwords_written0
+       *       ds_add_rtn_u32 dwords_written1
+       *       ds_add_rtn_u32 dwords_written2
+       *       ds_add_rtn_u32 dwords_written3
+       *    }
        *    ds_ordered_count release=1 done=1   // unlock mutex
        *
-       * TODO: Increment GDS_STRMOUT registers instead of GDS memory.
+       * GDS_STRMOUT_DWORDS_WRITTEN_n are just general-purpose global registers. We use them
+       * because MCBP (mid-command-buffer preemption) saves and restores them, and it doesn't
+       * save and restore GDS memory.
        */
       LLVMValueRef args[8] = {
          LLVMBuildIntToPtr(ctx->ac.builder, get_src(ctx, instr->src[0]), gdsptr, ""),
@@ -4205,21 +4217,29 @@ static bool visit_intrinsic(struct ac_nir_context *ctx, nir_intrinsic_instr *ins
       ac_build_waitcnt(&ctx->ac, AC_WAIT_LGKM);
 
       LLVMValueRef global_count[4];
-      LLVMValueRef add_count = get_src(ctx, instr->src[1]);
+      LLVMValueRef count_vec = get_src(ctx, instr->src[1]);
       unsigned write_mask = nir_intrinsic_write_mask(instr);
       for (unsigned i = 0; i < instr->num_components; i++) {
+         LLVMValueRef value =
+            LLVMBuildExtractElement(ctx->ac.builder, count_vec,
+                                    LLVMConstInt(ctx->ac.i32, i, false), "");
          if (write_mask & (1 << i)) {
-            LLVMValueRef gds_ptr =
-               ac_build_gep_ptr(&ctx->ac, ctx->ac.i32, gdsbase, LLVMConstInt(ctx->ac.i32, i, 0));
-            LLVMValueRef count =
-               LLVMBuildExtractElement(ctx->ac.builder, add_count,
-                                       LLVMConstInt(ctx->ac.i32, i, false), "");
-
-            global_count[i] =
-               LLVMBuildAtomicRMW(ctx->ac.builder, LLVMAtomicRMWBinOpAdd, gds_ptr, count,
-                                  LLVMAtomicOrderingMonotonic, false);
-         } else
+            if (use_gds_registers) {
+               /* The offset is a relative offset from GDS_STRMOUT_DWORDS_WRITTEN_0. */
+               global_count[i] =
+                  ac_build_intrinsic(&ctx->ac, "llvm.amdgcn.ds.add.gs.reg.rtn.i32", ctx->ac.i32,
+                                     (LLVMValueRef[]){value, LLVMConstInt(ctx->ac.i32, i * 4, 0)},
+                                     2, 0);
+            } else {
+               LLVMValueRef gds_ptr =
+                  ac_build_gep_ptr(&ctx->ac, ctx->ac.i32, gdsbase, LLVMConstInt(ctx->ac.i32, i, 0));
+               global_count[i] =
+                  LLVMBuildAtomicRMW(ctx->ac.builder, LLVMAtomicRMWBinOpAdd, gds_ptr, value,
+                                     LLVMAtomicOrderingMonotonic, false);
+            }
+         } else {
             global_count[i] = LLVMGetUndef(ctx->ac.i32);
+         }
       }
 
       ac_build_waitcnt(&ctx->ac, AC_WAIT_LGKM);
@@ -4228,8 +4248,37 @@ static bool visit_intrinsic(struct ac_nir_context *ctx, nir_intrinsic_instr *ins
       args[6] = args[7] = ctx->ac.i1true;
       ac_build_intrinsic(&ctx->ac, "llvm.amdgcn.ds.ordered.add", ctx->ac.i32,
                          args, ARRAY_SIZE(args), 0);
-
       result = ac_build_gather_values(&ctx->ac, global_count, instr->num_components);
+      break;
+   }
+   case nir_intrinsic_xfb_counter_sub_amd: {
+      /* must be called in a single lane of a workgroup. */
+      /* TODO: Add RADV support. */
+      bool use_gds_registers = ctx->ac.gfx_level >= GFX11 &&
+                               ctx->ac.float_mode == AC_FLOAT_MODE_DEFAULT_OPENGL;
+      LLVMTypeRef gdsptr = LLVMPointerType(ctx->ac.i32, AC_ADDR_SPACE_GDS);
+      LLVMValueRef gdsbase = LLVMBuildIntToPtr(ctx->ac.builder, ctx->ac.i32_0, gdsptr, "");
+      LLVMValueRef sub_vec = get_src(ctx, instr->src[0]);
+      unsigned write_mask = nir_intrinsic_write_mask(instr);
+
+      for (unsigned i = 0; i < instr->num_components; i++) {
+         if (write_mask & (1 << i)) {
+            LLVMValueRef value =
+               LLVMBuildExtractElement(ctx->ac.builder, sub_vec,
+                                       LLVMConstInt(ctx->ac.i32, i, false), "");
+            if (use_gds_registers) {
+               /* The offset is a relative offset from GDS_STRMOUT_DWORDS_WRITTEN_0. */
+               ac_build_intrinsic(&ctx->ac, "llvm.amdgcn.ds.sub.gs.reg.rtn.i32", ctx->ac.i32,
+                                  (LLVMValueRef[]){value, LLVMConstInt(ctx->ac.i32, i * 4, 0)},
+                                  2, 0);
+            } else {
+               LLVMValueRef gds_ptr =
+                  ac_build_gep_ptr(&ctx->ac, ctx->ac.i32, gdsbase, LLVMConstInt(ctx->ac.i32, i, 0));
+               LLVMBuildAtomicRMW(ctx->ac.builder, LLVMAtomicRMWBinOpSub, gds_ptr, value,
+                                  LLVMAtomicOrderingMonotonic, false);
+            }
+         }
+      }
       break;
    }
    case nir_intrinsic_export_amd: {
