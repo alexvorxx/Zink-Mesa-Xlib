@@ -1348,6 +1348,13 @@ agx_emit_tex(agx_builder *b, nir_tex_instr *instr)
          compare = index;
          break;
 
+      case nir_tex_src_texture_offset:
+         texture = index;
+         break;
+      case nir_tex_src_sampler_offset:
+         sampler = index;
+         break;
+
       case nir_tex_src_ddx: {
          int y_idx = nir_tex_instr_src_index(instr, nir_tex_src_ddy);
          assert(y_idx >= 0 && "we only handle gradients");
@@ -1373,10 +1380,8 @@ agx_emit_tex(agx_builder *b, nir_tex_instr *instr)
          /* handled above */
          break;
 
-      case nir_tex_src_texture_offset:
-      case nir_tex_src_sampler_offset:
       default:
-         unreachable("todo");
+         unreachable("Unexpected texture source");
       }
    }
 

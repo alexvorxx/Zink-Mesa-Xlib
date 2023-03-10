@@ -6456,6 +6456,18 @@ fs_visitor::fixup_nomask_control_flow()
    return progress;
 }
 
+uint32_t
+fs_visitor::compute_max_register_pressure()
+{
+   const register_pressure &rp = regpressure_analysis.require();
+   uint32_t ip = 0, max_pressure = 0;
+   foreach_block_and_inst(block, backend_instruction, inst, cfg) {
+      max_pressure = MAX2(max_pressure, rp.regs_live_at_ip[ip]);
+      ip++;
+   }
+   return max_pressure;
+}
+
 void
 fs_visitor::allocate_registers(bool allow_spilling)
 {
@@ -6474,6 +6486,9 @@ fs_visitor::allocate_registers(bool allow_spilling)
       "none",
       "lifo"
    };
+
+   if (needs_register_pressure)
+      shader_stats.max_register_pressure = compute_max_register_pressure();
 
    bool spill_all = allow_spilling && INTEL_DEBUG(DEBUG_SPILL_FS);
 
@@ -7443,6 +7458,7 @@ brw_compile_fs(const struct brw_compiler *compiler,
 
    v8 = std::make_unique<fs_visitor>(compiler, params->log_data, mem_ctx, &key->base,
                                      &prog_data->base, nir, 8,
+                                     params->stats != NULL,
                                      debug_enabled);
    if (!v8->run_fs(allow_spilling, false /* do_rep_send */)) {
       params->error_str = ralloc_strdup(mem_ctx, v8->fail_msg);
@@ -7485,6 +7501,7 @@ brw_compile_fs(const struct brw_compiler *compiler,
       /* Try a SIMD16 compile */
       v16 = std::make_unique<fs_visitor>(compiler, params->log_data, mem_ctx, &key->base,
                                          &prog_data->base, nir, 16,
+                                         params->stats != NULL,
                                          debug_enabled);
       v16->import_uniforms(v8.get());
       if (!v16->run_fs(allow_spilling, params->use_rep_send)) {
@@ -7512,6 +7529,7 @@ brw_compile_fs(const struct brw_compiler *compiler,
       /* Try a SIMD32 compile */
       v32 = std::make_unique<fs_visitor>(compiler, params->log_data, mem_ctx, &key->base,
                                          &prog_data->base, nir, 32,
+                                         params->stats != NULL,
                                          debug_enabled);
       v32->import_uniforms(v8.get());
       if (!v32->run_fs(allow_spilling, false)) {
@@ -7789,7 +7807,8 @@ brw_compile_cs(const struct brw_compiler *compiler,
                           key->base.robust_buffer_access);
 
       v[simd] = std::make_unique<fs_visitor>(compiler, params->log_data, mem_ctx, &key->base,
-                                    &prog_data->base, shader, dispatch_width,
+                                             &prog_data->base, shader, dispatch_width,
+                                             params->stats != NULL,
                                              debug_enabled);
 
       const int first = brw_simd_first_compiled(simd_state);
@@ -7922,7 +7941,9 @@ compile_single_bs(const struct brw_compiler *compiler, void *log_data,
 
       v[simd] = std::make_unique<fs_visitor>(compiler, log_data, mem_ctx, &key->base,
                                              &prog_data->base, shader,
-                                             dispatch_width, debug_enabled);
+                                             dispatch_width,
+                                             stats != NULL,
+                                             debug_enabled);
 
       const bool allow_spilling = !brw_simd_any_compiled(simd_state);
       if (v[simd]->run_bs(allow_spilling)) {

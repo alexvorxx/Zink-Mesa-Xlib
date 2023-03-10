@@ -334,6 +334,7 @@ brw_compile_task(const struct brw_compiler *compiler,
 
       v[simd] = std::make_unique<fs_visitor>(compiler, params->log_data, mem_ctx, &key->base,
                                              &prog_data->base.base, shader, dispatch_width,
+                                             params->stats != NULL,
                                              debug_enabled);
 
       if (prog_data->base.prog_mask) {
@@ -1042,6 +1043,7 @@ brw_compile_mesh(const struct brw_compiler *compiler,
 
       v[simd] = std::make_unique<fs_visitor>(compiler, params->log_data, mem_ctx, &key->base,
                                              &prog_data->base.base, shader, dispatch_width,
+                                             params->stats != NULL,
                                              debug_enabled);
 
       if (prog_data->base.prog_mask) {

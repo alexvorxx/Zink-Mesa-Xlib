@@ -3393,6 +3393,14 @@ VkResult anv_GetPipelineExecutableStatisticsKHR(
       stat->value.u64 = prog_data->total_scratch;
    }
 
+   vk_outarray_append_typed(VkPipelineExecutableStatisticKHR, &out, stat) {
+      WRITE_STR(stat->name, "Max live registers");
+      WRITE_STR(stat->description,
+                "Maximum number of registers used across the entire shader.");
+      stat->format = VK_PIPELINE_EXECUTABLE_STATISTIC_FORMAT_UINT64_KHR;
+      stat->value.u64 = exe->stats.max_live_registers;
+   }
+
    if (gl_shader_stage_uses_workgroup(exe->stage)) {
       vk_outarray_append_typed(VkPipelineExecutableStatisticKHR, &out, stat) {
          WRITE_STR(stat->name, "Workgroup Memory Size");

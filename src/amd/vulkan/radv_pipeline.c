@@ -445,8 +445,25 @@ radv_pipeline_init_blend_state(struct radv_graphics_pipeline *pipeline,
    return blend;
 }
 
+static bool
+radv_pipeline_uses_vrs_attachment(const VkGraphicsPipelineCreateInfo *pCreateInfo,
+                                  const struct vk_graphics_pipeline_state *state)
+{
+   VK_FROM_HANDLE(vk_render_pass, render_pass, state->rp->render_pass);
+
+   if (render_pass) {
+      uint32_t subpass_idx = state->rp->subpass;
+      struct vk_subpass *subpass = &render_pass->subpasses[subpass_idx];
+
+      return !!subpass->fragment_shading_rate_attachment;
+   }
+
+   return (pCreateInfo->flags & VK_PIPELINE_CREATE_RENDERING_FRAGMENT_SHADING_RATE_ATTACHMENT_BIT_KHR) != 0;
+}
+
 static void
 radv_pipeline_init_multisample_state(struct radv_graphics_pipeline *pipeline,
+                                     const VkGraphicsPipelineCreateInfo *pCreateInfo,
                                      const struct vk_graphics_pipeline_state *state,
                                      unsigned rast_prim)
 {
@@ -489,9 +506,17 @@ radv_pipeline_init_multisample_state(struct radv_graphics_pipeline *pipeline,
       S_028A4C_OUT_OF_ORDER_PRIMITIVE_ENABLE(out_of_order_rast) |
       S_028A4C_OUT_OF_ORDER_WATER_MARK(0x7) |
       /* always 1: */
-      S_028A4C_WALK_ALIGN8_PRIM_FITS_ST(1) | S_028A4C_SUPERTILE_WALK_ORDER_ENABLE(1) |
-      S_028A4C_TILE_WALK_ORDER_ENABLE(1) | S_028A4C_MULTI_SHADER_ENGINE_PRIM_DISCARD_ENABLE(1) |
-      S_028A4C_FORCE_EOV_CNTDWN_ENABLE(1) | S_028A4C_FORCE_EOV_REZ_ENABLE(1);
+      S_028A4C_SUPERTILE_WALK_ORDER_ENABLE(1) | S_028A4C_TILE_WALK_ORDER_ENABLE(1) |
+      S_028A4C_MULTI_SHADER_ENGINE_PRIM_DISCARD_ENABLE(1) | S_028A4C_FORCE_EOV_CNTDWN_ENABLE(1) |
+      S_028A4C_FORCE_EOV_REZ_ENABLE(1);
+
+   if (pdevice->rad_info.gfx_level < GFX11 ||
+       !radv_pipeline_uses_vrs_attachment(pCreateInfo, state)) {
+      /* This should only be set when VRS surfaces aren't enabled on GFX11, otherwise the GPU might
+       * hang.
+       */
+      pipeline->pa_sc_mode_cntl_1 |= S_028A4C_WALK_ALIGN8_PRIM_FITS_ST(1);
+   }
 }
 
 static void
@@ -4632,11 +4657,7 @@ gfx103_pipeline_emit_vrs_state(struct radeon_cmdbuf *ctx_cs,
       mode = ps->info.ps.can_discard ? V_028064_SC_VRS_COMB_MODE_MIN : V_028064_SC_VRS_COMB_MODE_PASSTHRU;
    }
 
-   if (pdevice->rad_info.gfx_level >= GFX11) {
-      radeon_set_context_reg(ctx_cs, R_0283D0_PA_SC_VRS_OVERRIDE_CNTL,
-                             S_0283D0_VRS_OVERRIDE_RATE_COMBINER_MODE(mode) |
-                                S_0283D0_VRS_RATE((rate_x << 2) | rate_y));
-   } else {
+   if (pdevice->rad_info.gfx_level < GFX11) {
       radeon_set_context_reg(ctx_cs, R_028064_DB_VRS_OVERRIDE_CNTL,
                              S_028064_VRS_OVERRIDE_RATE_COMBINER_MODE(mode) |
                                 S_028064_VRS_OVERRIDE_RATE_X(rate_x) |
@@ -5002,7 +5023,7 @@ radv_graphics_pipeline_init(struct radv_graphics_pipeline *pipeline, struct radv
 
    uint32_t vgt_gs_out_prim_type = radv_pipeline_init_vgt_gs_out(pipeline, &state);
 
-   radv_pipeline_init_multisample_state(pipeline, &state, vgt_gs_out_prim_type);
+   radv_pipeline_init_multisample_state(pipeline, pCreateInfo, &state, vgt_gs_out_prim_type);
 
    if (!radv_pipeline_has_stage(pipeline, MESA_SHADER_MESH))
       radv_pipeline_init_input_assembly_state(pipeline);

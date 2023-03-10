@@ -9,7 +9,7 @@
     DEQP_EXPECTED_RENDERER: llvmpipe
     LVP_POISON_MEMORY: "1"
 
-lavapipe:
+.lavapipe:
   tags:
     - mesa-swrast
   variables:

@@ -60,6 +60,11 @@ def define_tracepoints(args):
                    tp_print=tp_print,
                    end_of_pipe=end_pipelined)
 
+    # Frame tracepoints, only for Iris
+    begin_end_tp('frame',
+                 tp_args=[Arg(type='uint32_t', var='frame', c_format='%u'),],
+                 end_pipelined=False)
+
     # Batch buffer tracepoints, only for Iris
     begin_end_tp('batch',
                  tp_args=[Arg(type='uint8_t', var='name', c_format='%hhu'),],

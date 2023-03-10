@@ -202,6 +202,8 @@ void iris_chain_to_new_batch(struct iris_batch *batch);
 void iris_destroy_batches(struct iris_context *ice);
 void iris_batch_maybe_flush(struct iris_batch *batch, unsigned estimate);
 
+void iris_batch_maybe_begin_frame(struct iris_batch *batch);
+
 void _iris_batch_flush(struct iris_batch *batch, const char *file, int line);
 #define iris_batch_flush(batch) _iris_batch_flush((batch), __FILE__, __LINE__)
 
@@ -250,6 +252,7 @@ iris_get_command_space(struct iris_batch *batch, unsigned bytes)
 {
    if (!batch->begin_trace_recorded) {
       batch->begin_trace_recorded = true;
+      iris_batch_maybe_begin_frame(batch);
       trace_intel_begin_batch(&batch->trace);
    }
    iris_require_command_space(batch, bytes);

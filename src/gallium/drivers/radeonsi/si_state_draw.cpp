@@ -1214,10 +1214,11 @@ static void si_emit_vs_state(struct si_context *sctx, unsigned index_size)
       if (HAS_GS) {
          radeon_set_sh_reg(vs_base + SI_SGPR_VS_STATE_BITS * 4, vs_state);
 
-         /* NGG always uses the state bits. Legacy GS uses the state bits only for the emulation
-          * of GS pipeline statistics on gfx10.x.
+         /* GS always uses the state bits for emulating VGT_ESGS_RING_ITEMSIZE on Gfx9
+          * (via nir_load_esgs_vertex_stride_amd) and for emulating GS pipeline statistics
+          * on gfx10.x. NGG GS also has lots of states in there.
           */
-         if (NGG || (GFX_VERSION >= GFX10 && GFX_VERSION <= GFX10_3))
+         if (GFX_VERSION >= GFX9)
             radeon_set_sh_reg(gs_base + SI_SGPR_VS_STATE_BITS * 4, gs_state);
 
          /* The GS copy shader (for legacy GS) always uses the state bits. */

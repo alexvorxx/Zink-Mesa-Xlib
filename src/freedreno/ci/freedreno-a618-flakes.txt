@@ -201,3 +201,10 @@ gmem-dEQP-VK.image.queue_transfer.*
 
 # very rare flake (once two weeks), first occurence 21-02-2023
 KHR-GL45.sample_variables.mask.rgba8i.samples_4.mask_3
+
+# issue #8219 - 37cde2c6 onwards exhibits descriptor flakiness
+gmem-dEQP-VK.*descriptor
+
+# noted in #8219 - pipeline lib & suballoc fails
+gmem-dEQP-VK.pipeline.*library
+gmem-dEQP-VK.renderpass.*.suballocation

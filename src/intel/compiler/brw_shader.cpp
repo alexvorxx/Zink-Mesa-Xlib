@@ -1394,7 +1394,7 @@ brw_compile_tes(const struct brw_compiler *compiler,
    if (is_scalar) {
       fs_visitor v(compiler, params->log_data, mem_ctx, &key->base,
                    &prog_data->base.base, nir, 8,
-                   debug_enabled);
+                   params->stats != NULL, debug_enabled);
       if (!v.run_tes()) {
          params->error_str = ralloc_strdup(mem_ctx, v.fail_msg);
          return NULL;

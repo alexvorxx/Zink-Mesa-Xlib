@@ -390,6 +390,7 @@ struct lower_line_stipple_state {
    nir_variable *prev_pos;
    nir_variable *pos_counter;
    nir_variable *stipple_counter;
+   bool line_rectangular;
 };
 
 static nir_ssa_def *
@@ -428,7 +429,13 @@ lower_line_stipple_gs_instr(nir_builder *b, nir_instr *instr, void *data)
    curr = viewport_map(b, curr, vp_scale);
 
    // calculate length of line
-   nir_ssa_def *len = nir_fast_distance(b, prev, curr);
+   nir_ssa_def *len;
+   if (state->line_rectangular)
+      len = nir_fast_distance(b, prev, curr);
+   else {
+      nir_ssa_def *diff = nir_fabs(b, nir_fsub(b, prev, curr));
+      len = nir_fmax(b, nir_channel(b, diff, 0), nir_channel(b, diff, 1));
+   }
    // update stipple_counter
    nir_store_var(b, state->stipple_counter,
                     nir_fadd(b, nir_load_var(b, state->stipple_counter),
@@ -448,7 +455,7 @@ lower_line_stipple_gs_instr(nir_builder *b, nir_instr *instr, void *data)
 }
 
 static bool
-lower_line_stipple_gs(nir_shader *shader)
+lower_line_stipple_gs(nir_shader *shader, bool line_rectangular)
 {
    nir_builder b;
    struct lower_line_stipple_state state;
@@ -480,6 +487,7 @@ lower_line_stipple_gs(nir_shader *shader)
                                                glsl_float_type(),
                                                "__stipple_counter");
 
+   state.line_rectangular = line_rectangular;
    // initialize pos_counter and stipple_counter
    nir_function_impl *entry = nir_shader_get_entrypoint(shader);
    nir_builder_init(&b, entry);
@@ -3073,7 +3081,7 @@ zink_shader_compile(struct zink_screen *screen, struct zink_shader *zs,
 
          case MESA_SHADER_GEOMETRY:
             if (zink_gs_key(key)->lower_line_stipple) {
-               NIR_PASS_V(nir, lower_line_stipple_gs);
+               NIR_PASS_V(nir, lower_line_stipple_gs, zink_gs_key(key)->line_rectangular);
                NIR_PASS_V(nir, nir_lower_var_copies);
                need_optimize = true;
             }
@@ -3120,6 +3128,13 @@ zink_shader_compile(struct zink_screen *screen, struct zink_shader *zs,
             need_optimize = true;
          } else if (zink_fs_key(key)->lower_line_stipple)
                NIR_PASS_V(nir, lower_line_stipple_fs);
+
+         if (zink_fs_key(key)->lower_point_smooth) {
+            NIR_PASS_V(nir, nir_lower_point_smooth);
+            NIR_PASS_V(nir, nir_lower_discard_if, nir_lower_discard_if_to_cf);
+            nir->info.fs.uses_discard = true;
+            need_optimize = true;
+         }
 
          if (zink_fs_key(key)->robust_access)
             NIR_PASS(need_optimize, nir, lower_txf_lod_robustness);

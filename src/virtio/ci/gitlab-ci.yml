@@ -8,7 +8,7 @@
     CROSVM_VK_DRIVER: "lvp"
     CROSVM_GPU_ARGS: "vulkan=true,gles=false,backend=virglrenderer,egl=true,surfaceless=true"
 
-venus-lavapipe:
+.venus-lavapipe:
   extends:
     - .deqp-test-vk
     - .venus-lavapipe-test

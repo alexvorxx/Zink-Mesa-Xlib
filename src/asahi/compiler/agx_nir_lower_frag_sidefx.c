@@ -45,10 +45,9 @@ pass(struct nir_builder *b, nir_instr *instr, void *data)
                                      .num_slots = 1,
                                   });
 
-   nir_store_output(b, position, zero,
-                    .io_semantics.location = FRAG_RESULT_DEPTH,
-                    .write_mask = BITFIELD_MASK(1),
-                    .src_type = nir_type_float32);
+   nir_store_output(
+      b, position, zero, .io_semantics.location = FRAG_RESULT_DEPTH,
+      .write_mask = BITFIELD_MASK(1), .src_type = nir_type_float32);
 
    b->shader->info.inputs_read |= BITFIELD64_BIT(VARYING_SLOT_POS);
    b->shader->info.outputs_written |= BITFIELD64_BIT(FRAG_RESULT_DEPTH);

@@ -379,102 +379,6 @@ static void si_set_global_binding(struct pipe_context *ctx, unsigned first, unsi
    }
 }
 
-void si_emit_initial_compute_regs(struct si_context *sctx, struct radeon_cmdbuf *cs)
-{
-   const struct radeon_info *info = &sctx->screen->info;
-
-   radeon_begin(cs);
-   radeon_set_sh_reg(R_00B834_COMPUTE_PGM_HI,
-                     S_00B834_DATA(sctx->screen->info.address32_hi >> 8));
-
-   radeon_set_sh_reg_seq(R_00B858_COMPUTE_STATIC_THREAD_MGMT_SE0, 2);
-   /* R_00B858_COMPUTE_STATIC_THREAD_MGMT_SE0 / SE1,
-    * renamed COMPUTE_DESTINATION_EN_SEn on gfx10. */
-   radeon_emit(S_00B858_SH0_CU_EN(info->spi_cu_en) | S_00B858_SH1_CU_EN(info->spi_cu_en));
-   radeon_emit(S_00B858_SH0_CU_EN(info->spi_cu_en) | S_00B858_SH1_CU_EN(info->spi_cu_en));
-
-   if (sctx->gfx_level == GFX6) {
-      /* This register has been moved to R_00CD20_COMPUTE_MAX_WAVE_ID
-       * and is now per pipe, so it should be handled in the
-       * kernel if we want to use something other than the default value.
-       *
-       * TODO: This should be:
-       * (number of compute units) * 4 * (waves per simd) - 1
-       */
-      radeon_set_sh_reg(R_00B82C_COMPUTE_MAX_WAVE_ID, 0x190 /* Default value */);
-      radeon_set_config_reg(R_00950C_TA_CS_BC_BASE_ADDR, sctx->border_color_buffer->gpu_address >> 8);
-   }
-
-   if (sctx->gfx_level >= GFX7) {
-      /* Also set R_00B858_COMPUTE_STATIC_THREAD_MGMT_SE2 / SE3 */
-      radeon_set_sh_reg_seq(R_00B864_COMPUTE_STATIC_THREAD_MGMT_SE2, 2);
-      radeon_emit(S_00B858_SH0_CU_EN(info->spi_cu_en) | S_00B858_SH1_CU_EN(info->spi_cu_en));
-      radeon_emit(S_00B858_SH0_CU_EN(info->spi_cu_en) | S_00B858_SH1_CU_EN(info->spi_cu_en));
-
-      /* Disable profiling on compute queues. */
-      if (cs != &sctx->gfx_cs || !sctx->screen->info.has_graphics) {
-         radeon_set_sh_reg(R_00B82C_COMPUTE_PERFCOUNT_ENABLE, 0);
-         radeon_set_sh_reg(R_00B878_COMPUTE_THREAD_TRACE_ENABLE, 0);
-      }
-
-      /* Set the pointer to border colors. */
-      /* MI200 doesn't support border colors. */
-      if (sctx->border_color_buffer) {
-         uint64_t bc_va = sctx->border_color_buffer->gpu_address;
-
-         radeon_set_uconfig_reg_seq(R_030E00_TA_CS_BC_BASE_ADDR, 2, false);
-         radeon_emit(bc_va >> 8);                    /* R_030E00_TA_CS_BC_BASE_ADDR */
-         radeon_emit(S_030E04_ADDRESS(bc_va >> 40)); /* R_030E04_TA_CS_BC_BASE_ADDR_HI */
-      }
-   }
-
-   /* cs_preamble_state initializes this for the gfx queue, so only do this
-    * if we are on a compute queue.
-    */
-   if (sctx->gfx_level >= GFX9 && sctx->gfx_level < GFX11 &&
-       (cs != &sctx->gfx_cs || !sctx->screen->info.has_graphics)) {
-      radeon_set_uconfig_reg(R_0301EC_CP_COHER_START_DELAY,
-                             sctx->gfx_level >= GFX10 ? 0x20 : 0);
-   }
-
-   if (!info->has_graphics && info->family >= CHIP_MI100) {
-      radeon_set_sh_reg_seq(R_00B894_COMPUTE_STATIC_THREAD_MGMT_SE4, 4);
-      radeon_emit(S_00B858_SH0_CU_EN(info->spi_cu_en) | S_00B858_SH1_CU_EN(info->spi_cu_en));
-      radeon_emit(S_00B858_SH0_CU_EN(info->spi_cu_en) | S_00B858_SH1_CU_EN(info->spi_cu_en));
-      radeon_emit(S_00B858_SH0_CU_EN(info->spi_cu_en) | S_00B858_SH1_CU_EN(info->spi_cu_en));
-      radeon_emit(S_00B858_SH0_CU_EN(info->spi_cu_en) | S_00B858_SH1_CU_EN(info->spi_cu_en));
-   }
-
-   if (sctx->gfx_level >= GFX10) {
-      radeon_set_sh_reg_seq(R_00B890_COMPUTE_USER_ACCUM_0, 4);
-      radeon_emit(0); /* R_00B890_COMPUTE_USER_ACCUM_0 */
-      radeon_emit(0); /* R_00B894_COMPUTE_USER_ACCUM_1 */
-      radeon_emit(0); /* R_00B898_COMPUTE_USER_ACCUM_2 */
-      radeon_emit(0); /* R_00B89C_COMPUTE_USER_ACCUM_3 */
-
-      radeon_set_sh_reg(R_00B9F4_COMPUTE_DISPATCH_TUNNEL, 0);
-
-      if (sctx->gfx_level < GFX11)
-         radeon_set_sh_reg(R_00B8A0_COMPUTE_PGM_RSRC3, 0);
-   }
-
-   if (sctx->gfx_level >= GFX11) {
-      radeon_set_sh_reg_seq(R_00B8AC_COMPUTE_STATIC_THREAD_MGMT_SE4, 4);
-      radeon_emit(S_00B8AC_SA0_CU_EN(info->spi_cu_en) | S_00B8AC_SA1_CU_EN(info->spi_cu_en)); /* SE4 */
-      radeon_emit(S_00B8AC_SA0_CU_EN(info->spi_cu_en) | S_00B8AC_SA1_CU_EN(info->spi_cu_en)); /* SE5 */
-      radeon_emit(S_00B8AC_SA0_CU_EN(info->spi_cu_en) | S_00B8AC_SA1_CU_EN(info->spi_cu_en)); /* SE6 */
-      radeon_emit(S_00B8AC_SA0_CU_EN(info->spi_cu_en) | S_00B8AC_SA1_CU_EN(info->spi_cu_en)); /* SE7 */
-
-      /* How many threads should go to 1 SE before moving onto the next. Think of GL1 cache hits.
-       * Only these values are valid: 0 (disabled), 64, 128, 256, 512
-       * Recommendation: 64 = RT, 256 = non-RT (run benchmarks to be sure)
-       */
-      radeon_set_sh_reg(R_00B8BC_COMPUTE_DISPATCH_INTERLEAVE, S_00B8BC_INTERLEAVE(256));
-   }
-
-   radeon_end();
-}
-
 static bool si_setup_compute_scratch_buffer(struct si_context *sctx, struct si_shader *shader)
 {
    uint64_t scratch_bo_size, scratch_needed;
@@ -1018,13 +922,6 @@ static void si_launch_grid(struct pipe_context *ctx, const struct pipe_grid_info
 
    if (sctx->bo_list_add_all_compute_resources)
       si_compute_resources_add_all_to_bo_list(sctx);
-
-   if (!sctx->cs_shader_state.initialized) {
-      si_emit_initial_compute_regs(sctx, &sctx->gfx_cs);
-
-      sctx->cs_shader_state.emitted_program = NULL;
-      sctx->cs_shader_state.initialized = true;
-   }
 
    /* First emit registers. */
    bool prefetch;

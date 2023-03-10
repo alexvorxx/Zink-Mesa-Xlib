@@ -59,3 +59,6 @@ dEQP-VK.graphicsfuzz.while-inside-switch
 dEQP-VK.graphicsfuzz.spv-stable-maze-O-dead-code
 dEQP-VK.graphicsfuzz.spv-stable-maze-O-memory-accesses
 dEQP-VK.spirv_assembly.instruction.graphics.16bit_storage.uniform_32struct_to_16struct.uniform_buffer_block_geom
+
+# started failing with CTS 1.3.5.0
+dEQP-VK.api.device_init.create_instance_device_intentional_alloc_fail.basic

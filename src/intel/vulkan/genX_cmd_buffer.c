@@ -1668,10 +1668,10 @@ genX(emit_apply_pipe_flushes)(struct anv_batch *batch,
          pipe.RenderTargetCacheFlushEnable =
             bits & ANV_PIPE_RENDER_TARGET_CACHE_FLUSH_BIT;
 
+#if INTEL_NEEDS_WA_1409600907
          /* Wa_1409600907: "PIPE_CONTROL with Depth Stall Enable bit must
           * be set with any PIPE_CONTROL with Depth Flush Enable bit set.
           */
-#if GFX_VER >= 12
          pipe.DepthStallEnable =
             pipe.DepthCacheFlushEnable || (bits & ANV_PIPE_DEPTH_STALL_BIT);
 #else
@@ -6468,6 +6468,20 @@ genX(flush_pipeline_select)(struct anv_cmd_buffer *cmd_buffer,
     */
    if (pipeline == GPGPU)
       anv_batch_emit(&cmd_buffer->batch, GENX(3DSTATE_CC_STATE_POINTERS), t);
+#endif
+
+#if GFX_VERx10 == 120
+   /* Undocumented workaround to force the re-emission of
+    * MEDIA_INTERFACE_DESCRIPTOR_LOAD when switching from 3D to Compute
+    * pipeline without rebinding a pipeline :
+    *    vkCmdBindPipeline(COMPUTE, cs_pipeline);
+    *    vkCmdDispatch(...);
+    *    vkCmdBindPipeline(GRAPHICS, gfx_pipeline);
+    *    vkCmdDraw(...);
+    *    vkCmdDispatch(...);
+    */
+   if (pipeline == _3D)
+      cmd_buffer->state.compute.pipeline_dirty = true;
 #endif
 
 #if GFX_VER >= 12

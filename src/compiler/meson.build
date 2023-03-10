@@ -88,7 +88,7 @@ if with_tests
       dependencies : [dep_thread, idep_gtest, idep_nir, idep_mesautil],
     ),
     suite : ['compiler', 'spirv'],
-    protocol : gtest_test_protocol,
+    protocol : 'gtest',
   )
 endif
 

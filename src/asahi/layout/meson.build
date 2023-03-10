@@ -50,6 +50,6 @@ if with_tests
       link_with : [libasahi_layout],
     ),
     suite : ['asahi'],
-    protocol : gtest_test_protocol,
+    protocol : 'gtest',
   )
 endif

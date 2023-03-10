@@ -485,8 +485,10 @@ update_hs_scoped_barrier(nir_intrinsic_instr *intrin, lower_tess_io_state *st)
     * so we have to update the barriers to also reflect this.
     */
    unsigned mem_modes = nir_intrinsic_memory_modes(intrin);
-   if (mem_modes & nir_var_shader_out)
+   if (mem_modes & nir_var_shader_out) {
       mem_modes |= nir_var_mem_shared;
+      mem_modes &= ~nir_var_shader_out;
+   }
    nir_intrinsic_set_memory_modes(intrin, mem_modes);
 
    nir_scope exec_scope = nir_intrinsic_execution_scope(intrin);

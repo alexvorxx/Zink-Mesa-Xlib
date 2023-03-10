@@ -106,10 +106,8 @@ bool gfx10_ngg_calculate_subgroup_info(struct si_shader *shader)
    const unsigned max_verts_per_prim = u_vertices_per_prim(input_prim);
    const unsigned min_verts_per_prim = gs_stage == MESA_SHADER_GEOMETRY ? max_verts_per_prim : 1;
 
-   /* All these are in dwords: */
-   /* GE can only use 8K dwords (32KB) of LDS per workgroup.
-    */
-   const unsigned max_lds_size = 8 * 1024 - gfx10_ngg_get_scratch_dw_size(shader);
+   /* All these are in dwords. The maximum is 16K dwords (64KB) of LDS per workgroup. */
+   const unsigned max_lds_size = 16 * 1024 - gfx10_ngg_get_scratch_dw_size(shader);
    const unsigned target_lds_size = max_lds_size;
    unsigned esvert_lds_size = 0;
    unsigned gsprim_lds_size = 0;
@@ -119,8 +117,9 @@ bool gfx10_ngg_calculate_subgroup_info(struct si_shader *shader)
       gs_sel->screen->info.gfx_level >= GFX11 ? 3 : /* gfx11 requires at least 1 primitive per TG */
       gs_sel->screen->info.gfx_level >= GFX10_3 ? 29 : (24 - 1 + max_verts_per_prim);
    bool max_vert_out_per_gs_instance = false;
-   unsigned max_gsprims_base = gs_sel->screen->ngg_subgroup_size; /* default prim group size clamp */
-   unsigned max_esverts_base = gs_sel->screen->ngg_subgroup_size;
+   unsigned max_gsprims_base, max_esverts_base;
+
+   max_gsprims_base = max_esverts_base = si_get_max_workgroup_size(shader);
 
    if (gs_stage == MESA_SHADER_GEOMETRY) {
       bool force_multi_cycling = false;

@@ -69,6 +69,7 @@ static const driOptionDescription anv_dri_options[] = {
       DRI_CONF_VK_XWAYLAND_WAIT_READY(true)
       DRI_CONF_ANV_ASSUME_FULL_SUBGROUPS(false)
       DRI_CONF_ANV_SAMPLE_MASK_OUT_OPENGL_BEHAVIOUR(false)
+      DRI_CONF_NO_16BIT(false)
    DRI_CONF_SECTION_END
 
    DRI_CONF_SECTION_DEBUG
@@ -191,7 +192,7 @@ get_device_extensions(const struct anv_physical_device *device,
 
    *ext = (struct vk_device_extension_table) {
       .KHR_8bit_storage                      = device->info.ver >= 8,
-      .KHR_16bit_storage                     = device->info.ver >= 8,
+      .KHR_16bit_storage                     = device->info.ver >= 8 && !device->instance->no_16bit,
       .KHR_bind_memory2                      = true,
       .KHR_buffer_device_address             = device->has_a64_buffer_access,
       .KHR_copy_commands2                    = true,
@@ -235,7 +236,7 @@ get_device_extensions(const struct anv_physical_device *device,
       .KHR_separate_depth_stencil_layouts    = true,
       .KHR_shader_clock                      = true,
       .KHR_shader_draw_parameters            = true,
-      .KHR_shader_float16_int8               = device->info.ver >= 8,
+      .KHR_shader_float16_int8               = device->info.ver >= 8 && !device->instance->no_16bit,
       .KHR_shader_float_controls             = true,
       .KHR_shader_integer_dot_product        = true,
       .KHR_shader_non_semantic_info          = true,
@@ -1016,6 +1017,8 @@ anv_init_dri_options(struct anv_instance *instance)
             driQueryOptionb(&instance->dri_options, "anv_sample_mask_out_opengl_behaviour");
     instance->lower_depth_range_rate =
             driQueryOptionf(&instance->dri_options, "lower_depth_range_rate");
+    instance->no_16bit =
+            driQueryOptionb(&instance->dri_options, "no_16bit");
 }
 
 VkResult anv_CreateInstance(
@@ -1162,8 +1165,8 @@ anv_get_physical_device_features_1_1(struct anv_physical_device *pdevice,
 {
    assert(f->sType == VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES);
 
-   f->storageBuffer16BitAccess            = pdevice->info.ver >= 8;
-   f->uniformAndStorageBuffer16BitAccess  = pdevice->info.ver >= 8;
+   f->storageBuffer16BitAccess            = pdevice->info.ver >= 8 && !pdevice->instance->no_16bit;
+   f->uniformAndStorageBuffer16BitAccess  = pdevice->info.ver >= 8 && !pdevice->instance->no_16bit;
    f->storagePushConstant16               = pdevice->info.ver >= 8;
    f->storageInputOutput16                = false;
    f->multiview                           = true;
@@ -1189,8 +1192,8 @@ anv_get_physical_device_features_1_2(struct anv_physical_device *pdevice,
    f->storagePushConstant8                = pdevice->info.ver >= 8;
    f->shaderBufferInt64Atomics            = false;
    f->shaderSharedInt64Atomics            = false;
-   f->shaderFloat16                       = pdevice->info.ver >= 8;
-   f->shaderInt8                          = pdevice->info.ver >= 8;
+   f->shaderFloat16                       = pdevice->info.ver >= 8 && !pdevice->instance->no_16bit;
+   f->shaderInt8                          = pdevice->info.ver >= 8 && !pdevice->instance->no_16bit;
 
    f->descriptorIndexing                                 = false;
    f->shaderInputAttachmentArrayDynamicIndexing          = false;

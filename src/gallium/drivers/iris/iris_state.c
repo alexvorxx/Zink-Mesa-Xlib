@@ -8424,7 +8424,7 @@ iris_emit_raw_pipe_control(struct iris_batch *batch,
          flags |= PIPE_CONTROL_STALL_AT_SCOREBOARD;
    }
 
-   if (GFX_VER >= 12 && (flags & PIPE_CONTROL_DEPTH_CACHE_FLUSH)) {
+   if (INTEL_NEEDS_WA_1409600907 && (flags & PIPE_CONTROL_DEPTH_CACHE_FLUSH)) {
       /* Wa_1409600907:
        *
        * "PIPE_CONTROL with Depth Stall Enable bit must be set

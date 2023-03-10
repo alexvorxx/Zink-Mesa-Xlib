@@ -5592,7 +5592,10 @@ unsigned gfx103_get_cu_mask_ps(struct si_screen *sscreen)
 void si_init_cs_preamble_state(struct si_context *sctx, bool uses_reg_shadowing)
 {
    struct si_screen *sscreen = sctx->screen;
-   uint64_t border_color_va = sctx->border_color_buffer->gpu_address;
+   uint64_t border_color_va =
+      sctx->border_color_buffer ? sctx->border_color_buffer->gpu_address : 0;
+   uint32_t compute_cu_en = S_00B858_SH0_CU_EN(sscreen->info.spi_cu_en) |
+                            S_00B858_SH1_CU_EN(sscreen->info.spi_cu_en);
    bool has_clear_state = sscreen->info.has_clear_state;
 
    struct si_cs_preamble {
@@ -5607,7 +5610,7 @@ void si_init_cs_preamble_state(struct si_context *sctx, bool uses_reg_shadowing)
    /* Add all the space that we allocated. */
    pm4->max_dw = (sizeof(struct si_cs_preamble) - offsetof(struct si_cs_preamble, pm4.pm4)) / 4;
 
-   if (!uses_reg_shadowing) {
+   if (sctx->has_graphics && !uses_reg_shadowing) {
       si_pm4_cmd_add(pm4, PKT3(PKT3_CONTEXT_CONTROL, 1, 0));
       si_pm4_cmd_add(pm4, CC0_UPDATE_LOAD_ENABLES(1));
       si_pm4_cmd_add(pm4, CC1_UPDATE_SHADOW_ENABLES(1));
@@ -5623,6 +5626,79 @@ void si_init_cs_preamble_state(struct si_context *sctx, bool uses_reg_shadowing)
       }
    }
 
+   /* Compute registers. */
+   si_pm4_set_reg(pm4, R_00B834_COMPUTE_PGM_HI, S_00B834_DATA(sctx->screen->info.address32_hi >> 8));
+   si_pm4_set_reg(pm4, R_00B858_COMPUTE_STATIC_THREAD_MGMT_SE0, compute_cu_en);
+   si_pm4_set_reg(pm4, R_00B85C_COMPUTE_STATIC_THREAD_MGMT_SE1, compute_cu_en);
+
+   if (sctx->gfx_level == GFX6) {
+      /* This register has been moved to R_00CD20_COMPUTE_MAX_WAVE_ID and is now per pipe,
+       * so it should be handled in the kernel if we want to use something other than
+       * the default value.
+       * TODO: This should be: (number of compute units) * 4 * (waves per simd) - 1
+       */
+      si_pm4_set_reg(pm4, R_00B82C_COMPUTE_MAX_WAVE_ID, 0x190 /* Default value */);
+   }
+
+   if (sctx->gfx_level >= GFX7) {
+      si_pm4_set_reg(pm4, R_00B864_COMPUTE_STATIC_THREAD_MGMT_SE2, compute_cu_en);
+      si_pm4_set_reg(pm4, R_00B868_COMPUTE_STATIC_THREAD_MGMT_SE3, compute_cu_en);
+
+      /* Disable profiling on compute chips. */
+      if (!sscreen->info.has_graphics) {
+         si_pm4_set_reg(pm4, R_00B82C_COMPUTE_PERFCOUNT_ENABLE, 0);
+         si_pm4_set_reg(pm4, R_00B878_COMPUTE_THREAD_TRACE_ENABLE, 0);
+      }
+   }
+
+   if (sctx->gfx_level >= GFX9 && sctx->gfx_level < GFX11)
+      si_pm4_set_reg(pm4, R_0301EC_CP_COHER_START_DELAY, sctx->gfx_level >= GFX10 ? 0x20 : 0);
+
+   if (!sscreen->info.has_graphics && sscreen->info.family >= CHIP_MI100) {
+      si_pm4_set_reg(pm4, R_00B894_COMPUTE_STATIC_THREAD_MGMT_SE4, compute_cu_en);
+      si_pm4_set_reg(pm4, R_00B898_COMPUTE_STATIC_THREAD_MGMT_SE5, compute_cu_en);
+      si_pm4_set_reg(pm4, R_00B89C_COMPUTE_STATIC_THREAD_MGMT_SE6, compute_cu_en);
+      si_pm4_set_reg(pm4, R_00B8A0_COMPUTE_STATIC_THREAD_MGMT_SE7, compute_cu_en);
+   }
+
+   if (sctx->gfx_level >= GFX10) {
+      si_pm4_set_reg(pm4, R_00B890_COMPUTE_USER_ACCUM_0, 0);
+      si_pm4_set_reg(pm4, R_00B894_COMPUTE_USER_ACCUM_1, 0);
+      si_pm4_set_reg(pm4, R_00B898_COMPUTE_USER_ACCUM_2, 0);
+      si_pm4_set_reg(pm4, R_00B89C_COMPUTE_USER_ACCUM_3, 0);
+
+      if (sctx->gfx_level < GFX11)
+         si_pm4_set_reg(pm4, R_00B8A0_COMPUTE_PGM_RSRC3, 0);
+
+      si_pm4_set_reg(pm4, R_00B9F4_COMPUTE_DISPATCH_TUNNEL, 0);
+   }
+
+   if (sctx->gfx_level >= GFX11) {
+      si_pm4_set_reg(pm4, R_00B8AC_COMPUTE_STATIC_THREAD_MGMT_SE4, compute_cu_en);
+      si_pm4_set_reg(pm4, R_00B8B0_COMPUTE_STATIC_THREAD_MGMT_SE5, compute_cu_en);
+      si_pm4_set_reg(pm4, R_00B8B4_COMPUTE_STATIC_THREAD_MGMT_SE6, compute_cu_en);
+      si_pm4_set_reg(pm4, R_00B8B8_COMPUTE_STATIC_THREAD_MGMT_SE7, compute_cu_en);
+
+      /* How many threads should go to 1 SE before moving onto the next. Think of GL1 cache hits.
+       * Only these values are valid: 0 (disabled), 64, 128, 256, 512
+       * Recommendation: 64 = RT, 256 = non-RT (run benchmarks to be sure)
+       */
+      si_pm4_set_reg(pm4, R_00B8BC_COMPUTE_DISPATCH_INTERLEAVE, S_00B8BC_INTERLEAVE(256));
+   }
+
+   /* Set the pointer to border colors. MI200 doesn't support border colors. */
+   if (sctx->gfx_level >= GFX7 && sctx->border_color_buffer) {
+      si_pm4_set_reg(pm4, R_030E00_TA_CS_BC_BASE_ADDR, border_color_va >> 8);
+      si_pm4_set_reg(pm4, R_030E04_TA_CS_BC_BASE_ADDR_HI,
+                     S_030E04_ADDRESS(border_color_va >> 40));
+   } else if (sctx->gfx_level == GFX6) {
+      si_pm4_set_reg(pm4, R_00950C_TA_CS_BC_BASE_ADDR, border_color_va >> 8);
+   }
+
+   if (!sctx->has_graphics)
+      goto done;
+
+   /* Graphics registers. */
    /* CLEAR_STATE doesn't restore these correctly. */
    si_pm4_set_reg(pm4, R_028240_PA_SC_GENERIC_SCISSOR_TL, S_028240_WINDOW_OFFSET_DISABLE(1));
    si_pm4_set_reg(pm4, R_028244_PA_SC_GENERIC_SCISSOR_BR,
@@ -5804,12 +5880,8 @@ void si_init_cs_preamble_state(struct si_context *sctx, bool uses_reg_shadowing)
       si_pm4_set_reg(pm4, R_028C4C_PA_SC_CONSERVATIVE_RASTERIZATION_CNTL,
                      S_028C4C_NULL_SQUAD_AA_MASK_ENABLE(1));
 
+      si_pm4_set_reg(pm4, R_028AAC_VGT_ESGS_RING_ITEMSIZE, 1);
       si_pm4_set_reg(pm4, R_030968_VGT_INSTANCE_BASE_ID, 0);
-
-      if (sctx->gfx_level < GFX11) {
-         si_pm4_set_reg(pm4, R_0301EC_CP_COHER_START_DELAY,
-                        sctx->gfx_level >= GFX10 ? 0x20 : 0);
-      }
    }
 
    if (sctx->gfx_level >= GFX10) {
@@ -5992,6 +6064,7 @@ void si_init_cs_preamble_state(struct si_context *sctx, bool uses_reg_shadowing)
                      S_03111C_L1_POLICY(1));
    }
 
+done:
    sctx->cs_preamble_state = pm4;
 
    /* Make a copy of the preamble for TMZ. */

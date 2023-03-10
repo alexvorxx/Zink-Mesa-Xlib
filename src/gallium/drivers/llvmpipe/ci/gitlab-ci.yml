@@ -60,7 +60,7 @@ llvmpipe-traces:
     - .deqp-test
     - .llvmpipe-test
 
-llvmpipe:
+.llvmpipe:
   tags:
     - mesa-swrast
   variables:

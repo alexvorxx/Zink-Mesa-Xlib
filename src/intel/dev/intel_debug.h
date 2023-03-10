@@ -89,6 +89,8 @@ extern uint64_t intel_debug;
 #define DEBUG_TASK                (1ull << 41)
 #define DEBUG_MESH                (1ull << 42)
 #define DEBUG_CAPTURE_ALL         (1ull << 43)
+#define DEBUG_PERF_SYMBOL_NAMES   (1ull << 44)
+#define DEBUG_SWSB_STALL          (1ull << 45)
 
 #define DEBUG_ANY                 (~0ull)
 

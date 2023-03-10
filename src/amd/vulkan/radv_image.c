@@ -255,10 +255,6 @@ radv_use_dcc_for_image_early(struct radv_device *device, struct radv_image *imag
         radv_formats_is_atomic_allowed(device, pCreateInfo->pNext, format, pCreateInfo->flags)))
       return false;
 
-   /* Do not enable DCC for fragment shading rate attachments. */
-   if (pCreateInfo->usage & VK_IMAGE_USAGE_FRAGMENT_SHADING_RATE_ATTACHMENT_BIT_KHR)
-      return false;
-
    if (pCreateInfo->tiling == VK_IMAGE_TILING_LINEAR)
       return false;
 
@@ -656,6 +652,10 @@ radv_get_surface_flags(struct radv_device *device, struct radv_image *image, uns
       flags |=
          RADEON_SURF_PRT | RADEON_SURF_NO_FMASK | RADEON_SURF_NO_HTILE | RADEON_SURF_DISABLE_DCC;
    }
+
+   /* Disable DCC for VRS rate images because the hw can't handle compression. */
+   if (pCreateInfo->usage & VK_IMAGE_USAGE_FRAGMENT_SHADING_RATE_ATTACHMENT_BIT_KHR)
+      flags |= RADEON_SURF_VRS_RATE | RADEON_SURF_DISABLE_DCC;
 
    return flags;
 }
@@ -1487,7 +1487,7 @@ radv_image_alloc_single_sample_cmask(const struct radv_device *device,
 
    assert(image->info.storage_samples == 1);
 
-   surf->cmask_offset = align64(surf->total_size, 1 << surf->cmask_alignment_log2);
+   surf->cmask_offset = align64(surf->total_size, 1ull << surf->cmask_alignment_log2);
    surf->total_size = surf->cmask_offset + surf->cmask_size;
    surf->alignment_log2 = MAX2(surf->alignment_log2, surf->cmask_alignment_log2);
 }
@@ -1753,7 +1753,7 @@ radv_image_create_layout(struct radv_device *device, struct radv_image_create_in
          stride = mod_info->pPlaneLayouts[plane].rowPitch / image->planes[plane].surface.bpe;
       } else {
          offset = image->disjoint ? 0 :
-            align64(image->size, 1 << image->planes[plane].surface.alignment_log2);
+            align64(image->size, 1ull << image->planes[plane].surface.alignment_log2);
          stride = 0; /* 0 means no override */
       }
 

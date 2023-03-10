@@ -74,7 +74,7 @@ if with_any_opengl and with_tests
       dependencies : [dep_thread, idep_gtest, idep_mesautilc11],
     ),
     suite : ['mapi'],
-    protocol : gtest_test_protocol,
+    protocol : 'gtest',
   )
   if with_symbols_check
     test(

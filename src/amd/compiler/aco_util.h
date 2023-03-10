@@ -1019,6 +1019,8 @@ using bitfield_array32 = bitfield_array<T, offset, size, uint32_t>;
 template <typename T, unsigned offset, unsigned size>
 using bitfield_array64 = bitfield_array<T, offset, size, uint64_t>;
 
+using bitarray8 = bitfield_array<uint8_t, 0, 8, uint8_t>;
+
 } // namespace aco
 
 #endif // ACO_UTIL_H

@@ -44,8 +44,9 @@ anv-tgl-vk:
   variables:
     DEQP_SUITE: anv-tgl-vk
     DEQP_VER: vk
+    DEQP_FRACTION: 2 # temporarily drop network load
     VK_DRIVER: intel
-  parallel: 12  # 15 - 3 (intel job + two zink)
+  parallel: 6 # 15 - 3 zink - 3 post-merge perf + headroom
 
 hasvk-hsw-full:
   extends:

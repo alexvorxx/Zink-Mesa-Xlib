@@ -182,7 +182,7 @@ zink_update_barriers(struct zink_context *ctx, bool is_compute,
 bool
 zink_cmd_debug_marker_begin(struct zink_context *ctx, VkCommandBuffer cmdbuf, const char *fmt, ...);
 void
-zink_cmd_debug_marker_end(struct zink_context *ctx, bool emitted);
+zink_cmd_debug_marker_end(struct zink_context *ctx, VkCommandBuffer cmdbuf,bool emitted);
 
 #ifdef __cplusplus
 }

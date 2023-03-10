@@ -3769,7 +3769,7 @@ zink_resource_image_barrier(struct zink_context *ctx, struct zink_resource *res,
       0, NULL,
       1, &imb
    );
-   zink_cmd_debug_marker_end(ctx, marker);
+   zink_cmd_debug_marker_end(ctx, cmdbuf, marker);
 
    resource_check_defer_image_barrier(ctx, res, new_layout, pipeline);
 
@@ -3819,7 +3819,7 @@ zink_resource_image_barrier2(struct zink_context *ctx, struct zink_resource *res
    };
    bool marker = zink_cmd_debug_marker_begin(ctx, cmdbuf, "image_barrier(%s->%s)", vk_ImageLayout_to_str(res->layout), vk_ImageLayout_to_str(new_layout));
    VKCTX(CmdPipelineBarrier2)(cmdbuf, &dep);
-   zink_cmd_debug_marker_end(ctx, marker);
+   zink_cmd_debug_marker_end(ctx, cmdbuf, marker);
 
    resource_check_defer_image_barrier(ctx, res, new_layout, pipeline);
 
@@ -3973,7 +3973,7 @@ zink_resource_buffer_barrier(struct zink_context *ctx, struct zink_resource *res
          0, NULL,
          0, NULL
       );
-      zink_cmd_debug_marker_end(ctx, marker);
+      zink_cmd_debug_marker_end(ctx, cmdbuf, marker);
    }
 
    resource_check_defer_buffer_barrier(ctx, res, pipeline);
@@ -4032,7 +4032,7 @@ zink_resource_buffer_barrier2(struct zink_context *ctx, struct zink_resource *re
          marker = zink_cmd_debug_marker_begin(ctx, cmdbuf, "buffer_barrier(%s)", buf);
       }
       VKCTX(CmdPipelineBarrier2)(cmdbuf, &dep);
-      zink_cmd_debug_marker_end(ctx, marker);
+      zink_cmd_debug_marker_end(ctx, cmdbuf, marker);
    }
 
    resource_check_defer_buffer_barrier(ctx, res, pipeline);
@@ -5731,8 +5731,8 @@ zink_cmd_debug_marker_begin(struct zink_context *ctx, VkCommandBuffer cmdbuf, co
 }
 
 void
-zink_cmd_debug_marker_end(struct zink_context *ctx, bool emitted)
+zink_cmd_debug_marker_end(struct zink_context *ctx, VkCommandBuffer cmdbuf, bool emitted)
 {
    if (emitted)
-      VKCTX(CmdEndDebugUtilsLabelEXT)(ctx->batch.state->cmdbuf);
+      VKCTX(CmdEndDebugUtilsLabelEXT)(cmdbuf);
 }

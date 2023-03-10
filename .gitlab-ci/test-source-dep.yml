@@ -330,6 +330,7 @@
     - !reference [.freedreno-manual-rules, rules]
   allow_failure: true # see comment in .performance-rules, which we don't inherit this line from.
   variables:
+    LAVA_JOB_PRIORITY: 40
     MINIO_ARTIFACT_NAME: "mesa-arm64-rel"
   needs:
     - job: debian/arm64_test
@@ -556,6 +557,7 @@
       when: manual
   allow_failure: true # see comment in .performance-rules, which we don't inherit this line from.
   variables:
+    LAVA_JOB_PRIORITY: 40
     MINIO_ARTIFACT_NAME: "mesa-amd64-rel"
   needs:
     - kernel+rootfs_amd64
@@ -685,6 +687,7 @@
       when: manual
   allow_failure: true # see comment in .performance-rules, which we don't inherit this line from.
   variables:
+    LAVA_JOB_PRIORITY: 40
     MINIO_ARTIFACT_NAME: "mesa-amd64-rel"
   needs:
     - kernel+rootfs_amd64

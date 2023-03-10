@@ -64,6 +64,7 @@ enum intel_ds_stall_flag {
 typedef enum intel_ds_stall_flag (*intel_ds_stall_cb_t)(uint32_t flags);
 
 enum intel_ds_queue_stage {
+   INTEL_DS_QUEUE_STAGE_FRAME,
    INTEL_DS_QUEUE_STAGE_CMD_BUFFER,
    INTEL_DS_QUEUE_STAGE_GENERATE_DRAWS,
    INTEL_DS_QUEUE_STAGE_STALL,

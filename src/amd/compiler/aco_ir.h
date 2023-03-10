@@ -1756,22 +1756,12 @@ Instruction::usesModifiers() const noexcept
 
    if (isVOP3P()) {
       const VALU_instruction& vop3p = this->valu();
-      for (unsigned i = 0; i < operands.size(); i++) {
-         if (vop3p.neg_lo[i] || vop3p.neg_hi[i])
-            return true;
-
-         /* opsel_hi must be 1 to not be considered a modifier - even for constants */
-         if (!(vop3p.opsel_hi & (1 << i)))
-            return true;
-      }
-      return vop3p.opsel_lo || vop3p.clamp;
+      /* opsel_hi must be 1 to not be considered a modifier - even for constants */
+      return vop3p.opsel_lo || vop3p.clamp || vop3p.neg_lo || vop3p.neg_hi ||
+             (vop3p.opsel_hi & BITFIELD_MASK(operands.size())) != BITFIELD_MASK(operands.size());
    } else if (isVOP3()) {
       const VALU_instruction& vop3 = this->valu();
-      for (unsigned i = 0; i < operands.size(); i++) {
-         if (vop3.abs[i] || vop3.neg[i])
-            return true;
-      }
-      return vop3.opsel || vop3.clamp || vop3.omod;
+      return vop3.opsel || vop3.clamp || vop3.omod || vop3.abs || vop3.neg;
    }
    return false;
 }

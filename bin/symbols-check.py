@@ -68,7 +68,7 @@ def get_symbols_nm(nm, lib):
         if len(fields) == 2 or fields[1] == 'U':
             continue
         symbol_name = fields[0]
-        if platform_name == 'Linux':
+        if platform_name == 'Linux' or platform_name == 'GNU' or platform_name.startswith('GNU/'):
             if symbol_name in PLATFORM_SYMBOLS:
                 continue
         elif platform_name == 'Darwin':

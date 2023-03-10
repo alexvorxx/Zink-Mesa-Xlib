@@ -312,6 +312,9 @@ zink_get_tcs_key(const struct zink_context *ctx)
 void
 zink_update_fs_key_samples(struct zink_context *ctx);
 
+void
+zink_update_gs_key_rectangular_line(struct zink_context *ctx);
+
 static inline struct zink_vs_key *
 zink_set_vs_key(struct zink_context *ctx)
 {

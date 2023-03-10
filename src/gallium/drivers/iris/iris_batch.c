@@ -610,6 +610,16 @@ iris_destroy_batches(struct iris_context *ice)
       iris_batch_free(ice, batch);
 }
 
+void iris_batch_maybe_begin_frame(struct iris_batch *batch)
+{
+   struct iris_context *ice = batch->ice;
+
+   if (ice->tracing_begin_frame != ice->frame) {
+      trace_intel_begin_frame(&batch->trace);
+      ice->tracing_begin_frame = ice->tracing_end_frame = ice->frame;
+   }
+}
+
 /**
  * If we've chained to a secondary batch, or are getting near to the end,
  * then flush.  This should only be called between draws.
@@ -707,6 +717,12 @@ iris_finish_batch(struct iris_batch *batch)
    finish_seqno(batch);
 
    trace_intel_end_batch(&batch->trace, batch->name);
+
+   struct iris_context *ice = batch->ice;
+   if (ice->tracing_end_frame != ice->frame) {
+      trace_intel_end_frame(&batch->trace, ice->tracing_end_frame);
+      ice->tracing_end_frame = ice->frame;
+   }
 
    /* Emit MI_BATCH_BUFFER_END to finish our batch. */
    uint32_t *map = batch->map_next;

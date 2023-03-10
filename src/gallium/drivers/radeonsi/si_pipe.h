@@ -694,8 +694,6 @@ struct si_screen {
     * We want to minimize the impact on multithreaded Mesa. */
    struct ac_llvm_compiler compiler_lowp[10];
 
-   unsigned ngg_subgroup_size;
-
    struct util_idalloc_mt buffer_ids;
    struct util_vertex_state_cache vertex_state_cache;
 
@@ -734,7 +732,6 @@ struct si_cs_shader_state {
    struct si_compute *emitted_program;
    unsigned offset;
    uint32_t variable_shared_size;
-   bool initialized;
 };
 
 struct si_samplers {

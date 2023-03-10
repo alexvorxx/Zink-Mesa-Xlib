@@ -1702,6 +1702,7 @@ struct brw_compile_stats {
    uint32_t cycles;
    uint32_t spills;
    uint32_t fills;
+   uint32_t max_live_registers;
 };
 
 /** @} */

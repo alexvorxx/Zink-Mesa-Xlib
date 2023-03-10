@@ -730,6 +730,10 @@ struct iris_context {
 
    struct intel_perf_context *perf_ctx;
 
+   /** Frame number for u_trace */
+   uint32_t tracing_begin_frame;
+   uint32_t tracing_end_frame;
+
    /** Frame number for debug prints */
    uint32_t frame;
 

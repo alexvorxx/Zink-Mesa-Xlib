@@ -145,18 +145,25 @@ if [ -n "$HWCI_START_XORG" ]; then
 fi
 
 if [ -n "$HWCI_START_WESTON" ]; then
+  WESTON_X11_SOCK="/tmp/.X11-unix/X0"
+  if [ -n "$HWCI_START_XORG" ]; then
+    echo "Please consider dropping HWCI_START_XORG and instead using Weston XWayland for testing."
+    WESTON_X11_SOCK="/tmp/.X11-unix/X1"
+  fi
   export XDG_RUNTIME_DIR=/run/user
   mkdir -p $XDG_RUNTIME_DIR
+  export WAYLAND_DISPLAY=wayland-0
 
-  # Xwayland to be used when HWCI_START_XORG is not set
+  # Display server is Weston Xwayland when HWCI_START_XORG is not set or Xorg when it's
   export DISPLAY=:0
   mkdir -p /tmp/.X11-unix
 
   env \
-    VK_ICD_FILENAMES=/install/share/vulkan/icd.d/${VK_DRIVER}_icd.`uname -m`.json \
+    VK_ICD_FILENAMES="/install/share/vulkan/icd.d/${VK_DRIVER}_icd.$(uname -m).json" \
     weston -Bheadless-backend.so --use-gl -Swayland-0 --xwayland &
-  export WAYLAND_DISPLAY=wayland-0
-  sleep 1
+  BACKGROUND_PIDS="$! $BACKGROUND_PIDS"
+
+  while [ ! -S "$WESTON_X11_SOCK" ]; do sleep 1; done
 fi
 
 RESULT=fail

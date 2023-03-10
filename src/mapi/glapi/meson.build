@@ -111,6 +111,6 @@ if with_any_opengl and not with_shared_glapi and with_tests and not with_platfor
       dependencies : [idep_gtest, dep_thread],
     ),
     suite : ['mapi'],
-    protocol : gtest_test_protocol,
+    protocol : 'gtest',
   )
 endif

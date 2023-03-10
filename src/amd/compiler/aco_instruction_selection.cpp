@@ -1038,8 +1038,7 @@ emit_idot_instruction(isel_context* ctx, nir_alu_instr* instr, aco_opcode op, Te
    VALU_instruction& vop3p =
       bld.vop3p(op, Definition(dst), src[0], src[1], src[2], 0x0, 0x7)->valu();
    vop3p.clamp = clamp;
-   u_foreach_bit (i, neg_lo)
-      vop3p.neg_lo[i] = true;
+   vop3p.neg_lo = neg_lo;
 }
 
 void
@@ -10366,19 +10365,6 @@ visit_loop(isel_context* ctx, nir_loop* loop)
    loop_context lc;
    begin_loop(ctx, &lc);
 
-   /* NIR seems to allow this, and even though the loop exit has no predecessors, SSA defs from the
-    * loop header are live. Handle this without complicating the ACO IR by creating a dummy break.
-    */
-   if (nir_cf_node_cf_tree_next(&loop->cf_node)->predecessors->entries == 0) {
-      Builder bld(ctx->program, ctx->block);
-      Temp cond = bld.copy(bld.def(s1, scc), Operand::zero());
-      if_context ic;
-      begin_uniform_if_then(ctx, &ic, cond);
-      emit_loop_break(ctx);
-      begin_uniform_if_else(ctx, &ic);
-      end_uniform_if(ctx, &ic);
-   }
-
    bool unreachable = visit_cf_list(ctx, &loop->body);
 
    unsigned loop_header_idx = ctx->cf_info.parent_loop.header_idx;
@@ -10418,6 +10404,19 @@ visit_loop(isel_context* ctx, nir_loop* loop)
             break;
          }
       }
+   }
+
+   /* NIR seems to allow this, and even though the loop exit has no predecessors, SSA defs from the
+    * loop header are live. Handle this without complicating the ACO IR by creating a dummy break.
+    */
+   if (nir_cf_node_cf_tree_next(&loop->cf_node)->predecessors->entries == 0) {
+      Builder bld(ctx->program, ctx->block);
+      Temp cond = bld.copy(bld.def(s1, scc), Operand::zero());
+      if_context ic;
+      begin_uniform_if_then(ctx, &ic, cond);
+      emit_loop_break(ctx);
+      begin_uniform_if_else(ctx, &ic);
+      end_uniform_if(ctx, &ic);
    }
 
    end_loop(ctx, &lc);

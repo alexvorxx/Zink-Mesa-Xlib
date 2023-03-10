@@ -210,6 +210,6 @@ if with_tests
       dependencies : [idep_gtest, idep_nir, idep_mesautil, idep_intel_dev],
     ),
     suite : ['intel'],
-    protocol : gtest_test_protocol,
+    protocol : 'gtest',
   )
 endif

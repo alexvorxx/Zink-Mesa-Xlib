@@ -65,8 +65,8 @@ static void si_set_es_return_value_for_gs(struct si_shader_context *ctx)
    ret = si_insert_input_ptr(ctx, ret, ctx->args->internal_bindings, 8 + SI_SGPR_INTERNAL_BINDINGS);
    ret = si_insert_input_ptr(ctx, ret, ctx->args->bindless_samplers_and_images,
                              8 + SI_SGPR_BINDLESS_SAMPLERS_AND_IMAGES);
+   ret = si_insert_input_ptr(ctx, ret, ctx->args->vs_state_bits, 8 + SI_SGPR_VS_STATE_BITS);
    if (ctx->screen->use_ngg) {
-      ret = si_insert_input_ptr(ctx, ret, ctx->args->vs_state_bits, 8 + SI_SGPR_VS_STATE_BITS);
       ret = si_insert_input_ptr(ctx, ret, ctx->args->small_prim_cull_info, 8 + GFX9_SGPR_SMALL_PRIM_CULL_INFO);
       if (ctx->screen->info.gfx_level >= GFX11)
          ret = si_insert_input_ptr(ctx, ret, ctx->args->gs_attr_address, 8 + GFX9_SGPR_ATTRIBUTE_RING_ADDR);

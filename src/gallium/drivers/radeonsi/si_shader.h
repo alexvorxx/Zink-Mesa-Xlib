@@ -266,6 +266,8 @@ enum
  * in the shader via vs_state_bits in legacy GS, the GS copy shader, and any NGG shader.
  */
 /* bit gap */
+#define GS_STATE_ESGS_VERTEX_STRIDE__SHIFT      10
+#define GS_STATE_ESGS_VERTEX_STRIDE__MASK       0xff /* max 32 * 4 + 1 */
 /* Small prim filter precision = num_samples / quant_mode, which can only be equal to 1/2^n
  * where n is between 4 and 12. Knowing that, we only need to store 4 bits of the FP32 exponent.
  * Set it like this: value = (fui(num_samples / quant_mode) >> 23) & 0xf;
@@ -917,7 +919,7 @@ struct si_shader {
          unsigned vgt_primitiveid_en;
          unsigned vgt_gs_onchip_cntl;
          unsigned vgt_gs_instance_cnt;
-         unsigned vgt_esgs_ring_itemsize;
+         unsigned esgs_vertex_stride;
          unsigned spi_vs_out_config;
          unsigned spi_shader_idx_format;
          unsigned spi_shader_pos_format;
@@ -1056,7 +1058,7 @@ static inline bool gfx10_ngg_writes_user_edgeflags(struct si_shader *shader)
           shader->selector->info.writes_edgeflag;
 }
 
-static inline bool si_shader_uses_streamout(struct si_shader *shader)
+static inline bool si_shader_uses_streamout(const struct si_shader *shader)
 {
    return shader->selector->stage <= MESA_SHADER_GEOMETRY &&
           shader->selector->info.enabled_streamout_buffer_mask &&

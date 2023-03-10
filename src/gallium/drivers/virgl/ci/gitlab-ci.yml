@@ -8,7 +8,7 @@
   script:
     - xvfb-run --server-args='-noreset' bash -c ". $SCRIPTS_DIR/setup-test-env.sh && GALLIUM_DRIVER=virpipe install/deqp-runner.sh"
 
-virpipe-on-gl:
+.virpipe-on-gl:
   extends:
     - .deqp-test
     - .virpipe-test

@@ -709,6 +709,9 @@ zink_bind_rasterizer_state(struct pipe_context *pctx, void *cso)
 
       if (ctx->rast_state->base.half_pixel_center != half_pixel_center)
          ctx->vp_state_changed = true;
+
+      if (!screen->optimal_keys)
+         zink_update_gs_key_rectangular_line(ctx);
    }
 }
 

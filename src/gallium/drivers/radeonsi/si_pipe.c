@@ -753,9 +753,7 @@ static struct pipe_context *si_create_context(struct pipe_screen *screen, unsign
    /* The remainder of this function initializes the gfx CS and must be last. */
    assert(sctx->gfx_cs.current.cdw == 0);
 
-   if (sctx->has_graphics) {
-      si_init_cp_reg_shadowing(sctx);
-   }
+   si_init_cp_reg_shadowing(sctx);
 
    /* Set immutable fields of shader keys. */
    if (sctx->gfx_level >= GFX9) {
@@ -1414,8 +1412,6 @@ static struct pipe_screen *radeonsi_screen_create_impl(struct radeon_winsys *ws,
          sscreen->eqaa_force_color_samples = f;
       }
    }
-
-   sscreen->ngg_subgroup_size = 128;
 
    if (sscreen->info.gfx_level >= GFX11) {
       unsigned attr_ring_size = sscreen->info.attribute_ring_size_per_se * sscreen->info.max_se;

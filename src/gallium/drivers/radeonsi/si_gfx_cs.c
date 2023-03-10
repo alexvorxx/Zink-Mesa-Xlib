@@ -423,9 +423,17 @@ void si_begin_new_gfx_cs(struct si_context *ctx, bool first_cs)
    }
 
    si_add_all_descriptors_to_bo_list(ctx);
-
    si_shader_pointers_mark_dirty(ctx);
-   ctx->cs_shader_state.initialized = false;
+   ctx->cs_shader_state.emitted_program = NULL;
+
+   /* The CS initialization should be emitted before everything else. */
+   if (ctx->cs_preamble_state) {
+      struct si_pm4_state *preamble = is_secure ? ctx->cs_preamble_state_tmz :
+                                                  ctx->cs_preamble_state;
+      ctx->ws->cs_set_preamble(&ctx->gfx_cs, preamble->pm4, preamble->ndw,
+                               preamble != ctx->last_preamble);
+      ctx->last_preamble = preamble;
+   }
 
    if (!ctx->has_graphics) {
       ctx->initial_gfx_cs_size = ctx->gfx_cs.current.cdw;
@@ -442,15 +450,6 @@ void si_begin_new_gfx_cs(struct si_context *ctx, bool first_cs)
     * next draw command
     */
    si_pm4_reset_emitted(ctx);
-
-   /* The CS initialization should be emitted before everything else. */
-   if (ctx->cs_preamble_state) {
-      struct si_pm4_state *preamble = is_secure ? ctx->cs_preamble_state_tmz :
-                                                  ctx->cs_preamble_state;
-      ctx->ws->cs_set_preamble(&ctx->gfx_cs, preamble->pm4, preamble->ndw,
-                               preamble != ctx->last_preamble);
-      ctx->last_preamble = preamble;
-   }
 
    if (ctx->queued.named.ls)
       ctx->prefetch_L2_mask |= SI_PREFETCH_LS;

@@ -89,7 +89,7 @@ if with_tests
       link_with : [libasahi_lib],
     ),
     suite : ['asahi'],
-    protocol : gtest_test_protocol,
+    protocol : 'gtest',
   )
 endif
 

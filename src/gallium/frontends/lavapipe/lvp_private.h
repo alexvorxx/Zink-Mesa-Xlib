@@ -425,28 +425,31 @@ lvp_pipeline_nir_ref(struct lvp_pipeline_nir **dst, struct lvp_pipeline_nir *src
    *dst = src;
 }
 
-struct lvp_pipeline {
-   struct vk_object_base base;
-   struct lvp_device *                          device;
-   struct lvp_pipeline_layout *                 layout;
-
-   struct lvp_access_info access[MESA_SHADER_STAGES];
-
-   void *state_data;
-   bool is_compute_pipeline;
-   bool force_min_sample;
-   struct lvp_pipeline_nir *pipeline_nir[MESA_SHADER_STAGES];
+struct lvp_shader {
+   struct lvp_access_info access;
+   struct lvp_pipeline_nir *pipeline_nir;
    struct lvp_pipeline_nir *tess_ccw;
-   void *shader_cso[PIPE_SHADER_TYPES];
+   void *shader_cso;
    void *tess_ccw_cso;
    struct {
       uint32_t uniform_offsets[PIPE_MAX_CONSTANT_BUFFERS][MAX_INLINABLE_UNIFORMS];
       uint8_t count[PIPE_MAX_CONSTANT_BUFFERS];
       bool must_inline;
       uint32_t can_inline; //bitmask
-   } inlines[MESA_SHADER_STAGES];
-   gl_shader_stage last_vertex;
+   } inlines;
    struct pipe_stream_output_info stream_output;
+};
+
+struct lvp_pipeline {
+   struct vk_object_base base;
+   struct lvp_device *                          device;
+   struct lvp_pipeline_layout *                 layout;
+
+   void *state_data;
+   bool is_compute_pipeline;
+   bool force_min_sample;
+   struct lvp_shader shaders[MESA_SHADER_STAGES];
+   gl_shader_stage last_vertex;
    struct vk_graphics_pipeline_state graphics_state;
    VkGraphicsPipelineLibraryFlagsEXT stages;
    bool line_smooth;
@@ -632,9 +635,9 @@ lvp_shader_optimize(nir_shader *nir);
 void *
 lvp_pipeline_compile_stage(struct lvp_pipeline *pipeline, nir_shader *nir);
 bool
-lvp_find_inlinable_uniforms(struct lvp_pipeline *pipeline, nir_shader *shader);
+lvp_find_inlinable_uniforms(struct lvp_shader *shader, nir_shader *nir);
 void
-lvp_inline_uniforms(nir_shader *shader, const struct lvp_pipeline *pipeline, const uint32_t *uniform_values, uint32_t ubo);
+lvp_inline_uniforms(nir_shader *nir, const struct lvp_shader *shader, const uint32_t *uniform_values, uint32_t ubo);
 void *
 lvp_pipeline_compile(struct lvp_pipeline *pipeline, nir_shader *base_nir);
 #ifdef __cplusplus

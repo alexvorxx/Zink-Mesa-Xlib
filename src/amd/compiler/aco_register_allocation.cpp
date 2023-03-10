@@ -541,20 +541,15 @@ add_subdword_operand(ra_ctx& ctx, aco_ptr<Instruction>& instr, unsigned idx, uns
    assert(rc.bytes() <= 2);
    if (instr->isVALU()) {
       /* check if we can use opsel */
-      if (instr->format == Format::VOP3) {
+      if (instr->format == Format::VOP3 || instr->isVINTERP_INREG()) {
          assert(byte == 2);
-         instr->valu().opsel |= 1 << idx;
-         return;
-      }
-      if (instr->isVINTERP_INREG()) {
-         assert(byte == 2);
-         instr->vinterp_inreg().opsel |= 1 << idx;
+         instr->valu().opsel[idx] = true;
          return;
       }
       if (instr->isVOP3P()) {
-         assert(byte == 2 && !(instr->valu().opsel_lo & (1 << idx)));
-         instr->valu().opsel_lo |= 1 << idx;
-         instr->valu().opsel_hi |= 1 << idx;
+         assert(byte == 2 && !instr->valu().opsel_lo[idx]);
+         instr->valu().opsel_lo[idx] = true;
+         instr->valu().opsel_hi[idx] = true;
          return;
       }
       if (instr->opcode == aco_opcode::v_cvt_f32_ubyte0) {
@@ -692,15 +687,10 @@ add_subdword_definition(Program* program, aco_ptr<Instruction>& instr, PhysReg r
          return;
 
       /* check if we can use opsel */
-      if (instr->format == Format::VOP3) {
+      if (instr->format == Format::VOP3 || instr->isVINTERP_INREG()) {
          assert(reg.byte() == 2);
          assert(can_use_opsel(gfx_level, instr->opcode, -1));
-         instr->valu().opsel |= (1 << 3); /* dst in high half */
-         return;
-      } else if (instr->isVINTERP_INREG()) {
-         assert(reg.byte() == 2);
-         assert(can_use_opsel(gfx_level, instr->opcode, -1));
-         instr->vinterp_inreg().opsel |= (1 << 3); /* dst in high half */
+         instr->valu().opsel[3] = true; /* dst in high half */
          return;
       }
 

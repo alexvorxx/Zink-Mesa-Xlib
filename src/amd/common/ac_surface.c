@@ -1373,7 +1373,7 @@ static int gfx6_compute_surface(ADDR_HANDLE addrlib, const struct radeon_info *i
        *
        * "dcc_alignment * 4" was determined by trial and error.
        */
-      surf->meta_size = align64(surf->surf_size >> 8, (1 << surf->meta_alignment_log2) * 4);
+      surf->meta_size = align64(surf->surf_size >> 8, (1ull << surf->meta_alignment_log2) * 4);
    }
 
    /* Make sure HTILE covers the whole miptree, because the shader reads
@@ -2310,6 +2310,14 @@ static int gfx9_compute_surface(struct ac_addrlib *addrlib, const struct radeon_
             break;
          }
 
+         /* On GFX11, the only allowed swizzle mode for VRS rate images is
+          * 64KB_R_X.
+          */
+         if (info->gfx_level >= GFX11 && surf->flags & RADEON_SURF_VRS_RATE) {
+            AddrSurfInfoIn.swizzleMode = ADDR_SW_64KB_R_X;
+            break;
+         }
+
          r = gfx9_get_preferred_swizzle_mode(addrlib->handle, info, surf, &AddrSurfInfoIn, false,
                                              &AddrSurfInfoIn.swizzleMode);
          if (r)
@@ -2519,14 +2527,14 @@ int ac_compute_surface(struct ac_addrlib *addrlib, const struct radeon_info *inf
 
    if (surf->fmask_size) {
       assert(config->info.samples >= 2);
-      surf->fmask_offset = align64(surf->total_size, 1 << surf->fmask_alignment_log2);
+      surf->fmask_offset = align64(surf->total_size, 1ull << surf->fmask_alignment_log2);
       surf->total_size = surf->fmask_offset + surf->fmask_size;
       surf->alignment_log2 = MAX2(surf->alignment_log2, surf->fmask_alignment_log2);
    }
 
    /* Single-sample CMASK is in a separate buffer. */
    if (surf->cmask_size && config->info.samples >= 2) {
-      surf->cmask_offset = align64(surf->total_size, 1 << surf->cmask_alignment_log2);
+      surf->cmask_offset = align64(surf->total_size, 1ull << surf->cmask_alignment_log2);
       surf->total_size = surf->cmask_offset + surf->cmask_size;
       surf->alignment_log2 = MAX2(surf->alignment_log2, surf->cmask_alignment_log2);
    }
@@ -2544,11 +2552,11 @@ int ac_compute_surface(struct ac_addrlib *addrlib, const struct radeon_info *inf
           !(surf->flags & RADEON_SURF_Z_OR_SBUFFER) &&
           surf->u.gfx9.color.dcc.display_equation_valid) {
          /* Add space for the displayable DCC buffer. */
-         surf->display_dcc_offset = align64(surf->total_size, 1 << surf->u.gfx9.color.display_dcc_alignment_log2);
+         surf->display_dcc_offset = align64(surf->total_size, 1ull << surf->u.gfx9.color.display_dcc_alignment_log2);
          surf->total_size = surf->display_dcc_offset + surf->u.gfx9.color.display_dcc_size;
       }
 
-      surf->meta_offset = align64(surf->total_size, 1 << surf->meta_alignment_log2);
+      surf->meta_offset = align64(surf->total_size, 1ull << surf->meta_alignment_log2);
       surf->total_size = surf->meta_offset + surf->meta_size;
       surf->alignment_log2 = MAX2(surf->alignment_log2, surf->meta_alignment_log2);
    }

@@ -1,7 +1,7 @@
 # LLVM 16.0.0
 
 # piglit failures
-glx@glx-make-current,Crash
+glx@glx-make-current,Fail
 glx@glx-multi-window-single-context,Fail
 glx@glx-swap-event_interval,Fail
 glx@glx_arb_create_context_es2_profile@invalid opengl es version,Fail
@@ -17,21 +17,10 @@ glx@glx_ext_import_context@make current- multi process,Fail
 glx@glx_ext_import_context@make current- single process,Fail
 glx@glx_ext_import_context@query context info,Fail
 glx@glx_ext_no_config_context@no fbconfig,Fail
-spec@!opengl 1.0@gl-1.0-swapbuffers-behavior,Fail
 spec@!opengl 1.0@gl-1.0-user-clip-all-planes,Fail
 spec@!opengl 1.0@rasterpos,Fail
 spec@!opengl 1.0@rasterpos@glsl_vs_gs_linked,Fail
 spec@!opengl 1.0@rasterpos@glsl_vs_tes_linked,Fail
-spec@!opengl 1.1@read-front,Fail
-spec@!opengl 1.1@read-front clear-front-first,Fail
-spec@!opengl 1.1@read-front clear-front-first samples=2,Fail
-spec@!opengl 1.1@read-front clear-front-first samples=4,Fail
-spec@!opengl 1.1@read-front clear-front-first samples=6,Fail
-spec@!opengl 1.1@read-front clear-front-first samples=8,Fail
-spec@!opengl 1.1@read-front samples=2,Fail
-spec@!opengl 1.1@read-front samples=4,Fail
-spec@!opengl 1.1@read-front samples=6,Fail
-spec@!opengl 1.1@read-front samples=8,Fail
 spec@arb_bindless_texture@compiler@samplers@arith-bound-sampler-texture2d.frag,Crash
 spec@arb_gpu_shader_fp64@execution@conversion@frag-conversion-explicit-dmat2-mat2,Fail
 spec@arb_gpu_shader_fp64@execution@conversion@frag-conversion-explicit-dmat2x3-mat2x3,Fail
@@ -81,8 +70,6 @@ spec@arb_shading_language_packing@execution@built-in-functions@vs-packhalf2x16,F
 spec@arb_tessellation_shader@execution@tcs-tes-levels-out-of-bounds-write,Crash
 spec@egl_ext_protected_content@conformance,Fail
 spec@ext_framebuffer_blit@fbo-blit-check-limits,Fail
-spec@ext_image_dma_buf_import@ext_image_dma_buf_import-sample_uyvy,Fail
-spec@ext_image_dma_buf_import@ext_image_dma_buf_import-sample_yuyv,Fail
 spec@glsl-1.20@compiler@invalid-vec4-array-to-vec3-array-conversion.vert,Fail
 spec@glsl-4.00@execution@conversion@frag-conversion-explicit-dmat2-mat2,Fail
 spec@glsl-4.00@execution@conversion@frag-conversion-explicit-dmat2x3-mat2x3,Fail
@@ -154,28 +141,8 @@ KHR-Single-GL46.enhanced_layouts.xfb_capture_inactive_output_component,Fail
 spec@!opengl 1.1@line-smooth-stipple,Fail
 spec@arb_framebuffer_no_attachments@arb_framebuffer_no_attachments-atomic,Fail
 spec@arb_framebuffer_no_attachments@arb_framebuffer_no_attachments-atomic@Per-sample,Fail
-spec@arb_shader_texture_lod@execution@tex-miplevel-selection *lod 2dshadow,Fail
-spec@arb_shader_texture_lod@execution@tex-miplevel-selection *projgradarb 2dshadow,Fail
 spec@egl 1.4@egl-ext_egl_image_storage,Crash
-spec@glsl-1.20@execution@tex-miplevel-selection gl2:texture() 2dshadow,Fail
-spec@glsl-1.20@execution@tex-miplevel-selection gl2:textureproj(bias) 2dshadow,Fail
-spec@glsl-1.30@execution@tex-miplevel-selection texture() 2darrayshadow,Fail
-spec@glsl-1.30@execution@tex-miplevel-selection texture() 2dshadow,Fail
-spec@glsl-1.30@execution@tex-miplevel-selection texture() cubearrayshadow,Fail
-spec@glsl-1.30@execution@tex-miplevel-selection texture() cubeshadow,Fail
-spec@glsl-1.30@execution@tex-miplevel-selection texture(bias) cubeshadow,Fail
-spec@glsl-1.30@execution@tex-miplevel-selection texturegrad 2dshadow,Fail
-spec@glsl-1.30@execution@tex-miplevel-selection texturegrad cubeshadow,Fail
-spec@glsl-1.30@execution@tex-miplevel-selection texturelod 2dshadow,Fail
-spec@glsl-1.30@execution@tex-miplevel-selection texturelodoffset 2dshadow,Fail
-spec@glsl-1.30@execution@tex-miplevel-selection textureoffset 2dshadow,Fail
-spec@glsl-1.30@execution@tex-miplevel-selection textureproj(bias) 2dshadow,Fail
-spec@glsl-1.30@execution@tex-miplevel-selection textureprojgrad 2dshadow,Fail
-spec@glsl-1.30@execution@tex-miplevel-selection textureprojlod 2dshadow,Fail
-spec@glsl-1.30@execution@tex-miplevel-selection textureprojoffset(bias) 2dshadow,Fail
 
-KHR-GL46.direct_state_access.framebuffers_texture_attachment,Fail
-KHR-GL46.direct_state_access.framebuffers_texture_layer_attachment,Fail
 KHR-GL46.gl_spirv.spirv_validation_builtin_variable_decorations_test,Fail
 KHR-GL46.packed_pixels.pbo_rectangle.r11f_g11f_b10f,Fail
 KHR-GL46.packed_pixels.pbo_rectangle.r16,Fail
@@ -217,12 +184,14 @@ KHR-GL46.packed_pixels.pbo_rectangle.rgba8,Fail
 KHR-GL46.packed_pixels.pbo_rectangle.rgba8_snorm,Fail
 KHR-GL46.packed_pixels.pbo_rectangle.srgb8,Fail
 KHR-GL46.packed_pixels.pbo_rectangle.srgb8_alpha8,Fail
-KHR-GL46.texture_cube_map_array.sampling,Fail
 KHR-GL46.texture_view.view_sampling,Fail
 KHR-GL46.transform_feedback_overflow_query_ARB.advanced-single-stream-interleaved-attribs,Fail
 KHR-GL46.transform_feedback_overflow_query_ARB.advanced-single-stream-separate-attribs,Fail
 KHR-GL46.transform_feedback_overflow_query_ARB.multiple-streams-multiple-buffers-per-stream,Crash
 KHR-GL46.transform_feedback_overflow_query_ARB.multiple-streams-one-buffer-per-stream,Crash
+KHR-GL46.gl_spirv.spirv_glsl_to_spirv_builtin_functions_test,Fail
+KHR-GL46.sample_variables.position.fixed.samples_4,Fail
+KHR-GL46.sparse_texture_tests.SparseTextureCommitment,Fail
 
 dEQP-GLES3.functional.texture.specification.teximage2d_pbo.rgb565_2d,Fail
 dEQP-GLES3.functional.texture.specification.teximage2d_pbo.rgb565_cube,Fail

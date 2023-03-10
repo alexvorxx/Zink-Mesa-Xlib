@@ -540,17 +540,14 @@ gather_intrinsic_info(nir_intrinsic_instr *instr, nir_shader *shader,
       FALLTHROUGH; /* quads with helper lanes only might be discarded entirely */
    case nir_intrinsic_discard:
    case nir_intrinsic_discard_if:
-      /* Freedreno uses the discard_if intrinsic to end GS invocations that
-       * don't produce a vertex, so we only set uses_discard if executing on
-       * a fragment shader. */
-      if (shader->info.stage == MESA_SHADER_FRAGMENT)
-         shader->info.fs.uses_discard = true;
-      break;
-
    case nir_intrinsic_terminate:
    case nir_intrinsic_terminate_if:
-      assert(shader->info.stage == MESA_SHADER_FRAGMENT);
-      shader->info.fs.uses_discard = true;
+      /* Freedreno uses discard_if() to end GS invocations that don't produce
+       * a vertex and RADV uses terminate() to end ray-tracing shaders,
+       * so only set uses_discard for fragment shaders.
+       */
+      if (shader->info.stage == MESA_SHADER_FRAGMENT)
+         shader->info.fs.uses_discard = true;
       break;
 
    case nir_intrinsic_interp_deref_at_centroid:

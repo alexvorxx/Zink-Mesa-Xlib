@@ -772,7 +772,7 @@ copy_pool_results_to_buffer(struct zink_context *ctx, struct zink_query *query, 
    res->obj->unordered_read = res->obj->unordered_write = false;
    VKCTX(CmdCopyQueryPoolResults)(batch->state->cmdbuf, pool, query_id, num_results, res->obj->buffer,
                                   offset, base_result_size, flags);
-   zink_cmd_debug_marker_end(ctx, marker);
+   zink_cmd_debug_marker_end(ctx, batch->state->cmdbuf, marker);
 }
 
 static void

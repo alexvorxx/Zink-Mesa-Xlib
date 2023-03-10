@@ -3,6 +3,12 @@ workflow:
     - if: $GITLAB_USER_LOGIN == "marge-bot" && $CI_COMMIT_BRANCH == null
       variables:
         MESA_CI_PERFORMANCE_ENABLED: 1
+    - if: $GITLAB_USER_LOGIN == "marge-bot" && $CI_COMMIT_BRANCH
+      variables:
+        LAVA_JOB_PRIORITY: 40
+    - if: $GITLAB_USER_LOGIN != "marge-bot"
+      variables:
+        LAVA_JOB_PRIORITY: 50
     - when: always
 
 variables:

@@ -121,6 +121,6 @@ if with_tests
       link_with : [libasahi_compiler],
     ),
     suite : ['asahi'],
-    protocol : gtest_test_protocol,
+    protocol : 'gtest',
   )
 endif

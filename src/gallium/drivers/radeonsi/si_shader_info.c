@@ -791,8 +791,8 @@ void si_nir_scan_shader(struct si_screen *sscreen, const struct nir_shader *nir,
        */
       if (sscreen->info.gfx_level >= GFX9)
          info->esgs_vertex_stride += 4;
-
-      assert(((info->esgs_vertex_stride / 4) & C_028AAC_ITEMSIZE) == 0);
+      else
+         assert(((info->esgs_vertex_stride / 4) & C_028AAC_ITEMSIZE) == 0);
 
       info->tcs_vgpr_only_inputs = ~info->base.tess.tcs_cross_invocation_inputs_read &
                                    ~info->base.inputs_read_indirectly &

@@ -171,6 +171,6 @@ if with_tests
       cpp_args : '-DIN_UNIT_TEST',
     ),
     suite : ['intel'],
-    protocol : gtest_test_protocol,
+    protocol : 'gtest',
   )
 endif

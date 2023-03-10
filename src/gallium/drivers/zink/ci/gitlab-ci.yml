@@ -27,7 +27,7 @@
     # Fix non-conformant llvmpipe filter defaults
     GALLIVM_PERF: "no_quad_lod"
 
-zink-lvp:
+.zink-lvp:
   tags:
     - mesa-swrast
   extends:
@@ -43,8 +43,7 @@ zink-lvp:
     VK_LAYER_SETTINGS_PATH: ${CI_PROJECT_DIR}/install/zink-lvp-validation-settings.txt
     XVFB_SCRIPT: "GALLIUM_DRIVER=zink VK_DRIVER=lvp install/deqp-runner.sh"
   script: |
-    . "$SCRIPTS_DIR"/setup-test-env.sh
-    xvfb-run --server-args='-noreset' bash -c ". $SCRIPTS_DIR/setup-test-env.sh ${XVFB_SCRIPT}"
+    xvfb-run --server-args='-noreset' bash -c ". $SCRIPTS_DIR/setup-test-env.sh && ${XVFB_SCRIPT}"
 
 .zink-anv-test:
   extends:

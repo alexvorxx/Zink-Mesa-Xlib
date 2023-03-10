@@ -83,6 +83,7 @@ struct shader_stats {
    unsigned promoted_constants;
    unsigned spill_count;
    unsigned fill_count;
+   unsigned max_register_pressure;
 };
 
 /** Register numbers for thread payload fields. */
@@ -188,12 +189,14 @@ public:
               struct brw_stage_prog_data *prog_data,
               const nir_shader *shader,
               unsigned dispatch_width,
+              bool needs_register_pressure,
               bool debug_enabled);
    fs_visitor(const struct brw_compiler *compiler, void *log_data,
               void *mem_ctx,
               struct brw_gs_compile *gs_compile,
               struct brw_gs_prog_data *prog_data,
               const nir_shader *shader,
+              bool needs_register_pressure,
               bool debug_enabled);
    void init();
    ~fs_visitor();
@@ -220,6 +223,7 @@ public:
    bool run_mesh(bool allow_spilling);
    void optimize();
    void allocate_registers(bool allow_spilling);
+   uint32_t compute_max_register_pressure();
    bool fixup_sends_duplicate_payload();
    void fixup_3src_null_dest();
    void emit_dummy_memory_fence_before_eot();
@@ -526,6 +530,7 @@ public:
 
    unsigned grf_used;
    bool spilled_any_registers;
+   bool needs_register_pressure;
 
    const unsigned dispatch_width; /**< 8, 16 or 32 */
    unsigned max_dispatch_width;
@@ -631,11 +636,6 @@ private:
                                struct brw_reg src1);
 
    void generate_halt(fs_inst *inst);
-
-   void generate_pack_half_2x16_split(fs_inst *inst,
-                                      struct brw_reg dst,
-                                      struct brw_reg x,
-                                      struct brw_reg y);
 
    void generate_mov_indirect(fs_inst *inst,
                               struct brw_reg dst,

@@ -39,6 +39,7 @@ option(
 option(
   'dri3',
   type : 'feature',
+  deprecated: {'true': 'enabled', 'false': 'disabled'},
   description : 'enable support for dri3'
 )
 
@@ -81,6 +82,7 @@ option(
 option(
   'gallium-vdpau',
   type : 'feature',
+  deprecated: {'true': 'enabled', 'false': 'disabled'},
   description : 'enable gallium vdpau frontend.',
 )
 
@@ -110,6 +112,7 @@ option(
 option(
   'gallium-va',
   type : 'feature',
+  deprecated: {'true': 'enabled', 'false': 'disabled'},
   description : 'enable gallium va frontend.',
 )
 
@@ -123,6 +126,7 @@ option(
 option(
   'gallium-xa',
   type : 'feature',
+  deprecated: {'true': 'enabled', 'false': 'disabled'},
   description : 'enable gallium xa frontend.',
 )
 
@@ -221,6 +225,7 @@ option(
 option(
   'shader-cache',
   type : 'feature',
+  deprecated: {'true': 'enabled', 'false': 'disabled'},
   description : 'Build with on-disk shader cache support.',
 )
 
@@ -273,6 +278,7 @@ option(
 option(
   'shared-glapi',
   type : 'feature',
+  deprecated: {'true': 'enabled', 'false': 'disabled'},
   description : 'Whether to build a shared or static glapi. Defaults to ' +
                 'false on Windows, true elsewhere'
 )
@@ -280,12 +286,14 @@ option(
 option(
   'gles1',
   type : 'feature',
+  deprecated: {'true': 'enabled', 'false': 'disabled'},
   description : 'Build support for OpenGL ES 1.x'
 )
 
 option(
   'gles2',
   type : 'feature',
+  deprecated: {'true': 'enabled', 'false': 'disabled'},
   description : 'Build support for OpenGL ES 2.x and 3.x'
 )
 
@@ -299,6 +307,7 @@ option(
 option(
   'gbm',
   type : 'feature',
+  deprecated: {'true': 'enabled', 'false': 'disabled'},
   description : 'Build support for gbm platform'
 )
 
@@ -321,6 +330,7 @@ option(
 option(
   'egl',
   type : 'feature',
+  deprecated: {'true': 'enabled', 'false': 'disabled'},
   description : 'Build support for EGL platform'
 )
 
@@ -335,6 +345,7 @@ option(
   'microsoft-clc',
   type : 'feature',
   value : 'auto',
+  deprecated: {'true': 'enabled', 'false': 'disabled'},
   description : 'Build support for the Microsoft CLC to DXIL compiler'
 )
 
@@ -362,12 +373,14 @@ option(
 option(
   'llvm',
   type : 'feature',
+  deprecated: {'true': 'enabled', 'false': 'disabled'},
   description : 'Build with LLVM support.'
 )
 
 option(
   'shared-llvm',
   type : 'feature',
+  deprecated: {'true': 'enabled', 'false': 'disabled'},
   description : 'Whether to link LLVM shared or statically.'
 )
 
@@ -382,18 +395,21 @@ option(
 option(
   'valgrind',
   type : 'feature',
+  deprecated: {'true': 'enabled', 'false': 'disabled'},
   description : 'Build with valgrind support'
 )
 
 option(
   'libunwind',
   type : 'feature',
+  deprecated: {'true': 'enabled', 'false': 'disabled'},
   description : 'Use libunwind for stack-traces'
 )
 
 option(
   'lmsensors',
   type : 'feature',
+  deprecated: {'true': 'enabled', 'false': 'disabled'},
   description : 'Enable HUD lmsensors support.'
 )
 
@@ -469,12 +485,14 @@ option(
 option(
   'power8',
   type : 'feature',
+  deprecated: {'true': 'enabled', 'false': 'disabled'},
   description : 'Enable power8 optimizations.',
 )
 
 option(
   'xlib-lease',
   type : 'feature',
+  deprecated: {'true': 'enabled', 'false': 'disabled'},
   description : 'Enable VK_EXT_acquire_xlib_display.'
 )
 
@@ -510,6 +528,7 @@ option(
 option(
    'allow-kcmp',
    type : 'feature',
+  deprecated: {'true': 'enabled', 'false': 'disabled'},
    description : 'Allow using KCMP_FILE to compare file descriptions. ' +
                  'auto = allowed everywhere except on Android'
 )
@@ -517,12 +536,14 @@ option(
 option(
   'zstd',
   type : 'feature',
+  deprecated: {'true': 'enabled', 'false': 'disabled'},
   description : 'Use ZSTD instead of ZLIB in some cases.'
 )
 
 option(
    'zlib',
    type : 'feature',
+   deprecated: {'true': 'enabled', 'false': 'disabled'},
    value : 'enabled',
    description : 'Use ZLIB to build driver. Default: enabled'
 )
@@ -579,6 +600,7 @@ option(
 option(
   'intel-clc',
   type : 'feature',
+  deprecated: {'true': 'enabled', 'false': 'disabled'},
   value : 'disabled',
   description : 'Build the intel-clc compiler (enables Vulkan Intel ' +
                 'Ray Tracing on supported hardware).'
@@ -602,6 +624,7 @@ option(
   'gallium-d3d12-video',
   type : 'feature',
   value : 'auto',
+  deprecated: {'true': 'enabled', 'false': 'disabled'},
   description : 'build gallium d3d12 with video support.',
 )
 
@@ -626,6 +649,7 @@ option(
   'xmlconfig',
   type : 'feature',
   value : 'auto',
+  deprecated: {'true': 'enabled', 'false': 'disabled'},
   description : 'Build custom xmlconfig (driconf) support. If disabled, ' +
                 'the default driconf file is hardcoded into Mesa. ' +
                 'Requires expat.'

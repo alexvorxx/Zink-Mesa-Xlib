@@ -96,7 +96,7 @@ struct ntv_context {
          primitive_id_var, invocation_id_var, // geometry
          sample_mask_type, sample_id_var, sample_pos_var, sample_mask_in_var,
          tess_patch_vertices_in, tess_coord_var, // tess
-         push_const_var,
+         push_const_var, point_coord_var,
          workgroup_id_var, num_workgroups_var,
          local_invocation_id_var, global_invocation_id_var,
          local_invocation_index_var, helper_invocation_var,
@@ -3281,6 +3281,11 @@ emit_intrinsic(struct ntv_context *ctx, nir_intrinsic_instr *intr)
 
    case nir_intrinsic_load_sample_id:
       emit_load_uint_input(ctx, intr, &ctx->sample_id_var, "gl_SampleId", SpvBuiltInSampleId);
+      break;
+
+   case nir_intrinsic_load_point_coord_maybe_flipped:
+   case nir_intrinsic_load_point_coord:
+      emit_load_vec_input(ctx, intr, &ctx->point_coord_var, "gl_PointCoord", SpvBuiltInPointCoord, nir_type_float);
       break;
 
    case nir_intrinsic_load_sample_pos:

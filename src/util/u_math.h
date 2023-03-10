@@ -697,9 +697,9 @@ align(int value, int alignment)
 }
 
 static inline uint64_t
-align64(uint64_t value, unsigned alignment)
+align64(uint64_t value, uint64_t alignment)
 {
-   return (value + alignment - 1) & ~((uint64_t)alignment - 1);
+   return (value + alignment - 1) & ~(alignment - 1);
 }
 
 /**

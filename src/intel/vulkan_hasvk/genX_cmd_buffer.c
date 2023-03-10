@@ -1727,11 +1727,6 @@ genX(emit_apply_pipe_flushes)(struct anv_batch *batch,
          pipe.RenderTargetCacheFlushEnable =
             bits & ANV_PIPE_RENDER_TARGET_CACHE_FLUSH_BIT;
 
-         /* Wa_1409600907: "PIPE_CONTROL with Depth Stall Enable bit must
-          * be set with any PIPE_CONTROL with Depth Flush Enable bit set.
-          */
-         pipe.DepthStallEnable = bits & ANV_PIPE_DEPTH_STALL_BIT;
-
          pipe.CommandStreamerStallEnable = bits & ANV_PIPE_CS_STALL_BIT;
 #if GFX_VER == 8
          /* From Broadwell PRM, volume 2a:

@@ -246,7 +246,10 @@ static bool lower_abi_instr(nir_builder *b, nir_instr *instr, struct lower_abi_s
          unreachable("no nir_load_lshs_vertex_stride_amd");
       break;
    case nir_intrinsic_load_esgs_vertex_stride_amd:
-      replacement = nir_imm_int(b, 1);
+      assert(sel->screen->info.gfx_level >= GFX9);
+      replacement = shader->is_monolithic ?
+         nir_imm_int(b, key->ge.part.gs.es->info.esgs_vertex_stride / 4) :
+         GET_FIELD_NIR(GS_STATE_ESGS_VERTEX_STRIDE);
       break;
    case nir_intrinsic_load_tcs_num_patches_amd: {
       nir_ssa_def *tmp = ac_nir_unpack_arg(b, &args->ac, args->tcs_offchip_layout, 0, 6);

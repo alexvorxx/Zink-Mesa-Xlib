@@ -74,6 +74,7 @@ static const driOptionDescription anv_dri_options[] = {
       DRI_CONF_ANV_SAMPLE_MASK_OUT_OPENGL_BEHAVIOUR(false)
       DRI_CONF_ANV_FP64_WORKAROUND_ENABLED(false)
       DRI_CONF_ANV_GENERATED_INDIRECT_THRESHOLD(4)
+      DRI_CONF_NO_16BIT(false)
    DRI_CONF_SECTION_END
 
    DRI_CONF_SECTION_DEBUG
@@ -193,7 +194,7 @@ get_device_extensions(const struct anv_physical_device *device,
 
    *ext = (struct vk_device_extension_table) {
       .KHR_8bit_storage                      = true,
-      .KHR_16bit_storage                     = true,
+      .KHR_16bit_storage                     = !device->instance->no_16bit,
       .KHR_acceleration_structure            = rt_enabled,
       .KHR_bind_memory2                      = true,
       .KHR_buffer_device_address             = true,
@@ -255,7 +256,7 @@ get_device_extensions(const struct anv_physical_device *device,
       .KHR_shader_atomic_int64               = true,
       .KHR_shader_clock                      = true,
       .KHR_shader_draw_parameters            = true,
-      .KHR_shader_float16_int8               = true,
+      .KHR_shader_float16_int8               = !device->instance->no_16bit,
       .KHR_shader_float_controls             = true,
       .KHR_shader_integer_dot_product        = true,
       .KHR_shader_non_semantic_info          = true,
@@ -326,6 +327,7 @@ get_device_extensions(const struct anv_physical_device *device,
       .EXT_physical_device_drm               = true,
       .EXT_pipeline_creation_cache_control   = true,
       .EXT_pipeline_creation_feedback        = true,
+      .EXT_pipeline_library_group_handles    = true,
       .EXT_post_depth_coverage               = true,
       .EXT_primitives_generated_query        = true,
       .EXT_primitive_topology_list_restart   = true,
@@ -1086,6 +1088,9 @@ anv_init_dri_options(struct anv_instance *instance)
             driQueryOptionb(&instance->dri_options, "anv_sample_mask_out_opengl_behaviour");
     instance->lower_depth_range_rate =
             driQueryOptionf(&instance->dri_options, "lower_depth_range_rate");
+    instance->no_16bit =
+            driQueryOptionb(&instance->dri_options, "no_16bit");
+
     instance->fp64_workaround_enabled =
             driQueryOptionb(&instance->dri_options, "fp64_workaround_enabled");
     instance->generated_indirect_threshold =
@@ -1234,8 +1239,8 @@ anv_get_physical_device_features_1_1(struct anv_physical_device *pdevice,
 {
    assert(f->sType == VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES);
 
-   f->storageBuffer16BitAccess            = true;
-   f->uniformAndStorageBuffer16BitAccess  = true;
+   f->storageBuffer16BitAccess            = !pdevice->instance->no_16bit;
+   f->uniformAndStorageBuffer16BitAccess  = !pdevice->instance->no_16bit;
    f->storagePushConstant16               = true;
    f->storageInputOutput16                = false;
    f->multiview                           = true;
@@ -1261,8 +1266,8 @@ anv_get_physical_device_features_1_2(struct anv_physical_device *pdevice,
    f->storagePushConstant8                = true;
    f->shaderBufferInt64Atomics            = true;
    f->shaderSharedInt64Atomics            = false;
-   f->shaderFloat16                       = true;
-   f->shaderInt8                          = true;
+   f->shaderFloat16                       = !pdevice->instance->no_16bit;
+   f->shaderInt8                          = !pdevice->instance->no_16bit;
 
    f->descriptorIndexing                                 = true;
    f->shaderInputAttachmentArrayDynamicIndexing          = false;
@@ -1570,6 +1575,13 @@ void anv_GetPhysicalDeviceFeatures2(
          features->primitivesGeneratedQuery = true;
          features->primitivesGeneratedQueryWithRasterizerDiscard = false;
          features->primitivesGeneratedQueryWithNonZeroStreams = false;
+         break;
+      }
+
+      case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PIPELINE_LIBRARY_GROUP_HANDLES_FEATURES_EXT: {
+         VkPhysicalDevicePipelineLibraryGroupHandlesFeaturesEXT *features =
+            (VkPhysicalDevicePipelineLibraryGroupHandlesFeaturesEXT *)ext;
+         features->pipelineLibraryGroupHandles = true;
          break;
       }
 

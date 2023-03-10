@@ -302,6 +302,10 @@
    DRI_CONF_OPT_B(limit_trig_input_range, def, \
                   "Limit trig input range to [-2p : 2p] to improve sin/cos calculation precision on Intel")
 
+#define DRI_CONF_NO_16BIT(def) \
+   DRI_CONF_OPT_B(no_16bit, def, \
+                  "Disable 16-bit instructions")
+
 /**
  * \brief Image quality-related options
  */

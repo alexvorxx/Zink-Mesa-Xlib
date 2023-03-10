@@ -127,6 +127,12 @@ extern "C"
 #define RADV_USE_WSI_PLATFORM
 #endif
 
+#ifdef ANDROID
+#define RADV_API_VERSION VK_MAKE_VERSION(1, 1, VK_HEADER_VERSION)
+#else
+#define RADV_API_VERSION VK_MAKE_VERSION(1, 3, VK_HEADER_VERSION)
+#endif
+
 #ifdef _WIN32
 #define RADV_SUPPORT_CALIBRATED_TIMESTAMPS 0
 #else
@@ -137,6 +143,11 @@ extern "C"
 #define radv_printflike(a, b)
 #else
 #define radv_printflike(a, b) __attribute__((__format__(__printf__, a, b)))
+#endif
+
+/* The "RAW" clocks on Linux are called "FAST" on FreeBSD */
+#if !defined(CLOCK_MONOTONIC_RAW) && defined(CLOCK_MONOTONIC_FAST)
+#define CLOCK_MONOTONIC_RAW CLOCK_MONOTONIC_FAST
 #endif
 
 static inline uint32_t
@@ -364,6 +375,15 @@ struct radv_physical_device {
 };
 
 uint32_t radv_find_memory_index(struct radv_physical_device *pdevice, VkMemoryPropertyFlags flags);
+
+VkResult create_null_physical_device(struct vk_instance *vk_instance);
+
+VkResult create_drm_physical_device(struct vk_instance *vk_instance, struct _drmDevice *device,
+                                    struct vk_physical_device **out);
+
+void radv_physical_device_destroy(struct vk_physical_device *vk_device);
+
+bool radv_thread_trace_enabled(void);
 
 struct radv_instance {
    struct vk_instance vk;
@@ -820,6 +840,15 @@ struct radv_queue {
    struct radv_queue_state *ace_internal_state;
    struct radeon_winsys_bo *gang_sem_bo;
 };
+
+int radv_queue_init(struct radv_device *device, struct radv_queue *queue, int idx,
+                    const VkDeviceQueueCreateInfo *create_info,
+                    const VkDeviceQueueGlobalPriorityCreateInfoKHR *global_priority);
+
+void radv_queue_finish(struct radv_queue *queue);
+
+enum radeon_ctx_priority
+radv_get_queue_global_priority(const VkDeviceQueueGlobalPriorityCreateInfoKHR *pObj);
 
 #define RADV_BORDER_COLOR_COUNT       4096
 #define RADV_BORDER_COLOR_BUFFER_SIZE (sizeof(VkClearColorValue) * RADV_BORDER_COLOR_COUNT)

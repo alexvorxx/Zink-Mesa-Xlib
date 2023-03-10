@@ -470,12 +470,13 @@ zink_draw(struct pipe_context *pctx,
 
    bool rast_prim_changed = false;
    bool lines_changed = false;
+   bool points_changed = false;
    bool rast_state_changed = ctx->rast_state_changed;
    if (mode_changed || ctx->gfx_pipeline_state.modules_changed ||
        rast_state_changed) {
       enum pipe_prim_type rast_prim = zink_rast_prim(ctx, dinfo);
       if (rast_prim != ctx->gfx_pipeline_state.rast_prim) {
-         bool points_changed =
+         points_changed =
             (ctx->gfx_pipeline_state.rast_prim == PIPE_PRIM_POINTS) !=
             (rast_prim == PIPE_PRIM_POINTS);
 
@@ -501,7 +502,7 @@ zink_draw(struct pipe_context *pctx,
    ctx->gfx_pipeline_state.gfx_prim_mode = mode;
 
    if (!screen->optimal_keys &&
-       (lines_changed || rast_state_changed || ctx->gfx_pipeline_state.modules_changed))
+       (lines_changed || points_changed || rast_state_changed || ctx->gfx_pipeline_state.modules_changed))
       zink_set_primitive_emulation_keys(ctx);
 
    if (index_size) {
@@ -892,7 +893,7 @@ zink_draw(struct pipe_context *pctx,
    }
 
    if (unlikely(zink_tracing && ctx->blitting))
-      zink_cmd_debug_marker_end(ctx, marker);
+      zink_cmd_debug_marker_end(ctx, batch->state->cmdbuf, marker);
 
    if (have_streamout) {
       for (unsigned i = 0; i < ctx->num_so_targets; i++) {

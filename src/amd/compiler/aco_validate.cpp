@@ -232,11 +232,10 @@ validate_ir(Program* program)
                if (i >= instr->operands.size() ||
                    (instr->operands[i].hasRegClass() &&
                     instr->operands[i].regClass().is_subdword() && !instr->operands[i].isFixed()))
-                  check((vop3.opsel & (1 << i)) == 0, "Unexpected opsel for operand", instr.get());
+                  check(!vop3.opsel[i], "Unexpected opsel for operand", instr.get());
             }
             if (instr->definitions[0].regClass().is_subdword() && !instr->definitions[0].isFixed())
-               check((vop3.opsel & (1 << 3)) == 0, "Unexpected opsel for sub-dword definition",
-                     instr.get());
+               check(!vop3.opsel[3], "Unexpected opsel for sub-dword definition", instr.get());
          } else if (instr->opcode == aco_opcode::v_fma_mixlo_f16 ||
                     instr->opcode == aco_opcode::v_fma_mixhi_f16 ||
                     instr->opcode == aco_opcode::v_fma_mix_f32) {
@@ -248,7 +247,7 @@ validate_ir(Program* program)
             for (unsigned i = 0; i < instr->operands.size(); i++) {
                if (instr->operands[i].hasRegClass() &&
                    instr->operands[i].regClass().is_subdword() && !instr->operands[i].isFixed())
-                  check((vop3p.opsel_lo & (1 << i)) == 0 && (vop3p.opsel_hi & (1 << i)) == 0,
+                  check(!vop3p.opsel_lo[i] && !vop3p.opsel_hi[i],
                         "Unexpected opsel for subdword operand", instr.get());
             }
             check(instr->definitions[0].regClass() == v1, "VOP3P must have v1 definition",
@@ -866,8 +865,8 @@ validate_subdword_operand(amd_gfx_level gfx_level, const aco_ptr<Instruction>& i
       bool fma_mix = instr->opcode == aco_opcode::v_fma_mixlo_f16 ||
                      instr->opcode == aco_opcode::v_fma_mixhi_f16 ||
                      instr->opcode == aco_opcode::v_fma_mix_f32;
-      return ((instr->valu().opsel_lo >> index) & 1) == (byte >> 1) &&
-             ((instr->valu().opsel_hi >> index) & 1) == (fma_mix || (byte >> 1));
+      return instr->valu().opsel_lo[index] == (byte >> 1) &&
+             instr->valu().opsel_hi[index] == (fma_mix || (byte >> 1));
    }
    if (byte == 2 && can_use_opsel(gfx_level, instr->opcode, index))
       return true;

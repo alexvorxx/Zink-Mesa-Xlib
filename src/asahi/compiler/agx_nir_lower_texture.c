@@ -38,15 +38,16 @@ texture_descriptor_ptr(nir_builder *b, nir_tex_instr *tex)
    if (handle_idx >= 0)
       return tex->src[handle_idx].src.ssa;
 
-   /* For non-bindless, compute from the texture index, offset, and table */
-   unsigned base_B = tex->texture_index * AGX_TEXTURE_DESC_STRIDE;
-   nir_ssa_def *offs = nir_imm_int(b, base_B);
+   /* For non-bindless, compute from the texture index */
+   nir_ssa_def *offs;
 
    int offs_idx = nir_tex_instr_src_index(tex, nir_tex_src_texture_offset);
    if (offs_idx >= 0) {
       nir_ssa_def *offset_src = tex->src[offs_idx].src.ssa;
-      offs = nir_iadd(b, offs,
-                      nir_imul_imm(b, offset_src, AGX_TEXTURE_DESC_STRIDE));
+      offs = nir_imul_imm(b, offset_src, AGX_TEXTURE_DESC_STRIDE);
+   } else {
+      unsigned base_B = tex->texture_index * AGX_TEXTURE_DESC_STRIDE;
+      offs = nir_imm_int(b, base_B);
    }
 
    return nir_iadd(b, nir_load_texture_base_agx(b), nir_u2u64(b, offs));
@@ -322,6 +323,7 @@ agx_nir_lower_texture(nir_shader *s, bool support_lod_bias)
       .lower_txp = ~0,
       .lower_invalid_implicit_lod = true,
       .lower_tg4_offsets = true,
+      .lower_index_to_offset = true,
 
       /* XXX: Metal seems to handle just like 3D txd, so why doesn't it work?
        * TODO: Stop using this lowering
@@ -333,6 +335,8 @@ agx_nir_lower_texture(nir_shader *s, bool support_lod_bias)
       [nir_tex_src_lod] = {true, 16},
       [nir_tex_src_bias] = {true, 16},
       [nir_tex_src_ms_index] = {true, 16},
+      [nir_tex_src_texture_offset] = {true, 16},
+      [nir_tex_src_sampler_offset] = {true, 16},
    };
 
    NIR_PASS(progress, s, nir_lower_tex, &lower_tex_options);

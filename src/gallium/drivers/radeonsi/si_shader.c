@@ -206,7 +206,11 @@ unsigned si_get_max_workgroup_size(const struct si_shader *shader)
    switch (shader->selector->stage) {
    case MESA_SHADER_VERTEX:
    case MESA_SHADER_TESS_EVAL:
-      return shader->key.ge.as_ngg ? shader->selector->screen->ngg_subgroup_size : 0;
+      /* Use the largest workgroup size for streamout */
+      if (shader->key.ge.as_ngg)
+         return si_shader_uses_streamout(shader) ? 256 : 128;
+      else
+         return 0;
 
    case MESA_SHADER_TESS_CTRL:
       /* Return this so that LLVM doesn't remove s_barrier
@@ -214,7 +218,7 @@ unsigned si_get_max_workgroup_size(const struct si_shader *shader)
       return shader->selector->screen->info.gfx_level >= GFX7 ? 128 : 0;
 
    case MESA_SHADER_GEOMETRY:
-      /* ngg_subgroup_size is only the input size. GS can always generate up to 256 vertices. */
+      /* GS can always generate up to 256 vertices. */
       return shader->selector->screen->info.gfx_level >= GFX9 ? 256 : 0;
 
    case MESA_SHADER_COMPUTE:

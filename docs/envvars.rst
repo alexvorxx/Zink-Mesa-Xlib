@@ -500,6 +500,10 @@ Intel driver environment variables
       emit messages about performance issues
    ``perfmon``
       emit messages about :ext:`GL_AMD_performance_monitor`
+   ``perf-symbol-names``
+      use performance counter symbols instead of the counter name
+      (counter symbols are like variable names, it's sometimes easier
+      to work with when you have lots of metrics to collect)
    ``reemit``
       mark all state dirty on each draw call
    ``rt``
@@ -523,6 +527,8 @@ Intel driver environment variables
    ``sync``
       after sending each batch, wait on the CPU for that batch to
       finish rendering
+   ``swsb-stall``
+      Insert sync NOP after each instruction. This is only valid for Gfx12+.
    ``task``
       dump shader assembly for task shaders
    ``tcs``
@@ -1019,7 +1025,7 @@ Shared Vulkan driver environment variables
    after n frames. Currently, only RADV implements this.
 
 .. envvar:: MESA_VK_MEMORY_TRACE_TRIGGER
-   
+
    enable trigger file-based memory tracing. (e.g.
    ``export MESA_VK_MEMORY_TRACE_TRIGGER=/tmp/memory_trigger`` and then
    ``touch /tmp/memory_trigger`` to capture a memory trace).

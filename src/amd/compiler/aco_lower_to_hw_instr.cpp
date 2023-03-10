@@ -2249,8 +2249,9 @@ lower_to_hw_instr(Program* program)
                   if (program->gfx_level >= GFX11)
                      target =
                         program->has_color_exports ? V_008DFC_SQ_EXP_MRT : V_008DFC_SQ_EXP_MRTZ;
-                  bld.exp(aco_opcode::exp, Operand(v1), Operand(v1), Operand(v1), Operand(v1), 0,
-                          target, false, true, true);
+                  if (program->stage == fragment_fs)
+                     bld.exp(aco_opcode::exp, Operand(v1), Operand(v1), Operand(v1), Operand(v1),
+                             0, target, false, true, true);
                   if (should_dealloc_vgprs)
                      bld.sopp(aco_opcode::s_sendmsg, -1, sendmsg_dealloc_vgprs);
                   bld.sopp(aco_opcode::s_endpgm);

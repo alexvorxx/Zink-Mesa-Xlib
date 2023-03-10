@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 #
-# Copyright (C) 2020 - 2022 Collabora Limited
+# Copyright (C) 2020 - 2023 Collabora Limited
 # Authors:
 #     Gustavo Padovan <gustavo.padovan@collabora.com>
 #     Guilherme Gallo <guilherme.gallo@collabora.com>
@@ -61,6 +61,11 @@ NUMBER_OF_RETRIES_TIMEOUT_DETECTION = int(getenv("LAVA_NUMBER_OF_RETRIES_TIMEOUT
 # How many attempts should be made when a timeout happen during LAVA device boot.
 NUMBER_OF_ATTEMPTS_LAVA_BOOT = int(getenv("LAVA_NUMBER_OF_ATTEMPTS_LAVA_BOOT", 3))
 
+# Supports any integers in [0, 100].
+# The scheduler considers the job priority when ordering the queue
+# to consider which job should run next.
+JOB_PRIORITY = int(getenv("LAVA_JOB_PRIORITY", 75))
+
 
 def generate_lava_yaml_payload(args) -> dict[str, Any]:
     # General metadata and permissions, plus also inexplicably kernel arguments
@@ -68,7 +73,7 @@ def generate_lava_yaml_payload(args) -> dict[str, Any]:
         'job_name': 'mesa: {}'.format(args.pipeline_info),
         'device_type': args.device_type,
         'visibility': { 'group': [ args.visibility_group ] },
-        'priority': 75,
+        'priority': JOB_PRIORITY,
         'context': {
             'extra_nfsroot_args': ' init=/init rootwait usbcore.quirks=0bda:8153:k'
         },

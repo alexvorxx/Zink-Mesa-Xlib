@@ -375,7 +375,7 @@ lower_rt_instructions(nir_shader *shader, struct rt_variables *vars, unsigned ca
             }
             case nir_intrinsic_rt_return_amd: {
                if (shader->info.stage == MESA_SHADER_RAYGEN) {
-                  nir_store_var(&b_shader, vars->idx, nir_imm_int(&b_shader, 0), 1);
+                  nir_terminate(&b_shader);
                   break;
                }
                insert_rt_return(&b_shader, vars);
@@ -815,7 +815,7 @@ insert_rt_case(nir_builder *b, nir_shader *shader, struct rt_variables *vars, ni
    if (shader->info.stage == MESA_SHADER_CLOSEST_HIT || call_idx == 1)
       NIR_PASS_V(shader, lower_hit_attribs, NULL, workgroup_size);
 
-   vars->stack_size = MAX2(vars->stack_size, shader->scratch_size);
+   src_vars.stack_size = MAX2(src_vars.stack_size, shader->scratch_size);
 
    nir_push_if(b, nir_ieq_imm(b, idx, call_idx));
    nir_inline_function_impl(b, nir_shader_get_entrypoint(shader), NULL, var_remap);
@@ -1588,11 +1588,6 @@ create_rt_shader(struct radv_device *device, const VkRayTracingPipelineCreateInf
    nir_store_var(&b, vars.launch_size, nir_vec(&b, xyz, 3), 0x7);
 
    nir_loop *loop = nir_push_loop(&b);
-
-   nir_push_if(&b, nir_ieq_imm(&b, nir_load_var(&b, vars.idx), 0));
-   nir_jump(&b, nir_jump_break);
-   nir_pop_if(&b, NULL);
-
    nir_ssa_def *idx = nir_load_var(&b, vars.idx);
 
    /* Insert traversal shader */
