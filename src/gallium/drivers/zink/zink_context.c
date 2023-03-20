@@ -60,6 +60,8 @@
 #define XXH_INLINE_ALL
 #include "util/xxhash.h"
 
+struct pipe_context* zink_xlib_context;
+
 static void
 update_tc_info(struct zink_context *ctx)
 {
@@ -5575,6 +5577,7 @@ zink_context_create(struct pipe_screen *pscreen, void *priv, unsigned flags)
    }
 
    if (!(flags & PIPE_CONTEXT_PREFER_THREADED) || flags & PIPE_CONTEXT_COMPUTE_ONLY) {
+      zink_xlib_context = &ctx->base;
       return &ctx->base;
    }
 
@@ -5595,6 +5598,8 @@ zink_context_create(struct pipe_screen *pscreen, void *priv, unsigned flags)
       threaded_context_init_bytes_mapped_limit(tc, 4);
       ctx->base.set_context_param = zink_set_context_param;
    }
+
+   zink_xlib_context = (struct pipe_context*)tc;
 
    return (struct pipe_context*)tc;
 
