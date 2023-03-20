@@ -150,7 +150,8 @@ vl_swrast_texture_from_drawable(struct vl_screen *vscreen, void *drawable)
 
    XWindowAttributes x11_window_attrs = {};
    XGetWindowAttributes(scrn->display, x11_window, &x11_window_attrs);
-   enum pipe_format x11_window_format = vl_dri2_format_for_depth(&scrn->base, x11_window_attrs.depth);
+   //enum pipe_format x11_window_format = vl_dri2_format_for_depth(&scrn->base, x11_window_attrs.depth);
+   enum pipe_format x11_window_format = PIPE_FORMAT_B8G8R8X8_UNORM;
 
    bool needs_new_back_buffer_allocation = true;
    if (scrn->drawable_texture) {
