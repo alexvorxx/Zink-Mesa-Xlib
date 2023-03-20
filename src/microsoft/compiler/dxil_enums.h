@@ -354,6 +354,19 @@ enum dxil_quad_op_kind {
    QUAD_READ_ACROSS_DIAGONAL = 2,
 };
 
+enum dxil_wave_op_kind {
+   DXIL_WAVE_OP_SUM = 0,
+   DXIL_WAVE_OP_PRODUCT = 1,
+   DXIL_WAVE_OP_MIN = 2,
+   DXIL_WAVE_OP_MAX = 3,
+};
+
+enum dxil_wave_bit_op_kind {
+   DXIL_WAVE_BIT_OP_AND = 0,
+   DXIL_WAVE_BIT_OP_OR = 1,
+   DXIL_WAVE_BIT_OP_XOR = 2,
+};
+
 #ifdef __cplusplus
 extern "C" {
 #endif

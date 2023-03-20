@@ -283,7 +283,7 @@ zink_create_surface(struct pipe_context *pctx,
          format is a non-compressed format, the levelCount and layerCount members of
          subresourceRange must both be 1
        */
-      if (needs_mutable && util_format_is_compressed(pres->format) && templ->u.tex.first_layer != templ->u.tex.last_layer)
+      if (util_format_is_compressed(pres->format) && templ->u.tex.first_layer != templ->u.tex.last_layer)
          return NULL;
    }
 

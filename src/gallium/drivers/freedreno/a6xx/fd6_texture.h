@@ -36,6 +36,9 @@
 #include "fd6_context.h"
 #include "fdl/fd6_format_table.h"
 
+
+BEGINC;
+
 /* Border color layout is diff from a4xx/a5xx.. if it turns out to be
  * the same as a6xx then move this somewhere common ;-)
  *
@@ -126,5 +129,7 @@ struct fd6_texture_state {
 
 struct fd6_texture_state *
 fd6_texture_state(struct fd_context *ctx, enum pipe_shader_type type) assert_dt;
+
+ENDC;
 
 #endif /* FD6_TEXTURE_H_ */

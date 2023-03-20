@@ -28,7 +28,7 @@
 #include "agx_device.h"
 
 /* Transient command stream pooling: command stream uploads try to simply copy
- * into whereever we left off. If there isn't space, we allocate a new entry
+ * into wherever we left off. If there isn't space, we allocate a new entry
  * into the pool and copy there */
 
 #define POOL_SLAB_SIZE (256 * 1024)

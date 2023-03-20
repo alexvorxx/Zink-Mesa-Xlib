@@ -59,16 +59,18 @@
 #include <llvm/Analysis/TargetLibraryInfo.h>
 #include <llvm/ExecutionEngine/SectionMemoryManager.h>
 #include <llvm/Support/CommandLine.h>
-#include <llvm/Support/Host.h>
 #include <llvm/Support/PrettyStackTrace.h>
 #include <llvm/ExecutionEngine/ObjectCache.h>
 #include <llvm/Support/TargetSelect.h>
 #if LLVM_VERSION_MAJOR >= 15
 #include <llvm/Support/MemoryBuffer.h>
 #endif
+
 #if LLVM_VERSION_MAJOR >= 17
+#include <llvm/TargetParser/Host.h>
 #include <llvm/TargetParser/Triple.h>
 #else
+#include <llvm/Support/Host.h>
 #include <llvm/ADT/Triple.h>
 #endif
 

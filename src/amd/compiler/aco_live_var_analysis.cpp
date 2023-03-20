@@ -309,9 +309,12 @@ calc_waves_per_workgroup(Program* program)
 uint16_t
 get_extra_sgprs(Program* program)
 {
-   /* We don't use this register on GFX6-8 and it's removed on GFX10+. */
+   /* We don't use this register on GFX6-8 and it's removed on GFX10+. RT uses scratch but we don't
+    * yet know how much.
+    */
    bool needs_flat_scr =
-      (program->config->scratch_bytes_per_wave || program->rt_stack) && program->gfx_level == GFX9;
+      (program->config->scratch_bytes_per_wave || program->stage == raytracing_cs) &&
+      program->gfx_level == GFX9;
 
    if (program->gfx_level >= GFX10) {
       assert(!program->dev.xnack_enabled);

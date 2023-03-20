@@ -297,6 +297,8 @@ iris-cml-traces:
     GIT_STRATEGY: none
     HWCI_FREQ_MAX: "true"
     LAVA_TAGS: "cbg-0"
+    # Ensure that we are using the release build artifact
+    MINIO_ARTIFACT_NAME: mesa-amd64-release
 
 iris-apl-traces-performance:
   extends:

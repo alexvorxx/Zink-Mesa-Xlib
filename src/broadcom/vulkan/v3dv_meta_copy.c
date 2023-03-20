@@ -813,6 +813,11 @@ copy_image_tfu(struct v3dv_cmd_buffer *cmd_buffer,
                struct v3dv_image *src,
                const VkImageCopy2 *region)
 {
+   if (V3D_DBG(DISABLE_TFU)) {
+      perf_debug("Copy images: TFU disabled, fallbacks could be slower.\n");
+      return false;
+   }
+
    /* Destination can't be raster format */
    if (dst->vk.tiling == VK_IMAGE_TILING_LINEAR)
       return false;
@@ -1494,6 +1499,11 @@ copy_buffer_to_image_tfu(struct v3dv_cmd_buffer *cmd_buffer,
                          struct v3dv_buffer *buffer,
                          const VkBufferImageCopy2 *region)
 {
+   if (V3D_DBG(DISABLE_TFU)) {
+      perf_debug("Copy buffer to image: TFU disabled, fallbacks could be slower.\n");
+      return false;
+   }
+
    assert(image->vk.samples == VK_SAMPLE_COUNT_1_BIT);
 
    /* Destination can't be raster format */
@@ -3040,6 +3050,11 @@ blit_tfu(struct v3dv_cmd_buffer *cmd_buffer,
          struct v3dv_image *src,
          const VkImageBlit2 *region)
 {
+   if (V3D_DBG(DISABLE_TFU)) {
+      perf_debug("Blit: TFU disabled, fallbacks could be slower.");
+      return false;
+   }
+
    assert(dst->vk.samples == VK_SAMPLE_COUNT_1_BIT);
    assert(src->vk.samples == VK_SAMPLE_COUNT_1_BIT);
 

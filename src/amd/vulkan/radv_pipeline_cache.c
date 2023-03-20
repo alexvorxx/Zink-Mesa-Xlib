@@ -31,6 +31,7 @@
 #include "radv_private.h"
 #include "radv_shader.h"
 #include "aco_interface.h"
+#include "vk_pipeline.h"
 
 struct cache_entry {
    union {
@@ -152,26 +153,9 @@ radv_hash_rt_stages(struct mesa_sha1 *ctx, const VkPipelineShaderStageCreateInfo
                     unsigned stage_count)
 {
    for (unsigned i = 0; i < stage_count; ++i) {
-      RADV_FROM_HANDLE(vk_shader_module, module, stages[i].module);
-      const VkSpecializationInfo *spec_info = stages[i].pSpecializationInfo;
-
-      const VkPipelineShaderStageModuleIdentifierCreateInfoEXT *iinfo = vk_find_struct_const(
-         stages[i].pNext, PIPELINE_SHADER_STAGE_MODULE_IDENTIFIER_CREATE_INFO_EXT);
-
-      if (module) {
-         _mesa_sha1_update(ctx, module->sha1, sizeof(module->sha1));
-      } else {
-         assert(iinfo);
-         assert(iinfo->identifierSize <= VK_MAX_SHADER_MODULE_IDENTIFIER_SIZE_EXT);
-         _mesa_sha1_update(ctx, iinfo->pIdentifier, iinfo->identifierSize);
-      }
-
-      _mesa_sha1_update(ctx, stages[i].pName, strlen(stages[i].pName));
-      if (spec_info && spec_info->mapEntryCount) {
-         _mesa_sha1_update(ctx, spec_info->pMapEntries,
-                           spec_info->mapEntryCount * sizeof spec_info->pMapEntries[0]);
-         _mesa_sha1_update(ctx, spec_info->pData, spec_info->dataSize);
-      }
+      unsigned char hash[20];
+      vk_pipeline_hash_shader_stage(&stages[i], NULL, hash);
+      _mesa_sha1_update(ctx, hash, sizeof(hash));
    }
 }
 
@@ -406,8 +390,8 @@ radv_create_shaders_from_pipeline_cache(struct radv_device *device,
    assert(num_rt_groups == entry->num_stack_sizes);
    for (int i = 0; i < num_rt_groups; ++i) {
       memcpy(&rt_groups[i].stack_size, p, sizeof(struct radv_pipeline_shader_stack_size));
+      p += sizeof(struct radv_pipeline_shader_stack_size);
    }
-   p += entry->num_stack_sizes * sizeof(struct radv_pipeline_shader_stack_size);
 
    if (device->instance->debug_flags & RADV_DEBUG_NO_MEMORY_CACHE && cache == device->mem_cache)
       vk_free(&cache->alloc, entry);
@@ -486,7 +470,7 @@ radv_pipeline_cache_insert_shaders(struct radv_device *device, struct radv_pipel
    }
 
    for (int i = 0; i < num_rt_groups; ++i) {
-      memcpy(p, &rt_groups->stack_size, sizeof(struct radv_pipeline_shader_stack_size));
+      memcpy(p, &rt_groups[i].stack_size, sizeof(struct radv_pipeline_shader_stack_size));
       p += sizeof(struct radv_pipeline_shader_stack_size);
    }
    entry->num_stack_sizes = num_rt_groups;

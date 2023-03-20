@@ -5291,13 +5291,13 @@ invalid_enum:
    return;
 }
 
-static struct gl_renderbuffer_attachment *
-get_fb_attachment(struct gl_context *ctx, struct gl_framebuffer *fb,
-                  const GLenum attachment)
+static gl_buffer_index
+get_fb_attachment_index(struct gl_context *ctx, struct gl_framebuffer *fb,
+                        const GLenum attachment)
 {
    switch (attachment) {
    case GL_COLOR:
-      return &fb->Attachment[BUFFER_BACK_LEFT];
+      return BUFFER_BACK_LEFT;
    case GL_COLOR_ATTACHMENT0:
    case GL_COLOR_ATTACHMENT1:
    case GL_COLOR_ATTACHMENT2:
@@ -5316,19 +5316,19 @@ get_fb_attachment(struct gl_context *ctx, struct gl_framebuffer *fb,
    case GL_COLOR_ATTACHMENT15: {
       const unsigned i = attachment - GL_COLOR_ATTACHMENT0;
       if (i >= ctx->Const.MaxColorAttachments)
-         return NULL;
+         return BUFFER_NONE;
       assert(BUFFER_COLOR0 + i < ARRAY_SIZE(fb->Attachment));
-      return &fb->Attachment[BUFFER_COLOR0 + i];
+      return BUFFER_COLOR0 + i;
    }
    case GL_DEPTH:
    case GL_DEPTH_ATTACHMENT:
    case GL_DEPTH_STENCIL_ATTACHMENT:
-      return &fb->Attachment[BUFFER_DEPTH];
+      return BUFFER_DEPTH;
    case GL_STENCIL:
    case GL_STENCIL_ATTACHMENT:
-      return &fb->Attachment[BUFFER_STENCIL];
+      return BUFFER_STENCIL;
    default:
-      return NULL;
+      return BUFFER_NONE;
    }
 }
 
@@ -5352,52 +5352,66 @@ do_discard_framebuffer(struct gl_context *ctx, struct gl_framebuffer *fb,
 }
 
 static void
-discard_framebuffer(struct gl_context *ctx, struct gl_framebuffer *fb,
-                    GLsizei numAttachments, const GLenum *attachments)
+discard_attachments(struct gl_context *ctx, struct gl_framebuffer *fb,
+                    uint32_t mask)
 {
-   GLenum depth_att, stencil_att;
+   const uint32_t zsmask = BITFIELD_BIT(BUFFER_DEPTH) | BITFIELD_BIT(BUFFER_STENCIL);
 
-   if (_mesa_is_user_fbo(fb)) {
-      depth_att = GL_DEPTH_ATTACHMENT;
-      stencil_att = GL_STENCIL_ATTACHMENT;
-   } else {
-      depth_att = GL_DEPTH;
-      stencil_att = GL_STENCIL;
+   /* If we're asked to invalidate just depth or just stencil, but the
+    * attachment is packed depth/stencil, then we can only use
+    * DiscardFramebuffer if the attachments list includes both depth
+    * and stencil and they both point at the same renderbuffer.
+    *
+    * Note EXT_discard_framebuffer says that discarding only one component
+    * of a packed z/s implicitly discards both.  But glInvalidateFramebuffer
+    * does not appear to specify the behavior.  So this may be overly
+    * conservative.
+    */
+   if ((mask & zsmask) && ((mask & zsmask) != zsmask) &&
+       (fb->Attachment[BUFFER_DEPTH].Renderbuffer ==
+             fb->Attachment[BUFFER_STENCIL].Renderbuffer)) {
+      mask &= ~zsmask;
    }
 
-   for (int i = 0; i < numAttachments; i++) {
-      struct gl_renderbuffer_attachment *att =
-            get_fb_attachment(ctx, fb, attachments[i]);
-
-      if (!att)
-         continue;
-
-      /* If we're asked to invalidate just depth or just stencil, but the
-       * attachment is packed depth/stencil, then we can only use
-       * DiscardFramebuffer if the attachments list includes both depth
-       * and stencil and they both point at the same renderbuffer.
-       */
-      if ((attachments[i] == depth_att ||
-           attachments[i] == stencil_att) &&
-          (!att->Renderbuffer ||
-           att->Renderbuffer->_BaseFormat == GL_DEPTH_STENCIL)) {
-         GLenum other_format = (attachments[i] == depth_att ?
-                                stencil_att : depth_att);
-         bool has_both = false;
-         for (int j = 0; j < numAttachments; j++) {
-            if (attachments[j] == other_format) {
-               has_both = true;
-               break;
-            }
-         }
-
-         if (fb->Attachment[BUFFER_DEPTH].Renderbuffer !=
-             fb->Attachment[BUFFER_STENCIL].Renderbuffer || !has_both)
-            continue;
-      }
+   u_foreach_bit (b, mask) {
+      struct gl_renderbuffer_attachment *att = &fb->Attachment[b];
 
       do_discard_framebuffer(ctx, fb, att);
    }
+}
+
+static void
+discard_framebuffer(struct gl_context *ctx, struct gl_framebuffer *fb,
+                    GLsizei numAttachments, const GLenum *attachments)
+{
+   uint32_t mask = 0;
+
+   if (unlikely(ctx->st_opts->ignore_discard_framebuffer))
+      return;
+
+   for (int i = 0; i < numAttachments; i++) {
+      GLenum att = attachments[i];
+
+      /* A couple enums need special handling, because gl.. */
+      if (!_mesa_is_user_fbo(fb)) {
+         if (att == GL_DEPTH) {
+            att = GL_DEPTH_ATTACHMENT;
+         } else if (att == GL_STENCIL) {
+            att = GL_STENCIL_ATTACHMENT;
+         }
+      }
+
+      if (att == GL_DEPTH_STENCIL_ATTACHMENT) {
+         mask |= BITFIELD_BIT(BUFFER_DEPTH) | BITFIELD_BIT(BUFFER_STENCIL);
+         continue;
+      }
+
+      gl_buffer_index idx = get_fb_attachment_index(ctx, fb, att);
+      if (idx != BUFFER_NONE)
+         mask |= BITFIELD_BIT(idx);
+   }
+
+   discard_attachments(ctx, fb, mask);
 }
 
 void GLAPIENTRY

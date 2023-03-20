@@ -1560,8 +1560,7 @@ struct MUBUF_instruction : public Instruction {
    uint16_t offset : 12;     /* Unsigned byte offset - 12 bit */
    uint16_t swizzled : 1;
    uint16_t padding0 : 2;
-   uint16_t vtx_binding : 6; /* 0 if this is not a vertex attribute load */
-   uint16_t padding1 : 10;
+   uint16_t padding1;
 };
 static_assert(sizeof(MUBUF_instruction) == sizeof(Instruction) + 8, "Unexpected padding");
 
@@ -1584,8 +1583,7 @@ struct MTBUF_instruction : public Instruction {
    uint16_t slc : 1;         /* system level coherent */
    uint16_t tfe : 1;         /* texture fail enable */
    uint16_t disable_wqm : 1; /* Require an exec mask without helper invocations */
-   uint16_t vtx_binding : 6; /* 0 if this is not a vertex attribute load */
-   uint16_t padding : 4;
+   uint16_t padding : 10;
    uint16_t offset; /* Unsigned byte offset - 12 bit */
 };
 static_assert(sizeof(MTBUF_instruction) == sizeof(Instruction) + 8, "Unexpected padding");
@@ -1784,6 +1782,7 @@ inline bool
 is_dead(const std::vector<uint16_t>& uses, const Instruction* instr)
 {
    if (instr->definitions.empty() || instr->isBranch() ||
+       instr->opcode == aco_opcode::p_startpgm ||
        instr->opcode == aco_opcode::p_init_scratch ||
        instr->opcode == aco_opcode::p_dual_src_export_gfx11)
       return false;
@@ -1946,14 +1945,15 @@ struct Block {
  */
 enum class SWStage : uint16_t {
    None = 0,
-   VS = 1 << 0,     /* Vertex Shader */
-   GS = 1 << 1,     /* Geometry Shader */
-   TCS = 1 << 2,    /* Tessellation Control aka Hull Shader */
-   TES = 1 << 3,    /* Tessellation Evaluation aka Domain Shader */
-   FS = 1 << 4,     /* Fragment aka Pixel Shader */
-   CS = 1 << 5,     /* Compute Shader */
-   TS = 1 << 6,     /* Task Shader */
-   MS = 1 << 7,     /* Mesh Shader */
+   VS = 1 << 0,  /* Vertex Shader */
+   GS = 1 << 1,  /* Geometry Shader */
+   TCS = 1 << 2, /* Tessellation Control aka Hull Shader */
+   TES = 1 << 3, /* Tessellation Evaluation aka Domain Shader */
+   FS = 1 << 4,  /* Fragment aka Pixel Shader */
+   CS = 1 << 5,  /* Compute Shader */
+   TS = 1 << 6,  /* Task Shader */
+   MS = 1 << 7,  /* Mesh Shader */
+   RT = 1 << 8,  /* Raytracing Shader */
 
    /* Stage combinations merged to run on a single HWStage */
    VS_GS = VS | GS,
@@ -2037,6 +2037,8 @@ static constexpr Stage tess_control_hs(HWStage::HS, SWStage::TCS);
 static constexpr Stage tess_eval_es(HWStage::ES,
                                     SWStage::TES); /* tesselation evaluation before geometry */
 static constexpr Stage geometry_gs(HWStage::GS, SWStage::GS);
+/* Raytracing */
+static constexpr Stage raytracing_cs(HWStage::CS, SWStage::RT);
 
 struct DeviceInfo {
    uint16_t lds_encoding_granule;
@@ -2094,7 +2096,6 @@ public:
    uint16_t min_waves = 0;
    unsigned workgroup_size; /* if known; otherwise UINT_MAX */
    bool wgp_mode;
-   bool rt_stack = false;
 
    bool needs_vcc = false;
 
@@ -2186,6 +2187,10 @@ void select_trap_handler_shader(Program* program, struct nir_shader* shader,
                                 const struct aco_compiler_options* options,
                                 const struct aco_shader_info* info,
                                 const struct ac_shader_args* args);
+void select_rt_prolog(Program* program, ac_shader_config* config,
+                      const struct aco_compiler_options* options,
+                      const struct aco_shader_info* info, const struct ac_shader_args* in_args,
+                      const struct ac_shader_args* out_args);
 void select_vs_prolog(Program* program, const struct aco_vs_prolog_info* pinfo,
                       ac_shader_config* config, const struct aco_compiler_options* options,
                       const struct aco_shader_info* info, const struct ac_shader_args* args,

@@ -1,0 +1,1 @@
+dEQP-VK.draw.dynamic_rendering.primary_cmd_buff.linear_interpolation.offset_max_8_samples

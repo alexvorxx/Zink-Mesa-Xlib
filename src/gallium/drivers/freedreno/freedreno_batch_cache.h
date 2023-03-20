@@ -31,6 +31,8 @@
 
 #include "freedreno_util.h"
 
+BEGINC;
+
 struct fd_resource;
 struct fd_batch;
 struct fd_context;
@@ -80,5 +82,7 @@ struct fd_batch *fd_bc_alloc_batch(struct fd_context *ctx,
 struct fd_batch *
 fd_batch_from_fb(struct fd_context *ctx,
                  const struct pipe_framebuffer_state *pfb) assert_dt;
+
+ENDC;
 
 #endif /* FREEDRENO_BATCH_CACHE_H_ */

@@ -29,7 +29,7 @@ traces:
     freedreno-a630:
       checksum: 6aef509acd1257cc56612141e24dc11c
     zink-a630:
-      checksum: 45bdbb33bf87ed114bd548248be13408
+      checksum: f5c2e5bef8136c383ae1ac363626eb24
 
   valve/portal-2-v2.trace:
     freedreno-a306:
@@ -52,7 +52,7 @@ traces:
     freedreno-a630:
       checksum: 339dce29ae08569652438116829510c7
     zink-a630:
-      checksum: 2eb996b7d308087c73c57872231f7baa
+      checksum: ade41e6fe932552914c678155149babb
 
   xonotic/xonotic-keybench-high-v2.trace:
     freedreno-a306:
@@ -74,7 +74,7 @@ traces:
     freedreno-a630:
       checksum: 50d4bd01756ffe70aee5f8401f7a6ce4
     zink-a630:
-      checksum: 59e37d2dca80caedd9494114d64c676c
+      checksum: be297e672aaaf2351de71686d47f59eb
 
   godot/godot-thrive.trace:
     freedreno-a306:
@@ -100,7 +100,7 @@ traces:
     freedreno-a630:
       checksum: 47016a34553e5a28e2e1e0b92d11c92f
     zink-a630:
-      checksum: 7ad069adec81baa8f249c45c0f4eec7a
+      checksum: 5cd30bb46cbabc0d77cc4aacbcd7c0c2
 
   0ad/0ad-v2.trace:
     freedreno-a306:
@@ -172,7 +172,9 @@ traces:
     freedreno-a630:
       checksum: 5c0c5da476775dfac94b79e7edb556ce
     zink-a630:
+      label: [skip, flakes]
       checksum: a8dea3dcb341c0f6c786a264dee51766
+      text: occasional Different pixels 1 (no tolerance), 0 (1% tol.)
 
   filament/filament-default.trace:
     freedreno-a306:
@@ -478,7 +480,9 @@ traces:
     freedreno-a630:
       label: [skip]
     zink-a630:
+      label: [skip, flakes]
       checksum: fd1b9033e68c394a5564d8c4819a3012
+      text: crashes time to time
 
   blender/blender-demo-cube_diorama.trace:
     freedreno-a306:
@@ -528,7 +532,9 @@ traces:
     freedreno-a630:
       checksum: ae37867b1a9a94d2be9ff6c7e2009813
     zink-a630:
+      label: [skip, flakes]
       checksum: ae37867b1a9a94d2be9ff6c7e2009813
+      text: occasional misrender
 
   unvanquished/unvanquished-ultra.trace:
     freedreno-a306:

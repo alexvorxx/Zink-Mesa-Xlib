@@ -27,8 +27,10 @@
 #include "compiler/nir/nir_builder.h"
 #include "compiler/nir/nir_builtin_builder.h"
 #include "agx_compiler.h"
+#include "agx_internal_formats.h"
 
-#define AGX_TEXTURE_DESC_STRIDE 24
+#define AGX_TEXTURE_DESC_STRIDE   24
+#define AGX_FORMAT_RGB32_EMULATED 0x36
 
 static nir_ssa_def *
 texture_descriptor_ptr(nir_builder *b, nir_tex_instr *tex)
@@ -66,11 +68,27 @@ steal_tex_src(nir_tex_instr *tex, nir_tex_src_type type_)
    return ssa;
 }
 
+/* Implement txs for buffer textures. There is no mipmapping to worry about, so
+ * this is just a uniform pull. However, we lower buffer textures to 2D so the
+ * original size is irrecoverable. Instead, we stash it in the "Acceleration
+ * buffer" field, which is unused for linear images. Fetch just that.
+ */
+static nir_ssa_def *
+agx_txs_buffer(nir_builder *b, nir_ssa_def *descriptor)
+{
+   nir_ssa_def *size_ptr = nir_iadd_imm(b, descriptor, 16);
+
+   return nir_load_global_constant(b, size_ptr, 8, 1, 32);
+}
+
 static nir_ssa_def *
 agx_txs(nir_builder *b, nir_tex_instr *tex)
 {
    nir_ssa_def *ptr = texture_descriptor_ptr(b, tex);
    nir_ssa_def *comp[4] = {NULL};
+
+   if (tex->sampler_dim == GLSL_SAMPLER_DIM_BUF)
+      return agx_txs_buffer(b, ptr);
 
    nir_ssa_def *desc = nir_load_global_constant(b, ptr, 8, 4, 32);
    nir_ssa_def *w0 = nir_channel(b, desc, 0);
@@ -149,6 +167,97 @@ lower_txs(nir_builder *b, nir_instr *instr, UNUSED void *data)
    return true;
 }
 
+static nir_ssa_def *
+format_is_rgb32(nir_builder *b, nir_tex_instr *tex)
+{
+   nir_ssa_def *ptr = texture_descriptor_ptr(b, tex);
+   nir_ssa_def *desc = nir_load_global_constant(b, ptr, 8, 1, 32);
+   nir_ssa_def *channels =
+      nir_iand_imm(b, nir_ushr_imm(b, desc, 6), BITFIELD_MASK(7));
+
+   return nir_ieq_imm(b, channels, AGX_FORMAT_RGB32_EMULATED);
+}
+
+/* Load from an RGB32 buffer texture */
+static nir_ssa_def *
+load_rgb32(nir_builder *b, nir_tex_instr *tex, nir_ssa_def *coordinate)
+{
+   /* Base address right-shifted 4: bits [66, 102) */
+   nir_ssa_def *ptr_hi = nir_iadd_imm(b, texture_descriptor_ptr(b, tex), 8);
+   nir_ssa_def *desc_hi_words = nir_load_global_constant(b, ptr_hi, 8, 2, 32);
+   nir_ssa_def *desc_hi = nir_pack_64_2x32(b, desc_hi_words);
+   nir_ssa_def *base_shr4 =
+      nir_iand_imm(b, nir_ushr_imm(b, desc_hi, 2), BITFIELD64_MASK(36));
+   nir_ssa_def *base = nir_ishl_imm(b, base_shr4, 4);
+
+   nir_ssa_def *raw = nir_load_constant_agx(
+      b, 3, nir_dest_bit_size(tex->dest), base, nir_imul_imm(b, coordinate, 3),
+      .format = AGX_INTERNAL_FORMAT_I32);
+
+   /* Set alpha to 1 (in the appropriate format) */
+   bool is_float = nir_alu_type_get_base_type(tex->dest_type) == nir_type_float;
+
+   nir_ssa_def *swizzled[4] = {
+      nir_channel(b, raw, 0), nir_channel(b, raw, 1), nir_channel(b, raw, 2),
+      is_float ? nir_imm_float(b, 1.0) : nir_imm_int(b, 1)};
+
+   return nir_vec(b, swizzled, nir_tex_instr_dest_size(tex));
+}
+
+/*
+ * Buffer textures are lowered to 2D (1024xN) textures in the driver to access
+ * more storage. When lowering, we need to fix up the coordinate accordingly.
+ *
+ * Furthermore, RGB32 formats are emulated by lowering to global memory access,
+ * so to read a buffer texture we generate code that looks like:
+ *
+ *    if (descriptor->format == RGB32)
+ *       return ((uint32_t *) descriptor->address)[x];
+ *    else
+ *       return txf(texture_as_2d, vec2(x % 1024, x / 1024));
+ */
+static bool
+lower_buffer_texture(nir_builder *b, nir_tex_instr *tex)
+{
+   nir_ssa_def *coord = steal_tex_src(tex, nir_tex_src_coord);
+
+   /* The OpenGL ES 3.2 specification says on page 187:
+    *
+    *    When a buffer texture is accessed in a shader, the results of a texel
+    *    fetch are undefined if the specified texel coordinate is negative, or
+    *    greater than or equal to the clamped number of texels in the texture
+    *    image.
+    *
+    * However, faulting would be undesirable for robustness, so clamp.
+    */
+   nir_ssa_def *size = nir_get_texture_size(b, tex);
+   coord = nir_umin(b, coord, nir_iadd_imm(b, size, -1));
+
+   /* Lower RGB32 reads if the format requires */
+   nir_if *nif = nir_push_if(b, format_is_rgb32(b, tex));
+   nir_ssa_def *rgb32 = load_rgb32(b, tex, coord);
+   nir_push_else(b, nif);
+
+   /* Otherwise, lower the texture instruction to read from 2D */
+   assert(coord->num_components == 1 && "buffer textures are 1D");
+   tex->sampler_dim = GLSL_SAMPLER_DIM_2D;
+   nir_ssa_def *coord2d = nir_vec2(b, nir_iand_imm(b, coord, BITFIELD_MASK(10)),
+                                   nir_ushr_imm(b, coord, 10));
+   nir_instr_remove(&tex->instr);
+   nir_builder_instr_insert(b, &tex->instr);
+   nir_tex_instr_add_src(tex, nir_tex_src_backend1, nir_src_for_ssa(coord2d));
+   nir_block *else_block = nir_cursor_current_block(b->cursor);
+   nir_pop_if(b, nif);
+
+   /* Put it together with a phi */
+   nir_ssa_def *phi = nir_if_phi(b, rgb32, &tex->dest.ssa);
+   nir_ssa_def_rewrite_uses(&tex->dest.ssa, phi);
+   nir_phi_instr *phi_instr = nir_instr_as_phi(phi->parent_instr);
+   nir_phi_src *else_src = nir_phi_get_src_from_block(phi_instr, else_block);
+   nir_instr_rewrite_src_ssa(phi->parent_instr, &else_src->src, &tex->dest.ssa);
+   return true;
+}
+
 /*
  * NIR indexes into array textures with unclamped floats (integer for txf). AGX
  * requires the index to be a clamped integer. Lower tex_src_coord into
@@ -165,6 +274,9 @@ lower_regular_texture(nir_builder *b, nir_instr *instr, UNUSED void *data)
 
    if (nir_tex_instr_is_query(tex))
       return false;
+
+   if (tex->sampler_dim == GLSL_SAMPLER_DIM_BUF)
+      return lower_buffer_texture(b, tex);
 
    /* Get the coordinates */
    nir_ssa_def *coord = steal_tex_src(tex, nir_tex_src_coord);

@@ -123,13 +123,14 @@ panfrost-g52-gl:arm64:
     PAN_I_WANT_A_BROKEN_VULKAN_DRIVER: 1
     DEQP_SUITE: panfrost-g52-vk
 
-panfrost-g52-piglit-gl:arm64:
+panfrost-g52-piglit-gles2:arm64:
   extends:
     - .piglit-test
-    - .lava-test:arm64
+    - .lava-piglit:arm64
     - .lava-meson-g12b-a311d-khadas-vim3
   variables:
     HWCI_START_XORG: 1
+    DEQP_VER: gles2
     PIGLIT_PROFILES: quick_gl
 
 .lava-mt8183-kukui-jacuzzi-juniper-sku16:

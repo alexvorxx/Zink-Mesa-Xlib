@@ -3066,7 +3066,7 @@ void si_schedule_initial_compile(struct si_context *sctx, gl_shader_stage stage,
 
    struct util_async_debug_callback async_debug;
    bool debug = (sctx->debug.debug_message && !sctx->debug.async) || sctx->is_debug ||
-                si_can_dump_shader(sctx->screen, stage);
+                si_can_dump_shader(sctx->screen, stage, SI_DUMP_ALWAYS);
 
    if (debug) {
       u_async_debug_init(&async_debug);
@@ -3153,6 +3153,9 @@ static void *si_create_shader_selector(struct pipe_context *ctx,
       si_const_and_shader_buffer_descriptors_idx(type);
    sel->sampler_and_images_descriptors_index =
       si_sampler_and_image_descriptors_idx(type);
+
+   if (si_can_dump_shader(sscreen, sel->stage, SI_DUMP_INIT_NIR))
+      nir_print_shader(sel->nir, stderr);
 
    p_atomic_inc(&sscreen->num_shaders_created);
    si_get_active_slot_masks(sscreen, &sel->info, &sel->active_const_and_shader_buffers,

@@ -1462,16 +1462,50 @@ static LLVMValueRef ac_build_tbuffer_load(struct ac_llvm_context *ctx, LLVMValue
                              can_speculate ? AC_ATTR_INVARIANT_LOAD : 0);
 }
 
-LLVMValueRef ac_build_struct_tbuffer_load(struct ac_llvm_context *ctx, LLVMValueRef rsrc,
-                                          LLVMValueRef vindex, LLVMValueRef voffset,
-                                          LLVMValueRef soffset, unsigned num_channels,
-                                          unsigned dfmt, unsigned nfmt, unsigned cache_policy,
-                                          bool can_speculate)
+LLVMValueRef ac_build_safe_tbuffer_load(struct ac_llvm_context *ctx, LLVMValueRef rsrc,
+                                        LLVMValueRef vidx, LLVMValueRef base_voffset,
+                                        LLVMValueRef soffset, LLVMTypeRef channel_type,
+                                        const struct ac_vtx_format_info *vtx_info,
+                                        unsigned const_offset,
+                                        unsigned align_offset,
+                                        unsigned align_mul,
+                                        unsigned num_channels,
+                                        unsigned cache_policy,
+                                        bool can_speculate)
 {
-   unsigned fmt = ac_get_tbuffer_format(ctx->gfx_level, dfmt, nfmt);
-   return ac_build_tbuffer_load(ctx, rsrc, vindex, voffset, soffset, num_channels, fmt,
-                                ctx->i32, cache_policy, can_speculate);
+   const unsigned max_channels = vtx_info->num_channels;
+   LLVMValueRef voffset_plus_const =
+      LLVMBuildAdd(ctx->builder, base_voffset, LLVMConstInt(ctx->i32, const_offset, 0), "");
+
+   /* Split the specified load into several MTBUF instructions,
+    * according to a safe fetch size determined by aligmnent information.
+    */
+   LLVMValueRef result = NULL;
+   for (unsigned i = 0, fetch_num_channels; i < num_channels; i += fetch_num_channels) {
+      /* Packed formats (determined here by chan_byte_size == 0) should never be split. */
+      assert(i == 0 || vtx_info->chan_byte_size);
+
+      const unsigned fetch_const_offset = const_offset + i * vtx_info->chan_byte_size;
+      const unsigned fetch_align_offset = (align_offset + i * vtx_info->chan_byte_size) % align_mul;
+      const unsigned fetch_alignment = fetch_align_offset ? 1 << (ffs(fetch_align_offset) - 1) : align_mul;
+
+      fetch_num_channels =
+         ac_get_safe_fetch_size(ctx->gfx_level, vtx_info, fetch_const_offset,
+                                max_channels - i, fetch_alignment, num_channels - i);
+      const unsigned fetch_format = vtx_info->hw_format[fetch_num_channels - 1];
+      LLVMValueRef fetch_voffset =
+            LLVMBuildAdd(ctx->builder, voffset_plus_const,
+                         LLVMConstInt(ctx->i32, i * vtx_info->chan_byte_size, 0), "");
+      LLVMValueRef item =
+         ac_build_tbuffer_load(ctx, rsrc, vidx, fetch_voffset, soffset,
+                               fetch_num_channels, fetch_format, channel_type,
+                               cache_policy, can_speculate);
+      result = ac_build_concat(ctx, result, item);
+   }
+
+   return result;
 }
+
 
 LLVMValueRef ac_build_buffer_load_short(struct ac_llvm_context *ctx, LLVMValueRef rsrc,
                                         LLVMValueRef voffset, LLVMValueRef soffset,

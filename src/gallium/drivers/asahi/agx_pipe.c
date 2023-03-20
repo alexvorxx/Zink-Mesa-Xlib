@@ -25,6 +25,7 @@
  */
 #include <errno.h>
 #include <stdio.h>
+#include <xf86drm.h>
 #include "asahi/compiler/agx_compile.h"
 #include "asahi/layout/layout.h"
 #include "asahi/lib/agx_formats.h"
@@ -51,6 +52,7 @@
 #include "util/u_upload_mgr.h"
 #include "agx_device.h"
 #include "agx_disk_cache.h"
+#include "agx_fence.h"
 #include "agx_public.h"
 #include "agx_state.h"
 
@@ -287,6 +289,10 @@ agx_linear_allowed(const struct agx_resource *pres)
 {
    /* Mipmapping not allowed with linear */
    if (pres->base.last_level != 0)
+      return false;
+
+   /* Depth/stencil buffers must not be linear */
+   if (pres->base.bind & PIPE_BIND_DEPTH_STENCIL)
       return false;
 
    switch (pres->base.target) {
@@ -616,7 +622,7 @@ agx_shadow(struct agx_context *ctx, struct agx_resource *rsrc)
 
 /*
  * Perform the required synchronization before a transfer_map operation can
- * complete. This may require flushing batches.
+ * complete. This may require syncing batches.
  */
 static void
 agx_prepare_for_map(struct agx_context *ctx, struct agx_resource *rsrc,
@@ -644,10 +650,10 @@ agx_prepare_for_map(struct agx_context *ctx, struct agx_resource *rsrc,
    if (usage & PIPE_MAP_UNSYNCHRONIZED)
       return;
 
-   /* Both writing and reading need writers flushed */
-   agx_flush_writer(ctx, rsrc, "Unsynchronized transfer");
+   /* Both writing and reading need writers synced */
+   agx_sync_writer(ctx, rsrc, "Unsynchronized transfer");
 
-   /* Additionally, writing needs readers flushed */
+   /* Additionally, writing needs readers synced */
    if (!(usage & PIPE_MAP_WRITE))
       return;
 
@@ -657,12 +663,12 @@ agx_prepare_for_map(struct agx_context *ctx, struct agx_resource *rsrc,
    if (!agx_any_batch_uses_resource(ctx, rsrc))
       return;
 
-   /* There are readers. Try to shadow the resource to avoid a flush */
+   /* There are readers. Try to shadow the resource to avoid a sync */
    if ((usage & PIPE_MAP_DISCARD_WHOLE_RESOURCE) && agx_shadow(ctx, rsrc))
       return;
 
-   /* Otherwise, we need to flush */
-   agx_flush_readers(ctx, rsrc, "Unsynchronized write");
+   /* Otherwise, we need to sync */
+   agx_sync_readers(ctx, rsrc, "Unsynchronized write");
 }
 
 /* Most of the time we can do CPU-side transfers, but sometimes we need to use
@@ -794,7 +800,7 @@ agx_transfer_map(struct pipe_context *pctx, struct pipe_resource *resource,
 
       if ((usage & PIPE_MAP_READ) && agx_resource_valid(rsrc, level)) {
          agx_blit_to_staging(pctx, transfer);
-         agx_flush_writer(ctx, staging, "GPU read staging blit");
+         agx_sync_writer(ctx, staging, "GPU read staging blit");
       }
 
       agx_bo_mmap(staging->bo);
@@ -936,9 +942,63 @@ agx_clear(struct pipe_context *pctx, unsigned buffers,
 }
 
 static void
-agx_flush_resource(struct pipe_context *ctx, struct pipe_resource *resource)
+agx_flush_resource(struct pipe_context *pctx, struct pipe_resource *pres)
 {
-   agx_flush_writer(agx_context(ctx), agx_resource(resource), "flush_resource");
+   struct agx_resource *rsrc = agx_resource(pres);
+
+   /* flush_resource is used to prepare resources for sharing, so if this is not
+    * already a shareabe resource, make it so
+    */
+   struct agx_bo *old = rsrc->bo;
+   if (!(old->flags & AGX_BO_SHAREABLE)) {
+      assert(rsrc->layout.levels == 1 &&
+             "Shared resources must not be mipmapped");
+      assert(rsrc->layout.sample_count_sa == 1 &&
+             "Shared resources must not be multisampled");
+      assert(rsrc->bo);
+      assert(!(pres->bind & PIPE_BIND_SHARED));
+
+      struct pipe_resource templ = *pres;
+      templ.bind |= PIPE_BIND_SHARED;
+
+      /* Create a new shareable resource */
+      struct agx_resource *new_res =
+         agx_resource(pctx->screen->resource_create(pctx->screen, &templ));
+
+      assert(new_res);
+
+      /* Blit it over */
+      struct pipe_blit_info blit = {0};
+
+      u_box_3d(0, 0, 0, rsrc->layout.width_px, rsrc->layout.height_px,
+               rsrc->layout.depth_px, &blit.dst.box);
+      blit.src.box = blit.dst.box;
+
+      blit.dst.resource = &new_res->base;
+      blit.dst.format = new_res->base.format;
+      blit.dst.level = 0;
+      blit.src.resource = pres;
+      blit.src.format = pres->format;
+      blit.src.level = 0;
+      blit.mask = util_format_get_mask(blit.src.format);
+      blit.filter = PIPE_TEX_FILTER_NEAREST;
+      agx_blit(pctx, &blit);
+
+      /* Flush the blit out, to make sure the old resource is no longer used */
+      agx_flush_writer(agx_context(pctx), new_res, "flush_resource");
+
+      /* Copy the bind flags and swap the BOs */
+      rsrc->base.bind = new_res->base.bind;
+      rsrc->bo = new_res->bo;
+      new_res->bo = old;
+
+      /* Free the new resource, which now owns the old BO */
+      pipe_resource_reference((struct pipe_resource **)&new_res, NULL);
+   } else {
+      /* Otherwise just claim it's already shared */
+      pres->bind |= PIPE_BIND_SHARED;
+      agx_flush_writer(agx_context(pctx), rsrc, "flush_resource");
+   }
 }
 
 /*
@@ -950,10 +1010,24 @@ agx_flush(struct pipe_context *pctx, struct pipe_fence_handle **fence,
 {
    struct agx_context *ctx = agx_context(pctx);
 
-   if (fence)
-      *fence = NULL;
-
    agx_flush_all(ctx, "Gallium flush");
+
+   /* At this point all pending work has been submitted. Since jobs are
+    * started and completed sequentially from a UAPI perspective, and since
+    * we submit all jobs with compute+render barriers on the prior job,
+    * waiting on the last submitted job is sufficient to guarantee completion
+    * of all GPU work thus far, so we can create a fence out of the latest
+    * syncobj.
+    *
+    * See this page for more info on how the GPU/UAPI queueing works:
+    * https://github.com/AsahiLinux/docs/wiki/SW:AGX-driver-notes#queues
+    */
+
+   if (fence) {
+      struct pipe_fence_handle *f = agx_fence_create(ctx);
+      pctx->screen->fence_reference(pctx->screen, fence, NULL);
+      *fence = f;
+   }
 }
 
 void
@@ -962,10 +1036,11 @@ agx_flush_batch(struct agx_context *ctx, struct agx_batch *batch)
    struct agx_device *dev = agx_device(ctx->base.screen);
 
    assert(agx_batch_is_active(batch));
+   assert(!agx_batch_is_submitted(batch));
 
    /* Make sure there's something to submit. */
    if (!batch->clear && !batch->any_draws) {
-      agx_batch_cleanup(ctx, batch);
+      agx_batch_reset(ctx, batch);
       return;
    }
 
@@ -1061,13 +1136,22 @@ agx_flush_batch(struct agx_context *ctx, struct agx_batch *batch)
    (void)pipeline_background;
    (void)pipeline_background_partial;
 
-   agx_batch_cleanup(ctx, batch);
+   unreachable("Linux UAPI not yet upstream");
+   agx_batch_submit(ctx, batch, 0, 0, NULL);
 }
 
 static void
 agx_destroy_context(struct pipe_context *pctx)
 {
+   struct agx_device *dev = agx_device(pctx->screen);
    struct agx_context *ctx = agx_context(pctx);
+
+   /* Batch state needs to be freed on completion, and we don't want to yank
+    * buffers out from in-progress GPU jobs to avoid faults, so just wait until
+    * everything in progress is actually done on context destroy. This will
+    * ensure everything is cleaned up properly.
+    */
+   agx_sync_all(ctx, "destroy context");
 
    if (pctx->stream_uploader)
       u_upload_destroy(pctx->stream_uploader);
@@ -1080,6 +1164,16 @@ agx_destroy_context(struct pipe_context *pctx)
    agx_meta_cleanup(&ctx->meta);
 
    agx_bo_unreference(ctx->result_buf);
+
+   drmSyncobjDestroy(dev->fd, ctx->in_sync_obj);
+   drmSyncobjDestroy(dev->fd, ctx->dummy_syncobj);
+   if (ctx->in_sync_fd != -1)
+      close(ctx->in_sync_fd);
+
+   for (unsigned i = 0; i < AGX_MAX_BATCHES; ++i) {
+      if (ctx->batches.slots[i].syncobj)
+         drmSyncobjDestroy(dev->fd, ctx->batches.slots[i].syncobj);
+   }
 
    ralloc_free(ctx);
 }
@@ -1108,6 +1202,7 @@ agx_create_context(struct pipe_screen *screen, void *priv, unsigned flags)
 {
    struct agx_context *ctx = rzalloc(NULL, struct agx_context);
    struct pipe_context *pctx = &ctx->base;
+   int ret;
 
    if (!ctx)
       return NULL;
@@ -1115,7 +1210,7 @@ agx_create_context(struct pipe_screen *screen, void *priv, unsigned flags)
    pctx->screen = screen;
    pctx->priv = priv;
 
-   ctx->writer = _mesa_pointer_hash_table_create(ctx);
+   util_dynarray_init(&ctx->writer, ctx);
 
    pctx->stream_uploader = u_upload_create_default(pctx);
    if (!pctx->stream_uploader) {
@@ -1150,9 +1245,20 @@ agx_create_context(struct pipe_screen *screen, void *priv, unsigned flags)
    ctx->blitter = util_blitter_create(pctx);
 
    ctx->result_buf = agx_bo_create(
-      agx_device(screen), sizeof(union agx_batch_result) * AGX_MAX_BATCHES, 0,
-      "Batch result buffer");
+      agx_device(screen), sizeof(union agx_batch_result) * AGX_MAX_BATCHES,
+      AGX_BO_WRITEBACK, "Batch result buffer");
    assert(ctx->result_buf);
+
+   /* Sync object/FD used for NATIVE_FENCE_FD. */
+   ctx->in_sync_fd = -1;
+   ret = drmSyncobjCreate(agx_device(screen)->fd, 0, &ctx->in_sync_obj);
+   assert(!ret);
+
+   /* Dummy sync object used before any work has been submitted. */
+   ret = drmSyncobjCreate(agx_device(screen)->fd, DRM_SYNCOBJ_CREATE_SIGNALED,
+                          &ctx->dummy_syncobj);
+   assert(!ret);
+   ctx->syncobj = ctx->dummy_syncobj;
 
    return pctx;
 }
@@ -1250,6 +1356,7 @@ agx_get_param(struct pipe_screen *pscreen, enum pipe_cap param)
    case PIPE_CAP_PRIMITIVE_RESTART:
    case PIPE_CAP_PRIMITIVE_RESTART_FIXED_INDEX:
    case PIPE_CAP_ANISOTROPIC_FILTER:
+   case PIPE_CAP_NATIVE_FENCE_FD:
       return true;
 
    case PIPE_CAP_SAMPLER_VIEW_TARGET:
@@ -1271,13 +1378,12 @@ agx_get_param(struct pipe_screen *pscreen, enum pipe_cap param)
    case PIPE_CAP_CONDITIONAL_RENDER_INVERTED:
    case PIPE_CAP_SEAMLESS_CUBE_MAP:
    case PIPE_CAP_SEAMLESS_CUBE_MAP_PER_TEXTURE:
+   case PIPE_CAP_TEXTURE_BUFFER_OBJECTS:
       return 1;
 
    case PIPE_CAP_TEXTURE_MULTISAMPLE:
    case PIPE_CAP_SURFACE_SAMPLE_COUNT:
    case PIPE_CAP_SAMPLE_SHADING:
-   case PIPE_CAP_TEXTURE_BUFFER_OBJECTS:
-   case PIPE_CAP_TEXTURE_BUFFER_SAMPLER:
    case PIPE_CAP_IMAGE_LOAD_FORMATTED:
    case PIPE_CAP_IMAGE_STORE_FORMATTED:
    case PIPE_CAP_COMPUTE:
@@ -1310,8 +1416,9 @@ agx_get_param(struct pipe_screen *pscreen, enum pipe_cap param)
    case PIPE_CAP_CONSTANT_BUFFER_OFFSET_ALIGNMENT:
       return 16;
 
+   /* Texel buffers lowered to (at most) 1024x16384 2D textures */
    case PIPE_CAP_MAX_TEXEL_BUFFER_ELEMENTS_UINT:
-      return 65536;
+      return 1024 * 16384;
 
    case PIPE_CAP_TEXTURE_BUFFER_OFFSET_ALIGNMENT:
       return 64;
@@ -1642,6 +1749,11 @@ agx_is_format_supported(struct pipe_screen *pscreen, enum pipe_format format,
       if (!agx_is_valid_pixel_format(tex_format))
          return false;
 
+      /* RGB32 is emulated for texture buffers only */
+      if (ent.channels == AGX_CHANNELS_R32G32B32_EMULATED &&
+          target != PIPE_BUFFER)
+         return false;
+
       if ((usage & PIPE_BIND_RENDER_TARGET) && !ent.renderable)
          return false;
    }
@@ -1717,19 +1829,6 @@ agx_destroy_screen(struct pipe_screen *pscreen)
    agx_close_device(&screen->dev);
    disk_cache_destroy(screen->disk_cache);
    ralloc_free(screen);
-}
-
-static void
-agx_fence_reference(struct pipe_screen *screen, struct pipe_fence_handle **ptr,
-                    struct pipe_fence_handle *fence)
-{
-}
-
-static bool
-agx_fence_finish(struct pipe_screen *screen, struct pipe_context *ctx,
-                 struct pipe_fence_handle *fence, uint64_t timeout)
-{
-   return true;
 }
 
 static const void *
@@ -1841,6 +1940,7 @@ agx_screen_create(int fd, struct renderonly *ro, struct sw_winsys *winsys)
    screen->get_timestamp = u_default_get_timestamp;
    screen->fence_reference = agx_fence_reference;
    screen->fence_finish = agx_fence_finish;
+   screen->fence_get_fd = agx_fence_get_fd;
    screen->get_compiler_options = agx_get_compiler_options;
    screen->get_disk_shader_cache = agx_get_disk_shader_cache;
 

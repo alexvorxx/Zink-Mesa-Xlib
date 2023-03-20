@@ -498,7 +498,7 @@ for (int bit = bit_size - 1; bit >= 0; bit--) {
 }
 """)
 
-unop_convert("ifind_msb_rev", tint32, tint, """
+unop("ifind_msb_rev", tint32, """
 dst = -1;
 /* We are looking for the highest bit that's not the same as the sign bit. */
 uint32_t sign = src0 & 0x80000000u;

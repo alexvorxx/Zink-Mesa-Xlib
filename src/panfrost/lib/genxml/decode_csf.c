@@ -208,7 +208,7 @@ pandecode_run_idvs(FILE *fp, struct queue_ctx *ctx, struct MALI_CEU_RUN_IDVS *I)
    if (tiler_flags.index_type)
       pandecode_log("Index offset: %u\n", cs_get_u32(ctx, 35));
 
-   pandecode_log("Vertex offset: %u\n", cs_get_u32(ctx, 36));
+   pandecode_log("Vertex offset: %d\n", cs_get_u32(ctx, 36));
    pandecode_log("Instance offset: %u\n", cs_get_u32(ctx, 37));
    pandecode_log("Tiler DCD flags2: %X\n", cs_get_u32(ctx, 38));
 

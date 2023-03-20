@@ -30,8 +30,8 @@
 
 /* TODO: Shader caching (not pipeline caching) support. */
 
-void pvr_uscgen_per_job_eot(uint32_t state0,
-                            uint32_t state1,
+void pvr_uscgen_per_job_eot(uint32_t emit_count,
+                            const uint32_t *emit_state,
                             unsigned *temps_used,
                             struct util_dynarray *binary);
 

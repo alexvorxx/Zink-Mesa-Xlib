@@ -108,6 +108,12 @@ gl_shader_stage_is_callable(gl_shader_stage stage)
 }
 
 static inline bool
+gl_shader_stage_is_rt(gl_shader_stage stage)
+{
+   return stage == MESA_SHADER_RAYGEN || gl_shader_stage_is_callable(stage);
+}
+
+static inline bool
 gl_shader_stage_can_set_fragment_shading_rate(gl_shader_stage stage)
 {
    /* According to EXT_fragment_shading_rate :

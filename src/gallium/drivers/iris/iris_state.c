@@ -4811,7 +4811,10 @@ iris_store_tes_state(const struct intel_device_info *devinfo,
       te.MaximumTessellationFactorOdd = 63.0;
       te.MaximumTessellationFactorNotOdd = 64.0;
 #if GFX_VERx10 >= 125
-      te.TessellationDistributionMode = TEDMODE_RR_FREE;
+      if (intel_needs_workaround(devinfo, 22012785325))
+         te.TessellationDistributionMode = TEDMODE_RR_STRICT;
+      else
+         te.TessellationDistributionMode = TEDMODE_RR_FREE;
       te.TessellationDistributionLevel = TEDLEVEL_PATCH;
       /* 64_TRIANGLES */
       te.SmallPatchThreshold = 3;
@@ -7214,11 +7217,11 @@ iris_upload_render_state(struct iris_context *ice,
       batch->contains_draw_with_next_seqno = true;
    }
 
-   /* Wa_1306463417 - Send HS state for every primitive on gfx11.
+   /* Wa_1409433168 - Send HS state for every primitive on gfx11.
     * Wa_16011107343 (same for gfx12)
     * We implement this by setting TCS dirty on each draw.
     */
-   if ((GFX_VER == 11 || GFX_VERx10 == 120) &&
+   if ((INTEL_NEEDS_WA_1409433168 || INTEL_NEEDS_WA_16011107343) &&
        ice->shaders.prog[MESA_SHADER_TESS_CTRL]) {
       ice->state.stage_dirty |= IRIS_STAGE_DIRTY_TCS;
    }

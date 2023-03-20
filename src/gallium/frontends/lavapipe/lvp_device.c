@@ -1607,6 +1607,7 @@ VKAPI_ATTR VkResult VKAPI_CALL lvp_CreateDevice(
 
    device->queue.state = device + 1;
    device->poison_mem = debug_get_bool_option("LVP_POISON_MEMORY", false);
+   device->print_cmds = debug_get_bool_option("LVP_CMD_DEBUG", false);
 
    struct vk_device_dispatch_table dispatch_table;
    vk_device_dispatch_table_from_entrypoints(&dispatch_table,

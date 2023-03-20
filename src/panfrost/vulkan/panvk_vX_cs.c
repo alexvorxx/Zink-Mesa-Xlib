@@ -249,9 +249,9 @@ panvk_per_arch(emit_sampler)(const VkSamplerCreateInfo *pCreateInfo,
       cfg.mipmap_mode = panvk_translate_sampler_mipmap_mode(pCreateInfo->mipmapMode);
       cfg.normalized_coordinates = !pCreateInfo->unnormalizedCoordinates;
 
-      cfg.lod_bias = FIXED_16(pCreateInfo->mipLodBias, true);
-      cfg.minimum_lod = FIXED_16(pCreateInfo->minLod, false);
-      cfg.maximum_lod = FIXED_16(pCreateInfo->maxLod, false);
+      cfg.lod_bias = pCreateInfo->mipLodBias;
+      cfg.minimum_lod = pCreateInfo->minLod;
+      cfg.maximum_lod = pCreateInfo->maxLod;
       cfg.wrap_mode_s = panvk_translate_sampler_address_mode(pCreateInfo->addressModeU);
       cfg.wrap_mode_t = panvk_translate_sampler_address_mode(pCreateInfo->addressModeV);
       cfg.wrap_mode_r = panvk_translate_sampler_address_mode(pCreateInfo->addressModeW);

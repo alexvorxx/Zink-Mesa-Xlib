@@ -685,7 +685,7 @@ namespace brw {
             return MOV(dst, src);
          } else {
             assert(shader->devinfo->ver == 7);
-            return emit(BRW_OPCODE_F32TO16,
+            return emit(BRW_OPCODE_F16TO32,
                         dst, retype(src, BRW_REGISTER_TYPE_W));
          }
       }

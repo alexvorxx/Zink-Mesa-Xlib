@@ -27,6 +27,8 @@
 
 #include "fd6_emit.h"
 
+BEGINC;
+
 struct fd_ringbuffer *fd6_build_tess_consts(struct fd6_emit *emit) assert_dt;
 unsigned fd6_user_consts_cmdstream_size(struct ir3_shader_variant *v);
 struct fd_ringbuffer *fd6_build_user_consts(struct fd6_emit *emit) assert_dt;
@@ -47,5 +49,7 @@ void fd6_emit_link_map(struct fd_screen *screen,
                        const struct ir3_shader_variant *producer,
                        const struct ir3_shader_variant *v,
                        struct fd_ringbuffer *ring) assert_dt;
+
+ENDC;
 
 #endif /* FD6_CONST_H */

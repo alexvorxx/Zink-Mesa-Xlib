@@ -22,6 +22,10 @@
 # dependency tracking.
 
 vulkan_runtime_files = files(
+  'rmv/vk_rmv_common.c',
+  'rmv/vk_rmv_common.h',
+  'rmv/vk_rmv_exporter.c',
+  'rmv/vk_rmv_tokens.h',
   'vk_acceleration_structure.c',
   'vk_acceleration_structure.h',
   'vk_buffer.c',
@@ -161,10 +165,10 @@ vk_dispatch_trampolines = custom_target(
 vk_physical_device_features = custom_target(
   'vk_physical_device_features',
   input : [vk_physical_device_features_gen, vk_api_xml],
-  output : ['vk_physical_device_features.c'],
+  output : ['vk_physical_device_features.c', 'vk_physical_device_features.h'],
   command : [
     prog_python, '@INPUT0@', '--xml', '@INPUT1@',
-    '--out-c', '@OUTPUT0@'
+    '--out-c', '@OUTPUT0@', '--out-h', '@OUTPUT1@',
   ],
   depend_files : vk_physical_device_features_gen_depend_files,
 )
@@ -205,7 +209,7 @@ idep_vulkan_common_entrypoints_h = declare_dependency(
 
 # This is likely a bug in the Meson VS backend, as MSVC with ninja works fine.
 # See this discussion here:
-# https://gitlab.freedesktop.org/mesa/mesa/-/merge_requests/10506 
+# https://gitlab.freedesktop.org/mesa/mesa/-/merge_requests/10506
 if get_option('backend').startswith('vs')
   idep_vulkan_runtime = declare_dependency(
     link_with : libvulkan_runtime,

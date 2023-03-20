@@ -639,6 +639,8 @@ formats = [(f if len(f) == 5 else f + ('',)) for f in formats]
 % endfor
 };
 
+void hw_init_scratch(Builder& bld, Definition def, Operand scratch_addr, Operand scratch_offset);
+
 } // namespace aco
 
 #endif /* _ACO_BUILDER_ */"""

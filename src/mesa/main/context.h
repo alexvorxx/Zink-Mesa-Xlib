@@ -84,7 +84,10 @@ _mesa_alloc_dispatch_table(bool glthread);
 extern void
 _mesa_init_dispatch(struct gl_context *ctx);
 
-extern void
+extern bool
+_mesa_alloc_dispatch_tables(gl_api api, struct gl_dispatch *d, bool glthread);
+
+extern bool
 _mesa_initialize_dispatch_tables(struct gl_context *ctx);
 
 extern struct _glapi_table *

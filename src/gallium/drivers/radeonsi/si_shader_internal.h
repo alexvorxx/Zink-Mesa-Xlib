@@ -68,13 +68,10 @@ struct si_shader_args {
 
    /* API TCS */
    /* Offsets where TCS outputs and TCS patch outputs live in LDS (<= 16K):
-    *   [0:15] = TCS output patch0 offset / 4, max = 16K / 4 = 4K
     *   [16:31] = TCS output patch0 offset for per-patch / 4, max = 16K / 4 = 4K
     */
    struct ac_arg tcs_out_lds_offsets;
    /* Layout of TCS outputs / TES inputs:
-    *   [0:12] = stride between output patches in DW, num_outputs * num_vertices * 4
-    *            max = 32*32*4 + 32*4 = 4224
     *   [13:18] = gl_PatchVerticesIn, max = 32
     *   [19:31] = high 13 bits of the 32-bit address of tessellation ring buffers
     */

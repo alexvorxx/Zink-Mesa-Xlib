@@ -44,11 +44,6 @@ KHR-GL43.shader_image_load_store.basic-allFormats-loadGeometryStages,Fail
 KHR-GL43.shader_image_load_store.basic-allFormats-storeGeometryStages,Fail
 KHR-GL43.shader_image_load_store.basic-allTargets-store,Fail
 KHR-GL43.shader_image_load_store.incomplete_textures,Fail
-KHR-GL43.shader_storage_buffer_object.advanced-indirectAddressing-case2,Fail
-KHR-GL43.shader_storage_buffer_object.advanced-usage-case1,Fail
-KHR-GL43.shader_storage_buffer_object.advanced-usage-sync,Fail
-KHR-GL43.shader_storage_buffer_object.basic-atomic-case1,Fail
-KHR-GL43.shader_storage_buffer_object.basic-atomic-case2,Fail
 KHR-GL43.shader_subroutine.ssbo_atomic_image_load_store,Fail
 
 KHR-Single-GL43.arrays_of_arrays_gl.InteractionArgumentAliasing1,Fail
@@ -384,11 +379,6 @@ spec@arb_shader_texture_image_samples@texturesamples@vs-usampler2dmsarray-2,Fail
 spec@arb_shader_texture_lod@execution@arb_shader_texture_lod-texgrad,Fail
 spec@arb_tessellation_shader@execution@gs-primitiveid-instanced,Fail
 
-# "	intrinsic copy_deref (ssa_2, ssa_3) (dst_access=0, src_access=0)
-#  error: glsl_get_bare_type(dst->type) == glsl_get_bare_type(src->type) (../src/compiler/nir/nir_validate.c:643)"
-# since ntt copy-deref optimization, probably.
-spec@arb_tessellation_shader@execution@tcs-tes-levels-out-of-bounds-write,Crash
-
 spec@arb_texture_compression@texwrap formats bordercolor,Fail
 spec@arb_texture_compression@texwrap formats bordercolor-swizzled,Fail
 spec@arb_texture_compression@texwrap formats bordercolor-swizzled@GL_COMPRESSED_ALPHA- swizzled- border color only,Fail
@@ -716,8 +706,5 @@ spec@nv_read_depth@read_depth_gles3,Fail
 spec@oes_shader_io_blocks@compiler@layout-location-aliasing.vert,Fail
 spec@!opengl 1.0@depth-clear-precision-check,Fail
 spec@!opengl 1.0@depth-clear-precision-check@depth32,Fail
-
-# https://gitlab.freedesktop.org/mesa/mesa/-/issues/7152
-spec@ext_transform_feedback@builtin-varyings gl_culldistance,Fail
 
 spec@!opengl 1.1@line-smooth-stipple,Fail

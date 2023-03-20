@@ -66,14 +66,6 @@ do_optimization(struct exec_list *ir, const char *optimization,
       return do_common_optimization(ir, int_0 != 0, options, true);
    } else if (strcmp(optimization, "do_algebraic") == 0) {
       return do_algebraic(ir, true, options);
-   } else if (strcmp(optimization, "do_constant_folding") == 0) {
-      return do_constant_folding(ir);
-   } else if (strcmp(optimization, "do_constant_variable") == 0) {
-      return do_constant_variable(ir);
-   } else if (strcmp(optimization, "do_constant_variable_unlinked") == 0) {
-      return do_constant_variable_unlinked(ir);
-   } else if (strcmp(optimization, "do_constant_propagation") == 0) {
-      return do_constant_propagation(ir);
    } else if (strcmp(optimization, "do_dead_code") == 0) {
       return do_dead_code(ir);
    } else if (strcmp(optimization, "do_dead_code_local") == 0) {

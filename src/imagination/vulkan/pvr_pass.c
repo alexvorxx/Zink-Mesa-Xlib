@@ -72,14 +72,6 @@ static inline bool pvr_subpass_has_msaa_input_attachment(
    return false;
 }
 
-static inline size_t
-pvr_num_subpass_attachments(const VkSubpassDescription2 *desc)
-{
-   return desc->inputAttachmentCount + desc->colorAttachmentCount +
-          (desc->pResolveAttachments ? desc->colorAttachmentCount : 0) +
-          (desc->pDepthStencilAttachment != NULL);
-}
-
 static bool pvr_is_subpass_initops_flush_needed(
    const struct pvr_render_pass *pass,
    const struct pvr_renderpass_hwsetup_render *hw_render)
@@ -453,8 +445,10 @@ VkResult pvr_CreateRenderPass2(VkDevice _device,
 
    subpass_attachment_count = 0;
    for (uint32_t i = 0; i < pCreateInfo->subpassCount; i++) {
+      const VkSubpassDescription2 *desc = &pCreateInfo->pSubpasses[i];
       subpass_attachment_count +=
-         pvr_num_subpass_attachments(&pCreateInfo->pSubpasses[i]);
+         desc->inputAttachmentCount + desc->colorAttachmentCount +
+         (desc->pResolveAttachments ? desc->colorAttachmentCount : 0);
    }
 
    vk_multialloc_add(&ma,
@@ -579,9 +573,10 @@ VkResult pvr_CreateRenderPass2(VkDevice _device,
       }
 
       if (desc->pDepthStencilAttachment) {
-         subpass->depth_stencil_attachment = subpass_attachments++;
-         *subpass->depth_stencil_attachment =
+         subpass->depth_stencil_attachment =
             desc->pDepthStencilAttachment->attachment;
+      } else {
+         subpass->depth_stencil_attachment = VK_ATTACHMENT_UNUSED;
       }
 
       /* Give the dependencies a slice of the subpass_attachments array. */

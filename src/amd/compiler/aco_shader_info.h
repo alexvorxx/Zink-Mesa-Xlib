@@ -62,30 +62,12 @@ struct aco_vs_prolog_info {
    gl_shader_stage next_stage;
 };
 
-struct aco_vp_output_info {
-   uint8_t vs_output_param_offset[VARYING_SLOT_MAX];
-   uint8_t clip_dist_mask;
-   uint8_t cull_dist_mask;
-   uint8_t param_exports;
-   uint8_t prim_param_exports;
-   bool writes_pointsize;
-   bool writes_layer;
-   bool writes_layer_per_primitive;
-   bool writes_viewport_index;
-   bool writes_viewport_index_per_primitive;
-   bool writes_primitive_shading_rate;
-   bool writes_primitive_shading_rate_per_primitive;
-   bool export_prim_id;
-   bool export_clip_dists;
-};
-
 struct aco_shader_info {
    uint8_t wave_size;
    bool is_ngg;
    bool has_ngg_culling;
    bool has_ngg_early_prim_export;
    unsigned workgroup_size;
-   struct aco_vp_output_info outinfo;
    struct {
       bool as_es;
       bool as_ls;
@@ -150,15 +132,6 @@ struct aco_ps_epilog_info {
 struct aco_stage_input {
    uint32_t optimisations_disabled : 1;
    uint32_t image_2d_view_of_3d : 1;
-   struct {
-      uint32_t instance_rate_inputs;
-      uint32_t instance_rate_divisors[ACO_MAX_VERTEX_ATTRIBS];
-      uint8_t vertex_attribute_formats[ACO_MAX_VERTEX_ATTRIBS];
-      uint32_t vertex_attribute_bindings[ACO_MAX_VERTEX_ATTRIBS];
-      uint32_t vertex_attribute_offsets[ACO_MAX_VERTEX_ATTRIBS];
-      uint32_t vertex_attribute_strides[ACO_MAX_VERTEX_ATTRIBS];
-      uint8_t vertex_binding_align[ACO_MAX_VBS];
-   } vs;
 
    struct {
       unsigned tess_input_vertices;

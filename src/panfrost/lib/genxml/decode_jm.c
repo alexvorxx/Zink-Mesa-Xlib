@@ -259,7 +259,21 @@ GENX(pandecode_dcd)(const struct MALI_DRAW *p, enum mali_job_type job_type,
       DUMP_ADDR(LOCAL_STORAGE, p->thread_storage & ~1, "Local Storage:\n");
 #endif
    } else {
-#if PAN_ARCH <= 5
+#if PAN_ARCH == 5
+      /* On v5 only, the actual framebuffer pointer is tagged with extra
+       * metadata that we validate but do not print.
+       */
+      pan_unpack(&p->fbd, FRAMEBUFFER_POINTER, ptr);
+
+      if (!ptr.type || ptr.zs_crc_extension_present ||
+          ptr.render_target_count != 1) {
+
+         fprintf(pandecode_dump_stream,
+                 "Unexpected framebuffer pointer settings");
+      }
+
+      GENX(pandecode_fbd)(ptr.pointer, false, gpu_id);
+#elif PAN_ARCH == 4
       GENX(pandecode_fbd)(p->fbd, false, gpu_id);
 #endif
    }
@@ -307,13 +321,13 @@ GENX(pandecode_dcd)(const struct MALI_DRAW *p, enum mali_job_type job_type,
       pandecode_indent--;
       pandecode_log("\n");
 
-      /* MRT blend fields are used whenever MFBD is used, with
-       * per-RT descriptors */
-
+      /* MRT blend fields are used on v5+. Technically, they are optional on v5
+       * for backwards compatibility but we don't care about that.
+       */
 #if PAN_ARCH >= 5
       if ((job_type == MALI_JOB_TYPE_TILER ||
            job_type == MALI_JOB_TYPE_FRAGMENT) &&
-          (PAN_ARCH >= 6 || p->thread_storage & MALI_FBD_TAG_IS_MFBD)) {
+          PAN_ARCH >= 5) {
          void *blend_base = ((void *)cl) + pan_size(RENDERER_STATE);
 
          for (unsigned i = 0; i < fbd_info.rt_count; i++) {
@@ -455,35 +469,30 @@ pandecode_fragment_job(mali_ptr job, unsigned gpu_id)
    struct mali_fragment_job_packed *PANDECODE_PTR_VAR(p, job);
    pan_section_unpack(p, FRAGMENT_JOB, PAYLOAD, s);
 
-   UNUSED struct pandecode_fbd info =
-      GENX(pandecode_fbd)(s.framebuffer, true, gpu_id);
+   uint64_t fbd_pointer;
 
 #if PAN_ARCH >= 5
-   unsigned expected_tag = 0;
+   /* On v5 and newer, the actual framebuffer pointer is tagged with extra
+    * metadata that we need to disregard.
+    */
+   pan_unpack(&s.framebuffer, FRAMEBUFFER_POINTER, ptr);
+   fbd_pointer = ptr.pointer;
+#else
+   /* On v4, the framebuffer pointer is untagged. */
+   fbd_pointer = s.framebuffer;
+#endif
 
-   /* Compute the tag for the tagged pointer. This contains the type of
-    * FBD (MFBD/SFBD), and in the case of an MFBD, information about which
-    * additional structures follow the MFBD header (an extra payload or
-    * not, as well as a count of render targets) */
+   UNUSED struct pandecode_fbd info =
+      GENX(pandecode_fbd)(fbd_pointer, true, gpu_id);
 
-   expected_tag = MALI_FBD_TAG_IS_MFBD;
-   if (info.has_extra)
-      expected_tag |= MALI_FBD_TAG_HAS_ZS_RT;
-
-   expected_tag |= MALI_FBD_TAG_IS_MFBD | (MALI_POSITIVE(info.rt_count) << 2);
+#if PAN_ARCH >= 5
+   if (!ptr.type || ptr.zs_crc_extension_present != info.has_extra ||
+       ptr.render_target_count != info.rt_count) {
+      pandecode_log("invalid FBD tag\n");
+   }
 #endif
 
    DUMP_UNPACKED(FRAGMENT_JOB_PAYLOAD, s, "Fragment Job Payload:\n");
-
-#if PAN_ARCH >= 5
-   /* The FBD is a tagged pointer */
-
-   unsigned tag = (s.framebuffer & MALI_FBD_TAG_MASK);
-
-   if (tag != expected_tag)
-      pandecode_log("// XXX: expected FBD tag %X but got %X\n", expected_tag,
-                    tag);
-#endif
 
    pandecode_log("\n");
 }

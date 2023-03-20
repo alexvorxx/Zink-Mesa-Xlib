@@ -29,29 +29,41 @@
 
 #include <stdbool.h>
 
-void pvr_uscgen_per_job_eot(uint32_t state0,
-                            uint32_t state1,
+void pvr_uscgen_per_job_eot(uint32_t emit_count,
+                            const uint32_t *emit_state, /* Expects emit_count *
+                                                           ROGUE_NUM_PBESTATE_STATE_WORDS
+                                                           entries */
                             unsigned *temps_used,
                             struct util_dynarray *binary)
 {
    rogue_builder b;
    rogue_shader *shader = rogue_shader_create(NULL, MESA_SHADER_NONE);
+   rogue_reg *state_word_0 = rogue_temp_reg(shader, 0);
+   rogue_reg *state_word_1 = rogue_temp_reg(shader, 1);
+   rogue_backend_instr *emitpix = NULL;
+
    rogue_set_shader_name(shader, "per-job EOT");
    rogue_builder_init(&b, shader);
    rogue_push_block(&b);
 
-   rogue_reg *state_word_0 = rogue_ssa_reg(shader, 0);
-   rogue_reg *state_word_1 = rogue_ssa_reg(shader, 1);
+   for (unsigned u = 0; u < emit_count; u++) {
+      if (u > 0)
+         rogue_WOP(&b);
 
-   rogue_MOV(&b, rogue_ref_reg(state_word_0), rogue_ref_imm(state0));
-   rogue_MOV(&b, rogue_ref_reg(state_word_1), rogue_ref_imm(state1));
+      rogue_MOV(&b, rogue_ref_reg(state_word_0), rogue_ref_imm(emit_state[0]));
+      rogue_MOV(&b, rogue_ref_reg(state_word_1), rogue_ref_imm(emit_state[1]));
 
-   rogue_backend_instr *emitpix = rogue_EMITPIX(&b,
-                                                rogue_ref_reg(state_word_0),
-                                                rogue_ref_reg(state_word_1));
+      emitpix = rogue_EMITPIX(&b,
+                              rogue_ref_reg(state_word_0),
+                              rogue_ref_reg(state_word_1));
+
+      emit_state += 2;
+   }
+
+   assert(emitpix);
+
    rogue_set_backend_op_mod(emitpix, ROGUE_BACKEND_OP_MOD_FREEP);
-
-   rogue_END(&b);
+   emitpix->instr.end = true;
 
    rogue_shader_passes(shader);
    rogue_encode_shader(NULL, shader, binary);

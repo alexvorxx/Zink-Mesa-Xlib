@@ -124,6 +124,9 @@ struct agx_shader_info {
    /* Shader is incompatible with triangle merging */
    bool disable_tri_merging;
 
+   /* Shader needs a dummy sampler (for txf reads) */
+   bool needs_dummy_sampler;
+
    /* Number of 16-bit registers used by the main shader and preamble
     * respectively.
     */
@@ -201,10 +204,9 @@ static const nir_shader_compiler_options agx_nir_options = {
    .lower_fdph = true,
    .lower_ffract = true,
    .lower_pack_half_2x16 = true,
+   .lower_pack_64_2x32 = true,
    .lower_unpack_half_2x16 = true,
-   .lower_pack_split = true,
    .lower_extract_byte = true,
-   .lower_extract_word = true,
    .lower_insert_byte = true,
    .lower_insert_word = true,
    .lower_cs_local_index_to_id = true,
@@ -214,6 +216,7 @@ static const nir_shader_compiler_options agx_nir_options = {
    .lower_rotate = true,
    .has_fsub = true,
    .has_isub = true,
+   .use_scoped_barrier = true,
    .max_unroll_iterations = 32,
    .lower_uniforms_to_ubo = true,
    .force_indirect_unrolling_sampler = true,

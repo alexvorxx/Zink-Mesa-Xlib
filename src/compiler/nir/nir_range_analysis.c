@@ -25,6 +25,7 @@
 #include "nir.h"
 #include "nir_range_analysis.h"
 #include "util/hash_table.h"
+#include "util/u_math.h"
 
 /**
  * Analyzes a sequence of operations to determine some aspects of the range of
@@ -1469,6 +1470,24 @@ nir_unsigned_upper_bound_impl(nir_shader *shader, struct hash_table *range_ht,
          /* Very generous maximum: TCS/TES executed by largest possible workgroup */
          res = config->max_workgroup_invocations / MAX2(shader->info.tess.tcs_vertices_out, 1u);
          break;
+      case nir_intrinsic_load_typed_buffer_amd: {
+         const enum pipe_format format = nir_intrinsic_format(intrin);
+         if (format == PIPE_FORMAT_NONE)
+            break;
+
+         const struct util_format_description* desc = util_format_description(format);
+         if (desc->channel[scalar.comp].type != UTIL_FORMAT_TYPE_UNSIGNED)
+            break;
+
+         if (desc->channel[scalar.comp].normalized) {
+            res = fui(1.0);
+            break;
+         }
+
+         const uint32_t chan_max = u_uintN_max(desc->channel[scalar.comp].size);
+         res = desc->channel[scalar.comp].pure_integer ? chan_max : fui(chan_max);
+         break;
+      }
       case nir_intrinsic_load_scalar_arg_amd:
       case nir_intrinsic_load_vector_arg_amd: {
          uint32_t upper_bound = nir_intrinsic_arg_upper_bound_u32_amd(intrin);

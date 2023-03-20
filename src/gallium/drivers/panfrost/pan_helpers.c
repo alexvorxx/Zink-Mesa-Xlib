@@ -127,6 +127,12 @@ panfrost_get_index_buffer_bounded(struct panfrost_batch *batch,
    struct panfrost_context *ctx = batch->ctx;
    bool needs_indices = true;
 
+   /* Note: if index_bounds_valid is set but the bounds are wrong, page faults
+    * (at least on Mali-G52) can be triggered an underflow reading varyings.
+    * Providing invalid index bounds in GLES is implementation-defined
+    * behaviour. This should be fine for now but this needs to be revisited when
+    * wiring up robustness later.
+    */
    if (info->index_bounds_valid) {
       *min_index = info->min_index;
       *max_index = info->max_index;

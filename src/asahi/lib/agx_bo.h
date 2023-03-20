@@ -98,6 +98,9 @@ struct agx_bo {
    /* DMA-BUF fd clone for adding fences to imports/exports */
    int prime_fd;
 
+   /* Syncobj handle of the current writer, if any */
+   int writer_syncobj;
+
    /* Globally unique value (system wide) for tracing. Exists for resources,
     * command buffers, GPU submissions, segments, segmentent lists, encoders,
     * accelerators, and channels. Corresponds to Instruments' magic table

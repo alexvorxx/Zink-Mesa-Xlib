@@ -306,6 +306,10 @@
    DRI_CONF_OPT_B(no_16bit, def, \
                   "Disable 16-bit instructions")
 
+#define DRI_CONF_IGNORE_DISCARD_FRAMEBUFFER(def) \
+   DRI_CONF_OPT_B(ignore_discard_framebuffer, def, \
+                  "Ignore glDiscardFramebuffer/glInvalidateFramebuffer, workaround for games that use it incorrectly")
+
 /**
  * \brief Image quality-related options
  */

@@ -110,6 +110,15 @@ st_mesa_format_to_pipe_format(const struct st_context *st,
    }
 
    if (st_astc_format_fallback(st, mesaFormat)) {
+      const bool is_5x5 = mesaFormat == PIPE_FORMAT_ASTC_5x5 ||
+                          mesaFormat == PIPE_FORMAT_ASTC_5x5_SRGB;
+
+      /* If we're only emulating ASTC void extents, use the original format */
+      if (st->astc_void_extents_need_denorm_flush &&
+          (is_5x5 ? st->has_astc_5x5_ldr : st->has_astc_2d_ldr))
+         return mesaFormat;
+
+      /* We're emulating all of ASTC via transcoding or decompression */
       if (_mesa_is_format_srgb(mesaFormat)) {
          return st->transcode_astc ? PIPE_FORMAT_DXT5_SRGBA :
                                      PIPE_FORMAT_R8G8B8A8_SRGB;

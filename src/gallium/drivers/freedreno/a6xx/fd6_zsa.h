@@ -35,6 +35,8 @@
 
 #include "fd6_context.h"
 
+BEGINC;
+
 #define FD6_ZSA_NO_ALPHA    (1 << 0)
 #define FD6_ZSA_DEPTH_CLAMP (1 << 1)
 
@@ -84,5 +86,7 @@ void *fd6_zsa_state_create(struct pipe_context *pctx,
                            const struct pipe_depth_stencil_alpha_state *cso);
 
 void fd6_zsa_state_delete(struct pipe_context *pctx, void *hwcso);
+
+ENDC;
 
 #endif /* FD6_ZSA_H_ */

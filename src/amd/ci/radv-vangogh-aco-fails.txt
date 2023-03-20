@@ -115,3 +115,5 @@ dEQP-VK.binding_model.descriptor_buffer.multiple.graphics_vert_buffers32_sets1,C
 dEQP-VK.binding_model.descriptor_buffer.multiple.graphics_vert_buffers3_sets1,Crash
 dEQP-VK.binding_model.descriptor_buffer.multiple.graphics_vert_buffers8_sets1,Crash
 dEQP-VK.binding_model.ics_miss_buffers8_sets1,Crash
+
+dEQP-VK.draw.dynamic_rendering.primary_cmd_buff.linear_interpolation.no_offset_2_samples,Fail

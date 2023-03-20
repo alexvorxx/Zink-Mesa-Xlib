@@ -436,7 +436,7 @@ agx_write_sample_mask_1(agx_builder *b)
 {
    if (b->shader->nir->info.fs.uses_discard && !b->shader->did_sample_mask) {
       /* If the shader uses discard, the sample mask must be written by the
-       * shader on all exeuction paths. If we've reached the end of the shader,
+       * shader on all execution paths. If we've reached the end of the shader,
        * we are therefore still active and need to write a full sample mask.
        * TODO: interactions with MSAA and gl_SampleMask writes
        */
@@ -597,7 +597,6 @@ agx_tex_dim(enum glsl_sampler_dim dim, bool array)
 {
    switch (dim) {
    case GLSL_SAMPLER_DIM_1D:
-   case GLSL_SAMPLER_DIM_BUF:
       return array ? AGX_DIM_1D_ARRAY : AGX_DIM_1D;
 
    case GLSL_SAMPLER_DIM_2D:
@@ -614,6 +613,9 @@ agx_tex_dim(enum glsl_sampler_dim dim, bool array)
 
    case GLSL_SAMPLER_DIM_CUBE:
       return array ? AGX_DIM_CUBE_ARRAY : AGX_DIM_CUBE;
+
+   case GLSL_SAMPLER_DIM_BUF:
+      unreachable("Buffer textures should have been lowered");
 
    default:
       unreachable("Invalid sampler dim\n");
@@ -947,16 +949,34 @@ agx_emit_intrinsic(agx_builder *b, nir_intrinsic_instr *instr)
       return agx_load_compute_dimension(
          b, dst, instr, AGX_SR_THREAD_POSITION_IN_THREADGROUP_X);
 
-   case nir_intrinsic_memory_barrier_buffer:
-      return agx_memory_barrier(b);
+   case nir_intrinsic_scoped_barrier: {
+      bool needs_threadgroup_barrier = false;
 
-   case nir_intrinsic_control_barrier:
-      return agx_threadgroup_barrier(b);
+      if (nir_intrinsic_execution_scope(instr) != NIR_SCOPE_NONE) {
+         assert(nir_intrinsic_execution_scope(instr) > NIR_SCOPE_SUBGROUP &&
+                "todo: subgroup barriers");
 
-   case nir_intrinsic_group_memory_barrier:
-   case nir_intrinsic_memory_barrier_shared:
-      /* Always seen with a control_barrier */
+         needs_threadgroup_barrier = true;
+      }
+
+      if (nir_intrinsic_memory_scope(instr) != NIR_SCOPE_NONE) {
+         nir_variable_mode modes = nir_intrinsic_memory_modes(instr);
+
+         if (modes & nir_var_mem_global)
+            agx_memory_barrier(b);
+
+         if (modes & nir_var_mem_shared)
+            needs_threadgroup_barrier = true;
+
+         if (nir_intrinsic_memory_scope(instr) >= NIR_SCOPE_WORKGROUP)
+            needs_threadgroup_barrier = true;
+      }
+
+      if (needs_threadgroup_barrier)
+         agx_threadgroup_barrier(b);
+
       return NULL;
+   }
 
    default:
       fprintf(stderr, "Unhandled intrinsic %s\n",
@@ -1248,15 +1268,18 @@ agx_emit_alu(agx_builder *b, nir_alu_instr *instr)
       return agx_convert_to(b, dst, agx_immediate(mode), s0, AGX_ROUND_RTE);
    }
 
+   case nir_op_pack_32_2x16_split:
    case nir_op_pack_64_2x32_split: {
       agx_index idx[] = {s0, s1};
       return agx_emit_collect_to(b, dst, 2, idx);
    }
 
    case nir_op_unpack_64_2x32_split_x:
+   case nir_op_unpack_32_2x16_split_x:
       return agx_subdivide_to(b, dst, s0, 0);
 
    case nir_op_unpack_64_2x32_split_y:
+   case nir_op_unpack_32_2x16_split_y:
       return agx_subdivide_to(b, dst, s0, 1);
 
    case nir_op_vec2:
@@ -1325,6 +1348,12 @@ agx_emit_tex(agx_builder *b, nir_tex_instr *instr)
              packed_offset = agx_null();
 
    bool txf = (instr->op == nir_texop_txf || instr->op == nir_texop_txf_ms);
+
+   /* txf loads a texture without an associated sampler, but in the hardware
+    * there is an associated load of a sampler. This requires that the driver
+    * upload a dummy sampler.
+    */
+   b->shader->out->needs_dummy_sampler |= txf;
 
    for (unsigned i = 0; i < instr->num_srcs; ++i) {
       agx_index index = agx_src_index(&instr->src[i].src);
@@ -1903,6 +1932,18 @@ agx_optimize_loop_nir(nir_shader *nir)
    } while (progress);
 }
 
+static bool
+combine_all_barriers(nir_intrinsic_instr *a, nir_intrinsic_instr *b, void *_)
+{
+   nir_intrinsic_set_memory_modes(
+      a, nir_intrinsic_memory_modes(a) | nir_intrinsic_memory_modes(b));
+   nir_intrinsic_set_memory_semantics(
+      a, nir_intrinsic_memory_semantics(a) | nir_intrinsic_memory_semantics(b));
+   nir_intrinsic_set_memory_scope(
+      a, MAX2(nir_intrinsic_memory_scope(a), nir_intrinsic_memory_scope(b)));
+   return true;
+}
+
 static void
 agx_optimize_nir(nir_shader *nir, unsigned *preamble_size)
 {
@@ -1951,6 +1992,7 @@ agx_optimize_nir(nir_shader *nir, unsigned *preamble_size)
    NIR_PASS_V(nir, nir_opt_algebraic_late);
    NIR_PASS_V(nir, agx_nir_lower_algebraic_late);
    NIR_PASS_V(nir, nir_opt_constant_folding);
+   NIR_PASS_V(nir, nir_opt_combine_barriers, combine_all_barriers, NULL);
 
    /* Must run after uses are fixed but before a last round of copyprop + DCE */
    if (nir->info.stage == MESA_SHADER_FRAGMENT)
@@ -1978,7 +2020,7 @@ agx_remap_varyings_vs(nir_shader *nir, struct agx_varyings_vs *varyings)
 {
    unsigned base = 0;
 
-   /* Initalize to "nothing is written" */
+   /* Initialize to "nothing is written" */
    for (unsigned i = 0; i < ARRAY_SIZE(varyings->slots); ++i)
       varyings->slots[i] = ~0;
 
@@ -2083,6 +2125,27 @@ agx_fp32_varying_mask(nir_shader *nir)
    return mask;
 }
 
+static nir_mem_access_size_align
+mem_access_size_align_cb(nir_intrinsic_op intrin, uint8_t bytes, uint32_t align,
+                         uint32_t align_offset, bool offset_is_const,
+                         const void *cb_data)
+{
+   align = nir_combined_align(align, align_offset);
+
+   assert(util_is_power_of_two_nonzero(align));
+   unsigned bit_size = (bytes & 1) ? 8 : (bytes & 2) ? 16 : 32;
+   if (align == 2)
+      bit_size = MIN2(bit_size, 16);
+   else if (align == 1)
+      bit_size = 8;
+
+   return (nir_mem_access_size_align){
+      .num_components = bytes / (bit_size / 8),
+      .bit_size = bit_size,
+      .align = bit_size / 8,
+   };
+}
+
 static bool
 agx_should_dump(nir_shader *nir, unsigned agx_dbg_bit)
 {
@@ -2131,11 +2194,16 @@ agx_compile_function_nir(nir_shader *nir, nir_function_impl *impl,
    agx_validate(ctx, "IR translation");
 
    if (likely(!(agx_compiler_debug & AGX_DBG_NOOPT))) {
-      /* Dead code eliminate before instruction combining so use counts are
-       * right */
-      agx_dce(ctx);
-      agx_optimizer(ctx);
+      /* Eliminate dead instructions before CSE to avoid silly scheduling */
+      agx_dce(ctx, false);
+
+      /* CSE before eliminating dead destinations so that subdivision is
+       * optimized properly.
+       */
       agx_opt_cse(ctx);
+
+      /* After DCE, use counts are right so we can run the optimizer. */
+      agx_optimizer(ctx);
 
       /* For correctness, lower uniform sources after copyprop (for correctness,
        * as copyprop creates uniform sources). To keep register pressure in
@@ -2144,7 +2212,7 @@ agx_compile_function_nir(nir_shader *nir, nir_function_impl *impl,
       agx_lower_uniform_sources(ctx);
 
       /* Dead code eliminate after instruction combining to get the benefit */
-      agx_dce(ctx);
+      agx_dce(ctx, true);
       agx_validate(ctx, "Optimization");
 
       if (agx_should_dump(nir, AGX_DBG_SHADERS))
@@ -2249,7 +2317,6 @@ agx_preprocess_nir(nir_shader *nir, bool support_lod_bias)
    NIR_PASS_V(nir, nir_lower_ssbo);
    if (nir->info.stage == MESA_SHADER_FRAGMENT) {
       NIR_PASS_V(nir, agx_nir_lower_frag_sidefx);
-      NIR_PASS_V(nir, agx_nir_lower_zs_emit);
 
       /* Interpolate varyings at fp16 and write to the tilebuffer at fp16. As an
        * exception, interpolate flat shaded at fp32. This works around a
@@ -2337,6 +2404,20 @@ agx_compile_shader_nir(nir_shader *nir, struct agx_shader_key *key,
       else
          out->depth_layout = layout;
    }
+
+   /* Late clip plane lowering created discards */
+   if (nir->info.stage == MESA_SHADER_FRAGMENT) {
+      NIR_PASS_V(nir, agx_nir_lower_zs_emit);
+   }
+
+   /* Late sysval lowering creates large loads. Load lowering creates unpacks */
+   NIR_PASS_V(nir, nir_lower_mem_access_bit_sizes,
+              nir_var_mem_ssbo | nir_var_mem_constant |
+                 nir_var_mem_task_payload | nir_var_shader_temp |
+                 nir_var_function_temp | nir_var_mem_global |
+                 nir_var_mem_shared,
+              mem_access_size_align_cb, NULL);
+   NIR_PASS_V(nir, nir_lower_pack);
 
    /* Late blend lowering creates vectors */
    NIR_PASS_V(nir, nir_lower_alu_to_scalar, NULL, NULL);

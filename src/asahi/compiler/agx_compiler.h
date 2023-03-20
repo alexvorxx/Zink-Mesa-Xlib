@@ -774,7 +774,7 @@ void agx_optimizer(agx_context *ctx);
 void agx_lower_pseudo(agx_context *ctx);
 void agx_lower_uniform_sources(agx_context *ctx);
 void agx_opt_cse(agx_context *ctx);
-void agx_dce(agx_context *ctx);
+void agx_dce(agx_context *ctx, bool partial);
 void agx_ra(agx_context *ctx);
 void agx_lower_64bit_postra(agx_context *ctx);
 void agx_insert_waits(agx_context *ctx);

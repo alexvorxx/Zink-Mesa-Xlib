@@ -30,6 +30,8 @@
 #include "pipe/p_context.h"
 #include "freedreno_context.h"
 
+BEGINC;
+
 static inline bool
 fd_depth_enabled(struct fd_context *ctx) assert_dt
 {
@@ -76,5 +78,7 @@ void fd_set_framebuffer_state(struct pipe_context *pctx,
                          const struct pipe_framebuffer_state *framebuffer) in_dt;
 
 void fd_state_init(struct pipe_context *pctx);
+
+ENDC;
 
 #endif /* FREEDRENO_STATE_H_ */

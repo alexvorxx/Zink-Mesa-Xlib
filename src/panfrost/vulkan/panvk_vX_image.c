@@ -214,7 +214,7 @@ panvk_per_arch(CreateBufferView)(VkDevice _device,
          cfg.levels = 1;
          cfg.array_size = 1;
          cfg.surfaces = view->bo->ptr.gpu;
-         cfg.maximum_lod = cfg.minimum_lod = FIXED_16(0, false);
+         cfg.maximum_lod = cfg.minimum_lod = 0;
       }
    }
 

@@ -375,7 +375,7 @@ op("phi", _, srcs = VARIABLE)
 
 op("unit_test", _, dests = 0, srcs = 1, can_eliminate = False)
 
-# Like mov, but takes a register and can only appear at the start. Gauranteed
+# Like mov, but takes a register and can only appear at the start. Guaranteed
 # to be coalesced during RA, rather than lowered to a real move. 
 op("preload", _, srcs = 1)
 

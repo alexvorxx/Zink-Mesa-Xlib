@@ -566,6 +566,12 @@ Intel driver environment variables
    ``offsets``
       print offsets of instructions
 
+.. envvar:: INTEL_EXTENDED_METRICS
+
+   By default, only a standard set of gpu metrics are advertised. This
+   reduces time to collect metrics and hides infrequently used metrics.
+   To enable all metrics, set value to 1.
+
 .. envvar:: INTEL_MEASURE
 
    Collects GPU timestamps over common intervals, and generates a CSV report
@@ -1155,6 +1161,8 @@ RADV driver environment variables
       enable wave32 for compute shaders (GFX10+)
    ``dccmsaa``
       enable DCC for MSAA images
+   ``dmashaders``
+      upload shaders to invisible VRAM (might be useful for non-resizable BAR systems)
    ``emulate_rt``
       forces ray-tracing to be emulated in software on GFX10_3+ and enables
       rt extensions with older hardware.

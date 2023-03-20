@@ -86,15 +86,14 @@ void
 zink_fence_wait(struct pipe_context *ctx);
 
 void
-//zink_wait_on_batch(struct zink_context *ctx, uint64_t batch_id);
-zink_wait_on_batch(struct zink_context *ctx, uint32_t batch_id);
+zink_wait_on_batch(struct zink_context *ctx, uint64_t batch_id);
 
 bool
-//zink_check_batch_completion(struct zink_context *ctx, uint64_t batch_id);
-zink_check_batch_completion(struct zink_context *ctx, uint32_t batch_id);
-
+zink_check_batch_completion(struct zink_context *ctx, uint64_t batch_id);
 VkCommandBuffer
 zink_get_cmdbuf(struct zink_context *ctx, struct zink_resource *src, struct zink_resource *dst);
+unsigned
+zink_update_rendering_info(struct zink_context *ctx);
 void
 zink_flush_queue(struct zink_context *ctx);
 void
@@ -118,10 +117,10 @@ zink_resource_image_barrier2(struct zink_context *ctx, struct zink_resource *res
 bool
 zink_resource_needs_barrier(struct zink_resource *res, VkImageLayout layout, VkAccessFlags flags, VkPipelineStageFlags pipeline);
 bool
-zink_check_transfer_dst_barrier(struct zink_resource *res, unsigned level, const struct pipe_box *box);
+zink_check_unordered_transfer_access(struct zink_resource *res, unsigned level, const struct pipe_box *box);
 void
 zink_resource_image_transfer_dst_barrier(struct zink_context *ctx, struct zink_resource *res, unsigned level, const struct pipe_box *box);
-void
+bool
 zink_resource_buffer_transfer_dst_barrier(struct zink_context *ctx, struct zink_resource *res, unsigned offset, unsigned size);
 void
 zink_update_descriptor_refs(struct zink_context *ctx, bool compute);
@@ -133,6 +132,8 @@ zink_batch_rp(struct zink_context *ctx);
 
 void
 zink_batch_no_rp(struct zink_context *ctx);
+void
+zink_batch_no_rp_safe(struct zink_context *ctx);
 
 VkImageView
 zink_prep_fb_attachment(struct zink_context *ctx, struct zink_surface *surf, unsigned i);
@@ -200,6 +201,8 @@ zink_context_query_init(struct pipe_context *ctx);
 
 void
 zink_blit_begin(struct zink_context *ctx, enum zink_blit_flags flags);
+void
+zink_blit_barriers(struct zink_context *ctx, struct zink_resource *src, struct zink_resource *dst, bool whole_dst);
 
 void
 zink_blit(struct pipe_context *pctx,

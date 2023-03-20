@@ -50,10 +50,6 @@
 
 #include "util/u_cpu_detect.h"
 
-#include "frontend/sw_winsys.h"
-
-extern struct pipe_context* zink_xlib_context;
-
 static int num_screens = 0;
 bool zink_tracing = false;
 
@@ -130,8 +126,14 @@ static const char *
 zink_get_name(struct pipe_screen *pscreen)
 {
    struct zink_screen *screen = zink_screen(pscreen);
+   const char *driver_name = vk_DriverId_to_str(screen->info.driver_props.driverID) + strlen("VK_DRIVER_ID_");
    static char buf[1000];
-   snprintf(buf, sizeof(buf), "zink (%s)", screen->info.props.deviceName);
+   snprintf(buf, sizeof(buf), "zink Vulkan %d.%d(%s (%s))",
+            VK_VERSION_MAJOR(screen->info.device_version),
+            VK_VERSION_MINOR(screen->info.device_version),
+            screen->info.props.deviceName,
+            strstr(vk_DriverId_to_str(screen->info.driver_props.driverID), "VK_DRIVER_ID_") ? driver_name : "Driver Unknown"
+            );
    return buf;
 }
 
@@ -1457,9 +1459,6 @@ zink_destroy_screen(struct pipe_screen *pscreen)
    if (screen->sem)
       VKSCR(DestroySemaphore)(screen->dev, screen->sem, NULL);
 
-   if (screen->prev_sem)
-      VKSCR(DestroySemaphore)(screen->dev, screen->prev_sem, NULL);
-
    if (screen->fence)
       VKSCR(DestroyFence)(screen->dev, screen->fence, NULL);
 
@@ -1618,64 +1617,37 @@ zink_flush_frontbuffer(struct pipe_screen *pscreen,
 {
    struct zink_screen *screen = zink_screen(pscreen);
    struct zink_resource *res = zink_resource(pres);
-   //struct zink_context *ctx = zink_context(pctx);
+   struct zink_context *ctx = zink_context(pctx);
 
    /* if the surface is no longer a swapchain, this is a no-op */
-   /*if (!zink_is_swapchain(res))
+   if (!zink_is_swapchain(res))
       return;
 
    ctx = zink_tc_context_unwrap(pctx, screen->threaded);
 
-   if (!zink_kopper_acquired(res->obj->dt, res->obj->dt_idx)) {*/
+   if (!zink_kopper_acquired(res->obj->dt, res->obj->dt_idx)) {
       /* swapbuffers to an undefined surface: acquire and present garbage */
-      /*zink_kopper_acquire(ctx, res, UINT64_MAX);
-      ctx->needs_present = res;*/
+      zink_kopper_acquire(ctx, res, UINT64_MAX);
+      ctx->needs_present = res;
       /* set batch usage to submit acquire semaphore */
-      //zink_batch_resource_usage_set(&ctx->batch, res, true, false);
+      zink_batch_resource_usage_set(&ctx->batch, res, true, false);
       /* ensure the resource is set up to present garbage */
-      /*ctx->base.flush_resource(&ctx->base, pres);
-   }*/
+      ctx->base.flush_resource(&ctx->base, pres);
+   }
 
    /* handle any outstanding acquire submits (not just from above) */
-   /*if (ctx->batch.swapchain || ctx->needs_present) {
+   if (ctx->batch.swapchain || ctx->needs_present) {
       ctx->batch.has_work = true;
       pctx->flush(pctx, NULL, PIPE_FLUSH_END_OF_FRAME);
       if (ctx->last_fence && screen->threaded) {
          struct zink_batch_state *bs = zink_batch_state(ctx->last_fence);
          util_queue_fence_wait(&bs->flush_completed);
       }
-   }*/
-
-   /* always verify that this was acquired */
-   /*assert(zink_kopper_acquired(res->obj->dt, res->obj->dt_idx));
-   zink_kopper_present_queue(screen, res);*/
-
-   struct sw_winsys *winsys = screen->winsys;
-
-   if (!winsys)
-     return;
-   void *map = winsys->displaytarget_map(winsys, res->dt, 0);
-
-   if (map) {
-      struct pipe_transfer *transfer = NULL;
-
-      // Context hack
-      pctx = zink_xlib_context;
-
-      void *res_map = pipe_texture_map(pctx, pres, level, layer, PIPE_MAP_READ, 0, 0,
-                                        u_minify(pres->width0, level),
-                                        u_minify(pres->height0, level),
-                                        &transfer);
-      if (res_map) {
-         util_copy_rect((ubyte*)map, pres->format, res->dt_stride, 0, 0,
-                        transfer->box.width, transfer->box.height,
-                        (const ubyte*)res_map, transfer->stride, 0, 0);
-         pipe_texture_unmap(pctx, transfer);
-      }
-      winsys->displaytarget_unmap(winsys, res->dt);
    }
 
-   winsys->displaytarget_display(winsys, res->dt, winsys_drawable_handle, sub_box);
+   /* always verify that this was acquired */
+   assert(zink_kopper_acquired(res->obj->dt, res->obj->dt_idx));
+   zink_kopper_present_queue(screen, res);
 }
 
 bool
@@ -2056,6 +2028,9 @@ static void
 setup_renderdoc(struct zink_screen *screen)
 {
 #ifdef HAVE_RENDERDOC_APP_H
+   const char *capture_id = debug_get_option("ZINK_RENDERDOC", NULL);
+   if (!capture_id)
+      return;
    void *renderdoc = dlopen("librenderdoc.so", RTLD_NOW | RTLD_NOLOAD);
    /* not loaded */
    if (!renderdoc)
@@ -2070,9 +2045,6 @@ setup_renderdoc(struct zink_screen *screen)
    get_api(eRENDERDOC_API_Version_1_0_0, (void*)&screen->renderdoc_api);
    screen->renderdoc_api->SetActiveWindow(RENDERDOC_DEVICEPOINTER_FROM_VKINSTANCE(screen->instance), NULL);
 
-   const char *capture_id = debug_get_option("ZINK_RENDERDOC", NULL);
-   if (!capture_id)
-      return;
    int count = sscanf(capture_id, "%u:%u", &screen->renderdoc_capture_start, &screen->renderdoc_capture_end);
    if (count != 2) {
       count = sscanf(capture_id, "%u", &screen->renderdoc_capture_start);
@@ -2095,35 +2067,16 @@ zink_screen_init_semaphore(struct zink_screen *screen)
 {
    VkSemaphoreCreateInfo sci = {0};
    VkSemaphoreTypeCreateInfo tci = {0};
-
-   VkSemaphore sem;
-
    sci.pNext = &tci;
    sci.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
    tci.sType = VK_STRUCTURE_TYPE_SEMAPHORE_TYPE_CREATE_INFO;
    tci.semaphoreType = VK_SEMAPHORE_TYPE_TIMELINE;
 
-   //return VKSCR(CreateSemaphore)(screen->dev, &sci, NULL, &screen->sem) == VK_SUCCESS;
-
-   if (VKSCR(CreateSemaphore)(screen->dev, &sci, NULL, &sem) == VK_SUCCESS) {
-      /* semaphore signal values can never decrease,
-       * so we need a new semaphore anytime we overflow
-       */
-      if (screen->prev_sem)
-         VKSCR(DestroySemaphore)(screen->dev, screen->prev_sem, NULL);
-      screen->prev_sem = screen->sem;
-      screen->sem = sem;
-      return true;
-   } else {
-      mesa_loge("ZINK: vkCreateSemaphore failed");
-   }
-   screen->info.have_KHR_timeline_semaphore = false;
-   return false;
+   return VKSCR(CreateSemaphore)(screen->dev, &sci, NULL, &screen->sem) == VK_SUCCESS;
 }
 
 bool
-//zink_screen_timeline_wait(struct zink_screen *screen, uint64_t batch_id, uint64_t timeout)
-zink_screen_timeline_wait(struct zink_screen *screen, uint32_t batch_id, uint64_t timeout)
+zink_screen_timeline_wait(struct zink_screen *screen, uint64_t batch_id, uint64_t timeout)
 {
    VkSemaphoreWaitInfo wi = {0};
 
@@ -2132,13 +2085,8 @@ zink_screen_timeline_wait(struct zink_screen *screen, uint32_t batch_id, uint64_
 
    wi.sType = VK_STRUCTURE_TYPE_SEMAPHORE_WAIT_INFO;
    wi.semaphoreCount = 1;
-   /*wi.pSemaphores = &screen->sem;
-   wi.pValues = &batch_id;*/
-   /* handle batch_id overflow */
-   wi.pSemaphores = batch_id > screen->curr_batch ? &screen->prev_sem : &screen->sem;
-   uint64_t batch_id64 = batch_id;
-   wi.pValues = &batch_id64;
-
+   wi.pSemaphores = &screen->sem;
+   wi.pValues = &batch_id;
    bool success = false;
    if (screen->device_lost)
       return true;
@@ -2147,81 +2095,6 @@ zink_screen_timeline_wait(struct zink_screen *screen, uint32_t batch_id, uint64_
 
    if (success)
       zink_screen_update_last_finished(screen, batch_id);
-
-   return success;
-}
-
-struct noop_submit_info {
-   struct zink_screen *screen;
-   VkFence fence;
-};
-
-static void
-noop_submit(void *data, void *gdata, int thread_index)
-{
-   struct noop_submit_info *n = data;
-   VkSubmitInfo si = {0};
-   si.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-   simple_mtx_lock(&n->screen->queue_lock);
-   if (n->VKSCR(QueueSubmit)(n->screen->threaded ? n->screen->queue_sparse : n->screen->queue,
-                     1, &si, n->fence) != VK_SUCCESS) {
-      mesa_loge("ZINK: vkQueueSubmit failed");
-      n->screen->device_lost = true;
-   }
-   simple_mtx_unlock(&n->screen->queue_lock);
-}
-
-bool
-zink_screen_batch_id_wait(struct zink_screen *screen, uint32_t batch_id, uint64_t timeout)
-{
-   if (zink_screen_check_last_finished(screen, batch_id))
-      return true;
-
-   if (screen->info.have_KHR_timeline_semaphore)
-      return zink_screen_timeline_wait(screen, batch_id, timeout);
-
-   if (!timeout)
-      return false;
-
-   uint32_t new_id = 0;
-   while (!new_id)
-      new_id = p_atomic_inc_return(&screen->curr_batch);
-   VkResult ret;
-   struct noop_submit_info n;
-   uint64_t abs_timeout = os_time_get_absolute_timeout(timeout);
-   uint64_t remaining = PIPE_TIMEOUT_INFINITE;
-   VkFenceCreateInfo fci = {0};
-   struct util_queue_fence fence;
-   util_queue_fence_init(&fence);
-   fci.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
-
-   if (VKSCR(CreateFence)(screen->dev, &fci, NULL, &n.fence) != VK_SUCCESS) {
-      mesa_loge("ZINK: vkCreateFence failed");
-      return false;
-   }
-
-   n.screen = screen;
-   if (screen->threaded) {
-      /* must use thread dispatch for sanity */
-      util_queue_add_job(&screen->flush_queue, &n, &fence, noop_submit, NULL, 0);
-      util_queue_fence_wait(&fence);
-   } else {
-      noop_submit(&n, NULL, 0);
-   }
-   if (timeout != PIPE_TIMEOUT_INFINITE) {
-      int64_t time_ns = os_time_get_nano();
-      remaining = abs_timeout > time_ns ? abs_timeout - time_ns : 0;
-   }
-
-   if (remaining)
-      ret = VKSCR(WaitForFences)(screen->dev, 1, &n.fence, VK_TRUE, remaining);
-   else
-      ret = VKSCR(GetFenceStatus)(screen->dev, n.fence);
-   VKSCR(DestroyFence)(screen->dev, n.fence, NULL);
-   bool success = zink_screen_handle_vkresult(screen, ret);
-
-   if (success)
-      zink_screen_update_last_finished(screen, new_id);
 
    return success;
 }
@@ -2581,11 +2454,6 @@ init_driver_workarounds(struct zink_screen *screen)
       screen->driver_workarounds.no_linesmooth = true;
    }
 
-   screen->driver_workarounds.extra_swapchain_images = 0;
-   if (screen->info.driver_props.driverID == VK_DRIVER_ID_MESA_VENUS) {
-      screen->driver_workarounds.extra_swapchain_images = 1;
-   }
-
    /* This is a workarround for the lack of
     * gl_PointSize + glPolygonMode(..., GL_LINE), in the imagination
     * proprietary driver.
@@ -2645,6 +2513,18 @@ init_driver_workarounds(struct zink_screen *screen)
       break;
    default:
       screen->driver_workarounds.needs_sanitised_layer = false;
+      break;
+   }
+   /* these drivers will produce undefined results when using swizzle 1 with combined z/s textures
+    * TODO: use a future device property when available
+    */
+   switch (screen->info.driver_props.driverID) {
+   case VK_DRIVER_ID_IMAGINATION_PROPRIETARY:
+   case VK_DRIVER_ID_IMAGINATION_OPEN_SOURCE_MESA:
+      screen->driver_workarounds.needs_zs_shader_swizzle = true;
+      break;
+   default:
+      screen->driver_workarounds.needs_zs_shader_swizzle = false;
       break;
    }
 
@@ -2876,10 +2756,10 @@ zink_internal_create_screen(const struct pipe_screen_config *config)
    }
 
    zink_internal_setup_moltenvk(screen);
-   /*if (!screen->info.have_KHR_timeline_semaphore) {
+   if (!screen->info.have_KHR_timeline_semaphore) {
       mesa_loge("zink: KHR_timeline_semaphore is required");
       goto fail;
-   }*/
+   }
 
    init_driver_workarounds(screen);
 
@@ -3009,15 +2889,10 @@ zink_internal_create_screen(const struct pipe_screen_config *config)
    if (!os_get_total_physical_memory(&screen->total_mem))
       goto fail;
 
-   /*if (!zink_screen_init_semaphore(screen)) {
+   if (!zink_screen_init_semaphore(screen)) {
       mesa_loge("zink: failed to create timeline semaphore");
       goto fail;
-   }*/
-
-   if (debug_get_bool_option("ZINK_NO_TIMELINES", false))
-      screen->info.have_KHR_timeline_semaphore = false;
-   if (screen->info.have_KHR_timeline_semaphore)
-      zink_screen_init_semaphore(screen);
+   }
 
    memset(&screen->heap_map, UINT8_MAX, sizeof(screen->heap_map));
    for (enum zink_heap i = 0; i < ZINK_HEAP_MAX; i++) {
@@ -3175,7 +3050,8 @@ zink_internal_create_screen(const struct pipe_screen_config *config)
                           !screen->driver_workarounds.no_linesmooth &&
                           !screen->driver_workarounds.no_hw_gl_point &&
                           !screen->driver_workarounds.lower_robustImageAccess2 &&
-                          !screen->driconf.emulate_point_smooth;
+                          !screen->driconf.emulate_point_smooth &&
+                          !screen->driver_workarounds.needs_zs_shader_swizzle;
    if (!screen->optimal_keys)
       screen->info.have_EXT_graphics_pipeline_library = false;
 
@@ -3202,7 +3078,6 @@ zink_create_screen(struct sw_winsys *winsys, const struct pipe_screen_config *co
 {
    struct zink_screen *ret = zink_internal_create_screen(config);
    if (ret) {
-      ret->winsys = winsys;
       ret->drm_fd = -1;
    }
 

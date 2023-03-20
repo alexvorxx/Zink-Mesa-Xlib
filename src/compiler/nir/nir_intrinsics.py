@@ -182,6 +182,7 @@ index("enum glsl_sampler_dim", "image_dim")
 index("bool", "image_array")
 
 # Image format for image intrinsics
+# Vertex buffer format for load_typed_buffer_amd
 index("enum pipe_format", "format")
 
 # Access qualifiers for image and memory access intrinsics. ACCESS_RESTRICT is
@@ -1330,6 +1331,18 @@ intrinsic("optimization_barrier_vgpr_amd", dest_comp=0, src_comp=[0],
 intrinsic("load_buffer_amd", src_comp=[4, 1, 1, 1], dest_comp=0, indices=[BASE, MEMORY_MODES, ACCESS], flags=[CAN_ELIMINATE])
 # src[] = { store value, descriptor, vector byte offset, scalar byte offset, index offset }
 intrinsic("store_buffer_amd", src_comp=[0, 4, 1, 1, 1], indices=[BASE, WRITE_MASK, MEMORY_MODES, ACCESS])
+
+# Typed buffer load of arbitrary length, using a specified format.
+# src[] = { descriptor, vector byte offset, scalar byte offset, index offset }
+#
+# The compiler backend is responsible for emitting correct HW instructions according to alignment, range etc.
+# Users of this intrinsic must ensure that the first component being loaded is really the first component
+# of the specified format, because range analysis assumes this.
+# The size of the specified format also determines the memory range that this instruction is allowed to access.
+#
+# The index offset is multiplied by the stride in the descriptor, if any.
+# The vector/scalar offsets are in bytes, BASE is a constant byte offset.
+intrinsic("load_typed_buffer_amd", src_comp=[4, 1, 1, 1], dest_comp=0, indices=[BASE, MEMORY_MODES, ACCESS, FORMAT, ALIGN_MUL, ALIGN_OFFSET], flags=[CAN_ELIMINATE])
 
 # src[] = { address, unsigned 32-bit offset }.
 load("global_amd", [1, 1], indices=[BASE, ACCESS, ALIGN_MUL, ALIGN_OFFSET], flags=[CAN_ELIMINATE])

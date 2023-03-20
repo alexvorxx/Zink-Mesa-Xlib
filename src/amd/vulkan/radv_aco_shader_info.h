@@ -35,27 +35,6 @@
 #define ASSIGN_FIELD_CP(x) memcpy(&aco_info->x, &radv->x, sizeof(radv->x))
 
 static inline void
-radv_aco_convert_shader_vp_info(struct aco_vp_output_info *aco_info,
-				const struct radv_vs_output_info *radv)
-{
-   ASSIGN_FIELD_CP(vs_output_param_offset);
-   ASSIGN_FIELD(clip_dist_mask);
-   ASSIGN_FIELD(cull_dist_mask);
-   ASSIGN_FIELD(param_exports);
-   ASSIGN_FIELD(prim_param_exports);
-   ASSIGN_FIELD(writes_pointsize);
-   ASSIGN_FIELD(writes_layer);
-   ASSIGN_FIELD(writes_layer_per_primitive);
-   ASSIGN_FIELD(writes_viewport_index);
-   ASSIGN_FIELD(writes_viewport_index_per_primitive);
-   ASSIGN_FIELD(writes_primitive_shading_rate);
-   ASSIGN_FIELD(writes_primitive_shading_rate_per_primitive);
-   ASSIGN_FIELD(export_prim_id);
-   ASSIGN_FIELD(export_clip_dists);
-   /* don't use export params */
-}
-
-static inline void
 radv_aco_convert_shader_info(struct aco_shader_info *aco_info,
 			     const struct radv_shader_info *radv,
               const struct radv_shader_args *radv_args)
@@ -65,7 +44,6 @@ radv_aco_convert_shader_info(struct aco_shader_info *aco_info,
    ASSIGN_FIELD(has_ngg_culling);
    ASSIGN_FIELD(has_ngg_early_prim_export);
    ASSIGN_FIELD(workgroup_size);
-   radv_aco_convert_shader_vp_info(&aco_info->outinfo, &radv->outinfo);
    ASSIGN_FIELD(vs.as_es);
    ASSIGN_FIELD(vs.as_ls);
    ASSIGN_FIELD(vs.tcs_in_out_eq);
@@ -137,13 +115,6 @@ radv_aco_convert_pipe_key(struct aco_stage_input *aco_info, const struct radv_pi
    radv_aco_convert_ps_epilog_key(&aco_info->ps.epilog, &radv->ps.epilog, radv_args);
    ASSIGN_FIELD(optimisations_disabled);
    ASSIGN_FIELD(image_2d_view_of_3d);
-   ASSIGN_FIELD(vs.instance_rate_inputs);
-   ASSIGN_FIELD_CP(vs.instance_rate_divisors);
-   ASSIGN_FIELD_CP(vs.vertex_attribute_formats);
-   ASSIGN_FIELD_CP(vs.vertex_attribute_bindings);
-   ASSIGN_FIELD_CP(vs.vertex_attribute_offsets);
-   ASSIGN_FIELD_CP(vs.vertex_attribute_strides);
-   ASSIGN_FIELD_CP(vs.vertex_binding_align);
    ASSIGN_FIELD(tcs.tess_input_vertices);
    ASSIGN_FIELD(ps.alpha_to_coverage_via_mrtz);
 }

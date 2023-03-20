@@ -181,6 +181,7 @@ struct lvp_device {
    struct pipe_screen *pscreen;
    void *noop_fs;
    bool poison_mem;
+   bool print_cmds;
 };
 
 void lvp_device_get_cache_uuid(void *uuid);

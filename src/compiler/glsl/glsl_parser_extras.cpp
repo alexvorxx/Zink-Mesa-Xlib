@@ -95,7 +95,7 @@ _mesa_glsl_parse_state::_mesa_glsl_parse_state(struct gl_context *_ctx,
    this->ARB_texture_rectangle_enable = true;
 
    /* OpenGL ES 2.0 has different defaults from desktop GL. */
-   if (ctx->API == API_OPENGLES2) {
+   if (_mesa_is_gles2(ctx)) {
       this->language_version = 100;
       this->es_shader = true;
       this->ARB_texture_rectangle_enable = false;
@@ -238,7 +238,7 @@ _mesa_glsl_parse_state::_mesa_glsl_parse_state(struct gl_context *_ctx,
          }
       }
    }
-   if (ctx->API == API_OPENGLES2 || ctx->Extensions.ARB_ES2_compatibility) {
+   if (_mesa_is_gles2(ctx) || ctx->Extensions.ARB_ES2_compatibility) {
       this->supported_versions[this->num_supported_versions].ver = 100;
       this->supported_versions[this->num_supported_versions].gl_ver = 20;
       this->supported_versions[this->num_supported_versions].es = true;
@@ -256,7 +256,7 @@ _mesa_glsl_parse_state::_mesa_glsl_parse_state(struct gl_context *_ctx,
       this->supported_versions[this->num_supported_versions].es = true;
       this->num_supported_versions++;
    }
-   if ((ctx->API == API_OPENGLES2 && ctx->Version >= 32) ||
+   if (_mesa_is_gles32(ctx) ||
        ctx->Extensions.ARB_ES3_2_compatibility) {
       this->supported_versions[this->num_supported_versions].ver = 320;
       this->supported_versions[this->num_supported_versions].gl_ver = 32;
@@ -2398,12 +2398,6 @@ do_common_optimization(exec_list *ir, bool linked,
       OPT(do_dead_code_unlinked, ir);
    OPT(do_dead_code_local, ir);
    OPT(do_tree_grafting, ir);
-   OPT(do_constant_propagation, ir);
-   if (linked)
-      OPT(do_constant_variable, ir);
-   else
-      OPT(do_constant_variable_unlinked, ir);
-   OPT(do_constant_folding, ir);
    OPT(do_minmax_prune, ir);
    OPT(do_rebalance_tree, ir);
    OPT(do_algebraic, ir, native_integers, options);

@@ -228,15 +228,19 @@ glsl_to_nir(const struct gl_constants *consts,
    sh->ir = NULL;
 
    nir_validate_shader(shader, "after glsl to nir, before function inline");
+   if (should_print_nir(shader)) {
+      printf("glsl_to_nir\n");
+      nir_print_shader(shader, stdout);
+   }
 
    /* We have to lower away local constant initializers right before we
     * inline functions.  That way they get properly initialized at the top
     * of the function and not at the top of its caller.
     */
-   nir_lower_variable_initializers(shader, nir_var_all);
-   nir_lower_returns(shader);
-   nir_inline_functions(shader);
-   nir_opt_deref(shader);
+   NIR_PASS_V(shader, nir_lower_variable_initializers, nir_var_all);
+   NIR_PASS_V(shader, nir_lower_returns);
+   NIR_PASS_V(shader, nir_inline_functions);
+   NIR_PASS_V(shader, nir_opt_deref);
 
    nir_validate_shader(shader, "after function inlining and return lowering");
 
@@ -703,7 +707,13 @@ nir_visitor::visit(ir_variable *ir)
       var->state_slots = NULL;
    }
 
-   var->constant_initializer = constant_copy(ir->constant_initializer, var);
+   /* Values declared const will have ir->constant_value instead of
+    * ir->constant_initializer.
+    */
+   if (ir->constant_initializer)
+      var->constant_initializer = constant_copy(ir->constant_initializer, var);
+   else
+      var->constant_initializer = constant_copy(ir->constant_value, var);
 
    if (var->data.mode == nir_var_function_temp)
       nir_function_impl_add_variable(impl, var);

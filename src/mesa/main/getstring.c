@@ -162,7 +162,7 @@ _mesa_GetString( GLenum name )
             ctx->Extensions.String = _mesa_make_extension_string(ctx);
          return (const GLubyte *) ctx->Extensions.String;
       case GL_SHADING_LANGUAGE_VERSION:
-         if (ctx->API == API_OPENGLES)
+         if (_mesa_is_gles1(ctx))
             break;
 	 return shading_language_version(ctx);
       case GL_PROGRAM_ERROR_STRING_ARB:

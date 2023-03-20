@@ -214,6 +214,7 @@ public:
    EMIT1(FBH)
    EMIT1(FBL)
    EMIT1(CBIT)
+   EMIT1(LZD)
    EMIT3(MAD)
    EMIT2(ADDC)
    EMIT2(SUBB)

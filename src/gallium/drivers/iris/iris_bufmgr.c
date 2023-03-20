@@ -67,6 +67,7 @@
 #include "string.h"
 #include "iris_kmd_backend.h"
 #include "i915/iris_bufmgr.h"
+#include "xe/iris_bufmgr.h"
 
 #include "drm-uapi/i915_drm.h"
 
@@ -311,8 +312,12 @@ bucket_info_for_heap(struct iris_bufmgr *bufmgr, enum iris_heap heap,
  */
 static struct bo_cache_bucket *
 bucket_for_size(struct iris_bufmgr *bufmgr, uint64_t size,
-                enum iris_heap heap)
+                enum iris_heap heap, unsigned flags)
 {
+   /* Protected bo needs special handling during allocation */
+   if (flags & BO_ALLOC_PROTECTED)
+      return NULL;
+
    /* Calculating the pages and rounding up to the page size. */
    const unsigned pages = (size + PAGE_SIZE - 1) / PAGE_SIZE;
 
@@ -872,8 +877,7 @@ alloc_bo_from_cache(struct iris_bufmgr *bufmgr,
                     unsigned flags,
                     bool match_zone)
 {
-   /* Don't put anything protected in the BO cache. */
-   if (!bucket || (flags & BO_ALLOC_PROTECTED))
+   if (!bucket)
       return NULL;
 
    struct iris_bo *bo = NULL;
@@ -1039,7 +1043,7 @@ iris_bo_alloc(struct iris_bufmgr *bufmgr,
    unsigned int page_size = getpagesize();
    enum iris_heap heap = flags_to_heap(bufmgr, flags);
    bool local = heap != IRIS_HEAP_SYSTEM_MEMORY;
-   struct bo_cache_bucket *bucket = bucket_for_size(bufmgr, size, heap);
+   struct bo_cache_bucket *bucket = bucket_for_size(bufmgr, size, heap, flags);
 
    if (memzone != IRIS_MEMZONE_OTHER || (flags & BO_ALLOC_COHERENT))
       flags |= BO_ALLOC_NO_SUBALLOC;
@@ -1431,7 +1435,7 @@ bo_unreference_final(struct iris_bo *bo, time_t time)
 
    bucket = NULL;
    if (bo->real.reusable)
-      bucket = bucket_for_size(bufmgr, bo->size, bo->real.heap);
+      bucket = bucket_for_size(bufmgr, bo->size, bo->real.heap, 0);
    /* Put the buffer into our internal cache for reuse if we can. */
    if (bucket && iris_bo_madvise(bo, IRIS_MADVICE_DONT_NEED)) {
       bo->real.free_time = time;
@@ -1509,93 +1513,6 @@ print_flags(unsigned flags)
    DBG("\n");
 }
 
-static void *
-iris_bo_gem_mmap_legacy(struct util_debug_callback *dbg, struct iris_bo *bo)
-{
-   struct iris_bufmgr *bufmgr = bo->bufmgr;
-
-   assert(bufmgr->vram.size == 0);
-   assert(iris_bo_is_real(bo));
-   assert(bo->real.mmap_mode == IRIS_MMAP_WB ||
-          bo->real.mmap_mode == IRIS_MMAP_WC);
-
-   struct drm_i915_gem_mmap mmap_arg = {
-      .handle = bo->gem_handle,
-      .size = bo->size,
-      .flags = bo->real.mmap_mode == IRIS_MMAP_WC ? I915_MMAP_WC : 0,
-   };
-
-   int ret = intel_ioctl(bufmgr->fd, DRM_IOCTL_I915_GEM_MMAP, &mmap_arg);
-   if (ret != 0) {
-      DBG("%s:%d: Error mapping buffer %d (%s): %s .\n",
-          __FILE__, __LINE__, bo->gem_handle, bo->name, strerror(errno));
-      return NULL;
-   }
-   void *map = (void *) (uintptr_t) mmap_arg.addr_ptr;
-
-   return map;
-}
-
-static void *
-iris_bo_gem_mmap_offset(struct util_debug_callback *dbg, struct iris_bo *bo)
-{
-   struct iris_bufmgr *bufmgr = bo->bufmgr;
-
-   assert(iris_bo_is_real(bo));
-
-   struct drm_i915_gem_mmap_offset mmap_arg = {
-      .handle = bo->gem_handle,
-   };
-
-   if (bufmgr->devinfo.has_local_mem) {
-      /* On discrete memory platforms, we cannot control the mmap caching mode
-       * at mmap time.  Instead, it's fixed when the object is created (this
-       * is a limitation of TTM).
-       *
-       * On DG1, our only currently enabled discrete platform, there is no
-       * control over what mode we get.  For SMEM, we always get WB because
-       * it's fast (probably what we want) and when the device views SMEM
-       * across PCIe, it's always snooped.  The only caching mode allowed by
-       * DG1 hardware for LMEM is WC.
-       */
-      if (bo->real.heap != IRIS_HEAP_SYSTEM_MEMORY)
-         assert(bo->real.mmap_mode == IRIS_MMAP_WC);
-      else
-         assert(bo->real.mmap_mode == IRIS_MMAP_WB);
-
-      mmap_arg.flags = I915_MMAP_OFFSET_FIXED;
-   } else {
-      /* Only integrated platforms get to select a mmap caching mode here */
-      static const uint32_t mmap_offset_for_mode[] = {
-         [IRIS_MMAP_UC]    = I915_MMAP_OFFSET_UC,
-         [IRIS_MMAP_WC]    = I915_MMAP_OFFSET_WC,
-         [IRIS_MMAP_WB]    = I915_MMAP_OFFSET_WB,
-      };
-      assert(bo->real.mmap_mode != IRIS_MMAP_NONE);
-      assert(bo->real.mmap_mode < ARRAY_SIZE(mmap_offset_for_mode));
-      mmap_arg.flags = mmap_offset_for_mode[bo->real.mmap_mode];
-   }
-
-   /* Get the fake offset back */
-   int ret = intel_ioctl(bufmgr->fd, DRM_IOCTL_I915_GEM_MMAP_OFFSET, &mmap_arg);
-   if (ret != 0) {
-      DBG("%s:%d: Error preparing buffer %d (%s): %s .\n",
-          __FILE__, __LINE__, bo->gem_handle, bo->name, strerror(errno));
-      return NULL;
-   }
-
-   /* And map it */
-   void *map = mmap(0, bo->size, PROT_READ | PROT_WRITE, MAP_SHARED,
-                    bufmgr->fd, mmap_arg.offset);
-   if (map == MAP_FAILED) {
-      DBG("%s:%d: Error mapping buffer %d (%s): %s .\n",
-          __FILE__, __LINE__, bo->gem_handle, bo->name, strerror(errno));
-      return NULL;
-   }
-
-   return map;
-}
-
 void *
 iris_bo_map(struct util_debug_callback *dbg,
             struct iris_bo *bo, unsigned flags)
@@ -1614,9 +1531,7 @@ iris_bo_map(struct util_debug_callback *dbg,
 
       if (!bo->real.map) {
          DBG("iris_bo_map: %d (%s)\n", bo->gem_handle, bo->name);
-         map = bufmgr->devinfo.has_mmap_offset ?
-               iris_bo_gem_mmap_offset(dbg, bo) :
-               iris_bo_gem_mmap_legacy(dbg, bo);
+         map = bufmgr->kmd_backend->gem_mmap(bufmgr, bo);
          if (!map) {
             return NULL;
          }
@@ -1703,6 +1618,21 @@ iris_bo_wait_rendering(struct iris_bo *bo)
 }
 
 static void
+iris_bufmgr_destroy_global_vm(struct iris_bufmgr *bufmgr)
+{
+   switch (bufmgr->devinfo.kmd_type) {
+   case INTEL_KMD_TYPE_I915:
+      /* Nothing to do in i915 */
+      break;
+   case INTEL_KMD_TYPE_XE:
+      iris_xe_destroy_global_vm(bufmgr);
+      break;
+   default:
+      unreachable("missing");
+   }
+}
+
+static void
 iris_bufmgr_destroy(struct iris_bufmgr *bufmgr)
 {
    iris_destroy_border_color_pool(&bufmgr->border_color_pool);
@@ -1761,6 +1691,8 @@ iris_bufmgr_destroy(struct iris_bufmgr *bufmgr)
 
    for (int z = 0; z < IRIS_MEMZONE_COUNT; z++)
          util_vma_heap_finish(&bufmgr->vma_allocator[z]);
+
+   iris_bufmgr_destroy_global_vm(bufmgr);
 
    close(bufmgr->fd);
 
@@ -1950,11 +1882,11 @@ iris_bo_export_dmabuf(struct iris_bo *bo, int *prime_fd)
    /* We cannot export suballocated BOs. */
    assert(iris_bo_is_real(bo));
 
-   iris_bo_mark_exported(bo);
-
    if (drmPrimeHandleToFD(bufmgr->fd, bo->gem_handle,
                           DRM_CLOEXEC | DRM_RDWR, prime_fd) != 0)
       return -errno;
+
+   iris_bo_mark_exported(bo);
 
    return 0;
 }
@@ -2075,9 +2007,9 @@ add_bucket(struct iris_bufmgr *bufmgr, int size, enum iris_heap heap)
    list_inithead(&buckets[i].head);
    buckets[i].size = size;
 
-   assert(bucket_for_size(bufmgr, size, heap) == &buckets[i]);
-   assert(bucket_for_size(bufmgr, size - 2048, heap) == &buckets[i]);
-   assert(bucket_for_size(bufmgr, size + 1, heap) != &buckets[i]);
+   assert(bucket_for_size(bufmgr, size, heap, 0) == &buckets[i]);
+   assert(bucket_for_size(bufmgr, size - 2048, heap, 0) == &buckets[i]);
+   assert(bucket_for_size(bufmgr, size + 1, heap, 0) != &buckets[i]);
 }
 
 static void
@@ -2104,124 +2036,6 @@ init_cache_buckets(struct iris_bufmgr *bufmgr, enum iris_heap heap)
       add_bucket(bufmgr, size + size * 1 / 4, heap);
       add_bucket(bufmgr, size + size * 2 / 4, heap);
       add_bucket(bufmgr, size + size * 3 / 4, heap);
-   }
-}
-
-void
-iris_hw_context_set_unrecoverable(struct iris_bufmgr *bufmgr,
-                                  uint32_t ctx_id)
-{
-   /* Upon declaring a GPU hang, the kernel will zap the guilty context
-    * back to the default logical HW state and attempt to continue on to
-    * our next submitted batchbuffer.  However, our render batches assume
-    * the previous GPU state is preserved, and only emit commands needed
-    * to incrementally change that state.  In particular, we inherit the
-    * STATE_BASE_ADDRESS and PIPELINE_SELECT settings, which are critical.
-    * With default base addresses, our next batches will almost certainly
-    * cause more GPU hangs, leading to repeated hangs until we're banned
-    * or the machine is dead.
-    *
-    * Here we tell the kernel not to attempt to recover our context but
-    * immediately (on the next batchbuffer submission) report that the
-    * context is lost, and we will do the recovery ourselves.  Ideally,
-    * we'll have two lost batches instead of a continual stream of hangs.
-    */
-   intel_gem_set_context_param(bufmgr->fd, ctx_id,
-                               I915_CONTEXT_PARAM_RECOVERABLE, false);
-}
-
-void
-iris_hw_context_set_vm_id(struct iris_bufmgr *bufmgr, uint32_t ctx_id)
-{
-   if (!bufmgr->use_global_vm)
-      return;
-
-   if (!intel_gem_set_context_param(bufmgr->fd, ctx_id,
-                                    I915_CONTEXT_PARAM_VM,
-                                    bufmgr->global_vm_id))
-      DBG("DRM_IOCTL_I915_GEM_CONTEXT_SETPARAM failed: %s\n",
-          strerror(errno));
-}
-
-uint32_t
-iris_create_hw_context(struct iris_bufmgr *bufmgr, bool protected)
-{
-   uint32_t ctx_id;
-
-   if (protected) {
-      if (!intel_gem_create_context_ext(bufmgr->fd,
-                                        INTEL_GEM_CREATE_CONTEXT_EXT_PROTECTED_FLAG,
-                                        &ctx_id)) {
-         DBG("DRM_IOCTL_I915_GEM_CONTEXT_CREATE_EXT failed: %s\n", strerror(errno));
-         return 0;
-      }
-   } else {
-      if (!intel_gem_create_context(bufmgr->fd, &ctx_id)) {
-         DBG("intel_gem_create_context failed: %s\n", strerror(errno));
-         return 0;
-      }
-      iris_hw_context_set_unrecoverable(bufmgr, ctx_id);
-   }
-
-   iris_hw_context_set_vm_id(bufmgr, ctx_id);
-
-   return ctx_id;
-}
-
-int
-iris_kernel_context_get_priority(struct iris_bufmgr *bufmgr, uint32_t ctx_id)
-{
-   uint64_t priority = 0;
-   intel_gem_get_context_param(bufmgr->fd, ctx_id,
-                               I915_CONTEXT_PARAM_PRIORITY, &priority);
-   return priority; /* on error, return 0 i.e. default priority */
-}
-
-int
-iris_hw_context_set_priority(struct iris_bufmgr *bufmgr,
-                            uint32_t ctx_id,
-                            int priority)
-{
-   int err = 0;
-   if (!intel_gem_set_context_param(bufmgr->fd, ctx_id,
-                                    I915_CONTEXT_PARAM_PRIORITY, priority))
-      err = -errno;
-
-   return err;
-}
-
-static bool
-iris_hw_context_get_protected(struct iris_bufmgr *bufmgr, uint32_t ctx_id)
-{
-   uint64_t protected_content = 0;
-   intel_gem_get_context_param(bufmgr->fd, ctx_id,
-                               I915_CONTEXT_PARAM_PROTECTED_CONTENT,
-                               &protected_content);
-   return protected_content;
-}
-
-uint32_t
-iris_clone_hw_context(struct iris_bufmgr *bufmgr, uint32_t ctx_id)
-{
-   uint32_t new_ctx =
-      iris_create_hw_context(bufmgr,
-                             iris_hw_context_get_protected(bufmgr, ctx_id));
-
-   if (new_ctx) {
-      int priority = iris_kernel_context_get_priority(bufmgr, ctx_id);
-      iris_hw_context_set_priority(bufmgr, new_ctx, priority);
-   }
-
-   return new_ctx;
-}
-
-void
-iris_destroy_kernel_context(struct iris_bufmgr *bufmgr, uint32_t ctx_id)
-{
-   if (ctx_id != 0 &&
-       !intel_gem_destroy_context(bufmgr->fd, ctx_id)) {
-      fprintf(stderr, "DRM_IOCTL_I915_GEM_CONTEXT_DESTROY failed: %s\n",
-              strerror(errno));
    }
 }
 
@@ -2295,16 +2109,21 @@ iris_bufmgr_get_meminfo(struct iris_bufmgr *bufmgr,
    return true;
 }
 
-static void
+static bool
 iris_bufmgr_init_global_vm(struct iris_bufmgr *bufmgr)
 {
-   uint64_t value;
-   if (!intel_gem_get_context_param(bufmgr->fd, 0, I915_CONTEXT_PARAM_VM, &value)) {
-      bufmgr->use_global_vm = false;
-      bufmgr->global_vm_id = 0;
-   } else {
-      bufmgr->use_global_vm = true;
-      bufmgr->global_vm_id = value;
+   switch (bufmgr->devinfo.kmd_type) {
+   case INTEL_KMD_TYPE_I915:
+      bufmgr->use_global_vm = iris_i915_init_global_vm(bufmgr, &bufmgr->global_vm_id);
+      /* i915 don't require VM, so returning true even if use_global_vm is false */
+      return true;
+   case INTEL_KMD_TYPE_XE:
+      bufmgr->use_global_vm = iris_xe_init_global_vm(bufmgr, &bufmgr->global_vm_id);
+      /* Xe requires VM */
+      return bufmgr->use_global_vm;
+   default:
+      unreachable("missing");
+      return false;
    }
 }
 
@@ -2342,8 +2161,6 @@ iris_bufmgr_create(struct intel_device_info *devinfo, int fd, bool bo_reuse)
    simple_mtx_init(&bufmgr->lock, mtx_plain);
    simple_mtx_init(&bufmgr->bo_deps_lock, mtx_plain);
 
-   iris_bufmgr_init_global_vm(bufmgr);
-
    list_inithead(&bufmgr->zombie_list);
 
    bufmgr->devinfo = *devinfo;
@@ -2359,6 +2176,9 @@ iris_bufmgr_create(struct intel_device_info *devinfo, int fd, bool bo_reuse)
    bufmgr->devinfo.has_compute_engine = intel_engines_count(engine_info,
                                                             INTEL_ENGINE_CLASS_COMPUTE);
    free(engine_info);
+
+   if (!iris_bufmgr_init_global_vm(bufmgr))
+      goto error_init_vm;
 
    STATIC_ASSERT(IRIS_MEMZONE_SHADER_START == 0ull);
    const uint64_t _4GB = 1ull << 32;
@@ -2451,6 +2271,8 @@ error_slabs_init:
 
       pb_slabs_deinit(&bufmgr->bo_slabs[i]);
    }
+   iris_bufmgr_destroy_global_vm(bufmgr);
+error_init_vm:
 error_engine_info:
    close(bufmgr->fd);
 error_dup:
@@ -2568,4 +2390,22 @@ const struct intel_device_info *
 iris_bufmgr_get_device_info(struct iris_bufmgr *bufmgr)
 {
    return &bufmgr->devinfo;
+}
+
+const struct iris_kmd_backend *
+iris_bufmgr_get_kernel_driver_backend(struct iris_bufmgr *bufmgr)
+{
+   return bufmgr->kmd_backend;
+}
+
+uint32_t
+iris_bufmgr_get_global_vm_id(struct iris_bufmgr *bufmgr)
+{
+   return bufmgr->global_vm_id;
+}
+
+bool
+iris_bufmgr_use_global_vm_id(struct iris_bufmgr *bufmgr)
+{
+   return bufmgr->use_global_vm;
 }

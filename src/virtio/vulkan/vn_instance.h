@@ -55,7 +55,7 @@ struct vn_instance {
 
       /* to synchronize renderer/ring */
       mtx_t roundtrip_mutex;
-      uint32_t roundtrip_next;
+      uint64_t roundtrip_next;
    } ring;
 
    /* XXX staged features to be merged to core venus protocol */
@@ -95,16 +95,16 @@ VK_DEFINE_HANDLE_CASTS(vn_instance,
 
 VkResult
 vn_instance_submit_roundtrip(struct vn_instance *instance,
-                             uint32_t *roundtrip_seqno);
+                             uint64_t *roundtrip_seqno);
 
 void
 vn_instance_wait_roundtrip(struct vn_instance *instance,
-                           uint32_t roundtrip_seqno);
+                           uint64_t roundtrip_seqno);
 
 static inline void
 vn_instance_roundtrip(struct vn_instance *instance)
 {
-   uint32_t roundtrip_seqno;
+   uint64_t roundtrip_seqno;
    if (vn_instance_submit_roundtrip(instance, &roundtrip_seqno) == VK_SUCCESS)
       vn_instance_wait_roundtrip(instance, roundtrip_seqno);
 }
@@ -123,6 +123,9 @@ struct vn_instance_submit_command {
    /* when reply_size is non-zero, NULL can be returned on errors */
    struct vn_renderer_shmem *reply_shmem;
    struct vn_cs_decoder reply;
+
+   bool ring_seqno_valid;
+   uint32_t ring_seqno;
 };
 
 static inline struct vn_cs_encoder *

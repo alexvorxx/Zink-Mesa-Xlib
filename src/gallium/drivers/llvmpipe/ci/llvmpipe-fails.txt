@@ -90,8 +90,6 @@ spec@arb_shader_image_load_store@execution@image-array-out-of-bounds-access-stor
 
 spec@arb_shader_texture_lod@execution@arb_shader_texture_lod-texgrad,Fail
 
-spec@arb_tessellation_shader@execution@tcs-tes-levels-out-of-bounds-write,Crash
-
 spec@egl_khr_gl_image@egl_khr_gl_renderbuffer_image-clear-shared-image gl_depth_component24,Fail
 
 # No such file or directory (os error 2)
@@ -215,19 +213,6 @@ spec@arb_texture_buffer_object@texture-buffer-size-clamp@rg8ui_texture_buffer_si
 spec@arb_texture_buffer_object@texture-buffer-size-clamp@rgba8ui_texture_buffer_size_via_image,Fail
 spec@arb_texture_buffer_object@texture-buffer-size-clamp@rgba8ui_texture_buffer_size_via_sampler,Fail
 
-# https://gitlab.freedesktop.org/mesa/mesa/-/issues/7152
-spec@ext_transform_feedback@builtin-varyings gl_culldistance,Fail
-
-# EGL_BAD_DISPLAY is generated if display is not an EGL display connection
-# eglCreatePixmapSurface(0, 0x0000000000000000, 0x0000000000000000, { EGL_NONE });
-# // 0x0000000000000000 returned
-# eglCreatePixmapSurface(0xffffffffffffffff, 0x0000000000000000, 0x0000000000000000, { EGL_NONE });
-# // 0x0000000000000000 returned
-# EGL_BAD_CONFIG or EGL_BAD_PARAMETER is generated if config is not an EGL frame buffer configuration or if the PixmapSurface call is not supported
-# eglCreatePixmapSurface(0x5592c982cf90, 0xffffffffffffffff, 0x0000000000000000, { EGL_NONE });
-# // 0x0000000000000000 returned
-# // ERROR expected: EGL_BAD_CONFIG or EGL_BAD_PARAMETER, Got: EGL_BAD_NATIVE_PIXMAP
-wayland-dEQP-EGL.functional.negative_api.create_pixmap_surface,Fail
 # [...]
 # Image comparison failed: reference = -0.000488281, expected = 0:0:0:0, result = 0:0:0:3
 # Image comparison failed: reference = 0, expected = 0:0:0:0, result = 0:0:0:3

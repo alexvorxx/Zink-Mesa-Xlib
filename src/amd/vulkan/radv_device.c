@@ -50,6 +50,8 @@
 #include "radv_private.h"
 #include "radv_shader.h"
 #include "vk_util.h"
+#include "vk_common_entrypoints.h"
+#include "vk_semaphore.h"
 #ifdef _WIN32
 typedef void *drmDevicePtr;
 #include <io.h>
@@ -805,7 +807,7 @@ radv_CreateDevice(VkPhysicalDevice physicalDevice, const VkDeviceCreateInfo *pCr
 
       result = device->ws->ctx_create(device->ws, priority, &device->hw_ctx[priority]);
       if (result != VK_SUCCESS)
-         goto fail;
+         goto fail_queue;
    }
 
    for (unsigned i = 0; i < pCreateInfo->queueCreateInfoCount; i++) {
@@ -819,7 +821,7 @@ radv_CreateDevice(VkPhysicalDevice physicalDevice, const VkDeviceCreateInfo *pCr
                   VK_SYSTEM_ALLOCATION_SCOPE_DEVICE);
       if (!device->queues[qfi]) {
          result = VK_ERROR_OUT_OF_HOST_MEMORY;
-         goto fail;
+         goto fail_queue;
       }
 
       memset(device->queues[qfi], 0, queue_create->queueCount * sizeof(struct radv_queue));
@@ -829,10 +831,18 @@ radv_CreateDevice(VkPhysicalDevice physicalDevice, const VkDeviceCreateInfo *pCr
       for (unsigned q = 0; q < queue_create->queueCount; q++) {
          result = radv_queue_init(device, &device->queues[qfi][q], q, queue_create, global_priority);
          if (result != VK_SUCCESS)
-            goto fail;
+            goto fail_queue;
       }
    }
    device->private_sdma_queue = VK_NULL_HANDLE;
+
+   device->shader_use_invisible_vram =
+      (device->instance->perftest_flags & RADV_PERFTEST_DMA_SHADERS) &&
+      /* SDMA buffer copy is only implemented for GFX7+. */
+      device->physical_device->rad_info.gfx_level >= GFX7;
+   result = radv_init_shader_upload_queue(device);
+   if (result != VK_SUCCESS)
+      goto fail;
 
    device->pbb_allowed = device->physical_device->rad_info.gfx_level >= GFX9 &&
                          !(device->instance->debug_flags & RADV_DEBUG_NOBINNING);
@@ -1081,6 +1091,9 @@ fail:
    radv_device_finish_ps_epilogs(device);
    radv_device_finish_border_color(device);
 
+   radv_destroy_shader_upload_queue(device);
+
+fail_queue:
    for (unsigned i = 0; i < RADV_MAX_QUEUE_FAMILIES; i++) {
       for (unsigned q = 0; q < device->queue_count[i]; q++)
          radv_queue_finish(&device->queues[i][q]);
@@ -1092,6 +1105,8 @@ fail:
       if (device->hw_ctx[i])
          device->ws->ctx_destroy(device->hw_ctx[i]);
    }
+
+   radv_destroy_shader_arenas(device);
 
    _mesa_hash_table_destroy(device->rt_handles, NULL);
 
@@ -1153,6 +1168,8 @@ radv_DestroyDevice(VkDevice _device, const VkAllocationCallbacks *pAllocator)
 
    VkPipelineCache pc = radv_pipeline_cache_to_handle(device->mem_cache);
    radv_DestroyPipelineCache(radv_device_to_handle(device), pc, NULL);
+
+   radv_destroy_shader_upload_queue(device);
 
    radv_trap_handler_finish(device);
    radv_finish_trace(device);

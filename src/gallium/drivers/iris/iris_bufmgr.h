@@ -481,18 +481,6 @@ struct iris_bo *iris_bo_gem_create_from_name(struct iris_bufmgr *bufmgr,
 
 void* iris_bufmgr_get_aux_map_context(struct iris_bufmgr *bufmgr);
 
-uint32_t iris_create_hw_context(struct iris_bufmgr *bufmgr, bool protected);
-uint32_t iris_clone_hw_context(struct iris_bufmgr *bufmgr, uint32_t ctx_id);
-int iris_kernel_context_get_priority(struct iris_bufmgr *bufmgr, uint32_t ctx_id);
-
-void iris_hw_context_set_unrecoverable(struct iris_bufmgr *bufmgr,
-                                       uint32_t ctx_id);
-void iris_hw_context_set_vm_id(struct iris_bufmgr *bufmgr, uint32_t ctx_id);
-int iris_hw_context_set_priority(struct iris_bufmgr *bufmgr,
-                                 uint32_t ctx_id, int priority);
-
-void iris_destroy_kernel_context(struct iris_bufmgr *bufmgr, uint32_t ctx_id);
-
 int iris_gem_get_tiling(struct iris_bo *bo, uint32_t *tiling);
 int iris_gem_set_tiling(struct iris_bo *bo, const struct isl_surf *surf);
 
@@ -582,6 +570,10 @@ uint32_t iris_upload_border_color(struct iris_border_color_pool *pool,
 uint64_t iris_bufmgr_vram_size(struct iris_bufmgr *bufmgr);
 uint64_t iris_bufmgr_sram_size(struct iris_bufmgr *bufmgr);
 const struct intel_device_info *iris_bufmgr_get_device_info(struct iris_bufmgr *bufmgr);
+const struct iris_kmd_backend *
+iris_bufmgr_get_kernel_driver_backend(struct iris_bufmgr *bufmgr);
+uint32_t iris_bufmgr_get_global_vm_id(struct iris_bufmgr *bufmgr);
+bool iris_bufmgr_use_global_vm_id(struct iris_bufmgr *bufmgr);
 
 enum iris_madvice {
    IRIS_MADVICE_WILL_NEED = 0,

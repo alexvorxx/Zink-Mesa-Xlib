@@ -78,6 +78,8 @@ if freedreno_kmds.contains('msm')
   tu_deps += dep_libdrm
 endif
 
+tu_flags += '-Wno-array-bounds'
+
 tu_tracepoints = custom_target(
   'tu_tracepoints.[ch]',
   input: 'tu_tracepoints.py',

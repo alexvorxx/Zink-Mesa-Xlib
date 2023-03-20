@@ -39,6 +39,7 @@ struct fd_ringbuffer;
 
 void fd_draw_init(struct pipe_context *pctx);
 
+#ifndef __cplusplus
 static inline void
 fd_draw(struct fd_batch *batch, struct fd_ringbuffer *ring,
         enum pc_di_primtype primtype, enum pc_di_vis_cull_mode vismode,
@@ -170,6 +171,7 @@ fd_draw_emit(struct fd_batch *batch, struct fd_ringbuffer *ring,
            info->instance_count - 1, idx_type, idx_size, idx_offset,
            idx_buffer);
 }
+#endif
 
 static inline void
 fd_blend_tracking(struct fd_context *ctx)

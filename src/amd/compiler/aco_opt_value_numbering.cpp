@@ -489,6 +489,9 @@ value_numbering(Program* program)
          loop_headers.pop_back();
       }
 
+      if (block.logical_idom == (int)block.index)
+         ctx.expr_values.clear();
+
       if (block.logical_idom != -1)
          process_block(ctx, block);
       else

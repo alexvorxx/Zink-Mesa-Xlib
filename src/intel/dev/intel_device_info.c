@@ -1101,12 +1101,12 @@ static const struct intel_device_info intel_device_info_dg2_g12 = {
    .has_mesh_shading = true,                                    \
    .has_ray_tracing = true
 
-UNUSED static const struct intel_device_info intel_device_info_mtl_m = {
+static const struct intel_device_info intel_device_info_mtl_m = {
    MTL_FEATURES,
    .platform = INTEL_PLATFORM_MTL_M,
 };
 
-UNUSED static const struct intel_device_info intel_device_info_mtl_p = {
+static const struct intel_device_info intel_device_info_mtl_p = {
    MTL_FEATURES,
    .platform = INTEL_PLATFORM_MTL_P,
 };

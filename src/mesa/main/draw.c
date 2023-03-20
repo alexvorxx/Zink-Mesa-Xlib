@@ -1216,9 +1216,9 @@ _mesa_Rectf(GLfloat x1, GLfloat y1, GLfloat x2, GLfloat y2)
    GET_CURRENT_CONTEXT(ctx);
    ASSERT_OUTSIDE_BEGIN_END(ctx);
 
-   CALL_Begin(ctx->CurrentServerDispatch, (GL_QUADS));
-   /* Begin can change CurrentServerDispatch. */
-   struct _glapi_table *dispatch = ctx->CurrentServerDispatch;
+   CALL_Begin(ctx->Dispatch.Current, (GL_QUADS));
+   /* Begin can change Dispatch.Current. */
+   struct _glapi_table *dispatch = ctx->Dispatch.Current;
    CALL_Vertex2f(dispatch, (x1, y1));
    CALL_Vertex2f(dispatch, (x2, y1));
    CALL_Vertex2f(dispatch, (x2, y2));
@@ -1299,9 +1299,9 @@ _mesa_EvalMesh1(GLenum mode, GLint i1, GLint i2)
    u = ctx->Eval.MapGrid1u1 + i1 * du;
 
 
-   CALL_Begin(ctx->CurrentServerDispatch, (prim));
-   /* Begin can change CurrentServerDispatch. */
-   struct _glapi_table *dispatch = ctx->CurrentServerDispatch;
+   CALL_Begin(ctx->Dispatch.Current, (prim));
+   /* Begin can change Dispatch.Current. */
+   struct _glapi_table *dispatch = ctx->Dispatch.Current;
    for (i = i1; i <= i2; i++, u += du) {
       CALL_EvalCoord1f(dispatch, (u));
    }
@@ -1340,9 +1340,9 @@ _mesa_EvalMesh2(GLenum mode, GLint i1, GLint i2, GLint j1, GLint j2)
 
    switch (mode) {
    case GL_POINT:
-      CALL_Begin(ctx->CurrentServerDispatch, (GL_POINTS));
-      /* Begin can change CurrentServerDispatch. */
-      dispatch = ctx->CurrentServerDispatch;
+      CALL_Begin(ctx->Dispatch.Current, (GL_POINTS));
+      /* Begin can change Dispatch.Current. */
+      dispatch = ctx->Dispatch.Current;
       for (v = v1, j = j1; j <= j2; j++, v += dv) {
          for (u = u1, i = i1; i <= i2; i++, u += du) {
             CALL_EvalCoord2f(dispatch, (u, v));
@@ -1352,18 +1352,18 @@ _mesa_EvalMesh2(GLenum mode, GLint i1, GLint i2, GLint j1, GLint j2)
       break;
    case GL_LINE:
       for (v = v1, j = j1; j <= j2; j++, v += dv) {
-         CALL_Begin(ctx->CurrentServerDispatch, (GL_LINE_STRIP));
-         /* Begin can change CurrentServerDispatch. */
-         dispatch = ctx->CurrentServerDispatch;
+         CALL_Begin(ctx->Dispatch.Current, (GL_LINE_STRIP));
+         /* Begin can change Dispatch.Current. */
+         dispatch = ctx->Dispatch.Current;
          for (u = u1, i = i1; i <= i2; i++, u += du) {
             CALL_EvalCoord2f(dispatch, (u, v));
          }
          CALL_End(dispatch, ());
       }
       for (u = u1, i = i1; i <= i2; i++, u += du) {
-         CALL_Begin(ctx->CurrentServerDispatch, (GL_LINE_STRIP));
-         /* Begin can change CurrentServerDispatch. */
-         dispatch = ctx->CurrentServerDispatch;
+         CALL_Begin(ctx->Dispatch.Current, (GL_LINE_STRIP));
+         /* Begin can change Dispatch.Current. */
+         dispatch = ctx->Dispatch.Current;
          for (v = v1, j = j1; j <= j2; j++, v += dv) {
             CALL_EvalCoord2f(dispatch, (u, v));
          }
@@ -1372,9 +1372,9 @@ _mesa_EvalMesh2(GLenum mode, GLint i1, GLint i2, GLint j1, GLint j2)
       break;
    case GL_FILL:
       for (v = v1, j = j1; j < j2; j++, v += dv) {
-         CALL_Begin(ctx->CurrentServerDispatch, (GL_TRIANGLE_STRIP));
-         /* Begin can change CurrentServerDispatch. */
-         dispatch = ctx->CurrentServerDispatch;
+         CALL_Begin(ctx->Dispatch.Current, (GL_TRIANGLE_STRIP));
+         /* Begin can change Dispatch.Current. */
+         dispatch = ctx->Dispatch.Current;
          for (u = u1, i = i1; i <= i2; i++, u += du) {
             CALL_EvalCoord2f(dispatch, (u, v));
             CALL_EvalCoord2f(dispatch, (u, v + dv));
@@ -2316,7 +2316,7 @@ _mesa_DrawArraysIndirect(GLenum mode, const GLvoid *indirect)
     *    DrawElementsIndirect are to source their arguments directly from the
     *    pointer passed as their <indirect> parameters."
     */
-   if (ctx->API == API_OPENGL_COMPAT &&
+   if (_mesa_is_desktop_gl_compat(ctx) &&
        !ctx->DrawIndirectBuffer) {
       DrawArraysIndirectCommand *cmd = (DrawArraysIndirectCommand *) indirect;
 
@@ -2351,7 +2351,7 @@ _mesa_DrawElementsIndirect(GLenum mode, GLenum type, const GLvoid *indirect)
     *    DrawElementsIndirect are to source their arguments directly from the
     *    pointer passed as their <indirect> parameters."
     */
-   if (ctx->API == API_OPENGL_COMPAT &&
+   if (_mesa_is_desktop_gl_compat(ctx) &&
        !ctx->DrawIndirectBuffer) {
       /*
        * Unlike regular DrawElementsInstancedBaseVertex commands, the indices
@@ -2416,7 +2416,7 @@ _mesa_MultiDrawArraysIndirect(GLenum mode, const GLvoid *indirect,
     *    DrawElementsIndirect are to source their arguments directly from the
     *    pointer passed as their <indirect> parameters."
     */
-   if (ctx->API == API_OPENGL_COMPAT &&
+   if (_mesa_is_desktop_gl_compat(ctx) &&
        !ctx->DrawIndirectBuffer) {
 
       if (!_mesa_is_no_error_enabled(ctx) &&
@@ -2489,7 +2489,7 @@ _mesa_MultiDrawElementsIndirect(GLenum mode, GLenum type,
     *    DrawElementsIndirect are to source their arguments directly from the
     *    pointer passed as their <indirect> parameters."
     */
-   if (ctx->API == API_OPENGL_COMPAT &&
+   if (_mesa_is_desktop_gl_compat(ctx) &&
        !ctx->DrawIndirectBuffer) {
       /*
        * Unlike regular DrawElementsInstancedBaseVertex commands, the indices
@@ -2636,7 +2636,7 @@ _mesa_MultiModeDrawArraysIBM( const GLenum * mode, const GLint * first,
    for ( i = 0 ; i < primcount ; i++ ) {
       if ( count[i] > 0 ) {
          GLenum m = *((GLenum *) ((GLubyte *) mode + i * modestride));
-         CALL_DrawArrays(ctx->CurrentServerDispatch, ( m, first[i], count[i] ));
+         CALL_DrawArrays(ctx->Dispatch.Current, ( m, first[i], count[i] ));
       }
    }
 }
@@ -2654,7 +2654,7 @@ _mesa_MultiModeDrawElementsIBM( const GLenum * mode, const GLsizei * count,
    for ( i = 0 ; i < primcount ; i++ ) {
       if ( count[i] > 0 ) {
          GLenum m = *((GLenum *) ((GLubyte *) mode + i * modestride));
-         CALL_DrawElements(ctx->CurrentServerDispatch, ( m, count[i], type,
+         CALL_DrawElements(ctx->Dispatch.Current, ( m, count[i], type,
                                                          indices[i] ));
       }
    }

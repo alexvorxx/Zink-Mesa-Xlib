@@ -18,8 +18,10 @@ Other companies including `Intel <https://01.org/linuxgraphics>`__ and
 RedHat also actively contribute to the project. Intel has recently
 contributed the new GLSL compiler in Mesa 7.9.
 
-`LunarG <https://www.lunarg.com/>`__ can be contacted for custom Mesa /
-3D graphics development.
+The following companies can be contacted for custom Mesa / 3D graphics development (sorted alphabetically):
+
+- `Igalia <https://www.igalia.com>`__
+- `LunarG <https://www.lunarg.com/>`__
 
 Volunteers have made significant contributions to all parts of Mesa,
 including complete device drivers.

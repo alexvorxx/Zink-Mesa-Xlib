@@ -455,8 +455,6 @@ spec@arb_shader_image_load_store@max-size@image2DMS max size test/8x8x16384x1,Fa
 spec@arb_shader_texture_lod@execution@arb_shader_texture_lod-texgrad,Fail
 spec@arb_shader_texture_lod@execution@arb_shader_texture_lod-texgradcube,Fail
 
-spec@arb_tessellation_shader@execution@tcs-tes-levels-out-of-bounds-write,Crash
-
 # "../nouveau/pushbuf.c:730: nouveau_pushbuf_data: Assertion `kref' failed."
 spec@arb_texture_buffer_object@render-no-bo,Crash
 

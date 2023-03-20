@@ -1262,7 +1262,7 @@ st_precompile_shader_variant(struct st_context *st,
 
       memset(&key, 0, sizeof(key));
 
-      if (st->ctx->API == API_OPENGL_COMPAT &&
+      if (_mesa_is_desktop_gl_compat(st->ctx) &&
           st->clamp_vert_color_in_shader &&
           (prog->info.outputs_written & (VARYING_SLOT_COL0 |
                                          VARYING_SLOT_COL1 |

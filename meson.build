@@ -449,7 +449,7 @@ if with_glx != 'disabled'
     if not with_gallium
       error('xlib based GLX requires at least one gallium driver')
     elif not with_gallium_softpipe
-     # error('xlib based GLX requires softpipe or llvmpipe.')
+      error('xlib based GLX requires softpipe or llvmpipe.')
     elif with_dri
       error('xlib conflicts with any dri driver')
     endif
@@ -956,7 +956,7 @@ if cc.get_argument_syntax() == 'msvc'
     '/wd4056',  # overflow in floating-point constant arithmetic
     '/wd4244',  # conversion from 'type1' to 'type2', possible loss of data
     '/wd4267',  # 'var' : conversion from 'size_t' to 'type', possible loss of data
-    '/wd4305',  # trancation from 'type1' to 'type2'
+    '/wd4305',  # truncation from 'type1' to 'type2'
     '/wd4351',  # new behavior: elements of array 'array' will be default initialized
     '/wd4756',  # overflow in constant arithmetic
     '/wd4800',  # forcing value to bool 'true' or 'false' (performance warning)
@@ -1422,6 +1422,18 @@ endif
 
 if get_option('intel-xe-kmd').enabled()
   pre_args += '-DINTEL_XE_KMD_SUPPORTED'
+endif
+
+if with_intel_hasvk and host_machine.cpu_family().startswith('x86') == false
+  error('Intel "hasvk" Vulkan driver requires x86 or x86_64 CPU family')
+endif
+
+if with_gallium_crocus and host_machine.cpu_family().startswith('x86') == false
+  error('Intel "crocus" Gallium driver requires x86 or x86_64 CPU family')
+endif
+
+if with_gallium_i915 and host_machine.cpu_family().startswith('x86') == false
+  error('Intel "i915" Gallium driver requires x86 or x86_64 CPU family')
 endif
 
 # Determine whether or not the rt library is needed for time functions

@@ -228,17 +228,16 @@ anv_h264_decode_video(struct anv_cmd_buffer *cmd_buffer,
    }
 
    anv_batch_emit(&cmd_buffer->batch, GENX(MFD_AVC_PICID_STATE), picid) {
-      picid.PictureIDRemappingDisable = false;
-      for (unsigned i = 0; i < frame_info->referenceSlotCount; i++) {
-         int idx = frame_info->pReferenceSlots[i].slotIndex;
-         picid.PictureID[i] = idx;
-      }
+      picid.PictureIDRemappingDisable = true;
    }
 
+   uint32_t pic_height = sps->pic_height_in_map_units_minus1 + 1;
+   if (!sps->flags.frame_mbs_only_flag)
+      pic_height *= 2;
    anv_batch_emit(&cmd_buffer->batch, GENX(MFX_AVC_IMG_STATE), avc_img) {
       avc_img.FrameWidth = sps->pic_width_in_mbs_minus1;
-      avc_img.FrameHeight = sps->pic_height_in_map_units_minus1;
-      avc_img.FrameSize = (sps->pic_width_in_mbs_minus1 + 1) * (sps->pic_height_in_map_units_minus1 + 1);
+      avc_img.FrameHeight = pic_height - 1;
+      avc_img.FrameSize = (sps->pic_width_in_mbs_minus1 + 1) * pic_height;
 
       if (!h264_pic_info->pStdPictureInfo->flags.field_pic_flag)
          avc_img.ImageStructure = FramePicture;
@@ -249,8 +248,8 @@ anv_h264_decode_video(struct anv_cmd_buffer *cmd_buffer,
 
       avc_img.WeightedBiPredictionIDC = pps->weighted_bipred_idc;
       avc_img.WeightedPredictionEnable = pps->flags.weighted_pred_flag;
-      avc_img.FirstChromaQPOffset = pps->chroma_qp_index_offset & 0x1f;
-      avc_img.SecondChromaQPOffset = pps->second_chroma_qp_index_offset & 0x1f;
+      avc_img.FirstChromaQPOffset = pps->chroma_qp_index_offset;
+      avc_img.SecondChromaQPOffset = pps->second_chroma_qp_index_offset;
       avc_img.FieldPicture = h264_pic_info->pStdPictureInfo->flags.field_pic_flag;
       avc_img.MBAFFMode = (sps->flags.mb_adaptive_frame_field_flag &&
                            !h264_pic_info->pStdPictureInfo->flags.field_pic_flag);

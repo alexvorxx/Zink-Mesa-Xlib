@@ -173,6 +173,42 @@ fetch_framebuffer(nir_builder *b, struct si_shader_args *args,
                                   .access = ACCESS_CAN_REORDER);
 }
 
+static nir_ssa_def *build_tess_factor_ring_desc(nir_builder *b, struct si_screen *screen,
+                                                struct si_shader_args *args)
+{
+   nir_ssa_def *addr = ac_nir_load_arg(b, &args->ac, args->tcs_out_lds_layout);
+   /* TCS only receives high 13 bits of the address. */
+   addr = nir_iand_imm(b, addr, 0xfff80000);
+   addr = nir_iadd_imm(b, addr, screen->hs.tess_offchip_ring_size);
+
+   uint32_t rsrc3 =
+      S_008F0C_DST_SEL_X(V_008F0C_SQ_SEL_X) |
+      S_008F0C_DST_SEL_Y(V_008F0C_SQ_SEL_Y) |
+      S_008F0C_DST_SEL_Z(V_008F0C_SQ_SEL_Z) |
+      S_008F0C_DST_SEL_W(V_008F0C_SQ_SEL_W);
+
+   if (screen->info.gfx_level >= GFX11) {
+      rsrc3 |= S_008F0C_FORMAT(V_008F0C_GFX11_FORMAT_32_FLOAT) |
+               S_008F0C_OOB_SELECT(V_008F0C_OOB_SELECT_RAW);
+   } else if (screen->info.gfx_level >= GFX10) {
+      rsrc3 |= S_008F0C_FORMAT(V_008F0C_GFX10_FORMAT_32_FLOAT) |
+               S_008F0C_OOB_SELECT(V_008F0C_OOB_SELECT_RAW) |
+               S_008F0C_RESOURCE_LEVEL(1);
+   } else {
+      rsrc3 |= S_008F0C_NUM_FORMAT(V_008F0C_BUF_NUM_FORMAT_FLOAT) |
+               S_008F0C_DATA_FORMAT(V_008F0C_BUF_DATA_FORMAT_32);
+   }
+
+   nir_ssa_def *comp[4] = {
+      addr,
+      nir_imm_int(b, S_008F04_BASE_ADDRESS_HI(screen->info.address32_hi)),
+      nir_imm_int(b, 0xffffffff),
+      nir_imm_int(b, rsrc3),
+   };
+
+   return nir_vec(b, comp, 4);
+}
+
 static bool lower_abi_instr(nir_builder *b, nir_instr *instr, struct lower_abi_state *s)
 {
    if (instr->type != nir_instr_type_intrinsic)
@@ -436,6 +472,12 @@ static bool lower_abi_instr(nir_builder *b, nir_instr *instr, struct lower_abi_s
       replacement = fetch_framebuffer(b, args, sel, key);
       break;
    }
+   case nir_intrinsic_load_ring_tess_factors_amd:
+      replacement = build_tess_factor_ring_desc(b, sel->screen, args);
+      break;
+   case nir_intrinsic_load_ring_tess_factors_offset_amd:
+      replacement = ac_nir_load_arg(b, &args->ac, args->ac.tcs_factor_offset);
+      break;
    default:
       return false;
    }

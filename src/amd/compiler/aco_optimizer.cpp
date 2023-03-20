@@ -1481,7 +1481,7 @@ label_instruction(opt_ctx& ctx, aco_ptr<Instruction>& instr)
             mubuf.offset += offset;
             continue;
          } else if (i == 2 && parse_base_offset(ctx, instr.get(), i, &base, &offset, true) &&
-                    base.regClass() == s1 && mubuf.offset + offset < 4096) {
+                    base.regClass() == s1 && mubuf.offset + offset < 4096 && !mubuf.swizzled) {
             instr->operands[i].setTemp(base);
             mubuf.offset += offset;
             continue;

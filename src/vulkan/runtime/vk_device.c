@@ -79,50 +79,9 @@ static void
 collect_enabled_features(struct vk_device *device,
                          const VkDeviceCreateInfo *pCreateInfo)
 {
-   if (pCreateInfo->pEnabledFeatures) {
-      if (pCreateInfo->pEnabledFeatures->robustBufferAccess)
-         device->enabled_features.robustBufferAccess = true;
-   }
-
-   vk_foreach_struct_const(ext, pCreateInfo->pNext) {
-      switch (ext->sType) {
-      case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2: {
-         const VkPhysicalDeviceFeatures2 *features = (const void *)ext;
-         if (features->features.robustBufferAccess)
-            device->enabled_features.robustBufferAccess = true;
-         break;
-      }
-
-      case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_IMAGE_ROBUSTNESS_FEATURES: {
-         const VkPhysicalDeviceImageRobustnessFeatures *features = (void *)ext;
-         if (features->robustImageAccess)
-            device->enabled_features.robustImageAccess = true;
-         break;
-      }
-
-      case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ROBUSTNESS_2_FEATURES_EXT: {
-         const VkPhysicalDeviceRobustness2FeaturesEXT *features = (void *)ext;
-         if (features->robustBufferAccess2)
-            device->enabled_features.robustBufferAccess2 = true;
-         if (features->robustImageAccess2)
-            device->enabled_features.robustImageAccess2 = true;
-         if (features->nullDescriptor)
-            device->enabled_features.nullDescriptor = true;
-         break;
-      }
-
-      case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES: {
-         const VkPhysicalDeviceVulkan13Features *features = (void *)ext;
-         if (features->robustImageAccess)
-            device->enabled_features.robustImageAccess = true;
-         break;
-      }
-
-      default:
-         /* Don't warn */
-         break;
-      }
-   }
+   if (pCreateInfo->pEnabledFeatures)
+      vk_set_physical_device_features_1_0(&device->enabled_features, pCreateInfo->pEnabledFeatures);
+   vk_set_physical_device_features(&device->enabled_features, pCreateInfo->pNext);
 }
 
 VkResult
@@ -441,43 +400,6 @@ vk_common_GetDeviceGroupPeerMemoryFeatures(
                           VK_PEER_MEMORY_FEATURE_COPY_DST_BIT |
                           VK_PEER_MEMORY_FEATURE_GENERIC_SRC_BIT |
                           VK_PEER_MEMORY_FEATURE_GENERIC_DST_BIT;
-}
-
-VKAPI_ATTR void VKAPI_CALL
-vk_common_GetBufferMemoryRequirements(VkDevice _device,
-                                      VkBuffer buffer,
-                                      VkMemoryRequirements *pMemoryRequirements)
-{
-   VK_FROM_HANDLE(vk_device, device, _device);
-
-   VkBufferMemoryRequirementsInfo2 info = {
-      .sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_REQUIREMENTS_INFO_2,
-      .buffer = buffer,
-   };
-   VkMemoryRequirements2 reqs = {
-      .sType = VK_STRUCTURE_TYPE_MEMORY_REQUIREMENTS_2,
-   };
-   device->dispatch_table.GetBufferMemoryRequirements2(_device, &info, &reqs);
-
-   *pMemoryRequirements = reqs.memoryRequirements;
-}
-
-VKAPI_ATTR VkResult VKAPI_CALL
-vk_common_BindBufferMemory(VkDevice _device,
-                           VkBuffer buffer,
-                           VkDeviceMemory memory,
-                           VkDeviceSize memoryOffset)
-{
-   VK_FROM_HANDLE(vk_device, device, _device);
-
-   VkBindBufferMemoryInfo bind = {
-      .sType         = VK_STRUCTURE_TYPE_BIND_BUFFER_MEMORY_INFO,
-      .buffer        = buffer,
-      .memory        = memory,
-      .memoryOffset  = memoryOffset,
-   };
-
-   return device->dispatch_table.BindBufferMemory2(_device, 1, &bind);
 }
 
 VKAPI_ATTR void VKAPI_CALL

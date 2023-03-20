@@ -130,7 +130,13 @@ pvr_pack_tex_state(struct pvr_device *device,
          unreachable("Unknown memory layout");
       }
 
-      word0.texformat = pvr_get_tex_format(info->format);
+      /* When sampling from a combined D/S image, the TPU will default to only
+       * the depth aspect.
+       * The driver must select the correct single aspect format when sampling
+       * to avoid this.
+       */
+      word0.texformat =
+         pvr_get_tex_format_aspect(info->format, info->aspect_mask);
       word0.smpcnt = util_logbase2(info->sample_count);
       word0.swiz0 =
          pvr_get_hw_swizzle(VK_COMPONENT_SWIZZLE_R, info->swizzle[0]);

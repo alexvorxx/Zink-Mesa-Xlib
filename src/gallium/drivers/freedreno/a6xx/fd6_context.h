@@ -38,6 +38,8 @@
 
 #include "a6xx.xml.h"
 
+BEGINC;
+
 struct fd6_lrz_state {
    union {
       struct {
@@ -74,7 +76,7 @@ struct fd6_descriptor_set {
    struct fd_bo *bo;
 };
 
-static void
+static inline void
 fd6_descriptor_set_invalidate(struct fd6_descriptor_set *set)
 {
    if (!set->bo)
@@ -194,5 +196,7 @@ fd6_vertex_stateobj(void *p)
 {
    return (struct fd6_vertex_stateobj *)p;
 }
+
+ENDC;
 
 #endif /* FD6_CONTEXT_H_ */

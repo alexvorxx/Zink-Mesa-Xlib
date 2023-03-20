@@ -252,9 +252,9 @@ panfrost_create_sampler_state(struct pipe_context *pctx,
       cfg.minify_nearest = cso->min_img_filter == PIPE_TEX_FILTER_NEAREST;
 
       cfg.normalized_coordinates = !cso->unnormalized_coords;
-      cfg.lod_bias = FIXED_16(cso->lod_bias, true);
-      cfg.minimum_lod = FIXED_16(cso->min_lod, false);
-      cfg.maximum_lod = FIXED_16(cso->max_lod, false);
+      cfg.lod_bias = cso->lod_bias;
+      cfg.minimum_lod = cso->min_lod;
+      cfg.maximum_lod = cso->max_lod;
 
       cfg.wrap_mode_s = translate_tex_wrap(cso->wrap_s, using_nearest);
       cfg.wrap_mode_t = translate_tex_wrap(cso->wrap_t, using_nearest);
@@ -278,7 +278,7 @@ panfrost_create_sampler_state(struct pipe_context *pctx,
       /* Emulate disabled mipmapping by clamping the LOD as tight as
        * possible (from 0 to epsilon = 1/256) */
       if (cso->min_mip_filter == PIPE_TEX_MIPFILTER_NONE)
-         cfg.maximum_lod = cfg.minimum_lod + 1;
+         cfg.maximum_lod = cfg.minimum_lod + (1.0 / 256.0);
 #endif
    }
 
@@ -1732,25 +1732,53 @@ panfrost_update_sampler_view(struct panfrost_sampler_view *view,
    }
 }
 
+#if PAN_ARCH >= 6
+static void
+panfrost_emit_null_texture(struct mali_texture_packed *out)
+
+{
+   /* Annoyingly, an all zero texture descriptor is not valid and will raise
+    * a DATA_INVALID_FAULT if you try to texture it, instead of returning
+    * 0000s! Fill in with sometthing that will behave robustly.
+    */
+   pan_pack(out, TEXTURE, cfg) {
+      cfg.dimension = MALI_TEXTURE_DIMENSION_2D;
+      cfg.width = 1;
+      cfg.height = 1;
+      cfg.depth = 1;
+      cfg.array_size = 1;
+      cfg.format = PAN_ARCH >= 7 ? panfrost_pipe_format_v7[PIPE_FORMAT_NONE].hw
+                                 : panfrost_pipe_format_v6[PIPE_FORMAT_NONE].hw;
+#if PAN_ARCH <= 7
+         cfg.texel_ordering = MALI_TEXTURE_LAYOUT_LINEAR;
+#endif
+   }
+}
+#endif
+
 static mali_ptr
 panfrost_emit_texture_descriptors(struct panfrost_batch *batch,
                                   enum pipe_shader_type stage)
 {
    struct panfrost_context *ctx = batch->ctx;
 
-   if (!ctx->sampler_view_count[stage])
+   unsigned actual_count = ctx->sampler_view_count[stage];
+   unsigned needed_count = ctx->prog[stage]->info.texture_count;
+   unsigned alloc_count = MAX2(actual_count, needed_count);
+
+   if (!alloc_count)
       return 0;
 
 #if PAN_ARCH >= 6
-   struct panfrost_ptr T = pan_pool_alloc_desc_array(
-      &batch->pool.base, ctx->sampler_view_count[stage], TEXTURE);
+   struct panfrost_ptr T =
+      pan_pool_alloc_desc_array(&batch->pool.base, alloc_count, TEXTURE);
    struct mali_texture_packed *out = (struct mali_texture_packed *)T.cpu;
 
-   for (int i = 0; i < ctx->sampler_view_count[stage]; ++i) {
+   for (int i = 0; i < actual_count; ++i) {
       struct panfrost_sampler_view *view = ctx->sampler_views[stage][i];
 
       if (!view) {
-         memset(&out[i], 0, sizeof(out[i]));
+         panfrost_emit_null_texture(&out[i]);
          continue;
       }
 
@@ -1764,11 +1792,14 @@ panfrost_emit_texture_descriptors(struct panfrost_batch *batch,
       panfrost_batch_add_bo(batch, view->state.bo, stage);
    }
 
+   for (int i = actual_count; i < needed_count; ++i)
+      panfrost_emit_null_texture(&out[i]);
+
    return T.gpu;
 #else
    uint64_t trampolines[PIPE_MAX_SHADER_SAMPLER_VIEWS];
 
-   for (int i = 0; i < ctx->sampler_view_count[stage]; ++i) {
+   for (int i = 0; i < actual_count; ++i) {
       struct panfrost_sampler_view *view = ctx->sampler_views[stage][i];
 
       if (!view) {
@@ -1781,9 +1812,12 @@ panfrost_emit_texture_descriptors(struct panfrost_batch *batch,
       trampolines[i] = panfrost_get_tex_desc(batch, stage, view);
    }
 
-   return pan_pool_upload_aligned(
-      &batch->pool.base, trampolines,
-      sizeof(uint64_t) * ctx->sampler_view_count[stage], sizeof(uint64_t));
+   for (int i = actual_count; i < needed_count; ++i)
+      trampolines[i] = 0;
+
+   return pan_pool_upload_aligned(&batch->pool.base, trampolines,
+                                  sizeof(uint64_t) * alloc_count,
+                                  sizeof(uint64_t));
 #endif
 }
 
@@ -2853,7 +2887,7 @@ panfrost_update_shader_state(struct panfrost_batch *batch,
    unsigned dirty_3d = ctx->dirty;
    unsigned dirty = ctx->dirty_shader[st];
 
-   if (dirty & PAN_DIRTY_STAGE_TEXTURE) {
+   if (dirty & (PAN_DIRTY_STAGE_TEXTURE | PAN_DIRTY_STAGE_SHADER)) {
       batch->textures[st] = panfrost_emit_texture_descriptors(batch, st);
    }
 
@@ -3584,7 +3618,7 @@ panfrost_direct_draw(struct panfrost_batch *batch,
                                         false);
    } else {
       pan_pack(&invocation, INVOCATION, cfg) {
-         cfg.invocations = MALI_POSITIVE(vertex_count);
+         cfg.invocations = vertex_count - 1;
          cfg.size_y_shift = 0;
          cfg.size_z_shift = 0;
          cfg.workgroups_x_shift = 0;
@@ -3974,6 +4008,8 @@ panfrost_create_vertex_elements_state(struct pipe_context *pctx,
    for (int i = 0; i < num_elements; ++i) {
       enum pipe_format fmt = elements[i].src_format;
       so->formats[i] = dev->formats[fmt].hw;
+
+      assert(MALI_EXTRACT_INDEX(so->formats[i]) && "format must be supported");
    }
 
    /* Let's also prepare vertex builtins */
@@ -4381,8 +4417,6 @@ init_batch(struct panfrost_batch *batch)
       pan_pool_alloc_desc_aggregate(
          &batch->pool.base, PAN_DESC(FRAMEBUFFER), PAN_DESC(ZS_CRC_EXTENSION),
          PAN_DESC_ARRAY(MAX2(batch->key.nr_cbufs, 1), RENDER_TARGET));
-
-   batch->framebuffer.gpu |= MALI_FBD_TAG_IS_MFBD;
 #endif
 
 #if PAN_ARCH >= 6
@@ -4390,6 +4424,13 @@ init_batch(struct panfrost_batch *batch)
 #else
    /* On Midgard, the TLS is embedded in the FB descriptor */
    batch->tls = batch->framebuffer;
+
+#if PAN_ARCH == 5
+   pan_pack(&batch->tls.gpu, FRAMEBUFFER_POINTER, cfg) {
+      cfg.pointer = batch->framebuffer.gpu;
+      cfg.render_target_count = 1; /* a necessary lie */
+   }
+#endif
 #endif
 }
 
@@ -4436,7 +4477,6 @@ batch_get_polygon_list(struct panfrost_batch *batch)
       bool has_draws = batch->scoreboard.first_tiler != NULL;
       unsigned size = panfrost_tiler_get_polygon_list_size(
          dev, batch->key.width, batch->key.height, has_draws);
-      size = util_next_power_of_two(size);
 
       /* Create the BO as invisible if we can. If there are no draws,
        * we need to write the polygon list manually because there's

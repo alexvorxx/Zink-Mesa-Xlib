@@ -325,6 +325,16 @@ enum
 #define SI_PROFILE_PS_NO_BINNING             (1 << 4)
 #define SI_PROFILE_CLAMP_DIV_BY_ZERO         (1 << 5)
 
+enum si_shader_dump_type {
+   SI_DUMP_SHADER_KEY,
+   SI_DUMP_INIT_NIR,       /* initial input NIR when shaders are created (before lowering) */
+   SI_DUMP_NIR,            /* final NIR after lowering when shader variants are created */
+   SI_DUMP_INIT_LLVM_IR,   /* initial LLVM IR before optimizations */
+   SI_DUMP_LLVM_IR,        /* final LLVM IR */
+   SI_DUMP_ASM,            /* final asm shaders */
+   SI_DUMP_ALWAYS,
+};
+
 /**
  * For VS shader keys, describe any fixups required for vertex fetch.
  *
@@ -774,7 +784,6 @@ union si_shader_key {
 /* GCN-specific shader info. */
 struct si_shader_binary_info {
    ubyte vs_output_param_offset[NUM_TOTAL_VARYING_SLOTS];
-   uint64_t vs_output_param_mask; /* which params to export, indexed by "base" */
    uint32_t vs_output_ps_input_cntl[NUM_TOTAL_VARYING_SLOTS];
    ubyte num_input_sgprs;
    ubyte num_input_vgprs;
@@ -982,6 +991,8 @@ unsigned si_shader_io_get_unique_index_patch(unsigned semantic);
 unsigned si_shader_io_get_unique_index(unsigned semantic, bool is_varying);
 bool si_shader_binary_upload(struct si_screen *sscreen, struct si_shader *shader,
                              uint64_t scratch_va);
+bool si_can_dump_shader(struct si_screen *sscreen, gl_shader_stage stage,
+                        enum si_shader_dump_type dump_type);
 void si_shader_dump(struct si_screen *sscreen, struct si_shader *shader,
                     struct util_debug_callback *debug, FILE *f, bool check_debug_option);
 void si_shader_dump_stats_for_shader_db(struct si_screen *screen, struct si_shader *shader,

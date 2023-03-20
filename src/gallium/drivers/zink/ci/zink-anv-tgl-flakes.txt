@@ -93,3 +93,5 @@ wayland-dEQP-EGL.functional.render.single_context.gles2.rgba8888_pbuffer,Fail
 wayland-dEQP-EGL.functional.render.single_context.gles3.rgb565_pbuffer,Fail
 wayland-dEQP-EGL.functional.render.single_context.gles3.rgb888_pbuffer,Fail
 wayland-dEQP-EGL.functional.render.single_context.gles3.rgba8888_pbuffer,Fail
+
+spec@arb_tessellation_shader@execution@variable-indexing@tcs-patch-vec4-index-wr

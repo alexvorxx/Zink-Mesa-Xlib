@@ -3437,7 +3437,6 @@ static bool visit_intrinsic(struct ac_nir_context *ctx, nir_intrinsic_instr *ins
    case nir_intrinsic_load_base_vertex:
    case nir_intrinsic_load_first_vertex:
    case nir_intrinsic_load_tess_rel_patch_id_amd:
-   case nir_intrinsic_load_ring_tess_factors_amd:
    case nir_intrinsic_load_ring_tess_offchip_amd:
    case nir_intrinsic_load_ring_esgs_amd:
    case nir_intrinsic_load_ring_attr_amd:
@@ -3966,6 +3965,7 @@ static bool visit_intrinsic(struct ac_nir_context *ctx, nir_intrinsic_instr *ins
    case nir_intrinsic_set_vertex_and_primitive_count:
       /* Currently ignored. */
       break;
+   case nir_intrinsic_load_typed_buffer_amd:
    case nir_intrinsic_load_buffer_amd:
    case nir_intrinsic_store_buffer_amd: {
       unsigned src_base = instr->intrinsic == nir_intrinsic_store_buffer_amd ? 1 : 0;
@@ -4004,7 +4004,8 @@ static bool visit_intrinsic(struct ac_nir_context *ctx, nir_intrinsic_instr *ins
       } else if (instr->intrinsic == nir_intrinsic_store_buffer_amd && uses_format) {
          assert(instr->src[0].ssa->bit_size == 16 || instr->src[0].ssa->bit_size == 32);
          ac_build_buffer_store_format(&ctx->ac, descriptor, store_data, vidx, voffset, cache_policy);
-      } else if (instr->intrinsic == nir_intrinsic_load_buffer_amd) {
+      } else if (instr->intrinsic == nir_intrinsic_load_buffer_amd ||
+                 instr->intrinsic == nir_intrinsic_load_typed_buffer_amd) {
          /* LLVM is unable to select instructions for larger than 32-bit channel types.
           * Workaround by using i32 and casting to the correct type later.
           */
@@ -4013,8 +4014,21 @@ static bool visit_intrinsic(struct ac_nir_context *ctx, nir_intrinsic_instr *ins
          LLVMTypeRef channel_type =
             LLVMIntTypeInContext(ctx->ac.context, MIN2(32, instr->dest.ssa.bit_size));
 
-         result = ac_build_buffer_load(&ctx->ac, descriptor, fetch_num_components, vidx, voffset,
-                                       addr_soffset, channel_type, cache_policy, reorder, false);
+         if (instr->intrinsic == nir_intrinsic_load_buffer_amd) {
+            result = ac_build_buffer_load(&ctx->ac, descriptor, fetch_num_components, vidx, voffset,
+                                          addr_soffset, channel_type, cache_policy, reorder, false);
+         } else {
+            const unsigned align_offset = nir_intrinsic_align_offset(instr);
+            const unsigned align_mul = nir_intrinsic_align_mul(instr);
+            const enum pipe_format format = nir_intrinsic_format(instr);
+            const struct ac_vtx_format_info *vtx_info =
+               ac_get_vtx_format_info(ctx->ac.gfx_level, ctx->ac.family, format);
+
+            result =
+               ac_build_safe_tbuffer_load(&ctx->ac, descriptor, vidx, addr_voffset, addr_soffset,
+                                          channel_type, vtx_info, const_offset, align_offset,
+                                          align_mul, fetch_num_components, cache_policy, reorder);
+         }
 
          /* Trim to needed vector components. */
          result = ac_trim_vector(&ctx->ac, result, fetch_num_components);

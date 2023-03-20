@@ -412,8 +412,17 @@ bi_copy_component(bi_builder *b, nir_intrinsic_instr *instr, bi_index tmp)
 static void
 bi_emit_load_attr(bi_builder *b, nir_intrinsic_instr *instr)
 {
+   /* Disregard the signedness of an integer, since loading 32-bits into a
+    * 32-bit register should be bit exact so should not incur any clamping.
+    *
+    * If we are reading as a u32, then it must be paired with an integer (u32 or
+    * s32) source, so use .auto32 to disregard.
+    */
    nir_alu_type T = nir_intrinsic_dest_type(instr);
-   enum bi_register_format regfmt = bi_reg_fmt_for_nir(T);
+   assert(T == nir_type_uint32 || T == nir_type_int32 || T == nir_type_float32);
+   enum bi_register_format regfmt =
+      T == nir_type_float32 ? BI_REGISTER_FORMAT_F32 : BI_REGISTER_FORMAT_AUTO;
+
    nir_src *offset = nir_get_io_offset_src(instr);
    unsigned component = nir_intrinsic_component(instr);
    enum bi_vecsize vecsize = (instr->num_components + component - 1);

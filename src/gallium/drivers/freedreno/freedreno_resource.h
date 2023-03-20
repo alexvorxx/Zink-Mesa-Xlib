@@ -37,6 +37,8 @@
 #include "freedreno_batch.h"
 #include "freedreno_util.h"
 
+BEGINC;
+
 #define PRSC_FMT                                                               \
    "p: target=%s, format=%s, %ux%ux%u, "                                       \
    "array_size=%u, last_level=%u, "                                            \
@@ -399,5 +401,7 @@ fdl_type_from_pipe_target(enum pipe_texture_target target) {
       unreachable("bad texture type");
    }
 }
+
+ENDC;
 
 #endif /* FREEDRENO_RESOURCE_H_ */

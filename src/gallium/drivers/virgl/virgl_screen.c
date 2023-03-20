@@ -229,7 +229,8 @@ virgl_get_param(struct pipe_screen *screen, enum pipe_cap param)
    case PIPE_CAP_MIXED_COLOR_DEPTH_BITS:
       return 1;
    case PIPE_CAP_VS_LAYER_VIEWPORT:
-      return 0;
+      return (vscreen->caps.caps.v2.capability_bits_v2 & VIRGL_CAP_V2_VS_VERTEX_LAYER) &&
+            (vscreen->caps.caps.v2.capability_bits_v2 & VIRGL_CAP_V2_VS_VIEWPORT_INDEX);
    case PIPE_CAP_MAX_GEOMETRY_OUTPUT_VERTICES:
       return vscreen->caps.caps.v2.max_geom_output_vertices;
    case PIPE_CAP_MAX_GEOMETRY_TOTAL_OUTPUT_COMPONENTS:
@@ -889,8 +890,7 @@ static bool virgl_is_video_format_supported(struct pipe_screen *screen,
                                             enum pipe_video_profile profile,
                                             enum pipe_video_entrypoint entrypoint)
 {
-    //return vl_video_buffer_is_format_supported(screen, format, profile, entrypoint);
-    return false;
+    return vl_video_buffer_is_format_supported(screen, format, profile, entrypoint);
 }
 
 

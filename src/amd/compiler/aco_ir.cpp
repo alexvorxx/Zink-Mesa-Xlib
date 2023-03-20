@@ -1050,14 +1050,6 @@ wait_imm::empty() const
 bool
 should_form_clause(const Instruction* a, const Instruction* b)
 {
-   /* Vertex attribute loads from the same binding likely load from similar addresses */
-   unsigned a_vtx_binding =
-      a->isMUBUF() ? a->mubuf().vtx_binding : (a->isMTBUF() ? a->mtbuf().vtx_binding : 0);
-   unsigned b_vtx_binding =
-      b->isMUBUF() ? b->mubuf().vtx_binding : (b->isMTBUF() ? b->mtbuf().vtx_binding : 0);
-   if (a_vtx_binding && a_vtx_binding == b_vtx_binding)
-      return true;
-
    if (a->format != b->format)
       return false;
 

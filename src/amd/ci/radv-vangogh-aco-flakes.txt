@@ -1,4 +1,7 @@
+dEQP-VK.api.device_init.create_instance_device_intentional_alloc_fail.basic
+
 dEQP-VK.dynamic_rendering.basic.*
+dEQP-VK.draw.dynamic_rendering.*
 
 # This fail is 100% reproducible when running vkcts in parallel mode,
 # but isn't reproducible when running with the normal full test list.
@@ -16,5 +19,3 @@ dEQP-VK.pipeline.monolithic.image.suballocation.sampling_type.separate.view_type
 # Steam Deck 2 at Martin Roukala (mupuf)'s farm. Investigation is under way.
 dEQP-VK.query_pool.statistics_query.geometry_shader_primitives.*
 dEQP-VK.query_pool.statistics_query.host_query_reset.geometry_shader_primitives.*
-
-dEQP-VK.draw.dynamic_rendering.complete_secondary_cmd_buff.linear_interpolation.offset_max_2_samples

@@ -839,6 +839,8 @@ struct radv_queue {
    struct radv_queue_state state;
    struct radv_queue_state *ace_internal_state;
    struct radeon_winsys_bo *gang_sem_bo;
+
+   uint64_t last_shader_upload_seq;
 };
 
 int radv_queue_init(struct radv_device *device, struct radv_queue *queue, int idx,
@@ -849,6 +851,18 @@ void radv_queue_finish(struct radv_queue *queue);
 
 enum radeon_ctx_priority
 radv_get_queue_global_priority(const VkDeviceQueueGlobalPriorityCreateInfoKHR *pObj);
+
+struct radv_shader_dma_submission {
+   struct list_head list;
+
+   struct radeon_cmdbuf *cs;
+   struct radeon_winsys_bo *bo;
+   uint64_t bo_size;
+   char *ptr;
+
+   /* The semaphore value to wait for before reusing this submission. */
+   uint64_t seq;
+};
 
 #define RADV_BORDER_COLOR_COUNT       4096
 #define RADV_BORDER_COLOR_BUFFER_SIZE (sizeof(VkClearColorValue) * RADV_BORDER_COLOR_COUNT)
@@ -981,6 +995,17 @@ struct radv_device {
    struct list_head shader_free_lists[RADV_SHADER_ALLOC_NUM_FREE_LISTS];
    struct list_head shader_block_obj_pool;
    mtx_t shader_arena_mutex;
+
+   mtx_t shader_upload_hw_ctx_mutex;
+   struct radeon_winsys_ctx *shader_upload_hw_ctx;
+   VkSemaphore shader_upload_sem;
+   uint64_t shader_upload_seq;
+   struct list_head shader_dma_submissions;
+   mtx_t shader_dma_submission_list_mutex;
+   cnd_t shader_dma_submission_list_cond;
+
+   /* Whether to DMA shaders to invisible VRAM or to upload directly through BAR. */
+   bool shader_use_invisible_vram;
 
    /* For detecting VM faults reported by dmesg. */
    uint64_t dmesg_timestamp;
@@ -1748,6 +1773,8 @@ struct radv_cmd_buffer {
       struct radv_video_session *vid;
       struct radv_video_session_params *params;
    } video;
+
+   uint64_t shader_upload_seq;
 };
 
 extern const struct vk_command_buffer_ops radv_cmd_buffer_ops;
@@ -2091,8 +2118,7 @@ enum radv_pipeline_type {
    RADV_PIPELINE_GRAPHICS_LIB,
    /* Compute pipeline */
    RADV_PIPELINE_COMPUTE,
-   /* Pipeline library. This can't actually run and merely is a partial pipeline. */
-   RADV_PIPELINE_LIBRARY,
+   RADV_PIPELINE_RAY_TRACING_LIB,
    /* Raytracing pipeline */
    RADV_PIPELINE_RAY_TRACING,
 };
@@ -2130,6 +2156,8 @@ struct radv_pipeline {
    bool need_indirect_descriptor_sets;
    struct radv_shader *shaders[MESA_VULKAN_SHADER_STAGES];
    struct radv_shader *gs_copy_shader;
+
+   uint64_t shader_upload_seq;
 
    struct radeon_cmdbuf cs;
    uint32_t ctx_cs_hash;
@@ -2228,6 +2256,7 @@ struct radv_graphics_pipeline {
    bool retain_shaders;
    struct {
       nir_shader *nir;
+      unsigned char shader_sha1[SHA1_DIGEST_LENGTH];
    } retained_shaders[MESA_VULKAN_SHADER_STAGES];
 
    /* For relocation of shaders with RGP. */
@@ -2245,7 +2274,7 @@ struct radv_ray_tracing_module {
    struct radv_pipeline_shader_stack_size stack_size;
 };
 
-struct radv_library_pipeline {
+struct radv_ray_tracing_lib_pipeline {
    struct radv_pipeline base;
 
    /* ralloc context used for allocating pipeline library resources. */
@@ -2292,7 +2321,7 @@ struct radv_ray_tracing_pipeline {
 RADV_DECL_PIPELINE_DOWNCAST(graphics, RADV_PIPELINE_GRAPHICS)
 RADV_DECL_PIPELINE_DOWNCAST(graphics_lib, RADV_PIPELINE_GRAPHICS_LIB)
 RADV_DECL_PIPELINE_DOWNCAST(compute, RADV_PIPELINE_COMPUTE)
-RADV_DECL_PIPELINE_DOWNCAST(library, RADV_PIPELINE_LIBRARY)
+RADV_DECL_PIPELINE_DOWNCAST(ray_tracing_lib, RADV_PIPELINE_RAY_TRACING_LIB)
 RADV_DECL_PIPELINE_DOWNCAST(ray_tracing, RADV_PIPELINE_RAY_TRACING)
 
 struct radv_pipeline_stage {
@@ -3012,8 +3041,11 @@ void radv_rra_trace_init(struct radv_device *device);
 VkResult radv_rra_dump_trace(VkQueue vk_queue, char *filename);
 void radv_rra_trace_finish(VkDevice vk_device, struct radv_rra_trace_data *data);
 
-bool radv_sdma_copy_image(struct radv_cmd_buffer *cmd_buffer, struct radv_image *image,
-                          struct radv_buffer *buffer, const VkBufferImageCopy2 *region);
+bool radv_sdma_copy_image(struct radv_device *device, struct radeon_cmdbuf *cs,
+                          struct radv_image *image, struct radv_buffer *buffer,
+                          const VkBufferImageCopy2 *region);
+void radv_sdma_copy_buffer(struct radv_device *device, struct radeon_cmdbuf *cs, uint64_t src_va,
+                           uint64_t dst_va, uint64_t size);
 
 void radv_memory_trace_init(struct radv_device *device);
 void radv_rmv_log_bo_allocate(struct radv_device *device, struct radeon_winsys_bo *bo,
@@ -3579,6 +3611,17 @@ void radv_perfcounter_emit_spm_stop(struct radv_device *device, struct radeon_cm
 bool radv_spm_init(struct radv_device *device);
 void radv_spm_finish(struct radv_device *device);
 void radv_emit_spm_setup(struct radv_device *device, struct radeon_cmdbuf *cs);
+
+void radv_destroy_graphics_pipeline(struct radv_device *device,
+                                    struct radv_graphics_pipeline *pipeline);
+void radv_destroy_graphics_lib_pipeline(struct radv_device *device,
+                                        struct radv_graphics_lib_pipeline *pipeline);
+void radv_destroy_compute_pipeline(struct radv_device *device,
+                                   struct radv_compute_pipeline *pipeline);
+void radv_destroy_ray_tracing_lib_pipeline(struct radv_device *device,
+                                           struct radv_ray_tracing_lib_pipeline *pipeline);
+void radv_destroy_ray_tracing_pipeline(struct radv_device *device,
+                                       struct radv_ray_tracing_pipeline *pipeline);
 
 #define RADV_FROM_HANDLE(__radv_type, __name, __handle) \
    VK_FROM_HANDLE(__radv_type, __name, __handle)

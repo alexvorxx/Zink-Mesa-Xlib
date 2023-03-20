@@ -1640,7 +1640,7 @@ TESTS = [
                  color = (var.x > var.y) ? var : vec4(10.0);
          }
          """,
-         r'\(constant +f16vec4 \(10'),
+         r'\(expression f16vec4 f2fmp \(constant vec4 \(10'),
     Test("i32 csel",
          """
          #version 310 es
@@ -1654,7 +1654,7 @@ TESTS = [
                  color = (var.x > var.y) ? var : ivec4(10);
          }
          """,
-         r'\(constant +i16vec4 \(10'),
+         r'\(expression i16vec4 i2imp \(constant ivec4 \(10'),
     Test("u32 csel",
          """
          #version 310 es
@@ -1668,7 +1668,7 @@ TESTS = [
                  color = (var.x > var.y) ? var : uvec4(10);
          }
          """,
-         r'\(constant +u16vec4 \(10'),
+         r'\(expression u16vec4 u2ump \(constant uvec4 \(10'),
     Test("f32 loop counter",
          """
          #version 300 es
@@ -1735,7 +1735,7 @@ TESTS = [
                  color = a[0] + a[1];
          }
          """,
-         r'\(constant float16_t \(3'),
+         r'\(expression float16_t f2fmp \(constant float \(3'),
     Test("i32 temp array",
          """
          #version 310 es
@@ -1752,7 +1752,7 @@ TESTS = [
                  color = a[0] + a[1];
          }
          """,
-         r'\(constant int16_t \(3'),
+         r'\(expression int16_t i2imp \(constant int \(3'),
     Test("u32 temp array",
          """
          #version 310 es
@@ -1769,7 +1769,7 @@ TESTS = [
                  color = a[0] + a[1];
          }
          """,
-         r'\(constant uint16_t \(3'),
+         r'\(expression uint16_t u2ump \(constant uint \(3'),
     Test("f32 temp array of array",
          """
          #version 310 es
@@ -1786,7 +1786,7 @@ TESTS = [
                  color = a[0][0] + a[1][1];
          }
          """,
-         r'\(constant float16_t \(3'),
+         r'\(expression float16_t f2fmp \(constant float \(3'),
     Test("i32 temp array of array",
          """
          #version 310 es
@@ -1803,7 +1803,7 @@ TESTS = [
                  color = a[0][0] + a[1][1];
          }
          """,
-         r'\(constant int16_t \(3'),
+         r'\(expression int16_t i2imp \(constant int \(3'),
     Test("u32 temp array of array",
          """
          #version 310 es
@@ -1820,7 +1820,7 @@ TESTS = [
                  color = a[0][0] + a[1][1];
          }
          """,
-         r'\(constant uint16_t \(3'),
+         r'\(expression uint16_t u2ump \(constant uint \(3'),
     Test("f32 temp array of array assigned from highp",
          """
          #version 310 es
@@ -1839,7 +1839,7 @@ TESTS = [
                  color = a[0][0] + a[1][1];
          }
          """,
-         r'\(constant float16_t \(3'),
+         r'\(expression float16_t f2fmp \(constant float \(3'),
     Test("i32 temp array of array assigned from highp",
          """
          #version 310 es
@@ -1858,7 +1858,7 @@ TESTS = [
                  color = a[0][0] + a[1][1];
          }
          """,
-         r'\(constant int16_t \(3'),
+         r'\(expression int16_t i2imp \(constant int \(3'),
     Test("u32 temp array of array assigned from highp",
          """
          #version 310 es
@@ -1877,7 +1877,7 @@ TESTS = [
                  color = a[0][0] + a[1][1];
          }
          """,
-         r'\(constant uint16_t \(3'),
+         r'\(expression uint16_t u2ump \(constant uint \(3'),
     Test("f32 temp array of array assigned to highp",
          """
          #version 310 es
@@ -1897,7 +1897,7 @@ TESTS = [
                  color = a[0][0] + a[1][1];
          }
          """,
-         r'\(constant float16_t \(3'),
+         r'\(expression float16_t f2fmp \(constant float \(3'),
     Test("i32 temp array of array assigned to highp",
          """
          #version 310 es
@@ -1917,7 +1917,7 @@ TESTS = [
                  color = a[0][0] + a[1][1];
          }
          """,
-         r'\(constant int16_t \(3'),
+         r'\(expression int16_t i2imp \(constant int \(3'),
     Test("u32 temp array of array assigned to highp",
          """
          #version 310 es
@@ -1937,7 +1937,7 @@ TESTS = [
                  color = a[0][0] + a[1][1];
          }
          """,
-         r'\(constant uint16_t \(3'),
+         r'\(expression uint16_t u2ump \(constant uint \(3'),
     Test("f32 temp array of array returned by function",
          """
          #version 310 es
@@ -1959,7 +1959,7 @@ TESTS = [
                  color = a[0][0] + a[1][1];
          }
          """,
-         r'\(constant float16_t \(3'),
+         r'\(expression float16_t f2fmp \(constant float \(3'),
     Test("i32 temp array of array returned by function",
          """
          #version 310 es
@@ -1981,7 +1981,7 @@ TESTS = [
                  color = a[0][0] + a[1][1];
          }
          """,
-         r'\(constant int16_t \(3'),
+         r'\(expression int16_t i2imp \(constant int \(3'),
     Test("u32 temp array of array returned by function",
          """
          #version 310 es
@@ -2003,7 +2003,7 @@ TESTS = [
                  color = a[0][0] + a[1][1];
          }
          """,
-         r'\(constant uint16_t \(3'),
+         r'\(expression uint16_t u2ump \(constant uint \(3'),
     Test("f32 temp array of array as function out",
          """
          #version 310 es
@@ -2026,7 +2026,7 @@ TESTS = [
                  color = a[0][0] + a[1][1];
          }
          """,
-         r'\(constant float16_t \(3'),
+         r'\(expression float16_t f2fmp \(constant float \(3'),
     Test("i32 temp array of array as function out",
          """
          #version 310 es
@@ -2049,7 +2049,7 @@ TESTS = [
                  color = a[0][0] + a[1][1];
          }
          """,
-         r'\(constant int16_t \(3'),
+         r'\(expression int16_t i2imp \(constant int \(3'),
     Test("u32 temp array of array as function out",
          """
          #version 310 es
@@ -2072,7 +2072,7 @@ TESTS = [
                  color = a[0][0] + a[1][1];
          }
          """,
-         r'\(constant uint16_t \(3'),
+         r'\(expression uint16_t u2ump \(constant uint \(3'),
     Test("f32 temp array of array as function in",
          """
          #version 310 es
@@ -2096,7 +2096,7 @@ TESTS = [
                  color = a[0][0] + a[1][1];
          }
          """,
-         r'\(constant float16_t \(3'),
+         r'\(expression float16_t f2fmp \(constant float \(3'),
     Test("i32 temp array of array as function in",
          """
          #version 310 es
@@ -2120,7 +2120,7 @@ TESTS = [
                  color = a[0][0] + a[1][1];
          }
          """,
-         r'\(constant int16_t \(3'),
+         r'\(expression int16_t i2imp \(constant int \(3'),
     Test("u32 temp array of array as function in",
          """
          #version 310 es
@@ -2144,7 +2144,7 @@ TESTS = [
                  color = a[0][0] + a[1][1];
          }
          """,
-         r'\(constant uint16_t \(3'),
+         r'\(expression uint16_t u2ump \(constant uint \(3'),
     Test("f32 temp array of array as function inout",
          """
          #version 310 es
@@ -2168,7 +2168,7 @@ TESTS = [
                  color = a[0][0] + a[1][1];
          }
          """,
-         r'\(constant float16_t \(3'),
+         r'\(expression float16_t f2fmp \(constant float \(3'),
     Test("i32 temp array of array as function inout",
          """
          #version 310 es
@@ -2192,7 +2192,7 @@ TESTS = [
                  color = a[0][0] + a[1][1];
          }
          """,
-         r'\(constant int16_t \(3'),
+         r'\(expression int16_t i2imp \(constant int \(3'),
     Test("u32 temp array of array as function inout",
          """
          #version 310 es
@@ -2216,7 +2216,7 @@ TESTS = [
                  color = a[0][0] + a[1][1];
          }
          """,
-         r'\(constant uint16_t \(3'),
+         r'\(expression uint16_t u2ump \(constant uint \(3'),
     Test("f32 temp struct (not lowered in the presence of control flow - TODO)",
          """
          #version 300 es

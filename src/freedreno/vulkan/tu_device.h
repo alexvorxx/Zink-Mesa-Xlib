@@ -147,7 +147,8 @@ struct tu_queue
    struct tu_device *device;
 
    uint32_t msm_queue_id;
-   int fence;
+
+   int64_t last_submit_timestamp; /* timestamp of the last queue submission for kgsl */
 };
 VK_DEFINE_HANDLE_CASTS(tu_queue, vk.base, VkQueue, VK_OBJECT_TYPE_QUEUE)
 

@@ -87,6 +87,7 @@ enum {
    RADV_PERFTEST_GPL = 1u << 13,
    RADV_PERFTEST_NGG_STREAMOUT = 1u << 14,
    RADV_PERFTEST_VIDEO_DECODE = 1u << 15,
+   RADV_PERFTEST_DMA_SHADERS = 1u << 16,
 };
 
 bool radv_init_trace(struct radv_device *device);

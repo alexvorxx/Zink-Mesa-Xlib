@@ -641,10 +641,18 @@ fs_visitor::limit_dispatch_width(unsigned n, const char *msg)
 bool
 fs_inst::is_partial_write() const
 {
-   return ((this->predicate && this->opcode != BRW_OPCODE_SEL) ||
-           (this->exec_size * type_sz(this->dst.type)) < 32 ||
-           !this->dst.is_contiguous() ||
-           this->dst.offset % REG_SIZE != 0);
+   if (this->predicate && this->opcode != BRW_OPCODE_SEL)
+      return true;
+
+   if (this->dst.offset % REG_SIZE != 0)
+      return true;
+
+   /* SEND instructions always write whole registers */
+   if (this->opcode == SHADER_OPCODE_SEND)
+      return false;
+
+   return this->exec_size * type_sz(this->dst.type) < 32 ||
+          !this->dst.is_contiguous();
 }
 
 unsigned
@@ -2606,6 +2614,7 @@ fs_visitor::opt_algebraic()
          /* a * 1.0 = a */
          if (inst->src[1].is_one()) {
             inst->opcode = BRW_OPCODE_MOV;
+            inst->sources = 1;
             inst->src[1] = reg_undef;
             progress = true;
             break;
@@ -2614,6 +2623,7 @@ fs_visitor::opt_algebraic()
          /* a * -1.0 = -a */
          if (inst->src[1].is_negative_one()) {
             inst->opcode = BRW_OPCODE_MOV;
+            inst->sources = 1;
             inst->src[0].negate = !inst->src[0].negate;
             inst->src[1] = reg_undef;
             progress = true;
@@ -2628,6 +2638,7 @@ fs_visitor::opt_algebraic()
          if (brw_reg_type_is_integer(inst->src[1].type) &&
              inst->src[1].is_zero()) {
             inst->opcode = BRW_OPCODE_MOV;
+            inst->sources = 1;
             inst->src[1] = reg_undef;
             progress = true;
             break;
@@ -2636,6 +2647,7 @@ fs_visitor::opt_algebraic()
          if (inst->src[0].file == IMM) {
             assert(inst->src[0].type == BRW_REGISTER_TYPE_F);
             inst->opcode = BRW_OPCODE_MOV;
+            inst->sources = 1;
             inst->src[0].f += inst->src[1].f;
             inst->src[1] = reg_undef;
             progress = true;
@@ -2651,9 +2663,11 @@ fs_visitor::opt_algebraic()
              */
             if (inst->src[0].negate) {
                inst->opcode = BRW_OPCODE_NOT;
+               inst->sources = 1;
                inst->src[0].negate = false;
             } else {
                inst->opcode = BRW_OPCODE_MOV;
+               inst->sources = 1;
             }
             inst->src[1] = reg_undef;
             progress = true;
@@ -2700,6 +2714,7 @@ fs_visitor::opt_algebraic()
          }
          if (inst->src[0].equals(inst->src[1])) {
             inst->opcode = BRW_OPCODE_MOV;
+            inst->sources = 1;
             inst->src[1] = reg_undef;
             inst->predicate = BRW_PREDICATE_NONE;
             inst->predicate_inverse = false;
@@ -2712,6 +2727,7 @@ fs_visitor::opt_algebraic()
                case BRW_REGISTER_TYPE_F:
                   if (inst->src[1].f >= 1.0f) {
                      inst->opcode = BRW_OPCODE_MOV;
+                     inst->sources = 1;
                      inst->src[1] = reg_undef;
                      inst->conditional_mod = BRW_CONDITIONAL_NONE;
                      progress = true;
@@ -2727,6 +2743,7 @@ fs_visitor::opt_algebraic()
                case BRW_REGISTER_TYPE_F:
                   if (inst->src[1].f <= 0.0f) {
                      inst->opcode = BRW_OPCODE_MOV;
+                     inst->sources = 1;
                      inst->src[1] = reg_undef;
                      inst->conditional_mod = BRW_CONDITIONAL_NONE;
                      progress = true;
@@ -2747,11 +2764,13 @@ fs_visitor::opt_algebraic()
             break;
          if (inst->src[1].is_one()) {
             inst->opcode = BRW_OPCODE_ADD;
+            inst->sources = 2;
             inst->src[1] = inst->src[2];
             inst->src[2] = reg_undef;
             progress = true;
          } else if (inst->src[2].is_one()) {
             inst->opcode = BRW_OPCODE_ADD;
+            inst->sources = 2;
             inst->src[2] = reg_undef;
             progress = true;
          }
@@ -7140,6 +7159,8 @@ brw_compute_barycentric_interp_modes(const struct intel_device_info *devinfo,
             case nir_intrinsic_load_barycentric_pixel:
             case nir_intrinsic_load_barycentric_centroid:
             case nir_intrinsic_load_barycentric_sample:
+            case nir_intrinsic_load_barycentric_at_sample:
+            case nir_intrinsic_load_barycentric_at_offset:
                break;
             default:
                continue;
@@ -7356,6 +7377,20 @@ brw_nir_populate_wm_prog_data(const nir_shader *shader,
 
    prog_data->barycentric_interp_modes =
       brw_compute_barycentric_interp_modes(devinfo, shader);
+
+   /* From the BDW PRM documentation for 3DSTATE_WM:
+    *
+    *    "MSDISPMODE_PERSAMPLE is required in order to select Perspective
+    *     Sample or Non- perspective Sample barycentric coordinates."
+    *
+    * So cleanup any potentially set sample barycentric mode when not in per
+    * sample dispatch.
+    */
+   if (prog_data->persample_dispatch == BRW_NEVER) {
+      prog_data->barycentric_interp_modes &=
+         ~BITFIELD_BIT(BRW_BARYCENTRIC_PERSPECTIVE_SAMPLE);
+   }
+
    prog_data->uses_nonperspective_interp_modes |=
       (prog_data->barycentric_interp_modes &
       BRW_BARYCENTRIC_NONPERSPECTIVE_BITS) != 0;

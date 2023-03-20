@@ -460,6 +460,9 @@ enum anv_bo_alloc_flags {
     * Should be faster for bo pools, which write but do not read
     */
    ANV_BO_ALLOC_WRITE_COMBINE = (1 << 12),
+
+   /** This buffer will be scanout to display */
+   ANV_BO_ALLOC_SCANOUT = (1 << 13),
 };
 
 struct anv_bo {
@@ -1127,7 +1130,10 @@ struct anv_device {
     const struct intel_device_info *            info;
     const struct anv_kmd_backend *              kmd_backend;
     struct isl_device                           isl_dev;
-    uint32_t                                    context_id;
+    union {
+       uint32_t                                 context_id; /* i915 */
+       uint32_t                                 vm_id; /* Xe */
+    };
     int                                         fd;
 
     pthread_mutex_t                             vma_mutex;

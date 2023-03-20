@@ -607,31 +607,6 @@ emit_store_ngg_nogs_es_primitive_id(nir_builder *b, lower_ngg_nogs_state *st)
 }
 
 static void
-store_var_components(nir_builder *b, nir_variable *var, nir_ssa_def *value,
-                     unsigned component, unsigned writemask)
-{
-   /* component store */
-   if (value->num_components != 4) {
-      nir_ssa_def *undef = nir_ssa_undef(b, 1, value->bit_size);
-
-      /* add undef component before and after value to form a vec4 */
-      nir_ssa_def *comp[4];
-      for (int i = 0; i < 4; i++) {
-         comp[i] = (i >= component && i < component + value->num_components) ?
-            nir_channel(b, value, i - component) : undef;
-      }
-
-      value = nir_vec(b, comp, 4);
-      writemask <<= component;
-   } else {
-      /* if num_component==4, there should be no component offset */
-      assert(component == 0);
-   }
-
-   nir_store_var(b, var, value, writemask);
-}
-
-static void
 add_clipdist_bit(nir_builder *b, nir_ssa_def *dist, unsigned index, nir_variable *mask)
 {
    nir_ssa_def *is_neg = nir_flt(b, dist, nir_imm_float(b, 0));
@@ -671,7 +646,7 @@ remove_culling_shader_output(nir_builder *b, nir_instr *instr, void *state)
    nir_io_semantics io_sem = nir_intrinsic_io_semantics(intrin);
    switch (io_sem.location) {
    case VARYING_SLOT_POS:
-      store_var_components(b, s->position_value_var, store_val, component, writemask);
+      ac_nir_store_var_components(b, s->position_value_var, store_val, component, writemask);
       break;
    case VARYING_SLOT_CLIP_DIST0:
    case VARYING_SLOT_CLIP_DIST1: {
@@ -688,7 +663,7 @@ remove_culling_shader_output(nir_builder *b, nir_instr *instr, void *state)
       break;
    }
    case VARYING_SLOT_CLIP_VERTEX:
-      store_var_components(b, s->clip_vertex_var, store_val, component, writemask);
+      ac_nir_store_var_components(b, s->clip_vertex_var, store_val, component, writemask);
       break;
    default:
       break;
@@ -2210,9 +2185,20 @@ export_vertex_params_gfx11(nir_builder *b, nir_ssa_def *export_tid, nir_ssa_def 
    nir_ssa_def *voffset = nir_imm_int(b, 0);
    nir_ssa_def *undef = nir_ssa_undef(b, 1, 32);
 
+   uint32_t exported_params = 0;
+
    for (unsigned i = 0; i < num_outputs; i++) {
       gl_varying_slot slot = outputs[i].slot;
-      nir_ssa_def *soffset = nir_iadd_imm(b, attr_offset, vs_output_param_offset[slot] * 16 * 32);
+      unsigned offset = vs_output_param_offset[slot];
+
+      /* Since vs_output_param_offset[] can map multiple varying slots to
+       * the same param export index (that's radeonsi-specific behavior),
+       * we need to do this so as not to emit duplicated exports.
+       */
+      if (exported_params & BITFIELD_BIT(offset))
+         continue;
+
+      nir_ssa_def *soffset = nir_iadd_imm(b, attr_offset, offset * 16 * 32);
 
       nir_ssa_def *comp[4];
       for (unsigned j = 0; j < 4; j++)
@@ -2220,6 +2206,7 @@ export_vertex_params_gfx11(nir_builder *b, nir_ssa_def *export_tid, nir_ssa_def 
       nir_store_buffer_amd(b, nir_vec(b, comp, 4), attr_rsrc, voffset, soffset, vindex,
                            .memory_modes = nir_var_shader_out,
                            .access = ACCESS_COHERENT | ACCESS_IS_SWIZZLED_AMD);
+      exported_params |= BITFIELD_BIT(offset);
    }
 
    nir_pop_if(b, NULL);
@@ -2447,11 +2434,11 @@ ac_nir_lower_ngg_nogs(nir_shader *shader, const ac_nir_lower_ngg_options *option
                                        options->vs_output_param_offset);
          }
       } else {
-         ac_nir_export_parameter(b, options->vs_output_param_offset,
-                                 shader->info.outputs_written,
-                                 shader->info.outputs_written_16bit,
-                                 state.outputs, state.outputs_16bit_lo,
-                                 state.outputs_16bit_hi);
+         ac_nir_export_parameters(b, options->vs_output_param_offset,
+                                  shader->info.outputs_written,
+                                  shader->info.outputs_written_16bit,
+                                  state.outputs, state.outputs_16bit_lo,
+                                  state.outputs_16bit_hi);
       }
    }
 
@@ -2965,11 +2952,11 @@ ngg_gs_export_vertices(nir_builder *b, nir_ssa_def *max_num_out_vtx, nir_ssa_def
                                        s->options->vs_output_param_offset);
          }
       } else {
-         ac_nir_export_parameter(b, s->options->vs_output_param_offset,
-                                 b->shader->info.outputs_written,
-                                 b->shader->info.outputs_written_16bit,
-                                 s->outputs, s->outputs_16bit_lo,
-                                 s->outputs_16bit_hi);
+         ac_nir_export_parameters(b, s->options->vs_output_param_offset,
+                                  b->shader->info.outputs_written,
+                                  b->shader->info.outputs_written_16bit,
+                                  s->outputs, s->outputs_16bit_lo,
+                                  s->outputs_16bit_hi);
       }
    }
 }
@@ -4276,9 +4263,9 @@ emit_ms_finale(nir_builder *b, lower_ngg_ms_state *s)
                              s->per_vertex_outputs, s->outputs);
 
       if (s->has_param_exports) {
-         ac_nir_export_parameter(b, s->vs_output_param_offset,
-                                 s->per_vertex_outputs, 0,
-                                 s->outputs, NULL, NULL);
+         ac_nir_export_parameters(b, s->vs_output_param_offset,
+                                  s->per_vertex_outputs, 0,
+                                  s->outputs, NULL, NULL);
       }
    }
    nir_pop_if(b, if_has_output_vertex);
@@ -4337,9 +4324,9 @@ emit_ms_finale(nir_builder *b, lower_ngg_ms_state *s)
 
       ms_emit_primitive_export(b, prim_exp_arg, per_primitive_outputs, s);
 
-      ac_nir_export_parameter(b, s->vs_output_param_offset,
-                              per_primitive_outputs, 0,
-                              s->outputs, NULL, NULL);
+      ac_nir_export_parameters(b, s->vs_output_param_offset,
+                               per_primitive_outputs, 0,
+                               s->outputs, NULL, NULL);
    }
    nir_pop_if(b, if_has_output_primitive);
 }

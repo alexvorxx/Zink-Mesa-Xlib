@@ -1941,9 +1941,9 @@ pvr_create_subpass_info(const VkGraphicsPipelineCreateInfo *const info)
          pass->attachments[subpass->color_attachments[i]].aspects;
    }
 
-   if (subpass->depth_stencil_attachment) {
+   if (subpass->depth_stencil_attachment != VK_ATTACHMENT_UNUSED) {
       attachment_aspects |=
-         pass->attachments[*subpass->depth_stencil_attachment].aspects;
+         pass->attachments[subpass->depth_stencil_attachment].aspects;
    }
 
    return (struct vk_subpass_info){

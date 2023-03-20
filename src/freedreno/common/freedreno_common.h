@@ -62,7 +62,7 @@ struct BitmaskEnum {
    FOREACH_TYPE(BOP, &)
 #undef BOP
 
-#if defined(__GNUC__) && !defined(__clang) && (__GNUC__ <= 10)
+#if defined(__GNUC__) && !defined(__clang)
 /*
  * Silence:
  *
@@ -103,6 +103,16 @@ struct BitmaskEnum {
 #define BITMASK_ENUM(E) BitmaskEnum<E>
 #else
 #define BITMASK_ENUM(E) enum E
+#endif
+
+#ifdef __cplusplus
+#  define EXTERNC extern "C"
+#  define BEGINC EXTERNC {
+#  define ENDC }
+#else
+#  define EXTERNC
+#  define BEGINC
+#  define ENDC
 #endif
 
 /*

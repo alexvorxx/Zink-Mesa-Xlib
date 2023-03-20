@@ -196,11 +196,13 @@ vn_instance_init_experimental_features(struct vn_instance *instance)
              "\n\tmemoryResourceAllocationSize = %u"
              "\n\tglobalFencing = %u"
              "\n\tlargeRing = %u"
-             "\n\tsyncFdFencing = %u",
+             "\n\tsyncFdFencing = %u"
+             "\n\tasyncRoundtrip = %u",
              instance->experimental.memoryResourceAllocationSize,
              instance->experimental.globalFencing,
              instance->experimental.largeRing,
-             instance->experimental.syncFdFencing);
+             instance->experimental.syncFdFencing,
+             instance->experimental.asyncRoundtrip);
    }
 
    return VK_SUCCESS;
@@ -277,19 +279,24 @@ vn_instance_init_renderer(struct vn_instance *instance)
 
 VkResult
 vn_instance_submit_roundtrip(struct vn_instance *instance,
-                             uint32_t *roundtrip_seqno)
+                             uint64_t *roundtrip_seqno)
 {
-   uint32_t write_ring_extra_data[8];
-   struct vn_cs_encoder local_enc = VN_CS_ENCODER_INITIALIZER_LOCAL(
-      write_ring_extra_data, sizeof(write_ring_extra_data));
+   uint32_t local_data[8];
+   struct vn_cs_encoder local_enc =
+      VN_CS_ENCODER_INITIALIZER_LOCAL(local_data, sizeof(local_data));
 
-   /* submit a vkWriteRingExtraMESA through the renderer */
    mtx_lock(&instance->ring.roundtrip_mutex);
-   const uint32_t seqno = instance->ring.roundtrip_next++;
-   vn_encode_vkWriteRingExtraMESA(&local_enc, 0, instance->ring.id, 0, seqno);
-   VkResult result =
-      vn_renderer_submit_simple(instance->renderer, write_ring_extra_data,
-                                vn_cs_encoder_get_len(&local_enc));
+   const uint64_t seqno = instance->ring.roundtrip_next++;
+   if (instance->experimental.asyncRoundtrip) {
+      vn_encode_vkSubmitVirtqueueSeqno100000MESA(&local_enc, 0,
+                                                 instance->ring.id, seqno);
+   } else {
+      /* clamp to 32bit for legacy ring extra based roundtrip waiting */
+      vn_encode_vkWriteRingExtraMESA(&local_enc, 0, instance->ring.id, 0,
+                                     seqno);
+   }
+   VkResult result = vn_renderer_submit_simple(
+      instance->renderer, local_data, vn_cs_encoder_get_len(&local_enc));
    mtx_unlock(&instance->ring.roundtrip_mutex);
 
    *roundtrip_seqno = seqno;
@@ -305,14 +312,21 @@ roundtrip_seqno_ge(uint32_t a, uint32_t b)
 
 void
 vn_instance_wait_roundtrip(struct vn_instance *instance,
-                           uint32_t roundtrip_seqno)
+                           uint64_t roundtrip_seqno)
 {
    VN_TRACE_FUNC();
+
+   if (instance->experimental.asyncRoundtrip) {
+      vn_async_vkWaitVirtqueueSeqno100000MESA(instance, roundtrip_seqno);
+      return;
+   }
+
    const struct vn_ring *ring = &instance->ring.ring;
    const volatile atomic_uint *ptr = ring->shared.extra;
    uint32_t iter = 0;
    do {
       const uint32_t cur = atomic_load_explicit(ptr, memory_order_acquire);
+      /* clamp to 32bit for legacy ring extra based roundtrip waiting */
       if (roundtrip_seqno_ge(cur, roundtrip_seqno))
          break;
       vn_relax(ring, &iter, "roundtrip");
@@ -585,16 +599,20 @@ vn_instance_submit_command(struct vn_instance *instance,
          goto fail;
    }
 
-   uint32_t ring_seqno;
-   VkResult result = vn_instance_ring_submit_locked(
-      instance, &submit->command, submit->reply_shmem, &ring_seqno);
+   submit->ring_seqno_valid =
+      VK_SUCCESS == vn_instance_ring_submit_locked(instance, &submit->command,
+                                                   submit->reply_shmem,
+                                                   &submit->ring_seqno);
 
    mtx_unlock(&instance->ring.mutex);
 
-   submit->reply = VN_CS_DECODER_INITIALIZER(reply_ptr, submit->reply_size);
+   if (submit->reply_size) {
+      submit->reply =
+         VN_CS_DECODER_INITIALIZER(reply_ptr, submit->reply_size);
 
-   if (submit->reply_size && result == VK_SUCCESS)
-      vn_ring_wait(&instance->ring.ring, ring_seqno);
+      if (submit->ring_seqno_valid)
+         vn_ring_wait(&instance->ring.ring, submit->ring_seqno);
+   }
 
    return;
 

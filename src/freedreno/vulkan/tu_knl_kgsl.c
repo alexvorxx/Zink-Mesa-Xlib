@@ -8,6 +8,7 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <poll.h>
+#include <stdint.h>
 #include <sys/ioctl.h>
 #include <sys/mman.h>
 
@@ -15,18 +16,14 @@
 #include "vk_util.h"
 
 #include "util/u_debug.h"
+#include "util/u_vector.h"
+#include "util/libsync.h"
+#include "util/timespec.h"
 
 #include "tu_cmd_buffer.h"
 #include "tu_cs.h"
 #include "tu_device.h"
 #include "tu_dynamic_rendering.h"
-
-struct tu_syncobj {
-   struct vk_object_base base;
-   uint32_t timestamp;
-   bool timestamp_valid;
-};
-#define tu_syncobj_from_handle(x) ((struct tu_syncobj*) (uintptr_t) (x))
 
 static int
 safe_ioctl(int fd, unsigned long request, void *arg)
@@ -224,6 +221,54 @@ get_kgsl_prop(int fd, unsigned int type, void *value, size_t size)
    return safe_ioctl(fd, IOCTL_KGSL_DEVICE_GETPROPERTY, &getprop);
 }
 
+enum kgsl_syncobj_state {
+   KGSL_SYNCOBJ_STATE_UNSIGNALED,
+   KGSL_SYNCOBJ_STATE_SIGNALED,
+   KGSL_SYNCOBJ_STATE_TS,
+   KGSL_SYNCOBJ_STATE_FD,
+};
+
+struct kgsl_syncobj
+{
+   struct vk_object_base base;
+   enum kgsl_syncobj_state state;
+
+   struct tu_queue *queue;
+   uint32_t timestamp;
+
+   int fd;
+};
+
+static void
+kgsl_syncobj_init(struct kgsl_syncobj *s, bool signaled)
+{
+   s->state =
+      signaled ? KGSL_SYNCOBJ_STATE_SIGNALED : KGSL_SYNCOBJ_STATE_UNSIGNALED;
+
+   s->timestamp = UINT32_MAX;
+   s->fd = -1;
+}
+
+static void
+kgsl_syncobj_reset(struct kgsl_syncobj *s)
+{
+   if (s->state == KGSL_SYNCOBJ_STATE_FD && s->fd >= 0) {
+      ASSERTED int ret = close(s->fd);
+      assert(ret == 0);
+      s->fd = -1;
+   } else if (s->state == KGSL_SYNCOBJ_STATE_TS) {
+      s->timestamp = UINT32_MAX;
+   }
+
+   s->state = KGSL_SYNCOBJ_STATE_UNSIGNALED;
+}
+
+static void
+kgsl_syncobj_destroy(struct kgsl_syncobj *s)
+{
+   kgsl_syncobj_reset(s);
+}
+
 static int
 timestamp_to_fd(struct tu_queue *queue, uint32_t timestamp)
 {
@@ -241,6 +286,13 @@ timestamp_to_fd(struct tu_queue *queue, uint32_t timestamp)
       return -1;
 
    return fd;
+}
+
+static int
+kgsl_syncobj_ts_to_fd(const struct kgsl_syncobj *syncobj)
+{
+   assert(syncobj->state == KGSL_SYNCOBJ_STATE_TS);
+   return timestamp_to_fd(syncobj->queue, syncobj->timestamp);
 }
 
 /* return true if timestamp a is greater (more recent) then b
@@ -264,357 +316,22 @@ min_ts(uint32_t a, uint32_t b)
    return timestamp_cmp(a, b) ? b : a;
 }
 
-static struct tu_syncobj
-sync_merge(const VkSemaphore *syncobjs, uint32_t count, bool wait_all, bool reset)
+static int
+get_relative_ms(uint64_t abs_timeout_ns)
 {
-   struct tu_syncobj ret;
+   if (abs_timeout_ns >= INT64_MAX)
+      /* We can assume that a wait with a value this high is a forever wait
+       * and return -1 here as it's the infinite timeout for ppoll() while
+       * being the highest unsigned integer value for the wait KGSL IOCTL
+       */
+      return -1;
 
-   ret.timestamp_valid = false;
+   uint64_t cur_time_ms = os_time_get_nano() / 1000000;
+   uint64_t abs_timeout_ms = abs_timeout_ns / 1000000;
+   if (abs_timeout_ms <= cur_time_ms)
+      return 0;
 
-   for (uint32_t i = 0; i < count; ++i) {
-      TU_FROM_HANDLE(tu_syncobj, sync, syncobjs[i]);
-
-      /* TODO: this means the fence is unsignaled and will never become signaled */
-      if (!sync->timestamp_valid)
-         continue;
-
-      if (!ret.timestamp_valid)
-         ret.timestamp = sync->timestamp;
-      else if (wait_all)
-         ret.timestamp = max_ts(ret.timestamp, sync->timestamp);
-      else
-         ret.timestamp = min_ts(ret.timestamp, sync->timestamp);
-
-      ret.timestamp_valid = true;
-      if (reset)
-         sync->timestamp_valid = false;
-
-   }
-   return ret;
-}
-
-/* Only used for kgsl since drm started using common implementation */
-static VKAPI_ATTR VkResult VKAPI_CALL
-kgsl_QueueWaitIdle(VkQueue _queue)
-{
-   TU_FROM_HANDLE(tu_queue, queue, _queue);
-
-   if (vk_device_is_lost(&queue->device->vk))
-      return VK_ERROR_DEVICE_LOST;
-
-   if (queue->fence < 0)
-      return VK_SUCCESS;
-
-   struct pollfd fds = { .fd = queue->fence, .events = POLLIN };
-   int ret;
-   do {
-      ret = poll(&fds, 1, -1);
-   } while (ret == -1 && (errno == EINTR || errno == EAGAIN));
-
-   /* TODO: otherwise set device lost ? */
-   assert(ret == 1 && !(fds.revents & (POLLERR | POLLNVAL)));
-
-   close(queue->fence);
-   queue->fence = -1;
-   return VK_SUCCESS;
-}
-
-static VKAPI_ATTR VkResult VKAPI_CALL
-kgsl_QueueSubmit2(VkQueue _queue,
-                  uint32_t submitCount,
-                  const VkSubmitInfo2 *pSubmits,
-                  VkFence _fence)
-{
-   MESA_TRACE_FUNC();
-   TU_FROM_HANDLE(tu_queue, queue, _queue);
-   TU_FROM_HANDLE(tu_syncobj, fence, _fence);
-   VkResult result = VK_SUCCESS;
-
-   if (TU_DEBUG(LOG_SKIP_GMEM_OPS)) {
-      tu_dbg_log_gmem_load_store_skips(queue->device);
-   }
-
-   struct tu_cmd_buffer **submit_cmd_buffers[submitCount];
-   uint32_t submit_cmd_buffer_count[submitCount];
-
-   uint32_t max_entry_count = 0;
-   for (uint32_t i = 0; i < submitCount; ++i) {
-      const VkSubmitInfo2 *submit = pSubmits + i;
-
-      const VkPerformanceQuerySubmitInfoKHR *perf_info =
-         vk_find_struct_const(pSubmits[i].pNext,
-                              PERFORMANCE_QUERY_SUBMIT_INFO_KHR);
-
-      struct tu_cmd_buffer *old_cmd_buffers[submit->commandBufferInfoCount];
-      uint32_t cmdbuf_count = submit->commandBufferInfoCount;
-      for (uint32_t j = 0; j < cmdbuf_count; ++j) {
-         TU_FROM_HANDLE(tu_cmd_buffer, cmdbuf, submit->pCommandBufferInfos[j].commandBuffer);
-         old_cmd_buffers[j] = cmdbuf;
-      }
-
-      struct tu_cmd_buffer **cmd_buffers = old_cmd_buffers;
-      tu_insert_dynamic_cmdbufs(queue->device, &cmd_buffers, &cmdbuf_count);
-      if (cmd_buffers == old_cmd_buffers) {
-         cmd_buffers =
-            vk_alloc(&queue->device->vk.alloc,
-                     sizeof(*cmd_buffers) * cmdbuf_count, 8,
-                     VK_SYSTEM_ALLOCATION_SCOPE_COMMAND);
-         memcpy(cmd_buffers, old_cmd_buffers,
-                sizeof(*cmd_buffers) * cmdbuf_count);
-      }
-      submit_cmd_buffers[i] = cmd_buffers;
-      submit_cmd_buffer_count[i] = cmdbuf_count;
-
-      uint32_t entry_count = 0;
-      for (uint32_t j = 0; j < cmdbuf_count; ++j) {
-         entry_count += cmd_buffers[i]->cs.entry_count;
-         if (perf_info)
-            entry_count++;
-      }
-
-      if (tu_autotune_submit_requires_fence(cmd_buffers, cmdbuf_count))
-         entry_count++;
-
-      max_entry_count = MAX2(max_entry_count, entry_count);
-   }
-
-   struct kgsl_command_object *cmds =
-      vk_alloc(&queue->device->vk.alloc,
-               sizeof(cmds[0]) * max_entry_count, 8,
-               VK_SYSTEM_ALLOCATION_SCOPE_COMMAND);
-   if (cmds == NULL)
-      return vk_error(queue, VK_ERROR_OUT_OF_HOST_MEMORY);
-
-   for (uint32_t i = 0; i < submitCount; ++i) {
-      const VkSubmitInfo2 *submit = pSubmits + i;
-      uint32_t entry_idx = 0;
-      const VkPerformanceQuerySubmitInfoKHR *perf_info =
-         vk_find_struct_const(pSubmits[i].pNext,
-                              PERFORMANCE_QUERY_SUBMIT_INFO_KHR);
-
-
-      struct tu_cmd_buffer **cmd_buffers = submit_cmd_buffers[i];
-      uint32_t cmdbuf_count = submit_cmd_buffer_count[i];
-      for (uint32_t j = 0; j < cmdbuf_count; j++) {
-         struct tu_cmd_buffer *cmdbuf = cmd_buffers[j];
-         struct tu_cs *cs = &cmdbuf->cs;
-
-         if (perf_info) {
-            struct tu_cs_entry *perf_cs_entry =
-               &cmdbuf->device->perfcntrs_pass_cs_entries[perf_info->counterPassIndex];
-
-            cmds[entry_idx++] = (struct kgsl_command_object) {
-               .offset = 0, // KGSL doesn't use offset
-               .gpuaddr = perf_cs_entry->bo->iova + perf_cs_entry->offset,
-               .size = perf_cs_entry->size,
-               .flags = KGSL_CMDLIST_IB,
-               .id = perf_cs_entry->bo->gem_handle,
-            };
-         }
-
-         for (unsigned k = 0; k < cs->entry_count; k++) {
-            cmds[entry_idx++] = (struct kgsl_command_object) {
-               .offset = 0, // KGSL doesn't use offset
-               .gpuaddr = cs->entries[k].bo->iova + cs->entries[k].offset,
-               .size = cs->entries[k].size,
-               .flags = KGSL_CMDLIST_IB,
-               .id = cs->entries[k].bo->gem_handle,
-            };
-         }
-      }
-
-      if (tu_autotune_submit_requires_fence(cmd_buffers, cmdbuf_count)) {
-         struct tu_cs *autotune_cs =
-            tu_autotune_on_submit(queue->device,
-                                  &queue->device->autotune,
-                                  cmd_buffers,
-                                  cmdbuf_count);
-         cmds[entry_idx++] = (struct kgsl_command_object) {
-            .offset = 0, // KGSL doesn't use offset
-            .gpuaddr = autotune_cs->entries[0].bo->iova +
-                       autotune_cs->entries[0].offset,
-            .size = autotune_cs->entries[0].size,
-            .flags = KGSL_CMDLIST_IB,
-            .id = autotune_cs->entries[0].bo->gem_handle,
-         };
-      }
-
-      VkSemaphore wait_semaphores[submit->waitSemaphoreInfoCount];
-      for (uint32_t j = 0; j < submit->waitSemaphoreInfoCount; j++) {
-         wait_semaphores[j] = submit->pWaitSemaphoreInfos[j].semaphore;
-      }
-
-      struct tu_syncobj s = sync_merge(wait_semaphores,
-                                       submit->waitSemaphoreInfoCount,
-                                       true, true);
-
-      struct kgsl_cmd_syncpoint_timestamp ts = {
-         .context_id = queue->msm_queue_id,
-         .timestamp = s.timestamp,
-      };
-      struct kgsl_command_syncpoint sync = {
-         .type = KGSL_CMD_SYNCPOINT_TYPE_TIMESTAMP,
-         .size = sizeof(ts),
-         .priv = (uintptr_t) &ts,
-      };
-
-      struct kgsl_gpu_command req = {
-         .flags = KGSL_CMDBATCH_SUBMIT_IB_LIST,
-         .context_id = queue->msm_queue_id,
-         .cmdlist = (uint64_t) (uintptr_t) cmds,
-         .numcmds = entry_idx,
-         .cmdsize = sizeof(struct kgsl_command_object),
-         .synclist = (uintptr_t) &sync,
-         .syncsize = sizeof(struct kgsl_command_syncpoint),
-         .numsyncs = s.timestamp_valid ? 1 : 0,
-      };
-
-      int ret = safe_ioctl(queue->device->physical_device->local_fd,
-                           IOCTL_KGSL_GPU_COMMAND, &req);
-      if (ret) {
-         result = vk_device_set_lost(&queue->device->vk,
-                                     "submit failed: %s\n", strerror(errno));
-         goto fail;
-      }
-
-      for (uint32_t i = 0; i < submit->signalSemaphoreInfoCount; i++) {
-         TU_FROM_HANDLE(tu_syncobj, sem, submit->pSignalSemaphoreInfos[i].semaphore);
-         sem->timestamp = req.timestamp;
-         sem->timestamp_valid = true;
-      }
-
-      /* no need to merge fences as queue execution is serialized */
-      if (i == submitCount - 1) {
-         int fd = timestamp_to_fd(queue, req.timestamp);
-         if (fd < 0) {
-            result = vk_device_set_lost(&queue->device->vk,
-                                        "Failed to create sync file for timestamp: %s\n",
-                                        strerror(errno));
-            goto fail;
-         }
-
-         if (queue->fence >= 0)
-            close(queue->fence);
-         queue->fence = fd;
-
-         if (fence) {
-            fence->timestamp = req.timestamp;
-            fence->timestamp_valid = true;
-         }
-      }
-   }
-
-   tu_debug_bos_print_stats(queue->device);
-
-fail:
-   vk_free(&queue->device->vk.alloc, cmds);
-
-   return result;
-}
-
-static VkResult
-sync_create(VkDevice _device,
-            bool signaled,
-            bool fence,
-            const VkAllocationCallbacks *pAllocator,
-            void **p_sync)
-{
-   TU_FROM_HANDLE(tu_device, device, _device);
-
-   struct tu_syncobj *sync =
-         vk_object_alloc(&device->vk, pAllocator, sizeof(*sync),
-                         fence ? VK_OBJECT_TYPE_FENCE : VK_OBJECT_TYPE_SEMAPHORE);
-   if (!sync)
-      return vk_error(device, VK_ERROR_OUT_OF_HOST_MEMORY);
-
-   if (signaled)
-      tu_finishme("CREATE FENCE SIGNALED");
-
-   sync->timestamp_valid = false;
-   *p_sync = sync;
-
-   return VK_SUCCESS;
-}
-
-static VKAPI_ATTR VkResult VKAPI_CALL
-kgsl_ImportSemaphoreFdKHR(VkDevice _device,
-                          const VkImportSemaphoreFdInfoKHR *pImportSemaphoreFdInfo)
-{
-   tu_finishme("ImportSemaphoreFdKHR");
-   return VK_SUCCESS;
-}
-
-static VKAPI_ATTR VkResult VKAPI_CALL
-kgsl_GetSemaphoreFdKHR(VkDevice _device,
-                       const VkSemaphoreGetFdInfoKHR *pGetFdInfo,
-                       int *pFd)
-{
-   tu_finishme("GetSemaphoreFdKHR");
-   return VK_SUCCESS;
-}
-
-static VKAPI_ATTR VkResult VKAPI_CALL
-kgsl_CreateSemaphore(VkDevice device,
-                     const VkSemaphoreCreateInfo *pCreateInfo,
-                     const VkAllocationCallbacks *pAllocator,
-                     VkSemaphore *pSemaphore)
-{
-   return sync_create(device, false, false, pAllocator, (void**) pSemaphore);
-}
-
-static VKAPI_ATTR void VKAPI_CALL
-kgsl_DestroySemaphore(VkDevice _device,
-                      VkSemaphore semaphore,
-                      const VkAllocationCallbacks *pAllocator)
-{
-   TU_FROM_HANDLE(tu_device, device, _device);
-   TU_FROM_HANDLE(tu_syncobj, sync, semaphore);
-
-   if (!sync)
-      return;
-
-   vk_object_free(&device->vk, pAllocator, sync);
-}
-
-static VKAPI_ATTR VkResult VKAPI_CALL
-kgsl_ImportFenceFdKHR(VkDevice _device,
-                      const VkImportFenceFdInfoKHR *pImportFenceFdInfo)
-{
-   tu_stub();
-
-   return VK_SUCCESS;
-}
-
-static VKAPI_ATTR VkResult VKAPI_CALL
-kgsl_GetFenceFdKHR(VkDevice _device,
-                   const VkFenceGetFdInfoKHR *pGetFdInfo,
-                   int *pFd)
-{
-   tu_stub();
-
-   return VK_SUCCESS;
-}
-
-static VKAPI_ATTR VkResult VKAPI_CALL
-kgsl_CreateFence(VkDevice device,
-                 const VkFenceCreateInfo *info,
-                 const VkAllocationCallbacks *pAllocator,
-                 VkFence *pFence)
-{
-   return sync_create(device, info->flags & VK_FENCE_CREATE_SIGNALED_BIT, true,
-                      pAllocator, (void**) pFence);
-}
-
-static VKAPI_ATTR void VKAPI_CALL
-kgsl_DestroyFence(VkDevice _device, VkFence fence, const VkAllocationCallbacks *pAllocator)
-{
-   TU_FROM_HANDLE(tu_device, device, _device);
-   TU_FROM_HANDLE(tu_syncobj, sync, fence);
-
-   if (!sync)
-      return;
-
-   vk_object_free(&device->vk, pAllocator, sync);
+   return abs_timeout_ms - cur_time_ms;
 }
 
 /* safe_ioctl is not enough as restarted waits would not adjust the timeout
@@ -624,91 +341,712 @@ static int
 wait_timestamp_safe(int fd,
                     unsigned int context_id,
                     unsigned int timestamp,
-                    int64_t timeout_ms)
+                    uint64_t abs_timeout_ns)
 {
-   int64_t start_time = os_time_get_nano();
    struct kgsl_device_waittimestamp_ctxtid wait = {
       .context_id = context_id,
       .timestamp = timestamp,
-      .timeout = timeout_ms,
+      .timeout = get_relative_ms(abs_timeout_ns),
    };
 
    while (true) {
       int ret = ioctl(fd, IOCTL_KGSL_DEVICE_WAITTIMESTAMP_CTXTID, &wait);
 
       if (ret == -1 && (errno == EINTR || errno == EAGAIN)) {
-         int64_t current_time = os_time_get_nano();
+         int timeout_ms = get_relative_ms(abs_timeout_ns);
 
          /* update timeout to consider time that has passed since the start */
-         timeout_ms -= (current_time - start_time) / 1000000;
-         if (timeout_ms <= 0) {
+         if (timeout_ms == 0) {
             errno = ETIME;
             return -1;
          }
 
-         wait.timeout = (unsigned int) timeout_ms;
-         start_time = current_time;
+         wait.timeout = timeout_ms;
+      } else if (ret == -1 && errno == ETIMEDOUT) {
+         /* The kernel returns ETIMEDOUT if the timeout is reached, but
+          * we want to return ETIME instead.
+          */
+         errno = ETIME;
+         return -1;
       } else {
          return ret;
       }
    }
 }
 
-static VKAPI_ATTR VkResult VKAPI_CALL
-kgsl_WaitForFences(VkDevice _device,
-                   uint32_t count,
-                   const VkFence *pFences,
-                   VkBool32 waitAll,
-                   uint64_t timeout)
+static VkResult
+kgsl_syncobj_wait(struct tu_device *device,
+                  struct kgsl_syncobj *s,
+                  uint64_t abs_timeout_ns)
 {
-   TU_FROM_HANDLE(tu_device, device, _device);
-   struct tu_syncobj s = sync_merge((const VkSemaphore*) pFences, count, waitAll, false);
+   if (s->state == KGSL_SYNCOBJ_STATE_UNSIGNALED) {
+      /* If this syncobj is unsignaled we need to wait for it to resolve to a
+       * valid syncobj prior to letting the rest of the wait continue, this
+       * avoids needing kernel support for wait-before-signal semantics.
+       */
 
-   if (!s.timestamp_valid)
+      if (abs_timeout_ns == 0)
+         return VK_TIMEOUT; // If this is a simple poll then we can return early
+
+      pthread_mutex_lock(&device->submit_mutex);
+      struct timespec abstime;
+      timespec_from_nsec(&abstime, abs_timeout_ns);
+
+      while (s->state == KGSL_SYNCOBJ_STATE_UNSIGNALED) {
+         int ret;
+         if (abs_timeout_ns == UINT64_MAX) {
+            ret = pthread_cond_wait(&device->timeline_cond,
+                                    &device->submit_mutex);
+         } else {
+            ret = pthread_cond_timedwait(&device->timeline_cond,
+                                         &device->submit_mutex, &abstime);
+         }
+         if (ret != 0) {
+            assert(ret == ETIMEDOUT);
+            pthread_mutex_unlock(&device->submit_mutex);
+            return VK_TIMEOUT;
+         }
+      }
+
+      pthread_mutex_unlock(&device->submit_mutex);
+   }
+
+   switch (s->state) {
+   case KGSL_SYNCOBJ_STATE_SIGNALED:
       return VK_SUCCESS;
 
-   int ret = wait_timestamp_safe(device->fd, 
-                                 device->queues[0]->msm_queue_id, 
-                                 s.timestamp, 
-                                 timeout / 1000000);
-   if (ret) {
-      assert(errno == ETIME);
+   case KGSL_SYNCOBJ_STATE_UNSIGNALED:
       return VK_TIMEOUT;
+
+   case KGSL_SYNCOBJ_STATE_TS: {
+      int ret = wait_timestamp_safe(device->fd, s->queue->msm_queue_id,
+                                    s->timestamp, abs_timeout_ns);
+      if (ret) {
+         assert(errno == ETIME);
+         return VK_TIMEOUT;
+      } else {
+         return VK_SUCCESS;
+      }
+   }
+
+   case KGSL_SYNCOBJ_STATE_FD: {
+      int ret = sync_wait(device->fd, get_relative_ms(abs_timeout_ns));
+      if (ret) {
+         assert(errno == ETIME);
+         return VK_TIMEOUT;
+      } else {
+         return VK_SUCCESS;
+      }
+   }
+
+   default:
+      unreachable("invalid syncobj state");
+   }
+}
+
+#define kgsl_syncobj_foreach_state(syncobjs, filter) \
+   for (uint32_t i = 0; sync = syncobjs[i], i < count; i++) \
+      if (sync->state == filter)
+
+static VkResult
+kgsl_syncobj_wait_any(struct tu_device* device, struct kgsl_syncobj **syncobjs, uint32_t count, uint64_t abs_timeout_ns)
+{
+   if (count == 0)
+      return VK_TIMEOUT;
+   else if (count == 1)
+      return kgsl_syncobj_wait(device, syncobjs[0], abs_timeout_ns);
+
+   uint32_t num_fds = 0;
+   struct tu_queue *queue = NULL;
+   struct kgsl_syncobj *sync = NULL;
+
+   /* Simple case, we already have a signal one */
+   kgsl_syncobj_foreach_state(syncobjs, KGSL_SYNCOBJ_STATE_SIGNALED)
+      return VK_SUCCESS;
+
+   kgsl_syncobj_foreach_state(syncobjs, KGSL_SYNCOBJ_STATE_FD)
+      num_fds++;
+
+   /* If we have TS from different queues we cannot compare them and would
+    * have to convert them into FDs
+    */
+   bool convert_ts_to_fd = false;
+   kgsl_syncobj_foreach_state(syncobjs, KGSL_SYNCOBJ_STATE_TS) {
+      if (queue != NULL && sync->queue != queue) {
+         convert_ts_to_fd = true;
+         break;
+      }
+      queue = sync->queue;
+   }
+
+   /* If we have no FD nor TS syncobjs then we can return immediately */
+   if (num_fds == 0 && queue == NULL)
+      return VK_TIMEOUT;
+
+   VkResult result = VK_TIMEOUT;
+
+   struct u_vector poll_fds = { 0 };
+   uint32_t lowest_timestamp = 0;
+
+   if (convert_ts_to_fd || num_fds > 0)
+      u_vector_init(&poll_fds, 4, sizeof(struct pollfd));
+
+   if (convert_ts_to_fd) {
+      kgsl_syncobj_foreach_state(syncobjs, KGSL_SYNCOBJ_STATE_TS) {
+         struct pollfd *poll_fd = u_vector_add(&poll_fds);
+         poll_fd->fd = timestamp_to_fd(sync->queue, sync->timestamp);
+         poll_fd->events = POLLIN;
+      }
+   } else {
+      /* TSs could be merged by finding the one with the lowest timestamp */
+      bool first_ts = true;
+      kgsl_syncobj_foreach_state(syncobjs, KGSL_SYNCOBJ_STATE_TS) {
+         if (first_ts || timestamp_cmp(sync->timestamp, lowest_timestamp)) {
+            first_ts = false;
+            lowest_timestamp = sync->timestamp;
+         }
+      }
+
+      if (num_fds) {
+         struct pollfd *poll_fd = u_vector_add(&poll_fds);
+         poll_fd->fd = timestamp_to_fd(queue, lowest_timestamp);
+         poll_fd->events = POLLIN;
+      }
+   }
+
+   if (num_fds) {
+      kgsl_syncobj_foreach_state(syncobjs, KGSL_SYNCOBJ_STATE_FD) {
+         struct pollfd *poll_fd = u_vector_add(&poll_fds);
+         poll_fd->fd = sync->fd;
+         poll_fd->events = POLLIN;
+      }
+   }
+
+   if (u_vector_length(&poll_fds) == 0) {
+      int ret = wait_timestamp_safe(device->fd, queue->msm_queue_id,
+                                    lowest_timestamp, MIN2(abs_timeout_ns, INT64_MAX));
+      if (ret) {
+         assert(errno == ETIME);
+         result = VK_TIMEOUT;
+      } else {
+         result = VK_SUCCESS;
+      }
+   } else {
+      int ret, i;
+
+      struct pollfd *fds = poll_fds.data;
+      uint32_t fds_count = u_vector_length(&poll_fds);
+      do {
+         ret = poll(fds, fds_count, get_relative_ms(abs_timeout_ns));
+         if (ret > 0) {
+            for (i = 0; i < fds_count; i++) {
+               if (fds[i].revents & (POLLERR | POLLNVAL)) {
+                  errno = EINVAL;
+                  ret = -1;
+                  break;
+               }
+            }
+            break;
+         } else if (ret == 0) {
+            errno = ETIME;
+            break;
+         }
+      } while (ret == -1 && (errno == EINTR || errno == EAGAIN));
+
+      for (uint32_t i = 0; i < fds_count - num_fds; i++)
+         close(fds[i].fd);
+
+      if (ret != 0) {
+         assert(errno == ETIME);
+         result = VK_TIMEOUT;
+      } else {
+         result = VK_SUCCESS;
+      }
+   }
+
+   u_vector_finish(&poll_fds);
+   return result;
+}
+
+static VkResult
+kgsl_syncobj_export(struct kgsl_syncobj *s, int *pFd)
+{
+   if (!pFd)
+      return VK_SUCCESS;
+
+   switch (s->state) {
+   case KGSL_SYNCOBJ_STATE_SIGNALED:
+   case KGSL_SYNCOBJ_STATE_UNSIGNALED:
+      /* Getting a sync FD from an unsignaled syncobj is UB in Vulkan */
+      *pFd = -1;
+      return VK_SUCCESS;
+
+   case KGSL_SYNCOBJ_STATE_FD:
+      if (s->fd < 0)
+         *pFd = -1;
+      else
+         *pFd = dup(s->fd);
+      return VK_SUCCESS;
+
+   case KGSL_SYNCOBJ_STATE_TS:
+      *pFd = kgsl_syncobj_ts_to_fd(s);
+      return VK_SUCCESS;
+
+   default:
+      unreachable("Invalid syncobj state");
+   }
+}
+
+static VkResult
+kgsl_syncobj_import(struct kgsl_syncobj *s, int fd)
+{
+   kgsl_syncobj_reset(s);
+   if (fd >= 0) {
+      s->state = KGSL_SYNCOBJ_STATE_FD;
+      s->fd = fd;
+   } else {
+      s->state = KGSL_SYNCOBJ_STATE_SIGNALED;
    }
 
    return VK_SUCCESS;
 }
 
-static VKAPI_ATTR VkResult VKAPI_CALL
-kgsl_ResetFences(VkDevice _device, uint32_t count, const VkFence *pFences)
+static int
+sync_merge_close(const char *name, int fd1, int fd2, bool close_fd2)
 {
-   for (uint32_t i = 0; i < count; i++) {
-      TU_FROM_HANDLE(tu_syncobj, sync, pFences[i]);
-      sync->timestamp_valid = false;
+   int fd = sync_merge(name, fd1, fd2);
+   if (fd < 0)
+      return -1;
+
+   close(fd1);
+   if (close_fd2)
+      close(fd2);
+
+   return fd;
+}
+
+/* Merges multiple kgsl_syncobjs into a single one which is only signalled
+ * after all submitted syncobjs are signalled
+ */
+static struct kgsl_syncobj
+kgsl_syncobj_merge(const struct kgsl_syncobj **syncobjs, uint32_t count)
+{
+   struct kgsl_syncobj ret;
+   kgsl_syncobj_init(&ret, true);
+
+   if (count == 0)
+      return ret;
+
+   for (uint32_t i = 0; i < count; ++i) {
+      const struct kgsl_syncobj *sync = syncobjs[i];
+
+      switch (sync->state) {
+      case KGSL_SYNCOBJ_STATE_SIGNALED:
+         break;
+
+      case KGSL_SYNCOBJ_STATE_UNSIGNALED:
+         kgsl_syncobj_reset(&ret);
+         return ret;
+
+      case KGSL_SYNCOBJ_STATE_TS:
+         if (ret.state == KGSL_SYNCOBJ_STATE_TS) {
+            if (ret.queue == sync->queue) {
+               ret.timestamp = max_ts(ret.timestamp, sync->timestamp);
+            } else {
+               ret.state = KGSL_SYNCOBJ_STATE_FD;
+               int sync_fd = kgsl_syncobj_ts_to_fd(sync);
+               ret.fd = sync_merge_close("tu_sync", ret.fd, sync_fd, true);
+               assert(ret.fd >= 0);
+            }
+         } else if (ret.state == KGSL_SYNCOBJ_STATE_FD) {
+            int sync_fd = kgsl_syncobj_ts_to_fd(sync);
+            ret.fd = sync_merge_close("tu_sync", ret.fd, sync_fd, true);
+            assert(ret.fd >= 0);
+         } else {
+            ret = *sync;
+         }
+         break;
+
+      case KGSL_SYNCOBJ_STATE_FD:
+         if (ret.state == KGSL_SYNCOBJ_STATE_FD) {
+            ret.fd = sync_merge_close("tu_sync", ret.fd, sync->fd, false);
+            assert(ret.fd >= 0);
+         } else if (ret.state == KGSL_SYNCOBJ_STATE_TS) {
+            ret.state = KGSL_SYNCOBJ_STATE_FD;
+            int sync_fd = kgsl_syncobj_ts_to_fd(sync);
+            ret.fd = sync_merge_close("tu_sync", ret.fd, sync_fd, true);
+            assert(ret.fd >= 0);
+         } else {
+            ret = *sync;
+            ret.fd = dup(ret.fd);
+            assert(ret.fd >= 0);
+         }
+         break;
+
+      default:
+         unreachable("invalid syncobj state");
+      }
    }
+
+   return ret;
+}
+
+struct vk_kgsl_syncobj
+{
+   struct vk_sync vk;
+   struct kgsl_syncobj syncobj;
+};
+
+static VkResult
+vk_kgsl_sync_init(struct vk_device *device,
+                  struct vk_sync *sync,
+                  uint64_t initial_value)
+{
+   struct vk_kgsl_syncobj *s = container_of(sync, struct vk_kgsl_syncobj, vk);
+   kgsl_syncobj_init(&s->syncobj, initial_value != 0);
    return VK_SUCCESS;
 }
 
-static VKAPI_ATTR VkResult VKAPI_CALL
-kgsl_GetFenceStatus(VkDevice _device, VkFence _fence)
+static void
+vk_kgsl_sync_finish(struct vk_device *device, struct vk_sync *sync)
 {
-   TU_FROM_HANDLE(tu_device, device, _device);
-   TU_FROM_HANDLE(tu_syncobj, sync, _fence);
+   struct vk_kgsl_syncobj *s = container_of(sync, struct vk_kgsl_syncobj, vk);
+   kgsl_syncobj_destroy(&s->syncobj);
+}
 
-   if (!sync->timestamp_valid)
-      return VK_NOT_READY;
+static VkResult
+vk_kgsl_sync_reset(struct vk_device *device, struct vk_sync *sync)
+{
+   struct vk_kgsl_syncobj *s = container_of(sync, struct vk_kgsl_syncobj, vk);
+   kgsl_syncobj_reset(&s->syncobj);
+   return VK_SUCCESS;
+}
 
+static VkResult
+vk_kgsl_sync_move(struct vk_device *device,
+                  struct vk_sync *dst,
+                  struct vk_sync *src)
+{
+   struct vk_kgsl_syncobj *d = container_of(dst, struct vk_kgsl_syncobj, vk);
+   struct vk_kgsl_syncobj *s = container_of(src, struct vk_kgsl_syncobj, vk);
+   kgsl_syncobj_reset(&d->syncobj);
+   d->syncobj = s->syncobj;
+   kgsl_syncobj_init(&s->syncobj, false);
+   return VK_SUCCESS;
+}
 
-   int ret = wait_timestamp_safe(device->fd, 
-                                 device->queues[0]->msm_queue_id, 
-                                 sync->timestamp, 
-                                 0);
+static VkResult
+vk_kgsl_sync_wait(struct vk_device *_device,
+                  struct vk_sync *sync,
+                  uint64_t wait_value,
+                  enum vk_sync_wait_flags wait_flags,
+                  uint64_t abs_timeout_ns)
+{
+   struct tu_device *device = container_of(_device, struct tu_device, vk);
+   struct vk_kgsl_syncobj *s = container_of(sync, struct vk_kgsl_syncobj, vk);
+
+   if (wait_flags & VK_SYNC_WAIT_PENDING)
+      return VK_SUCCESS;
+
+   return kgsl_syncobj_wait(device, &s->syncobj, abs_timeout_ns);
+}
+
+static VkResult
+vk_kgsl_sync_wait_many(struct vk_device *_device,
+                       uint32_t wait_count,
+                       const struct vk_sync_wait *waits,
+                       enum vk_sync_wait_flags wait_flags,
+                       uint64_t abs_timeout_ns)
+{
+   struct tu_device *device = container_of(_device, struct tu_device, vk);
+
+   if (wait_flags & VK_SYNC_WAIT_PENDING)
+      return VK_SUCCESS;
+
+   if (wait_flags & VK_SYNC_WAIT_ANY) {
+      struct kgsl_syncobj *syncobjs[wait_count];
+      for (uint32_t i = 0; i < wait_count; i++) {
+         syncobjs[i] =
+            &container_of(waits[i].sync, struct vk_kgsl_syncobj, vk)->syncobj;
+      }
+
+      return kgsl_syncobj_wait_any(device, syncobjs, wait_count,
+                                   abs_timeout_ns);
+   } else {
+      for (uint32_t i = 0; i < wait_count; i++) {
+         struct vk_kgsl_syncobj *s =
+            container_of(waits[i].sync, struct vk_kgsl_syncobj, vk);
+
+         VkResult result =
+            kgsl_syncobj_wait(device, &s->syncobj, abs_timeout_ns);
+         if (result != VK_SUCCESS)
+            return result;
+      }
+      return VK_SUCCESS;
+   }
+}
+
+static VkResult
+vk_kgsl_sync_import_sync_file(struct vk_device *device,
+                              struct vk_sync *sync,
+                              int fd)
+{
+   struct vk_kgsl_syncobj *s = container_of(sync, struct vk_kgsl_syncobj, vk);
+   if (fd >= 0) {
+      fd = dup(fd);
+      if (fd < 0) {
+         mesa_loge("vk_kgsl_sync_import_sync_file: dup failed: %s",
+                   strerror(errno));
+         return vk_error(device, VK_ERROR_OUT_OF_HOST_MEMORY);
+      }
+   }
+   return kgsl_syncobj_import(&s->syncobj, fd);
+}
+
+static VkResult
+vk_kgsl_sync_export_sync_file(struct vk_device *device,
+                              struct vk_sync *sync,
+                              int *pFd)
+{
+   struct vk_kgsl_syncobj *s = container_of(sync, struct vk_kgsl_syncobj, vk);
+   return kgsl_syncobj_export(&s->syncobj, pFd);
+}
+
+const struct vk_sync_type vk_kgsl_sync_type = {
+   .size = sizeof(struct vk_kgsl_syncobj),
+   .features = VK_SYNC_FEATURE_BINARY |
+               VK_SYNC_FEATURE_GPU_WAIT |
+               VK_SYNC_FEATURE_GPU_MULTI_WAIT |
+               VK_SYNC_FEATURE_CPU_WAIT |
+               VK_SYNC_FEATURE_CPU_RESET |
+               VK_SYNC_FEATURE_WAIT_ANY |
+               VK_SYNC_FEATURE_WAIT_PENDING,
+   .init = vk_kgsl_sync_init,
+   .finish = vk_kgsl_sync_finish,
+   .reset = vk_kgsl_sync_reset,
+   .move = vk_kgsl_sync_move,
+   .wait = vk_kgsl_sync_wait,
+   .wait_many = vk_kgsl_sync_wait_many,
+   .import_sync_file = vk_kgsl_sync_import_sync_file,
+   .export_sync_file = vk_kgsl_sync_export_sync_file,
+};
+
+static VkResult
+kgsl_queue_submit(struct tu_queue *queue, struct vk_queue_submit *vk_submit)
+{
+   MESA_TRACE_FUNC();
+
+   if (vk_submit->command_buffer_count == 0) {
+      pthread_mutex_lock(&queue->device->submit_mutex);
+
+      const struct kgsl_syncobj *wait_semaphores[vk_submit->wait_count + 1];
+      for (uint32_t i = 0; i < vk_submit->wait_count; i++) {
+         wait_semaphores[i] = &container_of(vk_submit->waits[i].sync,
+                                            struct vk_kgsl_syncobj, vk)
+                                  ->syncobj;
+      }
+
+      struct kgsl_syncobj last_submit_sync;
+      if (queue->last_submit_timestamp >= 0)
+         last_submit_sync = (struct kgsl_syncobj) {
+            .state = KGSL_SYNCOBJ_STATE_TS,
+            .queue = queue,
+            .timestamp = queue->last_submit_timestamp,
+         };
+      else
+         last_submit_sync = (struct kgsl_syncobj) {
+            .state = KGSL_SYNCOBJ_STATE_SIGNALED,
+         };
+
+      wait_semaphores[vk_submit->wait_count] = &last_submit_sync;
+
+      struct kgsl_syncobj wait_sync =
+         kgsl_syncobj_merge(wait_semaphores, vk_submit->wait_count + 1);
+      assert(wait_sync.state !=
+             KGSL_SYNCOBJ_STATE_UNSIGNALED); // Would wait forever
+
+      for (uint32_t i = 0; i < vk_submit->signal_count; i++) {
+         struct kgsl_syncobj *signal_sync =
+            &container_of(vk_submit->signals[i].sync, struct vk_kgsl_syncobj,
+                          vk)
+                ->syncobj;
+
+         kgsl_syncobj_reset(signal_sync);
+         *signal_sync = wait_sync;
+      }
+
+      pthread_mutex_unlock(&queue->device->submit_mutex);
+      pthread_cond_broadcast(&queue->device->timeline_cond);
+
+      return VK_SUCCESS;
+   }
+
+   uint32_t perf_pass_index =
+      queue->device->perfcntrs_pass_cs ? vk_submit->perf_pass_index : ~0;
+
+   if (TU_DEBUG(LOG_SKIP_GMEM_OPS))
+      tu_dbg_log_gmem_load_store_skips(queue->device);
+
+   VkResult result = VK_SUCCESS;
+
+   pthread_mutex_lock(&queue->device->submit_mutex);
+
+   struct tu_cmd_buffer **cmd_buffers =
+      (struct tu_cmd_buffer **) vk_submit->command_buffers;
+   static_assert(offsetof(struct tu_cmd_buffer, vk) == 0,
+                 "vk must be first member of tu_cmd_buffer");
+   uint32_t cmdbuf_count = vk_submit->command_buffer_count;
+
+   result =
+      tu_insert_dynamic_cmdbufs(queue->device, &cmd_buffers, &cmdbuf_count);
+   if (result != VK_SUCCESS) {
+      pthread_mutex_unlock(&queue->device->submit_mutex);
+      return result;
+   }
+
+   uint32_t entry_count = 0;
+   for (uint32_t i = 0; i < cmdbuf_count; ++i) {
+      struct tu_cmd_buffer *cmd_buffer = cmd_buffers[i];
+
+      if (perf_pass_index != ~0)
+         entry_count++;
+
+      entry_count += cmd_buffer->cs.entry_count;
+   }
+
+   if (tu_autotune_submit_requires_fence(cmd_buffers, cmdbuf_count))
+      entry_count++;
+
+   struct kgsl_command_object *cmds =
+      vk_alloc(&queue->device->vk.alloc, sizeof(*cmds) * entry_count,
+               alignof(*cmds), VK_SYSTEM_ALLOCATION_SCOPE_COMMAND);
+   if (cmds == NULL) {
+      pthread_mutex_unlock(&queue->device->submit_mutex);
+      return vk_error(queue, VK_ERROR_OUT_OF_HOST_MEMORY);
+   }
+
+   uint32_t entry_idx = 0;
+   for (uint32_t i = 0; i < cmdbuf_count; i++) {
+      struct tu_cmd_buffer *cmd_buffer = cmd_buffers[i];
+      struct tu_cs *cs = &cmd_buffer->cs;
+
+      if (perf_pass_index != ~0) {
+         struct tu_cs_entry *perf_cs_entry =
+            &cmd_buffer->device->perfcntrs_pass_cs_entries[perf_pass_index];
+
+         cmds[entry_idx++] = (struct kgsl_command_object) {
+            .gpuaddr = perf_cs_entry->bo->iova + perf_cs_entry->offset,
+            .size = perf_cs_entry->size,
+            .flags = KGSL_CMDLIST_IB,
+            .id = perf_cs_entry->bo->gem_handle,
+         };
+      }
+
+      for (uint32_t j = 0; j < cs->entry_count; j++) {
+         cmds[entry_idx++] = (struct kgsl_command_object) {
+            .gpuaddr = cs->entries[j].bo->iova + cs->entries[j].offset,
+            .size = cs->entries[j].size,
+            .flags = KGSL_CMDLIST_IB,
+            .id = cs->entries[j].bo->gem_handle,
+         };
+      }
+   }
+
+   if (tu_autotune_submit_requires_fence(cmd_buffers, cmdbuf_count)) {
+      struct tu_cs *autotune_cs = tu_autotune_on_submit(
+         queue->device, &queue->device->autotune, cmd_buffers, cmdbuf_count);
+      cmds[entry_idx++] = (struct kgsl_command_object) {
+         .gpuaddr =
+            autotune_cs->entries[0].bo->iova + autotune_cs->entries[0].offset,
+         .size = autotune_cs->entries[0].size,
+         .flags = KGSL_CMDLIST_IB,
+         .id = autotune_cs->entries[0].bo->gem_handle,
+      };
+   }
+
+   const struct kgsl_syncobj *wait_semaphores[vk_submit->wait_count];
+   for (uint32_t i = 0; i < vk_submit->wait_count; i++) {
+      wait_semaphores[i] =
+         &container_of(vk_submit->waits[i].sync, struct vk_kgsl_syncobj, vk)
+             ->syncobj;
+   }
+
+   struct kgsl_syncobj wait_sync =
+      kgsl_syncobj_merge(wait_semaphores, vk_submit->wait_count);
+   assert(wait_sync.state !=
+          KGSL_SYNCOBJ_STATE_UNSIGNALED); // Would wait forever
+
+   struct kgsl_cmd_syncpoint_timestamp ts;
+   struct kgsl_cmd_syncpoint_fence fn;
+   struct kgsl_command_syncpoint sync = { 0 };
+   bool has_sync = false;
+   switch (wait_sync.state) {
+   case KGSL_SYNCOBJ_STATE_SIGNALED:
+      break;
+
+   case KGSL_SYNCOBJ_STATE_TS:
+      ts.context_id = wait_sync.queue->msm_queue_id;
+      ts.timestamp = wait_sync.timestamp;
+
+      has_sync = true;
+      sync.type = KGSL_CMD_SYNCPOINT_TYPE_TIMESTAMP;
+      sync.priv = (uintptr_t) &ts;
+      sync.size = sizeof(ts);
+      break;
+
+   case KGSL_SYNCOBJ_STATE_FD:
+      fn.fd = wait_sync.fd;
+
+      has_sync = true;
+      sync.type = KGSL_CMD_SYNCPOINT_TYPE_FENCE;
+      sync.priv = (uintptr_t) &fn;
+      sync.size = sizeof(fn);
+      break;
+
+   default:
+      unreachable("invalid syncobj state");
+   }
+
+   struct kgsl_gpu_command req = {
+      .flags = KGSL_CMDBATCH_SUBMIT_IB_LIST,
+      .context_id = queue->msm_queue_id,
+      .cmdlist = (uintptr_t) cmds,
+      .numcmds = entry_idx,
+      .cmdsize = sizeof(struct kgsl_command_object),
+      .synclist = (uintptr_t) &sync,
+      .syncsize = sizeof(sync),
+      .numsyncs = has_sync != 0 ? 1 : 0,
+   };
+
+   int ret = safe_ioctl(queue->device->physical_device->local_fd,
+                        IOCTL_KGSL_GPU_COMMAND, &req);
+
+   kgsl_syncobj_destroy(&wait_sync);
+
    if (ret) {
-      assert(errno == ETIME);
-      return VK_NOT_READY;
+      result = vk_device_set_lost(&queue->device->vk, "submit failed: %s\n",
+                                  strerror(errno));
+      pthread_mutex_unlock(&queue->device->submit_mutex);
+      return result;
    }
 
-   return VK_SUCCESS;
+   queue->last_submit_timestamp = req.timestamp;
+
+   for (uint32_t i = 0; i < vk_submit->signal_count; i++) {
+      struct kgsl_syncobj *signal_sync =
+         &container_of(vk_submit->signals[i].sync, struct vk_kgsl_syncobj, vk)
+             ->syncobj;
+
+      kgsl_syncobj_reset(signal_sync);
+      signal_sync->state = KGSL_SYNCOBJ_STATE_TS;
+      signal_sync->queue = queue;
+      signal_sync->timestamp = req.timestamp;
+   }
+
+   pthread_mutex_unlock(&queue->device->submit_mutex);
+   pthread_cond_broadcast(&queue->device->timeline_cond);
+
+   return result;
 }
 
 static VkResult
@@ -758,55 +1096,6 @@ kgsl_device_check_status(struct tu_device *device)
    return VK_SUCCESS;
 }
 
-#ifdef ANDROID
-static VKAPI_ATTR VkResult VKAPI_CALL
-kgsl_QueueSignalReleaseImageANDROID(VkQueue _queue,
-                                    uint32_t waitSemaphoreCount,
-                                    const VkSemaphore *pWaitSemaphores,
-                                    VkImage image,
-                                    int *pNativeFenceFd)
-{
-   TU_FROM_HANDLE(tu_queue, queue, _queue);
-   if (!pNativeFenceFd)
-      return VK_SUCCESS;
-
-   struct tu_syncobj s = sync_merge(pWaitSemaphores, waitSemaphoreCount, true, true);
-
-   if (!s.timestamp_valid) {
-      *pNativeFenceFd = -1;
-      return VK_SUCCESS;
-   }
-
-   *pNativeFenceFd = timestamp_to_fd(queue, s.timestamp);
-
-   return VK_SUCCESS;
-}
-#endif
-
-/**
- * kgsl's sync primitives are not drm_syncobj, therefore we have to bypass
- * a lot of the vk-common helpers and plug-in kgsl specific entrypoints
- * instead.
- */
-static const struct vk_device_entrypoint_table kgsl_device_entrypoints = {
-      .QueueWaitIdle = kgsl_QueueWaitIdle,
-      .QueueSubmit2 = kgsl_QueueSubmit2,
-      .ImportSemaphoreFdKHR = kgsl_ImportSemaphoreFdKHR,
-      .GetSemaphoreFdKHR = kgsl_GetSemaphoreFdKHR,
-      .CreateSemaphore = kgsl_CreateSemaphore,
-      .DestroySemaphore = kgsl_DestroySemaphore,
-      .ImportFenceFdKHR = kgsl_ImportFenceFdKHR,
-      .GetFenceFdKHR = kgsl_GetFenceFdKHR,
-      .CreateFence = kgsl_CreateFence,
-      .DestroyFence = kgsl_DestroyFence,
-      .WaitForFences = kgsl_WaitForFences,
-      .ResetFences = kgsl_ResetFences,
-      .GetFenceStatus = kgsl_GetFenceStatus,
-#ifdef ANDROID
-      .QueueSignalReleaseImageANDROID = kgsl_QueueSignalReleaseImageANDROID,
-#endif
-};
-
 static const struct tu_knl kgsl_knl_funcs = {
       .name = "kgsl",
 
@@ -822,8 +1111,7 @@ static const struct tu_knl kgsl_knl_funcs = {
       .bo_allow_dump = kgsl_bo_allow_dump,
       .bo_finish = kgsl_bo_finish,
       .device_wait_u_trace = kgsl_device_wait_u_trace,
-
-      .device_entrypoints = &kgsl_device_entrypoints,
+      .queue_submit = kgsl_queue_submit,
 };
 
 VkResult
@@ -867,6 +1155,12 @@ tu_knl_kgsl_load(struct tu_instance *instance, int fd)
    device->gmem_base = gmem_iova;
 
    device->submitqueue_priority_count = 1;
+   
+   device->timeline_type = vk_sync_timeline_get_type(&vk_kgsl_sync_type);
+
+   device->sync_types[0] = &vk_kgsl_sync_type;
+   device->sync_types[1] = &device->timeline_type.sync;
+   device->sync_types[2] = NULL;
 
    device->heap.size = tu_get_system_heap_size();
    device->heap.used = 0u;

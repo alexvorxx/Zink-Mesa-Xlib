@@ -27,15 +27,14 @@
     # Fix non-conformant llvmpipe filter defaults
     GALLIVM_PERF: "no_quad_lod"
 
-.zink-lvp:
-  tags:
-    - mesa-swrast
+zink-lvp:
   extends:
     - .test-gl
     - .deqp-test
     - .zink-lvp-test
   variables:
     DEQP_SUITE: zink-lvp
+    DEQP_FRACTION: 4
     PIGLIT_NO_WINDOW: 1
     # Enable validation (except for on piglit, see deqp-zink-lvp.toml), logging
     # to stdout and aborting on unknown failures.
@@ -102,6 +101,7 @@ zink-anv-tgl-traces-restricted:
 
 zink-tu-a618:
   extends:
+    - .lava-test:arm64
     - .a618-test
     - .zink-turnip-rules
     - .zink-test
@@ -134,7 +134,7 @@ zink-freedreno-a630-traces:
     PIGLIT_PROFILES: all
     PIGLIT_PLATFORM: gbm
     RADV_PERFTEST: gpl
-    B2C_TEST_SCRIPT: ./install/valve/gl_combined_testing.sh
+    HWCI_TEST_SCRIPT: ./install/valve/gl_combined_testing.sh
     B2C_JOB_SUCCESS_REGEX: 'Execution is over, pipeline status: 0'
 
     # Disable reporting, since DUTs don't have internet access
@@ -149,7 +149,7 @@ zink-radv-navi10-valve:
     GPU_VERSION: zink-radv-navi10
 
 zink-radv-vangogh-valve:
-  parallel: 2
+  parallel: 3
   extends:
     - .radv-zink-test-valve
     - .vangogh-test-valve

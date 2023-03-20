@@ -845,6 +845,12 @@ get_buffer_format_features2(const struct intel_device_info *devinfo,
       case VK_FORMAT_R16G16B16A16_SFLOAT:
       case VK_FORMAT_R16G16_SNORM:
       case VK_FORMAT_R16G16B16A16_SNORM:
+      case VK_FORMAT_R16G16B16A16_UNORM:
+      case VK_FORMAT_R16G16_UNORM:
+      case VK_FORMAT_R8G8B8A8_UNORM:
+      case VK_FORMAT_R8G8_UNORM:
+      case VK_FORMAT_R8G8B8A8_SNORM:
+      case VK_FORMAT_R8G8_SNORM:
          flags |= VK_FORMAT_FEATURE_ACCELERATION_STRUCTURE_VERTEX_BUFFER_BIT_KHR;
          break;
       default:

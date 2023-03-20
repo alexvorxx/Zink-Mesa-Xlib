@@ -29,7 +29,7 @@ static void
 agx_optimize_and_dce(agx_context *ctx)
 {
    agx_optimizer(ctx);
-   agx_dce(ctx);
+   agx_dce(ctx, true);
 }
 
 #define CASE(instr, expected, size)                                            \

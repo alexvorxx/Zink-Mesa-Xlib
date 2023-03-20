@@ -150,12 +150,26 @@ anv_gem_fd_to_handle(struct anv_device *device, int fd)
    unreachable("Unused");
 }
 
+static int
+stub_gem_vm_bind(struct anv_device *device, struct anv_bo *bo)
+{
+   return 0;
+}
+
+static int
+stub_gem_vm_unbind(struct anv_device *device, struct anv_bo *bo)
+{
+   return 0;
+}
+
 const struct anv_kmd_backend *anv_stub_kmd_backend_get(void)
 {
    static const struct anv_kmd_backend stub_backend = {
       .gem_create = stub_gem_create,
       .gem_close = stub_gem_close,
       .gem_mmap = stub_gem_mmap,
+      .gem_vm_bind = stub_gem_vm_bind,
+      .gem_vm_unbind = stub_gem_vm_unbind,
       .execute_simple_batch = stub_execute_simple_batch,
       .queue_exec_locked = stub_queue_exec_locked,
    };

@@ -286,6 +286,7 @@ static inline void rogue_instr_group_put(rogue_instr *instr,
 
    /* Set end flag. */
    group->header.end = instr->end;
+   instr->end = false;
 
    /* Ensure we're not mixing and matching execution conditions! */
    assert(group->header.exec_cond == ROGUE_EXEC_COND_INVALID ||

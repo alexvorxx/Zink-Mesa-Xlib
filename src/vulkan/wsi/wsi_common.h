@@ -91,7 +91,7 @@ struct vk_instance;
 
 struct driOptionCache;
 
-#define VK_ICD_WSI_PLATFORM_MAX (VK_ICD_WSI_PLATFORM_DISPLAY + 1)
+#define VK_ICD_WSI_PLATFORM_MAX (VK_ICD_WSI_PLATFORM_HEADLESS + 1)
 
 struct wsi_device {
    /* Allocator for the instance */
@@ -125,6 +125,9 @@ struct wsi_device {
 
    /* List of fences to signal when hotplug event happens. */
    struct list_head hotplug_fences;
+
+   /* Create headless swapchains. */
+   bool force_headless_swapchain;
 
    struct {
       /* Override the minimum number of images on the swapchain.

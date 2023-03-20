@@ -47,14 +47,6 @@ tu_env_init_once(void)
     tu_env.debug = parse_debug_string(os_get_option("TU_DEBUG"),
             tu_debug_options);
 
-#ifdef DEBUG
-   /* Enable startup debugging by default on debug drivers.  You almost always
-    * want to see your startup failures in that case, and it's hard to set
-    * this env var on android.
-    */
-   tu_env.debug |= TU_DEBUG_STARTUP;
-#endif
-
    if (TU_DEBUG(STARTUP))
       mesa_logi("TU_DEBUG=0x%x", tu_env.debug);
 }

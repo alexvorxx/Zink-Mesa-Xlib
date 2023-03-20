@@ -100,6 +100,12 @@
     <value name="R8G8B8A8" value="0x28"/>
     <value name="R32G32" value="0x31"/>
     <value name="R16G16B16A16" value="0x32"/>
+
+    <!-- Software-defined value selected not to clash with the hardware values.
+         Texture buffer reads from this format are lowered. It is invalid to
+         use this format for anything else. -->
+    <value name="R32G32B32 (Emulated)" value="0x36"/>
+
     <value name="R32G32B32A32" value="0x38"/>
     <value name="GBGR 422" value="0x40"/> <!-- Subsampled, swizzle BRG1 -->
     <value name="BGRG 422" value="0x41"/> <!-- Subsampled, swizzle BRG1 -->
@@ -781,7 +787,7 @@
 
   <!-- Conditional branching and function calls may be supported, see the
        STREAM_LINK0 struct in mesa/src/imagination/csbgen/rogue_vdm.xml for a
-       probable dfinition -->
+       probable definition -->
   <struct name="VDM Stream Link" size="8">
     <field name="Target hi" size="8" start="0" type="hex"/>
     <field name="Block Type" size="3" start="29" type="VDM Block Type" default="Stream Link"/>

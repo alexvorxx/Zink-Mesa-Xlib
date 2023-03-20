@@ -1,9 +1,6 @@
 # CTS bug: https://gitlab.khronos.org/Tracker/vk-gl-cts/-/issues/4200
 KHR-GLES31.core.compute_shader.max,Fail
 
-# "Invalid result. Region (0x0). Expected: 0 got 1"
-KHR-GLES31.core.viewport_array.dynamic_viewport_index,Fail
-
 # "Fail, buffer content is not well preserved when age > 0 (Fail)"
 dEQP-EGL.functional.buffer_age.no_preserve.no_resize.odd_clear_clear_even_clear_clear,Fail
 dEQP-EGL.functional.buffer_age.no_preserve.no_resize.odd_clear_clear_even_clear,Fail
@@ -88,6 +85,10 @@ dEQP-EGL.functional.buffer_age.no_preserve.resize_before_swap.odd_render_render_
 dEQP-EGL.functional.buffer_age.no_preserve.resize_before_swap.odd_render_render_even_render,Fail
 
 dEQP-EGL.functional.query_context.get_current_context.rgba8888_window,Crash
+
+wayland-dEQP-EGL.functional.resize.surface_size.grow,Fail
+wayland-dEQP-EGL.functional.resize.surface_size.shrink,Fail
+wayland-dEQP-EGL.functional.resize.surface_size.stretch_width,Fail
 
 565-nozs-dEQP-GLES3.functional.color_clear.complex_rgb,Fail
 
@@ -221,10 +222,8 @@ spec@arb_program_interface_query@arb_program_interface_query-getprogramresourcei
 spec@arb_query_buffer_object@qbo,Fail
 spec@arb_query_buffer_object@qbo@query-GL_CLIPPING_INPUT_PRIMITIVES-ASYNC_CPU_READ_BEFORE-GL_UNSIGNED_INT64_ARB,Fail
 spec@arb_query_buffer_object@qbo@query-GL_PRIMITIVES_SUBMITTED-ASYNC_CPU_READ_BEFORE-GL_UNSIGNED_INT64_ARB,Fail
-spec@arb_query_buffer_object@qbo@query-GL_SAMPLES_PASSED-ASYNC_CPU_READ_BEFORE-GL_UNSIGNED_INT64_ARB,Fail
 spec@arb_query_buffer_object@qbo@query-GL_VERTEX_SHADER_INVOCATIONS-ASYNC_CPU_READ_BEFORE-GL_UNSIGNED_INT64_ARB,Fail
-spec@arb_query_buffer_object@qbo@query-GL_VERTICES_SUBMITTED-ASYNC_CPU_READ_BEFORE-GL_INT,Fail
-spec@arb_query_buffer_object@qbo@query-GL_VERTICES_SUBMITTED-ASYNC_CPU_READ_BEFORE-GL_UNSIGNED_INT64_ARB,Fail
+spec@arb_query_buffer_object@qbo@query-GL_GEOMETRY_SHADER_INVOCATIONS-ASYNC_CPU_READ_BEFORE-GL_UNSIGNED_INT64_ARB,Fail
 
 spec@arb_sample_locations@test,Fail
 spec@arb_sample_locations@test@MSAA: 1- X: 0- Y: 0- Grid: false,Fail

@@ -410,7 +410,7 @@ static const struct opc_info {
 const char *
 disasm_a3xx_instr_name(opc_t opc)
 {
-   if (opc_cat(opc) == -1)
+   if (opc_cat(opc) == OPC_META)
       return "??meta??";
    return opcs[opc].name;
 }

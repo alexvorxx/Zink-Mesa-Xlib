@@ -187,6 +187,7 @@ struct d3d12_context {
    struct util_dynarray recently_destroyed_bos;
    struct util_dynarray barrier_scratch;
    struct set *pending_barriers_bos;
+   struct util_dynarray local_pending_barriers_bos;
 
    struct pipe_constant_buffer cbufs[PIPE_SHADER_TYPES][PIPE_MAX_CONSTANT_BUFFERS];
    struct pipe_framebuffer_state fb;
@@ -214,7 +215,10 @@ struct d3d12_context {
    struct d3d12_sampler_state *samplers[PIPE_SHADER_TYPES][PIPE_MAX_SAMPLERS];
    unsigned num_samplers[PIPE_SHADER_TYPES];
    D3D12_INDEX_BUFFER_VIEW ibv;
+
    dxil_wrap_sampler_state tex_wrap_states[PIPE_SHADER_TYPES][PIPE_MAX_SHADER_SAMPLER_VIEWS];
+   dxil_wrap_sampler_state tex_wrap_states_shader_key[PIPE_MAX_SHADER_SAMPLER_VIEWS];
+
    dxil_texture_swizzle_state tex_swizzle_state[PIPE_SHADER_TYPES][PIPE_MAX_SHADER_SAMPLER_VIEWS];
    enum compare_func tex_compare_func[PIPE_SHADER_TYPES][PIPE_MAX_SHADER_SAMPLER_VIEWS];
 
@@ -240,6 +244,7 @@ struct d3d12_context {
 
    bool has_flat_varyings;
    bool missing_dual_src_outputs;
+   bool manual_depth_range;
 
    struct d3d12_gfx_pipeline_state gfx_pipeline_state;
    struct d3d12_compute_pipeline_state compute_pipeline_state;

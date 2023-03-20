@@ -207,6 +207,12 @@ wsi_device_init(struct wsi_device *wsi,
       goto fail;
 #endif
 
+#ifndef VK_USE_PLATFORM_WIN32_KHR
+   result = wsi_headless_init_wsi(wsi, alloc, pdevice);
+   if (result != VK_SUCCESS)
+      goto fail;
+#endif
+
    present_mode = getenv("MESA_VK_WSI_PRESENT_MODE");
    if (present_mode) {
       if (!strcmp(present_mode, "fifo")) {
@@ -222,6 +228,9 @@ wsi_device_init(struct wsi_device *wsi,
       }
    }
 
+   wsi->force_headless_swapchain =
+      debug_get_bool_option("MESA_VK_WSI_HEADLESS_SWAPCHAIN", false);
+
    if (dri_options) {
       if (driCheckOption(dri_options, "adaptive_sync", DRI_BOOL))
          wsi->enable_adaptive_sync = driQueryOptionb(dri_options,
@@ -234,20 +243,18 @@ wsi_device_init(struct wsi_device *wsi,
    }
 
    return VK_SUCCESS;
-#if defined(VK_USE_PLATFORM_XCB_KHR) || \
-   defined(VK_USE_PLATFORM_WAYLAND_KHR) || \
-   defined(VK_USE_PLATFORM_WIN32_KHR) || \
-   defined(VK_USE_PLATFORM_DISPLAY_KHR)
 fail:
    wsi_device_finish(wsi, alloc);
    return result;
-#endif
 }
 
 void
 wsi_device_finish(struct wsi_device *wsi,
                   const VkAllocationCallbacks *alloc)
 {
+#ifndef VK_USE_PLATFORM_WIN32_KHR
+   wsi_headless_finish_wsi(wsi, alloc);
+#endif
 #ifdef VK_USE_PLATFORM_DISPLAY_KHR
    wsi_display_finish_wsi(wsi, alloc);
 #endif
@@ -905,7 +912,9 @@ wsi_CreateSwapchainKHR(VkDevice _device,
    VK_FROM_HANDLE(vk_device, device, _device);
    ICD_FROM_HANDLE(VkIcdSurfaceBase, surface, pCreateInfo->surface);
    struct wsi_device *wsi_device = device->physical->wsi_device;
-   struct wsi_interface *iface = wsi_device->wsi[surface->platform];
+   struct wsi_interface *iface = wsi_device->force_headless_swapchain ?
+      wsi_device->wsi[VK_ICD_WSI_PLATFORM_HEADLESS] :
+      wsi_device->wsi[surface->platform];
    const VkAllocationCallbacks *alloc;
    struct wsi_swapchain *swapchain;
 

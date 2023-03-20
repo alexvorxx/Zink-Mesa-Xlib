@@ -686,10 +686,8 @@ xfb_decl_find_candidate(struct xfb_decl *xfb_decl,
       name = xfb_decl->var_name;
       break;
    case clip_distance:
-      name = "gl_ClipDistanceMESA";
-      break;
    case cull_distance:
-      name = "gl_CullDistanceMESA";
+      name = "gl_ClipDistanceMESA";
       break;
    case tess_level_outer:
       name = "gl_TessLevelOuterMESA";

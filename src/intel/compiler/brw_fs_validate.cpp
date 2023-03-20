@@ -107,6 +107,10 @@ fs_visitor::validate()
          fsv_assert(is_uniform(inst->src[0]) && is_uniform(inst->src[1]));
          break;
 
+      case BRW_OPCODE_MOV:
+         fsv_assert(inst->sources == 1);
+         break;
+
       default:
          break;
       }

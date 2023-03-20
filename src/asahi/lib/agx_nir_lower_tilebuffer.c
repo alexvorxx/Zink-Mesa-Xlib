@@ -52,7 +52,7 @@ tib_impl(nir_builder *b, nir_instr *instr, void *data)
       /* Only write components that actually exist */
       uint16_t write_mask = BITFIELD_MASK(comps);
 
-      /* Delete stores to nonexistant render targets */
+      /* Delete stores to nonexistent render targets */
       if (logical_format == PIPE_FORMAT_NONE)
          return NIR_LOWER_INSTR_PROGRESS_REPLACE;
 
@@ -104,7 +104,7 @@ tib_impl(nir_builder *b, nir_instr *instr, void *data)
    } else {
       uint8_t bit_size = nir_dest_bit_size(intr->dest);
 
-      /* Loads from non-existant render targets are undefined in NIR but not
+      /* Loads from non-existent render targets are undefined in NIR but not
        * possible to encode in the hardware, delete them.
        */
       if (logical_format == PIPE_FORMAT_NONE)

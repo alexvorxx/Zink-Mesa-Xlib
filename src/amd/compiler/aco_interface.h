@@ -75,6 +75,11 @@ void aco_compile_shader(const struct aco_compiler_options* options,
                         aco_callback *build_binary,
                         void **binary);
 
+void aco_compile_rt_prolog(const struct aco_compiler_options* options,
+                           const struct aco_shader_info* info, const struct ac_shader_args* in_args,
+                           const struct ac_shader_args* out_args, aco_callback* build_prolog,
+                           void** binary);
+
 void aco_compile_vs_prolog(const struct aco_compiler_options* options,
                            const struct aco_shader_info* info,
                            const struct aco_vs_prolog_info* prolog_info,

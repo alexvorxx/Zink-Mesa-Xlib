@@ -49,7 +49,7 @@ traces:
       checksum: 0e7441a7f2c86c75eeac72269786e7a1
   gputest/gimark-v2.trace:
     gl-radeonsi-stoney:
-      checksum: 32689f31df53739dff8ade19fb96f965
+      checksum: 3e021c1c5f2900e53c3375e0366eeda9
   gputest/pixmark-julia-fp32-v2.trace:
     gl-radeonsi-stoney:
       checksum: b5e0ae5ad680d884432f89a923f3e70d

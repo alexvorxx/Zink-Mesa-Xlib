@@ -105,8 +105,6 @@ typedef struct {
 
    /* map of instruction/var/etc to failed assert string */
    struct hash_table *errors;
-
-   struct set *shader_gc_list;
 } validate_state;
 
 static void
@@ -386,6 +384,21 @@ validate_alu_instr(nir_alu_instr *instr, validate_state *state)
          /* 8-bit float isn't a thing */
          validate_assert(state, src_bit_size == 16 || src_bit_size == 32 ||
                                 src_bit_size == 64);
+      }
+
+      /* In nir_opcodes.py, these are defined to take general uint or int
+       * sources.  However, they're really only defined for 32-bit or 64-bit
+       * sources.  This seems to be the only place to enforce this
+       * restriction.
+       */
+      switch (instr->op) {
+      case nir_op_ufind_msb:
+      case nir_op_ufind_msb_rev:
+         validate_assert(state, src_bit_size == 32 || src_bit_size == 64);
+         break;
+
+      default:
+         break;
       }
 
       validate_alu_src(instr, i, state);
@@ -1137,9 +1150,6 @@ validate_instr(nir_instr *instr, validate_state *state)
 
    state->instr = instr;
 
-   if (state->shader_gc_list)
-      validate_assert(state, _mesa_set_search(state->shader_gc_list, instr));
-
    switch (instr->type) {
    case nir_instr_type_alu:
       validate_alu_instr(nir_instr_as_alu(instr), state);
@@ -1767,9 +1777,6 @@ init_validate_state(validate_state *state)
    state->var_defs = _mesa_pointer_hash_table_create(state->mem_ctx);
    state->errors = _mesa_pointer_hash_table_create(state->mem_ctx);
 
-   state->shader_gc_list = NIR_DEBUG(VALIDATE_GC_LIST) ?
-                           _mesa_pointer_set_create(state->mem_ctx) : NULL;
-
    state->loop = NULL;
    state->in_loop_continue_construct = false;
    state->instr = NULL;
@@ -1825,13 +1832,6 @@ nir_validate_shader(nir_shader *shader, const char *when)
 
    validate_state state;
    init_validate_state(&state);
-
-   if (state.shader_gc_list) {
-      list_for_each_entry(nir_instr, instr, &shader->gc_list, gc_node) {
-         if (instr->node.prev || instr->node.next)
-            _mesa_set_add(state.shader_gc_list, instr);
-      }
-   }
 
    state.shader = shader;
 

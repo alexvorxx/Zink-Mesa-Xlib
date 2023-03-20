@@ -199,6 +199,18 @@ tu_emit_cache_flush_renderpass(struct tu_cmd_buffer *cmd_buffer)
                     &cmd_buffer->state.renderpass_cache);
 }
 
+static struct fd_reg_pair
+rb_ccu_cntl(uint32_t color_offset, bool gmem)
+{
+   uint32_t color_offset_hi = color_offset >> 21;
+   color_offset &= 0x1fffff;
+   return A6XX_RB_CCU_CNTL(
+         .color_offset = color_offset,
+         .color_offset_hi = color_offset_hi,
+         .gmem = gmem,
+   );
+}
+
 /* Cache flushes for things that use the color/depth read/write path (i.e.
  * blits and draws). This deals with changing CCU state as well as the usual
  * cache flushing.
@@ -242,11 +254,10 @@ tu_emit_cache_flush_ccu(struct tu_cmd_buffer *cmd_buffer,
    if (ccu_state != cmd_buffer->state.ccu_state) {
       struct tu_physical_device *phys_dev = cmd_buffer->device->physical_device;
       tu_cs_emit_regs(cs,
-                      A6XX_RB_CCU_CNTL(.color_offset =
-                                          ccu_state == TU_CMD_CCU_GMEM ?
-                                          phys_dev->ccu_offset_gmem :
-                                          phys_dev->ccu_offset_bypass,
-                                       .gmem = ccu_state == TU_CMD_CCU_GMEM));
+                      rb_ccu_cntl(ccu_state == TU_CMD_CCU_GMEM ?
+                                  phys_dev->ccu_offset_gmem :
+                                  phys_dev->ccu_offset_bypass,
+                                  ccu_state == TU_CMD_CCU_GMEM));
       cmd_buffer->state.ccu_state = ccu_state;
    }
 }
@@ -946,8 +957,7 @@ tu6_init_hw(struct tu_cmd_buffer *cmd, struct tu_cs *cs)
    cmd->state.cache.pending_flush_bits &=
       ~(TU_CMD_FLAG_WAIT_FOR_IDLE | TU_CMD_FLAG_CACHE_INVALIDATE);
 
-   tu_cs_emit_regs(cs,
-                   A6XX_RB_CCU_CNTL(.color_offset = phys_dev->ccu_offset_bypass));
+   tu_cs_emit_regs(cs, rb_ccu_cntl(phys_dev->ccu_offset_bypass, false));
    cmd->state.ccu_state = TU_CMD_CCU_SYSMEM;
    tu_cs_emit_write_reg(cs, REG_A6XX_RB_DBG_ECO_CNTL,
                         phys_dev->info->a6xx.magic.RB_DBG_ECO_CNTL);
@@ -4635,6 +4645,9 @@ tu6_emit_user_consts(struct tu_cs *cs,
    for (unsigned i = 0; i < link->tu_const_state.num_inline_ubos; i++) {
       const struct tu_inline_ubo *ubo = &link->tu_const_state.ubos[i];
 
+      if (link->constlen <= ubo->const_offset_vec4)
+         continue;
+
       uint64_t va = descriptors->set_iova[ubo->base] & ~0x3f;
 
       tu_cs_emit_pkt7(cs, tu6_stage2opcode(type), ubo->push_address ? 7 : 3);
@@ -4642,7 +4655,7 @@ tu6_emit_user_consts(struct tu_cs *cs,
             CP_LOAD_STATE6_0_STATE_TYPE(ST6_CONSTANTS) |
             CP_LOAD_STATE6_0_STATE_SRC(ubo->push_address ? SS6_DIRECT : SS6_INDIRECT) |
             CP_LOAD_STATE6_0_STATE_BLOCK(tu6_stage2shadersb(type)) |
-            CP_LOAD_STATE6_0_NUM_UNIT(ubo->size_vec4));
+            CP_LOAD_STATE6_0_NUM_UNIT(MIN2(ubo->size_vec4, link->constlen - ubo->const_offset_vec4)));
       if (ubo->push_address) {
          tu_cs_emit(cs, 0);
          tu_cs_emit(cs, 0);

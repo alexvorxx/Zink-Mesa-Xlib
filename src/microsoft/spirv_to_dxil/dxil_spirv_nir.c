@@ -43,6 +43,7 @@ spirv_to_nir_options = {
       .subgroup_vote = true,
       .subgroup_shuffle = true,
       .subgroup_quad = true,
+      .subgroup_arithmetic = true,
       .descriptor_array_dynamic_indexing = true,
       .float_controls = true,
       .float16 = true,
@@ -894,6 +895,9 @@ lower_bit_size_callback(const nir_instr *instr, void *data)
    case nir_intrinsic_quad_swap_horizontal:
    case nir_intrinsic_quad_swap_vertical:
    case nir_intrinsic_quad_swap_diagonal:
+   case nir_intrinsic_reduce:
+   case nir_intrinsic_inclusive_scan:
+   case nir_intrinsic_exclusive_scan:
       return intr->dest.ssa.bit_size == 1 ? 32 : 0;
    default:
       return 0;
@@ -938,6 +942,10 @@ dxil_spirv_nir_passes(nir_shader *nir,
    };
    NIR_PASS_V(nir, nir_lower_subgroups, &subgroup_options);
    NIR_PASS_V(nir, nir_lower_bit_size, lower_bit_size_callback, NULL);
+
+   // Ensure subgroup scans on bools are gone
+   NIR_PASS_V(nir, nir_opt_dce);
+   NIR_PASS_V(nir, dxil_nir_lower_unsupported_subgroup_scan);
 
    // Force sample-rate shading if we're asked to.
    if (conf->force_sample_rate_shading) {

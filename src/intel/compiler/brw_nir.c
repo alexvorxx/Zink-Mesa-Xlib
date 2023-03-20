@@ -1458,8 +1458,19 @@ brw_postprocess_nir(nir_shader *nir, const struct brw_compiler *compiler,
       brw_nir_optimize(nir, compiler, is_scalar);
 
    if (devinfo->ver >= 6) {
-      /* Try and fuse multiply-adds */
-      OPT(brw_nir_opt_peephole_ffma);
+      /* Try and fuse multiply-adds, if successful, run shrink_vectors to
+       * avoid peephole_ffma to generate things like this :
+       *    vec16 ssa_0 = ...
+       *    vec16 ssa_1 = fneg ssa_0
+       *    vec1  ssa_2 = ffma ssa_1, ...
+       *
+       * We want this instead :
+       *    vec16 ssa_0 = ...
+       *    vec1  ssa_1 = fneg ssa_0.x
+       *    vec1  ssa_2 = ffma ssa_1, ...
+       */
+      if (OPT(brw_nir_opt_peephole_ffma))
+         OPT(nir_opt_shrink_vectors);
    }
 
    if (is_scalar)
@@ -1676,6 +1687,13 @@ get_subgroup_size(const struct shader_info *info, unsigned max_subgroup_size)
    }
 
    unreachable("Invalid subgroup size type");
+}
+
+unsigned
+brw_nir_api_subgroup_size(const nir_shader *nir,
+                          unsigned hw_subgroup_size)
+{
+   return get_subgroup_size(&nir->info, hw_subgroup_size);
 }
 
 void

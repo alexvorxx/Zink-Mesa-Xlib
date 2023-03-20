@@ -447,7 +447,7 @@ void rogue_print_instr(FILE *fp, const rogue_instr *instr)
    RESET(fp);
 
    if (instr->end)
-      fputs(".end", fp);
+      fputs(" {end}", fp);
 
    /* For debug purposes. */
    fputs(";", fp);

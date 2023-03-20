@@ -249,24 +249,8 @@ get_reg_class(isel_context* ctx, RegType type, unsigned components, unsigned bit
 }
 
 void
-setup_vs_output_info(isel_context* ctx, nir_shader* nir)
-{
-   const aco_vp_output_info* outinfo = &ctx->program->info.outinfo;
-
-   ctx->export_clip_dists = outinfo->export_clip_dists;
-   ctx->num_clip_distances = util_bitcount(outinfo->clip_dist_mask);
-   ctx->num_cull_distances = util_bitcount(outinfo->cull_dist_mask);
-
-   assert(ctx->num_clip_distances + ctx->num_cull_distances <= 8);
-}
-
-void
 setup_vs_variables(isel_context* ctx, nir_shader* nir)
 {
-   if (ctx->stage == vertex_vs || ctx->stage == vertex_ngg) {
-      setup_vs_output_info(ctx, nir);
-   }
-
    if (ctx->stage == vertex_ngg) {
       ctx->program->config->lds_size =
          DIV_ROUND_UP(nir->info.shared_size, ctx->program->dev.lds_encoding_granule);
@@ -282,8 +266,6 @@ setup_gs_variables(isel_context* ctx, nir_shader* nir)
       ctx->program->config->lds_size =
          ctx->program->info.gfx9_gs_ring_lds_size; /* Already in units of the alloc granularity */
    } else if (ctx->stage == vertex_geometry_ngg || ctx->stage == tess_eval_geometry_ngg) {
-      setup_vs_output_info(ctx, nir);
-
       ctx->program->config->lds_size =
          DIV_ROUND_UP(nir->info.shared_size, ctx->program->dev.lds_encoding_granule);
    }
@@ -300,10 +282,6 @@ setup_tcs_info(isel_context* ctx, nir_shader* nir, nir_shader* vs)
 void
 setup_tes_variables(isel_context* ctx, nir_shader* nir)
 {
-   if (ctx->stage == tess_eval_vs || ctx->stage == tess_eval_ngg) {
-      setup_vs_output_info(ctx, nir);
-   }
-
    if (ctx->stage == tess_eval_ngg) {
       ctx->program->config->lds_size =
          DIV_ROUND_UP(nir->info.shared_size, ctx->program->dev.lds_encoding_granule);
@@ -315,8 +293,6 @@ setup_tes_variables(isel_context* ctx, nir_shader* nir)
 void
 setup_ms_variables(isel_context* ctx, nir_shader* nir)
 {
-   setup_vs_output_info(ctx, nir);
-
    ctx->program->config->lds_size =
       DIV_ROUND_UP(nir->info.shared_size, ctx->program->dev.lds_encoding_granule);
    assert((ctx->program->config->lds_size * ctx->program->dev.lds_encoding_granule) < (32 * 1024));
@@ -330,7 +306,13 @@ setup_variables(isel_context* ctx, nir_shader* nir)
       break;
    }
    case MESA_SHADER_COMPUTE:
-   case MESA_SHADER_TASK: {
+   case MESA_SHADER_TASK:
+   case MESA_SHADER_RAYGEN:
+   case MESA_SHADER_CLOSEST_HIT:
+   case MESA_SHADER_MISS:
+   case MESA_SHADER_CALLABLE:
+   case MESA_SHADER_INTERSECTION:
+   case MESA_SHADER_ANY_HIT: {
       ctx->program->config->lds_size =
          DIV_ROUND_UP(nir->info.shared_size, ctx->program->dev.lds_encoding_granule);
       break;
@@ -398,24 +380,6 @@ init_context(isel_context* ctx, nir_shader* shader)
    ctx->ub_config.max_workgroup_size[0] = 2048;
    ctx->ub_config.max_workgroup_size[1] = 2048;
    ctx->ub_config.max_workgroup_size[2] = 2048;
-   for (unsigned i = 0; i < ACO_MAX_VERTEX_ATTRIBS; i++) {
-      pipe_format format = (pipe_format)ctx->options->key.vs.vertex_attribute_formats[i];
-      const struct util_format_description* desc = util_format_description(format);
-
-      uint32_t max;
-      if (desc->channel[0].type != UTIL_FORMAT_TYPE_UNSIGNED) {
-         max = UINT32_MAX;
-      } else if (desc->channel[0].normalized) {
-         max = 0x3f800000u;
-      } else {
-         max = 0;
-         for (unsigned j = 0; j < desc->nr_channels; j++) {
-            uint32_t chan_max = u_uintN_max(desc->channel[0].size);
-            max = MAX2(max, desc->channel[j].pure_integer ? chan_max : fui(chan_max));
-         }
-      }
-      ctx->ub_config.vertex_attrib_max[i] = max;
-   }
 
    nir_divergence_analysis(shader);
    nir_opt_uniform_atomics(shader);
@@ -579,6 +543,7 @@ init_context(isel_context* ctx, nir_shader* shader)
                case nir_intrinsic_load_push_constant:
                case nir_intrinsic_load_workgroup_id:
                case nir_intrinsic_load_num_workgroups:
+               case nir_intrinsic_load_ray_launch_size:
                case nir_intrinsic_load_ray_launch_size_addr_amd:
                case nir_intrinsic_load_sbt_base_amd:
                case nir_intrinsic_load_subgroup_id:
@@ -615,6 +580,7 @@ init_context(isel_context* ctx, nir_shader* shader)
                case nir_intrinsic_load_local_invocation_id:
                case nir_intrinsic_load_local_invocation_index:
                case nir_intrinsic_load_subgroup_invocation:
+               case nir_intrinsic_load_ray_launch_id:
                case nir_intrinsic_load_tess_coord:
                case nir_intrinsic_write_invocation_amd:
                case nir_intrinsic_mbcnt_amd:
@@ -676,11 +642,13 @@ init_context(isel_context* ctx, nir_shader* shader)
                case nir_intrinsic_load_scratch:
                case nir_intrinsic_load_invocation_id:
                case nir_intrinsic_load_primitive_id:
+               case nir_intrinsic_load_typed_buffer_amd:
                case nir_intrinsic_load_buffer_amd:
                case nir_intrinsic_load_initial_edgeflags_amd:
                case nir_intrinsic_gds_atomic_add_amd:
                case nir_intrinsic_bvh64_intersect_ray_amd:
                case nir_intrinsic_load_vector_arg_amd:
+               case nir_intrinsic_load_rt_dynamic_callable_stack_base_amd:
                case nir_intrinsic_ordered_xfb_counter_add_amd: type = RegType::vgpr; break;
                case nir_intrinsic_load_shared:
                case nir_intrinsic_load_shared2_amd:
@@ -815,6 +783,12 @@ setup_isel_context(Program* program, unsigned shader_count, struct nir_shader* c
       case MESA_SHADER_COMPUTE: sw_stage = sw_stage | SWStage::CS; break;
       case MESA_SHADER_TASK: sw_stage = sw_stage | SWStage::TS; break;
       case MESA_SHADER_MESH: sw_stage = sw_stage | SWStage::MS; break;
+      case MESA_SHADER_RAYGEN:
+      case MESA_SHADER_CLOSEST_HIT:
+      case MESA_SHADER_MISS:
+      case MESA_SHADER_CALLABLE:
+      case MESA_SHADER_INTERSECTION:
+      case MESA_SHADER_ANY_HIT: sw_stage = SWStage::RT; break;
       default: unreachable("Shader stage not implemented");
       }
    }
@@ -863,6 +837,8 @@ setup_isel_context(Program* program, unsigned shader_count, struct nir_shader* c
       hw_stage = HWStage::GS; /* GFX9: TES+GS merged into a GS (and GFX10/legacy) */
    else if (sw_stage == SWStage::TES_GS && ngg)
       hw_stage = HWStage::NGG; /* GFX10+: TES+GS merged into an NGG GS */
+   else if (sw_stage == SWStage::RT)
+      hw_stage = HWStage::CS; /* Raytracing shaders run as CS */
    else
       unreachable("Shader stage not implemented");
 

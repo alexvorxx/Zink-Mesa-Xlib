@@ -663,12 +663,6 @@ void trace_dump_nir(void *nir)
       return;
    }
 
-   if ((nir_count--) == 0) {
-      fputs("<string>Set GALLIUM_TRACE_NIR to a sufficiently big number "
-            "to enable NIR shader dumping.</string>", stream);
-      return;
-   }
-
    // NIR doesn't have a print to string function.  Use CDATA and hope for the
    // best.
    if (stream) {

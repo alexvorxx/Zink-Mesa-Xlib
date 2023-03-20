@@ -716,6 +716,15 @@ static struct {
       REG64(SP_CS_TEX_SAMP, reg_dump_gpuaddr64),
 
       {NULL},
+}, reg_a7xx[] = {
+      REG64(SP_VS_OBJ_START, reg_disasm_gpuaddr64),
+      REG64(SP_HS_OBJ_START, reg_disasm_gpuaddr64),
+      REG64(SP_DS_OBJ_START, reg_disasm_gpuaddr64),
+      REG64(SP_GS_OBJ_START, reg_disasm_gpuaddr64),
+      REG64(SP_FS_OBJ_START, reg_disasm_gpuaddr64),
+      REG64(SP_CS_OBJ_START, reg_disasm_gpuaddr64),
+
+      {NULL},
 }, *type0_reg;
 
 static struct rnn *rnn;
@@ -793,8 +802,12 @@ cffdec_init(const struct cffdec_options *_options)
       type0_reg = reg_a6xx;
       init_rnn("a6xx");
       break;
+   case 700 ... 799:
+      type0_reg = reg_a7xx;
+      init_rnn("a7xx");
+      break;
    default:
-      errx(-1, "unsupported gpu");
+      errx(-1, "unsupported gpu: %u", options->gpu_id);
    }
 }
 
@@ -1024,6 +1037,7 @@ dump_domain(uint32_t *dwords, uint32_t sizedwords, int level, const char *name)
 static uint32_t bin_x1, bin_x2, bin_y1, bin_y2;
 static unsigned mode;
 static const char *render_mode;
+static const char *thread;
 static enum {
    MODE_BINNING = 0x1,
    MODE_GMEM = 0x2,
@@ -1037,7 +1051,10 @@ static void
 print_mode(int level)
 {
    if ((options->gpu_id >= 500) && !quiet(2)) {
-      printf("%smode: %s\n", levels[level], render_mode);
+      printf("%smode: %s", levels[level], render_mode);
+      if (thread)
+         printf(":%s", thread);
+      printf("\n");
       printf("%sskip_ib2: g=%d, l=%d\n", levels[level], skip_ib2_enable_global,
              skip_ib2_enable_local);
    }
@@ -1108,6 +1125,8 @@ __do_query(const char *primtype, uint32_t num_indices)
              bin_y1, bin_x2, bin_y2, num_indices);
       if (options->gpu_id >= 500)
          printf("%s:", render_mode);
+      if (thread)
+         printf("%s:", thread);
       printf("\t%08"PRIx64, r.value);
       if (r.value != lastvals[regbase]) {
          printf("!");
@@ -1435,7 +1454,7 @@ dump_tex_samp(uint32_t *texsamp, enum state_src_t src, int num_unit, int level)
          dump_domain(texsamp, 4, level + 2, "A5XX_TEX_SAMP");
          dump_hex(texsamp, 4, level + 1);
          texsamp += 4;
-      } else if ((600 <= options->gpu_id) && (options->gpu_id < 700)) {
+      } else if ((600 <= options->gpu_id) && (options->gpu_id < 800)) {
          dump_domain(texsamp, 4, level + 2, "A6XX_TEX_SAMP");
          dump_hex(texsamp, 4, level + 1);
          texsamp += src == STATE_SRC_BINDLESS ? 16 : 4;
@@ -1475,7 +1494,7 @@ dump_tex_const(uint32_t *texconst, int num_unit, int level)
          }
          dump_hex(texconst, 12, level + 1);
          texconst += 12;
-      } else if ((600 <= options->gpu_id) && (options->gpu_id < 700)) {
+      } else if ((600 <= options->gpu_id) && (options->gpu_id < 800)) {
          dump_domain(texconst, 16, level + 2, "A6XX_TEX_CONST");
          if (options->dump_textures) {
             uint64_t addr =
@@ -1637,7 +1656,7 @@ cp_load_state(uint32_t *dwords, uint32_t sizedwords, int level)
             dump_domain(ssboconst, 4, level + 2, "A4XX_SSBO_0");
          } else if (500 <= options->gpu_id && options->gpu_id < 600) {
             dump_domain(ssboconst, 4, level + 2, "A5XX_SSBO_0");
-         } else if (600 <= options->gpu_id && options->gpu_id < 700) {
+         } else if (600 <= options->gpu_id && options->gpu_id < 800) {
             sz = 16;
             dump_domain(ssboconst, 16, level + 2, "A6XX_TEX_CONST");
          }
@@ -2351,7 +2370,7 @@ cp_start_bin(uint32_t *dwords, uint32_t sizedwords, int level)
       for (uint32_t i = 0; i < loopcount; i++) {
          ibs[ib].base = ibaddr;
          ibs[ib].size = ibsize;
-         printf("%sbin %u\n", levels[level], i);
+         printl(3, "%sbin %u\n", levels[level], i);
          dump_commands(ptr, ibsize, level);
          ibaddr += ibsize;
          ptr += ibsize;
@@ -2591,7 +2610,17 @@ cp_exec_cs_indirect(uint32_t *dwords, uint32_t sizedwords, int level)
 static void
 cp_set_marker(uint32_t *dwords, uint32_t sizedwords, int level)
 {
-   render_mode = rnn_enumname(rnn, "a6xx_marker", dwords[0] & 0xf);
+   uint32_t val = dwords[0] & 0xf;
+   const char *mode = rnn_enumname(rnn, "a6xx_marker", val);
+
+   if (!mode) {
+      static char buf[8];
+      sprintf(buf, "0x%x", val);
+      render_mode = buf;
+      return;
+   }
+
+   render_mode = mode;
 
    if (!strcmp(render_mode, "RM6_BINNING")) {
       enable_mask = MODE_BINNING;
@@ -2600,6 +2629,13 @@ cp_set_marker(uint32_t *dwords, uint32_t sizedwords, int level)
    } else if (!strcmp(render_mode, "RM6_BYPASS")) {
       enable_mask = MODE_BYPASS;
    }
+}
+
+static void
+cp_set_thread_control(uint32_t *dwords, uint32_t sizedwords, int level)
+{
+   uint32_t val = dwords[0] & 0x3;
+   thread = rnn_enumname(rnn, "cp_thread", val);
 }
 
 static void
@@ -2730,6 +2766,34 @@ cp_context_reg_bunch(uint32_t *dwords, uint32_t sizedwords, int level)
    summary = saved_summary;
 }
 
+/* Looks similar to CP_CONTEXT_REG_BUNCH, but not quite the same...
+ * discarding first two dwords??
+ *
+ *   CP_CONTEXT_REG_BUNCH:
+ *        0221: 9c1ff606  (rep)(xmov3)mov $usraddr, $data
+ *        ; mov $data, $data
+ *        ; mov $usraddr, $data
+ *        ; mov $data, $data
+ *        0222: d8000000  waitin
+ *        0223: 981f0806  mov $01, $data
+ *
+ *   CP_UNK5D:
+ *        0224: 981f0006  mov $00, $data
+ *        0225: 981f0006  mov $00, $data
+ *        0226: 9c1ff206  (rep)(xmov1)mov $usraddr, $data
+ *        ; mov $data, $data
+ *        0227: d8000000  waitin
+ *        0228: 981f0806  mov $01, $data
+ *
+ */
+static void
+cp_context_reg_bunch2(uint32_t *dwords, uint32_t sizedwords, int level)
+{
+   dwords += 2;
+   sizedwords -= 2;
+   cp_context_reg_bunch(dwords, sizedwords, level);
+}
+
 static void
 cp_reg_write(uint32_t *dwords, uint32_t sizedwords, int level)
 {
@@ -2829,6 +2893,10 @@ static const struct type3_op {
    CP(SET_CTXSWITCH_IB, cp_set_ctxswitch_ib),
 
    CP(START_BIN, cp_start_bin),
+
+   /* for a7xx */
+   CP(THREAD_CONTROL, cp_set_thread_control),
+   CP(CONTEXT_REG_BUNCH2, cp_context_reg_bunch2),
 };
 
 static void

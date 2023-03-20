@@ -230,16 +230,18 @@ copy_image_to_buffer(struct radv_cmd_buffer *cmd_buffer, struct radv_buffer *buf
                      struct radv_image *image, VkImageLayout layout,
                      const VkBufferImageCopy2 *region)
 {
+   struct radv_device *device = cmd_buffer->device;
    if (cmd_buffer->qf == RADV_QUEUE_TRANSFER) {
+      struct radeon_cmdbuf *cs = cmd_buffer->cs;
       /* RADV_QUEUE_TRANSFER should only be used for the prime blit */
       assert(!region->imageOffset.x && !region->imageOffset.y && !region->imageOffset.z);
       assert(image->vk.image_type == VK_IMAGE_TYPE_2D);
       assert(image->info.width == region->imageExtent.width);
       assert(image->info.height == region->imageExtent.height);
-      ASSERTED bool res = radv_sdma_copy_image(cmd_buffer, image, buffer, region);
+      ASSERTED bool res = radv_sdma_copy_image(device, cs, image, buffer, region);
       assert(res);
-      radv_cs_add_buffer(cmd_buffer->device->ws, cmd_buffer->cs, image->bindings[0].bo);
-      radv_cs_add_buffer(cmd_buffer->device->ws, cmd_buffer->cs, buffer->bo);
+      radv_cs_add_buffer(device->ws, cs, image->bindings[0].bo);
+      radv_cs_add_buffer(device->ws, cs, buffer->bo);
       return;
    }
 
@@ -283,9 +285,8 @@ copy_image_to_buffer(struct radv_cmd_buffer *cmd_buffer, struct radv_buffer *buf
    if (!radv_is_buffer_format_supported(img_info.format, NULL)) {
       uint32_t queue_mask = radv_image_queue_family_mask(image, cmd_buffer->qf,
                                                          cmd_buffer->qf);
-      bool compressed =
-         radv_layout_dcc_compressed(cmd_buffer->device, image, region->imageSubresource.mipLevel,
-                                    layout, queue_mask);
+      bool compressed = radv_layout_dcc_compressed(device, image, region->imageSubresource.mipLevel,
+                                                   layout, queue_mask);
       if (compressed) {
          radv_decompress_dcc(cmd_buffer, image,
                              &(VkImageSubresourceRange){

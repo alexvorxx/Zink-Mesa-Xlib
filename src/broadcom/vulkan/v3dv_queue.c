@@ -871,6 +871,8 @@ handle_tfu_job(struct v3dv_queue *queue,
                struct v3dv_submit_sync_info *sync_info,
                bool signal_syncs)
 {
+   assert(!V3D_DBG(DISABLE_TFU));
+
    struct v3dv_device *device = queue->device;
 
    const bool needs_sync = sync_info->wait_count || job->serialize;

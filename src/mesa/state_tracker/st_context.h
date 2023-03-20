@@ -148,6 +148,7 @@ struct st_context
    boolean transcode_astc;
    boolean has_astc_2d_ldr;
    boolean has_astc_5x5_ldr;
+   boolean astc_void_extents_need_denorm_flush;
    boolean has_s3tc;
    boolean has_rgtc;
    boolean has_latc;

@@ -89,6 +89,10 @@ enum radeon_micro_mode
 #define RADEON_SURF_FORCE_MICRO_TILE_MODE (1ull << 31)
 #define RADEON_SURF_PRT                   (1ull << 32)
 #define RADEON_SURF_VRS_RATE              (1ull << 33)
+/* Block compressed + linear format is not supported in addrlib. These surface can be
+ * used as transfer resource. This flag indicates not to set flags.texture flag in
+ * gfx9_compute_surface(). */
+#define RADEON_SURF_NO_TEXTURE            (1ull << 34)
 
 struct legacy_surf_level {
    uint32_t offset_256B;   /* divided by 256, the hw can only do 40-bit addresses */

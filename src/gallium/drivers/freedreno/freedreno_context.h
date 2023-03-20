@@ -192,6 +192,14 @@ enum fd_dirty_shader_state {
 #define NUM_DIRTY_SHADER_BITS 5
 };
 
+enum fd_buffer_mask {
+   /* align bitmask values w/ PIPE_CLEAR_*.. since that is convenient.. */
+   FD_BUFFER_COLOR = PIPE_CLEAR_COLOR,
+   FD_BUFFER_DEPTH = PIPE_CLEAR_DEPTH,
+   FD_BUFFER_STENCIL = PIPE_CLEAR_STENCIL,
+   FD_BUFFER_ALL = FD_BUFFER_COLOR | FD_BUFFER_DEPTH | FD_BUFFER_STENCIL,
+};
+
 #define MAX_HW_SAMPLE_PROVIDERS 7
 struct fd_hw_sample_provider;
 struct fd_hw_sample;
@@ -494,7 +502,7 @@ struct fd_context {
                      const struct pipe_draw_start_count_bias *draws,
                      unsigned num_draws,
                      unsigned index_offset) dt;
-   bool (*clear)(struct fd_context *ctx, unsigned buffers,
+   bool (*clear)(struct fd_context *ctx, enum fd_buffer_mask buffers,
                  const union pipe_color_union *color, double depth,
                  unsigned stencil) dt;
 
@@ -680,8 +688,7 @@ fd_context_all_clean(struct fd_context *ctx) assert_dt
  * bit.
  */
 static inline void
-fd_context_add_map(struct fd_context *ctx, enum fd_dirty_3d_state dirty,
-                   uint32_t gen_dirty)
+fd_context_add_map(struct fd_context *ctx, uint32_t dirty, uint32_t gen_dirty)
 {
    u_foreach_bit (b, dirty) {
       ctx->gen_dirty_map[b] |= gen_dirty;

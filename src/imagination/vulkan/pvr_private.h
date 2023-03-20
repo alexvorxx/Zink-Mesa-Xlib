@@ -1031,7 +1031,7 @@ struct pvr_render_subpass {
    uint32_t input_count;
    uint32_t *input_attachments;
 
-   uint32_t *depth_stencil_attachment;
+   uint32_t depth_stencil_attachment;
 
    /*  Derived and other state. */
    uint32_t dep_count;

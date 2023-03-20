@@ -26,6 +26,9 @@
 #include <stdint.h>
 
 struct iris_bo;
+struct iris_bufmgr;
 
 bool iris_i915_bo_busy_gem(struct iris_bo *bo);
 int iris_i915_bo_wait_gem(struct iris_bo *bo, int64_t timeout_ns);
+
+bool iris_i915_init_global_vm(struct iris_bufmgr *bufmgr, uint32_t *vm_id);

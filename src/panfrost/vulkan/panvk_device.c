@@ -407,7 +407,7 @@ panvk_physical_device_try_create(struct vk_instance *vk_instance,
                 VK_SYSTEM_ALLOCATION_SCOPE_INSTANCE);
    if (!device)
       return vk_error(instance, VK_ERROR_OUT_OF_HOST_MEMORY);
-   
+
    VkResult result = panvk_physical_device_init(device, instance, drm_device);
    if (result != VK_SUCCESS) {
       vk_free(&instance->vk.alloc, device);
@@ -422,7 +422,8 @@ void
 panvk_GetPhysicalDeviceFeatures2(VkPhysicalDevice physicalDevice,
                                  VkPhysicalDeviceFeatures2 *pFeatures)
 {
-   pFeatures->features = (VkPhysicalDeviceFeatures) {
+   struct vk_features features = {
+      /* Vulkan 1.0 */
       .robustBufferAccess = true,
       .fullDrawIndexUint32 = true,
       .independentBlend = true,
@@ -435,154 +436,109 @@ panvk_GetPhysicalDeviceFeatures2(VkPhysicalDevice physicalDevice,
       .shaderSampledImageArrayDynamicIndexing = true,
       .shaderStorageBufferArrayDynamicIndexing = true,
       .shaderStorageImageArrayDynamicIndexing = true,
-   };
 
-   const VkPhysicalDeviceVulkan11Features core_1_1 = {
-      .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES,
-      .storageBuffer16BitAccess           = false,
+      /* Vulkan 1.1 */
+      .storageBuffer16BitAccess = false,
       .uniformAndStorageBuffer16BitAccess = false,
-      .storagePushConstant16              = false,
-      .storageInputOutput16               = false,
-      .multiview                          = false,
-      .multiviewGeometryShader            = false,
-      .multiviewTessellationShader        = false,
-      .variablePointersStorageBuffer      = true,
-      .variablePointers                   = true,
-      .protectedMemory                    = false,
-      .samplerYcbcrConversion             = false,
-      .shaderDrawParameters               = false,
-   };
+      .storagePushConstant16 = false,
+      .storageInputOutput16 = false,
+      .multiview = false,
+      .multiviewGeometryShader = false,
+      .multiviewTessellationShader = false,
+      .variablePointersStorageBuffer = true,
+      .variablePointers = true,
+      .protectedMemory = false,
+      .samplerYcbcrConversion = false,
+      .shaderDrawParameters = false,
 
-   const VkPhysicalDeviceVulkan12Features core_1_2 = {
-      .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES,
-      .samplerMirrorClampToEdge           = false,
-      .drawIndirectCount                  = false,
-      .storageBuffer8BitAccess            = false,
-      .uniformAndStorageBuffer8BitAccess  = false,
-      .storagePushConstant8               = false,
-      .shaderBufferInt64Atomics           = false,
-      .shaderSharedInt64Atomics           = false,
-      .shaderFloat16                      = false,
-      .shaderInt8                         = false,
+      /* Vulkan 1.2 */
+      .samplerMirrorClampToEdge = false,
+      .drawIndirectCount = false,
+      .storageBuffer8BitAccess = false,
+      .uniformAndStorageBuffer8BitAccess = false,
+      .storagePushConstant8 = false,
+      .shaderBufferInt64Atomics = false,
+      .shaderSharedInt64Atomics = false,
+      .shaderFloat16 = false,
+      .shaderInt8 = false,
 
-      .descriptorIndexing                                   = false,
-      .shaderInputAttachmentArrayDynamicIndexing            = false,
-      .shaderUniformTexelBufferArrayDynamicIndexing         = false,
-      .shaderStorageTexelBufferArrayDynamicIndexing         = false,
-      .shaderUniformBufferArrayNonUniformIndexing           = false,
-      .shaderSampledImageArrayNonUniformIndexing            = false,
-      .shaderStorageBufferArrayNonUniformIndexing           = false,
-      .shaderStorageImageArrayNonUniformIndexing            = false,
-      .shaderInputAttachmentArrayNonUniformIndexing         = false,
-      .shaderUniformTexelBufferArrayNonUniformIndexing      = false,
-      .shaderStorageTexelBufferArrayNonUniformIndexing      = false,
-      .descriptorBindingUniformBufferUpdateAfterBind        = false,
-      .descriptorBindingSampledImageUpdateAfterBind         = false,
-      .descriptorBindingStorageImageUpdateAfterBind         = false,
-      .descriptorBindingStorageBufferUpdateAfterBind        = false,
-      .descriptorBindingUniformTexelBufferUpdateAfterBind   = false,
-      .descriptorBindingStorageTexelBufferUpdateAfterBind   = false,
-      .descriptorBindingUpdateUnusedWhilePending            = false,
-      .descriptorBindingPartiallyBound                      = false,
-      .descriptorBindingVariableDescriptorCount             = false,
-      .runtimeDescriptorArray                               = false,
+      .descriptorIndexing = false,
+      .shaderInputAttachmentArrayDynamicIndexing = false,
+      .shaderUniformTexelBufferArrayDynamicIndexing = false,
+      .shaderStorageTexelBufferArrayDynamicIndexing = false,
+      .shaderUniformBufferArrayNonUniformIndexing = false,
+      .shaderSampledImageArrayNonUniformIndexing = false,
+      .shaderStorageBufferArrayNonUniformIndexing = false,
+      .shaderStorageImageArrayNonUniformIndexing = false,
+      .shaderInputAttachmentArrayNonUniformIndexing = false,
+      .shaderUniformTexelBufferArrayNonUniformIndexing = false,
+      .shaderStorageTexelBufferArrayNonUniformIndexing = false,
+      .descriptorBindingUniformBufferUpdateAfterBind = false,
+      .descriptorBindingSampledImageUpdateAfterBind = false,
+      .descriptorBindingStorageImageUpdateAfterBind = false,
+      .descriptorBindingStorageBufferUpdateAfterBind = false,
+      .descriptorBindingUniformTexelBufferUpdateAfterBind = false,
+      .descriptorBindingStorageTexelBufferUpdateAfterBind = false,
+      .descriptorBindingUpdateUnusedWhilePending = false,
+      .descriptorBindingPartiallyBound = false,
+      .descriptorBindingVariableDescriptorCount = false,
+      .runtimeDescriptorArray = false,
 
-      .samplerFilterMinmax                = false,
-      .scalarBlockLayout                  = false,
-      .imagelessFramebuffer               = false,
-      .uniformBufferStandardLayout        = false,
-      .shaderSubgroupExtendedTypes        = false,
-      .separateDepthStencilLayouts        = false,
-      .hostQueryReset                     = false,
-      .timelineSemaphore                  = false,
-      .bufferDeviceAddress                = false,
-      .bufferDeviceAddressCaptureReplay   = false,
-      .bufferDeviceAddressMultiDevice     = false,
-      .vulkanMemoryModel                  = false,
-      .vulkanMemoryModelDeviceScope       = false,
+      .samplerFilterMinmax = false,
+      .scalarBlockLayout = false,
+      .imagelessFramebuffer = false,
+      .uniformBufferStandardLayout = false,
+      .shaderSubgroupExtendedTypes = false,
+      .separateDepthStencilLayouts = false,
+      .hostQueryReset = false,
+      .timelineSemaphore = false,
+      .bufferDeviceAddress = false,
+      .bufferDeviceAddressCaptureReplay = false,
+      .bufferDeviceAddressMultiDevice = false,
+      .vulkanMemoryModel = false,
+      .vulkanMemoryModelDeviceScope = false,
       .vulkanMemoryModelAvailabilityVisibilityChains = false,
-      .shaderOutputViewportIndex          = false,
-      .shaderOutputLayer                  = false,
-      .subgroupBroadcastDynamicId         = false,
-   };
+      .shaderOutputViewportIndex = false,
+      .shaderOutputLayer = false,
+      .subgroupBroadcastDynamicId = false,
 
-   const VkPhysicalDeviceVulkan13Features core_1_3 = {
-      .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES,
-      .robustImageAccess                  = false,
-      .inlineUniformBlock                 = false,
+      /* Vulkan 1.3 */
+      .robustImageAccess = false,
+      .inlineUniformBlock = false,
       .descriptorBindingInlineUniformBlockUpdateAfterBind = false,
-      .pipelineCreationCacheControl       = false,
-      .privateData                        = true,
-      .shaderDemoteToHelperInvocation     = false,
-      .shaderTerminateInvocation          = false,
-      .subgroupSizeControl                = false,
-      .computeFullSubgroups               = false,
-      .synchronization2                   = true,
-      .textureCompressionASTC_HDR         = false,
+      .pipelineCreationCacheControl = false,
+      .privateData = true,
+      .shaderDemoteToHelperInvocation = false,
+      .shaderTerminateInvocation = false,
+      .subgroupSizeControl = false,
+      .computeFullSubgroups = false,
+      .synchronization2 = true,
+      .textureCompressionASTC_HDR = false,
       .shaderZeroInitializeWorkgroupMemory = false,
-      .dynamicRendering                   = false,
-      .shaderIntegerDotProduct            = false,
-      .maintenance4                       = false,
+      .dynamicRendering = false,
+      .shaderIntegerDotProduct = false,
+      .maintenance4 = false,
+
+      /* VK_EXT_index_type_uint8 */
+      .indexTypeUint8 = true,
+
+      /* VK_EXT_vertex_attribute_divisor */
+      .vertexAttributeInstanceRateDivisor = true,
+      .vertexAttributeInstanceRateZeroDivisor = true,
+
+      /* VK_EXT_depth_clip_enable */
+      .depthClipEnable = true,
+
+      /* VK_EXT_4444_formats */
+      .formatA4R4G4B4 = true,
+      .formatA4B4G4R4 = true,
+
+      /* VK_EXT_custom_border_color */
+      .customBorderColors = true,
+      .customBorderColorWithoutFormat = true,
    };
 
-   vk_foreach_struct(ext, pFeatures->pNext)
-   {
-      if (vk_get_physical_device_core_1_1_feature_ext(ext, &core_1_1))
-         continue;
-      if (vk_get_physical_device_core_1_2_feature_ext(ext, &core_1_2))
-         continue;
-      if (vk_get_physical_device_core_1_3_feature_ext(ext, &core_1_3))
-         continue;
-      switch (ext->sType) {
-      case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_CONDITIONAL_RENDERING_FEATURES_EXT: {
-         VkPhysicalDeviceConditionalRenderingFeaturesEXT *features =
-            (VkPhysicalDeviceConditionalRenderingFeaturesEXT *) ext;
-         features->conditionalRendering = false;
-         features->inheritedConditionalRendering = false;
-         break;
-      }
-      case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_TRANSFORM_FEEDBACK_FEATURES_EXT: {
-         VkPhysicalDeviceTransformFeedbackFeaturesEXT *features =
-            (VkPhysicalDeviceTransformFeedbackFeaturesEXT *) ext;
-         features->transformFeedback = false;
-         features->geometryStreams = false;
-         break;
-      }
-      case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_INDEX_TYPE_UINT8_FEATURES_EXT: {
-         VkPhysicalDeviceIndexTypeUint8FeaturesEXT *features =
-            (VkPhysicalDeviceIndexTypeUint8FeaturesEXT *)ext;
-         features->indexTypeUint8 = true;
-         break;
-      }
-      case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VERTEX_ATTRIBUTE_DIVISOR_FEATURES_EXT: {
-         VkPhysicalDeviceVertexAttributeDivisorFeaturesEXT *features =
-            (VkPhysicalDeviceVertexAttributeDivisorFeaturesEXT *)ext;
-         features->vertexAttributeInstanceRateDivisor = true;
-         features->vertexAttributeInstanceRateZeroDivisor = true;
-         break;
-      }
-      case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DEPTH_CLIP_ENABLE_FEATURES_EXT: {
-         VkPhysicalDeviceDepthClipEnableFeaturesEXT *features =
-            (VkPhysicalDeviceDepthClipEnableFeaturesEXT *)ext;
-         features->depthClipEnable = true;
-         break;
-      }
-      case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_4444_FORMATS_FEATURES_EXT: {
-         VkPhysicalDevice4444FormatsFeaturesEXT *features = (void *)ext;
-         features->formatA4R4G4B4 = true;
-         features->formatA4B4G4R4 = true;
-         break;
-      }
-      case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_CUSTOM_BORDER_COLOR_FEATURES_EXT: {
-         VkPhysicalDeviceCustomBorderColorFeaturesEXT *features = (void *) ext;
-         features->customBorderColors = true;
-         features->customBorderColorWithoutFormat = true;
-         break;
-      }
-      default:
-         break;
-      }
-   }
+   vk_get_physical_device_features(pFeatures, &features);
 }
 
 void
@@ -1574,9 +1530,9 @@ vk_icdNegotiateLoaderICDInterfaceVersion(uint32_t *pSupportedVersion)
     *
     *    - Loader interface v4 differs from v3 in:
     *        - The ICD must implement vk_icdGetPhysicalDeviceProcAddr().
-    * 
+    *
     *    - Loader interface v5 differs from v4 in:
-    *        - The ICD must support 1.1 and must not return 
+    *        - The ICD must support 1.1 and must not return
     *          VK_ERROR_INCOMPATIBLE_DRIVER from vkCreateInstance() unless a
     *          Vulkan Loader with interface v4 or smaller is being used and the
     *          application provides an API version that is greater than 1.0.

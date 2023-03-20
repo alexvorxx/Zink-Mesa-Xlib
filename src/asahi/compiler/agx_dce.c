@@ -26,7 +26,7 @@
 /* SSA-based scalar dead code elimination */
 
 void
-agx_dce(agx_context *ctx)
+agx_dce(agx_context *ctx, bool partial)
 {
    bool progress;
    do {
@@ -47,18 +47,16 @@ agx_dce(agx_context *ctx)
 
          bool needed = false;
 
-         agx_foreach_dest(I, d) {
+         agx_foreach_ssa_dest(I, d) {
             /* Eliminate destinations that are never read, as RA needs to
              * handle them specially. Visible only for instructions that write
              * multiple destinations (splits) or that write a destination but
              * cannot be DCE'd (atomics).
              */
-            if ((I->dest[d].type == AGX_INDEX_NORMAL) &&
-                !BITSET_TEST(seen, I->dest[d].value))
+            if (BITSET_TEST(seen, I->dest[d].value))
+               needed = true;
+            else if (partial)
                I->dest[d] = agx_null();
-
-            /* If the destination is actually needed, the instruction is too */
-            needed |= (I->dest[d].type != AGX_INDEX_NULL);
          }
 
          if (!needed) {

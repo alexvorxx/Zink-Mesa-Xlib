@@ -868,6 +868,8 @@ print_stage(Stage stage, FILE* output)
       fprintf(output, "mesh_ngg");
    else if (stage == task_cs)
       fprintf(output, "task_cs");
+   else if (stage == raytracing_cs)
+      fprintf(output, "raytracing_cs");
    else
       fprintf(output, "unknown");
 

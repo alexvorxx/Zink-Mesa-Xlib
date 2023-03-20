@@ -179,6 +179,7 @@ struct agx_batch {
    struct agx_context *ctx;
    struct pipe_framebuffer_state key;
    uint64_t seqnum;
+   uint32_t syncobj;
 
    struct agx_tilebuffer_layout tilebuffer_layout;
 
@@ -283,7 +284,11 @@ enum agx_dirty {
    AGX_DIRTY_QUERY = BITFIELD_BIT(13),
 };
 
-#define AGX_MAX_BATCHES (2)
+/* Maximum number of in-progress + under-construction GPU batches.
+ * Must be large enough for silly workloads that do things like
+ * glGenerateMipmap on every frame, otherwise we end up losing performance.
+ */
+#define AGX_MAX_BATCHES (128)
 
 struct agx_context {
    struct pipe_context base;
@@ -299,6 +304,9 @@ struct agx_context {
 
       /** Set of active batches for faster traversal */
       BITSET_DECLARE(active, AGX_MAX_BATCHES);
+
+      /** Set of submitted batches for faster traversal */
+      BITSET_DECLARE(submitted, AGX_MAX_BATCHES);
    } batches;
 
    struct agx_batch *batch;
@@ -340,11 +348,64 @@ struct agx_context {
 
    struct blitter_context *blitter;
 
-   /* Map of agx_resource to agx_batch that writes that resource */
-   struct hash_table *writer;
+   /* Map of GEM handle to (batch index + 1) that (conservatively) writes that
+    * BO, or 0 if no writer.
+    */
+   struct util_dynarray writer;
 
    struct agx_meta_cache meta;
+
+   uint32_t syncobj;
+   uint32_t dummy_syncobj;
+   int in_sync_fd;
+   uint32_t in_sync_obj;
 };
+
+static void
+agx_writer_add(struct agx_context *ctx, uint8_t batch_index, unsigned handle)
+{
+   assert(batch_index < AGX_MAX_BATCHES && "invariant");
+   static_assert(AGX_MAX_BATCHES < 0xFF, "no overflow on addition");
+
+   /* If we need to grow, double the capacity so insertion is amortized O(1). */
+   if (unlikely(handle >= ctx->writer.size)) {
+      unsigned new_size =
+         MAX2(ctx->writer.capacity * 2, util_next_power_of_two(handle + 1));
+      unsigned grow = new_size - ctx->writer.size;
+
+      memset(util_dynarray_grow(&ctx->writer, uint8_t, grow), 0,
+             grow * sizeof(uint8_t));
+   }
+
+   /* There is now room */
+   uint8_t *value = util_dynarray_element(&ctx->writer, uint8_t, handle);
+   assert((*value) == 0 && "there should be no existing writer");
+   *value = batch_index + 1;
+}
+
+static struct agx_batch *
+agx_writer_get(struct agx_context *ctx, unsigned handle)
+{
+   if (handle >= ctx->writer.size)
+      return NULL;
+
+   uint8_t value = *util_dynarray_element(&ctx->writer, uint8_t, handle);
+
+   if (value > 0)
+      return &ctx->batches.slots[value - 1];
+   else
+      return NULL;
+}
+
+static void
+agx_writer_remove(struct agx_context *ctx, unsigned handle)
+{
+   if (handle >= ctx->writer.size)
+      return;
+
+   uint8_t *value = util_dynarray_element(&ctx->writer, uint8_t, handle);
+   *value = 0;
+}
 
 static inline struct agx_context *
 agx_context(struct pipe_context *pctx)
@@ -525,6 +586,7 @@ bool agx_nir_lower_sysvals(nir_shader *shader,
                            unsigned *push_size);
 
 bool agx_batch_is_active(struct agx_batch *batch);
+bool agx_batch_is_submitted(struct agx_batch *batch);
 
 uint64_t agx_batch_upload_pbe(struct agx_batch *batch, unsigned rt);
 
@@ -576,6 +638,10 @@ agx_batch_num_bo(struct agx_batch *batch)
    BITSET_FOREACH_SET(handle, (batch)->bo_list.set,                            \
                       agx_batch_bo_list_bits(batch))
 
+void agx_batch_submit(struct agx_context *ctx, struct agx_batch *batch,
+                      uint32_t barriers, enum drm_asahi_cmd_type cmd_type,
+                      void *cmdbuf);
+
 void agx_flush_batch(struct agx_context *ctx, struct agx_batch *batch);
 void agx_flush_batch_for_reason(struct agx_context *ctx,
                                 struct agx_batch *batch, const char *reason);
@@ -586,6 +652,15 @@ void agx_flush_writer(struct agx_context *ctx, struct agx_resource *rsrc,
                       const char *reason);
 void agx_flush_batches_writing_occlusion_queries(struct agx_context *ctx);
 void agx_flush_occlusion_queries(struct agx_context *ctx);
+
+void agx_sync_writer(struct agx_context *ctx, struct agx_resource *rsrc,
+                     const char *reason);
+void agx_sync_readers(struct agx_context *ctx, struct agx_resource *rsrc,
+                      const char *reason);
+void agx_sync_batch(struct agx_context *ctx, struct agx_batch *batch);
+void agx_sync_all(struct agx_context *ctx, const char *reason);
+void agx_sync_batch_for_reason(struct agx_context *ctx, struct agx_batch *batch,
+                               const char *reason);
 
 /* Use these instead of batch_add_bo for proper resource tracking */
 void agx_batch_reads(struct agx_batch *batch, struct agx_resource *rsrc);
@@ -603,7 +678,9 @@ bool agx_any_batch_uses_resource(struct agx_context *ctx,
 
 struct agx_batch *agx_get_batch(struct agx_context *ctx);
 struct agx_batch *agx_get_compute_batch(struct agx_context *ctx);
+void agx_batch_reset(struct agx_context *ctx, struct agx_batch *batch);
 void agx_batch_cleanup(struct agx_context *ctx, struct agx_batch *batch);
+int agx_cleanup_batches(struct agx_context *ctx);
 
 /* Blit shaders */
 void agx_blitter_save(struct agx_context *ctx, struct blitter_context *blitter,

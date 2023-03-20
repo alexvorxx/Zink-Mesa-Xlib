@@ -627,6 +627,8 @@ static rvcn_dec_message_avc_t get_h264_msg(struct radv_video_session *vid,
 
    *width_in_samples = (sps->pic_width_in_mbs_minus1 + 1) * 16;
    *height_in_samples = (sps->pic_height_in_map_units_minus1 + 1) * 16;
+   if (!sps->flags.frame_mbs_only_flag)
+      *height_in_samples *= 2;
    result.level = sps->level_idc;
 
    result.sps_info_flags = 0;
@@ -707,7 +709,9 @@ static rvcn_dec_message_avc_t get_h264_msg(struct radv_video_session *vid,
          result.used_for_reference_flags |= (1 << (2 * idx));
       if (dpb_slot->pStdReferenceInfo->flags.bottom_field_flag)
          result.used_for_reference_flags |= (1 << (2 * idx + 1));
-      else
+
+      if (!dpb_slot->pStdReferenceInfo->flags.top_field_flag &&
+          !dpb_slot->pStdReferenceInfo->flags.bottom_field_flag)
          result.used_for_reference_flags |= (3 << (2 * idx));
 
       if (dpb_slot->pStdReferenceInfo->flags.used_for_long_term_reference)
@@ -949,8 +953,8 @@ static bool rvcn_dec_message_decode(struct radv_cmd_buffer *cmd_buffer,
 
    decode->stream_type = vid->stream_type;
    decode->decode_flags = 0;
-   decode->width_in_samples = dst_iv->image->vk.extent.width;
-   decode->height_in_samples = dst_iv->image->vk.extent.height;
+   decode->width_in_samples = frame_info->dstPictureResource.codedExtent.width;
+   decode->height_in_samples = frame_info->dstPictureResource.codedExtent.height;
 
    decode->bsd_size = frame_info->srcBufferRange;
 
@@ -1088,6 +1092,8 @@ static struct ruvd_h264 get_uvd_h264_msg(struct radv_video_session *vid,
 
    *width_in_samples = (sps->pic_width_in_mbs_minus1 + 1) * 16;
    *height_in_samples = (sps->pic_height_in_map_units_minus1 + 1) * 16;
+   if (!sps->flags.frame_mbs_only_flag)
+      *height_in_samples *= 2;
    result.level = sps->level_idc;
 
    result.sps_info_flags = 0;
@@ -1342,8 +1348,8 @@ static bool ruvd_dec_message_decode(struct radv_device *device,
 
    msg->body.decode.stream_type = vid->stream_type;
    msg->body.decode.decode_flags = 0x1;
-   msg->body.decode.width_in_samples = dst_iv->image->vk.extent.width;
-   msg->body.decode.height_in_samples = dst_iv->image->vk.extent.height;
+   msg->body.decode.width_in_samples = frame_info->dstPictureResource.codedExtent.width;
+   msg->body.decode.height_in_samples = frame_info->dstPictureResource.codedExtent.height;
 
    msg->body.decode.dpb_size = (vid->dpb_type != DPB_DYNAMIC_TIER_2) ? dpb->size : 0;
    msg->body.decode.bsd_size = frame_info->srcBufferRange;

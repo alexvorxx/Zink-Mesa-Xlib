@@ -714,7 +714,9 @@ static void *virgl_shader_encoder(struct pipe_context *ctx,
    if (shader->type == PIPE_SHADER_IR_NIR) {
       struct nir_to_tgsi_options options = {
          .unoptimized_ra = true,
-         .lower_fabs = true
+         .lower_fabs = true,
+         .lower_ssbo_bindings =
+               rs->caps.caps.v2.host_feature_check_version >= 16
       };
 
       if (!(rs->caps.caps.v2.capability_bits_v2 & VIRGL_CAP_V2_TEXTURE_SHADOW_LOD) &&
@@ -1725,8 +1727,8 @@ struct pipe_context *virgl_context_create(struct pipe_screen *pscreen,
    vctx->base.memory_barrier = virgl_memory_barrier;
    vctx->base.emit_string_marker = virgl_emit_string_marker;
 
-   //vctx->base.create_video_codec = virgl_video_create_codec;
-   //vctx->base.create_video_buffer = virgl_video_create_buffer;
+   vctx->base.create_video_codec = virgl_video_create_codec;
+   vctx->base.create_video_buffer = virgl_video_create_buffer;
 
    if (rs->caps.caps.v2.host_feature_check_version >= 7)
       vctx->base.link_shader = virgl_link_shader;

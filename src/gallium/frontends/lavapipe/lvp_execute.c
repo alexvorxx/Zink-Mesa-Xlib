@@ -66,7 +66,9 @@ struct lvp_render_attachment {
    VkResolveModeFlags resolve_mode;
    struct lvp_image_view *resolve_imgv;
    VkAttachmentLoadOp load_op;
+   VkAttachmentStoreOp store_op;
    VkClearValue clear_value;
+   bool read_only;
 };
 
 struct rendering_state {
@@ -91,6 +93,7 @@ struct rendering_state {
    bool ib_dirty;
    bool sample_mask_dirty;
    bool min_samples_dirty;
+   bool poison_mem;
    struct pipe_draw_indirect_info indirect_info;
    struct pipe_draw_info info;
 
@@ -747,10 +750,13 @@ static void handle_graphics_pipeline(struct vk_cmd_queue_entry *cmd,
       if (BITSET_TEST(ps->dynamic, MESA_VK_DYNAMIC_RS_DEPTH_CLIP_ENABLE)) {
          state->depth_clamp_sets_clip = false;
       } else {
-         state->rs_state.depth_clip_near = state->rs_state.depth_clip_far =
-            vk_rasterization_state_depth_clip_enable(ps->rs);
          state->depth_clamp_sets_clip =
             ps->rs->depth_clip_enable == VK_MESA_DEPTH_CLIP_ENABLE_NOT_CLAMP;
+         if (state->depth_clamp_sets_clip)
+            state->rs_state.depth_clip_near = state->rs_state.depth_clip_far = !state->rs_state.depth_clamp;
+         else
+            state->rs_state.depth_clip_near = state->rs_state.depth_clip_far =
+               vk_rasterization_state_depth_clip_enable(ps->rs);
       }
 
       if (!BITSET_TEST(ps->dynamic, MESA_VK_DYNAMIC_RS_RASTERIZER_DISCARD_ENABLE))
@@ -1791,7 +1797,7 @@ att_needs_replicate(const struct rendering_state *state, const struct lvp_image_
 }
 
 static void render_att_init(struct lvp_render_attachment* att,
-                            const VkRenderingAttachmentInfo *vk_att)
+                            const VkRenderingAttachmentInfo *vk_att, bool poison_mem, bool stencil)
 {
    if (vk_att == NULL || vk_att->imageView == VK_NULL_HANDLE) {
       *att = (struct lvp_render_attachment) {
@@ -1803,8 +1809,26 @@ static void render_att_init(struct lvp_render_attachment* att,
    *att = (struct lvp_render_attachment) {
       .imgv = lvp_image_view_from_handle(vk_att->imageView),
       .load_op = vk_att->loadOp,
+      .store_op = vk_att->storeOp,
       .clear_value = vk_att->clearValue,
    };
+   if (util_format_is_depth_or_stencil(att->imgv->pformat)) {
+      if (stencil)
+         att->read_only = vk_att->imageLayout == VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_STENCIL_READ_ONLY_OPTIMAL || 
+                          vk_att->imageLayout == VK_IMAGE_LAYOUT_STENCIL_READ_ONLY_OPTIMAL;
+      else
+         att->read_only = vk_att->imageLayout == VK_IMAGE_LAYOUT_DEPTH_READ_ONLY_STENCIL_ATTACHMENT_OPTIMAL || 
+                          vk_att->imageLayout == VK_IMAGE_LAYOUT_DEPTH_READ_ONLY_OPTIMAL;
+   }
+   if (poison_mem && !att->read_only && att->load_op == VK_ATTACHMENT_LOAD_OP_DONT_CARE) {
+      att->load_op = VK_ATTACHMENT_LOAD_OP_CLEAR;
+      if (util_format_is_depth_or_stencil(att->imgv->pformat)) {
+         att->clear_value.depthStencil.depth = 0.12351251;
+         att->clear_value.depthStencil.stencil = rand() % UINT8_MAX;
+      } else {
+         memset(att->clear_value.color.uint32, rand() % UINT8_MAX, sizeof(att->clear_value.color.uint32));
+      }
+   }
 
    if (vk_att->resolveImageView && vk_att->resolveMode) {
       att->resolve_imgv = lvp_image_view_from_handle(vk_att->resolveImageView);
@@ -1844,7 +1868,7 @@ static void handle_begin_rendering(struct vk_cmd_queue_entry *cmd,
    state->color_att_count = info->colorAttachmentCount;
    state->color_att = realloc(state->color_att, sizeof(*state->color_att) * state->color_att_count);
    for (unsigned i = 0; i < info->colorAttachmentCount; i++) {
-      render_att_init(&state->color_att[i], &info->pColorAttachments[i]);
+      render_att_init(&state->color_att[i], &info->pColorAttachments[i], state->poison_mem, false);
       if (state->color_att[i].imgv) {
          struct lvp_image_view *imgv = state->color_att[i].imgv;
          add_img_view_surface(state, imgv,
@@ -1861,8 +1885,8 @@ static void handle_begin_rendering(struct vk_cmd_queue_entry *cmd,
       }
    }
 
-   render_att_init(&state->depth_att, info->pDepthAttachment);
-   render_att_init(&state->stencil_att, info->pStencilAttachment);
+   render_att_init(&state->depth_att, info->pDepthAttachment, state->poison_mem, false);
+   render_att_init(&state->stencil_att, info->pStencilAttachment, state->poison_mem, true);
    if (state->depth_att.imgv || state->stencil_att.imgv) {
       assert(state->depth_att.imgv == NULL ||
              state->stencil_att.imgv == NULL ||
@@ -1904,8 +1928,55 @@ static void handle_begin_rendering(struct vk_cmd_queue_entry *cmd,
 static void handle_end_rendering(struct vk_cmd_queue_entry *cmd,
                                  struct rendering_state *state)
 {
-   if (!state->suspending)
-      render_resolve(state);
+   if (state->suspending)
+      return;
+   render_resolve(state);
+   if (!state->poison_mem)
+      return;
+   union pipe_color_union color_clear_val;
+   memset(color_clear_val.ui, rand() % UINT8_MAX, sizeof(color_clear_val.ui));
+   for (unsigned i = 0; i < state->framebuffer.nr_cbufs; i++) {
+      if (state->color_att[i].imgv && state->color_att[i].store_op == VK_ATTACHMENT_STORE_OP_DONT_CARE) {
+         if (state->info.view_mask) {
+            u_foreach_bit(i, state->info.view_mask)
+               clear_attachment_layers(state, state->color_att[i].imgv, &state->render_area,
+                                       i, 1, 0, 0, 0, &color_clear_val);
+         } else {
+            state->pctx->clear_render_target(state->pctx,
+                                             state->color_att[i].imgv->surface,
+                                             &color_clear_val,
+                                             state->render_area.offset.x,
+                                             state->render_area.offset.y,
+                                             state->render_area.extent.width,
+                                             state->render_area.extent.height,
+                                             false);
+         }
+      }
+   }
+   uint32_t ds_clear_flags = 0;
+   if (state->depth_att.imgv && !state->depth_att.read_only && state->depth_att.store_op == VK_ATTACHMENT_STORE_OP_DONT_CARE)
+      ds_clear_flags |= PIPE_CLEAR_DEPTH;
+   if (state->stencil_att.imgv && !state->stencil_att.read_only && state->stencil_att.store_op == VK_ATTACHMENT_STORE_OP_DONT_CARE)
+      ds_clear_flags |= PIPE_CLEAR_STENCIL;
+   double dclear_val = 0.2389234;
+   uint32_t sclear_val = rand() % UINT8_MAX;
+   if (ds_clear_flags) {
+      if (state->info.view_mask) {
+         u_foreach_bit(i, state->info.view_mask)
+            clear_attachment_layers(state, state->ds_imgv, &state->render_area,
+                                    i, 1, ds_clear_flags, dclear_val, sclear_val, NULL);
+      } else {
+         state->pctx->clear_depth_stencil(state->pctx,
+                                          state->ds_imgv->surface,
+                                          ds_clear_flags,
+                                          dclear_val, sclear_val,
+                                          state->render_area.offset.x,
+                                          state->render_area.offset.y,
+                                          state->render_area.extent.width,
+                                          state->render_area.extent.height,
+                                          false);
+      }
+   }
 }
 
 static void handle_draw(struct vk_cmd_queue_entry *cmd,
@@ -2706,14 +2777,14 @@ static void handle_push_constants(struct vk_cmd_queue_entry *cmd,
 }
 
 static void lvp_execute_cmd_buffer(struct lvp_cmd_buffer *cmd_buffer,
-                                   struct rendering_state *state);
+                                   struct rendering_state *state, bool print_cmds);
 
 static void handle_execute_commands(struct vk_cmd_queue_entry *cmd,
-                                    struct rendering_state *state)
+                                    struct rendering_state *state, bool print_cmds)
 {
    for (unsigned i = 0; i < cmd->u.execute_commands.command_buffer_count; i++) {
       LVP_FROM_HANDLE(lvp_cmd_buffer, secondary_buf, cmd->u.execute_commands.command_buffers[i]);
-      lvp_execute_cmd_buffer(secondary_buf, state);
+      lvp_execute_cmd_buffer(secondary_buf, state, print_cmds);
    }
 }
 
@@ -2995,7 +3066,7 @@ static void handle_clear_ds_image(struct vk_cmd_queue_entry *cmd,
                                           cmd->u.clear_depth_stencil_image.depth_stencil->depth,
                                           cmd->u.clear_depth_stencil_image.depth_stencil->stencil,
                                           0, 0,
-                                          width, height, true);
+                                          width, height, false);
          state->pctx->surface_destroy(state->pctx, surf);
       }
    }
@@ -3998,13 +4069,15 @@ void lvp_add_enqueue_cmd_entrypoints(struct vk_device_dispatch_table *disp)
 }
 
 static void lvp_execute_cmd_buffer(struct lvp_cmd_buffer *cmd_buffer,
-                                   struct rendering_state *state)
+                                   struct rendering_state *state, bool print_cmds)
 {
    struct vk_cmd_queue_entry *cmd;
    bool first = true;
    bool did_flush = false;
 
    LIST_FOR_EACH_ENTRY(cmd, &cmd_buffer->vk.cmd_queue.cmds, cmd_link) {
+      if (print_cmds)
+         fprintf(stderr, "%s\n", vk_cmd_queue_type_names[cmd->type]);
       switch (cmd->type) {
       case VK_CMD_BIND_PIPELINE:
          handle_pipeline(cmd, state);
@@ -4151,7 +4224,7 @@ static void lvp_execute_cmd_buffer(struct lvp_cmd_buffer *cmd_buffer,
          handle_push_constants(cmd, state);
          break;
       case VK_CMD_EXECUTE_COMMANDS:
-         handle_execute_commands(cmd, state);
+         handle_execute_commands(cmd, state, print_cmds);
          break;
       case VK_CMD_DRAW_INDIRECT_COUNT:
          emit_state(state);
@@ -4336,12 +4409,13 @@ VkResult lvp_execute_cmds(struct lvp_device *device,
    state->sample_mask_dirty = true;
    state->min_samples_dirty = true;
    state->sample_mask = UINT32_MAX;
+   state->poison_mem = device->poison_mem;
    for (enum pipe_shader_type s = PIPE_SHADER_VERTEX; s < PIPE_SHADER_TYPES; s++) {
       for (unsigned i = 0; i < ARRAY_SIZE(state->cso_ss_ptr[s]); i++)
          state->cso_ss_ptr[s][i] = &state->ss[s][i];
    }
    /* create a gallium context */
-   lvp_execute_cmd_buffer(cmd_buffer, state);
+   lvp_execute_cmd_buffer(cmd_buffer, state, device->print_cmds);
 
    state->start_vb = -1;
    state->num_vb = 0;

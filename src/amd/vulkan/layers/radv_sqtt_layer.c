@@ -144,6 +144,7 @@ static VkResult
 radv_sqtt_reloc_graphics_shaders(struct radv_device *device,
                                  struct radv_graphics_pipeline *pipeline)
 {
+   struct radv_shader_dma_submission *submission = NULL;
    struct radv_sqtt_shaders_reloc *reloc;
    uint32_t code_size = 0;
 
@@ -170,21 +171,38 @@ radv_sqtt_reloc_graphics_shaders(struct radv_device *device,
    reloc->bo = reloc->alloc->arena->bo;
 
    /* Relocate shader binaries to be contiguous in memory as requested by RGP. */
-   uint64_t slab_va = radv_buffer_get_va(reloc->bo);
-   uint32_t slab_offset = reloc->alloc->offset;
-   char *slab_ptr = reloc->alloc->arena->ptr;
+   uint64_t slab_va = radv_buffer_get_va(reloc->bo) + reloc->alloc->offset;
+   char *slab_ptr = reloc->alloc->arena->ptr + reloc->alloc->offset;
+   uint64_t offset = 0;
+
+   if (device->shader_use_invisible_vram) {
+       submission =
+         radv_shader_dma_get_submission(device, reloc->bo, slab_va, code_size);
+      if (!submission)
+         return VK_ERROR_UNKNOWN;
+   }
 
    for (int i = 0; i < MESA_VULKAN_SHADER_STAGES; ++i) {
       const struct radv_shader *shader = pipeline->base.shaders[i];
+      void *dest_ptr;
       if (!shader)
          continue;
 
-      reloc->va[i] = slab_va + slab_offset;
+      reloc->va[i] = slab_va + offset;
 
-      void *dest_ptr = slab_ptr + slab_offset;
+      if (device->shader_use_invisible_vram)
+         dest_ptr = submission->ptr + offset;
+      else
+         dest_ptr = slab_ptr + offset;
+
       memcpy(dest_ptr, shader->code, shader->code_size);
 
-      slab_offset += align(shader->code_size, RADV_SHADER_ALLOC_ALIGNMENT);
+      offset += align(shader->code_size, RADV_SHADER_ALLOC_ALIGNMENT);
+   }
+
+   if (device->shader_use_invisible_vram) {
+      if (!radv_shader_dma_submit(device, submission, &pipeline->base.shader_upload_seq))
+         return VK_ERROR_UNKNOWN;
    }
 
    pipeline->sqtt_shaders_reloc = reloc;
@@ -1330,6 +1348,9 @@ sqtt_CreateRayTracingPipelinesKHR(VkDevice _device, VkDeferredOperationKHR defer
       RADV_FROM_HANDLE(radv_pipeline, pipeline, pPipelines[i]);
 
       if (!pipeline)
+         continue;
+
+      if (pCreateInfos[i].flags & VK_PIPELINE_CREATE_LIBRARY_BIT_KHR)
          continue;
 
       result = radv_register_pipeline(device, pipeline);

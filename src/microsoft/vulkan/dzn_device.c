@@ -1761,7 +1761,8 @@ dzn_GetPhysicalDeviceProperties2(VkPhysicalDevice physicalDevice,
                                      VK_SUBGROUP_FEATURE_VOTE_BIT |
                                      VK_SUBGROUP_FEATURE_SHUFFLE_BIT |
                                      VK_SUBGROUP_FEATURE_SHUFFLE_RELATIVE_BIT |
-                                     VK_SUBGROUP_FEATURE_QUAD_BIT,
+                                     VK_SUBGROUP_FEATURE_QUAD_BIT |
+                                     VK_SUBGROUP_FEATURE_ARITHMETIC_BIT,
       /* Note: The CTS doesn't seem to respect the subgroupQuadOperationsInAllStages bit, and it
        * seems more useful to support quad ops in FS/CS than subgroup ops at all in VS/GS. */
       .subgroupSupportedStages = VK_SHADER_STAGE_FRAGMENT_BIT | VK_SHADER_STAGE_COMPUTE_BIT,

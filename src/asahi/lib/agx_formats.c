@@ -135,6 +135,11 @@ const struct agx_pixel_format_entry agx_pixel_format[PIPE_FORMAT_COUNT] = {
    AGX_FMT(R11G11B10_FLOAT,         R11G11B10,     FLOAT,  T, RG11B10F),
    AGX_FMT(R9G9B9E5_FLOAT,          R9G9B9E5,      FLOAT,  F, RGB9E5),
 
+   /* These formats are emulated for texture buffers only */
+   AGX_FMT(R32G32B32_FLOAT,         R32G32B32_EMULATED,    FLOAT,  F, _),
+   AGX_FMT(R32G32B32_UINT,          R32G32B32_EMULATED,    UINT,   F, _),
+   AGX_FMT(R32G32B32_SINT,          R32G32B32_EMULATED,    SINT,   F, _),
+
    AGX_FMT(ETC1_RGB8,               ETC2_RGB8,     UNORM,  F,_),
    AGX_FMT(ETC2_RGB8,               ETC2_RGB8,     UNORM,  F,_),
    AGX_FMT(ETC2_SRGB8,              ETC2_RGB8,     UNORM,  F,_),

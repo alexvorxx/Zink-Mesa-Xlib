@@ -3396,9 +3396,9 @@ genX(cmd_buffer_flush_gfx_state)(struct anv_cmd_buffer *cmd_buffer)
       cmd_buffer->state.push_descriptors_dirty &= ~push_descriptor_dirty;
    }
 
-   /* Wa_1306463417, Wa_16011107343 - Send HS state for every primitive. */
+   /* Wa_1409433168, Wa_16011107343 - Send HS state for every primitive. */
    if (cmd_buffer->state.gfx.dirty & ANV_CMD_DIRTY_PIPELINE ||
-       (GFX_VER == 11 || GFX_VERx10 == 120)) {
+       (INTEL_NEEDS_WA_1409433168 || INTEL_NEEDS_WA_16011107343)) {
       genX(emit_hs)(cmd_buffer);
    }
 
@@ -3557,15 +3557,14 @@ anv_use_generated_draws(const struct anv_cmd_buffer *cmd_buffer, uint32_t count)
 {
    const struct anv_device *device = cmd_buffer->device;
 
-#if GFX_VER == 11 || GFX_VERx10 == 120
    /* Limit generated draws to pipelines without HS stage. This makes things
-    * simpler for implementing Wa_1306463417, Wa_16011107343.
+    * simpler for implementing Wa_1409433168, Wa_16011107343.
     */
-   if (anv_pipeline_has_stage(cmd_buffer->state.gfx.pipeline,
-                             MESA_SHADER_TESS_CTRL)) {
+   if ((INTEL_NEEDS_WA_1409433168 || INTEL_NEEDS_WA_16011107343) &&
+       anv_pipeline_has_stage(cmd_buffer->state.gfx.pipeline,
+                              MESA_SHADER_TESS_CTRL)) {
       return false;
    }
-#endif
 
    return device->physical->generated_indirect_draws &&
           count >= device->physical->instance->generated_indirect_threshold;
@@ -4196,10 +4195,10 @@ void genX(CmdDrawMultiEXT)(
 #else
    vk_foreach_multi_draw(draw, i, pVertexInfo, drawCount, stride) {
 
-      /* Wa_1306463417, Wa_16011107343 - Send HS state for every primitive,
+      /* Wa_1409433168, Wa_16011107343 - Send HS state for every primitive,
        * first one was handled by cmd_buffer_flush_gfx_state.
        */
-      if (i && (GFX_VER == 11 || GFX_VERx10 == 120))
+      if (i && (INTEL_NEEDS_WA_1409433168 || INTEL_NEEDS_WA_16011107343))
          genX(emit_hs)(cmd_buffer);
 
       anv_batch_emit(&cmd_buffer->batch, GENX(3DPRIMITIVE_EXTENDED), prim) {
@@ -4406,10 +4405,10 @@ void genX(CmdDrawMultiIndexedEXT)(
 #else
    vk_foreach_multi_draw_indexed(draw, i, pIndexInfo, drawCount, stride) {
 
-      /* Wa_1306463417, Wa_16011107343 - Send HS state for every primitive,
+      /* Wa_1409433168, Wa_16011107343 - Send HS state for every primitive,
        * first one was handled by cmd_buffer_flush_gfx_state.
        */
-      if (i && (GFX_VER == 11 || GFX_VERx10 == 120))
+      if (i && (INTEL_NEEDS_WA_1409433168 || INTEL_NEEDS_WA_16011107343))
          genX(emit_hs)(cmd_buffer);
 
       anv_batch_emit(&cmd_buffer->batch, GENX(3DPRIMITIVE_EXTENDED), prim) {
@@ -4659,10 +4658,10 @@ emit_indirect_draws(struct anv_cmd_buffer *cmd_buffer,
 
       load_indirect_parameters(cmd_buffer, draw, indexed, i);
 
-      /* Wa_1306463417, Wa_16011107343 - Send HS state for every primitive,
+      /* Wa_1409433168, Wa_16011107343 - Send HS state for every primitive,
        * first one was handled by cmd_buffer_flush_gfx_state.
        */
-      if (i && (GFX_VER == 11 || GFX_VERx10 == 120))
+      if (i && (INTEL_NEEDS_WA_1409433168 || INTEL_NEEDS_WA_16011107343))
          genX(emit_hs)(cmd_buffer);
 
       anv_batch_emit(&cmd_buffer->batch,
@@ -4884,10 +4883,10 @@ emit_indirect_count_draws(struct anv_cmd_buffer *cmd_buffer,
 
       load_indirect_parameters(cmd_buffer, draw, indexed, i);
 
-      /* Wa_1306463417, Wa_16011107343 - Send HS state for every primitive,
+      /* Wa_1409433168, Wa_16011107343 - Send HS state for every primitive,
        * first one was handled by cmd_buffer_flush_gfx_state.
        */
-      if (i && (GFX_VER == 11 || GFX_VERx10 == 120))
+      if (i && (INTEL_NEEDS_WA_1409433168 || INTEL_NEEDS_WA_16011107343))
          genX(emit_hs)(cmd_buffer);
 
       anv_batch_emit(&cmd_buffer->batch,
@@ -7478,8 +7477,10 @@ void genX(CmdBeginRendering)(
 #if GFX_VER >= 11
    bool has_color_att = false;
    for (uint32_t i = 0; i < gfx->color_att_count; i++) {
-      if (pRenderingInfo->pColorAttachments[i].imageView != VK_NULL_HANDLE)
+      if (pRenderingInfo->pColorAttachments[i].imageView != VK_NULL_HANDLE) {
          has_color_att = true;
+         break;
+      }
    }
    if (has_color_att) {
       /* The PIPE_CONTROL command description says:

@@ -193,7 +193,7 @@ get_device_extensions(const struct tu_physical_device *device,
                                             "vk_khr_present_wait") ||
                             wsi_common_vk_instance_supports_present_wait(
                                &device->instance->vk)),
-      .KHR_timeline_semaphore = !is_kgsl(device->instance),
+      .KHR_timeline_semaphore = true,
 #ifdef VK_USE_PLATFORM_DISPLAY_KHR
       .EXT_display_control = true,
 #endif
@@ -1682,15 +1682,14 @@ tu_queue_init(struct tu_device *device,
       return result;
 
    queue->device = device;
-   if (!is_kgsl(device->instance))
-      queue->vk.driver_submit = tu_queue_submit;
+   queue->vk.driver_submit = tu_queue_submit;
 
    int ret = tu_drm_submitqueue_new(device, priority, &queue->msm_queue_id);
    if (ret)
       return vk_startup_errorf(device->instance, VK_ERROR_INITIALIZATION_FAILED,
                                "submitqueue create failed");
 
-   queue->fence = -1;
+   queue->last_submit_timestamp = -1;
 
    return VK_SUCCESS;
 }
@@ -1699,8 +1698,6 @@ static void
 tu_queue_finish(struct tu_queue *queue)
 {
    vk_queue_finish(&queue->vk);
-   if (queue->fence >= 0)
-      close(queue->fence);
    tu_drm_submitqueue_close(queue->device, queue->msm_queue_id);
 }
 
@@ -2518,7 +2515,7 @@ VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL
 tu_GetInstanceProcAddr(VkInstance _instance, const char *pName)
 {
    TU_FROM_HANDLE(tu_instance, instance, _instance);
-   return vk_instance_get_proc_addr(&instance->vk,
+   return vk_instance_get_proc_addr(instance != NULL ? &instance->vk : NULL,
                                     &tu_instance_entrypoints,
                                     pName);
 }

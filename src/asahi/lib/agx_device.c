@@ -239,11 +239,28 @@ agx_bo_export(struct agx_bo *bo)
    if (drmPrimeHandleToFD(bo->dev->fd, bo->handle, DRM_CLOEXEC, &fd))
       return -1;
 
-   bo->flags |= AGX_BO_SHARED;
-   if (bo->prime_fd == -1)
+   if (!(bo->flags & AGX_BO_SHARED)) {
+      bo->flags |= AGX_BO_SHARED;
+      assert(bo->prime_fd == -1);
       bo->prime_fd = dup(fd);
-   assert(bo->prime_fd >= 0);
 
+      /* If there is a pending writer to this BO, import it into the buffer
+       * for implicit sync.
+       */
+      if (bo->writer_syncobj) {
+         int out_sync_fd = -1;
+         int ret = drmSyncobjExportSyncFile(bo->dev->fd, bo->writer_syncobj,
+                                            &out_sync_fd);
+         assert(ret >= 0);
+         assert(out_sync_fd >= 0);
+
+         ret = agx_import_sync_file(bo->dev, bo, out_sync_fd);
+         assert(ret >= 0);
+         close(out_sync_fd);
+      }
+   }
+
+   assert(bo->prime_fd >= 0);
    return fd;
 }
 

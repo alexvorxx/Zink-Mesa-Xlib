@@ -107,12 +107,6 @@ pandecode_sample_locations(const void *fb)
 struct pandecode_fbd
 GENX(pandecode_fbd)(uint64_t gpu_va, bool is_fragment, unsigned gpu_id)
 {
-#if PAN_ARCH >= 5
-   /* We only see MFBDs on architectures that support them */
-   assert(gpu_va & MALI_FBD_TAG_IS_MFBD);
-   gpu_va &= ~MALI_FBD_TAG_MASK;
-#endif
-
    const void *PANDECODE_PTR_VAR(fb, (mali_ptr)gpu_va);
    pan_section_unpack(fb, FRAMEBUFFER, PARAMETERS, params);
    DUMP_UNPACKED(FRAMEBUFFER_PARAMETERS, params, "Parameters:\n");

@@ -261,9 +261,7 @@ kopper_CreateSwapchain(struct zink_screen *screen, struct kopper_displaytarget *
       cswap->scci.clipped = VK_TRUE;
    }
    cswap->scci.presentMode = cdt->present_mode;
-   cswap->scci.minImageCount = cdt->caps.minImageCount + screen->driver_workarounds.extra_swapchain_images;
-   if (cdt->caps.maxImageCount != 0)
-      cswap->scci.minImageCount = MIN2(cswap->scci.minImageCount, cdt->caps.maxImageCount);
+   cswap->scci.minImageCount = cdt->caps.minImageCount;
    cswap->scci.preTransform = cdt->caps.currentTransform;
    if (cdt->formats[1])
       cswap->scci.pNext = &cdt->format_list;
@@ -714,11 +712,9 @@ kopper_present(void *data, void *gdata, int thread_idx)
    }
    /* queue this wait semaphore for deletion on completion of the next batch */
    assert(screen->curr_batch > 0);
-   //uint32_t next = (uint32_t)screen->curr_batch + 1;
+   uint32_t next = (uint32_t)screen->curr_batch + 1;
    /* handle overflow */
-   //next = MAX2(next + 1, 1);
-   uint32_t next = screen->curr_batch + 1;
-
+   next = MAX2(next + 1, 1);
    struct hash_entry *he = _mesa_hash_table_search(swapchain->presents, (void*)(uintptr_t)next);
    if (he)
       arr = he->data;

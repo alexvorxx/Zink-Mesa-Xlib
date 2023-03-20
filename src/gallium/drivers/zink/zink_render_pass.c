@@ -454,10 +454,11 @@ get_render_pass(struct zink_context *ctx)
    struct zink_render_pass_state state = {0};
    uint32_t clears = 0;
    bool have_zsbuf = fb->zsbuf && zink_is_zsbuf_used(ctx);
+   bool use_tc_info = !ctx->blitting && ctx->tc && zink_screen(ctx->base.screen)->driver_workarounds.track_renderpasses;
    state.samples = fb->samples > 0;
 
    for (int i = 0; i < fb->nr_cbufs; i++) {
-      if (ctx->tc && screen->driver_workarounds.track_renderpasses)
+      if (use_tc_info)
          zink_tc_init_color_attachment(ctx, &ctx->dynamic_fb.tc_info, i, &state.rts[i]);
       else
          zink_init_color_attachment(ctx, i, &state.rts[i]);
@@ -482,7 +483,7 @@ get_render_pass(struct zink_context *ctx)
    assert(!state.num_cresolves || state.num_cbufs == state.num_cresolves);
 
    if (have_zsbuf) {
-      if (ctx->tc && screen->driver_workarounds.track_renderpasses)
+      if (use_tc_info)
          zink_tc_init_zs_attachment(ctx, &ctx->dynamic_fb.tc_info, &state.rts[fb->nr_cbufs]);
       else
          zink_init_zs_attachment(ctx, &state.rts[fb->nr_cbufs]);
@@ -613,7 +614,7 @@ setup_framebuffer(struct zink_context *ctx)
    zink_init_framebuffer(screen, ctx->framebuffer, rp);
    ctx->fb_changed = false;
    ctx->gfx_pipeline_state.render_pass = rp;
-   zink_batch_no_rp(ctx);
+   zink_batch_no_rp_safe(ctx);
 }
 
 static bool
@@ -785,6 +786,7 @@ zink_begin_render_pass(struct zink_context *ctx)
          src_view = ctx->base.create_sampler_view(&ctx->base, src, &src_templ);
 
          zink_blit_begin(ctx, ZINK_BLIT_SAVE_FB | ZINK_BLIT_SAVE_FS | ZINK_BLIT_SAVE_TEXTURES);
+         zink_blit_barriers(ctx, zink_resource(src), zink_resource(dst_view->texture), false);
          ctx->blitting = true;
          util_blitter_blit_generic(ctx->blitter, dst_view, &dstbox,
                                    src_view, &dstbox, ctx->fb_state.width, ctx->fb_state.height,

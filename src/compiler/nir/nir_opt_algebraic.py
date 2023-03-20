@@ -976,32 +976,25 @@ for s in [16, 32, 64]:
 
        (('fadd', ('b2f{}'.format(s), ('flt', 0.0, 'a@{}'.format(s))), ('fneg', ('b2f{}'.format(s), ('flt', 'a@{}'.format(s), 0.0)))), ('fsign', a), '!options->lower_fsign'),
        (('iadd', ('b2i{}'.format(s), ('flt', 0, 'a@{}'.format(s))), ('ineg', ('b2i{}'.format(s), ('flt', 'a@{}'.format(s), 0)))), ('f2i{}'.format(s), ('fsign', a)), '!options->lower_fsign'),
+
+       # float? -> float? -> floatS ==> float? -> floatS
+       (('~f2f{}'.format(s), ('f2f', a)), ('f2f{}'.format(s), a)),
+
+       # int? -> float? -> floatS ==> int? -> floatS
+       (('~f2f{}'.format(s), ('u2f', a)), ('u2f{}'.format(s), a)),
+       (('~f2f{}'.format(s), ('i2f', a)), ('i2f{}'.format(s), a)),
+
+       # float? -> float? -> intS ==> float? -> intS
+       (('~f2u{}'.format(s), ('f2f', a)), ('f2u{}'.format(s), a)),
+       (('~f2i{}'.format(s), ('f2f', a)), ('f2i{}'.format(s), a)),
     ])
-
-    # float? -> float? -> floatS ==> float? -> floatS
-    (('~f2f{}'.format(s), ('f2f', a)), ('f2f{}'.format(s), a)),
-
-    # int? -> float? -> floatS ==> int? -> floatS
-    (('~f2f{}'.format(s), ('u2f', a)), ('u2f{}'.format(s), a)),
-    (('~f2f{}'.format(s), ('i2f', a)), ('i2f{}'.format(s), a)),
-
-    # float? -> float? -> intS ==> float? -> intS
-    (('~f2u{}'.format(s), ('f2f', a)), ('f2u{}'.format(s), a)),
-    (('~f2i{}'.format(s), ('f2f', a)), ('f2i{}'.format(s), a)),
 
     for B in [32, 64]:
         if s < B:
             optimizations.extend([
                # S = smaller, B = bigger
-               # typeS -> typeB -> typeS ==> identity
-               (('f2f{}'.format(s), ('f2f{}'.format(B), 'a@{}'.format(s))), a),
-               (('i2i{}'.format(s), ('i2i{}'.format(B), 'a@{}'.format(s))), a),
-               (('u2u{}'.format(s), ('u2u{}'.format(B), 'a@{}'.format(s))), a),
-
-               # bool1 -> typeB -> typeS ==> bool1 -> typeS
-               (('f2f{}'.format(s), ('b2f{}'.format(B), 'a@1')), ('b2f{}'.format(s), a)),
-               (('i2i{}'.format(s), ('b2i{}'.format(B), 'a@1')), ('b2i{}'.format(s), a)),
-               (('u2u{}'.format(s), ('b2i{}'.format(B), 'a@1')), ('b2i{}'.format(s), a)),
+               # floatS -> floatB -> floatS ==> identity
+               (('~f2f{}'.format(s), ('f2f{}'.format(B), 'a@{}'.format(s))), a),
 
                # floatS -> floatB -> intB ==> floatS -> intB
                (('f2u{}'.format(B), ('f2f{}'.format(B), 'a@{}'.format(s))), ('f2u{}'.format(B), a)),
@@ -1010,10 +1003,27 @@ for s in [16, 32, 64]:
                # int? -> floatB -> floatS ==> int? -> floatS
                (('f2f{}'.format(s), ('u2f{}'.format(B), a)), ('u2f{}'.format(s), a)),
                (('f2f{}'.format(s), ('i2f{}'.format(B), a)), ('i2f{}'.format(s), a)),
+            ])
 
-               # intS -> intB -> floatB ==> intS -> floatB
-               (('u2f{}'.format(B), ('u2u{}'.format(B), 'a@{}'.format(s))), ('u2f{}'.format(B), a)),
-               (('i2f{}'.format(B), ('i2i{}'.format(B), 'a@{}'.format(s))), ('i2f{}'.format(B), a)),
+for S in [1, 8, 16, 32]:
+    for B in [8, 16, 32, 64]:
+        if B <= S:
+            continue
+        optimizations.extend([
+            # intS -> intB -> intS ==> identity
+            (('i2i{}'.format(S), ('i2i{}'.format(B), 'a@{}'.format(S))), a),
+            (('u2u{}'.format(S), ('u2u{}'.format(B), 'a@{}'.format(S))), a),
+        ])
+
+        if B < 16:
+            continue
+        for C in [8, 16, 32, 64]:
+            if C <= S:
+                continue
+            optimizations.extend([
+                # intS -> intC -> floatB ==> intS -> floatB
+                (('u2f{}'.format(B), ('u2u{}'.format(C), 'a@{}'.format(S))), ('u2f{}'.format(B), a)),
+                (('i2f{}'.format(B), ('i2i{}'.format(C), 'a@{}'.format(S))), ('i2f{}'.format(B), a)),
             ])
 
 # mediump variants of the above
@@ -1488,14 +1498,16 @@ optimizations.extend([
    (('i2i32', ('i2imp', 'a@32')), a),
    (('u2u32', ('i2imp', 'a@32')), a),
 
+   # typeA@32 -> typeB@16 -> typeB@32 ==> typeA@32 -> typeB@32
    (('i2i32', ('f2imp', 'a@32')), ('f2i32', a)),
    (('u2u32', ('f2ump', 'a@32')), ('f2u32', a)),
    (('f2f32', ('i2fmp', 'a@32')), ('i2f32', a)),
    (('f2f32', ('u2fmp', 'a@32')), ('u2f32', a)),
 
-   # Conversions from float32 to float64 and back can be removed as long as
-   # it doesn't need to be precise, since the conversion may e.g. flush denorms
-   (('~f2f32', ('f2f64', 'a@32')), a),
+   # typeA@32 -> typeA@16 -> typeB@32 ==> typeA@32 -> typeB@32
+   (('f2i32', ('f2fmp', 'a@32')), ('f2i32', a)),
+   (('f2u32', ('f2fmp', 'a@32')), ('f2u32', a)),
+   (('i2f32', ('i2imp', 'a@32')), ('i2f32', a)),
 
    (('ffloor', 'a(is_integral)'), a),
    (('fceil', 'a(is_integral)'), a),
@@ -1809,8 +1821,12 @@ optimizations.extend([
    (('bcsel', ('ine', 'a@32', 0), ('iadd', 31, ('ineg', ('ufind_msb_rev', a))), ('ufind_msb_rev', a)), ('ufind_msb', a), '!options->lower_find_msb_to_reverse'),
    (('bcsel', ('ieq', 'a@32', 0), ('ufind_msb_rev', a), ('iadd', 31, ('ineg', ('ufind_msb_rev', a)))), ('ufind_msb', a), '!options->lower_find_msb_to_reverse'),
 
+   # This is safe. Both ufind_msb_rev and bitfield_reverse can only have
+   # 32-bit sources, so the transformation can only generate correct NIR.
    (('find_lsb', ('bitfield_reverse', a)), ('ufind_msb_rev', a), 'options->has_find_msb_rev'),
    (('ufind_msb_rev', ('bitfield_reverse', a)), ('find_lsb', a), '!options->lower_find_lsb'),
+
+   (('ifind_msb', ('f2i32(is_used_once)', a)), ('ufind_msb', ('f2i32', ('fabs', a)))),
 
    (('~fmul', ('bcsel(is_used_once)', c, -1.0, 1.0), b), ('bcsel', c, ('fneg', b), b)),
    (('~fmul', ('bcsel(is_used_once)', c, 1.0, -1.0), b), ('bcsel', c, b, ('fneg', b))),
@@ -2013,16 +2029,46 @@ optimizations.extend([
      ('ifind_msb_rev', 'value')),
     'options->lower_find_msb_to_reverse'),
 
-    (('ufind_msb', 'value'),
-     ('bcsel', ('ige', ('ufind_msb_rev', 'value'), 0),
-      ('isub', 31, ('ufind_msb_rev', 'value')),
-      ('ufind_msb_rev', 'value')),
-     'options->lower_find_msb_to_reverse'),
+   # uclz of an absolute value source almost always does the right thing.
+   # There are a couple problem values:
+   #
+   # * 0x80000000.  Since abs(0x80000000) == 0x80000000, uclz returns 0.
+   #   However, findMSB(int(0x80000000)) == 30.
+   #
+   # * 0xffffffff.  Since abs(0xffffffff) == 1, uclz returns 31.  Section 8.8
+   #   (Integer Functions) of the GLSL 4.50 spec says:
+   #
+   #    For a value of zero or negative one, -1 will be returned.
+   #
+   # * Negative powers of two.  uclz(abs(-(1<<x))) returns x, but
+   #   findMSB(-(1<<x)) should return x-1.
+   #
+   # For all negative number cases, including 0x80000000 and 0xffffffff, the
+   # correct value is obtained from uclz if instead of negating the (already
+   # negative) value the logical-not is used.  A conditional logical-not can
+   # be achieved by (x ^ (x >> 31)).
+   (('ifind_msb', 'value'),
+    ('isub', 31, ('uclz', ('ixor', 'value', ('ishr', 'value', 31)))),
+    'options->lower_ifind_msb_to_uclz'),
+
+   (('ufind_msb', 'value@32'),
+    ('bcsel', ('ige', ('ufind_msb_rev', 'value'), 0),
+     ('isub', 31, ('ufind_msb_rev', 'value')),
+     ('ufind_msb_rev', 'value')),
+    'options->lower_find_msb_to_reverse'),
+
+   (('ufind_msb', 'value@32'),
+    ('isub', 31, ('uclz', 'value')),
+    'options->lower_ufind_msb_to_uclz'),
 
    (('uclz', a), ('umin', 32, ('ufind_msb_rev', a)), 'options->lower_uclz'),
 
-   (('find_lsb', 'value'),
+   (('find_lsb', 'value@64'),
     ('ufind_msb', ('iand', 'value', ('ineg', 'value'))),
+    'options->lower_find_lsb'),
+
+   (('find_lsb', 'value'),
+    ('ufind_msb', ('u2u32', ('iand', 'value', ('ineg', 'value')))),
     'options->lower_find_lsb'),
 
    (('extract_i8', a, 'b@32'),

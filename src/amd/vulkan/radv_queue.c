@@ -28,6 +28,8 @@
 #include "radv_cs.h"
 #include "radv_debug.h"
 #include "radv_private.h"
+#include "vk_sync.h"
+#include "vk_semaphore.h"
 
 /* The number of IBs per submit isn't infinite, it depends on the IP type
  * (ie. some initial setup needed for a submit) and the number of IBs (4 DW).
@@ -1563,6 +1565,19 @@ radv_create_perf_counter_lock_cs(struct radv_device *device, unsigned pass, bool
    return *cs_ref;
 }
 
+static void
+radv_get_shader_upload_sync_wait(struct radv_device *device, uint64_t shader_upload_seq,
+                                 struct vk_sync_wait *out_sync_wait)
+{
+   struct vk_semaphore *semaphore = vk_semaphore_from_handle(device->shader_upload_sem);
+   struct vk_sync *sync = vk_semaphore_get_active_sync(semaphore);
+   *out_sync_wait = (struct vk_sync_wait){
+      .sync = sync,
+      .wait_value = shader_upload_seq,
+      .stage_mask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT,
+   };
+}
+
 static VkResult
 radv_queue_submit_normal(struct radv_queue *queue, struct vk_queue_submit *submission)
 {
@@ -1571,6 +1586,9 @@ radv_queue_submit_normal(struct radv_queue *queue, struct vk_queue_submit *submi
    bool use_ace = false;
    bool use_perf_counters = false;
    VkResult result;
+   uint64_t shader_upload_seq = 0;
+   uint32_t wait_count = submission->wait_count;
+   struct vk_sync_wait *waits = submission->waits;
 
    result = radv_update_preambles(&queue->state, queue->device, submission->command_buffers,
                                   submission->command_buffer_count, &use_perf_counters, &use_ace);
@@ -1600,6 +1618,27 @@ radv_queue_submit_normal(struct radv_queue *queue, struct vk_queue_submit *submi
    if (queue->device->trace_bo)
       simple_mtx_lock(&queue->device->trace_mtx);
 
+   for (uint32_t j = 0; j < submission->command_buffer_count; j++) {
+      struct radv_cmd_buffer *cmd_buffer = (struct radv_cmd_buffer *)submission->command_buffers[j];
+      shader_upload_seq = MAX2(shader_upload_seq, cmd_buffer->shader_upload_seq);
+   }
+
+   if (shader_upload_seq > queue->last_shader_upload_seq) {
+      /* Patch the wait array to add waiting for referenced shaders to upload. */
+      struct vk_sync_wait *new_waits = malloc(sizeof(struct vk_sync_wait) * (wait_count + 1));
+      if (!new_waits) {
+         result = VK_ERROR_OUT_OF_HOST_MEMORY;
+         goto fail;
+      }
+
+      memcpy(new_waits, submission->waits, sizeof(struct vk_sync_wait) * submission->wait_count);
+      radv_get_shader_upload_sync_wait(queue->device, shader_upload_seq,
+                                       &new_waits[submission->wait_count]);
+
+      waits = new_waits;
+      wait_count += 1;
+   }
+
    struct radeon_cmdbuf *perf_ctr_lock_cs = NULL;
    struct radeon_cmdbuf *perf_ctr_unlock_cs = NULL;
 
@@ -1625,7 +1664,7 @@ radv_queue_submit_normal(struct radv_queue *queue, struct vk_queue_submit *submi
    /* For fences on the same queue/vm amdgpu doesn't wait till all processing is finished
     * before starting the next cmdbuffer, so we need to do it here.
     */
-   const bool need_wait = submission->wait_count > 0;
+   const bool need_wait = wait_count > 0;
    unsigned num_preambles = 0;
    struct radeon_cmdbuf *preambles[4] = {0};
 
@@ -1700,7 +1739,7 @@ radv_queue_submit_normal(struct radv_queue *queue, struct vk_queue_submit *submi
       submit.preamble_count = submit_ace ? num_preambles : num_1q_preambles;
 
       result = queue->device->ws->cs_submit(
-         ctx, &submit, j == 0 ? submission->wait_count : 0, submission->waits,
+         ctx, &submit, j == 0 ? wait_count : 0, waits,
          last_submit ? submission->signal_count : 0, submission->signals, can_patch);
 
       if (result != VK_SUCCESS)
@@ -1718,8 +1757,13 @@ radv_queue_submit_normal(struct radv_queue *queue, struct vk_queue_submit *submi
       preambles[1] = !use_ace ? NULL : queue->ace_internal_state->initial_preamble_cs;
    }
 
+   queue->last_shader_upload_seq =
+      MAX2(queue->last_shader_upload_seq, shader_upload_seq);
+
 fail:
    free(cs_array);
+   if (waits != submission->waits)
+      free(waits);
    if (queue->device->trace_bo)
       simple_mtx_unlock(&queue->device->trace_mtx);
 

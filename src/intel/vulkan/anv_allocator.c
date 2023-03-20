@@ -1372,16 +1372,29 @@ anv_bo_alloc_flags_to_bo_flags(struct anv_device *device,
 }
 
 static void
-anv_bo_finish(struct anv_device *device, struct anv_bo *bo)
+anv_bo_unmap_close(struct anv_device *device, struct anv_bo *bo)
 {
-   if (bo->offset != 0 && !bo->has_fixed_address)
-      anv_vma_free(device, bo->offset, bo->size + bo->_ccs_size);
-
    if (bo->map && !bo->from_host_ptr)
       anv_device_unmap_bo(device, bo, bo->map, bo->size);
 
    assert(bo->gem_handle != 0);
    device->kmd_backend->gem_close(device, bo->gem_handle);
+}
+
+static void anv_bo_vma_free(struct anv_device *device, struct anv_bo *bo)
+{
+   if (bo->offset != 0 && !bo->has_fixed_address)
+      anv_vma_free(device, bo->offset, bo->size + bo->_ccs_size);
+}
+
+static void
+anv_bo_finish(struct anv_device *device, struct anv_bo *bo)
+{
+   /* Not releasing vma in case unbind fails */
+   if (device->kmd_backend->gem_vm_unbind(device, bo) == 0)
+      anv_bo_vma_free(device, bo);
+
+   anv_bo_unmap_close(device, bo);
 }
 
 static VkResult
@@ -1411,7 +1424,7 @@ anv_bo_vma_alloc_or_close(struct anv_device *device,
       bo->offset = anv_vma_alloc(device, bo->size + bo->_ccs_size,
                                  align, alloc_flags, explicit_address);
       if (bo->offset == 0) {
-         anv_bo_finish(device, bo);
+         anv_bo_unmap_close(device, bo);
          return vk_errorf(device, VK_ERROR_OUT_OF_DEVICE_MEMORY,
                           "failed to allocate virtual address for BO");
       }
@@ -1537,6 +1550,12 @@ anv_device_alloc_bo(struct anv_device *device,
                                                explicit_address);
    if (result != VK_SUCCESS)
       return result;
+
+   if (device->kmd_backend->gem_vm_bind(device, &new_bo)) {
+      anv_bo_vma_free(device, &new_bo);
+      anv_bo_unmap_close(device, &new_bo);
+      return vk_errorf(device, VK_ERROR_UNKNOWN, "vm bind failed");
+   }
 
    if (new_bo._ccs_size > 0) {
       assert(device->info->has_aux_map);
@@ -1791,6 +1810,12 @@ anv_device_import_bo(struct anv_device *device,
       if (result != VK_SUCCESS) {
          pthread_mutex_unlock(&cache->mutex);
          return result;
+      }
+
+      if (device->kmd_backend->gem_vm_bind(device, &new_bo)) {
+         anv_bo_vma_free(device, &new_bo);
+         pthread_mutex_unlock(&cache->mutex);
+         return vk_errorf(device, VK_ERROR_UNKNOWN, "vm bind failed");
       }
 
       *bo = new_bo;

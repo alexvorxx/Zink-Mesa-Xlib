@@ -55,6 +55,15 @@ struct fd_reg_pair {
 #  error 'Hardpin unsupported'
 #endif
 
+static inline uint64_t
+__reg_iova(const struct fd_reg_pair *reg)
+{
+   uint64_t iova = __reloc_iova((struct fd_bo *)reg->bo,
+                                reg->bo_offset, 0,
+                                -reg->bo_shift);
+   return iova << reg->bo_low;
+}
+
 #define __ONE_REG(i, ...)                                                      \
    do {                                                                        \
       const struct fd_reg_pair __regs[] = {__VA_ARGS__};                       \
@@ -63,9 +72,7 @@ struct fd_reg_pair {
          __assert_eq(__regs[0].reg + i, __regs[i].reg);                        \
          if (__regs[i].bo) {                                                   \
             uint64_t *__p64 = (uint64_t *)__p;                                 \
-            *__p64 = (__reloc_iova(__regs[i].bo, __regs[i].bo_offset, 0,       \
-                                -__regs[i].bo_shift) << __regs[i].bo_low) |    \
-                   __regs[i].value;                                            \
+            *__p64 = __reg_iova(&__regs[i]) | __regs[i].value;                 \
             __p += 2;                                                          \
             fd_ringbuffer_attach_bo(ring, __regs[i].bo);                       \
          } else {                                                              \

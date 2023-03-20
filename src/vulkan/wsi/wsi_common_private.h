@@ -383,6 +383,13 @@ void
 wsi_display_setup_syncobj_fd(struct wsi_device *wsi_device,
                              int fd);
 
+VkResult wsi_headless_init_wsi(struct wsi_device *wsi_device,
+                               const VkAllocationCallbacks *alloc,
+                               VkPhysicalDevice physical_device);
+
+void wsi_headless_finish_wsi(struct wsi_device *wsi_device,
+                             const VkAllocationCallbacks *alloc);
+
 VK_DEFINE_NONDISP_HANDLE_CASTS(wsi_swapchain, base, VkSwapchainKHR,
                                VK_OBJECT_TYPE_SWAPCHAIN_KHR)
 

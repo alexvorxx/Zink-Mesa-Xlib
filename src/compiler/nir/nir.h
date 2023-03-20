@@ -90,8 +90,6 @@ extern bool nir_debug_print_shader[MESA_SHADER_KERNEL + 1];
 #define NIR_DEBUG_PRINT_CONSTS           (1u << 20)
 #define NIR_DEBUG_PRINT_INTERNAL         (1u << 21)
 
-#define NIR_DEBUG_VALIDATE_GC_LIST       (1u << 21)
-
 #define NIR_DEBUG_PRINT (NIR_DEBUG_PRINT_VS  | \
                          NIR_DEBUG_PRINT_TCS | \
                          NIR_DEBUG_PRINT_TES | \
@@ -903,9 +901,6 @@ typedef enum PACKED {
 
 typedef struct nir_instr {
    struct exec_node node;
-
-   struct list_head gc_node;
-
    struct nir_block *block;
    nir_instr_type type;
 
@@ -3416,6 +3411,10 @@ typedef struct nir_shader_compiler_options {
    bool lower_ifind_msb;
    /** Lowers ifind_msb and ufind_msb to reverse variants */
    bool lower_find_msb_to_reverse;
+   /** Lowers ifind_msb to uclz and logic ops*/
+   bool lower_ifind_msb_to_uclz;
+   /** Lowers ufind_msb to 31-uclz */
+   bool lower_ufind_msb_to_uclz;
    /** Lowers find_lsb to ufind_msb and logic ops */
    bool lower_find_lsb;
    bool lower_uadd_carry;
@@ -3832,7 +3831,7 @@ typedef struct nir_shader_compiler_options {
 } nir_shader_compiler_options;
 
 typedef struct nir_shader {
-   //gc_ctx *gctx;
+   gc_ctx *gctx;
 
    /** list of uniforms (nir_variable) */
    struct exec_list variables;
@@ -3848,8 +3847,6 @@ typedef struct nir_shader {
    struct shader_info info;
 
    struct exec_list functions; /** < list of nir_function */
-
-   struct list_head gc_list; /** < list of all nir_instrs allocated on the shader but not yet freed. */
 
    /**
     * The size of the variable space for load_input_*, load_uniform_*, etc.

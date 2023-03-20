@@ -434,6 +434,9 @@ iris_get_param(struct pipe_screen *pscreen, enum pipe_cap param)
    case PIPE_CAP_DEVICE_PROTECTED_CONTEXT:
       return screen->kernel_features & KERNEL_HAS_PROTECTED_CONTEXT;
 
+   case PIPE_CAP_ASTC_VOID_EXTENTS_NEED_DENORM_FLUSH:
+      return devinfo->ver == 9 && !intel_device_info_is_9lp(devinfo);
+
    default:
       return u_pipe_screen_get_param_defaults(pscreen, param);
    }

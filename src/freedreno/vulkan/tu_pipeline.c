@@ -5283,7 +5283,7 @@ tu_compute_pipeline_create(VkDevice device,
    for (int i = 0; i < 3; i++)
       pipeline->compute.local_size[i] = v->local_size[i];
 
-   pipeline->compute.subgroup_size = v->info.double_threadsize ? 128 : 64;
+   pipeline->compute.subgroup_size = v->info.subgroup_size;
 
    struct tu_cs prog_cs;
    uint32_t additional_reserve_size = tu_xs_get_additional_cs_size_dwords(v);

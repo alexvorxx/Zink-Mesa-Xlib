@@ -154,7 +154,7 @@ st_invalidate_state(struct gl_context *ctx)
    /* Update the vertex shader if ctx->Light._ClampVertexColor was changed. */
    if (st->clamp_vert_color_in_shader && (new_state & _NEW_LIGHT_STATE)) {
       ctx->NewDriverState |= ST_NEW_VS_STATE;
-      if (st->ctx->API == API_OPENGL_COMPAT && ctx->Version >= 32) {
+      if (_mesa_is_desktop_gl_compat(st->ctx) && ctx->Version >= 32) {
          ctx->NewDriverState |= ST_NEW_GS_STATE | ST_NEW_TES_STATE;
       }
    }
@@ -566,6 +566,9 @@ st_create_context_priv(struct gl_context *ctx, struct pipe_context *pipe,
    st->has_astc_5x5_ldr =
       screen->is_format_supported(screen, PIPE_FORMAT_ASTC_5x5_SRGB,
                                   PIPE_TEXTURE_2D, 0, 0, PIPE_BIND_SAMPLER_VIEW);
+   st->astc_void_extents_need_denorm_flush =
+      screen->get_param(screen, PIPE_CAP_ASTC_VOID_EXTENTS_NEED_DENORM_FLUSH);
+
    st->has_s3tc = screen->is_format_supported(screen, PIPE_FORMAT_DXT5_RGBA,
                                               PIPE_TEXTURE_2D, 0, 0,
                                               PIPE_BIND_SAMPLER_VIEW);
@@ -681,7 +684,7 @@ st_create_context_priv(struct gl_context *ctx, struct pipe_context *pipe,
       /* For drivers which cannot do color clamping, it's better to just
        * disable ARB_color_buffer_float in the core profile, because
        * the clamping is deprecated there anyway. */
-      if (ctx->API == API_OPENGL_CORE &&
+      if (_mesa_is_desktop_gl_core(ctx) &&
           (st->clamp_frag_color_in_shader || st->clamp_vert_color_in_shader)) {
          st->clamp_vert_color_in_shader = GL_FALSE;
          st->clamp_frag_color_in_shader = GL_FALSE;
@@ -769,7 +772,8 @@ st_create_context_priv(struct gl_context *ctx, struct pipe_context *pipe,
    _mesa_override_extensions(ctx);
    _mesa_compute_version(ctx);
 
-   if (ctx->Version == 0) {
+   if (ctx->Version == 0 ||
+       !_mesa_initialize_dispatch_tables(ctx)) {
       /* This can happen when a core profile was requested, but the driver
        * does not support some features of GL 3.1 or later.
        */
@@ -793,7 +797,6 @@ st_create_context_priv(struct gl_context *ctx, struct pipe_context *pipe,
     */
    _vbo_CreateContext(ctx);
 
-   _mesa_initialize_dispatch_tables(ctx);
    st_init_driver_flags(st);
 
    /* Initialize context's winsys buffers list */

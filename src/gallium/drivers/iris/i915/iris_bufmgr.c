@@ -55,3 +55,13 @@ int iris_i915_bo_wait_gem(struct iris_bo *bo, int64_t timeout_ns)
 
    return 0;
 }
+
+bool iris_i915_init_global_vm(struct iris_bufmgr *bufmgr, uint32_t *vm_id)
+{
+   uint64_t value;
+   bool ret = intel_gem_get_context_param(iris_bufmgr_get_fd(bufmgr), 0,
+                                          I915_CONTEXT_PARAM_VM, &value);
+   if (ret)
+      *vm_id = value;
+   return ret;
+}

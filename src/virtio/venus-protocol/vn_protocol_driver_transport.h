@@ -484,6 +484,134 @@ static inline void vn_decode_vkWriteRingExtraMESA_reply(struct vn_cs_decoder *de
     /* skip value */
 }
 
+static inline size_t vn_sizeof_vkSubmitVirtqueueSeqno100000MESA(uint64_t ring, uint64_t seqno)
+{
+    const VkCommandTypeEXT cmd_type = VK_COMMAND_TYPE_vkSubmitVirtqueueSeqno100000MESA_EXT;
+    const VkFlags cmd_flags = 0;
+    size_t cmd_size = vn_sizeof_VkCommandTypeEXT(&cmd_type) + vn_sizeof_VkFlags(&cmd_flags);
+
+    cmd_size += vn_sizeof_uint64_t(&ring);
+    cmd_size += vn_sizeof_uint64_t(&seqno);
+
+    return cmd_size;
+}
+
+static inline void vn_encode_vkSubmitVirtqueueSeqno100000MESA(struct vn_cs_encoder *enc, VkCommandFlagsEXT cmd_flags, uint64_t ring, uint64_t seqno)
+{
+    const VkCommandTypeEXT cmd_type = VK_COMMAND_TYPE_vkSubmitVirtqueueSeqno100000MESA_EXT;
+
+    vn_encode_VkCommandTypeEXT(enc, &cmd_type);
+    vn_encode_VkFlags(enc, &cmd_flags);
+
+    vn_encode_uint64_t(enc, &ring);
+    vn_encode_uint64_t(enc, &seqno);
+}
+
+static inline size_t vn_sizeof_vkSubmitVirtqueueSeqno100000MESA_reply(uint64_t ring, uint64_t seqno)
+{
+    const VkCommandTypeEXT cmd_type = VK_COMMAND_TYPE_vkSubmitVirtqueueSeqno100000MESA_EXT;
+    size_t cmd_size = vn_sizeof_VkCommandTypeEXT(&cmd_type);
+
+    /* skip ring */
+    /* skip seqno */
+
+    return cmd_size;
+}
+
+static inline void vn_decode_vkSubmitVirtqueueSeqno100000MESA_reply(struct vn_cs_decoder *dec, uint64_t ring, uint64_t seqno)
+{
+    VkCommandTypeEXT command_type;
+    vn_decode_VkCommandTypeEXT(dec, &command_type);
+    assert(command_type == VK_COMMAND_TYPE_vkSubmitVirtqueueSeqno100000MESA_EXT);
+
+    /* skip ring */
+    /* skip seqno */
+}
+
+static inline size_t vn_sizeof_vkWaitVirtqueueSeqno100000MESA(uint64_t seqno)
+{
+    const VkCommandTypeEXT cmd_type = VK_COMMAND_TYPE_vkWaitVirtqueueSeqno100000MESA_EXT;
+    const VkFlags cmd_flags = 0;
+    size_t cmd_size = vn_sizeof_VkCommandTypeEXT(&cmd_type) + vn_sizeof_VkFlags(&cmd_flags);
+
+    cmd_size += vn_sizeof_uint64_t(&seqno);
+
+    return cmd_size;
+}
+
+static inline void vn_encode_vkWaitVirtqueueSeqno100000MESA(struct vn_cs_encoder *enc, VkCommandFlagsEXT cmd_flags, uint64_t seqno)
+{
+    const VkCommandTypeEXT cmd_type = VK_COMMAND_TYPE_vkWaitVirtqueueSeqno100000MESA_EXT;
+
+    vn_encode_VkCommandTypeEXT(enc, &cmd_type);
+    vn_encode_VkFlags(enc, &cmd_flags);
+
+    vn_encode_uint64_t(enc, &seqno);
+}
+
+static inline size_t vn_sizeof_vkWaitVirtqueueSeqno100000MESA_reply(uint64_t seqno)
+{
+    const VkCommandTypeEXT cmd_type = VK_COMMAND_TYPE_vkWaitVirtqueueSeqno100000MESA_EXT;
+    size_t cmd_size = vn_sizeof_VkCommandTypeEXT(&cmd_type);
+
+    /* skip seqno */
+
+    return cmd_size;
+}
+
+static inline void vn_decode_vkWaitVirtqueueSeqno100000MESA_reply(struct vn_cs_decoder *dec, uint64_t seqno)
+{
+    VkCommandTypeEXT command_type;
+    vn_decode_VkCommandTypeEXT(dec, &command_type);
+    assert(command_type == VK_COMMAND_TYPE_vkWaitVirtqueueSeqno100000MESA_EXT);
+
+    /* skip seqno */
+}
+
+static inline size_t vn_sizeof_vkWaitRingSeqno100000MESA(uint64_t ring, uint64_t seqno)
+{
+    const VkCommandTypeEXT cmd_type = VK_COMMAND_TYPE_vkWaitRingSeqno100000MESA_EXT;
+    const VkFlags cmd_flags = 0;
+    size_t cmd_size = vn_sizeof_VkCommandTypeEXT(&cmd_type) + vn_sizeof_VkFlags(&cmd_flags);
+
+    cmd_size += vn_sizeof_uint64_t(&ring);
+    cmd_size += vn_sizeof_uint64_t(&seqno);
+
+    return cmd_size;
+}
+
+static inline void vn_encode_vkWaitRingSeqno100000MESA(struct vn_cs_encoder *enc, VkCommandFlagsEXT cmd_flags, uint64_t ring, uint64_t seqno)
+{
+    const VkCommandTypeEXT cmd_type = VK_COMMAND_TYPE_vkWaitRingSeqno100000MESA_EXT;
+
+    vn_encode_VkCommandTypeEXT(enc, &cmd_type);
+    vn_encode_VkFlags(enc, &cmd_flags);
+
+    vn_encode_uint64_t(enc, &ring);
+    vn_encode_uint64_t(enc, &seqno);
+}
+
+static inline size_t vn_sizeof_vkWaitRingSeqno100000MESA_reply(uint64_t ring, uint64_t seqno)
+{
+    const VkCommandTypeEXT cmd_type = VK_COMMAND_TYPE_vkWaitRingSeqno100000MESA_EXT;
+    size_t cmd_size = vn_sizeof_VkCommandTypeEXT(&cmd_type);
+
+    /* skip ring */
+    /* skip seqno */
+
+    return cmd_size;
+}
+
+static inline void vn_decode_vkWaitRingSeqno100000MESA_reply(struct vn_cs_decoder *dec, uint64_t ring, uint64_t seqno)
+{
+    VkCommandTypeEXT command_type;
+    vn_decode_VkCommandTypeEXT(dec, &command_type);
+    assert(command_type == VK_COMMAND_TYPE_vkWaitRingSeqno100000MESA_EXT);
+
+    /* skip ring */
+    /* skip seqno */
+}
+
 static inline size_t vn_sizeof_vkGetVenusExperimentalFeatureData100000MESA(size_t* pDataSize, void* pData)
 {
     const VkCommandTypeEXT cmd_type = VK_COMMAND_TYPE_vkGetVenusExperimentalFeatureData100000MESA_EXT;
@@ -695,6 +823,69 @@ static inline void vn_submit_vkWriteRingExtraMESA(struct vn_instance *vn_instanc
     }
 }
 
+static inline void vn_submit_vkSubmitVirtqueueSeqno100000MESA(struct vn_instance *vn_instance, VkCommandFlagsEXT cmd_flags, uint64_t ring, uint64_t seqno, struct vn_instance_submit_command *submit)
+{
+    uint8_t local_cmd_data[VN_SUBMIT_LOCAL_CMD_SIZE];
+    void *cmd_data = local_cmd_data;
+    size_t cmd_size = vn_sizeof_vkSubmitVirtqueueSeqno100000MESA(ring, seqno);
+    if (cmd_size > sizeof(local_cmd_data)) {
+        cmd_data = malloc(cmd_size);
+        if (!cmd_data)
+            cmd_size = 0;
+    }
+    const size_t reply_size = cmd_flags & VK_COMMAND_GENERATE_REPLY_BIT_EXT ? vn_sizeof_vkSubmitVirtqueueSeqno100000MESA_reply(ring, seqno) : 0;
+
+    struct vn_cs_encoder *enc = vn_instance_submit_command_init(vn_instance, submit, cmd_data, cmd_size, reply_size);
+    if (cmd_size) {
+        vn_encode_vkSubmitVirtqueueSeqno100000MESA(enc, cmd_flags, ring, seqno);
+        vn_instance_submit_command(vn_instance, submit);
+        if (cmd_data != local_cmd_data)
+            free(cmd_data);
+    }
+}
+
+static inline void vn_submit_vkWaitVirtqueueSeqno100000MESA(struct vn_instance *vn_instance, VkCommandFlagsEXT cmd_flags, uint64_t seqno, struct vn_instance_submit_command *submit)
+{
+    uint8_t local_cmd_data[VN_SUBMIT_LOCAL_CMD_SIZE];
+    void *cmd_data = local_cmd_data;
+    size_t cmd_size = vn_sizeof_vkWaitVirtqueueSeqno100000MESA(seqno);
+    if (cmd_size > sizeof(local_cmd_data)) {
+        cmd_data = malloc(cmd_size);
+        if (!cmd_data)
+            cmd_size = 0;
+    }
+    const size_t reply_size = cmd_flags & VK_COMMAND_GENERATE_REPLY_BIT_EXT ? vn_sizeof_vkWaitVirtqueueSeqno100000MESA_reply(seqno) : 0;
+
+    struct vn_cs_encoder *enc = vn_instance_submit_command_init(vn_instance, submit, cmd_data, cmd_size, reply_size);
+    if (cmd_size) {
+        vn_encode_vkWaitVirtqueueSeqno100000MESA(enc, cmd_flags, seqno);
+        vn_instance_submit_command(vn_instance, submit);
+        if (cmd_data != local_cmd_data)
+            free(cmd_data);
+    }
+}
+
+static inline void vn_submit_vkWaitRingSeqno100000MESA(struct vn_instance *vn_instance, VkCommandFlagsEXT cmd_flags, uint64_t ring, uint64_t seqno, struct vn_instance_submit_command *submit)
+{
+    uint8_t local_cmd_data[VN_SUBMIT_LOCAL_CMD_SIZE];
+    void *cmd_data = local_cmd_data;
+    size_t cmd_size = vn_sizeof_vkWaitRingSeqno100000MESA(ring, seqno);
+    if (cmd_size > sizeof(local_cmd_data)) {
+        cmd_data = malloc(cmd_size);
+        if (!cmd_data)
+            cmd_size = 0;
+    }
+    const size_t reply_size = cmd_flags & VK_COMMAND_GENERATE_REPLY_BIT_EXT ? vn_sizeof_vkWaitRingSeqno100000MESA_reply(ring, seqno) : 0;
+
+    struct vn_cs_encoder *enc = vn_instance_submit_command_init(vn_instance, submit, cmd_data, cmd_size, reply_size);
+    if (cmd_size) {
+        vn_encode_vkWaitRingSeqno100000MESA(enc, cmd_flags, ring, seqno);
+        vn_instance_submit_command(vn_instance, submit);
+        if (cmd_data != local_cmd_data)
+            free(cmd_data);
+    }
+}
+
 static inline void vn_submit_vkGetVenusExperimentalFeatureData100000MESA(struct vn_instance *vn_instance, VkCommandFlagsEXT cmd_flags, size_t* pDataSize, void* pData, struct vn_instance_submit_command *submit)
 {
     uint8_t local_cmd_data[VN_SUBMIT_LOCAL_CMD_SIZE];
@@ -847,6 +1038,63 @@ static inline void vn_async_vkWriteRingExtraMESA(struct vn_instance *vn_instance
 {
     struct vn_instance_submit_command submit;
     vn_submit_vkWriteRingExtraMESA(vn_instance, 0, ring, offset, value, &submit);
+}
+
+static inline void vn_call_vkSubmitVirtqueueSeqno100000MESA(struct vn_instance *vn_instance, uint64_t ring, uint64_t seqno)
+{
+    VN_TRACE_FUNC();
+
+    struct vn_instance_submit_command submit;
+    vn_submit_vkSubmitVirtqueueSeqno100000MESA(vn_instance, VK_COMMAND_GENERATE_REPLY_BIT_EXT, ring, seqno, &submit);
+    struct vn_cs_decoder *dec = vn_instance_get_command_reply(vn_instance, &submit);
+    if (dec) {
+        vn_decode_vkSubmitVirtqueueSeqno100000MESA_reply(dec, ring, seqno);
+        vn_instance_free_command_reply(vn_instance, &submit);
+    }
+}
+
+static inline void vn_async_vkSubmitVirtqueueSeqno100000MESA(struct vn_instance *vn_instance, uint64_t ring, uint64_t seqno)
+{
+    struct vn_instance_submit_command submit;
+    vn_submit_vkSubmitVirtqueueSeqno100000MESA(vn_instance, 0, ring, seqno, &submit);
+}
+
+static inline void vn_call_vkWaitVirtqueueSeqno100000MESA(struct vn_instance *vn_instance, uint64_t seqno)
+{
+    VN_TRACE_FUNC();
+
+    struct vn_instance_submit_command submit;
+    vn_submit_vkWaitVirtqueueSeqno100000MESA(vn_instance, VK_COMMAND_GENERATE_REPLY_BIT_EXT, seqno, &submit);
+    struct vn_cs_decoder *dec = vn_instance_get_command_reply(vn_instance, &submit);
+    if (dec) {
+        vn_decode_vkWaitVirtqueueSeqno100000MESA_reply(dec, seqno);
+        vn_instance_free_command_reply(vn_instance, &submit);
+    }
+}
+
+static inline void vn_async_vkWaitVirtqueueSeqno100000MESA(struct vn_instance *vn_instance, uint64_t seqno)
+{
+    struct vn_instance_submit_command submit;
+    vn_submit_vkWaitVirtqueueSeqno100000MESA(vn_instance, 0, seqno, &submit);
+}
+
+static inline void vn_call_vkWaitRingSeqno100000MESA(struct vn_instance *vn_instance, uint64_t ring, uint64_t seqno)
+{
+    VN_TRACE_FUNC();
+
+    struct vn_instance_submit_command submit;
+    vn_submit_vkWaitRingSeqno100000MESA(vn_instance, VK_COMMAND_GENERATE_REPLY_BIT_EXT, ring, seqno, &submit);
+    struct vn_cs_decoder *dec = vn_instance_get_command_reply(vn_instance, &submit);
+    if (dec) {
+        vn_decode_vkWaitRingSeqno100000MESA_reply(dec, ring, seqno);
+        vn_instance_free_command_reply(vn_instance, &submit);
+    }
+}
+
+static inline void vn_async_vkWaitRingSeqno100000MESA(struct vn_instance *vn_instance, uint64_t ring, uint64_t seqno)
+{
+    struct vn_instance_submit_command submit;
+    vn_submit_vkWaitRingSeqno100000MESA(vn_instance, 0, ring, seqno, &submit);
 }
 
 static inline void vn_call_vkGetVenusExperimentalFeatureData100000MESA(struct vn_instance *vn_instance, size_t* pDataSize, void* pData)
