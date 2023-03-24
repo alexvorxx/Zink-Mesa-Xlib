@@ -610,5 +610,16 @@ bool intel_device_info_i915_get_info_from_fd(int fd, struct intel_device_info *d
    if (getparam(fd, I915_PARAM_HAS_CONTEXT_ISOLATION, &val))
       devinfo->has_context_isolation = val;
 
+   /* TODO: i915 don't require anymore the 2Mb alignment for gfx 12.5 and
+    * newer but using 64k brings some issues like unaligned offsets with
+    * aux map aligned to 1Mb in MTL.
+    */
+   if (devinfo->verx10 >= 125)
+      devinfo->mem_alignment = 2 * 1024 * 1024;
+   else if (devinfo->has_local_mem)
+      devinfo->mem_alignment = 64 * 1024;
+   else
+      devinfo->mem_alignment = 4096;
+
    return true;
 }

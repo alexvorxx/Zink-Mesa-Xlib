@@ -226,7 +226,6 @@ struct iris_bufmgr {
 
    struct util_vma_heap vma_allocator[IRIS_MEMZONE_COUNT];
 
-   uint64_t vma_min_align;
    struct iris_memregion vram, sys;
 
    /* Used only when use_global_vm is true. */
@@ -400,7 +399,7 @@ vma_alloc(struct iris_bufmgr *bufmgr,
 
    /* Force minimum alignment based on device requirements */
    assert((alignment & (alignment - 1)) == 0);
-   alignment = MAX2(alignment, bufmgr->vma_min_align);
+   alignment = MAX2(alignment, bufmgr->devinfo.mem_alignment);
 
    if (memzone == IRIS_MEMZONE_BORDER_COLOR_POOL)
       return IRIS_BORDER_COLOR_POOL_ADDRESS;
@@ -2249,10 +2248,6 @@ iris_bufmgr_create(struct intel_device_info *devinfo, int fd, bool bo_reuse)
       _mesa_hash_table_create(NULL, _mesa_hash_uint, _mesa_key_uint_equal);
    bufmgr->handle_table =
       _mesa_hash_table_create(NULL, _mesa_hash_uint, _mesa_key_uint_equal);
-
-   bufmgr->vma_min_align =
-      devinfo->verx10 >= 125 ? 2 * 1024 * 1024 :
-      (devinfo->has_local_mem ? 64 * 1024 : PAGE_SIZE);
 
    if (devinfo->has_aux_map) {
       bufmgr->aux_map_ctx = intel_aux_map_init(bufmgr, &aux_map_allocator,

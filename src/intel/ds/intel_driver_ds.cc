@@ -61,9 +61,9 @@ static const struct {
 } intel_queue_stage_desc[INTEL_DS_QUEUE_STAGE_N_STAGES] = {
    /* Order must match the enum! */
    {
-      "frame",
+      "queue",
       false,
-      INTEL_DS_QUEUE_STAGE_FRAME,
+      INTEL_DS_QUEUE_STAGE_QUEUE,
    },
    {
       "cmd-buffer",
@@ -456,7 +456,7 @@ extern "C" {
                 &trace_payload_as_extra_intel_end_##event_name);        \
    }                                                                    \
 
-CREATE_DUAL_EVENT_CALLBACK(frame, INTEL_DS_QUEUE_STAGE_FRAME)
+CREATE_DUAL_EVENT_CALLBACK(frame, INTEL_DS_QUEUE_STAGE_QUEUE)
 CREATE_DUAL_EVENT_CALLBACK(batch, INTEL_DS_QUEUE_STAGE_CMD_BUFFER)
 CREATE_DUAL_EVENT_CALLBACK(cmd_buffer, INTEL_DS_QUEUE_STAGE_CMD_BUFFER)
 CREATE_DUAL_EVENT_CALLBACK(render_pass, INTEL_DS_QUEUE_STAGE_RENDER_PASS)
@@ -498,6 +498,29 @@ intel_ds_end_cmd_buffer_annotation(struct intel_ds_device *device,
    const struct intel_ds_flush_data *flush =
       (const struct intel_ds_flush_data *) flush_data;
    end_event(flush->queue, ts_ns, INTEL_DS_QUEUE_STAGE_CMD_BUFFER,
+             flush->submission_id, payload->str, NULL, NULL);
+}
+
+void
+intel_ds_begin_queue_annotation(struct intel_ds_device *device,
+                                uint64_t ts_ns,
+                                const void *flush_data,
+                                const struct trace_intel_begin_queue_annotation *payload)
+{
+   const struct intel_ds_flush_data *flush =
+      (const struct intel_ds_flush_data *) flush_data;
+   begin_event(flush->queue, ts_ns, INTEL_DS_QUEUE_STAGE_QUEUE);
+}
+
+void
+intel_ds_end_queue_annotation(struct intel_ds_device *device,
+                              uint64_t ts_ns,
+                              const void *flush_data,
+                              const struct trace_intel_end_queue_annotation *payload)
+{
+   const struct intel_ds_flush_data *flush =
+      (const struct intel_ds_flush_data *) flush_data;
+   end_event(flush->queue, ts_ns, INTEL_DS_QUEUE_STAGE_QUEUE,
              flush->submission_id, payload->str, NULL, NULL);
 }
 

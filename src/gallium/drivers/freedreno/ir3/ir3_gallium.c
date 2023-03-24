@@ -555,10 +555,10 @@ ir3_screen_init(struct pipe_screen *pscreen)
    struct fd_screen *screen = fd_screen(pscreen);
 
    struct ir3_compiler_options options = {
-         .bindless_fb_read_descriptor =
-               ir3_shader_descriptor_set(PIPE_SHADER_FRAGMENT),
-         .bindless_fb_read_slot =
-               IR3_BINDLESS_IMAGE_OFFSET + IR3_BINDLESS_IMAGE_COUNT - 1,
+      .bindless_fb_read_descriptor =
+         ir3_shader_descriptor_set(PIPE_SHADER_FRAGMENT),
+      .bindless_fb_read_slot = IR3_BINDLESS_IMAGE_OFFSET +
+                               IR3_BINDLESS_IMAGE_COUNT - 1 - screen->max_rts,
    };
    screen->compiler = ir3_compiler_create(screen->dev, screen->dev_id, &options);
 

@@ -10,6 +10,7 @@
       - _build/meson-logs/*.txt
       - _build/meson-logs/strace
       - shader-db
+      - artifacts
 
 # Just Linux
 .build-linux:
@@ -24,11 +25,13 @@
     - |
       export PATH="/usr/lib/ccache:$PATH"
       export CCACHE_BASEDIR="$PWD"
-      section_start ccache_before "ccache stats before build"
-      ccache --show-stats
-      section_end ccache_before
+      if test -x /usr/bin/ccache; then
+        section_start ccache_before "ccache stats before build"
+        ccache --show-stats
+        section_end ccache_before
+      fi
   after_script:
-    - ccache --show-stats | grep "cache hit rate"
+    - if test -x /usr/bin/ccache; then ccache --show-stats | grep "cache hit rate"; fi
     - !reference [default, after_script]
 
 .build-windows:
@@ -72,7 +75,7 @@ debian-testing:
       -D glx=dri
       -D gbm=enabled
       -D egl=enabled
-      -D platforms=x11
+      -D platforms=x11,wayland
     GALLIUM_ST: >
       -D dri3=enabled
       -D gallium-va=enabled
@@ -142,7 +145,8 @@ debian-testing-msan:
     - .gitlab-ci/meson/build.sh
     - .gitlab-ci/prepare-artifacts.sh
 
-debian-clover-testing:
+# TODO: remove together with Clover
+.debian-clover-testing:
   extends:
     - .debian-cl-testing
   variables:
@@ -221,14 +225,14 @@ debian-release:
       -D llvm=enabled
     GALLIUM_DRIVERS: "i915,iris,nouveau,kmsro,freedreno,r300,svga,swrast,v3d,vc4,virgl,etnaviv,panfrost,lima,zink,d3d12,crocus"
     VULKAN_DRIVERS: "amd,imagination-experimental,microsoft-experimental"
-    BUILDTYPE: "release"
     EXTRA_OPTION: >
       -D spirv-to-dxil=true
       -D osmesa=true
       -D tools=all
       -D intel-clc=enabled
       -D imagination-srv=true
-    MINIO_ARTIFACT_NAME: "mesa-amd64-rel"
+    BUILDTYPE: "release"
+    MINIO_ARTIFACT_NAME: "mesa-amd64-${BUILDTYPE}"
   script:
     - .gitlab-ci/meson/build.sh
     - 'if [ -n "$MESA_CI_PERFORMANCE_ENABLED" ]; then .gitlab-ci/prepare-artifacts.sh; fi'
@@ -277,8 +281,13 @@ fedora-release:
     - .use-fedora/x86_build
   variables:
     BUILDTYPE: "release"
-    C_ARGS: >
+    C_LINK_ARGS: >
       -Wno-error=array-bounds
+      -Wno-error=stringop-overflow
+      -Wno-error=stringop-overread
+    CPP_LINK_ARGS: >
+      -Wno-error=array-bounds
+      -Wno-error=stringop-overflow
       -Wno-error=stringop-overread
     DRI_LOADERS: >
       -D glx=dri
@@ -287,6 +296,7 @@ fedora-release:
       -D glvnd=true
       -D platforms=x11,wayland
     EXTRA_OPTION: >
+      -D b_lto=true
       -D osmesa=true
       -D selinux=true
       -D tools=drm-shim,etnaviv,freedreno,glsl,intel,nir,nouveau,lima,panfrost,imagination
@@ -327,19 +337,13 @@ debian-android:
       -Wno-error=constant-conversion
       -Wno-error=enum-conversion
       -Wno-error=initializer-overrides
-      -Wno-error=missing-braces
       -Wno-error=sometimes-uninitialized
-      -Wno-error=unused-function
       -Wno-error=implicit-const-int-float-conversion
-      -Wno-error=bitwise-instead-of-logical
     CPP_ARGS: >
-      -Wno-error=deprecated-declarations
-      -Wno-error=non-virtual-dtor
       -Wno-error=c99-designator
       -Wno-error=unused-variable
       -Wno-error=unused-but-set-variable
       -Wno-error=self-assign
-      -Wno-error=bitwise-instead-of-logical
     DRI_LOADERS: >
       -D glx=disabled
       -D gbm=disabled
@@ -468,8 +472,8 @@ debian-arm64-release:
   extends:
     - debian-arm64
   variables:
-    MINIO_ARTIFACT_NAME: mesa-arm64-rel
-    BUILDTYPE: "release"
+    BUILDTYPE: release
+    MINIO_ARTIFACT_NAME: mesa-arm64-${BUILDTYPE}
     C_ARGS: >
       -Wno-error=stringop-truncation
   script:
@@ -562,7 +566,8 @@ windows-vs2019:
     EXTRA_OPTION: >
       -D valgrind=disabled
 
-debian-clover:
+# TODO: remove with Clover
+.debian-clover:
   extends: .debian-cl
   variables:
     GALLIUM_DRIVERS: "r600,radeonsi,swrast"
@@ -656,19 +661,21 @@ debian-ppc64el:
     GALLIUM_DRIVERS: "nouveau,radeonsi,swrast,virgl,zink"
     VULKAN_DRIVERS: "amd,swrast"
 
-debian-mingw32-x86_64:
+# Disabled as it hangs with winedbg on shared runners
+.debian-mingw32-x86_64:
   extends: .meson-build_mingw
   stage: build-misc
   variables:
     UNWIND: "disabled"
     C_ARGS: >
       -Wno-error=format
+      -Wno-error=unused-but-set-variable
+    CPP_ARGS: >
+      -Wno-error=format
       -Wno-error=unused-function
       -Wno-error=unused-variable
-      -Wno-error=unused-but-set-variable
       -Wno-error=sign-compare
       -Wno-error=narrowing
-    CPP_ARGS: $C_ARGS
     GALLIUM_DRIVERS: "swrast,d3d12,zink"
     VULKAN_DRIVERS: "swrast,amd,microsoft-experimental"
     GALLIUM_ST: >

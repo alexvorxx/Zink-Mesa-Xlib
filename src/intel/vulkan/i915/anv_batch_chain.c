@@ -460,46 +460,56 @@ setup_empty_execbuf(struct anv_execbuf *execbuf, struct anv_queue *queue)
 
 static VkResult
 setup_utrace_execbuf(struct anv_execbuf *execbuf, struct anv_queue *queue,
-                     struct anv_utrace_flush_copy *flush)
+                     struct anv_utrace_submit *submit)
 {
    struct anv_device *device = queue->device;
+
+   /* Always add the workaround BO as it includes a driver identifier for the
+    * error_state.
+    */
    VkResult result = anv_execbuf_add_bo(device, execbuf,
-                                        flush->batch_bo,
-                                        &flush->relocs, 0);
+                                        device->workaround_bo,
+                                        NULL, 0);
    if (result != VK_SUCCESS)
       return result;
 
-   result = anv_execbuf_add_sync(device, execbuf, flush->sync,
+   result = anv_execbuf_add_bo(device, execbuf,
+                               submit->batch_bo,
+                               &submit->relocs, 0);
+   if (result != VK_SUCCESS)
+      return result;
+
+   result = anv_execbuf_add_sync(device, execbuf, submit->sync,
                                  true /* is_signal */, 0 /* value */);
    if (result != VK_SUCCESS)
       return result;
 
-   if (flush->batch_bo->exec_obj_index != execbuf->bo_count - 1) {
-      uint32_t idx = flush->batch_bo->exec_obj_index;
+   if (submit->batch_bo->exec_obj_index != execbuf->bo_count - 1) {
+      uint32_t idx = submit->batch_bo->exec_obj_index;
       uint32_t last_idx = execbuf->bo_count - 1;
 
       struct drm_i915_gem_exec_object2 tmp_obj = execbuf->objects[idx];
-      assert(execbuf->bos[idx] == flush->batch_bo);
+      assert(execbuf->bos[idx] == submit->batch_bo);
 
       execbuf->objects[idx] = execbuf->objects[last_idx];
       execbuf->bos[idx] = execbuf->bos[last_idx];
       execbuf->bos[idx]->exec_obj_index = idx;
 
       execbuf->objects[last_idx] = tmp_obj;
-      execbuf->bos[last_idx] = flush->batch_bo;
-      flush->batch_bo->exec_obj_index = last_idx;
+      execbuf->bos[last_idx] = submit->batch_bo;
+      submit->batch_bo->exec_obj_index = last_idx;
    }
 
 #ifdef SUPPORT_INTEL_INTEGRATED_GPUS
    if (device->physical->memory.need_clflush)
-      intel_flush_range(flush->batch_bo->map, flush->batch_bo->size);
+      intel_flush_range(submit->batch_bo->map, submit->batch_bo->size);
 #endif
 
    execbuf->execbuf = (struct drm_i915_gem_execbuffer2) {
       .buffers_ptr = (uintptr_t) execbuf->objects,
       .buffer_count = execbuf->bo_count,
       .batch_start_offset = 0,
-      .batch_len = flush->batch.next - flush->batch.start,
+      .batch_len = submit->batch.next - submit->batch.start,
       .flags = I915_EXEC_NO_RELOC |
                I915_EXEC_HANDLE_LUT |
                I915_EXEC_FENCE_ARRAY |
@@ -525,9 +535,9 @@ anv_gem_execbuffer(struct anv_device *device,
 
 static VkResult
 anv_queue_exec_utrace_locked(struct anv_queue *queue,
-                             struct anv_utrace_flush_copy *flush)
+                             struct anv_utrace_submit *submit)
 {
-   assert(flush->batch_bo);
+   assert(submit->batch_bo);
 
    struct anv_device *device = queue->device;
    struct anv_execbuf execbuf = {
@@ -535,7 +545,7 @@ anv_queue_exec_utrace_locked(struct anv_queue *queue,
       .alloc_scope = VK_SYSTEM_ALLOCATION_SCOPE_DEVICE,
    };
 
-   VkResult result = setup_utrace_execbuf(&execbuf, queue, flush);
+   VkResult result = setup_utrace_execbuf(&execbuf, queue, submit);
    if (result != VK_SUCCESS)
       goto error;
 
@@ -589,7 +599,7 @@ i915_queue_exec_locked(struct anv_queue *queue,
                        uint32_t perf_query_pass)
 {
    struct anv_device *device = queue->device;
-   struct anv_utrace_flush_copy *utrace_flush_data = NULL;
+   struct anv_utrace_submit *utrace_submit = NULL;
    struct anv_execbuf execbuf = {
       .alloc = &queue->device->vk.alloc,
       .alloc_scope = VK_SYSTEM_ALLOCATION_SCOPE_DEVICE,
@@ -601,19 +611,20 @@ i915_queue_exec_locked(struct anv_queue *queue,
       anv_device_utrace_flush_cmd_buffers(queue,
                                           cmd_buffer_count,
                                           cmd_buffers,
-                                          &utrace_flush_data);
+                                          &utrace_submit);
    if (result != VK_SUCCESS)
       goto error;
 
-   if (utrace_flush_data && !utrace_flush_data->batch_bo) {
+   if (utrace_submit && !utrace_submit->batch_bo) {
       result = anv_execbuf_add_sync(device, &execbuf,
-                                    utrace_flush_data->sync,
+                                    utrace_submit->sync,
                                     true /* is_signal */,
                                     0);
       if (result != VK_SUCCESS)
          goto error;
 
-      utrace_flush_data = NULL;
+      /* When The utrace submission doesn't have its own batch buffer*/
+      utrace_submit = NULL;
    }
 
    /* Always add the workaround BO as it includes a driver identifier for the
@@ -743,8 +754,8 @@ i915_queue_exec_locked(struct anv_queue *queue,
  error:
    anv_execbuf_finish(&execbuf);
 
-   if (result == VK_SUCCESS && utrace_flush_data)
-      result = anv_queue_exec_utrace_locked(queue, utrace_flush_data);
+   if (result == VK_SUCCESS && utrace_submit)
+      result = anv_queue_exec_utrace_locked(queue, utrace_submit);
 
    return result;
 }
@@ -786,4 +797,13 @@ i915_execute_simple_batch(struct anv_queue *queue, struct anv_bo *batch_bo,
 fail:
    anv_execbuf_finish(&execbuf);
    return result;
+}
+
+VkResult
+i915_queue_exec_trace(struct anv_queue *queue,
+                      struct anv_utrace_submit *submit)
+{
+   assert(submit->batch_bo);
+
+   return anv_queue_exec_utrace_locked(queue, submit);
 }

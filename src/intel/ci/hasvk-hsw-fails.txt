@@ -47,15 +47,6 @@ dEQP-VK.pipeline.monolithic.framebuffer_attachment.no_attachments_ms,Fail
 
 dEQP-VK.pipeline.monolithic.multisample.alpha_to_coverage_no_color_attachment.samples_4.alpha_opaque,Fail
 dEQP-VK.pipeline.monolithic.multisample.alpha_to_coverage_no_color_attachment.samples_8.alpha_opaque,Fail
-dEQP-VK.pipeline.monolithic.multisample.sampled_image.64x64_1.r32g32b32a32_sfloat.samples_8,Fail
-dEQP-VK.pipeline.monolithic.multisample.sampled_image.64x64_1.r8g8b8a8_unorm.samples_8,Fail
-dEQP-VK.pipeline.monolithic.multisample.sampled_image.64x64_4.r32g32b32a32_sfloat.samples_8,Fail
-dEQP-VK.pipeline.monolithic.multisample.sampled_image.64x64_4.r8g8b8a8_unorm.samples_8,Fail
-dEQP-VK.pipeline.monolithic.multisample.sampled_image.79x31_1.r32g32b32a32_sfloat.samples_8,Fail
-dEQP-VK.pipeline.monolithic.multisample.sampled_image.79x31_1.r8g8b8a8_unorm.samples_8,Fail
-dEQP-VK.pipeline.monolithic.multisample.sampled_image.79x31_4.r32g32b32a32_sfloat.samples_8,Fail
-dEQP-VK.pipeline.monolithic.multisample.sampled_image.79x31_4.r8g8b8a8_unorm.samples_8,Fail
-dEQP-VK.pipeline.monolithic.multisample_shader_builtin.write_sample_mask.8_samples,Fail
 
 dEQP-VK.pipeline.monolithic.render_to_image.core.2d_array.huge.width_height_layers.r8g8b8a8_unorm,Fail
 dEQP-VK.pipeline.monolithic.render_to_image.core.2d_array.huge.width_height_layers.r8g8b8a8_unorm_d16_unorm,Fail

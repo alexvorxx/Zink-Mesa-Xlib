@@ -393,7 +393,7 @@ add_gpus([
         a6xx_gen3,
         num_ccu = 3,
         tile_align_w = 96,
-        tile_align_h = 48,
+        tile_align_h = 16,
         magic_regs = dict(
             PC_POWER_CNTL = 2,
             # this seems to be a chicken bit that fixes cubic filtering:

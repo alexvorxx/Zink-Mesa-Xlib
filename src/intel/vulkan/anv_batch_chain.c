@@ -1342,16 +1342,16 @@ anv_queue_submit(struct vk_queue *vk_queue,
       return VK_SUCCESS;
    }
 
-   uint64_t start_ts = intel_ds_begin_submit(&queue->ds);
-
    pthread_mutex_lock(&device->mutex);
+
+   uint64_t start_ts = intel_ds_begin_submit(&queue->ds);
    result = anv_queue_submit_locked(queue, submit);
    /* Take submission ID under lock */
-   pthread_mutex_unlock(&device->mutex);
-
    intel_ds_end_submit(&queue->ds, start_ts);
 
    u_trace_context_process(&device->ds.trace_context, true);
+
+   pthread_mutex_unlock(&device->mutex);
 
    return result;
 }

@@ -49,6 +49,9 @@ spirv_to_nir_options = {
       .float16 = true,
       .int16 = true,
       .storage_16bit = true,
+      .descriptor_indexing = true,
+      .runtime_descriptor_array = true,
+      .descriptor_array_non_uniform_indexing = true,
    },
    .ubo_addr_format = nir_address_format_32bit_index_offset,
    .ssbo_addr_format = nir_address_format_32bit_index_offset,
@@ -1085,7 +1088,8 @@ dxil_spirv_nir_passes(nir_shader *nir,
       } while (progress);
    }
 
-   NIR_PASS_V(nir, nir_lower_readonly_images_to_tex, true);
+   if (conf->read_only_images_as_srvs)
+      NIR_PASS_V(nir, nir_lower_readonly_images_to_tex, true);
    nir_lower_tex_options lower_tex_options = {
       .lower_txp = UINT32_MAX,
       .lower_invalid_implicit_lod = true,

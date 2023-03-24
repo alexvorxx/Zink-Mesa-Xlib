@@ -25,12 +25,17 @@
 #include <stdbool.h>
 
 #include "vulkan/vulkan_core.h"
+#include "vk_device.h"
 
 struct anv_device;
 struct anv_physical_device;
 
 bool anv_xe_device_destroy_vm(struct anv_device *device);
 VkResult anv_xe_device_setup_vm(struct anv_device *device);
+VkResult anv_xe_device_check_status(struct vk_device *vk_device);
 
 VkResult
 anv_xe_physical_device_get_parameters(struct anv_physical_device *device);
+void
+anv_xe_physical_device_max_priority_update(struct anv_physical_device *device);
+uint64_t anv_vk_priority_to_xe(VkQueueGlobalPriorityKHR vk_priority);

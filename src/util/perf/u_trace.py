@@ -34,7 +34,7 @@ class Tracepoint(object):
     """
     def __init__(self, name, args=[], toggle_name=None,
                  tp_struct=None, tp_print=None, tp_perfetto=None,
-                 tp_markers=None, end_of_pipe=False):
+                 tp_markers=None, end_of_pipe=False, need_cs_param=True):
         """Parameters:
 
         - name: the tracepoint name, a tracepoint function with the given
@@ -48,6 +48,8 @@ class Tracepoint(object):
         - tp_markers: (optional) driver provided printf-style callback which can
           generate CS markers, this requires 'need_cs_param' as the first param
           is the CS that the label should be emitted into
+        - need_cs_param: whether tracepoint functions need an additional cs
+          parameter.
         """
         assert isinstance(name, str)
         assert isinstance(args, list)
@@ -69,6 +71,7 @@ class Tracepoint(object):
         self.tp_markers = tp_markers
         self.end_of_pipe = end_of_pipe
         self.toggle_name = toggle_name
+        self.need_cs_param = need_cs_param
 
         TRACEPOINTS[name] = self
         if toggle_name is not None and toggle_name not in TRACEPOINTS_TOGGLES:
@@ -250,7 +253,7 @@ void ${trace.tp_perfetto}(
 void __trace_${trace_name}(
        struct u_trace *ut
      , enum u_trace_type enabled_traces
-%    if need_cs_param:
+%    if trace.need_cs_param:
      , void *cs
 %    endif
 %    for arg in trace.args:
@@ -259,7 +262,7 @@ void __trace_${trace_name}(
 );
 static ALWAYS_INLINE void trace_${trace_name}(
      struct u_trace *ut
-%    if need_cs_param:
+%    if trace.need_cs_param:
    , void *cs
 %    endif
 %    for arg in trace.args:
@@ -273,7 +276,7 @@ static ALWAYS_INLINE void trace_${trace_name}(
    __trace_${trace_name}(
         ut
       , enabled_traces
-%    if need_cs_param:
+%    if trace.need_cs_param:
       , cs
 %    endif
 %    for arg in trace.args:
@@ -454,7 +457,7 @@ static const struct u_tracepoint __tp_${trace_name} = {
 void __trace_${trace_name}(
      struct u_trace *ut
    , enum u_trace_type enabled_traces
- % if need_cs_param:
+ % if trace.need_cs_param:
    , void *cs
  % endif
  % for arg in trace.args:
@@ -465,7 +468,7 @@ void __trace_${trace_name}(
    UNUSED struct trace_${trace_name} *__entry =
       enabled_traces & U_TRACE_TYPE_REQUIRE_QUEUING ?
  % if trace.has_variable_arg:
-      (struct trace_${trace_name} *)u_trace_appendv(ut, ${cs_param_value + ","} &__tp_${trace_name},
+      (struct trace_${trace_name} *)u_trace_appendv(ut, ${"cs," if trace.need_cs_param else "NULL,"} &__tp_${trace_name},
                                                     0
   % for arg in trace.tp_struct:
    % if arg.length_arg is not None:
@@ -474,7 +477,7 @@ void __trace_${trace_name}(
   % endfor
                                                     ) :
  % else:
-      (struct trace_${trace_name} *)u_trace_append(ut, ${cs_param_value + ","} &__tp_${trace_name}) :
+      (struct trace_${trace_name} *)u_trace_append(ut, ${"cs," if trace.need_cs_param else "NULL,"} &__tp_${trace_name}) :
  % endif
       &entry;
  % for arg in trace.tp_struct:
@@ -493,30 +496,23 @@ void __trace_${trace_name}(
 % endfor
 """
 
-def utrace_generate(cpath, hpath, ctx_param, need_cs_param=True,
-                    trace_toggle_name=None, trace_toggle_defaults=[]):
+def utrace_generate(cpath, hpath, ctx_param, trace_toggle_name=None,
+                    trace_toggle_defaults=[]):
     """Parameters:
 
     - cpath: c file to generate.
     - hpath: h file to generate.
     - ctx_param: type of the first parameter to the perfetto vfuncs.
-    - need_cs_param: whether tracepoint functions need an additional cs
-      parameter.
     - trace_toggle_name: (optional) name of the environment variable
       enabling/disabling tracepoints.
     - trace_toggle_defaults: (optional) list of tracepoints enabled by default.
     """
-    cs_param_value = 'NULL'
-    if need_cs_param:
-        cs_param_value = 'cs'
     if cpath is not None:
         hdr = os.path.basename(cpath).rsplit('.', 1)[0] + '.h'
         with open(cpath, 'w') as f:
             f.write(Template(src_template).render(
                 hdr=hdr,
                 ctx_param=ctx_param,
-                need_cs_param=need_cs_param,
-                cs_param_value=cs_param_value,
                 trace_toggle_name=trace_toggle_name,
                 trace_toggle_defaults=trace_toggle_defaults,
                 HEADERS=[h for h in HEADERS if h.scope & HeaderScope.SOURCE],
@@ -529,7 +525,6 @@ def utrace_generate(cpath, hpath, ctx_param, need_cs_param=True,
             f.write(Template(hdr_template).render(
                 hdrname=hdr.rstrip('.h').upper(),
                 ctx_param=ctx_param,
-                need_cs_param=need_cs_param,
                 trace_toggle_name=trace_toggle_name,
                 HEADERS=[h for h in HEADERS if h.scope & HeaderScope.HEADER],
                 FORWARD_DECLS=FORWARD_DECLS,

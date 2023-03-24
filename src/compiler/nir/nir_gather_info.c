@@ -173,8 +173,10 @@ set_io_mask(nir_shader *shader, nir_variable *var, int offset, int len,
 
          if (var->data.fb_fetch_output) {
             shader->info.outputs_read |= bitfield;
-            if (shader->info.stage == MESA_SHADER_FRAGMENT)
+            if (shader->info.stage == MESA_SHADER_FRAGMENT) {
                shader->info.fs.uses_fbfetch_output = true;
+               shader->info.fs.fbfetch_coherent = var->data.access & ACCESS_COHERENT;
+            }
          }
 
          if (shader->info.stage == MESA_SHADER_FRAGMENT &&
@@ -709,6 +711,7 @@ gather_intrinsic_info(nir_intrinsic_instr *instr, nir_shader *shader,
    case nir_intrinsic_load_invocation_id:
    case nir_intrinsic_load_frag_coord:
    case nir_intrinsic_load_frag_shading_rate:
+   case nir_intrinsic_load_fully_covered:
    case nir_intrinsic_load_point_coord:
    case nir_intrinsic_load_line_coord:
    case nir_intrinsic_load_front_face:

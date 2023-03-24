@@ -208,7 +208,7 @@ v3d_create_depth_stencil_alpha_state(struct pipe_context *pctx,
                     (cso->stencil[0].zfail_op != PIPE_STENCIL_OP_KEEP ||
                      cso->stencil[0].func != PIPE_FUNC_ALWAYS ||
                      (cso->stencil[1].enabled &&
-                      (cso->stencil[1].zfail_op != PIPE_STENCIL_OP_KEEP &&
+                      (cso->stencil[1].zfail_op != PIPE_STENCIL_OP_KEEP ||
                        cso->stencil[1].func != PIPE_FUNC_ALWAYS)))) {
                         so->ez_state = V3D_EZ_DISABLED;
                 }
@@ -1296,9 +1296,12 @@ v3d_set_stream_output_targets(struct pipe_context *pctx,
         if (num_targets == 0 && so->num_targets > 0)
                 v3d_update_primitive_counters(ctx);
 
+        /* If offset is (unsigned) -1, it means continue appending to the
+         * buffer at the existing offset.
+         */
         for (i = 0; i < num_targets; i++) {
-                if (offsets[i] != -1)
-                        so->offsets[i] = offsets[i];
+                if (offsets[i] != (unsigned)-1)
+                        v3d_stream_output_target(targets[i])->offset = offsets[i];
 
                 pipe_so_target_reference(&so->targets[i], targets[i]);
         }

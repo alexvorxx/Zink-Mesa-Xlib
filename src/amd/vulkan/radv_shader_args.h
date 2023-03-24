@@ -74,6 +74,9 @@ struct radv_shader_args {
    /* TES */
    struct ac_arg tes_num_patches;
 
+   /* NGG VS streamout */
+   struct ac_arg num_verts_per_prim;
+
    struct radv_userdata_locations user_sgprs_locs;
    unsigned num_user_sgprs;
 

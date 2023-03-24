@@ -243,7 +243,7 @@ dzn_pipeline_get_nir_shader(struct dzn_device *device,
          .y_mask = options->y_flip_mask,
          .z_mask = options->z_flip_mask,
       },
-      .read_only_images_as_srvs = true,
+      .read_only_images_as_srvs = !device->bindless,
       .force_sample_rate_shading = options->force_sample_rate_shading,
       .lower_view_index = options->lower_view_index,
       .lower_view_index_to_rt_layer = options->lower_view_index_to_rt_layer,
@@ -297,8 +297,33 @@ adjust_resource_index_binding(struct nir_builder *builder, nir_instr *instr,
    return true;
 }
 
+static void
+adjust_to_bindless_cb(struct dxil_spirv_binding_remapping *inout, void *context)
+{
+   const struct dzn_pipeline_layout *layout = context;
+   assert(inout->descriptor_set < layout->set_count);
+   uint32_t new_binding = layout->binding_translation[inout->descriptor_set].base_reg[inout->binding];
+   switch (layout->binding_translation[inout->descriptor_set].binding_class[inout->binding]) {
+   case DZN_PIPELINE_BINDING_DYNAMIC_BUFFER:
+      inout->descriptor_set = layout->set_count;
+      FALLTHROUGH;
+   case DZN_PIPELINE_BINDING_STATIC_SAMPLER:
+      if (inout->is_sampler) {
+         inout->descriptor_set = ~0;
+         break;
+      }
+      FALLTHROUGH;
+   case DZN_PIPELINE_BINDING_NORMAL:
+      inout->binding = new_binding;
+      break;
+   default:
+      unreachable("Invalid binding type");
+   }
+}
+
 static bool
 adjust_var_bindings(nir_shader *shader,
+                    struct dzn_device *device,
                     const struct dzn_pipeline_layout *layout,
                     uint8_t *bindings_hash)
 {
@@ -322,7 +347,8 @@ adjust_var_bindings(nir_shader *shader,
          continue;
 
       assert(b < layout->binding_translation[s].binding_count);
-      var->data.binding = layout->binding_translation[s].base_reg[b];
+      if (!device->bindless)
+         var->data.binding = layout->binding_translation[s].base_reg[b];
 
       if (bindings_hash) {
          _mesa_sha1_update(&bindings_hash_ctx, &s, sizeof(s));
@@ -334,8 +360,25 @@ adjust_var_bindings(nir_shader *shader,
    if (bindings_hash)
       _mesa_sha1_final(&bindings_hash_ctx, bindings_hash);
 
-   return nir_shader_instructions_pass(shader, adjust_resource_index_binding,
-                                       nir_metadata_all, (void *)layout);
+   if (device->bindless) {
+      struct dxil_spirv_nir_lower_bindless_options options = {
+         .dynamic_buffer_binding = layout->dynamic_buffer_count ? layout->set_count : ~0,
+         .num_descriptor_sets = layout->set_count,
+         .callback_context = (void *)layout,
+         .remap_binding = adjust_to_bindless_cb
+      };
+      bool ret = dxil_spirv_nir_lower_bindless(shader, &options);
+      /* We skipped remapping variable bindings in the hashing loop, but if there's static
+       * samplers still declared, we need to remap those now. */
+      nir_foreach_variable_with_modes(var, shader, nir_var_uniform) {
+         assert(glsl_type_is_sampler(glsl_without_array(var->type)));
+         var->data.binding = layout->binding_translation[var->data.descriptor_set].base_reg[var->data.binding];
+      }
+      return ret;
+   } else {
+      return nir_shader_instructions_pass(shader, adjust_resource_index_binding,
+                                          nir_metadata_all, (void *)layout);
+   }
 }
 
 enum dxil_shader_model
@@ -405,7 +448,7 @@ dzn_pipeline_compile_shader(struct dzn_device *device,
 
    if (!res) {
       if (err) {
-         fprintf(stderr,
+         mesa_loge(
                "== VALIDATION ERROR =============================================\n"
                "%s\n"
                "== END ==========================================================\n",
@@ -872,7 +915,7 @@ dzn_graphics_pipeline_compile_shaders(struct dzn_device *device,
    u_foreach_bit(stage, active_stage_mask) {
       uint8_t bindings_hash[SHA1_DIGEST_LENGTH];
 
-      NIR_PASS_V(pipeline->templates.shaders[stage].nir, adjust_var_bindings, layout,
+      NIR_PASS_V(pipeline->templates.shaders[stage].nir, adjust_var_bindings, device, layout,
                  cache ? bindings_hash : NULL);
 
       if (cache) {
@@ -1603,6 +1646,7 @@ dzn_pipeline_init(struct dzn_pipeline *pipeline,
    pipeline->root.sets_param_count = layout->root.sets_param_count;
    pipeline->root.sysval_cbv_param_idx = layout->root.sysval_cbv_param_idx;
    pipeline->root.push_constant_cbv_param_idx = layout->root.push_constant_cbv_param_idx;
+   pipeline->root.dynamic_buffer_bindless_param_idx = layout->root.dynamic_buffer_bindless_param_idx;
    STATIC_ASSERT(sizeof(pipeline->root.type) == sizeof(layout->root.type));
    memcpy(pipeline->root.type, layout->root.type, sizeof(pipeline->root.type));
    pipeline->root.sig = layout->root.sig;
@@ -1613,6 +1657,7 @@ dzn_pipeline_init(struct dzn_pipeline *pipeline,
 
    STATIC_ASSERT(sizeof(layout->sets) == sizeof(pipeline->sets));
    memcpy(pipeline->sets, layout->sets, sizeof(pipeline->sets));
+   pipeline->dynamic_buffer_count = layout->dynamic_buffer_count;
    vk_object_base_init(&device->vk, &pipeline->base, VK_OBJECT_TYPE_PIPELINE);
 
    ASSERTED uint32_t max_streamsz =
@@ -2300,7 +2345,7 @@ dzn_compute_pipeline_compile_shader(struct dzn_device *device,
 
    uint8_t bindings_hash[SHA1_DIGEST_LENGTH], dxil_hash[SHA1_DIGEST_LENGTH];
 
-   NIR_PASS_V(nir, adjust_var_bindings, layout, cache ? bindings_hash : NULL);
+   NIR_PASS_V(nir, adjust_var_bindings, device, layout, cache ? bindings_hash : NULL);
 
    if (cache) {
       struct mesa_sha1 dxil_hash_ctx;

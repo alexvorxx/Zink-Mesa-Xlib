@@ -262,6 +262,9 @@ glx_display_free(struct glx_display *priv)
 
    gc = __glXGetCurrentContext();
    if (priv->dpy == gc->currentDpy) {
+      if (gc != &dummyContext)
+         gc->vtable->unbind(gc);
+
       gc->vtable->destroy(gc);
       __glXSetCurrentContextNull();
    }

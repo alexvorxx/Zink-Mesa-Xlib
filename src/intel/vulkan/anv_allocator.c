@@ -1405,17 +1405,11 @@ anv_bo_vma_alloc_or_close(struct anv_device *device,
 {
    assert(explicit_address == intel_48b_address(explicit_address));
 
-   uint32_t align = 4096;
+   uint32_t align = device->physical->info.mem_alignment;
 
    /* Gen12 CCS surface addresses need to be 64K aligned. */
    if (device->info->ver >= 12 && (alloc_flags & ANV_BO_ALLOC_IMPLICIT_CCS))
-      align = 64 * 1024;
-
-   /* For XeHP, lmem and smem cannot share a single PDE, which means they
-    * can't live in the same 2MiB aligned region.
-    */
-   if (device->info->verx10 >= 125)
-       align = 2 * 1024 * 1024;
+      align = MAX2(64 * 1024, align);
 
    if (alloc_flags & ANV_BO_ALLOC_FIXED_ADDRESS) {
       bo->has_fixed_address = true;

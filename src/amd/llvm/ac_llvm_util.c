@@ -31,9 +31,6 @@
 #include "util/u_math.h"
 #include <llvm-c/Core.h>
 #include <llvm-c/Support.h>
-#include <llvm-c/Transforms/IPO.h>
-#include <llvm-c/Transforms/Scalar.h>
-#include <llvm-c/Transforms/Utils.h>
 
 #include <assert.h>
 #include <stdio.h>
@@ -217,44 +214,6 @@ static LLVMTargetMachineRef ac_create_target_machine(enum radeon_family family,
       *out_triple = triple;
 
    return tm;
-}
-
-static LLVMPassManagerRef ac_create_passmgr(LLVMTargetLibraryInfoRef target_library_info,
-                                            bool check_ir)
-{
-   LLVMPassManagerRef passmgr = LLVMCreatePassManager();
-   if (!passmgr)
-      return NULL;
-
-   if (target_library_info)
-      LLVMAddTargetLibraryInfo(target_library_info, passmgr);
-
-   if (check_ir)
-      LLVMAddVerifierPass(passmgr);
-
-   LLVMAddAlwaysInlinerPass(passmgr);
-
-   /* Normally, the pass manager runs all passes on one function before
-    * moving onto another. Adding a barrier no-op pass forces the pass
-    * manager to run the inliner on all functions first, which makes sure
-    * that the following passes are only run on the remaining non-inline
-    * function, so it removes useless work done on dead inline functions.
-    */
-   ac_llvm_add_barrier_noop_pass(passmgr);
-
-   /* This pass eliminates all loads and stores on alloca'd pointers. */
-   LLVMAddPromoteMemoryToRegisterPass(passmgr);
-   LLVMAddScalarReplAggregatesPass(passmgr);
-   LLVMAddIPSCCPPass(passmgr);
-   if (LLVM_VERSION_MAJOR >= 16)
-      ac_add_sinking_pass(passmgr);
-   LLVMAddLICMPass(passmgr);
-   LLVMAddAggressiveDCEPass(passmgr);
-   LLVMAddCFGSimplificationPass(passmgr);
-   /* This is recommended by the instruction combining pass. */
-   LLVMAddEarlyCSEMemSSAPass(passmgr);
-   LLVMAddInstructionCombiningPass(passmgr);
-   return passmgr;
 }
 
 LLVMAttributeRef ac_get_llvm_attribute(LLVMContextRef ctx, const char *str)

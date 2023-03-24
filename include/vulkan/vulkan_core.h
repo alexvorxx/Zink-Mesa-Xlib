@@ -22,7 +22,7 @@ extern "C" {
 #define VK_VERSION_1_0 1
 #include "vk_platform.h"
 
-#define VK_DEFINE_HANDLE(object) typedef struct object##_T* (object);
+#define VK_DEFINE_HANDLE(object) typedef struct object##_T* object;
 
 
 #ifndef VK_USE_64_BIT_PTR_DEFINES
@@ -52,9 +52,9 @@ extern "C" {
 
 #ifndef VK_DEFINE_NON_DISPATCHABLE_HANDLE
     #if (VK_USE_64_BIT_PTR_DEFINES==1)
-        #define VK_DEFINE_NON_DISPATCHABLE_HANDLE(object) typedef struct object##_T *(object);
+        #define VK_DEFINE_NON_DISPATCHABLE_HANDLE(object) typedef struct object##_T *object;
     #else
-        #define VK_DEFINE_NON_DISPATCHABLE_HANDLE(object) typedef uint64_t (object);
+        #define VK_DEFINE_NON_DISPATCHABLE_HANDLE(object) typedef uint64_t object;
     #endif
 #endif
 
@@ -68,7 +68,7 @@ extern "C" {
 #define VK_API_VERSION_1_0 VK_MAKE_API_VERSION(0, 1, 0, 0)// Patch version should always be set to 0
 
 // Version of this file
-#define VK_HEADER_VERSION 241
+#define VK_HEADER_VERSION 244
 
 // Complete version of this file
 #define VK_HEADER_VERSION_COMPLETE VK_MAKE_API_VERSION(0, 1, 3, VK_HEADER_VERSION)
@@ -181,6 +181,9 @@ typedef enum VkResult {
     VK_THREAD_DONE_KHR = 1000268001,
     VK_OPERATION_DEFERRED_KHR = 1000268002,
     VK_OPERATION_NOT_DEFERRED_KHR = 1000268003,
+#ifdef VK_ENABLE_BETA_EXTENSIONS
+    VK_ERROR_INVALID_VIDEO_STD_PARAMETERS_KHR = -1000299000,
+#endif
     VK_ERROR_COMPRESSION_EXHAUSTED_EXT = -1000338000,
     VK_ERROR_OUT_OF_POOL_MEMORY_KHR = VK_ERROR_OUT_OF_POOL_MEMORY,
     VK_ERROR_INVALID_EXTERNAL_HANDLE_KHR = VK_ERROR_INVALID_EXTERNAL_HANDLE,
@@ -481,9 +484,6 @@ typedef enum VkStructureType {
     VK_STRUCTURE_TYPE_VIDEO_ENCODE_H264_NALU_SLICE_INFO_EXT = 1000038005,
 #endif
 #ifdef VK_ENABLE_BETA_EXTENSIONS
-    VK_STRUCTURE_TYPE_VIDEO_ENCODE_H264_EMIT_PICTURE_PARAMETERS_INFO_EXT = 1000038006,
-#endif
-#ifdef VK_ENABLE_BETA_EXTENSIONS
     VK_STRUCTURE_TYPE_VIDEO_ENCODE_H264_PROFILE_INFO_EXT = 1000038007,
 #endif
 #ifdef VK_ENABLE_BETA_EXTENSIONS
@@ -491,9 +491,6 @@ typedef enum VkStructureType {
 #endif
 #ifdef VK_ENABLE_BETA_EXTENSIONS
     VK_STRUCTURE_TYPE_VIDEO_ENCODE_H264_RATE_CONTROL_LAYER_INFO_EXT = 1000038009,
-#endif
-#ifdef VK_ENABLE_BETA_EXTENSIONS
-    VK_STRUCTURE_TYPE_VIDEO_ENCODE_H264_REFERENCE_LISTS_INFO_EXT = 1000038010,
 #endif
 #ifdef VK_ENABLE_BETA_EXTENSIONS
     VK_STRUCTURE_TYPE_VIDEO_ENCODE_H265_CAPABILITIES_EXT = 1000039000,
@@ -514,13 +511,7 @@ typedef enum VkStructureType {
     VK_STRUCTURE_TYPE_VIDEO_ENCODE_H265_NALU_SLICE_SEGMENT_INFO_EXT = 1000039005,
 #endif
 #ifdef VK_ENABLE_BETA_EXTENSIONS
-    VK_STRUCTURE_TYPE_VIDEO_ENCODE_H265_EMIT_PICTURE_PARAMETERS_INFO_EXT = 1000039006,
-#endif
-#ifdef VK_ENABLE_BETA_EXTENSIONS
     VK_STRUCTURE_TYPE_VIDEO_ENCODE_H265_PROFILE_INFO_EXT = 1000039007,
-#endif
-#ifdef VK_ENABLE_BETA_EXTENSIONS
-    VK_STRUCTURE_TYPE_VIDEO_ENCODE_H265_REFERENCE_LISTS_INFO_EXT = 1000039008,
 #endif
 #ifdef VK_ENABLE_BETA_EXTENSIONS
     VK_STRUCTURE_TYPE_VIDEO_ENCODE_H265_RATE_CONTROL_INFO_EXT = 1000039009,
@@ -777,6 +768,8 @@ typedef enum VkStructureType {
     VK_STRUCTURE_TYPE_PIPELINE_EXECUTABLE_INFO_KHR = 1000269003,
     VK_STRUCTURE_TYPE_PIPELINE_EXECUTABLE_STATISTIC_KHR = 1000269004,
     VK_STRUCTURE_TYPE_PIPELINE_EXECUTABLE_INTERNAL_REPRESENTATION_KHR = 1000269005,
+    VK_STRUCTURE_TYPE_MEMORY_MAP_INFO_KHR = 1000271000,
+    VK_STRUCTURE_TYPE_MEMORY_UNMAP_INFO_KHR = 1000271001,
     VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_ATOMIC_FLOAT_2_FEATURES_EXT = 1000273000,
     VK_STRUCTURE_TYPE_SURFACE_PRESENT_MODE_EXT = 1000274000,
     VK_STRUCTURE_TYPE_SURFACE_PRESENT_SCALING_CAPABILITIES_EXT = 1000274001,
@@ -829,8 +822,12 @@ typedef enum VkStructureType {
 #ifdef VK_ENABLE_BETA_EXTENSIONS
     VK_STRUCTURE_TYPE_VIDEO_ENCODE_USAGE_INFO_KHR = 1000299004,
 #endif
+#ifdef VK_ENABLE_BETA_EXTENSIONS
+    VK_STRUCTURE_TYPE_QUERY_POOL_VIDEO_ENCODE_FEEDBACK_CREATE_INFO_KHR = 1000299005,
+#endif
     VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DIAGNOSTICS_CONFIG_FEATURES_NV = 1000300000,
     VK_STRUCTURE_TYPE_DEVICE_DIAGNOSTICS_CONFIG_CREATE_INFO_NV = 1000300001,
+    VK_STRUCTURE_TYPE_QUERY_LOW_LATENCY_SUPPORT_NV = 1000310000,
     VK_STRUCTURE_TYPE_EXPORT_METAL_OBJECT_CREATE_INFO_EXT = 1000311000,
     VK_STRUCTURE_TYPE_EXPORT_METAL_OBJECTS_INFO_EXT = 1000311001,
     VK_STRUCTURE_TYPE_EXPORT_METAL_DEVICE_INFO_EXT = 1000311002,
@@ -1297,6 +1294,7 @@ typedef enum VkVendorId {
     VK_VENDOR_ID_CODEPLAY = 0x10004,
     VK_VENDOR_ID_MESA = 0x10005,
     VK_VENDOR_ID_POCL = 0x10006,
+    VK_VENDOR_ID_MOBILEYE = 0x10007,
     VK_VENDOR_ID_MAX_ENUM = 0x7FFFFFFF
 } VkVendorId;
 
@@ -1655,7 +1653,7 @@ typedef enum VkQueryType {
     VK_QUERY_TYPE_ACCELERATION_STRUCTURE_COMPACTED_SIZE_NV = 1000165000,
     VK_QUERY_TYPE_PERFORMANCE_QUERY_INTEL = 1000210000,
 #ifdef VK_ENABLE_BETA_EXTENSIONS
-    VK_QUERY_TYPE_VIDEO_ENCODE_BITSTREAM_BUFFER_RANGE_KHR = 1000299000,
+    VK_QUERY_TYPE_VIDEO_ENCODE_FEEDBACK_KHR = 1000299000,
 #endif
     VK_QUERY_TYPE_MESH_PRIMITIVES_GENERATED_EXT = 1000328000,
     VK_QUERY_TYPE_PRIMITIVES_GENERATED_EXT = 1000382000,
@@ -9839,6 +9837,41 @@ VKAPI_ATTR VkResult VKAPI_CALL vkGetPipelineExecutableInternalRepresentationsKHR
 #endif
 
 
+#define VK_KHR_map_memory2 1
+#define VK_KHR_MAP_MEMORY_2_SPEC_VERSION  1
+#define VK_KHR_MAP_MEMORY_2_EXTENSION_NAME "VK_KHR_map_memory2"
+typedef VkFlags VkMemoryUnmapFlagsKHR;
+typedef struct VkMemoryMapInfoKHR {
+    VkStructureType     sType;
+    const void*         pNext;
+    VkMemoryMapFlags    flags;
+    VkDeviceMemory      memory;
+    VkDeviceSize        offset;
+    VkDeviceSize        size;
+} VkMemoryMapInfoKHR;
+
+typedef struct VkMemoryUnmapInfoKHR {
+    VkStructureType          sType;
+    const void*              pNext;
+    VkMemoryUnmapFlagsKHR    flags;
+    VkDeviceMemory           memory;
+} VkMemoryUnmapInfoKHR;
+
+typedef VkResult (VKAPI_PTR *PFN_vkMapMemory2KHR)(VkDevice device, const VkMemoryMapInfoKHR* pMemoryMapInfo, void** ppData);
+typedef VkResult (VKAPI_PTR *PFN_vkUnmapMemory2KHR)(VkDevice device, const VkMemoryUnmapInfoKHR* pMemoryUnmapInfo);
+
+#ifndef VK_NO_PROTOTYPES
+VKAPI_ATTR VkResult VKAPI_CALL vkMapMemory2KHR(
+    VkDevice                                    device,
+    const VkMemoryMapInfoKHR*                   pMemoryMapInfo,
+    void**                                      ppData);
+
+VKAPI_ATTR VkResult VKAPI_CALL vkUnmapMemory2KHR(
+    VkDevice                                    device,
+    const VkMemoryUnmapInfoKHR*                 pMemoryUnmapInfo);
+#endif
+
+
 #define VK_KHR_shader_integer_dot_product 1
 #define VK_KHR_SHADER_INTEGER_DOT_PRODUCT_SPEC_VERSION 1
 #define VK_KHR_SHADER_INTEGER_DOT_PRODUCT_EXTENSION_NAME "VK_KHR_shader_integer_dot_product"
@@ -13552,21 +13585,21 @@ typedef struct VkPhysicalDeviceSwapchainMaintenance1FeaturesEXT {
 
 typedef struct VkSwapchainPresentFenceInfoEXT {
     VkStructureType    sType;
-    void*              pNext;
+    const void*        pNext;
     uint32_t           swapchainCount;
     const VkFence*     pFences;
 } VkSwapchainPresentFenceInfoEXT;
 
 typedef struct VkSwapchainPresentModesCreateInfoEXT {
     VkStructureType            sType;
-    void*                      pNext;
+    const void*                pNext;
     uint32_t                   presentModeCount;
     const VkPresentModeKHR*    pPresentModes;
 } VkSwapchainPresentModesCreateInfoEXT;
 
 typedef struct VkSwapchainPresentModeInfoEXT {
     VkStructureType            sType;
-    void*                      pNext;
+    const void*                pNext;
     uint32_t                   swapchainCount;
     const VkPresentModeKHR*    pPresentModes;
 } VkSwapchainPresentModeInfoEXT;
@@ -14064,6 +14097,17 @@ typedef struct VkDeviceDiagnosticsConfigCreateInfoNV {
 #define VK_QCOM_render_pass_store_ops 1
 #define VK_QCOM_RENDER_PASS_STORE_OPS_SPEC_VERSION 2
 #define VK_QCOM_RENDER_PASS_STORE_OPS_EXTENSION_NAME "VK_QCOM_render_pass_store_ops"
+
+
+#define VK_NV_low_latency 1
+#define VK_NV_LOW_LATENCY_SPEC_VERSION    1
+#define VK_NV_LOW_LATENCY_EXTENSION_NAME  "VK_NV_low_latency"
+typedef struct VkQueryLowLatencySupportNV {
+    VkStructureType    sType;
+    const void*        pNext;
+    void*              pQueriedLowLatencyData;
+} VkQueryLowLatencySupportNV;
+
 
 
 #define VK_EXT_descriptor_buffer 1
@@ -15464,6 +15508,7 @@ typedef struct VkPhysicalDeviceClusterCullingShaderPropertiesHUAWEI {
     uint32_t           maxWorkGroupCount[3];
     uint32_t           maxWorkGroupSize[3];
     uint32_t           maxOutputClusterCount;
+    VkDeviceSize       indirectBufferOffsetAlignment;
 } VkPhysicalDeviceClusterCullingShaderPropertiesHUAWEI;
 
 typedef void (VKAPI_PTR *PFN_vkCmdDrawClusterHUAWEI)(VkCommandBuffer commandBuffer, uint32_t groupCountX, uint32_t groupCountY, uint32_t groupCountZ);

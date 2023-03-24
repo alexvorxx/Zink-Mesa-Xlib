@@ -32,7 +32,11 @@
 #include <llvm/Support/CommandLine.h>
 #include <llvm/Transforms/IPO.h>
 #include <llvm/Transforms/Scalar.h>
-
+#include <llvm/Transforms/Utils.h>
+#include <llvm/CodeGen/Passes.h>
+#include <llvm/Transforms/IPO/AlwaysInliner.h>
+#include <llvm/Transforms/InstCombine/InstCombine.h>
+#include <llvm/Transforms/IPO/SCCP.h>
 #if LLVM_VERSION_MAJOR >= 15
 #include "llvm/CodeGen/SelectionDAGNodes.h"
 #endif
@@ -292,9 +296,46 @@ bool ac_compile_module_to_elf(struct ac_compiler_passes *p, LLVMModuleRef module
    return true;
 }
 
-void ac_llvm_add_barrier_noop_pass(LLVMPassManagerRef passmgr)
+LLVMPassManagerRef ac_create_passmgr(LLVMTargetLibraryInfoRef target_library_info,
+                                     bool check_ir)
 {
+   LLVMPassManagerRef passmgr = LLVMCreatePassManager();
+   if (!passmgr)
+      return NULL;
+
+   if (target_library_info)
+      LLVMAddTargetLibraryInfo(target_library_info, passmgr);
+
+   if (check_ir)
+      unwrap(passmgr)->add(createMachineVerifierPass("mesa ir"));
+
+   unwrap(passmgr)->add(createAlwaysInlinerLegacyPass());
+
+   /* Normally, the pass manager runs all passes on one function before
+    * moving onto another. Adding a barrier no-op pass forces the pass
+    * manager to run the inliner on all functions first, which makes sure
+    * that the following passes are only run on the remaining non-inline
+    * function, so it removes useless work done on dead inline functions.
+    */
    unwrap(passmgr)->add(createBarrierNoopPass());
+
+   /* This pass eliminates all loads and stores on alloca'd pointers. */
+   unwrap(passmgr)->add(createPromoteMemoryToRegisterPass());
+   #if LLVM_VERSION_MAJOR >= 16
+   unwrap(passmgr)->add(createSROAPass(true));
+   #else
+   unwrap(passmgr)->add(createSROAPass());
+   #endif
+   /* TODO: restore IPSCCP */
+   if (LLVM_VERSION_MAJOR >= 16)
+      unwrap(passmgr)->add(createLoopSinkPass());
+   /* TODO: restore IPSCCP */
+   unwrap(passmgr)->add(createLICMPass());
+   unwrap(passmgr)->add(createCFGSimplificationPass());
+   /* This is recommended by the instruction combining pass. */
+   unwrap(passmgr)->add(createEarlyCSEPass(true));
+   unwrap(passmgr)->add(createInstructionCombiningPass());
+   return passmgr;
 }
 
 LLVMValueRef ac_build_atomic_rmw(struct ac_llvm_context *ctx, LLVMAtomicRMWBinOp op,
@@ -363,9 +404,4 @@ LLVMValueRef ac_build_atomic_cmp_xchg(struct ac_llvm_context *ctx, LLVMValueRef 
 #endif
                                               AtomicOrdering::SequentiallyConsistent,
                                               AtomicOrdering::SequentiallyConsistent, SSID));
-}
-
-void ac_add_sinking_pass(LLVMPassManagerRef PM)
-{
-  unwrap(PM)->add(createLoopSinkPass());
 }

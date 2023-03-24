@@ -2193,8 +2193,7 @@ void select_rt_prolog(Program* program, ac_shader_config* config,
                       const struct ac_shader_args* out_args);
 void select_vs_prolog(Program* program, const struct aco_vs_prolog_info* pinfo,
                       ac_shader_config* config, const struct aco_compiler_options* options,
-                      const struct aco_shader_info* info, const struct ac_shader_args* args,
-                      unsigned* num_preserved_sgprs);
+                      const struct aco_shader_info* info, const struct ac_shader_args* args);
 
 void select_ps_epilog(Program* program, const struct aco_ps_epilog_info* epilog_info,
                       ac_shader_config* config, const struct aco_compiler_options* options,

@@ -262,6 +262,4 @@ spec@glsl-4.50@execution@ssbo-atomiccompswap-int,Fail
 # New CTS failures in 1.3.5.0
 KHR-GL46.polygon_offset_clamp.PolygonOffsetClampMinMax,Fail
 KHR-GL46.polygon_offset_clamp.PolygonOffsetClampZeroInfinity,Fail
-fast_color_clear@fcc-clear-tex,Fail
-spec@arb_clear_texture@arb_clear_texture-base-formats,Fail
 spec@arb_texture_cube_map_array@texsubimage cube_map_array,Fail

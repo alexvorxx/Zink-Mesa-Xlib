@@ -118,6 +118,7 @@ for var in \
     VK_ICD_FILENAMES \
     VKD3D_PROTON_RESULTS \
     ZINK_DESCRIPTORS \
+    LVP_POISON_MEMORY \
     ; do
   if [ -n "${!var+x}" ]; then
     echo "export $var=${!var@Q}"

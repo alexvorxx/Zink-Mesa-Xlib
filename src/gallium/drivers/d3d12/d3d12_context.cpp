@@ -920,7 +920,8 @@ d3d12_init_sampler_view_descriptor(struct d3d12_sampler_view *sampler_view)
    case D3D12_SRV_DIMENSION_BUFFER:
       desc.Buffer.StructureByteStride = 0;
       desc.Buffer.FirstElement = offset / util_format_get_blocksize(state->format);
-      desc.Buffer.NumElements = texture->width0 / util_format_get_blocksize(state->format);
+      desc.Buffer.NumElements = MIN2(texture->width0 / util_format_get_blocksize(state->format),
+                                     1 << D3D12_REQ_BUFFER_RESOURCE_TEXEL_COUNT_2_TO_EXP);
       break;
    default:
       unreachable("Invalid SRV dimension");

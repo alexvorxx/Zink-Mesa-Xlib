@@ -302,11 +302,10 @@ radv_FreeMemory(VkDevice _device, VkDeviceMemory _mem, const VkAllocationCallbac
 }
 
 VKAPI_ATTR VkResult VKAPI_CALL
-radv_MapMemory(VkDevice _device, VkDeviceMemory _memory, VkDeviceSize offset, VkDeviceSize size,
-               VkMemoryMapFlags flags, void **ppData)
+radv_MapMemory2KHR(VkDevice _device, const VkMemoryMapInfoKHR *pMemoryMapInfo, void **ppData)
 {
    RADV_FROM_HANDLE(radv_device, device, _device);
-   RADV_FROM_HANDLE(radv_device_memory, mem, _memory);
+   RADV_FROM_HANDLE(radv_device_memory, mem, pMemoryMapInfo->memory);
 
    if (mem->user_ptr)
       *ppData = mem->user_ptr;
@@ -315,22 +314,24 @@ radv_MapMemory(VkDevice _device, VkDeviceMemory _memory, VkDeviceSize offset, Vk
 
    if (*ppData) {
       vk_rmv_log_cpu_map(&device->vk, mem->bo->va, false);
-      *ppData = (uint8_t *)*ppData + offset;
+      *ppData = (uint8_t *)*ppData + pMemoryMapInfo->offset;
       return VK_SUCCESS;
    }
 
    return vk_error(device, VK_ERROR_MEMORY_MAP_FAILED);
 }
 
-VKAPI_ATTR void VKAPI_CALL
-radv_UnmapMemory(VkDevice _device, VkDeviceMemory _memory)
+VKAPI_ATTR VkResult VKAPI_CALL
+radv_UnmapMemory2KHR(VkDevice _device, const VkMemoryUnmapInfoKHR *pMemoryUnmapInfo)
 {
    RADV_FROM_HANDLE(radv_device, device, _device);
-   RADV_FROM_HANDLE(radv_device_memory, mem, _memory);
+   RADV_FROM_HANDLE(radv_device_memory, mem, pMemoryUnmapInfo->memory);
 
    vk_rmv_log_cpu_map(&device->vk, mem->bo->va, true);
    if (mem->user_ptr == NULL)
       device->ws->buffer_unmap(mem->bo);
+
+   return VK_SUCCESS;
 }
 
 VKAPI_ATTR VkResult VKAPI_CALL

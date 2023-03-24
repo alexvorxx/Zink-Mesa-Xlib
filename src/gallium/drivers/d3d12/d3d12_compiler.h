@@ -225,7 +225,6 @@ struct d3d12_shader {
    size_t end_srv_binding;
 
    struct {
-      enum pipe_format format;
       uint32_t dimension;
    } uav_bindings[PIPE_MAX_SHADER_IMAGES];
 

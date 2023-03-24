@@ -171,7 +171,8 @@ anv_i915_kmd_backend_get(void)
       .gem_vm_bind = i915_gem_vm_bind,
       .gem_vm_unbind = i915_gem_vm_unbind,
       .execute_simple_batch = i915_execute_simple_batch,
-      .queue_exec_locked = i915_queue_exec_locked
+      .queue_exec_locked = i915_queue_exec_locked,
+      .queue_exec_trace = i915_queue_exec_trace,
    };
    return &i915_backend;
 }

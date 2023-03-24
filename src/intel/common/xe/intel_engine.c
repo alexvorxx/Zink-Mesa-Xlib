@@ -47,6 +47,25 @@ xe_engine_class_to_intel(uint16_t xe)
    }
 }
 
+uint16_t
+intel_engine_class_to_xe(enum intel_engine_class intel)
+{
+   switch (intel) {
+   case INTEL_ENGINE_CLASS_RENDER:
+      return DRM_XE_ENGINE_CLASS_RENDER;
+   case INTEL_ENGINE_CLASS_COPY:
+      return DRM_XE_ENGINE_CLASS_COPY;
+   case INTEL_ENGINE_CLASS_VIDEO:
+      return DRM_XE_ENGINE_CLASS_VIDEO_DECODE;
+   case INTEL_ENGINE_CLASS_VIDEO_ENHANCE:
+      return DRM_XE_ENGINE_CLASS_VIDEO_ENHANCE;
+   case INTEL_ENGINE_CLASS_COMPUTE:
+      return DRM_XE_ENGINE_CLASS_COMPUTE;
+   default:
+      return -1;
+   }
+}
+
 struct intel_query_engine_info *
 xe_engine_get_info(int fd)
 {

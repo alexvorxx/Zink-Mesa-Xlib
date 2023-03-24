@@ -27,6 +27,8 @@
 
 #include "util/macros.h"
 
+#include "genxml/gen_macros.h"
+
 #include "pan_cs.h"
 #include "pan_encoder.h"
 #include "pan_texture.h"
@@ -831,12 +833,12 @@ GENX(pan_emit_fbd)(const struct panfrost_device *dev,
          *(fb->rts[i].crc_valid) = false;
    }
 
-   uint64_t tag = 0;
-   pan_pack(&tag, FRAMEBUFFER_POINTER, cfg) {
+   struct mali_framebuffer_pointer_packed tag;
+   pan_pack(tag.opaque, FRAMEBUFFER_POINTER, cfg) {
       cfg.zs_crc_extension_present = has_zs_crc_ext;
       cfg.render_target_count = MAX2(fb->rt_count, 1);
    }
-   return tag;
+   return tag.opaque[0];
 }
 #else /* PAN_ARCH == 4 */
 unsigned

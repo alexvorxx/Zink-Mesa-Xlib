@@ -24,6 +24,8 @@
 #ifndef DIXL_ENUMS_H
 #define DIXL_ENUMS_H
 
+#include <stdbool.h>
+
 enum dxil_signature_kind {
    DXIL_SIG_INVALID = 0,
    DXIL_SIG_INPUT,
@@ -372,11 +374,13 @@ extern "C" {
 #endif
 
 struct glsl_type;
+enum glsl_sampler_dim;
 
 enum dxil_component_type dxil_get_comp_type(const struct glsl_type *type);
 
 enum dxil_prog_sig_comp_type dxil_get_prog_sig_comp_type(const struct glsl_type *type);
 
+enum dxil_resource_kind dxil_sampler_dim_to_resource_kind(enum glsl_sampler_dim dim, bool is_array);
 enum dxil_resource_kind dxil_get_resource_kind(const struct glsl_type *type);
 
 enum dxil_primitive_topology dxil_get_primitive_topology(unsigned topology);

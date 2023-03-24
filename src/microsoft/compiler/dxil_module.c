@@ -2026,6 +2026,147 @@ dxil_module_get_res_props_const(struct dxil_module *m,
    return get_struct_const(m, type, values);
 }
 
+static enum dxil_component_type
+comp_type_from_alu_type(nir_alu_type type)
+{
+   switch (type & NIR_ALU_TYPE_BASE_TYPE_MASK)
+   {
+   case nir_type_int: return DXIL_COMP_TYPE_I32;
+   case nir_type_uint: return DXIL_COMP_TYPE_U32;
+   case nir_type_float: return DXIL_COMP_TYPE_F32;
+   default: unreachable("Unexpected component type");
+   }
+}
+
+const struct dxil_value *
+dxil_module_get_srv_res_props_const(struct dxil_module *m,
+                                    const nir_tex_instr *tex)
+{
+   const struct dxil_type *type = dxil_module_get_res_props_type(m);
+   if (!type)
+      return NULL;
+
+   uint32_t dwords[2];
+   dwords[0] = get_basic_srv_uav_res_props_dword(false, false, false, false,
+                                                 dxil_sampler_dim_to_resource_kind(tex->sampler_dim, tex->is_array));
+   dwords[1] = get_typed_srv_uav_res_props_dword(comp_type_from_alu_type(tex->dest_type),
+                                                 nir_tex_instr_dest_size(tex),
+                                                 0);
+
+   const struct dxil_value *values[2] = {
+      dxil_module_get_int32_const(m, dwords[0]),
+      dxil_module_get_int32_const(m, dwords[1])
+   };
+   if (!values[0] || !values[1])
+      return NULL;
+
+   return get_struct_const(m, type, values);
+}
+
+const struct dxil_value *
+dxil_module_get_sampler_res_props_const(struct dxil_module *m,
+                                        bool is_shadow)
+{
+   const struct dxil_type *type = dxil_module_get_res_props_type(m);
+   if (!type)
+      return NULL;
+
+   uint32_t dwords[2] = { get_sampler_res_props_dword(is_shadow), 0 };
+
+   const struct dxil_value *values[2] = {
+      dxil_module_get_int32_const(m, dwords[0]),
+      dxil_module_get_int32_const(m, dwords[1])
+   };
+   if (!values[0] || !values[1])
+      return NULL;
+
+   return get_struct_const(m, type, values);
+}
+
+static nir_alu_type
+alu_type_from_image_intr(nir_intrinsic_instr *intr)
+{
+   switch (intr->intrinsic)
+   {
+   case nir_intrinsic_image_load:
+   case nir_intrinsic_image_deref_load:
+   case nir_intrinsic_bindless_image_load:
+      return nir_intrinsic_dest_type(intr);
+   case nir_intrinsic_image_store:
+   case nir_intrinsic_image_deref_store:
+   case nir_intrinsic_bindless_image_store:
+      return nir_intrinsic_src_type(intr);
+   case nir_intrinsic_image_atomic_fadd:
+   case nir_intrinsic_image_atomic_fmax:
+   case nir_intrinsic_image_atomic_fmin:
+   case nir_intrinsic_image_deref_atomic_fadd:
+   case nir_intrinsic_image_deref_atomic_fmax:
+   case nir_intrinsic_image_deref_atomic_fmin:
+   case nir_intrinsic_bindless_image_atomic_fadd:
+   case nir_intrinsic_bindless_image_atomic_fmax:
+   case nir_intrinsic_bindless_image_atomic_fmin:
+      return nir_type_float;
+   default:
+      return nir_type_int;
+   }
+}
+
+const struct dxil_value *
+dxil_module_get_uav_res_props_const(struct dxil_module *m,
+                                    nir_intrinsic_instr *intr)
+{
+   const struct dxil_type *type = dxil_module_get_res_props_type(m);
+   if (!type)
+      return NULL;
+
+   uint32_t dwords[2];
+   dwords[0] = get_basic_srv_uav_res_props_dword(true, false, false /*TODO*/, false,
+                                                 dxil_sampler_dim_to_resource_kind(nir_intrinsic_image_dim(intr),
+                                                                                   nir_intrinsic_image_array(intr)));
+   dwords[1] = get_typed_srv_uav_res_props_dword(comp_type_from_alu_type(alu_type_from_image_intr(intr)),
+                                                 intr->num_components ? intr->num_components : 1,
+                                                 0);
+
+   const struct dxil_value *values[2] = {
+      dxil_module_get_int32_const(m, dwords[0]),
+      dxil_module_get_int32_const(m, dwords[1])
+   };
+   if (!values[0] || !values[1])
+      return NULL;
+
+   return get_struct_const(m, type, values);
+}
+
+const struct dxil_value *
+dxil_module_get_buffer_res_props_const(struct dxil_module *m,
+                                       enum dxil_resource_class class,
+                                       enum dxil_resource_kind kind)
+{
+   const struct dxil_type *type = dxil_module_get_res_props_type(m);
+   if (!type)
+      return NULL;
+
+   uint32_t dwords[2];
+   if (class == DXIL_RESOURCE_CLASS_CBV) {
+      dwords[0] = kind;
+      dwords[1] = 4096 /* vec4s */ * 4 /* components */ * 4 /* bytes */;
+   } else {
+      dwords[0] = get_basic_srv_uav_res_props_dword(class == DXIL_RESOURCE_CLASS_UAV,
+                                                    false, false /*TODO*/, false,
+                                                    kind);
+      dwords[1] = 0;
+   }
+
+   const struct dxil_value *values[2] = {
+      dxil_module_get_int32_const(m, dwords[0]),
+      dxil_module_get_int32_const(m, dwords[1])
+   };
+   if (!values[0] || !values[1])
+      return NULL;
+
+   return get_struct_const(m, type, values);
+}
+
 enum dxil_module_code {
    DXIL_MODULE_CODE_VERSION = 1,
    DXIL_MODULE_CODE_TRIPLE = 2,

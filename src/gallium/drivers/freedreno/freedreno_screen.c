@@ -370,7 +370,7 @@ fd_screen_get_param(struct pipe_screen *pscreen, enum pipe_cap param)
    case PIPE_CAP_FBFETCH:
       if (fd_device_version(screen->dev) >= FD_VERSION_GMEM_BASE &&
           is_a6xx(screen))
-         return 1;
+         return screen->max_rts;
       return 0;
    case PIPE_CAP_SAMPLE_SHADING:
       if (is_a6xx(screen))

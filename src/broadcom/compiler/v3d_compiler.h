@@ -173,6 +173,11 @@ struct qinst {
         /* If this is a a TLB Z write */
         bool is_tlb_z_write;
 
+        /* If this is a retiring TMU instruction (the last in a lookup sequence),
+         * how many ldtmu instructions are required to read the results.
+         */
+        uint32_t ldtmu_count;
+
         /* Position of this instruction in the program. Filled in during
          * register allocation.
          */

@@ -11898,13 +11898,12 @@ select_rt_prolog(Program* program, ac_shader_config* config,
 void
 select_vs_prolog(Program* program, const struct aco_vs_prolog_info* pinfo, ac_shader_config* config,
                  const struct aco_compiler_options* options, const struct aco_shader_info* info,
-                 const struct ac_shader_args* args, unsigned* num_preserved_sgprs)
+                 const struct ac_shader_args* args)
 {
    assert(pinfo->num_attributes > 0);
 
    /* This should be enough for any shader/stage. */
    unsigned max_user_sgprs = options->gfx_level >= GFX9 ? 32 : 16;
-   *num_preserved_sgprs = max_user_sgprs + 14;
 
    init_program(program, compute_cs, info, options->gfx_level, options->family, options->wgp_mode,
                 config);
@@ -11929,7 +11928,7 @@ select_vs_prolog(Program* program, const struct aco_vs_prolog_info* pinfo, ac_sh
    lgkm_imm.lgkm = 0;
 
    /* choose sgprs */
-   PhysReg vertex_buffers(align(*num_preserved_sgprs, 2));
+   PhysReg vertex_buffers(align(max_user_sgprs + 14, 2));
    PhysReg prolog_input = vertex_buffers.advance(8);
    PhysReg desc(
       align((has_nontrivial_divisors ? prolog_input : vertex_buffers).advance(8).reg(), 4));

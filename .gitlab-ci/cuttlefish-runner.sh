@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-set -x
+set -xe
 
 export HOME=/cuttlefish
 export PATH=$PATH:/cuttlefish/bin
@@ -38,7 +38,7 @@ $ADB shell mkdir -p "$OV_TMPFS/vendor-upper"
 $ADB shell mkdir -p "$OV_TMPFS/vendor-work"
 
 opts="lowerdir=/vendor,upperdir=$OV_TMPFS/vendor-upper,workdir=$OV_TMPFS/vendor-work"
-adb shell mount -t overlay -o "$opts" none /vendor
+$ADB shell mount -t overlay -o "$opts" none /vendor
 
 $ADB shell setenforce 0
 
@@ -62,7 +62,7 @@ $ADB push install/deqp-$DEQP_SUITE.toml /data/.
 
 $ADB shell rm /vendor/lib/dri/${ANDROID_DRIVER}_dri.so
 $ADB shell rm /vendor/lib/libglapi.so
-$ADB shell rm /vendor/lib/egl/libEGL_mesa.so
+$ADB shell rm /vendor/lib/egl/libGLES_mesa.so
 
 $ADB shell rm /vendor/lib/egl/libEGL_angle.so
 $ADB shell rm /vendor/lib/egl/libEGL_emulation.so
@@ -88,6 +88,7 @@ $ADB shell rm /vendor/lib64/egl/libGLESv2_emulation.so
 
 RESULTS=/data/results
 
+set +e
 $ADB shell "mkdir /data/results; cd /data; strace -o /data/results/out.strace -f -s 1000 ./deqp-runner \
     suite \
     --suite /data/deqp-$DEQP_SUITE.toml \
@@ -101,6 +102,7 @@ $ADB shell "mkdir /data/results; cd /data; strace -o /data/results/out.strace -f
     $DEQP_RUNNER_OPTIONS"
 
 EXIT_CODE=$?
+set -e
 
 $ADB pull $RESULTS results
 

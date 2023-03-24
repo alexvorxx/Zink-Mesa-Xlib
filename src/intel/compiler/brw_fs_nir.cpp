@@ -6043,11 +6043,12 @@ fs_visitor::nir_emit_texture(const fs_builder &bld, nir_tex_instr *instr)
             break;
          }
 
-         /* Wa_14013363432:
+         /* Wa_14012688258:
           *
           * Compiler should send U,V,R parameters even if V,R are 0.
           */
-         if (instr->sampler_dim == GLSL_SAMPLER_DIM_CUBE && devinfo->verx10 == 125)
+         if (instr->sampler_dim == GLSL_SAMPLER_DIM_CUBE &&
+             intel_needs_workaround(devinfo, 14012688258))
             assert(instr->coord_components >= 3u);
          break;
       case nir_tex_src_ddx:

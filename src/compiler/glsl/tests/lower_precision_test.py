@@ -28,149 +28,9 @@ from collections import namedtuple
 
 Test = namedtuple("Test", "name source match_re")
 
+# NOTE: This test is deprecated, please add any new tests to test_gl_lower_mediump.cpp.
 
 TESTS = [
-    Test("f32 simple division",
-         """
-         uniform mediump float a, b;
-
-         void main()
-         {
-                 gl_FragColor.rgba = vec4(a / b);
-         }
-         """,
-         r'\(expression +float16_t +/'),
-    Test("i32 simple division",
-         """
-         #version 300 es
-         precision mediump float;
-         precision mediump int;
-         uniform mediump int a, b;
-
-         out vec4 color;
-
-         void main()
-         {
-                 color = vec4(a / b);
-         }
-         """,
-         r'\(expression +int16_t +/'),
-    Test("u32 simple division",
-         """
-         #version 300 es
-         precision mediump float;
-         precision mediump int;
-         uniform mediump uint a, b;
-
-         out vec4 color;
-
-         void main()
-         {
-                 color = vec4(a / b);
-         }
-         """,
-         r'\(expression +uint16_t +/'),
-    Test("dot",
-         """
-         uniform mediump vec2 a, b;
-
-         void main()
-         {
-                 gl_FragColor.rgba = vec4(dot(a, b));
-         }
-         """,
-         r'\(expression +float16_t +dot\b'),
-    Test("f32 array with const index",
-         """
-         precision mediump float;
-
-         uniform float in_simple[2];
-
-         void main()
-         {
-                 gl_FragColor = vec4(in_simple[0] / in_simple[1]);
-         }
-         """,
-         r'\(expression +float16_t +/'),
-    Test("i32 array with const index",
-         """
-         #version 300 es
-         precision mediump float;
-         precision mediump int;
-
-         uniform int in_simple[2];
-
-         out vec4 color;
-
-         void main()
-         {
-                 color = vec4(in_simple[0] / in_simple[1]);
-         }
-         """,
-         r'\(expression +int16_t +/'),
-    Test("u32 array with const index",
-         """
-         #version 300 es
-         precision mediump float;
-         precision mediump int;
-
-         uniform uint in_simple[2];
-
-         out vec4 color;
-
-         void main()
-         {
-                 color = vec4(in_simple[0] / in_simple[1]);
-         }
-         """,
-         r'\(expression +uint16_t +/'),
-    Test("f32 array with uniform index",
-         """
-         precision mediump float;
-
-         uniform float in_simple[2];
-         uniform int i0, i1;
-
-         void main()
-         {
-                 gl_FragColor = vec4(in_simple[i0] / in_simple[i1]);
-         }
-         """,
-         r'\(expression +float16_t +/'),
-    Test("i32 array with uniform index",
-         """
-         #version 300 es
-         precision mediump float;
-         precision mediump int;
-
-         uniform int in_simple[2];
-         uniform int i0, i1;
-
-         out vec4 color;
-
-         void main()
-         {
-                 color = vec4(in_simple[i0] / in_simple[i1]);
-         }
-         """,
-         r'\(expression +int16_t +/'),
-    Test("u32 array with uniform index",
-         """
-         #version 300 es
-         precision mediump float;
-         precision mediump int;
-
-         uniform uint in_simple[2];
-         uniform int i0, i1;
-
-         out vec4 color;
-
-         void main()
-         {
-                 color = vec4(in_simple[i0] / in_simple[i1]);
-         }
-         """,
-         r'\(expression +uint16_t +/'),
     Test("f32 array-of-array with const index",
          """
          #version 310 es
@@ -268,34 +128,6 @@ TESTS = [
          }
          """,
          r'\(expression +uint16_t +/'),
-    Test("f32 array index",
-         """
-         uniform mediump float a, b;
-         uniform mediump float values[2];
-
-         void main()
-         {
-                 gl_FragColor.rgba = vec4(values[int(a / b)]);
-         }
-         """,
-         r'\(expression +float16_t +/'),
-    Test("i32 array index",
-         """
-         #version 310 es
-         precision mediump float;
-         precision mediump int;
-
-         uniform mediump int a, b;
-         uniform mediump int values[2];
-
-         out highp int color;
-
-         void main()
-         {
-                 color = values[a / b];
-         }
-         """,
-         r'\(expression +int16_t +/'),
     Test("f32 function",
          """
          precision mediump float;
@@ -500,126 +332,7 @@ TESTS = [
          }
          """,
          r'\(expression +uint +/'),
-    Test("f32 function inout different precision highp",
-         """
-         uniform mediump float a, b;
 
-         void
-         do_div(inout highp float x, highp float y)
-         {
-                 x = x / y;
-         }
-
-         void main()
-         {
-                 mediump float temp = a;
-                 do_div(temp, b);
-                 gl_FragColor = vec4(temp);
-         }
-         """,
-         r'\(expression +float +/'),
-    Test("i32 function inout different precision highp",
-         """
-         #version 310 es
-         uniform mediump int a, b;
-
-         void
-         do_div(inout highp int x, highp int y)
-         {
-                 x = x / y;
-         }
-
-         out mediump int color;
-
-         void main()
-         {
-                 mediump int temp = a;
-                 do_div(temp, b);
-                 color = temp;
-         }
-         """,
-         r'\(expression +int +/'),
-    Test("u32 function inout different precision highp",
-         """
-         #version 310 es
-         uniform mediump uint a, b;
-
-         void
-         do_div(inout highp uint x, highp uint y)
-         {
-                 x = x / y;
-         }
-
-         out mediump uint color;
-
-         void main()
-         {
-                 mediump uint temp = a;
-                 do_div(temp, b);
-                 color = temp;
-         }
-         """,
-         r'\(expression +uint +/'),
-    Test("f32 function inout different precision mediump",
-         """
-         uniform highp float a, b;
-
-         void
-         do_div(inout mediump float x, mediump float y)
-         {
-                 x = x / y;
-         }
-
-         void main()
-         {
-                 highp float temp = a;
-                 do_div(temp, b);
-                 gl_FragColor = vec4(temp);
-         }
-         """,
-         r'\(expression +float16_t +/'),
-    Test("i32 function inout different precision mediump",
-         """
-         #version 310 es
-         uniform highp int a, b;
-
-         out highp int color;
-
-         void
-         do_div(inout mediump int x, mediump int y)
-         {
-                 x = x / y;
-         }
-
-         void main()
-         {
-                 highp int temp = a;
-                 do_div(temp, b);
-                 color = temp;
-         }
-         """,
-         r'\(expression +int16_t +/'),
-    Test("u32 function inout different precision mediump",
-         """
-         #version 310 es
-         uniform highp uint a, b;
-
-         out highp uint color;
-
-         void
-         do_div(inout mediump uint x, mediump uint y)
-         {
-                 x = x / y;
-         }
-
-         void main()
-         {
-                 highp uint temp = a;
-                 do_div(temp, b);
-                 color = temp;
-         }
-         """,
-         r'\(expression +uint16_t +/'),
     Test("f32 if",
          """
          precision mediump float;
@@ -2274,6 +1987,49 @@ TESTS = [
          }
          """,
          r'\(constant uint \(3'), # should be uint16_t
+
+    Test("vec4 constructor from float",
+         """
+         uniform highp float a;
+         uniform mediump float b;
+
+         void main()
+         {
+                 gl_FragColor = vec4(a) * b;
+         }
+         """,
+         r'\(expression vec4 \* \(swiz xxxx \(var_ref a\) \)\(expression float f162f \(var_ref b\) \) \)'),
+
+    Test("respect copies",
+         """
+         uniform mediump float a, b;
+
+         void main()
+         {
+            highp float x = a;
+            gl_FragColor.x = x * b;
+         }
+         """,
+         r'expression float \* \(expression float f162f \(var_ref a\) \) \(expression float f162f \(var_ref b\) \) '), # should be uint16_t
+
+    Test("conversion constructor precision",
+         """
+         #version 300 es
+         uniform mediump uint a;
+         out highp float result;
+
+         void main()
+         {
+            /* Constructors don't have a precision qualifier themselves, but
+             * constructors are an operation, and so they do the usual "get
+             * precision from my operands, or default to the precision of the
+             * lvalue" rule.  So, the u2f is done at mediump due to a's precision.
+             */
+            result = float(a);
+         }
+         """,
+         r'expression float16_t u2f \(expression uint16_t u2ump \(var_ref a\) \)'), # should be uint16_t
+
 ]
 
 

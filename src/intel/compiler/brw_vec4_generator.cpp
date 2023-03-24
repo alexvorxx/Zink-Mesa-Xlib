@@ -2269,6 +2269,7 @@ generate_code(struct brw_codegen *p,
                         fill_count, send_count, before_size, after_size);
    if (stats) {
       stats->dispatch_width = 0;
+      stats->max_dispatch_width = 0;
       stats->instructions = before_size / 16;
       stats->sends = send_count;
       stats->loops = loop_count;

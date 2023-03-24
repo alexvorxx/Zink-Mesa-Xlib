@@ -614,8 +614,8 @@ radv_build_ray_traversal(struct radv_device *device, nir_builder *b,
                nir_iadd_imm(b, nir_load_deref(b, args->vars.stack), -args->stack_stride), 1);
 
             nir_ssa_def *stack_ptr =
-               nir_umod(b, nir_load_deref(b, args->vars.stack),
-                        nir_imm_int(b, args->stack_stride * args->stack_entries));
+               nir_umod_imm(b, nir_load_deref(b, args->vars.stack),
+                            args->stack_stride * args->stack_entries);
             nir_ssa_def *bvh_node = args->stack_load_cb(b, stack_ptr, args);
             nir_store_deref(b, args->vars.current_node, bvh_node, 0x1);
             nir_store_deref(b, args->vars.previous_node, nir_imm_int(b, RADV_BVH_INVALID_NODE),
@@ -724,7 +724,7 @@ radv_build_ray_traversal(struct radv_device *device, nir_builder *b,
                for (unsigned i = 4; i-- > 1;) {
                   nir_ssa_def *stack = nir_load_deref(b, args->vars.stack);
                   nir_ssa_def *stack_ptr =
-                     nir_umod(b, stack, nir_imm_int(b, args->stack_entries * args->stack_stride));
+                     nir_umod_imm(b, stack, args->stack_entries * args->stack_stride);
                   args->stack_store_cb(b, stack_ptr, new_nodes[i], args);
                   nir_store_deref(b, args->vars.stack, nir_iadd_imm(b, stack, args->stack_stride),
                                   1);

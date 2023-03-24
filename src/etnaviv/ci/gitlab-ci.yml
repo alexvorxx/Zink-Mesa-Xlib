@@ -56,6 +56,7 @@ gc2000_piglit:
   variables:
     PIGLIT_PLATFORM: gbm
     PIGLIT_PROFILES: gpu
+    TEST_PHASE_TIMEOUT: 40
 
 gc7000_gles2:
   extends:

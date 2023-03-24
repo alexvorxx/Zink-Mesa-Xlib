@@ -39,64 +39,91 @@
 #include "util/mesa-sha1.h"
 #include "vk_shader_module.h"
 
-#include "pan_shader.h"
+#include "compiler/bifrost_nir.h"
 #include "util/pan_lower_framebuffer.h"
+#include "pan_shader.h"
 
 #include "vk_util.h"
 
-static void
-panvk_init_sysvals(struct panfrost_sysvals *sysvals,
-                   gl_shader_stage stage)
+static nir_ssa_def *
+load_sysval_from_ubo(nir_builder *b, nir_intrinsic_instr *intr, unsigned offset)
 {
-   memset(sysvals, 0, sizeof(*sysvals));
-
-#define SYSVAL_SLOT(name) \
-   (assert(offsetof(struct panvk_sysvals, name) % 16 == 0), \
-    offsetof(struct panvk_sysvals, name) / 16)
-
-#define INIT_SYSVAL(name, SYSVAL) \
-   sysvals->sysvals[SYSVAL_SLOT(name)] = PAN_SYSVAL_##SYSVAL
-
-   if (gl_shader_stage_is_compute(stage)) {
-      INIT_SYSVAL(num_work_groups, NUM_WORK_GROUPS);
-      INIT_SYSVAL(local_group_size, LOCAL_GROUP_SIZE);
-   } else {
-      INIT_SYSVAL(viewport_scale, VIEWPORT_SCALE);
-      INIT_SYSVAL(viewport_offset, VIEWPORT_OFFSET);
-      INIT_SYSVAL(vertex_instance_offsets, VERTEX_INSTANCE_OFFSETS);
-      INIT_SYSVAL(blend_constants, BLEND_CONSTANTS);
-   }
-   sysvals->sysval_count = SYSVAL_SLOT(dyn_ssbos);
-
-#undef SYSVAL_SLOT
-#undef INIT_SYSVAL
+   return nir_load_ubo(
+      b, nir_dest_num_components(intr->dest), nir_dest_bit_size(intr->dest),
+      nir_imm_int(b, PANVK_SYSVAL_UBO_INDEX), nir_imm_int(b, offset),
+      .align_mul = nir_dest_bit_size(intr->dest) / 8, .align_offset = 0,
+      .range_base = offset, .range = nir_dest_bit_size(intr->dest) / 8);
 }
 
+struct sysval_options {
+   /* If non-null, a vec4 of blend constants known at pipeline compile time. If
+    * null, blend constants are dynamic.
+    */
+   float *static_blend_constants;
+};
+
 static bool
-panvk_inline_blend_constants(nir_builder *b, nir_instr *instr, void *data)
+panvk_lower_sysvals(nir_builder *b, nir_instr *instr, void *data)
 {
    if (instr->type != nir_instr_type_intrinsic)
       return false;
 
+   struct sysval_options *opts = data;
    nir_intrinsic_instr *intr = nir_instr_as_intrinsic(instr);
-   if (intr->intrinsic != nir_intrinsic_load_blend_const_color_rgba)
-      return false;
+   nir_ssa_def *val = NULL;
+   b->cursor = nir_before_instr(instr);
 
-   const nir_const_value *constants = data;
+#define SYSVAL(name) offsetof(struct panvk_sysvals, name)
+   switch (intr->intrinsic) {
+   case nir_intrinsic_load_num_workgroups:
+      val = load_sysval_from_ubo(b, intr, SYSVAL(num_work_groups));
+      break;
+   case nir_intrinsic_load_workgroup_size:
+      val = load_sysval_from_ubo(b, intr, SYSVAL(local_group_size));
+      break;
+   case nir_intrinsic_load_viewport_scale:
+      val = load_sysval_from_ubo(b, intr, SYSVAL(viewport_scale));
+      break;
+   case nir_intrinsic_load_viewport_offset:
+      val = load_sysval_from_ubo(b, intr, SYSVAL(viewport_offset));
+      break;
+   case nir_intrinsic_load_first_vertex:
+      val = load_sysval_from_ubo(b, intr, SYSVAL(first_vertex));
+      break;
+   case nir_intrinsic_load_base_vertex:
+      val = load_sysval_from_ubo(b, intr, SYSVAL(base_vertex));
+      break;
+   case nir_intrinsic_load_base_instance:
+      val = load_sysval_from_ubo(b, intr, SYSVAL(base_instance));
+      break;
+   case nir_intrinsic_load_blend_const_color_rgba:
+      if (opts->static_blend_constants) {
+         const nir_const_value constants[4] = {
+            {.f32 = opts->static_blend_constants[0]},
+            {.f32 = opts->static_blend_constants[1]},
+            {.f32 = opts->static_blend_constants[2]},
+            {.f32 = opts->static_blend_constants[3]},
+         };
+
+         val = nir_build_imm(b, 4, 32, constants);
+      } else {
+         val = load_sysval_from_ubo(b, intr, SYSVAL(blend_constants));
+      }
+      break;
+   default:
+      return false;
+   }
+#undef SYSVAL
 
    b->cursor = nir_after_instr(instr);
-   nir_ssa_def *constant = nir_build_imm(b, 4, 32, constants);
-   nir_ssa_def_rewrite_uses(&intr->dest.ssa, constant);
-   nir_instr_remove(instr);
+   nir_ssa_def_rewrite_uses(&intr->dest.ssa, val);
    return true;
 }
 
 static void
-panvk_lower_blend(struct panfrost_device *pdev,
-                  nir_shader *nir,
+panvk_lower_blend(struct panfrost_device *pdev, nir_shader *nir,
                   struct panfrost_compile_inputs *inputs,
-                  struct pan_blend_state *blend_state,
-                  bool static_blend_constants)
+                  struct pan_blend_state *blend_state)
 {
    nir_lower_blend_options options = {
       .logicop_enable = blend_state->logicop_enable,
@@ -153,28 +180,11 @@ panvk_lower_blend(struct panfrost_device *pdev,
       rt_state->equation.alpha_dst_factor = BLEND_FACTOR_ZERO;
       rt_state->equation.alpha_invert_dst_factor = false;
       lower_blend = true;
-
-      inputs->bifrost.static_rt_conv = true;
-      inputs->bifrost.rt_conv[rt] =
-         GENX(pan_blend_get_internal_desc)(pdev, fmt, rt, 32, false) >> 32;
    }
 
    if (lower_blend) {
       NIR_PASS_V(nir, nir_lower_blend, &options);
-
-      if (static_blend_constants) {
-         const nir_const_value constants[4] = {
-            { .f32 = CLAMP(blend_state->constants[0], 0.0f, 1.0f) },
-            { .f32 = CLAMP(blend_state->constants[1], 0.0f, 1.0f) },
-            { .f32 = CLAMP(blend_state->constants[2], 0.0f, 1.0f) },
-            { .f32 = CLAMP(blend_state->constants[3], 0.0f, 1.0f) },
-         };
-         NIR_PASS_V(nir, nir_shader_instructions_pass,
-                    panvk_inline_blend_constants,
-                    nir_metadata_block_index |
-                    nir_metadata_dominance,
-                    (void *)constants);
-      }
+      NIR_PASS_V(nir, bifrost_nir_lower_load_output);
    }
 }
 
@@ -262,15 +272,10 @@ panvk_per_arch(shader_create)(struct panvk_device *dev,
    NIR_PASS_V(nir, nir_lower_io_to_temporaries,
               nir_shader_get_entrypoint(nir), true, true);
 
-   struct panfrost_sysvals fixed_sysvals;
-   panvk_init_sysvals(&fixed_sysvals, stage);
-
    struct panfrost_compile_inputs inputs = {
       .gpu_id = pdev->gpu_id,
       .no_ubo_to_push = true,
       .no_idvs = true, /* TODO */
-      .fixed_sysval_ubo = sysval_ubo,
-      .fixed_sysval_layout = &fixed_sysvals,
    };
 
    NIR_PASS_V(nir, nir_lower_indirect_derefs,
@@ -348,15 +353,6 @@ panvk_per_arch(shader_create)(struct panvk_device *dev,
    NIR_PASS_V(nir, nir_split_var_copies);
    NIR_PASS_V(nir, nir_lower_var_copies);
 
-   /* We have to run nir_lower_blend() after we've gotten rid of copies (it
-    * requires load/store) and before we assign output locations.
-    */
-   if (stage == MESA_SHADER_FRAGMENT) {
-      /* This is required for nir_lower_blend */
-      NIR_PASS_V(nir, nir_lower_io_arrays_to_elements_no_indirects, true);
-      panvk_lower_blend(pdev, nir, &inputs, blend_state, static_blend_constants);
-   }
-
    nir_assign_io_var_locations(nir, nir_var_shader_in, &nir->num_inputs, stage);
    nir_assign_io_var_locations(nir, nir_var_shader_out, &nir->num_outputs, stage);
 
@@ -371,11 +367,31 @@ panvk_per_arch(shader_create)(struct panvk_device *dev,
       nir_print_shader(nir, stderr);
    }
 
-   GENX(pan_shader_compile)(nir, &inputs, &shader->binary, &shader->info);
+   pan_shader_preprocess(nir, inputs.gpu_id);
 
-   /* System values shouldn't have changed */
-   assert(memcmp(&shader->info.sysvals, &fixed_sysvals,
-                 sizeof(fixed_sysvals)) == 0);
+   if (stage == MESA_SHADER_FRAGMENT) {
+      panvk_lower_blend(pdev, nir, &inputs, blend_state);
+   }
+
+   struct sysval_options sysval_options = {
+      .static_blend_constants =
+         static_blend_constants ? blend_state->constants : NULL,
+   };
+
+   NIR_PASS_V(nir, nir_shader_instructions_pass, panvk_lower_sysvals,
+              nir_metadata_block_index | nir_metadata_dominance,
+              &sysval_options);
+
+   if (stage == MESA_SHADER_FRAGMENT) {
+      enum pipe_format rt_formats[MAX_RTS] = {PIPE_FORMAT_NONE};
+
+      for (unsigned rt = 0; rt < MAX_RTS; ++rt)
+         rt_formats[rt] = blend_state->rts[rt].format;
+
+      NIR_PASS_V(nir, GENX(pan_inline_rt_conversion), pdev, rt_formats);
+   }
+
+   GENX(pan_shader_compile)(nir, &inputs, &shader->binary, &shader->info);
 
    /* Patch the descriptor count */
    shader->info.ubo_count = PANVK_NUM_BUILTIN_UBOS +

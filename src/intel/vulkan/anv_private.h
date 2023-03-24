@@ -1065,7 +1065,10 @@ struct anv_queue {
 
    struct intel_batch_decode_ctx *           decoder;
 
-   uint32_t                                  exec_flags;
+   union {
+      uint32_t                               exec_flags; /* i915 */
+      uint32_t                               engine_id; /* Xe */
+   };
 
    /** Synchronization object for debug purposes (DEBUG_SYNC) */
    struct vk_sync                           *sync;
@@ -1576,6 +1579,9 @@ _anv_combine_address(struct anv_batch *batch, void *location,
 
 struct anv_device_memory {
    struct vk_object_base                        base;
+
+   /** Client-requested allocaiton size */
+   uint64_t                                     size;
 
    struct list_head                             link;
 
@@ -4206,7 +4212,16 @@ anv_device_init_generated_indirect_draws(struct anv_device *device);
 void
 anv_device_finish_generated_indirect_draws(struct anv_device *device);
 
-struct anv_utrace_flush_copy {
+/* This structure is used in 2 scenarios :
+ *
+ *    - copy utrace timestamps from command buffer so that command buffer can
+ *      be resubmitted multiple times without the recorded timestamps being
+ *      overwritten before they're read back
+ *
+ *    - emit trace points for queue debug tagging
+ *      (vkQueueBeginDebugUtilsLabelEXT/vkQueueEndDebugUtilsLabelEXT)
+ */
+struct anv_utrace_submit {
    /* Needs to be the first field */
    struct intel_ds_flush_data ds;
 
@@ -4217,15 +4232,16 @@ struct anv_utrace_flush_copy {
    struct anv_batch batch;
    struct anv_bo *batch_bo;
 
-   /* Buffer of 64bits timestamps */
-   struct anv_bo *trace_bo;
-
    /* Syncobj to be signaled when the batch completes */
    struct vk_sync *sync;
 
    /* Queue on which all the recorded traces are submitted */
    struct anv_queue *queue;
 
+   /* Buffer of 64bits timestamps (only used for timestamp copies) */
+   struct anv_bo *trace_bo;
+
+   /* Memcpy state tracking (only used for timestamp copies) */
    struct anv_memcpy_state memcpy_state;
 };
 
@@ -4235,7 +4251,7 @@ VkResult
 anv_device_utrace_flush_cmd_buffers(struct anv_queue *queue,
                                     uint32_t cmd_buffer_count,
                                     struct anv_cmd_buffer **cmd_buffers,
-                                    struct anv_utrace_flush_copy **out_flush_data);
+                                    struct anv_utrace_submit **out_submit);
 
 #ifdef HAVE_PERFETTO
 void anv_perfetto_init(void);

@@ -1174,6 +1174,11 @@ vtn_get_builtin_location(struct vtn_builder *b,
    case SpvBuiltInCullPrimitiveEXT:
       *location = VARYING_SLOT_CULL_PRIMITIVE;
       break;
+   case SpvBuiltInFullyCoveredEXT:
+      *location = SYSTEM_VALUE_FULLY_COVERED;
+      set_mode_system_value(b, mode);
+      break;
+
    default:
       vtn_fail("Unsupported builtin: %s (%u)",
                spirv_builtin_to_string(builtin), builtin);

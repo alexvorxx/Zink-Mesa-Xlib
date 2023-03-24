@@ -37,6 +37,7 @@ struct anv_cmd_buffer;
 struct anv_device;
 struct anv_queue;
 struct anv_query_pool;
+struct anv_utrace_submit;
 
 struct anv_kmd_backend {
    /*
@@ -66,6 +67,8 @@ struct anv_kmd_backend {
                                  const struct vk_sync_signal *signals,
                                  struct anv_query_pool *perf_query_pool,
                                  uint32_t perf_query_pass);
+   VkResult (*queue_exec_trace)(struct anv_queue *queue,
+                                struct anv_utrace_submit *submit);
 };
 
 const struct anv_kmd_backend *anv_kmd_backend_get(enum intel_kmd_type type);

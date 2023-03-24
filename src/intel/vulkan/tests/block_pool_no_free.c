@@ -104,6 +104,7 @@ static void run_test()
    struct anv_device device = {};
    struct anv_block_pool pool;
 
+   test_device_info_init(&physical_device.info);
    anv_device_set_physical(&device, &physical_device);
    device.kmd_backend = anv_kmd_backend_get(INTEL_KMD_TYPE_STUB);
    pthread_mutex_init(&device.mutex, NULL);

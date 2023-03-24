@@ -142,6 +142,37 @@ get_clear_data(struct zink_context *ctx, struct zink_framebuffer_clear *fb_clear
    return add_new_clear(fb_clear);
 }
 
+static void
+convert_color(struct pipe_surface *psurf, union pipe_color_union *color)
+{
+   const struct util_format_description *desc = util_format_description(psurf->format);
+   union pipe_color_union tmp = *color;
+
+   if (zink_format_is_emulated_alpha(psurf->format)) {
+      if (util_format_is_alpha(psurf->format)) {
+         tmp.ui[0] = tmp.ui[3];
+         tmp.ui[1] = 0;
+         tmp.ui[2] = 0;
+         tmp.ui[3] = 0;
+      } else if (util_format_is_luminance(psurf->format)) {
+         tmp.ui[1] = 0;
+         tmp.ui[2] = 0;
+         tmp.f[3] = 1.0;
+      } else if (util_format_is_luminance_alpha(psurf->format)) {
+         tmp.ui[1] = tmp.ui[3];
+         tmp.ui[2] = 0;
+         tmp.f[3] = 1.0;
+      } else /* zink_format_is_red_alpha */ {
+         tmp.ui[1] = tmp.ui[3];
+         tmp.ui[2] = 0;
+         tmp.ui[3] = 0;
+      }
+      memcpy(color, &tmp, sizeof(union pipe_color_union));
+   }
+   for (unsigned i = 0; i < 4; i++)
+      zink_format_clamp_channel_color(desc, color, &tmp, i);
+}
+
 void
 zink_clear(struct pipe_context *pctx,
            unsigned buffers,
@@ -199,8 +230,14 @@ zink_clear(struct pipe_context *pctx,
    }
 
    if (batch->in_rp) {
-      clear_in_rp(pctx, buffers, scissor_state, pcolor, depth, stencil);
-      return;
+      if (buffers & PIPE_CLEAR_DEPTHSTENCIL && (ctx->zsbuf_unused || ctx->zsbuf_readonly)) {
+         /* this will need a layout change */
+         assert(!zink_screen(ctx->base.screen)->driver_workarounds.track_renderpasses);
+         zink_batch_no_rp(ctx);
+      } else {
+         clear_in_rp(pctx, buffers, scissor_state, pcolor, depth, stencil);
+         return;
+      }
    }
 
    unsigned rp_clears_enabled = ctx->rp_clears_enabled;
@@ -241,42 +278,16 @@ zink_clear(struct pipe_context *pctx,
       for (unsigned i = 0; i < fb->nr_cbufs; i++) {
          if ((buffers & (PIPE_CLEAR_COLOR0 << i)) && fb->cbufs[i]) {
             struct pipe_surface *psurf = fb->cbufs[i];
-            bool emulated_alpha = zink_format_is_emulated_alpha(psurf->format);
-            const struct util_format_description *desc = util_format_description(psurf->format);
             struct zink_framebuffer_clear *fb_clear = &ctx->fb_clears[i];
             struct zink_framebuffer_clear_data *clear = get_clear_data(ctx, fb_clear, needs_rp ? scissor_state : NULL);
-            const union pipe_color_union *color = pcolor;
-            union pipe_color_union tmp;
 
             ctx->clears_enabled |= PIPE_CLEAR_COLOR0 << i;
             clear->conditional = ctx->render_condition_active;
             clear->has_scissor = needs_rp;
+            memcpy(&clear->color, pcolor, sizeof(union pipe_color_union));
+            convert_color(psurf, &clear->color);
             if (scissor_state && needs_rp)
                clear->scissor = *scissor_state;
-            if (emulated_alpha) {
-               tmp = *pcolor;
-               if (util_format_is_alpha(psurf->format)) {
-                  tmp.ui[0] = tmp.ui[3];
-                  tmp.ui[1] = 0;
-                  tmp.ui[2] = 0;
-                  tmp.ui[3] = 0;
-               } else if (util_format_is_luminance(psurf->format)) {
-                  tmp.ui[1] = 0;
-                  tmp.ui[2] = 0;
-                  tmp.f[3] = 1.0;
-               } else if (util_format_is_luminance_alpha(psurf->format)) {
-                  tmp.ui[1] = tmp.ui[3];
-                  tmp.ui[2] = 0;
-                  tmp.f[3] = 1.0;
-               } else /* zink_format_is_red_alpha */ {
-                  tmp.ui[1] = tmp.ui[3];
-                  tmp.ui[2] = 0;
-                  tmp.ui[3] = 0;
-               }
-               color = &tmp;
-            }
-            for (unsigned i = 0; i < 4; i++)
-               zink_format_clamp_channel_color(desc, &clear->color, color, i);
             if (zink_fb_clear_first_needs_explicit(fb_clear))
                ctx->rp_clears_enabled &= ~(PIPE_CLEAR_COLOR0 << i);
             else
@@ -298,10 +309,15 @@ zink_clear(struct pipe_context *pctx,
       if (buffers & PIPE_CLEAR_STENCIL)
          clear->zs.stencil = stencil;
       clear->zs.bits |= (buffers & PIPE_CLEAR_DEPTHSTENCIL);
-      if (zink_fb_clear_first_needs_explicit(fb_clear))
+      if (zink_fb_clear_first_needs_explicit(fb_clear)) {
          ctx->rp_clears_enabled &= ~PIPE_CLEAR_DEPTHSTENCIL;
-      else
+         if (!zink_screen(ctx->base.screen)->driver_workarounds.track_renderpasses)
+            ctx->dynamic_fb.tc_info.zsbuf_clear_partial = true;
+      } else {
          ctx->rp_clears_enabled |= (buffers & PIPE_CLEAR_DEPTHSTENCIL);
+         if (!zink_screen(ctx->base.screen)->driver_workarounds.track_renderpasses)
+            ctx->dynamic_fb.tc_info.zsbuf_clear = true;
+      }
    }
    assert(!ctx->batch.in_rp);
    ctx->rp_changed |= ctx->rp_clears_enabled != rp_clears_enabled;
@@ -474,6 +490,9 @@ zink_clear_texture_dynamic(struct pipe_context *pctx,
    uint8_t stencil = 0;
    if (res->aspect & VK_IMAGE_ASPECT_COLOR_BIT) {
       util_format_unpack_rgba(pres->format, color.ui, data, 1);
+
+      convert_color(surf, &color);
+
    } else {
       if (res->aspect & VK_IMAGE_ASPECT_DEPTH_BIT)
          util_format_unpack_z_float(pres->format, &depth, data, 1);

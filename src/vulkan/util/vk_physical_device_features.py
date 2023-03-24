@@ -24,6 +24,7 @@ COPYRIGHT=u"""
 
 import argparse
 from collections import OrderedDict
+from dataclasses import dataclass
 import os
 import sys
 import typing
@@ -32,6 +33,11 @@ import xml.etree.ElementTree as et
 import mako
 from mako.template import Template
 from vk_extensions import get_all_required, filter_api
+
+def str_removeprefix(s, prefix):
+    if s.startswith(prefix):
+        return s[len(prefix):]
+    return s
 
 RENAMED_FEATURES = {
     # See https://gitlab.freedesktop.org/mesa/mesa/-/merge_requests/17272#note_1446477 for details
@@ -111,12 +117,13 @@ for (feature_structs, features) in KNOWN_ALIASES:
             RENAMED_FEATURES[rename] = flag
 
 def get_renamed_feature(c_type, feature):
-    return RENAMED_FEATURES.get((c_type.removeprefix('VkPhysicalDevice'), feature), feature)
+    return RENAMED_FEATURES.get((str_removeprefix(c_type, 'VkPhysicalDevice'), feature), feature)
 
-class FeatureStruct(typing.NamedTuple):
+@dataclass
+class FeatureStruct:
     c_type: str
     s_type: str
-    features: list[str]
+    features: typing.List[str]
 
 TEMPLATE_C = Template(COPYRIGHT + """
 /* This file generated from ${filename}, don't edit directly. */
@@ -407,12 +414,12 @@ def get_feature_structs_from_xml(xml_files, api='vulkan'):
             if renamed_flag not in features:
                 features[renamed_flag] = f.c_type
             else:
-                a = features[renamed_flag].removeprefix('VkPhysicalDevice')
-                b = f.c_type.removeprefix('VkPhysicalDevice')
+                a = str_removeprefix(features[renamed_flag], 'VkPhysicalDevice')
+                b = str_removeprefix(f.c_type, 'VkPhysicalDevice')
                 if (a, flag) not in RENAMED_FEATURES or (b, flag) not in RENAMED_FEATURES:
                     diagnostics.append(f'{a} and {b} both define {flag}')
 
-            unused_renames.pop((f.c_type.removeprefix('VkPhysicalDevice'), flag), None)
+            unused_renames.pop((str_removeprefix(f.c_type, 'VkPhysicalDevice'), flag), None)
 
     for rename in unused_renames:
         diagnostics.append(f'unused rename {rename}')

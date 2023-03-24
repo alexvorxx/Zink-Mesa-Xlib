@@ -780,14 +780,14 @@ v3dX(emit_state)(struct pipe_context *pctx)
                 struct v3d_uncompiled_shader *tf_shader = get_tf_shader(v3d);
                 struct v3d_streamout_stateobj *so = &v3d->streamout;
                 for (int i = 0; i < so->num_targets; i++) {
-                        const struct pipe_stream_output_target *target =
+                        struct pipe_stream_output_target *target =
                                 so->targets[i];
                         struct v3d_resource *rsc = target ?
                                 v3d_resource(target->buffer) : NULL;
                         struct pipe_shader_state *ss = &tf_shader->base;
                         struct pipe_stream_output_info *info = &ss->stream_output;
-                        uint32_t offset = (v3d->streamout.offsets[i] *
-                                           info->stride[i] * 4);
+                        uint32_t offset = target ?
+                                v3d_stream_output_target(target)->offset * info->stride[i] * 4 : 0;
 
 #if V3D_VERSION >= 40
                         if (!target)

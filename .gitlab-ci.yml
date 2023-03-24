@@ -79,6 +79,7 @@ include:
   - local: '.gitlab-ci/build/gitlab-ci.yml'
   - local: '.gitlab-ci/test/gitlab-ci.yml'
   - local: '.gitlab-ci/test-source-dep.yml'
+  - local: 'docs/gitlab-ci.yml'
   - local: 'src/amd/ci/gitlab-ci.yml'
   - local: 'src/broadcom/ci/gitlab-ci.yml'
   - local: 'src/etnaviv/ci/gitlab-ci.yml'
@@ -121,15 +122,9 @@ stages:
 # --------------------------------
 .rules-anchors:
   rules:
-    # Pipeline for forked project branch
-    - if: &is-forked-branch '$CI_COMMIT_BRANCH && $CI_PROJECT_NAMESPACE != "mesa"'
-      when: manual
     # Forked project branch / pre-merge pipeline not for Marge bot
     - if: &is-forked-branch-or-pre-merge-not-for-marge '$CI_PROJECT_NAMESPACE != "mesa" || ($GITLAB_USER_LOGIN != "marge-bot" && $CI_PIPELINE_SOURCE == "merge_request_event")'
       when: manual
-    # Pipeline runs for the main branch of the upstream Mesa project
-    - if: &is-mesa-main '$CI_PROJECT_NAMESPACE == "mesa" && $CI_COMMIT_REF_NAME == $CI_DEFAULT_BRANCH && $CI_COMMIT_BRANCH'
-      when: always
     # Post-merge pipeline
     - if: &is-post-merge '$CI_PROJECT_NAMESPACE == "mesa" && $CI_COMMIT_BRANCH'
       when: on_success
@@ -143,71 +138,6 @@ stages:
     - if: &is-pre-merge-for-marge '$GITLAB_USER_LOGIN == "marge-bot" && $CI_PIPELINE_SOURCE == "merge_request_event"'
       when: on_success
 
-
-.docs-base:
-  variables:
-    BUILDER: html
-  extends:
-    - .fdo.ci-fairy
-    - .build-rules
-  artifacts:
-    expose_as: 'Documentation preview'
-    paths:
-    - public/
-  script:
-  - apk --no-cache add graphviz doxygen
-  - pip3 install sphinx===5.1.1 breathe===4.34.0 mako===1.2.3 sphinx_rtd_theme===1.0.0
-  - docs/doxygen-wrapper.py --out-dir=docs/doxygen_xml
-  - sphinx-build -W -b $BUILDER docs public
-
-pages:
-  extends: .docs-base
-  stage: deploy
-  needs: []
-  rules:
-    - !reference [.no_scheduled_pipelines-rules, rules]
-    - if: *is-mesa-main
-      changes: &docs-or-ci
-      - docs/**/*
-      - .gitlab-ci.yml
-      when: always
-    # Other cases default to never
-
-test-docs:
-  extends: .docs-base
-  # Cancel job if a newer commit is pushed to the same branch
-  interruptible: true
-  stage: deploy
-  needs: []
-  rules:
-    - !reference [.no_scheduled_pipelines-rules, rules]
-    - if: *is-forked-branch
-      changes: *docs-or-ci
-      when: manual
-    # Other cases default to never
-
-test-docs-mr:
-  extends:
-    - test-docs
-  needs:
-    - sanity
-  rules:
-    - if: *is-pre-merge
-      changes: *docs-or-ci
-      when: on_success
-    # Other cases default to never
-
-linkcheck-docs:
-  extends: .docs-base
-  # Cancel job if a newer commit is pushed to the same branch
-  interruptible: true
-  stage: deploy
-  needs: []
-  rules:
-    - !reference [.scheduled_pipeline-rules, rules]
-  allow_failure: true
-  variables:
-    BUILDER: linkcheck
 
 # When to automatically run the CI for build jobs
 .build-rules:

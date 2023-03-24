@@ -319,20 +319,20 @@ gather_xfb_info(const nir_shader *nir, struct radv_shader_info *info)
 
 static void
 assign_outinfo_param(struct radv_vs_output_info *outinfo, gl_varying_slot idx,
-                     unsigned *total_param_exports)
+                     unsigned *total_param_exports, unsigned extra_offset)
 {
    if (outinfo->vs_output_param_offset[idx] == AC_EXP_PARAM_UNDEFINED)
-      outinfo->vs_output_param_offset[idx] = (*total_param_exports)++;
+      outinfo->vs_output_param_offset[idx] = extra_offset + (*total_param_exports)++;
 }
 
 static void
 assign_outinfo_params(struct radv_vs_output_info *outinfo, uint64_t mask,
-                      unsigned *total_param_exports)
+                      unsigned *total_param_exports, unsigned extra_offset)
 {
    u_foreach_bit64(idx, mask) {
       if (idx >= VARYING_SLOT_VAR0 || idx == VARYING_SLOT_LAYER ||
           idx == VARYING_SLOT_PRIMITIVE_ID || idx == VARYING_SLOT_VIEWPORT)
-         assign_outinfo_param(outinfo, idx, total_param_exports);
+         assign_outinfo_param(outinfo, idx, total_param_exports, extra_offset);
    }
 }
 
@@ -421,6 +421,13 @@ gather_shader_info_vs(struct radv_device *device, const nir_shader *nir,
    nir_foreach_shader_in_variable(var, nir)
       gather_info_input_decl_vs(nir, var->data.location - VERT_ATTRIB_GENERIC0, var->type,
                                 pipeline_key, info);
+
+   /* When the topology is unknown (with GPL), the number of vertices per primitive needs be passed
+    * through a user SGPR for NGG streamout with VS. Otherwise, the XFB offset is incorrectly
+    * computed because using the maximum number of vertices can't work.
+    */
+   info->vs.dynamic_num_verts_per_prim =
+      pipeline_key->vs.topology == V_008958_DI_PT_NONE && info->is_ngg && nir->xfb_info;
 }
 
 static void
@@ -536,15 +543,24 @@ gather_shader_info_mesh(const nir_shader *nir, struct radv_shader_info *info)
 }
 
 static void
-gather_shader_info_fs(const nir_shader *nir, const struct radv_pipeline_key *pipeline_key,
-                      struct radv_shader_info *info)
+gather_shader_info_fs(const struct radv_device *device, const nir_shader *nir,
+                      const struct radv_pipeline_key *pipeline_key, struct radv_shader_info *info)
 {
    uint64_t per_primitive_input_mask = nir->info.inputs_read & nir->info.per_primitive_inputs;
    unsigned num_per_primitive_inputs = util_bitcount64(per_primitive_input_mask);
    assert(num_per_primitive_inputs <= nir->num_inputs);
 
-   info->ps.num_interp = nir->num_inputs - num_per_primitive_inputs;
-   info->ps.num_prim_interp = num_per_primitive_inputs;
+   info->ps.num_interp = nir->num_inputs;
+   info->ps.num_prim_interp = 0;
+
+   if (device->physical_device->rad_info.gfx_level == GFX10_3) {
+      /* GFX10.3 distinguishes NUM_INTERP and NUM_PRIM_INTERP, but
+       * these are counted together in NUM_INTERP on GFX11.
+       */
+      info->ps.num_interp = nir->num_inputs - num_per_primitive_inputs;
+      info->ps.num_prim_interp = num_per_primitive_inputs;
+   }
+
    info->ps.can_discard = nir->info.fs.uses_discard;
    info->ps.early_fragment_test = nir->info.fs.early_fragment_tests ||
                                   (nir->info.fs.early_and_late_fragment_tests &&
@@ -567,6 +583,8 @@ gather_shader_info_fs(const nir_shader *nir, const struct radv_pipeline_key *pip
    info->ps.reads_frag_shading_rate = BITSET_TEST(nir->info.system_values_read, SYSTEM_VALUE_FRAG_SHADING_RATE);
    info->ps.reads_front_face = BITSET_TEST(nir->info.system_values_read, SYSTEM_VALUE_FRONT_FACE);
    info->ps.reads_barycentric_model = BITSET_TEST(nir->info.system_values_read, SYSTEM_VALUE_BARYCENTRIC_PULL_MODEL);
+   info->ps.reads_fully_covered =
+      BITSET_TEST(nir->info.system_values_read, SYSTEM_VALUE_FULLY_COVERED);
 
    bool uses_persp_or_linear_interp = info->ps.reads_persp_center ||
                                       info->ps.reads_persp_centroid ||
@@ -679,6 +697,11 @@ gather_shader_info_cs(struct radv_device *device, const nir_shader *nir,
    }
 
    info->cs.subgroup_size = subgroup_size;
+
+   if (device->physical_device->rad_info.has_cs_regalloc_hang_bug) {
+      info->cs.regalloc_hang_bug =
+         info->cs.block_size[0] * info->cs.block_size[1] * info->cs.block_size[2] > 256;
+   }
 }
 
 static void
@@ -793,12 +816,18 @@ radv_nir_shader_info_pass(struct radv_device *device, const struct nir_shader *n
       unsigned total_param_exports = 0;
 
       /* Per-vertex outputs */
-      assign_outinfo_params(outinfo, per_vtx_mask, &total_param_exports);
+      assign_outinfo_params(outinfo, per_vtx_mask, &total_param_exports, 0);
 
       outinfo->param_exports = total_param_exports;
 
+      /* The HW always assumes that there is at least 1 per-vertex param.
+       * so if there aren't any, we have to offset per-primitive params by 1.
+       */
+      const unsigned extra_offset =
+         !!(total_param_exports == 0 && device->physical_device->rad_info.gfx_level >= GFX11);
+
       /* Per-primitive outputs: the HW needs these to be last. */
-      assign_outinfo_params(outinfo, per_prim_mask, &total_param_exports);
+      assign_outinfo_params(outinfo, per_prim_mask, &total_param_exports, extra_offset);
 
       outinfo->prim_param_exports = total_param_exports - outinfo->param_exports;
    }
@@ -829,7 +858,7 @@ radv_nir_shader_info_pass(struct radv_device *device, const struct nir_shader *n
       gather_shader_info_task(nir, info);
       break;
    case MESA_SHADER_FRAGMENT:
-      gather_shader_info_fs(nir, pipeline_key, info);
+      gather_shader_info_fs(device, nir, pipeline_key, info);
       break;
    case MESA_SHADER_GEOMETRY:
       gather_shader_info_gs(nir, info);

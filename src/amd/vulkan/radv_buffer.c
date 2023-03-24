@@ -28,6 +28,7 @@
 #include "radv_private.h"
 
 #include "vk_buffer.h"
+#include "vk_common_entrypoints.h"
 
 void
 radv_buffer_init(struct radv_buffer *buffer, struct radv_device *device,
@@ -155,7 +156,7 @@ radv_BindBufferMemory2(VkDevice _device, uint32_t bindInfoCount,
             .sType = VK_STRUCTURE_TYPE_MEMORY_REQUIREMENTS_2,
          };
 
-         radv_GetBufferMemoryRequirements2(_device, &info, &reqs);
+         vk_common_GetBufferMemoryRequirements2(_device, &info, &reqs);
 
          if (pBindInfos[i].memoryOffset + reqs.memoryRequirements.size > mem->alloc_size) {
             return vk_errorf(device, VK_ERROR_UNKNOWN,
@@ -229,17 +230,6 @@ radv_get_buffer_memory_requirements(struct radv_device *device, VkDeviceSize siz
          break;
       }
    }
-}
-
-VKAPI_ATTR void VKAPI_CALL
-radv_GetBufferMemoryRequirements2(VkDevice _device, const VkBufferMemoryRequirementsInfo2 *pInfo,
-                                  VkMemoryRequirements2 *pMemoryRequirements)
-{
-   RADV_FROM_HANDLE(radv_device, device, _device);
-   RADV_FROM_HANDLE(radv_buffer, buffer, pInfo->buffer);
-
-   radv_get_buffer_memory_requirements(device, buffer->vk.size, buffer->vk.create_flags,
-                                       buffer->vk.usage, pMemoryRequirements);
 }
 
 VKAPI_ATTR void VKAPI_CALL

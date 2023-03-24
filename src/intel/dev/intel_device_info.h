@@ -384,6 +384,11 @@ struct intel_device_info
    unsigned engine_class_prefetch[INTEL_ENGINE_CLASS_COMPUTE + 1];
 
    /**
+    * Memory alignment requirement for this device.
+    */
+   unsigned mem_alignment;
+
+   /**
     * For the longest time the timestamp frequency for Gen's timestamp counter
     * could be assumed to be 12.5MHz, where the least significant bit neatly
     * corresponded to 80 nanoseconds.
@@ -570,9 +575,9 @@ void intel_device_info_update_cs_workgroup_threads(struct intel_device_info *dev
 bool intel_device_info_compute_system_memory(struct intel_device_info *devinfo, bool update);
 void intel_device_info_update_after_hwconfig(struct intel_device_info *devinfo);
 
-#ifdef GFX_VER
+#ifdef GFX_VERx10
 #define intel_needs_workaround(devinfo, id)         \
-   INTEL_WA_##id_GFX_VER &&                              \
+   INTEL_WA_ ## id ## _GFX_VER &&                              \
    BITSET_TEST(devinfo->workarounds, INTEL_WA_##id)
 #else
 #define intel_needs_workaround(devinfo, id) \

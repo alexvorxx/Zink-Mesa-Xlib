@@ -987,6 +987,9 @@ for s in [16, 32, 64]:
        # float? -> float? -> intS ==> float? -> intS
        (('~f2u{}'.format(s), ('f2f', a)), ('f2u{}'.format(s), a)),
        (('~f2i{}'.format(s), ('f2f', a)), ('f2i{}'.format(s), a)),
+
+       # HLSL's sign function returns an integer
+       (('i2f{}'.format(s), ('f2i', ('fsign', 'a@{}'.format(s)))), ('fsign', a)),
     ])
 
     for B in [32, 64]:

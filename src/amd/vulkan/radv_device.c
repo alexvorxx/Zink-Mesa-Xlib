@@ -345,7 +345,7 @@ radv_device_init_vrs_state(struct radv_device *device)
    VkMemoryRequirements2 mem_req = {
       .sType = VK_STRUCTURE_TYPE_MEMORY_REQUIREMENTS_2,
    };
-   radv_GetBufferMemoryRequirements2(radv_device_to_handle(device), &info, &mem_req);
+   vk_common_GetBufferMemoryRequirements2(radv_device_to_handle(device), &info, &mem_req);
 
    VkMemoryAllocateInfo alloc_info = {
       .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,

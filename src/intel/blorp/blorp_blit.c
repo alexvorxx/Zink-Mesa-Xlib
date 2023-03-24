@@ -1252,7 +1252,7 @@ brw_blorp_build_nir_shader(struct blorp_context *blorp,
        */
       assert(dst_pos->num_components == 2);
       nir_ssa_def *dst_x = nir_channel(&b, dst_pos, 0);
-      comp = nir_umod(&b, dst_x, nir_imm_int(&b, 3));
+      comp = nir_umod_imm(&b, dst_x, 3);
       dst_pos = nir_vec2(&b, nir_idiv(&b, dst_x, nir_imm_int(&b, 3)),
                              nir_channel(&b, dst_pos, 1));
    }

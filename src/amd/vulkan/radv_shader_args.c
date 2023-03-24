@@ -88,6 +88,8 @@ count_vs_user_sgprs(const struct radv_shader_info *info)
       count++;
    if (info->vs.needs_base_instance)
       count++;
+   if (info->vs.dynamic_num_verts_per_prim)
+      count++;
 
    return count;
 }
@@ -828,6 +830,9 @@ radv_declare_shader_args(const struct radv_device *device, const struct radv_pip
          if (previous_stage == MESA_SHADER_TESS_EVAL && key->dynamic_patch_control_points)
             ac_add_arg(&args->ac, AC_ARG_SGPR, 1, AC_ARG_INT, &args->tes_num_patches);
 
+         if (previous_stage == MESA_SHADER_VERTEX && info->vs.dynamic_num_verts_per_prim)
+            ac_add_arg(&args->ac, AC_ARG_SGPR, 1, AC_ARG_INT, &args->num_verts_per_prim);
+
          /* Legacy GS force vrs is handled by GS copy shader. */
          if (info->force_vrs_per_vertex && info->is_ngg) {
             ac_add_arg(&args->ac, AC_ARG_SGPR, 1, AC_ARG_INT, &args->ac.force_vrs_rates);
@@ -973,6 +978,9 @@ radv_declare_shader_args(const struct radv_device *device, const struct radv_pip
 
       if (args->tes_num_patches.used)
          set_loc_shader(args, AC_UD_TES_NUM_PATCHES, &user_sgpr_idx, 1);
+
+      if (args->num_verts_per_prim.used)
+         set_loc_shader(args, AC_UD_NUM_VERTS_PER_PRIM, &user_sgpr_idx, 1);
 
       if (args->ac.force_vrs_rates.used)
          set_loc_shader(args, AC_UD_FORCE_VRS_RATES, &user_sgpr_idx, 1);

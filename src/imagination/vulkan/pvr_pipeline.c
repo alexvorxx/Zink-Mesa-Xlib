@@ -78,6 +78,14 @@ static VkResult pvr_pds_coeff_program_create_and_upload(
    /* Get the size of the program and then allocate that much memory. */
    pvr_pds_coefficient_loading(&program, NULL, PDS_GENERATE_SIZES);
 
+   if (!program.code_size) {
+      pds_upload_out->pvr_bo = NULL;
+      pds_upload_out->code_size = 0;
+      pds_upload_out->data_size = 0;
+
+      return VK_SUCCESS;
+   }
+
    staging_buffer_size =
       (program.code_size + program.data_size) * sizeof(*staging_buffer);
 

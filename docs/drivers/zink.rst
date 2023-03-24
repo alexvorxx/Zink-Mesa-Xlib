@@ -74,7 +74,7 @@ OpenGL 3.0
 
 
 For OpenGL 3.0 support, the following additional requirements must be
-supported:
+met:
 
 * ``VkPhysicalDeviceFeatures``:
 
@@ -97,7 +97,7 @@ OpenGL 3.2
 ^^^^^^^^^^
 
 For OpenGL 3.2 support, the following additional requirements must be
-supported, although some of these might not actually get verified:
+met, although some of these might not actually get verified:
 
 * ``VkPhysicalDeviceFeatures``:
 
@@ -113,7 +113,7 @@ OpenGL 3.3
 ^^^^^^^^^^
 
 For OpenGL 3.3 support, the following additional requirements must be
-supported, although some of these might not actually get verified:
+met, although some of these might not actually get verified:
 
 * ``VkPhysicalDeviceFeatures``:
 
@@ -127,7 +127,7 @@ OpenGL 4.0
 ^^^^^^^^^^
 
 For OpenGL 4.0 support, the following additional requirements must be
-supported:
+met:
 
 * ``VkPhysicalDeviceFeatures``:
 
@@ -149,7 +149,7 @@ OpenGL 4.1
 ^^^^^^^^^^
 
 For OpenGL 4.1 support, the following additional requirements must be
-supported:
+met:
 
 * ``VkPhysicalDeviceFeatures``:
 
@@ -168,7 +168,7 @@ OpenGL 4.2
 ^^^^^^^^^^
 
 For OpenGL 4.2 support, the following additional requirements must be
-supported:
+met:
 
 * Device extensions:
     * :ext:`VK_EXT_image_2d_view_of_3d`
@@ -196,7 +196,7 @@ OpenGL 4.3
 ^^^^^^^^^^
 
 For OpenGL 4.3 support, the following additional requirements must be
-supported:
+met:
 
 * ``VkPhysicalDeviceFeatures``:
 
@@ -216,15 +216,23 @@ OpenGL 4.4
 ^^^^^^^^^^
 
 For OpenGL 4.4 support, the following additional requirements must be
-supported:
+met:
 
 * Formats requiring ``VK_FORMAT_FEATURE_VERTEX_BUFFER_BIT``:
 
   * ``VK_FORMAT_B10G11R11_UFLOAT_PACK32``
 
-* Device extensions:
+* For Vulkan 1.2 and above:
 
-  * :ext:`VK_KHR_sampler_mirror_clamp_to_edge`
+  * ``VkPhysicalDeviceVulkan12Features``:
+
+    * ``samplerMirrorClampToEdge``
+
+* For Vulkan 1.1 and below:
+
+  * Device extensions:
+
+    * :ext:`VK_KHR_sampler_mirror_clamp_to_edge`
 
 OpenGL 4.5
 ^^^^^^^^^^
@@ -238,7 +246,7 @@ OpenGL 4.6
 ^^^^^^^^^^
 
 For OpenGL 4.6 support, the following additional requirements must be
-supported:
+met:
 
 * ``VkPhysicalDeviceFeatures``:
 
@@ -297,6 +305,8 @@ variable:
     Disable renderpass optimizations (for tiling GPUs)
   ``map``
     Print info about mapped VRAM
+  ``flushsync``
+    Force synchronous flushes/presents
 
 Vulkan Validation Layers
 ^^^^^^^^^^^^^^^^^^^^^^^^

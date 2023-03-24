@@ -54,6 +54,7 @@ struct spirv_supported_capabilities {
    bool float64;
    bool float64_atomic_add;
    bool float64_atomic_min_max;
+   bool fragment_fully_covered;
    bool fragment_shader_sample_interlock;
    bool fragment_shader_pixel_interlock;
    bool fragment_shading_rate;
@@ -402,6 +403,7 @@ typedef struct shader_info {
          bool uses_discard:1;
          bool uses_demote:1;
          bool uses_fbfetch_output:1;
+         bool fbfetch_coherent:1;
          bool color_is_dual_source:1;
 
          /**

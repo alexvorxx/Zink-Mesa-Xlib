@@ -316,10 +316,10 @@ dzn_image_get_dxgi_format(VkFormat format,
       if (usage == VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT)
          return DXGI_FORMAT_D32_FLOAT_S8X24_UINT;
 
-      if (aspects & VK_IMAGE_ASPECT_STENCIL_BIT)
-         return DXGI_FORMAT_X32_TYPELESS_G8X24_UINT;
-      else if (aspects & VK_IMAGE_ASPECT_DEPTH_BIT)
+      if (aspects & VK_IMAGE_ASPECT_DEPTH_BIT)
          return DXGI_FORMAT_R32_FLOAT_X8X24_TYPELESS;
+      else if (aspects & VK_IMAGE_ASPECT_STENCIL_BIT)
+         return DXGI_FORMAT_X32_TYPELESS_G8X24_UINT;
       else
          return DXGI_FORMAT_R32G8X24_TYPELESS;
 
@@ -991,12 +991,14 @@ translate_swizzle(VkComponentSwizzle in, uint32_t comp)
 static void
 dzn_image_view_prepare_srv_desc(struct dzn_image_view *iview)
 {
-   uint32_t plane_slice = (iview->vk.aspects & VK_IMAGE_ASPECT_STENCIL_BIT) ? 1 : 0;
+   uint32_t plane_slice = (iview->vk.aspects & (VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT)) ==
+      VK_IMAGE_ASPECT_STENCIL_BIT ? 1 : 0;
    bool ms = iview->vk.image->samples > 1;
    uint32_t layers_per_elem =
       (iview->vk.view_type == VK_IMAGE_VIEW_TYPE_CUBE ||
        iview->vk.view_type == VK_IMAGE_VIEW_TYPE_CUBE_ARRAY) ?
       6 : 1;
+   bool from_3d_image = iview->vk.image->image_type == VK_IMAGE_TYPE_3D;
    bool use_array = iview->vk.base_array_layer > 0 ||
                     (iview->vk.layer_count / layers_per_elem) > 1;
 
@@ -1060,7 +1062,12 @@ dzn_image_view_prepare_srv_desc(struct dzn_image_view *iview)
 
    case VK_IMAGE_VIEW_TYPE_2D_ARRAY:
    case VK_IMAGE_VIEW_TYPE_2D:
-      if (use_array && ms) {
+      if (from_3d_image) {
+         iview->srv_desc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE3D;
+         iview->srv_desc.Texture3D.MostDetailedMip = iview->vk.base_mip_level;
+         iview->srv_desc.Texture3D.MipLevels = iview->vk.level_count;
+         iview->srv_desc.Texture3D.ResourceMinLODClamp = 0.0f;
+      } else if (use_array && ms) {
          iview->srv_desc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2DMSARRAY;
          iview->srv_desc.Texture2DMSArray.FirstArraySlice = iview->vk.base_array_layer;
          iview->srv_desc.Texture2DMSArray.ArraySize = iview->vk.layer_count;
@@ -1316,6 +1323,11 @@ dzn_image_view_init(struct dzn_device *device,
                              VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT |
                              VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT));
 
+   /* We remove this bit on depth textures, so skip creating a UAV for those */
+   if ((iview->vk.usage & VK_IMAGE_USAGE_STORAGE_BIT) &&
+       !(image->desc.Flags & D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS))
+      iview->vk.usage &= ~VK_IMAGE_USAGE_STORAGE_BIT;
+
    switch (image->vk.image_type) {
    default:
       unreachable("bad VkImageType");
@@ -1350,6 +1362,9 @@ dzn_image_view_destroy(struct dzn_image_view *iview,
 
    struct dzn_device *device = container_of(iview->vk.base.device, struct dzn_device, vk);
 
+   dzn_device_descriptor_heap_free_slot(device, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, iview->srv_bindless_slot);
+   dzn_device_descriptor_heap_free_slot(device, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, iview->uav_bindless_slot);
+
    vk_image_view_finish(&iview->vk);
    vk_free2(&device->vk.alloc, pAllocator, iview);
 }
@@ -1360,6 +1375,7 @@ dzn_image_view_create(struct dzn_device *device,
                       const VkAllocationCallbacks *pAllocator,
                       VkImageView *out)
 {
+   VK_FROM_HANDLE(dzn_image, image, pCreateInfo->image);
    struct dzn_image_view *iview =
       vk_zalloc2(&device->vk.alloc, pAllocator, sizeof(*iview), 8,
                  VK_SYSTEM_ALLOCATION_SCOPE_OBJECT);
@@ -1367,6 +1383,36 @@ dzn_image_view_create(struct dzn_device *device,
       return vk_error(device, VK_ERROR_OUT_OF_HOST_MEMORY);
 
    dzn_image_view_init(device, iview, pCreateInfo);
+
+   iview->srv_bindless_slot = iview->uav_bindless_slot = -1;
+   if (device->bindless) {
+      if (!(image->desc.Flags & D3D12_RESOURCE_FLAG_DENY_SHADER_RESOURCE)) {
+         iview->srv_bindless_slot = dzn_device_descriptor_heap_alloc_slot(device, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+         if (iview->srv_bindless_slot < 0) {
+            dzn_image_view_destroy(iview, pAllocator);
+            return vk_error(device, VK_ERROR_OUT_OF_DEVICE_MEMORY);
+         }
+
+         dzn_descriptor_heap_write_image_view_desc(device,
+                                                   &device->device_heaps[D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV].heap,
+                                                   iview->srv_bindless_slot,
+                                                   false, false,
+                                                   iview);
+      }
+      if (iview->vk.usage & VK_IMAGE_USAGE_STORAGE_BIT) {
+         iview->uav_bindless_slot = dzn_device_descriptor_heap_alloc_slot(device, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+         if (iview->uav_bindless_slot < 0) {
+            dzn_image_view_destroy(iview, pAllocator);
+            return vk_error(device, VK_ERROR_OUT_OF_DEVICE_MEMORY);
+         }
+
+         dzn_descriptor_heap_write_image_view_desc(device,
+                                                   &device->device_heaps[D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV].heap,
+                                                   iview->uav_bindless_slot,
+                                                   true, true,
+                                                   iview);
+      }
+   }
 
    *out = dzn_image_view_to_handle(iview);
    return VK_SUCCESS;
@@ -1399,6 +1445,9 @@ dzn_buffer_view_destroy(struct dzn_buffer_view *bview,
 
    struct dzn_device *device = container_of(bview->base.device, struct dzn_device, vk);
 
+   dzn_device_descriptor_heap_free_slot(device, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, bview->srv_bindless_slot);
+   dzn_device_descriptor_heap_free_slot(device, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, bview->uav_bindless_slot);
+
    vk_object_base_finish(&bview->base);
    vk_free2(&device->vk.alloc, pAllocator, bview);
 }
@@ -1426,6 +1475,7 @@ dzn_buffer_view_create(struct dzn_device *device,
       buf->size - pCreateInfo->offset : pCreateInfo->range;
 
    bview->buffer = buf;
+   bview->srv_bindless_slot = bview->uav_bindless_slot = -1;
    if (buf->usage &
        (VK_BUFFER_USAGE_UNIFORM_TEXEL_BUFFER_BIT |
         VK_BUFFER_USAGE_STORAGE_TEXEL_BUFFER_BIT)) {
@@ -1440,6 +1490,16 @@ dzn_buffer_view_create(struct dzn_device *device,
             .Flags = D3D12_BUFFER_SRV_FLAG_NONE,
          },
       };
+
+      if (device->bindless) {
+         bview->srv_bindless_slot = dzn_device_descriptor_heap_alloc_slot(device, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+         if (bview->srv_bindless_slot < 0) {
+            dzn_buffer_view_destroy(bview, pAllocator);
+            return vk_error(device, VK_ERROR_OUT_OF_DEVICE_MEMORY);
+         }
+         dzn_descriptor_heap_write_buffer_view_desc(device, &device->device_heaps[D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV].heap,
+                                                    bview->srv_bindless_slot, false, bview);
+      }
    }
 
    if (buf->usage & VK_BUFFER_USAGE_STORAGE_TEXEL_BUFFER_BIT) {
@@ -1452,6 +1512,16 @@ dzn_buffer_view_create(struct dzn_device *device,
             .Flags = D3D12_BUFFER_UAV_FLAG_NONE,
          },
       };
+
+      if (device->bindless) {
+         bview->uav_bindless_slot = dzn_device_descriptor_heap_alloc_slot(device, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+         if (bview->uav_bindless_slot < 0) {
+            dzn_buffer_view_destroy(bview, pAllocator);
+            return vk_error(device, VK_ERROR_OUT_OF_DEVICE_MEMORY);
+         }
+         dzn_descriptor_heap_write_buffer_view_desc(device, &device->device_heaps[D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV].heap,
+                                                    bview->uav_bindless_slot, true, bview);
+      }
    }
 
    *out = dzn_buffer_view_to_handle(bview);

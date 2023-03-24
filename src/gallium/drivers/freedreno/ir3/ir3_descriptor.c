@@ -90,7 +90,7 @@ lower_intrinsic(nir_builder *b, nir_intrinsic_instr *intr)
     * instruction (as long as IR3_BINDLESS_DESC_COUNT is a power-of-two) we
     * can avoid the dmesg spam and users thinking this is a driver bug:
     */
-   src = nir_umod(b, src, nir_imm_int(b, IR3_BINDLESS_DESC_COUNT));
+   src = nir_umod_imm(b, src, IR3_BINDLESS_DESC_COUNT);
    nir_ssa_def *bindless = nir_bindless_resource_ir3(b, 32, src, set);
    nir_instr_rewrite_src_ssa(&intr->instr, &intr->src[buffer_src], bindless);
 

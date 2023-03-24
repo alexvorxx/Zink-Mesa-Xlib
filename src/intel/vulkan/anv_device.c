@@ -227,6 +227,7 @@ get_device_extensions(const struct anv_physical_device *device,
       .KHR_maintenance2                      = true,
       .KHR_maintenance3                      = true,
       .KHR_maintenance4                      = true,
+      .KHR_map_memory2                       = true,
       .KHR_multiview                         = true,
       .KHR_performance_query =
          device->perf &&
@@ -728,7 +729,7 @@ anv_physical_device_init_queue_families(struct anv_physical_device *pdevice)
          intel_engines_count(pdevice->engine_info,
                              INTEL_ENGINE_CLASS_RENDER);
       int v_count =
-         intel_engines_count(pdevice->engine_info, I915_ENGINE_CLASS_VIDEO);
+         intel_engines_count(pdevice->engine_info, INTEL_ENGINE_CLASS_VIDEO);
       int g_count = 0;
       int c_count = 0;
       if (debug_get_bool_option("INTEL_COMPUTE_CLASS", false))
@@ -768,7 +769,7 @@ anv_physical_device_init_queue_families(struct anv_physical_device *pdevice)
          pdevice->queue.families[family_count++] = (struct anv_queue_family) {
             .queueFlags = VK_QUEUE_VIDEO_DECODE_BIT_KHR,
             .queueCount = v_count,
-            .engine_class = I915_ENGINE_CLASS_VIDEO,
+            .engine_class = INTEL_ENGINE_CLASS_VIDEO,
          };
       }
       /* Increase count below when other families are added as a reminder to
@@ -801,6 +802,20 @@ anv_physical_device_get_parameters(struct anv_physical_device *device)
    default:
       unreachable("Missing");
       return VK_ERROR_UNKNOWN;
+   }
+}
+
+static void
+anv_physical_device_max_priority_update(struct anv_physical_device *device)
+{
+   switch (device->info.kmd_type) {
+   case INTEL_KMD_TYPE_I915:
+      break;
+   case INTEL_KMD_TYPE_XE:
+      anv_xe_physical_device_max_priority_update(device);
+      break;
+   default:
+      unreachable("Missing");
    }
 }
 
@@ -989,6 +1004,7 @@ anv_physical_device_try_create(struct vk_instance *vk_instance,
    device->info.has_compute_engine = intel_engines_count(device->engine_info,
                                                          INTEL_ENGINE_CLASS_COMPUTE);
    anv_physical_device_init_queue_families(device);
+   anv_physical_device_max_priority_update(device);
 
    anv_physical_device_init_perf(device, fd);
 
@@ -3035,8 +3051,18 @@ VkResult anv_CreateDevice(
       goto fail_device;
    }
 
+   switch (device->info->kmd_type) {
+   case INTEL_KMD_TYPE_I915:
+      device->vk.check_status = anv_i915_device_check_status;
+      break;
+   case INTEL_KMD_TYPE_XE:
+      device->vk.check_status = anv_xe_device_check_status;
+      break;
+   default:
+      unreachable("Missing");
+   }
+
    device->vk.command_buffer_ops = &anv_cmd_buffer_ops;
-   device->vk.check_status = anv_i915_device_check_status;
    device->vk.create_sync_for_memory = anv_create_sync_for_memory;
    vk_device_set_drm_fd(&device->vk, device->fd);
 
@@ -3652,6 +3678,7 @@ VkResult anv_AllocateMemory(
    if (mem == NULL)
       return vk_error(device, VK_ERROR_OUT_OF_HOST_MEMORY);
 
+   mem->size = pAllocateInfo->allocationSize;
    mem->type = mem_type;
    mem->map = NULL;
    mem->map_size = 0;
@@ -3980,8 +4007,13 @@ void anv_FreeMemory(
    list_del(&mem->link);
    pthread_mutex_unlock(&device->mutex);
 
-   if (mem->map)
-      anv_UnmapMemory(_device, _mem);
+   if (mem->map) {
+      const VkMemoryUnmapInfoKHR unmap = {
+         .sType = VK_STRUCTURE_TYPE_MEMORY_UNMAP_INFO_KHR,
+         .memory = _mem,
+      };
+      anv_UnmapMemory2KHR(_device, &unmap);
+   }
 
    p_atomic_add(&device->physical->memory.heaps[mem->type->heapIndex].used,
                 -mem->bo->size);
@@ -3996,16 +4028,13 @@ void anv_FreeMemory(
    vk_object_free(&device->vk, pAllocator, mem);
 }
 
-VkResult anv_MapMemory(
+VkResult anv_MapMemory2KHR(
     VkDevice                                    _device,
-    VkDeviceMemory                              _memory,
-    VkDeviceSize                                offset,
-    VkDeviceSize                                size,
-    VkMemoryMapFlags                            flags,
+    const VkMemoryMapInfoKHR*                   pMemoryMapInfo,
     void**                                      ppData)
 {
    ANV_FROM_HANDLE(anv_device, device, _device);
-   ANV_FROM_HANDLE(anv_device_memory, mem, _memory);
+   ANV_FROM_HANDLE(anv_device_memory, mem, pMemoryMapInfo->memory);
 
    if (mem == NULL) {
       *ppData = NULL;
@@ -4013,7 +4042,7 @@ VkResult anv_MapMemory(
    }
 
    if (mem->host_ptr) {
-      *ppData = mem->host_ptr + offset;
+      *ppData = mem->host_ptr + pMemoryMapInfo->offset;
       return VK_SUCCESS;
    }
 
@@ -4027,8 +4056,9 @@ VkResult anv_MapMemory(
                        "Memory object not mappable.");
    }
 
-   if (size == VK_WHOLE_SIZE)
-      size = mem->bo->size - offset;
+   const VkDeviceSize offset = pMemoryMapInfo->offset;
+   const VkDeviceSize size = pMemoryMapInfo->size == VK_WHOLE_SIZE ?
+                             mem->size - offset : pMemoryMapInfo->size;
 
    /* From the Vulkan spec version 1.0.32 docs for MapMemory:
     *
@@ -4038,7 +4068,8 @@ VkResult anv_MapMemory(
     *    equal to the size of the memory minus offset
     */
    assert(size > 0);
-   assert(offset + size <= mem->bo->size);
+   assert(offset < mem->size);
+   assert(size <= mem->size - offset);
 
    if (size != (size_t)size) {
       return vk_errorf(device, VK_ERROR_MEMORY_MAP_FAILED,
@@ -4081,21 +4112,23 @@ VkResult anv_MapMemory(
    return VK_SUCCESS;
 }
 
-void anv_UnmapMemory(
+VkResult anv_UnmapMemory2KHR(
     VkDevice                                    _device,
-    VkDeviceMemory                              _memory)
+    const VkMemoryUnmapInfoKHR*                 pMemoryUnmapInfo)
 {
    ANV_FROM_HANDLE(anv_device, device, _device);
-   ANV_FROM_HANDLE(anv_device_memory, mem, _memory);
+   ANV_FROM_HANDLE(anv_device_memory, mem, pMemoryUnmapInfo->memory);
 
    if (mem == NULL || mem->host_ptr)
-      return;
+      return VK_SUCCESS;
 
    anv_device_unmap_bo(device, mem->bo, mem->map, mem->map_size);
 
    mem->map = NULL;
    mem->map_size = 0;
    mem->map_delta = 0;
+
+   return VK_SUCCESS;
 }
 
 VkResult anv_FlushMappedMemoryRanges(
@@ -4177,8 +4210,8 @@ anv_bind_buffer_memory(const VkBindBufferMemoryInfo *pBindInfo)
    assert(pBindInfo->sType == VK_STRUCTURE_TYPE_BIND_BUFFER_MEMORY_INFO);
 
    if (mem) {
-      assert(pBindInfo->memoryOffset < mem->bo->size);
-      assert(mem->bo->size - pBindInfo->memoryOffset >= buffer->vk.size);
+      assert(pBindInfo->memoryOffset < mem->size);
+      assert(mem->size - pBindInfo->memoryOffset >= buffer->vk.size);
       buffer->address = (struct anv_address) {
          .bo = mem->bo,
          .offset = pBindInfo->memoryOffset,

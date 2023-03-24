@@ -149,6 +149,9 @@ d3d12_get_param(struct pipe_screen *pscreen, enum pipe_cap param)
    case PIPE_CAP_TEXTURE_SWIZZLE:
       return 1;
 
+   case PIPE_CAP_MAX_TEXEL_BUFFER_ELEMENTS_UINT:
+      return 1 << D3D12_REQ_BUFFER_RESOURCE_TEXEL_COUNT_2_TO_EXP;
+
    case PIPE_CAP_MAX_TEXTURE_2D_SIZE:
       return D3D12_REQ_TEXTURE2D_U_OR_V_DIMENSION;
 

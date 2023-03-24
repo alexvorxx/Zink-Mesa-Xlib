@@ -4266,6 +4266,17 @@ iris_create_so_decl_list(const struct pipe_stream_output_info *info,
       sol.Buffer1SurfacePitch = 4 * info->stride[1];
       sol.Buffer2SurfacePitch = 4 * info->stride[2];
       sol.Buffer3SurfacePitch = 4 * info->stride[3];
+
+#if INTEL_NEEDS_WA_14017076903
+      /* Wa_14017076903 : SOL should be programmed to force the
+       * rendering to be enabled.
+       *
+       * This fixes a rare case where SOL must render to get correct
+       * occlusion query results even when no PS and depth buffers are
+       * bound.
+       */
+      sol.ForceRendering = Force_on;
+#endif
    }
 
    iris_pack_command(GENX(3DSTATE_SO_DECL_LIST), so_decl_map, list) {

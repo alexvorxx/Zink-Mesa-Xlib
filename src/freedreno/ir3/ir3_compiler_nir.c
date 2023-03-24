@@ -3086,17 +3086,36 @@ emit_tex(struct ir3_context *ctx, nir_tex_instr *tex)
       type = TYPE_S32;
 
    if (tex->op == nir_texop_txf_ms_fb) {
-      /* only expect a single txf_ms_fb per shader: */
-      compile_assert(ctx, !ctx->so->fb_read);
       compile_assert(ctx, ctx->so->type == MESA_SHADER_FRAGMENT);
 
       ctx->so->fb_read = true;
       if (ctx->compiler->options.bindless_fb_read_descriptor >= 0) {
          ctx->so->bindless_tex = true;
-
-         info.flags = IR3_INSTR_B | IR3_INSTR_A1EN;
+         info.flags = IR3_INSTR_B;
          info.base = ctx->compiler->options.bindless_fb_read_descriptor;
-         info.a1_val = ctx->compiler->options.bindless_fb_read_slot << 3;
+         struct ir3_instruction *texture, *sampler;
+
+         int base_index =
+            nir_tex_instr_src_index(tex, nir_tex_src_texture_handle);
+         nir_src tex_src = tex->src[base_index].src;
+
+         if (nir_src_is_const(tex_src)) {
+            texture = create_immed_typed(b,
+               nir_src_as_uint(tex_src) + ctx->compiler->options.bindless_fb_read_slot,
+               TYPE_U32);
+         } else {
+            texture = create_immed_typed(
+               ctx->block, ctx->compiler->options.bindless_fb_read_slot, TYPE_U32);
+            struct ir3_instruction *base =
+               ir3_get_src(ctx, &tex->src[base_index].src)[0];
+            texture = ir3_ADD_U(b, texture, 0, base, 0);
+         }
+         sampler = create_immed_typed(ctx->block, 0, TYPE_U32);
+         info.samp_tex = ir3_collect(b, texture, sampler);
+         info.flags |= IR3_INSTR_S2EN;
+         if (tex->texture_non_uniform) {
+            info.flags |= IR3_INSTR_NONUNIF;
+         }
       } else {
          /* Otherwise append a sampler to be patched into the texture
           * state:

@@ -39,7 +39,7 @@ Feature                                                 Status
 GL 3.0, GLSL 1.30 --- all DONE: freedreno, i965, nv50, nvc0, r600, radeonsi, llvmpipe, softpipe, virgl, zink, d3d12, panfrost
 
   glBindFragDataLocation, glGetFragDataLocation         DONE
-  GL_NV_conditional_render (Conditional rendering)      DONE (asahi)
+  GL_NV_conditional_render (Conditional rendering)      DONE (asahi, v3d)
   GL_ARB_map_buffer_range (Map buffer subranges)        DONE (v3d, vc4, lima, asahi)
   GL_ARB_color_buffer_float (Clamping controls)         DONE (v3d, vc4, lima, asahi)
   GL_ARB_texture_float (Float textures, renderbuffers)  DONE (v3d, asahi)
@@ -317,6 +317,8 @@ Khronos, ARB, and OES extensions that are not part of any OpenGL or OpenGL ES ve
   GL_ARB_sparse_texture_clamp                           DONE (radeonsi/gfx9+, zink)
   GL_ARB_texture_filter_minmax                          DONE (nvc0/gm200+, zink)
   GL_ARM_shader_framebuffer_fetch_depth_stencil         DONE (llvmpipe)
+  GL_EXT_shader_framebuffer_fetch                       DONE (freedreno/a6xx, iris/gen9+, llvmpipe, panfrost, virgl, zink, asahi)
+  GL_EXT_shader_framebuffer_fetch_non_coherent          DONE (freedreno/a6xx, iris, llvmpipe, panfrost, virgl, zink, asahi)
   GL_EXT_color_buffer_half_float                        DONE (freedreno, i965, iris, llvmpipe, nv50, nvc0, radeonsi, zink)
   GL_EXT_depth_bounds_test                              DONE (i965/gen12+, nv50, nvc0, radeonsi, softpipe, zink)
   GL_EXT_memory_object                                  DONE (freedreno, radeonsi, i965/gen7+, llvmpipe, zink, d3d12)

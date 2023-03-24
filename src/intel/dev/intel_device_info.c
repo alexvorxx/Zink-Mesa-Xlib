@@ -928,19 +928,6 @@ static const struct intel_device_info intel_device_info_ehl_2x4 = {
    .max_eus_per_subslice = 4,
 };
 
-#define GFX12_URB_MIN_MAX_ENTRIES                   \
-   .min_entries = {                                 \
-      [MESA_SHADER_VERTEX]    = 64,                 \
-      [MESA_SHADER_TESS_EVAL] = 34,                 \
-   },                                               \
-   .max_entries = {                                 \
-      [MESA_SHADER_VERTEX]    = 3576,               \
-      [MESA_SHADER_TESS_CTRL] = 1548,               \
-      [MESA_SHADER_TESS_EVAL] = 3576,               \
-      /* Wa_14013840143 */                          \
-      [MESA_SHADER_GEOMETRY]  = 1536,               \
-   }
-
 #define GFX12_HW_INFO                               \
    .ver = 12,                                       \
    .has_pln = false,                                \
@@ -953,7 +940,17 @@ static const struct intel_device_info intel_device_info_ehl_2x4 = {
    .max_threads_per_psd = 64,                       \
    .max_cs_threads = 112, /* threads per DSS */     \
    .urb = {                                         \
-      GFX12_URB_MIN_MAX_ENTRIES,                    \
+      .size = 512, /* For intel_stub_gpu */         \
+      .min_entries = {                              \
+         [MESA_SHADER_VERTEX]    = 64,              \
+         [MESA_SHADER_TESS_EVAL] = 34,              \
+      },                                            \
+      .max_entries = {                              \
+         [MESA_SHADER_VERTEX]    = 3576,            \
+         [MESA_SHADER_TESS_CTRL] = 1548,            \
+         [MESA_SHADER_TESS_EVAL] = 3576,            \
+         [MESA_SHADER_GEOMETRY]  = 1548,            \
+      },                                            \
    }
 
 #define GFX12_FEATURES(_gt, _slices, _l3)                       \
@@ -1049,15 +1046,44 @@ static const struct intel_device_info intel_device_info_sg1 = {
    GFX12_DG1_SG1_FEATURES,
 };
 
+#define XEHP_URB_MIN_MAX_ENTRIES                        \
+   .min_entries = {                                     \
+      [MESA_SHADER_VERTEX]    = 64,                     \
+      [MESA_SHADER_TESS_EVAL] = 34,                     \
+   },                                                   \
+   .max_entries = {                                     \
+      [MESA_SHADER_VERTEX]    = 3832, /* BSpec 47138 */ \
+      [MESA_SHADER_TESS_CTRL] = 1548, /* BSpec 47137 */ \
+      [MESA_SHADER_TESS_EVAL] = 3576, /* BSpec 47135 */ \
+      [MESA_SHADER_GEOMETRY]  = 1548, /* BSpec 47136 */ \
+   }
+
 #define XEHP_FEATURES(_gt, _slices, _l3)                        \
-   GFX12_FEATURES(_gt, _slices, _l3),                           \
+   GFX8_FEATURES,                                               \
+   .has_64bit_float = false,                                    \
+   .has_64bit_int = false,                                      \
+   .has_integer_dword_mul = false,                              \
+   .gt = _gt, .num_slices = _slices, .l3_banks = _l3,           \
+   .ver = 12,                                                   \
+   .has_pln = false,                                            \
+   .has_sample_with_hiz = false,                                \
+   .max_vs_threads = 546,  /* BSpec 46312 */                    \
+   .max_gs_threads = 336,  /* BSpec 46299 */                    \
+   .max_tcs_threads = 336, /* BSpec 46300 */                    \
+   .max_tes_threads = 546, /* BSpec 46298 */                    \
+   .max_threads_per_psd = 64,                                   \
+   .max_cs_threads = 112, /* threads per DSS */                 \
+   .urb = {                                                     \
+      .size = 768, /* For intel_stub_gpu */                     \
+      XEHP_URB_MIN_MAX_ENTRIES,                                 \
+   },                                                           \
    .num_thread_per_eu = 8 /* BSpec 44472 */,                    \
+   .max_eus_per_subslice = 16,                                  \
    .verx10 = 125,                                               \
    .has_llc = false,                                            \
    .has_lsc = true,                                             \
    .has_local_mem = true,                                       \
    .has_aux_map = false,                                        \
-   .urb.size = 768, /* For intel_stub_gpu */                    \
    .simulator_id = 29
 
 #define DG2_FEATURES                                            \
@@ -1278,6 +1304,8 @@ intel_get_device_info_from_pci_id(int pci_id,
       strncpy(devinfo->name, "Intel Unknown", sizeof(devinfo->name));
    }
 
+   devinfo->pci_device_id = pci_id;
+
    fill_masks(devinfo);
 
    /* From the Skylake PRM, 3DSTATE_PS::Scratch Space Base Pointer:
@@ -1329,6 +1357,9 @@ intel_get_device_info_from_pci_id(int pci_id,
 
    intel_device_info_update_cs_workgroup_threads(devinfo);
    intel_device_info_init_was(devinfo);
+
+   if (intel_needs_workaround(devinfo, 22012575642))
+      devinfo->urb.max_entries[MESA_SHADER_GEOMETRY] = 1536;
 
    return true;
 }

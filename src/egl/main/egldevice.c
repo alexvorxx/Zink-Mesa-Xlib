@@ -306,7 +306,7 @@ _eglQueryDevicesEXT(EGLint max_devices,
                     _EGLDevice **devices,
                     EGLint *num_devices)
 {
-   _EGLDevice *dev, *devs;
+   _EGLDevice *dev, *devs, *swrast;
    int i = 0, num_devs;
 
    if ((devices && max_devices <= 0) || !num_devices)
@@ -317,29 +317,38 @@ _eglQueryDevicesEXT(EGLint max_devices,
    num_devs = _eglRefreshDeviceList();
    devs = _eglGlobal.DeviceList;
 
+#ifdef GALLIUM_SOFTPIPE
+   swrast = devs;
+#else
+   swrast = NULL;
+   num_devs--;
+#endif
+
+   /* The first device is swrast. Start with the non-swrast device. */
+   devs = devs->Next;
+
    /* bail early if we only care about the count */
    if (!devices) {
       *num_devices = num_devs;
       goto out;
    }
 
-   /* Push the first device (the software one) to the end of the list.
-    * Sending it to the user only if they've requested the full list.
+   *num_devices = MIN2(num_devs, max_devices);
+
+   /* Add non-swrast devices first and add swrast last.
     *
     * By default, the user is likely to pick the first device so having the
     * software (aka least performant) one is not a good idea.
     */
-   *num_devices = MIN2(num_devs, max_devices);
-
-   for (i = 0, dev = devs->Next; dev && i < max_devices; i++) {
+   for (i = 0, dev = devs; dev && i < max_devices; i++) {
       devices[i] = dev;
       dev = dev->Next;
    }
 
    /* User requested the full device list, add the sofware device. */
-   if (max_devices >= num_devs) {
-      assert(_eglDeviceSupports(devs, _EGL_DEVICE_SOFTWARE));
-      devices[num_devs - 1] = devs;
+   if (max_devices >= num_devs && swrast) {
+      assert(_eglDeviceSupports(swrast, _EGL_DEVICE_SOFTWARE));
+      devices[num_devs - 1] = swrast;
    }
 
 out:

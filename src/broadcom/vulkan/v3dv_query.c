@@ -1407,8 +1407,8 @@ get_set_query_availability_cs()
 static inline nir_ssa_def *
 nir_get_occlusion_counter_offset(nir_builder *b, nir_ssa_def *query_idx)
 {
-   nir_ssa_def *query_group = nir_udiv(b, query_idx, nir_imm_int(b, 16));
-   nir_ssa_def *query_group_offset = nir_umod(b, query_idx, nir_imm_int(b, 16));
+   nir_ssa_def *query_group = nir_udiv_imm(b, query_idx, 16);
+   nir_ssa_def *query_group_offset = nir_umod_imm(b, query_idx, 16);
    nir_ssa_def *offset =
       nir_iadd(b, nir_imul(b, query_group, nir_imm_int(b, 1024)),
                   nir_imul(b, query_group_offset, nir_imm_int(b, 4)));

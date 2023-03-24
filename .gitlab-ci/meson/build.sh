@@ -7,18 +7,23 @@ set -o xtrace
 
 CROSS_FILE=/cross_file-"$CROSS".txt
 
+export PATH=$PATH:$PWD/.gitlab-ci/build
+
+touch native.file
+printf > native.file "%s\n" \
+  "[binaries]" \
+  "c = 'compiler-wrapper-${CC:-gcc}.sh'" \
+  "cpp = 'compiler-wrapper-${CXX:-g++}.sh'"
+
 # We need to control the version of llvm-config we're using, so we'll
 # tweak the cross file or generate a native file to do so.
 if test -n "$LLVM_VERSION"; then
     LLVM_CONFIG="llvm-config-${LLVM_VERSION}"
-    echo -e "[binaries]\nllvm-config = '`which $LLVM_CONFIG`'" > native.file
+    echo "llvm-config = '`which $LLVM_CONFIG`'" >> native.file
     if [ -n "$CROSS" ]; then
         sed -i -e '/\[binaries\]/a\' -e "llvm-config = '`which $LLVM_CONFIG`'" $CROSS_FILE
     fi
     $LLVM_CONFIG --version
-else
-    rm -f native.file
-    touch native.file
 fi
 
 # cross-xfail-$CROSS, if it exists, contains a list of tests that are expected
@@ -71,7 +76,9 @@ meson setup _build \
       -D buildtype=${BUILDTYPE:-debug} \
       -D build-tests=true \
       -D c_args="$(echo -n $C_ARGS)" \
+      -D c_link_args="$(echo -n $C_LINK_ARGS)" \
       -D cpp_args="$(echo -n $CPP_ARGS)" \
+      -D cpp_link_args="$(echo -n $CPP_LINK_ARGS)" \
       -D enable-glcpp-tests=false \
       -D libunwind=${UNWIND} \
       ${DRI_LOADERS} \

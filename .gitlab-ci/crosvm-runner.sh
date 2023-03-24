@@ -66,9 +66,11 @@ set_vsock_context || { echo "Could not generate crosvm vsock CID" >&2; exit 1; }
 echo "Variables passed through:"
 SCRIPT_DIR=$(readlink -en "${0%/*}")
 ${SCRIPT_DIR}/common/generate-env.sh | tee ${VM_TEMP_DIR}/crosvm-env.sh
+cp ${SCRIPTS_DIR}/setup-test-env.sh ${VM_TEMP_DIR}/setup-test-env.sh
 
 # Set the crosvm-script as the arguments of the current script
-echo "$@" > ${VM_TEMP_DIR}/crosvm-script.sh
+echo ". ${VM_TEMP_DIR}/setup-test-env.sh" > ${VM_TEMP_DIR}/crosvm-script.sh
+echo "$@" >> ${VM_TEMP_DIR}/crosvm-script.sh
 
 # Setup networking
 /usr/sbin/iptables-legacy -w -t nat -A POSTROUTING -o eth0 -j MASQUERADE

@@ -869,6 +869,12 @@ typedef enum
     */
    SYSTEM_VALUE_FRAG_SHADING_RATE,
 
+   /*
+    * Rasterized fragment is fully covered by the generating primitive
+    * (SPV_EXT_fragment_fully_covered).
+    */
+   SYSTEM_VALUE_FULLY_COVERED,
+
    SYSTEM_VALUE_MAX             /**< Number of values */
 } gl_system_value;
 

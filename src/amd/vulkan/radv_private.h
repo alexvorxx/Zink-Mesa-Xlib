@@ -440,10 +440,13 @@ bool radv_create_shaders_from_pipeline_cache(
    struct radv_pipeline *pipeline, struct radv_ray_tracing_module *rt_groups,
    uint32_t num_rt_groups, bool *found_in_application_cache);
 
+struct radv_shader_binary_part;
+
 void radv_pipeline_cache_insert_shaders(struct radv_device *device,
                                         struct radv_pipeline_cache *cache,
                                         const unsigned char *sha1, struct radv_pipeline *pipeline,
                                         struct radv_shader_binary *const *binaries,
+                                        struct radv_shader_part_binary *ps_epilog_binary,
                                         const struct radv_ray_tracing_module *rt_groups,
                                         uint32_t num_rt_groups);
 
@@ -1889,7 +1892,8 @@ struct radv_ps_epilog_state
    uint8_t need_src_alpha;
 };
 
-struct radv_ps_epilog_key radv_generate_ps_epilog_key(const struct radv_graphics_pipeline *pipeline,
+struct radv_ps_epilog_key radv_generate_ps_epilog_key(const struct radv_device *device,
+                                                      const struct radv_graphics_pipeline *pipeline,
                                                       const struct radv_ps_epilog_state *state,
                                                       bool disable_mrt_compaction);
 
@@ -2150,8 +2154,6 @@ struct radv_pipeline {
    struct vk_object_base base;
    enum radv_pipeline_type type;
 
-   struct radv_device *device;
-
    bool is_internal;
    bool need_indirect_descriptor_sets;
    struct radv_shader *shaders[MESA_VULKAN_SHADER_STAGES];
@@ -2190,6 +2192,12 @@ struct radv_graphics_pipeline {
    bool use_per_attribute_vb_descs;
    bool can_use_simple_input;
    bool uses_user_sample_locations;
+
+   /* Whether the pipeline uses inner coverage which means that a fragment has all of its pixel
+    * squares fully covered by the generating primitive.
+    */
+   bool uses_inner_coverage;
+
    bool need_null_export_workaround;
    /* Whether the pipeline forces per-vertex VRS (GFX10.3+). */
    bool force_vrs_per_vertex;
@@ -2202,6 +2210,7 @@ struct radv_graphics_pipeline {
    bool has_streamout;
    bool has_dynamic_samples;
    bool has_sample_positions;
+   bool has_num_verts_per_prim;
 
    uint8_t vtx_emit_num;
 
@@ -2265,8 +2274,6 @@ struct radv_graphics_pipeline {
 
 struct radv_compute_pipeline {
    struct radv_pipeline base;
-
-   bool cs_regalloc_hang_bug;
 };
 
 struct radv_ray_tracing_module {
@@ -2357,8 +2364,7 @@ bool radv_pipeline_has_ngg_passthrough(const struct radv_graphics_pipeline *pipe
 
 bool radv_pipeline_has_gs_copy_shader(const struct radv_pipeline *pipeline);
 
-struct radv_userdata_info *radv_lookup_user_sgpr(const struct radv_pipeline *pipeline,
-                                                 gl_shader_stage stage, int idx);
+const struct radv_userdata_info *radv_get_user_sgpr(const struct radv_shader *shader, int idx);
 
 struct radv_shader *radv_get_shader(const struct radv_pipeline *pipeline, gl_shader_stage stage);
 
@@ -2372,7 +2378,8 @@ bool radv_mem_vectorize_callback(unsigned align_mul, unsigned align_offset, unsi
                                  unsigned num_components, nir_intrinsic_instr *low, nir_intrinsic_instr *high,
                                  void *data);
 
-void radv_compute_pipeline_init(struct radv_compute_pipeline *pipeline,
+void radv_compute_pipeline_init(const struct radv_device *device,
+                                struct radv_compute_pipeline *pipeline,
                                 const struct radv_pipeline_layout *layout);
 
 struct radv_graphics_pipeline_create_info {
@@ -2385,7 +2392,8 @@ struct radv_graphics_pipeline_create_info {
    uint32_t custom_blend_mode;
 };
 
-struct radv_pipeline_key radv_generate_pipeline_key(const struct radv_pipeline *pipeline,
+struct radv_pipeline_key radv_generate_pipeline_key(const struct radv_device *device,
+                                                    const struct radv_pipeline *pipeline,
                                                     VkPipelineCreateFlags flags);
 
 void radv_pipeline_init(struct radv_device *device, struct radv_pipeline *pipeline,

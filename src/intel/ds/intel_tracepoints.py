@@ -45,25 +45,37 @@ def define_tracepoints(args):
     Header('ds/intel_driver_ds.h', scope=HeaderScope.HEADER)
 
     def begin_end_tp(name, tp_args=[], tp_struct=None, tp_print=None,
-                     tp_default_enabled=True, end_pipelined=True):
+                     tp_default_enabled=True, end_pipelined=True,
+                     need_cs_param=False):
         global intel_default_tps
         if tp_default_enabled:
             intel_default_tps.append(name)
         Tracepoint('intel_begin_{0}'.format(name),
                    toggle_name=name,
-                   tp_perfetto='intel_ds_begin_{0}'.format(name))
+                   tp_perfetto='intel_ds_begin_{0}'.format(name),
+                   need_cs_param=need_cs_param)
         Tracepoint('intel_end_{0}'.format(name),
                    toggle_name=name,
                    args=tp_args,
                    tp_struct=tp_struct,
                    tp_perfetto='intel_ds_end_{0}'.format(name),
                    tp_print=tp_print,
-                   end_of_pipe=end_pipelined)
+                   end_of_pipe=end_pipelined,
+                   need_cs_param=need_cs_param)
 
     # Frame tracepoints, only for Iris
     begin_end_tp('frame',
                  tp_args=[Arg(type='uint32_t', var='frame', c_format='%u'),],
                  end_pipelined=False)
+
+    # Annotations for Queue(Begin|End)DebugUtilsLabelEXT
+    begin_end_tp('queue_annotation',
+                 tp_args=[ArgStruct(type='unsigned', var='len'),
+                          ArgStruct(type='const char *', var='str'),],
+                 tp_struct=[Arg(type='uint8_t', name='dummy', var='0', c_format='%hhu'),
+                            Arg(type='char', name='str', var='str', c_format='%s', length_arg='len + 1', copy_func='strncpy'),],
+                 end_pipelined=False,
+                 need_cs_param=True)
 
     # Batch buffer tracepoints, only for Iris
     begin_end_tp('batch',
@@ -202,7 +214,6 @@ def generate_code(args):
 
     utrace_generate(cpath=args.utrace_src, hpath=args.utrace_hdr,
                     ctx_param='struct intel_ds_device *dev',
-                    need_cs_param=False,
                     trace_toggle_name='intel_gpu_tracepoint',
                     trace_toggle_defaults=intel_default_tps)
     utrace_generate_perfetto_utils(hpath=args.perfetto_hdr)

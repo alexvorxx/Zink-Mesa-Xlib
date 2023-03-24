@@ -31,8 +31,10 @@ reset_obj(struct zink_screen *screen, struct zink_batch_state *bs, struct zink_r
       obj->unordered_read = true;
       obj->unordered_write = true;
       obj->access = 0;
+      obj->unordered_access = 0;
       obj->last_write = 0;
       obj->access_stage = 0;
+      obj->unordered_access_stage = 0;
       obj->copies_need_reset = true;
       /* also prune dead view objects */
       simple_mtx_lock(&obj->view_lock);
@@ -150,6 +152,9 @@ zink_reset_batch_state(struct zink_context *ctx, struct zink_batch_state *bs)
       simple_mtx_unlock(&screen->semaphores_lock);
    }
    bs->swapchain = NULL;
+
+   bs->unordered_write_access = 0;
+   bs->unordered_write_stages = 0;
 
    /* only reset submitted here so that tc fence desync can pick up the 'completed' flag
     * before the state is reused
@@ -573,6 +578,16 @@ submit_queue(void *data, void *gdata, int thread_index)
       goto end;
    }
    if (bs->has_barriers) {
+      if (bs->unordered_write_access) {
+         VkMemoryBarrier mb;
+         mb.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
+         mb.pNext = NULL;
+         mb.srcAccessMask = bs->unordered_write_access;
+         mb.dstAccessMask = 0;
+         VKSCR(CmdPipelineBarrier)(bs->barrier_cmdbuf,
+                                   bs->unordered_write_stages, 0,
+                                   0, 1, &mb, 0, NULL, 0, NULL);
+      }
       result = VKSCR(EndCommandBuffer)(bs->barrier_cmdbuf);
       if (result != VK_SUCCESS) {
          mesa_loge("ZINK: vkEndCommandBuffer failed (%s)", vk_Result_to_str(result));
@@ -664,7 +679,7 @@ zink_end_batch(struct zink_context *ctx, struct zink_batch *batch)
    if (screen->device_lost)
       return;
 
-   if (screen->threaded) {
+   if (screen->threaded_submit) {
       util_queue_add_job(&screen->flush_queue, bs, &bs->flush_completed,
                          submit_queue, post_submit, 0);
    } else {

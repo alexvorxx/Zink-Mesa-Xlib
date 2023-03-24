@@ -48,4 +48,35 @@ dxil_spirv_nir_passes(nir_shader *nir,
                       const struct dxil_spirv_runtime_conf *conf,
                       bool *requires_runtime_data);
 
+struct dxil_spirv_binding_remapping {
+   /* If ~0, don't lower to bindless */
+   uint32_t descriptor_set;
+   uint32_t binding;
+   bool is_sampler;
+};
+struct dxil_spirv_nir_lower_bindless_options {
+   uint32_t num_descriptor_sets;
+   uint32_t dynamic_buffer_binding;
+   void(*remap_binding)(struct dxil_spirv_binding_remapping *inout, void *context);
+   void *callback_context;
+};
+
+/* Each entry in a bindless descriptor set follows this layout. The first 32 bits are
+ * either a texture or buffer descriptor index in the descriptor heap. For pure
+ * sampler types, these bits are unused. The upper 32 bits are either a buffer
+ * offset, or for samplers (including combined image+sampler), a sampler index. */
+struct dxil_spirv_bindless_entry {
+   union {
+      uint32_t texture_idx;
+      uint32_t buffer_idx;
+   };
+   union {
+      uint32_t buffer_offset;
+      uint32_t sampler_idx;
+   };
+};
+
+bool
+dxil_spirv_nir_lower_bindless(nir_shader *nir, struct dxil_spirv_nir_lower_bindless_options *options);
+
 #endif

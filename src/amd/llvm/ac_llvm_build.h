@@ -586,8 +586,6 @@ LLVMValueRef ac_build_atomic_rmw(struct ac_llvm_context *ctx, LLVMAtomicRMWBinOp
 LLVMValueRef ac_build_atomic_cmp_xchg(struct ac_llvm_context *ctx, LLVMValueRef ptr,
                                       LLVMValueRef cmp, LLVMValueRef val, const char *sync_scope);
 
-void ac_add_sinking_pass(LLVMPassManagerRef PM);
-
 void ac_export_mrt_z(struct ac_llvm_context *ctx, LLVMValueRef depth, LLVMValueRef stencil,
                      LLVMValueRef samplemask, LLVMValueRef mrt0_alpha, bool is_last,
                      struct ac_export_args *args);

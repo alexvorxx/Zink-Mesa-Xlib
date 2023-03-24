@@ -125,8 +125,12 @@ lower_abi_instr(nir_builder *b, nir_instr *instr, void *state)
    case nir_intrinsic_load_ring_attr_amd:
       replacement = load_ring(b, RING_PS_ATTR, s);
 
+      /* Note, the HW always assumes there is at least 1 per-vertex param. */
+      const unsigned total_num_params =
+         MAX2(1, s->info->outinfo.param_exports) + s->info->outinfo.prim_param_exports;
+
       nir_ssa_def *dword1 = nir_channel(b, replacement, 1);
-      dword1 = nir_ior_imm(b, dword1, S_008F04_STRIDE(16 * s->info->outinfo.param_exports));
+      dword1 = nir_ior_imm(b, dword1, S_008F04_STRIDE(16 * total_num_params));
       replacement = nir_vector_insert_imm(b, replacement, dword1, 1);
       break;
 
@@ -406,7 +410,12 @@ lower_abi_instr(nir_builder *b, nir_instr *instr, void *state)
       unsigned num_vertices;
 
       if (stage == MESA_SHADER_VERTEX) {
-         num_vertices = radv_get_num_vertices_per_prim(s->pl_key);
+         /* For dynamic primitive topology with streamout. */
+         if (s->info->vs.dynamic_num_verts_per_prim) {
+            replacement = ac_nir_load_arg(b, &s->args->ac, s->args->num_verts_per_prim);
+         } else {
+            replacement = nir_imm_int(b, radv_get_num_vertices_per_prim(s->pl_key));
+         }
       } else if (stage == MESA_SHADER_TESS_EVAL) {
          if (s->info->tes.point_mode) {
             num_vertices = 1;
@@ -415,6 +424,7 @@ lower_abi_instr(nir_builder *b, nir_instr *instr, void *state)
          } else {
             num_vertices = 3;
          }
+         replacement = nir_imm_int(b, num_vertices);
       } else {
          assert(stage == MESA_SHADER_GEOMETRY);
          switch (s->info->gs.output_prim) {
@@ -431,8 +441,8 @@ lower_abi_instr(nir_builder *b, nir_instr *instr, void *state)
             unreachable("invalid GS output primitive");
             break;
          }
+         replacement = nir_imm_int(b, num_vertices);
       }
-      replacement = nir_imm_int(b, num_vertices);
       break;
    }
    case nir_intrinsic_load_ordered_id_amd:
@@ -441,6 +451,11 @@ lower_abi_instr(nir_builder *b, nir_instr *instr, void *state)
    case nir_intrinsic_load_force_vrs_rates_amd:
       replacement = ac_nir_load_arg(b, &s->args->ac, s->args->ac.force_vrs_rates);
       break;
+   case nir_intrinsic_load_fully_covered: {
+      nir_ssa_def *sample_coverage = ac_nir_load_arg(b, &s->args->ac, s->args->ac.sample_coverage);
+      replacement = nir_ine_imm(b, sample_coverage, 0);
+      break;
+   }
    default:
       progress = false;
       break;

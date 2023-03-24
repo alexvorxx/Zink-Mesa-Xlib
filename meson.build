@@ -904,6 +904,9 @@ endif
 if cc.has_function('reallocarray')
    pre_args += '-DHAVE_REALLOCARRAY'
 endif
+if cc.has_function('fmemopen')
+   pre_args += '-DHAVE_FMEMOPEN'
+endif
 
 # TODO: this is very incomplete
 if ['linux', 'cygwin', 'gnu', 'freebsd', 'gnu/kfreebsd', 'haiku', 'android'].contains(host_machine.system())

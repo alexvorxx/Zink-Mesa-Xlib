@@ -429,3 +429,6 @@ KHR-GL46.polygon_offset_clamp.PolygonOffsetClampMinMax,Fail
 KHR-GL46.polygon_offset_clamp.PolygonOffsetClampZeroInfinity,Fail
 
 spec@arb_query_buffer_object@qbo@query-GL_PRIMITIVES_GENERATED-ASYNC_CPU_READ_AFTER-GL_UNSIGNED_INT64_ARB,Fail
+
+# Should be fixed in the next glcts release (according to zmike)
+KHR-GL46.multi_bind.dispatch_bind_image_textures,Fail

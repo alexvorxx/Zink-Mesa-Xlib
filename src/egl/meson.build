@@ -28,6 +28,10 @@ link_for_egl = []
 deps_for_egl = []
 incs_for_egl = [inc_include, inc_src, inc_egl]
 
+if with_gallium_softpipe
+  c_args_for_egl += '-DGALLIUM_SOFTPIPE'
+endif
+
 files_egl = files(
   'main/eglapi.c',
   'main/eglarray.c',

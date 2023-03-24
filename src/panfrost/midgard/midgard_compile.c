@@ -40,7 +40,6 @@
 #include "util/u_dynarray.h"
 #include "util/u_math.h"
 
-#include "panfrost/util/pan_lower_framebuffer.h"
 #include "compiler.h"
 #include "helpers.h"
 #include "midgard.h"
@@ -329,61 +328,94 @@ midgard_vectorize_filter(const nir_instr *instr, const void *data)
    return 4;
 }
 
-static void
-optimise_nir(nir_shader *nir, unsigned quirks, bool is_blend, bool is_blit)
+void
+midgard_preprocess_nir(nir_shader *nir, unsigned gpu_id)
 {
-   bool progress;
-   unsigned lower_flrp = (nir->options->lower_flrp16 ? 16 : 0) |
-                         (nir->options->lower_flrp32 ? 32 : 0) |
-                         (nir->options->lower_flrp64 ? 64 : 0);
+   unsigned quirks = midgard_get_quirks(gpu_id);
 
-   NIR_PASS(progress, nir, nir_lower_regs_to_ssa);
+   /* Lower gl_Position pre-optimisation, but after lowering vars to ssa
+    * (so we don't accidentally duplicate the epilogue since mesa/st has
+    * messed with our I/O quite a bit already).
+    */
+   NIR_PASS_V(nir, nir_lower_vars_to_ssa);
+
+   if (nir->info.stage == MESA_SHADER_VERTEX) {
+      NIR_PASS_V(nir, nir_lower_viewport_transform);
+      NIR_PASS_V(nir, nir_lower_point_size, 1.0, 0.0);
+   }
+
+   NIR_PASS_V(nir, nir_lower_var_copies);
+   NIR_PASS_V(nir, nir_lower_vars_to_ssa);
+   NIR_PASS_V(nir, nir_split_var_copies);
+   NIR_PASS_V(nir, nir_lower_var_copies);
+   NIR_PASS_V(nir, nir_lower_global_vars_to_local);
+   NIR_PASS_V(nir, nir_lower_var_copies);
+   NIR_PASS_V(nir, nir_lower_vars_to_ssa);
+
+   NIR_PASS_V(nir, nir_lower_io, nir_var_shader_in | nir_var_shader_out,
+              glsl_type_size, 0);
+
+   if (nir->info.stage == MESA_SHADER_VERTEX) {
+      /* nir_lower[_explicit]_io is lazy and emits mul+add chains even
+       * for offsets it could figure out are constant.  Do some
+       * constant folding before pan_nir_lower_store_component below.
+       */
+      NIR_PASS_V(nir, nir_opt_constant_folding);
+      NIR_PASS_V(nir, pan_nir_lower_store_component);
+   }
+
+   NIR_PASS_V(nir, nir_lower_ssbo);
+   NIR_PASS_V(nir, pan_nir_lower_zs_store);
+
+   NIR_PASS_V(nir, pan_nir_lower_64bit_intrin);
+
+   NIR_PASS_V(nir, midgard_nir_lower_global_load);
+
+   NIR_PASS_V(nir, nir_lower_regs_to_ssa);
    nir_lower_idiv_options idiv_options = {
       .allow_fp16 = true,
    };
-   NIR_PASS(progress, nir, nir_lower_idiv, &idiv_options);
+
+   NIR_PASS_V(nir, nir_lower_idiv, &idiv_options);
 
    nir_lower_tex_options lower_tex_options = {
       .lower_txs_lod = true,
       .lower_txp = ~0,
       .lower_tg4_broadcom_swizzle = true,
-      /* TODO: we have native gradient.. */
       .lower_txd = true,
       .lower_invalid_implicit_lod = true,
    };
 
-   NIR_PASS(progress, nir, nir_lower_tex, &lower_tex_options);
+   NIR_PASS_V(nir, nir_lower_tex, &lower_tex_options);
 
    /* TEX_GRAD fails to apply sampler descriptor settings on some
-    * implementations, requiring a lowering. However, blit shaders do not
-    * use the affected settings and should skip the workaround.
+    * implementations, requiring a lowering.
     */
-   if ((quirks & MIDGARD_BROKEN_LOD) && !is_blit)
+   if (quirks & MIDGARD_BROKEN_LOD)
       NIR_PASS_V(nir, midgard_nir_lod_errata);
 
    /* Midgard image ops coordinates are 16-bit instead of 32-bit */
-   NIR_PASS(progress, nir, midgard_nir_lower_image_bitsize);
+   NIR_PASS_V(nir, midgard_nir_lower_image_bitsize);
 
    if (nir->info.stage == MESA_SHADER_FRAGMENT)
-      NIR_PASS(progress, nir, nir_lower_helper_writes, true);
+      NIR_PASS_V(nir, nir_lower_helper_writes, true);
 
-   NIR_PASS(progress, nir, pan_lower_helper_invocation);
-   NIR_PASS(progress, nir, pan_lower_sample_pos);
-
-   if (nir->xfb_info != NULL && nir->info.has_transform_feedback_varyings) {
-      NIR_PASS_V(nir, nir_io_add_const_offset_to_base,
-                 nir_var_shader_in | nir_var_shader_out);
-      NIR_PASS_V(nir, nir_io_add_intrinsic_xfb_info);
-      NIR_PASS_V(nir, pan_lower_xfb);
-   }
-
-   NIR_PASS(progress, nir, midgard_nir_lower_algebraic_early);
+   NIR_PASS_V(nir, pan_lower_helper_invocation);
+   NIR_PASS_V(nir, pan_lower_sample_pos);
+   NIR_PASS_V(nir, midgard_nir_lower_algebraic_early);
    NIR_PASS_V(nir, nir_lower_alu_to_scalar, mdg_should_scalarize, NULL);
+   NIR_PASS_V(nir, nir_lower_flrp, 16 | 32 | 64, false /* always_precise */);
+   NIR_PASS_V(nir, nir_lower_var_copies);
+}
+
+static void
+optimise_nir(nir_shader *nir, unsigned quirks, bool is_blend)
+{
+   bool progress;
 
    do {
       progress = false;
 
-      NIR_PASS(progress, nir, nir_lower_var_copies);
       NIR_PASS(progress, nir, nir_lower_vars_to_ssa);
 
       NIR_PASS(progress, nir, nir_copy_prop);
@@ -394,22 +426,6 @@ optimise_nir(nir_shader *nir, unsigned quirks, bool is_blend, bool is_blit)
       NIR_PASS(progress, nir, nir_opt_peephole_select, 64, false, true);
       NIR_PASS(progress, nir, nir_opt_algebraic);
       NIR_PASS(progress, nir, nir_opt_constant_folding);
-
-      if (lower_flrp != 0) {
-         bool lower_flrp_progress = false;
-         NIR_PASS(lower_flrp_progress, nir, nir_lower_flrp, lower_flrp,
-                  false /* always_precise */);
-         if (lower_flrp_progress) {
-            NIR_PASS(progress, nir, nir_opt_constant_folding);
-            progress = true;
-         }
-
-         /* Nothing should rematerialize any flrps, so we only
-          * need to do this lowering once.
-          */
-         lower_flrp = 0;
-      }
-
       NIR_PASS(progress, nir, nir_opt_undef);
       NIR_PASS(progress, nir, nir_lower_undef_to_zero);
 
@@ -1543,29 +1559,6 @@ emit_attr_read(compiler_context *ctx, unsigned dest, unsigned offset,
    emit_mir_instruction(ctx, ins);
 }
 
-static void
-emit_sysval_read(compiler_context *ctx, nir_instr *instr,
-                 unsigned nr_components, unsigned offset)
-{
-   nir_dest nir_dest;
-
-   /* Figure out which uniform this is */
-   unsigned sysval_ubo = ctx->inputs->fixed_sysval_ubo >= 0
-                            ? ctx->inputs->fixed_sysval_ubo
-                            : ctx->nir->info.num_ubos;
-   int sysval = panfrost_sysval_for_instr(instr, &nir_dest);
-   unsigned dest = nir_dest_index(&nir_dest);
-   unsigned uniform =
-      pan_lookup_sysval(ctx->sysval_to_id, &ctx->info->sysvals, sysval);
-
-   /* Emit the read itself -- this is never indirect */
-   midgard_instruction *ins =
-      emit_ubo_read(ctx, instr, dest, (uniform * 16) + offset, NULL, 0,
-                    sysval_ubo, nr_components);
-
-   ins->mask = mask_of(nr_components);
-}
-
 static unsigned
 compute_builtin_arg(nir_intrinsic_op op)
 {
@@ -1753,12 +1746,6 @@ emit_intrinsic(compiler_context *ctx, nir_intrinsic_instr *instr)
    case nir_intrinsic_image_store:
       emit_image_op(ctx, instr, false);
       break;
-
-   case nir_intrinsic_image_size: {
-      unsigned nr_comp = nir_intrinsic_dest_components(instr);
-      emit_sysval_read(ctx, &instr->instr, nr_comp, 0);
-      break;
-   }
 
    case nir_intrinsic_load_ubo:
    case nir_intrinsic_load_global:
@@ -2028,13 +2015,18 @@ emit_intrinsic(compiler_context *ctx, nir_intrinsic_instr *instr)
       break;
 
    /* Special case of store_output for lowered blend shaders */
-   case nir_intrinsic_store_raw_output_pan:
+   case nir_intrinsic_store_raw_output_pan: {
       assert(ctx->stage == MESA_SHADER_FRAGMENT);
       reg = nir_src_index(ctx, &instr->src[0]);
-      for (unsigned s = 0; s < ctx->blend_sample_iterations; s++)
-         emit_fragment_store(ctx, reg, ~0, ~0,
-                             ctx->inputs->blend.rt + MIDGARD_COLOR_RT0, s);
+
+      nir_io_semantics sem = nir_intrinsic_io_semantics(instr);
+      assert(sem.location >= FRAG_RESULT_DATA0);
+      unsigned rt = sem.location - FRAG_RESULT_DATA0;
+
+      emit_fragment_store(ctx, reg, ~0, ~0, rt + MIDGARD_COLOR_RT0,
+                          nir_intrinsic_base(instr));
       break;
+   }
 
    case nir_intrinsic_store_global:
    case nir_intrinsic_store_shared:
@@ -2051,42 +2043,6 @@ emit_intrinsic(compiler_context *ctx, nir_intrinsic_instr *instr)
          seg = LDST_SCRATCH;
 
       emit_global(ctx, &instr->instr, false, reg, &instr->src[1], seg);
-      break;
-
-   case nir_intrinsic_load_ssbo_address:
-   case nir_intrinsic_load_xfb_address:
-      emit_sysval_read(ctx, &instr->instr, 2, 0);
-      break;
-
-   case nir_intrinsic_load_first_vertex:
-   case nir_intrinsic_load_work_dim:
-   case nir_intrinsic_load_num_vertices:
-      emit_sysval_read(ctx, &instr->instr, 1, 0);
-      break;
-
-   case nir_intrinsic_load_base_vertex:
-      emit_sysval_read(ctx, &instr->instr, 1, 4);
-      break;
-
-   case nir_intrinsic_load_base_instance:
-   case nir_intrinsic_get_ssbo_size:
-      emit_sysval_read(ctx, &instr->instr, 1, 8);
-      break;
-
-   case nir_intrinsic_load_sample_positions_pan:
-      emit_sysval_read(ctx, &instr->instr, 2, 0);
-      break;
-
-   case nir_intrinsic_load_viewport_scale:
-   case nir_intrinsic_load_viewport_offset:
-   case nir_intrinsic_load_num_workgroups:
-   case nir_intrinsic_load_sampler_lod_parameters_pan:
-   case nir_intrinsic_load_workgroup_size:
-      emit_sysval_read(ctx, &instr->instr, 3, 0);
-      break;
-
-   case nir_intrinsic_load_blend_const_color_rgba:
-      emit_sysval_read(ctx, &instr->instr, 4, 0);
       break;
 
    case nir_intrinsic_load_workgroup_id:
@@ -2480,9 +2436,6 @@ emit_tex(compiler_context *ctx, nir_tex_instr *instr)
    case nir_texop_txf:
    case nir_texop_txf_ms:
       emit_texop_native(ctx, instr, midgard_tex_op_fetch);
-      break;
-   case nir_texop_txs:
-      emit_sysval_read(ctx, &instr->instr, 4, 0);
       break;
    default: {
       fprintf(stderr, "Unhandled texture op: %d\n", instr->op);
@@ -3114,23 +3067,11 @@ midgard_compile_shader_nir(nir_shader *nir,
 
    /* TODO: Bound against what? */
    compiler_context *ctx = rzalloc(NULL, compiler_context);
-   ctx->sysval_to_id =
-      panfrost_init_sysvals(&info->sysvals, inputs->fixed_sysval_layout, ctx);
 
    ctx->inputs = inputs;
    ctx->nir = nir;
    ctx->info = info;
    ctx->stage = nir->info.stage;
-
-   if (inputs->is_blend) {
-      unsigned nr_samples = MAX2(inputs->blend.nr_samples, 1);
-      const struct util_format_description *desc =
-         util_format_description(inputs->rt_formats[inputs->blend.rt]);
-
-      /* We have to split writeout in 128 bit chunks */
-      ctx->blend_sample_iterations =
-         DIV_ROUND_UP(desc->block.bits * nr_samples, 128);
-   }
    ctx->blend_input = ~0;
    ctx->blend_src1 = ~0;
    ctx->quirks = midgard_get_quirks(inputs->gpu_id);
@@ -3139,54 +3080,11 @@ midgard_compile_shader_nir(nir_shader *nir,
 
    ctx->ssa_constants = _mesa_hash_table_u64_create(ctx);
 
-   /* Lower gl_Position pre-optimisation, but after lowering vars to ssa
-    * (so we don't accidentally duplicate the epilogue since mesa/st has
-    * messed with our I/O quite a bit already) */
-
-   NIR_PASS_V(nir, nir_lower_vars_to_ssa);
-
-   if (ctx->stage == MESA_SHADER_VERTEX) {
-      NIR_PASS_V(nir, nir_lower_viewport_transform);
-      NIR_PASS_V(nir, nir_lower_point_size, 1.0, 0.0);
-   }
-
-   NIR_PASS_V(nir, nir_lower_var_copies);
-   NIR_PASS_V(nir, nir_lower_vars_to_ssa);
-   NIR_PASS_V(nir, nir_split_var_copies);
-   NIR_PASS_V(nir, nir_lower_var_copies);
-   NIR_PASS_V(nir, nir_lower_global_vars_to_local);
-   NIR_PASS_V(nir, nir_lower_var_copies);
-   NIR_PASS_V(nir, nir_lower_vars_to_ssa);
-
-   NIR_PASS_V(nir, nir_lower_io, nir_var_shader_in | nir_var_shader_out,
-              glsl_type_size, 0);
-
-   if (ctx->stage == MESA_SHADER_VERTEX) {
-      /* nir_lower[_explicit]_io is lazy and emits mul+add chains even
-       * for offsets it could figure out are constant.  Do some
-       * constant folding before pan_nir_lower_store_component below.
-       */
-      NIR_PASS_V(nir, nir_opt_constant_folding);
-      NIR_PASS_V(nir, pan_nir_lower_store_component);
-   }
-
-   NIR_PASS_V(nir, nir_lower_ssbo);
-   NIR_PASS_V(nir, pan_nir_lower_zs_store);
-
-   NIR_PASS_V(nir, pan_nir_lower_64bit_intrin);
-
-   NIR_PASS_V(nir, midgard_nir_lower_global_load);
-
-   NIR_PASS_V(nir, pan_lower_framebuffer, inputs->rt_formats,
-              inputs->raw_fmt_mask, inputs->is_blend,
-              ctx->quirks & MIDGARD_BROKEN_BLEND_LOADS);
-
    /* Collect varyings after lowering I/O */
    pan_nir_collect_varyings(nir, info);
 
    /* Optimisation passes */
-
-   optimise_nir(nir, ctx->quirks, inputs->is_blend, inputs->is_blit);
+   optimise_nir(nir, ctx->quirks, inputs->is_blend);
 
    bool skip_internal = nir->info.internal;
    skip_internal &= !(midgard_debug & MIDGARD_DBG_INTERNAL);
@@ -3382,7 +3280,5 @@ midgard_compile_shader_nir(nir_shader *nir,
    }
 
    _mesa_hash_table_u64_destroy(ctx->ssa_constants);
-   _mesa_hash_table_u64_destroy(ctx->sysval_to_id);
-
    ralloc_free(ctx);
 }

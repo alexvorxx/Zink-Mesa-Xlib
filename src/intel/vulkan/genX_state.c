@@ -545,7 +545,7 @@ genX(init_device_state)(struct anv_device *device)
       case INTEL_ENGINE_CLASS_COMPUTE:
          res = init_compute_queue_state(queue);
          break;
-      case I915_ENGINE_CLASS_VIDEO:
+      case INTEL_ENGINE_CLASS_VIDEO:
          res = VK_SUCCESS;
          break;
       default:

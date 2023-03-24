@@ -312,8 +312,7 @@ aco_compile_vs_prolog(const struct aco_compiler_options* options,
    program->debug.private_data = NULL;
 
    /* create IR */
-   unsigned num_preserved_sgprs;
-   aco::select_vs_prolog(program.get(), pinfo, &config, options, info, args, &num_preserved_sgprs);
+   aco::select_vs_prolog(program.get(), pinfo, &config, options, info, args);
    aco::insert_NOPs(program.get());
 
    if (options->dump_shader)
@@ -333,7 +332,6 @@ aco_compile_vs_prolog(const struct aco_compiler_options* options,
    (*build_prolog)(binary,
                    config.num_sgprs,
                    config.num_vgprs,
-                   num_preserved_sgprs,
                    code.data(),
                    code.size(),
                    disasm.data(),
@@ -376,7 +374,6 @@ aco_compile_ps_epilog(const struct aco_compiler_options* options,
    (*build_epilog)(binary,
                    config.num_sgprs,
                    config.num_vgprs,
-                   0,
                    code.data(),
                    code.size(),
                    disasm.data(),

@@ -197,7 +197,6 @@ compile_nir(struct d3d12_context *ctx, struct d3d12_shader_selector *sel,
       auto type_no_array = glsl_without_array(var->type);
       unsigned count = glsl_type_is_array(var->type) ? glsl_get_aoa_size(var->type) : 1;
       for (unsigned i = 0; i < count; ++i) {
-         shader->uav_bindings[var->data.driver_location + i].format = var->data.image.format;
          shader->uav_bindings[var->data.driver_location + i].dimension = resource_dimension(glsl_get_sampler_dim(type_no_array));
       }
    }

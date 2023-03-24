@@ -70,8 +70,7 @@ radv_perf_query_supported(const struct radv_physical_device *pdev)
 static bool
 radv_taskmesh_enabled(const struct radv_physical_device *pdevice)
 {
-   /* TODO: implement task/mesh on GFX11 */
-   return pdevice->use_ngg && !pdevice->use_llvm && pdevice->rad_info.gfx_level == GFX10_3 &&
+   return pdevice->use_ngg && !pdevice->use_llvm && pdevice->rad_info.gfx_level >= GFX10_3 &&
           !(pdevice->instance->debug_flags & (RADV_DEBUG_NO_COMPUTE_QUEUE | RADV_DEBUG_NO_IBS)) &&
           pdevice->rad_info.has_gang_submit;
 }
@@ -445,6 +444,7 @@ radv_physical_device_get_supported_extensions(const struct radv_physical_device 
       .KHR_maintenance2 = true,
       .KHR_maintenance3 = true,
       .KHR_maintenance4 = true,
+      .KHR_map_memory2 = true,
       .KHR_multiview = true,
       .KHR_performance_query = radv_perf_query_supported(device),
       .KHR_pipeline_executable_properties = true,
@@ -1840,7 +1840,7 @@ radv_GetPhysicalDeviceProperties2(VkPhysicalDevice physicalDevice,
          properties->conservativePointAndLineRasterization = false;
          properties->degenerateTrianglesRasterized = true;
          properties->degenerateLinesRasterized = false;
-         properties->fullyCoveredFragmentShaderInputVariable = false;
+         properties->fullyCoveredFragmentShaderInputVariable = true;
          properties->conservativeRasterizationPostDepthCoverage = false;
          break;
       }

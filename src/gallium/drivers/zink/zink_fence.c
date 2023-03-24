@@ -237,7 +237,7 @@ zink_fence_server_signal(struct pipe_context *pctx, struct pipe_fence_handle *pf
    struct zink_batch_state *bs = ctx->batch.state;
    /* this must produce a synchronous flush that completes before the function returns */
    pctx->flush(pctx, NULL, 0);
-   if (zink_screen(ctx->base.screen)->threaded)
+   if (zink_screen(ctx->base.screen)->threaded_submit)
       util_queue_fence_wait(&bs->flush_completed);
 }
 

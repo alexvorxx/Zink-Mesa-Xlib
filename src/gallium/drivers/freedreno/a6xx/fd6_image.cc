@@ -229,18 +229,20 @@ fd6_build_bindless_state(struct fd_context *ctx, enum pipe_shader_type shader,
       memcpy(desc_buf, set->descriptor, sizeof(set->descriptor));
 
       if (unlikely(append_fb_read)) {
-         /* The last image slot is used for fb-read: */
-         unsigned idx = IR3_BINDLESS_DESC_COUNT - 1;
+         /* Reserve A6XX_MAX_RENDER_TARGETS image slots for fb-read */
+         unsigned idx = IR3_BINDLESS_DESC_COUNT - 1 - A6XX_MAX_RENDER_TARGETS;
 
-         /* This is patched with the appropriate descriptor for GMEM or
-          * sysmem rendering path in fd6_gmem
-          */
-
-         struct fd_cs_patch patch = {
-               .cs = &desc_buf[idx * FDL6_TEX_CONST_DWORDS],
-         };
-         util_dynarray_append(&ctx->batch->fb_read_patches,
-                              __typeof__(patch), patch);
+         for (int i = 0; i < ctx->batch->framebuffer.nr_cbufs; i++) {
+            /* This is patched with the appropriate descriptor for GMEM or
+             * sysmem rendering path in fd6_gmem
+             */
+            struct fd_cs_patch patch = {
+               .cs = &desc_buf[(idx + i) * FDL6_TEX_CONST_DWORDS],
+               .val = i,
+            };
+            util_dynarray_append(&ctx->batch->fb_read_patches,
+                                 __typeof__(patch), patch);
+         }
       }
    }
 

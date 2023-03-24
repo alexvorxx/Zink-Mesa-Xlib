@@ -449,6 +449,7 @@ emit_tmu_general_address_write(struct v3d_compile *c,
                                int offset_src,
                                struct qreg base_offset,
                                uint32_t const_offset,
+                               uint32_t dest_components,
                                uint32_t *tmu_writes)
 {
         if (mode == MODE_COUNT) {
@@ -494,6 +495,8 @@ emit_tmu_general_address_write(struct v3d_compile *c,
 
         if (vir_in_nonuniform_control_flow(c))
                 vir_set_cond(tmu, V3D_QPU_COND_IFA);
+
+        tmu->ldtmu_count = dest_components;
 }
 
 /**
@@ -684,7 +687,7 @@ ntq_emit_tmu_general(struct v3d_compile *c, nir_intrinsic_instr *instr,
                 emit_tmu_general_address_write(c, mode, instr, config,
                                                dynamic_src, offset_src,
                                                base_offset, const_offset,
-                                               &tmu_writes);
+                                               dest_components, &tmu_writes);
 
                 assert(tmu_writes > 0);
                 if (mode == MODE_COUNT) {

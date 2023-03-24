@@ -77,9 +77,16 @@ zink_program_cache_stages(uint32_t stages_present)
 static inline bool
 zink_is_zsbuf_used(const struct zink_context *ctx)
 {
-   return !ctx->tc || ctx->blitting ||
-         !zink_screen(ctx->base.screen)->driver_workarounds.track_renderpasses ||
-         tc_renderpass_info_is_zsbuf_used(&ctx->dynamic_fb.tc_info);
+   return ctx->blitting || tc_renderpass_info_is_zsbuf_used(&ctx->dynamic_fb.tc_info);
+}
+
+static inline bool
+zink_is_zsbuf_write(const struct zink_context *ctx)
+{
+   if (!zink_is_zsbuf_used(ctx))
+      return false;
+   return ctx->dynamic_fb.tc_info.zsbuf_write_fs || ctx->dynamic_fb.tc_info.zsbuf_write_dsa ||
+          ctx->dynamic_fb.tc_info.zsbuf_clear || ctx->dynamic_fb.tc_info.zsbuf_clear_partial;
 }
 
 void
@@ -114,8 +121,6 @@ zink_resource_image_barrier(struct zink_context *ctx, struct zink_resource *res,
                       VkImageLayout new_layout, VkAccessFlags flags, VkPipelineStageFlags pipeline);
 void
 zink_resource_image_barrier2(struct zink_context *ctx, struct zink_resource *res, VkImageLayout new_layout, VkAccessFlags flags, VkPipelineStageFlags pipeline);
-bool
-zink_resource_needs_barrier(struct zink_resource *res, VkImageLayout layout, VkAccessFlags flags, VkPipelineStageFlags pipeline);
 bool
 zink_check_unordered_transfer_access(struct zink_resource *res, unsigned level, const struct pipe_box *box);
 void
@@ -166,6 +171,8 @@ zink_rebind_all_buffers(struct zink_context *ctx);
 void
 zink_rebind_all_images(struct zink_context *ctx);
 
+void
+zink_parse_tc_info(struct zink_context *ctx);
 void
 zink_flush_memory_barrier(struct zink_context *ctx, bool is_compute);
 void

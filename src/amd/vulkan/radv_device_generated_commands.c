@@ -33,6 +33,7 @@ radv_get_sequence_size(const struct radv_indirect_command_layout *layout,
                        const struct radv_graphics_pipeline *pipeline, uint32_t *cmd_size,
                        uint32_t *upload_size)
 {
+   const struct radv_device *device = container_of(layout->base.device, struct radv_device, vk);
    *cmd_size = 0;
    *upload_size = 0;
 
@@ -85,7 +86,7 @@ radv_get_sequence_size(const struct radv_indirect_command_layout *layout,
       /* One PKT3_SET_CONTEXT_REG (PA_SU_SC_MODE_CNTL) */
       *cmd_size += 3 * 4;
 
-      if (pipeline->base.device->physical_device->rad_info.has_gfx9_scissor_bug) {
+      if (device->physical_device->rad_info.has_gfx9_scissor_bug) {
          /* 1 reg write of 4 regs + 1 reg write of 2 regs per scissor */
          *cmd_size += (8 + 2 * MAX_SCISSORS) * 4;
       }
@@ -1151,11 +1152,12 @@ radv_prepare_dgc(struct radv_cmd_buffer *cmd_buffer,
    if (cmd_buffer->state.graphics_pipeline->uses_baseinstance)
       vtx_base_sgpr |= DGC_USES_BASEINSTANCE;
 
-   uint16_t vbo_sgpr =
-      ((radv_lookup_user_sgpr(&graphics_pipeline->base, MESA_SHADER_VERTEX, AC_UD_VS_VERTEX_BUFFERS)->sgpr_idx * 4 +
-        graphics_pipeline->base.user_data_0[MESA_SHADER_VERTEX]) -
-       SI_SH_REG_OFFSET) >>
-      2;
+   const struct radv_shader *vertex_shader =
+      radv_get_shader(&graphics_pipeline->base, MESA_SHADER_VERTEX);
+   uint16_t vbo_sgpr = ((radv_get_user_sgpr(vertex_shader, AC_UD_VS_VERTEX_BUFFERS)->sgpr_idx * 4 +
+                         graphics_pipeline->base.user_data_0[MESA_SHADER_VERTEX]) -
+                        SI_SH_REG_OFFSET) >>
+                       2;
    struct radv_dgc_params params = {
       .cmd_buf_stride = cmd_stride,
       .cmd_buf_size = cmd_buf_size,

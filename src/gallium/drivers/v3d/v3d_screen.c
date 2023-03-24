@@ -146,6 +146,8 @@ v3d_screen_get_param(struct pipe_screen *pscreen, enum pipe_cap param)
         case PIPE_CAP_ANISOTROPIC_FILTER:
         case PIPE_CAP_COPY_BETWEEN_COMPRESSED_AND_PLAIN_FORMATS:
         case PIPE_CAP_INDEP_BLEND_FUNC:
+        case PIPE_CAP_CONDITIONAL_RENDER:
+        case PIPE_CAP_CONDITIONAL_RENDER_INVERTED:
                 return 1;
 
         case PIPE_CAP_POLYGON_OFFSET_CLAMP:

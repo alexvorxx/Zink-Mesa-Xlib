@@ -248,6 +248,18 @@ directory.  You can hack on mesa and iterate testing the build with:
 
     sudo docker run --rm -v `pwd`:/mesa $IMAGE ninja -C /mesa/_build
 
+Running specific CI jobs
+------------------------
+
+You can use ``bin/ci/ci_run_n_monitor.py`` to run specific CI jobs. It
+will automatically take care of running all the jobs yours depends on,
+and cancel the rest to avoid wasting resources.
+
+See ``bin/ci/ci_run_n_monitor.py --help`` for all the options.
+
+The ``--target`` argument takes a regex that you can use to select the
+jobs names you want to run, eg. ``--target 'zink.*'`` will run all the
+zink jobs, leaving the other drivers' jobs free for others to use.
 
 Conformance Tests
 -----------------

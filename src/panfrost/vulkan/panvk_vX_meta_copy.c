@@ -449,17 +449,11 @@ panvk_meta_copy_img2img_shader(struct panfrost_device *pdev,
       .no_ubo_to_push = true,
    };
 
-   pan_pack(&inputs.bifrost.rt_conv[0], INTERNAL_CONVERSION, cfg) {
-      cfg.memory_format = (dstcompsz == 2 ? MALI_RG16UI : MALI_RG32UI) << 12;
-      cfg.register_format = dstcompsz == 2 ?
-                            MALI_REGISTER_FILE_FORMAT_U16 :
-                            MALI_REGISTER_FILE_FORMAT_U32;
-   }
-   inputs.bifrost.static_rt_conv = true;
-
    struct util_dynarray binary;
 
    util_dynarray_init(&binary, NULL);
+   pan_shader_preprocess(b.shader, inputs.gpu_id);
+   NIR_PASS_V(b.shader, GENX(pan_inline_rt_conversion), pdev, &dstfmt);
    GENX(pan_shader_compile)(b.shader, &inputs, &binary, shader_info);
 
    shader_info->fs.sample_shading = is_ms;
@@ -984,17 +978,14 @@ panvk_meta_copy_buf2img_shader(struct panfrost_device *pdev,
       .no_ubo_to_push = true,
    };
 
-   pan_pack(&inputs.bifrost.rt_conv[0], INTERNAL_CONVERSION, cfg) {
-      cfg.memory_format = (imgcompsz == 2 ? MALI_RG16UI : MALI_RG32UI) << 12;
-      cfg.register_format = imgcompsz == 2 ?
-                            MALI_REGISTER_FILE_FORMAT_U16 :
-                            MALI_REGISTER_FILE_FORMAT_U32;
-   }
-   inputs.bifrost.static_rt_conv = true;
-
    struct util_dynarray binary;
 
    util_dynarray_init(&binary, NULL);
+   pan_shader_preprocess(b.shader, inputs.gpu_id);
+
+   enum pipe_format rt_formats[8] = {key.imgfmt};
+   NIR_PASS_V(b.shader, GENX(pan_inline_rt_conversion), pdev, rt_formats);
+
    GENX(pan_shader_compile)(b.shader, &inputs, &binary, shader_info);
    shader_info->push.count = DIV_ROUND_UP(sizeof(struct panvk_meta_copy_buf2img_info), 4);
 
@@ -1434,6 +1425,7 @@ panvk_meta_copy_img2buf_shader(struct panfrost_device *pdev,
    struct util_dynarray binary;
 
    util_dynarray_init(&binary, NULL);
+   pan_shader_preprocess(b.shader, inputs.gpu_id);
    GENX(pan_shader_compile)(b.shader, &inputs, &binary, shader_info);
 
    shader_info->push.count = DIV_ROUND_UP(sizeof(struct panvk_meta_copy_img2buf_info), 4);
@@ -1662,6 +1654,7 @@ panvk_meta_copy_buf2buf_shader(struct panfrost_device *pdev,
    struct util_dynarray binary;
 
    util_dynarray_init(&binary, NULL);
+   pan_shader_preprocess(b.shader, inputs.gpu_id);
    GENX(pan_shader_compile)(b.shader, &inputs, &binary, shader_info);
 
    shader_info->push.count = DIV_ROUND_UP(sizeof(struct panvk_meta_copy_buf2buf_info), 4);
@@ -1791,6 +1784,7 @@ panvk_meta_fill_buf_shader(struct panfrost_device *pdev,
    struct util_dynarray binary;
 
    util_dynarray_init(&binary, NULL);
+   pan_shader_preprocess(b.shader, inputs.gpu_id);
    GENX(pan_shader_compile)(b.shader, &inputs, &binary, shader_info);
 
    shader_info->push.count = DIV_ROUND_UP(sizeof(struct panvk_meta_fill_buf_info), 4);

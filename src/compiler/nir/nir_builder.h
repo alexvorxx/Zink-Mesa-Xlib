@@ -883,6 +883,18 @@ nir_udiv_imm(nir_builder *build, nir_ssa_def *x, uint64_t y)
 }
 
 static inline nir_ssa_def *
+nir_umod_imm(nir_builder *build, nir_ssa_def *x, uint64_t y)
+{
+   assert(y > 0 && y <= u_uintN_max(x->bit_size));
+
+   if (util_is_power_of_two_nonzero(y)) {
+      return nir_iand_imm(build, x, y - 1);
+   } else {
+      return nir_umod(build, x, nir_imm_intN_t(build, y, x->bit_size));
+   }
+}
+
+static inline nir_ssa_def *
 nir_ibfe_imm(nir_builder *build, nir_ssa_def *x, uint32_t offset, uint32_t size)
 {
    return nir_ibfe(build, x, nir_imm_int(build, offset), nir_imm_int(build, size));

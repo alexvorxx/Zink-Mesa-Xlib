@@ -774,6 +774,48 @@ lower_hit_attribs(nir_shader *shader, nir_variable **hit_attribs, uint32_t workg
 }
 
 static void
+inline_constants(nir_shader *dst, nir_shader *src)
+{
+   if (!src->constant_data_size)
+      return;
+
+   uint32_t align_mul = 1;
+   if (dst->constant_data_size) {
+      nir_foreach_block (block, nir_shader_get_entrypoint(src)) {
+         nir_foreach_instr (instr, block) {
+            if (instr->type != nir_instr_type_intrinsic)
+               continue;
+
+            nir_intrinsic_instr *intrinsic = nir_instr_as_intrinsic(instr);
+            if (intrinsic->intrinsic == nir_intrinsic_load_constant)
+               align_mul = MAX2(align_mul, nir_intrinsic_align_mul(intrinsic));
+         }
+      }
+   }
+
+   uint32_t old_constant_data_size = dst->constant_data_size;
+   uint32_t base_offset = align(dst->constant_data_size, align_mul);
+   dst->constant_data_size = base_offset + src->constant_data_size;
+   dst->constant_data =
+      rerzalloc_size(dst, dst->constant_data, old_constant_data_size, dst->constant_data_size);
+   memcpy((char *)dst->constant_data + base_offset, src->constant_data, src->constant_data_size);
+
+   if (!base_offset)
+      return;
+
+   nir_foreach_block (block, nir_shader_get_entrypoint(src)) {
+      nir_foreach_instr (instr, block) {
+         if (instr->type != nir_instr_type_intrinsic)
+            continue;
+
+         nir_intrinsic_instr *intrinsic = nir_instr_as_intrinsic(instr);
+         if (intrinsic->intrinsic == nir_intrinsic_load_constant)
+            nir_intrinsic_set_base(intrinsic, base_offset + nir_intrinsic_base(intrinsic));
+      }
+   }
+}
+
+static void
 insert_rt_case(nir_builder *b, nir_shader *shader, struct rt_variables *vars, nir_ssa_def *idx,
                uint32_t call_idx_base, uint32_t call_idx, unsigned stage_idx,
                struct radv_ray_tracing_module *groups)
@@ -799,6 +841,8 @@ insert_rt_case(nir_builder *b, nir_shader *shader, struct rt_variables *vars, ni
       NIR_PASS_V(shader, lower_hit_attribs, NULL, workgroup_size);
 
    src_vars.stack_size = MAX2(src_vars.stack_size, shader->scratch_size);
+
+   inline_constants(b->shader, shader);
 
    nir_push_if(b, nir_ieq_imm(b, idx, call_idx));
    nir_inline_function_impl(b, nir_shader_get_entrypoint(shader), NULL, var_remap);
@@ -1005,6 +1049,9 @@ nir_lower_intersection_shader(nir_shader *intersection, nir_shader *any_hit)
    if (any_hit) {
       any_hit = nir_shader_clone(dead_ctx, any_hit);
       NIR_PASS(_, any_hit, nir_opt_dce);
+
+      inline_constants(intersection, any_hit);
+
       any_hit_impl = lower_any_hit_for_intersection(any_hit);
       any_hit_var_remap = _mesa_pointer_hash_table_create(dead_ctx);
    }

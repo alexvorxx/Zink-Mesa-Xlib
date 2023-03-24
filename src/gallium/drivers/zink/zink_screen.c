@@ -90,6 +90,7 @@ zink_debug_options[] = {
    { "rp", ZINK_DEBUG_RP, "Enable renderpass tracking/optimizations" },
    { "norp", ZINK_DEBUG_NORP, "Disable renderpass tracking/optimizations" },
    { "map", ZINK_DEBUG_MAP, "Track amount of mapped VRAM" },
+   { "flushsync", ZINK_DEBUG_FLUSHSYNC, "Force synchronous flushes/presents" },
    DEBUG_NAMED_VALUE_END
 };
 
@@ -1466,7 +1467,7 @@ zink_destroy_screen(struct pipe_screen *pscreen)
    if (screen->fence)
       VKSCR(DestroyFence)(screen->dev, screen->fence, NULL);
 
-   if (screen->threaded)
+   if (screen->threaded_submit)
       util_queue_destroy(&screen->flush_queue);
 
    simple_mtx_destroy(&screen->semaphores_lock);
@@ -2072,7 +2073,7 @@ setup_renderdoc(struct zink_screen *screen)
       return;
 
    /* need synchronous dispatch for renderdoc coherency */
-   screen->threaded = false;
+   screen->threaded_submit = false;
    get_api(eRENDERDOC_API_Version_1_0_0, (void*)&screen->renderdoc_api);
    screen->renderdoc_api->SetActiveWindow(RENDERDOC_DEVICEPOINTER_FROM_VKINSTANCE(screen->instance), NULL);
 
@@ -2709,11 +2710,16 @@ zink_internal_create_screen(const struct pipe_screen_config *config)
    if (!screen)
       return NULL;
 
-   screen->threaded = util_get_cpu_caps()->nr_cpus > 1 && debug_get_bool_option("GALLIUM_THREAD", util_get_cpu_caps()->nr_cpus > 1);
-   screen->abort_on_hang = debug_get_bool_option("ZINK_HANG_ABORT", false);
-
    zink_debug = debug_get_option_zink_debug();
    zink_descriptor_mode = debug_get_option_zink_descriptor_mode();
+
+   screen->threaded = util_get_cpu_caps()->nr_cpus > 1 && debug_get_bool_option("GALLIUM_THREAD", util_get_cpu_caps()->nr_cpus > 1);
+   if (zink_debug & ZINK_DEBUG_FLUSHSYNC)
+      screen->threaded_submit = false;
+   else
+      screen->threaded_submit = screen->threaded;
+   screen->abort_on_hang = debug_get_bool_option("ZINK_HANG_ABORT", false);
+
 
    u_trace_state_init();
 
@@ -2781,7 +2787,7 @@ zink_internal_create_screen(const struct pipe_screen_config *config)
    }
 
    setup_renderdoc(screen);
-   if (screen->threaded && !util_queue_init(&screen->flush_queue, "zfq", 8, 1, UTIL_QUEUE_INIT_RESIZE_IF_FULL, screen)) {
+   if (screen->threaded_submit && !util_queue_init(&screen->flush_queue, "zfq", 8, 1, UTIL_QUEUE_INIT_RESIZE_IF_FULL, screen)) {
       mesa_loge("zink: Failed to create flush queue.\n");
       goto fail;
    }
@@ -3097,7 +3103,7 @@ zink_internal_create_screen(const struct pipe_screen_config *config)
 fail:
    if (screen->loader_lib)
       util_dl_close(screen->loader_lib);
-   if (screen->threaded)
+   if (screen->threaded_submit)
       util_queue_destroy(&screen->flush_queue);
 
    ralloc_free(screen);

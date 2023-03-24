@@ -387,6 +387,43 @@ vk_common_GetDeviceQueue2(VkDevice _device,
       *pQueue = VK_NULL_HANDLE;
 }
 
+VKAPI_ATTR VkResult VKAPI_CALL
+vk_common_MapMemory(VkDevice _device,
+                    VkDeviceMemory memory,
+                    VkDeviceSize offset,
+                    VkDeviceSize size,
+                    VkMemoryMapFlags flags,
+                    void **ppData)
+{
+   VK_FROM_HANDLE(vk_device, device, _device);
+
+   const VkMemoryMapInfoKHR info = {
+      .sType = VK_STRUCTURE_TYPE_MEMORY_MAP_INFO_KHR,
+      .flags = flags,
+      .memory = memory,
+      .offset = offset,
+      .size = size,
+   };
+
+   return device->dispatch_table.MapMemory2KHR(_device, &info, ppData);
+}
+
+VKAPI_ATTR void VKAPI_CALL
+vk_common_UnmapMemory(VkDevice _device,
+                      VkDeviceMemory memory)
+{
+   VK_FROM_HANDLE(vk_device, device, _device);
+   ASSERTED VkResult result;
+
+   const VkMemoryUnmapInfoKHR info = {
+      .sType = VK_STRUCTURE_TYPE_MEMORY_UNMAP_INFO_KHR,
+      .memory = memory,
+   };
+
+   result = device->dispatch_table.UnmapMemory2KHR(_device, &info);
+   assert(result == VK_SUCCESS);
+}
+
 VKAPI_ATTR void VKAPI_CALL
 vk_common_GetDeviceGroupPeerMemoryFeatures(
    VkDevice device,

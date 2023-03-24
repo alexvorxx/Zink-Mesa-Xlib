@@ -82,19 +82,19 @@ enum intel_workaround_id {
  * checks these definitions to eliminate bitset tests at compile time.
  */
 % for a in wa_def:
-#define INTEL_GFX_VER_WA_${a} ${wa_macro[a]}
+#define INTEL_WA_${a}_GFX_VER ${wa_macro[a]}
 % endfor
 
 /* These defines are suitable for use to compile out genxml code using #if
  * guards.  Workarounds that apply to part of a generation must use a
- * combination of run time checks and INTEL_GFX_VER_WA_{NUM} macros.  Those
+ * combination of run time checks and INTEL_WA_{NUM}_GFX_VER macros.  Those
  * workarounds are 'poisoned' below.
  */
 % for a in partial_gens:
     % if partial_gens[a]:
 PRAGMA_POISON(INTEL_NEEDS_WA_${a})
     % else:
-#define INTEL_NEEDS_WA_${a} INTEL_GFX_VER_WA_${a}
+#define INTEL_NEEDS_WA_${a} INTEL_WA_${a}_GFX_VER
     % endif
 % endfor
 

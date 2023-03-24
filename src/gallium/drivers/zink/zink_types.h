@@ -220,6 +220,7 @@ enum zink_debug {
    ZINK_DEBUG_RP = (1<<9),
    ZINK_DEBUG_NORP = (1<<10),
    ZINK_DEBUG_MAP = (1<<11),
+   ZINK_DEBUG_FLUSHSYNC = (1<<12),
 };
 
 /** fence types */
@@ -558,6 +559,9 @@ struct zink_batch_state {
    struct zink_resource *swapchain;
    struct util_dynarray acquires;
    struct util_dynarray acquire_flags;
+
+   VkAccessFlagBits unordered_write_access;
+   VkPipelineStageFlagBits unordered_write_stages;
 
    struct util_queue_fence flush_completed;
 
@@ -1117,8 +1121,14 @@ struct zink_resource_object {
 
    VkPipelineStageFlagBits access_stage;
    VkAccessFlagBits access;
+   VkPipelineStageFlagBits unordered_access_stage;
+   VkAccessFlagBits unordered_access;
    VkAccessFlagBits last_write;
 
+   /* 'access' is propagated from unordered_access to handle ops occurring
+    * in the ordered cmdbuf which can promote barriers to unordered
+    */
+   bool ordered_access_is_copied;
    bool unordered_read;
    bool unordered_write;
    bool copies_valid;
@@ -1276,6 +1286,7 @@ struct zink_screen {
    PFN_vkGetDeviceProcAddr vk_GetDeviceProcAddr;
 
    bool threaded;
+   bool threaded_submit;
    bool is_cpu;
    bool abort_on_hang;
    bool frame_marker_emitted;
@@ -1710,6 +1721,8 @@ struct zink_context {
    bool rp_changed; //force renderpass restart
    bool rp_layout_changed; //renderpass changed, maybe restart
    bool rp_loadop_changed; //renderpass changed, don't restart
+   bool zsbuf_unused;
+   bool zsbuf_readonly;
 
    struct zink_framebuffer *framebuffer;
    struct zink_framebuffer_clear fb_clears[PIPE_MAX_COLOR_BUFS + 1];

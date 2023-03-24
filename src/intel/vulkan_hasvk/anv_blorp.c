@@ -1341,12 +1341,6 @@ void anv_CmdClearAttachments(
    anv_blorp_batch_finish(&batch);
 }
 
-enum subpass_stage {
-   SUBPASS_STAGE_LOAD,
-   SUBPASS_STAGE_DRAW,
-   SUBPASS_STAGE_RESOLVE,
-};
-
 void
 anv_image_msaa_resolve(struct anv_cmd_buffer *cmd_buffer,
                        const struct anv_image *src_image,

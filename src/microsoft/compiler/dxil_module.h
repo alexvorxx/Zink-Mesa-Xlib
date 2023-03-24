@@ -409,6 +409,23 @@ dxil_module_get_res_props_const(struct dxil_module *m,
                                 enum dxil_resource_class class,
                                 const struct dxil_mdnode *mdnode);
 
+const struct dxil_value *
+dxil_module_get_srv_res_props_const(struct dxil_module *m,
+                                    const nir_tex_instr *tex);
+
+const struct dxil_value *
+dxil_module_get_sampler_res_props_const(struct dxil_module *m,
+                                        bool is_shadow);
+
+const struct dxil_value *
+dxil_module_get_uav_res_props_const(struct dxil_module *m,
+                                    nir_intrinsic_instr *intr);
+
+const struct dxil_value *
+dxil_module_get_buffer_res_props_const(struct dxil_module *m,
+                                       enum dxil_resource_class class,
+                                       enum dxil_resource_kind kind);
+
 const struct dxil_mdnode *
 dxil_get_metadata_string(struct dxil_module *m, const char *str);
 

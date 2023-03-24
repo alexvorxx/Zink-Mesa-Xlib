@@ -4,9 +4,7 @@
 
 # deqp-egl skips
 # slow
-dEQP-EGL.functional.buffer_age.no_preserve
 dEQP-EGL.functional.multicontext
-dEQP-EGL.functional.swap_buffers_with_damage
 
 # piglit skips
 gles3

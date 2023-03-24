@@ -225,8 +225,21 @@
  * 6. COMMAND [29:22] | BYTE_COUNT [20:0]
  */
 #define PKT3_DMA_DATA                              0x50 /* GFX7+ */
-#define PKT3_DISPATCH_MESH_INDIRECT_MULTI          0x4C /* Indirect mesh shader only dispatch [GFX only] */
-#define PKT3_DISPATCH_TASKMESH_GFX                 0x4D /* Task+mesh shader dispatch [GFX side] */
+#define PKT3_DISPATCH_MESH_INDIRECT_MULTI          0x4C /* Indirect mesh shader only dispatch [GFX only], GFX10.3+ */
+#define   S_4C1_XYZ_DIM_REG(x)                        ((x & 0xFFFF))
+#define   S_4C1_DRAW_INDEX_REG(x)                     ((x & 0xFFFF) << 16)
+#define   S_4C2_DRAW_INDEX_ENABLE(x)                  ((x & 1) << 31)
+#define   S_4C2_COUNT_INDIRECT_ENABLE(x)              ((x & 1) << 30)
+#define   S_4C2_THREAD_TRACE_MARKER_ENABLE(x)         ((x & 1) << 29)
+#define   S_4C2_XYZ_DIM_ENABLE(x)                     ((x & 1) << 28) /* GFX11+ */
+#define   S_4C2_MODE1_ENABLE(x)                       ((x & 1) << 27) /* GFX11+ */
+#define PKT3_DISPATCH_TASKMESH_GFX                 0x4D /* Task + mesh shader dispatch [GFX side], GFX10.3+ */
+#define   S_4D0_RING_ENTRY_REG(x)                     ((x & 0xFFFF) << 16)
+#define   S_4D0_XYZ_DIM_REG(x)                        ((x & 0xFFFF))
+#define   S_4D1_THREAD_TRACE_MARKER_ENABLE(x)         ((x & 1) << 31)
+#define   S_4D1_XYZ_DIM_ENABLE(x)                     ((x & 1) << 30) /* GFX11+ */
+#define   S_4D1_MODE1_ENABLE(x)                       ((x & 1) << 29) /* GFX11+ */
+#define   S_4D1_LINEAR_DISPATCH_ENABLE(x)             ((x & 1) << 28) /* GFX11+ */
 #define PKT3_CONTEXT_REG_RMW                       0x51 /* older firmware versions on older chips don't have this */
 #define PKT3_ONE_REG_WRITE                         0x57 /* GFX6 only */
 #define PKT3_ACQUIRE_MEM                           0x58 /* GFX7+ */
@@ -249,9 +262,15 @@
 #define PKT3_WAIT_ON_CE_COUNTER                    0x86
 #define PKT3_SET_SH_REG_INDEX                      0x9B
 #define PKT3_LOAD_CONTEXT_REG_INDEX                0x9F /* GFX8+ */
-#define PKT3_DISPATCH_TASK_STATE_INIT              0xA9 /* Tells the HW about the task control buffer */
-#define PKT3_DISPATCH_TASKMESH_DIRECT_ACE          0xAA /* Direct task+mesh shader dispatch [ACE side] */
-#define PKT3_DISPATCH_TASKMESH_INDIRECT_MULTI_ACE  0xAD /* Indirect task+mesh shader dispatch [ACE side] */
+#define PKT3_DISPATCH_TASK_STATE_INIT              0xA9 /* Tells the HW about the task control buffer, GFX10.3+ */
+#define PKT3_DISPATCH_TASKMESH_DIRECT_ACE          0xAA /* Direct task + mesh shader dispatch [ACE side], GFX10.3+ */
+#define PKT3_DISPATCH_TASKMESH_INDIRECT_MULTI_ACE  0xAD /* Indirect task + mesh shader dispatch [ACE side], GFX10.3+ */
+#define   S_AD2_RING_ENTRY_REG(x)                     ((x & 0xFFFF))
+#define   S_AD3_COUNT_INDIRECT_ENABLE(x)              ((x & 1) << 1)
+#define   S_AD3_DRAW_INDEX_ENABLE(x)                  ((x & 1) << 2)
+#define   S_AD3_XYZ_DIM_ENABLE(x)                     ((x & 1) << 3)
+#define   S_AD3_DRAW_INDEX_REG(x)                     ((x & 0xFFFF) << 16)
+#define   S_AD4_XYZ_DIM_REG(x)                        ((x & 0xFFFF))
 #define PKT3_EVENT_WRITE_ZPASS                     0xB1 /* GFX11+ & PFP version >= 1458 */
 #define   EVENT_WRITE_ZPASS_PFP_VERSION               1458
 /* All PAIRS packets require GFX11+ and PFP version >= 1448.

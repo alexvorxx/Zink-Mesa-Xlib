@@ -3394,6 +3394,14 @@ VkResult anv_GetPipelineExecutableStatisticsKHR(
    }
 
    vk_outarray_append_typed(VkPipelineExecutableStatisticKHR, &out, stat) {
+      WRITE_STR(stat->name, "Max dispatch width");
+      WRITE_STR(stat->description,
+                "Largest SIMD dispatch width.");
+      stat->format = VK_PIPELINE_EXECUTABLE_STATISTIC_FORMAT_UINT64_KHR;
+      stat->value.u64 = exe->stats.max_dispatch_width;
+   }
+
+   vk_outarray_append_typed(VkPipelineExecutableStatisticKHR, &out, stat) {
       WRITE_STR(stat->name, "Max live registers");
       WRITE_STR(stat->description,
                 "Maximum number of registers used across the entire shader.");

@@ -36,6 +36,7 @@ int main(void)
    const uint32_t block_size = 16 * 1024;
    const uint32_t initial_size = block_size / 2;
 
+   test_device_info_init(&physical_device.info);
    anv_device_set_physical(&device, &physical_device);
    device.kmd_backend = anv_kmd_backend_get(INTEL_KMD_TYPE_STUB);
    pthread_mutex_init(&device.mutex, NULL);

@@ -763,6 +763,42 @@ GENX(pan_blend_get_internal_desc)(const struct panfrost_device *dev,
 
    return res;
 }
+
+struct rt_conversion_inputs {
+   const struct panfrost_device *dev;
+   enum pipe_format *formats;
+};
+
+static bool
+inline_rt_conversion(nir_builder *b, nir_instr *instr, void *data)
+{
+   if (instr->type != nir_instr_type_intrinsic)
+      return false;
+
+   nir_intrinsic_instr *intr = nir_instr_as_intrinsic(instr);
+   if (intr->intrinsic != nir_intrinsic_load_rt_conversion_pan)
+      return false;
+
+   struct rt_conversion_inputs *inputs = data;
+   unsigned rt = nir_intrinsic_base(intr);
+   unsigned size = nir_alu_type_get_type_size(nir_intrinsic_src_type(intr));
+   uint64_t conversion = GENX(pan_blend_get_internal_desc)(
+      inputs->dev, inputs->formats[rt], rt, size, false);
+
+   b->cursor = nir_after_instr(instr);
+   nir_ssa_def_rewrite_uses(&intr->dest.ssa, nir_imm_int(b, conversion >> 32));
+   return true;
+}
+
+bool
+GENX(pan_inline_rt_conversion)(nir_shader *s, const struct panfrost_device *dev,
+                               enum pipe_format *formats)
+{
+   return nir_shader_instructions_pass(
+      s, inline_rt_conversion,
+      nir_metadata_block_index | nir_metadata_dominance,
+      &(struct rt_conversion_inputs){.dev = dev, .formats = formats});
+}
 #endif
 
 struct pan_blend_shader_variant *
@@ -831,12 +867,11 @@ GENX(pan_blend_get_shader_locked)(const struct panfrost_device *dev,
    struct panfrost_compile_inputs inputs = {
       .gpu_id = dev->gpu_id,
       .is_blend = true,
-      .blend.rt = shader->key.rt,
       .blend.nr_samples = key.nr_samples,
-      .fixed_sysval_ubo = -1,
    };
 
-   inputs.rt_formats[rt] = key.format;
+   enum pipe_format rt_formats[8] = {0};
+   rt_formats[rt] = key.format;
 
 #if PAN_ARCH >= 6
    inputs.blend.bifrost_blend_desc =
@@ -844,11 +879,17 @@ GENX(pan_blend_get_shader_locked)(const struct panfrost_device *dev,
 #endif
 
    struct pan_shader_info info;
+   pan_shader_preprocess(nir, inputs.gpu_id);
+
+#if PAN_ARCH >= 6
+   NIR_PASS_V(nir, GENX(pan_inline_rt_conversion), dev, rt_formats);
+#else
+   NIR_PASS_V(nir, pan_lower_framebuffer, rt_formats,
+              pan_raw_format_mask_midgard(rt_formats), MAX2(key.nr_samples, 1),
+              dev->gpu_id < 0x700);
+#endif
 
    GENX(pan_shader_compile)(nir, &inputs, &variant->binary, &info);
-
-   /* Blend shaders can't have sysvals */
-   assert(info.sysvals.sysval_count == 0);
 
    variant->work_reg_count = info.work_reg_count;
 

@@ -2501,6 +2501,8 @@ nir_intrinsic_from_system_value(gl_system_value val)
       return nir_intrinsic_load_mesh_view_count;
    case SYSTEM_VALUE_FRAG_SHADING_RATE:
       return nir_intrinsic_load_frag_shading_rate;
+   case SYSTEM_VALUE_FULLY_COVERED:
+      return nir_intrinsic_load_fully_covered;
    default:
       unreachable("system value does not directly correspond to intrinsic");
    }
@@ -2648,6 +2650,8 @@ nir_system_value_from_intrinsic(nir_intrinsic_op intrin)
       return SYSTEM_VALUE_FRAG_SHADING_RATE;
    case nir_intrinsic_load_mesh_view_count:
       return SYSTEM_VALUE_MESH_VIEW_COUNT;
+   case nir_intrinsic_load_fully_covered:
+      return SYSTEM_VALUE_FULLY_COVERED;
    default:
       unreachable("intrinsic doesn't produce a system value");
    }

@@ -1019,7 +1019,7 @@ rra_copy_context_init(struct rra_copy_context *ctx)
       goto fail_buffer;
 
    result =
-      radv_MapMemory(ctx->device, ctx->memory, 0, VK_WHOLE_SIZE, 0, (void **)&ctx->mapped_data);
+      vk_common_MapMemory(ctx->device, ctx->memory, 0, VK_WHOLE_SIZE, 0, (void **)&ctx->mapped_data);
    if (result != VK_SUCCESS)
       goto fail_memory;
 
@@ -1046,7 +1046,7 @@ rra_copy_context_finish(struct rra_copy_context *ctx)
 
    vk_common_DestroyCommandPool(ctx->device, ctx->pool, NULL);
    radv_DestroyBuffer(ctx->device, ctx->buffer, NULL);
-   radv_UnmapMemory(ctx->device, ctx->memory);
+   vk_common_UnmapMemory(ctx->device, ctx->memory);
    radv_FreeMemory(ctx->device, ctx->memory, NULL);
 }
 
@@ -1059,7 +1059,7 @@ rra_map_accel_struct_data(struct rra_copy_context *ctx, uint32_t i)
 
    if (data->memory) {
       void *mapped_data;
-      radv_MapMemory(ctx->device, data->memory, 0, VK_WHOLE_SIZE, 0, &mapped_data);
+      vk_common_MapMemory(ctx->device, data->memory, 0, VK_WHOLE_SIZE, 0, &mapped_data);
       return mapped_data;
    }
 
@@ -1116,7 +1116,7 @@ rra_unmap_accel_struct_data(struct rra_copy_context *ctx, uint32_t i)
    struct radv_rra_accel_struct_data *data = ctx->entries[i]->data;
 
    if (data->memory)
-      radv_UnmapMemory(ctx->device, data->memory);
+      vk_common_UnmapMemory(ctx->device, data->memory);
 }
 
 VkResult
