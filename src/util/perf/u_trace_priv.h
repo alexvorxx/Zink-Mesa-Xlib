@@ -36,6 +36,10 @@
  * Internal interface used by generated tracepoints
  */
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 /**
  * Tracepoint descriptor.
  */
@@ -71,6 +75,8 @@ u_trace_append(struct u_trace *ut, void *cs, const struct u_tracepoint *tp)
    return u_trace_appendv(ut, cs, tp, 0);
 }
 
-
+#ifdef __cplusplus
+}
+#endif
 
 #endif  /* _U_TRACE_PRIV_H */

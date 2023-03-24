@@ -100,8 +100,8 @@ kgsl_bo_init(struct tu_device *dev,
       .gem_handle = req.id,
       .size = req.mmapsize,
       .iova = req.gpuaddr,
-      .refcnt = 1,
       .name = tu_debug_bos_add(dev, req.mmapsize, name),
+      .refcnt = 1,
    };
 
    *out_bo = bo;
@@ -149,8 +149,8 @@ kgsl_bo_init_dmabuf(struct tu_device *dev,
       .gem_handle = req.id,
       .size = info_req.size,
       .iova = info_req.gpuaddr,
-      .refcnt = 1,
       .name = tu_debug_bos_add(dev, info_req.size, "dmabuf"),
+      .refcnt = 1,
    };
 
    *out_bo = bo;
@@ -218,7 +218,9 @@ get_kgsl_prop(int fd, unsigned int type, void *value, size_t size)
       .sizebytes = size,
    };
 
-   return safe_ioctl(fd, IOCTL_KGSL_DEVICE_GETPROPERTY, &getprop);
+   return safe_ioctl(fd, IOCTL_KGSL_DEVICE_GETPROPERTY, &getprop)
+             ? VK_ERROR_UNKNOWN
+             : VK_SUCCESS;
 }
 
 enum kgsl_syncobj_state {
@@ -275,8 +277,8 @@ timestamp_to_fd(struct tu_queue *queue, uint32_t timestamp)
    int fd;
    struct kgsl_timestamp_event event = {
       .type = KGSL_TIMESTAMP_EVENT_FENCE,
-      .context_id = queue->msm_queue_id,
       .timestamp = timestamp,
+      .context_id = queue->msm_queue_id,
       .priv = &fd,
       .len = sizeof(fd),
    };
@@ -493,7 +495,7 @@ kgsl_syncobj_wait_any(struct tu_device* device, struct kgsl_syncobj **syncobjs, 
 
    if (convert_ts_to_fd) {
       kgsl_syncobj_foreach_state(syncobjs, KGSL_SYNCOBJ_STATE_TS) {
-         struct pollfd *poll_fd = u_vector_add(&poll_fds);
+         struct pollfd *poll_fd = (struct pollfd *) u_vector_add(&poll_fds);
          poll_fd->fd = timestamp_to_fd(sync->queue, sync->timestamp);
          poll_fd->events = POLLIN;
       }
@@ -508,7 +510,7 @@ kgsl_syncobj_wait_any(struct tu_device* device, struct kgsl_syncobj **syncobjs, 
       }
 
       if (num_fds) {
-         struct pollfd *poll_fd = u_vector_add(&poll_fds);
+         struct pollfd *poll_fd = (struct pollfd *) u_vector_add(&poll_fds);
          poll_fd->fd = timestamp_to_fd(queue, lowest_timestamp);
          poll_fd->events = POLLIN;
       }
@@ -516,7 +518,7 @@ kgsl_syncobj_wait_any(struct tu_device* device, struct kgsl_syncobj **syncobjs, 
 
    if (num_fds) {
       kgsl_syncobj_foreach_state(syncobjs, KGSL_SYNCOBJ_STATE_FD) {
-         struct pollfd *poll_fd = u_vector_add(&poll_fds);
+         struct pollfd *poll_fd = (struct pollfd *) u_vector_add(&poll_fds);
          poll_fd->fd = sync->fd;
          poll_fd->events = POLLIN;
       }
@@ -534,7 +536,7 @@ kgsl_syncobj_wait_any(struct tu_device* device, struct kgsl_syncobj **syncobjs, 
    } else {
       int ret, i;
 
-      struct pollfd *fds = poll_fds.data;
+      struct pollfd *fds = (struct pollfd *) poll_fds.data;
       uint32_t fds_count = u_vector_length(&poll_fds);
       do {
          ret = poll(fds, fds_count, get_relative_ms(abs_timeout_ns));
@@ -814,13 +816,14 @@ vk_kgsl_sync_export_sync_file(struct vk_device *device,
 
 const struct vk_sync_type vk_kgsl_sync_type = {
    .size = sizeof(struct vk_kgsl_syncobj),
-   .features = VK_SYNC_FEATURE_BINARY |
-               VK_SYNC_FEATURE_GPU_WAIT |
-               VK_SYNC_FEATURE_GPU_MULTI_WAIT |
-               VK_SYNC_FEATURE_CPU_WAIT |
-               VK_SYNC_FEATURE_CPU_RESET |
-               VK_SYNC_FEATURE_WAIT_ANY |
-               VK_SYNC_FEATURE_WAIT_PENDING,
+   .features = (enum vk_sync_features)
+               (VK_SYNC_FEATURE_BINARY |
+                VK_SYNC_FEATURE_GPU_WAIT |
+                VK_SYNC_FEATURE_GPU_MULTI_WAIT |
+                VK_SYNC_FEATURE_CPU_WAIT |
+                VK_SYNC_FEATURE_CPU_RESET |
+                VK_SYNC_FEATURE_WAIT_ANY |
+                VK_SYNC_FEATURE_WAIT_PENDING),
    .init = vk_kgsl_sync_init,
    .finish = vk_kgsl_sync_finish,
    .reset = vk_kgsl_sync_reset,
@@ -917,7 +920,7 @@ kgsl_queue_submit(struct tu_queue *queue, struct vk_queue_submit *vk_submit)
    if (tu_autotune_submit_requires_fence(cmd_buffers, cmdbuf_count))
       entry_count++;
 
-   struct kgsl_command_object *cmds =
+   struct kgsl_command_object *cmds = (struct kgsl_command_object *)
       vk_alloc(&queue->device->vk.alloc, sizeof(*cmds) * entry_count,
                alignof(*cmds), VK_SYSTEM_ALLOCATION_SCOPE_COMMAND);
    if (cmds == NULL) {
@@ -1009,13 +1012,13 @@ kgsl_queue_submit(struct tu_queue *queue, struct vk_queue_submit *vk_submit)
 
    struct kgsl_gpu_command req = {
       .flags = KGSL_CMDBATCH_SUBMIT_IB_LIST,
-      .context_id = queue->msm_queue_id,
       .cmdlist = (uintptr_t) cmds,
-      .numcmds = entry_idx,
       .cmdsize = sizeof(struct kgsl_command_object),
+      .numcmds = entry_idx,
       .synclist = (uintptr_t) &sync,
       .syncsize = sizeof(sync),
       .numsyncs = has_sync != 0 ? 1 : 0,
+      .context_id = queue->msm_queue_id,
    };
 
    int ret = safe_ioctl(queue->device->physical_device->local_fd,
@@ -1122,7 +1125,7 @@ tu_knl_kgsl_load(struct tu_instance *instance, int fd)
                        "I can't KHR_display");
    }
 
-   struct tu_physical_device *device =
+   struct tu_physical_device *device = (struct tu_physical_device *)
       vk_zalloc(&instance->vk.alloc, sizeof(*device), 8,
                 VK_SYSTEM_ALLOCATION_SCOPE_INSTANCE);
    if (!device) {

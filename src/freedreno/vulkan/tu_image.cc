@@ -163,7 +163,7 @@ tu_image_view_init(struct tu_device *device,
    TU_FROM_HANDLE(tu_image, image, pCreateInfo->image);
    const VkImageSubresourceRange *range = &pCreateInfo->subresourceRange;
    VkFormat vk_format = pCreateInfo->format;
-   VkImageAspectFlagBits aspect_mask = pCreateInfo->subresourceRange.aspectMask;
+   VkImageAspectFlags aspect_mask = pCreateInfo->subresourceRange.aspectMask;
 
    const struct VkSamplerYcbcrConversionInfo *ycbcr_conversion =
       vk_find_struct_const(pCreateInfo->pNext, SAMPLER_YCBCR_CONVERSION_INFO);
@@ -669,7 +669,7 @@ tu_CreateImage(VkDevice _device,
    const VkSubresourceLayout *plane_layouts = NULL;
 
    TU_FROM_HANDLE(tu_device, device, _device);
-   struct tu_image *image =
+   struct tu_image *image = (struct tu_image *)
       vk_object_zalloc(&device->vk, alloc, sizeof(*image), VK_OBJECT_TYPE_IMAGE);
 
    if (!image)
@@ -756,9 +756,9 @@ tu_get_image_memory_requirements(struct tu_image *image,
                                  VkMemoryRequirements2 *pMemoryRequirements)
 {
    pMemoryRequirements->memoryRequirements = (VkMemoryRequirements) {
-      .memoryTypeBits = 1,
+      .size = image->total_size,
       .alignment = image->layout[0].base_align,
-      .size = image->total_size
+      .memoryTypeBits = 1,
    };
 
    vk_foreach_struct(ext, pMemoryRequirements->pNext) {
@@ -859,8 +859,8 @@ tu_CreateImageView(VkDevice _device,
    TU_FROM_HANDLE(tu_device, device, _device);
    struct tu_image_view *view;
 
-   view = vk_object_alloc(&device->vk, pAllocator, sizeof(*view),
-                          VK_OBJECT_TYPE_IMAGE_VIEW);
+   view = (struct tu_image_view *) vk_object_alloc(
+      &device->vk, pAllocator, sizeof(*view), VK_OBJECT_TYPE_IMAGE_VIEW);
    if (view == NULL)
       return vk_error(device, VK_ERROR_OUT_OF_HOST_MEMORY);
 
@@ -913,8 +913,8 @@ tu_CreateBufferView(VkDevice _device,
    TU_FROM_HANDLE(tu_device, device, _device);
    struct tu_buffer_view *view;
 
-   view = vk_object_alloc(&device->vk, pAllocator, sizeof(*view),
-                          VK_OBJECT_TYPE_BUFFER_VIEW);
+   view = (struct tu_buffer_view *) vk_object_alloc(
+      &device->vk, pAllocator, sizeof(*view), VK_OBJECT_TYPE_BUFFER_VIEW);
    if (!view)
       return vk_error(device, VK_ERROR_OUT_OF_HOST_MEMORY);
 

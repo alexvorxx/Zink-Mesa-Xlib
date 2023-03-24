@@ -49,7 +49,7 @@ void
 tu_cs_init_suballoc(struct tu_cs *cs, struct tu_device *device,
                     struct tu_suballoc_bo *suballoc_bo)
 {
-   uint32_t *start = tu_suballoc_bo_map(suballoc_bo);
+   uint32_t *start = (uint32_t *) tu_suballoc_bo_map(suballoc_bo);
    uint32_t *end = start + (suballoc_bo->size >> 2);
 
    memset(cs, 0, sizeof(*cs));
@@ -116,7 +116,7 @@ tu_cs_add_bo(struct tu_cs *cs, uint32_t size)
    /* grow cs->bos if needed */
    if (cs->bo_count == cs->bo_capacity) {
       uint32_t new_capacity = MAX2(4, 2 * cs->bo_capacity);
-      struct tu_bo **new_bos =
+      struct tu_bo **new_bos = (struct tu_bo **)
          realloc(cs->bos, new_capacity * sizeof(struct tu_bo *));
       if (!new_bos)
          return VK_ERROR_OUT_OF_HOST_MEMORY;
@@ -129,7 +129,9 @@ tu_cs_add_bo(struct tu_cs *cs, uint32_t size)
 
    VkResult result =
       tu_bo_init_new(cs->device, &new_bo, size * sizeof(uint32_t),
-                     TU_BO_ALLOC_GPU_READ_ONLY | TU_BO_ALLOC_ALLOW_DUMP, cs->name);
+                     (enum tu_bo_alloc_flags)(TU_BO_ALLOC_GPU_READ_ONLY |
+                                              TU_BO_ALLOC_ALLOW_DUMP),
+                     cs->name);
    if (result != VK_SUCCESS) {
       return result;
    }
@@ -160,7 +162,7 @@ tu_cs_reserve_entry(struct tu_cs *cs)
    /* grow cs->entries if needed */
    if (cs->entry_count == cs->entry_capacity) {
       uint32_t new_capacity = MAX2(4, cs->entry_capacity * 2);
-      struct tu_cs_entry *new_entries =
+      struct tu_cs_entry *new_entries = (struct tu_cs_entry *)
          realloc(cs->entries, new_capacity * sizeof(struct tu_cs_entry));
       if (!new_entries)
          return VK_ERROR_OUT_OF_HOST_MEMORY;
@@ -308,7 +310,7 @@ tu_cs_alloc(struct tu_cs *cs,
    struct tu_bo *bo = tu_cs_current_bo(cs);
    size_t offset = align(tu_cs_get_offset(cs), size);
 
-   memory->map = bo->map + offset * sizeof(uint32_t);
+   memory->map = (uint32_t *) bo->map + offset;
    memory->iova = bo->iova + offset * sizeof(uint32_t);
 
    cs->start = cs->cur = (uint32_t*) bo->map + offset + count * size;

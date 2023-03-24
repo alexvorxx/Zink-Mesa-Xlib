@@ -6247,6 +6247,107 @@ radv_bind_vs_input_state(struct radv_cmd_buffer *cmd_buffer,
    cmd_buffer->state.dirty |= RADV_CMD_DIRTY_DYNAMIC_VERTEX_INPUT;
 }
 
+static void
+radv_bind_pre_rast_shader(struct radv_cmd_buffer *cmd_buffer, const struct radv_shader *shader)
+{
+   if (radv_get_user_sgpr(shader, AC_UD_NGG_PROVOKING_VTX)->sgpr_idx != -1) {
+      /* Re-emit the provoking vertex mode state because the SGPR idx can be different. */
+      cmd_buffer->state.dirty |= RADV_CMD_DIRTY_DYNAMIC_PROVOKING_VERTEX_MODE;
+   }
+
+   if (radv_get_user_sgpr(shader, AC_UD_STREAMOUT_BUFFERS)->sgpr_idx != -1) {
+      /* Re-emit the streamout buffers because the SGPR idx can be different and with NGG streamout
+       * they always need to be emitted because a buffer size of 0 is used to disable streamout.
+       */
+      cmd_buffer->state.dirty |= RADV_CMD_DIRTY_STREAMOUT_BUFFER;
+
+      if (cmd_buffer->device->physical_device->use_ngg_streamout) {
+         cmd_buffer->gds_needed = true;
+         cmd_buffer->gds_oa_needed = true;
+      }
+   }
+
+   if (radv_get_user_sgpr(shader, AC_UD_NUM_VERTS_PER_PRIM)->sgpr_idx != -1) {
+      /* Re-emit the primitive topology because the SGPR idx can be different. */
+      cmd_buffer->state.dirty |= RADV_CMD_DIRTY_DYNAMIC_PRIMITIVE_TOPOLOGY;
+   }
+
+   if (radv_get_user_sgpr(shader, AC_UD_NGG_QUERY_STATE)->sgpr_idx != -1) {
+      /* Re-emit NGG query state when SGPR exists but location potentially changed. */
+      cmd_buffer->state.dirty |= RADV_CMD_DIRTY_NGG_QUERY;
+   }
+}
+
+static void
+radv_bind_vertex_shader(struct radv_cmd_buffer *cmd_buffer, const struct radv_shader *vs)
+{
+   radv_bind_pre_rast_shader(cmd_buffer, vs);
+}
+
+static void
+radv_bind_tess_ctrl_shader(struct radv_cmd_buffer *cmd_buffer, const struct radv_shader *tcs)
+{
+   cmd_buffer->tess_rings_needed = true;
+
+   /* Always re-emit patch control points when a new pipeline with tessellation is bound because a
+    * bunch of parameters (user SGPRs, TCS vertices out, ccw, etc) can be different.
+    */
+   cmd_buffer->state.dirty |= RADV_CMD_DIRTY_DYNAMIC_PATCH_CONTROL_POINTS;
+}
+
+static void
+radv_bind_tess_eval_shader(struct radv_cmd_buffer *cmd_buffer, const struct radv_shader *tes)
+{
+   radv_bind_pre_rast_shader(cmd_buffer, tes);
+
+   cmd_buffer->tess_rings_needed = true;
+
+   /* Always re-emit patch control points/domain origin when a new pipeline with tessellation is
+    * bound because a bunch of parameters (user SGPRs, TCS vertices out, ccw, etc) can be different.
+    */
+   cmd_buffer->state.dirty |= RADV_CMD_DIRTY_DYNAMIC_PATCH_CONTROL_POINTS |
+                              RADV_CMD_DIRTY_DYNAMIC_TESS_DOMAIN_ORIGIN;
+}
+
+static void
+radv_bind_geometry_shader(struct radv_cmd_buffer *cmd_buffer, const struct radv_shader *gs)
+{
+   radv_bind_pre_rast_shader(cmd_buffer, gs);
+}
+
+static void
+radv_bind_mesh_shader(struct radv_cmd_buffer *cmd_buffer, const struct radv_shader *ms)
+{
+   radv_bind_pre_rast_shader(cmd_buffer, ms);
+
+   cmd_buffer->mesh_scratch_ring_needed |= ms->info.ms.needs_ms_scratch_ring;
+}
+
+static void
+radv_bind_fragment_shader(struct radv_cmd_buffer *cmd_buffer, const struct radv_shader *ps)
+{
+   if (ps->info.ps.needs_sample_positions) {
+      cmd_buffer->sample_positions_needed = true;
+   }
+
+   /* Re-emit the rasterization samples state because the SGPR idx can be different. */
+   if (radv_get_user_sgpr(ps, AC_UD_PS_NUM_SAMPLES)->sgpr_idx != -1) {
+      cmd_buffer->state.dirty |= RADV_CMD_DIRTY_DYNAMIC_RASTERIZATION_SAMPLES;
+   }
+}
+
+static void
+radv_bind_task_shader(struct radv_cmd_buffer *cmd_buffer, const struct radv_shader *ts)
+{
+   if (!cmd_buffer->ace_internal.cs) {
+      cmd_buffer->ace_internal.cs = radv_ace_internal_create(cmd_buffer);
+      if (!cmd_buffer->ace_internal.cs)
+         return;
+   }
+
+   cmd_buffer->task_rings_needed = true;
+}
+
 VKAPI_ATTR void VKAPI_CALL
 radv_CmdBindPipeline(VkCommandBuffer commandBuffer, VkPipelineBindPoint pipelineBindPoint,
                      VkPipeline _pipeline)
@@ -6334,23 +6435,11 @@ radv_CmdBindPipeline(VkCommandBuffer commandBuffer, VkPipelineBindPoint pipeline
             cmd_buffer->state.tess_num_patches = tcs->info.num_tess_patches;
             cmd_buffer->state.tess_lds_size = tcs->info.tcs.num_lds_blocks;
          }
-
-         /* Always re-emit patch control points/domain origin when a new pipeline with tessellation
-          * is bound because a bunch of parameters (user SGPRs, TCS vertices out, ccw, etc) can be
-          * different.
-          */
-         cmd_buffer->state.dirty |= RADV_CMD_DIRTY_DYNAMIC_PATCH_CONTROL_POINTS |
-                                    RADV_CMD_DIRTY_DYNAMIC_TESS_DOMAIN_ORIGIN;
       }
 
       /* Re-emit the vertex buffer descriptors because they are really tied to the pipeline. */
       if (graphics_pipeline->vb_desc_usage_mask) {
          cmd_buffer->state.dirty |= RADV_CMD_DIRTY_VERTEX_BUFFER;
-      }
-
-      /* Re-emit the provoking vertex mode state because the SGPR idx can be different. */
-      if (graphics_pipeline->has_pv_sgpr) {
-         cmd_buffer->state.dirty |= RADV_CMD_DIRTY_DYNAMIC_PROVOKING_VERTEX_MODE;
       }
 
       if (cmd_buffer->device->physical_device->rad_info.rbplus_allowed &&
@@ -6360,38 +6449,9 @@ radv_CmdBindPipeline(VkCommandBuffer commandBuffer, VkPipelineBindPoint pipeline
          cmd_buffer->state.dirty |= RADV_CMD_DIRTY_RBPLUS;
       }
 
-      /* Re-emit the streamout buffers because the SGPR idx can be different and with NGG streamout
-       * they always need to be emitted because a buffer size of 0 is used to disable streamout.
-       */
-      if (graphics_pipeline->has_streamout) {
-         cmd_buffer->state.dirty |= RADV_CMD_DIRTY_STREAMOUT_BUFFER;
-
-         if (cmd_buffer->device->physical_device->use_ngg_streamout) {
-            cmd_buffer->gds_needed = true;
-            cmd_buffer->gds_oa_needed = true;
-         }
-      }
-
-      /* Re-emit NGG query state when SGPR exists but location potentially changed. */
-      if (graphics_pipeline->last_vgt_api_stage_locs[AC_UD_NGG_QUERY_STATE].sgpr_idx != -1)
-         cmd_buffer->state.dirty |= RADV_CMD_DIRTY_NGG_QUERY;
-
-      /* Re-emit the rasterization samples state because the SGPR idx can be different. */
-      if (graphics_pipeline->has_dynamic_samples) {
-         cmd_buffer->state.dirty |= RADV_CMD_DIRTY_DYNAMIC_RASTERIZATION_SAMPLES;
-      }
-
-      /* Re-emit the primitive topology because the SGPR idx can be different. */
-      if (graphics_pipeline->has_num_verts_per_prim) {
-         cmd_buffer->state.dirty |= RADV_CMD_DIRTY_DYNAMIC_PRIMITIVE_TOPOLOGY;
-      }
-
       radv_bind_dynamic_state(cmd_buffer, &graphics_pipeline->dynamic_state);
 
       radv_bind_vs_input_state(cmd_buffer, graphics_pipeline);
-
-      if (graphics_pipeline->has_sample_positions)
-         cmd_buffer->sample_positions_needed = true;
 
       if (graphics_pipeline->esgs_ring_size > cmd_buffer->esgs_ring_size_needed)
          cmd_buffer->esgs_ring_size_needed = graphics_pipeline->esgs_ring_size;
@@ -6402,21 +6462,37 @@ radv_CmdBindPipeline(VkCommandBuffer commandBuffer, VkPipelineBindPoint pipeline
          MAX2(cmd_buffer->scratch_size_per_wave_needed, pipeline->scratch_bytes_per_wave);
       cmd_buffer->scratch_waves_wanted = MAX2(cmd_buffer->scratch_waves_wanted, pipeline->max_waves);
 
-      if (graphics_pipeline->active_stages & VK_SHADER_STAGE_TESSELLATION_CONTROL_BIT)
-         cmd_buffer->tess_rings_needed = true;
-      if (mesh_shading)
-         cmd_buffer->mesh_scratch_ring_needed |=
-            pipeline->shaders[MESA_SHADER_MESH]->info.ms.needs_ms_scratch_ring;
+      for (uint32_t s = 0; s < MESA_SHADER_COMPUTE; s++) {
+         const struct radv_shader *shader = graphics_pipeline->base.shaders[s];
 
-      if (graphics_pipeline->active_stages & VK_SHADER_STAGE_TASK_BIT_EXT) {
-         if (!cmd_buffer->ace_internal.cs) {
-            cmd_buffer->ace_internal.cs = radv_ace_internal_create(cmd_buffer);
-            if (!cmd_buffer->ace_internal.cs)
-               return;
+         if (!shader)
+            continue;
+
+         switch (s) {
+         case MESA_SHADER_VERTEX:
+            radv_bind_vertex_shader(cmd_buffer, shader);
+            break;
+         case MESA_SHADER_TESS_CTRL:
+            radv_bind_tess_ctrl_shader(cmd_buffer, shader);
+            break;
+         case MESA_SHADER_TESS_EVAL:
+            radv_bind_tess_eval_shader(cmd_buffer, shader);
+            break;
+         case MESA_SHADER_GEOMETRY:
+            radv_bind_geometry_shader(cmd_buffer, shader);
+            break;
+         case MESA_SHADER_FRAGMENT:
+            radv_bind_fragment_shader(cmd_buffer, shader);
+            break;
+         default:
+            unreachable("invalid graphics shader stage");
          }
-
-         cmd_buffer->task_rings_needed = true;
       }
+
+      if (graphics_pipeline->base.shaders[MESA_SHADER_MESH])
+         radv_bind_mesh_shader(cmd_buffer, graphics_pipeline->base.shaders[MESA_SHADER_MESH]);
+      if (graphics_pipeline->base.shaders[MESA_SHADER_TASK])
+         radv_bind_task_shader(cmd_buffer, graphics_pipeline->base.shaders[MESA_SHADER_TASK]);
       break;
    }
    default:

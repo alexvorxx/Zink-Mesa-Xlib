@@ -200,6 +200,23 @@ struct tu6_global
 };
 #define gb_offset(member) offsetof(struct tu6_global, member)
 #define global_iova(cmd, member) ((cmd)->device->global_bo->iova + gb_offset(member))
+#define global_iova_arr(cmd, member, idx)                                    \
+   (global_iova(cmd, member) + sizeof_field(struct tu6_global, member[0]) * (idx))
+
+struct tu_pvtmem_bo {
+      mtx_t mtx;
+      struct tu_bo *bo;
+      uint32_t per_fiber_size, per_sp_size;
+};
+
+#ifdef ANDROID
+enum tu_gralloc_type
+{
+   TU_GRALLOC_UNKNOWN,
+   TU_GRALLOC_CROS,
+   TU_GRALLOC_OTHER,
+};
+#endif
 
 struct tu_device
 {
@@ -228,13 +245,10 @@ struct tu_device
       bool initialized;
    } scratch_bos[48 - MIN_SCRATCH_BO_SIZE_LOG2];
 
-   struct tu_pvtmem_bo {
-      mtx_t mtx;
-      struct tu_bo *bo;
-      uint32_t per_fiber_size, per_sp_size;
-   } fiber_pvtmem_bo, wave_pvtmem_bo;
+   struct tu_pvtmem_bo fiber_pvtmem_bo, wave_pvtmem_bo;
 
    struct tu_bo *global_bo;
+   struct tu6_global *global_bo_map;
 
    uint32_t implicit_sync_bo_count;
 
@@ -317,11 +331,7 @@ struct tu_device
 
 #ifdef ANDROID
    const void *gralloc;
-   enum {
-      TU_GRALLOC_UNKNOWN,
-      TU_GRALLOC_CROS,
-      TU_GRALLOC_OTHER,
-   } gralloc_type;
+   enum tu_gralloc_type gralloc_type;
 #endif
 
    uint32_t submit_count;

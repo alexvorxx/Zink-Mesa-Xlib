@@ -73,7 +73,7 @@ struct tu_subpass
 struct tu_render_pass_attachment
 {
    VkFormat format;
-   uint32_t samples;
+   VkSampleCountFlagBits samples;
    uint32_t cpp;
    VkImageAspectFlags clear_mask;
    uint32_t clear_views;

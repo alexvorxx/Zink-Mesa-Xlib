@@ -43,8 +43,7 @@ static void *
 sync_gpu_with_cpu(void *_job)
 {
    struct breadcrumbs_context *ctx = (struct breadcrumbs_context *) _job;
-   struct tu6_global *global =
-      (struct tu6_global *) ctx->device->global_bo->map;
+   struct tu6_global *global = ctx->device->global_bo_map;
    uint32_t last_breadcrumb = 0;
    uint32_t breakpoint_hits = 0;
 
@@ -119,8 +118,8 @@ tu_breadcrumbs_init(struct tu_device *device)
       return;
    }
 
-   struct breadcrumbs_context *ctx =
-      malloc(sizeof(struct breadcrumbs_context));
+   struct breadcrumbs_context *ctx = (struct breadcrumbs_context *) malloc(
+      sizeof(struct breadcrumbs_context));
    ctx->device = device;
    ctx->breadcrumb_idx = 0;
    ctx->thread_stop = false;
@@ -135,7 +134,7 @@ tu_breadcrumbs_init(struct tu_device *device)
 
    device->breadcrumbs_ctx = ctx;
 
-   struct tu6_global *global = device->global_bo->map;
+   struct tu6_global *global = device->global_bo_map;
    global->breadcrumb_cpu_sync_seqno = 0;
    global->breadcrumb_gpu_sync_seqno = 0;
 

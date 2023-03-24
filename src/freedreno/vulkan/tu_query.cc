@@ -101,13 +101,14 @@ struct PACKED primitives_generated_query_slot {
 #define occlusion_query_iova(pool, query, field)                     \
    query_iova(struct occlusion_query_slot, pool, query, field)
 
-#define pipeline_stat_query_iova(pool, query, field)                 \
-   pool->bo->iova + pool->stride * (query) +                            \
-   offsetof(struct pipeline_stat_query_slot, field)
+#define pipeline_stat_query_iova(pool, query, field, idx)                    \
+   pool->bo->iova + pool->stride * (query) +                                 \
+      offsetof_arr(struct pipeline_stat_query_slot, field, (idx))
 
-#define primitive_query_iova(pool, query, field, i)                  \
-   query_iova(struct primitive_query_slot, pool, query, field) +     \
-   offsetof(struct primitive_slot_value, values[i])
+#define primitive_query_iova(pool, query, field, stream_id, i)               \
+   query_iova(struct primitive_query_slot, pool, query, field) +             \
+      sizeof_field(struct primitive_query_slot, field[0]) * (stream_id) +    \
+      offsetof_arr(struct primitive_slot_value, values, (i))
 
 #define perf_query_iova(pool, query, field, i)                          \
    pool->bo->iova + pool->stride * (query) +                             \
@@ -125,16 +126,16 @@ struct PACKED primitives_generated_query_slot {
    pool->bo->iova + pool->stride * (query) +                          \
    sizeof(struct query_slot) + sizeof(type) * (i)
 
-#define query_result_addr(pool, query, type, i)                            \
-   pool->bo->map + pool->stride * (query) +                             \
-   sizeof(struct query_slot) + sizeof(type) * (i)
+#define query_result_addr(pool, query, type, i)                              \
+   (uint64_t *) ((char *) pool->bo->map + pool->stride * (query) +           \
+                 sizeof(struct query_slot) + sizeof(type) * (i))
 
 #define query_is_available(slot) slot->available
 
 static const VkPerformanceCounterUnitKHR
 fd_perfcntr_type_to_vk_unit[] = {
-   [FD_PERFCNTR_TYPE_UINT]         = VK_PERFORMANCE_COUNTER_UNIT_GENERIC_KHR,
    [FD_PERFCNTR_TYPE_UINT64]       = VK_PERFORMANCE_COUNTER_UNIT_GENERIC_KHR,
+   [FD_PERFCNTR_TYPE_UINT]         = VK_PERFORMANCE_COUNTER_UNIT_GENERIC_KHR,
    [FD_PERFCNTR_TYPE_FLOAT]        = VK_PERFORMANCE_COUNTER_UNIT_GENERIC_KHR,
    [FD_PERFCNTR_TYPE_PERCENTAGE]   = VK_PERFORMANCE_COUNTER_UNIT_PERCENTAGE_KHR,
    [FD_PERFCNTR_TYPE_BYTES]        = VK_PERFORMANCE_COUNTER_UNIT_BYTES_KHR,
@@ -154,8 +155,8 @@ fd_perfcntr_type_to_vk_unit[] = {
  */
 static const VkPerformanceCounterStorageKHR
 fd_perfcntr_type_to_vk_storage[] = {
-   [FD_PERFCNTR_TYPE_UINT]         = VK_PERFORMANCE_COUNTER_STORAGE_UINT32_KHR,
    [FD_PERFCNTR_TYPE_UINT64]       = VK_PERFORMANCE_COUNTER_STORAGE_UINT64_KHR,
+   [FD_PERFCNTR_TYPE_UINT]         = VK_PERFORMANCE_COUNTER_STORAGE_UINT32_KHR,
    [FD_PERFCNTR_TYPE_FLOAT]        = VK_PERFORMANCE_COUNTER_STORAGE_FLOAT32_KHR,
    [FD_PERFCNTR_TYPE_PERCENTAGE]   = VK_PERFORMANCE_COUNTER_STORAGE_FLOAT32_KHR,
    [FD_PERFCNTR_TYPE_BYTES]        = VK_PERFORMANCE_COUNTER_STORAGE_UINT64_KHR,
@@ -171,9 +172,11 @@ fd_perfcntr_type_to_vk_storage[] = {
 /*
  * Returns a pointer to a given slot in a query pool.
  */
-static void* slot_address(struct tu_query_pool *pool, uint32_t query)
+static struct query_slot *
+slot_address(struct tu_query_pool *pool, uint32_t query)
 {
-   return (char*)pool->bo->map + query * pool->stride;
+   return (struct query_slot *) ((char *) pool->bo->map +
+                                 query * pool->stride);
 }
 
 static void
@@ -252,7 +255,7 @@ tu_CreateQueryPool(VkDevice _device,
       unreachable("Invalid query type");
    }
 
-   struct tu_query_pool *pool =
+   struct tu_query_pool *pool = (struct tu_query_pool *)
          vk_object_alloc(&device->vk, pAllocator, pool_size,
                          VK_OBJECT_TYPE_QUERY_POOL);
    if (!pool)
@@ -476,7 +479,7 @@ get_query_pool_results(struct tu_device *device,
 {
    assert(dataSize >= stride * queryCount);
 
-   char *result_base = pData;
+   char *result_base = (char *) pData;
    VkResult result = VK_SUCCESS;
    for (uint32_t i = 0; i < queryCount; i++) {
       uint32_t query = firstQuery + i;
@@ -847,7 +850,7 @@ emit_begin_stat_query(struct tu_cmd_buffer *cmdbuf,
                       uint32_t query)
 {
    struct tu_cs *cs = cmdbuf->state.pass ? &cmdbuf->draw_cs : &cmdbuf->cs;
-   uint64_t begin_iova = pipeline_stat_query_iova(pool, query, begin);
+   uint64_t begin_iova = pipeline_stat_query_iova(pool, query, begin, 0);
 
    if (is_pipeline_query_with_vertex_stage(pool->pipeline_statistics)) {
       bool need_cond_exec = cmdbuf->state.pass && cmdbuf->state.prim_counters_running;
@@ -986,7 +989,7 @@ emit_begin_xfb_query(struct tu_cmd_buffer *cmdbuf,
                      uint32_t stream_id)
 {
    struct tu_cs *cs = cmdbuf->state.pass ? &cmdbuf->draw_cs : &cmdbuf->cs;
-   uint64_t begin_iova = primitive_query_iova(pool, query, begin[0], 0);
+   uint64_t begin_iova = primitive_query_iova(pool, query, begin, 0, 0);
 
    tu_cs_emit_regs(cs, A6XX_VPC_SO_STREAM_COUNTS(.qword = begin_iova));
    tu6_emit_event_write(cmdbuf, cs, WRITE_PRIMITIVE_COUNTS);
@@ -1218,7 +1221,7 @@ emit_end_stat_query(struct tu_cmd_buffer *cmdbuf,
                     uint32_t query)
 {
    struct tu_cs *cs = cmdbuf->state.pass ? &cmdbuf->draw_cs : &cmdbuf->cs;
-   uint64_t end_iova = pipeline_stat_query_iova(pool, query, end);
+   uint64_t end_iova = pipeline_stat_query_iova(pool, query, end, 0);
    uint64_t available_iova = query_available_iova(pool, query);
    uint64_t result_iova;
    uint64_t stat_start_iova;
@@ -1250,8 +1253,8 @@ emit_end_stat_query(struct tu_cmd_buffer *cmdbuf,
 
    for (int i = 0; i < STAT_COUNT; i++) {
       result_iova = query_result_iova(pool, query, uint64_t, i);
-      stat_start_iova = pipeline_stat_query_iova(pool, query, begin[i]);
-      stat_stop_iova = pipeline_stat_query_iova(pool, query, end[i]);
+      stat_start_iova = pipeline_stat_query_iova(pool, query, begin, i);
+      stat_stop_iova = pipeline_stat_query_iova(pool, query, end, i);
 
       tu_cs_emit_pkt7(cs, CP_MEM_TO_MEM, 9);
       tu_cs_emit(cs, CP_MEM_TO_MEM_0_WAIT_FOR_MEM_WRITES |
@@ -1362,13 +1365,13 @@ emit_end_xfb_query(struct tu_cmd_buffer *cmdbuf,
 {
    struct tu_cs *cs = cmdbuf->state.pass ? &cmdbuf->draw_cs : &cmdbuf->cs;
 
-   uint64_t end_iova = primitive_query_iova(pool, query, end[0], 0);
+   uint64_t end_iova = primitive_query_iova(pool, query, end, 0, 0);
    uint64_t result_written_iova = query_result_iova(pool, query, uint64_t, 0);
    uint64_t result_generated_iova = query_result_iova(pool, query, uint64_t, 1);
-   uint64_t begin_written_iova = primitive_query_iova(pool, query, begin[stream_id], 0);
-   uint64_t begin_generated_iova = primitive_query_iova(pool, query, begin[stream_id], 1);
-   uint64_t end_written_iova = primitive_query_iova(pool, query, end[stream_id], 0);
-   uint64_t end_generated_iova = primitive_query_iova(pool, query, end[stream_id], 1);
+   uint64_t begin_written_iova = primitive_query_iova(pool, query, begin, stream_id, 0);
+   uint64_t begin_generated_iova = primitive_query_iova(pool, query, begin, stream_id, 1);
+   uint64_t end_written_iova = primitive_query_iova(pool, query, end, stream_id, 0);
+   uint64_t end_generated_iova = primitive_query_iova(pool, query, end, stream_id, 1);
    uint64_t available_iova = query_available_iova(pool, query);
 
    tu_cs_emit_regs(cs, A6XX_VPC_SO_STREAM_COUNTS(.qword = end_iova));

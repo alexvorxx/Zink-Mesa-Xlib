@@ -33,6 +33,8 @@
 
 #include "ir3_shader.h"
 
+BEGINC;
+
 bool ir3_nir_apply_trig_workarounds(nir_shader *shader);
 bool ir3_nir_lower_imul(nir_shader *shader);
 bool ir3_nir_lower_io_offsets(nir_shader *shader);
@@ -130,5 +132,7 @@ is_intrinsic_load(nir_intrinsic_op op)
       return false;
    }
 }
+
+ENDC;
 
 #endif /* IR3_NIR_H_ */

@@ -31,6 +31,10 @@ tu_hal_close(struct hw_device_t *dev);
 
 static_assert(HWVULKAN_DISPATCH_MAGIC == ICD_LOADER_MAGIC, "");
 
+struct hw_module_methods_t HAL_MODULE_METHODS = {
+   .open = tu_hal_open,
+};
+
 PUBLIC struct hwvulkan_module_t HAL_MODULE_INFO_SYM = {
    .common =
      {
@@ -40,10 +44,7 @@ PUBLIC struct hwvulkan_module_t HAL_MODULE_INFO_SYM = {
        .id = HWVULKAN_HARDWARE_MODULE_ID,
        .name = "Turnip Vulkan HAL",
        .author = "Google",
-       .methods =
-         &(hw_module_methods_t){
-           .open = tu_hal_open,
-         },
+       .methods = &HAL_MODULE_METHODS,
      },
 };
 
@@ -64,7 +65,7 @@ tu_hal_open(const struct hw_module_t *mod,
    assert(mod == &HAL_MODULE_INFO_SYM.common);
    assert(strcmp(id, HWVULKAN_DEVICE_0) == 0);
 
-   hwvulkan_device_t *hal_dev = malloc(sizeof(*hal_dev));
+   hwvulkan_device_t *hal_dev = (hwvulkan_device_t *) malloc(sizeof(*hal_dev));
    if (!hal_dev)
       return -1;
 
@@ -174,7 +175,7 @@ tu_gralloc_info_cros(struct tu_device *device,
                      uint64_t *modifier)
 
 {
-   const gralloc_module_t *gralloc = device->gralloc;
+   const gralloc_module_t *gralloc = (const gralloc_module_t *) device->gralloc;
    struct cros_gralloc0_buffer_info info;
    int ret;
 
@@ -211,7 +212,7 @@ tu_gralloc_info(struct tu_device *device,
                                   "Could not open gralloc\n");
       }
 
-      const gralloc_module_t *gralloc = device->gralloc;
+      const gralloc_module_t *gralloc = (const gralloc_module_t *) device->gralloc;
 
       mesa_logi("opened gralloc module name: %s", gralloc->common.name);
 
@@ -256,8 +257,8 @@ tu_import_memory_from_gralloc_handle(VkDevice device_h,
    const VkMemoryDedicatedAllocateInfo ded_alloc = {
       .sType = VK_STRUCTURE_TYPE_MEMORY_DEDICATED_ALLOCATE_INFO,
       .pNext = NULL,
+      .image = image_h,
       .buffer = VK_NULL_HANDLE,
-      .image = image_h
    };
 
    const VkImportMemoryFdInfoKHR import_info = {
@@ -267,17 +268,18 @@ tu_import_memory_from_gralloc_handle(VkDevice device_h,
       .fd = os_dupfd_cloexec(dma_buf),
    };
 
-   result =
-      tu_AllocateMemory(device_h,
-                        &(VkMemoryAllocateInfo) {
-                           .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
-                           .pNext = &import_info,
-                           .allocationSize = image->total_size,
-                           .memoryTypeIndex = 0,
-                        },
-                        alloc, &memory_h);
-   if (result != VK_SUCCESS)
-      goto fail_create_image;
+   const VkMemoryAllocateInfo alloc_info = {
+      .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
+      .pNext = &import_info,
+      .allocationSize = image->total_size,
+      .memoryTypeIndex = 0,
+   };
+   result = tu_AllocateMemory(device_h, &alloc_info, alloc, &memory_h);
+
+   if (result != VK_SUCCESS) {
+      tu_DestroyImage(device_h, image_h, alloc);
+      return result;
+   }
 
    VkBindImageMemoryInfo bind_info = {
       .sType = VK_STRUCTURE_TYPE_BIND_IMAGE_MEMORY_INFO,
@@ -290,11 +292,6 @@ tu_import_memory_from_gralloc_handle(VkDevice device_h,
    image->owned_memory = memory_h;
 
    return VK_SUCCESS;
-
-fail_create_image:
-   tu_DestroyImage(device_h, image_h, alloc);
-
-   return result;
 }
 
 static VkResult

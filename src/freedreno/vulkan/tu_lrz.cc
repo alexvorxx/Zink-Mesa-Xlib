@@ -560,10 +560,13 @@ tu6_calculate_lrz_state(struct tu_cmd_buffer *cmd,
                         const uint32_t a)
 {
    struct tu_pipeline *pipeline = cmd->state.pipeline;
-   bool z_test_enable = cmd->state.rb_depth_cntl & A6XX_RB_DEPTH_CNTL_Z_TEST_ENABLE;
-   bool z_write_enable = cmd->state.rb_depth_cntl & A6XX_RB_DEPTH_CNTL_Z_WRITE_ENABLE;
-   bool z_bounds_enable = cmd->state.rb_depth_cntl & A6XX_RB_DEPTH_CNTL_Z_BOUNDS_ENABLE;
-   VkCompareOp depth_compare_op = (cmd->state.rb_depth_cntl & A6XX_RB_DEPTH_CNTL_ZFUNC__MASK) >> A6XX_RB_DEPTH_CNTL_ZFUNC__SHIFT;
+   bool z_test_enable = (bool) (cmd->state.rb_depth_cntl & A6XX_RB_DEPTH_CNTL_Z_TEST_ENABLE);
+   bool z_write_enable = (bool) (cmd->state.rb_depth_cntl & A6XX_RB_DEPTH_CNTL_Z_WRITE_ENABLE);
+   bool z_bounds_enable = (bool) (cmd->state.rb_depth_cntl & A6XX_RB_DEPTH_CNTL_Z_BOUNDS_ENABLE);
+   VkCompareOp depth_compare_op =
+      (VkCompareOp) ((cmd->state.rb_depth_cntl &
+                      A6XX_RB_DEPTH_CNTL_ZFUNC__MASK) >>
+                     A6XX_RB_DEPTH_CNTL_ZFUNC__SHIFT);
 
    struct A6XX_GRAS_LRZ_CNTL gras_lrz_cntl = { 0 };
 
@@ -760,11 +763,11 @@ tu6_calculate_lrz_state(struct tu_cmd_buffer *cmd,
    /* Invalidate LRZ and disable write if stencil test is enabled */
    bool stencil_test_enable = cmd->state.rb_stencil_cntl & A6XX_RB_STENCIL_CONTROL_STENCIL_ENABLE;
    if (!disable_lrz && stencil_test_enable) {
-      VkCompareOp stencil_front_compare_op =
-         (cmd->state.rb_stencil_cntl & A6XX_RB_STENCIL_CONTROL_FUNC__MASK) >> A6XX_RB_STENCIL_CONTROL_FUNC__SHIFT;
+      VkCompareOp stencil_front_compare_op = (VkCompareOp)
+         ((cmd->state.rb_stencil_cntl & A6XX_RB_STENCIL_CONTROL_FUNC__MASK) >> A6XX_RB_STENCIL_CONTROL_FUNC__SHIFT);
 
-      VkCompareOp stencil_back_compare_op =
-         (cmd->state.rb_stencil_cntl & A6XX_RB_STENCIL_CONTROL_FUNC_BF__MASK) >> A6XX_RB_STENCIL_CONTROL_FUNC_BF__SHIFT;
+      VkCompareOp stencil_back_compare_op = (VkCompareOp)
+         ((cmd->state.rb_stencil_cntl & A6XX_RB_STENCIL_CONTROL_FUNC_BF__MASK) >> A6XX_RB_STENCIL_CONTROL_FUNC_BF__SHIFT);
 
       bool lrz_allowed = true;
       lrz_allowed = lrz_allowed && tu6_stencil_op_lrz_allowed(

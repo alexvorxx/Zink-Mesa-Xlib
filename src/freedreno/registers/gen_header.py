@@ -645,6 +645,10 @@ def main():
 
 	print("#ifndef %s\n#define %s\n" % (guard, guard))
 
+	print()
+	print("#include <assert.h>")
+	print()
+
 	try:
 		p.parse(rnn_path, xml_file)
 	except Error as e:

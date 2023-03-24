@@ -22,6 +22,8 @@
 #include "tu_image.h"
 #include "tu_tracepoints.h"
 
+static const VkOffset2D blt_no_coord = { ~0, ~0 };
+
 static uint32_t
 tu_pack_float32_for_unorm(float val, int bits)
 {
@@ -60,7 +62,6 @@ format_to_ifmt(enum pipe_format format)
       return is_int ? R2D_INT32 : R2D_FLOAT32;
     default:
       unreachable("bad format");
-      return 0;
    }
 }
 
@@ -124,22 +125,22 @@ blit_base_format(enum pipe_format format, bool ubwc)
 
 static void
 r2d_coords(struct tu_cs *cs,
-           const VkOffset2D *dst,
-           const VkOffset2D *src,
-           const VkExtent2D *extent)
+           const VkOffset2D dst,
+           const VkOffset2D src,
+           const VkExtent2D extent)
 {
    tu_cs_emit_regs(cs,
-      A6XX_GRAS_2D_DST_TL(.x = dst->x,                     .y = dst->y),
-      A6XX_GRAS_2D_DST_BR(.x = dst->x + extent->width - 1, .y = dst->y + extent->height - 1));
+      A6XX_GRAS_2D_DST_TL(.x = dst.x,                    .y = dst.y),
+      A6XX_GRAS_2D_DST_BR(.x = dst.x + extent.width - 1, .y = dst.y + extent.height - 1));
 
-   if (!src)
+   if (src.x == blt_no_coord.x)
       return;
 
    tu_cs_emit_regs(cs,
-                   A6XX_GRAS_2D_SRC_TL_X(src->x),
-                   A6XX_GRAS_2D_SRC_BR_X(src->x + extent->width - 1),
-                   A6XX_GRAS_2D_SRC_TL_Y(src->y),
-                   A6XX_GRAS_2D_SRC_BR_Y(src->y + extent->height - 1));
+                   A6XX_GRAS_2D_SRC_TL_X(src.x),
+                   A6XX_GRAS_2D_SRC_BR_X(src.x + extent.width - 1),
+                   A6XX_GRAS_2D_SRC_TL_Y(src.y),
+                   A6XX_GRAS_2D_SRC_BR_Y(src.y + extent.height - 1));
 }
 
 static void
@@ -247,7 +248,8 @@ r2d_src(struct tu_cmd_buffer *cmd,
    if (filter != VK_FILTER_NEAREST)
       src_info |= A6XX_SP_PS_2D_SRC_INFO_FILTER;
 
-   enum a6xx_format fmt = (src_info & A6XX_SP_PS_2D_SRC_INFO_COLOR_FORMAT__MASK);
+   enum a6xx_format fmt = (enum a6xx_format)(
+      src_info & A6XX_SP_PS_2D_SRC_INFO_COLOR_FORMAT__MASK);
    enum pipe_format src_format = iview->format;
    fixup_src_format(&src_format, dst_format, &fmt);
 
@@ -326,7 +328,8 @@ r2d_dst(struct tu_cs *cs, const struct fdl6_view *iview, uint32_t layer,
         enum pipe_format src_format)
 {
    uint32_t dst_info = iview->RB_2D_DST_INFO;
-   enum a6xx_format fmt = dst_info & A6XX_RB_2D_DST_INFO_COLOR_FORMAT__MASK;
+   enum a6xx_format fmt =
+      (enum a6xx_format)(dst_info & A6XX_RB_2D_DST_INFO_COLOR_FORMAT__MASK);
    enum pipe_format dst_format = iview->format;
    fixup_dst_format(src_format, &dst_format, &fmt);
 
@@ -414,11 +417,11 @@ r2d_setup_common(struct tu_cmd_buffer *cmd,
    tu_cs_emit(cs, unknown_8c01);
 
    uint32_t blit_cntl = A6XX_RB_2D_BLIT_CNTL(
-         .scissor = scissor,
-         .rotate = blit_param,
+         .rotate = (enum a6xx_rotation) blit_param,
          .solid_color = clear,
-         .d24s8 = fmt == FMT6_Z24_UNORM_S8_UINT_AS_R8G8B8A8 && !clear,
          .color_format = fmt,
+         .scissor = scissor,
+         .d24s8 = fmt == FMT6_Z24_UNORM_S8_UINT_AS_R8G8B8A8 && !clear,
          .mask = 0xf,
          .ifmt = util_format_is_srgb(dst_format) ? R2D_UNORM8_SRGB : ifmt,
       ).value;
@@ -721,19 +724,20 @@ compile_shader(struct tu_device *dev, struct nir_shader *nir,
 
    ir3_finalize_nir(dev->compiler, nir);
 
+   const struct ir3_shader_options options = {
+      .reserved_user_consts = align(consts, 4),
+      .api_wavesize = IR3_SINGLE_OR_DOUBLE,
+      .real_wavesize = IR3_SINGLE_OR_DOUBLE,
+   };
    struct ir3_shader *sh =
-      ir3_shader_from_nir(dev->compiler, nir, &(struct ir3_shader_options) {
-                              .api_wavesize = IR3_SINGLE_OR_DOUBLE,
-                              .real_wavesize = IR3_SINGLE_OR_DOUBLE,
-                              .reserved_user_consts = align(consts, 4),
-                          }, NULL);
+      ir3_shader_from_nir(dev->compiler, nir, &options, NULL);
 
    struct ir3_shader_key key = {};
    bool created;
    struct ir3_shader_variant *so =
       ir3_shader_get_variant(sh, &key, false, false, &created);
 
-   struct tu6_global *global = dev->global_bo->map;
+   struct tu6_global *global = dev->global_bo_map;
 
    assert(*offset + so->info.sizedwords <= ARRAY_SIZE(global->shaders));
    dev->global_shaders[idx] = sh;
@@ -741,7 +745,7 @@ compile_shader(struct tu_device *dev, struct nir_shader *nir,
    memcpy(&global->shaders[*offset], so->bin,
           sizeof(uint32_t) * so->info.sizedwords);
    dev->global_shader_va[idx] = dev->global_bo->iova +
-      gb_offset(shaders[*offset]);
+      offsetof_arr(struct tu6_global, shaders, *offset);
    *offset += align(so->info.sizedwords, 32);
 }
 
@@ -757,7 +761,7 @@ tu_init_clear_blit_shaders(struct tu_device *dev)
 
    for (uint32_t num_rts = 0; num_rts <= MAX_RTS; num_rts++) {
       compile_shader(dev, build_clear_fs_shader(num_rts), num_rts, &offset,
-                     GLOBAL_SH_FS_CLEAR0 + num_rts);
+                     (enum global_shader) (GLOBAL_SH_FS_CLEAR0 + num_rts));
    }
 }
 
@@ -789,7 +793,7 @@ r3d_common(struct tu_cmd_buffer *cmd, struct tu_cs *cs, bool blit,
 
    unsigned num_rts = util_bitcount(rts_mask);
    if (!blit)
-      fs_id = GLOBAL_SH_FS_CLEAR0 + num_rts;
+      fs_id = (enum global_shader) (GLOBAL_SH_FS_CLEAR0 + num_rts);
 
    struct ir3_shader_variant *fs = cmd->device->global_shader_variants[fs_id];
    uint64_t fs_iova = cmd->device->global_shader_va[fs_id];
@@ -801,11 +805,11 @@ r3d_common(struct tu_cmd_buffer *cmd, struct tu_cs *cs, bool blit,
          .gs_state = true,
          .fs_state = true,
          .cs_state = true,
-         .gfx_ibo = true,
          .cs_ibo = true,
+         .gfx_ibo = true,
          .gfx_shared_const = true,
-         .gfx_bindless = 0x1f,
-         .cs_bindless = 0x1f));
+         .cs_bindless = 0x1f,
+         .gfx_bindless = 0x1f,));
 
    tu6_emit_xs_config(cs, MESA_SHADER_VERTEX, vs);
    tu6_emit_xs_config(cs, MESA_SHADER_TESS_CTRL, NULL);
@@ -844,10 +848,10 @@ r3d_common(struct tu_cmd_buffer *cmd, struct tu_cs *cs, bool blit,
 
    tu_cs_emit_regs(cs,
                    A6XX_GRAS_CL_CNTL(
-                      .persp_division_disable = 1,
-                      .vp_xform_disable = 1,
+                      .clip_disable = 1,
                       .vp_clip_code_ignore = 1,
-                      .clip_disable = 1));
+                      .vp_xform_disable = 1,
+                      .persp_division_disable = 1,));
    tu_cs_emit_regs(cs, A6XX_GRAS_SU_CNTL()); // XXX msaa enable?
 
    tu_cs_emit_regs(cs, A6XX_PC_RASTER_CNTL());
@@ -913,18 +917,25 @@ r3d_coord_z(struct tu_cs *cs, float z)
 
 static void
 r3d_coords(struct tu_cs *cs,
-           const VkOffset2D *dst,
-           const VkOffset2D *src,
-           const VkExtent2D *extent)
+           const VkOffset2D dst,
+           const VkOffset2D src,
+           const VkExtent2D extent)
 {
-   int32_t src_x1 = src ? src->x : 0;
-   int32_t src_y1 = src ? src->y : 0;
-   r3d_coords_raw(cs, (float[]) {
-      dst->x,                 dst->y,
-      src_x1,                 src_y1,
-      dst->x + extent->width, dst->y + extent->height,
-      src_x1 + extent->width, src_y1 + extent->height,
-   });
+   const bool no_src = src.x != blt_no_coord.x;
+   int32_t src_x1 = no_src ? src.x : 0;
+   int32_t src_y1 = no_src ? src.y : 0;
+
+   const float coords[] = {
+      dst.x,
+      dst.y,
+      src_x1,
+      src_y1,
+      dst.x + extent.width,
+      dst.y + extent.height,
+      src_x1 + extent.width,
+      src_y1 + extent.height,
+   };
+   r3d_coords_raw(cs, coords);
 }
 
 static void
@@ -1040,8 +1051,8 @@ r3d_src(struct tu_cmd_buffer *cmd,
    uint32_t desc[A6XX_TEX_CONST_DWORDS];
    memcpy(desc, iview->descriptor, sizeof(desc));
 
-   enum a6xx_format fmt = (desc[0] & A6XX_TEX_CONST_0_FMT__MASK) >>
-         A6XX_TEX_CONST_0_FMT__SHIFT;
+   enum a6xx_format fmt = (enum a6xx_format)(
+      (desc[0] & A6XX_TEX_CONST_0_FMT__MASK) >> A6XX_TEX_CONST_0_FMT__SHIFT);
    enum pipe_format src_format = iview->format;
    fixup_src_format(&src_format, dst_format, &fmt);
    desc[0] = (desc[0] & ~A6XX_TEX_CONST_0_FMT__MASK) |
@@ -1134,7 +1145,8 @@ r3d_dst(struct tu_cs *cs, const struct fdl6_view *iview, uint32_t layer,
 {
    uint32_t mrt_buf_info = iview->RB_MRT_BUF_INFO;
 
-   enum a6xx_format fmt = mrt_buf_info & A6XX_RB_MRT_BUF_INFO_COLOR_FORMAT__MASK;
+   enum a6xx_format fmt = (enum a6xx_format)(
+      mrt_buf_info & A6XX_RB_MRT_BUF_INFO_COLOR_FORMAT__MASK);
    enum pipe_format dst_format = iview->format;
    fixup_dst_format(src_format, &dst_format, &fmt);
    mrt_buf_info =
@@ -1340,9 +1352,9 @@ r3d_teardown(struct tu_cmd_buffer *cmd, struct tu_cs *cs)
 
 struct blit_ops {
    void (*coords)(struct tu_cs *cs,
-                  const VkOffset2D *dst,
-                  const VkOffset2D *src,
-                  const VkExtent2D *extent);
+                  const VkOffset2D dst,
+                  const VkOffset2D src,
+                  const VkExtent2D extent);
    void (*clear_value)(struct tu_cs *cs, enum pipe_format format, const VkClearValue *val);
    void (*src)(
         struct tu_cmd_buffer *cmd,
@@ -1408,11 +1420,12 @@ static const struct blit_ops r3d_ops = {
 static void
 coords(const struct blit_ops *ops,
        struct tu_cs *cs,
-       const VkOffset3D *dst,
-       const VkOffset3D *src,
-       const VkExtent3D *extent)
+       const VkOffset3D dst,
+       const VkOffset3D src,
+       const VkExtent3D extent)
 {
-   ops->coords(cs, (const VkOffset2D*) dst, (const VkOffset2D*) src, (const VkExtent2D*) extent);
+   ops->coords(cs, (VkOffset2D) {dst.x, dst.y}, (VkOffset2D) {src.x, src.y},
+               (VkExtent2D) {extent.width, extent.height});
 }
 
 /* Decides the VK format to treat our data as for a memcpy-style blit. We have
@@ -1491,7 +1504,8 @@ tu6_clear_lrz(struct tu_cmd_buffer *cmd,
    ops->dst_buffer(cs, PIPE_FORMAT_Z16_UNORM,
                    image->iova + image->lrz_offset,
                    image->lrz_pitch * 2, PIPE_FORMAT_Z16_UNORM);
-   ops->coords(cs, &(VkOffset2D) {}, NULL, &(VkExtent2D) {image->lrz_pitch, image->lrz_height});
+   ops->coords(cs, (VkOffset2D) {}, blt_no_coord,
+               (VkExtent2D) { image->lrz_pitch, image->lrz_height });
    ops->run(cmd, cs);
    ops->teardown(cmd, cs);
 
@@ -1509,7 +1523,8 @@ tu6_dirty_lrz_fc(struct tu_cmd_buffer *cmd,
                  struct tu_image *image)
 {
    const struct blit_ops *ops = &r2d_ops;
-   VkClearValue clear = { .color = { .uint32[0] = 0xffffffff } };
+   VkClearValue clear = {};
+   clear.color.uint32[0] = 0xffffffff;
 
    /* LRZ fast-clear buffer is always allocated with 512 bytes size. */
    ops->setup(cmd, cs, PIPE_FORMAT_R32_UINT, PIPE_FORMAT_R32_UINT,
@@ -1519,7 +1534,7 @@ tu6_dirty_lrz_fc(struct tu_cmd_buffer *cmd,
    ops->dst_buffer(cs, PIPE_FORMAT_R32_UINT,
                    image->iova + image->lrz_fc_offset, 512,
                    PIPE_FORMAT_R32_UINT);
-   ops->coords(cs, &(VkOffset2D) {}, NULL, &(VkExtent2D) {128, 1});
+   ops->coords(cs, (VkOffset2D) {}, blt_no_coord, (VkExtent2D) {128, 1});
    ops->run(cmd, cs);
    ops->teardown(cmd, cs);
 }
@@ -1543,18 +1558,19 @@ tu_image_view_copy_blit(struct fdl6_view *iview,
    const struct fdl_layout *layout =
       &image->layout[tu6_plane_index(image->vk.format, aspect_mask)];
 
-   fdl6_view_init(iview, &layout, &(struct fdl_view_args) {
+   const struct fdl_view_args args = {
       .iova = image->iova,
-      .base_array_layer = subres->baseArrayLayer + layer,
-      .layer_count = 1,
       .base_miplevel = subres->mipLevel,
       .level_count = 1,
-      .format = tu_format_for_aspect(format, aspect_mask),
+      .base_array_layer = subres->baseArrayLayer + layer,
+      .layer_count = 1,
       .swiz = {
          PIPE_SWIZZLE_X, PIPE_SWIZZLE_Y, PIPE_SWIZZLE_Z, PIPE_SWIZZLE_W
       },
+      .format = tu_format_for_aspect(format, aspect_mask),
       .type = z_scale ? FDL_VIEW_TYPE_3D : FDL_VIEW_TYPE_2D,
-   }, false);
+   };
+   fdl6_view_init(iview, &layout, &args, false);
 }
 
 static void
@@ -1659,15 +1675,14 @@ tu6_blit_image(struct tu_cmd_buffer *cmd,
 
    ops->setup(cmd, cs, src_format, dst_format, info->dstSubresource.aspectMask,
               blit_param, false, dst_image->layout[0].ubwc,
-              dst_image->layout[0].nr_samples);
+              (VkSampleCountFlagBits) dst_image->layout[0].nr_samples);
 
    if (ops == &r3d_ops) {
-      r3d_coords_raw(cs, (float[]) {
-         info->dstOffsets[0].x, info->dstOffsets[0].y,
-         info->srcOffsets[0].x, info->srcOffsets[0].y,
-         info->dstOffsets[1].x, info->dstOffsets[1].y,
-         info->srcOffsets[1].x, info->srcOffsets[1].y
-      });
+      const float coords[] = { info->dstOffsets[0].x, info->dstOffsets[0].y,
+                               info->srcOffsets[0].x, info->srcOffsets[0].y,
+                               info->dstOffsets[1].x, info->dstOffsets[1].y,
+                               info->srcOffsets[1].x, info->srcOffsets[1].y };
+      r3d_coords_raw(cs, coords);
    } else {
       tu_cs_emit_regs(cs,
          A6XX_GRAS_2D_DST_TL(.x = MIN2(info->dstOffsets[0].x, info->dstOffsets[1].x),
@@ -1803,7 +1818,7 @@ tu_copy_buffer_to_image(struct tu_cmd_buffer *cmd,
 
    ops->setup(cmd, cs, src_format, dst_format,
               info->imageSubresource.aspectMask, 0, false, dst_image->layout[0].ubwc,
-              dst_image->layout[0].nr_samples);
+              (VkSampleCountFlagBits) dst_image->layout[0].nr_samples);
 
    struct fdl6_view dst;
    tu_image_view_copy(&dst, dst_image, dst_format, &info->imageSubresource, offset.z);
@@ -1817,14 +1832,14 @@ tu_copy_buffer_to_image(struct tu_cmd_buffer *cmd,
             uint32_t x = (src_va & 63) / util_format_get_blocksize(src_format);
             ops->src_buffer(cmd, cs, src_format, src_va & ~63, pitch,
                             x + extent.width, 1, dst_format);
-            ops->coords(cs, &(VkOffset2D){offset.x, offset.y + y},  &(VkOffset2D){x},
-                        &(VkExtent2D) {extent.width, 1});
+            ops->coords(cs, (VkOffset2D) {offset.x, offset.y + y},  (VkOffset2D) {x},
+                        (VkExtent2D) {extent.width, 1});
             ops->run(cmd, cs);
             src_va += pitch;
          }
       } else {
          ops->src_buffer(cmd, cs, src_format, src_va, pitch, extent.width, extent.height, dst_format);
-         coords(ops, cs, &offset, &(VkOffset3D){}, &extent);
+         coords(ops, cs, offset, (VkOffset3D) {}, extent);
          ops->run(cmd, cs);
       }
    }
@@ -1896,14 +1911,14 @@ tu_copy_image_to_buffer(struct tu_cmd_buffer *cmd,
          for (uint32_t y = 0; y < extent.height; y++) {
             uint32_t x = (dst_va & 63) / util_format_get_blocksize(dst_format);
             ops->dst_buffer(cs, dst_format, dst_va & ~63, 0, src_format);
-            ops->coords(cs, &(VkOffset2D) {x}, &(VkOffset2D){offset.x, offset.y + y},
-                        &(VkExtent2D) {extent.width, 1});
+            ops->coords(cs, (VkOffset2D) {x}, (VkOffset2D) {offset.x, offset.y + y},
+                        (VkExtent2D) {extent.width, 1});
             ops->run(cmd, cs);
             dst_va += pitch;
          }
       } else {
          ops->dst_buffer(cs, dst_format, dst_va, pitch, src_format);
-         coords(ops, cs, &(VkOffset3D) {0, 0}, &offset, &extent);
+         coords(ops, cs, (VkOffset3D) {0, 0}, offset, extent);
          ops->run(cmd, cs);
       }
    }
@@ -2069,20 +2084,21 @@ tu_copy_image_to_image(struct tu_cmd_buffer *cmd,
 
       struct fdl6_view staging;
       const struct fdl_layout *staging_layout_ptr = &staging_layout;
-      fdl6_view_init(&staging, &staging_layout_ptr, &(struct fdl_view_args) {
+      const struct fdl_view_args copy_to_args = {
          .iova = staging_bo->iova,
-         .base_array_layer = 0,
-         .layer_count = 1,
          .base_miplevel = 0,
          .level_count = info->srcSubresource.layerCount,
-         .format = tu_format_for_aspect(src_format, VK_IMAGE_ASPECT_COLOR_BIT),
+         .base_array_layer = 0,
+         .layer_count = 1,
          .swiz = { PIPE_SWIZZLE_X, PIPE_SWIZZLE_Y, PIPE_SWIZZLE_Z, PIPE_SWIZZLE_W },
+         .format = tu_format_for_aspect(src_format, VK_IMAGE_ASPECT_COLOR_BIT),
          .type = FDL_VIEW_TYPE_2D,
-      }, false);
+      };
+      fdl6_view_init(&staging, &staging_layout_ptr, &copy_to_args, false);
 
       ops->setup(cmd, cs, src_format, src_format, VK_IMAGE_ASPECT_COLOR_BIT, 0, false, false,
-                 dst_image->layout[0].nr_samples);
-      coords(ops, cs, &staging_offset, &src_offset, &extent);
+                 (VkSampleCountFlagBits) dst_image->layout[0].nr_samples);
+      coords(ops, cs, staging_offset, src_offset, extent);
 
       for (uint32_t i = 0; i < layers_to_copy; i++) {
          ops->src(cmd, cs, &src, i, VK_FILTER_NEAREST, src_format);
@@ -2097,21 +2113,22 @@ tu_copy_image_to_image(struct tu_cmd_buffer *cmd,
       tu6_emit_event_write(cmd, cs, CACHE_INVALIDATE);
       tu_cs_emit_wfi(cs);
 
-      fdl6_view_init(&staging, &staging_layout_ptr, &(struct fdl_view_args) {
+      const struct fdl_view_args copy_from_args = {
          .iova = staging_bo->iova,
-         .base_array_layer = 0,
-         .layer_count = 1,
          .base_miplevel = 0,
          .level_count = info->srcSubresource.layerCount,
-         .format = tu_format_for_aspect(dst_format, VK_IMAGE_ASPECT_COLOR_BIT),
+         .base_array_layer = 0,
+         .layer_count = 1,
          .swiz = { PIPE_SWIZZLE_X, PIPE_SWIZZLE_Y, PIPE_SWIZZLE_Z, PIPE_SWIZZLE_W },
+         .format = tu_format_for_aspect(dst_format, VK_IMAGE_ASPECT_COLOR_BIT),
          .type = FDL_VIEW_TYPE_2D,
-      }, false);
+      };
+      fdl6_view_init(&staging, &staging_layout_ptr, &copy_from_args, false);
 
       ops->setup(cmd, cs, dst_format, dst_format, info->dstSubresource.aspectMask,
                  0, false, dst_image->layout[0].ubwc,
-                 dst_image->layout[0].nr_samples);
-      coords(ops, cs, &dst_offset, &staging_offset, &extent);
+                 (VkSampleCountFlagBits) dst_image->layout[0].nr_samples);
+      coords(ops, cs, dst_offset, staging_offset, extent);
 
       for (uint32_t i = 0; i < layers_to_copy; i++) {
          ops->src(cmd, cs, &staging, i, VK_FILTER_NEAREST, dst_format);
@@ -2124,8 +2141,8 @@ tu_copy_image_to_image(struct tu_cmd_buffer *cmd,
 
       ops->setup(cmd, cs, format, format, info->dstSubresource.aspectMask,
                  0, false, dst_image->layout[0].ubwc,
-                 dst_image->layout[0].nr_samples);
-      coords(ops, cs, &dst_offset, &src_offset, &extent);
+                 (VkSampleCountFlagBits) dst_image->layout[0].nr_samples);
+      coords(ops, cs, dst_offset, src_offset, extent);
 
       for (uint32_t i = 0; i < layers_to_copy; i++) {
          ops->src(cmd, cs, &src, i, VK_FILTER_NEAREST, format);
@@ -2187,7 +2204,7 @@ copy_buffer(struct tu_cmd_buffer *cmd,
 
       ops->src_buffer(cmd, cs, format, src_va & ~63, 0, src_x + width, 1, format);
       ops->dst_buffer(     cs, format, dst_va & ~63, 0, format);
-      ops->coords(cs, &(VkOffset2D) {dst_x}, &(VkOffset2D) {src_x}, &(VkExtent2D) {width, 1});
+      ops->coords(cs, (VkOffset2D) {dst_x}, (VkOffset2D) {src_x}, (VkExtent2D) {width, 1});
       ops->run(cmd, cs);
 
       src_va += width * block_size;
@@ -2256,14 +2273,17 @@ tu_CmdFillBuffer(VkCommandBuffer commandBuffer,
    ops->setup(cmd, cs, PIPE_FORMAT_R32_UINT, PIPE_FORMAT_R32_UINT,
               VK_IMAGE_ASPECT_COLOR_BIT, 0, true, false,
               VK_SAMPLE_COUNT_1_BIT);
-   ops->clear_value(cs, PIPE_FORMAT_R32_UINT, &(VkClearValue){.color = {.uint32[0] = data}});
+
+   VkClearValue clear_val = {};
+   clear_val.color.uint32[0] = data;
+   ops->clear_value(cs, PIPE_FORMAT_R32_UINT, &clear_val);
 
    while (blocks) {
       uint32_t dst_x = (dst_va & 63) / 4;
       uint32_t width = MIN2(blocks, 0x4000 - dst_x);
 
       ops->dst_buffer(cs, PIPE_FORMAT_R32_UINT, dst_va & ~63, 0, PIPE_FORMAT_R32_UINT);
-      ops->coords(cs, &(VkOffset2D) {dst_x}, NULL, &(VkExtent2D) {width, 1});
+      ops->coords(cs, (VkOffset2D) {dst_x}, blt_no_coord, (VkExtent2D) {width, 1});
       ops->run(cmd, cs);
 
       dst_va += width * 4;
@@ -2298,7 +2318,7 @@ tu_CmdResolveImage2KHR(VkCommandBuffer commandBuffer,
       assert(info->srcSubresource.layerCount == info->dstSubresource.layerCount);
       /* TODO: aspect masks possible ? */
 
-      coords(ops, cs, &info->dstOffset, &info->srcOffset, &info->extent);
+      coords(ops, cs, info->dstOffset, info->srcOffset, info->extent);
 
       struct fdl6_view dst, src;
       tu_image_view_blit(&dst, dst_image, &info->dstSubresource, info->dstOffset.z);
@@ -2343,7 +2363,7 @@ resolve_sysmem(struct tu_cmd_buffer *cmd,
    ops->setup(cmd, cs, src_format, dst_format,
               VK_IMAGE_ASPECT_COLOR_BIT, 0, false, dst->view.ubwc_enabled,
               VK_SAMPLE_COUNT_1_BIT);
-   ops->coords(cs, &rect->offset, &rect->offset, &rect->extent);
+   ops->coords(cs, rect->offset, rect->offset, rect->extent);
 
    for_each_layer(i, layer_mask, layers) {
       if (src_separate_ds) {
@@ -2431,7 +2451,7 @@ clear_image(struct tu_cmd_buffer *cmd,
    const struct blit_ops *ops = image->layout[0].nr_samples > 1 ? &r3d_ops : &r2d_ops;
 
    ops->setup(cmd, cs, format, format, aspect_mask, 0, true, image->layout[0].ubwc,
-              image->layout[0].nr_samples);
+              (VkSampleCountFlagBits) image->layout[0].nr_samples);
    if (image->vk.format == VK_FORMAT_E5B9G9R9_UFLOAT_PACK32)
       ops->clear_value(cs, PIPE_FORMAT_R9G9B9E5_FLOAT, clear_value);
    else
@@ -2441,18 +2461,19 @@ clear_image(struct tu_cmd_buffer *cmd,
       if (image->layout[0].depth0 > 1)
          layer_count = u_minify(image->layout[0].depth0, range->baseMipLevel + j);
 
-      ops->coords(cs, &(VkOffset2D){}, NULL, &(VkExtent2D) {
+      ops->coords(cs, (VkOffset2D) {}, blt_no_coord, (VkExtent2D) {
                      u_minify(image->layout[0].width0, range->baseMipLevel + j),
                      u_minify(image->layout[0].height0, range->baseMipLevel + j)
                   });
 
       struct fdl6_view dst;
-      tu_image_view_copy_blit(&dst, image, format, &(VkImageSubresourceLayers) {
+      const VkImageSubresourceLayers subresource = {
          .aspectMask = aspect_mask,
          .mipLevel = range->baseMipLevel + j,
          .baseArrayLayer = range->baseArrayLayer,
          .layerCount = 1,
-      }, 0, false);
+      };
+      tu_image_view_copy_blit(&dst, image, format, &subresource, 0, false);
 
       for (uint32_t i = 0; i < layer_count; i++) {
          ops->dst(cs, &dst, i, format);
@@ -2653,14 +2674,20 @@ tu_clear_sysmem_attachments(struct tu_cmd_buffer *cmd,
        * a const. Just use the layered path instead, since it shouldn't be
        * much worse.
        */
-      for_each_layer(layer, subpass->multiview_mask, rects[i].layerCount) {
-         r3d_coords_raw(cs, (float[]) {
-            rects[i].rect.offset.x, rects[i].rect.offset.y,
-            z_clear_val, uif(rects[i].baseArrayLayer + layer),
+      for_each_layer(layer, subpass->multiview_mask, rects[i].layerCount)
+      {
+         const float coords[] = {
+            rects[i].rect.offset.x,
+            rects[i].rect.offset.y,
+            z_clear_val,
+            uif(rects[i].baseArrayLayer + layer),
             rects[i].rect.offset.x + rects[i].rect.extent.width,
             rects[i].rect.offset.y + rects[i].rect.extent.height,
-            z_clear_val, 1.0f,
-         });
+            z_clear_val,
+            1.0f,
+         };
+
+         r3d_coords_raw(cs, coords);
          r3d_run_vis(cmd, cs);
       }
    }
@@ -2951,8 +2978,8 @@ clear_sysmem_attachment(struct tu_cmd_buffer *cmd,
 
    ops->setup(cmd, cs, format, format, clear_mask, 0, true, iview->view.ubwc_enabled,
               cmd->state.pass->attachments[a].samples);
-   ops->coords(cs, &cmd->state.render_area.offset, NULL,
-               &cmd->state.render_area.extent);
+   ops->coords(cs, cmd->state.render_area.offset, (VkOffset2D) {},
+               cmd->state.render_area.extent);
    ops->clear_value(cs, format, value);
 
    for_each_layer(i, clear_views, fb->layers) {
@@ -3052,9 +3079,9 @@ tu_emit_blit(struct tu_cmd_buffer *cmd,
    tu_cs_emit_regs(cs, A6XX_RB_BLIT_INFO(
       .unk0 = !resolve,
       .gmem = !resolve,
-      .depth = vk_format_is_depth_or_stencil(attachment->format),
       .sample_0 = vk_format_is_int(attachment->format) ||
-         vk_format_is_depth_or_stencil(attachment->format)));
+         vk_format_is_depth_or_stencil(attachment->format),
+      .depth = vk_format_is_depth_or_stencil(attachment->format),));
 
    for_each_layer(i, attachment->clear_views, cmd->state.framebuffer->layers) {
       tu_cs_emit_pkt4(cs, REG_A6XX_RB_BLIT_DST_INFO, 4);
@@ -3249,8 +3276,8 @@ store_cp_blit(struct tu_cmd_buffer *cmd,
    tu_cs_emit_regs(cs,
                    A6XX_SP_PS_2D_SRC_INFO(
                       .color_format = fmt,
-                      .color_swap = WZYX,
                       .tile_mode = TILE6_2,
+                      .color_swap = WZYX,
                       .srgb = util_format_is_srgb(src_format),
                       .samples = tu_msaa_samples(samples),
                       .samples_average = !util_format_is_pure_integer(dst_format) &&
@@ -3281,7 +3308,7 @@ static void
 store_3d_blit(struct tu_cmd_buffer *cmd,
               struct tu_cs *cs,
               const struct tu_image_view *iview,
-              uint32_t dst_samples,
+              VkSampleCountFlagBits dst_samples,
               bool separate_stencil,
               enum pipe_format src_format,
               enum pipe_format dst_format,
@@ -3304,7 +3331,7 @@ store_3d_blit(struct tu_cmd_buffer *cmd,
    r3d_setup(cmd, cs, src_format, dst_format, VK_IMAGE_ASPECT_COLOR_BIT, 0, false,
              iview->view.ubwc_enabled, dst_samples);
 
-   r3d_coords(cs, &render_area->offset, &render_area->offset, &render_area->extent);
+   r3d_coords(cs, render_area->offset, render_area->offset, render_area->extent);
 
    if (iview->image->vk.format == VK_FORMAT_D32_SFLOAT_S8_UINT) {
       if (!separate_stencil) {
@@ -3500,7 +3527,7 @@ tu_store_gmem_attachment(struct tu_cmd_buffer *cmd,
          }
       }
    } else {
-      r2d_coords(cs, &render_area->offset, &render_area->offset, &render_area->extent);
+      r2d_coords(cs, render_area->offset, render_area->offset, render_area->extent);
 
       for_each_layer(i, layer_mask, layers) {
          if (store_common) {

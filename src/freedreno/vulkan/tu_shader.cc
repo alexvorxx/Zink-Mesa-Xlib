@@ -26,6 +26,45 @@ tu_spirv_to_nir(struct tu_device *dev,
 {
    /* TODO these are made-up */
    const struct spirv_to_nir_options spirv_options = {
+      /* ViewID is a sysval in geometry stages and an input in the FS */
+      .view_index_is_input = stage == MESA_SHADER_FRAGMENT,
+
+      /* Use 16-bit math for RelaxedPrecision ALU ops */
+      .mediump_16bit_alu = true,
+
+      .caps = {
+         .demote_to_helper_invocation = true,
+         .descriptor_array_dynamic_indexing = true,
+         .descriptor_array_non_uniform_indexing = true,
+         .descriptor_indexing = true,
+         .device_group = true,
+         .draw_parameters = true,
+         .float_controls = true,
+         .float16 = true,
+         .geometry_streams = true,
+         .image_read_without_format = true,
+         .image_write_without_format = true,
+         .int16 = true,
+         .multiview = true,
+         .physical_storage_buffer_address = true,
+         .post_depth_coverage = true,
+         .runtime_descriptor_array = true,
+         .shader_viewport_index_layer = true,
+         .stencil_export = true,
+         .storage_16bit = dev->physical_device->info->a6xx.storage_16bit,
+         .subgroup_arithmetic = true,
+         .subgroup_ballot = true,
+         .subgroup_basic = true,
+         .subgroup_quad = true,
+         .subgroup_shuffle = true,
+         .subgroup_vote = true,
+         .tessellation = true,
+         .transform_feedback = true,
+         .variable_pointers = true,
+         .vk_memory_model_device_scope = true,
+         .vk_memory_model = true,
+      },
+
       .ubo_addr_format = nir_address_format_vec2_index_32bit_offset,
       .ssbo_addr_format = nir_address_format_vec2_index_32bit_offset,
 
@@ -40,44 +79,6 @@ tu_spirv_to_nir(struct tu_device *dev,
 
       /* Accessed via stg/ldg (not used with Vulkan?) */
       .global_addr_format = nir_address_format_64bit_global,
-
-      /* Use 16-bit math for RelaxedPrecision ALU ops */
-      .mediump_16bit_alu = true,
-
-      /* ViewID is a sysval in geometry stages and an input in the FS */
-      .view_index_is_input = stage == MESA_SHADER_FRAGMENT,
-      .caps = {
-         .transform_feedback = true,
-         .tessellation = true,
-         .draw_parameters = true,
-         .image_read_without_format = true,
-         .image_write_without_format = true,
-         .variable_pointers = true,
-         .stencil_export = true,
-         .multiview = true,
-         .shader_viewport_index_layer = true,
-         .geometry_streams = true,
-         .device_group = true,
-         .descriptor_indexing = true,
-         .descriptor_array_dynamic_indexing = true,
-         .descriptor_array_non_uniform_indexing = true,
-         .runtime_descriptor_array = true,
-         .float_controls = true,
-         .float16 = true,
-         .int16 = true,
-         .storage_16bit = dev->physical_device->info->a6xx.storage_16bit,
-         .demote_to_helper_invocation = true,
-         .vk_memory_model = true,
-         .vk_memory_model_device_scope = true,
-         .subgroup_basic = true,
-         .subgroup_ballot = true,
-         .subgroup_vote = true,
-         .subgroup_quad = true,
-         .subgroup_shuffle = true,
-         .subgroup_arithmetic = true,
-         .physical_storage_buffer_address = true,
-         .post_depth_coverage = true,
-      },
    };
 
    const nir_shader_compiler_options *nir_options =
@@ -592,7 +593,7 @@ struct lower_instr_params {
 static bool
 lower_instr(nir_builder *b, nir_instr *instr, void *cb_data)
 {
-   struct lower_instr_params *params = cb_data;
+   struct lower_instr_params *params = (struct lower_instr_params *) cb_data;
    b->cursor = nir_before_instr(instr);
    switch (instr->type) {
    case nir_instr_type_tex:
@@ -617,7 +618,7 @@ lower_inline_ubo(nir_builder *b, nir_instr *instr, void *cb_data)
    if (intrin->intrinsic != nir_intrinsic_load_ubo)
       return false;
 
-   struct lower_instr_params *params = cb_data;
+   struct lower_instr_params *params = (struct lower_instr_params *) cb_data;
    struct tu_shader *shader = params->shader;
    const struct tu_pipeline_layout *layout = params->layout;
 
@@ -802,9 +803,9 @@ tu_lower_io(nir_shader *shader, struct tu_device *dev,
          const_state->ubos[const_state->num_inline_ubos++] = (struct tu_inline_ubo) {
             .base = set,
             .offset = binding->offset,
+            .push_address = push_address,
             .const_offset_vec4 = reserved_consts_vec4,
             .size_vec4 = size_vec4,
-            .push_address = push_address,
          };
 
          reserved_consts_vec4 += align(size_vec4, dev->compiler->const_upload_unit);
@@ -910,29 +911,30 @@ tu_shader_create(struct tu_device *dev,
 {
    struct tu_shader *shader;
 
-   shader = vk_zalloc2(
+   shader = (struct tu_shader *) vk_zalloc2(
       &dev->vk.alloc, alloc,
       sizeof(*shader),
       8, VK_SYSTEM_ALLOCATION_SCOPE_COMMAND);
    if (!shader)
       return NULL;
 
-   NIR_PASS_V(nir, nir_opt_access, &(nir_opt_access_options) {
-               .is_vulkan = true,
-             });
+   const nir_opt_access_options access_options = {
+      .is_vulkan = true,
+   };
+   NIR_PASS_V(nir, nir_opt_access, &access_options);
 
    if (nir->info.stage == MESA_SHADER_FRAGMENT) {
-      NIR_PASS_V(nir, nir_lower_input_attachments,
-                 &(nir_input_attachment_options) {
-                     .use_fragcoord_sysval = true,
-                     .use_layer_id_sysval = false,
-                     /* When using multiview rendering, we must use
-                      * gl_ViewIndex as the layer id to pass to the texture
-                      * sampling function. gl_Layer doesn't work when
-                      * multiview is enabled.
-                      */
-                     .use_view_id_for_layer = key->multiview_mask != 0,
-                 });
+      const nir_input_attachment_options att_options = {
+         .use_fragcoord_sysval = true,
+         .use_layer_id_sysval = false,
+         /* When using multiview rendering, we must use
+          * gl_ViewIndex as the layer id to pass to the texture
+          * sampling function. gl_Layer doesn't work when
+          * multiview is enabled.
+          */
+         .use_view_id_for_layer = key->multiview_mask != 0,
+      };
+      NIR_PASS_V(nir, nir_lower_input_attachments, &att_options);
    }
 
    /* This needs to happen before multiview lowering which rewrites store
@@ -1013,13 +1015,14 @@ tu_shader_create(struct tu_device *dev,
    if (shared_consts_enable)
       assert(!shader->const_state.push_consts.dwords);
 
+   const struct ir3_shader_options options = {
+      .reserved_user_consts = shader->reserved_user_consts_vec4,
+      .api_wavesize = key->api_wavesize,
+      .real_wavesize = key->real_wavesize,
+      .shared_consts_enable = shared_consts_enable,
+   };
    shader->ir3_shader =
-      ir3_shader_from_nir(dev->compiler, nir, &(struct ir3_shader_options) {
-                           .reserved_user_consts = shader->reserved_user_consts_vec4,
-                           .shared_consts_enable = shared_consts_enable,
-                           .api_wavesize = key->api_wavesize,
-                           .real_wavesize = key->real_wavesize,
-                          }, &so_info);
+      ir3_shader_from_nir(dev->compiler, nir, &options, &so_info);
 
    return shader;
 }

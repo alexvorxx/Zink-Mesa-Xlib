@@ -322,7 +322,8 @@ tu_framebuffer_tiling_config(struct tu_framebuffer *fb,
 {
    for (int gmem_layout = 0; gmem_layout < TU_GMEM_LAYOUT_COUNT; gmem_layout++) {
       struct tu_tiling_config *tiling = &fb->tiling[gmem_layout];
-      tu_tiling_config_update_tile_layout(fb, device, pass, gmem_layout);
+      tu_tiling_config_update_tile_layout(fb, device, pass,
+                                          (enum tu_gmem_layout) gmem_layout);
       tu_tiling_config_update_pipe_layout(tiling, device);
       tu_tiling_config_update_pipes(tiling, device);
       tu_tiling_config_update_binning(tiling, device);
@@ -350,7 +351,7 @@ tu_dbg_log_gmem_load_store_skips(struct tu_device *device)
       return;
    }
 
-   struct tu6_global *global = device->global_bo->map;
+   struct tu6_global *global = device->global_bo_map;
 
    uint32_t current_taken_loads = global->dbg_gmem_taken_loads;
    uint32_t current_taken_stores = global->dbg_gmem_taken_stores;

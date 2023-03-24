@@ -37,6 +37,7 @@ extern "C" {
 typedef struct VkRenderingSelfDependencyInfoMESA {
     VkStructureType    sType;
 #define VK_STRUCTURE_TYPE_RENDERING_SELF_DEPENDENCY_INFO_MESA (VkStructureType)1000044900
+#define VK_STRUCTURE_TYPE_RENDERING_SELF_DEPENDENCY_INFO_MESA_cast VkRenderingSelfDependencyInfoMESA
     const void*        pNext;
 
     /** Bitset of which color attachments have self-dependencies */
@@ -73,6 +74,7 @@ typedef struct VkRenderingSelfDependencyInfoMESA {
 typedef struct VkRenderingAttachmentInitialLayoutInfoMESA {
     VkStructureType    sType;
 #define VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INITIAL_LAYOUT_INFO_MESA (VkStructureType)1000044901
+#define VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INITIAL_LAYOUT_INFO_MESA_cast VkRenderingAttachmentInitialLayoutInfoMESA
     const void*        pNext;
 
     /** Initial layout of the attachment */

@@ -455,8 +455,8 @@ tu_cond_exec_end(struct tu_cs *cs)
 struct tu_reg_value {
    uint32_t reg;
    uint64_t value;
-   bool is_address;
    struct tu_bo *bo;
+   bool is_address;
    bool bo_write;
    uint32_t bo_offset;
    uint32_t bo_shift;

@@ -293,7 +293,7 @@ tu_physical_device_get_format_properties(
     * DEPTH_STENCIL_ATTACHMENT_BIT for the optimal features.
     */
    linear = optimal;
-   if (tu6_pipe2depth(vk_format) != (enum a6xx_depth_format)~0)
+   if (tu6_pipe2depth(vk_format) != DEPTH6_NONE)
       optimal |= VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT;
 
    if (!tiling_possible(vk_format) &&
@@ -411,6 +411,20 @@ tu_GetPhysicalDeviceFormatProperties2(
 }
 
 static VkResult
+tu_image_unsupported_format(VkImageFormatProperties *pImageFormatProperties)
+{
+   *pImageFormatProperties = (VkImageFormatProperties) {
+      .maxExtent = { 0, 0, 0 },
+      .maxMipLevels = 0,
+      .maxArrayLayers = 0,
+      .sampleCounts = 0,
+      .maxResourceSize = 0,
+   };
+
+   return VK_ERROR_FORMAT_NOT_SUPPORTED;
+}
+
+static VkResult
 tu_get_image_format_properties(
    struct tu_physical_device *physical_device,
    const VkPhysicalDeviceImageFormatInfo2 *info,
@@ -422,7 +436,7 @@ tu_get_image_format_properties(
    VkExtent3D maxExtent;
    uint32_t maxMipLevels;
    uint32_t maxArraySize;
-   VkSampleCountFlags sampleCounts = VK_SAMPLE_COUNT_1_BIT;
+   BITMASK_ENUM(VkSampleCountFlagBits) sampleCounts = VK_SAMPLE_COUNT_1_BIT;
 
    tu_physical_device_get_format_properties(physical_device, info->format,
                                             &format_props);
@@ -476,11 +490,11 @@ tu_get_image_format_properties(
    }
 
    if (format_feature_flags == 0)
-      goto unsupported;
+      return tu_image_unsupported_format(pImageFormatProperties);
 
    if (info->type != VK_IMAGE_TYPE_2D &&
        vk_format_is_depth_or_stencil(info->format))
-      goto unsupported;
+      return tu_image_unsupported_format(pImageFormatProperties);
 
    switch (info->type) {
    default:
@@ -542,26 +556,26 @@ tu_get_image_format_properties(
 
    if (image_usage & VK_IMAGE_USAGE_SAMPLED_BIT) {
       if (!(format_feature_flags & VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT)) {
-         goto unsupported;
+         return tu_image_unsupported_format(pImageFormatProperties);
       }
    }
 
    if (image_usage & VK_IMAGE_USAGE_STORAGE_BIT) {
       if (!(format_feature_flags & VK_FORMAT_FEATURE_STORAGE_IMAGE_BIT)) {
-         goto unsupported;
+         return tu_image_unsupported_format(pImageFormatProperties);
       }
    }
 
    if (image_usage & VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT) {
       if (!(format_feature_flags & VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT)) {
-         goto unsupported;
+         return tu_image_unsupported_format(pImageFormatProperties);
       }
    }
 
    if (image_usage & VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT) {
       if (!(format_feature_flags &
             VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT)) {
-         goto unsupported;
+         return tu_image_unsupported_format(pImageFormatProperties);
       }
    }
 
@@ -581,16 +595,6 @@ tu_get_image_format_properties(
       *p_feature_flags = format_feature_flags;
 
    return VK_SUCCESS;
-unsupported:
-   *pImageFormatProperties = (VkImageFormatProperties) {
-      .maxExtent = { 0, 0, 0 },
-      .maxMipLevels = 0,
-      .maxArrayLayers = 0,
-      .sampleCounts = 0,
-      .maxResourceSize = 0,
-   };
-
-   return VK_ERROR_FORMAT_NOT_SUPPORTED;
 }
 
 static VkResult
@@ -600,7 +604,7 @@ tu_get_external_image_format_properties(
    VkExternalMemoryHandleTypeFlagBits handleType,
    VkExternalImageFormatProperties *external_properties)
 {
-   VkExternalMemoryFeatureFlagBits flags = 0;
+   BITMASK_ENUM(VkExternalMemoryFeatureFlagBits) flags = 0;
    VkExternalMemoryHandleTypeFlags export_flags = 0;
    VkExternalMemoryHandleTypeFlags compat_flags = 0;
 
@@ -677,10 +681,10 @@ tu_GetPhysicalDeviceImageFormatProperties2(
    {
       switch (s->sType) {
       case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTERNAL_IMAGE_FORMAT_INFO:
-         external_info = (const void *) s;
+         external_info = (const VkPhysicalDeviceExternalImageFormatInfo *) s;
          break;
       case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_IMAGE_VIEW_IMAGE_FORMAT_INFO_EXT:
-         image_view_info = (const void *) s;
+         image_view_info = (const VkPhysicalDeviceImageViewImageFormatInfoEXT *) s;
          break;
       default:
          break;
@@ -692,13 +696,13 @@ tu_GetPhysicalDeviceImageFormatProperties2(
    {
       switch (s->sType) {
       case VK_STRUCTURE_TYPE_EXTERNAL_IMAGE_FORMAT_PROPERTIES:
-         external_props = (void *) s;
+         external_props = (VkExternalImageFormatProperties *) s;
          break;
       case VK_STRUCTURE_TYPE_FILTER_CUBIC_IMAGE_VIEW_IMAGE_FORMAT_PROPERTIES_EXT:
-         cubic_props = (void *) s;
+         cubic_props = (VkFilterCubicImageViewImageFormatPropertiesEXT *) s;
          break;
       case VK_STRUCTURE_TYPE_SAMPLER_YCBCR_CONVERSION_IMAGE_FORMAT_PROPERTIES:
-         ycbcr_props = (void *) s;
+         ycbcr_props = (VkSamplerYcbcrConversionImageFormatProperties *) s;
          break;
       default:
          break;
@@ -771,7 +775,7 @@ tu_GetPhysicalDeviceExternalBufferProperties(
    const VkPhysicalDeviceExternalBufferInfo *pExternalBufferInfo,
    VkExternalBufferProperties *pExternalBufferProperties)
 {
-   VkExternalMemoryFeatureFlagBits flags = 0;
+   BITMASK_ENUM(VkExternalMemoryFeatureFlagBits) flags = 0;
    VkExternalMemoryHandleTypeFlags export_flags = 0;
    VkExternalMemoryHandleTypeFlags compat_flags = 0;
    switch (pExternalBufferInfo->handleType) {

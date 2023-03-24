@@ -31,7 +31,7 @@ struct dynamic_rendering_entry {
 static VkResult
 get_cmd_buffer(struct tu_device *dev, struct tu_cmd_buffer **cmd_buffer_out)
 {
-   struct tu6_global *global = dev->global_bo->map;
+   struct tu6_global *global = dev->global_bo_map;
 
    /* Note: because QueueSubmit is serialized, we don't need any locks here.
     */
@@ -41,7 +41,8 @@ get_cmd_buffer(struct tu_device *dev, struct tu_cmd_buffer **cmd_buffer_out)
     * shrinking the array of pending entries.
     */
    struct dynamic_rendering_entry *new_entry =
-      util_dynarray_begin(&dev->dynamic_rendering_pending);
+      (struct dynamic_rendering_entry *) util_dynarray_begin(
+         &dev->dynamic_rendering_pending);
    uint32_t entries = 0;
    util_dynarray_foreach(&dev->dynamic_rendering_pending,
                          struct dynamic_rendering_entry, entry) {
@@ -92,13 +93,15 @@ tu_init_dynamic_rendering(struct tu_device *dev)
    util_dynarray_init(&dev->dynamic_rendering_pending, NULL);
    dev->dynamic_rendering_fence = 0;
 
-   return vk_common_CreateCommandPool(tu_device_to_handle(dev),
-                                      &(VkCommandPoolCreateInfo) {
-                                        .pNext = NULL,
-                                        .sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
-                                        .flags = 0,
-                                        .queueFamilyIndex = 0,
-                                      }, &dev->vk.alloc,
+   const VkCommandPoolCreateInfo create_info = {
+      .sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
+      .pNext = NULL,
+      .flags = 0,
+      .queueFamilyIndex = 0,
+   };
+
+   return vk_common_CreateCommandPool(tu_device_to_handle(dev), &create_info,
+                                      &dev->vk.alloc,
                                       &dev->dynamic_rendering_pool);
 }
 
@@ -208,7 +211,7 @@ tu_insert_dynamic_cmdbufs(struct tu_device *dev,
       }
    }
 
-   struct tu_cmd_buffer **new_cmds =
+   struct tu_cmd_buffer **new_cmds = (struct tu_cmd_buffer **)
       vk_alloc(&dev->vk.alloc, cmds.size, alignof(struct tu_cmd_buffer *),
                VK_SYSTEM_ALLOCATION_SCOPE_DEVICE);
    if (!new_cmds)

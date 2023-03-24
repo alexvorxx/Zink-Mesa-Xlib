@@ -34,13 +34,14 @@ tu_wsi_init(struct tu_physical_device *physical_device)
 {
    VkResult result;
 
+   const struct wsi_device_options options = { .sw_device = false };
    result = wsi_device_init(&physical_device->wsi_device,
                             tu_physical_device_to_handle(physical_device),
                             tu_wsi_proc_addr,
                             &physical_device->instance->vk.alloc,
                             physical_device->master_fd,
                             &physical_device->instance->dri_options,
-                            &(struct wsi_device_options){.sw_device = false});
+                            &options);
    if (result != VK_SUCCESS)
       return result;
 
