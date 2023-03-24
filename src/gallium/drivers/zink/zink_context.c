@@ -2600,6 +2600,7 @@ begin_rendering(struct zink_context *ctx)
    bool changed_size = false;
    bool zsbuf_used = zink_is_zsbuf_used(ctx);
    bool use_tc_info = !ctx->blitting && ctx->tc && zink_screen(ctx->base.screen)->driver_workarounds.track_renderpasses;
+   if (ctx->rp_changed || ctx->rp_layout_changed || (!ctx->batch.in_rp && ctx->rp_loadop_changed)) {
       /* init imageviews, base loadOp, formats */
       for (int i = 0; i < ctx->fb_state.nr_cbufs; i++) {
          struct zink_surface *surf = zink_csurface(ctx->fb_state.cbufs[i]);
