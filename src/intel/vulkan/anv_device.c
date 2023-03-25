@@ -805,20 +805,6 @@ anv_physical_device_get_parameters(struct anv_physical_device *device)
    }
 }
 
-static void
-anv_physical_device_max_priority_update(struct anv_physical_device *device)
-{
-   switch (device->info.kmd_type) {
-   case INTEL_KMD_TYPE_I915:
-      break;
-   case INTEL_KMD_TYPE_XE:
-      anv_xe_physical_device_max_priority_update(device);
-      break;
-   default:
-      unreachable("Missing");
-   }
-}
-
 static VkResult
 anv_physical_device_try_create(struct vk_instance *vk_instance,
                                struct _drmDevice *drm_device,
@@ -1004,7 +990,6 @@ anv_physical_device_try_create(struct vk_instance *vk_instance,
    device->info.has_compute_engine = intel_engines_count(device->engine_info,
                                                          INTEL_ENGINE_CLASS_COMPUTE);
    anv_physical_device_init_queue_families(device);
-   anv_physical_device_max_priority_update(device);
 
    anv_physical_device_init_perf(device, fd);
 

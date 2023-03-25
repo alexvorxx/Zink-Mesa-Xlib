@@ -252,9 +252,8 @@ aco_compile_shader(const struct aco_compiler_options* options,
    if (program->collect_statistics)
       stats_size = aco_num_statistics * sizeof(uint32_t);
 
-   (*build_binary)(binary, shaders[shader_count - 1]->info.stage, &config, llvm_ir.c_str(),
-                   llvm_ir.size(), disasm.c_str(), disasm.size(), program->statistics, stats_size,
-                   exec_size, code.data(), code.size());
+   (*build_binary)(binary, &config, llvm_ir.c_str(), llvm_ir.size(), disasm.c_str(), disasm.size(),
+                   program->statistics, stats_size, exec_size, code.data(), code.size());
 }
 
 void
@@ -292,8 +291,8 @@ aco_compile_rt_prolog(const struct aco_compiler_options* options,
    if (get_disasm)
       disasm = get_disasm_string(program.get(), code, exec_size);
 
-   (*build_prolog)(binary, MESA_SHADER_COMPUTE, &config, NULL, 0, disasm.c_str(), disasm.size(),
-                   program->statistics, 0, exec_size, code.data(), code.size());
+   (*build_prolog)(binary, &config, NULL, 0, disasm.c_str(), disasm.size(), program->statistics, 0,
+                   exec_size, code.data(), code.size());
 }
 
 void

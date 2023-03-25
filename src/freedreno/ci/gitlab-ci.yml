@@ -1,4 +1,4 @@
-.freedreno-test:
+.google-freedreno-test:
   extends:
     - .baremetal-test-arm64
     - .freedreno-rules
@@ -21,7 +21,7 @@
     # the .5s default.
     FREEDRENO_HANGCHECK_MS: 2000
 
-.freedreno-test-traces:
+.google-freedreno-test-traces:
   extends:
     - .piglit-traces-test
   variables:
@@ -34,7 +34,7 @@
 
 .a306-test:
   extends:
-    - .freedreno-test
+    - .google-freedreno-test
   variables:
     BM_KERNEL: /baremetal-files/Image.gz
     BM_DTB: /baremetal-files/apq8016-sbc.dtb
@@ -77,7 +77,7 @@ a306_piglit_shader:
 
 a306-traces:
   extends:
-    - .freedreno-test-traces
+    - .google-freedreno-test-traces
     - .a306-test
   variables:
     PIGLIT_REPLAY_DEVICE_NAME: "freedreno-a306"
@@ -85,7 +85,7 @@ a306-traces:
 
 .a530-test:
   extends:
-    - .freedreno-test
+    - .google-freedreno-test
   variables:
     BM_KERNEL: /baremetal-files/Image.gz
     BM_KERNEL_EXTRA_ARGS: maxcpus=2
@@ -125,7 +125,7 @@ a530_gl:
 
 a530-traces:
   extends:
-    - .freedreno-test-traces
+    - .google-freedreno-test-traces
     - .a530-test
   variables:
     PIGLIT_REPLAY_DEVICE_NAME: "freedreno-a530"
@@ -160,7 +160,7 @@ a530-traces:
 
 a618_vk:
   extends:
-    - .lava-test:arm64
+    - .lava-test-deqp:arm64
     - .a618-test-kingoftown-r1
     - .turnip-rules
   parallel: 12
@@ -184,7 +184,7 @@ a618_vk_full:
 
 a618_gl:
   extends:
-    - .lava-test:arm64
+    - .lava-test-deqp:arm64
     - .a618-test-limozeen-nots-r5
     - .freedreno-rules
   parallel: 4
@@ -195,7 +195,7 @@ a618_gl:
 # X11 takes over the screen, wayland is run headless.
 a618_egl:
   extends:
-    - .lava-test:arm64
+    - .lava-test-deqp:arm64
     - .a618-test-limozeen-nots-r5
     - .freedreno-rules
   variables:
@@ -206,7 +206,7 @@ a618_egl:
 
 a618_skqp:
   extends:
-    - .lava-test:arm64
+    - .lava-test-deqp:arm64
     - .a618-test-limozeen-nots-r5
     - .freedreno-rules
     # SKQP tests both the GL and VK drivers.
@@ -229,9 +229,37 @@ a618_piglit:
     DEQP_VER: gles2
     PIGLIT_PROFILES: gpu
 
+a618-traces:
+  extends:
+    - .lava-piglit-traces:arm64
+    - .a618-test-limozeen-nots-r5
+    - .freedreno-rules
+  variables:
+    HWCI_START_WESTON: 1
+    # So we aren't capped by VSync by the X server
+    EGL_PLATFORM: surfaceless
+    FDO_CI_CONCURRENT: 5  # 6 is too much leading to OOM
+    PIGLIT_REPLAY_DEVICE_NAME: "${GPU_VERSION}"
+    PIGLIT_RESULTS: "${GPU_VERSION}-replay"
+    # This lets us run several more traces which don't use any features we're
+    # missing.
+    MESA_GLSL_VERSION_OVERRIDE: "460"
+    MESA_GL_VERSION_OVERRIDE: "4.6"
+    PIGLIT_REPLAY_DESCRIPTION_FILE: "/install/traces-freedreno.yml"
+
+a618-traces-performance:
+  extends:
+    - a618-traces
+    - .freedreno-rules-performance
+    - .piglit-performance:arm64
+  variables:
+    # Always use the same device
+    # a618 tag starts with cbg-1 (not cbg-0) for some reason
+    LAVA_TAGS: "cbg-1"
+
 .a630-test:
   extends:
-    - .freedreno-test
+    - .google-freedreno-test
   variables:
     FDO_CI_CONCURRENT: 10
     BM_KERNEL: /baremetal-files/cheza-kernel
@@ -334,7 +362,7 @@ a630_piglit:
 
 a630-traces:
   extends:
-    - .freedreno-test-traces
+    - .google-freedreno-test-traces
     - .a630-test
   variables:
     PIGLIT_REPLAY_DEVICE_NAME: "freedreno-a630"
@@ -343,6 +371,7 @@ a630-traces:
     # missing.
     MESA_GLSL_VERSION_OVERRIDE: "460"
     MESA_GL_VERSION_OVERRIDE: "4.6"
+    PIGLIT_REPLAY_EXTRA_ARGS: "--download-caching-proxy-url=http://10.42.0.1:8888/cache/?uri="
 
 a630-traces-restricted:
   extends:
@@ -350,7 +379,7 @@ a630-traces-restricted:
     - .freedreno-rules-restricted
   variables:
     PIGLIT_REPLAY_DESCRIPTION_FILE: "/install/restricted-traces-freedreno.yml"
-    PIGLIT_REPLAY_EXTRA_ARGS: --keep-image --db-path ${CI_PROJECT_DIR}/replayer-db/ --minio_bucket=mesa-tracie-private --jwt-file=${CI_JOB_JWT_FILE}
+    PIGLIT_REPLAY_EXTRA_ARGS: "--download-caching-proxy-url=http://10.42.0.1:8888/cache/?uri= --keep-image --db-path ${CI_PROJECT_DIR}/replayer-db/ --minio_bucket=mesa-tracie-private --jwt-file=${CI_JOB_JWT_FILE}"
   allow_failure: true
 
 a630-traces-performance:
@@ -359,7 +388,7 @@ a630-traces-performance:
     - .freedreno-rules-performance
   variables:
     PIGLIT_REPLAY_SUBCOMMAND: "profile"
-    PIGLIT_REPLAY_EXTRA_ARGS: "--db-path ${CI_PROJECT_DIR}/replayer-db/"
+    PIGLIT_REPLAY_EXTRA_ARGS: "--download-caching-proxy-url=http://10.42.0.1:8888/cache/?uri= --db-path ${CI_PROJECT_DIR}/replayer-db/"
     # More than this can hit OOM due to BOs leaked during the replay of the last frame
     PIGLIT_REPLAY_LOOP_TIMES: 150
     # We don't want for more than one workload to be submitted to the GPU at a time

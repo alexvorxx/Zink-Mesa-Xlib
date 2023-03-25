@@ -27,17 +27,18 @@ vn_ring_store_tail(struct vn_ring *ring)
                                 memory_order_release);
 }
 
-static uint32_t
+uint32_t
 vn_ring_load_status(const struct vn_ring *ring)
 {
    /* must be called and ordered after vn_ring_store_tail for idle status */
    return atomic_load_explicit(ring->shared.status, memory_order_seq_cst);
 }
 
-bool
-vn_ring_fatal(const struct vn_ring *ring)
+void
+vn_ring_unset_status_bits(struct vn_ring *ring, uint32_t mask)
 {
-   return vn_ring_load_status(ring) & VK_RING_STATUS_FATAL_BIT_MESA;
+   atomic_fetch_and_explicit(ring->shared.status, ~mask,
+                             memory_order_seq_cst);
 }
 
 static void
@@ -89,17 +90,19 @@ vn_ring_retire_submits(struct vn_ring *ring, uint32_t seqno)
 }
 
 static uint32_t
-vn_ring_wait_seqno(const struct vn_ring *ring, uint32_t seqno)
+vn_ring_wait_seqno(struct vn_ring *ring, uint32_t seqno)
 {
    /* A renderer wait incurs several hops and the renderer might poll
     * repeatedly anyway.  Let's just poll here.
     */
-   uint32_t iter = 0;
+   struct vn_relax_state relax_state = vn_relax_init(ring, "ring seqno");
    do {
       const uint32_t head = vn_ring_load_head(ring);
-      if (vn_ring_ge_seqno(ring, head, seqno))
+      if (vn_ring_ge_seqno(ring, head, seqno)) {
+         vn_relax_fini(&relax_state);
          return head;
-      vn_relax(ring, &iter, "ring seqno");
+      }
+      vn_relax(&relax_state);
    } while (true);
 }
 
@@ -118,7 +121,7 @@ vn_ring_has_space(const struct vn_ring *ring,
 }
 
 static uint32_t
-vn_ring_wait_space(const struct vn_ring *ring, uint32_t size)
+vn_ring_wait_space(struct vn_ring *ring, uint32_t size)
 {
    assert(size <= ring->buffer_size);
 
@@ -130,11 +133,13 @@ vn_ring_wait_space(const struct vn_ring *ring, uint32_t size)
       VN_TRACE_FUNC();
 
       /* see the reasoning in vn_ring_wait_seqno */
-      uint32_t iter = 0;
+      struct vn_relax_state relax_state = vn_relax_init(ring, "ring space");
       do {
-         vn_relax(ring, &iter, "ring space");
-         if (vn_ring_has_space(ring, size, &head))
+         vn_relax(&relax_state);
+         if (vn_ring_has_space(ring, size, &head)) {
+            vn_relax_fini(&relax_state);
             return head;
+         }
       } while (true);
    }
 }
@@ -203,6 +208,9 @@ vn_ring_fini(struct vn_ring *ring)
    list_for_each_entry_safe(struct vn_ring_submit, submit,
                             &ring->free_submits, head)
       free(submit);
+
+   if (ring->monitor.report_period_us)
+      mtx_destroy(&ring->monitor.mutex);
 }
 
 struct vn_ring_submit *
@@ -263,7 +271,7 @@ vn_ring_submit(struct vn_ring *ring,
  * This is thread-safe.
  */
 void
-vn_ring_wait(const struct vn_ring *ring, uint32_t seqno)
+vn_ring_wait(struct vn_ring *ring, uint32_t seqno)
 {
    vn_ring_wait_seqno(ring, seqno);
 }

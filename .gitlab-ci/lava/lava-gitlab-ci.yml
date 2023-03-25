@@ -39,7 +39,6 @@
     KERNEL_IMAGE_NAME: zImage
     KERNEL_IMAGE_TYPE: "zimage"
     BOOT_METHOD: u-boot
-    HWCI_TEST_SCRIPT: "/install/deqp-runner.sh"
   extends:
     - .use-debian/arm_build # for same $MESA_ARTIFACTS_TAG as in kernel+rootfs_armhf
     - .use-debian/x86_build
@@ -50,13 +49,18 @@
     - debian/x86_build
     - debian-armhf
 
+.lava-test-deqp:armhf:
+  extends:
+    - .lava-test:armhf
+  variables:
+    HWCI_TEST_SCRIPT: "/install/deqp-runner.sh"
+
 .lava-test:arm64:
   variables:
     ARCH: arm64
     KERNEL_IMAGE_NAME: Image
     KERNEL_IMAGE_TYPE: "image"
     BOOT_METHOD: u-boot
-    HWCI_TEST_SCRIPT: "/install/deqp-runner.sh"
   extends:
     - .use-debian/arm_build # for same $MESA_ARTIFACTS_TAG as in kernel+rootfs_arm64
     - .use-debian/x86_build
@@ -69,13 +73,18 @@
     - debian/x86_build
     - debian-arm64
 
+.lava-test-deqp:arm64:
+  variables:
+    HWCI_TEST_SCRIPT: "/install/deqp-runner.sh"
+  extends:
+    - .lava-test:arm64
+
 .lava-test:amd64:
   variables:
     ARCH: amd64
     KERNEL_IMAGE_NAME: bzImage
     KERNEL_IMAGE_TYPE: "zimage"
     BOOT_METHOD: u-boot
-    HWCI_TEST_SCRIPT: "/install/deqp-runner.sh"
   extends:
     - .use-debian/x86_build-base # for same $MESA_ARTIFACTS_BASE_TAG as in kernel+rootfs_amd64
     - .use-debian/x86_build
@@ -84,6 +93,12 @@
   needs:
     - kernel+rootfs_amd64
     - debian-testing
+
+.lava-test-deqp:amd64:
+  variables:
+    HWCI_TEST_SCRIPT: "/install/deqp-runner.sh"
+  extends:
+    - .lava-test:amd64
 
 .lava-traces-base:
   variables:

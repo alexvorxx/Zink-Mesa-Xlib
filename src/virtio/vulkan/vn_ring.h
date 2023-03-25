@@ -44,7 +44,7 @@ static_assert(ATOMIC_INT_LOCK_FREE == 2 && sizeof(atomic_uint) == 4,
 struct vn_ring_shared {
    const volatile atomic_uint *head;
    volatile atomic_uint *tail;
-   const volatile atomic_uint *status;
+   volatile atomic_uint *status;
    void *buffer;
    void *extra;
 };
@@ -70,6 +70,22 @@ struct vn_ring {
 
    struct list_head submits;
    struct list_head free_submits;
+
+   /* Only one "waiting" thread may fulfill the "monitor" role at a time.
+    * Every "report_period_us" or longer, the waiting "monitor" thread tests
+    * the ring's ALIVE status, updates the "alive" atomic, and resets the
+    * ALIVE status for the next cycle. Waiting non-"monitor" threads, just
+    * check the "alive" atomic. The "monitor" role may be released and
+    * acquired by another waiting thread dynamically.
+    */
+   struct {
+      mtx_t mutex;
+      atomic_int threadid;
+      atomic_bool alive;
+
+      /* constant and non-zero after ring init, if monitoring is enabled */
+      uint32_t report_period_us;
+   } monitor;
 };
 
 void
@@ -89,6 +105,12 @@ vn_ring_fini(struct vn_ring *ring);
 struct vn_ring_submit *
 vn_ring_get_submit(struct vn_ring *ring, uint32_t shmem_count);
 
+uint32_t
+vn_ring_load_status(const struct vn_ring *ring);
+
+void
+vn_ring_unset_status_bits(struct vn_ring *ring, uint32_t mask);
+
 bool
 vn_ring_submit(struct vn_ring *ring,
                struct vn_ring_submit *submit,
@@ -96,9 +118,6 @@ vn_ring_submit(struct vn_ring *ring,
                uint32_t *seqno);
 
 void
-vn_ring_wait(const struct vn_ring *ring, uint32_t seqno);
-
-bool
-vn_ring_fatal(const struct vn_ring *ring);
+vn_ring_wait(struct vn_ring *ring, uint32_t seqno);
 
 #endif /* VN_RING_H */

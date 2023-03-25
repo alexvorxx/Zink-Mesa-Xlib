@@ -211,6 +211,24 @@ want_stencil_pma_fix(struct anv_cmd_buffer *cmd_buffer,
           wm_prog_data->computed_depth_mode != PSCDEPTH_OFF;
 }
 
+static UNUSED bool
+geom_or_tess_prim_id_used(struct anv_graphics_pipeline *pipeline)
+{
+   const struct brw_tcs_prog_data *tcs_prog_data =
+      anv_pipeline_has_stage(pipeline, MESA_SHADER_TESS_EVAL) ?
+      get_tcs_prog_data(pipeline) : NULL;
+   const struct brw_tes_prog_data *tes_prog_data =
+      anv_pipeline_has_stage(pipeline, MESA_SHADER_TESS_EVAL) ?
+      get_tes_prog_data(pipeline) : NULL;
+   const struct brw_gs_prog_data *gs_prog_data =
+      anv_pipeline_has_stage(pipeline, MESA_SHADER_GEOMETRY) ?
+      get_gs_prog_data(pipeline) : NULL;
+
+   return (tcs_prog_data && tcs_prog_data->include_primitive_id) ||
+          (tes_prog_data && tes_prog_data->include_primitive_id) ||
+          (gs_prog_data && gs_prog_data->include_primitive_id);
+}
+
 static void
 genX(cmd_emit_te)(struct anv_cmd_buffer *cmd_buffer)
 {
@@ -236,6 +254,16 @@ genX(cmd_emit_te)(struct anv_cmd_buffer *cmd_buffer)
          te.TessellationDistributionMode = TEDMODE_RR_STRICT;
       else
          te.TessellationDistributionMode = TEDMODE_RR_FREE;
+
+      if (intel_needs_workaround(cmd_buffer->device->info, 14015297576)) {
+         /* Wa_14015297576:
+          *
+          * Disable Tessellation Distribution when primitive Id is enabled.
+          */
+         if (geom_or_tess_prim_id_used(pipeline))
+            te.TessellationDistributionMode = TEDMODE_OFF;
+      }
+
       te.TessellationDistributionLevel = TEDLEVEL_PATCH;
       /* 64_TRIANGLES */
       te.SmallPatchThreshold = 3;

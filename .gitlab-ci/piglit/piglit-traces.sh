@@ -12,8 +12,8 @@ if [ "$PIGLIT_REPLAY_SUBCOMMAND" = "profile" ]; then
     # workaround for older Debian Bullseye libyaml 0.2.2
     sed -i "/^%YAML 1\.2$/d" "$PIGLIT_REPLAY_DESCRIPTION_FILE"
 
-    yq -i -Y '. | del(.traces[][] | select(.label[0,1,2,3,4,5,6,7,8,9] == "no-perf"))' \
-      "$PIGLIT_REPLAY_DESCRIPTION_FILE"  # label positions are a bit hack
+    yq -iY 'del(.traces[][] | select(.label[]? == "no-perf"))' \
+      "$PIGLIT_REPLAY_DESCRIPTION_FILE"
 fi
 
 # WINE

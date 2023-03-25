@@ -101,7 +101,7 @@ zink-anv-tgl-traces-restricted:
 
 zink-tu-a618:
   extends:
-    - .lava-test:arm64
+    - .lava-test-deqp:arm64
     - .a618-test
     - .zink-turnip-rules
     - .zink-test
@@ -115,6 +115,25 @@ zink-tu-a618:
     DEVICE_TYPE: sc7180-trogdor-lazor-limozeen
     DTB: sc7180-trogdor-lazor-limozeen-nots-r5
     RUNNER_TAG: mesa-ci-x86-64-lava-sc7180-trogdor-lazor-limozeen
+
+zink-tu-a618-traces:
+  extends:
+    - a618-traces
+    - .zink-turnip-rules
+    - .zink-trace-test
+  parallel: 3
+  variables:
+    PIGLIT_REPLAY_DEVICE_NAME: "zink-a618"
+
+zink-tu-a618-traces-performance:
+  extends:
+    - zink-tu-a618-traces
+    - .zink-turnip-manual-rules
+    - .piglit-performance:arm64
+  variables:
+    # Always use the same device
+    # a618 tag starts with cbg-1 (not cbg-0) for some reason
+    LAVA_TAGS: "cbg-1"
 
 zink-freedreno-a630-traces:
   extends:

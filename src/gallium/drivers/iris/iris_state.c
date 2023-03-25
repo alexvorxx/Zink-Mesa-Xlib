@@ -4822,10 +4822,15 @@ iris_store_tes_state(const struct intel_device_info *devinfo,
       te.MaximumTessellationFactorOdd = 63.0;
       te.MaximumTessellationFactorNotOdd = 64.0;
 #if GFX_VERx10 >= 125
-      if (intel_needs_workaround(devinfo, 22012785325))
+      STATIC_ASSERT(TEDMODE_OFF == 0);
+      if (intel_needs_workaround(devinfo, 14015297576)) {
+         te.TessellationDistributionMode = TEDMODE_OFF;
+      } else if (intel_needs_workaround(devinfo, 22012785325)) {
          te.TessellationDistributionMode = TEDMODE_RR_STRICT;
-      else
+      } else {
          te.TessellationDistributionMode = TEDMODE_RR_FREE;
+      }
+
       te.TessellationDistributionLevel = TEDLEVEL_PATCH;
       /* 64_TRIANGLES */
       te.SmallPatchThreshold = 3;
@@ -6057,6 +6062,40 @@ iris_preemption_streamout_wa(struct iris_context *ice,
 }
 
 static void
+shader_program_needs_wa_14015297576(struct iris_context *ice,
+                                    struct iris_batch *batch,
+                                    const struct brw_stage_prog_data *prog_data,
+                                    gl_shader_stage stage,
+                                    bool *program_needs_wa_14015297576)
+{
+   if (!intel_needs_workaround(batch->screen->devinfo, 14015297576))
+      return;
+
+   switch (stage) {
+   case MESA_SHADER_TESS_CTRL: {
+      struct brw_tcs_prog_data *tcs_prog_data = (void *) prog_data;
+      *program_needs_wa_14015297576 |= tcs_prog_data->include_primitive_id;
+      break;
+   }
+   case MESA_SHADER_TESS_EVAL: {
+      struct brw_tes_prog_data *tes_prog_data = (void *) prog_data;
+      *program_needs_wa_14015297576 |= tes_prog_data->include_primitive_id;
+      break;
+   }
+   default:
+      break;
+   }
+
+   struct iris_compiled_shader *gs_shader =
+      ice->shaders.prog[MESA_SHADER_GEOMETRY];
+   const struct brw_gs_prog_data *gs_prog_data =
+      gs_shader ? (void *) gs_shader->prog_data : NULL;
+
+   *program_needs_wa_14015297576 |=
+      gs_prog_data && gs_prog_data->include_primitive_id;
+}
+
+static void
 iris_upload_dirty_render_state(struct iris_context *ice,
                                struct iris_batch *batch,
                                const struct pipe_draw_info *draw)
@@ -6398,6 +6437,16 @@ iris_upload_dirty_render_state(struct iris_context *ice,
       }
    }
 
+   bool program_needs_wa_14015297576 = false;
+
+   /* Check if FS stage will use primitive ID overrides for Wa_14015297576. */
+   const struct brw_vue_map *last_vue_map =
+      &brw_vue_prog_data(ice->shaders.last_vue_shader->prog_data)->vue_map;
+   if ((wm_prog_data->inputs & VARYING_BIT_PRIMITIVE_ID) &&
+       last_vue_map->varying_to_slot[VARYING_SLOT_PRIMITIVE_ID] == -1) {
+      program_needs_wa_14015297576 = true;
+   }
+
    for (int stage = 0; stage <= MESA_SHADER_FRAGMENT; stage++) {
       if (!(stage_dirty & (IRIS_STAGE_DIRTY_VS << stage)))
          continue;
@@ -6411,6 +6460,9 @@ iris_upload_dirty_render_state(struct iris_context *ice,
 
          uint32_t scratch_addr =
             pin_scratch_space(ice, batch, prog_data, stage);
+
+         shader_program_needs_wa_14015297576(ice, batch, prog_data, stage,
+                                             &program_needs_wa_14015297576);
 
          if (stage == MESA_SHADER_FRAGMENT) {
             UNUSED struct iris_rasterizer_state *cso = ice->state.cso_rast;
@@ -6468,6 +6520,35 @@ iris_upload_dirty_render_state(struct iris_context *ice,
                             GENX(3DSTATE_PS_length));
             iris_emit_merge(batch, shader_psx, psx_state,
                             GENX(3DSTATE_PS_EXTRA_length));
+         } else if (stage == MESA_SHADER_TESS_EVAL &&
+                    intel_needs_workaround(batch->screen->devinfo, 14015297576) &&
+                    !program_needs_wa_14015297576) {
+            /* This program doesn't require Wa_14015297576, so we can enable
+             * a Tessellation Distribution Mode.
+             */
+#if GFX_VERx10 >= 125
+            uint32_t te_state[GENX(3DSTATE_TE_length)] = { 0 };
+            iris_pack_command(GENX(3DSTATE_TE), te_state, te) {
+               if (intel_needs_workaround(batch->screen->devinfo, 22012785325))
+                  te.TessellationDistributionMode = TEDMODE_RR_STRICT;
+               else
+                  te.TessellationDistributionMode = TEDMODE_RR_FREE;
+            }
+
+            uint32_t ds_state[GENX(3DSTATE_DS_length)] = { 0 };
+            iris_pack_command(GENX(3DSTATE_DS), ds_state, ds) {
+               if (scratch_addr)
+                  ds.ScratchSpaceBuffer = scratch_addr >> 4;
+            }
+
+            uint32_t *shader_ds = (uint32_t *) shader->derived_data;
+            uint32_t *shader_te = shader_ds + GENX(3DSTATE_DS_length);
+
+            iris_emit_merge(batch, shader_ds, ds_state,
+                            GENX(3DSTATE_DS_length));
+            iris_emit_merge(batch, shader_te, te_state,
+                            GENX(3DSTATE_TE_length));
+#endif
          } else if (scratch_addr) {
             uint32_t *pkt = (uint32_t *) shader->derived_data;
             switch (stage) {

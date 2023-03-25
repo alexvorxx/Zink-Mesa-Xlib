@@ -358,6 +358,22 @@ i915_batch_submit(struct iris_batch *batch)
    return ret;
 }
 
+static bool
+i915_gem_vm_bind(struct iris_bo *bo)
+{
+   /*
+    * i915 does not support VM_BIND yet. The binding operation happens at
+    * submission when we supply BO handle & offset in the execbuffer list.
+    */
+   return true;
+}
+
+static bool
+i915_gem_vm_unbind(struct iris_bo *bo)
+{
+   return true;
+}
+
 const struct iris_kmd_backend *i915_get_backend(void)
 {
    static const struct iris_kmd_backend i915_backend = {
@@ -367,6 +383,8 @@ const struct iris_kmd_backend *i915_get_backend(void)
       .gem_mmap = i915_gem_mmap,
       .batch_check_for_reset = i915_batch_check_for_reset,
       .batch_submit = i915_batch_submit,
+      .gem_vm_bind = i915_gem_vm_bind,
+      .gem_vm_unbind = i915_gem_vm_unbind,
    };
    return &i915_backend;
 }

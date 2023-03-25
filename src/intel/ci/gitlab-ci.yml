@@ -1,6 +1,6 @@
 .intel-common-test:
   extends:
-    - .lava-test:amd64
+    - .lava-test-deqp:amd64
   variables:
     DTB: ""
     BOOT_METHOD: depthcharge

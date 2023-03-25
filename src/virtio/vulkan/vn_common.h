@@ -156,6 +156,12 @@ struct vn_env {
 };
 extern struct vn_env vn_env;
 
+struct vn_relax_state {
+   struct vn_ring *ring;
+   uint32_t iter;
+   const char *reason;
+};
+
 void
 vn_env_init(void);
 
@@ -224,7 +230,19 @@ uint32_t
 vn_extension_get_spec_version(const char *name);
 
 void
-vn_relax(const struct vn_ring *ring, uint32_t *iter, const char *reason);
+vn_ring_monitor_release(struct vn_ring *ring);
+
+struct vn_relax_state
+vn_relax_init(struct vn_ring *ring, const char *reason);
+
+void
+vn_relax(struct vn_relax_state *state);
+
+static inline void
+vn_relax_fini(struct vn_relax_state *state)
+{
+   vn_ring_monitor_release(state->ring);
+}
 
 static_assert(sizeof(vn_object_id) >= sizeof(uintptr_t), "");
 

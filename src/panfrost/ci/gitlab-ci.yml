@@ -29,7 +29,7 @@
 
 panfrost-t720-gles2:arm64:
   extends:
-    - .lava-test:arm64
+    - .lava-test-deqp:arm64
     - .panfrost-midgard-rules
     - .panfrost-test
   variables:
@@ -44,7 +44,7 @@ panfrost-t720-gles2:arm64:
 # Keep the second t760 job manual.
 panfrost-t760-gles2:armhf:
   extends:
-    - .lava-test:armhf
+    - .lava-test-deqp:armhf
     - .panfrost-midgard-manual-rules
     - .panfrost-test
     - .lava-rk3288-veyron-jaq
@@ -73,7 +73,7 @@ panfrost-t760-gles2:armhf:
 panfrost-t860-gl:arm64:
   parallel: 3
   extends:
-    - .lava-test:arm64
+    - .lava-test-deqp:arm64
     - .lava-rk3399-gru-kevin
   variables:
     FDO_CI_CONCURRENT: 6
@@ -81,7 +81,7 @@ panfrost-t860-gl:arm64:
 
 panfrost-t860-egl:arm64:
   extends:
-    - .lava-test:arm64
+    - .lava-test-deqp:arm64
     - .lava-rk3399-gru-kevin
   variables:
     HWCI_START_WESTON: 1
@@ -106,7 +106,7 @@ panfrost-t860-egl:arm64:
 panfrost-g52-gl:arm64:
   parallel: 3
   extends:
-    - .lava-test:arm64
+    - .lava-test-deqp:arm64
     - .lava-meson-g12b-a311d-khadas-vim3
   variables:
     FDO_CI_CONCURRENT: 6
@@ -115,7 +115,7 @@ panfrost-g52-gl:arm64:
 
 .panfrost-g52-vk:arm64:
   extends:
-    - .lava-test:arm64
+    - .lava-test-deqp:arm64
     - .lava-meson-g12b-a311d-khadas-vim3
   variables:
     VK_DRIVER: panfrost
@@ -148,14 +148,14 @@ panfrost-g52-piglit-gles2:arm64:
 panfrost-g72-gl:arm64:
   parallel: 3
   extends:
-    - .lava-test:arm64
+    - .lava-test-deqp:arm64
     - .lava-mt8183-kukui-jacuzzi-juniper-sku16
   variables:
     DEQP_SUITE: panfrost-g72
 
 .panfrost-t820-gles2:arm64:
   extends:
-    - .lava-test:arm64
+    - .lava-test-deqp:arm64
     - .panfrost-midgard-rules
     - .panfrost-test
   variables:

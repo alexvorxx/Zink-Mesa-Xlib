@@ -25,9 +25,12 @@
 #include <sys/mman.h>
 
 #include "common/intel_gem.h"
+#include "dev/intel_debug.h"
 #include "iris/iris_bufmgr.h"
 
 #include "drm-uapi/xe_drm.h"
+
+#define FILE_DEBUG_FLAG DEBUG_BUFMGR
 
 static uint32_t
 xe_gem_create(struct iris_bufmgr *bufmgr,
@@ -41,7 +44,7 @@ xe_gem_create(struct iris_bufmgr *bufmgr,
 
    struct drm_xe_gem_create gem_create = {
      .vm_id = iris_bufmgr_get_global_vm_id(bufmgr),
-     .size = size,
+     .size = align64(size, iris_bufmgr_get_device_info(bufmgr)->mem_alignment),
    };
    for (uint16_t i = 0; i < regions_count; i++)
       gem_create.flags |= BITFIELD_BIT(regions[i]->instance);
@@ -67,11 +70,91 @@ xe_gem_mmap(struct iris_bufmgr *bufmgr, struct iris_bo *bo)
    return map != MAP_FAILED ? map : NULL;
 }
 
+static inline int
+xe_gem_vm_bind_op(struct iris_bo *bo, uint32_t op)
+{
+   struct drm_syncobj_create create = {};
+   int ret = intel_ioctl(iris_bufmgr_get_fd(bo->bufmgr),
+                         DRM_IOCTL_SYNCOBJ_CREATE, &create);
+   if (ret) {
+      DBG("vm_bind_op: Unable to create SYNCOBJ(%i)", ret);
+      return ret;
+   }
+
+   struct drm_xe_sync sync = {
+      .flags = DRM_XE_SYNC_SYNCOBJ | DRM_XE_SYNC_SIGNAL,
+      .handle = create.handle,
+   };
+   /* Old compilers do not allow declarations after 'goto label' */
+   struct drm_syncobj_destroy destroy = {
+      .handle = create.handle,
+   };
+
+   uint32_t handle = op == XE_VM_BIND_OP_UNMAP ? 0 : bo->gem_handle;
+   uint64_t obj_offset = 0;
+
+   if (bo->real.userptr) {
+      handle = 0;
+      obj_offset = (uintptr_t)bo->real.map;
+      if (op == XE_VM_BIND_OP_MAP)
+         op = XE_VM_BIND_OP_MAP_USERPTR;
+   }
+
+   struct drm_xe_vm_bind args = {
+      .vm_id = iris_bufmgr_get_global_vm_id(bo->bufmgr),
+      .num_binds = 1,
+      .bind.obj = handle,
+      .bind.obj_offset = obj_offset,
+      .bind.range = align64(bo->size,
+                            iris_bufmgr_get_device_info(bo->bufmgr)->mem_alignment),
+      .bind.addr = intel_48b_address(bo->address),
+      .bind.op = op,
+      .num_syncs = 1,
+      .syncs = (uintptr_t)&sync,
+   };
+   ret = intel_ioctl(iris_bufmgr_get_fd(bo->bufmgr), DRM_IOCTL_XE_VM_BIND, &args);
+   if (ret) {
+      DBG("vm_bind_op: DRM_IOCTL_XE_VM_BIND failed(%i)", ret);
+      goto bind_error;
+   }
+
+   struct drm_syncobj_wait wait = {
+      .handles = (uintptr_t)&create.handle,
+      .timeout_nsec = INT64_MAX,
+      .count_handles = 1,
+      .flags = 0,
+      .first_signaled = 0,
+      .pad = 0,
+   };
+   ret = intel_ioctl(iris_bufmgr_get_fd(bo->bufmgr), DRM_IOCTL_SYNCOBJ_WAIT, &wait);
+   if (ret)
+      DBG("vm_bind_op: DRM_IOCTL_SYNCOBJ_WAIT failed(%i)", ret);
+
+bind_error:
+   if (intel_ioctl(iris_bufmgr_get_fd(bo->bufmgr), DRM_IOCTL_SYNCOBJ_DESTROY, &destroy))
+      DBG("vm_bind_op: Unable to destroy SYNCOBJ(%i)", ret);
+   return ret;
+}
+
+static bool
+xe_gem_vm_bind(struct iris_bo *bo)
+{
+   return xe_gem_vm_bind_op(bo, XE_VM_BIND_OP_MAP) == 0;
+}
+
+static bool
+xe_gem_vm_unbind(struct iris_bo *bo)
+{
+   return xe_gem_vm_bind_op(bo, XE_VM_BIND_OP_UNMAP) == 0;
+}
+
 const struct iris_kmd_backend *xe_get_backend(void)
 {
    static const struct iris_kmd_backend xe_backend = {
       .gem_create = xe_gem_create,
       .gem_mmap = xe_gem_mmap,
+      .gem_vm_bind = xe_gem_vm_bind,
+      .gem_vm_unbind = xe_gem_vm_unbind,
    };
    return &xe_backend;
 }

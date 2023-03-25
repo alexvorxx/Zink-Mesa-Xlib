@@ -1178,6 +1178,10 @@ void r600_delete_shader_selector(struct pipe_context *ctx,
 	struct r600_pipe_shader *p = sel->current, *c;
 	while (p) {
 		c = p->next_variant;
+		if (p->gs_copy_shader) {
+			r600_pipe_shader_destroy(ctx, p->gs_copy_shader);
+			free(p->gs_copy_shader);
+		}
 		r600_pipe_shader_destroy(ctx, p);
 		free(p);
 		p = c;

@@ -1,6 +1,6 @@
 .lava-meson-gxl-s805x-libretech-ac:
   extends:
-    - .lava-test:arm64
+    - .lava-test-deqp:arm64
     - .lima-rules
   variables:
     DEVICE_TYPE: meson-gxl-s805x-libretech-ac

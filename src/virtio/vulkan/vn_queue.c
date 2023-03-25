@@ -1286,7 +1286,7 @@ static VkResult
 vn_update_sync_result(struct vn_device *dev,
                       VkResult result,
                       int64_t abs_timeout,
-                      uint32_t *iter)
+                      struct vn_relax_state *relax_state)
 {
    switch (result) {
    case VK_NOT_READY:
@@ -1294,7 +1294,7 @@ vn_update_sync_result(struct vn_device *dev,
           os_time_get_nano() >= abs_timeout)
          result = VK_TIMEOUT;
       else
-         vn_relax(&dev->instance->ring.ring, iter, "client");
+         vn_relax(relax_state);
       break;
    default:
       assert(result == VK_SUCCESS || result < 0);
@@ -1317,7 +1317,6 @@ vn_WaitForFences(VkDevice device,
 
    const int64_t abs_timeout = os_time_get_absolute_timeout(timeout);
    VkResult result = VK_NOT_READY;
-   uint32_t iter = 0;
    if (fenceCount > 1 && waitAll) {
       VkFence local_fences[8];
       VkFence *fences = local_fences;
@@ -1330,18 +1329,26 @@ vn_WaitForFences(VkDevice device,
       }
       memcpy(fences, pFences, sizeof(*fences) * fenceCount);
 
+      struct vn_relax_state relax_state =
+         vn_relax_init(&dev->instance->ring.ring, "client");
       while (result == VK_NOT_READY) {
          result = vn_remove_signaled_fences(device, fences, &fenceCount);
-         result = vn_update_sync_result(dev, result, abs_timeout, &iter);
+         result =
+            vn_update_sync_result(dev, result, abs_timeout, &relax_state);
       }
+      vn_relax_fini(&relax_state);
 
       if (fences != local_fences)
          vk_free(alloc, fences);
    } else {
+      struct vn_relax_state relax_state =
+         vn_relax_init(&dev->instance->ring.ring, "client");
       while (result == VK_NOT_READY) {
          result = vn_find_first_signaled_fence(device, pFences, fenceCount);
-         result = vn_update_sync_result(dev, result, abs_timeout, &iter);
+         result =
+            vn_update_sync_result(dev, result, abs_timeout, &relax_state);
       }
+      vn_relax_fini(&relax_state);
    }
 
    return vn_result(dev->instance, result);
@@ -1812,7 +1819,6 @@ vn_WaitSemaphores(VkDevice device,
 
    const int64_t abs_timeout = os_time_get_absolute_timeout(timeout);
    VkResult result = VK_NOT_READY;
-   uint32_t iter = 0;
    if (pWaitInfo->semaphoreCount > 1 &&
        !(pWaitInfo->flags & VK_SEMAPHORE_WAIT_ANY_BIT)) {
       uint32_t semaphore_count = pWaitInfo->semaphoreCount;
@@ -1833,21 +1839,29 @@ vn_WaitSemaphores(VkDevice device,
              sizeof(*semaphores) * semaphore_count);
       memcpy(values, pWaitInfo->pValues, sizeof(*values) * semaphore_count);
 
+      struct vn_relax_state relax_state =
+         vn_relax_init(&dev->instance->ring.ring, "client");
       while (result == VK_NOT_READY) {
          result = vn_remove_signaled_semaphores(device, semaphores, values,
                                                 &semaphore_count);
-         result = vn_update_sync_result(dev, result, abs_timeout, &iter);
+         result =
+            vn_update_sync_result(dev, result, abs_timeout, &relax_state);
       }
+      vn_relax_fini(&relax_state);
 
       if (semaphores != local_semaphores)
          vk_free(alloc, semaphores);
    } else {
+      struct vn_relax_state relax_state =
+         vn_relax_init(&dev->instance->ring.ring, "client");
       while (result == VK_NOT_READY) {
          result = vn_find_first_signaled_semaphore(
             device, pWaitInfo->pSemaphores, pWaitInfo->pValues,
             pWaitInfo->semaphoreCount);
-         result = vn_update_sync_result(dev, result, abs_timeout, &iter);
+         result =
+            vn_update_sync_result(dev, result, abs_timeout, &relax_state);
       }
+      vn_relax_fini(&relax_state);
    }
 
    return vn_result(dev->instance, result);

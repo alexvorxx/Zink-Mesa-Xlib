@@ -262,6 +262,8 @@ struct radv_shader_info {
    struct radv_vs_output_info outinfo;
    unsigned workgroup_size;
    bool force_vrs_per_vertex;
+   gl_shader_stage stage;
+
    struct {
       uint8_t input_usage_mask[RADV_VERT_ATTRIB_MAX];
       uint8_t output_usage_mask[VARYING_SLOT_VAR31 + 1];
@@ -429,8 +431,7 @@ struct radv_vs_prolog_key {
 enum radv_shader_binary_type { RADV_BINARY_TYPE_LEGACY, RADV_BINARY_TYPE_RTLD };
 
 struct radv_shader_binary {
-   enum radv_shader_binary_type type;
-   gl_shader_stage stage;
+   uint32_t type; /* enum radv_shader_binary_type */
 
    struct ac_shader_config config;
    struct radv_shader_info info;
@@ -441,11 +442,11 @@ struct radv_shader_binary {
 
 struct radv_shader_binary_legacy {
    struct radv_shader_binary base;
-   unsigned code_size;
-   unsigned exec_size;
-   unsigned ir_size;
-   unsigned disasm_size;
-   unsigned stats_size;
+   uint32_t code_size;
+   uint32_t exec_size;
+   uint32_t ir_size;
+   uint32_t disasm_size;
+   uint32_t stats_size;
 
    /* data has size of stats_size + code_size + ir_size + disasm_size + 2,
     * where the +2 is for 0 of the ir strings. */
@@ -581,9 +582,7 @@ void radv_destroy_shader_upload_queue(struct radv_device *device);
 struct radv_shader_args;
 
 struct radv_shader *radv_shader_create(struct radv_device *device,
-                                       const struct radv_shader_binary *binary,
-                                       bool keep_shader_info, bool from_cache,
-                                       const struct radv_shader_args *args);
+                                       const struct radv_shader_binary *binary);
 struct radv_shader *radv_shader_nir_to_asm(
    struct radv_device *device, struct radv_pipeline_stage *stage, struct nir_shader *const *shaders,
    int shader_count, const struct radv_pipeline_key *key, bool keep_shader_info, bool keep_statistic_info,
@@ -609,13 +608,6 @@ bool radv_shader_dma_submit(struct radv_device *device,
 union radv_shader_arena_block *radv_alloc_shader_memory(struct radv_device *device, uint32_t size,
                                                         void *ptr);
 void radv_free_shader_memory(struct radv_device *device, union radv_shader_arena_block *alloc);
-
-struct radv_shader *
-radv_create_gs_copy_shader(struct radv_device *device, struct nir_shader *nir,
-                           const struct radv_shader_info *info, const struct radv_shader_args *args,
-                           struct radv_shader_binary **binary_out,
-                           bool keep_shader_info, bool keep_statistic_info,
-                           bool disable_optimizations);
 
 struct radv_shader *radv_create_trap_handler_shader(struct radv_device *device);
 

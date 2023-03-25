@@ -742,6 +742,8 @@ radv_nir_shader_info_pass(struct radv_device *device, const struct nir_shader *n
                           bool consider_force_vrs,
                           struct radv_shader_info *info)
 {
+   info->stage = nir->info.stage;
+
    struct nir_function *func = (struct nir_function *)exec_list_get_head_const(&nir->functions);
 
    if (layout && layout->dynamic_offset_count &&

@@ -38,7 +38,7 @@
 # Run five jobs in parallel each running 1/55th of the test suite
 radv-stoney-vkcts:amd64:
   extends:
-    - .lava-test:amd64
+    - .lava-test-deqp:amd64
     - .radv-stoney-test:amd64
   parallel: 5
   variables:
@@ -46,7 +46,7 @@ radv-stoney-vkcts:amd64:
 
 radeonsi-stoney-gl:amd64:
   extends:
-    - .lava-test:amd64
+    - .lava-test-deqp:amd64
     - .radeonsi-stoney-test:amd64
   parallel: 11
   variables:
@@ -108,7 +108,7 @@ radeonsi-stoney-traces:amd64:
 
 radv-raven-vkcts:amd64:
   extends:
-    - .lava-test:amd64
+    - .lava-test-deqp:amd64
     - .radv-raven-test:amd64
     - .lava-asus-CM1400CXA-dalboz:amd64
   parallel: 9
@@ -118,7 +118,7 @@ radv-raven-vkcts:amd64:
 
 amd-raven-skqp:amd64:
   extends:
-    - .lava-test:amd64
+    - .lava-test-deqp:amd64
     - .amd-raven-test:amd64
     - .lava-lenovo-TPad-C13-Yoga-zork:amd64
   variables:
@@ -161,7 +161,7 @@ radeonsi-raven-piglit-quick_shader:amd64:
 
 radeonsi-raven-va:amd64:
   extends:
-    - .lava-test:amd64
+    - .lava-test-deqp:amd64
     - .radeonsi-raven-test:amd64
     - .radeonsi-vaapi-rules
     - .lava-asus-CM1400CXA-dalboz:amd64

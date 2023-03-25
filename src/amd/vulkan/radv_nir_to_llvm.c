@@ -899,7 +899,7 @@ radv_llvm_compile(LLVMModuleRef M, char **pelf_buffer, size_t *pelf_size,
 
 static void
 ac_compile_llvm_module(struct ac_llvm_compiler *ac_llvm, LLVMModuleRef llvm_module,
-                       struct radv_shader_binary **rbinary, gl_shader_stage stage, const char *name,
+                       struct radv_shader_binary **rbinary, const char *name,
                        const struct radv_nir_compiler_options *options)
 {
    char *elf_buffer = NULL;
@@ -935,7 +935,6 @@ ac_compile_llvm_module(struct ac_llvm_compiler *ac_llvm, LLVMModuleRef llvm_modu
       memcpy(rbin->data + elf_size, llvm_ir_string, llvm_ir_size + 1);
 
    rbin->base.type = RADV_BINARY_TYPE_RTLD;
-   rbin->base.stage = stage;
    rbin->base.total_size = alloc_size;
    rbin->elf_size = elf_size;
    rbin->llvm_ir_size = llvm_ir_size;
@@ -958,9 +957,8 @@ radv_compile_nir_shader(struct ac_llvm_compiler *ac_llvm,
 
    llvm_module = ac_translate_nir_to_llvm(ac_llvm, options, info, nir, nir_count, args);
 
-   ac_compile_llvm_module(ac_llvm, llvm_module, rbinary, nir[nir_count - 1]->info.stage,
-                          radv_get_shader_name(info, nir[nir_count - 1]->info.stage),
-                          options);
+   ac_compile_llvm_module(ac_llvm, llvm_module, rbinary,
+                          radv_get_shader_name(info, nir[nir_count - 1]->info.stage), options);
 }
 
 void

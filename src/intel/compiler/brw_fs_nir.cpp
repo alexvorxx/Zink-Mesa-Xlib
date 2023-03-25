@@ -4424,6 +4424,16 @@ fs_visitor::nir_emit_intrinsic(const fs_builder &bld, nir_intrinsic_instr *instr
 
          if (slm_fence) {
             assert(opcode == SHADER_OPCODE_MEMORY_FENCE);
+            if (intel_needs_workaround(devinfo, 14014063774)) {
+               /* Wa_14014063774
+                *
+                * Before SLM fence compiler needs to insert SYNC.ALLWR in order
+                * to avoid the SLM data race.
+                */
+               ubld.exec_all().group(1, 0).emit(
+                  BRW_OPCODE_SYNC, ubld.null_reg_ud(),
+                  brw_imm_ud(TGL_SYNC_ALLWR));
+            }
             fence_regs[fence_regs_count++] =
                emit_fence(ubld, opcode, GFX12_SFID_SLM, desc,
                           true /* commit_enable */,

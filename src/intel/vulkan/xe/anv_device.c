@@ -46,80 +46,76 @@ VkResult anv_xe_device_setup_vm(struct anv_device *device)
    return VK_SUCCESS;
 }
 
-VkResult
-anv_xe_physical_device_get_parameters(struct anv_physical_device *device)
-{
-   device->has_exec_timeline = true;
-   /* max_context_priority will be updated in
-    * anv_xe_physical_device_max_priority_update()
-    */
-   device->max_context_priority = VK_QUEUE_GLOBAL_PRIORITY_LOW_KHR;
-
-   return VK_SUCCESS;
-}
-
-/* TODO: include gpu_scheduler.h and spsc_queue.h and replace hard-coded values */
-uint64_t
-anv_vk_priority_to_xe(VkQueueGlobalPriorityKHR vk_priority)
+enum drm_sched_priority
+anv_vk_priority_to_drm_sched_priority(VkQueueGlobalPriorityKHR vk_priority)
 {
    switch (vk_priority) {
    case VK_QUEUE_GLOBAL_PRIORITY_LOW_KHR:
-      return 0;
+      return DRM_SCHED_PRIORITY_MIN;
    case VK_QUEUE_GLOBAL_PRIORITY_MEDIUM_KHR:
-      return 1;
+      return DRM_SCHED_PRIORITY_NORMAL;
    case VK_QUEUE_GLOBAL_PRIORITY_HIGH_KHR:
-      return 2;
+      return DRM_SCHED_PRIORITY_HIGH;
    default:
       unreachable("Invalid priority");
-      return 0;
+      return DRM_SCHED_PRIORITY_MIN;
    }
 }
 
-void
-anv_xe_physical_device_max_priority_update(struct anv_physical_device *device)
+static VkQueueGlobalPriorityKHR
+drm_sched_priority_to_vk_priority(enum drm_sched_priority drm_sched_priority)
 {
-   if (!device->engine_info->num_engines)
-      return;
+   switch (drm_sched_priority) {
+   case DRM_SCHED_PRIORITY_MIN:
+      return VK_QUEUE_GLOBAL_PRIORITY_LOW_KHR;
+   case DRM_SCHED_PRIORITY_NORMAL:
+      return VK_QUEUE_GLOBAL_PRIORITY_MEDIUM_KHR;
+   case DRM_SCHED_PRIORITY_HIGH:
+      return VK_QUEUE_GLOBAL_PRIORITY_HIGH_KHR;
+   default:
+      unreachable("Invalid drm_sched_priority");
+      return VK_QUEUE_GLOBAL_PRIORITY_LOW_KHR;
+   }
+}
 
-   struct drm_xe_vm_create create_vm = {};
-   if (intel_ioctl(device->local_fd, DRM_IOCTL_XE_VM_CREATE, &create_vm))
-      return;
+static void *
+xe_query_alloc_fetch(struct anv_physical_device *device, uint32_t query_id)
+{
+   struct drm_xe_device_query query = {
+      .query = query_id,
+   };
+   if (intel_ioctl(device->local_fd, DRM_IOCTL_XE_DEVICE_QUERY, &query))
+      return NULL;
 
-   const VkQueueGlobalPriorityKHR priorities[] = {
-      VK_QUEUE_GLOBAL_PRIORITY_LOW_KHR,
-      VK_QUEUE_GLOBAL_PRIORITY_MEDIUM_KHR,
-      VK_QUEUE_GLOBAL_PRIORITY_HIGH_KHR,
-   };
-   struct drm_xe_engine_destroy destroy_engine;
-   struct drm_xe_vm_destroy destroy_vm = {
-      .vm_id = create_vm.vm_id,
-   };
-   struct drm_xe_engine_create create_engine = {
-      .instances = (uintptr_t)device->engine_info->engines,
-      .width = 1,
-      .num_placements = 1,
-      .vm_id = create_vm.vm_id,
-   };
-   if (intel_ioctl(device->local_fd, DRM_IOCTL_XE_ENGINE_CREATE,
-                   &create_engine))
-      goto destroy_vm;
+   void *data = calloc(1, query.size);
+   if (!data)
+      return NULL;
 
-   for (unsigned i = 0; i < ARRAY_SIZE(priorities); i++) {
-      struct drm_xe_engine_set_property engine_property = {
-         .engine_id = create_engine.engine_id,
-         .property = XE_ENGINE_SET_PROPERTY_PRIORITY,
-         engine_property.value = anv_vk_priority_to_xe(priorities[i]),
-      };
-      if (intel_ioctl(device->local_fd, DRM_IOCTL_XE_ENGINE_SET_PROPERTY,
-                      &engine_property))
-         break;
-      device->max_context_priority = priorities[i];
+   query.data = (uintptr_t)data;
+   if (intel_ioctl(device->local_fd, DRM_IOCTL_XE_DEVICE_QUERY, &query)) {
+      free(data);
+      return NULL;
    }
 
-   destroy_engine.engine_id = create_engine.engine_id;
-   intel_ioctl(device->local_fd, DRM_IOCTL_XE_ENGINE_DESTROY, &destroy_engine);
-destroy_vm:
-   intel_ioctl(device->local_fd, DRM_IOCTL_XE_VM_DESTROY, &destroy_vm);
+   return data;
+}
+
+VkResult
+anv_xe_physical_device_get_parameters(struct anv_physical_device *device)
+{
+   struct drm_xe_query_config *config;
+
+   config = xe_query_alloc_fetch(device, DRM_XE_DEVICE_QUERY_CONFIG);
+   if (!config)
+      return vk_errorf(device, VK_ERROR_INITIALIZATION_FAILED,
+                       "unable to query device config");
+
+   device->has_exec_timeline = true;
+   device->max_context_priority =
+         drm_sched_priority_to_vk_priority(config->info[XE_QUERY_CONFIG_MAX_ENGINE_PRIORITY]);
+
+   free(config);
+   return VK_SUCCESS;
 }
 
 VkResult
