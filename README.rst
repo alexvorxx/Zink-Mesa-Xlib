@@ -41,6 +41,8 @@ It's recommended to use Ubuntu 18.04.
 
   $ pip3 install meson ninja
 
+  $ pip3 install dataclasses
+  
 It's recommended to use meson-0.61.5 or newer.
   
 After that, you need to build from source and install the following libraries.
