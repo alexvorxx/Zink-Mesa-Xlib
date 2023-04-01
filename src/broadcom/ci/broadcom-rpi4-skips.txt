@@ -4,6 +4,7 @@ spec@!opengl 1.2@tex3d-maxsize
 spec@arb_texture_multisample@large-float-texture-array-fp16
 spec@arb_texture_multisample@texelfetch fs sampler2dms 4 1x130-501x130
 spec@arb_texture_multisample@texelfetch fs sampler2dms 4 1x71-501x71
+spec@arb_texture_multisample@texelfetch fs sampler2dmsarray 4 1x129x9-98x129x9
 spec@arb_texture_multisample@texelfetch fs sampler2dmsarray 4 98x1x9-98x129x9
 spec@ext_texture_env_combine@texture-env-combine
 spec@glsl-1.10@execution@loops@glsl-fs-unroll-explosion

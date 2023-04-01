@@ -78,6 +78,12 @@ int
 anv_gem_set_caching(struct anv_device *device,
                     uint32_t gem_handle, uint32_t caching)
 {
+   /* Guard by has_caching_uapi */
+   if (unlikely(device->info->kmd_type != INTEL_KMD_TYPE_I915)) {
+      assert(!"Missing implementation of anv_gem_set_caching\n");
+      return -1;
+   }
+
    struct drm_i915_gem_caching gem_caching = {
       .handle = gem_handle,
       .caching = caching,
@@ -92,6 +98,14 @@ anv_gem_set_caching(struct anv_device *device,
 int
 anv_gem_wait(struct anv_device *device, uint32_t gem_handle, int64_t *timeout_ns)
 {
+   /* Only called from i915 code path and from anv_bo_sync that is not
+    * supported in Xe
+    */
+   if (unlikely(device->info->kmd_type != INTEL_KMD_TYPE_I915)) {
+      assert(!"Missing implementation of anv_gem_wait\n");
+      return -1;
+   }
+
    struct drm_i915_gem_wait wait = {
       .bo_handle = gem_handle,
       .timeout_ns = *timeout_ns,

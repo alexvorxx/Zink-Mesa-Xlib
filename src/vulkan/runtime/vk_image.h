@@ -70,6 +70,13 @@ struct vk_image {
 #endif
 
 #ifdef ANDROID
+   /* AHARDWAREBUFFER_FORMAT for this image or 0
+    *
+    * A default is provided by the Vulkan runtime code based on the VkFormat
+    * but it may be overridden by the driver as needed.
+    */
+   unsigned ahardware_buffer_format;
+
    /* VK_ANDROID_external_memory_android_hardware_buffer */
    uint64_t android_external_format;
 #endif

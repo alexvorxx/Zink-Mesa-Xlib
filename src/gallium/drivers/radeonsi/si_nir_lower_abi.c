@@ -478,6 +478,9 @@ static bool lower_abi_instr(nir_builder *b, nir_instr *instr, struct lower_abi_s
    case nir_intrinsic_load_ring_tess_factors_offset_amd:
       replacement = ac_nir_load_arg(b, &args->ac, args->ac.tcs_factor_offset);
       break;
+   case nir_intrinsic_load_alpha_reference_amd:
+      replacement = ac_nir_load_arg(b, &args->ac, args->alpha_reference);
+      break;
    default:
       return false;
    }

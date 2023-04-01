@@ -76,6 +76,10 @@ bool zink_tracing = false;
 #include "MoltenVK/vk_mvk_moltenvk.h"
 #endif
 
+#ifdef HAVE_LIBDRM
+#include <xf86drm.h>
+#endif
+
 static const struct debug_named_value
 zink_debug_options[] = {
    { "nir", ZINK_DEBUG_NIR, "Dump NIR during program compile" },
@@ -524,7 +528,6 @@ zink_get_param(struct pipe_screen *pscreen, enum pipe_cap param)
    }
    case PIPE_CAP_SUPPORTED_PRIM_MODES: {
       uint32_t modes = BITFIELD_MASK(PIPE_PRIM_MAX);
-      modes &= ~BITFIELD_BIT(PIPE_PRIM_QUADS);
       modes &= ~BITFIELD_BIT(PIPE_PRIM_QUAD_STRIP);
       modes &= ~BITFIELD_BIT(PIPE_PRIM_POLYGON);
       modes &= ~BITFIELD_BIT(PIPE_PRIM_LINE_LOOP);
@@ -599,7 +602,7 @@ zink_get_param(struct pipe_screen *pscreen, enum pipe_cap param)
          return true;
       return false;
    case PIPE_CAP_QUADS_FOLLOW_PROVOKING_VERTEX_CONVENTION:
-      return screen->info.have_EXT_provoking_vertex;
+      return 1;
 
    case PIPE_CAP_TEXTURE_MIRROR_CLAMP_TO_EDGE:
       return screen->info.have_KHR_sampler_mirror_clamp_to_edge || (screen->info.have_vulkan12 && screen->info.feats12.samplerMirrorClampToEdge);
@@ -688,7 +691,8 @@ zink_get_param(struct pipe_screen *pscreen, enum pipe_cap param)
       return false;
 
    case PIPE_CAP_DEMOTE_TO_HELPER_INVOCATION:
-      return screen->info.have_EXT_shader_demote_to_helper_invocation;
+      return screen->spirv_version >= SPIRV_VERSION(1, 6) ||
+             screen->info.have_EXT_shader_demote_to_helper_invocation;
 
    case PIPE_CAP_SAMPLE_SHADING:
       return screen->info.feats.features.sampleRateShading;
@@ -965,9 +969,15 @@ zink_get_param(struct pipe_screen *pscreen, enum pipe_cap param)
       return MIN2(screen->info.props.limits.maxVertexOutputComponents / 4 / 2, 16);
 
    case PIPE_CAP_DMABUF:
+#if defined(HAVE_LIBDRM) && (DETECT_OS_LINUX || DETECT_OS_BSD)
       return screen->info.have_KHR_external_memory_fd &&
              screen->info.have_EXT_external_memory_dma_buf &&
-             screen->info.have_EXT_queue_family_foreign;
+             screen->info.have_EXT_queue_family_foreign
+             ? DRM_PRIME_CAP_IMPORT | DRM_PRIME_CAP_EXPORT
+             : 0;
+#else
+      return 0;
+#endif
 
    case PIPE_CAP_DEPTH_BOUNDS_TEST:
       return screen->info.feats.features.depthBounds;
@@ -1561,7 +1571,9 @@ choose_pdev(struct zink_screen *screen)
    screen->vk_version = MIN2(screen->info.device_version, screen->instance_info.loader_version);
 
    /* calculate SPIR-V version based on VK version */
-   if (screen->vk_version >= VK_MAKE_VERSION(1, 2, 0))
+   if (screen->vk_version >= VK_MAKE_VERSION(1, 3, 0))
+      screen->spirv_version = SPIRV_VERSION(1, 6);
+   else if (screen->vk_version >= VK_MAKE_VERSION(1, 2, 0))
       screen->spirv_version = SPIRV_VERSION(1, 5);
    else if (screen->vk_version >= VK_MAKE_VERSION(1, 1, 0))
       screen->spirv_version = SPIRV_VERSION(1, 3);
@@ -2698,6 +2710,14 @@ init_layouts(struct zink_screen *screen)
    return !!screen->gfx_push_constant_layout;
 }
 
+static int
+zink_screen_get_fd(struct pipe_screen *pscreen)
+{
+   struct zink_screen *screen = zink_screen(pscreen);
+
+   return screen->drm_fd;
+}
+
 static struct zink_screen *
 zink_internal_create_screen(const struct pipe_screen_config *config)
 {
@@ -3062,13 +3082,7 @@ zink_internal_create_screen(const struct pipe_screen_config *config)
    screen->base.vertex_state_destroy = zink_cache_vertex_state_destroy;
    glsl_type_singleton_init_or_ref();
 
-   if (screen->info.have_vulkan13 || screen->info.have_KHR_synchronization2) {
-      screen->image_barrier = zink_resource_image_barrier2;
-      screen->buffer_barrier = zink_resource_buffer_barrier2;
-   } else {
-      screen->image_barrier = zink_resource_image_barrier;
-      screen->buffer_barrier = zink_resource_buffer_barrier;
-   }
+   zink_synchronization_init(screen);
 
    zink_init_screen_pipeline_libs(screen);
 
@@ -3082,6 +3096,7 @@ zink_internal_create_screen(const struct pipe_screen_config *config)
 
    screen->optimal_keys = !screen->need_decompose_attrs &&
                           screen->info.have_EXT_non_seamless_cube_map &&
+                          screen->info.have_EXT_provoking_vertex &&
                           !screen->driconf.inline_uniforms &&
                           !screen->driver_workarounds.no_linestipple &&
                           !screen->driver_workarounds.no_linesmooth &&

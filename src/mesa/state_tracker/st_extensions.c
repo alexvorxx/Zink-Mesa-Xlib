@@ -391,8 +391,6 @@ void st_init_limits(struct pipe_screen *screen,
       screen->get_param(screen, PIPE_CAP_PREFER_IMM_ARRAYS_AS_CONSTBUF);
    c->GLSLTessLevelsAsInputs =
       screen->get_param(screen, PIPE_CAP_GLSL_TESS_LEVELS_AS_INPUTS);
-   c->LowerTessLevel =
-      !screen->get_param(screen, PIPE_CAP_NIR_COMPACT_ARRAYS);
    c->PrimitiveRestartForPatches = false;
 
    c->MaxCombinedTextureImageUnits =

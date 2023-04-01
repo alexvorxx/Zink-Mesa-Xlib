@@ -722,13 +722,22 @@ ntt_output_decl(struct ntt_compile *c, nir_intrinsic_instr *instr, uint32_t *fra
        */
       bool invariant = semantics.invariant;
 
+      unsigned num_slots = semantics.num_slots;
+      if (semantics.location == VARYING_SLOT_TESS_LEVEL_INNER ||
+          semantics.location == VARYING_SLOT_TESS_LEVEL_OUTER) {
+         /* Compact vars get a num_slots in NIR as number of components, but we
+          * want the number of vec4 slots here.
+          */
+         num_slots = 1;
+      }
+
       out = ureg_DECL_output_layout(c->ureg,
                                     semantic_name, semantic_index,
                                     gs_streams,
                                     base,
                                     usage_mask,
                                     array_id,
-                                    semantics.num_slots,
+                                    num_slots,
                                     invariant);
    }
 

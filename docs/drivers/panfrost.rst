@@ -277,7 +277,7 @@ hardware algorithm, which means that the reference code from ridiculousfish
 doesn't always produce the right constants. Mali does not use the pre-shift
 optimization, since that would make a hardware implementation slower (it
 would have to always do the pre-shift, multiply, and post-shift operations).
-It also forces the multplier to be at least 2^31, which means that the
+It also forces the multiplier to be at least 2^31, which means that the
 exponent is entirely fixed, so there is no trial-and-error. Altogether,
 given the divisor d, the algorithm the driver must follow is:
 

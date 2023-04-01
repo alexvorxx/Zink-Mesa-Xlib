@@ -696,8 +696,7 @@ sha1_update_immutable_sampler(struct mesa_sha1 *ctx,
       return;
 
    /* The only thing that affects the shader is ycbcr conversion */
-   _mesa_sha1_update(ctx, sampler->conversion,
-                     sizeof(*sampler->conversion));
+   SHA1_UPDATE_VALUE(ctx, sampler->conversion->state);
 }
 
 static void

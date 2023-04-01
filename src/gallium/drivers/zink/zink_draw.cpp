@@ -13,6 +13,7 @@
 
 #include "tgsi/tgsi_from_mesa.h"
 #include "util/hash_table.h"
+#include "util/u_cpu_detect.h"
 #include "util/u_debug.h"
 #include "util/u_helpers.h"
 #include "util/u_inlines.h"
@@ -74,6 +75,11 @@ zink_emit_stream_output_targets(struct pipe_context *pctx)
       buffer_offsets[i] = t->base.buffer_offset;
       buffer_sizes[i] = t->base.buffer_size;
       res->so_valid = true;
+      if (!ctx->unordered_blitting) {
+         res->obj->unordered_read = res->obj->unordered_write = false;
+         res->obj->access = VK_ACCESS_TRANSFORM_FEEDBACK_COUNTER_WRITE_BIT_EXT;
+         res->obj->access_stage = VK_PIPELINE_STAGE_TRANSFORM_FEEDBACK_BIT_EXT;
+      }
       util_range_add(t->base.buffer, &res->valid_buffer_range, t->base.buffer_offset,
                      t->base.buffer_offset + t->base.buffer_size);
    }
@@ -156,28 +162,6 @@ zink_bind_vertex_buffers(struct zink_batch *batch, struct zink_context *ctx)
                                       elems->hw_state.num_attribs, elems->hw_state.dynattribs);
 
    ctx->vertex_buffers_dirty = false;
-}
-
-static void
-zink_bind_vertex_state(struct zink_batch *batch, struct zink_context *ctx,
-                       struct pipe_vertex_state *vstate, uint32_t partial_velem_mask)
-{
-   if (!vstate->input.vbuffer.buffer.resource)
-      return;
-
-   const struct zink_vertex_elements_hw_state *hw_state = zink_vertex_state_mask(vstate, partial_velem_mask, true);
-   assert(hw_state);
-
-   struct zink_resource *res = zink_resource(vstate->input.vbuffer.buffer.resource);
-   zink_batch_resource_usage_set(&ctx->batch, res, false, true);
-   VkDeviceSize offset = vstate->input.vbuffer.buffer_offset;
-   VKCTX(CmdBindVertexBuffers)(batch->state->cmdbuf, 0,
-                               hw_state->num_bindings,
-                               &res->obj->buffer, &offset);
-
-   VKCTX(CmdSetVertexInputEXT)(batch->state->cmdbuf,
-                               hw_state->num_bindings, hw_state->dynbindings,
-                               hw_state->num_attribs, hw_state->dynattribs);
 }
 
 ALWAYS_INLINE static void
@@ -288,7 +272,7 @@ update_gfx_pipeline(struct zink_context *ctx, struct zink_batch_state *bs, enum 
 {
    VkPipeline prev_pipeline = ctx->gfx_pipeline_state.pipeline;
    const struct zink_screen *screen = zink_screen(ctx->base.screen);
-   if (screen->optimal_keys)
+   if (screen->optimal_keys && !ctx->is_generated_gs_bound)
       zink_gfx_program_update_optimal(ctx);
    else
       zink_gfx_program_update(ctx);
@@ -474,20 +458,18 @@ zink_draw(struct pipe_context *pctx,
       zink_set_last_vertex_key(ctx)->push_drawid = drawid_broken;
 
    bool rast_prim_changed = false;
-   bool lines_changed = false;
-   bool points_changed = false;
+   bool prim_changed = false;
    bool rast_state_changed = ctx->rast_state_changed;
    if (mode_changed || ctx->gfx_pipeline_state.modules_changed ||
        rast_state_changed) {
       enum pipe_prim_type rast_prim = zink_rast_prim(ctx, dinfo);
       if (rast_prim != ctx->gfx_pipeline_state.rast_prim) {
-         points_changed =
+         bool points_changed =
             (ctx->gfx_pipeline_state.rast_prim == PIPE_PRIM_POINTS) !=
             (rast_prim == PIPE_PRIM_POINTS);
 
-         lines_changed =
-            (ctx->gfx_pipeline_state.rast_prim == PIPE_PRIM_LINES) !=
-            (rast_prim == PIPE_PRIM_LINES);
+         prim_changed = ctx->gfx_pipeline_state.rast_prim != rast_prim;
+
          static bool rect_warned = false;
          if (DYNAMIC_STATE >= ZINK_DYNAMIC_STATE3 && rast_prim == PIPE_PRIM_LINES && !rect_warned && 
              (VkLineRasterizationModeEXT)rast_state->hw_state.line_mode == VK_LINE_RASTERIZATION_MODE_RECTANGULAR_EXT) {
@@ -506,9 +488,9 @@ zink_draw(struct pipe_context *pctx,
    }
    ctx->gfx_pipeline_state.gfx_prim_mode = mode;
 
-   if (!screen->optimal_keys &&
-       (lines_changed || points_changed || rast_state_changed || ctx->gfx_pipeline_state.modules_changed))
+   if ((mode_changed || prim_changed || rast_state_changed || ctx->gfx_pipeline_state.modules_changed)) {
       zink_set_primitive_emulation_keys(ctx);
+   }
 
    if (index_size) {
       const VkIndexType index_type[3] = {
@@ -712,13 +694,13 @@ zink_draw(struct pipe_context *pctx,
    }
    ctx->blend_state_changed = false;
 
-   if (DRAW_STATE)
-      zink_bind_vertex_state(batch, ctx, vstate, partial_velem_mask);
-   else if (BATCH_CHANGED || ctx->vertex_buffers_dirty) {
-      if (DYNAMIC_STATE == ZINK_DYNAMIC_VERTEX_INPUT || ctx->gfx_pipeline_state.uses_dynamic_stride)
-         zink_bind_vertex_buffers<DYNAMIC_STATE>(batch, ctx);
-      else
-         zink_bind_vertex_buffers<ZINK_NO_DYNAMIC_STATE>(batch, ctx);
+   if (!DRAW_STATE) {
+      if (BATCH_CHANGED || ctx->vertex_buffers_dirty) {
+         if (DYNAMIC_STATE == ZINK_DYNAMIC_VERTEX_INPUT || ctx->gfx_pipeline_state.uses_dynamic_stride)
+            zink_bind_vertex_buffers<DYNAMIC_STATE>(batch, ctx);
+         else
+            zink_bind_vertex_buffers<ZINK_NO_DYNAMIC_STATE>(batch, ctx);
+      }
    }
 
    if (BATCH_CHANGED) {
@@ -940,7 +922,54 @@ zink_draw_vbo(struct pipe_context *pctx,
    zink_draw<HAS_MULTIDRAW, DYNAMIC_STATE, BATCH_CHANGED, false>(pctx, info, drawid_offset, indirect, draws, num_draws, NULL, 0);
 }
 
-template <zink_multidraw HAS_MULTIDRAW, zink_dynamic_state DYNAMIC_STATE, bool BATCH_CHANGED>
+template <util_popcnt HAS_POPCNT>
+static void
+zink_vertex_state_mask(struct zink_context *ctx, struct pipe_vertex_state *vstate, uint32_t partial_velem_mask)
+{
+   struct zink_vertex_state *zstate = (struct zink_vertex_state *)vstate;
+   VkCommandBuffer cmdbuf = ctx->batch.state->cmdbuf;
+
+   if (partial_velem_mask == vstate->input.full_velem_mask) {
+      VKCTX(CmdSetVertexInputEXT)(cmdbuf,
+                                 zstate->velems.hw_state.num_bindings, zstate->velems.hw_state.dynbindings,
+                                 zstate->velems.hw_state.num_attribs, zstate->velems.hw_state.dynattribs);
+      return;
+   }
+
+   VkVertexInputAttributeDescription2EXT dynattribs[PIPE_MAX_ATTRIBS];
+   unsigned num_attribs = 0;
+   u_foreach_bit(elem, vstate->input.full_velem_mask & partial_velem_mask) {
+      unsigned idx = util_bitcount_fast<HAS_POPCNT>(vstate->input.full_velem_mask & BITFIELD_MASK(elem));
+      dynattribs[num_attribs] = zstate->velems.hw_state.dynattribs[idx];
+      dynattribs[num_attribs].location = num_attribs;
+      num_attribs++;
+   }
+
+   VKCTX(CmdSetVertexInputEXT)(cmdbuf,
+                               zstate->velems.hw_state.num_bindings, zstate->velems.hw_state.dynbindings,
+                               num_attribs, dynattribs);
+}
+
+template <util_popcnt HAS_POPCNT>
+static void
+zink_bind_vertex_state(struct zink_context *ctx, struct pipe_vertex_state *vstate, uint32_t partial_velem_mask)
+{
+   struct zink_vertex_state *zstate = (struct zink_vertex_state *)vstate;
+   VkCommandBuffer cmdbuf = ctx->batch.state->cmdbuf;
+   if (!vstate->input.vbuffer.buffer.resource)
+      return;
+
+   zink_vertex_state_mask<HAS_POPCNT>(ctx, vstate, partial_velem_mask);
+
+   struct zink_resource *res = zink_resource(vstate->input.vbuffer.buffer.resource);
+   zink_batch_resource_usage_set(&ctx->batch, res, false, true);
+   VkDeviceSize offset = vstate->input.vbuffer.buffer_offset;
+   VKCTX(CmdBindVertexBuffers)(cmdbuf, 0,
+                               zstate->velems.hw_state.num_bindings,
+                               &res->obj->buffer, &offset);
+}
+
+template <zink_multidraw HAS_MULTIDRAW, zink_dynamic_state DYNAMIC_STATE, util_popcnt HAS_POPCNT, bool BATCH_CHANGED>
 static void
 zink_draw_vertex_state(struct pipe_context *pctx,
                        struct pipe_vertex_state *vstate,
@@ -961,11 +990,11 @@ zink_draw_vertex_state(struct pipe_context *pctx,
                                 VK_PIPELINE_STAGE_VERTEX_INPUT_BIT);
    if (!ctx->unordered_blitting)
       res->obj->unordered_read = false;
-   struct zink_vertex_elements_hw_state *hw_state = ctx->gfx_pipeline_state.element_state;
-   ctx->gfx_pipeline_state.element_state = &((struct zink_vertex_state*)vstate)->velems.hw_state;
+   zink_bind_vertex_state<HAS_POPCNT>(ctx, vstate, partial_velem_mask);
 
    zink_draw<HAS_MULTIDRAW, DYNAMIC_STATE, BATCH_CHANGED, true>(pctx, &dinfo, 0, NULL, draws, num_draws, vstate, partial_velem_mask);
-   ctx->gfx_pipeline_state.element_state = hw_state;
+   /* ensure ctx->vertex_buffers gets rebound on next non-vstate draw */
+   ctx->vertex_buffers_dirty = true;
 
    if (info.take_vertex_state_ownership)
       pipe_vertex_state_reference(&vstate, NULL);
@@ -1056,15 +1085,16 @@ zink_launch_grid(struct pipe_context *pctx, const struct pipe_grid_info *info)
 
 template <zink_multidraw HAS_MULTIDRAW, zink_dynamic_state DYNAMIC_STATE, bool BATCH_CHANGED>
 static void
-init_batch_changed_functions(struct zink_context *ctx, pipe_draw_vbo_func draw_vbo_array[2][6][2], pipe_draw_vertex_state_func draw_state_array[2][6][2])
+init_batch_changed_functions(struct zink_context *ctx, pipe_draw_vbo_func draw_vbo_array[2][6][2], pipe_draw_vertex_state_func draw_state_array[2][6][2][2])
 {
    draw_vbo_array[HAS_MULTIDRAW][DYNAMIC_STATE][BATCH_CHANGED] = zink_draw_vbo<HAS_MULTIDRAW, DYNAMIC_STATE, BATCH_CHANGED>;
-   draw_state_array[HAS_MULTIDRAW][DYNAMIC_STATE][BATCH_CHANGED] = zink_draw_vertex_state<HAS_MULTIDRAW, DYNAMIC_STATE, BATCH_CHANGED>;
+   draw_state_array[HAS_MULTIDRAW][DYNAMIC_STATE][0][BATCH_CHANGED] = zink_draw_vertex_state<HAS_MULTIDRAW, DYNAMIC_STATE, POPCNT_NO, BATCH_CHANGED>;
+   draw_state_array[HAS_MULTIDRAW][DYNAMIC_STATE][1][BATCH_CHANGED] = zink_draw_vertex_state<HAS_MULTIDRAW, DYNAMIC_STATE, POPCNT_YES, BATCH_CHANGED>;
 }
 
 template <zink_multidraw HAS_MULTIDRAW, zink_dynamic_state DYNAMIC_STATE>
 static void
-init_dynamic_state_functions(struct zink_context *ctx, pipe_draw_vbo_func draw_vbo_array[2][6][2], pipe_draw_vertex_state_func draw_state_array[2][6][2])
+init_dynamic_state_functions(struct zink_context *ctx, pipe_draw_vbo_func draw_vbo_array[2][6][2], pipe_draw_vertex_state_func draw_state_array[2][6][2][2])
 {
    init_batch_changed_functions<HAS_MULTIDRAW, DYNAMIC_STATE, false>(ctx, draw_vbo_array, draw_state_array);
    init_batch_changed_functions<HAS_MULTIDRAW, DYNAMIC_STATE, true>(ctx, draw_vbo_array, draw_state_array);
@@ -1072,7 +1102,7 @@ init_dynamic_state_functions(struct zink_context *ctx, pipe_draw_vbo_func draw_v
 
 template <zink_multidraw HAS_MULTIDRAW>
 static void
-init_multidraw_functions(struct zink_context *ctx, pipe_draw_vbo_func draw_vbo_array[2][6][2], pipe_draw_vertex_state_func draw_state_array[2][6][2])
+init_multidraw_functions(struct zink_context *ctx, pipe_draw_vbo_func draw_vbo_array[2][6][2], pipe_draw_vertex_state_func draw_state_array[2][6][2][2])
 {
    init_dynamic_state_functions<HAS_MULTIDRAW, ZINK_NO_DYNAMIC_STATE>(ctx, draw_vbo_array, draw_state_array);
    init_dynamic_state_functions<HAS_MULTIDRAW, ZINK_DYNAMIC_STATE>(ctx, draw_vbo_array, draw_state_array);
@@ -1083,7 +1113,7 @@ init_multidraw_functions(struct zink_context *ctx, pipe_draw_vbo_func draw_vbo_a
 }
 
 static void
-init_all_draw_functions(struct zink_context *ctx, pipe_draw_vbo_func draw_vbo_array[2][6][2], pipe_draw_vertex_state_func draw_state_array[2][6][2])
+init_all_draw_functions(struct zink_context *ctx, pipe_draw_vbo_func draw_vbo_array[2][6][2], pipe_draw_vertex_state_func draw_state_array[2][6][2][2])
 {
    init_multidraw_functions<ZINK_NO_MULTIDRAW>(ctx, draw_vbo_array, draw_state_array);
    init_multidraw_functions<ZINK_MULTIDRAW>(ctx, draw_vbo_array, draw_state_array);
@@ -1202,7 +1232,7 @@ zink_init_draw_functions(struct zink_context *ctx, struct zink_screen *screen)
    pipe_draw_vbo_func draw_vbo_array[2][6] //multidraw, zink_dynamic_state
                                     [2];   //batch changed
    pipe_draw_vertex_state_func draw_state_array[2][6] //multidraw, zink_dynamic_state
-                                               [2];   //batch changed
+                                               [2][2];   //has_popcnt, batch changed
    zink_dynamic_state dynamic;
    if (screen->info.have_EXT_extended_dynamic_state) {
       if (screen->info.have_EXT_extended_dynamic_state2) {
@@ -1228,7 +1258,7 @@ zink_init_draw_functions(struct zink_context *ctx, struct zink_screen *screen)
                                         [dynamic],
                                         sizeof(ctx->draw_vbo));
    memcpy(ctx->draw_state, &draw_state_array[screen->info.have_EXT_multi_draw]
-                                          [dynamic],
+                                          [dynamic][util_get_cpu_caps()->has_popcnt],
                                           sizeof(ctx->draw_state));
 
    /* Bind a fake draw_vbo, so that draw_vbo isn't NULL, which would skip

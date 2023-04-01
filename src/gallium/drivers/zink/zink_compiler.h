@@ -29,6 +29,8 @@
 #define ZINK_WORKGROUP_SIZE_X 1
 #define ZINK_WORKGROUP_SIZE_Y 2
 #define ZINK_WORKGROUP_SIZE_Z 3
+#define ZINK_INLINE_VAL_FLAT_MASK 0
+#define ZINK_INLINE_VAL_PV_LAST_VERT 1
 
 /* stop inlining shaders if they have >limit ssa vals after inlining:
  * recompile time isn't worth the inline
@@ -54,6 +56,10 @@ zink_get_compiler_options(struct pipe_screen *screen,
 struct nir_shader *
 zink_tgsi_to_nir(struct pipe_screen *screen, const struct tgsi_token *tokens);
 
+nir_shader*
+zink_create_quads_emulation_gs(const nir_shader_compiler_options *options,
+                               const nir_shader *prev_stage,
+                               int last_pv_vert_offset);
 
 void
 zink_screen_init_compiler(struct zink_screen *screen);
@@ -63,7 +69,7 @@ zink_compiler_assign_io(struct zink_screen *screen, nir_shader *producer, nir_sh
 VkShaderModule
 zink_shader_compile(struct zink_screen *screen, struct zink_shader *zs, nir_shader *nir, const struct zink_shader_key *key, const void *extra_data);
 VkShaderModule
-zink_shader_compile_separate(struct zink_screen *screen, struct zink_shader *zs, nir_shader **ret_nir);
+zink_shader_compile_separate(struct zink_screen *screen, struct zink_shader *zs);
 VkShaderModule
 zink_shader_spirv_compile(struct zink_screen *screen, struct zink_shader *zs, struct spirv_shader *spirv);
 struct zink_shader *

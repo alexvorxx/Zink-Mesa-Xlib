@@ -637,6 +637,15 @@
    DRI_CONF_OPT_B(anv_sample_mask_out_opengl_behaviour, def, \
                   "Ignore sample mask out when having single sampled target")
 
+#define DRI_CONF_ANV_MESH_CONV_PRIM_ATTRS_TO_VERT_ATTRS(def) \
+   DRI_CONF_OPT_E(anv_mesh_conv_prim_attrs_to_vert_attrs, def, -2, 2, \
+                  "Apply workaround for gfx12.5 per-prim attribute corruption HW bug", \
+                  DRI_CONF_ENUM(-2, "enable attribute conversion and vertex duplication ONLY if needed") \
+                  DRI_CONF_ENUM(-1, "enable attribute conversion ONLY if needed") \
+                  DRI_CONF_ENUM(0,  "disable workaround") \
+                  DRI_CONF_ENUM(1,  "enable attribute conversion ALWAYS") \
+                  DRI_CONF_ENUM(2,  "enable attribute conversion and vertex duplication ALWAYS") )
+
 #define DRI_CONF_ANV_FP64_WORKAROUND_ENABLED(def) \
    DRI_CONF_OPT_B(fp64_workaround_enabled, def, \
                   "Use softpf64 when the shader uses float64, but the device doesn't support that type")

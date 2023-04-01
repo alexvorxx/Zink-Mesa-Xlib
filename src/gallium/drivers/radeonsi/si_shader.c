@@ -662,7 +662,8 @@ void si_init_shader_args(struct si_shader *shader, struct si_shader_args *args)
    case MESA_SHADER_FRAGMENT:
       declare_global_desc_pointers(args);
       declare_per_stage_desc_pointers(args, shader, true);
-      si_add_arg_checked(&args->ac, AC_ARG_SGPR, 1, AC_ARG_INT, NULL, SI_PARAM_ALPHA_REF);
+      si_add_arg_checked(&args->ac, AC_ARG_SGPR, 1, AC_ARG_INT, &args->alpha_reference,
+                         SI_PARAM_ALPHA_REF);
       si_add_arg_checked(&args->ac, AC_ARG_SGPR, 1, AC_ARG_INT, &args->ac.prim_mask,
                          SI_PARAM_PRIM_MASK);
 
@@ -710,16 +711,20 @@ void si_init_shader_args(struct si_shader *shader, struct si_shader_args *args)
          num_prolog_vgprs += num_color_elements;
       }
 
-      /* Outputs for the epilog. */
-      num_return_sgprs = SI_SGPR_ALPHA_REF + 1;
-      num_returns = num_return_sgprs + util_bitcount(shader->selector->info.colors_written) * 4 +
-                    shader->selector->info.writes_z + shader->selector->info.writes_stencil +
-                    shader->selector->info.writes_samplemask + 1 /* SampleMaskIn */;
+      /* Monolithic PS emit epilog in NIR directly. */
+      if (!shader->is_monolithic) {
+         /* Outputs for the epilog. */
+         num_return_sgprs = SI_SGPR_ALPHA_REF + 1;
+         num_returns =
+            num_return_sgprs + util_bitcount(shader->selector->info.colors_written) * 4 +
+            shader->selector->info.writes_z + shader->selector->info.writes_stencil +
+            shader->selector->info.writes_samplemask + 1 /* SampleMaskIn */;
 
-      for (i = 0; i < num_return_sgprs; i++)
-         ac_add_return(&args->ac, AC_ARG_SGPR);
-      for (; i < num_returns; i++)
-         ac_add_return(&args->ac, AC_ARG_VGPR);
+         for (i = 0; i < num_return_sgprs; i++)
+            ac_add_return(&args->ac, AC_ARG_SGPR);
+         for (; i < num_returns; i++)
+            ac_add_return(&args->ac, AC_ARG_VGPR);
+      }
       break;
 
    case MESA_SHADER_COMPUTE:
@@ -1998,6 +2003,23 @@ struct nir_shader *si_get_nir_shader(struct si_shader *shader,
       }
    } else if (is_legacy_gs) {
       NIR_PASS_V(nir, ac_nir_lower_legacy_gs, false, sel->screen->use_ngg, output_info);
+   } else if (sel->stage == MESA_SHADER_FRAGMENT && shader->is_monolithic) {
+      ac_nir_lower_ps_options options = {
+         .gfx_level = sel->screen->info.gfx_level,
+         .family = sel->screen->info.family,
+         .uses_discard = si_shader_uses_discard(shader),
+         .alpha_to_coverage_via_mrtz = key->ps.part.epilog.alpha_to_coverage_via_mrtz,
+         .dual_src_blend_swizzle = key->ps.part.epilog.dual_src_blend_swizzle,
+         .spi_shader_col_format = key->ps.part.epilog.spi_shader_col_format,
+         .color_is_int8 = key->ps.part.epilog.color_is_int8,
+         .color_is_int10 = key->ps.part.epilog.color_is_int10,
+         .clamp_color = key->ps.part.epilog.clamp_color,
+         .alpha_to_one = key->ps.part.epilog.alpha_to_one,
+         .alpha_func = key->ps.part.epilog.alpha_func,
+         .broadcast_last_cbuf = key->ps.part.epilog.last_cbuf,
+      };
+
+      NIR_PASS_V(nir, ac_nir_lower_ps, &options);
    }
 
    NIR_PASS(progress2, nir, si_nir_lower_abi, shader, args);

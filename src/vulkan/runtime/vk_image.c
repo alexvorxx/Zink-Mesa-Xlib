@@ -23,8 +23,6 @@
 
 #include "vk_image.h"
 
-#include <vulkan/vulkan_android.h>
-
 #ifndef _WIN32
 #include <drm-uapi/drm_fourcc.h>
 #endif
@@ -39,6 +37,11 @@
 #include "vk_render_pass.h"
 #include "vk_util.h"
 #include "vulkan/wsi/wsi_common.h"
+
+#ifdef ANDROID
+#include "vk_android.h"
+#include <vulkan/vulkan_android.h>
+#endif
 
 void
 vk_image_init(struct vk_device *device,
@@ -97,6 +100,8 @@ vk_image_init(struct vk_device *device,
 #endif
 
 #ifdef ANDROID
+   image->ahardware_buffer_format = 0;
+
    const VkExternalFormatANDROID *ext_format =
       vk_find_struct_const(pCreateInfo->pNext, EXTERNAL_FORMAT_ANDROID);
    if (ext_format && ext_format->externalFormat != 0) {

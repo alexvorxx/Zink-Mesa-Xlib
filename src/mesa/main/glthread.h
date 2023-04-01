@@ -300,6 +300,7 @@ void _mesa_glthread_disable(struct gl_context *ctx);
 void _mesa_glthread_flush_batch(struct gl_context *ctx);
 void _mesa_glthread_finish(struct gl_context *ctx);
 void _mesa_glthread_finish_before(struct gl_context *ctx, const char *func);
+bool _mesa_glthread_invalidate_zsbuf(struct gl_context *ctx);
 void _mesa_glthread_release_upload_buffer(struct gl_context *ctx);
 void _mesa_glthread_upload(struct gl_context *ctx, const void *data,
                            GLsizeiptr size, unsigned *out_offset,

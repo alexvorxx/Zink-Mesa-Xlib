@@ -490,9 +490,7 @@ zink_clear_texture_dynamic(struct pipe_context *pctx,
    uint8_t stencil = 0;
    if (res->aspect & VK_IMAGE_ASPECT_COLOR_BIT) {
       util_format_unpack_rgba(pres->format, color.ui, data, 1);
-
       convert_color(surf, &color);
-
    } else {
       if (res->aspect & VK_IMAGE_ASPECT_DEPTH_BIT)
          util_format_unpack_z_float(pres->format, &depth, data, 1);

@@ -34,6 +34,7 @@
 #include <sync/sync.h>
 
 #include "anv_private.h"
+#include "vk_android.h"
 #include "vk_common_entrypoints.h"
 #include "vk_util.h"
 
@@ -138,8 +139,8 @@ vk_format_from_android(unsigned android_format, unsigned android_usage)
    }
 }
 
-static inline unsigned
-android_format_from_vk(unsigned vk_format)
+unsigned
+anv_ahb_format_for_vk_format(VkFormat vk_format)
 {
    switch (vk_format) {
    case VK_FORMAT_R8G8B8A8_UNORM:
@@ -305,81 +306,21 @@ anv_GetAndroidHardwareBufferPropertiesANDROID(
    return VK_SUCCESS;
 }
 
-VkResult
-anv_GetMemoryAndroidHardwareBufferANDROID(
-   VkDevice device_h,
-   const VkMemoryGetAndroidHardwareBufferInfoANDROID *pInfo,
-   struct AHardwareBuffer **pBuffer)
-{
-   ANV_FROM_HANDLE(anv_device_memory, mem, pInfo->memory);
-
-   /* Some quotes from Vulkan spec:
-    *
-    * "If the device memory was created by importing an Android hardware
-    * buffer, vkGetMemoryAndroidHardwareBufferANDROID must return that same
-    * Android hardware buffer object."
-    *
-    * "VK_EXTERNAL_MEMORY_HANDLE_TYPE_ANDROID_HARDWARE_BUFFER_BIT_ANDROID must
-    * have been included in VkExportMemoryAllocateInfo::handleTypes when
-    * memory was created."
-    */
-   if (mem->ahw) {
-      *pBuffer = mem->ahw;
-      /* Increase refcount. */
-      AHardwareBuffer_acquire(mem->ahw);
-      return VK_SUCCESS;
-   }
-
-   return VK_ERROR_OUT_OF_HOST_MEMORY;
-}
-
 #endif
-
-/* Construct ahw usage mask from image usage bits, see
- * 'AHardwareBuffer Usage Equivalence' in Vulkan spec.
- */
-uint64_t
-anv_ahw_usage_from_vk_usage(const VkImageCreateFlags vk_create,
-                            const VkImageUsageFlags vk_usage)
-{
-   uint64_t ahw_usage = 0;
-#if ANDROID_API_LEVEL >= 26
-   if (vk_usage & VK_IMAGE_USAGE_SAMPLED_BIT)
-      ahw_usage |= AHARDWAREBUFFER_USAGE_GPU_SAMPLED_IMAGE;
-
-   if (vk_usage & VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT)
-      ahw_usage |= AHARDWAREBUFFER_USAGE_GPU_SAMPLED_IMAGE;
-
-   if (vk_usage & VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT)
-      ahw_usage |= AHARDWAREBUFFER_USAGE_GPU_COLOR_OUTPUT;
-
-   if (vk_create & VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT)
-      ahw_usage |= AHARDWAREBUFFER_USAGE_GPU_CUBE_MAP;
-
-   if (vk_create & VK_IMAGE_CREATE_PROTECTED_BIT)
-      ahw_usage |= AHARDWAREBUFFER_USAGE_PROTECTED_CONTENT;
-
-   /* No usage bits set - set at least one GPU usage. */
-   if (ahw_usage == 0)
-      ahw_usage = AHARDWAREBUFFER_USAGE_GPU_SAMPLED_IMAGE;
-#endif
-   return ahw_usage;
-}
 
 /*
  * Called from anv_AllocateMemory when import AHardwareBuffer.
  */
 VkResult
 anv_import_ahw_memory(VkDevice device_h,
-                      struct anv_device_memory *mem,
-                      const VkImportAndroidHardwareBufferInfoANDROID *info)
+                      struct anv_device_memory *mem)
 {
 #if ANDROID_API_LEVEL >= 26
    ANV_FROM_HANDLE(anv_device, device, device_h);
 
    /* Import from AHardwareBuffer to anv_device_memory. */
    const native_handle_t *handle =
-      AHardwareBuffer_getNativeHandle(info->buffer);
+      AHardwareBuffer_getNativeHandle(mem->vk.ahardware_buffer);
 
    /* NOTE - We support buffers with only one handle but do not error on
     * multiple handle case. Reason is that we want to support YUV formats
@@ -395,82 +336,10 @@ anv_import_ahw_memory(VkDevice device_h,
                                           &mem->bo);
    assert(result == VK_SUCCESS);
 
-   /* "If the vkAllocateMemory command succeeds, the implementation must
-    * acquire a reference to the imported hardware buffer, which it must
-    * release when the device memory object is freed. If the command fails,
-    * the implementation must not retain a reference."
-    */
-   AHardwareBuffer_acquire(info->buffer);
-   mem->ahw = info->buffer;
-
    return VK_SUCCESS;
 #else
    return VK_ERROR_EXTENSION_NOT_PRESENT;
 #endif
-}
-
-VkResult
-anv_create_ahw_memory(VkDevice device_h,
-                      struct anv_device_memory *mem,
-                      const VkMemoryAllocateInfo *pAllocateInfo)
-{
-#if ANDROID_API_LEVEL >= 26
-   const VkMemoryDedicatedAllocateInfo *dedicated_info =
-      vk_find_struct_const(pAllocateInfo->pNext,
-                           MEMORY_DEDICATED_ALLOCATE_INFO);
-
-   uint32_t w = 0;
-   uint32_t h = 1;
-   uint32_t layers = 1;
-   uint32_t format = 0;
-   uint64_t usage = 0;
-
-   /* If caller passed dedicated information. */
-   if (dedicated_info && dedicated_info->image) {
-      ANV_FROM_HANDLE(anv_image, image, dedicated_info->image);
-      w = image->vk.extent.width;
-      h = image->vk.extent.height;
-      layers = image->vk.array_layers;
-      format = android_format_from_vk(image->vk.format);
-      usage = anv_ahw_usage_from_vk_usage(image->vk.create_flags, image->vk.usage);
-   } else if (dedicated_info && dedicated_info->buffer) {
-      ANV_FROM_HANDLE(anv_buffer, buffer, dedicated_info->buffer);
-      w = buffer->vk.size;
-      format = AHARDWAREBUFFER_FORMAT_BLOB;
-      usage = AHARDWAREBUFFER_USAGE_CPU_READ_OFTEN |
-              AHARDWAREBUFFER_USAGE_CPU_WRITE_OFTEN;
-   } else {
-      w = pAllocateInfo->allocationSize;
-      format = AHARDWAREBUFFER_FORMAT_BLOB;
-      usage = AHARDWAREBUFFER_USAGE_CPU_READ_OFTEN |
-              AHARDWAREBUFFER_USAGE_CPU_WRITE_OFTEN;
-   }
-
-   struct AHardwareBuffer *ahw = NULL;
-   struct AHardwareBuffer_Desc desc = {
-      .width = w,
-      .height = h,
-      .layers = layers,
-      .format = format,
-      .usage = usage,
-    };
-
-   if (AHardwareBuffer_allocate(&desc, &ahw) != 0)
-      return VK_ERROR_OUT_OF_HOST_MEMORY;
-
-   const VkImportAndroidHardwareBufferInfoANDROID import_info = {
-      .buffer = ahw,
-   };
-   VkResult result = anv_import_ahw_memory(device_h, mem, &import_info);
-
-   /* Release a reference to avoid leak for AHB allocation. */
-   AHardwareBuffer_release(ahw);
-
-   return result;
-#else
-   return VK_ERROR_EXTENSION_NOT_PRESENT;
-#endif
-
 }
 
 VkResult
@@ -531,6 +400,8 @@ anv_image_init_from_gralloc(struct anv_device *device,
                                                VK_IMAGE_ASPECT_COLOR_BIT,
                                                base_info->tiling);
    assert(format != ISL_FORMAT_UNSUPPORTED);
+
+   anv_info.stride = gralloc_info->stride * (isl_format_get_layout(format)->bpb / 8);
 
    result = anv_image_init(device, image, &anv_info);
    if (result != VK_SUCCESS)

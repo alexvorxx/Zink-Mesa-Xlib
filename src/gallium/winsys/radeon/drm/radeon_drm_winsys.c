@@ -795,6 +795,14 @@ static bool radeon_cs_set_pstate(struct radeon_cmdbuf* cs, enum radeon_ctx_pstat
     return false;
 }
 
+static int
+radeon_drm_winsys_get_fd(struct radeon_winsys *ws)
+{
+   struct radeon_drm_winsys *rws = (struct radeon_drm_winsys*)ws;
+
+   return rws->fd;
+}
+
 PUBLIC struct radeon_winsys *
 radeon_drm_winsys_create(int fd, const struct pipe_screen_config *config,
                          radeon_screen_create_t screen_create)
@@ -861,6 +869,7 @@ radeon_drm_winsys_create(int fd, const struct pipe_screen_config *config,
    /* Set functions. */
    ws->base.unref = radeon_winsys_unref;
    ws->base.destroy = radeon_winsys_destroy;
+   ws->base.get_fd = radeon_drm_winsys_get_fd;
    ws->base.query_info = radeon_query_info;
    ws->base.pin_threads_to_L3_cache = radeon_pin_threads_to_L3_cache;
    ws->base.cs_request_feature = radeon_cs_request_feature;

@@ -616,15 +616,14 @@ xsi:schemaLocation="http://nouveau.freedesktop.org/ rules-ng.xsd">
 	<value name="CP_PREEMPT_DISABLE" value="0x6c" variants="A6XX"/>
 
 	<value name="CP_WAIT_TIMESTAMP" value="0x14" variants="A7XX-"/>
+	<value name="CP_GLOBAL_TIMESTAMP" value="0x15" variants="A7XX-"/>  <!-- payload 1 dword -->
+	<value name="CP_LOCAL_TIMESTAMP" value="0x16" variants="A7XX-"/>  <!-- payload 1 dword, follows 0x15 -->
 	<value name="CP_THREAD_CONTROL" value="0x17" variants="A7XX-"/>
+	<!-- payload 4 dwords, last two could be render target addr (one pkt per MRT), possibly used for GMEM save/restore?-->
+	<value name="CP_RESOURCE_LIST" value="0x18" variants="A7XX-"/>
+	<value name="CP_BV_BR_COUNT_OPS" value="0x1b" variants="A7XX-"/>  <!-- payload 1 or 2 dwords -->
 	<!-- similar to CP_CONTEXT_REG_BUNCH, but discards first two dwords?? -->
 	<value name="CP_CONTEXT_REG_BUNCH2" value="0x5d" variants="A7XX-"/>
-
-	<!-- new on a7xx, currently unknown: -->
-	<value name="CP_UNK15" value="0x15" variants="A7XX-"/>  <!-- payload 1 dword -->
-	<value name="CP_UNK16" value="0x16" variants="A7XX-"/>  <!-- payload 1 dword, follows 0x15 -->
-	<value name="CP_UNK18" value="0x18" variants="A7XX-"/>  <!-- payload 4 dwords, last two could be render target addr (one pkt per MRT), possibly used for GMEM save/restore?-->
-	<value name="CP_UNK1B" value="0x1b" variants="A7XX-"/>  <!-- payload 1 or 2 dwords -->
 	<value name="CP_UNK49" value="0x49" variants="A7XX-"/>  <!-- payload 4 dwords, last two address of something -->
 </enum>
 
@@ -1567,9 +1566,11 @@ opcode: CP_LOAD_STATE4 (30) (4 dwords)
 	</reg32>
 </domain>
 
-<domain name="CP_EVENT_WRITE" width="32">
+<domain varset="chip" name="CP_EVENT_WRITE" width="32">
 	<reg32 offset="0" name="0">
 		<bitfield name="EVENT" low="0" high="7" type="vgt_event_type"/>
+		<!-- write seqno, not applicable to all events, leads to a hang on unsupported ones -->
+		<bitfield name="SEQNO" pos="27" type="boolean" variants="A7XX-"/>
 		<!-- when set, write back timestamp instead of value from packet: -->
 		<bitfield name="TIMESTAMP" pos="30" type="boolean"/>
 		<bitfield name="IRQ" pos="31" type="boolean"/>

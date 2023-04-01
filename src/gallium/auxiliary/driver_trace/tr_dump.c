@@ -658,7 +658,7 @@ void trace_dump_nir(void *nir)
    if (!dumping)
       return;
 
-   if (nir_count < 0) {
+   if (--nir_count < 0) {
       fputs("<string>...</string>", stream);
       return;
    }

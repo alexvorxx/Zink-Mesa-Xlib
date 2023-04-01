@@ -32,7 +32,7 @@
 #include "freedreno/freedreno_screen.h"
 
 struct pipe_screen *
-fd_drm_screen_create(int fd, struct renderonly *ro,
+fd_drm_screen_create_renderonly(int fd, struct renderonly *ro,
 		const struct pipe_screen_config *config)
 {
 	return u_pipe_screen_lookup_or_create(fd, config, ro, fd_screen_create);

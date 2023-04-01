@@ -82,6 +82,7 @@ ForEachMacros:
   - set_foreach
   - u_foreach_bit
   - u_foreach_bit64
+  - radv_foreach_stage
   - PHASE
 
 TypenameMacros:

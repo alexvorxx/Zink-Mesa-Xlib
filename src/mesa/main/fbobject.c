@@ -5524,6 +5524,15 @@ _mesa_InvalidateFramebuffer(GLenum target, GLsizei numAttachments,
    discard_framebuffer(ctx, fb, numAttachments, attachments);
 }
 
+void GLAPIENTRY
+_mesa_InternalInvalidateFramebufferAncillaryMESA(void)
+{
+   GET_CURRENT_CONTEXT(ctx);
+
+   struct gl_framebuffer *fb = get_framebuffer_target(ctx, GL_FRAMEBUFFER);
+   discard_attachments(ctx, fb, BITFIELD_BIT(BUFFER_DEPTH) | BITFIELD_BIT(BUFFER_STENCIL));
+}
+
 
 void GLAPIENTRY
 _mesa_InvalidateNamedFramebufferData(GLuint framebuffer,

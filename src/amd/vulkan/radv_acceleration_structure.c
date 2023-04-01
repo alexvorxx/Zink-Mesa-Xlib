@@ -25,7 +25,7 @@
 
 #include "nir_builder.h"
 #include "radv_cs.h"
-#include "radv_meta.h"
+#include "meta/radv_meta.h"
 
 #include "radix_sort/radv_radix_sort.h"
 

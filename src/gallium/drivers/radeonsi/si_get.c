@@ -1136,11 +1136,20 @@ static void si_init_renderer_string(struct si_screen *sscreen)
             sscreen->info.drm_major, sscreen->info.drm_minor, kernel_version);
 }
 
+static int si_get_screen_fd(struct pipe_screen *screen)
+{
+   struct si_screen *sscreen = (struct si_screen *)screen;
+   struct radeon_winsys *ws = sscreen->ws;
+
+   return ws->get_fd(ws);
+}
+
 void si_init_screen_get_functions(struct si_screen *sscreen)
 {
    sscreen->b.get_name = si_get_name;
    sscreen->b.get_vendor = si_get_vendor;
    sscreen->b.get_device_vendor = si_get_device_vendor;
+   sscreen->b.get_screen_fd = si_get_screen_fd;
    sscreen->b.get_param = si_get_param;
    sscreen->b.get_paramf = si_get_paramf;
    sscreen->b.get_compute_param = si_get_compute_param;

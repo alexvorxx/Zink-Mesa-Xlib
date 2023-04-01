@@ -82,6 +82,9 @@ KHR-.*.core.geometry_shader.layered_framebuffer.depth_support
 # [  359.031093] *** gpu fault: ttbr0=00000001040d6000 iova=0000001012c0a880 dir=WRITE type=TRANSLATION source=UCHE (0,0,0,1)
 KHR-.*.core.tessellation_shader.tessellation_shader_tc_barriers.barrier_guarded_read_calls
 
+# Typically fails, but occasionally passes.
+KHR-GL45.shader_image_load_store.basic-allTargets-store
+
 # edfff331b3241d1c18d5c589fcdf75728089c886 mostly fixed this, but apparently it still flakes.
 dEQP-GLES3.functional.fbo.blit.depth_stencil.depth32f_stencil8_basic
 dEQP-GLES3.functional.fbo.blit.depth_stencil.depth32f_stencil8_scale

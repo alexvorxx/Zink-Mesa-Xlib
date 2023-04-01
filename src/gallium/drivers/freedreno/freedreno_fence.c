@@ -42,6 +42,9 @@ fence_flush(struct pipe_context *pctx, struct pipe_fence_handle *fence,
     */
    in_dt
 {
+   if (fence->flushed)
+      return true;
+
    MESA_TRACE_FUNC();
 
    if (!util_queue_fence_is_signalled(&fence->ready)) {
@@ -61,24 +64,18 @@ fence_flush(struct pipe_context *pctx, struct pipe_fence_handle *fence,
          }
       }
 
-      if (fence->fence)
-         fd_fence_flush(fence->fence);
-
-      /* We've already waited for batch to be flushed and fence->batch
-       * to be cleared:
-       */
-      assert(!fence->batch);
-      return true;
+      goto out;
    }
 
    if (fence->batch)
       fd_batch_flush(fence->batch);
 
+out:
    if (fence->fence)
       fd_fence_flush(fence->fence);
 
    assert(!fence->batch);
-
+   fence->flushed = true;
    return true;
 }
 

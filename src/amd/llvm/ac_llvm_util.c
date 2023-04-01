@@ -174,8 +174,8 @@ const char *ac_get_llvm_processor_name(enum radeon_family family)
       return LLVM_VERSION_MAJOR >= 13 ? "gfx1034" : "gfx1030";
    case CHIP_REMBRANDT:
       return LLVM_VERSION_MAJOR >= 13 ? "gfx1035" : "gfx1030";
-   case CHIP_GFX1036: /* TODO: LLVM 15 doesn't support this yet */
-      return "gfx1030";
+   case CHIP_RAPHAEL_MENDOCINO:
+      return LLVM_VERSION_MAJOR >= 15 ? "gfx1036" : "gfx1030";
    case CHIP_GFX1100:
       return "gfx1100";
    case CHIP_GFX1101:

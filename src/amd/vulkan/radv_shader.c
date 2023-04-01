@@ -26,17 +26,18 @@
  */
 
 #include "radv_shader.h"
+#include "meta/radv_meta.h"
 #include "nir/nir.h"
 #include "nir/nir_builder.h"
 #include "nir/nir_xfb_info.h"
+#include "nir/radv_nir.h"
 #include "spirv/nir_spirv.h"
 #include "util/memstream.h"
 #include "util/mesa-sha1.h"
-#include "util/u_atomic.h"
 #include "util/streaming-load-memcpy.h"
+#include "util/u_atomic.h"
 #include "radv_cs.h"
 #include "radv_debug.h"
-#include "radv_meta.h"
 #include "radv_private.h"
 #include "radv_shader_args.h"
 
@@ -328,321 +329,6 @@ radv_compiler_debug(void *private_data, enum aco_compiler_debug_level level, con
 }
 
 static bool
-lower_intrinsics(nir_shader *nir, const struct radv_pipeline_key *key)
-{
-   nir_function_impl *entry = nir_shader_get_entrypoint(nir);
-   bool progress = false;
-   nir_builder b;
-
-   nir_builder_init(&b, entry);
-
-   nir_foreach_block (block, entry) {
-      nir_foreach_instr_safe (instr, block) {
-         if (instr->type != nir_instr_type_intrinsic)
-            continue;
-
-         nir_intrinsic_instr *intrin = nir_instr_as_intrinsic(instr);
-         b.cursor = nir_before_instr(&intrin->instr);
-
-         nir_ssa_def *def = NULL;
-         switch (intrin->intrinsic) {
-         case nir_intrinsic_is_sparse_texels_resident:
-            def = nir_ieq_imm(&b, intrin->src[0].ssa, 0);
-            break;
-         case nir_intrinsic_sparse_residency_code_and:
-            def = nir_ior(&b, intrin->src[0].ssa, intrin->src[1].ssa);
-            break;
-         case nir_intrinsic_load_view_index:
-            if (key->has_multiview_view_index)
-               continue;
-            def = nir_imm_zero(&b, 1, 32);
-            break;
-         default:
-            continue;
-         }
-
-         nir_ssa_def_rewrite_uses(&intrin->dest.ssa, def);
-
-         nir_instr_remove(instr);
-         progress = true;
-      }
-   }
-
-   if (progress)
-      nir_metadata_preserve(entry, nir_metadata_block_index | nir_metadata_dominance);
-   else
-      nir_metadata_preserve(entry, nir_metadata_all);
-
-   return progress;
-}
-
-static bool
-radv_lower_primitive_shading_rate(nir_shader *nir, enum amd_gfx_level gfx_level)
-{
-   nir_function_impl *impl = nir_shader_get_entrypoint(nir);
-   bool progress = false;
-
-   nir_builder b;
-   nir_builder_init(&b, impl);
-
-   /* Iterate in reverse order since there should be only one deref store to PRIMITIVE_SHADING_RATE
-    * after lower_io_to_temporaries for vertex shaders.
-    */
-   nir_foreach_block_reverse(block, impl) {
-      nir_foreach_instr_reverse(instr, block) {
-         if (instr->type != nir_instr_type_intrinsic)
-            continue;
-
-         nir_intrinsic_instr *intr = nir_instr_as_intrinsic(instr);
-         if (intr->intrinsic != nir_intrinsic_store_deref)
-            continue;
-
-         nir_variable *var = nir_intrinsic_get_var(intr, 0);
-         if (var->data.mode != nir_var_shader_out ||
-             var->data.location != VARYING_SLOT_PRIMITIVE_SHADING_RATE)
-            continue;
-
-         b.cursor = nir_before_instr(instr);
-
-         nir_ssa_def *val = nir_ssa_for_src(&b, intr->src[1], 1);
-
-         /* x_rate = (shadingRate & (Horizontal2Pixels | Horizontal4Pixels)) ? 0x1 : 0x0; */
-         nir_ssa_def *x_rate = nir_iand_imm(&b, val, 12);
-         x_rate = nir_b2i32(&b, nir_ine_imm(&b, x_rate, 0));
-
-         /* y_rate = (shadingRate & (Vertical2Pixels | Vertical4Pixels)) ? 0x1 : 0x0; */
-         nir_ssa_def *y_rate = nir_iand_imm(&b, val, 3);
-         y_rate = nir_b2i32(&b, nir_ine_imm(&b, y_rate, 0));
-
-         nir_ssa_def *out = NULL;
-
-         /* MS:
-          * Primitive shading rate is a per-primitive output, it is
-          * part of the second channel of the primitive export.
-          * Bits [28:31] = VRS rate
-          * This will be added to the other bits of that channel in the backend.
-          *
-          * VS, TES, GS:
-          * Primitive shading rate is a per-vertex output pos export.
-          * Bits [2:5] = VRS rate
-          * HW shading rate = (xRate << 2) | (yRate << 4)
-          *
-          * GFX11: 4-bit VRS_SHADING_RATE enum
-          * GFX10: X = low 2 bits, Y = high 2 bits
-          */
-         unsigned x_rate_shift = 2;
-         unsigned y_rate_shift = 4;
-
-         if (gfx_level >= GFX11) {
-            x_rate_shift = 4;
-            y_rate_shift = 2;
-         }
-         if (nir->info.stage == MESA_SHADER_MESH) {
-            x_rate_shift += 26;
-            y_rate_shift += 26;
-         }
-
-         out = nir_ior(&b, nir_ishl_imm(&b, x_rate, x_rate_shift), nir_ishl_imm(&b, y_rate, y_rate_shift));
-
-         nir_instr_rewrite_src(&intr->instr, &intr->src[1], nir_src_for_ssa(out));
-
-         progress = true;
-         if (nir->info.stage == MESA_SHADER_VERTEX)
-            break;
-      }
-      if (nir->info.stage == MESA_SHADER_VERTEX && progress)
-         break;
-   }
-
-   if (progress)
-      nir_metadata_preserve(impl, nir_metadata_block_index | nir_metadata_dominance);
-   else
-      nir_metadata_preserve(impl, nir_metadata_all);
-
-   return progress;
-}
-
-bool
-radv_lower_fs_intrinsics(nir_shader *nir, const struct radv_pipeline_stage *fs_stage,
-                         const struct radv_pipeline_key *key)
-{
-   const struct radv_shader_info *info = &fs_stage->info;
-   const struct radv_shader_args *args = &fs_stage->args;
-   nir_function_impl *impl = nir_shader_get_entrypoint(nir);
-   bool progress = false;
-
-   nir_builder b;
-   nir_builder_init(&b, impl);
-
-   nir_foreach_block(block, impl) {
-      nir_foreach_instr_safe(instr, block) {
-         if (instr->type != nir_instr_type_intrinsic)
-            continue;
-
-         nir_intrinsic_instr *intrin = nir_instr_as_intrinsic(instr);
-         b.cursor = nir_after_instr(&intrin->instr);
-
-         switch (intrin->intrinsic) {
-         case nir_intrinsic_load_sample_mask_in: {
-            nir_ssa_def *sample_coverage =
-               nir_load_vector_arg_amd(&b, 1, .base = args->ac.sample_coverage.arg_index);
-
-            nir_ssa_def *def = NULL;
-            if (info->ps.uses_sample_shading || key->ps.sample_shading_enable) {
-               /* gl_SampleMaskIn[0] = (SampleCoverage & (1 << gl_SampleID)). */
-               nir_ssa_def *sample_id = nir_load_sample_id(&b);
-               def = nir_iand(&b, sample_coverage, nir_ishl(&b, nir_imm_int(&b, 1u), sample_id));
-            } else {
-               def = sample_coverage;
-            }
-
-            nir_ssa_def_rewrite_uses(&intrin->dest.ssa, def);
-
-            nir_instr_remove(instr);
-            progress = true;
-            break;
-         }
-         case nir_intrinsic_load_frag_coord: {
-            if (!key->adjust_frag_coord_z)
-               continue;
-
-            if (!(nir_ssa_def_components_read(&intrin->dest.ssa) & (1 << 2)))
-               continue;
-
-            nir_ssa_def *frag_z = nir_channel(&b, &intrin->dest.ssa, 2);
-
-            /* adjusted_frag_z = fddx_fine(frag_z) * 0.0625 + frag_z */
-            nir_ssa_def *adjusted_frag_z = nir_fddx_fine(&b, frag_z);
-            adjusted_frag_z = nir_ffma_imm1(&b, adjusted_frag_z, 0.0625f, frag_z);
-
-            /* VRS Rate X = Ancillary[2:3] */
-            nir_ssa_def *ancillary =
-               nir_load_vector_arg_amd(&b, 1, .base = args->ac.ancillary.arg_index);
-            nir_ssa_def *x_rate = nir_ubfe_imm(&b, ancillary, 2, 2);
-
-            /* xRate = xRate == 0x1 ? adjusted_frag_z : frag_z. */
-            nir_ssa_def *cond = nir_ieq_imm(&b, x_rate, 1);
-            frag_z = nir_bcsel(&b, cond, adjusted_frag_z, frag_z);
-
-            nir_ssa_def *new_dest = nir_vector_insert_imm(&b, &intrin->dest.ssa, frag_z, 2);
-            nir_ssa_def_rewrite_uses_after(&intrin->dest.ssa, new_dest, new_dest->parent_instr);
-
-            progress = true;
-            break;
-         }
-         case nir_intrinsic_load_barycentric_at_sample: {
-            nir_ssa_def *num_samples = nir_load_rasterization_samples_amd(&b);
-            nir_ssa_def *new_dest;
-
-            if (key->dynamic_rasterization_samples) {
-               nir_ssa_def *res1, *res2;
-
-               nir_push_if(&b, nir_ieq_imm(&b, num_samples, 1));
-               {
-                  res1 = nir_load_barycentric_pixel(&b, 32,
-                                                    .interp_mode = nir_intrinsic_interp_mode(intrin));
-               }
-               nir_push_else(&b, NULL);
-               {
-                  nir_ssa_def *sample_pos =
-                     nir_load_sample_positions_amd(&b, 32, intrin->src[0].ssa, num_samples);
-
-                  /* sample_pos -= 0.5 */
-                  sample_pos = nir_fsub(&b, sample_pos, nir_imm_float(&b, 0.5f));
-
-                  res2 = nir_load_barycentric_at_offset(&b, 32, sample_pos,
-                                                        .interp_mode = nir_intrinsic_interp_mode(intrin));
-               }
-               nir_pop_if(&b, NULL);
-
-               new_dest = nir_if_phi(&b, res1, res2);
-            } else {
-               if (!key->ps.num_samples) {
-                  new_dest =
-                     nir_load_barycentric_pixel(&b, 32,
-                                                .interp_mode = nir_intrinsic_interp_mode(intrin));
-               } else {
-                  nir_ssa_def *sample_pos =
-                     nir_load_sample_positions_amd(&b, 32, intrin->src[0].ssa, num_samples);
-
-                  /* sample_pos -= 0.5 */
-                  sample_pos = nir_fsub(&b, sample_pos, nir_imm_float(&b, 0.5f));
-
-                  new_dest =
-                     nir_load_barycentric_at_offset(&b, 32, sample_pos,
-                                                    .interp_mode = nir_intrinsic_interp_mode(intrin));
-               }
-            }
-
-            nir_ssa_def_rewrite_uses(&intrin->dest.ssa, new_dest);
-            nir_instr_remove(instr);
-
-            progress = true;
-            break;
-         }
-         default:
-            break;
-         }
-      }
-   }
-
-   if (progress)
-      nir_metadata_preserve(impl, 0);
-   else
-      nir_metadata_preserve(impl, nir_metadata_all);
-
-   return progress;
-}
-
-/* Emulates NV_mesh_shader first_task using first_vertex. */
-static bool
-radv_lower_ms_workgroup_id(nir_shader *nir)
-{
-   nir_function_impl *impl = nir_shader_get_entrypoint(nir);
-   bool progress = false;
-   nir_builder b;
-   nir_builder_init(&b, impl);
-
-   nir_foreach_block(block, impl) {
-      nir_foreach_instr_safe(instr, block) {
-         if (instr->type != nir_instr_type_intrinsic)
-            continue;
-
-         nir_intrinsic_instr *intrin = nir_instr_as_intrinsic(instr);
-         if (intrin->intrinsic != nir_intrinsic_load_workgroup_id)
-            continue;
-
-         progress = true;
-         b.cursor = nir_after_instr(instr);
-         nir_ssa_def *x = nir_channel(&b, &intrin->dest.ssa, 0);
-         nir_ssa_def *x_full = nir_iadd(&b, x, nir_load_first_vertex(&b));
-         nir_ssa_def *v = nir_vector_insert_imm(&b, &intrin->dest.ssa, x_full, 0);
-         nir_ssa_def_rewrite_uses_after(&intrin->dest.ssa, v, v->parent_instr);
-      }
-   }
-
-   nir_metadata preserved =
-      progress ? (nir_metadata_block_index | nir_metadata_dominance) : nir_metadata_all;
-   nir_metadata_preserve(impl, preserved);
-   return progress;
-}
-
-static bool
-is_sincos(const nir_instr *instr, const void *_)
-{
-   return instr->type == nir_instr_type_alu &&
-          (nir_instr_as_alu(instr)->op == nir_op_fsin || nir_instr_as_alu(instr)->op == nir_op_fcos);
-}
-
-static nir_ssa_def *
-lower_sincos(struct nir_builder *b, nir_instr *instr, void *_)
-{
-   nir_alu_instr *sincos = nir_instr_as_alu(instr);
-   nir_ssa_def *src = nir_fmul_imm(b, nir_ssa_for_alu_src(b, sincos, 0), 0.15915493667125702);
-   return sincos->op == nir_op_fsin ? nir_fsin_amd(b, src) : nir_fcos_amd(b, src);
-}
-
-static bool
 is_not_xfb_output(nir_variable *var, void *data)
 {
    if (var->data.mode != nir_var_shader_out)
@@ -729,7 +415,6 @@ radv_shader_spirv_to_nir(struct radv_device *device, const struct radv_pipeline_
                .int64_atomics = true,
                .integer_functions2 = true,
                .mesh_shading = true,
-               .mesh_shading_nv = true,
                .min_lod = true,
                .multiview = true,
                .physical_storage_buffer_address = true,
@@ -873,7 +558,7 @@ radv_shader_spirv_to_nir(struct radv_device *device, const struct radv_pipeline_
 
       NIR_PASS(_, nir, nir_lower_doubles, NULL, lower_doubles);
 
-      NIR_PASS(_, nir, nir_shader_lower_instructions, &is_sincos, &lower_sincos, NULL);
+      NIR_PASS(_, nir, ac_nir_lower_sin_cos);
    }
 
    NIR_PASS(_, nir, nir_lower_system_values);
@@ -890,9 +575,6 @@ radv_shader_spirv_to_nir(struct radv_device *device, const struct radv_pipeline_
    NIR_PASS(_, nir, nir_lower_compute_system_values, &csv_options);
 
    if (nir->info.stage == MESA_SHADER_MESH) {
-      /* NV_mesh_shader: include first_task (aka. first_vertex) in workgroup ID. */
-      NIR_PASS(_, nir, radv_lower_ms_workgroup_id);
-
       /* Mesh shaders only have a 1D "vertex index" which we use
        * as "workgroup index" to emulate the 3D workgroup ID.
        */
@@ -1002,7 +684,7 @@ radv_shader_spirv_to_nir(struct radv_device *device, const struct radv_pipeline_
    NIR_PASS(_, nir, nir_lower_explicit_io, nir_var_mem_ubo | nir_var_mem_ssbo,
             nir_address_format_vec2_index_32bit_offset);
 
-   NIR_PASS(_, nir, lower_intrinsics, key);
+   NIR_PASS(_, nir, radv_nir_lower_intrinsics_early, key);
 
    /* Lower deref operations for compute shared memory. */
    if (nir->info.stage == MESA_SHADER_COMPUTE ||
@@ -1043,7 +725,7 @@ radv_shader_spirv_to_nir(struct radv_device *device, const struct radv_pipeline_
         nir->info.stage == MESA_SHADER_MESH) &&
        nir->info.outputs_written & BITFIELD64_BIT(VARYING_SLOT_PRIMITIVE_SHADING_RATE)) {
       /* Lower primitive shading rate to match HW requirements. */
-      NIR_PASS(_, nir, radv_lower_primitive_shading_rate,
+      NIR_PASS(_, nir, radv_nir_lower_primitive_shading_rate,
                device->physical_device->rad_info.gfx_level);
    }
 
@@ -1060,162 +742,6 @@ radv_shader_spirv_to_nir(struct radv_device *device, const struct radv_pipeline_
 
 
    return nir;
-}
-
-static int
-type_size_vec4(const struct glsl_type *type, bool bindless)
-{
-   return glsl_count_attribute_slots(type, false);
-}
-
-static nir_variable *
-find_layer_in_var(nir_shader *nir)
-{
-   nir_variable *var = nir_find_variable_with_location(nir, nir_var_shader_in, VARYING_SLOT_LAYER);
-   if (var != NULL)
-      return var;
-
-   var = nir_variable_create(nir, nir_var_shader_in, glsl_int_type(), "layer id");
-   var->data.location = VARYING_SLOT_LAYER;
-   var->data.interpolation = INTERP_MODE_FLAT;
-   return var;
-}
-
-/* We use layered rendering to implement multiview, which means we need to map
- * view_index to gl_Layer. The code generates a load from the layer_id sysval,
- * but since we don't have a way to get at this information from the fragment
- * shader, we also need to lower this to the gl_Layer varying.  This pass
- * lowers both to a varying load from the LAYER slot, before lowering io, so
- * that nir_assign_var_locations() will give the LAYER varying the correct
- * driver_location.
- */
-
-bool
-radv_lower_view_index(nir_shader *nir, bool per_primitive)
-{
-   bool progress = false;
-   nir_function_impl *entry = nir_shader_get_entrypoint(nir);
-   nir_builder b;
-   nir_builder_init(&b, entry);
-
-   nir_variable *layer = NULL;
-   nir_foreach_block (block, entry) {
-      nir_foreach_instr_safe (instr, block) {
-         if (instr->type != nir_instr_type_intrinsic)
-            continue;
-
-         nir_intrinsic_instr *load = nir_instr_as_intrinsic(instr);
-         if (load->intrinsic != nir_intrinsic_load_view_index)
-            continue;
-
-         if (!layer)
-            layer = find_layer_in_var(nir);
-
-         layer->data.per_primitive = per_primitive;
-         b.cursor = nir_before_instr(instr);
-         nir_ssa_def *def = nir_load_var(&b, layer);
-         nir_ssa_def_rewrite_uses(&load->dest.ssa, def);
-
-         /* Update inputs_read to reflect that the pass added a new input. */
-         nir->info.inputs_read |= VARYING_BIT_LAYER;
-         if (per_primitive)
-            nir->info.per_primitive_inputs |= VARYING_BIT_LAYER;
-
-         nir_instr_remove(instr);
-         progress = true;
-      }
-   }
-
-   if (progress)
-      nir_metadata_preserve(entry, nir_metadata_block_index | nir_metadata_dominance);
-   else
-      nir_metadata_preserve(entry, nir_metadata_all);
-
-   return progress;
-}
-
-void
-radv_lower_io(struct radv_device *device, nir_shader *nir)
-{
-   if (nir->info.stage == MESA_SHADER_FRAGMENT) {
-      nir_assign_io_var_locations(nir, nir_var_shader_in, &nir->num_inputs, MESA_SHADER_FRAGMENT);
-   }
-
-   if (nir->info.stage == MESA_SHADER_VERTEX) {
-      NIR_PASS(_, nir, nir_lower_io, nir_var_shader_in, type_size_vec4, 0);
-      NIR_PASS(_, nir, nir_lower_io, nir_var_shader_out, type_size_vec4,
-               nir_lower_io_lower_64bit_to_32);
-   } else {
-      NIR_PASS(_, nir, nir_lower_io, nir_var_shader_in | nir_var_shader_out, type_size_vec4,
-               nir_lower_io_lower_64bit_to_32);
-   }
-
-   /* This pass needs actual constants */
-   NIR_PASS(_, nir, nir_opt_constant_folding);
-
-   NIR_PASS(_, nir, nir_io_add_const_offset_to_base, nir_var_shader_in | nir_var_shader_out);
-
-   if (device->physical_device->use_ngg_streamout && nir->xfb_info) {
-      NIR_PASS_V(nir, nir_io_add_intrinsic_xfb_info);
-
-      /* The total number of shader outputs is required for computing the pervertex LDS size for
-       * VS/TES when lowering NGG streamout.
-       */
-      nir_assign_io_var_locations(nir, nir_var_shader_out, &nir->num_outputs, nir->info.stage);
-   }
-}
-
-bool
-radv_lower_io_to_mem(struct radv_device *device, struct radv_pipeline_stage *stage)
-{
-   const struct radv_shader_info *info = &stage->info;
-   nir_shader *nir = stage->nir;
-
-   if (nir->info.stage == MESA_SHADER_VERTEX) {
-      if (info->vs.as_ls) {
-         NIR_PASS_V(nir, ac_nir_lower_ls_outputs_to_mem, NULL, info->vs.tcs_in_out_eq,
-                    info->vs.tcs_temp_only_input_mask);
-         return true;
-      } else if (info->vs.as_es) {
-         NIR_PASS_V(nir, ac_nir_lower_es_outputs_to_mem, NULL,
-                    device->physical_device->rad_info.gfx_level, info->esgs_itemsize);
-         return true;
-      }
-   } else if (nir->info.stage == MESA_SHADER_TESS_CTRL) {
-      NIR_PASS_V(nir, ac_nir_lower_hs_inputs_to_mem, NULL, info->vs.tcs_in_out_eq);
-      NIR_PASS_V(nir, ac_nir_lower_hs_outputs_to_mem, NULL,
-                 device->physical_device->rad_info.gfx_level,
-                 info->tcs.tes_reads_tess_factors, info->tcs.tes_inputs_read,
-                 info->tcs.tes_patch_inputs_read, info->tcs.num_linked_outputs,
-                 info->tcs.num_linked_patch_outputs, info->wave_size,
-                 false, false, true);
-
-      return true;
-   } else if (nir->info.stage == MESA_SHADER_TESS_EVAL) {
-      NIR_PASS_V(nir, ac_nir_lower_tes_inputs_to_mem, NULL);
-
-      if (info->tes.as_es) {
-         NIR_PASS_V(nir, ac_nir_lower_es_outputs_to_mem, NULL,
-                    device->physical_device->rad_info.gfx_level, info->esgs_itemsize);
-      }
-
-      return true;
-   } else if (nir->info.stage == MESA_SHADER_GEOMETRY) {
-      NIR_PASS_V(nir, ac_nir_lower_gs_inputs_to_mem, NULL,
-                 device->physical_device->rad_info.gfx_level, false);
-      return true;
-   } else if (nir->info.stage == MESA_SHADER_TASK) {
-      ac_nir_apply_first_task_to_task_shader(nir);
-      ac_nir_lower_task_outputs_to_mem(nir, AC_TASK_PAYLOAD_ENTRY_BYTES,
-                                       device->physical_device->task_info.num_entries);
-      return true;
-   } else if (nir->info.stage == MESA_SHADER_MESH) {
-      ac_nir_lower_mesh_inputs_to_mem(nir, AC_TASK_PAYLOAD_ENTRY_BYTES,
-                                      device->physical_device->task_info.num_entries);
-      return true;
-   }
-
-   return false;
 }
 
 bool
@@ -2815,6 +2341,7 @@ radv_create_rt_prolog(struct radv_device *device)
    info.desc_set_used_mask = -1; /* just to force indirection */
    info.wave_size = device->physical_device->rt_wave_size;
    info.workgroup_size = info.wave_size;
+   info.user_data_0 = R_00B900_COMPUTE_USER_DATA_0;
    info.cs.is_rt_shader = true;
    info.cs.uses_ray_launch_size = true;
    info.cs.uses_dynamic_rt_callable_stack = true;

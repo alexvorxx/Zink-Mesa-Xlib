@@ -73,6 +73,8 @@ nir_ssa_def *
 ac_nir_unpack_arg(nir_builder *b, const struct ac_shader_args *ac_args, struct ac_arg arg,
                   unsigned rshift, unsigned bitwidth);
 
+bool ac_nir_lower_sin_cos(nir_shader *shader);
+
 void
 ac_nir_store_var_components(nir_builder *b, nir_variable *var, nir_ssa_def *value,
                             unsigned component, unsigned writemask);
@@ -200,9 +202,6 @@ ac_nir_lower_ngg_ms(nir_shader *shader,
                     bool multiview);
 
 void
-ac_nir_apply_first_task_to_task_shader(nir_shader *shader);
-
-void
 ac_nir_lower_task_outputs_to_mem(nir_shader *shader,
                                  unsigned task_payload_entry_bytes,
                                  unsigned task_num_entries);
@@ -285,6 +284,30 @@ typedef struct {
 } ac_nir_lower_subdword_options;
 
 bool ac_nir_lower_subdword_loads(nir_shader *nir, ac_nir_lower_subdword_options options);
+
+typedef struct {
+   enum radeon_family family;
+   enum amd_gfx_level gfx_level;
+
+   bool uses_discard;
+   bool alpha_to_coverage_via_mrtz;
+   bool dual_src_blend_swizzle;
+   unsigned spi_shader_col_format;
+   unsigned color_is_int8;
+   unsigned color_is_int10;
+
+   /* OpenGL only */
+   bool clamp_color;
+   bool alpha_to_one;
+   enum pipe_compare_func alpha_func;
+   unsigned broadcast_last_cbuf;
+
+   /* Vulkan only */
+   unsigned enable_mrt_output_nan_fixup;
+} ac_nir_lower_ps_options;
+
+void
+ac_nir_lower_ps(nir_shader *nir, const ac_nir_lower_ps_options *options);
 
 #ifdef __cplusplus
 }

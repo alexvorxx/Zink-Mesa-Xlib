@@ -783,6 +783,14 @@ iris_init_identifier_bo(struct iris_screen *screen)
    return true;
 }
 
+static int
+iris_screen_get_fd(struct pipe_screen *pscreen)
+{
+   struct iris_screen *screen = (struct iris_screen *) pscreen;
+
+   return screen->winsys_fd;
+}
+
 struct pipe_screen *
 iris_screen_create(int fd, const struct pipe_screen_config *config)
 {
@@ -885,6 +893,7 @@ iris_screen_create(int fd, const struct pipe_screen_config *config)
    pscreen->get_vendor = iris_get_vendor;
    pscreen->get_device_vendor = iris_get_device_vendor;
    pscreen->get_cl_cts_version = iris_get_cl_cts_version;
+   pscreen->get_screen_fd = iris_screen_get_fd;
    pscreen->get_param = iris_get_param;
    pscreen->get_shader_param = iris_get_shader_param;
    pscreen->get_compute_param = iris_get_compute_param;

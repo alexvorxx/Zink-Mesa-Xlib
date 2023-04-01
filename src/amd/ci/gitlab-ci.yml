@@ -280,7 +280,7 @@ radeonsi-raven-va:amd64:
     - .deqp-test-valve
   variables:
     DEQP_VER: vk
-    RADV_PERFTEST: nv_ms,gpl
+    RADV_PERFTEST: gpl
 
 # VKCTS never finishes on gfx7 due to all the GPU resets and hangs.
 # Hence, disable it for now.

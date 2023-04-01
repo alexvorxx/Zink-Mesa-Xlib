@@ -197,7 +197,7 @@ fd_device_del(struct fd_device *dev)
    _mesa_hash_table_destroy(dev->handle_table, NULL);
    _mesa_hash_table_destroy(dev->name_table, NULL);
 
-   if (util_queue_is_initialized(&dev->submit_queue))
+   if (fd_device_threaded_submit(dev))
       util_queue_destroy(&dev->submit_queue);
 
    if (dev->closefd)

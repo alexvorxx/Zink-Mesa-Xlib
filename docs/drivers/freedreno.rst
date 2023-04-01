@@ -9,7 +9,7 @@ See the `Freedreno Wiki
 details.
 
 Turnip
-======
+------
 
 Turnip is a Vulkan 1.3 driver for Adreno 6xx GPUs.
 
@@ -79,7 +79,7 @@ Hardware acronyms
     Visibility Stream Compressor
 
   PVS
-    Primitive Visibiliy Stream
+    Primitive Visibility Stream
 
   FE
     Front End?  Index buffer and vertex attribute fetch cluster.  Includes PC,
@@ -264,7 +264,7 @@ SSBOs are just untyped buffers, but otherwise use the same descriptors and
 instructions as images.  Samplers use a 16byte descriptor, and UBOs use an
 8byte descriptor which packs the size in the upper 15 bits of the UBO address.
 
-In the bindless model, descriptors are split into 5 desciptor sets, which are
+In the bindless model, descriptors are split into 5 descriptor sets, which are
 global across shader stages (but as with bindful IBO descriptors, separate for
 3d stages vs compute stage).  Each hw descriptor is an array of descriptors
 of configurable size (each descriptor set can be configured for a descriptor
@@ -609,7 +609,7 @@ the cases where stale data is read.
     stomp registers before each renderpass.
   ``inverse``
     changes `TU_DEBUG_STALE_REGS_RANGE` meaning to
-    "regs that should NOT be stompted".
+    "regs that should NOT be stomped".
 
 The best way to pinpoint the reg which causes a failure is to bisect the regs
 range. In case when a fail is caused by combination of several registers

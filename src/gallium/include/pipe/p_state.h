@@ -1034,6 +1034,27 @@ struct pipe_compute_state
    unsigned req_input_mem; /**< Required size of the INPUT resource. */
 };
 
+struct pipe_compute_state_object_info
+{
+   /**
+    * Max number of threads per block supported for the given cso.
+    */
+   unsigned max_threads;
+
+   /**
+    * Which multiple should the block size be of for best performance.
+    *
+    * E.g. for 8 a block with n * 8 threads would result in optimal utilization
+    * of the hardware.
+    */
+   unsigned preferred_simd_size;
+
+   /**
+    * How much private memory does this CSO require per thread (a.k.a. NIR scratch memory).
+    */
+   unsigned private_memory;
+};
+
 /**
  * Structure that contains a callback for device reset messages from the driver
  * back to the gallium frontend.

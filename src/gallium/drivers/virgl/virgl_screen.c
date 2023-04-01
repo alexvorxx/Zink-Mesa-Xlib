@@ -1101,6 +1101,18 @@ virgl_get_compiler_options(struct pipe_screen *pscreen,
    return &vscreen->compiler_options;
 }
 
+static int
+virgl_screen_get_fd(struct pipe_screen *pscreen)
+{
+   struct virgl_screen *vscreen = virgl_screen(pscreen);
+   struct virgl_winsys *vws = vscreen->vws;
+
+   if (vws->get_fd)
+      return vws->get_fd(vws);
+   else
+      return -1;
+}
+
 struct pipe_screen *
 virgl_create_screen(struct virgl_winsys *vws, const struct pipe_screen_config *config)
 {
@@ -1137,6 +1149,7 @@ virgl_create_screen(struct virgl_winsys *vws, const struct pipe_screen_config *c
    screen->vws = vws;
    screen->base.get_name = virgl_get_name;
    screen->base.get_vendor = virgl_get_vendor;
+   screen->base.get_screen_fd = virgl_screen_get_fd;
    screen->base.get_param = virgl_get_param;
    screen->base.get_shader_param = virgl_get_shader_param;
    screen->base.get_video_param = virgl_get_video_param;

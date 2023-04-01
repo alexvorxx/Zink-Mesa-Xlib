@@ -37,18 +37,13 @@
 #ifdef HAVE_PERFETTO
 
 #include "util/perf/u_perfetto.h"
+#include "util/perf/u_perfetto_renderpass.h"
 
 #include "intel_tracepoints_perfetto.h"
 
 /* Just naming stages */
 static const struct {
    const char *name;
-
-   /* Tells us if a given stage is pipelined. This is used to build stacks of
-    * pipelined elements so that the perfetto UI doesn't get confused by elements
-    * ending out of order.
-    */
-   bool pipelined;
 
    /* The perfetto UI requires that there is a parent-child relationship
     * within a row of elements. Which means that all children elements must
@@ -62,47 +57,38 @@ static const struct {
    /* Order must match the enum! */
    {
       "queue",
-      false,
       INTEL_DS_QUEUE_STAGE_QUEUE,
    },
    {
       "cmd-buffer",
-      false,
       INTEL_DS_QUEUE_STAGE_CMD_BUFFER,
    },
    {
       "generate-draws",
-      false,
       INTEL_DS_QUEUE_STAGE_GENERATE_DRAWS,
    },
    {
       "stall",
-      false,
       INTEL_DS_QUEUE_STAGE_STALL,
    },
    {
       "compute",
-      true,
       INTEL_DS_QUEUE_STAGE_COMPUTE,
    },
    {
       "render-pass",
-      true,
       INTEL_DS_QUEUE_STAGE_RENDER_PASS,
    },
    {
       "blorp",
-      true,
       INTEL_DS_QUEUE_STAGE_BLORP,
    },
    {
       "draw",
-      true,
       INTEL_DS_QUEUE_STAGE_DRAW,
    },
    {
       "draw_mesh",
-      true,
       INTEL_DS_QUEUE_STAGE_DRAW_MESH,
    },
 };
@@ -115,38 +101,8 @@ struct IntelRenderpassTraits : public perfetto::DefaultDataSourceTraits {
    using IncrementalStateType = IntelRenderpassIncrementalState;
 };
 
-class IntelRenderpassDataSource : public perfetto::DataSource<IntelRenderpassDataSource,
-                                                            IntelRenderpassTraits> {
-public:
-   void OnSetup(const SetupArgs &) override
-   {
-      // Use this callback to apply any custom configuration to your data source
-      // based on the TraceConfig in SetupArgs.
-   }
-
-   void OnStart(const StartArgs &) override
-   {
-      // This notification can be used to initialize the GPU driver, enable
-      // counters, etc. StartArgs will contains the DataSourceDescriptor,
-      // which can be extended.
-      u_trace_perfetto_start();
-      PERFETTO_LOG("Tracing started");
-   }
-
-   void OnStop(const StopArgs &) override
-   {
-      PERFETTO_LOG("Tracing stopped");
-
-      // Undo any initialization done in OnStart.
-      u_trace_perfetto_stop();
-      // TODO we should perhaps block until queued traces are flushed?
-
-      Trace([](IntelRenderpassDataSource::TraceContext ctx) {
-         auto packet = ctx.NewTracePacket();
-         packet->Finalize();
-         ctx.Flush();
-      });
-   }
+class IntelRenderpassDataSource : public MesaRenderpassDataSource<IntelRenderpassDataSource,
+                                                                  IntelRenderpassTraits> {
 };
 
 PERFETTO_DECLARE_DATA_SOURCE_STATIC_MEMBERS(IntelRenderpassDataSource);
@@ -172,24 +128,8 @@ sync_timestamp(IntelRenderpassDataSource::TraceContext &ctx,
    device->sync_gpu_ts = gpu_ts;
    device->next_clock_sync_ns = cpu_ts + 1000000000ull;
 
-   auto packet = ctx.NewTracePacket();
-
-   packet->set_timestamp_clock_id(perfetto::protos::pbzero::BUILTIN_CLOCK_BOOTTIME);
-   packet->set_timestamp(cpu_ts);
-
-   auto event = packet->set_clock_snapshot();
-   {
-      auto clock = event->add_clocks();
-
-      clock->set_clock_id(perfetto::protos::pbzero::BUILTIN_CLOCK_BOOTTIME);
-      clock->set_timestamp(cpu_ts);
-   }
-   {
-      auto clock = event->add_clocks();
-
-      clock->set_clock_id(device->gpu_clock_id);
-      clock->set_timestamp(gpu_ts);
-   }
+   MesaRenderpassDataSource<IntelRenderpassDataSource, IntelRenderpassTraits>::EmitClockSync(ctx,
+      cpu_ts, gpu_ts, device->gpu_clock_id);
 }
 
 static void
@@ -199,14 +139,11 @@ send_descriptors(IntelRenderpassDataSource::TraceContext &ctx,
    PERFETTO_LOG("Sending renderstage descriptors");
 
    device->event_id = 0;
-   device->current_app_event_iid = device->start_app_event_iids;
    list_for_each_entry_safe(struct intel_ds_queue, queue, &device->queues, link) {
       for (uint32_t s = 0; s < ARRAY_SIZE(queue->stages); s++) {
          queue->stages[s].start_ns[0] = 0;
       }
    }
-
-   _mesa_hash_table_clear(device->app_events, NULL);
 
    {
       auto packet = ctx.NewTracePacket();
@@ -285,33 +222,6 @@ begin_event(struct intel_ds_queue *queue, uint64_t ts_ns,
    queue->stages[stage_id].level++;
 }
 
-static uint64_t
-add_app_event(IntelRenderpassDataSource::TraceContext &tctx,
-              struct intel_ds_device *device,
-              const char *app_event)
-{
-   struct hash_entry *entry =
-      _mesa_hash_table_search(device->app_events, app_event);
-   if (entry)
-      return (uint64_t) entry->data;
-
-   /* Allocate a new iid for the string */
-   uint64_t iid = device->current_app_event_iid++;
-   _mesa_hash_table_insert(device->app_events, app_event, (void*)(uintptr_t)iid);
-
-   /* Send the definition of iid/string to perfetto */
-   {
-      auto packet = tctx.NewTracePacket();
-      auto interned_data = packet->set_interned_data();
-
-      auto desc = interned_data->add_gpu_specifications();
-      desc->set_iid(iid);
-      desc->set_name(app_event);
-   }
-
-   return iid;
-}
-
 static void
 end_event(struct intel_ds_queue *queue, uint64_t ts_ns,
           enum intel_ds_queue_stage stage_id,
@@ -355,7 +265,8 @@ end_event(struct intel_ds_queue *queue, uint64_t ts_ns,
        * have use the internal stage_iid.
        */
       uint64_t stage_iid = app_event ?
-         add_app_event(tctx, queue->device, app_event) : stage->stage_iid;
+         tctx.GetDataSourceLocked()->debug_marker_stage(tctx, app_event) :
+         stage->stage_iid;
 
       auto packet = tctx.NewTracePacket();
 
@@ -636,18 +547,12 @@ intel_ds_device_init(struct intel_ds_device *device,
    device->iid = get_iid();
    device->api = api;
    list_inithead(&device->queues);
-
-   /* Reserve iids for the application generated events */
-   device->start_app_event_iids = 1ull << 32;
-   device->app_events =
-      _mesa_hash_table_create(NULL, _mesa_hash_string, _mesa_key_string_equal);
 }
 
 void
 intel_ds_device_fini(struct intel_ds_device *device)
 {
    u_trace_context_fini(&device->trace_context);
-   _mesa_hash_table_destroy(device->app_events, NULL);
 }
 
 struct intel_ds_queue *

@@ -25,7 +25,7 @@
 #include "nir/nir_builder.h"
 
 #include "bvh/bvh.h"
-#include "radv_meta.h"
+#include "meta/radv_meta.h"
 #include "radv_private.h"
 #include "radv_rt_common.h"
 #include "radv_shader.h"

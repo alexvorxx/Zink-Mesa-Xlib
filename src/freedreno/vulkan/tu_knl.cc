@@ -27,9 +27,10 @@ tu_bo_init_new_explicit_iova(struct tu_device *dev,
                              struct tu_bo **out_bo,
                              uint64_t size,
                              uint64_t client_iova,
+                             VkMemoryPropertyFlags mem_property,
                              enum tu_bo_alloc_flags flags, const char *name)
 {
-   return dev->instance->knl->bo_init(dev, out_bo, size, client_iova, flags, name);
+   return dev->instance->knl->bo_init(dev, out_bo, size, client_iova, mem_property, flags, name);
 }
 
 VkResult

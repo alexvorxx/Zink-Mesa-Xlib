@@ -199,7 +199,7 @@ heap_clean(struct fd_bo_heap *heap, bool idle)
    foreach_bo_safe (bo, &heap->freelist) {
       /* It might be nice if we could keep freelist sorted by fence # */
       if (idle && !sa_idle(bo))
-         continue;
+         break;
       sa_release(bo);
    }
    simple_mtx_unlock(&heap->lock);

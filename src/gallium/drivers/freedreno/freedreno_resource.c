@@ -452,15 +452,15 @@ fd_try_shadow_resource(struct fd_context *ctx, struct fd_resource *rsc,
    DBG("shadow: %p (%d, %p) -> %p (%d, %p)", rsc, rsc->b.b.reference.count,
        rsc->track, shadow, shadow->b.b.reference.count, shadow->track);
 
-   swap(rsc->bo, shadow->bo);
-   swap(rsc->valid, shadow->valid);
+   SWAP(rsc->bo, shadow->bo);
+   SWAP(rsc->valid, shadow->valid);
 
    /* swap() doesn't work because you can't typeof() the bitfield. */
    bool temp = shadow->needs_ubwc_clear;
    shadow->needs_ubwc_clear = rsc->needs_ubwc_clear;
    rsc->needs_ubwc_clear = temp;
 
-   swap(rsc->layout, shadow->layout);
+   SWAP(rsc->layout, shadow->layout);
    rsc->seqno = seqno_next_u16(&ctx->screen->rsc_seqno);
 
    /* at this point, the newly created shadow buffer is not referenced
@@ -473,7 +473,7 @@ fd_try_shadow_resource(struct fd_context *ctx, struct fd_resource *rsc,
       _mesa_set_remove(batch->resources, entry);
       _mesa_set_add_pre_hashed(batch->resources, shadow->hash, shadow);
    }
-   swap(rsc->track, shadow->track);
+   SWAP(rsc->track, shadow->track);
 
    fd_screen_unlock(ctx->screen);
 

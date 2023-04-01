@@ -106,10 +106,11 @@ spec@khr_texture_compression_astc@basic-gl,Fail
 glx@glx-make-current,Crash
 glx@glx-multithread-buffer,Fail
 glx@glx-swap-pixmap-bad,Fail
-glx@glx-visuals-depth -pixmap,Fail
-glx@glx-visuals-stencil -pixmap,Fail
 glx@glx_arb_create_context_es2_profile@invalid opengl es version,Fail
 glx@glx_arb_create_context_no_error@no error,Fail
+
+# piglit: error: Test timed out.
+glx@glx_arb_sync_control@waitformsc,Fail
 
 glx@glx_ext_import_context@free context,Fail
 glx@glx_ext_import_context@get context id,Fail

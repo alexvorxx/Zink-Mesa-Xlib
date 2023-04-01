@@ -710,6 +710,14 @@ crocus_shader_perf_log(void *data, unsigned *id, const char *fmt, ...)
    va_end(args);
 }
 
+static int
+crocus_screen_get_fd(struct pipe_screen *pscreen)
+{
+   struct crocus_screen *screen = (struct crocus_screen *)pscreen;
+
+   return screen->winsys_fd;
+}
+
 struct pipe_screen *
 crocus_screen_create(int fd, const struct pipe_screen_config *config)
 {
@@ -797,6 +805,7 @@ crocus_screen_create(int fd, const struct pipe_screen_config *config)
    pscreen->get_name = crocus_get_name;
    pscreen->get_vendor = crocus_get_vendor;
    pscreen->get_device_vendor = crocus_get_device_vendor;
+   pscreen->get_screen_fd = crocus_screen_get_fd;
    pscreen->get_param = crocus_get_param;
    pscreen->get_shader_param = crocus_get_shader_param;
    pscreen->get_compute_param = crocus_get_compute_param;

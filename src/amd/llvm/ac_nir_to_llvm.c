@@ -1127,11 +1127,29 @@ static bool visit_alu(struct ac_nir_context *ctx, const nir_alu_instr *instr)
                                 ctx->ac.i32, "");
       break;
    case nir_op_pack_snorm_2x16:
-      result = emit_pack_2x16(&ctx->ac, src[0], ac_build_cvt_pknorm_i16);
+   case nir_op_pack_unorm_2x16: {
+      unsigned bit_size = instr->src[0].src.ssa->bit_size;
+      /* Only support 16 and 32bit. */
+      assert(bit_size == 16 || bit_size == 32);
+
+      LLVMValueRef data = src[0];
+      /* Work around for pre-GFX9 GPU which don't have fp16 pknorm instruction. */
+      if (bit_size == 16 && ctx->ac.gfx_level < GFX9) {
+         data = LLVMBuildFPExt(ctx->ac.builder, data, ctx->ac.v2f32, "");
+         bit_size = 32;
+      }
+
+      LLVMValueRef (*pack)(struct ac_llvm_context *ctx, LLVMValueRef args[2]);
+      if (bit_size == 32) {
+         pack = instr->op == nir_op_pack_snorm_2x16 ?
+            ac_build_cvt_pknorm_i16 : ac_build_cvt_pknorm_u16;
+      } else {
+         pack = instr->op == nir_op_pack_snorm_2x16 ?
+            ac_build_cvt_pknorm_i16_f16 : ac_build_cvt_pknorm_u16_f16;
+      }
+      result = emit_pack_2x16(&ctx->ac, data, pack);
       break;
-   case nir_op_pack_unorm_2x16:
-      result = emit_pack_2x16(&ctx->ac, src[0], ac_build_cvt_pknorm_u16);
-      break;
+   }
    case nir_op_pack_uint_2x16: {
       LLVMValueRef comp[2];
 

@@ -89,15 +89,11 @@ dEQP-EGL.functional.query_context.get_current_context.rgba8888_window,Crash
 wayland-dEQP-EGL.functional.resize.surface_size.grow,Fail
 wayland-dEQP-EGL.functional.resize.surface_size.shrink,Fail
 wayland-dEQP-EGL.functional.resize.surface_size.stretch_width,Fail
-
-565-nozs-dEQP-GLES3.functional.color_clear.complex_rgb,Fail
+wayland-dEQP-EGL.functional.resize.surface_size.stretch_height,Fail
 
 spec@egl_chromium_sync_control@conformance@eglGetSyncValuesCHROMIUM_ust_test,Fail
 spec@egl_chromium_sync_control@conformance@eglGetSyncValuesCHROMIUM_msc_and_sbc_test,Fail
 spec@egl_chromium_sync_control@conformance,Fail
-
-# "GLX_MESA_copy_sub_buffer found in both client and server extension strings, but missing from unified string."
-glx@extension string sanity,Fail
 
 glx@glx_arb_create_context_es2_profile@invalid opengl es version,Fail
 glx@glx_arb_create_context_no_error@no error,Fail
@@ -135,9 +131,6 @@ shaders@point-vertex-id gl_vertexid divisor,Fail
 shaders@point-vertex-id gl_vertexid gl_instanceid divisor,Fail
 shaders@point-vertex-id gl_vertexid gl_instanceid,Fail
 shaders@point-vertex-id gl_vertexid,Fail
-
-spec@!opengl 1.0@gl-1.0-edgeflag-quads,Fail
-spec@!opengl 1.0@gl-1.0-edgeflag,Fail
 
 spec@!opengl 1.0@gl-1.0-no-op-paths,Fail
 
@@ -182,9 +175,6 @@ spec@!opengl 1.1@linestipple,Fail
 # (and more)
 spec@!opengl 1.1@polygon-mode,Fail
 
-spec@!opengl 2.0@gl-2.0-edgeflag-immediate,Fail
-spec@!opengl 2.0@gl-2.0-edgeflag,Fail
-
 spec@!opengl 2.0@vs-point_size-zero,Fail
 
 spec@!opengl 2.1@pbo,Fail
@@ -212,9 +202,6 @@ spec@arb_gpu_shader_fp64@execution@arb_gpu_shader_fp64-tf-separate,Fail
 spec@arb_gpu_shader_fp64@execution@glsl-fs-loop-unroll-mul-fp64,Fail
 spec@arb_gpu_shader_fp64@uniform_buffers@fs-ubo-load.indirect.3,Fail
 
-spec@arb_point_sprite@arb_point_sprite-checkerboard,Fail
-spec@arb_point_sprite@arb_point_sprite-mipmap,Fail
-
 spec@arb_program_interface_query@arb_program_interface_query-getprogramresourceindex,Fail
 spec@arb_program_interface_query@arb_program_interface_query-getprogramresourceindex@'vs_input2[1][0]' on GL_PROGRAM_INPUT,Fail
 
@@ -222,8 +209,8 @@ spec@arb_program_interface_query@arb_program_interface_query-getprogramresourcei
 spec@arb_query_buffer_object@qbo,Fail
 spec@arb_query_buffer_object@qbo@query-GL_CLIPPING_INPUT_PRIMITIVES-ASYNC_CPU_READ_BEFORE-GL_UNSIGNED_INT64_ARB,Fail
 spec@arb_query_buffer_object@qbo@query-GL_PRIMITIVES_SUBMITTED-ASYNC_CPU_READ_BEFORE-GL_UNSIGNED_INT64_ARB,Fail
-spec@arb_query_buffer_object@qbo@query-GL_VERTEX_SHADER_INVOCATIONS-ASYNC_CPU_READ_BEFORE-GL_UNSIGNED_INT64_ARB,Fail
 spec@arb_query_buffer_object@qbo@query-GL_GEOMETRY_SHADER_INVOCATIONS-ASYNC_CPU_READ_BEFORE-GL_UNSIGNED_INT64_ARB,Fail
+spec@arb_query_buffer_object@qbo@query-GL_SAMPLES_PASSED-ASYNC_CPU_READ_BEFORE-GL_UNSIGNED_INT64_ARB,Fail
 
 spec@arb_sample_locations@test,Fail
 spec@arb_sample_locations@test@MSAA: 1- X: 0- Y: 0- Grid: false,Fail
@@ -701,6 +688,8 @@ spec@ext_framebuffer_multisample@interpolation 8 non-centroid-disabled,Fail
 spec@ext_packed_float@query-rgba-signed-components,Fail
 
 spec@ext_transform_feedback@tessellation triangle_fan flat_first,Fail
+spec@ext_transform_feedback@tessellation quad_strip wireframe,Fail
+spec@ext_transform_feedback@tessellation quads wireframe,Fail
 
 spec@glsl-1.50@execution@primitive-id-no-gs-quad-strip,Fail
 spec@glsl-1.50@execution@primitive-id-no-gs-quads,Fail

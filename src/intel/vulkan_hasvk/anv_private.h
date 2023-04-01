@@ -858,14 +858,6 @@ struct anv_physical_device {
     struct anv_instance *                       instance;
     char                                        path[20];
     struct intel_device_info                      info;
-    /** Amount of "GPU memory" we want to advertise
-     *
-     * Clearly, this value is bogus since Intel is a UMA architecture.  On
-     * gfx7 platforms, we are limited by GTT size unless we want to implement
-     * fine-grained tracking and GTT splitting.  On Broadwell and above we are
-     * practically unlimited.  However, we will never report more than 3/4 of
-     * the total system ram to try and avoid running out of RAM.
-     */
     bool                                        supports_48bit_addresses;
     struct brw_compiler *                       compiler;
     struct isl_device                           isl_dev;
@@ -3138,6 +3130,8 @@ anv_get_isl_format(const struct intel_device_info *devinfo, VkFormat vk_format,
 
 extern VkFormat
 vk_format_from_android(unsigned android_format, unsigned android_usage);
+
+unsigned anv_ahb_format_for_vk_format(VkFormat vk_format);
 
 static inline struct isl_swizzle
 anv_swizzle_for_render(struct isl_swizzle swizzle)

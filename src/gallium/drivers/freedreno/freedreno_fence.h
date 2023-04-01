@@ -79,6 +79,7 @@ struct pipe_fence_handle {
    struct fd_fence *fence;
 
    bool use_fence_fd;
+   bool flushed;
    uint32_t syncobj;
 };
 

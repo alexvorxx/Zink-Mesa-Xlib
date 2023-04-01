@@ -189,7 +189,7 @@ def main():
             continue
         if symbol[:2] == '_Z':
             # As ajax found out, the compiler intentionally exports symbols
-            # that we explicitely asked it not to export, and we can't do
+            # that we explicitly asked it not to export, and we can't do
             # anything about it:
             # https://gcc.gnu.org/bugzilla/show_bug.cgi?id=36022#c4
             continue

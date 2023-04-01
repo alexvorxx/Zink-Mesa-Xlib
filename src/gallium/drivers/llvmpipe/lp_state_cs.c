@@ -548,6 +548,19 @@ llvmpipe_bind_compute_state(struct pipe_context *pipe,
    llvmpipe->cs_dirty |= LP_CSNEW_CS;
 }
 
+static void
+llvmpipe_get_compute_state_info(struct pipe_context *pipe, void *cs,
+                                struct pipe_compute_state_object_info *info)
+{
+   struct lp_compute_shader* shader = cs;
+   struct nir_shader* nir = shader->base.ir.nir;
+
+   info->max_threads = 1024;
+   info->preferred_simd_size = 32;
+   // TODO: this is a bad estimate, but not much we can do without actually compiling the shaders
+   info->private_memory = nir->scratch_size;
+}
+
 
 /**
  * Remove shader variant from two lists: the shader's variant list
@@ -1528,6 +1541,7 @@ llvmpipe_init_compute_funcs(struct llvmpipe_context *llvmpipe)
 {
    llvmpipe->pipe.create_compute_state = llvmpipe_create_compute_state;
    llvmpipe->pipe.bind_compute_state = llvmpipe_bind_compute_state;
+   llvmpipe->pipe.get_compute_state_info = llvmpipe_get_compute_state_info;
    llvmpipe->pipe.delete_compute_state = llvmpipe_delete_compute_state;
    llvmpipe->pipe.set_compute_resources = llvmpipe_set_compute_resources;
    llvmpipe->pipe.set_global_binding = llvmpipe_set_global_binding;

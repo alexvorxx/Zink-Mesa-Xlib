@@ -1202,6 +1202,9 @@ v3dv_CmdClearAttachments(VkCommandBuffer commandBuffer,
     * framebuffers, we use a geometry shader to redirect clears to the
     * appropriate layers.
     */
+
+   v3dv_cmd_buffer_pause_occlusion_query(cmd_buffer);
+
    bool is_layered, all_rects_same_layers;
    gather_layering_info(rectCount, pRects, &is_layered, &all_rects_same_layers);
    for (uint32_t i = 0; i < attachmentCount; i++) {
@@ -1219,4 +1222,6 @@ v3dv_CmdClearAttachments(VkCommandBuffer commandBuffer,
                                      rectCount, pRects);
       }
    }
+
+   v3dv_cmd_buffer_resume_occlusion_query(cmd_buffer);
 }

@@ -256,6 +256,8 @@ enum
    DBG_NO_FMASK,
    DBG_NO_DMA,
 
+   DBG_EXTRA_METADATA,
+
    DBG_TMZ,
    DBG_SQTT,
 

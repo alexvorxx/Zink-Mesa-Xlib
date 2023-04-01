@@ -65,9 +65,11 @@ anv_init_wsi(struct anv_physical_device *physical_device)
       return result;
 
    physical_device->wsi_device.supports_modifiers = true;
-   physical_device->wsi_device.signal_semaphore_with_memory = true;
-   physical_device->wsi_device.signal_fence_with_memory = true;
    physical_device->wsi_device.get_blit_queue = anv_wsi_get_prime_blit_queue;
+   if (physical_device->info.kmd_type == INTEL_KMD_TYPE_I915) {
+      physical_device->wsi_device.signal_semaphore_with_memory = true;
+      physical_device->wsi_device.signal_fence_with_memory = true;
+   }
 
    physical_device->vk.wsi_device = &physical_device->wsi_device;
 

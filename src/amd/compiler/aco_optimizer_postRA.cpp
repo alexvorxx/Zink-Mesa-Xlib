@@ -524,21 +524,20 @@ try_combine_dpp(pr_opt_ctx& ctx, aco_ptr<Instruction>& instr)
 
       convert_to_DPP(instr, dpp8);
 
+      if (i) {
+         std::swap(instr->operands[0], instr->operands[1]);
+         instr->valu().neg[0].swap(instr->valu().neg[1]);
+         instr->valu().abs[0].swap(instr->valu().abs[1]);
+         instr->valu().opsel[0].swap(instr->valu().opsel[1]);
+      }
+
+      instr->operands[0] = mov->operands[0];
+
       if (dpp8) {
          DPP8_instruction* dpp = &instr->dpp8();
-         if (i) {
-            std::swap(dpp->operands[0], dpp->operands[1]);
-         }
-         dpp->operands[0] = mov->operands[0];
          memcpy(dpp->lane_sel, mov->dpp8().lane_sel, sizeof(dpp->lane_sel));
       } else {
          DPP16_instruction* dpp = &instr->dpp16();
-         if (i) {
-            std::swap(dpp->operands[0], dpp->operands[1]);
-            dpp->neg[0].swap(dpp->neg[1]);
-            dpp->abs[0].swap(dpp->abs[1]);
-         }
-         dpp->operands[0] = mov->operands[0];
          dpp->dpp_ctrl = mov->dpp16().dpp_ctrl;
          dpp->bound_ctrl = true;
          dpp->neg[0] ^= mov->dpp16().neg[0] && !dpp->abs[0];

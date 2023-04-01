@@ -3864,10 +3864,6 @@ link_shaders(struct gl_context *ctx, struct gl_shader_program *prog)
          lower_clip_cull_distance(prog, prog->_LinkedShaders[i]);
       }
 
-      if (consts->LowerTessLevel) {
-         lower_tess_level(prog->_LinkedShaders[i]);
-      }
-
       /* Section 13.46 (Vertex Attribute Aliasing) of the OpenGL ES 3.2
        * specification says:
        *

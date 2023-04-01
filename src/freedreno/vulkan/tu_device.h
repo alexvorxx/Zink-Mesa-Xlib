@@ -91,6 +91,15 @@ struct tu_physical_device
    uint64_t va_start;
    uint64_t va_size;
 
+   bool has_cached_coherent_memory;
+   bool has_cached_non_coherent_memory;
+   uintptr_t level1_dcache_size;
+
+   struct {
+      uint32_t type_count;
+      VkMemoryPropertyFlags types[VK_MAX_MEMORY_TYPES];
+   } memory;
+
    struct fd_dev_id dev_id;
    const struct fd_dev_info *info;
 

@@ -1046,6 +1046,15 @@ svga_destroy_screen( struct pipe_screen *screen )
 }
 
 
+static int
+svga_screen_get_fd( struct pipe_screen *screen )
+{
+   struct svga_winsys_screen *sws = svga_screen(screen)->sws;
+
+   return sws->get_fd(sws);
+}
+
+
 /**
  * Create a new svga_screen object
  */
@@ -1084,6 +1093,7 @@ svga_screen_create(struct svga_winsys_screen *sws)
    screen->get_name = svga_get_name;
    screen->get_vendor = svga_get_vendor;
    screen->get_device_vendor = svga_get_vendor; // TODO actual device vendor
+   screen->get_screen_fd = svga_screen_get_fd;
    screen->get_param = svga_get_param;
    screen->get_shader_param = svga_get_shader_param;
    screen->get_compiler_options = svga_get_compiler_options;

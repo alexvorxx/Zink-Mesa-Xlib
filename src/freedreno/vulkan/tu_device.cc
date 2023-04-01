@@ -326,6 +326,29 @@ tu_physical_device_init(struct tu_physical_device *device,
       goto fail_free_name;
    }
 
+   device->memory.type_count = 1;
+   device->memory.types[0] =
+      VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT |
+      VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+      VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
+
+   if (device->has_cached_coherent_memory) {
+      device->memory.types[device->memory.type_count] =
+         VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT |
+         VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+         VK_MEMORY_PROPERTY_HOST_COHERENT_BIT |
+         VK_MEMORY_PROPERTY_HOST_CACHED_BIT;
+      device->memory.type_count++;
+   }
+
+   if (device->has_cached_non_coherent_memory) {
+      device->memory.types[device->memory.type_count] =
+         VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT |
+         VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+         VK_MEMORY_PROPERTY_HOST_CACHED_BIT;
+      device->memory.type_count++;
+   }
+
    if (device->has_set_iova) {
       mtx_init(&device->vma_mutex, mtx_plain);
       util_vma_heap_init(&device->vma, device->va_start,
@@ -1645,12 +1668,13 @@ tu_GetPhysicalDeviceMemoryProperties2(VkPhysicalDevice pdev,
    props->memoryHeaps[0].size = physical_device->heap.size;
    props->memoryHeaps[0].flags = physical_device->heap.flags;
 
-   props->memoryTypeCount = 1;
-   props->memoryTypes[0].propertyFlags =
-      VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT |
-      VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
-      VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
-   props->memoryTypes[0].heapIndex = 0;
+   props->memoryTypeCount = physical_device->memory.type_count;
+   for (uint32_t i = 0; i < physical_device->memory.type_count; i++) {
+      props->memoryTypes[i] = (VkMemoryType) {
+         .propertyFlags = physical_device->memory.types[i],
+         .heapIndex     = 0,
+      };
+   }
 
    vk_foreach_struct(ext, props2->pNext)
    {
@@ -2673,9 +2697,11 @@ tu_AllocateMemory(VkDevice _device,
       if (device->bo_sizes)
          snprintf(name, ARRAY_SIZE(name), "vkAllocateMemory(%ldkb)",
                   (long)DIV_ROUND_UP(pAllocateInfo->allocationSize, 1024));
+      VkMemoryPropertyFlags mem_property =
+         device->physical_device->memory.types[pAllocateInfo->memoryTypeIndex];
       result = tu_bo_init_new_explicit_iova(
          device, &mem->bo, pAllocateInfo->allocationSize, client_address,
-         alloc_flags, name);
+         mem_property, alloc_flags, name);
    }
 
    if (result == VK_SUCCESS) {
@@ -2761,30 +2787,14 @@ tu_UnmapMemory(VkDevice _device, VkDeviceMemory _memory)
    /* TODO: unmap here instead of waiting for FreeMemory */
 }
 
-VKAPI_ATTR VkResult VKAPI_CALL
-tu_FlushMappedMemoryRanges(VkDevice _device,
-                           uint32_t memoryRangeCount,
-                           const VkMappedMemoryRange *pMemoryRanges)
-{
-   return VK_SUCCESS;
-}
-
-VKAPI_ATTR VkResult VKAPI_CALL
-tu_InvalidateMappedMemoryRanges(VkDevice _device,
-                                uint32_t memoryRangeCount,
-                                const VkMappedMemoryRange *pMemoryRanges)
-{
-   return VK_SUCCESS;
-}
-
 static void
-tu_get_buffer_memory_requirements(uint64_t size,
+tu_get_buffer_memory_requirements(struct tu_device *dev, uint64_t size,
                                   VkMemoryRequirements2 *pMemoryRequirements)
 {
    pMemoryRequirements->memoryRequirements = (VkMemoryRequirements) {
       .size = MAX2(align64(size, 64), size),
       .alignment = 64,
-      .memoryTypeBits = 1,
+      .memoryTypeBits = (1 << dev->physical_device->memory.type_count) - 1,
    };
 
    vk_foreach_struct(ext, pMemoryRequirements->pNext) {
@@ -2804,22 +2814,24 @@ tu_get_buffer_memory_requirements(uint64_t size,
 
 VKAPI_ATTR void VKAPI_CALL
 tu_GetBufferMemoryRequirements2(
-   VkDevice device,
+   VkDevice _device,
    const VkBufferMemoryRequirementsInfo2 *pInfo,
    VkMemoryRequirements2 *pMemoryRequirements)
 {
+   TU_FROM_HANDLE(tu_device, device, _device);
    TU_FROM_HANDLE(tu_buffer, buffer, pInfo->buffer);
 
-   tu_get_buffer_memory_requirements(buffer->vk.size, pMemoryRequirements);
+   tu_get_buffer_memory_requirements(device, buffer->vk.size, pMemoryRequirements);
 }
 
 VKAPI_ATTR void VKAPI_CALL
 tu_GetDeviceBufferMemoryRequirements(
-   VkDevice device,
+   VkDevice _device,
    const VkDeviceBufferMemoryRequirements *pInfo,
    VkMemoryRequirements2 *pMemoryRequirements)
 {
-   tu_get_buffer_memory_requirements(pInfo->pCreateInfo->size, pMemoryRequirements);
+   TU_FROM_HANDLE(tu_device, device, _device);
+   tu_get_buffer_memory_requirements(device, pInfo->pCreateInfo->size, pMemoryRequirements);
 }
 
 VKAPI_ATTR void VKAPI_CALL
@@ -3296,8 +3308,10 @@ tu_GetMemoryFdPropertiesKHR(VkDevice _device,
                             int fd,
                             VkMemoryFdPropertiesKHR *pMemoryFdProperties)
 {
+   TU_FROM_HANDLE(tu_device, device, _device);
    assert(handleType == VK_EXTERNAL_MEMORY_HANDLE_TYPE_DMA_BUF_BIT_EXT);
-   pMemoryFdProperties->memoryTypeBits = 1;
+   pMemoryFdProperties->memoryTypeBits =
+      (1 << device->physical_device->memory.type_count) - 1;
    return VK_SUCCESS;
 }
 

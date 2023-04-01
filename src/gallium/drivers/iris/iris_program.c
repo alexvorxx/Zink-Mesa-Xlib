@@ -2562,6 +2562,24 @@ iris_create_compute_state(struct pipe_context *ctx,
 }
 
 static void
+iris_get_compute_state_info(struct pipe_context *ctx, void *state,
+                            struct pipe_compute_state_object_info *info)
+{
+   struct iris_screen *screen = (void *) ctx->screen;
+   struct iris_uncompiled_shader *ish = state;
+
+   info->max_threads = MIN2(1024, 32 * screen->devinfo->max_cs_workgroup_threads);
+   info->private_memory = 0;
+   info->preferred_simd_size = 32;
+
+   list_for_each_entry_safe(struct iris_compiled_shader, shader,
+                            &ish->variants, link) {
+      info->private_memory = MAX2(info->private_memory,
+                                  shader->prog_data->total_scratch);
+   }
+}
+
+static void
 iris_compile_shader(void *_job, UNUSED void *_gdata, UNUSED int thread_index)
 {
    const struct iris_threaded_compile_job *job =
@@ -3019,4 +3037,6 @@ iris_init_program_functions(struct pipe_context *ctx)
    ctx->bind_gs_state  = iris_bind_gs_state;
    ctx->bind_fs_state  = iris_bind_fs_state;
    ctx->bind_compute_state = iris_bind_cs_state;
+
+   ctx->get_compute_state_info = iris_get_compute_state_info;
 }

@@ -143,10 +143,14 @@ v3dX(pack_texture_shader_state_from_buffer_view)(struct v3dv_device *device,
    const struct v3dv_buffer *buffer = buffer_view->buffer;
 
    v3dvx_pack(buffer_view->texture_shader_state, TEXTURE_SHADER_STATE, tex) {
-      tex.swizzle_r = v3d_translate_pipe_swizzle(PIPE_SWIZZLE_X);
-      tex.swizzle_g = v3d_translate_pipe_swizzle(PIPE_SWIZZLE_Y);
-      tex.swizzle_b = v3d_translate_pipe_swizzle(PIPE_SWIZZLE_Z);
-      tex.swizzle_a = v3d_translate_pipe_swizzle(PIPE_SWIZZLE_W);
+      tex.swizzle_r =
+         v3d_translate_pipe_swizzle(buffer_view->format->planes[0].swizzle[0]);
+      tex.swizzle_g =
+         v3d_translate_pipe_swizzle(buffer_view->format->planes[0].swizzle[1]);
+      tex.swizzle_b =
+         v3d_translate_pipe_swizzle(buffer_view->format->planes[0].swizzle[2]);
+      tex.swizzle_a =
+         v3d_translate_pipe_swizzle(buffer_view->format->planes[0].swizzle[3]);
 
       tex.image_depth = 1;
 

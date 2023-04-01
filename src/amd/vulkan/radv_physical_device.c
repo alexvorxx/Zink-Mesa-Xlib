@@ -608,8 +608,6 @@ radv_physical_device_get_supported_extensions(const struct radv_physical_device 
       .INTEL_shader_integer_functions2 = true,
       .NV_compute_shader_derivatives = true,
       .NV_device_generated_commands = radv_NV_device_generated_commands_enabled(device),
-      .NV_mesh_shader =
-         radv_taskmesh_enabled(device) && device->instance->perftest_flags & RADV_PERFTEST_NV_MS,
       /* Undocumented extension purely for vkd3d-proton. This check is to prevent anyone else from
        * using it.
        */
@@ -1146,12 +1144,6 @@ radv_GetPhysicalDeviceFeatures2(VkPhysicalDevice physicalDevice,
          VkPhysicalDeviceDynamicRenderingFeatures *features =
             (VkPhysicalDeviceDynamicRenderingFeatures *)ext;
          features->dynamicRendering = true;
-         break;
-      }
-      case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MESH_SHADER_FEATURES_NV: {
-         VkPhysicalDeviceMeshShaderFeaturesNV *features =
-            (VkPhysicalDeviceMeshShaderFeaturesNV *)ext;
-         features->taskShader = features->meshShader = radv_taskmesh_enabled(pdevice);
          break;
       }
       case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MESH_SHADER_FEATURES_EXT: {
@@ -1998,37 +1990,6 @@ radv_GetPhysicalDeviceProperties2(VkPhysicalDevice physicalDevice,
          VkPhysicalDeviceMaintenance4Properties *properties =
             (VkPhysicalDeviceMaintenance4Properties *)ext;
          properties->maxBufferSize = RADV_MAX_MEMORY_ALLOCATION_SIZE;
-         break;
-      }
-      case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MESH_SHADER_PROPERTIES_NV: {
-         VkPhysicalDeviceMeshShaderPropertiesNV *properties =
-            (VkPhysicalDeviceMeshShaderPropertiesNV *)ext;
-
-         /* Task shader limitations:
-          * Same as compute, because TS are compiled to CS.
-          */
-         properties->maxDrawMeshTasksCount = 65535;
-         properties->maxTaskTotalMemorySize = 65536;
-         properties->maxTaskWorkGroupInvocations = 1024;
-         properties->maxTaskWorkGroupSize[0] = 1024;
-         properties->maxTaskWorkGroupSize[1] = 1024;
-         properties->maxTaskWorkGroupSize[2] = 1024;
-         properties->maxTaskOutputCount = 65535;
-
-         /* Mesh shader limitations:
-          * Same as NGG, because MS are compiled to NGG.
-          */
-         properties->maxMeshMultiviewViewCount = MAX_VIEWS;
-         properties->maxMeshOutputPrimitives = 256;
-         properties->maxMeshOutputVertices = 256;
-         properties->maxMeshTotalMemorySize = 31 * 1024; /* Reserve 1K for prim indices, etc. */
-         properties->maxMeshWorkGroupInvocations = 256;
-         properties->maxMeshWorkGroupSize[0] = 256;
-         properties->maxMeshWorkGroupSize[1] = 256;
-         properties->maxMeshWorkGroupSize[2] = 256;
-         properties->meshOutputPerPrimitiveGranularity = 1;
-         properties->meshOutputPerVertexGranularity = 1;
-
          break;
       }
       case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_MODULE_IDENTIFIER_PROPERTIES_EXT: {

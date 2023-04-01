@@ -145,7 +145,7 @@ driver is working:
 
    OpenGL vendor string: VMware, Inc.
    OpenGL renderer string: SVGA3D; build: RELEASE;
-   OpenGL version string: 4.3 (Compatibilty Profile) Mesa 23.0
+   OpenGL version string: 4.3 (Compatibility Profile) Mesa 23.0
 
 If OpenGL 4.3 is not working (you only get OpenGL 4.1):
 

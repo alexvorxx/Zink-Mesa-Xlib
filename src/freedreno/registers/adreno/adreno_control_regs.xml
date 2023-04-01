@@ -147,6 +147,13 @@ xsi:schemaLocation="http://nouveau.freedesktop.org/ rules-ng.xsd">
 	<reg32 name="PACKET_TABLE_WRITE_ADDR" offset="0x060"/>
 	<reg32 name="PACKET_TABLE_WRITE" offset="0x061"/>
 
+	<doc>
+		The zap shader uses the base address of itself, adding the offset of the embedded
+		shader instructions, to program SP_CS_OBJ_START with the address of the shader
+		part of the zap "shader"
+	</doc>
+	<reg64 name="ZAP_SHADER_ADDR" offset="0x062"/>
+
 	<doc> Resettable counter used to implement PERF_CP_LONG_PREEMPTIONS </doc>
 	<reg32 name="PREEMPTION_TIMER" offset="0x06e"/>
 	<doc> Seemingly used to start/stop PREEMPTION_TIMER </doc>

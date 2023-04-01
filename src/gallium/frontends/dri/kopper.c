@@ -853,6 +853,10 @@ kopperSwapBuffers(__DRIdrawable *dPriv, uint32_t flush_flags)
    if (!ptex)
       return 0;
 
+   /* ensure invalidation is applied before renderpass ends */
+   if (flush_flags & __DRI2_FLUSH_INVALIDATE_ANCILLARY)
+      _mesa_glthread_invalidate_zsbuf(ctx->st->ctx);
+
    /* Wait for glthread to finish because we can't use pipe_context from
     * multiple threads.
     */

@@ -1205,6 +1205,13 @@ static void r600_resource_destroy(struct pipe_screen *screen,
 	}
 }
 
+static int r600_get_screen_fd(struct pipe_screen *screen)
+{
+	struct radeon_winsys *ws = ((struct r600_common_screen*)screen)->ws;
+
+	return ws->get_fd(ws);
+}
+
 bool r600_common_screen_init(struct r600_common_screen *rscreen,
 			     struct radeon_winsys *ws)
 {
@@ -1236,6 +1243,7 @@ bool r600_common_screen_init(struct r600_common_screen *rscreen,
 	rscreen->b.get_device_vendor = r600_get_device_vendor;
 	rscreen->b.get_disk_shader_cache = r600_get_disk_shader_cache;
 	rscreen->b.get_compute_param = r600_get_compute_param;
+	rscreen->b.get_screen_fd = r600_get_screen_fd;
 	rscreen->b.get_paramf = r600_get_paramf;
 	rscreen->b.get_timestamp = r600_get_timestamp;
 	rscreen->b.get_compiler_options = r600_get_compiler_options;

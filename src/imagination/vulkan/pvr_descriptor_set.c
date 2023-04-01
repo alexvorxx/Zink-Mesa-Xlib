@@ -1191,7 +1191,6 @@ pvr_descriptor_set_create(struct pvr_device *device,
    struct pvr_descriptor_set *set;
    VkResult result;
    size_t size;
-   void *map;
 
    size = sizeof(*set) + sizeof(set->descriptors[0]) * layout->descriptor_count;
 
@@ -1231,7 +1230,6 @@ pvr_descriptor_set_create(struct pvr_device *device,
    set->layout = layout;
    set->pool = pool;
 
-   map = set->pvr_bo->bo->map;
    for (uint32_t i = 0; i < layout->binding_count; i++) {
       const struct pvr_descriptor_set_layout_binding *binding =
          &layout->bindings[i];
@@ -1254,6 +1252,7 @@ pvr_descriptor_set_create(struct pvr_device *device,
                                                  binding,
                                                  stage,
                                                  j);
+            void *map = set->pvr_bo->bo->map;
 
             if (binding->type == VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER)
                offset_in_dwords += 4;

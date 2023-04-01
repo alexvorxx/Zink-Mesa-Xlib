@@ -938,7 +938,6 @@ vtest_init_renderer_info(struct vtest *vtest)
    info->pci.device_id = VTEST_PCI_DEVICE_ID;
 
    info->has_dma_buf_import = false;
-   info->has_cache_management = false;
    info->has_external_sync = false;
    info->has_implicit_fencing = false;
 

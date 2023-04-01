@@ -210,7 +210,6 @@ files_libglsl = files(
   'lower_packing_builtins.cpp',
   'lower_precision.cpp',
   'lower_subroutine.cpp',
-  'lower_tess_level.cpp',
   'lower_vec_index_to_cond_assign.cpp',
   'lower_vector_derefs.cpp',
   'opt_algebraic.cpp',

@@ -1398,3 +1398,21 @@ anv_queue_submit_simple_batch(struct anv_queue *queue,
 
    return result;
 }
+
+void
+anv_cmd_buffer_clflush(struct anv_cmd_buffer **cmd_buffers,
+                       uint32_t num_cmd_buffers)
+{
+#ifdef SUPPORT_INTEL_INTEGRATED_GPUS
+   struct anv_batch_bo **bbo;
+
+   __builtin_ia32_mfence();
+
+   for (uint32_t i = 0; i < num_cmd_buffers; i++) {
+      u_vector_foreach(bbo, &cmd_buffers[i]->seen_bbos) {
+         for (uint32_t l = 0; l < (*bbo)->length; l += CACHELINE_SIZE)
+            __builtin_ia32_clflush((*bbo)->bo->map + l);
+      }
+   }
+#endif
+}

@@ -2905,13 +2905,16 @@ panfrost_update_shader_state(struct panfrost_batch *batch,
    }
 
 #if PAN_ARCH >= 9
-   if (dirty & PAN_DIRTY_STAGE_IMAGE)
-      batch->images[st] = panfrost_emit_images(batch, st);
+   if (dirty & PAN_DIRTY_STAGE_IMAGE) {
+      batch->images[st] =
+         ctx->image_mask[st] ? panfrost_emit_images(batch, st) : 0;
+   }
 #endif
 
    if ((dirty & ss->dirty_shader) || (dirty_3d & ss->dirty_3d)) {
       batch->uniform_buffers[st] = panfrost_emit_const_buf(
-         batch, st, NULL, &batch->push_uniforms[st], NULL);
+         batch, st, &batch->nr_uniform_buffers[st], &batch->push_uniforms[st],
+         &batch->nr_push_uniforms[st]);
    }
 
 #if PAN_ARCH <= 7
@@ -3085,8 +3088,7 @@ panfrost_upload_wa_sampler(struct panfrost_batch *batch)
 
 static mali_ptr
 panfrost_emit_resources(struct panfrost_batch *batch,
-                        enum pipe_shader_type stage, mali_ptr ubos,
-                        unsigned ubo_count)
+                        enum pipe_shader_type stage)
 {
    struct panfrost_context *ctx = batch->ctx;
    struct panfrost_ptr T;
@@ -3099,7 +3101,8 @@ panfrost_emit_resources(struct panfrost_batch *batch,
                               64);
    memset(T.cpu, 0, nr_tables * pan_size(RESOURCE));
 
-   panfrost_make_resource_table(T, PAN_TABLE_UBO, ubos, ubo_count);
+   panfrost_make_resource_table(T, PAN_TABLE_UBO, batch->uniform_buffers[stage],
+                                batch->nr_uniform_buffers[stage]);
 
    panfrost_make_resource_table(T, PAN_TABLE_TEXTURE, batch->textures[stage],
                                 ctx->sampler_view_count[stage]);
@@ -3135,20 +3138,13 @@ panfrost_emit_shader(struct panfrost_batch *batch,
                      enum pipe_shader_type stage, mali_ptr shader_ptr,
                      mali_ptr thread_storage)
 {
-   unsigned fau_words = 0, ubo_count = 0;
-   mali_ptr ubos, resources;
-
-   ubos =
-      panfrost_emit_const_buf(batch, stage, &ubo_count, &cfg->fau, &fau_words);
-
-   resources = panfrost_emit_resources(batch, stage, ubos, ubo_count);
-
+   cfg->resources = panfrost_emit_resources(batch, stage);
    cfg->thread_storage = thread_storage;
    cfg->shader = shader_ptr;
-   cfg->resources = resources;
 
    /* Each entry of FAU is 64-bits */
-   cfg->fau_count = DIV_ROUND_UP(fau_words, 2);
+   cfg->fau = batch->push_uniforms[stage];
+   cfg->fau_count = DIV_ROUND_UP(batch->nr_push_uniforms[stage], 2);
 }
 #endif
 
@@ -3523,6 +3519,21 @@ panfrost_launch_xfb(struct panfrost_batch *batch,
    batch->push_uniforms[PIPE_SHADER_VERTEX] = saved_push;
 }
 
+/*
+ * Increase the vertex count on the batch using a saturating add, and hope the
+ * compiler can use the machine instruction here...
+ */
+static inline void
+panfrost_increase_vertex_count(struct panfrost_batch *batch, uint32_t increment)
+{
+   uint32_t sum = batch->tiler_ctx.vertex_count + increment;
+
+   if (sum >= batch->tiler_ctx.vertex_count)
+      batch->tiler_ctx.vertex_count = sum;
+   else
+      batch->tiler_ctx.vertex_count = UINT32_MAX;
+}
+
 static void
 panfrost_direct_draw(struct panfrost_batch *batch,
                      const struct pipe_draw_info *info, unsigned drawid_offset,
@@ -3582,6 +3593,9 @@ panfrost_direct_draw(struct panfrost_batch *batch,
 
    if (info->index_size && PAN_ARCH >= 9) {
       indices = panfrost_get_index_buffer(batch, info, draw);
+
+      /* Use index count to estimate vertex count */
+      panfrost_increase_vertex_count(batch, draw->count);
    } else if (info->index_size) {
       indices = panfrost_get_index_buffer_bounded(batch, info, draw, &min_index,
                                                   &max_index);
@@ -3589,8 +3603,10 @@ panfrost_direct_draw(struct panfrost_batch *batch,
       /* Use the corresponding values */
       vertex_count = max_index - min_index + 1;
       ctx->offset_start = min_index + draw->index_bias;
+      panfrost_increase_vertex_count(batch, vertex_count);
    } else {
       ctx->offset_start = draw->start;
+      panfrost_increase_vertex_count(batch, vertex_count);
    }
 
    if (info->instance_count > 1) {
@@ -4480,7 +4496,8 @@ batch_get_polygon_list(struct panfrost_batch *batch)
    if (!batch->tiler_ctx.midgard.polygon_list) {
       bool has_draws = batch->scoreboard.first_tiler != NULL;
       unsigned size = panfrost_tiler_get_polygon_list_size(
-         dev, batch->key.width, batch->key.height, has_draws);
+         dev, batch->key.width, batch->key.height,
+         batch->tiler_ctx.vertex_count);
 
       /* Create the BO as invisible if we can. If there are no draws,
        * we need to write the polygon list manually because there's

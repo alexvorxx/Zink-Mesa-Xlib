@@ -1417,6 +1417,16 @@ visit_store_output(struct lp_build_nir_context *bld_base,
                        bit_size, &var, mask, NULL, 0, indir_index, src);
 }
 
+static bool
+compact_array_index_oob(struct lp_build_nir_context *bld_base, nir_variable *var, const uint32_t index)
+{
+   const struct glsl_type *type = var->type;
+   if (nir_is_arrayed_io(var, bld_base->shader->info.stage)) {
+      assert(glsl_type_is_array(type));
+      type = glsl_get_array_element(type);
+   }
+   return index >= glsl_get_length(type);
+}
 
 static void
 visit_load_var(struct lp_build_nir_context *bld_base,
@@ -1427,7 +1437,7 @@ visit_load_var(struct lp_build_nir_context *bld_base,
    nir_variable *var = nir_deref_instr_get_variable(deref);
    assert(util_bitcount(deref->modes) == 1);
    nir_variable_mode mode = deref->modes;
-   unsigned const_index;
+   unsigned const_index = 0;
    LLVMValueRef indir_index;
    LLVMValueRef indir_vertex_index = NULL;
    unsigned vertex_index = 0;
@@ -1451,6 +1461,17 @@ visit_load_var(struct lp_build_nir_context *bld_base,
                    gs_in ? &vertex_index : NULL,
                    (tcs_in || tcs_out || tes_in) ? &indir_vertex_index : NULL,
                    &const_index, &indir_index);
+
+      /* Return undef for loads definitely outside of the array bounds
+       * (tcs-tes-levels-out-of-bounds-read.shader_test).
+       */
+      if (var->data.compact && compact_array_index_oob(bld_base, var, const_index)) {
+         struct lp_build_context *undef_bld = get_int_bld(bld_base, true,
+                                                          instr->dest.ssa.bit_size);
+         for (int i = 0; i < instr->dest.ssa.num_components; i++)
+            result[i] = LLVMGetUndef(undef_bld->vec_type);
+         return;
+      }
    }
    bld_base->load_var(bld_base, mode, nc, bit_size, var, vertex_index,
                       indir_vertex_index, const_index, indir_index, result);
@@ -1476,6 +1497,12 @@ visit_store_var(struct lp_build_nir_context *bld_base,
       get_deref_offset(bld_base, deref, false, NULL,
                        tcs_out ? &indir_vertex_index : NULL,
                        &const_index, &indir_index);
+
+      /* Skip stores definitely outside of the array bounds
+       * (tcs-tes-levels-out-of-bounds-write.shader_test).
+       */
+      if (var->data.compact && compact_array_index_oob(bld_base, var, const_index))
+         return;
    }
    bld_base->store_var(bld_base, mode, instr->num_components, bit_size,
                        var, writemask, indir_vertex_index, const_index,

@@ -121,7 +121,7 @@ zink-tu-a618-traces:
     - a618-traces
     - .zink-turnip-rules
     - .zink-trace-test
-  parallel: 3
+  parallel: null
   variables:
     PIGLIT_REPLAY_DEVICE_NAME: "zink-a618"
 
@@ -130,6 +130,9 @@ zink-tu-a618-traces-performance:
     - zink-tu-a618-traces
     - .zink-turnip-manual-rules
     - .piglit-performance:arm64
+  rules:
+    - !reference [.piglit-performance:arm64, rules]
+    - !reference [.zink-turnip-manual-rules, rules]
   variables:
     # Always use the same device
     # a618 tag starts with cbg-1 (not cbg-0) for some reason

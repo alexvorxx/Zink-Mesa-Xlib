@@ -50,7 +50,7 @@ dEQP-VK.ray_tracing_pipeline.misc.recursiveTraces_tri_14
 dEQP-VK.ray_tracing_pipeline.misc.recursiveTraces_tri_15
 
 # Those test either fail or hang so just exclude all of them for now.
-dEQP-VK.ray_tracing_pipeline.pipeline_no_null_shaders_flag.*
+dEQP-VK.pipeline.monolithic.shader_module_identifier.pipeline_from_id.ray_tracing_libs.*
 
 # LLVM (soft hangs)
 dEQP-VK.graphicsfuzz.while-inside-switch

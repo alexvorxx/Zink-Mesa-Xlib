@@ -614,7 +614,7 @@ setup_framebuffer(struct zink_context *ctx)
    zink_init_framebuffer(screen, ctx->framebuffer, rp);
    ctx->fb_changed = false;
    ctx->gfx_pipeline_state.render_pass = rp;
-   zink_batch_no_rp_safe(ctx);
+   zink_batch_no_rp(ctx);
 }
 
 static bool

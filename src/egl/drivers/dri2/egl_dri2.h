@@ -606,6 +606,9 @@ static inline void
 dri2_teardown_device(struct dri2_egl_display *dri2_dpy) { /* noop */ }
 
 void
+dri2_flush_drawable_for_swapbuffers_flags(_EGLDisplay *disp, _EGLSurface *draw,
+                                          enum __DRI2throttleReason throttle_reason);
+void
 dri2_flush_drawable_for_swapbuffers(_EGLDisplay *disp, _EGLSurface *draw);
 
 const __DRIconfig *

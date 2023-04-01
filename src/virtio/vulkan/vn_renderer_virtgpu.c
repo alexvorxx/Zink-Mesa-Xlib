@@ -1375,10 +1375,6 @@ virtgpu_init_renderer_info(struct virtgpu *gpu)
    }
 
    info->has_dma_buf_import = true;
-   /* Kernel makes every mapping coherent.  We are better off filtering
-    * incoherent memory types out than silently making them coherent.
-    */
-   info->has_cache_management = false;
    /* TODO drm_syncobj */
    info->has_external_sync = false;
 

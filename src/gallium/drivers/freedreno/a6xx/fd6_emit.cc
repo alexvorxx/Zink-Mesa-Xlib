@@ -194,7 +194,7 @@ compute_lrz_state(struct fd6_emit *emit) assert_dt
     * enable LRZ write.  But this would cause early-z/lrz to discard
     * fragments from draw A which should be visible due to draw B.
     */
-   if (reads_dest && zsa->writes_z && ctx->screen->conservative_lrz) {
+   if (reads_dest && zsa->writes_z && ctx->screen->driconf.conservative_lrz) {
       if (!zsa->perf_warn_blend && rsc->lrz_valid) {
          perf_debug_ctx(ctx, "Invalidating LRZ due to blend+depthwrite");
          zsa->perf_warn_blend = true;

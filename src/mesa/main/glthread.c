@@ -421,3 +421,13 @@ _mesa_error_glthread_safe(struct gl_context *ctx, GLenum error, bool glthread,
       _mesa_error(ctx, error, "%s", s);
    }
 }
+
+bool
+_mesa_glthread_invalidate_zsbuf(struct gl_context *ctx)
+{
+   struct glthread_state *glthread = &ctx->GLThread;
+   if (!glthread->enabled)
+      return false;
+   _mesa_marshal_InternalInvalidateFramebufferAncillaryMESA();
+   return true;
+}

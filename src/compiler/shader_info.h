@@ -513,6 +513,11 @@ typedef struct shader_info {
           */
          enum gl_derivative_group derivative_group:2;
 
+         /*
+          * If the shader might run with shared mem on top of `shared_size`.
+          */
+         bool has_variable_shared_mem:1;
+
          /**
           * pointer size is:
           *   AddressingModelLogical:    0    (default)

@@ -31,6 +31,11 @@
 #include "util/simple_mtx.h"
 #include "util/u_hash_table.h"
 #include "util/u_pointer.h"
+#include "util/macros.h"
+
+#ifdef HAVE_LIBDRM
+#include <xf86drm.h>
+#endif
 
 /**
  * Helper to use from a pipe_screen->get_param() implementation to return
@@ -43,6 +48,9 @@ int
 u_pipe_screen_get_param_defaults(struct pipe_screen *pscreen,
                                  enum pipe_cap param)
 {
+   UNUSED uint64_t cap;
+   UNUSED int fd;
+
    assert(param < PIPE_CAP_LAST);
 
    /* Let's keep these sorted by position in p_defines.h. */
@@ -435,8 +443,12 @@ u_pipe_screen_get_param_defaults(struct pipe_screen *pscreen,
       return 0;
 
    case PIPE_CAP_DMABUF:
-#if DETECT_OS_LINUX || DETECT_OS_BSD
-      return 1;
+#if defined(HAVE_LIBDRM) && (DETECT_OS_LINUX || DETECT_OS_BSD)
+      fd = pscreen->get_screen_fd(pscreen);
+      if (fd != -1 && (drmGetCap(fd, DRM_CAP_PRIME, &cap) == 0))
+         return cap;
+      else
+         return 0;
 #else
       return 0;
 #endif

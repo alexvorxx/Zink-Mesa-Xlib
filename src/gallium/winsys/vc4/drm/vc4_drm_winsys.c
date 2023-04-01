@@ -60,9 +60,9 @@ vc4_drm_screen_create(int fd, const struct pipe_screen_config *config)
 }
 
 struct pipe_screen *
-vc4_drm_screen_create_renderonly(struct renderonly *ro,
+vc4_drm_screen_create_renderonly(int fd, struct renderonly *ro,
                                  const struct pipe_screen_config *config)
 {
-   return u_pipe_screen_lookup_or_create(os_dupfd_cloexec(ro->gpu_fd), config,
+   return u_pipe_screen_lookup_or_create(os_dupfd_cloexec(fd), config,
                                          ro, vc4_screen_create);
 }

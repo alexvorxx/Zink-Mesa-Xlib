@@ -259,13 +259,6 @@ xfb_decl_init(struct xfb_decl *xfb_decl, const struct gl_constants *consts,
        strcmp(xfb_decl->var_name, "gl_CullDistance") == 0) {
       xfb_decl->lowered_builtin_array_variable = cull_distance;
    }
-
-   if (consts->LowerTessLevel &&
-       (strcmp(xfb_decl->var_name, "gl_TessLevelOuter") == 0))
-      xfb_decl->lowered_builtin_array_variable = tess_level_outer;
-   if (consts->LowerTessLevel &&
-       (strcmp(xfb_decl->var_name, "gl_TessLevelInner") == 0))
-      xfb_decl->lowered_builtin_array_variable = tess_level_inner;
 }
 
 /**
@@ -338,12 +331,6 @@ xfb_decl_assign_location(struct xfb_decl *xfb_decl,
          actual_array_size = prog->last_vert_prog ?
             prog->last_vert_prog->info.cull_distance_array_size : 0;
          break;
-      case tess_level_outer:
-         actual_array_size = 4;
-         break;
-      case tess_level_inner:
-         actual_array_size = 2;
-         break;
       case none:
       default:
          actual_array_size = glsl_array_size(xfb_decl->matched_candidate->type);
@@ -367,7 +354,9 @@ xfb_decl_assign_location(struct xfb_decl *xfb_decl,
                                                 disable_varying_packing,
                                                 xfb_enabled) ||
             strcmp(xfb_decl->matched_candidate->toplevel_var->name, "gl_ClipDistance") == 0 ||
-            strcmp(xfb_decl->matched_candidate->toplevel_var->name, "gl_CullDistance") == 0;
+            strcmp(xfb_decl->matched_candidate->toplevel_var->name, "gl_CullDistance") == 0 ||
+            strcmp(xfb_decl->matched_candidate->toplevel_var->name, "gl_TessLevelInner") == 0 ||
+            strcmp(xfb_decl->matched_candidate->toplevel_var->name, "gl_TessLevelOuter") == 0;
 
          unsigned array_elem_size = xfb_decl->lowered_builtin_array_variable ?
             1 : (array_will_be_lowered ? vector_elements : 4) * matrix_cols * dmul;
@@ -688,12 +677,6 @@ xfb_decl_find_candidate(struct xfb_decl *xfb_decl,
    case clip_distance:
    case cull_distance:
       name = "gl_ClipDistanceMESA";
-      break;
-   case tess_level_outer:
-      name = "gl_TessLevelOuterMESA";
-      break;
-   case tess_level_inner:
-      name = "gl_TessLevelInnerMESA";
       break;
    }
    struct hash_entry *entry =

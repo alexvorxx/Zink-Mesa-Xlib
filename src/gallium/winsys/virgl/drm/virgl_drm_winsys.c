@@ -1203,6 +1203,14 @@ static int virgl_init_context(int drmFD)
    return 0;
 }
 
+static int
+virgl_drm_winsys_get_fd(struct virgl_winsys *vws)
+{
+   struct virgl_drm_winsys *vdws = virgl_drm_winsys(vws);
+
+   return vdws->fd;
+}
+
 static struct virgl_winsys *
 virgl_drm_winsys_create(int drmFD)
 {

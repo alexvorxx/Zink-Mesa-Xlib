@@ -1109,23 +1109,15 @@ emit_v_mov_b16(Builder& bld, Definition dst, Operand op)
       if (!op.isLiteral() && op.physReg() >= 240) {
          /* v_add_f16 is smaller because it can use 16bit fp inline constants. */
          Instruction* instr = bld.vop2_e64(aco_opcode::v_add_f16, dst, op, Operand::zero());
-         if (dst.physReg().byte() == 2)
-            instr->valu().opsel = 0x8;
+         instr->valu().opsel[3] = dst.physReg().byte() == 2;
          return;
       }
       op = Operand::c32((int32_t)(int16_t)op.constantValue());
    }
 
-   if (!dst.physReg().byte() && !op.physReg().byte()) {
-      bld.vop1(aco_opcode::v_mov_b16, dst, op);
-   } else {
-      // TODO: this can use VOP1 for vgpr0-127 with assembler support
-      Instruction* instr = bld.vop1_e64(aco_opcode::v_mov_b16, dst, op);
-      if (op.physReg().byte() == 2)
-         instr->valu().opsel |= 0x1;
-      if (dst.physReg().byte() == 2)
-         instr->valu().opsel |= 0x8;
-   }
+   Instruction* instr = bld.vop1(aco_opcode::v_mov_b16, dst, op);
+   instr->valu().opsel[0] = op.physReg().byte() == 2;
+   instr->valu().opsel[3] = dst.physReg().byte() == 2;
 }
 
 void

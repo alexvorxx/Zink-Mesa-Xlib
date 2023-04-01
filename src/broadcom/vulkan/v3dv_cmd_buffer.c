@@ -3618,6 +3618,32 @@ v3dv_cmd_buffer_begin_query(struct v3dv_cmd_buffer *cmd_buffer,
    }
 }
 
+void
+v3dv_cmd_buffer_pause_occlusion_query(struct v3dv_cmd_buffer *cmd_buffer)
+{
+   struct v3dv_cmd_buffer_state *state = &cmd_buffer->state;
+   struct v3dv_bo *occlusion_query_bo = state->query.active_query.bo;
+   if (occlusion_query_bo) {
+      assert(!state->query.active_query.paused_bo);
+      state->query.active_query.paused_bo = occlusion_query_bo;
+      state->query.active_query.bo = NULL;
+      state->dirty |= V3DV_CMD_DIRTY_OCCLUSION_QUERY;
+   }
+}
+
+void
+v3dv_cmd_buffer_resume_occlusion_query(struct v3dv_cmd_buffer *cmd_buffer)
+{
+   struct v3dv_cmd_buffer_state *state = &cmd_buffer->state;
+   struct v3dv_bo *occlusion_query_bo = state->query.active_query.paused_bo;
+   if (occlusion_query_bo) {
+      assert(!state->query.active_query.bo);
+      state->query.active_query.bo = occlusion_query_bo;
+      state->query.active_query.paused_bo = NULL;
+      state->dirty |= V3DV_CMD_DIRTY_OCCLUSION_QUERY;
+   }
+}
+
 static void
 v3dv_cmd_buffer_schedule_end_query(struct v3dv_cmd_buffer *cmd_buffer,
                                    struct v3dv_query_pool *pool,

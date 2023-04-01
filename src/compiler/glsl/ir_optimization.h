@@ -72,7 +72,6 @@ bool lower_vector_derefs(gl_linked_shader *shader);
 void lower_named_interface_blocks(void *mem_ctx, gl_linked_shader *shader);
 void optimize_dead_builtin_variables(exec_list *instructions,
                                      enum ir_variable_mode other);
-bool lower_tess_level(gl_linked_shader *shader);
 
 bool lower_blend_equation_advanced(gl_linked_shader *shader, bool coherent);
 
@@ -81,10 +80,6 @@ bool lower_subroutine(exec_list *instructions, struct _mesa_glsl_parse_state *st
 bool propagate_invariance(exec_list *instructions);
 
 namespace ir_builder { class ir_factory; };
-
-ir_variable *compare_index_block(ir_builder::ir_factory &body,
-                                 ir_variable *index,
-                                 unsigned base, unsigned components);
 
 bool lower_64bit_integer_instructions(exec_list *instructions,
                                       unsigned what_to_lower);

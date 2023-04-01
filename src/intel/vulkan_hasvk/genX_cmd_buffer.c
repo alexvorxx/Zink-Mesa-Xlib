@@ -813,7 +813,7 @@ genX(copy_fast_clear_dwords)(struct anv_cmd_buffer *cmd_buffer,
     *
     * It is unclear exactly why this hang occurs.  Both MI commands come with
     * warnings about the 3D pipeline but that doesn't seem to fully explain
-    * it.  My (Jason's) best theory is that it has something to do with the
+    * it.  My (Faith's) best theory is that it has something to do with the
     * fact that we're using a GPU state register as our temporary and that
     * something with reading/writing it is causing problems.
     *

@@ -487,6 +487,21 @@ panfrost_bind_compute_state(struct pipe_context *pipe, void *cso)
       uncompiled ? util_dynarray_begin(&uncompiled->variants) : NULL;
 }
 
+static void
+panfrost_get_compute_state_info(struct pipe_context *pipe, void *cso,
+                                struct pipe_compute_state_object_info *info)
+{
+   struct panfrost_device *dev = pan_device(pipe->screen);
+   struct panfrost_uncompiled_shader *uncompiled = cso;
+   struct panfrost_compiled_shader *cs =
+      util_dynarray_begin(&uncompiled->variants);
+
+   info->max_threads =
+      panfrost_max_thread_count(dev->arch, cs->info.work_reg_count);
+   info->private_memory = cs->info.tls_size;
+   info->preferred_simd_size = pan_subgroup_size(dev->arch);
+}
+
 void
 panfrost_shader_context_init(struct pipe_context *pctx)
 {
@@ -500,5 +515,6 @@ panfrost_shader_context_init(struct pipe_context *pctx)
 
    pctx->create_compute_state = panfrost_create_compute_state;
    pctx->bind_compute_state = panfrost_bind_compute_state;
+   pctx->get_compute_state_info = panfrost_get_compute_state_info;
    pctx->delete_compute_state = panfrost_delete_shader_state;
 }

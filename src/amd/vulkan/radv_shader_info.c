@@ -422,6 +422,9 @@ gather_shader_info_vs(struct radv_device *device, const nir_shader *nir,
       gather_info_input_decl_vs(nir, var->data.location - VERT_ATTRIB_GENERIC0, var->type,
                                 pipeline_key, info);
 
+   if (info->vs.dynamic_inputs)
+      info->vs.vb_desc_usage_mask = BITFIELD_MASK(util_last_bit(info->vs.vb_desc_usage_mask));
+
    /* When the topology is unknown (with GPL), the number of vertices per primitive needs be passed
     * through a user SGPR for NGG streamout with VS. Otherwise, the XFB offset is incorrectly
     * computed because using the maximum number of vertices can't work.
@@ -514,7 +517,6 @@ gather_shader_info_mesh(const nir_shader *nir, struct radv_shader_info *info)
     * - drawing 1 input vertex ~ launching 1 mesh shader workgroup
     *
     * In the shader:
-    * - base vertex ~ first workgroup index (firstTask in NV_mesh_shader)
     * - input vertex id ~ workgroup id (in 1D - shader needs to calculate in 3D)
     *
     * Notes:
@@ -711,10 +713,6 @@ gather_shader_info_task(const nir_shader *nir, struct radv_shader_info *info)
     * use them.
     */
 
-   /* Needed to address the IB to read firstTask in NV_mesh_shader. */
-   info->vs.needs_draw_id |=
-      BITSET_TEST(nir->info.system_values_read, SYSTEM_VALUE_WORKGROUP_ID);
-
    /* Needed to address the task draw/payload rings. */
    info->cs.uses_block_id[0] = true;
    info->cs.uses_block_id[1] = true;
@@ -723,6 +721,59 @@ gather_shader_info_task(const nir_shader *nir, struct radv_shader_info *info)
 
    /* Needed for storing draw ready only on the 1st thread. */
    info->cs.uses_local_invocation_idx = true;
+}
+
+static uint32_t
+radv_get_user_data_0(const struct radv_device *device, struct radv_shader_info *info)
+{
+   const enum amd_gfx_level gfx_level = device->physical_device->rad_info.gfx_level;
+
+   switch (info->stage) {
+   case MESA_SHADER_VERTEX:
+   case MESA_SHADER_TESS_EVAL:
+   case MESA_SHADER_MESH:
+      if (info->next_stage == MESA_SHADER_TESS_CTRL) {
+         assert(info->stage == MESA_SHADER_VERTEX);
+
+         if (gfx_level >= GFX10) {
+            return R_00B430_SPI_SHADER_USER_DATA_HS_0;
+         } else if (gfx_level == GFX9) {
+            return R_00B430_SPI_SHADER_USER_DATA_LS_0;
+         } else {
+            return R_00B530_SPI_SHADER_USER_DATA_LS_0;
+         }
+      }
+
+      if (info->next_stage == MESA_SHADER_GEOMETRY) {
+         assert(info->stage == MESA_SHADER_VERTEX || info->stage == MESA_SHADER_TESS_EVAL);
+
+         if (gfx_level >= GFX10) {
+            return R_00B230_SPI_SHADER_USER_DATA_GS_0;
+         } else {
+            return R_00B330_SPI_SHADER_USER_DATA_ES_0;
+         }
+      }
+
+      if (info->is_ngg)
+         return R_00B230_SPI_SHADER_USER_DATA_GS_0;
+
+      assert(info->stage != MESA_SHADER_MESH);
+      return R_00B130_SPI_SHADER_USER_DATA_VS_0;
+   case MESA_SHADER_TESS_CTRL:
+      return gfx_level == GFX9 ? R_00B430_SPI_SHADER_USER_DATA_LS_0
+                               : R_00B430_SPI_SHADER_USER_DATA_HS_0;
+   case MESA_SHADER_GEOMETRY:
+      return gfx_level == GFX9 ? R_00B330_SPI_SHADER_USER_DATA_ES_0
+                               : R_00B230_SPI_SHADER_USER_DATA_GS_0;
+   case MESA_SHADER_FRAGMENT:
+      return R_00B030_SPI_SHADER_USER_DATA_PS_0;
+   case MESA_SHADER_COMPUTE:
+   case MESA_SHADER_TASK:
+   case MESA_SHADER_RAYGEN:
+      return R_00B900_COMPUTE_USER_DATA_0;
+   default:
+      unreachable("invalid shader stage");
+   }
 }
 
 void
@@ -736,6 +787,7 @@ radv_nir_shader_info_init(struct radv_shader_info *info)
 
 void
 radv_nir_shader_info_pass(struct radv_device *device, const struct nir_shader *nir,
+                          gl_shader_stage next_stage,
                           const struct radv_pipeline_layout *layout,
                           const struct radv_pipeline_key *pipeline_key,
                           const enum radv_pipeline_type pipeline_type,
@@ -743,6 +795,7 @@ radv_nir_shader_info_pass(struct radv_device *device, const struct nir_shader *n
                           struct radv_shader_info *info)
 {
    info->stage = nir->info.stage;
+   info->next_stage = next_stage;
 
    struct nir_function *func = (struct nir_function *)exec_list_get_head_const(&nir->functions);
 
@@ -852,6 +905,8 @@ radv_nir_shader_info_pass(struct radv_device *device, const struct nir_shader *n
          info->cs.block_size[i] = nir->info.workgroup_size[i];
    }
 
+   info->user_data_0 = radv_get_user_data_0(device, info);
+
    switch (nir->info.stage) {
    case MESA_SHADER_COMPUTE:
       gather_shader_info_cs(device, nir, pipeline_key, info);
@@ -915,13 +970,47 @@ radv_nir_shader_info_pass(struct radv_device *device, const struct nir_shader *n
 }
 
 static void
-gfx9_get_gs_info(const struct radv_device *device, struct radv_pipeline_stage *es_stage,
-                 struct radv_pipeline_stage *gs_stage)
+radv_init_legacy_gs_ring_info(const struct radv_device *device, struct radv_shader_info *gs_info)
+{
+   const struct radv_physical_device *pdevice = device->physical_device;
+   struct radv_legacy_gs_info *gs_ring_info = &gs_info->gs_ring_info;
+   unsigned num_se = pdevice->rad_info.max_se;
+   unsigned wave_size = 64;
+   unsigned max_gs_waves = 32 * num_se; /* max 32 per SE on GCN */
+   /* On GFX6-GFX7, the value comes from VGT_GS_VERTEX_REUSE = 16.
+    * On GFX8+, the value comes from VGT_VERTEX_REUSE_BLOCK_CNTL = 30 (+2).
+    */
+   unsigned gs_vertex_reuse = (pdevice->rad_info.gfx_level >= GFX8 ? 32 : 16) * num_se;
+   unsigned alignment = 256 * num_se;
+   /* The maximum size is 63.999 MB per SE. */
+   unsigned max_size = ((unsigned)(63.999 * 1024 * 1024) & ~255) * num_se;
+
+   /* Calculate the minimum size. */
+   unsigned min_esgs_ring_size =
+      align(gs_ring_info->vgt_esgs_ring_itemsize * 4 * gs_vertex_reuse * wave_size, alignment);
+   /* These are recommended sizes, not minimum sizes. */
+   unsigned esgs_ring_size =
+      max_gs_waves * 2 * wave_size * gs_ring_info->vgt_esgs_ring_itemsize * 4 * gs_info->gs.vertices_in;
+   unsigned gsvs_ring_size = max_gs_waves * 2 * wave_size * gs_info->gs.max_gsvs_emit_size;
+
+   min_esgs_ring_size = align(min_esgs_ring_size, alignment);
+   esgs_ring_size = align(esgs_ring_size, alignment);
+   gsvs_ring_size = align(gsvs_ring_size, alignment);
+
+   if (pdevice->rad_info.gfx_level <= GFX8)
+      gs_ring_info->esgs_ring_size = CLAMP(esgs_ring_size, min_esgs_ring_size, max_size);
+
+   gs_ring_info->gsvs_ring_size = MIN2(gsvs_ring_size, max_size);
+}
+
+static void
+radv_get_legacy_gs_info(const struct radv_device *device, struct radv_pipeline_stage *es_stage,
+                        struct radv_pipeline_stage *gs_stage)
 {
    const enum amd_gfx_level gfx_level = device->physical_device->rad_info.gfx_level;
    struct radv_shader_info *gs_info = &gs_stage->info;
    struct radv_shader_info *es_info = &es_stage->info;
-   struct gfx9_gs_info *out = &gs_stage->info.gs_ring_info;
+   struct radv_legacy_gs_info *out = &gs_stage->info.gs_ring_info;
 
    const unsigned gs_num_invocations = MAX2(gs_info->gs.invocations, 1);
    const bool uses_adjacency = gs_info->gs.input_prim == SHADER_PRIM_LINES_ADJACENCY ||
@@ -1019,6 +1108,8 @@ gfx9_get_gs_info(const struct radv_device *device, struct radv_pipeline_stage *e
       es_verts_per_subgroup, gs_inst_prims_in_subgroup);
    es_info->workgroup_size = workgroup_size;
    gs_info->workgroup_size = workgroup_size;
+
+   radv_init_legacy_gs_ring_info(device, &gs_stage->info);
 }
 
 static void
@@ -1402,7 +1493,7 @@ radv_link_shaders_info(struct radv_device *device,
             radv_determine_ngg_settings(device, producer, consumer, pipeline_key);
          }
       } else if (consumer && consumer->stage == MESA_SHADER_GEOMETRY) {
-         gfx9_get_gs_info(device, producer, consumer);
+         radv_get_legacy_gs_info(device, producer, consumer);
       }
    }
 

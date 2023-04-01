@@ -689,8 +689,8 @@ bool ac_query_gpu_info(int fd, void *dev_p, struct radeon_info *info)
          else if (device_info.family == FAMILY_NV ||
                   device_info.family == FAMILY_VGH ||
                   device_info.family == FAMILY_RMB ||
-                  device_info.family == FAMILY_GC_10_3_6 ||
-                  device_info.family == FAMILY_GC_10_3_7)
+                  device_info.family == FAMILY_RPL ||
+                  device_info.family == FAMILY_MDN)
             info->ip[AMD_IP_GFX].ver_minor = info->ip[AMD_IP_COMPUTE].ver_minor = 3;
       }
       info->ip[ip_type].num_queues = util_bitcount(ip_info.available_rings);
@@ -845,11 +845,11 @@ bool ac_query_gpu_info(int fd, void *dev_p, struct radeon_info *info)
    case FAMILY_RMB:
       identify_chip(REMBRANDT);
       break;
-   case FAMILY_GC_10_3_6:
-      identify_chip(GFX1036);
+   case FAMILY_RPL:
+      identify_chip2(RAPHAEL, RAPHAEL_MENDOCINO);
       break;
-   case FAMILY_GC_10_3_7:
-      identify_chip2(GFX1037, GFX1036);
+   case FAMILY_MDN:
+      identify_chip2(MENDOCINO, RAPHAEL_MENDOCINO);
       break;
    case FAMILY_GFX1100:
       identify_chip(GFX1100);
@@ -1031,7 +1031,7 @@ bool ac_query_gpu_info(int fd, void *dev_p, struct radeon_info *info)
       case CHIP_FIJI:
       case CHIP_POLARIS12:
       case CHIP_VEGAM:
-      case CHIP_GFX1036:
+      case CHIP_RAPHAEL_MENDOCINO:
          info->l2_cache_size = info->num_tcc_blocks * 128 * 1024;
          break;
       default:
@@ -1297,7 +1297,7 @@ bool ac_query_gpu_info(int fd, void *dev_p, struct radeon_info *info)
          break;
       case CHIP_VANGOGH:
       case CHIP_REMBRANDT:
-      case CHIP_GFX1036:
+      case CHIP_RAPHAEL_MENDOCINO:
          pc_lines = 256;
          break;
       default:

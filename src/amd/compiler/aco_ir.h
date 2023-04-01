@@ -1757,7 +1757,7 @@ Instruction::usesModifiers() const noexcept
       /* opsel_hi must be 1 to not be considered a modifier - even for constants */
       return vop3p.opsel_lo || vop3p.clamp || vop3p.neg_lo || vop3p.neg_hi ||
              (vop3p.opsel_hi & BITFIELD_MASK(operands.size())) != BITFIELD_MASK(operands.size());
-   } else if (isVOP3()) {
+   } else if (isVALU()) {
       const VALU_instruction& vop3 = this->valu();
       return vop3.opsel || vop3.clamp || vop3.omod || vop3.abs || vop3.neg;
    }

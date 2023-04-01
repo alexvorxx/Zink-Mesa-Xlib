@@ -487,6 +487,9 @@ iris_resource_alloc_flags(const struct iris_screen *screen,
    if (templ->bind & PIPE_BIND_PROTECTED)
       flags |= BO_ALLOC_PROTECTED;
 
+   if (templ->bind & PIPE_BIND_SHARED)
+      flags |= BO_ALLOC_SHARED;
+
    return flags;
 }
 

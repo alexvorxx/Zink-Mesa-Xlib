@@ -420,15 +420,16 @@ static void
 radv_dump_vertex_descriptors(const struct radv_device *device,
                              struct radv_graphics_pipeline *pipeline, FILE *f)
 {
+   struct radv_shader *vs = radv_get_shader(pipeline->base.shaders, MESA_SHADER_VERTEX);
    void *ptr = (uint64_t *)device->trace_id_ptr;
-   uint32_t count = util_bitcount(pipeline->vb_desc_usage_mask);
+   uint32_t count = util_bitcount(vs->info.vs.vb_desc_usage_mask);
    uint32_t *vb_ptr = &((uint32_t *)ptr)[3];
 
    if (!count)
       return;
 
    fprintf(f, "Num vertex %s: %d\n",
-           pipeline->use_per_attribute_vb_descs ? "attributes" : "bindings", count);
+           vs->info.vs.use_per_attribute_vb_descs ? "attributes" : "bindings", count);
    for (uint32_t i = 0; i < count; i++) {
       uint32_t *desc = &((uint32_t *)vb_ptr)[i * 4];
       uint64_t va = 0;
@@ -455,7 +456,7 @@ radv_dump_vs_prolog(const struct radv_device *device, struct radv_graphics_pipel
                     FILE *f)
 {
    struct radv_shader_part *vs_prolog = radv_get_saved_vs_prolog(device);
-   struct radv_shader *vs_shader = radv_get_shader(&pipeline->base, MESA_SHADER_VERTEX);
+   struct radv_shader *vs_shader = radv_get_shader(pipeline->base.shaders, MESA_SHADER_VERTEX);
 
    if (!vs_prolog || !vs_shader || !vs_shader->info.vs.has_prolog)
       return;

@@ -84,13 +84,19 @@ struct fd_screen {
    bool has_robustness;
    bool has_syncobj;
 
-   /* Conservative LRZ (default true) invalidates LRZ on draws with
-    * blend and depth-write enabled, because this can lead to incorrect
-    * rendering.  Driconf can be used to disable conservative LRZ for
-    * games which do not have the problematic sequence of draws *and*
-    * suffer a performance loss with conservative LRZ.
-    */
-   bool conservative_lrz;
+   struct {
+      /* Conservative LRZ (default true) invalidates LRZ on draws with
+       * blend and depth-write enabled, because this can lead to incorrect
+       * rendering.  Driconf can be used to disable conservative LRZ for
+       * games which do not have the problematic sequence of draws *and*
+       * suffer a performance loss with conservative LRZ.
+       */
+      bool conservative_lrz;
+
+      /* Enable EGL throttling (default true).
+       */
+      bool enable_throttling;
+   } driconf;
 
    const struct fd_dev_info *info;
    uint32_t ccu_offset_gmem;

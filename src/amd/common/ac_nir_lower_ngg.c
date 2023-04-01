@@ -2229,12 +2229,11 @@ export_vertex_params_gfx11(nir_builder *b, nir_ssa_def *export_tid, nir_ssa_def 
       if (exported_params & BITFIELD_BIT(offset))
          continue;
 
-      nir_ssa_def *soffset = nir_iadd_imm(b, attr_offset, offset * 16 * 32);
-
       nir_ssa_def *comp[4];
       for (unsigned j = 0; j < 4; j++)
          comp[j] = outputs[i].chan[j] ? outputs[i].chan[j] : undef;
-      nir_store_buffer_amd(b, nir_vec(b, comp, 4), attr_rsrc, voffset, soffset, vindex,
+      nir_store_buffer_amd(b, nir_vec(b, comp, 4), attr_rsrc, voffset, attr_offset, vindex,
+                           .base = offset * 16,
                            .memory_modes = nir_var_shader_out,
                            .access = ACCESS_COHERENT | ACCESS_IS_SWIZZLED_AMD);
       exported_params |= BITFIELD_BIT(offset);
@@ -3531,65 +3530,6 @@ ms_store_cull_flag(nir_builder *b,
 }
 
 static nir_ssa_def *
-lower_ms_store_output(nir_builder *b,
-                      nir_intrinsic_instr *intrin,
-                      lower_ngg_ms_state *s)
-{
-   nir_io_semantics io_sem = nir_intrinsic_io_semantics(intrin);
-   nir_ssa_def *store_val = intrin->src[0].ssa;
-
-   /* Component makes no sense here. */
-   assert(nir_intrinsic_component(intrin) == 0);
-
-   if (io_sem.location == VARYING_SLOT_PRIMITIVE_COUNT) {
-      /* Total number of primitives output by the mesh shader workgroup.
-       * This can be read and written by any invocation any number of times.
-       */
-
-      /* Base, offset and component make no sense here. */
-      assert(nir_src_is_const(intrin->src[1]) && nir_src_as_uint(intrin->src[1]) == 0);
-
-      ms_store_num_prims(b, store_val, s);
-   } else if (io_sem.location == VARYING_SLOT_PRIMITIVE_INDICES) {
-      /* Contrary to the name, these are not primitive indices, but
-       * vertex indices for each vertex of the output primitives.
-       * The Mesh NV API has these stored in a flat array.
-       */
-
-      nir_ssa_def *offset_src = nir_get_io_offset_src(intrin)->ssa;
-      ms_store_prim_indices(b, store_val, offset_src, s);
-   } else {
-      unreachable("Invalid mesh shader output");
-   }
-
-   return NIR_LOWER_INSTR_PROGRESS_REPLACE;
-}
-
-static nir_ssa_def *
-lower_ms_load_output(nir_builder *b,
-                     nir_intrinsic_instr *intrin,
-                     lower_ngg_ms_state *s)
-{
-   nir_io_semantics io_sem = nir_intrinsic_io_semantics(intrin);
-
-   /* Component makes no sense here. */
-   assert(nir_intrinsic_component(intrin) == 0);
-
-   if (io_sem.location == VARYING_SLOT_PRIMITIVE_COUNT) {
-      /* Base, offset and component make no sense here. */
-      assert(nir_src_is_const(intrin->src[1]) && nir_src_as_uint(intrin->src[1]) == 0);
-
-      return ms_load_num_prims(b, s);
-   } else if (io_sem.location == VARYING_SLOT_PRIMITIVE_INDICES) {
-      nir_ssa_def *offset_src = nir_get_io_offset_src(intrin)->ssa;
-      nir_ssa_def *index = ms_load_prim_indices(b, offset_src, s);
-      return nir_u2uN(b, index, intrin->dest.ssa.bit_size);
-   }
-
-   unreachable("Invalid mesh shader output");
-}
-
-static nir_ssa_def *
 ms_arrayed_output_base_addr(nir_builder *b,
                             nir_ssa_def *arr_index,
                             unsigned driver_location,
@@ -3809,10 +3749,11 @@ ms_store_arrayed_output_intrin(nir_builder *b,
        * (Also much better than storing and reloading from the scratch ring.)
        */
       const nir_io_semantics io_sem = nir_intrinsic_io_semantics(intrin);
+      unsigned param_offset = s->vs_output_param_offset[io_sem.location];
       nir_ssa_def *ring = nir_load_ring_attr_amd(b);
       nir_ssa_def *soffset = nir_load_ring_attr_offset_amd(b);
-      soffset = nir_iadd_imm(b, soffset, s->vs_output_param_offset[io_sem.location] * 16 * 32);
-      nir_store_buffer_amd(b, store_val, ring, base_addr_off, soffset, arr_index, .base = const_off,
+      nir_store_buffer_amd(b, store_val, ring, base_addr_off, soffset, arr_index,
+                           .base = const_off + param_offset * 16,
                            .memory_modes = nir_var_shader_out,
                            .access = ACCESS_COHERENT | ACCESS_IS_SWIZZLED_AMD);
    } else if (out_mode == ms_out_mode_var) {
@@ -3869,16 +3810,6 @@ ms_load_arrayed_output(nir_builder *b,
                                  .base = const_off,
                                  .memory_modes = nir_var_shader_out,
                                  .access = ACCESS_COHERENT);
-   } else if (out_mode == ms_out_mode_attr_ring) {
-      /* Loading from the attribute ring shouldn't be necessary,
-       * but we implement it for the sake of NV_mesh_shader.
-       */
-      nir_ssa_def *ring = nir_load_ring_attr_amd(b);
-      nir_ssa_def *soffset = nir_load_ring_attr_offset_amd(b);
-      soffset = nir_iadd_imm(b, soffset, s->vs_output_param_offset[driver_location] * 16 * 32);
-      return nir_load_buffer_amd(b, num_components, load_bit_size, ring, base_addr_off, soffset,
-                                 arr_index, .base = const_off, .memory_modes = nir_var_shader_out,
-                                 .access = ACCESS_COHERENT | ACCESS_IS_SWIZZLED_AMD);
    } else if (out_mode == ms_out_mode_var) {
       nir_ssa_def *arr[8] = {0};
       unsigned num_32bit_components = num_components * load_bit_size / 32;
@@ -3972,10 +3903,6 @@ lower_ms_intrinsic(nir_builder *b, nir_instr *instr, void *state)
    nir_intrinsic_instr *intrin = nir_instr_as_intrinsic(instr);
 
    switch (intrin->intrinsic) {
-   case nir_intrinsic_store_output:
-      return lower_ms_store_output(b, intrin, s);
-   case nir_intrinsic_load_output:
-      return lower_ms_load_output(b, intrin, s);
    case nir_intrinsic_store_per_vertex_output:
    case nir_intrinsic_store_per_primitive_output:
       ms_store_arrayed_output_intrin(b, intrin, s);
@@ -4124,45 +4051,6 @@ ms_emit_legacy_workgroup_index(nir_builder *b, lower_ngg_ms_state *s)
 
    workgroup_index = nir_if_phi(b, workgroup_index, dont_care);
    s->workgroup_index = nir_read_first_invocation(b, workgroup_index);
-}
-
-static void
-set_nv_ms_final_output_counts(nir_builder *b,
-                               lower_ngg_ms_state *s,
-                               nir_ssa_def **out_num_prm,
-                               nir_ssa_def **out_num_vtx)
-{
-   /* Limitations of the NV extension:
-    * - Number of primitives can be written and read by any invocation,
-    *   so we have to store/load it to/from LDS to make sure the general case works.
-    * - Number of vertices is not actually known, so we just always use the
-    *   maximum number here.
-    */
-   nir_ssa_def *loaded_num_prm;
-   nir_ssa_def *dont_care = nir_ssa_undef(b, 1, 32);
-   nir_if *if_elected = nir_push_if(b, nir_elect(b, 1));
-   {
-      loaded_num_prm = ms_load_num_prims(b, s);
-   }
-   nir_pop_if(b, if_elected);
-   loaded_num_prm = nir_if_phi(b, loaded_num_prm, dont_care);
-   nir_ssa_def *num_prm = nir_read_first_invocation(b, loaded_num_prm);
-   nir_ssa_def *num_vtx = nir_imm_int(b, b->shader->info.mesh.max_vertices_out);
-   num_prm = nir_umin(b, num_prm, nir_imm_int(b, b->shader->info.mesh.max_primitives_out));
-
-   /* If the shader doesn't actually create any primitives, don't allocate any output. */
-   num_vtx = nir_bcsel(b, nir_ieq_imm(b, num_prm, 0), nir_imm_int(b, 0), num_vtx);
-
-   /* Emit GS_ALLOC_REQ on Wave 0 to let the HW know the output size. */
-   nir_ssa_def *wave_id = nir_load_subgroup_id(b);
-   nir_if *if_wave_0 = nir_push_if(b, nir_ieq_imm(b, wave_id, 0));
-   {
-      nir_alloc_vertices_and_primitives_amd(b, num_vtx, num_prm);
-   }
-   nir_pop_if(b, if_wave_0);
-
-   *out_num_prm = num_prm;
-   *out_num_vtx = num_vtx;
 }
 
 static void
@@ -4345,10 +4233,7 @@ emit_ms_finale(nir_builder *b, lower_ngg_ms_state *s)
    nir_ssa_def *num_prm;
    nir_ssa_def *num_vtx;
 
-   if (b->shader->info.mesh.nv)
-      set_nv_ms_final_output_counts(b, s, &num_prm, &num_vtx);
-   else
-      set_ms_final_output_counts(b, s, &num_prm, &num_vtx);
+   set_ms_final_output_counts(b, s, &num_prm, &num_vtx);
 
    nir_ssa_def *invocation_index = nir_load_local_invocation_index(b);
 
@@ -4744,11 +4629,6 @@ ac_nir_lower_ngg_ms(nir_shader *shader,
    /* Can't handle indirect register addressing, pretend as if they were cross-invocation. */
    uint64_t cross_invocation_access = shader->info.mesh.ms_cross_invocation_output_access |
                                       shader->info.outputs_accessed_indirectly;
-
-   if (shader->info.mesh.nv) {
-      per_primitive_outputs &= ~SPECIAL_MS_OUT_MASK;
-      cross_invocation_access |= SPECIAL_MS_OUT_MASK;
-   }
 
    unsigned max_vertices = shader->info.mesh.max_vertices_out;
    unsigned max_primitives = shader->info.mesh.max_primitives_out;

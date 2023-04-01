@@ -314,7 +314,7 @@ dump_binding_table(struct intel_batch_decode_ctx *ctx,
 
    if (count < 0) {
       count = update_count(ctx, bt_pool_base + offset,
-                           bt_pool_base, 1, 8);
+                           bt_pool_base, 1, 32);
    }
 
    if (offset % btp_alignment != 0 || offset >= (1u << btp_pointer_bits)) {
@@ -332,8 +332,9 @@ dump_binding_table(struct intel_batch_decode_ctx *ctx,
 
    const uint32_t *pointers = bind_bo.map;
    for (int i = 0; i < count; i++) {
-      if (pointers[i] == 0)
-         continue;
+      if (((uintptr_t)&pointers[i] >= ((uintptr_t)bind_bo.map + bind_bo.size)) ||
+          pointers[i] == 0)
+         break;
 
       uint64_t addr = ctx->surface_base + pointers[i];
       struct intel_batch_decode_bo bo = ctx_get_bo(ctx, true, addr);

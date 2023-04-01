@@ -140,6 +140,8 @@ anv_xe_kmd_backend_get(void)
       .gem_vm_bind = xe_gem_vm_bind,
       .gem_vm_unbind = xe_gem_vm_unbind,
       .execute_simple_batch = xe_execute_simple_batch,
+      .queue_exec_locked = xe_queue_exec_locked,
+      .queue_exec_trace = xe_queue_exec_utrace_locked,
    };
    return &xe_backend;
 }

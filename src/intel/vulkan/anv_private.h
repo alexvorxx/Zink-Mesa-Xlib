@@ -75,6 +75,7 @@
 #include "vk_debug_report.h"
 #include "vk_descriptor_update_template.h"
 #include "vk_device.h"
+#include "vk_device_memory.h"
 #include "vk_drm_syncobj.h"
 #include "vk_enum_defines.h"
 #include "vk_format.h"
@@ -923,14 +924,6 @@ struct anv_physical_device {
     struct anv_instance *                       instance;
     char                                        path[20];
     struct intel_device_info                      info;
-    /** Amount of "GPU memory" we want to advertise
-     *
-     * Clearly, this value is bogus since Intel is a UMA architecture.  On
-     * gfx7 platforms, we are limited by GTT size unless we want to implement
-     * fine-grained tracking and GTT splitting.  On Broadwell and above we are
-     * practically unlimited.  However, we will never report more than 3/4 of
-     * the total system ram to try and avoid running out of RAM.
-     */
     bool                                        supports_48bit_addresses;
     bool                                        video_decode_enabled;
 
@@ -1008,6 +1001,9 @@ struct anv_physical_device {
     uint8_t                                     device_uuid[VK_UUID_SIZE];
     uint8_t                                     rt_uuid[VK_UUID_SIZE];
 
+    /* Maximum amount of scratch space used by all the GRL kernels */
+    uint32_t                                    max_grl_scratch_size;
+
     struct vk_sync_type                         sync_syncobj_type;
     struct vk_sync_timeline_type                sync_timeline_type;
     const struct vk_sync_type *                 sync_types[4];
@@ -1039,6 +1035,7 @@ struct anv_instance {
     struct driOptionCache                       dri_options;
     struct driOptionCache                       available_dri_options;
 
+    int                                         mesh_conv_prim_attrs_to_vert_attrs;
     /**
      * Workarounds for game bugs.
      */
@@ -1578,10 +1575,7 @@ _anv_combine_address(struct anv_batch *batch, void *location,
 /* #define __gen_address_offset anv_address_add */
 
 struct anv_device_memory {
-   struct vk_object_base                        base;
-
-   /** Client-requested allocaiton size */
-   uint64_t                                     size;
+   struct vk_device_memory                      vk;
 
    struct list_head                             link;
 
@@ -1593,14 +1587,6 @@ struct anv_device_memory {
 
    /* The map, from the user PoV is map + map_delta */
    uint64_t                                     map_delta;
-
-   /* If set, we are holding reference to AHardwareBuffer
-    * which we must release when memory is freed.
-    */
-   struct AHardwareBuffer *                     ahw;
-
-   /* If set, this memory comes from a host pointer. */
-   void *                                       host_ptr;
 };
 
 /**
@@ -2597,6 +2583,9 @@ struct anv_cmd_compute_state {
    struct anv_state push_data;
 
    struct anv_address num_workgroups;
+
+   uint32_t scratch_size;
+   bool cfe_state_valid;
 };
 
 struct anv_cmd_ray_tracing_state {
@@ -2838,6 +2827,20 @@ anv_cmd_buffer_is_chainable(struct anv_cmd_buffer *cmd_buffer)
             VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT);
 }
 
+static inline bool
+anv_cmd_buffer_is_render_queue(const struct anv_cmd_buffer *cmd_buffer)
+{
+   struct anv_queue_family *queue_family = cmd_buffer->queue_family;
+   return (queue_family->queueFlags & VK_QUEUE_GRAPHICS_BIT) != 0;
+}
+
+static inline bool
+anv_cmd_buffer_is_video_queue(const struct anv_cmd_buffer *cmd_buffer)
+{
+   struct anv_queue_family *queue_family = cmd_buffer->queue_family;
+   return (queue_family->queueFlags & VK_QUEUE_VIDEO_DECODE_BIT_KHR) != 0;
+}
+
 VkResult anv_cmd_buffer_init_batch_bo_chain(struct anv_cmd_buffer *cmd_buffer);
 void anv_cmd_buffer_fini_batch_bo_chain(struct anv_cmd_buffer *cmd_buffer);
 void anv_cmd_buffer_reset_batch_bo_chain(struct anv_cmd_buffer *cmd_buffer);
@@ -2885,6 +2888,9 @@ anv_cmd_buffer_exec_batch_debug(struct anv_queue *queue,
                                 struct anv_cmd_buffer **cmd_buffers,
                                 struct anv_query_pool *perf_query_pool,
                                 uint32_t perf_query_pass);
+void
+anv_cmd_buffer_clflush(struct anv_cmd_buffer **cmd_buffers,
+                       uint32_t num_cmd_buffers);
 
 /**
  * A allocation tied to a command buffer.
@@ -3993,6 +3999,9 @@ struct anv_image_create_info {
 
    /** These flags will be added to any derived from VkImageCreateInfo. */
    isl_surf_usage_flags_t isl_extra_usage_flags;
+
+   /** An opt-in stride, should be 0 for implicit layouts */
+   uint32_t stride;
 };
 
 VkResult anv_image_init(struct anv_device *device, struct anv_image *image,
@@ -4198,6 +4207,11 @@ void anv_perf_write_pass_results(struct intel_perf_config *perf,
                                  const struct intel_perf_query_result *accumulated_results,
                                  union VkPerformanceCounterResultKHR *results);
 
+void anv_apply_per_prim_attr_wa(struct nir_shader *ms_nir,
+                                struct nir_shader *fs_nir,
+                                struct anv_device *device,
+                                const VkGraphicsPipelineCreateInfo *info);
+
 /* Use to emit a series of memcpy operations */
 struct anv_memcpy_state {
    struct anv_device *device;
@@ -4295,7 +4309,7 @@ VK_DEFINE_NONDISP_HANDLE_CASTS(anv_descriptor_set, base, VkDescriptorSet,
 VK_DEFINE_NONDISP_HANDLE_CASTS(anv_descriptor_set_layout, base,
                                VkDescriptorSetLayout,
                                VK_OBJECT_TYPE_DESCRIPTOR_SET_LAYOUT)
-VK_DEFINE_NONDISP_HANDLE_CASTS(anv_device_memory, base, VkDeviceMemory,
+VK_DEFINE_NONDISP_HANDLE_CASTS(anv_device_memory, vk.base, VkDeviceMemory,
                                VK_OBJECT_TYPE_DEVICE_MEMORY)
 VK_DEFINE_NONDISP_HANDLE_CASTS(anv_event, base, VkEvent, VK_OBJECT_TYPE_EVENT)
 VK_DEFINE_NONDISP_HANDLE_CASTS(anv_image, vk.base, VkImage, VK_OBJECT_TYPE_IMAGE)

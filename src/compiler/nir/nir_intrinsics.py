@@ -1394,9 +1394,6 @@ system_value("ring_mesh_scratch_amd", 4)
 system_value("ring_mesh_scratch_offset_amd", 1)
 # Pointer into the draw and payload rings
 system_value("task_ring_entry_amd", 1)
-# Pointer into the draw and payload rings
-system_value("task_ib_addr", 2)
-system_value("task_ib_stride", 1)
 # Descriptor where NGG attributes are stored on GFX11.
 system_value("ring_attr_amd", 4)
 system_value("ring_attr_offset_amd", 1)
@@ -1597,6 +1594,9 @@ system_value("lds_ngg_gs_out_vertex_base_amd", 1)
 # BASE = export target
 # FLAGS = AC_EXP_FLAG_*
 intrinsic("export_amd", [0], indices=[BASE, WRITE_MASK, FLAGS])
+
+# Alpha test reference value
+system_value("alpha_reference_amd", 1)
 
 # V3D-specific instrinc for tile buffer color reads.
 #

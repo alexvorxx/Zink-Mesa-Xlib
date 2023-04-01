@@ -381,6 +381,61 @@ fd_batch_resource_read(struct fd_batch *batch,
       fd_batch_resource_read_slowpath(batch, rsc);
 }
 
+static inline bool
+needs_dirty_resource(struct fd_context *ctx, struct pipe_resource *prsc, bool write)
+   assert_dt
+{
+   if (!prsc)
+      return false;
+
+   struct fd_resource *rsc = fd_resource(prsc);
+
+   /* Switching between draw and non_draw will dirty all state, so if
+    * we pick the wrong one, all the bits in the dirty_resource state
+    * will be set anyways.. so no harm, no foul.
+    */
+   struct fd_batch *batch = ctx->batch_nondraw ? ctx->batch_nondraw : ctx->batch;
+
+   if (!batch)
+      return false;
+
+   if (write)
+      return rsc->track->write_batch != batch;
+
+   return !fd_batch_references_resource(batch, rsc);
+}
+
+static inline void
+fd_dirty_resource(struct fd_context *ctx, struct pipe_resource *prsc,
+                  BITMASK_ENUM(fd_dirty_3d_state) dirty, bool write)
+   assert_dt
+{
+   if (ctx->dirty_resource & dirty)
+      return;
+
+   if (!needs_dirty_resource(ctx, prsc, write))
+      return;
+
+   ctx->dirty_resource |= dirty;
+}
+
+static inline void
+fd_dirty_shader_resource(struct fd_context *ctx, struct pipe_resource *prsc,
+                         enum pipe_shader_type shader,
+                         BITMASK_ENUM(fd_dirty_shader_state) dirty,
+                         bool write)
+   assert_dt
+{
+   if (ctx->dirty_shader_resource[shader] & dirty)
+      return;
+
+   if (!needs_dirty_resource(ctx, prsc, write))
+      return;
+
+   ctx->dirty_shader_resource[shader] |= dirty;
+   ctx->dirty_resource |= dirty_shader_to_dirty_state(dirty);
+}
+
 static inline enum fdl_view_type
 fdl_type_from_pipe_target(enum pipe_texture_target target) {
    switch (target) {

@@ -132,6 +132,9 @@ void genX(cmd_emit_conditional_render_predicate)(struct anv_cmd_buffer *cmd_buff
 
 struct anv_state genX(cmd_buffer_ray_query_globals)(struct anv_cmd_buffer *cmd_buffer);
 
+void genX(cmd_buffer_ensure_cfe_state)(struct anv_cmd_buffer *cmd_buffer,
+                                       uint32_t total_scratch);
+
 void
 genX(emit_urb_setup)(struct anv_device *device, struct anv_batch *batch,
                      const struct intel_l3_config *l3_config,

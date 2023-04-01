@@ -316,6 +316,11 @@ struct radeon_winsys {
    void (*destroy)(struct radeon_winsys *ws);
 
    /**
+    * Get FD for winsys if winsys provides one
+    */
+   int (*get_fd)(struct radeon_winsys *ws);
+
+   /**
     * Query an info structure from winsys.
     *
     * \param ws        The winsys this function is called from.

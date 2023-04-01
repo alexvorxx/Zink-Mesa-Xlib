@@ -44,6 +44,9 @@ genX(grl_dispatch)(struct anv_cmd_buffer *cmd_buffer,
 void
 genX(grl_load_rt_uuid)(uint8_t *out_uuid);
 
+uint32_t
+genX(grl_max_scratch_size)(void);
+
 #ifdef __cplusplus
 } /* extern "C" */
 #endif

@@ -44,6 +44,14 @@ i915_drm_winsys_destroy(struct i915_winsys *iws)
    FREE(idws);
 }
 
+static int
+i915_drm_winsys_get_fd(struct i915_winsys *iws)
+{
+   struct i915_drm_winsys *idws = i915_drm_winsys(iws);
+
+   return idws->fd;
+}
+
 struct i915_winsys *
 i915_drm_winsys_create(int drmFD)
 {

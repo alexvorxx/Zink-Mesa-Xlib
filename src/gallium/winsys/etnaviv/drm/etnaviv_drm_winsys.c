@@ -68,9 +68,10 @@ screen_create(int gpu_fd, const struct pipe_screen_config *config, struct render
 }
 
 struct pipe_screen *
-etna_drm_screen_create_renderonly(struct renderonly *ro)
+etna_drm_screen_create_renderonly(int fd, struct renderonly *ro,
+                                  const struct pipe_screen_config *config)
 {
-   return u_pipe_screen_lookup_or_create(ro->gpu_fd, NULL, ro, screen_create);
+   return u_pipe_screen_lookup_or_create(fd, config, ro, screen_create);
 }
 
 struct pipe_screen *

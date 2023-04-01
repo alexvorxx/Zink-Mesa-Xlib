@@ -160,6 +160,7 @@ libanv_files = files(
   'anv_kmd_backend.h',
   'anv_measure.c',
   'anv_measure.h',
+  'anv_mesh_perprim_wa.c',
   'anv_nir.h',
   'anv_nir_apply_pipeline_layout.c',
   'anv_nir_compute_push_layout.c',

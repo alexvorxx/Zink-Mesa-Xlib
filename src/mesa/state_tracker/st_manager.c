@@ -62,6 +62,7 @@
 #include "util/u_surface.h"
 #include "util/list.h"
 #include "util/u_memory.h"
+#include "util/perf/cpu_trace.h"
 
 struct hash_table;
 
@@ -800,6 +801,8 @@ st_context_flush(struct st_context *st, unsigned flags,
                  void (*before_flush_cb) (void*), void* args)
 {
    unsigned pipe_flags = 0;
+
+   MESA_TRACE_FUNC();
 
    if (flags & ST_FLUSH_END_OF_FRAME)
       pipe_flags |= PIPE_FLUSH_END_OF_FRAME;

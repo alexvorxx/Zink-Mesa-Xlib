@@ -1019,8 +1019,20 @@ disk_cache_mmap_cache_index(void *mem_ctx, struct disk_cache *cache,
    /* Force the index file to be the expected size. */
    size_t size = sizeof(*cache->size) + CACHE_INDEX_MAX_KEYS * CACHE_KEY_SIZE;
    if (sb.st_size != size) {
+#if HAVE_POSIX_FALLOCATE
+      /* posix_fallocate() ensures disk space is allocated otherwise it
+       * fails if there is not enough space on the disk.
+       */
+      if (posix_fallocate(fd, 0, size) != 0)
+         goto path_fail;
+#else
+      /* ftruncate() allocates disk space lazily. If the disk is full
+       * and it is unable to allocate disk space when accessed via
+       * mmap, it will crash with a SIGBUS.
+       */
       if (ftruncate(fd, size) == -1)
          goto path_fail;
+#endif
    }
 
    /* We map this shared so that other processes see updates that we

@@ -39,6 +39,7 @@
 #include "pvr_hardcode.h"
 #include "pvr_pds.h"
 #include "pvr_private.h"
+#include "pvr_robustness.h"
 #include "pvr_shader.h"
 #include "pvr_types.h"
 #include "rogue/rogue.h"
@@ -333,7 +334,9 @@ static void pvr_pds_vertex_attrib_init_dma_descriptions(
       dma_desc->destination = vs_data->inputs.base[location];
       dma_desc->binding_index = attrib_desc->binding;
       dma_desc->divisor = 1;
-      dma_desc->robustness_buffer_offset = 0;
+
+      dma_desc->robustness_buffer_offset =
+         pvr_get_robustness_buffer_format_offset(attrib_desc->format);
 
       ++dma_count;
    }

@@ -28,6 +28,10 @@
 #include "vk_format.h"
 #include "vk_util.h"
 
+#if defined(ANDROID) && ANDROID_API_LEVEL >= 26
+#include "vk_android.h"
+#endif
+
 /*
  * gcc-4 and earlier don't allow compound literals where a constant
  * is required in -std=c99/gnu99 mode, so we can't use ISL_SWIZZLE()
@@ -1377,7 +1381,7 @@ VkResult anv_GetPhysicalDeviceImageFormatProperties2(
    const VkPhysicalDeviceExternalImageFormatInfo *external_info = NULL;
    VkExternalImageFormatProperties *external_props = NULL;
    VkSamplerYcbcrConversionImageFormatProperties *ycbcr_props = NULL;
-   VkAndroidHardwareBufferUsageANDROID *android_usage = NULL;
+   UNUSED VkAndroidHardwareBufferUsageANDROID *android_usage = NULL;
    VkResult result;
    bool from_wsi = false;
 
@@ -1429,14 +1433,16 @@ VkResult anv_GetPhysicalDeviceImageFormatProperties2(
    bool ahw_supported =
       physical_device->vk.supported_extensions.ANDROID_external_memory_android_hardware_buffer;
 
+#if defined(ANDROID) && ANDROID_API_LEVEL >= 26
    if (ahw_supported && android_usage) {
       android_usage->androidHardwareBufferUsage =
-         anv_ahw_usage_from_vk_usage(base_info->flags,
+         vk_image_usage_to_ahb_usage(base_info->flags,
                                      base_info->usage);
 
       /* Limit maxArrayLayers to 1 for AHardwareBuffer based images for now. */
       base_props->imageFormatProperties.maxArrayLayers = 1;
    }
+#endif
 
    /* From the Vulkan 1.0.42 spec:
     *

@@ -51,10 +51,6 @@ struct radv_shader_args {
    struct ac_arg ngg_viewport_scale[2];
    struct ac_arg ngg_viewport_translate[2];
 
-   /* Task shaders */
-   struct ac_arg task_ib_addr;
-   struct ac_arg task_ib_stride;
-
    /* Fragment shaders */
    struct ac_arg ps_epilog_pc;
    struct ac_arg ps_num_samples;

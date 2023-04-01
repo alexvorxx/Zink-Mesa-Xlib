@@ -304,6 +304,7 @@ struct iris_bo {
 #define BO_ALLOC_NO_SUBALLOC (1<<4)
 #define BO_ALLOC_LMEM        (1<<5)
 #define BO_ALLOC_PROTECTED   (1<<6)
+#define BO_ALLOC_SHARED      (1<<7)
 
 /**
  * Allocate a buffer object.

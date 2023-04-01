@@ -110,19 +110,6 @@ struct intel_ds_device {
     */
    uint64_t event_id;
 
-   /* Start of unique IID for device generated events */
-   uint64_t start_app_event_iids;
-
-   /* Last app event iid (manipulate only inside
-    * IntelRenderpassDataSource::Trace)
-    */
-   uint64_t current_app_event_iid;
-
-   /* Hash table of application generated events (string -> iid) (manipulate
-    * only inside IntelRenderpassDataSource::Trace)
-    */
-   struct hash_table *app_events;
-
    struct u_trace_context trace_context;
 
    /* List of intel_ds_queue */

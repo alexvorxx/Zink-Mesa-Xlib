@@ -752,13 +752,13 @@ tu_DestroyImage(VkDevice _device,
 }
 
 static void
-tu_get_image_memory_requirements(struct tu_image *image,
+tu_get_image_memory_requirements(struct tu_device *dev, struct tu_image *image,
                                  VkMemoryRequirements2 *pMemoryRequirements)
 {
    pMemoryRequirements->memoryRequirements = (VkMemoryRequirements) {
       .size = image->total_size,
       .alignment = image->layout[0].base_align,
-      .memoryTypeBits = 1,
+      .memoryTypeBits = (1 << dev->physical_device->memory.type_count) - 1,
    };
 
    vk_foreach_struct(ext, pMemoryRequirements->pNext) {
@@ -778,13 +778,14 @@ tu_get_image_memory_requirements(struct tu_image *image,
 }
 
 VKAPI_ATTR void VKAPI_CALL
-tu_GetImageMemoryRequirements2(VkDevice device,
+tu_GetImageMemoryRequirements2(VkDevice _device,
                                const VkImageMemoryRequirementsInfo2 *pInfo,
                                VkMemoryRequirements2 *pMemoryRequirements)
 {
+   TU_FROM_HANDLE(tu_device, device, _device);
    TU_FROM_HANDLE(tu_image, image, pInfo->image);
 
-   tu_get_image_memory_requirements(image, pMemoryRequirements);
+   tu_get_image_memory_requirements(device, image, pMemoryRequirements);
 }
 
 VKAPI_ATTR void VKAPI_CALL
@@ -810,7 +811,7 @@ tu_GetDeviceImageMemoryRequirements(
    tu_image_init(device, &image, pInfo->pCreateInfo, DRM_FORMAT_MOD_INVALID,
                  NULL);
 
-   tu_get_image_memory_requirements(&image, pMemoryRequirements);
+   tu_get_image_memory_requirements(device, &image, pMemoryRequirements);
 }
 
 VKAPI_ATTR void VKAPI_CALL

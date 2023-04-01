@@ -573,6 +573,8 @@ fd_screen_get_param(struct pipe_screen *pscreen, enum pipe_cap param)
       return is_a6xx(screen);
    case PIPE_CAP_TWO_SIDED_COLOR:
       return 0;
+   case PIPE_CAP_THROTTLE:
+      return screen->driconf.enable_throttling;
    default:
       return u_pipe_screen_get_param_defaults(pscreen, param);
    }
@@ -1108,8 +1110,10 @@ fd_screen_create(int fd,
    driParseConfigFiles(config->options, config->options_info, 0, "msm",
                        NULL, fd_dev_name(screen->dev_id), NULL, 0, NULL, 0);
 
-   screen->conservative_lrz =
+   screen->driconf.conservative_lrz =
          !driQueryOptionb(config->options, "disable_conservative_lrz");
+   screen->driconf.enable_throttling =
+         !driQueryOptionb(config->options, "disable_throttling");
 
    struct sysinfo si;
    sysinfo(&si);

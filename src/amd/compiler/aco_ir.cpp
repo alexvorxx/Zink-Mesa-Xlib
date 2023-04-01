@@ -305,7 +305,7 @@ convert_to_SDWA(amd_gfx_level gfx_level, aco_ptr<Instruction>& instr)
    if (tmp->isVOP3()) {
       VALU_instruction& vop3 = tmp->valu();
       sdwa.neg = vop3.neg;
-      sdwa.abs = vop3.neg;
+      sdwa.abs = vop3.abs;
       sdwa.omod = vop3.omod;
       sdwa.clamp = vop3.clamp;
    }
@@ -403,13 +403,11 @@ convert_to_DPP(aco_ptr<Instruction>& instr, bool dpp8)
       dpp->dpp_ctrl = dpp_quad_perm(0, 1, 2, 3);
       dpp->row_mask = 0xf;
       dpp->bank_mask = 0xf;
-
-      if (tmp->isVOP3()) {
-         const VALU_instruction* vop3 = &tmp->valu();
-         dpp->neg = vop3->neg;
-         dpp->abs = vop3->abs;
-      }
    }
+
+   instr->valu().neg = tmp->valu().neg;
+   instr->valu().abs = tmp->valu().abs;
+   instr->valu().opsel = tmp->valu().opsel;
 
    if (instr->isVOPC() || instr->definitions.size() > 1)
       instr->definitions.back().setFixed(vcc);
@@ -473,7 +471,8 @@ can_use_opsel(amd_gfx_level gfx_level, aco_opcode op, int idx)
    case aco_opcode::v_interp_p10_rtz_f16_f32_inreg: return idx == 0 || idx == 2;
    case aco_opcode::v_interp_p2_f16_f32_inreg:
    case aco_opcode::v_interp_p2_rtz_f16_f32_inreg: return idx == -1 || idx == 0;
-   default: return false;
+   default:
+      return gfx_level >= GFX11 && (get_gfx11_true16_mask(op) & BITFIELD_BIT(idx == -1 ? 3 : idx));
    }
 }
 
@@ -539,7 +538,6 @@ instr_is_16bit(amd_gfx_level gfx_level, aco_opcode op)
 /* On GFX11, for some instructions, bit 7 of the destination/operand vgpr is opsel and the field
  * only supports v0-v127.
  */
-// TODO: take advantage of this functionality in the RA and assembler
 uint8_t
 get_gfx11_true16_mask(aco_opcode op)
 {

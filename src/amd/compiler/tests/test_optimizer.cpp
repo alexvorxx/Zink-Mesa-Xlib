@@ -1305,7 +1305,9 @@ BEGIN_TEST(optimize.mad_mix.input_conv.precision)
 END_TEST
 
 BEGIN_TEST(optimize.mad_mix.input_conv.modifiers)
-   for (unsigned i = GFX9; i <= GFX10; i++) {
+   for (unsigned i = GFX9; i <= GFX11; i++) {
+      if (i == GFX10_3)
+         continue;
       //>> v1: %a, v2b: %a16 = p_startpgm
       if (!setup_cs("v1 v2b", (amd_gfx_level)i))
          continue;
@@ -1380,18 +1382,24 @@ BEGIN_TEST(optimize.mad_mix.input_conv.modifiers)
       //! p_unit_test 14, %res14
       writeout(14, fmul(f2f32(ext_ushort(a, 1)), a));
 
-      //! v1: %res15_cvt = v_cvt_f32_f16 %a dst_sel:uword0 src0_sel:dword
+      //~gfx(9|10)! v1: %res15_cvt = v_cvt_f32_f16 %a dst_sel:uword0 src0_sel:dword
+      //~gfx11! v1: %res16_cvt1 = v_cvt_f32_f16 %a
+      //~gfx11! v1: %res15_cvt = p_extract %res16_cvt1, 0, 16, 0
       //! v1: %res15 = v_mul_f32 %res15_cvt, %a
       //! p_unit_test 15, %res15
       writeout(15, fmul(ext_ushort(f2f32(a), 0), a));
 
       //! v1: %res16_cvt = v_cvt_f32_f16 %a
-      //! v1: %res16 = v_mul_f32 %res16_cvt, %a dst_sel:dword src0_sel:uword1 src1_sel:dword
+      //~gfx(9|10)! v1: %res16 = v_mul_f32 %res16_cvt, %a dst_sel:dword src0_sel:uword1 src1_sel:dword
+      //~gfx11! v1: %res16_ext = p_extract %res16_cvt, 1, 16, 0
+      //~gfx11! v1: %res16 = v_mul_f32 %res16_ext, %a
       //! p_unit_test 16, %res16
       writeout(16, fmul(ext_ushort(f2f32(a), 1), a));
 
-      //! v1: %res17_cvt = v_cvt_f32_f16 %a dst_sel:dword src0_sel:ubyte2
-      //! v1: %res17 = v_mul_f32 %res17_cvt, %a
+      //~gfx(9|10)! v1: %res17_cvt = v_cvt_f32_f16 %a dst_sel:dword src0_sel:ubyte2
+      //~gfx(9|10)! v1: %res17 = v_mul_f32 %res17_cvt, %a
+      //~gfx11! v1: %res17_ext = p_extract %a, 2, 8, 0
+      //~gfx11! v1: %res17 = v_fma_mix_f32 lo(%res17_ext), %a, -0
       //! p_unit_test 17, %res17
       writeout(17, fmul(f2f32(ext_ubyte(a, 2)), a));
 
@@ -1946,4 +1954,238 @@ BEGIN_TEST(optimize.fmamix_two_literals)
 
       finish_opt_test();
    }
+END_TEST
+
+BEGIN_TEST(optimize.fma_opsel)
+   /* TODO make these work before GFX11 using SDWA. */
+   for (unsigned i = GFX11; i <= GFX11; i++) {
+      //>> v2b: %a, v2b: %b, v1: %c, v1: %d, v1: %e  = p_startpgm
+      if (!setup_cs("v2b v2b v1 v1 v1", (amd_gfx_level)i))
+         continue;
+
+      Temp a = inputs[0];
+      Temp b = inputs[1];
+      Temp c = inputs[2];
+      Temp d = inputs[3];
+      Temp e = inputs[4];
+      Temp c_hi = bld.pseudo(aco_opcode::p_extract_vector, bld.def(v2b), c, Operand::c32(1));
+      Temp d_hi = bld.pseudo(aco_opcode::p_extract_vector, bld.def(v2b), d, Operand::c32(1));
+      Temp e_hi = bld.pseudo(aco_opcode::p_extract_vector, bld.def(v2b), e, Operand::c32(1));
+
+      //! v2b: %res0 = v_fma_f16 %b, hi(%c), %a
+      //! p_unit_test 0, %res0
+      writeout(0, fadd(fmul(b, c_hi), a));
+
+      //! v2b: %res1 = v_fma_f16 %a, %b, hi(%d)
+      //! p_unit_test 1, %res1
+      writeout(1, fadd(fmul(a, b), d_hi));
+
+      //! v2b: %res2 = v_fma_f16 %a, %b, hi(%e)
+      //! p_unit_test 2, %res2
+      writeout(2, fma(a, b, e_hi));
+
+      finish_opt_test();
+   }
+END_TEST
+
+BEGIN_TEST(optimize.dpp_opsel)
+   //>> v1: %a, v1: %b = p_startpgm
+   if (!setup_cs("v1  v1", GFX11))
+      return;
+
+   Temp a = inputs[0];
+   Temp b = inputs[1];
+
+   Temp dpp16 = bld.vop1_dpp(aco_opcode::v_mov_b32, bld.def(v1), a, dpp_row_mirror);
+   Temp dpp16_hi = bld.pseudo(aco_opcode::p_extract_vector, bld.def(v2b), dpp16, Operand::c32(1));
+   Temp dpp8 = bld.vop1_dpp8(aco_opcode::v_mov_b32, bld.def(v1), a);
+   Temp dpp8_hi = bld.pseudo(aco_opcode::p_extract_vector, bld.def(v2b), dpp8, Operand::c32(1));
+
+   Temp b_hi = bld.pseudo(aco_opcode::p_extract_vector, bld.def(v2b), b, Operand::c32(1));
+   Temp b_lo = bld.pseudo(aco_opcode::p_extract_vector, bld.def(v2b), b, Operand::c32(0));
+
+   //! v2b: %res0 = v_add_f16 hi(%a), hi(%b) row_mirror bound_ctrl:1
+   //! p_unit_test 0, %res0
+   writeout(0, fadd(dpp16_hi, b_hi));
+
+   //! v2b: %res1 = v_add_f16 hi(%a), %b dpp8:[0,0,0,0,0,0,0,0]
+   //! p_unit_test 1, %res1
+   writeout(1, fadd(b_lo, dpp8_hi));
+
+   finish_opt_test();
+END_TEST
+
+BEGIN_TEST(optimize.apply_sgpr_swap_opsel)
+   //>> v1: %a, s1: %b = p_startpgm
+   if (!setup_cs("v1  s1", GFX11))
+      return;
+
+   Temp a = inputs[0];
+   Temp b = inputs[1];
+
+   Temp b_vgpr = bld.pseudo(aco_opcode::p_extract_vector, bld.def(v2b), bld.copy(bld.def(v1), b),
+                            Operand::c32(0));
+
+   Temp res0 = bld.tmp(v2b);
+   VALU_instruction& valu = bld.vop2(aco_opcode::v_sub_f16, Definition(res0), a, b_vgpr)->valu();
+   valu.opsel[0] = true;
+
+   //! v2b: %res0 = v_subrev_f16 %b, hi(%a)
+   //! p_unit_test 0, %res0
+   writeout(0, res0);
+
+   finish_opt_test();
+END_TEST
+
+BEGIN_TEST(optimize.combine_comparison_ordering)
+   //>> v1: %a, v1: %b, v1: %c = p_startpgm
+   if (!setup_cs("v1 v1 v1", GFX11))
+      return;
+
+   Temp a = inputs[0];
+   Temp b = inputs[1];
+   Temp c = inputs[2];
+
+   Temp a_unordered = bld.vopc(aco_opcode::v_cmp_neq_f32, bld.def(bld.lm), a, a);
+   Temp b_unordered = bld.vopc(aco_opcode::v_cmp_neq_f32, bld.def(bld.lm), b, b);
+   Temp unordered =
+      bld.sop2(Builder::s_or, bld.def(bld.lm), bld.def(bld.lm, scc), a_unordered, b_unordered);
+
+   Temp a_lt_a = bld.vopc(aco_opcode::v_cmp_lt_f32, bld.def(bld.lm), a, a);
+   Temp unordered_cmp =
+      bld.sop2(Builder::s_or, bld.def(bld.lm), bld.def(bld.lm, scc), unordered, a_lt_a);
+
+   //! s2: %res0_unordered = v_cmp_u_f32 %a, %b
+   //! s2: %res0_cmp = v_cmp_lt_f32 %a, %a
+   //! s2: %res0,  s2: %_:scc = s_or_b64 %res0_unordered, %res0_cmp
+   //! p_unit_test 0, %res0
+   writeout(0, unordered_cmp);
+
+   Temp c_hi = bld.pseudo(aco_opcode::p_extract_vector, bld.def(v2b), c, Operand::c32(1));
+
+   Temp c_unordered = bld.vopc(aco_opcode::v_cmp_neq_f16, bld.def(bld.lm), c, c);
+   Temp c_hi_unordered = bld.vopc(aco_opcode::v_cmp_neq_f16, bld.def(bld.lm), c_hi, c_hi);
+   unordered =
+      bld.sop2(Builder::s_or, bld.def(bld.lm), bld.def(bld.lm, scc), c_unordered, c_hi_unordered);
+
+   Temp c_lt_c_hi = bld.vopc(aco_opcode::v_cmp_lt_f16, bld.def(bld.lm), c, c_hi);
+   unordered_cmp =
+      bld.sop2(Builder::s_or, bld.def(bld.lm), bld.def(bld.lm, scc), unordered, c_lt_c_hi);
+
+   //! s2: %res1 = v_cmp_nge_f16 %c, hi(%c)
+   //! p_unit_test 1, %res1
+   writeout(1, unordered_cmp);
+
+   finish_opt_test();
+END_TEST
+
+BEGIN_TEST(optimize.combine_comparison_ordering_opsel)
+   //>> v1: %a, v2b: %b = p_startpgm
+   if (!setup_cs("v1  v2b", GFX11))
+      return;
+
+   Temp a = inputs[0];
+   Temp b = inputs[1];
+
+   Temp a_hi = bld.pseudo(aco_opcode::p_extract_vector, bld.def(v2b), a, Operand::c32(1));
+
+   Temp ahi_unordered = bld.vopc(aco_opcode::v_cmp_neq_f16, bld.def(bld.lm), a_hi, a_hi);
+   Temp b_unordered = bld.vopc(aco_opcode::v_cmp_neq_f16, bld.def(bld.lm), b, b);
+   Temp unordered =
+      bld.sop2(Builder::s_or, bld.def(bld.lm), bld.def(bld.lm, scc), ahi_unordered, b_unordered);
+
+   Temp ahi_lt_b = bld.vopc(aco_opcode::v_cmp_lt_f16, bld.def(bld.lm), a_hi, b);
+   Temp unordered_cmp =
+      bld.sop2(Builder::s_or, bld.def(bld.lm), bld.def(bld.lm, scc), unordered, ahi_lt_b);
+
+   //! s2: %res0 = v_cmp_nge_f16 hi(%a), %b
+   //! p_unit_test 0, %res0
+   writeout(0, unordered_cmp);
+
+   Temp ahi_cmp_const = bld.vopc(aco_opcode::v_cmp_lt_f16, bld.def(bld.lm), a_hi,
+                                 bld.copy(bld.def(v2b), Operand::c16(0x4400)));
+   Temp ahi_ucmp_const =
+      bld.sop2(Builder::s_or, bld.def(bld.lm), bld.def(bld.lm, scc), ahi_unordered, ahi_cmp_const);
+   //! s2: %res1 = v_cmp_nle_f16 4.0, hi(%a)
+   //! p_unit_test 1, %res1
+   writeout(1, ahi_ucmp_const);
+
+   a_hi = bld.pseudo(aco_opcode::p_extract_vector, bld.def(v2b), a, Operand::c32(1));
+   ahi_unordered = bld.vopc(aco_opcode::v_cmp_neq_f16, bld.def(bld.lm), a_hi, a_hi);
+   b_unordered = bld.vopc(aco_opcode::v_cmp_neq_f16, bld.def(bld.lm), b, b);
+   unordered =
+      bld.sop2(Builder::s_or, bld.def(bld.lm), bld.def(bld.lm, scc), ahi_unordered, b_unordered);
+   Temp alo_lt_b = bld.vopc(aco_opcode::v_cmp_lt_f16, bld.def(bld.lm), a, b);
+   Temp noopt = bld.sop2(Builder::s_or, bld.def(bld.lm), bld.def(bld.lm, scc), unordered, alo_lt_b);
+   //! s2: %u2 = v_cmp_u_f16 hi(%a), %b
+   //! s2: %cmp2 = v_cmp_lt_f16 %a, %b
+   //! s2: %res2,  s2: %scc2:scc = s_or_b64 %u2, %cmp2
+   //! p_unit_test 2, %res2
+   writeout(2, noopt);
+
+   Temp hi_neq_lo = bld.vopc(aco_opcode::v_cmp_neq_f16, bld.def(bld.lm), a, a_hi);
+   Temp a_unordered = bld.vopc(aco_opcode::v_cmp_neq_f16, bld.def(bld.lm), a, a);
+   noopt = bld.sop2(Builder::s_or, bld.def(bld.lm), bld.def(bld.lm, scc), hi_neq_lo, a_unordered);
+   //! s2: %nan31 = v_cmp_neq_f16 %a, hi(%a)
+   //! s2: %nan32 = v_cmp_neq_f16 %a, %a
+   //! s2: %res3,  s2: %scc3:scc = s_or_b64 %nan31, %nan32
+   //! p_unit_test 3, %res3
+   writeout(3, noopt);
+
+   ahi_cmp_const = bld.vopc(aco_opcode::v_cmp_lt_f16, bld.def(bld.lm), a_hi,
+                            bld.copy(bld.def(v2b), Operand::c16(0x4400)));
+   a_unordered = bld.vopc(aco_opcode::v_cmp_neq_f16, bld.def(bld.lm), a, a);
+   noopt =
+      bld.sop2(Builder::s_or, bld.def(bld.lm), bld.def(bld.lm, scc), a_unordered, ahi_cmp_const);
+   //! s2: %cmp4 = v_cmp_gt_f16 4.0, hi(%a)
+   //! s2: %nan4 = v_cmp_neq_f16 %a, %a
+   //! s2: %res4,  s2: %scc4:scc = s_or_b64 %nan4, %cmp4
+   //! p_unit_test 4, %res4
+   writeout(4, noopt);
+
+   finish_opt_test();
+END_TEST
+
+BEGIN_TEST(optimize.max3_opsel)
+   /* TODO make these work before GFX11 using SDWA. */
+   for (unsigned i = GFX11; i <= GFX11; i++) {
+      //>> v1: %a, v1: %b, v2b: %c = p_startpgm
+      if (!setup_cs("v1  v1 v2b", GFX11))
+         continue;
+
+      Temp a = inputs[0];
+      Temp b = inputs[1];
+      Temp c = inputs[2];
+
+      Temp a_hi = bld.pseudo(aco_opcode::p_extract_vector, bld.def(v2b), a, Operand::c32(1));
+      Temp b_hi = bld.pseudo(aco_opcode::p_extract_vector, bld.def(v2b), b, Operand::c32(1));
+
+      //! v2b: %res0 = v_max3_f16 hi(%a), %c, hi(%b)
+      //! p_unit_test 0, %res0
+      writeout(0, bld.vop2(aco_opcode::v_max_f16, bld.def(v2b),
+                           bld.vop2(aco_opcode::v_max_f16, bld.def(v2b), a_hi, c), b_hi));
+
+      finish_opt_test();
+   }
+END_TEST
+
+BEGIN_TEST(optimize.neg_mul_opsel)
+   //>> v1: %a, v2b: %b = p_startpgm
+   if (!setup_cs("v1  v2b", GFX11))
+      return;
+
+   Temp a = inputs[0];
+   Temp b = inputs[1];
+
+   Temp a_hi = bld.pseudo(aco_opcode::p_extract_vector, bld.def(v2b), a, Operand::c32(1));
+
+   //! v2b: %res0 = v_mul_f16 -hi(%a), %b
+   //! p_unit_test 0, %res0
+   writeout(0, fneg(fmul(a_hi, b)));
+
+   //! v1: %res1 = v_fma_mix_f32 -hi(%a), lo(%b), -0
+   //! p_unit_test 1, %res1
+   writeout(1, fneg(fmul(f2f32(a_hi), f2f32(b))));
+
+   finish_opt_test();
 END_TEST

@@ -38,6 +38,10 @@
 #include "vulkan/util/vk_format.h"
 #include "vulkan/util/vk_enum_defines.h"
 
+#ifdef ANDROID
+#include "vk_android.h"
+#endif
+
 uint32_t
 radv_translate_buffer_dataformat(const struct util_format_description *desc, int first_non_void)
 {
@@ -1803,7 +1807,7 @@ radv_GetPhysicalDeviceImageFormatProperties2(VkPhysicalDevice physicalDevice,
    if (android_usage && ahb_supported) {
 #if RADV_SUPPORT_ANDROID_HARDWARE_BUFFER
       android_usage->androidHardwareBufferUsage =
-         radv_ahb_usage_from_vk_usage(base_info->flags, base_info->usage);
+         vk_image_usage_to_ahb_usage(base_info->flags, base_info->usage);
 #endif
    }
 

@@ -624,8 +624,23 @@ radv_get_surface_flags(struct radv_device *device, struct radv_image *image, uns
    if (is_depth) {
       flags |= RADEON_SURF_ZBUFFER;
 
+      if (is_depth && is_stencil && device->physical_device->rad_info.gfx_level <= GFX8) {
+         if (!(pCreateInfo->usage & VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT))
+            flags |= RADEON_SURF_NO_RENDER_TARGET;
+
+         /* RADV doesn't support stencil pitch adjustment. As a result there are some spec gaps that
+          * are not covered by CTS.
+          *
+          * For D+S images with pitch constraints due to rendertarget usage it can happen that
+          * sampling from mipmaps beyond the base level of the descriptor is broken as the pitch
+          * adjustment can't be applied to anything beyond the first level.
+          */
+         flags |= RADEON_SURF_NO_STENCIL_ADJUST;
+      }
+
       if (radv_use_htile_for_image(device, image) &&
-          !(device->instance->debug_flags & RADV_DEBUG_NO_HIZ)) {
+          !(device->instance->debug_flags & RADV_DEBUG_NO_HIZ) &&
+          !(flags & RADEON_SURF_NO_RENDER_TARGET)) {
          if (radv_use_tc_compat_htile_for_image(device, pCreateInfo, image_format))
             flags |= RADEON_SURF_TC_COMPATIBLE_HTILE;
       } else {
@@ -1426,8 +1441,9 @@ radv_query_opaque_metadata(struct radv_device *device, struct radv_image *image,
                                   0, image->planes[0].surface.blk_w, false, false, false, false,
                                   desc, NULL);
 
-   ac_surface_get_umd_metadata(&device->physical_device->rad_info, &image->planes[0].surface,
-                               image->info.levels, desc, &md->size_metadata, md->metadata);
+   ac_surface_compute_umd_metadata(&device->physical_device->rad_info, &image->planes[0].surface,
+                                   image->info.levels, desc, &md->size_metadata, md->metadata,
+                                   device->instance->debug_flags & RADV_DEBUG_EXTRA_MD);
 }
 
 void
@@ -1736,10 +1752,10 @@ radv_image_create_layout(struct radv_device *device, struct radv_image_create_in
       }
 
       if (create_info.bo_metadata && !mod_info &&
-          !ac_surface_set_umd_metadata(&device->physical_device->rad_info,
-                                       &image->planes[plane].surface, image_info.storage_samples,
-                                       image_info.levels, create_info.bo_metadata->size_metadata,
-                                       create_info.bo_metadata->metadata))
+          !ac_surface_apply_umd_metadata(&device->physical_device->rad_info,
+                                         &image->planes[plane].surface, image_info.storage_samples,
+                                         image_info.levels, create_info.bo_metadata->size_metadata,
+                                         create_info.bo_metadata->metadata))
          return VK_ERROR_INVALID_EXTERNAL_HANDLE;
 
       if (!create_info.no_metadata_planes && !create_info.bo_metadata && plane_count == 1 &&
@@ -1958,11 +1974,13 @@ radv_image_create(VkDevice _device, const struct radv_image_create_info *create_
       image->planes[plane].surface.modifier = modifier;
    }
 
-   bool delay_layout =
-      external_info && (external_info->handleTypes &
-                        VK_EXTERNAL_MEMORY_HANDLE_TYPE_ANDROID_HARDWARE_BUFFER_BIT_ANDROID);
+   if (image->vk.external_handle_types &
+       VK_EXTERNAL_MEMORY_HANDLE_TYPE_ANDROID_HARDWARE_BUFFER_BIT_ANDROID) {
+#ifdef ANDROID
+      image->vk.ahardware_buffer_format =
+         radv_ahb_format_for_vk_format(image->vk.format);
+#endif
 
-   if (delay_layout) {
       *pImage = radv_image_to_handle(image);
       assert(!(image->vk.create_flags & VK_IMAGE_CREATE_SPARSE_BINDING_BIT));
       return VK_SUCCESS;

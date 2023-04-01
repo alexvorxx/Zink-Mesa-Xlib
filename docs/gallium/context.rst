@@ -357,7 +357,7 @@ buffer.
 In indexed draw, ``min_index`` and ``max_index`` respectively provide a lower
 and upper bound of the indices contained in the index buffer inside the range
 between ``start`` to ``start``+``count``-1.  This allows the driver to
-determine which subset of vertices will be referenced during te draw call
+determine which subset of vertices will be referenced during the draw call
 without having to scan the index buffer.  Providing a over-estimation of the
 the true bounds, for example, a ``min_index`` and ``max_index`` of 0 and
 0xffffffff respectively, must give exactly the same rendering, albeit with less
@@ -561,7 +561,7 @@ has completed, drawing will be predicated on the outcome of the query.
 If ``mode`` is PIPE_RENDER_COND_BY_REGION_WAIT or
 PIPE_RENDER_COND_BY_REGION_NO_WAIT rendering will be predicated as above
 for the non-REGION modes but in the case that an occlusion query returns
-a non-zero result, regions which were occluded may be ommitted by subsequent
+a non-zero result, regions which were occluded may be omitted by subsequent
 drawing commands.  This can result in better performance with some GPUs.
 Normally, if the occlusion query returned a non-zero result subsequent
 drawing happens normally so fragments may be generated, shaded and

@@ -758,6 +758,12 @@ fd_bo_state(struct fd_bo *bo)
    if (bo->alloc_flags & (FD_BO_SHARED | _FD_BO_NOSYNC))
       return FD_BO_STATE_UNKNOWN;
 
+   /* Speculatively check, if we already know we're idle, no need to acquire
+    * lock and do the cleanup_fences() dance:
+    */
+   if (!bo->nr_fences)
+      return FD_BO_STATE_IDLE;
+
    simple_mtx_lock(&fence_lock);
    cleanup_fences(bo);
    simple_mtx_unlock(&fence_lock);

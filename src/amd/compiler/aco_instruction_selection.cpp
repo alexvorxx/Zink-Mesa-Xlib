@@ -3543,11 +3543,30 @@ visit_alu_instr(isel_context* ctx, nir_alu_instr* instr)
    }
    case nir_op_pack_unorm_2x16:
    case nir_op_pack_snorm_2x16: {
+      unsigned bit_size = instr->src[0].src.ssa->bit_size;
+      /* Only support 16 and 32bit. */
+      assert(bit_size == 32 || bit_size == 16);
+
+      RegClass src_rc = bit_size == 32 ? v1 : v2b;
       Temp src = get_alu_src(ctx, instr->src[0], 2);
-      Temp src0 = emit_extract_vector(ctx, src, 0, v1);
-      Temp src1 = emit_extract_vector(ctx, src, 1, v1);
-      aco_opcode opcode = instr->op == nir_op_pack_unorm_2x16 ? aco_opcode::v_cvt_pknorm_u16_f32
-                                                              : aco_opcode::v_cvt_pknorm_i16_f32;
+      Temp src0 = emit_extract_vector(ctx, src, 0, src_rc);
+      Temp src1 = emit_extract_vector(ctx, src, 1, src_rc);
+
+      /* Work around for pre-GFX9 GPU which don't have fp16 pknorm instruction. */
+      if (bit_size == 16 && ctx->program->gfx_level < GFX9) {
+         src0 = bld.vop1(aco_opcode::v_cvt_f32_f16, bld.def(v1), src0);
+         src1 = bld.vop1(aco_opcode::v_cvt_f32_f16, bld.def(v1), src1);
+         bit_size = 32;
+      }
+
+      aco_opcode opcode;
+      if (bit_size == 32) {
+         opcode = instr->op == nir_op_pack_unorm_2x16 ? aco_opcode::v_cvt_pknorm_u16_f32
+                                                      : aco_opcode::v_cvt_pknorm_i16_f32;
+      } else {
+         opcode = instr->op == nir_op_pack_unorm_2x16 ? aco_opcode::v_cvt_pknorm_u16_f16
+                                                      : aco_opcode::v_cvt_pknorm_i16_f16;
+      }
       bld.vop3(opcode, Definition(dst), src0, src1);
       break;
    }
@@ -7223,7 +7242,8 @@ emit_scoped_barrier(isel_context* ctx, nir_intrinsic_instr* instr)
       storage_allowed |= storage_task_payload;
 
    /* Allow VMEM output for all stages that can have outputs. */
-   if (ctx->stage.hw != HWStage::CS && ctx->stage.hw != HWStage::FS)
+   if ((ctx->stage.hw != HWStage::CS && ctx->stage.hw != HWStage::FS) ||
+       ctx->stage.has(SWStage::TS))
       storage_allowed |= storage_vmem_output;
 
    /* Workgroup barriers can hang merged shaders that can potentially have 0 threads in either half.
@@ -11868,8 +11888,8 @@ select_rt_prolog(Program* program, ac_shader_config* config,
       /* Thread IDs are packed in VGPR0, 10 bits per component. */
       bld.vop3(aco_opcode::v_bfe_u32, Definition(in_local_ids[1], v1), Operand(in_local_ids[0], v1),
                Operand::c32(10u), Operand::c32(3u));
-      bld.vop2(aco_opcode::v_and_b32, Definition(in_local_ids[0], v1), Operand(in_local_ids[0], v1),
-               Operand::c32(0x7));
+      bld.vop2(aco_opcode::v_and_b32, Definition(in_local_ids[0], v1), Operand::c32(0x7),
+               Operand(in_local_ids[0], v1));
    }
    /* Do this backwards to reduce some RAW hazards on GFX11+ */
    bld.vop1(aco_opcode::v_mov_b32, Definition(out_launch_ids[2], v1), Operand(in_wg_id_z, s1));
@@ -11891,8 +11911,8 @@ select_rt_prolog(Program* program, ac_shader_config* config,
    bld.sop1(aco_opcode::s_setpc_b64, Operand(out_shader_pc, s2));
 
    program->config->float_mode = program->blocks[0].fp_mode.val;
-   program->config->num_vgprs = get_vgpr_alloc(program, num_sgprs);
-   program->config->num_sgprs = get_sgpr_alloc(program, num_vgprs);
+   program->config->num_vgprs = get_vgpr_alloc(program, num_vgprs);
+   program->config->num_sgprs = get_sgpr_alloc(program, num_sgprs);
 }
 
 void

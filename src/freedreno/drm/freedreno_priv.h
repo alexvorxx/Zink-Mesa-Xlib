@@ -271,6 +271,12 @@ struct fd_device {
    struct util_queue submit_queue;
 };
 
+static inline bool
+fd_device_threaded_submit(struct fd_device *dev)
+{
+   return util_queue_is_initialized(&dev->submit_queue);
+}
+
 #define foreach_submit(name, list) \
    list_for_each_entry(struct fd_submit, name, list, node)
 #define foreach_submit_safe(name, list) \

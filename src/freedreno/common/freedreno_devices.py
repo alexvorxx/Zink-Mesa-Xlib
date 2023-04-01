@@ -488,6 +488,18 @@ add_gpus([
         )
     ))
 
+# Minimal definition needed for ir3 assembler/disassembler
+add_gpus([
+        GPUId(730),
+        GPUId(740),
+    ], A6xxGPUInfo(
+        a6xx_gen4,
+        num_ccu = 4,
+        tile_align_w = 64,
+        tile_align_h = 32,
+        magic_regs = dict()
+    ))
+
 template = """\
 /* Copyright (C) 2021 Google, Inc.
  *

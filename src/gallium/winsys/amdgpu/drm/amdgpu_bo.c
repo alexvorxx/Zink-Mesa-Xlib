@@ -1312,8 +1312,8 @@ static void amdgpu_buffer_get_metadata(struct radeon_winsys *rws,
    if (r)
       return;
 
-   ac_surface_set_bo_metadata(&ws->info, surf, info.metadata.tiling_info,
-                              &md->mode);
+   ac_surface_apply_bo_metadata(&ws->info, surf, info.metadata.tiling_info,
+                                &md->mode);
 
    md->size_metadata = info.metadata.size_metadata;
    memcpy(md->metadata, info.metadata.umd_metadata, sizeof(md->metadata));
@@ -1330,7 +1330,7 @@ static void amdgpu_buffer_set_metadata(struct radeon_winsys *rws,
 
    assert(bo->bo && "must not be called for slab entries");
 
-   ac_surface_get_bo_metadata(&ws->info, surf, &metadata.tiling_info);
+   ac_surface_compute_bo_metadata(&ws->info, surf, &metadata.tiling_info);
 
    metadata.size_metadata = md->size_metadata;
    memcpy(metadata.umd_metadata, md->metadata, sizeof(md->metadata));

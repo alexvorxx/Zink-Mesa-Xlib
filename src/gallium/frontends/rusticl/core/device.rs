@@ -75,6 +75,7 @@ pub trait HelperContextWrapper {
 
     fn create_compute_state(&self, nir: &NirShader, static_local_mem: u32) -> *mut c_void;
     fn delete_compute_state(&self, cso: *mut c_void);
+    fn compute_state_info(&self, state: *mut c_void) -> pipe_compute_state_object_info;
 
     fn unmap(&self, tx: PipeTransfer);
 }
@@ -157,6 +158,10 @@ impl<'a> HelperContextWrapper for HelperContext<'a> {
 
     fn delete_compute_state(&self, cso: *mut c_void) {
         self.lock.delete_compute_state(cso)
+    }
+
+    fn compute_state_info(&self, state: *mut c_void) -> pipe_compute_state_object_info {
+        self.lock.compute_state_info(state)
     }
 
     fn unmap(&self, tx: PipeTransfer) {

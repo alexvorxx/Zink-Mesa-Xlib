@@ -62,8 +62,11 @@ get_dynamic_state_groups(BITSET_WORD *dynamic,
       BITSET_SET(dynamic, MESA_VK_DYNAMIC_VP_DEPTH_CLIP_NEGATIVE_ONE_TO_ONE);
    }
 
-   if (groups & MESA_VK_GRAPHICS_STATE_DISCARD_RECTANGLES_BIT)
+   if (groups & MESA_VK_GRAPHICS_STATE_DISCARD_RECTANGLES_BIT) {
       BITSET_SET(dynamic, MESA_VK_DYNAMIC_DR_RECTANGLES);
+      BITSET_SET(dynamic, MESA_VK_DYNAMIC_DR_ENABLE);
+      BITSET_SET(dynamic, MESA_VK_DYNAMIC_DR_MODE);
+   }
 
    if (groups & MESA_VK_GRAPHICS_STATE_RASTERIZATION_BIT) {
       BITSET_SET(dynamic, MESA_VK_DYNAMIC_RS_RASTERIZER_DISCARD_ENABLE);
@@ -228,6 +231,8 @@ vk_get_dynamic_graphics_states(BITSET_WORD *dynamic,
       CASE( DEPTH_BIAS_ENABLE,            RS_DEPTH_BIAS_ENABLE)
       CASE( PRIMITIVE_RESTART_ENABLE,     IA_PRIMITIVE_RESTART_ENABLE)
       CASE( DISCARD_RECTANGLE_EXT,        DR_RECTANGLES)
+      CASE( DISCARD_RECTANGLE_ENABLE_EXT, DR_ENABLE)
+      CASE( DISCARD_RECTANGLE_MODE_EXT,   DR_MODE)
       CASE( SAMPLE_LOCATIONS_EXT,         MS_SAMPLE_LOCATIONS)
       CASE( FRAGMENT_SHADING_RATE_KHR,    FSR)
       CASE( LINE_STIPPLE_EXT,             RS_LINE_STIPPLE)
@@ -477,6 +482,8 @@ vk_dynamic_graphics_state_init_dr(struct vk_dynamic_graphics_state *dst,
                                   const BITSET_WORD *needed,
                                   const struct vk_discard_rectangles_state *dr)
 {
+   dst->dr.enable = dr->rectangle_count > 0;
+   dst->dr.mode = dr->mode;
    dst->dr.rectangle_count = dr->rectangle_count;
    typed_memcpy(dst->dr.rectangles, dr->rectangles, dr->rectangle_count);
 }
@@ -1668,6 +1675,8 @@ vk_dynamic_graphics_state_copy(struct vk_dynamic_graphics_state *dst,
    COPY_IF_SET(VP_DEPTH_CLIP_NEGATIVE_ONE_TO_ONE,
                vp.depth_clip_negative_one_to_one);
 
+   COPY_IF_SET(DR_ENABLE, dr.enable);
+   COPY_IF_SET(DR_MODE, dr.mode);
    if (IS_SET_IN_SRC(DR_RECTANGLES)) {
       COPY_MEMBER(DR_RECTANGLES, dr.rectangle_count);
       COPY_ARRAY(DR_RECTANGLES, dr.rectangles, src->dr.rectangle_count);
@@ -2565,4 +2574,24 @@ vk_common_CmdSetColorBlendAdvancedEXT(VkCommandBuffer commandBuffer,
                                       const VkColorBlendAdvancedEXT* pColorBlendAdvanced)
 {
    unreachable("VK_EXT_blend_operation_advanced unsupported");
+}
+
+VKAPI_ATTR void VKAPI_CALL
+vk_common_CmdSetDiscardRectangleEnableEXT(VkCommandBuffer commandBuffer,
+                                          VkBool32 discardRectangleEnable)
+{
+   VK_FROM_HANDLE(vk_command_buffer, cmd, commandBuffer);
+   struct vk_dynamic_graphics_state *dyn = &cmd->dynamic_graphics_state;
+
+   SET_DYN_VALUE(dyn, DR_ENABLE, dr.enable, discardRectangleEnable);
+}
+
+VKAPI_ATTR void VKAPI_CALL
+vk_common_CmdSetDiscardRectangleModeEXT(VkCommandBuffer commandBuffer,
+                                        VkDiscardRectangleModeEXT discardRectangleMode)
+{
+   VK_FROM_HANDLE(vk_command_buffer, cmd, commandBuffer);
+   struct vk_dynamic_graphics_state *dyn = &cmd->dynamic_graphics_state;
+
+   SET_DYN_VALUE(dyn, DR_MODE, dr.mode, discardRectangleMode);
 }

@@ -45,7 +45,8 @@ zink_create_gfx_pipeline(struct zink_screen *screen,
 {
    struct zink_rasterizer_hw_state *hw_rast_state = (void*)&state->dyn_state3;
    VkPipelineVertexInputStateCreateInfo vertex_input_state;
-   if (!screen->info.have_EXT_vertex_input_dynamic_state || !state->element_state->num_attribs || !state->uses_dynamic_stride) {
+   bool needs_vi = !screen->info.have_EXT_vertex_input_dynamic_state;
+   if (needs_vi) {
       memset(&vertex_input_state, 0, sizeof(vertex_input_state));
       vertex_input_state.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
       vertex_input_state.pVertexBindingDescriptions = state->element_state->b.bindings;
@@ -62,7 +63,7 @@ zink_create_gfx_pipeline(struct zink_screen *screen,
    }
 
    VkPipelineVertexInputDivisorStateCreateInfoEXT vdiv_state;
-   if (!screen->info.have_EXT_vertex_input_dynamic_state && state->element_state->b.divisors_present) {
+   if (needs_vi && state->element_state->b.divisors_present) {
        memset(&vdiv_state, 0, sizeof(vdiv_state));
        vertex_input_state.pNext = &vdiv_state;
        vdiv_state.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_DIVISOR_STATE_CREATE_INFO_EXT;
@@ -349,7 +350,7 @@ zink_create_gfx_pipeline(struct zink_screen *screen,
       pci.renderPass = state->render_pass->render_pass;
    else
       pci.pNext = &state->rendering_info;
-   if (!screen->info.have_EXT_vertex_input_dynamic_state || !state->element_state->num_attribs || !state->uses_dynamic_stride)
+   if (needs_vi)
       pci.pVertexInputState = &vertex_input_state;
    pci.pInputAssemblyState = &primitive_state;
    pci.pRasterizationState = &rast_state;

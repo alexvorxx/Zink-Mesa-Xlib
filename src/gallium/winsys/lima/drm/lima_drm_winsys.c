@@ -37,7 +37,8 @@ lima_drm_screen_create(int fd)
 }
 
 struct pipe_screen *
-lima_drm_screen_create_renderonly(struct renderonly *ro)
+lima_drm_screen_create_renderonly(int fd, struct renderonly *ro,
+                                  const struct pipe_screen_config *config)
 {
-   return lima_screen_create(os_dupfd_cloexec(ro->gpu_fd), NULL, ro);
+   return lima_screen_create(os_dupfd_cloexec(fd), config, ro);
 }

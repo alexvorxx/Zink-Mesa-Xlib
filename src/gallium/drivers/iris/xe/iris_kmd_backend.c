@@ -42,9 +42,16 @@ xe_gem_create(struct iris_bufmgr *bufmgr,
    if (alloc_flags & BO_ALLOC_PROTECTED)
       return -EINVAL;
 
+   uint32_t vm_id = iris_bufmgr_get_global_vm_id(bufmgr);
+   vm_id = alloc_flags & BO_ALLOC_SHARED ? 0 : vm_id;
+
    struct drm_xe_gem_create gem_create = {
-     .vm_id = iris_bufmgr_get_global_vm_id(bufmgr),
+     .vm_id = vm_id,
      .size = align64(size, iris_bufmgr_get_device_info(bufmgr)->mem_alignment),
+     /* TODO: we might need to consider scanout for shared buffers too as we
+      * do not know what the process this is shared with will do with it
+      */
+     .flags = alloc_flags & BO_ALLOC_SCANOUT ? XE_GEM_CREATE_FLAG_SCANOUT : 0,
    };
    for (uint16_t i = 0; i < regions_count; i++)
       gem_create.flags |= BITFIELD_BIT(regions[i]->instance);
@@ -148,6 +155,25 @@ xe_gem_vm_unbind(struct iris_bo *bo)
    return xe_gem_vm_bind_op(bo, XE_VM_BIND_OP_UNMAP) == 0;
 }
 
+static bool
+xe_bo_madvise(struct iris_bo *bo, enum iris_madvice state)
+{
+   /* Only applicable if VM was created with DRM_XE_VM_CREATE_FAULT_MODE but
+    * that is not compatible with DRM_XE_VM_CREATE_SCRATCH_PAGE
+    *
+    * So returning as retained.
+    */
+   return true;
+}
+
+static int
+xe_bo_set_caching(struct iris_bo *bo, bool cached)
+{
+   /* Xe don't have caching UAPI so this function should never be called */
+   assert(0);
+   return -1;
+}
+
 const struct iris_kmd_backend *xe_get_backend(void)
 {
    static const struct iris_kmd_backend xe_backend = {
@@ -155,6 +181,8 @@ const struct iris_kmd_backend *xe_get_backend(void)
       .gem_mmap = xe_gem_mmap,
       .gem_vm_bind = xe_gem_vm_bind,
       .gem_vm_unbind = xe_gem_vm_unbind,
+      .bo_madvise = xe_bo_madvise,
+      .bo_set_caching = xe_bo_set_caching,
    };
    return &xe_backend;
 }

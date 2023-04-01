@@ -770,26 +770,25 @@ vn_physical_device_init_memory_properties(
    struct vn_physical_device *physical_dev)
 {
    struct vn_instance *instance = physical_dev->instance;
+   VkPhysicalDeviceMemoryProperties2 *props2 =
+      &physical_dev->memory_properties;
+   VkPhysicalDeviceMemoryProperties *props1 = &props2->memoryProperties;
 
-   physical_dev->memory_properties.sType =
-      VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MEMORY_PROPERTIES_2;
+   props2->sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MEMORY_PROPERTIES_2;
 
    vn_call_vkGetPhysicalDeviceMemoryProperties2(
-      instance, vn_physical_device_to_handle(physical_dev),
-      &physical_dev->memory_properties);
+      instance, vn_physical_device_to_handle(physical_dev), props2);
 
-   if (!instance->renderer->info.has_cache_management) {
-      VkPhysicalDeviceMemoryProperties *props =
-         &physical_dev->memory_properties.memoryProperties;
-      const uint32_t host_flags = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
-                                  VK_MEMORY_PROPERTY_HOST_COHERENT_BIT |
-                                  VK_MEMORY_PROPERTY_HOST_CACHED_BIT;
+   for (uint32_t i = 0; i < props1->memoryTypeCount; i++) {
+      VkMemoryType *type = &props1->memoryTypes[i];
 
-      for (uint32_t i = 0; i < props->memoryTypeCount; i++) {
-         const bool coherent = props->memoryTypes[i].propertyFlags &
-                               VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
-         if (!coherent)
-            props->memoryTypes[i].propertyFlags &= ~host_flags;
+      /* Kernel makes every mapping coherent.  If a memory type is truly
+       * incoherent, it's better to remove the host-visible flag than silently
+       * making it coherent.
+       */
+      if (!(type->propertyFlags & VK_MEMORY_PROPERTY_HOST_COHERENT_BIT)) {
+         type->propertyFlags &= ~(VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+                                  VK_MEMORY_PROPERTY_HOST_CACHED_BIT);
       }
    }
 }
@@ -1124,6 +1123,7 @@ vn_physical_device_get_passthrough_extensions(
       .EXT_image_view_min_lod = true,
       .EXT_index_type_uint8 = true,
       .EXT_line_rasterization = true,
+      .EXT_memory_budget = true,
       .EXT_multi_draw = true,
       .EXT_mutable_descriptor_type = true,
       .EXT_primitive_topology_list_restart = true,
@@ -1901,7 +1901,29 @@ vn_GetPhysicalDeviceMemoryProperties2(
 {
    struct vn_physical_device *physical_dev =
       vn_physical_device_from_handle(physicalDevice);
+   struct vn_instance *instance = physical_dev->instance;
+   VkPhysicalDeviceMemoryBudgetPropertiesEXT *memory_budget = NULL;
 
+   /* Don't waste time searching for unsupported structs. */
+   if (physical_dev->base.base.supported_extensions.EXT_memory_budget) {
+      memory_budget =
+         vk_find_struct(pMemoryProperties->pNext,
+                        PHYSICAL_DEVICE_MEMORY_BUDGET_PROPERTIES_EXT);
+   }
+
+   /* When the app queries invariant memory properties, we return a cached
+    * copy. For dynamic properties, we must query the server.
+    */
+   if (memory_budget) {
+      vn_call_vkGetPhysicalDeviceMemoryProperties2(instance, physicalDevice,
+                                                   pMemoryProperties);
+   }
+
+   /* Even when we query the server for memory properties, we must still
+    * overwrite the invariant memory properties returned from the server with
+    * our cached version.  Our cached version may differ from the server's
+    * version due to workarounds.
+    */
    pMemoryProperties->memoryProperties =
       physical_dev->memory_properties.memoryProperties;
 }

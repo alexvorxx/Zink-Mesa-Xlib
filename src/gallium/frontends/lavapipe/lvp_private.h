@@ -399,6 +399,12 @@ struct lvp_pipeline_layout {
    } stage[MESA_SHADER_STAGES];
 };
 
+
+struct lvp_pipeline_layout *
+lvp_pipeline_layout_create(struct lvp_device *device,
+                           const VkPipelineLayoutCreateInfo*           pCreateInfo,
+                           const VkAllocationCallbacks*                pAllocator);
+
 struct lvp_access_info {
    uint64_t images_read;
    uint64_t images_written;
@@ -427,6 +433,8 @@ lvp_pipeline_nir_ref(struct lvp_pipeline_nir **dst, struct lvp_pipeline_nir *src
 }
 
 struct lvp_shader {
+   struct vk_object_base base;
+   struct lvp_pipeline_layout *layout;
    struct lvp_access_info access;
    struct lvp_pipeline_nir *pipeline_nir;
    struct lvp_pipeline_nir *tess_ccw;
@@ -439,6 +447,7 @@ struct lvp_shader {
       uint32_t can_inline; //bitmask
    } inlines;
    struct pipe_stream_output_info stream_output;
+   struct blob blob; //preserved for GetShaderBinaryDataEXT
 };
 
 struct lvp_pipeline {
@@ -456,9 +465,7 @@ struct lvp_pipeline {
    bool line_smooth;
    bool disable_multisample;
    bool line_rectangular;
-   bool gs_output_lines;
    bool library;
-   bool noop_fs;
    bool compiled;
    bool used;
 };
@@ -561,6 +568,8 @@ VK_DEFINE_NONDISP_HANDLE_CASTS(lvp_pipeline_cache, base, VkPipelineCache,
                                VK_OBJECT_TYPE_PIPELINE_CACHE)
 VK_DEFINE_NONDISP_HANDLE_CASTS(lvp_pipeline, base, VkPipeline,
                                VK_OBJECT_TYPE_PIPELINE)
+VK_DEFINE_NONDISP_HANDLE_CASTS(lvp_shader, base, VkShaderEXT,
+                               VK_OBJECT_TYPE_SHADER_EXT)
 VK_DEFINE_NONDISP_HANDLE_CASTS(lvp_pipeline_layout, vk.base, VkPipelineLayout,
                                VK_OBJECT_TYPE_PIPELINE_LAYOUT)
 VK_DEFINE_NONDISP_HANDLE_CASTS(lvp_query_pool, base, VkQueryPool,
@@ -634,13 +643,13 @@ queue_thread_noop(void *data, void *gdata, int thread_index);
 void
 lvp_shader_optimize(nir_shader *nir);
 void *
-lvp_pipeline_compile_stage(struct lvp_pipeline *pipeline, nir_shader *nir);
+lvp_shader_compile_stage(struct lvp_device *device, struct lvp_shader *shader, nir_shader *nir);
 bool
 lvp_find_inlinable_uniforms(struct lvp_shader *shader, nir_shader *nir);
 void
 lvp_inline_uniforms(nir_shader *nir, const struct lvp_shader *shader, const uint32_t *uniform_values, uint32_t ubo);
 void *
-lvp_pipeline_compile(struct lvp_pipeline *pipeline, nir_shader *base_nir);
+lvp_shader_compile(struct lvp_device *device, struct lvp_shader *shader, nir_shader *nir);
 #ifdef __cplusplus
 }
 #endif

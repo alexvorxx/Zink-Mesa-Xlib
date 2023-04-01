@@ -72,6 +72,7 @@ kgsl_bo_init(struct tu_device *dev,
              struct tu_bo **out_bo,
              uint64_t size,
              uint64_t client_iova,
+             VkMemoryPropertyFlags mem_property,
              enum tu_bo_alloc_flags flags,
              const char *name)
 {
@@ -80,6 +81,16 @@ kgsl_bo_init(struct tu_device *dev,
    struct kgsl_gpumem_alloc_id req = {
       .size = size,
    };
+
+   if (mem_property & VK_MEMORY_PROPERTY_HOST_CACHED_BIT) {
+      if (mem_property & VK_MEMORY_PROPERTY_HOST_COHERENT_BIT) {
+         req.flags |= KGSL_MEMFLAGS_IOCOHERENT;
+      }
+
+      req.flags |= KGSL_CACHEMODE_WRITEBACK << KGSL_CACHEMODE_SHIFT;
+   } else {
+      req.flags |= KGSL_CACHEMODE_WRITECOMBINE << KGSL_CACHEMODE_SHIFT;
+   }
 
    if (flags & TU_BO_ALLOC_GPU_READ_ONLY)
       req.flags |= KGSL_MEMFLAGS_GPUREADONLY;
@@ -210,6 +221,66 @@ kgsl_bo_finish(struct tu_device *dev, struct tu_bo *bo)
 }
 
 static VkResult
+kgsl_sync_cache(VkDevice _device,
+                uint32_t op,
+                uint32_t count,
+                const VkMappedMemoryRange *ranges)
+{
+   TU_FROM_HANDLE(tu_device, device, _device);
+
+   struct kgsl_gpuobj_sync_obj *sync_list =
+      (struct kgsl_gpuobj_sync_obj *) vk_zalloc(
+         &device->vk.alloc, sizeof(*sync_list), 8,
+         VK_SYSTEM_ALLOCATION_SCOPE_INSTANCE);
+
+   struct kgsl_gpuobj_sync gpuobj_sync = {
+      .objs = (uintptr_t) sync_list,
+      .obj_len = sizeof(*sync_list),
+      .count = count,
+   };
+
+   for (uint32_t i = 0; i < count; i++) {
+      TU_FROM_HANDLE(tu_device_memory, mem, ranges[i].memory);
+
+      sync_list[i].op = op;
+      sync_list[i].id = mem->bo->gem_handle;
+      sync_list[i].offset = ranges[i].offset;
+      sync_list[i].length = ranges[i].size == VK_WHOLE_SIZE
+                               ? (mem->bo->size - ranges[i].offset)
+                               : ranges[i].size;
+   }
+
+   /* There are two other KGSL ioctls for flushing/invalidation:
+    * - IOCTL_KGSL_GPUMEM_SYNC_CACHE - processes one memory range at a time;
+    * - IOCTL_KGSL_GPUMEM_SYNC_CACHE_BULK - processes several buffers but
+    *   not way to specify ranges.
+    *
+    * While IOCTL_KGSL_GPUOBJ_SYNC exactly maps to VK function.
+    */
+   safe_ioctl(device->fd, IOCTL_KGSL_GPUOBJ_SYNC, &gpuobj_sync);
+
+   vk_free(&device->vk.alloc, sync_list);
+
+   return VK_SUCCESS;
+}
+
+VkResult
+tu_FlushMappedMemoryRanges(VkDevice device,
+                           uint32_t count,
+                           const VkMappedMemoryRange *ranges)
+{
+   return kgsl_sync_cache(device, KGSL_GPUMEM_CACHE_TO_GPU, count, ranges);
+}
+
+VkResult
+tu_InvalidateMappedMemoryRanges(VkDevice device,
+                                uint32_t count,
+                                const VkMappedMemoryRange *ranges)
+{
+   return kgsl_sync_cache(device, KGSL_GPUMEM_CACHE_FROM_GPU, count, ranges);
+}
+
+static VkResult
 get_kgsl_prop(int fd, unsigned int type, void *value, size_t size)
 {
    struct kgsl_device_getproperty getprop = {
@@ -221,6 +292,26 @@ get_kgsl_prop(int fd, unsigned int type, void *value, size_t size)
    return safe_ioctl(fd, IOCTL_KGSL_DEVICE_GETPROPERTY, &getprop)
              ? VK_ERROR_UNKNOWN
              : VK_SUCCESS;
+}
+
+static bool
+kgsl_is_memory_type_supported(int fd, uint32_t flags)
+{
+   struct kgsl_gpumem_alloc_id req_alloc = {
+      .flags = flags,
+      .size = 0x1000,
+   };
+
+   int ret = safe_ioctl(fd, IOCTL_KGSL_GPUMEM_ALLOC_ID, &req_alloc);
+   if (ret) {
+      return false;
+   }
+
+   struct kgsl_gpumem_free_id req_free = { .id = req_alloc.id };
+
+   safe_ioctl(fd, IOCTL_KGSL_GPUMEM_FREE_ID, &req_free);
+
+   return true;
 }
 
 enum kgsl_syncobj_state {
@@ -1168,6 +1259,12 @@ tu_knl_kgsl_load(struct tu_instance *instance, int fd)
    device->heap.size = tu_get_system_heap_size();
    device->heap.used = 0u;
    device->heap.flags = VK_MEMORY_HEAP_DEVICE_LOCAL_BIT;
+
+   /* Even if kernel is new enough, the GPU itself may not support it. */
+   device->has_cached_coherent_memory = kgsl_is_memory_type_supported(
+      fd, KGSL_MEMFLAGS_IOCOHERENT |
+             (KGSL_CACHEMODE_WRITEBACK << KGSL_CACHEMODE_SHIFT));
+   device->has_cached_non_coherent_memory = true;
 
    instance->knl = &kgsl_knl_funcs;
 

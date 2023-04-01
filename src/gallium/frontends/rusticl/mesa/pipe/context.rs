@@ -319,6 +319,14 @@ impl PipeContext {
         unsafe { self.pipe.as_ref().delete_compute_state.unwrap()(self.pipe.as_ptr(), state) }
     }
 
+    pub fn compute_state_info(&self, state: *mut c_void) -> pipe_compute_state_object_info {
+        let mut info = pipe_compute_state_object_info::default();
+        unsafe {
+            self.pipe.as_ref().get_compute_state_info.unwrap()(self.pipe.as_ptr(), state, &mut info)
+        }
+        info
+    }
+
     pub fn create_sampler_state(&self, state: &pipe_sampler_state) -> *mut c_void {
         unsafe { self.pipe.as_ref().create_sampler_state.unwrap()(self.pipe.as_ptr(), state) }
     }
@@ -530,6 +538,7 @@ fn has_required_cbs(context: &pipe_context) -> bool {
         & has_required_feature!(context, delete_compute_state)
         & has_required_feature!(context, delete_sampler_state)
         & has_required_feature!(context, flush)
+        & has_required_feature!(context, get_compute_state_info)
         & has_required_feature!(context, launch_grid)
         & has_required_feature!(context, memory_barrier)
         & has_required_feature!(context, resource_copy_region)

@@ -60,7 +60,8 @@ struct tu_knl {
    int (*submitqueue_new)(const struct tu_device *dev, int priority, uint32_t *queue_id);
    void (*submitqueue_close)(const struct tu_device *dev, uint32_t queue_id);
    VkResult (*bo_init)(struct tu_device *dev, struct tu_bo **out_bo, uint64_t size,
-                       uint64_t client_iova, enum tu_bo_alloc_flags flags, const char *name);
+                       uint64_t client_iova, VkMemoryPropertyFlags mem_property,
+                       enum tu_bo_alloc_flags flags, const char *name);
    VkResult (*bo_init_dmabuf)(struct tu_device *dev, struct tu_bo **out_bo,
                               uint64_t size, int prime_fd);
    int (*bo_export_dmabuf)(struct tu_device *dev, struct tu_bo *bo);
@@ -87,13 +88,20 @@ tu_bo_init_new_explicit_iova(struct tu_device *dev,
                              struct tu_bo **out_bo,
                              uint64_t size,
                              uint64_t client_iova,
-                             enum tu_bo_alloc_flags flags, const char *name);
+                             VkMemoryPropertyFlags mem_property,
+                             enum tu_bo_alloc_flags flags,
+                             const char *name);
 
 static inline VkResult
 tu_bo_init_new(struct tu_device *dev, struct tu_bo **out_bo, uint64_t size,
                enum tu_bo_alloc_flags flags, const char *name)
 {
-   return tu_bo_init_new_explicit_iova(dev, out_bo, size, 0, flags, name);
+   return tu_bo_init_new_explicit_iova(
+      dev, out_bo, size, 0,
+      VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT |
+         VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+         VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+      flags, name);
 }
 
 VkResult

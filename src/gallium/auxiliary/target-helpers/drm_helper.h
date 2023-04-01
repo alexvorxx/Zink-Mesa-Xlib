@@ -264,7 +264,7 @@ pipe_msm_create_screen(int fd, const struct pipe_screen_config *config)
 {
    struct pipe_screen *screen;
 
-   screen = fd_drm_screen_create(fd, NULL, config);
+   screen = fd_drm_screen_create_renderonly(fd, NULL, config);
    return screen ? debug_screen_wrap(screen) : NULL;
 }
 
@@ -292,7 +292,7 @@ pipe_virtio_gpu_create_screen(int fd, const struct pipe_screen_config *config)
    /* Try native guest driver(s) first, and then fallback to virgl: */
 #ifdef GALLIUM_FREEDRENO
    if (!screen)
-      screen = fd_drm_screen_create(fd, NULL, config);
+      screen = fd_drm_screen_create_renderonly(fd, NULL, config);
 #endif
 #ifdef GALLIUM_VIRGL
    if (!screen)

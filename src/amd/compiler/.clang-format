@@ -128,3 +128,6 @@ IncludeCategories:
   - Regex:           '.*'
     Priority:        5
 
+MacroBlockBegin: 'BEGIN_TEST'
+MacroBlockEnd: 'END_TEST'
+CommentPragmas: '^(!|;|>>|~)'

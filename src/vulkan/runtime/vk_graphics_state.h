@@ -57,6 +57,8 @@ enum mesa_vk_dynamic_graphics_state {
    MESA_VK_DYNAMIC_VP_SCISSORS,
    MESA_VK_DYNAMIC_VP_DEPTH_CLIP_NEGATIVE_ONE_TO_ONE,
    MESA_VK_DYNAMIC_DR_RECTANGLES,
+   MESA_VK_DYNAMIC_DR_MODE,
+   MESA_VK_DYNAMIC_DR_ENABLE,
    MESA_VK_DYNAMIC_RS_RASTERIZER_DISCARD_ENABLE,
    MESA_VK_DYNAMIC_RS_DEPTH_CLAMP_ENABLE,
    MESA_VK_DYNAMIC_RS_DEPTH_CLIP_ENABLE,
@@ -711,13 +713,31 @@ struct vk_dynamic_graphics_state {
    /** Viewport state */
    struct vk_viewport_state vp;
 
-   /** Discard rectangles
-    *
-    * MESA_VK_DYNAMIC_GRAPHICS_STATE_DR_RECTANGLES
-    */
+   /** Discard rectangles state */
    struct {
-      uint32_t rectangle_count;
+      /** Custom enable
+       *
+       * MESA_VK_DYNAMIC_DR_ENABLE
+       */
+      bool enable;
+
+      /** Mode
+       *
+       * MESA_VK_DYNAMIC_DR_MODE
+       */
+      VkDiscardRectangleModeEXT mode;
+
+      /** Rectangles
+       *
+       * MESA_VK_DYNAMIC_DR_RECTANGLES
+       */
       VkRect2D rectangles[MESA_VK_MAX_DISCARD_RECTANGLES];
+
+      /** Number of rectangles
+       *
+       * MESA_VK_DYNAMIC_GRAPHICS_STATE_DR_RECTANGLES
+       */
+      uint32_t rectangle_count;
    } dr;
 
    /** Rasterization state */

@@ -631,6 +631,11 @@ public:
       return *this;
    }
 
+   constexpr bitfield_uint& operator=(const bitfield_uint& value)
+   {
+      return *this = access_type(value);
+   }
+
    constexpr bitfield_uint& operator|=(const access_type& value)
    {
       storage |= data_type(value & mask) << offset;
@@ -938,6 +943,11 @@ public:
       storage &= ~(mask << offset);
       storage |= data_type(value & mask) << offset;
       return *this;
+   }
+
+   constexpr bitfield_array& operator=(const bitfield_array& value)
+   {
+      return *this = access_type(value);
    }
 
    constexpr reference operator[](unsigned index)

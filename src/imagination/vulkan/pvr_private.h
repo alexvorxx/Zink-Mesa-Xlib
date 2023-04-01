@@ -274,6 +274,8 @@ struct pvr_device {
 
    struct pvr_bo_store *bo_store;
 
+   struct pvr_bo *robustness_buffer;
+
    struct vk_sync *presignaled_sync;
 };
 

@@ -54,9 +54,15 @@ nir_ssa_def *
 nir_get_texture_size(nir_builder *b, nir_tex_instr *tex);
 
 static inline nir_ssa_def *
+nir_fisnan(nir_builder *b, nir_ssa_def *x)
+{
+   return nir_fneu(b, x, x);
+}
+
+static inline nir_ssa_def *
 nir_nan_check2(nir_builder *b, nir_ssa_def *x, nir_ssa_def *y, nir_ssa_def *res)
 {
-   return nir_bcsel(b, nir_fneu(b, x, x), x, nir_bcsel(b, nir_fneu(b, y, y), y, res));
+   return nir_bcsel(b, nir_fisnan(b, x), x, nir_bcsel(b, nir_fisnan(b, y), y, res));
 }
 
 static inline nir_ssa_def *

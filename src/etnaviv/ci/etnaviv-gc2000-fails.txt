@@ -306,7 +306,7 @@ shaders@glsl-bug-110796,Fail
 shaders@glsl-fs-flat-color,Fail
 shaders@glsl-fs-loop-nested,Crash
 shaders@glsl-fs-pointcoord,Fail
-shaders@glsl-kwin-blur-1,Crash
+shaders@glsl-kwin-blur-1,Fail
 shaders@glsl-kwin-blur-2,Fail
 shaders@glsl-max-varyings,Crash
 shaders@glsl-max-varyings >max_varying_components,Crash
@@ -316,6 +316,9 @@ shaders@glsl-uniform-interstage-limits@subdivide 5- statechanges,Timeout
 shaders@glsl-uniform-interstage-limits@subdivide 5,Timeout
 shaders@glsl-vs-loop-nested,Crash
 shaders@glsl-vs-point-size,Fail
+
+spec@amd_shader_trinary_minmax@execution@built-in-functions@fs-max3-float-float-float,Fail
+
 spec@arb_arrays_of_arrays@execution@glsl-arrays-copy-size-mismatch,Fail
 spec@arb_depth_texture@fbo-depth-gl_depth_component16-drawpixels,Fail
 spec@arb_depth_texture@fbo-depth-gl_depth_component16-tex1d,Fail
@@ -445,6 +448,8 @@ spec@arb_vertex_program@big-param,Fail
 spec@arb_vertex_program@clip-plane-transformation arb,Fail
 spec@arb_vertex_program@vp-arl-constant-array-huge-offset,Fail
 spec@arb_vertex_program@vp-arl-constant-array-varying,Fail
+
+spec@glsl-1.10@execution@copy-propagation@glsl-fs-copy-propagation-texcoords-2,Fail
 
 spec@egl 1.4@eglterminate then unbind context,Fail
 spec@egl_ext_protected_content@conformance,Fail

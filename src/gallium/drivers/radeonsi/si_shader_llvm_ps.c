@@ -850,30 +850,26 @@ void si_llvm_build_ps_epilog(struct si_shader_context *ctx, union si_shader_part
 
 void si_llvm_build_monolithic_ps(struct si_shader_context *ctx, struct si_shader *shader)
 {
-   struct ac_llvm_pointer parts[3];
-   unsigned num_parts = 0, main_index;
+   union si_shader_part_key prolog_key;
+   si_get_ps_prolog_key(shader, &prolog_key, false);
+
+   /* If no prolog is needed, we only have the main part, no need to build wrapper function. */
+   if (!si_need_ps_prolog(&prolog_key))
+      return;
+
    struct ac_llvm_pointer main_fn = ctx->main_fn;
+
    /* Preserve main arguments. */
    enum ac_arg_type main_arg_types[AC_MAX_ARGS];
    for (int i = 0; i < ctx->args->ac.arg_count; i++)
       main_arg_types[i] = ctx->args->ac.args[i].type;
 
+   si_llvm_build_ps_prolog(ctx, &prolog_key, false);
 
-   union si_shader_part_key prolog_key;
-   si_get_ps_prolog_key(shader, &prolog_key, false);
+   struct ac_llvm_pointer parts[2] = {
+      ctx->main_fn, /* prolog */
+      main_fn,      /* main */
+   };
 
-   if (si_need_ps_prolog(&prolog_key)) {
-      si_llvm_build_ps_prolog(ctx, &prolog_key, false);
-      parts[num_parts++] = ctx->main_fn;
-   }
-
-   main_index = num_parts;
-   parts[num_parts++] = main_fn;
-
-   union si_shader_part_key epilog_key;
-   si_get_ps_epilog_key(shader, &epilog_key);
-   si_llvm_build_ps_epilog(ctx, &epilog_key, false);
-   parts[num_parts++] = ctx->main_fn;
-
-   si_build_wrapper_function(ctx, parts, num_parts, main_index, 0, main_arg_types, false);
+   si_build_wrapper_function(ctx, parts, 2, 1, 0, main_arg_types, false);
 }

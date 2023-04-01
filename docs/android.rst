@@ -16,7 +16,9 @@ Building using the Android NDK
 
 Download and install the NDK using whatever method you normally would.
 Then, create your Meson cross file to use it, something like this
-``~/.local/share/meson/cross/android-aarch64`` file::
+``~/.local/share/meson/cross/android-aarch64`` file:
+
+.. code-block:: ini
 
     [binaries]
     ar = 'NDKDIR/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android-ar'

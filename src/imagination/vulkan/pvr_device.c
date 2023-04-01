@@ -51,6 +51,7 @@
 #include "pvr_limits.h"
 #include "pvr_pds.h"
 #include "pvr_private.h"
+#include "pvr_robustness.h"
 #include "pvr_tex_state.h"
 #include "pvr_types.h"
 #include "pvr_uscgen.h"
@@ -609,8 +610,7 @@ void pvr_GetPhysicalDeviceFeatures2(VkPhysicalDevice physicalDevice,
    PVR_FROM_HANDLE(pvr_physical_device, pdevice, physicalDevice);
 
    pFeatures->features = (VkPhysicalDeviceFeatures){
-      .robustBufferAccess =
-         PVR_HAS_FEATURE(&pdevice->dev_info, robust_buffer_access),
+      .robustBufferAccess = true,
       .fullDrawIndexUint32 = true,
       .imageCubeArray = true,
       .independentBlend = false,
@@ -1828,6 +1828,10 @@ VkResult pvr_CreateDevice(VkPhysicalDevice physicalDevice,
 
    pvr_spm_init_scratch_buffer_store(device);
 
+   result = pvr_init_robustness_buffer(device);
+   if (result != VK_SUCCESS)
+      goto err_pvr_spm_finish_scratch_buffer_store;
+
    if (pCreateInfo->pEnabledFeatures)
       memcpy(&device->features,
              pCreateInfo->pEnabledFeatures,
@@ -1847,6 +1851,11 @@ VkResult pvr_CreateDevice(VkPhysicalDevice physicalDevice,
    *pDevice = pvr_device_to_handle(device);
 
    return VK_SUCCESS;
+
+err_pvr_spm_finish_scratch_buffer_store:
+   pvr_spm_finish_scratch_buffer_store(device);
+
+   pvr_queues_destroy(device);
 
 err_pvr_finish_tile_buffer_state:
    pvr_device_finish_tile_buffer_state(device);
@@ -1900,6 +1909,7 @@ void pvr_DestroyDevice(VkDevice _device,
 {
    PVR_FROM_HANDLE(pvr_device, device, _device);
 
+   pvr_robustness_buffer_finish(device);
    pvr_spm_finish_scratch_buffer_store(device);
    pvr_queues_destroy(device);
    pvr_device_finish_tile_buffer_state(device);

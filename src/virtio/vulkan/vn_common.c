@@ -217,7 +217,7 @@ vn_relax(struct vn_relax_state *state)
             vn_ring_unset_status_bits(ring, VK_RING_STATUS_ALIVE_BIT_MESA);
          }
 
-         if (!ring->monitor.alive) {
+         if (!ring->monitor.alive && !VN_DEBUG(NO_ABORT)) {
             vn_log(NULL, "aborting on expired ring alive status at iter %d",
                    *iter);
             abort();

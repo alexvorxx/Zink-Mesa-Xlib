@@ -639,6 +639,14 @@ i915_destroy_screen(struct pipe_screen *screen)
    FREE(is);
 }
 
+static int
+i915_screen_get_fd(struct pipe_screen *screen)
+{
+   struct i915_screen *is = i915_screen(screen);
+
+   return is->iws->get_fd(is->iws);
+}
+
 /**
  * Create a new i915_screen object
  */
@@ -681,6 +689,7 @@ i915_screen_create(struct i915_winsys *iws)
    is->base.get_name = i915_get_name;
    is->base.get_vendor = i915_get_vendor;
    is->base.get_device_vendor = i915_get_device_vendor;
+   is->base.get_screen_fd = i915_screen_get_fd;
    is->base.get_param = i915_get_param;
    is->base.get_shader_param = i915_get_shader_param;
    is->base.get_paramf = i915_get_paramf;

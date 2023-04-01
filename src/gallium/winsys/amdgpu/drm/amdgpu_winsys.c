@@ -407,6 +407,14 @@ are_file_descriptions_equal(int fd1, int fd2)
    return false;
 }
 
+static int
+amdgpu_drm_winsys_get_fd(struct radeon_winsys *rws)
+{
+   struct amdgpu_screen_winsys *sws = amdgpu_screen_winsys(rws);
+
+   return sws->fd;
+}
+
 PUBLIC struct radeon_winsys *
 amdgpu_winsys_create(int fd, const struct pipe_screen_config *config,
 		     radeon_screen_create_t screen_create)
@@ -576,6 +584,7 @@ amdgpu_winsys_create(int fd, const struct pipe_screen_config *config,
    /* Set functions. */
    ws->base.unref = amdgpu_winsys_unref;
    ws->base.destroy = amdgpu_winsys_destroy;
+   ws->base.get_fd = amdgpu_drm_winsys_get_fd;
    ws->base.query_info = amdgpu_winsys_query_info;
    ws->base.cs_request_feature = amdgpu_cs_request_feature;
    ws->base.query_value = amdgpu_query_value;

@@ -313,8 +313,14 @@ static struct bo_cache_bucket *
 bucket_for_size(struct iris_bufmgr *bufmgr, uint64_t size,
                 enum iris_heap heap, unsigned flags)
 {
-   /* Protected bo needs special handling during allocation */
-   if (flags & BO_ALLOC_PROTECTED)
+
+   /* Protected bo needs special handling during allocation.
+    * Exported and scanout bos also need special handling during allocation
+    * in Xe KMD.
+    */
+   if ((flags & BO_ALLOC_PROTECTED) ||
+       ((flags & (BO_ALLOC_SHARED | BO_ALLOC_SCANOUT)) &&
+        bufmgr->devinfo.kmd_type == INTEL_KMD_TYPE_XE))
       return NULL;
 
    /* Calculating the pages and rounding up to the page size. */
@@ -994,7 +1000,8 @@ alloc_fresh_bo(struct iris_bufmgr *bufmgr, uint64_t bo_size, unsigned flags)
       case IRIS_HEAP_DEVICE_LOCAL_PREFERRED:
          /* For vram allocations, still use system memory as a fallback. */
          regions[num_regions++] = bufmgr->vram.region;
-         regions[num_regions++] = bufmgr->sys.region;
+         if (!(flags & BO_ALLOC_SCANOUT))
+            regions[num_regions++] = bufmgr->sys.region;
          break;
       case IRIS_HEAP_DEVICE_LOCAL:
          regions[num_regions++] = bufmgr->vram.region;

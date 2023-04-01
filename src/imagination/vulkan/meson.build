@@ -60,6 +60,7 @@ pvr_files = files(
   'pvr_query.c',
   'pvr_query_compute.c',
   'pvr_queue.c',
+  'pvr_robustness.c',
   'pvr_shader.c',
   'pvr_spm.c',
   'pvr_tex_state.c',
