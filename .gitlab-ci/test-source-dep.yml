@@ -83,7 +83,8 @@
   allow_failure: true
 
 .piglit-performance-base:
-  allow_failure: true
+  extends:
+    - .performance-rules
   variables:
     LAVA_JOB_PRIORITY: 40
     PIGLIT_REPLAY_SUBCOMMAND: "profile"

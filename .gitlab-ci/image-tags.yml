@@ -1,6 +1,6 @@
 variables:
    DEBIAN_X86_BUILD_BASE_IMAGE: "debian/x86_build-base"
-   DEBIAN_BASE_TAG: "2023-03-16-clang-format"
+   DEBIAN_BASE_TAG: "2023-03-27-virglrenderer-crosvm"
 
    DEBIAN_X86_BUILD_IMAGE_PATH: "debian/x86_build"
    DEBIAN_BUILD_TAG: "2023-02-14-pip"
@@ -21,7 +21,7 @@ variables:
 
    ALPINE_X86_BUILD_TAG: "2023-03-20-3.17-bump"
    FEDORA_X86_BUILD_TAG: "2023-03-13-procps-ng"
-   KERNEL_ROOTFS_TAG: "2023-03-20-piglit-60e7f058"
+   KERNEL_ROOTFS_TAG: "2023-03-27-virglrenderer-crosvm"
 
    WINDOWS_X64_VS_PATH: "windows/x64_vs"
    WINDOWS_X64_VS_TAG: "2022-10-20-upgrade-zlib"
