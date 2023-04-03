@@ -54,6 +54,9 @@ struct radv_descriptor_set_binding_layout {
 struct radv_descriptor_set_layout {
    struct vk_descriptor_set_layout vk;
 
+   /* Hash of all fields below */
+   uint8_t hash[SHA1_DIGEST_LENGTH];
+
    /* Everything below is hashed and shouldn't contain any pointers. Be careful when modifying this
     * structure.
     */
@@ -66,9 +69,6 @@ struct radv_descriptor_set_layout {
 
    /* Total size of the descriptor set with room for all array entries */
    uint32_t size;
-
-   /* CPU size of this struct + all associated data, for hashing. */
-   uint32_t layout_size;
 
    /* Shader stages affected by this descriptor set */
    uint16_t shader_stages;

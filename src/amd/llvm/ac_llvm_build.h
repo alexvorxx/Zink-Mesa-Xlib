@@ -315,13 +315,6 @@ LLVMValueRef ac_build_safe_tbuffer_load(struct ac_llvm_context *ctx, LLVMValueRe
                                         unsigned cache_policy,
                                         bool can_speculate);
 
-LLVMValueRef ac_build_opencoded_load_format(struct ac_llvm_context *ctx, unsigned log_size,
-                                            unsigned num_channels, unsigned format, bool reverse,
-                                            bool known_aligned, LLVMValueRef rsrc,
-                                            LLVMValueRef vindex, LLVMValueRef voffset,
-                                            LLVMValueRef soffset, unsigned cache_policy,
-                                            bool can_speculate);
-
 void ac_build_buffer_store_short(struct ac_llvm_context *ctx, LLVMValueRef rsrc,
                                  LLVMValueRef vdata, LLVMValueRef voffset, LLVMValueRef soffset,
                                  unsigned cache_policy);

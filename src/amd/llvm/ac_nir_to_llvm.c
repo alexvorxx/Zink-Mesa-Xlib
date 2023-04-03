@@ -2907,8 +2907,8 @@ static LLVMValueRef visit_load_local_invocation_index(struct ac_nir_context *ctx
                            ac_unpack_param(&ctx->ac, ac_get_arg(&ctx->ac, ctx->args->tcs_wave_id), 0, 3),
                            LLVMConstInt(ctx->ac.i32, ctx->ac.wave_size, 0),
                            ac_get_thread_id(&ctx->ac));
-   } else if (ctx->args->vs_rel_patch_id.used) {
-      return ac_get_arg(&ctx->ac, ctx->args->vs_rel_patch_id);
+   } else if (ctx->abi->vs_rel_patch_id) {
+      return ctx->abi->vs_rel_patch_id;
    } else if (ctx->args->merged_wave_info.used) {
       /* Thread ID in threadgroup in merged ESGS. */
       LLVMValueRef wave_id = ac_unpack_param(&ctx->ac, ac_get_arg(&ctx->ac, ctx->args->merged_wave_info), 24, 4);
@@ -3341,9 +3341,6 @@ static LLVMValueRef visit_load(struct ac_nir_context *ctx, nir_intrinsic_instr *
 
    /* No indirect indexing is allowed after this point. */
    assert(!indir_index);
-
-   if (ctx->stage == MESA_SHADER_VERTEX && !is_output)
-      return ctx->abi->load_inputs(ctx->abi, base, component, count, 0, component_type);
 
    /* Other non-fragment cases have outputs in temporaries. */
    if (is_output && (ctx->stage == MESA_SHADER_VERTEX || ctx->stage == MESA_SHADER_TESS_EVAL)) {
@@ -5143,4 +5140,24 @@ bool ac_nir_translate(struct ac_llvm_context *ac, struct ac_shader_abi *abi,
       ralloc_free(ctx.verified_interp);
 
    return true;
+}
+
+/* Fixup the HW not emitting the TCS regs if there are no HS threads. */
+void ac_fixup_ls_hs_input_vgprs(struct ac_llvm_context *ac, struct ac_shader_abi *abi,
+                                const struct ac_shader_args *args)
+{
+   LLVMValueRef count = ac_unpack_param(ac, ac_get_arg(ac, args->merged_wave_info), 8, 8);
+   LLVMValueRef hs_empty = LLVMBuildICmp(ac->builder, LLVMIntEQ, count, ac->i32_0, "");
+
+   abi->instance_id =
+      LLVMBuildSelect(ac->builder, hs_empty, ac_get_arg(ac, args->vertex_id),
+                      abi->instance_id, "");
+
+   abi->vs_rel_patch_id =
+      LLVMBuildSelect(ac->builder, hs_empty, ac_get_arg(ac, args->tcs_rel_ids),
+                      abi->vs_rel_patch_id, "");
+
+   abi->vertex_id =
+      LLVMBuildSelect(ac->builder, hs_empty, ac_get_arg(ac, args->tcs_patch_id),
+                      abi->vertex_id, "");
 }

@@ -56,8 +56,6 @@ struct radv_shader_context {
 
    LLVMValueRef descriptor_sets[MAX_SETS];
 
-   LLVMValueRef vs_rel_patch_id;
-
    LLVMValueRef gs_wave_id;
 
    uint64_t output_mask;
@@ -616,24 +614,6 @@ ac_llvm_finalize_module(struct radv_shader_context *ctx, LLVMPassManagerRef pass
    ac_llvm_context_dispose(&ctx->ac);
 }
 
-/* Fixup the HW not emitting the TCS regs if there are no HS threads. */
-static void
-ac_nir_fixup_ls_hs_input_vgprs(struct radv_shader_context *ctx)
-{
-   LLVMValueRef count =
-      ac_unpack_param(&ctx->ac, ac_get_arg(&ctx->ac, ctx->args->ac.merged_wave_info), 8, 8);
-   LLVMValueRef hs_empty = LLVMBuildICmp(ctx->ac.builder, LLVMIntEQ, count, ctx->ac.i32_0, "");
-   ctx->abi.instance_id =
-      LLVMBuildSelect(ctx->ac.builder, hs_empty, ac_get_arg(&ctx->ac, ctx->args->ac.vertex_id),
-                      ctx->abi.instance_id, "");
-   ctx->vs_rel_patch_id =
-      LLVMBuildSelect(ctx->ac.builder, hs_empty, ac_get_arg(&ctx->ac, ctx->args->ac.tcs_rel_ids),
-                      ctx->vs_rel_patch_id, "");
-   ctx->abi.vertex_id =
-      LLVMBuildSelect(ctx->ac.builder, hs_empty, ac_get_arg(&ctx->ac, ctx->args->ac.tcs_patch_id),
-                      ctx->abi.vertex_id, "");
-}
-
 static void
 prepare_gs_input_vgprs(struct radv_shader_context *ctx, bool merged)
 {
@@ -744,13 +724,13 @@ ac_translate_nir_to_llvm(struct ac_llvm_compiler *ac_llvm,
    if (args->ac.vertex_id.used)
       ctx.abi.vertex_id = ac_get_arg(&ctx.ac, args->ac.vertex_id);
    if (args->ac.vs_rel_patch_id.used)
-      ctx.vs_rel_patch_id = ac_get_arg(&ctx.ac, args->ac.vs_rel_patch_id);
+      ctx.abi.vs_rel_patch_id = ac_get_arg(&ctx.ac, args->ac.vs_rel_patch_id);
    if (args->ac.instance_id.used)
       ctx.abi.instance_id = ac_get_arg(&ctx.ac, args->ac.instance_id);
 
    if (options->has_ls_vgpr_init_bug &&
        shaders[shader_count - 1]->info.stage == MESA_SHADER_TESS_CTRL)
-      ac_nir_fixup_ls_hs_input_vgprs(&ctx);
+      ac_fixup_ls_hs_input_vgprs(&ctx.ac, &ctx.abi, &args->ac);
 
    if (is_ngg) {
       if (!info->is_ngg_passthrough)

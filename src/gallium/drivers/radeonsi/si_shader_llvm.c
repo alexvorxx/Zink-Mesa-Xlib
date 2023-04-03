@@ -238,12 +238,17 @@ void si_llvm_create_main_func(struct si_shader_context *ctx)
       LLVMSetAlignment(ctx->ac.lds.value, 256);
    }
 
-   /* Unlike radv, we override these arguments in the prolog, so to the
-    * API shader they appear as normal arguments.
-    */
    if (ctx->stage == MESA_SHADER_VERTEX) {
       ctx->abi.vertex_id = ac_get_arg(&ctx->ac, ctx->args->ac.vertex_id);
       ctx->abi.instance_id = ac_get_arg(&ctx->ac, ctx->args->ac.instance_id);
+      if (ctx->args->ac.vs_rel_patch_id.used)
+         ctx->abi.vs_rel_patch_id = ac_get_arg(&ctx->ac, ctx->args->ac.vs_rel_patch_id);
+
+      /* Non-monolithic shaders apply the LS-HS input VGPR hw bug workaround in
+       * the VS prolog, while monolithic shaders apply it here.
+       */
+      if (shader->is_monolithic && shader->key.ge.part.vs.prolog.ls_vgpr_fix)
+         ac_fixup_ls_hs_input_vgprs(&ctx->ac, &ctx->abi, &ctx->args->ac);
    } else if (ctx->stage == MESA_SHADER_FRAGMENT) {
       ctx->abi.persp_centroid = ac_get_arg(&ctx->ac, ctx->args->ac.persp_centroid);
       ctx->abi.linear_centroid = ac_get_arg(&ctx->ac, ctx->args->ac.linear_centroid);
@@ -776,8 +781,6 @@ static bool si_llvm_translate_nir(struct si_shader_context *ctx, struct si_shade
 
    switch (ctx->stage) {
    case MESA_SHADER_VERTEX:
-      si_llvm_init_vs_callbacks(ctx);
-
       /* preload instance_divisor_constbuf to be used for input load after culling */
       if (ctx->shader->key.ge.opt.ngg_culling &&
           ctx->shader->key.ge.part.vs.prolog.instance_divisor_is_fetched) {
@@ -913,11 +916,14 @@ static bool si_llvm_translate_nir(struct si_shader_context *ctx, struct si_shade
          if (!shader->is_monolithic || !shader->key.ge.as_es)
             ac_init_exec_full_mask(&ctx->ac);
       } else if (ctx->stage == MESA_SHADER_VERTEX) {
-         /* If the prolog is present, EXEC is set there instead. */
-         if (!si_vs_needs_prolog(sel, &shader->key.ge.part.vs.prolog)) {
-            /* When no prolog, only mono VS with TCS/GS present has wrapper function. */
-            if (!(shader->is_monolithic && (shader->key.ge.as_ls || shader->key.ge.as_es)))
+         if (shader->is_monolithic) {
+            /* Only mono VS with TCS/GS present has wrapper function. */
+            if (!shader->key.ge.as_ls && !shader->key.ge.as_es)
                ac_init_exec_full_mask(&ctx->ac);
+         } else {
+            /* If the prolog is present, EXEC is set there instead. */
+             if (!si_vs_needs_prolog(sel, &shader->key.ge.part.vs.prolog))
+                ac_init_exec_full_mask(&ctx->ac);
          }
       }
 
@@ -1099,37 +1105,16 @@ bool si_llvm_compile_shader(struct si_screen *sscreen, struct ac_llvm_compiler *
       return false;
    }
 
-   if (shader->is_monolithic && sel->stage == MESA_SHADER_VERTEX &&
-       si_vs_needs_prolog(sel, &shader->key.ge.part.vs.prolog)) {
-      struct ac_llvm_pointer parts[2];
-      parts[1] = ctx.main_fn;
-
-       /* Preserve main arguments. */
-      enum ac_arg_type main_arg_types[AC_MAX_ARGS];
-      for (int i = 0; i < ctx.args->ac.arg_count; i++)
-         main_arg_types[i] = ctx.args->ac.args[i].type;
-      main_arg_types[MIN2(AC_MAX_ARGS - 1, ctx.args->ac.arg_count)] = AC_ARG_INVALID;
-
-      union si_shader_part_key prolog_key;
-      si_get_vs_prolog_key(&sel->info, shader->info.num_input_sgprs,
-                           &shader->key.ge.part.vs.prolog, shader, &prolog_key);
-      prolog_key.vs_prolog.is_monolithic = true;
-      si_llvm_build_vs_prolog(&ctx, &prolog_key, false);
-      parts[0] = ctx.main_fn;
-
-      si_build_wrapper_function(&ctx, parts, 2, 1, 0, main_arg_types, false);
-   } else if (shader->is_monolithic && sel->stage == MESA_SHADER_TESS_CTRL) {
+   if (shader->is_monolithic && sel->stage == MESA_SHADER_TESS_CTRL) {
       /* Preserve main arguments. */
       enum ac_arg_type main_arg_types[AC_MAX_ARGS];
 
       if (sscreen->info.gfx_level >= GFX9) {
          struct si_shader_selector *ls = shader->key.ge.part.tcs.ls;
-         struct ac_llvm_pointer parts[3];
-         bool vs_needs_prolog =
-            si_vs_needs_prolog(ls, &shader->key.ge.part.tcs.ls_prolog);
+         struct ac_llvm_pointer parts[2];
 
          /* TCS main part */
-         parts[2] = ctx.main_fn;
+         parts[1] = ctx.main_fn;
 
          struct si_shader shader_ls = {};
          shader_ls.selector = ls;
@@ -1152,29 +1137,17 @@ bool si_llvm_compile_shader(struct si_screen *sscreen, struct ac_llvm_compiler *
             return false;
          }
          shader->info.uses_instanceid |= ls->info.uses_instanceid;
-         parts[1] = ctx.main_fn;
+         parts[0] = ctx.main_fn;
 
          for (int i = 0; i < ctx.args->ac.arg_count; i++)
             main_arg_types[i] = ctx.args->ac.args[i].type;
          main_arg_types[MIN2(AC_MAX_ARGS - 1, ctx.args->ac.arg_count)] = AC_ARG_INVALID;
 
-         /* LS prolog */
-         if (vs_needs_prolog) {
-            union si_shader_part_key vs_prolog_key;
-            si_get_vs_prolog_key(&ls->info, shader_ls.info.num_input_sgprs,
-                                 &shader->key.ge.part.tcs.ls_prolog, shader, &vs_prolog_key);
-            vs_prolog_key.vs_prolog.is_monolithic = true;
-            si_llvm_build_vs_prolog(&ctx, &vs_prolog_key, false);
-            parts[0] = ctx.main_fn;
-         }
-
          /* Reset the shader context. */
          ctx.shader = shader;
          ctx.stage = MESA_SHADER_TESS_CTRL;
 
-         si_build_wrapper_function(&ctx, parts + !vs_needs_prolog, 3 - !vs_needs_prolog,
-                                   vs_needs_prolog, vs_needs_prolog ? 2 : 1,
-                                   main_arg_types,
+         si_build_wrapper_function(&ctx, parts, 2, 0, 1, main_arg_types,
                                    shader->key.ge.opt.same_patch_vertices);
       }
    } else if (shader->is_monolithic && sel->stage == MESA_SHADER_GEOMETRY) {
@@ -1182,7 +1155,6 @@ bool si_llvm_compile_shader(struct si_screen *sscreen, struct ac_llvm_compiler *
          enum ac_arg_type main_arg_types[AC_MAX_ARGS];
 
          struct si_shader_selector *es = shader->key.ge.part.gs.es;
-         struct ac_llvm_pointer es_prolog = {};
          struct ac_llvm_pointer es_main = {};
          struct ac_llvm_pointer gs_main = ctx.main_fn;
 
@@ -1217,32 +1189,14 @@ bool si_llvm_compile_shader(struct si_screen *sscreen, struct ac_llvm_compiler *
             main_arg_types[i] = ctx.args->ac.args[i].type;
          main_arg_types[MIN2(AC_MAX_ARGS - 1, ctx.args->ac.arg_count)] = AC_ARG_INVALID;
 
-         /* ES prolog */
-         if (es->stage == MESA_SHADER_VERTEX &&
-             si_vs_needs_prolog(es, &shader->key.ge.part.gs.vs_prolog)) {
-            union si_shader_part_key vs_prolog_key;
-            si_get_vs_prolog_key(&es->info, shader_es.info.num_input_sgprs,
-                                 &shader->key.ge.part.gs.vs_prolog, shader, &vs_prolog_key);
-            vs_prolog_key.vs_prolog.is_monolithic = true;
-            si_llvm_build_vs_prolog(&ctx, &vs_prolog_key, false);
-            es_prolog = ctx.main_fn;
-         }
-
          /* Reset the shader context. */
          ctx.shader = shader;
          ctx.stage = MESA_SHADER_GEOMETRY;
 
          /* Prepare the array of shader parts. */
-         struct ac_llvm_pointer parts[4];
-         unsigned num_parts = 0, main_part;
+         struct ac_llvm_pointer parts[2] = {es_main, gs_main};
 
-         if (es_prolog.value)
-            parts[num_parts++] = es_prolog;
-
-         parts[main_part = num_parts++] = es_main;
-         parts[num_parts++] = gs_main;
-
-         si_build_wrapper_function(&ctx, parts, num_parts, main_part, main_part + 1, main_arg_types, false);
+         si_build_wrapper_function(&ctx, parts, 2, 0, 1, main_arg_types, false);
       } else {
          /* Nothing to do for gfx6-8. The shader has only 1 part and it's ctx.main_fn. */
       }

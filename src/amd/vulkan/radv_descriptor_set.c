@@ -183,7 +183,6 @@ radv_CreateDescriptorSetLayout(VkDevice _device, const VkDescriptorSetLayoutCrea
       return vk_error(device, VK_ERROR_OUT_OF_HOST_MEMORY);
 
    set_layout->flags = pCreateInfo->flags;
-   set_layout->layout_size = size;
 
    /* We just allocate all the samplers at the end of the struct */
    uint32_t *samplers = (uint32_t *)&set_layout->binding[num_bindings];
@@ -390,6 +389,14 @@ radv_CreateDescriptorSetLayout(VkDevice _device, const VkDescriptorSetLayoutCrea
    set_layout->buffer_count = buffer_count;
    set_layout->dynamic_offset_count = dynamic_offset_count;
 
+   /* Hash the entire set layout except vk_descriptor_set_layout. The rest of the set layout is
+    * carefully constructed to not have pointers so a full hash instead of a per-field hash
+    * should be ok.
+    */
+   uint32_t hash_offset =
+      offsetof(struct radv_descriptor_set_layout, hash) + sizeof(set_layout->hash);
+   _mesa_sha1_compute((const char *)set_layout + hash_offset, size - hash_offset, set_layout->hash);
+
    *pSetLayout = radv_descriptor_set_layout_to_handle(set_layout);
 
    return VK_SUCCESS;
@@ -567,13 +574,7 @@ radv_pipeline_layout_hash(struct radv_pipeline_layout *layout)
       if (!set_layout)
          continue;
 
-      /* Hash the entire set layout except vk_descriptor_set_layout. The rest of the set layout is
-       * carefully constructed to not have pointers so a full hash instead of a per-field hash
-       * should be ok.
-       */
-      uint32_t hash_offset = sizeof(struct vk_descriptor_set_layout);
-      _mesa_sha1_update(&ctx, (const char *)set_layout + hash_offset,
-                        set_layout->layout_size - hash_offset);
+      _mesa_sha1_update(&ctx, set_layout->hash, sizeof(set_layout->hash));
    }
    _mesa_sha1_update(&ctx, &layout->push_constant_size, sizeof(layout->push_constant_size));
    _mesa_sha1_final(&ctx, layout->sha1);

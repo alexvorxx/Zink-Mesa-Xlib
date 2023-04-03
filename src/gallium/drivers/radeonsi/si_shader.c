@@ -1972,6 +1972,9 @@ struct nir_shader *si_get_nir_shader(struct si_shader *shader,
     */
    progress2 |= ac_nir_lower_indirect_derefs(nir, sel->screen->info.gfx_level);
 
+   if (sel->stage == MESA_SHADER_VERTEX)
+      progress2 |= si_nir_lower_vs_inputs(nir, shader, args);
+
    bool opt_offsets = si_lower_io_to_mem(shader, nir, tcs_vgpr_only_inputs);
 
    if (is_last_vgt_stage) {
@@ -2232,7 +2235,8 @@ bool si_compile_shader(struct si_screen *sscreen, struct ac_llvm_compiler *compi
 
    si_update_shader_binary_info(shader, nir);
 
-   shader->info.uses_instanceid = sel->info.uses_instanceid;
+   /* uses_instanceid may be set by si_nir_lower_vs_inputs(). */
+   shader->info.uses_instanceid |= sel->info.uses_instanceid;
    shader->info.private_mem_vgprs = DIV_ROUND_UP(nir->scratch_size, 4);
 
    /* Set the FP ALU behavior. */

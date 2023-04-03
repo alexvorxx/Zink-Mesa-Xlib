@@ -67,7 +67,14 @@ typedef struct nir_builder nir_builder;
 typedef void (*ac_nir_cull_accepted)(nir_builder *b, void *state);
 
 nir_ssa_def *
-ac_nir_load_arg(nir_builder *b, const struct ac_shader_args *ac_args, struct ac_arg arg);
+ac_nir_load_arg_at_offset(nir_builder *b, const struct ac_shader_args *ac_args,
+                          struct ac_arg arg, unsigned relative_index);
+
+static inline nir_ssa_def *
+ac_nir_load_arg(nir_builder *b, const struct ac_shader_args *ac_args, struct ac_arg arg)
+{
+   return ac_nir_load_arg_at_offset(b, ac_args, arg, 0);
+}
 
 nir_ssa_def *
 ac_nir_unpack_arg(nir_builder *b, const struct ac_shader_args *ac_args, struct ac_arg arg,

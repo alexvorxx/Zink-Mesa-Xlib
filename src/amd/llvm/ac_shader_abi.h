@@ -44,6 +44,7 @@ struct ac_shader_abi {
 
    /* These input registers sometimes need to be fixed up. */
    LLVMValueRef vertex_id;
+   LLVMValueRef vs_rel_patch_id;
    LLVMValueRef instance_id;
    LLVMValueRef persp_centroid, linear_centroid;
    LLVMValueRef color0, color1;
@@ -64,11 +65,6 @@ struct ac_shader_abi {
 
    void (*emit_vertex_with_counter)(struct ac_shader_abi *abi, unsigned stream,
                                     LLVMValueRef vertexidx, LLVMValueRef *addrs);
-
-   LLVMValueRef (*load_inputs)(struct ac_shader_abi *abi,
-                               unsigned driver_location, unsigned component,
-                               unsigned num_components, unsigned vertex_index,
-                               LLVMTypeRef type);
 
    LLVMValueRef (*load_tess_varyings)(struct ac_shader_abi *abi, LLVMTypeRef type,
                                       LLVMValueRef vertex_index, LLVMValueRef param_index,

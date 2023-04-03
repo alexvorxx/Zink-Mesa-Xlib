@@ -1642,7 +1642,7 @@ void anv_GetPhysicalDeviceProperties(
       .maxImageArrayLayers                      = (1 << 11),
       .maxTexelBufferElements                   = 128 * 1024 * 1024,
       .maxUniformBufferRange                    = pdevice->compiler->indirect_ubos_use_sampler ? (1u << 27) : (1u << 30),
-      .maxStorageBufferRange                    = pdevice->isl_dev.max_buffer_size,
+      .maxStorageBufferRange                    = MIN2(pdevice->isl_dev.max_buffer_size, UINT32_MAX),
       .maxPushConstantsSize                     = MAX_PUSH_CONSTANTS_SIZE,
       .maxMemoryAllocationCount                 = UINT32_MAX,
       .maxSamplerAllocationCount                = 64 * 1024,
@@ -1831,7 +1831,11 @@ anv_get_physical_device_properties_1_1(struct anv_physical_device *pdevice,
     * the real limit.
     */
    p->maxPerSetDescriptors       = 1024;
-   p->maxMemoryAllocationSize    = MAX_MEMORY_ALLOCATION_SIZE;
+
+   for (uint32_t i = 0; i < pdevice->memory.heap_count; i++) {
+      p->maxMemoryAllocationSize = MAX2(p->maxMemoryAllocationSize,
+                                        pdevice->memory.heaps[i].size);
+   }
 }
 
 static void
@@ -3654,15 +3658,15 @@ VkResult anv_AllocateMemory(
    VkDeviceSize aligned_alloc_size =
       align64(pAllocateInfo->allocationSize, 4096);
 
-   if (aligned_alloc_size > MAX_MEMORY_ALLOCATION_SIZE)
-      return vk_error(device, VK_ERROR_OUT_OF_DEVICE_MEMORY);
-
    assert(pAllocateInfo->memoryTypeIndex < pdevice->memory.type_count);
    const struct anv_memory_type *mem_type =
       &pdevice->memory.types[pAllocateInfo->memoryTypeIndex];
    assert(mem_type->heapIndex < pdevice->memory.heap_count);
    struct anv_memory_heap *mem_heap =
       &pdevice->memory.heaps[mem_type->heapIndex];
+
+   if (aligned_alloc_size > mem_heap->size)
+      return vk_error(device, VK_ERROR_OUT_OF_DEVICE_MEMORY);
 
    uint64_t mem_heap_used = p_atomic_read(&mem_heap->used);
    if (mem_heap_used + aligned_alloc_size > mem_heap->size)

@@ -26,15 +26,18 @@
 #include "nir_builder.h"
 #include "nir_xfb_info.h"
 
+/* Load argument with index start from arg plus relative_index. */
 nir_ssa_def *
-ac_nir_load_arg(nir_builder *b, const struct ac_shader_args *ac_args, struct ac_arg arg)
+ac_nir_load_arg_at_offset(nir_builder *b, const struct ac_shader_args *ac_args,
+                          struct ac_arg arg, unsigned relative_index)
 {
-   unsigned num_components = ac_args->args[arg.arg_index].size;
+   unsigned arg_index = arg.arg_index + relative_index;
+   unsigned num_components = ac_args->args[arg_index].size;
 
-   if (ac_args->args[arg.arg_index].file == AC_ARG_SGPR)
-      return nir_load_scalar_arg_amd(b, num_components, .base = arg.arg_index);
+   if (ac_args->args[arg_index].file == AC_ARG_SGPR)
+      return nir_load_scalar_arg_amd(b, num_components, .base = arg_index);
    else
-      return nir_load_vector_arg_amd(b, num_components, .base = arg.arg_index);
+      return nir_load_vector_arg_amd(b, num_components, .base = arg_index);
 }
 
 nir_ssa_def *

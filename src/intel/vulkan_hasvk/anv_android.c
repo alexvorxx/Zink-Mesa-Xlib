@@ -34,6 +34,7 @@
 #include <sync/sync.h>
 
 #include "anv_private.h"
+#include "vk_android.h"
 #include "vk_common_entrypoints.h"
 #include "vk_util.h"
 
