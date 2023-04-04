@@ -164,7 +164,11 @@ pack_cfg_bits(struct v3dv_pipeline *pipeline,
       config.clockwise_primitives =
          rs_info ? rs_info->frontFace == VK_FRONT_FACE_COUNTER_CLOCKWISE : false;
 
-      config.enable_depth_offset = rs_info ? rs_info->depthBiasEnable: false;
+      /* Even if rs_info->depthBiasEnabled is true, we can decide to not
+       * enable it, like if there isn't a depth/stencil attachment with the
+       * pipeline.
+       */
+      config.enable_depth_offset = pipeline->depth_bias.enabled;
 
       /* This is required to pass line rasterization tests in CTS while
        * exposing, at least, a minimum of 4-bits of subpixel precision

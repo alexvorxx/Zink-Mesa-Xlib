@@ -4438,22 +4438,6 @@ tu_CmdBeginRendering(VkCommandBuffer commandBuffer,
       }
    }
 
-   if (TU_DEBUG(DYNAMIC)) {
-      const VkRenderingSelfDependencyInfoMESA *self_dependency =
-         vk_find_struct_const(pRenderingInfo->pNext, RENDERING_SELF_DEPENDENCY_INFO_MESA);
-      if (self_dependency &&
-          (self_dependency->colorSelfDependencies ||
-           self_dependency->depthSelfDependency ||
-           self_dependency->stencilSelfDependency)) {
-         /* Mesa's renderpass emulation requires us to use normal attachments
-          * for input attachments, and currently doesn't try to keep track of
-          * which color/depth attachment an input attachment corresponds to.
-          * So when there's a self-dependency, we have to use sysmem.
-          */
-         cmd->state.rp.disable_gmem = true;
-      }
-   }
-
    tu_choose_gmem_layout(cmd);
 
    cmd->state.renderpass_cache.pending_flush_bits =

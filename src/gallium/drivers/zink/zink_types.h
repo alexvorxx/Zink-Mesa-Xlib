@@ -733,7 +733,8 @@ enum zink_rast_prim {
 struct zink_shader {
    struct util_live_shader base;
    uint32_t hash;
-   struct nir_shader *nir;
+   struct blob blob;
+   struct shader_info info;
 
    struct zink_shader_info sinfo;
 
@@ -747,6 +748,7 @@ struct zink_shader {
    unsigned num_texel_buffers;
    uint32_t ubos_used; // bitfield of which ubo indices are used
    uint32_t ssbos_used; // bitfield of which ssbo indices are used
+   uint32_t flat_flags;
    bool bindless;
    bool can_inline;
    bool has_uniforms;
@@ -1036,7 +1038,7 @@ struct zink_gfx_program {
    /* full */
    VkShaderModule modules[ZINK_GFX_SHADER_COUNT]; // compute stage doesn't belong here
    uint32_t module_hash[ZINK_GFX_SHADER_COUNT];
-   struct nir_shader *nir[ZINK_GFX_SHADER_COUNT];
+   struct blob blobs[ZINK_GFX_SHADER_COUNT];
    struct util_dynarray shader_cache[ZINK_GFX_SHADER_COUNT][2][2]; //normal, nonseamless cubes, inline uniforms
    unsigned inlined_variant_count[ZINK_GFX_SHADER_COUNT];
    uint32_t default_variant_hash;
@@ -1062,7 +1064,8 @@ struct zink_compute_program {
 
    bool use_local_size;
 
-   nir_shader *nir;
+   unsigned num_inlinable_uniforms;
+   nir_shader *nir; //only until precompile finishes
 
    struct zink_shader_module *curr;
 

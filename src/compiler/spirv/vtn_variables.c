@@ -1174,6 +1174,14 @@ vtn_get_builtin_location(struct vtn_builder *b,
       *location = SYSTEM_VALUE_FULLY_COVERED;
       set_mode_system_value(b, mode);
       break;
+   case SpvBuiltInFragSizeEXT:
+      *location = SYSTEM_VALUE_FRAG_SIZE;
+      set_mode_system_value(b, mode);
+      break;
+   case SpvBuiltInFragInvocationCountEXT:
+      *location = SYSTEM_VALUE_FRAG_INVOCATION_COUNT;
+      set_mode_system_value(b, mode);
+      break;
 
    default:
       vtn_fail("Unsupported builtin: %s (%u)",

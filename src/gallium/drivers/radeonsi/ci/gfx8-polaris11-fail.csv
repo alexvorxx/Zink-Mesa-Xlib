@@ -179,7 +179,6 @@ spec@ext_texture_srgb@texwrap formats-s3tc bordercolor-swizzled@GL_COMPRESSED_SR
 spec@ext_texture_srgb@texwrap formats-s3tc bordercolor-swizzled@GL_COMPRESSED_SRGB_ALPHA_S3TC_DXT3_EXT- swizzled- border color only,Fail
 spec@ext_texture_srgb@texwrap formats-s3tc bordercolor-swizzled@GL_COMPRESSED_SRGB_ALPHA_S3TC_DXT5_EXT- swizzled- border color only,Fail
 spec@ext_texture_srgb@texwrap formats-s3tc bordercolor-swizzled@GL_COMPRESSED_SRGB_S3TC_DXT1_EXT- swizzled- border color only,Fail
-spec@ext_transform_feedback@builtin-varyings gl_culldistance,Fail
 spec@glsl-1.20@compiler@invalid-vec4-array-to-vec3-array-conversion.vert,Fail
 spec@glsl-1.50@execution@geometry@tri-strip-ordering-with-prim-restart gl_triangle_strip_adjacency ffs,Fail
 spec@glsl-1.50@execution@geometry@tri-strip-ordering-with-prim-restart gl_triangle_strip_adjacency other,Fail

@@ -2966,11 +2966,12 @@ pipeline_init(struct v3dv_pipeline *pipeline,
     */
    assert(!ds_info || !ds_info->depthBoundsTestEnable);
 
+   enable_depth_bias(pipeline, rs_info);
+
    v3dv_X(device, pipeline_pack_state)(pipeline, cb_info, ds_info,
                                        rs_info, pv_info, ls_info,
                                        ms_info);
 
-   enable_depth_bias(pipeline, rs_info);
    pipeline_set_sample_mask(pipeline, ms_info);
    pipeline_set_sample_rate_shading(pipeline, ms_info);
 

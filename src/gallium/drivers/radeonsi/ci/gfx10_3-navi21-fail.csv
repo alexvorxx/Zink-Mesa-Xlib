@@ -121,7 +121,6 @@ spec@khr_texture_compression_astc@sliced-3d-miptree-gl srgb-fp@sRGB decode full 
 spec@khr_texture_compression_astc@sliced-3d-miptree-gles srgb-fp,Fail
 spec@khr_texture_compression_astc@sliced-3d-miptree-gles srgb-fp@sRGB decode full precision,Fail
 spec@oes_shader_io_blocks@compiler@layout-location-aliasing.vert,Fail
-spec@ext_transform_feedback@builtin-varyings gl_culldistance,Fail
 
 # glcts failures
 ## Test issue - https://github.com/KhronosGroup/VK-GL-CTS/issues/251

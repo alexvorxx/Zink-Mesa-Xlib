@@ -8167,11 +8167,14 @@ radv_cs_emit_dispatch_taskmesh_gfx_packet(struct radv_cmd_buffer *cmd_buffer)
    uint32_t ring_entry_reg = ((base_reg + ring_entry_loc->sgpr_idx * 4) - SI_SH_REG_OFFSET) >> 2;
    uint32_t xyz_dim_en = 1; /* TODO: disable XYZ_DIM when unneeded */
    uint32_t mode1_en = 1;   /* legacy fast launch mode */
+   uint32_t linear_dispatch_en =
+      cmd_buffer->state.shaders[MESA_SHADER_TASK]->info.cs.linear_taskmesh_dispatch;
 
    radeon_emit(cs, PKT3(PKT3_DISPATCH_TASKMESH_GFX, 2, predicating));
    radeon_emit(cs, S_4D0_RING_ENTRY_REG(ring_entry_reg) | S_4D0_XYZ_DIM_REG(xyz_dim_reg));
    if (cmd_buffer->device->physical_device->rad_info.gfx_level >= GFX11)
-      radeon_emit(cs, S_4D1_XYZ_DIM_ENABLE(xyz_dim_en) | S_4D1_MODE1_ENABLE(mode1_en));
+      radeon_emit(cs, S_4D1_XYZ_DIM_ENABLE(xyz_dim_en) | S_4D1_MODE1_ENABLE(mode1_en) |
+                         S_4D1_LINEAR_DISPATCH_ENABLE(linear_dispatch_en));
    else
       radeon_emit(cs, 0);
    radeon_emit(cs, V_0287F0_DI_SRC_SEL_AUTO_INDEX);
@@ -9846,8 +9849,11 @@ radv_trace_rays(struct radv_cmd_buffer *cmd_buffer, const VkTraceRaysIndirectCom
    uint32_t scratch_bytes_per_wave = pipeline->base.scratch_bytes_per_wave;
    uint32_t wave_size = rt_prolog->info.wave_size;
 
-   /* The hardware register is specified as a multiple of 256 DWORDS. */
-   scratch_bytes_per_wave += align(cmd_buffer->state.rt_stack_size * wave_size, 1024);
+   /* The hardware register is specified as a multiple of 64 or 256 DWORDS. */
+   unsigned scratch_alloc_granule =
+      cmd_buffer->device->physical_device->rad_info.gfx_level >= GFX11 ? 256 : 1024;
+   scratch_bytes_per_wave +=
+      align(cmd_buffer->state.rt_stack_size * wave_size, scratch_alloc_granule);
 
    cmd_buffer->compute_scratch_size_per_wave_needed =
       MAX2(cmd_buffer->compute_scratch_size_per_wave_needed, scratch_bytes_per_wave);

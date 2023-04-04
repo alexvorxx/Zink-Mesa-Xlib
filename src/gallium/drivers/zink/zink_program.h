@@ -411,7 +411,7 @@ zink_can_use_pipeline_libs(const struct zink_context *ctx)
           /* this is just terrible */
           !zink_get_fs_base_key(ctx)->shadow_needs_shader_swizzle &&
           /* TODO: is sample shading even possible to handle with GPL? */
-          !ctx->gfx_stages[MESA_SHADER_FRAGMENT]->nir->info.fs.uses_sample_shading &&
+          !ctx->gfx_stages[MESA_SHADER_FRAGMENT]->info.fs.uses_sample_shading &&
           !zink_get_fs_base_key(ctx)->fbfetch_ms &&
           !ctx->gfx_pipeline_state.force_persample_interp &&
           !ctx->gfx_pipeline_state.min_samples &&

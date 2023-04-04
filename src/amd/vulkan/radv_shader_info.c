@@ -721,6 +721,12 @@ gather_shader_info_task(const nir_shader *nir, struct radv_shader_info *info)
 
    /* Needed for storing draw ready only on the 1st thread. */
    info->cs.uses_local_invocation_idx = true;
+
+   /* Task->Mesh dispatch is linear when Y = Z = 1.
+    * GFX11 CP can optimize this case with a field in its draw packets.
+    */
+   info->cs.linear_taskmesh_dispatch = nir->info.mesh.ts_mesh_dispatch_dimensions[1] == 1 &&
+                                       nir->info.mesh.ts_mesh_dispatch_dimensions[2] == 1;
 }
 
 static uint32_t

@@ -1,28 +1,12 @@
 # Please include a comment with the log message and a testcase triggering each
 # VUID at the bottom of the file.
-khronos_validation.message_id_filter = VUID-vkCmdDrawMultiEXT-colorAttachmentCount-06188,VUID-VkGraphicsPipelineCreateInfo-Geometry-07725,VUID-VkShaderModuleCreateInfo-pCode-01091,VUID-vkCmdCopyImage-srcImage-07743,VUID-vkCmdDrawMultiEXT-None-06479,VUID-vkCmdDrawMultiIndexedEXT-format-07753,VUID-vkCmdDrawMultiEXT-viewType-07752,VUID-vkCmdDispatch-viewType-07752,VUID-RuntimeSpirv-Location-06272,VUID-vkDestroyDevice-device-00378,VUID-vkCmdDrawMultiEXT-None-02699
+khronos_validation.message_id_filter = VUID-vkCmdDrawMultiEXT-colorAttachmentCount-06188,VUID-VkGraphicsPipelineCreateInfo-Geometry-07725,VUID-VkShaderModuleCreateInfo-pCode-01091,VUID-vkCmdCopyImage-srcImage-07743,VUID-vkCmdDrawMultiEXT-None-06479,VUID-vkCmdDrawMultiIndexedEXT-format-07753,VUID-vkCmdDrawMultiEXT-viewType-07752,VUID-vkCmdDispatch-viewType-07752,VUID-RuntimeSpirv-Location-06272,VUID-vkCmdDrawMultiEXT-None-02699
 khronos_validation.report_flags = error
 khronos_validation.debug_action = VK_DBG_LAYER_ACTION_LOG_MSG,VK_DBG_LAYER_ACTION_BREAK
 VK_LAYER_ENABLES=VK_VALIDATION_FEATURE_ENABLE_DEBUG_PRINTF_EXT
 khronos_validation.printf_buffer_size = 40960
 khronos_validation.printf_to_stdout = true
 khronos_validation.log_filename = stdout
-
-# dEQP-GLES2.functional.shaders.builtin_variable.pointcoord:
-#
-# leak on most rendering tests with glthread.  Also leaks on
-# some tests
-# (KHR-GL45.shader_atomic_counter_ops_tests.ShaderAtomicCounterOpsAdditionSubstractionTestCase)
-# without glthread.  https://gitlab.freedesktop.org/mesa/mesa/-/issues/8104 and
-# https://gitlab.freedesktop.org/mesa/mesa/-/merge_requests/20867
-#
-# [ VUID-vkDestroyDevice-device-00378 ] Object 0: handle = 0x55b94c15adb0, type =
-# VK_OBJECT_TYPE_DEVICE; Object 1: handle = 0x95a125000000001a, type =
-# VK_OBJECT_TYPE_BUFFER; | MessageID = 0x71500fba | OBJ ERROR : For VkDevice
-# 0x55b94c15adb0[], VkBuffer 0x95a125000000001a[] has not been destroyed. The
-# Vulkan spec states: All child objects created on device must have been destroyed
-# prior to destroying device
-# (https://www.khronos.org/registry/vulkan/specs/1.3-extensions/html/vkspec.html#VUID-vkDestroyDevice-device-00378)
 
 # caselist of :
 #   dEQP-GLES31.functional.shaders.helper_invocation.value.triangles

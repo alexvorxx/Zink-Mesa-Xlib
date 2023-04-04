@@ -215,7 +215,7 @@ static UNUSED bool
 geom_or_tess_prim_id_used(struct anv_graphics_pipeline *pipeline)
 {
    const struct brw_tcs_prog_data *tcs_prog_data =
-      anv_pipeline_has_stage(pipeline, MESA_SHADER_TESS_EVAL) ?
+      anv_pipeline_has_stage(pipeline, MESA_SHADER_TESS_CTRL) ?
       get_tcs_prog_data(pipeline) : NULL;
    const struct brw_tes_prog_data *tes_prog_data =
       anv_pipeline_has_stage(pipeline, MESA_SHADER_TESS_EVAL) ?
@@ -260,7 +260,8 @@ genX(cmd_emit_te)(struct anv_cmd_buffer *cmd_buffer)
           *
           * Disable Tessellation Distribution when primitive Id is enabled.
           */
-         if (geom_or_tess_prim_id_used(pipeline))
+         if (pipeline->primitive_id_override ||
+             geom_or_tess_prim_id_used(pipeline))
             te.TessellationDistributionMode = TEDMODE_OFF;
       }
 

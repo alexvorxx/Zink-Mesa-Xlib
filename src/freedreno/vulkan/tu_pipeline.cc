@@ -4964,6 +4964,8 @@ tu_pipeline_builder_init_graphics(
       builder->create_info->pRasterizationState->rasterizerDiscardEnable &&
       !rasterizer_discard_dynamic;
 
+   VkPipelineCreateFlags rendering_flags = builder->create_info->flags;
+
    if (builder->state &
        (VK_GRAPHICS_PIPELINE_LIBRARY_PRE_RASTERIZATION_SHADERS_BIT_EXT |
         VK_GRAPHICS_PIPELINE_LIBRARY_FRAGMENT_SHADER_BIT_EXT |
@@ -5014,16 +5016,7 @@ tu_pipeline_builder_init_graphics(
          builder->subpass_feedback_loop_ds = false;
          builder->subpass_feedback_loop_color = false;
 
-         const VkRenderingSelfDependencyInfoMESA *self_dependency =
-            vk_find_struct_const(rendering_info->pNext, RENDERING_SELF_DEPENDENCY_INFO_MESA);
-
-         if (self_dependency) {
-            builder->subpass_feedback_loop_ds =
-               self_dependency->depthSelfDependency ||
-               self_dependency->stencilSelfDependency;
-            builder->subpass_feedback_loop_color =
-               self_dependency->colorSelfDependencies;
-         }
+         rendering_flags = vk_get_pipeline_rendering_flags(builder->create_info);
 
          if (!builder->rasterizer_discard) {
             builder->depth_attachment_format =
@@ -5077,12 +5070,12 @@ tu_pipeline_builder_init_graphics(
       }
    }
 
-   if (builder->create_info->flags & VK_PIPELINE_CREATE_COLOR_ATTACHMENT_FEEDBACK_LOOP_BIT_EXT) {
+   if (rendering_flags & VK_PIPELINE_CREATE_COLOR_ATTACHMENT_FEEDBACK_LOOP_BIT_EXT) {
       builder->subpass_feedback_loop_color = true;
       builder->feedback_loop_may_involve_textures = true;
    }
 
-   if (builder->create_info->flags & VK_PIPELINE_CREATE_DEPTH_STENCIL_ATTACHMENT_FEEDBACK_LOOP_BIT_EXT) {
+   if (rendering_flags & VK_PIPELINE_CREATE_DEPTH_STENCIL_ATTACHMENT_FEEDBACK_LOOP_BIT_EXT) {
       builder->subpass_feedback_loop_ds = true;
       builder->feedback_loop_may_involve_textures = true;
    }

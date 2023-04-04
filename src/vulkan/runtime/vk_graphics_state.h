@@ -650,14 +650,12 @@ struct vk_render_pass_state {
    /** VkPipelineRenderingCreateInfo::viewMask */
    uint32_t view_mask;
 
-   /** VkRenderingSelfDependencyInfoMESA::colorSelfDependencies */
-   uint8_t color_self_dependencies;
-
-   /** VkRenderingSelfDependencyInfoMESA::depthSelfDependency */
-   bool depth_self_dependency;
-
-   /** VkRenderingSelfDependencyInfoMESA::stencilSelfDependency */
-   bool stencil_self_dependency;
+   /** Render pass flags from VkGraphicsPipelineCreateInfo::flags
+    *
+    * For drivers which use vk_render_pass, this will also include flags
+    * generated based on subpass self-dependencies and fragment density map.
+    */
+   VkPipelineCreateFlags pipeline_flags;
 
    /** VkPipelineRenderingCreateInfo::colorAttachmentCount */
    uint8_t color_attachment_count;

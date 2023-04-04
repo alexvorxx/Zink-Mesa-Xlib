@@ -121,9 +121,8 @@ aco_postprocess_shader(const struct aco_compiler_options* options,
 
    aco::live live_vars;
    if (!info->is_trap_handler_shader) {
-      /* Phi lowering */
-      aco::lower_phis(program.get());
       aco::dominator_tree(program.get());
+      aco::lower_phis(program.get());
       validate(program.get());
 
       /* Optimization */

@@ -976,17 +976,34 @@ vk_render_pass_state_init(struct vk_render_pass_state *rp,
                           const struct vk_subpass_info *sp_info,
                           VkGraphicsPipelineLibraryFlagsEXT lib)
 {
+   VkPipelineCreateFlags valid_pipeline_flags = 0;
+   if (lib & VK_GRAPHICS_PIPELINE_LIBRARY_FRAGMENT_SHADER_BIT_EXT) {
+      valid_pipeline_flags |=
+         VK_PIPELINE_CREATE_RENDERING_FRAGMENT_SHADING_RATE_ATTACHMENT_BIT_KHR |
+         VK_PIPELINE_CREATE_RENDERING_FRAGMENT_DENSITY_MAP_ATTACHMENT_BIT_EXT;
+   }
+   if (lib & VK_GRAPHICS_PIPELINE_LIBRARY_FRAGMENT_OUTPUT_INTERFACE_BIT_EXT) {
+      valid_pipeline_flags |=
+         VK_PIPELINE_CREATE_COLOR_ATTACHMENT_FEEDBACK_LOOP_BIT_EXT |
+         VK_PIPELINE_CREATE_DEPTH_STENCIL_ATTACHMENT_FEEDBACK_LOOP_BIT_EXT;
+   }
+   const VkPipelineCreateFlags pipeline_flags =
+      vk_get_pipeline_rendering_flags(info) & valid_pipeline_flags;
+
    /* If we already have render pass state and it has attachment info, then
-    * it's complete and we don't need a new one.
+    * it's complete and we don't need a new one.  The one caveat here is that
+    * we may need to add in some rendering flags.
     */
    if (old_rp != NULL && vk_render_pass_state_is_complete(old_rp)) {
       *rp = *old_rp;
+      rp->pipeline_flags |= pipeline_flags;
       return;
    }
 
    *rp = (struct vk_render_pass_state) {
       .render_pass = info->renderPass,
       .subpass = info->subpass,
+      .pipeline_flags = pipeline_flags,
       .depth_attachment_format = VK_FORMAT_UNDEFINED,
       .stencil_attachment_format = VK_FORMAT_UNDEFINED,
    };
@@ -1042,16 +1059,6 @@ vk_render_pass_state_init(struct vk_render_pass_state *rp,
    rp->stencil_attachment_format = r_info->stencilAttachmentFormat;
    if (r_info->stencilAttachmentFormat != VK_FORMAT_UNDEFINED)
       rp->attachment_aspects |= VK_IMAGE_ASPECT_STENCIL_BIT;
-
-   const VkRenderingSelfDependencyInfoMESA *rsd_info =
-      vk_find_struct_const(r_info->pNext, RENDERING_SELF_DEPENDENCY_INFO_MESA);
-   if (rsd_info != NULL) {
-      STATIC_ASSERT(sizeof(rp->color_self_dependencies) * 8 >=
-                    MESA_VK_MAX_COLOR_ATTACHMENTS);
-      rp->color_self_dependencies = rsd_info->colorSelfDependencies;
-      rp->depth_self_dependency = rsd_info->depthSelfDependency;
-      rp->stencil_self_dependency = rsd_info->stencilSelfDependency;
-   }
 
    const VkAttachmentSampleCountInfoAMD *asc_info =
       vk_get_pipeline_sample_count_info_amd(info);

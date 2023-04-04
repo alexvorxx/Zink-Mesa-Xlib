@@ -2487,7 +2487,7 @@ zink_update_fbfetch(struct zink_context *ctx)
 {
    const bool had_fbfetch = ctx->di.fbfetch.imageLayout == VK_IMAGE_LAYOUT_GENERAL;
    if (!ctx->gfx_stages[MESA_SHADER_FRAGMENT] ||
-       !ctx->gfx_stages[MESA_SHADER_FRAGMENT]->nir->info.fs.uses_fbfetch_output) {
+       !ctx->gfx_stages[MESA_SHADER_FRAGMENT]->info.fs.uses_fbfetch_output) {
       if (!had_fbfetch)
          return;
       ctx->rp_changed = true;
@@ -4759,9 +4759,9 @@ static void
 zink_tc_parse_fs(void *state, struct tc_renderpass_info *info)
 {
    struct zink_shader *zs = state;
-   info->zsbuf_write_fs |= zs->nir->info.outputs_written & (BITFIELD64_BIT(FRAG_RESULT_DEPTH) | BITFIELD64_BIT(FRAG_RESULT_STENCIL));
+   info->zsbuf_write_fs |= zs->info.outputs_written & (BITFIELD64_BIT(FRAG_RESULT_DEPTH) | BITFIELD64_BIT(FRAG_RESULT_STENCIL));
    /* TODO: if >1 fbfetch attachment is ever supported */
-   info->cbuf_fbfetch |= zs->nir->info.fs.uses_fbfetch_output ? BITFIELD_BIT(0) : 0;
+   info->cbuf_fbfetch |= zs->info.fs.uses_fbfetch_output ? BITFIELD_BIT(0) : 0;
 }
 
 void
@@ -5132,7 +5132,7 @@ add_implicit_feedback_loop(struct zink_context *ctx, struct zink_resource *res)
       /* in-range VkPipelineStageFlagBits can be converted to VkShaderStageFlags with a bitshift */
       gl_shader_stage stage = vk_to_mesa_shader_stage((VkShaderStageFlagBits)(vkstagebit >> 3));
       /* check shader texture usage against resource's sampler binds */
-      if ((ctx->gfx_stages[stage] && (res->sampler_binds[stage] & ctx->gfx_stages[stage]->nir->info.textures_used[0])))
+      if ((ctx->gfx_stages[stage] && (res->sampler_binds[stage] & ctx->gfx_stages[stage]->info.textures_used[0])))
          is_feedback = true;
    }
    if (!is_feedback)

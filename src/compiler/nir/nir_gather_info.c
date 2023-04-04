@@ -875,6 +875,17 @@ gather_intrinsic_info(nir_intrinsic_instr *instr, nir_shader *shader,
                                       BITFIELD64_BIT(FRAG_RESULT_STENCIL);
       break;
 
+   case nir_intrinsic_launch_mesh_workgroups:
+   case nir_intrinsic_launch_mesh_workgroups_with_payload_deref: {
+      for (unsigned i = 0; i < 3; ++i) {
+         nir_ssa_scalar dim = nir_ssa_scalar_resolved(instr->src[0].ssa, i);
+         if (nir_ssa_scalar_is_const(dim))
+            shader->info.mesh.ts_mesh_dispatch_dimensions[i] =
+               nir_ssa_scalar_as_uint(dim);
+      }
+      break;
+   }
+
    default:
       shader->info.uses_bindless |= intrinsic_is_bindless(instr);
       if (nir_intrinsic_writes_external_memory(instr))
@@ -1053,6 +1064,11 @@ nir_shader_gather_info(nir_shader *shader, nir_function_impl *entrypoint)
    }
    if (shader->info.stage == MESA_SHADER_MESH) {
       shader->info.mesh.ms_cross_invocation_output_access = 0;
+   }
+   if (shader->info.stage == MESA_SHADER_TASK) {
+      shader->info.mesh.ts_mesh_dispatch_dimensions[0] = 0;
+      shader->info.mesh.ts_mesh_dispatch_dimensions[1] = 0;
+      shader->info.mesh.ts_mesh_dispatch_dimensions[2] = 0;
    }
 
    if (shader->info.stage != MESA_SHADER_FRAGMENT)

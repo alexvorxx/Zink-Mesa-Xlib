@@ -1512,6 +1512,9 @@ void u_vbuf_draw_vbo(struct pipe_context *pipe, const struct pipe_draw_info *inf
       if (indirect && indirect->buffer) {
          unsigned draw_count = 0;
 
+         /* num_draws can only be 1 with indirect draws. */
+         assert(num_draws == 1);
+
          /* Get the number of draws. */
          if (indirect->indirect_draw_count) {
             pipe_buffer_read(pipe, indirect->indirect_draw_count,
@@ -1547,6 +1550,7 @@ void u_vbuf_draw_vbo(struct pipe_context *pipe, const struct pipe_draw_info *inf
                u_vbuf_split_indexed_multidraw(mgr, &new_info, drawid_offset, data,
                                               indirect->stride, draw_count);
                free(data);
+               /* We're done (as num_draws is 1), so return early. */
                return;
             }
 
@@ -1563,6 +1567,7 @@ void u_vbuf_draw_vbo(struct pipe_context *pipe, const struct pipe_draw_info *inf
                u_vbuf_split_indexed_multidraw(mgr, &new_info, drawid_offset, data,
                                               indirect->stride, draw_count);
                free(data);
+               /* We're done (as num_draws is 1), so return early. */
                return;
             }
 
@@ -1724,6 +1729,8 @@ void u_vbuf_draw_vbo(struct pipe_context *pipe, const struct pipe_draw_info *inf
          }
 
          if (unroll_indices) {
+            if (!new_info.has_user_indices && info->take_index_buffer_ownership)
+               pipe_drop_resource_references(new_info.index.resource, 1);
             new_info.index_size = 0;
             new_draw.index_bias = 0;
             new_info.index_bounds_valid = true;

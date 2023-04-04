@@ -43,9 +43,9 @@ struct spirv_shader;
 struct tgsi_token;
 
 static inline gl_shader_stage
-clamp_stage(nir_shader *nir)
+clamp_stage(const shader_info *info)
 {
-   return nir->info.stage == MESA_SHADER_KERNEL ? MESA_SHADER_COMPUTE : nir->info.stage;
+   return info->stage == MESA_SHADER_KERNEL ? MESA_SHADER_COMPUTE : info->stage;
 }
 
 const void *
@@ -85,7 +85,7 @@ zink_shader_free(struct zink_screen *screen, struct zink_shader *shader);
 VkShaderModule
 zink_shader_tcs_compile(struct zink_screen *screen, struct zink_shader *zs, unsigned patch_vertices);
 struct zink_shader *
-zink_shader_tcs_create(struct zink_screen *screen, struct zink_shader *vs, unsigned vertices_per_patch);
+zink_shader_tcs_create(struct zink_screen *screen, nir_shader *vs, unsigned vertices_per_patch, nir_shader **nir_ret);
 
 static inline bool
 zink_shader_descriptor_is_buffer(struct zink_shader *zs, enum zink_descriptor_type type, unsigned i)
@@ -96,4 +96,10 @@ zink_shader_descriptor_is_buffer(struct zink_shader *zs, enum zink_descriptor_ty
 
 bool
 zink_shader_has_cubes(nir_shader *nir);
+nir_shader *
+zink_shader_blob_deserialize(struct zink_screen *screen, struct blob *blob);
+nir_shader *
+zink_shader_deserialize(struct zink_screen *screen, struct zink_shader *zs);
+void
+zink_shader_serialize_blob(nir_shader *nir, struct blob *blob);
 #endif

@@ -370,7 +370,7 @@ zink_init_zs_attachment(struct zink_context *ctx, struct zink_rt_attrib *rt)
                                            !zink_fb_clear_first_needs_explicit(fb_clear) &&
                                            (zink_fb_clear_element(fb_clear, 0)->zs.bits & PIPE_CLEAR_STENCIL);
    const uint64_t outputs_written = ctx->gfx_stages[MESA_SHADER_FRAGMENT] ?
-                                    ctx->gfx_stages[MESA_SHADER_FRAGMENT]->nir->info.outputs_written : 0;
+                                    ctx->gfx_stages[MESA_SHADER_FRAGMENT]->info.outputs_written : 0;
    bool needs_write_z = (ctx->dsa_state && ctx->dsa_state->hw_state.depth_write) ||
                        outputs_written & BITFIELD64_BIT(FRAG_RESULT_DEPTH);
    needs_write_z |= transient || rt->clear_color ||

@@ -4893,6 +4893,10 @@ vtn_handle_preamble_instruction(struct vtn_builder *b, SpvOp opcode,
          spv_check_supported(fragment_fully_covered, cap);
          break;
 
+      case SpvCapabilityFragmentDensityEXT:
+         spv_check_supported(fragment_density, cap);
+         break;
+
       default:
          vtn_fail("Unhandled capability: %s (%u)",
                   spirv_capability_to_string(cap), cap);

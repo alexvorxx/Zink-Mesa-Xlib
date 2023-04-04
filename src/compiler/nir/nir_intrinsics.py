@@ -866,6 +866,8 @@ system_value("shared_base_ptr", 0, bit_sizes=[32,64])
 system_value("global_base_ptr", 0, bit_sizes=[32,64])
 # Address of a transform feedback buffer, indexed by BASE
 system_value("xfb_address", 1, bit_sizes=[32,64], indices=[BASE])
+system_value("frag_size", 2)
+system_value("frag_invocation_count", 1)
 
 # System values for ray tracing.
 system_value("ray_launch_id", 3)

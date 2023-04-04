@@ -373,6 +373,7 @@ struct radv_shader_info {
       bool uses_dynamic_rt_callable_stack;
       bool uses_rt;
       bool uses_full_subgroups;
+      bool linear_taskmesh_dispatch;
 
       bool regalloc_hang_bug;
    } cs;

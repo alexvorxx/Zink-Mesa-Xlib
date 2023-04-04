@@ -3115,6 +3115,7 @@ struct anv_graphics_pipeline {
    bool                                         kill_pixel;
    bool                                         force_fragment_thread_dispatch;
    bool                                         uses_xfb;
+   bool                                         primitive_id_override;
 
    /* Number of VERTEX_ELEMENT_STATE input elements used by the shader */
    uint32_t                                     vs_input_elements;

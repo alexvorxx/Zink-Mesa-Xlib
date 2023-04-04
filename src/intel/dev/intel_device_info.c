@@ -1361,6 +1361,9 @@ intel_get_device_info_from_pci_id(int pci_id,
    if (intel_needs_workaround(devinfo, 22012575642))
       devinfo->urb.max_entries[MESA_SHADER_GEOMETRY] = 1536;
 
+   /* This is a placeholder until a proper value is set. */
+   devinfo->kmd_type = INTEL_KMD_TYPE_I915;
+
    return true;
 }
 
