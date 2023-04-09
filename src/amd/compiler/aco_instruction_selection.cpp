@@ -192,7 +192,17 @@ emit_bpermute(isel_context* ctx, Builder& bld, Temp index, Temp data)
    if (index.regClass() == s1)
       return bld.readlane(bld.def(s1), data, index);
 
-   if (ctx->options->gfx_level <= GFX7) {
+   /* Avoid using shared VGPRs for shuffle on GFX10 when the shader consists
+    * of multiple binaries, because the VGPR use is not known when choosing
+    * which registers to use for the shared VGPRs.
+    */
+   const bool avoid_shared_vgprs =
+      ctx->options->gfx_level >= GFX10 && ctx->options->gfx_level < GFX11 &&
+      ctx->program->wave_size == 64 &&
+      ((ctx->stage == fragment_fs && ctx->program->info.ps.has_epilog) ||
+       ctx->stage == raytracing_cs);
+
+   if (ctx->options->gfx_level <= GFX7 || avoid_shared_vgprs) {
       /* GFX6-7: there is no bpermute instruction */
       Operand index_op(index);
       Operand input_data(data);
@@ -12187,6 +12197,7 @@ select_ps_epilog(Program* program, const struct aco_ps_epilog_info* einfo, ac_sh
       out.enable_mrt_output_nan_fixup = (einfo->enable_mrt_output_nan_fixup >> i) & 1;
 
       Temp inputs = get_arg(&ctx, einfo->inputs[i]);
+      emit_split_vector(&ctx, inputs, 4);
       for (unsigned c = 0; c < 4; ++c) {
          out.values[c] = Operand(emit_extract_vector(&ctx, inputs, c, v1));
       }

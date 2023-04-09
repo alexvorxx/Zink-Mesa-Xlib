@@ -36,6 +36,12 @@ gfx_levels = {
         'asic_reg/gc/gc_9_2_1_sh_mask.h',
         'vega10_enum.h',
     ],
+    'gfx940': [
+        [0x00002000, 0x0000A000, 0, 0, 0], # IP_BASE GC_BASE
+        'asic_reg/gc/gc_9_4_3_offset.h',
+        'asic_reg/gc/gc_9_4_3_sh_mask.h',
+        'vega10_enum.h',
+    ],
     'gfx10': [
         [0x00001260, 0x0000A000, 0x02402C00, 0, 0], # IP_BASE GC_BASE
         'asic_reg/gc/gc_10_1_0_offset.h',
@@ -69,29 +75,33 @@ re_shift = re.compile(r'^#define (?P<name>\w+)__(?P<field>\w+)__SHIFT\s+(?P<valu
 re_mask = re.compile(r'^#define (?P<name>\w+)__(?P<field>\w+)_MASK\s+(?P<value>[0-9a-fA-Fx]+)L?\n')
 
 def register_filter(gfx_level, name, offset, already_added):
-    # Compute shader registers
-    umd_ranges = [0xB]
+    group = offset // 0x1000
+    is_cdna = gfx_level in ['gfx940']
 
-    # Gfx context, uconfig, and perf counter registers
-    umd_ranges += [0x28, 0x30, 0x31, 0x34, 0x35, 0x36, 0x37]
+    # Shader and uconfig registers
+    umd_ranges = [0xB, 0x30]
+
+    # Gfx context, other uconfig, and perf counter registers
+    if not is_cdna:
+        umd_ranges += [0x28, 0x31, 0x34, 0x35, 0x36, 0x37]
 
     # Add all registers in the 0x8000 range for gfx6
     if gfx_level == 'gfx6':
         umd_ranges += [0x8]
 
     # Only accept writeable registers and debug registers
-    return ((offset // 0x1000 in umd_ranges or
+    return ((group in umd_ranges or
              # Add SQ_WAVE registers for trap handlers
              name.startswith('SQ_WAVE_') or
              # Add registers in the 0x8000 range used by all generations
-             (offset // 0x1000 == 0x8 and
+             (group == 0x8 and
               (name.startswith('SQ_IMG_') or
                name.startswith('SQ_BUF_') or
                name.startswith('SQ_THREAD') or
                name.startswith('GRBM_STATUS') or
                name.startswith('CP_CP'))) or
              # Add registers in the 0x9000 range
-             (offset // 0x1000 == 0x9 and
+             (group == 0x9 and
               (name in ['TA_CS_BC_BASE_ADDR', 'GB_ADDR_CONFIG', 'SPI_CONFIG_CNTL'] or
                (name.startswith('GB') and 'TILE_MODE' in name)))) and
             # Remove SQ compiler definitions
@@ -100,7 +110,9 @@ def register_filter(gfx_level, name, offset, already_added):
             not already_added and
             'PREF_PRI_ACCUM' not in name and
             # only define SPI and COMPUTE registers in the 0xB000 range.
-            (offset // 0x1000 != 0xB or name.startswith('SPI') or name.startswith('COMPUTE')))
+            (group != 0xB or name.startswith('SPI') or name.startswith('COMPUTE')) and
+            # only define CP_COHER uconfig registers on CDNA
+            (not is_cdna or group != 0x30 or name.startswith('CP_COHER')))
 
 # Mapping from field names to enum types
 enum_map = {
@@ -665,6 +677,9 @@ enums_missing = {
     **missing_enums_gfx81plus,
   },
   'gfx9': {
+    **missing_enums_gfx9,
+  },
+  'gfx940': {
     **missing_enums_gfx9,
   },
   'gfx10': {

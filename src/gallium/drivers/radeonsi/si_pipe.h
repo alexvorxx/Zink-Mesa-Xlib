@@ -561,8 +561,8 @@ struct si_screen {
                                    enum pipe_texture_target target, enum pipe_format pipe_format,
                                    const unsigned char state_swizzle[4], unsigned first_level,
                                    unsigned last_level, unsigned first_layer, unsigned last_layer,
-                                   unsigned width, unsigned height, unsigned depth, uint32_t *state,
-                                   uint32_t *fmask_state);
+                                   unsigned width, unsigned height, unsigned depth,
+                                   bool get_bo_metadata, uint32_t *state, uint32_t *fmask_state);
 
    unsigned max_memory_usage_kb;
    unsigned pa_sc_raster_config;

@@ -90,8 +90,7 @@ virgl-traces:
 virgl-iris-traces:
   extends:
     - .virgl-iris-test
-    - .virgl-rules
-    - .test-manual-mr
+    - .virgl-iris-manual-rules
   variables:
     PIGLIT_REPLAY_EXTRA_ARGS: "--keep-image --download-caching-proxy-url=${FDO_HTTP_CACHE_URI}"
 

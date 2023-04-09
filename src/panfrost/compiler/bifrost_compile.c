@@ -3534,9 +3534,7 @@ bi_emit_tex_valhall(bi_builder *b, nir_tex_instr *instr)
 
    /* 32-bit indices to be allocated as consecutive staging registers */
    bi_index sregs[VALHALL_TEX_SREG_COUNT] = {};
-
-   bool has_sampler = nir_tex_instr_need_sampler(instr);
-   bi_index sampler = bi_imm_u32(has_sampler ? instr->sampler_index : 0);
+   bi_index sampler = bi_imm_u32(instr->sampler_index);
    bi_index texture = bi_imm_u32(instr->texture_index);
    uint32_t tables = (PAN_TABLE_SAMPLER << 11) | (PAN_TABLE_TEXTURE << 27);
 
@@ -3779,6 +3777,14 @@ bi_is_simple_tex(nir_tex_instr *instr)
 static void
 bi_emit_tex(bi_builder *b, nir_tex_instr *instr)
 {
+   /* If txf is used, we assume there is a valid sampler bound at index 0. Use
+    * it for txf operations, since there may be no other valid samplers. This is
+    * a workaround: txf does not require a sampler in NIR (so sampler_index is
+    * undefined) but we need one in the hardware. This is ABI with the driver.
+    */
+   if (!nir_tex_instr_need_sampler(instr))
+      instr->sampler_index = 0;
+
    if (b->shader->arch >= 9)
       bi_emit_tex_valhall(b, instr);
    else if (bi_is_simple_tex(instr))

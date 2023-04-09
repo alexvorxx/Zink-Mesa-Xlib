@@ -40,9 +40,11 @@
 
 #define AMDGPU_MI100_RANGE       0x32, 0x3C
 #define AMDGPU_MI200_RANGE       0x3C, 0xFF
+#define AMDGPU_GFX940_RANGE      0x46, 0xFF
 
 #define ASICREV_IS_MI100(r)      ASICREV_IS(r, MI100)
 #define ASICREV_IS_MI200(r)      ASICREV_IS(r, MI200)
+#define ASICREV_IS_GFX940(r)     ASICREV_IS(r, GFX940)
 
 #ifdef _WIN32
 #define DRM_CAP_ADDFB2_MODIFIERS 0x10
@@ -824,6 +826,7 @@ bool ac_query_gpu_info(int fd, void *dev_p, struct radeon_info *info)
       identify_chip(VEGA20);
       identify_chip(MI100);
       identify_chip(MI200);
+      identify_chip(GFX940);
       break;
    case FAMILY_RV:
       identify_chip(RAVEN);
@@ -931,7 +934,7 @@ bool ac_query_gpu_info(int fd, void *dev_p, struct radeon_info *info)
 
    /* unified ring */
    info->has_video_hw.vcn_decode
-                  = info->family >= CHIP_GFX1100
+                  = (info->family >= CHIP_GFX1100 || info->family == CHIP_GFX940)
                     ? info->ip[AMD_IP_VCN_UNIFIED].num_queues != 0
                     : info->ip[AMD_IP_VCN_DEC].num_queues != 0;
    info->has_userptr = true;
@@ -1337,6 +1340,8 @@ bool ac_query_gpu_info(int fd, void *dev_p, struct radeon_info *info)
    }
 
    info->has_3d_cube_border_color_mipmap = info->has_graphics || info->family == CHIP_MI100;
+   info->has_image_opcodes = debug_get_bool_option("AMD_IMAGE_OPCODES",
+                                                   info->has_graphics || info->family < CHIP_GFX940);
    info->never_stop_sq_perf_counters = info->gfx_level == GFX10 ||
                                        info->gfx_level == GFX10_3;
    info->never_send_perfcounter_stop = info->gfx_level == GFX11;
@@ -1567,7 +1572,8 @@ void ac_print_gpu_info(struct radeon_info *info, FILE *f)
       [AMD_IP_VCE] = "VCE",
       [AMD_IP_UVD_ENC] = "UVD_ENC",
       [AMD_IP_VCN_DEC] = "VCN_DEC",
-      [AMD_IP_VCN_ENC] = info->family >= CHIP_GFX1100 ? "VCN" : "VCN_ENC",
+      [AMD_IP_VCN_ENC] = (info->family >= CHIP_GFX1100 ||
+			  info->family == CHIP_GFX940) ? "VCN" : "VCN_ENC",
       [AMD_IP_VCN_JPEG] = "VCN_JPG",
    };
 
@@ -1609,6 +1615,7 @@ void ac_print_gpu_info(struct radeon_info *info, FILE *f)
    fprintf(f, "    has_ls_vgpr_init_bug = %i\n", info->has_ls_vgpr_init_bug);
    fprintf(f, "    has_32bit_predication = %i\n", info->has_32bit_predication);
    fprintf(f, "    has_3d_cube_border_color_mipmap = %i\n", info->has_3d_cube_border_color_mipmap);
+   fprintf(f, "    has_image_opcodes = %i\n", info->has_image_opcodes);
    fprintf(f, "    never_stop_sq_perf_counters = %i\n", info->never_stop_sq_perf_counters);
    fprintf(f, "    has_sqtt_rb_harvest_bug = %i\n", info->has_sqtt_rb_harvest_bug);
    fprintf(f, "    has_sqtt_auto_flush_mode_bug = %i\n", info->has_sqtt_auto_flush_mode_bug);
@@ -1657,7 +1664,7 @@ void ac_print_gpu_info(struct radeon_info *info, FILE *f)
    fprintf(f, "Multimedia info:\n");
    fprintf(f, "    vce_encode = %u\n", info->ip[AMD_IP_VCE].num_queues);
 
-   if (info->family >= CHIP_GFX1100)
+   if (info->family >= CHIP_GFX1100 || info->family == CHIP_GFX940)
       fprintf(f, "    vcn_unified = %u\n", info->has_video_hw.vcn_decode);
    else {
       fprintf(f, "    vcn_decode = %u\n", info->has_video_hw.vcn_decode);

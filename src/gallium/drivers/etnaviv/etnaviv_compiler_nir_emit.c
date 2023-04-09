@@ -77,9 +77,19 @@ static const struct etna_op_info etna_ops[] = {
 
    /* type convert */
    IOP(i2f32, I2F, 0_X_X),
+   IOP(i2i32, I2I, 0_X_X),
+   OPCT(i2i16, I2I, 0_X_X, TRUE, S16),
+   OPCT(i2i8,  I2I, 0_X_X, TRUE, S8),
    UOP(u2f32, I2F, 0_X_X),
+   UOP(u2u32, I2I, 0_X_X),
+   OPCT(u2u16, I2I, 0_X_X, TRUE, U16),
+   OPCT(u2u8,  I2I, 0_X_X, TRUE, U8),
    IOP(f2i32, F2I, 0_X_X),
+   OPCT(f2i16, F2I, 0_X_X, TRUE, S16),
+   OPCT(f2i8,  F2I, 0_X_X, TRUE, S8),
    UOP(f2u32, F2I, 0_X_X),
+   OPCT(f2u16, F2I, 0_X_X, TRUE, U16),
+   OPCT(f2u8,  F2I, 0_X_X, TRUE, U8),
    UOP(b2f32, AND, 0_X_X), /* AND with fui(1.0f) */
    UOP(b2i32, AND, 0_X_X), /* AND with 1 */
 
@@ -118,6 +128,7 @@ static const struct etna_op_info etna_ops[] = {
    IOP(ishl, LSHIFT, 0_X_1),
    IOP(ishr, RSHIFT, 0_X_1),
    UOP(ushr, RSHIFT, 0_X_1),
+   UOP(uclz, LEADZERO, 0_X_X),
 };
 
 void

@@ -38,7 +38,7 @@
 #include "panfrost/pan_public.h"
 #include "xf86drm.h"
 
-static struct renderonly_scanout *
+struct renderonly_scanout *
 panfrost_create_kms_dumb_buffer_for_resource(struct pipe_resource *rsc,
                                              struct renderonly *ro,
                                              struct winsys_handle *out_handle)
@@ -123,7 +123,6 @@ panfrost_drm_screen_create_renderonly(int fd,
                                       struct renderonly *ro,
                                       const struct pipe_screen_config *config)
 {
-   ro->create_for_resource = panfrost_create_kms_dumb_buffer_for_resource;
    return u_pipe_screen_lookup_or_create(os_dupfd_cloexec(fd), config,
                                          ro, panfrost_create_screen);
 }

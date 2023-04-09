@@ -600,6 +600,11 @@ lower_doubles_instr_to_soft(nir_builder *b, nir_alu_instr *instr,
       name = "__fsat64";
       mangled_name = "__fsat64(u641;";
       break;
+   case nir_op_fisfinite:
+      name = "__fisfinite64";
+      mangled_name = "__fisfinite64(u641;";
+      return_type = glsl_bool_type();
+      break;
    default:
       return false;
    }

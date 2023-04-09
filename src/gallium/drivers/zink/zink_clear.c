@@ -232,7 +232,7 @@ zink_clear(struct pipe_context *pctx,
    if (batch->in_rp) {
       if (buffers & PIPE_CLEAR_DEPTHSTENCIL && (ctx->zsbuf_unused || ctx->zsbuf_readonly)) {
          /* this will need a layout change */
-         assert(!zink_screen(ctx->base.screen)->driver_workarounds.track_renderpasses);
+         assert(!ctx->track_renderpasses);
          zink_batch_no_rp(ctx);
       } else {
          clear_in_rp(pctx, buffers, scissor_state, pcolor, depth, stencil);
@@ -311,11 +311,11 @@ zink_clear(struct pipe_context *pctx,
       clear->zs.bits |= (buffers & PIPE_CLEAR_DEPTHSTENCIL);
       if (zink_fb_clear_first_needs_explicit(fb_clear)) {
          ctx->rp_clears_enabled &= ~PIPE_CLEAR_DEPTHSTENCIL;
-         if (!zink_screen(ctx->base.screen)->driver_workarounds.track_renderpasses)
+         if (!ctx->track_renderpasses)
             ctx->dynamic_fb.tc_info.zsbuf_clear_partial = true;
       } else {
          ctx->rp_clears_enabled |= (buffers & PIPE_CLEAR_DEPTHSTENCIL);
-         if (!zink_screen(ctx->base.screen)->driver_workarounds.track_renderpasses)
+         if (!ctx->track_renderpasses)
             ctx->dynamic_fb.tc_info.zsbuf_clear = true;
       }
    }

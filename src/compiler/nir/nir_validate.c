@@ -49,7 +49,7 @@ typedef struct {
     * equivalent to the uses and defs in nir_register, but built up by the
     * validator. At the end, we verify that the sets have the same entries.
     */
-   struct set *uses, *if_uses, *defs;
+   struct set *uses, *defs;
    nir_function_impl *where_defined; /* NULL for global registers */
 } reg_validate_state;
 
@@ -163,7 +163,8 @@ validate_reg_src(nir_src *src, validate_state *state,
       _mesa_set_add(reg_state->uses, src);
    } else {
       validate_assert(state, state->if_stmt);
-      _mesa_set_add(reg_state->if_uses, src);
+      validate_assert(state, src->is_if);
+      _mesa_set_add(reg_state->uses, src);
    }
 
    validate_assert(state, reg_state->where_defined == state->impl &&
@@ -187,9 +188,6 @@ validate_reg_src(nir_src *src, validate_state *state,
    }
 }
 
-#define SET_PTR_BIT(ptr, bit) \
-   (void *)(((uintptr_t)(ptr)) | (((uintptr_t)1) << bit))
-
 static void
 validate_ssa_src(nir_src *src, validate_state *state,
                  unsigned bit_sizes, unsigned num_components)
@@ -199,12 +197,7 @@ validate_ssa_src(nir_src *src, validate_state *state,
    /* As we walk SSA defs, we add every use to this set.  We need to make sure
     * our use is seen in a use list.
     */
-   struct set_entry *entry;
-   if (state->instr) {
-      entry = _mesa_set_search(state->ssa_srcs, src);
-   } else {
-      entry = _mesa_set_search(state->ssa_srcs, SET_PTR_BIT(src, 0));
-   }
+   struct set_entry *entry = _mesa_set_search(state->ssa_srcs, src);
    validate_assert(state, entry);
 
    /* This will let us prove that we've seen all the sources */
@@ -300,22 +293,12 @@ validate_ssa_def(nir_ssa_def *def, validate_state *state)
    validate_num_components(state, def->num_components);
 
    list_validate(&def->uses);
-   nir_foreach_use(src, def) {
+   nir_foreach_use_including_if(src, def) {
       validate_assert(state, src->is_ssa);
       validate_assert(state, src->ssa == def);
+
       bool already_seen = false;
       _mesa_set_search_and_add(state->ssa_srcs, src, &already_seen);
-      /* A nir_src should only appear once and only in one SSA def use list */
-      validate_assert(state, !already_seen);
-   }
-
-   list_validate(&def->if_uses);
-   nir_foreach_if_use(src, def) {
-      validate_assert(state, src->is_ssa);
-      validate_assert(state, src->ssa == def);
-      bool already_seen = false;
-      _mesa_set_search_and_add(state->ssa_srcs, SET_PTR_BIT(src, 0),
-                               &already_seen);
       /* A nir_src should only appear once and only in one SSA def use list */
       validate_assert(state, !already_seen);
    }
@@ -349,7 +332,7 @@ validate_alu_dest(nir_alu_instr *instr, validate_state *state)
     * validate that the instruction doesn't write to components not in the
     * register/SSA value
     */
-   validate_assert(state, !(dest->write_mask & ~((1 << dest_size) - 1)));
+   validate_assert(state, !(dest->write_mask & ~nir_component_mask(dest_size)));
 
    /* validate that saturate is only ever used on instructions with
     * destinations of type float
@@ -545,16 +528,17 @@ validate_deref_instr(nir_deref_instr *instr, validate_state *state)
     */
    validate_dest(&instr->dest, state, 0, 0);
 
-   /* Deref instructions as if conditions don't make sense because if
-    * conditions expect well-formed Booleans.  If you want to compare with
-    * NULL, an explicit comparison operation should be used.
-    */
-   validate_assert(state, list_is_empty(&instr->dest.ssa.if_uses));
-
    /* Certain modes cannot be used as sources for phi instructions because
     * way too many passes assume that they can always chase deref chains.
     */
-   nir_foreach_use(use, &instr->dest.ssa) {
+   nir_foreach_use_including_if(use, &instr->dest.ssa) {
+      /* Deref instructions as if conditions don't make sense because if
+       * conditions expect well-formed Booleans.  If you want to compare with
+       * NULL, an explicit comparison operation should be used.
+       */
+      if (!validate_assert(state, !use->is_if))
+         continue;
+
       if (use->parent_instr->type == nir_instr_type_phi) {
          validate_assert(state, !(instr->modes & (nir_var_shader_in |
                                                   nir_var_shader_out |
@@ -1412,6 +1396,7 @@ validate_if(nir_if *if_stmt, validate_state *state)
    nir_cf_node *next_node = nir_cf_node_next(&if_stmt->cf_node);
    validate_assert(state, next_node->type == nir_cf_node_block);
 
+   validate_assert(state, if_stmt->condition.is_if);
    validate_src(&if_stmt->condition, state, 0, 1);
 
    validate_assert(state, !exec_list_is_empty(&if_stmt->then_list));
@@ -1500,11 +1485,9 @@ prevalidate_reg_decl(nir_register *reg, validate_state *state)
 
    list_validate(&reg->uses);
    list_validate(&reg->defs);
-   list_validate(&reg->if_uses);
 
    reg_validate_state *reg_state = ralloc(state->regs, reg_validate_state);
    reg_state->uses = _mesa_pointer_set_create(reg_state);
-   reg_state->if_uses = _mesa_pointer_set_create(reg_state);
    reg_state->defs = _mesa_pointer_set_create(reg_state);
 
    reg_state->where_defined = state->impl;
@@ -1520,19 +1503,12 @@ postvalidate_reg_decl(nir_register *reg, validate_state *state)
    assume(entry);
    reg_validate_state *reg_state = (reg_validate_state *) entry->data;
 
-   nir_foreach_use(src, reg) {
+   nir_foreach_use_including_if(src, reg) {
       struct set_entry *entry = _mesa_set_search(reg_state->uses, src);
       validate_assert(state, entry);
       _mesa_set_remove(reg_state->uses, entry);
    }
    validate_assert(state, reg_state->uses->entries == 0);
-
-   nir_foreach_if_use(src, reg) {
-      struct set_entry *entry = _mesa_set_search(reg_state->if_uses, src);
-      validate_assert(state, entry);
-      _mesa_set_remove(reg_state->if_uses, entry);
-   }
-   validate_assert(state, reg_state->if_uses->entries == 0);
 
    nir_foreach_def(src, reg) {
       struct set_entry *entry = _mesa_set_search(reg_state->defs, src);

@@ -116,6 +116,7 @@ enum radeon_family
    CHIP_RENOIR,         /* Ryzen 4000, 5000 */
    CHIP_MI100,
    CHIP_MI200,
+   CHIP_GFX940,
    /* GFX10.1 (RDNA 1) */
    CHIP_NAVI10,         /* Radeon 5600, 5700 */
    CHIP_NAVI12,         /* Radeon Pro 5600M */

@@ -577,14 +577,14 @@ update_if_uses(nir_cf_node *node)
       return;
 
    nir_if *if_stmt = nir_cf_node_as_if(node);
+   nir_src_set_parent_if(&if_stmt->condition, if_stmt);
 
-   if_stmt->condition.parent_if = if_stmt;
    if (if_stmt->condition.is_ssa) {
       list_addtail(&if_stmt->condition.use_link,
-                   &if_stmt->condition.ssa->if_uses);
+                   &if_stmt->condition.ssa->uses);
    } else {
       list_addtail(&if_stmt->condition.use_link,
-                   &if_stmt->condition.reg.reg->if_uses);
+                   &if_stmt->condition.reg.reg->uses);
    }
 }
 

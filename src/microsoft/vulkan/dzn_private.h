@@ -202,6 +202,9 @@ struct dzn_physical_device {
    ID3D12Device4 *dev;
    ID3D12Device10 *dev10;
    ID3D12Device11 *dev11;
+#if D3D12_SDK_VERSION >= 610
+   ID3D12Device12 *dev12;
+#endif
    D3D_FEATURE_LEVEL feature_level;
    D3D_SHADER_MODEL shader_model;
    D3D_ROOT_SIGNATURE_VERSION root_sig_version;
@@ -215,6 +218,9 @@ struct dzn_physical_device {
    D3D12_FEATURE_DATA_D3D12_OPTIONS13 options13;
    D3D12_FEATURE_DATA_D3D12_OPTIONS14 options14;
    D3D12_FEATURE_DATA_D3D12_OPTIONS15 options15;
+#if D3D12_SDK_VERSION >= 610
+   D3D12_FEATURE_DATA_D3D12_OPTIONS19 options19;
+#endif
    VkPhysicalDeviceMemoryProperties memory;
    D3D12_HEAP_FLAGS heap_flags_for_mem_type[VK_MAX_MEMORY_TYPES];
    const struct vk_sync_type *sync_types[MAX_SYNC_TYPES + 1];
@@ -281,6 +287,9 @@ struct dzn_device {
    ID3D12Device4 *dev;
    ID3D12Device10 *dev10;
    ID3D12Device11 *dev11;
+#if D3D12_SDK_VERSION >= 610
+   ID3D12Device12 *dev12;
+#endif
    ID3D12DeviceConfiguration *dev_config;
 
    struct dzn_meta_indirect_draw indirect_draws[DZN_NUM_INDIRECT_DRAW_TYPES];
@@ -302,6 +311,7 @@ struct dzn_device {
    struct dzn_queue *swapchain_queue;
 
    bool bindless;
+   bool support_static_samplers;
    struct dzn_device_descriptor_heap device_heaps[NUM_POOL_TYPES];
 };
 
@@ -345,13 +355,21 @@ enum dzn_cmd_bindpoint_dirty {
    DZN_CMD_BINDPOINT_DIRTY_DESC_SET1 = 1 << 4,
    DZN_CMD_BINDPOINT_DIRTY_DESC_SET2 = 1 << 5,
    DZN_CMD_BINDPOINT_DIRTY_DESC_SET3 = 1 << 6,
+   DZN_CMD_BINDPOINT_DIRTY_DESC_SET4 = 1 << 7,
+   DZN_CMD_BINDPOINT_DIRTY_DESC_SET5 = 1 << 8,
+   DZN_CMD_BINDPOINT_DIRTY_DESC_SET6 = 1 << 9,
+   DZN_CMD_BINDPOINT_DIRTY_DESC_SET7 = 1 << 10,
    DZN_CMD_BINDPOINT_DIRTY_HEAPS =
       DZN_CMD_BINDPOINT_DIRTY_DYNAMIC_BUFFERS |
       DZN_CMD_BINDPOINT_DIRTY_SYSVALS |
       DZN_CMD_BINDPOINT_DIRTY_DESC_SET0 |
       DZN_CMD_BINDPOINT_DIRTY_DESC_SET1 |
       DZN_CMD_BINDPOINT_DIRTY_DESC_SET2 |
-      DZN_CMD_BINDPOINT_DIRTY_DESC_SET3,
+      DZN_CMD_BINDPOINT_DIRTY_DESC_SET3 |
+      DZN_CMD_BINDPOINT_DIRTY_DESC_SET4 |
+      DZN_CMD_BINDPOINT_DIRTY_DESC_SET5 |
+      DZN_CMD_BINDPOINT_DIRTY_DESC_SET6 |
+      DZN_CMD_BINDPOINT_DIRTY_DESC_SET7,
 };
 
 enum dzn_cmd_dirty {
@@ -368,7 +386,7 @@ enum dzn_cmd_dirty {
 #define MAX_VBS D3D12_IA_VERTEX_INPUT_RESOURCE_SLOT_COUNT
 #define MAX_VP D3D12_VIEWPORT_AND_SCISSORRECT_OBJECT_COUNT_PER_PIPELINE
 #define MAX_SCISSOR D3D12_VIEWPORT_AND_SCISSORRECT_OBJECT_COUNT_PER_PIPELINE
-#define MAX_SETS 4
+#define MAX_SETS 8
 #define MAX_DYNAMIC_UNIFORM_BUFFERS 8
 #define MAX_DYNAMIC_STORAGE_BUFFERS 4
 #define MAX_DYNAMIC_BUFFERS                                                  \
@@ -411,8 +429,8 @@ struct dzn_buffer_desc {
    int *bindless_descriptor_slot;
 };
 
-#define MAX_DESCS_PER_SAMPLER_HEAP 2048u
-#define MAX_DESCS_PER_CBV_SRV_UAV_HEAP 1000000u
+#define MAX_DESCS_PER_SAMPLER_HEAP     D3D12_MAX_SHADER_VISIBLE_SAMPLER_HEAP_SIZE
+#define MAX_DESCS_PER_CBV_SRV_UAV_HEAP D3D12_MAX_SHADER_VISIBLE_DESCRIPTOR_HEAP_SIZE_TIER_1
 
 VkResult
 dzn_descriptor_heap_init(struct dzn_descriptor_heap *heap,
@@ -1075,7 +1093,8 @@ dzn_image_get_rtv_desc(const struct dzn_image *image,
 D3D12_RESOURCE_STATES
 dzn_image_layout_to_state(const struct dzn_image *image,
                           VkImageLayout layout,
-                          VkImageAspectFlagBits aspect);
+                          VkImageAspectFlagBits aspect,
+                          D3D12_COMMAND_LIST_TYPE type);
 
 D3D12_BARRIER_LAYOUT
 dzn_vk_layout_to_d3d_layout(VkImageLayout layout,

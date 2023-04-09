@@ -237,8 +237,7 @@ update_shader_samplers(struct st_context *st,
        * states that are NULL.
        */
       if (samplers_used & 1 &&
-          (ctx->Texture.Unit[tex_unit]._Current->Target != GL_TEXTURE_BUFFER ||
-           st->texture_buffer_sampler)) {
+          (ctx->Texture.Unit[tex_unit]._Current->Target != GL_TEXTURE_BUFFER)) {
          st_convert_sampler_from_unit(
             st, sampler, tex_unit,
             prog->shader_program && prog->shader_program->GLSL_Version >= 130);

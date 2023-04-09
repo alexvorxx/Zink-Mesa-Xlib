@@ -981,7 +981,7 @@ TESTS = [
                  color2 = y + 1;
          }
          """,
-         r'assign  \(x\) \(var_ref compiler_temp@2\)  \(expression uint bitcast_f2u \(expression float f162f'),
+         r'expression int16_t i2imp \(expression int frexp_exp \(expression float f162f'),
     Test("ldexp",
          """
          #version 310 es

@@ -1130,6 +1130,22 @@ lower_64bit_pack(nir_shader *shader)
                                        nir_metadata_block_index | nir_metadata_dominance, NULL);
 }
 
+static void
+copy_vars(nir_builder *b, nir_deref_instr *dst, nir_deref_instr *src)
+{
+   assert(glsl_get_bare_type(dst->type) == glsl_get_bare_type(src->type));
+   if (glsl_type_is_struct(dst->type)) {
+      for (unsigned i = 0; i < glsl_get_length(dst->type); ++i) {
+         copy_vars(b, nir_build_deref_struct(b, dst, i), nir_build_deref_struct(b, src, i));
+      }
+   } else if (glsl_type_is_array_or_matrix(dst->type)) {
+      copy_vars(b, nir_build_deref_array_wildcard(b, dst), nir_build_deref_array_wildcard(b, src));
+   } else {
+      nir_ssa_def *load = nir_load_deref(b, src);
+      nir_store_deref(b, dst, load, BITFIELD_MASK(load->num_components));
+   }
+}
+
 nir_shader *
 zink_create_quads_emulation_gs(const nir_shader_compiler_options *options,
                                const nir_shader *prev_stage,
@@ -1205,24 +1221,8 @@ zink_create_quads_emulation_gs(const nir_shader_compiler_options *options,
          if (in_vars[j]->data.location == VARYING_SLOT_EDGE) {
             continue;
          }
-         /* no need to use copy_var to save a lower pass */
-         nir_deref_instr *deref_var = nir_build_deref_var(&b, in_vars[j]);
-         nir_deref_instr *deref_array = nir_build_deref_array(&b, deref_var, idx);
-         if (glsl_type_is_array(deref_array->type)) {
-            nir_deref_instr *deref_out = nir_build_deref_var(&b, out_vars[j]);
-            for (unsigned k = 0; k < glsl_array_size(deref_array->type); k++) {
-               nir_deref_instr *deref_arr_arr = nir_build_deref_array_imm(&b, deref_array, k);
-               nir_deref_instr *deref_arr_out = nir_build_deref_array_imm(&b, deref_out, k);
-               assert(glsl_type_is_vector_or_scalar(deref_arr_arr->type));
-               nir_ssa_def *value = nir_load_deref(&b, deref_arr_arr);
-               nir_store_deref(&b, deref_arr_out, value,
-                             (1u << value->num_components) - 1);
-            }
-         } else {
-            nir_ssa_def *value = nir_load_deref(&b, deref_array);
-            nir_store_var(&b, out_vars[j], value,
-                        (1u << value->num_components) - 1);
-         }
+         nir_deref_instr *in_value = nir_build_deref_array(&b, nir_build_deref_var(&b, in_vars[j]), idx);
+         copy_vars(&b, nir_build_deref_var(&b, out_vars[j]), in_value);
       }
       nir_emit_vertex(&b, 0);
       if (i == 2)
@@ -1252,6 +1252,15 @@ zink_screen_init_compiler(struct zink_screen *screen)
       .lower_extract_word = true,
       .lower_insert_byte = true,
       .lower_insert_word = true,
+
+      /* We can only support 32-bit ldexp, but NIR doesn't have a flag
+       * distinguishing 64-bit ldexp support (radeonsi *does* support 64-bit
+       * ldexp, so we don't just always lower it in NIR).  Given that ldexp is
+       * effectively unused (no instances in shader-db), it's not worth the
+       * effort to do so.
+       * */
+      .lower_ldexp = true,
+
       .lower_mul_high = true,
       .lower_rotate = true,
       .lower_uadd_carry = true,
@@ -4684,6 +4693,7 @@ zink_shader_create(struct zink_screen *screen, struct nir_shader *nir,
                         nir_find_variable_with_location(nir, nir_var_shader_out, VARYING_SLOT_EDGE);
 
    ret->sinfo.have_vulkan_memory_model = screen->info.have_KHR_vulkan_memory_model;
+   ret->sinfo.bindless_set_idx = screen->desc_set_id[ZINK_DESCRIPTOR_BINDLESS];
 
    util_queue_fence_init(&ret->precompile.fence);
    util_dynarray_init(&ret->pipeline_libs, ret);
@@ -4720,6 +4730,7 @@ zink_shader_create(struct zink_screen *screen, struct nir_shader *nir,
    NIR_PASS_V(nir, lower_baseinstance);
    NIR_PASS_V(nir, lower_sparse);
    NIR_PASS_V(nir, split_bitfields);
+   NIR_PASS_V(nir, nir_lower_frexp); /* TODO: Use the spirv instructions for this. */
 
    if (screen->info.have_EXT_shader_demote_to_helper_invocation) {
       NIR_PASS_V(nir, nir_lower_discard_or_demote,
@@ -5118,10 +5129,9 @@ zink_shader_tcs_create(struct zink_screen *screen, nir_shader *vs, unsigned vert
          - ARB_tessellation_shader
        */
       /* we need to load the invocation-specific value of the vertex output and then store it to the per-patch output */
-      nir_deref_instr *in_array_var = nir_build_deref_array(&b, nir_build_deref_var(&b, in), invocation_id);
-      nir_ssa_def *load = nir_load_deref(&b, in_array_var);
-      nir_deref_instr *out_array_var = nir_build_deref_array(&b, nir_build_deref_var(&b, out), invocation_id);
-      nir_store_deref(&b, out_array_var, load, 0xff);
+      nir_deref_instr *in_value = nir_build_deref_array(&b, nir_build_deref_var(&b, in), invocation_id);
+      nir_deref_instr *out_value = nir_build_deref_array(&b, nir_build_deref_var(&b, out), invocation_id);
+      copy_vars(&b, out_value, in_value);
    }
    nir_variable *gl_TessLevelInner = nir_variable_create(nir, nir_var_shader_out, glsl_array_type(glsl_float_type(), 2, 0), "gl_TessLevelInner");
    gl_TessLevelInner->data.location = VARYING_SLOT_TESS_LEVEL_INNER;

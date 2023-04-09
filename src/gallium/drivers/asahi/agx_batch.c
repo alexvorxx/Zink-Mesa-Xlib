@@ -458,6 +458,12 @@ agx_batch_writes(struct agx_batch *batch, struct agx_resource *rsrc)
     */
    agx_writer_remove(ctx, rsrc->bo->handle);
    agx_writer_add(ctx, agx_batch_idx(batch), rsrc->bo->handle);
+
+   if (rsrc->base.target == PIPE_BUFFER) {
+      /* Assume BOs written by the GPU are fully valid */
+      rsrc->valid_buffer_range.start = 0;
+      rsrc->valid_buffer_range.end = ~0;
+   }
 }
 
 /*

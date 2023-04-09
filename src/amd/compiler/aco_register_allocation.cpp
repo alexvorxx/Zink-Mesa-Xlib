@@ -1977,6 +1977,7 @@ handle_fixed_operands(ra_ctx& ctx, RegisterFile& register_file,
          continue;
 
       PhysReg src = ctx.assignments[op.tempId()].reg;
+      adjust_max_used_regs(ctx, op.regClass(), op.physReg());
 
       if (op.physReg() == src) {
          tmp_file.block(op.physReg(), op.regClass());

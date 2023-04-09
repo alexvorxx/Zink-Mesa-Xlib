@@ -128,12 +128,12 @@ objects. They all follow simple, one-method binding calls, e.g.
 Samplers
 ^^^^^^^^
 
-pipe_sampler_state objects control how textures are sampled
-(coordinate wrap modes, interpolation modes, etc).  Note that unless
-``PIPE_CAP_TEXTURE_BUFFER_SAMPLER`` is enabled, samplers are not used for
-texture buffer objects.  That is, pipe_context::bind_sampler_views()
-will not bind a sampler if the corresponding sampler view refers to a
-PIPE_BUFFER resource.
+pipe_sampler_state objects control how textures are sampled (coordinate wrap
+modes, interpolation modes, etc). Samplers are only required for texture
+instructions for which nir_tex_instr_need_sampler returns true. Drivers must
+ignore samplers for other texture instructions. Frontends may or may not bind
+samplers when no texture instruction use them. Notably, frontends may not bind
+samplers for texture buffer objects, which are never accessed with samplers.
 
 Sampler Views
 ^^^^^^^^^^^^^

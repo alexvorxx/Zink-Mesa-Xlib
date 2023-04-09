@@ -225,7 +225,6 @@ reg_create(void *mem_ctx, struct exec_list *list)
 
    list_inithead(&reg->uses);
    list_inithead(&reg->defs);
-   list_inithead(&reg->if_uses);
 
    reg->num_components = 0;
    reg->bit_size = 32;
@@ -888,7 +887,7 @@ nir_phi_instr_add_src(nir_phi_instr *instr, nir_block *pred, nir_src src)
    phi_src = gc_zalloc(gc_get_context(instr), nir_phi_src, 1);
    phi_src->pred = pred;
    phi_src->src = src;
-   phi_src->src.parent_instr = &instr->instr;
+   nir_src_set_parent_instr(&phi_src->src, &instr->instr);
    exec_list_push_tail(&instr->srcs, &phi_src->node);
 
    return phi_src;
@@ -1056,7 +1055,7 @@ add_use_cb(nir_src *src, void *state)
 {
    nir_instr *instr = state;
 
-   src->parent_instr = instr;
+   nir_src_set_parent_instr(src, instr);
    list_addtail(&src->use_link,
                 src->is_ssa ? &src->ssa->uses : &src->reg.reg->uses);
 
@@ -1633,19 +1632,16 @@ src_add_all_uses(nir_src *src, nir_instr *parent_instr, nir_if *parent_if)
          continue;
 
       if (parent_instr) {
-         src->parent_instr = parent_instr;
-         if (src->is_ssa)
-            list_addtail(&src->use_link, &src->ssa->uses);
-         else
-            list_addtail(&src->use_link, &src->reg.reg->uses);
+         nir_src_set_parent_instr(src, parent_instr);
       } else {
          assert(parent_if);
-         src->parent_if = parent_if;
-         if (src->is_ssa)
-            list_addtail(&src->use_link, &src->ssa->if_uses);
-         else
-            list_addtail(&src->use_link, &src->reg.reg->if_uses);
+         nir_src_set_parent_if(src, parent_if);
       }
+
+      if (src->is_ssa)
+         list_addtail(&src->use_link, &src->ssa->uses);
+      else
+         list_addtail(&src->use_link, &src->reg.reg->uses);
    }
 }
 
@@ -1677,7 +1673,7 @@ nir_if_rewrite_condition(nir_if *if_stmt, nir_src new_src)
 {
    nir_shader *shader = ralloc_parent(if_stmt);
    nir_src *src = &if_stmt->condition;
-   assert(!src_is_valid(src) || src->parent_if == if_stmt);
+   assert(!src_is_valid(src) || (src->is_if && src->parent_if == if_stmt));
 
    src_remove_all_uses(src);
    src_copy(src, &new_src, shader->gctx);
@@ -1716,7 +1712,6 @@ nir_ssa_def_init(nir_instr *instr, nir_ssa_def *def,
 {
    def->parent_instr = instr;
    list_inithead(&def->uses);
-   list_inithead(&def->if_uses);
    def->num_components = num_components;
    def->bit_size = bit_size;
    def->divergent = true; /* This is the safer default */
@@ -1747,11 +1742,9 @@ void
 nir_ssa_def_rewrite_uses(nir_ssa_def *def, nir_ssa_def *new_ssa)
 {
    assert(def != new_ssa);
-   nir_foreach_use_safe(use_src, def)
-      nir_instr_rewrite_src_ssa(use_src->parent_instr, use_src, new_ssa);
-
-   nir_foreach_if_use_safe(use_src, def)
-      nir_if_rewrite_condition_ssa(use_src->parent_if, use_src, new_ssa);
+   nir_foreach_use_including_if_safe(use_src, def) {
+      nir_src_rewrite_ssa(use_src, new_ssa);
+   }
 }
 
 void
@@ -1760,11 +1753,12 @@ nir_ssa_def_rewrite_uses_src(nir_ssa_def *def, nir_src new_src)
    if (new_src.is_ssa) {
       nir_ssa_def_rewrite_uses(def, new_src.ssa);
    } else {
-      nir_foreach_use_safe(use_src, def)
-         nir_instr_rewrite_src(use_src->parent_instr, use_src, new_src);
-
-      nir_foreach_if_use_safe(use_src, def)
-         nir_if_rewrite_condition(use_src->parent_if, new_src);
+      nir_foreach_use_including_if_safe(use_src, def) {
+         if (use_src->is_if)
+            nir_if_rewrite_condition(use_src->parent_if, new_src);
+         else
+            nir_instr_rewrite_src(use_src->parent_instr, use_src, new_src);
+      }
    }
 }
 
@@ -1805,20 +1799,19 @@ nir_ssa_def_rewrite_uses_after(nir_ssa_def *def, nir_ssa_def *new_ssa,
    if (def == new_ssa)
       return;
 
-   nir_foreach_use_safe(use_src, def) {
-      assert(use_src->parent_instr != def->parent_instr);
-      /* Since def already dominates all of its uses, the only way a use can
-       * not be dominated by after_me is if it is between def and after_me in
-       * the instruction list.
-       */
-      if (!is_instr_between(def->parent_instr, after_me, use_src->parent_instr))
-         nir_instr_rewrite_src_ssa(use_src->parent_instr, use_src, new_ssa);
-   }
+   nir_foreach_use_including_if_safe(use_src, def) {
+      if (!use_src->is_if) {
+         assert(use_src->parent_instr != def->parent_instr);
 
-   nir_foreach_if_use_safe(use_src, def) {
-      nir_if_rewrite_condition_ssa(use_src->parent_if,
-                                   &use_src->parent_if->condition,
-                                   new_ssa);
+         /* Since def already dominates all of its uses, the only way a use can
+          * not be dominated by after_me is if it is between def and after_me in
+          * the instruction list.
+          */
+         if (is_instr_between(def->parent_instr, after_me, use_src->parent_instr))
+            continue;
+      }
+
+      nir_src_rewrite_ssa(use_src, new_ssa);
    }
 }
 
@@ -1862,11 +1855,9 @@ nir_ssa_def_components_read(const nir_ssa_def *def)
 {
    nir_component_mask_t read_mask = 0;
 
-   if (!list_is_empty(&def->if_uses))
-      read_mask |= 1;
+   nir_foreach_use_including_if(use, def) {
+      read_mask |= use->is_if ? 1 : nir_src_components_read(use);
 
-   nir_foreach_use(use, def) {
-      read_mask |= nir_src_components_read(use);
       if (read_mask == (1 << def->num_components) - 1)
          return read_mask;
    }
@@ -2267,7 +2258,7 @@ nir_function_impl_lower_instructions(nir_function_impl *impl,
 
       assert(nir_foreach_dest(instr, dest_is_ssa, NULL));
       nir_ssa_def *old_def = nir_instr_ssa_def(instr);
-      struct list_head old_uses, old_if_uses;
+      struct list_head old_uses;
       if (old_def != NULL) {
          /* We're about to ask the callback to generate a replacement for instr.
           * Save off the uses from instr's SSA def so we know what uses to
@@ -2283,8 +2274,6 @@ nir_function_impl_lower_instructions(nir_function_impl *impl,
 
          list_replace(&old_def->uses, &old_uses);
          list_inithead(&old_def->uses);
-         list_replace(&old_def->if_uses, &old_if_uses);
-         list_inithead(&old_def->if_uses);
       }
 
       b.cursor = nir_after_instr(instr);
@@ -2296,11 +2285,12 @@ nir_function_impl_lower_instructions(nir_function_impl *impl,
             preserved = nir_metadata_none;
 
          nir_src new_src = nir_src_for_ssa(new_def);
-         list_for_each_entry_safe(nir_src, use_src, &old_uses, use_link)
-            nir_instr_rewrite_src(use_src->parent_instr, use_src, new_src);
-
-         list_for_each_entry_safe(nir_src, use_src, &old_if_uses, use_link)
-            nir_if_rewrite_condition(use_src->parent_if, new_src);
+         list_for_each_entry_safe(nir_src, use_src, &old_uses, use_link) {
+            if (use_src->is_if)
+               nir_if_rewrite_condition(use_src->parent_if, new_src);
+            else
+               nir_instr_rewrite_src(use_src->parent_instr, use_src, new_src);
+         }
 
          if (nir_ssa_def_is_unused(old_def)) {
             iter = nir_instr_free_and_dce(instr);
@@ -2310,10 +2300,9 @@ nir_function_impl_lower_instructions(nir_function_impl *impl,
          progress = true;
       } else {
          /* We didn't end up lowering after all.  Put the uses back */
-         if (old_def) {
+         if (old_def)
             list_replace(&old_uses, &old_def->uses);
-            list_replace(&old_if_uses, &old_def->if_uses);
-         }
+
          if (new_def == NIR_LOWER_INSTR_PROGRESS_REPLACE) {
             /* Only instructions without a return value can be removed like this */
             assert(!old_def);

@@ -328,7 +328,8 @@ op("st_vary", None, dests = 0, srcs = 2, can_eliminate = False)
 op("no_varyings", (0x80000051, 0xFFFFFFFF, 4, _), dests = 0, can_eliminate = False)
 op("stop", (0x88, 0xFFFF, 2, _), dests = 0, can_eliminate = False)
 op("trap", (0x08, 0xFFFF, 2, _), dests = 0, can_eliminate = False)
-op("writeout", (0x48, 0xFF, 4, _), dests = 0, imms = [WRITEOUT], can_eliminate = False)
+op("wait_pix", (0x48, 0xFF, 4, _), dests = 0, imms = [WRITEOUT], can_eliminate = False)
+op("signal_pix", (0x58, 0xFF, 4, _), dests = 0, imms = [WRITEOUT], can_eliminate = False)
 
 # Sources are the image and the offset within shared memory
 # TODO: Do we need the short encoding?

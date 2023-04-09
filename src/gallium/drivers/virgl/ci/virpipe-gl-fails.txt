@@ -70,7 +70,7 @@ KHR-GL43.transform_feedback_overflow_query_ARB.basic-single-stream-separate-attr
 KHR-GL43.transform_feedback_overflow_query_ARB.multiple-streams-multiple-buffers-per-stream,Fail
 KHR-GL43.transform_feedback_overflow_query_ARB.multiple-streams-one-buffer-per-stream,Fail
 
-glx@glx-make-current,Crash
+glx@glx-make-current,Fail
 glx@glx-multi-window-single-context,Fail
 glx@glx-multithread-clearbuffer,Crash
 glx@glx-multithread-texture,Crash

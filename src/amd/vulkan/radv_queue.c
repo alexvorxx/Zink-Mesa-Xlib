@@ -279,7 +279,7 @@ radv_queue_submit_empty(struct radv_queue *queue, struct vk_queue_submit *submis
    };
 
    return queue->device->ws->cs_submit(ctx, &submit, submission->wait_count, submission->waits,
-                                       submission->signal_count, submission->signals, false);
+                                       submission->signal_count, submission->signals);
 }
 
 static void
@@ -1582,7 +1582,6 @@ static VkResult
 radv_queue_submit_normal(struct radv_queue *queue, struct vk_queue_submit *submission)
 {
    struct radeon_winsys_ctx *ctx = queue->hw_ctx;
-   bool can_patch = true;
    bool use_ace = false;
    bool use_perf_counters = false;
    VkResult result;
@@ -1596,9 +1595,6 @@ radv_queue_submit_normal(struct radv_queue *queue, struct vk_queue_submit *submi
       return result;
 
    if (use_ace) {
-      /* TODO: chaining with gang submit. */
-      can_patch = false;
-
       result = radv_update_gang_preambles(queue);
       if (result != VK_SUCCESS)
          return result;
@@ -1652,9 +1648,6 @@ radv_queue_submit_normal(struct radv_queue *queue, struct vk_queue_submit *submi
       /* RADV only supports perf counters on the GFX queue currently. */
       assert(radv_queue_ring(queue) == AMD_IP_GFX);
 
-      /* Disallow chaining the lock/unlock CS. */
-      can_patch = false;
-
       if (!perf_ctr_lock_cs || !perf_ctr_unlock_cs) {
          result = VK_ERROR_OUT_OF_HOST_MEMORY;
          goto fail;
@@ -1694,6 +1687,9 @@ radv_queue_submit_normal(struct radv_queue *queue, struct vk_queue_submit *submi
       .uses_shadow_regs = queue->state.uses_shadow_regs,
    };
 
+   const bool chaining_en = !(queue->device->instance->debug_flags & RADV_DEBUG_NO_IBS) &&
+                            queue->device->physical_device->rad_info.gfx_level >= GFX7;
+
    for (uint32_t j = 0, advance; j < cmd_buffer_count; j += advance) {
       advance = MIN2(max_cs_submission, cmd_buffer_count - j);
       const bool last_submit = j + advance == cmd_buffer_count;
@@ -1708,20 +1704,34 @@ radv_queue_submit_normal(struct radv_queue *queue, struct vk_queue_submit *submi
       if (use_perf_counters)
          cs_array[num_submitted_cs++] = perf_ctr_lock_cs;
 
+      struct radeon_cmdbuf *chainable = NULL;
+      struct radeon_cmdbuf *chainable_ace = NULL;
+
       /* Add CS from submitted command buffers. */
       for (unsigned c = 0; c < advance; ++c) {
          struct radv_cmd_buffer *cmd_buffer =
             (struct radv_cmd_buffer *)submission->command_buffers[j + c];
          assert(cmd_buffer->vk.level == VK_COMMAND_BUFFER_LEVEL_PRIMARY);
+         const bool can_chain_next = chaining_en && !(cmd_buffer->usage_flags &
+                                                      VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT);
 
          /* ACE needs to be first because the last CS must match the queue's IP type. */
          if (radv_cmd_buffer_needs_ace(cmd_buffer)) {
-            cs_array[num_submitted_cs++] = cmd_buffer->ace_internal.cs;
+            queue->device->ws->cs_unchain(cmd_buffer->ace_internal.cs);
+            if (!chainable_ace ||
+                !queue->device->ws->cs_chain(chainable_ace, cmd_buffer->ace_internal.cs, false))
+               cs_array[num_submitted_cs++] = cmd_buffer->ace_internal.cs;
+
+            chainable_ace = can_chain_next ? cmd_buffer->ace_internal.cs : NULL;
             submit_ace = true;
          }
 
-         can_patch &= !(cmd_buffer->usage_flags & VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT);
-         cs_array[num_submitted_cs++] = cmd_buffer->cs;
+         queue->device->ws->cs_unchain(cmd_buffer->cs);
+         if (!chainable ||
+             !queue->device->ws->cs_chain(chainable, cmd_buffer->cs, queue->state.uses_shadow_regs))
+            cs_array[num_submitted_cs++] = cmd_buffer->cs;
+
+         chainable = can_chain_next ? cmd_buffer->cs : NULL;
          cs_idx = num_submitted_cs - 1;
       }
 
@@ -1738,9 +1748,9 @@ radv_queue_submit_normal(struct radv_queue *queue, struct vk_queue_submit *submi
       submit.cs_count = num_submitted_cs;
       submit.preamble_count = submit_ace ? num_preambles : num_1q_preambles;
 
-      result = queue->device->ws->cs_submit(
-         ctx, &submit, j == 0 ? wait_count : 0, waits,
-         last_submit ? submission->signal_count : 0, submission->signals, can_patch);
+      result = queue->device->ws->cs_submit(ctx, &submit, j == 0 ? wait_count : 0, waits,
+                                            last_submit ? submission->signal_count : 0,
+                                            submission->signals);
 
       if (result != VK_SUCCESS)
          goto fail;
@@ -1816,7 +1826,7 @@ radv_queue_internal_submit(struct radv_queue *queue, struct radeon_cmdbuf *cs)
       .cs_count = 1,
    };
 
-   VkResult result = queue->device->ws->cs_submit(ctx, &submit, 0, NULL, 0, NULL, false);
+   VkResult result = queue->device->ws->cs_submit(ctx, &submit, 0, NULL, 0, NULL);
    if (result != VK_SUCCESS)
       return false;
 

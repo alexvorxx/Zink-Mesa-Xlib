@@ -257,7 +257,7 @@ lower_load_ssbo(nir_builder *b, nir_intrinsic_instr *intr, unsigned min_bit_size
       if (nir_intrinsic_align(intr) < store_bit_size / 8) {
          nir_ssa_def *shift = nir_imul(b, nir_iand(b, intr->src[1].ssa, nir_imm_int(b, offset_mask)),
                                           nir_imm_int(b, 8));
-         result = nir_ushr(b, result, nir_u2uN(b, shift, store_bit_size));
+         result = nir_ushr(b, result, shift);
       }
 
       /* And now comes the pack/unpack step to match the original type. */
@@ -287,11 +287,14 @@ lower_store_ssbo(nir_builder *b, nir_intrinsic_instr *intr, unsigned min_bit_siz
 
    unsigned src_bit_size = val->bit_size;
    unsigned store_bit_size = CLAMP(src_bit_size, min_bit_size, 32);
+   unsigned masked_store_bit_size = 32;
    unsigned num_components = val->num_components;
    unsigned num_bits = num_components * src_bit_size;
 
    unsigned offset_mask = store_bit_size / 8 - 1;
+   unsigned masked_store_offset_mask = masked_store_bit_size / 8 - 1;
    nir_ssa_def *offset = nir_iand(b, intr->src[2].ssa, nir_imm_int(b, ~offset_mask));
+   nir_ssa_def *masked_offset = nir_iand(b, intr->src[2].ssa, nir_imm_int(b, ~masked_store_offset_mask));
 
    nir_ssa_def *comps[NIR_MAX_VEC_COMPONENTS] = { 0 };
    unsigned comp_idx = 0;
@@ -325,32 +328,41 @@ lower_store_ssbo(nir_builder *b, nir_intrinsic_instr *intr, unsigned min_bit_siz
          ++num_src_comps_stored;
          substore_num_bits += src_bit_size;
       }
+      bool force_masked = false;
       if (substore_num_bits > store_bit_size &&
           substore_num_bits % store_bit_size != 0) {
          /* Split this into two, one unmasked store of the first bits,
           * and then the second loop iteration will handle a masked store
           * for the rest. */
          assert(num_src_comps_stored == 3);
-         --num_src_comps_stored;
-         substore_num_bits = store_bit_size;
+         if (store_bit_size == 16) {
+            assert(substore_num_bits < 32);
+            /* If we're already doing atomics to store, just do one
+             * 32bit masked store instead of a 16bit store and a masked
+             * store for the other 8 bits. */
+            force_masked = true;
+         } else {
+            --num_src_comps_stored;
+            substore_num_bits = store_bit_size;
+         }
       }
-      nir_ssa_def *local_offset = nir_iadd(b, offset, nir_imm_int(b, bit_offset / 8));
-      nir_ssa_def *store_vec = load_comps_to_vec(b, src_bit_size, &comps[comp_idx],
-                                             num_src_comps_stored, store_bit_size);
       nir_intrinsic_instr *store;
 
-      if (substore_num_bits < store_bit_size) {
-         nir_ssa_def *mask = nir_imm_intN_t(b, (1 << substore_num_bits) - 1, store_bit_size);
+      if (substore_num_bits < store_bit_size || force_masked) {
+         nir_ssa_def *store_vec = load_comps_to_vec(b, src_bit_size, &comps[comp_idx],
+                                                    num_src_comps_stored, masked_store_bit_size);
+         nir_ssa_def *mask = nir_imm_intN_t(b, (1 << substore_num_bits) - 1, masked_store_bit_size);
 
         /* If we have small alignments we need to place them correctly in the component. */
-         if (nir_intrinsic_align(intr) <= store_bit_size / 8) {
-            nir_ssa_def *pos = nir_iand(b, intr->src[2].ssa, nir_imm_int(b, offset_mask));
-            nir_ssa_def *shift = nir_u2uN(b, nir_imul_imm(b, pos, 8), store_bit_size);
+         if (nir_intrinsic_align(intr) <= masked_store_bit_size / 8) {
+            nir_ssa_def *pos = nir_iand(b, intr->src[2].ssa, nir_imm_int(b, masked_store_offset_mask));
+            nir_ssa_def *shift = nir_imul_imm(b, pos, 8);
 
             store_vec = nir_ishl(b, store_vec, shift);
             mask = nir_ishl(b, mask, shift);
          }
 
+         nir_ssa_def *local_offset = nir_iadd(b, masked_offset, nir_imm_int(b, bit_offset / 8));
          store = nir_intrinsic_instr_create(b->shader,
                                             nir_intrinsic_store_ssbo_masked_dxil);
          store->src[0] = nir_src_for_ssa(store_vec);
@@ -358,6 +370,9 @@ lower_store_ssbo(nir_builder *b, nir_intrinsic_instr *intr, unsigned min_bit_siz
          store->src[2] = nir_src_for_ssa(buffer);
          store->src[3] = nir_src_for_ssa(local_offset);
       } else {
+         nir_ssa_def *local_offset = nir_iadd(b, offset, nir_imm_int(b, bit_offset / 8));
+         nir_ssa_def *store_vec = load_comps_to_vec(b, src_bit_size, &comps[comp_idx],
+                                                    num_src_comps_stored, store_bit_size);
          store = nir_intrinsic_instr_create(b->shader,
                                             nir_intrinsic_store_ssbo);
          store->src[0] = nir_src_for_ssa(store_vec);
@@ -2046,11 +2061,20 @@ lower_subgroup_id(nir_builder *b, nir_instr *instr, void *data)
    if (intr->intrinsic != nir_intrinsic_load_subgroup_id)
       return false;
 
+   b->cursor = nir_before_block(nir_start_block(b->impl));
+   if (b->shader->info.workgroup_size[1] == 1 &&
+       b->shader->info.workgroup_size[2] == 1) {
+      /* When using Nx1x1 groups, use a simple stable algorithm
+       * which is almost guaranteed to be correct. */
+      nir_ssa_def *subgroup_id = nir_udiv(b, nir_load_local_invocation_index(b), nir_load_subgroup_size(b));
+      nir_ssa_def_rewrite_uses(&intr->dest.ssa, subgroup_id);
+      return true;
+   }
+
    nir_ssa_def **subgroup_id = (nir_ssa_def **)data;
    if (*subgroup_id == NULL) {
       nir_variable *subgroup_id_counter = nir_variable_create(b->shader, nir_var_mem_shared, glsl_uint_type(), "dxil_SubgroupID_counter");
       nir_variable *subgroup_id_local = nir_local_variable_create(b->impl, glsl_uint_type(), "dxil_SubgroupID_local");
-      b->cursor = nir_before_block(nir_start_block(b->impl));
       nir_store_var(b, subgroup_id_local, nir_imm_int(b, 0), 1);
 
       nir_deref_instr *counter_deref = nir_build_deref_var(b, subgroup_id_counter);
@@ -2059,7 +2083,11 @@ lower_subgroup_id(nir_builder *b, nir_instr *instr, void *data)
       nir_store_deref(b, counter_deref, nir_imm_int(b, 0), 1);
       nir_pop_if(b, nif);
 
-      nir_scoped_memory_barrier(b, NIR_SCOPE_WORKGROUP, NIR_MEMORY_ACQ_REL, nir_var_mem_shared);
+      nir_scoped_barrier(b,
+                         .execution_scope = NIR_SCOPE_WORKGROUP,
+                         .memory_scope = NIR_SCOPE_WORKGROUP,
+                         .memory_semantics = NIR_MEMORY_ACQ_REL,
+                         .memory_modes = nir_var_mem_shared);
 
       nif = nir_push_if(b, nir_elect(b, 1));
       nir_ssa_def *subgroup_id_first_thread = nir_deref_atomic_add(b, 32, &counter_deref->dest.ssa, nir_imm_int(b, 1));
@@ -2342,4 +2370,40 @@ dxil_nir_lower_unsupported_subgroup_scan(nir_shader *s)
       nir_lower_subgroups(s, &options);
    }
    return ret;
+}
+
+static bool
+lower_load_face(nir_builder *b, nir_instr *instr, void *data)
+{
+   if (instr->type != nir_instr_type_intrinsic)
+      return false;
+
+   nir_intrinsic_instr *intr = nir_instr_as_intrinsic(instr);
+   if (intr->intrinsic != nir_intrinsic_load_front_face)
+      return false;
+
+   b->cursor = nir_before_instr(&intr->instr);
+
+   nir_variable *var = data;
+   nir_ssa_def *load = nir_ine_imm(b, nir_load_var(b, var), 0);
+
+   nir_ssa_def_rewrite_uses(&intr->dest.ssa, load);
+   nir_instr_remove(instr);
+   return true;
+}
+
+bool
+dxil_nir_forward_front_face(nir_shader *nir)
+{
+   assert(nir->info.stage == MESA_SHADER_FRAGMENT);
+
+   nir_variable *var = nir_variable_create(nir, nir_var_shader_in,
+                                           glsl_uint_type(),
+                                           "gl_FrontFacing");
+   var->data.location = VARYING_SLOT_VAR12;
+   var->data.interpolation = INTERP_MODE_FLAT;
+
+   return nir_shader_instructions_pass(nir, lower_load_face,
+                                       nir_metadata_block_index | nir_metadata_dominance,
+                                       var);
 }

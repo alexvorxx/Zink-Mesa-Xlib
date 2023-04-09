@@ -186,6 +186,16 @@
     <value name="YZW" value="14" />
     <value name="XYZW" value="15" />
   </enum>
+  <enum name="PREF_SLM_ALLOCATION_SIZE">
+    <value name="SLM_ENCODES_0K" value="8" />
+    <value name="SLM_ENCODES_16K" value="9" />
+    <value name="SLM_ENCODES_32K" value="10" />
+    <value name="SLM_ENCODES_64K" value="11" />
+    <value name="SLM_ENCODES_96K" value="12" />
+    <value name="SLM_ENCODES_128K" value="13" />
+    <value name="SLM_ENCODES_192K" value="14" />
+    <value name="SLM_ENCODES_256K" value="15" />
+  </enum>
   <enum name="Shader Channel Select" prefix="SCS">
     <value name="ZERO" value="0" />
     <value name="ONE" value="1" />
@@ -569,6 +579,7 @@
       <value name="B32" value="7" />
     </field>
     <field name="BTD Mode" start="191" end="191" type="uint" />
+    <field name="Preferred SLM Allocation Size" start="192" end="195" type="uint" />
   </struct>
   <struct name="LUMA_FILTER_COEFFICIENTS_ARRAY" length="4">
     <field name="Table 0X Filter Coefficient[[n],0]" start="0" end="7" type="s1.6" />
@@ -2162,7 +2173,7 @@
       <value name="RD" value="2" />
       <value name="RTZ" value="3" />
     </field>
-    <field name="Preferred SLM Allocation Size" start="152" end="155" type="uint" />
+    <field name="Preferred SLM Allocation Size" start="152" end="155" type="PREF_SLM_ALLOCATION_SIZE" />
     <field name="Number of Barriers" start="156" end="158" type="uint" />
     <field name="Indirect Data Length" start="160" end="176" type="uint" />
     <field name="L3 Prefetch Disable" start="177" end="177" type="bool" />

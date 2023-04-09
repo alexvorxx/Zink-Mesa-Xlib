@@ -311,12 +311,6 @@ declare_ps_input_vgprs(const struct radv_shader_info *info, struct radv_shader_a
          vgpr_arg++;
       }
    }
-
-   if (info->ps.has_epilog) {
-      /* FIXME: Ensure the main shader doesn't have less VGPRs than the epilog */
-      for (unsigned i = 0; i < MAX_RTS; i++)
-         ac_add_arg(&args->ac, AC_ARG_VGPR, 4, AC_ARG_INT, NULL);
-   }
 }
 
 static void

@@ -24,6 +24,10 @@ pages:
       changes: &docs-or-ci
       - docs/**/*
       - .gitlab-ci.yml
+      # Paths from doxygen-wrapper.py
+      - src/compiler/nir/nir.h
+      - src/intel/isl/**/*
+      - src/vulkan/runtime/**/*
       when: always
     # Other cases default to never
 

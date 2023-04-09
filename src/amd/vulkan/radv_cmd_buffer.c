@@ -1846,10 +1846,12 @@ radv_emit_ps_epilog_state(struct radv_cmd_buffer *cmd_buffer, struct radv_shader
    radeon_set_context_reg(cmd_buffer->cs, R_02823C_CB_SHADER_MASK,
                           ac_get_cb_shader_mask(ps_epilog->spi_shader_col_format));
 
-   /* The main shader must not use less VGPRs than the epilog, otherwise shared vgprs might not
-    * work.
-    */
-   assert(G_00B848_VGPRS(ps_shader->config.rsrc1) >= G_00B848_VGPRS(ps_epilog->rsrc1));
+   assert(ps_shader->config.num_shared_vgprs == 0);
+   if (G_00B848_VGPRS(ps_epilog->rsrc1) > G_00B848_VGPRS(ps_shader->config.rsrc1)) {
+      uint32_t rsrc1 = ps_shader->config.rsrc1;
+      rsrc1 = (rsrc1 & C_00B848_VGPRS) | (ps_epilog->rsrc1 & ~C_00B848_VGPRS);
+      radeon_set_sh_reg(cmd_buffer->cs, R_00B028_SPI_SHADER_PGM_RSRC1_PS, rsrc1);
+   }
 
    radv_cs_add_buffer(cmd_buffer->device->ws, cmd_buffer->cs, ps_epilog->bo);
 
@@ -2663,10 +2665,10 @@ radv_emit_fb_color_state(struct radv_cmd_buffer *cmd_buffer, int index,
       }
    }
 
-   if (!radv_layout_fmask_compressed(
-          cmd_buffer->device, image, layout,
-          radv_image_queue_family_mask(image, cmd_buffer->qf,
-                                       cmd_buffer->qf))) {
+   const enum radv_fmask_compression fmask_comp =
+      radv_layout_fmask_compression(cmd_buffer->device, image, layout,
+            radv_image_queue_family_mask(image, cmd_buffer->qf, cmd_buffer->qf));
+   if (fmask_comp == RADV_FMASK_COMPRESSION_NONE) {
       cb_color_info &= C_028C70_COMPRESSION;
    }
 
@@ -3708,6 +3710,7 @@ lookup_vs_prolog(struct radv_cmd_buffer *cmd_buffer, const struct radv_shader *v
    STATIC_ASSERT(sizeof(union vs_prolog_key_header) == 4);
    assert(vs_shader->info.vs.dynamic_inputs);
 
+   const struct radv_graphics_pipeline *pipeline = cmd_buffer->state.graphics_pipeline;
    const struct radv_vs_input_state *state = &cmd_buffer->state.dynamic_vs_input;
    struct radv_device *device = cmd_buffer->device;
 
@@ -3726,10 +3729,20 @@ lookup_vs_prolog(struct radv_cmd_buffer *cmd_buffer, const struct radv_shader *v
          uint8_t binding = state->bindings[index];
          if (!(cmd_buffer->state.vbo_bound_mask & BITFIELD_BIT(binding)))
             continue;
+
          uint8_t req = state->format_align_req_minus_1[index];
-         struct radv_vertex_binding *vb = &cmd_buffer->vertex_bindings[binding];
-         VkDeviceSize offset = vb->offset + state->offsets[index];
-         if ((offset & req) || (vb->stride & req))
+         uint64_t vb_offset = cmd_buffer->vertex_bindings[binding].offset;
+         uint64_t vb_stride;
+
+         if (pipeline->dynamic_states & (RADV_DYNAMIC_VERTEX_INPUT_BINDING_STRIDE |
+                                         RADV_DYNAMIC_VERTEX_INPUT)) {
+            vb_stride = cmd_buffer->vertex_bindings[binding].stride;
+         } else {
+            vb_stride = pipeline->binding_stride[binding];
+         }
+
+         VkDeviceSize offset = vb_offset + state->offsets[index];
+         if ((offset & req) || (vb_stride & req))
             misaligned_mask |= BITFIELD_BIT(index);
       }
       cmd_buffer->state.vbo_misaligned_mask = misaligned_mask;
@@ -8857,11 +8870,10 @@ radv_emit_all_graphics_states(struct radv_cmd_buffer *cmd_buffer, const struct r
                               bool pipeline_is_dirty)
 {
    const struct radv_device *device = cmd_buffer->device;
+   struct radv_shader_part *ps_epilog = NULL;
    bool late_scissor_emission;
 
    if (cmd_buffer->state.shaders[MESA_SHADER_FRAGMENT]->info.ps.has_epilog) {
-      struct radv_shader_part *ps_epilog = NULL;
-
       if (cmd_buffer->state.graphics_pipeline->ps_epilog) {
          ps_epilog = cmd_buffer->state.graphics_pipeline->ps_epilog;
       } else if ((cmd_buffer->state.emitted_graphics_pipeline != cmd_buffer->state.graphics_pipeline ||
@@ -8882,9 +8894,6 @@ radv_emit_all_graphics_states(struct radv_cmd_buffer *cmd_buffer, const struct r
          if (device->physical_device->rad_info.rbplus_allowed)
             cmd_buffer->state.dirty |= RADV_CMD_DIRTY_RBPLUS;
       }
-
-      if (ps_epilog)
-         radv_emit_ps_epilog_state(cmd_buffer, ps_epilog, pipeline_is_dirty);
    }
 
    if (cmd_buffer->state.dirty & RADV_CMD_DIRTY_RBPLUS)
@@ -8911,6 +8920,9 @@ radv_emit_all_graphics_states(struct radv_cmd_buffer *cmd_buffer, const struct r
 
    if (cmd_buffer->state.dirty & RADV_CMD_DIRTY_PIPELINE)
       radv_emit_graphics_pipeline(cmd_buffer);
+
+   if (ps_epilog)
+      radv_emit_ps_epilog_state(cmd_buffer, ps_epilog, pipeline_is_dirty);
 
    /* This should be before the cmd_buffer->state.dirty is cleared
     * (excluding RADV_CMD_DIRTY_PIPELINE) and after
@@ -10289,10 +10301,14 @@ radv_handle_color_image_transition(struct radv_cmd_buffer *cmd_buffer, struct ra
    }
 
    /* MSAA color decompress. */
-   if (radv_image_has_fmask(image) &&
-       (image->vk.usage & (VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT)) &&
-       radv_layout_fmask_compressed(cmd_buffer->device, image, src_layout, src_queue_mask) &&
-       !radv_layout_fmask_compressed(cmd_buffer->device, image, dst_layout, dst_queue_mask)) {
+   const enum radv_fmask_compression src_fmask_comp = radv_layout_fmask_compression(cmd_buffer->device,
+         image, src_layout, src_queue_mask);
+   const enum radv_fmask_compression dst_fmask_comp = radv_layout_fmask_compression(cmd_buffer->device,
+         image, dst_layout, dst_queue_mask);
+   if (src_fmask_comp <= dst_fmask_comp)
+      return;
+
+   if (src_fmask_comp == RADV_FMASK_COMPRESSION_FULL) {
       if (radv_dcc_enabled(image, range->baseMipLevel) &&
           !radv_image_use_dcc_image_stores(cmd_buffer->device, image) && !dcc_decompressed) {
          /* A DCC decompress is required before expanding FMASK
@@ -10307,7 +10323,9 @@ radv_handle_color_image_transition(struct radv_cmd_buffer *cmd_buffer, struct ra
           */
          radv_fast_clear_flush_image_inplace(cmd_buffer, image, range);
       }
+   }
 
+   if (dst_fmask_comp == RADV_FMASK_COMPRESSION_NONE) {
       struct radv_barrier_data barrier = {0};
       barrier.layout_transitions.fmask_color_expand = 1;
       radv_describe_layout_transition(cmd_buffer, &barrier);

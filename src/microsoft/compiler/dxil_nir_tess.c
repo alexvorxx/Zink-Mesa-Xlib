@@ -230,16 +230,12 @@ dxil_nir_split_tess_ctrl(nir_shader *nir, nir_function **patch_const_func)
             continue;
          nir_intrinsic_instr *intr = nir_instr_as_intrinsic(instr);
          if (intr->intrinsic != nir_intrinsic_load_invocation_id ||
-             list_length(&intr->dest.ssa.uses) +
-             list_length(&intr->dest.ssa.if_uses) <= 1)
+             list_is_empty(&intr->dest.ssa.uses) ||
+             list_is_singular(&intr->dest.ssa.uses))
             continue;
-         nir_foreach_use_safe(src, &intr->dest.ssa) {
-            b.cursor = nir_before_src(src, false);
-            nir_instr_rewrite_src_ssa(src->parent_instr, src, nir_load_invocation_id(&b));
-         }
-         nir_foreach_if_use_safe(src, &intr->dest.ssa) {
-            b.cursor = nir_before_src(src, true);
-            nir_if_rewrite_condition_ssa(src->parent_if, src, nir_load_invocation_id(&b));
+         nir_foreach_use_including_if_safe(src, &intr->dest.ssa) {
+            b.cursor = nir_before_src(src);
+            nir_src_rewrite_ssa(src, nir_load_invocation_id(&b));
          }
          nir_instr_remove(instr);
       }

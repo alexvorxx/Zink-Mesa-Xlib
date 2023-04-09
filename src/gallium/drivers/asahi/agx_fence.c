@@ -82,20 +82,20 @@ agx_fence_from_fd(struct agx_context *ctx, int fd, enum pipe_fd_type type)
    if (type == PIPE_FD_TYPE_NATIVE_SYNC) {
       ret = drmSyncobjCreate(dev->fd, 0, &f->syncobj);
       if (ret) {
-         fprintf(stderr, "create syncobj failed\n");
+         agx_msg("create syncobj failed\n");
          goto err_free_fence;
       }
 
       ret = drmSyncobjImportSyncFile(dev->fd, f->syncobj, fd);
       if (ret) {
-         fprintf(stderr, "import syncfile failed\n");
+         agx_msg("import syncfile failed\n");
          goto err_destroy_syncobj;
       }
    } else {
       assert(type == PIPE_FD_TYPE_SYNCOBJ);
       ret = drmSyncobjFDToHandle(dev->fd, fd, &f->syncobj);
       if (ret) {
-         fprintf(stderr, "import syncobj FD failed\n");
+         agx_msg("import syncobj FD failed\n");
          goto err_free_fence;
       }
    }
@@ -125,7 +125,7 @@ agx_fence_create(struct agx_context *ctx)
    ret = drmSyncobjExportSyncFile(dev->fd, ctx->syncobj, &fd);
    assert(ret >= 0 && fd != -1 && "export failed");
    if (ret || fd == -1) {
-      fprintf(stderr, "export failed\n");
+      agx_msg("export failed\n");
       return NULL;
    }
 

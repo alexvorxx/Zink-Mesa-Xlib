@@ -721,6 +721,7 @@ struct zink_shader_info {
    bool have_xfb;
    bool have_sparse;
    bool have_vulkan_memory_model;
+   unsigned bindless_set_idx;
 };
 
 enum zink_rast_prim {
@@ -1686,6 +1687,7 @@ struct zink_context {
    struct zink_batch_state *last_free_batch_state; //for appending
    bool oom_flush;
    bool oom_stall;
+   bool track_renderpasses;
    struct zink_batch batch;
 
    unsigned shader_has_inlinable_uniforms_mask;

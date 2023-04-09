@@ -1153,11 +1153,16 @@ backend_instruction::is_volatile() const
 static bool
 inst_is_in_block(const bblock_t *block, const backend_instruction *inst)
 {
-   foreach_inst_in_block (backend_instruction, i, block) {
-      if (inst == i)
-         return true;
-   }
-   return false;
+   const exec_node *n = inst;
+
+   /* Find the tail sentinel. If the tail sentinel is the sentinel from the
+    * list header in the bblock_t, then this instruction is in that basic
+    * block.
+    */
+   while (!n->is_tail_sentinel())
+      n = n->get_next();
+
+   return n == &block->instructions.tail_sentinel;
 }
 #endif
 
@@ -1202,21 +1207,6 @@ backend_instruction::insert_before(bblock_t *block, backend_instruction *inst)
    adjust_later_block_ips(block, 1);
 
    exec_node::insert_before(inst);
-}
-
-void
-backend_instruction::insert_before(bblock_t *block, exec_list *list)
-{
-   assert(inst_is_in_block(block, this) || !"Instruction not in block");
-   assert(block->end_ip_delta == 0);
-
-   unsigned num_inst = list->length();
-
-   block->end_ip += num_inst;
-
-   adjust_later_block_ips(block, num_inst);
-
-   exec_node::insert_before(list);
 }
 
 void

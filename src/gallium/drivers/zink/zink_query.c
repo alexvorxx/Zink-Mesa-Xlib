@@ -1320,7 +1320,8 @@ zink_render_condition(struct pipe_context *pctx,
       int num_results = get_num_starts(query);
       if (num_results) {
          if (!is_emulated_primgen(query) &&
-            !is_so_overflow_query(query)) {
+            !is_so_overflow_query(query) &&
+            num_results == 1) {
             copy_results_to_buffer(ctx, query, res, 0, num_results, flags);
          } else {
             /* these need special handling */

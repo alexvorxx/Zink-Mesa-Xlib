@@ -8,6 +8,7 @@
 
 #include "fdl/fd6_format_table.h"
 
+#include "vk_enum_defines.h"
 #include "vk_util.h"
 #include "drm-uapi/drm_fourcc.h"
 
@@ -373,9 +374,12 @@ tu_GetPhysicalDeviceFormatProperties2(
       physical_device, format, props3);
 
    pFormatProperties->formatProperties = (VkFormatProperties) {
-      .linearTilingFeatures = props3->linearTilingFeatures,
-      .optimalTilingFeatures = props3->optimalTilingFeatures,
-      .bufferFeatures = props3->bufferFeatures,
+      .linearTilingFeatures =
+         vk_format_features2_to_features(props3->linearTilingFeatures),
+      .optimalTilingFeatures =
+         vk_format_features2_to_features(props3->optimalTilingFeatures),
+      .bufferFeatures =
+         vk_format_features2_to_features(props3->bufferFeatures),
    };
 
    VkDrmFormatModifierPropertiesListEXT *list =

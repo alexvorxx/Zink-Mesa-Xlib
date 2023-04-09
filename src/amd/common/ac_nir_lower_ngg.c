@@ -2758,6 +2758,7 @@ lower_ngg_gs_emit_vertex_with_counter(nir_builder *b, nir_intrinsic_instr *intri
    /* Calculate and store per-vertex primitive flags based on vertex counts:
     * - bit 0: whether this vertex finishes a primitive (a real primitive, not the strip)
     * - bit 1: whether the primitive index is odd (if we are emitting triangle strips, otherwise always 0)
+    *          only set when the vertex also finishes the primitive
     * - bit 2: whether vertex is live (if culling is enabled: set after culling, otherwise always 1)
     */
 
@@ -2771,11 +2772,15 @@ lower_ngg_gs_emit_vertex_with_counter(nir_builder *b, nir_intrinsic_instr *intri
 
    nir_ssa_def *prim_flag = nir_ior(b, vertex_live_flag, complete_flag);
    if (s->num_vertices_per_primitive == 3) {
-      nir_ssa_def *odd = nir_iand_imm(b, current_vtx_per_prim, 1);
-      prim_flag = nir_iadd_nuw(b, prim_flag, nir_ishl(b, odd, nir_imm_int(b, 1)));
+      nir_ssa_def *odd = nir_iand(b, current_vtx_per_prim, complete_flag);
+      nir_ssa_def *odd_flag = nir_ishl(b, odd, nir_imm_int(b, 1));
+      prim_flag = nir_ior(b, prim_flag, odd_flag);
    }
 
-   nir_store_shared(b, nir_u2u8(b, prim_flag), gs_emit_vtx_addr, .base = s->lds_offs_primflags + stream, .align_mul = 4u);
+   nir_store_shared(b, nir_u2u8(b, prim_flag), gs_emit_vtx_addr,
+                    .base = s->lds_offs_primflags + stream,
+                    .align_mul = 4, .align_offset = stream);
+
    nir_instr_remove(&intrin->instr);
    return true;
 }

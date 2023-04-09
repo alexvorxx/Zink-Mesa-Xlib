@@ -1,9 +1,4 @@
-# X Error of failed request:  BadMatch (invalid parameter attributes)
-#   Major opcode of failed request:  151 (GLX)
-#   Minor opcode of failed request:  11 (X_GLXSwapBuffers)
-#   Serial number of failed request:  79
-#   Current serial number in output stream:  80
-glx@glx-make-current,Crash
+glx@glx-make-current,Fail
 
 glx@glx-multi-window-single-context,Fail
 

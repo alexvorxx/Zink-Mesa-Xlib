@@ -186,6 +186,28 @@ fs_copy_prop_dataflow::fs_copy_prop_dataflow(void *mem_ctx, cfg_t *cfg,
 }
 
 /**
+ * Like reg_offset, but register must be VGRF or FIXED_GRF.
+ */
+static inline unsigned
+grf_reg_offset(const fs_reg &r)
+{
+   return (r.file == VGRF ? 0 : r.nr) * REG_SIZE +
+          r.offset +
+          (r.file == FIXED_GRF ? r.subnr : 0);
+}
+
+/**
+ * Like regions_overlap, but register must be VGRF or FIXED_GRF.
+ */
+static inline bool
+grf_regions_overlap(const fs_reg &r, unsigned dr, const fs_reg &s, unsigned ds)
+{
+   return reg_space(r) == reg_space(s) &&
+          !(grf_reg_offset(r) + dr <= grf_reg_offset(s) ||
+            grf_reg_offset(s) + ds <= grf_reg_offset(r));
+}
+
+/**
  * Set up initial values for each of the data flow sets, prior to running
  * the fixed-point algorithm.
  */
@@ -227,8 +249,8 @@ fs_copy_prop_dataflow::setup_initial_values()
 
             unsigned idx = reg_space(inst->dst) & (acp_table_size - 1);
             foreach_in_list(acp_entry, entry, &acp_table[idx]) {
-               if (regions_overlap(inst->dst, inst->size_written,
-                                   entry->dst, entry->size_written)) {
+               if (grf_regions_overlap(inst->dst, inst->size_written,
+                                       entry->dst, entry->size_written)) {
                   BITSET_SET(bd[block->num].kill, entry->global_idx);
                   if (inst->force_writemask_all && !entry->force_writemask_all)
                      BITSET_SET(bd[block->num].exec_mismatch, entry->global_idx);
@@ -257,8 +279,8 @@ fs_copy_prop_dataflow::setup_initial_values()
 
             unsigned idx = reg_space(inst->dst) & (acp_table_size - 1);
             foreach_in_list(acp_entry, entry, &acp_table[idx]) {
-               if (regions_overlap(inst->dst, inst->size_written,
-                                   entry->src, entry->size_read)) {
+               if (grf_regions_overlap(inst->dst, inst->size_written,
+                                       entry->src, entry->size_read)) {
                   BITSET_SET(bd[block->num].kill, entry->global_idx);
                   if (inst->force_writemask_all && !entry->force_writemask_all)
                      BITSET_SET(bd[block->num].exec_mismatch, entry->global_idx);
@@ -1075,8 +1097,8 @@ can_propagate_from(fs_inst *inst)
    return (inst->opcode == BRW_OPCODE_MOV &&
            inst->dst.file == VGRF &&
            ((inst->src[0].file == VGRF &&
-             !regions_overlap(inst->dst, inst->size_written,
-                              inst->src[0], inst->size_read(0))) ||
+             !grf_regions_overlap(inst->dst, inst->size_written,
+                                  inst->src[0], inst->size_read(0))) ||
             inst->src[0].file == ATTR ||
             inst->src[0].file == UNIFORM ||
             inst->src[0].file == IMM ||
@@ -1116,8 +1138,8 @@ fs_visitor::opt_copy_propagation_local(void *copy_prop_ctx, bblock_t *block,
       /* kill the destination from the ACP */
       if (inst->dst.file == VGRF || inst->dst.file == FIXED_GRF) {
          foreach_in_list_safe(acp_entry, entry, &acp[inst->dst.nr % ACP_HASH_SIZE]) {
-            if (regions_overlap(entry->dst, entry->size_written,
-                                inst->dst, inst->size_written))
+            if (grf_regions_overlap(entry->dst, entry->size_written,
+                                    inst->dst, inst->size_written))
                entry->remove();
          }
 
@@ -1129,8 +1151,8 @@ fs_visitor::opt_copy_propagation_local(void *copy_prop_ctx, bblock_t *block,
                /* Make sure we kill the entry if this instruction overwrites
                 * _any_ of the registers that it reads
                 */
-               if (regions_overlap(entry->src, entry->size_read,
-                                   inst->dst, inst->size_written))
+               if (grf_regions_overlap(entry->src, entry->size_read,
+                                       inst->dst, inst->size_written))
                   entry->remove();
             }
 	 }

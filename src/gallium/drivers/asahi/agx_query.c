@@ -50,9 +50,10 @@ agx_begin_query(struct pipe_context *pctx, struct pipe_query *pquery)
        * other than piglit) actually hits this, we could shadow the query to
        * avoid the flush.
        */
-      if (query->writer)
+      if (query->writer) {
          agx_flush_batch_for_reason(ctx, query->writer,
                                     "Occlusion overwritten");
+      }
 
       assert(query->writer == NULL);
 

@@ -423,6 +423,7 @@ agx_write_sample_mask_1(agx_builder *b)
        * TODO: interactions with MSAA and gl_SampleMask writes
        */
       agx_sample_mask(b, agx_immediate(1));
+      agx_signal_pix(b, 1);
       b->shader->did_sample_mask = true;
 
       assert(!(b->shader->nir->info.outputs_written &
@@ -439,9 +440,9 @@ agx_emit_local_store_pixel(agx_builder *b, nir_intrinsic_instr *instr)
    if (b->shader->key->fs.ignore_tib_dependencies) {
       assert(b->shader->nir->info.internal && "only for clear shaders");
    } else if (b->shader->did_writeout) {
-      agx_writeout(b, 0x0004);
+      agx_wait_pix(b, 0x0004);
    } else {
-      agx_writeout(b, 0x000C);
+      agx_wait_pix(b, 0x000C);
    }
 
    agx_write_sample_mask_1(b);
@@ -472,7 +473,7 @@ agx_emit_store_zs(agx_builder *b, nir_intrinsic_instr *instr)
 
    /* TODO: Handle better */
    assert(!b->shader->key->fs.ignore_tib_dependencies && "not used");
-   agx_writeout(b, 0x0001);
+   agx_wait_pix(b, 0x0001);
 
    agx_index z = agx_src_index(&instr->src[1]);
    agx_index s = agx_src_index(&instr->src[2]);
@@ -494,7 +495,7 @@ agx_emit_local_load_pixel(agx_builder *b, agx_index dest,
 {
    /* TODO: Reverse-engineer interactions with MRT */
    assert(!b->shader->key->fs.ignore_tib_dependencies && "invalid usage");
-   agx_writeout(b, 0x0008);
+   agx_wait_pix(b, 0x0008);
    b->shader->did_writeout = true;
    b->shader->out->reads_tib = true;
 
@@ -664,11 +665,12 @@ static agx_instr *
 agx_emit_discard(agx_builder *b)
 {
    assert(!b->shader->key->fs.ignore_tib_dependencies && "invalid usage");
-   agx_writeout(b, 0x0001);
+   agx_wait_pix(b, 0x0001);
    b->shader->did_writeout = true;
 
    b->shader->out->writes_sample_mask = true;
-   return agx_sample_mask(b, agx_immediate(0));
+   agx_sample_mask(b, agx_immediate(0));
+   return agx_signal_pix(b, 1);
 }
 
 static agx_instr *
@@ -1805,8 +1807,8 @@ agx_dump_stats(agx_context *ctx, unsigned size, char **out)
    agx_foreach_instr_global(ctx, I)
       nr_ins++;
 
-   /* TODO: Pipe through occupancy */
-   unsigned nr_threads = 1;
+   unsigned nr_threads =
+      agx_occupancy_for_register_count(ctx->max_reg).max_threads;
 
    return asprintf(out,
                    "%s shader: %u inst, %u bytes, %u halfregs, %u threads, "
@@ -2186,23 +2188,20 @@ agx_compile_function_nir(nir_shader *nir, nir_function_impl *impl,
 
       /* After DCE, use counts are right so we can run the optimizer. */
       agx_optimizer(ctx);
-
-      /* For correctness, lower uniform sources after copyprop (for correctness,
-       * as copyprop creates uniform sources). To keep register pressure in
-       * check, lower after CSE, since moves are cheaper than registers.
-       */
-      agx_lower_uniform_sources(ctx);
-
-      /* Dead code eliminate after instruction combining to get the benefit */
-      agx_dce(ctx, true);
-      agx_validate(ctx, "Optimization");
-
-      if (agx_should_dump(nir, AGX_DBG_SHADERS))
-         agx_print_shader(ctx, stdout);
-   } else {
-      /* We need to lower regardless */
-      agx_lower_uniform_sources(ctx);
    }
+
+   /* For correctness, lower uniform sources after copyprop (for correctness,
+    * as copyprop creates uniform sources). To keep register pressure in
+    * check, lower after CSE, since moves are cheaper than registers.
+    */
+   agx_lower_uniform_sources(ctx);
+
+   /* RA correctness depends on DCE */
+   agx_dce(ctx, true);
+   agx_validate(ctx, "Pre-RA passes");
+
+   if (agx_should_dump(nir, AGX_DBG_SHADERS))
+      agx_print_shader(ctx, stdout);
 
    agx_ra(ctx);
    agx_lower_64bit_postra(ctx);
@@ -2240,9 +2239,10 @@ agx_compile_function_nir(nir_shader *nir, nir_function_impl *impl,
       int ret = agx_dump_stats(ctx, binary->size, &stats);
 
       if (ret >= 0) {
-         if (agx_should_dump(nir, AGX_DBG_SHADERDB))
+         if (agx_should_dump(nir, AGX_DBG_SHADERDB)) {
             fprintf(stderr, "SHADER-DB: %s - %s\n", nir->info.label ?: "",
                     stats);
+         }
 
          if (debug)
             util_debug_message(debug, SHADER_INFO, "%s", stats);
@@ -2325,6 +2325,7 @@ agx_preprocess_nir(nir_shader *nir, bool support_lod_bias)
 
    NIR_PASS_V(nir, nir_lower_regs_to_ssa);
    NIR_PASS_V(nir, nir_lower_idiv, &idiv_options);
+   NIR_PASS_V(nir, nir_lower_frexp);
    NIR_PASS_V(nir, nir_lower_alu_to_scalar, NULL, NULL);
    NIR_PASS_V(nir, nir_lower_load_const_to_scalar);
    NIR_PASS_V(nir, nir_lower_flrp, 16 | 32 | 64, false);
@@ -2386,6 +2387,8 @@ agx_compile_shader_nir(nir_shader *nir, struct agx_shader_key *key,
       else
          out->depth_layout = layout;
    }
+
+   out->nr_bindful_textures = nir->info.num_textures;
 
    /* Late clip plane lowering created discards */
    if (nir->info.stage == MESA_SHADER_FRAGMENT) {

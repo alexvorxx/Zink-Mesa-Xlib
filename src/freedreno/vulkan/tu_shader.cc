@@ -124,8 +124,6 @@ tu_spirv_to_nir(struct tu_device *dev,
    NIR_PASS_V(nir, nir_lower_system_values);
    NIR_PASS_V(nir, nir_lower_is_helper_invocation);
 
-   NIR_PASS_V(nir, nir_lower_frexp);
-
    ir3_optimize_loop(dev->compiler, nir);
 
    NIR_PASS_V(nir, nir_opt_conditional_discard);

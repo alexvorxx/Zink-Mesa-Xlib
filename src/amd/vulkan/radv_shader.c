@@ -1876,7 +1876,7 @@ radv_shader_dma_submit(struct radv_device *device, struct radv_shader_dma_submis
       .cs_count = 1,
    };
 
-   result = ws->cs_submit(device->shader_upload_hw_ctx, &submit, 0, NULL, 1, &signal_info, false);
+   result = ws->cs_submit(device->shader_upload_hw_ctx, &submit, 0, NULL, 1, &signal_info);
    if (result != VK_SUCCESS)
    {
       mtx_unlock(&device->shader_upload_hw_ctx_mutex);

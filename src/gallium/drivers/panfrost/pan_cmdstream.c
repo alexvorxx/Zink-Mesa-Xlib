@@ -1822,13 +1822,23 @@ panfrost_emit_texture_descriptors(struct panfrost_batch *batch,
 }
 
 static mali_ptr
+panfrost_upload_wa_sampler(struct panfrost_batch *batch)
+{
+   struct panfrost_ptr T = pan_pool_alloc_desc(&batch->pool.base, SAMPLER);
+   pan_pack(T.cpu, SAMPLER, cfg)
+      ;
+   return T.gpu;
+}
+
+static mali_ptr
 panfrost_emit_sampler_descriptors(struct panfrost_batch *batch,
                                   enum pipe_shader_type stage)
 {
    struct panfrost_context *ctx = batch->ctx;
 
+   /* We always need at least 1 sampler for txf to work */
    if (!ctx->sampler_count[stage])
-      return 0;
+      return panfrost_upload_wa_sampler(batch);
 
    struct panfrost_ptr T = pan_pool_alloc_desc_array(
       &batch->pool.base, ctx->sampler_count[stage], SAMPLER);
@@ -3078,15 +3088,6 @@ panfrost_emit_primitive(struct panfrost_context *ctx,
 
 #if PAN_ARCH >= 9
 static mali_ptr
-panfrost_upload_wa_sampler(struct panfrost_batch *batch)
-{
-   struct panfrost_ptr T = pan_pool_alloc_desc(&batch->pool.base, SAMPLER);
-   pan_pack(T.cpu, SAMPLER, cfg)
-      ;
-   return T.gpu;
-}
-
-static mali_ptr
 panfrost_emit_resources(struct panfrost_batch *batch,
                         enum pipe_shader_type stage)
 {
@@ -3107,14 +3108,9 @@ panfrost_emit_resources(struct panfrost_batch *batch,
    panfrost_make_resource_table(T, PAN_TABLE_TEXTURE, batch->textures[stage],
                                 ctx->sampler_view_count[stage]);
 
-   if (ctx->sampler_count[stage]) {
-      panfrost_make_resource_table(T, PAN_TABLE_SAMPLER, batch->samplers[stage],
-                                   ctx->sampler_count[stage]);
-   } else {
-      /* We always need at least 1 sampler for txf to work */
-      panfrost_make_resource_table(T, PAN_TABLE_SAMPLER,
-                                   panfrost_upload_wa_sampler(batch), 1);
-   }
+   /* We always need at least 1 sampler for txf to work */
+   panfrost_make_resource_table(T, PAN_TABLE_SAMPLER, batch->samplers[stage],
+                                MAX2(ctx->sampler_count[stage], 1));
 
    panfrost_make_resource_table(T, PAN_TABLE_IMAGE, batch->images[stage],
                                 util_last_bit(ctx->image_mask[stage]));

@@ -63,9 +63,12 @@ struct ntv_context {
    SpvId images[PIPE_MAX_SHADER_IMAGES];
    struct hash_table image_types;
    SpvId samplers[PIPE_MAX_SHADER_SAMPLER_VIEWS];
+   SpvId bindless_samplers[2];
    SpvId cl_samplers[PIPE_MAX_SAMPLERS];
    nir_variable *sampler_var[PIPE_MAX_SHADER_SAMPLER_VIEWS]; /* driver_location -> variable */
+   nir_variable *bindless_sampler_var[2];
    unsigned last_sampler;
+   unsigned bindless_set_idx;
    nir_variable *image_var[PIPE_MAX_SHADER_IMAGES]; /* driver_location -> variable */
 
    SpvId entry_ifaces[PIPE_MAX_SHADER_INPUTS * 4 + PIPE_MAX_SHADER_OUTPUTS * 4];
@@ -1059,7 +1062,10 @@ emit_image(struct ntv_context *ctx, struct nir_variable *var, SpvId image_type)
 
    _mesa_hash_table_insert(ctx->vars, var, (void *)(intptr_t)var_id);
    if (is_sampler) {
-      ctx->samplers[index] = var_id;
+      if (var->data.descriptor_set == ctx->bindless_set_idx)
+         ctx->bindless_samplers[index] = var_id;
+      else
+         ctx->samplers[index] = var_id;
    } else {
       ctx->images[index] = var_id;
       emit_access_decorations(ctx, var, var_id);
@@ -2253,6 +2259,7 @@ emit_alu(struct ntv_context *ctx, nir_alu_instr *alu)
    BUILTIN_BINOP(nir_op_imax, GLSLstd450SMax)
    BUILTIN_BINOP(nir_op_umin, GLSLstd450UMin)
    BUILTIN_BINOP(nir_op_umax, GLSLstd450UMax)
+   BUILTIN_BINOP(nir_op_ldexp, GLSLstd450Ldexp)
 #undef BUILTIN_BINOP
 
    case nir_op_fdot2:
@@ -3722,19 +3729,20 @@ emit_tex(struct ntv_context *ctx, nir_tex_instr *tex)
 
    unsigned texture_index = tex->texture_index;
    nir_variable *var = bindless_var ? bindless_var : ctx->sampler_var[tex->texture_index];
+   nir_variable **sampler_var = bindless ? ctx->bindless_sampler_var : ctx->sampler_var;
    if (!bindless_var && (!tex_offset || !var)) {
-      if (ctx->sampler_var[texture_index]) {
-         if (glsl_type_is_array(ctx->sampler_var[texture_index]->type))
+      if (sampler_var[texture_index]) {
+         if (glsl_type_is_array(sampler_var[texture_index]->type))
             tex_offset = emit_uint_const(ctx, 32, 0);
          assert(var);
       } else {
          /* convert constant index back to base + offset */
          for (int i = texture_index; i >= 0; i--) {
-            if (ctx->sampler_var[i]) {
-               assert(glsl_type_is_array(ctx->sampler_var[i]->type));
+            if (sampler_var[i]) {
+               assert(glsl_type_is_array(sampler_var[i]->type));
                if (!tex_offset)
                   tex_offset = emit_uint_const(ctx, 32, texture_index - i);
-               var = ctx->sampler_var[i];
+               var = sampler_var[i];
                texture_index = i;
                break;
             }
@@ -4363,6 +4371,7 @@ nir_to_spirv(struct nir_shader *s, const struct zink_shader_info *sinfo, uint32_
    assert(spirv_version >= SPIRV_VERSION(1, 0));
    ctx.spirv_1_4_interfaces = spirv_version >= SPIRV_VERSION(1, 4);
 
+   ctx.bindless_set_idx = sinfo->bindless_set_idx;
    ctx.glsl_types = _mesa_pointer_hash_table_create(ctx.mem_ctx);
    ctx.bo_array_types = _mesa_pointer_hash_table_create(ctx.mem_ctx);
    ctx.bo_struct_types = _mesa_pointer_hash_table_create(ctx.mem_ctx);
@@ -4550,7 +4559,10 @@ nir_to_spirv(struct nir_shader *s, const struct zink_shader_info *sinfo, uint32_
       ctx.image_var[var->data.driver_location] = var;
    nir_foreach_variable_with_modes(var, s, nir_var_uniform) {
       if (glsl_type_is_sampler(glsl_without_array(var->type))) {
-         ctx.sampler_var[var->data.driver_location] = var;
+         if (var->data.descriptor_set == ctx.bindless_set_idx)
+            ctx.bindless_sampler_var[var->data.driver_location] = var;
+         else
+            ctx.sampler_var[var->data.driver_location] = var;
          ctx.last_sampler = MAX2(ctx.last_sampler, var->data.driver_location);
       }
    }

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-
+section_start cuttlefish_setup "cuttlefish: setup"
 set -xe
 
 export HOME=/cuttlefish
@@ -84,9 +84,9 @@ $ADB shell rm /vendor/lib64/egl/libGLESv1_CM_emulation.so
 $ADB shell rm /vendor/lib64/egl/libGLESv2_angle.so
 $ADB shell rm /vendor/lib64/egl/libGLESv2_emulation.so
 
-# run tests
 
 RESULTS=/data/results
+uncollapsed_section_switch cuttlefish_test "cuttlefish: testing"
 
 set +e
 $ADB shell "mkdir /data/results; cd /data; strace -o /data/results/out.strace -f -s 1000 ./deqp-runner \
@@ -103,6 +103,7 @@ $ADB shell "mkdir /data/results; cd /data; strace -o /data/results/out.strace -f
 
 EXIT_CODE=$?
 set -e
+section_switch cuttlefish_results "cuttlefish: gathering the results"
 
 $ADB pull $RESULTS results
 
@@ -110,4 +111,5 @@ cp /cuttlefish/cuttlefish/instances/cvd-1/logs/logcat results
 cp /cuttlefish/cuttlefish/instances/cvd-1/kernel.log results
 cp /cuttlefish/cuttlefish/instances/cvd-1/logs/launcher.log results
 
+section_end cuttlefish_results
 exit $EXIT_CODE

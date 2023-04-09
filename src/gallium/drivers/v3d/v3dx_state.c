@@ -1114,8 +1114,7 @@ v3d_create_sampler_view(struct pipe_context *pctx, struct pipe_resource *prsc,
                         }
                 }
         } else {
-                if (v3d_get_tex_return_size(&screen->devinfo, sample_format,
-                                           PIPE_TEX_COMPARE_NONE) == 32) {
+                if (v3d_get_tex_return_size(&screen->devinfo, sample_format) == 32) {
                         if (util_format_is_alpha(sample_format))
                                 so->sampler_variant = V3D_SAMPLER_STATE_32_A;
                         else

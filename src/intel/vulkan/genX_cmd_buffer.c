@@ -35,6 +35,7 @@
 #include "genxml/genX_rt_pack.h"
 #include "common/intel_guardband.h"
 #include "compiler/brw_prim.h"
+#include "common/intel_genX_state.h"
 
 #include "ds/intel_tracepoints.h"
 
@@ -82,9 +83,9 @@ convert_pc_to_bits(struct GENX(PIPE_CONTROL) *pc) {
 
 #define anv_debug_dump_pc(pc) \
    if (INTEL_DEBUG(DEBUG_PIPE_CONTROL)) { \
-      fputs("pc: emit PC=( ", stderr); \
-      anv_dump_pipe_bits(convert_pc_to_bits(&(pc))); \
-      fprintf(stderr, ") reason: %s\n", __func__); \
+      fputs("pc: emit PC=( ", stdout); \
+      anv_dump_pipe_bits(convert_pc_to_bits(&(pc)), stdout);   \
+      fprintf(stdout, ") reason: %s\n", __func__); \
    }
 
 ALWAYS_INLINE static void
@@ -277,7 +278,7 @@ genX(cmd_buffer_emit_state_base_address)(struct anv_cmd_buffer *cmd_buffer)
 
 static void
 add_surface_reloc(struct anv_cmd_buffer *cmd_buffer,
-                  struct anv_state state, struct anv_address addr)
+                  struct anv_address addr)
 {
    VkResult result = anv_reloc_list_add_bo(&cmd_buffer->surface_relocs,
                                            &cmd_buffer->vk.pool->alloc,
@@ -292,7 +293,7 @@ add_surface_state_relocs(struct anv_cmd_buffer *cmd_buffer,
                          struct anv_surface_state state)
 {
    assert(!anv_address_is_null(state.address));
-   add_surface_reloc(cmd_buffer, state.state, state.address);
+   add_surface_reloc(cmd_buffer, state.address);
 
    if (!anv_address_is_null(state.aux_address)) {
       VkResult result =
@@ -1751,7 +1752,16 @@ genX(emit_apply_pipe_flushes)(struct anv_batch *batch,
        * saying that render target writes are ongoing.
        */
       if (bits & ANV_PIPE_RENDER_TARGET_CACHE_FLUSH_BIT)
-         bits &= ~(ANV_PIPE_RENDER_TARGET_BUFFER_WRITES);
+         bits &= ~ANV_PIPE_RENDER_TARGET_BUFFER_WRITES;
+
+      /* If the conditions for flushing the query clears are met, we can
+       * toggle the bit off.
+       */
+      if ((bits & ANV_PIPE_QUERY_FLUSH_BITS) == ANV_PIPE_QUERY_FLUSH_BITS &&
+          (bits & (ANV_PIPE_END_OF_PIPE_SYNC_BIT |
+                   ANV_PIPE_CS_STALL_BIT))) {
+         bits &= ~ANV_PIPE_QUERY_CLEARS_BIT;
+      }
 
       bits &= ~(ANV_PIPE_FLUSH_BITS | ANV_PIPE_STALL_BITS |
                 ANV_PIPE_END_OF_PIPE_SYNC_BIT);
@@ -2092,8 +2102,7 @@ emit_binding_table(struct anv_cmd_buffer *cmd_buffer,
          assert(set->desc_mem.alloc_size);
          assert(set->desc_surface_state.alloc_size);
          bt_map[s] = set->desc_surface_state.offset + state_offset;
-         add_surface_reloc(cmd_buffer, set->desc_surface_state,
-                           anv_descriptor_set_address(set));
+         add_surface_reloc(cmd_buffer, anv_descriptor_set_address(set));
          break;
       }
 
@@ -3803,6 +3812,16 @@ genX(EndCommandBuffer)(
       return VK_SUCCESS;
    }
 
+   /* Flush query clears using blorp so that secondary query writes do not
+    * race with the clear.
+    */
+   if (cmd_buffer->state.pending_pipe_bits & ANV_PIPE_QUERY_CLEARS_BIT) {
+      anv_add_pending_pipe_bits(cmd_buffer,
+                                ANV_PIPE_QUERY_FLUSH_BITS |
+                                ANV_PIPE_NEEDS_END_OF_PIPE_SYNC_BIT,
+                                "query clear flush prior command buffer end");
+   }
+
    genX(cmd_buffer_flush_generated_draws)(cmd_buffer);
 
    /* Turn on object level preemption if it is disabled to have it in known
@@ -3877,6 +3896,16 @@ genX(CmdExecuteCommands)(
     * Apply task URB workaround before secondary cmd buffers.
     */
    genX(apply_task_urb_workaround)(primary);
+
+   /* Flush query clears using blorp so that secondary query writes do not
+    * race with the clear.
+    */
+   if (primary->state.pending_pipe_bits & ANV_PIPE_QUERY_CLEARS_BIT) {
+      anv_add_pending_pipe_bits(primary,
+                                ANV_PIPE_QUERY_FLUSH_BITS |
+                                ANV_PIPE_NEEDS_END_OF_PIPE_SYNC_BIT,
+                                "query clear flush prior to secondary buffer");
+   }
 
    /* The secondary command buffer doesn't know which textures etc. have been
     * flushed prior to their execution.  Apply those flushes now.
@@ -5718,6 +5747,7 @@ emit_compute_walker(struct anv_cmd_buffer *cmd_buffer,
          .NumberofThreadsinGPGPUThreadGroup = dispatch.threads,
          .SharedLocalMemorySize = encode_slm_size(GFX_VER,
                                                   prog_data->base.total_shared),
+         .PreferredSLMAllocationSize = preferred_slm_allocation_size(devinfo),
          .NumberOfBarriers = prog_data->uses_barrier,
       };
    }
@@ -6532,6 +6562,21 @@ genX(flush_pipeline_select)(struct anv_cmd_buffer *cmd_buffer,
     */
    if (pipeline == _3D)
       cmd_buffer->state.compute.pipeline_dirty = true;
+#endif
+
+
+#if GFX_VERx10 < 125
+   /* We apparently cannot flush the tile cache (color/depth) from the GPGPU
+    * pipeline. That means query clears will not be visible to query
+    * copy/write. So we need to flush it before going to GPGPU mode.
+    */
+   if (cmd_buffer->state.current_pipeline == _3D &&
+       (cmd_buffer->state.pending_pipe_bits & ANV_PIPE_QUERY_CLEARS_BIT)) {
+      anv_add_pending_pipe_bits(cmd_buffer,
+                                ANV_PIPE_QUERY_FLUSH_BITS |
+                                ANV_PIPE_END_OF_PIPE_SYNC_BIT,
+                                "query clear flush prior to GPGPU");
+   }
 #endif
 
 #if GFX_VER >= 12

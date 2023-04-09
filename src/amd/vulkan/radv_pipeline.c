@@ -942,7 +942,7 @@ radv_graphics_pipeline_import_lib(const struct radv_device *device,
                                   struct radv_graphics_lib_pipeline *lib,
                                   bool link_optimize)
 {
-   bool import_nir = false;
+   bool import_binaries = false;
 
    /* There should be no common blocks between a lib we import and the current
     * pipeline we're building.
@@ -954,31 +954,12 @@ radv_graphics_pipeline_import_lib(const struct radv_device *device,
 
    vk_graphics_pipeline_state_merge(state, &lib->graphics_state);
 
-   /* Import the NIR shaders when LTO is enabled or when a libary uses the retain bit.
-    * Otherwise, compiled binaries are imported for fast-linking.
-    */
-   if (link_optimize || pipeline->retain_shaders) {
-      import_nir = true;
+   /* Import binaries when LTO is disabled and when the library doesn't retain any shaders. */
+   if (!link_optimize && !pipeline->retain_shaders) {
+      import_binaries = true;
    }
 
-   if (import_nir) {
-      /* Import the NIR shaders (after SPIRV->NIR). */
-      for (uint32_t s = 0; s < ARRAY_SIZE(lib->base.base.shaders); s++) {
-         if (!lib->base.retained_shaders[s].serialized_nir_size)
-            continue;
-
-         /* Deserialize the NIR shader. */
-         const struct nir_shader_compiler_options *options =
-            &device->physical_device->nir_options[s];
-         struct blob_reader blob_reader;
-         blob_reader_init(&blob_reader, lib->base.retained_shaders[s].serialized_nir,
-                          lib->base.retained_shaders[s].serialized_nir_size);
-         pipeline->retained_shaders[s].nir = nir_deserialize(NULL, options, &blob_reader);
-
-         memcpy(pipeline->retained_shaders[s].shader_sha1, lib->base.retained_shaders[s].shader_sha1,
-                sizeof(pipeline->retained_shaders[s].shader_sha1));
-      }
-   } else {
+   if (import_binaries) {
       /* Import the compiled shaders. */
       for (uint32_t s = 0; s < ARRAY_SIZE(lib->base.base.shaders); s++) {
          if (!lib->base.base.shaders[s])
@@ -2082,6 +2063,7 @@ radv_generate_graphics_pipeline_key(const struct radv_device *device,
    const struct radv_physical_device *pdevice = device->physical_device;
    struct radv_pipeline_key key = radv_generate_pipeline_key(device, &pipeline->base, pCreateInfo->flags);
 
+   key.lib_flags = lib_flags;
    key.has_multiview_view_index = state->rp ? !!state->rp->view_mask : 0;
 
    if (pipeline->dynamic_states & RADV_DYNAMIC_VERTEX_INPUT) {
@@ -2759,39 +2741,18 @@ radv_pipeline_nir_to_asm(struct radv_device *device, struct radv_graphics_pipeli
 static void
 radv_pipeline_get_nir(struct radv_device *device, struct radv_graphics_pipeline *pipeline,
                       struct radv_pipeline_stage *stages,
-                      const struct radv_pipeline_key *pipeline_key, bool retain_shaders)
+                      const struct radv_pipeline_key *pipeline_key)
 {
    for (unsigned s = 0; s < MESA_VULKAN_SHADER_STAGES; s++) {
       if (!stages[s].entrypoint)
          continue;
 
-      /* Do not try to get the NIR when we already have the assembly. */
-      if (pipeline->base.shaders[s])
-         continue;
-
       int64_t stage_start = os_time_get_nano();
 
-      assert(retain_shaders || pipeline->base.shaders[s] == NULL);
-
-      if (pipeline->retained_shaders[s].nir) {
-         /* Get the deserialized NIR shader directly because it has been imported from a library. */
-         stages[s].nir = pipeline->retained_shaders[s].nir;
-      } else {
+      /* NIR might already have been imported from a library. */
+      if (!stages[s].nir) {
          stages[s].nir =
             radv_shader_spirv_to_nir(device, &stages[s], pipeline_key, pipeline->base.is_internal);
-      }
-
-      if (retain_shaders) {
-         /* Serialize the NIR shader to reduce memory pressure. */
-         struct blob blob;
-
-         blob_init(&blob);
-         nir_serialize(&blob, stages[s].nir, true);
-         blob_finish_get_buffer(&blob, &pipeline->retained_shaders[s].serialized_nir,
-                                &pipeline->retained_shaders[s].serialized_nir_size);
-
-         memcpy(pipeline->retained_shaders[s].shader_sha1, stages[s].shader_sha1,
-                sizeof(stages[s].shader_sha1));
       }
 
       stages[s].feedback.duration += os_time_get_nano() - stage_start;
@@ -2799,25 +2760,100 @@ radv_pipeline_get_nir(struct radv_device *device, struct radv_graphics_pipeline 
 }
 
 static void
-radv_pipeline_load_retained_shaders(struct radv_graphics_pipeline *pipeline,
-                                    struct radv_pipeline_stage *stages)
+radv_pipeline_retain_shaders(struct radv_graphics_lib_pipeline *gfx_pipeline_lib,
+                             struct radv_pipeline_stage *stages)
 {
-   for (uint32_t s = 0; s < MESA_VULKAN_SHADER_STAGES; s++) {
-      if (!pipeline->retained_shaders[s].nir)
+   for (unsigned s = 0; s < MESA_VULKAN_SHADER_STAGES; s++) {
+      if (!stages[s].entrypoint)
          continue;
 
       int64_t stage_start = os_time_get_nano();
 
-      assert(pipeline->base.shaders[s] == NULL);
+      /* Serialize the NIR shader to reduce memory pressure. */
+      struct blob blob;
 
-      stages[s].stage = s;
-      stages[s].entrypoint =
-         nir_shader_get_entrypoint(pipeline->retained_shaders[s].nir)->function->name;
-      memcpy(stages[s].shader_sha1, pipeline->retained_shaders[s].shader_sha1,
-             sizeof(stages[s].shader_sha1));
+      blob_init(&blob);
+      nir_serialize(&blob, stages[s].nir, true);
+      blob_finish_get_buffer(&blob, &gfx_pipeline_lib->retained_shaders[s].serialized_nir,
+                             &gfx_pipeline_lib->retained_shaders[s].serialized_nir_size);
+
+      memcpy(gfx_pipeline_lib->retained_shaders[s].shader_sha1, stages[s].shader_sha1,
+               sizeof(stages[s].shader_sha1));
 
       stages[s].feedback.duration += os_time_get_nano() - stage_start;
+   }
+}
+
+static void
+radv_pipeline_import_retained_shaders(const struct radv_device *device,
+                                      struct radv_graphics_pipeline *pipeline,
+                                      struct radv_graphics_lib_pipeline *lib,
+                                      struct radv_pipeline_stage *stages)
+{
+   /* Import the stages (SPIR-V only in case of cache hits). */
+   for (uint32_t i = 0; i < lib->stage_count; i++) {
+      const VkPipelineShaderStageCreateInfo *sinfo = &lib->stages[i];
+      gl_shader_stage s = vk_to_mesa_shader_stage(sinfo->stage);
+
+      /* Ignore graphics shader stages that don't need to be imported. */
+      if (!(shader_stage_to_pipeline_library_flags(sinfo->stage) & lib->lib_flags))
+         continue;
+
+      radv_pipeline_stage_init(sinfo, &stages[s], s);
+   }
+
+   /* Import the NIR shaders (after SPIRV->NIR). */
+   for (uint32_t s = 0; s < ARRAY_SIZE(lib->base.base.shaders); s++) {
+      if (!lib->retained_shaders[s].serialized_nir_size)
+         continue;
+
+      int64_t stage_start = os_time_get_nano();
+
+      /* Deserialize the NIR shader. */
+      const struct nir_shader_compiler_options *options =
+         &device->physical_device->nir_options[s];
+      struct blob_reader blob_reader;
+      blob_reader_init(&blob_reader, lib->retained_shaders[s].serialized_nir,
+                       lib->retained_shaders[s].serialized_nir_size);
+
+      stages[s].stage = s;
+      stages[s].nir = nir_deserialize(NULL, options, &blob_reader);
+      stages[s].entrypoint =
+         nir_shader_get_entrypoint(stages[s].nir)->function->name;
+      memcpy(stages[s].shader_sha1, lib->retained_shaders[s].shader_sha1,
+             sizeof(stages[s].shader_sha1));
+
       stages[s].feedback.flags |= VK_PIPELINE_CREATION_FEEDBACK_VALID_BIT;
+
+      stages[s].feedback.duration += os_time_get_nano() - stage_start;
+   }
+}
+
+static void
+radv_pipeline_load_retained_shaders(const struct radv_device *device,
+                                    struct radv_graphics_pipeline *pipeline,
+                                    const VkGraphicsPipelineCreateInfo *pCreateInfo,
+                                    struct radv_pipeline_stage *stages)
+{
+   const VkPipelineLibraryCreateInfoKHR *libs_info =
+      vk_find_struct_const(pCreateInfo->pNext, PIPELINE_LIBRARY_CREATE_INFO_KHR);
+   const bool link_optimize =
+      (pCreateInfo->flags & VK_PIPELINE_CREATE_LINK_TIME_OPTIMIZATION_BIT_EXT) != 0;
+
+   /* Nothing to load if no libs are imported. */
+   if (!libs_info)
+      return;
+
+   /* Nothing to load if fast-linking is enabled and if there is no retained shaders. */
+   if (!link_optimize && !pipeline->retain_shaders)
+      return;
+
+   for (uint32_t i = 0; i < libs_info->libraryCount; i++) {
+      RADV_FROM_HANDLE(radv_pipeline, pipeline_lib, libs_info->pLibraries[i]);
+      struct radv_graphics_lib_pipeline *gfx_pipeline_lib =
+         radv_pipeline_to_graphics_lib(pipeline_lib);
+
+      radv_pipeline_import_retained_shaders(device, pipeline, gfx_pipeline_lib, stages);
    }
 }
 
@@ -3168,11 +3204,25 @@ radv_skip_graphics_pipeline_compile(const struct radv_device *device,
 
 static bool
 radv_pipeline_needs_noop_fs(struct radv_graphics_pipeline *pipeline,
-                            VkGraphicsPipelineLibraryFlagBitsEXT lib_flags)
+                            const VkGraphicsPipelineCreateInfo *pCreateInfo,
+                            VkGraphicsPipelineLibraryFlagBitsEXT lib_flags,
+                            const struct radv_pipeline_stage *stages)
 {
-   if (pipeline->base.type == RADV_PIPELINE_GRAPHICS &&
-       !(radv_pipeline_to_graphics(&pipeline->base)->active_stages & VK_SHADER_STAGE_FRAGMENT_BIT))
-      return true;
+   if (pipeline->base.type == RADV_PIPELINE_GRAPHICS) {
+      if (!(radv_pipeline_to_graphics(&pipeline->base)->active_stages & VK_SHADER_STAGE_FRAGMENT_BIT))
+         return true;
+
+      const VkPipelineLibraryCreateInfoKHR *libs_info =
+         vk_find_struct_const(pCreateInfo->pNext, PIPELINE_LIBRARY_CREATE_INFO_KHR);
+      const bool link_optimize =
+         (pCreateInfo->flags & VK_PIPELINE_CREATE_LINK_TIME_OPTIMIZATION_BIT_EXT) != 0;
+
+      /* When the noop FS has already been imported by libraries we can skip it, otherwise we need
+       * to compile one.
+       */
+      if (libs_info && link_optimize && !stages[MESA_SHADER_FRAGMENT].entrypoint)
+         return true;
+   }
 
    if (pipeline->base.type == RADV_PIPELINE_GRAPHICS_LIB &&
        (lib_flags & VK_GRAPHICS_PIPELINE_LIBRARY_FRAGMENT_SHADER_BIT_EXT) &&
@@ -3191,7 +3241,6 @@ radv_graphics_pipeline_compile(struct radv_graphics_pipeline *pipeline,
                                VkGraphicsPipelineLibraryFlagBitsEXT lib_flags,
                                bool fast_linking_enabled)
 {
-   const bool noop_fs = radv_pipeline_needs_noop_fs(pipeline, lib_flags);
    const char *noop_fs_entrypoint = "noop_fs";
    struct radv_shader_binary *binaries[MESA_VULKAN_SHADER_STAGES] = {NULL};
    struct radv_shader_binary *gs_copy_binary = NULL;
@@ -3214,16 +3263,6 @@ radv_graphics_pipeline_compile(struct radv_graphics_pipeline *pipeline,
 
    int64_t pipeline_start = os_time_get_nano();
 
-   /* Skip the shaders cache when any of the below are true:
-    * - fast-linking is enabled because it's useless to cache unoptimized pipelines
-    * - shaders are captured because it's for debugging purposes
-    * - libraries are created with GPL
-    */
-   if (fast_linking_enabled || keep_executable_info ||
-       (pCreateInfo->flags & VK_PIPELINE_CREATE_LIBRARY_BIT_KHR)) {
-      skip_shaders_cache = true;
-   }
-
    for (unsigned i = 0; i < MESA_VULKAN_SHADER_STAGES; i++) {
       stages[i].entrypoint = NULL;
       stages[i].nir = NULL;
@@ -3241,13 +3280,30 @@ radv_graphics_pipeline_compile(struct radv_graphics_pipeline *pipeline,
       radv_pipeline_stage_init(sinfo, &stages[stage], stage);
    }
 
-   radv_pipeline_load_retained_shaders(pipeline, stages);
+   radv_pipeline_load_retained_shaders(device, pipeline, pCreateInfo, stages);
 
    if (!fast_linking_enabled) {
       radv_hash_shaders(hash, stages, MESA_VULKAN_SHADER_STAGES, pipeline_layout, pipeline_key,
                         radv_get_hash_flags(device, keep_statistic_info));
 
       pipeline->base.pipeline_hash = *(uint64_t *)hash;
+   }
+
+   /* Skip the shaders cache when any of the below are true:
+    * - fast-linking is enabled because it's useless to cache unoptimized pipelines
+    * - shaders are captured because it's for debugging purposes
+    * - graphics pipeline libraries are created with the RETAIN_LINK_TIME_OPTIMIZATION flag and
+    *   module identifiers are used (ie. no SPIR-V provided).
+    */
+   if (fast_linking_enabled || keep_executable_info) {
+      skip_shaders_cache = true;
+   } else if ((pCreateInfo->flags & VK_PIPELINE_CREATE_LIBRARY_BIT_KHR) && retain_shaders) {
+      for (uint32_t i = 0; i < MESA_VULKAN_SHADER_STAGES; i++) {
+         if (stages[i].entrypoint && !stages[i].spirv.size) {
+            skip_shaders_cache = true;
+            break;
+         }
+      }
    }
 
    bool found_in_application_cache = true;
@@ -3257,6 +3313,23 @@ radv_graphics_pipeline_compile(struct radv_graphics_pipeline *pipeline,
       if (found_in_application_cache)
          pipeline_feedback.flags |= VK_PIPELINE_CREATION_FEEDBACK_APPLICATION_PIPELINE_CACHE_HIT_BIT;
 
+      if (retain_shaders) {
+         /* For graphics pipeline libraries created with the RETAIN_LINK_TIME_OPTIMIZATION flag, we
+          * need to retain the stage info because we can't know if the LTO pipelines will
+          * be find in the shaders cache.
+          */
+         struct radv_graphics_lib_pipeline *gfx_pipeline_lib =
+            radv_pipeline_to_graphics_lib(&pipeline->base);
+
+         gfx_pipeline_lib->stages =
+            radv_copy_shader_stage_create_info(device, pCreateInfo->stageCount, pCreateInfo->pStages,
+                                               gfx_pipeline_lib->mem_ctx);
+         if (!gfx_pipeline_lib->stages)
+            return VK_ERROR_OUT_OF_HOST_MEMORY;
+
+         gfx_pipeline_lib->stage_count = pCreateInfo->stageCount;
+      }
+
       result = VK_SUCCESS;
       goto done;
    }
@@ -3264,6 +3337,7 @@ radv_graphics_pipeline_compile(struct radv_graphics_pipeline *pipeline,
    if (pCreateInfo->flags & VK_PIPELINE_CREATE_FAIL_ON_PIPELINE_COMPILE_REQUIRED_BIT)
       return VK_PIPELINE_COMPILE_REQUIRED;
 
+   const bool noop_fs = radv_pipeline_needs_noop_fs(pipeline, pCreateInfo, lib_flags, stages);
    if (noop_fs) {
       nir_builder fs_b = radv_meta_init_shader(device, MESA_SHADER_FRAGMENT, "noop_fs");
 
@@ -3277,7 +3351,11 @@ radv_graphics_pipeline_compile(struct radv_graphics_pipeline *pipeline,
       };
    }
 
-   radv_pipeline_get_nir(device, pipeline, stages, pipeline_key, retain_shaders);
+   radv_pipeline_get_nir(device, pipeline, stages, pipeline_key);
+
+   if (retain_shaders) {
+      radv_pipeline_retain_shaders(radv_pipeline_to_graphics_lib(&pipeline->base), stages);
+   }
 
    VkShaderStageFlagBits active_nir_stages = 0;
    for (int i = 0; i < MESA_VULKAN_SHADER_STAGES; i++) {
@@ -3396,12 +3474,13 @@ radv_graphics_pipeline_compile(struct radv_graphics_pipeline *pipeline,
          if (radv_can_dump_shader_stats(device, stages[i].nir) && pipeline->base.shaders[i]) {
             radv_dump_shader_stats(device, &pipeline->base, pipeline->base.shaders[i], i, stderr);
          }
-
-         ralloc_free(stages[i].nir);
       }
    }
 
 done:
+   for (int i = 0; i < MESA_VULKAN_SHADER_STAGES; ++i) {
+      ralloc_free(stages[i].nir);
+   }
    pipeline_feedback.duration = os_time_get_nano() - pipeline_start;
 
    if (creation_feedback) {
@@ -4855,6 +4934,8 @@ radv_graphics_lib_pipeline_create(VkDevice _device, VkPipelineCache _cache,
 
    radv_pipeline_init(device, &pipeline->base.base, RADV_PIPELINE_GRAPHICS_LIB);
 
+   pipeline->mem_ctx = ralloc_context(NULL);
+
    result = radv_graphics_lib_pipeline_init(pipeline, device, cache, pCreateInfo);
    if (result != VK_SUCCESS) {
       radv_pipeline_destroy(device, &pipeline->base.base, pAllocator);
@@ -4873,8 +4954,10 @@ radv_destroy_graphics_lib_pipeline(struct radv_device *device,
    radv_pipeline_layout_finish(device, &pipeline->layout);
 
    for (unsigned i = 0; i < MESA_VULKAN_SHADER_STAGES; ++i) {
-      free(pipeline->base.retained_shaders[i].serialized_nir);
+      free(pipeline->retained_shaders[i].serialized_nir);
    }
+
+   ralloc_free(pipeline->mem_ctx);
 
    radv_destroy_graphics_pipeline(device, &pipeline->base);
 }
@@ -5600,4 +5683,87 @@ radv_GetPipelineExecutableInternalRepresentationsKHR(
    }
 
    return result;
+}
+
+static void
+vk_shader_module_finish(void *_module)
+{
+   struct vk_shader_module *module = _module;
+   vk_object_base_finish(&module->base);
+}
+
+VkPipelineShaderStageCreateInfo *
+radv_copy_shader_stage_create_info(struct radv_device *device, uint32_t stageCount,
+                                   const VkPipelineShaderStageCreateInfo *pStages, void *mem_ctx)
+{
+   VkPipelineShaderStageCreateInfo *new_stages;
+
+   size_t size = sizeof(VkPipelineShaderStageCreateInfo) * stageCount;
+   new_stages = ralloc_size(mem_ctx, size);
+   if (!new_stages)
+      return NULL;
+
+   memcpy(new_stages, pStages, size);
+
+   for (uint32_t i = 0; i < stageCount; i++) {
+      RADV_FROM_HANDLE(vk_shader_module, module, new_stages[i].module);
+
+      const VkShaderModuleCreateInfo *minfo =
+         vk_find_struct_const(pStages[i].pNext, SHADER_MODULE_CREATE_INFO);
+
+      if (module) {
+         struct vk_shader_module *new_module =
+            ralloc_size(mem_ctx, sizeof(struct vk_shader_module) + module->size);
+         if (!new_module)
+            return NULL;
+
+         ralloc_set_destructor(new_module, vk_shader_module_finish);
+         vk_object_base_init(&device->vk, &new_module->base, VK_OBJECT_TYPE_SHADER_MODULE);
+
+         new_module->nir = NULL;
+         memcpy(new_module->sha1, module->sha1, sizeof(module->sha1));
+         new_module->size = module->size;
+         memcpy(new_module->data, module->data, module->size);
+
+         module = new_module;
+      } else if (minfo) {
+         module = ralloc_size(mem_ctx, sizeof(struct vk_shader_module) + minfo->codeSize);
+         if (!module)
+            return NULL;
+
+         vk_shader_module_init(&device->vk, module, minfo);
+      }
+
+      if (module) {
+         const VkSpecializationInfo *spec = new_stages[i].pSpecializationInfo;
+         if (spec) {
+            VkSpecializationInfo *new_spec = ralloc(mem_ctx, VkSpecializationInfo);
+            if (!new_spec)
+               return NULL;
+
+            new_spec->mapEntryCount = spec->mapEntryCount;
+            uint32_t map_entries_size = sizeof(VkSpecializationMapEntry) * spec->mapEntryCount;
+            new_spec->pMapEntries = ralloc_size(mem_ctx, map_entries_size);
+            if (!new_spec->pMapEntries)
+               return NULL;
+            memcpy((void *)new_spec->pMapEntries, spec->pMapEntries, map_entries_size);
+
+            new_spec->dataSize = spec->dataSize;
+            new_spec->pData = ralloc_size(mem_ctx, spec->dataSize);
+            if (!new_spec->pData)
+               return NULL;
+            memcpy((void *)new_spec->pData, spec->pData, spec->dataSize);
+
+            new_stages[i].pSpecializationInfo = new_spec;
+         }
+
+         new_stages[i].module = vk_shader_module_to_handle(module);
+         new_stages[i].pName = ralloc_strdup(mem_ctx, new_stages[i].pName);
+         if (!new_stages[i].pName)
+            return NULL;
+         new_stages[i].pNext = NULL;
+      }
+   }
+
+   return new_stages;
 }

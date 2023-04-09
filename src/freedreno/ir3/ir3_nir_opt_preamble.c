@@ -47,11 +47,10 @@ def_size(nir_ssa_def *def, unsigned *size, unsigned *align)
 static bool
 all_uses_float(nir_ssa_def *def, bool allow_src2)
 {
-   nir_foreach_if_use (use, def) {
-      return false;
-   }
+   nir_foreach_use_including_if (use, def) {
+      if (use->is_if)
+         return false;
 
-   nir_foreach_use (use, def) {
       nir_instr *use_instr = use->parent_instr;
       if (use_instr->type != nir_instr_type_alu)
          return false;
@@ -78,11 +77,10 @@ all_uses_float(nir_ssa_def *def, bool allow_src2)
 static bool
 all_uses_bit(nir_ssa_def *def)
 {
-   nir_foreach_if_use (use, def) {
-      return false;
-   }
+   nir_foreach_use_including_if (use, def) {
+      if (use->is_if)
+         return false;
 
-   nir_foreach_use (use, def) {
       nir_instr *use_instr = use->parent_instr;
       if (use_instr->type != nir_instr_type_alu)
          return false;

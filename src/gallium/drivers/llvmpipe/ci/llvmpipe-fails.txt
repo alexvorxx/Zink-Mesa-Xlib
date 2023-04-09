@@ -26,10 +26,7 @@ dEQP-GLES3.functional.fbo.blit.rect.nearest_consistency_min_reverse_src_x,Fail
 spec@glsl-1.20@compiler@invalid-vec4-array-to-vec3-array-conversion.vert,Fail
 spec@oes_shader_io_blocks@compiler@layout-location-aliasing.vert,Fail
 
-# X Error of failed request:  BadMatch (invalid parameter attributes)
-#   Major opcode of failed request:  150 (GLX)
-#   Minor opcode of failed request:  11 (X_GLXSwapBuffers)
-glx@glx-make-current,Crash
+glx@glx-make-current,Fail
 
 glx@glx-multi-window-single-context,Fail
 glx@glx-swap-pixmap-bad,Fail

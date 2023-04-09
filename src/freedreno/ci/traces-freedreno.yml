@@ -58,7 +58,9 @@ traces:
           MESA: error: zink: couldn't allocate memory: heap=<heap> size=<size>
         Resulting in a segfault
     zink-a630:
+      label: [skip, flakes]
       checksum: b589b5d9ddd3026cbde08f0abe840ea7
+      text: seems to trigger oomkilling recently
 
   valve/counterstrike-source-v2.trace:
     freedreno-a306:
@@ -109,7 +111,9 @@ traces:
       checksum: 59e37d2dca80caedd9494114d64c676c
       text: https://gitlab.freedesktop.org/mesa/mesa/-/issues/8337
     zink-a630:
+      label: [skip]
       checksum: be297e672aaaf2351de71686d47f59eb
+      text: OOMkilled at 4GB total_vm so it would need to be run singly.
 
   godot/godot-thrive.trace:
     freedreno-a306:

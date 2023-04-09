@@ -365,7 +365,7 @@ lower_phi_instr(nir_builder *b, nir_phi_instr *phi)
          dst_bit_size = src_bit_size;
       } else if (src_bit_size != dst_bit_size) {
          assert(phi_src->src.is_ssa);
-         b->cursor = nir_before_src(&phi_src->src, false);
+         b->cursor = nir_before_src(&phi_src->src);
          nir_op convert_op = get_bool_convert_opcode(dst_bit_size);
          nir_ssa_def *new_src =
             nir_build_alu(b, convert_op, phi_src->src.ssa, NULL, NULL, NULL);

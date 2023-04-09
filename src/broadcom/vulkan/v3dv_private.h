@@ -197,8 +197,7 @@ struct v3dv_physical_device {
    } caps;
 };
 
-VkResult v3dv_physical_device_acquire_display(struct v3dv_instance *instance,
-                                              struct v3dv_physical_device *pdevice,
+VkResult v3dv_physical_device_acquire_display(struct v3dv_physical_device *pdevice,
                                               VkIcdSurfaceBase *surface);
 
 static inline struct v3dv_bo *

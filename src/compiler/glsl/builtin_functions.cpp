@@ -4753,10 +4753,10 @@ builtin_builder::create_builtins()
                 _frexp(glsl_type::vec2_type,  glsl_type::ivec2_type),
                 _frexp(glsl_type::vec3_type,  glsl_type::ivec3_type),
                 _frexp(glsl_type::vec4_type,  glsl_type::ivec4_type),
-                _dfrexp(glsl_type::double_type, glsl_type::int_type),
-                _dfrexp(glsl_type::dvec2_type,  glsl_type::ivec2_type),
-                _dfrexp(glsl_type::dvec3_type,  glsl_type::ivec3_type),
-                _dfrexp(glsl_type::dvec4_type,  glsl_type::ivec4_type),
+                _frexp(glsl_type::double_type, glsl_type::int_type),
+                _frexp(glsl_type::dvec2_type,  glsl_type::ivec2_type),
+                _frexp(glsl_type::dvec3_type,  glsl_type::ivec3_type),
+                _frexp(glsl_type::dvec4_type,  glsl_type::ivec4_type),
                 NULL);
    add_function("uaddCarry",
                 _uaddCarry(glsl_type::uint_type),
@@ -7768,64 +7768,17 @@ builtin_builder::_ldexp(const glsl_type *x_type, const glsl_type *exp_type)
 }
 
 ir_function_signature *
-builtin_builder::_dfrexp(const glsl_type *x_type, const glsl_type *exp_type)
+builtin_builder::_frexp(const glsl_type *x_type, const glsl_type *exp_type)
 {
    ir_variable *x = in_highp_var(x_type, "x");
    ir_variable *exponent = out_var(exp_type, "exp");
-   MAKE_SIG(x_type, fp64, 2, x, exponent);
+   MAKE_SIG(x_type, x_type->is_double() ? fp64 : gpu_shader5_or_es31_or_integer_functions,
+            2, x, exponent);
+   sig->return_precision = GLSL_PRECISION_HIGH;
 
    body.emit(assign(exponent, expr(ir_unop_frexp_exp, x)));
 
    body.emit(ret(expr(ir_unop_frexp_sig, x)));
-   return sig;
-}
-
-ir_function_signature *
-builtin_builder::_frexp(const glsl_type *x_type, const glsl_type *exp_type)
-{
-   ir_variable *x = in_highp_var(x_type, "x");
-   ir_variable *exponent = out_highp_var(exp_type, "exp");
-   MAKE_SIG(x_type, gpu_shader5_or_es31_or_integer_functions, 2, x, exponent);
-   sig->return_precision = GLSL_PRECISION_HIGH;
-
-   const unsigned vec_elem = x_type->vector_elements;
-   const glsl_type *bvec = glsl_type::get_instance(GLSL_TYPE_BOOL, vec_elem, 1);
-   const glsl_type *uvec = glsl_type::get_instance(GLSL_TYPE_UINT, vec_elem, 1);
-
-   /* Single-precision floating-point values are stored as
-    *   1 sign bit;
-    *   8 exponent bits;
-    *   23 mantissa bits.
-    *
-    * An exponent shift of 23 will shift the mantissa out, leaving only the
-    * exponent and sign bit (which itself may be zero, if the absolute value
-    * was taken before the bitcast and shift.
-    */
-   ir_constant *exponent_shift = imm(23);
-   ir_constant *exponent_bias = imm(-126, vec_elem);
-
-   ir_constant *sign_mantissa_mask = imm(0x807fffffu, vec_elem);
-
-   /* Exponent of floating-point values in the range [0.5, 1.0). */
-   ir_constant *exponent_value = imm(0x3f000000u, vec_elem);
-
-   ir_variable *is_not_zero = body.make_temp(bvec, "is_not_zero");
-   body.emit(assign(is_not_zero, nequal(abs(x), imm(0.0f, vec_elem))));
-
-   /* Since abs(x) ensures that the sign bit is zero, we don't need to bitcast
-    * to unsigned integers to ensure that 1 bits aren't shifted in.
-    */
-   body.emit(assign(exponent, rshift(bitcast_f2i(abs(x)), exponent_shift)));
-   body.emit(assign(exponent, add(exponent, csel(is_not_zero, exponent_bias,
-                                                     imm(0, vec_elem)))));
-
-   ir_variable *bits = body.make_temp(uvec, "bits");
-   body.emit(assign(bits, bitcast_f2u(x)));
-   body.emit(assign(bits, bit_and(bits, sign_mantissa_mask)));
-   body.emit(assign(bits, bit_or(bits, csel(is_not_zero, exponent_value,
-                                                imm(0u, vec_elem)))));
-   body.emit(ret(bitcast_u2f(bits)));
-
    return sig;
 }
 

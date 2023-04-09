@@ -3707,172 +3707,6 @@ LLVMValueRef ac_build_reduce(struct ac_llvm_context *ctx, LLVMValueRef src, nir_
    }
 }
 
-/**
- * "Top half" of a scan that reduces per-wave values across an entire
- * workgroup.
- *
- * The source value must be present in the highest lane of the wave, and the
- * highest lane must be live.
- */
-void ac_build_wg_wavescan_top(struct ac_llvm_context *ctx, struct ac_wg_scan *ws)
-{
-   if (ws->maxwaves <= 1)
-      return;
-
-   const LLVMValueRef last_lane = LLVMConstInt(ctx->i32, ctx->wave_size - 1, false);
-   LLVMBuilderRef builder = ctx->builder;
-   LLVMValueRef tid = ac_get_thread_id(ctx);
-   LLVMValueRef tmp;
-
-   tmp = LLVMBuildICmp(builder, LLVMIntEQ, tid, last_lane, "");
-   ac_build_ifcc(ctx, tmp, 1000);
-   LLVMBuildStore(builder, ws->src,
-                  LLVMBuildGEP2(builder, LLVMTypeOf(ws->src), ws->scratch, &ws->waveidx, 1, ""));
-   ac_build_endif(ctx, 1000);
-}
-
-/**
- * "Bottom half" of a scan that reduces per-wave values across an entire
- * workgroup.
- *
- * The caller must place a barrier between the top and bottom halves.
- */
-void ac_build_wg_wavescan_bottom(struct ac_llvm_context *ctx, struct ac_wg_scan *ws)
-{
-   const LLVMTypeRef type = LLVMTypeOf(ws->src);
-   const LLVMValueRef identity = get_reduction_identity(ctx, ws->op, ac_get_type_size(type));
-
-   if (ws->maxwaves <= 1) {
-      ws->result_reduce = ws->src;
-      ws->result_inclusive = ws->src;
-      ws->result_exclusive = identity;
-      return;
-   }
-   assert(ws->maxwaves <= 32);
-
-   LLVMBuilderRef builder = ctx->builder;
-   LLVMValueRef tid = ac_get_thread_id(ctx);
-   LLVMBasicBlockRef bbs[2];
-   LLVMValueRef phivalues_scan[2];
-   LLVMValueRef tmp, tmp2;
-
-   bbs[0] = LLVMGetInsertBlock(builder);
-   phivalues_scan[0] = LLVMGetUndef(type);
-
-   if (ws->enable_reduce)
-      tmp = LLVMBuildICmp(builder, LLVMIntULT, tid, ws->numwaves, "");
-   else if (ws->enable_inclusive)
-      tmp = LLVMBuildICmp(builder, LLVMIntULE, tid, ws->waveidx, "");
-   else
-      tmp = LLVMBuildICmp(builder, LLVMIntULT, tid, ws->waveidx, "");
-   ac_build_ifcc(ctx, tmp, 1001);
-   {
-      tmp = LLVMBuildLoad2(builder, LLVMTypeOf(ws->src),
-                          LLVMBuildGEP2(builder, LLVMTypeOf(ws->src), ws->scratch, &tid, 1, ""), "");
-
-      ac_build_optimization_barrier(ctx, &tmp, false);
-
-      bbs[1] = LLVMGetInsertBlock(builder);
-      phivalues_scan[1] = ac_build_scan(ctx, ws->op, tmp, identity, ws->maxwaves, true);
-   }
-   ac_build_endif(ctx, 1001);
-
-   const LLVMValueRef scan = ac_build_phi(ctx, type, 2, phivalues_scan, bbs);
-
-   if (ws->enable_reduce) {
-      tmp = LLVMBuildSub(builder, ws->numwaves, ctx->i32_1, "");
-      ws->result_reduce = ac_build_readlane(ctx, scan, tmp);
-   }
-   if (ws->enable_inclusive)
-      ws->result_inclusive = ac_build_readlane(ctx, scan, ws->waveidx);
-   if (ws->enable_exclusive) {
-      tmp = LLVMBuildSub(builder, ws->waveidx, ctx->i32_1, "");
-      tmp = ac_build_readlane(ctx, scan, tmp);
-      tmp2 = LLVMBuildICmp(builder, LLVMIntEQ, ws->waveidx, ctx->i32_0, "");
-      ws->result_exclusive = LLVMBuildSelect(builder, tmp2, identity, tmp, "");
-   }
-}
-
-/**
- * Inclusive scan of a per-wave value across an entire workgroup.
- *
- * This implies an s_barrier instruction.
- *
- * Unlike ac_build_inclusive_scan, the caller \em must ensure that all threads
- * of the workgroup are live. (This requirement cannot easily be relaxed in a
- * useful manner because of the barrier in the algorithm.)
- */
-void ac_build_wg_wavescan(struct ac_llvm_context *ctx, struct ac_wg_scan *ws)
-{
-   ac_build_wg_wavescan_top(ctx, ws);
-   ac_build_waitcnt(ctx, AC_WAIT_LGKM);
-   ac_build_s_barrier(ctx, ws->stage);
-   ac_build_wg_wavescan_bottom(ctx, ws);
-}
-
-/**
- * "Top half" of a scan that reduces per-thread values across an entire
- * workgroup.
- *
- * All lanes must be active when this code runs.
- */
-void ac_build_wg_scan_top(struct ac_llvm_context *ctx, struct ac_wg_scan *ws)
-{
-   if (ws->enable_exclusive) {
-      ws->extra = ac_build_exclusive_scan(ctx, ws->src, ws->op);
-      if (LLVMTypeOf(ws->src) == ctx->i1 && ws->op == nir_op_iadd)
-         ws->src = LLVMBuildZExt(ctx->builder, ws->src, ctx->i32, "");
-      ws->src = ac_build_alu_op(ctx, ws->extra, ws->src, ws->op);
-   } else {
-      ws->src = ac_build_inclusive_scan(ctx, ws->src, ws->op);
-   }
-
-   bool enable_inclusive = ws->enable_inclusive;
-   bool enable_exclusive = ws->enable_exclusive;
-   ws->enable_inclusive = false;
-   ws->enable_exclusive = ws->enable_exclusive || enable_inclusive;
-   ac_build_wg_wavescan_top(ctx, ws);
-   ws->enable_inclusive = enable_inclusive;
-   ws->enable_exclusive = enable_exclusive;
-}
-
-/**
- * "Bottom half" of a scan that reduces per-thread values across an entire
- * workgroup.
- *
- * The caller must place a barrier between the top and bottom halves.
- */
-void ac_build_wg_scan_bottom(struct ac_llvm_context *ctx, struct ac_wg_scan *ws)
-{
-   bool enable_inclusive = ws->enable_inclusive;
-   bool enable_exclusive = ws->enable_exclusive;
-   ws->enable_inclusive = false;
-   ws->enable_exclusive = ws->enable_exclusive || enable_inclusive;
-   ac_build_wg_wavescan_bottom(ctx, ws);
-   ws->enable_inclusive = enable_inclusive;
-   ws->enable_exclusive = enable_exclusive;
-
-   /* ws->result_reduce is already the correct value */
-   if (ws->enable_inclusive)
-      ws->result_inclusive = ac_build_alu_op(ctx, ws->result_inclusive, ws->src, ws->op);
-   if (ws->enable_exclusive)
-      ws->result_exclusive = ac_build_alu_op(ctx, ws->result_exclusive, ws->extra, ws->op);
-}
-
-/**
- * A scan that reduces per-thread values across an entire workgroup.
- *
- * The caller must ensure that all lanes are active when this code runs
- * (WWM is insufficient!), because there is an implied barrier.
- */
-void ac_build_wg_scan(struct ac_llvm_context *ctx, struct ac_wg_scan *ws)
-{
-   ac_build_wg_scan_top(ctx, ws);
-   ac_build_waitcnt(ctx, AC_WAIT_LGKM);
-   ac_build_s_barrier(ctx, ws->stage);
-   ac_build_wg_scan_bottom(ctx, ws);
-}
-
 static void _ac_build_dual_src_blend_swizzle(struct ac_llvm_context *ctx,
                                              LLVMValueRef *arg0, LLVMValueRef *arg1)
 {
@@ -4145,43 +3979,48 @@ void ac_build_sendmsg_gs_alloc_req(struct ac_llvm_context *ctx, LLVMValueRef wav
                                    LLVMValueRef vtx_cnt, LLVMValueRef prim_cnt)
 {
    LLVMBuilderRef builder = ctx->builder;
-   LLVMValueRef tmp;
-   bool export_dummy_prim = false;
-
-   /* HW workaround for a GPU hang with 100% culling.
-    * We always have to export at least 1 primitive.
-    * Export a degenerate triangle using vertex 0 for all 3 vertices.
-    */
-   if (prim_cnt == ctx->i32_0 && ctx->gfx_level == GFX10) {
-      assert(vtx_cnt == ctx->i32_0);
-      prim_cnt = ctx->i32_1;
-      vtx_cnt = ctx->i32_1;
-      export_dummy_prim = true;
-   }
 
    if (wave_id)
       ac_build_ifcc(ctx, LLVMBuildICmp(builder, LLVMIntEQ, wave_id, ctx->i32_0, ""), 5020);
 
-   tmp = LLVMBuildShl(builder, prim_cnt, LLVMConstInt(ctx->i32, 12, false), "");
-   tmp = LLVMBuildOr(builder, tmp, vtx_cnt, "");
-   ac_build_sendmsg(ctx, AC_SENDMSG_GS_ALLOC_REQ, tmp);
+   /* HW workaround for a GPU hang with 100% culling on GFX10.
+    * We always have to export at least 1 primitive.
+    * Export a degenerate triangle using vertex 0 for all 3 vertices.
+    * 
+    * NOTE: We rely on the caller to set the vertex count also to 0 when the primitive count is 0.
+    */
+   if (ctx->gfx_level == GFX10) {
+      ac_build_ifcc(ctx, LLVMBuildICmp(builder, LLVMIntEQ, ac_get_thread_id(ctx), ctx->i32_0, ""), 5021);
+      LLVMValueRef prim_cnt_is_0 = LLVMBuildICmp(builder, LLVMIntEQ, prim_cnt, ctx->i32_0, "");
+      ac_build_ifcc(ctx, prim_cnt_is_0, 5022);
+      {
+         LLVMValueRef x = LLVMBuildShl(builder, ctx->i32_1, LLVMConstInt(ctx->i32, 12, false), "");
+         x = LLVMBuildOr(builder, x, ctx->i32_1, "");
+         ac_build_sendmsg(ctx, AC_SENDMSG_GS_ALLOC_REQ, x);
 
-   if (export_dummy_prim) {
-      struct ac_ngg_prim prim = {0};
-      /* The vertex indices are 0,0,0. */
-      prim.passthrough = ctx->i32_0;
+         /* The vertex indices are 0, 0, 0. */
+         struct ac_ngg_prim prim = {0};
+         prim.passthrough = ctx->i32_0;
 
-      struct ac_export_args pos = {0};
-      /* The hw culls primitives with NaN. */
-      pos.out[0] = pos.out[1] = pos.out[2] = pos.out[3] = LLVMConstReal(ctx->f32, NAN);
-      pos.target = V_008DFC_SQ_EXP_POS;
-      pos.enabled_channels = 0xf;
-      pos.done = true;
+         /* The HW culls primitives with NaN. */
+         struct ac_export_args pos = {0};
+         pos.out[0] = pos.out[1] = pos.out[2] = pos.out[3] = LLVMConstReal(ctx->f32, NAN);
+         pos.target = V_008DFC_SQ_EXP_POS;
+         pos.enabled_channels = 0xf;
+         pos.done = true;
 
-      ac_build_ifcc(ctx, LLVMBuildICmp(builder, LLVMIntEQ, ac_get_thread_id(ctx), ctx->i32_0, ""),
-                    5021);
-      ac_build_export_prim(ctx, &prim);
-      ac_build_export(ctx, &pos);
+         ac_build_export_prim(ctx, &prim);
+         ac_build_export(ctx, &pos);
+      }
+      ac_build_else(ctx, 5022);
+   }
+
+   LLVMValueRef x = LLVMBuildShl(builder, prim_cnt, LLVMConstInt(ctx->i32, 12, false), "");
+   x = LLVMBuildOr(builder, x, vtx_cnt, "");
+   ac_build_sendmsg(ctx, AC_SENDMSG_GS_ALLOC_REQ, x);
+
+   if (ctx->gfx_level == GFX10) {
+      ac_build_endif(ctx, 5022);
       ac_build_endif(ctx, 5021);
    }
 
@@ -4366,34 +4205,6 @@ void ac_build_s_endpgm(struct ac_llvm_context *ctx)
    LLVMTypeRef calltype = LLVMFunctionType(ctx->voidt, NULL, 0, false);
    LLVMValueRef code = LLVMConstInlineAsm(calltype, "s_endpgm", "", true, false);
    LLVMBuildCall2(ctx->builder, calltype, code, NULL, 0, "");
-}
-
-/**
- * Convert triangle strip indices to triangle indices. This is used to decompose
- * triangle strips into triangles.
- */
-void ac_build_triangle_strip_indices_to_triangle(struct ac_llvm_context *ctx, LLVMValueRef is_odd,
-                                                 LLVMValueRef flatshade_first,
-                                                 LLVMValueRef index[3])
-{
-   LLVMBuilderRef builder = ctx->builder;
-   LLVMValueRef out[3];
-
-   /* We need to change the vertex order for odd triangles to get correct
-    * front/back facing by swapping 2 vertex indices, but we also have to
-    * keep the provoking vertex in the same place.
-    *
-    * If the first vertex is provoking, swap index 1 and 2.
-    * If the last vertex is provoking, swap index 0 and 1.
-    */
-   out[0] = LLVMBuildSelect(builder, flatshade_first, index[0],
-                            LLVMBuildSelect(builder, is_odd, index[1], index[0], ""), "");
-   out[1] = LLVMBuildSelect(builder, flatshade_first,
-                            LLVMBuildSelect(builder, is_odd, index[2], index[1], ""),
-                            LLVMBuildSelect(builder, is_odd, index[0], index[1], ""), "");
-   out[2] = LLVMBuildSelect(builder, flatshade_first,
-                            LLVMBuildSelect(builder, is_odd, index[1], index[2], ""), index[2], "");
-   memcpy(index, out, sizeof(out));
 }
 
 LLVMValueRef ac_build_is_inf_or_nan(struct ac_llvm_context *ctx, LLVMValueRef a)

@@ -46,9 +46,6 @@ emit_vertex_bo(struct anv_cmd_buffer *cmd_buffer,
          .MOCS = anv_mocs(cmd_buffer->device, addr.bo,
                           ISL_SURF_USAGE_VERTEX_BUFFER_BIT),
          .NullVertexBuffer = size == 0,
-#if GFX_VER >= 12
-         .L3BypassDisable = true,
-#endif
          .BufferStartingAddress = addr,
          .BufferSize = size
       });

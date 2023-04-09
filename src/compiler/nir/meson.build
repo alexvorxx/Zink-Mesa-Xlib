@@ -411,6 +411,7 @@ if with_tests
         'tests/control_flow_tests.cpp',
         'tests/core_tests.cpp',
         'tests/loop_analyze_tests.cpp',
+        'tests/loop_unroll_tests.cpp',
         'tests/lower_alu_width_tests.cpp',
         'tests/lower_returns_tests.cpp',
         'tests/mod_analysis_tests.cpp',

@@ -643,21 +643,6 @@ v3d_lower_nir(struct v3d_compile *c)
                 }
         }
 
-        /* CS textures may not have return_size reflecting the shadow state. */
-        nir_foreach_uniform_variable(var, c->s) {
-                const struct glsl_type *type = glsl_without_array(var->type);
-                unsigned array_len = MAX2(glsl_get_length(var->type), 1);
-
-                if (!glsl_type_is_sampler(type) ||
-                    !glsl_sampler_type_is_shadow(type))
-                        continue;
-
-                for (int i = 0; i < array_len; i++) {
-                        tex_options.lower_tex_packing[var->data.binding + i] =
-                                nir_lower_tex_packing_16;
-                }
-        }
-
         NIR_PASS(_, c->s, nir_lower_tex, &tex_options);
         NIR_PASS(_, c->s, nir_lower_system_values);
 

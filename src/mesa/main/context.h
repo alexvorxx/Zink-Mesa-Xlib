@@ -303,11 +303,7 @@ _mesa_is_gles1(const struct gl_context *ctx)
 static inline bool
 _mesa_is_gles2(const struct gl_context *ctx)
 {
-#if HAVE_OPENGL_ES_2
-   return ctx->API == API_OPENGLES2;
-#else
-   return false;
-#endif
+   return _mesa_is_api_gles2(ctx->API);
 }
 
 /**

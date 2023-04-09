@@ -203,19 +203,20 @@ convert_loop_exit_for_ssa(nir_ssa_def *def, void *void_state)
          return true;
    }
 
-   nir_foreach_use(use, def) {
+   nir_foreach_use_including_if(use, def) {
+      if (use->is_if) {
+         if (!is_if_use_inside_loop(use, state->loop))
+            all_uses_inside_loop = false;
+
+         continue;
+      }
+
       if (use->parent_instr->type == nir_instr_type_phi &&
           use->parent_instr->block == state->block_after_loop) {
          continue;
       }
 
       if (!is_use_inside_loop(use, state->loop)) {
-         all_uses_inside_loop = false;
-      }
-   }
-
-   nir_foreach_if_use(use, def) {
-      if (!is_if_use_inside_loop(use, state->loop)) {
          all_uses_inside_loop = false;
       }
    }
@@ -261,7 +262,14 @@ convert_loop_exit_for_ssa(nir_ssa_def *def, void *void_state)
    /* Run through all uses and rewrite those outside the loop to point to
     * the phi instead of pointing to the ssa-def.
     */
-   nir_foreach_use_safe(use, def) {
+   nir_foreach_use_including_if_safe(use, def) {
+      if (use->is_if) {
+         if (!is_if_use_inside_loop(use, state->loop))
+            nir_if_rewrite_condition(use->parent_if, nir_src_for_ssa(dest));
+
+         continue;
+      }
+
       if (use->parent_instr->type == nir_instr_type_phi &&
           state->block_after_loop == use->parent_instr->block) {
          continue;
@@ -269,12 +277,6 @@ convert_loop_exit_for_ssa(nir_ssa_def *def, void *void_state)
 
       if (!is_use_inside_loop(use, state->loop)) {
          nir_instr_rewrite_src(use->parent_instr, use, nir_src_for_ssa(dest));
-      }
-   }
-
-   nir_foreach_if_use_safe(use, def) {
-      if (!is_if_use_inside_loop(use, state->loop)) {
-         nir_if_rewrite_condition(use->parent_if, nir_src_for_ssa(dest));
       }
    }
 

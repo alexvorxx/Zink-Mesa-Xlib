@@ -74,6 +74,7 @@ i915_drm_winsys_create(int drmFD)
 
    idws->base.aperture_size = i915_drm_aperture_size;
    idws->base.destroy = i915_drm_winsys_destroy;
+   idws->base.get_fd = i915_drm_winsys_get_fd;
 
    idws->gem_manager = drm_intel_bufmgr_gem_init(idws->fd, idws->max_batch_size);
    drm_intel_bufmgr_gem_enable_reuse(idws->gem_manager);

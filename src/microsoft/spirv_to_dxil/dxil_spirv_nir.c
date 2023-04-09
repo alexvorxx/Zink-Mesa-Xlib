@@ -49,9 +49,12 @@ spirv_to_nir_options = {
       .float16 = true,
       .int16 = true,
       .storage_16bit = true,
+      .storage_8bit = true,
       .descriptor_indexing = true,
       .runtime_descriptor_array = true,
       .descriptor_array_non_uniform_indexing = true,
+      .image_read_without_format = true,
+      .image_write_without_format = true,
    },
    .ubo_addr_format = nir_address_format_32bit_index_offset,
    .ssbo_addr_format = nir_address_format_32bit_index_offset,
@@ -438,7 +441,7 @@ lower_yz_flip(struct nir_builder *builder, nir_instr *instr,
    return true;
 }
 
-static bool
+bool
 dxil_spirv_nir_lower_yz_flip(nir_shader *shader,
                              const struct dxil_spirv_runtime_conf *rt_conf,
                              bool *reads_sysval_ubo)
@@ -1000,7 +1003,7 @@ dxil_spirv_nir_passes(nir_shader *nir,
               nir_var_mem_ubo | nir_var_mem_push_const |
               nir_var_mem_ssbo);
 
-   if (conf->read_only_images_as_srvs) {
+   if (conf->inferred_read_only_images_as_srvs) {
       const nir_opt_access_options opt_access_options = {
          .is_vulkan = true,
       };
@@ -1088,7 +1091,7 @@ dxil_spirv_nir_passes(nir_shader *nir,
       } while (progress);
    }
 
-   if (conf->read_only_images_as_srvs)
+   if (conf->declared_read_only_images_as_srvs)
       NIR_PASS_V(nir, nir_lower_readonly_images_to_tex, true);
    nir_lower_tex_options lower_tex_options = {
       .lower_txp = UINT32_MAX,

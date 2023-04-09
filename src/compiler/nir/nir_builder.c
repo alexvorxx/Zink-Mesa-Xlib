@@ -117,7 +117,7 @@ nir_builder_alu_instr_finish_and_insert(nir_builder *build, nir_alu_instr *instr
 
    nir_ssa_dest_init(&instr->instr, &instr->dest.dest, num_components,
                      bit_size, NULL);
-   instr->dest.write_mask = (1 << num_components) - 1;
+   instr->dest.write_mask = nir_component_mask(num_components);
 
    nir_builder_instr_insert(build, &instr->instr);
 
@@ -338,7 +338,7 @@ nir_vec_scalars(nir_builder *build, nir_ssa_scalar *comp, unsigned num_component
     */
    nir_ssa_dest_init(&instr->instr, &instr->dest.dest, num_components,
                      comp[0].def->bit_size, NULL);
-   instr->dest.write_mask = (1 << num_components) - 1;
+   instr->dest.write_mask = nir_component_mask(num_components);
 
    nir_builder_instr_insert(build, &instr->instr);
 

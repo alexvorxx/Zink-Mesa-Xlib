@@ -772,8 +772,8 @@ agx_validate(UNUSED agx_context *ctx, UNUSED const char *after_str)
 }
 #endif
 
-unsigned agx_read_registers(agx_instr *I, unsigned s);
-unsigned agx_write_registers(agx_instr *I, unsigned d);
+unsigned agx_read_registers(const agx_instr *I, unsigned s);
+unsigned agx_write_registers(const agx_instr *I, unsigned d);
 bool agx_allows_16bit_immediate(agx_instr *I);
 
 struct agx_copy {
@@ -801,6 +801,13 @@ bool agx_nir_lower_address(nir_shader *shader);
 bool agx_nir_lower_ubo(nir_shader *shader);
 bool agx_nir_lower_shared_bitsize(nir_shader *shader);
 bool agx_nir_lower_frag_sidefx(nir_shader *s);
+
+struct agx_occupancy {
+   unsigned max_registers;
+   unsigned max_threads;
+};
+
+struct agx_occupancy agx_occupancy_for_register_count(unsigned halfregs);
 
 #ifdef __cplusplus
 } /* extern C */

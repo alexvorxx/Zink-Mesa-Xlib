@@ -190,9 +190,8 @@ void si_get_ir_cache_key(struct si_shader_selector *sel, bool ngg, bool es,
       shader_variant_flags |= 1 << 4;
    if (sel->screen->record_llvm_ir)
       shader_variant_flags |= 1 << 5;
-
-   /* bit gap */
-
+   if (sel->screen->info.has_image_opcodes)
+      shader_variant_flags |= 1 << 6;
    if (sel->screen->options.no_infinite_interp)
       shader_variant_flags |= 1 << 7;
    if (sel->screen->options.clamp_div_by_zero)

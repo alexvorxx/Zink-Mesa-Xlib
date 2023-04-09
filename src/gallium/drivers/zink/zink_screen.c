@@ -1208,7 +1208,6 @@ zink_get_shader_param(struct pipe_screen *pscreen,
                   PIPE_MAX_SAMPLERS);
 
    case PIPE_SHADER_CAP_DROUND_SUPPORTED:
-   case PIPE_SHADER_CAP_DFRACEXP_DLDEXP_SUPPORTED:
       return 0; /* not implemented */
 
    case PIPE_SHADER_CAP_TGSI_ANY_INOUT_DECL_RANGE:
@@ -1246,7 +1245,6 @@ zink_get_shader_param(struct pipe_screen *pscreen,
                      ZINK_MAX_SHADER_IMAGES);
       return 0;
 
-   case PIPE_SHADER_CAP_LDEXP_SUPPORTED:
    case PIPE_SHADER_CAP_MAX_HW_ATOMIC_COUNTERS:
    case PIPE_SHADER_CAP_MAX_HW_ATOMIC_COUNTER_BUFFERS:
       return 0; /* not implemented */
@@ -1500,71 +1498,58 @@ zink_destroy_screen(struct pipe_screen *pscreen)
    glsl_type_singleton_decref();
 }
 
-static bool
+static void
 choose_pdev(struct zink_screen *screen)
 {
-   uint32_t i, pdev_count;
-   VkPhysicalDevice *pdevs;
-   bool is_cpu = false;
-   VkResult result = VKSCR(EnumeratePhysicalDevices)(screen->instance, &pdev_count, NULL);
-   if (result != VK_SUCCESS) {
-      mesa_loge("ZINK: vkEnumeratePhysicalDevices failed (%s)", vk_Result_to_str(result));
-      return is_cpu;
-   }
-
-   assert(pdev_count > 0);
-
-   pdevs = malloc(sizeof(*pdevs) * pdev_count);
-   result = VKSCR(EnumeratePhysicalDevices)(screen->instance, &pdev_count, pdevs);
-   assert(result == VK_SUCCESS);
-   assert(pdev_count > 0);
-
-   VkPhysicalDeviceProperties props;
    bool cpu = debug_get_bool_option("LIBGL_ALWAYS_SOFTWARE", false) ||
               debug_get_bool_option("D3D_ALWAYS_SOFTWARE", false);
-   /* priority when multiple drivers are available (highest to lowest):
-      VK_PHYSICAL_DEVICE_TYPE_VIRTUAL_GPU
-      VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU
-      VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU
-      VK_PHYSICAL_DEVICE_TYPE_CPU
-      VK_PHYSICAL_DEVICE_TYPE_OTHER
+   if (cpu) {
+      uint32_t i, pdev_count;
+      VkPhysicalDevice *pdevs;
+      VkResult result = VKSCR(EnumeratePhysicalDevices)(screen->instance, &pdev_count, NULL);
+      if (result != VK_SUCCESS) {
+         mesa_loge("ZINK: vkEnumeratePhysicalDevices failed (%s)", vk_Result_to_str(result));
+         return;
+      }
 
-    * users should specify VK_ICD_FILENAMES since this is a standardized variable
-    * used by all vulkan applications
-    */
-   unsigned prio_map[] = {
-      [VK_PHYSICAL_DEVICE_TYPE_OTHER] = 0,
-      [VK_PHYSICAL_DEVICE_TYPE_CPU] = 1,
-      [VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU] = 2,
-      [VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU] = 3,
-      [VK_PHYSICAL_DEVICE_TYPE_VIRTUAL_GPU] = 4,
-   };
-   unsigned idx = 0;
-   int cur_prio = 0;
-   for (i = 0; i < pdev_count; ++i) {
-      VKSCR(GetPhysicalDeviceProperties)(pdevs[i], &props);
+      assert(pdev_count > 0);
 
-      if (cpu) {
+      pdevs = malloc(sizeof(*pdevs) * pdev_count);
+      result = VKSCR(EnumeratePhysicalDevices)(screen->instance, &pdev_count, pdevs);
+      assert(result == VK_SUCCESS);
+      assert(pdev_count > 0);
+
+      VkPhysicalDeviceProperties props;
+      int idx = -1;
+      for (i = 0; i < pdev_count; ++i) {
+         VKSCR(GetPhysicalDeviceProperties)(pdevs[i], &props);
+
          /* if user wants cpu, only give them cpu */
          if (props.deviceType == VK_PHYSICAL_DEVICE_TYPE_CPU) {
             idx = i;
-            cur_prio = prio_map[props.deviceType];
             break;
          }
-      } else {
-         assert(props.deviceType <= VK_PHYSICAL_DEVICE_TYPE_CPU);
-         if (prio_map[props.deviceType] > cur_prio) {
-            idx = i;
-            cur_prio = prio_map[props.deviceType];
-         }
       }
+      if (idx != -1)
+         /* valid cpu device */
+         screen->pdev = pdevs[idx];
+      free(pdevs);
+      if (idx == -1) {
+         mesa_loge("ZINK: CPU device requested but none found!");
+         return;
+      }
+   } else {
+      VkPhysicalDevice pdev;
+      unsigned pdev_count = 1;
+      VkResult result = VKSCR(EnumeratePhysicalDevices)(screen->instance, &pdev_count, &pdev);
+      if (result != VK_SUCCESS && result != VK_INCOMPLETE) {
+         mesa_loge("ZINK: vkEnumeratePhysicalDevices failed (%s)", vk_Result_to_str(result));
+         return;
+      }
+      screen->pdev = pdev;
    }
-   is_cpu = cur_prio == prio_map[VK_PHYSICAL_DEVICE_TYPE_CPU];
-   if (cpu != is_cpu)
-      goto out;
-
-   screen->pdev = pdevs[idx];
    VKSCR(GetPhysicalDeviceProperties)(screen->pdev, &screen->info.props);
+
    screen->info.device_version = screen->info.props.apiVersion;
 
    /* runtime version is the lesser of the instance version and device version */
@@ -1579,9 +1564,6 @@ choose_pdev(struct zink_screen *screen)
       screen->spirv_version = SPIRV_VERSION(1, 3);
    else
       screen->spirv_version = SPIRV_VERSION(1, 0);
-out:
-   free(pdevs);
-   return is_cpu;
 }
 
 static void
@@ -2788,9 +2770,10 @@ zink_internal_create_screen(const struct pipe_screen_config *config)
       (zink_debug & ZINK_DEBUG_VALIDATION) && !create_debug(screen))
       debug_printf("ZINK: failed to setup debug utils\n");
 
-   screen->is_cpu = choose_pdev(screen);
+   choose_pdev(screen);
    if (screen->pdev == VK_NULL_HANDLE)
       goto fail;
+   screen->is_cpu = screen->info.props.deviceType == VK_PHYSICAL_DEVICE_TYPE_CPU;
 
    update_queue_props(screen);
 

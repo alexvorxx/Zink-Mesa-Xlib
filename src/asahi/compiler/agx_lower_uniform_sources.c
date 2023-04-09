@@ -40,6 +40,7 @@ should_lower(enum agx_opcode op, agx_index uniform, unsigned src_index)
    case AGX_OPCODE_BLOCK_IMAGE_STORE:
    case AGX_OPCODE_UNIFORM_STORE:
    case AGX_OPCODE_ST_VARY:
+   case AGX_OPCODE_LOCAL_ATOMIC:
       return true;
    default:
       return false;

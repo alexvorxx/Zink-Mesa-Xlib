@@ -213,12 +213,12 @@ dzn_cmd_buffer_queue_image_range_layout_transition(struct dzn_cmd_buffer *cmdbuf
 
    dzn_foreach_aspect(aspect, range->aspectMask) {
       D3D12_RESOURCE_STATES after =
-         dzn_image_layout_to_state(image, new_layout, aspect);
+         dzn_image_layout_to_state(image, new_layout, aspect, cmdbuf->type);
       D3D12_RESOURCE_STATES before =
          (old_layout == VK_IMAGE_LAYOUT_UNDEFINED ||
           old_layout == VK_IMAGE_LAYOUT_PREINITIALIZED) ?
          D3D12_RESOURCE_STATE_COMMON :
-         dzn_image_layout_to_state(image, old_layout, aspect);
+         dzn_image_layout_to_state(image, old_layout, aspect, cmdbuf->type);
 
       uint32_t layer_count = dzn_get_layer_count(image, range);
       uint32_t level_count = dzn_get_level_count(image, range);
@@ -1150,9 +1150,19 @@ dzn_CmdPipelineBarrier2(VkCommandBuffer commandBuffer,
          ID3D12GraphicsCommandList1_ResourceBarrier(cmdbuf->cmdlist, 1, &aliasing_barrier);
       }
 
+      VkImageLayout old_layout = ibarrier->oldLayout;
+      VkImageLayout new_layout = ibarrier->newLayout;
+      if ((image->vk.usage & VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT) &&
+          old_layout == VK_IMAGE_LAYOUT_GENERAL &&
+          (ibarrier->srcAccessMask & VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT))
+         old_layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+      if ((image->vk.usage & VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT) &&
+          new_layout == VK_IMAGE_LAYOUT_GENERAL &&
+          (ibarrier->dstAccessMask & VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT))
+         new_layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
       dzn_cmd_buffer_queue_image_range_layout_transition(cmdbuf, image, range,
-                                                         ibarrier->oldLayout,
-                                                         ibarrier->newLayout,
+                                                         old_layout,
+                                                         new_layout,
                                                          DZN_QUEUE_TRANSITION_FLUSH);
    }
 }
@@ -1480,6 +1490,9 @@ dzn_CmdPipelineBarrier2_enhanced(VkCommandBuffer commandBuffer,
    VK_MULTIALLOC_DECL(&ma, D3D12_GLOBAL_BARRIER, global_barriers, info->memoryBarrierCount);
    VK_MULTIALLOC_DECL(&ma, D3D12_BUFFER_BARRIER, buffer_barriers, num_buffer_barriers);
    VK_MULTIALLOC_DECL(&ma, D3D12_TEXTURE_BARRIER, texture_barriers, num_image_barriers);
+
+   if (ma.size == 0)
+      return;
 
    if (!vk_multialloc_alloc(&ma, &cmdbuf->vk.pool->alloc,
                             VK_SYSTEM_ALLOCATION_SCOPE_COMMAND)) {
@@ -3159,19 +3172,21 @@ dzn_cmd_buffer_update_heaps(struct dzn_cmd_buffer *cmdbuf, uint32_t bindpoint)
          cmdbuf->state.heaps[h] = new_heaps[h];
    }
 
-   for (uint32_t r = 0; r < pipeline->root.sets_param_count; r++) {
-      D3D12_DESCRIPTOR_HEAP_TYPE type = pipeline->root.type[r];
+   if (!device->bindless) {
+      for (uint32_t r = 0; r < pipeline->root.sets_param_count; r++) {
+         D3D12_DESCRIPTOR_HEAP_TYPE type = pipeline->root.type[r];
 
-      if (!update_root_desc_table[type])
-         continue;
+         if (!update_root_desc_table[type])
+            continue;
 
-      D3D12_GPU_DESCRIPTOR_HANDLE handle =
-         dzn_descriptor_heap_get_gpu_handle(new_heaps[type], new_heap_offsets[type]);
+         D3D12_GPU_DESCRIPTOR_HANDLE handle =
+            dzn_descriptor_heap_get_gpu_handle(new_heaps[type], new_heap_offsets[type]);
 
-      if (bindpoint == VK_PIPELINE_BIND_POINT_GRAPHICS)
-         ID3D12GraphicsCommandList1_SetGraphicsRootDescriptorTable(cmdbuf->cmdlist, r, handle);
-      else
-         ID3D12GraphicsCommandList1_SetComputeRootDescriptorTable(cmdbuf->cmdlist, r, handle);
+         if (bindpoint == VK_PIPELINE_BIND_POINT_GRAPHICS)
+            ID3D12GraphicsCommandList1_SetGraphicsRootDescriptorTable(cmdbuf->cmdlist, r, handle);
+         else
+            ID3D12GraphicsCommandList1_SetComputeRootDescriptorTable(cmdbuf->cmdlist, r, handle);
+      }
    }
 
    if (device->bindless) {
@@ -3214,8 +3229,10 @@ dzn_cmd_buffer_update_heaps(struct dzn_cmd_buffer *cmdbuf, uint32_t bindpoint)
                const struct dzn_buffer_desc *bdesc = &set->dynamic_buffers[o];
                struct dxil_spirv_bindless_entry *map_entry = &map[pipeline->sets[s].dynamic_buffer_heap_offsets[o].primary];
                if (*bdesc->bindless_descriptor_slot >= 0) {
+                  uint32_t embedded_offset = (bdesc->offset / D3D12_RAW_UAV_SRV_BYTE_ALIGNMENT) * D3D12_RAW_UAV_SRV_BYTE_ALIGNMENT;
+                  uint32_t additional_offset = bdesc->offset - embedded_offset;
                   map_entry->buffer_idx = *bdesc->bindless_descriptor_slot;
-                  map_entry->buffer_offset = desc_state->sets[s].dynamic_offsets[o];
+                  map_entry->buffer_offset = additional_offset + desc_state->sets[s].dynamic_offsets[o];
                } else {
                   map_entry->buffer_idx = bdesc->type == VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC ?
                      bdesc->buffer->uav_bindless_slot : bdesc->buffer->cbv_bindless_slot;
@@ -4402,8 +4419,8 @@ dzn_cmd_buffer_resolve_rendering_attachment(struct dzn_cmd_buffer *cmdbuf,
       dst_range.layerCount = 1;
    }
 
-   D3D12_RESOURCE_STATES src_state = dzn_image_layout_to_state(src_img, src_layout, aspect);
-   D3D12_RESOURCE_STATES dst_state = dzn_image_layout_to_state(dst_img, dst_layout, aspect);
+   D3D12_RESOURCE_STATES src_state = dzn_image_layout_to_state(src_img, src_layout, aspect, cmdbuf->type);
+   D3D12_RESOURCE_STATES dst_state = dzn_image_layout_to_state(dst_img, dst_layout, aspect, cmdbuf->type);
    D3D12_BARRIER_LAYOUT src_restore_layout = D3D12_BARRIER_LAYOUT_COMMON,
       src_needed_layout = D3D12_BARRIER_LAYOUT_DIRECT_QUEUE_GENERIC_READ;
    D3D12_BARRIER_LAYOUT dst_restore_layout = D3D12_BARRIER_LAYOUT_COMMON,
@@ -4505,11 +4522,18 @@ dzn_rendering_attachment_initial_transition(struct dzn_cmd_buffer *cmdbuf,
          access_before = D3D12_BARRIER_ACCESS_NO_ACCESS;
       }
 
+      D3D12_BARRIER_LAYOUT layout_before = dzn_vk_layout_to_d3d_layout(initial_layout->initialLayout, cmdbuf->type, aspect);
+      D3D12_BARRIER_LAYOUT layout_after = dzn_vk_layout_to_d3d_layout(att->imageLayout, cmdbuf->type, aspect);
+      if (image->desc.Flags & D3D12_RESOURCE_FLAG_ALLOW_SIMULTANEOUS_ACCESS) {
+         layout_before = D3D12_BARRIER_LAYOUT_UNDEFINED;
+         layout_after = D3D12_BARRIER_LAYOUT_UNDEFINED;
+      }
+
       dzn_cmd_buffer_image_barrier(cmdbuf, image,
                                    sync_before, D3D12_BARRIER_SYNC_DRAW,
                                    access_before, D3D12_BARRIER_ACCESS_COMMON,
-                                   dzn_vk_layout_to_d3d_layout(initial_layout->initialLayout, cmdbuf->type, aspect),
-                                   dzn_vk_layout_to_d3d_layout(att->imageLayout, cmdbuf->type, aspect),
+                                   layout_before,
+                                   layout_after,
                                    &range);
    } else {
       dzn_cmd_buffer_queue_image_range_layout_transition(cmdbuf, image, &range,

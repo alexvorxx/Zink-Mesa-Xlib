@@ -181,7 +181,6 @@ VkResult genX(CreateQueryPool)(
    case VK_QUERY_TYPE_ACCELERATION_STRUCTURE_SERIALIZATION_BOTTOM_LEVEL_POINTERS_KHR:
       uint64s_per_slot = 1 + 2 /* availability + size (PostbuildInfoSerializationDesc) */;
       break;
-      break;
 
 #endif
    case VK_QUERY_TYPE_RESULT_STATUS_ONLY_KHR:
@@ -783,6 +782,19 @@ void genX(CmdResetQueryPool)(
 {
    ANV_FROM_HANDLE(anv_cmd_buffer, cmd_buffer, commandBuffer);
    ANV_FROM_HANDLE(anv_query_pool, pool, queryPool);
+   struct anv_physical_device *pdevice = cmd_buffer->device->physical;
+
+   if (queryCount >= pdevice->instance->query_clear_with_blorp_threshold) {
+      anv_cmd_buffer_fill_area(cmd_buffer,
+                               anv_query_address(pool, firstQuery),
+                               queryCount * pool->stride,
+                               0);
+
+      anv_add_pending_pipe_bits(cmd_buffer,
+                                ANV_PIPE_QUERY_CLEARS_BIT,
+                                "vkCmdResetQueryPool of timestamps");
+      return;
+   }
 
    switch (pool->type) {
    case VK_QUERY_TYPE_OCCLUSION:
@@ -963,6 +975,22 @@ emit_perf_intel_query(struct anv_cmd_buffer *cmd_buffer,
    }
 }
 
+static void
+emit_query_clear_flush(struct anv_cmd_buffer *cmd_buffer,
+                       struct anv_query_pool *pool,
+                       const char *reason)
+{
+   if ((cmd_buffer->state.pending_pipe_bits & ANV_PIPE_QUERY_CLEARS_BIT) == 0)
+      return;
+
+   anv_add_pending_pipe_bits(cmd_buffer,
+                             ANV_PIPE_QUERY_FLUSH_BITS |
+                             ANV_PIPE_END_OF_PIPE_SYNC_BIT,
+                             reason);
+   genX(cmd_buffer_apply_pipe_flushes)(cmd_buffer);
+}
+
+
 void genX(CmdBeginQuery)(
     VkCommandBuffer                             commandBuffer,
     VkQueryPool                                 queryPool,
@@ -982,6 +1010,8 @@ void genX(CmdBeginQueryIndexedEXT)(
    ANV_FROM_HANDLE(anv_cmd_buffer, cmd_buffer, commandBuffer);
    ANV_FROM_HANDLE(anv_query_pool, pool, queryPool);
    struct anv_address query_addr = anv_query_address(pool, query);
+
+   emit_query_clear_flush(cmd_buffer, pool, "CmdBeginQuery* flush query clears");
 
    struct mi_builder b;
    mi_builder_init(&b, cmd_buffer->device->info, &cmd_buffer->batch);
@@ -1352,6 +1382,9 @@ void genX(CmdWriteTimestamp2)(
 
    assert(pool->type == VK_QUERY_TYPE_TIMESTAMP);
 
+   emit_query_clear_flush(cmd_buffer, pool,
+                          "CmdWriteTimestamp flush query clears");
+
    struct mi_builder b;
    mi_builder_init(&b, cmd_buffer->device->info, &cmd_buffer->batch);
 
@@ -1472,37 +1505,56 @@ void genX(CmdCopyQueryPoolResults)(
     * to ensure proper ordering of the commands from the 3d pipe and the
     * command streamer.
     */
-   if (cmd_buffer->state.pending_pipe_bits & ANV_PIPE_RENDER_TARGET_BUFFER_WRITES) {
+   const bool need_flushes =
+      (cmd_buffer->state.pending_pipe_bits &
+       (ANV_PIPE_RENDER_TARGET_BUFFER_WRITES |
+        ANV_PIPE_QUERY_CLEARS_BIT));
+
+   if (need_flushes) {
       anv_add_pending_pipe_bits(cmd_buffer,
-                                ANV_PIPE_TILE_CACHE_FLUSH_BIT |
-                                ANV_PIPE_RENDER_TARGET_CACHE_FLUSH_BIT,
+                                ANV_PIPE_QUERY_FLUSH_BITS | ANV_PIPE_CS_STALL_BIT,
                                 "CopyQueryPoolResults");
    }
 
-   if ((flags & VK_QUERY_RESULT_WAIT_BIT) ||
-       (cmd_buffer->state.pending_pipe_bits & ANV_PIPE_FLUSH_BITS) ||
-       /* Occlusion & timestamp queries are written using a PIPE_CONTROL and
-        * because we're about to copy values from MI commands, we need to
-        * stall the command streamer to make sure the PIPE_CONTROL values have
-        * landed, otherwise we could see inconsistent values & availability.
-        *
-        *  From the vulkan spec:
-        *
-        *     "vkCmdCopyQueryPoolResults is guaranteed to see the effect of
-        *     previous uses of vkCmdResetQueryPool in the same queue, without
-        *     any additional synchronization."
-        */
-       pool->type == VK_QUERY_TYPE_OCCLUSION ||
-       pool->type == VK_QUERY_TYPE_TIMESTAMP) {
+   bool need_cs_stall =
+      (cmd_buffer->state.pending_pipe_bits & ANV_PIPE_FLUSH_BITS) ||
+      /* Occlusion & timestamp queries are written using a PIPE_CONTROL and
+       * because we're about to copy values from MI commands, we need to stall
+       * the command streamer to make sure the PIPE_CONTROL values have
+       * landed, otherwise we could see inconsistent values & availability.
+       *
+       *  From the vulkan spec:
+       *
+       *     "vkCmdCopyQueryPoolResults is guaranteed to see the effect of
+       *     previous uses of vkCmdResetQueryPool in the same queue, without
+       *     any additional synchronization."
+       */
+      pool->type == VK_QUERY_TYPE_OCCLUSION ||
+      pool->type == VK_QUERY_TYPE_TIMESTAMP;
+
+   if (need_cs_stall) {
       anv_add_pending_pipe_bits(cmd_buffer,
                                 ANV_PIPE_CS_STALL_BIT,
-                                "CopyQueryPoolResults");
-      genX(cmd_buffer_apply_pipe_flushes)(cmd_buffer);
+                                "CopyQueryPoolResults stall");
    }
+
+   if (need_cs_stall || need_flushes)
+      genX(cmd_buffer_apply_pipe_flushes)(cmd_buffer);
 
    struct anv_address dest_addr = anv_address_add(buffer->address, destOffset);
    for (uint32_t i = 0; i < queryCount; i++) {
       struct anv_address query_addr = anv_query_address(pool, firstQuery + i);
+
+      /* Wait for the availability write to land before we go read the data */
+      if (flags & VK_QUERY_RESULT_WAIT_BIT) {
+          anv_batch_emit(&cmd_buffer->batch, GENX(MI_SEMAPHORE_WAIT), sem) {
+             sem.WaitMode            = PollingMode;
+             sem.CompareOperation    = COMPARE_SAD_EQUAL_SDD;
+             sem.SemaphoreDataDword  = true;
+             sem.SemaphoreAddress    = query_addr;
+          }
+      }
+
       uint32_t idx = 0;
       switch (pool->type) {
       case VK_QUERY_TYPE_OCCLUSION:

@@ -1,4 +1,4 @@
-glx@glx-make-current,Crash
+glx@glx-make-current,Fail
 glx@glx-multi-window-single-context,Fail
 glx@glx-swap-event_async,Fail
 glx@glx-swap-pixmap-bad,Fail

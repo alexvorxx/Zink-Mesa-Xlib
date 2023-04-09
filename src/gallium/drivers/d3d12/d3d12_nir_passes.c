@@ -118,53 +118,6 @@ d3d12_lower_yflip(nir_shader *nir)
 }
 
 static void
-lower_load_face(nir_builder *b, struct nir_instr *instr, nir_variable *var)
-{
-   if (instr->type != nir_instr_type_intrinsic)
-      return;
-
-   nir_intrinsic_instr *intr = nir_instr_as_intrinsic(instr);
-   if (intr->intrinsic != nir_intrinsic_load_front_face)
-      return;
-
-   b->cursor = nir_before_instr(&intr->instr);
-
-   nir_ssa_def *load = nir_ine_imm(b, nir_load_var(b, var), 0);
-
-   nir_ssa_def_rewrite_uses(&intr->dest.ssa, load);
-   nir_instr_remove(instr);
-}
-
-void
-d3d12_forward_front_face(nir_shader *nir)
-{
-   assert(nir->info.stage == MESA_SHADER_FRAGMENT);
-
-   nir_variable *var = nir_variable_create(nir, nir_var_shader_in,
-                                           glsl_uint_type(),
-                                           "gl_FrontFacing");
-   var->data.location = VARYING_SLOT_VAR12;
-   var->data.interpolation = INTERP_MODE_FLAT;
-
-
-   nir_foreach_function(function, nir) {
-      if (function->impl) {
-         nir_builder b;
-         nir_builder_init(&b, function->impl);
-
-         nir_foreach_block(block, function->impl) {
-            nir_foreach_instr_safe(instr, block) {
-               lower_load_face(&b, instr, var);
-            }
-         }
-
-         nir_metadata_preserve(function->impl, nir_metadata_block_index |
-                                               nir_metadata_dominance);
-      }
-   }
-}
-
-static void
 lower_pos_read(nir_builder *b, struct nir_instr *instr,
                nir_variable **depth_transform_var)
 {

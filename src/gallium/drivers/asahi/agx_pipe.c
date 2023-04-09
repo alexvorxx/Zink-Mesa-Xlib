@@ -28,6 +28,7 @@
 #include "util/format/u_format.h"
 #include "util/half_float.h"
 #include "util/u_drm.h"
+#include "util/u_gen_mipmap.h"
 #include "util/u_inlines.h"
 #include "util/u_memory.h"
 #include "util/u_screen.h"
@@ -66,6 +67,7 @@ static const struct debug_named_value agx_debug_options[] = {
    {"nocluster", AGX_DBG_NOCLUSTER,"Disable vertex clustering"},
    {"sync",      AGX_DBG_SYNC,     "Synchronously wait for all submissions"},
    {"stats",     AGX_DBG_STATS,    "Show command execution statistics"},
+   {"resource",  AGX_DBG_RESOURCE, "Log resource operations"},
    DEBUG_NAMED_VALUE_END
 };
 /* clang-format on */
@@ -95,6 +97,57 @@ ail_modifier_to_tiling(uint64_t modifier)
    default:
       unreachable("Unsupported modifier");
    }
+}
+
+const static char *s_tiling[] = {
+   [AIL_TILING_LINEAR] = "LINR",
+   [AIL_TILING_TWIDDLED] = "TWID",
+   [AIL_TILING_TWIDDLED_COMPRESSED] = "COMP",
+};
+
+#define rsrc_debug(res, ...)                                                   \
+   do {                                                                        \
+      if (agx_device((res)->base.screen)->debug & AGX_DBG_RESOURCE)            \
+         agx_msg(__VA_ARGS__);                                                 \
+   } while (0)
+
+static void
+agx_resource_debug(struct agx_resource *res, const char *msg)
+{
+   if (!(agx_device(res->base.screen)->debug & AGX_DBG_RESOURCE))
+      return;
+
+   int ino = -1;
+   if (res->bo->prime_fd >= 0) {
+      struct stat sb;
+      if (!fstat(res->bo->prime_fd, &sb))
+         ino = sb.st_ino;
+   }
+
+   agx_msg(
+      "%s%s %dx%dx%d %dL %d/%dM %dS M:%llx %s %s%s S:0x%llx LS:0x%llx CS:0x%llx "
+      "Base=0x%llx Size=0x%llx Meta=0x%llx/0x%llx (%s) %s%s%s%s%s%sfd:%d(%d) @ %p\n",
+      msg ?: "", util_format_short_name(res->base.format), res->base.width0,
+      res->base.height0, res->base.depth0, res->base.array_size,
+      res->base.last_level, res->layout.levels, res->layout.sample_count_sa,
+      (long long)res->modifier, s_tiling[res->layout.tiling],
+      res->layout.mipmapped_z ? "MZ " : "",
+      res->layout.page_aligned_layers ? "PL " : "",
+      (long long)res->layout.linear_stride_B,
+      (long long)res->layout.layer_stride_B,
+      (long long)res->layout.compression_layer_stride_B,
+      (long long)res->bo->ptr.gpu, (long long)res->layout.size_B,
+      res->layout.metadata_offset_B
+         ? ((long long)res->bo->ptr.gpu + res->layout.metadata_offset_B)
+         : 0,
+      (long long)res->layout.metadata_offset_B, res->bo->label,
+      res->bo->flags & AGX_BO_SHARED ? "SH " : "",
+      res->bo->flags & AGX_BO_LOW_VA ? "LO " : "",
+      res->bo->flags & AGX_BO_EXEC ? "EX " : "",
+      res->bo->flags & AGX_BO_WRITEBACK ? "WB " : "",
+      res->bo->flags & AGX_BO_SHAREABLE ? "SA " : "",
+      res->bo->flags & AGX_BO_READONLY ? "RO " : "", res->bo->prime_fd, ino,
+      res);
 }
 
 static void
@@ -170,11 +223,12 @@ agx_resource_from_handle(struct pipe_screen *pscreen,
 
    ail_make_miptree(&rsc->layout);
 
-   if (dev->ro) {
-      rsc->scanout =
-         renderonly_create_gpu_import_for_resource(prsc, dev->ro, NULL);
-      /* failure is expected in some cases.. */
+   if (prsc->target == PIPE_BUFFER) {
+      assert(rsc->layout.tiling == AIL_TILING_LINEAR);
+      util_range_init(&rsc->valid_buffer_range);
    }
+
+   agx_resource_debug(rsc, "Import: ");
 
    return prsc;
 }
@@ -185,7 +239,6 @@ agx_resource_get_handle(struct pipe_screen *pscreen, struct pipe_context *ctx,
                         unsigned usage)
 {
    struct agx_device *dev = agx_device(pscreen);
-   struct renderonly_scanout *scanout;
    struct pipe_resource *cur = pt;
 
    /* Even though asahi doesn't support multi-planar formats, we
@@ -198,12 +251,23 @@ agx_resource_get_handle(struct pipe_screen *pscreen, struct pipe_context *ctx,
          return false;
    }
 
-   struct agx_resource *rsrc = (struct agx_resource *)cur;
-   scanout = rsrc->scanout;
+   struct agx_resource *rsrc = agx_resource(cur);
 
    if (handle->type == WINSYS_HANDLE_TYPE_KMS && dev->ro) {
-      return renderonly_get_handle(scanout, handle);
+      rsrc_debug(rsrc, "Get handle: %p (KMS RO)\n", rsrc);
+
+      if (!rsrc->scanout && dev->ro && (rsrc->base.bind & PIPE_BIND_SCANOUT)) {
+         rsrc->scanout =
+            renderonly_scanout_for_resource(&rsrc->base, dev->ro, NULL);
+      }
+
+      if (!rsrc->scanout)
+         return false;
+
+      return renderonly_get_handle(rsrc->scanout, handle);
    } else if (handle->type == WINSYS_HANDLE_TYPE_KMS) {
+      rsrc_debug(rsrc, "Get handle: %p (KMS)\n", rsrc);
+
       handle->handle = rsrc->bo->handle;
    } else if (handle->type == WINSYS_HANDLE_TYPE_FD) {
       int fd = agx_bo_export(rsrc->bo);
@@ -212,6 +276,11 @@ agx_resource_get_handle(struct pipe_screen *pscreen, struct pipe_context *ctx,
          return false;
 
       handle->handle = fd;
+      if (dev->debug & AGX_DBG_RESOURCE) {
+         struct stat sb;
+         fstat(rsrc->bo->prime_fd, &sb);
+         agx_msg("Get handle: %p (FD %d/%ld)\n", rsrc, fd, (long)sb.st_ino);
+      }
    } else {
       /* Other handle types not supported */
       return false;
@@ -281,6 +350,7 @@ agx_linear_allowed(const struct agx_resource *pres)
    /* 1D is always linear */
    case PIPE_BUFFER:
    case PIPE_TEXTURE_1D:
+   case PIPE_TEXTURE_1D_ARRAY:
 
    /* Linear textures require specifying their strides explicitly, which only
     * works for 2D textures. Rectangle textures are a special case of 2D.
@@ -302,12 +372,11 @@ static bool
 agx_twiddled_allowed(const struct agx_resource *pres)
 {
    /* Certain binds force linear */
-   if (pres->base.bind &
-       (PIPE_BIND_DISPLAY_TARGET | PIPE_BIND_SCANOUT | PIPE_BIND_LINEAR))
+   if (pres->base.bind & (PIPE_BIND_DISPLAY_TARGET | PIPE_BIND_LINEAR))
       return false;
 
-   /* Buffers must be linear, and it does not make sense to twiddle 1D */
-   if (pres->base.target == PIPE_BUFFER || pres->base.target == PIPE_TEXTURE_1D)
+   /* Buffers must be linear */
+   if (pres->base.target == PIPE_BUFFER)
       return false;
 
    /* Anything else may be twiddled */
@@ -318,21 +387,28 @@ static bool
 agx_compression_allowed(const struct agx_resource *pres)
 {
    /* Allow disabling compression for debugging */
-   if (agx_device(pres->base.screen)->debug & AGX_DBG_NOCOMPRESS)
+   if (agx_device(pres->base.screen)->debug & AGX_DBG_NOCOMPRESS) {
+      rsrc_debug(pres, "No compression: disabled\n");
       return false;
+   }
 
    /* Limited to renderable */
    if (pres->base.bind &
        ~(PIPE_BIND_SAMPLER_VIEW | PIPE_BIND_RENDER_TARGET |
-         PIPE_BIND_DEPTH_STENCIL | PIPE_BIND_SHARED | PIPE_BIND_SCANOUT))
+         PIPE_BIND_DEPTH_STENCIL | PIPE_BIND_SHARED | PIPE_BIND_SCANOUT)) {
+      rsrc_debug(pres, "No compression: not renderable\n");
       return false;
+   }
 
    /* We use the PBE for compression via staging blits, so we can only compress
     * renderable formats. As framebuffer compression, other formats don't make a
     * ton of sense to compress anyway.
     */
-   if (!agx_pixel_format[pres->base.format].renderable)
+   if (!agx_pixel_format[pres->base.format].renderable &&
+       !util_format_is_depth_or_stencil(pres->base.format)) {
+      rsrc_debug(pres, "No compression: format not renderable\n");
       return false;
+   }
 
    /* Lossy-compressed texture formats cannot be compressed */
    assert(!util_format_is_compressed(pres->base.format) &&
@@ -343,12 +419,16 @@ agx_compression_allowed(const struct agx_resource *pres)
     * could be worked around with more sophisticated blit code.
     */
    if (pres->base.target != PIPE_TEXTURE_2D &&
-       pres->base.target != PIPE_TEXTURE_RECT)
+       pres->base.target != PIPE_TEXTURE_RECT) {
+      rsrc_debug(pres, "No compression: array/cube\n");
       return false;
+   }
 
    /* Small textures cannot (should not?) be compressed */
-   if (pres->base.width0 < 16 || pres->base.height0 < 16)
+   if (pres->base.width0 < 16 || pres->base.height0 < 16) {
+      rsrc_debug(pres, "No compression: too small\n");
       return false;
+   }
 
    return true;
 }
@@ -382,6 +462,14 @@ agx_select_best_modifier(const struct agx_resource *pres)
     */
    if (agx_linear_allowed(pres) && pres->base.usage == PIPE_USAGE_STAGING)
       return DRM_FORMAT_MOD_LINEAR;
+
+   /* For SCANOUT resources with no explicit modifier selection, assume we need
+    * linear.
+    */
+   if (pres->base.bind & PIPE_BIND_SCANOUT) {
+      assert(agx_linear_allowed(pres));
+      return DRM_FORMAT_MOD_LINEAR;
+   }
 
    if (agx_twiddled_allowed(pres)) {
       if (agx_compression_allowed(pres))
@@ -438,44 +526,9 @@ agx_resource_create_with_modifiers(struct pipe_screen *screen,
 
    ail_make_miptree(&nresource->layout);
 
-   if (dev->ro && (templ->bind & PIPE_BIND_SCANOUT)) {
-      struct winsys_handle handle;
-      assert(util_format_get_blockwidth(templ->format) == 1);
-      assert(util_format_get_blockheight(templ->format) == 1);
-
-      unsigned width = templ->width0;
-      unsigned stride =
-         templ->width0 * util_format_get_blocksize(templ->format);
-      unsigned size = nresource->layout.size_B;
-      unsigned effective_rows = DIV_ROUND_UP(size, stride);
-
-      struct pipe_resource scanout_tmpl = {
-         .target = nresource->base.target,
-         .format = templ->format,
-         .width0 = width,
-         .height0 = effective_rows,
-         .depth0 = 1,
-         .array_size = 1,
-      };
-
-      nresource->scanout =
-         renderonly_scanout_for_resource(&scanout_tmpl, dev->ro, &handle);
-
-      if (!nresource->scanout) {
-         fprintf(stderr, "Failed to create scanout resource\n");
-         free(nresource);
-         return NULL;
-      }
-      assert(handle.type == WINSYS_HANDLE_TYPE_FD);
-      nresource->bo = agx_bo_import(dev, handle.handle);
-      close(handle.handle);
-
-      if (!nresource->bo) {
-         free(nresource);
-         return NULL;
-      }
-
-      return &nresource->base;
+   if (templ->target == PIPE_BUFFER) {
+      assert(nresource->layout.tiling == AIL_TILING_LINEAR);
+      util_range_init(&nresource->valid_buffer_range);
    }
 
    if (winsys && templ->bind & PIPE_BIND_DISPLAY_TARGET) {
@@ -541,6 +594,7 @@ agx_resource_create_with_modifiers(struct pipe_screen *screen,
       return NULL;
    }
 
+   agx_resource_debug(nresource, "New: ");
    return &nresource->base;
 }
 
@@ -556,6 +610,11 @@ agx_resource_destroy(struct pipe_screen *screen, struct pipe_resource *prsrc)
 {
    struct agx_resource *rsrc = (struct agx_resource *)prsrc;
    struct agx_screen *agx_screen = (struct agx_screen *)screen;
+
+   agx_resource_debug(rsrc, "Destroy: ");
+
+   if (prsrc->target == PIPE_BUFFER)
+      util_range_destroy(&rsrc->valid_buffer_range);
 
    if (rsrc->dt) {
       /* display target */
@@ -632,11 +691,23 @@ agx_prepare_for_map(struct agx_context *ctx, struct agx_resource *rsrc,
    if (usage & PIPE_MAP_UNSYNCHRONIZED)
       return;
 
+   /* Everything after this needs the context, which is not safe for
+    * unsynchronized transfers when we claim
+    * PIPE_CAP_MAP_UNSYNCHRONIZED_THREAD_SAFE.
+    */
+   assert(!(usage & PIPE_MAP_UNSYNCHRONIZED));
+
    /* Both writing and reading need writers synced */
    agx_sync_writer(ctx, rsrc, "Unsynchronized transfer");
 
    /* Additionally, writing needs readers synced */
    if (!(usage & PIPE_MAP_WRITE))
+      return;
+
+   /* If the range being written is uninitialized, we do not need to sync. */
+   if (rsrc->base.target == PIPE_BUFFER && !(rsrc->bo->flags & AGX_BO_SHARED) &&
+       !util_ranges_intersect(&rsrc->valid_buffer_range, box->x,
+                              box->x + box->width))
       return;
 
    /* If there are no readers, we're done. We check at the start to
@@ -658,10 +729,9 @@ agx_prepare_for_map(struct agx_context *ctx, struct agx_resource *rsrc,
  * Code adapted from panfrost */
 
 static struct agx_resource *
-agx_alloc_staging(struct agx_context *ctx, struct agx_resource *rsc,
+agx_alloc_staging(struct pipe_screen *screen, struct agx_resource *rsc,
                   unsigned level, const struct pipe_box *box)
 {
-   struct pipe_context *pctx = &ctx->base;
    struct pipe_resource tmpl = rsc->base;
 
    tmpl.width0 = box->width;
@@ -682,8 +752,7 @@ agx_alloc_staging(struct agx_context *ctx, struct agx_resource *rsc,
    tmpl.last_level = 0;
    tmpl.bind |= PIPE_BIND_LINEAR;
 
-   struct pipe_resource *pstaging =
-      pctx->screen->resource_create(pctx->screen, &tmpl);
+   struct pipe_resource *pstaging = screen->resource_create(screen, &tmpl);
    if (!pstaging)
       return NULL;
 
@@ -750,6 +819,17 @@ agx_transfer_map(struct pipe_context *pctx, struct pipe_resource *resource,
 
    agx_prepare_for_map(ctx, rsrc, level, usage, box);
 
+   /* Track the written buffer range */
+   if (resource->target == PIPE_BUFFER) {
+      /* Note the ordering: DISCARD|WRITE is valid, so clear before adding. */
+      if (usage & PIPE_MAP_DISCARD_WHOLE_RESOURCE)
+         util_range_set_empty(&rsrc->valid_buffer_range);
+      if (usage & PIPE_MAP_WRITE) {
+         util_range_add(resource, &rsrc->valid_buffer_range, box->x,
+                        box->x + box->width);
+      }
+   }
+
    struct agx_transfer *transfer = CALLOC_STRUCT(agx_transfer);
    transfer->base.level = level;
    transfer->base.usage = usage;
@@ -763,7 +843,11 @@ agx_transfer_map(struct pipe_context *pctx, struct pipe_resource *resource,
     * twiddled too, but we don't have a use case for that yet.
     */
    if (rsrc->modifier == DRM_FORMAT_MOD_APPLE_TWIDDLED_COMPRESSED) {
-      struct agx_resource *staging = agx_alloc_staging(ctx, rsrc, level, box);
+      /* Should never happen for buffers, and it's not safe */
+      assert(resource->target != PIPE_BUFFER);
+
+      struct agx_resource *staging =
+         agx_alloc_staging(pctx->screen, rsrc, level, box);
       assert(staging);
 
       /* Staging resources have one LOD: level 0. Query the strides
@@ -792,6 +876,9 @@ agx_transfer_map(struct pipe_context *pctx, struct pipe_resource *resource,
    agx_bo_mmap(rsrc->bo);
 
    if (rsrc->modifier == DRM_FORMAT_MOD_APPLE_TWIDDLED) {
+      /* Should never happen for buffers, and it's not safe */
+      assert(resource->target != PIPE_BUFFER);
+
       transfer->base.stride =
          util_format_get_stride(rsrc->layout.format, box->width);
 
@@ -842,6 +929,7 @@ agx_transfer_unmap(struct pipe_context *pctx, struct pipe_transfer *transfer)
    struct agx_resource *rsrc = (struct agx_resource *)prsrc;
 
    if (trans->staging.rsrc && (transfer->usage & PIPE_MAP_WRITE)) {
+      assert(prsrc->target != PIPE_BUFFER);
       agx_blit_from_staging(pctx, trans);
       agx_flush_readers(agx_context(pctx), agx_resource(trans->staging.rsrc),
                         "GPU write staging blit");
@@ -870,6 +958,27 @@ agx_transfer_unmap(struct pipe_context *pctx, struct pipe_transfer *transfer)
    pipe_resource_reference(&trans->staging.rsrc, NULL);
    pipe_resource_reference(&transfer->resource, NULL);
    FREE(transfer);
+}
+
+static bool
+agx_generate_mipmap(struct pipe_context *pctx, struct pipe_resource *prsrc,
+                    enum pipe_format format, unsigned base_level,
+                    unsigned last_level, unsigned first_layer,
+                    unsigned last_layer)
+{
+   struct agx_resource *rsrc = agx_resource(prsrc);
+
+   /* Generating a mipmap invalidates the written levels. Make that
+    * explicit so we don't reload the previous contents.
+    */
+   for (unsigned l = base_level + 1; l <= last_level; ++l)
+      BITSET_CLEAR(rsrc->data_valid, l);
+
+   /* For now we use util_gen_mipmap, but this has way too much overhead */
+   perf_debug_ctx(agx_context(pctx), "Unoptimized mipmap generation");
+
+   return util_gen_mipmap(pctx, prsrc, format, base_level, last_level,
+                          first_layer, last_layer, PIPE_TEX_FILTER_LINEAR);
 }
 
 /*
@@ -1206,6 +1315,7 @@ agx_create_context(struct pipe_screen *screen, void *priv, unsigned flags)
    pctx->clear = agx_clear;
    pctx->resource_copy_region = util_resource_copy_region;
    pctx->blit = agx_blit;
+   pctx->generate_mipmap = agx_generate_mipmap;
    pctx->flush_resource = agx_flush_resource;
 
    pctx->buffer_map = u_transfer_helper_transfer_map;
@@ -1331,10 +1441,12 @@ agx_get_param(struct pipe_screen *pscreen, enum pipe_cap param)
    case PIPE_CAP_FBFETCH:
    case PIPE_CAP_FBFETCH_COHERENT:
       return 8;
+
    case PIPE_CAP_MAX_DUAL_SOURCE_RENDER_TARGETS:
-      return 1;
+      return 0;
 
    case PIPE_CAP_OCCLUSION_QUERY:
+   case PIPE_CAP_GENERATE_MIPMAP:
    case PIPE_CAP_PRIMITIVE_RESTART:
    case PIPE_CAP_PRIMITIVE_RESTART_FIXED_INDEX:
    case PIPE_CAP_ANISOTROPIC_FILTER:
@@ -1359,8 +1471,10 @@ agx_get_param(struct pipe_screen *pscreen, enum pipe_cap param)
    case PIPE_CAP_CONDITIONAL_RENDER:
    case PIPE_CAP_CONDITIONAL_RENDER_INVERTED:
    case PIPE_CAP_SEAMLESS_CUBE_MAP:
+   case PIPE_CAP_LOAD_CONSTBUF:
    case PIPE_CAP_SEAMLESS_CUBE_MAP_PER_TEXTURE:
    case PIPE_CAP_TEXTURE_BUFFER_OBJECTS:
+   case PIPE_CAP_NULL_TEXTURES:
       return 1;
 
    case PIPE_CAP_TEXTURE_MULTISAMPLE:
@@ -1398,9 +1512,8 @@ agx_get_param(struct pipe_screen *pscreen, enum pipe_cap param)
    case PIPE_CAP_CONSTANT_BUFFER_OFFSET_ALIGNMENT:
       return 16;
 
-   /* Texel buffers lowered to (at most) 1024x16384 2D textures */
    case PIPE_CAP_MAX_TEXEL_BUFFER_ELEMENTS_UINT:
-      return 1024 * 16384;
+      return AGX_TEXTURE_BUFFER_MAX_SIZE;
 
    case PIPE_CAP_TEXTURE_BUFFER_OFFSET_ALIGNMENT:
       return 64;
@@ -1478,6 +1591,9 @@ agx_get_param(struct pipe_screen *pscreen, enum pipe_cap param)
              BITFIELD_BIT(PIPE_PRIM_TRIANGLE_STRIP) |
              BITFIELD_BIT(PIPE_PRIM_TRIANGLE_FAN) |
              BITFIELD_BIT(PIPE_PRIM_QUADS) | BITFIELD_BIT(PIPE_PRIM_QUAD_STRIP);
+
+   case PIPE_CAP_MAP_UNSYNCHRONIZED_THREAD_SAFE:
+      return 1;
 
    default:
       return u_pipe_screen_get_param_defaults(pscreen, param);
@@ -1590,8 +1706,6 @@ agx_get_shader_param(struct pipe_screen *pscreen, enum pipe_shader_type shader,
 
    case PIPE_SHADER_CAP_INT64_ATOMICS:
    case PIPE_SHADER_CAP_DROUND_SUPPORTED:
-   case PIPE_SHADER_CAP_DFRACEXP_DLDEXP_SUPPORTED:
-   case PIPE_SHADER_CAP_LDEXP_SUPPORTED:
    case PIPE_SHADER_CAP_TGSI_ANY_INOUT_DECL_RANGE:
       return 0;
 
@@ -1893,10 +2007,10 @@ agx_screen_create(int fd, struct renderonly *ro, struct sw_winsys *winsys)
       static bool warned_about_hacks = false;
 
       if (!warned_about_hacks) {
-         fprintf(stderr, "\n------------------\n"
-                         "Unsupported debug parameter set. Expect breakage.\n"
-                         "Do not report bugs.\n"
-                         "------------------\n\n");
+         agx_msg("\n------------------\n"
+                 "Unsupported debug parameter set. Expect breakage.\n"
+                 "Do not report bugs.\n"
+                 "------------------\n\n");
          warned_about_hacks = true;
       }
    }

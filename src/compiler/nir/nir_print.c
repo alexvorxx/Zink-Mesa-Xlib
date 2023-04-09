@@ -1413,14 +1413,12 @@ print_tex_instr(nir_tex_instr *instr, print_state *state)
       fprintf(fp, " } (offsets)");
    }
 
-   if (instr->op != nir_texop_txf_ms_fb) {
-      if (!has_texture_deref) {
-         fprintf(fp, ", %u (texture)", instr->texture_index);
-      }
+   if (instr->op != nir_texop_txf_ms_fb && !has_texture_deref) {
+      fprintf(fp, ", %u (texture)", instr->texture_index);
+   }
 
-      if (!has_sampler_deref) {
-         fprintf(fp, ", %u (sampler)", instr->sampler_index);
-      }
+   if (nir_tex_instr_need_sampler(instr) && !has_sampler_deref) {
+      fprintf(fp, ", %u (sampler)", instr->sampler_index);
    }
 
    if (instr->texture_non_uniform) {

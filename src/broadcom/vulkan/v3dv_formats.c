@@ -322,15 +322,6 @@ v3dv_buffer_format_supports_features(struct v3dv_device *device,
    return (supported & features) == features;
 }
 
-/* FIXME: this helper now on anv, radv, lvp, and v3dv. Perhaps common
- * place?
- */
-static inline VkFormatFeatureFlags
-features2_to_features(VkFormatFeatureFlags2 features2)
-{
-   return features2 & VK_ALL_FORMAT_FEATURE_FLAG_BITS;
-}
-
 VKAPI_ATTR void VKAPI_CALL
 v3dv_GetPhysicalDeviceFormatProperties2(VkPhysicalDevice physicalDevice,
                                         VkFormat format,
@@ -346,9 +337,9 @@ v3dv_GetPhysicalDeviceFormatProperties2(VkPhysicalDevice physicalDevice,
                                     VK_IMAGE_TILING_OPTIMAL);
    buffer2 = buffer_format_features(format, v3dv_format);
    pFormatProperties->formatProperties = (VkFormatProperties) {
-      .linearTilingFeatures = features2_to_features(linear2),
-      .optimalTilingFeatures = features2_to_features(optimal2),
-      .bufferFeatures = features2_to_features(buffer2),
+      .linearTilingFeatures = vk_format_features2_to_features(linear2),
+      .optimalTilingFeatures = vk_format_features2_to_features(optimal2),
+      .bufferFeatures = vk_format_features2_to_features(buffer2),
    };
 
    vk_foreach_struct(ext, pFormatProperties->pNext) {

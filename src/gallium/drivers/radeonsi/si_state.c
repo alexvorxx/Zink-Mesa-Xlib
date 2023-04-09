@@ -4048,14 +4048,116 @@ static unsigned gfx9_border_color_swizzle(const unsigned char swizzle[4])
 }
 
 /**
+ * Translate the parameters to an image descriptor for CDNA image emulation.
+ * In this function, we choose our own image descriptor format because we emulate image opcodes
+ * using buffer opcodes.
+ */
+static void cdna_emu_make_image_descriptor(struct si_screen *screen, struct si_texture *tex,
+                                           bool sampler, enum pipe_texture_target target,
+                                           enum pipe_format pipe_format,
+                                           const unsigned char state_swizzle[4], unsigned first_level,
+                                           unsigned last_level, unsigned first_layer,
+                                           unsigned last_layer, unsigned width, unsigned height,
+                                           unsigned depth, uint32_t *state, uint32_t *fmask_state)
+{
+   const struct util_format_description *desc = util_format_description(pipe_format);
+
+   /* We don't need support these. We only need enough to support VAAPI and OpenMAX. */
+   if (target == PIPE_TEXTURE_CUBE ||
+       target == PIPE_TEXTURE_CUBE_ARRAY ||
+       tex->buffer.b.b.last_level > 0 ||
+       tex->buffer.b.b.nr_samples >= 2 ||
+       desc->colorspace != UTIL_FORMAT_COLORSPACE_RGB ||
+       desc->layout == UTIL_FORMAT_LAYOUT_SUBSAMPLED ||
+       util_format_is_compressed(pipe_format)) {
+      assert(!"unexpected texture type");
+      memset(state, 0, 8 * 4);
+      return;
+   }
+
+   /* Adjust the image parameters according to the texture type. */
+   switch (target) {
+   case PIPE_TEXTURE_1D:
+      height = 1;
+      FALLTHROUGH;
+   case PIPE_TEXTURE_2D:
+   case PIPE_TEXTURE_RECT:
+      depth = 1;
+      break;
+
+   case PIPE_TEXTURE_1D_ARRAY:
+      height = 1;
+      FALLTHROUGH;
+   case PIPE_TEXTURE_2D_ARRAY:
+      first_layer = MIN2(first_layer, tex->buffer.b.b.array_size - 1);
+      last_layer = MIN2(last_layer, tex->buffer.b.b.array_size - 1);
+      last_layer = MAX2(last_layer, first_layer);
+      depth = last_layer - first_layer + 1;
+      break;
+
+   case PIPE_TEXTURE_3D:
+      first_layer = 0;
+      break;
+
+   default:
+      unreachable("invalid texture target");
+   }
+
+   unsigned stride = desc->block.bits / 8;
+   uint64_t num_records = tex->surface.surf_size / stride;
+   assert(num_records <= UINT32_MAX);
+
+   /* Prepare the format fields. */
+   unsigned char swizzle[4];
+   util_format_compose_swizzles(desc->swizzle, state_swizzle, swizzle);
+
+   /* Buffer descriptor */
+   state[0] = 0;
+   state[1] = S_008F04_STRIDE(stride);
+   state[2] = num_records;
+   state[3] = S_008F0C_DST_SEL_X(si_map_swizzle(swizzle[0])) |
+              S_008F0C_DST_SEL_Y(si_map_swizzle(swizzle[1])) |
+              S_008F0C_DST_SEL_Z(si_map_swizzle(swizzle[2])) |
+              S_008F0C_DST_SEL_W(si_map_swizzle(swizzle[3]));
+
+   if (screen->info.gfx_level >= GFX10) {
+      const struct gfx10_format *fmt = &ac_get_gfx10_format_table(&screen->info)[pipe_format];
+
+      state[3] |= S_008F0C_FORMAT(fmt->img_format) |
+                  S_008F0C_OOB_SELECT(V_008F0C_OOB_SELECT_STRUCTURED_WITH_OFFSET) |
+                  S_008F0C_RESOURCE_LEVEL(screen->info.gfx_level < GFX11);
+   } else {
+      int first_non_void = util_format_get_first_non_void_channel(pipe_format);
+      unsigned num_format = si_translate_buffer_numformat(&screen->b, desc, first_non_void);
+      unsigned data_format = si_translate_buffer_dataformat(&screen->b, desc, first_non_void);
+
+      state[3] |= S_008F0C_NUM_FORMAT(num_format) |
+                  S_008F0C_DATA_FORMAT(data_format);
+   }
+
+   /* Additional fields used by image opcode emulation. */
+   state[4] = width | (height << 16);
+   state[5] = depth | (first_layer << 16);
+   state[6] = tex->surface.u.gfx9.surf_pitch;
+   state[7] = (uint32_t)tex->surface.u.gfx9.surf_pitch * tex->surface.u.gfx9.surf_height;
+}
+
+/**
  * Build the sampler view descriptor for a texture.
  */
 static void gfx10_make_texture_descriptor(
    struct si_screen *screen, struct si_texture *tex, bool sampler, enum pipe_texture_target target,
    enum pipe_format pipe_format, const unsigned char state_swizzle[4], unsigned first_level,
    unsigned last_level, unsigned first_layer, unsigned last_layer, unsigned width, unsigned height,
-   unsigned depth, uint32_t *state, uint32_t *fmask_state)
+   unsigned depth, bool get_bo_metadata, uint32_t *state, uint32_t *fmask_state)
 {
+   if (!screen->info.has_image_opcodes && !get_bo_metadata) {
+      cdna_emu_make_image_descriptor(screen, tex, sampler, target, pipe_format, state_swizzle,
+                                     first_level, last_level, first_layer, last_layer, width,
+                                     height, depth, state, fmask_state);
+      return;
+   }
+
    struct pipe_resource *res = &tex->buffer.b.b;
    const struct util_format_description *desc;
    unsigned img_format;
@@ -4240,8 +4342,16 @@ static void si_make_texture_descriptor(struct si_screen *screen, struct si_textu
                                        const unsigned char state_swizzle[4], unsigned first_level,
                                        unsigned last_level, unsigned first_layer,
                                        unsigned last_layer, unsigned width, unsigned height,
-                                       unsigned depth, uint32_t *state, uint32_t *fmask_state)
+                                       unsigned depth, bool get_bo_metadata,
+                                       uint32_t *state, uint32_t *fmask_state)
 {
+   if (!screen->info.has_image_opcodes && !get_bo_metadata) {
+      cdna_emu_make_image_descriptor(screen, tex, sampler, target, pipe_format, state_swizzle,
+                                     first_level, last_level, first_layer, last_layer, width,
+                                     height, depth, state, fmask_state);
+      return;
+   }
+
    struct pipe_resource *res = &tex->buffer.b.b;
    const struct util_format_description *desc;
    unsigned char swizzle[4];
@@ -4671,7 +4781,7 @@ static struct pipe_sampler_view *si_create_sampler_view(struct pipe_context *ctx
       sctx->screen, tex, true, state->target, pipe_format, state_swizzle,
       state->u.tex.first_level, state->u.tex.last_level,
       state->u.tex.first_layer, last_layer, texture->width0, texture->height0, texture->depth0,
-            view->state, view->fmask_state);
+      false, view->state, view->fmask_state);
 
    view->base_level_info = &surflevel[0];
    view->block_width = util_format_get_blockwidth(pipe_format);
@@ -5514,11 +5624,10 @@ void si_init_screen_state_functions(struct si_screen *sscreen)
    sscreen->b.create_vertex_state = si_pipe_create_vertex_state;
    sscreen->b.vertex_state_destroy = si_pipe_vertex_state_destroy;
 
-   if (sscreen->info.gfx_level >= GFX10) {
+   if (sscreen->info.gfx_level >= GFX10)
       sscreen->make_texture_descriptor = gfx10_make_texture_descriptor;
-   } else {
+   else
       sscreen->make_texture_descriptor = si_make_texture_descriptor;
-   }
 
    util_vertex_state_cache_init(&sscreen->vertex_state_cache,
                                 si_create_vertex_state, si_vertex_state_destroy);
@@ -5653,10 +5762,16 @@ void si_init_cs_preamble_state(struct si_context *sctx, bool uses_reg_shadowing)
       }
    }
 
+   if (!sscreen->info.has_graphics && sscreen->info.family >= CHIP_GFX940) {
+      si_pm4_set_reg(pm4, R_00B89C_COMPUTE_TG_CHUNK_SIZE, 0);
+      si_pm4_set_reg(pm4, R_00B8B4_COMPUTE_PGM_RSRC3, 0);
+   }
+
    if (sctx->gfx_level >= GFX9 && sctx->gfx_level < GFX11)
       si_pm4_set_reg(pm4, R_0301EC_CP_COHER_START_DELAY, sctx->gfx_level >= GFX10 ? 0x20 : 0);
 
-   if (!sscreen->info.has_graphics && sscreen->info.family >= CHIP_MI100) {
+   if (sscreen->info.family == CHIP_MI100 ||
+       sscreen->info.family == CHIP_MI200) {
       si_pm4_set_reg(pm4, R_00B894_COMPUTE_STATIC_THREAD_MGMT_SE4, compute_cu_en);
       si_pm4_set_reg(pm4, R_00B898_COMPUTE_STATIC_THREAD_MGMT_SE5, compute_cu_en);
       si_pm4_set_reg(pm4, R_00B89C_COMPUTE_STATIC_THREAD_MGMT_SE6, compute_cu_en);

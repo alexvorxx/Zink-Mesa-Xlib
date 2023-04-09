@@ -500,10 +500,13 @@ agx_pack_instr(struct util_dynarray *emission, struct util_dynarray *fixups,
 
    case AGX_OPCODE_SAMPLE_MASK: {
       unsigned S = agx_pack_sample_mask_src(I->src[0]);
-      uint64_t raw = 0x7fc1 | ((S & 0xff) << 16) | (0x3 << 24) |
-                     ((S >> 8) << 26) | (0x158ull << 32);
+      unsigned T = 0xFF;
+      bool Tt = true /* immediate */;
+      uint32_t raw = 0xc1 | (Tt ? BITFIELD_BIT(8) : 0) |
+                     ((T & BITFIELD_MASK(6)) << 9) | ((S & 0xff) << 16) |
+                     ((T >> 6) << 24) | ((S >> 8) << 26);
 
-      unsigned size = 8;
+      unsigned size = 4;
       memcpy(util_dynarray_grow_bytes(emission, 1, size), &raw, size);
       break;
    }

@@ -2296,12 +2296,6 @@ struct radv_graphics_pipeline {
 
    /* For graphics pipeline library */
    bool retain_shaders;
-   struct {
-      nir_shader *nir;
-      void *serialized_nir;
-      size_t serialized_nir_size;
-      unsigned char shader_sha1[SHA1_DIGEST_LENGTH];
-   } retained_shaders[MESA_VULKAN_SHADER_STAGES];
 
    /* For relocation of shaders with RGP. */
    struct radv_sqtt_shaders_reloc *sqtt_shaders_reloc;
@@ -2326,11 +2320,6 @@ struct radv_ray_tracing_lib_pipeline {
    VkPipelineShaderStageCreateInfo *stages;
    unsigned group_count;
    VkRayTracingShaderGroupCreateInfoKHR *group_infos;
-   VkPipelineShaderStageModuleIdentifierCreateInfoEXT *identifiers;
-   struct {
-      uint8_t sha1[SHA1_DIGEST_LENGTH];
-   } *hashes;
-
    struct radv_ray_tracing_module groups[];
 };
 
@@ -2342,6 +2331,17 @@ struct radv_graphics_lib_pipeline {
    struct vk_graphics_pipeline_state graphics_state;
 
    VkGraphicsPipelineLibraryFlagsEXT lib_flags;
+
+   struct {
+      void *serialized_nir;
+      size_t serialized_nir_size;
+      unsigned char shader_sha1[SHA1_DIGEST_LENGTH];
+   } retained_shaders[MESA_VULKAN_SHADER_STAGES];
+
+   void *mem_ctx;
+
+   unsigned stage_count;
+   VkPipelineShaderStageCreateInfo *stages;
 };
 
 struct radv_ray_tracing_pipeline {
@@ -2448,6 +2448,10 @@ bool radv_pipeline_capture_shaders(const struct radv_device *device, VkPipelineC
 bool radv_pipeline_capture_shader_stats(const struct radv_device *device,
                                         VkPipelineCreateFlags flags);
 
+VkPipelineShaderStageCreateInfo *
+radv_copy_shader_stage_create_info(struct radv_device *device, uint32_t stageCount,
+                                   const VkPipelineShaderStageCreateInfo *pStages, void *mem_ctx);
+
 void radv_pipeline_destroy(struct radv_device *device, struct radv_pipeline *pipeline,
                            const VkAllocationCallbacks *allocator);
 
@@ -2547,8 +2551,15 @@ bool radv_layout_can_fast_clear(const struct radv_device *device, const struct r
 bool radv_layout_dcc_compressed(const struct radv_device *device, const struct radv_image *image,
                                 unsigned level, VkImageLayout layout, unsigned queue_mask);
 
-bool radv_layout_fmask_compressed(const struct radv_device *device, const struct radv_image *image,
-                                  VkImageLayout layout, unsigned queue_mask);
+enum radv_fmask_compression {
+   RADV_FMASK_COMPRESSION_NONE,
+   RADV_FMASK_COMPRESSION_PARTIAL,
+   RADV_FMASK_COMPRESSION_FULL,
+};
+
+enum radv_fmask_compression radv_layout_fmask_compression(
+      const struct radv_device *device, const struct radv_image *image, VkImageLayout layout,
+      unsigned queue_mask);
 
 /**
  * Return whether the image has CMASK metadata for color surfaces.

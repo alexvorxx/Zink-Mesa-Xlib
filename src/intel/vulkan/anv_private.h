@@ -1029,6 +1029,7 @@ struct anv_instance {
     bool                                        fp64_workaround_enabled;
     float                                       lower_depth_range_rate;
     unsigned                                    generated_indirect_threshold;
+    unsigned                                    query_clear_with_blorp_threshold;
 
     /* HW workarounds */
     bool                                        no_16bit;
@@ -2085,6 +2086,11 @@ enum anv_pipe_bits {
     * implement a workaround for Gfx9.
     */
    ANV_PIPE_POST_SYNC_BIT                    = (1 << 25),
+
+   /* This bit does not exist directly in PIPE_CONTROL. It means that render
+    * target operations related to clearing of queries are ongoing.
+    */
+   ANV_PIPE_QUERY_CLEARS_BIT                 = (1 << 26),
 };
 
 #define ANV_PIPE_FLUSH_BITS ( \
@@ -2126,6 +2132,20 @@ enum anv_pipe_bits {
  */
 #define ANV_PIPE_GPGPU_BITS ( \
    (GFX_VERx10 >= 125 ? ANV_PIPE_UNTYPED_DATAPORT_CACHE_FLUSH_BIT : 0))
+
+/* Things we need to flush before accessing query data using the command
+ * streamer.
+ *
+ * Prior to DG2 experiments show that the command streamer is not coherent
+ * with the tile cache so we need to flush it to make any data visible to CS.
+ *
+ * Otherwise we want to flush the RT cache which is where blorp writes, either
+ * for clearing the query buffer or for clearing the destination buffer in
+ * vkCopyQueryPoolResults().
+ */
+#define ANV_PIPE_QUERY_FLUSH_BITS ( \
+   (GFX_VERx10 < 125 ? ANV_PIPE_TILE_CACHE_FLUSH_BIT : 0) | \
+   ANV_PIPE_RENDER_TARGET_CACHE_FLUSH_BIT)
 
 enum intel_ds_stall_flag
 anv_pipe_flush_bit_to_ds_stall_flag(enum anv_pipe_bits bits);
@@ -3882,6 +3902,12 @@ anv_image_ccs_op(struct anv_cmd_buffer *cmd_buffer,
                  enum isl_aux_op ccs_op, union isl_color_value *clear_value,
                  bool predicate);
 
+void
+anv_cmd_buffer_fill_area(struct anv_cmd_buffer *cmd_buffer,
+                         struct anv_address address,
+                         VkDeviceSize size,
+                         uint32_t data);
+
 enum isl_aux_state ATTRIBUTE_PURE
 anv_layout_to_aux_state(const struct intel_device_info * const devinfo,
                         const struct anv_image *image,
@@ -4161,7 +4187,7 @@ struct anv_video_session_params {
 };
 
 void
-anv_dump_pipe_bits(enum anv_pipe_bits bits);
+anv_dump_pipe_bits(enum anv_pipe_bits bits, FILE *f);
 
 static inline void
 anv_add_pending_pipe_bits(struct anv_cmd_buffer* cmd_buffer,
@@ -4171,9 +4197,9 @@ anv_add_pending_pipe_bits(struct anv_cmd_buffer* cmd_buffer,
    cmd_buffer->state.pending_pipe_bits |= bits;
    if (INTEL_DEBUG(DEBUG_PIPE_CONTROL) && bits)
    {
-      fputs("pc: add ", stderr);
-      anv_dump_pipe_bits(bits);
-      fprintf(stderr, "reason: %s\n", reason);
+      fputs("pc: add ", stdout);
+      anv_dump_pipe_bits(bits, stdout);
+      fprintf(stdout, "reason: %s\n", reason);
    }
 }
 

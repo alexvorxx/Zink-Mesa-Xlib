@@ -47,6 +47,8 @@ struct vn_physical_device_features {
    VkPhysicalDevicePrimitivesGeneratedQueryFeaturesEXT
       primitives_generated_query;
    VkPhysicalDeviceProvokingVertexFeaturesEXT provoking_vertex;
+   VkPhysicalDeviceRasterizationOrderAttachmentAccessFeaturesEXT
+      rasterization_order_attachment_access;
    VkPhysicalDeviceRobustness2FeaturesEXT robustness_2;
    VkPhysicalDeviceTransformFeedbackFeaturesEXT transform_feedback;
    VkPhysicalDeviceVertexAttributeDivisorFeaturesEXT vertex_attribute_divisor;

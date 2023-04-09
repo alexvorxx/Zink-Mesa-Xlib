@@ -214,10 +214,9 @@ clone_register(clone_state *state, const nir_register *reg)
    nreg->num_array_elems = reg->num_array_elems;
    nreg->index = reg->index;
 
-   /* reconstructing uses/defs/if_uses handled by nir_instr_insert() */
+   /* reconstructing uses/defs handled by nir_instr_insert() */
    list_inithead(&nreg->uses);
    list_inithead(&nreg->defs);
-   list_inithead(&nreg->if_uses);
 
    return nreg;
 }

@@ -1716,3 +1716,9 @@ __ffract64(uint64_t a)
 {
    return __fadd64(a, __fneg64(__ffloor64(a)));
 }
+
+bool
+__fisfinite64(uint64_t __a)
+{
+   return __extractFloat64Exp(__a) != 0x7ff;
+}

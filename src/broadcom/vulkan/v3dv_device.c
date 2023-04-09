@@ -589,8 +589,7 @@ create_display_fd_wayland(VkIcdSurfaceBase *surface)
  * and platform to use. It should work in most cases.
  */
 static void
-acquire_display_device_no_surface(struct v3dv_instance *instance,
-                                  struct v3dv_physical_device *pdevice)
+acquire_display_device_no_surface(struct v3dv_physical_device *pdevice)
 {
 #ifdef VK_USE_PLATFORM_WAYLAND_KHR
    pdevice->display_fd = create_display_fd_wayland(NULL);
@@ -613,8 +612,7 @@ acquire_display_device_no_surface(struct v3dv_instance *instance,
  * display and platform combination.
  */
 static void
-acquire_display_device_surface(struct v3dv_instance *instance,
-                               struct v3dv_physical_device *pdevice,
+acquire_display_device_surface(struct v3dv_physical_device *pdevice,
                                VkIcdSurfaceBase *surface)
 {
    /* Mesa will set both of VK_USE_PLATFORM_{XCB,XLIB} when building with
@@ -646,8 +644,7 @@ acquire_display_device_surface(struct v3dv_instance *instance,
  * we can use to allocate BOs for presentable images.
  */
 VkResult
-v3dv_physical_device_acquire_display(struct v3dv_instance *instance,
-                                     struct v3dv_physical_device *pdevice,
+v3dv_physical_device_acquire_display(struct v3dv_physical_device *pdevice,
                                      VkIcdSurfaceBase *surface)
 {
    VkResult result = VK_SUCCESS;
@@ -661,9 +658,9 @@ v3dv_physical_device_acquire_display(struct v3dv_instance *instance,
     */
 #if !using_v3d_simulator
    if (surface)
-      acquire_display_device_surface(instance, pdevice, surface);
+      acquire_display_device_surface(pdevice, surface);
    else
-      acquire_display_device_no_surface(instance, pdevice);
+      acquire_display_device_no_surface(pdevice);
 
    if (pdevice->display_fd == -1)
       result = VK_ERROR_INITIALIZATION_FAILED;
@@ -843,7 +840,8 @@ create_physical_device(struct v3dv_instance *instance,
    device->device_id = drm_render_device->deviceinfo.pci->device_id;
 #endif
 
-   if (instance->vk.enabled_extensions.KHR_display) {
+   if (instance->vk.enabled_extensions.KHR_display ||
+       instance->vk.enabled_extensions.EXT_acquire_drm_display) {
 #if !using_v3d_simulator
       /* Open the primary node on the vc4 display device */
       assert(drm_primary_device);
@@ -2252,10 +2250,9 @@ device_alloc_for_wsi(struct v3dv_device *device,
     * display device and we need to do it now.
     */
    VkResult result;
-   struct v3dv_instance *instance = device->instance;
    struct v3dv_physical_device *pdevice = device->pdevice;
    if (unlikely(pdevice->display_fd < 0)) {
-      result = v3dv_physical_device_acquire_display(instance, pdevice, NULL);
+      result = v3dv_physical_device_acquire_display(pdevice, NULL);
       if (result != VK_SUCCESS)
          return result;
    }

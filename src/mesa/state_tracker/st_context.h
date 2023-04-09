@@ -202,7 +202,6 @@ struct st_context
    boolean use_format_with_border_color;
    boolean alpha_border_color_is_not_w;
    boolean emulate_gl_clamp;
-   boolean texture_buffer_sampler;
 
    boolean draw_needs_minmax_index;
    boolean has_hw_atomics;

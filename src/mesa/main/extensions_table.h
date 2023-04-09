@@ -421,7 +421,7 @@ EXT(NV_shader_atomic_float                  , NV_shader_atomic_float            
 EXT(NV_shader_atomic_int64                  , NV_shader_atomic_int64                 , GLL, GLC,  x ,  x , 2014)
 EXT(NV_shader_noperspective_interpolation   , EXT_gpu_shader4                        ,  x ,  x ,  x ,  30, 2014)
 EXT(NV_texgen_reflection                    , dummy_true                             , GLL,  x ,  x ,  x , 1999)
-EXT(NV_texture_barrier                      , NV_texture_barrier                     , GLL, GLC,  x ,  x , 2009)
+EXT(NV_texture_barrier                      , NV_texture_barrier                     , GLL, GLC,  x , ES2, 2009)
 EXT(NV_texture_env_combine4                 , NV_texture_env_combine4                , GLL,  x ,  x ,  x , 1999)
 EXT(NV_texture_rectangle                    , NV_texture_rectangle                   , GLL,  x ,  x ,  x , 2000)
 EXT(NV_vdpau_interop                        , NV_vdpau_interop                       , GLL, GLC,  x ,  x , 2010)

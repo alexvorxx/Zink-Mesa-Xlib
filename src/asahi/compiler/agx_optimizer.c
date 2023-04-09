@@ -99,6 +99,8 @@ agx_optimizer_inline_imm(agx_instr **defs, agx_instr *I, unsigned srcs,
       agx_index src = I->src[s];
       if (src.type != AGX_INDEX_NORMAL)
          continue;
+      if (src.neg)
+         continue;
 
       agx_instr *def = defs[src.value];
       if (def->op != AGX_OPCODE_MOV_IMM)

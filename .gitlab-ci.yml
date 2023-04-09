@@ -122,9 +122,6 @@ stages:
 # --------------------------------
 .rules-anchors:
   rules:
-    # Forked project branch / pre-merge pipeline not for Marge bot
-    - if: &is-forked-branch-or-pre-merge-not-for-marge '$CI_PROJECT_NAMESPACE != "mesa" || ($GITLAB_USER_LOGIN != "marge-bot" && $CI_PIPELINE_SOURCE == "merge_request_event")'
-      when: manual
     # Post-merge pipeline
     - if: &is-post-merge '$CI_PROJECT_NAMESPACE == "mesa" && $CI_COMMIT_BRANCH'
       when: on_success
@@ -241,22 +238,3 @@ sanity:
     when: on_failure
     reports:
       junit: check-*.xml
-
-# Temporary rules for tests that should not block merging, but should be
-# available to optionally run with the "play" button in the UI in pre-merge
-# non-marge pipelines.  This should appear in "extends:" after any includes of
-# test-source-dep.yml rules, so that these rules replace those.
-#
-# If a job is going to be manual for a long period of time, then please use a
-# driver-specific manual rules set from test-source-dep (see
-# freedreno-manual-rules, for example)
-.test-manual-mr:
-  rules:
-    - !reference [.no_scheduled_pipelines-rules, rules]
-    - if: *is-forked-branch-or-pre-merge-not-for-marge
-      changes:
-        *all_paths
-      when: manual
-  variables:
-    JOB_TIMEOUT: 80
-

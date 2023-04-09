@@ -155,12 +155,12 @@ lower_fb_write_logical_send(const fs_builder &bld, fs_inst *inst,
 {
    assert(inst->src[FB_WRITE_LOGICAL_SRC_COMPONENTS].file == IMM);
    const intel_device_info *devinfo = bld.shader->devinfo;
-   const fs_reg &color0 = inst->src[FB_WRITE_LOGICAL_SRC_COLOR0];
-   const fs_reg &color1 = inst->src[FB_WRITE_LOGICAL_SRC_COLOR1];
-   const fs_reg &src0_alpha = inst->src[FB_WRITE_LOGICAL_SRC_SRC0_ALPHA];
-   const fs_reg &src_depth = inst->src[FB_WRITE_LOGICAL_SRC_SRC_DEPTH];
-   const fs_reg &dst_depth = inst->src[FB_WRITE_LOGICAL_SRC_DST_DEPTH];
-   const fs_reg &src_stencil = inst->src[FB_WRITE_LOGICAL_SRC_SRC_STENCIL];
+   const fs_reg color0 = inst->src[FB_WRITE_LOGICAL_SRC_COLOR0];
+   const fs_reg color1 = inst->src[FB_WRITE_LOGICAL_SRC_COLOR1];
+   const fs_reg src0_alpha = inst->src[FB_WRITE_LOGICAL_SRC_SRC0_ALPHA];
+   const fs_reg src_depth = inst->src[FB_WRITE_LOGICAL_SRC_SRC_DEPTH];
+   const fs_reg dst_depth = inst->src[FB_WRITE_LOGICAL_SRC_DST_DEPTH];
+   const fs_reg src_stencil = inst->src[FB_WRITE_LOGICAL_SRC_SRC_STENCIL];
    fs_reg sample_mask = inst->src[FB_WRITE_LOGICAL_SRC_OMASK];
    const unsigned components =
       inst->src[FB_WRITE_LOGICAL_SRC_COMPONENTS].ud;
@@ -1260,18 +1260,18 @@ static void
 lower_sampler_logical_send(const fs_builder &bld, fs_inst *inst, opcode op)
 {
    const intel_device_info *devinfo = bld.shader->devinfo;
-   const fs_reg &coordinate = inst->src[TEX_LOGICAL_SRC_COORDINATE];
-   const fs_reg &shadow_c = inst->src[TEX_LOGICAL_SRC_SHADOW_C];
-   const fs_reg &lod = inst->src[TEX_LOGICAL_SRC_LOD];
-   const fs_reg &lod2 = inst->src[TEX_LOGICAL_SRC_LOD2];
-   const fs_reg &min_lod = inst->src[TEX_LOGICAL_SRC_MIN_LOD];
-   const fs_reg &sample_index = inst->src[TEX_LOGICAL_SRC_SAMPLE_INDEX];
-   const fs_reg &mcs = inst->src[TEX_LOGICAL_SRC_MCS];
-   const fs_reg &surface = inst->src[TEX_LOGICAL_SRC_SURFACE];
-   const fs_reg &sampler = inst->src[TEX_LOGICAL_SRC_SAMPLER];
-   const fs_reg &surface_handle = inst->src[TEX_LOGICAL_SRC_SURFACE_HANDLE];
-   const fs_reg &sampler_handle = inst->src[TEX_LOGICAL_SRC_SAMPLER_HANDLE];
-   const fs_reg &tg4_offset = inst->src[TEX_LOGICAL_SRC_TG4_OFFSET];
+   const fs_reg coordinate = inst->src[TEX_LOGICAL_SRC_COORDINATE];
+   const fs_reg shadow_c = inst->src[TEX_LOGICAL_SRC_SHADOW_C];
+   const fs_reg lod = inst->src[TEX_LOGICAL_SRC_LOD];
+   const fs_reg lod2 = inst->src[TEX_LOGICAL_SRC_LOD2];
+   const fs_reg min_lod = inst->src[TEX_LOGICAL_SRC_MIN_LOD];
+   const fs_reg sample_index = inst->src[TEX_LOGICAL_SRC_SAMPLE_INDEX];
+   const fs_reg mcs = inst->src[TEX_LOGICAL_SRC_MCS];
+   const fs_reg surface = inst->src[TEX_LOGICAL_SRC_SURFACE];
+   const fs_reg sampler = inst->src[TEX_LOGICAL_SRC_SAMPLER];
+   const fs_reg surface_handle = inst->src[TEX_LOGICAL_SRC_SURFACE_HANDLE];
+   const fs_reg sampler_handle = inst->src[TEX_LOGICAL_SRC_SAMPLER_HANDLE];
+   const fs_reg tg4_offset = inst->src[TEX_LOGICAL_SRC_TG4_OFFSET];
    assert(inst->src[TEX_LOGICAL_SRC_COORD_COMPONENTS].file == IMM);
    const unsigned coord_components = inst->src[TEX_LOGICAL_SRC_COORD_COMPONENTS].ud;
    assert(inst->src[TEX_LOGICAL_SRC_GRAD_COMPONENTS].file == IMM);
@@ -1373,18 +1373,58 @@ setup_surface_descriptors(const fs_builder &bld, fs_inst *inst, uint32_t desc,
 }
 
 static void
+setup_lsc_surface_descriptors(const fs_builder &bld, fs_inst *inst,
+                              uint32_t desc, const fs_reg &surface)
+{
+   const ASSERTED intel_device_info *devinfo = bld.shader->devinfo;
+
+   inst->src[0] = brw_imm_ud(0); /* desc */
+
+   enum lsc_addr_surface_type surf_type = lsc_msg_desc_addr_type(devinfo, desc);
+   switch (surf_type) {
+   case LSC_ADDR_SURFTYPE_BSS:
+   case LSC_ADDR_SURFTYPE_SS:
+      assert(surface.file != BAD_FILE);
+      /* We assume that the driver provided the handle in the top 20 bits so
+       * we can use the surface handle directly as the extended descriptor.
+       */
+      inst->src[1] = retype(surface, BRW_REGISTER_TYPE_UD);
+      break;
+
+   case LSC_ADDR_SURFTYPE_BTI:
+      assert(surface.file != BAD_FILE);
+      if (surface.file == IMM) {
+         inst->src[1] = brw_imm_ud(lsc_bti_ex_desc(devinfo, surface.ud));
+      } else {
+         const fs_builder ubld = bld.exec_all().group(1, 0);
+         fs_reg tmp = ubld.vgrf(BRW_REGISTER_TYPE_UD);
+         ubld.SHL(tmp, surface, brw_imm_ud(24));
+         inst->src[1] = component(tmp, 0);
+      }
+      break;
+
+   case LSC_ADDR_SURFTYPE_FLAT:
+      inst->src[1] = brw_imm_ud(0);
+      break;
+
+   default:
+      unreachable("Invalid LSC surface address type");
+   }
+}
+
+static void
 lower_surface_logical_send(const fs_builder &bld, fs_inst *inst)
 {
    const intel_device_info *devinfo = bld.shader->devinfo;
 
    /* Get the logical send arguments. */
-   const fs_reg &addr = inst->src[SURFACE_LOGICAL_SRC_ADDRESS];
-   const fs_reg &src = inst->src[SURFACE_LOGICAL_SRC_DATA];
-   const fs_reg &surface = inst->src[SURFACE_LOGICAL_SRC_SURFACE];
-   const fs_reg &surface_handle = inst->src[SURFACE_LOGICAL_SRC_SURFACE_HANDLE];
-   const UNUSED fs_reg &dims = inst->src[SURFACE_LOGICAL_SRC_IMM_DIMS];
-   const fs_reg &arg = inst->src[SURFACE_LOGICAL_SRC_IMM_ARG];
-   const fs_reg &allow_sample_mask =
+   const fs_reg addr = inst->src[SURFACE_LOGICAL_SRC_ADDRESS];
+   const fs_reg src = inst->src[SURFACE_LOGICAL_SRC_DATA];
+   const fs_reg surface = inst->src[SURFACE_LOGICAL_SRC_SURFACE];
+   const fs_reg surface_handle = inst->src[SURFACE_LOGICAL_SRC_SURFACE_HANDLE];
+   const UNUSED fs_reg dims = inst->src[SURFACE_LOGICAL_SRC_IMM_DIMS];
+   const fs_reg arg = inst->src[SURFACE_LOGICAL_SRC_IMM_ARG];
+   const fs_reg allow_sample_mask =
       inst->src[SURFACE_LOGICAL_SRC_ALLOW_SAMPLE_MASK];
    assert(arg.file == IMM);
    assert(allow_sample_mask.file == IMM);
@@ -1642,7 +1682,7 @@ lower_lsc_surface_logical_send(const fs_builder &bld, fs_inst *inst)
    const fs_reg src = inst->src[SURFACE_LOGICAL_SRC_DATA];
    const fs_reg surface = inst->src[SURFACE_LOGICAL_SRC_SURFACE];
    const fs_reg surface_handle = inst->src[SURFACE_LOGICAL_SRC_SURFACE_HANDLE];
-   const UNUSED fs_reg &dims = inst->src[SURFACE_LOGICAL_SRC_IMM_DIMS];
+   const UNUSED fs_reg dims = inst->src[SURFACE_LOGICAL_SRC_IMM_DIMS];
    const fs_reg arg = inst->src[SURFACE_LOGICAL_SRC_IMM_ARG];
    const fs_reg allow_sample_mask =
       inst->src[SURFACE_LOGICAL_SRC_ALLOW_SAMPLE_MASK];
@@ -1755,34 +1795,6 @@ lower_lsc_surface_logical_send(const fs_builder &bld, fs_inst *inst)
       unreachable("Unknown surface logical instruction");
    }
 
-   inst->src[0] = brw_imm_ud(0);
-
-   /* Set up extended descriptors */
-   switch (surf_type) {
-   case LSC_ADDR_SURFTYPE_FLAT:
-      inst->src[1] = brw_imm_ud(0);
-      break;
-   case LSC_ADDR_SURFTYPE_SS:
-   case LSC_ADDR_SURFTYPE_BSS:
-      /* We assume that the driver provided the handle in the top 20 bits so
-       * we can use the surface handle directly as the extended descriptor.
-       */
-      inst->src[1] = retype(surface_handle, BRW_REGISTER_TYPE_UD);
-      break;
-   case LSC_ADDR_SURFTYPE_BTI:
-      if (surface.file == IMM) {
-         inst->src[1] = brw_imm_ud(lsc_bti_ex_desc(devinfo, surface.ud));
-      } else {
-         const fs_builder ubld = bld.exec_all().group(1, 0);
-         fs_reg tmp = ubld.vgrf(BRW_REGISTER_TYPE_UD);
-         ubld.SHL(tmp, surface, brw_imm_ud(24));
-         inst->src[1] = component(tmp, 0);
-      }
-      break;
-   default:
-      unreachable("Unknown surface type");
-   }
-
    /* Update the original instruction. */
    inst->opcode = SHADER_OPCODE_SEND;
    inst->mlen = lsc_msg_desc_src0_len(devinfo, inst->desc);
@@ -1792,6 +1804,15 @@ lower_lsc_surface_logical_send(const fs_builder &bld, fs_inst *inst)
    inst->send_is_volatile = !has_side_effects;
 
    inst->resize_sources(4);
+
+   if (non_bindless) {
+      inst->src[0] = brw_imm_ud(0);     /* desc */
+      inst->src[1] = surface_handle;    /* ex_desc */
+   } else {
+      setup_lsc_surface_descriptors(bld, inst, inst->desc,
+                                    surface.file != BAD_FILE ?
+                                    surface : surface_handle);
+   }
 
    /* Finally, the payload */
    inst->src[2] = payload;
@@ -1805,11 +1826,11 @@ lower_lsc_block_logical_send(const fs_builder &bld, fs_inst *inst)
    assert(devinfo->has_lsc);
 
    /* Get the logical send arguments. */
-   const fs_reg &addr = inst->src[SURFACE_LOGICAL_SRC_ADDRESS];
-   const fs_reg &src = inst->src[SURFACE_LOGICAL_SRC_DATA];
-   const fs_reg &surface = inst->src[SURFACE_LOGICAL_SRC_SURFACE];
-   const fs_reg &surface_handle = inst->src[SURFACE_LOGICAL_SRC_SURFACE_HANDLE];
-   const fs_reg &arg = inst->src[SURFACE_LOGICAL_SRC_IMM_ARG];
+   const fs_reg addr = inst->src[SURFACE_LOGICAL_SRC_ADDRESS];
+   const fs_reg src = inst->src[SURFACE_LOGICAL_SRC_DATA];
+   const fs_reg surface = inst->src[SURFACE_LOGICAL_SRC_SURFACE];
+   const fs_reg surface_handle = inst->src[SURFACE_LOGICAL_SRC_SURFACE_HANDLE];
+   const fs_reg arg = inst->src[SURFACE_LOGICAL_SRC_IMM_ARG];
    assert(arg.file == IMM);
    assert(inst->src[SURFACE_LOGICAL_SRC_IMM_DIMS].file == BAD_FILE);
    assert(inst->src[SURFACE_LOGICAL_SRC_ALLOW_SAMPLE_MASK].file == BAD_FILE);
@@ -1823,12 +1844,12 @@ lower_lsc_block_logical_send(const fs_builder &bld, fs_inst *inst)
    const bool write = inst->opcode == SHADER_OPCODE_OWORD_BLOCK_WRITE_LOGICAL;
 
    fs_builder ubld = bld.exec_all().group(1, 0);
-   fs_reg ex_desc = ubld.vgrf(BRW_REGISTER_TYPE_UD);
+   fs_reg stateless_ex_desc;
    if (is_stateless) {
-      ubld.AND(ex_desc, retype(brw_vec1_grf(0, 5), BRW_REGISTER_TYPE_UD),
-                        brw_imm_ud(INTEL_MASK(31, 10)));
-   } else {
-      ubld.MOV(ex_desc, surface_handle);
+      stateless_ex_desc = ubld.vgrf(BRW_REGISTER_TYPE_UD);
+      ubld.AND(stateless_ex_desc,
+               retype(brw_vec1_grf(0, 5), BRW_REGISTER_TYPE_UD),
+               brw_imm_ud(INTEL_MASK(31, 10)));
    }
 
    fs_reg data;
@@ -1842,11 +1863,15 @@ lower_lsc_block_logical_send(const fs_builder &bld, fs_inst *inst)
       inst->sfid = GFX12_SFID_SLM;
    else
       inst->sfid = GFX12_SFID_UGM;
+   const enum lsc_addr_surface_type surf_type =
+      inst->sfid == GFX12_SFID_SLM ?
+      LSC_ADDR_SURFTYPE_FLAT :
+      surface.file == BAD_FILE ?
+      LSC_ADDR_SURFTYPE_BSS : LSC_ADDR_SURFTYPE_BTI;
    inst->desc = lsc_msg_desc(devinfo,
                              write ? LSC_OP_STORE : LSC_OP_LOAD,
                              1 /* exec_size */,
-                             inst->sfid == GFX12_SFID_SLM ?
-                             LSC_ADDR_SURFTYPE_FLAT : LSC_ADDR_SURFTYPE_BSS,
+                             surf_type,
                              LSC_ADDR_SIZE_A32,
                              1 /* num_coordinates */,
                              LSC_DATA_SIZE_D32,
@@ -1865,8 +1890,14 @@ lower_lsc_block_logical_send(const fs_builder &bld, fs_inst *inst)
 
    inst->resize_sources(4);
 
-   inst->src[0] = brw_imm_ud(0); /* desc */
-   inst->src[1] = ex_desc;       /* ex_desc */
+   if (stateless_ex_desc.file != BAD_FILE) {
+      inst->src[0] = brw_imm_ud(0);     /* desc */
+      inst->src[1] = stateless_ex_desc; /* ex_desc */
+   } else {
+      setup_lsc_surface_descriptors(bld, inst, inst->desc,
+                                    surface.file != BAD_FILE ?
+                                    surface : surface_handle);
+   }
    inst->src[2] = addr;          /* payload */
    inst->src[3] = data;          /* payload2 */
 }
@@ -1878,11 +1909,11 @@ lower_surface_block_logical_send(const fs_builder &bld, fs_inst *inst)
    assert(devinfo->ver >= 9);
 
    /* Get the logical send arguments. */
-   const fs_reg &addr = inst->src[SURFACE_LOGICAL_SRC_ADDRESS];
-   const fs_reg &src = inst->src[SURFACE_LOGICAL_SRC_DATA];
-   const fs_reg &surface = inst->src[SURFACE_LOGICAL_SRC_SURFACE];
-   const fs_reg &surface_handle = inst->src[SURFACE_LOGICAL_SRC_SURFACE_HANDLE];
-   const fs_reg &arg = inst->src[SURFACE_LOGICAL_SRC_IMM_ARG];
+   const fs_reg addr = inst->src[SURFACE_LOGICAL_SRC_ADDRESS];
+   const fs_reg src = inst->src[SURFACE_LOGICAL_SRC_DATA];
+   const fs_reg surface = inst->src[SURFACE_LOGICAL_SRC_SURFACE];
+   const fs_reg surface_handle = inst->src[SURFACE_LOGICAL_SRC_SURFACE_HANDLE];
+   const fs_reg arg = inst->src[SURFACE_LOGICAL_SRC_IMM_ARG];
    assert(arg.file == IMM);
    assert(inst->src[SURFACE_LOGICAL_SRC_IMM_DIMS].file == BAD_FILE);
    assert(inst->src[SURFACE_LOGICAL_SRC_ALLOW_SAMPLE_MASK].file == BAD_FILE);
@@ -1993,8 +2024,8 @@ lower_lsc_a64_logical_send(const fs_builder &bld, fs_inst *inst)
    const intel_device_info *devinfo = bld.shader->devinfo;
 
    /* Get the logical send arguments. */
-   const fs_reg &addr = inst->src[A64_LOGICAL_ADDRESS];
-   const fs_reg &src = inst->src[A64_LOGICAL_SRC];
+   const fs_reg addr = inst->src[A64_LOGICAL_ADDRESS];
+   const fs_reg src = inst->src[A64_LOGICAL_SRC];
    const unsigned src_sz = type_sz(src.type);
    const unsigned dst_sz = type_sz(inst->dst.type);
 
@@ -2123,8 +2154,8 @@ lower_a64_logical_send(const fs_builder &bld, fs_inst *inst)
 {
    const intel_device_info *devinfo = bld.shader->devinfo;
 
-   const fs_reg &addr = inst->src[A64_LOGICAL_ADDRESS];
-   const fs_reg &src = inst->src[A64_LOGICAL_SRC];
+   const fs_reg addr = inst->src[A64_LOGICAL_ADDRESS];
+   const fs_reg src = inst->src[A64_LOGICAL_SRC];
    const unsigned src_comps = inst->components_read(1);
    assert(inst->src[A64_LOGICAL_ARG].file == IMM);
    const unsigned arg = inst->src[A64_LOGICAL_ARG].ud;
@@ -2264,7 +2295,7 @@ lower_lsc_varying_pull_constant_logical_send(const fs_builder &bld,
    const intel_device_info *devinfo = bld.shader->devinfo;
    ASSERTED const brw_compiler *compiler = bld.shader->compiler;
 
-   fs_reg index = inst->src[0];
+   fs_reg surface = inst->src[0];
 
    /* We are switching the instruction from an ALU-like instruction to a
     * send-from-grf instruction.  Since sends can't handle strides or
@@ -2278,16 +2309,6 @@ lower_lsc_varying_pull_constant_logical_send(const fs_builder &bld,
    inst->opcode = SHADER_OPCODE_SEND;
    inst->sfid = GFX12_SFID_UGM;
    inst->resize_sources(3);
-   inst->src[0] = brw_imm_ud(0);
-
-   if (index.file == IMM) {
-      inst->src[1] = brw_imm_ud(lsc_bti_ex_desc(devinfo, index.ud));
-   } else {
-      const fs_builder ubld = bld.exec_all().group(1, 0);
-      fs_reg tmp = ubld.vgrf(BRW_REGISTER_TYPE_UD);
-      ubld.SHL(tmp, index, brw_imm_ud(24));
-      inst->src[1] = component(tmp, 0);
-   }
 
    assert(!compiler->indirect_ubos_use_sampler);
 
@@ -2302,6 +2323,8 @@ lower_lsc_varying_pull_constant_logical_send(const fs_builder &bld,
                                 LSC_CACHE_LOAD_L1STATE_L3MOCS,
                                 true /* has_dest */);
       inst->mlen = lsc_msg_desc_src0_len(devinfo, inst->desc);
+
+      setup_lsc_surface_descriptors(bld, inst, inst->desc, surface);
    } else {
       inst->desc = lsc_msg_desc(devinfo, LSC_OP_LOAD, inst->exec_size,
                                 LSC_ADDR_SURFTYPE_BTI, LSC_ADDR_SIZE_A32,
@@ -2312,6 +2335,9 @@ lower_lsc_varying_pull_constant_logical_send(const fs_builder &bld,
                                 LSC_CACHE_LOAD_L1STATE_L3MOCS,
                                 true /* has_dest */);
       inst->mlen = lsc_msg_desc_src0_len(devinfo, inst->desc);
+
+      setup_lsc_surface_descriptors(bld, inst, inst->desc, surface);
+
       /* The byte scattered messages can only read one dword at a time so
        * we have to duplicate the message 4 times to read the full vec4.
        * Hopefully, dead code will clean up the mess if some of them aren't
@@ -2535,7 +2561,7 @@ lower_btd_logical_send(const fs_builder &bld, fs_inst *inst)
 {
    const intel_device_info *devinfo = bld.shader->devinfo;
    fs_reg global_addr = inst->src[0];
-   const fs_reg &btd_record = inst->src[1];
+   const fs_reg btd_record = inst->src[1];
 
    const unsigned mlen = 2;
    const fs_builder ubld = bld.exec_all().group(8, 0);
@@ -2612,17 +2638,17 @@ lower_trace_ray_logical_send(const fs_builder &bld, fs_inst *inst)
     */
    fs_reg globals_addr = retype(inst->src[RT_LOGICAL_SRC_GLOBALS], BRW_REGISTER_TYPE_UD);
    globals_addr.stride = 1;
-   const fs_reg &bvh_level =
+   const fs_reg bvh_level =
       inst->src[RT_LOGICAL_SRC_BVH_LEVEL].file == BRW_IMMEDIATE_VALUE ?
       inst->src[RT_LOGICAL_SRC_BVH_LEVEL] :
       bld.move_to_vgrf(inst->src[RT_LOGICAL_SRC_BVH_LEVEL],
                        inst->components_read(RT_LOGICAL_SRC_BVH_LEVEL));
-   const fs_reg &trace_ray_control =
+   const fs_reg trace_ray_control =
       inst->src[RT_LOGICAL_SRC_TRACE_RAY_CONTROL].file == BRW_IMMEDIATE_VALUE ?
       inst->src[RT_LOGICAL_SRC_TRACE_RAY_CONTROL] :
       bld.move_to_vgrf(inst->src[RT_LOGICAL_SRC_TRACE_RAY_CONTROL],
                        inst->components_read(RT_LOGICAL_SRC_TRACE_RAY_CONTROL));
-   const fs_reg &synchronous_src = inst->src[RT_LOGICAL_SRC_SYNCHRONOUS];
+   const fs_reg synchronous_src = inst->src[RT_LOGICAL_SRC_SYNCHRONOUS];
    assert(synchronous_src.file == BRW_IMMEDIATE_VALUE);
    const bool synchronous = synchronous_src.ud;
 
@@ -2893,9 +2919,9 @@ fs_visitor::lower_uniform_pull_constant_loads()
       if (inst->opcode != FS_OPCODE_UNIFORM_PULL_CONSTANT_LOAD)
          continue;
 
-      const fs_reg& surface = inst->src[PULL_UNIFORM_CONSTANT_SRC_SURFACE];
-      const fs_reg& offset_B = inst->src[PULL_UNIFORM_CONSTANT_SRC_OFFSET];
-      const fs_reg& size_B = inst->src[PULL_UNIFORM_CONSTANT_SRC_SIZE];
+      const fs_reg surface = inst->src[PULL_UNIFORM_CONSTANT_SRC_SURFACE];
+      const fs_reg offset_B = inst->src[PULL_UNIFORM_CONSTANT_SRC_OFFSET];
+      const fs_reg size_B = inst->src[PULL_UNIFORM_CONSTANT_SRC_SIZE];
       assert(offset_B.file == IMM);
       assert(size_B.file == IMM);
 
@@ -2918,17 +2944,6 @@ fs_visitor::lower_uniform_pull_constant_loads()
                                    LSC_CACHE_LOAD_L1STATE_L3MOCS,
                                    true /* has_dest */);
 
-         fs_reg ex_desc;
-         if (surface.file == IMM) {
-            ex_desc = brw_imm_ud(lsc_bti_ex_desc(devinfo, surface.ud));
-         } else {
-            /* We only need the first component for the payload so we can use
-             * one of the other components for the extended descriptor
-             */
-            ex_desc = component(payload, 1);
-            ubld.group(1, 0).SHL(ex_desc, surface, brw_imm_ud(24));
-         }
-
          /* Update the original instruction. */
          inst->opcode = SHADER_OPCODE_SEND;
          inst->mlen = lsc_msg_desc_src0_len(devinfo, inst->desc);
@@ -2939,9 +2954,9 @@ fs_visitor::lower_uniform_pull_constant_loads()
          inst->exec_size = 1;
 
          /* Finally, the payload */
+
          inst->resize_sources(3);
-         inst->src[0] = brw_imm_ud(0); /* desc */
-         inst->src[1] = ex_desc;
+         setup_lsc_surface_descriptors(ubld, inst, inst->desc, surface);
          inst->src[2] = payload;
 
          invalidate_analysis(DEPENDENCY_INSTRUCTIONS | DEPENDENCY_VARIABLES);

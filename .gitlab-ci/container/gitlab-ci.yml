@@ -497,6 +497,7 @@ windows_test_vs2019:
     MESA_BASE_IMAGE_PATH: *windows_vs_image_path
     MESA_BASE_IMAGE_TAG: *windows_vs_image_tag
     MESA_BASE_IMAGE: "$CI_REGISTRY_IMAGE/${MESA_BASE_IMAGE_PATH}:${MESA_BASE_IMAGE_TAG}"
+  timeout: 2h 30m
   needs:
     - windows_vs2019
 

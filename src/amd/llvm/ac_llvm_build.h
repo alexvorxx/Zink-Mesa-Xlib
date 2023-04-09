@@ -521,37 +521,6 @@ LLVMValueRef ac_build_exclusive_scan(struct ac_llvm_context *ctx, LLVMValueRef s
 LLVMValueRef ac_build_reduce(struct ac_llvm_context *ctx, LLVMValueRef src, nir_op op,
                              unsigned cluster_size);
 
-/**
- * Common arguments for a scan/reduce operation that accumulates per-wave
- * values across an entire workgroup, while respecting the order of waves.
- */
-struct ac_wg_scan {
-   gl_shader_stage stage;
-   bool enable_reduce;
-   bool enable_exclusive;
-   bool enable_inclusive;
-   nir_op op;
-   LLVMValueRef src; /* clobbered! */
-   LLVMValueRef result_reduce;
-   LLVMValueRef result_exclusive;
-   LLVMValueRef result_inclusive;
-   LLVMValueRef extra;
-   LLVMValueRef waveidx;
-   LLVMValueRef numwaves; /* only needed for "reduce" operations */
-
-   /* T addrspace(LDS) pointer to the same type as value, at least maxwaves entries */
-   LLVMValueRef scratch;
-   unsigned maxwaves;
-};
-
-void ac_build_wg_wavescan_top(struct ac_llvm_context *ctx, struct ac_wg_scan *ws);
-void ac_build_wg_wavescan_bottom(struct ac_llvm_context *ctx, struct ac_wg_scan *ws);
-void ac_build_wg_wavescan(struct ac_llvm_context *ctx, struct ac_wg_scan *ws);
-
-void ac_build_wg_scan_top(struct ac_llvm_context *ctx, struct ac_wg_scan *ws);
-void ac_build_wg_scan_bottom(struct ac_llvm_context *ctx, struct ac_wg_scan *ws);
-void ac_build_wg_scan(struct ac_llvm_context *ctx, struct ac_wg_scan *ws);
-
 LLVMValueRef ac_build_quad_swizzle(struct ac_llvm_context *ctx, LLVMValueRef src, unsigned lane0,
                                    unsigned lane1, unsigned lane2, unsigned lane3);
 
@@ -633,9 +602,6 @@ struct ac_llvm_pointer ac_build_main(const struct ac_shader_args *args, struct a
                                      LLVMTypeRef ret_type, LLVMModuleRef module);
 void ac_build_s_endpgm(struct ac_llvm_context *ctx);
 
-void ac_build_triangle_strip_indices_to_triangle(struct ac_llvm_context *ctx, LLVMValueRef is_odd,
-                                                 LLVMValueRef flatshade_first,
-                                                 LLVMValueRef index[3]);
 LLVMValueRef ac_build_is_inf_or_nan(struct ac_llvm_context *ctx, LLVMValueRef a);
 
 void ac_build_dual_src_blend_swizzle(struct ac_llvm_context *ctx,

@@ -405,7 +405,8 @@ static bool si_setup_compute_scratch_buffer(struct si_context *sctx, struct si_s
    }
 
    if (sctx->compute_scratch_buffer != shader->scratch_bo && scratch_needed) {
-      if (sctx->gfx_level < GFX11) {
+      if (sctx->gfx_level < GFX11 &&
+          (sctx->family < CHIP_GFX940 || sctx->screen->info.has_graphics)) {
          uint64_t scratch_va = sctx->compute_scratch_buffer->gpu_address;
 
          if (!si_shader_binary_upload(sctx->screen, shader, scratch_va))
@@ -507,7 +508,9 @@ static bool si_switch_compute_shader(struct si_context *sctx, struct si_compute 
                         S_00B8A0_INST_PREF_SIZE(si_get_shader_prefetch_size(shader)));
    }
 
-   if (sctx->gfx_level >= GFX11 && shader->scratch_bo) {
+   if ((sctx->gfx_level >= GFX11 ||
+        (sctx->family >= CHIP_GFX940 && !sctx->screen->info.has_graphics)) &&
+       shader->scratch_bo) {
       radeon_set_sh_reg_seq(R_00B840_COMPUTE_DISPATCH_SCRATCH_BASE_LO, 4);
       radeon_emit(sctx->compute_scratch_buffer->gpu_address >> 8);
       radeon_emit(sctx->compute_scratch_buffer->gpu_address >> 40);
@@ -762,8 +765,11 @@ static void si_emit_dispatch_packets(struct si_context *sctx, const struct pipe_
 
    unsigned dispatch_initiator = S_00B800_COMPUTE_SHADER_EN(1) | S_00B800_FORCE_START_AT_000(1) |
                                  /* If the KMD allows it (there is a KMD hw register for it),
-                                  * allow launching waves out-of-order. (same as Vulkan) */
-                                 S_00B800_ORDER_MODE(sctx->gfx_level >= GFX7) |
+                                  * allow launching waves out-of-order. (same as Vulkan)
+                                  * Not available in gfx940.
+                                  */
+                                 S_00B800_ORDER_MODE(sctx->gfx_level >= GFX7 &&
+                                                     (sctx->family < CHIP_GFX940 || sctx->screen->info.has_graphics)) |
                                  S_00B800_CS_W32_EN(sctx->cs_shader_state.program->shader.wave_size == 32);
 
    const uint *last_block = info->last_block;

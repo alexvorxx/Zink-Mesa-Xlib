@@ -1222,12 +1222,6 @@ radv_get_modifier_flags(struct radv_physical_device *dev, VkFormat format, uint6
    return features;
 }
 
-static VkFormatFeatureFlags
-features2_to_features(VkFormatFeatureFlags2 features2)
-{
-   return features2 & VK_ALL_FORMAT_FEATURE_FLAG_BITS;
-}
-
 static void
 radv_list_drm_format_modifiers(struct radv_physical_device *dev, VkFormat format,
                                const VkFormatProperties3 *format_props,
@@ -1277,7 +1271,8 @@ radv_list_drm_format_modifiers(struct radv_physical_device *dev, VkFormat format
          *out_props = (VkDrmFormatModifierPropertiesEXT) {
             .drmFormatModifier = mods[i],
             .drmFormatModifierPlaneCount = planes,
-            .drmFormatModifierTilingFeatures = features2_to_features(features),
+            .drmFormatModifierTilingFeatures =
+               vk_format_features2_to_features(features),
          };
       };
    }
@@ -1433,11 +1428,11 @@ radv_GetPhysicalDeviceFormatProperties2(VkPhysicalDevice physicalDevice, VkForma
    radv_physical_device_get_format_properties(physical_device, format, &format_props);
 
    pFormatProperties->formatProperties.linearTilingFeatures =
-      features2_to_features(format_props.linearTilingFeatures);
+      vk_format_features2_to_features(format_props.linearTilingFeatures);
    pFormatProperties->formatProperties.optimalTilingFeatures =
-      features2_to_features(format_props.optimalTilingFeatures);
+      vk_format_features2_to_features(format_props.optimalTilingFeatures);
    pFormatProperties->formatProperties.bufferFeatures =
-      features2_to_features(format_props.bufferFeatures);
+      vk_format_features2_to_features(format_props.bufferFeatures);
 
    VkFormatProperties3 *format_props_extended =
       vk_find_struct(pFormatProperties, FORMAT_PROPERTIES_3);

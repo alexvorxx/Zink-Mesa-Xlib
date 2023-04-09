@@ -97,8 +97,7 @@ swizzled_border_color(const struct v3d_device_info *devinfo,
          * For swizzling in the shader, we don't do any pre-swizzling of the
          * border color.
          */
-        if (v3d_get_tex_return_size(devinfo, sview->base.format,
-                                    sampler->compare_mode) != 32)
+        if (v3d_get_tex_return_size(devinfo, sview->base.format) != 32)
                 swiz = desc->swizzle[swiz];
 
         switch (swiz) {
@@ -131,8 +130,7 @@ emit_one_texture(struct v3d_context *v3d, struct v3d_texture_stateobj *stage_tex
         v3d_bo_set_reference(&stage_tex->texture_state[i].bo,
                              job->indirect.bo);
 
-        uint32_t return_size = v3d_get_tex_return_size(devinfo, psview->format,
-                                                       psampler->compare_mode);
+        uint32_t return_size = v3d_get_tex_return_size(devinfo, psview->format);
 
         struct V3D33_TEXTURE_SHADER_STATE unpacked = {
                 /* XXX */

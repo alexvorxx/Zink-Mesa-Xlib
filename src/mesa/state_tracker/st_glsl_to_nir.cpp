@@ -542,6 +542,14 @@ st_glsl_to_nir_post_opts(struct st_context *st, struct gl_program *prog,
             NIR_PASS(revectorize, nir, nir_lower_alu_to_scalar, filter_64_bit_instr, nullptr);
             NIR_PASS(revectorize, nir, nir_lower_phis_to_scalar, false);
          }
+         /* doubles lowering requires frexp to be lowered first if it will be,
+          * since the pass generates other 64-bit ops.  Most backends lower
+          * frexp, and using doubles is rare, and using frexp is even more rare
+          * (no instances in shader-db), so we're not too worried about
+          * accidentally lowering a 32-bit frexp here.
+          */
+         NIR_PASS(lowered_64bit_ops, nir, nir_lower_frexp);
+
          NIR_PASS(lowered_64bit_ops, nir, nir_lower_doubles,
                   st->ctx->SoftFP64, nir->options->lower_doubles_options);
       }

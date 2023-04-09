@@ -230,6 +230,7 @@ bool
 ac_nir_lower_global_access(nir_shader *shader);
 
 bool ac_nir_lower_resinfo(nir_shader *nir, enum amd_gfx_level gfx_level);
+bool ac_nir_lower_image_opcodes(nir_shader *nir);
 
 typedef struct ac_nir_gs_output_info {
    const uint8_t *streams;

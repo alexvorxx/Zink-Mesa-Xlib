@@ -64,9 +64,6 @@ void
 d3d12_lower_yflip(nir_shader *s);
 
 void
-d3d12_forward_front_face(nir_shader *nir);
-
-void
 d3d12_lower_depth_range(nir_shader *nir);
 
 bool

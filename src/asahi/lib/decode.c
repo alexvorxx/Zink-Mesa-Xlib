@@ -254,14 +254,6 @@ agxdecode_map_read_write(void)
 
 unsigned agxdecode_indent = 0;
 
-static void
-agxdecode_dump_bo(struct agx_bo *bo, const char *name)
-{
-   fprintf(agxdecode_dump_stream, "%s %s (%u)\n", name, bo->name ?: "",
-           bo->handle);
-   hexdump(agxdecode_dump_stream, bo->ptr.cpu, bo->size, false);
-}
-
 /* Abstraction for command stream parsing */
 typedef unsigned (*decode_cmd)(const uint8_t *map, uint64_t *link, bool verbose,
                                void *data);
@@ -283,8 +275,6 @@ agxdecode_stateful(uint64_t va, const char *label, decode_cmd decoder,
    uint8_t *end = (uint8_t *)alloc->ptr.cpu + alloc->size;
    uint64_t link = 0;
 
-   if (verbose)
-      agxdecode_dump_bo(alloc, label);
    fflush(agxdecode_dump_stream);
 
    while (map < end) {
@@ -562,7 +552,7 @@ agxdecode_vdm(const uint8_t *map, uint64_t *link, bool verbose,
 
    switch (block_type) {
    case AGX_VDM_BLOCK_TYPE_BARRIER: {
-      agx_unpack(agxdecode_dump_stream, map, VDM_BARRIER, cmd);
+      DUMP_CL(VDM_BARRIER, map, "Barrier");
       return AGX_VDM_BARRIER_LENGTH;
    }
 
@@ -835,10 +825,11 @@ agxdecode_dump_file_open(void)
                agxdecode_dump_frame_count);
       printf("agxdecode: dump command stream to file %s\n", buffer);
       agxdecode_dump_stream = fopen(buffer, "w");
-      if (!agxdecode_dump_stream)
+      if (!agxdecode_dump_stream) {
          fprintf(stderr,
                  "agxdecode: failed to open command stream log file %s\n",
                  buffer);
+      }
    }
 }
 

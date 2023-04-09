@@ -65,7 +65,7 @@ struct pipe_context* zink_xlib_context;
 static void
 update_tc_info(struct zink_context *ctx)
 {
-   if (ctx->tc && zink_screen(ctx->base.screen)->driver_workarounds.track_renderpasses) {
+   if (ctx->track_renderpasses) {
       const struct tc_renderpass_info *info = threaded_context_get_renderpass_info(ctx->tc);
       ctx->rp_changed |= ctx->dynamic_fb.tc_info.data != info->data;
       ctx->dynamic_fb.tc_info.data = info->data;
@@ -2601,7 +2601,7 @@ begin_rendering(struct zink_context *ctx)
    bool changed_layout = false;
    bool changed_size = false;
    bool zsbuf_used = zink_is_zsbuf_used(ctx);
-   bool use_tc_info = !ctx->blitting && ctx->tc && zink_screen(ctx->base.screen)->driver_workarounds.track_renderpasses;
+   bool use_tc_info = !ctx->blitting && ctx->track_renderpasses;
    if (ctx->rp_changed || ctx->rp_layout_changed || (!ctx->batch.in_rp && ctx->rp_loadop_changed)) {
       /* init imageviews, base loadOp, formats */
       for (int i = 0; i < ctx->fb_state.nr_cbufs; i++) {
@@ -2812,7 +2812,7 @@ zink_batch_rp(struct zink_context *ctx)
          update_tc_info(ctx);
       ctx->rp_tc_info_updated = false;
    }
-   bool maybe_has_query_ends = !ctx->tc || !zink_screen(ctx->base.screen)->driver_workarounds.track_renderpasses || ctx->dynamic_fb.tc_info.has_query_ends;
+   bool maybe_has_query_ends = !ctx->track_renderpasses || ctx->dynamic_fb.tc_info.has_query_ends;
    ctx->queries_in_rp = maybe_has_query_ends;
    /* if possible, out-of-renderpass resume any queries that were stopped when previous rp ended */
    if (!ctx->queries_disabled && !maybe_has_query_ends) {
@@ -2880,7 +2880,7 @@ zink_batch_no_rp(struct zink_context *ctx)
 {
    if (!ctx->batch.in_rp)
       return;
-   if (zink_screen(ctx->base.screen)->driver_workarounds.track_renderpasses && !ctx->blitting)
+   if (ctx->track_renderpasses && !ctx->blitting)
       tc_renderpass_info_reset(&ctx->dynamic_fb.tc_info);
    zink_batch_no_rp_safe(ctx);
 }
@@ -2924,7 +2924,7 @@ zink_prep_fb_attachment(struct zink_context *ctx, struct zink_surface *surf, uns
    if (ctx->blitting)
       return surf->image_view;
    VkImageLayout layout;
-   if (ctx->tc && zink_screen(ctx->base.screen)->driver_workarounds.track_renderpasses && !ctx->blitting) {
+   if (ctx->track_renderpasses && !ctx->blitting) {
       layout = zink_tc_renderpass_info_parse(ctx, &ctx->dynamic_fb.tc_info, i < ctx->fb_state.nr_cbufs ? i : PIPE_MAX_COLOR_BUFS, &pipeline, &access);
       assert(i < ctx->fb_state.nr_cbufs || layout != VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL || !zink_fb_clear_enabled(ctx, PIPE_MAX_COLOR_BUFS));
       if (i == ctx->fb_state.nr_cbufs && zink_fb_clear_enabled(ctx, PIPE_MAX_COLOR_BUFS))
@@ -3274,7 +3274,7 @@ unbind_fb_surface(struct zink_context *ctx, struct pipe_surface *surf, unsigned 
    res->fb_binds &= ~BITFIELD_BIT(idx);
    /* this is called just before the resource loses a reference, so a refcount==1 means the resource will be destroyed */
    if (!res->fb_bind_count && res->base.b.reference.count > 1) {
-      if (ctx->tc && zink_screen(ctx->base.screen)->driver_workarounds.track_renderpasses && !ctx->blitting) {
+      if (ctx->track_renderpasses && !ctx->blitting) {
          if (!(res->base.b.bind & PIPE_BIND_DISPLAY_TARGET) && util_format_is_depth_or_stencil(surf->format))
             /* assume that all depth buffers which are not swapchain images will be used for sampling to avoid splitting renderpasses */
             zink_screen(ctx->base.screen)->image_barrier(ctx, res, VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL, VK_ACCESS_SHADER_READ_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT);
@@ -3633,7 +3633,7 @@ zink_flush(struct pipe_context *pctx,
                 check_device_lost(ctx);
           }
        }
-       if (!screen->driver_workarounds.track_renderpasses)
+       if (ctx->tc && !screen->driver_workarounds.track_renderpasses)
          tc_driver_internal_flush_notify(ctx->tc);
    } else {
       fence = &batch->state->fence;
@@ -5088,6 +5088,7 @@ zink_context_create(struct pipe_screen *pscreen, void *priv, unsigned flags)
                                                      &ctx->tc);
 
    if (tc && (struct zink_context*)tc != ctx) {
+      ctx->track_renderpasses = screen->driver_workarounds.track_renderpasses;
       threaded_context_init_bytes_mapped_limit(tc, 4);
       ctx->base.set_context_param = zink_set_context_param;
    }

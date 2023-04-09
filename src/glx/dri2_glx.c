@@ -168,8 +168,10 @@ dri2_create_context_attribs(struct glx_screen *base,
       goto error_exit;
 
    /* Check the renderType value */
-   if (!validate_renderType_against_config(config_base, dca.render_type))
-       goto error_exit;
+   if (!validate_renderType_against_config(config_base, dca.render_type)) {
+      *error = BadValue;
+      goto error_exit;
+   }
 
    if (shareList) {
       /* We can't share with an indirect context */
@@ -183,7 +185,7 @@ dri2_create_context_attribs(struct glx_screen *base,
        *    GLX_CONTEXT_OPENGL_NO_ERROR_ARB for the context being created.
        */
       if (!!shareList->noError != !!dca.no_error) {
-         *error = __DRI_CTX_ERROR_BAD_FLAG;
+         *error = BadMatch;
          return NULL;
       }
 
@@ -192,7 +194,7 @@ dri2_create_context_attribs(struct glx_screen *base,
 
    pcp = calloc(1, sizeof *pcp);
    if (pcp == NULL) {
-      *error = __DRI_CTX_ERROR_NO_MEMORY;
+      *error = BadAlloc;
       goto error_exit;
    }
 
@@ -243,6 +245,8 @@ dri2_create_context_attribs(struct glx_screen *base,
 					  ctx_attribs,
 					  error,
 					  pcp);
+
+   *error = dri_context_error_to_glx_error(*error);
 
    if (pcp->driContext == NULL)
       goto error_exit;

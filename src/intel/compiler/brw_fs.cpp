@@ -641,7 +641,8 @@ fs_visitor::limit_dispatch_width(unsigned n, const char *msg)
 bool
 fs_inst::is_partial_write() const
 {
-   if (this->predicate && this->opcode != BRW_OPCODE_SEL)
+   if (this->predicate && !this->predicate_trivial &&
+       this->opcode != BRW_OPCODE_SEL)
       return true;
 
    if (this->dst.offset % REG_SIZE != 0)
@@ -6444,15 +6445,18 @@ fs_visitor::fixup_nomask_control_flow()
                 */
                const bool save_flag = flag_liveout &
                                       flag_mask(flag, dispatch_width / 8);
-               const fs_reg tmp = ubld.group(1, 0).vgrf(flag.type);
+               const fs_reg tmp = ubld.group(8, 0).vgrf(flag.type);
 
-               if (save_flag)
+               if (save_flag) {
+                  ubld.group(8, 0).UNDEF(tmp);
                   ubld.group(1, 0).MOV(tmp, flag);
+               }
 
                ubld.emit(FS_OPCODE_LOAD_LIVE_CHANNELS);
 
                set_predicate(pred, inst);
                inst->flag_subreg = 0;
+               inst->predicate_trivial = true;
 
                if (save_flag)
                   ubld.group(1, 0).at(block, inst->next).MOV(flag, tmp);
@@ -6505,6 +6509,8 @@ fs_visitor::allocate_registers(bool allow_spilling)
       "none",
       "lifo"
    };
+
+   compact_virtual_grfs();
 
    if (needs_register_pressure)
       shader_stats.max_register_pressure = compute_max_register_pressure();
@@ -7116,7 +7122,10 @@ fs_visitor::run_mesh(bool allow_spilling)
 static bool
 is_used_in_not_interp_frag_coord(nir_ssa_def *def)
 {
-   nir_foreach_use(src, def) {
+   nir_foreach_use_including_if(src, def) {
+      if (src->is_if)
+         return true;
+
       if (src->parent_instr->type != nir_instr_type_intrinsic)
          return true;
 
@@ -7124,9 +7133,6 @@ is_used_in_not_interp_frag_coord(nir_ssa_def *def)
       if (intrin->intrinsic != nir_intrinsic_load_frag_coord)
          return true;
    }
-
-   nir_foreach_if_use(src, def)
-      return true;
 
    return false;
 }
@@ -7255,11 +7261,12 @@ brw_nir_move_interpolation_to_top(nir_shader *nir)
          continue;
 
       nir_block *top = nir_start_block(f->impl);
-      exec_node *cursor_node = NULL;
+      nir_cursor cursor = nir_before_instr(nir_block_first_instr(top));
+      bool impl_progress = false;
 
-      nir_foreach_block(block, f->impl) {
-         if (block == top)
-            continue;
+      for (nir_block *block = nir_block_cf_tree_next(top);
+           block != NULL;
+           block = nir_block_cf_tree_next(block)) {
 
          nir_foreach_instr_safe(instr, block) {
             if (instr->type != nir_instr_type_intrinsic)
@@ -7285,21 +7292,18 @@ brw_nir_move_interpolation_to_top(nir_shader *nir)
 
             for (unsigned i = 0; i < ARRAY_SIZE(move); i++) {
                if (move[i]->block != top) {
-                  move[i]->block = top;
-                  exec_node_remove(&move[i]->node);
-                  if (cursor_node) {
-                     exec_node_insert_after(cursor_node, &move[i]->node);
-                  } else {
-                     exec_list_push_head(&top->instr_list, &move[i]->node);
-                  }
-                  cursor_node = &move[i]->node;
-                  progress = true;
+                  nir_instr_move(cursor, move[i]);
+                  impl_progress = true;
                }
             }
          }
       }
-      nir_metadata_preserve(f->impl, nir_metadata_block_index |
-                                     nir_metadata_dominance);
+
+      progress = progress || impl_progress;
+
+      nir_metadata_preserve(f->impl, impl_progress ? (nir_metadata_block_index |
+                                                      nir_metadata_dominance)
+                                                   : nir_metadata_all);
    }
 
    return progress;
@@ -7475,11 +7479,11 @@ brw_compile_fs(const struct brw_compiler *compiler,
        * offset to determine render target 0 store instruction in
        * emit_alpha_to_coverage pass.
        */
-      NIR_PASS_V(nir, nir_opt_constant_folding);
-      NIR_PASS_V(nir, brw_nir_lower_alpha_to_coverage, key, prog_data);
+      NIR_PASS(_, nir, nir_opt_constant_folding);
+      NIR_PASS(_, nir, brw_nir_lower_alpha_to_coverage, key, prog_data);
    }
 
-   NIR_PASS_V(nir, brw_nir_move_interpolation_to_top);
+   NIR_PASS(_, nir, brw_nir_move_interpolation_to_top);
    brw_postprocess_nir(nir, compiler, true, debug_enabled,
                        key->base.robust_buffer_access);
 

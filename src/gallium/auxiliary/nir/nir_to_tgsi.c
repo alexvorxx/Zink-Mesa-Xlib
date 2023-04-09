@@ -763,7 +763,7 @@ ntt_output_decl(struct ntt_compile *c, nir_intrinsic_instr *instr, uint32_t *fra
  */
 static bool
 ntt_try_store_in_tgsi_output(struct ntt_compile *c, struct ureg_dst *dst,
-                             struct list_head *uses, struct list_head *if_uses)
+                             struct list_head *uses)
 {
    *dst = ureg_dst_undef();
 
@@ -779,10 +779,12 @@ ntt_try_store_in_tgsi_output(struct ntt_compile *c, struct ureg_dst *dst,
       return false;
    }
 
-   if (!list_is_empty(if_uses) || !list_is_singular(uses))
+   if (!list_is_singular(uses))
       return false;
 
    nir_src *src = list_first_entry(uses, nir_src, use_link);
+   if (src->is_if)
+      return false;
 
    if (src->parent_instr->type != nir_instr_type_intrinsic)
       return false;
@@ -1099,7 +1101,7 @@ ntt_setup_registers(struct ntt_compile *c, struct exec_list *list)
       if (nir_reg->num_array_elems == 0) {
          struct ureg_dst decl;
          uint32_t write_mask = BITFIELD_MASK(nir_reg->num_components);
-         if (!ntt_try_store_in_tgsi_output(c, &decl, &nir_reg->uses, &nir_reg->if_uses)) {
+         if (!ntt_try_store_in_tgsi_output(c, &decl, &nir_reg->uses)) {
             if (nir_reg->bit_size == 64) {
                if (nir_reg->num_components > 2) {
                   fprintf(stderr, "NIR-to-TGSI: error: %d-component NIR r%d\n",
@@ -1253,7 +1255,7 @@ ntt_get_ssa_def_decl(struct ntt_compile *c, nir_ssa_def *ssa)
       writemask = ntt_64bit_write_mask(writemask);
 
    struct ureg_dst dst;
-   if (!ntt_try_store_in_tgsi_output(c, &dst, &ssa->uses, &ssa->if_uses))
+   if (!ntt_try_store_in_tgsi_output(c, &dst, &ssa->uses))
       dst = ntt_temp(c);
 
    c->ssa_temp[ssa->index] = ntt_swizzle_for_write_mask(ureg_src(dst), writemask);
@@ -1685,40 +1687,10 @@ ntt_emit_alu(struct ntt_compile *c, nir_alu_instr *instr)
          ntt_CMP(c, dst, src[0], src[2], src[1]);
          break;
 
-         /* It would be nice if we could get this left as scalar in NIR, since
-          * the TGSI op is scalar.
-          */
       case nir_op_frexp_sig:
-      case nir_op_frexp_exp: {
-         assert(src_64);
-         struct ureg_dst temp = ntt_temp(c);
-
-         for (int chan = 0; chan < 2; chan++) {
-            int wm = 1 << chan;
-
-            if (!(instr->dest.write_mask & wm))
-               continue;
-
-            struct ureg_dst dsts[2] = { temp, temp };
-            if (instr->op == nir_op_frexp_sig) {
-               dsts[0] = ureg_writemask(dst, ntt_64bit_write_mask(wm));
-            } else {
-               dsts[1] = ureg_writemask(dst, wm);
-            }
-
-            struct ureg_src chan_src = ureg_swizzle(src[0],
-                                                    chan * 2, chan * 2 + 1,
-                                                    chan * 2, chan * 2 + 1);
-
-            struct ntt_insn *insn = ntt_insn(c, TGSI_OPCODE_DFRACEXP,
-                                             dsts[0], chan_src,
-                                             ureg_src_undef(),
-                                             ureg_src_undef(),
-                                             ureg_src_undef());
-            insn->dst[1] = dsts[1];
-         }
+      case nir_op_frexp_exp:
+         unreachable("covered by nir_lower_frexp()");
          break;
-      }
 
       case nir_op_ldexp:
          assert(dst_64); /* 32bit handled in table. */
@@ -3933,6 +3905,8 @@ const void *nir_to_tgsi_options(struct nir_shader *s,
 
    /* Lower demote_if to if (cond) { demote } because TGSI doesn't have a DEMOTE_IF. */
    NIR_PASS_V(s, nir_lower_discard_if, nir_lower_demote_if_to_cf);
+
+   NIR_PASS_V(s, nir_lower_frexp);
 
    bool progress;
    do {

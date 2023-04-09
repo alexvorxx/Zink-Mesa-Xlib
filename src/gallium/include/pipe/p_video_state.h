@@ -44,7 +44,7 @@ extern "C" {
 #define PIPE_DEFAULT_FRAME_RATE_DEN   1
 #define PIPE_DEFAULT_FRAME_RATE_NUM   30
 #define PIPE_H2645_EXTENDED_SAR       255
-#define PIPE_DEFAULT_DECODER_FEEDBACK_TIMEOUT_NS 100000000
+#define PIPE_DEFAULT_DECODER_FEEDBACK_TIMEOUT_NS 1000000000
 
 /*
  * see table 6-12 in the spec
@@ -793,6 +793,10 @@ struct pipe_mjpeg_picture_desc
       } components[255];
 
       uint8_t num_components;
+      uint16_t crop_x;
+      uint16_t crop_y;
+      uint16_t crop_width;
+      uint16_t crop_height;
    } picture_parameter;
 
    struct

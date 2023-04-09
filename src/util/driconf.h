@@ -654,11 +654,21 @@
    DRI_CONF_OPT_I(generated_indirect_threshold, def, 0, INT32_MAX, \
                   "Indirect threshold count above which we start generating commands")
 
+#define DRI_CONF_ANV_QUERY_CLEAR_WITH_BLORP_THRESHOLD(def) \
+   DRI_CONF_OPT_I(query_clear_with_blorp_threshold, def, 0, INT32_MAX, \
+                  "Indirect threshold count above which we start generating commands")
+
 /**
  * \brief DZN specific configuration options
  */
 
 #define DRI_CONF_DZN_CLAIM_WIDE_LINES(def) \
    DRI_CONF_OPT_B(dzn_claim_wide_lines, def, "Claim wide line support")
+
+#define DRI_CONF_DZN_ENABLE_8BIT_LOADS_STORES(def) \
+   DRI_CONF_OPT_B(dzn_enable_8bit_loads_stores, def, "Enable VK_KHR_8bit_loads_stores")
+
+#define DRI_CONF_DZN_ENABLE_SUBGROUP_OPS_IN_VTX_PIPELINE(def) \
+   DRI_CONF_OPT_B(dzn_enable_subgroup_ops_in_vtx_pipeline, def, "Enable subgroup ops in pre-rasterizer stages (VS/GS)")
 
 #endif

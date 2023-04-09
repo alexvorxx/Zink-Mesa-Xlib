@@ -188,7 +188,8 @@ dzn_descriptor_set_layout_create(struct dzn_device *device,
          bindings[i].pImmutableSamplers != NULL;
       bool static_sampler = false;
 
-      if (immutable_samplers && bindings[i].descriptorCount == 1) {
+      if (device->support_static_samplers &&
+          immutable_samplers && bindings[i].descriptorCount == 1) {
          VK_FROM_HANDLE(dzn_sampler, sampler, bindings[i].pImmutableSamplers[0]);
 
          if (sampler->static_border_color != -1)
@@ -301,7 +302,8 @@ dzn_descriptor_set_layout_create(struct dzn_device *device,
       bool has_immutable_samplers =
          has_sampler &&
          ordered_bindings[i].pImmutableSamplers != NULL;
-      bool has_static_sampler = has_immutable_samplers && desc_count == 1;
+      bool has_static_sampler = device->support_static_samplers &&
+         has_immutable_samplers && desc_count == 1;
       bool is_dynamic = is_dynamic_desc_type(desc_type);
 
       D3D12_SHADER_VISIBILITY visibility = device->bindless ?
@@ -1182,10 +1184,16 @@ dzn_bindless_descriptor_set_write_buffer_desc(struct dzn_device *device,
       if (*info->bindless_descriptor_slot < 0)
          *info->bindless_descriptor_slot =
             dzn_device_descriptor_heap_alloc_slot(device, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+      uint32_t offset = (info->offset / D3D12_RAW_UAV_SRV_BYTE_ALIGNMENT) * D3D12_RAW_UAV_SRV_BYTE_ALIGNMENT;
+
+      struct dzn_buffer_desc local_info = *info;
+      local_info.offset = offset;
+      info = &local_info;
+
       dzn_descriptor_heap_write_buffer_desc(device, &device->device_heaps[D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV].heap,
                                             *info->bindless_descriptor_slot, info->type == VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, info);
       map[desc_offset].buffer_idx = *info->bindless_descriptor_slot;
-      map[desc_offset].buffer_offset = 0;
+      map[desc_offset].buffer_offset = info->offset - offset;
    }
 }
 
@@ -1372,8 +1380,12 @@ dzn_descriptor_set_write_dynamic_buffer_desc(struct dzn_device *device,
          if (*info->bindless_descriptor_slot < 0)
             *info->bindless_descriptor_slot =
             dzn_device_descriptor_heap_alloc_slot(device, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+         uint32_t offset = (info->offset / D3D12_RAW_UAV_SRV_BYTE_ALIGNMENT) * D3D12_RAW_UAV_SRV_BYTE_ALIGNMENT;
+
+         struct dzn_buffer_desc local_info = *info;
+         local_info.offset = offset;
          dzn_descriptor_heap_write_buffer_desc(device, &device->device_heaps[D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV].heap,
-                                               *info->bindless_descriptor_slot, info->type == VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, info);
+                                               *info->bindless_descriptor_slot, info->type == VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, &local_info);
       }
    }
 
@@ -1591,8 +1603,10 @@ dzn_descriptor_set_init(struct dzn_descriptor_set *set,
    if (!reuse) {
       dzn_foreach_pool_type(type) {
          set->heap_offsets[type] = pool->free_offset[type];
+         if (device->bindless)
+            set->heap_offsets[type] = ALIGN(set->heap_offsets[type], 2);
          set->heap_sizes[type] = layout->range_desc_count[type] + variable_descriptor_count[type];
-         set->pool->free_offset[type] += set->heap_sizes[type];
+         set->pool->free_offset[type] = set->heap_offsets[type] + set->heap_sizes[type];
       }
    }
 
@@ -1725,6 +1739,12 @@ dzn_descriptor_pool_create(struct dzn_device *device,
 
    if (device->bindless) {
       if (pool->desc_count[0]) {
+         /* Include extra descriptors so that we can align each allocated descriptor set to a 16-byte boundary */
+         static_assert(D3D12_RAW_UAV_SRV_BYTE_ALIGNMENT / sizeof(struct dxil_spirv_bindless_entry) == 2,
+                       "Ensure only one extra descriptor is needed to produce correct alignments");
+         uint32_t extra_descriptors = pool->set_count - 1;
+         pool->desc_count[0] += extra_descriptors;
+
          /* Going to raw APIs to avoid allocating descriptors for this */
          D3D12_RESOURCE_DESC buf_desc = {
             .Dimension = D3D12_RESOURCE_DIMENSION_BUFFER,
@@ -2125,7 +2145,7 @@ dzn_descriptor_set_write(struct dzn_device *device,
             pDescriptorWrite->descriptorType,
             dzn_buffer_from_handle(binfo->buffer),
             binfo->range, binfo->offset,
-            &set->buffer_heap_slots[set->layout->bindings[ptr.binding].buffer_idx]
+            &set->buffer_heap_slots[dzn_descriptor_set_ptr_get_buffer_idx(set->layout, &ptr)]
          };
 
          if (desc.buffer)

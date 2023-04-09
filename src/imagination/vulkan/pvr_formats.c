@@ -649,12 +649,6 @@ pvr_get_buffer_format_features2(const struct pvr_format *pvr_format)
    return flags;
 }
 
-static VkFormatFeatureFlags
-pvr_features2_to_features(VkFormatFeatureFlags2 features2)
-{
-   return features2 & VK_ALL_FORMAT_FEATURE_FLAG_BITS;
-}
-
 void pvr_GetPhysicalDeviceFormatProperties2(
    VkPhysicalDevice physicalDevice,
    VkFormat format,
@@ -669,9 +663,9 @@ void pvr_GetPhysicalDeviceFormatProperties2(
    buffer2 = pvr_get_buffer_format_features2(pvr_format);
 
    pFormatProperties->formatProperties = (VkFormatProperties){
-      .linearTilingFeatures = pvr_features2_to_features(linear2),
-      .optimalTilingFeatures = pvr_features2_to_features(optimal2),
-      .bufferFeatures = pvr_features2_to_features(buffer2),
+      .linearTilingFeatures = vk_format_features2_to_features(linear2),
+      .optimalTilingFeatures = vk_format_features2_to_features(optimal2),
+      .bufferFeatures = vk_format_features2_to_features(buffer2),
    };
 
    vk_foreach_struct (ext, pFormatProperties->pNext) {

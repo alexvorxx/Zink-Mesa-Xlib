@@ -383,6 +383,11 @@ radv_use_tc_compat_cmask_for_image(struct radv_device *device, struct radv_image
    if (device->physical_device->rad_info.gfx_level < GFX8)
       return false;
 
+   /* GFX9 has issues when sample count is greater than 2 */
+   if (device->physical_device->rad_info.gfx_level == GFX9 &&
+       image->info.samples > 2)
+      return false;
+
    if (device->instance->debug_flags & RADV_DEBUG_NO_TC_COMPAT_CMASK)
       return false;
 
@@ -2449,23 +2454,31 @@ radv_layout_dcc_compressed(const struct radv_device *device, const struct radv_i
    return device->physical_device->rad_info.gfx_level >= GFX10 || layout != VK_IMAGE_LAYOUT_GENERAL;
 }
 
-bool
-radv_layout_fmask_compressed(const struct radv_device *device, const struct radv_image *image,
-                             VkImageLayout layout, unsigned queue_mask)
+enum radv_fmask_compression
+radv_layout_fmask_compression(const struct radv_device *device, const struct radv_image *image,
+                               VkImageLayout layout, unsigned queue_mask)
 {
    if (!radv_image_has_fmask(image))
-      return false;
+      return RADV_FMASK_COMPRESSION_NONE;
+
+   if (layout == VK_IMAGE_LAYOUT_GENERAL)
+      return RADV_FMASK_COMPRESSION_NONE;
 
    /* Don't compress compute transfer dst because image stores ignore FMASK and it needs to be
     * expanded before.
     */
-   if ((layout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL || layout == VK_IMAGE_LAYOUT_GENERAL) &&
-       (queue_mask & (1u << RADV_QUEUE_COMPUTE)))
-      return false;
+   if (layout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL && (queue_mask & (1u << RADV_QUEUE_COMPUTE)))
+      return RADV_FMASK_COMPRESSION_NONE;
+
+   if (layout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL ||
+       layout == VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL) {
+      return radv_image_is_tc_compat_cmask(image) ? RADV_FMASK_COMPRESSION_FULL :
+         RADV_FMASK_COMPRESSION_PARTIAL;
+   }
 
    /* Only compress concurrent images if TC-compat CMASK is enabled (no FMASK decompression). */
-   return layout != VK_IMAGE_LAYOUT_GENERAL &&
-          (queue_mask == (1u << RADV_QUEUE_GENERAL) || radv_image_is_tc_compat_cmask(image));
+   return (queue_mask == (1u << RADV_QUEUE_GENERAL) || radv_image_is_tc_compat_cmask(image)) ?
+      RADV_FMASK_COMPRESSION_FULL : RADV_FMASK_COMPRESSION_NONE;
 }
 
 unsigned

@@ -33,3 +33,6 @@ dEQP-VK.glsl.builtin.function.integer.findMSB.ivec2_highp_geometry
 # https://gitlab.freedesktop.org/eric/mesa/-/jobs/37556931
 # https://gitlab.freedesktop.org/eric/mesa/-/jobs/37596148
 dEQP-VK.renderpass2.suballocation.load_store_op_none.depthstencil_d24_unorm_s8_uint_load_op_depth_load_stencil_none_store_op_depth_store_stencil_none_stencil_write_off
+
+# first encounter 01/04/2023
+spec@ext_framebuffer_blit@fbo-sys-blit

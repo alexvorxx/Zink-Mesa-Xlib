@@ -83,6 +83,7 @@ bool dxil_nir_lower_subgroup_id(nir_shader *s);
 bool dxil_nir_lower_num_subgroups(nir_shader *s);
 bool dxil_nir_split_unaligned_loads_stores(nir_shader *shader, nir_variable_mode modes);
 bool dxil_nir_lower_unsupported_subgroup_scan(nir_shader *s);
+bool dxil_nir_forward_front_face(nir_shader *s);
 
 #ifdef __cplusplus
 }

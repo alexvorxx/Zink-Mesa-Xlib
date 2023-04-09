@@ -3,7 +3,7 @@
 
 set -ex
 
-REV="60e7f0586bac0cfcfcb5871046e31ca2057a5117"
+REV="2391a83d1639a7ab7bbea02853b922878687b0e5"
 
 git clone https://gitlab.freedesktop.org/mesa/piglit.git --single-branch --no-checkout /piglit
 pushd /piglit

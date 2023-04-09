@@ -82,6 +82,8 @@ const char *ac_get_family_name(enum radeon_family family)
       return "MI100";
    case CHIP_MI200:
       return "MI200";
+   case CHIP_GFX940:
+      return "GFX940";
    case CHIP_NAVI10:
       return "NAVI10";
    case CHIP_NAVI12:

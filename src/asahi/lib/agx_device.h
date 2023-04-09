@@ -23,6 +23,7 @@ enum agx_dbg {
    AGX_DBG_NOCLUSTER = BITFIELD_BIT(7),
    AGX_DBG_SYNC = BITFIELD_BIT(8),
    AGX_DBG_STATS = BITFIELD_BIT(9),
+   AGX_DBG_RESOURCE = BITFIELD_BIT(10),
 };
 
 /* Dummy partial declarations, pending real UAPI */

@@ -1039,7 +1039,8 @@ zink_create_gfx_program(struct zink_context *ctx,
       if (stages[i]) {
          prog->shaders[i] = stages[i];
          prog->stages_present |= BITFIELD_BIT(i);
-         prog->optimal_keys &= !prog->shaders[i]->non_fs.is_generated;
+         if (i != MESA_SHADER_FRAGMENT)
+            prog->optimal_keys &= !prog->shaders[i]->non_fs.is_generated;
          prog->needs_inlining |= prog->shaders[i]->needs_inlining;
          nir[i] = zink_shader_deserialize(screen, stages[i]);
       } else {
@@ -1785,7 +1786,7 @@ zink_bind_fs_state(struct pipe_context *pctx,
       if (shadow_mask != ctx->gfx_stages[MESA_SHADER_FRAGMENT]->fs.legacy_shadow_mask &&
           !zink_screen(pctx->screen)->driver_workarounds.needs_zs_shader_swizzle)
          zink_update_shadow_samplerviews(ctx, shadow_mask | ctx->gfx_stages[MESA_SHADER_FRAGMENT]->fs.legacy_shadow_mask);
-      if (!zink_screen(ctx->base.screen)->driver_workarounds.track_renderpasses && !ctx->blitting)
+      if (!ctx->track_renderpasses && !ctx->blitting)
          zink_parse_tc_info(ctx);
    }
    zink_update_fbfetch(ctx);

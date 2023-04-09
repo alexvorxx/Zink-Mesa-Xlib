@@ -2515,6 +2515,10 @@ int ac_compute_surface(struct ac_addrlib *addrlib, const struct radeon_info *inf
    if (r)
       return r;
 
+   /* Images are emulated on some CDNA chips. */
+   if (!info->has_image_opcodes)
+      mode = RADEON_SURF_MODE_LINEAR_ALIGNED;
+
    if (info->family_id >= FAMILY_AI)
       r = gfx9_compute_surface(addrlib, info, config, mode, surf);
    else

@@ -566,38 +566,6 @@
         *radv_file_list
       when: manual
 
-.virgl-rules:
-  stage: layered-backends
-  rules:
-    - !reference [.gl-rules, rules]
-    - changes:
-        *llvmpipe_file_list
-      when: on_success
-    - changes: &virgl_file_list
-      - src/gallium/drivers/virgl/**/*
-      - src/gallium/winsys/virgl/**/*
-      when: on_success
-
-.virgl-iris-rules-performance:
-  stage: layered-backends
-  rules:
-    - !reference [.collabora-farm-rules, rules]
-    - !reference [.performance-rules, rules]
-    - !reference [.gl-manual-rules, rules]
-    - changes:
-        *llvmpipe_file_list
-      when: manual
-    - changes:
-        *virgl_file_list
-      when: manual
-  allow_failure: true # see comment in .performance-rules, which we don't inherit this line from.
-  variables:
-    LAVA_JOB_PRIORITY: 40
-    MINIO_ARTIFACT_NAME: "mesa-amd64-release"
-  needs:
-    - kernel+rootfs_amd64
-    - debian-release
-
 .venus-rules:
   stage: layered-backends
   rules:
@@ -774,6 +742,50 @@
       - src/gallium/winsys/iris/**/*
       - src/intel/**/*
       when: on_success
+
+.virgl-rules:
+  stage: layered-backends
+  rules:
+    - !reference [.gl-rules, rules]
+    - changes:
+        *llvmpipe_file_list
+      when: on_success
+    - changes: &virgl_file_list
+      - src/gallium/drivers/virgl/**/*
+      - src/gallium/winsys/virgl/**/*
+      when: on_success
+
+.virgl-iris-manual-rules:
+  stage: layered-backends
+  rules:
+    - !reference [.collabora-farm-rules, rules]
+    - !reference [.gl-manual-rules, rules]
+    - changes:
+        *virgl_file_list
+      when: manual
+    - changes:
+        *iris_file_list
+      when: manual
+
+.virgl-iris-rules-performance:
+  stage: layered-backends
+  rules:
+    - !reference [.collabora-farm-rules, rules]
+    - !reference [.performance-rules, rules]
+    - !reference [.gl-manual-rules, rules]
+    - changes:
+        *llvmpipe_file_list
+      when: manual
+    - changes:
+        *virgl_file_list
+      when: manual
+  allow_failure: true # see comment in .performance-rules, which we don't inherit this line from.
+  variables:
+    LAVA_JOB_PRIORITY: 40
+    MINIO_ARTIFACT_NAME: "mesa-amd64-release"
+  needs:
+    - kernel+rootfs_amd64
+    - debian-release
 
 .zink-common-rules:
   rules:
