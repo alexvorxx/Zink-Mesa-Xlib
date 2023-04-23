@@ -25,6 +25,7 @@
 #include "aco_ir.h"
 
 #include "util/memstream.h"
+#include "util/ralloc.h"
 
 #include <array>
 #include <map>

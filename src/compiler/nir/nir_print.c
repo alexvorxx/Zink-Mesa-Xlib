@@ -1401,6 +1401,9 @@ print_tex_instr(nir_tex_instr *instr, print_state *state)
       }
    }
 
+   if (instr->is_gather_implicit_lod)
+      fprintf(fp, ", implicit lod");
+
    if (instr->op == nir_texop_tg4) {
       fprintf(fp, ", %u (gather_component)", instr->component);
    }

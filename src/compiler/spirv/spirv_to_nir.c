@@ -3086,6 +3086,14 @@ vtn_handle_texture(struct vtn_builder *b, SpvOp opcode,
       is_shadow && glsl_get_components(ret_type->type) == 1;
    instr->component = gather_component;
 
+   /* If SpvCapabilityImageGatherBiasLodAMD is enabled, texture gather without an explicit LOD
+    * has an implicit one (instead of using level 0).
+    */
+   if (texop == nir_texop_tg4 && b->image_gather_bias_lod &&
+       !(operands & SpvImageOperandsLodMask)) {
+      instr->is_gather_implicit_lod = true;
+   }
+
    /* The Vulkan spec says:
     *
     *    "If an instruction loads from or stores to a resource (including
@@ -4797,6 +4805,7 @@ vtn_handle_preamble_instruction(struct vtn_builder *b, SpvOp opcode,
 
       case SpvCapabilityImageGatherBiasLodAMD:
          spv_check_supported(amd_image_gather_bias_lod, cap);
+         b->image_gather_bias_lod = true;
          break;
 
       case SpvCapabilityAtomicFloat16AddEXT:

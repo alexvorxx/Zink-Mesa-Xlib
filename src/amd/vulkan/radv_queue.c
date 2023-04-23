@@ -31,13 +31,6 @@
 #include "vk_sync.h"
 #include "vk_semaphore.h"
 
-/* The number of IBs per submit isn't infinite, it depends on the IP type
- * (ie. some initial setup needed for a submit) and the number of IBs (4 DW).
- * This limit is arbitrary but should be safe for now.  Ideally, we should get
- * this limit from the KMD.
- */
-#define RADV_MAX_IBS_PER_SUBMIT 192
-
 enum radeon_ctx_priority
 radv_get_queue_global_priority(const VkDeviceQueueGlobalPriorityCreateInfoKHR *pObj)
 {
@@ -835,7 +828,7 @@ radv_init_graphics_state(struct radeon_cmdbuf *cs, struct radv_device *device)
    if (device->gfx_init) {
       uint64_t va = radv_buffer_get_va(device->gfx_init);
 
-      radeon_emit(cs, PKT3(PKT3_INDIRECT_BUFFER_CIK, 2, 0));
+      radeon_emit(cs, PKT3(PKT3_INDIRECT_BUFFER, 2, 0));
       radeon_emit(cs, va);
       radeon_emit(cs, va >> 32);
       radeon_emit(cs, device->gfx_init_size_dw & 0xffff);
@@ -1063,23 +1056,9 @@ radv_update_preamble_cs(struct radv_queue_state *queue, struct radv_device *devi
    }
 
    for (int i = 0; i < 3; ++i) {
-      /* Don't create continue preamble when it's not necessary. */
-      if (i == 2) {
-         /* We only need the continue preamble when we can't use indirect buffers. */
-         if (!(device->instance->debug_flags & RADV_DEBUG_NO_IBS) &&
-             device->physical_device->rad_info.gfx_level >= GFX7)
-            continue;
-         /* Continue preamble is unnecessary when no shader rings are used. */
-         if (!needs->scratch_size_per_wave && !needs->compute_scratch_size_per_wave &&
-             !needs->esgs_ring_size && !needs->gsvs_ring_size && !needs->tess_rings &&
-             !needs->task_rings && !needs->mesh_scratch_ring && !needs->attr_ring_size &&
-             !needs->gds && !needs->gds_oa && !needs->sample_positions)
-            continue;
-      }
-
       enum rgp_flush_bits sqtt_flush_bits = 0;
       struct radeon_cmdbuf *cs = NULL;
-      cs = ws->cs_create(ws, radv_queue_family_to_ring(device->physical_device, queue->qf));
+      cs = ws->cs_create(ws, radv_queue_family_to_ring(device->physical_device, queue->qf), false);
       if (!cs) {
          result = VK_ERROR_OUT_OF_HOST_MEMORY;
          goto fail;
@@ -1148,7 +1127,8 @@ radv_update_preamble_cs(struct radv_queue_state *queue, struct radv_device *devi
                flush_bits |= RADV_CMD_FLAG_PS_PARTIAL_FLUSH;
          }
 
-         si_cs_emit_cache_flush(cs, gfx_level, NULL, 0, is_mec, flush_bits, &sqtt_flush_bits, 0);
+         si_cs_emit_cache_flush(ws, cs, gfx_level, NULL, 0, is_mec, flush_bits, &sqtt_flush_bits,
+                                0);
       }
 
       result = ws->cs_finalize(cs);
@@ -1346,10 +1326,10 @@ radv_create_gang_wait_preambles_postambles(struct radv_queue *queue)
    if (r != VK_SUCCESS)
       return r;
 
-   struct radeon_cmdbuf *leader_pre_cs = ws->cs_create(ws, leader_ip);
-   struct radeon_cmdbuf *leader_post_cs = ws->cs_create(ws, leader_ip);
-   struct radeon_cmdbuf *ace_pre_cs = ws->cs_create(ws, AMD_IP_COMPUTE);
-   struct radeon_cmdbuf *ace_post_cs = ws->cs_create(ws, AMD_IP_COMPUTE);
+   struct radeon_cmdbuf *leader_pre_cs = ws->cs_create(ws, leader_ip, false);
+   struct radeon_cmdbuf *leader_post_cs = ws->cs_create(ws, leader_ip, false);
+   struct radeon_cmdbuf *ace_pre_cs = ws->cs_create(ws, AMD_IP_COMPUTE, false);
+   struct radeon_cmdbuf *ace_post_cs = ws->cs_create(ws, AMD_IP_COMPUTE, false);
 
    if (!leader_pre_cs || !leader_post_cs || !ace_pre_cs || !ace_post_cs)
       goto fail;
@@ -1496,7 +1476,7 @@ radv_create_perf_counter_lock_cs(struct radv_device *device, unsigned pass, bool
    if (*cs_ref)
       return *cs_ref;
 
-   cs = device->ws->cs_create(device->ws, AMD_IP_GFX);
+   cs = device->ws->cs_create(device->ws, AMD_IP_GFX, false);
    if (!cs)
       return NULL;
 
@@ -1602,8 +1582,8 @@ radv_queue_submit_normal(struct radv_queue *queue, struct vk_queue_submit *submi
 
    const unsigned num_perfctr_cs = use_perf_counters ? 2 : 0;
    const unsigned num_gang_wait_cs = use_ace ? 4 : 0;
-   const unsigned max_cs_submission = queue->device->trace_bo ? 1 : RADV_MAX_IBS_PER_SUBMIT;
    const unsigned cmd_buffer_count = submission->command_buffer_count;
+   const unsigned max_cs_submission = queue->device->trace_bo ? 1 : cmd_buffer_count;
    const unsigned cs_array_size = (use_ace ? 2 : 1) * MIN2(max_cs_submission, cmd_buffer_count) +
                                   num_perfctr_cs + num_gang_wait_cs;
 
@@ -1658,22 +1638,45 @@ radv_queue_submit_normal(struct radv_queue *queue, struct vk_queue_submit *submi
     * before starting the next cmdbuffer, so we need to do it here.
     */
    const bool need_wait = wait_count > 0;
-   unsigned num_preambles = 0;
-   struct radeon_cmdbuf *preambles[4] = {0};
+   unsigned num_initial_preambles = 0;
+   unsigned num_continue_preambles = 0;
+   unsigned num_postambles = 0;
+   struct radeon_cmdbuf *initial_preambles[5] = {0};
+   struct radeon_cmdbuf *continue_preambles[5] = {0};
+   struct radeon_cmdbuf *postambles[3] = {0};
 
    if (queue->state.qf == RADV_QUEUE_GENERAL || queue->state.qf == RADV_QUEUE_COMPUTE) {
-      preambles[num_preambles++] =
+      initial_preambles[num_initial_preambles++] =
          need_wait ? queue->state.initial_full_flush_preamble_cs : queue->state.initial_preamble_cs;
+
+      continue_preambles[num_continue_preambles++] = queue->state.continue_preamble_cs;
+
+      if (use_perf_counters) {
+         initial_preambles[num_initial_preambles++] = perf_ctr_lock_cs;
+         continue_preambles[num_continue_preambles++] = perf_ctr_lock_cs;
+         postambles[num_postambles++] = perf_ctr_unlock_cs;
+      }
    }
 
-   const unsigned num_1q_preambles = num_preambles;
+   const unsigned num_1q_initial_preambles = num_initial_preambles;
+   const unsigned num_1q_continue_preambles = num_continue_preambles;
+   const unsigned num_1q_postambles = num_postambles;
 
    if (use_ace) {
-      preambles[num_preambles++] = queue->state.gang_wait_preamble_cs;
-      preambles[num_preambles++] = queue->ace_internal_state->gang_wait_preamble_cs;
-      preambles[num_preambles++] = need_wait
-                                      ? queue->ace_internal_state->initial_full_flush_preamble_cs
-                                      : queue->ace_internal_state->initial_preamble_cs;
+      initial_preambles[num_initial_preambles++] = queue->state.gang_wait_preamble_cs;
+      initial_preambles[num_initial_preambles++] = queue->ace_internal_state->gang_wait_preamble_cs;
+      initial_preambles[num_initial_preambles++] =
+         need_wait ? queue->ace_internal_state->initial_full_flush_preamble_cs
+                   : queue->ace_internal_state->initial_preamble_cs;
+
+      continue_preambles[num_continue_preambles++] = queue->state.gang_wait_preamble_cs;
+      continue_preambles[num_continue_preambles++] =
+         queue->ace_internal_state->gang_wait_preamble_cs;
+      continue_preambles[num_continue_preambles++] =
+         queue->ace_internal_state->continue_preamble_cs;
+
+      postambles[num_postambles++] = queue->ace_internal_state->gang_wait_postamble_cs;
+      postambles[num_postambles++] = queue->state.gang_wait_postamble_cs;
    }
 
    struct radv_winsys_submit_info submit = {
@@ -1681,14 +1684,14 @@ radv_queue_submit_normal(struct radv_queue *queue, struct vk_queue_submit *submi
       .queue_index = queue->vk.index_in_family,
       .cs_array = cs_array,
       .cs_count = 0,
-      .preamble_count = 1,
-      .initial_preamble_cs = preambles,
-      .continue_preamble_cs = queue->state.continue_preamble_cs,
+      .initial_preamble_count = num_1q_initial_preambles,
+      .continue_preamble_count = num_1q_continue_preambles,
+      .postamble_count = num_1q_postambles,
+      .initial_preamble_cs = initial_preambles,
+      .continue_preamble_cs = continue_preambles,
+      .postamble_cs = postambles,
       .uses_shadow_regs = queue->state.uses_shadow_regs,
    };
-
-   const bool chaining_en = !(queue->device->instance->debug_flags & RADV_DEBUG_NO_IBS) &&
-                            queue->device->physical_device->rad_info.gfx_level >= GFX7;
 
    for (uint32_t j = 0, advance; j < cmd_buffer_count; j += advance) {
       advance = MIN2(max_cs_submission, cmd_buffer_count - j);
@@ -1700,10 +1703,6 @@ radv_queue_submit_normal(struct radv_queue *queue, struct vk_queue_submit *submi
       if (queue->device->trace_bo)
          *queue->device->trace_id_ptr = 0;
 
-      /* Add perf counter lock CS (GFX only) to the beginning of each submit. */
-      if (use_perf_counters)
-         cs_array[num_submitted_cs++] = perf_ctr_lock_cs;
-
       struct radeon_cmdbuf *chainable = NULL;
       struct radeon_cmdbuf *chainable_ace = NULL;
 
@@ -1712,8 +1711,8 @@ radv_queue_submit_normal(struct radv_queue *queue, struct vk_queue_submit *submi
          struct radv_cmd_buffer *cmd_buffer =
             (struct radv_cmd_buffer *)submission->command_buffers[j + c];
          assert(cmd_buffer->vk.level == VK_COMMAND_BUFFER_LEVEL_PRIMARY);
-         const bool can_chain_next = chaining_en && !(cmd_buffer->usage_flags &
-                                                      VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT);
+         const bool can_chain_next =
+            !(cmd_buffer->usage_flags & VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT);
 
          /* ACE needs to be first because the last CS must match the queue's IP type. */
          if (radv_cmd_buffer_needs_ace(cmd_buffer)) {
@@ -1735,18 +1734,11 @@ radv_queue_submit_normal(struct radv_queue *queue, struct vk_queue_submit *submi
          cs_idx = num_submitted_cs - 1;
       }
 
-      /* Add gang wait postambles to make sure the gang leader waits for the whole gang. */
-      if (submit_ace) {
-         cs_array[num_submitted_cs++] = queue->ace_internal_state->gang_wait_postamble_cs;
-         cs_array[num_submitted_cs++] = queue->state.gang_wait_postamble_cs;
-      }
-
-      /* Add perf counter unlock CS (GFX only) to the end of each submit. */
-      if (use_perf_counters)
-         cs_array[num_submitted_cs++] = perf_ctr_unlock_cs;
-
       submit.cs_count = num_submitted_cs;
-      submit.preamble_count = submit_ace ? num_preambles : num_1q_preambles;
+      submit.initial_preamble_count = submit_ace ? num_initial_preambles : num_1q_initial_preambles;
+      submit.continue_preamble_count =
+         submit_ace ? num_continue_preambles : num_1q_continue_preambles;
+      submit.postamble_count = submit_ace ? num_postambles : num_1q_postambles;
 
       result = queue->device->ws->cs_submit(ctx, &submit, j == 0 ? wait_count : 0, waits,
                                             last_submit ? submission->signal_count : 0,
@@ -1763,8 +1755,8 @@ radv_queue_submit_normal(struct radv_queue *queue, struct vk_queue_submit *submi
          radv_check_trap_handler(queue);
       }
 
-      preambles[0] = queue->state.initial_preamble_cs;
-      preambles[1] = !use_ace ? NULL : queue->ace_internal_state->initial_preamble_cs;
+      initial_preambles[0] = queue->state.initial_preamble_cs;
+      initial_preambles[1] = !use_ace ? NULL : queue->ace_internal_state->initial_preamble_cs;
    }
 
    queue->last_shader_upload_seq =

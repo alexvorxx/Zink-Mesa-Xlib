@@ -192,7 +192,7 @@ static void ac_sqtt_fill_cpu_info(struct sqtt_file_chunk_cpu_info *chunk)
    if (os_get_total_physical_memory(&system_ram_size))
       chunk->system_ram_size = system_ram_size / (1024 * 1024);
 
-   /* Parse cpuinfo to get more detailled information. */
+   /* Parse cpuinfo to get more detailed information. */
    f = fopen("/proc/cpuinfo", "r");
    if (!f)
       return;

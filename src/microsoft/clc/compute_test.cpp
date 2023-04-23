@@ -39,7 +39,7 @@
 
 #include <spirv-tools/libspirv.hpp>
 
-#if (defined(_WIN32) && defined(_MSC_VER)) || D3D12_SDK_VERSION < 606
+#if (defined(_WIN32) && defined(_MSC_VER))
 inline D3D12_CPU_DESCRIPTOR_HANDLE
 GetCPUDescriptorHandleForHeapStart(ID3D12DescriptorHeap *heap)
 {

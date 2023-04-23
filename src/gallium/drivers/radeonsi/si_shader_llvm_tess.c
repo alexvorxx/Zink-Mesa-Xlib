@@ -577,8 +577,8 @@ void si_llvm_ls_build_end(struct si_shader_context *ctx)
 }
 
 /**
- * Compile the TCS epilog function. This writes tesselation factors to memory
- * based on the output primitive type of the tesselator (determined by TES).
+ * Compile the TCS epilog function. This writes tessellation factors to memory
+ * based on the output primitive type of the tessellator (determined by TES).
  */
 void si_llvm_build_tcs_epilog(struct si_shader_context *ctx, union si_shader_part_key *key,
                               UNUSED bool separate_epilog)

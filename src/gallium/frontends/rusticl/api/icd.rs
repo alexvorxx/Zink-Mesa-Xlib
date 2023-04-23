@@ -1271,6 +1271,17 @@ extern "C" fn cl_get_extension_function_address(
         "clCreateProgramWithILKHR" => cl_create_program_with_il as *mut ::std::ffi::c_void,
         "clGetPlatformInfo" => cl_get_platform_info as *mut ::std::ffi::c_void,
         "clIcdGetPlatformIDsKHR" => cl_icd_get_platform_ids_khr as *mut ::std::ffi::c_void,
+
+        // cl_arm_shared_virtual_memory
+        "clEnqueueSVMFreeARM" => cl_enqueue_svm_free_arm as *mut ::std::ffi::c_void,
+        "clEnqueueSVMMapARM" => cl_enqueue_svm_map_arm as *mut ::std::ffi::c_void,
+        "clEnqueueSVMMemcpyARM" => cl_enqueue_svm_memcpy_arm as *mut ::std::ffi::c_void,
+        "clEnqueueSVMMemFillARM" => cl_enqueue_svm_mem_fill_arm as *mut ::std::ffi::c_void,
+        "clEnqueueSVMUnmapARM" => cl_enqueue_svm_unmap_arm as *mut ::std::ffi::c_void,
+        "clSetKernelArgSVMPointerARM" => cl_set_kernel_arg_svm_pointer as *mut ::std::ffi::c_void,
+        "clSetKernelExecInfoARM" => cl_set_kernel_exec_info as *mut ::std::ffi::c_void,
+        "clSVMAllocARM" => cl_svm_alloc as *mut ::std::ffi::c_void,
+        "clSVMFreeARM" => cl_svm_free as *mut ::std::ffi::c_void,
         _ => ptr::null_mut(),
     }
 }
@@ -1646,76 +1657,120 @@ extern "C" fn cl_get_pipe_info(
 }
 
 extern "C" fn cl_svm_alloc(
-    _context: cl_context,
-    _flags: cl_svm_mem_flags,
-    _size: usize,
-    _alignment: ::std::os::raw::c_uint,
+    context: cl_context,
+    flags: cl_svm_mem_flags,
+    size: usize,
+    alignment: ::std::os::raw::c_uint,
 ) -> *mut ::std::os::raw::c_void {
-    ptr::null_mut()
+    svm_alloc(context, flags, size, alignment).unwrap_or(ptr::null_mut())
 }
 
-extern "C" fn cl_svm_free(_context: cl_context, _svm_pointer: *mut ::std::os::raw::c_void) {}
+extern "C" fn cl_svm_free(context: cl_context, svm_pointer: *mut ::std::os::raw::c_void) {
+    svm_free(context, svm_pointer).ok();
+}
 
 extern "C" fn cl_enqueue_svm_free(
-    _command_queue: cl_command_queue,
-    _num_svm_pointers: cl_uint,
-    _svm_pointers: *mut *mut ::std::os::raw::c_void,
-    _pfn_free_func: ::std::option::Option<SVMFreeCb>,
-    _user_data: *mut ::std::os::raw::c_void,
-    _num_events_in_wait_list: cl_uint,
-    _event_wait_list: *const cl_event,
-    _event: *mut cl_event,
+    command_queue: cl_command_queue,
+    num_svm_pointers: cl_uint,
+    svm_pointers: *mut *mut ::std::os::raw::c_void,
+    pfn_free_func: ::std::option::Option<SVMFreeCb>,
+    user_data: *mut ::std::os::raw::c_void,
+    num_events_in_wait_list: cl_uint,
+    event_wait_list: *const cl_event,
+    event: *mut cl_event,
 ) -> cl_int {
-    CL_INVALID_OPERATION
+    match_err!(enqueue_svm_free(
+        command_queue,
+        num_svm_pointers,
+        svm_pointers,
+        pfn_free_func,
+        user_data,
+        num_events_in_wait_list,
+        event_wait_list,
+        event
+    ))
 }
 
 extern "C" fn cl_enqueue_svm_memcpy(
-    _command_queue: cl_command_queue,
-    _blocking_copy: cl_bool,
-    _dst_ptr: *mut ::std::os::raw::c_void,
-    _src_ptr: *const ::std::os::raw::c_void,
-    _size: usize,
-    _num_events_in_wait_list: cl_uint,
-    _event_wait_list: *const cl_event,
-    _event: *mut cl_event,
+    command_queue: cl_command_queue,
+    blocking_copy: cl_bool,
+    dst_ptr: *mut ::std::os::raw::c_void,
+    src_ptr: *const ::std::os::raw::c_void,
+    size: usize,
+    num_events_in_wait_list: cl_uint,
+    event_wait_list: *const cl_event,
+    event: *mut cl_event,
 ) -> cl_int {
-    CL_INVALID_OPERATION
+    match_err!(enqueue_svm_memcpy(
+        command_queue,
+        blocking_copy,
+        dst_ptr,
+        src_ptr,
+        size,
+        num_events_in_wait_list,
+        event_wait_list,
+        event
+    ))
 }
 
 extern "C" fn cl_enqueue_svm_mem_fill(
-    _command_queue: cl_command_queue,
-    _svm_ptr: *mut ::std::os::raw::c_void,
-    _pattern: *const ::std::os::raw::c_void,
-    _pattern_size: usize,
-    _size: usize,
-    _num_events_in_wait_list: cl_uint,
-    _event_wait_list: *const cl_event,
-    _event: *mut cl_event,
+    command_queue: cl_command_queue,
+    svm_ptr: *mut ::std::os::raw::c_void,
+    pattern: *const ::std::os::raw::c_void,
+    pattern_size: usize,
+    size: usize,
+    num_events_in_wait_list: cl_uint,
+    event_wait_list: *const cl_event,
+    event: *mut cl_event,
 ) -> cl_int {
-    CL_INVALID_OPERATION
+    match_err!(enqueue_svm_mem_fill(
+        command_queue,
+        svm_ptr,
+        pattern,
+        pattern_size,
+        size,
+        num_events_in_wait_list,
+        event_wait_list,
+        event
+    ))
 }
 
 extern "C" fn cl_enqueue_svm_map(
-    _command_queue: cl_command_queue,
-    _blocking_map: cl_bool,
-    _flags: cl_map_flags,
-    _svm_ptr: *mut ::std::os::raw::c_void,
-    _size: usize,
-    _num_events_in_wait_list: cl_uint,
-    _event_wait_list: *const cl_event,
-    _event: *mut cl_event,
+    command_queue: cl_command_queue,
+    blocking_map: cl_bool,
+    flags: cl_map_flags,
+    svm_ptr: *mut ::std::os::raw::c_void,
+    size: usize,
+    num_events_in_wait_list: cl_uint,
+    event_wait_list: *const cl_event,
+    event: *mut cl_event,
 ) -> cl_int {
-    CL_INVALID_OPERATION
+    match_err!(enqueue_svm_map(
+        command_queue,
+        blocking_map,
+        flags,
+        svm_ptr,
+        size,
+        num_events_in_wait_list,
+        event_wait_list,
+        event
+    ))
 }
 
 extern "C" fn cl_enqueue_svm_unmap(
-    _command_queue: cl_command_queue,
-    _svm_ptr: *mut ::std::os::raw::c_void,
-    _num_events_in_wait_list: cl_uint,
-    _event_wait_list: *const cl_event,
-    _event: *mut cl_event,
+    command_queue: cl_command_queue,
+    svm_ptr: *mut ::std::os::raw::c_void,
+    num_events_in_wait_list: cl_uint,
+    event_wait_list: *const cl_event,
+    event: *mut cl_event,
 ) -> cl_int {
-    CL_INVALID_OPERATION
+    match_err!(enqueue_svm_unmap(
+        command_queue,
+        svm_ptr,
+        num_events_in_wait_list,
+        event_wait_list,
+        event
+    ))
 }
 
 extern "C" fn cl_create_sampler_with_properties(
@@ -1730,20 +1785,25 @@ extern "C" fn cl_create_sampler_with_properties(
 }
 
 extern "C" fn cl_set_kernel_arg_svm_pointer(
-    _kernel: cl_kernel,
-    _arg_index: cl_uint,
-    _arg_value: *const ::std::os::raw::c_void,
+    kernel: cl_kernel,
+    arg_index: cl_uint,
+    arg_value: *const ::std::os::raw::c_void,
 ) -> cl_int {
-    CL_INVALID_OPERATION
+    match_err!(set_kernel_arg_svm_pointer(kernel, arg_index, arg_value))
 }
 
 extern "C" fn cl_set_kernel_exec_info(
-    _kernel: cl_kernel,
-    _param_name: cl_kernel_exec_info,
-    _param_value_size: usize,
-    _param_value: *const ::std::os::raw::c_void,
+    kernel: cl_kernel,
+    param_name: cl_kernel_exec_info,
+    param_value_size: usize,
+    param_value: *const ::std::os::raw::c_void,
 ) -> cl_int {
-    CL_INVALID_OPERATION
+    match_err!(set_kernel_exec_info(
+        kernel,
+        param_name,
+        param_value_size,
+        param_value
+    ))
 }
 
 extern "C" fn cl_clone_kernel(source_kernel: cl_kernel, errcode_ret: *mut cl_int) -> cl_kernel {
@@ -1760,16 +1820,25 @@ extern "C" fn cl_create_program_with_il(
 }
 
 extern "C" fn cl_enqueue_svm_migrate_mem(
-    _command_queue: cl_command_queue,
-    _num_svm_pointers: cl_uint,
-    _svm_pointers: *mut *const ::std::os::raw::c_void,
-    _sizes: *const usize,
-    _flags: cl_mem_migration_flags,
-    _num_events_in_wait_list: cl_uint,
-    _event_wait_list: *const cl_event,
-    _event: *mut cl_event,
+    command_queue: cl_command_queue,
+    num_svm_pointers: cl_uint,
+    svm_pointers: *mut *const ::std::os::raw::c_void,
+    sizes: *const usize,
+    flags: cl_mem_migration_flags,
+    num_events_in_wait_list: cl_uint,
+    event_wait_list: *const cl_event,
+    event: *mut cl_event,
 ) -> cl_int {
-    CL_INVALID_OPERATION
+    match_err!(enqueue_svm_migrate_mem(
+        command_queue,
+        num_svm_pointers,
+        svm_pointers,
+        sizes,
+        flags,
+        num_events_in_wait_list,
+        event_wait_list,
+        event
+    ))
 }
 
 extern "C" fn cl_get_device_and_host_timer(
@@ -1891,4 +1960,109 @@ extern "C" fn cl_icd_get_platform_ids_khr(
     num_platforms: *mut cl_uint,
 ) -> cl_int {
     match_err!(get_platform_ids(num_entries, platforms, num_platforms))
+}
+
+// cl_arm_shared_virtual_memory
+extern "C" fn cl_enqueue_svm_free_arm(
+    command_queue: cl_command_queue,
+    num_svm_pointers: cl_uint,
+    svm_pointers: *mut *mut ::std::os::raw::c_void,
+    pfn_free_func: ::std::option::Option<SVMFreeCb>,
+    user_data: *mut ::std::os::raw::c_void,
+    num_events_in_wait_list: cl_uint,
+    event_wait_list: *const cl_event,
+    event: *mut cl_event,
+) -> cl_int {
+    match_err!(enqueue_svm_free_arm(
+        command_queue,
+        num_svm_pointers,
+        svm_pointers,
+        pfn_free_func,
+        user_data,
+        num_events_in_wait_list,
+        event_wait_list,
+        event
+    ))
+}
+
+extern "C" fn cl_enqueue_svm_memcpy_arm(
+    command_queue: cl_command_queue,
+    blocking_copy: cl_bool,
+    dst_ptr: *mut ::std::os::raw::c_void,
+    src_ptr: *const ::std::os::raw::c_void,
+    size: usize,
+    num_events_in_wait_list: cl_uint,
+    event_wait_list: *const cl_event,
+    event: *mut cl_event,
+) -> cl_int {
+    match_err!(enqueue_svm_memcpy_arm(
+        command_queue,
+        blocking_copy,
+        dst_ptr,
+        src_ptr,
+        size,
+        num_events_in_wait_list,
+        event_wait_list,
+        event
+    ))
+}
+
+extern "C" fn cl_enqueue_svm_mem_fill_arm(
+    command_queue: cl_command_queue,
+    svm_ptr: *mut ::std::os::raw::c_void,
+    pattern: *const ::std::os::raw::c_void,
+    pattern_size: usize,
+    size: usize,
+    num_events_in_wait_list: cl_uint,
+    event_wait_list: *const cl_event,
+    event: *mut cl_event,
+) -> cl_int {
+    match_err!(enqueue_svm_mem_fill_arm(
+        command_queue,
+        svm_ptr,
+        pattern,
+        pattern_size,
+        size,
+        num_events_in_wait_list,
+        event_wait_list,
+        event
+    ))
+}
+
+extern "C" fn cl_enqueue_svm_map_arm(
+    command_queue: cl_command_queue,
+    blocking_map: cl_bool,
+    flags: cl_map_flags,
+    svm_ptr: *mut ::std::os::raw::c_void,
+    size: usize,
+    num_events_in_wait_list: cl_uint,
+    event_wait_list: *const cl_event,
+    event: *mut cl_event,
+) -> cl_int {
+    match_err!(enqueue_svm_map_arm(
+        command_queue,
+        blocking_map,
+        flags,
+        svm_ptr,
+        size,
+        num_events_in_wait_list,
+        event_wait_list,
+        event
+    ))
+}
+
+extern "C" fn cl_enqueue_svm_unmap_arm(
+    command_queue: cl_command_queue,
+    svm_ptr: *mut ::std::os::raw::c_void,
+    num_events_in_wait_list: cl_uint,
+    event_wait_list: *const cl_event,
+    event: *mut cl_event,
+) -> cl_int {
+    match_err!(enqueue_svm_unmap_arm(
+        command_queue,
+        svm_ptr,
+        num_events_in_wait_list,
+        event_wait_list,
+        event
+    ))
 }

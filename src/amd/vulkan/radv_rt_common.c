@@ -108,7 +108,7 @@ intersect_ray_amd_software_box(struct radv_device *device, nir_builder *b, nir_s
    nir_store_var(b, child_indices,
                  nir_imm_ivec4(b, 0xffffffffu, 0xffffffffu, 0xffffffffu, 0xffffffffu), 0xf);
 
-   /* Need to remove infinities here because otherwise we get nasty NaN propogation
+   /* Need to remove infinities here because otherwise we get nasty NaN propagation
     * if the direction has 0s in it. */
    /* inv_dir = clamp(inv_dir, -FLT_MAX, FLT_MAX); */
    inv_dir = nir_fclamp(b, inv_dir, nir_imm_float(b, -FLT_MAX), nir_imm_float(b, FLT_MAX));
@@ -238,7 +238,7 @@ intersect_ray_amd_software_tri(struct radv_device *device, nir_builder *b, nir_s
    nir_ssa_def *k_indices[3] = {kx, ky, kz};
    nir_ssa_def *k = nir_vec(b, k_indices, 3);
 
-   /* Swap kx and ky dimensions to preseve winding order */
+   /* Swap kx and ky dimensions to preserve winding order */
    unsigned swap_xy_swizzle[4] = {1, 0, 2, 3};
    k = nir_bcsel(b, nir_flt(b, nir_vector_extract(b, dir, kz), nir_imm_float(b, 0.0f)),
                  nir_swizzle(b, k, swap_xy_swizzle, 3), k);
@@ -502,8 +502,9 @@ insert_traversal_aabb_case(struct radv_device *device, nir_builder *b,
 
    struct radv_leaf_intersection intersection;
    intersection.node_addr = build_node_to_addr(device, b, bvh_node, false);
-   nir_ssa_def *triangle_info =
-      nir_build_load_global(b, 2, 32, nir_iadd_imm(b, intersection.node_addr, 24));
+   nir_ssa_def *triangle_info = nir_build_load_global(
+      b, 2, 32,
+      nir_iadd_imm(b, intersection.node_addr, offsetof(struct radv_bvh_aabb_node, primitive_id)));
    intersection.primitive_id = nir_channel(b, triangle_info, 0);
    intersection.geometry_id_and_flags = nir_channel(b, triangle_info, 1);
    intersection.opaque = hit_is_opaque(b, nir_load_deref(b, args->vars.sbt_offset_and_flags),

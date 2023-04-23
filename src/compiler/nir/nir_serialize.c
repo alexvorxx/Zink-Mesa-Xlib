@@ -1502,7 +1502,8 @@ union packed_tex_data {
       unsigned texture_non_uniform:1;
       unsigned sampler_non_uniform:1;
       unsigned array_is_lowered_cube:1;
-      unsigned unused:6; /* Mark unused for valgrind. */
+      unsigned is_gather_implicit_lod:1;
+      unsigned unused:5; /* Mark unused for valgrind. */
    } u;
 };
 
@@ -1539,6 +1540,7 @@ write_tex(write_ctx *ctx, const nir_tex_instr *tex)
       .u.texture_non_uniform = tex->texture_non_uniform,
       .u.sampler_non_uniform = tex->sampler_non_uniform,
       .u.array_is_lowered_cube = tex->array_is_lowered_cube,
+      .u.is_gather_implicit_lod = tex->is_gather_implicit_lod,
    };
    blob_write_uint32(ctx->blob, packed.u32);
 
@@ -1576,6 +1578,7 @@ read_tex(read_ctx *ctx, union packed_instr header)
    tex->texture_non_uniform = packed.u.texture_non_uniform;
    tex->sampler_non_uniform = packed.u.sampler_non_uniform;
    tex->array_is_lowered_cube = packed.u.array_is_lowered_cube;
+   tex->is_gather_implicit_lod = packed.u.is_gather_implicit_lod;
 
    for (unsigned i = 0; i < tex->num_srcs; i++) {
       union packed_src src = read_src(ctx, &tex->src[i].src);

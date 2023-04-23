@@ -24,14 +24,16 @@
 
 #include "aco_ir.h"
 
+#include "util/enum_operators.h"
+
 #include <algorithm>
 #include <array>
 #include <bitset>
 #include <map>
+#include <optional>
 #include <set>
 #include <unordered_map>
 #include <vector>
-#include <optional>
 
 namespace aco {
 namespace {
@@ -2413,8 +2415,8 @@ init_reg_file(ra_ctx& ctx, const std::vector<IDSet>& live_out_per_block, Block& 
 void
 get_affinities(ra_ctx& ctx, std::vector<IDSet>& live_out_per_block)
 {
-   std::vector<std::vector<Temp>> phi_ressources;
-   std::unordered_map<unsigned, unsigned> temp_to_phi_ressources;
+   std::vector<std::vector<Temp>> phi_resources;
+   std::unordered_map<unsigned, unsigned> temp_to_phi_resources;
 
    for (auto block_rit = ctx.program->blocks.rbegin(); block_rit != ctx.program->blocks.rend();
         block_rit++) {
@@ -2475,10 +2477,10 @@ get_affinities(ra_ctx& ctx, std::vector<IDSet>& live_out_per_block)
             live.erase(def.tempId());
             /* mark last-seen phi operand */
             std::unordered_map<unsigned, unsigned>::iterator it =
-               temp_to_phi_ressources.find(def.tempId());
-            if (it != temp_to_phi_ressources.end() &&
-                def.regClass() == phi_ressources[it->second][0].regClass()) {
-               phi_ressources[it->second][0] = def.getTemp();
+               temp_to_phi_resources.find(def.tempId());
+            if (it != temp_to_phi_resources.end() &&
+                def.regClass() == phi_resources[it->second][0].regClass()) {
+               phi_resources[it->second][0] = def.getTemp();
                /* try to coalesce phi affinities with parallelcopies */
                Operand op = Operand();
                switch (instr->opcode) {
@@ -2512,8 +2514,8 @@ get_affinities(ra_ctx& ctx, std::vector<IDSet>& live_out_per_block)
                }
 
                if (op.isTemp() && op.isFirstKillBeforeDef() && def.regClass() == op.regClass()) {
-                  phi_ressources[it->second].emplace_back(op.getTemp());
-                  temp_to_phi_ressources[op.tempId()] = it->second;
+                  phi_resources[it->second].emplace_back(op.getTemp());
+                  temp_to_phi_resources[op.tempId()] = it->second;
                }
             }
          }
@@ -2530,16 +2532,16 @@ get_affinities(ra_ctx& ctx, std::vector<IDSet>& live_out_per_block)
 
          assert(instr->definitions[0].isTemp());
          std::unordered_map<unsigned, unsigned>::iterator it =
-            temp_to_phi_ressources.find(instr->definitions[0].tempId());
-         unsigned index = phi_ressources.size();
+            temp_to_phi_resources.find(instr->definitions[0].tempId());
+         unsigned index = phi_resources.size();
          std::vector<Temp>* affinity_related;
-         if (it != temp_to_phi_ressources.end()) {
+         if (it != temp_to_phi_resources.end()) {
             index = it->second;
-            phi_ressources[index][0] = instr->definitions[0].getTemp();
-            affinity_related = &phi_ressources[index];
+            phi_resources[index][0] = instr->definitions[0].getTemp();
+            affinity_related = &phi_resources[index];
          } else {
-            phi_ressources.emplace_back(std::vector<Temp>{instr->definitions[0].getTemp()});
-            affinity_related = &phi_ressources.back();
+            phi_resources.emplace_back(std::vector<Temp>{instr->definitions[0].getTemp()});
+            affinity_related = &phi_resources.back();
          }
 
          for (const Operand& op : instr->operands) {
@@ -2547,7 +2549,7 @@ get_affinities(ra_ctx& ctx, std::vector<IDSet>& live_out_per_block)
                affinity_related->emplace_back(op.getTemp());
                if (block.kind & block_kind_loop_header)
                   continue;
-               temp_to_phi_ressources[op.tempId()] = index;
+               temp_to_phi_resources[op.tempId()] = index;
             }
          }
       }
@@ -2566,25 +2568,25 @@ get_affinities(ra_ctx& ctx, std::vector<IDSet>& live_out_per_block)
                continue;
 
             /* create an (empty) merge-set for the phi-related variables */
-            auto it = temp_to_phi_ressources.find(phi->definitions[0].tempId());
-            unsigned index = phi_ressources.size();
-            if (it == temp_to_phi_ressources.end()) {
-               temp_to_phi_ressources[phi->definitions[0].tempId()] = index;
-               phi_ressources.emplace_back(std::vector<Temp>{phi->definitions[0].getTemp()});
+            auto it = temp_to_phi_resources.find(phi->definitions[0].tempId());
+            unsigned index = phi_resources.size();
+            if (it == temp_to_phi_resources.end()) {
+               temp_to_phi_resources[phi->definitions[0].tempId()] = index;
+               phi_resources.emplace_back(std::vector<Temp>{phi->definitions[0].getTemp()});
             } else {
                index = it->second;
             }
             for (unsigned i = 1; i < phi->operands.size(); i++) {
                const Operand& op = phi->operands[i];
                if (op.isTemp() && op.isKill() && op.regClass() == phi->definitions[0].regClass()) {
-                  temp_to_phi_ressources[op.tempId()] = index;
+                  temp_to_phi_resources[op.tempId()] = index;
                }
             }
          }
       }
    }
    /* create affinities */
-   for (std::vector<Temp>& vec : phi_ressources) {
+   for (std::vector<Temp>& vec : phi_resources) {
       for (unsigned i = 1; i < vec.size(); i++)
          if (vec[i].id() != vec[0].id())
             ctx.assignments[vec[i].id()].affinity = vec[0].id();

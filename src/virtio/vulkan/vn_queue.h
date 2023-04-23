@@ -58,11 +58,7 @@ struct vn_sync_payload {
 struct vn_sync_payload_external {
    /* ring_idx of the last queue submission */
    uint32_t ring_idx;
-   /* ring_seqno_valid is false when:
-    * - feature asyncRoundtrip is not supported by the renderer
-    * - NO_ASYNC_QUEUE_SUBMIT perf option is used
-    * - external fence and external semaphore
-    */
+   /* valid when NO_ASYNC_QUEUE_SUBMIT perf option is not used */
    bool ring_seqno_valid;
    /* ring seqno of the last queue submission */
    uint32_t ring_seqno;
@@ -83,7 +79,7 @@ struct vn_fence {
    } feedback;
 
    bool is_external;
-   struct vn_sync_payload_external external;
+   struct vn_sync_payload_external external_payload;
 };
 VK_DEFINE_NONDISP_HANDLE_CASTS(vn_fence,
                                base.base,
@@ -133,7 +129,7 @@ struct vn_semaphore {
    } feedback;
 
    bool is_external;
-   struct vn_sync_payload_external external;
+   struct vn_sync_payload_external external_payload;
 };
 VK_DEFINE_NONDISP_HANDLE_CASTS(vn_semaphore,
                                base.base,

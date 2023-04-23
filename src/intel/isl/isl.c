@@ -2132,8 +2132,8 @@ isl_surf_get_mcs_surf(const struct isl_device *dev,
    if (surf->msaa_layout != ISL_MSAA_LAYOUT_ARRAY)
       return false;
 
-   /* We are seeing failures with mcs on dg2, so disable it for now. */
-   if (intel_device_info_is_dg2(dev->info))
+   /* We are seeing failures with mcs on dg2/mtl, so disable it for now. */
+   if (ISL_GFX_VERX10(dev) == 125)
       return false;
 
    /* The following are true of all multisampled surfaces */

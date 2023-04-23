@@ -62,7 +62,7 @@ emit_split_buffer_load(nir_builder *b, nir_ssa_def *desc, nir_ssa_def *v_off, ni
    unsigned full_dwords = total_bytes / 4u;
    unsigned remaining_bytes = total_bytes - full_dwords * 4u;
 
-   /* Accomodate max number of split 64-bit loads */
+   /* Accommodate max number of split 64-bit loads */
    nir_ssa_def *comps[NIR_MAX_VEC_COMPONENTS * 2u];
 
    /* Assume that 1x32-bit load is better than 1x16-bit + 1x8-bit */

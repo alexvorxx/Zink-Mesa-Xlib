@@ -211,6 +211,7 @@ struct radeon_info {
    uint32_t drm_major; /* version */
    uint32_t drm_minor;
    uint32_t drm_patchlevel;
+   uint8_t max_submitted_ibs[AMD_NUM_IP_TYPES];
    bool is_amdgpu;
    bool has_userptr;
    bool has_syncobj;
@@ -308,7 +309,7 @@ void ac_get_hs_info(struct radeon_info *info,
  * store the task payload which is passed to mesh shaders.
  *
  * The driver only needs to create this BO once,
- * and it will always be able to accomodate the maximum needed
+ * and it will always be able to accommodate the maximum needed
  * task payload size.
  *
  * The following memory layout is used:

@@ -64,8 +64,8 @@ extern const char *shader_with_dest_array2_scheduled_ra;
 extern const char *shader_group_chan_pin_to_combine;
 extern const char *shader_group_chan_pin_combined;
 
-extern const char *shader_group_chan_pin_combined_sheduled;
-extern const char *shader_group_chan_pin_combined_sheduled_ra;
+extern const char *shader_group_chan_pin_combined_scheduled;
+extern const char *shader_group_chan_pin_combined_scheduled_ra;
 
 extern const char *shader_group_chan_pin_to_combine_2;
 extern const char *shader_group_chan_pin_to_combine_2_opt;

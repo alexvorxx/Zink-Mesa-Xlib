@@ -1,5 +1,0 @@
-VK_EXT_pipeline_library_group_handles on RADV
-VK_EXT_image_sliced_view_of_3d on RADV/GFX10+
-VK_KHR_map_memory2 on ANV and RADV
-fullyCoveredFragmentShaderInputVariable on RADV/GFX9+
-VK_EXT_discard_rectangles version 2 on RADV

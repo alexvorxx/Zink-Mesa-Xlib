@@ -513,6 +513,30 @@ impl PipeContext {
             PipeFence::new(fence, &self.screen)
         }
     }
+
+    pub fn svm_migrate(
+        &self,
+        ptrs: &[*const c_void],
+        sizes: &[usize],
+        to_device: bool,
+        content_undefined: bool,
+    ) {
+        assert_eq!(ptrs.len(), sizes.len());
+        unsafe {
+            if let Some(cb) = self.pipe.as_ref().svm_migrate {
+                cb(
+                    self.pipe.as_ptr(),
+                    ptrs.len() as u32,
+                    ptrs.as_ptr(),
+                    sizes.as_ptr(),
+                    to_device,
+                    content_undefined,
+                );
+            } else {
+                panic!("svm_migrate not implemented but called!");
+            }
+        }
+    }
 }
 
 impl Drop for PipeContext {

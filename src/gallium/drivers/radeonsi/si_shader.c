@@ -701,18 +701,18 @@ void si_init_shader_args(struct si_shader *shader, struct si_shader_args *args)
       si_add_arg_checked(&args->ac, AC_ARG_VGPR, 1, AC_ARG_INT, &args->pos_fixed_pt,
                          SI_PARAM_POS_FIXED_PT);
 
-      /* Color inputs from the prolog. */
-      if (shader->selector->info.colors_read) {
-         unsigned num_color_elements = util_bitcount(shader->selector->info.colors_read);
-
-         for (i = 0; i < num_color_elements; i++)
-            ac_add_arg(&args->ac, AC_ARG_VGPR, 1, AC_ARG_FLOAT, NULL);
-
-         num_prolog_vgprs += num_color_elements;
-      }
-
-      /* Monolithic PS emit epilog in NIR directly. */
+      /* Monolithic PS emit prolog and epilog in NIR directly. */
       if (!shader->is_monolithic) {
+         /* Color inputs from the prolog. */
+         if (shader->selector->info.colors_read) {
+            unsigned num_color_elements = util_bitcount(shader->selector->info.colors_read);
+
+            for (i = 0; i < num_color_elements; i++)
+               ac_add_arg(&args->ac, AC_ARG_VGPR, 1, AC_ARG_FLOAT, i ? NULL : &args->color_start);
+
+            num_prolog_vgprs += num_color_elements;
+         }
+
          /* Outputs for the epilog. */
          num_return_sgprs = SI_SGPR_ALPHA_REF + 1;
          num_returns =
@@ -1837,6 +1837,143 @@ static unsigned si_get_nr_pos_exports(const struct si_shader_selector *sel,
    return nr_pos_exports;
 }
 
+static bool lower_ps_load_color_intrinsic(nir_builder *b, nir_instr *instr, void *state)
+{
+   nir_ssa_def **colors = (nir_ssa_def **)state;
+
+   if (instr->type != nir_instr_type_intrinsic)
+      return false;
+
+   nir_intrinsic_instr *intrin = nir_instr_as_intrinsic(instr);
+
+   if (intrin->intrinsic != nir_intrinsic_load_color0 &&
+       intrin->intrinsic != nir_intrinsic_load_color1)
+      return false;
+
+   unsigned index = intrin->intrinsic == nir_intrinsic_load_color0 ? 0 : 1;
+   assert(colors[index]);
+
+   nir_ssa_def_rewrite_uses(&intrin->dest.ssa, colors[index]);
+
+   nir_instr_remove(&intrin->instr);
+   return true;
+}
+
+static void si_nir_lower_ps_color_input(nir_shader *nir, struct si_shader *shader)
+{
+   nir_function_impl *impl = nir_shader_get_entrypoint(nir);
+
+   nir_builder builder;
+   nir_builder *b = &builder;
+   nir_builder_init(b, impl);
+
+   b->cursor = nir_before_cf_list(&impl->body);
+
+   const struct si_shader_selector *sel = shader->selector;
+   const union si_shader_key *key = &shader->key;
+
+   /* Build ready to be used colors at the beginning of the shader. */
+   nir_ssa_def *colors[2] = {0};
+   for (int i = 0; i < 2; i++) {
+      if (!(sel->info.colors_read & (0xf << (i * 4))))
+         continue;
+
+      unsigned color_base = sel->info.color_attr_index[i];
+      /* If BCOLOR0 is used, BCOLOR1 is at offset "num_inputs + 1",
+       * otherwise it's at offset "num_inputs".
+       */
+      unsigned back_color_base = sel->info.num_inputs;
+      if (i == 1 && (sel->info.colors_read & 0xf))
+         back_color_base += 1;
+
+      enum glsl_interp_mode interp_mode = sel->info.color_interpolate[i];
+      if (interp_mode == INTERP_MODE_COLOR) {
+         interp_mode = key->ps.part.prolog.flatshade_colors ?
+            INTERP_MODE_FLAT : INTERP_MODE_SMOOTH;
+      }
+
+      nir_ssa_def *back_color = NULL;
+      if (interp_mode == INTERP_MODE_FLAT) {
+         colors[i] = nir_load_input(b, 4, 32, nir_imm_int(b, 0),
+                                   .base = color_base);
+
+         if (key->ps.part.prolog.color_two_side) {
+            back_color = nir_load_input(b, 4, 32, nir_imm_int(b, 0),
+                                        .base = back_color_base);
+         }
+      } else {
+         nir_intrinsic_op op = 0;
+         switch (sel->info.color_interpolate_loc[i]) {
+         case TGSI_INTERPOLATE_LOC_CENTER:
+            op = nir_intrinsic_load_barycentric_pixel;
+            break;
+         case TGSI_INTERPOLATE_LOC_CENTROID:
+            op = nir_intrinsic_load_barycentric_centroid;
+            break;
+         case TGSI_INTERPOLATE_LOC_SAMPLE:
+            op = nir_intrinsic_load_barycentric_sample;
+            break;
+         default:
+            unreachable("invalid color interpolate location");
+            break;
+         }
+
+         nir_ssa_def *barycentric = nir_load_barycentric(b, op, interp_mode);
+
+         colors[i] =
+            nir_load_interpolated_input(b, 4, 32, barycentric, nir_imm_int(b, 0),
+                                        .base = color_base);
+
+         if (key->ps.part.prolog.color_two_side) {
+            back_color =
+               nir_load_interpolated_input(b, 4, 32, barycentric, nir_imm_int(b, 0),
+                                           .base = back_color_base);
+         }
+      }
+
+      if (back_color) {
+         nir_ssa_def *is_front_face = nir_load_front_face(b, 1);
+         colors[i] = nir_bcsel(b, is_front_face, colors[i], back_color);
+      }
+   }
+
+   /* lower nir_load_color0/1 to use the color value. */
+   nir_shader_instructions_pass(nir, lower_ps_load_color_intrinsic,
+                                nir_metadata_block_index | nir_metadata_dominance,
+                                colors);
+}
+
+static void si_nir_emit_polygon_stipple(nir_shader *nir, struct si_shader_args *args)
+{
+   nir_function_impl *impl = nir_shader_get_entrypoint(nir);
+
+   nir_builder builder;
+   nir_builder *b = &builder;
+   nir_builder_init(b, impl);
+
+   b->cursor = nir_before_cf_list(&impl->body);
+
+   /* Load the buffer descriptor. */
+   nir_ssa_def *desc =
+      si_nir_load_internal_binding(b, args, SI_PS_CONST_POLY_STIPPLE, 4);
+
+   /* Use the fixed-point gl_FragCoord input.
+    * Since the stipple pattern is 32x32 and it repeats, just get 5 bits
+    * per coordinate to get the repeating effect.
+    */
+   nir_ssa_def *pos_x = ac_nir_unpack_arg(b, &args->ac, args->pos_fixed_pt, 0, 5);
+   nir_ssa_def *pos_y = ac_nir_unpack_arg(b, &args->ac, args->pos_fixed_pt, 16, 5);
+
+   nir_ssa_def *zero = nir_imm_int(b, 0);
+   /* The stipple pattern is 32x32, each row has 32 bits. */
+   nir_ssa_def *offset = nir_ishl_imm(b, pos_y, 2);
+   nir_ssa_def *row = nir_load_buffer_amd(b, 1, 32, desc, offset, zero, zero);
+   nir_ssa_def *bit = nir_ubfe(b, row, pos_x, nir_imm_int(b, 1));
+
+   nir_ssa_def *pass = nir_i2b(b, bit);
+   nir_discard_if(b, nir_inot(b, pass));
+}
+
 struct nir_shader *si_get_nir_shader(struct si_shader *shader,
                                      struct si_shader_args *args,
                                      bool *free_nir,
@@ -2011,6 +2148,10 @@ struct nir_shader *si_get_nir_shader(struct si_shader *shader,
    } else if (is_legacy_gs) {
       NIR_PASS_V(nir, ac_nir_lower_legacy_gs, false, sel->screen->use_ngg, output_info);
    } else if (sel->stage == MESA_SHADER_FRAGMENT && shader->is_monolithic) {
+      /* two-side color selection and interpolation */
+      if (sel->info.colors_read)
+         NIR_PASS_V(nir, si_nir_lower_ps_color_input, shader);
+
       ac_nir_lower_ps_options options = {
          .gfx_level = sel->screen->info.gfx_level,
          .family = sel->screen->info.family,
@@ -2024,9 +2165,22 @@ struct nir_shader *si_get_nir_shader(struct si_shader *shader,
          .alpha_to_one = key->ps.part.epilog.alpha_to_one,
          .alpha_func = key->ps.part.epilog.alpha_func,
          .broadcast_last_cbuf = key->ps.part.epilog.last_cbuf,
+
+         .bc_optimize_for_persp = key->ps.part.prolog.bc_optimize_for_persp,
+         .bc_optimize_for_linear = key->ps.part.prolog.bc_optimize_for_linear,
+         .force_persp_sample_interp = key->ps.part.prolog.force_persp_sample_interp,
+         .force_linear_sample_interp = key->ps.part.prolog.force_linear_sample_interp,
+         .force_persp_center_interp = key->ps.part.prolog.force_persp_center_interp,
+         .force_linear_center_interp = key->ps.part.prolog.force_linear_center_interp,
+         .samplemask_log_ps_iter = key->ps.part.prolog.samplemask_log_ps_iter,
       };
 
       NIR_PASS_V(nir, ac_nir_lower_ps, &options);
+
+      if (key->ps.part.prolog.poly_stipple)
+         NIR_PASS_V(nir, si_nir_emit_polygon_stipple, args);
+
+      progress2 = true;
    }
 
    NIR_PASS(progress2, nir, si_nir_lower_abi, shader, args);
@@ -2045,8 +2199,6 @@ struct nir_shader *si_get_nir_shader(struct si_shader *shader,
 
    if (progress || progress2 || opt_offsets)
       si_nir_late_opts(nir);
-
-   NIR_PASS_V(nir, nir_divergence_analysis);
 
    /* This helps LLVM form VMEM clauses and thus get more GPU cache hits.
     * 200 is tuned for Viewperf. It should be done last.
@@ -2461,7 +2613,8 @@ si_get_shader_part(struct si_screen *sscreen, struct si_shader_part **list,
    }
 
    struct si_shader_context ctx;
-   si_llvm_context_init(&ctx, sscreen, compiler, wave32 ? 32 : 64, exports_color_null, exports_mrtz);
+   si_llvm_context_init(&ctx, sscreen, compiler, wave32 ? 32 : 64, exports_color_null, exports_mrtz,
+                        AC_FLOAT_MODE_DEFAULT_OPENGL);
 
    ctx.shader = &shader;
    ctx.stage = stage;
@@ -2585,8 +2738,7 @@ static bool si_shader_select_gs_parts(struct si_screen *sscreen, struct ac_llvm_
  * Compute the PS prolog key, which contains all the information needed to
  * build the PS prolog function, and set related bits in shader->config.
  */
-void si_get_ps_prolog_key(struct si_shader *shader, union si_shader_part_key *key,
-                          bool separate_prolog)
+void si_get_ps_prolog_key(struct si_shader *shader, union si_shader_part_key *key)
 {
    struct si_shader_info *info = &shader->selector->info;
 
@@ -2616,8 +2768,7 @@ void si_get_ps_prolog_key(struct si_shader *shader, union si_shader_part_key *ke
          /* BCOLORs are stored after the last input. */
          key->ps_prolog.num_interp_inputs = info->num_inputs;
          key->ps_prolog.face_vgpr_index = shader->info.face_vgpr_index;
-         if (separate_prolog)
-            shader->config.spi_ps_input_ena |= S_0286CC_FRONT_FACE_ENA(1);
+         shader->config.spi_ps_input_ena |= S_0286CC_FRONT_FACE_ENA(1);
       }
 
       for (unsigned i = 0; i < 2; i++) {
@@ -2647,21 +2798,15 @@ void si_get_ps_prolog_key(struct si_shader *shader, union si_shader_part_key *ke
             switch (location) {
             case TGSI_INTERPOLATE_LOC_SAMPLE:
                key->ps_prolog.color_interp_vgpr_index[i] = 0;
-               if (separate_prolog) {
-                  shader->config.spi_ps_input_ena |= S_0286CC_PERSP_SAMPLE_ENA(1);
-               }
+               shader->config.spi_ps_input_ena |= S_0286CC_PERSP_SAMPLE_ENA(1);
                break;
             case TGSI_INTERPOLATE_LOC_CENTER:
                key->ps_prolog.color_interp_vgpr_index[i] = 2;
-               if (separate_prolog) {
-                  shader->config.spi_ps_input_ena |= S_0286CC_PERSP_CENTER_ENA(1);
-               }
+               shader->config.spi_ps_input_ena |= S_0286CC_PERSP_CENTER_ENA(1);
                break;
             case TGSI_INTERPOLATE_LOC_CENTROID:
                key->ps_prolog.color_interp_vgpr_index[i] = 4;
-               if (separate_prolog) {
-                  shader->config.spi_ps_input_ena |= S_0286CC_PERSP_CENTROID_ENA(1);
-               }
+               shader->config.spi_ps_input_ena |= S_0286CC_PERSP_CENTROID_ENA(1);
                break;
             default:
                assert(0);
@@ -2680,22 +2825,16 @@ void si_get_ps_prolog_key(struct si_shader *shader, union si_shader_part_key *ke
              */
             switch (location) {
             case TGSI_INTERPOLATE_LOC_SAMPLE:
-               key->ps_prolog.color_interp_vgpr_index[i] = separate_prolog ? 6 : 9;
-               if (separate_prolog) {
-                  shader->config.spi_ps_input_ena |= S_0286CC_LINEAR_SAMPLE_ENA(1);
-               }
+               key->ps_prolog.color_interp_vgpr_index[i] = 6;
+               shader->config.spi_ps_input_ena |= S_0286CC_LINEAR_SAMPLE_ENA(1);
                break;
             case TGSI_INTERPOLATE_LOC_CENTER:
-               key->ps_prolog.color_interp_vgpr_index[i] = separate_prolog ? 8 : 11;
-               if (separate_prolog) {
-                  shader->config.spi_ps_input_ena |= S_0286CC_LINEAR_CENTER_ENA(1);
-               }
+               key->ps_prolog.color_interp_vgpr_index[i] = 8;
+               shader->config.spi_ps_input_ena |= S_0286CC_LINEAR_CENTER_ENA(1);
                break;
             case TGSI_INTERPOLATE_LOC_CENTROID:
-               key->ps_prolog.color_interp_vgpr_index[i] = separate_prolog ? 10 : 13;
-               if (separate_prolog) {
-                  shader->config.spi_ps_input_ena |= S_0286CC_LINEAR_CENTROID_ENA(1);
-               }
+               key->ps_prolog.color_interp_vgpr_index[i] = 10;
+               shader->config.spi_ps_input_ena |= S_0286CC_LINEAR_CENTROID_ENA(1);
                break;
             default:
                assert(0);
@@ -2750,7 +2889,7 @@ static bool si_shader_select_ps_parts(struct si_screen *sscreen, struct ac_llvm_
    union si_shader_part_key epilog_key;
 
    /* Get the prolog. */
-   si_get_ps_prolog_key(shader, &prolog_key, true);
+   si_get_ps_prolog_key(shader, &prolog_key);
 
    /* The prolog is a no-op if these aren't set. */
    if (si_need_ps_prolog(&prolog_key)) {

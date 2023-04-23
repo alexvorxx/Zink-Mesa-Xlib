@@ -156,7 +156,7 @@ VkResult genX(CreateQueryPool)(
                              perf_query_info->counterIndexCount);
       vk_multialloc_add(&ma, &pass_query, struct intel_perf_query_info *,
                              n_passes);
-      uint64s_per_slot = 4 /* availability + small batch */;
+      uint64s_per_slot = 1 /* availability */;
       /* Align to the requirement of the layout */
       uint64s_per_slot = align(uint64s_per_slot,
                                DIV_ROUND_UP(layout->alignment, sizeof(uint64_t)));
@@ -222,6 +222,16 @@ VkResult genX(CreateQueryPool)(
    }
 
    uint64_t size = pool->slots * (uint64_t)pool->stride;
+
+   /* For KHR_performance_query we need some space in the buffer for a small
+    * batch updating ANV_PERF_QUERY_OFFSET_REG.
+    */
+   if (pool->type == VK_QUERY_TYPE_PERFORMANCE_QUERY_KHR) {
+      pool->khr_perf_preamble_stride = 32;
+      pool->khr_perf_preambles_offset = size;
+      size += pool->n_passes * pool->khr_perf_preamble_stride;
+   }
+
    result = anv_device_alloc_bo(device, "query-pool", size,
                                 ANV_BO_ALLOC_MAPPED |
                                 ANV_BO_ALLOC_SNOOPED,
@@ -277,36 +287,24 @@ void genX(DestroyQueryPool)(
  * --------------------------------------------
  * |       availability (8b)       | |        |
  * |-------------------------------| |        |
- * |      Small batch loading      | |        |
- * |   ANV_PERF_QUERY_OFFSET_REG   | |        |
- * |            (24b)              | | Pass 0 |
- * |-------------------------------| |        |
  * |       some padding (see       | |        |
- * | query_field_layout:alignment) | |        |
+ * | query_field_layout:alignment) | | Pass 0 |
  * |-------------------------------| |        |
  * |           query data          | |        |
  * | (2 * query_field_layout:size) | |        |
  * |-------------------------------|--        | Query 0
  * |       availability (8b)       | |        |
  * |-------------------------------| |        |
- * |      Small batch loading      | |        |
- * |   ANV_PERF_QUERY_OFFSET_REG   | |        |
- * |            (24b)              | | Pass 1 |
- * |-------------------------------| |        |
  * |       some padding (see       | |        |
- * | query_field_layout:alignment) | |        |
+ * | query_field_layout:alignment) | | Pass 1 |
  * |-------------------------------| |        |
  * |           query data          | |        |
  * | (2 * query_field_layout:size) | |        |
  * |-------------------------------|-----------
  * |       availability (8b)       | |        |
  * |-------------------------------| |        |
- * |      Small batch loading      | |        |
- * |   ANV_PERF_QUERY_OFFSET_REG   | |        |
- * |            (24b)              | | Pass 0 |
- * |-------------------------------| |        |
  * |       some padding (see       | |        |
- * | query_field_layout:alignment) | |        |
+ * | query_field_layout:alignment) | | Pass 0 |
  * |-------------------------------| |        |
  * |           query data          | |        |
  * | (2 * query_field_layout:size) | |        |
@@ -784,7 +782,10 @@ void genX(CmdResetQueryPool)(
    ANV_FROM_HANDLE(anv_query_pool, pool, queryPool);
    struct anv_physical_device *pdevice = cmd_buffer->device->physical;
 
-   if (queryCount >= pdevice->instance->query_clear_with_blorp_threshold) {
+   /* Temporarily disable on MTL until we understand why some tests hang.
+    */
+   if (queryCount >= pdevice->instance->query_clear_with_blorp_threshold &&
+       !intel_device_info_is_mtl(cmd_buffer->device->info)) {
       anv_cmd_buffer_fill_area(cmd_buffer,
                                anv_query_address(pool, firstQuery),
                                queryCount * pool->stride,
@@ -1684,7 +1685,9 @@ genX(CmdWriteAccelerationStructuresPropertiesKHR)(
       }
    }
 
-   cmd_buffer->state.pending_pipe_bits |= ANV_PIPE_END_OF_PIPE_SYNC_BIT;
+   anv_add_pending_pipe_bits(cmd_buffer,
+                             ANV_PIPE_END_OF_PIPE_SYNC_BIT,
+                             "after write acceleration struct props");
    genX(cmd_buffer_apply_pipe_flushes)(cmd_buffer);
 
    for (uint32_t i = 0; i < accelerationStructureCount; i++)

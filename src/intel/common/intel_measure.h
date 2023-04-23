@@ -100,6 +100,9 @@ struct intel_measure_config {
 
    /* true when snapshots are currently being collected */
    bool                       enabled;
+
+   /* Measure CPU timing, not GPU timing */
+   bool                       cpu_measure;
 };
 
 struct intel_measure_batch;
@@ -164,6 +167,12 @@ void intel_measure_frame_transition(unsigned frame);
 bool intel_measure_ready(struct intel_measure_batch *batch);
 
 struct intel_device_info;
+void intel_measure_print_cpu_result(unsigned int frame,
+                                    unsigned int batch_count,
+                                    unsigned int event_index,
+                                    unsigned int event_count,
+                                    unsigned int count,
+                                    const char* event_name);
 void intel_measure_gather(struct intel_measure_device *device,
                           const struct intel_device_info *info);
 

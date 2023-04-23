@@ -1116,6 +1116,12 @@ radv_mesa_to_rgp_shader_stage(struct radv_pipeline *pipeline, gl_shader_stage st
    case MESA_SHADER_FRAGMENT:
       return RGP_HW_STAGE_PS;
    case MESA_SHADER_COMPUTE:
+   case MESA_SHADER_RAYGEN:
+   case MESA_SHADER_CLOSEST_HIT:
+   case MESA_SHADER_ANY_HIT:
+   case MESA_SHADER_INTERSECTION:
+   case MESA_SHADER_MISS:
+   case MESA_SHADER_CALLABLE:
       return RGP_HW_STAGE_CS;
    default:
       unreachable("invalid mesa shader stage");

@@ -83,7 +83,7 @@ cd shader-db
 make
 popd
 
-git clone https://github.com/microsoft/DirectX-Headers -b v1.606.4 --depth 1
+git clone https://github.com/microsoft/DirectX-Headers -b v1.610.0 --depth 1
 mkdir -p DirectX-Headers/build
 pushd DirectX-Headers/build
 meson .. --backend=ninja --buildtype=release -Dbuild-test=false

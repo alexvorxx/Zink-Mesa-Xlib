@@ -32,7 +32,6 @@ dEQP-VK.binding_model.descriptor_buffer.multiple.graphics_vert_buffers16_sets1,C
 dEQP-VK.binding_model.descriptor_buffer.multiple.graphics_vert_buffers1_sets3_imm_samplers,Crash
 dEQP-VK.binding_model.descriptor_buffer.multiple.graphics_vert_buffers2_sets4_imm_samplers,Crash
 dEQP-VK.dynamic_rendering.primary_cmd_buff.random.seed49_tessellation,Fail
-dEQP-VK.dynamic_rendering.primary_cmd_buff.random.seed50_geometry,Fail
 dEQP-VK.dynamic_rendering.primary_cmd_buff.random.seed59_geometry,Fail
 dEQP-VK.memory.mapping.dedicated_alloc.image.full.variable.implicit_unmap,Timeout
 dEQP-VK.memory.mapping.suballocation.full.variable.implicit_unmap,Timeout

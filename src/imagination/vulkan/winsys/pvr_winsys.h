@@ -251,6 +251,8 @@ struct pvr_winsys_transfer_ctx {
    struct pvr_winsys *ws;
 };
 
+#define PVR_WINSYS_TRANSFER_FLAG_SINGLE_CORE BITFIELD_BIT(0U)
+
 #define PVR_TRANSFER_MAX_PREPARES_PER_SUBMIT 16U
 #define PVR_TRANSFER_MAX_RENDER_TARGETS 3U
 
@@ -258,6 +260,7 @@ struct pvr_winsys_transfer_regs {
    uint32_t event_pixel_pds_code;
    uint32_t event_pixel_pds_data;
    uint32_t event_pixel_pds_info;
+   uint32_t frag_screen;
    uint32_t isp_aa;
    uint32_t isp_bgobjvals;
    uint32_t isp_ctl;

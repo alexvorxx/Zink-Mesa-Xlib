@@ -1074,6 +1074,9 @@ struct si_context {
    /* if current tcs set by user */
    bool is_user_tcs;
 
+   /* video context */
+   bool vcn_has_ctx;
+
    /* shader information */
    uint64_t ps_inputs_read_or_disabled;
    struct si_vertex_elements *vertex_elements;

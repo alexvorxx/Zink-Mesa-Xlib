@@ -43,15 +43,16 @@
 #include <sys/inotify.h>
 #endif
 
-#include "util/u_debug.h"
 #include "util/disk_cache.h"
+#include "util/u_debug.h"
 #include "radv_cs.h"
 #include "radv_debug.h"
 #include "radv_private.h"
 #include "radv_shader.h"
-#include "vk_util.h"
 #include "vk_common_entrypoints.h"
+#include "vk_pipeline_cache.h"
 #include "vk_semaphore.h"
+#include "vk_util.h"
 #ifdef _WIN32
 typedef void *drmDevicePtr;
 #include <io.h>
@@ -602,6 +603,26 @@ init_dispatch_tables(struct radv_device *device, struct radv_physical_device *ph
    add_entrypoints(&b, &vk_common_device_entrypoints, RADV_DISPATCH_TABLE_COUNT);
 }
 
+static VkResult
+radv_check_status(struct vk_device *vk_device)
+{
+   struct radv_device *device = container_of(vk_device, struct radv_device, vk);
+   enum radv_reset_status status;
+
+   for (int i = 0; i < RADV_NUM_HW_CTX; i++) {
+      if (device->hw_ctx[i]) {
+         status = device->ws->ctx_query_reset_status(device->hw_ctx[i]);
+
+         if (status == RADV_GUILTY_CONTEXT_RESET)
+            return vk_device_set_lost(&device->vk, "GPU hung detected in this process");
+	 if (status == RADV_INNOCENT_CONTEXT_RESET)
+            return vk_device_set_lost(&device->vk, "GPU hung triggered by other process");
+      }
+   }
+
+   return VK_SUCCESS;
+}
+
 VKAPI_ATTR VkResult VKAPI_CALL
 radv_CreateDevice(VkPhysicalDevice physicalDevice, const VkDeviceCreateInfo *pCreateInfo,
                   const VkAllocationCallbacks *pAllocator, VkDevice *pDevice)
@@ -750,6 +771,7 @@ radv_CreateDevice(VkPhysicalDevice physicalDevice, const VkDeviceCreateInfo *pCr
    init_dispatch_tables(device, physical_device);
 
    device->vk.command_buffer_ops = &radv_cmd_buffer_ops;
+   device->vk.check_status = radv_check_status;
 
    device->instance = physical_device->instance;
    device->physical_device = physical_device;
@@ -1020,18 +1042,10 @@ radv_CreateDevice(VkPhysicalDevice physicalDevice, const VkDeviceCreateInfo *pCr
    if (device->physical_device->rad_info.gfx_level >= GFX7)
       cik_create_gfx_config(device);
 
-   VkPipelineCacheCreateInfo ci;
-   ci.sType = VK_STRUCTURE_TYPE_PIPELINE_CACHE_CREATE_INFO;
-   ci.pNext = NULL;
-   ci.flags = 0;
-   ci.pInitialData = NULL;
-   ci.initialDataSize = 0;
-   VkPipelineCache pc;
-   result = radv_CreatePipelineCache(radv_device_to_handle(device), &ci, NULL, &pc);
-   if (result != VK_SUCCESS)
+   struct vk_pipeline_cache_create_info info = {0};
+   device->mem_cache = vk_pipeline_cache_create(&device->vk, &info, NULL);
+   if (!device->mem_cache)
       goto fail_meta;
-
-   device->mem_cache = radv_pipeline_cache_from_handle(pc);
 
    device->force_aniso = MIN2(16, radv_get_int_debug_option("RADV_TEX_ANISO", -1));
    if (device->force_aniso >= 0) {
@@ -1069,7 +1083,7 @@ radv_CreateDevice(VkPhysicalDevice physicalDevice, const VkDeviceCreateInfo *pCr
    return VK_SUCCESS;
 
 fail_cache:
-   radv_DestroyPipelineCache(radv_device_to_handle(device), pc, NULL);
+   vk_pipeline_cache_destroy(device->mem_cache, NULL);
 fail_meta:
    radv_device_finish_meta(device);
 fail:
@@ -1166,8 +1180,7 @@ radv_DestroyDevice(VkDevice _device, const VkAllocationCallbacks *pAllocator)
 
    radv_device_finish_meta(device);
 
-   VkPipelineCache pc = radv_pipeline_cache_to_handle(device->mem_cache);
-   radv_DestroyPipelineCache(radv_device_to_handle(device), pc, NULL);
+   vk_pipeline_cache_destroy(device->mem_cache, NULL);
 
    radv_destroy_shader_upload_queue(device);
 

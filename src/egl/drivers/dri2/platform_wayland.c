@@ -1121,10 +1121,10 @@ get_back_bo(struct dri2_egl_surface *dri2_surf)
                                                    &strides[0],
                                                    &offsets[0],
                                                    dri2_surf->back);
-            do {
+            for (i = 0; i < num_planes; ++i) {
                if (buffer_fds[i] != -1)
                   close(buffer_fds[i]);
-            } while (--i >= 0);
+            }
             dri2_dpy->image->destroyImage(linear_copy_display_gpu_image);
          }
       }

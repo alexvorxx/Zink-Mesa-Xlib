@@ -468,3 +468,5 @@ gmem-dEQP-VK.binding_model.descriptor_buffer.multiple.graphics_miss_buffers1_set
 gmem-dEQP-VK.binding_model.descriptor_buffer.multiple.graphics_tese_buffers1_sets3,Crash
 gmem-dEQP-VK.pipeline.fast_linked_library.misc.unused_shader_stages_include_geom,Crash
 gmem-dEQP-VK.transform_feedback.simple.lines_or_triangles_triangle_strip_1,Fail
+spec@arb_vertex_attrib_64bit@execution@unused-sub-dvec4-01,Crash
+spec@arb_vertex_attrib_64bit@execution@unused-sub-dvec4-02,Crash

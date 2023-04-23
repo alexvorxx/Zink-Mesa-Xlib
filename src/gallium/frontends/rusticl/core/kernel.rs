@@ -1245,6 +1245,10 @@ impl Kernel {
         // TODO include args
         self.dev_state.get(dev).nir.shared_size() as cl_ulong
     }
+
+    pub fn has_svm_devs(&self) -> bool {
+        self.prog.devs.iter().any(|dev| dev.svm_supported())
+    }
 }
 
 impl Clone for Kernel {

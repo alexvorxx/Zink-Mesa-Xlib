@@ -51,16 +51,6 @@ void set_parent(uint32_t child, uint32_t parent)
 }
 
 uint32_t
-encode_geometry_id_and_flags(uint32_t src)
-{
-   uint32_t flags = src >> 28;
-   uint32_t ret = src & 0xfffffffu;
-   if ((flags & VK_GEOMETRY_OPAQUE_BIT_KHR) != 0)
-      ret |= RADV_GEOMETRY_OPAQUE;
-   return ret;
-}
-
-uint32_t
 encode_sbt_offset_and_flags(uint32_t src)
 {
    uint32_t flags = src >> 24;
@@ -86,7 +76,7 @@ encode_leaf_node(uint32_t type, uint64_t src_node, uint64_t dst_node)
 
       DEREF(dst).coords = src.coords;
       DEREF(dst).triangle_id = src.triangle_id;
-      DEREF(dst).geometry_id_and_flags = encode_geometry_id_and_flags(src.geometry_id_and_flags);
+      DEREF(dst).geometry_id_and_flags = src.geometry_id_and_flags;
       DEREF(dst).id = src.id;
       break;
    }
@@ -94,9 +84,8 @@ encode_leaf_node(uint32_t type, uint64_t src_node, uint64_t dst_node)
       radv_ir_aabb_node src = DEREF(REF(radv_ir_aabb_node)(src_node));
       REF(radv_bvh_aabb_node) dst = REF(radv_bvh_aabb_node)(dst_node);
 
-      DEREF(dst).aabb = src.base.aabb;
       DEREF(dst).primitive_id = src.primitive_id;
-      DEREF(dst).geometry_id_and_flags = encode_geometry_id_and_flags(src.geometry_id_and_flags);
+      DEREF(dst).geometry_id_and_flags = src.geometry_id_and_flags;
       break;
    }
    case radv_ir_node_instance: {

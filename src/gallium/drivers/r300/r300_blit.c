@@ -629,7 +629,7 @@ static void r300_resource_copy_region(struct pipe_context *pipe,
         switch (util_format_get_blocksize(dst_templ.format)) {
         case 8:
             /* one 4x4 pixel block has 8 bytes.
-             * we set 1 pixel = 4 bytes ===> 1 block corrensponds to 2 pixels. */
+             * we set 1 pixel = 4 bytes ===> 1 block corresponds to 2 pixels. */
             dst_templ.format = PIPE_FORMAT_R8G8B8A8_UNORM;
             dst_width0 = dst_width0 / 2;
             src_width0 = src_width0 / 2;

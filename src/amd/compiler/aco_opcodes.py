@@ -205,7 +205,7 @@ class Opcode(object):
       - name is the name of the opcode (prepend nir_op_ for the enum name)
       - all types are strings that get nir_type_ prepended to them
       - input_types is a list of types
-      - algebraic_properties is a space-seperated string, where nir_op_is_ is
+      - algebraic_properties is a space-separated string, where nir_op_is_ is
         prepended before each entry
       - const_expr is an expression or series of statements that computes the
         constant value of the opcode given the constant values of its inputs.

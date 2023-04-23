@@ -22,7 +22,6 @@ glx@glx_ext_import_context@imported context has same context id,Fail
 glx@glx_ext_import_context@make current- multi process,Fail
 glx@glx_ext_import_context@make current- single process,Fail
 glx@glx_ext_import_context@query context info,Fail
-glx@glx-make-current,Fail
 glx@glx-swap-pixmap-bad,Fail
 
 # #6322
@@ -248,6 +247,7 @@ spec@glsl-1.10@execution@loops@glsl-vs-unroll-explosion,Crash
 spec@glsl-1.10@execution@samplers@glsl-fs-shadow2d-clamp-z,Fail
 
 spec@glsl-1.20@compiler@invalid-vec4-array-to-vec3-array-conversion.vert,Fail
+
 spec@glsl-1.50@execution@primitive-id-no-gs-quad-strip,Fail
 spec@glsl-4.00@execution@conversion@frag-conversion-explicit-dmat2-mat2,Fail
 spec@glsl-4.00@execution@conversion@frag-conversion-explicit-dmat2x3-mat2x3,Fail
@@ -392,7 +392,6 @@ spec@egl_nok_texture_from_pixmap@basic,Timeout
 spec@ext_image_dma_buf_import@ext_image_dma_buf_import-sample_yuv420,Fail
 spec@ext_image_dma_buf_import@ext_image_dma_buf_import-sample_yvu420,Fail
 spec@ext_image_dma_buf_import@ext_image_dma_buf_import-transcode-nv12-as-r8-gr88,Fail
-spec@ext_texture_integer@multisample-fast-clear gl_ext_texture_integer,Fail
 spec@ext_texture_srgb@fbo-generatemipmap-formats,Fail
 spec@ext_texture_srgb@fbo-generatemipmap-formats-s3tc,Fail
 spec@ext_texture_srgb@fbo-generatemipmap-formats-s3tc@GL_COMPRESSED_SLUMINANCE_ALPHA,Fail

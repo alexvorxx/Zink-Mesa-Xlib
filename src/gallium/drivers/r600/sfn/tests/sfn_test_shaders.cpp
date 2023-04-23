@@ -2178,7 +2178,7 @@ ALU_GROUP_END
 EXPORT_DONE PIXEL 0 S1.xyzw
 )";
 
-const char *shader_group_chan_pin_combined_sheduled =
+const char *shader_group_chan_pin_combined_scheduled =
    R"(FS
 CHIPCLASS EVERGREEN
 PROP MAX_COLOR_EXPORTS:1
@@ -2204,7 +2204,7 @@ ALU_GROUP_END
 EXPORT_DONE PIXEL 0 S2.xyzw
 )";
 
-const char *shader_group_chan_pin_combined_sheduled_ra =
+const char *shader_group_chan_pin_combined_scheduled_ra =
    R"(FS
 CHIPCLASS EVERGREEN
 PROP MAX_COLOR_EXPORTS:1

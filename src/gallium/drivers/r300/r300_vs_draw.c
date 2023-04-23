@@ -24,7 +24,7 @@
  * 
  **************************************************************************/
 
-/* This file contains the vertex shader tranformations for SW TCL needed
+/* This file contains the vertex shader transformations for SW TCL needed
  * to overcome the limitations of the r300 rasterizer.
  *
  * Transformations:

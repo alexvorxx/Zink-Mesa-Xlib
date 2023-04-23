@@ -520,7 +520,7 @@ static void si_blit_decompress_color(struct si_context *sctx, struct si_texture 
              custom_blend == sctx->custom_blend_dcc_decompress)
             sctx->flags |= SI_CONTEXT_FLUSH_AND_INV_CB;
 
-         /* When running FMASK decompresion with DCC, we need to run the "eliminate fast clear" pass
+         /* When running FMASK decompression with DCC, we need to run the "eliminate fast clear" pass
           * separately because FMASK decompression doesn't eliminate DCC fast clear. This makes
           * render->texture transitions more expensive. It can be disabled by
           * allow_dcc_msaa_clear_to_reg_for_bpp.

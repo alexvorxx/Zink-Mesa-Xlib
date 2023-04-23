@@ -184,4 +184,10 @@ VkResult pvr_clear_vertices_upload(struct pvr_device *device,
                                    float depth,
                                    struct pvr_bo **const pvr_bo_out);
 
+/* TODO: Create pvr_blit.h, rename this, and move it there? */
+/* This is provided by pvr_blit.c instead of the usual pvr_clear.c . */
+void pvr_clear_attachments_render_init(struct pvr_cmd_buffer *cmd_buffer,
+                                       const VkClearAttachment *attachment,
+                                       const VkClearRect *rect);
+
 #endif /* PVR_CLEAR_H */

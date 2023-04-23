@@ -649,7 +649,7 @@ struct iris_context {
 
    struct iris_batch batches[IRIS_BATCH_COUNT];
    enum iris_context_priority priority;
-   bool has_engines_context;
+   bool has_engines_context; /* i915 specific */
 
    struct u_upload_mgr *query_buffer_uploader;
 

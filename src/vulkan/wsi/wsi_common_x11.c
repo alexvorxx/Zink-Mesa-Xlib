@@ -800,6 +800,14 @@ format_get_component_bits(VkFormat format, int comp)
 }
 
 static bool
+rgb_component_bits_are_equal(VkFormat format, const xcb_visualtype_t* type)
+{
+   return format_get_component_bits(format, 0) == util_bitcount(type->red_mask) &&
+          format_get_component_bits(format, 1) == util_bitcount(type->green_mask) &&
+          format_get_component_bits(format, 2) == util_bitcount(type->blue_mask);
+}
+
+static bool
 get_sorted_vk_formats(VkIcdSurfaceBase *surface, struct wsi_device *wsi_device,
                       VkFormat *sorted_formats, unsigned *count)
 {
@@ -814,19 +822,17 @@ get_sorted_vk_formats(VkIcdSurfaceBase *surface, struct wsi_device *wsi_device,
    /* use the root window's visual to set the default */
    *count = 0;
    for (unsigned i = 0; i < ARRAY_SIZE(formats); i++) {
-      if (format_get_component_bits(formats[i], 0) == util_bitcount(rootvis->red_mask) &&
-          format_get_component_bits(formats[i], 1) == util_bitcount(rootvis->green_mask) &&
-          format_get_component_bits(formats[i], 2) == util_bitcount(rootvis->blue_mask))
+      if (rgb_component_bits_are_equal(formats[i], rootvis))
          sorted_formats[(*count)++] = formats[i];
    }
 
    for (unsigned i = 0; i < ARRAY_SIZE(formats); i++) {
-      if (formats[i] == sorted_formats[0])
-         continue;
-      if (format_get_component_bits(formats[i], 0) == util_bitcount(visual->red_mask) &&
-          format_get_component_bits(formats[i], 1) == util_bitcount(visual->green_mask) &&
-          format_get_component_bits(formats[i], 2) == util_bitcount(visual->blue_mask))
+      for (unsigned j = 0; j < *count; j++)
+         if (formats[i] == sorted_formats[j])
+            goto next_format;
+      if (rgb_component_bits_are_equal(formats[i], visual))
          sorted_formats[(*count)++] = formats[i];
+next_format:;
    }
 
    if (wsi_device->force_bgra8_unorm_first) {

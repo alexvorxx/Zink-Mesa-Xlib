@@ -662,7 +662,7 @@ ValueFactory::dest_from_string(const std::string& s)
    int sel = 0;
    if (s[0] == '_') {
       /* Since these instructions still may use or switch to a different
-       * channel we have to create a new instance for each occurance */
+       * channel we have to create a new instance for each occurrence */
       sel = std::numeric_limits<int>::max() - m_nowrite_idx++;
    } else {
       std::istringstream n(index_str);

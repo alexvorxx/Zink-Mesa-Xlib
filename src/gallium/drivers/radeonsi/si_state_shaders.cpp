@@ -1868,7 +1868,7 @@ static void si_shader_ps(struct si_screen *sscreen, struct si_shader *shader)
       shader->ps.db_shader_control |= S_02880C_DUAL_QUAD_DISABLE(1);
 
    /* SPI_BARYC_CNTL.POS_FLOAT_LOCATION
-    * Possible vaules:
+    * Possible values:
     * 0 -> Position = pixel center
     * 1 -> Position = pixel centroid
     * 2 -> Position = at sample position
@@ -3167,7 +3167,7 @@ static void *si_create_shader_selector(struct pipe_context *ctx,
       if (util_rast_prim_is_triangles(sel->rast_prim))
          sel->rast_prim = PIPE_PRIM_TRIANGLES;
 
-      /* EN_MAX_VERT_OUT_PER_GS_INSTANCE does not work with tesselation so
+      /* EN_MAX_VERT_OUT_PER_GS_INSTANCE does not work with tessellation so
        * we can't split workgroups. Disable ngg if any of the following conditions is true:
        * - num_invocations * gs.vertices_out > 256
        * - LDS usage is too high

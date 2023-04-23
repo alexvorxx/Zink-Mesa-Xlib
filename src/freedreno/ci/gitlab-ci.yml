@@ -83,12 +83,12 @@ a306-traces:
     PIGLIT_REPLAY_DEVICE_NAME: "freedreno-a306"
     PIGLIT_RESULTS: "freedreno-a306-replay"
 
+# 8 devices (2023-04-15)
 .a530-test:
   extends:
     - .google-freedreno-test
   variables:
     BM_KERNEL: /baremetal-files/Image.gz
-    BM_KERNEL_EXTRA_ARGS: maxcpus=2
     BM_DTB: /baremetal-files/apq8096-db820c.dtb
     GPU_VERSION: freedreno-a530
   tags:
@@ -98,28 +98,30 @@ a530_gl:
   extends:
     - .baremetal-deqp-test
     - .a530-test
-    - .freedreno-manual-rules # Unstable as of kernel 5.19
   variables:
     DEQP_SUITE: freedreno-a530
     PIGLIT_PLATFORM: gbm
   parallel: 6
 
-.a530_piglit:
-  extends:
-    - .piglit-test
-    - .a530-test
-  variables:
-    HWCI_START_XORG: 1
-
-# piglit_gl since it takes a bit under 20 minutes and has a lot of flakes, so
+# piglit and piglit_gl since it takes a bit under 20 minutes and has a lot of flakes, so
 # leave it as manual.  The shader_tests are in the main a530_gl suite.
 #
 # Disabled for now because something reliably takes out the board 19-20 minutes in,
 # and then it reboots and tries again until the job timeout.
+.a530_piglit:
+  extends:
+    - .baremetal-deqp-test
+    - .a530-test
+  parallel: 2
+  variables:
+    DEQP_SUITE: freedreno-a530-piglit
+    HWCI_START_WESTON: 1
+
 .a530_piglit_gl:
   extends:
     - .a530_piglit
     - .freedreno-manual-rules
+  parallel: null
   variables:
     PIGLIT_PROFILES: quick_gl
 

@@ -1758,15 +1758,6 @@ dri2_surface_get_dri_drawable(_EGLSurface *surf)
    return dri2_surf->dri_drawable;
 }
 
-/*
- * Called from eglGetProcAddress() via drv->GetProcAddress().
- */
-static _EGLProc
-dri2_get_proc_address(const char *procname)
-{
-   return _glapi_get_proc_address(procname);
-}
-
 static _EGLSurface*
 dri2_create_window_surface(_EGLDisplay *disp, _EGLConfig *conf,
                            void *native_window, const EGLint *attrib_list)
@@ -3673,7 +3664,6 @@ const _EGLDriver _eglDriver = {
    .CreatePixmapSurface = dri2_create_pixmap_surface,
    .CreatePbufferSurface = dri2_create_pbuffer_surface,
    .DestroySurface = dri2_destroy_surface,
-   .GetProcAddress = dri2_get_proc_address,
    .WaitClient = dri2_wait_client,
    .WaitNative = dri2_wait_native,
    .BindTexImage = dri2_bind_tex_image,

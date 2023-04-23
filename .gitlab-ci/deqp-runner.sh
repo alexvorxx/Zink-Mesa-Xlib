@@ -1,27 +1,27 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 section_start test_setup "deqp: preparing test setup"
 
 set -ex
 
 # Needed so configuration files can contain paths to files in /install
-ln -sf $CI_PROJECT_DIR/install /install
+ln -sf "$CI_PROJECT_DIR"/install /install
 
 if [ -z "$GPU_VERSION" ]; then
    echo 'GPU_VERSION must be set to something like "llvmpipe" or "freedreno-a630" (the name used in .gitlab-ci/gpu-version-*.txt)'
    exit 1
 fi
 
-INSTALL=`pwd`/install
+INSTALL=$(realpath -s "$PWD"/install)
 
 # Set up the driver environment.
-export LD_LIBRARY_PATH=`pwd`/install/lib/
+export LD_LIBRARY_PATH="$INSTALL"/lib/
 export EGL_PLATFORM=surfaceless
-export VK_ICD_FILENAMES=`pwd`/install/share/vulkan/icd.d/"$VK_DRIVER"_icd.${VK_CPU:-`uname -m`}.json
-export OCL_ICD_VENDORS=`pwd`/install/etc/OpenCL/vendors/
+export VK_ICD_FILENAMES="$PWD"/install/share/vulkan/icd.d/"$VK_DRIVER"_icd.${VK_CPU:-$(uname -m)}.json
+export OCL_ICD_VENDORS="$PWD"/install/etc/OpenCL/vendors/
 
-RESULTS=`pwd`/${DEQP_RESULTS_DIR:-results}
-mkdir -p $RESULTS
+RESULTS="$PWD/${DEQP_RESULTS_DIR:-results}"
+mkdir -p "$RESULTS"
 
 # Ensure Mesa Shader Cache resides on tmpfs.
 SHADER_CACHE_HOME=${XDG_CACHE_HOME:-${HOME}/.cache}

@@ -70,7 +70,7 @@ class radv_llvm_per_thread_info {
    struct ac_compiler_passes *passes;
 };
 
-/* we have to store a linked list per thread due to the possiblity of multiple gpus being required */
+/* we have to store a linked list per thread due to the possibility of multiple gpus being required */
 static thread_local std::list<radv_llvm_per_thread_info> radv_llvm_per_thread_list;
 
 bool

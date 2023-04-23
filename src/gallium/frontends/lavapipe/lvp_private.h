@@ -432,6 +432,12 @@ lvp_pipeline_nir_ref(struct lvp_pipeline_nir **dst, struct lvp_pipeline_nir *src
    *dst = src;
 }
 
+struct lvp_inline_variant {
+   uint32_t mask;
+   uint32_t vals[PIPE_MAX_CONSTANT_BUFFERS][MAX_INLINABLE_UNIFORMS];
+   void *cso;
+};
+
 struct lvp_shader {
    struct vk_object_base base;
    struct lvp_pipeline_layout *layout;
@@ -445,6 +451,7 @@ struct lvp_shader {
       uint8_t count[PIPE_MAX_CONSTANT_BUFFERS];
       bool must_inline;
       uint32_t can_inline; //bitmask
+      struct set variants;
    } inlines;
    struct pipe_stream_output_info stream_output;
    struct blob blob; //preserved for GetShaderBinaryDataEXT

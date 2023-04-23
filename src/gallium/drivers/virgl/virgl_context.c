@@ -1622,10 +1622,21 @@ static void virgl_send_tweaks(struct virgl_context *vctx, struct virgl_screen *r
 static void virgl_link_shader(struct pipe_context *ctx, void **handles)
 {
    struct virgl_context *vctx = virgl_context(ctx);
+   struct virgl_screen *rs = virgl_screen(vctx->base.screen);
+
    uint32_t shader_handles[PIPE_SHADER_TYPES];
    for (uint32_t i = 0; i < PIPE_SHADER_TYPES; ++i)
       shader_handles[i] = (uintptr_t)handles[i];
    virgl_encode_link_shader(vctx, shader_handles);
+
+   /* block until shader linking is finished on host */
+   if (rs->shader_sync && !unlikely(virgl_debug & VIRGL_DEBUG_SYNC)) {
+      struct virgl_winsys *vws = rs->vws;
+      struct pipe_fence_handle *sync_fence;
+      virgl_flush_eq(vctx, vctx, &sync_fence);
+      vws->fence_wait(vws, sync_fence, PIPE_TIMEOUT_INFINITE);
+      vws->fence_reference(vws, &sync_fence, NULL);
+   }
 }
 
 struct pipe_context *virgl_context_create(struct pipe_screen *pscreen,

@@ -1224,7 +1224,7 @@ radv_GetQueryPoolResults(VkDevice _device, VkQueryPool queryPool, uint32_t first
       case VK_QUERY_TYPE_ACCELERATION_STRUCTURE_SERIALIZATION_SIZE_KHR:
       case VK_QUERY_TYPE_ACCELERATION_STRUCTURE_SERIALIZATION_BOTTOM_LEVEL_POINTERS_KHR:
       case VK_QUERY_TYPE_ACCELERATION_STRUCTURE_SIZE_KHR: {
-         uint64_t const *src64 = (uint64_t const *)src;
+         p_atomic_uint64_t const *src64 = (p_atomic_uint64_t const *)src;
          uint64_t value;
 
          do {
@@ -1248,7 +1248,7 @@ radv_GetQueryPoolResults(VkDevice _device, VkQueryPool queryPool, uint32_t first
          break;
       }
       case VK_QUERY_TYPE_OCCLUSION: {
-         uint64_t const *src64 = (uint64_t const *)src;
+         p_atomic_uint64_t const *src64 = (p_atomic_uint64_t const *)src;
          uint32_t db_count = device->physical_device->rad_info.max_render_backends;
          uint64_t enabled_rb_mask = device->physical_device->rad_info.enabled_rb_mask;
          uint64_t sample_count = 0;
@@ -1349,7 +1349,7 @@ radv_GetQueryPoolResults(VkDevice _device, VkQueryPool queryPool, uint32_t first
          break;
       }
       case VK_QUERY_TYPE_TRANSFORM_FEEDBACK_STREAM_EXT: {
-         uint64_t const *src64 = (uint64_t const *)src;
+         p_atomic_uint64_t const *src64 = (p_atomic_uint64_t const *)src;
          uint64_t num_primitives_written;
          uint64_t primitive_storage_needed;
 
@@ -1389,7 +1389,7 @@ radv_GetQueryPoolResults(VkDevice _device, VkQueryPool queryPool, uint32_t first
          break;
       }
       case VK_QUERY_TYPE_PRIMITIVES_GENERATED_EXT: {
-         uint64_t const *src64 = (uint64_t const *)src;
+         p_atomic_uint64_t const *src64 = (p_atomic_uint64_t const *)src;
          uint64_t primitive_storage_needed;
 
          /* SAMPLE_STREAMOUTSTATS stores this structure:
@@ -1429,7 +1429,7 @@ radv_GetQueryPoolResults(VkDevice _device, VkQueryPool queryPool, uint32_t first
       }
       case VK_QUERY_TYPE_PERFORMANCE_QUERY_KHR: {
          struct radv_pc_query_pool *pc_pool = (struct radv_pc_query_pool *)pool;
-         const uint64_t *src64 = (const uint64_t *)src;
+         const p_atomic_uint64_t *src64 = (const p_atomic_uint64_t *)src;
          bool avail;
          do {
             avail = true;
@@ -1466,7 +1466,7 @@ emit_query_flush(struct radv_cmd_buffer *cmd_buffer, struct radv_query_pool *poo
    if (cmd_buffer->pending_reset_query) {
       if (pool->size >= RADV_BUFFER_OPS_CS_THRESHOLD) {
          /* Only need to flush caches if the query pool size is
-          * large enough to be resetted using the compute shader
+          * large enough to be reset using the compute shader
           * path. Small pools don't need any cache flushes
           * because we use a CP dma clear.
           */

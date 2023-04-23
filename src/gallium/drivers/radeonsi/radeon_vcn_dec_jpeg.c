@@ -51,6 +51,7 @@ static struct pb_buffer *radeon_jpeg_get_decode_param(struct radeon_decoder *dec
       case PIPE_FORMAT_IYUV:
       case PIPE_FORMAT_YV12:
       case PIPE_FORMAT_Y8_U8_V8_444_UNORM:
+      case PIPE_FORMAT_R8_G8_B8_UNORM:
          chromav = (struct si_texture *)((struct vl_video_buffer *)target)->resources[2];
          dec->jpg.dt_chromav_top_offset = chromav->surface.u.gfx9.surf_offset;
          chroma = (struct si_texture *)((struct vl_video_buffer*)target)->resources[1];
@@ -252,16 +253,20 @@ static void send_cmd_target_direct(struct radeon_decoder *dec, struct pb_buffer 
    uint32_t fc_sps_info_val = 0;
 
    switch (buffer_format) {
-         case PIPE_FORMAT_R8G8B8A8_UNORM:
-            format_convert = true;
-            fc_sps_info_val = 1 | (1 << 4) | (0xff << 8);
-            break;
-         case PIPE_FORMAT_A8R8G8B8_UNORM:
-            format_convert = true;
-            fc_sps_info_val = 1 | (1 << 4) | (1 << 5) | (0xff << 8);
-            break;
-         default:
-            break;
+      case PIPE_FORMAT_R8G8B8A8_UNORM:
+         format_convert = true;
+         fc_sps_info_val = 1 | (1 << 4) | (0xff << 8);
+         break;
+      case PIPE_FORMAT_A8R8G8B8_UNORM:
+         format_convert = true;
+         fc_sps_info_val = 1 | (1 << 4) | (1 << 5) | (0xff << 8);
+         break;
+      case PIPE_FORMAT_R8_G8_B8_UNORM:
+         format_convert = true;
+         fc_sps_info_val = 1 | (1 << 5) | (0xff << 8);
+         break;
+      default:
+         break;
    }
 
    if (dec->jpg_reg.version == RDECODE_JPEG_REG_VER_V3 && format_convert) {

@@ -204,7 +204,7 @@ radv_create_merged_rt_create_info(const VkRayTracingPipelineCreateInfoKHR *pCrea
 static VkResult
 radv_rt_pipeline_compile(struct radv_ray_tracing_pipeline *pipeline,
                          struct radv_pipeline_layout *pipeline_layout, struct radv_device *device,
-                         struct radv_pipeline_cache *cache,
+                         struct vk_pipeline_cache *cache,
                          const struct radv_pipeline_key *pipeline_key,
                          const VkPipelineShaderStageCreateInfo *pStage,
                          const VkPipelineCreateFlags flags, const uint8_t *custom_hash,
@@ -235,9 +235,8 @@ radv_rt_pipeline_compile(struct radv_ray_tracing_pipeline *pipeline,
    pipeline->base.base.pipeline_hash = *(uint64_t *)hash;
 
    bool found_in_application_cache = true;
-   if (!keep_executable_info &&
-       radv_create_shaders_from_pipeline_cache(device, cache, hash, &pipeline->base.base, rt_groups,
-                                               num_rt_groups, &found_in_application_cache)) {
+   if (!keep_executable_info && radv_pipeline_cache_search(device, cache, &pipeline->base.base,
+                                                           hash, &found_in_application_cache)) {
       if (found_in_application_cache)
          pipeline_feedback.flags |=
             VK_PIPELINE_CREATION_FEEDBACK_APPLICATION_PIPELINE_CACHE_HIT_BIT;
@@ -266,12 +265,8 @@ radv_rt_pipeline_compile(struct radv_ray_tracing_pipeline *pipeline,
    radv_nir_shader_info_pass(device, rt_stage.nir, MESA_SHADER_NONE, pipeline_layout, pipeline_key,
                              pipeline->base.base.type, false, &rt_stage.info);
 
-   /* Declare shader arguments. */
-   rt_stage.args.explicit_scratch_args = !radv_use_llvm_for_stage(device, rt_stage.stage);
-   rt_stage.args.load_grid_size_from_user_sgpr = device->load_grid_size_from_user_sgpr;
-
-   radv_declare_shader_args(device, pipeline_key, &rt_stage.info, rt_stage.stage, false,
-                            MESA_SHADER_NONE, &rt_stage.args);
+   radv_declare_shader_args(device, pipeline_key, &rt_stage.info, rt_stage.stage, MESA_SHADER_NONE,
+                            RADV_SHADER_TYPE_DEFAULT, &rt_stage.args);
 
    rt_stage.info.user_sgprs_locs = rt_stage.args.user_sgprs_locs;
    rt_stage.info.inline_push_constant_mask = rt_stage.args.ac.inline_push_const_mask;
@@ -286,7 +281,7 @@ radv_rt_pipeline_compile(struct radv_ray_tracing_pipeline *pipeline,
 
    /* Compile NIR shader to AMD assembly. */
    pipeline->base.base.shaders[rt_stage.stage] =
-      radv_shader_nir_to_asm(device, &rt_stage, &rt_stage.nir, 1, pipeline_key,
+      radv_shader_nir_to_asm(device, cache, &rt_stage, &rt_stage.nir, 1, pipeline_key,
                              keep_executable_info, keep_statistic_info, &binaries[rt_stage.stage]);
 
    rt_stage.feedback.duration += os_time_get_nano() - stage_start;
@@ -302,8 +297,7 @@ radv_rt_pipeline_compile(struct radv_ray_tracing_pipeline *pipeline,
    }
 
    if (!keep_executable_info) {
-      radv_pipeline_cache_insert_shaders(device, cache, hash, &pipeline->base.base, binaries, NULL,
-                                         rt_groups, num_rt_groups);
+      radv_pipeline_cache_insert(device, cache, &pipeline->base.base, NULL, hash);
    }
 
    free(binaries[rt_stage.stage]);
@@ -516,7 +510,7 @@ radv_rt_pipeline_create(VkDevice _device, VkPipelineCache _cache,
                         const VkAllocationCallbacks *pAllocator, VkPipeline *pPipeline)
 {
    RADV_FROM_HANDLE(radv_device, device, _device);
-   RADV_FROM_HANDLE(radv_pipeline_cache, cache, _cache);
+   VK_FROM_HANDLE(vk_pipeline_cache, cache, _cache);
    RADV_FROM_HANDLE(radv_pipeline_layout, pipeline_layout, pCreateInfo->layout);
    VkResult result;
    struct radv_ray_tracing_pipeline *rt_pipeline = NULL;
@@ -590,7 +584,7 @@ radv_rt_pipeline_create(VkDevice _device, VkPipelineCache _cache,
          goto shader_fail;
    }
 
-   rt_pipeline->stack_size = compute_rt_stack_size(pCreateInfo, rt_pipeline->groups);
+   rt_pipeline->stack_size = compute_rt_stack_size(&local_create_info, rt_pipeline->groups);
    rt_pipeline->base.base.shaders[MESA_SHADER_COMPUTE] = radv_create_rt_prolog(device);
 
    combine_config(&rt_pipeline->base.base.shaders[MESA_SHADER_COMPUTE]->config,

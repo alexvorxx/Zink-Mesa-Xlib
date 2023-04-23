@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # The relative paths in this file only become valid at runtime.
 # shellcheck disable=SC1091
 # shellcheck disable=SC2086 # we want word splitting
@@ -135,3 +135,6 @@ apt-get purge -y \
       $STABLE_EPHEMERAL
 
 apt-get autoremove -y --purge
+
+# hack to remove Debian libdrm (until bookworm), deqp sometimes load old libdrm, we could remove here eventually Mesa too; execute on both GL and VK container
+dpkg -r --force-depends "libdrm2" "libdrm-radeon1" "libdrm-nouveau2" "libdrm-intel1" "libdrm-amdgpu1" "libdrm-common"  # "mesa-vulkan-drivers" "mesa-vdpau-drivers" "mesa-va-drivers" "libgl1-mesa-dri" "libglx-mesa0" "vdpau-driver-all" "va-driver-all" "libglx0" "libgl1" "libvdpau-va-gl1" "libglu1-mesa" "libegl-mesa0" "libgl1-mesa-dri" "libglapi-mesa" "libosmesa6"

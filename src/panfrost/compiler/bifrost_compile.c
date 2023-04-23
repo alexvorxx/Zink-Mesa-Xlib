@@ -2239,16 +2239,19 @@ bi_emit_alu(bi_builder *b, nir_alu_instr *instr)
 
    case nir_op_pack_64_2x32:
       bi_collect_v2i32_to(b, dst,
-                          bi_extract(b, bi_src_index(&instr->src[0].src), 0),
-                          bi_extract(b, bi_src_index(&instr->src[0].src), 1));
+                          bi_extract(b, bi_src_index(&instr->src[0].src),
+                                     instr->src[0].swizzle[0]),
+                          bi_extract(b, bi_src_index(&instr->src[0].src),
+                                     instr->src[0].swizzle[1]));
       return;
 
    case nir_op_pack_uvec2_to_uint: {
       bi_index src = bi_src_index(&instr->src[0].src);
 
       assert(sz == 32 && src_sz == 32);
-      bi_mkvec_v2i16_to(b, dst, bi_half(bi_extract(b, src, 0), false),
-                        bi_half(bi_extract(b, src, 1), false));
+      bi_mkvec_v2i16_to(
+         b, dst, bi_half(bi_extract(b, src, instr->src[0].swizzle[0]), false),
+         bi_half(bi_extract(b, src, instr->src[0].swizzle[1]), false));
       return;
    }
 
@@ -2256,10 +2259,11 @@ bi_emit_alu(bi_builder *b, nir_alu_instr *instr)
       bi_index src = bi_src_index(&instr->src[0].src);
 
       assert(sz == 32 && src_sz == 32);
-      bi_mkvec_v4i8_to(b, dst, bi_byte(bi_extract(b, src, 0), 0),
-                       bi_byte(bi_extract(b, src, 1), 0),
-                       bi_byte(bi_extract(b, src, 2), 0),
-                       bi_byte(bi_extract(b, src, 3), 0));
+      bi_mkvec_v4i8_to(
+         b, dst, bi_byte(bi_extract(b, src, instr->src[0].swizzle[0]), 0),
+         bi_byte(bi_extract(b, src, instr->src[0].swizzle[1]), 0),
+         bi_byte(bi_extract(b, src, instr->src[0].swizzle[2]), 0),
+         bi_byte(bi_extract(b, src, instr->src[0].swizzle[3]), 0));
       return;
    }
 
@@ -4389,6 +4393,35 @@ bifrost_nir_lower_blend_components(struct nir_builder *b, nir_instr *instr,
    return true;
 }
 
+static nir_mem_access_size_align
+mem_access_size_align_cb(nir_intrinsic_op intrin, uint8_t bytes, uint32_t align,
+                         uint32_t align_offset, bool offset_is_const,
+                         const void *cb_data)
+{
+   align = nir_combined_align(align, align_offset);
+   assert(util_is_power_of_two_nonzero(align));
+
+   /* If the number of bytes is a multiple of 4, use 32-bit loads. Else if it's
+    * a multiple of 2, use 16-bit loads. Else use 8-bit loads.
+    */
+   unsigned bit_size = (bytes & 1) ? 8 : (bytes & 2) ? 16 : 32;
+
+   /* But if we're only aligned to 1 byte, use 8-bit loads. If we're only
+    * aligned to 2 bytes, use 16-bit loads, unless we needed 8-bit loads due to
+    * the size.
+    */
+   if (align == 1)
+      bit_size = 8;
+   else if (align == 2)
+      bit_size = MIN2(bit_size, 16);
+
+   return (nir_mem_access_size_align){
+      .num_components = MIN2(bytes / (bit_size / 8), 4),
+      .bit_size = bit_size,
+      .align = bit_size / 8,
+   };
+}
+
 static void
 bi_optimize_nir(nir_shader *nir, unsigned gpu_id, bool is_blend)
 {
@@ -4756,6 +4789,13 @@ bifrost_preprocess_nir(nir_shader *nir, unsigned gpu_id)
       NIR_PASS_V(nir, pan_nir_lower_store_component);
    }
 
+   NIR_PASS_V(nir, nir_lower_mem_access_bit_sizes,
+              nir_var_mem_ubo | nir_var_mem_ssbo | nir_var_mem_constant |
+                 nir_var_mem_task_payload | nir_var_shader_temp |
+                 nir_var_function_temp | nir_var_mem_global |
+                 nir_var_mem_shared,
+              mem_access_size_align_cb, NULL);
+
    NIR_PASS_V(nir, nir_lower_ssbo);
    NIR_PASS_V(nir, pan_lower_sample_pos);
    NIR_PASS_V(nir, nir_lower_bit_size, bi_lower_bit_size, NULL);
@@ -4790,8 +4830,8 @@ bifrost_preprocess_nir(nir_shader *nir, unsigned gpu_id)
 static bi_context *
 bi_compile_variant_nir(nir_shader *nir,
                        const struct panfrost_compile_inputs *inputs,
-                       struct util_dynarray *binary,
-                       struct bi_shader_info info, enum bi_idvs_mode idvs)
+                       struct util_dynarray *binary, struct bi_shader_info info,
+                       enum bi_idvs_mode idvs)
 {
    bi_context *ctx = rzalloc(NULL, bi_context);
 
@@ -5055,8 +5095,8 @@ bi_compile_variant_nir(nir_shader *nir,
 static void
 bi_compile_variant(nir_shader *nir,
                    const struct panfrost_compile_inputs *inputs,
-                   struct util_dynarray *binary,
-                   struct pan_shader_info *info, enum bi_idvs_mode idvs)
+                   struct util_dynarray *binary, struct pan_shader_info *info,
+                   enum bi_idvs_mode idvs)
 {
    struct bi_shader_info local_info = {
       .push = &info->push,

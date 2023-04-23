@@ -38,6 +38,7 @@
 #include "util/u_debug.h"
 #include "u_cpu_detect.h"
 #include "u_math.h"
+#include "os_file.h"
 #include "c11/threads.h"
 
 #include <stdio.h>
@@ -477,6 +478,40 @@ get_cpu_topology(void)
    util_cpu_caps.num_L3_caches = 1;
 
    memset(util_cpu_caps.cpu_to_L3, 0xff, sizeof(util_cpu_caps.cpu_to_L3));
+
+#if DETECT_OS_LINUX
+   uint64_t big_cap = 0;
+   unsigned num_big_cpus = 0;
+   uint64_t *caps = malloc(sizeof(uint64_t) * util_cpu_caps.max_cpus);
+   bool fail = false;
+   for (unsigned i = 0; caps && i < util_cpu_caps.max_cpus; i++) {
+      char name[PATH_MAX];
+      snprintf(name, sizeof(name), "/sys/devices/system/cpu/cpu%u/cpu_capacity", i);
+      size_t size = 0;
+      char *cap = os_read_file(name, &size);
+      if (!cap) {
+         num_big_cpus = 0;
+         fail = true;
+         break;
+      }
+      errno = 0;
+      caps[i] = strtoull(cap, NULL, 10);
+      free(cap);
+      if (errno) {
+         fail = true;
+         break;
+      }
+      big_cap = MAX2(caps[i], big_cap);
+   }
+   if (!fail) {
+      for (unsigned i = 0; caps && i < util_cpu_caps.max_cpus; i++) {
+         if (caps[i] >= big_cap / 2)
+            num_big_cpus++;
+      }
+   }
+   free(caps);
+   util_cpu_caps.nr_big_cpus = num_big_cpus;
+#endif
 
 #if DETECT_ARCH_X86 || DETECT_ARCH_X86_64
    /* AMD Zen */

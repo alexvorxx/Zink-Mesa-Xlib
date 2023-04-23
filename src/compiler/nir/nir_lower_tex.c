@@ -1160,6 +1160,7 @@ lower_tg4_offsets(nir_builder *b, nir_tex_instr *tex)
       tex_copy->is_shadow = tex->is_shadow;
       tex_copy->is_new_style_shadow = tex->is_new_style_shadow;
       tex_copy->is_sparse = tex->is_sparse;
+      tex_copy->is_gather_implicit_lod = tex->is_gather_implicit_lod;
       tex_copy->component = tex->component;
       tex_copy->dest_type = tex->dest_type;
 

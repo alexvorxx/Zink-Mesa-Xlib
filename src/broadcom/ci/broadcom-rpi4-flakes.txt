@@ -36,3 +36,4 @@ dEQP-VK.renderpass2.suballocation.load_store_op_none.depthstencil_d24_unorm_s8_u
 
 # first encounter 01/04/2023
 spec@ext_framebuffer_blit@fbo-sys-blit
+spec@ext_framebuffer_blit@fbo-sys-sub-blit

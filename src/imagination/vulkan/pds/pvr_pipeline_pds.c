@@ -686,7 +686,7 @@ void pvr_pds_generate_vertex_primary_program(
 
          PVR_PDS_MODE_TOGGLE(code,
                              instruction,
-                             pvr_pds_inst_encode_stflp64(
+                             pvr_pds_inst_encode_sftlp64(
                                 0, /* cc */
                                 PVR_ROGUE_PDSINST_LOP_XOR, /* LOP */
                                 1, /* IM */
@@ -699,7 +699,7 @@ void pvr_pds_generate_vertex_primary_program(
                                 ));
          PVR_PDS_MODE_TOGGLE(code,
                              instruction,
-                             pvr_pds_inst_encode_stflp64(
+                             pvr_pds_inst_encode_sftlp64(
                                 0, /* cc */
                                 PVR_ROGUE_PDSINST_LOP_NONE, /* LOP */
                                 1, /* IM */
@@ -712,7 +712,7 @@ void pvr_pds_generate_vertex_primary_program(
                                 ));
          PVR_PDS_MODE_TOGGLE(code,
                              instruction,
-                             pvr_pds_inst_encode_stflp64(
+                             pvr_pds_inst_encode_sftlp64(
                                 0, /* cc */
                                 PVR_ROGUE_PDSINST_LOP_NONE, /* LOP */
                                 1, /* IM */
@@ -744,7 +744,8 @@ void pvr_pds_generate_vertex_primary_program(
       uint32_t control_word;
       struct pvr_const_map_entry_literal32 *literal_entry;
 
-      struct pvr_pds_vertex_dma *vertex_dma = &input_program->dma_list[dma];
+      const struct pvr_pds_vertex_dma *vertex_dma =
+         &input_program->dma_list[dma];
       bool last_dma = (++running_dma_count == total_dma_count);
 
       pvr_debug_pds_note("Vertex Attribute DMA %d (last=%d)", dma, last_dma);
@@ -884,7 +885,7 @@ void pvr_pds_generate_vertex_primary_program(
                shift_2s_comp = 0xFFFE1;
                PVR_PDS_MODE_TOGGLE(code,
                                    instruction,
-                                   pvr_pds_inst_encode_stflp64(
+                                   pvr_pds_inst_encode_sftlp64(
                                       /* cc */ 0,
                                       /* LOP */ PVR_ROGUE_PDSINST_LOP_NONE,
                                       /* IM */ 1, /*  enable immediate */
@@ -901,7 +902,7 @@ void pvr_pds_generate_vertex_primary_program(
             shift_2s_comp = *((uint32_t *)&shift);
             PVR_PDS_MODE_TOGGLE(code,
                                 instruction,
-                                pvr_pds_inst_encode_stflp64(
+                                pvr_pds_inst_encode_sftlp64(
                                    /* cc */ 0,
                                    /* LOP */ PVR_ROGUE_PDSINST_LOP_NONE,
                                    /* IM */ 1, /*  enable immediate */
@@ -1234,7 +1235,7 @@ void pvr_pds_generate_vertex_primary_program(
 
             PVR_PDS_MODE_TOGGLE(code,
                                 instruction,
-                                pvr_pds_inst_encode_stflp32(
+                                pvr_pds_inst_encode_sftlp32(
                                    1, /* IM */
                                    0, /* cc */
                                    PVR_ROGUE_PDSINST_LOP_NONE, /* LOP */
@@ -1260,7 +1261,7 @@ void pvr_pds_generate_vertex_primary_program(
 
             PVR_PDS_MODE_TOGGLE(code,
                                 instruction,
-                                pvr_pds_inst_encode_stflp32(
+                                pvr_pds_inst_encode_sftlp32(
                                    1, /* IM */
                                    1, /* cc */
                                    PVR_ROGUE_PDSINST_LOP_NONE, /* LOP */
@@ -1291,8 +1292,8 @@ void pvr_pds_generate_vertex_primary_program(
                                    /* cc    */ 0,
                                    /* end   */ 0,
                                    /* src0  */ R32_C(const_base + 3),
-                                   /* src2  */ (index),
-                                   /* src1  */ R64_C((const_base + 4) >> 1),
+                                   /* src1  */ (index),
+                                   /* src2  */ R64_C((const_base + 4) >> 1),
                                    /* src3  */ (const_base + 6) >> 1));
          }
       }

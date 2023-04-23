@@ -32,7 +32,9 @@ from lava.utils.log_section import (
 
 @dataclass
 class LogFollower:
-    current_section: Optional[GitlabSection] = None
+    starting_section: Optional[GitlabSection] = None
+    _current_section: Optional[GitlabSection] = None
+    section_history: list[GitlabSection] = field(default_factory=list, init=False)
     timeout_durations: dict[LogSectionType, timedelta] = field(
         default_factory=lambda: DEFAULT_GITLAB_SECTION_TIMEOUTS,
     )
@@ -43,9 +45,11 @@ class LogFollower:
     _merge_next_line: str = field(default_factory=str, init=False)
 
     def __post_init__(self):
-        section_is_created = bool(self.current_section)
+        # Make it trigger current_section setter to populate section history
+        self.current_section = self.starting_section
+        section_is_created = bool(self._current_section)
         section_has_started = bool(
-            self.current_section and self.current_section.has_started
+            self._current_section and self._current_section.has_started
         )
         self.log_hints = LAVALogHints(self)
         assert (
@@ -57,10 +61,20 @@ class LogFollower:
         next(self.gl_section_fix_gen)
 
     @property
+    def current_section(self):
+        return self._current_section
+
+    @current_section.setter
+    def current_section(self, new_section: GitlabSection) -> None:
+        if old_section := self._current_section:
+            self.section_history.append(old_section)
+        self._current_section = new_section
+
+    @property
     def phase(self) -> LogSectionType:
         return (
-            self.current_section.type
-            if self.current_section
+            self._current_section.type
+            if self._current_section
             else LogSectionType.UNKNOWN
         )
 
@@ -75,22 +89,22 @@ class LogFollower:
             print(line)
 
     def watchdog(self):
-        if not self.current_section:
+        if not self._current_section:
             return
 
         timeout_duration = self.timeout_durations.get(
-            self.current_section.type, self.fallback_timeout
+            self._current_section.type, self.fallback_timeout
         )
 
-        if self.current_section.delta_time() > timeout_duration:
+        if self._current_section.delta_time() > timeout_duration:
             raise MesaCITimeoutError(
-                f"Gitlab Section {self.current_section} has timed out",
+                f"Gitlab Section {self._current_section} has timed out",
                 timeout_duration=timeout_duration,
             )
 
     def clear_current_section(self):
-        if self.current_section and not self.current_section.has_finished:
-            self._buffer.append(self.current_section.end())
+        if self._current_section and not self._current_section.has_finished:
+            self._buffer.append(self._current_section.end())
             self.current_section = None
 
     def update_section(self, new_section: GitlabSection):
@@ -270,11 +284,13 @@ def print_log(msg: str) -> None:
     print(f"{CONSOLE_LOG['RESET']}{datetime.now()}: {msg}")
 
 
-def fatal_err(msg):
+def fatal_err(msg, exception=None):
     colored_msg = f"{CONSOLE_LOG['FG_RED']}"
     f"{msg}"
     f"{CONSOLE_LOG['RESET']}"
     print_log(colored_msg)
+    if exception:
+        raise exception
     sys.exit(1)
 
 

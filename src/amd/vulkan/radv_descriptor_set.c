@@ -174,7 +174,7 @@ radv_CreateDescriptorSetLayout(VkDevice _device, const VkDescriptorSetLayoutCrea
       size += ycbcr_sampler_count * sizeof(struct vk_ycbcr_conversion_state);
    }
 
-   /* We need to allocate decriptor set layouts off the device allocator with DEVICE scope because
+   /* We need to allocate descriptor set layouts off the device allocator with DEVICE scope because
     * they are reference counted and may not be destroyed when vkDestroyDescriptorSetLayout is
     * called.
     */

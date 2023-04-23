@@ -101,7 +101,10 @@ init_program(Program* program, Stage stage, const struct aco_shader_info* info,
    program->dev.lds_encoding_granule = gfx_level >= GFX11 && stage == fragment_fs ? 1024 :
                                        gfx_level >= GFX7 ? 512 : 256;
    program->dev.lds_alloc_granule = gfx_level >= GFX10_3 ? 1024 : program->dev.lds_encoding_granule;
+
+   /* GFX6: There is 64KB LDS per CU, but a single workgroup can only use 32KB. */
    program->dev.lds_limit = gfx_level >= GFX7 ? 65536 : 32768;
+
    /* apparently gfx702 also has 16-bank LDS but I can't find a family for that */
    program->dev.has_16bank_lds = family == CHIP_KABINI || family == CHIP_STONEY;
 

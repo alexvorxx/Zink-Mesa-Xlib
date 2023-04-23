@@ -129,6 +129,10 @@ enum pipe_video_cap
       when it has reached its maximum async depth capacity
    */
    PIPE_VIDEO_CAP_ENC_SUPPORTS_ASYNC_OPERATION = 33,
+
+   PIPE_VIDEO_CAP_MIN_WIDTH = 34,
+   PIPE_VIDEO_CAP_MIN_HEIGHT = 35,
+   PIPE_VIDEO_CAP_ENC_RATE_CONTROL_QVBR = 36
 };
 
 /* To be used with PIPE_VIDEO_CAP_VPP_ORIENTATION_MODES and for VPP state*/

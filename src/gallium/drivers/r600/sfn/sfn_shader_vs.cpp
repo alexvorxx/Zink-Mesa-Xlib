@@ -436,8 +436,8 @@ VertexShader::do_scan_instruction(nir_instr *instr)
    switch (intr->intrinsic) {
    case nir_intrinsic_load_input: {
       int vtx_register = nir_intrinsic_base(intr) + 1;
-      if (m_last_vertex_atribute_register < vtx_register)
-         m_last_vertex_atribute_register = vtx_register;
+      if (m_last_vertex_attribute_register < vtx_register)
+         m_last_vertex_attribute_register = vtx_register;
       return true;
    }
    case nir_intrinsic_store_output: {
@@ -546,7 +546,7 @@ VertexShader::do_allocate_reserved_registers()
       m_rel_vertex_id = value_factory().allocate_pinned_register(0, 1);
    }
 
-   return m_last_vertex_atribute_register + 1;
+   return m_last_vertex_attribute_register + 1;
 }
 
 bool

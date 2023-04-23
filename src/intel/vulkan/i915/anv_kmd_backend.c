@@ -33,7 +33,8 @@ static uint32_t
 i915_gem_create(struct anv_device *device,
                 const struct intel_memory_class_instance **regions,
                 uint16_t num_regions, uint64_t size,
-                enum anv_bo_alloc_flags alloc_flags)
+                enum anv_bo_alloc_flags alloc_flags,
+                uint64_t *actual_size)
 {
    if (unlikely(!device->info->mem.use_class_instance)) {
       assert(num_regions == 1 &&
@@ -44,6 +45,8 @@ i915_gem_create(struct anv_device *device,
       };
       if (intel_ioctl(device->fd, DRM_IOCTL_I915_GEM_CREATE, &gem_create))
          return 0;
+
+      *actual_size = gem_create.size;
       return gem_create.handle;
    }
 
@@ -75,6 +78,7 @@ i915_gem_create(struct anv_device *device,
    if (intel_ioctl(device->fd, DRM_IOCTL_I915_GEM_CREATE_EXT, &gem_create))
       return 0;
 
+   *actual_size = gem_create.size;
    return gem_create.handle;
 }
 

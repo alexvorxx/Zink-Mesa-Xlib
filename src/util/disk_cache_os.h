@@ -78,7 +78,7 @@ struct disk_cache {
    size_t index_mmap_size;
 
    /* Pointer to total size of all objects in cache (within index_mmap) */
-   uint64_t *size;
+   p_atomic_uint64_t *size;
 
    /* Pointer to stored keys, (within index_mmap). */
    uint8_t *stored_keys;

@@ -143,7 +143,7 @@ typedef enum {
 #define DRL_MODE_CONTEXTS 3
 #define INTER_COMPOUND_MODES (1 + AV1_NEW_NEWMV - AV1_NEAREST_NEARESTMV)
 
-#define PALATTE_BSIZE_CTXS 9
+#define PALETTE_BSIZE_CTXS 9
 #define PALETTE_COLOR_INDEX_CONTEXTS 5
 #define PALETTE_Y_MODE_CONTEXTS 3
 #define PALETTE_UV_MODE_CONTEXTS 2
@@ -440,7 +440,7 @@ typedef struct rvcn_av1_vcn4_frame_contexts {
    uint16_t skip_mode_cdfs[SKIP_CONTEXTS][CDF_SIZE(2)];
    uint16_t skip_cdfs[SKIP_CONTEXTS][CDF_SIZE(2)];
    uint16_t intra_inter_cdf[AV1_INTRA_INTER_CONTEXTS][CDF_SIZE(2)];
-   uint16_t palette_y_mode_cdf[PALATTE_BSIZE_CTXS][PALETTE_Y_MODE_CONTEXTS][CDF_SIZE(2)];
+   uint16_t palette_y_mode_cdf[PALETTE_BSIZE_CTXS][PALETTE_Y_MODE_CONTEXTS][CDF_SIZE(2)];
    uint16_t palette_uv_mode_cdf[PALETTE_UV_MODE_CONTEXTS][CDF_SIZE(2)];
    uint16_t filter_intra_cdfs[AV1_BLOCK_SIZES_ALL][CDF_SIZE(2)];
    uint16_t wiener_restore_cdf[CDF_SIZE(2)];
@@ -497,8 +497,8 @@ typedef struct rvcn_av1_vcn4_frame_contexts {
    uint16_t filter_intra_mode_cdf[CDF_SIZE(FILTER_INTRA_MODES)];
    uint16_t eob_flag_cdf32[AV1_PLANE_TYPES][2][CDF_SIZE(6)];
    uint16_t eob_flag_cdf64[AV1_PLANE_TYPES][2][CDF_SIZE(7)];
-   uint16_t palette_y_size_cdf[PALATTE_BSIZE_CTXS][CDF_SIZE(PALETTE_SIZES)];
-   uint16_t palette_uv_size_cdf[PALATTE_BSIZE_CTXS][CDF_SIZE(PALETTE_SIZES)];
+   uint16_t palette_y_size_cdf[PALETTE_BSIZE_CTXS][CDF_SIZE(PALETTE_SIZES)];
+   uint16_t palette_uv_size_cdf[PALETTE_BSIZE_CTXS][CDF_SIZE(PALETTE_SIZES)];
    uint16_t angle_delta_cdf[DIRECTIONAL_MODES][CDF_SIZE(2 * MAX_ANGLE_DELTA + 1)];
    uint16_t reserve3[6];
    uint16_t eob_flag_cdf128[AV1_PLANE_TYPES][2][CDF_SIZE(8)];
@@ -2488,7 +2488,7 @@ static const uint16_t default_comp_bwdref_cdf[AV1_REF_CONTEXTS][BWD_REFS - 1][CD
    { { AOM_CDF2(2235) },{ AOM_CDF2(1423) } }, { { AOM_CDF2(17182) },{ AOM_CDF2(15175) } }, { { AOM_CDF2(30606) },{ AOM_CDF2(30489) } }
 };
 
-static const uint16_t default_palette_y_size_cdf[PALATTE_BSIZE_CTXS][CDF_SIZE(PALETTE_SIZES)] =
+static const uint16_t default_palette_y_size_cdf[PALETTE_BSIZE_CTXS][CDF_SIZE(PALETTE_SIZES)] =
 {
    { AOM_CDF7(7952, 13000, 18149, 21478, 25527, 29241) }, { AOM_CDF7(7139, 11421, 16195, 19544, 23666, 28073) },
    { AOM_CDF7(7788, 12741, 17325, 20500, 24315, 28530) }, { AOM_CDF7(8271, 14064, 18246, 21564, 25071, 28533) },
@@ -2496,7 +2496,7 @@ static const uint16_t default_palette_y_size_cdf[PALATTE_BSIZE_CTXS][CDF_SIZE(PA
    { AOM_CDF7(14940, 20797, 21678, 24186, 27033, 28999) }
 };
 
-static const uint16_t default_palette_uv_size_cdf[PALATTE_BSIZE_CTXS][CDF_SIZE(PALETTE_SIZES)] =
+static const uint16_t default_palette_uv_size_cdf[PALETTE_BSIZE_CTXS][CDF_SIZE(PALETTE_SIZES)] =
 {
    { AOM_CDF7(8713, 19979, 27128, 29609, 31331, 32272) }, { AOM_CDF7(5839, 15573, 23581, 26947, 29848, 31700) },
    { AOM_CDF7(4426, 11260, 17999, 21483, 25863, 29430) }, { AOM_CDF7(3228, 9464, 14993, 18089, 22523, 27420) },
@@ -2504,7 +2504,7 @@ static const uint16_t default_palette_uv_size_cdf[PALATTE_BSIZE_CTXS][CDF_SIZE(P
    { AOM_CDF7(1269, 5435, 10433, 18963, 21700, 25865) }
 };
 
-static const uint16_t default_palette_y_mode_cdf[PALATTE_BSIZE_CTXS][PALETTE_Y_MODE_CONTEXTS][CDF_SIZE(2)] =
+static const uint16_t default_palette_y_mode_cdf[PALETTE_BSIZE_CTXS][PALETTE_Y_MODE_CONTEXTS][CDF_SIZE(2)] =
 {
    { { AOM_CDF2(31676) },{ AOM_CDF2(3419) },{ AOM_CDF2(1261) } }, { { AOM_CDF2(31912) },{ AOM_CDF2(2859) },{ AOM_CDF2(980) } },
    { { AOM_CDF2(31823) },{ AOM_CDF2(3400) },{ AOM_CDF2(781) } }, { { AOM_CDF2(32030) },{ AOM_CDF2(3561) },{ AOM_CDF2(904) } },
@@ -2706,7 +2706,7 @@ typedef struct rvcn_av1_frame_context_s
    uint16_t skip_mode_cdfs[SKIP_CONTEXTS][CDF_SIZE(2)];
    uint16_t skip_cdfs[SKIP_CONTEXTS][CDF_SIZE(2)];
    uint16_t intra_inter_cdf[AV1_INTRA_INTER_CONTEXTS][CDF_SIZE(2)];
-   uint16_t palette_y_mode_cdf[PALATTE_BSIZE_CTXS][PALETTE_Y_MODE_CONTEXTS][CDF_SIZE(2)];
+   uint16_t palette_y_mode_cdf[PALETTE_BSIZE_CTXS][PALETTE_Y_MODE_CONTEXTS][CDF_SIZE(2)];
    uint16_t palette_uv_mode_cdf[PALETTE_UV_MODE_CONTEXTS][CDF_SIZE(2)];
    uint16_t filter_intra_cdfs[AV1_BLOCK_SIZES_ALL][CDF_SIZE(2)];
    uint16_t wiener_restore_cdf[CDF_SIZE(2)];
@@ -2763,8 +2763,8 @@ typedef struct rvcn_av1_frame_context_s
    uint16_t filter_intra_mode_cdf[CDF_SIZE(FILTER_INTRA_MODES)];
    uint16_t eob_flag_cdf32[AV1_PLANE_TYPES][2][CDF_SIZE(6)];
    uint16_t eob_flag_cdf64[AV1_PLANE_TYPES][2][CDF_SIZE(7)];
-   uint16_t palette_y_size_cdf[PALATTE_BSIZE_CTXS][CDF_SIZE(PALETTE_SIZES)];
-   uint16_t palette_uv_size_cdf[PALATTE_BSIZE_CTXS][CDF_SIZE(PALETTE_SIZES)];
+   uint16_t palette_y_size_cdf[PALETTE_BSIZE_CTXS][CDF_SIZE(PALETTE_SIZES)];
+   uint16_t palette_uv_size_cdf[PALETTE_BSIZE_CTXS][CDF_SIZE(PALETTE_SIZES)];
    uint16_t angle_delta_cdf[DIRECTIONAL_MODES][CDF_SIZE(2 * MAX_ANGLE_DELTA + 1)];
    uint16_t reserve3[6];
    uint16_t eob_flag_cdf128[AV1_PLANE_TYPES][2][CDF_SIZE(8)];

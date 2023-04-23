@@ -228,6 +228,9 @@ static void pvr_srv_transfer_cmds_init(
                                        submit_cmd->fw_stream,
                                        submit_cmd->fw_stream_len,
                                        dev_info);
+
+      if (submit_info->cmds[i].flags & PVR_WINSYS_TRANSFER_FLAG_SINGLE_CORE)
+         cmd->flags |= ROGUE_FWIF_CMDTRANSFER_SINGLE_CORE;
    }
 }
 

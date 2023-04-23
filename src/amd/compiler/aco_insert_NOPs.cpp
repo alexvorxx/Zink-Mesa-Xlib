@@ -25,6 +25,8 @@
 #include "aco_builder.h"
 #include "aco_ir.h"
 
+#include "util/bitset.h"
+
 #include <algorithm>
 #include <bitset>
 #include <set>

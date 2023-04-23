@@ -28,7 +28,7 @@ rustfmt:
     GIT_STRATEGY: fetch
   script:
     - shopt -s globstar
-    - rustfmt --check --verbose src/**/*.rs
+    - rustfmt --check --verbose src/**/lib.rs
 
 clang-format:
   # Cancel job if a newer commit is pushed to the same branch
@@ -41,7 +41,7 @@ clang-format:
     GIT_STRATEGY: fetch
   script:
     - shopt -s globstar
-    - clang-format-13 --Werror --dry-run src/**/asahi/**/*.{h,c,cpp}
+    - clang-format-13 --Werror --dry-run src/**/{asahi,panfrost}/**/*.{h,c,cpp}
 
 .test-gl:
   extends:

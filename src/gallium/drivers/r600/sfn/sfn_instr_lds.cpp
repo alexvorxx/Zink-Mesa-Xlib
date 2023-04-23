@@ -154,7 +154,7 @@ LDSReadInstr::split(std::vector<AluInstr *>& out_block, AluInstr *last_lds_instr
 bool
 LDSReadInstr::do_ready() const
 {
-   unreachable("This instruction is not handled by the schduler");
+   unreachable("This instruction is not handled by the scheduler");
    return false;
 }
 
@@ -378,7 +378,7 @@ LDSAtomicInstr::replace_source(PRegister old_src, PVirtualValue new_src)
    if (new_src->get_addr()) {
       for (auto& s : m_srcs) {
          auto addr = s->get_addr();
-         /* can't have two differen't indirect addresses in the same instr */
+         /* can't have two different indirect addresses in the same instr */
          if (addr && !addr->equal_to(*new_src->get_addr()))
             return false;
       }
@@ -403,7 +403,7 @@ LDSAtomicInstr::replace_source(PRegister old_src, PVirtualValue new_src)
 bool
 LDSAtomicInstr::do_ready() const
 {
-   unreachable("This instruction is not handled by the schduler");
+   unreachable("This instruction is not handled by the scheduler");
    return false;
 }
 

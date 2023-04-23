@@ -1006,11 +1006,12 @@ struct pipe_context {
     *
     * \param to_device - true if the virtual memory is migrated to the device
     *                    false if the virtual memory is migrated to the host
-    * \param migrate_content - whether the content should be migrated as well
+    * \param content_undefined - whether the content of the migrated memory
+    *                            is undefined after migration
     */
    void (*svm_migrate)(struct pipe_context *context, unsigned num_ptrs,
                        const void* const* ptrs, const size_t *sizes,
-                       bool to_device, bool migrate_content);
+                       bool to_device, bool content_undefined);
    /*@}*/
 
    /**

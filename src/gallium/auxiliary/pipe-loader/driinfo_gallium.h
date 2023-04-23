@@ -1,6 +1,8 @@
 // DriConf options supported by all Gallium DRI drivers.
 DRI_CONF_SECTION_PERFORMANCE
-   DRI_CONF_MESA_GLTHREAD(false)
+   DRI_CONF_MESA_GLTHREAD_DRIVER(false)
+   DRI_CONF_OPT_I(mesa_glthread_app_profile, -1, -1, 1, \
+                  "Set an app profile enablement for glthread")
    DRI_CONF_MESA_NO_ERROR(false)
 DRI_CONF_SECTION_END
 

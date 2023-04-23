@@ -481,7 +481,7 @@ static void si_llvm_emit_polygon_stipple(struct si_shader_context *ctx,
  * - polygon stippling
  *
  * All preloaded SGPRs and VGPRs are passed through unmodified unless they are
- * overriden by other states. (e.g. per-sample interpolation)
+ * overridden by other states. (e.g. per-sample interpolation)
  * Interpolated colors are stored after the preloaded VGPRs.
  */
 void si_llvm_build_ps_prolog(struct si_shader_context *ctx, union si_shader_part_key *key,
@@ -848,28 +848,3 @@ void si_llvm_build_ps_epilog(struct si_shader_context *ctx, union si_shader_part
    LLVMBuildRetVoid(ctx->ac.builder);
 }
 
-void si_llvm_build_monolithic_ps(struct si_shader_context *ctx, struct si_shader *shader)
-{
-   union si_shader_part_key prolog_key;
-   si_get_ps_prolog_key(shader, &prolog_key, false);
-
-   /* If no prolog is needed, we only have the main part, no need to build wrapper function. */
-   if (!si_need_ps_prolog(&prolog_key))
-      return;
-
-   struct ac_llvm_pointer main_fn = ctx->main_fn;
-
-   /* Preserve main arguments. */
-   enum ac_arg_type main_arg_types[AC_MAX_ARGS];
-   for (int i = 0; i < ctx->args->ac.arg_count; i++)
-      main_arg_types[i] = ctx->args->ac.args[i].type;
-
-   si_llvm_build_ps_prolog(ctx, &prolog_key, false);
-
-   struct ac_llvm_pointer parts[2] = {
-      ctx->main_fn, /* prolog */
-      main_fn,      /* main */
-   };
-
-   si_build_wrapper_function(ctx, parts, 2, 1, 0, main_arg_types, false);
-}

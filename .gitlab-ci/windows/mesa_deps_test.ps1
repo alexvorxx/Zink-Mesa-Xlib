@@ -132,7 +132,7 @@ cargo install --git https://gitlab.freedesktop.org/anholt/deqp-runner.git
 
 Get-Date
 Write-Host "Downloading DirectX 12 Agility SDK"
-Invoke-WebRequest -Uri https://www.nuget.org/api/v2/package/Microsoft.Direct3D.D3D12/1.710.0-preview -OutFile 'agility.zip'
+Invoke-WebRequest -Uri https://www.nuget.org/api/v2/package/Microsoft.Direct3D.D3D12/1.610.0 -OutFile 'agility.zip'
 Expand-Archive -Path 'agility.zip' -DestinationPath 'C:\agility'
 Remove-Item 'agility.zip'
 

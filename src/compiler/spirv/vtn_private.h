@@ -738,6 +738,7 @@ struct vtn_builder {
    struct vtn_value *entry_point;
    struct vtn_value *workgroup_size_builtin;
    bool variable_pointers;
+   bool image_gather_bias_lod;
 
    uint32_t *interface_ids;
    size_t interface_ids_count;

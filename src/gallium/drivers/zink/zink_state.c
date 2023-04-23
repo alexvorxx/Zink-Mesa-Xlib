@@ -735,6 +735,10 @@ zink_create_vertex_state(struct pipe_screen *pscreen,
                           uint32_t full_velem_mask)
 {
    struct zink_vertex_state *zstate = CALLOC_STRUCT(zink_vertex_state);
+   if (!zstate) {
+      mesa_loge("ZINK: failed to allocate zstate!");
+      return NULL;
+   }
 
    util_init_pipe_vertex_state(pscreen, buffer, elements, num_elements, indexbuf, full_velem_mask,
                                &zstate->b);

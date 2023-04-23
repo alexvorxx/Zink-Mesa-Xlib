@@ -39,8 +39,11 @@
  * relevant for the driver/compiler interface (no Vulkan types).
  */
 
+#include "hwdef/rogue_hw_defs.h"
 #include "pvr_limits.h"
+#include "pvr_types.h"
 #include "util/list.h"
+#include "util/macros.h"
 #include "vk_object.h"
 #include "vk_sync.h"
 
@@ -55,6 +58,11 @@
 
 #define PVR_PIPELINE_LAYOUT_SUPPORTED_DESCRIPTOR_TYPE_COUNT \
    (uint32_t)(VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT + 1U)
+
+#define PVR_TRANSFER_MAX_LAYERS 1U
+#define PVR_TRANSFER_MAX_LOADS 4U
+#define PVR_TRANSFER_MAX_IMAGES \
+   (PVR_TRANSFER_MAX_LAYERS * PVR_TRANSFER_MAX_LOADS)
 
 /* TODO: move into a common surface library? */
 enum pvr_memlayout {
@@ -140,6 +148,37 @@ enum pvr_stage_allocation {
    PVR_STAGE_ALLOCATION_COUNT
 };
 
+enum pvr_filter {
+   PVR_FILTER_DONTCARE, /* Any filtering mode is acceptable. */
+   PVR_FILTER_POINT,
+   PVR_FILTER_LINEAR,
+   PVR_FILTER_BICUBIC,
+};
+
+enum pvr_resolve_op {
+   PVR_RESOLVE_BLEND,
+   PVR_RESOLVE_MIN,
+   PVR_RESOLVE_MAX,
+   PVR_RESOLVE_SAMPLE0,
+   PVR_RESOLVE_SAMPLE1,
+   PVR_RESOLVE_SAMPLE2,
+   PVR_RESOLVE_SAMPLE3,
+   PVR_RESOLVE_SAMPLE4,
+   PVR_RESOLVE_SAMPLE5,
+   PVR_RESOLVE_SAMPLE6,
+   PVR_RESOLVE_SAMPLE7,
+};
+
+enum pvr_alpha_type {
+   PVR_ALPHA_NONE,
+   PVR_ALPHA_SOURCE,
+   PVR_ALPHA_PREMUL_SOURCE,
+   PVR_ALPHA_GLOBAL,
+   PVR_ALPHA_PREMUL_SOURCE_WITH_GLOBAL,
+   PVR_ALPHA_CUSTOM,
+   PVR_ALPHA_AATEXT,
+};
+
 enum pvr_event_state {
    PVR_EVENT_STATE_SET_BY_HOST,
    PVR_EVENT_STATE_RESET_BY_HOST,
@@ -171,6 +210,42 @@ union pvr_sampler_descriptor {
       uint32_t word3;
    } data;
 };
+
+struct pvr_combined_image_sampler_descriptor {
+   /* | TEXSTATE_IMAGE_WORD0 | TEXSTATE_{STRIDE_,}IMAGE_WORD1 | */
+   uint64_t image[ROGUE_NUM_TEXSTATE_IMAGE_WORDS];
+   union pvr_sampler_descriptor sampler;
+};
+
+#define CHECK_STRUCT_FIELD_SIZE(_struct_type, _field_name, _size)      \
+   static_assert(sizeof(((struct _struct_type *)NULL)->_field_name) == \
+                    (_size),                                           \
+                 "Size of '" #_field_name "' in '" #_struct_type       \
+                 "' differs from expected")
+
+CHECK_STRUCT_FIELD_SIZE(pvr_combined_image_sampler_descriptor,
+                        image,
+                        ROGUE_NUM_TEXSTATE_IMAGE_WORDS * sizeof(uint64_t));
+CHECK_STRUCT_FIELD_SIZE(pvr_combined_image_sampler_descriptor,
+                        image,
+                        PVR_IMAGE_DESCRIPTOR_SIZE * sizeof(uint32_t));
+#if 0
+/* TODO: Don't really want to include pvr_csb.h in here since this header is
+ * shared with the compiler. Figure out a better place for these.
+ */
+CHECK_STRUCT_FIELD_SIZE(pvr_combined_image_sampler_descriptor,
+                        image,
+                        (pvr_cmd_length(TEXSTATE_IMAGE_WORD0) +
+                         pvr_cmd_length(TEXSTATE_IMAGE_WORD1)) *
+                           sizeof(uint32_t));
+CHECK_STRUCT_FIELD_SIZE(pvr_combined_image_sampler_descriptor,
+                        image,
+                        (pvr_cmd_length(TEXSTATE_IMAGE_WORD0) +
+                         pvr_cmd_length(TEXSTATE_STRIDE_IMAGE_WORD1)) *
+                           sizeof(uint32_t));
+#endif
+
+#undef CHECK_STRUCT_FIELD_SIZE
 
 struct pvr_sampler {
    struct vk_object_base base;

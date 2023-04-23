@@ -40,23 +40,15 @@ struct vn_instance {
    struct vn_renderer *renderer;
 
    struct vn_renderer_shmem_pool reply_shmem_pool;
-   /* cache "set" stream for renderer submission replies */
-   const struct vn_renderer_shmem *renderer_reply_shmem;
 
    mtx_t ring_idx_mutex;
    uint64_t ring_idx_used_mask;
-
-   /* XXX staged features to be merged to core venus protocol */
-   VkVenusExperimentalFeatures100000MESA experimental;
 
    struct {
       mtx_t mutex;
       struct vn_renderer_shmem *shmem;
       struct vn_ring ring;
       uint64_t id;
-
-      /* cache "set" stream for ring submission replies */
-      const struct vn_renderer_shmem *reply_shmem;
 
       struct vn_cs_encoder upload;
       uint32_t command_dropped;
@@ -65,6 +57,9 @@ struct vn_instance {
       mtx_t roundtrip_mutex;
       uint64_t roundtrip_next;
    } ring;
+
+   /* XXX staged features to be merged to core venus protocol */
+   VkVenusExperimentalFeatures100000MESA experimental;
 
    /* Between the driver and the app, VN_MAX_API_VERSION is what we advertise
     * and base.base.app_info.api_version is what the app requests.
@@ -129,6 +124,7 @@ struct vn_instance_submit_command {
    struct vn_renderer_shmem *reply_shmem;
    struct vn_cs_decoder reply;
 
+   /* valid when instance ring submission succeeds */
    bool ring_seqno_valid;
    uint32_t ring_seqno;
 };

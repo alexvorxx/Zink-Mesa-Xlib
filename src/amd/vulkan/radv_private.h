@@ -415,40 +415,16 @@ struct radv_instance {
 VkResult radv_init_wsi(struct radv_physical_device *physical_device);
 void radv_finish_wsi(struct radv_physical_device *physical_device);
 
-struct cache_entry;
-
-struct radv_pipeline_cache {
-   struct vk_object_base base;
-   struct radv_device *device;
-   mtx_t mutex;
-   VkPipelineCacheCreateFlags flags;
-
-   uint32_t total_size;
-   uint32_t table_size;
-   uint32_t kernel_count;
-   struct cache_entry **hash_table;
-
-   VkAllocationCallbacks alloc;
-};
-
-struct radv_shader_binary;
-struct radv_shader;
-struct radv_pipeline_shader_stack_size;
-
-bool radv_create_shaders_from_pipeline_cache(
-   struct radv_device *device, struct radv_pipeline_cache *cache, const unsigned char *sha1,
-   struct radv_pipeline *pipeline, struct radv_ray_tracing_module *rt_groups,
-   uint32_t num_rt_groups, bool *found_in_application_cache);
-
 struct radv_shader_binary_part;
 
-void radv_pipeline_cache_insert_shaders(struct radv_device *device,
-                                        struct radv_pipeline_cache *cache,
-                                        const unsigned char *sha1, struct radv_pipeline *pipeline,
-                                        struct radv_shader_binary *const *binaries,
-                                        struct radv_shader_part_binary *ps_epilog_binary,
-                                        const struct radv_ray_tracing_module *rt_groups,
-                                        uint32_t num_rt_groups);
+bool radv_pipeline_cache_search(struct radv_device *device, struct vk_pipeline_cache *cache,
+                                struct radv_pipeline *pipeline, const unsigned char *sha1,
+                                bool *found_in_application_cache);
+
+void radv_pipeline_cache_insert(struct radv_device *device, struct vk_pipeline_cache *cache,
+                                struct radv_pipeline *pipeline,
+                                struct radv_shader_part_binary *ps_epilog_binary,
+                                const unsigned char *sha1);
 
 enum radv_blit_ds_layout {
    RADV_BLIT_DS_LAYOUT_TILE_ENABLE,
@@ -983,7 +959,7 @@ struct radv_device {
    struct radv_physical_device *physical_device;
 
    /* Backup in-memory cache to be used if the app doesn't provide one */
-   struct radv_pipeline_cache *mem_cache;
+   struct vk_pipeline_cache *mem_cache;
 
    /*
     * use different counters so MSAA MRTs get consecutive surface indices,
@@ -1681,8 +1657,8 @@ struct radv_cmd_state {
 
    uint8_t cb_mip[MAX_RTS];
 
-   /* Whether DRAW_{INDEX}_INDIRECT_MULTI is emitted. */
-   bool uses_draw_indirect_multi;
+   /* Whether DRAW_{INDEX}_INDIRECT_{MULTI} is emitted. */
+   bool uses_draw_indirect;
 
    uint32_t rt_stack_size;
 
@@ -1813,7 +1789,7 @@ struct radv_cmd_buffer {
    } ace_internal;
 
    /**
-    * Whether a query pool has been resetted and we have to flush caches.
+    * Whether a query pool has been reset and we have to flush caches.
     */
    bool pending_reset_query;
 
@@ -1909,9 +1885,9 @@ void si_cs_emit_write_event_eop(struct radeon_cmdbuf *cs, enum amd_gfx_level gfx
 
 void radv_cp_wait_mem(struct radeon_cmdbuf *cs, uint32_t op, uint64_t va, uint32_t ref,
                       uint32_t mask);
-void si_cs_emit_cache_flush(struct radeon_cmdbuf *cs, enum amd_gfx_level gfx_level,
-                            uint32_t *fence_ptr, uint64_t va, bool is_mec,
-                            enum radv_cmd_flush_bits flush_bits,
+void si_cs_emit_cache_flush(struct radeon_winsys *ws, struct radeon_cmdbuf *cs,
+                            enum amd_gfx_level gfx_level, uint32_t *flush_cnt, uint64_t flush_va,
+                            bool is_mec, enum radv_cmd_flush_bits flush_bits,
                             enum rgp_flush_bits *sqtt_flush_bits, uint64_t gfx9_eop_bug_va);
 void si_emit_cache_flush(struct radv_cmd_buffer *cmd_buffer);
 void si_emit_set_predication_state(struct radv_cmd_buffer *cmd_buffer, bool draw_visible,
@@ -2451,6 +2427,12 @@ bool radv_pipeline_capture_shader_stats(const struct radv_device *device,
 VkPipelineShaderStageCreateInfo *
 radv_copy_shader_stage_create_info(struct radv_device *device, uint32_t stageCount,
                                    const VkPipelineShaderStageCreateInfo *pStages, void *mem_ctx);
+
+bool radv_shader_need_indirect_descriptor_sets(const struct radv_shader *shader);
+
+void radv_pipeline_init_scratch(const struct radv_device *device, struct radv_pipeline *pipeline);
+
+bool radv_pipeline_has_ngg(const struct radv_graphics_pipeline *pipeline);
 
 void radv_pipeline_destroy(struct radv_device *device, struct radv_pipeline *pipeline,
                            const VkAllocationCallbacks *allocator);
@@ -3710,8 +3692,6 @@ VK_DEFINE_NONDISP_HANDLE_CASTS(radv_image_view, vk.base, VkImageView,
                                VK_OBJECT_TYPE_IMAGE_VIEW);
 VK_DEFINE_NONDISP_HANDLE_CASTS(radv_indirect_command_layout, base, VkIndirectCommandsLayoutNV,
                                VK_OBJECT_TYPE_INDIRECT_COMMANDS_LAYOUT_NV)
-VK_DEFINE_NONDISP_HANDLE_CASTS(radv_pipeline_cache, base, VkPipelineCache,
-                               VK_OBJECT_TYPE_PIPELINE_CACHE)
 VK_DEFINE_NONDISP_HANDLE_CASTS(radv_pipeline, base, VkPipeline,
                                VK_OBJECT_TYPE_PIPELINE)
 VK_DEFINE_NONDISP_HANDLE_CASTS(radv_pipeline_layout, base, VkPipelineLayout,

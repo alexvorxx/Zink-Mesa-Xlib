@@ -502,6 +502,7 @@ compute_version_es2(const struct gl_extensions *extensions,
                          extensions->EXT_texture_sRGB &&
                          extensions->EXT_transform_feedback &&
                          extensions->ARB_draw_instanced &&
+                         extensions->ARB_instanced_arrays &&
                          extensions->ARB_uniform_buffer_object &&
                          extensions->EXT_texture_snorm &&
                          (extensions->NV_primitive_restart ||

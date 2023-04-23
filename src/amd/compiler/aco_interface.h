@@ -25,8 +25,6 @@
 #ifndef ACO_INTERFACE_H
 #define ACO_INTERFACE_H
 
-#include "nir.h"
-
 #include "amd_family.h"
 
 #include "aco_shader_info.h"
@@ -34,6 +32,7 @@
 extern "C" {
 #endif
 
+typedef struct nir_shader nir_shader;
 struct ac_shader_config;
 struct aco_shader_info;
 struct aco_vs_prolog_info;

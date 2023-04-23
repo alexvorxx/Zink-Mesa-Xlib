@@ -25,6 +25,8 @@
 
 #include "radv_meta.h"
 
+#include "vk_common_entrypoints.h"
+#include "vk_pipeline_cache.h"
 #include "vk_util.h"
 
 #include <fcntl.h>
@@ -314,6 +316,15 @@ radv_builtin_cache_path(char *path)
 }
 #endif
 
+static uint32_t
+num_cache_entries(VkPipelineCache cache)
+{
+   struct set *s = vk_pipeline_cache_from_handle(cache)->object_cache;
+   if (!s)
+      return 0;
+   return s->entries;
+}
+
 static bool
 radv_load_meta_pipeline(struct radv_device *device)
 {
@@ -349,9 +360,10 @@ radv_load_meta_pipeline(struct radv_device *device)
    create_info.pInitialData = data;
 
 fail:
-   result = radv_CreatePipelineCache(radv_device_to_handle(device), &create_info, NULL, &device->meta_state.cache);
+   result = vk_common_CreatePipelineCache(radv_device_to_handle(device), &create_info, NULL,
+                                          &device->meta_state.cache);
    if (result == VK_SUCCESS) {
-      device->meta_state.initial_cache_entries = radv_pipeline_cache_from_handle(device->meta_state.cache)->kernel_count;
+      device->meta_state.initial_cache_entries = num_cache_entries(device->meta_state.cache);
       ret = device->meta_state.initial_cache_entries > 0;
    }
 
@@ -374,12 +386,11 @@ radv_store_meta_pipeline(struct radv_device *device)
       return;
 
    /* Skip serialization if no entries were added. */
-   if (radv_pipeline_cache_from_handle(device->meta_state.cache)->kernel_count <= device->meta_state.initial_cache_entries)
+   if (num_cache_entries(device->meta_state.cache) <= device->meta_state.initial_cache_entries)
       return;
 
-   if (radv_GetPipelineCacheData(radv_device_to_handle(device),
-                                 device->meta_state.cache, &size,
-                                 NULL))
+   if (vk_common_GetPipelineCacheData(radv_device_to_handle(device), device->meta_state.cache,
+                                      &size, NULL))
       return;
 
    if (!radv_builtin_cache_path(path))
@@ -394,9 +405,8 @@ radv_store_meta_pipeline(struct radv_device *device)
    if (!data)
       goto fail;
 
-   if (radv_GetPipelineCacheData(radv_device_to_handle(device),
-                                 device->meta_state.cache, &size,
-                                 data))
+   if (vk_common_GetPipelineCacheData(radv_device_to_handle(device), device->meta_state.cache,
+                                      &size, data))
       goto fail;
    if (write(fd, data, size) == -1)
       goto fail;
@@ -549,7 +559,7 @@ fail_clear:
    radv_device_finish_meta_clear_state(device);
 
    mtx_destroy(&device->meta_state.mtx);
-   radv_DestroyPipelineCache(radv_device_to_handle(device), device->meta_state.cache, NULL);
+   vk_common_DestroyPipelineCache(radv_device_to_handle(device), device->meta_state.cache, NULL);
    return result;
 }
 
@@ -576,7 +586,7 @@ radv_device_finish_meta(struct radv_device *device)
    radv_device_finish_meta_fmask_copy_state(device);
 
    radv_store_meta_pipeline(device);
-   radv_DestroyPipelineCache(radv_device_to_handle(device), device->meta_state.cache, NULL);
+   vk_common_DestroyPipelineCache(radv_device_to_handle(device), device->meta_state.cache, NULL);
    mtx_destroy(&device->meta_state.mtx);
 }
 

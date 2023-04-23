@@ -499,8 +499,6 @@ static nir_ssa_def *load_bindless_sampler_desc(nir_builder *b, nir_ssa_def *inde
 static bool lower_resource_tex(nir_builder *b, nir_tex_instr *tex,
                                struct lower_resource_state *s)
 {
-   assert(!tex->texture_non_uniform && !tex->sampler_non_uniform);
-
    nir_deref_instr *texture_deref = NULL;
    nir_deref_instr *sampler_deref = NULL;
    nir_ssa_def *texture_handle = NULL;
@@ -554,12 +552,12 @@ static bool lower_resource_tex(nir_builder *b, nir_tex_instr *tex,
    }
 
    nir_ssa_def *image = texture_deref ?
-      load_deref_sampler_desc(b, texture_deref, desc_type, s, false) :
+      load_deref_sampler_desc(b, texture_deref, desc_type, s, !tex->texture_non_uniform) :
       load_bindless_sampler_desc(b, texture_handle, desc_type, s);
 
    nir_ssa_def *sampler = NULL;
    if (sampler_deref)
-      sampler = load_deref_sampler_desc(b, sampler_deref, AC_DESC_SAMPLER, s, false);
+      sampler = load_deref_sampler_desc(b, sampler_deref, AC_DESC_SAMPLER, s, !tex->sampler_non_uniform);
    else if (sampler_handle)
       sampler = load_bindless_sampler_desc(b, sampler_handle, AC_DESC_SAMPLER, s);
 

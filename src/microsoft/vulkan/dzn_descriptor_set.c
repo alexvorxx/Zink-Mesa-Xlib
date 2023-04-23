@@ -858,7 +858,6 @@ dzn_pipeline_layout_create(struct dzn_device *device,
    if (device->bindless)
       root_flags |= D3D12_ROOT_SIGNATURE_FLAG_SAMPLER_HEAP_DIRECTLY_INDEXED |
                     D3D12_ROOT_SIGNATURE_FLAG_CBV_SRV_UAV_HEAP_DIRECTLY_INDEXED;
-#if D3D12_SDK_VERSION >= 609
    if (pdev->root_sig_version >= D3D_ROOT_SIGNATURE_VERSION_1_2) {
       root_sig_desc.Desc_1_2 = (D3D12_ROOT_SIGNATURE_DESC2){
          .NumParameters = layout->root.param_count,
@@ -867,9 +866,7 @@ dzn_pipeline_layout_create(struct dzn_device *device,
          .pStaticSamplers = static_sampler_descs,
          .Flags = root_flags,
       };
-   } else
-#endif
-   {
+   } else {
       root_sig_desc.Desc_1_1 = (D3D12_ROOT_SIGNATURE_DESC1){
             .NumParameters = layout->root.param_count,
             .pParameters = layout->root.param_count ? root_params : NULL,

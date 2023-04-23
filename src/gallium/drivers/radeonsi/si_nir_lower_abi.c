@@ -256,7 +256,8 @@ static bool lower_abi_instr(nir_builder *b, nir_instr *instr, struct lower_abi_s
       unsigned num_components = intrin->dest.ssa.num_components;
       unsigned offset =
          intrin->intrinsic == nir_intrinsic_load_tess_level_inner_default ? 16 : 0;
-      replacement = nir_load_smem_buffer_amd(b, num_components, buf, nir_imm_int(b, offset));
+      replacement = nir_load_ubo(b, num_components, 32, buf, nir_imm_int(b, offset),
+                                 .range = ~0);
       break;
    }
    case nir_intrinsic_load_patch_vertices_in:
@@ -361,7 +362,8 @@ static bool lower_abi_instr(nir_builder *b, nir_instr *instr, struct lower_abi_s
    case nir_intrinsic_load_user_clip_plane: {
       nir_ssa_def *buf = si_nir_load_internal_binding(b, args, SI_VS_CONST_CLIP_PLANES, 4);
       unsigned offset = nir_intrinsic_ucp_id(intrin) * 16;
-      replacement = nir_load_smem_buffer_amd(b, 4, buf, nir_imm_int(b, offset));
+      replacement = nir_load_ubo(b, 4, 32, buf, nir_imm_int(b, offset),
+                                 .range = ~0);
       break;
    }
    case nir_intrinsic_load_streamout_buffer_amd: {
@@ -453,7 +455,7 @@ static bool lower_abi_instr(nir_builder *b, nir_instr *instr, struct lower_abi_s
          nir_ssa_def *offset = nir_ishl_imm(b, sample_id, 3);
 
          nir_ssa_def *buf = si_nir_load_internal_binding(b, args, SI_PS_CONST_SAMPLE_POSITIONS, 4);
-         nir_ssa_def *sample_pos = nir_load_smem_buffer_amd(b, 2, buf, offset);
+         nir_ssa_def *sample_pos = nir_load_ubo(b, 2, 32, buf, offset, .range = ~0);
 
          sample_pos = nir_fsub(b, sample_pos, nir_imm_float(b, 0.5));
 
@@ -482,6 +484,45 @@ static bool lower_abi_instr(nir_builder *b, nir_instr *instr, struct lower_abi_s
    case nir_intrinsic_load_alpha_reference_amd:
       replacement = ac_nir_load_arg(b, &args->ac, args->alpha_reference);
       break;
+   case nir_intrinsic_load_barycentric_optimize_amd: {
+      nir_ssa_def *prim_mask = ac_nir_load_arg(b, &args->ac, args->ac.prim_mask);
+      /* enabled when bit 31 is set */
+      replacement = nir_ilt(b, prim_mask, nir_imm_int(b, 0));
+      break;
+   }
+   case nir_intrinsic_load_color0:
+   case nir_intrinsic_load_color1: {
+      uint32_t colors_read = sel->info.colors_read;
+
+      int start, offset;
+      if (intrin->intrinsic == nir_intrinsic_load_color0) {
+         start = 0;
+         offset = 0;
+      } else {
+         start = 4;
+         offset = util_bitcount(colors_read & 0xf);
+      }
+
+      nir_ssa_def *color[4];
+      for (int i = 0; i < 4; i++) {
+         color[i] = colors_read & BITFIELD_BIT(start + i) ?
+            ac_nir_load_arg_at_offset(b, &args->ac, args->color_start, offset++) :
+            nir_ssa_undef(b, 1, 32);
+      }
+
+      replacement = nir_vec(b, color, 4);
+      break;
+   }
+   case nir_intrinsic_load_point_coord_maybe_flipped: {
+      nir_ssa_def *interp_param =
+         nir_load_barycentric_pixel(b, 32, .interp_mode = INTERP_MODE_NONE);
+
+      /* Load point coordinates (x, y) which are written by the hw after the interpolated inputs */
+      replacement = nir_load_interpolated_input(b, 2, 32, interp_param, nir_imm_int(b, 0),
+                                                .base = si_get_ps_num_interp(shader),
+                                                .component = 2);
+      break;
+   }
    default:
       return false;
    }

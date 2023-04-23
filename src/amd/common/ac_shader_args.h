@@ -171,5 +171,6 @@ struct ac_shader_args {
 void ac_add_arg(struct ac_shader_args *info, enum ac_arg_regfile regfile, unsigned registers,
                 enum ac_arg_type type, struct ac_arg *arg);
 void ac_add_return(struct ac_shader_args *info, enum ac_arg_regfile regfile);
+void ac_compact_ps_vgpr_args(struct ac_shader_args *info, uint32_t spi_ps_input);
 
 #endif

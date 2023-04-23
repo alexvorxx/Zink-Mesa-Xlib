@@ -383,7 +383,7 @@ struct rc_list * rc_get_variables(struct radeon_compiler * c)
 	 * as the src1.xyz and src1.w of the instruction where the value is used are
 	 * in theory independent. They are not because the same register is written
 	 * also by the texture instruction in the other branch and TEX can't write xyz
-	 * and w separatelly.
+	 * and w separately.
 	 *
 	 * Therefore first search for RC_INSTRUCTION_NORMAL to create variables from
 	 * the texture instruction and than the pair instructions will be properly

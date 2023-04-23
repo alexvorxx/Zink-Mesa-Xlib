@@ -40,7 +40,7 @@
 #include <wrl/client.h>
 using Microsoft::WRL::ComPtr;
 
-#if !defined(_WIN32) || defined(_MSC_VER) || D3D12_SDK_VERSION < 606
+#if !defined(_WIN32) || defined(_MSC_VER)
 inline D3D12_VIDEO_DECODER_HEAP_DESC
 GetDesc(ID3D12VideoDecoderHeap *heap)
 {
@@ -55,18 +55,6 @@ GetDesc(ID3D12VideoDecoderHeap *heap)
    return ret;
 }
 #endif
-
-// Allow encoder to continue the encoding session when an optional 
-// rate control mode such as the following is used but not supported
-//
-// D3D12_VIDEO_ENCODER_RATE_CONTROL_FLAG_ENABLE_VBV_SIZES
-// D3D12_VIDEO_ENCODER_RATE_CONTROL_FLAG_ENABLE_MAX_FRAME_SIZE
-//
-// If setting this OS Env variable to true, the encoding process will continue, disregarding the settings
-// requested for the optional RC mode
-//
-
-const bool D3D12_VIDEO_ENC_FALLBACK_RATE_CONTROL_CONFIG = debug_get_bool_option("D3D12_VIDEO_ENC_FALLBACK_RATE_CONTROL_CONFIG", false);
 
 /* For CBR mode, to guarantee bitrate of generated stream complies with
 * target bitrate (e.g. no over +/-10%), vbv_buffer_size should be same

@@ -55,6 +55,7 @@ static const struct debug_named_value virgl_debug_options[] = {
    { "r8srgb-readback",   VIRGL_DEBUG_L8_SRGB_ENABLE_READBACK, "Enable redaback for L8 sRGB textures" },
    { "nocoherent", VIRGL_DEBUG_NO_COHERENT,        "Disable coherent memory"},
    { "video",     VIRGL_DEBUG_VIDEO,               "Video codec"},
+   { "shader_sync", VIRGL_DEBUG_SHADER_SYNC,       "Sync after every shader link"},
    DEBUG_NAMED_VALUE_END
 };
 DEBUG_GET_ONCE_FLAGS_OPTION(virgl_debug, "VIRGL_DEBUG", virgl_debug_options, 0)
@@ -1122,6 +1123,7 @@ virgl_create_screen(struct virgl_winsys *vws, const struct pipe_screen_config *c
    const char *VIRGL_GLES_APPLY_BGRA_DEST_SWIZZLE = "gles_apply_bgra_dest_swizzle";
    const char *VIRGL_GLES_SAMPLES_PASSED_VALUE = "gles_samples_passed_value";
    const char *VIRGL_FORMAT_L8_SRGB_ENABLE_READBACK = "format_l8_srgb_enable_readback";
+   const char *VIRGL_SHADER_SYNC = "virgl_shader_sync";
 
    if (!screen)
       return NULL;
@@ -1140,11 +1142,13 @@ virgl_create_screen(struct virgl_winsys *vws, const struct pipe_screen_config *c
             driQueryOptioni(config->options, VIRGL_GLES_SAMPLES_PASSED_VALUE);
       screen->tweak_l8_srgb_readback =
             driQueryOptionb(config->options, VIRGL_FORMAT_L8_SRGB_ENABLE_READBACK);
+      screen->shader_sync = driQueryOptionb(config->options, VIRGL_SHADER_SYNC);
    }
    screen->tweak_gles_emulate_bgra &= !(virgl_debug & VIRGL_DEBUG_NO_EMULATE_BGRA);
    screen->tweak_gles_apply_bgra_dest_swizzle &= !(virgl_debug & VIRGL_DEBUG_NO_BGRA_DEST_SWIZZLE);
    screen->no_coherent = virgl_debug & VIRGL_DEBUG_NO_COHERENT;
    screen->tweak_l8_srgb_readback |= !!(virgl_debug & VIRGL_DEBUG_L8_SRGB_ENABLE_READBACK);
+   screen->shader_sync |= !!(virgl_debug & VIRGL_DEBUG_SHADER_SYNC);
 
    screen->vws = vws;
    screen->base.get_name = virgl_get_name;

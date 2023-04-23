@@ -38,8 +38,8 @@ typedef uint32_t u32;
 typedef uint64_t u64;
 typedef uint64_t mali_ptr;
 
-#define MALI_FORMAT_COMPRESSED (0 << 5)
-#define MALI_EXTRACT_TYPE(fmt) ((fmt)&0xe0)
+#define MALI_FORMAT_COMPRESSED     (0 << 5)
+#define MALI_EXTRACT_TYPE(fmt)     ((fmt)&0xe0)
 #define MALI_EXTRACT_INDEX(pixfmt) (((pixfmt) >> 12) & 0xFF)
 
 /* Mali hardware can texture up to 65536 x 65536 x 65536 and render up to 16384

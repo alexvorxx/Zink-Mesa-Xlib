@@ -34,6 +34,7 @@
 #include "util/format/u_format_s3tc.h"
 #include "util/u_upload_mgr.h"
 #include "util/os_time.h"
+#include "util/hex.h"
 #include "vl/vl_decoder.h"
 #include "vl/vl_video_buffer.h"
 #include "radeon_video.h"
@@ -772,7 +773,7 @@ static void r600_disk_cache_create(struct r600_common_screen *rscreen)
 		return;
 
 	_mesa_sha1_final(&ctx, sha1);
-	disk_cache_format_hex_id(cache_id, sha1, 20 * 2);
+	mesa_bytes_to_hex(cache_id, sha1, 20);
 
 	/* These flags affect shader compilation. */
 	uint64_t shader_debug_flags =

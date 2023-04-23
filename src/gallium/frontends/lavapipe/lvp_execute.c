@@ -282,18 +282,18 @@ update_pcbuf(struct rendering_state *state, enum pipe_shader_type pstage)
 static void
 update_inline_shader_state(struct rendering_state *state, enum pipe_shader_type sh, bool pcbuf_dirty, bool constbuf_dirty)
 {
-   uint32_t inline_uniforms[MAX_INLINABLE_UNIFORMS];
    unsigned stage = tgsi_processor_to_shader_stage(sh);
    state->inlines_dirty[sh] = false;
    struct lvp_shader *shader = state->shaders[stage];
    if (!shader || !shader->inlines.can_inline)
       return;
+   struct lvp_inline_variant v;
+   v.mask = shader->inlines.can_inline;
    /* these buffers have already been flushed in llvmpipe, so they're safe to read */
    nir_shader *base_nir = shader->pipeline_nir->nir;
    if (stage == MESA_SHADER_TESS_EVAL && state->tess_ccw)
       base_nir = shader->tess_ccw->nir;
-   nir_shader *nir = nir_shader_clone(shader->pipeline_nir->nir, base_nir);
-   nir_function_impl *impl = nir_shader_get_entrypoint(nir);
+   nir_function_impl *impl = nir_shader_get_entrypoint(base_nir);
    unsigned ssa_alloc = impl->ssa_alloc;
    unsigned count = shader->inlines.count[0];
    if (count && pcbuf_dirty) {
@@ -301,24 +301,28 @@ update_inline_shader_state(struct rendering_state *state, enum pipe_shader_type 
       for (unsigned i = 0; i < count; i++) {
          unsigned offset = shader->inlines.uniform_offsets[0][i];
          if (offset < push_size) {
-            memcpy(&inline_uniforms[i], &state->push_constants[offset], sizeof(uint32_t));
+            memcpy(&v.vals[0][i], &state->push_constants[offset], sizeof(uint32_t));
          } else {
             for (unsigned i = 0; i < state->uniform_blocks[sh].count; i++) {
                if (offset < push_size + state->uniform_blocks[sh].size[i]) {
                   unsigned ubo_offset = offset - push_size;
                   uint8_t *block = state->uniform_blocks[sh].block[i];
-                  memcpy(&inline_uniforms[i], &block[ubo_offset], sizeof(uint32_t));
+                  memcpy(&v.vals[0][i], &block[ubo_offset], sizeof(uint32_t));
                   break;
                }
                push_size += state->uniform_blocks[sh].size[i];
             }
          }
       }
-      NIR_PASS_V(nir, lvp_inline_uniforms, shader, inline_uniforms, 0);
+      for (unsigned i = count; i < MAX_INLINABLE_UNIFORMS; i++)
+         v.vals[0][i] = 0;
    }
    if (constbuf_dirty) {
       struct pipe_box box = {0};
       u_foreach_bit(slot, shader->inlines.can_inline) {
+         /* this is already inlined above */
+         if (slot == 0)
+            continue;
          unsigned count = shader->inlines.count[slot];
          struct pipe_constant_buffer *cbuf = &state->const_buffer[sh][slot - 1];
          struct pipe_resource *pres = cbuf->buffer;
@@ -328,24 +332,42 @@ update_inline_shader_state(struct rendering_state *state, enum pipe_shader_type 
          uint8_t *map = state->pctx->buffer_map(state->pctx, pres, 0, PIPE_MAP_READ, &box, &xfer);
          for (unsigned i = 0; i < count; i++) {
             unsigned offset = shader->inlines.uniform_offsets[slot][i];
-            memcpy(&inline_uniforms[i], map + offset, sizeof(uint32_t));
+            memcpy(&v.vals[slot][i], map + offset, sizeof(uint32_t));
          }
          state->pctx->buffer_unmap(state->pctx, xfer);
-         NIR_PASS_V(nir, lvp_inline_uniforms, shader, inline_uniforms, slot);
+         for (unsigned i = count; i < MAX_INLINABLE_UNIFORMS; i++)
+            v.vals[slot][i] = 0;
       }
    }
-   lvp_shader_optimize(nir);
-   impl = nir_shader_get_entrypoint(nir);
+   bool found = false;
+   struct set_entry *entry = _mesa_set_search_or_add_pre_hashed(&shader->inlines.variants, v.mask, &v, &found);
    void *shader_state;
-   if (ssa_alloc - impl->ssa_alloc < ssa_alloc / 2 &&
-       !shader->inlines.must_inline) {
-      /* not enough change; don't inline further */
-      shader->inlines.can_inline = 0;
-      ralloc_free(nir);
-      shader->shader_cso = lvp_shader_compile(state->device, shader, nir_shader_clone(NULL, shader->pipeline_nir->nir));
-      shader_state = shader->shader_cso;
+   if (found) {
+      const struct lvp_inline_variant *variant = entry->key;
+      shader_state = variant->cso;
    } else {
-      shader_state = lvp_shader_compile(state->device, shader, nir);
+      nir_shader *nir = nir_shader_clone(NULL, base_nir);
+      NIR_PASS_V(nir, lvp_inline_uniforms, shader, v.vals[0], 0);
+      if (constbuf_dirty) {
+         u_foreach_bit(slot, shader->inlines.can_inline)
+            NIR_PASS_V(nir, lvp_inline_uniforms, shader, v.vals[slot], slot);
+      }
+      lvp_shader_optimize(nir);
+      impl = nir_shader_get_entrypoint(nir);
+      if (ssa_alloc - impl->ssa_alloc < ssa_alloc / 2 &&
+         !shader->inlines.must_inline) {
+         /* not enough change; don't inline further */
+         shader->inlines.can_inline = 0;
+         ralloc_free(nir);
+         shader->shader_cso = lvp_shader_compile(state->device, shader, nir_shader_clone(NULL, shader->pipeline_nir->nir));
+         _mesa_set_remove(&shader->inlines.variants, entry);
+         shader_state = shader->shader_cso;
+      } else {
+         shader_state = lvp_shader_compile(state->device, shader, nir);
+         struct lvp_inline_variant *variant = mem_dup(&v, sizeof(v));
+         variant->cso = shader_state;
+         entry->key = variant;
+      }
    }
    switch (sh) {
    case MESA_SHADER_VERTEX:

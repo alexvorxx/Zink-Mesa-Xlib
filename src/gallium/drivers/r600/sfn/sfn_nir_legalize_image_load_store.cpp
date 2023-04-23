@@ -186,7 +186,7 @@ r600_legalize_image_load_store_filter(const nir_instr *instr, UNUSED const void 
 }
 
 /* This pass makes sure only existing images are accessd and
- * the access is withing range, if not zero is returned by all
+ * the access is within range, if not zero is returned by all
  * image ops that return a value.
  */
 bool

@@ -1265,6 +1265,7 @@ static VkResult pvr_pds_idfwdf_programs_create_and_upload(
                                                     0,
                                                     shareds,
                                                     shareds_buffer_addr.addr,
+                                                    false,
                                                     dev_info);
 
    /* DMA temp regs. */

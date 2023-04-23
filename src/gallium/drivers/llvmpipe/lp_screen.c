@@ -39,6 +39,7 @@
 #include "gallivm/lp_bld_type.h"
 #include "gallivm/lp_bld_nir.h"
 #include "util/disk_cache.h"
+#include "util/hex.h"
 #include "util/os_misc.h"
 #include "util/os_time.h"
 #include "util/u_helpers.h"
@@ -950,7 +951,7 @@ lp_disk_cache_create(struct llvmpipe_screen *screen)
    _mesa_sha1_update(&ctx, &gallivm_perf, sizeof(gallivm_perf));
    update_cache_sha1_cpu(&ctx);
    _mesa_sha1_final(&ctx, sha1);
-   disk_cache_format_hex_id(cache_id, sha1, 20 * 2);
+   mesa_bytes_to_hex(cache_id, sha1, 20);
 
    screen->disk_shader_cache = disk_cache_create("llvmpipe", cache_id, 0);
 }

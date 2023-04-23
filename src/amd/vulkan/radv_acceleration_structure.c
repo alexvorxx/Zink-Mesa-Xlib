@@ -647,6 +647,16 @@ struct bvh_state {
    struct build_config config;
 };
 
+static uint32_t
+pack_geometry_id_and_flags(uint32_t geometry_id, uint32_t flags)
+{
+   uint32_t geometry_id_and_flags = geometry_id;
+   if (flags & VK_GEOMETRY_OPAQUE_BIT_KHR)
+      geometry_id_and_flags |= RADV_GEOMETRY_OPAQUE;
+
+   return geometry_id_and_flags;
+}
+
 static void
 build_leaves(VkCommandBuffer commandBuffer, uint32_t infoCount,
              const VkAccelerationStructureBuildGeometryInfoKHR *pInfos,
@@ -673,7 +683,7 @@ build_leaves(VkCommandBuffer commandBuffer, uint32_t infoCount,
          leaf_consts.first_id = bvh_states[i].node_count;
 
          leaf_consts.geometry_type = geom->geometryType;
-         leaf_consts.geometry_id = j | (geom->flags << 28);
+         leaf_consts.geometry_id = pack_geometry_id_and_flags(j, geom->flags);
          unsigned prim_size;
          switch (geom->geometryType) {
          case VK_GEOMETRY_TYPE_TRIANGLES_KHR:

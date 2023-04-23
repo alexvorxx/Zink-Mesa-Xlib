@@ -121,13 +121,14 @@ static char *loader_get_kernel_driver_name(int fd)
 }
 
 bool
-is_kernel_i915(int fd)
+iris_predicate(int fd)
 {
    char *kernel_driver = loader_get_kernel_driver_name(fd);
-   bool is_i915 = kernel_driver && strcmp(kernel_driver, "i915") == 0;
+   bool ret = kernel_driver && (strcmp(kernel_driver, "i915") == 0 ||
+                                strcmp(kernel_driver, "xe") == 0);
 
    free(kernel_driver);
-   return is_i915;
+   return ret;
 }
 
 int

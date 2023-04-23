@@ -22,28 +22,504 @@
  */
 
 #include <assert.h>
+#include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 #include <vulkan/vulkan.h>
 
 #include "pvr_clear.h"
 #include "pvr_csb.h"
 #include "pvr_formats.h"
+#include "pvr_job_transfer.h"
 #include "pvr_private.h"
 #include "pvr_shader_factory.h"
 #include "pvr_static_shaders.h"
+#include "pvr_types.h"
+#include "util/bitscan.h"
 #include "util/list.h"
+#include "util/macros.h"
+#include "util/u_math.h"
 #include "vk_alloc.h"
 #include "vk_command_buffer.h"
 #include "vk_command_pool.h"
+#include "vk_format.h"
 #include "vk_log.h"
 
 /* TODO: Investigate where this limit comes from. */
 #define PVR_MAX_TRANSFER_SIZE_IN_TEXELS 2048U
 
-void pvr_CmdBlitImage2KHR(VkCommandBuffer commandBuffer,
-                          const VkBlitImageInfo2 *pBlitImageInfo)
+static struct pvr_transfer_cmd *
+pvr_transfer_cmd_alloc(struct pvr_cmd_buffer *cmd_buffer)
 {
-   assert(!"Unimplemented");
+   struct pvr_transfer_cmd *transfer_cmd;
+
+   transfer_cmd = vk_zalloc(&cmd_buffer->vk.pool->alloc,
+                            sizeof(*transfer_cmd),
+                            8U,
+                            VK_SYSTEM_ALLOCATION_SCOPE_COMMAND);
+   if (!transfer_cmd) {
+      cmd_buffer->state.status =
+         vk_error(cmd_buffer, VK_ERROR_OUT_OF_HOST_MEMORY);
+      return NULL;
+   }
+
+   /* transfer_cmd->mapping_count is already set to zero. */
+   transfer_cmd->sources[0].filter = PVR_FILTER_POINT;
+   transfer_cmd->sources[0].resolve_op = PVR_RESOLVE_BLEND;
+   transfer_cmd->sources[0].addr_mode = PVRX(TEXSTATE_ADDRMODE_CLAMP_TO_EDGE);
+   transfer_cmd->cmd_buffer = cmd_buffer;
+
+   return transfer_cmd;
+}
+
+static void pvr_setup_buffer_surface(struct pvr_transfer_cmd_surface *surface,
+                                     VkRect2D *rect,
+                                     pvr_dev_addr_t dev_addr,
+                                     VkDeviceSize offset,
+                                     VkFormat vk_format,
+                                     uint32_t width,
+                                     uint32_t height,
+                                     uint32_t stride)
+{
+   surface->dev_addr = PVR_DEV_ADDR_OFFSET(dev_addr, offset);
+   surface->width = width;
+   surface->height = height;
+   surface->stride = stride;
+   surface->vk_format = vk_format;
+   surface->mem_layout = PVR_MEMLAYOUT_LINEAR;
+   surface->sample_count = 1;
+
+   /* Initialize rectangle extent. Also, rectangle.offset should be set to
+    * zero, as the offset is already adjusted in the device address above. We
+    * don't explicitly set offset to zero as transfer_cmd is zero allocated.
+    */
+   rect->extent.width = width;
+   rect->extent.height = height;
+}
+
+static VkFormat pvr_get_raw_copy_format(VkFormat format)
+{
+   switch (vk_format_get_blocksize(format)) {
+   case 1:
+      return VK_FORMAT_R8_UINT;
+   case 2:
+      return VK_FORMAT_R8G8_UINT;
+   case 3:
+      return VK_FORMAT_R8G8B8_UINT;
+   case 4:
+      return VK_FORMAT_R32_UINT;
+   case 6:
+      return VK_FORMAT_R16G16B16_UINT;
+   case 8:
+      return VK_FORMAT_R32G32_UINT;
+   case 12:
+      return VK_FORMAT_R32G32B32_UINT;
+   case 16:
+      return VK_FORMAT_R32G32B32A32_UINT;
+   default:
+      unreachable("Unhandled copy block size.");
+   }
+}
+
+static void pvr_setup_transfer_surface(struct pvr_device *device,
+                                       struct pvr_transfer_cmd_surface *surface,
+                                       VkRect2D *rect,
+                                       const struct pvr_image *image,
+                                       uint32_t array_layer,
+                                       uint32_t mip_level,
+                                       const VkOffset3D *offset,
+                                       const VkExtent3D *extent,
+                                       float fdepth,
+                                       VkFormat format,
+                                       VkImageAspectFlags aspect_mask)
+{
+   const uint32_t height = MAX2(image->vk.extent.height >> mip_level, 1U);
+   const uint32_t width = MAX2(image->vk.extent.width >> mip_level, 1U);
+   const VkImageSubresource sub_resource = {
+      .aspectMask = aspect_mask,
+      .mipLevel = mip_level,
+      .arrayLayer = array_layer,
+   };
+   VkSubresourceLayout info;
+   uint32_t depth;
+
+   if (image->memlayout == PVR_MEMLAYOUT_3DTWIDDLED)
+      depth = MAX2(image->vk.extent.depth >> mip_level, 1U);
+   else
+      depth = 1U;
+
+   pvr_get_image_subresource_layout(image, &sub_resource, &info);
+
+   surface->dev_addr = PVR_DEV_ADDR_OFFSET(image->dev_addr, info.offset);
+   surface->width = width;
+   surface->height = height;
+   surface->depth = depth;
+   surface->stride = info.rowPitch / vk_format_get_blocksize(format);
+   surface->vk_format = format;
+   surface->mem_layout = image->memlayout;
+   surface->sample_count = image->vk.samples;
+
+   if (image->memlayout == PVR_MEMLAYOUT_3DTWIDDLED)
+      surface->z_position = fdepth;
+   else
+      surface->dev_addr.addr += info.depthPitch * ((uint32_t)fdepth);
+
+   rect->offset.x = offset->x;
+   rect->offset.y = offset->y;
+   rect->extent.width = extent->width;
+   rect->extent.height = extent->height;
+}
+
+void pvr_CmdBlitImage2KHR(VkCommandBuffer commandBuffer,
+                          const VkBlitImageInfo2KHR *pBlitImageInfo)
+{
+   PVR_FROM_HANDLE(pvr_cmd_buffer, cmd_buffer, commandBuffer);
+   PVR_FROM_HANDLE(pvr_image, src, pBlitImageInfo->srcImage);
+   PVR_FROM_HANDLE(pvr_image, dst, pBlitImageInfo->dstImage);
+   struct pvr_device *device = cmd_buffer->device;
+   enum pvr_filter filter = PVR_FILTER_DONTCARE;
+
+   PVR_CHECK_COMMAND_BUFFER_BUILDING_STATE(cmd_buffer);
+
+   if (pBlitImageInfo->filter == VK_FILTER_LINEAR)
+      filter = PVR_FILTER_LINEAR;
+
+   for (uint32_t i = 0U; i < pBlitImageInfo->regionCount; i++) {
+      const VkImageBlit2 *region = &pBlitImageInfo->pRegions[i];
+
+      assert(region->srcSubresource.layerCount ==
+             region->dstSubresource.layerCount);
+      const bool inverted_dst_z =
+         (region->dstOffsets[1].z < region->dstOffsets[0].z);
+      const bool inverted_src_z =
+         (region->srcOffsets[1].z < region->srcOffsets[0].z);
+      const uint32_t min_src_z = inverted_src_z ? region->srcOffsets[1].z
+                                                : region->srcOffsets[0].z;
+      const uint32_t max_src_z = inverted_src_z ? region->srcOffsets[0].z
+                                                : region->srcOffsets[1].z;
+      const uint32_t min_dst_z = inverted_dst_z ? region->dstOffsets[1].z
+                                                : region->dstOffsets[0].z;
+      const uint32_t max_dst_z = inverted_dst_z ? region->dstOffsets[0].z
+                                                : region->dstOffsets[1].z;
+
+      const uint32_t src_width =
+         region->srcOffsets[1].x - region->srcOffsets[0].x;
+      const uint32_t src_height =
+         region->srcOffsets[1].y - region->srcOffsets[0].y;
+      const uint32_t dst_width =
+         region->dstOffsets[1].x - region->dstOffsets[0].x;
+      const uint32_t dst_height =
+         region->dstOffsets[1].y - region->dstOffsets[0].y;
+
+      float initial_depth_offset;
+      VkExtent3D src_extent;
+      VkExtent3D dst_extent;
+      float z_slice_stride;
+
+      /* If any of the extent regions is zero, then reject the blit and
+       * continue.
+       */
+      if (!src_width || !src_height || !dst_width || !dst_height ||
+          !(max_dst_z - min_dst_z) || !(max_src_z - min_src_z)) {
+         mesa_loge("BlitImage: Region %i has an area of zero", i);
+         continue;
+      }
+
+      src_extent = (VkExtent3D){
+         .width = src_width,
+         .height = src_height,
+         .depth = 0U,
+      };
+
+      dst_extent = (VkExtent3D){
+         .width = dst_width,
+         .height = dst_height,
+         .depth = 0U,
+      };
+
+      /* The z_position of a transfer surface is intended to be in the range
+       * of 0.0f <= z_position <= depth. It will be used as a texture coordinate
+       * in the source surface for cases where linear filtering is enabled, so
+       * the fractional part will need to represent the exact midpoint of a z
+       * slice range in the source texture, as it maps to each destination
+       * slice.
+       *
+       * For destination surfaces, the fractional part is discarded, so
+       * we can safely pass the slice index.
+       */
+
+      /* Calculate the ratio of z slices in our source region to that of our
+       * destination region, to get the number of z slices in our source region
+       * to iterate over for each destination slice.
+       *
+       * If our destination region is inverted, we iterate backwards.
+       */
+      z_slice_stride =
+         (inverted_dst_z ? -1.0f : 1.0f) *
+         ((float)(max_src_z - min_src_z) / (float)(max_dst_z - min_dst_z));
+
+      /* Offset the initial depth offset by half of the z slice stride, into the
+       * blit region's z range.
+       */
+      initial_depth_offset =
+         (inverted_dst_z ? max_src_z : min_src_z) + (0.5f * z_slice_stride);
+
+      for (uint32_t j = 0U; j < region->srcSubresource.layerCount; j++) {
+         struct pvr_transfer_cmd_surface src_surface = { 0 };
+         struct pvr_transfer_cmd_surface dst_surface = { 0 };
+         VkRect2D src_rect;
+         VkRect2D dst_rect;
+
+         /* Get the subresource info for the src and dst images, this is
+          * required when incrementing the address of the depth slice used by
+          * the transfer surface.
+          */
+         VkSubresourceLayout src_info, dst_info;
+         const VkImageSubresource src_sub_resource = {
+            .aspectMask = region->srcSubresource.aspectMask,
+            .mipLevel = region->srcSubresource.mipLevel,
+            .arrayLayer = region->srcSubresource.baseArrayLayer + j,
+         };
+         const VkImageSubresource dst_sub_resource = {
+            .aspectMask = region->dstSubresource.aspectMask,
+            .mipLevel = region->dstSubresource.mipLevel,
+            .arrayLayer = region->dstSubresource.baseArrayLayer + j,
+         };
+
+         pvr_get_image_subresource_layout(src, &src_sub_resource, &src_info);
+         pvr_get_image_subresource_layout(dst, &dst_sub_resource, &dst_info);
+
+         /* Setup the transfer surfaces once per image layer, which saves us
+          * from repeating subresource queries by manually incrementing the
+          * depth slices.
+          */
+         pvr_setup_transfer_surface(device,
+                                    &src_surface,
+                                    &src_rect,
+                                    src,
+                                    region->srcSubresource.baseArrayLayer + j,
+                                    region->srcSubresource.mipLevel,
+                                    &region->srcOffsets[0],
+                                    &src_extent,
+                                    initial_depth_offset,
+                                    src->vk.format,
+                                    region->srcSubresource.aspectMask);
+
+         pvr_setup_transfer_surface(device,
+                                    &dst_surface,
+                                    &dst_rect,
+                                    dst,
+                                    region->dstSubresource.baseArrayLayer + j,
+                                    region->dstSubresource.mipLevel,
+                                    &region->dstOffsets[0],
+                                    &dst_extent,
+                                    min_dst_z,
+                                    dst->vk.format,
+                                    region->dstSubresource.aspectMask);
+
+         for (uint32_t dst_z = min_dst_z; dst_z < max_dst_z; dst_z++) {
+            struct pvr_transfer_cmd *transfer_cmd;
+            VkResult result;
+
+            /* TODO: See if we can allocate all the transfer cmds in one go. */
+            transfer_cmd = pvr_transfer_cmd_alloc(cmd_buffer);
+            if (!transfer_cmd)
+               return;
+
+            transfer_cmd->sources[0].mappings[0].src_rect = src_rect;
+            transfer_cmd->sources[0].mappings[0].dst_rect = dst_rect;
+            transfer_cmd->sources[0].mapping_count++;
+
+            transfer_cmd->sources[0].surface = src_surface;
+            transfer_cmd->sources[0].filter = filter;
+            transfer_cmd->source_count = 1;
+
+            transfer_cmd->dst = dst_surface;
+            transfer_cmd->scissor = dst_rect;
+
+            result = pvr_cmd_buffer_add_transfer_cmd(cmd_buffer, transfer_cmd);
+            if (result != VK_SUCCESS) {
+               vk_free(&cmd_buffer->vk.pool->alloc, transfer_cmd);
+               return;
+            }
+
+            if (src_surface.mem_layout == PVR_MEMLAYOUT_3DTWIDDLED) {
+               src_surface.z_position += z_slice_stride;
+            } else {
+               src_surface.dev_addr.addr +=
+                  src_info.depthPitch * ((uint32_t)z_slice_stride);
+            }
+
+            if (dst_surface.mem_layout == PVR_MEMLAYOUT_3DTWIDDLED)
+               dst_surface.z_position += 1.0f;
+            else
+               dst_surface.dev_addr.addr += dst_info.depthPitch;
+         }
+      }
+   }
+}
+
+static VkFormat pvr_get_copy_format(VkFormat format)
+{
+   switch (format) {
+   case VK_FORMAT_R8_SNORM:
+      return VK_FORMAT_R8_SINT;
+   case VK_FORMAT_R8G8_SNORM:
+      return VK_FORMAT_R8G8_SINT;
+   case VK_FORMAT_R8G8B8_SNORM:
+      return VK_FORMAT_R8G8B8_SINT;
+   case VK_FORMAT_R8G8B8A8_SNORM:
+      return VK_FORMAT_R8G8B8A8_SINT;
+   case VK_FORMAT_B8G8R8A8_SNORM:
+      return VK_FORMAT_B8G8R8A8_SINT;
+   default:
+      return format;
+   }
+}
+
+static void
+pvr_setup_surface_for_image(struct pvr_device *device,
+                            struct pvr_transfer_cmd_surface *surface,
+                            VkRect2D *rect,
+                            const struct pvr_image *image,
+                            uint32_t array_layer,
+                            uint32_t array_offset,
+                            uint32_t mip_level,
+                            const VkOffset3D *offset,
+                            const VkExtent3D *extent,
+                            uint32_t depth,
+                            VkFormat format,
+                            const VkImageAspectFlags aspect_mask)
+{
+   if (image->vk.image_type != VK_IMAGE_TYPE_3D) {
+      pvr_setup_transfer_surface(device,
+                                 surface,
+                                 rect,
+                                 image,
+                                 array_layer + array_offset,
+                                 mip_level,
+                                 offset,
+                                 extent,
+                                 0.0f,
+                                 format,
+                                 aspect_mask);
+   } else {
+      pvr_setup_transfer_surface(device,
+                                 surface,
+                                 rect,
+                                 image,
+                                 array_layer,
+                                 mip_level,
+                                 offset,
+                                 extent,
+                                 (float)depth,
+                                 format,
+                                 aspect_mask);
+   }
+}
+
+static VkResult
+pvr_copy_or_resolve_image_region(struct pvr_cmd_buffer *cmd_buffer,
+                                 enum pvr_resolve_op resolve_op,
+                                 const struct pvr_image *src,
+                                 const struct pvr_image *dst,
+                                 const VkImageCopy2 *region)
+{
+   VkExtent3D src_extent;
+   VkExtent3D dst_extent;
+   VkFormat dst_format;
+   VkFormat src_format;
+   uint32_t dst_layers;
+   uint32_t src_layers;
+   uint32_t max_slices;
+   uint32_t flags = 0U;
+
+   if (src->vk.format == VK_FORMAT_D24_UNORM_S8_UINT &&
+       region->srcSubresource.aspectMask !=
+          (VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT)) {
+      /* Takes the stencil of the source and the depth of the destination and
+       * combines the two interleaved.
+       */
+      flags |= PVR_TRANSFER_CMD_FLAGS_DSMERGE;
+
+      if (region->srcSubresource.aspectMask & VK_IMAGE_ASPECT_DEPTH_BIT) {
+         /* Takes the depth of the source and the stencil of the destination and
+          * combines the two interleaved.
+          */
+         flags |= PVR_TRANSFER_CMD_FLAGS_PICKD;
+      }
+   }
+
+   src_extent = region->extent;
+   dst_extent = region->extent;
+
+   /* We don't care what format dst is as it's guaranteed to be size compatible
+    * with src.
+    */
+   dst_format = pvr_get_copy_format(src->vk.format);
+   src_format = dst_format;
+
+   src_layers =
+      vk_image_subresource_layer_count(&src->vk, &region->srcSubresource);
+   dst_layers =
+      vk_image_subresource_layer_count(&dst->vk, &region->dstSubresource);
+
+   /* srcSubresource.layerCount must match layerCount of dstSubresource in
+    * copies not involving 3D images. In copies involving 3D images, if there is
+    * a 2D image it's layerCount.
+    */
+   max_slices = MAX3(src_layers, dst_layers, region->extent.depth);
+
+   for (uint32_t i = 0U; i < max_slices; i++) {
+      struct pvr_transfer_cmd *transfer_cmd;
+      VkResult result;
+
+      transfer_cmd = pvr_transfer_cmd_alloc(cmd_buffer);
+      if (!transfer_cmd)
+         return VK_ERROR_OUT_OF_HOST_MEMORY;
+
+      transfer_cmd->flags |= flags;
+      transfer_cmd->sources[0].resolve_op = resolve_op;
+
+      pvr_setup_surface_for_image(
+         cmd_buffer->device,
+         &transfer_cmd->sources[0].surface,
+         &transfer_cmd->sources[0].mappings[0U].src_rect,
+         src,
+         region->srcSubresource.baseArrayLayer,
+         i,
+         region->srcSubresource.mipLevel,
+         &region->srcOffset,
+         &src_extent,
+         region->srcOffset.z + i,
+         src_format,
+         region->srcSubresource.aspectMask);
+
+      pvr_setup_surface_for_image(cmd_buffer->device,
+                                  &transfer_cmd->dst,
+                                  &transfer_cmd->scissor,
+                                  dst,
+                                  region->dstSubresource.baseArrayLayer,
+                                  i,
+                                  region->dstSubresource.mipLevel,
+                                  &region->dstOffset,
+                                  &dst_extent,
+                                  region->dstOffset.z + i,
+                                  dst_format,
+                                  region->dstSubresource.aspectMask);
+
+      transfer_cmd->sources[0].mappings[0U].dst_rect = transfer_cmd->scissor;
+      transfer_cmd->sources[0].mapping_count++;
+      transfer_cmd->source_count = 1;
+
+      result = pvr_cmd_buffer_add_transfer_cmd(cmd_buffer, transfer_cmd);
+      if (result != VK_SUCCESS) {
+         vk_free(&cmd_buffer->vk.pool->alloc, transfer_cmd);
+         return result;
+      }
+   }
+
+   return VK_SUCCESS;
 }
 
 VkResult
@@ -52,46 +528,510 @@ pvr_copy_or_resolve_color_image_region(struct pvr_cmd_buffer *cmd_buffer,
                                        const struct pvr_image *dst,
                                        const VkImageCopy2 *region)
 {
-   assert(!"Unimplemented");
-   return VK_SUCCESS;
+   enum pvr_resolve_op resolve_op = PVR_RESOLVE_BLEND;
+
+   if (src->vk.samples > 1U && dst->vk.samples < 2U) {
+      /* Integer resolve picks a single sample. */
+      if (vk_format_is_int(src->vk.format))
+         resolve_op = PVR_RESOLVE_SAMPLE0;
+   }
+
+   return pvr_copy_or_resolve_image_region(cmd_buffer,
+                                           resolve_op,
+                                           src,
+                                           dst,
+                                           region);
 }
 
-void pvr_CmdCopyImageToBuffer2KHR(
-   VkCommandBuffer commandBuffer,
-   const VkCopyImageToBufferInfo2 *pCopyImageToBufferInfo)
+static bool pvr_can_merge_ds_regions(const VkImageCopy2 *pRegionA,
+                                     const VkImageCopy2 *pRegionB)
 {
-   assert(!"Unimplemented");
+   assert(pRegionA->srcSubresource.aspectMask != 0U);
+   assert(pRegionB->srcSubresource.aspectMask != 0U);
+
+   if (!((pRegionA->srcSubresource.aspectMask ^
+          pRegionB->srcSubresource.aspectMask) &
+         (VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT))) {
+      return false;
+   }
+
+   /* Assert if aspectMask mismatch between src and dst, given it's a depth and
+    * stencil image so not multi-planar and from the Vulkan 1.0.223 spec:
+    *
+    *    If neither srcImage nor dstImage has a multi-planar image format then
+    *    for each element of pRegions, srcSubresource.aspectMask and
+    *    dstSubresource.aspectMask must match.
+    */
+   assert(pRegionA->srcSubresource.aspectMask ==
+          pRegionA->dstSubresource.aspectMask);
+   assert(pRegionB->srcSubresource.aspectMask ==
+          pRegionB->dstSubresource.aspectMask);
+
+   if (!(pRegionA->srcSubresource.mipLevel ==
+            pRegionB->srcSubresource.mipLevel &&
+         pRegionA->srcSubresource.baseArrayLayer ==
+            pRegionB->srcSubresource.baseArrayLayer &&
+         pRegionA->srcSubresource.layerCount ==
+            pRegionB->srcSubresource.layerCount)) {
+      return false;
+   }
+
+   if (!(pRegionA->dstSubresource.mipLevel ==
+            pRegionB->dstSubresource.mipLevel &&
+         pRegionA->dstSubresource.baseArrayLayer ==
+            pRegionB->dstSubresource.baseArrayLayer &&
+         pRegionA->dstSubresource.layerCount ==
+            pRegionB->dstSubresource.layerCount)) {
+      return false;
+   }
+
+   if (!(pRegionA->srcOffset.x == pRegionB->srcOffset.x &&
+         pRegionA->srcOffset.y == pRegionB->srcOffset.y &&
+         pRegionA->srcOffset.z == pRegionB->srcOffset.z)) {
+      return false;
+   }
+
+   if (!(pRegionA->dstOffset.x == pRegionB->dstOffset.x &&
+         pRegionA->dstOffset.y == pRegionB->dstOffset.y &&
+         pRegionA->dstOffset.z == pRegionB->dstOffset.z)) {
+      return false;
+   }
+
+   if (!(pRegionA->extent.width == pRegionB->extent.width &&
+         pRegionA->extent.height == pRegionB->extent.height &&
+         pRegionA->extent.depth == pRegionB->extent.depth)) {
+      return false;
+   }
+
+   return true;
 }
 
 void pvr_CmdCopyImage2KHR(VkCommandBuffer commandBuffer,
-                          const VkCopyImageInfo2 *pCopyImageInfo)
+                          const VkCopyImageInfo2KHR *pCopyImageInfo)
 {
-   assert(!"Unimplemented");
+   PVR_FROM_HANDLE(pvr_cmd_buffer, cmd_buffer, commandBuffer);
+   PVR_FROM_HANDLE(pvr_image, src, pCopyImageInfo->srcImage);
+   PVR_FROM_HANDLE(pvr_image, dst, pCopyImageInfo->dstImage);
+
+   const bool can_merge_ds = src->vk.format == VK_FORMAT_D24_UNORM_S8_UINT &&
+                             dst->vk.format == VK_FORMAT_D24_UNORM_S8_UINT;
+
+   PVR_CHECK_COMMAND_BUFFER_BUILDING_STATE(cmd_buffer);
+
+   for (uint32_t i = 0U; i < pCopyImageInfo->regionCount; i++) {
+      VkResult result;
+
+      /* If an application has split a copy between D24S8 images into two
+       * separate copy regions (one for the depth aspect and one for the
+       * stencil aspect) attempt to merge the two regions back into one blit.
+       *
+       * This can only be merged if both regions are identical apart from the
+       * aspectMask, one of which has to be depth and the other has to be
+       * stencil.
+       *
+       * Only attempt to merge consecutive regions, ignore the case of merging
+       * non-consecutive regions.
+       */
+      if (can_merge_ds && i != (pCopyImageInfo->regionCount - 1)) {
+         const bool ret =
+            pvr_can_merge_ds_regions(&pCopyImageInfo->pRegions[i],
+                                     &pCopyImageInfo->pRegions[i + 1]);
+         if (ret) {
+            VkImageCopy2 region = pCopyImageInfo->pRegions[i];
+
+            region.srcSubresource.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT |
+                                               VK_IMAGE_ASPECT_STENCIL_BIT;
+            region.dstSubresource.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT |
+                                               VK_IMAGE_ASPECT_STENCIL_BIT;
+
+            result = pvr_copy_or_resolve_color_image_region(cmd_buffer,
+                                                            src,
+                                                            dst,
+                                                            &region);
+            if (result != VK_SUCCESS)
+               return;
+
+            /* Skip the next region as it has been processed with the last
+             * region.
+             */
+            i++;
+
+            continue;
+         }
+      }
+
+      result =
+         pvr_copy_or_resolve_color_image_region(cmd_buffer,
+                                                src,
+                                                dst,
+                                                &pCopyImageInfo->pRegions[i]);
+      if (result != VK_SUCCESS)
+         return;
+   }
 }
 
-void pvr_CmdUpdateBuffer(VkCommandBuffer commandBuffer,
-                         VkBuffer dstBuffer,
-                         VkDeviceSize dstOffset,
-                         VkDeviceSize dataSize,
-                         const void *pData)
+static VkResult
+pvr_copy_buffer_to_image_region(struct pvr_cmd_buffer *cmd_buffer,
+                                const struct pvr_buffer *buffer,
+                                const struct pvr_image *image,
+                                const VkBufferImageCopy2 *region)
 {
-   assert(!"Unimplemented");
-}
+   const VkImageAspectFlags aspect_mask = region->imageSubresource.aspectMask;
+   uint32_t row_length_in_texels;
+   uint32_t buffer_slice_size;
+   uint32_t buffer_layer_size;
+   uint32_t height_in_blks;
+   uint32_t row_length;
+   VkFormat src_format;
+   VkFormat dst_format;
+   uint32_t flags = 0;
 
-void pvr_CmdFillBuffer(VkCommandBuffer commandBuffer,
-                       VkBuffer dstBuffer,
-                       VkDeviceSize dstOffset,
-                       VkDeviceSize fillSize,
-                       uint32_t data)
-{
-   assert(!"Unimplemented");
+   if (vk_format_has_depth(image->vk.format) &&
+       vk_format_has_stencil(image->vk.format)) {
+      flags |= PVR_TRANSFER_CMD_FLAGS_DSMERGE;
+
+      if ((aspect_mask & VK_IMAGE_ASPECT_STENCIL_BIT) != 0) {
+         src_format = vk_format_stencil_only(image->vk.format);
+      } else {
+         src_format = vk_format_depth_only(image->vk.format);
+         flags |= PVR_TRANSFER_CMD_FLAGS_PICKD;
+      }
+
+      dst_format = image->vk.format;
+   } else {
+      src_format = pvr_get_raw_copy_format(image->vk.format);
+      dst_format = src_format;
+   }
+
+   if (region->bufferRowLength == 0)
+      row_length_in_texels = region->imageExtent.width;
+   else
+      row_length_in_texels = region->bufferRowLength;
+
+   if (region->bufferImageHeight == 0)
+      height_in_blks = region->imageExtent.height;
+   else
+      height_in_blks = region->bufferImageHeight;
+
+   row_length = row_length_in_texels * vk_format_get_blocksize(src_format);
+
+   buffer_slice_size = height_in_blks * row_length;
+   buffer_layer_size = buffer_slice_size * region->imageExtent.depth;
+
+   for (uint32_t i = 0; i < region->imageExtent.depth; i++) {
+      const uint32_t depth = i + (uint32_t)region->imageOffset.z;
+
+      for (uint32_t j = 0; j < region->imageSubresource.layerCount; j++) {
+         const VkDeviceSize buffer_offset = region->bufferOffset +
+                                            (j * buffer_layer_size) +
+                                            (i * buffer_slice_size);
+         struct pvr_transfer_cmd *transfer_cmd;
+         VkResult result;
+
+         transfer_cmd = pvr_transfer_cmd_alloc(cmd_buffer);
+         if (!transfer_cmd)
+            return VK_ERROR_OUT_OF_HOST_MEMORY;
+
+         transfer_cmd->flags = flags;
+
+         pvr_setup_buffer_surface(
+            &transfer_cmd->sources[0].surface,
+            &transfer_cmd->sources[0].mappings[0].src_rect,
+            buffer->dev_addr,
+            buffer_offset,
+            src_format,
+            region->imageExtent.width,
+            region->imageExtent.height,
+            row_length_in_texels);
+
+         transfer_cmd->sources[0].surface.depth = 1;
+         transfer_cmd->source_count = 1;
+
+         pvr_setup_transfer_surface(cmd_buffer->device,
+                                    &transfer_cmd->dst,
+                                    &transfer_cmd->scissor,
+                                    image,
+                                    region->imageSubresource.baseArrayLayer + j,
+                                    region->imageSubresource.mipLevel,
+                                    &region->imageOffset,
+                                    &region->imageExtent,
+                                    depth,
+                                    dst_format,
+                                    region->imageSubresource.aspectMask);
+
+         transfer_cmd->sources[0].mappings[0].dst_rect = transfer_cmd->scissor;
+         transfer_cmd->sources[0].mapping_count++;
+
+         result = pvr_cmd_buffer_add_transfer_cmd(cmd_buffer, transfer_cmd);
+         if (result != VK_SUCCESS) {
+            vk_free(&cmd_buffer->vk.pool->alloc, transfer_cmd);
+            return result;
+         }
+      }
+   }
+
+   return VK_SUCCESS;
 }
 
 void pvr_CmdCopyBufferToImage2KHR(
    VkCommandBuffer commandBuffer,
-   const VkCopyBufferToImageInfo2 *pCopyBufferToImageInfo)
+   const VkCopyBufferToImageInfo2KHR *pCopyBufferToImageInfo)
 {
-   assert(!"Unimplemented");
+   PVR_FROM_HANDLE(pvr_buffer, src, pCopyBufferToImageInfo->srcBuffer);
+   PVR_FROM_HANDLE(pvr_image, dst, pCopyBufferToImageInfo->dstImage);
+   PVR_FROM_HANDLE(pvr_cmd_buffer, cmd_buffer, commandBuffer);
+
+   PVR_CHECK_COMMAND_BUFFER_BUILDING_STATE(cmd_buffer);
+
+   for (uint32_t i = 0; i < pCopyBufferToImageInfo->regionCount; i++) {
+      const VkResult result =
+         pvr_copy_buffer_to_image_region(cmd_buffer,
+                                         src,
+                                         dst,
+                                         &pCopyBufferToImageInfo->pRegions[i]);
+      if (result != VK_SUCCESS)
+         return;
+   }
+}
+
+static VkResult
+pvr_copy_image_to_buffer_region(struct pvr_device *device,
+                                struct pvr_cmd_buffer *cmd_buffer,
+                                const struct pvr_image *image,
+                                const struct pvr_buffer *buffer,
+                                const VkBufferImageCopy2 *region)
+{
+   const VkImageAspectFlags aspect_mask = region->imageSubresource.aspectMask;
+   VkFormat image_format = pvr_get_copy_format(image->vk.format);
+   struct pvr_transfer_cmd_surface dst_surface = { 0 };
+   VkImageSubresource sub_resource;
+   uint32_t buffer_image_height;
+   uint32_t buffer_row_length;
+   uint32_t buffer_slice_size;
+   uint32_t max_array_layers;
+   VkRect2D dst_rect = { 0 };
+   uint32_t max_depth_slice;
+   VkSubresourceLayout info;
+   VkFormat dst_format;
+
+   /* Only images with VK_SAMPLE_COUNT_1_BIT can be copied to buffer. */
+   assert(image->vk.samples == 1);
+
+   /* Only one aspect bit should be set per region. */
+   assert(util_is_power_of_two_nonzero(aspect_mask));
+
+   /* Color and depth aspect copies can be done using an appropriate raw format.
+    */
+   if (aspect_mask & (VK_IMAGE_ASPECT_COLOR_BIT | VK_IMAGE_ASPECT_DEPTH_BIT)) {
+      image_format = pvr_get_raw_copy_format(image_format);
+      dst_format = image_format;
+   } else if (aspect_mask & VK_IMAGE_ASPECT_STENCIL_BIT) {
+      /* From the Vulkan spec:
+       *
+       *    Data copied to or from the stencil aspect of any depth/stencil
+       *    format is tightly packed with one VK_FORMAT_S8_UINT value per texel.
+       */
+      dst_format = VK_FORMAT_S8_UINT;
+   } else {
+      /* YUV Planes require specific formats. */
+      dst_format = image_format;
+   }
+
+   if (region->bufferRowLength == 0)
+      buffer_row_length = region->imageExtent.width;
+   else
+      buffer_row_length = region->bufferRowLength;
+
+   if (region->bufferImageHeight == 0)
+      buffer_image_height = region->imageExtent.height;
+   else
+      buffer_image_height = region->bufferImageHeight;
+
+   max_array_layers =
+      region->imageSubresource.baseArrayLayer +
+      vk_image_subresource_layer_count(&image->vk, &region->imageSubresource);
+
+   buffer_slice_size = buffer_image_height * buffer_row_length *
+                       vk_format_get_blocksize(dst_format);
+
+   max_depth_slice = region->imageExtent.depth + region->imageOffset.z;
+
+   pvr_setup_buffer_surface(&dst_surface,
+                            &dst_rect,
+                            buffer->dev_addr,
+                            region->bufferOffset,
+                            dst_format,
+                            buffer_row_length,
+                            buffer_image_height,
+                            buffer_row_length);
+
+   dst_rect.extent.width = region->imageExtent.width;
+   dst_rect.extent.height = region->imageExtent.height;
+
+   sub_resource = (VkImageSubresource){
+      .aspectMask = region->imageSubresource.aspectMask,
+      .mipLevel = region->imageSubresource.mipLevel,
+      .arrayLayer = region->imageSubresource.baseArrayLayer,
+   };
+
+   pvr_get_image_subresource_layout(image, &sub_resource, &info);
+
+   for (uint32_t i = region->imageSubresource.baseArrayLayer;
+        i < max_array_layers;
+        i++) {
+      struct pvr_transfer_cmd_surface src_surface = { 0 };
+      VkRect2D src_rect = { 0 };
+
+      /* Note: Set the depth to the initial depth offset, the memory address (or
+       * the z_position) for the depth slice will be incremented manually in the
+       * loop below.
+       */
+      pvr_setup_transfer_surface(device,
+                                 &src_surface,
+                                 &src_rect,
+                                 image,
+                                 i,
+                                 region->imageSubresource.mipLevel,
+                                 &region->imageOffset,
+                                 &region->imageExtent,
+                                 region->imageOffset.z,
+                                 image_format,
+                                 region->imageSubresource.aspectMask);
+
+      for (uint32_t j = region->imageOffset.z; j < max_depth_slice; j++) {
+         struct pvr_transfer_cmd *transfer_cmd;
+         VkResult result;
+
+         /* TODO: See if we can allocate all the transfer cmds in one go. */
+         transfer_cmd = pvr_transfer_cmd_alloc(cmd_buffer);
+         if (!transfer_cmd)
+            return vk_error(device, VK_ERROR_OUT_OF_HOST_MEMORY);
+
+         transfer_cmd->sources[0].mappings[0].src_rect = src_rect;
+         transfer_cmd->sources[0].mappings[0].dst_rect = dst_rect;
+         transfer_cmd->sources[0].mapping_count++;
+
+         transfer_cmd->sources[0].surface = src_surface;
+         transfer_cmd->source_count = 1;
+
+         transfer_cmd->dst = dst_surface;
+         transfer_cmd->scissor = dst_rect;
+
+         result = pvr_cmd_buffer_add_transfer_cmd(cmd_buffer, transfer_cmd);
+         if (result != VK_SUCCESS) {
+            vk_free(&cmd_buffer->vk.pool->alloc, transfer_cmd);
+            return result;
+         }
+
+         transfer_cmd->dst.dev_addr.addr += buffer_slice_size;
+
+         if (src_surface.mem_layout == PVR_MEMLAYOUT_3DTWIDDLED)
+            src_surface.z_position += 1.0f;
+         else
+            src_surface.dev_addr.addr += info.depthPitch;
+      }
+   }
+
+   return VK_SUCCESS;
+}
+
+void pvr_CmdCopyImageToBuffer2(
+   VkCommandBuffer commandBuffer,
+   const VkCopyImageToBufferInfo2 *pCopyImageToBufferInfo)
+{
+   PVR_FROM_HANDLE(pvr_buffer, dst, pCopyImageToBufferInfo->dstBuffer);
+   PVR_FROM_HANDLE(pvr_image, src, pCopyImageToBufferInfo->srcImage);
+   PVR_FROM_HANDLE(pvr_cmd_buffer, cmd_buffer, commandBuffer);
+
+   PVR_CHECK_COMMAND_BUFFER_BUILDING_STATE(cmd_buffer);
+
+   for (uint32_t i = 0U; i < pCopyImageToBufferInfo->regionCount; i++) {
+      const VkBufferImageCopy2 *region = &pCopyImageToBufferInfo->pRegions[i];
+      const VkResult result =
+         pvr_copy_image_to_buffer_region(cmd_buffer->device,
+                                         cmd_buffer,
+                                         src,
+                                         dst,
+                                         region);
+      if (result != VK_SUCCESS)
+         return;
+   }
+}
+
+static void pvr_calc_mip_level_extents(const struct pvr_image *image,
+                                       uint16_t mip_level,
+                                       VkExtent3D *extent_out)
+{
+   /* 3D textures are clamped to 4x4x4. */
+   const uint32_t clamp = (image->vk.image_type == VK_IMAGE_TYPE_3D) ? 4 : 1;
+   const VkExtent3D *extent = &image->vk.extent;
+
+   extent_out->width = MAX2(extent->width >> mip_level, clamp);
+   extent_out->height = MAX2(extent->height >> mip_level, clamp);
+   extent_out->depth = MAX2(extent->depth >> mip_level, clamp);
+}
+
+static VkResult pvr_clear_image_range(struct pvr_cmd_buffer *cmd_buffer,
+                                      const struct pvr_image *image,
+                                      const VkClearColorValue *pColor,
+                                      const VkImageSubresourceRange *psRange,
+                                      uint32_t flags)
+{
+   const uint32_t layer_count =
+      vk_image_subresource_layer_count(&image->vk, psRange);
+   const uint32_t max_layers = psRange->baseArrayLayer + layer_count;
+   VkFormat format = image->vk.format;
+   const VkOffset3D offset = { 0 };
+   VkExtent3D mip_extent;
+
+   assert((psRange->baseArrayLayer + layer_count) <= image->vk.array_layers);
+
+   for (uint32_t layer = psRange->baseArrayLayer; layer < max_layers; layer++) {
+      const uint32_t level_count =
+         vk_image_subresource_level_count(&image->vk, psRange);
+      const uint32_t max_level = psRange->baseMipLevel + level_count;
+
+      assert((psRange->baseMipLevel + level_count) <= image->vk.mip_levels);
+
+      for (uint32_t level = psRange->baseMipLevel; level < max_level; level++) {
+         pvr_calc_mip_level_extents(image, level, &mip_extent);
+
+         for (uint32_t depth = 0; depth < mip_extent.depth; depth++) {
+            struct pvr_transfer_cmd *transfer_cmd;
+            VkResult result;
+
+            transfer_cmd = pvr_transfer_cmd_alloc(cmd_buffer);
+            if (!transfer_cmd)
+               return VK_ERROR_OUT_OF_HOST_MEMORY;
+
+            transfer_cmd->flags |= flags;
+            transfer_cmd->flags |= PVR_TRANSFER_CMD_FLAGS_FILL;
+
+            for (uint32_t i = 0; i < ARRAY_SIZE(transfer_cmd->clear_color); i++)
+               transfer_cmd->clear_color[i].ui = pColor->uint32[i];
+
+            pvr_setup_transfer_surface(cmd_buffer->device,
+                                       &transfer_cmd->dst,
+                                       &transfer_cmd->scissor,
+                                       image,
+                                       layer,
+                                       level,
+                                       &offset,
+                                       &mip_extent,
+                                       depth,
+                                       format,
+                                       psRange->aspectMask);
+
+            result = pvr_cmd_buffer_add_transfer_cmd(cmd_buffer, transfer_cmd);
+            if (result != VK_SUCCESS) {
+               vk_free(&cmd_buffer->vk.pool->alloc, transfer_cmd);
+               return result;
+            }
+         }
+      }
+   }
+
+   return VK_SUCCESS;
 }
 
 void pvr_CmdClearColorImage(VkCommandBuffer commandBuffer,
@@ -101,48 +1041,235 @@ void pvr_CmdClearColorImage(VkCommandBuffer commandBuffer,
                             uint32_t rangeCount,
                             const VkImageSubresourceRange *pRanges)
 {
-   assert(!"Unimplemented");
+   PVR_FROM_HANDLE(pvr_cmd_buffer, cmd_buffer, commandBuffer);
+   PVR_FROM_HANDLE(pvr_image, image, _image);
+
+   for (uint32_t i = 0; i < rangeCount; i++) {
+      const VkResult result =
+         pvr_clear_image_range(cmd_buffer, image, pColor, &pRanges[i], 0);
+      if (result != VK_SUCCESS)
+         return;
+   }
 }
 
 void pvr_CmdClearDepthStencilImage(VkCommandBuffer commandBuffer,
-                                   VkImage image_h,
+                                   VkImage _image,
                                    VkImageLayout imageLayout,
                                    const VkClearDepthStencilValue *pDepthStencil,
                                    uint32_t rangeCount,
                                    const VkImageSubresourceRange *pRanges)
 {
-   assert(!"Unimplemented");
+   PVR_FROM_HANDLE(pvr_cmd_buffer, cmd_buffer, commandBuffer);
+   PVR_FROM_HANDLE(pvr_image, image, _image);
+
+   for (uint32_t i = 0; i < rangeCount; i++) {
+      const VkImageAspectFlags ds_aspect = VK_IMAGE_ASPECT_DEPTH_BIT |
+                                           VK_IMAGE_ASPECT_STENCIL_BIT;
+      VkClearColorValue clear_ds = { 0 };
+      uint32_t flags = 0U;
+      VkResult result;
+
+      if (image->vk.format == VK_FORMAT_D24_UNORM_S8_UINT &&
+          pRanges[i].aspectMask != ds_aspect) {
+         /* A depth or stencil blit to a packed_depth_stencil requires a merge
+          * operation.
+          */
+         flags |= PVR_TRANSFER_CMD_FLAGS_DSMERGE;
+
+         if (pRanges[i].aspectMask & VK_IMAGE_ASPECT_DEPTH_BIT)
+            flags |= PVR_TRANSFER_CMD_FLAGS_PICKD;
+      }
+
+      clear_ds.float32[0] = pDepthStencil->depth;
+      clear_ds.uint32[1] = pDepthStencil->stencil;
+
+      result =
+         pvr_clear_image_range(cmd_buffer, image, &clear_ds, pRanges + i, flags);
+      if (result != VK_SUCCESS)
+         return;
+   }
+}
+
+static VkResult pvr_cmd_copy_buffer_region(struct pvr_cmd_buffer *cmd_buffer,
+                                           pvr_dev_addr_t src_addr,
+                                           VkDeviceSize src_offset,
+                                           pvr_dev_addr_t dst_addr,
+                                           VkDeviceSize dst_offset,
+                                           VkDeviceSize size,
+                                           uint32_t fill_data,
+                                           bool is_fill)
+{
+   VkDeviceSize offset = 0;
+
+   while (offset < size) {
+      const VkDeviceSize remaining_size = size - offset;
+      struct pvr_transfer_cmd *transfer_cmd;
+      uint32_t texel_width;
+      VkDeviceSize texels;
+      VkFormat vk_format;
+      VkResult result;
+      uint32_t height;
+      uint32_t width;
+
+      if (is_fill) {
+         vk_format = VK_FORMAT_R32_UINT;
+         texel_width = 4U;
+      } else if (remaining_size >= 16U) {
+         vk_format = VK_FORMAT_R32G32B32A32_UINT;
+         texel_width = 16U;
+      } else if (remaining_size >= 4U) {
+         vk_format = VK_FORMAT_R32_UINT;
+         texel_width = 4U;
+      } else {
+         vk_format = VK_FORMAT_R8_UINT;
+         texel_width = 1U;
+      }
+
+      texels = remaining_size / texel_width;
+
+      /* Try to do max-width rects, fall back to a 1-height rect for the
+       * remainder.
+       */
+      if (texels > PVR_MAX_TRANSFER_SIZE_IN_TEXELS) {
+         width = PVR_MAX_TRANSFER_SIZE_IN_TEXELS;
+         height = texels / PVR_MAX_TRANSFER_SIZE_IN_TEXELS;
+         height = MIN2(height, PVR_MAX_TRANSFER_SIZE_IN_TEXELS);
+      } else {
+         width = texels;
+         height = 1;
+      }
+
+      transfer_cmd = pvr_transfer_cmd_alloc(cmd_buffer);
+      if (!transfer_cmd)
+         return VK_ERROR_OUT_OF_HOST_MEMORY;
+
+      if (!is_fill) {
+         pvr_setup_buffer_surface(
+            &transfer_cmd->sources[0].surface,
+            &transfer_cmd->sources[0].mappings[0].src_rect,
+            src_addr,
+            offset + src_offset,
+            vk_format,
+            width,
+            height,
+            width);
+         transfer_cmd->source_count = 1;
+      } else {
+         transfer_cmd->flags |= PVR_TRANSFER_CMD_FLAGS_FILL;
+
+         for (uint32_t i = 0; i < ARRAY_SIZE(transfer_cmd->clear_color); i++)
+            transfer_cmd->clear_color[i].ui = fill_data;
+      }
+
+      pvr_setup_buffer_surface(&transfer_cmd->dst,
+                               &transfer_cmd->scissor,
+                               dst_addr,
+                               offset + dst_offset,
+                               vk_format,
+                               width,
+                               height,
+                               width);
+
+      if (transfer_cmd->source_count > 0) {
+         transfer_cmd->sources[0].mappings[0].dst_rect = transfer_cmd->scissor;
+
+         transfer_cmd->sources[0].mapping_count++;
+      }
+
+      result = pvr_cmd_buffer_add_transfer_cmd(cmd_buffer, transfer_cmd);
+      if (result != VK_SUCCESS) {
+         vk_free(&cmd_buffer->vk.pool->alloc, transfer_cmd);
+         return result;
+      }
+
+      offset += width * height * texel_width;
+   }
+
+   return VK_SUCCESS;
+}
+
+void pvr_CmdUpdateBuffer(VkCommandBuffer commandBuffer,
+                         VkBuffer dstBuffer,
+                         VkDeviceSize dstOffset,
+                         VkDeviceSize dataSize,
+                         const void *pData)
+{
+   PVR_FROM_HANDLE(pvr_cmd_buffer, cmd_buffer, commandBuffer);
+   PVR_FROM_HANDLE(pvr_buffer, dst, dstBuffer);
+   struct pvr_bo *pvr_bo;
+   VkResult result;
+
+   PVR_CHECK_COMMAND_BUFFER_BUILDING_STATE(cmd_buffer);
+
+   result = pvr_cmd_buffer_upload_general(cmd_buffer, pData, dataSize, &pvr_bo);
+   if (result != VK_SUCCESS)
+      return;
+
+   pvr_cmd_copy_buffer_region(cmd_buffer,
+                              pvr_bo->vma->dev_addr,
+                              0,
+                              dst->dev_addr,
+                              dstOffset,
+                              dataSize,
+                              0U,
+                              false);
 }
 
 void pvr_CmdCopyBuffer2KHR(VkCommandBuffer commandBuffer,
                            const VkCopyBufferInfo2 *pCopyBufferInfo)
 {
-   PVR_FROM_HANDLE(pvr_cmd_buffer, cmd_buffer, commandBuffer);
    PVR_FROM_HANDLE(pvr_buffer, src, pCopyBufferInfo->srcBuffer);
    PVR_FROM_HANDLE(pvr_buffer, dst, pCopyBufferInfo->dstBuffer);
-   const size_t regions_size =
-      pCopyBufferInfo->regionCount * sizeof(*pCopyBufferInfo->pRegions);
-   struct pvr_transfer_cmd *transfer_cmd;
+   PVR_FROM_HANDLE(pvr_cmd_buffer, cmd_buffer, commandBuffer);
 
    PVR_CHECK_COMMAND_BUFFER_BUILDING_STATE(cmd_buffer);
 
-   transfer_cmd = vk_alloc(&cmd_buffer->vk.pool->alloc,
-                           sizeof(*transfer_cmd) + regions_size,
-                           8U,
-                           VK_SYSTEM_ALLOCATION_SCOPE_OBJECT);
-   if (!transfer_cmd) {
-      cmd_buffer->state.status =
-         vk_error(cmd_buffer, VK_ERROR_OUT_OF_HOST_MEMORY);
-
-      return;
+   for (uint32_t i = 0; i < pCopyBufferInfo->regionCount; i++) {
+      const VkResult result =
+         pvr_cmd_copy_buffer_region(cmd_buffer,
+                                    src->dev_addr,
+                                    pCopyBufferInfo->pRegions[i].srcOffset,
+                                    dst->dev_addr,
+                                    pCopyBufferInfo->pRegions[i].dstOffset,
+                                    pCopyBufferInfo->pRegions[i].size,
+                                    0U,
+                                    false);
+      if (result != VK_SUCCESS)
+         return;
    }
+}
 
-   transfer_cmd->src = src;
-   transfer_cmd->dst = dst;
-   transfer_cmd->region_count = pCopyBufferInfo->regionCount;
-   memcpy(transfer_cmd->regions, pCopyBufferInfo->pRegions, regions_size);
+void pvr_CmdFillBuffer(VkCommandBuffer commandBuffer,
+                       VkBuffer dstBuffer,
+                       VkDeviceSize dstOffset,
+                       VkDeviceSize fillSize,
+                       uint32_t data)
+{
+   PVR_FROM_HANDLE(pvr_cmd_buffer, cmd_buffer, commandBuffer);
+   PVR_FROM_HANDLE(pvr_buffer, dst, dstBuffer);
 
-   pvr_cmd_buffer_add_transfer_cmd(cmd_buffer, transfer_cmd);
+   PVR_CHECK_COMMAND_BUFFER_BUILDING_STATE(cmd_buffer);
+
+   fillSize = vk_buffer_range(&dst->vk, dstOffset, fillSize);
+
+   /* From the Vulkan spec:
+    *
+    *    "size is the number of bytes to fill, and must be either a multiple
+    *    of 4, or VK_WHOLE_SIZE to fill the range from offset to the end of
+    *    the buffer. If VK_WHOLE_SIZE is used and the remaining size of the
+    *    buffer is not a multiple of 4, then the nearest smaller multiple is
+    *    used."
+    */
+   fillSize &= ~3ULL;
+
+   pvr_cmd_copy_buffer_region(cmd_buffer,
+                              PVR_DEV_ADDR_INVALID,
+                              0,
+                              dst->dev_addr,
+                              dstOffset,
+                              fillSize,
+                              data,
+                              true);
 }
 
 /**
@@ -494,11 +1621,140 @@ static VkResult pvr_clear_color_attachment_static(
    return VK_SUCCESS;
 }
 
+/**
+ * \brief Record a deferred clear operation into the command buffer.
+ *
+ * Devices which don't have gs_rta_support require extra handling for RTA
+ * clears. We setup a list of deferred clear transfer commands which will be
+ * processed at the end of the graphics sub command to account for the missing
+ * feature.
+ */
+static VkResult pvr_add_deferred_rta_clear(struct pvr_cmd_buffer *cmd_buffer,
+                                           const VkClearAttachment *attachment,
+                                           const VkClearRect *rect,
+                                           bool is_render_init)
+{
+   struct pvr_render_pass_info *pass_info = &cmd_buffer->state.render_pass_info;
+   struct pvr_sub_cmd_gfx *sub_cmd = &cmd_buffer->state.current_sub_cmd->gfx;
+   const struct pvr_renderpass_hwsetup_render *hw_render =
+      &pass_info->pass->hw_setup->renders[sub_cmd->hw_render_idx];
+   struct pvr_transfer_cmd *transfer_cmd_list;
+   const struct pvr_image_view *image_view;
+   const struct pvr_image *image;
+   uint32_t base_layer;
+
+   const VkOffset3D offset = {
+      .x = rect->rect.offset.x,
+      .y = rect->rect.offset.y,
+      .z = 1,
+   };
+   const VkExtent3D extent = {
+      .width = rect->rect.extent.width,
+      .height = rect->rect.extent.height,
+      .depth = 1,
+   };
+
+   assert(
+      !PVR_HAS_FEATURE(&cmd_buffer->device->pdevice->dev_info, gs_rta_support));
+
+   transfer_cmd_list = util_dynarray_grow(&cmd_buffer->deferred_clears,
+                                          struct pvr_transfer_cmd,
+                                          rect->layerCount);
+   if (!transfer_cmd_list) {
+      cmd_buffer->state.status =
+         vk_error(cmd_buffer, VK_ERROR_OUT_OF_HOST_MEMORY);
+      return cmd_buffer->state.status;
+   }
+
+   /* From the Vulkan 1.3.229 spec VUID-VkClearAttachment-aspectMask-00019:
+    *
+    *    "If aspectMask includes VK_IMAGE_ASPECT_COLOR_BIT, it must not
+    *    include VK_IMAGE_ASPECT_DEPTH_BIT or VK_IMAGE_ASPECT_STENCIL_BIT"
+    *
+    */
+   if (attachment->aspectMask != VK_IMAGE_ASPECT_COLOR_BIT) {
+      assert(attachment->aspectMask == VK_IMAGE_ASPECT_DEPTH_BIT ||
+             attachment->aspectMask == VK_IMAGE_ASPECT_STENCIL_BIT ||
+             attachment->aspectMask ==
+                (VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT));
+
+      image_view = pass_info->attachments[hw_render->ds_attach_idx];
+   } else if (is_render_init) {
+      uint32_t index;
+
+      assert(attachment->colorAttachment < hw_render->color_init_count);
+      index = hw_render->color_init[attachment->colorAttachment].index;
+
+      image_view = pass_info->attachments[index];
+   } else {
+      const struct pvr_renderpass_hwsetup_subpass *hw_pass =
+         pvr_get_hw_subpass(pass_info->pass, pass_info->subpass_idx);
+      const struct pvr_render_subpass *sub_pass =
+         &pass_info->pass->subpasses[hw_pass->index];
+      const uint32_t attachment_idx =
+         sub_pass->color_attachments[attachment->colorAttachment];
+
+      assert(attachment->colorAttachment < sub_pass->color_count);
+
+      image_view = pass_info->attachments[attachment_idx];
+   }
+
+   base_layer = image_view->vk.base_array_layer + rect->baseArrayLayer;
+   image = vk_to_pvr_image(image_view->vk.image);
+
+   for (uint32_t i = 0; i < rect->layerCount; i++) {
+      struct pvr_transfer_cmd *transfer_cmd = &transfer_cmd_list[i];
+
+      /* TODO: Add an init function for when we don't want to use
+       * pvr_transfer_cmd_alloc()? And use it here.
+       */
+      *transfer_cmd = (struct pvr_transfer_cmd){
+         .flags = PVR_TRANSFER_CMD_FLAGS_FILL,
+         .source_count = 1,
+         .sources = {
+            [0] = {
+               .filter = PVR_FILTER_POINT,
+               .resolve_op = PVR_RESOLVE_BLEND,
+               .addr_mode = PVRX(TEXSTATE_ADDRMODE_CLAMP_TO_EDGE),
+            },
+         },
+         .cmd_buffer = cmd_buffer,
+      };
+
+      if (attachment->aspectMask == VK_IMAGE_ASPECT_COLOR_BIT) {
+         for (uint32_t i = 0; i < ARRAY_SIZE(transfer_cmd->clear_color); i++) {
+            transfer_cmd->clear_color[i].ui =
+               attachment->clearValue.color.uint32[i];
+         }
+      } else {
+         transfer_cmd->clear_color[0].f =
+            attachment->clearValue.depthStencil.depth;
+         transfer_cmd->clear_color[1].ui =
+            attachment->clearValue.depthStencil.stencil;
+      }
+
+      pvr_setup_transfer_surface(cmd_buffer->device,
+                                 &transfer_cmd->sources[0].surface,
+                                 &transfer_cmd->scissor,
+                                 image,
+                                 base_layer + i,
+                                 0,
+                                 &offset,
+                                 &extent,
+                                 0.0f,
+                                 image->vk.format,
+                                 attachment->aspectMask);
+   }
+
+   return VK_SUCCESS;
+}
+
 static void pvr_clear_attachments(struct pvr_cmd_buffer *cmd_buffer,
                                   uint32_t attachment_count,
                                   const VkClearAttachment *attachments,
                                   uint32_t rect_count,
-                                  const VkClearRect *rects)
+                                  const VkClearRect *rects,
+                                  bool is_render_init)
 {
    const struct pvr_render_pass *pass = cmd_buffer->state.render_pass_info.pass;
    struct pvr_render_pass_info *pass_info = &cmd_buffer->state.render_pass_info;
@@ -547,11 +1803,26 @@ static void pvr_clear_attachments(struct pvr_cmd_buffer *cmd_buffer,
          VkFormat format;
 
          local_attachment_idx = attachment->colorAttachment;
-         mrt_resource = &hw_pass->setup.mrt_resources[local_attachment_idx];
 
-         assert(local_attachment_idx < sub_pass->color_count);
-         global_attachment_idx =
-            sub_pass->color_attachments[local_attachment_idx];
+         if (is_render_init) {
+            struct pvr_renderpass_hwsetup_render *hw_render;
+
+            assert(pass->hw_setup->render_count > 0);
+            hw_render = &pass->hw_setup->renders[0];
+
+            mrt_resource =
+               &hw_render->init_setup.mrt_resources[local_attachment_idx];
+
+            assert(local_attachment_idx < hw_render->color_init_count);
+            global_attachment_idx =
+               hw_render->color_init[local_attachment_idx].index;
+         } else {
+            mrt_resource = &hw_pass->setup.mrt_resources[local_attachment_idx];
+
+            assert(local_attachment_idx < sub_pass->color_count);
+            global_attachment_idx =
+               sub_pass->color_attachments[local_attachment_idx];
+         }
 
          if (global_attachment_idx == VK_ATTACHMENT_UNUSED)
             continue;
@@ -685,7 +1956,12 @@ static void pvr_clear_attachments(struct pvr_cmd_buffer *cmd_buffer,
 
          if (!PVR_HAS_FEATURE(dev_info, gs_rta_support) &&
              (clear_rect->baseArrayLayer != 0 || clear_rect->layerCount > 1)) {
-            pvr_finishme("Add deferred RTA clear.");
+            result = pvr_add_deferred_rta_clear(cmd_buffer,
+                                                attachment,
+                                                clear_rect,
+                                                is_render_init);
+            if (result != VK_SUCCESS)
+               return;
 
             if (clear_rect->baseArrayLayer != 0)
                continue;
@@ -772,6 +2048,13 @@ static void pvr_clear_attachments(struct pvr_cmd_buffer *cmd_buffer,
    }
 }
 
+void pvr_clear_attachments_render_init(struct pvr_cmd_buffer *cmd_buffer,
+                                       const VkClearAttachment *attachment,
+                                       const VkClearRect *rect)
+{
+   pvr_clear_attachments(cmd_buffer, 1, attachment, 1, rect, true);
+}
+
 void pvr_CmdClearAttachments(VkCommandBuffer commandBuffer,
                              uint32_t attachmentCount,
                              const VkClearAttachment *pAttachments,
@@ -845,11 +2128,32 @@ void pvr_CmdClearAttachments(VkCommandBuffer commandBuffer,
                          attachmentCount,
                          pAttachments,
                          rectCount,
-                         pRects);
+                         pRects,
+                         false);
 }
 
 void pvr_CmdResolveImage2KHR(VkCommandBuffer commandBuffer,
                              const VkResolveImageInfo2 *pResolveImageInfo)
 {
-   assert(!"Unimplemented");
+   PVR_FROM_HANDLE(pvr_image, src, pResolveImageInfo->srcImage);
+   PVR_FROM_HANDLE(pvr_image, dst, pResolveImageInfo->dstImage);
+   PVR_FROM_HANDLE(pvr_cmd_buffer, cmd_buffer, commandBuffer);
+
+   PVR_CHECK_COMMAND_BUFFER_BUILDING_STATE(cmd_buffer);
+
+   for (uint32_t i = 0U; i < pResolveImageInfo->regionCount; i++) {
+      VkImageCopy2 region = {
+         .sType = VK_STRUCTURE_TYPE_IMAGE_COPY_2,
+         .srcSubresource = pResolveImageInfo->pRegions[i].srcSubresource,
+         .srcOffset = pResolveImageInfo->pRegions[i].srcOffset,
+         .dstSubresource = pResolveImageInfo->pRegions[i].dstSubresource,
+         .dstOffset = pResolveImageInfo->pRegions[i].dstOffset,
+         .extent = pResolveImageInfo->pRegions[i].extent,
+      };
+
+      VkResult result =
+         pvr_copy_or_resolve_color_image_region(cmd_buffer, src, dst, &region);
+      if (result != VK_SUCCESS)
+         return;
+   }
 }

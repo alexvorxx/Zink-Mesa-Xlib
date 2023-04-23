@@ -32,6 +32,8 @@
 #include "hwdef/rogue_hw_defs.h"
 #include "hwdef/rogue_hw_utils.h"
 #include "pvr_bo.h"
+#include "pvr_clear.h"
+#include "pvr_common.h"
 #include "pvr_csb.h"
 #include "pvr_csb_enum_helpers.h"
 #include "pvr_device_info.h"
@@ -154,6 +156,7 @@ static void pvr_cmd_buffer_free_resources(struct pvr_cmd_buffer *cmd_buffer)
       pvr_bo_free(cmd_buffer->device, bo);
    }
 
+   util_dynarray_fini(&cmd_buffer->deferred_clears);
    util_dynarray_fini(&cmd_buffer->deferred_csb_commands);
    util_dynarray_fini(&cmd_buffer->scissor_array);
    util_dynarray_fini(&cmd_buffer->depth_bias_array);
@@ -221,6 +224,7 @@ static VkResult pvr_cmd_buffer_create(struct pvr_device *device,
    util_dynarray_init(&cmd_buffer->depth_bias_array, NULL);
    util_dynarray_init(&cmd_buffer->scissor_array, NULL);
    util_dynarray_init(&cmd_buffer->deferred_csb_commands, NULL);
+   util_dynarray_init(&cmd_buffer->deferred_clears, NULL);
 
    cmd_buffer->state.status = VK_SUCCESS;
 
@@ -603,37 +607,6 @@ err_csb_finish:
 
    return result;
 }
-
-struct pvr_combined_image_sampler_descriptor {
-   /* | TEXSTATE_IMAGE_WORD0 | TEXSTATE_{STRIDE_,}IMAGE_WORD1 | */
-   uint64_t image[ROGUE_NUM_TEXSTATE_IMAGE_WORDS];
-   union pvr_sampler_descriptor sampler;
-};
-
-#define CHECK_STRUCT_FIELD_SIZE(_struct_type, _field_name, _size)      \
-   static_assert(sizeof(((struct _struct_type *)NULL)->_field_name) == \
-                    (_size),                                           \
-                 "Size of '" #_field_name "' in '" #_struct_type       \
-                 "' differs from expected")
-
-CHECK_STRUCT_FIELD_SIZE(pvr_combined_image_sampler_descriptor,
-                        image,
-                        ROGUE_NUM_TEXSTATE_IMAGE_WORDS * sizeof(uint64_t));
-CHECK_STRUCT_FIELD_SIZE(pvr_combined_image_sampler_descriptor,
-                        image,
-                        PVR_IMAGE_DESCRIPTOR_SIZE * sizeof(uint32_t));
-CHECK_STRUCT_FIELD_SIZE(pvr_combined_image_sampler_descriptor,
-                        image,
-                        (pvr_cmd_length(TEXSTATE_IMAGE_WORD0) +
-                         pvr_cmd_length(TEXSTATE_IMAGE_WORD1)) *
-                           sizeof(uint32_t));
-CHECK_STRUCT_FIELD_SIZE(pvr_combined_image_sampler_descriptor,
-                        image,
-                        (pvr_cmd_length(TEXSTATE_IMAGE_WORD0) +
-                         pvr_cmd_length(TEXSTATE_STRIDE_IMAGE_WORD1)) *
-                           sizeof(uint32_t));
-
-#undef CHECK_STRUCT_FIELD_SIZE
 
 static VkResult pvr_setup_texture_state_words(
    struct pvr_device *device,
@@ -1711,6 +1684,24 @@ void pvr_compute_generate_fence(struct pvr_cmd_buffer *cmd_buffer,
    pvr_compute_generate_control_stream(csb, sub_cmd, &info);
 }
 
+static VkResult
+pvr_cmd_buffer_process_deferred_clears(struct pvr_cmd_buffer *cmd_buffer)
+{
+   util_dynarray_foreach (&cmd_buffer->deferred_clears,
+                          struct pvr_transfer_cmd,
+                          transfer_cmd) {
+      VkResult result;
+
+      result = pvr_cmd_buffer_add_transfer_cmd(cmd_buffer, transfer_cmd);
+      if (result != VK_SUCCESS)
+         return result;
+
+      cmd_buffer->state.current_sub_cmd->transfer.serialize_with_frag = true;
+   }
+
+   return VK_SUCCESS;
+}
+
 VkResult pvr_cmd_buffer_end_sub_cmd(struct pvr_cmd_buffer *cmd_buffer)
 {
    struct pvr_cmd_buffer_state *state = &cmd_buffer->state;
@@ -1785,6 +1776,10 @@ VkResult pvr_cmd_buffer_end_sub_cmd(struct pvr_cmd_buffer *cmd_buffer)
        * sub_cmd->gfx.empty_cmd flag.
        */
 
+      /* TODO: Set the state in the functions called with the command buffer
+       * instead of here.
+       */
+
       result = pvr_cmd_buffer_upload_tables(device, cmd_buffer, gfx_sub_cmd);
       if (result != VK_SUCCESS) {
          state->status = result;
@@ -1817,6 +1812,12 @@ VkResult pvr_cmd_buffer_end_sub_cmd(struct pvr_cmd_buffer *cmd_buffer)
       result = pvr_sub_cmd_gfx_job_init(&device->pdevice->dev_info,
                                         cmd_buffer,
                                         gfx_sub_cmd);
+      if (result != VK_SUCCESS) {
+         state->status = result;
+         return result;
+      }
+
+      result = pvr_cmd_buffer_process_deferred_clears(cmd_buffer);
       if (result != VK_SUCCESS) {
          state->status = result;
          return result;
@@ -2464,11 +2465,15 @@ static void pvr_perform_start_of_render_attachment_clear(
    bool is_depth_stencil,
    uint32_t *index_list_clear_mask)
 {
+   ASSERTED static const VkImageAspectFlags dsc_aspect_flags =
+      VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT |
+      VK_IMAGE_ASPECT_COLOR_BIT;
    struct pvr_render_pass_info *info = &cmd_buffer->state.render_pass_info;
    const struct pvr_render_pass *pass = info->pass;
    const struct pvr_renderpass_hwsetup *hw_setup = pass->hw_setup;
    const struct pvr_renderpass_hwsetup_render *hw_render =
       &hw_setup->renders[hw_setup->subpass_map[info->subpass_idx].render];
+   VkImageAspectFlags image_aspect;
    struct pvr_image_view *iview;
    uint32_t view_idx;
    uint32_t height;
@@ -2519,7 +2524,37 @@ static void pvr_perform_start_of_render_attachment_clear(
       return;
    }
 
-   pvr_finishme("Unimplemented path!");
+   image_aspect = vk_format_aspects(pass->attachments[view_idx].vk_format);
+   assert((image_aspect & ~dsc_aspect_flags) == 0);
+
+   if (image_aspect & VK_IMAGE_ASPECT_DEPTH_BIT &&
+       hw_render->depth_init != VK_ATTACHMENT_LOAD_OP_CLEAR) {
+      image_aspect &= ~VK_IMAGE_ASPECT_DEPTH_BIT;
+   }
+
+   if (image_aspect & VK_IMAGE_ASPECT_STENCIL_BIT &&
+       hw_render->stencil_init != VK_ATTACHMENT_LOAD_OP_CLEAR) {
+      image_aspect &= ~VK_IMAGE_ASPECT_STENCIL_BIT;
+   }
+
+   if (image_aspect != VK_IMAGE_ASPECT_NONE) {
+      VkClearAttachment clear_attachment = {
+         .aspectMask = image_aspect,
+         .colorAttachment = index,
+         .clearValue = info->clear_values[view_idx],
+      };
+      VkClearRect rect = {
+         .rect = info->render_area,
+         .baseArrayLayer = 0,
+         .layerCount = info->framebuffer->layers,
+      };
+
+      assert(view_idx < info->clear_value_count);
+
+      pvr_clear_attachments_render_init(cmd_buffer, &clear_attachment, &rect);
+
+      *index_list_clear_mask |= (1 << index);
+   }
 }
 
 static void
@@ -3003,12 +3038,34 @@ pvr_setup_vertex_buffers(struct pvr_cmd_buffer *cmd_buffer,
          break;
       }
 
+      case PVR_PDS_CONST_MAP_ENTRY_TYPE_BASE_VERTEX: {
+         const struct pvr_const_map_entry_base_instance *const base_instance =
+            (struct pvr_const_map_entry_base_instance *)entries;
+
+         PVR_WRITE(dword_buffer,
+                   state->draw_state.base_vertex,
+                   base_instance->const_offset,
+                   pds_info->data_size_in_dwords);
+
+         entries += sizeof(*base_instance);
+         break;
+      }
+
       case PVR_PDS_CONST_MAP_ENTRY_TYPE_VERTEX_ATTRIBUTE_ADDRESS: {
          const struct pvr_const_map_entry_vertex_attribute_address
             *const attribute =
                (struct pvr_const_map_entry_vertex_attribute_address *)entries;
          const struct pvr_vertex_binding *const binding =
             &state->vertex_bindings[attribute->binding_index];
+         /* In relation to the Vulkan spec. 22.4. Vertex Input Address
+          * Calculation:
+          *    Adding binding->offset corresponds to calculating the
+          *    `bufferBindingAddress`. Adding attribute->offset corresponds to
+          *    adding the `attribDesc.offset`. The `effectiveVertexOffset` is
+          *    taken care by the PDS program itself with a DDMAD which will
+          *    multiply the vertex/instance idx with the binding's stride and
+          *    add that to the address provided here.
+          */
          const pvr_dev_addr_t addr =
             PVR_DEV_ADDR_OFFSET(binding->buffer->dev_addr,
                                 binding->offset + attribute->offset);
@@ -3049,6 +3106,49 @@ pvr_setup_vertex_buffers(struct pvr_cmd_buffer *cmd_buffer,
                    pds_info->data_size_in_dwords);
 
          entries += sizeof(*attribute);
+         break;
+      }
+
+      case PVR_PDS_CONST_MAP_ENTRY_TYPE_VERTEX_ATTRIBUTE_MAX_INDEX: {
+         const struct pvr_const_map_entry_vertex_attribute_max_index *attribute =
+            (struct pvr_const_map_entry_vertex_attribute_max_index *)entries;
+         const struct pvr_vertex_binding *const binding =
+            &state->vertex_bindings[attribute->binding_index];
+         const uint64_t bound_size = binding->buffer->vk.size - binding->offset;
+         const uint32_t attribute_end =
+            attribute->offset + attribute->component_size_in_bytes;
+         uint32_t max_index;
+
+         if (PVR_HAS_FEATURE(&cmd_buffer->device->pdevice->dev_info,
+                             pds_ddmadt)) {
+            /* TODO: PVR_PDS_CONST_MAP_ENTRY_TYPE_VERTEX_ATTRIBUTE_MAX_INDEX
+             * has the same define value as
+             * PVR_PDS_CONST_MAP_ENTRY_TYPE_VERTEX_ATTR_DDMADT_OOB_BUFFER_SIZE
+             * so maybe we want to remove one of the defines or change the
+             * values.
+             */
+            pvr_finishme("Unimplemented robust buffer access with DDMADT");
+            assert(false);
+         }
+
+         /* If the stride is 0 then all attributes use the same single element
+          * from the binding so the index can only be up to 0.
+          */
+         if (bound_size < attribute_end || attribute->stride == 0) {
+            max_index = 0;
+         } else {
+            max_index = (uint32_t)(bound_size / attribute->stride) - 1;
+
+            /* There's one last attribute that can fit in. */
+            if (bound_size % attribute->stride >= attribute_end)
+               max_index++;
+         }
+
+         PVR_WRITE(dword_buffer,
+                   max_index,
+                   attribute->const_offset,
+                   pds_info->data_size_in_dwords);
+
          break;
       }
 
@@ -5736,7 +5836,7 @@ static void pvr_emit_dirty_vdm_state(struct pvr_cmd_buffer *const cmd_buffer,
             break;
 
          default:
-            unreachable(!"Invalid index type");
+            unreachable("Invalid index type");
          }
       }
    }
@@ -6842,8 +6942,10 @@ pvr_execute_graphics_cmd_buffer(struct pvr_cmd_buffer *cmd_buffer,
          primary_sub_cmd->gfx.empty_cmd = false;
       }
 
-      if (!PVR_HAS_FEATURE(dev_info, gs_rta_support))
-         pvr_finishme("Unimplemented path.");
+      if (!PVR_HAS_FEATURE(dev_info, gs_rta_support)) {
+         util_dynarray_append_dynarray(&cmd_buffer->deferred_clears,
+                                       &sec_cmd_buffer->deferred_clears);
+      }
    }
 
    return VK_SUCCESS;

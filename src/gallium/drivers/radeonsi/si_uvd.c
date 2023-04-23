@@ -135,6 +135,9 @@ struct pipe_video_codec *si_uvd_create_decoder(struct pipe_context *context,
       }
    }
 
+   if (ctx->family == CHIP_GFX1100)
+      ctx->vcn_has_ctx = true;
+
    return (vcn) ? radeon_create_decoder(context, templ)
                 : si_common_uvd_create_decoder(context, templ, si_uvd_set_dtb);
 }

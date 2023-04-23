@@ -191,7 +191,7 @@ debian/android_build:
 debian/x86_test-base:
   extends: debian/x86_build-base
   variables:
-    KERNEL_URL: &kernel-rootfs-url "https://gitlab.freedesktop.org/gfx-ci/linux/-/archive/v6.1-for-mesa-ci-439f86d0051b/linux-v6.1-for-mesa-ci-439f86d0051b.tar.bz2"
+    KERNEL_URL: &kernel-rootfs-url "https://gitlab.freedesktop.org/gfx-ci/linux/-/archive/v6.3-for-mesa-ci-43c973a8ff91/linux-v6.3-for-mesa-ci-43c973a8ff91.tar.bz2"
     MESA_IMAGE_TAG: &debian-x86_test-base ${DEBIAN_BASE_TAG}
 
 .use-debian/x86_test-base:

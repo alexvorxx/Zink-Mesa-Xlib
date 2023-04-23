@@ -71,7 +71,7 @@ aco_opcode
 get_reduce_opcode(amd_gfx_level gfx_level, ReduceOp op)
 {
    /* Because some 16-bit instructions are already VOP3 on GFX10, we use the
-    * 32-bit opcodes (VOP2) which allows to remove the tempory VGPR and to use
+    * 32-bit opcodes (VOP2) which allows to remove the temporary VGPR and to use
     * DPP with the arithmetic instructions. This requires to sign-extend.
     */
    switch (op) {
@@ -718,7 +718,7 @@ emit_reduction(lower_context* ctx, aco_opcode op, ReduceOp reduce_op, unsigned c
 
       for (unsigned i = 0; i < src.size(); i++) {
          if (!identity[i].isConstant() ||
-             identity[i].constantValue()) { /* bound_ctrl should take care of this overwise */
+             identity[i].constantValue()) { /* bound_ctrl should take care of this otherwise */
             if (ctx->program->gfx_level < GFX10)
                assert((identity[i].isConstant() && !identity[i].isLiteral()) ||
                       identity[i].physReg() == PhysReg{sitmp + i});
@@ -2642,9 +2642,7 @@ lower_to_hw_instr(Program* program)
              * - The compiler stack knows that it's a divergent branch always taken
              */
             const bool prefer_remove =
-               (branch->selection_control == nir_selection_control_flatten ||
-                branch->selection_control == nir_selection_control_divergent_always_taken) &&
-               ctx.program->gfx_level >= GFX10;
+               branch->selection_control_remove && ctx.program->gfx_level >= GFX10;
             bool can_remove = block->index < target;
             unsigned num_scalar = 0;
             unsigned num_vector = 0;

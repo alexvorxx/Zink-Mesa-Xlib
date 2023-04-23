@@ -1363,7 +1363,8 @@ vec4_visitor::emit_shader_float_controls_execution_mode()
    unsigned execution_mode = this->nir->info.float_controls_execution_mode;
    if (nir_has_any_rounding_mode_enabled(execution_mode)) {
       brw_rnd_mode rnd = brw_rnd_mode_from_execution_mode(execution_mode);
-      emit(SHADER_OPCODE_RND_MODE, dst_null_ud(), brw_imm_d(rnd));
+      const vec4_builder bld = vec4_builder(this).at_end();
+      bld.exec_all().emit(SHADER_OPCODE_RND_MODE, dst_null_ud(), brw_imm_d(rnd));
    }
 }
 

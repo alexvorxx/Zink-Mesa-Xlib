@@ -367,8 +367,8 @@ void anv_CmdEndDebugUtilsLabelEXT(VkCommandBuffer _commandBuffer)
    vk_common_CmdEndDebugUtilsLabelEXT(_commandBuffer);
 }
 
-static void
-anv_queue_trace(struct anv_queue *queue, const VkDebugUtilsLabelEXT *label, bool begin)
+void
+anv_queue_trace(struct anv_queue *queue, const char *label, bool frame, bool begin)
 {
    struct anv_device *device = queue->device;
 
@@ -403,13 +403,21 @@ anv_queue_trace(struct anv_queue *queue, const VkDebugUtilsLabelEXT *label, bool
                          (struct anv_address) { .bo = submit->batch_bo, },
                          submit->batch_bo->map, submit->batch_bo->size);
 
-   if (begin) {
-      trace_intel_begin_queue_annotation(&submit->ds.trace, &submit->batch);
+   if (frame) {
+      if (begin)
+         trace_intel_begin_frame(&submit->ds.trace, &submit->batch);
+      else
+         trace_intel_end_frame(&submit->ds.trace, &submit->batch,
+                               device->debug_frame_desc->frame_id);
    } else {
-      trace_intel_end_queue_annotation(&submit->ds.trace,
-                                       &submit->batch,
-                                       strlen(label->pLabelName),
-                                       label->pLabelName);
+      if (begin) {
+         trace_intel_begin_queue_annotation(&submit->ds.trace, &submit->batch);
+      } else {
+         trace_intel_end_queue_annotation(&submit->ds.trace,
+                                          &submit->batch,
+                                          strlen(label),
+                                          label);
+      }
    }
 
    anv_batch_emit(&submit->batch, GFX8_MI_BATCH_BUFFER_END, bbs);
@@ -448,7 +456,8 @@ anv_QueueBeginDebugUtilsLabelEXT(
 
    vk_common_QueueBeginDebugUtilsLabelEXT(_queue, pLabelInfo);
 
-   anv_queue_trace(queue, pLabelInfo, true /* begin */);
+   anv_queue_trace(queue, pLabelInfo->pLabelName,
+                   false /* frame */, true /* begin */);
 }
 
 void
@@ -459,7 +468,8 @@ anv_QueueEndDebugUtilsLabelEXT(VkQueue _queue)
    if (queue->vk.labels.size > 0) {
       const VkDebugUtilsLabelEXT *label =
          util_dynarray_top_ptr(&queue->vk.labels, VkDebugUtilsLabelEXT);
-      anv_queue_trace(queue, label, false /* begin */);
+      anv_queue_trace(queue, label->pLabelName,
+                      false /* frame */, false /* begin */);
 
       u_trace_context_process(&queue->device->ds.trace_context, true);
    }

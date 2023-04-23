@@ -906,7 +906,7 @@ zink_draw(struct pipe_context *pctx,
    batch->last_was_compute = false;
    ctx->batch.work_count = work_count;
    /* flush if there's >100k draws */
-   if (unlikely(work_count >= 30000) || ctx->oom_flush)
+   if (!ctx->unordered_blitting && (unlikely(work_count >= 30000) || ctx->oom_flush))
       pctx->flush(pctx, NULL, 0);
 }
 
@@ -1079,7 +1079,7 @@ zink_launch_grid(struct pipe_context *pctx, const struct pipe_grid_info *info)
    batch->has_work = true;
    batch->last_was_compute = true;
    /* flush if there's >100k computes */
-   if (unlikely(ctx->batch.work_count >= 30000) || ctx->oom_flush)
+   if (!ctx->unordered_blitting && (unlikely(ctx->batch.work_count >= 30000) || ctx->oom_flush))
       pctx->flush(pctx, NULL, 0);
 }
 

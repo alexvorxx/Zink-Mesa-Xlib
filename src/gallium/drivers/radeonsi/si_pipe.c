@@ -34,6 +34,7 @@
 #include "ac_shadowed_regs.h"
 #include "compiler/nir/nir.h"
 #include "util/disk_cache.h"
+#include "util/hex.h"
 #include "util/u_cpu_detect.h"
 #include "util/u_log.h"
 #include "util/u_memory.h"
@@ -1093,7 +1094,7 @@ static void si_disk_cache_create(struct si_screen *sscreen)
       return;
 
    _mesa_sha1_final(&ctx, sha1);
-   disk_cache_format_hex_id(cache_id, sha1, 20 * 2);
+   mesa_bytes_to_hex(cache_id, sha1, 20);
 
    sscreen->disk_shader_cache = disk_cache_create(sscreen->info.name, cache_id,
                                                   sscreen->info.address32_hi);
@@ -1397,7 +1398,7 @@ static struct pipe_screen *radeonsi_screen_create_impl(struct radeon_winsys *ws,
     *     z = [2..8]
     *     c = [2..8]
     *
-    * Only MSAA color and depth buffers are overriden.
+    * Only MSAA color and depth buffers are overridden.
     */
    if (sscreen->info.has_eqaa_surface_allocator) {
       const char *eqaa = debug_get_option("EQAA", NULL);

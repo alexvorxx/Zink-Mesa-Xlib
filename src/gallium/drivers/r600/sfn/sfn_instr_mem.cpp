@@ -924,7 +924,7 @@ RatInstr::emit_image_size(nir_intrinsic_instr *intrin, Shader& shader)
                                        R600_BUFFER_INFO_CONST_BUFFER),
                             AluInstr::last_write));
          } else {
-            /* If the adressing is indirect we have to get the z-value by
+            /* If the addressing is indirect we have to get the z-value by
              * using a binary search */
             auto addr = vf.temp_register();
             auto comp1 = vf.temp_register();

@@ -596,6 +596,7 @@ struct zink_batch_state {
    struct util_dynarray dead_framebuffers;
 
    struct set active_queries; /* zink_query objects which were active at some point in this batch */
+   struct util_dynarray dead_querypools;
 
    struct zink_batch_descriptor_data dd;
 

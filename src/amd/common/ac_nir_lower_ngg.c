@@ -67,6 +67,7 @@ typedef struct
    nir_variable *prim_exp_arg_var;
    nir_variable *es_accepted_var;
    nir_variable *gs_accepted_var;
+   nir_variable *gs_exported_var;
    nir_variable *gs_vtx_indices_vars[3];
 
    nir_ssa_def *vtx_addr[3];
@@ -447,6 +448,50 @@ emit_pack_ngg_prim_exp_arg(nir_builder *b, unsigned num_vertices_per_primitives,
 }
 
 static void
+alloc_vertices_and_primitives_gfx10_workaround(nir_builder *b,
+                                               nir_ssa_def *num_vtx,
+                                               nir_ssa_def *num_prim)
+{
+   /* HW workaround for a GPU hang with 100% culling on GFX10.
+    * We always have to export at least 1 primitive.
+    * Export a degenerate triangle using vertex 0 for all 3 vertices.
+    *
+    * NOTE: We rely on the caller to set the vertex count also to 0 when the primitive count is 0.
+    */
+   nir_ssa_def *is_prim_cnt_0 = nir_ieq_imm(b, num_prim, 0);
+   nir_if *if_prim_cnt_0 = nir_push_if(b, is_prim_cnt_0);
+   {
+      nir_ssa_def *one = nir_imm_int(b, 1);
+      nir_alloc_vertices_and_primitives_amd(b, one, one);
+
+      nir_ssa_def *tid = nir_load_subgroup_invocation(b);
+      nir_ssa_def *is_thread_0 = nir_ieq_imm(b, tid, 0);
+      nir_if *if_thread_0 = nir_push_if(b, is_thread_0);
+      {
+         /* The vertex indices are 0, 0, 0. */
+         nir_export_amd(b, nir_imm_zero(b, 4, 32),
+                        .base = V_008DFC_SQ_EXP_PRIM,
+                        .flags = AC_EXP_FLAG_DONE,
+                        .write_mask = 1);
+
+         /* The HW culls primitives with NaN. -1 is also NaN and can save
+          * a dword in binary code by inlining constant.
+          */
+         nir_export_amd(b, nir_imm_ivec4(b, -1, -1, -1, -1),
+                        .base = V_008DFC_SQ_EXP_POS,
+                        .flags = AC_EXP_FLAG_DONE,
+                        .write_mask = 0xf);
+      }
+      nir_pop_if(b, if_thread_0);
+   }
+   nir_push_else(b, if_prim_cnt_0);
+   {
+      nir_alloc_vertices_and_primitives_amd(b, num_vtx, num_prim);
+   }
+   nir_pop_if(b, if_prim_cnt_0);
+}
+
+static void
 ngg_nogs_init_vertex_indices_vars(nir_builder *b, nir_function_impl *impl, lower_ngg_nogs_state *s)
 {
    for (unsigned v = 0; v < s->options->num_vertices_per_primitive; ++v) {
@@ -517,10 +562,7 @@ nogs_prim_gen_query(nir_builder *b, lower_ngg_nogs_state *s)
 static void
 emit_ngg_nogs_prim_export(nir_builder *b, lower_ngg_nogs_state *s, nir_ssa_def *arg)
 {
-   nir_ssa_def *gs_thread =
-      s->gs_accepted_var ? nir_load_var(b, s->gs_accepted_var) : has_input_primitive(b);
-
-   nir_if *if_gs_thread = nir_push_if(b, gs_thread);
+   nir_if *if_gs_thread = nir_push_if(b, nir_load_var(b, s->gs_exported_var));
    {
       if (!arg)
          arg = emit_ngg_nogs_prim_exp_arg(b, s);
@@ -914,7 +956,6 @@ compact_vertices_after_culling(nir_builder *b,
                                nir_ssa_def *es_vertex_lds_addr,
                                nir_ssa_def *es_exporter_tid,
                                nir_ssa_def *num_live_vertices_in_workgroup,
-                               nir_ssa_def *fully_culled,
                                unsigned pervertex_lds_bytes,
                                unsigned num_repacked_variables)
 {
@@ -1008,8 +1049,6 @@ compact_vertices_after_culling(nir_builder *b,
    nir_pop_if(b, if_gs_accepted);
 
    nir_store_var(b, es_accepted_var, es_survived, 0x1u);
-   nir_store_var(b, gs_accepted_var, nir_iand(b, nir_inot(b, fully_culled), has_input_primitive(b)),
-                 0x1u);
 }
 
 static void
@@ -1455,7 +1494,7 @@ add_deferred_attribute_culling(nir_builder *b, nir_cf_list *original_extracted_c
    /* Run culling algorithms if culling is enabled.
     *
     * NGG culling can be enabled or disabled in runtime.
-    * This is determined by a SGPR shader argument which is acccessed
+    * This is determined by a SGPR shader argument which is accessed
     * by the following NIR intrinsic.
     */
 
@@ -1565,11 +1604,18 @@ add_deferred_attribute_culling(nir_builder *b, nir_cf_list *original_extracted_c
       nir_ssa_def *num_exported_prims = nir_load_workgroup_num_input_primitives_amd(b);
       nir_ssa_def *fully_culled = nir_ieq_imm(b, num_live_vertices_in_workgroup, 0u);
       num_exported_prims = nir_bcsel(b, fully_culled, nir_imm_int(b, 0u), num_exported_prims);
+      nir_store_var(b, s->gs_exported_var, nir_iand(b, nir_inot(b, fully_culled), has_input_primitive(b)), 0x1u);
 
       nir_if *if_wave_0 = nir_push_if(b, nir_ieq(b, nir_load_subgroup_id(b), nir_imm_int(b, 0)));
       {
          /* Tell the final vertex and primitive count to the HW. */
-         nir_alloc_vertices_and_primitives_amd(b, num_live_vertices_in_workgroup, num_exported_prims);
+         if (s->options->gfx_level == GFX10) {
+            alloc_vertices_and_primitives_gfx10_workaround(
+               b, num_live_vertices_in_workgroup, num_exported_prims);
+         } else {
+            nir_alloc_vertices_and_primitives_amd(
+               b, num_live_vertices_in_workgroup, num_exported_prims);
+         }
       }
       nir_pop_if(b, if_wave_0);
 
@@ -1577,7 +1623,7 @@ add_deferred_attribute_culling(nir_builder *b, nir_cf_list *original_extracted_c
       compact_vertices_after_culling(b, s,
                                      repacked_variables, gs_vtxaddr_vars,
                                      invocation_index, es_vertex_lds_addr,
-                                     es_exporter_tid, num_live_vertices_in_workgroup, fully_culled,
+                                     es_exporter_tid, num_live_vertices_in_workgroup,
                                      pervertex_lds_bytes, num_repacked_variables);
    }
    nir_push_else(b, if_cull_en);
@@ -2256,6 +2302,7 @@ ac_nir_lower_ngg_nogs(nir_shader *shader, const ac_nir_lower_ngg_options *option
       options->can_cull ? nir_local_variable_create(impl, glsl_bool_type(), "es_accepted") : NULL;
    nir_variable *gs_accepted_var =
       options->can_cull ? nir_local_variable_create(impl, glsl_bool_type(), "gs_accepted") : NULL;
+   nir_variable *gs_exported_var = nir_local_variable_create(impl, glsl_bool_type(), "gs_exported");
 
    bool streamout_enabled = shader->xfb_info && !options->disable_streamout;
    bool has_user_edgeflags =
@@ -2279,6 +2326,7 @@ ac_nir_lower_ngg_nogs(nir_shader *shader, const ac_nir_lower_ngg_options *option
       .prim_exp_arg_var = prim_exp_arg_var,
       .es_accepted_var = es_accepted_var,
       .gs_accepted_var = gs_accepted_var,
+      .gs_exported_var = gs_exported_var,
       .max_num_waves = DIV_ROUND_UP(options->max_workgroup_size, options->wave_size),
       .has_user_edgeflags = has_user_edgeflags,
    };
@@ -2313,6 +2361,11 @@ ac_nir_lower_ngg_nogs(nir_shader *shader, const ac_nir_lower_ngg_options *option
     * it executes before culling and isn't in the extracted CF.
     */
    nogs_prim_gen_query(b, &state);
+
+   /* Whether a shader invocation should export a primitive,
+    * initialize to all invocations that have an input primitive.
+    */
+   nir_store_var(b, gs_exported_var, has_input_primitive(b), 0x1u);
 
    if (!options->can_cull) {
       /* Newer chips can use PRIMGEN_PASSTHRU_NO_MSG to skip gs_alloc_req for NGG passthrough. */
@@ -3180,7 +3233,7 @@ ngg_gs_build_streamout(nir_builder *b, lower_ngg_gs_state *s)
 
       /* We want to export primitives to streamout buffer in sequence,
        * but not all vertices are alive or mark end of a primitive, so
-       * there're "holes". We don't need continous invocations to write
+       * there're "holes". We don't need continuous invocations to write
        * primitives to streamout buffer like final vertex export, so
        * just repack to get the sequence (export_seq) is enough, no need
        * to do compaction.
@@ -3306,7 +3359,12 @@ ngg_gs_finale(nir_builder *b, lower_ngg_gs_state *s)
 
    /* Allocate export space. We currently don't compact primitives, just use the maximum number. */
    nir_if *if_wave_0 = nir_push_if(b, nir_ieq(b, nir_load_subgroup_id(b), nir_imm_zero(b, 1, 32)));
-   nir_alloc_vertices_and_primitives_amd(b, workgroup_num_vertices, max_prmcnt);
+   {
+      if (s->options->gfx_level == GFX10)
+         alloc_vertices_and_primitives_gfx10_workaround(b, workgroup_num_vertices, max_prmcnt);
+      else
+         nir_alloc_vertices_and_primitives_amd(b, workgroup_num_vertices, max_prmcnt);
+   }
    nir_pop_if(b, if_wave_0);
 
    /* Vertex compaction. This makes sure there are no gaps between threads that export vertices. */
@@ -3960,7 +4018,7 @@ ms_emit_arrayed_outputs(nir_builder *b,
    nir_ssa_def *zero = nir_imm_int(b, 0);
 
    u_foreach_bit64(slot, mask) {
-      /* Should not occour here, handled separately. */
+      /* Should not occur here, handled separately. */
       assert(slot != VARYING_SLOT_PRIMITIVE_COUNT && slot != VARYING_SLOT_PRIMITIVE_INDICES);
 
       unsigned component_mask = s->output_info[slot].components_mask;

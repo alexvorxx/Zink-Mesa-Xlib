@@ -430,7 +430,7 @@ bool AluInstr::can_replace_source(PRegister old_src, PVirtualValue new_src)
    if (new_src->get_addr()) {
       for (auto& s : m_src) {
          auto addr = s->get_addr();
-         /* can't have two differen't indirect addresses in the same instr */
+         /* can't have two different indirect addresses in the same instr */
          if (addr && !addr->equal_to(*new_src->get_addr()))
             return false;
       }
@@ -516,8 +516,8 @@ AluInstr::replace_dest(PRegister new_dest, AluInstr *move_instr)
       return false;
 
    /* Currently we bail out when an array write should be moved, because
-    * decalring an array write is currently not well defined. The
-    * Whole "backwards" copy propagation shoul dprobably be replaced by some
+    * declaring an array write is currently not well defined. The
+    * Whole "backwards" copy propagation should dprobably be replaced by some
     * forward peep holew optimization */
    /*
    if (new_dest->pin() == pin_array) {
@@ -865,7 +865,7 @@ AluInstr::propagate_death()
 
    /* We assume that nir does a good job in eliminating all ALU results that
     * are not needed, and we don't let copy propagation doesn't make the
-    * instruction obsolte, so just keep all */
+    * instruction obsolete, so just keep all */
    if (has_alu_flag(alu_is_cayman_trans))
       return false;
 

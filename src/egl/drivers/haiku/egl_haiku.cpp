@@ -517,5 +517,4 @@ const _EGLDriver _eglDriver = {
 	.CreatePbufferSurface = haiku_create_pbuffer_surface,
 	.DestroySurface = haiku_destroy_surface,
 	.SwapBuffers = haiku_swap_buffers,
-	.GetProcAddress = _glapi_get_proc_address,
 };

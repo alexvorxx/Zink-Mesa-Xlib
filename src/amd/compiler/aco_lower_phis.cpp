@@ -25,6 +25,8 @@
 #include "aco_builder.h"
 #include "aco_ir.h"
 
+#include "util/enum_operators.h"
+
 #include <algorithm>
 #include <map>
 #include <vector>

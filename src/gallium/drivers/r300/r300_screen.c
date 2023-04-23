@@ -26,6 +26,7 @@
 #include "util/format/u_format_s3tc.h"
 #include "util/u_screen.h"
 #include "util/u_memory.h"
+#include "util/hex.h"
 #include "util/os_time.h"
 #include "vl/vl_decoder.h"
 #include "vl/vl_video_buffer.h"
@@ -105,7 +106,7 @@ static void r300_disk_cache_create(struct r300_screen* r300screen)
         return;
 
     _mesa_sha1_final(&ctx, sha1);
-    disk_cache_format_hex_id(cache_id, sha1, 20 * 2);
+    mesa_bytes_to_hex(cache_id, sha1, 20);
 
     r300screen->disk_shader_cache =
                     disk_cache_create(r300_get_family_name(r300screen),

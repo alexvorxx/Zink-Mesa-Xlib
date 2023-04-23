@@ -28,6 +28,7 @@
 #define ACO_SHADER_INFO_H
 
 #include "ac_shader_args.h"
+#include "amd_family.h"
 #include "shader_enums.h"
 
 #ifdef __cplusplus
@@ -62,11 +63,25 @@ struct aco_vs_prolog_info {
    gl_shader_stage next_stage;
 };
 
+struct aco_ps_epilog_info {
+   struct ac_arg inputs[8];
+   struct ac_arg pc;
+
+   uint32_t spi_shader_col_format;
+
+   /* Bitmasks, each bit represents one of the 8 MRTs. */
+   uint8_t color_is_int8;
+   uint8_t color_is_int10;
+
+   bool mrt0_is_dual_src;
+};
+
 struct aco_shader_info {
    uint8_t wave_size;
    bool is_ngg;
    bool has_ngg_culling;
    bool has_ngg_early_prim_export;
+   bool image_2d_view_of_3d;
    unsigned workgroup_size;
    struct {
       bool as_es;
@@ -86,17 +101,22 @@ struct aco_shader_info {
    } gs;
    struct {
       uint32_t num_lds_blocks;
+      unsigned tess_input_vertices;
    } tcs;
    struct {
       bool as_es;
    } tes;
    struct {
+      struct aco_ps_epilog_info epilog;
       bool writes_z;
       bool writes_stencil;
       bool writes_sample_mask;
       bool has_epilog;
       uint32_t num_interp;
       unsigned spi_ps_input;
+
+      /* Used to export alpha through MRTZ for alpha-to-coverage (GFX11+). */
+      bool alpha_to_coverage_via_mrtz;
    } ps;
    struct {
       uint8_t subgroup_size;
@@ -105,7 +125,6 @@ struct aco_shader_info {
 
    uint32_t gfx9_gs_ring_lds_size;
 
-   bool is_gs_copy_shader;
    bool is_trap_handler_shader;
 };
 
@@ -114,38 +133,7 @@ enum aco_compiler_debug_level {
    ACO_COMPILER_DEBUG_LEVEL_ERROR,
 };
 
-struct aco_ps_epilog_info {
-   struct ac_arg inputs[8];
-   struct ac_arg pc;
-
-   uint32_t spi_shader_col_format;
-
-   /* Bitmasks, each bit represents one of the 8 MRTs. */
-   uint8_t color_is_int8;
-   uint8_t color_is_int10;
-   uint8_t enable_mrt_output_nan_fixup;
-
-   bool mrt0_is_dual_src;
-};
-
-struct aco_stage_input {
-   uint32_t optimisations_disabled : 1;
-   uint32_t image_2d_view_of_3d : 1;
-
-   struct {
-      unsigned tess_input_vertices;
-   } tcs;
-
-   struct {
-      struct aco_ps_epilog_info epilog;
-
-      /* Used to export alpha through MRTZ for alpha-to-coverage (GFX11+). */
-      bool alpha_to_coverage_via_mrtz;
-   } ps;
-};
-
 struct aco_compiler_options {
-   struct aco_stage_input key;
    bool robust_buffer_access;
    bool dump_shader;
    bool dump_preoptir;
@@ -153,6 +141,7 @@ struct aco_compiler_options {
    bool record_stats;
    bool has_ls_vgpr_init_bug;
    bool load_grid_size_from_user_sgpr;
+   bool optimisations_disabled;
    uint8_t enable_mrt_output_nan_fixup;
    bool wgp_mode;
    enum radeon_family family;

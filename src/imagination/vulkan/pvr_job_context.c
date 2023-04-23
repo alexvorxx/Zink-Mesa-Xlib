@@ -25,21 +25,26 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
+#include <stdio.h>
 #include <vulkan/vulkan.h>
 
 #include "hwdef/rogue_hw_utils.h"
 #include "pvr_bo.h"
 #include "pvr_cdm_load_sr.h"
+#include "pvr_common.h"
 #include "pvr_csb.h"
 #include "pvr_job_context.h"
 #include "pvr_pds.h"
 #include "pvr_private.h"
-#include "pvr_transfer_eot.h"
+#include "pvr_transfer_frag_store.h"
 #include "pvr_types.h"
+#include "pvr_uscgen.h"
 #include "pvr_vdm_load_sr.h"
 #include "pvr_vdm_store_sr.h"
 #include "pvr_winsys.h"
 #include "util/macros.h"
+#include "util/os_file.h"
+#include "util/u_dynarray.h"
 #include "vk_alloc.h"
 #include "vk_log.h"
 
@@ -670,7 +675,7 @@ static VkResult pvr_render_ctx_switch_init(struct pvr_device *device,
    for (uint32_t i = 0; i < ARRAY_SIZE(ctx_switch->programs); i++) {
       result =
          pvr_render_ctx_switch_programs_setup(device, &ctx_switch->programs[i]);
-      if (result)
+      if (result != VK_SUCCESS)
          goto err_programs_cleanup;
    }
 
@@ -1200,39 +1205,88 @@ static void pvr_transfer_ctx_ws_create_info_init(
    create_info->priority = priority;
 }
 
-static VkResult pvr_transfer_ctx_setup_shaders(struct pvr_device *device,
-                                               struct pvr_transfer_ctx *ctx)
+static VkResult pvr_transfer_eot_shaders_init(struct pvr_device *device,
+                                              struct pvr_transfer_ctx *ctx)
 {
-   const uint32_t cache_line_size =
-      rogue_get_slc_cache_line_size(&device->pdevice->dev_info);
-   VkResult result;
+   uint64_t rt_pbe_regs[PVR_TRANSFER_MAX_RENDER_TARGETS];
 
-   /* TODO: Setup USC fragments. */
+   /* Setup start indexes of the shared registers that will contain the PBE
+    * state words for each render target. These must match the indexes used in
+    * pvr_pds_generate_pixel_event(), which is used to generate the
+    * corresponding PDS program in pvr_pbe_setup_emit() via
+    * pvr_pds_generate_pixel_event_data_segment() and
+    * pvr_pds_generate_pixel_event_code_segment().
+    */
+   /* TODO: store the shared register information somewhere so that it can be
+    * shared with pvr_pbe_setup_emit() rather than having the shared register
+    * indexes and number of shared registers hard coded in
+    * pvr_pds_generate_pixel_event().
+    */
+   for (uint32_t i = 0; i < ARRAY_SIZE(rt_pbe_regs); i++)
+      rt_pbe_regs[i] = i * PVR_STATE_PBE_DWORDS;
 
-   /* Setup EOT program. */
-   result = pvr_gpu_upload_usc(device,
-                               pvr_transfer_eot_usc_code,
-                               sizeof(pvr_transfer_eot_usc_code),
-                               cache_line_size,
-                               &ctx->usc_eot_bo);
-   if (result != VK_SUCCESS)
-      return result;
+   STATIC_ASSERT(ARRAY_SIZE(rt_pbe_regs) == ARRAY_SIZE(ctx->usc_eot_bos));
 
-   STATIC_ASSERT(ARRAY_SIZE(pvr_transfer_eot_usc_offsets) ==
-                 ARRAY_SIZE(ctx->transfer_mrts));
-   for (uint32_t i = 0U; i < ARRAY_SIZE(pvr_transfer_eot_usc_offsets); i++) {
-      ctx->transfer_mrts[i] =
-         PVR_DEV_ADDR_OFFSET(ctx->usc_eot_bo->vma->dev_addr,
-                             pvr_transfer_eot_usc_offsets[i]);
+   for (uint32_t i = 0; i < ARRAY_SIZE(ctx->usc_eot_bos); i++) {
+      const uint32_t cache_line_size =
+         rogue_get_slc_cache_line_size(&device->pdevice->dev_info);
+      const unsigned rt_count = i + 1;
+      struct util_dynarray eot_bin;
+      VkResult result;
+
+      pvr_uscgen_tq_eot(rt_count, rt_pbe_regs, &eot_bin);
+
+      result = pvr_gpu_upload_usc(device,
+                                  util_dynarray_begin(&eot_bin),
+                                  eot_bin.size,
+                                  cache_line_size,
+                                  &ctx->usc_eot_bos[i]);
+      util_dynarray_fini(&eot_bin);
+      if (result != VK_SUCCESS) {
+         for (uint32_t j = 0; j < i; j++)
+            pvr_bo_free(device, ctx->usc_eot_bos[j]);
+
+         return result;
+      }
    }
 
    return VK_SUCCESS;
 }
 
-static void pvr_transfer_ctx_fini_shaders(struct pvr_device *device,
+static void pvr_transfer_eot_shaders_fini(struct pvr_device *device,
                                           struct pvr_transfer_ctx *ctx)
 {
-   pvr_bo_free(device, ctx->usc_eot_bo);
+   for (uint32_t i = 0; i < ARRAY_SIZE(ctx->usc_eot_bos); i++)
+      pvr_bo_free(device, ctx->usc_eot_bos[i]);
+}
+
+static VkResult pvr_transfer_ctx_shaders_init(struct pvr_device *device,
+                                              struct pvr_transfer_ctx *ctx)
+{
+   VkResult result;
+
+   result = pvr_transfer_frag_store_init(device, &ctx->frag_store);
+   if (result != VK_SUCCESS)
+      goto err_out;
+
+   result = pvr_transfer_eot_shaders_init(device, ctx);
+   if (result != VK_SUCCESS)
+      goto err_frag_store_fini;
+
+   return VK_SUCCESS;
+
+err_frag_store_fini:
+   pvr_transfer_frag_store_fini(device, &ctx->frag_store);
+
+err_out:
+   return result;
+}
+
+static void pvr_transfer_ctx_shaders_fini(struct pvr_device *device,
+                                          struct pvr_transfer_ctx *ctx)
+{
+   pvr_transfer_eot_shaders_fini(device, ctx);
+   pvr_transfer_frag_store_fini(device, &ctx->frag_store);
 }
 
 VkResult pvr_transfer_ctx_create(struct pvr_device *const device,
@@ -1264,7 +1318,7 @@ VkResult pvr_transfer_ctx_create(struct pvr_device *const device,
    if (result != VK_SUCCESS)
       goto err_fini_reset_cmd;
 
-   result = pvr_transfer_ctx_setup_shaders(device, ctx);
+   result = pvr_transfer_ctx_shaders_init(device, ctx);
    if (result != VK_SUCCESS)
       goto err_destroy_transfer_ctx;
 
@@ -1300,7 +1354,7 @@ err_free_pds_unitex_bos:
       }
    }
 
-   pvr_transfer_ctx_fini_shaders(device, ctx);
+   pvr_transfer_ctx_shaders_fini(device, ctx);
 
 err_destroy_transfer_ctx:
    device->ws->ops->transfer_ctx_destroy(ctx->ws_ctx);
@@ -1327,7 +1381,7 @@ void pvr_transfer_ctx_destroy(struct pvr_transfer_ctx *const ctx)
       }
    }
 
-   pvr_transfer_ctx_fini_shaders(device, ctx);
+   pvr_transfer_ctx_shaders_fini(device, ctx);
    device->ws->ops->transfer_ctx_destroy(ctx->ws_ctx);
    pvr_ctx_reset_cmd_fini(device, &ctx->reset_cmd);
    vk_free(&device->vk.alloc, ctx);

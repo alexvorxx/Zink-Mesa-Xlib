@@ -126,13 +126,13 @@ iris_init_non_engine_contexts(struct iris_context *ice)
    struct iris_screen *screen = (void *) ice->ctx.screen;
 
    iris_foreach_batch(ice, batch) {
-      batch->ctx_id = iris_create_hw_context(screen->bufmgr, ice->protected);
-      batch->exec_flags = I915_EXEC_RENDER;
-      assert(batch->ctx_id);
-      context_set_priority(screen->bufmgr, batch->ctx_id, ice->priority);
+      batch->i915.ctx_id = iris_create_hw_context(screen->bufmgr, ice->protected);
+      batch->i915.exec_flags = I915_EXEC_RENDER;
+      assert(batch->i915.ctx_id);
+      context_set_priority(screen->bufmgr, batch->i915.ctx_id, ice->priority);
    }
 
-   ice->batches[IRIS_BATCH_BLITTER].exec_flags = I915_EXEC_BLT;
+   ice->batches[IRIS_BATCH_BLITTER].i915.exec_flags = I915_EXEC_BLT;
    ice->has_engines_context = false;
 }
 
@@ -192,8 +192,8 @@ iris_init_engines_context(struct iris_context *ice)
 
    iris_foreach_batch(ice, batch) {
       unsigned i = batch - &ice->batches[0];
-      batch->ctx_id = engines_ctx;
-      batch->exec_flags = i;
+      batch->i915.ctx_id = engines_ctx;
+      batch->i915.exec_flags = i;
    }
 
    ice->has_engines_context = true;
@@ -216,7 +216,7 @@ clone_hw_context(struct iris_batch *batch)
    struct iris_screen *screen = batch->screen;
    struct iris_bufmgr *bufmgr = screen->bufmgr;
    struct iris_context *ice = batch->ice;
-   bool protected = iris_hw_context_get_protected(bufmgr, batch->ctx_id);
+   bool protected = iris_hw_context_get_protected(bufmgr, batch->i915.ctx_id);
    uint32_t new_ctx = iris_create_hw_context(bufmgr, protected);
 
    if (new_ctx)
@@ -243,12 +243,12 @@ iris_i915_replace_batch(struct iris_batch *batch)
    struct iris_context *ice = batch->ice;
 
    if (ice->has_engines_context) {
-      uint32_t old_ctx = batch->ctx_id;
+      uint32_t old_ctx = batch->i915.ctx_id;
       int new_ctx = iris_create_engines_context(ice);
       if (new_ctx < 0)
          return false;
       iris_foreach_batch(ice, bat) {
-         bat->ctx_id = new_ctx;
+         bat->i915.ctx_id = new_ctx;
          /* Notify the context that state must be re-initialized. */
          iris_lost_context_state(bat);
       }
@@ -258,8 +258,8 @@ iris_i915_replace_batch(struct iris_batch *batch)
       if (!new_ctx)
          return false;
 
-      iris_destroy_kernel_context(bufmgr, batch->ctx_id);
-      batch->ctx_id = new_ctx;
+      iris_destroy_kernel_context(bufmgr, batch->i915.ctx_id);
+      batch->i915.ctx_id = new_ctx;
 
       /* Notify the context that state must be re-initialized. */
       iris_lost_context_state(batch);
@@ -273,7 +273,13 @@ void iris_i915_destroy_batch(struct iris_batch *batch)
    struct iris_screen *screen = batch->screen;
    struct iris_bufmgr *bufmgr = screen->bufmgr;
 
-   iris_destroy_kernel_context(bufmgr, batch->ctx_id);
+   /* destroy the engines context on the first batch or destroy each batch
+    * context
+    */
+   if (batch->ice->has_engines_context && batch != &batch->ice->batches[0])
+      return;
+
+   iris_destroy_kernel_context(bufmgr, batch->i915.ctx_id);
 }
 
 void iris_i915_init_batches(struct iris_context *ice)

@@ -450,7 +450,7 @@ struct waterfall_context {
  * to implement the body.
  *
  * params:
- *  - ctx is the usal nir context
+ *  - ctx is the usual nir context
  *  - wctx is a temporary struct containing some loop info. Can be left uninitialized.
  *  - value is the possibly divergent value for which we built the loop
  *  - divergent is whether value is actually divergent. If false we just pass
@@ -1601,8 +1601,10 @@ static LLVMValueRef build_tex_intrinsic(struct ac_nir_context *ctx, const nir_te
       break;
    case nir_texop_tg4:
       args->opcode = ac_image_gather4;
-      if (!args->lod && !args->bias)
+      if (!args->lod && !instr->is_gather_implicit_lod)
          args->level_zero = true;
+      /* GFX11 supports implicit LOD, but the extension is unsupported. */
+      assert(args->level_zero || ctx->ac.gfx_level < GFX11);
       break;
    case nir_texop_lod:
       args->opcode = ac_image_get_lod;
@@ -3544,12 +3546,6 @@ static bool visit_intrinsic(struct ac_nir_context *ctx, nir_intrinsic_instr *ins
    case nir_intrinsic_is_helper_invocation:
       result = ac_build_is_helper_invocation(&ctx->ac);
       break;
-   case nir_intrinsic_load_color0:
-      result = ctx->abi->color0;
-      break;
-   case nir_intrinsic_load_color1:
-      result = ctx->abi->color1;
-      break;
    case nir_intrinsic_load_user_data_amd:
       assert(LLVMTypeOf(ctx->abi->user_data) == ctx->ac.v4i32);
       result = ctx->abi->user_data;
@@ -3814,14 +3810,6 @@ static bool visit_intrinsic(struct ac_nir_context *ctx, nir_intrinsic_instr *ins
       result = load_interpolated_input(ctx, interp_param, index, component,
                                        instr->dest.ssa.num_components, instr->dest.ssa.bit_size,
                                        nir_intrinsic_io_semantics(instr).high_16bits);
-      break;
-   }
-   case nir_intrinsic_load_point_coord_maybe_flipped: {
-      LLVMValueRef interp_param = lookup_interp_param(ctx, INTERP_MODE_NONE, INTERP_CENTER);
-      /* Load point coordinates (x, y) which are written by the hw after the interpolated inputs */
-      result = load_interpolated_input(ctx, interp_param, ctx->abi->num_interp, 2,
-                                       instr->dest.ssa.num_components, instr->dest.ssa.bit_size,
-                                       false);
       break;
    }
    case nir_intrinsic_emit_vertex_with_counter: {
@@ -4099,14 +4087,22 @@ static bool visit_intrinsic(struct ac_nir_context *ctx, nir_intrinsic_instr *ins
    case nir_intrinsic_load_workgroup_num_input_primitives_amd:
       result = ac_unpack_param(&ctx->ac, ac_get_arg(&ctx->ac, ctx->args->gs_tg_info), 22, 9);
       break;
-   case nir_intrinsic_alloc_vertices_and_primitives_amd:
-      /* The caller should only call this conditionally for wave 0, so pass NULL to disable
-       * the wave 0 check inside this function.
+   case nir_intrinsic_alloc_vertices_and_primitives_amd: {
+      /* The caller should only call this conditionally for wave 0.
+       *
+       * Send GS Alloc Req message from the first wave of the group to SPI.
+       * Message payload is:
+       * - bits 0..10: vertices in group
+       * - bits 12..22: primitives in group
        */
-      ac_build_sendmsg_gs_alloc_req(&ctx->ac, NULL,
-                                    get_src(ctx, instr->src[0]),
-                                    get_src(ctx, instr->src[1]));
+      LLVMValueRef vtx_cnt = get_src(ctx, instr->src[0]);
+      LLVMValueRef prim_cnt = get_src(ctx, instr->src[1]);
+      LLVMValueRef msg = LLVMBuildShl(ctx->ac.builder, prim_cnt,
+                                      LLVMConstInt(ctx->ac.i32, 12, false), "");
+      msg = LLVMBuildOr(ctx->ac.builder, msg, vtx_cnt, "");
+      ac_build_sendmsg(&ctx->ac, AC_SENDMSG_GS_ALLOC_REQ, msg);
       break;
+   }
    case nir_intrinsic_overwrite_vs_arguments_amd:
       ctx->abi->vertex_id_replaced = get_src(ctx, instr->src[0]);
       ctx->abi->instance_id_replaced = get_src(ctx, instr->src[1]);
@@ -4188,15 +4184,6 @@ static bool visit_intrinsic(struct ac_nir_context *ctx, nir_intrinsic_instr *ins
       LLVMSetMetadata(addr, ctx->ac.uniform_md_kind, ctx->ac.empty_md);
       result = LLVMBuildLoad2(ctx->ac.builder, result_type, addr, "");
       LLVMSetMetadata(result, ctx->ac.invariant_load_md_kind, ctx->ac.empty_md);
-      break;
-   }
-   case nir_intrinsic_load_smem_buffer_amd: {
-      LLVMValueRef descriptor = get_src(ctx, instr->src[0]);
-      LLVMValueRef offset = get_src(ctx, instr->src[1]);
-      unsigned num_components = instr->dest.ssa.num_components;
-
-      result = ac_build_buffer_load(&ctx->ac, descriptor, num_components, NULL, offset, NULL,
-                                    ctx->ac.i32, 0, true, true);
       break;
    }
    case nir_intrinsic_ordered_xfb_counter_add_amd: {
@@ -4395,8 +4382,6 @@ static void tex_fetch_ptrs(struct ac_nir_context *ctx, nir_tex_instr *instr,
                            struct waterfall_context *wctx, LLVMValueRef *res_ptr,
                            LLVMValueRef *samp_ptr)
 {
-   bool texture_handle_divergent = false;
-   bool sampler_handle_divergent = false;
    LLVMValueRef texture_dynamic_handle = NULL;
    LLVMValueRef sampler_dynamic_handle = NULL;
    int plane = -1;
@@ -4414,14 +4399,10 @@ static void tex_fetch_ptrs(struct ac_nir_context *ctx, nir_tex_instr *instr,
             else
                *samp_ptr = val;
          } else {
-            bool divergent = instr->src[i].src.ssa->divergent;
-            if (instr->src[i].src_type == nir_tex_src_texture_handle) {
+            if (instr->src[i].src_type == nir_tex_src_texture_handle)
                texture_dynamic_handle = val;
-               texture_handle_divergent = divergent;
-            } else {
+            else
                sampler_dynamic_handle = val;
-               sampler_handle_divergent = divergent;
-            }
          }
          break;
       }
@@ -4451,23 +4432,11 @@ static void tex_fetch_ptrs(struct ac_nir_context *ctx, nir_tex_instr *instr,
       main_descriptor = AC_DESC_FMASK;
    }
 
-   /* instr->sampler_non_uniform and texture_non_uniform are always false in GLSL,
-    * but this can lead to unexpected behavior if texture/sampler index come from
-    * a vertex attribute.
-    * For instance, 2 consecutive draws using 2 different index values,
-    * could be squashed together by the hw - producing a single draw with
-    * non-dynamically uniform index.
-    * To avoid this, detect divergent indexing, and use enter_waterfall.
-    * See https://gitlab.freedesktop.org/mesa/mesa/-/issues/2253.
-    */
-
    /* descriptor handles given through nir_tex_src_{texture,sampler}_handle */
-   if (instr->texture_non_uniform ||
-       (ctx->abi->use_waterfall_for_divergent_tex_samplers && texture_handle_divergent))
+   if (instr->texture_non_uniform)
       texture_dynamic_handle = enter_waterfall(ctx, &wctx[0], texture_dynamic_handle, true);
 
-   if (instr->sampler_non_uniform ||
-       (ctx->abi->use_waterfall_for_divergent_tex_samplers && sampler_handle_divergent))
+   if (instr->sampler_non_uniform)
       sampler_dynamic_handle = enter_waterfall(ctx, &wctx[1], sampler_dynamic_handle, true);
 
    if (texture_dynamic_handle)

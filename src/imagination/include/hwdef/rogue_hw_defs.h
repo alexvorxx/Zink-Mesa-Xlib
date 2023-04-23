@@ -125,6 +125,16 @@
  */
 #define ROGUE_MAX_OVERLAPPED_PIXEL_TASK_INSTANCES 7U
 
+/* Size of the image state in 64-bit units. */
+#define ROGUE_MAXIMUM_IMAGE_STATE_SIZE_IN_ULONGLONGS 2U
+
+/* Size of the image state in dwords. The last 64-bit word is optional for
+ * non-YUV textures.
+ */
+#define ROGUE_MAXIMUM_IMAGE_STATE_SIZE             \
+   (ROGUE_MAXIMUM_IMAGE_STATE_SIZE_IN_ULONGLONGS * \
+    (sizeof(uint64_t) / sizeof(uint32_t)))
+
 #define PVR_NUM_PBE_EMIT_REGS 8U
 
 #endif /* ROGUE_HW_DEFS_H */

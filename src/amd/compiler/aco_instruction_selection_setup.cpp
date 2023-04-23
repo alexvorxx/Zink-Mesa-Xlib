@@ -249,95 +249,23 @@ get_reg_class(isel_context* ctx, RegType type, unsigned components, unsigned bit
 }
 
 void
-setup_vs_variables(isel_context* ctx, nir_shader* nir)
-{
-   if (ctx->stage == vertex_ngg) {
-      ctx->program->config->lds_size =
-         DIV_ROUND_UP(nir->info.shared_size, ctx->program->dev.lds_encoding_granule);
-      assert((ctx->program->config->lds_size * ctx->program->dev.lds_encoding_granule) <
-             (32 * 1024));
-   }
-}
-
-void
-setup_gs_variables(isel_context* ctx, nir_shader* nir)
-{
-   if (ctx->stage == vertex_geometry_gs || ctx->stage == tess_eval_geometry_gs) {
-      ctx->program->config->lds_size =
-         ctx->program->info.gfx9_gs_ring_lds_size; /* Already in units of the alloc granularity */
-   } else if (ctx->stage == vertex_geometry_ngg || ctx->stage == tess_eval_geometry_ngg) {
-      ctx->program->config->lds_size =
-         DIV_ROUND_UP(nir->info.shared_size, ctx->program->dev.lds_encoding_granule);
-   }
-}
-
-void
 setup_tcs_info(isel_context* ctx, nir_shader* nir, nir_shader* vs)
 {
    ctx->tcs_in_out_eq = ctx->program->info.vs.tcs_in_out_eq;
    ctx->tcs_temp_only_inputs = ctx->program->info.vs.tcs_temp_only_input_mask;
-   ctx->program->config->lds_size = ctx->program->info.tcs.num_lds_blocks;
 }
 
 void
-setup_tes_variables(isel_context* ctx, nir_shader* nir)
+setup_lds_size(isel_context* ctx, nir_shader* nir)
 {
-   if (ctx->stage == tess_eval_ngg) {
+   /* TCS and GFX9 GS are special cases, already in units of the allocation granule. */
+   if (ctx->stage.has(SWStage::TCS))
+      ctx->program->config->lds_size = ctx->program->info.tcs.num_lds_blocks;
+   else if (ctx->stage == vertex_geometry_gs || ctx->stage == tess_eval_geometry_gs)
+      ctx->program->config->lds_size = ctx->program->info.gfx9_gs_ring_lds_size;
+   else
       ctx->program->config->lds_size =
          DIV_ROUND_UP(nir->info.shared_size, ctx->program->dev.lds_encoding_granule);
-      assert((ctx->program->config->lds_size * ctx->program->dev.lds_encoding_granule) <
-             (32 * 1024));
-   }
-}
-
-void
-setup_ms_variables(isel_context* ctx, nir_shader* nir)
-{
-   ctx->program->config->lds_size =
-      DIV_ROUND_UP(nir->info.shared_size, ctx->program->dev.lds_encoding_granule);
-   assert((ctx->program->config->lds_size * ctx->program->dev.lds_encoding_granule) < (32 * 1024));
-}
-
-void
-setup_variables(isel_context* ctx, nir_shader* nir)
-{
-   switch (nir->info.stage) {
-   case MESA_SHADER_FRAGMENT: {
-      break;
-   }
-   case MESA_SHADER_COMPUTE:
-   case MESA_SHADER_TASK:
-   case MESA_SHADER_RAYGEN:
-   case MESA_SHADER_CLOSEST_HIT:
-   case MESA_SHADER_MISS:
-   case MESA_SHADER_CALLABLE:
-   case MESA_SHADER_INTERSECTION:
-   case MESA_SHADER_ANY_HIT: {
-      ctx->program->config->lds_size =
-         DIV_ROUND_UP(nir->info.shared_size, ctx->program->dev.lds_encoding_granule);
-      break;
-   }
-   case MESA_SHADER_VERTEX: {
-      setup_vs_variables(ctx, nir);
-      break;
-   }
-   case MESA_SHADER_GEOMETRY: {
-      setup_gs_variables(ctx, nir);
-      break;
-   }
-   case MESA_SHADER_TESS_CTRL: {
-      break;
-   }
-   case MESA_SHADER_TESS_EVAL: {
-      setup_tes_variables(ctx, nir);
-      break;
-   }
-   case MESA_SHADER_MESH: {
-      setup_ms_variables(ctx, nir);
-      break;
-   }
-   default: unreachable("Unhandled shader stage.");
-   }
 
    /* Make sure we fit the available LDS space. */
    assert((ctx->program->config->lds_size * ctx->program->dev.lds_encoding_granule) <=
@@ -347,9 +275,6 @@ setup_variables(isel_context* ctx, nir_shader* nir)
 void
 setup_nir(isel_context* ctx, nir_shader* nir)
 {
-   /* the variable setup has to be done before lower_io / CSE */
-   setup_variables(ctx, nir);
-
    nir_convert_to_lcssa(nir, true, false);
    nir_lower_phis_to_scalar(nir, true);
 
@@ -622,6 +547,8 @@ init_context(isel_context* ctx, nir_shader* shader)
                case nir_intrinsic_bindless_image_atomic_xor:
                case nir_intrinsic_bindless_image_atomic_exchange:
                case nir_intrinsic_bindless_image_atomic_comp_swap:
+               case nir_intrinsic_bindless_image_atomic_inc_wrap:
+               case nir_intrinsic_bindless_image_atomic_dec_wrap:
                case nir_intrinsic_bindless_image_atomic_fadd:
                case nir_intrinsic_bindless_image_atomic_fmin:
                case nir_intrinsic_bindless_image_atomic_fmax:
@@ -869,6 +796,7 @@ setup_isel_context(Program* program, unsigned shader_count, struct nir_shader* c
    for (unsigned i = 0; i < shader_count; i++) {
       nir_shader* nir = shaders[i];
       setup_nir(&ctx, nir);
+      setup_lds_size(&ctx, nir);
    }
 
    for (unsigned i = 0; i < shader_count; i++)

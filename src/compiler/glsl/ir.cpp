@@ -574,7 +574,7 @@ ir_expression::ir_expression(int op, ir_rvalue *op0, ir_rvalue *op1)
          base = GLSL_TYPE_UINT64;
          break;
       default:
-         unreachable(!"Invalid base type.");
+         unreachable("Invalid base type.");
       }
 
       this->type = glsl_type::get_instance(base, op0->type->vector_elements, 1);

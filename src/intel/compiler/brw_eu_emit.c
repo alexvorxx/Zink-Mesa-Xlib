@@ -3281,7 +3281,7 @@ gfx12_set_memory_fence_message(struct brw_codegen *p,
          flush_type = LSC_FLUSH_TYPE_EVICT;
       }
 
-      /* Wa_14014435656:
+      /* Wa_14012437816:
        *
        *   "For any fence greater than local scope, always set flush type to
        *    at least invalidate so that fence goes on properly."
@@ -3292,7 +3292,7 @@ gfx12_set_memory_fence_message(struct brw_codegen *p,
        * Here set scope to NONE_6 instead of NONE, which has the same effect
        * as NONE but avoids the downgrade to scope LOCAL.
        */
-      if (intel_device_info_is_dg2(p->devinfo) &&
+      if (intel_needs_workaround(p->devinfo, 14012437816) &&
           scope > LSC_FENCE_LOCAL &&
           flush_type == LSC_FLUSH_TYPE_NONE) {
          flush_type = LSC_FLUSH_TYPE_NONE_6;
@@ -3614,6 +3614,8 @@ void
 brw_float_controls_mode(struct brw_codegen *p,
                         unsigned mode, unsigned mask)
 {
+   assert(p->current->mask_control == BRW_MASK_DISABLE);
+
    /* From the Skylake PRM, Volume 7, page 760:
     *  "Implementation Restriction on Register Access: When the control
     *   register is used as an explicit source and/or destination, hardware

@@ -4073,7 +4073,7 @@ void ac_check_shadowed_regs(enum amd_gfx_level gfx_level, enum radeon_family fam
          unsigned end_reg_offset = reg_offset + count * 4;
          unsigned end_range_offset = ranges[i].offset + ranges[i].size;
 
-         /* Test if the ranges interect. */
+         /* Test if the ranges intersect. */
          if (MAX2(ranges[i].offset, reg_offset) < MIN2(end_range_offset, end_reg_offset)) {
             /* Assertion: A register can be listed only once. */
             assert(!found);

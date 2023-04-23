@@ -2817,7 +2817,7 @@ anv_shader_bin_ref(struct anv_shader_bin *shader)
 static inline void
 anv_shader_bin_unref(struct anv_device *device, struct anv_shader_bin *shader)
 {
-   vk_pipeline_cache_object_unref(&shader->base);
+   vk_pipeline_cache_object_unref(&device->vk, &shader->base);
 }
 
 struct anv_pipeline_executable {

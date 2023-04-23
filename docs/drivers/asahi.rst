@@ -32,7 +32,7 @@ below.
 Vertex shader
 `````````````
 
-A vertex shader (running on the Unified Shader Cores) outputs varyings with the
+A vertex shader (running on the :term:`Unified Shader Cores`) outputs varyings with the
 ``st_var`` instruction. ``st_var`` takes a *vertex output index* and a 32-bit
 value. The maximum number of *vertex outputs* is specified as the "output count"
 of the shader in the "Bind Vertex Pipeline" packet. The value may be interpreted
@@ -295,3 +295,40 @@ with the IR:
 
 The drm-shim implementation for Asahi is located in ``src/asahi/drm-shim``. The
 drm-shim implementation there should be updated as new UABI is added.
+
+Hardware glossary
+-----------------
+
+AGX is a tiled renderer descended from the PowerVR architecture. Some hardware
+concepts used in PowerVR GPUs appear in AGX.
+
+.. glossary:: :sorted:
+
+   VDM
+   Vertex Data Master
+      Dispatches vertex shaders.
+
+   PDM
+   Pixel Data Master
+      Dispatches pixel shaders.
+
+   CDM
+   Compute Data Master
+      Dispatches compute kernels.
+
+   USC
+   Unified Shader Cores
+      A unified shader core is a small cpu that runs shader code. The core is
+      unified because a single ISA is used for vertex, pixel and compute
+      shaders. This differs from older GPUs where the vertex, fragment and
+      compute have separate ISAs for shader stages.
+
+   PPP
+   Primitive Processing Pipeline
+      The Primitive Processing Pipeline is a hardware unit that does primitive
+      assembly. The PPP is between the :term:`VDM` and :term:`ISP`.
+
+   ISP
+   Image Synthesis Processor
+      The Image Synthesis Processor is responsible for the rasterization stage
+      of the rendering pipeline.

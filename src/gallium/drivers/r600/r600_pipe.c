@@ -383,6 +383,7 @@ static int r600_get_param(struct pipe_screen* pscreen, enum pipe_cap param)
 	case PIPE_CAP_SHADER_ARRAY_COMPONENTS:
 	case PIPE_CAP_QUERY_BUFFER_OBJECT:
 	case PIPE_CAP_IMAGE_STORE_FORMATTED:
+	case PIPE_CAP_ALPHA_TO_COVERAGE_DITHER_CONTROL:
 		return family >= CHIP_CEDAR ? 1 : 0;
 	case PIPE_CAP_MAX_TEXTURE_GATHER_COMPONENTS:
 		return family >= CHIP_CEDAR ? 4 : 0;
@@ -420,7 +421,7 @@ static int r600_get_param(struct pipe_screen* pscreen, enum pipe_cap param)
 	case PIPE_CAP_TWO_SIDED_COLOR:
 		return !is_nir_enabled(&rscreen->b);
 	case PIPE_CAP_INT64_DIVMOD:
-		/* it is actually not supported, but the nir lowering handles this corectly wheras
+		/* it is actually not supported, but the nir lowering handles this correctly whereas
 		 * the glsl lowering path seems to not initialize the buildins correctly.
 		 */
 		return is_nir_enabled(&rscreen->b);

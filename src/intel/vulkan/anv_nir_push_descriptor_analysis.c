@@ -24,7 +24,7 @@
 #include "anv_nir.h"
 
 const struct anv_descriptor_set_layout *
-anv_pipeline_layout_get_push_set(const struct anv_pipeline_layout *layout,
+anv_pipeline_layout_get_push_set(const struct anv_pipeline_sets_layout *layout,
                                  uint8_t *set_idx)
 {
    for (unsigned s = 0; s < ARRAY_SIZE(layout->set); s++) {
@@ -51,7 +51,7 @@ anv_pipeline_layout_get_push_set(const struct anv_pipeline_layout *layout,
  */
 uint32_t
 anv_nir_compute_used_push_descriptors(nir_shader *shader,
-                                      const struct anv_pipeline_layout *layout)
+                                      const struct anv_pipeline_sets_layout *layout)
 {
    uint8_t push_set;
    const struct anv_descriptor_set_layout *push_set_layout =
@@ -108,7 +108,7 @@ anv_nir_compute_used_push_descriptors(nir_shader *shader,
  */
 bool
 anv_nir_loads_push_desc_buffer(nir_shader *nir,
-                               const struct anv_pipeline_layout *layout,
+                               const struct anv_pipeline_sets_layout *layout,
                                const struct anv_pipeline_bind_map *bind_map)
 {
    uint8_t push_set;
@@ -157,7 +157,7 @@ anv_nir_loads_push_desc_buffer(nir_shader *nir,
  */
 uint32_t
 anv_nir_push_desc_ubo_fully_promoted(nir_shader *nir,
-                                     const struct anv_pipeline_layout *layout,
+                                     const struct anv_pipeline_sets_layout *layout,
                                      const struct anv_pipeline_bind_map *bind_map)
 {
    uint8_t push_set;

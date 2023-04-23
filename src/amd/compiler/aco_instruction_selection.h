@@ -27,6 +27,8 @@
 
 #include "aco_ir.h"
 
+#include "nir.h"
+
 #include <array>
 #include <unordered_map>
 #include <vector>

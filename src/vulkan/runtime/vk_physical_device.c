@@ -230,7 +230,7 @@ VKAPI_ATTR void VKAPI_CALL
 vk_common_GetPhysicalDeviceSparseImageFormatProperties(VkPhysicalDevice physicalDevice,
                                                        VkFormat format,
                                                        VkImageType type,
-                                                       uint32_t samples,
+                                                       VkSampleCountFlagBits samples,
                                                        VkImageUsageFlags usage,
                                                        VkImageTiling tiling,
                                                        uint32_t *pNumProperties,

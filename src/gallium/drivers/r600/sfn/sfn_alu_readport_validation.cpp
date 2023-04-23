@@ -286,7 +286,7 @@ ReserveReadportVec::visit(const Register& value)
 void
 ReserveReadportVec::visit(const LocalArrayValue& value)
 {
-   // Set the hightest non-sign bit to indicated that we use the
+   // Set the highest non-sign bit to indicated that we use the
    // AR register
    reserve_gpr(0x4000000 | value.sel(), value.chan());
 }

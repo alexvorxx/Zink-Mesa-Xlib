@@ -22,6 +22,7 @@
  */
 
 #include "bvh/bvh.h"
+#include "util/half_float.h"
 #include "amd_family.h"
 #include "radv_private.h"
 #include "vk_acceleration_structure.h"
@@ -540,17 +541,18 @@ rra_transcode_triangle_node(struct rra_transcoding_context *ctx,
 }
 
 static void
-rra_transcode_aabb_node(struct rra_transcoding_context *ctx, const struct radv_bvh_aabb_node *src)
+rra_transcode_aabb_node(struct rra_transcoding_context *ctx, const struct radv_bvh_aabb_node *src,
+                        radv_aabb bounds)
 {
    struct rra_aabb_node *dst = (struct rra_aabb_node *)(ctx->dst + ctx->dst_leaf_offset);
    ctx->dst_leaf_offset += sizeof(struct rra_aabb_node);
 
-   dst->aabb[0][0] = src->aabb.min.x;
-   dst->aabb[0][1] = src->aabb.min.y;
-   dst->aabb[0][2] = src->aabb.min.z;
-   dst->aabb[1][0] = src->aabb.max.x;
-   dst->aabb[1][1] = src->aabb.max.y;
-   dst->aabb[1][2] = src->aabb.max.z;
+   dst->aabb[0][0] = bounds.min.x;
+   dst->aabb[0][1] = bounds.min.y;
+   dst->aabb[0][2] = bounds.min.z;
+   dst->aabb[1][0] = bounds.max.x;
+   dst->aabb[1][1] = bounds.max.y;
+   dst->aabb[1][2] = bounds.max.z;
 
    dst->geometry_id = src->geometry_id_and_flags & 0xfffffff;
    dst->flags = src->geometry_id_and_flags >> 28;
@@ -579,7 +581,7 @@ rra_transcode_instance_node(struct rra_transcoding_context *ctx,
 }
 
 static uint32_t rra_transcode_node(struct rra_transcoding_context *ctx, uint32_t parent_id,
-                                   uint32_t src_id);
+                                   uint32_t src_id, radv_aabb bounds);
 
 static void
 rra_transcode_box16_node(struct rra_transcoding_context *ctx, const struct radv_bvh_box16_node *src)
@@ -596,8 +598,23 @@ rra_transcode_box16_node(struct rra_transcoding_context *ctx, const struct radv_
          continue;
       }
 
+      radv_aabb bounds = {
+         .min =
+            {
+               _mesa_half_to_float(src->coords[i][0][0]),
+               _mesa_half_to_float(src->coords[i][0][1]),
+               _mesa_half_to_float(src->coords[i][0][2]),
+            },
+         .max =
+            {
+               _mesa_half_to_float(src->coords[i][1][0]),
+               _mesa_half_to_float(src->coords[i][1][1]),
+               _mesa_half_to_float(src->coords[i][1][2]),
+            },
+      };
+
       dst->children[i] =
-         rra_transcode_node(ctx, radv_bvh_node_box16 | (dst_offset >> 3), src->children[i]);
+         rra_transcode_node(ctx, radv_bvh_node_box16 | (dst_offset >> 3), src->children[i], bounds);
    }
 }
 
@@ -616,8 +633,8 @@ rra_transcode_box32_node(struct rra_transcoding_context *ctx, const struct radv_
          continue;
       }
 
-      dst->children[i] =
-         rra_transcode_node(ctx, radv_bvh_node_box32 | (dst_offset >> 3), src->children[i]);
+      dst->children[i] = rra_transcode_node(ctx, radv_bvh_node_box32 | (dst_offset >> 3),
+                                            src->children[i], src->coords[i]);
    }
 }
 
@@ -638,7 +655,8 @@ get_geometry_id(const void *node, uint32_t node_type)
 }
 
 static uint32_t
-rra_transcode_node(struct rra_transcoding_context *ctx, uint32_t parent_id, uint32_t src_id)
+rra_transcode_node(struct rra_transcoding_context *ctx, uint32_t parent_id, uint32_t src_id,
+                   radv_aabb bounds)
 {
    uint32_t node_type = src_id & 7;
    uint32_t src_offset = (src_id & (~7u)) << 3;
@@ -658,7 +676,7 @@ rra_transcode_node(struct rra_transcoding_context *ctx, uint32_t parent_id, uint
       if (node_type == radv_bvh_node_triangle)
          rra_transcode_triangle_node(ctx, src_child_node);
       else if (node_type == radv_bvh_node_aabb)
-         rra_transcode_aabb_node(ctx, src_child_node);
+         rra_transcode_aabb_node(ctx, src_child_node, bounds);
       else if (node_type == radv_bvh_node_instance)
          rra_transcode_instance_node(ctx, src_child_node);
    }
@@ -811,7 +829,7 @@ rra_dump_acceleration_structure(struct radv_rra_accel_struct_data *accel_struct,
       .leaf_indices = leaf_indices,
    };
 
-   rra_transcode_node(&ctx, 0xFFFFFFFF, RADV_BVH_ROOT_NODE);
+   rra_transcode_node(&ctx, 0xFFFFFFFF, RADV_BVH_ROOT_NODE, header->aabb);
 
    struct rra_accel_struct_chunk_header chunk_header = {
       .metadata_offset = 0,
@@ -1224,7 +1242,7 @@ radv_rra_dump_trace(VkQueue vk_queue, char *filename)
 
       rra_dump_chunk_description(accel_struct_offsets[i],
                                  sizeof(struct rra_accel_struct_chunk_header), accel_struct_size,
-                                 "RawAccelStruc", RADV_RRA_CHUNK_ID_ACCEL_STRUCT, file);
+                                 "RawAccelStruct", RADV_RRA_CHUNK_ID_ACCEL_STRUCT, file);
    }
 
    uint64_t file_end = (uint64_t)ftell(file);

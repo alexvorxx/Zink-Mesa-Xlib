@@ -872,7 +872,7 @@ void ac_prepare_cube_coords(struct ac_llvm_context *ctx, bool is_deriv, bool is_
        *
        *     where d is the depth of the texture array and layer
        *     comes from the component indicated in the tables below.
-       *     Workaroudn for an issue where the layer is taken from a
+       *     Workaround for an issue where the layer is taken from a
        *     helper invocation which happens to fall on a different
        *     layer due to extrapolation."
        *
@@ -1693,7 +1693,7 @@ LLVMValueRef ac_build_umsb(struct ac_llvm_context *ctx, LLVMValueRef arg, LLVMTy
       zero = ctx->i8_0;
       break;
    default:
-      unreachable(!"invalid bitsize");
+      unreachable("invalid bitsize");
       break;
    }
 
@@ -1972,7 +1972,7 @@ LLVMValueRef ac_build_image_opcode(struct ac_llvm_context *ctx, struct ac_image_
    if (atomic) {
       data_type = LLVMTypeOf(a->data[0]);
    } else if (a->opcode == ac_image_store || a->opcode == ac_image_store_mip) {
-      /* Image stores might have been shrinked using the format. */
+      /* Image stores might have been shrunk using the format. */
       data_type = LLVMTypeOf(a->data[0]);
       dmask = (1 << ac_get_llvm_num_components(a->data[0])) - 1;
    } else {
@@ -2483,7 +2483,7 @@ LLVMValueRef ac_build_bit_count(struct ac_llvm_context *ctx, LLVMValueRef src0)
       result = LLVMBuildZExt(ctx->builder, result, ctx->i32, "");
       break;
    default:
-      unreachable(!"invalid bitsize");
+      unreachable("invalid bitsize");
       break;
    }
 
@@ -2514,7 +2514,7 @@ LLVMValueRef ac_build_bitfield_reverse(struct ac_llvm_context *ctx, LLVMValueRef
       result = LLVMBuildZExt(ctx->builder, result, ctx->i32, "");
       break;
    default:
-      unreachable(!"invalid bitsize");
+      unreachable("invalid bitsize");
       break;
    }
 
@@ -2595,7 +2595,7 @@ LLVMValueRef ac_find_lsb(struct ac_llvm_context *ctx, LLVMTypeRef dst_type, LLVM
       zero = ctx->i8_0;
       break;
    default:
-      unreachable(!"invalid bitsize");
+      unreachable("invalid bitsize");
    }
 
    LLVMValueRef params[2] = {
@@ -3970,65 +3970,6 @@ void ac_export_mrt_z(struct ac_llvm_context *ctx, LLVMValueRef depth, LLVMValueR
    args->enabled_channels = mask;
 }
 
-/* Send GS Alloc Req message from the first wave of the group to SPI.
- * Message payload is:
- * - bits 0..10: vertices in group
- * - bits 12..22: primitives in group
- */
-void ac_build_sendmsg_gs_alloc_req(struct ac_llvm_context *ctx, LLVMValueRef wave_id,
-                                   LLVMValueRef vtx_cnt, LLVMValueRef prim_cnt)
-{
-   LLVMBuilderRef builder = ctx->builder;
-
-   if (wave_id)
-      ac_build_ifcc(ctx, LLVMBuildICmp(builder, LLVMIntEQ, wave_id, ctx->i32_0, ""), 5020);
-
-   /* HW workaround for a GPU hang with 100% culling on GFX10.
-    * We always have to export at least 1 primitive.
-    * Export a degenerate triangle using vertex 0 for all 3 vertices.
-    * 
-    * NOTE: We rely on the caller to set the vertex count also to 0 when the primitive count is 0.
-    */
-   if (ctx->gfx_level == GFX10) {
-      ac_build_ifcc(ctx, LLVMBuildICmp(builder, LLVMIntEQ, ac_get_thread_id(ctx), ctx->i32_0, ""), 5021);
-      LLVMValueRef prim_cnt_is_0 = LLVMBuildICmp(builder, LLVMIntEQ, prim_cnt, ctx->i32_0, "");
-      ac_build_ifcc(ctx, prim_cnt_is_0, 5022);
-      {
-         LLVMValueRef x = LLVMBuildShl(builder, ctx->i32_1, LLVMConstInt(ctx->i32, 12, false), "");
-         x = LLVMBuildOr(builder, x, ctx->i32_1, "");
-         ac_build_sendmsg(ctx, AC_SENDMSG_GS_ALLOC_REQ, x);
-
-         /* The vertex indices are 0, 0, 0. */
-         struct ac_ngg_prim prim = {0};
-         prim.passthrough = ctx->i32_0;
-
-         /* The HW culls primitives with NaN. */
-         struct ac_export_args pos = {0};
-         pos.out[0] = pos.out[1] = pos.out[2] = pos.out[3] = LLVMConstReal(ctx->f32, NAN);
-         pos.target = V_008DFC_SQ_EXP_POS;
-         pos.enabled_channels = 0xf;
-         pos.done = true;
-
-         ac_build_export_prim(ctx, &prim);
-         ac_build_export(ctx, &pos);
-      }
-      ac_build_else(ctx, 5022);
-   }
-
-   LLVMValueRef x = LLVMBuildShl(builder, prim_cnt, LLVMConstInt(ctx->i32, 12, false), "");
-   x = LLVMBuildOr(builder, x, vtx_cnt, "");
-   ac_build_sendmsg(ctx, AC_SENDMSG_GS_ALLOC_REQ, x);
-
-   if (ctx->gfx_level == GFX10) {
-      ac_build_endif(ctx, 5022);
-      ac_build_endif(ctx, 5021);
-   }
-
-   if (wave_id)
-      ac_build_endif(ctx, 5020);
-}
-
-
 LLVMValueRef ac_pack_edgeflags_for_export(struct ac_llvm_context *ctx,
                                           const struct ac_shader_args *args)
 {
@@ -4042,53 +3983,6 @@ LLVMValueRef ac_pack_edgeflags_for_export(struct ac_llvm_context *ctx,
                                    LLVMConstInt(ctx->i32, 0x700, 0), "");
    tmp = LLVMBuildMul(ctx->builder, tmp, LLVMConstInt(ctx->i32, 0x80402u, 0), "");
    return LLVMBuildAnd(ctx->builder, tmp, LLVMConstInt(ctx->i32, 0x20080200, 0), "");
-}
-
-LLVMValueRef ac_pack_prim_export(struct ac_llvm_context *ctx, const struct ac_ngg_prim *prim)
-{
-   /* The prim export format is:
-    *  - bits 0..8: index 0
-    *  - bit 9: edge flag 0
-    *  - bits 10..18: index 1
-    *  - bit 19: edge flag 1
-    *  - bits 20..28: index 2
-    *  - bit 29: edge flag 2
-    *  - bit 31: null primitive (skip)
-    */
-   LLVMBuilderRef builder = ctx->builder;
-   LLVMValueRef tmp = LLVMBuildZExt(builder, prim->isnull, ctx->i32, "");
-   LLVMValueRef result = LLVMBuildShl(builder, tmp, LLVMConstInt(ctx->i32, 31, false), "");
-   result = LLVMBuildOr(ctx->builder, result, prim->edgeflags, "");
-
-   for (unsigned i = 0; i < prim->num_vertices; ++i) {
-      tmp = LLVMBuildShl(builder, prim->index[i], LLVMConstInt(ctx->i32, 10 * i, false), "");
-      result = LLVMBuildOr(builder, result, tmp, "");
-   }
-   return result;
-}
-
-void ac_build_export_prim(struct ac_llvm_context *ctx, const struct ac_ngg_prim *prim)
-{
-   struct ac_export_args args;
-
-   if (prim->passthrough) {
-      args.out[0] = prim->passthrough;
-   } else {
-      args.out[0] = ac_pack_prim_export(ctx, prim);
-   }
-
-   args.out[0] = LLVMBuildBitCast(ctx->builder, args.out[0], ctx->f32, "");
-   args.out[1] = LLVMGetUndef(ctx->f32);
-   args.out[2] = LLVMGetUndef(ctx->f32);
-   args.out[3] = LLVMGetUndef(ctx->f32);
-
-   args.target = V_008DFC_SQ_EXP_PRIM;
-   args.enabled_channels = 1;
-   args.done = true;
-   args.valid_mask = false;
-   args.compr = false;
-
-   ac_build_export(ctx, &args);
 }
 
 static LLVMTypeRef arg_llvm_type(enum ac_arg_type type, unsigned size, struct ac_llvm_context *ctx)

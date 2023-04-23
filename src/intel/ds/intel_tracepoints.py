@@ -63,10 +63,11 @@ def define_tracepoints(args):
                    end_of_pipe=end_pipelined,
                    need_cs_param=need_cs_param)
 
-    # Frame tracepoints, only for Iris
+    # Frame tracepoints
     begin_end_tp('frame',
                  tp_args=[Arg(type='uint32_t', var='frame', c_format='%u'),],
-                 end_pipelined=False)
+                 end_pipelined=False,
+                 need_cs_param=True)
 
     # Annotations for Queue(Begin|End)DebugUtilsLabelEXT
     begin_end_tp('queue_annotation',

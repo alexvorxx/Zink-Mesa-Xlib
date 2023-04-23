@@ -135,7 +135,7 @@ if gallium_drivers.contains('auto')
     elif ['arm', 'aarch64'].contains(host_machine.cpu_family())
       gallium_drivers = [
         'v3d', 'vc4', 'freedreno', 'etnaviv', 'nouveau', 'svga',
-        'tegra', 'virgl', 'lima', 'panfrost', 'swrast'
+        'tegra', 'virgl', 'lima', 'panfrost', 'swrast', 'iris'
       ]
     elif ['mips', 'mips64', 'riscv32', 'riscv64'].contains(host_machine.cpu_family())
       gallium_drivers = [
@@ -213,7 +213,7 @@ if _vulkan_drivers.contains('auto')
     if host_machine.cpu_family().startswith('x86')
       _vulkan_drivers = ['amd', 'intel', 'intel_hasvk', 'swrast']
     elif ['arm', 'aarch64'].contains(host_machine.cpu_family())
-      _vulkan_drivers = ['swrast']
+      _vulkan_drivers = ['swrast', 'intel']
     elif ['mips', 'mips64', 'riscv32', 'riscv64'].contains(host_machine.cpu_family())
       _vulkan_drivers = ['amd', 'swrast']
     elif ['loongarch64'].contains(host_machine.cpu_family())
@@ -245,7 +245,14 @@ with_microsoft_vk = _vulkan_drivers.contains('microsoft-experimental')
 with_any_vk = _vulkan_drivers.length() != 0
 
 with_any_broadcom = with_gallium_vc4 or with_gallium_v3d or with_broadcom_vk
-with_any_intel = with_intel_vk or with_intel_hasvk or with_gallium_iris or with_gallium_crocus or with_intel_tools
+with_any_intel = [
+  with_gallium_crocus,
+  with_gallium_i915,
+  with_gallium_iris,
+  with_intel_hasvk,
+  with_intel_tools,
+  with_intel_vk,
+].contains(true)
 
 if with_swrast_vk and not with_gallium_softpipe
   error('swrast vulkan requires gallium swrast')
@@ -502,7 +509,7 @@ if with_gallium_d3d12 or with_microsoft_clc or with_microsoft_vk
   dep_dxheaders = dependency('directx-headers', required : false)
   if not dep_dxheaders.found()
     dep_dxheaders = dependency('DirectX-Headers',
-      version : '>= 1.606.4',
+      version : '>= 1.610.0',
       fallback : ['DirectX-Headers', 'dep_dxheaders'],
       required : with_gallium_d3d12 or with_microsoft_vk
     )
@@ -841,7 +848,7 @@ has_mako = run_command(
   '''
 from distutils.version import StrictVersion
 import mako
-assert StrictVersion(mako.__version__) > StrictVersion("0.8.0")
+assert StrictVersion(mako.__version__) >= StrictVersion("0.8.0")
   ''', check: false)
 if has_mako.returncode() != 0
   error('Python (3.x) mako module >= 0.8.0 required to build mesa.')

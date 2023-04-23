@@ -644,7 +644,7 @@ si_emit_graphics(struct radv_device *device, struct radeon_cmdbuf *cs)
 void
 cik_create_gfx_config(struct radv_device *device)
 {
-   struct radeon_cmdbuf *cs = device->ws->cs_create(device->ws, AMD_IP_GFX);
+   struct radeon_cmdbuf *cs = device->ws->cs_create(device->ws, AMD_IP_GFX, false);
    if (!cs)
       return;
 
@@ -1324,13 +1324,16 @@ gfx10_cs_emit_cache_flush(struct radeon_cmdbuf *cs, enum amd_gfx_level gfx_level
 }
 
 void
-si_cs_emit_cache_flush(struct radeon_cmdbuf *cs, enum amd_gfx_level gfx_level, uint32_t *flush_cnt,
-                       uint64_t flush_va, bool is_mec, enum radv_cmd_flush_bits flush_bits,
+si_cs_emit_cache_flush(struct radeon_winsys *ws, struct radeon_cmdbuf *cs,
+                       enum amd_gfx_level gfx_level, uint32_t *flush_cnt, uint64_t flush_va,
+                       bool is_mec, enum radv_cmd_flush_bits flush_bits,
                        enum rgp_flush_bits *sqtt_flush_bits, uint64_t gfx9_eop_bug_va)
 {
    unsigned cp_coher_cntl = 0;
    uint32_t flush_cb_db =
       flush_bits & (RADV_CMD_FLAG_FLUSH_AND_INV_CB | RADV_CMD_FLAG_FLUSH_AND_INV_DB);
+
+   radeon_check_space(ws, cs, 128);
 
    if (gfx_level >= GFX10) {
       /* GFX10 cache flush handling is quite different. */
@@ -1536,9 +1539,8 @@ si_emit_cache_flush(struct radv_cmd_buffer *cmd_buffer)
       return;
    }
 
-   radeon_check_space(cmd_buffer->device->ws, cmd_buffer->cs, 128);
-
-   si_cs_emit_cache_flush(cmd_buffer->cs, cmd_buffer->device->physical_device->rad_info.gfx_level,
+   si_cs_emit_cache_flush(cmd_buffer->device->ws, cmd_buffer->cs,
+                          cmd_buffer->device->physical_device->rad_info.gfx_level,
                           &cmd_buffer->gfx9_fence_idx, cmd_buffer->gfx9_fence_va,
                           radv_cmd_buffer_uses_mec(cmd_buffer), cmd_buffer->state.flush_bits,
                           &cmd_buffer->state.sqtt_flush_bits, cmd_buffer->gfx9_eop_bug_va);
@@ -1570,6 +1572,8 @@ si_emit_set_predication_state(struct radv_cmd_buffer *cmd_buffer, bool draw_visi
                               unsigned pred_op, uint64_t va)
 {
    uint32_t op = 0;
+
+   radeon_check_space(cmd_buffer->device->ws, cmd_buffer->cs, 4);
 
    if (va) {
       assert(pred_op == PREDICATION_OP_BOOL32 || pred_op == PREDICATION_OP_BOOL64);

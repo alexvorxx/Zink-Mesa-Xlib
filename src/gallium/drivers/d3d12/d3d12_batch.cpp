@@ -218,6 +218,9 @@ d3d12_start_batch(struct d3d12_context *ctx, struct d3d12_batch *batch)
          batch->has_errors = true;
          return;
       }
+      if (FAILED(ctx->cmdlist->QueryInterface(IID_PPV_ARGS(&ctx->cmdlist8)))) {
+         ctx->cmdlist8 = nullptr;
+      }
    }
 
    ctx->cmdlist->SetDescriptorHeaps(2, heaps);

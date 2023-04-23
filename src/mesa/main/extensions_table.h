@@ -260,6 +260,7 @@ EXT(EXT_gpu_program_parameters              , EXT_gpu_program_parameters        
  * Additionally, EXT_gpu_shader4 would reintroduce functions that were removed in GLSL 1.40. */
 EXT(EXT_gpu_shader4                         , EXT_gpu_shader4                        , GLL,  x ,  x ,  x , 2006)
 EXT(EXT_gpu_shader5                         , ARB_gpu_shader5                        ,  x ,  x ,  x ,  31, 2014)
+EXT(EXT_instanced_arrays                    , ARB_instanced_arrays                   ,  x ,  x ,  x , ES2, 2012)
 EXT(EXT_map_buffer_range                    , ARB_map_buffer_range                   ,  x ,  x , ES1, ES2, 2012)
 EXT(EXT_memory_object                       , EXT_memory_object                      , GLL, GLC,  x , ES2, 2017)
 EXT(EXT_memory_object_fd                    , EXT_memory_object_fd                   , GLL, GLC,  x , ES2, 2017)
@@ -421,7 +422,7 @@ EXT(NV_shader_atomic_float                  , NV_shader_atomic_float            
 EXT(NV_shader_atomic_int64                  , NV_shader_atomic_int64                 , GLL, GLC,  x ,  x , 2014)
 EXT(NV_shader_noperspective_interpolation   , EXT_gpu_shader4                        ,  x ,  x ,  x ,  30, 2014)
 EXT(NV_texgen_reflection                    , dummy_true                             , GLL,  x ,  x ,  x , 1999)
-EXT(NV_texture_barrier                      , NV_texture_barrier                     , GLL, GLC,  x , ES2, 2009)
+EXT(NV_texture_barrier                      , NV_texture_barrier                     , GLL, GLC,  x ,  x , 2009)
 EXT(NV_texture_env_combine4                 , NV_texture_env_combine4                , GLL,  x ,  x ,  x , 1999)
 EXT(NV_texture_rectangle                    , NV_texture_rectangle                   , GLL,  x ,  x ,  x , 2000)
 EXT(NV_vdpau_interop                        , NV_vdpau_interop                       , GLL, GLC,  x ,  x , 2010)

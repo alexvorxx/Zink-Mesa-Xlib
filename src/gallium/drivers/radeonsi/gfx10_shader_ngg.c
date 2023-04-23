@@ -108,7 +108,7 @@ bool gfx10_ngg_calculate_subgroup_info(struct si_shader *shader)
 
    /* All these are in dwords. The maximum is 16K dwords (64KB) of LDS per workgroup. */
    const unsigned scratch_lds_size = gfx10_ngg_get_scratch_dw_size(shader);
-   /* Scrach is at last of LDS space and 2 dwords aligned, so it may cost more for alignment. */
+   /* Scratch is at last of LDS space and 2 dwords aligned, so it may cost more for alignment. */
    const unsigned max_lds_size = 16 * 1024 - ALIGN(scratch_lds_size, 2);
    const unsigned target_lds_size = max_lds_size;
    unsigned esvert_lds_size = 0;

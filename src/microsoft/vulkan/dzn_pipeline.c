@@ -93,12 +93,13 @@ dzn_cached_blob_serialize(struct vk_pipeline_cache_object *object,
 }
 
 static void
-dzn_cached_blob_destroy(struct vk_pipeline_cache_object *object)
+dzn_cached_blob_destroy(struct vk_device *device,
+                        struct vk_pipeline_cache_object *object)
 {
    struct dzn_cached_blob *shader =
       container_of(object, struct dzn_cached_blob, base);
 
-   vk_free(&shader->base.device->alloc, shader);
+   vk_free(&device->alloc, shader);
 }
 
 static struct vk_pipeline_cache_object *
@@ -108,17 +109,15 @@ dzn_cached_blob_create(struct vk_device *device,
                        size_t data_size);
 
 static struct vk_pipeline_cache_object *
-dzn_cached_blob_deserialize(struct vk_device *device,
-                                   const void *key_data,
-                                   size_t key_size,
-                                   struct blob_reader *blob)
+dzn_cached_blob_deserialize(struct vk_pipeline_cache *cache,
+                            const void *key_data, size_t key_size,
+                            struct blob_reader *blob)
 {
    size_t data_size = blob->end - blob->current;
    assert(key_size == SHA1_DIGEST_LENGTH);
 
-   return dzn_cached_blob_create(device, key_data,
-                                 blob_read_bytes(blob, data_size),
-                                 data_size);
+   return dzn_cached_blob_create(cache->base.device, key_data,
+                                 blob_read_bytes(blob, data_size), data_size);
 }
 
 const struct vk_pipeline_cache_object_ops dzn_cached_blob_ops = {
@@ -544,7 +543,7 @@ dzn_pipeline_cache_lookup_dxil_shader(struct vk_pipeline_cache *cache,
    *stage = info->stage;
 
 out:
-   vk_pipeline_cache_object_unref(cache_obj);
+   vk_pipeline_cache_object_unref(cache->base.device, cache_obj);
    return ret;
 }
 
@@ -571,7 +570,7 @@ dzn_pipeline_cache_add_dxil_shader(struct vk_pipeline_cache *cache,
    memcpy(info->data, bc->pShaderBytecode, bc->BytecodeLength);
 
    cache_obj = vk_pipeline_cache_add_object(cache, cache_obj);
-   vk_pipeline_cache_object_unref(cache_obj);
+   vk_pipeline_cache_object_unref(cache->base.device, cache_obj);
 }
 
 struct dzn_cached_gfx_pipeline_header {
@@ -647,7 +646,7 @@ dzn_pipeline_cache_lookup_gfx_pipeline(struct dzn_graphics_pipeline *pipeline,
 
    *cache_hit = true;
 
-   vk_pipeline_cache_object_unref(cache_obj);
+   vk_pipeline_cache_object_unref(cache->base.device, cache_obj);
    return VK_SUCCESS;
 }
 
@@ -702,7 +701,7 @@ dzn_pipeline_cache_add_gfx_pipeline(struct dzn_graphics_pipeline *pipeline,
    }
 
    cache_obj = vk_pipeline_cache_add_object(cache, cache_obj);
-   vk_pipeline_cache_object_unref(cache_obj);
+   vk_pipeline_cache_object_unref(cache->base.device, cache_obj);
 }
 
 static void
@@ -1702,6 +1701,7 @@ dzn_pipeline_init(struct dzn_pipeline *pipeline,
 
    STATIC_ASSERT(sizeof(layout->sets) == sizeof(pipeline->sets));
    memcpy(pipeline->sets, layout->sets, sizeof(pipeline->sets));
+   pipeline->set_count = layout->set_count;
    pipeline->dynamic_buffer_count = layout->dynamic_buffer_count;
    vk_object_base_init(&device->vk, &pipeline->base, VK_OBJECT_TYPE_PIPELINE);
 
@@ -2333,7 +2333,7 @@ dzn_pipeline_cache_lookup_compute_pipeline(struct vk_pipeline_cache *cache,
    *cache_hit = true;
 
 out:
-   vk_pipeline_cache_object_unref(cache_obj);
+   vk_pipeline_cache_object_unref(cache->base.device, cache_obj);
    return ret;
 }
 
@@ -2353,7 +2353,7 @@ dzn_pipeline_cache_add_compute_pipeline(struct vk_pipeline_cache *cache,
    memcpy((void *)cached_blob->data, dxil_hash, SHA1_DIGEST_LENGTH);
 
    cache_obj = vk_pipeline_cache_add_object(cache, cache_obj);
-   vk_pipeline_cache_object_unref(cache_obj);
+   vk_pipeline_cache_object_unref(cache->base.device, cache_obj);
 }
 
 static VkResult

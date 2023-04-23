@@ -256,6 +256,11 @@ static struct pipe_surface *
 wrap_surface(struct pipe_context *pctx, const struct pipe_surface *psurf)
 {
    struct zink_ctx_surface *csurf = CALLOC_STRUCT(zink_ctx_surface);
+   if (!csurf) {
+      mesa_loge("ZINK: failed to allocate csurf!");
+      return NULL;
+   }
+      
    csurf->base = *psurf;
    pipe_reference_init(&csurf->base.reference, 1);
    csurf->surf = (struct zink_surface*)psurf;
@@ -493,6 +498,10 @@ zink_surface_swapchain_update(struct zink_context *ctx, struct zink_surface *sur
       free(surface->swapchain);
       surface->swapchain_size = cdt->swapchain->num_images;
       surface->swapchain = calloc(surface->swapchain_size, sizeof(VkImageView));
+      if (!surface->swapchain) {
+         mesa_loge("ZINK: failed to allocate surface->swapchain!");
+         return;
+      }
       surface->base.width = res->base.b.width0;
       surface->base.height = res->base.b.height0;
       init_surface_info(surface, res, &surface->ivci);

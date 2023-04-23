@@ -39,7 +39,7 @@
 struct apply_pipeline_layout_state {
    const struct anv_physical_device *pdevice;
 
-   const struct anv_pipeline_layout *layout;
+   const struct anv_pipeline_sets_layout *layout;
    bool add_bounds_checks;
    nir_address_format desc_addr_format;
    nir_address_format ssbo_addr_format;
@@ -50,6 +50,7 @@ struct apply_pipeline_layout_state {
 
    bool uses_constants;
    bool has_dynamic_buffers;
+   bool has_independent_sets;
    uint8_t constants_offset;
    struct {
       bool desc_buffer_used;
@@ -88,6 +89,9 @@ add_binding(struct apply_pipeline_layout_state *state,
 {
    const struct anv_descriptor_set_binding_layout *bind_layout =
       &state->layout->set[set].layout->binding[binding];
+
+   assert(set < state->layout->num_sets);
+   assert(binding < state->layout->set[set].layout->binding_count);
 
    if (state->set[set].use_count[binding] < UINT8_MAX)
       state->set[set].use_count[binding]++;
@@ -331,16 +335,30 @@ build_res_index(nir_builder *b, uint32_t set, uint32_t binding,
       }
 
       assert(bind_layout->dynamic_offset_index < MAX_DYNAMIC_BUFFERS);
-      uint32_t dynamic_offset_index = 0xff; /* No dynamic offset */
+      nir_ssa_def *dynamic_offset_index;
       if (bind_layout->dynamic_offset_index >= 0) {
-         dynamic_offset_index =
-            state->layout->set[set].dynamic_offset_start +
-            bind_layout->dynamic_offset_index;
+         if (state->has_independent_sets) {
+            nir_ssa_def *dynamic_offset_start =
+               nir_load_desc_set_dynamic_index_intel(b, nir_imm_int(b, set));
+            dynamic_offset_index =
+               nir_iadd_imm(b, dynamic_offset_start,
+                            bind_layout->dynamic_offset_index);
+         } else {
+            dynamic_offset_index =
+               nir_imm_int(b,
+                           state->layout->set[set].dynamic_offset_start +
+                           bind_layout->dynamic_offset_index);
+         }
+      } else {
+         dynamic_offset_index = nir_imm_int(b, 0xff); /* No dynamic offset */
       }
 
-      const uint32_t packed = (bind_layout->descriptor_stride << 16 ) | (set_idx << 8) | dynamic_offset_index;
+      nir_ssa_def *packed =
+         nir_ior_imm(b,
+                     dynamic_offset_index,
+                     (bind_layout->descriptor_stride << 16 ) | (set_idx << 8));
 
-      return nir_vec4(b, nir_imm_int(b, packed),
+      return nir_vec4(b, packed,
                          nir_imm_int(b, bind_layout->descriptor_offset),
                          nir_imm_int(b, array_size - 1),
                          array_index);
@@ -965,11 +983,8 @@ lower_image_intrinsic(nir_builder *b, nir_intrinsic_instr *intrin,
    b->cursor = nir_before_instr(&intrin->instr);
 
    if (binding_offset > MAX_BINDING_TABLE_SIZE) {
-      const unsigned desc_comp =
-         image_binding_needs_lowered_surface(var) ? 1 : 0;
-      nir_ssa_def *desc =
-         build_load_var_deref_descriptor_mem(b, deref, 0, 2, 32, state);
-      nir_ssa_def *handle = nir_channel(b, desc, desc_comp);
+      nir_ssa_def *handle =
+         build_load_var_deref_descriptor_mem(b, deref, 0, 1, 32, state);
       nir_rewrite_image_intrinsic(intrin, handle, true);
    } else {
       unsigned array_size =
@@ -1278,14 +1293,48 @@ compare_binding_infos(const void *_a, const void *_b)
    return a->binding - b->binding;
 }
 
+#ifndef NDEBUG
+static void
+anv_validate_pipeline_layout(const struct anv_pipeline_sets_layout *layout,
+                             nir_shader *shader)
+{
+   nir_foreach_function(function, shader) {
+      if (!function->impl)
+         continue;
+
+      nir_foreach_block(block, function->impl) {
+         nir_foreach_instr(instr, block) {
+            if (instr->type != nir_instr_type_intrinsic)
+               continue;
+
+            nir_intrinsic_instr *intrin = nir_instr_as_intrinsic(instr);
+            if (intrin->intrinsic != nir_intrinsic_vulkan_resource_index)
+               continue;
+
+            unsigned set = nir_intrinsic_desc_set(intrin);
+            assert(layout->set[set].layout);
+         }
+      }
+   }
+}
+#endif
+
 void
 anv_nir_apply_pipeline_layout(nir_shader *shader,
                               const struct anv_physical_device *pdevice,
                               bool robust_buffer_access,
-                              const struct anv_pipeline_layout *layout,
+                              bool independent_sets,
+                              const struct anv_pipeline_sets_layout *layout,
                               struct anv_pipeline_bind_map *map)
 {
    void *mem_ctx = ralloc_context(NULL);
+
+#ifndef NDEBUG
+   /* We should not have have any reference to a descriptor set that is not
+    * given through the pipeline layout (layout->set[set].layout = NULL).
+    */
+   anv_validate_pipeline_layout(layout, shader);
+#endif
 
    struct apply_pipeline_layout_state state = {
       .pdevice = pdevice,
@@ -1298,9 +1347,13 @@ anv_nir_apply_pipeline_layout(nir_shader *shader,
       .ssbo_addr_format = anv_nir_ssbo_addr_format(pdevice, robust_buffer_access),
       .ubo_addr_format = anv_nir_ubo_addr_format(pdevice, robust_buffer_access),
       .lowered_instrs = _mesa_pointer_set_create(mem_ctx),
+      .has_independent_sets = independent_sets,
    };
 
    for (unsigned s = 0; s < layout->num_sets; s++) {
+      if (!layout->set[s].layout)
+         continue;
+
       const unsigned count = layout->set[s].layout->binding_count;
       state.set[s].use_count = rzalloc_array(mem_ctx, uint8_t, count);
       state.set[s].surface_offsets = rzalloc_array(mem_ctx, uint8_t, count);
@@ -1328,6 +1381,9 @@ anv_nir_apply_pipeline_layout(nir_shader *shader,
    unsigned used_binding_count = 0;
    for (uint32_t set = 0; set < layout->num_sets; set++) {
       struct anv_descriptor_set_layout *set_layout = layout->set[set].layout;
+      if (!set_layout)
+         continue;
+
       for (unsigned b = 0; b < set_layout->binding_count; b++) {
          if (state.set[set].use_count[b] == 0)
             continue;
@@ -1341,6 +1397,9 @@ anv_nir_apply_pipeline_layout(nir_shader *shader,
    used_binding_count = 0;
    for (uint32_t set = 0; set < layout->num_sets; set++) {
       const struct anv_descriptor_set_layout *set_layout = layout->set[set].layout;
+      if (!set_layout)
+         continue;
+
       for (unsigned b = 0; b < set_layout->binding_count; b++) {
          if (state.set[set].use_count[b] == 0)
             continue;
@@ -1380,6 +1439,7 @@ anv_nir_apply_pipeline_layout(nir_shader *shader,
 
    for (unsigned i = 0; i < used_binding_count; i++) {
       unsigned set = infos[i].set, b = infos[i].binding;
+      assert(layout->set[set].layout);
       const struct anv_descriptor_set_binding_layout *binding =
             &layout->set[set].layout->binding[b];
 
@@ -1421,7 +1481,6 @@ anv_nir_apply_pipeline_layout(nir_shader *shader,
                         .binding = b,
                         .index = binding->descriptor_index + i,
                         .dynamic_offset_index =
-                           layout->set[set].dynamic_offset_start +
                            binding->dynamic_offset_index + i,
                      };
                }
@@ -1480,9 +1539,6 @@ anv_nir_apply_pipeline_layout(nir_shader *shader,
       for (unsigned i = 0; i < array_size; i++) {
          assert(pipe_binding[i].set == set);
          assert(pipe_binding[i].index == bind_layout->descriptor_index + i);
-
-         pipe_binding[i].lowered_storage_surface =
-            image_binding_needs_lowered_surface(var);
       }
    }
 

@@ -184,7 +184,6 @@ visit_intrinsic(nir_shader *shader, nir_intrinsic_instr *instr)
    case nir_intrinsic_load_tess_level_outer_default:
    case nir_intrinsic_load_scalar_arg_amd:
    case nir_intrinsic_load_smem_amd:
-   case nir_intrinsic_load_smem_buffer_amd:
    case nir_intrinsic_load_rt_dynamic_callable_stack_base_amd:
    case nir_intrinsic_load_global_const_block_intel:
    case nir_intrinsic_load_reloc_const_intel:
@@ -208,6 +207,7 @@ visit_intrinsic(nir_shader *shader, nir_intrinsic_instr *instr)
    case nir_intrinsic_load_alpha_reference_amd:
    case nir_intrinsic_load_ssbo_uniform_block_intel:
    case nir_intrinsic_load_shared_uniform_block_intel:
+   case nir_intrinsic_load_barycentric_optimize_amd:
       is_divergent = false;
       break;
 
@@ -433,7 +433,8 @@ visit_intrinsic(nir_shader *shader, nir_intrinsic_instr *instr)
    case nir_intrinsic_image_load_raw_intel:
    case nir_intrinsic_get_ubo_size:
    case nir_intrinsic_load_ssbo_address:
-   case nir_intrinsic_load_desc_set_address_intel: {
+   case nir_intrinsic_load_desc_set_address_intel:
+   case nir_intrinsic_load_desc_set_dynamic_index_intel: {
       unsigned num_srcs = nir_intrinsic_infos[instr->intrinsic].num_srcs;
       for (unsigned i = 0; i < num_srcs; i++) {
          if (instr->src[i].ssa->divergent) {

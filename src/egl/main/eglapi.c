@@ -94,6 +94,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include "c11/threads.h"
+#include "mapi/glapi/glapi.h"
 #include "util/u_debug.h"
 #include "util/macros.h"
 #include "util/perf/cpu_trace.h"
@@ -2885,8 +2886,8 @@ eglGetProcAddress(const char *procname)
          ret = entrypoint->function;
    }
 
-   if (!ret && _eglDriver.GetProcAddress)
-      ret = _eglDriver.GetProcAddress(procname);
+   if (!ret)
+      ret = _glapi_get_proc_address(procname);
 
    RETURN_EGL_SUCCESS(NULL, ret);
 }

@@ -58,13 +58,11 @@ struct vn_queue_submission {
    };
    VkFence fence_handle;
 
-   /* TODO remove synchronous when asyncRoundtrip is required */
-   bool synchronous;
    bool has_feedback_fence;
    bool has_feedback_semaphore;
    const struct vn_device_memory *wsi_mem;
    uint32_t sem_cmd_buffer_count;
-   struct vn_sync_payload_external external;
+   struct vn_sync_payload_external external_payload;
 
    /* Temporary storage allocation for submission
     * A single alloc for storage is performed and the offsets inside
@@ -231,10 +229,6 @@ vn_queue_submission_fix_batch_semaphores(struct vn_queue_submission *submit,
    for (uint32_t i = 0; i < signal_count; i++) {
       struct vn_semaphore *sem = vn_semaphore_from_handle(
          vn_get_signal_semaphore(submit, batch_index, i));
-
-      /* see vn_queue_submission_prepare */
-      submit->synchronous |= sem->is_external;
-
       if (sem->feedback.slot) {
          batch_has_sem_feedback = true;
          submit->sem_cmd_buffer_count++;
@@ -254,9 +248,11 @@ vn_queue_submission_fix_batch_semaphores(struct vn_queue_submission *submit,
 static VkResult
 vn_queue_submission_prepare(struct vn_queue_submission *submit)
 {
+   struct vn_queue *queue = vn_queue_from_handle(submit->queue_handle);
    struct vn_fence *fence = vn_fence_from_handle(submit->fence_handle);
    const bool has_external_fence = fence && fence->is_external;
 
+   submit->external_payload.ring_idx = queue->ring_idx;
    submit->has_feedback_fence = fence && fence->feedback.slot;
    assert(!has_external_fence || !submit->has_feedback_fence);
 
@@ -269,21 +265,6 @@ vn_queue_submission_prepare(struct vn_queue_submission *submit)
          assert(!submit->wsi_mem->base_memory && submit->wsi_mem->base_bo);
       }
    }
-
-   /* To ensure external components waiting on the correct fence payload,
-    * below sync primitives must be installed after the submission:
-    * - explicit fencing: sync file export
-    * - implicit fencing: dma-fence attached to the wsi bo
-    *
-    * We enforce above via an asynchronous vkQueueSubmit(2) via ring followed
-    * by an asynchronous renderer submission to wait for the ring submission:
-    * - struct wsi_memory_signal_submit_info
-    * - fence is an external fence
-    * - has an external signal semaphore
-    */
-   struct vn_queue *queue = vn_queue_from_handle(submit->queue_handle);
-   submit->external.ring_idx = queue->ring_idx;
-   submit->synchronous = has_external_fence || submit->wsi_mem;
 
    for (uint32_t i = 0; i < submit->batch_count; i++) {
       VkResult result = vn_queue_submission_fix_batch_semaphores(submit, i);
@@ -800,15 +781,16 @@ vn_queue_wsi_present(struct vn_queue_submission *submit)
 
    if (dev->instance->renderer->info.has_implicit_fencing) {
       struct vn_renderer_submit_batch batch = {
-         .ring_idx = submit->external.ring_idx,
+         .ring_idx = submit->external_payload.ring_idx,
       };
 
       uint32_t local_data[8];
       struct vn_cs_encoder local_enc =
          VN_CS_ENCODER_INITIALIZER_LOCAL(local_data, sizeof(local_data));
-      if (submit->external.ring_seqno_valid) {
-         vn_encode_vkWaitRingSeqno100000MESA(&local_enc, 0, instance->ring.id,
-                                             submit->external.ring_seqno);
+      if (submit->external_payload.ring_seqno_valid) {
+         vn_encode_vkWaitRingSeqno100000MESA(
+            &local_enc, 0, instance->ring.id,
+            submit->external_payload.ring_seqno);
          batch.cs_data = local_data;
          batch.cs_size = vn_cs_encoder_get_len(&local_enc);
       }
@@ -840,6 +822,17 @@ vn_queue_submit(struct vn_queue_submission *submit)
    struct vn_instance *instance = dev->instance;
    VkResult result;
 
+   /* To ensure external components waiting on the correct fence payload,
+    * below sync primitives must be installed after the submission:
+    * - explicit fencing: sync file export
+    * - implicit fencing: dma-fence attached to the wsi bo
+    *
+    * We enforce above via an asynchronous vkQueueSubmit(2) via ring followed
+    * by an asynchronous renderer submission to wait for the ring submission:
+    * - struct wsi_memory_signal_submit_info
+    * - fence is an external fence
+    * - has an external signal semaphore
+    */
    result = vn_queue_submission_prepare_submit(submit);
    if (result != VK_SUCCESS)
       return vn_error(dev->instance, result);
@@ -848,8 +841,7 @@ vn_queue_submit(struct vn_queue_submission *submit)
    if (!submit->batch_count && submit->fence_handle == VK_NULL_HANDLE)
       return VK_SUCCESS;
 
-   if ((!instance->experimental.asyncRoundtrip && submit->synchronous) ||
-       VN_PERF(NO_ASYNC_QUEUE_SUBMIT)) {
+   if (VN_PERF(NO_ASYNC_QUEUE_SUBMIT)) {
       if (submit->batch_type == VK_STRUCTURE_TYPE_SUBMIT_INFO_2) {
          result = vn_call_vkQueueSubmit2(
             instance, submit->queue_handle, submit->batch_count,
@@ -879,8 +871,8 @@ vn_queue_submit(struct vn_queue_submission *submit)
          vn_queue_submission_cleanup(submit);
          return vn_error(dev->instance, VK_ERROR_DEVICE_LOST);
       }
-      submit->external.ring_seqno_valid = true;
-      submit->external.ring_seqno = instance_submit.ring_seqno;
+      submit->external_payload.ring_seqno_valid = true;
+      submit->external_payload.ring_seqno = instance_submit.ring_seqno;
    }
 
    /* If external fence, track the submission's ring_idx to facilitate
@@ -892,7 +884,7 @@ vn_queue_submit(struct vn_queue_submission *submit)
    struct vn_fence *fence = vn_fence_from_handle(submit->fence_handle);
    if (fence && fence->is_external) {
       assert(fence->payload->type == VN_SYNC_TYPE_DEVICE_ONLY);
-      fence->external = submit->external;
+      fence->external_payload = submit->external_payload;
    }
 
    for (uint32_t i = 0; i < submit->batch_count; i++) {
@@ -903,7 +895,7 @@ vn_queue_submit(struct vn_queue_submission *submit)
             vn_semaphore_from_handle(vn_get_signal_semaphore(submit, i, j));
          if (sem->is_external) {
             assert(sem->payload->type == VN_SYNC_TYPE_DEVICE_ONLY);
-            sem->external = submit->external;
+            sem->external_payload = submit->external_payload;
          }
       }
    }
@@ -1356,7 +1348,7 @@ vn_WaitForFences(VkDevice device,
 
 static VkResult
 vn_create_sync_file(struct vn_device *dev,
-                    struct vn_sync_payload_external *payload,
+                    struct vn_sync_payload_external *external_payload,
                     int *out_fd)
 {
    struct vn_renderer_sync *sync;
@@ -1369,15 +1361,15 @@ vn_create_sync_file(struct vn_device *dev,
       .syncs = &sync,
       .sync_values = &(const uint64_t){ 1 },
       .sync_count = 1,
-      .ring_idx = payload->ring_idx,
+      .ring_idx = external_payload->ring_idx,
    };
 
    uint32_t local_data[8];
    struct vn_cs_encoder local_enc =
       VN_CS_ENCODER_INITIALIZER_LOCAL(local_data, sizeof(local_data));
-   if (payload->ring_seqno_valid) {
+   if (external_payload->ring_seqno_valid) {
       vn_encode_vkWaitRingSeqno100000MESA(
-         &local_enc, 0, dev->instance->ring.id, payload->ring_seqno);
+         &local_enc, 0, dev->instance->ring.id, external_payload->ring_seqno);
       batch.cs_data = local_data;
       batch.cs_size = vn_cs_encoder_get_len(&local_enc);
    }
@@ -1450,7 +1442,7 @@ vn_GetFenceFdKHR(VkDevice device,
 
    int fd = -1;
    if (payload->type == VN_SYNC_TYPE_DEVICE_ONLY) {
-      result = vn_create_sync_file(dev, &fence->external, &fd);
+      result = vn_create_sync_file(dev, &fence->external_payload, &fd);
       if (result != VK_SUCCESS)
          return vn_error(dev->instance, result);
 
@@ -1912,7 +1904,7 @@ vn_GetSemaphoreFdKHR(VkDevice device,
 
    int fd = -1;
    if (payload->type == VN_SYNC_TYPE_DEVICE_ONLY) {
-      VkResult result = vn_create_sync_file(dev, &sem->external, &fd);
+      VkResult result = vn_create_sync_file(dev, &sem->external_payload, &fd);
       if (result != VK_SUCCESS)
          return vn_error(dev->instance, result);
 

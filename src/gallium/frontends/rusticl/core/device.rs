@@ -524,6 +524,10 @@ impl Device {
             }
         }
 
+        if self.svm_supported() {
+            add_ext(1, 0, 0, "cl_arm_shared_virtual_memory", "");
+        }
+
         self.extensions = exts;
         self.clc_features = feats;
         self.extension_string = exts_str.join(" ");
@@ -746,6 +750,10 @@ impl Device {
             self.screen.as_ref(),
             pipe_compute_cap::PIPE_COMPUTE_CAP_SUBGROUP_SIZE,
         )
+    }
+
+    pub fn svm_supported(&self) -> bool {
+        self.screen.param(pipe_cap::PIPE_CAP_SYSTEM_SVM) == 1
     }
 
     pub fn unified_memory(&self) -> bool {

@@ -38,6 +38,7 @@
 #include <inttypes.h>
 
 #include "dev/intel_device_info.h"
+#include "util/os_time.h"
 #include "util/u_debug.h"
 #include "util/macros.h"
 
@@ -97,6 +98,7 @@ intel_measure_init(struct intel_measure_device *device)
       const char *interval_s = strstr(env_copy, "interval=");
       const char *batch_size_s = strstr(env_copy, "batch_size=");
       const char *buffer_size_s = strstr(env_copy, "buffer_size=");
+      const char *cpu_s = strstr(env_copy, "cpu");
       while (true) {
          char *sep = strrchr(env_copy, ',');
          if (sep == NULL)
@@ -206,10 +208,19 @@ intel_measure_init(struct intel_measure_device *device)
          config.buffer_size = buffer_size;
       }
 
-      fputs("draw_start,draw_end,frame,batch,"
-            "event_index,event_count,type,count,vs,tcs,tes,"
-            "gs,fs,cs,ms,ts,framebuffer,idle_us,time_us\n",
-            config.file);
+      if (cpu_s) {
+         config.cpu_measure = true;
+      }
+
+      if (!config.cpu_measure)
+         fputs("draw_start,draw_end,frame,batch,"
+               "event_index,event_count,type,count,vs,tcs,tes,"
+               "gs,fs,cs,ms,ts,framebuffer,idle_us,time_us\n",
+               config.file);
+      else
+         fputs("draw_start,frame,batch,event_index,event_count,"
+               "type,count\n",
+               config.file);
    }
 
    device->config = NULL;
@@ -614,6 +625,25 @@ print_combined_results(struct intel_measure_device *measure_device,
            begin->ms, begin->ts, begin->framebuffer,
            (double)duration_idle_ns / 1000.0,
            (double)duration_time_ns / 1000.0);
+}
+
+/**
+ * Write data for a cpu event.
+ */
+void
+intel_measure_print_cpu_result(unsigned int frame,
+                               unsigned int batch_count,
+                               unsigned int event_index,
+                               unsigned int event_count,
+                               unsigned int count,
+                               const char* event_name)
+{
+   assert(config.cpu_measure);
+   uint64_t start_ns = os_time_get_nano();
+
+   fprintf(config.file, "%"PRIu64",%u,%3u,%3u,%u,%s,%u\n",
+           start_ns, frame, batch_count, event_index, event_count,
+           event_name, count);
 }
 
 /**

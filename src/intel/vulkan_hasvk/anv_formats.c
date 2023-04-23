@@ -843,7 +843,7 @@ get_buffer_format_features2(const struct intel_device_info *devinfo,
    if (isl_format_supports_vertex_fetch(devinfo, isl_format))
       flags |= VK_FORMAT_FEATURE_2_VERTEX_BUFFER_BIT;
 
-   if (isl_is_storage_image_format(isl_format))
+   if (isl_is_storage_image_format(devinfo, isl_format))
       flags |= VK_FORMAT_FEATURE_2_STORAGE_TEXEL_BUFFER_BIT;
 
    if (isl_format == ISL_FORMAT_R32_SINT || isl_format == ISL_FORMAT_R32_UINT)

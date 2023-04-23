@@ -494,7 +494,7 @@ void si_clear_buffer(struct si_context *sctx, struct pipe_resource *dst,
 
       sctx->b.buffer_subdata(&sctx->b, dst,
                              PIPE_MAP_WRITE |
-                             /* TC forbids drivers to invalidate buffers and infer unsychronized mappings,
+                             /* TC forbids drivers to invalidate buffers and infer unsynchronized mappings,
                               * so suppress those optimizations. */
                              (sctx->tc ? TC_TRANSFER_MAP_NO_INFER_UNSYNCHRONIZED |
                                          TC_TRANSFER_MAP_NO_INVALIDATE : 0),

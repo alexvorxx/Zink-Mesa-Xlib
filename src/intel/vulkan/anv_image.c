@@ -429,22 +429,6 @@ anv_get_isl_format_with_usage(const struct intel_device_info *devinfo,
       anv_get_format_aspect(devinfo, vk_format, vk_aspect,
                             vk_tiling);
 
-   if ((vk_usage == VK_IMAGE_USAGE_STORAGE_BIT) &&
-       isl_is_storage_image_format(format.isl_format)) {
-      enum isl_format lowered_format =
-         isl_lower_storage_image_format(devinfo, format.isl_format);
-
-      /* If we lower the format, we should ensure either they both match in
-       * bits per channel or that there is no swizzle, because we can't use
-       * the swizzle for a different bit pattern.
-       */
-      assert(isl_formats_have_same_bits_per_channel(lowered_format,
-                                                    format.isl_format) ||
-             isl_swizzle_is_identity(format.swizzle));
-
-      format.isl_format = lowered_format;
-   }
-
    return format.isl_format;
 }
 
@@ -2418,123 +2402,75 @@ anv_image_fill_surface_state(struct anv_device *device,
    const struct anv_address address =
       anv_image_address(image, &surface->memory_range);
 
-   if (view_usage == ISL_SURF_USAGE_STORAGE_BIT &&
-       (flags & ANV_IMAGE_VIEW_STATE_STORAGE_LOWERED) &&
-       !isl_has_matching_typed_storage_image_format(device->info,
-                                                    view.format)) {
-      /* In this case, we are a writeable storage buffer which needs to be
-       * lowered to linear. All tiling and offset calculations will be done in
-       * the shader.
+   const struct isl_surf *isl_surf = &surface->isl;
+
+   struct isl_surf tmp_surf;
+   uint64_t offset_B = 0;
+   uint32_t tile_x_sa = 0, tile_y_sa = 0;
+   if (isl_format_is_compressed(surface->isl.format) &&
+       !isl_format_is_compressed(view.format)) {
+      /* We're creating an uncompressed view of a compressed surface. This is
+       * allowed but only for a single level/layer.
        */
-      assert(aux_usage == ISL_AUX_USAGE_NONE);
-      isl_buffer_fill_state(&device->isl_dev, state_inout->state.map,
-                            .address = anv_address_physical(address),
-                            .size_B = surface->isl.size_B,
-                            .format = ISL_FORMAT_RAW,
-                            .swizzle = ISL_SWIZZLE_IDENTITY,
-                            .stride_B = 1,
-                            .mocs = anv_mocs(device, address.bo, view_usage));
-      state_inout->address = address,
-      state_inout->aux_address = ANV_NULL_ADDRESS;
-      state_inout->clear_address = ANV_NULL_ADDRESS;
-   } else {
-      if (view_usage == ISL_SURF_USAGE_STORAGE_BIT &&
-          (flags & ANV_IMAGE_VIEW_STATE_STORAGE_LOWERED)) {
-         /* Typed surface reads support a very limited subset of the shader
-          * image formats.  Translate it into the closest format the hardware
-          * supports.
-          */
-         enum isl_format lower_format =
-            isl_lower_storage_image_format(device->info, view.format);
-         if (aux_usage != ISL_AUX_USAGE_NONE) {
-            assert(device->info->verx10 >= 125);
-            assert(aux_usage == ISL_AUX_USAGE_CCS_E);
-            assert(isl_formats_are_ccs_e_compatible(device->info,
-                                                    view.format,
-                                                    lower_format));
-         }
+      assert(surface->isl.samples == 1);
+      assert(view.levels == 1);
+      assert(surface->isl.dim == ISL_SURF_DIM_3D || view.array_len == 1);
 
-         /* If we lower the format, we should ensure either they both match in
-          * bits per channel or that there is no swizzle, because we can't use
-          * the swizzle for a different bit pattern.
-          */
-         assert(isl_formats_have_same_bits_per_channel(lower_format,
-                                                       view.format) ||
-                isl_swizzle_is_identity_for_format(view.format, view.swizzle));
+      ASSERTED bool ok =
+         isl_surf_get_uncompressed_surf(&device->isl_dev, isl_surf, &view,
+                                        &tmp_surf, &view,
+                                        &offset_B, &tile_x_sa, &tile_y_sa);
+      assert(ok);
+      isl_surf = &tmp_surf;
+   }
 
-         view.format = lower_format;
-      }
+   state_inout->address = anv_address_add(address, offset_B);
 
-      const struct isl_surf *isl_surf = &surface->isl;
+   struct anv_address aux_address = ANV_NULL_ADDRESS;
+   if (aux_usage != ISL_AUX_USAGE_NONE)
+      aux_address = anv_image_address(image, &aux_surface->memory_range);
+   state_inout->aux_address = aux_address;
 
-      struct isl_surf tmp_surf;
-      uint64_t offset_B = 0;
-      uint32_t tile_x_sa = 0, tile_y_sa = 0;
-      if (isl_format_is_compressed(surface->isl.format) &&
-          !isl_format_is_compressed(view.format)) {
-         /* We're creating an uncompressed view of a compressed surface.  This
-          * is allowed but only for a single level/layer.
-          */
-         assert(surface->isl.samples == 1);
-         assert(view.levels == 1);
-         assert(surface->isl.dim == ISL_SURF_DIM_3D || view.array_len == 1);
+   struct anv_address clear_address = ANV_NULL_ADDRESS;
+   if (device->info->ver >= 10 && isl_aux_usage_has_fast_clears(aux_usage)) {
+      clear_address = anv_image_get_clear_color_addr(device, image, aspect);
+   }
+   state_inout->clear_address = clear_address;
 
-         ASSERTED bool ok =
-            isl_surf_get_uncompressed_surf(&device->isl_dev, isl_surf, &view,
-                                           &tmp_surf, &view,
-                                           &offset_B, &tile_x_sa, &tile_y_sa);
-         assert(ok);
-         isl_surf = &tmp_surf;
-      }
+   isl_surf_fill_state(&device->isl_dev, state_inout->state.map,
+                       .surf = isl_surf,
+                       .view = &view,
+                       .address = anv_address_physical(state_inout->address),
+                       .clear_color = *clear_color,
+                       .aux_surf = &aux_surface->isl,
+                       .aux_usage = aux_usage,
+                       .aux_address = anv_address_physical(aux_address),
+                       .clear_address = anv_address_physical(clear_address),
+                       .use_clear_address = !anv_address_is_null(clear_address),
+                       .mocs = anv_mocs(device, state_inout->address.bo,
+                                        view_usage),
+                       .x_offset_sa = tile_x_sa,
+                       .y_offset_sa = tile_y_sa,
+                       .robust_image_access =
+                          device->vk.enabled_features.robustImageAccess ||
+                          device->vk.enabled_features.robustImageAccess2);
 
-      state_inout->address = anv_address_add(address, offset_B);
+   /* With the exception of gfx8, the bottom 12 bits of the MCS base address
+    * are used to store other information. This should be ok, however, because
+    * the surface buffer addresses are always 4K page aligned.
+    */
+   if (!anv_address_is_null(aux_address)) {
+      uint32_t *aux_addr_dw = state_inout->state.map +
+         device->isl_dev.ss.aux_addr_offset;
+      assert((aux_address.offset & 0xfff) == 0);
+      state_inout->aux_address.offset |= *aux_addr_dw & 0xfff;
+   }
 
-      struct anv_address aux_address = ANV_NULL_ADDRESS;
-      if (aux_usage != ISL_AUX_USAGE_NONE)
-         aux_address = anv_image_address(image, &aux_surface->memory_range);
-      state_inout->aux_address = aux_address;
-
-      struct anv_address clear_address = ANV_NULL_ADDRESS;
-      if (device->info->ver >= 10 && isl_aux_usage_has_fast_clears(aux_usage)) {
-         clear_address = anv_image_get_clear_color_addr(device, image, aspect);
-      }
-      state_inout->clear_address = clear_address;
-
-      isl_surf_fill_state(&device->isl_dev, state_inout->state.map,
-                          .surf = isl_surf,
-                          .view = &view,
-                          .address = anv_address_physical(state_inout->address),
-                          .clear_color = *clear_color,
-                          .aux_surf = &aux_surface->isl,
-                          .aux_usage = aux_usage,
-                          .aux_address = anv_address_physical(aux_address),
-                          .clear_address = anv_address_physical(clear_address),
-                          .use_clear_address = !anv_address_is_null(clear_address),
-                          .mocs = anv_mocs(device, state_inout->address.bo,
-                                           view_usage),
-                          .x_offset_sa = tile_x_sa,
-                          .y_offset_sa = tile_y_sa,
-                          .robust_image_access =
-                             device->vk.enabled_features.robustImageAccess ||
-                             device->vk.enabled_features.robustImageAccess2);
-
-      /* With the exception of gfx8, the bottom 12 bits of the MCS base address
-       * are used to store other information.  This should be ok, however,
-       * because the surface buffer addresses are always 4K page aligned.
-       */
-      if (!anv_address_is_null(aux_address)) {
-         uint32_t *aux_addr_dw = state_inout->state.map +
-            device->isl_dev.ss.aux_addr_offset;
-         assert((aux_address.offset & 0xfff) == 0);
-         state_inout->aux_address.offset |= *aux_addr_dw & 0xfff;
-      }
-
-      if (device->info->ver >= 10 && clear_address.bo) {
-         uint32_t *clear_addr_dw = state_inout->state.map +
-                                   device->isl_dev.ss.clear_color_state_offset;
-         assert((clear_address.offset & 0x3f) == 0);
-         state_inout->clear_address.offset |= *clear_addr_dw & 0x3f;
-      }
+   if (device->info->ver >= 10 && clear_address.bo) {
+      uint32_t *clear_addr_dw = state_inout->state.map +
+         device->isl_dev.ss.clear_color_state_offset;
+      assert((clear_address.offset & 0x3f) == 0);
+      state_inout->clear_address.offset |= *clear_addr_dw & 0x3f;
    }
 }
 
@@ -2686,33 +2622,6 @@ anv_CreateImageView(VkDevice _device,
                                       general_aux_usage, NULL,
                                       0,
                                       &iview->planes[vplane].storage_surface_state);
-
-         iview->planes[vplane].lowered_storage_surface_state.state =
-            alloc_bindless_surface_state(device);
-         if (isl_is_storage_image_format(format.isl_format)) {
-            anv_image_fill_surface_state(device, image, 1ULL << iaspect_bit,
-                                         &storage_view,
-                                         ISL_SURF_USAGE_STORAGE_BIT,
-                                         general_aux_usage, NULL,
-                                         ANV_IMAGE_VIEW_STATE_STORAGE_LOWERED,
-                                         &iview->planes[vplane].lowered_storage_surface_state);
-         } else {
-            /* In this case, we support the format but, because there's no
-             * SPIR-V format specifier corresponding to it, we only support it
-             * if the hardware can do it natively.  This is possible for some
-             * reads but for most writes.  Instead of hanging if someone gets
-             * it wrong, we give them a NULL descriptor.
-             */
-            isl_null_fill_state(&device->isl_dev,
-                                iview->planes[vplane].lowered_storage_surface_state.state.map,
-                                .size = {
-                                   .w = image->vk.extent.width,
-                                   .h = image->vk.extent.height,
-                                   .d = image->vk.extent.depth,
-                                });
-
-            iview->planes[vplane].lowered_surface_state_is_null = true;
-         }
       }
    }
 
@@ -2745,11 +2654,6 @@ anv_DestroyImageView(VkDevice _device, VkImageView _iview,
       if (iview->planes[plane].storage_surface_state.state.alloc_size) {
          anv_state_pool_free(&device->bindless_surface_state_pool,
                              iview->planes[plane].storage_surface_state.state);
-      }
-
-      if (iview->planes[plane].lowered_storage_surface_state.state.alloc_size) {
-         anv_state_pool_free(&device->bindless_surface_state_pool,
-                             iview->planes[plane].lowered_storage_surface_state.state);
       }
    }
 
@@ -2796,36 +2700,13 @@ anv_CreateBufferView(VkDevice _device,
 
    if (buffer->vk.usage & VK_BUFFER_USAGE_STORAGE_TEXEL_BUFFER_BIT) {
       view->storage_surface_state = alloc_bindless_surface_state(device);
-      view->lowered_storage_surface_state = alloc_bindless_surface_state(device);
 
       anv_fill_buffer_surface_state(device, view->storage_surface_state,
                                     format.isl_format, format.swizzle,
                                     ISL_SURF_USAGE_STORAGE_BIT,
                                     view->address, view->range, format_bs);
-
-      enum isl_format lowered_format =
-         isl_has_matching_typed_storage_image_format(device->info,
-                                                     format.isl_format) ?
-         isl_lower_storage_image_format(device->info, format.isl_format) :
-         ISL_FORMAT_RAW;
-
-      /* If we lower the format, we should ensure either they both match in
-       * bits per channel or that there is no swizzle because we can't use
-       * the swizzle for a different bit pattern.
-       */
-      assert(isl_formats_have_same_bits_per_channel(lowered_format,
-                                                    format.isl_format) ||
-             isl_swizzle_is_identity(format.swizzle));
-
-      anv_fill_buffer_surface_state(device, view->lowered_storage_surface_state,
-                                    lowered_format, format.swizzle,
-                                    ISL_SURF_USAGE_STORAGE_BIT,
-                                    view->address, view->range,
-                                    (lowered_format == ISL_FORMAT_RAW ? 1 :
-                                     isl_format_get_layout(lowered_format)->bpb / 8));
    } else {
       view->storage_surface_state = (struct anv_state){ 0 };
-      view->lowered_storage_surface_state = (struct anv_state){ 0 };
    }
 
    *pView = anv_buffer_view_to_handle(view);
@@ -2850,10 +2731,6 @@ anv_DestroyBufferView(VkDevice _device, VkBufferView bufferView,
    if (view->storage_surface_state.alloc_size > 0)
       anv_state_pool_free(&device->bindless_surface_state_pool,
                           view->storage_surface_state);
-
-   if (view->lowered_storage_surface_state.alloc_size > 0)
-      anv_state_pool_free(&device->bindless_surface_state_pool,
-                          view->lowered_storage_surface_state);
 
    vk_object_free(&device->vk, pAllocator, view);
 }

@@ -1135,7 +1135,7 @@ apply_extract(opt_ctx& ctx, aco_ptr<Instruction>& instr, unsigned idx, ssa_info&
               sel.offset() == 0 &&
               ((sel.size() == 2 && instr->operands[0].constantValue() >= 16u) ||
                (sel.size() == 1 && instr->operands[0].constantValue() >= 24u))) {
-      /* The undesireable upper bits are already shifted out. */
+      /* The undesirable upper bits are already shifted out. */
       return;
    } else if (instr->opcode == aco_opcode::v_mul_u32_u24 && ctx.program->gfx_level >= GFX10 &&
               !instr->usesModifiers() && sel.size() == 2 && !sel.sign_extend() &&
@@ -2354,7 +2354,7 @@ bool
 optimize_cmp_subgroup_invocation(opt_ctx& ctx, aco_ptr<Instruction>& instr)
 {
    /* This optimization only applies to VOPC with 2 operands. */
-   if (instr->operands.size() == 2)
+   if (instr->operands.size() != 2)
       return false;
 
    /* Find the constant operand or return early if there isn't one. */
@@ -2420,7 +2420,7 @@ optimize_cmp_subgroup_invocation(opt_ctx& ctx, aco_ptr<Instruction>& instr)
 
    cpy->definitions[0] = instr->definitions[0];
    ctx.info[instr->definitions[0].tempId()].label = 0;
-   decrease_uses(ctx, ctx.instructions[mbcnt_op_idx].get());
+   decrease_uses(ctx, ctx.info[mbcnt_op.tempId()].instr);
    instr.reset(cpy);
 
    return true;
@@ -3567,7 +3567,7 @@ apply_ds_extract(opt_ctx& ctx, aco_ptr<Instruction>& extract)
    unsigned sign_ext = extract->operands[3].constantValue();
    unsigned dst_bitsize = extract->definitions[0].bytes() * 8u;
 
-   /* TODO: These are doable, but probably don't occour too often. */
+   /* TODO: These are doable, but probably don't occur too often. */
    if (extract_idx || sign_ext || dst_bitsize != 32)
       return false;
 

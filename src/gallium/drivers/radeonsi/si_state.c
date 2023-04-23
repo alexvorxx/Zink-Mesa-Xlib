@@ -2368,7 +2368,9 @@ static unsigned si_is_vertex_format_supported(struct pipe_screen *screen, enum p
 
    if (sscreen->info.gfx_level >= GFX10) {
       const struct gfx10_format *fmt = &ac_get_gfx10_format_table(&sscreen->info)[format];
-      if (!fmt->img_format || fmt->img_format >= 128)
+      unsigned first_image_only_format = sscreen->info.gfx_level >= GFX11 ? 64 : 128;
+
+      if (!fmt->img_format || fmt->img_format >= first_image_only_format)
          return 0;
       return usage;
    }
@@ -5218,7 +5220,8 @@ static void *si_create_vertex_elements(struct pipe_context *ctx, unsigned count,
 
       if (sscreen->info.gfx_level >= GFX10) {
          const struct gfx10_format *fmt = &ac_get_gfx10_format_table(&sscreen->info)[elements[i].src_format];
-         assert(fmt->img_format != 0 && fmt->img_format < 128);
+         unsigned last_vertex_format = sscreen->info.gfx_level >= GFX11 ? 64 : 128;
+         assert(fmt->img_format != 0 && fmt->img_format < last_vertex_format);
          v->rsrc_word3[i] |= S_008F0C_FORMAT(fmt->img_format) |
                              S_008F0C_RESOURCE_LEVEL(sscreen->info.gfx_level < GFX11);
       } else {
@@ -5962,7 +5965,7 @@ void si_init_cs_preamble_state(struct si_context *sctx, bool uses_reg_shadowing)
                                  S_028B50_ACCUM_QUAD(11) |
                                  S_028B50_DONUT_SPLIT_GFX81(16);
 
-         /* Testing with Unigine Heaven extreme tesselation yielded best results
+         /* Testing with Unigine Heaven extreme tessellation yielded best results
           * with TRAP_SPLIT = 3.
           */
          if (sctx->family == CHIP_FIJI || sctx->family >= CHIP_POLARIS10)

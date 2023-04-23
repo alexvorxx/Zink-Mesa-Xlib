@@ -1,12 +1,3 @@
-dEQP-VK.api.copy_and_blit.copy_commands2.resolve_image.layer_copy_before_resolving.2_bit,Fail
-dEQP-VK.api.copy_and_blit.copy_commands2.resolve_image.layer_copy_before_resolving.4_bit,Fail
-dEQP-VK.api.copy_and_blit.copy_commands2.resolve_image.layer_copy_before_resolving.8_bit,Fail
-dEQP-VK.api.copy_and_blit.core.resolve_image.layer_copy_before_resolving.2_bit,Fail
-dEQP-VK.api.copy_and_blit.core.resolve_image.layer_copy_before_resolving.4_bit,Fail
-dEQP-VK.api.copy_and_blit.core.resolve_image.layer_copy_before_resolving.8_bit,Fail
-dEQP-VK.api.copy_and_blit.dedicated_allocation.resolve_image.layer_copy_before_resolving.2_bit,Fail
-dEQP-VK.api.copy_and_blit.dedicated_allocation.resolve_image.layer_copy_before_resolving.4_bit,Fail
-dEQP-VK.api.copy_and_blit.dedicated_allocation.resolve_image.layer_copy_before_resolving.8_bit,Fail
 dEQP-VK.texture.mipmap.2d.image_view_min_lod.base_level.linear_linear,Fail
 dEQP-VK.texture.mipmap.2d.image_view_min_lod.base_level.linear_linear_integer_texel_coord,Fail
 dEQP-VK.texture.mipmap.2d.image_view_min_lod.base_level.linear_nearest,Fail
@@ -26,39 +17,9 @@ dEQP-VK.texture.mipmap.3d.image_view_min_lod.base_level.nearest_nearest_integer_
 dEQP-VK.texture.mipmap.cubemap.image_view_min_lod.base_level.linear_nearest,Fail
 dEQP-VK.texture.mipmap.cubemap.image_view_min_lod.base_level.nearest_linear,Fail
 dEQP-VK.texture.mipmap.cubemap.image_view_min_lod.base_level.nearest_nearest,Fail
-dEQP-VK.api.copy_and_blit.copy_commands2.resolve_image.layer_copy_before_resolving.2_bit_bind_offset,Fail
-dEQP-VK.api.copy_and_blit.copy_commands2.resolve_image.layer_copy_before_resolving.4_bit_bind_offset,Fail
-dEQP-VK.api.copy_and_blit.copy_commands2.resolve_image.layer_copy_before_resolving.8_bit_bind_offset,Fail
-dEQP-VK.api.copy_and_blit.core.resolve_image.layer_copy_before_resolving.2_bit_bind_offset,Fail
-dEQP-VK.api.copy_and_blit.core.resolve_image.layer_copy_before_resolving.4_bit_bind_offset,Fail
-dEQP-VK.api.copy_and_blit.core.resolve_image.layer_copy_before_resolving.8_bit_bind_offset,Fail
-dEQP-VK.api.copy_and_blit.dedicated_allocation.resolve_image.layer_copy_before_resolving.2_bit_bind_offset,Fail
-dEQP-VK.api.copy_and_blit.dedicated_allocation.resolve_image.layer_copy_before_resolving.4_bit_bind_offset,Fail
-dEQP-VK.api.copy_and_blit.dedicated_allocation.resolve_image.layer_copy_before_resolving.8_bit_bind_offset,Fail
-
-# Test bugs with GPL (all of them should be fixed with recent CTS).
-dEQP-VK.pipeline.pipeline_library.creation_feedback.graphics_tests.vertex_stage_fragment_stage,Crash
-dEQP-VK.pipeline.pipeline_library.creation_feedback.graphics_tests.vertex_stage_fragment_stage_delayed_destroy,Crash
-dEQP-VK.pipeline.pipeline_library.creation_feedback.graphics_tests.vertex_stage_fragment_stage_no_cache,Crash
-dEQP-VK.pipeline.pipeline_library.creation_feedback.graphics_tests.vertex_stage_geometry_stage_fragment_stage,Crash
-dEQP-VK.pipeline.pipeline_library.creation_feedback.graphics_tests.vertex_stage_geometry_stage_fragment_stage_delayed_destroy,Crash
-dEQP-VK.pipeline.pipeline_library.creation_feedback.graphics_tests.vertex_stage_geometry_stage_fragment_stage_no_cache,Crash
-dEQP-VK.pipeline.pipeline_library.creation_feedback.graphics_tests.vertex_stage_tessellation_control_stage_tessellation_evaluation_stage_fragment_stage,Crash
-dEQP-VK.pipeline.pipeline_library.creation_feedback.graphics_tests.vertex_stage_tessellation_control_stage_tessellation_evaluation_stage_fragment_stage_delayed_destroy,Crash
-dEQP-VK.pipeline.pipeline_library.creation_feedback.graphics_tests.vertex_stage_tessellation_control_stage_tessellation_evaluation_stage_fragment_stage_no_cache,Crash
 
 # New CTS failures in 1.3.5.0.
 dEQP-VK.dynamic_rendering.primary_cmd_buff.basic.contents_2_secondary_cmdbuffers,Fail
-dEQP-VK.dynamic_rendering.primary_cmd_buff.random.seed3_tessellation,Fail
-dEQP-VK.dynamic_rendering.primary_cmd_buff.random.seed46_geometry,Fail
-dEQP-VK.dynamic_rendering.primary_cmd_buff.random.seed49_tessellation,Fail
-dEQP-VK.dynamic_rendering.primary_cmd_buff.random.seed50_geometry,Fail
-dEQP-VK.dynamic_rendering.primary_cmd_buff.random.seed52_geometry,Fail
-dEQP-VK.dynamic_rendering.primary_cmd_buff.random.seed59_geometry,Fail
-dEQP-VK.dynamic_rendering.primary_cmd_buff.random.seed65_tessellation,Fail
-dEQP-VK.dynamic_rendering.primary_cmd_buff.random.seed6_geometry,Fail
-dEQP-VK.dynamic_rendering.primary_cmd_buff.random.seed81_tessellation,Fail
-dEQP-VK.dynamic_rendering.primary_cmd_buff.random.seed8_tessellation,Fail
 dEQP-VK.image.texel_view_compatible.compute.basic.1d_image.image_store.bc1_rgb_srgb_block.r16g16b16a16_sint,Fail
 dEQP-VK.image.texel_view_compatible.compute.basic.1d_image.image_store.bc1_rgb_srgb_block.r16g16b16a16_snorm,Fail
 dEQP-VK.image.texel_view_compatible.compute.basic.1d_image.image_store.bc1_rgb_srgb_block.r16g16b16a16_uint,Fail

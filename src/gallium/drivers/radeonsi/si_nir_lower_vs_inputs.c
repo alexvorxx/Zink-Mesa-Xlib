@@ -77,8 +77,8 @@ get_vertex_index_for_mono_shader(nir_builder *b, int input_index,
          index = instance_id;
       } else {
          nir_ssa_def *offset = nir_imm_int(b, input_index * 16);
-         nir_ssa_def *divisor =
-            nir_load_smem_buffer_amd(b, 4, s->instance_divisor_constbuf, offset);
+         nir_ssa_def *divisor = nir_load_ubo(b, 4, 32, s->instance_divisor_constbuf, offset,
+                                             .range = ~0);
 
          /* The faster NUW version doesn't work when InstanceID == UINT_MAX.
           * Such InstanceID might not be achievable in a reasonable time though.

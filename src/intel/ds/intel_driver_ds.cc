@@ -60,6 +60,10 @@ static const struct {
       INTEL_DS_QUEUE_STAGE_QUEUE,
    },
    {
+      "frame",
+      INTEL_DS_QUEUE_STAGE_FRAME,
+   },
+   {
       "cmd-buffer",
       INTEL_DS_QUEUE_STAGE_CMD_BUFFER,
    },
@@ -367,7 +371,7 @@ extern "C" {
                 &trace_payload_as_extra_intel_end_##event_name);        \
    }                                                                    \
 
-CREATE_DUAL_EVENT_CALLBACK(frame, INTEL_DS_QUEUE_STAGE_QUEUE)
+CREATE_DUAL_EVENT_CALLBACK(frame, INTEL_DS_QUEUE_STAGE_FRAME)
 CREATE_DUAL_EVENT_CALLBACK(batch, INTEL_DS_QUEUE_STAGE_CMD_BUFFER)
 CREATE_DUAL_EVENT_CALLBACK(cmd_buffer, INTEL_DS_QUEUE_STAGE_CMD_BUFFER)
 CREATE_DUAL_EVENT_CALLBACK(render_pass, INTEL_DS_QUEUE_STAGE_RENDER_PASS)

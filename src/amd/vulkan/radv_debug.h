@@ -69,6 +69,7 @@ enum {
    RADV_DEBUG_NO_FMASK = 1ull << 38,
    RADV_DEBUG_SHADOW_REGS = 1ull << 39,
    RADV_DEBUG_EXTRA_MD = 1ull << 40,
+   RADV_DEBUG_NO_GPL = 1ull << 41,
 };
 
 enum {
@@ -84,10 +85,9 @@ enum {
    RADV_PERFTEST_NGGC = 1u << 9,
    RADV_PERFTEST_EMULATE_RT = 1u << 10,
    RADV_PERFTEST_RT_WAVE_64 = 1u << 11,
-   RADV_PERFTEST_GPL = 1u << 12,
-   RADV_PERFTEST_NGG_STREAMOUT = 1u << 13,
-   RADV_PERFTEST_VIDEO_DECODE = 1u << 14,
-   RADV_PERFTEST_DMA_SHADERS = 1u << 15,
+   RADV_PERFTEST_NGG_STREAMOUT = 1u << 12,
+   RADV_PERFTEST_VIDEO_DECODE = 1u << 13,
+   RADV_PERFTEST_DMA_SHADERS = 1u << 14,
 };
 
 bool radv_init_trace(struct radv_device *device);

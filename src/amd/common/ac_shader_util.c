@@ -364,7 +364,7 @@ unsigned ac_get_tbuffer_format(enum amd_gfx_level gfx_level, unsigned dfmt, unsi
       // Use the regularity properties of the combined format enum.
       //
       // Note: float is incompatible with 8-bit data formats,
-      //       [us]{norm,scaled} are incomparible with 32-bit data formats.
+      //       [us]{norm,scaled} are incompatible with 32-bit data formats.
       //       [us]scaled are not writable.
       switch (nfmt) {
       case V_008F0C_BUF_NUM_FORMAT_UNORM:

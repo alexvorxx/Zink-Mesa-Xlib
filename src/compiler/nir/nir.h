@@ -2321,6 +2321,9 @@ typedef struct {
    /** Validation needs to know this for gradient component count */
    unsigned array_is_lowered_cube : 1;
 
+   /** True if this tg4 instruction has an implicit LOD or LOD bias, instead of using level 0 */
+   unsigned is_gather_implicit_lod : 1;
+
    /** Gather offsets */
    int8_t tg4_offsets[4][2];
 

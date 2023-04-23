@@ -31,12 +31,12 @@
 
 #include "panvk_private.h"
 
-#include "nir_builder.h"
-#include "nir_deref.h"
-#include "nir_lower_blend.h"
-#include "nir_conversion_builder.h"
 #include "spirv/nir_spirv.h"
 #include "util/mesa-sha1.h"
+#include "nir_builder.h"
+#include "nir_conversion_builder.h"
+#include "nir_deref.h"
+#include "nir_lower_blend.h"
 #include "vk_shader_module.h"
 
 #include "compiler/bifrost_nir.h"
@@ -157,14 +157,18 @@ panvk_lower_blend(struct panfrost_device *pdev, nir_shader *nir,
       } else {
          options.rt[rt].rgb.func = rt_state->equation.rgb_func;
          options.rt[rt].rgb.src_factor = rt_state->equation.rgb_src_factor;
-         options.rt[rt].rgb.invert_src_factor = rt_state->equation.rgb_invert_src_factor;
+         options.rt[rt].rgb.invert_src_factor =
+            rt_state->equation.rgb_invert_src_factor;
          options.rt[rt].rgb.dst_factor = rt_state->equation.rgb_dst_factor;
-         options.rt[rt].rgb.invert_dst_factor = rt_state->equation.rgb_invert_dst_factor;
+         options.rt[rt].rgb.invert_dst_factor =
+            rt_state->equation.rgb_invert_dst_factor;
          options.rt[rt].alpha.func = rt_state->equation.alpha_func;
          options.rt[rt].alpha.src_factor = rt_state->equation.alpha_src_factor;
-         options.rt[rt].alpha.invert_src_factor = rt_state->equation.alpha_invert_src_factor;
+         options.rt[rt].alpha.invert_src_factor =
+            rt_state->equation.alpha_invert_src_factor;
          options.rt[rt].alpha.dst_factor = rt_state->equation.alpha_dst_factor;
-         options.rt[rt].alpha.invert_dst_factor = rt_state->equation.alpha_invert_dst_factor;
+         options.rt[rt].alpha.invert_dst_factor =
+            rt_state->equation.alpha_invert_dst_factor;
       }
 
       /* Update the equation to force a color replacement */
@@ -199,15 +203,12 @@ panvk_lower_load_push_constant(nir_builder *b, nir_instr *instr, void *data)
       return false;
 
    b->cursor = nir_before_instr(instr);
-   nir_ssa_def *ubo_load =
-      nir_load_ubo(b, nir_dest_num_components(intr->dest),
-                   nir_dest_bit_size(intr->dest),
-                   nir_imm_int(b, PANVK_PUSH_CONST_UBO_INDEX),
-                   intr->src[0].ssa,
-                   .align_mul = nir_dest_bit_size(intr->dest) / 8,
-                   .align_offset = 0,
-                   .range_base = nir_intrinsic_base(intr),
-                   .range = nir_intrinsic_range(intr));
+   nir_ssa_def *ubo_load = nir_load_ubo(
+      b, nir_dest_num_components(intr->dest), nir_dest_bit_size(intr->dest),
+      nir_imm_int(b, PANVK_PUSH_CONST_UBO_INDEX), intr->src[0].ssa,
+      .align_mul = nir_dest_bit_size(intr->dest) / 8, .align_offset = 0,
+      .range_base = nir_intrinsic_base(intr),
+      .range = nir_intrinsic_range(intr));
    nir_ssa_def_rewrite_uses(&intr->dest.ssa, ubo_load);
    nir_instr_remove(instr);
    return true;
@@ -218,16 +219,14 @@ shared_type_info(const struct glsl_type *type, unsigned *size, unsigned *align)
 {
    assert(glsl_type_is_vector_or_scalar(type));
 
-   uint32_t comp_size = glsl_type_is_boolean(type)
-      ? 4 : glsl_get_bit_size(type) / 8;
+   uint32_t comp_size =
+      glsl_type_is_boolean(type) ? 4 : glsl_get_bit_size(type) / 8;
    unsigned length = glsl_get_vector_elements(type);
-   *size = comp_size * length,
-   *align = comp_size * (length == 3 ? 4 : length);
+   *size = comp_size * length, *align = comp_size * (length == 3 ? 4 : length);
 }
 
 struct panvk_shader *
-panvk_per_arch(shader_create)(struct panvk_device *dev,
-                              gl_shader_stage stage,
+panvk_per_arch(shader_create)(struct panvk_device *dev, gl_shader_stage stage,
                               const VkPipelineShaderStageCreateInfo *stage_info,
                               const struct panvk_pipeline_layout *layout,
                               unsigned sysval_ubo,
@@ -248,29 +247,28 @@ panvk_per_arch(shader_create)(struct panvk_device *dev,
 
    /* TODO these are made-up */
    const struct spirv_to_nir_options spirv_options = {
-      .caps = {
-         .variable_pointers = true,
-      },
+      .caps =
+         {
+            .variable_pointers = true,
+         },
       .ubo_addr_format = nir_address_format_32bit_index_offset,
-      .ssbo_addr_format = dev->vk.enabled_features.robustBufferAccess ?
-                          nir_address_format_64bit_bounded_global :
-                          nir_address_format_64bit_global_32bit_offset,
+      .ssbo_addr_format = dev->vk.enabled_features.robustBufferAccess
+                             ? nir_address_format_64bit_bounded_global
+                             : nir_address_format_64bit_global_32bit_offset,
    };
 
    nir_shader *nir;
-   VkResult result = vk_shader_module_to_nir(&dev->vk, module, stage,
-                                             stage_info->pName,
-                                             stage_info->pSpecializationInfo,
-                                             &spirv_options,
-                                             GENX(pan_shader_get_compiler_options)(),
-                                             NULL, &nir);
+   VkResult result = vk_shader_module_to_nir(
+      &dev->vk, module, stage, stage_info->pName,
+      stage_info->pSpecializationInfo, &spirv_options,
+      GENX(pan_shader_get_compiler_options)(), NULL, &nir);
    if (result != VK_SUCCESS) {
       vk_free2(&dev->vk.alloc, alloc, shader);
       return NULL;
    }
 
-   NIR_PASS_V(nir, nir_lower_io_to_temporaries,
-              nir_shader_get_entrypoint(nir), true, true);
+   NIR_PASS_V(nir, nir_lower_io_to_temporaries, nir_shader_get_entrypoint(nir),
+              true, true);
 
    struct panfrost_compile_inputs inputs = {
       .gpu_id = pdev->gpu_id,
@@ -279,8 +277,7 @@ panvk_per_arch(shader_create)(struct panvk_device *dev,
    };
 
    NIR_PASS_V(nir, nir_lower_indirect_derefs,
-              nir_var_shader_in | nir_var_shader_out,
-              UINT32_MAX);
+              nir_var_shader_in | nir_var_shader_out, UINT32_MAX);
 
    NIR_PASS_V(nir, nir_opt_copy_prop_vars);
    NIR_PASS_V(nir, nir_opt_combine_stores, nir_var_all);
@@ -318,33 +315,28 @@ panvk_per_arch(shader_create)(struct panvk_device *dev,
    };
    NIR_PASS_V(nir, nir_lower_tex, &lower_tex_options);
 
-   NIR_PASS_V(nir, panvk_per_arch(nir_lower_descriptors),
-              dev, layout, &shader->has_img_access);
+   NIR_PASS_V(nir, panvk_per_arch(nir_lower_descriptors), dev, layout,
+              &shader->has_img_access);
 
    NIR_PASS_V(nir, nir_lower_explicit_io, nir_var_mem_ubo,
               nir_address_format_32bit_index_offset);
    NIR_PASS_V(nir, nir_lower_explicit_io, nir_var_mem_ssbo,
               spirv_options.ssbo_addr_format);
-   NIR_PASS_V(nir, nir_lower_explicit_io,
-              nir_var_mem_push_const,
+   NIR_PASS_V(nir, nir_lower_explicit_io, nir_var_mem_push_const,
               nir_address_format_32bit_offset);
 
    if (gl_shader_stage_uses_workgroup(stage)) {
       if (!nir->info.shared_memory_explicit_layout) {
-         NIR_PASS_V(nir, nir_lower_vars_to_explicit_types,
-                    nir_var_mem_shared,
+         NIR_PASS_V(nir, nir_lower_vars_to_explicit_types, nir_var_mem_shared,
                     shared_type_info);
       }
 
-      NIR_PASS_V(nir, nir_lower_explicit_io,
-                 nir_var_mem_shared,
+      NIR_PASS_V(nir, nir_lower_explicit_io, nir_var_mem_shared,
                  nir_address_format_32bit_offset);
    }
 
-   NIR_PASS_V(nir, nir_shader_instructions_pass,
-              panvk_lower_load_push_constant,
-              nir_metadata_block_index |
-              nir_metadata_dominance,
+   NIR_PASS_V(nir, nir_shader_instructions_pass, panvk_lower_load_push_constant,
+              nir_metadata_block_index | nir_metadata_dominance,
               (void *)layout);
 
    NIR_PASS_V(nir, nir_lower_system_values);
@@ -354,7 +346,8 @@ panvk_per_arch(shader_create)(struct panvk_device *dev,
    NIR_PASS_V(nir, nir_lower_var_copies);
 
    nir_assign_io_var_locations(nir, nir_var_shader_in, &nir->num_inputs, stage);
-   nir_assign_io_var_locations(nir, nir_var_shader_out, &nir->num_outputs, stage);
+   nir_assign_io_var_locations(nir, nir_var_shader_out, &nir->num_outputs,
+                               stage);
 
    /* Needed to turn shader_temp into function_temp since the backend only
     * handles the latter for now.
@@ -362,7 +355,8 @@ panvk_per_arch(shader_create)(struct panvk_device *dev,
    NIR_PASS_V(nir, nir_lower_global_vars_to_local);
 
    nir_shader_gather_info(nir, nir_shader_get_entrypoint(nir));
-   if (unlikely(dev->physical_device->instance->debug_flags & PANVK_DEBUG_NIR)) {
+   if (unlikely(dev->physical_device->instance->debug_flags &
+                PANVK_DEBUG_NIR)) {
       fprintf(stderr, "translated nir:\n");
       nir_print_shader(nir, stderr);
    }
@@ -394,8 +388,8 @@ panvk_per_arch(shader_create)(struct panvk_device *dev,
    GENX(pan_shader_compile)(nir, &inputs, &shader->binary, &shader->info);
 
    /* Patch the descriptor count */
-   shader->info.ubo_count = PANVK_NUM_BUILTIN_UBOS +
-                            layout->num_ubos + layout->num_dyn_ubos;
+   shader->info.ubo_count =
+      PANVK_NUM_BUILTIN_UBOS + layout->num_ubos + layout->num_dyn_ubos;
    shader->info.sampler_count = layout->num_samplers;
    shader->info.texture_count = layout->num_textures;
    if (shader->has_img_access)

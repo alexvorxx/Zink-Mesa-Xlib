@@ -740,10 +740,10 @@ GENX(pandecode_cs)(mali_ptr queue, uint32_t size, unsigned gpu_id,
 
    uint64_t *cs = pandecode_fetch_gpu_mem(queue, size);
 
+   /* Mali-G610 has 96 registers. Other devices not yet supported, we can make
+    * this configurable later when we encounter new Malis.
+    */
    struct queue_ctx ctx = {
-      /* Mali-G610 has 96 registers. Other devices not yet supported, we can
-       * make this configurable later when we encounter new Malis.
-       */
       .nr_regs = 96,
       .regs = regs,
       .ip = cs,

@@ -34,7 +34,7 @@
 #include "vl/vl_video_buffer.h"
 #include <sys/utsname.h>
 
-/* The capabilties reported by the kernel has priority
+/* The capabilities reported by the kernel has priority
    over the existing logic in si_get_video_param */
 #define QUERYABLE_KERNEL   (!!(sscreen->info.drm_minor >= 41))
 #define KERNEL_DEC_CAP(codec, attrib)    \
@@ -604,6 +604,10 @@ static int si_get_video_param(struct pipe_screen *screen, enum pipe_video_profil
             (profile == PIPE_VIDEO_PROFILE_HEVC_MAIN_10 && sscreen->info.family >= CHIP_RENOIR)));
       case PIPE_VIDEO_CAP_NPOT_TEXTURES:
          return 1;
+      case PIPE_VIDEO_CAP_MIN_WIDTH:
+         return 256;
+      case PIPE_VIDEO_CAP_MIN_HEIGHT:
+         return 128;
       case PIPE_VIDEO_CAP_MAX_WIDTH:
          if (codec != PIPE_VIDEO_FORMAT_UNKNOWN && QUERYABLE_KERNEL)
             return KERNEL_ENC_CAP(codec, max_width);
@@ -779,6 +783,9 @@ static int si_get_video_param(struct pipe_screen *screen, enum pipe_video_profil
       }
    case PIPE_VIDEO_CAP_NPOT_TEXTURES:
       return 1;
+   case PIPE_VIDEO_CAP_MIN_WIDTH:
+   case PIPE_VIDEO_CAP_MIN_HEIGHT:
+      return 64;
    case PIPE_VIDEO_CAP_MAX_WIDTH:
       if (codec != PIPE_VIDEO_FORMAT_UNKNOWN && QUERYABLE_KERNEL)
             return KERNEL_DEC_CAP(codec, max_width);
@@ -899,6 +906,7 @@ static bool si_vid_is_format_supported(struct pipe_screen *screen, enum pipe_for
             return false;
       case PIPE_FORMAT_R8G8B8A8_UNORM:
       case PIPE_FORMAT_A8R8G8B8_UNORM:
+      case PIPE_FORMAT_R8_G8_B8_UNORM:
          if (sscreen->info.family == CHIP_GFX940)
             return true;
          else

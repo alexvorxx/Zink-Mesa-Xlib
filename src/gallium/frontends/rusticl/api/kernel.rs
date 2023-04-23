@@ -11,6 +11,7 @@ use mesa_rust_util::string::*;
 use rusticl_opencl_gen::*;
 
 use std::collections::HashSet;
+use std::mem;
 use std::os::raw::c_void;
 use std::ptr;
 use std::slice;
@@ -312,6 +313,78 @@ pub fn set_kernel_arg(
     //• CL_INVALID_DEVICE_QUEUE for an argument declared to be of type queue_t when the specified arg_value is not a valid device queue object. This error code is missing before version 2.0.
     //• CL_INVALID_ARG_VALUE if the argument is an image declared with the read_only qualifier and arg_value refers to an image object created with cl_mem_flags of CL_MEM_WRITE_ONLY or if the image argument is declared with the write_only qualifier and arg_value refers to an image object created with cl_mem_flags of CL_MEM_READ_ONLY.
     //• CL_MAX_SIZE_RESTRICTION_EXCEEDED if the size in bytes of the memory object (if the argument is a memory object) or arg_size (if the argument is declared with local qualifier) exceeds a language- specified maximum size restriction for this argument, such as the MaxByteOffset SPIR-V decoration. This error code is missing before version 2.2.
+}
+
+pub fn set_kernel_arg_svm_pointer(
+    kernel: cl_kernel,
+    arg_index: cl_uint,
+    arg_value: *const ::std::os::raw::c_void,
+) -> CLResult<()> {
+    let kernel = kernel.get_ref()?;
+    let arg_index = arg_index as usize;
+    let arg_value = arg_value as usize;
+
+    if !kernel.has_svm_devs() {
+        return Err(CL_INVALID_OPERATION);
+    }
+
+    if let Some(arg) = kernel.args.get(arg_index) {
+        if !matches!(
+            arg.kind,
+            KernelArgType::MemConstant | KernelArgType::MemGlobal
+        ) {
+            return Err(CL_INVALID_ARG_INDEX);
+        }
+
+        let arg_value = KernelArgValue::Constant(arg_value.to_ne_bytes().to_vec());
+        kernel.values[arg_index].replace(Some(arg_value));
+        Ok(())
+    } else {
+        Err(CL_INVALID_ARG_INDEX)
+    }
+
+    // CL_INVALID_ARG_VALUE if arg_value specified is not a valid value.
+}
+
+pub fn set_kernel_exec_info(
+    kernel: cl_kernel,
+    param_name: cl_kernel_exec_info,
+    param_value_size: usize,
+    param_value: *const ::std::os::raw::c_void,
+) -> CLResult<()> {
+    let k = kernel.get_ref()?;
+
+    // CL_INVALID_OPERATION if no devices in the context associated with kernel support SVM.
+    if !k.prog.devs.iter().any(|dev| dev.svm_supported()) {
+        return Err(CL_INVALID_OPERATION);
+    }
+
+    // CL_INVALID_VALUE ... if param_value is NULL
+    if param_value.is_null() {
+        return Err(CL_INVALID_VALUE);
+    }
+
+    // CL_INVALID_VALUE ... if the size specified by param_value_size is not valid.
+    match param_name {
+        CL_KERNEL_EXEC_INFO_SVM_PTRS | CL_KERNEL_EXEC_INFO_SVM_PTRS_ARM => {
+            // it's a list of pointers
+            if param_value_size % mem::size_of::<*const c_void>() != 0 {
+                return Err(CL_INVALID_VALUE);
+            }
+        }
+        CL_KERNEL_EXEC_INFO_SVM_FINE_GRAIN_SYSTEM
+        | CL_KERNEL_EXEC_INFO_SVM_FINE_GRAIN_SYSTEM_ARM => {
+            if param_value_size != mem::size_of::<cl_bool>() {
+                return Err(CL_INVALID_VALUE);
+            }
+        }
+        // CL_INVALID_VALUE if param_name is not valid
+        _ => return Err(CL_INVALID_VALUE),
+    }
+
+    Ok(())
+
+    // CL_INVALID_OPERATION if param_name is CL_KERNEL_EXEC_INFO_SVM_FINE_GRAIN_SYSTEM and param_value is CL_TRUE but no devices in context associated with kernel support fine-grain system SVM allocations.
 }
 
 pub fn enqueue_ndrange_kernel(

@@ -68,3 +68,28 @@ void ac_add_return(struct ac_shader_args *info, enum ac_arg_regfile regfile)
 
    info->return_count++;
 }
+
+void ac_compact_ps_vgpr_args(struct ac_shader_args *info, uint32_t spi_ps_input)
+{
+   /* LLVM optimizes away unused FS inputs and computes spi_ps_input_addr itself and then
+    * communicates the results back via the ELF binary. Mirror what LLVM does by re-mapping the
+    * VGPR arguments here.
+    */
+   unsigned vgpr_arg = 0;
+   unsigned vgpr_reg = 0;
+
+   for (unsigned i = 0; i < info->arg_count; i++) {
+      if (info->args[i].file != AC_ARG_VGPR)
+         continue;
+
+      if (!(spi_ps_input & (1 << vgpr_arg))) {
+         info->args[i].skip = true;
+      } else {
+         info->args[i].offset = vgpr_reg;
+         vgpr_reg += info->args[i].size;
+      }
+      vgpr_arg++;
+   }
+
+   info->num_vgprs_used = vgpr_reg;
+}

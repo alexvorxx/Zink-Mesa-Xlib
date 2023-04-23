@@ -309,7 +309,7 @@ static void si_invalidate_resource(struct pipe_context *ctx, struct pipe_resourc
    struct si_context *sctx = (struct si_context *)ctx;
    struct si_resource *buf = si_resource(resource);
 
-   /* We currently only do anyting here for buffers */
+   /* We currently only do anything here for buffers */
    if (resource->target == PIPE_BUFFER)
       (void)si_invalidate_buffer(sctx, buf);
 }

@@ -165,6 +165,11 @@ static unsigned int get_screen_supported_va_rt_formats(struct pipe_screen *pscre
                                           profile,
                                           entrypoint))
       supported_rt_formats |= VA_RT_FORMAT_RGB32;
+   if (pscreen->is_video_format_supported(pscreen, PIPE_FORMAT_R8_G8_B8_UNORM,
+                                          profile,
+                                          entrypoint))
+      supported_rt_formats |= VA_RT_FORMAT_RGBP;
+
 
    return supported_rt_formats;
 }
@@ -208,8 +213,17 @@ vlVaGetConfigAttributes(VADriverContextP ctx, VAProfile profile, VAEntrypoint en
                                                        PIPE_VIDEO_ENTRYPOINT_ENCODE);
             break;
          case VAConfigAttribRateControl:
+         {
+            /* Legacy behavior reports these three modes for all drivers */
             value = VA_RC_CQP | VA_RC_CBR | VA_RC_VBR;
-            break;
+
+            /* Check for optional mode QVBR */
+            int supports_qvbr = pscreen->get_video_param(pscreen, ProfileToPipe(profile),
+                                             PIPE_VIDEO_ENTRYPOINT_ENCODE,
+                                             PIPE_VIDEO_CAP_ENC_RATE_CONTROL_QVBR);
+            if (supports_qvbr > 0)
+               value |= VA_RC_QVBR;
+         } break;
          case VAConfigAttribEncRateControlExt:
             value = pscreen->get_video_param(pscreen, ProfileToPipe(profile),
                                              PIPE_VIDEO_ENTRYPOINT_ENCODE,
@@ -519,6 +533,8 @@ vlVaCreateConfig(VADriverContextP ctx, VAProfile profile, VAEntrypoint entrypoin
             config->rc = PIPE_H2645_ENC_RATE_CONTROL_METHOD_VARIABLE;
          else if (attrib_list[i].value == VA_RC_CQP)
             config->rc = PIPE_H2645_ENC_RATE_CONTROL_METHOD_DISABLE;
+         else if (attrib_list[i].value == VA_RC_QVBR)
+            config->rc = PIPE_H2645_ENC_RATE_CONTROL_METHOD_QUALITY_VARIABLE;
          else {
             FREE(config);
             return VA_STATUS_ERROR_INVALID_VALUE;

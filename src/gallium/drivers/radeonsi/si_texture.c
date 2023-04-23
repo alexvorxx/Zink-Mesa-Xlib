@@ -1255,7 +1255,7 @@ si_texture_create_with_modifier(struct pipe_screen *screen,
    if (templ->nr_samples >= 2) {
       /* This is hackish (overwriting the const pipe_resource template),
        * but should be harmless and gallium frontends can also see
-       * the overriden number of samples in the created pipe_resource.
+       * the overridden number of samples in the created pipe_resource.
        */
       if (is_zs && sscreen->eqaa_force_z_samples) {
          ((struct pipe_resource *)templ)->nr_samples =
@@ -2358,7 +2358,7 @@ static int si_get_sparse_texture_virtual_page_size(struct pipe_screen *screen,
    if (multi_sample && sscreen->info.gfx_level != GFX9)
       return 0;
 
-   /* Unsupport formats. */
+   /* Unsupported formats. */
    /* TODO: support these formats. */
    if (util_format_is_depth_or_stencil(format) ||
        util_format_get_num_planes(format) > 1 ||

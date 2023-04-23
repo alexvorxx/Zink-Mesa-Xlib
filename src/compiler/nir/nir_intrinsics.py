@@ -864,8 +864,15 @@ system_value("scratch_base_ptr", 0, bit_sizes=[32,64], indices=[BASE])
 system_value("constant_base_ptr", 0, bit_sizes=[32,64])
 system_value("shared_base_ptr", 0, bit_sizes=[32,64])
 system_value("global_base_ptr", 0, bit_sizes=[32,64])
-# Address of a transform feedback buffer, indexed by BASE
+# Address and size of a transform feedback buffer, indexed by BASE
 system_value("xfb_address", 1, bit_sizes=[32,64], indices=[BASE])
+system_value("xfb_size", 1, bit_sizes=[32], indices=[BASE])
+
+# Address of the associated index buffer in a transform feedback program for an
+# indexed draw. This will be used so transform feedback can pull the gl_VertexID
+# from the index buffer.
+system_value("xfb_index_buffer", 1, bit_sizes=[32,64])
+
 system_value("frag_size", 2)
 system_value("frag_invocation_count", 1)
 
@@ -1526,11 +1533,6 @@ intrinsic("load_smem_amd", src_comp=[1, 1], dest_comp=0, bit_sizes=[32],
                            indices=[ALIGN_MUL, ALIGN_OFFSET],
                            flags=[CAN_ELIMINATE, CAN_REORDER])
 
-# src[] = { descriptor, offset }
-intrinsic("load_smem_buffer_amd", src_comp=[4, 1], dest_comp=0, bit_sizes=[32],
-                                  indices=[ALIGN_MUL, ALIGN_OFFSET],
-                                  flags=[CAN_ELIMINATE, CAN_REORDER])
-
 # src[] = { offset }.
 intrinsic("load_shared2_amd", [1], dest_comp=2, indices=[OFFSET0, OFFSET1, ST64], flags=[CAN_ELIMINATE])
 
@@ -1599,6 +1601,9 @@ intrinsic("export_amd", [0], indices=[BASE, WRITE_MASK, FLAGS])
 
 # Alpha test reference value
 system_value("alpha_reference_amd", 1)
+
+# Whether to enable barycentric optimization
+system_value("barycentric_optimize_amd", dest_comp=1, bit_sizes=[1])
 
 # V3D-specific instrinc for tile buffer color reads.
 #
@@ -1729,6 +1734,11 @@ intrinsic("load_reloc_const_intel", dest_comp=1, bit_sizes=[32],
 # 64-bit global address for a Vulkan descriptor set
 # src[0] = { set }
 intrinsic("load_desc_set_address_intel", dest_comp=1, bit_sizes=[64],
+          src_comp=[1], flags=[CAN_ELIMINATE, CAN_REORDER])
+
+# Base offset for a given set in the flatten array of dynamic offsets
+# src[0] = { set }
+intrinsic("load_desc_set_dynamic_index_intel", dest_comp=1, bit_sizes=[32],
           src_comp=[1], flags=[CAN_ELIMINATE, CAN_REORDER])
 
 # OpSubgroupBlockReadINTEL and OpSubgroupBlockWriteINTEL from SPV_INTEL_subgroups.

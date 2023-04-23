@@ -459,3 +459,5 @@ gmem-dEQP-VK.transform_feedback.simple.lines_or_triangles_triangle_strip_1,Fail
 gmem-dEQP-VK.transform_feedback.simple.lines_or_triangles_triangle_strip_3,Fail
 nobin-dEQP-VK.transform_feedback.simple.lines_or_triangles_triangle_strip_1,Fail
 nobin-dEQP-VK.transform_feedback.simple.lines_or_triangles_triangle_strip_3,Fail
+spec@arb_vertex_attrib_64bit@execution@unused-sub-dvec4-01,Crash
+spec@arb_vertex_attrib_64bit@execution@unused-sub-dvec4-02,Crash

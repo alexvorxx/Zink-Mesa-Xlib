@@ -400,8 +400,8 @@
    DRI_CONF_OPT_B(vk_xwayland_wait_ready, def, \
                   "Wait for fences before submitting buffers to Xwayland")
 
-#define DRI_CONF_MESA_GLTHREAD(def) \
-   DRI_CONF_OPT_B(mesa_glthread, def, \
+#define DRI_CONF_MESA_GLTHREAD_DRIVER(def) \
+   DRI_CONF_OPT_B(mesa_glthread_driver, def, \
                   "Enable offloading GL driver work to a separate thread")
 
 #define DRI_CONF_MESA_NO_ERROR(def) \
@@ -522,6 +522,10 @@
 #define DRI_CONF_FORMAT_L8_SRGB_ENABLE_READBACK(def) \
    DRI_CONF_OPT_B(format_l8_srgb_enable_readback, def, \
                   "Force-enable reading back L8_SRGB textures")
+
+#define DRI_CONF_VIRGL_SHADER_SYNC(def) \
+   DRI_CONF_OPT_B(virgl_shader_sync, def, \
+                  "Make shader compilation synchronous")
 
 /**
  * \brief freedreno specific configuration options

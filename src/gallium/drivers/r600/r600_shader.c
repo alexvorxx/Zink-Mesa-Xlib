@@ -218,7 +218,7 @@ int r600_pipe_shader_create(struct pipe_context *ctx,
 				sel->nir_blob = NULL;
 			}
 			sel->nir = tgsi_to_nir(sel->tokens, ctx->screen, true);
-			/* Lower int64 ops because we have some r600 build-in shaders that use it */
+			/* Lower int64 ops because we have some r600 built-in shaders that use it */
 			if (nir_options->lower_int64_options) {
 				NIR_PASS_V(sel->nir, nir_lower_regs_to_ssa);
 				NIR_PASS_V(sel->nir, nir_lower_alu_to_scalar, r600_lower_to_scalar_instr_filter, NULL);
@@ -3402,7 +3402,7 @@ static int r600_emit_tess_factor(struct r600_shader_ctx *ctx)
  * calculated from the MBCNT instructions.
  * Then the shader engine ID is multiplied by 256,
  * and the wave id is added.
- * Then the result is multipled by 64 and thread id is
+ * Then the result is multiplied by 64 and thread id is
  * added.
  */
 static int load_thread_id_gpr(struct r600_shader_ctx *ctx)
@@ -8374,7 +8374,7 @@ static int tgsi_tex(struct r600_shader_ctx *ctx)
 		if (inst->Texture.Texture == TGSI_TEXTURE_2D_ARRAY ||
 			 inst->Texture.Texture == TGSI_TEXTURE_SHADOW2D_ARRAY)
 			/* make sure array index selector is 0, this is just a safety
-			 * precausion because TGSI seems to emit something strange here */
+			 * precaution because TGSI seems to emit something strange here */
 			t->src_sel_z = 4;
 		else
 			t->src_sel_z = inst->TexOffsets[0].SwizzleZ;

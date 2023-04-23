@@ -1485,10 +1485,12 @@ anv_device_alloc_bo(struct anv_device *device,
       regions[nregions++] = device->physical->sys.region;
    }
 
+   uint64_t actual_size;
    uint32_t gem_handle = device->kmd_backend->gem_create(device, regions,
                                                          nregions,
                                                          size + ccs_size,
-                                                         alloc_flags);
+                                                         alloc_flags,
+                                                         &actual_size);
    if (gem_handle == 0)
       return vk_error(device, VK_ERROR_OUT_OF_DEVICE_MEMORY);
 
@@ -1499,6 +1501,7 @@ anv_device_alloc_bo(struct anv_device *device,
       .offset = -1,
       .size = size,
       ._ccs_size = ccs_size,
+      .actual_size = actual_size,
       .flags = bo_flags,
       .is_external = (alloc_flags & ANV_BO_ALLOC_EXTERNAL),
       .has_client_visible_address =
@@ -1666,6 +1669,7 @@ anv_device_import_bo_from_host_ptr(struct anv_device *device,
          .refcount = 1,
          .offset = -1,
          .size = size,
+         .actual_size = size,
          .map = host_ptr,
          .flags = bo_flags,
          .is_external = true,
@@ -1791,6 +1795,7 @@ anv_device_import_bo(struct anv_device *device,
          .refcount = 1,
          .offset = -1,
          .size = size,
+         .actual_size = size,
          .flags = bo_flags,
          .is_external = true,
          .has_client_visible_address =

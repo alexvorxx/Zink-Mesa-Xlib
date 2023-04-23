@@ -1179,7 +1179,6 @@ struct _egl_driver _eglDriver = {
    .QuerySurface = wgl_query_surface,
    .BindTexImage = wgl_bind_tex_image,
    .ReleaseTexImage = _eglReleaseTexImage,
-   .GetProcAddress = _glapi_get_proc_address,
    .SwapInterval = wgl_swap_interval,
    .SwapBuffers = wgl_swap_buffers,
    .WaitClient = wgl_wait_client,

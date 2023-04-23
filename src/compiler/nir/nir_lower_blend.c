@@ -188,6 +188,17 @@ should_clamp_factor(enum blend_factor factor, bool inverted, bool snorm)
    unreachable("invalid blend factor");
 }
 
+static bool
+channel_uses_dest(nir_lower_blend_channel chan)
+{
+   return chan.src_factor == BLEND_FACTOR_DST_COLOR ||
+          chan.src_factor == BLEND_FACTOR_DST_ALPHA ||
+          chan.src_factor == BLEND_FACTOR_SRC_ALPHA_SATURATE ||
+          !(chan.dst_factor == BLEND_FACTOR_ZERO && !chan.invert_dst_factor) ||
+          chan.func == BLEND_FUNC_MIN ||
+          chan.func == BLEND_FUNC_MAX;
+}
+
 static nir_ssa_def *
 nir_blend_factor(
    nir_builder *b,
@@ -510,19 +521,28 @@ nir_lower_blend_instr(nir_builder *b, nir_instr *instr, void *data)
    assert(store->src[0].is_ssa);
    nir_ssa_def *src = nir_pad_vector(b, store->src[0].ssa, 4);
 
-   /* Grab the previous fragment color */
-   b->shader->info.outputs_read |= BITFIELD64_BIT(sem.location);
-   b->shader->info.fs.uses_fbfetch_output = true;
-   sem.fb_fetch_output = true;
-
    assert(nir_src_as_uint(store->src[1]) == 0 && "store_output invariant");
 
-   nir_ssa_def *dst =
-      nir_load_output(b, 4,
-                      nir_src_bit_size(store->src[0]),
-                      nir_imm_int(b, 0),
-                     .dest_type = nir_intrinsic_src_type(store),
-                     .io_semantics = sem);
+   /* Grab the previous fragment color if we need it */
+   nir_ssa_def *dst;
+
+   if (channel_uses_dest(options->rt[rt].rgb) ||
+       channel_uses_dest(options->rt[rt].alpha) ||
+       options->logicop_enable ||
+       options->rt[rt].colormask != BITFIELD_MASK(4)) {
+
+      b->shader->info.outputs_read |= BITFIELD64_BIT(sem.location);
+      b->shader->info.fs.uses_fbfetch_output = true;
+      b->shader->info.fs.uses_sample_shading = true;
+      sem.fb_fetch_output = true;
+
+      dst = nir_load_output(b, 4, nir_src_bit_size(store->src[0]),
+                            nir_imm_int(b, 0),
+                            .dest_type = nir_intrinsic_src_type(store),
+                            .io_semantics = sem);
+   } else {
+      dst = nir_ssa_undef(b, 4, nir_src_bit_size(store->src[0]));
+   }
 
    /* Blend the two colors per the passed options. We only call nir_blend if
     * blending is enabled with a blend mode other than replace (independent of

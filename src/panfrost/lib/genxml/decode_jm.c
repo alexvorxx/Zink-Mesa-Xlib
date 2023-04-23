@@ -569,6 +569,7 @@ pandecode_compute_job(mali_ptr job, unsigned gpu_id)
    pan_section_unpack(p, COMPUTE_JOB, PAYLOAD, payload);
 
    GENX(pandecode_shader_environment)(&payload.compute, gpu_id);
+   DUMP_SECTION(COMPUTE_JOB, PAYLOAD, p, "Compute");
 }
 #endif
 

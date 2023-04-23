@@ -31,6 +31,7 @@
 #include "util/u_helpers.h"
 #include "util/u_memory.h"
 #include "util/u_prim.h"
+#include "util/u_sample_positions.h"
 #include "util/u_vbuf.h"
 #include "util/u_viewport.h"
 
@@ -1604,7 +1605,7 @@ panfrost_emit_shared_memory(struct panfrost_batch *batch,
       info.tls.ptr = bo->ptr.gpu;
    }
 
-   if (ss->info.wls_size) {
+   if (info.wls.size) {
       unsigned size = pan_wls_adjust_size(info.wls.size) * info.wls.instances *
                       dev->core_id_range;
 
@@ -1750,7 +1751,7 @@ panfrost_emit_null_texture(struct mali_texture_packed *out)
       cfg.format = PAN_ARCH >= 7 ? panfrost_pipe_format_v7[PIPE_FORMAT_NONE].hw
                                  : panfrost_pipe_format_v6[PIPE_FORMAT_NONE].hw;
 #if PAN_ARCH <= 7
-         cfg.texel_ordering = MALI_TEXTURE_LAYOUT_LINEAR;
+      cfg.texel_ordering = MALI_TEXTURE_LAYOUT_LINEAR;
 #endif
    }
 }
@@ -4392,15 +4393,6 @@ prepare_shader(struct panfrost_compiled_shader *state,
 }
 
 static void
-panfrost_get_sample_position(struct pipe_context *context,
-                             unsigned sample_count, unsigned sample_index,
-                             float *out_value)
-{
-   panfrost_query_sample_position(panfrost_sample_pattern(sample_count),
-                                  sample_index, out_value);
-}
-
-static void
 screen_destroy(struct pipe_screen *pscreen)
 {
    struct panfrost_device *dev = pan_device(pscreen);
@@ -4475,7 +4467,7 @@ context_init(struct pipe_context *pipe)
    pipe->create_sampler_state = panfrost_create_sampler_state;
    pipe->create_blend_state = panfrost_create_blend_state;
 
-   pipe->get_sample_position = panfrost_get_sample_position;
+   pipe->get_sample_position = u_default_get_sample_position;
 }
 
 #if PAN_ARCH <= 5

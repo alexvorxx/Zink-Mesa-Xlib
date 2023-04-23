@@ -30,10 +30,6 @@
 
 #include "dxil_spirv_nir.h"
 
-#if D3D12_SDK_VERSION >= 608
-static const D3D12_BARRIER_SYNC D3D12_BARRIER_SYNC_INPUT_ASSEMBLER = D3D12_BARRIER_SYNC_INDEX_INPUT;
-#endif
-
 static void
 dzn_cmd_buffer_exec_transition_barriers(struct dzn_cmd_buffer *cmdbuf,
                                         D3D12_RESOURCE_BARRIER *barriers,
@@ -402,10 +398,12 @@ dzn_cmd_buffer_destroy(struct vk_command_buffer *cbuf)
    if (cmdbuf->cmdalloc)
       ID3D12CommandAllocator_Release(cmdbuf->cmdalloc);
 
-   list_for_each_entry_safe(struct dzn_internal_resource, res, &cmdbuf->internal_bufs, link) {
-      list_del(&res->link);
-      ID3D12Resource_Release(res->res);
-      vk_free(&cbuf->pool->alloc, res);
+   for (uint32_t bucket = 0; bucket < DZN_INTERNAL_BUF_BUCKET_COUNT; ++bucket) {
+      list_for_each_entry_safe(struct dzn_internal_resource, res, &cmdbuf->internal_bufs[bucket], link) {
+         list_del(&res->link);
+         ID3D12Resource_Release(res->res);
+         vk_free(&cbuf->pool->alloc, res);
+      }
    }
 
    dzn_descriptor_heap_pool_finish(&cmdbuf->cbv_srv_uav_pool);
@@ -465,11 +463,14 @@ dzn_cmd_buffer_reset(struct vk_command_buffer *cbuf, VkCommandBufferResetFlags f
    cmdbuf->state.multiview.view_mask = 1;
 
    /* TODO: Return resources to the pool */
-   list_for_each_entry_safe(struct dzn_internal_resource, res, &cmdbuf->internal_bufs, link) {
-      list_del(&res->link);
-      ID3D12Resource_Release(res->res);
-      vk_free(&cmdbuf->vk.pool->alloc, res);
+   for (uint32_t bucket = 0; bucket < DZN_INTERNAL_BUF_BUCKET_COUNT; ++bucket) {
+      list_for_each_entry_safe(struct dzn_internal_resource, res, &cmdbuf->internal_bufs[bucket], link) {
+         list_del(&res->link);
+         ID3D12Resource_Release(res->res);
+         vk_free(&cmdbuf->vk.pool->alloc, res);
+      }
    }
+   cmdbuf->cur_upload_buf = NULL;
 
    util_dynarray_clear(&cmdbuf->events.wait);
    util_dynarray_clear(&cmdbuf->events.signal);
@@ -603,7 +604,8 @@ dzn_cmd_buffer_create(const VkCommandBufferAllocateInfo *info,
    memset(&cmdbuf->state, 0, sizeof(cmdbuf->state));
    cmdbuf->state.multiview.num_views = 1;
    cmdbuf->state.multiview.view_mask = 1;
-   list_inithead(&cmdbuf->internal_bufs);
+   for (uint32_t bucket = 0; bucket < DZN_INTERNAL_BUF_BUCKET_COUNT; ++bucket)
+      list_inithead(&cmdbuf->internal_bufs[bucket]);
    util_dynarray_init(&cmdbuf->events.wait, NULL);
    util_dynarray_init(&cmdbuf->events.signal, NULL);
    util_dynarray_init(&cmdbuf->queries.reset, NULL);
@@ -1187,7 +1189,7 @@ translate_sync(VkPipelineStageFlags2 flags, bool before)
    if (flags & (VK_PIPELINE_STAGE_2_VERTEX_INPUT_BIT |
                 VK_PIPELINE_STAGE_2_INDEX_INPUT_BIT |
                 VK_PIPELINE_STAGE_2_VERTEX_ATTRIBUTE_INPUT_BIT))
-      ret |= D3D12_BARRIER_SYNC_INPUT_ASSEMBLER;
+      ret |= D3D12_BARRIER_SYNC_INDEX_INPUT;
    if (flags & VK_PIPELINE_STAGE_2_VERTEX_SHADER_BIT)
       ret |= D3D12_BARRIER_SYNC_VERTEX_SHADING;
    if (flags & (VK_PIPELINE_STAGE_2_TESSELLATION_CONTROL_SHADER_BIT |
@@ -1399,7 +1401,7 @@ adjust_sync_for_access(D3D12_BARRIER_SYNC in, D3D12_BARRIER_ACCESS access)
                    D3D12_BARRIER_SYNC_ALL_SHADING |
                    D3D12_BARRIER_SYNC_NON_PIXEL_SHADING);
    if (access & D3D12_BARRIER_ACCESS_INDEX_BUFFER)
-      out |= in & D3D12_BARRIER_SYNC_INPUT_ASSEMBLER;
+      out |= in & D3D12_BARRIER_SYNC_INDEX_INPUT;
    if (access & D3D12_BARRIER_ACCESS_RENDER_TARGET)
       out |= in & D3D12_BARRIER_SYNC_RENDER_TARGET;
    if (access & D3D12_BARRIER_ACCESS_UNORDERED_ACCESS)
@@ -1752,25 +1754,55 @@ dzn_cmd_buffer_get_null_rtv(struct dzn_cmd_buffer *cmdbuf)
    return cmdbuf->null_rtv;
 }
 
+static D3D12_HEAP_TYPE
+heap_type_for_bucket(enum dzn_internal_buf_bucket bucket)
+{
+   switch (bucket) {
+   case DZN_INTERNAL_BUF_UPLOAD: return D3D12_HEAP_TYPE_UPLOAD;
+   case DZN_INTERNAL_BUF_DEFAULT: return D3D12_HEAP_TYPE_DEFAULT;
+   default: unreachable("Invalid value");
+   }
+}
+
 static VkResult
 dzn_cmd_buffer_alloc_internal_buf(struct dzn_cmd_buffer *cmdbuf,
                                   uint32_t size,
-                                  D3D12_HEAP_TYPE heap_type,
+                                  enum dzn_internal_buf_bucket bucket,
                                   D3D12_RESOURCE_STATES init_state,
-                                  ID3D12Resource **out)
+                                  uint64_t align,
+                                  ID3D12Resource **out,
+                                  uint64_t *offset)
 {
    struct dzn_device *device = container_of(cmdbuf->vk.base.device, struct dzn_device, vk);
    ID3D12Resource *res;
    *out = NULL;
+   D3D12_HEAP_TYPE heap_type = heap_type_for_bucket(bucket);
 
-   /* Align size on 64k (the default alignment) */
-   size = ALIGN_POT(size, 64 * 1024);
+   if (bucket == DZN_INTERNAL_BUF_UPLOAD && cmdbuf->cur_upload_buf) {
+      uint64_t new_offset = ALIGN_POT(cmdbuf->cur_upload_buf_offset, align);
+      if (cmdbuf->cur_upload_buf->size >= size + new_offset) {
+         cmdbuf->cur_upload_buf_offset = new_offset + size;
+         *out = cmdbuf->cur_upload_buf->res;
+         *offset = new_offset;
+         return VK_SUCCESS;
+      }
+      cmdbuf->cur_upload_buf = NULL;
+      cmdbuf->cur_upload_buf_offset = 0;
+   }
+
+   uint32_t alloc_size = size;
+   if (bucket == DZN_INTERNAL_BUF_UPLOAD)
+      /* Walk through a 4MB upload buffer */
+      alloc_size = ALIGN_POT(size, 4 * 1024 * 1024);
+   else
+      /* Align size on 64k (the default alignment) */
+      alloc_size = ALIGN_POT(size, 64 * 1024);
 
    D3D12_HEAP_PROPERTIES hprops = dzn_ID3D12Device4_GetCustomHeapProperties(device->dev, 0, heap_type);
    D3D12_RESOURCE_DESC rdesc = {
       .Dimension = D3D12_RESOURCE_DIMENSION_BUFFER,
       .Alignment = D3D12_DEFAULT_RESOURCE_PLACEMENT_ALIGNMENT,
-      .Width = size,
+      .Width = alloc_size,
       .Height = 1,
       .DepthOrArraySize = 1,
       .MipLevels = 1,
@@ -1799,8 +1831,15 @@ dzn_cmd_buffer_alloc_internal_buf(struct dzn_cmd_buffer *cmdbuf,
    }
 
    entry->res = res;
-   list_addtail(&entry->link, &cmdbuf->internal_bufs);
+   entry->size = alloc_size;
+   list_addtail(&entry->link, &cmdbuf->internal_bufs[bucket]);
    *out = entry->res;
+   if (offset)
+      *offset = 0;
+   if (bucket == DZN_INTERNAL_BUF_UPLOAD) {
+      cmdbuf->cur_upload_buf = entry;
+      cmdbuf->cur_upload_buf_offset = size;
+   }
    return VK_SUCCESS;
 }
 
@@ -1837,12 +1876,15 @@ dzn_cmd_buffer_clear_rects_with_copy(struct dzn_cmd_buffer *cmdbuf,
       memcpy(&buf[i], raw, blksize);
 
    ID3D12Resource *src_res;
+   uint64_t src_offset;
 
    VkResult result =
       dzn_cmd_buffer_alloc_internal_buf(cmdbuf, res_size,
-                                        D3D12_HEAP_TYPE_UPLOAD,
+                                        DZN_INTERNAL_BUF_UPLOAD,
                                         D3D12_RESOURCE_STATE_GENERIC_READ,
-                                        &src_res);
+                                        D3D12_TEXTURE_DATA_PLACEMENT_ALIGNMENT,
+                                        &src_res,
+                                        &src_offset);
    if (result != VK_SUCCESS)
       return;
 
@@ -1850,6 +1892,7 @@ dzn_cmd_buffer_clear_rects_with_copy(struct dzn_cmd_buffer *cmdbuf,
 
    uint8_t *cpu_ptr;
    ID3D12Resource_Map(src_res, 0, NULL, (void **)&cpu_ptr);
+   cpu_ptr += src_offset;
    for (uint32_t i = 0; i < res_size; i += fill_step)
       memcpy(&cpu_ptr[i], buf, fill_step);
 
@@ -1859,7 +1902,7 @@ dzn_cmd_buffer_clear_rects_with_copy(struct dzn_cmd_buffer *cmdbuf,
       .pResource = src_res,
       .Type = D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT,
       .PlacedFootprint = {
-         .Offset = 0,
+         .Offset = src_offset,
          .Footprint = {
             .Width = max_w,
             .Height = max_h,
@@ -1977,12 +2020,15 @@ dzn_cmd_buffer_clear_ranges_with_copy(struct dzn_cmd_buffer *cmdbuf,
       memcpy(&buf[i], raw, blksize);
 
    ID3D12Resource *src_res;
+   uint64_t src_offset;
 
    VkResult result =
       dzn_cmd_buffer_alloc_internal_buf(cmdbuf, res_size,
-                                        D3D12_HEAP_TYPE_UPLOAD,
+                                        DZN_INTERNAL_BUF_UPLOAD,
                                         D3D12_RESOURCE_STATE_GENERIC_READ,
-                                        &src_res);
+                                        D3D12_TEXTURE_DATA_PLACEMENT_ALIGNMENT,
+                                        &src_res,
+                                        &src_offset);
    if (result != VK_SUCCESS)
       return;
 
@@ -1990,6 +2036,7 @@ dzn_cmd_buffer_clear_ranges_with_copy(struct dzn_cmd_buffer *cmdbuf,
 
    uint8_t *cpu_ptr;
    ID3D12Resource_Map(src_res, 0, NULL, (void **)&cpu_ptr);
+   cpu_ptr += src_offset;
    for (uint32_t i = 0; i < res_size; i += fill_step)
       memcpy(&cpu_ptr[i], buf, fill_step);
 
@@ -1999,7 +2046,7 @@ dzn_cmd_buffer_clear_ranges_with_copy(struct dzn_cmd_buffer *cmdbuf,
       .pResource = src_res,
       .Type = D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT,
       .PlacedFootprint = {
-         .Offset = 0,
+         .Offset = src_offset,
       },
    };
 
@@ -3097,7 +3144,16 @@ dzn_cmd_buffer_update_heaps(struct dzn_cmd_buffer *cmdbuf, uint32_t bindpoint)
    const struct dzn_pipeline *pipeline =
       cmdbuf->state.bindpoint[bindpoint].pipeline;
 
-   if (!(cmdbuf->state.bindpoint[bindpoint].dirty & DZN_CMD_BINDPOINT_DIRTY_HEAPS))
+   /* The set of dirty bits that are cleared by running this function. Notably, 
+    * for bindless, descriptor sets that are bound but unused by the currently
+    * set pipeline are not processed, meaning their dirty bits should persist 
+    * until such a point as a pipeline does use them. For not-bindless,
+    * all sets are processed. */
+   uint32_t dirty_bits_bindless =
+      (pipeline->dynamic_buffer_count ? DZN_CMD_BINDPOINT_DIRTY_DYNAMIC_BUFFERS : 0) |
+      (((DZN_CMD_BINDPOINT_DIRTY_DESC_SET0 << pipeline->set_count) - 1) & DZN_CMD_BINDPOINT_DIRTY_DESC_SETS);
+   uint32_t dirty_bits = (device->bindless ? dirty_bits_bindless : DZN_CMD_BINDPOINT_DIRTY_DESC_SETS | DZN_CMD_BINDPOINT_DIRTY_DYNAMIC_BUFFERS);
+   if (!(cmdbuf->state.bindpoint[bindpoint].dirty & dirty_bits))
       return;
 
    dzn_foreach_pool_type (type) {
@@ -3119,12 +3175,12 @@ dzn_cmd_buffer_update_heaps(struct dzn_cmd_buffer *cmdbuf, uint32_t bindpoint)
          new_heap_offsets[type] = dst_heap_offset;
          update_root_desc_table[type] = true;
 
-         for (uint32_t s = 0; s < cmdbuf->state.pipeline->root.sets_param_count; s++) {
+         for (uint32_t s = 0; s < MAX_SETS; s++) {
             const struct dzn_descriptor_set *set = desc_state->sets[s].set;
             if (!set) continue;
 
             uint32_t set_heap_offset = pipeline->sets[s].heap_offsets[type];
-            uint32_t set_desc_count = pipeline->sets[s].range_desc_count[type];
+            uint32_t set_desc_count = MIN2(pipeline->sets[s].range_desc_count[type], set->heap_sizes[type]);
             if (set_desc_count) {
                dzn_descriptor_heap_copy(device, dst_heap, dst_heap_offset + set_heap_offset,
                                         &set->pool->heaps[type], set->heap_offsets[type],
@@ -3135,6 +3191,8 @@ dzn_cmd_buffer_update_heaps(struct dzn_cmd_buffer *cmdbuf, uint32_t bindpoint)
                uint32_t dynamic_buffer_count = pipeline->sets[s].dynamic_buffer_count;
                for (uint32_t o = 0; o < dynamic_buffer_count; o++) {
                   struct dzn_buffer_desc bdesc = set->dynamic_buffers[o];
+                  if (!bdesc.buffer)
+                     continue;
                   bdesc.offset += desc_state->sets[s].dynamic_offsets[o];
 
                   bool primary_is_writable = bdesc.type == VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC;
@@ -3190,7 +3248,7 @@ dzn_cmd_buffer_update_heaps(struct dzn_cmd_buffer *cmdbuf, uint32_t bindpoint)
    }
 
    if (device->bindless) {
-      for (uint32_t s = 0; s < pipeline->root.sets_param_count; ++s) {
+      for (uint32_t s = 0; s < pipeline->set_count; ++s) {
          const struct dzn_descriptor_set *set = desc_state->sets[s].set;
          if (!set || !set->pool->bindless.buf)
             continue;
@@ -3207,17 +3265,21 @@ dzn_cmd_buffer_update_heaps(struct dzn_cmd_buffer *cmdbuf, uint32_t bindpoint)
       if (pipeline->dynamic_buffer_count &&
           (cmdbuf->state.bindpoint[bindpoint].dirty & DZN_CMD_BINDPOINT_DIRTY_DYNAMIC_BUFFERS)) {
          ID3D12Resource *dynamic_buffer_buf = NULL;
+         uint64_t dynamic_buffer_buf_offset;
          VkResult result =
             dzn_cmd_buffer_alloc_internal_buf(cmdbuf, sizeof(struct dxil_spirv_bindless_entry) * pipeline->dynamic_buffer_count,
-                                              D3D12_HEAP_TYPE_UPLOAD,
+                                              DZN_INTERNAL_BUF_UPLOAD,
                                               D3D12_RESOURCE_STATE_GENERIC_READ,
-                                              &dynamic_buffer_buf);
+                                              D3D12_RAW_UAV_SRV_BYTE_ALIGNMENT,
+                                              &dynamic_buffer_buf,
+                                              &dynamic_buffer_buf_offset);
          if (result != VK_SUCCESS)
             return;
 
-         uint64_t gpuva = ID3D12Resource_GetGPUVirtualAddress(dynamic_buffer_buf);
+         uint64_t gpuva = ID3D12Resource_GetGPUVirtualAddress(dynamic_buffer_buf) + dynamic_buffer_buf_offset;
          struct dxil_spirv_bindless_entry *map;
          ID3D12Resource_Map(dynamic_buffer_buf, 0, NULL, (void **)&map);
+         map += (dynamic_buffer_buf_offset / sizeof(*map));
 
          for (uint32_t s = 0; s < MAX_SETS; ++s) {
             const struct dzn_descriptor_set *set = desc_state->sets[s].set;
@@ -3252,6 +3314,8 @@ dzn_cmd_buffer_update_heaps(struct dzn_cmd_buffer *cmdbuf, uint32_t bindpoint)
                                                                         gpuva);
       }
    }
+
+   cmdbuf->state.bindpoint[bindpoint].dirty &= ~dirty_bits;
 }
 
 static void
@@ -3272,6 +3336,8 @@ dzn_cmd_buffer_update_sysvals(struct dzn_cmd_buffer *cmdbuf, uint32_t bindpoint)
                                                     sizeof(cmdbuf->state.sysvals.compute) / 4,
                                                     &cmdbuf->state.sysvals.compute, 0);
    }
+
+   cmdbuf->state.bindpoint[bindpoint].dirty &= ~DZN_CMD_BINDPOINT_DIRTY_SYSVALS;
 }
 
 static void
@@ -3413,16 +3479,20 @@ dzn_cmd_buffer_triangle_fan_create_index(struct dzn_cmd_buffer *cmdbuf, uint32_t
       return VK_SUCCESS;
 
    ID3D12Resource *index_buf;
+   uint64_t index_offset;
    VkResult result =
       dzn_cmd_buffer_alloc_internal_buf(cmdbuf, *vertex_count * index_size,
-                                        D3D12_HEAP_TYPE_UPLOAD,
+                                        DZN_INTERNAL_BUF_UPLOAD,
                                         D3D12_RESOURCE_STATE_GENERIC_READ,
-                                        &index_buf);
+                                        index_size,
+                                        &index_buf,
+                                        &index_offset);
    if (result != VK_SUCCESS)
       return result;
 
    void *cpu_ptr;
    ID3D12Resource_Map(index_buf, 0, NULL, &cpu_ptr);
+   cpu_ptr = (uint8_t *)cpu_ptr + index_offset;
 
    /* TODO: VK_PROVOKING_VERTEX_MODE_LAST_VERTEX_EXT */
    if (index_size == 2) {
@@ -3444,7 +3514,7 @@ dzn_cmd_buffer_triangle_fan_create_index(struct dzn_cmd_buffer *cmdbuf, uint32_t
    }
 
    cmdbuf->state.ib.view.SizeInBytes = *vertex_count * index_size;
-   cmdbuf->state.ib.view.BufferLocation = ID3D12Resource_GetGPUVirtualAddress(index_buf);
+   cmdbuf->state.ib.view.BufferLocation = ID3D12Resource_GetGPUVirtualAddress(index_buf) + index_offset;
    cmdbuf->state.dirty |= DZN_CMD_DIRTY_IB;
    return VK_SUCCESS;
 }
@@ -3466,9 +3536,11 @@ dzn_cmd_buffer_triangle_fan_rewrite_index(struct dzn_cmd_buffer *cmdbuf,
    ID3D12Resource *new_index_buf;
    VkResult result =
       dzn_cmd_buffer_alloc_internal_buf(cmdbuf, *index_count * 4,
-                                        D3D12_HEAP_TYPE_DEFAULT,
+                                        DZN_INTERNAL_BUF_DEFAULT,
                                         D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
-                                        &new_index_buf);
+                                        4,
+                                        &new_index_buf,
+                                        NULL);
    if (result != VK_SUCCESS)
       return result;
 
@@ -3503,7 +3575,7 @@ dzn_cmd_buffer_triangle_fan_rewrite_index(struct dzn_cmd_buffer *cmdbuf,
 
    if (cmdbuf->enhanced_barriers) {
       dzn_cmd_buffer_buffer_barrier(cmdbuf, new_index_buf,
-                                    D3D12_BARRIER_SYNC_COMPUTE_SHADING, D3D12_BARRIER_SYNC_INPUT_ASSEMBLER,
+                                    D3D12_BARRIER_SYNC_COMPUTE_SHADING, D3D12_BARRIER_SYNC_INDEX_INPUT,
                                     D3D12_BARRIER_ACCESS_UNORDERED_ACCESS, D3D12_BARRIER_ACCESS_INDEX_BUFFER);
    } else {
       dzn_cmd_buffer_queue_transition_barriers(cmdbuf, new_index_buf, 0, 1,
@@ -3548,7 +3620,7 @@ dzn_cmd_buffer_prepare_draw(struct dzn_cmd_buffer *cmdbuf, bool indexed)
    dzn_cmd_buffer_update_depth_bounds(cmdbuf);
 
    /* Reset the dirty states */
-   cmdbuf->state.bindpoint[VK_PIPELINE_BIND_POINT_GRAPHICS].dirty = 0;
+   cmdbuf->state.bindpoint[VK_PIPELINE_BIND_POINT_GRAPHICS].dirty &= DZN_CMD_BINDPOINT_DIRTY_HEAPS;
    cmdbuf->state.dirty = 0;
 }
 
@@ -3628,9 +3700,10 @@ dzn_cmd_buffer_indirect_draw(struct dzn_cmd_buffer *cmdbuf,
    ID3D12Resource *exec_buf;
    VkResult result =
       dzn_cmd_buffer_alloc_internal_buf(cmdbuf, exec_buf_size,
-                                        D3D12_HEAP_TYPE_DEFAULT,
+                                        DZN_INTERNAL_BUF_DEFAULT,
                                         D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
-                                        &exec_buf);
+                                        0,
+                                        &exec_buf, NULL);
    if (result != VK_SUCCESS)
       return;
 
@@ -3643,18 +3716,20 @@ dzn_cmd_buffer_indirect_draw(struct dzn_cmd_buffer *cmdbuf,
       result =
          dzn_cmd_buffer_alloc_internal_buf(cmdbuf,
                                            max_draw_count * triangle_fan_index_buf_stride,
-                                           D3D12_HEAP_TYPE_DEFAULT,
+                                           DZN_INTERNAL_BUF_DEFAULT,
                                            D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
-                                           &triangle_fan_index_buf);
+                                           0,
+                                           &triangle_fan_index_buf, NULL);
       if (result != VK_SUCCESS)
          return;
 
       result =
          dzn_cmd_buffer_alloc_internal_buf(cmdbuf,
                                            max_draw_count * triangle_fan_exec_buf_stride,
-                                           D3D12_HEAP_TYPE_DEFAULT,
+                                           DZN_INTERNAL_BUF_DEFAULT,
                                            D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
-                                           &triangle_fan_exec_buf);
+                                           0,
+                                           &triangle_fan_exec_buf, NULL);
       if (result != VK_SUCCESS)
          return;
    }
@@ -3785,7 +3860,7 @@ dzn_cmd_buffer_indirect_draw(struct dzn_cmd_buffer *cmdbuf,
       if (cmdbuf->enhanced_barriers) {
          buf_barriers[enhanced_barriers.NumBarriers++] = (D3D12_BUFFER_BARRIER){
             .SyncBefore = D3D12_BARRIER_SYNC_COMPUTE_SHADING,
-            .SyncAfter = D3D12_BARRIER_SYNC_INPUT_ASSEMBLER,
+            .SyncAfter = D3D12_BARRIER_SYNC_INDEX_INPUT,
             .AccessBefore = D3D12_BARRIER_ACCESS_UNORDERED_ACCESS,
             .AccessAfter = D3D12_BARRIER_ACCESS_INDEX_BUFFER,
             .pResource = triangle_fan_index_buf,
@@ -3883,7 +3958,7 @@ dzn_cmd_buffer_prepare_dispatch(struct dzn_cmd_buffer *cmdbuf)
    dzn_cmd_buffer_update_push_constants(cmdbuf, VK_PIPELINE_BIND_POINT_COMPUTE);
 
    /* Reset the dirty states */
-   cmdbuf->state.bindpoint[VK_PIPELINE_BIND_POINT_COMPUTE].dirty = 0;
+   cmdbuf->state.bindpoint[VK_PIPELINE_BIND_POINT_COMPUTE].dirty &= DZN_CMD_BINDPOINT_DIRTY_HEAPS;
 }
 
 VKAPI_ATTR void VKAPI_CALL
@@ -4071,9 +4146,10 @@ dzn_CmdCopyImage2(VkCommandBuffer commandBuffer,
 
       VkResult result =
          dzn_cmd_buffer_alloc_internal_buf(cmdbuf, max_size,
-                                           D3D12_HEAP_TYPE_DEFAULT,
+                                           DZN_INTERNAL_BUF_DEFAULT,
                                            D3D12_RESOURCE_STATE_COPY_DEST,
-                                           &tmp_loc.pResource);
+                                           0,
+                                           &tmp_loc.pResource, NULL);
       if (result != VK_SUCCESS)
          return;
 
@@ -4245,22 +4321,26 @@ dzn_CmdFillBuffer(VkCommandBuffer commandBuffer,
    size &= ~3ULL;
 
    ID3D12Resource *src_res;
+   uint64_t src_offset;
    VkResult result =
       dzn_cmd_buffer_alloc_internal_buf(cmdbuf, size,
-                                        D3D12_HEAP_TYPE_UPLOAD,
+                                        DZN_INTERNAL_BUF_UPLOAD,
                                         D3D12_RESOURCE_STATE_GENERIC_READ,
-                                        &src_res);
+                                        4,
+                                        &src_res,
+                                        &src_offset);
    if (result != VK_SUCCESS)
       return;
 
    uint32_t *cpu_ptr;
    ID3D12Resource_Map(src_res, 0, NULL, (void **)&cpu_ptr);
+   cpu_ptr += src_offset / sizeof(uint32_t);
    for (uint32_t i = 0; i < size / 4; i++)
       cpu_ptr[i] = data;
 
    ID3D12Resource_Unmap(src_res, 0, NULL);
 
-   ID3D12GraphicsCommandList1_CopyBufferRegion(cmdbuf->cmdlist, buf->res, dstOffset, src_res, 0, size);
+   ID3D12GraphicsCommandList1_CopyBufferRegion(cmdbuf->cmdlist, buf->res, dstOffset, src_res, src_offset, size);
 }
 
 VKAPI_ATTR void VKAPI_CALL
@@ -4285,20 +4365,22 @@ dzn_CmdUpdateBuffer(VkCommandBuffer commandBuffer,
    size &= ~3ULL;
 
    ID3D12Resource *src_res;
+   uint64_t src_offset;
    VkResult result =
       dzn_cmd_buffer_alloc_internal_buf(cmdbuf, size,
-                                        D3D12_HEAP_TYPE_UPLOAD,
+                                        DZN_INTERNAL_BUF_UPLOAD,
                                         D3D12_RESOURCE_STATE_GENERIC_READ,
-                                        &src_res);
+                                        4,
+                                        &src_res, &src_offset);
    if (result != VK_SUCCESS)
       return;
 
    void *cpu_ptr;
    ID3D12Resource_Map(src_res, 0, NULL, &cpu_ptr);
-   memcpy(cpu_ptr, data, size),
+   memcpy((uint8_t *)cpu_ptr + src_offset, data, size),
    ID3D12Resource_Unmap(src_res, 0, NULL);
 
-   ID3D12GraphicsCommandList1_CopyBufferRegion(cmdbuf->cmdlist, buf->res, dstOffset, src_res, 0, size);
+   ID3D12GraphicsCommandList1_CopyBufferRegion(cmdbuf->cmdlist, buf->res, dstOffset, src_res, src_offset, size);
 }
 
 VKAPI_ATTR void VKAPI_CALL
@@ -4997,21 +5079,23 @@ dzn_CmdDrawIndexed(VkCommandBuffer commandBuffer,
       };
 
       ID3D12Resource *draw_buf;
+      uint64_t offset;
       VkResult result =
          dzn_cmd_buffer_alloc_internal_buf(cmdbuf, sizeof(params),
-                                           D3D12_HEAP_TYPE_UPLOAD,
+                                           DZN_INTERNAL_BUF_UPLOAD,
                                            D3D12_RESOURCE_STATE_GENERIC_READ,
-                                           &draw_buf);
+                                           4,
+                                           &draw_buf, &offset);
       if (result != VK_SUCCESS)
          return;
 
       void *cpu_ptr;
       ID3D12Resource_Map(draw_buf, 0, NULL, &cpu_ptr);
-      memcpy(cpu_ptr, &params, sizeof(params));
+      memcpy((uint8_t *)cpu_ptr + offset, &params, sizeof(params));
 
       ID3D12Resource_Unmap(draw_buf, 0, NULL);
 
-      dzn_cmd_buffer_indirect_draw(cmdbuf, draw_buf, 0, NULL, 0, 1, sizeof(params), true);
+      dzn_cmd_buffer_indirect_draw(cmdbuf, draw_buf, offset, NULL, 0, 1, sizeof(params), true);
       return;
    }
 
@@ -5535,9 +5619,10 @@ dzn_CmdDispatchIndirect(VkCommandBuffer commandBuffer,
    ID3D12Resource *exec_buf;
    VkResult result =
       dzn_cmd_buffer_alloc_internal_buf(cmdbuf, sizeof(D3D12_DISPATCH_ARGUMENTS) * 2,
-                                        D3D12_HEAP_TYPE_DEFAULT,
+                                        DZN_INTERNAL_BUF_DEFAULT,
                                         D3D12_RESOURCE_STATE_COPY_DEST,
-                                        &exec_buf);
+                                        0,
+                                        &exec_buf, NULL);
    if (result != VK_SUCCESS)
       return;
 

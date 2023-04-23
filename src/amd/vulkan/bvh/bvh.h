@@ -181,11 +181,10 @@ struct radv_bvh_triangle_node {
 };
 
 struct radv_bvh_aabb_node {
-   radv_aabb aabb;
    uint32_t primitive_id;
    /* flags in upper 4 bits */
    uint32_t geometry_id_and_flags;
-   uint32_t reserved[8];
+   uint32_t reserved[14];
 };
 
 struct radv_bvh_instance_node {

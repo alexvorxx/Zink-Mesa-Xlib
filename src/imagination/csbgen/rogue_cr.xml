@@ -488,6 +488,31 @@ SOFTWARE.
     <field name="y" start="0" end="9" type="uint"/>
   </struct>
 
+  <struct name="ISP_RGN" length="1">
+    <field name="size" start="0" end="23" type="uint">
+      <define name="UNIT_SIZE" value="4"/>
+    </field>
+  </struct>
+
+  <!-- FIXME: This is the SIMPLE_INTERNAL_PARAMETER_FORMAT variant.
+       Should we use the "condition" tag for this?
+  -->
+  <struct name="ISP_RGN_SIPF" length="1">
+    <condition type="if" check="IPF_CREQ_PF"/>
+      <!-- FIXME: This should have a default value of 0x1F not setting it since
+        csbgen doesn't check if the feature is present or not so this will
+        be set even when the feature is not present.
+      -->
+      <field name="cs_size_ipf_creq_pf" start="24" end="28" type="uint">
+        <define name="MAX" value="31"/>
+      </field>
+    <condition type="endif" check="IPF_CREQ_PF"/>
+    <field name="size" start="0" end="23" type="uint">
+      <!-- Note that this differs from ISP_RGN. -->
+      <define name="UNIT_SIZE" value="1"/>
+    </field>
+  </struct>
+
   <struct name="ISP_BGOBJDEPTH" length="1">
     <field name="value" start="0" end="31" type="uint"/>
   </struct>
@@ -499,7 +524,7 @@ SOFTWARE.
   </struct>
 
   <struct name="ISP_AA" length="1">
-    <field name="mode" start="0" end="1" type="ISP_AA_MODE_TYPE"/>
+    <field name="mode" start="0" end="1" type="ISP_AA_MODE_TYPE" default="AA_NONE"/>
   </struct>
 
   <struct name="ISP_CTL" length="1">

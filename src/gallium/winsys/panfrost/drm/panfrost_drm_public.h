@@ -35,11 +35,12 @@ struct renderonly_scanout;
 struct winsys_handle;
 
 struct pipe_screen *panfrost_drm_screen_create(int drmFD);
-struct pipe_screen *panfrost_drm_screen_create_renderonly(int fd,
-                                                          struct renderonly *ro,
-                                                          const struct pipe_screen_config *config);
-struct renderonly_scanout *panfrost_create_kms_dumb_buffer_for_resource(struct pipe_resource *rsc,
-                                                                        struct renderonly *ro,
-                                                                        struct winsys_handle *out_handle);
+struct pipe_screen *
+panfrost_drm_screen_create_renderonly(int fd, struct renderonly *ro,
+                                      const struct pipe_screen_config *config);
+struct renderonly_scanout *
+panfrost_create_kms_dumb_buffer_for_resource(struct pipe_resource *rsc,
+                                             struct renderonly *ro,
+                                             struct winsys_handle *out_handle);
 
 #endif /* __PAN_DRM_PUBLIC_H__ */

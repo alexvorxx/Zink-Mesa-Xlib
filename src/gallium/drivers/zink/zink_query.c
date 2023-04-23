@@ -383,30 +383,31 @@ fail:
 }
 
 static void
-unref_vk_pool(struct zink_screen *screen, struct zink_query_pool *pool)
+unref_vk_pool(struct zink_context *ctx, struct zink_query_pool *pool)
 {
    if (!pool || --pool->refcount)
       return;
-   VKSCR(DestroyQueryPool)(screen->dev, pool->query_pool, NULL);
+   util_dynarray_append(&ctx->batch.state->dead_querypools, VkQueryPool, pool->query_pool);
    if (list_is_linked(&pool->list))
       list_del(&pool->list);
    FREE(pool);
 }
 
 static void
-unref_vk_query(struct zink_screen *screen, struct zink_vk_query *vkq)
+unref_vk_query(struct zink_context *ctx, struct zink_vk_query *vkq)
 {
    if (!vkq)
       return;
-   unref_vk_pool(screen, vkq->pool);
+   unref_vk_pool(ctx, vkq->pool);
    vkq->refcount--;
    if (vkq->refcount == 0)
       FREE(vkq);
 }
 
 static void
-destroy_query(struct zink_screen *screen, struct zink_query *query)
+destroy_query(struct zink_context *ctx, struct zink_query *query)
 {
+   struct zink_screen *screen = zink_screen(ctx->base.screen);
    assert(zink_screen_usage_check_completion(screen, query->batch_uses));
    struct zink_query_buffer *qbo, *next;
 
@@ -414,7 +415,7 @@ destroy_query(struct zink_screen *screen, struct zink_query *query)
    unsigned num_starts = query->starts.capacity / sizeof(struct zink_query_start);
    for (unsigned j = 0; j < num_starts; j++) {
       for (unsigned i = 0; i < PIPE_MAX_VERTEX_STREAMS; i++) {
-         unref_vk_query(screen, starts[j].vkq[i]);
+         unref_vk_query(ctx, starts[j].vkq[i]);
       }
    }
 
@@ -474,6 +475,10 @@ query_pool_get_range(struct zink_context *ctx, struct zink_query *q)
             pool = find_or_allocate_qp(ctx, q, pool_idx);
          }
          vkq = CALLOC_STRUCT(zink_vk_query);
+         if (!vkq) {
+            mesa_loge("ZINK: failed to allocate vkq!");
+            return;
+         }
 
          vkq->refcount = 1;
          vkq->needs_reset = true;
@@ -482,7 +487,7 @@ query_pool_get_range(struct zink_context *ctx, struct zink_query *q)
          vkq->query_id = pool->last_range;
 
       }
-      unref_vk_query(zink_screen(ctx->base.screen), start->vkq[i]);
+      unref_vk_query(ctx, start->vkq[i]);
       start->vkq[i] = vkq;
    }
 }
@@ -534,7 +539,7 @@ zink_create_query(struct pipe_context *pctx,
    }
    return (struct pipe_query *)query;
 fail:
-   destroy_query(screen, query);
+   destroy_query(zink_context(pctx), query);
    return NULL;
 }
 
@@ -542,28 +547,27 @@ static void
 zink_destroy_query(struct pipe_context *pctx,
                    struct pipe_query *q)
 {
-   struct zink_screen *screen = zink_screen(pctx->screen);
    struct zink_query *query = (struct zink_query *)q;
 
    /* only destroy if this query isn't active on any batches,
     * otherwise just mark dead and wait
     */
    if (query->batch_uses) {
-      p_atomic_set(&query->dead, true);
+      query->dead = true;
       return;
    }
 
-   destroy_query(screen, query);
+   destroy_query(zink_context(pctx), query);
 }
 
 void
-zink_prune_query(struct zink_screen *screen, struct zink_batch_state *bs, struct zink_query *query)
+zink_prune_query(struct zink_batch_state *bs, struct zink_query *query)
 {
    if (!zink_batch_usage_matches(query->batch_uses, bs))
       return;
    query->batch_uses = NULL;
-   if (p_atomic_read(&query->dead))
-      destroy_query(screen, query);
+   if (query->dead)
+      destroy_query(bs->ctx, query);
 }
 
 static void

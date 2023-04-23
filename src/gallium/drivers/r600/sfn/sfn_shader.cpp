@@ -1244,7 +1244,7 @@ Shader::load_ubo(nir_intrinsic_instr *instr)
 
    if (!buf_offset) {
       /* TODO: if bufid is constant then this can also be solved by using the
-       * CF indes on the ALU block, and this would probably make sense when
+       * CF index on the ALU block, and this would probably make sense when
        * there are more then one loads with the same buffer ID. */
 
       auto addr = value_factory().src(instr->src[1], 0)->as_register();

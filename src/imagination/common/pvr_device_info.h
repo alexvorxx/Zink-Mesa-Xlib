@@ -257,6 +257,7 @@ struct pvr_device_features {
    bool has_eight_output_registers : 1;
    bool has_gpu_multicore_support : 1;
    bool has_gs_rta_support : 1;
+   bool has_ipf_creq_pf : 1;
    bool has_isp_max_tiles_in_flight : 1;
    bool has_isp_samples_per_pixel : 1;
    bool has_max_instances_per_pds_task : 1;
@@ -268,10 +269,13 @@ struct pvr_device_features {
    bool has_num_user_clip_planes : 1;
    bool has_paired_tiles : 1;
    bool has_pbe2_in_xe : 1;
+   bool has_pbe_filterable_f16 : 1;
+   bool has_pbe_yuv : 1;
    bool has_pds_ddmadt : 1;
    bool has_roguexe : 1;
    bool has_screen_size8K : 1;
    bool has_simple_internal_parameter_format : 1;
+   bool has_simple_internal_parameter_format_v1 : 1;
    bool has_simple_internal_parameter_format_v2 : 1;
    bool has_simple_parameter_format_version : 1;
    bool has_slc_cache_line_size_bits : 1;
@@ -327,6 +331,7 @@ struct pvr_device_enhancements {
    bool has_ern35421 : 1;
    bool has_ern38020 : 1;
    bool has_ern38748 : 1;
+   bool has_ern42064 : 1;
    bool has_ern42307 : 1;
    bool has_ern45493 : 1;
 };

@@ -548,8 +548,9 @@ v3d_upload_sampler_state_variant(void *map,
                 sampler.wrap_r = translate_wrap(cso->wrap_r);
 
                 sampler.fixed_bias = cso->lod_bias;
-                sampler.depth_compare_function = cso->compare_func;
-
+                sampler.depth_compare_function = cso->compare_mode ?
+                                                 cso->compare_func :
+                                                 V3D_COMPARE_FUNC_NEVER;
                 sampler.min_filter_nearest =
                         cso->min_img_filter == PIPE_TEX_FILTER_NEAREST;
                 sampler.mag_filter_nearest =
@@ -792,7 +793,9 @@ v3d_create_sampler_state(struct pipe_context *pctx,
         }
 
         v3dx_pack(&so->texture_shader_state, TEXTURE_SHADER_STATE, tex) {
-                tex.depth_compare_function = cso->compare_func;
+                tex.depth_compare_function = cso->compare_mode ?
+                                             cso->compare_func :
+                                             V3D_COMPARE_FUNC_NEVER;
                 tex.fixed_bias = cso->lod_bias;
         }
 #endif /* V3D_VERSION < 40 */

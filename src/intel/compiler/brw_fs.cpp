@@ -6297,7 +6297,7 @@ fs_visitor::emit_dummy_memory_fence_before_eot()
    bool progress = false;
    bool has_ugm_write_or_atomic = false;
 
-   if (!intel_device_info_is_dg2(devinfo))
+   if (!intel_needs_workaround(devinfo, 22013689345))
       return;
 
    foreach_block_and_inst_safe (block, fs_inst, inst, cfg) {

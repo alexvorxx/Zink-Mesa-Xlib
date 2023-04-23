@@ -449,7 +449,7 @@ static void ac_parse_packet3(FILE *f, uint32_t header, struct ac_ib_parser *ib,
       break;
    case PKT3_INDIRECT_BUFFER_SI:
    case PKT3_INDIRECT_BUFFER_CONST:
-   case PKT3_INDIRECT_BUFFER_CIK: {
+   case PKT3_INDIRECT_BUFFER: {
       uint32_t base_lo_dw = ac_ib_get(ib);
       ac_dump_reg(f, ib->gfx_level, ib->family, R_3F0_IB_BASE_LO, base_lo_dw, ~0);
       uint32_t base_hi_dw = ac_ib_get(ib);
@@ -689,7 +689,7 @@ void ac_parse_ib(FILE *f, uint32_t *ib, int num_dw, const int *trace_ids, unsign
  * \param old_dmesg_timestamp	previous dmesg timestamp parsed at init time
  * \param out_addr		detected VM fault addr
  */
-bool ac_vm_fault_occured(enum amd_gfx_level gfx_level, uint64_t *old_dmesg_timestamp,
+bool ac_vm_fault_occurred(enum amd_gfx_level gfx_level, uint64_t *old_dmesg_timestamp,
                          uint64_t *out_addr)
 {
 #ifdef _WIN32

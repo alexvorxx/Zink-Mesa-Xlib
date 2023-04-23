@@ -251,6 +251,8 @@ files_libgallium = files(
   'util/u_rect.h',
   'util/u_resource.c',
   'util/u_resource.h',
+  'util/u_sample_positions.c',
+  'util/u_sample_positions.h',
   'util/u_sampler.c',
   'util/u_sampler.h',
   'util/u_screen.c',

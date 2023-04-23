@@ -115,7 +115,6 @@ glx@glx_ext_import_context@query context info,Fail
 glx@glx-buffer-age,Fail
 glx@glx-buffer-age vblank_mode=0,Fail
 
-glx@glx-make-current,Fail
 glx@glx-multi-window-single-context,Crash
 glx@glx-swap-pixmap-bad,Fail
 glx@glx-tfp,Crash

@@ -356,7 +356,7 @@ lower_load_vs_input(nir_builder *b, nir_intrinsic_instr *intrin, lower_vs_inputs
    nir_ssa_def *load = loads[0];
 
    /* Extract the channels we actually need when we couldn't skip starting
-    * components or had to emit more than one load instrinsic.
+    * components or had to emit more than one load intrinsic.
     */
    if (num_loads > 0 && (first_used_channel > skipped_start || num_loads != 1))
       load = nir_extract_bits(b, loads, num_loads, (first_used_channel - skipped_start) * bit_size,

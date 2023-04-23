@@ -710,7 +710,13 @@ vn_physical_device_init_properties(struct vn_physical_device *physical_dev)
       vk10_props->apiVersion = ver;
    }
 
-   vk10_props->driverVersion = vk_get_driver_version();
+   /* ANGLE relies on ARM proprietary driver version for workarounds */
+   const char *engine_name = instance->base.base.app_info.engine_name;
+   const bool forward_driver_version =
+      vk12_props->driverID == VK_DRIVER_ID_ARM_PROPRIETARY && engine_name &&
+      strcmp(engine_name, "ANGLE") == 0;
+   if (!forward_driver_version)
+      vk10_props->driverVersion = vk_get_driver_version();
 
    char device_name[VK_MAX_PHYSICAL_DEVICE_NAME_SIZE];
    int device_name_len =

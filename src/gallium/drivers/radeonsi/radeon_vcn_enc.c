@@ -712,6 +712,9 @@ static void radeon_enc_destroy(struct pipe_video_codec *encoder)
 
    RADEON_ENC_DESTROY_VIDEO_BUFFER(enc->dpb);
    enc->ws->cs_destroy(&enc->cs);
+   if (enc->ectx)
+      enc->ectx->destroy(enc->ectx);
+
    FREE(enc);
 }
 
@@ -749,9 +752,15 @@ struct pipe_video_codec *radeon_create_encoder(struct pipe_context *context,
    if (!enc)
       return NULL;
 
+   if (sctx->vcn_has_ctx) {
+      enc->ectx = pipe_create_multimedia_context(context->screen);
+      if (!enc->ectx)
+         sctx->vcn_has_ctx = false;
+   }
+
    enc->alignment = 256;
    enc->base = *templ;
-   enc->base.context = context;
+   enc->base.context = (sctx->vcn_has_ctx)? enc->ectx : context;
    enc->base.destroy = radeon_enc_destroy;
    enc->base.begin_frame = radeon_enc_begin_frame;
    enc->base.encode_bitstream = radeon_enc_encode_bitstream;
@@ -763,7 +772,9 @@ struct pipe_video_codec *radeon_create_encoder(struct pipe_context *context,
    enc->screen = context->screen;
    enc->ws = ws;
 
-   if (!ws->cs_create(&enc->cs, sctx->ctx, AMD_IP_VCN_ENC, radeon_enc_cs_flush, enc, false)) {
+   if (!ws->cs_create(&enc->cs,
+       (sctx->vcn_has_ctx) ? ((struct si_context *)enc->ectx)->ctx : sctx->ctx,
+       AMD_IP_VCN_ENC, radeon_enc_cs_flush, enc, false)) {
       RVID_ERR("Can't get command submission context.\n");
       goto error;
    }

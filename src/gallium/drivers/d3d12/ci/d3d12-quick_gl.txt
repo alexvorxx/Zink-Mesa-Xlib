@@ -22,7 +22,6 @@ spec@!opengl 1.1@polygon-mode-offset@config 4: Expected white pixel on top edge,
 spec@!opengl 1.1@polygon-offset,Fail
 spec@!opengl 1.1@vertex-fallbacks,Crash
 spec@!opengl 1.1@windowoverlap,Missing
-spec@!opengl 2.0@gl-2.0-two-sided-stencil,Fail
 spec@!opengl 3.0@sampler-cube-shadow,Fail
 spec@!opengl 3.1@default-vao,Fail
 spec@!opengl 3.1@genned-names,Fail
@@ -37,8 +36,6 @@ spec@arb_draw_indirect@arb_draw_indirect-api-errors,Crash
 spec@arb_explicit_attrib_location@overlapping-locations-input-attribs api,Crash
 spec@arb_explicit_attrib_location@overlapping-locations-input-attribs shader,Crash
 spec@arb_framebuffer_object@fbo-blit-scaled-linear,Fail
-spec@arb_framebuffer_no_attachments@arb_framebuffer_no_attachments-atomic,Fail
-spec@arb_framebuffer_no_attachments@arb_framebuffer_no_attachments-atomic@Per-sample,Fail
 spec@arb_get_program_binary@restore-sso-program,Fail
 spec@arb_point_sprite@arb_point_sprite-mipmap,Fail
 spec@arb_program_interface_query@arb_program_interface_query-getprogramresourceindex,Fail
@@ -48,8 +45,6 @@ spec@arb_sample_shading@arb_sample_shading-builtin-gl-sample-mask-mrt-alpha-to-c
 spec@arb_seamless_cube_map@arb_seamless_cubemap,Fail
 spec@arb_shader_atomic_counters@semantics,Fail
 spec@arb_shader_atomic_counters@semantics@Tessellation control shader atomic built-in semantics,Fail
-spec@arb_texture_buffer_range@ranges-2,Fail
-spec@arb_texture_buffer_range@ranges-2 compat,Fail
 spec@arb_texture_cube_map_array@arb_texture_cube_map_array-sampler-cube-array-shadow,Fail
 spec@arb_texture_multisample@arb_texture_multisample-dsa-texelfetch,Fail
 spec@arb_texture_multisample@arb_texture_multisample-dsa-texelfetch@Texture type: GL_RGB9_E5,Fail

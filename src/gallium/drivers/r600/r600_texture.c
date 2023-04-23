@@ -1366,7 +1366,7 @@ void *r600_texture_transfer_map(struct pipe_context *ctx,
 			 * First downsample the depth buffer to a temporary texture,
 			 * then decompress the temporary one to staging.
 			 *
-			 * Only the region being mapped is transfered.
+			 * Only the region being mapped is transferred.
 			 */
 			struct pipe_resource resource;
 
@@ -1895,7 +1895,7 @@ r600_texture_from_memobj(struct pipe_screen *screen,
 		 * surface pitch isn't correctly aligned by default.
 		 *
 		 * In order to support it correctly we require multi-image
-		 * metadata to be syncrhonized between radv and radeonsi. The
+		 * metadata to be synchronized between radv and radeonsi. The
 		 * semantics of associating multiple image metadata to a memory
 		 * object on the vulkan export side are not concretely defined
 		 * either.

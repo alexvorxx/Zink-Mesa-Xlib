@@ -1102,7 +1102,9 @@ radv_get_legacy_gs_info(const struct radv_device *device, struct radv_pipeline_s
    const uint32_t gs_prims_per_subgroup = gs_prims;
    const uint32_t gs_inst_prims_in_subgroup = gs_prims * gs_num_invocations;
    const uint32_t max_prims_per_subgroup = gs_inst_prims_in_subgroup * gs_info->gs.vertices_out;
-   out->lds_size = align(esgs_lds_size, 128) / 128;
+   const uint32_t lds_granularity = device->physical_device->rad_info.lds_encode_granularity;
+   const uint32_t total_lds_bytes = align(esgs_lds_size * 4, lds_granularity);
+   out->lds_size = total_lds_bytes / lds_granularity;
    out->vgt_gs_onchip_cntl = S_028A44_ES_VERTS_PER_SUBGRP(es_verts_per_subgroup) |
                              S_028A44_GS_PRIMS_PER_SUBGRP(gs_prims_per_subgroup) |
                              S_028A44_GS_INST_PRIMS_IN_SUBGRP(gs_inst_prims_in_subgroup);

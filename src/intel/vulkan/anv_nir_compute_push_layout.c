@@ -32,6 +32,7 @@ void
 anv_nir_compute_push_layout(nir_shader *nir,
                             const struct anv_physical_device *pdevice,
                             bool robust_buffer_access,
+                            bool fragment_dynamic,
                             struct brw_stage_prog_data *prog_data,
                             struct anv_pipeline_bind_map *map,
                             void *mem_ctx)
@@ -68,6 +69,7 @@ anv_nir_compute_push_layout(nir_shader *nir,
             }
 
             case nir_intrinsic_load_desc_set_address_intel:
+            case nir_intrinsic_load_desc_set_dynamic_index_intel:
                push_start = MIN2(push_start,
                   offsetof(struct anv_push_constants, desc_sets));
                push_end = MAX2(push_end, push_start +
@@ -99,6 +101,14 @@ anv_nir_compute_push_layout(nir_shader *nir,
       const uint32_t push_reg_mask_end = push_reg_mask_start + sizeof(uint64_t);
       push_start = MIN2(push_start, push_reg_mask_start);
       push_end = MAX2(push_end, push_reg_mask_end);
+   }
+
+   if (nir->info.stage == MESA_SHADER_FRAGMENT && fragment_dynamic) {
+      const uint32_t fs_msaa_flags_start =
+         offsetof(struct anv_push_constants, fs.msaa_flags);
+      const uint32_t fs_msaa_flags_end = fs_msaa_flags_start + sizeof(uint32_t);
+      push_start = MIN2(push_start, fs_msaa_flags_start);
+      push_end = MAX2(push_end, fs_msaa_flags_end);
    }
 
    if (nir->info.stage == MESA_SHADER_COMPUTE && devinfo->verx10 < 125) {
@@ -171,6 +181,22 @@ anv_nir_compute_push_layout(nir_shader *nir,
                      .base = offsetof(struct anv_push_constants, desc_sets),
                      .range = sizeof_field(struct anv_push_constants, desc_sets),
                      .dest_type = nir_type_uint64);
+                  pc_load = nir_iand_imm(b, pc_load, ANV_DESCRIPTOR_SET_ADDRESS_MASK);
+                  nir_ssa_def_rewrite_uses(&intrin->dest.ssa, pc_load);
+                  break;
+               }
+
+               case nir_intrinsic_load_desc_set_dynamic_index_intel: {
+                  b->cursor = nir_before_instr(&intrin->instr);
+                  nir_ssa_def *pc_load = nir_load_uniform(b, 1, 64,
+                     nir_imul_imm(b, intrin->src[0].ssa, sizeof(uint64_t)),
+                     .base = offsetof(struct anv_push_constants, desc_sets),
+                     .range = sizeof_field(struct anv_push_constants, desc_sets),
+                     .dest_type = nir_type_uint64);
+                  pc_load = nir_i2i32(
+                     b,
+                     nir_iand_imm(
+                        b, pc_load, ANV_DESCRIPTOR_SET_DYNAMIC_INDEX_MASK));
                   nir_ssa_def_rewrite_uses(&intrin->dest.ssa, pc_load);
                   break;
                }
@@ -256,6 +282,17 @@ anv_nir_compute_push_layout(nir_shader *nir,
        * better to just provide one in push_ranges[0].
        */
       map->push_ranges[0] = push_constant_range;
+   }
+
+   if (nir->info.stage == MESA_SHADER_FRAGMENT && fragment_dynamic) {
+      struct brw_wm_prog_data *wm_prog_data =
+         container_of(prog_data, struct brw_wm_prog_data, base);
+
+      const uint32_t fs_msaa_flags_offset =
+         offsetof(struct anv_push_constants, fs.msaa_flags);
+      assert(fs_msaa_flags_offset >= push_start);
+      wm_prog_data->msaa_flags_param =
+         (fs_msaa_flags_offset - push_start) / 4;
    }
 
    /* Now that we're done computing the push constant portion of the

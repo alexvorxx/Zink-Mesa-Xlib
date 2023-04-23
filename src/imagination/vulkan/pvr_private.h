@@ -58,6 +58,7 @@
 #include "util/macros.h"
 #include "util/simple_mtx.h"
 #include "util/u_dynarray.h"
+#include "util/u_math.h"
 #include "vk_buffer.h"
 #include "vk_command_buffer.h"
 #include "vk_device.h"
@@ -353,16 +354,124 @@ struct pvr_buffer_view {
    uint64_t texture_state[2];
 };
 
+#define PVR_TRANSFER_MAX_SOURCES 10U
+#define PVR_TRANSFER_MAX_CUSTOM_MAPPINGS 6U
+
+/** A surface describes a source or destination for a transfer operation. */
+struct pvr_transfer_cmd_surface {
+   pvr_dev_addr_t dev_addr;
+
+   /* Memory address for extra U/V planes. */
+   pvr_dev_addr_t uv_address[2];
+
+   /* Surface width in texels. */
+   uint32_t width;
+
+   /* Surface height in texels. */
+   uint32_t height;
+
+   uint32_t depth;
+
+   /* Z position in a 3D tecture. 0.0f <= z_position <= depth. */
+   float z_position;
+
+   /* Stride in texels. */
+   uint32_t stride;
+
+   VkFormat vk_format;
+
+   enum pvr_memlayout mem_layout;
+
+   uint32_t sample_count;
+};
+
+struct pvr_rect_mapping {
+   VkRect2D src_rect;
+   VkRect2D dst_rect;
+};
+
+/* Describes an Alpha-Transparency configuration - for Transfer Queue Use. */
+struct pvr_transfer_alpha {
+   enum pvr_alpha_type type;
+   /* Global alpha value. */
+   uint32_t global;
+
+   /* Custom blend op for rgb. */
+   uint32_t custom_rgb;
+   /* Custom blend op for alpha. */
+   uint32_t custom_alpha;
+   /* Custom global alpha value for alpha output. */
+   uint32_t global2;
+   /* Custom multiplication of global and source alpha. */
+   bool glob_src_mul;
+   /* Custom zero source alpha transparency stage. */
+   bool zero_src_a_trans;
+
+   /* Enable argb1555 alpha components. */
+   bool alpha_components;
+   /* Source alpha value when argb1555 alpha bit is 0. */
+   uint32_t component0;
+   /* Source alpha value when argb1555 alpha bit is 1. */
+   uint32_t component1;
+};
+
+struct pvr_transfer_blit {
+   /* 16 bit rop4 (ie two 8 bit rop3's). */
+   uint32_t rop_code;
+
+   /* Color key mask. */
+   uint32_t color_mask;
+
+   /* Alpha blend. */
+   struct pvr_transfer_alpha alpha;
+
+   VkOffset2D offset;
+};
+
+struct pvr_transfer_cmd_source {
+   struct pvr_transfer_cmd_surface surface;
+
+   uint32_t mapping_count;
+   struct pvr_rect_mapping mappings[PVR_TRANSFER_MAX_CUSTOM_MAPPINGS];
+
+   /* In the case of a simple 1:1 copy, this setting does not affect the output
+    * but will affect performance. Use clamp to edge when possible.
+    */
+   /* This is of type enum PVRX(TEXSTATE_ADDRMODE). */
+   int addr_mode;
+
+   /* Source filtering method. */
+   enum pvr_filter filter;
+
+   /* MSAA resolve operation. */
+   enum pvr_resolve_op resolve_op;
+};
+
 struct pvr_transfer_cmd {
    /* Node to link this cmd into the transfer_cmds list in
     * pvr_sub_cmd::transfer structure.
     */
    struct list_head link;
 
-   struct pvr_buffer *src;
-   struct pvr_buffer *dst;
-   uint32_t region_count;
-   VkBufferCopy2 regions[0];
+   uint32_t flags;
+
+   uint32_t source_count;
+
+   struct pvr_transfer_cmd_source sources[PVR_TRANSFER_MAX_SOURCES];
+
+   union fi clear_color[4];
+
+   struct pvr_transfer_cmd_surface dst;
+
+   VkRect2D scissor;
+
+   struct pvr_transfer_blit blit;
+
+   /* Pointer to cmd buffer this transfer cmd belongs to. This is mainly used
+    * to link buffer objects allocated during job submission into
+    * cmd_buffer::bo_list head.
+    */
+   struct pvr_cmd_buffer *cmd_buffer;
 };
 
 struct pvr_sub_cmd_gfx {
@@ -521,11 +630,6 @@ struct pvr_render_pass_info {
    bool process_empty_tiles;
    bool enable_bg_tag;
    uint32_t isp_userpass;
-
-   /* Have we had to scissor a depth/stencil clear because render area was not
-    * tile aligned?
-    */
-   bool scissor_ds_clear;
 };
 
 struct pvr_ppp_state {
@@ -742,6 +846,10 @@ struct pvr_cmd_buffer {
     * execute in secondary command buffer.
     */
    struct util_dynarray deferred_csb_commands;
+   /* List of struct pvr_transfer_cmd used to emulate RTA clears on non RTA
+    * capable cores.
+    */
+   struct util_dynarray deferred_clears;
 
    /* List of pvr_bo structs associated with this cmd buffer. */
    struct list_head bo_list;
@@ -1182,15 +1290,6 @@ VkResult pvr_cmd_buffer_alloc_mem(struct pvr_cmd_buffer *cmd_buffer,
                                   uint64_t size,
                                   uint32_t flags,
                                   struct pvr_bo **const pvr_bo_out);
-VkResult pvr_cmd_buffer_upload_pds(struct pvr_cmd_buffer *const cmd_buffer,
-                                   const uint32_t *data,
-                                   uint32_t data_size_dwords,
-                                   uint32_t data_alignment,
-                                   const uint32_t *code,
-                                   uint32_t code_size_dwords,
-                                   uint32_t code_alignment,
-                                   uint64_t min_alignment,
-                                   struct pvr_pds_upload *const pds_upload_out);
 
 void pvr_calculate_vertex_cam_size(const struct pvr_device_info *dev_info,
                                    const uint32_t vs_output_size,
@@ -1318,6 +1417,15 @@ VkResult pvr_cmd_buffer_upload_general(struct pvr_cmd_buffer *const cmd_buffer,
                                        const void *const data,
                                        const size_t size,
                                        struct pvr_bo **const pvr_bo_out);
+VkResult pvr_cmd_buffer_upload_pds(struct pvr_cmd_buffer *const cmd_buffer,
+                                   const uint32_t *data,
+                                   uint32_t data_size_dwords,
+                                   uint32_t data_alignment,
+                                   const uint32_t *code,
+                                   uint32_t code_size_dwords,
+                                   uint32_t code_alignment,
+                                   uint64_t min_alignment,
+                                   struct pvr_pds_upload *const pds_upload_out);
 
 VkResult pvr_cmd_buffer_start_sub_cmd(struct pvr_cmd_buffer *cmd_buffer,
                                       enum pvr_sub_cmd_type type);

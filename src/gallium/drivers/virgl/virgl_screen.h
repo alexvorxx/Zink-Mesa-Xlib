@@ -41,6 +41,7 @@ enum virgl_debug_flags {
    VIRGL_DEBUG_USE_TGSI             = 1 << 7,
    VIRGL_DEBUG_L8_SRGB_ENABLE_READBACK = 1 << 8,
    VIRGL_DEBUG_VIDEO                = 1 << 9,
+   VIRGL_DEBUG_SHADER_SYNC          = 1 << 10,
 };
 
 extern int virgl_debug;
@@ -64,6 +65,7 @@ struct virgl_screen {
    bool tweak_gles_apply_bgra_dest_swizzle;
    bool tweak_l8_srgb_readback;
    bool no_coherent;
+   bool shader_sync;
    int32_t tweak_gles_tf3_value;
 
    nir_shader_compiler_options compiler_options;

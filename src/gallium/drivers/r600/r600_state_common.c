@@ -586,10 +586,10 @@ static void r600_set_vertex_buffers(struct pipe_context *ctx,
 	/* Set vertex buffers. */
 	if (input) {
 		for (i = 0; i < count; i++) {
-			if ((input[i].buffer.resource != vb[i].buffer.resource) ||
-			    (vb[i].stride != input[i].stride) ||
-			    (vb[i].buffer_offset != input[i].buffer_offset) ||
-			    (vb[i].is_user_buffer != input[i].is_user_buffer)) {
+			if (likely((input[i].buffer.resource != vb[i].buffer.resource) ||
+				   (vb[i].stride != input[i].stride) ||
+				   (vb[i].buffer_offset != input[i].buffer_offset) ||
+				   (vb[i].is_user_buffer != input[i].is_user_buffer))) {
 				if (input[i].buffer.resource) {
 					vb[i].stride = input[i].stride;
 					vb[i].buffer_offset = input[i].buffer_offset;
@@ -605,6 +605,14 @@ static void r600_set_vertex_buffers(struct pipe_context *ctx,
 				} else {
 					pipe_resource_reference(&vb[i].buffer.resource, NULL);
 					disable_mask |= 1 << i;
+				}
+			} else if (input[i].buffer.resource) {
+				if (take_ownership) {
+					pipe_resource_reference(&vb[i].buffer.resource, NULL);
+					vb[i].buffer.resource = input[i].buffer.resource;
+				} else {
+					pipe_resource_reference(&vb[i].buffer.resource,
+								input[i].buffer.resource);
 				}
 			}
 		}
@@ -1970,7 +1978,7 @@ static bool r600_update_derived_state(struct r600_context *rctx)
 	 * it will therefore overwrite the VS slots. If it now gets disabled,
 	 * the VS needs to rebind all buffer/resource/sampler slots - not only
 	 * has TES overwritten the corresponding slots, but when the VS was
-	 * operating as LS the things with correpsonding dirty bits got bound
+	 * operating as LS the things with corresponding dirty bits got bound
 	 * to LS slots and won't reflect what is dirty as VS stage even if the
 	 * TES didn't overwrite it. The story for re-enabled TES is similar.
 	 * In any case, we're not allowed to submit any TES state when
@@ -2795,7 +2803,7 @@ uint32_t r600_translate_texformat(struct pipe_screen *screen,
 	 * not divisible by 8.
 	 * Mesa conversion functions don't swap bits for those formats, and because
 	 * we transmit this over a serial bus to the GPU (PCIe), the
-	 * bit-endianess is important!!!
+	 * bit-endianness is important!!!
 	 * In case we have an "opposite" format, just use that for the swizzling
 	 * information. If we don't have such an "opposite" format, we need
 	 * to use a fixed swizzle info instead (see below)
@@ -3272,7 +3280,7 @@ uint32_t r600_colorformat_endian_swap(uint32_t colorformat, bool do_endian_swap)
 			/*
 			 * No need to do endian swaps on array formats,
 			 * as mesa<-->pipe formats conversion take into account
-			 * the endianess
+			 * the endianness
 			 */
 			return ENDIAN_NONE;
 
@@ -3287,7 +3295,7 @@ uint32_t r600_colorformat_endian_swap(uint32_t colorformat, bool do_endian_swap)
 			/*
 			 * No need to do endian swaps on array formats,
 			 * as mesa<-->pipe formats conversion take into account
-			 * the endianess
+			 * the endianness
 			 */
 			return ENDIAN_NONE;
 

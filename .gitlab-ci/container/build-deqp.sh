@@ -1,5 +1,12 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # shellcheck disable=SC2086 # we want word splitting
+
+# When changing this file, you need to bump the following
+# .gitlab-ci/image-tags.yml tags:
+# DEBIAN_X86_TEST_ANDROID_TAG
+# DEBIAN_X86_TEST_GL_TAG
+# DEBIAN_X86_TEST_VK_TAG
+# KERNEL_ROOTFS_TAG
 
 set -ex
 
@@ -48,14 +55,14 @@ if [ "${DEQP_TARGET}" != 'android' ]; then
         -DCMAKE_BUILD_TYPE=Release \
         $EXTRA_CMAKE_ARGS
     ninja modules/egl/deqp-egl
-    cp /deqp/modules/egl/deqp-egl /deqp/modules/egl/deqp-egl-x11
+    mv /deqp/modules/egl/deqp-egl /deqp/modules/egl/deqp-egl-x11
 
     cmake -S /VK-GL-CTS -B . -G Ninja \
         -DDEQP_TARGET=wayland \
         -DCMAKE_BUILD_TYPE=Release \
         $EXTRA_CMAKE_ARGS
     ninja modules/egl/deqp-egl
-    cp /deqp/modules/egl/deqp-egl /deqp/modules/egl/deqp-egl-wayland
+    mv /deqp/modules/egl/deqp-egl /deqp/modules/egl/deqp-egl-wayland
 fi
 
 cmake -S /VK-GL-CTS -B . -G Ninja \
@@ -64,8 +71,8 @@ cmake -S /VK-GL-CTS -B . -G Ninja \
       $EXTRA_CMAKE_ARGS
 ninja
 
-if [ "${DEQP_TARGET}" != 'android' ]; then
-    mv /deqp/modules/egl/deqp-egl-x11 /deqp/modules/egl/deqp-egl
+if [ "${DEQP_TARGET}" = 'android' ]; then
+    mv /deqp/modules/egl/deqp-egl /deqp/modules/egl/deqp-egl-android
 fi
 
 # Copy out the mustpass lists we want.

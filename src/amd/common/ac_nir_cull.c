@@ -241,7 +241,7 @@ cull_small_primitive_line(nir_builder *b, nir_ssa_def *pos[3][4],
        * it doesn't exit it. If a line is entirely inside a corner diamond, it can be culled
        * because it doesn't enter any diamond and thus can't exit any diamond.
        *
-       * The viewport is rotated by 45 degress to turn diamonds into squares, and a bounding
+       * The viewport is rotated by 45 degrees to turn diamonds into squares, and a bounding
        * box test is used to determine whether a line is entirely inside any square (diamond).
        *
        * The line width doesn't matter. Wide lines only duplicate filled pixels in either X or
@@ -264,7 +264,7 @@ cull_small_primitive_line(nir_builder *b, nir_ssa_def *pos[3][4],
          v1[chan] = nir_ffma(b, pos[1][chan], vp_scale, vp_translate);
       }
 
-      /* Rotate the viewport by 45 degress, so that diamonds become squares. */
+      /* Rotate the viewport by 45 degrees, so that diamonds become squares. */
       rotate_45degrees(b, v0);
       rotate_45degrees(b, v1);
 

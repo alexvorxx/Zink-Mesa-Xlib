@@ -2253,9 +2253,13 @@ dxil_nir_split_unaligned_loads_stores(nir_shader *shader, nir_variable_mode mode
                val = intrin->src[1].ssa;
             }
 
-            unsigned natural_alignment =
-               val->bit_size / 8 *
+            unsigned scalar_byte_size = glsl_type_is_boolean(deref->type) ? 4 : glsl_get_bit_size(deref->type) / 8;
+            unsigned num_components =
+               /* If the vector stride is larger than the scalar size, lower_explicit_io will
+                * turn this into multiple scalar loads anyway, so we don't have to split it here. */
+               glsl_get_explicit_stride(deref->type) > scalar_byte_size ? 1 :
                (val->num_components == 3 ? 4 : val->num_components);
+            unsigned natural_alignment = scalar_byte_size * num_components;
 
             if (alignment >= natural_alignment)
                continue;

@@ -245,7 +245,7 @@ ReplacePredicate::visit(AluInstr *alu)
 
    for (auto& s : alu->sources()) {
       auto reg = s->as_register();
-      /* Protext against propagating
+      /* Protect against propagating
        *
        *   V = COND(R, X)
        *   R = SOME_OP

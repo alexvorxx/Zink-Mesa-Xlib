@@ -6503,7 +6503,7 @@ iris_upload_dirty_render_state(struct iris_context *ice,
             uint32_t ps_state[GENX(3DSTATE_PS_length)] = {0};
             _iris_pack_command(batch, GENX(3DSTATE_PS), ps_state, ps) {
                intel_set_ps_dispatch_state(&ps, batch->screen->devinfo,
-                                           wm_prog_data, cso_fb->samples,
+                                           wm_prog_data, util_framebuffer_get_num_samples(cso_fb),
                                            0 /* msaa_flags */);
 
                ps.DispatchGRFStartRegisterForConstantSetupData0 =

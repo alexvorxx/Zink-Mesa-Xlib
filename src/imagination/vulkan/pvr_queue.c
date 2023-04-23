@@ -361,8 +361,7 @@ static VkResult pvr_process_transfer_cmds(struct pvr_device *device,
       return result;
 
    result =
-      pvr_transfer_job_submit(device,
-                              queue->transfer_ctx,
+      pvr_transfer_job_submit(queue->transfer_ctx,
                               sub_cmd,
                               queue->next_job_wait_sync[PVR_JOB_TYPE_TRANSFER],
                               sync);

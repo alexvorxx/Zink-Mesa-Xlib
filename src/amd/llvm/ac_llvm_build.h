@@ -552,9 +552,6 @@ void ac_export_mrt_z(struct ac_llvm_context *ctx, LLVMValueRef depth, LLVMValueR
                      LLVMValueRef samplemask, LLVMValueRef mrt0_alpha, bool is_last,
                      struct ac_export_args *args);
 
-void ac_build_sendmsg_gs_alloc_req(struct ac_llvm_context *ctx, LLVMValueRef wave_id,
-                                   LLVMValueRef vtx_cnt, LLVMValueRef prim_cnt);
-
 struct ac_ngg_prim {
    unsigned num_vertices;
    LLVMValueRef isnull;
@@ -565,8 +562,6 @@ struct ac_ngg_prim {
 
 LLVMValueRef ac_pack_edgeflags_for_export(struct ac_llvm_context *ctx,
                                           const struct ac_shader_args *args);
-LLVMValueRef ac_pack_prim_export(struct ac_llvm_context *ctx, const struct ac_ngg_prim *prim);
-void ac_build_export_prim(struct ac_llvm_context *ctx, const struct ac_ngg_prim *prim);
 
 LLVMTypeRef ac_arg_type_to_pointee_type(struct ac_llvm_context *ctx, enum ac_arg_type type);
 

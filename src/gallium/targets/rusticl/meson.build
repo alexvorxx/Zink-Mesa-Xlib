@@ -45,6 +45,7 @@ librusticl = shared_library(
     driver_iris,
     driver_nouveau,
     driver_panfrost,
+    driver_radeonsi,
     driver_swrast,
     idep_nir,
   ],

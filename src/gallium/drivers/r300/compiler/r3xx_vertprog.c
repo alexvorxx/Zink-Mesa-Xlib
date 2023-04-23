@@ -816,7 +816,7 @@ void r3xx_compile_vertex_program(struct r300_vertex_program_compiler *c)
 		{ NULL, NULL }
 	};
 
-	/* Note: These passes have to be done seperately from ALU rewrite,
+	/* Note: These passes have to be done separately from ALU rewrite,
 	 * otherwise non-native ALU instructions with source conflits
 	 * or non-native modifiers will not be treated properly.
 	 */

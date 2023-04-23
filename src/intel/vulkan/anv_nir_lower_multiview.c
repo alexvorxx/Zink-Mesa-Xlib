@@ -316,6 +316,10 @@ anv_check_for_primitive_replication(struct anv_device *device,
    if (stages & ~(VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT))
       return false;
 
+   /* It's possible we have no vertex shader yet (with pipeline libraries) */
+   if (!(stages & VK_SHADER_STAGE_VERTEX_BIT))
+      return false;
+
    int view_count = util_bitcount(view_mask);
    if (view_count == 1 || view_count > primitive_replication_max_views)
       return false;

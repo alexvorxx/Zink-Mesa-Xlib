@@ -723,6 +723,8 @@ validate_intrinsic_instr(nir_intrinsic_instr *instr, validate_state *state)
    case nir_intrinsic_image_deref_atomic_or:
    case nir_intrinsic_image_deref_atomic_xor:
    case nir_intrinsic_image_deref_atomic_comp_swap:
+   case nir_intrinsic_image_deref_atomic_inc_wrap:
+   case nir_intrinsic_image_deref_atomic_dec_wrap:
    case nir_intrinsic_image_atomic_add:
    case nir_intrinsic_image_atomic_imin:
    case nir_intrinsic_image_atomic_umin:
@@ -732,6 +734,8 @@ validate_intrinsic_instr(nir_intrinsic_instr *instr, validate_state *state)
    case nir_intrinsic_image_atomic_or:
    case nir_intrinsic_image_atomic_xor:
    case nir_intrinsic_image_atomic_comp_swap:
+   case nir_intrinsic_image_atomic_inc_wrap:
+   case nir_intrinsic_image_atomic_dec_wrap:
    case nir_intrinsic_bindless_image_atomic_add:
    case nir_intrinsic_bindless_image_atomic_imin:
    case nir_intrinsic_bindless_image_atomic_umin:
@@ -740,7 +744,9 @@ validate_intrinsic_instr(nir_intrinsic_instr *instr, validate_state *state)
    case nir_intrinsic_bindless_image_atomic_and:
    case nir_intrinsic_bindless_image_atomic_or:
    case nir_intrinsic_bindless_image_atomic_xor:
-   case nir_intrinsic_bindless_image_atomic_comp_swap: {
+   case nir_intrinsic_bindless_image_atomic_comp_swap:
+   case nir_intrinsic_bindless_image_atomic_inc_wrap:
+   case nir_intrinsic_bindless_image_atomic_dec_wrap: {
       enum pipe_format format = image_intrin_format(instr);
       if (format != PIPE_FORMAT_COUNT) {
          validate_assert(state, format == PIPE_FORMAT_R32_UINT ||
@@ -980,6 +986,9 @@ validate_tex_instr(nir_tex_instr *instr, validate_state *state)
       validate_assert(state, instr->op == nir_texop_tg4);
       validate_assert(state, !src_type_seen[nir_tex_src_offset]);
    }
+
+   if (instr->is_gather_implicit_lod)
+      validate_assert(state, instr->op == nir_texop_tg4);
 
    validate_dest(&instr->dest, state, 0, nir_tex_instr_dest_size(instr));
 

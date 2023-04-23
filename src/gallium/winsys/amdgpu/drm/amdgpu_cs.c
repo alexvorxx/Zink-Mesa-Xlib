@@ -371,7 +371,7 @@ amdgpu_ctx_query_reset_status(struct radeon_winsys_ctx *rwctx, bool full_reset_o
 
       r = amdgpu_cs_query_reset_state2(ctx->ctx, &flags);
       if (r) {
-         fprintf(stderr, "amdgpu: amdgpu_cs_query_reset_state failed. (%i)\n", r);
+         fprintf(stderr, "amdgpu: amdgpu_cs_query_reset_state2 failed. (%i)\n", r);
          return PIPE_NO_RESET;
       }
 
@@ -1148,7 +1148,7 @@ static bool amdgpu_cs_check_space(struct radeon_cmdbuf *rcs, unsigned dw)
    while ((rcs->current.cdw & ib_pad_dw_mask) != ib_pad_dw_mask - 3)
       radeon_emit(rcs, PKT3_NOP_PAD);
 
-   radeon_emit(rcs, PKT3(PKT3_INDIRECT_BUFFER_CIK, 2, 0));
+   radeon_emit(rcs, PKT3(PKT3_INDIRECT_BUFFER, 2, 0));
    radeon_emit(rcs, va);
    radeon_emit(rcs, va >> 32);
    uint32_t *new_ptr_ib_size = &rcs->current.buf[rcs->current.cdw++];

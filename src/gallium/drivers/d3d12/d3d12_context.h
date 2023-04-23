@@ -257,6 +257,7 @@ struct d3d12_context {
 
    uint64_t submit_id;
    ID3D12GraphicsCommandList *cmdlist;
+   ID3D12GraphicsCommandList8 *cmdlist8;
    ID3D12GraphicsCommandList *state_fixup_cmdlist;
 
    struct list_head active_queries;

@@ -102,6 +102,12 @@ enum radeon_value_id {
    RADEON_CURRENT_MCLK,
 };
 
+enum radv_reset_status {
+   RADV_NO_RESET,
+   RADV_GUILTY_CONTEXT_RESET,
+   RADV_INNOCENT_CONTEXT_RESET,
+};
+
 struct radeon_cmdbuf {
    /* These are uint64_t to tell the compiler that buf can't alias them.
     * If they're uint32_t the generated code needs to redundantly
@@ -194,10 +200,13 @@ struct radv_winsys_submit_info {
    enum amd_ip_type ip_type;
    int queue_index;
    unsigned cs_count;
-   unsigned preamble_count;
+   unsigned initial_preamble_count;
+   unsigned continue_preamble_count;
+   unsigned postamble_count;
    struct radeon_cmdbuf **cs_array;
    struct radeon_cmdbuf **initial_preamble_cs;
-   struct radeon_cmdbuf *continue_preamble_cs;
+   struct radeon_cmdbuf **continue_preamble_cs;
+   struct radeon_cmdbuf **postamble_cs;
    bool uses_shadow_regs;
 };
 
@@ -275,9 +284,12 @@ struct radeon_winsys {
 
    int (*ctx_set_pstate)(struct radeon_winsys_ctx *ctx, uint32_t pstate);
 
+   enum radv_reset_status (*ctx_query_reset_status)(struct radeon_winsys_ctx *rwctx);
+
    enum radeon_bo_domain (*cs_domain)(const struct radeon_winsys *ws);
 
-   struct radeon_cmdbuf *(*cs_create)(struct radeon_winsys *ws, enum amd_ip_type amd_ip_type);
+   struct radeon_cmdbuf *(*cs_create)(struct radeon_winsys *ws, enum amd_ip_type amd_ip_type,
+                                      bool is_secondary);
 
    void (*cs_destroy)(struct radeon_cmdbuf *cs);
 
@@ -292,7 +304,7 @@ struct radeon_winsys {
    void (*cs_grow)(struct radeon_cmdbuf *cs, size_t min_size);
 
    VkResult (*cs_submit)(struct radeon_winsys_ctx *ctx,
-                         const struct radv_winsys_submit_info *submits, uint32_t wait_count,
+                         const struct radv_winsys_submit_info *submit, uint32_t wait_count,
                          const struct vk_sync_wait *waits, uint32_t signal_count,
                          const struct vk_sync_signal *signals);
 

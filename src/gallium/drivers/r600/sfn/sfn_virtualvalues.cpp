@@ -644,7 +644,7 @@ InlineConstant::from_string(const std::string& s)
       use_chan = entry->second.second;
    }
 
-   ASSERT_OR_THROW(value != ALU_SRC_UNKNOWN, "Unknwon inline constant was given");
+   ASSERT_OR_THROW(value != ALU_SRC_UNKNOWN, "Unknown inline constant was given");
 
    if (use_chan) {
       ASSERT_OR_THROW(s[i + 1] == '.', "inline const channel not started with '.'");
@@ -671,7 +671,7 @@ InlineConstant::from_string(const std::string& s)
          chan = 7;
          break;
       default:
-         ASSERT_OR_THROW(0, "invalied inline const channel ");
+         ASSERT_OR_THROW(0, "invalid inline const channel ");
       }
    }
    return new InlineConstant(value, chan);
@@ -804,7 +804,7 @@ UniformValue::from_string(const std::string& s)
       chan = 3;
       break;
    default:
-      unreachable("Unknown channle when reading uniform");
+      unreachable("Unknown channel when reading uniform");
    }
    return new UniformValue(index + 512, chan, bank);
 }

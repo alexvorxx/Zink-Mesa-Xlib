@@ -226,15 +226,19 @@ static void scan_io_usage(const nir_shader *nir, struct si_shader_info *info,
    unsigned interp = INTERP_MODE_FLAT; /* load_input uses flat shading */
 
    if (intr->intrinsic == nir_intrinsic_load_interpolated_input) {
-      nir_intrinsic_instr *baryc = nir_instr_as_intrinsic(intr->src[0].ssa->parent_instr);
-
-      if (baryc) {
+      nir_instr *src_instr = intr->src[0].ssa->parent_instr;
+      if (src_instr->type == nir_instr_type_intrinsic) {
+         nir_intrinsic_instr *baryc = nir_instr_as_intrinsic(src_instr);
          if (nir_intrinsic_infos[baryc->intrinsic].index_map[NIR_INTRINSIC_INTERP_MODE] > 0)
             interp = nir_intrinsic_interp_mode(baryc);
          else
             unreachable("unknown barycentric intrinsic");
       } else {
-         unreachable("unknown barycentric expression");
+         /* May get here when si_update_shader_binary_info() after ps lower bc_optimize
+          * which select center and centroid. Set to any value is OK because we don't
+          * care this when si_update_shader_binary_info().
+          */
+         interp = INTERP_MODE_SMOOTH;
       }
    }
 

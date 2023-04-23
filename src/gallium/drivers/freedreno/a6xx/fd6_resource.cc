@@ -119,10 +119,31 @@ is_norm(enum pipe_format format)
 }
 
 static bool
+is_z24s8(enum pipe_format format)
+{
+   switch (format) {
+   case PIPE_FORMAT_Z24_UNORM_S8_UINT:
+   case PIPE_FORMAT_Z24X8_UNORM:
+   case PIPE_FORMAT_X24S8_UINT:
+   case PIPE_FORMAT_Z24_UNORM_S8_UINT_AS_R8G8B8A8:
+      return true;
+   default:
+      return false;
+   }
+}
+
+static bool
 valid_format_cast(struct fd_resource *rsc, enum pipe_format format)
 {
    /* Special case "casting" format in hw: */
    if (format == PIPE_FORMAT_Z24_UNORM_S8_UINT_AS_R8G8B8A8)
+      return true;
+
+   /* If we support z24s8 ubwc then allow casts between the various
+    * permutations of z24s8:
+    */
+   if (fd_screen(rsc->b.b.screen)->info->a6xx.has_z24uint_s8uint &&
+         (is_z24s8(format) == is_z24s8(rsc->b.b.format)))
       return true;
 
    /* For some color values (just "solid white") compression metadata maps to

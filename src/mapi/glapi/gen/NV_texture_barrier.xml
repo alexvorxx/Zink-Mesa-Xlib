@@ -6,7 +6,7 @@
 
 <OpenGLAPI>
 
-<category name="GL_NV_texture_barrier" number="381" es2="2.0">
+<category name="GL_NV_texture_barrier" number="381">
     <function name="TextureBarrierNV" exec="dlist" />
 </category>
 

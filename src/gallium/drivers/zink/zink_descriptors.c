@@ -95,7 +95,7 @@ equals_descriptor_layout(const void *a, const void *b)
    const struct zink_descriptor_layout_key *a_k = a;
    const struct zink_descriptor_layout_key *b_k = b;
    return a_k->num_bindings == b_k->num_bindings &&
-          !memcmp(a_k->bindings, b_k->bindings, a_k->num_bindings * sizeof(VkDescriptorSetLayoutBinding));
+          (!a_k->num_bindings || !memcmp(a_k->bindings, b_k->bindings, a_k->num_bindings * sizeof(VkDescriptorSetLayoutBinding)));
 }
 
 static struct zink_descriptor_layout *
@@ -784,7 +784,7 @@ static void
 pool_destroy(struct zink_screen *screen, struct zink_descriptor_pool *pool)
 {
    VKSCR(DestroyDescriptorPool)(screen->dev, pool->pool, NULL);
-   ralloc_free(pool);
+   FREE(pool);
 }
 
 static void
@@ -792,7 +792,7 @@ multi_pool_destroy(struct zink_screen *screen, struct zink_descriptor_pool_multi
 {
    if (mpool->pool)
       pool_destroy(screen, mpool->pool);
-   ralloc_free(mpool);
+   FREE(mpool);
 }
 
 static bool
@@ -855,13 +855,13 @@ set_pool(struct zink_batch_state *bs, struct zink_program *pg, struct zink_descr
 static struct zink_descriptor_pool *
 alloc_new_pool(struct zink_screen *screen, struct zink_descriptor_pool_multi *mpool)
 {
-   struct zink_descriptor_pool *pool = rzalloc(mpool, struct zink_descriptor_pool);
+   struct zink_descriptor_pool *pool = CALLOC_STRUCT(zink_descriptor_pool);
    if (!pool)
       return NULL;
    const unsigned num_type_sizes = mpool->pool_key->sizes[1].descriptorCount ? 2 : 1;
    pool->pool = create_pool(screen, num_type_sizes, mpool->pool_key->sizes, 0);
    if (!pool->pool) {
-      ralloc_free(pool);
+      FREE(pool);
       return NULL;
    }
    return pool;
@@ -943,7 +943,7 @@ check_pool_alloc(struct zink_context *ctx, struct zink_descriptor_pool_multi *mp
 static struct zink_descriptor_pool *
 create_push_pool(struct zink_screen *screen, struct zink_batch_state *bs, bool is_compute, bool has_fbfetch)
 {
-   struct zink_descriptor_pool *pool = rzalloc(bs, struct zink_descriptor_pool);
+   struct zink_descriptor_pool *pool = CALLOC_STRUCT(zink_descriptor_pool);
    VkDescriptorPoolSize sizes[2];
    sizes[0].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
    if (is_compute)
@@ -998,11 +998,11 @@ get_descriptor_pool(struct zink_context *ctx, struct zink_program *pg, enum zink
                                          NULL;
    if (mppool && *mppool)
       return check_pool_alloc(ctx, *mppool, pg, type, bs, is_compute);
-   struct zink_descriptor_pool_multi *mpool = rzalloc(bs, struct zink_descriptor_pool_multi);
+   struct zink_descriptor_pool_multi *mpool = CALLOC_STRUCT(zink_descriptor_pool_multi);
    if (!mpool)
       return NULL;
-   util_dynarray_init(&mpool->overflowed_pools[0], mpool);
-   util_dynarray_init(&mpool->overflowed_pools[1], mpool);
+   util_dynarray_init(&mpool->overflowed_pools[0], NULL);
+   util_dynarray_init(&mpool->overflowed_pools[1], NULL);
    mpool->pool_key = pool_key;
    if (!set_pool(bs, pg, mpool, type)) {
       multi_pool_destroy(screen, mpool);
@@ -1456,7 +1456,7 @@ zink_batch_descriptor_deinit(struct zink_screen *screen, struct zink_batch_state
       util_dynarray_fini(&bs->dd.pools[i]);
    }
    for (unsigned i = 0; i < 2; i++) {
-      if (bs->dd.push_pool[0].pool)
+      if (bs->dd.push_pool[i].pool)
          pool_destroy(screen, bs->dd.push_pool[i].pool);
       deinit_multi_pool_overflow(screen, &bs->dd.push_pool[i]);
    }

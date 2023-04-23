@@ -1,5 +1,5 @@
 /*
- * Copyright © 2022 Imagination Technologies Ltd.
+ * Copyright © 2023 Imagination Technologies Ltd.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -21,27 +21,37 @@
  * SOFTWARE.
  */
 
-/* Auto-generated file - don't edit */
-
-#ifndef PVR_TRANSFER_EOT_H
-#define PVR_TRANSFER_EOT_H
+#ifndef PVR_TRANSFER_FRAG_STORE_H
+#define PVR_TRANSFER_FRAG_STORE_H
 
 #include <stdint.h>
+#include <vulkan/vulkan_core.h>
 
-static const uint8_t pvr_transfer_eot_usc_code[] = {
-   0x46, 0xa0, 0x80, 0xc2, 0x80, 0x40, 0x80, 0x01, 0x88, 0x00, 0x00, 0xff,
-   0x35, 0x20, 0xc0, 0x80, 0x40, 0x80, 0x01, 0x88, 0x00, 0x00, 0x02, 0x80,
-   0x68, 0xff, 0x46, 0xa0, 0x80, 0xc2, 0x82, 0x40, 0x80, 0x03, 0x88, 0x00,
-   0x00, 0xff, 0xcd, 0xcd, 0x35, 0x20, 0xc0, 0x80, 0x40, 0x80, 0x01, 0x88,
-   0x00, 0x00, 0x02, 0x80, 0x68, 0xff, 0x35, 0x20, 0xc0, 0x82, 0x40, 0x80,
-   0x03, 0x88, 0x00, 0x00, 0x02, 0x80, 0x68, 0xff, 0x46, 0xa0, 0x80, 0xc2,
-   0x84, 0x40, 0x80, 0x05, 0x88, 0x00, 0x00, 0xff,
+#include "pvr_device_info.h"
+#include "pvr_uscgen.h"
+#include "pvr_types.h"
+#include "util/hash_table.h"
+
+struct pvr_device;
+
+struct pvr_transfer_frag_store {
+   uint32_t max_multisample;
+   /* Hash table mapping keys, produced by pvr_transfer_frag_shader_key(), to
+    * pvr_transfer_frag_store_entry_data entries.
+    */
+   struct hash_table *hash_table;
 };
 
-static const uint32_t pvr_transfer_eot_usc_offsets[] = {
-   0,
-   12,
-   40,
-};
+VkResult pvr_transfer_frag_store_init(struct pvr_device *device,
+                                      struct pvr_transfer_frag_store *store);
+void pvr_transfer_frag_store_fini(struct pvr_device *device,
+                                  struct pvr_transfer_frag_store *store);
 
-#endif /* PVR_TRANSFER_EOT_H */
+VkResult pvr_transfer_frag_store_get_shader_info(
+   struct pvr_device *device,
+   struct pvr_transfer_frag_store *store,
+   const struct pvr_tq_shader_properties *shader_props,
+   pvr_dev_addr_t *const pds_dev_addr_out,
+   const struct pvr_tq_frag_sh_reg_layout **const reg_layout_out);
+
+#endif /* PVR_TRANSFER_FRAG_STORE_H */

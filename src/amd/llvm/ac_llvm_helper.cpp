@@ -93,7 +93,7 @@ bool ac_is_llvm_processor_supported(LLVMTargetMachineRef tm, const char *process
    return TM->getMCSubtargetInfo()->isCPUStringValid(processor);
 }
 
-void ac_reset_llvm_all_options_occurences()
+void ac_reset_llvm_all_options_occurrences()
 {
    cl::ResetAllOptionOccurrences();
 }

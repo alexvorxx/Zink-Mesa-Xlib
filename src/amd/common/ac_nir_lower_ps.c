@@ -29,6 +29,14 @@
 typedef struct {
    const ac_nir_lower_ps_options *options;
 
+   nir_variable *persp_center;
+   nir_variable *persp_centroid;
+   nir_variable *persp_sample;
+   nir_variable *linear_center;
+   nir_variable *linear_centroid;
+   nir_variable *linear_sample;
+   bool lower_load_barycentric;
+
    /* Add one for dual source blend second output. */
    nir_ssa_def *outputs[FRAG_RESULT_MAX + 1][4];
    nir_alu_type output_types[FRAG_RESULT_MAX + 1];
@@ -41,6 +49,166 @@ typedef struct {
 } lower_ps_state;
 
 #define DUAL_SRC_BLEND_SLOT FRAG_RESULT_MAX
+
+static void
+create_interp_param(nir_builder *b, lower_ps_state *s)
+{
+   if (s->options->force_persp_sample_interp) {
+      s->persp_center =
+         nir_local_variable_create(b->impl, glsl_vec_type(2), "persp_center");
+   }
+
+   if (s->options->bc_optimize_for_persp ||
+       s->options->force_persp_sample_interp ||
+       s->options->force_persp_center_interp) {
+      s->persp_centroid =
+         nir_local_variable_create(b->impl, glsl_vec_type(2), "persp_centroid");
+   }
+
+   if (s->options->force_persp_center_interp) {
+      s->persp_sample =
+         nir_local_variable_create(b->impl, glsl_vec_type(2), "persp_sample");
+   }
+
+   if (s->options->force_linear_sample_interp) {
+      s->linear_center =
+         nir_local_variable_create(b->impl, glsl_vec_type(2), "linear_center");
+   }
+
+   if (s->options->bc_optimize_for_linear ||
+       s->options->force_linear_sample_interp ||
+       s->options->force_linear_center_interp) {
+      s->linear_centroid =
+         nir_local_variable_create(b->impl, glsl_vec_type(2), "linear_centroid");
+   }
+
+   if (s->options->force_linear_center_interp) {
+      s->linear_sample =
+         nir_local_variable_create(b->impl, glsl_vec_type(2), "linear_sample");
+   }
+
+   s->lower_load_barycentric =
+      s->persp_center || s->persp_centroid || s->persp_sample ||
+      s->linear_center || s->linear_centroid || s->linear_sample;
+}
+
+static void
+init_interp_param(nir_builder *b, lower_ps_state *s)
+{
+   b->cursor = nir_before_cf_list(&b->impl->body);
+
+   /* The shader should do: if (PRIM_MASK[31]) CENTROID = CENTER;
+    * The hw doesn't compute CENTROID if the whole wave only
+    * contains fully-covered quads.
+    */
+   if (s->options->bc_optimize_for_persp || s->options->bc_optimize_for_linear) {
+      nir_ssa_def *bc_optimize = nir_load_barycentric_optimize_amd(b);
+
+      if (s->options->bc_optimize_for_persp) {
+         nir_ssa_def *center =
+            nir_load_barycentric_pixel(b, 32, .interp_mode = INTERP_MODE_SMOOTH);
+         nir_ssa_def *centroid =
+            nir_load_barycentric_centroid(b, 32, .interp_mode = INTERP_MODE_SMOOTH);
+
+         nir_ssa_def *value = nir_bcsel(b, bc_optimize, center, centroid);
+         nir_store_var(b, s->persp_centroid, value, 0x3);
+      }
+
+      if (s->options->bc_optimize_for_linear) {
+         nir_ssa_def *center =
+            nir_load_barycentric_pixel(b, 32, .interp_mode = INTERP_MODE_NOPERSPECTIVE);
+         nir_ssa_def *centroid =
+            nir_load_barycentric_centroid(b, 32, .interp_mode = INTERP_MODE_NOPERSPECTIVE);
+
+         nir_ssa_def *value = nir_bcsel(b, bc_optimize, center, centroid);
+         nir_store_var(b, s->linear_centroid, value, 0x3);
+      }
+   }
+
+   if (s->options->force_persp_sample_interp) {
+      nir_ssa_def *sample =
+         nir_load_barycentric_sample(b, 32, .interp_mode = INTERP_MODE_SMOOTH);
+      nir_store_var(b, s->persp_center, sample, 0x3);
+      nir_store_var(b, s->persp_centroid, sample, 0x3);
+   }
+
+   if (s->options->force_linear_sample_interp) {
+      nir_ssa_def *sample =
+         nir_load_barycentric_sample(b, 32, .interp_mode = INTERP_MODE_NOPERSPECTIVE);
+      nir_store_var(b, s->linear_center, sample, 0x3);
+      nir_store_var(b, s->linear_centroid, sample, 0x3);
+   }
+
+   if (s->options->force_persp_center_interp) {
+      nir_ssa_def *center =
+         nir_load_barycentric_pixel(b, 32, .interp_mode = INTERP_MODE_SMOOTH);
+      nir_store_var(b, s->persp_sample, center, 0x3);
+      nir_store_var(b, s->persp_centroid, center, 0x3);
+   }
+
+   if (s->options->force_linear_center_interp) {
+      nir_ssa_def *center =
+         nir_load_barycentric_pixel(b, 32, .interp_mode = INTERP_MODE_NOPERSPECTIVE);
+      nir_store_var(b, s->linear_sample, center, 0x3);
+      nir_store_var(b, s->linear_centroid, center, 0x3);
+   }
+}
+
+static bool
+lower_ps_load_barycentric(nir_builder *b, nir_intrinsic_instr *intrin, lower_ps_state *s)
+{
+   enum glsl_interp_mode mode = nir_intrinsic_interp_mode(intrin);
+   nir_variable *var = NULL;
+
+   switch (mode) {
+   case INTERP_MODE_NONE:
+   case INTERP_MODE_SMOOTH:
+      switch (intrin->intrinsic) {
+      case nir_intrinsic_load_barycentric_pixel:
+         var = s->persp_center;
+         break;
+      case nir_intrinsic_load_barycentric_centroid:
+         var = s->persp_centroid;
+         break;
+      case nir_intrinsic_load_barycentric_sample:
+         var = s->persp_sample;
+         break;
+      default:
+         break;
+      }
+      break;
+
+   case INTERP_MODE_NOPERSPECTIVE:
+      switch (intrin->intrinsic) {
+      case nir_intrinsic_load_barycentric_pixel:
+         var = s->linear_center;
+         break;
+      case nir_intrinsic_load_barycentric_centroid:
+         var = s->linear_centroid;
+         break;
+      case nir_intrinsic_load_barycentric_sample:
+         var = s->linear_sample;
+         break;
+      default:
+         break;
+      }
+      break;
+
+   default:
+      break;
+   }
+
+   if (!var)
+      return false;
+
+   b->cursor = nir_before_instr(&intrin->instr);
+
+   nir_ssa_def *replacement = nir_load_var(b, var);
+   nir_ssa_def_rewrite_uses(&intrin->dest.ssa, replacement);
+
+   nir_instr_remove(&intrin->instr);
+   return true;
+}
 
 static bool
 gather_ps_store_output(nir_builder *b, nir_intrinsic_instr *intrin, lower_ps_state *s)
@@ -71,6 +239,50 @@ gather_ps_store_output(nir_builder *b, nir_intrinsic_instr *intrin, lower_ps_sta
 }
 
 static bool
+lower_ps_load_sample_mask_in(nir_builder *b, nir_intrinsic_instr *intrin, lower_ps_state *s)
+{
+   /* Section 15.2.2 (Shader Inputs) of the OpenGL 4.5 (Core Profile) spec
+    * says:
+    *
+    *    "When per-sample shading is active due to the use of a fragment
+    *     input qualified by sample or due to the use of the gl_SampleID
+    *     or gl_SamplePosition variables, only the bit for the current
+    *     sample is set in gl_SampleMaskIn. When state specifies multiple
+    *     fragment shader invocations for a given fragment, the sample
+    *     mask for any single fragment shader invocation may specify a
+    *     subset of the covered samples for the fragment. In this case,
+    *     the bit corresponding to each covered sample will be set in
+    *     exactly one fragment shader invocation."
+    *
+    * The samplemask loaded by hardware is always the coverage of the
+    * entire pixel/fragment, so mask bits out based on the sample ID.
+    */
+
+   b->cursor = nir_before_instr(&intrin->instr);
+
+   /* The bit pattern matches that used by fixed function fragment
+    * processing.
+    */
+   static const uint16_t ps_iter_masks[] = {
+      0xffff, /* not used */
+      0x5555, 0x1111, 0x0101, 0x0001,
+   };
+   assert(s->options->samplemask_log_ps_iter < ARRAY_SIZE(ps_iter_masks));
+   uint32_t ps_iter_mask = ps_iter_masks[s->options->samplemask_log_ps_iter];
+
+   nir_ssa_def *sampleid = nir_load_sample_id(b);
+   nir_ssa_def *submask = nir_ishl(b, nir_imm_int(b, ps_iter_mask), sampleid);
+
+   nir_ssa_def *sample_mask = nir_load_sample_mask_in(b);
+   nir_ssa_def *replacement = nir_iand(b, sample_mask, submask);
+
+   nir_ssa_def_rewrite_uses(&intrin->dest.ssa, replacement);
+
+   nir_instr_remove(&intrin->instr);
+   return true;
+}
+
+static bool
 lower_ps_intrinsic(nir_builder *b, nir_instr *instr, void *state)
 {
    lower_ps_state *s = (lower_ps_state *)state;
@@ -80,8 +292,22 @@ lower_ps_intrinsic(nir_builder *b, nir_instr *instr, void *state)
 
    nir_intrinsic_instr *intrin = nir_instr_as_intrinsic(instr);
 
-   if (intrin->intrinsic == nir_intrinsic_store_output)
+   switch (intrin->intrinsic) {
+   case nir_intrinsic_store_output:
       return gather_ps_store_output(b, intrin, s);
+   case nir_intrinsic_load_barycentric_pixel:
+   case nir_intrinsic_load_barycentric_centroid:
+   case nir_intrinsic_load_barycentric_sample:
+      if (s->lower_load_barycentric)
+         return lower_ps_load_barycentric(b, intrin, s);
+      break;
+   case nir_intrinsic_load_sample_mask_in:
+      if (s->options->samplemask_log_ps_iter)
+         return lower_ps_load_sample_mask_in(b, intrin, s);
+      break;
+   default:
+      break;
+   }
 
    return false;
 }
@@ -151,8 +377,8 @@ emit_ps_mrtz_export(nir_builder *b, lower_ps_state *s)
 
    uint64_t outputs_written = b->shader->info.outputs_written;
    /* use outputs_written to determine export format as we use it to set
-    * R_028710_SPI_SHADER_Z_FORMAT instead of relying on the real store ouput,
-    * because store ouput may be optimized out.
+    * R_028710_SPI_SHADER_Z_FORMAT instead of relying on the real store output,
+    * because store output may be optimized out.
     */
    unsigned format =
       ac_get_spi_shader_z_format(outputs_written & BITFIELD64_BIT(FRAG_RESULT_DEPTH),
@@ -352,7 +578,7 @@ emit_ps_color_export(nir_builder *b, lower_ps_state *s, gl_frag_result slot, uns
          pack_op = nir_op_pack_snorm_2x16;
          break;
       default:
-         unreachable("unsupport color export format");
+         unreachable("unsupported color export format");
          break;
       }
 
@@ -495,15 +721,9 @@ emit_ps_null_export(nir_builder *b, lower_ps_state *s)
 }
 
 static void
-export_ps_outputs(nir_shader *nir, lower_ps_state *s)
+export_ps_outputs(nir_builder *b, lower_ps_state *s)
 {
-   nir_function_impl *impl = nir_shader_get_entrypoint(nir);
-
-   nir_builder builder;
-   nir_builder *b = &builder;
-   nir_builder_init(b, impl);
-
-   b->cursor = nir_after_cf_list(&impl->body);
+   b->cursor = nir_after_cf_list(&b->impl->body);
 
    emit_ps_color_clamp_and_alpha_test(b, s);
 
@@ -578,13 +798,24 @@ export_ps_outputs(nir_shader *nir, lower_ps_state *s)
 void
 ac_nir_lower_ps(nir_shader *nir, const ac_nir_lower_ps_options *options)
 {
+   nir_function_impl *impl = nir_shader_get_entrypoint(nir);
+
+   nir_builder builder;
+   nir_builder *b = &builder;
+   nir_builder_init(b, impl);
+
    lower_ps_state state = {
       .options = options,
    };
+
+   create_interp_param(b, &state);
 
    nir_shader_instructions_pass(nir, lower_ps_intrinsic,
                                 nir_metadata_block_index | nir_metadata_dominance,
                                 &state);
 
-   export_ps_outputs(nir, &state);
+   /* Must be after lower_ps_intrinsic() to prevent it lower added intrinsic here. */
+   init_interp_param(b, &state);
+
+   export_ps_outputs(b, &state);
 }

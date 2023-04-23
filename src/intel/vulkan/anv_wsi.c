@@ -121,6 +121,9 @@ VkResult anv_QueuePresentKHR(
 #endif
    }
 
+   if (u_trace_should_process(&device->ds.trace_context))
+      anv_queue_trace(queue, NULL, true /* frame */, false /* begin */);
+
    result = vk_queue_wait_before_present(&queue->vk, pPresentInfo);
    if (result != VK_SUCCESS)
       return result;
@@ -129,6 +132,9 @@ VkResult anv_QueuePresentKHR(
                                      anv_device_to_handle(queue->device),
                                      _queue, 0,
                                      pPresentInfo);
+
+   if (u_trace_should_process(&device->ds.trace_context))
+      anv_queue_trace(queue, NULL, true /* frame */, true /* begin */);
 
    return result;
 }

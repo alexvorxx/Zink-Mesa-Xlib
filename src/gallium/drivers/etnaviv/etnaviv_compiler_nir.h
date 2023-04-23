@@ -127,7 +127,7 @@ real_dest(nir_dest *dest, unsigned *swiz, unsigned *mask)
    if (!dest || !dest->is_ssa)
       return dest;
 
-   bool can_bypass_src = nir_ssa_def_used_by_if(&dest->ssa);
+   bool can_bypass_src = !nir_ssa_def_used_by_if(&dest->ssa);
    nir_instr *p_instr = dest->ssa.parent_instr;
 
    /* if used by a vecN, the "real" destination becomes the vecN destination

@@ -115,7 +115,7 @@ traces:
       label: [skip, flakes]
   supertuxkart/supertuxkart-mansion-egl-gles-v2.trace:
     crocus-hsw:
-      checksum: c219d20ed5f701c4d4194e762501d4fd
+      checksum: c59dc93744d2dfcf172aa3f26ce2a62e
   valve/counterstrike-v2.trace:
     crocus-g41:
       checksum: 90c01e73b3544cb477ac6109bc61bef1

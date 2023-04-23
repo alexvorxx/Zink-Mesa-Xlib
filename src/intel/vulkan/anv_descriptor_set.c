@@ -66,7 +66,8 @@ anv_descriptor_data_for_type(const struct anv_physical_device *device,
       break;
 
    case VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT:
-      data = ANV_DESCRIPTOR_SURFACE_STATE;
+      data = ANV_DESCRIPTOR_SURFACE_STATE |
+             ANV_DESCRIPTOR_SAMPLED_IMAGE;
       break;
 
    case VK_DESCRIPTOR_TYPE_STORAGE_IMAGE:
@@ -646,6 +647,12 @@ set_layout_buffer_view_count(const struct anv_descriptor_set_layout *set_layout,
    return set_layout->buffer_view_count - shrink;
 }
 
+static bool
+anv_descriptor_set_layout_empty(const struct anv_descriptor_set_layout *set_layout)
+{
+   return set_layout->binding_count == 0;
+}
+
 uint32_t
 anv_descriptor_set_layout_descriptor_buffer_size(const struct anv_descriptor_set_layout *set_layout,
                                                  uint32_t var_desc_count)
@@ -739,6 +746,83 @@ sha1_update_descriptor_set_layout(struct mesa_sha1 *ctx,
  * just multiple descriptor set layouts pasted together
  */
 
+void
+anv_pipeline_sets_layout_init(struct anv_pipeline_sets_layout *layout,
+                              struct anv_device *device,
+                              bool independent_sets)
+{
+   memset(layout, 0, sizeof(*layout));
+
+   layout->device = device;
+   layout->independent_sets = independent_sets;
+}
+
+void
+anv_pipeline_sets_layout_add(struct anv_pipeline_sets_layout *layout,
+                             uint32_t set_idx,
+                             struct anv_descriptor_set_layout *set_layout)
+{
+   if (layout->set[set_idx].layout)
+      return;
+
+   /* Workaround CTS : Internal CTS issue 3584 */
+   if (layout->independent_sets && anv_descriptor_set_layout_empty(set_layout))
+      return;
+
+   layout->num_sets = MAX2(set_idx + 1, layout->num_sets);
+
+   layout->set[set_idx].layout =
+      anv_descriptor_set_layout_ref(set_layout);
+
+   layout->set[set_idx].dynamic_offset_start = layout->num_dynamic_buffers;
+   layout->num_dynamic_buffers += set_layout->dynamic_offset_count;
+
+   assert(layout->num_dynamic_buffers < MAX_DYNAMIC_BUFFERS);
+}
+
+void
+anv_pipeline_sets_layout_hash(struct anv_pipeline_sets_layout *layout)
+{
+   struct mesa_sha1 ctx;
+   _mesa_sha1_init(&ctx);
+   for (unsigned s = 0; s < layout->num_sets; s++) {
+      if (!layout->set[s].layout)
+         continue;
+      sha1_update_descriptor_set_layout(&ctx, layout->set[s].layout);
+      _mesa_sha1_update(&ctx, &layout->set[s].dynamic_offset_start,
+                        sizeof(layout->set[s].dynamic_offset_start));
+   }
+   _mesa_sha1_update(&ctx, &layout->num_sets, sizeof(layout->num_sets));
+   _mesa_sha1_final(&ctx, layout->sha1);
+}
+
+void
+anv_pipeline_sets_layout_fini(struct anv_pipeline_sets_layout *layout)
+{
+   for (unsigned s = 0; s < layout->num_sets; s++) {
+      if (!layout->set[s].layout)
+         continue;
+
+      anv_descriptor_set_layout_unref(layout->device, layout->set[s].layout);
+   }
+}
+
+void
+anv_pipeline_sets_layout_print(const struct anv_pipeline_sets_layout *layout)
+{
+   fprintf(stderr, "layout: dyn_count=%u sets=%u ind=%u\n",
+           layout->num_dynamic_buffers,
+           layout->num_sets,
+           layout->independent_sets);
+   for (unsigned s = 0; s < layout->num_sets; s++) {
+      if (!layout->set[s].layout)
+         continue;
+
+      fprintf(stderr, "   set%i: dyn_start=%u flags=0x%x\n",
+              s, layout->set[s].dynamic_offset_start, layout->set[s].layout->flags);
+   }
+}
+
 VkResult anv_CreatePipelineLayout(
     VkDevice                                    _device,
     const VkPipelineLayoutCreateInfo*           pCreateInfo,
@@ -755,30 +839,28 @@ VkResult anv_CreatePipelineLayout(
    if (layout == NULL)
       return vk_error(device, VK_ERROR_OUT_OF_HOST_MEMORY);
 
-   layout->num_sets = pCreateInfo->setLayoutCount;
-
-   unsigned dynamic_offset_count = 0;
+   anv_pipeline_sets_layout_init(&layout->sets_layout, device,
+                                 pCreateInfo->flags & VK_PIPELINE_LAYOUT_CREATE_INDEPENDENT_SETS_BIT_EXT);
 
    for (uint32_t set = 0; set < pCreateInfo->setLayoutCount; set++) {
       ANV_FROM_HANDLE(anv_descriptor_set_layout, set_layout,
                       pCreateInfo->pSetLayouts[set]);
-      layout->set[set].layout = set_layout;
-      anv_descriptor_set_layout_ref(set_layout);
 
-      layout->set[set].dynamic_offset_start = dynamic_offset_count;
-      dynamic_offset_count += set_layout->dynamic_offset_count;
-   }
-   assert(dynamic_offset_count < MAX_DYNAMIC_BUFFERS);
+      /* VUID-VkPipelineLayoutCreateInfo-graphicsPipelineLibrary-06753
+       *
+       *    "If graphicsPipelineLibrary is not enabled, elements of
+       *     pSetLayouts must be valid VkDescriptorSetLayout objects"
+       *
+       * As a result of supporting graphicsPipelineLibrary, we need to allow
+       * null descriptor set layouts.
+       */
+      if (set_layout == NULL)
+         continue;
 
-   struct mesa_sha1 ctx;
-   _mesa_sha1_init(&ctx);
-   for (unsigned s = 0; s < layout->num_sets; s++) {
-      sha1_update_descriptor_set_layout(&ctx, layout->set[s].layout);
-      _mesa_sha1_update(&ctx, &layout->set[s].dynamic_offset_start,
-                        sizeof(layout->set[s].dynamic_offset_start));
+      anv_pipeline_sets_layout_add(&layout->sets_layout, set, set_layout);
    }
-   _mesa_sha1_update(&ctx, &layout->num_sets, sizeof(layout->num_sets));
-   _mesa_sha1_final(&ctx, layout->sha1);
+
+   anv_pipeline_sets_layout_hash(&layout->sets_layout);
 
    *pPipelineLayout = anv_pipeline_layout_to_handle(layout);
 
@@ -791,15 +873,14 @@ void anv_DestroyPipelineLayout(
     const VkAllocationCallbacks*                pAllocator)
 {
    ANV_FROM_HANDLE(anv_device, device, _device);
-   ANV_FROM_HANDLE(anv_pipeline_layout, pipeline_layout, _pipelineLayout);
+   ANV_FROM_HANDLE(anv_pipeline_layout, layout, _pipelineLayout);
 
-   if (!pipeline_layout)
+   if (!layout)
       return;
 
-   for (uint32_t i = 0; i < pipeline_layout->num_sets; i++)
-      anv_descriptor_set_layout_unref(device, pipeline_layout->set[i].layout);
+   anv_pipeline_sets_layout_fini(&layout->sets_layout);
 
-   vk_object_free(&device->vk, pAllocator, pipeline_layout);
+   vk_object_free(&device->vk, pAllocator, layout);
 }
 
 /*
@@ -1449,8 +1530,6 @@ anv_descriptor_set_write_image_view(struct anv_device *device,
       struct anv_storage_image_descriptor desc_data = {
          .vanilla = anv_surface_state_to_handle(
                            image_view->planes[0].storage_surface_state.state),
-         .lowered = anv_surface_state_to_handle(
-                           image_view->planes[0].lowered_storage_surface_state.state),
       };
       memcpy(desc_map, &desc_data, sizeof(desc_data));
    }
@@ -1501,8 +1580,6 @@ anv_descriptor_set_write_buffer_view(struct anv_device *device,
       struct anv_storage_image_descriptor desc_data = {
          .vanilla = anv_surface_state_to_handle(
                            buffer_view->storage_surface_state),
-         .lowered = anv_surface_state_to_handle(
-                           buffer_view->lowered_storage_surface_state),
       };
       memcpy(desc_map, &desc_data, sizeof(desc_data));
    }

@@ -350,7 +350,7 @@ genX(emit_shading_rate)(struct anv_batch *batch,
 {
    const struct brw_wm_prog_data *wm_prog_data = get_wm_prog_data(pipeline);
    const bool cps_enable = wm_prog_data &&
-      brw_wm_prog_data_is_coarse(wm_prog_data, 0);
+      brw_wm_prog_data_is_coarse(wm_prog_data, pipeline->fs_msaa_flags);
 
 #if GFX_VER == 11
    anv_batch_emit(batch, GENX(3DSTATE_CPS), cps) {
@@ -380,7 +380,7 @@ genX(emit_shading_rate)(struct anv_batch *batch,
    }
 
    anv_batch_emit(batch, GENX(3DSTATE_CPS_POINTERS), cps) {
-      struct anv_device *device = pipeline->base.device;
+      struct anv_device *device = pipeline->base.base.device;
 
       cps.CoarsePixelShadingStateArrayPointer =
          get_cps_state_offset(device, cps_enable, fsr);
@@ -463,7 +463,8 @@ genX(cmd_buffer_flush_dynamic_state)(struct anv_cmd_buffer *cmd_buffer)
 
 #if GFX_VER >= 11
    if (cmd_buffer->device->vk.enabled_extensions.KHR_fragment_shading_rate &&
-       BITSET_TEST(dyn->dirty, MESA_VK_DYNAMIC_FSR))
+       (cmd_buffer->state.gfx.dirty & ANV_CMD_DIRTY_PIPELINE ||
+        BITSET_TEST(dyn->dirty, MESA_VK_DYNAMIC_FSR)))
       genX(emit_shading_rate)(&cmd_buffer->batch, pipeline, &dyn->fsr);
 #endif /* GFX_VER >= 11 */
 
@@ -714,7 +715,7 @@ genX(cmd_buffer_flush_dynamic_state)(struct anv_cmd_buffer *cmd_buffer)
    }
 #endif
 
-   if (pipeline->base.device->vk.enabled_extensions.EXT_sample_locations &&
+   if (cmd_buffer->device->vk.enabled_extensions.EXT_sample_locations &&
        (BITSET_TEST(dyn->dirty, MESA_VK_DYNAMIC_MS_SAMPLE_LOCATIONS) ||
         BITSET_TEST(dyn->dirty, MESA_VK_DYNAMIC_MS_SAMPLE_LOCATIONS_ENABLE))) {
       genX(emit_sample_pattern)(&cmd_buffer->batch,

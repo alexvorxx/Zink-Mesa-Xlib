@@ -57,7 +57,7 @@
 RAT0 is for global binding write
 VTX1 is for global binding read
 
-for wrting images RAT1...
+for writing images RAT1...
 for reading images TEX2...
   TEX2-RAT1 is paired
 
@@ -1155,7 +1155,7 @@ void evergreen_init_atom_start_compute_cs(struct r600_context *rctx)
 		r600_store_value(cb, 0);
 
 		/* R_008C28_SQ_STACK_RESOURCE_MGMT_3
-		 * Set the Contol Flow stack entries to 0 for the HS stage, and
+		 * Set the Control Flow stack entries to 0 for the HS stage, and
 		 * set it to the maximum value for the CS (aka LS) stage. */
 		r600_store_value(cb,
 			S_008C28_NUM_LS_STACK_ENTRIES(num_stack_entries));

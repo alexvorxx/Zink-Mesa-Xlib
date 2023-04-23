@@ -21,10 +21,12 @@
  * IN THE SOFTWARE.
  */
 
+
 #include "d3d12_pipeline_state.h"
 #include "d3d12_compiler.h"
 #include "d3d12_context.h"
 #include "d3d12_screen.h"
+#include <directx/d3dx12_pipeline_state_stream.h>
 
 #include "util/hash_table.h"
 #include "util/set.h"
@@ -224,36 +226,32 @@ create_gfx_pipeline_state(struct d3d12_context *ctx)
    UINT strides[PIPE_MAX_SO_OUTPUTS] = { 0 };
    UINT num_entries = 0, num_strides = 0;
 
-   D3D12_GRAPHICS_PIPELINE_STATE_DESC pso_desc = { 0 };
+   CD3DX12_PIPELINE_STATE_STREAM3 pso_desc;
    pso_desc.pRootSignature = state->root_signature;
 
    nir_shader *last_vertex_stage_nir = NULL;
 
    if (state->stages[PIPE_SHADER_VERTEX]) {
       auto shader = state->stages[PIPE_SHADER_VERTEX];
-      pso_desc.VS.BytecodeLength = shader->bytecode_length;
-      pso_desc.VS.pShaderBytecode = shader->bytecode;
+      pso_desc.VS = D3D12_SHADER_BYTECODE { shader->bytecode, shader->bytecode_length };
       last_vertex_stage_nir = shader->nir;
    }
 
    if (state->stages[PIPE_SHADER_TESS_CTRL]) {
       auto shader = state->stages[PIPE_SHADER_TESS_CTRL];
-      pso_desc.HS.BytecodeLength = shader->bytecode_length;
-      pso_desc.HS.pShaderBytecode = shader->bytecode;
+      pso_desc.HS = D3D12_SHADER_BYTECODE{ shader->bytecode, shader->bytecode_length };
       last_vertex_stage_nir = shader->nir;
    }
 
    if (state->stages[PIPE_SHADER_TESS_EVAL]) {
       auto shader = state->stages[PIPE_SHADER_TESS_EVAL];
-      pso_desc.DS.BytecodeLength = shader->bytecode_length;
-      pso_desc.DS.pShaderBytecode = shader->bytecode;
+      pso_desc.DS = D3D12_SHADER_BYTECODE{ shader->bytecode, shader->bytecode_length };
       last_vertex_stage_nir = shader->nir;
    }
 
    if (state->stages[PIPE_SHADER_GEOMETRY]) {
       auto shader = state->stages[PIPE_SHADER_GEOMETRY];
-      pso_desc.GS.BytecodeLength = shader->bytecode_length;
-      pso_desc.GS.pShaderBytecode = shader->bytecode;
+      pso_desc.GS = D3D12_SHADER_BYTECODE{ shader->bytecode, shader->bytecode_length };
       last_vertex_stage_nir = shader->nir;
    }
 
@@ -261,74 +259,99 @@ create_gfx_pipeline_state(struct d3d12_context *ctx)
    if (last_vertex_stage_writes_pos && state->stages[PIPE_SHADER_FRAGMENT] &&
        !state->rast->base.rasterizer_discard) {
       auto shader = state->stages[PIPE_SHADER_FRAGMENT];
-      pso_desc.PS.BytecodeLength = shader->bytecode_length;
-      pso_desc.PS.pShaderBytecode = shader->bytecode;
+      pso_desc.PS = D3D12_SHADER_BYTECODE{ shader->bytecode, shader->bytecode_length };
    }
 
    if (state->num_so_targets)
       fill_so_declaration(&state->so_info, last_vertex_stage_nir, entries, &num_entries, strides, &num_strides);
-   pso_desc.StreamOutput.NumEntries = num_entries;
-   pso_desc.StreamOutput.pSODeclaration = entries;
-   pso_desc.StreamOutput.RasterizedStream = state->rast->base.rasterizer_discard ? D3D12_SO_NO_RASTERIZED_STREAM : 0;
-   pso_desc.StreamOutput.NumStrides = num_strides;
-   pso_desc.StreamOutput.pBufferStrides = strides;
 
-   pso_desc.BlendState = state->blend->desc;
+   D3D12_STREAM_OUTPUT_DESC& stream_output_desc = (D3D12_STREAM_OUTPUT_DESC&)pso_desc.StreamOutput;
+   stream_output_desc.NumEntries = num_entries;
+   stream_output_desc.pSODeclaration = entries;
+   stream_output_desc.RasterizedStream = state->rast->base.rasterizer_discard ? D3D12_SO_NO_RASTERIZED_STREAM : 0;
+   stream_output_desc.NumStrides = num_strides;
+   stream_output_desc.pBufferStrides = strides;
+   pso_desc.StreamOutput = stream_output_desc;
+
+   D3D12_BLEND_DESC& blend_state = (D3D12_BLEND_DESC&)pso_desc.BlendState;
+   blend_state = state->blend->desc;
    if (state->has_float_rtv)
-      pso_desc.BlendState.RenderTarget[0].LogicOpEnable = FALSE;
+      blend_state.RenderTarget[0].LogicOpEnable = FALSE;
 
-   pso_desc.DepthStencilState = state->zsa->desc;
+   (D3D12_DEPTH_STENCIL_DESC2&)pso_desc.DepthStencilState = state->zsa->desc;
    pso_desc.SampleMask = state->sample_mask;
-   pso_desc.RasterizerState = state->rast->desc;
+
+   D3D12_RASTERIZER_DESC& rast = (D3D12_RASTERIZER_DESC&)pso_desc.RasterizerState;
+   rast = state->rast->desc;
 
    if (reduced_prim != PIPE_PRIM_TRIANGLES)
-      pso_desc.RasterizerState.CullMode = D3D12_CULL_MODE_NONE;
+      rast.CullMode = D3D12_CULL_MODE_NONE;
 
    if (depth_bias(state->rast, reduced_prim)) {
-      pso_desc.RasterizerState.DepthBias = state->rast->base.offset_units * 2;
-      pso_desc.RasterizerState.DepthBiasClamp = state->rast->base.offset_clamp;
-      pso_desc.RasterizerState.SlopeScaledDepthBias = state->rast->base.offset_scale;
+      rast.DepthBias = state->rast->base.offset_units * 2;
+      rast.DepthBiasClamp = state->rast->base.offset_clamp;
+      rast.SlopeScaledDepthBias = state->rast->base.offset_scale;
    }
-
-   pso_desc.InputLayout.pInputElementDescs = state->ves->elements;
-   pso_desc.InputLayout.NumElements = state->ves->num_elements;
+   D3D12_INPUT_LAYOUT_DESC& input_layout = (D3D12_INPUT_LAYOUT_DESC&)pso_desc.InputLayout;
+   input_layout.pInputElementDescs = state->ves->elements;
+   input_layout.NumElements = state->ves->num_elements;
 
    pso_desc.IBStripCutValue = state->ib_strip_cut_value;
 
    pso_desc.PrimitiveTopologyType = topology_type(reduced_prim);
 
-   pso_desc.NumRenderTargets = state->num_cbufs;
+   D3D12_RT_FORMAT_ARRAY& render_targets = (D3D12_RT_FORMAT_ARRAY&)pso_desc.RTVFormats;
+   render_targets.NumRenderTargets = state->num_cbufs;
    for (unsigned i = 0; i < state->num_cbufs; ++i)
-      pso_desc.RTVFormats[i] = d3d12_rtv_format(ctx, i);
+      render_targets.RTFormats[i] = d3d12_rtv_format(ctx, i);
    pso_desc.DSVFormat = state->dsv_format;
 
+   DXGI_SAMPLE_DESC& samples = (DXGI_SAMPLE_DESC&)pso_desc.SampleDesc;
+   samples.Count = state->samples;
    if (state->num_cbufs || state->dsv_format != DXGI_FORMAT_UNKNOWN) {
-      pso_desc.SampleDesc.Count = state->samples;
       if (!state->zsa->desc.DepthEnable &&
           !state->zsa->desc.StencilEnable &&
           !state->rast->desc.MultisampleEnable &&
           state->samples > 1) {
-         pso_desc.RasterizerState.ForcedSampleCount = 1;
+         rast.ForcedSampleCount = 1;
          pso_desc.DSVFormat = DXGI_FORMAT_UNKNOWN;
       }
-   } else if (state->samples > 1) {
-      pso_desc.SampleDesc.Count = 1;
-      pso_desc.RasterizerState.ForcedSampleCount = state->samples;
+   } else if (state->samples > 1 &&
+              !(screen->opts19.SupportedSampleCountsWithNoOutputs & (1 << state->samples))) {
+      samples.Count = 1;
+      rast.ForcedSampleCount = state->samples;
    }
-   pso_desc.SampleDesc.Quality = 0;
+   samples.Quality = 0;
 
    pso_desc.NodeMask = 0;
 
-   pso_desc.CachedPSO.pCachedBlob = NULL;
-   pso_desc.CachedPSO.CachedBlobSizeInBytes = 0;
+   D3D12_CACHED_PIPELINE_STATE& cached_pso = (D3D12_CACHED_PIPELINE_STATE&)pso_desc.CachedPSO;
+   cached_pso.pCachedBlob = NULL;
+   cached_pso.CachedBlobSizeInBytes = 0;
 
    pso_desc.Flags = D3D12_PIPELINE_STATE_FLAG_NONE;
 
    ID3D12PipelineState *ret;
-   if (FAILED(screen->dev->CreateGraphicsPipelineState(&pso_desc,
+
+   if (screen->opts14.IndependentFrontAndBackStencilRefMaskSupported) {
+      D3D12_PIPELINE_STATE_STREAM_DESC pso_stream_desc{
+          sizeof(pso_desc),
+          &pso_desc
+      };
+
+      if (FAILED(screen->dev->CreatePipelineState(&pso_stream_desc,
+                                                  IID_PPV_ARGS(&ret)))) {
+         debug_printf("D3D12: CreateGraphicsPipelineState failed!\n");
+         return NULL;
+      }
+   } 
+   else {
+      D3D12_GRAPHICS_PIPELINE_STATE_DESC v0desc = pso_desc.GraphicsDescV0();
+      if (FAILED(screen->dev->CreateGraphicsPipelineState(&v0desc,
                                                        IID_PPV_ARGS(&ret)))) {
-      debug_printf("D3D12: CreateGraphicsPipelineState failed!\n");
-      return NULL;
+         debug_printf("D3D12: CreateGraphicsPipelineState failed!\n");
+         return NULL;
+      }
    }
 
    return ret;

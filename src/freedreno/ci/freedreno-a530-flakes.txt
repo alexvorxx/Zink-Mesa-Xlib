@@ -112,3 +112,6 @@ spec@!opengl 1.1@depthstencil-default_fb-copypixels
 spec@arb_direct_state_access@gettextureimage-formats
 spec@ext_polygon_offset_clamp@ext_polygon_offset_clamp-draw_gles2
 spec@ext_polygon_offset_clamp@ext_polygon_offset_clamp-draw_gles2@negative clamp
+
+# 1/10 run flake
+KHR-GLES31.shaders.layout_location.isampler_2d

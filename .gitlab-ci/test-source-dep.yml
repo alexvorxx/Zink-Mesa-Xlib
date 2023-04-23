@@ -985,4 +985,5 @@
     - !reference [.core-rules, rules]
     - changes:
       - src/**/asahi/**/*
+      - src/**/panfrost/**/*
       when: on_success

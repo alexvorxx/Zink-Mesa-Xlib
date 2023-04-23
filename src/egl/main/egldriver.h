@@ -125,9 +125,6 @@ struct _egl_driver
    EGLBoolean (*WaitClient)(_EGLDisplay *disp, _EGLContext *ctx);
    EGLBoolean (*WaitNative)(EGLint engine);
 
-   /* this function may be called from multiple threads at the same time */
-   _EGLProc (*GetProcAddress)(const char *procname);
-
    /* for EGL_KHR_image_base */
    _EGLImage *(*CreateImageKHR)(_EGLDisplay *disp, _EGLContext *ctx,
                                 EGLenum target, EGLClientBuffer buffer,

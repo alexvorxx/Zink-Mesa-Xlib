@@ -32,6 +32,7 @@
 #endif
 
 #include "util/disk_cache.h"
+#include "util/hex.h"
 #include "util/u_debug.h"
 #include "radv_debug.h"
 #include "radv_private.h"
@@ -71,7 +72,7 @@ static bool
 radv_taskmesh_enabled(const struct radv_physical_device *pdevice)
 {
    return pdevice->use_ngg && !pdevice->use_llvm && pdevice->rad_info.gfx_level >= GFX10_3 &&
-          !(pdevice->instance->debug_flags & (RADV_DEBUG_NO_COMPUTE_QUEUE | RADV_DEBUG_NO_IBS)) &&
+          !(pdevice->instance->debug_flags & RADV_DEBUG_NO_COMPUTE_QUEUE) &&
           pdevice->rad_info.has_gang_submit;
 }
 
@@ -522,7 +523,7 @@ radv_physical_device_get_supported_extensions(const struct radv_physical_device 
       .EXT_global_priority = true,
       .EXT_global_priority_query = true,
       .EXT_graphics_pipeline_library =
-         !device->use_llvm && !!(device->instance->perftest_flags & RADV_PERFTEST_GPL),
+         !device->use_llvm && !(device->instance->debug_flags & RADV_DEBUG_NO_GPL),
       .EXT_host_query_reset = true,
       .EXT_image_2d_view_of_3d = true,
       .EXT_image_drm_format_modifier = device->rad_info.gfx_level >= GFX9,
@@ -2272,7 +2273,7 @@ radv_physical_device_try_create(struct radv_instance *instance, drmDevicePtr drm
     * when creating the cache.
     */
    char buf[VK_UUID_SIZE * 2 + 1];
-   disk_cache_format_hex_id(buf, device->cache_uuid, VK_UUID_SIZE * 2);
+   mesa_bytes_to_hex(buf, device->cache_uuid, VK_UUID_SIZE);
    device->vk.disk_cache = disk_cache_create(device->name, buf, 0);
 #endif
 
@@ -2315,7 +2316,7 @@ radv_physical_device_try_create(struct radv_instance *instance, drmDevicePtr drm
       if (device->instance->perftest_flags & RADV_PERFTEST_CS_WAVE_32)
          device->cs_wave_size = 32;
 
-      /* For pixel shaders, wave64 is recommanded. */
+      /* For pixel shaders, wave64 is recommended. */
       if (device->instance->perftest_flags & RADV_PERFTEST_PS_WAVE_32)
          device->ps_wave_size = 32;
 
@@ -2641,7 +2642,7 @@ radv_get_memory_budget_properties(VkPhysicalDevice physicalDevice,
                                        device->ws->query_value(device->ws, RADEON_GTT_USAGE);
          uint64_t total_usage = MAX2(total_internal_usage, total_system_usage);
 
-         /* Compute the total free space that can be allocated for this process accross all heaps. */
+         /* Compute the total free space that can be allocated for this process across all heaps. */
          uint64_t total_free_space = total_heap_size - MIN2(total_heap_size, total_usage);
 
          memoryBudget->heapBudget[vram_vis_heap_idx] = total_free_space + total_internal_usage;
@@ -2673,7 +2674,7 @@ radv_get_memory_budget_properties(VkPhysicalDevice physicalDevice,
 
          uint64_t total_usage = MAX2(total_internal_usage, total_system_usage);
 
-         /* Compute the total free space that can be allocated for this process accross all heaps. */
+         /* Compute the total free space that can be allocated for this process across all heaps. */
          uint64_t total_free_space = total_heap_size - MIN2(total_heap_size, total_usage);
 
          /* Compute the remaining visible VRAM size for this process. */

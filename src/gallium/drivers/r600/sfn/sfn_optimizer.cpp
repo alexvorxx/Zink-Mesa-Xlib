@@ -382,7 +382,7 @@ CopyPropFwdVisitor::visit(AluInstr *instr)
 
       if (!can_propagate) {
 
-         /* Register can propagate if the assigment was in the same
+         /* Register can propagate if the assignment was in the same
           * block, and we don't have a second assignment coming later
           * (e.g. helper invocation evaluation does
           *

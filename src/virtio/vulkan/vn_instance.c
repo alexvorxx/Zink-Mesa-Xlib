@@ -133,19 +133,16 @@ vn_instance_init_ring(struct vn_instance *instance)
 
    instance->ring.id = (uintptr_t)ring;
 
-   struct VkRingMonitorInfoMESA monitor_info;
-   if (instance->experimental.ringMonitoring) {
-      ring->monitor.report_period_us = 3000000;
-      mtx_init(&ring->monitor.mutex, mtx_plain);
-      monitor_info = (struct VkRingMonitorInfoMESA){
-         .sType = VK_STRUCTURE_TYPE_RING_MONITOR_INFO_MESA,
-         .maxReportingPeriodMicroseconds = ring->monitor.report_period_us,
-      };
-   }
+   ring->monitor.report_period_us = 3000000;
+   mtx_init(&ring->monitor.mutex, mtx_plain);
 
+   const struct VkRingMonitorInfoMESA monitor_info = {
+      .sType = VK_STRUCTURE_TYPE_RING_MONITOR_INFO_MESA,
+      .maxReportingPeriodMicroseconds = ring->monitor.report_period_us,
+   };
    const struct VkRingCreateInfoMESA info = {
       .sType = VK_STRUCTURE_TYPE_RING_CREATE_INFO_MESA,
-      .pNext = instance->experimental.ringMonitoring ? &monitor_info : NULL,
+      .pNext = &monitor_info,
       .resourceId = instance->ring.shmem->res_id,
       .size = layout.shmem_size,
       .idleTimeout = 50ull * 1000 * 1000,
@@ -174,11 +171,6 @@ vn_instance_init_ring(struct vn_instance *instance)
    return VK_SUCCESS;
 }
 
-static struct vn_renderer_shmem *
-vn_instance_get_reply_shmem_locked(struct vn_instance *instance,
-                                   size_t size,
-                                   void **ptr);
-
 static VkResult
 vn_instance_init_experimental_features(struct vn_instance *instance)
 {
@@ -190,37 +182,8 @@ vn_instance_init_experimental_features(struct vn_instance *instance)
    }
 
    size_t struct_size = sizeof(instance->experimental);
-
-   /* prepare the reply shmem */
-   const size_t reply_size =
-      vn_sizeof_vkGetVenusExperimentalFeatureData100000MESA_reply(
-         &struct_size, &instance->experimental);
-   void *reply_ptr;
-   struct vn_renderer_shmem *reply_shmem =
-      vn_instance_get_reply_shmem_locked(instance, reply_size, &reply_ptr);
-   if (!reply_shmem)
-      return VK_ERROR_OUT_OF_HOST_MEMORY;
-
-   /* encode the command */
-   uint32_t local_data[16];
-   struct vn_cs_encoder local_enc =
-      VN_CS_ENCODER_INITIALIZER_LOCAL(local_data, sizeof(local_data));
-   vn_encode_vkGetVenusExperimentalFeatureData100000MESA(
-      &local_enc, VK_COMMAND_GENERATE_REPLY_BIT_EXT, &struct_size,
-      &instance->experimental);
-
-   VkResult result = vn_renderer_submit_simple_sync(
-      instance->renderer, local_data, vn_cs_encoder_get_len(&local_enc));
-   if (result != VK_SUCCESS) {
-      vn_renderer_shmem_unref(instance->renderer, reply_shmem);
-      return result;
-   }
-
-   struct vn_cs_decoder reply_dec =
-      VN_CS_DECODER_INITIALIZER(reply_ptr, reply_size);
-   vn_decode_vkGetVenusExperimentalFeatureData100000MESA_reply(
-      &reply_dec, &struct_size, &instance->experimental);
-   vn_renderer_shmem_unref(instance->renderer, reply_shmem);
+   vn_call_vkGetVenusExperimentalFeatureData100000MESA(
+      instance, &struct_size, &instance->experimental);
 
    VkVenusExperimentalFeatures100000MESA *exp_feats = &instance->experimental;
 
@@ -232,7 +195,8 @@ vn_instance_init_experimental_features(struct vn_instance *instance)
 
    if (!exp_feats->memoryResourceAllocationSize ||
        !exp_feats->globalFencing || !exp_feats->largeRing ||
-       !exp_feats->syncFdFencing)
+       !exp_feats->syncFdFencing || !exp_feats->asyncRoundtrip ||
+       !exp_feats->ringMonitoring)
       return VK_ERROR_INITIALIZATION_FAILED;
 
    if (VN_DEBUG(INIT)) {
@@ -334,14 +298,8 @@ vn_instance_submit_roundtrip(struct vn_instance *instance,
 
    mtx_lock(&instance->ring.roundtrip_mutex);
    const uint64_t seqno = instance->ring.roundtrip_next++;
-   if (instance->experimental.asyncRoundtrip) {
-      vn_encode_vkSubmitVirtqueueSeqno100000MESA(&local_enc, 0,
-                                                 instance->ring.id, seqno);
-   } else {
-      /* clamp to 32bit for legacy ring extra based roundtrip waiting */
-      vn_encode_vkWriteRingExtraMESA(&local_enc, 0, instance->ring.id, 0,
-                                     seqno);
-   }
+   vn_encode_vkSubmitVirtqueueSeqno100000MESA(&local_enc, 0,
+                                              instance->ring.id, seqno);
    VkResult result = vn_renderer_submit_simple(
       instance->renderer, local_data, vn_cs_encoder_get_len(&local_enc));
    mtx_unlock(&instance->ring.roundtrip_mutex);
@@ -350,36 +308,11 @@ vn_instance_submit_roundtrip(struct vn_instance *instance,
    return result;
 }
 
-static bool
-roundtrip_seqno_ge(uint32_t a, uint32_t b)
-{
-   /* a >= b, but deal with wrapping as well */
-   return (a - b) <= INT32_MAX;
-}
-
 void
 vn_instance_wait_roundtrip(struct vn_instance *instance,
                            uint64_t roundtrip_seqno)
 {
-   VN_TRACE_FUNC();
-
-   if (instance->experimental.asyncRoundtrip) {
-      vn_async_vkWaitVirtqueueSeqno100000MESA(instance, roundtrip_seqno);
-      return;
-   }
-
-   struct vn_ring *ring = &instance->ring.ring;
-   const volatile atomic_uint *ptr = ring->shared.extra;
-   struct vn_relax_state relax_state = vn_relax_init(ring, "roundtrip");
-   do {
-      const uint32_t cur = atomic_load_explicit(ptr, memory_order_acquire);
-      /* clamp to 32bit for legacy ring extra based roundtrip waiting */
-      if (roundtrip_seqno_ge(cur, roundtrip_seqno)) {
-         vn_relax_fini(&relax_state);
-         break;
-      }
-      vn_relax(&relax_state);
-   } while (true);
+   vn_async_vkWaitVirtqueueSeqno100000MESA(instance, roundtrip_seqno);
 }
 
 struct vn_instance_submission {
@@ -592,6 +525,7 @@ vn_instance_get_reply_shmem_locked(struct vn_instance *instance,
 {
    VN_TRACE_FUNC();
    struct vn_renderer_shmem_pool *pool = &instance->reply_shmem_pool;
+   const struct vn_renderer_shmem *saved_pool_shmem = pool->shmem;
 
    size_t offset;
    struct vn_renderer_shmem *shmem =
@@ -602,14 +536,7 @@ vn_instance_get_reply_shmem_locked(struct vn_instance *instance,
    assert(shmem == pool->shmem);
    *out_ptr = shmem->mmap_ptr + offset;
 
-   bool needs_set_stream = false;
-   if (likely(instance->ring.id)) {
-      needs_set_stream = shmem != instance->ring.reply_shmem;
-   } else {
-      needs_set_stream = shmem != instance->renderer_reply_shmem;
-   }
-
-   if (needs_set_stream) {
+   if (shmem != saved_pool_shmem) {
       uint32_t set_reply_command_stream_data[16];
       struct vn_cs_encoder local_enc = VN_CS_ENCODER_INITIALIZER_LOCAL(
          set_reply_command_stream_data,
@@ -620,19 +547,7 @@ vn_instance_get_reply_shmem_locked(struct vn_instance *instance,
       };
       vn_encode_vkSetReplyCommandStreamMESA(&local_enc, 0, &stream);
       vn_cs_encoder_commit(&local_enc);
-
-      /* vn_instance_init_experimental_features calls this before the ring is
-       * created
-       */
-      if (likely(instance->ring.id)) {
-         vn_instance_ring_submit_locked(instance, &local_enc, NULL, NULL);
-         instance->ring.reply_shmem = shmem;
-      } else {
-         vn_renderer_submit_simple(instance->renderer,
-                                   set_reply_command_stream_data,
-                                   vn_cs_encoder_get_len(&local_enc));
-         instance->renderer_reply_shmem = shmem;
-      }
+      vn_instance_ring_submit_locked(instance, &local_enc, NULL, NULL);
    }
 
    /* TODO avoid this seek command and go lock-free? */
@@ -641,17 +556,7 @@ vn_instance_get_reply_shmem_locked(struct vn_instance *instance,
       seek_reply_command_stream_data, sizeof(seek_reply_command_stream_data));
    vn_encode_vkSeekReplyCommandStreamMESA(&local_enc, 0, offset);
    vn_cs_encoder_commit(&local_enc);
-
-   /* vn_instance_init_experimental_features calls this before the ring is
-    * created
-    */
-   if (likely(instance->ring.id)) {
-      vn_instance_ring_submit_locked(instance, &local_enc, NULL, NULL);
-   } else {
-      vn_renderer_submit_simple(instance->renderer,
-                                seek_reply_command_stream_data,
-                                vn_cs_encoder_get_len(&local_enc));
-   }
+   vn_instance_ring_submit_locked(instance, &local_enc, NULL, NULL);
 
    return shmem;
 }
@@ -787,11 +692,11 @@ vn_CreateInstance(const VkInstanceCreateInfo *pCreateInfo,
    vn_renderer_shmem_pool_init(instance->renderer,
                                &instance->reply_shmem_pool, 1u << 20);
 
-   result = vn_instance_init_experimental_features(instance);
+   result = vn_instance_init_ring(instance);
    if (result != VK_SUCCESS)
       goto fail;
 
-   result = vn_instance_init_ring(instance);
+   result = vn_instance_init_experimental_features(instance);
    if (result != VK_SUCCESS)
       goto fail;
 

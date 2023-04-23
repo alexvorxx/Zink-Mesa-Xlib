@@ -27,7 +27,7 @@ sh .gitlab-ci/container/create-android-ndk-pc.sh /$ndk zlib.pc "" "-lz" "1.2.3" 
 
 sh .gitlab-ci/container/create-android-cross-file.sh /$ndk x86_64-linux-android x86_64 x86_64 $ANDROID_SDK_VERSION
 sh .gitlab-ci/container/create-android-cross-file.sh /$ndk i686-linux-android x86 x86 $ANDROID_SDK_VERSION
-sh .gitlab-ci/container/create-android-cross-file.sh /$ndk aarch64-linux-android arm armv8 $ANDROID_SDK_VERSION
+sh .gitlab-ci/container/create-android-cross-file.sh /$ndk aarch64-linux-android aarch64 armv8 $ANDROID_SDK_VERSION
 sh .gitlab-ci/container/create-android-cross-file.sh /$ndk arm-linux-androideabi arm armv7hl $ANDROID_SDK_VERSION armv7a-linux-androideabi
 
 # Not using build-libdrm.sh because we don't want its cleanup after building

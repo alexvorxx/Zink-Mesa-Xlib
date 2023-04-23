@@ -36,6 +36,7 @@
 #include <compiler/nir/nir_serialize.h>
 #include <compiler/spirv/nir_spirv.h>
 #include <util/u_math.h>
+#include <util/hex.h>
 
 using namespace clover;
 
@@ -239,7 +240,7 @@ struct disk_cache *clover::nir::create_clc_disk_cache(void)
 
    _mesa_sha1_final(&ctx, sha1);
 
-   disk_cache_format_hex_id(cache_id, sha1, 20 * 2);
+   mesa_bytes_to_hex(cache_id, sha1, 20);
    return disk_cache_create("clover-clc", cache_id, 0);
 }
 

@@ -280,7 +280,9 @@ static rvcn_dec_message_avc_t get_h264_msg(struct radeon_decoder *dec,
 
    /* if reference picture exists, however no reference picture found at the end
       curr_pic_ref_frame_num == 0, which is not reasonable, should be corrected. */
-   if (result.used_for_reference_flags && (result.curr_pic_ref_frame_num == 0)) {
+   /* one exeption for I frames which is valid situation and should be skipped. */
+   if ((result.curr_field_order_cnt_list[0] == result.curr_field_order_cnt_list[1])
+      && result.used_for_reference_flags && (result.curr_pic_ref_frame_num == 0)) {
       for (i = 0; i < ARRAY_SIZE(result.ref_frame_list); i++) {
          result.ref_frame_list[i] = pic->ref[i] ?
                 (uintptr_t)vl_video_buffer_get_associated_data(pic->ref[i], &dec->base) : 0xff;
@@ -2690,7 +2692,7 @@ static unsigned calc_dpb_size(struct radeon_decoder *dec)
       break;
 
    case PIPE_VIDEO_FORMAT_VC1:
-      // the firmware seems to allways assume a minimum of ref frames
+      // the firmware seems to always assume a minimum of ref frames
       max_references = MAX2(NUM_VC1_REFS, max_references);
 
       // reference picture buffer
@@ -3090,6 +3092,8 @@ struct pipe_video_codec *radeon_create_decoder(struct pipe_context *context,
 
       if (sctx->family == CHIP_MI100 || sctx->family == CHIP_MI200)
          dec->njctx = 2;
+      else if (sctx->family == CHIP_GFX940)
+         dec->njctx = 24;
       else
          dec->njctx = 1;
 

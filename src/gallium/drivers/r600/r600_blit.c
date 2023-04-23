@@ -199,7 +199,7 @@ static void r600_blit_decompress_depth(struct pipe_context *ctx,
 		}
 	}
 
-	/* reenable compression in DB_RENDER_CONTROL */
+	/* re-enable compression in DB_RENDER_CONTROL */
 	rctx->db_misc_state.flush_depthstencil_through_cb = false;
 	r600_mark_atom_dirty(rctx, &rctx->db_misc_state.atom);
 }

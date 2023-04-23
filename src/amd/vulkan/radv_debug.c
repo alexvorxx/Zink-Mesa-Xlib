@@ -84,7 +84,7 @@ radv_init_trace(struct radv_device *device)
    if (!device->trace_id_ptr)
       return false;
 
-   ac_vm_fault_occured(device->physical_device->rad_info.gfx_level, &device->dmesg_timestamp, NULL);
+   ac_vm_fault_occurred(device->physical_device->rad_info.gfx_level, &device->dmesg_timestamp, NULL);
 
    return true;
 }
@@ -690,7 +690,7 @@ radv_dump_umr_waves(struct radv_queue *queue, FILE *f)
 }
 
 static bool
-radv_gpu_hang_occured(struct radv_queue *queue, enum amd_ip_type ring)
+radv_gpu_hang_occurred(struct radv_queue *queue, enum amd_ip_type ring)
 {
    struct radeon_winsys *ws = queue->device->ws;
 
@@ -709,10 +709,10 @@ radv_check_gpu_hangs(struct radv_queue *queue, struct radeon_cmdbuf *cs)
 
    ring = radv_queue_ring(queue);
 
-   bool hang_occurred = radv_gpu_hang_occured(queue, ring);
+   bool hang_occurred = radv_gpu_hang_occurred(queue, ring);
    bool vm_fault_occurred = false;
    if (queue->device->instance->debug_flags & RADV_DEBUG_VM_FAULTS)
-      vm_fault_occurred = ac_vm_fault_occured(device->physical_device->rad_info.gfx_level,
+      vm_fault_occurred = ac_vm_fault_occurred(device->physical_device->rad_info.gfx_level,
                                               &device->dmesg_timestamp, &addr);
    if (!hang_occurred && !vm_fault_occurred)
       return;

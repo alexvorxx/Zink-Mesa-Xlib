@@ -126,7 +126,7 @@ aco_postprocess_shader(const struct aco_compiler_options* options,
       validate(program.get());
 
       /* Optimization */
-      if (!options->key.optimisations_disabled) {
+      if (!options->optimisations_disabled) {
          if (!(aco::debug_flags & aco::DEBUG_NO_VN))
             aco::value_numbering(program.get());
          if (!(aco::debug_flags & aco::DEBUG_NO_OPT))
@@ -165,7 +165,7 @@ aco_postprocess_shader(const struct aco_compiler_options* options,
       aco_print_program(program.get(), stderr, live_vars, aco::print_live_vars | aco::print_kill);
 
    if (!info->is_trap_handler_shader) {
-      if (!options->key.optimisations_disabled && !(aco::debug_flags & aco::DEBUG_NO_SCHED))
+      if (!options->optimisations_disabled && !(aco::debug_flags & aco::DEBUG_NO_SCHED))
          aco::schedule_program(program.get(), live_vars);
       validate(program.get());
 
@@ -182,7 +182,7 @@ aco_postprocess_shader(const struct aco_compiler_options* options,
       validate(program.get());
 
       /* Optimization */
-      if (!options->key.optimisations_disabled && !(aco::debug_flags & aco::DEBUG_NO_OPT)) {
+      if (!options->optimisations_disabled && !(aco::debug_flags & aco::DEBUG_NO_OPT)) {
          aco::optimize_postRA(program.get());
          validate(program.get());
       }

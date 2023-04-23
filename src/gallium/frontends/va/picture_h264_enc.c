@@ -251,7 +251,8 @@ vlVaHandleVAEncMiscParameterTypeRateControlH264(vlVaContext *context, VAEncMiscP
       return VA_STATUS_ERROR_INVALID_PARAMETER;
 
    context->desc.h264enc.rate_ctrl[temporal_id].fill_data_enable = !(rc->rc_flags.bits.disable_bit_stuffing);
-   context->desc.h264enc.rate_ctrl[temporal_id].skip_frame_enable = !(rc->rc_flags.bits.disable_frame_skip);
+   /* context->desc.h264enc.rate_ctrl[temporal_id].skip_frame_enable = !(rc->rc_flags.bits.disable_frame_skip); */
+   context->desc.h264enc.rate_ctrl[temporal_id].skip_frame_enable = 0;
    context->desc.h264enc.rate_ctrl[temporal_id].peak_bitrate = rc->bits_per_second;
 
    if ((context->desc.h264enc.rate_ctrl[0].rate_ctrl_method == PIPE_H2645_ENC_RATE_CONTROL_METHOD_CONSTANT) ||
@@ -267,6 +268,14 @@ vlVaHandleVAEncMiscParameterTypeRateControlH264(vlVaContext *context, VAEncMiscP
 
    context->desc.h264enc.rate_ctrl[temporal_id].max_qp = rc->max_qp;
    context->desc.h264enc.rate_ctrl[temporal_id].min_qp = rc->min_qp;
+   /* Distinguishes from the default params set for these values in other
+      functions and app specific params passed down */
+   context->desc.h264enc.rate_ctrl[temporal_id].app_requested_qp_range = ((rc->max_qp > 0) || (rc->min_qp > 0));
+
+   if (context->desc.h264enc.rate_ctrl[0].rate_ctrl_method ==
+       PIPE_H2645_ENC_RATE_CONTROL_METHOD_QUALITY_VARIABLE)
+      context->desc.h264enc.rate_ctrl[temporal_id].vbr_quality_factor =
+         rc->quality_factor;
 
    return VA_STATUS_SUCCESS;
 }
@@ -333,6 +342,10 @@ vlVaHandleVAEncMiscParameterTypeHRDH264(vlVaContext *context, VAEncMiscParameter
    if (ms->buffer_size) {
       context->desc.h264enc.rate_ctrl[0].vbv_buffer_size = ms->buffer_size;
       context->desc.h264enc.rate_ctrl[0].vbv_buf_lv = (ms->initial_buffer_fullness << 6 ) / ms->buffer_size;
+      context->desc.h264enc.rate_ctrl[0].vbv_buf_initial_size = ms->initial_buffer_fullness;
+      /* Distinguishes from the default params set for these values in other
+      functions and app specific params passed down via HRD buffer */
+      context->desc.h264enc.rate_ctrl[0].app_requested_hrd_buffer = true;
    }
 
    return VA_STATUS_SUCCESS;

@@ -459,7 +459,7 @@ public:
       free(buffer);
    }
 
-   /* Delete copy-constructor and -assigment to avoid double free() */
+   /* Delete copy-constructor and -assignment to avoid double free() */
    monotonic_buffer_resource(const monotonic_buffer_resource&) = delete;
    monotonic_buffer_resource& operator=(const monotonic_buffer_resource&) = delete;
 

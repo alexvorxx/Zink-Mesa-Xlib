@@ -37,7 +37,8 @@ static uint32_t
 stub_gem_create(struct anv_device *device,
                 const struct intel_memory_class_instance **regions,
                 uint16_t num_regions, uint64_t size,
-                enum anv_bo_alloc_flags alloc_flags)
+                enum anv_bo_alloc_flags alloc_flags,
+                uint64_t *actual_size)
 {
    int fd = os_create_anonymous_file(size, "fake bo");
    if (fd == -1)
@@ -45,6 +46,7 @@ stub_gem_create(struct anv_device *device,
 
    assert(fd != 0);
 
+   *actual_size = size;
    return fd;
 }
 

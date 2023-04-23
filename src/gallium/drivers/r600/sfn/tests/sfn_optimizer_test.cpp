@@ -164,11 +164,11 @@ TEST_F(TestShaderFromNir, RA_with_dest_array)
 
 TEST_F(TestShaderFromNir, RA_with_chan_group)
 {
-   auto sh = from_string(shader_group_chan_pin_combined_sheduled);
+   auto sh = from_string(shader_group_chan_pin_combined_scheduled);
 
    auto lrm = r600::LiveRangeEvaluator().run(*sh);
    EXPECT_TRUE(r600::register_allocation(lrm));
-   ra_check(sh, shader_group_chan_pin_combined_sheduled_ra);
+   ra_check(sh, shader_group_chan_pin_combined_scheduled_ra);
 }
 
 TEST_F(TestShaderFromNir, TES_opt)

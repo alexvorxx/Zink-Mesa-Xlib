@@ -61,7 +61,7 @@ struct geometry_constant {
 
 #define set_uniform_location(var, field, packed)                 \
    do {                                                          \
-      unsigned offset = Offset(struct geometry_constant, field); \
+      unsigned offset = offsetof(struct geometry_constant, field); \
       var->data.driver_location = offset >> (packed ? 2 : 4);    \
       var->data.location_frac = (offset >> 2) & 0x3;             \
    } while (0)
