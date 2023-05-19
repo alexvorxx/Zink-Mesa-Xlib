@@ -28,6 +28,7 @@
 #include "nine_state.h"
 #include "vertexdeclaration9.h"
 
+#include "util/bitscan.h"
 #include "util/macros.h"
 #include "util/u_memory.h"
 #include "util/u_inlines.h"
@@ -456,6 +457,8 @@ struct shader_translator
     boolean wpos_is_sysval;
     boolean face_is_sysval_integer;
     boolean mul_zero_wins;
+    boolean always_output_pointsize;
+    boolean no_vs_window_space;
     unsigned texcoord_sn;
 
     struct sm1_instruction insn; /* current instruction */
@@ -463,7 +466,7 @@ struct shader_translator
     struct {
         struct ureg_dst *r;
         struct ureg_dst oPos;
-        struct ureg_dst oPos_out; /* the real output when doing streamout */
+        struct ureg_dst oPos_out; /* the real output when doing streamout or clipplane emulation */
         struct ureg_dst oFog;
         struct ureg_dst oPts;
         struct ureg_dst oCol[4];
@@ -510,7 +513,7 @@ struct shader_translator
     struct sm1_local_const *lconstb;
     unsigned num_lconstb;
 
-    boolean slots_used[NINE_MAX_CONST_ALL];
+    boolean slots_used[NINE_MAX_CONST_ALL_VS];
     unsigned *slot_map;
     unsigned num_slots;
 
@@ -636,6 +639,26 @@ static struct ureg_src nine_boolean_constant_src(struct shader_translator *tx, i
 
     if (tx->info->const_bool_slots < (idx + 1))
         tx->info->const_bool_slots = idx + 1;
+
+    return src;
+}
+
+static struct ureg_src nine_special_constant_src(struct shader_translator *tx, int idx)
+{
+    struct ureg_src src;
+
+    unsigned slot_idx = idx + (IS_PS ? NINE_MAX_CONST_PS_SPE_OFFSET :
+        (tx->info->swvp_on ? NINE_MAX_CONST_SWVP_SPE_OFFSET : NINE_MAX_CONST_VS_SPE_OFFSET));
+
+    if (!tx->info->swvp_on && tx->slot_map)
+        slot_idx = tx->slot_map[slot_idx];
+    src = ureg_src_register(TGSI_FILE_CONSTANT, slot_idx);
+    src = ureg_src_dimension(src, 0);
+
+    if (!tx->info->swvp_on)
+        tx->slots_used[slot_idx] = TRUE;
+    if (tx->num_slots < (slot_idx + 1))
+        tx->num_slots = slot_idx + 1;
 
     return src;
 }
@@ -1052,7 +1075,7 @@ tx_src_param(struct shader_translator *tx, const struct sm1_src_param *param)
             if (tx->version.major < 3) {
                 src = ureg_DECL_fs_input_centroid(
                     ureg, TGSI_SEMANTIC_COLOR, param->idx,
-                    TGSI_INTERPOLATE_COLOR,
+                    tx->info->color_flatshade ? TGSI_INTERPOLATE_CONSTANT : TGSI_INTERPOLATE_PERSPECTIVE,
                     tx->info->force_color_in_centroid ?
                       TGSI_INTERPOLATE_LOC_CENTROID : 0,
                     0, 1);
@@ -1317,9 +1340,13 @@ _tx_dst_param(struct shader_translator *tx, const struct sm1_dst_param *param)
         assert(!param->rel);
         switch (param->idx) {
         case 0:
-            if (ureg_dst_is_undef(tx->regs.oPos))
-                tx->regs.oPos =
-                    ureg_DECL_output(tx->ureg, TGSI_SEMANTIC_POSITION, 0);
+            if (ureg_dst_is_undef(tx->regs.oPos)) {
+                if (tx->info->clip_plane_emulation > 0) {
+                    tx->regs.oPos = ureg_DECL_temporary(tx->ureg);
+                } else {
+                    tx->regs.oPos = tx->regs.oPos_out;
+                }
+            }
             dst = tx->regs.oPos;
             break;
         case 1:
@@ -1355,8 +1382,9 @@ _tx_dst_param(struct shader_translator *tx, const struct sm1_dst_param *param)
         assert(!param->rel);
         tx->info->rt_mask |= 1 << param->idx;
         if (ureg_dst_is_undef(tx->regs.oCol[param->idx])) {
-            /* ps < 3: oCol[0] will have fog blending afterward */
-            if (!IS_VS && tx->version.major < 3 && param->idx == 0) {
+            /* ps < 3: oCol[0] will have fog blending afterward
+             * ps: oCol[0] might have alphatest afterward */
+            if (!IS_VS && param->idx == 0) {
                 tx->regs.oCol[0] = ureg_DECL_temporary(tx->ureg);
             } else {
                 tx->regs.oCol[param->idx] =
@@ -2304,8 +2332,9 @@ DECL_SPECIAL(DCL)
             tx->regs.o[sem.reg.idx] = ureg_DECL_output_masked(
                 ureg, tgsi.Name, tgsi.Index, sem.reg.mask, 0, 1);
             nine_record_outputs(tx, sem.usage, sem.usage_idx, sem.reg.mask, sem.reg.idx);
-            if (tx->info->process_vertices && sem.usage == D3DDECLUSAGE_POSITION && sem.usage_idx == 0) {
-                tx->regs.oPos_out = tx->regs.o[sem.reg.idx];
+            if ((tx->info->process_vertices || tx->info->clip_plane_emulation > 0) &&
+                sem.usage == D3DDECLUSAGE_POSITION && sem.usage_idx == 0) {
+                tx->regs.oPos_out = tx->regs.o[sem.reg.idx]; /* TODO: probably not good declare it twice */
                 tx->regs.o[sem.reg.idx] = ureg_DECL_temporary(ureg);
                 tx->regs.oPos = tx->regs.o[sem.reg.idx];
             }
@@ -2317,6 +2346,7 @@ DECL_SPECIAL(DCL)
         }
     } else {
         if (is_input && tx->version.major >= 3) {
+            unsigned interp_flag;
             unsigned interp_location = 0;
             /* SM3 only, SM2 input semantic determined by file */
             assert(sem.reg.idx < ARRAY_SIZE(tx->regs.v));
@@ -2337,10 +2367,15 @@ DECL_SPECIAL(DCL)
             if (sem.reg.mod & NINED3DSPDM_CENTROID ||
                 (tgsi.Name == TGSI_SEMANTIC_COLOR && tx->info->force_color_in_centroid))
                 interp_location = TGSI_INTERPOLATE_LOC_CENTROID;
+            interp_flag = nine_tgsi_to_interp_mode(&tgsi);
+            /* We replace TGSI_INTERPOLATE_COLOR because some drivers don't support it,
+             * and those who support it do the same replacement we do */
+            if (interp_flag == TGSI_INTERPOLATE_COLOR)
+                interp_flag = tx->info->color_flatshade ? TGSI_INTERPOLATE_CONSTANT : TGSI_INTERPOLATE_PERSPECTIVE;
 
             tx->regs.v[sem.reg.idx] = ureg_DECL_fs_input_centroid(
                 ureg, tgsi.Name, tgsi.Index,
-                nine_tgsi_to_interp_mode(&tgsi),
+                interp_flag,
                 interp_location, 0, 1);
         } else
         if (!is_input && 0) { /* declare in COLOROUT/DEPTHOUT case */
@@ -2378,7 +2413,18 @@ DECL_SPECIAL(POW)
         tx_src_param(tx, &tx->insn.src[0]),
         tx_src_param(tx, &tx->insn.src[1])
     };
-    ureg_POW(tx->ureg, dst, ureg_abs(src[0]), src[1]);
+    /* Anything^0 is 1, including 0^0.
+     * Assume mul_zero_wins drivers already have
+     * this behaviour. Emulate for the others. */
+    if (tx->mul_zero_wins) {
+        ureg_POW(tx->ureg, dst, ureg_abs(src[0]), src[1]);
+    } else {
+        struct ureg_dst tmp = tx_scratch_scalar(tx);
+        ureg_POW(tx->ureg, tmp, ureg_abs(src[0]), src[1]);
+        ureg_CMP(tx->ureg, dst,
+             ureg_negate(ureg_abs(ureg_scalar(src[1], TGSI_SWIZZLE_X))),
+             tx_src_scalar(tmp), ureg_imm1f(tx->ureg, 1.0f));
+    }
     return D3D_OK;
 }
 
@@ -2572,8 +2618,8 @@ DECL_SPECIAL(TEXBEM)
      * 10 is Z
      * 11 is W
      */
-    c8m = nine_float_constant_src(tx, 8+m);
-    c16m2 = nine_float_constant_src(tx, 8+8+m/2);
+    c8m = nine_special_constant_src(tx, m);
+    c16m2 = nine_special_constant_src(tx, 8+m/2);
 
     m00 = NINE_APPLY_SWIZZLE(c8m, X);
     m01 = NINE_APPLY_SWIZZLE(c8m, Y);
@@ -2925,7 +2971,7 @@ DECL_SPECIAL(BEM)
      * 10 is Z
      * 11 is W
      */
-    c8m = nine_float_constant_src(tx, 8+m);
+    c8m = nine_special_constant_src(tx, m);
     m00 = NINE_APPLY_SWIZZLE(c8m, X);
     m01 = NINE_APPLY_SWIZZLE(c8m, Y);
     m10 = NINE_APPLY_SWIZZLE(c8m, Z);
@@ -3640,6 +3686,14 @@ tx_ctor(struct shader_translator *tx, struct pipe_screen *screen, struct nine_sh
         TGSI_SEMANTIC_TEXCOORD : TGSI_SEMANTIC_GENERIC;
     tx->wpos_is_sysval = GET_CAP(FS_POSITION_IS_SYSVAL);
     tx->face_is_sysval_integer = GET_CAP(FS_FACE_IS_INTEGER_SYSVAL);
+    tx->no_vs_window_space = !GET_CAP(VS_WINDOW_SPACE_POSITION);
+    tx->mul_zero_wins = GET_CAP(LEGACY_MATH_RULES);
+
+    if (info->emulate_features) {
+        tx->shift_wpos = true;
+        tx->no_vs_window_space = true;
+        tx->mul_zero_wins = false;
+    }
 
     if (IS_VS) {
         tx->num_constf_allowed = NINE_MAX_CONST_F;
@@ -3670,14 +3724,13 @@ tx_ctor(struct shader_translator *tx, struct pipe_screen *screen, struct nine_sh
      * (Some drivers like nv50 are buggy and rely on that.)
      */
     if (IS_VS) {
-        tx->regs.oPos = ureg_DECL_output(tx->ureg, TGSI_SEMANTIC_POSITION, 0);
+        tx->regs.oPos_out = ureg_DECL_output(tx->ureg, TGSI_SEMANTIC_POSITION, 0);
     } else {
         ureg_property(tx->ureg, TGSI_PROPERTY_FS_COORD_ORIGIN, TGSI_FS_COORD_ORIGIN_UPPER_LEFT);
         if (!tx->shift_wpos)
             ureg_property(tx->ureg, TGSI_PROPERTY_FS_COORD_PIXEL_CENTER, TGSI_FS_COORD_PIXEL_CENTER_INTEGER);
     }
 
-    tx->mul_zero_wins = GET_CAP(LEGACY_MATH_RULES);
     if (tx->mul_zero_wins)
        ureg_property(tx->ureg, TGSI_PROPERTY_LEGACY_MATH_RULES, 1);
 
@@ -3742,28 +3795,28 @@ shader_add_vs_viewport_transform(struct shader_translator *tx)
 }
 
 static void
-shader_add_ps_fog_stage(struct shader_translator *tx, struct ureg_src src_col)
+shader_add_ps_fog_stage(struct shader_translator *tx, struct ureg_dst dst_col, struct ureg_src src_col)
 {
     struct ureg_program *ureg = tx->ureg;
-    struct ureg_dst oCol0 = ureg_DECL_output(ureg, TGSI_SEMANTIC_COLOR, 0);
     struct ureg_src fog_end, fog_coeff, fog_density, fog_params;
     struct ureg_src fog_vs, fog_color;
     struct ureg_dst fog_factor, depth;
 
     if (!tx->info->fog_enable) {
-        ureg_MOV(ureg, oCol0, src_col);
+        ureg_MOV(ureg, dst_col, src_col);
         return;
     }
 
     if (tx->info->fog_mode != D3DFOG_NONE) {
         depth = tx_scratch_scalar(tx);
-        /* Depth used for fog is perspective interpolated */
-        ureg_RCP(ureg, depth, ureg_scalar(nine_get_position_input(tx), TGSI_SWIZZLE_W));
-        ureg_MUL(ureg, depth, ureg_src(depth), ureg_scalar(nine_get_position_input(tx), TGSI_SWIZZLE_Z));
+        if (tx->info->zfog)
+            ureg_MOV(ureg, depth, ureg_scalar(nine_get_position_input(tx), TGSI_SWIZZLE_Z));
+        else /* wfog: use w. position's w contains 1/w */
+            ureg_RCP(ureg, depth, ureg_scalar(nine_get_position_input(tx), TGSI_SWIZZLE_W));
     }
 
-    fog_color = nine_float_constant_src(tx, 32);
-    fog_params = nine_float_constant_src(tx, 33);
+    fog_color = nine_special_constant_src(tx, 12);
+    fog_params = nine_special_constant_src(tx, 13);
     fog_factor = tx_scratch_scalar(tx);
 
     if (tx->info->fog_mode == D3DFOG_LINEAR) {
@@ -3789,9 +3842,29 @@ shader_add_ps_fog_stage(struct shader_translator *tx, struct ureg_src src_col)
         ureg_MOV(ureg, fog_factor, fog_vs);
     }
 
-    ureg_LRP(ureg, ureg_writemask(oCol0, TGSI_WRITEMASK_XYZ),
+    ureg_LRP(ureg, ureg_writemask(dst_col, TGSI_WRITEMASK_XYZ),
              tx_src_scalar(fog_factor), src_col, fog_color);
-    ureg_MOV(ureg, ureg_writemask(oCol0, TGSI_WRITEMASK_W), src_col);
+    ureg_MOV(ureg, ureg_writemask(dst_col, TGSI_WRITEMASK_W), src_col);
+}
+
+static void
+shader_add_ps_alpha_test_stage(struct shader_translator *tx, struct ureg_src src_color)
+{
+    struct ureg_program *ureg = tx->ureg;
+    unsigned cmp_op;
+    struct ureg_src src[2];
+    struct ureg_dst tmp = tx_scratch(tx);
+    if (tx->info->alpha_test_emulation == PIPE_FUNC_ALWAYS)
+        return;
+    if (tx->info->alpha_test_emulation == PIPE_FUNC_NEVER) {
+        ureg_KILL(ureg);
+        return;
+    }
+    cmp_op = pipe_comp_to_tgsi_opposite(tx->info->alpha_test_emulation);
+    src[0] = ureg_scalar(src_color, TGSI_SWIZZLE_W); /* Read color alpha channel */
+    src[1] = ureg_scalar(nine_special_constant_src(tx, 14), TGSI_SWIZZLE_X); /* Read alphatest */
+    ureg_insn(tx->ureg, cmp_op, &tmp, 1, src, 2, 0);
+    ureg_KILL_IF(tx->ureg, ureg_negate(ureg_scalar(ureg_src(tmp), TGSI_SWIZZLE_X))); /* if opposite test passes, discard */
 }
 
 static void parse_shader(struct shader_translator *tx)
@@ -3805,14 +3878,24 @@ static void parse_shader(struct shader_translator *tx)
     if (tx->failure)
         return;
 
-    if (IS_PS && tx->version.major < 3) {
-        if (tx->version.major < 2) {
-            assert(tx->num_temp); /* there must be color output */
-            info->rt_mask |= 0x1;
-            shader_add_ps_fog_stage(tx, ureg_src(tx->regs.r[0]));
+    if (IS_PS) {
+        struct ureg_dst oCol0 = ureg_DECL_output(tx->ureg, TGSI_SEMANTIC_COLOR, 0);
+        struct ureg_dst tmp_oCol0;
+        if (tx->version.major < 3) {
+            tmp_oCol0 = ureg_DECL_temporary(tx->ureg);
+            if (tx->version.major < 2) {
+                assert(tx->num_temp); /* there must be color output */
+                info->rt_mask |= 0x1;
+                shader_add_ps_fog_stage(tx, tmp_oCol0, ureg_src(tx->regs.r[0]));
+            } else {
+                shader_add_ps_fog_stage(tx, tmp_oCol0, ureg_src(tx->regs.oCol[0]));
+            }
         } else {
-            shader_add_ps_fog_stage(tx, ureg_src(tx->regs.oCol[0]));
+            assert(!ureg_dst_is_undef(tx->regs.oCol[0]));
+            tmp_oCol0 = tx->regs.oCol[0];
         }
+        shader_add_ps_alpha_test_stage(tx, ureg_src(tmp_oCol0));
+        ureg_MOV(tx->ureg, oCol0, ureg_src(tmp_oCol0));
     }
 
     if (IS_VS && tx->version.major < 3 && ureg_dst_is_undef(tx->regs.oFog) && info->fog_enable) {
@@ -3820,14 +3903,46 @@ static void parse_shader(struct shader_translator *tx)
         ureg_MOV(tx->ureg, ureg_writemask(tx->regs.oFog, TGSI_WRITEMASK_X), ureg_imm1f(tx->ureg, 0.0f));
     }
 
-    if (info->position_t)
-        ureg_property(tx->ureg, TGSI_PROPERTY_VS_WINDOW_SPACE_POSITION, TRUE);
+    if (info->position_t) {
+        if (tx->no_vs_window_space) {
+            ERR("POSITIONT is not yet implemented for your device.\n");
+        } else {
+            ureg_property(tx->ureg, TGSI_PROPERTY_VS_WINDOW_SPACE_POSITION, TRUE);
+        }
+    }
 
     if (IS_VS && !ureg_dst_is_undef(tx->regs.oPts)) {
         struct ureg_dst oPts = ureg_DECL_output(tx->ureg, TGSI_SEMANTIC_PSIZE, 0);
-        ureg_MAX(tx->ureg, tx->regs.oPts, ureg_src(tx->regs.oPts), ureg_imm1f(tx->ureg, info->point_size_min));
-        ureg_MIN(tx->ureg, oPts, ureg_src(tx->regs.oPts), ureg_imm1f(tx->ureg, info->point_size_max));
+        ureg_MAX(tx->ureg, ureg_writemask(tx->regs.oPts, TGSI_WRITEMASK_X), ureg_src(tx->regs.oPts), ureg_imm1f(tx->ureg, info->point_size_min));
+        ureg_MIN(tx->ureg, ureg_writemask(oPts, TGSI_WRITEMASK_X), ureg_src(tx->regs.oPts), ureg_imm1f(tx->ureg, info->point_size_max));
         info->point_size = TRUE;
+    } else if (IS_VS && tx->always_output_pointsize) {
+        struct ureg_dst oPts = ureg_DECL_output(tx->ureg, TGSI_SEMANTIC_PSIZE, 0);
+        ureg_MOV(tx->ureg, ureg_writemask(oPts, TGSI_WRITEMASK_X), nine_special_constant_src(tx, 8));
+        info->point_size = TRUE;
+    }
+
+    if (IS_VS && tx->info->clip_plane_emulation > 0) {
+        struct ureg_dst clipdist[2] = {ureg_dst_undef(), ureg_dst_undef()};
+        int num_clipdist = ffs(tx->info->clip_plane_emulation);
+        int i;
+        /* TODO: handle undefined channels of oPos (w is not always written to I think. default is 1) *
+         * Note in d3d9 it's not possible to output clipvert, so we don't need to check
+         * for its existence */
+        clipdist[0] = ureg_DECL_output_masked(tx->ureg, TGSI_SEMANTIC_CLIPDIST, 0, ((1 << num_clipdist) - 1) & 0xf, 0, 1);
+        if (num_clipdist >= 5)
+            clipdist[1] = ureg_DECL_output_masked(tx->ureg, TGSI_SEMANTIC_CLIPDIST, 1, ((1 << (num_clipdist - 4)) - 1) & 0xf, 0, 1);
+        ureg_property(tx->ureg, TGSI_PROPERTY_NUM_CLIPDIST_ENABLED, num_clipdist);
+        for (i = 0; i < num_clipdist; i++) {
+            assert(!ureg_dst_is_undef(clipdist[i>>2]));
+            if (!(tx->info->clip_plane_emulation & (1 << i)))
+                ureg_MOV(tx->ureg, ureg_writemask(clipdist[i>>2], 1 << (i & 0x2)), ureg_imm1f(tx->ureg, 0.f));
+            else
+                ureg_DP4(tx->ureg, ureg_writemask(clipdist[i>>2], 1 << (i & 0x2)),
+                         ureg_src(tx->regs.oPos), nine_special_constant_src(tx, i));
+        }
+
+        ureg_MOV(tx->ureg, tx->regs.oPos_out, ureg_src(tx->regs.oPos));
     }
 
     if (info->process_vertices)
@@ -3968,10 +4083,13 @@ nine_translate_shader(struct NineDevice9 *device, struct nine_shader_info *info,
     if (!tx)
         return E_OUTOFMEMORY;
 
+    info->emulate_features = device->driver_caps.shader_emulate_features;
+
     if (tx_ctor(tx, screen, info) == E_OUTOFMEMORY) {
         hr = E_OUTOFMEMORY;
         goto out;
     }
+    tx->always_output_pointsize = device->driver_caps.always_output_pointsize;
 
     assert(IS_VS || !info->swvp_on);
 
@@ -4017,14 +4135,14 @@ nine_translate_shader(struct NineDevice9 *device, struct nine_shader_info *info,
 
         num_ranges = 0;
         prev = -2;
-        for (i = 0; i < NINE_MAX_CONST_ALL; i++) {
+        for (i = 0; i < NINE_MAX_CONST_ALL_VS; i++) {
             if (tx->slots_used[i]) {
                 if (prev != i - 1)
                     num_ranges++;
                 prev = i;
             }
         }
-        slot_map = MALLOC(NINE_MAX_CONST_ALL * sizeof(unsigned));
+        slot_map = MALLOC(NINE_MAX_CONST_ALL_VS * sizeof(unsigned));
         const_ranges = CALLOC(num_ranges + 1, 2 * sizeof(unsigned)); /* ranges stop when last is of size 0 */
         if (!slot_map || !const_ranges) {
             hr = E_OUTOFMEMORY;
@@ -4033,7 +4151,7 @@ nine_translate_shader(struct NineDevice9 *device, struct nine_shader_info *info,
         c = 0;
         j = -1;
         prev = -2;
-        for (i = 0; i < NINE_MAX_CONST_ALL; i++) {
+        for (i = 0; i < NINE_MAX_CONST_ALL_VS; i++) {
             if (tx->slots_used[i]) {
                 if (prev != i - 1)
                     j++;
@@ -4050,6 +4168,7 @@ nine_translate_shader(struct NineDevice9 *device, struct nine_shader_info *info,
             hr = E_OUTOFMEMORY;
             goto out;
         }
+        tx->always_output_pointsize = device->driver_caps.always_output_pointsize;
         tx->slot_map = slot_map;
         parse_shader(tx);
         assert(!tx->failure);

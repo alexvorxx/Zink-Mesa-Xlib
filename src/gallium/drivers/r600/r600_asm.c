@@ -1090,7 +1090,7 @@ static int r600_bytecode_alloc_inst_kcache_lines(struct r600_bytecode *bc,
 		bank = alu->src[i].kc_bank;
 		assert(bank < R600_MAX_HW_CONST_BUFFERS);
 		line = (sel-512)>>4;
-		index_mode = alu->src[i].kc_rel ? 1 : 0; // V_SQ_CF_INDEX_0 / V_SQ_CF_INDEX_NONE
+		index_mode = alu->src[i].kc_rel;
 
 		if ((r = r600_bytecode_alloc_kcache_line(bc, kcache, bank, line, index_mode)))
 			return r;
@@ -1310,7 +1310,7 @@ int r600_bytecode_add_alu_type(struct r600_bytecode *bc,
 	if (bc->gfx_level >= EVERGREEN) {
 		for (i = 0; i < 3; i++)
 			if (nalu->src[i].kc_bank &&  nalu->src[i].kc_rel)
-				egcm_load_index_reg(bc, 0, true);
+				egcm_load_index_reg(bc, nalu->src[i].kc_rel - 1, true);
 	}
 
 	/* Check AR usage and load it if required */
@@ -1532,7 +1532,7 @@ int r600_bytecode_add_tex(struct r600_bytecode *bc, const struct r600_bytecode_t
 	/* Load index register if required */
 	if (bc->gfx_level >= EVERGREEN) {
 		if (tex->sampler_index_mode || tex->resource_index_mode)
-			egcm_load_index_reg(bc, 1, false);
+			egcm_load_index_reg(bc, tex->resource_index_mode - 1, false);
 	}
 
 	/* we can't fetch data und use it as texture lookup address in the same TEX clause */

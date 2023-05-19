@@ -89,7 +89,7 @@ vir_has_side_effects(struct v3d_compile *c, struct qinst *inst)
          * pointer, so each read has a side effect (we don't care for ldunif
          * because we reconstruct the uniform stream buffer after compiling
          * with the surviving uniforms), so allowing DCE to remove
-         * one would break follow-up loads. We could fix this by emiting a
+         * one would break follow-up loads. We could fix this by emitting a
          * unifa for each ldunifa, but each unifa requires 3 delay slots
          * before a ldunifa, so that would be quite expensive.
          */
@@ -549,6 +549,7 @@ struct v3d_compiler_strategy {
         bool disable_gcm;
         bool disable_loop_unrolling;
         bool disable_ubo_load_sorting;
+        bool move_buffer_loads;
         bool disable_tmu_pipelining;
         uint32_t max_tmu_spills;
 };
@@ -583,6 +584,7 @@ vir_compile_init(const struct v3d_compiler *compiler,
         c->disable_general_tmu_sched = strategy->disable_general_tmu_sched;
         c->disable_tmu_pipelining = strategy->disable_tmu_pipelining;
         c->disable_constant_ubo_load_sorting = strategy->disable_ubo_load_sorting;
+        c->move_buffer_loads = strategy->move_buffer_loads;
         c->disable_gcm = strategy->disable_gcm;
         c->disable_loop_unrolling = V3D_DBG(NO_LOOP_UNROLL)
                 ? true : strategy->disable_loop_unrolling;
@@ -1159,7 +1161,7 @@ v3d_instr_delay_cb(nir_instr *instr, void *data)
    /* We should not use very large delays for TMU instructions. Typically,
     * thread switches will be sufficient to hide all or most of the latency,
     * so we typically only need a little bit of extra room. If we over-estimate
-    * the latency here we may end up unnecesarily delaying the critical path in
+    * the latency here we may end up unnecessarily delaying the critical path in
     * the shader, which would have a negative effect in performance, so here
     * we are trying to strike a balance based on empirical testing.
     */
@@ -1629,7 +1631,7 @@ v3d_attempt_compile(struct v3d_compile *c)
                 .threshold = c->threads == 4 ? 24 : 48,
 
                 /* Vertex shaders share the same memory for inputs and outputs,
-                 * fragement and geometry shaders do not.
+                 * fragment and geometry shaders do not.
                  */
                 .stages_with_shared_io_memory =
                 (((1 << MESA_ALL_SHADER_STAGES) - 1) &
@@ -1649,8 +1651,11 @@ v3d_attempt_compile(struct v3d_compile *c)
         if (!c->disable_constant_ubo_load_sorting)
                 NIR_PASS(_, c->s, v3d_nir_sort_constant_ubo_loads, c);
 
+        const nir_move_options buffer_opts = c->move_buffer_loads ?
+                (nir_move_load_ubo | nir_move_load_ssbo) : 0;
         NIR_PASS(_, c->s, nir_opt_move, nir_move_load_uniform |
-                                       nir_move_const_undef);
+                                        nir_move_const_undef |
+                                        buffer_opts);
 
         v3d_nir_to_vir(c);
 }
@@ -1710,24 +1715,24 @@ int v3d_shaderdb_dump(struct v3d_compile *c,
  * because v3d_nir_to_vir will cap this to the actual minimum.
  */
 static const struct v3d_compiler_strategy strategies[] = {
-        /*0*/  { "default",                        4, 4, false, false, false, false, false,  0 },
-        /*1*/  { "disable general TMU sched",      4, 4, true,  false, false, false, false,  0 },
-        /*2*/  { "disable gcm",                    4, 4, true,  true,  false, false, false,  0 },
-        /*3*/  { "disable loop unrolling",         4, 4, true,  true,  true,  false, false,  0 },
-        /*4*/  { "disable UBO load sorting",       4, 4, true,  true,  true,  true,  false,  0 },
-        /*5*/  { "disable TMU pipelining",         4, 4, true,  true,  true,  true,  true,   0 },
-        /*6*/  { "lower thread count",             2, 1, false, false, false, false, false, -1 },
-        /*7*/  { "disable general TMU sched (2t)", 2, 1, true,  false, false, false, false, -1 },
-        /*8*/  { "disable gcm (2t)",               2, 1, true,  true,  false, false, false, -1 },
-        /*9*/  { "disable loop unrolling (2t)",    2, 1, true,  true,  true,  false, false, -1 },
-        /*10*/ { "disable UBO load sorting (2t)",  2, 1, true,  true,  true,  true,  false, -1 },
-        /*11*/ { "disable TMU pipelining (2t)",    2, 1, true,  true,  true,  true,  true,  -1 },
-        /*12*/ { "fallback scheduler",             2, 1, true,  true,  true,  true,  true,  -1 }
+        /*0*/  { "default",                        4, 4, false, false, false, false, false, false,  0 },
+        /*1*/  { "disable general TMU sched",      4, 4, true,  false, false, false, false, false,  0 },
+        /*2*/  { "disable gcm",                    4, 4, true,  true,  false, false, false, false,  0 },
+        /*3*/  { "disable loop unrolling",         4, 4, true,  true,  true,  false, false, false,  0 },
+        /*4*/  { "disable UBO load sorting",       4, 4, true,  true,  true,  true,  false, false,  0 },
+        /*5*/  { "disable TMU pipelining",         4, 4, true,  true,  true,  true,  false, true,   0 },
+        /*6*/  { "lower thread count",             2, 1, false, false, false, false, false, false, -1 },
+        /*7*/  { "disable general TMU sched (2t)", 2, 1, true,  false, false, false, false, false, -1 },
+        /*8*/  { "disable gcm (2t)",               2, 1, true,  true,  false, false, false, false, -1 },
+        /*9*/  { "disable loop unrolling (2t)",    2, 1, true,  true,  true,  false, false, false, -1 },
+        /*10*/ { "Move buffer loads (2t)",         2, 1, true,  true,  true,  true,  true,  false, -1 },
+        /*11*/ { "disable TMU pipelining (2t)",    2, 1, true,  true,  true,  true,  true,  false, -1 },
+        /*12*/ { "fallback scheduler",             2, 1, true,  true,  true,  true,  true,  false, -1 }
 };
 
 /**
  * If a particular optimization didn't make any progress during a compile
- * attempt disabling it alone won't allow us to compile the shader successfuly,
+ * attempt disabling it alone won't allow us to compile the shader successfully,
  * since we'll end up with the same code. Detect these scenarios so we can
  * avoid wasting time with useless compiles. We should also consider if the
  * gy changes other aspects of the compilation process though, like
@@ -1763,8 +1768,15 @@ skip_compile_strategy(struct v3d_compile *c, uint32_t idx)
            return !c->unrolled_any_loops;
    /* UBO load sorting: skip if we didn't sort any loads */
    case 4:
-   case 10:
            return !c->sorted_any_ubo_loads;
+   /* Move buffer loads: we assume any shader with difficult RA
+    * most likely has UBO / SSBO loads so we never try to skip.
+    * For now, we only try this for 2-thread compiles since it
+    * is expected to impact instruction counts and latency.
+    */
+   case 10:
+          assert(c->threads < 4);
+          return false;
    /* TMU pipelining: skip if we didn't pipeline any TMU ops */
    case 5:
    case 11:

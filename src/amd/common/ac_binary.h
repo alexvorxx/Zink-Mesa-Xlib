@@ -53,6 +53,8 @@ struct ac_shader_config {
 void ac_parse_shader_binary_config(const char *data, size_t nbytes, unsigned wave_size,
                                    const struct radeon_info *info, struct ac_shader_config *conf);
 
+unsigned ac_align_shader_binary_for_prefetch(const struct radeon_info *info, unsigned size);
+
 #ifdef __cplusplus
 }
 #endif

@@ -234,7 +234,12 @@ gather_ps_store_output(nir_builder *b, nir_intrinsic_instr *intrin, lower_ps_sta
 
    s->output_types[slot] = type;
 
-   nir_instr_remove(&intrin->instr);
+   /* Keep color output instruction if not exported in nir. */
+   if (!s->options->no_color_export ||
+       (slot < FRAG_RESULT_DATA0 && slot != FRAG_RESULT_COLOR)) {
+      nir_instr_remove(&intrin->instr);
+   }
+
    return true;
 }
 
@@ -552,7 +557,6 @@ emit_ps_color_export(nir_builder *b, lower_ps_state *s, gl_frag_result slot, uns
 
    default: {
       nir_op pack_op = nir_op_pack_32_2x16;
-      bool need_clamp = false;
 
       switch (spi_shader_col_format) {
       case V_028714_SPI_SHADER_FP16_ABGR:
@@ -562,13 +566,39 @@ emit_ps_color_export(nir_builder *b, lower_ps_state *s, gl_frag_result slot, uns
       case V_028714_SPI_SHADER_UINT16_ABGR:
          if (type_size == 32) {
             pack_op = nir_op_pack_uint_2x16;
-            need_clamp = is_int8 || is_int10;
+            if (is_int8 || is_int10) {
+               /* clamp 32bit output for 8/10 bit color component */
+               uint32_t max_rgb = is_int8 ? 255 : 1023;
+
+               for (int i = 0; i < 4; i++) {
+                  if (!data[i])
+                     continue;
+
+                  uint32_t max_value = i == 3 && is_int10 ? 3 : max_rgb;
+                  data[i] = nir_umin(b, data[i], nir_imm_int(b, max_value));
+               }
+            }
          }
          break;
       case V_028714_SPI_SHADER_SINT16_ABGR:
          if (type_size == 32) {
             pack_op = nir_op_pack_sint_2x16;
-            need_clamp = is_int8 || is_int10;
+            if (is_int8 || is_int10) {
+               /* clamp 32bit output for 8/10 bit color component */
+               uint32_t max_rgb = is_int8 ? 127 : 511;
+               uint32_t min_rgb = is_int8 ? -128 : -512;
+
+               for (int i = 0; i < 4; i++) {
+                  if (!data[i])
+                     continue;
+
+                  uint32_t max_value = i == 3 && is_int10 ? 1 : max_rgb;
+                  uint32_t min_value = i == 3 && is_int10 ? -2u : min_rgb;
+
+                  data[i] = nir_imin(b, data[i], nir_imm_int(b, max_value));
+                  data[i] = nir_imax(b, data[i], nir_imm_int(b, min_value));
+               }
+            }
          }
          break;
       case V_028714_SPI_SHADER_UNORM16_ABGR:
@@ -580,14 +610,6 @@ emit_ps_color_export(nir_builder *b, lower_ps_state *s, gl_frag_result slot, uns
       default:
          unreachable("unsupported color export format");
          break;
-      }
-
-      /* clamp 32bit output for 8/10 bit color component */
-      for (int i = 0; i < 4; i++) {
-         if (need_clamp && data[i]) {
-            int max_value = is_int10 ? (i == 3 ? 3 : 1023) : 255;
-            data[i] = nir_umin(b, data[i], nir_imm_int(b, max_value));
-         }
       }
 
       for (int i = 0; i < 2; i++) {
@@ -661,6 +683,14 @@ emit_ps_dual_src_blend_swizzle(nir_builder *b, lower_ps_state *s, unsigned first
    /* Swizzle code is right before mrt0_exp. */
    b->cursor = nir_before_instr(&mrt0_exp->instr);
 
+   /* ACO need to emit the swizzle code by a pseudo instruction. */
+   if (s->options->use_aco) {
+      nir_export_dual_src_blend_amd(b, mrt0_arg, mrt1_arg, .write_mask = write_mask);
+      nir_instr_remove(&mrt0_exp->instr);
+      nir_instr_remove(&mrt1_exp->instr);
+      return;
+   }
+
    nir_ssa_def *undef = nir_ssa_undef(b, 1, 32);
    nir_ssa_def *arg0_vec[4] = {undef, undef, undef, undef};
    nir_ssa_def *arg1_vec[4] = {undef, undef, undef, undef};
@@ -715,9 +745,12 @@ emit_ps_null_export(nir_builder *b, lower_ps_state *s)
    unsigned target = s->options->gfx_level >= GFX11 ?
       V_008DFC_SQ_EXP_MRT : V_008DFC_SQ_EXP_NULL;
 
-   nir_export_amd(b, nir_ssa_undef(b, 4, 32),
-                  .base = target,
-                  .flags = AC_EXP_FLAG_VALID_MASK | AC_EXP_FLAG_DONE);
+   nir_intrinsic_instr *intrin =
+      nir_export_amd(b, nir_ssa_undef(b, 4, 32),
+                     .base = target,
+                     .flags = AC_EXP_FLAG_VALID_MASK | AC_EXP_FLAG_DONE);
+   /* To avoid builder set write mask to 0xf. */
+   nir_intrinsic_set_write_mask(intrin, 0);
 }
 
 static void
@@ -728,6 +761,10 @@ export_ps_outputs(nir_builder *b, lower_ps_state *s)
    emit_ps_color_clamp_and_alpha_test(b, s);
 
    emit_ps_mrtz_export(b, s);
+
+   /* When non-monolithic shader, RADV export mrtz in main part and export color in epilog. */
+   if (s->options->no_color_export)
+      return;
 
    unsigned first_color_export = s->exp_num;
 
@@ -782,8 +819,14 @@ export_ps_outputs(nir_builder *b, lower_ps_state *s)
    }
 
    if (s->exp_num) {
-      if (s->options->dual_src_blend_swizzle)
+      if (s->options->dual_src_blend_swizzle) {
          emit_ps_dual_src_blend_swizzle(b, s, first_color_export);
+         /* Skip last export flag setting because they have been replaced by
+          * a pseudo instruction.
+          */
+         if (s->options->use_aco)
+            return;
+      }
 
       /* Specify that this is the last export */
       nir_intrinsic_instr *final_exp = s->exp[s->exp_num - 1];
@@ -818,4 +861,8 @@ ac_nir_lower_ps(nir_shader *nir, const ac_nir_lower_ps_options *options)
    init_interp_param(b, &state);
 
    export_ps_outputs(b, &state);
+
+   /* Cleanup nir variable, as RADV won't do this. */
+   if (state.lower_load_barycentric)
+      nir_lower_vars_to_ssa(nir);
 }

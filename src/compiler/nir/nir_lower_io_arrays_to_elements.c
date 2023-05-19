@@ -176,7 +176,7 @@ lower_array(nir_builder *b, nir_intrinsic_instr *intr, nir_variable *var,
 
    if (intr->intrinsic != nir_intrinsic_store_deref) {
       nir_ssa_dest_init(&element_intr->instr, &element_intr->dest,
-                        intr->num_components, intr->dest.ssa.bit_size, NULL);
+                        intr->num_components, intr->dest.ssa.bit_size);
 
       if (intr->intrinsic == nir_intrinsic_interp_deref_at_offset ||
           intr->intrinsic == nir_intrinsic_interp_deref_at_sample ||

@@ -1160,7 +1160,7 @@ split_64bit_subgroup_op(nir_builder *b, const nir_intrinsic_instr *intrin)
              sizeof(intrin->const_index));
 
       nir_ssa_dest_init(&split->instr, &split->dest,
-                        intrin->dest.ssa.num_components, 32, NULL);
+                        intrin->dest.ssa.num_components, 32);
       nir_builder_instr_insert(b, &split->instr);
 
       res[i] = &split->dest.ssa;
@@ -1176,7 +1176,7 @@ build_vote_ieq(nir_builder *b, nir_ssa_def *x)
       nir_intrinsic_instr_create(b->shader, nir_intrinsic_vote_ieq);
    vote->src[0] = nir_src_for_ssa(x);
    vote->num_components = x->num_components;
-   nir_ssa_dest_init(&vote->instr, &vote->dest, 1, 1, NULL);
+   nir_ssa_dest_init(&vote->instr, &vote->dest, 1, 1);
    nir_builder_instr_insert(b, &vote->instr);
    return &vote->dest.ssa;
 }
@@ -1200,8 +1200,8 @@ build_scan_intrinsic(nir_builder *b, nir_intrinsic_op scan_op,
    nir_intrinsic_set_reduction_op(scan, reduction_op);
    if (scan_op == nir_intrinsic_reduce)
       nir_intrinsic_set_cluster_size(scan, cluster_size);
-   nir_ssa_dest_init(&scan->instr, &scan->dest,
-                     val->num_components, val->bit_size, NULL);
+   nir_ssa_dest_init(&scan->instr, &scan->dest, val->num_components,
+                     val->bit_size);
    nir_builder_instr_insert(b, &scan->instr);
    return &scan->dest.ssa;
 }
@@ -1365,6 +1365,43 @@ bool
 nir_lower_int64(nir_shader *shader)
 {
    return nir_shader_lower_instructions(shader, should_lower_int64_instr,
+                                        lower_int64_instr,
+                                        (void *)shader->options);
+}
+
+static bool
+should_lower_int64_float_conv(const nir_instr *instr, const void *_options)
+{
+   if (instr->type != nir_instr_type_alu)
+      return false;
+
+   nir_alu_instr *alu = nir_instr_as_alu(instr);
+
+   switch (alu->op) {
+   case nir_op_i2f64:
+   case nir_op_i2f32:
+   case nir_op_i2f16:
+   case nir_op_u2f64:
+   case nir_op_u2f32:
+   case nir_op_u2f16:
+   case nir_op_f2i64:
+   case nir_op_f2u64:
+      return should_lower_int64_alu_instr(alu, _options);
+   default:
+      return false;
+   }
+}
+
+/**
+ * Like nir_lower_int64(), but only lowers conversions to/from float.
+ *
+ * These operations in particular may affect double-precision lowering,
+ * so it can be useful to run them in tandem with nir_lower_doubles().
+ */
+bool
+nir_lower_int64_float_conversions(nir_shader *shader)
+{
+   return nir_shader_lower_instructions(shader, should_lower_int64_float_conv,
                                         lower_int64_instr,
                                         (void *)shader->options);
 }

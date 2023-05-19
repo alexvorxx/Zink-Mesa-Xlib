@@ -255,20 +255,21 @@ bool si_replace_shader(unsigned num, struct si_shader_binary *binary)
    if (fseek(f, 0, SEEK_SET) != 0)
       goto file_error;
 
-   binary->elf_buffer = MALLOC(filesize);
-   if (!binary->elf_buffer) {
+   binary->code_buffer = MALLOC(filesize);
+   if (!binary->code_buffer) {
       fprintf(stderr, "out of memory\n");
       goto out_close;
    }
 
-   nread = fread((void *)binary->elf_buffer, 1, filesize, f);
+   nread = fread((void *)binary->code_buffer, 1, filesize, f);
    if (nread != filesize) {
-      FREE((void *)binary->elf_buffer);
-      binary->elf_buffer = NULL;
+      FREE((void *)binary->code_buffer);
+      binary->code_buffer = NULL;
       goto file_error;
    }
 
-   binary->elf_size = nread;
+   binary->type = SI_SHADER_BINARY_ELF;
+   binary->code_size = nread;
    replaced = true;
 
 out_close:
@@ -834,8 +835,8 @@ static void si_add_split_disasm(struct si_screen *screen, struct ac_rtld_binary 
                                      .shader_type = stage,
                                      .wave_size = wave_size,
                                      .num_parts = 1,
-                                     .elf_ptrs = &binary->elf_buffer,
-                                     .elf_sizes = &binary->elf_size}))
+                                     .elf_ptrs = &binary->code_buffer,
+                                     .elf_sizes = &binary->code_size}))
       return;
 
    const char *disasm;

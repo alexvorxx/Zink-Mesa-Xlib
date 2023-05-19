@@ -101,7 +101,7 @@ struct lp_build_nir_context
                         LLVMValueRef addr, LLVMValueRef dst);
 
    void (*atomic_global)(struct lp_build_nir_context *bld_base,
-                         nir_intrinsic_op op,
+                         nir_atomic_op nir_op,
                          unsigned addr_bit_size,
                          unsigned val_bit_size,
                          LLVMValueRef addr,
@@ -119,7 +119,7 @@ struct lp_build_nir_context
                      LLVMValueRef index, LLVMValueRef offset, LLVMValueRef dst);
 
    void (*atomic_mem)(struct lp_build_nir_context *bld_base,
-                      nir_intrinsic_op op,
+                      nir_atomic_op op,
                       unsigned bit_size,
                       LLVMValueRef index, LLVMValueRef offset,
                       LLVMValueRef val, LLVMValueRef val2,
@@ -246,6 +246,8 @@ struct lp_build_nir_soa_context
    LLVMValueRef (*outputs)[TGSI_NUM_CHANNELS];
    LLVMTypeRef context_type;
    LLVMValueRef context_ptr;
+   LLVMTypeRef resources_type;
+   LLVMValueRef resources_ptr;
    LLVMTypeRef thread_data_type;
    LLVMValueRef thread_data_ptr;
 
@@ -359,5 +361,7 @@ get_int_bld(struct lp_build_nir_context *bld_base,
 unsigned
 lp_nir_aos_swizzle(struct lp_build_nir_context *bld_base, unsigned chan);
 
+LLVMAtomicRMWBinOp
+lp_translate_atomic_op(nir_atomic_op op);
 
 #endif

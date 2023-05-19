@@ -21,6 +21,7 @@
 radv_entrypoints_gen_command = [
   prog_python, '@INPUT0@', '--xml', '@INPUT1@', '--proto', '--weak',
   '--out-h', '@OUTPUT0@', '--out-c', '@OUTPUT1@',
+  '--beta', with_vulkan_beta.to_string()
 ]
 
 radv_entrypoints_gen_command += [

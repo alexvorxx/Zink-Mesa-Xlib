@@ -747,36 +747,36 @@ d3d12_has_video_encode_support(struct pipe_screen *pscreen,
                if(ref_l1)
                   codecSupport.hevc_support.prediction_direction |= PIPE_H265_PRED_DIRECTION_FUTURE;
 
-               codecSupport.hevc_support.hevc_features.bits.separate_colour_planes = PIPE_H265_ENC_FEATURE_NOT_SUPPORTED;
-               codecSupport.hevc_support.hevc_features.bits.scaling_lists = PIPE_H265_ENC_FEATURE_NOT_SUPPORTED;
-               codecSupport.hevc_support.hevc_features.bits.pcm = PIPE_H265_ENC_FEATURE_NOT_SUPPORTED;
-               codecSupport.hevc_support.hevc_features.bits.temporal_mvp = PIPE_H265_ENC_FEATURE_NOT_SUPPORTED;
-               codecSupport.hevc_support.hevc_features.bits.strong_intra_smoothing = PIPE_H265_ENC_FEATURE_NOT_SUPPORTED;
-               codecSupport.hevc_support.hevc_features.bits.dependent_slices = PIPE_H265_ENC_FEATURE_NOT_SUPPORTED;
-               codecSupport.hevc_support.hevc_features.bits.sign_data_hiding = PIPE_H265_ENC_FEATURE_NOT_SUPPORTED;
-               codecSupport.hevc_support.hevc_features.bits.weighted_prediction = PIPE_H265_ENC_FEATURE_NOT_SUPPORTED;
-               codecSupport.hevc_support.hevc_features.bits.transquant_bypass = PIPE_H265_ENC_FEATURE_NOT_SUPPORTED;
-               codecSupport.hevc_support.hevc_features.bits.deblocking_filter_disable = PIPE_H265_ENC_FEATURE_NOT_SUPPORTED;
+               codecSupport.hevc_support.hevc_features.bits.separate_colour_planes = PIPE_ENC_FEATURE_NOT_SUPPORTED;
+               codecSupport.hevc_support.hevc_features.bits.scaling_lists = PIPE_ENC_FEATURE_NOT_SUPPORTED;
+               codecSupport.hevc_support.hevc_features.bits.pcm = PIPE_ENC_FEATURE_NOT_SUPPORTED;
+               codecSupport.hevc_support.hevc_features.bits.temporal_mvp = PIPE_ENC_FEATURE_NOT_SUPPORTED;
+               codecSupport.hevc_support.hevc_features.bits.strong_intra_smoothing = PIPE_ENC_FEATURE_NOT_SUPPORTED;
+               codecSupport.hevc_support.hevc_features.bits.dependent_slices = PIPE_ENC_FEATURE_NOT_SUPPORTED;
+               codecSupport.hevc_support.hevc_features.bits.sign_data_hiding = PIPE_ENC_FEATURE_NOT_SUPPORTED;
+               codecSupport.hevc_support.hevc_features.bits.weighted_prediction = PIPE_ENC_FEATURE_NOT_SUPPORTED;
+               codecSupport.hevc_support.hevc_features.bits.transquant_bypass = PIPE_ENC_FEATURE_NOT_SUPPORTED;
+               codecSupport.hevc_support.hevc_features.bits.deblocking_filter_disable = PIPE_ENC_FEATURE_NOT_SUPPORTED;
 
                /* cu_qp_delta always required to be 1 in https://github.com/microsoft/DirectX-Specs/blob/master/d3d/D3D12VideoEncoding.md */
-               codecSupport.hevc_support.hevc_features.bits.cu_qp_delta = (PIPE_H265_ENC_FEATURE_SUPPORTED | PIPE_H265_ENC_FEATURE_REQUIRED);
+               codecSupport.hevc_support.hevc_features.bits.cu_qp_delta = (PIPE_ENC_FEATURE_SUPPORTED | PIPE_ENC_FEATURE_REQUIRED);
 
                if ((codecSupport.hevc_support.d3d12_caps.SupportFlags & D3D12_VIDEO_ENCODER_CODEC_CONFIGURATION_SUPPORT_HEVC_FLAG_P_FRAMES_IMPLEMENTED_AS_LOW_DELAY_B_FRAMES) != 0)
                   codecSupport.hevc_support.prediction_direction |= PIPE_H265_PRED_DIRECTION_BI_NOT_EMPTY;
 
                if ((codecSupport.hevc_support.d3d12_caps.SupportFlags & D3D12_VIDEO_ENCODER_CODEC_CONFIGURATION_SUPPORT_HEVC_FLAG_ASYMETRIC_MOTION_PARTITION_SUPPORT) != 0)
-                  codecSupport.hevc_support.hevc_features.bits.amp = PIPE_H265_ENC_FEATURE_SUPPORTED;
+                  codecSupport.hevc_support.hevc_features.bits.amp = PIPE_ENC_FEATURE_SUPPORTED;
 
                if ((codecSupport.hevc_support.d3d12_caps.SupportFlags & D3D12_VIDEO_ENCODER_CODEC_CONFIGURATION_SUPPORT_HEVC_FLAG_ASYMETRIC_MOTION_PARTITION_REQUIRED) != 0)
-                  codecSupport.hevc_support.hevc_features.bits.amp = (PIPE_H265_ENC_FEATURE_SUPPORTED | PIPE_H265_ENC_FEATURE_REQUIRED);
+                  codecSupport.hevc_support.hevc_features.bits.amp = (PIPE_ENC_FEATURE_SUPPORTED | PIPE_ENC_FEATURE_REQUIRED);
 
                if ((codecSupport.hevc_support.d3d12_caps.SupportFlags & D3D12_VIDEO_ENCODER_CODEC_CONFIGURATION_SUPPORT_HEVC_FLAG_SAO_FILTER_SUPPORT) != 0)
-                  codecSupport.hevc_support.hevc_features.bits.sao = PIPE_H265_ENC_FEATURE_SUPPORTED;
+                  codecSupport.hevc_support.hevc_features.bits.sao = PIPE_ENC_FEATURE_SUPPORTED;
 
                if ((codecSupport.hevc_support.d3d12_caps.SupportFlags & D3D12_VIDEO_ENCODER_CODEC_CONFIGURATION_SUPPORT_HEVC_FLAG_CONSTRAINED_INTRAPREDICTION_SUPPORT) != 0)
-                  codecSupport.hevc_support.hevc_features.bits.constrained_intra_pred = PIPE_H265_ENC_FEATURE_SUPPORTED;
+                  codecSupport.hevc_support.hevc_features.bits.constrained_intra_pred = PIPE_ENC_FEATURE_SUPPORTED;
                if ((codecSupport.hevc_support.d3d12_caps.SupportFlags & D3D12_VIDEO_ENCODER_CODEC_CONFIGURATION_SUPPORT_HEVC_FLAG_TRANSFORM_SKIP_SUPPORT) != 0)
-                  codecSupport.hevc_support.hevc_features.bits.transform_skip = PIPE_H265_ENC_FEATURE_SUPPORTED;
+                  codecSupport.hevc_support.hevc_features.bits.transform_skip = PIPE_ENC_FEATURE_SUPPORTED;
 
                DXGI_FORMAT encodeFormat = d3d12_convert_pipe_video_profile_to_dxgi_format(profile);
                supportsProfile = supportsProfile &&

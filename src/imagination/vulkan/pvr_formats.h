@@ -220,13 +220,6 @@ void pvr_get_hw_clear_color(VkFormat vk_format,
                             VkClearColorValue value,
                             uint32_t packed_out[static const 4]);
 
-/* TODO: alpha_type is of 'enum pvr_int_pbe_pixel_num_loads' type. See if we can
- * move that in here. It's currently in pvr_common.h and it doesn't seem
- * appropriate including that in here. Also moving the definition in here would
- * make pvr_common.h include this which would mean that the compiler would be
- * pulling in vulkan specific format stuff.
- */
-uint32_t pvr_pbe_pixel_num_loads(enum pvr_transfer_pbe_pixel_src pbe_format,
-                                 uint32_t alpha_type);
+uint32_t pvr_pbe_pixel_num_loads(enum pvr_transfer_pbe_pixel_src pbe_format);
 
 #endif /* PVR_FORMATS_H */

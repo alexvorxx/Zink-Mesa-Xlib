@@ -34,7 +34,7 @@ extern "C" {
 
 bool dxil_nir_lower_8bit_conv(nir_shader *shader);
 bool dxil_nir_lower_16bit_conv(nir_shader *shader);
-bool dxil_nir_lower_x2b(nir_shader *shader);
+bool dxil_nir_algebraic(nir_shader *shader);
 bool dxil_nir_lower_fquantize2f16(nir_shader *shader);
 bool dxil_nir_lower_ubo_to_temp(nir_shader *shader);
 struct dxil_nir_lower_loads_stores_options {
@@ -84,6 +84,10 @@ bool dxil_nir_lower_num_subgroups(nir_shader *s);
 bool dxil_nir_split_unaligned_loads_stores(nir_shader *shader, nir_variable_mode modes);
 bool dxil_nir_lower_unsupported_subgroup_scan(nir_shader *s);
 bool dxil_nir_forward_front_face(nir_shader *s);
+bool dxil_nir_split_phis_and_const_srcs(nir_shader *s);
+
+struct dxil_module;
+bool dxil_nir_analyze_io_dependencies(struct dxil_module *mod, nir_shader *s);
 
 #ifdef __cplusplus
 }

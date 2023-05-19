@@ -115,9 +115,10 @@ anv_shader_bin_create(struct anv_device *device,
    memcpy(shader->kernel.map, kernel_data, kernel_size);
    shader->kernel_size = kernel_size;
 
-   uint64_t shader_data_addr = INSTRUCTION_STATE_POOL_MIN_ADDRESS +
-                               shader->kernel.offset +
-                               prog_data_in->const_data_offset;
+   uint64_t shader_data_addr =
+      device->physical->va.instruction_state_pool.addr +
+      shader->kernel.offset +
+      prog_data_in->const_data_offset;
 
    int rv_count = 0;
    struct brw_shader_reloc_value reloc_values[5];
@@ -125,7 +126,11 @@ anv_shader_bin_create(struct anv_device *device,
       .id = BRW_SHADER_RELOC_CONST_DATA_ADDR_LOW,
       .value = shader_data_addr,
    };
-   assert(shader_data_addr >> 32 == INSTRUCTION_STATE_POOL_MIN_ADDRESS >> 32);
+   assert(shader_data_addr >> 32 == device->physical->va.instruction_state_pool.addr >> 32);
+   reloc_values[rv_count++] = (struct brw_shader_reloc_value) {
+      .id = BRW_SHADER_RELOC_CONST_DATA_ADDR_HIGH,
+      .value = device->physical->va.instruction_state_pool.addr >> 32,
+   };
    reloc_values[rv_count++] = (struct brw_shader_reloc_value) {
       .id = BRW_SHADER_RELOC_SHADER_START_OFFSET,
       .value = shader->kernel.offset,
@@ -133,9 +138,10 @@ anv_shader_bin_create(struct anv_device *device,
    if (brw_shader_stage_is_bindless(stage)) {
       const struct brw_bs_prog_data *bs_prog_data =
          brw_bs_prog_data_const(prog_data_in);
-      uint64_t resume_sbt_addr = INSTRUCTION_STATE_POOL_MIN_ADDRESS +
-                                 shader->kernel.offset +
-                                 bs_prog_data->resume_sbt_offset;
+      uint64_t resume_sbt_addr =
+         device->physical->va.instruction_state_pool.addr +
+         shader->kernel.offset +
+         bs_prog_data->resume_sbt_offset;
       reloc_values[rv_count++] = (struct brw_shader_reloc_value) {
          .id = BRW_SHADER_RELOC_RESUME_SBT_ADDR_LOW,
          .value = resume_sbt_addr,

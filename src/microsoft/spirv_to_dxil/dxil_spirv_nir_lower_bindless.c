@@ -57,7 +57,8 @@ load_vulkan_ssbo(nir_builder *b, unsigned buf_idx,
                         nir_channel(b, descriptor, 0),
                         offset,
                         .align_mul = num_comps * 4,
-                        .align_offset = 0);
+                        .align_offset = 0,
+                        .access = ACCESS_NON_WRITEABLE | ACCESS_CAN_REORDER);
 }
 
 static nir_ssa_def *
@@ -168,21 +169,8 @@ lower_bindless_instr(nir_builder *b, nir_instr *instr, void *data)
    case nir_intrinsic_image_deref_load:
    case nir_intrinsic_image_deref_store:
    case nir_intrinsic_image_deref_size:
-   case nir_intrinsic_image_deref_atomic_add:
-   case nir_intrinsic_image_deref_atomic_and:
-   case nir_intrinsic_image_deref_atomic_comp_swap:
-   case nir_intrinsic_image_deref_atomic_dec_wrap:
-   case nir_intrinsic_image_deref_atomic_exchange:
-   case nir_intrinsic_image_deref_atomic_fadd:
-   case nir_intrinsic_image_deref_atomic_fmax:
-   case nir_intrinsic_image_deref_atomic_fmin:
-   case nir_intrinsic_image_deref_atomic_imax:
-   case nir_intrinsic_image_deref_atomic_imin:
-   case nir_intrinsic_image_deref_atomic_inc_wrap:
-   case nir_intrinsic_image_deref_atomic_or:
-   case nir_intrinsic_image_deref_atomic_umax:
-   case nir_intrinsic_image_deref_atomic_umin:
-   case nir_intrinsic_image_deref_atomic_xor:
+   case nir_intrinsic_image_deref_atomic:
+   case nir_intrinsic_image_deref_atomic_swap:
       return lower_bindless_image_intr(b, intr, options);
    case nir_intrinsic_vulkan_resource_index:
       return lower_vulkan_resource_index(b, intr, options);

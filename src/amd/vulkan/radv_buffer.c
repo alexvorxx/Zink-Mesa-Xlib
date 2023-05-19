@@ -173,7 +173,7 @@ radv_BindBufferMemory2(VkDevice _device, uint32_t bindInfoCount,
 
 static void
 radv_get_buffer_memory_requirements(struct radv_device *device, VkDeviceSize size,
-                                    VkBufferCreateFlags flags, VkBufferCreateFlags usage,
+                                    VkBufferCreateFlags flags, VkBufferUsageFlags usage,
                                     VkMemoryRequirements2 *pMemoryRequirements)
 {
    pMemoryRequirements->memoryRequirements.memoryTypeBits =

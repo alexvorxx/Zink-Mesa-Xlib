@@ -63,6 +63,7 @@
 #include "util/crc32.h"
 #include "util/os_file.h"
 #include "util/list.h"
+#include "util/perf/cpu_trace.h"
 #include "util/u_process.h"
 #include "util/u_string.h"
 #include "api_exec_decl.h"
@@ -1303,6 +1304,8 @@ link_program(struct gl_context *ctx, struct gl_shader_program *shProg,
 {
    if (!shProg)
       return;
+
+   MESA_TRACE_FUNC();
 
    if (!no_error) {
       /* From the ARB_transform_feedback2 specification:

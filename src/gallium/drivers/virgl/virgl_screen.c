@@ -44,18 +44,18 @@
 #include "virgl_encode.h"
 
 int virgl_debug = 0;
-static const struct debug_named_value virgl_debug_options[] = {
-   { "verbose",   VIRGL_DEBUG_VERBOSE,             NULL },
-   { "tgsi",      VIRGL_DEBUG_TGSI,                NULL },
-   { "use_tgsi",  VIRGL_DEBUG_USE_TGSI,            NULL },
-   { "noemubgra", VIRGL_DEBUG_NO_EMULATE_BGRA,     "Disable tweak to emulate BGRA as RGBA on GLES hosts"},
-   { "nobgraswz", VIRGL_DEBUG_NO_BGRA_DEST_SWIZZLE,"Disable tweak to swizzle emulated BGRA on GLES hosts" },
-   { "sync",      VIRGL_DEBUG_SYNC,                "Sync after every flush" },
-   { "xfer",      VIRGL_DEBUG_XFER,                "Do not optimize for transfers" },
-   { "r8srgb-readback",   VIRGL_DEBUG_L8_SRGB_ENABLE_READBACK, "Enable redaback for L8 sRGB textures" },
-   { "nocoherent", VIRGL_DEBUG_NO_COHERENT,        "Disable coherent memory"},
-   { "video",     VIRGL_DEBUG_VIDEO,               "Video codec"},
-   { "shader_sync", VIRGL_DEBUG_SHADER_SYNC,       "Sync after every shader link"},
+const struct debug_named_value virgl_debug_options[] = {
+   { "verbose",         VIRGL_DEBUG_VERBOSE,                 NULL },
+   { "tgsi",            VIRGL_DEBUG_TGSI,                    NULL },
+   { "use_tgsi",        VIRGL_DEBUG_USE_TGSI,                NULL },
+   { "noemubgra",       VIRGL_DEBUG_NO_EMULATE_BGRA,         "Disable tweak to emulate BGRA as RGBA on GLES hosts" },
+   { "nobgraswz",       VIRGL_DEBUG_NO_BGRA_DEST_SWIZZLE,    "Disable tweak to swizzle emulated BGRA on GLES hosts" },
+   { "sync",            VIRGL_DEBUG_SYNC,                    "Sync after every flush" },
+   { "xfer",            VIRGL_DEBUG_XFER,                    "Do not optimize for transfers" },
+   { "r8srgb-readback", VIRGL_DEBUG_L8_SRGB_ENABLE_READBACK, "Enable redaback for L8 sRGB textures" },
+   { "nocoherent",      VIRGL_DEBUG_NO_COHERENT,             "Disable coherent memory" },
+   { "video",           VIRGL_DEBUG_VIDEO,                   "Video codec" },
+   { "shader_sync",     VIRGL_DEBUG_SHADER_SYNC,             "Sync after every shader link" },
    DEBUG_NAMED_VALUE_END
 };
 DEBUG_GET_ONCE_FLAGS_OPTION(virgl_debug, "VIRGL_DEBUG", virgl_debug_options, 0)

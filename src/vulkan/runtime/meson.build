@@ -126,6 +126,7 @@ vk_common_entrypoints = custom_target(
   command : [
     prog_python, '@INPUT0@', '--xml', '@INPUT1@', '--proto', '--weak',
     '--out-h', '@OUTPUT0@', '--out-c', '@OUTPUT1@', '--prefix', 'vk_common',
+    '--beta', with_vulkan_beta.to_string()
   ],
   depend_files : vk_entrypoints_gen_depend_files,
 )
@@ -136,7 +137,8 @@ vk_cmd_queue = custom_target(
   output : ['vk_cmd_queue.c', 'vk_cmd_queue.h'],
   command : [
     prog_python, '@INPUT0@', '--xml', '@INPUT1@',
-    '--out-c', '@OUTPUT0@', '--out-h', '@OUTPUT1@'
+    '--out-c', '@OUTPUT0@', '--out-h', '@OUTPUT1@',
+    '--beta', with_vulkan_beta.to_string()
   ],
   depend_files : vk_cmd_queue_gen_depend_files,
 )
@@ -149,6 +151,7 @@ vk_cmd_enqueue_entrypoints = custom_target(
     prog_python, '@INPUT0@', '--xml', '@INPUT1@', '--proto', '--weak',
     '--out-h', '@OUTPUT0@', '--out-c', '@OUTPUT1@',
     '--prefix', 'vk_cmd_enqueue', '--prefix', 'vk_cmd_enqueue_unless_primary',
+    '--beta', with_vulkan_beta.to_string()
   ],
   depend_files : vk_entrypoints_gen_depend_files,
 )
@@ -159,7 +162,8 @@ vk_dispatch_trampolines = custom_target(
   output : ['vk_dispatch_trampolines.c', 'vk_dispatch_trampolines.h'],
   command : [
     prog_python, '@INPUT0@', '--xml', '@INPUT1@',
-    '--out-c', '@OUTPUT0@', '--out-h', '@OUTPUT1@'
+    '--out-c', '@OUTPUT0@', '--out-h', '@OUTPUT1@',
+    '--beta', with_vulkan_beta.to_string()
   ],
   depend_files : vk_dispatch_trampolines_gen_depend_files,
 )
@@ -171,6 +175,7 @@ vk_physical_device_features = custom_target(
   command : [
     prog_python, '@INPUT0@', '--xml', '@INPUT1@',
     '--out-c', '@OUTPUT0@', '--out-h', '@OUTPUT1@',
+    '--beta', with_vulkan_beta.to_string()
   ],
   depend_files : vk_physical_device_features_gen_depend_files,
 )

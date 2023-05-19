@@ -22,6 +22,9 @@
 
 #include <stdint.h>
 
+#include "compiler/nir/nir.h"
+#include "compiler/nir/nir_builder.h"
+
 #include "pipe/p_defines.h"
 
 #include "util/u_inlines.h"
@@ -29,10 +32,9 @@
 #include "util/format/u_format.h"
 #include "util/u_math.h"
 #include "util/u_surface.h"
-
-#include "tgsi/tgsi_ureg.h"
-
 #include "util/u_thread.h"
+
+#include "nv50_ir_driver.h"
 
 #include "nv50/nv50_context.h"
 #include "nv50/nv50_resource.h"
@@ -907,12 +909,9 @@ nv50_blitter_make_fp(struct pipe_context *pipe,
                      unsigned mode,
                      enum pipe_texture_target ptarg)
 {
-   struct ureg_program *ureg;
-   struct ureg_src tc;
-   struct ureg_dst out;
-   struct ureg_dst data;
-
-   const unsigned target = nv50_blit_get_tgsi_texture_target(ptarg);
+   enum glsl_sampler_dim sampler_dim
+      = nv50_blit_get_glsl_sampler_dim(ptarg);
+   bool is_array = nv50_blit_is_array(ptarg);
 
    bool tex_rgbaz = false;
    bool tex_s = false;
@@ -937,98 +936,140 @@ nv50_blitter_make_fp(struct pipe_context *pipe,
        mode != NV50_BLIT_MODE_XS)
       cvt_un8 = true;
 
-   ureg = ureg_create(PIPE_SHADER_FRAGMENT);
-   if (!ureg)
-      return NULL;
+   const int chipset = nouveau_screen(pipe->screen)->device->chipset;
+   const nir_shader_compiler_options *options =
+      nv50_ir_nir_shader_compiler_options(chipset, PIPE_SHADER_FRAGMENT,
+                                          true);
 
-   out = ureg_DECL_output(ureg, TGSI_SEMANTIC_COLOR, 0);
-   tc = ureg_DECL_fs_input(
-      ureg, TGSI_SEMANTIC_GENERIC, 0, TGSI_INTERPOLATE_LINEAR);
+   struct nir_builder b =
+      nir_builder_init_simple_shader(MESA_SHADER_FRAGMENT, options,
+                                     "blitter_fp");
 
+   /* load coordinates */
+   const struct glsl_type* float3 = glsl_vector_type(GLSL_TYPE_FLOAT, 3);
+   nir_variable *coord_var =
+      nir_variable_create(b.shader, nir_var_shader_in, float3, "coord");
+   coord_var->data.location = VARYING_SLOT_VAR0;
+   coord_var->data.interpolation = INTERP_MODE_NOPERSPECTIVE;
+
+   nir_ssa_def *coord = nir_load_var(&b, coord_var);
    if (ptarg == PIPE_TEXTURE_1D_ARRAY) {
       /* Adjust coordinates. Depth is in z, but TEX expects it to be in y. */
-      tc = ureg_swizzle(tc, TGSI_SWIZZLE_X, TGSI_SWIZZLE_Z,
-                        TGSI_SWIZZLE_Z, TGSI_SWIZZLE_Z);
+      coord = nir_channels(&b, coord, TGSI_WRITEMASK_XZ);
+   } else {
+      int size = glsl_get_sampler_dim_coordinate_components(sampler_dim);
+      if (is_array) size += 1;
+      coord = nir_trim_vector(&b, coord, size);
    }
 
-   data = ureg_DECL_temporary(ureg);
+   /* sample textures */
+   const struct glsl_type *sampler_type =
+      glsl_sampler_type(sampler_dim, false, is_array, GLSL_TYPE_FLOAT);
 
+   nir_ssa_def *s = NULL;
    if (tex_s) {
-      ureg_TEX(ureg, ureg_writemask(data, TGSI_WRITEMASK_X),
-               target, tc, ureg_DECL_sampler(ureg, 1));
-      ureg_MOV(ureg, ureg_writemask(data, TGSI_WRITEMASK_Y),
-               ureg_scalar(ureg_src(data), TGSI_SWIZZLE_X));
+      nir_variable *sampler =
+         nir_variable_create(b.shader, nir_var_uniform,
+                             sampler_type, "sampler_s");
+      sampler->data.binding = 1;
+
+      nir_deref_instr *tex_deref = nir_build_deref_var(&b, sampler);
+
+      s = nir_tex_deref(&b, tex_deref, tex_deref, coord);
+      s = nir_channel(&b, s, 0);
    }
+
+   nir_ssa_def *rgba = NULL, *z = NULL;
    if (tex_rgbaz) {
-      const unsigned mask = (mode == NV50_BLIT_MODE_PASS) ?
-         TGSI_WRITEMASK_XYZW : TGSI_WRITEMASK_X;
-      ureg_TEX(ureg, ureg_writemask(data, mask),
-               target, tc, ureg_DECL_sampler(ureg, 0));
+      nir_variable *sampler =
+         nir_variable_create(b.shader, nir_var_uniform,
+                             sampler_type, "sampler_rgbaz");
+      sampler->data.binding = 0;
+
+      nir_deref_instr *tex_deref = nir_build_deref_var(&b, sampler);
+
+      rgba = nir_tex_deref(&b, tex_deref, tex_deref, coord);
+      z = nir_channel(&b, rgba, 0);
    }
 
    /* handle signed to unsigned integer conversions */
-   if (int_clamp)
-      ureg_UMIN(ureg, data, ureg_src(data), ureg_imm1u(ureg, 0x7fffffff));
+   if (int_clamp) {
+      rgba = nir_umin(&b, rgba, nir_imm_int(&b, 0x7fffffff));
+   }
 
+   /* handle conversions */
+   nir_ssa_def *out_ssa;
+   nir_component_mask_t out_mask = 0;
    if (cvt_un8) {
-      struct ureg_src mask;
-      struct ureg_src scale;
-      struct ureg_dst outz;
-      struct ureg_dst outs;
-      struct ureg_dst zdst3 = ureg_writemask(data, TGSI_WRITEMASK_XYZ);
-      struct ureg_dst zdst = ureg_writemask(data, TGSI_WRITEMASK_X);
-      struct ureg_dst sdst = ureg_writemask(data, TGSI_WRITEMASK_Y);
-      struct ureg_src zsrc3 = ureg_src(data);
-      struct ureg_src zsrc = ureg_scalar(zsrc3, TGSI_SWIZZLE_X);
-      struct ureg_src ssrc = ureg_scalar(zsrc3, TGSI_SWIZZLE_Y);
-      struct ureg_src zshuf;
+      if (tex_s) {
+         s = nir_i2f32(&b, s);
+         s = nir_fmul_imm(&b, s, 1.0f / 0xff);
+      } else {
+         s = nir_ssa_undef(&b, 1, 32);
+      }
 
-      mask = ureg_imm3u(ureg, 0x0000ff, 0x00ff00, 0xff0000);
-      scale = ureg_imm4f(ureg,
-                         1.0f / 0x0000ff, 1.0f / 0x00ff00, 1.0f / 0xff0000,
-                         (1 << 24) - 1);
+      if (tex_rgbaz) {
+         z = nir_fmul_imm(&b, z, (1 << 24) - 1);
+         z = nir_f2i32(&b, z);
+         z = nir_iand(&b, z, nir_imm_ivec3(&b, 0x0000ff,
+                                               0x00ff00,
+                                               0xff0000));
+         z = nir_i2f32(&b, z);
+         z = nir_fmul(&b, z, nir_imm_vec3(&b, 1.0f / 0x0000ff,
+                                              1.0f / 0x00ff00,
+                                              1.0f / 0xff0000));
+      } else {
+         z = nir_ssa_undef(&b, 3, 32);
+      }
 
       if (mode == NV50_BLIT_MODE_Z24S8 ||
           mode == NV50_BLIT_MODE_X24S8 ||
           mode == NV50_BLIT_MODE_Z24X8) {
-         outz = ureg_writemask(out, TGSI_WRITEMASK_XYZ);
-         outs = ureg_writemask(out, TGSI_WRITEMASK_W);
-         zshuf = ureg_src(data);
+         out_ssa = nir_vec4(&b,
+                            nir_channel(&b, z, 0),
+                            nir_channel(&b, z, 1),
+                            nir_channel(&b, z, 2),
+                            s);
+
+         if (tex_rgbaz) out_mask |= TGSI_WRITEMASK_XYZ;
+         if (tex_s)     out_mask |= TGSI_WRITEMASK_W;
       } else {
-         outz = ureg_writemask(out, TGSI_WRITEMASK_YZW);
-         outs = ureg_writemask(out, TGSI_WRITEMASK_X);
-         zshuf = ureg_swizzle(zsrc3, TGSI_SWIZZLE_W,
-                              TGSI_SWIZZLE_X, TGSI_SWIZZLE_Y, TGSI_SWIZZLE_Z);
-      }
+         out_ssa = nir_vec4(&b,
+                            s,
+                            nir_channel(&b, z, 0),
+                            nir_channel(&b, z, 1),
+                            nir_channel(&b, z, 2));
 
-      if (tex_s) {
-         ureg_I2F(ureg, sdst, ssrc);
-         ureg_MUL(ureg, outs, ssrc, ureg_scalar(scale, TGSI_SWIZZLE_X));
-      }
-
-      if (tex_rgbaz) {
-         ureg_MUL(ureg, zdst, zsrc, ureg_scalar(scale, TGSI_SWIZZLE_W));
-         ureg_F2I(ureg, zdst, zsrc);
-         ureg_AND(ureg, zdst3, zsrc, mask);
-         ureg_I2F(ureg, zdst3, zsrc3);
-         ureg_MUL(ureg, zdst3, zsrc3, scale);
-         ureg_MOV(ureg, outz, zshuf);
+         if (tex_rgbaz) out_mask |= TGSI_WRITEMASK_YZW;
+         if (tex_s)     out_mask |= TGSI_WRITEMASK_X;
       }
    } else {
-      unsigned mask = TGSI_WRITEMASK_XYZW;
-
-      if (mode != NV50_BLIT_MODE_PASS) {
-         mask &= ~TGSI_WRITEMASK_ZW;
-         if (!tex_s)
-            mask = TGSI_WRITEMASK_X;
-         if (!tex_rgbaz)
-            mask = TGSI_WRITEMASK_Y;
+      if (mode == NV50_BLIT_MODE_PASS) {
+         out_ssa = rgba;
+         out_mask |= TGSI_WRITEMASK_XYZW;
+      } else {
+         out_ssa = nir_vec2(&b, z ? z : nir_ssa_undef(&b, 1, 32),
+                                s ? s : nir_ssa_undef(&b, 1, 32));
+         if (tex_rgbaz) out_mask |= TGSI_WRITEMASK_X;
+         if (tex_s)     out_mask |= TGSI_WRITEMASK_Y;
       }
-      ureg_MOV(ureg, ureg_writemask(out, mask), ureg_src(data));
    }
-   ureg_END(ureg);
 
-   return ureg_create_shader_and_destroy(ureg, pipe);
+   /* write output */
+   const struct glsl_type* out_type =
+      glsl_vector_type(GLSL_TYPE_FLOAT, out_ssa->num_components);
+   nir_variable *out_var =
+      nir_variable_create(b.shader, nir_var_shader_out, out_type, "out");
+   out_var->data.location = FRAG_RESULT_DATA0;
+
+   nir_store_var(&b, out_var, out_ssa, out_mask);
+
+   /* return shader */
+   NIR_PASS_V(b.shader, nir_lower_samplers);
+
+   struct pipe_shader_state state;
+   pipe_shader_state_from_nir(&state, b.shader);
+   return pipe->create_fs_state(pipe, &state);
 }
 
 static void
@@ -1832,7 +1873,7 @@ nv50_blitter_destroy(struct nv50_screen *screen)
          struct nv50_program *prog = blitter->fp[i][m];
          if (prog) {
             nv50_program_destroy(NULL, prog);
-            FREE((void *)prog->pipe.tokens);
+            ralloc_free((void *)prog->pipe.ir.nir);
             FREE(prog);
          }
       }

@@ -299,7 +299,7 @@
     <value name="packed complete patches" value="2"/>
   </enum>
 
-  <enum name="Primitve counters" prefix="V3D_PRIM_COUNTS">
+  <enum name="Primitive counters" prefix="V3D_PRIM_COUNTS">
     <value name="tf_words_buffer0" value="0"/>
     <value name="tf_words_buffer1" value="1"/>
     <value name="tf_words_buffer2" value="2"/>

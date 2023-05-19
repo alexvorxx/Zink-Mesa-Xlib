@@ -50,8 +50,10 @@ radv_suspend_queries(struct radv_meta_saved_state *state, struct radv_cmd_buffer
    }
 
    /* Occlusion queries. */
-   if (cmd_buffer->state.active_occlusion_queries > 0) {
-      radv_set_db_count_control(cmd_buffer, false);
+   if (cmd_buffer->state.active_occlusion_queries) {
+      state->active_occlusion_queries = cmd_buffer->state.active_occlusion_queries;
+      cmd_buffer->state.active_occlusion_queries = 0;
+      cmd_buffer->state.dirty |= RADV_CMD_DIRTY_OCCLUSION_QUERY;
    }
 
    /* Primitives generated queries (legacy). */
@@ -88,8 +90,9 @@ radv_resume_queries(const struct radv_meta_saved_state *state, struct radv_cmd_b
    }
 
    /* Occlusion queries. */
-   if (cmd_buffer->state.active_occlusion_queries > 0) {
-      radv_set_db_count_control(cmd_buffer, true);
+   if (state->active_occlusion_queries) {
+      cmd_buffer->state.active_occlusion_queries = state->active_occlusion_queries;
+      cmd_buffer->state.dirty |= RADV_CMD_DIRTY_OCCLUSION_QUERY;
    }
 
    /* Primitives generated queries (legacy). */
@@ -242,20 +245,20 @@ radv_meta_get_view_type(const struct radv_image *image)
  * VkImageViewCreateInfo::subresourceRange::baseArrayLayer.
  */
 uint32_t
-radv_meta_get_iview_layer(const struct radv_image *dest_image,
-                          const VkImageSubresourceLayers *dest_subresource,
-                          const VkOffset3D *dest_offset)
+radv_meta_get_iview_layer(const struct radv_image *dst_image,
+                          const VkImageSubresourceLayers *dst_subresource,
+                          const VkOffset3D *dst_offset)
 {
-   switch (dest_image->vk.image_type) {
+   switch (dst_image->vk.image_type) {
    case VK_IMAGE_TYPE_1D:
    case VK_IMAGE_TYPE_2D:
-      return dest_subresource->baseArrayLayer;
+      return dst_subresource->baseArrayLayer;
    case VK_IMAGE_TYPE_3D:
       /* HACK: Vulkan does not allow attaching a 3D image to a framebuffer,
        * but meta does it anyway. When doing so, we translate the
        * destination's z offset into an array offset.
        */
-      return dest_offset->z;
+      return dst_offset->z;
    default:
       assert(!"bad VkImageType");
       return 0;

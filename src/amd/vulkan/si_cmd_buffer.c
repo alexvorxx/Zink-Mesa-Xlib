@@ -625,6 +625,15 @@ si_emit_graphics(struct radv_device *device, struct radeon_cmdbuf *cs)
       radeon_set_context_reg(cs, R_028620_PA_RATE_CNTL,
                                  S_028620_VERTEX_RATE(2) | S_028620_PRIM_RATE(1));
 
+      uint64_t rb_mask = BITFIELD64_MASK(physical_device->rad_info.max_render_backends);
+
+      radeon_emit(cs, PKT3(PKT3_EVENT_WRITE, 2, 0));
+      radeon_emit(cs, EVENT_TYPE(V_028A90_PIXEL_PIPE_STAT_CONTROL) | EVENT_INDEX(1));
+      radeon_emit(cs, PIXEL_PIPE_STATE_CNTL_COUNTER_ID(0) |
+                      PIXEL_PIPE_STATE_CNTL_STRIDE(2) |
+                      PIXEL_PIPE_STATE_CNTL_INSTANCE_EN_LO(rb_mask));
+      radeon_emit(cs, PIXEL_PIPE_STATE_CNTL_INSTANCE_EN_HI(rb_mask));
+
       radeon_set_uconfig_reg(cs, R_031110_SPI_GS_THROTTLE_CNTL1, 0x12355123);
       radeon_set_uconfig_reg(cs, R_031114_SPI_GS_THROTTLE_CNTL2, 0x1544D);
    }
@@ -647,6 +656,8 @@ cik_create_gfx_config(struct radv_device *device)
    struct radeon_cmdbuf *cs = device->ws->cs_create(device->ws, AMD_IP_GFX, false);
    if (!cs)
       return;
+
+   radeon_check_space(device->ws, cs, 512);
 
    si_emit_graphics(device, cs);
 

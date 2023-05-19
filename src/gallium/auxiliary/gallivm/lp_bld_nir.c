@@ -1603,10 +1603,10 @@ visit_ssbo_atomic(struct lp_build_nir_context *bld_base,
    LLVMValueRef val = get_src(bld_base, instr->src[2]);
    LLVMValueRef val2 = NULL;
    int bitsize = nir_src_bit_size(instr->src[2]);
-   if (instr->intrinsic == nir_intrinsic_ssbo_atomic_comp_swap)
+   if (instr->intrinsic == nir_intrinsic_ssbo_atomic_swap)
       val2 = get_src(bld_base, instr->src[3]);
 
-   bld_base->atomic_mem(bld_base, instr->intrinsic, bitsize, idx,
+   bld_base->atomic_mem(bld_base, nir_intrinsic_atomic_op(instr), bitsize, idx,
                         offset, val, val2, &result[0]);
 }
 
@@ -1681,6 +1681,27 @@ visit_store_image(struct lp_build_nir_context *bld_base,
    bld_base->image_op(bld_base, &params);
 }
 
+LLVMAtomicRMWBinOp
+lp_translate_atomic_op(nir_atomic_op op)
+{
+   switch (op) {
+   case nir_atomic_op_iadd: return LLVMAtomicRMWBinOpAdd;
+   case nir_atomic_op_xchg: return LLVMAtomicRMWBinOpXchg;
+   case nir_atomic_op_iand: return LLVMAtomicRMWBinOpAnd;
+   case nir_atomic_op_ior:  return LLVMAtomicRMWBinOpOr;
+   case nir_atomic_op_ixor: return LLVMAtomicRMWBinOpXor;
+   case nir_atomic_op_umin: return LLVMAtomicRMWBinOpUMin;
+   case nir_atomic_op_umax: return LLVMAtomicRMWBinOpUMax;
+   case nir_atomic_op_imin: return LLVMAtomicRMWBinOpMin;
+   case nir_atomic_op_imax: return LLVMAtomicRMWBinOpMax;
+   case nir_atomic_op_fadd: return LLVMAtomicRMWBinOpFAdd;
+#if LLVM_VERSION_MAJOR >= 15
+   case nir_atomic_op_fmin: return LLVMAtomicRMWBinOpFMin;
+   case nir_atomic_op_fmax: return LLVMAtomicRMWBinOpFMax;
+#endif
+   default:          unreachable("Unexpected atomic");
+   }
+}
 
 static void
 visit_atomic_image(struct lp_build_nir_context *bld_base,
@@ -1696,48 +1717,8 @@ visit_atomic_image(struct lp_build_nir_context *bld_base,
 
    memset(&params, 0, sizeof(params));
 
-   switch (instr->intrinsic) {
-   case nir_intrinsic_image_atomic_add:
-      params.op = LLVMAtomicRMWBinOpAdd;
-      break;
-   case nir_intrinsic_image_atomic_exchange:
-      params.op = LLVMAtomicRMWBinOpXchg;
-      break;
-   case nir_intrinsic_image_atomic_and:
-      params.op = LLVMAtomicRMWBinOpAnd;
-      break;
-   case nir_intrinsic_image_atomic_or:
-      params.op = LLVMAtomicRMWBinOpOr;
-      break;
-   case nir_intrinsic_image_atomic_xor:
-      params.op = LLVMAtomicRMWBinOpXor;
-      break;
-   case nir_intrinsic_image_atomic_umin:
-      params.op = LLVMAtomicRMWBinOpUMin;
-      break;
-   case nir_intrinsic_image_atomic_umax:
-      params.op = LLVMAtomicRMWBinOpUMax;
-      break;
-   case nir_intrinsic_image_atomic_imin:
-      params.op = LLVMAtomicRMWBinOpMin;
-      break;
-   case nir_intrinsic_image_atomic_imax:
-      params.op = LLVMAtomicRMWBinOpMax;
-      break;
-   case nir_intrinsic_image_atomic_fadd:
-      params.op = LLVMAtomicRMWBinOpFAdd;
-      break;
-#if LLVM_VERSION_MAJOR >= 15
-   case nir_intrinsic_image_atomic_fmin:
-      params.op = LLVMAtomicRMWBinOpFMin;
-      break;
-   case nir_intrinsic_image_atomic_fmax:
-      params.op = LLVMAtomicRMWBinOpFMax;
-      break;
-#endif
-   default:
-      break;
-   }
+   if (instr->intrinsic != nir_intrinsic_image_atomic_swap)
+      params.op = lp_translate_atomic_op(nir_intrinsic_atomic_op(instr));
 
    params.target = glsl_sampler_to_pipe(nir_intrinsic_image_dim(instr),
                                         nir_intrinsic_image_array(instr));
@@ -1752,7 +1733,7 @@ visit_atomic_image(struct lp_build_nir_context *bld_base,
 
    if (nir_intrinsic_image_dim(instr) == GLSL_SAMPLER_DIM_MS)
       params.ms_index = get_src(bld_base, instr->src[2]);
-   if (instr->intrinsic == nir_intrinsic_image_atomic_comp_swap) {
+   if (instr->intrinsic == nir_intrinsic_image_atomic_swap) {
       LLVMValueRef cas_val = get_src(bld_base, instr->src[4]);
       params.indata[0] = in_val;
       params.indata2[0] = cas_val;
@@ -1762,7 +1743,7 @@ visit_atomic_image(struct lp_build_nir_context *bld_base,
 
    params.outdata = result;
    params.img_op =
-      (instr->intrinsic == nir_intrinsic_image_atomic_comp_swap)
+      (instr->intrinsic == nir_intrinsic_image_atomic_swap)
       ? LP_IMG_ATOMIC_CAS : LP_IMG_ATOMIC;
    if (nir_src_is_const(instr->src[0]))
       params.image_index = nir_src_as_int(instr->src[0]);
@@ -1849,10 +1830,10 @@ visit_shared_atomic(struct lp_build_nir_context *bld_base,
    LLVMValueRef val = get_src(bld_base, instr->src[1]);
    LLVMValueRef val2 = NULL;
    int bitsize = nir_src_bit_size(instr->src[1]);
-   if (instr->intrinsic == nir_intrinsic_shared_atomic_comp_swap)
+   if (instr->intrinsic == nir_intrinsic_shared_atomic_swap)
       val2 = get_src(bld_base, instr->src[2]);
 
-   bld_base->atomic_mem(bld_base, instr->intrinsic, bitsize, NULL,
+   bld_base->atomic_mem(bld_base, nir_intrinsic_atomic_op(instr), bitsize, NULL,
                         offset, val, val2, &result[0]);
 }
 
@@ -1931,11 +1912,12 @@ visit_global_atomic(struct lp_build_nir_context *bld_base,
    LLVMValueRef val2 = NULL;
    int addr_bitsize = nir_src_bit_size(instr->src[0]);
    int val_bitsize = nir_src_bit_size(instr->src[1]);
-   if (instr->intrinsic == nir_intrinsic_global_atomic_comp_swap)
+   if (instr->intrinsic == nir_intrinsic_global_atomic_swap)
       val2 = get_src(bld_base, instr->src[2]);
 
-   bld_base->atomic_global(bld_base, instr->intrinsic, addr_bitsize,
-                           val_bitsize, addr, val, val2, &result[0]);
+   bld_base->atomic_global(bld_base, nir_intrinsic_atomic_op(instr),
+                           addr_bitsize, val_bitsize, addr, val, val2,
+                           &result[0]);
 }
 
 #if LLVM_VERSION_MAJOR >= 10
@@ -2086,19 +2068,8 @@ visit_intrinsic(struct lp_build_nir_context *bld_base,
    case nir_intrinsic_end_primitive:
       bld_base->end_primitive(bld_base, nir_intrinsic_stream_id(instr));
       break;
-   case nir_intrinsic_ssbo_atomic_add:
-   case nir_intrinsic_ssbo_atomic_imin:
-   case nir_intrinsic_ssbo_atomic_imax:
-   case nir_intrinsic_ssbo_atomic_umin:
-   case nir_intrinsic_ssbo_atomic_umax:
-   case nir_intrinsic_ssbo_atomic_and:
-   case nir_intrinsic_ssbo_atomic_or:
-   case nir_intrinsic_ssbo_atomic_xor:
-   case nir_intrinsic_ssbo_atomic_exchange:
-   case nir_intrinsic_ssbo_atomic_comp_swap:
-   case nir_intrinsic_ssbo_atomic_fadd:
-   case nir_intrinsic_ssbo_atomic_fmin:
-   case nir_intrinsic_ssbo_atomic_fmax:
+   case nir_intrinsic_ssbo_atomic:
+   case nir_intrinsic_ssbo_atomic_swap:
       visit_ssbo_atomic(bld_base, instr, result);
       break;
    case nir_intrinsic_image_load:
@@ -2107,19 +2078,8 @@ visit_intrinsic(struct lp_build_nir_context *bld_base,
    case nir_intrinsic_image_store:
       visit_store_image(bld_base, instr);
       break;
-   case nir_intrinsic_image_atomic_add:
-   case nir_intrinsic_image_atomic_imin:
-   case nir_intrinsic_image_atomic_imax:
-   case nir_intrinsic_image_atomic_umin:
-   case nir_intrinsic_image_atomic_umax:
-   case nir_intrinsic_image_atomic_and:
-   case nir_intrinsic_image_atomic_or:
-   case nir_intrinsic_image_atomic_xor:
-   case nir_intrinsic_image_atomic_exchange:
-   case nir_intrinsic_image_atomic_comp_swap:
-   case nir_intrinsic_image_atomic_fadd:
-   case nir_intrinsic_image_atomic_fmin:
-   case nir_intrinsic_image_atomic_fmax:
+   case nir_intrinsic_image_atomic:
+   case nir_intrinsic_image_atomic_swap:
       visit_atomic_image(bld_base, instr, result);
       break;
    case nir_intrinsic_image_size:
@@ -2134,19 +2094,8 @@ visit_intrinsic(struct lp_build_nir_context *bld_base,
    case nir_intrinsic_store_shared:
       visit_shared_store(bld_base, instr);
       break;
-   case nir_intrinsic_shared_atomic_add:
-   case nir_intrinsic_shared_atomic_imin:
-   case nir_intrinsic_shared_atomic_umin:
-   case nir_intrinsic_shared_atomic_imax:
-   case nir_intrinsic_shared_atomic_umax:
-   case nir_intrinsic_shared_atomic_and:
-   case nir_intrinsic_shared_atomic_or:
-   case nir_intrinsic_shared_atomic_xor:
-   case nir_intrinsic_shared_atomic_exchange:
-   case nir_intrinsic_shared_atomic_comp_swap:
-   case nir_intrinsic_shared_atomic_fadd:
-   case nir_intrinsic_shared_atomic_fmin:
-   case nir_intrinsic_shared_atomic_fmax:
+   case nir_intrinsic_shared_atomic:
+   case nir_intrinsic_shared_atomic_swap:
       visit_shared_atomic(bld_base, instr, result);
       break;
    case nir_intrinsic_scoped_barrier:
@@ -2163,19 +2112,8 @@ visit_intrinsic(struct lp_build_nir_context *bld_base,
    case nir_intrinsic_store_global:
       visit_store_global(bld_base, instr);
       break;
-   case nir_intrinsic_global_atomic_add:
-   case nir_intrinsic_global_atomic_imin:
-   case nir_intrinsic_global_atomic_umin:
-   case nir_intrinsic_global_atomic_imax:
-   case nir_intrinsic_global_atomic_umax:
-   case nir_intrinsic_global_atomic_and:
-   case nir_intrinsic_global_atomic_or:
-   case nir_intrinsic_global_atomic_xor:
-   case nir_intrinsic_global_atomic_exchange:
-   case nir_intrinsic_global_atomic_comp_swap:
-   case nir_intrinsic_global_atomic_fadd:
-   case nir_intrinsic_global_atomic_fmin:
-   case nir_intrinsic_global_atomic_fmax:
+   case nir_intrinsic_global_atomic:
+   case nir_intrinsic_global_atomic_swap:
       visit_global_atomic(bld_base, instr, result);
       break;
    case nir_intrinsic_vote_all:

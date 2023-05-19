@@ -589,7 +589,7 @@ static int si_get_video_param(struct pipe_screen *screen, enum pipe_video_profil
             sscreen->info.ip[AMD_IP_VCN_ENC].num_queues))
          return 0;
 
-      if (sscreen->info.family == CHIP_GFX940)
+      if (sscreen->info.vcn_ip_version == VCN_4_0_3)
 	 return 0;
 
       switch (param) {
@@ -598,10 +598,12 @@ static int si_get_video_param(struct pipe_screen *screen, enum pipe_video_profil
              /* in case it is explicitly marked as not supported by the kernel */
             (QUERYABLE_KERNEL ? KERNEL_ENC_CAP(codec, valid) : 1) &&
             ((codec == PIPE_VIDEO_FORMAT_MPEG4_AVC &&
-             (sscreen->info.family >= CHIP_RAVEN || si_vce_is_fw_version_supported(sscreen))) ||
+             (sscreen->info.vcn_ip_version >= VCN_1_0_0 || si_vce_is_fw_version_supported(sscreen))) ||
             (profile == PIPE_VIDEO_PROFILE_HEVC_MAIN &&
-             (sscreen->info.family >= CHIP_RAVEN || si_radeon_uvd_enc_supported(sscreen))) ||
-            (profile == PIPE_VIDEO_PROFILE_HEVC_MAIN_10 && sscreen->info.family >= CHIP_RENOIR)));
+             (sscreen->info.vcn_ip_version >= VCN_1_0_0 || si_radeon_uvd_enc_supported(sscreen))) ||
+            (profile == PIPE_VIDEO_PROFILE_HEVC_MAIN_10 && sscreen->info.vcn_ip_version >= VCN_2_0_0) ||
+            (profile == PIPE_VIDEO_PROFILE_AV1_MAIN &&
+	     (sscreen->info.vcn_ip_version >= VCN_4_0_0 && sscreen->info.vcn_ip_version != VCN_4_0_3))));
       case PIPE_VIDEO_CAP_NPOT_TEXTURES:
          return 1;
       case PIPE_VIDEO_CAP_MIN_WIDTH:
@@ -632,40 +634,34 @@ static int si_get_video_param(struct pipe_screen *screen, enum pipe_video_profil
       case PIPE_VIDEO_CAP_STACKED_FRAMES:
          return (sscreen->info.family < CHIP_TONGA) ? 1 : 2;
       case PIPE_VIDEO_CAP_MAX_TEMPORAL_LAYERS:
-         if (codec == PIPE_VIDEO_FORMAT_MPEG4_AVC &&
-             sscreen->info.family >= CHIP_RAVEN)
-            return 4;
-         else
-            return 0;
+         return (codec == PIPE_VIDEO_FORMAT_MPEG4_AVC &&
+                 sscreen->info.vcn_ip_version >= VCN_1_0_0) ? 4 : 0;
       case PIPE_VIDEO_CAP_ENC_QUALITY_LEVEL:
-         if (sscreen->info.family >= CHIP_RAVEN)
-            return 32;
-         else
-            return 0;
+         return (sscreen->info.vcn_ip_version >= VCN_1_0_0) ? 32 : 0;
       case PIPE_VIDEO_CAP_ENC_SUPPORTS_MAX_FRAME_SIZE:
-         return (sscreen->info.family >= CHIP_RAVEN) ? 1 : 0;
+         return (sscreen->info.vcn_ip_version >= VCN_1_0_0) ? 1 : 0;
 
       case PIPE_VIDEO_CAP_ENC_HEVC_FEATURE_FLAGS:
-         if ((sscreen->info.family >= CHIP_RAVEN) &&
+         if ((sscreen->info.vcn_ip_version >= VCN_1_0_0) &&
                (profile == PIPE_VIDEO_PROFILE_HEVC_MAIN ||
              profile == PIPE_VIDEO_PROFILE_HEVC_MAIN_10)) {
             union pipe_h265_enc_cap_features pipe_features;
             pipe_features.value = 0;
 
-            pipe_features.bits.amp = PIPE_H265_ENC_FEATURE_SUPPORTED;
-            pipe_features.bits.strong_intra_smoothing = PIPE_H265_ENC_FEATURE_SUPPORTED;
-            pipe_features.bits.constrained_intra_pred = PIPE_H265_ENC_FEATURE_SUPPORTED;
+            pipe_features.bits.amp = PIPE_ENC_FEATURE_SUPPORTED;
+            pipe_features.bits.strong_intra_smoothing = PIPE_ENC_FEATURE_SUPPORTED;
+            pipe_features.bits.constrained_intra_pred = PIPE_ENC_FEATURE_SUPPORTED;
             pipe_features.bits.deblocking_filter_disable
-                                                      = PIPE_H265_ENC_FEATURE_SUPPORTED;
-            if (sscreen->info.family >= CHIP_RENOIR)
-               pipe_features.bits.sao = PIPE_H265_ENC_FEATURE_SUPPORTED;
+                                                      = PIPE_ENC_FEATURE_SUPPORTED;
+            if (sscreen->info.vcn_ip_version >= VCN_2_0_0)
+               pipe_features.bits.sao = PIPE_ENC_FEATURE_SUPPORTED;
 
             return pipe_features.value;
          } else
             return 0;
 
       case PIPE_VIDEO_CAP_ENC_HEVC_BLOCK_SIZES:
-         if (sscreen->info.family >= CHIP_RAVEN &&
+         if (sscreen->info.vcn_ip_version >= VCN_1_0_0 &&
              (profile == PIPE_VIDEO_PROFILE_HEVC_MAIN ||
               profile == PIPE_VIDEO_PROFILE_HEVC_MAIN_10)) {
             union pipe_h265_enc_cap_block_sizes pipe_block_sizes;
@@ -682,21 +678,84 @@ static int si_get_video_param(struct pipe_screen *screen, enum pipe_video_profil
             return 0;
 
       case PIPE_VIDEO_CAP_ENC_SUPPORTS_ASYNC_OPERATION:
-         return (sscreen->info.family >= CHIP_RAVEN) ? 1 : 0;
+         return (sscreen->info.vcn_ip_version >= VCN_1_0_0) ? 1 : 0;
 
       case PIPE_VIDEO_CAP_ENC_MAX_SLICES_PER_FRAME:
-         if (sscreen->info.family >= CHIP_RAVEN)
-            return 128;
-         else
-            return 1;
+         return (sscreen->info.vcn_ip_version >= VCN_1_0_0) ? 128 : 1;
 
       case PIPE_VIDEO_CAP_ENC_SLICES_STRUCTURE:
-         if (sscreen->info.family >= CHIP_RENOIR) {
+         if (sscreen->info.vcn_ip_version >= VCN_2_0_0) {
             int value = (PIPE_VIDEO_CAP_SLICE_STRUCTURE_POWER_OF_TWO_ROWS |
                          PIPE_VIDEO_CAP_SLICE_STRUCTURE_EQUAL_ROWS |
                          PIPE_VIDEO_CAP_SLICE_STRUCTURE_EQUAL_MULTI_ROWS);
             return value;
          } else
+            return 0;
+
+      case PIPE_VIDEO_CAP_ENC_AV1_FEATURE:
+         if (sscreen->info.vcn_ip_version >= VCN_4_0_0 && sscreen->info.vcn_ip_version != VCN_4_0_3) {
+            union pipe_av1_enc_cap_features attrib;
+            attrib.value = 0;
+
+            attrib.bits.support_128x128_superblock = PIPE_ENC_FEATURE_NOT_SUPPORTED;
+            attrib.bits.support_filter_intra = PIPE_ENC_FEATURE_NOT_SUPPORTED;
+            attrib.bits.support_intra_edge_filter = PIPE_ENC_FEATURE_NOT_SUPPORTED;
+            attrib.bits.support_interintra_compound = PIPE_ENC_FEATURE_NOT_SUPPORTED;
+            attrib.bits.support_masked_compound = PIPE_ENC_FEATURE_NOT_SUPPORTED;
+            attrib.bits.support_warped_motion = PIPE_ENC_FEATURE_NOT_SUPPORTED;
+            attrib.bits.support_palette_mode = PIPE_ENC_FEATURE_SUPPORTED;
+            attrib.bits.support_dual_filter = PIPE_ENC_FEATURE_NOT_SUPPORTED;
+            attrib.bits.support_jnt_comp = PIPE_ENC_FEATURE_NOT_SUPPORTED;
+            attrib.bits.support_ref_frame_mvs = PIPE_ENC_FEATURE_NOT_SUPPORTED;
+            attrib.bits.support_superres = PIPE_ENC_FEATURE_NOT_SUPPORTED;
+            attrib.bits.support_restoration = PIPE_ENC_FEATURE_NOT_SUPPORTED;
+            attrib.bits.support_allow_intrabc = PIPE_ENC_FEATURE_NOT_SUPPORTED;
+            attrib.bits.support_cdef_channel_strength = PIPE_ENC_FEATURE_SUPPORTED;
+
+            return attrib.value;
+         } else
+            return 0;
+
+      case PIPE_VIDEO_CAP_ENC_AV1_FEATURE_EXT1:
+         if (sscreen->info.vcn_ip_version >= VCN_4_0_0 && sscreen->info.vcn_ip_version != VCN_4_0_3) {
+            union pipe_av1_enc_cap_features_ext1 attrib_ext1;
+            attrib_ext1.value = 0;
+            attrib_ext1.bits.interpolation_filter = PIPE_VIDEO_CAP_ENC_AV1_INTERPOLATION_FILTER_EIGHT_TAP |
+                           PIPE_VIDEO_CAP_ENC_AV1_INTERPOLATION_FILTER_EIGHT_TAP_SMOOTH |
+                           PIPE_VIDEO_CAP_ENC_AV1_INTERPOLATION_FILTER_EIGHT_TAP_SHARP |
+                           PIPE_VIDEO_CAP_ENC_AV1_INTERPOLATION_FILTER_BILINEAR |
+                           PIPE_VIDEO_CAP_ENC_AV1_INTERPOLATION_FILTER_SWITCHABLE;
+            attrib_ext1.bits.min_segid_block_size_accepted = 0;
+            attrib_ext1.bits.segment_feature_support = 0;
+
+            return attrib_ext1.value;
+         } else
+            return 0;
+
+      case PIPE_VIDEO_CAP_ENC_AV1_FEATURE_EXT2:
+         if (sscreen->info.vcn_ip_version >= VCN_4_0_0 && sscreen->info.vcn_ip_version != VCN_4_0_3) {
+            union pipe_av1_enc_cap_features_ext2 attrib_ext2;
+            attrib_ext2.value = 0;
+
+           attrib_ext2.bits.tile_size_bytes_minus1 = 1;
+           attrib_ext2.bits.obu_size_bytes_minus1 = 1;
+           /**
+            * tx_mode supported.
+            * (tx_mode_support & 0x01) == 1: ONLY_4X4 is supported, 0: not.
+            * (tx_mode_support & 0x02) == 1: TX_MODE_LARGEST is supported, 0: not.
+            * (tx_mode_support & 0x04) == 1: TX_MODE_SELECT is supported, 0: not.
+            */
+           attrib_ext2.bits.tx_mode_support = PIPE_VIDEO_CAP_ENC_AV1_TX_MODE_SELECT;
+           attrib_ext2.bits.max_tile_num_minus1 = 31;
+
+            return attrib_ext2.value;
+         } else
+            return 0;
+      case PIPE_VIDEO_CAP_ENC_SUPPORTS_TILE:
+         if ((sscreen->info.vcn_ip_version >= VCN_4_0_0 && sscreen->info.vcn_ip_version != VCN_4_0_3) &&
+              profile == PIPE_VIDEO_PROFILE_AV1_MAIN)
+            return 1;
+         else
             return 0;
 
       default:
@@ -708,7 +767,9 @@ static int si_get_video_param(struct pipe_screen *screen, enum pipe_video_profil
    case PIPE_VIDEO_CAP_SUPPORTED:
       if (codec != PIPE_VIDEO_FORMAT_JPEG &&
           !(sscreen->info.ip[AMD_IP_UVD].num_queues ||
-            sscreen->info.has_video_hw.vcn_decode))
+            ((sscreen->info.vcn_ip_version >= VCN_4_0_0) ?
+	      sscreen->info.ip[AMD_IP_VCN_UNIFIED].num_queues :
+	      sscreen->info.ip[AMD_IP_VCN_DEC].num_queues)))
          return false;
       if (QUERYABLE_KERNEL &&
           codec != PIPE_VIDEO_FORMAT_JPEG &&
@@ -717,23 +778,14 @@ static int si_get_video_param(struct pipe_screen *screen, enum pipe_video_profil
             sscreen->info.family == CHIP_POLARIS11))
          return KERNEL_DEC_CAP(codec, valid);
       if (codec < PIPE_VIDEO_FORMAT_MPEG4_AVC &&
-          (sscreen->info.family >= CHIP_NAVI24 ||
-           sscreen->info.family == CHIP_GFX940))
+          sscreen->info.vcn_ip_version >= VCN_3_0_33)
          return false;
 
       switch (codec) {
       case PIPE_VIDEO_FORMAT_MPEG12:
-         if (sscreen->info.gfx_level >= GFX11 ||
-	     sscreen->info.family == CHIP_GFX940)
-            return false;
-         else
-            return profile != PIPE_VIDEO_PROFILE_MPEG1;
+         return !(sscreen->info.vcn_ip_version >= VCN_3_0_33 || profile == PIPE_VIDEO_PROFILE_MPEG1);
       case PIPE_VIDEO_FORMAT_MPEG4:
-         if (sscreen->info.gfx_level >= GFX11 ||
-	     sscreen->info.family == CHIP_GFX940)
-            return false;
-         else
-            return true;
+         return !(sscreen->info.vcn_ip_version >= VCN_3_0_33);
       case PIPE_VIDEO_FORMAT_MPEG4_AVC:
          if ((sscreen->info.family == CHIP_POLARIS10 || sscreen->info.family == CHIP_POLARIS11) &&
              sscreen->info.uvd_fw_version < UVD_FW_1_66_16) {
@@ -742,11 +794,7 @@ static int si_get_video_param(struct pipe_screen *screen, enum pipe_video_profil
          }
          return true;
       case PIPE_VIDEO_FORMAT_VC1:
-         if (sscreen->info.gfx_level >= GFX11 ||
-	     sscreen->info.family == CHIP_GFX940)
-            return false;
-         else
-            return true;
+         return !(sscreen->info.vcn_ip_version >= VCN_3_0_33);
       case PIPE_VIDEO_FORMAT_HEVC:
          /* Carrizo only supports HEVC Main */
          if (sscreen->info.family >= CHIP_STONEY)
@@ -756,7 +804,7 @@ static int si_get_video_param(struct pipe_screen *screen, enum pipe_video_profil
             return profile == PIPE_VIDEO_PROFILE_HEVC_MAIN;
          return false;
       case PIPE_VIDEO_FORMAT_JPEG:
-         if (sscreen->info.family >= CHIP_RAVEN) {
+         if (sscreen->info.vcn_ip_version >= VCN_1_0_0) {
             if (!sscreen->info.ip[AMD_IP_VCN_JPEG].num_queues)
                return false;
             else
@@ -770,14 +818,9 @@ static int si_get_video_param(struct pipe_screen *screen, enum pipe_video_profil
          }
          return true;
       case PIPE_VIDEO_FORMAT_VP9:
-         if (sscreen->info.family < CHIP_RAVEN)
-            return false;
-         return true;
+         return sscreen->info.vcn_ip_version >= VCN_1_0_0;
       case PIPE_VIDEO_FORMAT_AV1:
-         if ((sscreen->info.family < CHIP_NAVI21 && sscreen->info.family != CHIP_GFX940) ||
-	      sscreen->info.family == CHIP_NAVI24)
-            return false;
-         return true;
+         return sscreen->info.vcn_ip_version >= VCN_3_0_0 && sscreen->info.vcn_ip_version != VCN_3_0_33;
       default:
          return false;
       }
@@ -794,7 +837,7 @@ static int si_get_video_param(struct pipe_screen *screen, enum pipe_video_profil
          case PIPE_VIDEO_FORMAT_HEVC:
          case PIPE_VIDEO_FORMAT_VP9:
          case PIPE_VIDEO_FORMAT_AV1:
-            return (sscreen->info.family < CHIP_RENOIR) ?
+            return (sscreen->info.vcn_ip_version < VCN_2_0_0) ?
                ((sscreen->info.family < CHIP_TONGA) ? 2048 : 4096) : 8192;
          default:
             return (sscreen->info.family < CHIP_TONGA) ? 2048 : 4096;
@@ -808,7 +851,7 @@ static int si_get_video_param(struct pipe_screen *screen, enum pipe_video_profil
          case PIPE_VIDEO_FORMAT_HEVC:
          case PIPE_VIDEO_FORMAT_VP9:
          case PIPE_VIDEO_FORMAT_AV1:
-            return (sscreen->info.family < CHIP_RENOIR) ?
+            return (sscreen->info.vcn_ip_version < VCN_2_0_0) ?
                ((sscreen->info.family < CHIP_TONGA) ? 1152 : 4096) : 4352;
          default:
             return (sscreen->info.family < CHIP_TONGA) ? 1152 : 4096;
@@ -900,14 +943,14 @@ static bool si_vid_is_format_supported(struct pipe_screen *screen, enum pipe_for
       case PIPE_FORMAT_Y8_400_UNORM:
          return true;
       case PIPE_FORMAT_Y8_U8_V8_444_UNORM:
-         if (sscreen->info.family >= CHIP_RENOIR)
+         if (sscreen->info.vcn_ip_version >= VCN_2_0_0)
             return true;
          else
             return false;
       case PIPE_FORMAT_R8G8B8A8_UNORM:
       case PIPE_FORMAT_A8R8G8B8_UNORM:
       case PIPE_FORMAT_R8_G8_B8_UNORM:
-         if (sscreen->info.family == CHIP_GFX940)
+         if (sscreen->info.vcn_ip_version == VCN_4_0_3)
             return true;
          else
             return false;
@@ -916,12 +959,14 @@ static bool si_vid_is_format_supported(struct pipe_screen *screen, enum pipe_for
       }
    }
 
-   /* support 10 bit input for encoding on some of the chips with vcn 2.0 and up */
-   if (profile == PIPE_VIDEO_PROFILE_MPEG4_AVC_HIGH &&
-       entrypoint == PIPE_VIDEO_ENTRYPOINT_ENCODE &&
-       sscreen->info.family >= CHIP_RENOIR) {
+   if ((entrypoint == PIPE_VIDEO_ENTRYPOINT_ENCODE) &&
+          (((profile == PIPE_VIDEO_PROFILE_MPEG4_AVC_HIGH) &&
+          (sscreen->info.vcn_ip_version >= VCN_2_0_0)) ||
+          ((profile == PIPE_VIDEO_PROFILE_AV1_MAIN) &&
+           (sscreen->info.vcn_ip_version >= VCN_4_0_0 &&
+            sscreen->info.vcn_ip_version != VCN_4_0_3))))
       return (format == PIPE_FORMAT_P010 || format == PIPE_FORMAT_NV12);
-   }
+
 
    /* we can only handle this one with UVD */
    if (profile != PIPE_VIDEO_PROFILE_UNKNOWN)
@@ -1181,7 +1226,9 @@ void si_init_screen_get_functions(struct si_screen *sscreen)
    sscreen->b.query_memory_info = si_query_memory_info;
    sscreen->b.get_disk_shader_cache = si_get_disk_shader_cache;
 
-   if (sscreen->info.ip[AMD_IP_UVD].num_queues || sscreen->info.has_video_hw.vcn_decode ||
+   if (sscreen->info.ip[AMD_IP_UVD].num_queues ||
+       ((sscreen->info.vcn_ip_version >= VCN_4_0_0) ?
+	 sscreen->info.ip[AMD_IP_VCN_UNIFIED].num_queues : sscreen->info.ip[AMD_IP_VCN_DEC].num_queues) ||
        sscreen->info.ip[AMD_IP_VCN_JPEG].num_queues || sscreen->info.ip[AMD_IP_VCE].num_queues ||
        sscreen->info.ip[AMD_IP_UVD_ENC].num_queues || sscreen->info.ip[AMD_IP_VCN_ENC].num_queues) {
       sscreen->b.get_video_param = si_get_video_param;
@@ -1233,12 +1280,19 @@ void si_init_screen_get_functions(struct si_screen *sscreen)
       .fuse_ffma32 = use_fma32,
       .fuse_ffma64 = true,
       .lower_fmod = true,
+      .lower_fpow = true,
+      .lower_ineg = true,
       .lower_pack_snorm_4x8 = true,
       .lower_pack_unorm_4x8 = true,
+      .lower_pack_half_2x16 = true,
+      .lower_pack_64_2x32 = true,
+      .lower_pack_64_4x16 = true,
+      .lower_pack_32_2x16 = true,
       .lower_unpack_snorm_2x16 = true,
       .lower_unpack_snorm_4x8 = true,
       .lower_unpack_unorm_2x16 = true,
       .lower_unpack_unorm_4x8 = true,
+      .lower_unpack_half_2x16 = true,
       .lower_extract_byte = true,
       .lower_extract_word = true,
       .lower_insert_byte = true,
@@ -1248,7 +1302,7 @@ void si_init_screen_get_functions(struct si_screen *sscreen)
       .lower_fisnormal = true,
       .lower_rotate = true,
       .lower_to_scalar = true,
-      .lower_int64_options = nir_lower_imul_2x32_64,
+      .lower_int64_options = nir_lower_imul_2x32_64 | nir_lower_imul_high64,
       .has_sdot_4x8 = sscreen->info.has_accelerated_dot_product,
       .has_sudot_4x8 = sscreen->info.has_accelerated_dot_product && sscreen->info.gfx_level >= GFX11,
       .has_udot_4x8 = sscreen->info.has_accelerated_dot_product,
@@ -1268,7 +1322,6 @@ void si_init_screen_get_functions(struct si_screen *sscreen)
          nir_pack_varying_interp_loc_sample |
          nir_pack_varying_interp_loc_centroid,
       .lower_io_variables = true,
-      .lower_fs_color_inputs = true,
       /* HW supports indirect indexing for: | Enabled in driver
        * -------------------------------------------------------
        * TCS inputs                         | Yes
@@ -1282,6 +1335,10 @@ void si_init_screen_get_functions(struct si_screen *sscreen)
       .support_indirect_inputs = BITFIELD_BIT(MESA_SHADER_TESS_CTRL) |
                                  BITFIELD_BIT(MESA_SHADER_TESS_EVAL),
       .support_indirect_outputs = BITFIELD_BIT(MESA_SHADER_TESS_CTRL),
+      .lower_int64_options =
+         nir_lower_imul64 | nir_lower_imul_high64 | nir_lower_imul_2x32_64 |
+         nir_lower_divmod64 | nir_lower_minmax64 | nir_lower_iabs64 |
+         nir_lower_iadd_sat64,
    };
    sscreen->nir_options = nir_options;
 }

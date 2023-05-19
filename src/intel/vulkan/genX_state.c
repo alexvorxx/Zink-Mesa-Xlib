@@ -213,13 +213,17 @@ init_common_queue_state(struct anv_queue *queue, struct anv_batch *batch)
       sba.StatelessDataPortAccessMOCS = mocs;
 
       sba.SurfaceStateBaseAddress =
-         (struct anv_address) { .offset = INTERNAL_SURFACE_STATE_POOL_MIN_ADDRESS };
+         (struct anv_address) { .offset =
+         device->physical->va.internal_surface_state_pool.addr,
+      };
       sba.SurfaceStateMOCS = mocs;
       sba.SurfaceStateBaseAddressModifyEnable = true;
 
       sba.DynamicStateBaseAddress =
-         (struct anv_address) { .offset = DYNAMIC_STATE_POOL_MIN_ADDRESS };
-      sba.DynamicStateBufferSize = DYNAMIC_STATE_POOL_SIZE / 4096;
+         (struct anv_address) { .offset =
+         device->physical->va.dynamic_state_pool.addr,
+      };
+      sba.DynamicStateBufferSize = device->physical->va.dynamic_state_pool.size / 4096;
       sba.DynamicStateMOCS = mocs;
       sba.DynamicStateBaseAddressModifyEnable = true;
       sba.DynamicStateBufferSizeModifyEnable = true;
@@ -231,14 +235,18 @@ init_common_queue_state(struct anv_queue *queue, struct anv_batch *batch)
       sba.IndirectObjectBufferSizeModifyEnable = true;
 
       sba.InstructionBaseAddress =
-         (struct anv_address) { .offset = INSTRUCTION_STATE_POOL_MIN_ADDRESS };
-      sba.InstructionBufferSize = INSTRUCTION_STATE_POOL_SIZE / 4096;
+         (struct anv_address) { .offset =
+         device->physical->va.instruction_state_pool.addr,
+      };
+      sba.InstructionBufferSize = device->physical->va.instruction_state_pool.size / 4096;
       sba.InstructionMOCS = mocs;
       sba.InstructionBaseAddressModifyEnable = true;
       sba.InstructionBuffersizeModifyEnable = true;
 
       sba.BindlessSurfaceStateBaseAddress =
-         (struct anv_address) { .offset = BINDLESS_SURFACE_STATE_POOL_MIN_ADDRESS };
+         (struct anv_address) { .offset =
+         device->physical->va.bindless_surface_state_pool.addr,
+      };
       sba.BindlessSurfaceStateSize = (1 << 20) - 1;
       sba.BindlessSurfaceStateMOCS = mocs;
       sba.BindlessSurfaceStateBaseAddressModifyEnable = true;

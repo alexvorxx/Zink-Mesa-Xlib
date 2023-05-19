@@ -744,6 +744,7 @@ clc_free_kernels_info(const struct clc_kernel_info *kernels,
             free((void *)kernels[i].args[j].name);
             free((void *)kernels[i].args[j].type_name);
          }
+         free((void *)kernels[i].args);
       }
       free((void *)kernels[i].name);
    }
@@ -796,6 +797,14 @@ clc_compile_to_llvm_module(LLVMContext &llvm_ctx,
       "-U__SPIR__",
       "-U__SPIRV__",
    };
+
+   // llvm handles these extensions differently so we have to pass this flag instead to expose the clc functions
+   if (args->features.integer_dot_product) {
+      clang_opts.push_back("-Dcl_khr_integer_dot_product=1");
+      clang_opts.push_back("-D__opencl_c_integer_dot_product_input_4x8bit_packed=1");
+      clang_opts.push_back("-D__opencl_c_integer_dot_product_input_4x8bit=1");
+   }
+
    // We assume there's appropriate defines for __OPENCL_VERSION__ and __IMAGE_SUPPORT__
    // being provided by the caller here.
    clang_opts.insert(clang_opts.end(), args->args, args->args + args->num_args);

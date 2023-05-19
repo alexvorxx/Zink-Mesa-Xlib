@@ -93,7 +93,11 @@ agx_read_registers(const agx_instr *I, unsigned s)
          /* Depth (bit 0) is fp32, stencil (bit 1) is u16 in the hw but we pad
           * up to u32 for simplicity
           */
-         return 2 * (!!(I->zs & 1) + !!(I->zs & 2));
+         bool z = !!(I->zs & 1);
+         bool s = !!(I->zs & 2);
+         assert(z || s);
+
+         return (z && s) ? 4 : z ? 2 : 1;
       } else {
          return 1;
       }
@@ -563,23 +567,27 @@ agx_ra(agx_context *ctx)
          agx_remove_instruction(ins);
          continue;
       } else if (ins->op == AGX_OPCODE_SPLIT) {
-         assert(ins->src[0].type == AGX_INDEX_REGISTER);
-         unsigned base = ins->src[0].value;
-         unsigned width = agx_size_align_16(agx_split_width(ins));
+         assert(ins->src[0].type == AGX_INDEX_REGISTER ||
+                ins->src[0].type == AGX_INDEX_UNIFORM);
 
          struct agx_copy copies[4];
          assert(ins->nr_dests <= ARRAY_SIZE(copies));
 
          unsigned n = 0;
+         unsigned width = agx_size_align_16(agx_split_width(ins));
 
          /* Move the sources */
          agx_foreach_dest(ins, i) {
             if (ins->dest[i].type != AGX_INDEX_REGISTER)
                continue;
 
+            agx_index src = ins->src[0];
+            src.size = ins->dest[i].size;
+            src.value += (i * width);
+
             copies[n++] = (struct agx_copy){
                .dest = ins->dest[i].value,
-               .src = agx_register(base + (i * width), ins->dest[i].size),
+               .src = src,
             };
          }
 

@@ -49,7 +49,7 @@ struct pvr_transfer_frag_store_entry_data {
    pvr_dev_addr_t kick_usc_pds_offset;
    struct pvr_bo *kick_usc_pds_upload;
 
-   struct pvr_bo *usc_upload;
+   struct pvr_suballoc_bo *usc_upload;
    struct pvr_tq_frag_sh_reg_layout sh_reg_layout;
 };
 
@@ -161,7 +161,8 @@ static uint32_t pvr_transfer_frag_shader_key(
    hash |= 1;
 
    shift_hash(hash, 3U);
-   hash |= shader_props->alpha_type;
+   /* alpha type none */
+   hash |= 0;
 
 #undef shift_hash
 
@@ -247,7 +248,7 @@ static VkResult pvr_transfer_frag_store_entry_data_create(
    if (result != VK_SUCCESS)
       goto err_free_entry;
 
-   dev_addr = entry_data->usc_upload->vma->dev_addr;
+   dev_addr = entry_data->usc_upload->dev_addr;
    dev_addr.addr -= device->heaps.usc_heap->base_addr.addr;
 
    pvr_pds_setup_doutu(&kick_usc_pds_prog.usc_task_control,
@@ -260,13 +261,13 @@ static VkResult pvr_transfer_frag_store_entry_data_create(
 
    pvr_pds_kick_usc(&kick_usc_pds_prog, NULL, 0U, false, PDS_GENERATE_SIZES);
 
-   result = pvr_bo_alloc(
-      device,
-      device->heaps.pds_heap,
-      (kick_usc_pds_prog.data_size + kick_usc_pds_prog.code_size) * 4,
-      16,
-      PVR_BO_ALLOC_FLAG_CPU_MAPPED,
-      &entry_data->kick_usc_pds_upload);
+   result = pvr_bo_alloc(device,
+                         device->heaps.pds_heap,
+                         PVR_DW_TO_BYTES(kick_usc_pds_prog.data_size +
+                                         kick_usc_pds_prog.code_size),
+                         16,
+                         PVR_BO_ALLOC_FLAG_CPU_MAPPED,
+                         &entry_data->kick_usc_pds_upload);
    if (result != VK_SUCCESS)
       goto err_free_usc_upload;
 
@@ -285,7 +286,7 @@ static VkResult pvr_transfer_frag_store_entry_data_create(
    return VK_SUCCESS;
 
 err_free_usc_upload:
-   pvr_bo_free(device, entry_data->usc_upload);
+   pvr_bo_suballoc_free(entry_data->usc_upload);
 
 err_free_entry:
    ralloc_free(entry_data);
@@ -298,7 +299,7 @@ static void inline pvr_transfer_frag_store_entry_data_destroy_no_ralloc_free(
    const struct pvr_transfer_frag_store_entry_data *entry_data)
 {
    pvr_bo_free(device, entry_data->kick_usc_pds_upload);
-   pvr_bo_free(device, entry_data->usc_upload);
+   pvr_bo_suballoc_free(entry_data->usc_upload);
 }
 
 static void inline pvr_transfer_frag_store_entry_data_destroy(

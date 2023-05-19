@@ -75,8 +75,7 @@ d3d12_context_destroy(struct pipe_context *pctx)
    mtx_unlock(&screen->submit_mutex);
 
 #ifdef _WIN32
-   if (ctx->dxil_validator)
-      dxil_destroy_validator(ctx->dxil_validator);
+   dxil_destroy_validator(ctx->dxil_validator);
 #endif
 
 #ifndef _GAMING_XBOX

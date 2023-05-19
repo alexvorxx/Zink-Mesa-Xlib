@@ -143,7 +143,7 @@ valid_format_cast(struct fd_resource *rsc, enum pipe_format format)
     * permutations of z24s8:
     */
    if (fd_screen(rsc->b.b.screen)->info->a6xx.has_z24uint_s8uint &&
-         (is_z24s8(format) == is_z24s8(rsc->b.b.format)))
+         is_z24s8(format) && is_z24s8(rsc->b.b.format))
       return true;
 
    /* For some color values (just "solid white") compression metadata maps to
@@ -269,10 +269,10 @@ fd6_setup_slices(struct fd_resource *rsc)
 {
    struct pipe_resource *prsc = &rsc->b.b;
 
-   if (!FD_DBG(NOLRZ) && has_depth(rsc->b.b.format))
+   if (!FD_DBG(NOLRZ) && has_depth(prsc->format) && !is_z32(prsc->format))
       setup_lrz(rsc);
 
-   if (rsc->layout.ubwc && !ok_ubwc_format(rsc->b.b.screen, rsc->b.b.format))
+   if (rsc->layout.ubwc && !ok_ubwc_format(prsc->screen, prsc->format))
       rsc->layout.ubwc = false;
 
    fdl6_layout(&rsc->layout, prsc->format, fd_resource_nr_samples(prsc),

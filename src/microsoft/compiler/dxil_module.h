@@ -225,6 +225,23 @@ struct dxil_module {
    struct _mesa_string_buffer *sem_string_table;
    struct dxil_psv_sem_index_table sem_index_table;
 
+   /* These tables are a bitmask per input, with one bit per output
+    * to indicate whether or not that input contributes to the output.
+    * Each input's bitmask size is rounded up to a uint32 (DWORD),
+    * so a bitbask for one output component is the same as for 8 output vec4s.
+    * Sizes are in number of uint32s.
+    * Meaning of each array entry depends on shader stage.
+    * GS: [i] = output stream index
+    * HS: [0] = control point outputs, [1] = patch constant outputs
+    * DS: [0] = control point inputs, [1] = patch constant inputs (only for io table)
+    * PS/VS: only 0 is used. */
+   uint32_t *serialized_dependency_table;
+   uint32_t *viewid_dependency_table[4];
+   uint32_t *io_dependency_table[4];
+   uint32_t dependency_table_dwords_per_input[4];
+   uint32_t io_dependency_table_size[4];
+   uint32_t serialized_dependency_table_size;
+
    struct {
       unsigned abbrev_width;
       intptr_t offset;

@@ -152,7 +152,7 @@ lower_readonly_image_instr_intrinsic(nir_builder *b, nir_intrinsic_instr *intrin
       assert(num_srcs == 3);
 
       tex->dest_type = nir_intrinsic_dest_type(intrin);
-      nir_ssa_dest_init(&tex->instr, &tex->dest, 4, 32, NULL);
+      nir_ssa_dest_init(&tex->instr, &tex->dest, 4, 32);
       break;
    }
 
@@ -165,8 +165,7 @@ lower_readonly_image_instr_intrinsic(nir_builder *b, nir_intrinsic_instr *intrin
       assert(num_srcs == 2);
 
       tex->dest_type = nir_type_uint32;
-      nir_ssa_dest_init(&tex->instr, &tex->dest,
-                        coord_components, 32, NULL);
+      nir_ssa_dest_init(&tex->instr, &tex->dest, coord_components, 32);
       break;
    }
 

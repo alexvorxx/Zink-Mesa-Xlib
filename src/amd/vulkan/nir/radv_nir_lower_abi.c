@@ -454,6 +454,12 @@ lower_abi_instr(nir_builder *b, nir_instr *instr, void *state)
       replacement = nir_ine_imm(b, sample_coverage, 0);
       break;
    }
+   case nir_intrinsic_load_barycentric_optimize_amd: {
+      nir_ssa_def *prim_mask = ac_nir_load_arg(b, &s->args->ac, s->args->ac.prim_mask);
+      /* enabled when bit 31 is set */
+      replacement = nir_ilt(b, prim_mask, nir_imm_int(b, 0));
+      break;
+   }
    default:
       progress = false;
       break;

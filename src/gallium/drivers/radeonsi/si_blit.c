@@ -1211,13 +1211,13 @@ static void si_blit(struct pipe_context *ctx, const struct pipe_blit_info *info)
       simple_mtx_unlock(&sscreen->async_compute_context_lock);
    }
 
-   if (unlikely(sctx->thread_trace_enabled))
+   if (unlikely(sctx->sqtt_enabled))
       sctx->sqtt_next_event = EventCmdResolveImage;
 
    if (si_msaa_resolve_blit_via_CB(ctx, info))
       return;
 
-   if (unlikely(sctx->thread_trace_enabled))
+   if (unlikely(sctx->sqtt_enabled))
       sctx->sqtt_next_event = EventCmdCopyImage;
 
    /* Using compute for copying to a linear texture in GTT is much faster than
@@ -1252,7 +1252,7 @@ void si_gfx_blit(struct pipe_context *ctx, const struct pipe_blit_info *info)
                              info->src.box.z, info->src.box.z + info->src.box.depth - 1,
                              false);
 
-   if (unlikely(sctx->thread_trace_enabled))
+   if (unlikely(sctx->sqtt_enabled))
       sctx->sqtt_next_event = EventCmdBlitImage;
 
    si_blitter_begin(sctx, SI_BLIT | (info->render_condition_enable ? 0 : SI_DISABLE_RENDER_COND));

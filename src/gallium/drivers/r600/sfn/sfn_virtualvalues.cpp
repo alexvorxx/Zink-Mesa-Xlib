@@ -137,7 +137,7 @@ VirtualValue::from_string(const std::string& s)
    case 'L':
       return LiteralConstant::from_string(s);
    case 'K':
-      return UniformValue::from_string(s);
+      return UniformValue::from_string(s, nullptr);
    case 'P':
       return InlineConstant::param_from_string(s);
    case 'I':
@@ -263,6 +263,17 @@ Register::accept(ConstRegisterVisitor& visitor) const
 void
 Register::print(std::ostream& os) const
 {
+   if (m_flags.test(addr_or_idx)) {
+      switch (sel()) {
+      case AddressRegister::addr: os << "AR"; break;
+      case AddressRegister::idx0: os << "IDX0"; break;
+      case AddressRegister::idx1: os << "IDX1"; break;
+      default:
+         unreachable("Wrong address ID");
+      }
+      return;
+   }
+
    os << (m_flags.test(ssa) ? "S" : "R") << sel() << "." << chanchar[chan()];
 
    if (pin() != pin_none)
@@ -285,6 +296,14 @@ Register::from_string(const std::string& s)
    std::string numstr;
    char chan = 0;
    std::string pinstr;
+
+   if (s == "AR") {
+      return new AddressRegister(AddressRegister::addr);
+   } else if (s == "IDX0") {
+      return new AddressRegister(AddressRegister::idx0);
+   } else if (s == "IDX1") {
+      return new AddressRegister(AddressRegister::idx1);
+   }
 
    assert(s[0] == 'R' || s[0] == '_' || s[0] == 'S');
 
@@ -744,6 +763,11 @@ UniformValue::buf_addr() const
    return m_buf_addr;
 }
 
+void UniformValue::set_buf_addr(PVirtualValue addr)
+{
+   m_buf_addr = addr; 
+}
+
 void
 UniformValue::print(std::ostream& os) const
 {
@@ -769,10 +793,12 @@ UniformValue::equal_buf_and_cache(const UniformValue& other) const
 }
 
 UniformValue::Pointer
-UniformValue::from_string(const std::string& s)
+UniformValue::from_string(const std::string& s, ValueFactory *factory)
 {
    assert(s[1] == 'C');
    std::istringstream is(s.substr(2));
+
+   VirtualValue *bufid = nullptr;
    int bank;
    char c;
    is >> bank;
@@ -780,10 +806,31 @@ UniformValue::from_string(const std::string& s)
 
    assert(c == '[');
 
+   std::stringstream index0_ss;
+
    int index;
-   is >> index;
 
    is >> c;
+   while (c != ']' && is.good()) {
+      index0_ss << c;
+      is >> c;
+   }
+
+   auto index0_str = index0_ss.str();
+   if (isdigit(index0_str[0])) {
+      std::istringstream is_digit(index0_str);
+      is_digit >> index;
+   } else {
+      bufid = factory ?
+                 factory->src_from_string(index0_str) :
+                 Register::from_string(index0_str);
+      assert(c == ']');
+      is >> c;
+      assert(c == '[');
+      is >> index;
+      is >> c;
+   }
+
    assert(c == ']');
    is >> c;
    assert(c == '.');
@@ -806,7 +853,10 @@ UniformValue::from_string(const std::string& s)
    default:
       unreachable("Unknown channel when reading uniform");
    }
-   return new UniformValue(index + 512, chan, bank);
+   if (bufid)
+      return new UniformValue(index + 512, chan, bufid, bank);
+   else
+      return new UniformValue(index + 512, chan, bank);
 }
 
 LocalArray::LocalArray(int base_sel, int nchannels, int size, int frac):
@@ -983,6 +1033,12 @@ LocalArrayValue::addr() const
 {
    return m_addr;
 }
+
+void LocalArrayValue::set_addr(PRegister addr)
+{
+   m_addr = addr;
+}
+
 
 const LocalArray&
 LocalArrayValue::array() const

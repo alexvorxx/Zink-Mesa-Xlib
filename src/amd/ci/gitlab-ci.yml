@@ -73,7 +73,7 @@ radeonsi-stoney-traces:amd64:
     KERNEL_IMAGE_TYPE: ""
     RUNNER_TAG: mesa-ci-x86-64-lava-asus-CM1400CXA-dalboz
 
-# 5 devices (2023-04-10) # FIXME currently only 2 available
+# 5 devices (2023-05-03)
 .lava-lenovo-TPad-C13-Yoga-zork:amd64:
   variables:
     BOOT_METHOD: depthcharge
@@ -159,7 +159,7 @@ radeonsi-raven-piglit-quick_shader:amd64:
     PIGLIT_PROFILES: quick_shader
     PIGLIT_FRACTION: 2
 
-.radeonsi-raven-va:amd64:  # FIXME: when TPad-C13 gets back, restore
+radeonsi-raven-va:amd64:
   extends:
     - .lava-test-deqp:amd64
     - .radeonsi-raven-test:amd64
@@ -180,6 +180,13 @@ radeonsi-raven-piglit-quick_shader:amd64:
     # https://github.com/google/googletest/issues/3614 would probably help.
     GTEST_FRACTION: 2
 
+radeonsi-raven-va-full:amd64:
+  extends:
+    - radeonsi-raven-va:amd64
+    - .radeonsi-vaapi-manual-rules
+  variables:
+    GTEST_FRACTION: null
+
 ############### Valve Infra
 .test-radv:
   variables:
@@ -190,7 +197,6 @@ radeonsi-raven-piglit-quick_shader:amd64:
     # size getting too big. Since it's not feasible right now
     # to fix these shaders in the CTS, instead, ignore warnings from
     # the code generator.
-    MESA_SPIRV_LOG_LEVEL: error
     ACO_DEBUG: validateir,validatera
     MESA_VK_IGNORE_CONFORMANCE_WARNING: 1
     B2C_JOB_VOLUME_EXCLUSIONS: "*.shader_cache,install/*,*/install/*,*/vkd3d-proton.cache*,vkd3d-proton.cache*,*.qpa"
@@ -355,6 +361,10 @@ vkcts-navi10-valve:
     # Use Linux 5.17 to work around hitting __vm_enough_memory then hanging on Linux 6.1
     # See https://gitlab.freedesktop.org/mesa/mesa/-/issues/7888 for details
     B2C_KERNEL_URL: 'https://gitlab.freedesktop.org/mupuf/valve-infra/-/package_files/144/download'  # 5.17.1
+    # NAVI10 hangs quite often while running vkcts. This is being investigated,
+    # but in the mean time, retry up to 2 times.
+    B2C_SESSION_REBOOT_REGEX: '(GPU hang detected!|\*ERROR\* ring [^\s]+ timeout(?!, but soft recovered)|The CS has been cancelled because the context is lost)'
+    B2C_TIMEOUT_BOOT_RETRIES: 2
 
 vkcts-navi21-valve:
   parallel: 3
@@ -363,8 +373,10 @@ vkcts-navi21-valve:
     - .navi21-test-valve
   variables:
     GPU_VERSION: radv-navi21-aco
+    RADV_PERFTEST: rt
 
-vkcts-navi21-llvm-valve:
+# Disabled due to its extremelly-broken nature
+.vkcts-navi21-llvm-valve:
   extends:
     - .vkcts-test-valve
     - .navi21-test-valve
@@ -392,25 +404,25 @@ radv-fossils:
     - .fossilize-test
   script:
     # Pitcairn (GFX6)
-    - export RADV_FORCE_FAMILY="PITCAIRN"
+    - export AMDGPU_GPU_ID="PITCAIRN"
     - ./install/fossilize-runner.sh
     # Bonaire (GFX7)
-    - export RADV_FORCE_FAMILY="BONAIRE"
+    - export AMDGPU_GPU_ID="BONAIRE"
     - ./install/fossilize-runner.sh
     # Polaris10 (GFX8)
-    - export RADV_FORCE_FAMILY="POLARIS10"
+    - export AMDGPU_GPU_ID="POLARIS10"
     - ./install/fossilize-runner.sh
     # Vega10 (GFX9)
-    - export RADV_FORCE_FAMILY="VEGA10"
+    - export AMDGPU_GPU_ID="VEGA10"
     - ./install/fossilize-runner.sh
     # Navi10 (GFX10)
-    - export RADV_FORCE_FAMILY="NAVI10"
+    - export AMDGPU_GPU_ID="NAVI10"
     - ./install/fossilize-runner.sh
     # Navi21 (GFX10_3)
-    - export RADV_FORCE_FAMILY="NAVI21"
+    - export AMDGPU_GPU_ID="NAVI21"
     - ./install/fossilize-runner.sh
     # RDNA3 (GFX11)
-    - export RADV_FORCE_FAMILY="GFX1100"
+    - export AMDGPU_GPU_ID="GFX1100"
     - ./install/fossilize-runner.sh
 
 ############### vkd3d-proton
@@ -418,7 +430,7 @@ radv-fossils:
   extends:
     - .b2c-test-radv-vk
   variables:
-    B2C_JOB_SUCCESS_REGEX: 'SUCCESS: No changes found!\r$'
+    B2C_JOB_SUCCESS_REGEX: 'vkd3d-proton execution: SUCCESS\r$'
     HWCI_TEST_SCRIPT: ./install/vkd3d-proton/run.sh
 
 .vkd3d-kabini-valve:

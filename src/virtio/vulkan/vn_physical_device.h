@@ -109,6 +109,7 @@ struct vn_physical_device {
 
    VkQueueFamilyProperties2 *queue_family_properties;
    uint32_t queue_family_count;
+   bool sparse_binding_disabled;
 
    VkPhysicalDeviceMemoryProperties2 memory_properties;
 

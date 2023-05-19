@@ -42,14 +42,14 @@
 
 #include <llvm/Config/llvm-config.h>
 #include <llvm-c/Analysis.h>
-#include <llvm-c/Transforms/Scalar.h>
-#if LLVM_VERSION_MAJOR >= 7
-#include <llvm-c/Transforms/Utils.h>
-#endif
 #include <llvm-c/BitWriter.h>
 #if GALLIVM_USE_NEW_PASS == 1
 #include <llvm-c/Transforms/PassBuilder.h>
 #elif GALLIVM_HAVE_CORO == 1
+#include <llvm-c/Transforms/Scalar.h>
+#if LLVM_VERSION_MAJOR >= 7
+#include <llvm-c/Transforms/Utils.h>
+#endif
 #if LLVM_VERSION_MAJOR <= 8 && (DETECT_ARCH_AARCH64 || DETECT_ARCH_ARM || DETECT_ARCH_S390 || DETECT_ARCH_MIPS64)
 #include <llvm-c/Transforms/IPO.h>
 #endif
@@ -420,10 +420,23 @@ fail:
    return FALSE;
 }
 
+unsigned
+lp_build_init_native_width(void)
+{
+   // Default to 256 until we're confident llvmpipe with 512 is as correct and not slower than 256
+   lp_native_vector_width = MIN2(util_get_cpu_caps()->max_vector_bits, 256);
+   assert(lp_native_vector_width);
+
+   lp_native_vector_width = debug_get_num_option("LP_NATIVE_VECTOR_WIDTH", lp_native_vector_width);
+   assert(lp_native_vector_width);
+
+   return lp_native_vector_width;
+}
 
 boolean
 lp_build_init(void)
 {
+   lp_build_init_native_width();
    if (gallivm_initialized)
       return TRUE;
 
@@ -439,12 +452,6 @@ lp_build_init(void)
    gallivm_perf = debug_get_flags_option("GALLIVM_PERF", lp_bld_perf_flags, 0 );
 
    lp_set_target_options();
-
-   // Default to 256 until we're confident llvmpipe with 512 is as correct and not slower than 256
-   lp_native_vector_width = MIN2(util_get_cpu_caps()->max_vector_bits, 256);
-
-   lp_native_vector_width = debug_get_num_option("LP_NATIVE_VECTOR_WIDTH",
-                                                 lp_native_vector_width);
 
 #if DETECT_ARCH_PPC_64
    /* Set the NJ bit in VSCR to 0 so denormalized values are handled as

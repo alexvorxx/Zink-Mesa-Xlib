@@ -375,14 +375,14 @@ static inline void
 OUT_PKT4(struct fd_ringbuffer *ring, uint16_t regindx, uint16_t cnt)
 {
    BEGIN_RING(ring, cnt + 1);
-   OUT_RING(ring, pm4_pkt4_hdr(regindx, cnt));
+   OUT_RING(ring, pm4_pkt4_hdr((uint16_t)regindx, (uint16_t)cnt));
 }
 
 static inline void
-OUT_PKT7(struct fd_ringbuffer *ring, uint8_t opcode, uint16_t cnt)
+OUT_PKT7(struct fd_ringbuffer *ring, uint32_t opcode, uint32_t cnt)
 {
    BEGIN_RING(ring, cnt + 1);
-   OUT_RING(ring, pm4_pkt7_hdr(opcode, cnt));
+   OUT_RING(ring, pm4_pkt7_hdr((uint8_t)opcode, (uint16_t)cnt));
 }
 
 static inline void

@@ -28,6 +28,7 @@
 #include "dev/intel_debug.h"
 #include "iris/iris_bufmgr.h"
 #include "iris/iris_batch.h"
+#include "iris/iris_context.h"
 
 #include "drm-uapi/xe_drm.h"
 
@@ -213,7 +214,8 @@ xe_batch_submit(struct iris_batch *batch)
     * in theory try to grab bo_deps_lock. Let's keep it safe and decode
     * outside the lock.
     */
-   if (INTEL_DEBUG(DEBUG_BATCH))
+   if (INTEL_DEBUG(DEBUG_BATCH) &&
+       intel_debug_batch_in_range(batch->ice->frame))
       iris_batch_decode_batch(batch);
 
    simple_mtx_lock(bo_deps_lock);
@@ -243,7 +245,9 @@ xe_batch_submit(struct iris_batch *batch)
       }
    }
 
-   if (INTEL_DEBUG(DEBUG_BATCH | DEBUG_SUBMIT)) {
+   if ((INTEL_DEBUG(DEBUG_BATCH) &&
+        intel_debug_batch_in_range(batch->ice->frame)) ||
+       INTEL_DEBUG(DEBUG_SUBMIT)) {
       iris_dump_fence_list(batch);
       iris_dump_bo_list(batch);
    }

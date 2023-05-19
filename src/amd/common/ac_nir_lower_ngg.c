@@ -448,6 +448,23 @@ emit_pack_ngg_prim_exp_arg(nir_builder *b, unsigned num_vertices_per_primitives,
 }
 
 static void
+alloc_vertices_and_primitives(nir_builder *b,
+                              nir_ssa_def *num_vtx,
+                              nir_ssa_def *num_prim)
+{
+   /* The caller should only call this conditionally on wave 0.
+    *
+    * Send GS Alloc Request message from the first wave of the group to SPI.
+    * Message payload (in the m0 register) is:
+    * - bits 0..10: number of vertices in group
+    * - bits 12..22: number of primitives in group
+    */
+
+   nir_ssa_def *m0 = nir_ior(b, nir_ishl_imm(b, num_prim, 12), num_vtx);
+   nir_sendmsg_amd(b, m0, .base = AC_SENDMSG_GS_ALLOC_REQ);
+}
+
+static void
 alloc_vertices_and_primitives_gfx10_workaround(nir_builder *b,
                                                nir_ssa_def *num_vtx,
                                                nir_ssa_def *num_prim)
@@ -462,7 +479,7 @@ alloc_vertices_and_primitives_gfx10_workaround(nir_builder *b,
    nir_if *if_prim_cnt_0 = nir_push_if(b, is_prim_cnt_0);
    {
       nir_ssa_def *one = nir_imm_int(b, 1);
-      nir_alloc_vertices_and_primitives_amd(b, one, one);
+      alloc_vertices_and_primitives(b, one, one);
 
       nir_ssa_def *tid = nir_load_subgroup_invocation(b);
       nir_ssa_def *is_thread_0 = nir_ieq_imm(b, tid, 0);
@@ -486,7 +503,7 @@ alloc_vertices_and_primitives_gfx10_workaround(nir_builder *b,
    }
    nir_push_else(b, if_prim_cnt_0);
    {
-      nir_alloc_vertices_and_primitives_amd(b, num_vtx, num_prim);
+      alloc_vertices_and_primitives(b, num_vtx, num_prim);
    }
    nir_pop_if(b, if_prim_cnt_0);
 }
@@ -886,7 +903,7 @@ cleanup_culling_shader_after_dce(nir_shader *shader,
          nir_intrinsic_instr *intrin = nir_instr_as_intrinsic(instr);
 
          switch (intrin->intrinsic) {
-         case nir_intrinsic_alloc_vertices_and_primitives_amd:
+         case nir_intrinsic_sendmsg_amd:
             goto cleanup_culling_shader_after_dce_done;
          case nir_intrinsic_load_vertex_id:
          case nir_intrinsic_load_vertex_id_zero_base:
@@ -1297,7 +1314,7 @@ apply_reusable_variables(nir_builder *b, lower_ngg_nogs_state *s)
          /* When we found any of these intrinsics, it means
           * we reached the top part and we must stop.
           */
-         if (intrin->intrinsic == nir_intrinsic_alloc_vertices_and_primitives_amd)
+         if (intrin->intrinsic == nir_intrinsic_sendmsg_amd)
             goto done;
 
          if (intrin->intrinsic != nir_intrinsic_store_deref)
@@ -1613,7 +1630,7 @@ add_deferred_attribute_culling(nir_builder *b, nir_cf_list *original_extracted_c
             alloc_vertices_and_primitives_gfx10_workaround(
                b, num_live_vertices_in_workgroup, num_exported_prims);
          } else {
-            nir_alloc_vertices_and_primitives_amd(
+            alloc_vertices_and_primitives(
                b, num_live_vertices_in_workgroup, num_exported_prims);
          }
       }
@@ -1633,7 +1650,7 @@ add_deferred_attribute_culling(nir_builder *b, nir_cf_list *original_extracted_c
       {
          nir_ssa_def *vtx_cnt = nir_load_workgroup_num_input_vertices_amd(b);
          nir_ssa_def *prim_cnt = nir_load_workgroup_num_input_primitives_amd(b);
-         nir_alloc_vertices_and_primitives_amd(b, vtx_cnt, prim_cnt);
+         alloc_vertices_and_primitives(b, vtx_cnt, prim_cnt);
       }
       nir_pop_if(b, if_wave_0);
       nir_store_var(b, s->prim_exp_arg_var, emit_ngg_nogs_prim_exp_arg(b, s), 0x1u);
@@ -2017,7 +2034,7 @@ ngg_build_streamout_vertex(nir_builder *b, nir_xfb_info *info,
                            vtx_buffer_offsets[out->buffer],
                            zero, zero,
                            .base = out->offset,
-                           .access = ACCESS_STREAM_CACHE_POLICY);
+                           .access = ACCESS_NON_TEMPORAL);
    }
 }
 
@@ -2375,7 +2392,7 @@ ac_nir_lower_ngg_nogs(nir_shader *shader, const ac_nir_lower_ngg_options *option
          {
             nir_ssa_def *vtx_cnt = nir_load_workgroup_num_input_vertices_amd(b);
             nir_ssa_def *prim_cnt = nir_load_workgroup_num_input_primitives_amd(b);
-            nir_alloc_vertices_and_primitives_amd(b, vtx_cnt, prim_cnt);
+            alloc_vertices_and_primitives(b, vtx_cnt, prim_cnt);
          }
          nir_pop_if(b, if_wave_0);
       }
@@ -3313,7 +3330,7 @@ ngg_gs_finale(nir_builder *b, lower_ngg_gs_state *s)
        * The gs_alloc_req needs to happen on one wave only, otherwise the HW hangs.
        */
       nir_if *if_wave_0 = nir_push_if(b, nir_ieq(b, nir_load_subgroup_id(b), nir_imm_zero(b, 1, 32)));
-      nir_alloc_vertices_and_primitives_amd(b, max_vtxcnt, max_prmcnt);
+      alloc_vertices_and_primitives(b, max_vtxcnt, max_prmcnt);
       nir_pop_if(b, if_wave_0);
    }
 
@@ -3363,7 +3380,7 @@ ngg_gs_finale(nir_builder *b, lower_ngg_gs_state *s)
       if (s->options->gfx_level == GFX10)
          alloc_vertices_and_primitives_gfx10_workaround(b, workgroup_num_vertices, max_prmcnt);
       else
-         nir_alloc_vertices_and_primitives_amd(b, workgroup_num_vertices, max_prmcnt);
+         alloc_vertices_and_primitives(b, workgroup_num_vertices, max_prmcnt);
    }
    nir_pop_if(b, if_wave_0);
 
@@ -4133,7 +4150,7 @@ set_ms_final_output_counts(nir_builder *b,
 
    if (s->hw_workgroup_size <= s->wave_size) {
       /* Single-wave mesh shader workgroup. */
-      nir_alloc_vertices_and_primitives_amd(b, num_vtx, num_prm);
+      alloc_vertices_and_primitives(b, num_vtx, num_prm);
       *out_num_prm = num_prm;
       *out_num_vtx = num_vtx;
       return;
@@ -4164,7 +4181,7 @@ set_ms_final_output_counts(nir_builder *b,
                             .memory_semantics = NIR_MEMORY_ACQ_REL,
                             .memory_modes = nir_var_mem_shared);
 
-      nir_alloc_vertices_and_primitives_amd(b, num_vtx, num_prm);
+      alloc_vertices_and_primitives(b, num_vtx, num_prm);
    }
    nir_push_else(b, if_wave_0);
    {
@@ -4500,7 +4517,9 @@ handle_smaller_ms_api_workgroup(nir_builder *b,
          /* One invocation in each API wave decrements the number of API waves in flight. */
          nir_if *if_elected_again = nir_push_if(b, nir_elect(b, 1));
          {
-            nir_shared_atomic_add(b, 32, zero, nir_imm_int(b, -1u), .base = api_waves_in_flight_addr);
+            nir_shared_atomic(b, 32, zero, nir_imm_int(b, -1u),
+                              .base = api_waves_in_flight_addr,
+                              .atomic_op = nir_atomic_op_iadd);
          }
          nir_pop_if(b, if_elected_again);
 

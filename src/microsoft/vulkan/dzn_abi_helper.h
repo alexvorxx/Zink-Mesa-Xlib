@@ -84,6 +84,18 @@ dzn_ID3D12Resource_GetDesc(ID3D12Resource *res)
     return ret;
 }
 
+static inline D3D12_HEAP_DESC
+dzn_ID3D12Heap_GetDesc(ID3D12Heap *heap)
+{
+   D3D12_HEAP_DESC ret;
+#ifdef _WIN32
+    ID3D12Heap_GetDesc(heap, &ret);
+#else
+    ret = ID3D12Heap_GetDesc(heap);
+#endif
+    return ret;
+}
+
 static inline D3D12_CPU_DESCRIPTOR_HANDLE
 dzn_ID3D12DescriptorHeap_GetCPUDescriptorHandleForHeapStart(ID3D12DescriptorHeap *heap)
 {

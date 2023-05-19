@@ -896,6 +896,31 @@ blorp_emit_ps_config(struct blorp_batch *batch,
          unreachable("Invalid fast clear op");
       }
 
+      /* The RENDER_SURFACE_STATE page for TGL says:
+       *
+       *   For an 8 bpp surface with NUM_MULTISAMPLES = 1, Surface Width not
+       *   multiple of 64 pixels and more than 1 mip level in the view, Fast
+       *   Clear is not supported when AUX_CCS_E is set in this field.
+       *
+       * The granularity of a fast-clear or ambiguate operation is likely one
+       * CCS element. For an 8 bpp primary surface, this maps to 32px x 4rows.
+       * Due to the surface layout parameters, if LOD0's width isn't a
+       * multiple of 64px, LOD1 and LOD2+ will share CCS elements. Assert that
+       * these operations aren't occurring on these LODs.
+       *
+       * We don't explicitly check for TGL+ because the restriction is
+       * technically applicable to all hardware. Platforms prior to TGL don't
+       * support CCS on 8 bpp surfaces. So, these unaligned fast clear
+       * operations shouldn't be occurring prior to TGL as well.
+       */
+      if (isl_format_get_layout(params->dst.surf.format)->bpb == 8 &&
+          params->dst.surf.logical_level0_px.width % 64 != 0 &&
+          params->dst.surf.levels >= 3 &&
+          params->dst.view.base_level >= 1) {
+         assert(params->num_samples == 1);
+         assert(!ps.RenderTargetFastClearEnable);
+      }
+
       if (prog_data) {
          intel_set_ps_dispatch_state(&ps, devinfo, prog_data,
                                      params->num_samples,

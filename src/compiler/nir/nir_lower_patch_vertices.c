@@ -22,7 +22,6 @@
  */
 
 #include "nir_builder.h"
-#include "program/prog_instruction.h"
 
 static nir_variable *
 make_uniform(nir_shader *nir, const gl_state_index16 *tokens)
@@ -36,7 +35,6 @@ make_uniform(nir_shader *nir, const gl_state_index16 *tokens)
    var->num_state_slots = 1;
    var->state_slots = ralloc_array(var, nir_state_slot, var->num_state_slots);
    memcpy(var->state_slots[0].tokens, tokens, sizeof(*tokens) * STATE_LENGTH);
-   var->state_slots[0].swizzle = SWIZZLE_XXXX;
 
    return var;
 }

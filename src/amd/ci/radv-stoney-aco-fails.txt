@@ -11,6 +11,7 @@ dEQP-VK.rasterization.interpolation_multisample_4_bit.lines_wide,Fail
 # mipmap failures seen since (at least) CTS 1.3.1.x
 dEQP-VK.texture.mipmap.2d.image_view_min_lod.base_level.linear_linear,Fail
 dEQP-VK.texture.mipmap.2d.image_view_min_lod.base_level.linear_linear_integer_texel_coord,Fail
+dEQP-VK.texture.mipmap.2d.image_view_min_lod.base_level.linear_nearest_integer_texel_coord,Fail
 dEQP-VK.texture.mipmap.2d.image_view_min_lod.base_level.linear_nearest,Fail
 dEQP-VK.texture.mipmap.2d.image_view_min_lod.base_level.nearest_linear,Fail
 dEQP-VK.texture.mipmap.2d.image_view_min_lod.base_level.nearest_nearest_integer_texel_coord,Fail
@@ -89,9 +90,12 @@ dEQP-VK.renderpass2.depth_stencil_resolve.image_2d_16_64_6.samples_8.d16_unorm.d
 dEQP-VK.renderpass2.depth_stencil_resolve.image_2d_16_64_6.samples_8.d16_unorm.depth_min,Fail
 dEQP-VK.renderpass2.depth_stencil_resolve.image_2d_16_64_6.samples_8.d16_unorm.depth_zero,Fail
 dEQP-VK.renderpass2.depth_stencil_resolve.image_2d_16_64_6.samples_8.d32_sfloat.depth_average,Fail
+dEQP-VK.renderpass2.depth_stencil_resolve.image_2d_16_64_6.samples_8.d32_sfloat.depth_max,Fail
 dEQP-VK.renderpass2.depth_stencil_resolve.image_2d_16_64_6.samples_8.d32_sfloat.depth_min,Fail
 dEQP-VK.renderpass2.depth_stencil_resolve.image_2d_16_64_6.samples_8.d32_sfloat.depth_zero,Fail
 dEQP-VK.renderpass2.depth_stencil_resolve.image_2d_32_32.samples_2.d32_sfloat_s8_uint.depth_none_stencil_max_testing_stencil,Fail
 dEQP-VK.renderpass2.depth_stencil_resolve.image_2d_32_32.samples_2.d32_sfloat_s8_uint.depth_none_stencil_min_testing_stencil,Fail
 dEQP-VK.renderpass2.depth_stencil_resolve.image_2d_32_32.samples_2.d32_sfloat_s8_uint.depth_none_stencil_zero_testing_stencil,Fail
+dEQP-VK.renderpass2.depth_stencil_resolve.image_2d_32_32.samples_4.d32_sfloat_s8_uint.depth_none_stencil_max_testing_stencil,Fail
+dEQP-VK.renderpass2.depth_stencil_resolve.image_2d_49_13.samples_2.d32_sfloat_s8_uint.depth_none_stencil_max_testing_stencil,Fail
 dEQP-VK.renderpass2.depth_stencil_resolve.image_2d_49_13.samples_8.d32_sfloat_s8_uint.depth_none_stencil_max_testing_stencil,Fail

@@ -147,7 +147,7 @@ spirv_builder_emit_entry_point(struct spirv_builder *b,
    b->entry_points.words[pos] |= (3 + len + num_interfaces) << 16;
    spirv_buffer_prepare(&b->entry_points, b->mem_ctx, num_interfaces);
    for (int i = 0; i < num_interfaces; ++i)
-        spirv_buffer_emit_word(&b->entry_points, interfaces[i]);
+      spirv_buffer_emit_word(&b->entry_points, interfaces[i]);
 }
 
 uint32_t
@@ -1726,16 +1726,15 @@ spirv_builder_get_words(struct spirv_builder *b, uint32_t *words,
       &b->instructions
    };
 
-   bool find_tcs_vertices_out = *tcs_vertices_out_word > 0;
    for (int i = 0; i < ARRAY_SIZE(buffers); ++i) {
       const struct spirv_buffer *buffer = buffers[i];
-      for (int j = 0; j < buffer->num_words; ++j) {
-         if (find_tcs_vertices_out && buffer == &b->exec_modes && *tcs_vertices_out_word == j) {
-            *tcs_vertices_out_word = written;
-            find_tcs_vertices_out = false;
-         }
-         words[written++] = buffer->words[j];
-      }
+
+      if (buffer == &b->exec_modes && *tcs_vertices_out_word > 0)
+         *tcs_vertices_out_word += written;
+
+      memcpy(words + written, buffer->words,
+             buffer->num_words * sizeof(uint32_t));
+      written += buffer->num_words;
    }
 
    assert(written == spirv_builder_get_num_words(b));

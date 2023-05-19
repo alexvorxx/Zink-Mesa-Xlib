@@ -681,7 +681,7 @@ get_stencil_resolve_fs(struct d3d12_context *ctx, bool no_flip)
       txs->is_array = false;
       txs->dest_type = nir_type_int;
 
-      nir_ssa_dest_init(&txs->instr, &txs->dest, 2, 32, "tex");
+      nir_ssa_dest_init(&txs->instr, &txs->dest, 2, 32);
       nir_builder_instr_insert(&b, &txs->instr);
 
       pos_src = nir_vec4(&b,
@@ -709,7 +709,7 @@ get_stencil_resolve_fs(struct d3d12_context *ctx, bool no_flip)
    tex->is_array = false;
    tex->coord_components = 2;
 
-   nir_ssa_dest_init(&tex->instr, &tex->dest, 4, 32, "tex");
+   nir_ssa_dest_init(&tex->instr, &tex->dest, 4, 32);
    nir_builder_instr_insert(&b, &tex->instr);
 
    nir_store_var(&b, stencil_out, nir_channel(&b, &tex->dest.ssa, 1), 0x1);

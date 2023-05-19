@@ -57,6 +57,7 @@ struct radv_meta_saved_state {
    unsigned active_pipeline_gds_queries;
    unsigned active_prims_gen_gds_queries;
    unsigned active_prims_xfb_gds_queries;
+   unsigned active_occlusion_queries;
 
    bool predicating;
 };
@@ -119,9 +120,9 @@ void radv_meta_restore(const struct radv_meta_saved_state *state,
 
 VkImageViewType radv_meta_get_view_type(const struct radv_image *image);
 
-uint32_t radv_meta_get_iview_layer(const struct radv_image *dest_image,
-                                   const VkImageSubresourceLayers *dest_subresource,
-                                   const VkOffset3D *dest_offset);
+uint32_t radv_meta_get_iview_layer(const struct radv_image *dst_image,
+                                   const VkImageSubresourceLayers *dst_subresource,
+                                   const VkOffset3D *dst_offset);
 
 struct radv_meta_blit2d_surf {
    /** The size of an element in bytes. */
@@ -202,14 +203,14 @@ void radv_fmask_copy(struct radv_cmd_buffer *cmd_buffer, struct radv_meta_blit2d
 
 void radv_meta_resolve_compute_image(struct radv_cmd_buffer *cmd_buffer,
                                      struct radv_image *src_image, VkFormat src_format,
-                                     VkImageLayout src_image_layout, struct radv_image *dest_image,
-                                     VkFormat dest_format, VkImageLayout dest_image_layout,
+                                     VkImageLayout src_image_layout, struct radv_image *dst_image,
+                                     VkFormat dst_format, VkImageLayout dst_image_layout,
                                      const VkImageResolve2 *region);
 
 void radv_meta_resolve_fragment_image(struct radv_cmd_buffer *cmd_buffer,
                                       struct radv_image *src_image, VkImageLayout src_image_layout,
-                                      struct radv_image *dest_image,
-                                      VkImageLayout dest_image_layout,
+                                      struct radv_image *dst_image,
+                                      VkImageLayout dst_image_layout,
                                       const VkImageResolve2 *region);
 
 void radv_decompress_resolve_rendering_src(struct radv_cmd_buffer *cmd_buffer);

@@ -97,7 +97,7 @@ void radv_check_gpu_hangs(struct radv_queue *queue, struct radeon_cmdbuf *cs);
 
 void radv_print_spirv(const char *data, uint32_t size, FILE *fp);
 
-void radv_dump_enabled_options(struct radv_device *device, FILE *f);
+void radv_dump_enabled_options(const struct radv_device *device, FILE *f);
 
 bool radv_trap_handler_init(struct radv_device *device);
 void radv_trap_handler_finish(struct radv_device *device);

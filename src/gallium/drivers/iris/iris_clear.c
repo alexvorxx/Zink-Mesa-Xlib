@@ -481,9 +481,13 @@ fast_clear_depth(struct iris_context *ice,
        *
        * There may have been a write to this depth buffer. Flush it from the
        * tile cache just in case.
+       *
+       * Set CS stall bit to guarantee that the fast clear starts the execution
+       * after the tile cache flush completed.
        */
       iris_emit_pipe_control_flush(batch, "hiz_ccs_wt: before fast clear",
                                    PIPE_CONTROL_DEPTH_CACHE_FLUSH |
+                                   PIPE_CONTROL_CS_STALL |
                                    PIPE_CONTROL_TILE_CACHE_FLUSH);
    }
 

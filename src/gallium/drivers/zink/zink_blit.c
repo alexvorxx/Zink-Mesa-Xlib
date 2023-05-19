@@ -173,25 +173,6 @@ blit_native(struct zink_context *ctx, const struct pipe_blit_info *info, bool *n
       return false;
 
 
-   apply_dst_clears(ctx, info, false);
-   zink_fb_clears_apply_region(ctx, info->src.resource, zink_rect_from_box(&info->src.box));
-
-   if (src->obj->dt)
-      *needs_present_readback = zink_kopper_acquire_readback(ctx, src);
-
-   struct zink_batch *batch = &ctx->batch;
-   zink_resource_setup_transfer_layouts(ctx, src, dst);
-   VkCommandBuffer cmdbuf = *needs_present_readback ?
-                            ctx->batch.state->cmdbuf :
-                            zink_get_cmdbuf(ctx, src, dst);
-   zink_batch_reference_resource_rw(batch, src, false);
-   zink_batch_reference_resource_rw(batch, dst, true);
-
-   bool marker = zink_cmd_debug_marker_begin(ctx, cmdbuf, "blit_native(%s->%s, %dx%d->%dx%d)",
-                                             util_format_short_name(info->src.format),
-                                             util_format_short_name(info->src.format),
-                                             info->src.box.width, info->src.box.height,
-                                             info->dst.box.width, info->dst.box.height);
    VkImageBlit region = {0};
    region.srcSubresource.aspectMask = src->aspect;
    region.srcSubresource.mipLevel = info->src.level;
@@ -210,6 +191,9 @@ blit_native(struct zink_context *ctx, const struct pipe_blit_info *info, bool *n
    case PIPE_TEXTURE_1D_ARRAY:
       /* these use layer */
       region.srcSubresource.baseArrayLayer = info->src.box.z;
+      /* VUID-vkCmdBlitImage-srcImage-00240 */
+      if (region.srcSubresource.baseArrayLayer && dst->base.b.target == PIPE_TEXTURE_3D)
+         return false;
       region.srcSubresource.layerCount = info->src.box.depth;
       region.srcOffsets[0].z = 0;
       region.srcOffsets[1].z = 1;
@@ -248,6 +232,9 @@ blit_native(struct zink_context *ctx, const struct pipe_blit_info *info, bool *n
    case PIPE_TEXTURE_1D_ARRAY:
       /* these use layer */
       region.dstSubresource.baseArrayLayer = info->dst.box.z;
+      /* VUID-vkCmdBlitImage-srcImage-00240 */
+      if (region.dstSubresource.baseArrayLayer && src->base.b.target == PIPE_TEXTURE_3D)
+         return false;
       region.dstSubresource.layerCount = info->dst.box.depth;
       region.dstOffsets[0].z = 0;
       region.dstOffsets[1].z = 1;
@@ -267,6 +254,26 @@ blit_native(struct zink_context *ctx, const struct pipe_blit_info *info, bool *n
       region.dstOffsets[1].z = 1;
    }
    assert(region.dstOffsets[0].z != region.dstOffsets[1].z);
+
+   apply_dst_clears(ctx, info, false);
+   zink_fb_clears_apply_region(ctx, info->src.resource, zink_rect_from_box(&info->src.box));
+
+   if (src->obj->dt)
+      *needs_present_readback = zink_kopper_acquire_readback(ctx, src);
+
+   struct zink_batch *batch = &ctx->batch;
+   zink_resource_setup_transfer_layouts(ctx, src, dst);
+   VkCommandBuffer cmdbuf = *needs_present_readback ?
+                            ctx->batch.state->cmdbuf :
+                            zink_get_cmdbuf(ctx, src, dst);
+   zink_batch_reference_resource_rw(batch, src, false);
+   zink_batch_reference_resource_rw(batch, dst, true);
+
+   bool marker = zink_cmd_debug_marker_begin(ctx, cmdbuf, "blit_native(%s->%s, %dx%d->%dx%d)",
+                                             util_format_short_name(info->src.format),
+                                             util_format_short_name(info->src.format),
+                                             info->src.box.width, info->src.box.height,
+                                             info->dst.box.width, info->dst.box.height);
 
    VKCTX(CmdBlitImage)(cmdbuf, src->obj->image, src->layout,
                   dst->obj->image, dst->layout,
@@ -405,7 +412,7 @@ zink_blit(struct pipe_context *pctx,
       zink_select_draw_vbo(ctx);
    }
    zink_blit_begin(ctx, ZINK_BLIT_SAVE_FB | ZINK_BLIT_SAVE_FS | ZINK_BLIT_SAVE_TEXTURES);
-   if (!needs_present_readback && info->src.format != info->src.resource->format)
+   if (!zink_is_swapchain(src) && info->src.format != info->src.resource->format)
       zink_resource_object_init_mutable(ctx, src);
    if (!zink_is_swapchain(dst) && info->dst.format != info->dst.resource->format)
       zink_resource_object_init_mutable(ctx, dst);

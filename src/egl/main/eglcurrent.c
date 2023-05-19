@@ -54,7 +54,7 @@ _eglInitThreadInfo(_EGLThreadInfo *t)
 
 /**
  * Return the calling thread's thread info.
- * If the calling thread nevers calls this function before, or if its thread
+ * If the calling thread never calls this function before, or if its thread
  * info was destroyed, reinitialize it.  This function never returns NULL.
  */
 _EGLThreadInfo *

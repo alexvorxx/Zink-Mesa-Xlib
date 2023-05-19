@@ -2482,31 +2482,11 @@ struct gl_shared_state
     */
    simple_mtx_t ShaderIncludeMutex;
 
-   /**
-    * Some context in this share group was affected by a GPU reset
-    *
-    * On the next call to \c glGetGraphicsResetStatus, contexts that have not
-    * been affected by a GPU reset must also return
-    * \c GL_INNOCENT_CONTEXT_RESET_ARB.
-    *
-    * Once this field becomes true, it is never reset to false.
-    */
-   bool ShareGroupReset;
-
    /** EXT_external_objects */
    struct _mesa_HashTable *MemoryObjects;
 
    /** EXT_semaphore */
    struct _mesa_HashTable *SemaphoreObjects;
-
-   /**
-    * Some context in this share group was affected by a disjoint
-    * operation. This operation can be anything that has effects on
-    * values of timer queries in such manner that they become invalid for
-    * performance metrics. As example gpu reset, counter overflow or gpu
-    * frequency changes.
-    */
-   bool DisjointOperation;
 
    /**
     * Whether at least one image has been imported or exported, excluding

@@ -48,6 +48,7 @@
 #include <c11/threads.h>
 #include <drm-uapi/drm.h>
 
+#include "util/anon_file.h"
 #include "util/set.h"
 #include "util/u_debug.h"
 #include "drm_shim.h"
@@ -293,21 +294,29 @@ static bool hide_drm_device_path(const char *path)
    return false;
 }
 
+static int file_override_open(const char *path)
+{
+   for (int i = 0; i < file_overrides_count; i++) {
+      if (strcmp(file_overrides[i].path, path) == 0) {
+         int fd = os_create_anonymous_file(0, "shim file");
+         write(fd, file_overrides[i].contents,
+               strlen(file_overrides[i].contents));
+         lseek(fd, 0, SEEK_SET);
+         return fd;
+      }
+   }
+
+   return -1;
+}
+
 /* Override libdrm's reading of various sysfs files for device enumeration. */
 PUBLIC FILE *fopen(const char *path, const char *mode)
 {
    init_shim();
 
-   for (int i = 0; i < file_overrides_count; i++) {
-      if (strcmp(file_overrides[i].path, path) == 0) {
-         int fds[2];
-         pipe(fds);
-         write(fds[1], file_overrides[i].contents,
-               strlen(file_overrides[i].contents));
-         close(fds[1]);
-         return fdopen(fds[0], "r");
-      }
-   }
+   int fd = file_override_open(path);
+   if (fd >= 0)
+      return fdopen(fd, "r");
 
    return real_fopen(path, mode);
 }
@@ -324,6 +333,10 @@ PUBLIC int open(const char *path, int flags, ...)
    mode_t mode = va_arg(ap, mode_t);
    va_end(ap);
 
+   int fd = file_override_open(path);
+   if (fd >= 0)
+      return fd;
+
    if (hide_drm_device_path(path)) {
       errno = ENOENT;
       return -1;
@@ -332,7 +345,7 @@ PUBLIC int open(const char *path, int flags, ...)
    if (strcmp(path, render_node_path) != 0)
       return real_open(path, flags, mode);
 
-   int fd = real_open("/dev/null", O_RDWR, 0);
+   fd = real_open("/dev/null", O_RDWR, 0);
 
    drm_shim_fd_register(fd, NULL);
 
@@ -619,6 +632,7 @@ readdir(DIR *dir)
    if (_mesa_set_search(opendir_set, dir)) {
       strcpy(render_node_dirent.d_name,
              render_node_dirent_name);
+      render_node_dirent.d_type = DT_CHR;
       ent = &render_node_dirent;
       _mesa_set_remove_key(opendir_set, dir);
    }
@@ -646,6 +660,7 @@ readdir64(DIR *dir)
    if (_mesa_set_search(opendir_set, dir)) {
       strcpy(render_node_dirent.d_name,
              render_node_dirent_name);
+      render_node_dirent.d_type = DT_CHR;
       ent = &render_node_dirent;
       _mesa_set_remove_key(opendir_set, dir);
    }

@@ -232,7 +232,8 @@ apply_nuw_to_offsets(isel_context* ctx, nir_function_impl* impl)
                apply_nuw_to_ssa(ctx, intrin->src[2].ssa);
             break;
          case nir_intrinsic_load_scratch: apply_nuw_to_ssa(ctx, intrin->src[0].ssa); break;
-         case nir_intrinsic_store_scratch: apply_nuw_to_ssa(ctx, intrin->src[1].ssa); break;
+         case nir_intrinsic_store_scratch:
+         case nir_intrinsic_load_smem_amd: apply_nuw_to_ssa(ctx, intrin->src[1].ssa); break;
          default: break;
          }
       }
@@ -511,61 +512,15 @@ init_context(isel_context* ctx, nir_shader* shader)
                case nir_intrinsic_mbcnt_amd:
                case nir_intrinsic_lane_permute_16_amd:
                case nir_intrinsic_load_instance_id:
-               case nir_intrinsic_ssbo_atomic_add:
-               case nir_intrinsic_ssbo_atomic_imin:
-               case nir_intrinsic_ssbo_atomic_umin:
-               case nir_intrinsic_ssbo_atomic_imax:
-               case nir_intrinsic_ssbo_atomic_umax:
-               case nir_intrinsic_ssbo_atomic_and:
-               case nir_intrinsic_ssbo_atomic_or:
-               case nir_intrinsic_ssbo_atomic_xor:
-               case nir_intrinsic_ssbo_atomic_exchange:
-               case nir_intrinsic_ssbo_atomic_comp_swap:
-               case nir_intrinsic_ssbo_atomic_fadd:
-               case nir_intrinsic_ssbo_atomic_fmin:
-               case nir_intrinsic_ssbo_atomic_fmax:
-               case nir_intrinsic_global_atomic_add_amd:
-               case nir_intrinsic_global_atomic_imin_amd:
-               case nir_intrinsic_global_atomic_umin_amd:
-               case nir_intrinsic_global_atomic_imax_amd:
-               case nir_intrinsic_global_atomic_umax_amd:
-               case nir_intrinsic_global_atomic_and_amd:
-               case nir_intrinsic_global_atomic_or_amd:
-               case nir_intrinsic_global_atomic_xor_amd:
-               case nir_intrinsic_global_atomic_exchange_amd:
-               case nir_intrinsic_global_atomic_comp_swap_amd:
-               case nir_intrinsic_global_atomic_fadd_amd:
-               case nir_intrinsic_global_atomic_fmin_amd:
-               case nir_intrinsic_global_atomic_fmax_amd:
-               case nir_intrinsic_bindless_image_atomic_add:
-               case nir_intrinsic_bindless_image_atomic_umin:
-               case nir_intrinsic_bindless_image_atomic_imin:
-               case nir_intrinsic_bindless_image_atomic_umax:
-               case nir_intrinsic_bindless_image_atomic_imax:
-               case nir_intrinsic_bindless_image_atomic_and:
-               case nir_intrinsic_bindless_image_atomic_or:
-               case nir_intrinsic_bindless_image_atomic_xor:
-               case nir_intrinsic_bindless_image_atomic_exchange:
-               case nir_intrinsic_bindless_image_atomic_comp_swap:
-               case nir_intrinsic_bindless_image_atomic_inc_wrap:
-               case nir_intrinsic_bindless_image_atomic_dec_wrap:
-               case nir_intrinsic_bindless_image_atomic_fadd:
-               case nir_intrinsic_bindless_image_atomic_fmin:
-               case nir_intrinsic_bindless_image_atomic_fmax:
+               case nir_intrinsic_ssbo_atomic:
+               case nir_intrinsic_ssbo_atomic_swap:
+               case nir_intrinsic_global_atomic_amd:
+               case nir_intrinsic_global_atomic_swap_amd:
+               case nir_intrinsic_bindless_image_atomic:
+               case nir_intrinsic_bindless_image_atomic_swap:
                case nir_intrinsic_bindless_image_size:
-               case nir_intrinsic_shared_atomic_add:
-               case nir_intrinsic_shared_atomic_imin:
-               case nir_intrinsic_shared_atomic_umin:
-               case nir_intrinsic_shared_atomic_imax:
-               case nir_intrinsic_shared_atomic_umax:
-               case nir_intrinsic_shared_atomic_and:
-               case nir_intrinsic_shared_atomic_or:
-               case nir_intrinsic_shared_atomic_xor:
-               case nir_intrinsic_shared_atomic_exchange:
-               case nir_intrinsic_shared_atomic_comp_swap:
-               case nir_intrinsic_shared_atomic_fadd:
-               case nir_intrinsic_shared_atomic_fmin:
-               case nir_intrinsic_shared_atomic_fmax:
+               case nir_intrinsic_shared_atomic:
+               case nir_intrinsic_shared_atomic_swap:
                case nir_intrinsic_load_scratch:
                case nir_intrinsic_load_invocation_id:
                case nir_intrinsic_load_primitive_id:

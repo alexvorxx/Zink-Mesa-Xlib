@@ -32,6 +32,7 @@
 #include "pvr_rogue_pds_defs.h"
 #include "pvr_rogue_pds_disasm.h"
 #include "pvr_rogue_pds_encode.h"
+#include "pvr_types.h"
 #include "util/log.h"
 #include "util/macros.h"
 
@@ -1568,7 +1569,7 @@ void pvr_pds_generate_descriptor_upload_program(
 
       addr_literal_buffer_entry->type =
          PVR_PDS_CONST_MAP_ENTRY_TYPE_ADDR_LITERAL_BUFFER;
-      addr_literal_buffer_entry->size = size_in_dwords * sizeof(uint32_t);
+      addr_literal_buffer_entry->size = PVR_DW_TO_BYTES(size_in_dwords);
       addr_literal_buffer_entry->const_offset = next_const64 * 2;
 
       for (unsigned int i = 0; i < input_program->addr_literal_count; i++) {

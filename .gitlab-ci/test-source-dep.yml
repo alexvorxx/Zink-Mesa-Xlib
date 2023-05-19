@@ -614,7 +614,16 @@
       when: on_success
     - changes: &radeon_vcn_file_list
       - src/gallium/frontends/va/**/*
+      - src/gallium/targets/va/**/*
       when: on_success
+
+.radeonsi-vaapi-manual-rules:
+  stage: amd
+  rules:
+    - !reference [.gl-manual-rules, rules]
+    - changes:
+        *radeon_vcn_file_list
+      when: manual
 
 .i915g-rules:
   stage: intel

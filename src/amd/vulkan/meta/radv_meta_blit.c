@@ -27,8 +27,8 @@
 struct blit_region {
    VkOffset3D src_offset;
    VkExtent3D src_extent;
-   VkOffset3D dest_offset;
-   VkExtent3D dest_extent;
+   VkOffset3D dst_offset;
+   VkExtent3D dst_extent;
 };
 
 static VkResult build_pipeline(struct radv_device *device, VkImageAspectFlagBits aspect,
@@ -194,18 +194,18 @@ translate_sampler_dim(VkImageType type)
 static void
 meta_emit_blit(struct radv_cmd_buffer *cmd_buffer, struct radv_image *src_image,
                struct radv_image_view *src_iview, VkImageLayout src_image_layout,
-               float src_offset_0[3], float src_offset_1[3], struct radv_image *dest_image,
-               struct radv_image_view *dest_iview, VkImageLayout dest_image_layout,
-               VkRect2D dest_box, VkSampler sampler)
+               float src_offset_0[3], float src_offset_1[3], struct radv_image *dst_image,
+               struct radv_image_view *dst_iview, VkImageLayout dst_image_layout,
+               VkRect2D dst_box, VkSampler sampler)
 {
    struct radv_device *device = cmd_buffer->device;
-   uint32_t src_width = radv_minify(src_iview->image->info.width, src_iview->vk.base_mip_level);
-   uint32_t src_height = radv_minify(src_iview->image->info.height, src_iview->vk.base_mip_level);
-   uint32_t src_depth = radv_minify(src_iview->image->info.depth, src_iview->vk.base_mip_level);
-   uint32_t dst_width = radv_minify(dest_iview->image->info.width, dest_iview->vk.base_mip_level);
-   uint32_t dst_height = radv_minify(dest_iview->image->info.height, dest_iview->vk.base_mip_level);
+   uint32_t src_width = radv_minify(src_iview->image->vk.extent.width, src_iview->vk.base_mip_level);
+   uint32_t src_height = radv_minify(src_iview->image->vk.extent.height, src_iview->vk.base_mip_level);
+   uint32_t src_depth = radv_minify(src_iview->image->vk.extent.depth, src_iview->vk.base_mip_level);
+   uint32_t dst_width = radv_minify(dst_iview->image->vk.extent.width, dst_iview->vk.base_mip_level);
+   uint32_t dst_height = radv_minify(dst_iview->image->vk.extent.height, dst_iview->vk.base_mip_level);
 
-   assert(src_image->info.samples == dest_image->info.samples);
+   assert(src_image->vk.samples == dst_image->vk.samples);
 
    float vertex_push_constants[5] = {
       src_offset_0[0] / (float)src_width, src_offset_0[1] / (float)src_height,
@@ -223,7 +223,7 @@ meta_emit_blit(struct radv_cmd_buffer *cmd_buffer, struct radv_image *src_image,
 
    switch (src_iview->vk.aspects) {
    case VK_IMAGE_ASPECT_COLOR_BIT: {
-      fs_key = radv_format_meta_fs_key(device, dest_image->vk.format);
+      fs_key = radv_format_meta_fs_key(device, dst_image->vk.format);
       format = radv_fs_key_format_exemplars[fs_key];
 
       switch (src_image->vk.image_type) {
@@ -322,12 +322,12 @@ meta_emit_blit(struct radv_cmd_buffer *cmd_buffer, struct radv_image *src_image,
 
    VkRenderingAttachmentInfo color_att;
    if (src_iview->image->vk.aspects == VK_IMAGE_ASPECT_COLOR_BIT) {
-      unsigned dst_layout = radv_meta_dst_layout_from_layout(dest_image_layout);
+      unsigned dst_layout = radv_meta_dst_layout_from_layout(dst_image_layout);
       VkImageLayout layout = radv_meta_dst_layout_to_layout(dst_layout);
 
       color_att = (VkRenderingAttachmentInfo) {
          .sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
-         .imageView = radv_image_view_to_handle(dest_iview),
+         .imageView = radv_image_view_to_handle(dst_iview),
          .imageLayout = layout,
          .loadOp = VK_ATTACHMENT_LOAD_OP_LOAD,
          .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
@@ -338,12 +338,12 @@ meta_emit_blit(struct radv_cmd_buffer *cmd_buffer, struct radv_image *src_image,
 
    VkRenderingAttachmentInfo depth_att;
    if (src_iview->image->vk.aspects & VK_IMAGE_ASPECT_DEPTH_BIT) {
-      enum radv_blit_ds_layout ds_layout = radv_meta_blit_ds_to_type(dest_image_layout);
+      enum radv_blit_ds_layout ds_layout = radv_meta_blit_ds_to_type(dst_image_layout);
       VkImageLayout layout = radv_meta_blit_ds_to_layout(ds_layout);
 
       depth_att = (VkRenderingAttachmentInfo) {
          .sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
-         .imageView = radv_image_view_to_handle(dest_iview),
+         .imageView = radv_image_view_to_handle(dst_iview),
          .imageLayout = layout,
          .loadOp = VK_ATTACHMENT_LOAD_OP_LOAD,
          .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
@@ -353,12 +353,12 @@ meta_emit_blit(struct radv_cmd_buffer *cmd_buffer, struct radv_image *src_image,
 
    VkRenderingAttachmentInfo stencil_att;
    if (src_iview->image->vk.aspects & VK_IMAGE_ASPECT_STENCIL_BIT) {
-      enum radv_blit_ds_layout ds_layout = radv_meta_blit_ds_to_type(dest_image_layout);
+      enum radv_blit_ds_layout ds_layout = radv_meta_blit_ds_to_type(dst_image_layout);
       VkImageLayout layout = radv_meta_blit_ds_to_layout(ds_layout);
 
       stencil_att = (VkRenderingAttachmentInfo) {
          .sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
-         .imageView = radv_image_view_to_handle(dest_iview),
+         .imageView = radv_image_view_to_handle(dst_iview),
          .imageLayout = layout,
          .loadOp = VK_ATTACHMENT_LOAD_OP_LOAD,
          .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
@@ -409,8 +409,8 @@ blit_image(struct radv_cmd_buffer *cmd_buffer, struct radv_image *src_image,
     *    vkCmdBlitImage must not be used for multisampled source or
     *    destination images. Use vkCmdResolveImage for this purpose.
     */
-   assert(src_image->info.samples == 1);
-   assert(dst_image->info.samples == 1);
+   assert(src_image->vk.samples == 1);
+   assert(dst_image->vk.samples == 1);
 
    radv_CreateSampler(radv_device_to_handle(device),
                       &(VkSamplerCreateInfo){

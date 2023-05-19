@@ -686,7 +686,7 @@ create_conversion_shader(struct st_context *st, enum pipe_texture_target target,
    nir_deref_instr *sampler_deref = nir_build_deref_var(&b, sampler);
    txf->src[2].src = nir_src_for_ssa(&sampler_deref->dest.ssa);
 
-   nir_ssa_dest_init(&txf->instr, &txf->dest, 4, 32, NULL);
+   nir_ssa_dest_init(&txf->instr, &txf->dest, 4, 32);
    nir_builder_instr_insert(&b, &txf->instr);
 
    /* pass the grid offset as the coord to get the zero-indexed buffer offset */

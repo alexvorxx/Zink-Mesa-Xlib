@@ -111,6 +111,18 @@ lower_intrinsic(nir_builder *b, nir_intrinsic_instr *intr)
                                   &u->ssbo_size, intr->src[0].ssa);
    case nir_intrinsic_load_num_workgroups:
       return load_sysval(b, 3, 32, AGX_SYSVAL_TABLE_GRID, 0);
+   case nir_intrinsic_load_xfb_address:
+      return load_sysval_root(b, 1, 64,
+                              &u->vs.xfb.base[nir_intrinsic_base(intr)]);
+   case nir_intrinsic_load_xfb_size:
+      return load_sysval_root(b, 1, 32,
+                              &u->vs.xfb.size[nir_intrinsic_base(intr)]);
+   case nir_intrinsic_load_xfb_index_buffer:
+      return load_sysval_root(b, 1, 64, &u->vs.xfb.index_buffer);
+   case nir_intrinsic_load_base_vertex:
+      return load_sysval_root(b, 1, 32, &u->vs.xfb.base_vertex);
+   case nir_intrinsic_load_num_vertices:
+      return load_sysval_root(b, 1, 32, &u->vs.xfb.num_vertices);
    default:
       return NULL;
    }

@@ -118,13 +118,9 @@ static nir_ssa_def *
 load_input(struct st_translate *t, gl_varying_slot slot)
 {
    if (!t->inputs[slot]) {
-      const char *slot_name =
-         gl_varying_slot_name_for_stage(slot, MESA_SHADER_FRAGMENT);
-      nir_variable *var = nir_variable_create(t->b->shader, nir_var_shader_in,
-                                              slot == VARYING_SLOT_FOGC ?
-                                              glsl_float_type() : glsl_vec4_type(),
-                                              slot_name);
-      var->data.location = slot;
+      nir_variable *var = nir_create_variable_with_location(t->b->shader, nir_var_shader_in, slot,
+                                                            slot == VARYING_SLOT_FOGC ?
+                                                            glsl_float_type() : glsl_vec4_type());
       var->data.interpolation = INTERP_MODE_NONE;
 
       t->inputs[slot] = nir_load_var(t->b, var);
@@ -376,7 +372,7 @@ compile_setupinst(struct st_translate *t,
          nir_src_for_ssa(nir_channels(t->b, coord,
                                     (1 << tex->coord_components) - 1));
 
-      nir_ssa_dest_init(&tex->instr, &tex->dest, 4, 32, NULL);
+      nir_ssa_dest_init(&tex->instr, &tex->dest, 4, 32);
       nir_builder_instr_insert(t->b, &tex->instr);
 
       t->temps[r] = &tex->dest.ssa;
@@ -461,9 +457,8 @@ st_translate_atifs_program(struct ati_fragment_shader *atifs,
    s->info.name = ralloc_asprintf(s, "ATIFS%d", program->Id);
    s->info.internal = false;
 
-   t->fragcolor = nir_variable_create(b.shader, nir_var_shader_out,
-                                      glsl_vec4_type(), "gl_FragColor");
-   t->fragcolor->data.location = FRAG_RESULT_COLOR;
+   t->fragcolor = nir_create_variable_with_location(b.shader, nir_var_shader_out,
+                                                    FRAG_RESULT_COLOR, glsl_vec4_type());
 
    st_atifs_setup_uniforms(t, program);
 

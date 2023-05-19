@@ -124,6 +124,8 @@ ir3_shader_variant(struct ir3_shader *shader, struct ir3_shader_key key,
    struct ir3_shader_variant *v;
    bool created = false;
 
+   MESA_TRACE_FUNC();
+
    /* Some shader key values may not be used by a given ir3_shader (for
     * example, fragment shader saturates in the vertex shader), so clean out
     * those flags to avoid recompiling.
@@ -248,6 +250,8 @@ create_initial_variants_async(void *job, void *gdata, int thread_index)
    struct ir3_shader_state *hwcso = job;
    struct util_debug_callback debug = {};
 
+   MESA_TRACE_FUNC();
+
    create_initial_variants(hwcso, &debug);
 }
 
@@ -258,6 +262,8 @@ create_initial_compute_variants_async(void *job, void *gdata, int thread_index)
    struct ir3_shader *shader = hwcso->shader;
    struct util_debug_callback debug = {};
    static struct ir3_shader_key key; /* static is implicitly zeroed */
+
+   MESA_TRACE_FUNC();
 
    ir3_shader_variant(shader, key, false, &debug);
    shader->initial_variants_done = true;
@@ -450,6 +456,8 @@ ir3_get_shader(struct ir3_shader_state *hwcso)
    if (!hwcso)
       return NULL;
 
+   MESA_TRACE_FUNC();
+
    struct ir3_shader *shader = hwcso->shader;
    perf_time (1000, "waited for %s:%s:%s variants",
               _mesa_shader_stage_to_abbrev(shader->type),
@@ -501,6 +509,8 @@ static char *
 ir3_screen_finalize_nir(struct pipe_screen *pscreen, void *nir)
 {
    struct fd_screen *screen = fd_screen(pscreen);
+
+   MESA_TRACE_FUNC();
 
    ir3_nir_lower_io_to_temporaries(nir);
    ir3_finalize_nir(screen->compiler, nir);
@@ -560,6 +570,10 @@ ir3_screen_init(struct pipe_screen *pscreen)
       .bindless_fb_read_slot = IR3_BINDLESS_IMAGE_OFFSET +
                                IR3_BINDLESS_IMAGE_COUNT - 1 - screen->max_rts,
    };
+
+   if (screen->gen >= 6) {
+      options.lower_base_vertex = true;
+   }
    screen->compiler = ir3_compiler_create(screen->dev, screen->dev_id, &options);
 
    /* TODO do we want to limit things to # of fast cores, or just limit

@@ -32,6 +32,7 @@
 #include "pvr_job_context.h"
 #include "pvr_job_compute.h"
 #include "pvr_private.h"
+#include "pvr_types.h"
 #include "pvr_winsys.h"
 #include "util/macros.h"
 
@@ -69,9 +70,8 @@ pvr_submit_info_stream_init(struct pvr_compute_ctx *ctx,
    stream_ptr += pvr_cmd_length(CR_CDM_CONTEXT_STATE_BASE);
 
    pvr_csb_pack (stream_ptr, CR_CDM_CONTEXT_PDS1, state) {
-      /* Convert the data size from dwords to bytes. */
       const uint32_t load_program_data_size =
-         ctx_switch->sr[0].pds.load_program.data_size * 4U;
+         PVR_DW_TO_BYTES(ctx_switch->sr[0].pds.load_program.data_size);
 
       state.pds_seq_dep = false;
       state.usc_seq_dep = false;

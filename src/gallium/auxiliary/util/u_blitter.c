@@ -607,8 +607,7 @@ void util_blitter_set_texture_multisample(struct blitter_context *blitter,
 void util_blitter_set_running_flag(struct blitter_context *blitter)
 {
    if (blitter->running) {
-      _debug_printf("u_blitter:%i: Caught recursion. This is a driver bug.\n",
-                    __LINE__);
+      _debug_printf("u_blitter:%i: Caught recursion. This is a driver bug.\n", __LINE__);
    }
    blitter->running = true;
 

@@ -188,7 +188,7 @@ _egl_relax_end(_EGLDisplay *disp, _EGLResource **rs, unsigned rs_count)
 
 /**
  * Helper to relax (drop) the EGL BDL over it's body, optionally holding
- * a reference to a list of _EGLResource's until the lock is re-aquired,
+ * a reference to a list of _EGLResource's until the lock is re-acquired,
  * protecting the resources from destruction while the BDL is dropped.
  */
 #define egl_relax(disp, ...) \

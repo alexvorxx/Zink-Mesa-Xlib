@@ -172,8 +172,8 @@ get_texture_size(struct ycbcr_state *state, nir_deref_instr *texture)
    tex->src[0].src_type = nir_tex_src_texture_deref;
    tex->src[0].src = nir_src_for_ssa(&texture->dest.ssa);
 
-   nir_ssa_dest_init(&tex->instr, &tex->dest,
-                     nir_tex_instr_dest_size(tex), 32, NULL);
+   nir_ssa_dest_init(&tex->instr, &tex->dest, nir_tex_instr_dest_size(tex),
+                     32);
    nir_builder_instr_insert(b, &tex->instr);
 
    state->image_size = nir_i2f32(b, &tex->dest.ssa);
@@ -273,7 +273,7 @@ create_plane_tex_instr_implicit(struct ycbcr_state *state,
 
    nir_ssa_dest_init(&tex->instr, &tex->dest,
                      old_tex->dest.ssa.num_components,
-                     nir_dest_bit_size(old_tex->dest), NULL);
+                     nir_dest_bit_size(old_tex->dest));
    nir_builder_instr_insert(b, &tex->instr);
 
    return &tex->dest.ssa;

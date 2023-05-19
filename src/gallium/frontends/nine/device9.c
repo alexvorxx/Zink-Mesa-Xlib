@@ -440,25 +440,25 @@ NineDevice9_ctor( struct NineDevice9 *This,
 
     /* Create constant buffers. */
     {
-        unsigned max_const_vs, max_const_ps;
+        unsigned max_const_vs;
 
         /* vs 3.0: >= 256 float constants, but for cards with exactly 256 slots,
          * we have to take in some more slots for int and bool*/
         max_const_vs = _min(pScreen->get_shader_param(pScreen, PIPE_SHADER_VERTEX,
                                 PIPE_SHADER_CAP_MAX_CONST_BUFFER0_SIZE) /
                                 sizeof(float[4]),
-                            NINE_MAX_CONST_ALL);
+                            NINE_MAX_CONST_ALL_VS);
         /* ps 3.0: 224 float constants. All cards supported support at least
          * 256 constants for ps */
-        max_const_ps = NINE_MAX_CONST_F_PS3 + (NINE_MAX_CONST_I + NINE_MAX_CONST_B / 4);
 
-        This->max_vs_const_f = max_const_vs -
-                               (NINE_MAX_CONST_I + NINE_MAX_CONST_B / 4);
-        This->max_ps_const_f = max_const_ps -
+        if (max_const_vs == NINE_MAX_CONST_ALL_VS)
+            This->max_vs_const_f = NINE_MAX_CONST_F;
+        else /* Do not count SPE constants as we won't use them */
+            This->max_vs_const_f = max_const_vs -
                                (NINE_MAX_CONST_I + NINE_MAX_CONST_B / 4);
 
         This->vs_const_size = max_const_vs * sizeof(float[4]);
-        This->ps_const_size = max_const_ps * sizeof(float[4]);
+        This->ps_const_size = NINE_MAX_CONST_ALL_PS * sizeof(float[4]);
         /* Include space for I,B constants for user constbuf. */
         if (This->may_swvp) {
             This->state.vs_const_f = CALLOC(NINE_MAX_CONST_F_SWVP * sizeof(float[4]),1);
@@ -484,11 +484,9 @@ NineDevice9_ctor( struct NineDevice9 *This,
         This->context.vs_const_f = CALLOC(This->vs_const_size, 1);
         This->state.ps_const_f = CALLOC(This->ps_const_size, 1);
         This->context.ps_const_f = CALLOC(This->ps_const_size, 1);
-        This->context.ps_lconstf_temp = CALLOC(This->ps_const_size,1);
         if (!This->state.vs_const_f || !This->context.vs_const_f ||
             !This->state.ps_const_f || !This->context.ps_const_f ||
             !This->state.vs_lconstf_temp || !This->context.vs_lconstf_temp ||
-            !This->context.ps_lconstf_temp ||
             !This->state.vs_const_i || !This->context.vs_const_i ||
             !This->state.vs_const_b || !This->context.vs_const_b)
             return E_OUTOFMEMORY;
@@ -557,9 +555,30 @@ NineDevice9_ctor( struct NineDevice9 *This,
     This->driver_caps.user_sw_vbufs = This->screen_sw->get_param(This->screen_sw, PIPE_CAP_USER_VERTEX_BUFFERS);
     This->vertex_uploader = This->csmt_active ? This->pipe_secondary->stream_uploader : This->context.pipe->stream_uploader;
     This->driver_caps.window_space_position_support = GET_PCAP(VS_WINDOW_SPACE_POSITION);
+    This->driver_caps.disabling_depth_clipping_support = GET_PCAP(DEPTH_CLIP_DISABLE);
     This->driver_caps.vs_integer = pScreen->get_shader_param(pScreen, PIPE_SHADER_VERTEX, PIPE_SHADER_CAP_INTEGERS);
     This->driver_caps.ps_integer = pScreen->get_shader_param(pScreen, PIPE_SHADER_FRAGMENT, PIPE_SHADER_CAP_INTEGERS);
     This->driver_caps.offset_units_unscaled = GET_PCAP(POLYGON_OFFSET_UNITS_UNSCALED);
+    This->driver_caps.alpha_test_emulation = !GET_PCAP(ALPHA_TEST);
+    /* Always write pointsize output when the driver doesn't support point_size_per_vertex = 0.
+     * TODO: Only generate pointsize for draw calls that need it */
+    This->driver_caps.always_output_pointsize = !GET_PCAP(POINT_SIZE_FIXED);
+    This->driver_caps.emulate_ucp = !(GET_PCAP(CLIP_PLANES) == 1 || GET_PCAP(CLIP_PLANES) >= 8);
+    This->driver_caps.shader_emulate_features =  pCTX->force_emulation;
+
+    if (pCTX->force_emulation) {
+        This->driver_caps.user_sw_vbufs = false;
+        This->driver_caps.window_space_position_support = false;
+        This->driver_caps.alpha_test_emulation = true;
+        This->driver_caps.always_output_pointsize = true;
+        This->driver_caps.emulate_ucp = true;
+    }
+
+    /* Disable SPE constants if there is no room for them */
+    if (This->max_vs_const_f != NINE_MAX_CONST_F) {
+        This->driver_caps.always_output_pointsize = false;
+        This->driver_caps.emulate_ucp = false;
+    }
 
     This->context.inline_constants = pCTX->shader_inline_constants;
     /* Code would be needed when integers are not available to correctly
@@ -626,7 +645,6 @@ NineDevice9_dtor( struct NineDevice9 *This )
     FREE(This->context.ps_const_f);
     FREE(This->state.vs_lconstf_temp);
     FREE(This->context.vs_lconstf_temp);
-    FREE(This->context.ps_lconstf_temp);
     FREE(This->state.vs_const_i);
     FREE(This->context.vs_const_i);
     FREE(This->state.vs_const_b);
@@ -2516,7 +2534,7 @@ NineDevice9_CreateStateBlock( struct NineDevice9 *This,
           NINE_STATE_PS | NINE_STATE_PS_CONST | NINE_STATE_FF_PS_CONSTS;
        memcpy(dst->changed.rs,
               nine_render_states_pixel, sizeof(dst->changed.rs));
-       nine_ranges_insert(&dst->changed.ps_const_f, 0, This->max_ps_const_f,
+       nine_ranges_insert(&dst->changed.ps_const_f, 0, NINE_MAX_CONST_F_PS3,
                           &This->range_pool);
        dst->changed.ps_const_i = 0xffff;
        dst->changed.ps_const_b = 0xffff;

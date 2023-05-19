@@ -471,10 +471,6 @@ spec@arb_texture_rg@texwrap formats-float bordercolor@GL_R16F- border color only
 spec@arb_texture_rg@texwrap formats-float bordercolor@GL_R32F- border color only,Fail
 spec@arb_texture_rg@texwrap formats-float bordercolor@GL_RG16F- border color only,Fail
 spec@arb_texture_rg@texwrap formats-float bordercolor@GL_RG32F- border color only,Fail
-spec@arb_texture_view@rendering-layers-image,Fail
-spec@arb_texture_view@rendering-layers-image@layers rendering of image1DArray,Fail
-spec@arb_texture_view@rendering-layers-image@layers rendering of image2DArray,Fail
-spec@arb_texture_view@rendering-layers-image@layers rendering of imageCubeArray,Fail
 spec@arb_transform_feedback_overflow_query@arb_transform_feedback_overflow_query-basic,Fail
 spec@arb_transform_feedback_overflow_query@arb_transform_feedback_overflow_query-basic@arb_transform_feedback_overflow_query-buffer_object_0,Fail
 spec@arb_transform_feedback_overflow_query@arb_transform_feedback_overflow_query-basic@arb_transform_feedback_overflow_query-buffer_object_2,Fail
@@ -708,3 +704,4 @@ spec@!opengl 1.0@depth-clear-precision-check,Fail
 spec@!opengl 1.0@depth-clear-precision-check@depth32,Fail
 
 spec@!opengl 1.1@line-smooth-stipple,Fail
+spec@arb_fragment_program_shadow@tex-shadow2dnotdepth,Crash

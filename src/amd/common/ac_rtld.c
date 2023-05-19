@@ -433,34 +433,7 @@ bool ac_rtld_open(struct ac_rtld_binary *binary, struct ac_rtld_open_info i)
    binary->rx_size += rx_size;
    binary->exec_size = exec_size;
 
-   /* The SQ fetches up to N cache lines of 16 dwords
-    * ahead of the PC, configurable by SH_MEM_CONFIG and
-    * S_INST_PREFETCH. This can cause two issues:
-    *
-    * (1) Crossing a page boundary to an unmapped page. The logic
-    *     does not distinguish between a required fetch and a "mere"
-    *     prefetch and will fault.
-    *
-    * (2) Prefetching instructions that will be changed for a
-    *     different shader.
-    *
-    * (2) is not currently an issue because we flush the I$ at IB
-    * boundaries, but (1) needs to be addressed. Due to buffer
-    * suballocation, we just play it safe.
-    */
-   unsigned prefetch_distance = 0;
-
-   if (!i.info->has_graphics && i.info->family >= CHIP_MI200)
-      prefetch_distance = 16;
-   else if (i.info->gfx_level >= GFX10)
-      prefetch_distance = 3;
-
-   if (prefetch_distance) {
-      if (i.info->gfx_level >= GFX11)
-         binary->rx_size = align(binary->rx_size + prefetch_distance * 64, 128);
-      else
-         binary->rx_size = align(binary->rx_size + prefetch_distance * 64, 64);
-   }
+   binary->rx_size = ac_align_shader_binary_for_prefetch(i.info, binary->rx_size);
 
    return true;
 

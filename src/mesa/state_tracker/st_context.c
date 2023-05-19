@@ -177,7 +177,8 @@ st_invalidate_state(struct gl_context *ctx)
       if (ctx->FragmentProgram._Current) {
          struct gl_program *fp = ctx->FragmentProgram._Current;
 
-         if (fp->ExternalSamplersUsed || fp->ati_fs)
+         if (fp->ExternalSamplersUsed || fp->ati_fs ||
+            (!fp->shader_program && fp->ShadowSamplers))
             ctx->NewDriverState |= ST_NEW_FS_STATE;
       }
    }

@@ -56,7 +56,10 @@ deref_offset_var(nir_builder *b, unsigned binding, unsigned offset_align_state)
 static bool
 lower_instr(nir_intrinsic_instr *instr, unsigned ssbo_offset, nir_builder *b, unsigned offset_align_state)
 {
-   nir_intrinsic_op op;
+   nir_intrinsic_op op = nir_intrinsic_ssbo_atomic;
+
+   /* Initialize to something to avoid spurious compiler warning */
+   nir_atomic_op atomic_op = nir_atomic_op_iadd;
 
    b->cursor = nir_before_instr(&instr->instr);
 
@@ -81,31 +84,32 @@ lower_instr(nir_intrinsic_instr *instr, unsigned ssbo_offset, nir_builder *b, un
    case nir_intrinsic_atomic_counter_pre_dec:
    case nir_intrinsic_atomic_counter_post_dec:
       /* inc and dec get remapped to add: */
-      op = nir_intrinsic_ssbo_atomic_add;
+      atomic_op = nir_atomic_op_iadd;
       break;
    case nir_intrinsic_atomic_counter_read:
       op = nir_intrinsic_load_ssbo;
       break;
    case nir_intrinsic_atomic_counter_min:
-      op = nir_intrinsic_ssbo_atomic_umin;
+      atomic_op = nir_atomic_op_umin;
       break;
    case nir_intrinsic_atomic_counter_max:
-      op = nir_intrinsic_ssbo_atomic_umax;
+      atomic_op = nir_atomic_op_umax;
       break;
    case nir_intrinsic_atomic_counter_and:
-      op = nir_intrinsic_ssbo_atomic_and;
+      atomic_op = nir_atomic_op_iand;
       break;
    case nir_intrinsic_atomic_counter_or:
-      op = nir_intrinsic_ssbo_atomic_or;
+      atomic_op = nir_atomic_op_ior;
       break;
    case nir_intrinsic_atomic_counter_xor:
-      op = nir_intrinsic_ssbo_atomic_xor;
+      atomic_op = nir_atomic_op_ixor;
       break;
    case nir_intrinsic_atomic_counter_exchange:
-      op = nir_intrinsic_ssbo_atomic_exchange;
+      atomic_op = nir_atomic_op_xchg;
       break;
    case nir_intrinsic_atomic_counter_comp_swap:
-      op = nir_intrinsic_ssbo_atomic_comp_swap;
+      op = nir_intrinsic_ssbo_atomic_swap;
+      atomic_op = nir_atomic_op_cmpxchg;
       break;
    default:
       return false;
@@ -121,6 +125,8 @@ lower_instr(nir_intrinsic_instr *instr, unsigned ssbo_offset, nir_builder *b, un
    }
    nir_intrinsic_instr *new_instr =
          nir_intrinsic_instr_create(b->shader, op);
+   if (nir_intrinsic_has_atomic_op(new_instr))
+      nir_intrinsic_set_atomic_op(new_instr, atomic_op);
 
    /* a couple instructions need special handling since they don't map
     * 1:1 with ssbo atomics
@@ -152,8 +158,7 @@ lower_instr(nir_intrinsic_instr *instr, unsigned ssbo_offset, nir_builder *b, un
       new_instr->src[0] = nir_src_for_ssa(buffer);
       nir_src_copy(&new_instr->src[1], &instr->src[0], &new_instr->instr);
       nir_src_copy(&new_instr->src[2], &instr->src[1], &new_instr->instr);
-      if (op == nir_intrinsic_ssbo_atomic_comp_swap ||
-          op == nir_intrinsic_ssbo_atomic_fcomp_swap)
+      if (op == nir_intrinsic_ssbo_atomic_swap)
          nir_src_copy(&new_instr->src[3], &instr->src[2], &new_instr->instr);
       break;
    }
@@ -176,8 +181,7 @@ lower_instr(nir_intrinsic_instr *instr, unsigned ssbo_offset, nir_builder *b, un
    }
 
    nir_ssa_dest_init(&new_instr->instr, &new_instr->dest,
-                     instr->dest.ssa.num_components,
-                     instr->dest.ssa.bit_size, NULL);
+                     instr->dest.ssa.num_components, instr->dest.ssa.bit_size);
    nir_instr_insert_before(&instr->instr, &new_instr->instr);
    nir_instr_remove(&instr->instr);
 

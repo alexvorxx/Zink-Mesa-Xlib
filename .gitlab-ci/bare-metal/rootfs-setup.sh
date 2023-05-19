@@ -23,10 +23,8 @@ cp "$SCRIPTS_DIR/setup-test-env.sh" "$rootfs_dst/"
 set +x
 
 # Pass through relevant env vars from the gitlab job to the baremetal init script
-"$CI_COMMON"/generate-env.sh > $rootfs_dst/set-job-env-vars.sh
-chmod +x $rootfs_dst/set-job-env-vars.sh
 echo "Variables passed through:"
-cat $rootfs_dst/set-job-env-vars.sh
+"$CI_COMMON"/generate-env.sh | tee $rootfs_dst/set-job-env-vars.sh
 
 set -x
 

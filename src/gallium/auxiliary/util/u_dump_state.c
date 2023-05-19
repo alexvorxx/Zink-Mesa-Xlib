@@ -356,7 +356,7 @@ util_dump_rasterizer_state(FILE *stream, const struct pipe_rasterizer_state *sta
    util_dump_member(stream, uint, state, sprite_coord_enable);
    util_dump_member(stream, bool, state, sprite_coord_mode);
    util_dump_member(stream, bool, state, point_quad_rasterization);
-   util_dump_member(stream, bool, state, point_tri_clip);
+   util_dump_member(stream, bool, state, point_line_tri_clip);
    util_dump_member(stream, bool, state, point_size_per_vertex);
    util_dump_member(stream, bool, state, multisample);
    util_dump_member(stream, bool, state, line_smooth);

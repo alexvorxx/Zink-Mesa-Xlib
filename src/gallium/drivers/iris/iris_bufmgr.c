@@ -776,11 +776,13 @@ fail:
 static enum iris_heap
 flags_to_heap(struct iris_bufmgr *bufmgr, unsigned flags)
 {
-   if (bufmgr->vram.size > 0 &&
-       !(flags & BO_ALLOC_SMEM) &&
-       !(flags & BO_ALLOC_COHERENT)) {
-      return flags & BO_ALLOC_LMEM ? IRIS_HEAP_DEVICE_LOCAL :
-                                     IRIS_HEAP_DEVICE_LOCAL_PREFERRED;
+   if (bufmgr->vram.size > 0) {
+      if ((flags & BO_ALLOC_SMEM) || (flags & BO_ALLOC_COHERENT))
+         return IRIS_HEAP_SYSTEM_MEMORY;
+      if ((flags & BO_ALLOC_LMEM) ||
+          ((flags & BO_ALLOC_SCANOUT) && !(flags & BO_ALLOC_SHARED)))
+         return IRIS_HEAP_DEVICE_LOCAL;
+      return IRIS_HEAP_DEVICE_LOCAL_PREFERRED;
    } else {
       assert(!(flags & BO_ALLOC_LMEM));
       return IRIS_HEAP_SYSTEM_MEMORY;
@@ -1016,8 +1018,7 @@ alloc_fresh_bo(struct iris_bufmgr *bufmgr, uint64_t bo_size, unsigned flags)
       case IRIS_HEAP_DEVICE_LOCAL_PREFERRED:
          /* For vram allocations, still use system memory as a fallback. */
          regions[num_regions++] = bufmgr->vram.region;
-         if (!(flags & BO_ALLOC_SCANOUT))
-            regions[num_regions++] = bufmgr->sys.region;
+         regions[num_regions++] = bufmgr->sys.region;
          break;
       case IRIS_HEAP_DEVICE_LOCAL:
          regions[num_regions++] = bufmgr->vram.region;
@@ -1060,6 +1061,31 @@ iris_heap_to_string[IRIS_HEAP_MAX] = {
    [IRIS_HEAP_DEVICE_LOCAL_PREFERRED] = "local-preferred",
 };
 
+static enum iris_mmap_mode
+iris_bo_alloc_get_mmap_mode(struct iris_bufmgr *bufmgr, enum iris_heap heap,
+                            unsigned flags)
+{
+   if (bufmgr->devinfo.kmd_type == INTEL_KMD_TYPE_XE)
+      return iris_xe_bo_flags_to_mmap_mode(bufmgr, heap, flags);
+
+   /* i915 */
+   const bool local = heap != IRIS_HEAP_SYSTEM_MEMORY;
+   const bool is_coherent = bufmgr->devinfo.has_llc ||
+                            (bufmgr->vram.size > 0 && !local) ||
+                            (flags & BO_ALLOC_COHERENT);
+   const bool is_scanout = (flags & BO_ALLOC_SCANOUT) != 0;
+   enum iris_mmap_mode mmap_mode;
+
+   if (!intel_vram_all_mappable(&bufmgr->devinfo) && heap == IRIS_HEAP_DEVICE_LOCAL)
+      mmap_mode = IRIS_MMAP_NONE;
+   else if (!local && is_coherent && !is_scanout)
+      mmap_mode = IRIS_MMAP_WB;
+   else
+      mmap_mode = IRIS_MMAP_WC;
+
+   return mmap_mode;
+}
+
 struct iris_bo *
 iris_bo_alloc(struct iris_bufmgr *bufmgr,
               const char *name,
@@ -1071,7 +1097,6 @@ iris_bo_alloc(struct iris_bufmgr *bufmgr,
    struct iris_bo *bo;
    unsigned int page_size = getpagesize();
    enum iris_heap heap = flags_to_heap(bufmgr, flags);
-   bool local = heap != IRIS_HEAP_SYSTEM_MEMORY;
    struct bo_cache_bucket *bucket = bucket_for_size(bufmgr, size, heap, flags);
 
    if (memzone != IRIS_MEMZONE_OTHER || (flags & BO_ALLOC_COHERENT))
@@ -1087,19 +1112,7 @@ iris_bo_alloc(struct iris_bufmgr *bufmgr,
     */
    uint64_t bo_size =
       bucket ? bucket->size : MAX2(ALIGN(size, page_size), page_size);
-
-   bool is_coherent = bufmgr->devinfo.has_llc ||
-                      (bufmgr->vram.size > 0 && !local) ||
-                      (flags & BO_ALLOC_COHERENT);
-   bool is_scanout = (flags & BO_ALLOC_SCANOUT) != 0;
-
-   enum iris_mmap_mode mmap_mode;
-   if (!intel_vram_all_mappable(&bufmgr->devinfo) && heap == IRIS_HEAP_DEVICE_LOCAL)
-      mmap_mode = IRIS_MMAP_NONE;
-   else if (!local && is_coherent && !is_scanout)
-      mmap_mode = IRIS_MMAP_WB;
-   else
-      mmap_mode = IRIS_MMAP_WC;
+   enum iris_mmap_mode mmap_mode = iris_bo_alloc_get_mmap_mode(bufmgr, heap, flags);
 
    simple_mtx_lock(&bufmgr->lock);
 
@@ -1192,6 +1205,19 @@ iris_bufmgr_bo_close(struct iris_bufmgr *bufmgr, uint32_t gem_handle)
    return iris_bo_close(bufmgr->fd, gem_handle);
 }
 
+static enum iris_mmap_mode
+iris_bo_create_userptr_get_mmap_mode(struct iris_bufmgr *bufmgr)
+{
+   switch (bufmgr->devinfo.kmd_type) {
+   case INTEL_KMD_TYPE_I915:
+      return IRIS_MMAP_WB;
+   case INTEL_KMD_TYPE_XE:
+      return iris_xe_bo_flags_to_mmap_mode(bufmgr, IRIS_HEAP_SYSTEM_MEMORY, 0);
+   default:
+      return IRIS_MMAP_NONE;
+   }
+}
+
 struct iris_bo *
 iris_bo_create_userptr(struct iris_bufmgr *bufmgr, const char *name,
                        void *ptr, size_t size,
@@ -1239,7 +1265,8 @@ iris_bo_create_userptr(struct iris_bufmgr *bufmgr, const char *name,
    bo->real.userptr = true;
    bo->index = -1;
    bo->idle = true;
-   bo->real.mmap_mode = IRIS_MMAP_WB;
+   bo->real.heap = IRIS_HEAP_SYSTEM_MEMORY;
+   bo->real.mmap_mode = iris_bo_create_userptr_get_mmap_mode(bufmgr);
 
    return bo;
 
@@ -2100,6 +2127,20 @@ init_cache_buckets(struct iris_bufmgr *bufmgr, enum iris_heap heap)
    }
 }
 
+static enum iris_mmap_mode
+iris_bo_alloc_aux_map_get_mmap_mode(struct iris_bufmgr *bufmgr,
+                                    enum iris_heap heap)
+{
+   switch (bufmgr->devinfo.kmd_type) {
+   case INTEL_KMD_TYPE_I915:
+      return heap != IRIS_HEAP_SYSTEM_MEMORY ? IRIS_MMAP_WC : IRIS_MMAP_WB;
+   case INTEL_KMD_TYPE_XE:
+      return iris_xe_bo_flags_to_mmap_mode(bufmgr, heap, 0);
+   default:
+      return IRIS_MMAP_NONE;
+   }
+}
+
 static struct intel_buffer *
 intel_aux_map_buffer_alloc(void *driver_ctx, uint32_t size)
 {
@@ -2134,8 +2175,8 @@ intel_aux_map_buffer_alloc(void *driver_ctx, uint32_t size)
    bo->index = -1;
    bo->real.kflags = EXEC_OBJECT_SUPPORTS_48B_ADDRESS | EXEC_OBJECT_PINNED |
                      EXEC_OBJECT_CAPTURE;
-   bo->real.mmap_mode =
-      bo->real.heap != IRIS_HEAP_SYSTEM_MEMORY ? IRIS_MMAP_WC : IRIS_MMAP_WB;
+   bo->real.mmap_mode = iris_bo_alloc_aux_map_get_mmap_mode(bufmgr,
+                                                            bo->real.heap);
 
    buf->driver_bo = bo;
    buf->gpu = bo->address;

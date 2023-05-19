@@ -285,6 +285,10 @@ ir3_compiler_create(struct fd_device *dev, const struct fd_dev_id *dev_id,
       compiler->nir_options.force_indirect_unrolling = nir_var_all;
    }
 
+   if (options->lower_base_vertex) {
+      compiler->nir_options.lower_base_vertex = true;
+   }
+
    /* 16-bit ALU op generation is mostly controlled by frontend compiler options, but
     * this core NIR option enables some optimizations of 16-bit operations.
     */

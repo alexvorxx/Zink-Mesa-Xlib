@@ -92,6 +92,6 @@ static inline unsigned int DebugBitFromType(EGLenum type)
  * Perform validity checks on a generic pointer.
  */
 extern EGLBoolean
-_eglPointerIsDereferencable(void *p);
+_eglPointerIsDereferenceable(void *p);
 
 #endif /* EGLGLOBALS_INCLUDED */

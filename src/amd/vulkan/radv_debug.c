@@ -101,14 +101,14 @@ radv_finish_trace(struct radv_device *device)
 }
 
 static void
-radv_dump_trace(struct radv_device *device, struct radeon_cmdbuf *cs, FILE *f)
+radv_dump_trace(const struct radv_device *device, struct radeon_cmdbuf *cs, FILE *f)
 {
    fprintf(f, "Trace ID: %x\n", *device->trace_id_ptr);
    device->ws->cs_dump(cs, f, (const int *)device->trace_id_ptr, 2);
 }
 
 static void
-radv_dump_mmapped_reg(struct radv_device *device, FILE *f, unsigned offset)
+radv_dump_mmapped_reg(const struct radv_device *device, FILE *f, unsigned offset)
 {
    struct radeon_winsys *ws = device->ws;
    uint32_t value;
@@ -119,9 +119,9 @@ radv_dump_mmapped_reg(struct radv_device *device, FILE *f, unsigned offset)
 }
 
 static void
-radv_dump_debug_registers(struct radv_device *device, FILE *f)
+radv_dump_debug_registers(const struct radv_device *device, FILE *f)
 {
-   struct radeon_info *info = &device->physical_device->rad_info;
+   const struct radeon_info *info = &device->physical_device->rad_info;
 
    fprintf(f, "Memory-mapped registers:\n");
    radv_dump_mmapped_reg(device, f, R_008010_GRBM_STATUS);
@@ -196,7 +196,7 @@ radv_dump_combined_image_sampler_descriptor(enum amd_gfx_level gfx_level,
 }
 
 static void
-radv_dump_descriptor_set(struct radv_device *device, struct radv_descriptor_set *set, unsigned id,
+radv_dump_descriptor_set(const struct radv_device *device, const struct radv_descriptor_set *set, unsigned id,
                          FILE *f)
 {
    enum amd_gfx_level gfx_level = device->physical_device->rad_info.gfx_level;
@@ -304,7 +304,7 @@ si_add_split_disasm(const char *disasm, uint64_t start_addr, unsigned *num,
 }
 
 static void
-radv_dump_annotated_shader(struct radv_shader *shader, gl_shader_stage stage,
+radv_dump_annotated_shader(const struct radv_shader *shader, gl_shader_stage stage,
                            struct ac_wave_info *waves, unsigned num_waves, FILE *f)
 {
    uint64_t start_addr, end_addr;
@@ -371,7 +371,7 @@ radv_dump_annotated_shader(struct radv_shader *shader, gl_shader_stage stage,
 }
 
 static void
-radv_dump_spirv(struct radv_shader *shader, const char *sha1, const char *dump_dir)
+radv_dump_spirv(const struct radv_shader *shader, const char *sha1, const char *dump_dir)
 {
    char dump_path[512];
    FILE *f;
@@ -418,7 +418,7 @@ radv_dump_shader(struct radv_device *device, struct radv_pipeline *pipeline,
 
 static void
 radv_dump_vertex_descriptors(const struct radv_device *device,
-                             struct radv_graphics_pipeline *pipeline, FILE *f)
+                             const struct radv_graphics_pipeline *pipeline, FILE *f)
 {
    struct radv_shader *vs = radv_get_shader(pipeline->base.shaders, MESA_SHADER_VERTEX);
    void *ptr = (uint64_t *)device->trace_id_ptr;
@@ -452,7 +452,7 @@ radv_get_saved_vs_prolog(const struct radv_device *device)
 }
 
 static void
-radv_dump_vs_prolog(const struct radv_device *device, struct radv_graphics_pipeline *pipeline,
+radv_dump_vs_prolog(const struct radv_device *device, const struct radv_graphics_pipeline *pipeline,
                     FILE *f)
 {
    struct radv_shader_part *vs_prolog = radv_get_saved_vs_prolog(device);
@@ -589,7 +589,7 @@ radv_dump_dmesg(FILE *f)
 }
 
 void
-radv_dump_enabled_options(struct radv_device *device, FILE *f)
+radv_dump_enabled_options(const struct radv_device *device, FILE *f)
 {
    uint64_t mask;
 
@@ -617,9 +617,9 @@ radv_dump_enabled_options(struct radv_device *device, FILE *f)
 }
 
 static void
-radv_dump_app_info(struct radv_device *device, FILE *f)
+radv_dump_app_info(const struct radv_device *device, FILE *f)
 {
-   struct radv_instance *instance = device->instance;
+   const struct radv_instance *instance = device->instance;
 
    fprintf(f, "Application name: %s\n", instance->vk.app_info.app_name);
    fprintf(f, "Application version: %d\n", instance->vk.app_info.app_version);
@@ -633,9 +633,9 @@ radv_dump_app_info(struct radv_device *device, FILE *f)
 }
 
 static void
-radv_dump_device_name(struct radv_device *device, FILE *f)
+radv_dump_device_name(const struct radv_device *device, FILE *f)
 {
-   struct radeon_info *info = &device->physical_device->rad_info;
+   const struct radeon_info *info = &device->physical_device->rad_info;
 #ifndef _WIN32
    char kernel_version[128] = {0};
    struct utsname uname_data;
@@ -654,17 +654,17 @@ radv_dump_device_name(struct radv_device *device, FILE *f)
 }
 
 static void
-radv_dump_umr_ring(struct radv_queue *queue, FILE *f)
+radv_dump_umr_ring(const struct radv_queue *queue, FILE *f)
 {
-   enum amd_ip_type ring = radv_queue_ring(queue);
-   struct radv_device *device = queue->device;
+   const enum amd_ip_type ring = radv_queue_ring(queue);
+   const struct radv_device *device = queue->device;
    char cmd[128];
 
    /* TODO: Dump compute ring. */
    if (ring != AMD_IP_GFX)
       return;
 
-   sprintf(cmd, "umr -R %s 2>&1",
+   sprintf(cmd, "umr -RS %s 2>&1",
            device->physical_device->rad_info.gfx_level >= GFX10 ? "gfx_0.0.0" : "gfx");
 
    fprintf(f, "\nUMR GFX ring:\n\n");

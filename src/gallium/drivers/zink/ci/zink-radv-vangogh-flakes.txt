@@ -48,3 +48,5 @@ spec@arb_shader_image_load_store@shader-mem-barrier@Vertex shader/'volatile' qua
 spec@arb_shader_image_load_store@shader-mem-barrier@Vertex shader/'volatile' qualifier memory barrier test/modulus=64
 spec@arb_texture_multisample@arb_texture_multisample-dsa-texelfetch
 spec@arb_texture_multisample@arb_texture_multisample-dsa-texelfetch@Texture type: GL_RGB9_E5
+
+spec@arb_copy_image@arb_copy_image-targets .* 32 32 1 gl_texture_1d 32 1 1 11 23 0 5 0 0 14 1 1

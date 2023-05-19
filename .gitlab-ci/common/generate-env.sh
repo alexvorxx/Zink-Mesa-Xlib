@@ -85,7 +85,6 @@ for var in \
     MESA_LOADER_DRIVER_OVERRIDE \
     MESA_TEMPLATES_COMMIT \
     MESA_VK_IGNORE_CONFORMANCE_WARNING \
-    MESA_SPIRV_LOG_LEVEL \
     MINIO_HOST \
     MINIO_RESULTS_UPLOAD \
     NIR_DEBUG \
@@ -118,6 +117,7 @@ for var in \
     VK_ICD_FILENAMES \
     VKD3D_PROTON_RESULTS \
     ZINK_DESCRIPTORS \
+    ZINK_DEBUG \
     LVP_POISON_MEMORY \
     ; do
   if [ -n "${!var+x}" ]; then

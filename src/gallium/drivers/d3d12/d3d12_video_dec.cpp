@@ -39,7 +39,6 @@
 #include "util/u_inlines.h"
 #include "util/u_memory.h"
 #include "util/u_video.h"
-#include "util/vl_vlc.h"
 
 struct pipe_video_codec *
 d3d12_video_create_decoder(struct pipe_context *context, const struct pipe_video_codec *codec)
@@ -1235,36 +1234,6 @@ d3d12_video_decoder_get_frame_info(
       const uint32_t AlignmentMask = 31;
       *pHeight = (*pHeight + AlignmentMask) & ~AlignmentMask;
    }
-}
-
-///
-/// Returns the number of bytes starting from [buf.data() + buffsetOffset] where the _targetCode_ is found
-/// Returns -1 if start code not found
-///
-int
-d3d12_video_decoder_get_next_startcode_offset(std::vector<uint8_t> &buf,
-                                              unsigned int bufferOffset,
-                                              unsigned int targetCode,
-                                              unsigned int targetCodeBitSize,
-                                              unsigned int numBitsToSearchIntoBuffer)
-{
-   struct vl_vlc vlc = { 0 };
-
-   // Shorten the buffer to be [buffetOffset, endOfBuf)
-   unsigned int bufSize = buf.size() - bufferOffset;
-   uint8_t *bufPtr = buf.data();
-   bufPtr += bufferOffset;
-
-   /* search the first numBitsToSearchIntoBuffer bytes for a startcode */
-   vl_vlc_init(&vlc, 1, (const void *const *) &bufPtr, &bufSize);
-   for (uint i = 0; i < numBitsToSearchIntoBuffer && vl_vlc_bits_left(&vlc) >= targetCodeBitSize; ++i) {
-      if (vl_vlc_peekbits(&vlc, targetCodeBitSize) == targetCode)
-         return i;
-      vl_vlc_eatbits(&vlc, 8);   // Stride is 8 bits = 1 byte
-      vl_vlc_fillbits(&vlc);
-   }
-
-   return -1;
 }
 
 void

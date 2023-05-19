@@ -196,6 +196,8 @@ enum
    DBG_NIR,
    DBG_INIT_LLVM,
    DBG_LLVM,
+   DBG_INIT_ACO,
+   DBG_ACO,
    DBG_ASM,
 
    /* Shader compiler options the shader cache should be aware of: */
@@ -260,6 +262,7 @@ enum
 
    DBG_TMZ,
    DBG_SQTT,
+   DBG_USE_ACO,
 
    DBG_COUNT
 };
@@ -962,7 +965,14 @@ struct si_context {
    struct u_log_context *log;
    void *query_result_shader;
    void *sh_query_result_shader;
-   struct si_resource *shadowed_regs;
+   struct {
+      /* Memory where the shadowed registers will be saved and loaded from. */
+      struct si_resource *registers;
+      /* Context Save Area: scratch area to save other required data. Only
+       * used if info->has_fw_based_mcbp is true.
+       */
+      struct si_resource *csa;
+   } shadowing;
 
    void (*emit_cache_flush)(struct si_context *ctx, struct radeon_cmdbuf *cs);
 
@@ -1076,6 +1086,7 @@ struct si_context {
 
    /* video context */
    bool vcn_has_ctx;
+   enum vcn_version vcn_ip_ver;
 
    /* shader information */
    uint64_t ps_inputs_read_or_disabled;
@@ -1211,6 +1222,7 @@ struct si_context {
    bool dpbb_force_off_profile_ps;
    bool vs_writes_viewport_index;
    bool vs_disables_clipping_viewport;
+   bool has_reset_been_notified;
 
    /* Precomputed IA_MULTI_VGT_PARAM */
    union si_vgt_param_key ia_multi_vgt_param_key;
@@ -1311,11 +1323,11 @@ struct si_context {
    void (*emit_spi_map[33])(struct si_context *sctx);
 
    /* SQTT */
-   struct ac_thread_trace_data *thread_trace;
-   struct ac_spm_trace_data spm_trace;
+   struct ac_sqtt *sqtt;
+   struct ac_spm spm;
    struct pipe_fence_handle *last_sqtt_fence;
    enum rgp_sqtt_marker_event_type sqtt_next_event;
-   bool thread_trace_enabled;
+   bool sqtt_enabled;
 
    unsigned context_flags;
 
@@ -1658,7 +1670,7 @@ void si_sqtt_write_event_marker(struct si_context* sctx, struct radeon_cmdbuf *r
                                 uint32_t instance_offset_user_data,
                                 uint32_t draw_index_user_data);
 bool si_sqtt_register_pipeline(struct si_context* sctx, struct si_sqtt_fake_pipeline *pipeline, bool is_compute);
-bool si_sqtt_pipeline_is_registered(struct ac_thread_trace_data *thread_trace_data,
+bool si_sqtt_pipeline_is_registered(struct ac_sqtt *sqtt,
                                     uint64_t pipeline_hash);
 void si_sqtt_describe_pipeline_bind(struct si_context* sctx, uint64_t pipeline_hash, int bind_point);
 void
@@ -1673,9 +1685,9 @@ void
 si_sqtt_describe_barrier_start(struct si_context* sctx, struct radeon_cmdbuf *rcs);
 void
 si_sqtt_describe_barrier_end(struct si_context* sctx, struct radeon_cmdbuf *rcs, unsigned flags);
-bool si_init_thread_trace(struct si_context *sctx);
-void si_destroy_thread_trace(struct si_context *sctx);
-void si_handle_thread_trace(struct si_context *sctx, struct radeon_cmdbuf *rcs);
+bool si_init_sqtt(struct si_context *sctx);
+void si_destroy_sqtt(struct si_context *sctx);
+void si_handle_sqtt(struct si_context *sctx, struct radeon_cmdbuf *rcs);
 
 /*
  * common helpers

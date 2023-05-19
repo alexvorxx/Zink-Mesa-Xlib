@@ -122,7 +122,7 @@ struct pipe_video_codec *si_uvd_create_decoder(struct pipe_context *context,
                                                const struct pipe_video_codec *templ)
 {
    struct si_context *ctx = (struct si_context *)context;
-   bool vcn = ctx->family >= CHIP_RAVEN;
+   bool vcn = ctx->vcn_ip_ver >= VCN_1_0_0;
 
    if (templ->entrypoint == PIPE_VIDEO_ENTRYPOINT_ENCODE) {
       if (vcn) {
@@ -135,7 +135,7 @@ struct pipe_video_codec *si_uvd_create_decoder(struct pipe_context *context,
       }
    }
 
-   if (ctx->family == CHIP_GFX1100)
+   if (ctx->vcn_ip_ver == VCN_4_0_0)
       ctx->vcn_has_ctx = true;
 
    return (vcn) ? radeon_create_decoder(context, templ)

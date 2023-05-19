@@ -251,7 +251,7 @@ vtn_variable_resource_index(struct vtn_builder *b, struct vtn_variable *var,
    nir_address_format addr_format = vtn_mode_to_address_format(b, var->mode);
    nir_ssa_dest_init(&instr->instr, &instr->dest,
                      nir_address_format_num_components(addr_format),
-                     nir_address_format_bit_size(addr_format), NULL);
+                     nir_address_format_bit_size(addr_format));
    instr->num_components = instr->dest.ssa.num_components;
    nir_builder_instr_insert(&b->nb, &instr->instr);
 
@@ -274,7 +274,7 @@ vtn_resource_reindex(struct vtn_builder *b, enum vtn_variable_mode mode,
    nir_address_format addr_format = vtn_mode_to_address_format(b, mode);
    nir_ssa_dest_init(&instr->instr, &instr->dest,
                      nir_address_format_num_components(addr_format),
-                     nir_address_format_bit_size(addr_format), NULL);
+                     nir_address_format_bit_size(addr_format));
    instr->num_components = instr->dest.ssa.num_components;
    nir_builder_instr_insert(&b->nb, &instr->instr);
 
@@ -296,7 +296,7 @@ vtn_descriptor_load(struct vtn_builder *b, enum vtn_variable_mode mode,
    nir_address_format addr_format = vtn_mode_to_address_format(b, mode);
    nir_ssa_dest_init(&desc_load->instr, &desc_load->dest,
                      nir_address_format_num_components(addr_format),
-                     nir_address_format_bit_size(addr_format), NULL);
+                     nir_address_format_bit_size(addr_format));
    desc_load->num_components = desc_load->dest.ssa.num_components;
    nir_builder_instr_insert(&b->nb, &desc_load->instr);
 
@@ -1180,6 +1180,10 @@ vtn_get_builtin_location(struct vtn_builder *b,
       break;
    case SpvBuiltInFragInvocationCountEXT:
       *location = SYSTEM_VALUE_FRAG_INVOCATION_COUNT;
+      set_mode_system_value(b, mode);
+      break;
+   case SpvBuiltInHitTriangleVertexPositionsKHR:
+      *location = SYSTEM_VALUE_RAY_TRIANGLE_VERTEX_POSITIONS;
       set_mode_system_value(b, mode);
       break;
 
@@ -2262,10 +2266,10 @@ vtn_assert_types_equal(struct vtn_builder *b, SpvOp opcode,
       return;
    }
 
-   vtn_fail("Source and destination types of %s do not match: %s vs. %s",
+   vtn_fail("Source and destination types of %s do not match: %s (%%%u) vs. %s (%%%u)",
             spirv_op_to_string(opcode),
-            glsl_get_type_name(dst_type->type),
-            glsl_get_type_name(src_type->type));
+            glsl_get_type_name(dst_type->type), dst_type->id,
+            glsl_get_type_name(src_type->type), src_type->id);
 }
 
 static nir_ssa_def *
@@ -2345,7 +2349,7 @@ spv_access_to_gl_access(SpvMemoryAccessMask access)
    if (access & SpvMemoryAccessVolatileMask)
       result |= ACCESS_VOLATILE;
    if (access & SpvMemoryAccessNontemporalMask)
-      result |= ACCESS_STREAM_CACHE_POLICY;
+      result |= ACCESS_NON_TEMPORAL;
 
    return result;
 }
@@ -2798,8 +2802,7 @@ vtn_handle_variables(struct vtn_builder *b, SpvOp opcode,
          nir_intrinsic_instr_create(b->nb.shader,
                                     nir_intrinsic_load_deref_block_intel);
       load->src[0] = nir_src_for_ssa(&src->dest.ssa);
-      nir_ssa_dest_init_for_type(&load->instr, &load->dest,
-                                 res_type->type, NULL);
+      nir_ssa_dest_init_for_type(&load->instr, &load->dest, res_type->type);
       load->num_components = load->dest.ssa.num_components;
       nir_builder_instr_insert(&b->nb, &load->instr);
 

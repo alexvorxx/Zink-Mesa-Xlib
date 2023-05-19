@@ -2,8 +2,6 @@
 # non-zero-length and not starting with '#', will regex match to
 # delete lines from the test list.  Be careful.
 
-gmem-dEQP-VK.binding_model.mutable_descriptor.single.switches.sampled_image_sampler.update_copy.nonmutable_source.normal_source.pool_expand_types.update_after_bind.no_array.frag
-
 # dEQP-EGL started flaking around 2021-04-19 on an innocent CI-related branch.
 dEQP-EGL.functional.color_clears.multi_context.gles2.rgb888_pbuffer
 dEQP-EGL.functional.color_clears.multi_context.gles2.rgb888_window
@@ -203,13 +201,6 @@ KHR-GL45.buffer_storage.map_persistent_flush
 KHR-GL45.sample_variables.mask.rgba8ui.samples_0.mask_2
 KHR-GL45.sample_variables.mask.rgba8i.samples_4.mask_3
 KHR-GL45.sample_variables.mask.rgba32f.samples_4.mask_3
-
-# issue #8219 - 37cde2c6 onwards exhibits descriptor flakiness
-gmem-dEQP-VK.*descriptor
-
-# noted in #8219 - pipeline lib & suballoc fails
-gmem-dEQP-VK.pipeline.*library
-gmem-dEQP-VK.renderpass.*.suballocation
 
 # these flake basically everywhere
 glx@glx-make-current

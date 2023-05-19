@@ -235,7 +235,9 @@ pub fn create_program_with_binary(
         return Err(err);
     }
 
-    Ok(cl_program::from_arc(Program::from_bins(c, devs, &bins)))
+    let prog = Program::from_bins(c, devs, &bins);
+
+    Ok(cl_program::from_arc(prog))
     //• CL_INVALID_BINARY if an invalid program binary was encountered for any device. binary_status will return specific status for each device.
 }
 
@@ -291,7 +293,7 @@ pub fn build_program(
     if res {
         Ok(())
     } else {
-        if Platform::get().debug.program {
+        if Platform::dbg().program {
             for dev in &devs {
                 eprintln!("{}", p.log(dev));
             }
@@ -370,7 +372,7 @@ pub fn compile_program(
     if res {
         Ok(())
     } else {
-        if Platform::get().debug.program {
+        if Platform::dbg().program {
             for dev in &devs {
                 eprintln!("{}", p.log(dev));
             }

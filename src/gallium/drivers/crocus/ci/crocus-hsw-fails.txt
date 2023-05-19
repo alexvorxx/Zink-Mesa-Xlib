@@ -198,6 +198,10 @@ KHR-GL46.sample_variables.mask.rgba8i.samples_1.mask_5,Fail
 KHR-GL46.sample_variables.mask.rgba8i.samples_1.mask_6,Fail
 KHR-GL46.sample_variables.mask.rgba8i.samples_1.mask_7,Fail
 KHR-GL46.sample_variables.mask.rgba8i.samples_1.mask_zero,Fail
+
+# https://gitlab.freedesktop.org/mesa/mesa/-/issues/8900
+KHR-GL46.shader_texture_image_samples_tests.texture_functional_test,Fail
+
 KHR-GL46.shader_multisample_interpolation.render.base.rgba8i.samples_1,Fail
 KHR-GL46.shader_multisample_interpolation.render.centroid.rgba8i.samples_1,Fail
 KHR-GL46.shader_multisample_interpolation.render.interpolate_at_centroid.rgba8i.samples_1,Fail

@@ -58,8 +58,7 @@ pvr_transfer_cmd_alloc(struct pvr_cmd_buffer *cmd_buffer)
                             8U,
                             VK_SYSTEM_ALLOCATION_SCOPE_COMMAND);
    if (!transfer_cmd) {
-      cmd_buffer->state.status =
-         vk_error(cmd_buffer, VK_ERROR_OUT_OF_HOST_MEMORY);
+      vk_command_buffer_set_error(&cmd_buffer->vk, VK_ERROR_OUT_OF_HOST_MEMORY);
       return NULL;
    }
 
@@ -206,15 +205,34 @@ void pvr_CmdBlitImage2KHR(VkCommandBuffer commandBuffer,
          region->srcOffsets[1].x - region->srcOffsets[0].x;
       const uint32_t src_height =
          region->srcOffsets[1].y - region->srcOffsets[0].y;
-      const uint32_t dst_width =
-         region->dstOffsets[1].x - region->dstOffsets[0].x;
-      const uint32_t dst_height =
-         region->dstOffsets[1].y - region->dstOffsets[0].y;
+      uint32_t dst_width;
+      uint32_t dst_height;
 
       float initial_depth_offset;
       VkExtent3D src_extent;
       VkExtent3D dst_extent;
+      VkOffset3D dst_offset = region->dstOffsets[0];
       float z_slice_stride;
+      bool flip_x;
+      bool flip_y;
+
+      if (region->dstOffsets[1].x > region->dstOffsets[0].x) {
+         dst_width = region->dstOffsets[1].x - region->dstOffsets[0].x;
+         flip_x = false;
+      } else {
+         dst_width = region->dstOffsets[0].x - region->dstOffsets[1].x;
+         flip_x = true;
+         dst_offset.x = region->dstOffsets[1].x;
+      }
+
+      if (region->dstOffsets[1].y > region->dstOffsets[0].y) {
+         dst_height = region->dstOffsets[1].y - region->dstOffsets[0].y;
+         flip_y = false;
+      } else {
+         dst_height = region->dstOffsets[0].y - region->dstOffsets[1].y;
+         flip_y = true;
+         dst_offset.y = region->dstOffsets[1].y;
+      }
 
       /* If any of the extent regions is zero, then reject the blit and
        * continue.
@@ -311,7 +329,7 @@ void pvr_CmdBlitImage2KHR(VkCommandBuffer commandBuffer,
                                     dst,
                                     region->dstSubresource.baseArrayLayer + j,
                                     region->dstSubresource.mipLevel,
-                                    &region->dstOffsets[0],
+                                    &dst_offset,
                                     &dst_extent,
                                     min_dst_z,
                                     dst->vk.format,
@@ -328,6 +346,8 @@ void pvr_CmdBlitImage2KHR(VkCommandBuffer commandBuffer,
 
             transfer_cmd->sources[0].mappings[0].src_rect = src_rect;
             transfer_cmd->sources[0].mappings[0].dst_rect = dst_rect;
+            transfer_cmd->sources[0].mappings[0].flip_x = flip_x;
+            transfer_cmd->sources[0].mappings[0].flip_y = flip_y;
             transfer_cmd->sources[0].mapping_count++;
 
             transfer_cmd->sources[0].surface = src_surface;
@@ -802,6 +822,7 @@ pvr_copy_image_to_buffer_region(struct pvr_device *device,
                                 const VkBufferImageCopy2 *region)
 {
    const VkImageAspectFlags aspect_mask = region->imageSubresource.aspectMask;
+   enum pipe_format pformat = vk_format_to_pipe_format(image->vk.format);
    VkFormat image_format = pvr_get_copy_format(image->vk.format);
    struct pvr_transfer_cmd_surface dst_surface = { 0 };
    VkImageSubresource sub_resource;
@@ -868,6 +889,14 @@ pvr_copy_image_to_buffer_region(struct pvr_device *device,
    dst_rect.extent.width = region->imageExtent.width;
    dst_rect.extent.height = region->imageExtent.height;
 
+   if (util_format_is_compressed(pformat)) {
+      uint32_t block_width = util_format_get_blockwidth(pformat);
+      uint32_t block_height = util_format_get_blockheight(pformat);
+
+      dst_rect.extent.width = MAX2(1U, dst_rect.extent.width / block_width);
+      dst_rect.extent.height = MAX2(1U, dst_rect.extent.height / block_height);
+   }
+
    sub_resource = (VkImageSubresource){
       .aspectMask = region->imageSubresource.aspectMask,
       .mipLevel = region->imageSubresource.mipLevel,
@@ -923,7 +952,7 @@ pvr_copy_image_to_buffer_region(struct pvr_device *device,
             return result;
          }
 
-         transfer_cmd->dst.dev_addr.addr += buffer_slice_size;
+         dst_surface.dev_addr.addr += buffer_slice_size;
 
          if (src_surface.mem_layout == PVR_MEMLAYOUT_3DTWIDDLED)
             src_surface.z_position += 1.0f;
@@ -1196,7 +1225,7 @@ void pvr_CmdUpdateBuffer(VkCommandBuffer commandBuffer,
 {
    PVR_FROM_HANDLE(pvr_cmd_buffer, cmd_buffer, commandBuffer);
    PVR_FROM_HANDLE(pvr_buffer, dst, dstBuffer);
-   struct pvr_bo *pvr_bo;
+   struct pvr_suballoc_bo *pvr_bo;
    VkResult result;
 
    PVR_CHECK_COMMAND_BUFFER_BUILDING_STATE(cmd_buffer);
@@ -1206,7 +1235,7 @@ void pvr_CmdUpdateBuffer(VkCommandBuffer commandBuffer,
       return;
 
    pvr_cmd_copy_buffer_region(cmd_buffer,
-                              pvr_bo->vma->dev_addr,
+                              pvr_bo->dev_addr,
                               0,
                               dst->dev_addr,
                               dstOffset,
@@ -1362,10 +1391,10 @@ static VkResult pvr_clear_color_attachment_static_create_consts_buffer(
    const uint32_t clear_color[static const PVR_CLEAR_COLOR_ARRAY_SIZE],
    ASSERTED bool uses_tile_buffer,
    uint32_t tile_buffer_idx,
-   struct pvr_bo **const const_shareds_buffer_out)
+   struct pvr_suballoc_bo **const const_shareds_buffer_out)
 {
    struct pvr_device *device = cmd_buffer->device;
-   struct pvr_bo *const_shareds_buffer;
+   struct pvr_suballoc_bo *const_shareds_buffer;
    struct pvr_bo *tile_buffer;
    uint64_t tile_dev_addr;
    uint32_t *buffer;
@@ -1382,7 +1411,7 @@ static VkResult pvr_clear_color_attachment_static_create_consts_buffer(
    if (result != VK_SUCCESS)
       return result;
 
-   buffer = const_shareds_buffer->bo->map;
+   buffer = pvr_bo_suballoc_get_map_addr(const_shareds_buffer);
 
    for (uint32_t i = 0; i < PVR_CLEAR_ATTACHMENT_CONST_COUNT; i++) {
       uint32_t dest_idx = shader_info->driver_const_location_map[i];
@@ -1428,8 +1457,6 @@ static VkResult pvr_clear_color_attachment_static_create_consts_buffer(
       buffer[static_buff->dst_idx] = static_buff->value;
    }
 
-   pvr_bo_cpu_unmap(device, const_shareds_buffer);
-
    *const_shareds_buffer_out = const_shareds_buffer;
 
    return VK_SUCCESS;
@@ -1456,14 +1483,14 @@ static VkResult pvr_clear_color_attachment_static(
    struct pvr_pds_pixel_shader_sa_program texture_program;
    uint32_t pds_state[PVR_STATIC_CLEAR_PDS_STATE_COUNT];
    const struct pvr_shader_factory_info *shader_info;
+   struct pvr_suballoc_bo *pds_texture_program_bo;
    struct pvr_static_clear_ppp_template template;
-   struct pvr_bo *pds_texture_program_bo;
-   struct pvr_bo *const_shareds_buffer;
+   struct pvr_suballoc_bo *const_shareds_buffer;
    uint64_t pds_texture_program_addr;
+   struct pvr_suballoc_bo *pvr_bo;
    uint32_t tile_buffer_idx = 0;
    uint32_t out_reg_count;
    uint32_t output_offset;
-   struct pvr_bo *pvr_bo;
    uint32_t program_idx;
    uint32_t *buffer;
    VkResult result;
@@ -1475,7 +1502,7 @@ static VkResult pvr_clear_color_attachment_static(
       tile_buffer_idx = mrt_resource->mem.tile_buffer;
       output_offset = mrt_resource->mem.offset_dw;
    } else {
-      output_offset = mrt_resource->reg.offset;
+      output_offset = mrt_resource->reg.output_reg;
    }
 
    assert(has_eight_output_registers || out_reg_count + output_offset <= 4);
@@ -1500,7 +1527,7 @@ static VkResult pvr_clear_color_attachment_static(
    texture_program = (struct pvr_pds_pixel_shader_sa_program){
       .num_texture_dma_kicks = 1,
       .texture_dma_address = {
-         [0] = const_shareds_buffer->vma->dev_addr.addr,
+         [0] = const_shareds_buffer->dev_addr.addr,
       }
    };
    /* clang-format on */
@@ -1526,21 +1553,19 @@ static VkResult pvr_clear_color_attachment_static(
       &pds_texture_program_bo);
    if (result != VK_SUCCESS) {
       list_del(&const_shareds_buffer->link);
-      pvr_bo_free(device, const_shareds_buffer);
+      pvr_bo_suballoc_free(const_shareds_buffer);
 
       return result;
    }
 
-   buffer = pds_texture_program_bo->bo->map;
-   pds_texture_program_addr = pds_texture_program_bo->vma->dev_addr.addr -
+   buffer = pvr_bo_suballoc_get_map_addr(pds_texture_program_bo);
+   pds_texture_program_addr = pds_texture_program_bo->dev_addr.addr -
                               device->heaps.pds_heap->base_addr.addr;
 
    pvr_pds_generate_pixel_shader_sa_texture_state_data(
       &texture_program,
       buffer,
       &device->pdevice->dev_info);
-
-   pvr_bo_cpu_unmap(device, pds_texture_program_bo);
 
    pvr_csb_pack (&pds_state[PVR_STATIC_CLEAR_PPP_PDS_TYPE_SHADERBASE],
                  TA_STATE_PDS_SHADERBASE,
@@ -1607,13 +1632,12 @@ static VkResult pvr_clear_color_attachment_static(
       &pvr_bo);
    if (result != VK_SUCCESS) {
       list_del(&pds_texture_program_bo->link);
-      pvr_bo_free(device, pds_texture_program_bo);
+      pvr_bo_suballoc_free(pds_texture_program_bo);
 
       list_del(&const_shareds_buffer->link);
-      pvr_bo_free(device, const_shareds_buffer);
+      pvr_bo_suballoc_free(const_shareds_buffer);
 
-      cmd_buffer->state.status = result;
-      return result;
+      return pvr_cmd_buffer_set_error_unwarned(cmd_buffer, result);
    }
 
    list_add(&pvr_bo->link, &cmd_buffer->bo_list);
@@ -1661,9 +1685,8 @@ static VkResult pvr_add_deferred_rta_clear(struct pvr_cmd_buffer *cmd_buffer,
                                           struct pvr_transfer_cmd,
                                           rect->layerCount);
    if (!transfer_cmd_list) {
-      cmd_buffer->state.status =
-         vk_error(cmd_buffer, VK_ERROR_OUT_OF_HOST_MEMORY);
-      return cmd_buffer->state.status;
+      return vk_command_buffer_set_error(&cmd_buffer->vk,
+                                         VK_ERROR_OUT_OF_HOST_MEMORY);
    }
 
    /* From the Vulkan 1.3.229 spec VUID-VkClearAttachment-aspectMask-00019:
@@ -1763,7 +1786,6 @@ static void pvr_clear_attachments(struct pvr_cmd_buffer *cmd_buffer,
    struct pvr_sub_cmd_gfx *sub_cmd = &cmd_buffer->state.current_sub_cmd->gfx;
    struct pvr_device_info *dev_info = &cmd_buffer->device->pdevice->dev_info;
    struct pvr_render_subpass *sub_pass = &pass->subpasses[hw_pass->index];
-   bool z_replicate = hw_pass->z_replicate != -1;
    uint32_t vs_output_size_in_bytes;
    bool vs_has_rt_id_output;
 
@@ -1783,9 +1805,9 @@ static void pvr_clear_attachments(struct pvr_cmd_buffer *cmd_buffer,
       pvr_clear_needs_rt_id_output(dev_info, rect_count, rects);
 
    /* 4 because we're expecting the USC to output X, Y, Z, and W. */
-   vs_output_size_in_bytes = 4 * sizeof(uint32_t);
+   vs_output_size_in_bytes = PVR_DW_TO_BYTES(4);
    if (vs_has_rt_id_output)
-      vs_output_size_in_bytes += sizeof(uint32_t);
+      vs_output_size_in_bytes += PVR_DW_TO_BYTES(1);
 
    for (uint32_t i = 0; i < attachment_count; i++) {
       const VkClearAttachment *attachment = &attachments[i];
@@ -1845,7 +1867,7 @@ static void pvr_clear_attachments(struct pvr_cmd_buffer *cmd_buffer,
                                                     vs_has_rt_id_output);
          if (result != VK_SUCCESS)
             return;
-      } else if (z_replicate &&
+      } else if (hw_pass->z_replicate != -1 &&
                  attachment->aspectMask & VK_IMAGE_ASPECT_DEPTH_BIT) {
          const VkClearColorValue clear_color = {
             .float32 = { [0] = attachment->clearValue.depthStencil.depth, },
@@ -1856,7 +1878,6 @@ static void pvr_clear_attachments(struct pvr_cmd_buffer *cmd_buffer,
          uint32_t packed_clear_color[PVR_CLEAR_COLOR_ARRAY_SIZE];
          const struct usc_mrt_resource *mrt_resource;
 
-         assert(hw_pass->z_replicate > 0);
          mrt_resource = &hw_pass->setup.mrt_resources[hw_pass->z_replicate];
 
          pvr_get_hw_clear_color(VK_FORMAT_R32_SFLOAT,
@@ -1875,7 +1896,7 @@ static void pvr_clear_attachments(struct pvr_cmd_buffer *cmd_buffer,
       } else {
          const uint32_t template_idx = attachment->aspectMask;
          struct pvr_static_clear_ppp_template template;
-         struct pvr_bo *pvr_bo;
+         struct pvr_suballoc_bo *pvr_bo;
 
          assert(template_idx < PVR_STATIC_CLEAR_VARIANT_COUNT);
          template =
@@ -1896,7 +1917,7 @@ static void pvr_clear_attachments(struct pvr_cmd_buffer *cmd_buffer,
                                              &template,
                                              &pvr_bo);
          if (result != VK_SUCCESS) {
-            cmd_buffer->state.status = result;
+            pvr_cmd_buffer_set_error_unwarned(cmd_buffer, result);
             return;
          }
 
@@ -1911,7 +1932,7 @@ static void pvr_clear_attachments(struct pvr_cmd_buffer *cmd_buffer,
       if (vs_has_rt_id_output) {
          const struct pvr_device_static_clear_state *dev_clear_state =
             &cmd_buffer->device->static_clear_state;
-         const struct pvr_bo *multi_layer_vert_bo =
+         const struct pvr_suballoc_bo *multi_layer_vert_bo =
             dev_clear_state->usc_multi_layer_vertex_shader_bo;
 
          /* We can't use the device's passthrough pds program since it doesn't
@@ -1950,7 +1971,8 @@ static void pvr_clear_attachments(struct pvr_cmd_buffer *cmd_buffer,
       for (uint32_t j = 0; j < rect_count; j++) {
          struct pvr_pds_upload pds_program_data_upload;
          const VkClearRect *clear_rect = &rects[j];
-         struct pvr_bo *vertices_bo;
+         struct pvr_suballoc_bo *vertices_bo;
+         uint32_t vdm_cs_size_in_dw;
          uint32_t *vdm_cs_buffer;
          VkResult result;
 
@@ -1975,7 +1997,7 @@ static void pvr_clear_attachments(struct pvr_cmd_buffer *cmd_buffer,
                                             depth,
                                             &vertices_bo);
          if (result != VK_SUCCESS) {
-            cmd_buffer->state.status = result;
+            pvr_cmd_buffer_set_error_unwarned(cmd_buffer, result);
             return;
          }
 
@@ -1993,7 +2015,7 @@ static void pvr_clear_attachments(struct pvr_cmd_buffer *cmd_buffer,
                      base_array_layer,
                      &pds_program_code_upload);
                if (result != VK_SUCCESS) {
-                  cmd_buffer->state.status = result;
+                  pvr_cmd_buffer_set_error_unwarned(cmd_buffer, result);
                   return;
                }
 
@@ -2029,11 +2051,15 @@ static void pvr_clear_attachments(struct pvr_cmd_buffer *cmd_buffer,
          pds_program_upload.data_offset = pds_program_data_upload.data_offset;
          pds_program_upload.data_size = pds_program_data_upload.data_size;
 
-         vdm_cs_buffer = pvr_csb_alloc_dwords(&sub_cmd->control_stream,
-                                              PVR_CLEAR_VDM_STATE_DWORD_COUNT);
+         vdm_cs_size_in_dw =
+            pvr_clear_vdm_state_get_size_in_dw(dev_info,
+                                               clear_rect->layerCount);
+
+         vdm_cs_buffer =
+            pvr_csb_alloc_dwords(&sub_cmd->control_stream, vdm_cs_size_in_dw);
          if (!vdm_cs_buffer) {
-            result = vk_error(cmd_buffer, VK_ERROR_OUT_OF_HOST_MEMORY);
-            cmd_buffer->state.status = result;
+            pvr_cmd_buffer_set_error_unwarned(cmd_buffer,
+                                              sub_cmd->control_stream.status);
             return;
          }
 

@@ -592,9 +592,13 @@ tu_cs_emit_draw_state(struct tu_cs *cs, uint32_t id, struct tu_draw_state state)
     * value as the last draw. This means that if the descriptor sets change
     * but not the pipeline, we'd try to re-execute the same buffer which
     * the firmware would ignore and we wouldn't pre-load the new
-    * descriptors. Set the DIRTY bit to avoid this optimization
+    * descriptors. Set the DIRTY bit to avoid this optimization.
+    *
+    * We also need to set this bit for draw states which may be patched by the
+    * GPU, because their underlying memory may change between setting the draw
+    * state.
     */
-   if (id == TU_DRAW_STATE_DESC_SETS_LOAD)
+   if (id == TU_DRAW_STATE_DESC_SETS_LOAD || state.writeable)
       enable_mask |= CP_SET_DRAW_STATE__0_DIRTY;
 
    tu_cs_emit(cs, CP_SET_DRAW_STATE__0_COUNT(state.size) |
@@ -644,6 +648,7 @@ tu6_update_msaa_samples(struct tu_cmd_buffer *cmd, VkSampleCountFlagBits samples
 {
    if (cmd->state.samples != samples) {
       cmd->state.samples = samples;
+      cmd->state.dirty |= TU_CMD_DIRTY_FS_PARAMS;
       tu6_update_msaa(cmd);
    }
 }
@@ -767,7 +772,8 @@ tu6_emit_cond_for_load_stores(struct tu_cmd_buffer *cmd, struct tu_cs *cs,
 static void
 tu6_emit_tile_select(struct tu_cmd_buffer *cmd,
                      struct tu_cs *cs,
-                     uint32_t tx, uint32_t ty, uint32_t pipe, uint32_t slot)
+                     uint32_t tx, uint32_t ty, uint32_t pipe, uint32_t slot,
+                     const struct tu_image_view *fdm)
 {
    const struct tu_tiling_config *tiling = cmd->state.tiling;
 
@@ -776,9 +782,9 @@ tu6_emit_tile_select(struct tu_cmd_buffer *cmd,
 
    const uint32_t x1 = tiling->tile0.width * tx;
    const uint32_t y1 = tiling->tile0.height * ty;
-   const uint32_t x2 = MIN2(x1 + tiling->tile0.width - 1, MAX_VIEWPORT_SIZE - 1);
-   const uint32_t y2 = MIN2(y1 + tiling->tile0.height - 1, MAX_VIEWPORT_SIZE - 1);
-   tu6_emit_window_scissor(cs, x1, y1, x2, y2);
+   const uint32_t x2 = MIN2(x1 + tiling->tile0.width, MAX_VIEWPORT_SIZE);
+   const uint32_t y2 = MIN2(y1 + tiling->tile0.height, MAX_VIEWPORT_SIZE);
+   tu6_emit_window_scissor(cs, x1, y1, x2 - 1, y2 - 1);
    tu6_emit_window_offset(cs, x1, y1);
 
    bool hw_binning = use_hw_binning(cmd);
@@ -804,6 +810,85 @@ tu6_emit_tile_select(struct tu_cmd_buffer *cmd,
 
    tu_cs_emit_pkt7(cs, CP_SET_MODE, 1);
    tu_cs_emit(cs, 0x0);
+
+   if (fdm || (TU_DEBUG(FDM) && cmd->state.pass->has_fdm)) {
+      unsigned views =
+         cmd->state.pass->num_views ? cmd->state.pass->num_views : 1;
+      const struct tu_framebuffer *fb = cmd->state.framebuffer;
+      struct tu_frag_area raw_areas[views];
+      if (fdm) {
+         tu_fragment_density_map_sample(fdm,
+                                        (x1 + MIN2(x2, fb->width)) / 2,
+                                        (y1 + MIN2(y2, fb->height)) / 2,
+                                        fb->width, fb->height, views,
+                                        raw_areas);
+      } else {
+         for (unsigned i = 0; i < views; i++)
+            raw_areas[i].width = raw_areas[i].height = 1.0f;
+      }
+
+      VkExtent2D frag_areas[views];
+      for (unsigned i = 0; i < views; i++) {
+         float floor_x, floor_y;
+         float area = raw_areas[i].width * raw_areas[i].height;
+         float frac_x = modff(raw_areas[i].width, &floor_x);
+         float frac_y = modff(raw_areas[i].height, &floor_y);
+         /* The spec allows rounding up one of the axes as long as the total
+          * area is less than or equal to the original area. Take advantage of
+          * this to try rounding up the number with the largest fraction.
+          */
+         if ((frac_x > frac_y ? (floor_x + 1.f) * floor_y :
+                                 floor_x * (floor_y + 1.f)) <= area) {
+            if (frac_x > frac_y)
+               floor_x += 1.f;
+            else
+               floor_y += 1.f;
+         }
+         frag_areas[i].width = floor_x;
+         frag_areas[i].height = floor_y;
+
+         /* Make sure that the width/height divides the tile width/height so
+          * we don't have to do extra awkward clamping of the edges of each
+          * bin when resolving. Note that because the tile width is rounded to
+          * a multiple of 32 any power of two 32 or less will work.
+          *
+          * TODO: Try to take advantage of the total area allowance here, too.
+          */
+         while (tiling->tile0.width % frag_areas[i].width != 0)
+            frag_areas[i].width--;
+         while (tiling->tile0.height % frag_areas[i].height != 0)
+            frag_areas[i].height--;
+      }
+
+      /* If at any point we were forced to use the same scaling for all
+       * viewports, we need to make sure that any users *not* using shared
+       * scaling, including loads/stores, also consistently share the scaling. 
+       */
+      if (cmd->state.rp.shared_viewport) {
+         VkExtent2D frag_area = { UINT32_MAX, UINT32_MAX };
+         for (unsigned i = 0; i < views; i++) {
+            frag_area.width = MIN2(frag_area.width, frag_areas[i].width);
+            frag_area.height = MIN2(frag_area.height, frag_areas[i].height);
+         }
+
+         for (unsigned i = 0; i < views; i++)
+            frag_areas[i] = frag_area;
+      }
+
+      VkRect2D bin = { { x1, y1 }, { x2 - x1, y2 - y1 } };
+      util_dynarray_foreach (&cmd->fdm_bin_patchpoints,
+                             struct tu_fdm_bin_patchpoint, patch) {
+         tu_cs_emit_pkt7(cs, CP_MEM_WRITE, 2 + patch->size);
+         tu_cs_emit_qw(cs, patch->iova);
+         patch->apply(cs, patch->data, bin, views, frag_areas);
+      }
+
+      /* Make the CP wait until the CP_MEM_WRITE's to the command buffers
+       * land.
+       */
+      tu_cs_emit_pkt7(cs, CP_WAIT_MEM_WRITES, 0);
+      tu_cs_emit_pkt7(cs, CP_WAIT_FOR_ME, 0);
+   }
 }
 
 static void
@@ -886,6 +971,9 @@ tu6_emit_tile_store(struct tu_cmd_buffer *cmd, struct tu_cs *cs)
    const struct tu_subpass *subpass = &pass->subpasses[pass->subpass_count-1];
    const struct tu_framebuffer *fb = cmd->state.framebuffer;
 
+   if (pass->has_fdm)
+      tu_cs_set_writeable(cs, true);
+
    tu_cs_emit_pkt7(cs, CP_SET_MARKER, 1);
    tu_cs_emit(cs, A6XX_CP_SET_MARKER_0_MODE(RM6_RESOLVE));
 
@@ -911,6 +999,9 @@ tu6_emit_tile_store(struct tu_cmd_buffer *cmd, struct tu_cs *cs)
          }
       }
    }
+
+   if (pass->has_fdm)
+      tu_cs_set_writeable(cs, false);
 }
 
 void
@@ -1110,6 +1201,28 @@ tu6_emit_binning_pass(struct tu_cmd_buffer *cmd, struct tu_cs *cs)
    struct tu_physical_device *phys_dev = cmd->device->physical_device;
    const struct tu_framebuffer *fb = cmd->state.framebuffer;
 
+   /* If this command buffer may be executed multiple times, then
+    * viewports/scissor states may have been changed by previous executions
+    * and we need to reset them before executing the binning IB.
+    */
+   if (!(cmd->usage_flags & VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT) &&
+       cmd->fdm_bin_patchpoints.size != 0) {
+      unsigned num_views = MAX2(cmd->state.pass->num_views, 1);
+      VkExtent2D unscaled_frag_areas[num_views];
+      for (unsigned i = 0; i < num_views; i++)
+         unscaled_frag_areas[i] = (VkExtent2D) { 1, 1 };
+      VkRect2D bin = { { 0, 0 }, { fb->width, fb->height } };
+      util_dynarray_foreach (&cmd->fdm_bin_patchpoints,
+                             struct tu_fdm_bin_patchpoint, patch) {
+         tu_cs_emit_pkt7(cs, CP_MEM_WRITE, 2 + patch->size);
+         tu_cs_emit_qw(cs, patch->iova);
+         patch->apply(cs, patch->data, bin, num_views, unscaled_frag_areas);
+      }
+
+      tu_cs_emit_pkt7(cs, CP_WAIT_MEM_WRITES, 0);
+      tu_cs_emit_pkt7(cs, CP_WAIT_FOR_ME, 0);
+   }
+
    tu6_emit_window_scissor(cs, 0, 0, fb->width - 1, fb->height - 1);
 
    tu_cs_emit_pkt7(cs, CP_SET_MARKER, 1);
@@ -1280,7 +1393,7 @@ tu_emit_input_attachments(struct tu_cmd_buffer *cmd,
          dst[0] &= ~A6XX_TEX_CONST_0_FMT__MASK;
          dst[0] |= A6XX_TEX_CONST_0_FMT(FMT6_8_UINT);
          dst[2] &= ~(A6XX_TEX_CONST_2_PITCHALIGN__MASK | A6XX_TEX_CONST_2_PITCH__MASK);
-         dst[2] |= A6XX_TEX_CONST_2_PITCH(iview->stencil_PITCH << 6);
+         dst[2] |= A6XX_TEX_CONST_2_PITCH(iview->stencil_pitch);
          dst[3] = 0;
          dst[4] = iview->stencil_base_addr;
          dst[5] = (dst[5] & 0xffff) | iview->stencil_base_addr >> 32;
@@ -1303,7 +1416,7 @@ tu_emit_input_attachments(struct tu_cmd_buffer *cmd,
        */
       dst[3] = 0;
       dst[4] = cmd->device->physical_device->gmem_base + gmem_offset;
-      dst[5] = A6XX_TEX_CONST_5_DEPTH(1);
+      dst[5] &= A6XX_TEX_CONST_5_DEPTH__MASK;
       for (unsigned i = 6; i < A6XX_TEX_CONST_DWORDS; i++)
          dst[i] = 0;
    }
@@ -1347,6 +1460,9 @@ tu_emit_renderpass_begin(struct tu_cmd_buffer *cmd,
 {
    struct tu_cs *cs = &cmd->draw_cs;
 
+   if (cmd->state.pass->has_fdm)
+      tu_cs_set_writeable(cs, true);
+
    tu_cond_exec_start(cs, CP_COND_EXEC_0_RENDER_MODE_GMEM);
 
    tu6_emit_tile_load(cmd, cs);
@@ -1358,12 +1474,25 @@ tu_emit_renderpass_begin(struct tu_cmd_buffer *cmd,
 
    tu_cond_exec_end(cs);
 
+   if (cmd->state.pass->has_fdm)
+      tu_cs_set_writeable(cs, false);
+
    tu_cond_exec_start(cs, CP_COND_EXEC_0_RENDER_MODE_SYSMEM);
 
    for (uint32_t i = 0; i < cmd->state.pass->attachment_count; ++i)
       tu_clear_sysmem_attachment(cmd, cs, i, &clear_values[i]);
 
    tu_cond_exec_end(cs);
+
+   /* We need to re-emit any draw states that are patched in order for them to
+    * be correctly added to the per-renderpass patchpoint list, even if they
+    * are the same as before.
+    */
+   if (cmd->state.pass->has_fdm) {
+      cmd->state.dirty |=
+         TU_CMD_DIRTY_VIEWPORTS | TU_CMD_DIRTY_SCISSORS |
+         TU_CMD_DIRTY_FS_PARAMS;
+   }
 }
 
 static void
@@ -1487,9 +1616,10 @@ tu6_tile_render_begin(struct tu_cmd_buffer *cmd, struct tu_cs *cs,
 
 static void
 tu6_render_tile(struct tu_cmd_buffer *cmd, struct tu_cs *cs,
-                uint32_t tx, uint32_t ty, uint32_t pipe, uint32_t slot)
+                uint32_t tx, uint32_t ty, uint32_t pipe, uint32_t slot,
+                const struct tu_image_view *fdm)
 {
-   tu6_emit_tile_select(cmd, &cmd->cs, tx, ty, pipe, slot);
+   tu6_emit_tile_select(cmd, &cmd->cs, tx, ty, pipe, slot, fdm);
 
    trace_start_draw_ib_gmem(&cmd->trace, &cmd->cs);
 
@@ -1546,6 +1676,11 @@ tu_cmd_render_tiles(struct tu_cmd_buffer *cmd,
                     struct tu_renderpass_result *autotune_result)
 {
    const struct tu_tiling_config *tiling = cmd->state.tiling;
+   const struct tu_image_view *fdm = NULL;
+
+   if (cmd->state.pass->fragment_density_map.attachment != VK_ATTACHMENT_UNUSED) {
+      fdm = cmd->state.attachments[cmd->state.pass->fragment_density_map.attachment];
+   }
 
    /* Create gmem stores now (at EndRenderPass time)) because they needed to
     * know whether to allow their conditional execution, which was tied to a
@@ -1586,7 +1721,7 @@ tu_cmd_render_tiles(struct tu_cmd_buffer *cmd,
                else
                   tx = tile_row_i;
                uint32_t slot = slot_row + tx;
-               tu6_render_tile(cmd, &cmd->cs, tx1 + tx, ty, pipe, slot);
+               tu6_render_tile(cmd, &cmd->cs, tx1 + tx, ty, pipe, slot, fdm);
             }
             slot_row += tile_row_stride;
          }
@@ -1596,6 +1731,16 @@ tu_cmd_render_tiles(struct tu_cmd_buffer *cmd,
    tu6_tile_render_end(cmd, &cmd->cs, autotune_result);
 
    trace_end_render_pass(&cmd->trace, &cmd->cs);
+
+   /* We have trashed the dynamically-emitted viewport, scissor, and FS params
+    * via the patchpoints, so we need to re-emit them if they are reused for a
+    * later render pass.
+    */
+   if (cmd->state.pass->has_fdm) {
+      cmd->state.dirty |=
+         TU_CMD_DIRTY_VIEWPORTS | TU_CMD_DIRTY_SCISSORS |
+         TU_CMD_DIRTY_FS_PARAMS;
+   }
 
    /* tu6_render_tile has cloned these tracepoints for each tile */
    if (!u_trace_iterator_equal(cmd->trace_renderpass_start, cmd->trace_renderpass_end))
@@ -1666,6 +1811,11 @@ static void tu_reset_render_pass(struct tu_cmd_buffer *cmd_buffer)
    /* LRZ is not valid next time we use it */
    cmd_buffer->state.lrz.valid = false;
    cmd_buffer->state.dirty |= TU_CMD_DIRTY_LRZ;
+
+   /* Patchpoints have been executed */
+   util_dynarray_clear(&cmd_buffer->fdm_bin_patchpoints);
+   ralloc_free(cmd_buffer->patchpoints_ctx);
+   cmd_buffer->patchpoints_ctx = NULL;
 }
 
 static VkResult
@@ -1738,6 +1888,9 @@ tu_cmd_buffer_destroy(struct vk_command_buffer *vk_cmd_buffer)
               cmd_buffer->descriptors[i].push_set.mapped_ptr);
    }
 
+   ralloc_free(cmd_buffer->patchpoints_ctx);
+   util_dynarray_fini(&cmd_buffer->fdm_bin_patchpoints);
+
    vk_command_buffer_finish(&cmd_buffer->vk);
    vk_free2(&cmd_buffer->device->vk.alloc, &cmd_buffer->vk.pool->alloc,
             cmd_buffer);
@@ -1781,6 +1934,10 @@ tu_reset_cmd_buffer(struct vk_command_buffer *vk_cmd_buffer,
    cmd_buffer->state.last_prim_params.valid = false;
 
    cmd_buffer->vsc_initialized = false;
+
+   ralloc_free(cmd_buffer->patchpoints_ctx);
+   cmd_buffer->patchpoints_ctx = NULL;
+   util_dynarray_clear(&cmd_buffer->fdm_bin_patchpoints);
 }
 
 const struct vk_command_buffer_ops tu_cmd_buffer_ops = {
@@ -1890,6 +2047,8 @@ tu_BeginCommandBuffer(VkCommandBuffer commandBuffer,
             cmd_buffer->state.subpass =
                &cmd_buffer->state.pass->subpasses[pBeginInfo->pInheritanceInfo->subpass];
          }
+
+         cmd_buffer->patchpoints_ctx = ralloc_parent(NULL);
 
          /* We can't set the gmem layout here, because the state.pass only has
           * to be compatible (same formats/sample counts) with the primary's
@@ -2691,7 +2850,8 @@ tu_CmdBindPipeline(VkCommandBuffer commandBuffer,
 
    cmd->state.pipeline = pipeline;
    cmd->state.dirty |= TU_CMD_DIRTY_DESC_SETS | TU_CMD_DIRTY_SHADER_CONSTS |
-                       TU_CMD_DIRTY_LRZ | TU_CMD_DIRTY_VS_PARAMS;
+                       TU_CMD_DIRTY_LRZ | TU_CMD_DIRTY_VS_PARAMS |
+                       TU_CMD_DIRTY_FS_PARAMS;
 
    if (pipeline->output.feedback_loop_may_involve_textures &&
        !cmd->state.rp.disable_gmem) {
@@ -2796,11 +2956,39 @@ tu_CmdBindPipeline(VkCommandBuffer commandBuffer,
              pipeline->viewport.num_viewports *
              sizeof(pipeline->viewport.viewports[0]));
 
-      /* Any viewports set dynamically are invalidated when the pipeline is
-       * bound, so we don't need to take the max here.
-       */
-      cmd->state.max_viewport = pipeline->viewport.num_viewports;
+      cmd->state.viewport_count = pipeline->viewport.num_viewports;
       cmd->state.dirty |= TU_CMD_DIRTY_VIEWPORTS;
+   }
+
+   if (pipeline->viewport.set_dynamic_scissor_to_static) {
+      memcpy(cmd->state.scissor, pipeline->viewport.scissors,
+             pipeline->viewport.num_viewports *
+             sizeof(pipeline->viewport.scissors[0]));
+
+      cmd->state.scissor_count = pipeline->viewport.num_scissors;
+      cmd->state.dirty |= TU_CMD_DIRTY_SCISSORS;
+   }
+
+   if ((pipeline->dynamic_state_mask & BIT(VK_DYNAMIC_STATE_VIEWPORT)) &&
+       !(pipeline->dynamic_state_mask & BIT(TU_DYNAMIC_STATE_VIEWPORT_COUNT)) &&
+       cmd->state.viewport_count != pipeline->viewport.num_viewports) {
+      cmd->state.viewport_count = pipeline->viewport.num_viewports;
+      cmd->state.dirty |= TU_CMD_DIRTY_VIEWPORTS;
+   }
+
+   if ((pipeline->dynamic_state_mask & BIT(VK_DYNAMIC_STATE_SCISSOR)) &&
+       !(pipeline->dynamic_state_mask & BIT(TU_DYNAMIC_STATE_SCISSOR_COUNT)) &&
+       cmd->state.scissor_count != pipeline->viewport.num_scissors) {
+      cmd->state.scissor_count = pipeline->viewport.num_scissors;
+      cmd->state.dirty |= TU_CMD_DIRTY_SCISSORS;
+   }
+
+   if (pipeline->viewport.per_view_viewport != cmd->state.per_view_viewport) {
+      cmd->state.per_view_viewport = pipeline->viewport.per_view_viewport;
+      if (pipeline->dynamic_state_mask & BIT(VK_DYNAMIC_STATE_VIEWPORT))
+         cmd->state.dirty |= TU_CMD_DIRTY_VIEWPORTS;
+      if (pipeline->dynamic_state_mask & BIT(VK_DYNAMIC_STATE_SCISSOR))
+         cmd->state.dirty |= TU_CMD_DIRTY_SCISSORS;
    }
 
    if (!(pipeline->dynamic_state_mask & BIT(VK_DYNAMIC_STATE_VIEWPORT)))
@@ -2829,8 +3017,8 @@ tu_CmdBindPipeline(VkCommandBuffer commandBuffer,
     */
    UPDATE_REG(rast, gras_su_cntl, RAST);
    UPDATE_REG(rast, gras_cl_cntl, RAST);
-   UPDATE_REG(rast_ds, rb_depth_cntl, RB_DEPTH_CNTL);
-   UPDATE_REG(ds, rb_stencil_cntl, RB_STENCIL_CNTL);
+   UPDATE_REG(rast_ds, rb_depth_cntl, DS);
+   UPDATE_REG(ds, rb_stencil_cntl, DS);
    UPDATE_REG(rast, pc_raster_cntl, PC_RASTER_CNTL);
    UPDATE_REG(rast, vpc_unknown_9107, PC_RASTER_CNTL);
    UPDATE_REG(blend, sp_blend_cntl, BLEND);
@@ -2880,7 +3068,7 @@ tu_CmdBindPipeline(VkCommandBuffer commandBuffer,
    }
 
    if (pipeline->output.rb_depth_cntl_disable)
-      cmd->state.dirty |= TU_CMD_DIRTY_RB_DEPTH_CNTL;
+      cmd->state.dirty |= TU_CMD_DIRTY_DS;
 }
 
 VKAPI_ATTR void VKAPI_CALL
@@ -2892,7 +3080,6 @@ tu_CmdSetViewport(VkCommandBuffer commandBuffer,
    TU_FROM_HANDLE(tu_cmd_buffer, cmd, commandBuffer);
 
    memcpy(&cmd->state.viewport[firstViewport], pViewports, viewportCount * sizeof(*pViewports));
-   cmd->state.max_viewport = MAX2(cmd->state.max_viewport, firstViewport + viewportCount);
 
    /* With VK_EXT_depth_clip_control we have to take into account
     * negativeOneToOne property of the pipeline, so the viewport calculations
@@ -2908,13 +3095,10 @@ tu_CmdSetScissor(VkCommandBuffer commandBuffer,
                  const VkRect2D *pScissors)
 {
    TU_FROM_HANDLE(tu_cmd_buffer, cmd, commandBuffer);
-   struct tu_cs cs;
 
    memcpy(&cmd->state.scissor[firstScissor], pScissors, scissorCount * sizeof(*pScissors));
-   cmd->state.max_scissor = MAX2(cmd->state.max_scissor, firstScissor + scissorCount);
 
-   cs = tu_cmd_dynamic_state(cmd, VK_DYNAMIC_STATE_SCISSOR, 1 + 2 * cmd->state.max_scissor);
-   tu6_emit_scissor(&cs, cmd->state.scissor, cmd->state.max_scissor);
+   cmd->state.dirty |= TU_CMD_DIRTY_SCISSORS;
 }
 
 VKAPI_ATTR void VKAPI_CALL
@@ -3081,7 +3265,12 @@ tu_CmdSetViewportWithCountEXT(VkCommandBuffer commandBuffer,
                               uint32_t viewportCount,
                               const VkViewport* pViewports)
 {
-   tu_CmdSetViewport(commandBuffer, 0, viewportCount, pViewports);
+   TU_FROM_HANDLE(tu_cmd_buffer, cmd, commandBuffer);
+
+   memcpy(cmd->state.viewport, pViewports, viewportCount * sizeof(*pViewports));
+   cmd->state.viewport_count = viewportCount;
+
+   cmd->state.dirty |= TU_CMD_DIRTY_VIEWPORTS;
 }
 
 VKAPI_ATTR void VKAPI_CALL
@@ -3089,7 +3278,12 @@ tu_CmdSetScissorWithCountEXT(VkCommandBuffer commandBuffer,
                              uint32_t scissorCount,
                              const VkRect2D* pScissors)
 {
-   tu_CmdSetScissor(commandBuffer, 0, scissorCount, pScissors);
+   TU_FROM_HANDLE(tu_cmd_buffer, cmd, commandBuffer);
+
+   memcpy(cmd->state.scissor, pScissors, scissorCount * sizeof(*pScissors));
+   cmd->state.scissor_count = scissorCount;
+
+   cmd->state.dirty |= TU_CMD_DIRTY_SCISSORS;
 }
 
 VKAPI_ATTR void VKAPI_CALL
@@ -3103,7 +3297,7 @@ tu_CmdSetDepthTestEnableEXT(VkCommandBuffer commandBuffer,
    if (depthTestEnable)
       cmd->state.rb_depth_cntl |= A6XX_RB_DEPTH_CNTL_Z_TEST_ENABLE;
 
-   cmd->state.dirty |= TU_CMD_DIRTY_RB_DEPTH_CNTL;
+   cmd->state.dirty |= TU_CMD_DIRTY_DS;
 }
 
 VKAPI_ATTR void VKAPI_CALL
@@ -3117,7 +3311,7 @@ tu_CmdSetDepthWriteEnableEXT(VkCommandBuffer commandBuffer,
    if (depthWriteEnable)
       cmd->state.rb_depth_cntl |= A6XX_RB_DEPTH_CNTL_Z_WRITE_ENABLE;
 
-   cmd->state.dirty |= TU_CMD_DIRTY_RB_DEPTH_CNTL;
+   cmd->state.dirty |= TU_CMD_DIRTY_DS;
 }
 
 VKAPI_ATTR void VKAPI_CALL
@@ -3131,7 +3325,7 @@ tu_CmdSetDepthCompareOpEXT(VkCommandBuffer commandBuffer,
    cmd->state.rb_depth_cntl |=
       A6XX_RB_DEPTH_CNTL_ZFUNC(tu6_compare_func(depthCompareOp));
 
-   cmd->state.dirty |= TU_CMD_DIRTY_RB_DEPTH_CNTL;
+   cmd->state.dirty |= TU_CMD_DIRTY_DS;
 }
 
 VKAPI_ATTR void VKAPI_CALL
@@ -3145,7 +3339,7 @@ tu_CmdSetDepthBoundsTestEnableEXT(VkCommandBuffer commandBuffer,
    if (depthBoundsTestEnable)
       cmd->state.rb_depth_cntl |= A6XX_RB_DEPTH_CNTL_Z_BOUNDS_ENABLE;
 
-   cmd->state.dirty |= TU_CMD_DIRTY_RB_DEPTH_CNTL;
+   cmd->state.dirty |= TU_CMD_DIRTY_DS;
 }
 
 VKAPI_ATTR void VKAPI_CALL
@@ -3166,7 +3360,7 @@ tu_CmdSetStencilTestEnableEXT(VkCommandBuffer commandBuffer,
          A6XX_RB_STENCIL_CONTROL_STENCIL_READ;
    }
 
-   cmd->state.dirty |= TU_CMD_DIRTY_RB_STENCIL_CNTL;
+   cmd->state.dirty |= TU_CMD_DIRTY_DS;
 }
 
 VKAPI_ATTR void VKAPI_CALL
@@ -3207,7 +3401,7 @@ tu_CmdSetStencilOpEXT(VkCommandBuffer commandBuffer,
          A6XX_RB_STENCIL_CONTROL_ZFAIL_BF(tu6_stencil_op(depthFailOp));
    }
 
-   cmd->state.dirty |= TU_CMD_DIRTY_RB_STENCIL_CNTL;
+   cmd->state.dirty |= TU_CMD_DIRTY_DS;
 }
 
 VKAPI_ATTR void VKAPI_CALL
@@ -3348,7 +3542,7 @@ tu_CmdSetDepthClampEnableEXT(VkCommandBuffer commandBuffer,
    cmd->state.rb_depth_cntl =
       (cmd->state.rb_depth_cntl & ~A6XX_RB_DEPTH_CNTL_Z_CLAMP_ENABLE) |
       COND(depthClampEnable, A6XX_RB_DEPTH_CNTL_Z_CLAMP_ENABLE);
-   cmd->state.dirty |= TU_CMD_DIRTY_RAST | TU_CMD_DIRTY_RB_DEPTH_CNTL;
+   cmd->state.dirty |= TU_CMD_DIRTY_RAST | TU_CMD_DIRTY_DS;
 }
 
 VKAPI_ATTR void VKAPI_CALL
@@ -3875,7 +4069,8 @@ static enum tu_stage
 vk2tu_single_stage(VkPipelineStageFlags2 vk_stage, bool dst)
 {
    if (vk_stage == VK_PIPELINE_STAGE_2_DRAW_INDIRECT_BIT ||
-       vk_stage == VK_PIPELINE_STAGE_2_CONDITIONAL_RENDERING_BIT_EXT)
+       vk_stage == VK_PIPELINE_STAGE_2_CONDITIONAL_RENDERING_BIT_EXT ||
+       vk_stage == VK_PIPELINE_STAGE_2_FRAGMENT_DENSITY_PROCESS_BIT_EXT)
       return TU_STAGE_CP;
 
    if (vk_stage == VK_PIPELINE_STAGE_2_VERTEX_INPUT_BIT ||
@@ -3993,6 +4188,7 @@ tu_render_pass_state_merge(struct tu_render_pass_state *dst,
    dst->disable_gmem |= src->disable_gmem;
    dst->sysmem_single_prim_mode |= src->sysmem_single_prim_mode;
    dst->draw_cs_writes_to_cond_pred |= src->draw_cs_writes_to_cond_pred;
+   dst->shared_viewport |= src->shared_viewport;
 
    dst->drawcall_count += src->drawcall_count;
    dst->drawcall_bandwidth_per_sample_sum +=
@@ -4028,6 +4224,8 @@ tu_append_pre_chain(struct tu_cmd_buffer *cmd,
                               &secondary->pre_chain.state);
    tu_clone_trace_range(cmd, &cmd->draw_cs, secondary->pre_chain.trace_renderpass_start,
          secondary->pre_chain.trace_renderpass_end);
+   util_dynarray_append_dynarray(&cmd->fdm_bin_patchpoints,
+                                 &secondary->pre_chain.fdm_bin_patchpoints);
 }
 
 /* Take the saved post-chain in "secondary" and copy it to "cmd".
@@ -4042,6 +4240,8 @@ tu_append_post_chain(struct tu_cmd_buffer *cmd,
    tu_clone_trace_range(cmd, &cmd->draw_cs, secondary->trace_renderpass_start,
          secondary->trace_renderpass_end);
    cmd->state.rp = secondary->state.rp;
+   util_dynarray_append_dynarray(&cmd->fdm_bin_patchpoints,
+                                 &secondary->fdm_bin_patchpoints);
 }
 
 /* Assuming "secondary" is just a sequence of suspended and resuming passes,
@@ -4061,6 +4261,8 @@ tu_append_pre_post_chain(struct tu_cmd_buffer *cmd,
          secondary->trace_renderpass_end);
    tu_render_pass_state_merge(&cmd->state.rp,
                               &secondary->state.rp);
+   util_dynarray_append_dynarray(&cmd->fdm_bin_patchpoints,
+                                 &secondary->fdm_bin_patchpoints);
 }
 
 /* Take the current render pass state and save it to "pre_chain" to be
@@ -4078,6 +4280,10 @@ tu_save_pre_chain(struct tu_cmd_buffer *cmd)
    cmd->pre_chain.trace_renderpass_end =
       cmd->trace_renderpass_end;
    cmd->pre_chain.state = cmd->state.rp;
+   util_dynarray_append_dynarray(&cmd->pre_chain.fdm_bin_patchpoints,
+                                 &cmd->fdm_bin_patchpoints);
+   cmd->pre_chain.patchpoints_ctx = cmd->patchpoints_ctx;
+   cmd->patchpoints_ctx = NULL;
 }
 
 VKAPI_ATTR void VKAPI_CALL
@@ -4127,6 +4333,8 @@ tu_CmdExecuteCommands(VkCommandBuffer commandBuffer,
 
          tu_clone_trace(cmd, &cmd->draw_cs, &secondary->trace);
          tu_render_pass_state_merge(&cmd->state.rp, &secondary->state.rp);
+         util_dynarray_append_dynarray(&cmd->fdm_bin_patchpoints,
+                                       &secondary->fdm_bin_patchpoints);
       } else {
          switch (secondary->state.suspend_resume) {
          case SR_NONE:
@@ -4371,6 +4579,9 @@ tu_CmdBeginRenderPass2(VkCommandBuffer commandBuffer,
 
    tu_emit_renderpass_begin(cmd, pRenderPassBegin->pClearValues);
    tu_emit_subpass_begin(cmd);
+
+   if (pass->has_fdm)
+      cmd->patchpoints_ctx = ralloc_parent(NULL);
 }
 
 VKAPI_ATTR void VKAPI_CALL
@@ -4437,6 +4648,18 @@ tu_CmdBeginRendering(VkCommandBuffer commandBuffer,
          }
       }
    }
+
+   a = cmd->dynamic_pass.fragment_density_map.attachment;
+   if (a != VK_ATTACHMENT_UNUSED) {
+      const VkRenderingFragmentDensityMapAttachmentInfoEXT *fdm_info =
+         vk_find_struct_const(pRenderingInfo->pNext,
+                              RENDERING_FRAGMENT_DENSITY_MAP_ATTACHMENT_INFO_EXT);
+      TU_FROM_HANDLE(tu_image_view, view, fdm_info->imageView);
+      cmd->state.attachments[a] = view;
+   }
+
+   if (cmd->dynamic_pass.has_fdm)
+      cmd->patchpoints_ctx = ralloc_context(NULL);
 
    tu_choose_gmem_layout(cmd);
 
@@ -4537,6 +4760,9 @@ tu_CmdNextSubpass2(VkCommandBuffer commandBuffer,
    }
 
    if (cmd->state.tiling->possible) {
+      if (cmd->state.pass->has_fdm)
+         tu_cs_set_writeable(cs, true);
+
       tu_cond_exec_start(cs, CP_COND_EXEC_0_RENDER_MODE_GMEM);
 
       if (subpass->resolve_attachments) {
@@ -4564,6 +4790,9 @@ tu_CmdNextSubpass2(VkCommandBuffer commandBuffer,
       }
 
       tu_cond_exec_end(cs);
+
+      if (cmd->state.pass->has_fdm)
+         tu_cs_set_writeable(cs, false);
 
       tu_cond_exec_start(cs, CP_COND_EXEC_0_RENDER_MODE_SYSMEM);
    }
@@ -4904,6 +5133,261 @@ tu6_emit_blend(struct tu_cs *cs, struct tu_cmd_buffer *cmd)
                    ~pipeline->blend.rb_blend_cntl_mask));
 }
 
+struct apply_viewport_state {
+   VkViewport viewports[MAX_VIEWPORTS];
+   unsigned num_viewports;
+   bool z_negative_one_to_one;
+   bool share_scale;
+};
+
+/* It's a hardware restriction that the window offset (i.e. bin.offset) must
+ * be the same for all views. This means that GMEM coordinates cannot be a
+ * simple scaling of framebuffer coordinates, because this would require us to
+ * scale the window offset and the scale may be different per view. Instead we
+ * have to apply a per-bin offset to the GMEM coordinate transform to make
+ * sure that the window offset maps to itself. Specifically we need an offset
+ * o to the transform:
+ *
+ * x' = s * x + o
+ *
+ * so that when we plug in the bin start b_s:
+ * 
+ * b_s = s * b_s + o
+ *
+ * and we get:
+ *
+ * o = b_s - s * b_s
+ *
+ * We use this form exactly, because we know the bin offset is a multiple of
+ * the frag area so s * b_s is an integer and we can compute an exact result
+ * easily.
+ */
+
+static VkOffset2D
+fdm_per_bin_offset(VkExtent2D frag_area, VkRect2D bin)
+{
+   assert(bin.offset.x % frag_area.width == 0);
+   assert(bin.offset.y % frag_area.height == 0);
+
+   return (VkOffset2D) {
+      bin.offset.x - bin.offset.x / frag_area.width,
+      bin.offset.y - bin.offset.y / frag_area.height
+   };
+}
+
+static void
+fdm_apply_viewports(struct tu_cs *cs, void *data, VkRect2D bin, unsigned views,
+                    VkExtent2D *frag_areas)
+{
+   VkViewport viewports[MAX_VIEWPORTS];
+   const struct apply_viewport_state *state =
+      (const struct apply_viewport_state *)data;
+
+   for (unsigned i = 0; i < state->num_viewports; i++) {
+      /* Note: If we're using shared scaling, the scale should already be the
+       * same across all views, we can pick any view. However the number
+       * of viewports and number of views is not guaranteed the same, so we
+       * need to pick the 0'th view which always exists to be safe.
+       *
+       * Conversly, if we're not using shared scaling then the rasterizer in
+       * the original pipeline is using only the first viewport, so we need to
+       * replicate it across all viewports.
+       */
+      VkExtent2D frag_area = state->share_scale ? frag_areas[0] : frag_areas[i];
+      VkViewport viewport =
+         state->share_scale ? state->viewports[i] : state->viewports[0];
+      if (frag_area.width == 1 && frag_area.height == 1) {
+         viewports[i] = viewport;
+         continue;
+      }
+
+      float scale_x = (float) 1.0f / frag_area.width;
+      float scale_y = (float) 1.0f / frag_area.height;
+
+      viewports[i].minDepth = viewport.minDepth;
+      viewports[i].maxDepth = viewport.maxDepth;
+      viewports[i].width = viewport.width * scale_x;
+      viewports[i].height = viewport.height * scale_y;
+
+      VkOffset2D offset = fdm_per_bin_offset(frag_area, bin);
+
+      viewports[i].x = scale_x * viewport.x + offset.x;
+      viewports[i].y = scale_y * viewport.y + offset.y;
+   }
+
+   tu6_emit_viewport(cs, viewports, state->num_viewports, state->z_negative_one_to_one);
+}
+
+struct apply_scissor_state {
+   VkRect2D scissors[MAX_VIEWPORTS];
+   unsigned num_scissors;
+   bool share_scale;
+};
+
+static void
+fdm_apply_scissors(struct tu_cs *cs, void *data, VkRect2D bin, unsigned views,
+                   VkExtent2D *frag_areas)
+{
+   VkRect2D scissors[MAX_VIEWPORTS];
+   const struct apply_scissor_state *state =
+      (const struct apply_scissor_state *)data;
+
+   for (unsigned i = 0; i < state->num_scissors; i++) {
+      VkExtent2D frag_area = state->share_scale ? frag_areas[0] : frag_areas[i];
+      VkRect2D scissor =
+         state->share_scale ? state->scissors[i] : state->scissors[0];
+      if (frag_area.width == 1 && frag_area.height == 1) {
+         scissors[i] = scissor;
+         continue;
+      }
+
+      /* Transform the scissor following the viewport. It's unclear how this
+       * is supposed to handle cases where the scissor isn't aligned to the
+       * fragment area, but we round outwards to always render partial
+       * fragments if the scissor size equals the framebuffer size and it
+       * isn't aligned to the fragment area.
+       */
+      VkOffset2D offset = fdm_per_bin_offset(frag_area, bin);
+      VkOffset2D min = {
+         scissor.offset.x / frag_area.width + offset.x,
+         scissor.offset.y / frag_area.width + offset.y,
+      };
+      VkOffset2D max = {
+         DIV_ROUND_UP(scissor.offset.x + scissor.extent.width, frag_area.width) + offset.x,
+         DIV_ROUND_UP(scissor.offset.y + scissor.extent.height, frag_area.height) + offset.y,
+      };
+
+      /* Intersect scissor with the scaled bin, this essentially replaces the
+       * window scissor.
+       */
+      uint32_t scaled_width = bin.extent.width / frag_area.width;
+      uint32_t scaled_height = bin.extent.height / frag_area.height;
+      scissors[i].offset.x = MAX2(min.x, bin.offset.x);
+      scissors[i].offset.y = MAX2(min.y, bin.offset.y);
+      scissors[i].extent.width =
+         MIN2(max.x, bin.offset.x + scaled_width) - scissors[i].offset.x;
+      scissors[i].extent.height =
+         MIN2(max.y, bin.offset.y + scaled_height) - scissors[i].offset.y;
+   }
+
+   tu6_emit_scissor(cs, scissors, state->num_scissors);
+}
+
+static uint32_t
+fs_params_offset(struct tu_cmd_buffer *cmd)
+{
+   const struct tu_program_descriptor_linkage *link =
+      &cmd->state.pipeline->program.link[MESA_SHADER_FRAGMENT];
+   const struct ir3_const_state *const_state = &link->const_state;
+
+   if (const_state->num_driver_params <= IR3_DP_FS_DYNAMIC)
+      return 0;
+
+   if (const_state->offsets.driver_param + IR3_DP_FS_DYNAMIC / 4 >= link->constlen)
+      return 0;
+
+   return const_state->offsets.driver_param + IR3_DP_FS_DYNAMIC / 4;
+}
+
+static uint32_t
+fs_params_size(struct tu_cmd_buffer *cmd)
+{
+   const struct tu_program_descriptor_linkage *link =
+      &cmd->state.pipeline->program.link[MESA_SHADER_FRAGMENT];
+   const struct ir3_const_state *const_state = &link->const_state;
+
+   return DIV_ROUND_UP(const_state->num_driver_params - IR3_DP_FS_DYNAMIC, 4);
+}
+
+struct apply_fs_params_state {
+   unsigned num_consts;
+};
+
+static void
+fdm_apply_fs_params(struct tu_cs *cs, void *data, VkRect2D bin, unsigned views,
+                    VkExtent2D *frag_areas)
+{
+   const struct apply_fs_params_state *state =
+      (const struct apply_fs_params_state *)data;
+   unsigned num_consts = state->num_consts;
+
+   for (unsigned i = 0; i < num_consts; i++) {
+      assert(i < views);
+      VkExtent2D area = frag_areas[i];
+      VkOffset2D offset = fdm_per_bin_offset(area, bin);
+      
+      tu_cs_emit(cs, area.width);
+      tu_cs_emit(cs, area.height);
+      tu_cs_emit(cs, fui(offset.x));
+      tu_cs_emit(cs, fui(offset.y));
+   }
+}
+
+static void
+tu6_emit_fs_params(struct tu_cmd_buffer *cmd)
+{
+   uint32_t offset = fs_params_offset(cmd);
+
+   if (offset == 0) {
+      cmd->state.fs_params = (struct tu_draw_state) {};
+      return;
+   }
+
+   struct tu_pipeline *pipeline = cmd->state.pipeline;
+
+   unsigned num_units = fs_params_size(cmd);
+
+   if (pipeline->fs.fragment_density_map)
+      tu_cs_set_writeable(&cmd->sub_cs, true);
+
+   struct tu_cs cs;
+   VkResult result = tu_cs_begin_sub_stream(&cmd->sub_cs, 4 + 4 * num_units, &cs);
+   if (result != VK_SUCCESS) {
+      tu_cs_set_writeable(&cmd->sub_cs, false);
+      vk_command_buffer_set_error(&cmd->vk, result);
+      return;
+   }
+
+   tu_cs_emit_pkt7(&cs, CP_LOAD_STATE6_FRAG, 3 + 4 * num_units);
+   tu_cs_emit(&cs, CP_LOAD_STATE6_0_DST_OFF(offset) |
+         CP_LOAD_STATE6_0_STATE_TYPE(ST6_CONSTANTS) |
+         CP_LOAD_STATE6_0_STATE_SRC(SS6_DIRECT) |
+         CP_LOAD_STATE6_0_STATE_BLOCK(SB6_FS_SHADER) |
+         CP_LOAD_STATE6_0_NUM_UNIT(num_units));
+   tu_cs_emit(&cs, 0);
+   tu_cs_emit(&cs, 0);
+
+   STATIC_ASSERT(IR3_DP_FS_FRAG_INVOCATION_COUNT == IR3_DP_FS_DYNAMIC);
+   tu_cs_emit(&cs, pipeline->program.per_samp ? cmd->state.samples : 1);
+   tu_cs_emit(&cs, 0);
+   tu_cs_emit(&cs, 0);
+   tu_cs_emit(&cs, 0);
+
+   STATIC_ASSERT(IR3_DP_FS_FRAG_SIZE == IR3_DP_FS_DYNAMIC + 4);
+   STATIC_ASSERT(IR3_DP_FS_FRAG_OFFSET == IR3_DP_FS_DYNAMIC + 6);
+   if (num_units > 1) {
+      if (pipeline->fs.fragment_density_map) {
+         struct apply_fs_params_state state = {
+            .num_consts = num_units - 1,
+         };
+         tu_create_fdm_bin_patchpoint(cmd, &cs, 4 * (num_units - 1),
+                                      fdm_apply_fs_params, state);
+      } else {
+         for (unsigned i = 1; i < num_units; i++) {
+            tu_cs_emit(&cs, 1);
+            tu_cs_emit(&cs, 1);
+            tu_cs_emit(&cs, fui(0.0f));
+            tu_cs_emit(&cs, fui(0.0f));
+         }
+      }
+   }
+
+   cmd->state.fs_params = tu_cs_end_draw_state(&cmd->sub_cs, &cs);
+
+   if (pipeline->fs.fragment_density_map)
+      tu_cs_set_writeable(&cmd->sub_cs, false);
+}
+
 static VkResult
 tu6_draw_common(struct tu_cmd_buffer *cmd,
                 struct tu_cs *cs,
@@ -4968,8 +5452,7 @@ tu6_draw_common(struct tu_cmd_buffer *cmd,
       return VK_SUCCESS;
 
    bool dirty_lrz =
-      dirty & (TU_CMD_DIRTY_LRZ | TU_CMD_DIRTY_RB_DEPTH_CNTL |
-                          TU_CMD_DIRTY_RB_STENCIL_CNTL | TU_CMD_DIRTY_BLEND);
+      dirty & (TU_CMD_DIRTY_LRZ | TU_CMD_DIRTY_DS | TU_CMD_DIRTY_BLEND);
 
    if (dirty_lrz) {
       struct tu_cs cs;
@@ -5012,8 +5495,8 @@ tu6_draw_common(struct tu_cmd_buffer *cmd,
                     gras_cl_cntl, cmd->state.polygon_mode);
    }
 
-   if (dirty & TU_CMD_DIRTY_RB_DEPTH_CNTL) {
-      struct tu_cs cs = tu_cmd_dynamic_state(cmd, TU_DYNAMIC_STATE_RB_DEPTH_CNTL, 2);
+   if (dirty & TU_CMD_DIRTY_DS) {
+      struct tu_cs cs = tu_cmd_dynamic_state(cmd, TU_DYNAMIC_STATE_DS, 4);
       uint32_t rb_depth_cntl = cmd->state.rb_depth_cntl;
 
       if ((rb_depth_cntl & A6XX_RB_DEPTH_CNTL_Z_TEST_ENABLE) ||
@@ -5028,10 +5511,6 @@ tu6_draw_common(struct tu_cmd_buffer *cmd,
          rb_depth_cntl = 0;
 
       tu_cs_emit_regs(&cs, A6XX_RB_DEPTH_CNTL(.dword = rb_depth_cntl));
-   }
-
-   if (dirty & TU_CMD_DIRTY_RB_STENCIL_CNTL) {
-      struct tu_cs cs = tu_cmd_dynamic_state(cmd, TU_DYNAMIC_STATE_RB_STENCIL_CNTL, 2);
       tu_cs_emit_regs(&cs, A6XX_RB_STENCIL_CONTROL(.dword = cmd->state.rb_stencil_cntl));
    }
 
@@ -5039,9 +5518,49 @@ tu6_draw_common(struct tu_cmd_buffer *cmd,
       cmd->state.shader_const = tu6_emit_consts(cmd, pipeline, false);
 
    if (dirty & TU_CMD_DIRTY_VIEWPORTS) {
-      struct tu_cs cs = tu_cmd_dynamic_state(cmd, VK_DYNAMIC_STATE_VIEWPORT, 8 + 10 * cmd->state.max_viewport);
-      tu6_emit_viewport(&cs, cmd->state.viewport, cmd->state.max_viewport,
-                        cmd->state.z_negative_one_to_one);
+      if (pipeline->fs.fragment_density_map) {
+         unsigned num_views = MAX2(cmd->state.pass->num_views, 1);
+         unsigned num_viewports = cmd->state.per_view_viewport ?
+            num_views : cmd->state.viewport_count;
+         struct apply_viewport_state state = {
+            .num_viewports = num_viewports,
+            .z_negative_one_to_one = cmd->state.z_negative_one_to_one,
+            .share_scale = !cmd->state.per_view_viewport,
+         };
+         memcpy(&state.viewports, cmd->state.viewport, sizeof(state.viewports));
+         tu_cs_set_writeable(&cmd->sub_cs, true);
+         struct tu_cs cs = tu_cmd_dynamic_state(cmd, VK_DYNAMIC_STATE_VIEWPORT, 8 + 10 * num_viewports);
+         tu_cs_set_writeable(&cmd->sub_cs, false);
+         tu_create_fdm_bin_patchpoint(cmd, &cs, 8 + 10 * num_viewports,
+                                      fdm_apply_viewports, state);
+         cmd->state.rp.shared_viewport |= !cmd->state.per_view_viewport;
+      } else {
+         struct tu_cs cs = tu_cmd_dynamic_state(cmd, VK_DYNAMIC_STATE_VIEWPORT, 8 + 10 * cmd->state.viewport_count);
+         tu6_emit_viewport(&cs, cmd->state.viewport, cmd->state.viewport_count,
+                           cmd->state.z_negative_one_to_one);
+      }
+   }
+
+   if (dirty & TU_CMD_DIRTY_SCISSORS) {
+      if (pipeline->fs.fragment_density_map) {
+         unsigned num_views = MAX2(cmd->state.pass->num_views, 1);
+         unsigned num_scissors = cmd->state.per_view_viewport ?
+            num_views : cmd->state.scissor_count;
+         struct apply_scissor_state state = {
+            .num_scissors = num_scissors,
+            .share_scale = !cmd->state.per_view_viewport,
+         };
+         memcpy(&state.scissors, cmd->state.scissor, sizeof(state.scissors));
+         tu_cs_set_writeable(&cmd->sub_cs, true);
+         struct tu_cs cs = tu_cmd_dynamic_state(cmd, VK_DYNAMIC_STATE_SCISSOR, 1 + 2 * num_scissors);
+         tu_cs_set_writeable(&cmd->sub_cs, false);
+         tu_create_fdm_bin_patchpoint(cmd, &cs, 1 + 2 * num_scissors,
+                                      fdm_apply_scissors, state);
+         cmd->state.rp.shared_viewport |= !cmd->state.per_view_viewport;
+      } else {
+         struct tu_cs cs = tu_cmd_dynamic_state(cmd, VK_DYNAMIC_STATE_SCISSOR, 1 + 2 * cmd->state.scissor_count);
+         tu6_emit_scissor(&cs, cmd->state.scissor, cmd->state.scissor_count);
+      }
    }
 
    if (dirty & TU_CMD_DIRTY_BLEND) {
@@ -5063,6 +5582,9 @@ tu6_draw_common(struct tu_cmd_buffer *cmd,
 
    if (dirty & TU_CMD_DIRTY_DESC_SETS)
       tu6_emit_descriptor_sets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS);
+
+   if (dirty & TU_CMD_DIRTY_FS_PARAMS)
+      tu6_emit_fs_params(cmd);
 
    /* for the first draw in a renderpass, re-emit all the draw states
     *
@@ -5087,6 +5609,7 @@ tu6_draw_common(struct tu_cmd_buffer *cmd,
       tu_cs_emit_draw_state(cs, TU_DRAW_STATE_DESC_SETS_LOAD, pipeline->load_state);
       tu_cs_emit_draw_state(cs, TU_DRAW_STATE_VB, cmd->state.vertex_buffers);
       tu_cs_emit_draw_state(cs, TU_DRAW_STATE_VS_PARAMS, cmd->state.vs_params);
+      tu_cs_emit_draw_state(cs, TU_DRAW_STATE_FS_PARAMS, cmd->state.fs_params);
       tu_cs_emit_draw_state(cs, TU_DRAW_STATE_LRZ_AND_DEPTH_PLANE, cmd->state.lrz_and_depth_plane_state);
       tu_cs_emit_draw_state(cs, TU_DRAW_STATE_MSAA, cmd->state.msaa);
 
@@ -5107,6 +5630,7 @@ tu6_draw_common(struct tu_cmd_buffer *cmd,
          ((dirty & TU_CMD_DIRTY_DESC_SETS) ? 1 : 0) +
          ((dirty & TU_CMD_DIRTY_VERTEX_BUFFERS) ? 1 : 0) +
          ((dirty & TU_CMD_DIRTY_VS_PARAMS) ? 1 : 0) +
+         ((dirty & TU_CMD_DIRTY_FS_PARAMS) ? 1 : 0) +
          (dirty_lrz ? 1 : 0);
 
       if ((dirty & TU_CMD_DIRTY_VB_STRIDE) &&
@@ -5153,6 +5677,8 @@ tu6_draw_common(struct tu_cmd_buffer *cmd,
       }
       if (dirty & TU_CMD_DIRTY_VS_PARAMS)
          tu_cs_emit_draw_state(cs, TU_DRAW_STATE_VS_PARAMS, cmd->state.vs_params);
+      if (dirty & TU_CMD_DIRTY_FS_PARAMS)
+         tu_cs_emit_draw_state(cs, TU_DRAW_STATE_FS_PARAMS, cmd->state.fs_params);
 
       if (dirty_lrz) {
          tu_cs_emit_draw_state(cs, TU_DRAW_STATE_LRZ_AND_DEPTH_PLANE, cmd->state.lrz_and_depth_plane_state);
@@ -6223,7 +6749,7 @@ tu_CmdWriteBufferMarker2AMD(VkCommandBuffer commandBuffer,
    TU_FROM_HANDLE(tu_cmd_buffer, cmd, commandBuffer);
    TU_FROM_HANDLE(tu_buffer, buffer, dstBuffer);
 
-   uint64_t va = buffer->bo->iova + dstOffset;
+   uint64_t va = buffer->iova + dstOffset;
 
    struct tu_cs *cs = cmd->state.pass ? &cmd->draw_cs : &cmd->cs;
    struct tu_cache_state *cache =

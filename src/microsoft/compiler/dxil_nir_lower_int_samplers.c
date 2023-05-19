@@ -105,7 +105,7 @@ dx_get_texture_lod(nir_builder *b, nir_tex_instr *tex)
       }
    }
 
-   nir_ssa_dest_init(&tql->instr, &tql->dest, 2, 32, NULL);
+   nir_ssa_dest_init(&tql->instr, &tql->dest, 2, 32);
    nir_builder_instr_insert(b, &tql->instr);
 
    /* DirectX LOD only has a value in x channel */
@@ -296,8 +296,8 @@ create_txf_from_tex(nir_builder *b, nir_tex_instr *tex)
       }
    }
 
-   nir_ssa_dest_init(&txf->instr, &txf->dest,
-                     nir_tex_instr_dest_size(txf), 32, NULL);
+   nir_ssa_dest_init(&txf->instr, &txf->dest, nir_tex_instr_dest_size(txf),
+                     32);
    nir_builder_instr_insert(b, &txf->instr);
 
    return txf;

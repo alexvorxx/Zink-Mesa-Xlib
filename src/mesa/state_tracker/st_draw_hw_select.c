@@ -413,9 +413,12 @@ update_result_buffer(nir_builder *b, nir_ssa_def *dmin, nir_ssa_def *dmax,
    /* driver_location = 0 (slot 0) */
 
    nir_ssa_def *ssbo = nir_imm_int(b, 0);
-   nir_ssbo_atomic_exchange(b, 32, ssbo, offset, nir_imm_int(b, 1));
-   nir_ssbo_atomic_umin(b, 32, ssbo, nir_iadd_imm(b, offset, 4), dmin);
-   nir_ssbo_atomic_umax(b, 32, ssbo, nir_iadd_imm(b, offset, 8), dmax);
+   nir_ssbo_atomic(b, 32, ssbo, offset, nir_imm_int(b, 1),
+                   .atomic_op = nir_atomic_op_xchg);
+   nir_ssbo_atomic(b, 32, ssbo, nir_iadd_imm(b, offset, 4), dmin,
+                   .atomic_op = nir_atomic_op_umin);
+   nir_ssbo_atomic(b, 32, ssbo, nir_iadd_imm(b, offset, 8), dmax,
+                   .atomic_op = nir_atomic_op_umax);
 }
 
 static void

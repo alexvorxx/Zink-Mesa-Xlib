@@ -20,9 +20,55 @@ struct match {
 };
 
 /*
+ * Try to match a multiplication with an immediate value. This generalizes to
+ * both imul and ishl. If successful, returns true and sets the output
+ * variables. Otherwise, returns false.
+ */
+static bool
+match_imul_imm(nir_ssa_scalar scalar, nir_ssa_scalar *variable, uint32_t *imm)
+{
+   if (!nir_ssa_scalar_is_alu(scalar))
+      return false;
+
+   nir_op op = nir_ssa_scalar_alu_op(scalar);
+   if (op != nir_op_imul && op != nir_op_ishl)
+      return false;
+
+   nir_ssa_scalar inputs[] = {
+      nir_ssa_scalar_chase_alu_src(scalar, 0),
+      nir_ssa_scalar_chase_alu_src(scalar, 1),
+   };
+
+   /* For imul check both operands for an immediate, since imul is commutative.
+    * For ishl, only check the operand on the right.
+    */
+   bool commutes = (op == nir_op_imul);
+
+   for (unsigned i = commutes ? 0 : 1; i < ARRAY_SIZE(inputs); ++i) {
+      if (!nir_ssa_scalar_is_const(inputs[i]))
+         continue;
+
+      *variable = inputs[1 - i];
+
+      uint32_t value = nir_ssa_scalar_as_uint(inputs[i]);
+
+      if (op == nir_op_imul)
+         *imm = value;
+      else
+         *imm = (1 << value);
+
+      return true;
+   }
+
+   return false;
+}
+
+/*
  * Try to rewrite (a << (#b + #c)) + #d as ((a << #b) + #d') << #c,
  * assuming that #d is a multiple of 1 << #c. This takes advantage of
  * the hardware's implicit << #c and avoids a right-shift.
+ *
+ * Similarly, try to rewrite (a * (#b << #c)) + #d as ((a * #b) + #d') << #c.
  *
  * This pattern occurs with a struct-of-array layout.
  */
@@ -43,32 +89,28 @@ match_soa(nir_builder *b, struct match *match, unsigned format_shift)
          continue;
 
       unsigned offset = nir_ssa_scalar_as_uint(summands[i]);
-      unsigned offset_shifted = offset >> format_shift;
+      nir_ssa_scalar variable;
+      uint32_t multiplier;
 
-      /* If the constant offset is not aligned, we can't rewrite safely */
+      /* The other operand must multiply */
+      if (!match_imul_imm(summands[1 - i], &variable, &multiplier))
+         return false;
+
+      unsigned offset_shifted = offset >> format_shift;
+      uint32_t multiplier_shifted = multiplier >> format_shift;
+
+      /* If the multiplier or the offset are not aligned, we can't rewrite */
+      if (multiplier != (multiplier_shifted << format_shift))
+         return false;
+
       if (offset != (offset_shifted << format_shift))
          return false;
 
-      /* The other operand must be ishl */
-      if (!nir_ssa_scalar_is_alu(summands[1 - i]) ||
-          nir_ssa_scalar_alu_op(summands[1 - i]) != nir_op_ishl)
-         return false;
+      /* Otherwise, rewrite! */
+      nir_ssa_def *unmultiplied = nir_vec_scalars(b, &variable, 1);
 
-      nir_ssa_scalar shifted = nir_ssa_scalar_chase_alu_src(summands[1 - i], 0);
-      nir_ssa_scalar shift = nir_ssa_scalar_chase_alu_src(summands[1 - i], 1);
-
-      /* The explicit shift must be at least as big as the implicit shift */
-      if (!nir_ssa_scalar_is_const(shift) ||
-          nir_ssa_scalar_as_uint(shift) < format_shift)
-         return false;
-
-      /* All conditions met, rewrite! */
-      nir_ssa_def *shifted_ssa = nir_vec_scalars(b, &shifted, 1);
-      uint32_t shift_u32 = nir_ssa_scalar_as_uint(shift);
-
-      nir_ssa_def *rewrite =
-         nir_iadd_imm(b, nir_ishl_imm(b, shifted_ssa, shift_u32 - format_shift),
-                      offset_shifted);
+      nir_ssa_def *rewrite = nir_iadd_imm(
+         b, nir_imul_imm(b, unmultiplied, multiplier_shifted), offset_shifted);
 
       match->offset = nir_get_ssa_scalar(rewrite, 0);
       match->shift = 0;
@@ -133,32 +175,44 @@ match_address(nir_builder *b, nir_ssa_scalar base, int8_t format_shift)
    if (!match.offset.def)
       return match;
 
-   /* But if we did, we can try to fold in an ishl from the offset */
-   if (nir_ssa_scalar_is_alu(match.offset) &&
-       nir_ssa_scalar_alu_op(match.offset) == nir_op_ishl) {
+   /* But if we did, we can try to fold in in a multiply */
+   nir_ssa_scalar multiplied;
+   uint32_t multiplier;
 
-      nir_ssa_scalar shifted = nir_ssa_scalar_chase_alu_src(match.offset, 0);
-      nir_ssa_scalar shift = nir_ssa_scalar_chase_alu_src(match.offset, 1);
+   if (match_imul_imm(match.offset, &multiplied, &multiplier)) {
+      int8_t new_shift = match.shift;
 
-      if (nir_ssa_scalar_is_const(shift)) {
-         int8_t new_shift = match.shift + nir_ssa_scalar_as_uint(shift);
+      /* Try to fold in either a full power-of-two, or just the power-of-two
+       * part of a non-power-of-two stride.
+       */
+      if (util_is_power_of_two_nonzero(multiplier)) {
+         new_shift += util_logbase2(multiplier);
+         multiplier = 1;
+      } else if (((multiplier >> format_shift) << format_shift) == multiplier) {
+         new_shift += format_shift;
+         multiplier >>= format_shift;
+      } else {
+         return match;
+      }
 
-         /* Only fold in if we wouldn't overflow the lsl field */
-         if (new_shift <= 2) {
-            match.offset = shifted;
-            match.shift = new_shift;
-         } else if (new_shift > 0) {
-            /* For large shifts, we do need an ishl instruction but we can
-             * shrink the shift to avoid generating an ishr.
-             */
-            assert(new_shift >= 3);
+      nir_ssa_def *multiplied_ssa = nir_vec_scalars(b, &multiplied, 1);
 
-            nir_ssa_def *rewrite =
-               nir_ishl_imm(b, nir_vec_scalars(b, &shifted, 1), new_shift);
+      /* Only fold in if we wouldn't overflow the lsl field */
+      if (new_shift <= 2) {
+         match.offset =
+            nir_get_ssa_scalar(nir_imul_imm(b, multiplied_ssa, multiplier), 0);
+         match.shift = new_shift;
+      } else if (new_shift > 0) {
+         /* For large shifts, we do need a multiply, but we can
+          * shrink the shift to avoid generating an ishr.
+          */
+         assert(new_shift >= 3);
 
-            match.offset = nir_get_ssa_scalar(rewrite, 0);
-            match.shift = 0;
-         }
+         nir_ssa_def *rewrite =
+            nir_imul_imm(b, multiplied_ssa, multiplier << new_shift);
+
+         match.offset = nir_get_ssa_scalar(rewrite, 0);
+         match.shift = 0;
       }
    } else {
       /* Try to match struct-of-arrays pattern, updating match if possible */

@@ -2015,7 +2015,7 @@ get_texel_buffer_copy_fs(struct v3dv_device *device, VkFormat format,
    tex->dest_type = nir_type_uint32;
    tex->is_array = false;
    tex->coord_components = 1;
-   nir_ssa_dest_init(&tex->instr, &tex->dest, 4, 32, "texel buffer result");
+   nir_ssa_dest_init(&tex->instr, &tex->dest, 4, 32);
    nir_builder_instr_insert(&b, &tex->instr);
 
    uint32_t swiz[4];
@@ -3369,7 +3369,7 @@ build_nir_tex_op_read(struct nir_builder *b,
    tex->is_array = glsl_sampler_type_is_array(sampler_type);
    tex->coord_components = tex_pos->num_components;
 
-   nir_ssa_dest_init(&tex->instr, &tex->dest, 4, 32, "tex");
+   nir_ssa_dest_init(&tex->instr, &tex->dest, 4, 32);
    nir_builder_instr_insert(b, &tex->instr);
    return &tex->dest.ssa;
 }
@@ -3397,7 +3397,7 @@ build_nir_tex_op_ms_fetch_sample(struct nir_builder *b,
    tex->is_array = false;
    tex->coord_components = tex_pos->num_components;
 
-   nir_ssa_dest_init(&tex->instr, &tex->dest, 4, 32, "tex");
+   nir_ssa_dest_init(&tex->instr, &tex->dest, 4, 32);
    nir_builder_instr_insert(b, &tex->instr);
    return &tex->dest.ssa;
 }

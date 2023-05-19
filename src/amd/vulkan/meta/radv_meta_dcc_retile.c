@@ -185,7 +185,7 @@ radv_retile_dcc(struct radv_cmd_buffer *cmd_buffer, struct radv_image *image)
    struct radv_buffer buffer;
 
    assert(image->vk.image_type == VK_IMAGE_TYPE_2D);
-   assert(image->info.array_size == 1 && image->info.levels == 1);
+   assert(image->vk.array_layers == 1 && image->vk.mip_levels == 1);
 
    struct radv_cmd_state *state = &cmd_buffer->state;
 
@@ -256,8 +256,8 @@ radv_retile_dcc(struct radv_cmd_buffer *cmd_buffer, struct radv_image *image)
                                     },
                                  });
 
-   unsigned width = DIV_ROUND_UP(image->info.width, vk_format_get_blockwidth(image->vk.format));
-   unsigned height = DIV_ROUND_UP(image->info.height, vk_format_get_blockheight(image->vk.format));
+   unsigned width = DIV_ROUND_UP(image->vk.extent.width, vk_format_get_blockwidth(image->vk.format));
+   unsigned height = DIV_ROUND_UP(image->vk.extent.height, vk_format_get_blockheight(image->vk.format));
 
    unsigned dcc_width = DIV_ROUND_UP(width, image->planes[0].surface.u.gfx9.color.dcc_block_width);
    unsigned dcc_height =

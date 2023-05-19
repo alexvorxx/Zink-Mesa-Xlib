@@ -375,8 +375,8 @@ nir_get_texture_size(nir_builder *b, nir_tex_instr *tex)
    txs->src[idx].src = nir_src_for_ssa(nir_imm_int(b, 0));
    txs->src[idx].src_type = nir_tex_src_lod;
 
-   nir_ssa_dest_init(&txs->instr, &txs->dest,
-                     nir_tex_instr_dest_size(txs), 32, NULL);
+   nir_ssa_dest_init(&txs->instr, &txs->dest, nir_tex_instr_dest_size(txs),
+                     32);
    nir_builder_instr_insert(b, &txs->instr);
 
    return &txs->dest.ssa;
@@ -427,7 +427,7 @@ nir_get_texture_lod(nir_builder *b, nir_tex_instr *tex)
       }
    }
 
-   nir_ssa_dest_init(&tql->instr, &tql->dest, 2, 32, NULL);
+   nir_ssa_dest_init(&tql->instr, &tql->dest, 2, 32);
    nir_builder_instr_insert(b, &tql->instr);
 
    /* The LOD is the y component of the result */

@@ -81,8 +81,10 @@ fetch_pipeline_prepare(struct draw_pt_middle_end *middle,
                                  u_assembled_prim(prim));
    unsigned nr_vs_outputs = draw_total_vs_outputs(draw);
    unsigned nr = MAX2(vs->info.num_inputs, nr_vs_outputs);
-   unsigned point_clip = draw->rasterizer->fill_front == PIPE_POLYGON_MODE_POINT ||
-                         gs_out_prim == PIPE_PRIM_POINTS;
+   unsigned point_line_clip = draw->rasterizer->fill_front == PIPE_POLYGON_MODE_POINT ||
+                              draw->rasterizer->fill_front == PIPE_POLYGON_MODE_LINE ||
+                              gs_out_prim == PIPE_PRIM_POINTS ||
+                              gs_out_prim == PIPE_PRIM_LINE_STRIP;
 
    if (gs) {
       nr = MAX2(nr, gs->info.num_outputs + 1);
@@ -114,8 +116,8 @@ fetch_pipeline_prepare(struct draw_pt_middle_end *middle,
                            draw->clip_xy,
                            draw->clip_z,
                            draw->clip_user,
-                           point_clip ? draw->guard_band_points_xy :
-                                        draw->guard_band_xy,
+                           point_line_clip ? draw->guard_band_points_lines_xy :
+                                             draw->guard_band_xy,
                            draw->bypass_viewport,
                            draw->rasterizer->clip_halfz,
                            (draw->vs.edgeflag_output ? TRUE : FALSE));

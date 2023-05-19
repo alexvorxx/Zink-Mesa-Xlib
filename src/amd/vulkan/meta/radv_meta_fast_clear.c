@@ -480,8 +480,8 @@ radv_process_color_image_layer(struct radv_cmd_buffer *cmd_buffer, struct radv_i
    struct radv_image_view iview;
    uint32_t width, height;
 
-   width = radv_minify(image->info.width, range->baseMipLevel + level);
-   height = radv_minify(image->info.height, range->baseMipLevel + level);
+   width = radv_minify(image->vk.extent.width, range->baseMipLevel + level);
+   height = radv_minify(image->vk.extent.height, range->baseMipLevel + level);
 
    radv_image_view_init(&iview, device,
                         &(VkImageViewCreateInfo){
@@ -571,7 +571,7 @@ radv_process_color_image(struct radv_cmd_buffer *cmd_buffer, struct radv_image *
    }
 
    if (radv_dcc_enabled(image, subresourceRange->baseMipLevel) &&
-       (image->info.array_size != radv_get_layerCount(image, subresourceRange) ||
+       (image->vk.array_layers != vk_image_subresource_layer_count(&image->vk, subresourceRange) ||
         subresourceRange->baseArrayLayer != 0)) {
       /* Only use predication if the image has DCC with mipmaps or
        * if the range of layers covers the whole image because the
@@ -605,15 +605,15 @@ radv_process_color_image(struct radv_cmd_buffer *cmd_buffer, struct radv_image *
    radv_CmdBindPipeline(radv_cmd_buffer_to_handle(cmd_buffer), VK_PIPELINE_BIND_POINT_GRAPHICS,
                         *pipeline);
 
-   for (uint32_t l = 0; l < radv_get_levelCount(image, subresourceRange); ++l) {
+   for (uint32_t l = 0; l < vk_image_subresource_level_count(&image->vk, subresourceRange); ++l) {
       uint32_t width, height;
 
       /* Do not decompress levels without DCC. */
       if (op == DCC_DECOMPRESS && !radv_dcc_enabled(image, subresourceRange->baseMipLevel + l))
          continue;
 
-      width = radv_minify(image->info.width, subresourceRange->baseMipLevel + l);
-      height = radv_minify(image->info.height, subresourceRange->baseMipLevel + l);
+      width = radv_minify(image->vk.extent.width, subresourceRange->baseMipLevel + l);
+      height = radv_minify(image->vk.extent.height, subresourceRange->baseMipLevel + l);
 
       radv_CmdSetViewport(radv_cmd_buffer_to_handle(cmd_buffer), 0, 1,
                           &(VkViewport){.x = 0,
@@ -629,7 +629,7 @@ radv_process_color_image(struct radv_cmd_buffer *cmd_buffer, struct radv_image *
                             .extent = {width, height},
                          });
 
-      for (uint32_t s = 0; s < radv_get_layerCount(image, subresourceRange); s++) {
+      for (uint32_t s = 0; s < vk_image_subresource_layer_count(&image->vk, subresourceRange); s++) {
          radv_process_color_image_layer(cmd_buffer, image, subresourceRange, l, s, flush_cb);
       }
    }
@@ -736,17 +736,17 @@ radv_decompress_dcc_compute(struct radv_cmd_buffer *cmd_buffer, struct radv_imag
    radv_CmdBindPipeline(radv_cmd_buffer_to_handle(cmd_buffer), VK_PIPELINE_BIND_POINT_COMPUTE,
                         device->meta_state.fast_clear_flush.dcc_decompress_compute_pipeline);
 
-   for (uint32_t l = 0; l < radv_get_levelCount(image, subresourceRange); l++) {
+   for (uint32_t l = 0; l < vk_image_subresource_level_count(&image->vk, subresourceRange); l++) {
       uint32_t width, height;
 
       /* Do not decompress levels without DCC. */
       if (!radv_dcc_enabled(image, subresourceRange->baseMipLevel + l))
          continue;
 
-      width = radv_minify(image->info.width, subresourceRange->baseMipLevel + l);
-      height = radv_minify(image->info.height, subresourceRange->baseMipLevel + l);
+      width = radv_minify(image->vk.extent.width, subresourceRange->baseMipLevel + l);
+      height = radv_minify(image->vk.extent.height, subresourceRange->baseMipLevel + l);
 
-      for (uint32_t s = 0; s < radv_get_layerCount(image, subresourceRange); s++) {
+      for (uint32_t s = 0; s < vk_image_subresource_layer_count(&image->vk, subresourceRange); s++) {
          radv_image_view_init(
             &load_iview, cmd_buffer->device,
             &(VkImageViewCreateInfo){

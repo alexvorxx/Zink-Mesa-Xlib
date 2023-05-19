@@ -60,6 +60,8 @@ Instr::print(std::ostream& os) const
 bool
 Instr::ready() const
 {
+   if (is_scheduled())
+      return true;
    for (auto& i : m_required_instr)
       if (!i->ready())
          return false;
@@ -340,6 +342,12 @@ Block::push_back(PInst instr)
       m_lds_group_requirement += instr->slots();
 
    m_instructions.push_back(instr);
+}
+
+Block::iterator
+Block::insert(const iterator pos, Instr *instr)
+{
+   return m_instructions.insert(pos, instr);
 }
 
 bool

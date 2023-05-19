@@ -1509,7 +1509,10 @@ d3d12_init_screen(struct d3d12_screen *screen, IUnknown *adapter)
    for (UINT i = 0; i < ARRAY_SIZE(valid_shader_models); ++i) {
       D3D12_FEATURE_DATA_SHADER_MODEL shader_model = { valid_shader_models[i] };
       if (SUCCEEDED(screen->dev->CheckFeatureSupport(D3D12_FEATURE_SHADER_MODEL, &shader_model, sizeof(shader_model)))) {
-         screen->max_shader_model = shader_model.HighestShaderModel;
+         static_assert(D3D_SHADER_MODEL_6_0 == 0x60 && SHADER_MODEL_6_0 == 0x60000, "Validating math below");
+         static_assert(D3D_SHADER_MODEL_6_7 == 0x67 && SHADER_MODEL_6_7 == 0x60007, "Validating math below");
+         screen->max_shader_model = static_cast<dxil_shader_model>(((shader_model.HighestShaderModel & 0xf0) << 12) |
+                                                                   (shader_model.HighestShaderModel & 0xf));
          break;
       }
    }
@@ -1614,20 +1617,15 @@ d3d12_init_screen(struct d3d12_screen *screen, IUnknown *adapter)
    }
 #endif
 
-   screen->nir_options = *dxil_get_nir_compiler_options();
-
    static constexpr uint64_t known_good_warp_version = 10ull << 48 | 22000ull << 16;
-   if ((screen->vendor_id == HW_VENDOR_MICROSOFT &&
-        screen->driver_version < known_good_warp_version) ||
-      !screen->opts1.Int64ShaderOps) {
-      /* Work around old versions of WARP that are completely broken for 64bit shifts */
-      screen->nir_options.lower_pack_64_2x32_split = false;
-      screen->nir_options.lower_unpack_64_2x32_split = false;
-      screen->nir_options.lower_int64_options = (nir_lower_int64_options)~0;
-   }
-
-   if (!screen->opts.DoublePrecisionFloatShaderOps)
-      screen->nir_options.lower_doubles_options = (nir_lower_doubles_options)~0;
+   bool warp_with_broken_int64 =
+      (screen->vendor_id == HW_VENDOR_MICROSOFT && screen->driver_version < known_good_warp_version);
+   unsigned supported_int_sizes = 32 | (screen->opts1.Int64ShaderOps && !warp_with_broken_int64 ? 64 : 0);
+   unsigned supported_float_sizes = 32 | (screen->opts.DoublePrecisionFloatShaderOps ? 64 : 0);
+   dxil_get_nir_compiler_options(&screen->nir_options,
+                                 screen->max_shader_model,
+                                 supported_int_sizes,
+                                 supported_float_sizes);
 
    const char *mesa_version = "Mesa " PACKAGE_VERSION MESA_GIT_SHA1;
    struct mesa_sha1 sha1_ctx;

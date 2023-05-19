@@ -55,6 +55,8 @@ spirv_to_nir_options = {
       .descriptor_array_non_uniform_indexing = true,
       .image_read_without_format = true,
       .image_write_without_format = true,
+      .int64 = true,
+      .float64 = true,
    },
    .ubo_addr_format = nir_address_format_32bit_index_offset,
    .ssbo_addr_format = nir_address_format_32bit_index_offset,
@@ -127,6 +129,34 @@ shared_var_info(const struct glsl_type* type, unsigned* size, unsigned* align)
    unsigned length = glsl_get_vector_elements(type);
    *size = comp_size * length;
    *align = comp_size;
+}
+
+static void
+temp_var_info(const struct glsl_type* type, unsigned* size, unsigned* align)
+{
+   uint32_t base_size, base_align;
+   switch (glsl_get_base_type(type)) {
+   case GLSL_TYPE_ARRAY:
+      temp_var_info(glsl_get_array_element(type), &base_size, align);
+      *size = base_size * glsl_array_size(type);
+      break;
+   case GLSL_TYPE_STRUCT:
+   case GLSL_TYPE_INTERFACE:
+      *size = 0;
+      *align = 0;
+      for (uint32_t i = 0; i < glsl_get_length(type); ++i) {
+         temp_var_info(glsl_get_struct_field(type, i), &base_size, &base_align);
+         *size = ALIGN_POT(*size, base_align) + base_size;
+         *align = MAX2(*align, base_align);
+      }
+      break;
+   default:
+      glsl_get_natural_size_align_bytes(type, &base_size, &base_align);
+
+      *align = MAX2(base_align, 4);
+      *size = ALIGN_POT(base_size, *align);
+      break;
+   }
 }
 
 static nir_variable *
@@ -917,7 +947,6 @@ dxil_spirv_nir_passes(nir_shader *nir,
 {
    glsl_type_singleton_init_or_ref();
 
-   NIR_PASS_V(nir, dxil_nir_lower_int_cubemaps, false);
    NIR_PASS_V(nir, nir_lower_io_to_vector,
               nir_var_shader_out |
               (nir->info.stage != MESA_SHADER_VERTEX ? nir_var_shader_in : 0));
@@ -946,6 +975,9 @@ dxil_spirv_nir_passes(nir_shader *nir,
       .lower_to_scalar = true,
       .lower_relative_shuffle = true,
    };
+   if (nir->info.stage != MESA_SHADER_FRAGMENT &&
+       nir->info.stage != MESA_SHADER_COMPUTE)
+      subgroup_options.lower_quad = true;
    NIR_PASS_V(nir, nir_lower_subgroups, &subgroup_options);
    NIR_PASS_V(nir, nir_lower_bit_size, lower_bit_size_callback, NULL);
 
@@ -993,6 +1025,9 @@ dxil_spirv_nir_passes(nir_shader *nir,
       NIR_PASS_V(nir, nir_lower_discard_or_demote, nir->info.use_legacy_math_rules);
 
       NIR_PASS_V(nir, dxil_nir_lower_discard_and_terminate);
+      /* Remove single-source phis now that returns have been inserted, otherwise
+       * lowering returns might not behave correctly. */
+      NIR_PASS_V(nir, nir_opt_remove_phis);
       NIR_PASS_V(nir, nir_lower_returns);
       NIR_PASS_V(nir, dxil_nir_lower_sample_pos);
       NIR_PASS_V(nir, nir_lower_fragcoord_wtrans);
@@ -1034,8 +1069,13 @@ dxil_spirv_nir_passes(nir_shader *nir,
                  shared_var_info);
    }
    NIR_PASS_V(nir, dxil_nir_split_unaligned_loads_stores, nir_var_mem_shared);
+   NIR_PASS_V(nir, nir_lower_vars_to_scratch, nir_var_function_temp | nir_var_shader_temp,
+              256 /* arbitrary */, temp_var_info);
    NIR_PASS_V(nir, nir_lower_explicit_io, nir_var_mem_shared,
       nir_address_format_32bit_offset);
+
+   NIR_PASS_V(nir, dxil_nir_lower_atomics_to_dxil);
+   NIR_PASS_V(nir, dxil_nir_lower_int_cubemaps, false);
 
    NIR_PASS_V(nir, nir_lower_clip_cull_distance_arrays);
    NIR_PASS_V(nir, nir_lower_io_to_temporaries, nir_shader_get_entrypoint(nir), true, true);
@@ -1091,6 +1131,8 @@ dxil_spirv_nir_passes(nir_shader *nir,
       } while (progress);
    }
 
+   NIR_PASS_V(nir, nir_lower_doubles, NULL, nir->options->lower_doubles_options);
+
    if (conf->declared_read_only_images_as_srvs)
       NIR_PASS_V(nir, nir_lower_readonly_images_to_tex, true);
    nir_lower_tex_options lower_tex_options = {
@@ -1100,7 +1142,6 @@ dxil_spirv_nir_passes(nir_shader *nir,
    };
    NIR_PASS_V(nir, nir_lower_tex, &lower_tex_options);
 
-   NIR_PASS_V(nir, dxil_nir_lower_atomics_to_dxil);
    NIR_PASS_V(nir, dxil_nir_split_clip_cull_distance);
    const struct dxil_nir_lower_loads_stores_options loads_stores_options = {
       .use_16bit_ssbo = conf->shader_model_max >= SHADER_MODEL_6_2,

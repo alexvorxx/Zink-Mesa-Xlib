@@ -125,6 +125,11 @@ spec@arb_vertex_type_2_10_10_10_rev@attrib-p-type-size-match,Fail
 spec@arb_enhanced_layouts@execution@component-layout@vs-fs-array-dvec3,Crash
 spec@arb_enhanced_layouts@gs-stream-location-aliasing,Fail
 
+# fails on gen1 (a618/a630) with both fd and zink, but passes on gen4..
+# maybe gen1 sqe doesn't handle the count==0 case?
+spec@arb_indirect_parameters@tf-count-arrays,Fail
+spec@arb_indirect_parameters@tf-count-elements,Fail
+
 spec@egl 1.4@eglterminate then unbind context,Fail
 spec@egl_chromium_sync_control@conformance@eglGetSyncValuesCHROMIUM_msc_and_sbc_test,Fail
 spec@egl_chromium_sync_control@conformance,Fail
@@ -270,8 +275,6 @@ spec@oes_egl_image_external_essl3@oes_egl_image_external_essl3,Fail
 # "Failure with Polygon Stipple set to fail mode."
 spec@!opengl 1.0@gl-1.0-no-op-paths,Fail
 
-spec@!opengl 1.0@gl-1.0-spot-light,Fail
-
 # crash in tgsi exec doing st_freedback_draw_vbo().
 spec@!opengl 1.0@rasterpos,Crash
 
@@ -302,7 +305,6 @@ spec@!opengl 1.4@gl-1.4-polygon-offset,Fail
 spec@!opengl 2.1@pbo,Fail
 spec@!opengl 2.1@pbo@test_polygon_stip,Fail
 spec@!opengl 2.1@polygon-stipple-fs,Fail
-spec@!opengl 3.0@clearbuffer-depth-cs-probe,Timeout
 spec@!opengl 3.2@gl-3.2-adj-prims cull-back pv-first,Fail
 spec@!opengl 3.2@gl-3.2-adj-prims cull-front pv-first,Fail
 spec@!opengl 3.2@gl-3.2-adj-prims line cull-back pv-first,Fail
@@ -343,44 +345,9 @@ wayland-dEQP-EGL.functional.wide_color.window_fp16_default_colorspace,Fail
 # ../../tests/SRGBReadWritePixelsTest.cpp:214	Could not create sRGB surface context. [OpenGL]
 SRGBReadWritePixels,Fail
 
-# https://gitlab.khronos.org/Tracker/vk-gl-cts/-/issues/4144
-dEQP-VK.pipeline.fast_linked_library.descriptor_limits.fragment_shader.input_attachments_3,Fail
-dEQP-VK.pipeline.fast_linked_library.descriptor_limits.fragment_shader.input_attachments_4,Fail
-dEQP-VK.pipeline.fast_linked_library.descriptor_limits.fragment_shader.input_attachments_5,Fail
-dEQP-VK.pipeline.fast_linked_library.descriptor_limits.fragment_shader.input_attachments_6,Fail
-dEQP-VK.pipeline.fast_linked_library.descriptor_limits.fragment_shader.input_attachments_7,Fail
-dEQP-VK.pipeline.fast_linked_library.descriptor_limits.fragment_shader.input_attachments_8,Fail
-dEQP-VK.pipeline.monolithic.descriptor_limits.fragment_shader.input_attachments_3,Fail
-dEQP-VK.pipeline.monolithic.descriptor_limits.fragment_shader.input_attachments_4,Fail
-dEQP-VK.pipeline.monolithic.descriptor_limits.fragment_shader.input_attachments_5,Fail
-dEQP-VK.pipeline.monolithic.descriptor_limits.fragment_shader.input_attachments_6,Fail
-dEQP-VK.pipeline.monolithic.descriptor_limits.fragment_shader.input_attachments_7,Fail
-dEQP-VK.pipeline.monolithic.descriptor_limits.fragment_shader.input_attachments_8,Fail
-dEQP-VK.pipeline.pipeline_library.descriptor_limits.fragment_shader.input_attachments_3,Fail
-dEQP-VK.pipeline.pipeline_library.descriptor_limits.fragment_shader.input_attachments_4,Fail
-dEQP-VK.pipeline.pipeline_library.descriptor_limits.fragment_shader.input_attachments_5,Fail
-dEQP-VK.pipeline.pipeline_library.descriptor_limits.fragment_shader.input_attachments_6,Fail
-dEQP-VK.pipeline.pipeline_library.descriptor_limits.fragment_shader.input_attachments_7,Fail
-dEQP-VK.pipeline.pipeline_library.descriptor_limits.fragment_shader.input_attachments_8,Fail
-gmem-dEQP-VK.pipeline.fast_linked_library.descriptor_limits.fragment_shader.input_attachments_8,Fail
-gmem-dEQP-VK.pipeline.monolithic.descriptor_limits.fragment_shader.input_attachments_4,Fail
-gmem-dEQP-VK.pipeline.pipeline_library.descriptor_limits.fragment_shader.input_attachments_6,Fail
-
 # New CTS failures in 1.3.5.0
 KHR-GL45.polygon_offset_clamp.PolygonOffsetClampMinMax,Fail
 KHR-GL45.polygon_offset_clamp.PolygonOffsetClampZeroInfinity,Fail
-dEQP-VK.api.buffer_marker.graphics.default_mem.bottom_of_pipe.memory_dep.buffer_copy_offset_24,Fail
-dEQP-VK.api.buffer_marker.graphics.default_mem.bottom_of_pipe.memory_dep.dispatch_offset_24,Fail
-dEQP-VK.api.buffer_marker.graphics.default_mem.bottom_of_pipe.memory_dep.draw_offset_24,Fail
-dEQP-VK.api.buffer_marker.graphics.default_mem.bottom_of_pipe.overwrite.64_offset_24,Fail
-dEQP-VK.api.buffer_marker.graphics.default_mem.bottom_of_pipe.sequential.64_offset_16,Fail
-dEQP-VK.api.buffer_marker.graphics.default_mem.bottom_of_pipe.sequential.65536_offset_1024,Fail
-dEQP-VK.api.buffer_marker.graphics.default_mem.top_of_pipe.memory_dep.buffer_copy_offset_24,Fail
-dEQP-VK.api.buffer_marker.graphics.default_mem.top_of_pipe.memory_dep.dispatch_offset_24,Fail
-dEQP-VK.api.buffer_marker.graphics.default_mem.top_of_pipe.memory_dep.draw_offset_24,Fail
-dEQP-VK.api.buffer_marker.graphics.default_mem.top_of_pipe.overwrite.64_offset_24,Fail
-dEQP-VK.api.buffer_marker.graphics.default_mem.top_of_pipe.sequential.64_offset_16,Fail
-dEQP-VK.api.buffer_marker.graphics.default_mem.top_of_pipe.sequential.65536_offset_1024,Fail
 dEQP-VK.binding_model.descriptor_buffer.multiple.compute_comp_buffers1_sets1,Crash
 dEQP-VK.binding_model.descriptor_buffer.multiple.compute_comp_buffers1_sets3,Crash
 dEQP-VK.binding_model.descriptor_buffer.multiple.compute_comp_buffers1_sets3_imm_samplers,Crash
@@ -446,7 +413,6 @@ dEQP-VK.transform_feedback.simple.lines_or_triangles_line_strip_1,Fail
 dEQP-VK.transform_feedback.simple.lines_or_triangles_line_strip_3,Fail
 dEQP-VK.transform_feedback.simple.lines_or_triangles_triangle_strip_1,Fail
 dEQP-VK.transform_feedback.simple.lines_or_triangles_triangle_strip_3,Fail
-gmem-dEQP-VK.api.buffer_marker.graphics.default_mem.top_of_pipe.memory_dep.dispatch_offset_24,Fail
 gmem-dEQP-VK.binding_model.descriptor_buffer.multiple.graphics_ahit_buffers1_sets1,Crash
 gmem-dEQP-VK.binding_model.descriptor_buffer.multiple.graphics_call_buffers1_sets3_imm_samplers,Crash
 gmem-dEQP-VK.binding_model.descriptor_buffer.multiple.graphics_chit_buffers1_sets1,Crash

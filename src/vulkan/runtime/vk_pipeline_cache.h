@@ -268,6 +268,25 @@ vk_pipeline_cache_add_nir(struct vk_pipeline_cache *cache,
                           const void *key_data, size_t key_size,
                           const struct nir_shader *nir);
 
+/** Specialized type of vk_pipeline_cache_object for raw data objects.
+ *
+ * This cache object implementation, together with vk_raw_data_cache_object_ops,
+ * can be used to cache plain objects as well as already serialized data.
+ */
+struct vk_raw_data_cache_object {
+   struct vk_pipeline_cache_object base;
+
+   const void *data;
+   size_t data_size;
+};
+
+struct vk_raw_data_cache_object *
+vk_raw_data_cache_object_create(struct vk_device *device,
+                                const void *key_data, size_t key_size,
+                                const void *data, size_t data_size);
+
+extern const struct vk_pipeline_cache_object_ops vk_raw_data_cache_object_ops;
+
 #ifdef __cplusplus
 }
 #endif

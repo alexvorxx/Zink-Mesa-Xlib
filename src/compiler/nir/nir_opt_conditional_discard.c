@@ -63,11 +63,7 @@ nir_opt_conditional_discard_block(nir_builder *b, nir_block *block)
     * make sure no subsequent phi nodes point at this if.
     */
    nir_block *after = nir_cf_node_as_block(nir_cf_node_next(&if_stmt->cf_node));
-   nir_foreach_instr_safe(instr, after) {
-      if (instr->type != nir_instr_type_phi)
-         break;
-      nir_phi_instr *phi = nir_instr_as_phi(instr);
-
+   nir_foreach_phi_safe(phi, after) {
       nir_foreach_phi_src(phi_src, phi) {
          if (phi_src->pred == then_block ||
              phi_src->pred == else_block)

@@ -46,7 +46,8 @@ struct aco_compiler_statistic_info {
 typedef void(aco_callback)(void** priv_ptr, const struct ac_shader_config* config,
                            const char* llvm_ir_str, unsigned llvm_ir_size, const char* disasm_str,
                            unsigned disasm_size, uint32_t* statistics, uint32_t stats_size,
-                           uint32_t exec_size, const uint32_t* code, uint32_t code_dw);
+                           uint32_t exec_size, const uint32_t* code, uint32_t code_dw,
+                           const struct aco_symbol *symbols, unsigned num_symbols);
 
 typedef void (aco_shader_part_callback)(void **priv_ptr,
                                         uint32_t num_sgprs,

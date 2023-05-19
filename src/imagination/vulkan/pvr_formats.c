@@ -66,15 +66,15 @@
       .supported = true,                                        \
    }
 
-#define FORMAT_DEPTH_STENCIL(vk, combined_fmt, d_fmt, s_fmt) \
-   [VK_FORMAT_##vk] = {                                      \
-      .vk_format = VK_FORMAT_##vk,                           \
-      .tex_format = ROGUE_TEXSTATE_FORMAT_##combined_fmt,    \
-      .depth_tex_format = ROGUE_TEXSTATE_FORMAT_##d_fmt,     \
-      .stencil_tex_format = ROGUE_TEXSTATE_FORMAT_##s_fmt,   \
-      .pbe_packmode = ROGUE_PBESTATE_PACKMODE_INVALID,       \
-      .pbe_accum_format = PVR_PBE_ACCUM_FORMAT_INVALID,      \
-      .supported = true,                                     \
+#define FORMAT_DEPTH_STENCIL(vk, combined_fmt, d_fmt, s_fmt)  \
+   [VK_FORMAT_##vk] = {                                       \
+      .vk_format = VK_FORMAT_##vk,                            \
+      .tex_format = ROGUE_TEXSTATE_FORMAT_##combined_fmt,     \
+      .depth_tex_format = ROGUE_TEXSTATE_FORMAT_##d_fmt,      \
+      .stencil_tex_format = ROGUE_TEXSTATE_FORMAT_##s_fmt,    \
+      .pbe_packmode = ROGUE_PBESTATE_PACKMODE_##combined_fmt, \
+      .pbe_accum_format = PVR_PBE_ACCUM_FORMAT_INVALID,       \
+      .supported = true,                                      \
    }
 
 struct pvr_format {
@@ -291,6 +291,10 @@ uint32_t pvr_get_pbe_accum_format_size_in_bytes(VkFormat vk_format)
    enum pvr_pbe_accum_format pbe_accum_format;
    uint32_t nr_components;
 
+   /* FIXME: Can we encode this in the format table somehow? */
+   if (vk_format == VK_FORMAT_A2B10G10R10_UINT_PACK32)
+      return 4;
+
    pbe_accum_format = pvr_get_pbe_accum_format(vk_format);
    nr_components = vk_format_get_nr_components(vk_format);
 
@@ -386,13 +390,6 @@ void pvr_get_hw_clear_color(
 
    const enum pvr_pbe_accum_format pbe_accum_format =
       pvr_get_pbe_accum_format(vk_format);
-   const uint32_t nr_components = vk_format_get_nr_components(vk_format);
-
-   /* Make sure that the caller has zeroed out unused components. Otherwise we
-    * might end up with garbage being packed with the actual values.
-    */
-   for (uint32_t i = nr_components; i < 4; i++)
-      assert(value.uint32[i] == 0);
 
    static_assert(ARRAY_SIZE(value.uint32) == PVR_CLEAR_COLOR_ARRAY_SIZE,
                  "Size mismatch. Unknown/unhandled extra values.");
@@ -491,7 +488,8 @@ pvr_get_image_format_features2(const struct pvr_format *pvr_format,
 
          if (!vk_format_is_int(vk_format) &&
              !vk_format_is_depth_or_stencil(vk_format) &&
-             first_component_size < 32) {
+             (first_component_size < 32 ||
+              vk_format_is_block_compressed(vk_format))) {
             flags |= VK_FORMAT_FEATURE_2_SAMPLED_IMAGE_FILTER_LINEAR_BIT;
          }
       } else if (!vk_format_is_block_compressed(vk_format)) {
@@ -500,7 +498,7 @@ pvr_get_image_format_features2(const struct pvr_format *pvr_format,
       }
    }
 
-   if (pvr_get_pbe_accum_format(vk_format) != ROGUE_PBESTATE_PACKMODE_INVALID) {
+   if (pvr_get_pbe_accum_format(vk_format) != PVR_PBE_ACCUM_FORMAT_INVALID) {
       if (vk_format_is_color(vk_format)) {
          flags |= VK_FORMAT_FEATURE_2_COLOR_ATTACHMENT_BIT |
                   VK_FORMAT_FEATURE_2_BLIT_DST_BIT;
@@ -508,16 +506,16 @@ pvr_get_image_format_features2(const struct pvr_format *pvr_format,
          if (!vk_format_is_int(vk_format)) {
             flags |= VK_FORMAT_FEATURE_2_COLOR_ATTACHMENT_BLEND_BIT;
          }
-      } else if (vk_format_is_depth_or_stencil(vk_format)) {
-         flags |= VK_FORMAT_FEATURE_2_DEPTH_STENCIL_ATTACHMENT_BIT |
-                  VK_FORMAT_FEATURE_2_BLIT_DST_BIT;
       }
+   } else if (vk_format_is_depth_or_stencil(vk_format)) {
+      flags |= VK_FORMAT_FEATURE_2_DEPTH_STENCIL_ATTACHMENT_BIT |
+               VK_FORMAT_FEATURE_2_BLIT_DST_BIT;
    }
 
    if (vk_tiling == VK_IMAGE_TILING_OPTIMAL) {
       if (vk_format_is_color(vk_format) &&
           vk_format_get_nr_components(vk_format) == 1 &&
-          vk_format_get_blocksize(vk_format) == 32 &&
+          vk_format_get_blocksizebits(vk_format) == 32 &&
           vk_format_is_int(vk_format)) {
          flags |= VK_FORMAT_FEATURE_2_STORAGE_IMAGE_BIT |
                   VK_FORMAT_FEATURE_2_STORAGE_IMAGE_ATOMIC_BIT;
@@ -616,7 +614,7 @@ pvr_get_buffer_format_features2(const struct pvr_format *pvr_format)
 
    if (vk_format_is_color(vk_format) &&
        vk_format_get_nr_components(vk_format) == 1 &&
-       vk_format_get_blocksize(vk_format) == 32 &&
+       vk_format_get_blocksizebits(vk_format) == 32 &&
        vk_format_is_int(vk_format)) {
       flags |= VK_FORMAT_FEATURE_2_STORAGE_TEXEL_BUFFER_BIT |
                VK_FORMAT_FEATURE_2_STORAGE_TEXEL_BUFFER_ATOMIC_BIT;
@@ -643,6 +641,11 @@ pvr_get_buffer_format_features2(const struct pvr_format *pvr_format)
    case VK_FORMAT_R32G32B32A32_SFLOAT:
       flags |= VK_FORMAT_FEATURE_2_STORAGE_TEXEL_BUFFER_BIT;
       break;
+
+   case VK_FORMAT_B10G11R11_UFLOAT_PACK32:
+      flags |= VK_FORMAT_FEATURE_2_UNIFORM_TEXEL_BUFFER_BIT;
+      break;
+
    default:
       break;
    }
@@ -728,6 +731,12 @@ pvr_get_image_format_properties(struct pvr_physical_device *pdevice,
        */
       if (info->tiling == VK_IMAGE_TILING_LINEAR &&
           info->usage & ~transfer_usage) {
+         result = vk_error(pdevice, VK_ERROR_FORMAT_NOT_SUPPORTED);
+         goto err_unsupported_format;
+      }
+
+      /* Block compressed with 3D layout not supported */
+      if (vk_format_is_block_compressed(info->format)) {
          result = vk_error(pdevice, VK_ERROR_FORMAT_NOT_SUPPORTED);
          goto err_unsupported_format;
       }
@@ -918,7 +927,7 @@ void pvr_GetPhysicalDeviceSparseImageFormatProperties(
    VkPhysicalDevice physicalDevice,
    VkFormat format,
    VkImageType type,
-   uint32_t samples,
+   VkSampleCountFlagBits samples,
    VkImageUsageFlags usage,
    VkImageTiling tiling,
    uint32_t *pNumProperties,
@@ -1033,20 +1042,8 @@ bool pvr_format_is_pbe_downscalable(VkFormat vk_format)
    }
 }
 
-uint32_t pvr_pbe_pixel_num_loads(enum pvr_transfer_pbe_pixel_src pbe_format,
-                                 uint32_t alpha_type)
+uint32_t pvr_pbe_pixel_num_loads(enum pvr_transfer_pbe_pixel_src pbe_format)
 {
-   switch (alpha_type) {
-   default:
-   case PVR_ALPHA_NONE:
-      break;
-   case PVR_ALPHA_SOURCE:
-   case PVR_ALPHA_PREMUL_SOURCE:
-   case PVR_ALPHA_PREMUL_SOURCE_WITH_GLOBAL:
-   case PVR_ALPHA_GLOBAL:
-      return 2U;
-   }
-
    switch (pbe_format) {
    case PVR_TRANSFER_PBE_PIXEL_SRC_UU8888:
    case PVR_TRANSFER_PBE_PIXEL_SRC_US8888:

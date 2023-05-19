@@ -30,14 +30,17 @@ agx_bo_free(struct agx_device *dev, struct agx_bo *bo)
 
    if (bo->ptr.gpu) {
       struct util_vma_heap *heap;
+      uint64_t bo_addr = bo->ptr.gpu;
 
-      if (bo->flags & AGX_BO_LOW_VA)
+      if (bo->flags & AGX_BO_LOW_VA) {
          heap = &dev->usc_heap;
-      else
+         bo_addr += dev->shader_base;
+      } else {
          heap = &dev->main_heap;
+      }
 
       simple_mtx_lock(&dev->vma_lock);
-      util_vma_heap_free(heap, bo->ptr.gpu, bo->size + dev->guard_size);
+      util_vma_heap_free(heap, bo_addr, bo->size + dev->guard_size);
       simple_mtx_unlock(&dev->vma_lock);
 
       /* No need to unmap the BO, as the kernel will take care of that when we
@@ -249,10 +252,11 @@ agx_bo_export(struct agx_bo *bo)
       /* If there is a pending writer to this BO, import it into the buffer
        * for implicit sync.
        */
-      if (bo->writer_syncobj) {
+      uint32_t writer_syncobj = p_atomic_read_relaxed(&bo->writer_syncobj);
+      if (writer_syncobj) {
          int out_sync_fd = -1;
-         int ret = drmSyncobjExportSyncFile(bo->dev->fd, bo->writer_syncobj,
-                                            &out_sync_fd);
+         int ret =
+            drmSyncobjExportSyncFile(bo->dev->fd, writer_syncobj, &out_sync_fd);
          assert(ret >= 0);
          assert(out_sync_fd >= 0);
 

@@ -120,9 +120,9 @@ _nir_build_${name}(nir_builder *build${intrinsic_decl_list(opcode)})
    % endif
    % if opcode.has_dest:
       % if opcode.dest_components == 0:
-      nir_ssa_dest_init(&intrin->instr, &intrin->dest, intrin->num_components, ${get_intrinsic_bitsize(opcode)}, NULL);
+      nir_ssa_dest_init(&intrin->instr, &intrin->dest, intrin->num_components, ${get_intrinsic_bitsize(opcode)});
       % else:
-      nir_ssa_dest_init(&intrin->instr, &intrin->dest, ${opcode.dest_components}, ${get_intrinsic_bitsize(opcode)}, NULL);
+      nir_ssa_dest_init(&intrin->instr, &intrin->dest, ${opcode.dest_components}, ${get_intrinsic_bitsize(opcode)});
       % endif
    % endif
    % for i in range(opcode.num_srcs):

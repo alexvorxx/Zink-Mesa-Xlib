@@ -762,9 +762,9 @@ vn_get_memory_dma_buf_properties(struct vn_device *dev,
 
    vn_instance_roundtrip(dev->instance);
 
-   VkMemoryResourceAllocationSizeProperties100000MESA alloc_size_props = {
+   VkMemoryResourceAllocationSizePropertiesMESA alloc_size_props = {
       .sType =
-         VK_STRUCTURE_TYPE_MEMORY_RESOURCE_ALLOCATION_SIZE_PROPERTIES_100000_MESA,
+         VK_STRUCTURE_TYPE_MEMORY_RESOURCE_ALLOCATION_SIZE_PROPERTIES_MESA,
    };
    VkMemoryResourcePropertiesMESA props = {
       .sType = VK_STRUCTURE_TYPE_MEMORY_RESOURCE_PROPERTIES_MESA,

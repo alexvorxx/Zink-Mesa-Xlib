@@ -80,7 +80,7 @@ vtn_handle_amd_shader_ballot_instruction(struct vtn_builder *b, SpvOp ext_opcode
 
    const struct glsl_type *dest_type = vtn_get_type(b, w[1])->type;
    nir_intrinsic_instr *intrin = nir_intrinsic_instr_create(b->nb.shader, op);
-   nir_ssa_dest_init_for_type(&intrin->instr, &intrin->dest, dest_type, NULL);
+   nir_ssa_dest_init_for_type(&intrin->instr, &intrin->dest, dest_type);
    if (nir_intrinsic_infos[op].src_components[0] == 0)
       intrin->num_components = intrin->dest.ssa.num_components;
 
@@ -214,7 +214,7 @@ vtn_handle_amd_shader_explicit_vertex_parameter_instruction(struct vtn_builder *
    intrin->num_components = glsl_get_vector_elements(deref->type);
    nir_ssa_dest_init(&intrin->instr, &intrin->dest,
                      glsl_get_vector_elements(deref->type),
-                     glsl_get_bit_size(deref->type), NULL);
+                     glsl_get_bit_size(deref->type));
 
    nir_builder_instr_insert(&b->nb, &intrin->instr);
 

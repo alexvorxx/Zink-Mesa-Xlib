@@ -304,7 +304,7 @@ const char *gl_vert_attrib_name(gl_vert_attrib attrib);
  * - vertResults (in prog_print.c's arb_output_attrib_string())
  * - fragAttribs (in prog_print.c's arb_input_attrib_string())
  * - _mesa_varying_slot_in_fs()
- * - _mesa_varying_slot_name_for_stage()
+ * - gl_varying_slot_name_for_stage()
  */
 typedef enum
 {
@@ -841,6 +841,7 @@ typedef enum
    SYSTEM_VALUE_RAY_GEOMETRY_INDEX,
    SYSTEM_VALUE_RAY_INSTANCE_CUSTOM_INDEX,
    SYSTEM_VALUE_CULL_MASK,
+   SYSTEM_VALUE_RAY_TRIANGLE_VERTEX_POSITIONS,
    /*@}*/
 
    /**
@@ -977,12 +978,27 @@ enum gl_frag_stencil_layout
 };
 
 /**
- * \brief Buffer access qualifiers
+ * \brief Memory access qualifiers
  */
 enum gl_access_qualifier
 {
+   /**
+    * This means that the memory scope is the current device. It indicates
+    * that reads and writes are coherent with reads and writes from other
+    * shader invocations and other workgroups.
+    */
    ACCESS_COHERENT      = (1 << 0),
+
+   /**
+    * This means non-aliased. It indicates that the accessed address is not
+    * accessible through any other memory resource in the shader.
+    */
    ACCESS_RESTRICT      = (1 << 1),
+
+   /**
+    * The access cannot be eliminated, duplicated, or combined with other
+    * accesses.
+    */
    ACCESS_VOLATILE      = (1 << 2),
 
    /* The memory used by the access/variable is not read. */
@@ -1026,8 +1042,11 @@ enum gl_access_qualifier
     */
    ACCESS_CAN_REORDER = (1 << 6),
 
-   /** Use as little cache space as possible. */
-   ACCESS_STREAM_CACHE_POLICY = (1 << 7),
+   /**
+    * Hints that the accessed address is not likely to be accessed again
+    * in the near future. This reduces data retention in caches.
+    */
+   ACCESS_NON_TEMPORAL = (1 << 7),
 
    /** Execute instruction also in helpers. */
    ACCESS_INCLUDE_HELPERS = (1 << 8),

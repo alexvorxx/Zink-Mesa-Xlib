@@ -70,10 +70,14 @@ impl SPIRVBin {
         headers: &[CLCHeader],
         cache: &Option<DiskCache>,
         features: clc_optional_features,
+        spirv_extensions: &[CString],
         address_bits: u32,
     ) -> (Option<Self>, String) {
         let mut hash_key = None;
         let has_includes = args.iter().any(|a| a.as_bytes()[0..2] == *b"-I");
+
+        let mut spirv_extensions: Vec<_> = spirv_extensions.iter().map(|s| s.as_ptr()).collect();
+        spirv_extensions.push(ptr::null());
 
         if let Some(cache) = cache {
             if !has_includes {
@@ -117,7 +121,7 @@ impl SPIRVBin {
             num_args: c_args.len() as u32,
             spirv_version: clc_spirv_version::CLC_SPIRV_VERSION_MAX,
             features: features,
-            allowed_spirv_extensions: ptr::null(),
+            allowed_spirv_extensions: spirv_extensions.as_ptr(),
             address_bits: address_bits,
         };
         let mut msgs: Vec<String> = Vec::new();

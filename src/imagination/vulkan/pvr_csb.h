@@ -226,14 +226,15 @@ void pvr_csb_dump(const struct pvr_csb *csb,
  *                     This can be used by the caller to modify the command or
  *                     state information before it's packed.
  */
-#define pvr_csb_pack(_dst, cmd, name)                                 \
-   for (struct PVRX(cmd) name = { pvr_cmd_header(cmd) },              \
-                         *_loop_terminate = &name;                    \
-        __builtin_expect(_loop_terminate != NULL, 1);                 \
-        ({                                                            \
-           STATIC_ASSERT(sizeof(*(_dst)) == pvr_cmd_length(cmd) * 4); \
-           pvr_cmd_pack(cmd)((_dst), &name);                          \
-           _loop_terminate = NULL;                                    \
+#define pvr_csb_pack(_dst, cmd, name)                           \
+   for (struct PVRX(cmd) name = { pvr_cmd_header(cmd) },        \
+                         *_loop_terminate = &name;              \
+        __builtin_expect(_loop_terminate != NULL, 1);           \
+        ({                                                      \
+           STATIC_ASSERT(sizeof(*(_dst)) ==                     \
+                         PVR_DW_TO_BYTES(pvr_cmd_length(cmd))); \
+           pvr_cmd_pack(cmd)((_dst), &name);                    \
+           _loop_terminate = NULL;                              \
         }))
 
 /**
@@ -245,12 +246,12 @@ void pvr_csb_dump(const struct pvr_csb *csb,
  * \param[in] _src     Pointer to read the packed command/state from.
  * \param[in] cmd      Command/state type.
  */
-#define pvr_csb_unpack(_src, cmd)                                \
-   ({                                                            \
-      struct PVRX(cmd) _name;                                    \
-      STATIC_ASSERT(sizeof(*(_src)) == pvr_cmd_length(cmd) * 4); \
-      pvr_cmd_unpack(cmd)((_src), &_name);                       \
-      _name;                                                     \
+#define pvr_csb_unpack(_src, cmd)                                             \
+   ({                                                                         \
+      struct PVRX(cmd) _name;                                                 \
+      STATIC_ASSERT(sizeof(*(_src)) == PVR_DW_TO_BYTES(pvr_cmd_length(cmd))); \
+      pvr_cmd_unpack(cmd)((_src), &_name);                                    \
+      _name;                                                                  \
    })
 
 /**
@@ -263,13 +264,13 @@ void pvr_csb_dump(const struct pvr_csb *csb,
  * \param[in]     cmd Command/state type.
  * \param[in]     val Pre-packed value to write.
  */
-#define pvr_csb_write_value(dst, cmd, val)                                    \
-   do {                                                                       \
-      static_assert(sizeof(*(dst)) == pvr_cmd_length(cmd) * sizeof(uint32_t), \
-                    "Size mismatch");                                         \
-      static_assert(sizeof(*(dst)) == sizeof(val), "Size mismatch");          \
-      *(dst) = (val);                                                         \
-      (dst)++;                                                                \
+#define pvr_csb_write_value(dst, cmd, val)                                  \
+   do {                                                                     \
+      static_assert(sizeof(*(dst)) == PVR_DW_TO_BYTES(pvr_cmd_length(cmd)), \
+                    "Size mismatch");                                       \
+      static_assert(sizeof(*(dst)) == sizeof(val), "Size mismatch");        \
+      *(dst) = (val);                                                       \
+      (dst)++;                                                              \
    } while (0)
 
 /**
@@ -283,12 +284,12 @@ void pvr_csb_dump(const struct pvr_csb *csb,
  * \param[in]     cmd Command/state type.
  * \param[in]     val Command/state struct to pack and write.
  */
-#define pvr_csb_write_struct(dst, cmd, val)                                   \
-   do {                                                                       \
-      static_assert(sizeof(*(dst)) == pvr_cmd_length(cmd) * sizeof(uint32_t), \
-                    "Size mismatch");                                         \
-      pvr_cmd_pack(cmd)((dst), (val));                                        \
-      (dst)++;                                                                \
+#define pvr_csb_write_struct(dst, cmd, val)                                 \
+   do {                                                                     \
+      static_assert(sizeof(*(dst)) == PVR_DW_TO_BYTES(pvr_cmd_length(cmd)), \
+                    "Size mismatch");                                       \
+      pvr_cmd_pack(cmd)((dst), (val));                                      \
+      (dst)++;                                                              \
    } while (0)
 
 /**@}*/

@@ -426,6 +426,9 @@ static void scan_instruction(const struct nir_shader *nir, struct si_shader_info
          if (nir_deref_instr_has_indirect(nir_src_as_deref(*deref)))
             info->uses_indirect_descriptor = true;
       }
+
+      info->has_non_uniform_tex_access =
+         tex->texture_non_uniform || tex->sampler_non_uniform;
    } else if (instr->type == nir_instr_type_intrinsic) {
       nir_intrinsic_instr *intr = nir_instr_as_intrinsic(instr);
       const char *intr_name = nir_intrinsic_infos[intr->intrinsic].name;
@@ -557,6 +560,12 @@ static void scan_instruction(const struct nir_shader *nir, struct si_shader_info
          if (intr->intrinsic == nir_intrinsic_load_barycentric_at_sample)
             info->uses_interp_at_sample = true;
          break;
+      case nir_intrinsic_load_frag_coord:
+         info->reads_frag_coord_mask |= nir_ssa_def_components_read(&intr->dest.ssa);
+         break;
+      case nir_intrinsic_load_sample_pos:
+         info->reads_sample_pos_mask |= nir_ssa_def_components_read(&intr->dest.ssa);
+         break;
       case nir_intrinsic_load_input:
       case nir_intrinsic_load_per_vertex_input:
       case nir_intrinsic_load_input_vertex:
@@ -652,6 +661,7 @@ void si_nir_scan_shader(struct si_screen *sscreen, const struct nir_shader *nir,
    info->uses_persp_sample = BITSET_TEST(nir->info.system_values_read, SYSTEM_VALUE_BARYCENTRIC_PERSP_SAMPLE);
    info->uses_persp_centroid = BITSET_TEST(nir->info.system_values_read, SYSTEM_VALUE_BARYCENTRIC_PERSP_CENTROID);
    info->uses_persp_center = BITSET_TEST(nir->info.system_values_read, SYSTEM_VALUE_BARYCENTRIC_PERSP_PIXEL);
+   info->uses_sampleid = BITSET_TEST(nir->info.system_values_read, SYSTEM_VALUE_SAMPLE_ID);
 
    if (nir->info.stage == MESA_SHADER_FRAGMENT) {
       info->writes_z = nir->info.outputs_written & BITFIELD64_BIT(FRAG_RESULT_DEPTH);

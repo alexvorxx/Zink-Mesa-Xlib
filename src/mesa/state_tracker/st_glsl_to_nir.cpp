@@ -228,15 +228,15 @@ st_nir_assign_uniform_locations(struct gl_context *ctx,
    }
 }
 
-/* - create a gl_PointSizeMESA variable
+/* - create a gl_PointSize variable
  * - find every gl_Position write
- * - store 1.0 to gl_PointSizeMESA after every gl_Position write
+ * - store 1.0 to gl_PointSize after every gl_Position write
  */
 void
 st_nir_add_point_size(nir_shader *nir)
 {
-   nir_variable *psiz = nir_variable_create(nir, nir_var_shader_out, glsl_float_type(), "gl_PointSizeMESA");
-   psiz->data.location = VARYING_SLOT_PSIZ;
+   nir_variable *psiz = nir_create_variable_with_location(nir, nir_var_shader_out,
+                                                          VARYING_SLOT_PSIZ, glsl_float_type());
    psiz->data.how_declared = nir_var_hidden;
 
    nir_builder b;
@@ -712,6 +712,8 @@ st_link_nir(struct gl_context *ctx,
    struct gl_linked_shader *linked_shader[MESA_SHADER_STAGES];
    unsigned num_shaders = 0;
 
+   MESA_TRACE_FUNC();
+
    for (unsigned i = 0; i < MESA_SHADER_STAGES; i++) {
       if (shader_program->_LinkedShaders[i])
          linked_shader[num_shaders++] = shader_program->_LinkedShaders[i];
@@ -1056,6 +1058,8 @@ st_finalize_nir(struct st_context *st, struct gl_program *prog,
 {
    struct pipe_screen *screen = st->screen;
 
+   MESA_TRACE_FUNC();
+
    NIR_PASS_V(nir, nir_split_var_copies);
    NIR_PASS_V(nir, nir_lower_var_copies);
 
@@ -1076,8 +1080,11 @@ st_finalize_nir(struct st_context *st, struct gl_program *prog,
    /* Lower load_deref/store_deref of inputs and outputs.
     * This depends on st_nir_assign_varying_locations.
     */
-   if (nir->options->lower_io_variables)
-      nir_lower_io_passes(nir);
+   if (nir->options->lower_io_variables) {
+      nir_lower_io_passes(nir, false);
+      NIR_PASS_V(nir, nir_remove_dead_variables,
+                 nir_var_shader_in | nir_var_shader_out, NULL);
+   }
 
    /* Set num_uniforms in number of attribute slots (vec4s) */
    nir->num_uniforms = DIV_ROUND_UP(prog->Parameters->NumParameterValues, 4);

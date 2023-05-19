@@ -39,6 +39,7 @@
 #include "pvr_debug.h"
 #include "pvr_device_info.h"
 #include "pvr_private.h"
+#include "pvr_types.h"
 #include "util/list.h"
 #include "util/u_dynarray.h"
 #include "vk_log.h"
@@ -135,7 +136,7 @@ VkResult pvr_csb_bake(struct pvr_csb *const csb,
    if (csb->status != VK_SUCCESS)
       return csb->status;
 
-   *bo_list_out = csb->pvr_bo_list;
+   list_replace(&csb->pvr_bo_list, bo_list_out);
 
    /* Same as pvr_csb_finish(). */
    pvr_csb_init(NULL, PVR_CMD_STREAM_TYPE_INVALID, csb);
@@ -150,20 +151,23 @@ VkResult pvr_csb_bake(struct pvr_csb *const csb,
  * using STREAM_LINK dwords and updates csb object to use the new buffer.
  *
  * To make sure that we have enough space to emit STREAM_LINK dwords in the
- * current buffer, a few bytes are reserved at the end, every time a buffer is
- * created. Every time we allocate a new buffer we fix the current buffer in use
- * to emit the stream link dwords. This makes sure that when
- * #pvr_csb_alloc_dwords() is called from #pvr_csb_emit() to add STREAM_LINK0
- * and STREAM_LINK1, it succeeds without trying to allocate new pages.
+ * current buffer, a few bytes including guard padding size are reserved at the
+ * end, every time a buffer is created. Every time we allocate a new buffer we
+ * fix the current buffer in use to emit the stream link dwords. This makes sure
+ * that when #pvr_csb_alloc_dwords() is called from #pvr_csb_emit() to add
+ * STREAM_LINK0 and STREAM_LINK1, it succeeds without trying to allocate new
+ * pages.
  *
  * \param[in] csb Control Stream Builder object to extend.
  * \return true on success and false otherwise.
  */
 static bool pvr_csb_buffer_extend(struct pvr_csb *csb)
 {
-   const uint8_t stream_link_space = (pvr_cmd_length(VDMCTRL_STREAM_LINK0) +
-                                      pvr_cmd_length(VDMCTRL_STREAM_LINK1)) *
-                                     sizeof(uint32_t);
+   const uint8_t stream_link_space =
+      PVR_DW_TO_BYTES(pvr_cmd_length(VDMCTRL_STREAM_LINK0) +
+                      pvr_cmd_length(VDMCTRL_STREAM_LINK1));
+   const uint8_t stream_reserved_space =
+      stream_link_space + PVRX(VDMCTRL_GUARD_SIZE_DEFAULT);
    const uint32_t cache_line_size =
       rogue_get_slc_cache_line_size(&csb->device->pdevice->dev_info);
    struct pvr_bo *pvr_bo;
@@ -176,6 +180,9 @@ static bool pvr_csb_buffer_extend(struct pvr_csb *csb)
                   pvr_cmd_length(VDMCTRL_STREAM_LINK1)) ==
                  (pvr_cmd_length(CDMCTRL_STREAM_LINK0) +
                   pvr_cmd_length(CDMCTRL_STREAM_LINK1)));
+
+   STATIC_ASSERT(PVRX(VDMCTRL_GUARD_SIZE_DEFAULT) ==
+                 PVRX(CDMCTRL_GUARD_SIZE_DEFAULT));
 
    result = pvr_bo_alloc(csb->device,
                          csb->device->heaps.general_heap,
@@ -200,10 +207,10 @@ static bool pvr_csb_buffer_extend(struct pvr_csb *csb)
    csb->pvr_bo = pvr_bo;
    csb->start = pvr_bo->bo->map;
 
-   /* Reserve stream link size at the end to make sure we don't run out of
-    * space when a stream link is required.
+   /* Reserve space at the end, including the default guard padding, to make
+    * sure we don't run out of space when a stream link is required.
     */
-   csb->end = csb->start + pvr_bo->bo->size - stream_link_space;
+   csb->end = csb->start + pvr_bo->bo->size - stream_reserved_space;
    csb->next = csb->start;
 
    list_addtail(&pvr_bo->link, &csb->pvr_bo_list);
@@ -224,7 +231,7 @@ static bool pvr_csb_buffer_extend(struct pvr_csb *csb)
  */
 void *pvr_csb_alloc_dwords(struct pvr_csb *csb, uint32_t num_dwords)
 {
-   const uint32_t required_space = num_dwords * 4;
+   const uint32_t required_space = PVR_DW_TO_BYTES(num_dwords);
    void *p;
 
    if (csb->status != VK_SUCCESS)
@@ -272,9 +279,10 @@ void *pvr_csb_alloc_dwords(struct pvr_csb *csb, uint32_t num_dwords)
  */
 VkResult pvr_csb_copy(struct pvr_csb *csb_dst, struct pvr_csb *csb_src)
 {
-   const uint8_t stream_link_space = (pvr_cmd_length(VDMCTRL_STREAM_LINK0) +
-                                      pvr_cmd_length(VDMCTRL_STREAM_LINK1)) *
-                                     sizeof(uint32_t);
+   const uint8_t stream_reserved_space =
+      PVR_DW_TO_BYTES(pvr_cmd_length(VDMCTRL_STREAM_LINK0) +
+                      pvr_cmd_length(VDMCTRL_STREAM_LINK1)) +
+      PVRX(VDMCTRL_GUARD_SIZE_DEFAULT);
    const uint32_t size =
       util_dynarray_num_elements(&csb_src->deferred_cs_mem, char);
    const uint8_t *start = util_dynarray_begin(&csb_src->deferred_cs_mem);
@@ -286,7 +294,7 @@ VkResult pvr_csb_copy(struct pvr_csb *csb_dst, struct pvr_csb *csb_src)
    /* Only graphics control stream supported as dst. */
    assert(csb_dst->stream_type == PVR_CMD_STREAM_TYPE_GRAPHICS);
 
-   if (size >= (PVR_CMD_BUFFER_CSB_BO_SIZE - stream_link_space)) {
+   if (size >= (PVR_CMD_BUFFER_CSB_BO_SIZE - stream_reserved_space)) {
       /* TODO: For now we don't support deferred streams bigger than one csb
        * buffer object size.
        *

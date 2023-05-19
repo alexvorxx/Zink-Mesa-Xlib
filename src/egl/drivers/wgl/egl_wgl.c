@@ -621,7 +621,7 @@ wgl_make_current(_EGLDisplay *disp, _EGLSurface *dsurf,
          /* wgl_dpy->core->bindContext succeeded, so take a reference on the
           * wgl_dpy. This prevents wgl_dpy from being reinitialized when a
           * EGLDisplay is terminated and then initialized again while a
-          * context is still bound. See wgl_intitialize() for a more in depth
+          * context is still bound. See wgl_initialize() for a more in depth
           * explanation. */
          p_atomic_inc(&wgl_dpy->ref_count);
       }

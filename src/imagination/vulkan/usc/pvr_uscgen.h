@@ -49,9 +49,6 @@ struct pvr_tq_shader_properties {
    /* Sample specific channel of pixel. */
    bool pick_component;
 
-   /* Alpha type from transfer API. */
-   uint32_t alpha_type;
-
    struct pvr_tq_layer_properties {
       /* Controls whether we need to send the sample count to the TPU. */
       bool msaa;

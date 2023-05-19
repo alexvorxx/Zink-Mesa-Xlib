@@ -97,6 +97,7 @@ struct spirv_supported_capabilities {
    bool ray_query;
    bool ray_tracing;
    bool ray_traversal_primitive_culling;
+   bool ray_tracing_position_fetch;
    bool runtime_descriptor_array;
    bool shader_clock;
    bool shader_viewport_index_layer;

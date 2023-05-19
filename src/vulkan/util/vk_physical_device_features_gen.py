@@ -125,9 +125,40 @@ class FeatureStruct:
     s_type: str
     features: typing.List[str]
 
+TEMPLATE_H = Template(COPYRIGHT + """
+/* This file generated from ${filename}, don't edit directly. */
+#ifndef VK_FEATURES_H
+#define VK_FEATURES_H
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+struct vk_features {
+% for flag in all_flags:
+   bool ${flag};
+% endfor
+};
+
+void
+vk_set_physical_device_features(struct vk_features *all_features,
+                                const VkPhysicalDeviceFeatures2 *pFeatures);
+
+void
+vk_set_physical_device_features_1_0(struct vk_features *all_features,
+                                    const VkPhysicalDeviceFeatures *pFeatures);
+
+#ifdef __cplusplus
+}
+#endif
+
+#endif
+""", output_encoding='utf-8')
+
 TEMPLATE_C = Template(COPYRIGHT + """
 /* This file generated from ${filename}, don't edit directly. */
 
+#include "vk_common_entrypoints.h"
 #include "vk_log.h"
 #include "vk_physical_device.h"
 #include "vk_physical_device_features.h"
@@ -235,14 +266,32 @@ vk_physical_device_check_device_features(struct vk_physical_device *physical_dev
    return VK_SUCCESS;
 }
 
-void
-vk_set_physical_device_features_1_0(struct vk_features *all_features,
-                                    const VkPhysicalDeviceFeatures *pFeatures)
+VKAPI_ATTR void VKAPI_CALL
+vk_common_GetPhysicalDeviceFeatures2(VkPhysicalDevice physicalDevice,
+                                     VkPhysicalDeviceFeatures2 *pFeatures)
 {
+   VK_FROM_HANDLE(vk_physical_device, pdevice, physicalDevice);
+
 % for flag in pdev_features:
-   if (pFeatures->${flag})
-      all_features->${flag} = true;
+   pFeatures->features.${flag} = pdevice->supported_features.${flag};
 % endfor
+
+   vk_foreach_struct(ext, pFeatures) {
+      switch (ext->sType) {
+% for f in feature_structs:
+      case ${f.s_type}: {
+         ${f.c_type} *features = (void *) ext;
+% for flag in f.features:
+         features->${flag} = pdevice->supported_features.${get_renamed_feature(f.c_type, flag)};
+% endfor
+         break;
+      }
+
+% endfor
+      default:
+         break;
+      }
+   }
 }
 
 void
@@ -275,64 +324,14 @@ vk_set_physical_device_features(struct vk_features *all_features,
 }
 
 void
-vk_get_physical_device_features(VkPhysicalDeviceFeatures2 *pFeatures,
-                                const struct vk_features *all_features)
+vk_set_physical_device_features_1_0(struct vk_features *all_features,
+                                    const VkPhysicalDeviceFeatures *pFeatures)
 {
 % for flag in pdev_features:
-   pFeatures->features.${flag} = all_features->${flag};
+   if (pFeatures->${flag})
+      all_features->${flag} = true;
 % endfor
-
-   vk_foreach_struct(ext, pFeatures) {
-      switch (ext->sType) {
-% for f in feature_structs:
-      case ${f.s_type}: {
-         ${f.c_type} *features = (void *) ext;
-% for flag in f.features:
-         features->${flag} = all_features->${get_renamed_feature(f.c_type, flag)};
-% endfor
-         break;
-      }
-
-% endfor
-      default:
-         break;
-      }
-   }
 }
-""", output_encoding='utf-8')
-
-TEMPLATE_H = Template(COPYRIGHT + """
-/* This file generated from ${filename}, don't edit directly. */
-#ifndef VK_FEATURES_H
-#define VK_FEATURES_H
-
-#ifdef __cplusplus
-extern "C" {
-#endif
-
-struct vk_features {
-% for flag in all_flags:
-   bool ${flag};
-% endfor
-};
-
-void
-vk_set_physical_device_features_1_0(struct vk_features *all_features,
-                                    const VkPhysicalDeviceFeatures *pFeatures);
-
-void
-vk_set_physical_device_features(struct vk_features *all_features,
-                                const VkPhysicalDeviceFeatures2 *pFeatures);
-
-void
-vk_get_physical_device_features(VkPhysicalDeviceFeatures2 *pFeatures,
-                                const struct vk_features *all_features);
-
-#ifdef __cplusplus
-}
-#endif
-
-#endif
 """, output_encoding='utf-8')
 
 def get_pdev_features(doc):
@@ -351,10 +350,10 @@ def filter_api(elem, api):
 
     return api in elem.attrib['api'].split(',')
 
-def get_feature_structs(doc, api):
+def get_feature_structs(doc, api, beta):
     feature_structs = OrderedDict()
 
-    required = get_all_required(doc, 'type', api)
+    required = get_all_required(doc, 'type', api, beta)
 
     # parse all struct types where structextends VkPhysicalDeviceFeatures2
     for _type in doc.findall('./types/type[@category="struct"]'):
@@ -389,7 +388,7 @@ def get_feature_structs(doc, api):
 
     return feature_structs.values()
 
-def get_feature_structs_from_xml(xml_files, api='vulkan'):
+def get_feature_structs_from_xml(xml_files, beta, api='vulkan'):
     diagnostics = []
 
     pdev_features = None
@@ -397,7 +396,7 @@ def get_feature_structs_from_xml(xml_files, api='vulkan'):
 
     for filename in xml_files:
         doc = et.parse(filename)
-        feature_structs += get_feature_structs(doc, api)
+        feature_structs += get_feature_structs(doc, api, beta)
         if not pdev_features:
             pdev_features = get_pdev_features(doc)
 
@@ -433,12 +432,13 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--out-c', required=True, help='Output C file.')
     parser.add_argument('--out-h', required=True, help='Output H file.')
+    parser.add_argument('--beta', required=True, help='Enable beta extensions.')
     parser.add_argument('--xml',
                         help='Vulkan API XML file.',
                         required=True, action='append', dest='xml_files')
     args = parser.parse_args()
 
-    pdev_features, feature_structs, all_flags = get_feature_structs_from_xml(args.xml_files)
+    pdev_features, feature_structs, all_flags = get_feature_structs_from_xml(args.xml_files, args.beta)
 
     environment = {
         'filename': os.path.basename(__file__),

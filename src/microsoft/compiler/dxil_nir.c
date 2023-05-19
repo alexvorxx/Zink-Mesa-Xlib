@@ -22,9 +22,11 @@
  */
 
 #include "dxil_nir.h"
+#include "dxil_module.h"
 
 #include "nir_builder.h"
 #include "nir_deref.h"
+#include "nir_worklist.h"
 #include "nir_to_dxil.h"
 #include "util/u_math.h"
 #include "vulkan/vulkan_core.h"
@@ -405,7 +407,7 @@ lower_load_vec32(nir_builder *b, nir_ssa_def *index, unsigned num_comps, nir_ssa
 
       load->num_components = 1;
       load->src[0] = nir_src_for_ssa(nir_iadd(b, index, nir_imm_int(b, i)));
-      nir_ssa_dest_init(&load->instr, &load->dest, 1, 32, NULL);
+      nir_ssa_dest_init(&load->instr, &load->dest, 1, 32);
       nir_builder_instr_insert(b, &load->instr);
       comps[i] = &load->dest.ssa;
    }
@@ -756,8 +758,7 @@ dxil_nir_lower_loads_stores_to_dxil(nir_shader *nir,
 }
 
 static bool
-lower_shared_atomic(nir_builder *b, nir_intrinsic_instr *intr,
-                    nir_intrinsic_op dxil_op)
+lower_shared_atomic(nir_builder *b, nir_intrinsic_instr *intr)
 {
    b->cursor = nir_before_instr(&intr->instr);
 
@@ -766,16 +767,19 @@ lower_shared_atomic(nir_builder *b, nir_intrinsic_instr *intr,
       nir_iadd(b, intr->src[0].ssa, nir_imm_int(b, nir_intrinsic_base(intr)));
    nir_ssa_def *index = nir_ushr(b, offset, nir_imm_int(b, 2));
 
+   nir_intrinsic_op dxil_op = intr->intrinsic == nir_intrinsic_shared_atomic_swap ?
+      nir_intrinsic_shared_atomic_swap_dxil : nir_intrinsic_shared_atomic_dxil;
    nir_intrinsic_instr *atomic = nir_intrinsic_instr_create(b->shader, dxil_op);
    atomic->src[0] = nir_src_for_ssa(index);
    assert(intr->src[1].is_ssa);
    atomic->src[1] = nir_src_for_ssa(intr->src[1].ssa);
-   if (dxil_op == nir_intrinsic_shared_atomic_comp_swap_dxil) {
+   if (dxil_op == nir_intrinsic_shared_atomic_swap_dxil) {
       assert(intr->src[2].is_ssa);
       atomic->src[2] = nir_src_for_ssa(intr->src[2].ssa);
    }
    atomic->num_components = 0;
-   nir_ssa_dest_init(&atomic->instr, &atomic->dest, 1, 32, NULL);
+   nir_ssa_dest_init(&atomic->instr, &atomic->dest, 1, 32);
+   nir_intrinsic_set_atomic_op(atomic, nir_intrinsic_atomic_op(intr));
 
    nir_builder_instr_insert(b, &atomic->instr);
    nir_ssa_def_rewrite_uses(&intr->dest.ssa, &atomic->dest.ssa);
@@ -803,25 +807,10 @@ dxil_nir_lower_atomics_to_dxil(nir_shader *nir)
             nir_intrinsic_instr *intr = nir_instr_as_intrinsic(instr);
 
             switch (intr->intrinsic) {
-
-#define ATOMIC(op)                                                            \
-  case nir_intrinsic_shared_atomic_##op:                                     \
-     progress |= lower_shared_atomic(&b, intr,                                \
-                                     nir_intrinsic_shared_atomic_##op##_dxil); \
-     break
-
-            ATOMIC(add);
-            ATOMIC(imin);
-            ATOMIC(umin);
-            ATOMIC(imax);
-            ATOMIC(umax);
-            ATOMIC(and);
-            ATOMIC(or);
-            ATOMIC(xor);
-            ATOMIC(exchange);
-            ATOMIC(comp_swap);
-
-#undef ATOMIC
+            case nir_intrinsic_shared_atomic:
+            case nir_intrinsic_shared_atomic_swap:
+               progress |= lower_shared_atomic(&b, intr);
+               break;
             default:
                break;
             }
@@ -970,8 +959,8 @@ cast_phi(nir_builder *b, nir_phi_instr *phi, unsigned new_bit_size)
       nir_phi_instr_add_src(lowered, src->pred, nir_src_for_ssa(cast));
    }
 
-   nir_ssa_dest_init(&lowered->instr, &lowered->dest,
-                     num_components, new_bit_size, NULL);
+   nir_ssa_dest_init(&lowered->instr, &lowered->dest, num_components,
+                     new_bit_size);
 
    b->cursor = nir_before_instr(&phi->instr);
    nir_builder_instr_insert(b, &lowered->instr);
@@ -991,11 +980,7 @@ upcast_phi_impl(nir_function_impl *impl, unsigned min_bit_size)
    bool progress = false;
 
    nir_foreach_block_reverse(block, impl) {
-      nir_foreach_instr_safe(instr, block) {
-         if (instr->type != nir_instr_type_phi)
-            continue;
-
-         nir_phi_instr *phi = nir_instr_as_phi(instr);
+      nir_foreach_phi_safe(phi, block) {
          assert(phi->dest.is_ssa);
 
          if (phi->dest.ssa.bit_size == 1 ||
@@ -2090,7 +2075,8 @@ lower_subgroup_id(nir_builder *b, nir_instr *instr, void *data)
                          .memory_modes = nir_var_mem_shared);
 
       nif = nir_push_if(b, nir_elect(b, 1));
-      nir_ssa_def *subgroup_id_first_thread = nir_deref_atomic_add(b, 32, &counter_deref->dest.ssa, nir_imm_int(b, 1));
+      nir_ssa_def *subgroup_id_first_thread = nir_deref_atomic(b, 32, &counter_deref->dest.ssa, nir_imm_int(b, 1),
+                                                               .atomic_op = nir_atomic_op_iadd);
       nir_store_var(b, subgroup_id_local, subgroup_id_first_thread, 1);
       nir_pop_if(b, nif);
 
@@ -2410,4 +2396,273 @@ dxil_nir_forward_front_face(nir_shader *nir)
    return nir_shader_instructions_pass(nir, lower_load_face,
                                        nir_metadata_block_index | nir_metadata_dominance,
                                        var);
+}
+
+static bool
+split_phi_and_const_srcs(nir_builder *b, nir_instr *instr, void *data)
+{
+   bool progress = false;
+   switch (instr->type) {
+   case nir_instr_type_phi: {
+      /* Ensure each phi src is used only as a phi src and is not also a phi dest */
+      nir_phi_instr *phi = nir_instr_as_phi(instr);
+      nir_foreach_phi_src(src, phi) {
+         assert(src->src.is_ssa);
+         if (!list_is_singular(&src->src.use_link) ||
+             (src->src.is_ssa && src->src.parent_instr->type == nir_instr_type_phi)) {
+            b->cursor = nir_after_instr_and_phis(src->src.ssa->parent_instr);
+            nir_ssa_def *new_phi_src = nir_mov(b, src->src.ssa);
+            nir_src_rewrite_ssa(&src->src, new_phi_src);
+            progress = true;
+         }
+      }
+      return progress;
+   }
+   case nir_instr_type_load_const: {
+      /* Sink load_const to their uses if there's multiple */
+      nir_load_const_instr *load_const = nir_instr_as_load_const(instr);
+      if (!list_is_singular(&load_const->def.uses)) {
+         nir_foreach_use_safe(src, &load_const->def) {
+            b->cursor = nir_before_src(src);
+            nir_load_const_instr *new_load = nir_load_const_instr_create(b->shader,
+                                                                         load_const->def.num_components,
+                                                                         load_const->def.bit_size);
+            memcpy(new_load->value, load_const->value, sizeof(load_const->value[0]) * load_const->def.num_components);
+            nir_builder_instr_insert(b, &new_load->instr);
+            nir_src_rewrite_ssa(src, &new_load->def);
+            progress = true;
+         }
+      }
+      return progress;
+   }
+   default:
+      return false;
+   }
+}
+
+/* If a value is used by a phi and another instruction (e.g. another phi),
+ * copy the value with a mov and use that as the phi source. If the types
+ * of the uses are compatible, then the two phi sources will use the same
+ * DXIL SSA value, but if the types are not, then the mov provides an opportunity
+ * to insert a bitcast. Similarly, sink all consts so that they have only have
+ * a single use. The DXIL backend will already de-dupe the constants to the
+ * same dxil_value if they have the same type, but this allows a single constant
+ * to have different types without bitcasts. */
+bool
+dxil_nir_split_phis_and_const_srcs(nir_shader *s)
+{
+   return nir_shader_instructions_pass(s, split_phi_and_const_srcs,
+                                       nir_metadata_block_index | nir_metadata_dominance,
+                                       NULL);
+}
+
+static void
+clear_pass_flags(nir_function_impl *impl)
+{
+   nir_foreach_block(block, impl) {
+      nir_foreach_instr(instr, block) {
+         instr->pass_flags = 0;
+      }
+   }
+}
+
+static bool
+add_dest_to_worklist(nir_dest *dest, void *state)
+{
+   assert(dest->is_ssa);
+   nir_foreach_use_including_if(src, &dest->ssa) {
+      assert(src->is_ssa);
+      if (src->is_if) {
+         nir_if *nif = src->parent_if;
+         nir_foreach_block_in_cf_node(block, &nif->cf_node) {
+            nir_foreach_instr(instr, block)
+               nir_instr_worklist_push_tail(state, instr);
+         }
+      } else
+         nir_instr_worklist_push_tail(state, src->parent_instr);
+   }
+   return true;
+}
+
+static bool
+set_input_bits(struct dxil_module *mod, nir_intrinsic_instr *intr, BITSET_WORD *input_bits, uint32_t ***tables, const uint32_t **table_sizes)
+{
+   if (intr->intrinsic == nir_intrinsic_load_view_index) {
+      BITSET_SET(input_bits, 0);
+      return true;
+   }
+   
+   bool any_bits_set = false;
+   nir_src *row_src = intr->intrinsic == nir_intrinsic_load_per_vertex_input ? &intr->src[1] : &intr->src[0];
+   bool is_patch_constant = mod->shader_kind == DXIL_DOMAIN_SHADER && intr->intrinsic == nir_intrinsic_load_input;
+   const struct dxil_signature_record *sig_rec = is_patch_constant ?
+      &mod->patch_consts[nir_intrinsic_base(intr)] :
+      &mod->inputs[mod->input_mappings[nir_intrinsic_base(intr)]];
+   if (is_patch_constant) {
+      /* Redirect to the second I/O table */
+      *tables = *tables + 1;
+      *table_sizes = *table_sizes + 1;
+   }
+   for (uint32_t component = 0; component < intr->num_components; ++component) {
+      uint32_t base_element = 0;
+      uint32_t num_elements = sig_rec->num_elements;
+      if (nir_src_is_const(*row_src)) {
+         base_element = (uint32_t)nir_src_as_uint(*row_src);
+         num_elements = 1;
+      }
+      for (uint32_t element = 0; element < num_elements; ++element) {
+         uint32_t row = sig_rec->elements[element + base_element].reg;
+         if (row == 0xffffffff)
+            continue;
+         BITSET_SET(input_bits, row * 4 + component + nir_intrinsic_component(intr));
+         any_bits_set = true;
+      }
+   }
+   return any_bits_set;
+}
+
+static bool
+set_output_bits(struct dxil_module *mod, nir_intrinsic_instr *intr, BITSET_WORD *input_bits, uint32_t **tables, const uint32_t *table_sizes)
+{
+   bool any_bits_set = false;
+   nir_src *row_src = intr->intrinsic == nir_intrinsic_store_per_vertex_output ? &intr->src[2] : &intr->src[1];
+   bool is_patch_constant = mod->shader_kind == DXIL_HULL_SHADER && intr->intrinsic == nir_intrinsic_store_output;
+   const struct dxil_signature_record *sig_rec = is_patch_constant ?
+      &mod->patch_consts[nir_intrinsic_base(intr)] :
+      &mod->outputs[nir_intrinsic_base(intr)];
+   for (uint32_t component = 0; component < intr->num_components; ++component) {
+      uint32_t base_element = 0;
+      uint32_t num_elements = sig_rec->num_elements;
+      if (nir_src_is_const(*row_src)) {
+         base_element = (uint32_t)nir_src_as_uint(*row_src);
+         num_elements = 1;
+      }
+      for (uint32_t element = 0; element < num_elements; ++element) {
+         uint32_t row = sig_rec->elements[element + base_element].reg;
+         if (row == 0xffffffff)
+            continue;
+         uint32_t stream = sig_rec->elements[element + base_element].stream;
+         uint32_t table_idx = is_patch_constant ? 1 : stream;
+         uint32_t *table = tables[table_idx];
+         uint32_t output_component = component + nir_intrinsic_component(intr);
+         uint32_t input_component;
+         BITSET_FOREACH_SET(input_component, input_bits, 32 * 4) {
+            uint32_t *table_for_input_component = table + table_sizes[table_idx] * input_component;
+            BITSET_SET(table_for_input_component, row * 4 + output_component);
+            any_bits_set = true;
+         }
+      }
+   }
+   return any_bits_set;
+}
+
+static bool
+propagate_input_to_output_dependencies(struct dxil_module *mod, nir_intrinsic_instr *load_intr, uint32_t **tables, const uint32_t *table_sizes)
+{
+   /* Which input components are being loaded by this instruction */
+   BITSET_DECLARE(input_bits, 32 * 4) = { 0 };
+   if (!set_input_bits(mod, load_intr, input_bits, &tables, &table_sizes))
+      return false;
+
+   nir_instr_worklist *worklist = nir_instr_worklist_create();
+   nir_instr_worklist_push_tail(worklist, &load_intr->instr);
+   bool any_bits_set = false;
+   nir_foreach_instr_in_worklist(instr, worklist) {
+      if (instr->pass_flags)
+         continue;
+
+      instr->pass_flags = 1;
+      nir_foreach_dest(instr, add_dest_to_worklist, worklist);
+      switch (instr->type) {
+      case nir_instr_type_jump: {
+         nir_jump_instr *jump = nir_instr_as_jump(instr);
+         switch (jump->type) {
+         case nir_jump_break:
+         case nir_jump_continue: {
+            nir_cf_node *parent = &instr->block->cf_node;
+            while (parent->type != nir_cf_node_loop)
+               parent = parent->parent;
+            nir_foreach_block_in_cf_node(block, parent)
+               nir_foreach_instr(i, block)
+               nir_instr_worklist_push_tail(worklist, i);
+            }
+            break;
+         default:
+            unreachable("Don't expect any other jumps");
+         }
+         break;
+      }
+      case nir_instr_type_intrinsic: {
+         nir_intrinsic_instr *intr = nir_instr_as_intrinsic(instr);
+         switch (intr->intrinsic) {
+         case nir_intrinsic_store_output:
+         case nir_intrinsic_store_per_vertex_output:
+            any_bits_set |= set_output_bits(mod, intr, input_bits, tables, table_sizes);
+            break;
+            /* TODO: Memory writes */
+         default:
+            break;
+         }
+         break;
+      }
+      default:
+         break;
+      }
+   }
+
+   nir_instr_worklist_destroy(worklist);
+   return any_bits_set;
+}
+
+/* For every input load, compute the set of output stores that it can contribute to.
+ * If it contributes to a store to memory, If it's used for control flow, then any
+ * instruction in the CFG that it impacts is considered to contribute.
+ * Ideally, we should also handle stores to outputs/memory and then loads from that
+ * output/memory, but this is non-trivial and unclear how much impact that would have. */
+bool
+dxil_nir_analyze_io_dependencies(struct dxil_module *mod, nir_shader *s)
+{
+   bool any_outputs = false;
+   for (uint32_t i = 0; i < 4; ++i)
+      any_outputs |= mod->num_psv_outputs[i] > 0;
+   if (mod->shader_kind == DXIL_HULL_SHADER)
+      any_outputs |= mod->num_psv_patch_consts > 0;
+   if (!any_outputs)
+      return false;
+
+   bool any_bits_set = false;
+   nir_foreach_function(func, s) {
+      assert(func->impl);
+      /* Hull shaders have a patch constant function */
+      assert(func->is_entrypoint || s->info.stage == MESA_SHADER_TESS_CTRL);
+
+      /* Pass 1: input/view ID -> output dependencies */
+      nir_foreach_block(block, func->impl) {
+         nir_foreach_instr(instr, block) {
+            if (instr->type != nir_instr_type_intrinsic)
+               continue;
+            nir_intrinsic_instr *intr = nir_instr_as_intrinsic(instr);
+            uint32_t **tables = mod->io_dependency_table;
+            const uint32_t *table_sizes = mod->dependency_table_dwords_per_input;
+            switch (intr->intrinsic) {
+            case nir_intrinsic_load_view_index:
+               tables = mod->viewid_dependency_table;
+               FALLTHROUGH;
+            case nir_intrinsic_load_input:
+            case nir_intrinsic_load_per_vertex_input:
+            case nir_intrinsic_load_interpolated_input:
+               break;
+            default:
+               continue;
+            }
+
+            clear_pass_flags(func->impl);
+            any_bits_set |= propagate_input_to_output_dependencies(mod, intr, tables, table_sizes);
+         }
+      }
+
+      /* Pass 2: output -> output dependencies */
+      /* TODO */
+   }
+   return any_bits_set;
 }

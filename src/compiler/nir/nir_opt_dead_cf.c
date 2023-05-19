@@ -90,11 +90,7 @@ opt_constant_if(nir_if *if_stmt, bool condition)
    nir_block *last_block = condition ? nir_if_last_then_block(if_stmt)
                                      : nir_if_last_else_block(if_stmt);
 
-   nir_foreach_instr_safe(instr, after) {
-      if (instr->type != nir_instr_type_phi)
-         break;
-
-      nir_phi_instr *phi = nir_instr_as_phi(instr);
+   nir_foreach_phi_safe(phi, after) {
       nir_ssa_def *def = NULL;
       nir_foreach_phi_src(phi_src, phi) {
          if (phi_src->pred != last_block)
@@ -107,7 +103,7 @@ opt_constant_if(nir_if *if_stmt, bool condition)
       assert(def);
       assert(phi->dest.is_ssa);
       nir_ssa_def_rewrite_uses(&phi->dest.ssa, def);
-      nir_instr_remove(instr);
+      nir_instr_remove(&phi->instr);
    }
 
    /* The control flow list we're about to paste in may include a jump at the

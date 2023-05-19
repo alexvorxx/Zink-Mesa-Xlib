@@ -1167,8 +1167,13 @@ anv_cmd_buffer_exec_batch_debug(struct anv_queue *queue,
    struct anv_device *device = queue->device;
    const bool has_perf_query = perf_query_pool && perf_query_pass >= 0 &&
                                cmd_buffer_count;
+   uint64_t frame_id = device->debug_frame_desc->frame_id;
 
-   fprintf(stderr, "Batch on queue %d\n", (int)(queue - device->queues));
+   if (!intel_debug_batch_in_range(device->debug_frame_desc->frame_id))
+      return;
+   fprintf(stderr, "Batch for frame %"PRIu64" on queue %d\n",
+      frame_id, (int)(queue - device->queues));
+
    if (cmd_buffer_count) {
       if (has_perf_query) {
          struct anv_bo *pass_batch_bo = perf_query_pool->bo;
@@ -1384,7 +1389,8 @@ anv_queue_submit_simple_batch(struct anv_queue *queue,
       intel_flush_range(batch_bo->map, batch_size);
 #endif
 
-   if (INTEL_DEBUG(DEBUG_BATCH)) {
+   if (INTEL_DEBUG(DEBUG_BATCH) &&
+       intel_debug_batch_in_range(device->debug_frame_desc->frame_id)) {
       intel_print_batch(queue->decoder,
                         batch_bo->map,
                         batch_bo->size,

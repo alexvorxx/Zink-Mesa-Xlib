@@ -41,6 +41,7 @@
 #include "pvr_srv_job_common.h"
 #include "pvr_srv_job_render.h"
 #include "pvr_srv_sync.h"
+#include "pvr_srv_sync_prim.h"
 #include "pvr_types.h"
 #include "pvr_winsys.h"
 #include "util/log.h"
@@ -102,7 +103,7 @@ VkResult pvr_srv_winsys_free_list_create(
    void *parent_handle;
    VkResult result;
 
-   srv_free_list = vk_zalloc(srv_ws->alloc,
+   srv_free_list = vk_zalloc(ws->alloc,
                              sizeof(*srv_free_list),
                              8,
                              VK_SYSTEM_ALLOCATION_SCOPE_DEVICE);
@@ -117,7 +118,7 @@ VkResult pvr_srv_winsys_free_list_create(
       parent_handle = NULL;
    }
 
-   result = pvr_srv_rgx_create_free_list(srv_ws->render_fd,
+   result = pvr_srv_rgx_create_free_list(ws->render_fd,
                                          srv_ws->server_memctx_data,
                                          max_num_pages,
                                          initial_num_pages,
@@ -143,7 +144,7 @@ VkResult pvr_srv_winsys_free_list_create(
    return VK_SUCCESS;
 
 err_vk_free_srv_free_list:
-   vk_free(srv_ws->alloc, srv_free_list);
+   vk_free(ws->alloc, srv_free_list);
 
    return result;
 }
@@ -154,8 +155,8 @@ void pvr_srv_winsys_free_list_destroy(struct pvr_winsys_free_list *free_list)
    struct pvr_srv_winsys_free_list *srv_free_list =
       to_pvr_srv_winsys_free_list(free_list);
 
-   pvr_srv_rgx_destroy_free_list(srv_ws->render_fd, srv_free_list->handle);
-   vk_free(srv_ws->alloc, srv_free_list);
+   pvr_srv_rgx_destroy_free_list(srv_ws->base.render_fd, srv_free_list->handle);
+   vk_free(srv_ws->base.alloc, srv_free_list);
 }
 
 VkResult pvr_srv_render_target_dataset_create(
@@ -191,7 +192,7 @@ VkResult pvr_srv_render_target_dataset_create(
          srv_local_free_list->parent->handle;
    }
 
-   srv_rt_dataset = vk_zalloc(srv_ws->alloc,
+   srv_rt_dataset = vk_zalloc(ws->alloc,
                               sizeof(*srv_rt_dataset),
                               8,
                               VK_SYSTEM_ALLOCATION_SCOPE_DEVICE);
@@ -206,7 +207,7 @@ VkResult pvr_srv_render_target_dataset_create(
    STATIC_ASSERT(ROGUE_FWIF_NUM_RTDATAS == 2);
 
    result = pvr_srv_rgx_create_hwrt_dataset(
-      srv_ws->render_fd,
+      ws->render_fd,
       create_info->ppp_multi_sample_ctl_y_flipped,
       create_info->ppp_multi_sample_ctl,
       macrotile_addrs,
@@ -254,16 +255,16 @@ VkResult pvr_srv_render_target_dataset_create(
 
 err_srv_sync_prim_free:
    for (uint32_t i = 0; i < ARRAY_SIZE(srv_rt_dataset->rt_datas); i++) {
-      pvr_srv_sync_prim_free(srv_rt_dataset->rt_datas[i].sync_prim);
+      pvr_srv_sync_prim_free(srv_ws, srv_rt_dataset->rt_datas[i].sync_prim);
 
       if (srv_rt_dataset->rt_datas[i].handle) {
-         pvr_srv_rgx_destroy_hwrt_dataset(srv_ws->render_fd,
+         pvr_srv_rgx_destroy_hwrt_dataset(ws->render_fd,
                                           srv_rt_dataset->rt_datas[i].handle);
       }
    }
 
 err_vk_free_srv_rt_dataset:
-   vk_free(srv_ws->alloc, srv_rt_dataset);
+   vk_free(ws->alloc, srv_rt_dataset);
 
    return result;
 }
@@ -276,15 +277,15 @@ void pvr_srv_render_target_dataset_destroy(
       to_pvr_srv_winsys_rt_dataset(rt_dataset);
 
    for (uint32_t i = 0; i < ARRAY_SIZE(srv_rt_dataset->rt_datas); i++) {
-      pvr_srv_sync_prim_free(srv_rt_dataset->rt_datas[i].sync_prim);
+      pvr_srv_sync_prim_free(srv_ws, srv_rt_dataset->rt_datas[i].sync_prim);
 
       if (srv_rt_dataset->rt_datas[i].handle) {
-         pvr_srv_rgx_destroy_hwrt_dataset(srv_ws->render_fd,
+         pvr_srv_rgx_destroy_hwrt_dataset(srv_ws->base.render_fd,
                                           srv_rt_dataset->rt_datas[i].handle);
       }
    }
 
-   vk_free(srv_ws->alloc, srv_rt_dataset);
+   vk_free(srv_ws->base.alloc, srv_rt_dataset);
 }
 
 static void pvr_srv_render_ctx_fw_static_state_init(
@@ -333,18 +334,18 @@ VkResult pvr_srv_winsys_render_ctx_create(
    const uint32_t call_stack_depth = 1U;
    VkResult result;
 
-   srv_ctx = vk_zalloc(srv_ws->alloc,
+   srv_ctx = vk_zalloc(ws->alloc,
                        sizeof(*srv_ctx),
                        8,
                        VK_SYSTEM_ALLOCATION_SCOPE_DEVICE);
    if (!srv_ctx)
       return vk_error(NULL, VK_ERROR_OUT_OF_HOST_MEMORY);
 
-   result = pvr_srv_create_timeline(srv_ws->render_fd, &srv_ctx->timeline_geom);
+   result = pvr_srv_create_timeline(ws->render_fd, &srv_ctx->timeline_geom);
    if (result != VK_SUCCESS)
       goto err_free_srv_ctx;
 
-   result = pvr_srv_create_timeline(srv_ws->render_fd, &srv_ctx->timeline_frag);
+   result = pvr_srv_create_timeline(ws->render_fd, &srv_ctx->timeline_frag);
    if (result != VK_SUCCESS)
       goto err_close_timeline_geom;
 
@@ -354,7 +355,7 @@ VkResult pvr_srv_winsys_render_ctx_create(
     * reset_cmd.regs size from reset_cmd size to only pass empty flags field.
     */
    result = pvr_srv_rgx_create_render_context(
-      srv_ws->render_fd,
+      ws->render_fd,
       pvr_srv_from_winsys_priority(create_info->priority),
       create_info->vdm_callstack_addr,
       call_stack_depth,
@@ -385,7 +386,7 @@ err_close_timeline_geom:
    close(srv_ctx->timeline_geom);
 
 err_free_srv_ctx:
-   vk_free(srv_ws->alloc, srv_ctx);
+   vk_free(ws->alloc, srv_ctx);
 
    return vk_error(NULL, VK_ERROR_INITIALIZATION_FAILED);
 }
@@ -396,10 +397,10 @@ void pvr_srv_winsys_render_ctx_destroy(struct pvr_winsys_render_ctx *ctx)
    struct pvr_srv_winsys_render_ctx *srv_ctx =
       to_pvr_srv_winsys_render_ctx(ctx);
 
-   pvr_srv_rgx_destroy_render_context(srv_ws->render_fd, srv_ctx->handle);
+   pvr_srv_rgx_destroy_render_context(srv_ws->base.render_fd, srv_ctx->handle);
    close(srv_ctx->timeline_frag);
    close(srv_ctx->timeline_geom);
-   vk_free(srv_ws->alloc, srv_ctx);
+   vk_free(srv_ws->base.alloc, srv_ctx);
 }
 
 static void
@@ -747,21 +748,21 @@ VkResult pvr_srv_winsys_render_submit(
        * physically backed so no need to inform the fw about their status and
        * pass in anything. We'll just pass in NULL.
        */
-      result = pvr_srv_rgx_kick_render2(srv_ws->render_fd,
+      result = pvr_srv_rgx_kick_render2(srv_ws->base.render_fd,
                                         srv_ctx->handle,
                                         0,
                                         NULL,
                                         NULL,
                                         NULL,
                                         1,
-                                        &sync_prim->srv_ws->sync_block_handle,
+                                        &sync_prim->ctx->block_handle,
                                         &sync_prim->offset,
                                         &sync_prim->value,
                                         0,
                                         NULL,
                                         NULL,
                                         NULL,
-                                        sync_prim->srv_ws->sync_block_handle,
+                                        sync_prim->ctx->block_handle,
                                         sync_prim->offset,
                                         sync_prim->value,
                                         in_geom_fd,

@@ -31,6 +31,7 @@
 #include "compiler/glsl/linker.h"
 #include "compiler/glsl/program.h"
 #include "compiler/glsl/shader_cache.h"
+#include "util/perf/cpu_trace.h"
 
 #include "state_tracker/st_glsl_to_ir.h"
 
@@ -44,6 +45,8 @@ _mesa_glsl_link_shader(struct gl_context *ctx, struct gl_shader_program *prog)
 {
    unsigned int i;
    bool spirv = false;
+
+   MESA_TRACE_FUNC();
 
    _mesa_clear_shader_program_data(ctx, prog);
 

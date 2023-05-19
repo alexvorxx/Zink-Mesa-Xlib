@@ -1,0 +1,6 @@
+# Several bugs in WARP's 64-bit wave ops. Fixes incoming
+dEQP-VK.subgroups.*int64_t.*
+dEQP-VK.subgroups.*double.*
+dEQP-VK.subgroups.*i64vec.*
+dEQP-VK.subgroups.*u64vec.*
+dEQP-VK.subgroups.*dvec.*

@@ -75,7 +75,7 @@ v3d_setup_plane_slices(struct v3dv_image *image, uint8_t plane,
                        uint32_t plane_offset)
 {
    assert(image->planes[plane].cpp > 0);
-   /* Texture Base Adress needs to be 64-byte aligned */
+   /* Texture Base Address needs to be 64-byte aligned */
    assert(plane_offset % 64 == 0);
 
    uint32_t width = image->planes[plane].width;

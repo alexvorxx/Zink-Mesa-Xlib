@@ -23,7 +23,7 @@ static const uint32_t _vn_info_extension_count = 102;
 static const struct vn_info_extension _vn_info_extensions[102] = {
    { "VK_EXT_4444_formats", 341, 1 },
    { "VK_EXT_calibrated_timestamps", 185, 2 },
-   { "VK_EXT_command_serialization", 384, 0 },
+   { "VK_EXT_command_serialization", 384, 1 },
    { "VK_EXT_conditional_rendering", 82, 2 },
    { "VK_EXT_conservative_rasterization", 102, 1 },
    { "VK_EXT_custom_border_color", 288, 12 },
@@ -121,14 +121,14 @@ static const struct vn_info_extension _vn_info_extensions[102] = {
    { "VK_KHR_variable_pointers", 121, 1 },
    { "VK_KHR_vulkan_memory_model", 212, 3 },
    { "VK_KHR_zero_initialize_workgroup_memory", 326, 1 },
-   { "VK_MESA_venus_protocol", 385, 100000 },
+   { "VK_MESA_venus_protocol", 385, 1 },
    { "VK_VALVE_mutable_descriptor_type", 352, 1 },
 };
 
 static inline uint32_t
 vn_info_wire_format_version(void)
 {
-    return 0;
+    return 1;
 }
 
 static inline uint32_t

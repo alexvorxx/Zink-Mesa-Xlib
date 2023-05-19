@@ -1578,13 +1578,13 @@ static void r600_emit_db_misc_state(struct r600_context *rctx, struct r600_atom 
 	if (rctx->b.gfx_level >= R700) {
 		switch (a->ps_conservative_z) {
 		default: /* fall through */
-		case TGSI_FS_DEPTH_LAYOUT_ANY:
+		case FRAG_DEPTH_LAYOUT_ANY:
 			db_render_control |= S_028D0C_CONSERVATIVE_Z_EXPORT(V_028D0C_EXPORT_ANY_Z);
 			break;
-		case TGSI_FS_DEPTH_LAYOUT_GREATER:
+		case FRAG_DEPTH_LAYOUT_GREATER:
 			db_render_control |= S_028D0C_CONSERVATIVE_Z_EXPORT(V_028D0C_EXPORT_GREATER_THAN_Z);
 			break;
-		case TGSI_FS_DEPTH_LAYOUT_LESS:
+		case FRAG_DEPTH_LAYOUT_LESS:
 			db_render_control |= S_028D0C_CONSERVATIVE_Z_EXPORT(V_028D0C_EXPORT_LESS_THAN_Z);
 			break;
 		}

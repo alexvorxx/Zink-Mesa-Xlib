@@ -102,7 +102,7 @@ emit_load_store_deref(nir_builder *b, nir_intrinsic_instr *orig_instr,
 
       nir_ssa_dest_init(&load->instr, &load->dest,
                         orig_instr->dest.ssa.num_components,
-                        orig_instr->dest.ssa.bit_size, NULL);
+                        orig_instr->dest.ssa.bit_size);
       nir_builder_instr_insert(b, &load->instr);
       *dest = &load->dest.ssa;
    } else {

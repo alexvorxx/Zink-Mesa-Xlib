@@ -384,7 +384,7 @@ _eglValidateConfig(const _EGLConfig *conf, EGLBoolean for_matching)
       }
    }
 
-   /* any invalid attribute value should have been catched */
+   /* any invalid attribute value should have been caught */
    if (!valid || for_matching)
       return valid;
 

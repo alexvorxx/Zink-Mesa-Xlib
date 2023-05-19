@@ -257,6 +257,26 @@ anv_cmd_buffer_mark_image_written(struct anv_cmd_buffer *cmd_buffer,
 }
 
 void
+anv_cmd_buffer_mark_image_fast_cleared(struct anv_cmd_buffer *cmd_buffer,
+                                       const struct anv_image *image,
+                                       const enum isl_format format,
+                                       union isl_color_value clear_color)
+{
+   const struct intel_device_info *devinfo = cmd_buffer->device->info;
+   anv_genX(devinfo, set_fast_clear_state)(cmd_buffer, image, format,
+                                           clear_color);
+}
+
+void
+anv_cmd_buffer_load_clear_color_from_image(struct anv_cmd_buffer *cmd_buffer,
+                                           struct anv_state state,
+                                           const struct anv_image *image)
+{
+   const struct intel_device_info *devinfo = cmd_buffer->device->info;
+   anv_genX(devinfo, load_image_clear_color)(cmd_buffer, state, image);
+}
+
+void
 anv_cmd_emit_conditional_render_predicate(struct anv_cmd_buffer *cmd_buffer)
 {
    const struct intel_device_info *devinfo = cmd_buffer->device->info;

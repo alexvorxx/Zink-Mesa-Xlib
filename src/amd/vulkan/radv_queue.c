@@ -157,8 +157,9 @@ radv_sparse_image_bind_memory(struct radv_device *device, const VkSparseImageMem
 
    for (uint32_t i = 0; i < bind->bindCount; ++i) {
       struct radv_device_memory *mem = NULL;
-      uint32_t offset, pitch, depth_pitch;
-      uint32_t mem_offset = bind->pBinds[i].memoryOffset;
+      uint64_t offset, depth_pitch;
+      uint32_t pitch;
+      uint64_t mem_offset = bind->pBinds[i].memoryOffset;
       const uint32_t layer = bind->pBinds[i].subresource.arrayLayer;
       const uint32_t level = bind->pBinds[i].subresource.mipLevel;
 
@@ -186,8 +187,8 @@ radv_sparse_image_bind_memory(struct radv_device *device, const VkSparseImageMem
       }
 
       offset += bind_offset.z * depth_pitch +
-                (bind_offset.y * pitch * surface->prt_tile_depth +
-                 bind_offset.x * surface->prt_tile_height * surface->prt_tile_depth) *
+                ((uint64_t)bind_offset.y * pitch * surface->prt_tile_depth +
+                 (uint64_t)bind_offset.x * surface->prt_tile_height * surface->prt_tile_depth) *
                    bs;
 
       uint32_t aligned_extent_width = ALIGN(bind_extent.width, surface->prt_tile_width);
@@ -197,10 +198,10 @@ radv_sparse_image_bind_memory(struct radv_device *device, const VkSparseImageMem
       bool whole_subres =
          (bind_extent.height <= surface->prt_tile_height || aligned_extent_width == pitch) &&
          (bind_extent.depth <= surface->prt_tile_depth ||
-          aligned_extent_width * aligned_extent_height * bs == depth_pitch);
+          (uint64_t)aligned_extent_width * aligned_extent_height * bs == depth_pitch);
 
       if (whole_subres) {
-         uint32_t size = aligned_extent_width * aligned_extent_height * aligned_extent_depth * bs;
+         uint64_t size = (uint64_t)aligned_extent_width * aligned_extent_height * aligned_extent_depth * bs;
          result = device->ws->buffer_virtual_bind(device->ws, image->bindings[0].bo, offset, size,
                                                   mem ? mem->bo : NULL, mem_offset);
          if (result != VK_SUCCESS)
@@ -214,14 +215,14 @@ radv_sparse_image_bind_memory(struct radv_device *device, const VkSparseImageMem
       } else {
          uint32_t img_y_increment = pitch * bs * surface->prt_tile_depth;
          uint32_t mem_y_increment = aligned_extent_width * bs * surface->prt_tile_depth;
-         uint32_t mem_z_increment = aligned_extent_width * aligned_extent_height * bs;
-         uint32_t size = mem_y_increment * surface->prt_tile_height;
+         uint64_t mem_z_increment = (uint64_t)aligned_extent_width * aligned_extent_height * bs;
+         uint64_t size = mem_y_increment * surface->prt_tile_height;
          for (unsigned z = 0; z < bind_extent.depth;
               z += surface->prt_tile_depth, offset += depth_pitch * surface->prt_tile_depth) {
             for (unsigned y = 0; y < bind_extent.height; y += surface->prt_tile_height) {
                result = device->ws->buffer_virtual_bind(
-                  device->ws, image->bindings[0].bo, offset + img_y_increment * y, size,
-                  mem ? mem->bo : NULL, mem_offset + mem_y_increment * y + mem_z_increment * z);
+                  device->ws, image->bindings[0].bo, offset + (uint64_t)img_y_increment * y, size,
+                  mem ? mem->bo : NULL, mem_offset + (uint64_t)mem_y_increment * y + mem_z_increment * z);
                if (result != VK_SUCCESS)
                   return result;
 
@@ -646,7 +647,7 @@ radv_emit_graphics_scratch(struct radv_device *device, struct radeon_cmdbuf *cs,
                            uint32_t size_per_wave, uint32_t waves,
                            struct radeon_winsys_bo *scratch_bo)
 {
-   struct radeon_info *info = &device->physical_device->rad_info;
+   const struct radeon_info *info = &device->physical_device->rad_info;
 
    if (!scratch_bo)
       return;
@@ -675,7 +676,7 @@ radv_emit_compute_scratch(struct radv_device *device, struct radeon_cmdbuf *cs,
                           uint32_t size_per_wave, uint32_t waves,
                           struct radeon_winsys_bo *compute_scratch_bo)
 {
-   struct radeon_info *info = &device->physical_device->rad_info;
+   const struct radeon_info *info = &device->physical_device->rad_info;
    uint64_t scratch_va;
    uint32_t rsrc1;
 
@@ -1064,6 +1065,7 @@ radv_update_preamble_cs(struct radv_queue_state *queue, struct radv_device *devi
          goto fail;
       }
 
+      radeon_check_space(ws, cs, 512);
       dest_cs[i] = cs;
 
       if (scratch_bo)
@@ -1334,6 +1336,11 @@ radv_create_gang_wait_preambles_postambles(struct radv_queue *queue)
    if (!leader_pre_cs || !leader_post_cs || !ace_pre_cs || !ace_post_cs)
       goto fail;
 
+   radeon_check_space(ws, leader_pre_cs, 256);
+   radeon_check_space(ws, leader_post_cs, 256);
+   radeon_check_space(ws, ace_pre_cs, 256);
+   radeon_check_space(ws, ace_post_cs, 256);
+
    radv_cs_add_buffer(ws, leader_pre_cs, gang_sem_bo);
    radv_cs_add_buffer(ws, leader_post_cs, gang_sem_bo);
    radv_cs_add_buffer(ws, ace_pre_cs, gang_sem_bo);
@@ -1482,6 +1489,8 @@ radv_create_perf_counter_lock_cs(struct radv_device *device, unsigned pass, bool
 
    ASSERTED unsigned cdw = radeon_check_space(device->ws, cs, 21);
 
+   radv_cs_add_buffer(device->ws, cs, device->perf_counter_bo);
+
    if (!unlock) {
       uint64_t mutex_va = radv_buffer_get_va(device->perf_counter_bo) + PERF_CTR_BO_LOCK_OFFSET;
       radeon_emit(cs, PKT3(PKT3_ATOMIC_MEM, 7, 0));
@@ -1580,12 +1589,9 @@ radv_queue_submit_normal(struct radv_queue *queue, struct vk_queue_submit *submi
          return result;
    }
 
-   const unsigned num_perfctr_cs = use_perf_counters ? 2 : 0;
-   const unsigned num_gang_wait_cs = use_ace ? 4 : 0;
    const unsigned cmd_buffer_count = submission->command_buffer_count;
    const unsigned max_cs_submission = queue->device->trace_bo ? 1 : cmd_buffer_count;
-   const unsigned cs_array_size = (use_ace ? 2 : 1) * MIN2(max_cs_submission, cmd_buffer_count) +
-                                  num_perfctr_cs + num_gang_wait_cs;
+   const unsigned cs_array_size = (use_ace ? 2 : 1) * MIN2(max_cs_submission, cmd_buffer_count);
 
    struct radeon_cmdbuf **cs_array = malloc(sizeof(struct radeon_cmdbuf *) * cs_array_size);
    if (!cs_array)
@@ -1615,25 +1621,6 @@ radv_queue_submit_normal(struct radv_queue *queue, struct vk_queue_submit *submi
       wait_count += 1;
    }
 
-   struct radeon_cmdbuf *perf_ctr_lock_cs = NULL;
-   struct radeon_cmdbuf *perf_ctr_unlock_cs = NULL;
-
-   if (use_perf_counters) {
-      /* Create the lock/unlock CS. */
-      perf_ctr_lock_cs =
-         radv_create_perf_counter_lock_cs(queue->device, submission->perf_pass_index, false);
-      perf_ctr_unlock_cs =
-         radv_create_perf_counter_lock_cs(queue->device, submission->perf_pass_index, true);
-
-      /* RADV only supports perf counters on the GFX queue currently. */
-      assert(radv_queue_ring(queue) == AMD_IP_GFX);
-
-      if (!perf_ctr_lock_cs || !perf_ctr_unlock_cs) {
-         result = VK_ERROR_OUT_OF_HOST_MEMORY;
-         goto fail;
-      }
-   }
-
    /* For fences on the same queue/vm amdgpu doesn't wait till all processing is finished
     * before starting the next cmdbuffer, so we need to do it here.
     */
@@ -1652,6 +1639,20 @@ radv_queue_submit_normal(struct radv_queue *queue, struct vk_queue_submit *submi
       continue_preambles[num_continue_preambles++] = queue->state.continue_preamble_cs;
 
       if (use_perf_counters) {
+         /* RADV only supports perf counters on the GFX queue currently. */
+         assert(queue->state.qf == RADV_QUEUE_GENERAL);
+
+         /* Create the lock/unlock CS. */
+         struct radeon_cmdbuf *perf_ctr_lock_cs =
+            radv_create_perf_counter_lock_cs(queue->device, submission->perf_pass_index, false);
+         struct radeon_cmdbuf *perf_ctr_unlock_cs =
+            radv_create_perf_counter_lock_cs(queue->device, submission->perf_pass_index, true);
+
+         if (!perf_ctr_lock_cs || !perf_ctr_unlock_cs) {
+            result = VK_ERROR_OUT_OF_HOST_MEMORY;
+            goto fail;
+         }
+
          initial_preambles[num_initial_preambles++] = perf_ctr_lock_cs;
          continue_preambles[num_continue_preambles++] = perf_ctr_lock_cs;
          postambles[num_postambles++] = perf_ctr_unlock_cs;

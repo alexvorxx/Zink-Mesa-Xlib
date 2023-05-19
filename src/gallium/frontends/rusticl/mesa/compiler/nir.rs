@@ -70,7 +70,9 @@ impl NirShader {
         unsafe {
             blob_init(&mut blob);
             nir_serialize(&mut blob, self.nir.as_ptr(), false);
-            slice::from_raw_parts(blob.data, blob.size).to_vec()
+            let res = slice::from_raw_parts(blob.data, blob.size).to_vec();
+            blob_finish(&mut blob);
+            res
         }
     }
 

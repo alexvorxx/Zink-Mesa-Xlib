@@ -47,39 +47,13 @@ lower_int_cubmap_to_array_filter(const nir_instr *instr,
    if (instr->type == nir_instr_type_intrinsic) {
       nir_intrinsic_instr *intr = nir_instr_as_intrinsic(instr);
       switch (intr->intrinsic) {
-      case nir_intrinsic_image_atomic_add:
-      case nir_intrinsic_image_atomic_and:
-      case nir_intrinsic_image_atomic_comp_swap:
-      case nir_intrinsic_image_atomic_dec_wrap:
-      case nir_intrinsic_image_atomic_exchange:
-      case nir_intrinsic_image_atomic_fadd:
-      case nir_intrinsic_image_atomic_fmax:
-      case nir_intrinsic_image_atomic_fmin:
-      case nir_intrinsic_image_atomic_imax:
-      case nir_intrinsic_image_atomic_imin:
-      case nir_intrinsic_image_atomic_inc_wrap:
-      case nir_intrinsic_image_atomic_or:
-      case nir_intrinsic_image_atomic_umax:
-      case nir_intrinsic_image_atomic_umin:
-      case nir_intrinsic_image_atomic_xor:
+      case nir_intrinsic_image_atomic:
+      case nir_intrinsic_image_atomic_swap:
       case nir_intrinsic_image_load:
       case nir_intrinsic_image_size:
       case nir_intrinsic_image_store:
-      case nir_intrinsic_image_deref_atomic_add:
-      case nir_intrinsic_image_deref_atomic_and:
-      case nir_intrinsic_image_deref_atomic_comp_swap:
-      case nir_intrinsic_image_deref_atomic_dec_wrap:
-      case nir_intrinsic_image_deref_atomic_exchange:
-      case nir_intrinsic_image_deref_atomic_fadd:
-      case nir_intrinsic_image_deref_atomic_fmax:
-      case nir_intrinsic_image_deref_atomic_fmin:
-      case nir_intrinsic_image_deref_atomic_imax:
-      case nir_intrinsic_image_deref_atomic_imin:
-      case nir_intrinsic_image_deref_atomic_inc_wrap:
-      case nir_intrinsic_image_deref_atomic_or:
-      case nir_intrinsic_image_deref_atomic_umax:
-      case nir_intrinsic_image_deref_atomic_umin:
-      case nir_intrinsic_image_deref_atomic_xor:
+      case nir_intrinsic_image_deref_atomic:
+      case nir_intrinsic_image_deref_atomic_swap:
       case nir_intrinsic_image_deref_load:
       case nir_intrinsic_image_deref_size:
       case nir_intrinsic_image_deref_store:
@@ -215,7 +189,7 @@ create_array_tex_from_cube_tex(nir_builder *b, nir_tex_instr *tex, nir_ssa_def *
    }
 
    nir_ssa_dest_init(&array_tex->instr, &array_tex->dest,
-                     nir_tex_instr_dest_size(array_tex), 32, NULL);
+                     nir_tex_instr_dest_size(array_tex), 32);
    nir_builder_instr_insert(b, &array_tex->instr);
    return &array_tex->dest.ssa;
 }

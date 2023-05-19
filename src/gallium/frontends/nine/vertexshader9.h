@@ -108,6 +108,9 @@ NineVertexShader9_UpdateKey( struct NineVertexShader9 *vs,
                                                                context->vs_const_i,
                                                                context->vs_const_b)) << 16;
 
+    if (device->driver_caps.emulate_ucp)
+        key |= (context->rs[D3DRS_CLIPPLANEENABLE] & 0xff) << 24;
+
     /* We want to use a 64 bits key for performance.
      * Use compressed float16 values for the pointsize min/max in the key.
      * Shaders do not usually output psize.*/

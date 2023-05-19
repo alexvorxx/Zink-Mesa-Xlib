@@ -389,9 +389,9 @@ struct pvr_winsys_render_submit_info {
 
 struct pvr_winsys_ops {
    void (*destroy)(struct pvr_winsys *ws);
-   int (*device_info_init)(struct pvr_winsys *ws,
-                           struct pvr_device_info *dev_info,
-                           struct pvr_device_runtime_info *runtime_info);
+   VkResult (*device_info_init)(struct pvr_winsys *ws,
+                                struct pvr_device_info *dev_info,
+                                struct pvr_device_runtime_info *runtime_info);
    void (*get_heaps_info)(struct pvr_winsys *ws,
                           struct pvr_winsys_heaps *heaps);
 
@@ -408,18 +408,20 @@ struct pvr_winsys_ops {
 
    VkResult (*buffer_get_fd)(struct pvr_winsys_bo *bo, int *const fd_out);
 
-   void *(*buffer_map)(struct pvr_winsys_bo *bo);
+   VkResult (*buffer_map)(struct pvr_winsys_bo *bo);
    void (*buffer_unmap)(struct pvr_winsys_bo *bo);
 
-   struct pvr_winsys_vma *(*heap_alloc)(struct pvr_winsys_heap *heap,
-                                        uint64_t size,
-                                        uint64_t alignment);
+   VkResult (*heap_alloc)(struct pvr_winsys_heap *heap,
+                          uint64_t size,
+                          uint64_t alignment,
+                          struct pvr_winsys_vma **vma_out);
    void (*heap_free)(struct pvr_winsys_vma *vma);
 
-   pvr_dev_addr_t (*vma_map)(struct pvr_winsys_vma *vma,
-                             struct pvr_winsys_bo *bo,
-                             uint64_t offset,
-                             uint64_t size);
+   VkResult (*vma_map)(struct pvr_winsys_vma *vma,
+                       struct pvr_winsys_bo *bo,
+                       uint64_t offset,
+                       uint64_t size,
+                       pvr_dev_addr_t *dev_addr_out);
    void (*vma_unmap)(struct pvr_winsys_vma *vma);
 
    VkResult (*free_list_create)(
@@ -488,6 +490,11 @@ struct pvr_winsys {
    struct vk_sync_type syncobj_type;
    struct vk_sync_timeline_type timeline_syncobj_type;
 
+   int render_fd;
+   int display_fd;
+
+   const VkAllocationCallbacks *alloc;
+
    struct {
       bool supports_threaded_submit : 1;
    } features;
@@ -496,8 +503,9 @@ struct pvr_winsys {
 };
 
 void pvr_winsys_destroy(struct pvr_winsys *ws);
-struct pvr_winsys *pvr_winsys_create(int master_fd,
-                                     int render_fd,
-                                     const VkAllocationCallbacks *alloc);
+VkResult pvr_winsys_create(const char *render_path,
+                           const char *display_path,
+                           const VkAllocationCallbacks *alloc,
+                           struct pvr_winsys **ws_out);
 
 #endif /* PVR_WINSYS_H */

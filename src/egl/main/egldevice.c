@@ -347,7 +347,7 @@ _eglQueryDevicesEXT(EGLint max_devices,
       dev = dev->Next;
    }
 
-   /* User requested the full device list, add the sofware device. */
+   /* User requested the full device list, add the software device. */
    if (max_devices >= num_devs && swrast) {
       assert(_eglDeviceSupports(swrast, _EGL_DEVICE_SOFTWARE));
       devices[num_devs - 1] = swrast;

@@ -594,7 +594,7 @@ clc_libclc_new_dxil(const struct clc_logger *logger,
 {
    struct clc_libclc_options clc_options = {
       .optimize = options->optimize,
-      .nir_options = dxil_get_nir_compiler_options(),
+      .nir_options = dxil_get_base_nir_compiler_options(),
    };
 
    return clc_libclc_new(logger, &clc_options);
@@ -645,17 +645,17 @@ clc_spirv_to_dxil(struct clc_libclc *lib,
          .printf = true,
       },
    };
-   nir_shader_compiler_options nir_options =
-      *dxil_get_nir_compiler_options();
-
-   if (conf && conf->lower_bit_size & 64) {
-      nir_options.lower_pack_64_2x32_split = false;
-      nir_options.lower_unpack_64_2x32_split = false;
-      nir_options.lower_int64_options = ~0;
+   unsigned supported_int_sizes = (16 | 32 | 64);
+   unsigned supported_float_sizes = (16 | 32);
+   if (conf) {
+      supported_int_sizes &= ~conf->lower_bit_size;
+      supported_float_sizes &= ~conf->lower_bit_size;
    }
-
-   if (conf && conf->lower_bit_size & 16)
-      nir_options.support_16bit_alu = true;
+   nir_shader_compiler_options nir_options;
+   dxil_get_nir_compiler_options(&nir_options,
+                                 conf ? conf->max_shader_model : SHADER_MODEL_6_2,
+                                 supported_int_sizes,
+                                 supported_float_sizes);
 
    glsl_type_singleton_init_or_ref();
 

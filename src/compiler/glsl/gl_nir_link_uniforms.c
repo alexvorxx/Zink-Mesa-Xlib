@@ -546,16 +546,8 @@ add_var_use_shader(nir_shader *shader, struct hash_table *live)
                   case nir_intrinsic_atomic_counter_comp_swap_deref:
                   case nir_intrinsic_image_deref_load:
                   case nir_intrinsic_image_deref_store:
-                  case nir_intrinsic_image_deref_atomic_add:
-                  case nir_intrinsic_image_deref_atomic_umin:
-                  case nir_intrinsic_image_deref_atomic_imin:
-                  case nir_intrinsic_image_deref_atomic_umax:
-                  case nir_intrinsic_image_deref_atomic_imax:
-                  case nir_intrinsic_image_deref_atomic_and:
-                  case nir_intrinsic_image_deref_atomic_or:
-                  case nir_intrinsic_image_deref_atomic_xor:
-                  case nir_intrinsic_image_deref_atomic_exchange:
-                  case nir_intrinsic_image_deref_atomic_comp_swap:
+                  case nir_intrinsic_image_deref_atomic:
+                  case nir_intrinsic_image_deref_atomic_swap:
                   case nir_intrinsic_image_deref_size:
                   case nir_intrinsic_image_deref_samples:
                   case nir_intrinsic_load_deref:

@@ -314,6 +314,13 @@ lower_rt_intrinsics_impl(nir_function_impl *impl,
             sysval = build_leaf_is_procedural(b, &hit_in);
             break;
 
+         case nir_intrinsic_load_ray_triangle_vertex_positions: {
+            struct brw_nir_rt_bvh_primitive_leaf_positions_defs pos;
+            brw_nir_rt_load_bvh_primitive_leaf_positions(b, &pos, hit_in.prim_leaf_ptr);
+            sysval = pos.positions[nir_intrinsic_column(intrin)];
+            break;
+         }
+
          case nir_intrinsic_load_leaf_opaque_intel: {
             if (stage == MESA_SHADER_INTERSECTION) {
                /* In intersection shaders, the opaque bit is passed to us in

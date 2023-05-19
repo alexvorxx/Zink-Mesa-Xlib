@@ -100,8 +100,11 @@ struct agx_shader_info {
    /* Depth layout, never equal to NONE */
    enum gl_frag_depth_layout depth_layout;
 
-   /* Is colour output omitted? */
-   bool no_colour_output;
+   /* Based only the compiled shader, should tag writes be disabled? This is set
+    * based on what is outputted. Note if rasterizer discard is used, that needs
+    * to disable tag writes regardless of this flag.
+    */
+   bool tag_write_disable;
 
    /* Shader is incompatible with triangle merging */
    bool disable_tri_merging;
@@ -200,7 +203,6 @@ static const nir_shader_compiler_options agx_nir_options = {
    .vectorize_io = true,
    .use_interpolated_input_intrinsics = true,
    .lower_rotate = true,
-   .has_fsub = true,
    .has_isub = true,
    .use_scoped_barrier = true,
    .max_unroll_iterations = 32,

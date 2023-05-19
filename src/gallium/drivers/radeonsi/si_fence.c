@@ -489,9 +489,8 @@ static void si_flush_all_queues(struct pipe_context *ctx,
 
       tc_driver_internal_flush_notify(sctx->tc);
 
-      if (unlikely(sctx->thread_trace &&
-                   (flags & PIPE_FLUSH_END_OF_FRAME))) {
-         si_handle_thread_trace(sctx, &sctx->gfx_cs);
+      if (unlikely(sctx->sqtt && (flags & PIPE_FLUSH_END_OF_FRAME))) {
+         si_handle_sqtt(sctx, &sctx->gfx_cs);
       }
    } else {
       /* Instead of flushing, create a deferred fence. Constraints:

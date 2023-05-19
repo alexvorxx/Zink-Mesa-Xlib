@@ -650,12 +650,12 @@ print_var_decl(nir_variable *var, print_state *state)
    const char *const ronly = (access & ACCESS_NON_WRITEABLE) ? "readonly " : "";
    const char *const wonly = (access & ACCESS_NON_READABLE) ? "writeonly " : "";
    const char *const reorder = (access & ACCESS_CAN_REORDER) ? "reorderable " : "";
-   const char *const stream_cache_policy = (access & ACCESS_STREAM_CACHE_POLICY) ?
-                                           "stream-cache-policy " : "";
+   const char *const non_temporal = (access & ACCESS_NON_TEMPORAL) ?
+                                       "non-temporal" : "";
    const char *const include_helpers = (access & ACCESS_INCLUDE_HELPERS) ?
                                        "include-helpers " : "";
    fprintf(fp, "%s%s%s%s%s%s%s%s", coher, volat, restr, ronly, wonly, reorder,
-           stream_cache_policy, include_helpers);
+           non_temporal, include_helpers);
 
    if (glsl_get_base_type(glsl_without_array(var->type)) == GLSL_TYPE_IMAGE) {
       fprintf(fp, "%s ", util_format_short_name(var->data.image.format));
@@ -850,12 +850,12 @@ print_deref_instr(nir_deref_instr *instr, print_state *state)
       fprintf(fp, "%s%s", get_variable_mode_str(1 << m, true),
                           modes ? "|" : "");
    }
-   fprintf(fp, " %s) ", glsl_get_type_name(instr->type));
+   fprintf(fp, " %s)", glsl_get_type_name(instr->type));
 
    if (instr->deref_type != nir_deref_type_var &&
        instr->deref_type != nir_deref_type_cast) {
       /* Print the entire chain as a comment */
-      fprintf(fp, "/* &");
+      fprintf(fp, " /* &");
       print_deref_link(instr, true, state);
       fprintf(fp, " */");
    }
@@ -950,6 +950,32 @@ print_intrinsic_instr(nir_intrinsic_instr *instr, print_state *state)
       case NIR_INTRINSIC_REDUCTION_OP: {
          nir_op reduction_op = nir_intrinsic_reduction_op(instr);
          fprintf(fp, "reduction_op=%s", nir_op_infos[reduction_op].name);
+         break;
+      }
+
+      case NIR_INTRINSIC_ATOMIC_OP: {
+         nir_atomic_op atomic_op = nir_intrinsic_atomic_op(instr);
+         fprintf(fp, "atomic_op=");
+         print_raw = false;
+
+         switch (atomic_op) {
+         case nir_atomic_op_iadd:     fprintf(fp, "iadd"); break;
+         case nir_atomic_op_imin:     fprintf(fp, "imin"); break;
+         case nir_atomic_op_umin:     fprintf(fp, "umin"); break;
+         case nir_atomic_op_imax:     fprintf(fp, "imax"); break;
+         case nir_atomic_op_umax:     fprintf(fp, "umax"); break;
+         case nir_atomic_op_iand:     fprintf(fp, "iand"); break;
+         case nir_atomic_op_ior:      fprintf(fp, "ior"); break;
+         case nir_atomic_op_ixor:     fprintf(fp, "ixor"); break;
+         case nir_atomic_op_xchg:     fprintf(fp, "xchg"); break;
+         case nir_atomic_op_fadd:     fprintf(fp, "fadd"); break;
+         case nir_atomic_op_fmin:     fprintf(fp, "fmin"); break;
+         case nir_atomic_op_fmax:     fprintf(fp, "fmax"); break;
+         case nir_atomic_op_cmpxchg:  fprintf(fp, "cmpxchg"); break;
+         case nir_atomic_op_fcmpxchg: fprintf(fp, "fcmpxchg"); break;
+         case nir_atomic_op_inc_wrap: fprintf(fp, "inc_wrap"); break;
+         case nir_atomic_op_dec_wrap: fprintf(fp, "dec_wrap"); break;
+         }
          break;
       }
 

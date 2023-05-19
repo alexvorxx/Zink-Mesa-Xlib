@@ -1,6 +1,7 @@
 use crate::api::icd::*;
 use crate::core::context::*;
 use crate::core::device::*;
+use crate::core::kernel::*;
 use crate::core::platform::Platform;
 use crate::impl_cl_type_trait;
 
@@ -61,15 +62,171 @@ pub struct Program {
     pub devs: Vec<Arc<Device>>,
     pub src: ProgramSourceType,
     pub kernel_count: AtomicU32,
-    spec_constants: Mutex<HashMap<u32, nir_const_value>>,
     build: Mutex<ProgramBuild>,
 }
 
 impl_cl_type_trait!(cl_program, Program, CL_INVALID_PROGRAM);
 
-struct ProgramBuild {
+#[derive(Clone)]
+pub struct NirKernelBuild {
+    pub nirs: HashMap<Arc<Device>, Arc<NirShader>>,
+    pub args: Vec<KernelArg>,
+    pub internal_args: Vec<InternalKernelArg>,
+    pub attributes_string: String,
+}
+
+pub(super) struct ProgramBuild {
     builds: HashMap<Arc<Device>, ProgramDevBuild>,
+    spec_constants: HashMap<u32, nir_const_value>,
     kernels: Vec<String>,
+    kernel_builds: HashMap<String, NirKernelBuild>,
+}
+
+impl ProgramBuild {
+    fn attribute_str(&self, kernel: &str, d: &Arc<Device>) -> String {
+        let info = self.dev_build(d);
+
+        let attributes_strings = [
+            info.spirv.as_ref().unwrap().vec_type_hint(kernel),
+            info.spirv.as_ref().unwrap().local_size(kernel),
+            info.spirv.as_ref().unwrap().local_size_hint(kernel),
+        ];
+
+        let attributes_strings: Vec<_> = attributes_strings
+            .iter()
+            .flatten()
+            .map(String::as_str)
+            .collect();
+        attributes_strings.join(",")
+    }
+
+    fn args(&self, dev: &Arc<Device>, kernel: &str) -> Vec<spirv::SPIRVKernelArg> {
+        self.dev_build(dev).spirv.as_ref().unwrap().args(kernel)
+    }
+
+    fn build_nirs(&mut self, is_src: bool) {
+        for kernel_name in &self.kernels {
+            let kernel_args: HashSet<_> = self
+                .devs_with_build()
+                .iter()
+                .map(|d| self.args(d, kernel_name))
+                .collect();
+
+            let args = kernel_args.into_iter().next().unwrap();
+            let mut nirs = HashMap::new();
+            let mut args_set = HashSet::new();
+            let mut internal_args_set = HashSet::new();
+            let mut attributes_string_set = HashSet::new();
+
+            // TODO: we could run this in parallel?
+            for d in self.devs_with_build() {
+                let (nir, args, internal_args) = convert_spirv_to_nir(self, kernel_name, &args, d);
+                let attributes_string = self.attribute_str(kernel_name, d);
+                nirs.insert(d.clone(), Arc::new(nir));
+                args_set.insert(args);
+                internal_args_set.insert(internal_args);
+                attributes_string_set.insert(attributes_string);
+            }
+
+            // we want the same (internal) args for every compiled kernel, for now
+            assert!(args_set.len() == 1);
+            assert!(internal_args_set.len() == 1);
+            assert!(attributes_string_set.len() == 1);
+            let args = args_set.into_iter().next().unwrap();
+            let internal_args = internal_args_set.into_iter().next().unwrap();
+
+            // spec: For kernels not created from OpenCL C source and the clCreateProgramWithSource
+            // API call the string returned from this query [CL_KERNEL_ATTRIBUTES] will be empty.
+            let attributes_string = if is_src {
+                attributes_string_set.into_iter().next().unwrap()
+            } else {
+                String::new()
+            };
+
+            self.kernel_builds.insert(
+                kernel_name.clone(),
+                NirKernelBuild {
+                    nirs: nirs,
+                    args: args,
+                    internal_args: internal_args,
+                    attributes_string: attributes_string,
+                },
+            );
+        }
+    }
+
+    fn dev_build(&self, dev: &Device) -> &ProgramDevBuild {
+        self.builds.get(dev).unwrap()
+    }
+
+    fn dev_build_mut(&mut self, dev: &Device) -> &mut ProgramDevBuild {
+        self.builds.get_mut(dev).unwrap()
+    }
+
+    fn devs_with_build(&self) -> Vec<&Arc<Device>> {
+        self.builds
+            .iter()
+            .filter(|(_, build)| build.status == CL_BUILD_SUCCESS as cl_build_status)
+            .map(|(d, _)| d)
+            .collect()
+    }
+
+    pub fn hash_key(&self, dev: &Arc<Device>, name: &str) -> Option<cache_key> {
+        if let Some(cache) = dev.screen().shader_cache() {
+            let info = self.dev_build(dev);
+            assert_eq!(info.status, CL_BUILD_SUCCESS as cl_build_status);
+
+            let spirv = info.spirv.as_ref().unwrap();
+            let mut bin = spirv.to_bin().to_vec();
+            bin.extend_from_slice(name.as_bytes());
+
+            for (k, v) in &self.spec_constants {
+                bin.extend_from_slice(&k.to_ne_bytes());
+                unsafe {
+                    // SAFETY: we fully initialize this union
+                    bin.extend_from_slice(&v.u64_.to_ne_bytes());
+                }
+            }
+
+            Some(cache.gen_key(&bin))
+        } else {
+            None
+        }
+    }
+
+    pub fn to_nir(&self, kernel: &str, d: &Arc<Device>) -> NirShader {
+        let mut spec_constants: Vec<_> = self
+            .spec_constants
+            .iter()
+            .map(|(&id, &value)| nir_spirv_specialization {
+                id: id,
+                value: value,
+                defined_on_module: true,
+            })
+            .collect();
+
+        let info = self.dev_build(d);
+        assert_eq!(info.status, CL_BUILD_SUCCESS as cl_build_status);
+
+        let mut log = Platform::dbg().program.then(Vec::new);
+        let nir = info.spirv.as_ref().unwrap().to_nir(
+            kernel,
+            d.screen
+                .nir_shader_compiler_options(pipe_shader_type::PIPE_SHADER_COMPUTE),
+            &d.lib_clc,
+            &mut spec_constants,
+            d.address_bits(),
+            log.as_mut(),
+        );
+
+        if let Some(log) = log {
+            for line in log {
+                eprintln!("{}", line);
+            }
+        };
+
+        nir.unwrap()
+    }
 }
 
 struct ProgramDevBuild {
@@ -152,10 +309,11 @@ impl Program {
             devs: devs.to_vec(),
             src: ProgramSourceType::Src(src),
             kernel_count: AtomicU32::new(0),
-            spec_constants: Mutex::new(HashMap::new()),
             build: Mutex::new(ProgramBuild {
                 builds: Self::create_default_builds(devs),
+                spec_constants: HashMap::new(),
                 kernels: Vec::new(),
+                kernel_builds: HashMap::new(),
             }),
         })
     }
@@ -218,17 +376,21 @@ impl Program {
             );
         }
 
+        let mut build = ProgramBuild {
+            builds: builds,
+            spec_constants: HashMap::new(),
+            kernels: kernels.into_iter().collect(),
+            kernel_builds: HashMap::new(),
+        };
+        build.build_nirs(false);
+
         Arc::new(Self {
             base: CLObjectBase::new(),
             context: context,
             devs: devs,
             src: ProgramSourceType::Binary,
             kernel_count: AtomicU32::new(0),
-            spec_constants: Mutex::new(HashMap::new()),
-            build: Mutex::new(ProgramBuild {
-                builds: builds,
-                kernels: kernels.into_iter().collect(),
-            }),
+            build: Mutex::new(build),
         })
     }
 
@@ -240,10 +402,11 @@ impl Program {
             context: context,
             src: ProgramSourceType::Il(SPIRVBin::from_bin(spirv)),
             kernel_count: AtomicU32::new(0),
-            spec_constants: Mutex::new(HashMap::new()),
             build: Mutex::new(ProgramBuild {
                 builds: builds,
+                spec_constants: HashMap::new(),
                 kernels: Vec::new(),
+                kernel_builds: HashMap::new(),
             }),
         })
     }
@@ -252,39 +415,33 @@ impl Program {
         self.build.lock().unwrap()
     }
 
-    fn dev_build_info<'a>(
-        l: &'a mut MutexGuard<ProgramBuild>,
-        dev: &Arc<Device>,
-    ) -> &'a mut ProgramDevBuild {
-        l.builds.get_mut(dev).unwrap()
+    pub fn get_nir_kernel_build(&self, name: &str) -> NirKernelBuild {
+        let info = self.build_info();
+        info.kernel_builds.get(name).unwrap().clone()
     }
 
     pub fn status(&self, dev: &Arc<Device>) -> cl_build_status {
-        Self::dev_build_info(&mut self.build_info(), dev).status
+        self.build_info().dev_build(dev).status
     }
 
     pub fn log(&self, dev: &Arc<Device>) -> String {
-        Self::dev_build_info(&mut self.build_info(), dev)
-            .log
-            .clone()
+        self.build_info().dev_build(dev).log.clone()
     }
 
     pub fn bin_type(&self, dev: &Arc<Device>) -> cl_program_binary_type {
-        Self::dev_build_info(&mut self.build_info(), dev).bin_type
+        self.build_info().dev_build(dev).bin_type
     }
 
     pub fn options(&self, dev: &Arc<Device>) -> String {
-        Self::dev_build_info(&mut self.build_info(), dev)
-            .options
-            .clone()
+        self.build_info().dev_build(dev).options.clone()
     }
 
     // we need to precalculate the size
     pub fn bin_sizes(&self) -> Vec<usize> {
-        let mut lock = self.build_info();
+        let lock = self.build_info();
         let mut res = Vec::new();
         for d in &self.devs {
-            let info = Self::dev_build_info(&mut lock, d);
+            let info = lock.dev_build(d);
 
             res.push(
                 info.spirv
@@ -310,10 +467,10 @@ impl Program {
             slice::from_raw_parts(vals.as_ptr().cast(), vals.len() / size_of::<*mut u8>())
         };
 
-        let mut lock = self.build_info();
+        let lock = self.build_info();
         for (i, d) in self.devs.iter().enumerate() {
             let mut ptr = ptrs[i];
-            let info = Self::dev_build_info(&mut lock, d);
+            let info = lock.dev_build(d);
             let spirv = info.spirv.as_ref().unwrap().to_bin();
 
             unsafe {
@@ -338,12 +495,15 @@ impl Program {
         ptrs.to_vec()
     }
 
-    pub fn args(&self, dev: &Arc<Device>, kernel: &str) -> Vec<spirv::SPIRVKernelArg> {
-        Self::dev_build_info(&mut self.build_info(), dev)
-            .spirv
-            .as_ref()
-            .unwrap()
-            .args(kernel)
+    pub fn kernel_signatures(&self, kernel_name: &str) -> HashSet<Vec<spirv::SPIRVKernelArg>> {
+        let build = self.build_info();
+        let devs = build.devs_with_build();
+
+        if devs.is_empty() {
+            return HashSet::new();
+        }
+
+        devs.iter().map(|d| build.args(d, kernel_name)).collect()
     }
 
     pub fn kernels(&self) -> Vec<String> {
@@ -361,21 +521,22 @@ impl Program {
             return false;
         }
 
-        let d = Self::dev_build_info(&mut info, dev);
+        let mut d = info.dev_build_mut(dev);
         let spirvs = [d.spirv.as_ref().unwrap()];
         let (spirv, log) = spirv::SPIRVBin::link(&spirvs, lib);
 
         d.log.push_str(&log);
         d.spirv = spirv;
-        if d.spirv.is_some() {
+        if let Some(spirv) = &d.spirv {
             d.bin_type = if lib {
                 CL_PROGRAM_BINARY_TYPE_LIBRARY
             } else {
                 CL_PROGRAM_BINARY_TYPE_EXECUTABLE
             };
             d.status = CL_BUILD_SUCCESS as cl_build_status;
-            let mut kernels = d.spirv.as_ref().unwrap().kernels();
+            let mut kernels = spirv.kernels();
             info.kernels.append(&mut kernels);
+            info.build_nirs(self.is_src());
             true
         } else {
             d.status = CL_BUILD_ERROR;
@@ -391,7 +552,7 @@ impl Program {
         headers: &[spirv::CLCHeader],
         info: &mut MutexGuard<ProgramBuild>,
     ) -> bool {
-        let d = Self::dev_build_info(info, dev);
+        let mut d = info.dev_build_mut(dev);
 
         let (spirv, log) = match &self.src {
             ProgramSourceType::Il(spirv) => spirv.clone_on_validate(),
@@ -403,6 +564,7 @@ impl Program {
                     headers,
                     get_disk_cache(),
                     dev.cl_features(),
+                    &dev.spirv_extensions,
                     dev.address_bits(),
                 )
             }
@@ -432,8 +594,7 @@ impl Program {
         options: String,
         headers: &[spirv::CLCHeader],
     ) -> bool {
-        let mut info = self.build_info();
-        self.do_compile(dev, options, headers, &mut info)
+        self.do_compile(dev, options, headers, &mut self.build_info())
     }
 
     pub fn link(
@@ -451,7 +612,7 @@ impl Program {
         for d in &devs {
             let bins: Vec<_> = locks
                 .iter_mut()
-                .map(|l| Self::dev_build_info(l, d).spirv.as_ref().unwrap())
+                .map(|l| l.dev_build(d).spirv.as_ref().unwrap())
                 .collect();
 
             let (spirv, log) = spirv::SPIRVBin::link(&bins, lib);
@@ -485,108 +646,24 @@ impl Program {
             );
         }
 
+        let mut build = ProgramBuild {
+            builds: builds,
+            spec_constants: HashMap::new(),
+            kernels: kernels.into_iter().collect(),
+            kernel_builds: HashMap::new(),
+        };
+
+        // Pre build nir kernels
+        build.build_nirs(false);
+
         Arc::new(Self {
             base: CLObjectBase::new(),
             context: context,
             devs: devs,
             src: ProgramSourceType::Linked,
             kernel_count: AtomicU32::new(0),
-            spec_constants: Mutex::new(HashMap::new()),
-            build: Mutex::new(ProgramBuild {
-                builds: builds,
-                kernels: kernels.into_iter().collect(),
-            }),
+            build: Mutex::new(build),
         })
-    }
-
-    pub(super) fn hash_key(&self, dev: &Arc<Device>, name: &str) -> Option<cache_key> {
-        if let Some(cache) = dev.screen().shader_cache() {
-            let mut lock = self.build_info();
-            let info = Self::dev_build_info(&mut lock, dev);
-            assert_eq!(info.status, CL_BUILD_SUCCESS as cl_build_status);
-
-            let spirv = info.spirv.as_ref().unwrap();
-            let mut bin = spirv.to_bin().to_vec();
-            bin.extend_from_slice(name.as_bytes());
-
-            for (k, v) in self.spec_constants.lock().unwrap().iter() {
-                bin.extend_from_slice(&k.to_ne_bytes());
-                unsafe {
-                    // SAFETY: we fully initialize this union
-                    bin.extend_from_slice(&v.u64_.to_ne_bytes());
-                }
-            }
-
-            Some(cache.gen_key(&bin))
-        } else {
-            None
-        }
-    }
-
-    pub fn devs_with_build(&self) -> Vec<&Arc<Device>> {
-        let mut lock = self.build_info();
-        self.devs
-            .iter()
-            .filter(|d| {
-                let info = Self::dev_build_info(&mut lock, d);
-                info.status == CL_BUILD_SUCCESS as cl_build_status
-            })
-            .collect()
-    }
-
-    pub fn attribute_str(&self, kernel: &str, d: &Arc<Device>) -> String {
-        let mut lock = self.build_info();
-        let info = Self::dev_build_info(&mut lock, d);
-
-        let attributes_strings = [
-            info.spirv.as_ref().unwrap().vec_type_hint(kernel),
-            info.spirv.as_ref().unwrap().local_size(kernel),
-            info.spirv.as_ref().unwrap().local_size_hint(kernel),
-        ];
-
-        let attributes_strings: Vec<_> = attributes_strings
-            .iter()
-            .flatten()
-            .map(String::as_str)
-            .collect();
-        attributes_strings.join(",")
-    }
-
-    pub fn to_nir(&self, kernel: &str, d: &Arc<Device>) -> NirShader {
-        let constants = self.spec_constants.lock().unwrap();
-        let mut spec_constants: Vec<_> = constants
-            .iter()
-            .map(|(&id, &value)| nir_spirv_specialization {
-                id: id,
-                value: value,
-                defined_on_module: true,
-            })
-            .collect();
-        drop(constants);
-
-        let mut lock = self.build_info();
-
-        let info = Self::dev_build_info(&mut lock, d);
-        assert_eq!(info.status, CL_BUILD_SUCCESS as cl_build_status);
-
-        let mut log = Platform::get().debug.program.then(Vec::new);
-        let nir = info.spirv.as_ref().unwrap().to_nir(
-            kernel,
-            d.screen
-                .nir_shader_compiler_options(pipe_shader_type::PIPE_SHADER_COMPUTE),
-            &d.lib_clc,
-            &mut spec_constants,
-            d.address_bits(),
-            log.as_mut(),
-        );
-
-        if let Some(log) = log {
-            for line in log {
-                eprintln!("{}", line);
-            }
-        };
-
-        nir.unwrap()
     }
 
     pub fn is_il(&self) -> bool {
@@ -607,7 +684,7 @@ impl Program {
     }
 
     pub fn set_spec_constant(&self, spec_id: u32, data: &[u8]) {
-        let mut lock = self.spec_constants.lock().unwrap();
+        let mut lock = self.build_info();
         let mut val = nir_const_value::default();
 
         match data.len() {
@@ -618,6 +695,6 @@ impl Program {
             _ => unreachable!("Spec constant with invalid size!"),
         };
 
-        lock.insert(spec_id, val);
+        lock.spec_constants.insert(spec_id, val);
     }
 }

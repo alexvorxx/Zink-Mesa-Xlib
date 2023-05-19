@@ -159,7 +159,7 @@ amdgpu_vram_type_to_rra(uint32_t type)
 }
 
 static void
-rra_dump_asic_info(struct radeon_info *rad_info, FILE *output)
+rra_dump_asic_info(const struct radeon_info *rad_info, FILE *output)
 {
    struct rra_asic_info asic_info = {
       /* All frequencies are in Hz */

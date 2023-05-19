@@ -2,6 +2,9 @@
 # shellcheck disable=SC1091 # The relative paths in this file only become valid at runtime.
 # shellcheck disable=SC2034 # Variables are used in scripts called from here
 # shellcheck disable=SC2086 # we want word splitting
+# When changing this file, you need to bump the following
+# .gitlab-ci/image-tags.yml tags:
+# KERNEL_ROOTFS_TAG
 
 set -e
 set -o xtrace
@@ -143,69 +146,77 @@ if [[ "$DEBIAN_ARCH" = "armhf" ]]; then
                        libxkbcommon-dev:armhf
 fi
 
-mkdir -p "/lava-files/rootfs-${DEBIAN_ARCH}"
+ROOTFS=/lava-files/rootfs-${DEBIAN_ARCH}
+mkdir -p $ROOTFS
 
 ############### Setuping
 if [ "$DEBIAN_ARCH" = "amd64" ]; then
   . .gitlab-ci/container/setup-wine.sh "/dxvk-wine64"
   . .gitlab-ci/container/install-wine-dxvk.sh
-  mv /dxvk-wine64 "/lava-files/rootfs-${DEBIAN_ARCH}/"
+  mv /dxvk-wine64 $ROOTFS
 fi
 
 ############### Installing
 . .gitlab-ci/container/install-wine-apitrace.sh
-mkdir -p "/lava-files/rootfs-${DEBIAN_ARCH}/apitrace-msvc-win64"
-mv /apitrace-msvc-win64/bin "/lava-files/rootfs-${DEBIAN_ARCH}/apitrace-msvc-win64"
+mkdir -p "$ROOTFS/apitrace-msvc-win64"
+mv /apitrace-msvc-win64/bin "$ROOTFS/apitrace-msvc-win64"
 rm -rf /apitrace-msvc-win64
 
 ############### Building
 STRIP_CMD="${GCC_ARCH}-strip"
-mkdir -p /lava-files/rootfs-${DEBIAN_ARCH}/usr/lib/$GCC_ARCH
+mkdir -p $ROOTFS/usr/lib/$GCC_ARCH
 
+############### Build Vulkan validation layer (for zink)
+if [ "$DEBIAN_ARCH" = "amd64" ]; then
+  . .gitlab-ci/container/build-vulkan-validation.sh
+  mv /usr/lib/x86_64-linux-gnu/libVkLayer_khronos_validation.so $ROOTFS/usr/lib/x86_64-linux-gnu/
+  mkdir -p $ROOTFS/usr/share/vulkan/explicit_layer.d
+  mv /usr/share/vulkan/explicit_layer.d/* $ROOTFS/usr/share/vulkan/explicit_layer.d/
+fi
 
 ############### Build apitrace
 . .gitlab-ci/container/build-apitrace.sh
-mkdir -p /lava-files/rootfs-${DEBIAN_ARCH}/apitrace
-mv /apitrace/build /lava-files/rootfs-${DEBIAN_ARCH}/apitrace
+mkdir -p $ROOTFS/apitrace
+mv /apitrace/build $ROOTFS/apitrace
 rm -rf /apitrace
 
 
 ############### Build dEQP runner
 . .gitlab-ci/container/build-deqp-runner.sh
-mkdir -p /lava-files/rootfs-${DEBIAN_ARCH}/usr/bin
-mv /usr/local/bin/*-runner /lava-files/rootfs-${DEBIAN_ARCH}/usr/bin/.
+mkdir -p $ROOTFS/usr/bin
+mv /usr/local/bin/*-runner $ROOTFS/usr/bin/.
 
 
 ############### Build dEQP
 DEQP_TARGET=surfaceless . .gitlab-ci/container/build-deqp.sh
 
-mv /deqp /lava-files/rootfs-${DEBIAN_ARCH}/.
+mv /deqp $ROOTFS/.
 
 
 ############### Build SKQP
 if [[ "$DEBIAN_ARCH" = "arm64" ]] \
   || [[ "$DEBIAN_ARCH" = "amd64" ]]; then
     . .gitlab-ci/container/build-skqp.sh
-    mv /skqp /lava-files/rootfs-${DEBIAN_ARCH}/.
+    mv /skqp $ROOTFS/.
 fi
 
 ############### Build piglit
 PIGLIT_OPTS="-DPIGLIT_BUILD_DMA_BUF_TESTS=ON -DPIGLIT_BUILD_GLX_TESTS=ON" . .gitlab-ci/container/build-piglit.sh
-mv /piglit /lava-files/rootfs-${DEBIAN_ARCH}/.
+mv /piglit $ROOTFS/.
 
 ############### Build libva tests
 if [[ "$DEBIAN_ARCH" = "amd64" ]]; then
     . .gitlab-ci/container/build-va-tools.sh
-    mv /va/bin/* /lava-files/rootfs-${DEBIAN_ARCH}/usr/bin/
+    mv /va/bin/* $ROOTFS/usr/bin/
 fi
 
 ############### Build Crosvm
 if [[ ${DEBIAN_ARCH} = "amd64" ]]; then
     . .gitlab-ci/container/build-crosvm.sh
-    mv /usr/local/bin/crosvm /lava-files/rootfs-${DEBIAN_ARCH}/usr/bin/
-    mv /usr/local/lib/$GCC_ARCH/libvirglrenderer.* /lava-files/rootfs-${DEBIAN_ARCH}/usr/lib/$GCC_ARCH/
-    mkdir -p /lava-files/rootfs-${DEBIAN_ARCH}/usr/local/libexec/
-    mv /usr/local/libexec/virgl* /lava-files/rootfs-${DEBIAN_ARCH}/usr/local/libexec/
+    mv /usr/local/bin/crosvm $ROOTFS/usr/bin/
+    mv /usr/local/lib/$GCC_ARCH/libvirglrenderer.* $ROOTFS/usr/lib/$GCC_ARCH/
+    mkdir -p $ROOTFS/usr/local/libexec/
+    mv /usr/local/libexec/virgl* $ROOTFS/usr/local/libexec/
 fi
 
 ############### Build libdrm
@@ -235,20 +246,32 @@ if ! debootstrap \
      --arch=${DEBIAN_ARCH} \
      --components main,contrib,non-free \
      bullseye \
-     /lava-files/rootfs-${DEBIAN_ARCH}/ \
+     $ROOTFS/ \
      http://deb.debian.org/debian; then
-    cat /lava-files/rootfs-${DEBIAN_ARCH}/debootstrap/debootstrap.log
+    cat $ROOTFS/debootstrap/debootstrap.log
     exit 1
 fi
 set -e
 
-cp .gitlab-ci/container/create-rootfs.sh /lava-files/rootfs-${DEBIAN_ARCH}/.
-cp .gitlab-ci/container/debian/llvm-snapshot.gpg.key /lava-files/rootfs-${DEBIAN_ARCH}/.
-cp .gitlab-ci/container/debian/winehq.gpg.key /lava-files/rootfs-${DEBIAN_ARCH}/.
-chroot /lava-files/rootfs-${DEBIAN_ARCH} sh /create-rootfs.sh
-rm /lava-files/rootfs-${DEBIAN_ARCH}/{llvm-snapshot,winehq}.gpg.key
-rm /lava-files/rootfs-${DEBIAN_ARCH}/create-rootfs.sh
-cp /etc/wgetrc /lava-files/rootfs-${DEBIAN_ARCH}/etc/.
+cp .gitlab-ci/container/create-rootfs.sh $ROOTFS/.
+cp .gitlab-ci/container/debian/llvm-snapshot.gpg.key $ROOTFS/.
+cp .gitlab-ci/container/debian/winehq.gpg.key $ROOTFS/.
+chroot $ROOTFS sh /create-rootfs.sh
+rm $ROOTFS/{llvm-snapshot,winehq}.gpg.key
+rm $ROOTFS/create-rootfs.sh
+cp /etc/wgetrc $ROOTFS/etc/.
+
+############### Inject missing firmwares from Debian 11
+if [[ "$DEBIAN_ARCH" == "arm64" ]]; then
+  # This A660 firmware is included from Debian 12 (bookworm) up
+  mkdir -p /lava-files/rootfs-arm64/lib/firmware/qcom/sm8350/  # for firmware imported later
+  curl -L --retry 4 -f --retry-all-errors --retry-delay 60 \
+    "https://git.kernel.org/pub/scm/linux/kernel/git/firmware/linux-firmware.git/plain/qcom/a660_gmu.bin?id=8451c2b1d529dc1a49328ac9235d3cf5bb8a8fcb" \
+    -o /lava-files/rootfs-arm64/lib/firmware/qcom/a660_gmu.bin
+  curl -L --retry 4 -f --retry-all-errors --retry-delay 60 \
+    "https://git.kernel.org/pub/scm/linux/kernel/git/firmware/linux-firmware.git/plain/qcom/a660_sqe.fw?id=8451c2b1d529dc1a49328ac9235d3cf5bb8a8fcb" \
+    -o /lava-files/rootfs-arm64/lib/firmware/qcom/a660_sqe.fw
+fi
 
 
 ############### Install the built libdrm
@@ -256,9 +279,9 @@ cp /etc/wgetrc /lava-files/rootfs-${DEBIAN_ARCH}/etc/.
 # the built libdrm. Hence, we add it after the rootfs has been already
 # created.
 find /libdrm/ -name lib\*\.so\* \
-  -exec cp -t /lava-files/rootfs-${DEBIAN_ARCH}/usr/lib/$GCC_ARCH/. {} \;
-mkdir -p /lava-files/rootfs-${DEBIAN_ARCH}/libdrm/
-cp -Rp /libdrm/share /lava-files/rootfs-${DEBIAN_ARCH}/libdrm/share
+  -exec cp -t $ROOTFS/usr/lib/$GCC_ARCH/. {} \;
+mkdir -p $ROOTFS/libdrm/
+cp -Rp /libdrm/share $ROOTFS/libdrm/share
 rm -rf /libdrm
 
 
@@ -268,8 +291,8 @@ if [ ${DEBIAN_ARCH} = arm64 ]; then
     KERNEL_IMAGE_NAME+=" Image.gz"
 fi
 
-du -ah /lava-files/rootfs-${DEBIAN_ARCH} | sort -h | tail -100
-pushd /lava-files/rootfs-${DEBIAN_ARCH}
+du -ah $ROOTFS | sort -h | tail -100
+pushd $ROOTFS
   tar --zstd -cf /lava-files/lava-rootfs.tar.zst .
 popd
 

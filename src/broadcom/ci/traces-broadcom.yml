@@ -61,7 +61,7 @@ traces:
       label: [unsupported]
   neverball/neverball-v2.trace:
     broadcom-rpi4:
-      checksum: 35ccaea492e4a865314e700b24514535
+      checksum: c8e8ee352bdb303e4ed144b69272575e
   nheko/nheko-colors.trace:
     broadcom-rpi4:
       checksum: 922597b0203ff18d6e430002bcf32ef4

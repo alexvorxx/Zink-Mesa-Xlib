@@ -300,12 +300,12 @@ fd6_build_driver_params(struct fd6_emit *emit)
 
    if (emit->vs->need_driver_params) {
       ir3_emit_driver_params(emit->vs, dpconstobj, ctx, emit->info,
-                             emit->indirect, emit->draw);
+                             emit->indirect, emit->draw, emit->draw_id);
    }
 
    if (emit->gs && emit->gs->need_driver_params) {
       ir3_emit_driver_params(emit->gs, dpconstobj, ctx, emit->info,
-                             emit->indirect, emit->draw);
+                             emit->indirect, emit->draw, 0);
    }
 
    if (emit->hs && emit->hs->need_driver_params) {
@@ -314,7 +314,7 @@ fd6_build_driver_params(struct fd6_emit *emit)
 
    if (emit->ds && emit->ds->need_driver_params) {
       ir3_emit_driver_params(emit->ds, dpconstobj, ctx, emit->info,
-                             emit->indirect, emit->draw);
+                             emit->indirect, emit->draw, 0);
    }
 
    fd6_ctx->has_dp_state = true;

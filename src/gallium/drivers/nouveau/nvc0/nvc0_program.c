@@ -23,7 +23,7 @@
 #include "pipe/p_defines.h"
 
 #include "compiler/nir/nir.h"
-#include "tgsi/tgsi_ureg.h"
+#include "compiler/nir/nir_builder.h"
 #include "util/blob.h"
 
 #include "nvc0/nvc0_context.h"
@@ -1014,14 +1014,18 @@ nvc0_program_destroy(struct nvc0_context *nvc0, struct nvc0_program *prog)
 void
 nvc0_program_init_tcp_empty(struct nvc0_context *nvc0)
 {
-   struct ureg_program *ureg;
+   const nir_shader_compiler_options *options =
+      nv50_ir_nir_shader_compiler_options(nvc0->screen->base.device->chipset,
+                                          PIPE_SHADER_TESS_CTRL, true);
 
-   ureg = ureg_create(PIPE_SHADER_TESS_CTRL);
-   if (!ureg)
-      return;
+   struct nir_builder b =
+      nir_builder_init_simple_shader(MESA_SHADER_TESS_CTRL, options,
+                                     "tcp_empty");
+   b.shader->info.tess.tcs_vertices_out = 1;
 
-   ureg_property(ureg, TGSI_PROPERTY_TCS_VERTICES_OUT, 1);
-   ureg_END(ureg);
+   nir_validate_shader(b.shader, "in nvc0_program_init_tcp_empty");
 
-   nvc0->tcp_empty = ureg_create_shader_and_destroy(ureg, &nvc0->base.pipe);
+   struct pipe_shader_state state;
+   pipe_shader_state_from_nir(&state, b.shader);
+   nvc0->tcp_empty = nvc0->base.pipe.create_tcs_state(&nvc0->base.pipe, &state);
 }

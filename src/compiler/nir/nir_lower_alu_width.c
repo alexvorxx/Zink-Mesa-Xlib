@@ -91,8 +91,7 @@ static void
 nir_alu_ssa_dest_init(nir_alu_instr *alu, unsigned num_components,
                       unsigned bit_size)
 {
-   nir_ssa_dest_init(&alu->instr, &alu->dest.dest, num_components,
-                     bit_size, NULL);
+   nir_ssa_dest_init(&alu->instr, &alu->dest.dest, num_components, bit_size);
    alu->dest.write_mask = (1 << num_components) - 1;
 }
 

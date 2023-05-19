@@ -169,16 +169,6 @@ enum pvr_resolve_op {
    PVR_RESOLVE_SAMPLE7,
 };
 
-enum pvr_alpha_type {
-   PVR_ALPHA_NONE,
-   PVR_ALPHA_SOURCE,
-   PVR_ALPHA_PREMUL_SOURCE,
-   PVR_ALPHA_GLOBAL,
-   PVR_ALPHA_PREMUL_SOURCE_WITH_GLOBAL,
-   PVR_ALPHA_CUSTOM,
-   PVR_ALPHA_AATEXT,
-};
-
 enum pvr_event_state {
    PVR_EVENT_STATE_SET_BY_HOST,
    PVR_EVENT_STATE_RESET_BY_HOST,
@@ -228,7 +218,7 @@ CHECK_STRUCT_FIELD_SIZE(pvr_combined_image_sampler_descriptor,
                         ROGUE_NUM_TEXSTATE_IMAGE_WORDS * sizeof(uint64_t));
 CHECK_STRUCT_FIELD_SIZE(pvr_combined_image_sampler_descriptor,
                         image,
-                        PVR_IMAGE_DESCRIPTOR_SIZE * sizeof(uint32_t));
+                        PVR_DW_TO_BYTES(PVR_IMAGE_DESCRIPTOR_SIZE));
 #if 0
 /* TODO: Don't really want to include pvr_csb.h in here since this header is
  * shared with the compiler. Figure out a better place for these.
@@ -267,8 +257,7 @@ struct pvr_descriptor_set_layout_binding {
    VkDescriptorType type;
 
    /* "M" in layout(set = N, binding = M)
-    * Can be used to index bindings in the descriptor_set_layout. Not the
-    * original user specified binding number as those might be non-contiguous.
+    * Can be used to index bindings in the descriptor_set_layout.
     */
    uint32_t binding_number;
 
@@ -379,7 +368,7 @@ struct pvr_descriptor_set {
    const struct pvr_descriptor_set_layout *layout;
    const struct pvr_descriptor_pool *pool;
 
-   struct pvr_bo *pvr_bo;
+   struct pvr_suballoc_bo *pvr_bo;
 
    /* Links this descriptor set into pvr_descriptor_pool::descriptor_sets list.
     */
@@ -449,7 +438,8 @@ struct pvr_pipeline_layout {
    /* Contains set_count amount of descriptor set layouts. */
    struct pvr_descriptor_set_layout *set_layout[PVR_MAX_DESCRIPTOR_SETS];
 
-   VkShaderStageFlags push_constants_shader_stages;
+   /* Mask of enum pvr_stage_allocation. */
+   uint8_t push_constants_shader_stages;
    uint32_t vert_push_constants_offset;
    uint32_t frag_push_constants_offset;
    uint32_t compute_push_constants_offset;

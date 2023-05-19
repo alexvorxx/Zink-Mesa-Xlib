@@ -899,10 +899,18 @@ isl_choose_image_alignment_el(const struct isl_device *dev,
        * Height, width, and layout of MCS buffer in this case must match with
        * Render Target height, width, and layout. MCS buffer is tiledY.
        *
-       * To avoid wasting memory, choose the smallest alignment possible:
-       * HALIGN_4 and VALIGN_4.
+       * Pick a vertical and horizontal alignment that matches the main render
+       * target. Vertical alignment is important for properly spacing an array
+       * of MCS images. Horizontal alignment is not expected to matter because
+       * MCS is not mipmapped. Regardless, we pick a valid value here.
        */
-      *image_align_el = isl_extent3d(4, 4, 1);
+      if (ISL_GFX_VERX10(dev) >= 125) {
+         *image_align_el = isl_extent3d(128 * 8 / fmtl->bpb, 4, 1);
+      } else if (ISL_GFX_VER(dev) >= 8) {
+         *image_align_el = isl_extent3d(16, 4, 1);
+      } else {
+         *image_align_el = isl_extent3d(4, 4, 1);
+      }
       return;
    } else if (fmtl->txc == ISL_TXC_HIZ) {
       assert(ISL_GFX_VER(dev) >= 6);

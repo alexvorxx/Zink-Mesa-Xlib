@@ -527,7 +527,7 @@ struct radeon_winsys {
     */
    enum pipe_reset_status (*ctx_query_reset_status)(struct radeon_winsys_ctx *ctx,
                                                     bool full_reset_only,
-                                                    bool *needs_reset);
+                                                    bool *needs_reset, bool *reset_completed);
 
    /**
     * Create a command stream.
@@ -728,13 +728,15 @@ struct radeon_winsys {
     * Initialize surface
     *
     * \param ws        The winsys this function is called from.
+    * \param info      radeon_info from the driver
     * \param tex       Input texture description
     * \param flags     Bitmask of RADEON_SURF_* flags
     * \param bpe       Bytes per pixel, it can be different for Z buffers.
     * \param mode      Preferred tile mode. (linear, 1D, or 2D)
     * \param surf      Output structure
     */
-   int (*surface_init)(struct radeon_winsys *ws, const struct pipe_resource *tex, uint64_t flags,
+   int (*surface_init)(struct radeon_winsys *ws, const struct radeon_info *info,
+                       const struct pipe_resource *tex, uint64_t flags,
                        unsigned bpe, enum radeon_surf_mode mode, struct radeon_surf *surf);
 
    uint64_t (*query_value)(struct radeon_winsys *ws, enum radeon_value_id value);
@@ -751,6 +753,12 @@ struct radeon_winsys {
     * Stable pstate
     */
    bool (*cs_set_pstate)(struct radeon_cmdbuf *cs, enum radeon_ctx_pstate state);
+
+   /**
+    * Pass the VAs to the buffers where various information is saved by the FW during mcbp.
+    */
+   void (*cs_set_mcbp_reg_shadowing_va)(struct radeon_cmdbuf *cs, uint64_t regs_va,
+                                                                  uint64_t csa_va);
 };
 
 static inline bool radeon_emitted(struct radeon_cmdbuf *cs, unsigned num_dw)

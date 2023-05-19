@@ -41,7 +41,7 @@ radv_create_shadow_regs_preamble(const struct radv_device *device,
                                  struct radv_queue_state *queue_state)
 {
    struct radeon_winsys *ws = device->ws;
-   struct radeon_info *info = &device->physical_device->rad_info;
+   const struct radeon_info *info = &device->physical_device->rad_info;
    VkResult result;
 
    struct radeon_cmdbuf *cs = ws->cs_create(ws, AMD_IP_GFX, false);
@@ -126,7 +126,7 @@ radv_emit_shadow_regs_preamble(struct radeon_cmdbuf *cs, const struct radv_devic
 VkResult
 radv_init_shadowed_regs_buffer_state(const struct radv_device *device, struct radv_queue *queue)
 {
-   struct radeon_info *info = &device->physical_device->rad_info;
+   const struct radeon_info *info = &device->physical_device->rad_info;
    struct radeon_winsys *ws = device->ws;
    struct radeon_cmdbuf *cs;
    VkResult result;

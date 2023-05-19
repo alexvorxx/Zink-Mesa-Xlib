@@ -537,11 +537,12 @@ iris_resolve_color(struct iris_context *ice,
 }
 
 static void
-iris_mcs_partial_resolve(struct iris_context *ice,
-                         struct iris_batch *batch,
-                         struct iris_resource *res,
-                         uint32_t start_layer,
-                         uint32_t num_layers)
+iris_mcs_exec(struct iris_context *ice,
+              struct iris_batch *batch,
+              struct iris_resource *res,
+              uint32_t start_layer,
+              uint32_t num_layers,
+              enum isl_aux_op op)
 {
    //DBG("%s to mt %p layers %u-%u\n", __func__, mt,
        //start_layer, start_layer + num_layers - 1);
@@ -553,13 +554,24 @@ iris_mcs_partial_resolve(struct iris_context *ice,
    struct blorp_surf surf;
    iris_blorp_surf_for_resource(&batch->screen->isl_dev, &surf,
                                 &res->base.b, res->aux.usage, 0, true);
+
+   /* MCS partial resolve will read from the MCS surface. */
+   assert(res->aux.bo == res->bo);
+   iris_emit_buffer_barrier_for(batch, res->bo, IRIS_DOMAIN_SAMPLER_READ);
    iris_emit_buffer_barrier_for(batch, res->bo, IRIS_DOMAIN_RENDER_WRITE);
 
    struct blorp_batch blorp_batch;
    iris_batch_sync_region_start(batch);
    blorp_batch_init(&ice->blorp, &blorp_batch, batch, 0);
-   blorp_mcs_partial_resolve(&blorp_batch, &surf, res->surf.format,
-                             start_layer, num_layers);
+
+   if (op == ISL_AUX_OP_PARTIAL_RESOLVE) {
+      blorp_mcs_partial_resolve(&blorp_batch, &surf, res->surf.format,
+                                start_layer, num_layers);
+   } else {
+      assert(op == ISL_AUX_OP_AMBIGUATE);
+      blorp_mcs_ambiguate(&blorp_batch, &surf, start_layer, num_layers);
+   }
+
    blorp_batch_finish(&blorp_batch);
    iris_batch_sync_region_end(batch);
 }
@@ -842,8 +854,7 @@ iris_resource_prepare_access(struct iris_context *ice,
          if (aux_op == ISL_AUX_OP_NONE) {
             /* Nothing to do here. */
          } else if (isl_aux_usage_has_mcs(res->aux.usage)) {
-            assert(aux_op == ISL_AUX_OP_PARTIAL_RESOLVE);
-            iris_mcs_partial_resolve(ice, batch, res, layer, 1);
+            iris_mcs_exec(ice, batch, res, layer, 1, aux_op);
          } else if (isl_aux_usage_has_hiz(res->aux.usage)) {
             iris_hiz_exec(ice, batch, res, level, layer, 1, aux_op, false);
          } else if (res->aux.usage == ISL_AUX_USAGE_STC_CCS) {
@@ -1054,7 +1065,7 @@ iris_can_sample_mcs_with_clear(const struct intel_device_info *devinfo,
     * See HSD 1707282275, wa_14013111325. Due to the use of
     * format-reinterpretation, a simplified workaround is implemented.
     */
-   if (devinfo->ver >= 12 &&
+   if (intel_needs_workaround(devinfo, 14013111325) &&
        isl_format_get_layout(res->surf.format)->bpb <= 16) {
       return false;
    }

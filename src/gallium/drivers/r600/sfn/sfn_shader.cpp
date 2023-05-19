@@ -32,6 +32,7 @@
 #include "nir_intrinsics_indices.h"
 #include "sfn_debug.h"
 #include "sfn_instr.h"
+#include "sfn_instr_alu.h"
 #include "sfn_instr_alugroup.h"
 #include "sfn_instr_controlflow.h"
 #include "sfn_instr_export.h"
@@ -200,6 +201,8 @@ Shader::add_info_from_string(std::istream& is)
 
    if (type == "CHIPCLASS")
       return read_chipclass(is);
+   if (type == "FAMILY")
+      return read_family(is);
    if (type == "OUTPUT")
       return read_output(is);
    if (type == "INPUT")
@@ -330,7 +333,9 @@ Shader::allocate_registers_from_string(std::istream& is, Pin pin)
       if (reg_str.empty())
          break;
 
-      if (strchr(reg_str.c_str(), '@')) {
+      if (strchr(reg_str.c_str(), '@') ||
+          reg_str == "AR" ||
+          reg_str.substr(0,3) == "IDX") {
          value_factory().dest_from_string(reg_str);
       } else {
          RegisterVec4::Swizzle swz = {0, 1, 2, 3};
@@ -384,6 +389,47 @@ Shader::read_chipclass(std::istream& is)
    return true;
 }
 
+bool
+Shader::read_family(std::istream& is)
+{
+   string name;
+   is >> name;
+#define CHECK_FAMILY(F) if (name == #F) m_chip_family = CHIP_ ## F
+
+   CHECK_FAMILY(R600);
+   else CHECK_FAMILY(R600);
+   else CHECK_FAMILY(RV610);
+   else CHECK_FAMILY(RV630);
+   else CHECK_FAMILY(RV670);
+   else CHECK_FAMILY(RV620);
+   else CHECK_FAMILY(RV635);
+   else CHECK_FAMILY(RS780);
+   else CHECK_FAMILY(RS880);
+   /* GFX3 (R7xx) */
+   else CHECK_FAMILY(RV770);
+   else CHECK_FAMILY(RV730);
+   else CHECK_FAMILY(RV710);
+   else CHECK_FAMILY(RV740);
+   /* GFX4 (Evergreen) */
+   else CHECK_FAMILY(CEDAR);
+   else CHECK_FAMILY(REDWOOD);
+   else CHECK_FAMILY(JUNIPER);
+   else CHECK_FAMILY(CYPRESS);
+   else CHECK_FAMILY(HEMLOCK);
+   else CHECK_FAMILY(PALM);
+   else CHECK_FAMILY(SUMO);
+   else CHECK_FAMILY(SUMO2);
+   else CHECK_FAMILY(BARTS);
+   else CHECK_FAMILY(TURKS);
+   else CHECK_FAMILY(CAICOS);
+   /* GFX5 (Northern Islands) */
+   else CHECK_FAMILY(CAYMAN);
+   else CHECK_FAMILY(ARUBA);
+   else
+      return false;
+   return true;
+}
+
 void
 Shader::allocate_reserved_registers()
 {
@@ -432,7 +478,8 @@ Shader::translate_from_nir(nir_shader *nir,
                            const pipe_stream_output_info *so_info,
                            struct r600_shader *gs_shader,
                            r600_shader_key& key,
-                           r600_chip_class chip_class)
+                           r600_chip_class chip_class,
+                           radeon_family family)
 {
    Shader *shader = nullptr;
 
@@ -466,6 +513,8 @@ Shader::translate_from_nir(nir_shader *nir,
    shader->set_info(nir);
 
    shader->set_chip_class(chip_class);
+   shader->set_chip_family(family);
+
    if (!shader->process(nir))
       return nullptr;
 
@@ -615,27 +664,11 @@ Shader::scan_instruction(nir_instr *instr)
 
    // handle unhandled instructions
    switch (intr->intrinsic) {
-   case nir_intrinsic_ssbo_atomic_add:
-   case nir_intrinsic_ssbo_atomic_comp_swap:
-   case nir_intrinsic_ssbo_atomic_or:
-   case nir_intrinsic_ssbo_atomic_xor:
-   case nir_intrinsic_ssbo_atomic_imax:
-   case nir_intrinsic_ssbo_atomic_imin:
-   case nir_intrinsic_ssbo_atomic_umax:
-   case nir_intrinsic_ssbo_atomic_umin:
-   case nir_intrinsic_ssbo_atomic_and:
-   case nir_intrinsic_ssbo_atomic_exchange:
+   case nir_intrinsic_ssbo_atomic:
+   case nir_intrinsic_ssbo_atomic_swap:
    case nir_intrinsic_image_load:
-   case nir_intrinsic_image_atomic_add:
-   case nir_intrinsic_image_atomic_and:
-   case nir_intrinsic_image_atomic_or:
-   case nir_intrinsic_image_atomic_xor:
-   case nir_intrinsic_image_atomic_exchange:
-   case nir_intrinsic_image_atomic_comp_swap:
-   case nir_intrinsic_image_atomic_umin:
-   case nir_intrinsic_image_atomic_umax:
-   case nir_intrinsic_image_atomic_imin:
-   case nir_intrinsic_image_atomic_imax:
+   case nir_intrinsic_image_atomic:
+   case nir_intrinsic_image_atomic_swap:
       m_flags.set(sh_needs_sbo_ret_address);
       FALLTHROUGH;
    case nir_intrinsic_image_store:
@@ -859,16 +892,8 @@ Shader::process_intrinsic(nir_intrinsic_instr *intr)
    case nir_intrinsic_memory_barrier:
       return emit_wait_ack();
 
-   case nir_intrinsic_shared_atomic_add:
-   case nir_intrinsic_shared_atomic_and:
-   case nir_intrinsic_shared_atomic_or:
-   case nir_intrinsic_shared_atomic_imax:
-   case nir_intrinsic_shared_atomic_umax:
-   case nir_intrinsic_shared_atomic_imin:
-   case nir_intrinsic_shared_atomic_umin:
-   case nir_intrinsic_shared_atomic_xor:
-   case nir_intrinsic_shared_atomic_exchange:
-   case nir_intrinsic_shared_atomic_comp_swap:
+   case nir_intrinsic_shared_atomic:
+   case nir_intrinsic_shared_atomic_swap:
       return emit_atomic_local_shared(intr);
    case nir_intrinsic_shader_clock:
       return emit_shader_clock(intr);
@@ -879,31 +904,31 @@ Shader::process_intrinsic(nir_intrinsic_instr *intr)
 }
 
 static ESDOp
-lds_op_from_intrinsic(nir_intrinsic_op op, bool ret)
+lds_op_from_intrinsic(nir_atomic_op op, bool ret)
 {
    switch (op) {
-   case nir_intrinsic_shared_atomic_add:
+   case nir_atomic_op_iadd:
       return ret ? LDS_ADD_RET : LDS_ADD;
-   case nir_intrinsic_shared_atomic_and:
+   case nir_atomic_op_iand:
       return ret ? LDS_AND_RET : LDS_AND;
-   case nir_intrinsic_shared_atomic_or:
+   case nir_atomic_op_ior:
       return ret ? LDS_OR_RET : LDS_OR;
-   case nir_intrinsic_shared_atomic_imax:
+   case nir_atomic_op_imax:
       return ret ? LDS_MAX_INT_RET : LDS_MAX_INT;
-   case nir_intrinsic_shared_atomic_umax:
+   case nir_atomic_op_umax:
       return ret ? LDS_MAX_UINT_RET : LDS_MAX_UINT;
-   case nir_intrinsic_shared_atomic_imin:
+   case nir_atomic_op_imin:
       return ret ? LDS_MIN_INT_RET : LDS_MIN_INT;
-   case nir_intrinsic_shared_atomic_umin:
+   case nir_atomic_op_umin:
       return ret ? LDS_MIN_UINT_RET : LDS_MIN_UINT;
-   case nir_intrinsic_shared_atomic_xor:
+   case nir_atomic_op_ixor:
       return ret ? LDS_XOR_RET : LDS_XOR;
-   case nir_intrinsic_shared_atomic_exchange:
+   case nir_atomic_op_xchg:
       return LDS_XCHG_RET;
-   case nir_intrinsic_shared_atomic_comp_swap:
+   case nir_atomic_op_cmpxchg:
       return LDS_CMP_XCHG_RET;
    default:
-      unreachable("Unsupported shared atomic opcode");
+      unreachable("Unsupported shared atomic_op opcode");
    }
 }
 
@@ -929,14 +954,14 @@ Shader::emit_atomic_local_shared(nir_intrinsic_instr *instr)
 
    auto dest_value = uses_retval ? vf.dest(instr->dest, 0, pin_free) : nullptr;
 
-   auto op = lds_op_from_intrinsic(instr->intrinsic, uses_retval);
+   auto op = lds_op_from_intrinsic(nir_intrinsic_atomic_op(instr), uses_retval);
 
    auto address = vf.src(instr->src[0], 0);
 
    AluInstr::SrcValues src;
    src.push_back(vf.src(instr->src[1], 0));
 
-   if (unlikely(instr->intrinsic == nir_intrinsic_shared_atomic_comp_swap))
+   if (unlikely(instr->intrinsic == nir_intrinsic_shared_atomic_swap))
       src.push_back(vf.src(instr->src[2], 0));
    emit_instruction(new LDSAtomicInstr(op, dest_value, address, src));
    return true;
@@ -1134,6 +1159,21 @@ Shader::emit_wait_ack()
    return true;
 }
 
+void Shader::InstructionChain::visit(AluInstr *instr)
+{
+   if (instr->is_kill()) {
+      last_kill_instr = instr;
+
+      // these instructions have side effects, they should
+      // not be re-order with kill
+      if (last_gds_instr)
+         instr->add_required_instr(last_gds_instr);
+
+      if (last_ssbo_instr)
+         instr->add_required_instr(last_ssbo_instr);
+   }
+}
+
 void
 Shader::InstructionChain::visit(ScratchIOInstr *instr)
 {
@@ -1148,6 +1188,9 @@ Shader::InstructionChain::visit(GDSInstr *instr)
    for (auto& loop : this_shader->m_loops) {
       loop->set_instr_flag(flag);
    }
+   if (last_kill_instr)
+      instr->add_required_instr(last_kill_instr);
+
 }
 
 void
@@ -1164,6 +1207,9 @@ Shader::InstructionChain::visit(RatInstr *instr)
 
    if (this_shader->m_current_block->inc_rat_emitted() > 15)
       this_shader->start_new_block(0);
+
+   if (last_kill_instr)
+      instr->add_required_instr(last_kill_instr);
 }
 
 void

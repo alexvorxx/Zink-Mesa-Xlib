@@ -348,7 +348,7 @@ lower_ray_query_intrinsic(nir_builder *b,
    }
 
    case nir_intrinsic_rq_load: {
-      const bool committed = nir_src_as_bool(intrin->src[1]);
+      const bool committed = nir_intrinsic_committed(intrin);
 
       struct brw_nir_rt_mem_ray_defs world_ray_in = {};
       struct brw_nir_rt_mem_ray_defs object_ray_in = {};
@@ -470,6 +470,13 @@ lower_ray_query_intrinsic(nir_builder *b,
       case nir_ray_query_value_world_ray_origin:
          sysval = world_ray_in.orig;
          break;
+
+      case nir_ray_query_value_intersection_triangle_vertex_positions: {
+         struct brw_nir_rt_bvh_primitive_leaf_positions_defs pos;
+         brw_nir_rt_load_bvh_primitive_leaf_positions(b, &pos, hit_in.prim_leaf_ptr);
+         sysval = pos.positions[nir_intrinsic_column(intrin)];
+         break;
+      }
 
       default:
          unreachable("Invalid ray query");

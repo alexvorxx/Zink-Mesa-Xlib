@@ -376,17 +376,9 @@ get_parallel_copy_at_end_of_block(nir_block *block)
 static bool
 isolate_phi_nodes_block(nir_shader *shader, nir_block *block, void *dead_ctx)
 {
-   nir_instr *last_phi_instr = NULL;
-   nir_foreach_instr(instr, block) {
-      /* Phi nodes only ever come at the start of a block */
-      if (instr->type != nir_instr_type_phi)
-         break;
-
-      last_phi_instr = instr;
-   }
-
    /* If we don't have any phis, then there's nothing for us to do. */
-   if (last_phi_instr == NULL)
+   nir_phi_instr *last_phi = nir_block_last_phi_instr(block);
+   if (last_phi == NULL)
       return true;
 
    /* If we have phi nodes, we need to create a parallel copy at the
@@ -394,14 +386,9 @@ isolate_phi_nodes_block(nir_shader *shader, nir_block *block, void *dead_ctx)
     */
    nir_parallel_copy_instr *block_pcopy =
       nir_parallel_copy_instr_create(shader);
-   nir_instr_insert_after(last_phi_instr, &block_pcopy->instr);
+   nir_instr_insert_after(&last_phi->instr, &block_pcopy->instr);
 
-   nir_foreach_instr(instr, block) {
-      /* Phi nodes only ever come at the start of a block */
-      if (instr->type != nir_instr_type_phi)
-         break;
-
-      nir_phi_instr *phi = nir_instr_as_phi(instr);
+   nir_foreach_phi(phi, block) {
       assert(phi->dest.is_ssa);
       nir_foreach_phi_src(src, phi) {
          if (nir_src_is_undef(src->src))
@@ -415,7 +402,7 @@ isolate_phi_nodes_block(nir_shader *shader, nir_block *block, void *dead_ctx)
                                                   nir_parallel_copy_entry);
          nir_ssa_dest_init(&pcopy->instr, &entry->dest,
                            phi->dest.ssa.num_components,
-                           phi->dest.ssa.bit_size, NULL);
+                           phi->dest.ssa.bit_size);
          entry->dest.ssa.divergent = nir_src_is_divergent(src->src);
          exec_list_push_tail(&pcopy->entries, &entry->node);
 
@@ -429,8 +416,7 @@ isolate_phi_nodes_block(nir_shader *shader, nir_block *block, void *dead_ctx)
       nir_parallel_copy_entry *entry = rzalloc(dead_ctx,
                                                nir_parallel_copy_entry);
       nir_ssa_dest_init(&block_pcopy->instr, &entry->dest,
-                        phi->dest.ssa.num_components, phi->dest.ssa.bit_size,
-                        NULL);
+                        phi->dest.ssa.num_components, phi->dest.ssa.bit_size);
       entry->dest.ssa.divergent = phi->dest.ssa.divergent;
       exec_list_push_tail(&block_pcopy->entries, &entry->node);
 
@@ -447,13 +433,7 @@ isolate_phi_nodes_block(nir_shader *shader, nir_block *block, void *dead_ctx)
 static bool
 coalesce_phi_nodes_block(nir_block *block, struct from_ssa_state *state)
 {
-   nir_foreach_instr(instr, block) {
-      /* Phi nodes only ever come at the start of a block */
-      if (instr->type != nir_instr_type_phi)
-         break;
-
-      nir_phi_instr *phi = nir_instr_as_phi(instr);
-
+   nir_foreach_phi(phi, block) {
       assert(phi->dest.is_ssa);
       merge_node *dest_node = get_merge_node(&phi->dest.ssa, state);
 
@@ -1012,13 +992,8 @@ nir_lower_phis_to_regs_block(nir_block *block)
                                                  _mesa_key_pointer_equal);
 
    bool progress = false;
-   nir_foreach_instr_safe(instr, block) {
-      if (instr->type != nir_instr_type_phi)
-         break;
-
-      nir_phi_instr *phi = nir_instr_as_phi(instr);
+   nir_foreach_phi_safe(phi, block) {
       assert(phi->dest.is_ssa);
-
       nir_register *reg = create_reg_for_ssa_def(&phi->dest.ssa, b.impl);
 
       b.cursor = nir_after_instr(&phi->instr);

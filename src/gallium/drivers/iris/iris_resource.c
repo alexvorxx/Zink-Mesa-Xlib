@@ -866,20 +866,12 @@ iris_resource_configure_aux(struct iris_screen *screen,
    case ISL_AUX_USAGE_HIZ:
    case ISL_AUX_USAGE_HIZ_CCS:
    case ISL_AUX_USAGE_HIZ_CCS_WT:
-      initial_state = ISL_AUX_STATE_AUX_INVALID;
-      break;
    case ISL_AUX_USAGE_MCS:
    case ISL_AUX_USAGE_MCS_CCS:
-      /* The Ivybridge PRM, Vol 2 Part 1 p326 says:
-       *
-       *    "When MCS buffer is enabled and bound to MSRT, it is required
-       *     that it is cleared prior to any rendering."
-       *
-       * Since we only use the MCS buffer for rendering, we just clear it
-       * immediately on allocation.  The clear value for MCS buffers is all
-       * 1's, so we simply memset it to 0xff.
+      /* Leave the auxiliary buffer uninitialized. We can ambiguate it before
+       * accessing it later on, if needed.
        */
-      initial_state = ISL_AUX_STATE_CLEAR;
+      initial_state = ISL_AUX_STATE_AUX_INVALID;
       break;
    case ISL_AUX_USAGE_CCS_D:
    case ISL_AUX_USAGE_CCS_E:
@@ -897,14 +889,27 @@ iris_resource_configure_aux(struct iris_screen *screen,
           *    "CCS surface does not require initialization. Illegal CCS
           *     [values] are treated as uncompressed memory."
           *
-          * Even if we wanted to, we can't initialize the CCS via CPU map. So,
-          * we choose an aux state which describes the current state and helps
-          * avoid ambiguating (something not currently supported for STC_CCS).
+          * The above quote is from the render target section, but we assume
+          * it applies to CCS in general (e.g., STC_CCS). The uninitialized
+          * CCS may be in any aux state. We choose the one which is most
+          * convenient.
+          *
+          * We avoid states with CLEAR because stencil does not support it.
+          * Those states also create a dependency on the clear color, which
+          * can have negative performance implications. Even though some
+          * blocks may actually be encoded with CLEAR, we can get away with
+          * ignoring them - there are no known issues that require fast
+          * cleared blocks to be tracked and avoided.
+          *
+          * We specifically avoid the AUX_INVALID state because it could
+          * trigger an ambiguate. BLORP does not have support for ambiguating
+          * stencil. Also, ambiguating some LODs of mipmapped 8bpp surfaces
+          * seems to stomp on neighboring miplevels.
+          *
+          * There is only one remaining aux state which can give us correct
+          * behavior, COMPRESSED_NO_CLEAR.
           */
-         assert(isl_aux_usage_has_compression(res->aux.usage));
-         initial_state = isl_aux_usage_has_fast_clears(res->aux.usage) ?
-                         ISL_AUX_STATE_COMPRESSED_CLEAR :
-                         ISL_AUX_STATE_COMPRESSED_NO_CLEAR;
+         initial_state = ISL_AUX_STATE_COMPRESSED_NO_CLEAR;
       } else {
          assert(res->aux.surf.size_B > 0);
          /* When CCS is used, we need to ensure that it starts off in a valid
@@ -950,10 +955,7 @@ iris_resource_init_aux_buf(struct iris_screen *screen,
       if (!map)
          return false;
 
-      /* See iris_resource_configure_aux for the memset_value rationale. */
-      uint8_t memset_value = isl_aux_usage_has_mcs(res->aux.usage) ? 0xFF : 0;
-      memset((char*)map + res->aux.offset, memset_value,
-             res->aux.surf.size_B);
+      memset((char*)map + res->aux.offset, 0, res->aux.surf.size_B);
    }
 
    if (res->aux.extra_aux.surf.size_B > 0) {

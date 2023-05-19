@@ -382,7 +382,7 @@ radv_meta_blit2d(struct radv_cmd_buffer *cmd_buffer, struct radv_meta_blit2d_sur
                                    : use_3d ? BLIT2D_SRC_TYPE_IMAGE_3D
                                             : BLIT2D_SRC_TYPE_IMAGE;
    radv_meta_blit2d_normal_dst(cmd_buffer, src_img, src_buf, dst, num_rects, rects, src_type,
-                               src_img ? util_logbase2(src_img->image->info.samples) : 0);
+                               src_img ? util_logbase2(src_img->image->vk.samples) : 0);
 }
 
 static nir_shader *

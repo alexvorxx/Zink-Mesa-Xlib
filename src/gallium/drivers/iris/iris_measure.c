@@ -121,7 +121,7 @@ iris_init_batch_measure(struct iris_context *ice, struct iris_batch *batch)
                                config->batch_size * sizeof(uint64_t), 8,
                                IRIS_MEMZONE_OTHER, BO_ALLOC_ZEROED);
    measure->base.timestamps = iris_bo_map(NULL, measure->bo, MAP_READ);
-   measure->base.framebuffer =
+   measure->base.renderpass =
       (uintptr_t)util_hash_crc32(&ice->state.framebuffer,
                                  sizeof(ice->state.framebuffer));
 }
@@ -155,7 +155,7 @@ measure_start_snapshot(struct iris_context *ice,
    if (measure_batch->frame == 0)
       measure_batch->frame = screen_frame;
 
-   uintptr_t framebuffer = measure_batch->framebuffer;
+   uintptr_t renderpass = measure_batch->renderpass;
 
    if (measure_batch->index == config->batch_size) {
       /* Snapshot buffer is full.  The batch must be flushed before additional
@@ -199,7 +199,7 @@ measure_start_snapshot(struct iris_context *ice,
    snapshot->count = (unsigned) count;
    snapshot->event_count = measure_batch->event_count;
    snapshot->event_name = event_name;
-   snapshot->framebuffer = framebuffer;
+   snapshot->renderpass = renderpass;
 
    if (type == INTEL_SNAPSHOT_COMPUTE) {
       snapshot->cs = (uintptr_t) ice->shaders.prog[MESA_SHADER_COMPUTE];
@@ -269,7 +269,7 @@ iris_measure_renderpass(struct iris_context *ice)
       return;
    uint32_t framebuffer_crc = util_hash_crc32(&ice->state.framebuffer,
                                               sizeof(ice->state.framebuffer));
-   if (framebuffer_crc == batch->framebuffer)
+   if (framebuffer_crc == batch->renderpass)
       return;
    bool filtering = config->flags & INTEL_MEASURE_RENDERPASS;
    if (filtering && batch->index % 2 == 1) {
@@ -279,7 +279,7 @@ iris_measure_renderpass(struct iris_context *ice)
       batch->event_count = 0;
    }
 
-   batch->framebuffer = framebuffer_crc;
+   batch->renderpass = framebuffer_crc;
 }
 
 void

@@ -161,7 +161,6 @@ libintel_compiler = static_library(
   [libintel_compiler_files, brw_nir_trig, ir_expression_operation_h],
   include_directories : [inc_include, inc_src, inc_mapi, inc_mesa, inc_gallium, inc_intel],
   c_args : [no_override_init_args],
-  override_options: ['cpp_std=c++17'],
   gnu_symbol_visibility : 'hidden',
   dependencies : [idep_nir_headers, idep_mesautil, idep_intel_dev],
   build_by_default : false,
@@ -207,7 +206,6 @@ if with_tests
       link_with : [
         libintel_compiler, libintel_common, libisl
       ],
-      override_options: ['cpp_std=c++17'],
       dependencies : [idep_gtest, idep_nir, idep_mesautil, idep_intel_dev],
     ),
     suite : ['intel'],

@@ -445,11 +445,7 @@ nir_opt_peephole_select_block(nir_block *block, nir_shader *shader,
       exec_list_push_tail(&prev_block->instr_list, &instr->node);
    }
 
-   nir_foreach_instr_safe(instr, block) {
-      if (instr->type != nir_instr_type_phi)
-         break;
-
-      nir_phi_instr *phi = nir_instr_as_phi(instr);
+   nir_foreach_phi_safe(phi, block) {
       nir_alu_instr *sel = nir_alu_instr_create(shader, nir_op_bcsel);
       nir_src_copy(&sel->src[0].src, &if_stmt->condition, &sel->instr);
       /* Splat the condition to all channels */
@@ -465,8 +461,7 @@ nir_opt_peephole_select_block(nir_block *block, nir_shader *shader,
       }
 
       nir_ssa_dest_init(&sel->instr, &sel->dest.dest,
-                        phi->dest.ssa.num_components,
-                        phi->dest.ssa.bit_size, NULL);
+                        phi->dest.ssa.num_components, phi->dest.ssa.bit_size);
       sel->dest.write_mask = (1 << phi->dest.ssa.num_components) - 1;
 
       nir_ssa_def_rewrite_uses(&phi->dest.ssa,

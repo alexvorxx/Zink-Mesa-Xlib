@@ -468,8 +468,6 @@ query_pool_get_range(struct zink_context *ctx, struct zink_query *q)
          vkq->pool->refcount++;
       } else {
          struct zink_query_pool *pool = find_or_allocate_qp(ctx, q, pool_idx);
-         pool->refcount++;
-         pool->last_range++;
          if (pool->last_range == NUM_QUERIES) {
             list_del(&pool->list);
             pool = find_or_allocate_qp(ctx, q, pool_idx);
@@ -480,12 +478,12 @@ query_pool_get_range(struct zink_context *ctx, struct zink_query *q)
             return;
          }
 
+         pool->refcount++;
          vkq->refcount = 1;
          vkq->needs_reset = true;
          vkq->pool = pool;
          vkq->started = false;
-         vkq->query_id = pool->last_range;
-
+         vkq->query_id = pool->last_range++;
       }
       unref_vk_query(ctx, start->vkq[i]);
       start->vkq[i] = vkq;
@@ -1108,8 +1106,10 @@ zink_get_query_result(struct pipe_context *pctx,
       return result->b;
    }
 
-   if (query->needs_update)
+   if (query->needs_update) {
+      assert(!ctx->tc || !threaded_query(q)->flushed);
       update_qbo(ctx, query);
+   }
 
    if (zink_batch_usage_is_unflushed(query->batch_uses)) {
       if (!threaded_query(q)->flushed)
@@ -1251,6 +1251,13 @@ zink_set_active_query_state(struct pipe_context *pctx, bool enable)
       zink_suspend_queries(ctx, batch);
    else if (ctx->batch.in_rp)
       zink_resume_queries(ctx, batch);
+}
+
+void
+zink_query_sync(struct zink_context *ctx, struct zink_query *query)
+{
+   if (query->needs_update)
+      update_qbo(ctx, query);
 }
 
 void

@@ -812,11 +812,12 @@ AllocAndFetchScreenConfigs(Display * dpy, struct glx_display * priv)
 	 psc = priv->driswDisplay->createScreen(i, priv);
 #endif /* GLX_DIRECT_RENDERING && !GLX_USE_APPLEGL */
 
+      bool indirect = false;
+
 #if defined(GLX_USE_APPLEGL)
       if (psc == NULL)
          psc = applegl_create_screen(i, priv);
 #else
-      bool indirect = false;
       if (psc == NULL)
       {
          psc = indirect_create_screen(i, priv);
@@ -938,7 +939,7 @@ __glXInitialize(Display * dpy)
 
    glxSendClientInfo(dpyPriv, -1);
 
-   /* Grab the lock again and add the dispay private, unless somebody
+   /* Grab the lock again and add the display private, unless somebody
     * beat us to initializing on this display in the meantime. */
    _XLockMutex(_Xglobal_lock);
 

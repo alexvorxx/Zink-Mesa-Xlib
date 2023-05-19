@@ -168,8 +168,12 @@ iris_create_engines_context(struct iris_context *ice)
        intel_engines_count(engines_info, INTEL_ENGINE_CLASS_COMPUTE) > 0)
       engine_classes[IRIS_BATCH_COMPUTE] = INTEL_ENGINE_CLASS_COMPUTE;
 
+   enum intel_gem_create_context_flags flags = 0;
+   if (ice->protected)
+      flags |= INTEL_GEM_CREATE_CONTEXT_EXT_PROTECTED_FLAG;
+
    uint32_t engines_ctx;
-   if (!intel_gem_create_context_engines(fd, engines_info, num_batches,
+   if (!intel_gem_create_context_engines(fd, flags, engines_info, num_batches,
                                          engine_classes, &engines_ctx)) {
       free(engines_info);
       return -1;

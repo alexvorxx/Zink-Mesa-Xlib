@@ -20,6 +20,7 @@ EPHEMERAL="
         "
 
 dnf install -y --setopt=install_weak_deps=False \
+    bindgen \
     bison \
     clang-devel \
     flex \
@@ -30,6 +31,8 @@ dnf install -y --setopt=install_weak_deps=False \
     kernel-headers \
     llvm-devel \
     meson \
+    "pkgconfig(LLVMSPIRVLib)" \
+    "pkgconfig(SPIRV-Tools)" \
     "pkgconfig(dri2proto)" \
     "pkgconfig(expat)" \
     "pkgconfig(glproto)" \
@@ -64,6 +67,7 @@ dnf install -y --setopt=install_weak_deps=False \
     python3-devel \
     python3-mako \
     python3-ply \
+    rust-packaging \
     vulkan-headers \
     spirv-tools-devel \
     spirv-llvm-translator-devel \

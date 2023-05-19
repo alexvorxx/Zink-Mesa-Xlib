@@ -837,7 +837,7 @@ _eglCheckMakeCurrent(_EGLContext *ctx, _EGLSurface *draw, _EGLSurface *read)
  * returned context and surfaces.
  *
  * Making a second call with the resources returned by the first call
- * unsurprisingly undoes the first call, except for the resouce reference
+ * unsurprisingly undoes the first call, except for the resource reference
  * counts.
  */
 EGLBoolean

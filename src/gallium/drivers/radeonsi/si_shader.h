@@ -331,6 +331,8 @@ enum si_shader_dump_type {
    SI_DUMP_NIR,            /* final NIR after lowering when shader variants are created */
    SI_DUMP_INIT_LLVM_IR,   /* initial LLVM IR before optimizations */
    SI_DUMP_LLVM_IR,        /* final LLVM IR */
+   SI_DUMP_INIT_ACO_IR,    /* initial ACO IR before optimizations */
+   SI_DUMP_ACO_IR,         /* final ACO IR */
    SI_DUMP_ASM,            /* final asm shaders */
    SI_DUMP_ALWAYS,
 };
@@ -476,6 +478,8 @@ struct si_shader_info {
    bool uses_bindless_images;
    bool uses_indirect_descriptor;
    bool has_divergent_loop;
+   bool uses_sampleid;
+   bool has_non_uniform_tex_access;
 
    bool uses_vmem_sampler_or_bvh;
    bool uses_vmem_load_other; /* all other VMEM loads and atomics with return */
@@ -494,6 +498,10 @@ struct si_shader_info {
     * texunit + 1.
     */
    uint8_t writes_1_if_tex_is_1;
+
+   /* frag coord and sample pos per component read mask. */
+   uint8_t reads_frag_coord_mask;
+   uint8_t reads_sample_pos_mask;
 };
 
 /* A shader selector is a gallium CSO and contains shader variants and
@@ -799,14 +807,28 @@ struct si_shader_binary_info {
    unsigned max_simd_waves;
 };
 
+enum si_shader_binary_type {
+   SI_SHADER_BINARY_ELF,
+   SI_SHADER_BINARY_RAW,
+};
+
 struct si_shader_binary {
-   const char *elf_buffer;
-   size_t elf_size;
+   enum si_shader_binary_type type;
+
+   /* Depends on binary type, either ELF or raw buffer. */
+   const char *code_buffer;
+   size_t code_size;
 
    char *uploaded_code;
    size_t uploaded_code_size;
 
    char *llvm_ir_string;
+
+   const char *disasm_string;
+   size_t disasm_size;
+
+   const unsigned *symbols;
+   unsigned num_symbols;
 };
 
 struct gfx9_gs_info {
@@ -874,6 +896,9 @@ struct si_shader {
    bool is_binary_shared;
    bool is_gs_copy_shader;
    uint8_t wave_size;
+
+   /* Use ACO for compilation. */
+   bool use_aco;
 
    /* The following data is all that's needed for binary shaders. */
    struct si_shader_binary binary;

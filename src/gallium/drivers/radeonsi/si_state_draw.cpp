@@ -303,7 +303,7 @@ static bool si_update_shaders(struct si_context *sctx)
          si_mark_atom_dirty(sctx, &sctx->atoms.s.msaa_sample_locs);
    }
 
-   if (GFX_VERSION >= GFX9 && unlikely(sctx->thread_trace)) {
+   if (GFX_VERSION >= GFX9 && unlikely(sctx->sqtt)) {
       /* Pretend the bound shaders form a vk pipeline. Include the scratch size in
        * the hash calculation to force re-emitting the pipeline if the scratch bo
        * changes.
@@ -317,8 +317,8 @@ static bool si_update_shaders(struct si_context *sctx)
          struct si_shader *shader = sctx->shaders[i].current;
          if (sctx->shaders[i].cso && shader) {
             pipeline_code_hash = XXH64(
-               shader->binary.elf_buffer,
-               shader->binary.elf_size,
+               shader->binary.code_buffer,
+               shader->binary.code_size,
                pipeline_code_hash);
 
             total_size += ALIGN(shader->binary.uploaded_code_size, 256);
@@ -326,8 +326,7 @@ static bool si_update_shaders(struct si_context *sctx)
       }
 
       struct si_sqtt_fake_pipeline *pipeline = NULL;
-      struct ac_thread_trace_data *thread_trace_data = sctx->thread_trace;
-      if (!si_sqtt_pipeline_is_registered(thread_trace_data, pipeline_code_hash)) {
+      if (!si_sqtt_pipeline_is_registered(sctx->sqtt, pipeline_code_hash)) {
          /* This is a new pipeline. Allocate a new bo to hold all the shaders. Without
           * this, shader code export process creates huge rgp files because RGP assumes
           * the shaders live sequentially in memory (shader N address = shader 0 + offset N)
@@ -387,7 +386,7 @@ static bool si_update_shaders(struct si_context *sctx)
             }
             sctx->screen->ws->buffer_unmap(sctx->screen->ws, bo->buf);
 
-            _mesa_hash_table_u64_insert(sctx->thread_trace->pipeline_bos,
+            _mesa_hash_table_u64_insert(sctx->sqtt->pipeline_bos,
                                         pipeline_code_hash, pipeline);
 
             si_sqtt_register_pipeline(sctx, pipeline, false);
@@ -396,8 +395,8 @@ static bool si_update_shaders(struct si_context *sctx)
                si_resource_reference(&bo, NULL);
          }
       } else {
-         pipeline = (struct si_sqtt_fake_pipeline *)
-            _mesa_hash_table_u64_search(sctx->thread_trace->pipeline_bos, pipeline_code_hash);
+         pipeline = (struct si_sqtt_fake_pipeline *)_mesa_hash_table_u64_search(
+             sctx->sqtt->pipeline_bos, pipeline_code_hash);
       }
       assert(pipeline);
 
@@ -1389,15 +1388,15 @@ static void si_emit_draw_registers(struct si_context *sctx,
    radeon_end();
 }
 
-#define EMIT_SQTT_END_DRAW do {                                          \
-      if (GFX_VERSION >= GFX9 && unlikely(sctx->thread_trace_enabled)) { \
-         radeon_begin(&sctx->gfx_cs);                                    \
-         radeon_emit(PKT3(PKT3_EVENT_WRITE, 0, 0));       \
-         radeon_emit(EVENT_TYPE(V_028A90_THREAD_TRACE_MARKER) |          \
-                     EVENT_INDEX(0));                                    \
-         radeon_end();                                      \
-      }                                                                  \
-   } while (0)
+#define EMIT_SQTT_END_DRAW                                                     \
+  do {                                                                         \
+    if (GFX_VERSION >= GFX9 && unlikely(sctx->sqtt_enabled)) {                 \
+      radeon_begin(&sctx->gfx_cs);                                             \
+      radeon_emit(PKT3(PKT3_EVENT_WRITE, 0, 0));                               \
+      radeon_emit(EVENT_TYPE(V_028A90_THREAD_TRACE_MARKER) | EVENT_INDEX(0));  \
+      radeon_end();                                                            \
+    }                                                                          \
+  } while (0)
 
 template <amd_gfx_level GFX_VERSION, si_has_ngg NGG, si_is_draw_vertex_state IS_DRAW_VERTEX_STATE>
 ALWAYS_INLINE
@@ -1411,7 +1410,7 @@ static void si_emit_draw_packets(struct si_context *sctx, const struct pipe_draw
 {
    struct radeon_cmdbuf *cs = &sctx->gfx_cs;
 
-   if (unlikely(sctx->thread_trace_enabled)) {
+   if (unlikely(sctx->sqtt_enabled)) {
       si_sqtt_write_event_marker(sctx, &sctx->gfx_cs, sctx->sqtt_next_event,
                                  UINT_MAX, UINT_MAX, UINT_MAX);
    }
@@ -1471,7 +1470,7 @@ static void si_emit_draw_packets(struct si_context *sctx, const struct pipe_draw
    /* draw packet */
    if (index_size) {
       /* Register shadowing doesn't shadow INDEX_TYPE. */
-      if (index_size != sctx->last_index_size || sctx->shadowed_regs ||
+      if (index_size != sctx->last_index_size || sctx->shadowing.registers ||
           (GFX_VERSION == GFX10_3 && disable_instance_packing != sctx->disable_instance_packing)) {
          unsigned index_type;
 
@@ -1598,7 +1597,7 @@ static void si_emit_draw_packets(struct si_context *sctx, const struct pipe_draw
       }
    } else {
       /* Register shadowing requires that we always emit PKT3_NUM_INSTANCES. */
-      if (sctx->shadowed_regs ||
+      if (sctx->shadowing.registers ||
           sctx->last_instance_count == SI_INSTANCE_COUNT_UNKNOWN ||
           sctx->last_instance_count != instance_count) {
          radeon_emit(PKT3(PKT3_NUM_INSTANCES, 0, 0));

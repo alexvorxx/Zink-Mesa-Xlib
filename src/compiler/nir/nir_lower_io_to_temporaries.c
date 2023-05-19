@@ -209,7 +209,7 @@ emit_interp(nir_builder *b, nir_deref_instr **old_interp_deref,
    new_interp->num_components = interp->num_components;
    nir_ssa_dest_init(&new_interp->instr, &new_interp->dest,
                      interp->dest.ssa.num_components,
-                     interp->dest.ssa.bit_size, NULL);
+                     interp->dest.ssa.bit_size);
 
    nir_builder_instr_insert(b, &new_interp->instr);
    nir_store_deref(b, temp_deref, &new_interp->dest.ssa,

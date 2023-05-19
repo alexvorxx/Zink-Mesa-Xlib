@@ -44,7 +44,6 @@ default:
     - >
       export SCRIPTS_DIR=$(mktemp -d) &&
       curl -L -s --retry 4 -f --retry-all-errors --retry-delay 60 -O --output-dir "${SCRIPTS_DIR}" "${CI_PROJECT_URL}/-/raw/${CI_COMMIT_SHA}/.gitlab-ci/setup-test-env.sh" &&
-      chmod +x ${SCRIPTS_DIR}/setup-test-env.sh &&
       . ${SCRIPTS_DIR}/setup-test-env.sh &&
       echo -n "${CI_JOB_JWT}" > "${CI_JOB_JWT_FILE}" &&
       unset CI_JOB_JWT  # Unsetting vulnerable env variables

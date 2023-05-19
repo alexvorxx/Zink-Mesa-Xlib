@@ -44,6 +44,7 @@ enum intel_measure_snapshot_type {
    INTEL_SNAPSHOT_HIZ_AMBIGUATE,
    INTEL_SNAPSHOT_HIZ_CLEAR,
    INTEL_SNAPSHOT_HIZ_RESOLVE,
+   INTEL_SNAPSHOT_MCS_AMBIGUATE,
    INTEL_SNAPSHOT_MCS_COLOR_CLEAR,
    INTEL_SNAPSHOT_MCS_PARTIAL_RESOLVE,
    INTEL_SNAPSHOT_SLOW_COLOR_CLEAR,
@@ -111,7 +112,8 @@ struct intel_measure_snapshot {
    enum intel_measure_snapshot_type type;
    unsigned count, event_count;
    const char* event_name;
-   uintptr_t framebuffer, vs, tcs, tes, gs, fs, cs, ms, ts;
+   uint32_t renderpass;
+   uintptr_t vs, tcs, tes, gs, fs, cs, ms, ts;
    /* for vulkan secondary command buffers */
    struct intel_measure_batch *secondary;
 };
@@ -119,7 +121,8 @@ struct intel_measure_snapshot {
 struct intel_measure_buffered_result {
    struct intel_measure_snapshot snapshot;
    uint64_t start_ts, end_ts, idle_duration;
-   unsigned frame, batch_count, event_index;
+   unsigned frame, batch_count, event_index, primary_renderpass;
+;
 };
 
 struct intel_measure_ringbuffer {
@@ -133,6 +136,7 @@ typedef void (*intel_measure_release_batch_cb)(struct intel_measure_batch *base)
 struct intel_measure_device {
    struct intel_measure_config *config;
    unsigned frame;
+   unsigned render_pass_count;
    intel_measure_release_batch_cb release_batch;
 
    /* Holds the list of (iris/anv)_measure_batch snapshots that have been
@@ -151,7 +155,7 @@ struct intel_measure_batch {
    struct list_head link;
    unsigned index;
    unsigned frame, batch_count, event_count;
-   uintptr_t framebuffer;
+   uint32_t renderpass, primary_renderpass;
    uint64_t *timestamps;
    struct intel_measure_snapshot snapshots[0];
 };

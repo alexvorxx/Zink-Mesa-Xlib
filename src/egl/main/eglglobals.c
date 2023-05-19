@@ -139,7 +139,7 @@ _eglAddAtExitCall(void (*func)(void))
 }
 
 EGLBoolean
-_eglPointerIsDereferencable(void *p)
+_eglPointerIsDereferenceable(void *p)
 {
    uintptr_t addr = (uintptr_t) p;
    uint64_t page_size = 0;

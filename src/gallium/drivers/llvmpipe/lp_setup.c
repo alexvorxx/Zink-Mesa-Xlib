@@ -599,7 +599,7 @@ lp_setup_bind_rasterizer(struct lp_setup_context *setup,
    setup->point_size = rast->point_size;
    setup->sprite_coord_enable = rast->sprite_coord_enable;
    setup->sprite_coord_origin = rast->sprite_coord_mode;
-   setup->point_tri_clip = rast->point_size_per_vertex;
+   setup->point_line_tri_clip = rast->point_line_tri_clip;
    setup->point_size_per_vertex = rast->point_size_per_vertex;
    setup->legacy_points = !rast->point_quad_rasterization && !setup->multisample;
 }
@@ -686,7 +686,7 @@ lp_setup_set_fs_images(struct lp_setup_context *setup,
 
       struct pipe_resource *res = image->resource;
       struct llvmpipe_resource *lp_res = llvmpipe_resource(res);
-      struct lp_jit_image *jit_image = &setup->fs.current.jit_context.images[i];
+      struct lp_jit_image *jit_image = &setup->fs.current.jit_resources.images[i];
 
       if (!lp_res)
          continue;
@@ -940,7 +940,7 @@ lp_setup_set_fragment_sampler_views(struct lp_setup_context *setup,
          struct pipe_resource *res = view->texture;
          struct llvmpipe_resource *lp_tex = llvmpipe_resource(res);
          struct lp_jit_texture *jit_tex;
-         jit_tex = &setup->fs.current.jit_context.textures[i];
+         jit_tex = &setup->fs.current.jit_resources.textures[i];
 
          /* We're referencing the texture's internal data, so save a
           * reference to it.
@@ -1080,7 +1080,7 @@ lp_setup_set_fragment_sampler_state(struct lp_setup_context *setup,
 
       if (sampler) {
          struct lp_jit_sampler *jit_sam;
-         jit_sam = &setup->fs.current.jit_context.samplers[i];
+         jit_sam = &setup->fs.current.jit_resources.samplers[i];
 
          jit_sam->min_lod = sampler->min_lod;
          jit_sam->max_lod = sampler->max_lod;
@@ -1257,18 +1257,18 @@ try_update_scene_state(struct lp_setup_context *setup)
                setup->constants[i].stored_size = current_size;
                setup->constants[i].stored_data = stored;
             }
-            setup->fs.current.jit_context.constants[i].f =
+            setup->fs.current.jit_resources.constants[i].f =
                setup->constants[i].stored_data;
          } else {
             setup->constants[i].stored_size = 0;
             setup->constants[i].stored_data = NULL;
-            setup->fs.current.jit_context.constants[i].f = fake_const_buf;
+            setup->fs.current.jit_resources.constants[i].f = fake_const_buf;
          }
 
          const int num_constants =
             DIV_ROUND_UP(setup->constants[i].stored_size,
                          lp_get_constant_buffer_stride(scene->pipe->screen));
-         setup->fs.current.jit_context.constants[i].num_elements = num_constants;
+         setup->fs.current.jit_resources.constants[i].num_elements = num_constants;
          setup->dirty |= LP_SETUP_NEW_FS;
       }
    }
@@ -1285,13 +1285,13 @@ try_update_scene_state(struct lp_setup_context *setup)
          if (current_data) {
             current_data += setup->ssbos[i].current.buffer_offset;
 
-            setup->fs.current.jit_context.ssbos[i].u =
+            setup->fs.current.jit_resources.ssbos[i].u =
                (const uint32_t *)current_data;
-            setup->fs.current.jit_context.ssbos[i].num_elements =
+            setup->fs.current.jit_resources.ssbos[i].num_elements =
                setup->ssbos[i].current.buffer_size;
          } else {
-            setup->fs.current.jit_context.ssbos[i].u = NULL;
-            setup->fs.current.jit_context.ssbos[i].num_elements = 0;
+            setup->fs.current.jit_resources.ssbos[i].u = NULL;
+            setup->fs.current.jit_resources.ssbos[i].num_elements = 0;
          }
          setup->dirty |= LP_SETUP_NEW_FS;
       }
@@ -1316,8 +1316,11 @@ try_update_scene_state(struct lp_setup_context *setup)
          memcpy(&stored->jit_context,
                 &setup->fs.current.jit_context,
                 sizeof setup->fs.current.jit_context);
+         memcpy(&stored->jit_resources,
+                &setup->fs.current.jit_resources,
+                sizeof setup->fs.current.jit_resources);         
 
-         stored->jit_context.aniso_filter_table =
+         stored->jit_resources.aniso_filter_table =
             lp_build_sample_aniso_filter_table();
          stored->variant = setup->fs.current.variant;
 
@@ -1386,7 +1389,7 @@ try_update_scene_state(struct lp_setup_context *setup)
             u_rect_possible_intersection(&setup->vpwh,
                                          &setup->draw_regions[0]);
          }
-      } else if (setup->point_tri_clip) {
+      } else if (setup->point_line_tri_clip) {
          /*
           * for d3d-style point clipping, we're going to need
           * the fake vp scissor too. Hence do the intersection with vp,
@@ -1396,7 +1399,7 @@ try_update_scene_state(struct lp_setup_context *setup)
           * points are always single pixel).
           * (Also note that if we have permit_linear_rasterizer this will
           * cause large points to always get vp scissored, regardless the
-          * point_tri_clip setting.)
+          * point_line_tri_clip setting.)
           */
          boolean need_vp_scissoring =
             !!memcmp(&setup->vpwh, &setup->framebuffer,

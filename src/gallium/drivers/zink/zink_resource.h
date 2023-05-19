@@ -96,7 +96,7 @@ zink_is_swapchain(const struct zink_resource *res)
 bool
 zink_resource_copy_box_intersects(struct zink_resource *res, unsigned level, const struct pipe_box *box);
 void
-zink_resource_copy_box_add(struct zink_resource *res, unsigned level, const struct pipe_box *box);
+zink_resource_copy_box_add(struct zink_context *ctx, struct zink_resource *res, unsigned level, const struct pipe_box *box);
 void
 zink_resource_copies_reset(struct zink_resource *res);
 
@@ -174,11 +174,7 @@ zink_resource_object_usage_unset(struct zink_resource_object *obj, struct zink_b
 static inline void
 zink_batch_resource_usage_set(struct zink_batch *batch, struct zink_resource *res, bool write, bool is_buffer)
 {
-   if (is_buffer) {
-      /* multiple array entries are fine */
-      if (!res->obj->coherent && res->obj->persistent_maps)
-         util_dynarray_append(&batch->state->persistent_resources, struct zink_resource_object*, res->obj);
-   } else {
+   if (!is_buffer) {
       if (res->obj->dt) {
          VkSemaphore acquire = zink_kopper_acquire_submit(zink_screen(batch->state->ctx->base.screen), res);
          if (acquire)

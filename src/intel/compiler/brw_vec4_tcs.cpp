@@ -365,8 +365,6 @@ brw_compile_tcs(const struct brw_compiler *compiler,
    const bool debug_enabled = INTEL_DEBUG(DEBUG_TCS);
    const unsigned *assembly;
 
-   brw_nir_clamp_per_vertex_loads(nir, key->input_vertices);
-
    vue_prog_data->base.stage = MESA_SHADER_TESS_CTRL;
    prog_data->base.base.ray_queries = nir->info.ray_queries;
    prog_data->base.base.total_scratch = 0;
@@ -381,14 +379,16 @@ brw_compile_tcs(const struct brw_compiler *compiler,
                             nir->info.outputs_written,
                             nir->info.patch_outputs_written);
 
-   brw_nir_apply_key(nir, compiler, &key->base, 8, is_scalar);
+   brw_nir_apply_key(nir, compiler, &key->base, 8);
    brw_nir_lower_vue_inputs(nir, &input_vue_map);
    brw_nir_lower_tcs_outputs(nir, &vue_prog_data->vue_map,
                              key->_tes_primitive_mode);
    if (key->quads_workaround)
       brw_nir_apply_tcs_quads_workaround(nir);
+   if (compiler->use_tcs_multi_patch)
+      brw_nir_clamp_per_vertex_loads(nir, key->input_vertices);
 
-   brw_postprocess_nir(nir, compiler, is_scalar, debug_enabled,
+   brw_postprocess_nir(nir, compiler, debug_enabled,
                        key->base.robust_buffer_access);
 
    bool has_primitive_id =

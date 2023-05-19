@@ -84,6 +84,24 @@ static void radeon_enc_op_preset(struct radeon_encoder *enc)
    RADEON_ENC_END();
 }
 
+static void radeon_enc_quality_params(struct radeon_encoder *enc)
+{
+   enc->enc_pic.quality_params.vbaq_mode = enc->enc_pic.quality_modes.vbaq_mode;
+   enc->enc_pic.quality_params.scene_change_sensitivity = 0;
+   enc->enc_pic.quality_params.scene_change_min_idr_interval = 0;
+   enc->enc_pic.quality_params.two_pass_search_center_map_mode =
+                    (enc->enc_pic.quality_modes.pre_encode_mode) ? 1 : 0;
+   enc->enc_pic.quality_params.vbaq_strength = 0;
+
+   RADEON_ENC_BEGIN(enc->cmd.quality_params);
+   RADEON_ENC_CS(enc->enc_pic.quality_params.vbaq_mode);
+   RADEON_ENC_CS(enc->enc_pic.quality_params.scene_change_sensitivity);
+   RADEON_ENC_CS(enc->enc_pic.quality_params.scene_change_min_idr_interval);
+   RADEON_ENC_CS(enc->enc_pic.quality_params.two_pass_search_center_map_mode);
+   RADEON_ENC_CS(enc->enc_pic.quality_params.vbaq_strength);
+   RADEON_ENC_END();
+}
+
 static void radeon_enc_slice_header_hevc(struct radeon_encoder *enc)
 {
    uint32_t instruction[RENCODE_SLICE_HEADER_TEMPLATE_MAX_NUM_INSTRUCTIONS] = {0};
@@ -285,12 +303,12 @@ static void radeon_enc_nalu_sps_hevc(struct radeon_encoder *enc)
    } else if (pic->session_init.padding_width  != 0 ||
               pic->session_init.padding_height != 0) {
       radeon_enc_code_fixed_bits(enc, 0x1, 1);
+      radeon_enc_code_ue(enc, 0);
       radeon_enc_code_ue(enc, pic->session_init.padding_width / 2);
-      radeon_enc_code_ue(enc, pic->session_init.padding_width / 2);
-      radeon_enc_code_ue(enc, pic->session_init.padding_height / 2);
+      radeon_enc_code_ue(enc, 0);
       radeon_enc_code_ue(enc, pic->session_init.padding_height / 2);
    } else
-   radeon_enc_code_fixed_bits(enc, 0x0, 1);
+      radeon_enc_code_fixed_bits(enc, 0x0, 1);
 
    radeon_enc_code_ue(enc, pic->bit_depth_luma_minus8);
    radeon_enc_code_ue(enc, pic->bit_depth_chroma_minus8);
@@ -443,9 +461,18 @@ static void radeon_enc_output_format(struct radeon_encoder *enc)
    RADEON_ENC_END();
 }
 
+static uint32_t radeon_enc_ref_swizzle_mode(struct radeon_encoder *enc)
+{
+   /* return RENCODE_REC_SWIZZLE_MODE_LINEAR; for debugging purpose */
+   if (enc->enc_pic.bit_depth_luma_minus8 != 0)
+      return RENCODE_REC_SWIZZLE_MODE_8x8_1D_THIN_12_24BPP;
+   else
+      return RENCODE_REC_SWIZZLE_MODE_256B_S;
+}
+
 static void radeon_enc_ctx(struct radeon_encoder *enc)
 {
-   enc->enc_pic.ctx_buf.swizzle_mode = 0;
+   enc->enc_pic.ctx_buf.swizzle_mode = radeon_enc_ref_swizzle_mode(enc);
    enc->enc_pic.ctx_buf.two_pass_search_center_map_offset = 0;
 
    RADEON_ENC_BEGIN(enc->cmd.ctx);
@@ -506,6 +533,7 @@ void radeon_enc_2_0_init(struct radeon_encoder *enc)
    enc->output_format = radeon_enc_output_format;
    enc->ctx = radeon_enc_ctx;
    enc->op_preset = radeon_enc_op_preset;
+   enc->quality_params = radeon_enc_quality_params;
 
    if (u_reduce_video_profile(enc->base.profile) == PIPE_VIDEO_FORMAT_HEVC) {
       enc->deblocking_filter = radeon_enc_loop_filter_hevc;

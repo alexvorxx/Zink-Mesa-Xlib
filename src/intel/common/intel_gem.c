@@ -74,11 +74,12 @@ intel_gem_destroy_context(int fd, uint32_t context_id)
 
 bool
 intel_gem_create_context_engines(int fd,
+                                 enum intel_gem_create_context_flags flags,
                                  const struct intel_query_engine_info *info,
                                  int num_engines, enum intel_engine_class *engine_classes,
                                  uint32_t *context_id)
 {
-   return i915_gem_create_context_engines(fd, info, num_engines,
+   return i915_gem_create_context_engines(fd, flags, info, num_engines,
                                           engine_classes, context_id);
 }
 

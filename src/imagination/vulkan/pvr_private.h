@@ -96,10 +96,8 @@ struct pvr_physical_device {
    struct pvr_instance *instance;
 
    char *name;
-   int master_fd;
-   int render_fd;
-   char *master_path;
    char *render_path;
+   char *display_path;
 
    struct pvr_winsys *ws;
    struct pvr_device_info dev_info;
@@ -118,8 +116,7 @@ struct pvr_physical_device {
 struct pvr_instance {
    struct vk_instance vk;
 
-   int physical_devices_count;
-   struct pvr_physical_device physical_device;
+   uint32_t active_device_count;
 };
 
 struct pvr_queue {
@@ -142,7 +139,7 @@ struct pvr_vertex_binding {
 };
 
 struct pvr_pds_upload {
-   struct pvr_bo *pvr_bo;
+   struct pvr_suballoc_bo *pvr_bo;
    /* Offset from the pds heap base address. */
    uint32_t data_offset;
    /* Offset from the pds heap base address. */
@@ -154,7 +151,7 @@ struct pvr_pds_upload {
 };
 
 struct pvr_compute_query_shader {
-   struct pvr_bo *usc_bo;
+   struct pvr_suballoc_bo *usc_bo;
 
    struct pvr_pds_upload pds_prim_code;
    uint32_t primary_data_size_dw;
@@ -168,9 +165,6 @@ struct pvr_device {
    struct vk_device vk;
    struct pvr_instance *instance;
    struct pvr_physical_device *pdevice;
-
-   int master_fd;
-   int render_fd;
 
    struct pvr_winsys *ws;
    struct pvr_winsys_heaps heaps;
@@ -198,15 +192,21 @@ struct pvr_device {
    struct pvr_compute_query_shader *copy_results_shaders;
    struct pvr_compute_query_shader *reset_queries_shaders;
 
+   struct pvr_suballocator suballoc_general;
+   struct pvr_suballocator suballoc_pds;
+   struct pvr_suballocator suballoc_transfer;
+   struct pvr_suballocator suballoc_usc;
+   struct pvr_suballocator suballoc_vis_test;
+
    struct {
       struct pvr_pds_upload pds;
-      struct pvr_bo *usc;
+      struct pvr_suballoc_bo *usc;
    } nop_program;
 
    /* Issue Data Fence, Wait for Data Fence state. */
    struct {
       uint32_t usc_shareds;
-      struct pvr_bo *usc;
+      struct pvr_suballoc_bo *usc;
 
       /* Buffer in which the IDF/WDF program performs store ops. */
       struct pvr_bo *store_bo;
@@ -218,22 +218,23 @@ struct pvr_device {
    } idfwdf_state;
 
    struct pvr_device_static_clear_state {
-      struct pvr_bo *usc_vertex_shader_bo;
-      struct pvr_bo *vertices_bo;
+      struct pvr_suballoc_bo *usc_vertex_shader_bo;
+      struct pvr_suballoc_bo *vertices_bo;
       struct pvr_pds_upload pds;
 
-      struct pvr_bo *usc_multi_layer_vertex_shader_bo;
+      /* Only valid if PVR_HAS_FEATURE(dev_info, gs_rta_support). */
+      struct pvr_suballoc_bo *usc_multi_layer_vertex_shader_bo;
 
       struct pvr_static_clear_ppp_base ppp_base;
       /* Indexable using VkImageAspectFlags. */
       struct pvr_static_clear_ppp_template
          ppp_templates[PVR_STATIC_CLEAR_VARIANT_COUNT];
 
-      uint32_t vdm_words[PVR_CLEAR_VDM_STATE_DWORD_COUNT];
-      uint32_t large_clear_vdm_words[PVR_CLEAR_VDM_STATE_DWORD_COUNT];
+      const uint32_t *vdm_words;
+      const uint32_t *large_clear_vdm_words;
 
-      struct pvr_bo *usc_clear_attachment_programs;
-      struct pvr_bo *pds_clear_attachment_programs;
+      struct pvr_suballoc_bo *usc_clear_attachment_programs;
+      struct pvr_suballoc_bo *pds_clear_attachment_programs;
       /* TODO: See if we can use PVR_CLEAR_ATTACHMENT_PROGRAM_COUNT to save some
        * memory.
        */
@@ -249,8 +250,8 @@ struct pvr_device {
    } static_clear_state;
 
    struct {
-      struct pvr_bo *usc_programs;
-      struct pvr_bo *pds_programs;
+      struct pvr_suballoc_bo *usc_programs;
+      struct pvr_suballoc_bo *pds_programs;
 
       struct pvr_spm_per_load_program_state {
          pvr_dev_addr_t pds_pixel_program_offset;
@@ -261,7 +262,7 @@ struct pvr_device {
       } load_program[PVR_SPM_LOAD_PROGRAM_COUNT];
    } spm_load_state;
 
-   struct {
+   struct pvr_device_tile_buffer_state {
       simple_mtx_t mtx;
 
 #define PVR_MAX_TILE_BUFFER_COUNT 7U
@@ -270,8 +271,6 @@ struct pvr_device {
    } tile_buffer_state;
 
    struct pvr_spm_scratch_buffer_store spm_scratch_buffer_store;
-
-   VkPhysicalDeviceFeatures features;
 
    struct pvr_bo_store *bo_store;
 
@@ -388,44 +387,8 @@ struct pvr_transfer_cmd_surface {
 struct pvr_rect_mapping {
    VkRect2D src_rect;
    VkRect2D dst_rect;
-};
-
-/* Describes an Alpha-Transparency configuration - for Transfer Queue Use. */
-struct pvr_transfer_alpha {
-   enum pvr_alpha_type type;
-   /* Global alpha value. */
-   uint32_t global;
-
-   /* Custom blend op for rgb. */
-   uint32_t custom_rgb;
-   /* Custom blend op for alpha. */
-   uint32_t custom_alpha;
-   /* Custom global alpha value for alpha output. */
-   uint32_t global2;
-   /* Custom multiplication of global and source alpha. */
-   bool glob_src_mul;
-   /* Custom zero source alpha transparency stage. */
-   bool zero_src_a_trans;
-
-   /* Enable argb1555 alpha components. */
-   bool alpha_components;
-   /* Source alpha value when argb1555 alpha bit is 0. */
-   uint32_t component0;
-   /* Source alpha value when argb1555 alpha bit is 1. */
-   uint32_t component1;
-};
-
-struct pvr_transfer_blit {
-   /* 16 bit rop4 (ie two 8 bit rop3's). */
-   uint32_t rop_code;
-
-   /* Color key mask. */
-   uint32_t color_mask;
-
-   /* Alpha blend. */
-   struct pvr_transfer_alpha alpha;
-
-   VkOffset2D offset;
+   bool flip_x;
+   bool flip_y;
 };
 
 struct pvr_transfer_cmd_source {
@@ -465,8 +428,6 @@ struct pvr_transfer_cmd {
 
    VkRect2D scissor;
 
-   struct pvr_transfer_blit blit;
-
    /* Pointer to cmd buffer this transfer cmd belongs to. This is mainly used
     * to link buffer objects allocated during job submission into
     * cmd_buffer::bo_list head.
@@ -479,8 +440,8 @@ struct pvr_sub_cmd_gfx {
 
    struct pvr_render_job job;
 
-   struct pvr_bo *depth_bias_bo;
-   struct pvr_bo *scissor_bo;
+   struct pvr_suballoc_bo *depth_bias_bo;
+   struct pvr_suballoc_bo *scissor_bo;
 
    /* Tracking how the loaded depth/stencil values are being used. */
    enum pvr_depth_stencil_usage depth_usage;
@@ -699,7 +660,7 @@ struct pvr_deferred_cs_command {
       struct {
          struct pvr_ppp_dbsc state;
 
-         struct pvr_bo *ppp_cs_bo;
+         struct pvr_suballoc_bo *ppp_cs_bo;
          uint32_t patch_offset;
       } dbsc2;
    };
@@ -713,8 +674,6 @@ struct pvr_cmd_buffer_draw_state {
 };
 
 struct pvr_cmd_buffer_state {
-   VkResult status;
-
    /* Pipeline binding. */
    const struct pvr_graphics_pipeline *gfx_pipeline;
 
@@ -873,7 +832,7 @@ struct pvr_stage_allocation_descriptor_state {
    struct pvr_pds_info pds_info;
 
    /* Already setup compile time static consts. */
-   struct pvr_bo *static_consts;
+   struct pvr_suballoc_bo *static_consts;
 };
 
 struct pvr_pds_attrib_program {
@@ -910,7 +869,7 @@ struct pvr_pipeline_stage_state {
 
 struct pvr_compute_shader_state {
    /* Pointer to a buffer object that contains the shader binary. */
-   struct pvr_bo *bo;
+   struct pvr_suballoc_bo *bo;
 
    bool uses_atomic_ops;
    bool uses_barrier;
@@ -925,7 +884,7 @@ struct pvr_compute_shader_state {
 
 struct pvr_vertex_shader_state {
    /* Pointer to a buffer object that contains the shader binary. */
-   struct pvr_bo *bo;
+   struct pvr_suballoc_bo *bo;
    uint32_t entry_offset;
 
    /* 2 since we only need STATE_VARYING{0,1} state words. */
@@ -944,7 +903,7 @@ struct pvr_vertex_shader_state {
 
 struct pvr_fragment_shader_state {
    /* Pointer to a buffer object that contains the shader binary. */
-   struct pvr_bo *bo;
+   struct pvr_suballoc_bo *bo;
    uint32_t entry_offset;
 
    struct pvr_pipeline_stage_state stage_state;
@@ -1016,8 +975,8 @@ struct pvr_query_pool {
 
    uint32_t query_count;
 
-   struct pvr_bo *result_buffer;
-   struct pvr_bo *availability_buffer;
+   struct pvr_suballoc_bo *result_buffer;
+   struct pvr_suballoc_bo *availability_buffer;
 };
 
 struct pvr_private_compute_pipeline {
@@ -1046,9 +1005,9 @@ struct pvr_query_info {
    union {
       struct {
          uint32_t num_query_indices;
-         struct pvr_bo *index_bo;
+         struct pvr_suballoc_bo *index_bo;
          uint32_t num_queries;
-         struct pvr_bo *availability_bo;
+         struct pvr_suballoc_bo *availability_bo;
       } availability_write;
 
       struct {
@@ -1089,7 +1048,7 @@ struct pvr_framebuffer {
    struct pvr_image_view **attachments;
 
    /* Derived and other state. */
-   struct pvr_bo *ppp_state_bo;
+   struct pvr_suballoc_bo *ppp_state_bo;
    /* PPP state size in dwords. */
    size_t ppp_state_size;
 
@@ -1189,7 +1148,7 @@ struct pvr_render_pass {
 struct pvr_load_op {
    bool is_hw_object;
 
-   struct pvr_bo *usc_frag_prog_bo;
+   struct pvr_suballoc_bo *usc_frag_prog_bo;
    uint32_t const_shareds_count;
    uint32_t shareds_dest_offset;
    uint32_t shareds_count;
@@ -1259,13 +1218,12 @@ VkResult pvr_bind_memory(struct pvr_device *device,
                          struct pvr_winsys_vma **const vma_out,
                          pvr_dev_addr_t *const dev_addr_out);
 void pvr_unbind_memory(struct pvr_device *device, struct pvr_winsys_vma *vma);
-
 VkResult pvr_gpu_upload(struct pvr_device *device,
                         struct pvr_winsys_heap *heap,
                         const void *data,
                         size_t size,
                         uint64_t alignment,
-                        struct pvr_bo **const pvr_bo_out);
+                        struct pvr_suballoc_bo **const pvr_bo_out);
 VkResult pvr_gpu_upload_pds(struct pvr_device *device,
                             const uint32_t *data,
                             uint32_t data_size_dwords,
@@ -1275,12 +1233,11 @@ VkResult pvr_gpu_upload_pds(struct pvr_device *device,
                             uint32_t code_alignment,
                             uint64_t min_alignment,
                             struct pvr_pds_upload *const pds_upload_out);
-
 VkResult pvr_gpu_upload_usc(struct pvr_device *device,
                             const void *code,
                             size_t code_size,
                             uint64_t code_alignment,
-                            struct pvr_bo **const pvr_bo_out);
+                            struct pvr_suballoc_bo **const pvr_bo_out);
 
 VkResult pvr_cmd_buffer_add_transfer_cmd(struct pvr_cmd_buffer *cmd_buffer,
                                          struct pvr_transfer_cmd *transfer_cmd);
@@ -1289,7 +1246,7 @@ VkResult pvr_cmd_buffer_alloc_mem(struct pvr_cmd_buffer *cmd_buffer,
                                   struct pvr_winsys_heap *heap,
                                   uint64_t size,
                                   uint32_t flags,
-                                  struct pvr_bo **const pvr_bo_out);
+                                  struct pvr_suballoc_bo **const pvr_bo_out);
 
 void pvr_calculate_vertex_cam_size(const struct pvr_device_info *dev_info,
                                    const uint32_t vs_output_size,
@@ -1393,10 +1350,28 @@ static inline bool pvr_sub_cmd_gfx_requires_split_submit(
    return sub_cmd->job.run_frag && sub_cmd->framebuffer->layers > 1;
 }
 
+/* This function is intended to be used when the error being set has been
+ * returned from a function call, i.e. the error happened further down the
+ * stack. `vk_command_buffer_set_error()` should be used at the point an error
+ * occurs, i.e. VK_ERROR_* is being passed in.
+ * This ensures we only ever get the error printed once.
+ */
+static inline VkResult
+pvr_cmd_buffer_set_error_unwarned(struct pvr_cmd_buffer *cmd_buffer,
+                                  VkResult error)
+{
+   assert(error != VK_SUCCESS);
+
+   if (cmd_buffer->vk.record_result == VK_SUCCESS)
+      cmd_buffer->vk.record_result = error;
+
+   return error;
+}
+
 VkResult pvr_pds_fragment_program_create_and_upload(
    struct pvr_device *device,
    const VkAllocationCallbacks *allocator,
-   const struct pvr_bo *fragment_shader_bo,
+   const struct pvr_suballoc_bo *fragment_shader_bo,
    uint32_t fragment_temp_count,
    enum rogue_msaa_mode msaa_mode,
    bool has_phase_rate_change,
@@ -1413,10 +1388,11 @@ VkResult pvr_device_tile_buffer_ensure_cap(struct pvr_device *device,
                                            uint32_t capacity,
                                            uint32_t size_in_bytes);
 
-VkResult pvr_cmd_buffer_upload_general(struct pvr_cmd_buffer *const cmd_buffer,
-                                       const void *const data,
-                                       const size_t size,
-                                       struct pvr_bo **const pvr_bo_out);
+VkResult
+pvr_cmd_buffer_upload_general(struct pvr_cmd_buffer *const cmd_buffer,
+                              const void *const data,
+                              const size_t size,
+                              struct pvr_suballoc_bo **const pvr_bo_out);
 VkResult pvr_cmd_buffer_upload_pds(struct pvr_cmd_buffer *const cmd_buffer,
                                    const uint32_t *data,
                                    uint32_t data_size_dwords,
@@ -1563,18 +1539,20 @@ VK_DEFINE_NONDISP_HANDLE_CASTS(pvr_render_pass,
 #define pvr_debug_ignored_stype(sType) \
    mesa_logd("%s: ignored VkStructureType %u\n", __func__, (sType))
 
-/* Debug helper macros. */
 #define PVR_CHECK_COMMAND_BUFFER_BUILDING_STATE(cmd_buffer)                  \
    do {                                                                      \
       struct pvr_cmd_buffer *const _cmd_buffer = (cmd_buffer);               \
+      const VkResult _record_result =                                        \
+         vk_command_buffer_get_record_result(&_cmd_buffer->vk);              \
+                                                                             \
       if (_cmd_buffer->vk.state != MESA_VK_COMMAND_BUFFER_STATE_RECORDING) { \
          vk_errorf(_cmd_buffer,                                              \
                    VK_ERROR_OUT_OF_DEVICE_MEMORY,                            \
                    "Command buffer is not in recording state");              \
          return;                                                             \
-      } else if (_cmd_buffer->state.status < VK_SUCCESS) {                   \
+      } else if (_record_result < VK_SUCCESS) {                              \
          vk_errorf(_cmd_buffer,                                              \
-                   _cmd_buffer->state.status,                                \
+                   _record_result,                                           \
                    "Skipping function as command buffer has "                \
                    "previous build error");                                  \
          return;                                                             \

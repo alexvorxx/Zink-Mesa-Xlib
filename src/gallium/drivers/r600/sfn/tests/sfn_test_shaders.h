@@ -2,9 +2,9 @@
 #define SFN_TEST_SHADERS_H
 #include <gtest/gtest.h>
 
-namespace r600 {
+#include "../sfn_shader.h"
 
-class Shader;
+namespace r600 {
 
 extern const char *red_triangle_fs_nir;
 extern const char *red_triangle_fs_expect_from_nir;
@@ -111,6 +111,13 @@ class TestShader : public ::testing::Test {
 
 protected:
    Shader *from_string(const std::string& s);
+};
+
+class TestShaderFromNir : public TestShader {
+
+protected:
+   void check(Shader *s, const char *expect_str);
+   void ra_check(Shader *s, const char *expect_str);
 };
 
 } // namespace r600

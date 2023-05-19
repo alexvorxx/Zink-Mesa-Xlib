@@ -44,6 +44,7 @@ enum virgl_debug_flags {
    VIRGL_DEBUG_SHADER_SYNC          = 1 << 10,
 };
 
+extern const struct debug_named_value virgl_debug_options[];
 extern int virgl_debug;
 
 struct virgl_screen {

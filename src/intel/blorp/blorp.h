@@ -45,6 +45,7 @@ enum blorp_op {
    BLORP_OP_HIZ_AMBIGUATE,
    BLORP_OP_HIZ_CLEAR,
    BLORP_OP_HIZ_RESOLVE,
+   BLORP_OP_MCS_AMBIGUATE,
    BLORP_OP_MCS_COLOR_CLEAR,
    BLORP_OP_MCS_PARTIAL_RESOLVE,
    BLORP_OP_SLOW_COLOR_CLEAR,
@@ -305,6 +306,11 @@ blorp_mcs_partial_resolve(struct blorp_batch *batch,
                           struct blorp_surf *surf,
                           enum isl_format format,
                           uint32_t start_layer, uint32_t num_layers);
+
+void
+blorp_mcs_ambiguate(struct blorp_batch *batch,
+                    struct blorp_surf *surf,
+                    uint32_t start_layer, uint32_t num_layers);
 
 void
 blorp_hiz_op(struct blorp_batch *batch, struct blorp_surf *surf,

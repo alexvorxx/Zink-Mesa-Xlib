@@ -327,10 +327,10 @@ v3dX(get_internal_type_bpp_for_output_format)(uint32_t format,
 }
 
 bool
-v3dX(tfu_supports_tex_format)(enum V3DX(Texture_Data_Formats) format,
+v3dX(tfu_supports_tex_format)(uint32_t tex_format,
                               bool for_mipmap)
 {
-        switch (format) {
+        switch (tex_format) {
         case TEXTURE_DATA_FORMAT_R8:
         case TEXTURE_DATA_FORMAT_R8_SNORM:
         case TEXTURE_DATA_FORMAT_RG8:

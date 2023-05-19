@@ -68,12 +68,7 @@ remove_phis_block(nir_block *block, nir_builder *b)
 {
    bool progress = false;
 
-   nir_foreach_instr_safe(instr, block) {
-      if (instr->type != nir_instr_type_phi)
-         break;
-
-      nir_phi_instr *phi = nir_instr_as_phi(instr);
-
+   nir_foreach_phi_safe(phi, block) {
       nir_ssa_def *def = NULL;
       nir_alu_instr *mov = NULL;
       bool srcs_same = true;
@@ -133,7 +128,7 @@ remove_phis_block(nir_block *block, nir_builder *b)
 
       assert(phi->dest.is_ssa);
       nir_ssa_def_rewrite_uses(&phi->dest.ssa, def);
-      nir_instr_remove(instr);
+      nir_instr_remove(&phi->instr);
 
       progress = true;
    }

@@ -296,8 +296,7 @@ convert_to_SDWA(amd_gfx_level gfx_level, aco_ptr<Instruction>& instr)
       return NULL;
 
    aco_ptr<Instruction> tmp = std::move(instr);
-   Format format =
-      (Format)(((uint16_t)tmp->format & ~(uint16_t)Format::VOP3) | (uint16_t)Format::SDWA);
+   Format format = asSDWA(withoutVOP3(tmp->format));
    instr.reset(create_instruction<SDWA_instruction>(tmp->opcode, format, tmp->operands.size(),
                                                     tmp->definitions.size()));
    std::copy(tmp->operands.cbegin(), tmp->operands.cend(), instr->operands.begin());
@@ -336,36 +335,50 @@ convert_to_SDWA(amd_gfx_level gfx_level, aco_ptr<Instruction>& instr)
 }
 
 bool
-can_use_DPP(const aco_ptr<Instruction>& instr, bool pre_ra, bool dpp8)
+can_use_DPP(amd_gfx_level gfx_level, const aco_ptr<Instruction>& instr, bool dpp8)
 {
    assert(instr->isVALU() && !instr->operands.empty());
 
    if (instr->isDPP())
       return instr->isDPP8() == dpp8;
 
-   if (instr->operands.size() && instr->operands[0].isLiteral())
+   if (instr->isSDWA() || instr->isVINTERP_INREG())
       return false;
 
-   if (instr->isSDWA() || instr->isVINTERP_INREG() || instr->isVOP3P())
+   if ((instr->format == Format::VOP3 || instr->isVOP3P()) && gfx_level < GFX11)
       return false;
 
-   if (!pre_ra && (instr->isVOPC() || instr->definitions.size() > 1) &&
-       instr->definitions.back().physReg() != vcc)
+   if ((instr->isVOPC() || instr->definitions.size() > 1) && instr->definitions.back().isFixed() &&
+       instr->definitions.back().physReg() != vcc && gfx_level < GFX11)
       return false;
 
-   if (!pre_ra && instr->operands.size() >= 3 && instr->operands[2].physReg() != vcc)
+   if (instr->operands.size() >= 3 && instr->operands[2].isFixed() &&
+       instr->operands[2].isOfType(RegType::sgpr) && instr->operands[2].physReg() != vcc &&
+       gfx_level < GFX11)
       return false;
 
-   if (instr->isVOP3()) {
+   if (instr->isVOP3() && gfx_level < GFX11) {
       const VALU_instruction* vop3 = &instr->valu();
-      if (vop3->clamp || vop3->omod || vop3->opsel)
+      if (vop3->clamp || vop3->omod)
          return false;
       if (dpp8)
          return false;
-      if (instr->format == Format::VOP3)
+   }
+
+   for (unsigned i = 0; i < instr->operands.size(); i++) {
+      if (instr->operands[i].isLiteral())
          return false;
-      if (instr->operands.size() > 1 && !instr->operands[1].isOfType(RegType::vgpr))
+      if (!instr->operands[i].isOfType(RegType::vgpr) && i < 2)
          return false;
+   }
+
+   /* simpler than listing all VOP3P opcodes which do not support DPP */
+   if (instr->isVOP3P()) {
+      return instr->opcode == aco_opcode::v_fma_mix_f32 ||
+             instr->opcode == aco_opcode::v_fma_mixlo_f16 ||
+             instr->opcode == aco_opcode::v_fma_mixhi_f16 ||
+             instr->opcode == aco_opcode::v_dot2_f32_f16 ||
+             instr->opcode == aco_opcode::v_dot2_f32_bf16;
    }
 
    /* there are more cases but those all take 64-bit inputs */
@@ -375,18 +388,31 @@ can_use_DPP(const aco_ptr<Instruction>& instr, bool pre_ra, bool dpp8)
           instr->opcode != aco_opcode::v_fmamk_f16 && instr->opcode != aco_opcode::v_fmaak_f16 &&
           instr->opcode != aco_opcode::v_readfirstlane_b32 &&
           instr->opcode != aco_opcode::v_cvt_f64_i32 &&
-          instr->opcode != aco_opcode::v_cvt_f64_f32 && instr->opcode != aco_opcode::v_cvt_f64_u32;
+          instr->opcode != aco_opcode::v_cvt_f64_f32 &&
+          instr->opcode != aco_opcode::v_cvt_f64_u32 && instr->opcode != aco_opcode::v_mul_lo_u32 &&
+          instr->opcode != aco_opcode::v_mul_lo_i32 && instr->opcode != aco_opcode::v_mul_hi_u32 &&
+          instr->opcode != aco_opcode::v_mul_hi_i32 &&
+          instr->opcode != aco_opcode::v_qsad_pk_u16_u8 &&
+          instr->opcode != aco_opcode::v_mqsad_pk_u16_u8 &&
+          instr->opcode != aco_opcode::v_mqsad_u32_u8 &&
+          instr->opcode != aco_opcode::v_mad_u64_u32 &&
+          instr->opcode != aco_opcode::v_mad_i64_i32 &&
+          instr->opcode != aco_opcode::v_permlane16_b32 &&
+          instr->opcode != aco_opcode::v_permlanex16_b32 &&
+          instr->opcode != aco_opcode::v_permlane64_b32 &&
+          instr->opcode != aco_opcode::v_readlane_b32_e64 &&
+          instr->opcode != aco_opcode::v_writelane_b32_e64;
 }
 
 aco_ptr<Instruction>
-convert_to_DPP(aco_ptr<Instruction>& instr, bool dpp8)
+convert_to_DPP(amd_gfx_level gfx_level, aco_ptr<Instruction>& instr, bool dpp8)
 {
    if (instr->isDPP())
       return NULL;
 
    aco_ptr<Instruction> tmp = std::move(instr);
-   Format format = (Format)(((uint32_t)tmp->format & ~(uint32_t)Format::VOP3) |
-                            (dpp8 ? (uint32_t)Format::DPP8 : (uint32_t)Format::DPP16));
+   Format format =
+      (Format)((uint32_t)tmp->format | (uint32_t)(dpp8 ? Format::DPP8 : Format::DPP16));
    if (dpp8)
       instr.reset(create_instruction<DPP8_instruction>(tmp->opcode, format, tmp->operands.size(),
                                                        tmp->definitions.size()));
@@ -394,8 +420,7 @@ convert_to_DPP(aco_ptr<Instruction>& instr, bool dpp8)
       instr.reset(create_instruction<DPP16_instruction>(tmp->opcode, format, tmp->operands.size(),
                                                         tmp->definitions.size()));
    std::copy(tmp->operands.cbegin(), tmp->operands.cend(), instr->operands.begin());
-   for (unsigned i = 0; i < instr->definitions.size(); i++)
-      instr->definitions[i] = tmp->definitions[i];
+   std::copy(tmp->definitions.cbegin(), tmp->definitions.cend(), instr->definitions.begin());
 
    if (dpp8) {
       DPP8_instruction* dpp = &instr->dpp8();
@@ -410,17 +435,51 @@ convert_to_DPP(aco_ptr<Instruction>& instr, bool dpp8)
 
    instr->valu().neg = tmp->valu().neg;
    instr->valu().abs = tmp->valu().abs;
+   instr->valu().omod = tmp->valu().omod;
+   instr->valu().clamp = tmp->valu().clamp;
    instr->valu().opsel = tmp->valu().opsel;
+   instr->valu().opsel_lo = tmp->valu().opsel_lo;
+   instr->valu().opsel_hi = tmp->valu().opsel_hi;
 
-   if (instr->isVOPC() || instr->definitions.size() > 1)
+   if ((instr->isVOPC() || instr->definitions.size() > 1) && gfx_level < GFX11)
       instr->definitions.back().setFixed(vcc);
 
-   if (instr->operands.size() >= 3)
+   if (instr->operands.size() >= 3 && instr->operands[2].isOfType(RegType::sgpr) &&
+       gfx_level < GFX11)
       instr->operands[2].setFixed(vcc);
 
    instr->pass_flags = tmp->pass_flags;
 
+   /* DPP16 supports input modifiers, so we might no longer need VOP3. */
+   bool remove_vop3 = !dpp8 && !instr->valu().omod && !instr->valu().clamp &&
+                      (instr->isVOP1() || instr->isVOP2() || instr->isVOPC());
+
+   /* VOPC/add_co/sub_co definition needs VCC without VOP3. */
+   remove_vop3 &= instr->definitions.back().regClass().type() != RegType::sgpr ||
+                  !instr->definitions.back().isFixed() ||
+                  instr->definitions.back().physReg() == vcc;
+
+   /* addc/subb/cndmask 3rd operand needs VCC without VOP3. */
+   remove_vop3 &= instr->operands.size() < 3 || !instr->operands[2].isFixed() ||
+                  instr->operands[2].isOfType(RegType::vgpr) || instr->operands[2].physReg() == vcc;
+
+   if (remove_vop3)
+      instr->format = withoutVOP3(instr->format);
+
    return tmp;
+}
+
+bool
+can_use_input_modifiers(amd_gfx_level gfx_level, aco_opcode op, int idx)
+{
+   if (op == aco_opcode::v_mov_b32)
+      return gfx_level >= GFX10;
+
+   if (op == aco_opcode::v_ldexp_f16 || op == aco_opcode::v_ldexp_f32 ||
+       op == aco_opcode::v_ldexp_f64)
+      return idx == 0;
+
+   return instr_info.can_use_input_modifiers[(int)op];
 }
 
 bool
@@ -476,6 +535,28 @@ can_use_opsel(amd_gfx_level gfx_level, aco_opcode op, int idx)
    case aco_opcode::v_interp_p2_rtz_f16_f32_inreg: return idx == -1 || idx == 0;
    default:
       return gfx_level >= GFX11 && (get_gfx11_true16_mask(op) & BITFIELD_BIT(idx == -1 ? 3 : idx));
+   }
+}
+
+bool
+can_write_m0(const aco_ptr<Instruction>& instr)
+{
+   if (instr->isSALU())
+      return true;
+
+   /* VALU can't write m0 on any GPU generations. */
+   if (instr->isVALU())
+      return false;
+
+   switch (instr->opcode) {
+   case aco_opcode::p_parallelcopy:
+   case aco_opcode::p_extract:
+   case aco_opcode::p_insert:
+      /* These pseudo instructions are implemented with SALU when writing m0. */
+      return true;
+   default:
+      /* Assume that no other instructions can write m0. */
+      return false;
    }
 }
 
@@ -700,6 +781,24 @@ get_reduction_identity(ReduceOp op, unsigned idx)
    return 0;
 }
 
+unsigned
+get_operand_size(aco_ptr<Instruction>& instr, unsigned index)
+{
+   if (instr->isPseudo())
+      return instr->operands[index].bytes() * 8u;
+   else if (instr->opcode == aco_opcode::v_mad_u64_u32 ||
+            instr->opcode == aco_opcode::v_mad_i64_i32)
+      return index == 2 ? 64 : 32;
+   else if (instr->opcode == aco_opcode::v_fma_mix_f32 ||
+            instr->opcode == aco_opcode::v_fma_mixlo_f16 ||
+            instr->opcode == aco_opcode::v_fma_mixhi_f16)
+      return instr->valu().opsel_hi[index] ? 16 : 32;
+   else if (instr->isVALU() || instr->isSALU())
+      return instr_info.operand_size[(int)instr->opcode];
+   else
+      return 0;
+}
+
 bool
 needs_exec_mask(const Instruction* instr)
 {
@@ -760,6 +859,7 @@ get_cmp_info(aco_opcode op, CmpInfo* info)
    info->swapped = aco_opcode::num_opcodes;
    info->inverse = aco_opcode::num_opcodes;
    info->f32 = aco_opcode::num_opcodes;
+   info->vcmpx = aco_opcode::num_opcodes;
    switch (op) {
       // clang-format off
 #define CMP2(ord, unord, ord_swap, unord_swap, sz)                                                 \
@@ -908,27 +1008,77 @@ is_cmpx(aco_opcode op)
 }
 
 bool
-can_swap_operands(aco_ptr<Instruction>& instr, aco_opcode* new_op)
+can_swap_operands(aco_ptr<Instruction>& instr, aco_opcode* new_op, unsigned idx0, unsigned idx1)
 {
+   if (idx0 == idx1) {
+      *new_op = instr->opcode;
+      return true;
+   }
+
+   if (idx0 > idx1)
+      std::swap(idx0, idx1);
+
    if (instr->isDPP())
       return false;
 
-   if (instr->operands[0].isConstant() ||
-       (instr->operands[0].isTemp() && instr->operands[0].getTemp().type() == RegType::sgpr))
+   if (!instr->isVOP3() && !instr->isVOP3P() && !instr->operands[0].isOfType(RegType::vgpr))
       return false;
 
+   if (instr->isVOPC()) {
+      CmpInfo info;
+      if (get_cmp_info(instr->opcode, &info) && info.swapped != aco_opcode::num_opcodes) {
+         *new_op = info.swapped;
+         return true;
+      }
+   }
+
+   /* opcodes not relevant for DPP or SGPRs optimizations are not included. */
    switch (instr->opcode) {
+   case aco_opcode::v_med3_f32: return false; /* order matters for clamp+GFX8+denorm ftz. */
    case aco_opcode::v_add_u32:
    case aco_opcode::v_add_co_u32:
    case aco_opcode::v_add_co_u32_e64:
    case aco_opcode::v_add_i32:
+   case aco_opcode::v_add_i16:
+   case aco_opcode::v_add_u16_e64:
+   case aco_opcode::v_add3_u32:
    case aco_opcode::v_add_f16:
    case aco_opcode::v_add_f32:
+   case aco_opcode::v_mul_i32_i24:
+   case aco_opcode::v_mul_hi_i32_i24:
+   case aco_opcode::v_mul_u32_u24:
+   case aco_opcode::v_mul_hi_u32_u24:
+   case aco_opcode::v_mul_lo_u16:
+   case aco_opcode::v_mul_lo_u16_e64:
    case aco_opcode::v_mul_f16:
    case aco_opcode::v_mul_f32:
+   case aco_opcode::v_mul_legacy_f32:
    case aco_opcode::v_or_b32:
    case aco_opcode::v_and_b32:
    case aco_opcode::v_xor_b32:
+   case aco_opcode::v_xnor_b32:
+   case aco_opcode::v_xor3_b32:
+   case aco_opcode::v_or3_b32:
+   case aco_opcode::v_and_b16:
+   case aco_opcode::v_or_b16:
+   case aco_opcode::v_xor_b16:
+   case aco_opcode::v_max3_f32:
+   case aco_opcode::v_min3_f32:
+   case aco_opcode::v_max3_f16:
+   case aco_opcode::v_min3_f16:
+   case aco_opcode::v_med3_f16:
+   case aco_opcode::v_max3_u32:
+   case aco_opcode::v_min3_u32:
+   case aco_opcode::v_med3_u32:
+   case aco_opcode::v_max3_i32:
+   case aco_opcode::v_min3_i32:
+   case aco_opcode::v_med3_i32:
+   case aco_opcode::v_max3_u16:
+   case aco_opcode::v_min3_u16:
+   case aco_opcode::v_med3_u16:
+   case aco_opcode::v_max3_i16:
+   case aco_opcode::v_min3_i16:
+   case aco_opcode::v_med3_i16:
    case aco_opcode::v_max_f16:
    case aco_opcode::v_max_f32:
    case aco_opcode::v_min_f16:
@@ -950,14 +1100,73 @@ can_swap_operands(aco_ptr<Instruction>& instr, aco_opcode* new_op)
    case aco_opcode::v_sub_co_u32: *new_op = aco_opcode::v_subrev_co_u32; return true;
    case aco_opcode::v_sub_u16: *new_op = aco_opcode::v_subrev_u16; return true;
    case aco_opcode::v_sub_u32: *new_op = aco_opcode::v_subrev_u32; return true;
-   default: {
-      CmpInfo info;
-      if (get_cmp_info(instr->opcode, &info) && info.swapped != aco_opcode::num_opcodes) {
-         *new_op = info.swapped;
-         return true;
-      }
-      return false;
+   case aco_opcode::v_sub_co_u32_e64: *new_op = aco_opcode::v_subrev_co_u32_e64; return true;
+   case aco_opcode::v_subrev_f16: *new_op = aco_opcode::v_sub_f16; return true;
+   case aco_opcode::v_subrev_f32: *new_op = aco_opcode::v_sub_f32; return true;
+   case aco_opcode::v_subrev_co_u32: *new_op = aco_opcode::v_sub_co_u32; return true;
+   case aco_opcode::v_subrev_u16: *new_op = aco_opcode::v_sub_u16; return true;
+   case aco_opcode::v_subrev_u32: *new_op = aco_opcode::v_sub_u32; return true;
+   case aco_opcode::v_subrev_co_u32_e64: *new_op = aco_opcode::v_sub_co_u32_e64; return true;
+   case aco_opcode::v_addc_co_u32:
+   case aco_opcode::v_mad_i32_i24:
+   case aco_opcode::v_mad_u32_u24:
+   case aco_opcode::v_lerp_u8:
+   case aco_opcode::v_sad_u8:
+   case aco_opcode::v_sad_hi_u8:
+   case aco_opcode::v_sad_u16:
+   case aco_opcode::v_sad_u32:
+   case aco_opcode::v_xad_u32:
+   case aco_opcode::v_add_lshl_u32:
+   case aco_opcode::v_and_or_b32:
+   case aco_opcode::v_mad_u16:
+   case aco_opcode::v_mad_i16:
+   case aco_opcode::v_mad_u32_u16:
+   case aco_opcode::v_mad_i32_i16:
+   case aco_opcode::v_maxmin_f32:
+   case aco_opcode::v_minmax_f32:
+   case aco_opcode::v_maxmin_f16:
+   case aco_opcode::v_minmax_f16:
+   case aco_opcode::v_maxmin_u32:
+   case aco_opcode::v_minmax_u32:
+   case aco_opcode::v_maxmin_i32:
+   case aco_opcode::v_minmax_i32:
+   case aco_opcode::v_fma_f32:
+   case aco_opcode::v_fma_legacy_f32:
+   case aco_opcode::v_fmac_f32:
+   case aco_opcode::v_fmac_legacy_f32:
+   case aco_opcode::v_mac_f32:
+   case aco_opcode::v_mac_legacy_f32:
+   case aco_opcode::v_fma_f16:
+   case aco_opcode::v_fmac_f16:
+   case aco_opcode::v_mac_f16:
+   case aco_opcode::v_dot4c_i32_i8:
+   case aco_opcode::v_dot2c_f32_f16:
+   case aco_opcode::v_dot2_f32_f16:
+   case aco_opcode::v_dot2_f32_bf16:
+   case aco_opcode::v_dot2_f16_f16:
+   case aco_opcode::v_dot2_bf16_bf16:
+   case aco_opcode::v_fma_mix_f32:
+   case aco_opcode::v_fma_mixlo_f16:
+   case aco_opcode::v_fma_mixhi_f16:
+   case aco_opcode::v_pk_fmac_f16: {
+      if (idx1 == 2)
+         return false;
+      *new_op = instr->opcode;
+      return true;
    }
+   case aco_opcode::v_subb_co_u32: {
+      if (idx1 == 2)
+         return false;
+      *new_op = aco_opcode::v_subbrev_co_u32;
+      return true;
+   }
+   case aco_opcode::v_subbrev_co_u32: {
+      if (idx1 == 2)
+         return false;
+      *new_op = aco_opcode::v_subb_co_u32;
+      return true;
+   }
+   default: return false;
    }
 }
 

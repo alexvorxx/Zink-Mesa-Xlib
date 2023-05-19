@@ -32,10 +32,12 @@
 #include "util/u_prim.h"
 #include "util/u_string.h"
 
+#include "freedreno_blitter.h"
 #include "freedreno_resource.h"
 #include "freedreno_state.h"
 
 #include "fd6_barrier.h"
+#include "fd6_blitter.h"
 #include "fd6_context.h"
 #include "fd6_draw.h"
 #include "fd6_emit.h"
@@ -72,26 +74,70 @@ draw_emit_xfb(struct fd_ringbuffer *ring, struct CP_DRAW_INDX_OFFSET_0 *draw0,
 }
 
 static void
-draw_emit_indirect(struct fd_ringbuffer *ring,
+draw_emit_indirect(struct fd_context *ctx,
+                   struct fd_ringbuffer *ring,
                    struct CP_DRAW_INDX_OFFSET_0 *draw0,
                    const struct pipe_draw_info *info,
                    const struct pipe_draw_indirect_info *indirect,
-                   unsigned index_offset)
+                   unsigned index_offset, uint32_t driver_param)
 {
    struct fd_resource *ind = fd_resource(indirect->buffer);
 
-   if (info->index_size) {
+   if (indirect->indirect_draw_count && info->index_size) {
+      //On some firmwares CP_DRAW_INDIRECT_MULTI waits for WFIs before
+      //reading the draw parameters but after reading the count, so commands
+      //that use indirect draw count need a WFM anyway.
+      OUT_PKT7(ring, CP_WAIT_FOR_ME, 0);
+      OUT_PKT7(ring, CP_DRAW_INDIRECT_MULTI, 11);
+      OUT_RING(ring, pack_CP_DRAW_INDX_OFFSET_0(*draw0).value);
+      OUT_RING(ring,
+         (A6XX_CP_DRAW_INDIRECT_MULTI_1_OPCODE(INDIRECT_OP_INDIRECT_COUNT_INDEXED)
+         | A6XX_CP_DRAW_INDIRECT_MULTI_1_DST_OFF(driver_param)));
+      struct fd_resource *count_buf = fd_resource(indirect->indirect_draw_count);
       struct pipe_resource *idx = info->index.resource;
       unsigned max_indices = (idx->width0 - index_offset) / info->index_size;
-
-      OUT_PKT(ring, CP_DRAW_INDX_INDIRECT, pack_CP_DRAW_INDX_OFFSET_0(*draw0),
-              A5XX_CP_DRAW_INDX_INDIRECT_INDX_BASE(fd_resource(idx)->bo,
-                                                   index_offset),
-              A5XX_CP_DRAW_INDX_INDIRECT_3(.max_indices = max_indices),
-              A5XX_CP_DRAW_INDX_INDIRECT_INDIRECT(ind->bo, indirect->offset));
+      OUT_RING(ring, indirect->draw_count);
+      OUT_RELOC(ring, fd_resource(idx)->bo, index_offset, 0, 0);
+      OUT_RING(ring, max_indices);
+      OUT_RELOC(ring, ind->bo, indirect->offset, 0, 0);
+      OUT_RELOC(ring, count_buf->bo, indirect->indirect_draw_count_offset, 0, 0);
+      OUT_RING(ring, indirect->stride);
+   } else if (info->index_size) {
+      OUT_PKT7(ring, CP_DRAW_INDIRECT_MULTI, 9);
+      OUT_RING(ring, pack_CP_DRAW_INDX_OFFSET_0(*draw0).value);
+      OUT_RING(ring,
+         (A6XX_CP_DRAW_INDIRECT_MULTI_1_OPCODE(INDIRECT_OP_INDEXED)
+         | A6XX_CP_DRAW_INDIRECT_MULTI_1_DST_OFF(driver_param)));
+      struct pipe_resource *idx = info->index.resource;
+      unsigned max_indices = (idx->width0 - index_offset) / info->index_size;
+      OUT_RING(ring, indirect->draw_count);
+      //index va
+      OUT_RELOC(ring, fd_resource(idx)->bo, index_offset, 0, 0);
+      //max indices
+      OUT_RING(ring, max_indices);
+      OUT_RELOC(ring, ind->bo, indirect->offset, 0, 0);
+      OUT_RING(ring, indirect->stride);
+   }  else if(indirect->indirect_draw_count) {
+      OUT_PKT7(ring, CP_WAIT_FOR_ME, 0);
+      OUT_PKT7(ring, CP_DRAW_INDIRECT_MULTI, 8);
+      OUT_RING(ring, pack_CP_DRAW_INDX_OFFSET_0(*draw0).value);
+      OUT_RING(ring,
+         (A6XX_CP_DRAW_INDIRECT_MULTI_1_OPCODE(INDIRECT_OP_INDIRECT_COUNT)
+         | A6XX_CP_DRAW_INDIRECT_MULTI_1_DST_OFF(driver_param)));
+      struct fd_resource *count_buf = fd_resource(indirect->indirect_draw_count);
+      OUT_RING(ring, indirect->draw_count);
+      OUT_RELOC(ring, ind->bo, indirect->offset, 0, 0);
+      OUT_RELOC(ring, count_buf->bo, indirect->indirect_draw_count_offset, 0, 0);
+      OUT_RING(ring, indirect->stride);
    } else {
-      OUT_PKT(ring, CP_DRAW_INDIRECT, pack_CP_DRAW_INDX_OFFSET_0(*draw0),
-              A5XX_CP_DRAW_INDIRECT_INDIRECT(ind->bo, indirect->offset));
+      OUT_PKT7(ring, CP_DRAW_INDIRECT_MULTI, 6);
+      OUT_RING(ring, pack_CP_DRAW_INDX_OFFSET_0(*draw0).value);
+      OUT_RING(ring,
+         (A6XX_CP_DRAW_INDIRECT_MULTI_1_OPCODE(INDIRECT_OP_NORMAL)
+         | A6XX_CP_DRAW_INDIRECT_MULTI_1_DST_OFF(driver_param)));
+      OUT_RING(ring, indirect->draw_count);
+      OUT_RELOC(ring, ind->bo, indirect->offset, 0, 0);
+      OUT_RING(ring, indirect->stride);
    }
 }
 
@@ -202,6 +248,7 @@ flush_streamout(struct fd_context *ctx, struct fd6_emit *emit)
    }
 }
 
+template <chip CHIP>
 static void
 fd6_draw_vbos(struct fd_context *ctx, const struct pipe_draw_info *info,
               unsigned drawid_offset,
@@ -225,6 +272,7 @@ fd6_draw_vbos(struct fd_context *ctx, const struct pipe_draw_info *info,
    emit.state.num_groups = 0;
    emit.streamout_mask = 0;
    emit.prog = NULL;
+   emit.draw_id = 0;
 
    if (!(ctx->prog.vs && ctx->prog.fs))
       return;
@@ -344,7 +392,7 @@ fd6_draw_vbos(struct fd_context *ctx, const struct pipe_draw_info *info,
    }
 
    if (emit.dirty_groups)
-      fd6_emit_3d_state(ring, &emit);
+      fd6_emit_3d_state<CHIP>(ring, &emit);
 
    if (ctx->batch->barrier)
       fd6_barrier_flush(ctx->batch);
@@ -362,7 +410,14 @@ fd6_draw_vbos(struct fd_context *ctx, const struct pipe_draw_info *info,
       if (indirect->count_from_stream_output) {
          draw_emit_xfb(ring, &draw0, info, indirect);
       } else {
-         draw_emit_indirect(ring, &draw0, info, indirect, index_offset);
+         const struct ir3_const_state *const_state = ir3_const_state(emit.vs);
+         uint32_t dst_offset_dp = const_state->offsets.driver_param;
+
+         /* If unused, pass 0 for DST_OFF: */
+         if (dst_offset_dp > emit.vs->constlen)
+            dst_offset_dp = 0;
+
+         draw_emit_indirect(ctx, ring, &draw0, info, indirect, index_offset, dst_offset_dp);
       }
    } else {
       draw_emit(ring, &draw0, info, &draws[0], index_offset);
@@ -398,7 +453,8 @@ fd6_draw_vbos(struct fd_context *ctx, const struct pipe_draw_info *info,
             if (emit.dirty_groups) {
                emit.state.num_groups = 0;
                emit.draw = &draws[i];
-               fd6_emit_3d_state(ring, &emit);
+               emit.draw_id = info->increment_draw_id ? i : 0;
+               fd6_emit_3d_state<CHIP>(ring, &emit);
             }
 
             assert(!index_offset); /* handled by util_draw_multi() */
@@ -418,131 +474,17 @@ fd6_draw_vbos(struct fd_context *ctx, const struct pipe_draw_info *info,
    fd_context_all_clean(ctx);
 }
 
-static void
-fd6_clear_lrz(struct fd_batch *batch, struct fd_resource *zsbuf, double depth) assert_dt
-{
-   struct fd_ringbuffer *ring;
-   struct fd_screen *screen = batch->ctx->screen;
-
-   ring = fd_batch_get_prologue(batch);
-
-   emit_marker6(ring, 7);
-   OUT_PKT7(ring, CP_SET_MARKER, 1);
-   OUT_RING(ring, A6XX_CP_SET_MARKER_0_MODE(RM6_BYPASS));
-   emit_marker6(ring, 7);
-
-   OUT_WFI5(ring);
-
-   fd6_emit_ccu_cntl(ring, screen, false);
-
-   OUT_REG(ring,
-           A6XX_HLSQ_INVALIDATE_CMD(.vs_state = true, .hs_state = true,
-                                    .ds_state = true, .gs_state = true,
-                                    .fs_state = true, .cs_state = true,
-                                    .cs_ibo = true, .gfx_ibo = true,
-                                    .gfx_shared_const = true,
-                                    .cs_bindless = 0x1f, .gfx_bindless = 0x1f));
-
-   emit_marker6(ring, 7);
-   OUT_PKT7(ring, CP_SET_MARKER, 1);
-   OUT_RING(ring, A6XX_CP_SET_MARKER_0_MODE(RM6_BLIT2DSCALE));
-   emit_marker6(ring, 7);
-
-   OUT_PKT4(ring, REG_A6XX_RB_2D_UNKNOWN_8C01, 1);
-   OUT_RING(ring, 0x0);
-
-   OUT_PKT4(ring, REG_A6XX_SP_PS_2D_SRC_INFO, 13);
-   OUT_RING(ring, 0x00000000);
-   OUT_RING(ring, 0x00000000);
-   OUT_RING(ring, 0x00000000);
-   OUT_RING(ring, 0x00000000);
-   OUT_RING(ring, 0x00000000);
-   OUT_RING(ring, 0x00000000);
-   OUT_RING(ring, 0x00000000);
-   OUT_RING(ring, 0x00000000);
-   OUT_RING(ring, 0x00000000);
-   OUT_RING(ring, 0x00000000);
-   OUT_RING(ring, 0x00000000);
-   OUT_RING(ring, 0x00000000);
-   OUT_RING(ring, 0x00000000);
-
-   OUT_PKT4(ring, REG_A6XX_SP_2D_DST_FORMAT, 1);
-   OUT_RING(ring, 0x0000f410);
-
-   OUT_PKT4(ring, REG_A6XX_GRAS_2D_BLIT_CNTL, 1);
-   OUT_RING(ring,
-            A6XX_GRAS_2D_BLIT_CNTL_COLOR_FORMAT(FMT6_16_UNORM) | 0x4f00080);
-
-   OUT_PKT4(ring, REG_A6XX_RB_2D_BLIT_CNTL, 1);
-   OUT_RING(ring, A6XX_RB_2D_BLIT_CNTL_COLOR_FORMAT(FMT6_16_UNORM) | 0x4f00080);
-
-   fd6_event_write(batch, ring, PC_CCU_FLUSH_COLOR_TS, true);
-   fd6_event_write(batch, ring, PC_CCU_INVALIDATE_COLOR, false);
-   fd_wfi(batch, ring);
-
-   OUT_PKT4(ring, REG_A6XX_RB_2D_SRC_SOLID_C0, 4);
-   OUT_RING(ring, fui(depth));
-   OUT_RING(ring, 0x00000000);
-   OUT_RING(ring, 0x00000000);
-   OUT_RING(ring, 0x00000000);
-
-   OUT_PKT4(ring, REG_A6XX_RB_2D_DST_INFO, 9);
-   OUT_RING(ring, A6XX_RB_2D_DST_INFO_COLOR_FORMAT(FMT6_16_UNORM) |
-                     A6XX_RB_2D_DST_INFO_TILE_MODE(TILE6_LINEAR) |
-                     A6XX_RB_2D_DST_INFO_COLOR_SWAP(WZYX));
-   OUT_RELOC(ring, zsbuf->lrz, 0, 0, 0);
-   OUT_RING(ring, A6XX_RB_2D_DST_PITCH(zsbuf->lrz_pitch * 2).value);
-   OUT_RING(ring, 0x00000000);
-   OUT_RING(ring, 0x00000000);
-   OUT_RING(ring, 0x00000000);
-   OUT_RING(ring, 0x00000000);
-   OUT_RING(ring, 0x00000000);
-
-   OUT_REG(ring, A6XX_GRAS_2D_SRC_TL_X(0), A6XX_GRAS_2D_SRC_BR_X(0),
-           A6XX_GRAS_2D_SRC_TL_Y(0), A6XX_GRAS_2D_SRC_BR_Y(0));
-
-   OUT_PKT4(ring, REG_A6XX_GRAS_2D_DST_TL, 2);
-   OUT_RING(ring, A6XX_GRAS_2D_DST_TL_X(0) | A6XX_GRAS_2D_DST_TL_Y(0));
-   OUT_RING(ring, A6XX_GRAS_2D_DST_BR_X(zsbuf->lrz_width - 1) |
-                     A6XX_GRAS_2D_DST_BR_Y(zsbuf->lrz_height - 1));
-
-   fd6_event_write(batch, ring, (enum vgt_event_type)0x3f, false);
-
-   if (screen->info->a6xx.magic.RB_DBG_ECO_CNTL_blit != screen->info->a6xx.magic.RB_DBG_ECO_CNTL) {
-      /* This a non-context register, so we have to WFI before changing. */
-      OUT_WFI5(ring);
-      OUT_PKT4(ring, REG_A6XX_RB_DBG_ECO_CNTL, 1);
-      OUT_RING(ring, screen->info->a6xx.magic.RB_DBG_ECO_CNTL_blit);
-   }
-
-   OUT_PKT7(ring, CP_BLIT, 1);
-   OUT_RING(ring, CP_BLIT_0_OP(BLIT_OP_SCALE));
-
-   if (screen->info->a6xx.magic.RB_DBG_ECO_CNTL_blit != screen->info->a6xx.magic.RB_DBG_ECO_CNTL) {
-      OUT_WFI5(ring);
-      OUT_PKT4(ring, REG_A6XX_RB_DBG_ECO_CNTL, 1);
-      OUT_RING(ring, screen->info->a6xx.magic.RB_DBG_ECO_CNTL);
-   }
-
-   fd6_event_write(batch, ring, PC_CCU_FLUSH_COLOR_TS, true);
-   fd6_event_write(batch, ring, PC_CCU_FLUSH_DEPTH_TS, true);
-   fd6_event_write(batch, ring, CACHE_FLUSH_TS, true);
-   fd_wfi(batch, ring);
-
-   fd6_cache_inv(batch, ring);
-}
-
 static bool
-is_z32(enum pipe_format format)
+do_lrz_clear(struct fd_context *ctx, enum fd_buffer_mask buffers)
 {
-   switch (format) {
-   case PIPE_FORMAT_Z32_FLOAT_S8X24_UINT:
-   case PIPE_FORMAT_Z32_UNORM:
-   case PIPE_FORMAT_Z32_FLOAT:
-      return true;
-   default:
+   struct pipe_framebuffer_state *pfb = &ctx->batch->framebuffer;
+
+   if (!pfb->zsbuf)
       return false;
-   }
+
+   struct fd_resource *zsbuf = fd_resource(pfb->zsbuf->texture);
+
+   return (buffers & FD_BUFFER_DEPTH) && zsbuf->lrz;
 }
 
 static bool
@@ -551,45 +493,82 @@ fd6_clear(struct fd_context *ctx, enum fd_buffer_mask buffers,
           unsigned stencil) assert_dt
 {
    struct pipe_framebuffer_state *pfb = &ctx->batch->framebuffer;
-   const bool has_depth = pfb->zsbuf;
+   struct fd_batch_subpass *subpass = ctx->batch->subpass;
    unsigned color_buffers = buffers >> 2;
 
-   /* If we're clearing after draws, fallback to 3D pipe clears.  We could
-    * use blitter clears in the draw batch but then we'd have to patch up the
-    * gmem offsets. This doesn't seem like a useful thing to optimize for
-    * however.*/
-   if (ctx->batch->num_draws > 0)
-      return false;
+   if (pfb->samples > 1) {
+      /* we need to do multisample clear on 3d pipe, so fallback to u_blitter.
+       * But we do this ourselves so that we can still benefit from LRZ, as
+       * normally zfunc==ALWAYS would invalidate LRZ.  So we want to mark the
+       * LRZ state as valid *after* the fallback clear.
+       */
+      fd_blitter_clear(&ctx->base, (unsigned)buffers, color, depth, stencil);
+   }
 
-   if (has_depth && (buffers & FD_BUFFER_DEPTH)) {
-      struct fd_resource *zsbuf = fd_resource(pfb->zsbuf->texture);
-      if (zsbuf->lrz && !is_z32(pfb->zsbuf->format)) {
-         zsbuf->lrz_valid = true;
-         zsbuf->lrz_direction = FD_LRZ_UNKNOWN;
-         fd6_clear_lrz(ctx->batch, zsbuf, depth);
+   /* If we are clearing after draws, split out a new subpass:
+    */
+   if (subpass->num_draws > 0) {
+      /* If we won't be able to do any fast-clears, avoid pointlessly
+       * splitting out a new subpass:
+       */
+      if (pfb->samples > 1 && !do_lrz_clear(ctx, buffers))
+         return true;
+
+      subpass = fd_batch_create_subpass(ctx->batch);
+
+      /* If doing an LRZ clear, replace the existing LRZ buffer with a
+       * freshly allocated one so that we have valid LRZ state for the
+       * new pass.  Otherwise unconditional writes to the depth buffer
+       * would cause LRZ state to be invalid.
+       */
+      if (do_lrz_clear(ctx, buffers)) {
+         struct fd_resource *zsbuf = fd_resource(pfb->zsbuf->texture);
+
+         fd_bo_del(subpass->lrz);
+         subpass->lrz = fd_bo_new(ctx->screen->dev, fd_bo_size(zsbuf->lrz),
+                                  FD_BO_NOMAP, "lrz");
+         fd_bo_del(zsbuf->lrz);
+         zsbuf->lrz = fd_bo_ref(subpass->lrz);
       }
    }
 
-   /* we need to do multisample clear on 3d pipe, so fallback to u_blitter: */
+   if (do_lrz_clear(ctx, buffers)) {
+      struct fd_resource *zsbuf = fd_resource(pfb->zsbuf->texture);
+
+      zsbuf->lrz_valid = true;
+      zsbuf->lrz_direction = FD_LRZ_UNKNOWN;
+      subpass->clear_depth = depth;
+      subpass->fast_cleared |= FD_BUFFER_LRZ;
+
+      STATIC_ASSERT((FD_BUFFER_LRZ & FD_BUFFER_ALL) == 0);
+   }
+
+   /* We've already done the fallback 3d clear: */
    if (pfb->samples > 1)
-      return false;
+      return true;
 
    u_foreach_bit (i, color_buffers)
-      ctx->batch->clear_color[i] = *color;
+      subpass->clear_color[i] = *color;
    if (buffers & FD_BUFFER_DEPTH)
-      ctx->batch->clear_depth = depth;
+      subpass->clear_depth = depth;
    if (buffers & FD_BUFFER_STENCIL)
-      ctx->batch->clear_stencil = stencil;
+      subpass->clear_stencil = stencil;
 
-   ctx->batch->fast_cleared |= buffers;
+   subpass->fast_cleared |= buffers;
 
    return true;
 }
 
+template <chip CHIP>
 void
-fd6_draw_init(struct pipe_context *pctx) disable_thread_safety_analysis
+fd6_draw_init(struct pipe_context *pctx)
+   disable_thread_safety_analysis
 {
    struct fd_context *ctx = fd_context(pctx);
-   ctx->draw_vbos = fd6_draw_vbos;
    ctx->clear = fd6_clear;
+   ctx->draw_vbos = fd6_draw_vbos<CHIP>;
 }
+
+/* Teach the compiler about needed variants: */
+template void fd6_draw_init<A6XX>(struct pipe_context *pctx);
+template void fd6_draw_init<A7XX>(struct pipe_context *pctx);

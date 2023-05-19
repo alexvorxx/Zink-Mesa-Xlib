@@ -184,6 +184,7 @@ struct draw_context
       enum pipe_prim_type prim;
       unsigned opt;     /**< bitmask of PT_x flags */
       unsigned eltSize; /* saved eltSize for flushing */
+      unsigned viewid; /* saved viewid for flushing */
       ubyte vertices_per_patch;
       boolean rebind_parameters;
 
@@ -261,7 +262,7 @@ struct draw_context
       boolean bypass_clip_xy;
       boolean bypass_clip_z;
       boolean guard_band_xy;
-      boolean bypass_clip_points;
+      boolean bypass_clip_points_lines;
    } driver;
 
    boolean quads_always_flatshade_last;
@@ -276,7 +277,7 @@ struct draw_context
    boolean clip_z;
    boolean clip_user;
    boolean guard_band_xy;
-   boolean guard_band_points_xy;
+   boolean guard_band_points_lines_xy;
 
    boolean dump_vs;
 

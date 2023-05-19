@@ -180,7 +180,7 @@ dri_is_thread_safe(UNUSED void *loaderPrivate)
     * platform
     *
     * 'lock_fns' is the XLockDisplay function pointer of the X11 display 'dpy'.
-    * It wll be NULL if XInitThreads wasn't called.
+    * It will be NULL if XInitThreads wasn't called.
     */
    if (display->Platform == _EGL_PLATFORM_X11 && xdpy && !xdpy->lock_fns)
       return false;
@@ -564,6 +564,9 @@ dri2_add_config(_EGLDisplay *disp, const __DRIconfig *dri_config, int id,
 
    if (double_buffer) {
       surface_type &= ~EGL_PIXMAP_BIT;
+   }
+   else {
+      surface_type &= ~EGL_WINDOW_BIT;
    }
 
    if (!surface_type)
@@ -3361,7 +3364,7 @@ dri2_create_sync(_EGLDisplay *disp, EGLenum type, const EGLAttrib *attrib_list)
       break;
 
    case EGL_SYNC_REUSABLE_KHR:
-      /* intialize attr */
+      /* initialize attr */
       ret = pthread_condattr_init(&attr);
 
       if (ret) {

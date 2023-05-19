@@ -399,8 +399,9 @@ nvc0_screen_get_shader_param(struct pipe_screen *pscreen,
    case PIPE_SHADER_CAP_PREFERRED_IR:
       return screen->prefer_nir ? PIPE_SHADER_IR_NIR : PIPE_SHADER_IR_TGSI;
    case PIPE_SHADER_CAP_SUPPORTED_IRS: {
-      uint32_t irs = 1 << PIPE_SHADER_IR_NIR |
-         ((class_3d >= GV100_3D_CLASS) ? 0 : 1 << PIPE_SHADER_IR_TGSI);
+      uint32_t irs = 1 << PIPE_SHADER_IR_NIR;
+      if (!screen->prefer_nir && class_3d < GV100_3D_CLASS)
+         irs |= 1 << PIPE_SHADER_IR_TGSI;
       if (screen->force_enable_cl)
          irs |= 1 << PIPE_SHADER_IR_NIR_SERIALIZED;
       return irs;

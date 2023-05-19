@@ -582,7 +582,7 @@ radv_get_resolve_pipeline(struct radv_cmd_buffer *cmd_buffer, struct radv_image_
 {
    struct radv_device *device = cmd_buffer->device;
    unsigned fs_key = radv_format_meta_fs_key(cmd_buffer->device, dst_iview->vk.format);
-   const uint32_t samples = src_iview->image->info.samples;
+   const uint32_t samples = src_iview->image->vk.samples;
    const uint32_t samples_log2 = ffs(samples) - 1;
    VkPipeline *pipeline;
 
@@ -602,8 +602,8 @@ radv_get_resolve_pipeline(struct radv_cmd_buffer *cmd_buffer, struct radv_image_
 
 static void
 emit_resolve(struct radv_cmd_buffer *cmd_buffer, struct radv_image_view *src_iview,
-             struct radv_image_view *dest_iview, const VkOffset2D *src_offset,
-             const VkOffset2D *dest_offset)
+             struct radv_image_view *dst_iview, const VkOffset2D *src_offset,
+             const VkOffset2D *dst_offset)
 {
    struct radv_device *device = cmd_buffer->device;
    VkCommandBuffer cmd_buffer_h = radv_cmd_buffer_to_handle(cmd_buffer);
@@ -631,23 +631,23 @@ emit_resolve(struct radv_cmd_buffer *cmd_buffer, struct radv_image_view *src_ivi
 
    cmd_buffer->state.flush_bits |=
       radv_dst_access_flush(cmd_buffer, VK_ACCESS_2_SHADER_READ_BIT, src_iview->image) |
-      radv_dst_access_flush(cmd_buffer, VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT, dest_iview->image);
+      radv_dst_access_flush(cmd_buffer, VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT, dst_iview->image);
 
    unsigned push_constants[2] = {
-      src_offset->x - dest_offset->x,
-      src_offset->y - dest_offset->y,
+      src_offset->x - dst_offset->x,
+      src_offset->y - dst_offset->y,
    };
    radv_CmdPushConstants(radv_cmd_buffer_to_handle(cmd_buffer),
                          device->meta_state.resolve_fragment.p_layout, VK_SHADER_STAGE_FRAGMENT_BIT,
                          0, 8, push_constants);
 
-   pipeline = radv_get_resolve_pipeline(cmd_buffer, src_iview, dest_iview);
+   pipeline = radv_get_resolve_pipeline(cmd_buffer, src_iview, dst_iview);
 
    radv_CmdBindPipeline(cmd_buffer_h, VK_PIPELINE_BIND_POINT_GRAPHICS, *pipeline);
 
    radv_CmdDraw(cmd_buffer_h, 3, 1, 0, 0);
    cmd_buffer->state.flush_bits |=
-      radv_src_access_flush(cmd_buffer, VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT, dest_iview->image);
+      radv_src_access_flush(cmd_buffer, VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT, dst_iview->image);
 }
 
 static void
@@ -657,7 +657,7 @@ emit_depth_stencil_resolve(struct radv_cmd_buffer *cmd_buffer, struct radv_image
                            VkResolveModeFlagBits resolve_mode)
 {
    struct radv_device *device = cmd_buffer->device;
-   const uint32_t samples = src_iview->image->info.samples;
+   const uint32_t samples = src_iview->image->vk.samples;
    const uint32_t samples_log2 = ffs(samples) - 1;
    VkPipeline *pipeline;
 
@@ -741,11 +741,11 @@ emit_depth_stencil_resolve(struct radv_cmd_buffer *cmd_buffer, struct radv_image
 
 void
 radv_meta_resolve_fragment_image(struct radv_cmd_buffer *cmd_buffer, struct radv_image *src_image,
-                                 VkImageLayout src_image_layout, struct radv_image *dest_image,
-                                 VkImageLayout dest_image_layout, const VkImageResolve2 *region)
+                                 VkImageLayout src_image_layout, struct radv_image *dst_image,
+                                 VkImageLayout dst_image_layout, const VkImageResolve2 *region)
 {
    struct radv_meta_saved_state saved_state;
-   unsigned dst_layout = radv_meta_dst_layout_from_layout(dest_image_layout);
+   unsigned dst_layout = radv_meta_dst_layout_from_layout(dst_image_layout);
    VkImageLayout layout = radv_meta_dst_layout_to_layout(dst_layout);
 
    radv_meta_save(
@@ -759,12 +759,12 @@ radv_meta_resolve_fragment_image(struct radv_cmd_buffer *cmd_buffer, struct radv
    const uint32_t src_base_layer =
       radv_meta_get_iview_layer(src_image, &region->srcSubresource, &region->srcOffset);
 
-   const uint32_t dest_base_layer =
-      radv_meta_get_iview_layer(dest_image, &region->dstSubresource, &region->dstOffset);
+   const uint32_t dst_base_layer =
+      radv_meta_get_iview_layer(dst_image, &region->dstSubresource, &region->dstOffset);
 
    const struct VkExtent3D extent = vk_image_sanitize_extent(&src_image->vk, region->extent);
    const struct VkOffset3D srcOffset = vk_image_sanitize_offset(&src_image->vk, region->srcOffset);
-   const struct VkOffset3D dstOffset = vk_image_sanitize_offset(&dest_image->vk, region->dstOffset);
+   const struct VkOffset3D dstOffset = vk_image_sanitize_offset(&dst_image->vk, region->dstOffset);
 
    VkRect2D resolve_area = {
       .offset = { dstOffset.x, dstOffset.y },
@@ -801,19 +801,19 @@ radv_meta_resolve_fragment_image(struct radv_cmd_buffer *cmd_buffer, struct radv
                            },
                            0, NULL);
 
-      struct radv_image_view dest_iview;
-      radv_image_view_init(&dest_iview, cmd_buffer->device,
+      struct radv_image_view dst_iview;
+      radv_image_view_init(&dst_iview, cmd_buffer->device,
                            &(VkImageViewCreateInfo){
                               .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
-                              .image = radv_image_to_handle(dest_image),
-                              .viewType = radv_meta_get_view_type(dest_image),
-                              .format = dest_image->vk.format,
+                              .image = radv_image_to_handle(dst_image),
+                              .viewType = radv_meta_get_view_type(dst_image),
+                              .format = dst_image->vk.format,
                               .subresourceRange =
                                  {
                                     .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
                                     .baseMipLevel = region->dstSubresource.mipLevel,
                                     .levelCount = 1,
-                                    .baseArrayLayer = dest_base_layer + layer,
+                                    .baseArrayLayer = dst_base_layer + layer,
                                     .layerCount = 1,
                                  },
                            },
@@ -821,7 +821,7 @@ radv_meta_resolve_fragment_image(struct radv_cmd_buffer *cmd_buffer, struct radv
 
       const VkRenderingAttachmentInfo color_att = {
          .sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
-         .imageView = radv_image_view_to_handle(&dest_iview),
+         .imageView = radv_image_view_to_handle(&dst_iview),
          .imageLayout = layout,
          .loadOp = VK_ATTACHMENT_LOAD_OP_LOAD,
          .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
@@ -837,13 +837,13 @@ radv_meta_resolve_fragment_image(struct radv_cmd_buffer *cmd_buffer, struct radv
 
       radv_CmdBeginRendering(radv_cmd_buffer_to_handle(cmd_buffer), &rendering_info);
 
-      emit_resolve(cmd_buffer, &src_iview, &dest_iview, &(VkOffset2D){srcOffset.x, srcOffset.y},
+      emit_resolve(cmd_buffer, &src_iview, &dst_iview, &(VkOffset2D){srcOffset.x, srcOffset.y},
                    &(VkOffset2D){dstOffset.x, dstOffset.y});
 
       radv_CmdEndRendering(radv_cmd_buffer_to_handle(cmd_buffer));
 
       radv_image_view_finish(&src_iview);
-      radv_image_view_finish(&dest_iview);
+      radv_image_view_finish(&dst_iview);
    }
 
    radv_meta_restore(&saved_state, cmd_buffer);

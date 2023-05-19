@@ -160,7 +160,7 @@ get_flat_type(const nir_shader *shader, nir_variable *old_vars[MAX_SLOTS][4],
    unsigned todo = 1;
    unsigned slots = 0;
    unsigned num_vars = 0;
-   enum glsl_base_type base;
+   enum glsl_base_type base = GLSL_TYPE_ERROR;
    *num_vertices = 0;
    *first_var = NULL;
 

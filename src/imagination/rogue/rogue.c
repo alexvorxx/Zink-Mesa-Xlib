@@ -1244,7 +1244,7 @@ rogue_build_context_create(rogue_compiler *compiler,
 {
    rogue_build_ctx *ctx;
 
-   ctx = rzalloc_size(compiler, sizeof(*ctx));
+   ctx = rzalloc_size(NULL, sizeof(*ctx));
    if (!ctx)
       return NULL;
 

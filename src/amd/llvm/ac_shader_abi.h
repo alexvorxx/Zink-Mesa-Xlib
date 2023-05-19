@@ -46,7 +46,6 @@ struct ac_shader_abi {
    LLVMValueRef vertex_id;
    LLVMValueRef vs_rel_patch_id;
    LLVMValueRef instance_id;
-   LLVMValueRef persp_centroid, linear_centroid;
    LLVMValueRef user_data;
 
    /* replaced registers when culling enabled */
@@ -59,11 +58,6 @@ struct ac_shader_abi {
 
    /* Varying -> attribute number mapping. Also NIR-only */
    unsigned fs_input_attr_indices[MAX_VARYING];
-
-   void (*emit_primitive)(struct ac_shader_abi *abi, unsigned stream);
-
-   void (*emit_vertex_with_counter)(struct ac_shader_abi *abi, unsigned stream,
-                                    LLVMValueRef vertexidx, LLVMValueRef *addrs);
 
    LLVMValueRef (*load_tess_varyings)(struct ac_shader_abi *abi, LLVMTypeRef type,
                                       LLVMValueRef vertex_index, LLVMValueRef param_index,

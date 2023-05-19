@@ -134,7 +134,7 @@ etna_lower_io(nir_shader *shader, struct etna_shader_variant *v)
                vec->src[i].src = nir_src_for_ssa(src1->ssa);
 
             vec->dest.write_mask = 0xf;
-            nir_ssa_dest_init(&vec->instr, &vec->dest.dest, 4, 32, NULL);
+            nir_ssa_dest_init(&vec->instr, &vec->dest.dest, 4, 32);
 
             nir_tex_instr_remove_src(tex, src1_idx);
             nir_instr_rewrite_src(&tex->instr, coord, nir_src_for_ssa(&vec->dest.dest.ssa));
@@ -190,7 +190,7 @@ etna_lower_alu_impl(nir_function_impl *impl, bool has_new_transcendentals)
             mul->src[1].swizzle[0] = 1;
 
             mul->dest.write_mask = 1;
-            nir_ssa_dest_init(&mul->instr, &mul->dest.dest, 1, 32, NULL);
+            nir_ssa_dest_init(&mul->instr, &mul->dest.dest, 1, 32);
 
             ssa->num_components = 2;
 

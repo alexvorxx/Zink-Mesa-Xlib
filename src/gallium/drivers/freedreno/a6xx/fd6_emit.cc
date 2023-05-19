@@ -535,6 +535,7 @@ build_prim_mode(struct fd6_emit *emit, struct fd_context *ctx, bool gmem)
    return ring;
 }
 
+template <chip CHIP>
 void
 fd6_emit_3d_state(struct fd_ringbuffer *ring, struct fd6_emit *emit)
 {
@@ -596,7 +597,7 @@ fd6_emit_3d_state(struct fd_ringbuffer *ring, struct fd6_emit *emit)
                               FD6_GROUP_PROG_INTERP);
          break;
       case FD6_GROUP_RASTERIZER:
-         state = fd6_rasterizer_state(ctx, emit->primitive_restart);
+         state = fd6_rasterizer_state<CHIP>(ctx, emit->primitive_restart);
          fd6_state_add_group(&emit->state, state, FD6_GROUP_RASTERIZER);
          break;
       case FD6_GROUP_PROG_FB_RAST:
@@ -613,23 +614,23 @@ fd6_emit_3d_state(struct fd_ringbuffer *ring, struct fd6_emit *emit)
          fd6_state_take_group(&emit->state, state, FD6_GROUP_BLEND_COLOR);
          break;
       case FD6_GROUP_VS_BINDLESS:
-         state = fd6_build_bindless_state(ctx, PIPE_SHADER_VERTEX, false);
+         state = fd6_build_bindless_state<CHIP>(ctx, PIPE_SHADER_VERTEX, false);
          fd6_state_take_group(&emit->state, state, FD6_GROUP_VS_BINDLESS);
          break;
       case FD6_GROUP_HS_BINDLESS:
-         state = fd6_build_bindless_state(ctx, PIPE_SHADER_TESS_CTRL, false);
+         state = fd6_build_bindless_state<CHIP>(ctx, PIPE_SHADER_TESS_CTRL, false);
          fd6_state_take_group(&emit->state, state, FD6_GROUP_HS_BINDLESS);
          break;
       case FD6_GROUP_DS_BINDLESS:
-         state = fd6_build_bindless_state(ctx, PIPE_SHADER_TESS_EVAL, false);
+         state = fd6_build_bindless_state<CHIP>(ctx, PIPE_SHADER_TESS_EVAL, false);
          fd6_state_take_group(&emit->state, state, FD6_GROUP_DS_BINDLESS);
          break;
       case FD6_GROUP_GS_BINDLESS:
-         state = fd6_build_bindless_state(ctx, PIPE_SHADER_GEOMETRY, false);
+         state = fd6_build_bindless_state<CHIP>(ctx, PIPE_SHADER_GEOMETRY, false);
          fd6_state_take_group(&emit->state, state, FD6_GROUP_GS_BINDLESS);
          break;
       case FD6_GROUP_FS_BINDLESS:
-         state = fd6_build_bindless_state(ctx, PIPE_SHADER_FRAGMENT, fs->fb_read);
+         state = fd6_build_bindless_state<CHIP>(ctx, PIPE_SHADER_FRAGMENT, fs->fb_read);
          fd6_state_take_group(&emit->state, state, FD6_GROUP_FS_BINDLESS);
          break;
       case FD6_GROUP_CONST:
@@ -686,6 +687,10 @@ fd6_emit_3d_state(struct fd_ringbuffer *ring, struct fd6_emit *emit)
    fd6_state_emit(&emit->state, ring);
 }
 
+template void fd6_emit_3d_state<A6XX>(struct fd_ringbuffer *ring, struct fd6_emit *emit);
+template void fd6_emit_3d_state<A7XX>(struct fd_ringbuffer *ring, struct fd6_emit *emit);
+
+template <chip CHIP>
 void
 fd6_emit_cs_state(struct fd_context *ctx, struct fd_ringbuffer *ring,
                   struct fd6_compute_state *cs)
@@ -722,7 +727,7 @@ fd6_emit_cs_state(struct fd_context *ctx, struct fd_ringbuffer *ring,
       case FD6_GROUP_CS_BINDLESS:
          fd6_state_take_group(
                &state,
-               fd6_build_bindless_state(ctx, PIPE_SHADER_COMPUTE, false),
+               fd6_build_bindless_state<CHIP>(ctx, PIPE_SHADER_COMPUTE, false),
                FD6_GROUP_CS_BINDLESS);
          break;
       default:
@@ -749,9 +754,13 @@ fd6_emit_ccu_cntl(struct fd_ringbuffer *ring, struct fd_screen *screen, bool gme
    ));
 }
 
+template void fd6_emit_cs_state<A6XX>(struct fd_context *ctx, struct fd_ringbuffer *ring, struct fd6_compute_state *cs);
+template void fd6_emit_cs_state<A7XX>(struct fd_context *ctx, struct fd_ringbuffer *ring, struct fd6_compute_state *cs);
+
 /* emit setup at begin of new cmdstream buffer (don't rely on previous
  * state, there could have been a context switch between ioctls):
  */
+template <chip CHIP>
 void
 fd6_emit_restore(struct fd_batch *batch, struct fd_ringbuffer *ring)
 {
@@ -767,7 +776,7 @@ fd6_emit_restore(struct fd_batch *batch, struct fd_ringbuffer *ring)
    fd6_cache_inv(batch, ring);
 
    OUT_REG(ring,
-           A6XX_HLSQ_INVALIDATE_CMD(.vs_state = true, .hs_state = true,
+           HLSQ_INVALIDATE_CMD(CHIP, .vs_state = true, .hs_state = true,
                                     .ds_state = true, .gs_state = true,
                                     .fs_state = true, .cs_state = true,
                                     .cs_ibo = true, .gfx_ibo = true,
@@ -820,7 +829,7 @@ fd6_emit_restore(struct fd_batch *batch, struct fd_ringbuffer *ring)
 
    WRITE(REG_A6XX_VPC_SO_DISABLE, A6XX_VPC_SO_DISABLE(true).value);
 
-   WRITE(REG_A6XX_PC_RASTER_CNTL, 0);
+   OUT_REG(ring, PC_RASTER_CNTL(CHIP));
 
    WRITE(REG_A6XX_PC_MULTIVIEW_CNTL, 0);
 
@@ -844,7 +853,11 @@ fd6_emit_restore(struct fd_batch *batch, struct fd_ringbuffer *ring)
    WRITE(REG_A6XX_GRAS_SAMPLE_CONFIG, 0);
    WRITE(REG_A6XX_RB_Z_BOUNDS_MIN, 0);
    WRITE(REG_A6XX_RB_Z_BOUNDS_MAX, 0);
-   WRITE(REG_A6XX_HLSQ_CONTROL_5_REG, 0xfc);
+   OUT_REG(ring, HLSQ_CONTROL_5_REG(
+         CHIP,
+         .linelengthregid = INVALID_REG,
+         .foveationqualityregid = INVALID_REG,
+   ));
 
    emit_marker6(ring, 7);
 
@@ -904,6 +917,9 @@ fd6_emit_restore(struct fd_batch *batch, struct fd_ringbuffer *ring)
    }
 }
 
+template void fd6_emit_restore<A6XX>(struct fd_batch *batch, struct fd_ringbuffer *ring);
+template void fd6_emit_restore<A7XX>(struct fd_batch *batch, struct fd_ringbuffer *ring);
+
 static void
 fd6_mem_to_mem(struct fd_ringbuffer *ring, struct pipe_resource *dst,
                unsigned dst_off, struct pipe_resource *src, unsigned src_off,
@@ -928,6 +944,5 @@ void
 fd6_emit_init_screen(struct pipe_screen *pscreen)
 {
    struct fd_screen *screen = fd_screen(pscreen);
-   screen->emit_ib = fd6_emit_ib;
    screen->mem_to_mem = fd6_mem_to_mem;
 }

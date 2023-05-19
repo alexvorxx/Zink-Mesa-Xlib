@@ -651,6 +651,7 @@ radv_shader_spirv_to_nir(struct radv_device *device, const struct radv_pipeline_
                .lower_quad_broadcast_dynamic = 1,
                .lower_quad_broadcast_dynamic_to_const = gfx7minus,
                .lower_shuffle_to_swizzle_amd = 1,
+               .lower_ballot_bit_count_to_mbcnt_amd = 1,
             });
 
    NIR_PASS(_, nir, nir_lower_load_const_to_scalar);
@@ -739,7 +740,6 @@ radv_shader_spirv_to_nir(struct radv_device *device, const struct radv_pipeline_
       /* Optimize the lowered code before the linking optimizations. */
       radv_optimize_nir(nir, false);
    }
-
 
    return nir;
 }
@@ -2070,7 +2070,8 @@ static void
 radv_aco_build_shader_binary(void **bin, const struct ac_shader_config *config,
                              const char *llvm_ir_str, unsigned llvm_ir_size, const char *disasm_str,
                              unsigned disasm_size, uint32_t *statistics, uint32_t stats_size,
-                             uint32_t exec_size, const uint32_t *code, uint32_t code_dw)
+                             uint32_t exec_size, const uint32_t *code, uint32_t code_dw,
+                             const struct aco_symbol *symbols, unsigned num_symbols)
 {
    struct radv_shader_binary **binary = (struct radv_shader_binary **)bin;
    size_t size = llvm_ir_size;
@@ -2382,7 +2383,7 @@ radv_create_rt_prolog(struct radv_device *device)
    radv_postprocess_binary_config(device, binary, &in_args);
    prolog = radv_shader_create(device, binary);
    if (!prolog)
-      goto fail;
+      goto done;
 
    if (device->keep_shader_info || options.dump_shader) {
       radv_capture_shader_executable_info(device, prolog, NULL, 0, binary);
@@ -2393,11 +2394,9 @@ radv_create_rt_prolog(struct radv_device *device)
       fprintf(stderr, "\ndisasm:\n%s\n", prolog->disasm_string);
    }
 
-   return prolog;
-
-fail:
+done:
    free(binary);
-   return NULL;
+   return prolog;
 }
 
 struct radv_shader_part *
@@ -2636,10 +2635,10 @@ unsigned
 radv_get_max_waves(const struct radv_device *device, struct radv_shader *shader,
                    gl_shader_stage stage)
 {
-   struct radeon_info *info = &device->physical_device->rad_info;
-   enum amd_gfx_level gfx_level = info->gfx_level;
-   uint8_t wave_size = shader->info.wave_size;
-   struct ac_shader_config *conf = &shader->config;
+   const struct radeon_info *info = &device->physical_device->rad_info;
+   const enum amd_gfx_level gfx_level = info->gfx_level;
+   const uint8_t wave_size = shader->info.wave_size;
+   const struct ac_shader_config *conf = &shader->config;
    unsigned max_simd_waves;
    unsigned lds_per_wave = 0;
 

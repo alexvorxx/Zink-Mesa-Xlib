@@ -183,6 +183,7 @@ struct fd6_emit {
    bool rasterflat : 1;
    bool primitive_restart : 1;
    uint8_t streamout_mask;
+   uint32_t draw_id;
 
    /* cached to avoid repeated lookups: */
    const struct fd6_program_state *prog;
@@ -332,21 +333,21 @@ fd6_gl2spacing(enum gl_tess_spacing spacing)
    }
 }
 
-BEGINC;
-
+template <chip CHIP>
 void fd6_emit_3d_state(struct fd_ringbuffer *ring,
                        struct fd6_emit *emit) assert_dt;
 
 struct fd6_compute_state;
+template <chip CHIP>
 void fd6_emit_cs_state(struct fd_context *ctx, struct fd_ringbuffer *ring,
                        struct fd6_compute_state *cs) assert_dt;
 
 void fd6_emit_ccu_cntl(struct fd_ringbuffer *ring, struct fd_screen *screen, bool gmem);
+
+template <chip CHIP>
 void fd6_emit_restore(struct fd_batch *batch, struct fd_ringbuffer *ring);
 
 void fd6_emit_init_screen(struct pipe_screen *pscreen);
-
-ENDC;
 
 static inline void
 fd6_emit_ib(struct fd_ringbuffer *ring, struct fd_ringbuffer *target)

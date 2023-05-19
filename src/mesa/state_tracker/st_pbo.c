@@ -293,23 +293,17 @@ st_pbo_create_vs(struct st_context *st)
    nir_builder b = nir_builder_init_simple_shader(MESA_SHADER_VERTEX, options,
                                                   "st/pbo VS");
 
-   nir_variable *in_pos = nir_variable_create(b.shader, nir_var_shader_in,
-                                              vec4, "in_pos");
-   in_pos->data.location = VERT_ATTRIB_POS;
+   nir_variable *in_pos = nir_create_variable_with_location(b.shader, nir_var_shader_in,
+                                                             VERT_ATTRIB_POS, vec4);
 
-   nir_variable *out_pos = nir_variable_create(b.shader, nir_var_shader_out,
-                                               vec4, "out_pos");
-   out_pos->data.location = VARYING_SLOT_POS;
-   out_pos->data.interpolation = INTERP_MODE_NONE;
+   nir_variable *out_pos = nir_create_variable_with_location(b.shader, nir_var_shader_out,
+                                                             VARYING_SLOT_POS, vec4);
 
    nir_copy_var(&b, out_pos, in_pos);
 
    if (st->pbo.layers) {
-      nir_variable *instance_id = nir_variable_create(b.shader,
-                                                      nir_var_system_value,
-                                                      glsl_int_type(),
-                                                      "instance_id");
-      instance_id->data.location = SYSTEM_VALUE_INSTANCE_ID;
+      nir_variable *instance_id = nir_create_variable_with_location(b.shader, nir_var_system_value,
+                                                                    SYSTEM_VALUE_INSTANCE_ID, glsl_int_type());
 
       if (st->pbo.use_gs) {
          unsigned swiz_x[4] = {0, 0, 0, 0};
@@ -317,11 +311,8 @@ st_pbo_create_vs(struct st_context *st)
                        nir_swizzle(&b, nir_i2f32(&b, nir_load_var(&b, instance_id)), swiz_x, 4),
                        (1 << 2));
       } else {
-         nir_variable *out_layer = nir_variable_create(b.shader,
-                                                     nir_var_shader_out,
-                                                     glsl_int_type(),
-                                                     "out_layer");
-         out_layer->data.location = VARYING_SLOT_LAYER;
+         nir_variable *out_layer = nir_create_variable_with_location(b.shader, nir_var_shader_out,
+                                                                     VARYING_SLOT_LAYER, glsl_int_type());
          out_layer->data.interpolation = INTERP_MODE_NONE;
          nir_copy_var(&b, out_layer, instance_id);
       }
@@ -429,11 +420,13 @@ create_fs(struct st_context *st, bool download,
    b.shader->num_uniforms += 4;
    nir_ssa_def *param = nir_load_var(&b, param_var);
 
-   nir_variable *fragcoord =
-      nir_variable_create(b.shader, pos_is_sysval ? nir_var_system_value :
-                          nir_var_shader_in, glsl_vec4_type(), "gl_FragCoord");
-   fragcoord->data.location = pos_is_sysval ? SYSTEM_VALUE_FRAG_COORD
-                                            : VARYING_SLOT_POS;
+   nir_variable *fragcoord;
+   if (pos_is_sysval)
+      fragcoord = nir_create_variable_with_location(b.shader, nir_var_system_value,
+                                                    SYSTEM_VALUE_FRAG_COORD, glsl_vec4_type());
+   else
+      fragcoord = nir_create_variable_with_location(b.shader, nir_var_shader_in,
+                                                    VARYING_SLOT_POS, glsl_vec4_type());
    nir_ssa_def *coord = nir_load_var(&b, fragcoord);
 
    /* When st->pbo.layers == false, it is guaranteed we only have a single
@@ -449,9 +442,8 @@ create_fs(struct st_context *st, bool download,
                     target == PIPE_TEXTURE_CUBE_ARRAY) {
       if (need_layer) {
          assert(st->pbo.layers);
-         nir_variable *var = nir_variable_create(b.shader, nir_var_shader_in,
-                                                glsl_int_type(), "gl_Layer");
-         var->data.location = VARYING_SLOT_LAYER;
+         nir_variable *var = nir_create_variable_with_location(b.shader, nir_var_shader_in,
+                                                               VARYING_SLOT_LAYER, glsl_int_type());
          var->data.interpolation = INTERP_MODE_FLAT;
          layer = nir_load_var(&b, var);
       }
@@ -535,7 +527,7 @@ create_fs(struct st_context *st, bool download,
    tex->src[1].src = nir_src_for_ssa(&tex_deref->dest.ssa);
    tex->src[2].src_type = nir_tex_src_coord;
    tex->src[2].src = nir_src_for_ssa(texcoord);
-   nir_ssa_dest_init(&tex->instr, &tex->dest, 4, 32, NULL);
+   nir_ssa_dest_init(&tex->instr, &tex->dest, 4, 32);
    nir_builder_instr_insert(&b, &tex->instr);
    nir_ssa_def *result = &tex->dest.ssa;
 
@@ -570,9 +562,8 @@ create_fs(struct st_context *st, bool download,
                             .image_dim = GLSL_SAMPLER_DIM_BUF);
    } else {
       nir_variable *color =
-         nir_variable_create(b.shader, nir_var_shader_out, glsl_vec4_type(),
-                             "gl_FragColor");
-      color->data.location = FRAG_RESULT_COLOR;
+         nir_create_variable_with_location(b.shader, nir_var_shader_out,
+                                           FRAG_RESULT_COLOR, glsl_vec4_type());
 
       nir_store_var(&b, color, result, TGSI_WRITEMASK_XYZW);
    }

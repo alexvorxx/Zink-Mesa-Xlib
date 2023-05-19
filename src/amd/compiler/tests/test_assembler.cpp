@@ -913,4 +913,63 @@ BEGIN_TEST(assembler.gfx11.vop12c_v128)
 
    finish_assembler_test();
 END_TEST
+
+BEGIN_TEST(assembler.vop3_dpp)
+   if (!setup_cs(NULL, GFX11))
+      return;
+
+   Definition dst_v0 = bld.def(v1);
+   dst_v0.setFixed(PhysReg(256));
+
+   Definition dst_non_vcc = bld.def(s2);
+   dst_non_vcc.setFixed(PhysReg(4));
+
+   Operand op_v1(bld.tmp(v1));
+   op_v1.setFixed(PhysReg(256 + 1));
+
+   Operand op_v2(bld.tmp(v1));
+   op_v2.setFixed(PhysReg(256 + 2));
+
+   Operand op_s1(bld.tmp(s1));
+   op_s1.setFixed(PhysReg(1));
+
+   //>> BB0:
+   //! v_fma_f32_e64_dpp v0, v1, v2, s1 clamp row_ror:1 row_mask:0xf bank_mask:0xf bound_ctrl:1 fi:1 ; d6138000 000604fa ff0d2101
+   bld.vop3_dpp(aco_opcode::v_fma_f32, dst_v0, op_v1, op_v2, op_s1, dpp_row_rr(1))->valu().clamp =
+      true;
+
+   //! v_fma_mix_f32_e64_dpp v0, |v1|, |v2|, |s1| op_sel:[1,0,0] op_sel_hi:[1,0,1] row_ror:1 row_mask:0xf bank_mask:0xf bound_ctrl:1 fi:1 ; cc204f00 080604fa ffad2101
+   bld.vop3p_dpp(aco_opcode::v_fma_mix_f32, dst_v0, op_v1, op_v2, op_s1, 0x1, 0x5, dpp_row_rr(1))
+      ->valu()
+      .abs = 0x7;
+
+   //! v_fma_f32_e64_dpp v0, -v1, -v2, -s1 dpp8:[0,0,0,0,0,0,0,0] fi:1 ; d6130000 e00604ea 00000001
+   bld.vop3_dpp8(aco_opcode::v_fma_f32, dst_v0, op_v1, op_v2, op_s1)->valu().neg = 0x7;
+
+   //! v_fma_mix_f32_e64_dpp v0, -v1, -v2, s1 op_sel_hi:[1,1,1] dpp8:[0,0,0,0,0,0,0,0] fi:1 ; cc204000 780604ea 00000001
+   bld.vop3p_dpp8(aco_opcode::v_fma_mix_f32, dst_v0, op_v1, op_v2, op_s1, 0x0, 0x7)->valu().neg =
+      0x3;
+
+   //! v_add_f32_e64_dpp v0, v1, v2 clamp row_ror:1 row_mask:0xf bank_mask:0xf bound_ctrl:1 fi:1 ; d5038000 000204fa ff0d2101
+   bld.vop2_e64_dpp(aco_opcode::v_add_f32, dst_v0, op_v1, op_v2, dpp_row_rr(1))->valu().clamp =
+      true;
+
+   //! v_sqrt_f32_e64_dpp v0, v1 clamp row_ror:1 row_mask:0xf bank_mask:0xf bound_ctrl:1 fi:1 ; d5b38000 000000fa ff0d2101
+   bld.vop1_e64_dpp(aco_opcode::v_sqrt_f32, dst_v0, op_v1, dpp_row_rr(1))->valu().clamp = true;
+
+   //! v_cmp_lt_f32_e64_dpp s[4:5], |v1|, |v2| row_ror:1 row_mask:0xf bank_mask:0xf bound_ctrl:1 fi:1 ; d4110304 000204fa ffad2101
+   bld.vopc_e64_dpp(aco_opcode::v_cmp_lt_f32, dst_non_vcc, op_v1, op_v2, dpp_row_rr(1))->valu().abs =
+      0x3;
+
+   //! v_add_f32_e64_dpp v0, v1, v2 mul:4 dpp8:[0,0,0,0,0,0,0,0] fi:1 ; d5030000 100204ea 00000001
+   bld.vop2_e64_dpp8(aco_opcode::v_add_f32, dst_v0, op_v1, op_v2)->valu().omod = 2;
+
+   //! v_sqrt_f32_e64_dpp v0, v1 clamp dpp8:[0,0,0,0,0,0,0,0] fi:1 ; d5b38000 000000ea 00000001
+   bld.vop1_e64_dpp8(aco_opcode::v_sqrt_f32, dst_v0, op_v1)->valu().clamp = true;
+
+   //! v_cmp_lt_f32_e64_dpp s[4:5], |v1|, v2 dpp8:[0,0,0,0,0,0,0,0] fi:1 ; d4110104 000204ea 00000001
+   bld.vopc_e64_dpp8(aco_opcode::v_cmp_lt_f32, dst_non_vcc, op_v1, op_v2)->valu().abs = 0x1;
+
+   finish_assembler_test();
+END_TEST
 #endif

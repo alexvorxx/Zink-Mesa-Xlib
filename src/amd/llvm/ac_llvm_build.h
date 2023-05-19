@@ -281,28 +281,28 @@ LLVMValueRef ac_build_load_to_sgpr_uint_wraparound(struct ac_llvm_context *ctx, 
 
 void ac_build_buffer_store_dword(struct ac_llvm_context *ctx, LLVMValueRef rsrc, LLVMValueRef vdata,
                                  LLVMValueRef vindex, LLVMValueRef voffset, LLVMValueRef soffset,
-                                 unsigned cache_policy);
+                                 enum gl_access_qualifier access);
 
 void ac_build_buffer_store_format(struct ac_llvm_context *ctx, LLVMValueRef rsrc, LLVMValueRef data,
-                                  LLVMValueRef vindex, LLVMValueRef voffset, unsigned cache_policy);
+                                  LLVMValueRef vindex, LLVMValueRef voffset, enum gl_access_qualifier access);
 
 LLVMValueRef ac_build_buffer_load(struct ac_llvm_context *ctx, LLVMValueRef rsrc, int num_channels,
                                   LLVMValueRef vindex, LLVMValueRef voffset, LLVMValueRef soffset,
-                                  LLVMTypeRef channel_type, unsigned cache_policy,
+                                  LLVMTypeRef channel_type, enum gl_access_qualifier access,
                                   bool can_speculate, bool allow_smem);
 
 LLVMValueRef ac_build_buffer_load_format(struct ac_llvm_context *ctx, LLVMValueRef rsrc,
                                          LLVMValueRef vindex, LLVMValueRef voffset,
-                                         unsigned num_channels, unsigned cache_policy,
+                                         unsigned num_channels, enum gl_access_qualifier access,
                                          bool can_speculate, bool d16, bool tfe);
 
 LLVMValueRef ac_build_buffer_load_short(struct ac_llvm_context *ctx, LLVMValueRef rsrc,
                                         LLVMValueRef voffset, LLVMValueRef soffset,
-                                        unsigned cache_policy);
+                                        enum gl_access_qualifier access);
 
 LLVMValueRef ac_build_buffer_load_byte(struct ac_llvm_context *ctx, LLVMValueRef rsrc,
                                        LLVMValueRef voffset, LLVMValueRef soffset,
-                                       unsigned cache_policy);
+                                       enum gl_access_qualifier access);
 
 LLVMValueRef ac_build_safe_tbuffer_load(struct ac_llvm_context *ctx, LLVMValueRef rsrc,
                                         LLVMValueRef vindex, LLVMValueRef voffset,
@@ -312,15 +312,15 @@ LLVMValueRef ac_build_safe_tbuffer_load(struct ac_llvm_context *ctx, LLVMValueRe
                                         unsigned align_offset,
                                         unsigned align_mul,
                                         unsigned num_channels,
-                                        unsigned cache_policy,
+                                        enum gl_access_qualifier access,
                                         bool can_speculate);
 
 void ac_build_buffer_store_short(struct ac_llvm_context *ctx, LLVMValueRef rsrc,
                                  LLVMValueRef vdata, LLVMValueRef voffset, LLVMValueRef soffset,
-                                 unsigned cache_policy);
+                                 enum gl_access_qualifier access);
 
 void ac_build_buffer_store_byte(struct ac_llvm_context *ctx, LLVMValueRef rsrc, LLVMValueRef vdata,
-                                LLVMValueRef voffset, LLVMValueRef soffset, unsigned cache_policy);
+                                LLVMValueRef voffset, LLVMValueRef soffset, enum gl_access_qualifier access);
 
 void ac_set_range_metadata(struct ac_llvm_context *ctx, LLVMValueRef value, unsigned lo,
                            unsigned hi);
@@ -332,16 +332,7 @@ LLVMValueRef ac_get_thread_id(struct ac_llvm_context *ctx);
 
 LLVMValueRef ac_build_ddxy(struct ac_llvm_context *ctx, uint32_t mask, int idx, LLVMValueRef val);
 
-#define AC_SENDMSG_GS           2
-#define AC_SENDMSG_GS_DONE      3
-#define AC_SENDMSG_GS_ALLOC_REQ 9
-
-#define AC_SENDMSG_GS_OP_NOP      (0 << 4)
-#define AC_SENDMSG_GS_OP_CUT      (1 << 4)
-#define AC_SENDMSG_GS_OP_EMIT     (2 << 4)
-#define AC_SENDMSG_GS_OP_EMIT_CUT (3 << 4)
-
-void ac_build_sendmsg(struct ac_llvm_context *ctx, uint32_t msg, LLVMValueRef wave_id);
+void ac_build_sendmsg(struct ac_llvm_context *ctx, uint32_t imm, LLVMValueRef m0_content);
 
 LLVMValueRef ac_build_imsb(struct ac_llvm_context *ctx, LLVMValueRef arg, LLVMTypeRef dst_type);
 
@@ -400,21 +391,12 @@ enum ac_atomic_op
    ac_atomic_fmax,
 };
 
-/* These cache policy bits match the definitions used by the LLVM intrinsics. */
-enum ac_image_cache_policy
-{
-   ac_glc = 1 << 0,      /* per-CU cache control */
-   ac_slc = 1 << 1,      /* global L2 cache control */
-   ac_dlc = 1 << 2,      /* per-shader-array cache control */
-   ac_swizzled = 1 << 3, /* the access is swizzled, disabling load/store merging */
-};
-
 struct ac_image_args {
    enum ac_image_opcode opcode;
    enum ac_atomic_op atomic; /* for the ac_image_atomic opcode */
    enum ac_image_dim dim;
+   enum gl_access_qualifier access;
    unsigned dmask : 4;
-   unsigned cache_policy : 3;
    bool unorm : 1;
    bool level_zero : 1;
    bool d16 : 1;        /* GFX8+: data and return values are 16-bit */

@@ -258,6 +258,7 @@ vk_get_dynamic_graphics_states(BITSET_WORD *dynamic,
       CASE( LINE_RASTERIZATION_MODE_EXT,  RS_LINE_MODE)
       CASE( LINE_STIPPLE_ENABLE_EXT,      RS_LINE_STIPPLE_ENABLE)
       CASE( DEPTH_CLIP_NEGATIVE_ONE_TO_ONE_EXT, VP_DEPTH_CLIP_NEGATIVE_ONE_TO_ONE)
+      CASE( ATTACHMENT_FEEDBACK_LOOP_ENABLE_EXT, ATTACHMENT_FEEDBACK_LOOP_ENABLE)
       default:
          unreachable("Unsupported dynamic graphics state");
       }

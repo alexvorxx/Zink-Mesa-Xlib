@@ -37,6 +37,50 @@
 extern "C" {
 #endif
 
+#define AC_SENDMSG_GS           2
+#define AC_SENDMSG_GS_DONE      3
+#define AC_SENDMSG_GS_ALLOC_REQ 9
+
+#define AC_SENDMSG_GS_OP_NOP      (0 << 4)
+#define AC_SENDMSG_GS_OP_CUT      (1 << 4)
+#define AC_SENDMSG_GS_OP_EMIT     (2 << 4)
+#define AC_SENDMSG_GS_OP_EMIT_CUT (3 << 4)
+
+/* An extension of gl_access_qualifier describing other aspects of memory operations
+ * for code generation.
+ */
+enum {
+   /* Only one of LOAD/STORE/ATOMIC can be set. */
+   ACCESS_TYPE_LOAD            = BITFIELD_BIT(27),
+   ACCESS_TYPE_STORE           = BITFIELD_BIT(28),
+   ACCESS_TYPE_ATOMIC          = BITFIELD_BIT(29),
+
+   /* This access is expected to use an SMEM instruction if source operands are non-divergent.
+    * Only loads can set this.
+    */
+   ACCESS_TYPE_SMEM            = BITFIELD_BIT(30),
+
+   /* Whether a store offset or size alignment is less than 4. */
+   ACCESS_MAY_STORE_SUBDWORD   = BITFIELD_BIT(31),
+};
+
+/* The meaning of these enums is different between chips. They match LLVM definitions,
+ * but they can also be used by ACO. Use ac_get_hw_cache_flags to get these.
+ */
+enum ac_cache_flags
+{
+   ac_glc = BITFIELD_BIT(0),
+   ac_slc = BITFIELD_BIT(1),
+   ac_dlc = BITFIELD_BIT(2),
+   ac_swizzled = BITFIELD_BIT(3),
+};
+
+union ac_hw_cache_flags
+{
+   /* NOTE: This will contain more fields in the future. */
+   enum ac_cache_flags value;
+};
+
 enum ac_image_dim
 {
    ac_image_1d,
@@ -189,6 +233,11 @@ ac_ngg_get_scratch_lds_size(gl_shader_stage stage,
                             unsigned wave_size,
                             bool streamout_enabled,
                             bool can_cull);
+
+enum gl_access_qualifier ac_get_mem_access_flags(const nir_intrinsic_instr *instr);
+
+union ac_hw_cache_flags ac_get_hw_cache_flags(enum amd_gfx_level gfx_level,
+                                              enum gl_access_qualifier access);
 
 #ifdef __cplusplus
 }

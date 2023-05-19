@@ -168,23 +168,6 @@ create_function(struct radv_shader_context *ctx, gl_shader_stage stage, bool has
    }
 }
 
-static void
-visit_emit_vertex_with_counter(struct ac_shader_abi *abi, unsigned stream, LLVMValueRef vertexidx,
-                               LLVMValueRef *addrs)
-{
-   struct radv_shader_context *ctx = radv_shader_context_from_abi(abi);
-   ac_build_sendmsg(&ctx->ac, AC_SENDMSG_GS_OP_EMIT | AC_SENDMSG_GS | (stream << 8),
-                    ctx->gs_wave_id);
-}
-
-static void
-visit_end_primitive(struct ac_shader_abi *abi, unsigned stream)
-{
-   struct radv_shader_context *ctx = radv_shader_context_from_abi(abi);
-   ac_build_sendmsg(&ctx->ac, AC_SENDMSG_GS_OP_CUT | AC_SENDMSG_GS | (stream << 8),
-                    ctx->gs_wave_id);
-}
-
 static LLVMValueRef
 radv_load_base_vertex(struct ac_shader_abi *abi, bool non_indexed_is_zero)
 {
@@ -254,38 +237,6 @@ radv_get_sampler_desc(struct ac_shader_abi *abi, LLVMValueRef index,
 }
 
 static void
-prepare_interp_optimize(struct radv_shader_context *ctx, struct nir_shader *nir)
-{
-   bool uses_center = false;
-   bool uses_centroid = false;
-   nir_foreach_shader_in_variable (variable, nir) {
-      if (glsl_get_base_type(glsl_without_array(variable->type)) != GLSL_TYPE_FLOAT ||
-          variable->data.sample)
-         continue;
-
-      if (variable->data.centroid)
-         uses_centroid = true;
-      else
-         uses_center = true;
-   }
-
-   ctx->abi.persp_centroid = ac_get_arg(&ctx->ac, ctx->args->ac.persp_centroid);
-   ctx->abi.linear_centroid = ac_get_arg(&ctx->ac, ctx->args->ac.linear_centroid);
-
-   if (uses_center && uses_centroid) {
-      LLVMValueRef sel =
-         LLVMBuildICmp(ctx->ac.builder, LLVMIntSLT, ac_get_arg(&ctx->ac, ctx->args->ac.prim_mask),
-                       ctx->ac.i32_0, "");
-      ctx->abi.persp_centroid =
-         LLVMBuildSelect(ctx->ac.builder, sel, ac_get_arg(&ctx->ac, ctx->args->ac.persp_center),
-                         ctx->abi.persp_centroid, "");
-      ctx->abi.linear_centroid =
-         LLVMBuildSelect(ctx->ac.builder, sel, ac_get_arg(&ctx->ac, ctx->args->ac.linear_center),
-                         ctx->abi.linear_centroid, "");
-   }
-}
-
-static void
 scan_shader_output_decl(struct radv_shader_context *ctx, struct nir_variable *variable,
                         struct nir_shader *shader, gl_shader_stage stage)
 {
@@ -303,176 +254,6 @@ scan_shader_output_decl(struct radv_shader_context *ctx, struct nir_variable *va
    ctx->output_mask |= mask_attribs;
 }
 
-/* Initialize arguments for the shader export intrinsic */
-static void
-si_llvm_init_export_args(struct radv_shader_context *ctx, LLVMValueRef *values,
-                         unsigned enabled_channels, unsigned target, unsigned index,
-                         struct ac_export_args *args)
-{
-   /* Specify the channels that are enabled. */
-   args->enabled_channels = enabled_channels;
-
-   /* Specify whether the EXEC mask represents the valid mask */
-   args->valid_mask = 0;
-
-   /* Specify whether this is the last export */
-   args->done = 0;
-
-   /* Specify the target we are exporting */
-   args->target = target;
-
-   args->compr = false;
-   args->out[0] = LLVMGetUndef(ctx->ac.f32);
-   args->out[1] = LLVMGetUndef(ctx->ac.f32);
-   args->out[2] = LLVMGetUndef(ctx->ac.f32);
-   args->out[3] = LLVMGetUndef(ctx->ac.f32);
-
-   if (!values)
-      return;
-
-   bool is_16bit = ac_get_type_size(LLVMTypeOf(values[0])) == 2;
-   if (ctx->stage == MESA_SHADER_FRAGMENT) {
-      unsigned col_format =
-         (ctx->options->key.ps.epilog.spi_shader_col_format >> (4 * index)) & 0xf;
-      bool is_int8 = (ctx->options->key.ps.epilog.color_is_int8 >> index) & 1;
-      bool is_int10 = (ctx->options->key.ps.epilog.color_is_int10 >> index) & 1;
-      bool enable_mrt_output_nan_fixup = (ctx->options->enable_mrt_output_nan_fixup >> index) & 1;
-
-      LLVMValueRef (*packf)(struct ac_llvm_context * ctx, LLVMValueRef args[2]) = NULL;
-      LLVMValueRef (*packi)(struct ac_llvm_context * ctx, LLVMValueRef args[2], unsigned bits,
-                            bool hi) = NULL;
-
-      switch (col_format) {
-      case V_028714_SPI_SHADER_ZERO:
-         args->enabled_channels = 0; /* writemask */
-         args->target = V_008DFC_SQ_EXP_NULL;
-         break;
-
-      case V_028714_SPI_SHADER_32_R:
-         args->enabled_channels = 1;
-         args->out[0] = values[0];
-         break;
-
-      case V_028714_SPI_SHADER_32_GR:
-         args->enabled_channels = 0x3;
-         args->out[0] = values[0];
-         args->out[1] = values[1];
-         break;
-
-      case V_028714_SPI_SHADER_32_AR:
-         if (ctx->ac.gfx_level >= GFX10) {
-            args->enabled_channels = 0x3;
-            args->out[0] = values[0];
-            args->out[1] = values[3];
-         } else {
-            args->enabled_channels = 0x9;
-            args->out[0] = values[0];
-            args->out[3] = values[3];
-         }
-         break;
-
-      case V_028714_SPI_SHADER_FP16_ABGR:
-         args->enabled_channels = 0xf;
-         packf = ac_build_cvt_pkrtz_f16;
-         if (is_16bit) {
-            for (unsigned chan = 0; chan < 4; chan++)
-               values[chan] = LLVMBuildFPExt(ctx->ac.builder, values[chan], ctx->ac.f32, "");
-         }
-         break;
-
-      case V_028714_SPI_SHADER_UNORM16_ABGR:
-         args->enabled_channels = 0xf;
-         packf = ac_build_cvt_pknorm_u16;
-         break;
-
-      case V_028714_SPI_SHADER_SNORM16_ABGR:
-         args->enabled_channels = 0xf;
-         packf = ac_build_cvt_pknorm_i16;
-         break;
-
-      case V_028714_SPI_SHADER_UINT16_ABGR:
-         args->enabled_channels = 0xf;
-         packi = ac_build_cvt_pk_u16;
-         if (is_16bit) {
-            for (unsigned chan = 0; chan < 4; chan++)
-               values[chan] = LLVMBuildZExt(ctx->ac.builder, ac_to_integer(&ctx->ac, values[chan]),
-                                            ctx->ac.i32, "");
-         }
-         break;
-
-      case V_028714_SPI_SHADER_SINT16_ABGR:
-         args->enabled_channels = 0xf;
-         packi = ac_build_cvt_pk_i16;
-         if (is_16bit) {
-            for (unsigned chan = 0; chan < 4; chan++)
-               values[chan] = LLVMBuildSExt(ctx->ac.builder, ac_to_integer(&ctx->ac, values[chan]),
-                                            ctx->ac.i32, "");
-         }
-         break;
-
-      default:
-      case V_028714_SPI_SHADER_32_ABGR:
-         memcpy(&args->out[0], values, sizeof(values[0]) * 4);
-         break;
-      }
-
-      /* Replace NaN by zero (for 32-bit float formats) to fix game bugs if requested. */
-      if (enable_mrt_output_nan_fixup && !is_16bit) {
-         for (unsigned i = 0; i < 4; i++) {
-            LLVMValueRef class_args[2] = {values[i],
-                                          LLVMConstInt(ctx->ac.i32, S_NAN | Q_NAN, false)};
-            LLVMValueRef isnan = ac_build_intrinsic(&ctx->ac, "llvm.amdgcn.class.f32", ctx->ac.i1,
-                                                    class_args, 2, 0);
-            values[i] = LLVMBuildSelect(ctx->ac.builder, isnan, ctx->ac.f32_0, values[i], "");
-         }
-      }
-
-      /* Pack f16 or norm_i16/u16. */
-      if (packf) {
-         for (unsigned chan = 0; chan < 2; chan++) {
-            LLVMValueRef pack_args[2] = {values[2 * chan], values[2 * chan + 1]};
-            LLVMValueRef packed;
-
-            packed = packf(&ctx->ac, pack_args);
-            args->out[chan] = ac_to_float(&ctx->ac, packed);
-         }
-      }
-
-      /* Pack i16/u16. */
-      if (packi) {
-         for (unsigned chan = 0; chan < 2; chan++) {
-            LLVMValueRef pack_args[2] = {ac_to_integer(&ctx->ac, values[2 * chan]),
-                                         ac_to_integer(&ctx->ac, values[2 * chan + 1])};
-            LLVMValueRef packed;
-
-            packed = packi(&ctx->ac, pack_args, is_int8 ? 8 : is_int10 ? 10 : 16, chan == 1);
-            args->out[chan] = ac_to_float(&ctx->ac, packed);
-         }
-      }
-
-      if (packf || packi) {
-         if (ctx->options->gfx_level >= GFX11) {
-            args->enabled_channels = 0x3;
-         } else {
-            args->compr = 1; /* COMPR flag */
-         }
-      }
-
-      return;
-   }
-
-   if (is_16bit) {
-      for (unsigned chan = 0; chan < 4; chan++) {
-         values[chan] = LLVMBuildBitCast(ctx->ac.builder, values[chan], ctx->ac.i16, "");
-         args->out[chan] = LLVMBuildZExt(ctx->ac.builder, values[chan], ctx->ac.i32, "");
-      }
-   } else
-      memcpy(&args->out[0], values, sizeof(values[0]) * 4);
-
-   for (unsigned i = 0; i < 4; ++i)
-      args->out[i] = ac_to_float(&ctx->ac, args->out[i]);
-}
-
 static LLVMValueRef
 radv_load_output(struct radv_shader_context *ctx, unsigned index, unsigned chan)
 {
@@ -480,129 +261,6 @@ radv_load_output(struct radv_shader_context *ctx, unsigned index, unsigned chan)
    LLVMValueRef output = ctx->abi.outputs[idx];
    LLVMTypeRef type = ctx->abi.is_16bit[idx] ? ctx->ac.f16 : ctx->ac.f32;
    return LLVMBuildLoad2(ctx->ac.builder, type, output, "");
-}
-
-static bool
-si_export_mrt_color(struct radv_shader_context *ctx, LLVMValueRef *color, unsigned target,
-                    unsigned index, struct ac_export_args *args)
-{
-   unsigned mrt_target = V_008DFC_SQ_EXP_MRT + target;
-
-   if (ctx->options->gfx_level >= GFX11 && ctx->options->key.ps.epilog.mrt0_is_dual_src &&
-       (target == 0 || target == 1)) {
-      mrt_target += 21;
-   }
-
-   si_llvm_init_export_args(ctx, color, 0xf, mrt_target, index, args);
-   if (!args->enabled_channels)
-      return false; /* unnecessary NULL export */
-
-   return true;
-}
-
-static void
-radv_export_mrt_z(struct radv_shader_context *ctx, LLVMValueRef depth, LLVMValueRef stencil,
-                  LLVMValueRef samplemask)
-{
-   struct ac_export_args args;
-
-   ac_export_mrt_z(&ctx->ac, depth, stencil, samplemask, NULL, true, &args);
-
-   ac_build_export(&ctx->ac, &args);
-}
-
-static void
-handle_fs_outputs_post(struct radv_shader_context *ctx)
-{
-   unsigned index = 0;
-   LLVMValueRef depth = NULL, stencil = NULL, samplemask = NULL;
-   struct ac_export_args color_args[8];
-
-   for (unsigned i = 0; i < AC_LLVM_MAX_OUTPUTS; ++i) {
-      LLVMValueRef values[4];
-
-      if (!(ctx->output_mask & (1ull << i)))
-         continue;
-
-      if (i < FRAG_RESULT_DATA0)
-         continue;
-
-      for (unsigned j = 0; j < 4; j++)
-         values[j] = ac_to_float(&ctx->ac, radv_load_output(ctx, i, j));
-
-      bool ret = si_export_mrt_color(ctx, values, index, i - FRAG_RESULT_DATA0, &color_args[index]);
-      if (ret)
-         index++;
-   }
-
-   /* Process depth, stencil, samplemask. */
-   if (ctx->shader_info->ps.writes_z) {
-      depth = ac_to_float(&ctx->ac, radv_load_output(ctx, FRAG_RESULT_DEPTH, 0));
-   }
-   if (ctx->shader_info->ps.writes_stencil) {
-      stencil = ac_to_float(&ctx->ac, radv_load_output(ctx, FRAG_RESULT_STENCIL, 0));
-   }
-   if (ctx->shader_info->ps.writes_sample_mask) {
-      samplemask = ac_to_float(&ctx->ac, radv_load_output(ctx, FRAG_RESULT_SAMPLE_MASK, 0));
-   }
-
-   /* Set the DONE bit on last non-null color export only if Z isn't
-    * exported.
-    */
-   if (index > 0 && !ctx->shader_info->ps.writes_z &&
-       !ctx->shader_info->ps.writes_stencil &&
-       !ctx->shader_info->ps.writes_sample_mask) {
-      unsigned last = index - 1;
-
-      color_args[last].valid_mask = 1; /* whether the EXEC mask is valid */
-      color_args[last].done = 1;       /* DONE bit */
-
-      if (ctx->options->gfx_level >= GFX11 && ctx->options->key.ps.epilog.mrt0_is_dual_src) {
-         ac_build_dual_src_blend_swizzle(&ctx->ac, &color_args[0], &color_args[1]);
-      }
-   }
-
-   /* Export PS outputs. */
-   for (unsigned i = 0; i < index; i++)
-      ac_build_export(&ctx->ac, &color_args[i]);
-
-   if (depth || stencil || samplemask)
-      radv_export_mrt_z(ctx, depth, stencil, samplemask);
-   else if (!index)
-      ac_build_export_null(&ctx->ac, true);
-}
-
-static void
-emit_gs_epilogue(struct radv_shader_context *ctx)
-{
-   if (ctx->ac.gfx_level >= GFX10)
-      ac_build_waitcnt(&ctx->ac, AC_WAIT_VSTORE);
-
-   ac_build_sendmsg(&ctx->ac, AC_SENDMSG_GS_OP_NOP | AC_SENDMSG_GS_DONE, ctx->gs_wave_id);
-}
-
-static void
-handle_shader_outputs_post(struct ac_shader_abi *abi)
-{
-   struct radv_shader_context *ctx = radv_shader_context_from_abi(abi);
-
-   switch (ctx->stage) {
-   case MESA_SHADER_VERTEX:
-   case MESA_SHADER_TESS_CTRL:
-   case MESA_SHADER_TESS_EVAL:
-      break; /* Lowered in NIR */
-   case MESA_SHADER_FRAGMENT:
-      handle_fs_outputs_post(ctx);
-      break;
-   case MESA_SHADER_GEOMETRY:
-      if (ctx->shader_info->is_ngg)
-         break; /* Lowered in NIR */
-      else
-         emit_gs_epilogue(ctx);
-      break;
-   default:
-      break;
-   }
 }
 
 static void
@@ -763,11 +421,6 @@ ac_translate_nir_to_llvm(struct ac_llvm_compiler *ac_llvm,
       ctx.shader = shaders[shader_idx];
       ctx.output_mask = 0;
 
-      if (shaders[shader_idx]->info.stage == MESA_SHADER_GEOMETRY && !ctx.shader_info->is_ngg) {
-         ctx.abi.emit_vertex_with_counter = visit_emit_vertex_with_counter;
-         ctx.abi.emit_primitive = visit_end_primitive;
-      }
-
       if (shader_idx && !(shaders[shader_idx]->info.stage == MESA_SHADER_GEOMETRY && info->is_ngg)) {
          /* Execute a barrier before the second shader in
           * a merged shader.
@@ -810,17 +463,12 @@ ac_translate_nir_to_llvm(struct ac_llvm_compiler *ac_llvm,
          LLVMPositionBuilderAtEnd(ctx.ac.builder, then_block);
       }
 
-      if (shaders[shader_idx]->info.stage == MESA_SHADER_FRAGMENT)
-         prepare_interp_optimize(&ctx, shaders[shader_idx]);
-      else if (shaders[shader_idx]->info.stage == MESA_SHADER_GEOMETRY && !info->is_ngg)
+      if (shaders[shader_idx]->info.stage == MESA_SHADER_GEOMETRY && !info->is_ngg)
          prepare_gs_input_vgprs(&ctx, shader_count >= 2);
 
       if (!ac_nir_translate(&ctx.ac, &ctx.abi, &args->ac, shaders[shader_idx])) {
          abort();
       }
-
-      if (!gl_shader_stage_is_compute(shaders[shader_idx]->info.stage))
-         handle_shader_outputs_post(&ctx.abi);
 
       if (check_merged_wave_info) {
          LLVMBuildBr(ctx.ac.builder, merge_block);

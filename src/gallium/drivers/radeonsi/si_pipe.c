@@ -61,6 +61,8 @@ static const struct debug_named_value radeonsi_debug_options[] = {
    {"nir", DBG(NIR), "Print final NIR after lowering when shader variants are created"},
    {"initllvm", DBG(INIT_LLVM), "Print initial LLVM IR before optimizations"},
    {"llvm", DBG(LLVM), "Print final LLVM IR"},
+   {"initaco", DBG(INIT_ACO), "Print initial ACO IR before optimizations"},
+   {"aco", DBG(ACO), "Print final ACO IR"},
    {"asm", DBG(ASM), "Print final shaders in asm"},
 
    /* Shader compiler options the shader cache should be aware of: */
@@ -76,6 +78,7 @@ static const struct debug_named_value radeonsi_debug_options[] = {
    {"checkir", DBG(CHECK_IR), "Enable additional sanity checks on shader IR"},
    {"mono", DBG(MONOLITHIC_SHADERS), "Use old-style monolithic shaders compiled on demand"},
    {"nooptvariant", DBG(NO_OPT_VARIANT), "Disable compiling optimized shader variants."},
+   {"useaco", DBG(USE_ACO), "Use ACO as shader compiler when possible"},
 
    /* Information logging options: */
    {"info", DBG(INFO), "Print driver information"},
@@ -209,13 +212,13 @@ static void si_destroy_context(struct pipe_context *context)
    if (sctx->gfx_level >= GFX10 && sctx->has_graphics)
       gfx10_destroy_query(sctx);
 
-   if (sctx->thread_trace) {
+   if (sctx->sqtt) {
       struct si_screen *sscreen = sctx->screen;
       if (sscreen->info.has_stable_pstate && sscreen->b.num_contexts == 1 &&
           !(sctx->context_flags & SI_CONTEXT_FLAG_AUX))
           sscreen->ws->cs_set_pstate(&sctx->gfx_cs, RADEON_CTX_PSTATE_NONE);
 
-      si_destroy_thread_trace(sctx);
+      si_destroy_sqtt(sctx);
    }
 
    pipe_resource_reference(&sctx->esgs_ring, NULL);
@@ -350,7 +353,8 @@ static void si_destroy_context(struct pipe_context *context)
    sctx->ws->fence_reference(&sctx->last_gfx_fence, NULL);
    si_resource_reference(&sctx->eop_bug_scratch, NULL);
    si_resource_reference(&sctx->eop_bug_scratch_tmz, NULL);
-   si_resource_reference(&sctx->shadowed_regs, NULL);
+   si_resource_reference(&sctx->shadowing.registers, NULL);
+   si_resource_reference(&sctx->shadowing.csa, NULL);
 
    si_destroy_compiler(&sctx->compiler);
 
@@ -384,13 +388,20 @@ static enum pipe_reset_status si_get_reset_status(struct pipe_context *ctx)
    if (sctx->context_flags & SI_CONTEXT_FLAG_AUX)
       return PIPE_NO_RESET;
 
-   bool needs_reset;
-   enum pipe_reset_status status = sctx->ws->ctx_query_reset_status(sctx->ctx, false, &needs_reset);
+   bool needs_reset, reset_completed;
+   enum pipe_reset_status status = sctx->ws->ctx_query_reset_status(sctx->ctx, false,
+                                                                    &needs_reset, &reset_completed);
 
-   if (status != PIPE_NO_RESET && needs_reset && !(sctx->context_flags & SI_CONTEXT_FLAG_AUX)) {
-      /* Call the gallium frontend to set a no-op API dispatch. */
-      if (sctx->device_reset_callback.reset) {
-         sctx->device_reset_callback.reset(sctx->device_reset_callback.data, status);
+   if (status != PIPE_NO_RESET) {
+      if (sctx->has_reset_been_notified && reset_completed)
+         return PIPE_NO_RESET;
+
+      sctx->has_reset_been_notified = true;
+
+      if (!(sctx->context_flags & SI_CONTEXT_FLAG_AUX)) {
+         /* Call the gallium frontend to set a no-op API dispatch. */
+         if (needs_reset && sctx->device_reset_callback.reset)
+            sctx->device_reset_callback.reset(sctx->device_reset_callback.data, status);
       }
    }
    return status;
@@ -421,7 +432,7 @@ static void si_emit_string_marker(struct pipe_context *ctx, const char *string, 
 
    dd_parse_apitrace_marker(string, len, &sctx->apitrace_call_number);
 
-   if (sctx->thread_trace_enabled)
+   if (sctx->sqtt_enabled)
       si_write_user_event(sctx, &sctx->gfx_cs, UserEventTrigger, string, len);
 
    if (sctx->log)
@@ -511,6 +522,7 @@ static struct pipe_context *si_create_context(struct pipe_screen *screen, unsign
    sctx->ws = sscreen->ws;
    sctx->family = sscreen->info.family;
    sctx->gfx_level = sscreen->info.gfx_level;
+   sctx->vcn_ip_ver = sscreen->info.vcn_ip_version;
 
    if (sctx->gfx_level == GFX7 || sctx->gfx_level == GFX8 || sctx->gfx_level == GFX9) {
       sctx->eop_bug_scratch = si_aligned_buffer_create(
@@ -701,7 +713,9 @@ static struct pipe_context *si_create_context(struct pipe_screen *screen, unsign
    sctx->sample_mask = 0xffff;
 
    /* Initialize multimedia functions. */
-   if (sscreen->info.ip[AMD_IP_UVD].num_queues || sscreen->info.has_video_hw.vcn_decode ||
+   if (sscreen->info.ip[AMD_IP_UVD].num_queues ||
+       ((sscreen->info.vcn_ip_version >= VCN_4_0_0) ?
+	 sscreen->info.ip[AMD_IP_VCN_UNIFIED].num_queues : sscreen->info.ip[AMD_IP_VCN_DEC].num_queues) ||
        sscreen->info.ip[AMD_IP_VCN_JPEG].num_queues || sscreen->info.ip[AMD_IP_VCE].num_queues ||
        sscreen->info.ip[AMD_IP_UVD_ENC].num_queues || sscreen->info.ip[AMD_IP_VCN_ENC].num_queues) {
       sctx->b.create_video_codec = si_uvd_create_decoder;
@@ -817,7 +831,7 @@ static struct pipe_context *si_create_context(struct pipe_screen *screen, unsign
       struct si_context *saux = si_get_aux_context(sscreen);
 
       enum pipe_reset_status status = sctx->ws->ctx_query_reset_status(
-         saux->ctx, true, NULL);
+         saux->ctx, true, NULL, NULL);
       if (status != PIPE_NO_RESET) {
          /* We lost the aux_context, create a new one */
          struct u_log_context *aux_log = (saux)->log;
@@ -888,7 +902,7 @@ static struct pipe_context *si_pipe_create_context(struct pipe_screen *screen, v
                          "detected. Force the GPU into a profiling mode with e.g. "
                          "\"echo profile_peak  > "
                          "/sys/class/drm/card0/device/power_dpm_force_performance_level\"\n");
-      } else if (!si_init_thread_trace((struct si_context *)ctx)) {
+      } else if (!si_init_sqtt((struct si_context *)ctx)) {
          FREE(ctx);
          return NULL;
       }
@@ -1150,6 +1164,11 @@ static struct pipe_screen *radeonsi_screen_create_impl(struct radeon_winsys *ws,
    sscreen->debug_flags = debug_get_flags_option("R600_DEBUG", radeonsi_debug_options, 0);
    sscreen->debug_flags |= debug_get_flags_option("AMD_DEBUG", radeonsi_debug_options, 0);
    test_flags = debug_get_flags_option("AMD_TEST", test_options, 0);
+
+   if (sscreen->debug_flags & DBG(NO_DISPLAY_DCC)) {
+      sscreen->info.use_display_dcc_unaligned = false;
+      sscreen->info.use_display_dcc_with_retile_blit = false;
+   }
 
    if (sscreen->debug_flags & DBG(NO_GFX))
       sscreen->info.has_graphics = false;

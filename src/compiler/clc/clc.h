@@ -56,6 +56,7 @@ struct clc_optional_features {
    bool images;
    bool images_read_write;
    bool images_write_3d;
+   bool integer_dot_product;
    bool intel_subgroups;
    bool subgroups;
 };

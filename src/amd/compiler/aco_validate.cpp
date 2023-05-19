@@ -142,10 +142,19 @@ validate_ir(Program* program)
                "Wrong base format for instruction", instr.get());
 
          /* check VOP3 modifiers */
-         if (instr->isVOP3() && instr->format != Format::VOP3) {
+         if (instr->isVOP3() && withoutDPP(instr->format) != Format::VOP3) {
             check(base_format == Format::VOP2 || base_format == Format::VOP1 ||
                      base_format == Format::VOPC || base_format == Format::VINTRP,
                   "Format cannot have VOP3/VOP3B applied", instr.get());
+         }
+
+         if (instr->isDPP()) {
+            check(base_format == Format::VOP2 || base_format == Format::VOP1 ||
+                     base_format == Format::VOPC || base_format == Format::VOP3 ||
+                     base_format == Format::VOP3P,
+                  "Format cannot have DPP applied", instr.get());
+            check((!instr->isVOP3() && !instr->isVOP3P()) || program->gfx_level >= GFX11,
+                  "VOP3+DPP is GFX11+ only", instr.get());
          }
 
          /* check SDWA */
@@ -270,7 +279,8 @@ validate_ir(Program* program)
                                    (instr->opcode == aco_opcode::p_bpermute_gfx11w64 && i == 0) ||
                                    (flat && i == 1) || (instr->isMIMG() && (i == 1 || i == 2)) ||
                                    ((instr->isMUBUF() || instr->isMTBUF()) && i == 1) ||
-                                   (instr->isScratch() && i == 0);
+                                   (instr->isScratch() && i == 0) ||
+                                   (instr->opcode == aco_opcode::p_init_scratch && i == 0);
                check(can_be_undef, "Undefs can only be used in certain operands", instr.get());
             } else {
                check(instr->operands[i].isFixed() || instr->operands[i].isTemp() ||

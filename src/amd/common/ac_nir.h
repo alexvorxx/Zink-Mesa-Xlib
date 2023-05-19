@@ -297,6 +297,7 @@ typedef struct {
    enum radeon_family family;
    enum amd_gfx_level gfx_level;
 
+   bool use_aco;
    bool uses_discard;
    bool alpha_to_coverage_via_mrtz;
    bool dual_src_blend_swizzle;
@@ -320,6 +321,7 @@ typedef struct {
 
    /* Vulkan only */
    unsigned enable_mrt_output_nan_fixup;
+   bool no_color_export;
 } ac_nir_lower_ps_options;
 
 void

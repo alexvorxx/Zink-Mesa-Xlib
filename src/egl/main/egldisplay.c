@@ -123,7 +123,7 @@ _eglGetNativePlatformFromEnv(void)
 
 
 /**
- * Try detecting native platform with the help of native display characteristcs.
+ * Try detecting native platform with the help of native display characteristics.
  */
 static _EGLPlatformType
 _eglNativePlatformDetectNativeDisplay(void *nativeDisplay)
@@ -137,7 +137,7 @@ _eglNativePlatformDetectNativeDisplay(void *nativeDisplay)
 #endif
 
 #if defined(HAVE_WAYLAND_PLATFORM) || defined(HAVE_DRM_PLATFORM)
-   if (_eglPointerIsDereferencable(nativeDisplay)) {
+   if (_eglPointerIsDereferenceable(nativeDisplay)) {
       void *first_pointer = *(void **) nativeDisplay;
 
 #ifdef HAVE_WAYLAND_PLATFORM
@@ -635,7 +635,7 @@ _eglGetDeviceDisplay(void *native_display,
 
    /* If the fd is explicitly provided and we did not dup() it yet, do so.
     * The spec mandates that we do so, since we'll need it past the
-    * eglGetPlatformDispay call.
+    * eglGetPlatformDisplay call.
     *
     * The new fd is guaranteed to be 3 or greater.
     */

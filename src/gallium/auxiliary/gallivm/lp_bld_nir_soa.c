@@ -991,27 +991,8 @@ static void emit_store_global(struct lp_build_nir_context *bld_base,
    }
 }
 
-static bool atomic_op_is_float(nir_intrinsic_op nir_op)
-{
-   switch (nir_op) {
-   case nir_intrinsic_shared_atomic_fadd:
-   case nir_intrinsic_shared_atomic_fmin:
-   case nir_intrinsic_shared_atomic_fmax:
-   case nir_intrinsic_global_atomic_fadd:
-   case nir_intrinsic_global_atomic_fmin:
-   case nir_intrinsic_global_atomic_fmax:
-   case nir_intrinsic_ssbo_atomic_fadd:
-   case nir_intrinsic_ssbo_atomic_fmin:
-   case nir_intrinsic_ssbo_atomic_fmax:
-      return true;
-   default:
-      break;
-   }
-   return false;
-}
-
 static void emit_atomic_global(struct lp_build_nir_context *bld_base,
-                               nir_intrinsic_op nir_op,
+                               nir_atomic_op nir_op,
                                unsigned addr_bit_size,
                                unsigned val_bit_size,
                                LLVMValueRef addr,
@@ -1021,7 +1002,7 @@ static void emit_atomic_global(struct lp_build_nir_context *bld_base,
    struct gallivm_state *gallivm = bld_base->base.gallivm;
    LLVMBuilderRef builder = gallivm->builder;
    struct lp_build_context *uint_bld = &bld_base->uint_bld;
-   bool is_flt = atomic_op_is_float(nir_op);
+   bool is_flt = nir_atomic_op_type(nir_op) == nir_type_float;
    struct lp_build_context *atom_bld = is_flt ? get_flt_bld(bld_base, val_bit_size) : get_int_bld(bld_base, true, val_bit_size);
    if (is_flt)
       val = LLVMBuildBitCast(builder, val, atom_bld->vec_type, "");
@@ -1046,7 +1027,7 @@ static void emit_atomic_global(struct lp_build_nir_context *bld_base,
    lp_build_if(&ifthen, gallivm, cond);
 
    addr_ptr = LLVMBuildBitCast(gallivm->builder, addr_ptr, LLVMPointerType(LLVMTypeOf(value_ptr), 0), "");
-   if (nir_op == nir_intrinsic_global_atomic_comp_swap) {
+   if (val2 != NULL /* compare-and-swap */) {
       LLVMValueRef cas_src_ptr = LLVMBuildExtractElement(gallivm->builder, val2,
                                                          loop_state.counter, "");
       cas_src_ptr = LLVMBuildBitCast(gallivm->builder, cas_src_ptr, atom_bld->elem_type, "");
@@ -1057,52 +1038,7 @@ static void emit_atomic_global(struct lp_build_nir_context *bld_base,
                                       false);
       scalar = LLVMBuildExtractValue(gallivm->builder, scalar, 0, "");
    } else {
-      LLVMAtomicRMWBinOp op;
-      switch (nir_op) {
-      case nir_intrinsic_global_atomic_add:
-         op = LLVMAtomicRMWBinOpAdd;
-         break;
-      case nir_intrinsic_global_atomic_exchange:
-
-         op = LLVMAtomicRMWBinOpXchg;
-         break;
-      case nir_intrinsic_global_atomic_and:
-         op = LLVMAtomicRMWBinOpAnd;
-         break;
-      case nir_intrinsic_global_atomic_or:
-         op = LLVMAtomicRMWBinOpOr;
-         break;
-      case nir_intrinsic_global_atomic_xor:
-         op = LLVMAtomicRMWBinOpXor;
-         break;
-      case nir_intrinsic_global_atomic_umin:
-         op = LLVMAtomicRMWBinOpUMin;
-         break;
-      case nir_intrinsic_global_atomic_umax:
-         op = LLVMAtomicRMWBinOpUMax;
-         break;
-      case nir_intrinsic_global_atomic_imin:
-         op = LLVMAtomicRMWBinOpMin;
-         break;
-      case nir_intrinsic_global_atomic_imax:
-         op = LLVMAtomicRMWBinOpMax;
-         break;
-      case nir_intrinsic_global_atomic_fadd:
-         op = LLVMAtomicRMWBinOpFAdd;
-         break;
-#if LLVM_VERSION_MAJOR >= 15
-      case nir_intrinsic_global_atomic_fmin:
-         op = LLVMAtomicRMWBinOpFMin;
-         break;
-      case nir_intrinsic_global_atomic_fmax:
-         op = LLVMAtomicRMWBinOpFMax;
-         break;
-#endif
-      default:
-         unreachable("unknown atomic op");
-      }
-
-      scalar = LLVMBuildAtomicRMW(builder, op,
+      scalar = LLVMBuildAtomicRMW(builder, lp_translate_atomic_op(nir_op),
                                   addr_ptr, value_ptr,
                                   LLVMAtomicOrderingSequentiallyConsistent,
                                   false);
@@ -1506,7 +1442,7 @@ static void emit_store_mem(struct lp_build_nir_context *bld_base,
 
 
 static void emit_atomic_mem(struct lp_build_nir_context *bld_base,
-                            nir_intrinsic_op nir_op,
+                            nir_atomic_op nir_op,
                             uint32_t bit_size,
                             LLVMValueRef index, LLVMValueRef offset,
                             LLVMValueRef val, LLVMValueRef val2,
@@ -1517,7 +1453,7 @@ static void emit_atomic_mem(struct lp_build_nir_context *bld_base,
    LLVMBuilderRef builder = bld->bld_base.base.gallivm->builder;
    struct lp_build_context *uint_bld = &bld_base->uint_bld;
    uint32_t shift_val = bit_size_to_shift_size(bit_size);
-   bool is_float = atomic_op_is_float(nir_op);
+   bool is_float = nir_atomic_op_type(nir_op) == nir_type_float;
    struct lp_build_context *atomic_bld = is_float ? get_flt_bld(bld_base, bit_size) : get_int_bld(bld_base, true, bit_size);
 
    offset = lp_build_shr_imm(uint_bld, offset, shift_val);
@@ -1557,7 +1493,7 @@ static void emit_atomic_mem(struct lp_build_nir_context *bld_base,
    inner_cond = LLVMBuildICmp(gallivm->builder, LLVMIntNE, do_fetch, lp_build_const_int32(gallivm, 0), "");
    lp_build_if(&ifthen, gallivm, inner_cond);
 
-   if (nir_op == nir_intrinsic_ssbo_atomic_comp_swap || nir_op == nir_intrinsic_shared_atomic_comp_swap) {
+   if (val2 != NULL) {
       LLVMValueRef cas_src_ptr = LLVMBuildExtractElement(gallivm->builder, val2,
                                                          loop_state.counter, "");
       cas_src_ptr = LLVMBuildBitCast(gallivm->builder, cas_src_ptr, atomic_bld->elem_type, "");
@@ -1568,63 +1504,7 @@ static void emit_atomic_mem(struct lp_build_nir_context *bld_base,
                                       false);
       scalar = LLVMBuildExtractValue(gallivm->builder, scalar, 0, "");
    } else {
-      LLVMAtomicRMWBinOp op;
-
-      switch (nir_op) {
-      case nir_intrinsic_shared_atomic_add:
-      case nir_intrinsic_ssbo_atomic_add:
-         op = LLVMAtomicRMWBinOpAdd;
-         break;
-      case nir_intrinsic_shared_atomic_exchange:
-      case nir_intrinsic_ssbo_atomic_exchange:
-         op = LLVMAtomicRMWBinOpXchg;
-         break;
-      case nir_intrinsic_shared_atomic_and:
-      case nir_intrinsic_ssbo_atomic_and:
-         op = LLVMAtomicRMWBinOpAnd;
-         break;
-      case nir_intrinsic_shared_atomic_or:
-      case nir_intrinsic_ssbo_atomic_or:
-         op = LLVMAtomicRMWBinOpOr;
-         break;
-      case nir_intrinsic_shared_atomic_xor:
-      case nir_intrinsic_ssbo_atomic_xor:
-         op = LLVMAtomicRMWBinOpXor;
-         break;
-      case nir_intrinsic_shared_atomic_umin:
-      case nir_intrinsic_ssbo_atomic_umin:
-         op = LLVMAtomicRMWBinOpUMin;
-         break;
-      case nir_intrinsic_shared_atomic_umax:
-      case nir_intrinsic_ssbo_atomic_umax:
-         op = LLVMAtomicRMWBinOpUMax;
-         break;
-      case nir_intrinsic_ssbo_atomic_imin:
-      case nir_intrinsic_shared_atomic_imin:
-         op = LLVMAtomicRMWBinOpMin;
-         break;
-      case nir_intrinsic_ssbo_atomic_imax:
-      case nir_intrinsic_shared_atomic_imax:
-         op = LLVMAtomicRMWBinOpMax;
-         break;
-      case nir_intrinsic_shared_atomic_fadd:
-      case nir_intrinsic_ssbo_atomic_fadd:
-         op = LLVMAtomicRMWBinOpFAdd;
-         break;
-#if LLVM_VERSION_MAJOR >= 15
-      case nir_intrinsic_shared_atomic_fmin:
-      case nir_intrinsic_ssbo_atomic_fmin:
-         op = LLVMAtomicRMWBinOpFMin;
-         break;
-      case nir_intrinsic_shared_atomic_fmax:
-      case nir_intrinsic_ssbo_atomic_fmax:
-         op = LLVMAtomicRMWBinOpFMax;
-         break;
-#endif
-      default:
-         unreachable("unknown atomic op");
-      }
-      scalar = LLVMBuildAtomicRMW(builder, op,
+      scalar = LLVMBuildAtomicRMW(builder, lp_translate_atomic_op(nir_op),
                                   scalar_ptr, value_ptr,
                                   LLVMAtomicOrderingSequentiallyConsistent,
                                   false);
@@ -1679,8 +1559,8 @@ static void emit_image_op(struct lp_build_nir_context *bld_base,
    struct gallivm_state *gallivm = bld_base->base.gallivm;
 
    params->type = bld_base->base.type;
-   params->context_type = bld->context_type;
-   params->context_ptr = bld->context_ptr;
+   params->resources_type = bld->resources_type;
+   params->resources_ptr = bld->resources_ptr;
    params->thread_data_type = bld->thread_data_type;
    params->thread_data_ptr = bld->thread_data_ptr;
    params->exec_mask = mask_vec(bld_base);
@@ -1702,9 +1582,8 @@ static void emit_image_size(struct lp_build_nir_context *bld_base,
    struct gallivm_state *gallivm = bld_base->base.gallivm;
 
    params->int_type = bld_base->int_bld.type;
-   params->context_type = bld->context_type;
-   params->context_ptr = bld->context_ptr;
-
+   params->resources_type = bld->resources_type;
+   params->resources_ptr = bld->resources_ptr;
    if (params->texture_unit_offset)
       params->texture_unit_offset = LLVMBuildExtractElement(gallivm->builder, params->texture_unit_offset,
                                                             first_active_invocation(bld_base), "");
@@ -1759,8 +1638,8 @@ static void emit_tex(struct lp_build_nir_context *bld_base,
    struct gallivm_state *gallivm = bld_base->base.gallivm;
 
    params->type = bld_base->base.type;
-   params->context_type = bld->context_type;
-   params->context_ptr = bld->context_ptr;
+   params->resources_type = bld->resources_type;
+   params->resources_ptr = bld->resources_ptr;
    params->thread_data_type = bld->thread_data_type;
    params->thread_data_ptr = bld->thread_data_ptr;
 
@@ -1829,9 +1708,8 @@ static void emit_tex_size(struct lp_build_nir_context *bld_base,
    struct lp_build_nir_soa_context *bld = (struct lp_build_nir_soa_context *)bld_base;
 
    params->int_type = bld_base->int_bld.type;
-   params->context_type = bld->context_type;
-   params->context_ptr = bld->context_ptr;
-
+   params->resources_type = bld->resources_type;
+   params->resources_ptr = bld->resources_ptr;
    if (params->texture_unit_offset)
       params->texture_unit_offset = LLVMBuildExtractElement(bld_base->base.gallivm->builder,
                                                              params->texture_unit_offset,
@@ -2852,8 +2730,8 @@ void lp_build_nir_soa(struct gallivm_state *gallivm,
    bld.sampler = params->sampler;
 //   bld.bld_base.info = params->info;
 
-   bld.context_type = params->context_type;
-   bld.context_ptr = params->context_ptr;
+   bld.resources_type = params->resources_type;
+   bld.resources_ptr = params->resources_ptr;
    bld.thread_data_type = params->thread_data_type;
    bld.thread_data_ptr = params->thread_data_ptr;
    bld.bld_base.aniso_filter_table = params->aniso_filter_table;

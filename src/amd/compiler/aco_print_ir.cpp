@@ -334,18 +334,18 @@ print_instr_format_specific(enum amd_gfx_level gfx_level, const Instruction* ins
       }
       case aco_opcode::s_sendmsg: {
          unsigned id = imm & sendmsg_id_mask;
-         static_assert(_sendmsg_gs == sendmsg_hs_tessfactor);
-         static_assert(_sendmsg_gs_done == sendmsg_dealloc_vgprs);
+         static_assert(sendmsg_gs == sendmsg_hs_tessfactor);
+         static_assert(sendmsg_gs_done == sendmsg_dealloc_vgprs);
          switch (id) {
          case sendmsg_none: fprintf(output, " sendmsg(MSG_NONE)"); break;
-         case _sendmsg_gs:
+         case sendmsg_gs:
             if (gfx_level >= GFX11)
                fprintf(output, " sendmsg(hs_tessfactor)");
             else
                fprintf(output, " sendmsg(gs%s%s, %u)", imm & 0x10 ? ", cut" : "",
                        imm & 0x20 ? ", emit" : "", imm >> 8);
             break;
-         case _sendmsg_gs_done:
+         case sendmsg_gs_done:
             if (gfx_level >= GFX11)
                fprintf(output, " sendmsg(dealloc_vgprs)");
             else

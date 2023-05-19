@@ -332,7 +332,7 @@ emit_color_clear(struct radv_cmd_buffer *cmd_buffer, const VkClearAttachment *cl
     * the render pass because it's likely a secondary command buffer.
     */
    if (color_att->iview) {
-      samples = color_att->iview->image->info.samples;
+      samples = color_att->iview->image->vk.samples;
       format = color_att->iview->vk.format;
    } else {
       samples = render->max_samples;
@@ -579,7 +579,7 @@ emit_depthstencil_clear(struct radv_cmd_buffer *cmd_buffer, const VkClearAttachm
     */
    struct radv_image_view *iview = render->ds_att.iview;
    if (iview) {
-      samples = iview->image->info.samples;
+      samples = iview->image->vk.samples;
    } else {
       assert(render->ds_att.format != VK_FORMAT_UNDEFINED);
       samples = render->max_samples;
@@ -789,16 +789,16 @@ radv_can_fast_clear_depth(struct radv_cmd_buffer *cmd_buffer, const struct radv_
       return false;
 
    if (clear_rect->rect.offset.x || clear_rect->rect.offset.y ||
-       clear_rect->rect.extent.width != iview->image->info.width ||
-       clear_rect->rect.extent.height != iview->image->info.height)
+       clear_rect->rect.extent.width != iview->image->vk.extent.width ||
+       clear_rect->rect.extent.height != iview->image->vk.extent.height)
       return false;
 
-   if (view_mask && (iview->image->info.array_size >= 32 ||
-                     (1u << iview->image->info.array_size) - 1u != view_mask))
+   if (view_mask && (iview->image->vk.array_layers >= 32 ||
+                     (1u << iview->image->vk.array_layers) - 1u != view_mask))
       return false;
    if (!view_mask && clear_rect->baseArrayLayer != 0)
       return false;
-   if (!view_mask && clear_rect->layerCount != iview->image->info.array_size)
+   if (!view_mask && clear_rect->layerCount != iview->image->vk.array_layers)
       return false;
 
    if (cmd_buffer->device->vk.enabled_extensions.EXT_depth_range_unrestricted &&
@@ -812,7 +812,7 @@ radv_can_fast_clear_depth(struct radv_cmd_buffer *cmd_buffer, const struct radv_
          !radv_is_fast_clear_stencil_allowed(clear_value))))
       return false;
 
-   if (iview->image->info.levels > 1) {
+   if (iview->image->vk.mip_levels > 1) {
       uint32_t last_level = iview->vk.base_mip_level + iview->vk.level_count - 1;
       if (last_level >= iview->image->planes[0].surface.num_meta_levels) {
          /* Do not fast clears if one level can't be fast cleared. */
@@ -1214,7 +1214,7 @@ radv_get_cmask_fast_clear_value(const struct radv_image *image)
     */
    if (radv_image_has_dcc(image)) {
       /* DCC fast clear with MSAA should clear CMASK to 0xC. */
-      return image->info.samples > 1 ? 0xcccccccc : 0xffffffff;
+      return image->vk.samples > 1 ? 0xcccccccc : 0xffffffff;
    }
 
    return value;
@@ -1234,7 +1234,7 @@ radv_clear_cmask(struct radv_cmd_buffer *cmd_buffer, struct radv_image *image,
       unsigned slice_size = image->planes[0].surface.cmask_slice_size;
 
       offset += slice_size * range->baseArrayLayer;
-      size = slice_size * radv_get_layerCount(image, range);
+      size = slice_size * vk_image_subresource_layer_count(&image->vk, range);
    }
 
    return radv_fill_buffer(cmd_buffer, image, image->bindings[0].bo,
@@ -1250,10 +1250,10 @@ radv_clear_fmask(struct radv_cmd_buffer *cmd_buffer, struct radv_image *image,
    uint64_t size;
 
    /* MSAA images do not support mipmap levels. */
-   assert(range->baseMipLevel == 0 && radv_get_levelCount(image, range) == 1);
+   assert(range->baseMipLevel == 0 && vk_image_subresource_level_count(&image->vk, range) == 1);
 
    offset += slice_size * range->baseArrayLayer;
-   size = slice_size * radv_get_layerCount(image, range);
+   size = slice_size * vk_image_subresource_layer_count(&image->vk, range);
 
    return radv_fill_buffer(cmd_buffer, image, image->bindings[0].bo,
          radv_buffer_get_va(image->bindings[0].bo) + offset, size, value);
@@ -1263,8 +1263,8 @@ uint32_t
 radv_clear_dcc(struct radv_cmd_buffer *cmd_buffer, struct radv_image *image,
                const VkImageSubresourceRange *range, uint32_t value)
 {
-   uint32_t level_count = radv_get_levelCount(image, range);
-   uint32_t layer_count = radv_get_layerCount(image, range);
+   uint32_t level_count = vk_image_subresource_level_count(&image->vk, range);
+   uint32_t layer_count = vk_image_subresource_layer_count(&image->vk, range);
    uint32_t flush_bits = 0;
 
    /* Mark the image as being compressed. */
@@ -1296,7 +1296,7 @@ radv_clear_dcc(struct radv_cmd_buffer *cmd_buffer, struct radv_image *image,
           */
          offset +=
             dcc_level->dcc_offset + dcc_level->dcc_slice_fast_clear_size * range->baseArrayLayer;
-         size = dcc_level->dcc_slice_fast_clear_size * radv_get_layerCount(image, range);
+         size = dcc_level->dcc_slice_fast_clear_size * vk_image_subresource_layer_count(&image->vk, range);
       }
 
       /* Do not clear this level if it can't be compressed. */
@@ -1319,9 +1319,9 @@ radv_clear_dcc_comp_to_single(struct radv_cmd_buffer *cmd_buffer,
 {
    struct radv_device *device = cmd_buffer->device;
    unsigned bytes_per_pixel = vk_format_get_blocksize(image->vk.format);
-   unsigned layer_count = radv_get_layerCount(image, range);
+   unsigned layer_count = vk_image_subresource_layer_count(&image->vk, range);
    struct radv_meta_saved_state saved_state;
-   bool is_msaa = image->info.samples > 1;
+   bool is_msaa = image->vk.samples > 1;
    struct radv_image_view iview;
    VkFormat format;
 
@@ -1354,15 +1354,15 @@ radv_clear_dcc_comp_to_single(struct radv_cmd_buffer *cmd_buffer,
    radv_CmdBindPipeline(radv_cmd_buffer_to_handle(cmd_buffer), VK_PIPELINE_BIND_POINT_COMPUTE,
                         pipeline);
 
-   for (uint32_t l = 0; l < radv_get_levelCount(image, range); l++) {
+   for (uint32_t l = 0; l < vk_image_subresource_level_count(&image->vk, range); l++) {
       uint32_t width, height;
 
       /* Do not write the clear color value for levels without DCC. */
       if (!radv_dcc_enabled(image, range->baseMipLevel + l))
          continue;
 
-      width = radv_minify(image->info.width, range->baseMipLevel + l);
-      height = radv_minify(image->info.height, range->baseMipLevel + l);
+      width = radv_minify(image->vk.extent.width, range->baseMipLevel + l);
+      height = radv_minify(image->vk.extent.height, range->baseMipLevel + l);
 
       radv_image_view_init(
          &iview, cmd_buffer->device,
@@ -1428,13 +1428,13 @@ uint32_t
 radv_clear_htile(struct radv_cmd_buffer *cmd_buffer, const struct radv_image *image,
                  const VkImageSubresourceRange *range, uint32_t value)
 {
-   uint32_t level_count = radv_get_levelCount(image, range);
+   uint32_t level_count = vk_image_subresource_level_count(&image->vk, range);
    uint32_t flush_bits = 0;
    uint32_t htile_mask;
 
    htile_mask = radv_get_htile_mask(cmd_buffer->device, image, range->aspectMask);
 
-   if (level_count != image->info.levels) {
+   if (level_count != image->vk.mip_levels) {
       assert(cmd_buffer->device->physical_device->rad_info.gfx_level >= GFX10);
 
       /* Clear individuals levels separately. */
@@ -1460,7 +1460,7 @@ radv_clear_htile(struct radv_cmd_buffer *cmd_buffer, const struct radv_image *im
          }
       }
    } else {
-      unsigned layer_count = radv_get_layerCount(image, range);
+      unsigned layer_count = vk_image_subresource_layer_count(&image->vk, range);
       uint64_t size = image->planes[0].surface.meta_slice_size * layer_count;
       uint64_t offset = image->bindings[0].offset + image->planes[0].surface.meta_offset +
                         image->planes[0].surface.meta_slice_size * range->baseArrayLayer;
@@ -1727,16 +1727,16 @@ radv_can_fast_clear_color(struct radv_cmd_buffer *cmd_buffer, const struct radv_
       return false;
 
    if (clear_rect->rect.offset.x || clear_rect->rect.offset.y ||
-       clear_rect->rect.extent.width != iview->image->info.width ||
-       clear_rect->rect.extent.height != iview->image->info.height)
+       clear_rect->rect.extent.width != iview->image->vk.extent.width ||
+       clear_rect->rect.extent.height != iview->image->vk.extent.height)
       return false;
 
-   if (view_mask && (iview->image->info.array_size >= 32 ||
-                     (1u << iview->image->info.array_size) - 1u != view_mask))
+   if (view_mask && (iview->image->vk.array_layers >= 32 ||
+                     (1u << iview->image->vk.array_layers) - 1u != view_mask))
       return false;
    if (!view_mask && clear_rect->baseArrayLayer != 0)
       return false;
-   if (!view_mask && clear_rect->layerCount != iview->image->info.array_size)
+   if (!view_mask && clear_rect->layerCount != iview->image->vk.array_layers)
       return false;
 
    /* DCC */
@@ -1761,7 +1761,7 @@ radv_can_fast_clear_color(struct radv_cmd_buffer *cmd_buffer, const struct radv_
                                         &can_avoid_fast_clear_elim);
       }
 
-      if (iview->image->info.levels > 1) {
+      if (iview->image->vk.mip_levels > 1) {
          if (cmd_buffer->device->physical_device->rad_info.gfx_level >= GFX9) {
             uint32_t last_level = iview->vk.base_mip_level + iview->vk.level_count - 1;
             if (last_level >= iview->image->planes[0].surface.num_meta_levels) {
@@ -2024,8 +2024,8 @@ radv_clear_image_layer(struct radv_cmd_buffer *cmd_buffer, struct radv_image *im
                        const VkClearValue *clear_val)
 {
    struct radv_image_view iview;
-   uint32_t width = radv_minify(image->info.width, range->baseMipLevel + level);
-   uint32_t height = radv_minify(image->info.height, range->baseMipLevel + level);
+   uint32_t width = radv_minify(image->vk.extent.width, range->baseMipLevel + level);
+   uint32_t height = radv_minify(image->vk.extent.height, range->baseMipLevel + level);
 
    radv_image_view_init(&iview, cmd_buffer->device,
                         &(VkImageViewCreateInfo){
@@ -2113,9 +2113,9 @@ radv_fast_clear_range(struct radv_cmd_buffer *cmd_buffer, struct radv_image *ima
                               {
                                  .aspectMask = range->aspectMask,
                                  .baseMipLevel = range->baseMipLevel,
-                                 .levelCount = range->levelCount,
+                                 .levelCount = vk_image_subresource_level_count(&image->vk, range),
                                  .baseArrayLayer = range->baseArrayLayer,
-                                 .layerCount = range->layerCount,
+                                 .layerCount = vk_image_subresource_layer_count(&image->vk, range),
                               },
                         },
                         0, NULL);
@@ -2126,12 +2126,12 @@ radv_fast_clear_range(struct radv_cmd_buffer *cmd_buffer, struct radv_image *ima
             .offset = {0, 0},
             .extent =
                {
-                  radv_minify(image->info.width, range->baseMipLevel),
-                  radv_minify(image->info.height, range->baseMipLevel),
+                  radv_minify(image->vk.extent.width, range->baseMipLevel),
+                  radv_minify(image->vk.extent.height, range->baseMipLevel),
                },
          },
       .baseArrayLayer = range->baseArrayLayer,
-      .layerCount = range->layerCount,
+      .layerCount = vk_image_subresource_layer_count(&image->vk, range),
    };
 
    VkClearAttachment clear_att = {
@@ -2217,11 +2217,10 @@ radv_cmd_clear_image(struct radv_cmd_buffer *cmd_buffer, struct radv_image *imag
          continue;
       }
 
-      for (uint32_t l = 0; l < radv_get_levelCount(image, range); ++l) {
+      for (uint32_t l = 0; l < vk_image_subresource_level_count(&image->vk, range); ++l) {
          const uint32_t layer_count = image->vk.image_type == VK_IMAGE_TYPE_3D
-                                         ? radv_minify(image->info.depth, range->baseMipLevel + l)
-                                         : radv_get_layerCount(image, range);
-
+                                         ? radv_minify(image->vk.extent.depth, range->baseMipLevel + l)
+                                         : vk_image_subresource_layer_count(&image->vk, range);
          if (cs) {
             for (uint32_t s = 0; s < layer_count; ++s) {
                struct radv_meta_blit2d_surf surf;

@@ -1,3 +1,6 @@
+# ???
+spec@arb_query_buffer_object@qbo
+spec@arb_query_buffer_object@qbo@query-GL_PRIMITIVES_SUBMITTED-ASYNC_CPU_READ_BEFORE-GL_UNSIGNED_INT64_ARB
 
 # "../src/gallium/drivers/zink/zink_fence.c:130: fence_wait: Assertion `fence->batch_id' failed."
 .*dEQP-EGL.functional.sharing.gles2.multithread.random_egl_sync.textures.copytexsubimage2d.4
@@ -18,6 +21,9 @@ dEQP-EGL.functional.color_clears.*_window
 
 # MESA: error: ZINK: vkQueueSubmit failed (VK_ERROR_DEVICE_LOST)
 dEQP-EGL.functional.render.*_window
+
+# ../../src/xcb_in.c:746: xcb_request_check: Assertion `!reply' failed.
+glx@glx-make-current
 
 # Expected 15 15 15, observed 0 0 0
 glx@glx-multithread-texture

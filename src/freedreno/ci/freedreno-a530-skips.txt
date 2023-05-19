@@ -43,7 +43,6 @@ glx@glx-multithread-texture
 spec@!opengl 1.1@draw-sync
 spec@arb_uniform_buffer_object@execution@shared-struct-array-array-array-struct
 spec@arb_uniform_buffer_object@execution@std140-struct-array-array-array-struct
-spec@!opengl 2.0@tex3d-npot
 
 # This one seems to be triggering faults and causing random other fails
 # depending on what else was running at the time:

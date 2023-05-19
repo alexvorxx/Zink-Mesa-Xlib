@@ -139,6 +139,31 @@ build_occlusion_query_shader(struct radv_device *device)
    nir_store_var(&b, outer_counter, nir_imm_int(&b, 0), 0x1);
    nir_store_var(&b, available, nir_imm_true(&b), 0x1);
 
+   nir_ssa_def *query_result_wait = nir_test_mask(&b, flags, VK_QUERY_RESULT_WAIT_BIT);
+   nir_push_if(&b, query_result_wait);
+   {
+      /* Wait on the upper word of the last DB entry. */
+      nir_push_loop(&b);
+      {
+         const uint32_t rb_avail_offset = 16 * util_last_bit64(enabled_rb_mask) - 4;
+
+         /* Prevent the SSBO load to be moved out of the loop. */
+         nir_scoped_memory_barrier(&b, NIR_SCOPE_INVOCATION, NIR_MEMORY_ACQUIRE, nir_var_mem_ssbo);
+
+         nir_ssa_def *load_offset = nir_iadd_imm(&b, input_base, rb_avail_offset);
+         nir_ssa_def *load = nir_load_ssbo(&b, 1, 32, src_buf, load_offset, .align_mul = 4,
+                                           .access = ACCESS_COHERENT);
+
+         nir_push_if(&b, nir_ige(&b, load, nir_imm_int(&b, 0x80000000)));
+         {
+            nir_jump(&b, nir_jump_break);
+         }
+         nir_pop_if(&b, NULL);
+      }
+      nir_pop_loop(&b, NULL);
+   }
+   nir_pop_if(&b, NULL);
+
    nir_push_loop(&b);
 
    nir_ssa_def *current_outer_count = nir_load_var(&b, outer_counter);
@@ -1359,11 +1384,13 @@ radv_GetQueryPoolResults(VkDevice _device, VkQueryPool queryPool, uint32_t first
           *	u64 PrimitiveStorageNeeded;
           * }
           */
-         available = 1;
-         for (int j = 0; j < 4; j++) {
-            if (!(p_atomic_read(src64 + j) & 0x8000000000000000UL))
-               available = 0;
-         }
+         do {
+            available = 1;
+            for (int j = 0; j < 4; j++) {
+               if (!(p_atomic_read(src64 + j) & 0x8000000000000000UL))
+                  available = 0;
+            }
+         } while (!available && (flags & VK_QUERY_RESULT_WAIT_BIT));
 
          if (!available && !(flags & VK_QUERY_RESULT_PARTIAL_BIT))
             result = VK_NOT_READY;
@@ -1398,11 +1425,13 @@ radv_GetQueryPoolResults(VkDevice _device, VkQueryPool queryPool, uint32_t first
           *	u64 PrimitiveStorageNeeded;
           * }
           */
-         available = 1;
-         if (!(p_atomic_read(src64 + 0) & 0x8000000000000000UL) ||
-             !(p_atomic_read(src64 + 2) & 0x8000000000000000UL)) {
-            available = 0;
-         }
+         do {
+            available = 1;
+            if (!(p_atomic_read(src64 + 0) & 0x8000000000000000UL) ||
+                !(p_atomic_read(src64 + 2) & 0x8000000000000000UL)) {
+               available = 0;
+            }
+         } while (!available && (flags & VK_QUERY_RESULT_WAIT_BIT));
 
          if (!available && !(flags & VK_QUERY_RESULT_PARTIAL_BIT))
             result = VK_NOT_READY;
@@ -1541,19 +1570,6 @@ radv_CmdCopyQueryPoolResults(VkCommandBuffer commandBuffer, VkQueryPool queryPoo
 
    switch (pool->type) {
    case VK_QUERY_TYPE_OCCLUSION:
-      if (flags & VK_QUERY_RESULT_WAIT_BIT) {
-         uint64_t enabled_rb_mask = cmd_buffer->device->physical_device->rad_info.enabled_rb_mask;
-         uint32_t rb_avail_offset = 16 * util_last_bit64(enabled_rb_mask) - 4;
-         for (unsigned i = 0; i < queryCount; ++i, dest_va += stride) {
-            unsigned query = firstQuery + i;
-            uint64_t src_va = va + query * pool->stride + rb_avail_offset;
-
-            radeon_check_space(cmd_buffer->device->ws, cs, 7);
-
-            /* Waits on the upper word of the last DB entry */
-            radv_cp_wait_mem(cs, WAIT_REG_MEM_GREATER_OR_EQUAL, src_va, 0x80000000, 0xffffffff);
-         }
-      }
       radv_query_shader(cmd_buffer, &cmd_buffer->device->meta_state.query.occlusion_query_pipeline,
                         pool->bo, dst_buffer->bo, firstQuery * pool->stride,
                         dst_buffer->offset + dstOffset, pool->stride, stride, dst_size, queryCount,
@@ -1781,7 +1797,7 @@ emit_begin_query(struct radv_cmd_buffer *cmd_buffer, struct radv_query_pool *poo
             cmd_buffer->state.perfect_occlusion_queries_enabled = true;
          }
 
-         radv_set_db_count_control(cmd_buffer, true);
+         cmd_buffer->state.dirty |= RADV_CMD_DIRTY_OCCLUSION_QUERY;
       } else {
          if ((flags & VK_QUERY_CONTROL_PRECISE_BIT) &&
              !cmd_buffer->state.perfect_occlusion_queries_enabled) {
@@ -1791,20 +1807,8 @@ emit_begin_query(struct radv_cmd_buffer *cmd_buffer, struct radv_query_pool *poo
              */
             cmd_buffer->state.perfect_occlusion_queries_enabled = true;
 
-            radv_set_db_count_control(cmd_buffer, true);
+            cmd_buffer->state.dirty |= RADV_CMD_DIRTY_OCCLUSION_QUERY;
          }
-      }
-
-      if (cmd_buffer->device->physical_device->rad_info.gfx_level >= GFX11) {
-         uint64_t rb_mask =
-            BITFIELD64_MASK(cmd_buffer->device->physical_device->rad_info.max_render_backends);
-
-         radeon_emit(cs, PKT3(PKT3_EVENT_WRITE, 2, 0));
-         radeon_emit(cs, EVENT_TYPE(V_028A90_PIXEL_PIPE_STAT_CONTROL) | EVENT_INDEX(1));
-         radeon_emit(cs, PIXEL_PIPE_STATE_CNTL_COUNTER_ID(0) |
-                         PIXEL_PIPE_STATE_CNTL_STRIDE(2) |
-                         PIXEL_PIPE_STATE_CNTL_INSTANCE_EN_LO(rb_mask));
-         radeon_emit(cs, PIXEL_PIPE_STATE_CNTL_INSTANCE_EN_HI(rb_mask));
       }
 
       if (cmd_buffer->device->physical_device->rad_info.gfx_level >= GFX11 &&
@@ -1897,8 +1901,6 @@ emit_begin_query(struct radv_cmd_buffer *cmd_buffer, struct radv_query_pool *poo
             cmd_buffer->state.active_prims_gen_queries++;
          }
 
-         emit_sample_streamout(cmd_buffer, va, index);
-
          if (pool->uses_gds) {
             /* generated prim counter */
             gfx10_copy_gds_query(cmd_buffer, RADV_NGG_QUERY_PRIM_GEN_OFFSET(index), va + 32);
@@ -1911,6 +1913,8 @@ emit_begin_query(struct radv_cmd_buffer *cmd_buffer, struct radv_query_pool *poo
 
             cmd_buffer->state.active_prims_gen_gds_queries++;
          }
+
+         emit_sample_streamout(cmd_buffer, va, index);
       }
       break;
    }
@@ -1934,12 +1938,12 @@ emit_end_query(struct radv_cmd_buffer *cmd_buffer, struct radv_query_pool *pool,
 
       cmd_buffer->state.active_occlusion_queries--;
       if (cmd_buffer->state.active_occlusion_queries == 0) {
-         radv_set_db_count_control(cmd_buffer, false);
-
          /* Reset the perfect occlusion queries hint now that no
           * queries are active.
           */
          cmd_buffer->state.perfect_occlusion_queries_enabled = false;
+
+         cmd_buffer->state.dirty |= RADV_CMD_DIRTY_OCCLUSION_QUERY;
       }
 
       if (cmd_buffer->device->physical_device->rad_info.gfx_level >= GFX11 &&
@@ -2033,8 +2037,6 @@ emit_end_query(struct radv_cmd_buffer *cmd_buffer, struct radv_query_pool *pool,
             cmd_buffer->state.active_prims_gen_queries--;
          }
 
-         emit_sample_streamout(cmd_buffer, va + 16, index);
-
          if (pool->uses_gds) {
             /* generated prim counter */
             gfx10_copy_gds_query(cmd_buffer, RADV_NGG_QUERY_PRIM_GEN_OFFSET(index), va + 36);
@@ -2044,6 +2046,8 @@ emit_end_query(struct radv_cmd_buffer *cmd_buffer, struct radv_query_pool *pool,
             if (!cmd_buffer->state.active_prims_gen_gds_queries)
                cmd_buffer->state.dirty |= RADV_CMD_DIRTY_NGG_QUERY;
          }
+
+         emit_sample_streamout(cmd_buffer, va + 16, index);
       }
       break;
    }
@@ -2141,7 +2145,12 @@ radv_CmdWriteTimestamp2(VkCommandBuffer commandBuffer, VkPipelineStageFlags2 sta
 
    radv_cs_add_buffer(cmd_buffer->device->ws, cs, pool->bo);
 
-   emit_query_flush(cmd_buffer, pool);
+   if (cmd_buffer->device->instance->flush_before_timestamp_write) {
+      /* Make sure previously launched waves have finished */
+      cmd_buffer->state.flush_bits |= RADV_CMD_FLAG_PS_PARTIAL_FLUSH | RADV_CMD_FLAG_CS_PARTIAL_FLUSH;
+   }
+   
+   si_emit_cache_flush(cmd_buffer);
 
    int num_queries = 1;
    if (cmd_buffer->state.render.view_mask)

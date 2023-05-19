@@ -235,8 +235,10 @@ vlVaGetConfigAttributes(VADriverContextP ctx, VAProfile profile, VAEntrypoint en
             break;
          case VAConfigAttribEncPackedHeaders:
             value = VA_ENC_PACKED_HEADER_NONE;
-            if (u_reduce_video_profile(ProfileToPipe(profile)) == PIPE_VIDEO_FORMAT_HEVC)
+            if ((u_reduce_video_profile(ProfileToPipe(profile)) == PIPE_VIDEO_FORMAT_HEVC))
                value |= VA_ENC_PACKED_HEADER_SEQUENCE;
+            else if (u_reduce_video_profile(ProfileToPipe(profile)) == PIPE_VIDEO_FORMAT_AV1)
+               value |= (VA_ENC_PACKED_HEADER_SEQUENCE | VA_ENC_PACKED_HEADER_PICTURE);
             break;
          case VAConfigAttribEncMaxSlices:
          {
@@ -391,6 +393,70 @@ vlVaGetConfigAttributes(VADriverContextP ctx, VAProfile profile, VAEntrypoint en
                value = h265_enc_pred_direction;
          } break;
 #endif
+#if VA_CHECK_VERSION(1, 16, 0)
+         case VAConfigAttribEncAV1:
+         {
+            union pipe_av1_enc_cap_features features;
+            features.value = 0;
+
+            int support = pscreen->get_video_param(pscreen, ProfileToPipe(profile),
+                                       PIPE_VIDEO_ENTRYPOINT_ENCODE,
+                                       PIPE_VIDEO_CAP_ENC_AV1_FEATURE);
+            if (support <= 0)
+               value = VA_ATTRIB_NOT_SUPPORTED;
+            else {
+               VAConfigAttribValEncAV1 attrib;
+               features.value = support;
+               attrib.value = features.value;
+               value = attrib.value;
+            }
+         } break;
+         case VAConfigAttribEncAV1Ext1:
+         {
+            union pipe_av1_enc_cap_features_ext1 features_ext1;
+            features_ext1.value = 0;
+            int support =  pscreen->get_video_param(pscreen, ProfileToPipe(profile),
+                                       PIPE_VIDEO_ENTRYPOINT_ENCODE,
+                                       PIPE_VIDEO_CAP_ENC_AV1_FEATURE_EXT1);
+            if (support <= 0)
+               value = VA_ATTRIB_NOT_SUPPORTED;
+            else {
+               VAConfigAttribValEncAV1Ext1 attrib;
+               features_ext1.value = support;
+               attrib.value = features_ext1.value;
+               value = attrib.value;
+            }
+
+         } break;
+         case VAConfigAttribEncAV1Ext2:
+         {
+            union pipe_av1_enc_cap_features_ext2 features_ext2;
+            features_ext2.value = 0;
+
+            int support = pscreen->get_video_param(pscreen, ProfileToPipe(profile),
+                                       PIPE_VIDEO_ENTRYPOINT_ENCODE,
+                                       PIPE_VIDEO_CAP_ENC_AV1_FEATURE_EXT2);
+            if (support <= 0)
+               value = VA_ATTRIB_NOT_SUPPORTED;
+            else {
+               VAConfigAttribValEncAV1Ext2 attrib;
+               features_ext2.value = support;
+               attrib.value = features_ext2.value;
+               value = attrib.value;
+           }
+
+         } break;
+         case VAConfigAttribEncTileSupport:
+         {
+            int encode_tile_support = pscreen->get_video_param(pscreen, ProfileToPipe(profile),
+                                             PIPE_VIDEO_ENTRYPOINT_ENCODE,
+                                             PIPE_VIDEO_CAP_ENC_SUPPORTS_TILE);
+            if (encode_tile_support <= 0)
+               value = VA_ATTRIB_NOT_SUPPORTED;
+            else
+               value = encode_tile_support;
+         } break;
+#endif
          default:
             value = VA_ATTRIB_NOT_SUPPORTED;
             break;
@@ -533,7 +599,10 @@ vlVaCreateConfig(VADriverContextP ctx, VAProfile profile, VAEntrypoint entrypoin
             config->rc = PIPE_H2645_ENC_RATE_CONTROL_METHOD_VARIABLE;
          else if (attrib_list[i].value == VA_RC_CQP)
             config->rc = PIPE_H2645_ENC_RATE_CONTROL_METHOD_DISABLE;
-         else if (attrib_list[i].value == VA_RC_QVBR)
+         else if (attrib_list[i].value == VA_RC_QVBR &&
+                     (pscreen->get_video_param(pscreen, ProfileToPipe(profile),
+                        PIPE_VIDEO_ENTRYPOINT_ENCODE,
+                        PIPE_VIDEO_CAP_ENC_RATE_CONTROL_QVBR) > 0))
             config->rc = PIPE_H2645_ENC_RATE_CONTROL_METHOD_QUALITY_VARIABLE;
          else {
             FREE(config);
@@ -549,11 +618,12 @@ vlVaCreateConfig(VADriverContextP ctx, VAProfile profile, VAEntrypoint entrypoin
          }
       }
       if (attrib_list[i].type == VAConfigAttribEncPackedHeaders) {
-         if ((attrib_list[i].value > 1) ||
-             (attrib_list[i].value &&
-               u_reduce_video_profile(ProfileToPipe(profile)) !=
-                  PIPE_VIDEO_FORMAT_HEVC) ||
-             (config->entrypoint != PIPE_VIDEO_ENTRYPOINT_ENCODE)) {
+         if (config->entrypoint != PIPE_VIDEO_ENTRYPOINT_ENCODE ||
+             (((attrib_list[i].value != 0)) &&
+              ((attrib_list[i].value != 1) || u_reduce_video_profile(ProfileToPipe(profile))
+               != PIPE_VIDEO_FORMAT_HEVC) &&
+              ((attrib_list[i].value != 3) || u_reduce_video_profile(ProfileToPipe(profile))
+               != PIPE_VIDEO_FORMAT_AV1))) {
             FREE(config);
             return VA_STATUS_ERROR_INVALID_VALUE;
          }

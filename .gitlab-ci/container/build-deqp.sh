@@ -14,25 +14,56 @@ git config --global user.email "mesa@example.com"
 git config --global user.name "Mesa CI"
 git clone \
     https://github.com/KhronosGroup/VK-GL-CTS.git \
-    -b vulkan-cts-1.3.5.0 \
+    -b vulkan-cts-1.3.5.1 \
     --depth 1 \
     /VK-GL-CTS
 pushd /VK-GL-CTS
 
-cts_commits_to_backport=()
+# Patches to VulkanCTS may come from commits in their repo (listed in
+# cts_commits_to_backport) or patch files stored in our repo (in the patch
+# directory `$OLDPWD/.gitlab-ci/container/patches/` listed in cts_patch_files).
+# Both list variables would have comments explaining the reasons behind the
+# patches.
+
+cts_commits_to_backport=(
+        # queue_transfer fix
+        8771481027d76a262195de8397d8985246bca98f
+
+        # sync fix for SSBO writes
+        44f1be32fe6bd2a7de7b9169fc71cc44e0b26124
+
+        # correctness fixes for zink validation fails
+        1923cbc89ed3969a3afe7c6926124b51157902e1
+        af3a979c49dc65f8809c27660405ae3a76c7da4a
+        6b70682c57c4ffd07fdf6bcbf1aebd7cf1123629
+
+        # video validation fails
+        4cc3980a86ba5b7fe6e76b559cc1a9cb5fd1b253
+        a7a2ce442db51ca058ce051de7e09d62db44ae81
+
+        # Check for robustness before testing it
+        ee7138d8adf5ed3c4845e5ac2553c4f9697be9d8
+)
 
 for commit in "${cts_commits_to_backport[@]}"
 do
-  curl -L --retry 4 -f --retry-all-errors --retry-delay 60 \
-    "https://github.com/KhronosGroup/VK-GL-CTS/commit/$commit.patch" | git am -
+  PATCH_URL="https://github.com/KhronosGroup/VK-GL-CTS/commit/$commit.patch"
+  echo "Apply patch to VK-GL-CTS from $PATCH_URL"
+  curl -L --retry 4 -f --retry-all-errors --retry-delay 60 $PATCH_URL | \
+    git am -
 done
 
-# Fix surfaceless build.
-git am < $OLDPWD/.gitlab-ci/container/0001-Fix-build-for-the-surfaceless-and-null-WS-target-pla.patch
+cts_patch_files=(
+  # Android specific patches.
+  build-deqp_Allow-running-on-Android-from-the-command-line.patch
+  build-deqp_Android-prints-to-stdout-instead-of-logcat.patch
+)
 
-# Android specific patches.
-git am < $OLDPWD/.gitlab-ci/container/0001-Allow-running-on-Android-from-the-command-line.patch
-git am < $OLDPWD/.gitlab-ci/container/0002-Android-prints-to-stdout-instead-of-logcat.patch
+for patch in "${cts_patch_files[@]}"
+do
+  echo "Apply patch to VK-GL-CTS from $patch"
+  git am < $OLDPWD/.gitlab-ci/container/patches/$patch
+done
 
 # --insecure is due to SSL cert failures hitting sourceforge for zlib and
 # libpng (sigh).  The archives get their checksums checked anyway, and git

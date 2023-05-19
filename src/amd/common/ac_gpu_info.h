@@ -47,6 +47,7 @@ struct amdgpu_gpu_info;
 struct amd_ip_info {
    uint8_t ver_major;
    uint8_t ver_minor;
+   uint8_t ver_rev;
    uint8_t num_queues;
 };
 
@@ -189,10 +190,6 @@ struct radeon_info {
    bool has_set_sh_reg_pairs_n;
 
    /* Multimedia info. */
-   struct {
-      bool vcn_decode; /* TODO: remove */
-   } has_video_hw;
-
    uint32_t uvd_fw_version;
    uint32_t vce_fw_version;
    uint32_t vce_harvest_config;
@@ -206,6 +203,8 @@ struct radeon_info {
          uint32_t pad;
       } codec_info[8]; /* the number of available codecs */
    } dec_caps, enc_caps;
+
+   enum vcn_version vcn_ip_version;
 
    /* Kernel & winsys capabilities. */
    uint32_t drm_major; /* version */
@@ -273,6 +272,14 @@ struct radeon_info {
    /* AMD_CU_MASK environment variable or ~0. */
    bool spi_cu_en_has_effect;
    uint32_t spi_cu_en;
+
+   struct {
+      uint32_t shadow_size;
+      uint32_t shadow_alignment;
+      uint32_t csa_size;
+      uint32_t csa_alignment;
+   } fw_based_mcbp;
+   bool has_fw_based_shadowing;
 };
 
 bool ac_query_gpu_info(int fd, void *dev_p, struct radeon_info *info);
@@ -280,12 +287,12 @@ bool ac_query_pci_bus_info(int fd, struct radeon_info *info);
 
 void ac_compute_driver_uuid(char *uuid, size_t size);
 
-void ac_compute_device_uuid(struct radeon_info *info, char *uuid, size_t size);
-void ac_print_gpu_info(struct radeon_info *info, FILE *f);
+void ac_compute_device_uuid(const struct radeon_info *info, char *uuid, size_t size);
+void ac_print_gpu_info(const struct radeon_info *info, FILE *f);
 int ac_get_gs_table_depth(enum amd_gfx_level gfx_level, enum radeon_family family);
-void ac_get_raster_config(struct radeon_info *info, uint32_t *raster_config_p,
+void ac_get_raster_config(const struct radeon_info *info, uint32_t *raster_config_p,
                           uint32_t *raster_config_1_p, uint32_t *se_tile_repeat_p);
-void ac_get_harvested_configs(struct radeon_info *info, unsigned raster_config,
+void ac_get_harvested_configs(const struct radeon_info *info, unsigned raster_config,
                               unsigned *cik_raster_config_1_p, unsigned *raster_config_se);
 unsigned ac_get_compute_resource_limits(const struct radeon_info *info,
                                         unsigned waves_per_threadgroup, unsigned max_waves_per_sh,
@@ -300,7 +307,7 @@ struct ac_hs_info {
    uint32_t tess_offchip_ring_size;
 };
 
-void ac_get_hs_info(struct radeon_info *info,
+void ac_get_hs_info(const struct radeon_info *info,
                     struct ac_hs_info *hs);
 
 /* Task rings BO layout information.
@@ -344,7 +351,7 @@ struct ac_task_info {
 /* Size of the task control buffer. 9 DWORDs. */
 #define AC_TASK_CTRLBUF_BYTES 36
 
-void ac_get_task_info(struct radeon_info *info,
+void ac_get_task_info(const struct radeon_info *info,
                       struct ac_task_info *task_info);
 
 uint32_t ac_memory_ops_per_clock(uint32_t vram_type);

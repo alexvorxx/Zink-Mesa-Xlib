@@ -31,6 +31,7 @@
 #include "sfn_instr_alugroup.h"
 #include "sfn_instr_tex.h"
 #include "sfn_shader.h"
+#include "sfn_virtualvalues.h"
 
 #include <algorithm>
 #include <sstream>
@@ -168,7 +169,11 @@ AluInstr::update_uses()
          u->buf_addr()->as_register()->add_use(this);
    }
 
-   if (m_dest && has_alu_flag(alu_write)) {
+   if (m_dest &&
+       (has_alu_flag(alu_write) ||
+        m_opcode == op1_mova_int ||
+        m_opcode == op1_set_cf_idx0 ||
+        m_opcode == op1_set_cf_idx1)) {
       m_dest->add_parent(this);
 
       if (m_dest->pin() == pin_array) {
@@ -253,16 +258,17 @@ AluInstr::do_print(std::ostream& os) const
          os << " CLAMP";
 
       if (m_dest) {
-         if (has_alu_flag(alu_write))
+         if (has_alu_flag(alu_write) || m_dest->has_flag(Register::addr_or_idx)) {
             os << " " << *m_dest;
-         else
+         } else {
             os << " __"
                << "." << swzchar[m_dest->chan()];
-         if (!has_alu_flag(alu_write) && m_dest->pin() != pin_none)
-            os << "@" << m_dest->pin();
+            if (m_dest->pin() != pin_none)
+               os << "@" << m_dest->pin();
+         }
          os << " : ";
       } else {
-         os << "__." << swzchar[dest_chan()] << " : ";
+         os << " __." << swzchar[dest_chan()] << " : ";
       }
    }
 
@@ -345,6 +351,51 @@ AluInstr::can_propagate_src() const
    return m_dest->pin() == pin_none || m_dest->pin() == pin_free;
 }
 
+class ReplaceIndirectArrayAddr : public RegisterVisitor {
+public:
+   void visit(Register& value) override { (void)value; }
+   void visit(LocalArray& value) override
+   {
+      (void)value;
+      unreachable("An array can't be used as address");
+   }
+   void visit(LocalArrayValue& value) override;
+   void visit(UniformValue& value) override;
+   void visit(LiteralConstant& value) override { (void)value; }
+   void visit(InlineConstant& value) override { (void)value; }
+
+   PRegister new_addr;
+};
+
+void ReplaceIndirectArrayAddr::visit(LocalArrayValue& value)
+{
+   if (new_addr->sel() == 0 && value.addr()->as_register())
+      value.set_addr(new_addr);
+}
+
+void ReplaceIndirectArrayAddr::visit(UniformValue& value)
+{
+   if (value.buf_addr() && value.buf_addr()->as_register() &&
+       (new_addr->sel() == 1 || new_addr->sel() == 2)) {
+      value.set_buf_addr(new_addr);
+   }
+}
+
+void AluInstr::update_indirect_addr(PRegister reg)
+{
+   ReplaceIndirectArrayAddr visitor;
+   visitor.new_addr = reg;
+   assert(reg->has_flag(Register::addr_or_idx));
+
+   if (m_dest)
+      m_dest->accept(visitor);
+
+   for (auto src : m_src)
+      src->accept(visitor);
+
+   reg->add_use(this);
+}
+
 bool
 AluInstr::can_propagate_dest() const
 {
@@ -364,6 +415,9 @@ AluInstr::can_propagate_dest() const
    }
 
    if (!src_reg->has_flag(Register::ssa))
+      return false;
+
+   if (!m_dest->has_flag(Register::ssa))
       return false;
 
    if (src_reg->pin() == pin_chan)
@@ -421,29 +475,46 @@ bool AluInstr::can_replace_source(PRegister old_src, PVirtualValue new_src)
    if (!check_readport_validation(old_src, new_src))
       return false;
 
-   /* If the old source is an array element, we assume that there
+   /* If the old or new source is an array element, we assume that there
     * might have been an (untracked) indirect access, so don't replace
     * this source */
-   if (old_src->pin() == pin_array)
+   if (old_src->pin() == pin_array || new_src->pin() == pin_array)
       return false;
 
-   if (new_src->get_addr()) {
-      for (auto& s : m_src) {
-         auto addr = s->get_addr();
-         /* can't have two different indirect addresses in the same instr */
-         if (addr && !addr->equal_to(*new_src->get_addr()))
+   auto [addr, dummy, index] = indirect_addr();
+   auto addr_reg = addr ?  addr->as_register() : nullptr;
+   auto index_reg = index ? index->as_register() : nullptr;
+
+   if (auto u = new_src->as_uniform()) {
+      if (u && u->buf_addr()) {
+
+         /* Don't mix indirect buffer and indirect registers, because the
+          * scheduler can't handle it yet. */
+         if (addr_reg)
+            return false;
+
+         /* Don't allow two different index registers, can't deal with that yet */
+         if (index_reg && !index_reg->equal_to(*u->buf_addr()))
             return false;
       }
    }
 
-   if (m_dest) {
-      /* We don't allow src and dst with rel and different indirect register
-       * addresses */
-      if (m_dest->pin() == pin_array && new_src->pin() == pin_array) {
-         auto dav = static_cast<const LocalArrayValue *>(m_dest)->addr();
-         auto sav = static_cast<const LocalArrayValue *>(new_src)->addr();
-         if (dav && sav && dav->as_register() && !dav->equal_to(*sav))
+   if (auto new_addr = new_src->get_addr()) {
+      auto new_addr_reg = new_addr->as_register();
+      bool new_addr_lowered = new_addr_reg &&
+                              new_addr_reg->has_flag(Register::addr_or_idx);
+
+      if (addr_reg) {
+         if (!addr_reg->equal_to(*new_addr) || new_addr_lowered ||
+             addr_reg->has_flag(Register::addr_or_idx))
             return false;
+      }
+      if (m_dest->has_flag(Register::addr_or_idx)) {
+         if (new_src->pin() == pin_array) {
+            auto s = static_cast<const LocalArrayValue *>(new_src)->addr();
+            if (!s->as_inline_const() || !s->as_literal())
+               return false;
+         }
       }
    }
    return true;
@@ -666,15 +737,18 @@ public:
    void visit(const InlineConstant& value) { (void)value; }
 
    PRegister addr{nullptr};
-   bool is_index{false};
+   PRegister index{nullptr};
+   bool addr_is_for_dest{false};
 };
 
 void
 ResolveIndirectArrayAddr::visit(const LocalArrayValue& value)
 {
    auto a = value.addr();
-   if (a)
+   if (a) {
       addr = a->as_register();
+      assert(!addr_is_for_dest);
+   }
 }
 
 void
@@ -682,12 +756,11 @@ ResolveIndirectArrayAddr::visit(const UniformValue& value)
 {
    auto a = value.buf_addr();
    if (a) {
-      addr = a->as_register();
-      is_index = true;
+      index = a->as_register();
    }
 }
 
-std::tuple<PRegister, bool, bool>
+std::tuple<PRegister, bool, PRegister>
 AluInstr::indirect_addr() const
 {
    ResolveIndirectArrayAddr visitor;
@@ -695,16 +768,13 @@ AluInstr::indirect_addr() const
    if (m_dest) {
       m_dest->accept(visitor);
       if (visitor.addr)
-         return {visitor.addr, false, false};
+          visitor.addr_is_for_dest = true;
    }
 
    for (auto s : m_src) {
       s->accept(visitor);
-      if (visitor.addr) {
-         return {visitor.addr, !visitor.is_index, visitor.is_index};
-      }
    }
-   return {nullptr, false, false};
+   return {visitor.addr, visitor.addr_is_for_dest, visitor.index};
 }
 
 AluGroup *
@@ -815,7 +885,8 @@ AluInstr::register_priority() const
 
       if (m_dest) {
          if (m_dest->has_flag(Register::ssa) && has_alu_flag(alu_write)) {
-            if (m_dest->pin() != pin_group && m_dest->pin() != pin_chgr)
+            if (m_dest->pin() != pin_group && m_dest->pin() != pin_chgr &&
+                !m_dest->addr())
                priority--;
          } else {
             // Arrays and registers are pre-allocated, hence scheduling
@@ -826,14 +897,18 @@ AluInstr::register_priority() const
 
       for (const auto s : m_src) {
          auto r = s->as_register();
-         if (r && r->has_flag(Register::ssa)) {
-            int pending = 0;
-            for (auto b : r->uses()) {
-               if (!b->is_scheduled())
-                  ++pending;
+         if (r) {
+            if (r->has_flag(Register::ssa)) {
+               int pending = 0;
+               for (auto b : r->uses()) {
+                  if (!b->is_scheduled())
+                     ++pending;
+               }
+               if (pending == 1)
+                  ++priority;
             }
-            if (pending == 1)
-               ++priority;
+            if (r->addr() && r->addr()->as_register())
+               priority += 2;
          }
          if (s->as_uniform())
             ++priority;
@@ -1204,6 +1279,28 @@ void
 AluInstrVisitor::visit(IfInstr *instr)
 {
    instr->predicate()->accept(*this);
+}
+
+bool AluInstr::is_kill() const
+{
+   if (has_alu_flag(alu_is_lds))
+      return false;
+
+   switch (m_opcode) {
+   case op2_kille:
+   case op2_kille_int:
+   case op2_killne:
+   case op2_killne_int:
+   case op2_killge:
+   case op2_killge_int:
+   case op2_killge_uint:
+   case op2_killgt:
+   case op2_killgt_int:
+   case op2_killgt_uint:
+      return true;
+   default:
+      return false;
+   }
 }
 
 static bool

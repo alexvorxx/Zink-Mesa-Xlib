@@ -63,6 +63,26 @@ static uint8_t si_vectorize_callback(const nir_instr *instr, const void *data)
    return 1;
 }
 
+static unsigned si_lower_bit_size_callback(const nir_instr *instr, void *data)
+{
+   if (instr->type != nir_instr_type_alu)
+      return 0;
+
+   nir_alu_instr *alu = nir_instr_as_alu(instr);
+
+   switch (alu->op) {
+   case nir_op_imul_high:
+   case nir_op_umul_high:
+      if (nir_dest_bit_size(alu->dest.dest) < 32)
+         return 32;
+      break;
+   default:
+      break;
+   }
+
+   return 0;
+}
+
 void si_nir_opts(struct si_screen *sscreen, struct nir_shader *nir, bool first)
 {
    bool progress;
@@ -105,6 +125,7 @@ void si_nir_opts(struct si_screen *sscreen, struct nir_shader *nir, bool first)
       NIR_PASS(progress, nir, nir_opt_peephole_select, 8, true, true);
 
       /* Needed for algebraic lowering */
+      NIR_PASS(progress, nir, nir_lower_bit_size, si_lower_bit_size_callback, NULL);
       NIR_PASS(progress, nir, nir_opt_algebraic);
       NIR_PASS(progress, nir, nir_opt_constant_folding);
 
@@ -269,10 +290,12 @@ static void si_lower_nir(struct si_screen *sscreen, struct nir_shader *nir)
 
    const struct nir_lower_tex_options lower_tex_options = {
       .lower_txp = ~0u,
+      .lower_txf_offset = true,
       .lower_txs_cube_array = true,
       .lower_invalid_implicit_lod = true,
       .lower_tg4_offsets = true,
       .lower_to_fragment_fetch_amd = sscreen->info.gfx_level < GFX11,
+      .lower_array_layer_round_even = !sscreen->info.conformant_trunc_coord,
    };
    NIR_PASS_V(nir, nir_lower_tex, &lower_tex_options);
 
@@ -283,6 +306,8 @@ static void si_lower_nir(struct si_screen *sscreen, struct nir_shader *nir)
    NIR_PASS_V(nir, nir_lower_image, &lower_image_options);
 
    NIR_PASS_V(nir, si_lower_intrinsics);
+
+   NIR_PASS_V(nir, ac_nir_lower_sin_cos);
 
    NIR_PASS_V(nir, nir_lower_subgroups, &si_nir_subgroups_options);
 
@@ -412,7 +437,11 @@ char *si_finalize_nir(struct pipe_screen *screen, void *nirptr)
    struct si_screen *sscreen = (struct si_screen *)screen;
    struct nir_shader *nir = (struct nir_shader *)nirptr;
 
-   nir_lower_io_passes(nir);
+   nir_lower_io_passes(nir, false);
+   NIR_PASS_V(nir, nir_remove_dead_variables, nir_var_shader_in | nir_var_shader_out, NULL);
+
+   if (nir->info.stage == MESA_SHADER_FRAGMENT)
+      NIR_PASS_V(nir, nir_lower_color_inputs);
 
    NIR_PASS_V(nir, ac_nir_lower_subdword_loads,
               (ac_nir_lower_subdword_options) {

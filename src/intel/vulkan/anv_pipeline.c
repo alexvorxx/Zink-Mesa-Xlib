@@ -188,6 +188,7 @@ anv_shader_stage_to_nir(struct anv_device *device,
          .ray_cull_mask = rt_enabled,
          .ray_query = rt_enabled,
          .ray_tracing = rt_enabled,
+         .ray_tracing_position_fetch = rt_enabled,
          .shader_clock = true,
          .shader_viewport_index_layer = true,
          .stencil_export = true,
@@ -954,7 +955,15 @@ anv_pipeline_lower_nir(struct anv_pipeline *pipeline,
    NIR_PASS(_, nir, nir_copy_prop);
    NIR_PASS(_, nir, nir_opt_constant_folding);
 
+   /* Required for nir_divergence_analysis() which is needed for
+    * anv_nir_lower_ubo_loads.
+    */
+   NIR_PASS(_, nir, nir_convert_to_lcssa, true, true);
+   nir_divergence_analysis(nir);
+
    NIR_PASS(_, nir, anv_nir_lower_ubo_loads);
+
+   NIR_PASS(_, nir, nir_opt_remove_phis);
 
    enum nir_lower_non_uniform_access_type lower_non_uniform_access_types =
       nir_lower_non_uniform_texture_access | nir_lower_non_uniform_image_access;
@@ -1815,12 +1824,6 @@ anv_graphics_pipeline_load_nir(struct anv_graphics_base_pipeline *pipeline,
                          stages[s].imported.nir;
       }
 
-      /* We might not have a NIR version of shader if it's coming from a
-       * library.
-       */
-      if (stages[s].nir != NULL)
-         nir_shader_gather_info(stages[s].nir, nir_shader_get_entrypoint(stages[s].nir));
-
       stages[s].feedback.duration += os_time_get_nano() - stage_start;
    }
 
@@ -1896,6 +1899,8 @@ anv_pipeline_nir_preprocess(struct anv_pipeline *pipeline, nir_shader *nir)
       NIR_PASS(_, nir, nir_opt_dce);
       NIR_PASS(_, nir, nir_remove_dead_variables, nir_var_shader_out, NULL);
    }
+
+   nir_shader_gather_info(nir, nir_shader_get_entrypoint(nir));
 }
 
 static void

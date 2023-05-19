@@ -451,7 +451,7 @@ construct_value(nir_builder *build,
 
       nir_alu_instr *alu = nir_alu_instr_create(build->shader, op);
       nir_ssa_dest_init(&alu->instr, &alu->dest.dest, num_components,
-                        dst_bit_size, NULL);
+                        dst_bit_size);
       alu->dest.write_mask = (1 << num_components) - 1;
       alu->dest.saturate = false;
 

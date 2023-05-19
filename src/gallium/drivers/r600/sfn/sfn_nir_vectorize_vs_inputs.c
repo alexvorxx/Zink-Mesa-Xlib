@@ -149,8 +149,8 @@ r600_create_new_load(nir_builder *b,
    assert(intr->dest.is_ssa);
 
    nir_intrinsic_instr *new_intr = nir_intrinsic_instr_create(b->shader, intr->intrinsic);
-   nir_ssa_dest_init(
-      &new_intr->instr, &new_intr->dest, num_comps, intr->dest.ssa.bit_size, NULL);
+   nir_ssa_dest_init(&new_intr->instr, &new_intr->dest, num_comps,
+                     intr->dest.ssa.bit_size);
    new_intr->num_components = num_comps;
 
    nir_deref_instr *deref = nir_build_deref_var(b, var);

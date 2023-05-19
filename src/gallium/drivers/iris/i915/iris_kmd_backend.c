@@ -31,6 +31,7 @@
 
 #include "iris/iris_bufmgr.h"
 #include "iris/iris_batch.h"
+#include "iris/iris_context.h"
 
 #define FILE_DEBUG_FLAG DEBUG_BUFMGR
 
@@ -286,14 +287,17 @@ i915_batch_submit(struct iris_batch *batch)
     * in theory try to grab bo_deps_lock. Let's keep it safe and decode
     * outside the lock.
     */
-   if (INTEL_DEBUG(DEBUG_BATCH))
+   if (INTEL_DEBUG(DEBUG_BATCH) &&
+       intel_debug_batch_in_range(batch->ice->frame))
       iris_batch_decode_batch(batch);
 
    simple_mtx_lock(bo_deps_lock);
 
    iris_batch_update_syncobjs(batch);
 
-   if (INTEL_DEBUG(DEBUG_BATCH | DEBUG_SUBMIT)) {
+   if ((INTEL_DEBUG(DEBUG_BATCH) &&
+        intel_debug_batch_in_range(batch->ice->frame)) ||
+       INTEL_DEBUG(DEBUG_SUBMIT)) {
       iris_dump_fence_list(batch);
       iris_dump_bo_list(batch);
    }

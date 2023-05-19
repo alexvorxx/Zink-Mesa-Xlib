@@ -50,7 +50,7 @@ static const char *v3d_counter_names[] = {
         "TLB-quads-written-to-color-buffer",
         "PTB-primitives-discarded-outside-viewport",
         "PTB-primitives-need-clipping",
-        "PTB-primitives-discared-reversed",
+        "PTB-primitives-discarded-reversed",
         "QPU-total-idle-clk-cycles",
         "QPU-total-clk-cycles-vertex-coord-shading",
         "QPU-total-clk-cycles-fragment-shading",

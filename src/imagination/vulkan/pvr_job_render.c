@@ -392,11 +392,12 @@ pvr_rt_get_isp_region_size(struct pvr_device *device,
          rgn_size /= (2U * 2U);
       }
    } else {
-      const uint64_t rgn_header_size = rogue_get_region_header_size(dev_info);
+      const uint64_t single_rgn_header_size =
+         rogue_get_region_header_size(dev_info);
 
       /* Round up to next dword to prevent IPF overrun and convert to bytes.
        */
-      rgn_size = DIV_ROUND_UP(rgn_size * rgn_header_size, 4);
+      rgn_size = DIV_ROUND_UP(rgn_size * single_rgn_header_size, 4);
    }
 
    return rgn_size;
@@ -576,7 +577,8 @@ static void pvr_rt_get_region_headers_stride_size(
    uint64_t *const size_out)
 {
    const struct pvr_device_info *dev_info = &device->pdevice->dev_info;
-   const uint32_t rgn_header_size = rogue_get_region_header_size(dev_info);
+   const uint32_t single_rgn_header_size =
+      rogue_get_region_header_size(dev_info);
    uint64_t rgn_headers_size;
    uint32_t num_tiles_x;
    uint32_t num_tiles_y;
@@ -594,7 +596,7 @@ static void pvr_rt_get_region_headers_stride_size(
    rgn_headers_size = (uint64_t)num_tiles_x / group_size;
    /* Careful here. We want the division to happen first. */
    rgn_headers_size *= num_tiles_y / group_size;
-   rgn_headers_size *= rgn_header_size;
+   rgn_headers_size *= single_rgn_header_size;
 
    if (PVR_HAS_FEATURE(dev_info, simple_internal_parameter_format)) {
       rgn_headers_size =
@@ -606,7 +608,7 @@ static void pvr_rt_get_region_headers_stride_size(
          ALIGN_POT(rgn_headers_size, PVRX(CR_TE_PSG_REGION_STRIDE_UNIT_SIZE));
    }
 
-   *stride_out = rgn_header_size;
+   *stride_out = rgn_headers_size;
    *size_out = rgn_headers_size * layers;
 }
 

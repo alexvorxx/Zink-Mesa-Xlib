@@ -98,8 +98,8 @@ enum class Format : std::uint16_t {
    PSEUDO_REDUCTION = 19,
 
    /* Vector ALU Formats */
-   VOP3P = 20,
    VINTERP_INREG = 21,
+   VOP3P = 1 << 7,
    VOP1 = 1 << 8,
    VOP2 = 1 << 9,
    VOPC = 1 << 10,
@@ -301,6 +301,12 @@ constexpr Format
 withoutDPP(Format format)
 {
    return (Format)((uint32_t)format & ~((uint32_t)Format::DPP16 | (uint32_t)Format::DPP8));
+}
+
+constexpr Format
+withoutVOP3(Format format)
+{
+   return (Format)((uint32_t)format & ~((uint32_t)Format::VOP3));
 }
 
 enum class RegType {
@@ -1248,7 +1254,7 @@ struct Instruction {
       return *(Pseudo_reduction_instruction*)this;
    }
    constexpr bool isReduction() const noexcept { return format == Format::PSEUDO_REDUCTION; }
-   constexpr bool isVOP3P() const noexcept { return format == Format::VOP3P; }
+   constexpr bool isVOP3P() const noexcept { return (uint16_t)format & (uint16_t)Format::VOP3P; }
    VINTERP_inreg_instruction& vinterp_inreg() noexcept
    {
       assert(isVINTERP_INREG());
@@ -1384,8 +1390,7 @@ struct SMEM_instruction : public Instruction {
    bool dlc : 1; /* NAVI: device level coherent */
    bool nv : 1;  /* VEGA only: Non-volatile */
    bool disable_wqm : 1;
-   bool prevent_overflow : 1; /* avoid overflow when combining additions */
-   uint8_t padding : 3;
+   uint8_t padding : 4;
 };
 static_assert(sizeof(SMEM_instruction) == sizeof(Instruction) + 4, "Unexpected padding");
 
@@ -1403,6 +1408,8 @@ struct VALU_instruction : public Instruction {
       bitfield_array8<uint32_t, 15, 3> opsel_hi; /* VOP3P */
       bitfield_bool<uint32_t, 18> clamp;         /* VOP3, VOP3P, SDWA, VINTERP_inreg */
    };
+
+   void swapOperands(unsigned idx0, unsigned idx1);
 };
 static_assert(sizeof(VALU_instruction) == sizeof(Instruction) + 4, "Unexpected padding");
 
@@ -1719,6 +1726,22 @@ struct Pseudo_reduction_instruction : public Instruction {
 static_assert(sizeof(Pseudo_reduction_instruction) == sizeof(Instruction) + 4,
               "Unexpected padding");
 
+inline void
+VALU_instruction::swapOperands(unsigned idx0, unsigned idx1)
+{
+   if (this->isSDWA() && idx0 != idx1) {
+      assert(idx0 < 2 && idx1 < 2);
+      std::swap(this->sdwa().sel[0], this->sdwa().sel[1]);
+   }
+   assert(idx0 < 3 && idx1 < 3);
+   std::swap(this->operands[idx0], this->operands[idx1]);
+   this->neg[idx0].swap(this->neg[idx1]);
+   this->abs[idx0].swap(this->abs[idx1]);
+   this->opsel[idx0].swap(this->opsel[idx1]);
+   this->opsel_lo[idx0].swap(this->opsel_lo[idx1]);
+   this->opsel_hi[idx0].swap(this->opsel_hi[idx1]);
+}
+
 extern thread_local aco::monotonic_buffer_resource* instruction_buffer;
 
 struct instr_deleter_functor {
@@ -1800,14 +1823,17 @@ is_dead(const std::vector<uint16_t>& uses, const Instruction* instr)
    return !(get_sync_info(instr).semantics & (semantic_volatile | semantic_acqrel));
 }
 
+bool can_use_input_modifiers(amd_gfx_level gfx_level, aco_opcode op, int idx);
 bool can_use_opsel(amd_gfx_level gfx_level, aco_opcode op, int idx);
 bool instr_is_16bit(amd_gfx_level gfx_level, aco_opcode op);
 uint8_t get_gfx11_true16_mask(aco_opcode op);
 bool can_use_SDWA(amd_gfx_level gfx_level, const aco_ptr<Instruction>& instr, bool pre_ra);
-bool can_use_DPP(const aco_ptr<Instruction>& instr, bool pre_ra, bool dpp8);
+bool can_use_DPP(amd_gfx_level gfx_level, const aco_ptr<Instruction>& instr, bool dpp8);
+bool can_write_m0(const aco_ptr<Instruction>& instr);
 /* updates "instr" and returns the old instruction (or NULL if no update was needed) */
 aco_ptr<Instruction> convert_to_SDWA(amd_gfx_level gfx_level, aco_ptr<Instruction>& instr);
-aco_ptr<Instruction> convert_to_DPP(aco_ptr<Instruction>& instr, bool dpp8);
+aco_ptr<Instruction> convert_to_DPP(amd_gfx_level gfx_level, aco_ptr<Instruction>& instr,
+                                    bool dpp8);
 bool needs_exec_mask(const Instruction* instr);
 
 aco_opcode get_ordered(aco_opcode op);
@@ -1820,11 +1846,14 @@ unsigned get_cmp_bitsize(aco_opcode op);
 bool is_fp_cmp(aco_opcode op);
 bool is_cmpx(aco_opcode op);
 
-bool can_swap_operands(aco_ptr<Instruction>& instr, aco_opcode* new_op);
+bool can_swap_operands(aco_ptr<Instruction>& instr, aco_opcode* new_op, unsigned idx0 = 0,
+                       unsigned idx1 = 1);
 
 uint32_t get_reduction_identity(ReduceOp op, unsigned idx);
 
 unsigned get_mimg_nsa_dwords(const Instruction* instr);
+
+unsigned get_operand_size(aco_ptr<Instruction>& instr, unsigned index);
 
 bool should_form_clause(const Instruction* a, const Instruction* b);
 
@@ -2227,7 +2256,8 @@ void insert_wait_states(Program* program);
 bool dealloc_vgprs(Program* program);
 void insert_NOPs(Program* program);
 void form_hard_clauses(Program* program);
-unsigned emit_program(Program* program, std::vector<uint32_t>& code);
+unsigned emit_program(Program* program, std::vector<uint32_t>& code,
+                      std::vector<struct aco_symbol> *symbols);
 /**
  * Returns true if print_asm can disassemble the given program for the current build/runtime
  * configuration

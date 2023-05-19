@@ -1416,9 +1416,17 @@ load_scratch_resource(spill_ctx& ctx, Temp& scratch_offset, Block& block,
       return bld.copy(bld.def(s1), Operand::c32(offset));
 
    Temp private_segment_buffer = ctx.program->private_segment_buffer;
-   if (ctx.program->stage.hw != HWStage::CS)
+   if (!private_segment_buffer.bytes()) {
+      Temp addr_lo = bld.sop1(aco_opcode::p_load_symbol, bld.def(s1),
+                              Operand::c32(aco_symbol_scratch_addr_lo));
+      Temp addr_hi = bld.sop1(aco_opcode::p_load_symbol, bld.def(s1),
+                              Operand::c32(aco_symbol_scratch_addr_hi));
+      private_segment_buffer =
+         bld.pseudo(aco_opcode::p_create_vector, bld.def(s2), addr_lo, addr_hi);
+   } else if (ctx.program->stage.hw != HWStage::CS) {
       private_segment_buffer =
          bld.smem(aco_opcode::s_load_dwordx2, bld.def(s2), private_segment_buffer, Operand::zero());
+   }
 
    if (offset)
       scratch_offset = bld.sop2(aco_opcode::s_add_u32, bld.def(s1), bld.def(s1, scc),

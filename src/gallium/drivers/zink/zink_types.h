@@ -221,6 +221,10 @@ enum zink_debug {
    ZINK_DEBUG_NORP = (1<<10),
    ZINK_DEBUG_MAP = (1<<11),
    ZINK_DEBUG_FLUSHSYNC = (1<<12),
+   ZINK_DEBUG_NOSHOBJ = (1<<13),
+   ZINK_DEBUG_OPTIMAL_KEYS = (1<<14),
+   ZINK_DEBUG_NOOPT = (1<<15),
+   ZINK_DEBUG_NOBGC = (1<<16),
 };
 
 enum zink_pv_emulation_primitive {
@@ -591,7 +595,6 @@ struct zink_batch_state {
    struct util_dynarray unref_resources;
    struct util_dynarray bindless_releases[2];
 
-   struct util_dynarray persistent_resources;
    struct util_dynarray zombie_samplers;
    struct util_dynarray dead_framebuffers;
 
@@ -732,6 +735,14 @@ enum zink_rast_prim {
    ZINK_PRIM_MAX,
 };
 
+struct zink_shader_object {
+   union {
+      VkShaderEXT obj;
+      VkShaderModule mod;
+   };
+   struct spirv_shader *spirv;
+};
+
 struct zink_shader {
    struct util_live_shader base;
    uint32_t hash;
@@ -760,7 +771,8 @@ struct zink_shader {
 
    struct {
       struct util_queue_fence fence;
-      VkShaderModule mod;
+      struct zink_shader_object obj;
+      struct zink_shader_object no_psiz_obj; //avoid a crippling bug in nir_assign_io_var_locations()
       VkDescriptorSetLayout dsl;
       VkPipelineLayout layout;
       VkPipeline gpl;
@@ -785,7 +797,11 @@ struct zink_shader {
       } non_fs;
 
       struct {
-         uint32_t legacy_shadow_mask; //is_new_style_shadow is false for these
+         /* Bitmask of textures that have shadow sampling result components
+          * other than RED accessed. This is a subset of !is_new_style_shadow
+          * (GLSL <1.30, ARB_fp) shadow sampling usage.
+          */
+         uint32_t legacy_shadow_mask;
          nir_variable *fbfetch; //for fs output
       } fs;
    };
@@ -925,8 +941,9 @@ enum zink_gfx_push_constant_member {
  * allowing us to skip going through shader keys
  */
 struct zink_shader_module {
-   VkShaderModule shader;
+   struct zink_shader_object obj;
    uint32_t hash;
+   bool shobj;
    bool default_variant;
    bool has_nonseamless;
    bool needs_zs_shader_swizzle;
@@ -945,6 +962,7 @@ struct zink_program {
    struct zink_batch_usage *batch_uses;
    bool is_compute;
    bool can_precompile;
+   bool uses_shobj; //whether shader objects are used; programs CANNOT mix shader objects and shader modules
 
    struct zink_program_descriptor_data dd;
 
@@ -1004,13 +1022,18 @@ struct zink_gfx_output_key {
 struct zink_gfx_pipeline_cache_entry {
    struct zink_gfx_pipeline_state state;
    VkPipeline pipeline;
+   struct zink_gfx_program *prog;
    /* GPL only */
    struct util_queue_fence fence;
-   struct zink_gfx_input_key *ikey;
-   struct zink_gfx_library_key *gkey;
-   struct zink_gfx_output_key *okey;
-   struct zink_gfx_program *prog;
-   VkPipeline unoptimized_pipeline;
+   union {
+      struct {
+         struct zink_gfx_input_key *ikey;
+         struct zink_gfx_library_key *gkey;
+         struct zink_gfx_output_key *okey;
+         VkPipeline unoptimized_pipeline;
+      } gpl;
+      struct zink_shader_object shobjs[ZINK_GFX_SHADER_COUNT];
+   };
 };
 
 struct zink_gfx_lib_cache {
@@ -1036,9 +1059,10 @@ struct zink_gfx_program {
 
    struct zink_shader *shaders[ZINK_GFX_SHADER_COUNT];
    struct zink_shader *last_vertex_stage;
+   struct zink_shader_object objs[ZINK_GFX_SHADER_COUNT];
 
    /* full */
-   VkShaderModule modules[ZINK_GFX_SHADER_COUNT]; // compute stage doesn't belong here
+   VkShaderEXT objects[ZINK_GFX_SHADER_COUNT];
    uint32_t module_hash[ZINK_GFX_SHADER_COUNT];
    struct blob blobs[ZINK_GFX_SHADER_COUNT];
    struct util_dynarray shader_cache[ZINK_GFX_SHADER_COUNT][2][2]; //normal, nonseamless cubes, inline uniforms
@@ -1161,7 +1185,6 @@ struct zink_resource_object {
    bool copies_valid;
    bool copies_need_reset; //for use with batch state resets
 
-   unsigned persistent_maps; //if nonzero, requires vkFlushMappedMemoryRanges during batch use
    struct util_dynarray copies[16]; //regions being copied to; for barrier omission
 
    VkBuffer storage_buffer;
@@ -1273,6 +1296,7 @@ struct zink_resource {
       };
    };
 
+   bool copies_warned;
    bool swapchain;
    bool dmabuf;
 
@@ -1435,6 +1459,7 @@ struct zink_screen {
       bool glsl_correct_derivatives_after_discard;
       bool inline_uniforms;
       bool emulate_point_smooth;
+      bool zink_shader_object_enable;
    } driconf;
 
    VkFormatProperties format_props[PIPE_FORMAT_COUNT];
@@ -1450,6 +1475,7 @@ struct zink_screen {
        */
       bool broken_cache_semantics;
       bool implicit_sync;
+      bool disable_optimized_compile;
       bool always_feedback_loop;
       bool always_feedback_loop_zs;
       bool needs_sanitised_layer;
@@ -1584,6 +1610,7 @@ struct zink_sampler_view {
       struct zink_buffer_view *buffer_view;
    };
    struct zink_surface *cube_array;
+   /* Optional sampler view returning red (depth) in all channels, for shader rewrites. */
    struct zink_surface *zs_view;
    struct zink_zs_swizzle swizzle;
 };
@@ -1671,6 +1698,7 @@ struct zink_context {
    struct slab_child_pool transfer_pool;
    struct slab_child_pool transfer_pool_unsync;
    struct blitter_context *blitter;
+   struct util_debug_callback dbg;
 
    unsigned flags;
 
@@ -1887,6 +1915,7 @@ struct zink_context {
 
    bool gfx_dirty;
 
+   bool shobj_draw : 1; //using shader objects for draw
    bool is_device_lost;
    bool primitive_restart;
    bool blitting : 1;

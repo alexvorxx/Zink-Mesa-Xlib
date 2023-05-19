@@ -1732,12 +1732,19 @@ to upconvert to 32b float internally?
 		<bitfield name="LINE_MODE" pos="13" type="a5xx_line_mode"/>
 		<bitfield name="UNK15" low="15" high="16"/>
 		<!--
-		This is set by the blob when multiview is enabled, but doesn't seem
-		to do anything.
+                        On gen1 only MULTIVIEW_ENABLE exists. On gen3 we have
+                        the ability to add the view index to either the RT array
+                        index or the viewport index, and it seems that
+                        MULTIVIEW_ENABLE doesn't do anything, instead we need to
+                        set at least one of RENDERTARGETINDEXINCR or
+                        VIEWPORTINDEXINCR to enable multiview. The blob still
+                        sets MULTIVIEW_ENABLE regardless.
+                        TODO: what about gen2 (a640)?
 		-->
-		<bitfield name="UNK17" pos="17" type="boolean"/>
-		<bitfield name="MULTIVIEW_ENABLE" pos="18" type="boolean"/>
-		<bitfield name="UNK19" low="19" high="22"/>
+		<bitfield name="MULTIVIEW_ENABLE" pos="17" type="boolean"/>
+		<bitfield name="RENDERTARGETINDEXINCR" pos="18" type="boolean"/>
+		<bitfield name="VIEWPORTINDEXINCR" pos="19" type="boolean"/>
+		<bitfield name="UNK20" low="20" high="22"/>
 	</reg32>
 	<reg32 offset="0x8091" name="GRAS_SU_POINT_MINMAX">
 		<bitfield name="MIN" low="0" high="15" type="ufixed" radix="4"/>

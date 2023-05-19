@@ -244,7 +244,7 @@ static int r600_init_surface(struct r600_common_screen *rscreen,
 	if (is_imported)
 		flags |= RADEON_SURF_IMPORTED | RADEON_SURF_SHAREABLE;
 
-	r = rscreen->ws->surface_init(rscreen->ws, ptex,
+	r = rscreen->ws->surface_init(rscreen->ws, &rscreen->info, ptex,
 				      flags, bpe, array_mode, surface);
 	if (r) {
 		return r;
@@ -634,7 +634,7 @@ void r600_texture_get_fmask_info(struct r600_common_screen *rscreen,
 		bpe *= 2;
 	}
 
-	if (rscreen->ws->surface_init(rscreen->ws, &templ,
+	if (rscreen->ws->surface_init(rscreen->ws, &rscreen->info, &templ,
 				      flags, bpe, RADEON_SURF_MODE_2D, &fmask)) {
 		R600_ERR("Got error in surface_init while allocating FMASK.\n");
 		return;

@@ -87,6 +87,8 @@ ir3_nir_should_vectorize_mem(unsigned align_mul, unsigned align_offset,
 void
 ir3_optimize_loop(struct ir3_compiler *compiler, nir_shader *s)
 {
+   MESA_TRACE_FUNC();
+
    bool progress;
    unsigned lower_flrp = (s->options->lower_flrp16 ? 16 : 0) |
                          (s->options->lower_flrp32 ? 32 : 0) |
@@ -325,6 +327,8 @@ ir3_nir_lower_array_sampler(nir_shader *shader)
 void
 ir3_finalize_nir(struct ir3_compiler *compiler, nir_shader *s)
 {
+   MESA_TRACE_FUNC();
+
    struct nir_lower_tex_options tex_options = {
       .lower_rect = 0,
       .lower_tg4_offsets = true,
@@ -461,6 +465,8 @@ ir3_nir_post_finalize(struct ir3_shader *shader)
 {
    struct nir_shader *s = shader->nir;
    struct ir3_compiler *compiler = shader->compiler;
+
+   MESA_TRACE_FUNC();
 
    NIR_PASS_V(s, nir_lower_io, nir_var_shader_in | nir_var_shader_out,
               ir3_glsl_type_size, nir_lower_io_lower_64bit_to_32);
@@ -632,6 +638,8 @@ lower_ucp_vs(struct ir3_shader_variant *so)
 void
 ir3_nir_lower_variant(struct ir3_shader_variant *so, nir_shader *s)
 {
+   MESA_TRACE_FUNC();
+
    if (ir3_shader_debug & IR3_DBG_DISASM) {
       mesa_logi("----------------------");
       nir_log_shaderi(s);
@@ -834,16 +842,8 @@ ir3_nir_scan_driver_consts(struct ir3_compiler *compiler, nir_shader *shader, st
             unsigned idx;
 
             switch (intr->intrinsic) {
-            case nir_intrinsic_image_atomic_add:
-            case nir_intrinsic_image_atomic_imin:
-            case nir_intrinsic_image_atomic_umin:
-            case nir_intrinsic_image_atomic_imax:
-            case nir_intrinsic_image_atomic_umax:
-            case nir_intrinsic_image_atomic_and:
-            case nir_intrinsic_image_atomic_or:
-            case nir_intrinsic_image_atomic_xor:
-            case nir_intrinsic_image_atomic_exchange:
-            case nir_intrinsic_image_atomic_comp_swap:
+            case nir_intrinsic_image_atomic:
+            case nir_intrinsic_image_atomic_swap:
             case nir_intrinsic_image_load:
             case nir_intrinsic_image_store:
             case nir_intrinsic_image_size:
@@ -863,6 +863,10 @@ ir3_nir_scan_driver_consts(struct ir3_compiler *compiler, nir_shader *shader, st
             case nir_intrinsic_load_first_vertex:
                layout->num_driver_params =
                   MAX2(layout->num_driver_params, IR3_DP_VTXID_BASE + 1);
+               break;
+            case nir_intrinsic_load_is_indexed_draw:
+               layout->num_driver_params =
+                  MAX2(layout->num_driver_params, IR3_DP_IS_INDEXED_DRAW + 1);
                break;
             case nir_intrinsic_load_base_instance:
                layout->num_driver_params =
@@ -915,6 +919,20 @@ ir3_nir_scan_driver_consts(struct ir3_compiler *compiler, nir_shader *shader, st
             case nir_intrinsic_load_tess_level_inner_default:
                layout->num_driver_params = MAX2(layout->num_driver_params,
                                                 IR3_DP_HS_DEFAULT_INNER_LEVEL_Y + 1);
+               break;
+            case nir_intrinsic_load_frag_size_ir3:
+               layout->num_driver_params = MAX2(layout->num_driver_params,
+                                                IR3_DP_FS_FRAG_SIZE + 2 +
+                                                (nir_intrinsic_range(intr) - 1) * 4);
+               break;
+            case nir_intrinsic_load_frag_offset_ir3:
+               layout->num_driver_params = MAX2(layout->num_driver_params,
+                                                IR3_DP_FS_FRAG_OFFSET + 2 +
+                                                (nir_intrinsic_range(intr) - 1) * 4);
+               break;
+            case nir_intrinsic_load_frag_invocation_count:
+               layout->num_driver_params = MAX2(layout->num_driver_params,
+                                                IR3_DP_FS_FRAG_INVOCATION_COUNT + 1);
                break;
             default:
                break;

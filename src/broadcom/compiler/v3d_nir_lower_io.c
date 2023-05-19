@@ -216,7 +216,7 @@ v3d_nir_lower_vpm_output(struct v3d_compile *c, nir_builder *b,
         }
 
         /* Scalarize outputs if it hasn't happened already, since we want to
-         * schedule each VPM write individually.  We can skip any outut
+         * schedule each VPM write individually.  We can skip any output
          * components not read by the FS.
          */
         for (int i = 0; i < intr->num_components; i++) {
@@ -304,7 +304,7 @@ v3d_nir_lower_end_primitive(struct v3d_compile *c, nir_builder *b,
  * doesn't provide means to do that, so we need to apply the swizzle in the
  * vertex shader.
  *
- * This is required at least in Vulkan to support madatory vertex attribute
+ * This is required at least in Vulkan to support mandatory vertex attribute
  * format VK_FORMAT_B8G8R8A8_UNORM.
  */
 static void
@@ -679,7 +679,7 @@ emit_gs_vpm_output_header_prolog(struct v3d_compile *c, nir_builder *b,
          * have a variable just to keep track of the number of vertices we
          * emitted and instead we can just compute it here from the header
          * offset variable by removing the one generic header slot that always
-         * goes at the begining of out header.
+         * goes at the beginning of out header.
          */
         nir_ssa_def *header_offset =
                 nir_load_var(b, state->gs.header_offset_var);

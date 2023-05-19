@@ -126,7 +126,7 @@ nir_collect_src_uniforms(const nir_src *src, int component,
        * offset.
        */
       if (intr->intrinsic == nir_intrinsic_load_ubo &&
-          nir_src_is_const(intr->src[0]) &&
+          nir_src_is_const(intr->src[0]) && nir_src_num_components(intr->src[0]) == 1 &&
           nir_src_as_uint(intr->src[0]) < max_num_bo &&
           nir_src_is_const(intr->src[1]) &&
           nir_src_as_uint(intr->src[1]) <= max_offset &&

@@ -39,7 +39,6 @@ zink-lvp:
     # Enable validation (except for on piglit, see deqp-zink-lvp.toml), logging
     # to stdout and aborting on unknown failures.
     ZINK_DEBUG: validation
-    VK_LAYER_SETTINGS_PATH: ${CI_PROJECT_DIR}/install/zink-lvp-validation-settings.txt
     XVFB_SCRIPT: "GALLIUM_DRIVER=zink VK_DRIVER=lvp install/deqp-runner.sh"
   script: |
     xvfb-run --server-args='-noreset' bash -c ". $SCRIPTS_DIR/setup-test-env.sh && ${XVFB_SCRIPT}"
@@ -138,7 +137,7 @@ zink-tu-a618-traces-performance:
     # a618 tag starts with cbg-1 (not cbg-0) for some reason
     LAVA_TAGS: "cbg-1"
 
-zink-freedreno-a630-traces:
+.zink-freedreno-a630-traces:
   extends:
     - a630-traces
     - .zink-turnip-rules

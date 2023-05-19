@@ -997,9 +997,9 @@ droid_swap_buffers(_EGLDisplay *disp, _EGLSurface *draw)
    if (dri2_surf->back)
       dri2_surf->back->age = 1;
 
-   dri2_flush_drawable_for_swapbuffers_flags(disp, draw, -1);
+   dri2_flush_drawable_for_swapbuffers_flags(disp, draw, __DRI2_NOTHROTTLE_SWAPBUFFER);
 
-   /* dri2_surf->buffer can be null even when no error has occured. For
+   /* dri2_surf->buffer can be null even when no error has occurred. For
     * example, if the user has called no GL rendering commands since the
     * previous eglSwapBuffers, then the driver may have not triggered
     * a callback to ANativeWindow_dequeueBuffer, in which case

@@ -134,7 +134,7 @@ sample_via_nir(nir_builder *b, nir_variable *texcoord,
       nir_src_for_ssa(nir_channels(b, nir_load_var(b, texcoord),
                                    (1 << tex->coord_components) - 1));
 
-   nir_ssa_dest_init(&tex->instr, &tex->dest, 4, 32, NULL);
+   nir_ssa_dest_init(&tex->instr, &tex->dest, 4, 32);
    nir_builder_instr_insert(b, &tex->instr);
    return nir_channel(b, &tex->dest.ssa, 0);
 }
@@ -153,37 +153,29 @@ make_drawpix_z_stencil_program_nir(struct st_context *st,
                                                   write_stencil ? "S" : "");
 
    nir_variable *texcoord =
-      nir_variable_create(b.shader, nir_var_shader_in, glsl_vec_type(2),
-                          "texcoord");
-   texcoord->data.location = VARYING_SLOT_TEX0;
+      nir_create_variable_with_location(b.shader, nir_var_shader_in,
+                                        VARYING_SLOT_TEX0, glsl_vec_type(2));
 
    if (write_depth) {
       nir_variable *out =
-         nir_variable_create(b.shader, nir_var_shader_out, glsl_float_type(),
-                             "gl_FragDepth");
-      out->data.location = FRAG_RESULT_DEPTH;
+         nir_create_variable_with_location(b.shader, nir_var_shader_out,
+                                           FRAG_RESULT_DEPTH, glsl_float_type());
       nir_ssa_def *depth = sample_via_nir(&b, texcoord, "depth", 0,
                                           GLSL_TYPE_FLOAT, nir_type_float32);
       nir_store_var(&b, out, depth, 0x1);
 
       /* Also copy color */
-      nir_variable *color_in =
-         nir_variable_create(b.shader, nir_var_shader_in, glsl_vec_type(4),
-                             "v_color");
-      color_in->data.location = VARYING_SLOT_COL0;
-
-      nir_variable *color_out =
-         nir_variable_create(b.shader, nir_var_shader_out, glsl_vec_type(4),
-                             "gl_FragColor");
-      color_out->data.location = FRAG_RESULT_COLOR;
-      nir_copy_var(&b, color_out, color_in);
+      nir_copy_var(&b,
+                   nir_create_variable_with_location(b.shader, nir_var_shader_out,
+                                                     FRAG_RESULT_COLOR, glsl_vec4_type()),
+                   nir_create_variable_with_location(b.shader, nir_var_shader_in,
+                                                     VARYING_SLOT_COL0, glsl_vec4_type()));
    }
 
    if (write_stencil) {
       nir_variable *out =
-         nir_variable_create(b.shader, nir_var_shader_out, glsl_uint_type(),
-                             "gl_FragStencilRefARB");
-      out->data.location = FRAG_RESULT_STENCIL;
+         nir_create_variable_with_location(b.shader, nir_var_shader_out,
+                                           FRAG_RESULT_STENCIL, glsl_uint_type());
       nir_ssa_def *stencil = sample_via_nir(&b, texcoord, "stencil", 1,
                                             GLSL_TYPE_UINT, nir_type_uint32);
       nir_store_var(&b, out, stencil, 0x1);
@@ -203,9 +195,8 @@ make_drawpix_zs_to_color_program_nir(struct st_context *st,
                                                   "copypixels ZStoC");
 
    nir_variable *texcoord =
-      nir_variable_create(b.shader, nir_var_shader_in, glsl_vec_type(2),
-                          "texcoord");
-   texcoord->data.location = VARYING_SLOT_TEX0;
+      nir_create_variable_with_location(b.shader, nir_var_shader_in,
+                                        VARYING_SLOT_TEX0, glsl_vec_type(2));
 
    /* Sample depth and stencil */
    nir_ssa_def *depth = sample_via_nir(&b, texcoord, "depth", 0,
@@ -215,9 +206,8 @@ make_drawpix_zs_to_color_program_nir(struct st_context *st,
 
    /* Create the variable to store the output color */
    nir_variable *color_out =
-      nir_variable_create(b.shader, nir_var_shader_out, glsl_vec_type(4),
-                          "make_drawpix_zs_to_color_program_nirgl_FragColor");
-   color_out->data.location = FRAG_RESULT_COLOR;
+      nir_create_variable_with_location(b.shader, nir_var_shader_out,
+                                        FRAG_RESULT_COLOR, glsl_vec_type(4));
 
    nir_ssa_def *shifted_depth = nir_fmul(&b,nir_f2f64(&b, depth), nir_imm_double(&b,0xffffff));
    nir_ssa_def *int_depth = nir_f2u32(&b,shifted_depth);

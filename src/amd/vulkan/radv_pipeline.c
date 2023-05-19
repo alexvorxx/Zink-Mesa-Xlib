@@ -98,9 +98,6 @@ radv_pipeline_destroy(struct radv_device *device, struct radv_pipeline *pipeline
    case RADV_PIPELINE_COMPUTE:
       radv_destroy_compute_pipeline(device, radv_pipeline_to_compute(pipeline));
       break;
-   case RADV_PIPELINE_RAY_TRACING_LIB:
-      radv_destroy_ray_tracing_lib_pipeline(device, radv_pipeline_to_ray_tracing_lib(pipeline));
-      break;
    case RADV_PIPELINE_RAY_TRACING:
       radv_destroy_ray_tracing_pipeline(device, radv_pipeline_to_ray_tracing(pipeline));
       break;
@@ -570,10 +567,9 @@ radv_postprocess_nir(struct radv_device *device, const struct radv_pipeline_layo
    /* Lower I/O intrinsics to memory instructions. */
    bool io_to_mem = radv_nir_lower_io_to_mem(device, stage);
    bool lowered_ngg = stage->info.is_ngg && stage->stage == last_vgt_api_stage;
-   if (lowered_ngg)
+   if (lowered_ngg) {
       radv_lower_ngg(device, stage, pipeline_key);
-
-   if (stage->stage == last_vgt_api_stage && !lowered_ngg) {
+   } else if (stage->stage == last_vgt_api_stage) {
       if (stage->stage != MESA_SHADER_GEOMETRY) {
          NIR_PASS_V(stage->nir, ac_nir_lower_legacy_vs, gfx_level,
                     stage->info.outinfo.clip_dist_mask | stage->info.outinfo.cull_dist_mask,
@@ -588,6 +584,37 @@ radv_postprocess_nir(struct radv_device *device, const struct radv_pipeline_layo
          };
          NIR_PASS_V(stage->nir, ac_nir_lower_legacy_gs, false, false, &gs_out_info);
       }
+   } else if (stage->stage == MESA_SHADER_FRAGMENT) {
+      ac_nir_lower_ps_options options = {
+         .gfx_level = gfx_level,
+         .family = device->physical_device->rad_info.family,
+         .use_aco = !radv_use_llvm_for_stage(device, stage->stage),
+         .uses_discard = true,
+         /* Compared to radv_pipeline_key.ps.alpha_to_coverage_via_mrtz,
+          * radv_shader_info.ps.writes_mrt0_alpha need any depth/stencil/sample_mask exist.
+          * ac_nir_lower_ps() require this field to reflect whether alpha via mrtz is really
+          * present.
+          */
+         .alpha_to_coverage_via_mrtz = stage->info.ps.writes_mrt0_alpha,
+         .dual_src_blend_swizzle =
+            pipeline_key->ps.epilog.mrt0_is_dual_src && gfx_level >= GFX11,
+         /* Need to filter out unwritten color slots. */
+         .spi_shader_col_format =
+            pipeline_key->ps.epilog.spi_shader_col_format & stage->info.ps.colors_written,
+         .color_is_int8 = pipeline_key->ps.epilog.color_is_int8,
+         .color_is_int10 = pipeline_key->ps.epilog.color_is_int10,
+         .alpha_func = PIPE_FUNC_ALWAYS,
+
+         .enable_mrt_output_nan_fixup = pipeline_key->ps.epilog.enable_mrt_output_nan_fixup,
+         .no_color_export = stage->info.ps.has_epilog,
+
+         .bc_optimize_for_persp = G_0286CC_PERSP_CENTER_ENA(stage->info.ps.spi_ps_input) &&
+                                  G_0286CC_PERSP_CENTROID_ENA(stage->info.ps.spi_ps_input),
+         .bc_optimize_for_linear = G_0286CC_LINEAR_CENTER_ENA(stage->info.ps.spi_ps_input) &&
+                                   G_0286CC_LINEAR_CENTROID_ENA(stage->info.ps.spi_ps_input),
+      };
+
+      NIR_PASS_V(stage->nir, ac_nir_lower_ps, &options);
    }
 
    NIR_PASS(_, stage->nir, nir_opt_idiv_const, 8);

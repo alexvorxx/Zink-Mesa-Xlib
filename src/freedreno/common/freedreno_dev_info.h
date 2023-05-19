@@ -146,6 +146,12 @@ struct fd_dev_info {
          bool has_lrz_dir_tracking;
          bool lrz_track_quirk;
 
+         /* Some generations have a bit to add the multiview index to the
+          * viewport index, which lets us implement different scaling for
+          * different views.
+          */
+         bool has_per_view_viewport;
+
          struct {
             uint32_t PC_POWER_CNTL;
             uint32_t TPL1_DBG_ECO_CNTL;

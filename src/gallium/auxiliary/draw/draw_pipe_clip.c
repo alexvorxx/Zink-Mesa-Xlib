@@ -688,7 +688,7 @@ clip_point_guard_xy(struct draw_stage *stage, struct prim_header *header)
 static void
 clip_first_point(struct draw_stage *stage, struct prim_header *header)
 {
-   stage->point = stage->draw->guard_band_points_xy ? clip_point_guard_xy : clip_point;
+   stage->point = stage->draw->guard_band_points_lines_xy ? clip_point_guard_xy : clip_point;
    stage->point(stage, header);
 }
 
@@ -710,6 +710,40 @@ clip_line(struct draw_stage *stage, struct prim_header *header)
    /* else, totally clipped */
 }
 
+static void
+clip_line_guard_xy(struct draw_stage *stage, struct prim_header *header)
+{
+   unsigned clipmask = (header->v[0]->clipmask |
+                        header->v[1]->clipmask);
+
+   if ((clipmask & 0xffffffff) == 0) {
+      stage->next->line(stage->next, header);
+   }
+   else if ((clipmask & 0xfffffff0) == 0) {
+      while (clipmask) {
+         const unsigned plane_idx = ffs(clipmask)-1;
+         clipmask &= ~(1 << plane_idx);  /* turn off this plane's bit */
+         /* TODO: this should really do proper guardband clipping,
+          * currently just throw out infs/nans.
+          * Also note that vertices with negative w values MUST be tossed
+          * out (not sure if proper guardband clipping would do this
+          * automatically). These would usually be captured by depth clip
+          * too but this can be disabled.
+          */
+         if ((header->v[0]->clip_pos[3] <= 0.0f &&
+              header->v[1]->clip_pos[3] <= 0.0f) ||
+             util_is_nan(header->v[0]->clip_pos[0]) ||
+             util_is_nan(header->v[0]->clip_pos[1]) ||
+             util_is_nan(header->v[1]->clip_pos[0]) ||
+             util_is_nan(header->v[1]->clip_pos[1]))
+            return;
+      }
+      stage->next->line(stage->next, header);
+   } else if ((header->v[0]->clipmask &
+               header->v[1]->clipmask) == 0) {
+      do_clip_line(stage, header, clipmask & 0xfffffff0);
+   }
+}
 
 static void
 clip_tri(struct draw_stage *stage, struct prim_header *header)
@@ -894,7 +928,6 @@ clip_init_state(struct draw_stage *stage)
    }
 
    stage->tri = clip_tri;
-   stage->line = clip_line;
 }
 
 
@@ -912,6 +945,7 @@ clip_first_line(struct draw_stage *stage,
                 struct prim_header *header)
 {
    clip_init_state(stage);
+   stage->line = stage->draw->guard_band_points_lines_xy ? clip_line_guard_xy : clip_line;
    stage->line(stage, header);
 }
 

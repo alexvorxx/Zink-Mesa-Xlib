@@ -74,17 +74,9 @@ nir_lower_texcoord_replace_impl(nir_function_impl *impl,
                                         0, 2, 32);
    } else {
       /* find or create pntc */
-      nir_variable *pntc = nir_find_variable_with_location(b.shader,
-                                                           nir_var_shader_in,
-                                                           VARYING_SLOT_PNTC);
-      if (!pntc) {
-         pntc = nir_variable_create(b.shader, nir_var_shader_in,
-                                    glsl_vec_type(2), "gl_PointCoord");
-         pntc->data.location = VARYING_SLOT_PNTC;
-         pntc->data.driver_location = b.shader->num_inputs++;
-         b.shader->info.inputs_read |= BITFIELD64_BIT(VARYING_SLOT_PNTC);
-      }
-
+      nir_variable *pntc = nir_get_variable_with_location(b.shader, nir_var_shader_in,
+                                                          VARYING_SLOT_PNTC, glsl_vec_type(2));
+      b.shader->info.inputs_read |= BITFIELD64_BIT(VARYING_SLOT_PNTC);
       new_coord = nir_load_var(&b, pntc);
    }
 

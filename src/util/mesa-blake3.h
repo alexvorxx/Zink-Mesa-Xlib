@@ -1,8 +1,4 @@
-/*
- * Copyright © 2015 Collabora Ltd.
- *
- * Derived from tu_util.c which is:
- * Copyright © 2015 Intel Corporation
+/* Copyright © 2023 Valve Corporation
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -24,33 +20,47 @@
  * DEALINGS IN THE SOFTWARE.
  */
 
-#include "panvk_private.h"
+#ifndef MESA_BLAKE3_H
+#define MESA_BLAKE3_H
 
-#include <assert.h>
-#include <errno.h>
-#include <stdarg.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
+#include "blake3/blake3.h"
 
-#include "util/u_math.h"
-#include "vk_enum_to_str.h"
+#ifdef __cplusplus
+extern "C" {
+#endif
 
-/** Log an error message.  */
-void panvk_printflike(1, 2) panvk_logi(const char *format, ...)
+#define mesa_blake3 blake3_hasher
+
+static inline void
+_mesa_blake3_init(struct mesa_blake3 *ctx)
 {
-   va_list va;
-
-   va_start(va, format);
-   panvk_logi_v(format, va);
-   va_end(va);
+  blake3_hasher_init(ctx);
 }
 
-/** \see panvk_logi() */
+static inline void
+_mesa_blake3_update(struct mesa_blake3 *ctx, const void *data, size_t size)
+{
+   blake3_hasher_update(ctx, data, size);
+}
+
+static inline void
+_mesa_blake3_final(struct mesa_blake3 *ctx, unsigned char result[BLAKE3_OUT_LEN])
+{
+   blake3_hasher_finalize(ctx, result, BLAKE3_OUT_LEN);
+}
+
 void
-panvk_logi_v(const char *format, va_list va)
-{
-   fprintf(stderr, "tu: info: ");
-   vfprintf(stderr, format, va);
-   fprintf(stderr, "\n");
-}
+_mesa_blake3_format(char *buf, const unsigned char *blake3);
+
+void
+_mesa_blake3_hex_to_blake3(unsigned char *buf, const char *hex);
+
+void
+_mesa_blake3_compute(const void *data, size_t size, unsigned char result[BLAKE3_OUT_LEN]);
+
+#ifdef __cplusplus
+} /* extern C */
+#endif
+
+
+#endif

@@ -30,24 +30,33 @@ lower(nir_function_impl *impl, nir_block *block)
           sem.location != FRAG_RESULT_STENCIL)
          continue;
 
-      if (zs_emit == NULL) {
-         nir_builder b;
-         nir_builder_init(&b, impl);
-         b.cursor = nir_before_instr(instr);
+      nir_builder b;
+      nir_builder_init(&b, impl);
+      b.cursor = nir_before_instr(instr);
 
-         /* Multisampling will get lowered later if needed, default to broadcast
+      nir_ssa_def *value = intr->src[0].ssa;
+      bool z = (sem.location == FRAG_RESULT_DEPTH);
+
+      unsigned src_idx = z ? 1 : 2;
+      unsigned base = z ? BASE_Z : BASE_S;
+
+      /* In the hw, depth is 32-bit but stencil is 16-bit. Instruction
+       * selection checks this, so emit the conversion now.
+       */
+      if (z)
+         value = nir_f2f32(&b, value);
+      else
+         value = nir_u2u16(&b, value);
+
+      if (zs_emit == NULL) {
+         /* Multisampling will get lowered later if needed, default to
+          * broadcast
           */
          nir_ssa_def *sample_mask = nir_imm_intN_t(&b, ALL_SAMPLES, 16);
          zs_emit = nir_store_zs_agx(&b, sample_mask,
                                     nir_ssa_undef(&b, 1, 32) /* depth */,
                                     nir_ssa_undef(&b, 1, 16) /* stencil */);
       }
-
-      nir_ssa_def *value = intr->src[0].ssa;
-
-      bool z = (sem.location == FRAG_RESULT_DEPTH);
-      unsigned src_idx = z ? 1 : 2;
-      unsigned base = z ? BASE_Z : BASE_S;
 
       assert((nir_intrinsic_base(zs_emit) & base) == 0 &&
              "each of depth/stencil may only be written once");
@@ -91,7 +100,7 @@ lower_discard_to_z(nir_builder *b, nir_instr *instr, UNUSED void *data)
       nir_push_else(b, NULL);
 
    nir_instr_remove(instr);
-   return false;
+   return true;
 }
 
 bool

@@ -2096,18 +2096,10 @@ alu_type_from_image_intr(nir_intrinsic_instr *intr)
    case nir_intrinsic_image_deref_store:
    case nir_intrinsic_bindless_image_store:
       return nir_intrinsic_src_type(intr);
-   case nir_intrinsic_image_atomic_fadd:
-   case nir_intrinsic_image_atomic_fmax:
-   case nir_intrinsic_image_atomic_fmin:
-   case nir_intrinsic_image_deref_atomic_fadd:
-   case nir_intrinsic_image_deref_atomic_fmax:
-   case nir_intrinsic_image_deref_atomic_fmin:
-   case nir_intrinsic_bindless_image_atomic_fadd:
-   case nir_intrinsic_bindless_image_atomic_fmax:
-   case nir_intrinsic_bindless_image_atomic_fmin:
-      return nir_type_float;
    default:
-      return nir_type_int;
+      if (nir_intrinsic_has_atomic_op(intr))
+         return nir_atomic_op_type(nir_intrinsic_atomic_op(intr));
+      return nir_type_uint;
    }
 }
 

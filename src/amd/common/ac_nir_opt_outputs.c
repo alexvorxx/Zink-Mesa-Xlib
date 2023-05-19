@@ -58,7 +58,7 @@ static void ac_remove_varying(struct ac_out_info *out)
    /* Remove the output. (all channels) */
    for (unsigned i = 0; i < ARRAY_SIZE(out->chan); i++) {
       if (out->chan[i].store_intr) {
-         nir_remove_varying(out->chan[i].store_intr);
+         nir_remove_varying(out->chan[i].store_intr, MESA_SHADER_FRAGMENT);
          out->chan[i].store_intr = NULL;
          out->chan[i].value = NULL;
       }

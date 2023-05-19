@@ -63,7 +63,6 @@ void pvr_uscgen_tq_frag(const struct pvr_tq_shader_properties *shader_props,
    /* TODO: Unrestrict. */
    assert(shader_props->full_rate == false);
    assert(shader_props->pick_component == false);
-   assert(shader_props->alpha_type == 0);
 
    const struct pvr_tq_layer_properties *layer_props =
       &shader_props->layer_props;
@@ -80,8 +79,7 @@ void pvr_uscgen_tq_frag(const struct pvr_tq_shader_properties *shader_props,
    assert(layer_props->byte_unwind == 0);
    assert(layer_props->linear == false);
 
-   loads = pvr_pbe_pixel_num_loads(layer_props->pbe_format,
-                                   shader_props->alpha_type);
+   loads = pvr_pbe_pixel_num_loads(layer_props->pbe_format);
    for (uint32_t load = 0; load < loads; ++load) {
       if (shader_props->iterated) {
          /* TODO: feed{back,forward} the coeff index to/from shader_info. */

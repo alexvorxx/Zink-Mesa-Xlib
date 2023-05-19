@@ -33,9 +33,23 @@ the occasional use of enums, structs or constants through the code base.
 If you need help ping ``karolherbst`` either in ``#dri-devel`` or
 ``#rusticl`` on OFTC.
 
-Also, make sure that before submitting code to verify the formatting is
-in order. That can easily be done via ``git ls-files */{lib,app}.rs
-| xargs rustfmt``
+Contributing 
+------------
+
+The minimum configuration you need to start developing with rust
+is ``RUSTC=clippy-driver meson configure -Dgallium-rusticl=true
+-Dllvm=enabled -Drust_std=2021``. In addition you probably want to enable
+any device drivers on your platform. Some device drivers as well as some
+features are locked behind flags during runtime. See
+:ref:`Rusticl environment variables <rusticl-env-var>` for
+more info.
+
+All patches that are potentially conformance breaking and also patches
+that add new features should be ran against the appropriate conformance
+tests.
+
+Also, make sure the formatting is in order before submitting code. That
+can easily be done via ``git ls-files */{lib,app}.rs | xargs rustfmt``.
 
 When submitting Merge Requests or filing bugs related to Rusticl, make
 sure to add the ``Rusticl`` label so people subscribed to that Label get

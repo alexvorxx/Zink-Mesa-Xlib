@@ -500,7 +500,8 @@ pan_allow_forward_pixel_to_kill(struct panfrost_context *ctx,
     * from reading it directly, or from failing to write it
     */
    unsigned rt_mask = ctx->fb_rt_mask;
-   uint64_t rt_written = (fs->info.outputs_written >> FRAG_RESULT_DATA0);
+   uint64_t rt_written = (fs->info.outputs_written >> FRAG_RESULT_DATA0) &
+                         ctx->blend->enabled_mask;
    bool blend_reads_dest = (ctx->blend->load_dest_mask & rt_mask);
    bool alpha_to_coverage = ctx->blend->base.alpha_to_coverage;
 
@@ -4280,6 +4281,11 @@ panfrost_create_blend_state(struct pipe_context *pipe,
        * destination in the hot draw path, so precompute this */
       if (so->info[c].load_dest)
          so->load_dest_mask |= BITFIELD_BIT(c);
+
+      /* Bifrost needs to know if any render target loads its
+       * destination in the hot draw path, so precompute this */
+      if (so->info[c].enabled)
+         so->enabled_mask |= BITFIELD_BIT(c);
 
       /* Converting equations to Mali style is expensive, do it at
        * CSO create time instead of draw-time */

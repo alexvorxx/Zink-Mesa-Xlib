@@ -55,6 +55,7 @@ struct assignment {
       struct {
          bool assigned : 1;
          bool vcc : 1;
+         bool m0 : 1;
       };
       uint8_t _ = 0;
    };
@@ -511,7 +512,7 @@ get_subdword_operand_stride(amd_gfx_level gfx_level, const aco_ptr<Instruction>&
          return rc.bytes();
       if (can_use_opsel(gfx_level, instr->opcode, idx))
          return 2;
-      if (instr->format == Format::VOP3P)
+      if (instr->isVOP3P())
          return 2;
    }
 
@@ -1653,6 +1654,11 @@ get_reg(ra_ctx& ctx, RegisterFile& reg_file, Temp temp,
       if (get_reg_specified(ctx, reg_file, temp.regClass(), instr, vcc))
          return vcc;
    }
+   if (ctx.assignments[temp.id()].m0) {
+      if (get_reg_specified(ctx, reg_file, temp.regClass(), instr, m0) &&
+          can_write_m0(instr))
+         return m0;
+   }
 
    std::optional<PhysReg> res;
 
@@ -2461,6 +2467,8 @@ get_affinities(ra_ctx& ctx, std::vector<IDSet>& live_out_per_block)
             if (!instr->definitions[1].isKill() && instr->operands[0].isTemp() &&
                 instr->operands[1].isFixed() && instr->operands[1].physReg() == exec)
                ctx.assignments[instr->operands[0].tempId()].vcc = true;
+         } else if (instr->opcode == aco_opcode::s_sendmsg) {
+            ctx.assignments[instr->operands[0].tempId()].m0 = true;
          }
 
          /* add operands to live variables */
@@ -2608,14 +2616,29 @@ optimize_encoding_vop2(Program* program, ra_ctx& ctx, RegisterFile& register_fil
         (instr->opcode != aco_opcode::v_dot4_i32_i8 || program->family == CHIP_VEGA20)) ||
        !instr->operands[2].isTemp() || !instr->operands[2].isKillBeforeDef() ||
        instr->operands[2].getTemp().type() != RegType::vgpr ||
-       ((!instr->operands[0].isTemp() || instr->operands[0].getTemp().type() != RegType::vgpr) &&
-        (!instr->operands[1].isTemp() || instr->operands[1].getTemp().type() != RegType::vgpr)) ||
-       instr->usesModifiers() || instr->operands[0].physReg().byte() != 0 ||
-       instr->operands[1].physReg().byte() != 0 || instr->operands[2].physReg().byte() != 0)
+       (!instr->operands[0].isOfType(RegType::vgpr) &&
+        !instr->operands[1].isOfType(RegType::vgpr)) ||
+       instr->operands[2].physReg().byte() != 0 || instr->valu().opsel[2])
       return;
 
-   if (!instr->operands[1].isTemp() || instr->operands[1].getTemp().type() != RegType::vgpr)
-      std::swap(instr->operands[0], instr->operands[1]);
+   if (instr->isVOP3P() && (instr->valu().opsel_lo != 0 || instr->valu().opsel_hi != 0x7))
+      return;
+
+   if ((instr->operands[0].physReg().byte() != 0 || instr->operands[1].physReg().byte() != 0 ||
+        instr->valu().opsel) &&
+       program->gfx_level < GFX11)
+      return;
+
+   unsigned im_mask = instr->isDPP16() ? 0x3 : 0;
+   if (instr->valu().omod || instr->valu().clamp || (instr->valu().abs & ~im_mask) ||
+       (instr->valu().neg & ~im_mask))
+      return;
+
+   if (!instr->operands[1].isOfType(RegType::vgpr))
+      instr->valu().swapOperands(0, 1);
+
+   if (!instr->operands[0].isOfType(RegType::vgpr) && instr->valu().opsel[0])
+      return;
 
    unsigned def_id = instr->definitions[0].tempId();
    if (ctx.assignments[def_id].affinity) {
@@ -2625,7 +2648,8 @@ optimize_encoding_vop2(Program* program, ra_ctx& ctx, RegisterFile& register_fil
          return;
    }
 
-   instr->format = Format::VOP2;
+   instr->format = (Format)(((unsigned)withoutVOP3(instr->format) & ~(unsigned)Format::VOP3P) |
+                            (unsigned)Format::VOP2);
    instr->valu().opsel_hi = 0;
    switch (instr->opcode) {
    case aco_opcode::v_mad_f32: instr->opcode = aco_opcode::v_mac_f32; break;
@@ -3064,20 +3088,20 @@ register_allocation(Program* program, std::vector<IDSet>& live_out_per_block, ra
          /* some instructions need VOP3 encoding if operand/definition is not assigned to VCC */
          bool instr_needs_vop3 =
             !instr->isVOP3() &&
-            ((instr->format == Format::VOPC && !(instr->definitions[0].physReg() == vcc)) ||
-             (instr->opcode == aco_opcode::v_cndmask_b32 &&
-              !(instr->operands[2].physReg() == vcc)) ||
+            ((withoutDPP(instr->format) == Format::VOPC &&
+              instr->definitions[0].physReg() != vcc) ||
+             (instr->opcode == aco_opcode::v_cndmask_b32 && instr->operands[2].physReg() != vcc) ||
              ((instr->opcode == aco_opcode::v_add_co_u32 ||
                instr->opcode == aco_opcode::v_addc_co_u32 ||
                instr->opcode == aco_opcode::v_sub_co_u32 ||
                instr->opcode == aco_opcode::v_subb_co_u32 ||
                instr->opcode == aco_opcode::v_subrev_co_u32 ||
                instr->opcode == aco_opcode::v_subbrev_co_u32) &&
-              !(instr->definitions[1].physReg() == vcc)) ||
+              instr->definitions[1].physReg() != vcc) ||
              ((instr->opcode == aco_opcode::v_addc_co_u32 ||
                instr->opcode == aco_opcode::v_subb_co_u32 ||
                instr->opcode == aco_opcode::v_subbrev_co_u32) &&
-              !(instr->operands[2].physReg() == vcc)));
+              instr->operands[2].physReg() != vcc));
          if (instr_needs_vop3) {
 
             /* if the first operand is a literal, we have to move it to a reg */

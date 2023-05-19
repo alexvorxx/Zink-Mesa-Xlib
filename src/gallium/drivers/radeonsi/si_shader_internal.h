@@ -218,7 +218,6 @@ void si_llvm_es_build_end(struct si_shader_context *ctx);
 void si_preload_esgs_ring(struct si_shader_context *ctx);
 void si_preload_gs_rings(struct si_shader_context *ctx);
 void si_llvm_gs_build_end(struct si_shader_context *ctx);
-void si_llvm_init_gs_callbacks(struct si_shader_context *ctx);
 
 /* si_shader_llvm_tess.c */
 LLVMValueRef si_get_rel_patch_id(struct si_shader_context *ctx);
@@ -239,5 +238,12 @@ void si_llvm_ps_build_end(struct si_shader_context *ctx);
 /* si_shader_llvm_vs.c */
 void si_llvm_build_vs_prolog(struct si_shader_context *ctx, union si_shader_part_key *key,
                              bool separate_prolog);
+
+/* si_shader_aco.c */
+bool si_aco_compile_shader(struct si_shader *shader,
+                           struct si_shader_args *args,
+                           struct nir_shader *nir,
+                           struct util_debug_callback *debug);
+void si_aco_resolve_symbols(struct si_shader *shader, uint32_t *code, uint64_t scratch_va);
 
 #endif

@@ -148,6 +148,7 @@ lower_system_value_instr(nir_builder *b, nir_instr *instr, void *_state)
          case SYSTEM_VALUE_RAY_OBJECT_TO_WORLD:
          case SYSTEM_VALUE_RAY_WORLD_TO_OBJECT:
          case SYSTEM_VALUE_MESH_VIEW_INDICES:
+         case SYSTEM_VALUE_RAY_TRIANGLE_VERTEX_POSITIONS:
             /* These are all single-element arrays in our implementation, and
              * the sysval load below just drops the 0 array index.
              */
@@ -172,8 +173,7 @@ lower_system_value_instr(nir_builder *b, nir_instr *instr, void *_state)
          nir_intrinsic_op op =
             nir_intrinsic_from_system_value(var->data.location);
          nir_intrinsic_instr *load = nir_intrinsic_instr_create(b->shader, op);
-         nir_ssa_dest_init_for_type(&load->instr, &load->dest,
-                                    var->type, NULL);
+         nir_ssa_dest_init_for_type(&load->instr, &load->dest, var->type);
          load->num_components = load->dest.ssa.num_components;
          nir_builder_instr_insert(b, &load->instr);
          return &load->dest.ssa;
@@ -250,6 +250,19 @@ lower_system_value_instr(nir_builder *b, nir_instr *instr, void *_state)
             assert(cols[i]->num_components == num_rows);
          }
          return nir_select_from_ssa_def_array(b, cols, num_cols, column);
+      } else if (glsl_type_is_array(var->type)) {
+         unsigned num_elems = glsl_get_length(var->type);
+         ASSERTED const struct glsl_type *elem_type = glsl_get_array_element(var->type);
+         assert(glsl_get_components(elem_type) == intrin->dest.ssa.num_components);
+
+         nir_ssa_def *elems[4];
+         assert(ARRAY_SIZE(elems) >= num_elems);
+         for (unsigned i = 0; i < num_elems; i++) {
+            elems[i] = nir_load_system_value(b, sysval_op, i,
+                                             intrin->dest.ssa.num_components,
+                                             intrin->dest.ssa.bit_size);
+         }
+         return nir_select_from_ssa_def_array(b, elems, num_elems, column);
       } else {
          return nir_load_system_value(b, sysval_op, 0,
                                       intrin->dest.ssa.num_components,

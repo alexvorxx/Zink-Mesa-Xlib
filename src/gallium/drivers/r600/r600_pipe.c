@@ -130,6 +130,16 @@ static void r600_destroy_context(struct pipe_context *context)
 	r600_resource_reference(&rctx->last_trace_buf, NULL);
 	radeon_clear_saved_cs(&rctx->last_gfx);
 
+	switch (rctx->b.gfx_level) {
+	case EVERGREEN:
+	case CAYMAN:
+		for (i = 0; i < EG_MAX_ATOMIC_BUFFERS; ++i)
+			pipe_resource_reference(&rctx->atomic_buffer_state.buffer[i].buffer, NULL);
+		break;
+	default:
+		break;
+	}
+
 	FREE(rctx);
 }
 
@@ -244,10 +254,6 @@ fail:
 	return NULL;
 }
 
-static bool is_nir_enabled(struct r600_common_screen *screen) {
-   return !(screen->debug_flags & DBG_USE_TGSI);
-}
-
 /*
  * pipe_screen
  */
@@ -317,7 +323,7 @@ static int r600_get_param(struct pipe_screen* pscreen, enum pipe_cap param)
 
 	case PIPE_CAP_NIR_ATOMICS_AS_DEREF:
 	case PIPE_CAP_GL_SPIRV:
-		return is_nir_enabled(&rscreen->b);
+		return 1;
 
 	case PIPE_CAP_TEXTURE_TRANSFER_MODES:
 		return PIPE_TEXTURE_TRANSFER_BLIT;
@@ -357,12 +363,9 @@ static int r600_get_param(struct pipe_screen* pscreen, enum pipe_cap param)
 	case PIPE_CAP_TEXTURE_BUFFER_OFFSET_ALIGNMENT:
 		return 4;
 	case PIPE_CAP_GLSL_FEATURE_LEVEL_COMPATIBILITY:
-		if (!is_nir_enabled(&rscreen->b))
-			return 140;
-		FALLTHROUGH;
 	case PIPE_CAP_GLSL_FEATURE_LEVEL:
 		if (family >= CHIP_CEDAR)
-		   return is_nir_enabled(&rscreen->b) ? 450 : 430;
+		   return 450;
 		return 330;
 
 	/* Supported except the original R600. */
@@ -413,18 +416,17 @@ static int r600_get_param(struct pipe_screen* pscreen, enum pipe_cap param)
 		    rscreen->b.family == CHIP_CYPRESS ||
 		    rscreen->b.family == CHIP_HEMLOCK)
 			return 1;
-		if (is_nir_enabled(&rscreen->b) &&
-			rscreen->b.family >= CHIP_CEDAR)
+		if (rscreen->b.family >= CHIP_CEDAR)
 			return 1;
 		return 0;
 
 	case PIPE_CAP_TWO_SIDED_COLOR:
-		return !is_nir_enabled(&rscreen->b);
+		return 0;
 	case PIPE_CAP_INT64_DIVMOD:
 		/* it is actually not supported, but the nir lowering handles this correctly whereas
 		 * the glsl lowering path seems to not initialize the buildins correctly.
 		 */
-		return is_nir_enabled(&rscreen->b);
+		return 1;
 	case PIPE_CAP_CULL_DISTANCE:
 		return 1;
 
@@ -588,9 +590,7 @@ static int r600_get_shader_param(struct pipe_screen* pscreen,
 	case PIPE_SHADER_CAP_MAX_CONST_BUFFER0_SIZE:
 		if (shader == PIPE_SHADER_COMPUTE) {
 			uint64_t max_const_buffer_size;
-			enum pipe_shader_ir ir_type = is_nir_enabled(&rscreen->b) ?
-				PIPE_SHADER_IR_NIR: PIPE_SHADER_IR_TGSI;
-			pscreen->get_compute_param(pscreen, ir_type,
+			pscreen->get_compute_param(pscreen, PIPE_SHADER_IR_NIR,
 						   PIPE_COMPUTE_CAP_MAX_MEM_ALLOC_SIZE,
 						   &max_const_buffer_size);
 			return MIN2(max_const_buffer_size, INT_MAX);
@@ -624,17 +624,12 @@ static int r600_get_shader_param(struct pipe_screen* pscreen,
 	case PIPE_SHADER_CAP_MAX_SAMPLER_VIEWS:
 		return 16;
 	case PIPE_SHADER_CAP_PREFERRED_IR:
-		if (rscreen->b.debug_flags & DBG_USE_TGSI)
-			return PIPE_SHADER_IR_TGSI;
 		return PIPE_SHADER_IR_NIR;
 	case PIPE_SHADER_CAP_SUPPORTED_IRS: {
 		int ir = 0;
 		if (shader == PIPE_SHADER_COMPUTE)
 			ir = 1 << PIPE_SHADER_IR_NATIVE;
-		ir |= 1 << PIPE_SHADER_IR_TGSI;
-		if (is_nir_enabled(&rscreen->b)) {
-			ir |= 1 << PIPE_SHADER_IR_NIR;
-		}
+		ir |= 1 << PIPE_SHADER_IR_NIR;
 		return ir;
 	}
 	case PIPE_SHADER_CAP_DROUND_SUPPORTED:
@@ -731,8 +726,7 @@ struct pipe_screen *r600_screen_create(struct radeon_winsys *ws,
 		return NULL;
 	}
 
-   if (is_nir_enabled(&rscreen->b))
-       rscreen->b.b.finalize_nir = r600_finalize_nir;
+	rscreen->b.b.finalize_nir = r600_finalize_nir;
 
 	rscreen->b.has_streamout = true;
 

@@ -10,8 +10,9 @@ traces:
       checksum: acf06d1e321e1f3f1e2819c25656c6c3
   unigine/heaven-scene1-low-d3d9.trace-dxgi:
     vk-radv-raven:
-      label: [no-perf]
+      label: [no-perf, skip]
       checksum: e7631312bf602e9c0de94320441d83c7
+      text: "flaky, starting from around https://mesa.pages.freedesktop.org/-/mesa/-/jobs/40335547/"
   unigine/tropics-d3d9.trace-dxgi:
     vk-radv-raven:
       label: [no-perf, slow, skip]
@@ -37,7 +38,7 @@ traces:
       checksum: 6cb8190a2ee4c335291914fbc70a8bb8
   gputest/furmark-v2.trace:
     gl-radeonsi-stoney:
-      checksum: 4ceea12000bb5995b915228d2d4b49c7
+      checksum: cc6344ca8f5348c5e39dafb1b38edd7c
   gputest/triangle-v2.trace:
     gl-radeonsi-stoney:
       checksum: 2d0527e7288a0fc31099404546dadbfb
@@ -49,7 +50,7 @@ traces:
       checksum: 0e7441a7f2c86c75eeac72269786e7a1
   gputest/gimark-v2.trace:
     gl-radeonsi-stoney:
-      checksum: 3e021c1c5f2900e53c3375e0366eeda9
+      checksum: 32d373e5ae6cd241c5a7b286c296113f
   gputest/pixmark-julia-fp32-v2.trace:
     gl-radeonsi-stoney:
       checksum: b5e0ae5ad680d884432f89a923f3e70d
@@ -64,7 +65,7 @@ traces:
       checksum: 2832d2190df232bcbde71a4b720303e1
   gputest/tessmark-v2.trace:
     gl-radeonsi-stoney:
-      checksum: b4bc7998ff804bf25aac9f9609b8acbf
+      checksum: 071c8863793e7adcd95acb054592f819
   humus/AmbientAperture-v2.trace:
     gl-radeonsi-stoney:
       checksum: 679dc88e5f0d3b3608e0490b4b39fbea
@@ -103,7 +104,7 @@ traces:
       checksum: 60f74020451e9beaf586b4551541b763
   ror/ror-default.trace:
     gl-radeonsi-stoney:
-      checksum: ea53f93df31703bf7a07a4efb922608f
+      checksum: a37b58424c4289a6de77e61d599b6fab
   nheko/nheko-colors.trace:
     gl-radeonsi-stoney:
       checksum: d3234cd6ccc2ab5d3ceab7db79300c69

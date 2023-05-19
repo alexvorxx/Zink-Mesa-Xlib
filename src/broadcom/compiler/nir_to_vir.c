@@ -164,7 +164,7 @@ vir_emit_thrsw(struct v3d_compile *c)
         c->last_thrsw->qpu.sig.thrsw = true;
         c->last_thrsw_at_top_level = !c->in_control_flow;
 
-        /* We need to lock the scoreboard before any tlb acess happens. If this
+        /* We need to lock the scoreboard before any tlb access happens. If this
          * thread switch comes after we have emitted a tlb load, then it means
          * that we can't lock on the last thread switch any more.
          */
@@ -187,6 +187,28 @@ v3d_get_op_for_atomic_add(nir_intrinsic_instr *instr, unsigned src)
 }
 
 static uint32_t
+v3d_general_tmu_op_for_atomic(nir_intrinsic_instr *instr)
+{
+        nir_atomic_op atomic_op = nir_intrinsic_atomic_op(instr);
+        switch (atomic_op) {
+        case nir_atomic_op_iadd:
+                return  instr->intrinsic == nir_intrinsic_ssbo_atomic ?
+                        v3d_get_op_for_atomic_add(instr, 2) :
+                        v3d_get_op_for_atomic_add(instr, 1);
+        case nir_atomic_op_imin:    return V3D_TMU_OP_WRITE_SMIN;
+        case nir_atomic_op_umin:    return V3D_TMU_OP_WRITE_UMIN_FULL_L1_CLEAR;
+        case nir_atomic_op_imax:    return V3D_TMU_OP_WRITE_SMAX;
+        case nir_atomic_op_umax:    return V3D_TMU_OP_WRITE_UMAX;
+        case nir_atomic_op_iand:    return V3D_TMU_OP_WRITE_AND_READ_INC;
+        case nir_atomic_op_ior:     return V3D_TMU_OP_WRITE_OR_READ_DEC;
+        case nir_atomic_op_ixor:    return V3D_TMU_OP_WRITE_XOR_READ_NOT;
+        case nir_atomic_op_xchg:    return V3D_TMU_OP_WRITE_XCHG_READ_FLUSH;
+        case nir_atomic_op_cmpxchg: return V3D_TMU_OP_WRITE_CMPXCHG_READ_FLUSH;
+        default:                    unreachable("unknown atomic op");
+        }
+}
+
+static uint32_t
 v3d_general_tmu_op(nir_intrinsic_instr *instr)
 {
         switch (instr->intrinsic) {
@@ -201,47 +223,15 @@ v3d_general_tmu_op(nir_intrinsic_instr *instr)
         case nir_intrinsic_store_scratch:
         case nir_intrinsic_store_global_2x32:
                 return V3D_TMU_OP_REGULAR;
-        case nir_intrinsic_ssbo_atomic_add:
-                return v3d_get_op_for_atomic_add(instr, 2);
-        case nir_intrinsic_shared_atomic_add:
-        case nir_intrinsic_global_atomic_add_2x32:
-                return v3d_get_op_for_atomic_add(instr, 1);
-        case nir_intrinsic_ssbo_atomic_imin:
-        case nir_intrinsic_global_atomic_imin_2x32:
-        case nir_intrinsic_shared_atomic_imin:
-                return V3D_TMU_OP_WRITE_SMIN;
-        case nir_intrinsic_ssbo_atomic_umin:
-        case nir_intrinsic_global_atomic_umin_2x32:
-        case nir_intrinsic_shared_atomic_umin:
-                return V3D_TMU_OP_WRITE_UMIN_FULL_L1_CLEAR;
-        case nir_intrinsic_ssbo_atomic_imax:
-        case nir_intrinsic_global_atomic_imax_2x32:
-        case nir_intrinsic_shared_atomic_imax:
-                return V3D_TMU_OP_WRITE_SMAX;
-        case nir_intrinsic_ssbo_atomic_umax:
-        case nir_intrinsic_global_atomic_umax_2x32:
-        case nir_intrinsic_shared_atomic_umax:
-                return V3D_TMU_OP_WRITE_UMAX;
-        case nir_intrinsic_ssbo_atomic_and:
-        case nir_intrinsic_global_atomic_and_2x32:
-        case nir_intrinsic_shared_atomic_and:
-                return V3D_TMU_OP_WRITE_AND_READ_INC;
-        case nir_intrinsic_ssbo_atomic_or:
-        case nir_intrinsic_global_atomic_or_2x32:
-        case nir_intrinsic_shared_atomic_or:
-                return V3D_TMU_OP_WRITE_OR_READ_DEC;
-        case nir_intrinsic_ssbo_atomic_xor:
-        case nir_intrinsic_global_atomic_xor_2x32:
-        case nir_intrinsic_shared_atomic_xor:
-                return V3D_TMU_OP_WRITE_XOR_READ_NOT;
-        case nir_intrinsic_ssbo_atomic_exchange:
-        case nir_intrinsic_global_atomic_exchange_2x32:
-        case nir_intrinsic_shared_atomic_exchange:
-                return V3D_TMU_OP_WRITE_XCHG_READ_FLUSH;
-        case nir_intrinsic_ssbo_atomic_comp_swap:
-        case nir_intrinsic_global_atomic_comp_swap_2x32:
-        case nir_intrinsic_shared_atomic_comp_swap:
-                return V3D_TMU_OP_WRITE_CMPXCHG_READ_FLUSH;
+
+        case nir_intrinsic_ssbo_atomic:
+        case nir_intrinsic_ssbo_atomic_swap:
+        case nir_intrinsic_shared_atomic:
+        case nir_intrinsic_shared_atomic_swap:
+        case nir_intrinsic_global_atomic_2x32:
+        case nir_intrinsic_global_atomic_swap_2x32:
+                return v3d_general_tmu_op_for_atomic(instr);
+
         default:
                 unreachable("unknown intrinsic op");
         }
@@ -304,7 +294,7 @@ ntq_flush_tmu(struct v3d_compile *c)
 
 /**
  * Queues a pending thread switch + LDTMU/TMUWT for a TMU operation. The caller
- * is reponsible for ensuring that doing this doesn't overflow the TMU fifos,
+ * is responsible for ensuring that doing this doesn't overflow the TMU fifos,
  * and more specifically, the output fifo, since that can't stall.
  */
 void
@@ -514,11 +504,12 @@ ntq_emit_tmu_general(struct v3d_compile *c, nir_intrinsic_instr *instr,
          * amount to add/sub, as that is implicit.
          */
         bool atomic_add_replaced =
-                ((instr->intrinsic == nir_intrinsic_ssbo_atomic_add ||
-                  instr->intrinsic == nir_intrinsic_shared_atomic_add ||
-                  instr->intrinsic == nir_intrinsic_global_atomic_add_2x32) &&
+                (instr->intrinsic == nir_intrinsic_ssbo_atomic ||
+                 instr->intrinsic == nir_intrinsic_shared_atomic ||
+                 instr->intrinsic == nir_intrinsic_global_atomic_2x32) &&
+                nir_intrinsic_atomic_op(instr) == nir_atomic_op_iadd &&
                  (tmu_op == V3D_TMU_OP_WRITE_AND_READ_INC ||
-                  tmu_op == V3D_TMU_OP_WRITE_OR_READ_DEC));
+                  tmu_op == V3D_TMU_OP_WRITE_OR_READ_DEC);
 
         bool is_store = (instr->intrinsic == nir_intrinsic_store_ssbo ||
                          instr->intrinsic == nir_intrinsic_store_scratch ||
@@ -1741,7 +1732,7 @@ ntq_emit_alu(struct v3d_compile *c, nir_alu_instr *instr)
 
 /* Each TLB read/write setup (a render target or depth buffer) takes an 8-bit
  * specifier.  They come from a register that's preloaded with 0xffffffff
- * (0xff gets you normal vec4 f16 RT0 writes), and when one is neaded the low
+ * (0xff gets you normal vec4 f16 RT0 writes), and when one is needed the low
  * 8 bits are shifted off the bottom and 0xff shifted in from the top.
  */
 #define TLB_TYPE_F16_COLOR         (3 << 6)
@@ -2097,7 +2088,7 @@ v3d_optimize_nir(struct v3d_compile *c, struct nir_shader *s)
                 NIR_PASS(progress, s, nir_opt_dead_cf);
                 NIR_PASS(progress, s, nir_opt_cse);
                 NIR_PASS(progress, s, nir_opt_peephole_select, 0, false, false);
-                NIR_PASS(progress, s, nir_opt_peephole_select, 8, true, true);
+                NIR_PASS(progress, s, nir_opt_peephole_select, 24, true, true);
                 NIR_PASS(progress, s, nir_opt_algebraic);
                 NIR_PASS(progress, s, nir_opt_constant_folding);
 
@@ -2555,7 +2546,7 @@ vir_emit_tlb_color_read(struct v3d_compile *c, nir_intrinsic_instr *instr)
          *
          * To fix that, we make sure we always emit a thread switch before the
          * first tlb color read. If that happens to be the last thread switch
-         * we emit, then everything is fine, but otherwsie, if any code after
+         * we emit, then everything is fine, but otherwise, if any code after
          * this point needs to emit additional thread switches, then we will
          * switch the strategy to locking the scoreboard on the first thread
          * switch instead -- see vir_emit_thrsw().
@@ -3330,44 +3321,20 @@ ntq_emit_intrinsic(struct v3d_compile *c, nir_intrinsic_instr *instr)
                 }
                 break;
 
-        case nir_intrinsic_ssbo_atomic_add:
-        case nir_intrinsic_ssbo_atomic_imin:
-        case nir_intrinsic_ssbo_atomic_umin:
-        case nir_intrinsic_ssbo_atomic_imax:
-        case nir_intrinsic_ssbo_atomic_umax:
-        case nir_intrinsic_ssbo_atomic_and:
-        case nir_intrinsic_ssbo_atomic_or:
-        case nir_intrinsic_ssbo_atomic_xor:
-        case nir_intrinsic_ssbo_atomic_exchange:
-        case nir_intrinsic_ssbo_atomic_comp_swap:
         case nir_intrinsic_store_ssbo:
+        case nir_intrinsic_ssbo_atomic:
+        case nir_intrinsic_ssbo_atomic_swap:
                 ntq_emit_tmu_general(c, instr, false, false);
                 break;
 
-        case nir_intrinsic_global_atomic_add_2x32:
-        case nir_intrinsic_global_atomic_imin_2x32:
-        case nir_intrinsic_global_atomic_umin_2x32:
-        case nir_intrinsic_global_atomic_imax_2x32:
-        case nir_intrinsic_global_atomic_umax_2x32:
-        case nir_intrinsic_global_atomic_and_2x32:
-        case nir_intrinsic_global_atomic_or_2x32:
-        case nir_intrinsic_global_atomic_xor_2x32:
-        case nir_intrinsic_global_atomic_exchange_2x32:
-        case nir_intrinsic_global_atomic_comp_swap_2x32:
         case nir_intrinsic_store_global_2x32:
+        case nir_intrinsic_global_atomic_2x32:
+        case nir_intrinsic_global_atomic_swap_2x32:
                 ntq_emit_tmu_general(c, instr, false, true);
                 break;
 
-        case nir_intrinsic_shared_atomic_add:
-        case nir_intrinsic_shared_atomic_imin:
-        case nir_intrinsic_shared_atomic_umin:
-        case nir_intrinsic_shared_atomic_imax:
-        case nir_intrinsic_shared_atomic_umax:
-        case nir_intrinsic_shared_atomic_and:
-        case nir_intrinsic_shared_atomic_or:
-        case nir_intrinsic_shared_atomic_xor:
-        case nir_intrinsic_shared_atomic_exchange:
-        case nir_intrinsic_shared_atomic_comp_swap:
+        case nir_intrinsic_shared_atomic:
+        case nir_intrinsic_shared_atomic_swap:
         case nir_intrinsic_store_shared:
         case nir_intrinsic_store_scratch:
                 ntq_emit_tmu_general(c, instr, true, false);
@@ -3380,16 +3347,8 @@ ntq_emit_intrinsic(struct v3d_compile *c, nir_intrinsic_instr *instr)
                 break;
 
         case nir_intrinsic_image_store:
-        case nir_intrinsic_image_atomic_add:
-        case nir_intrinsic_image_atomic_imin:
-        case nir_intrinsic_image_atomic_umin:
-        case nir_intrinsic_image_atomic_imax:
-        case nir_intrinsic_image_atomic_umax:
-        case nir_intrinsic_image_atomic_and:
-        case nir_intrinsic_image_atomic_or:
-        case nir_intrinsic_image_atomic_xor:
-        case nir_intrinsic_image_atomic_exchange:
-        case nir_intrinsic_image_atomic_comp_swap:
+        case nir_intrinsic_image_atomic:
+        case nir_intrinsic_image_atomic_swap:
                 v3d40_vir_emit_image_load_store(c, instr);
                 break;
 

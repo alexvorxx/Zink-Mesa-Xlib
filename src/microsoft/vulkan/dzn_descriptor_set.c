@@ -1084,7 +1084,7 @@ dzn_descriptor_heap_write_buffer_desc(struct dzn_device *device,
 }
 
 static void
-dzn_bindless_descriptor_set_write_sampler_desc(struct dxil_spirv_bindless_entry *map,
+dzn_bindless_descriptor_set_write_sampler_desc(volatile struct dxil_spirv_bindless_entry *map,
                                                uint32_t desc_offset,
                                                const struct dzn_sampler *sampler)
 {
@@ -1092,7 +1092,7 @@ dzn_bindless_descriptor_set_write_sampler_desc(struct dxil_spirv_bindless_entry 
 }
 
 static void
-dzn_bindless_descriptor_set_write_image_view_desc(struct dxil_spirv_bindless_entry *map,
+dzn_bindless_descriptor_set_write_image_view_desc(volatile struct dxil_spirv_bindless_entry *map,
                                                   VkDescriptorType type,
                                                   uint32_t desc_offset,
                                                   const struct dzn_image_view *iview)
@@ -1112,7 +1112,7 @@ dzn_bindless_descriptor_set_write_image_view_desc(struct dxil_spirv_bindless_ent
 }
 
 static void
-dzn_bindless_descriptor_set_write_buffer_view_desc(struct dxil_spirv_bindless_entry *map,
+dzn_bindless_descriptor_set_write_buffer_view_desc(volatile struct dxil_spirv_bindless_entry *map,
                                                    VkDescriptorType type,
                                                    uint32_t desc_offset,
                                                    const struct dzn_buffer_view *bview)
@@ -1129,69 +1129,161 @@ dzn_bindless_descriptor_set_write_buffer_view_desc(struct dxil_spirv_bindless_en
    }
 }
 
-static bool
-need_custom_buffer_descriptor(struct dzn_device *device, const struct dzn_buffer_desc *info)
-{
-   if (info->type == VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER ||
-       info->type == VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC) {
-      uint64_t upper_bound = info->range == VK_WHOLE_SIZE ? info->buffer->size :
-         info->offset + info->range;
-      /* The buffer's default CBV only addresses the first 64KiB. If this view needs a higher
-       * upper bound, then we need a custom descriptor. */
-      if (upper_bound > D3D12_REQ_CONSTANT_BUFFER_ELEMENT_COUNT * 4 * sizeof(float)) {
-         /* It's invalid to use WHOLE_SIZE if it would address more than 64KiB, so if they're
-          * using it on a buffer that large, it better have an offset. */
-         assert(info->range != VK_WHOLE_SIZE || info->offset > 0);
-         return true;
-      }
-   }
-   /* Addressing the whole buffer, no custom descriptor needed. */
-   if (info->range == VK_WHOLE_SIZE ||
-       info->offset + info->range == info->buffer->size)
-      return false;
-   /* We need proper out-of-bounds behavior, we need a descriptor with the right size. */
-   if (device->vk.enabled_features.robustBufferAccess ||
-       device->vk.enabled_features.robustBufferAccess2)
-      return true;
-   /* We can just apply an offset in the shader */
-   return false;
-}
-
 static void
 dzn_bindless_descriptor_set_write_buffer_desc(struct dzn_device *device,
-                                              struct dxil_spirv_bindless_entry *map,
+                                              volatile struct dxil_spirv_bindless_entry *map,
                                               uint32_t desc_offset,
                                               const struct dzn_buffer_desc *info)
 {
-   if (!need_custom_buffer_descriptor(device, info)) {
-      switch (info->type) {
-      case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER:
-         map[desc_offset].buffer_idx = info->buffer->cbv_bindless_slot;
-         break;
-      case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER:
-         map[desc_offset].buffer_idx = info->buffer->uav_bindless_slot;
-         break;
-      default:
-         unreachable("Unexpected descriptor type");
-      }
-      map[desc_offset].buffer_offset = info->offset;
-      if (*info->bindless_descriptor_slot >= 0)
-         dzn_device_descriptor_heap_free_slot(device, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, *info->bindless_descriptor_slot);
-   } else {
-      if (*info->bindless_descriptor_slot < 0)
-         *info->bindless_descriptor_slot =
-            dzn_device_descriptor_heap_alloc_slot(device, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
-      uint32_t offset = (info->offset / D3D12_RAW_UAV_SRV_BYTE_ALIGNMENT) * D3D12_RAW_UAV_SRV_BYTE_ALIGNMENT;
+   dzn_buffer_get_bindless_buffer_descriptor(device, info, &map[desc_offset]);
+}
 
-      struct dzn_buffer_desc local_info = *info;
-      local_info.offset = offset;
-      info = &local_info;
-
-      dzn_descriptor_heap_write_buffer_desc(device, &device->device_heaps[D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV].heap,
-                                            *info->bindless_descriptor_slot, info->type == VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, info);
-      map[desc_offset].buffer_idx = *info->bindless_descriptor_slot;
-      map[desc_offset].buffer_offset = info->offset - offset;
+static bool
+need_custom_buffer_descriptor(struct dzn_device *device, const struct dzn_buffer_desc *info,
+                              struct dzn_buffer_desc *out_desc)
+{
+   *out_desc = *info;
+   uint32_t upper_bound_default_descriptor;
+   uint32_t size_align, offset_align;
+   /* Canonicalize descriptor types for hash/compare, and get size/align info */
+   switch (info->type) {
+   case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC:
+      out_desc->type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+      FALLTHROUGH;
+   case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER:
+      upper_bound_default_descriptor =
+         MIN2(D3D12_REQ_CONSTANT_BUFFER_ELEMENT_COUNT * sizeof(float) * 4, info->buffer->size);
+      size_align = offset_align = D3D12_CONSTANT_BUFFER_DATA_PLACEMENT_ALIGNMENT;
+      break;
+   case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC:
+      out_desc->type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+      FALLTHROUGH;
+   default:
+      upper_bound_default_descriptor = MIN2(UINT32_MAX, info->buffer->size);
+      offset_align = D3D12_RAW_UAV_SRV_BYTE_ALIGNMENT;
+      size_align = 4;
+      break;
    }
+
+   uint64_t upper_bound = info->range == VK_WHOLE_SIZE ?
+      info->buffer->size :
+      info->offset + info->range;
+   /* Addressing the whole buffer, no custom descriptor needed. */
+   if (upper_bound == upper_bound_default_descriptor)
+      return false;
+
+   out_desc->range = ALIGN_POT(upper_bound, size_align);
+   if (out_desc->range <= upper_bound_default_descriptor) {
+      /* Use a larger descriptor with the hope that we'll be more likely
+       * to be able to re-use it. The shader is already doing the offset
+       * add, so there's not really a cost to putting a nonzero value there. */
+      out_desc->offset = 0;
+   } else {
+      /* At least align-down the base offset to ensure that's a valid view to create */
+      out_desc->offset = (out_desc->offset / offset_align) * offset_align;
+      out_desc->range -= out_desc->offset;
+   }
+   return true;
+}
+
+static uint32_t
+hash_buffer_desc(const void *data)
+{
+   const struct dzn_buffer_desc *bdesc = data;
+   /* Avoid any potential padding in the struct */
+   uint32_t type_hash = _mesa_hash_data(&bdesc->type, sizeof(bdesc->type));
+   return _mesa_hash_data_with_seed(&bdesc->range, sizeof(bdesc->range) * 2, type_hash);
+}
+
+static bool
+compare_buffer_desc(const void *_a, const void *_b)
+{
+   const struct dzn_buffer_desc *a = _a, *b = _b;
+   assert(a->buffer == b->buffer);
+   /* Avoid any potential padding in the struct */
+   return a->type == b->type &&
+          a->range == b->range &&
+          a->offset == b->offset;
+}
+
+static int
+handle_custom_descriptor_cache(struct dzn_device *device,
+                               const struct dzn_buffer_desc *stack_desc)
+{
+   /* Buffer lock is held */
+
+   /* Initialize hash map */
+   if (!stack_desc->buffer->custom_views)
+      stack_desc->buffer->custom_views = _mesa_hash_table_create(NULL, hash_buffer_desc, compare_buffer_desc);
+
+   if (!stack_desc->buffer->custom_views)
+      return -1;
+
+   uint32_t hash = hash_buffer_desc(stack_desc);
+   struct hash_entry *entry = _mesa_hash_table_search_pre_hashed(stack_desc->buffer->custom_views, hash, stack_desc);
+   if (entry)
+      return (int)(intptr_t)entry->data;
+
+   int slot = dzn_device_descriptor_heap_alloc_slot(device, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+   if (slot < 0)
+      return slot;
+
+   struct dzn_buffer_desc *key = malloc(sizeof(*stack_desc));
+   if (!key) {
+      dzn_device_descriptor_heap_free_slot(device, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, slot);
+      return -1;
+   }
+
+   *key = *stack_desc;
+   entry = _mesa_hash_table_insert_pre_hashed(stack_desc->buffer->custom_views, hash, key, (void *)(intptr_t)slot);
+   if (!entry) {
+      free(key);
+      dzn_device_descriptor_heap_free_slot(device, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, slot);
+      return -1;
+   }
+
+   dzn_descriptor_heap_write_buffer_desc(device, &device->device_heaps[D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV].heap,
+                                         slot, key->type == VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, key);
+   return slot;
+}
+
+void
+dzn_buffer_get_bindless_buffer_descriptor(struct dzn_device *device,
+                                          const struct dzn_buffer_desc *bdesc,
+                                          volatile struct dxil_spirv_bindless_entry *out)
+{
+   int slot;
+   uint32_t offset = bdesc->offset;
+   switch (bdesc->type) {
+   case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER:
+   case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC:
+      slot = bdesc->buffer->cbv_bindless_slot;
+      break;
+   case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER:
+   case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC:
+      slot = bdesc->buffer->uav_bindless_slot;
+      break;
+   default:
+      unreachable("Unexpected descriptor type");
+   }
+
+   struct dzn_buffer_desc local_desc;
+   if (need_custom_buffer_descriptor(device, bdesc, &local_desc)) {
+      mtx_lock(&bdesc->buffer->bindless_view_lock);
+
+      int new_slot = handle_custom_descriptor_cache(device, &local_desc);
+      if (new_slot >= 0) {
+         slot = new_slot;
+         offset = bdesc->offset - local_desc.offset;
+      }
+      /* In the case of cache failure, just use the base view and try
+       * shader-based offsetting, it'll probably still work in most cases. */
+
+      mtx_unlock(&bdesc->buffer->bindless_view_lock);
+   }
+
+   out->buffer_idx = slot;
+   out->buffer_offset = offset;
 }
 
 void
@@ -1368,23 +1460,6 @@ dzn_descriptor_set_write_dynamic_buffer_desc(struct dzn_device *device,
 {
    if (dynamic_buffer_idx == ~0)
       return;
-
-   if (device->bindless) {
-      if (!need_custom_buffer_descriptor(device, info)) {
-         if (*info->bindless_descriptor_slot >= 0)
-            dzn_device_descriptor_heap_free_slot(device, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, *info->bindless_descriptor_slot);
-      } else {
-         if (*info->bindless_descriptor_slot < 0)
-            *info->bindless_descriptor_slot =
-            dzn_device_descriptor_heap_alloc_slot(device, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
-         uint32_t offset = (info->offset / D3D12_RAW_UAV_SRV_BYTE_ALIGNMENT) * D3D12_RAW_UAV_SRV_BYTE_ALIGNMENT;
-
-         struct dzn_buffer_desc local_info = *info;
-         local_info.offset = offset;
-         dzn_descriptor_heap_write_buffer_desc(device, &device->device_heaps[D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV].heap,
-                                               *info->bindless_descriptor_slot, info->type == VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, &local_info);
-      }
-   }
 
    assert(dynamic_buffer_idx < set->layout->dynamic_buffers.count);
    set->dynamic_buffers[dynamic_buffer_idx] = *info;
@@ -1585,15 +1660,6 @@ dzn_descriptor_set_init(struct dzn_descriptor_set *set,
 {
    vk_object_base_init(&device->vk, &set->base, VK_OBJECT_TYPE_DESCRIPTOR_SET);
 
-   if (device->bindless && layout->buffer_count) {
-      set->buffer_heap_slots = malloc(sizeof(int) * layout->buffer_count);
-      if (!set->buffer_heap_slots) {
-         vk_object_base_finish(&set->base);
-         return vk_error(device, VK_ERROR_OUT_OF_HOST_MEMORY);
-      }
-      memset(set->buffer_heap_slots, 0xff, sizeof(int) * layout->buffer_count);
-   }
-
    set->pool = pool;
    set->layout = layout;
 
@@ -1636,14 +1702,6 @@ static void
 dzn_descriptor_set_finish(struct dzn_descriptor_set *set)
 {
    vk_object_base_finish(&set->base);
-   if (set->buffer_heap_slots) {
-      struct dzn_device *device = container_of(set->base.device, struct dzn_device, vk);
-      for (uint32_t i = 0; i < set->layout->buffer_count; ++i)
-         dzn_device_descriptor_heap_free_slot(device, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV,
-                                              set->buffer_heap_slots[i]);
-   }
-   free(set->buffer_heap_slots);
-   set->buffer_heap_slots = NULL;
    set->pool = NULL;
    set->layout = NULL;
 }
@@ -2121,8 +2179,7 @@ dzn_descriptor_set_write(struct dzn_device *device,
          struct dzn_buffer_desc desc = {
             pDescriptorWrite->descriptorType,
             dzn_buffer_from_handle(binfo->buffer),
-            binfo->range, binfo->offset,
-            &set->buffer_heap_slots[dzn_descriptor_set_ptr_get_buffer_idx(set->layout, &ptr)]
+            binfo->range, binfo->offset
          };
 
          if (desc.buffer)
@@ -2141,8 +2198,7 @@ dzn_descriptor_set_write(struct dzn_device *device,
          struct dzn_buffer_desc desc = {
             pDescriptorWrite->descriptorType,
             dzn_buffer_from_handle(binfo->buffer),
-            binfo->range, binfo->offset,
-            &set->buffer_heap_slots[dzn_descriptor_set_ptr_get_buffer_idx(set->layout, &ptr)]
+            binfo->range, binfo->offset
          };
 
          if (desc.buffer)
@@ -2231,8 +2287,8 @@ dzn_descriptor_set_copy(struct dzn_device *device,
             dst_heap_offset += dst_set->heap_offsets[type];
 
             if (device->bindless) {
-               memcpy(&dst_set->pool->bindless.map[dst_heap_offset],
-                      &src_set->pool->bindless.map[src_heap_offset],
+               memcpy((void *)&dst_set->pool->bindless.map[dst_heap_offset],
+                      (const void *)&src_set->pool->bindless.map[src_heap_offset],
                       sizeof(src_set->pool->bindless.map[0]) * count);
                /* There's never a reason to loop and memcpy again for bindless */
                break;
@@ -2507,8 +2563,7 @@ dzn_UpdateDescriptorSetWithTemplate(VkDevice _device,
             struct dzn_buffer_desc desc = {
                entry->type,
                dzn_buffer_from_handle(info->buffer),
-               info->range, info->offset,
-               &set->buffer_heap_slots[entry->buffer_idx],
+               info->range, info->offset
             };
 
             if (desc.buffer)
@@ -2527,8 +2582,7 @@ dzn_UpdateDescriptorSetWithTemplate(VkDevice _device,
             struct dzn_buffer_desc desc = {
                entry->type,
                dzn_buffer_from_handle(info->buffer),
-               info->range, info->offset,
-               &set->buffer_heap_slots[entry->buffer_idx]
+               info->range, info->offset
             };
 
             if (desc.buffer)

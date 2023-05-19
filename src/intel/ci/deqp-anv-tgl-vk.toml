@@ -4,12 +4,3 @@ deqp = "/deqp/external/vulkancts/modules/vulkan/deqp-vk"
 caselists = ["/deqp/mustpass/vk-master.txt"]
 fraction = 2
 renderer_check = "TGL GT2"
-
-[[deqp]]
-deqp = "/deqp/external/vulkancts/modules/vulkan/deqp-vk"
-caselists = ["/deqp/mustpass/vk-master.txt"]
-fraction = 2
-include = ["dEQP-VK.pipeline.pipeline_library"]
-prefix = "gpl-"
-[deqp.env]
-ANV_GPL = "true"

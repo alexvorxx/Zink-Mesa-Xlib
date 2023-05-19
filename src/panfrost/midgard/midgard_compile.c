@@ -253,7 +253,7 @@ midgard_nir_lower_global_load_instr(nir_builder *b, nir_instr *instr,
          nir_intrinsic_set_align(shared_load, compsz / 8, 0);
          nir_intrinsic_set_base(shared_load, nir_intrinsic_base(intr));
          nir_ssa_dest_init(&shared_load->instr, &shared_load->dest,
-                           shared_load->num_components, compsz, NULL);
+                           shared_load->num_components, compsz);
          nir_builder_instr_insert(b, &shared_load->instr);
          load = &shared_load->dest.ssa;
       }
@@ -551,22 +551,6 @@ nir_is_non_scalar_swizzle(nir_alu_src *src, unsigned nr_components)
 
    return false;
 }
-
-#define ATOMIC_CASE_IMPL(ctx, instr, nir, op, is_shared)                       \
-   case nir_intrinsic_##nir:                                                   \
-      emit_atomic(ctx, instr, is_shared, midgard_op_##op, ~0);                 \
-      break;
-
-#define ATOMIC_CASE(ctx, instr, nir, op)                                       \
-   ATOMIC_CASE_IMPL(ctx, instr, shared_atomic_##nir, atomic_##op, true);       \
-   ATOMIC_CASE_IMPL(ctx, instr, global_atomic_##nir, atomic_##op, false);
-
-#define IMAGE_ATOMIC_CASE(ctx, instr, nir, op)                                 \
-   case nir_intrinsic_image_atomic_##nir: {                                    \
-      midgard_instruction ins = emit_image_op(ctx, instr, true);               \
-      emit_atomic(ctx, instr, false, midgard_op_atomic_##op, ins.dest);        \
-      break;                                                                   \
-   }
 
 #define ALU_CASE(nir, _op)                                                     \
    case nir_op_##nir:                                                          \
@@ -1329,20 +1313,45 @@ emit_global(compiler_context *ctx, nir_instr *instr, bool is_read,
    emit_mir_instruction(ctx, ins);
 }
 
-/* If is_shared is off, the only other possible value are globals, since
- * SSBO's are being lowered to globals through a NIR pass.
- * `image_direct_address` should be ~0 when instr is not an image_atomic
- * and the destination register of a lea_image op when it is an image_atomic. */
-static void
-emit_atomic(compiler_context *ctx, nir_intrinsic_instr *instr, bool is_shared,
-            midgard_load_store_op op, unsigned image_direct_address)
+static midgard_load_store_op
+translate_atomic_op(nir_atomic_op op)
 {
+   /* clang-format off */
+   switch (op) {
+   case nir_atomic_op_xchg:    return midgard_op_atomic_xchg;
+   case nir_atomic_op_cmpxchg: return midgard_op_atomic_cmpxchg;
+   case nir_atomic_op_iadd:    return midgard_op_atomic_add;
+   case nir_atomic_op_iand:    return midgard_op_atomic_and;
+   case nir_atomic_op_imax:    return midgard_op_atomic_imax;
+   case nir_atomic_op_imin:    return midgard_op_atomic_imin;
+   case nir_atomic_op_ior:     return midgard_op_atomic_or;
+   case nir_atomic_op_umax:    return midgard_op_atomic_umax;
+   case nir_atomic_op_umin:    return midgard_op_atomic_umin;
+   case nir_atomic_op_ixor:    return midgard_op_atomic_xor;
+   default: unreachable("Unexpected atomic");
+   }
+   /* clang-format on */
+}
+
+/* Emit an atomic to shared memory or global memory. Image atomics are
+ * implemented as global memory atomics on direct addresses calculated by
+ * lea_image and passed as image_direct_address, otherwise that should be ~0.
+ */
+static void
+emit_atomic(compiler_context *ctx, nir_intrinsic_instr *instr,
+            unsigned image_direct_address)
+{
+   midgard_load_store_op op =
+      translate_atomic_op(nir_intrinsic_atomic_op(instr));
+
    nir_alu_type type =
       (op == midgard_op_atomic_imin || op == midgard_op_atomic_imax)
          ? nir_type_int
          : nir_type_uint;
 
    bool is_image = image_direct_address != ~0;
+   bool is_shared = (instr->intrinsic == nir_intrinsic_shared_atomic) ||
+                    (instr->intrinsic == nir_intrinsic_shared_atomic_swap);
 
    unsigned dest = nir_dest_index(&instr->dest);
    unsigned val_src = is_image ? 3 : 1;
@@ -1350,24 +1359,14 @@ emit_atomic(compiler_context *ctx, nir_intrinsic_instr *instr, bool is_shared,
    unsigned bitsize = nir_src_bit_size(instr->src[val_src]);
    emit_explicit_constant(ctx, val);
 
-   midgard_instruction ins = {.type = TAG_LOAD_STORE_4,
-                              .mask = 0xF,
-                              .dest = dest,
-                              .src =
-                                 {
-                                    ~0,
-                                    ~0,
-                                    ~0,
-                                    val,
-                                 },
-                              .src_types =
-                                 {
-                                    0,
-                                    0,
-                                    0,
-                                    type | bitsize,
-                                 },
-                              .op = op};
+   midgard_instruction ins = {
+      .type = TAG_LOAD_STORE_4,
+      .mask = 0xF,
+      .dest = dest,
+      .src = {~0, ~0, ~0, val},
+      .src_types = {0, 0, 0, type | bitsize},
+      .op = op,
+   };
 
    nir_src *src_offset = nir_get_io_offset_src(instr);
 
@@ -2082,27 +2081,19 @@ emit_intrinsic(compiler_context *ctx, nir_intrinsic_instr *instr)
       }
       break;
 
-      ATOMIC_CASE(ctx, instr, add, add);
-      ATOMIC_CASE(ctx, instr, and, and);
-      ATOMIC_CASE(ctx, instr, comp_swap, cmpxchg);
-      ATOMIC_CASE(ctx, instr, exchange, xchg);
-      ATOMIC_CASE(ctx, instr, imax, imax);
-      ATOMIC_CASE(ctx, instr, imin, imin);
-      ATOMIC_CASE(ctx, instr, or, or);
-      ATOMIC_CASE(ctx, instr, umax, umax);
-      ATOMIC_CASE(ctx, instr, umin, umin);
-      ATOMIC_CASE(ctx, instr, xor, xor);
+   case nir_intrinsic_shared_atomic:
+   case nir_intrinsic_shared_atomic_swap:
+   case nir_intrinsic_global_atomic:
+   case nir_intrinsic_global_atomic_swap:
+      emit_atomic(ctx, instr, ~0);
+      break;
 
-      IMAGE_ATOMIC_CASE(ctx, instr, add, add);
-      IMAGE_ATOMIC_CASE(ctx, instr, and, and);
-      IMAGE_ATOMIC_CASE(ctx, instr, comp_swap, cmpxchg);
-      IMAGE_ATOMIC_CASE(ctx, instr, exchange, xchg);
-      IMAGE_ATOMIC_CASE(ctx, instr, imax, imax);
-      IMAGE_ATOMIC_CASE(ctx, instr, imin, imin);
-      IMAGE_ATOMIC_CASE(ctx, instr, or, or);
-      IMAGE_ATOMIC_CASE(ctx, instr, umax, umax);
-      IMAGE_ATOMIC_CASE(ctx, instr, umin, umin);
-      IMAGE_ATOMIC_CASE(ctx, instr, xor, xor);
+   case nir_intrinsic_image_atomic:
+   case nir_intrinsic_image_atomic_swap: {
+      midgard_instruction lea_image = emit_image_op(ctx, instr, true);
+      emit_atomic(ctx, instr, lea_image.dest);
+      break;
+   }
 
    default:
       fprintf(stderr, "Unhandled intrinsic %s\n",

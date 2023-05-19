@@ -15,7 +15,7 @@ fi
 INSTALL=$(realpath -s "$PWD"/install)
 
 # Set up the driver environment.
-export LD_LIBRARY_PATH="$INSTALL"/lib/
+export LD_LIBRARY_PATH="$INSTALL"/lib/:$LD_LIBRARY_PATH
 export EGL_PLATFORM=surfaceless
 export VK_ICD_FILENAMES="$PWD"/install/share/vulkan/icd.d/"$VK_DRIVER"_icd.${VK_CPU:-$(uname -m)}.json
 export OCL_ICD_VENDORS="$PWD"/install/etc/OpenCL/vendors/
@@ -123,6 +123,9 @@ fi
 if [ "$PIGLIT_PLATFORM" = "gbm" ]; then
     DEQP_SKIPS="$DEQP_SKIPS $INSTALL/gbm-skips.txt"
 fi
+
+# Set the path to VK validation layer settings (in case it ends up getting loaded)
+export VK_LAYER_SETTINGS_PATH=$INSTALL/$GPU_VERSION-validation-settings.txt
 
 report_load() {
     echo "System load: $(cut -d' ' -f1-3 < /proc/loadavg)"

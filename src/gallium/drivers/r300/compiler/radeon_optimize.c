@@ -1331,6 +1331,49 @@ static void merge_channels(struct radeon_compiler * c, struct rc_instruction * i
 	}
 }
 
+/**
+ * Searches for duplicate ARLs
+ *
+ * Only a very trivial case is now optimized where if a second ARL is detected which reads from
+ * the same register as the first one and source is the same, just remove the second one.
+ */
+static void merge_ARL(struct radeon_compiler * c, struct rc_instruction * inst)
+{
+	unsigned int ARL_src_reg = inst->U.I.SrcReg[0].Index;
+	unsigned int ARL_src_file = inst->U.I.SrcReg[0].File;
+	unsigned int ARL_src_swizzle = inst->U.I.SrcReg[0].Swizzle;
+
+	struct rc_instruction * cur = inst;
+	while (cur != &c->Program.Instructions) {
+		cur = cur->Next;
+		const struct rc_opcode_info * opcode = rc_get_opcode_info(cur->U.I.Opcode);
+
+		/* Keep it simple for now and stop when encountering any
+		 * control flow.
+		 */
+		if (opcode->IsFlowControl)
+			return;
+
+		/* Stop when the original source is overwritten */
+		if (ARL_src_reg == cur->U.I.DstReg.Index &&
+			ARL_src_file == cur->U.I.DstReg.File &&
+			cur->U.I.DstReg.WriteMask | rc_swizzle_to_writemask(ARL_src_swizzle))
+			return;
+
+		if (cur->U.I.Opcode == RC_OPCODE_ARL) {
+			if (ARL_src_reg == cur->U.I.SrcReg[0].Index &&
+			    ARL_src_file == cur->U.I.SrcReg[0].File &&
+			    ARL_src_swizzle == cur->U.I.SrcReg[0].Swizzle) {
+				struct rc_instruction * next = cur->Next;
+				rc_remove_instruction(cur);
+				cur = next;
+			} else {
+				return;
+			}
+		}
+	}
+}
+
 void rc_optimize(struct radeon_compiler * c, void *user)
 {
 	struct rc_instruction * inst = c->Program.Instructions.Next;
@@ -1351,7 +1394,7 @@ void rc_optimize(struct radeon_compiler * c, void *user)
 	}
 
 	/* Merge MOVs to same source in different channels using the constant
-	 * swizzles.
+	 * swizzle.
 	 */
 	if (c->is_r500 || c->type == RC_VERTEX_PROGRAM) {
 		inst = c->Program.Instructions.Next;
@@ -1384,7 +1427,16 @@ void rc_optimize(struct radeon_compiler * c, void *user)
 		peephole(c, cur);
 	}
 
+
 	if (!c->has_omod) {
+		inst = c->Program.Instructions.Next;
+		while (inst != &c->Program.Instructions) {
+			struct rc_instruction * cur = inst;
+			inst = inst->Next;
+			if (cur->U.I.Opcode == RC_OPCODE_ARL) {
+				merge_ARL(c, cur);
+			}
+		}
 		return;
 	}
 

@@ -6,6 +6,8 @@
 #ifndef __HEXDUMP_H
 #define __HEXDUMP_H
 
+#include <stdbool.h>
+
 static void
 hexdump(FILE *fp, const uint8_t *hex, size_t cnt, bool with_strings)
 {

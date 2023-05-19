@@ -30,6 +30,7 @@
 #include "nine_state.h"
 #include "pipe/p_state.h" /* PIPE_MAX_ATTRIBS */
 #include "util/u_memory.h"
+#include "tgsi/tgsi_ureg.h"
 
 struct NineDevice9;
 struct NineVertexDeclaration9;
@@ -69,9 +70,14 @@ struct nine_shader_info
 
     uint8_t fog_enable;
     uint8_t fog_mode;
+    uint8_t zfog;
     uint8_t force_color_in_centroid;
+    uint8_t color_flatshade;
     uint8_t projected; /* ps 1.1 to 1.3 */
     uint16_t fetch4;
+    uint8_t alpha_test_emulation;
+    uint8_t clip_plane_emulation;
+    boolean emulate_features;
 
     unsigned const_i_base; /* in vec4 (16 byte) units */
     unsigned const_b_base; /* in vec4 (16 byte) units */
@@ -323,6 +329,23 @@ nine_shader_constant_combination_free(struct nine_shader_constant_combination *l
     }
 
     FREE(list);
+}
+
+/* Returns corresponding opposite test */
+static inline unsigned
+pipe_comp_to_tgsi_opposite(BYTE flags)
+{
+    switch (flags) {
+    case PIPE_FUNC_GREATER: return TGSI_OPCODE_SLE;
+    case PIPE_FUNC_EQUAL: return TGSI_OPCODE_SNE;
+    case PIPE_FUNC_GEQUAL: return TGSI_OPCODE_SLT;
+    case PIPE_FUNC_LESS: return TGSI_OPCODE_SGE;
+    case PIPE_FUNC_NOTEQUAL: return TGSI_OPCODE_SEQ;
+    case PIPE_FUNC_LEQUAL: return TGSI_OPCODE_SGT;
+    default:
+        assert(!"invalid comparison flags");
+        return TGSI_OPCODE_SGT;
+    }
 }
 
 #endif /* _NINE_SHADER_H_ */

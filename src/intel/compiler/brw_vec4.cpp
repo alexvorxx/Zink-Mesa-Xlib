@@ -2552,7 +2552,7 @@ brw_compile_vs(const struct brw_compiler *compiler,
    prog_data->base.base.total_scratch = 0;
 
    const bool is_scalar = compiler->scalar_stage[MESA_SHADER_VERTEX];
-   brw_nir_apply_key(nir, compiler, &key->base, 8, is_scalar);
+   brw_nir_apply_key(nir, compiler, &key->base, 8);
 
    const unsigned *assembly = NULL;
 
@@ -2561,7 +2561,7 @@ brw_compile_vs(const struct brw_compiler *compiler,
 
    brw_nir_lower_vs_inputs(nir, params->edgeflag_is_last, key->gl_attrib_wa_flags);
    brw_nir_lower_vue_outputs(nir);
-   brw_postprocess_nir(nir, compiler, is_scalar, debug_enabled,
+   brw_postprocess_nir(nir, compiler, debug_enabled,
                        key->base.robust_buffer_access);
 
    prog_data->base.clip_distance_mask =

@@ -29,6 +29,7 @@ enum tu_draw_state_group_id
    TU_DRAW_STATE_DESC_SETS,
    TU_DRAW_STATE_DESC_SETS_LOAD,
    TU_DRAW_STATE_VS_PARAMS,
+   TU_DRAW_STATE_FS_PARAMS,
    TU_DRAW_STATE_INPUT_ATTACHMENTS_GMEM,
    TU_DRAW_STATE_INPUT_ATTACHMENTS_SYSMEM,
    TU_DRAW_STATE_LRZ_AND_DEPTH_PLANE,
@@ -56,19 +57,20 @@ enum tu_cmd_dirty_bits
    TU_CMD_DIRTY_VERTEX_BUFFERS = BIT(0),
    TU_CMD_DIRTY_VB_STRIDE = BIT(1),
    TU_CMD_DIRTY_RAST = BIT(2),
-   TU_CMD_DIRTY_RB_DEPTH_CNTL = BIT(3),
-   TU_CMD_DIRTY_RB_STENCIL_CNTL = BIT(4),
-   TU_CMD_DIRTY_DESC_SETS = BIT(5),
-   TU_CMD_DIRTY_COMPUTE_DESC_SETS = BIT(6),
-   TU_CMD_DIRTY_SHADER_CONSTS = BIT(7),
-   TU_CMD_DIRTY_LRZ = BIT(8),
-   TU_CMD_DIRTY_VS_PARAMS = BIT(9),
+   TU_CMD_DIRTY_DS = BIT(3),
+   TU_CMD_DIRTY_DESC_SETS = BIT(4),
+   TU_CMD_DIRTY_COMPUTE_DESC_SETS = BIT(5),
+   TU_CMD_DIRTY_SHADER_CONSTS = BIT(6),
+   TU_CMD_DIRTY_LRZ = BIT(7),
+   TU_CMD_DIRTY_VS_PARAMS = BIT(8),
+   TU_CMD_DIRTY_FS_PARAMS = BIT(9),
    TU_CMD_DIRTY_PC_RASTER_CNTL = BIT(10),
    TU_CMD_DIRTY_VIEWPORTS = BIT(11),
-   TU_CMD_DIRTY_BLEND = BIT(12),
-   TU_CMD_DIRTY_PATCH_CONTROL_POINTS = BIT(13),
+   TU_CMD_DIRTY_SCISSORS = BIT(12),
+   TU_CMD_DIRTY_BLEND = BIT(13),
+   TU_CMD_DIRTY_PATCH_CONTROL_POINTS = BIT(14),
    /* all draw states were disabled and need to be re-enabled: */
-   TU_CMD_DIRTY_DRAW_STATE = BIT(14)
+   TU_CMD_DIRTY_DRAW_STATE = BIT(15)
 };
 
 /* There are only three cache domains we have to care about: the CCU, or
@@ -283,6 +285,7 @@ struct tu_render_pass_state
    bool has_prim_generated_query_in_rp;
    bool disable_gmem;
    bool sysmem_single_prim_mode;
+   bool shared_viewport;
 
    /* Track whether conditional predicate for COND_REG_EXEC is changed in draw_cs */
    bool draw_cs_writes_to_cond_pred;
@@ -427,7 +430,8 @@ struct tu_cmd_state
 
    VkViewport viewport[MAX_VIEWPORTS];
    VkRect2D scissor[MAX_SCISSORS];
-   uint32_t max_viewport, max_scissor;
+   uint32_t viewport_count, scissor_count;
+   bool per_view_viewport;
 
    /* for dynamic states that can't be emitted directly */
    uint32_t dynamic_stencil_mask;
@@ -460,6 +464,7 @@ struct tu_cmd_state
    struct tu_draw_state msaa;
 
    struct tu_draw_state vs_params;
+   struct tu_draw_state fs_params;
 
    /* Index buffer */
    uint64_t index_va;
@@ -558,6 +563,9 @@ struct tu_cmd_buffer
    struct list_head renderpass_autotune_results;
    struct tu_autotune_results_buffer* autotune_buffer;
 
+   void *patchpoints_ctx;
+   struct util_dynarray fdm_bin_patchpoints;
+
    VkCommandBufferUsageFlags usage_flags;
 
    VkQueryPipelineStatisticFlags inherited_pipeline_statistics;
@@ -571,10 +579,10 @@ struct tu_cmd_buffer
 
    struct tu_descriptor_state descriptors[MAX_BIND_POINTS];
 
-   struct tu_render_pass_attachment dynamic_rp_attachments[2 * (MAX_RTS + 1)];
+   struct tu_render_pass_attachment dynamic_rp_attachments[2 * (MAX_RTS + 1) + 1];
    struct tu_subpass_attachment dynamic_color_attachments[MAX_RTS];
    struct tu_subpass_attachment dynamic_resolve_attachments[MAX_RTS + 1];
-   const struct tu_image_view *dynamic_attachments[2 * (MAX_RTS + 1)];
+   const struct tu_image_view *dynamic_attachments[2 * (MAX_RTS + 1) + 1];
 
    struct tu_render_pass dynamic_pass;
    struct tu_subpass dynamic_subpass;
@@ -602,6 +610,9 @@ struct tu_cmd_buffer
       struct u_trace_iterator trace_renderpass_start, trace_renderpass_end;
 
       struct tu_render_pass_state state;
+
+      struct util_dynarray fdm_bin_patchpoints;
+      void *patchpoints_ctx;
    } pre_chain;
 
    uint32_t vsc_draw_strm_pitch;
@@ -690,5 +701,56 @@ void tu6_apply_depth_bounds_workaround(struct tu_device *device,
 
 void
 update_stencil_mask(uint32_t *value, VkStencilFaceFlags face, uint32_t mask);
+
+typedef void (*tu_fdm_bin_apply_t)(struct tu_cs *cs, void *data, VkRect2D bin,
+                                   unsigned views, VkExtent2D *frag_areas);
+
+struct tu_fdm_bin_patchpoint {
+   uint64_t iova;
+   uint32_t size;
+   void *data;
+   tu_fdm_bin_apply_t apply;
+};
+
+static inline void
+_tu_create_fdm_bin_patchpoint(struct tu_cmd_buffer *cmd,
+                              struct tu_cs *cs,
+                              unsigned size,
+                              tu_fdm_bin_apply_t apply,
+                              void *state,
+                              unsigned state_size)
+{
+   void *data = ralloc_size(cmd->patchpoints_ctx, state_size);
+   memcpy(data, state, state_size);
+   assert(cs->writeable);
+   tu_cs_reserve_space(cs, size);
+   struct tu_fdm_bin_patchpoint patch = {
+      .iova = tu_cs_get_cur_iova(cs),
+      .size = size,
+      .data = data,
+      .apply = apply,
+   };
+
+   /* Apply the "default" setup where there is no scaling. This is used if
+    * sysmem is required, and uses up the dwords that have been reserved.
+    */
+   unsigned num_views = MAX2(cmd->state.pass->num_views, 1);
+   VkExtent2D unscaled_frag_areas[num_views];
+   for (unsigned i = 0; i < num_views; i++) {
+      unscaled_frag_areas[i] = (VkExtent2D) { 1, 1 };
+   }
+   apply(cs, state, (VkRect2D) {
+         { 0, 0 },
+         { MAX_VIEWPORT_SIZE, MAX_VIEWPORT_SIZE },
+        }, num_views, unscaled_frag_areas);
+   assert(tu_cs_get_cur_iova(cs) == patch.iova + patch.size * sizeof(uint32_t));
+
+   util_dynarray_append(&cmd->fdm_bin_patchpoints,
+                        struct tu_fdm_bin_patchpoint,
+                        patch);
+}
+
+#define tu_create_fdm_bin_patchpoint(cmd, cs, size, apply, state) \
+   _tu_create_fdm_bin_patchpoint(cmd, cs, size, apply, &state, sizeof(state))
 
 #endif /* TU_CMD_BUFFER_H */

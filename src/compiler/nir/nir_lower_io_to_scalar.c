@@ -52,8 +52,8 @@ lower_load_input_to_scalar(nir_builder *b, nir_intrinsic_instr *intr)
    for (unsigned i = 0; i < intr->num_components; i++) {
       nir_intrinsic_instr *chan_intr =
          nir_intrinsic_instr_create(b->shader, intr->intrinsic);
-      nir_ssa_dest_init(&chan_intr->instr, &chan_intr->dest,
-                        1, intr->dest.ssa.bit_size, NULL);
+      nir_ssa_dest_init(&chan_intr->instr, &chan_intr->dest, 1,
+                        intr->dest.ssa.bit_size);
       chan_intr->num_components = 1;
 
       nir_intrinsic_set_base(chan_intr, nir_intrinsic_base(intr));
@@ -87,8 +87,8 @@ lower_load_to_scalar(nir_builder *b, nir_intrinsic_instr *intr)
    for (unsigned i = 0; i < intr->num_components; i++) {
       nir_intrinsic_instr *chan_intr =
          nir_intrinsic_instr_create(b->shader, intr->intrinsic);
-      nir_ssa_dest_init(&chan_intr->instr, &chan_intr->dest,
-                        1, intr->dest.ssa.bit_size, NULL);
+      nir_ssa_dest_init(&chan_intr->instr, &chan_intr->dest, 1,
+                        intr->dest.ssa.bit_size);
       chan_intr->num_components = 1;
 
       nir_intrinsic_set_align_offset(chan_intr,
@@ -231,13 +231,15 @@ nir_lower_io_to_scalar_instr(nir_builder *b, nir_instr *instr, void *data)
       return false;
 
    if ((intr->intrinsic == nir_intrinsic_load_input ||
-        intr->intrinsic == nir_intrinsic_load_per_vertex_input) &&
+        intr->intrinsic == nir_intrinsic_load_per_vertex_input ||
+        intr->intrinsic == nir_intrinsic_load_interpolated_input) &&
        (mask & nir_var_shader_in)) {
       lower_load_input_to_scalar(b, intr);
       return true;
    }
 
-   if (intr->intrinsic == nir_intrinsic_load_per_vertex_output &&
+   if ((intr->intrinsic == nir_intrinsic_load_output ||
+        intr->intrinsic == nir_intrinsic_load_per_vertex_output) &&
       (mask & nir_var_shader_out)) {
       lower_load_input_to_scalar(b, intr);
       return true;
@@ -349,8 +351,8 @@ lower_load_to_scalar_early(nir_builder *b, nir_intrinsic_instr *intr,
 
       nir_intrinsic_instr *chan_intr =
          nir_intrinsic_instr_create(b->shader, intr->intrinsic);
-      nir_ssa_dest_init(&chan_intr->instr, &chan_intr->dest,
-                        1, intr->dest.ssa.bit_size, NULL);
+      nir_ssa_dest_init(&chan_intr->instr, &chan_intr->dest, 1,
+                        intr->dest.ssa.bit_size);
       chan_intr->num_components = 1;
 
       nir_deref_instr *deref = nir_build_deref_var(b, chan_var);

@@ -107,16 +107,10 @@ struct aco_shader_info {
       bool as_es;
    } tes;
    struct {
-      struct aco_ps_epilog_info epilog;
-      bool writes_z;
-      bool writes_stencil;
-      bool writes_sample_mask;
       bool has_epilog;
+      struct ac_arg epilog_pc;
       uint32_t num_interp;
       unsigned spi_ps_input;
-
-      /* Used to export alpha through MRTZ for alpha-to-coverage (GFX11+). */
-      bool alpha_to_coverage_via_mrtz;
    } ps;
    struct {
       uint8_t subgroup_size;
@@ -134,7 +128,6 @@ enum aco_compiler_debug_level {
 };
 
 struct aco_compiler_options {
-   bool robust_buffer_access;
    bool dump_shader;
    bool dump_preoptir;
    bool record_ir;
@@ -165,6 +158,17 @@ enum aco_statistic {
    aco_statistic_sgpr_presched,
    aco_statistic_vgpr_presched,
    aco_num_statistics
+};
+
+enum aco_symbol_id {
+   aco_symbol_invalid,
+   aco_symbol_scratch_addr_lo,
+   aco_symbol_scratch_addr_hi,
+};
+
+struct aco_symbol {
+   enum aco_symbol_id id;
+   unsigned offset;
 };
 
 #ifdef __cplusplus

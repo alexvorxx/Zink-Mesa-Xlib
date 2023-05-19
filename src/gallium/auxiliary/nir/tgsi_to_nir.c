@@ -26,6 +26,7 @@
 #include "util/u_debug.h"
 #include "util/disk_cache.h"
 #include "util/u_memory.h"
+#include "util/perf/cpu_trace.h"
 #include "util/ralloc.h"
 #include "pipe/p_screen.h"
 
@@ -765,7 +766,7 @@ ttn_src_for_file_and_index(struct ttn_compile *c, unsigned file, unsigned index,
       }
       load->src[srcn++] = nir_src_for_ssa(offset);
 
-      nir_ssa_dest_init(&load->instr, &load->dest, 4, 32, NULL);
+      nir_ssa_dest_init(&load->instr, &load->dest, 4, 32);
       nir_builder_instr_insert(b, &load->instr);
 
       src = nir_src_for_ssa(&load->dest.ssa);
@@ -1573,8 +1574,7 @@ ttn_tex(struct ttn_compile *c, nir_alu_dest dest, nir_ssa_def **src)
    assert(src_number == instr->num_srcs);
 
    nir_ssa_dest_init(&instr->instr, &instr->dest,
-		     nir_tex_instr_dest_size(instr),
-		     32, NULL);
+                     nir_tex_instr_dest_size(instr), 32);
    nir_builder_instr_insert(b, &instr->instr);
 
    /* Resolve the writemask on the texture op. */
@@ -1634,11 +1634,11 @@ ttn_txq(struct ttn_compile *c, nir_alu_dest dest, nir_ssa_def **src)
    txs->src[1].src = nir_src_for_ssa(ttn_channel(b, src[0], X));
    txs->src[1].src_type = nir_tex_src_lod;
 
-   nir_ssa_dest_init(&txs->instr, &txs->dest,
-		     nir_tex_instr_dest_size(txs), 32, NULL);
+   nir_ssa_dest_init(&txs->instr, &txs->dest, nir_tex_instr_dest_size(txs),
+                     32);
    nir_builder_instr_insert(b, &txs->instr);
 
-   nir_ssa_dest_init(&qlv->instr, &qlv->dest, 1, 32, NULL);
+   nir_ssa_dest_init(&qlv->instr, &qlv->dest, 1, 32);
    nir_builder_instr_insert(b, &qlv->instr);
 
    ttn_move_dest_masked(b, dest, &txs->dest.ssa, TGSI_WRITEMASK_XYZ);
@@ -1672,7 +1672,7 @@ get_mem_qualifier(struct tgsi_full_instruction *tgsi_inst)
    if (tgsi_inst->Memory.Qualifier & TGSI_MEMORY_VOLATILE)
       access |= ACCESS_VOLATILE;
    if (tgsi_inst->Memory.Qualifier & TGSI_MEMORY_STREAM_CACHE_POLICY)
-      access |= ACCESS_STREAM_CACHE_POLICY;
+      access |= ACCESS_NON_TEMPORAL;
 
    return access;
 }
@@ -1796,7 +1796,7 @@ ttn_mem(struct ttn_compile *c, nir_alu_dest dest, nir_ssa_def **src)
 
    if (tgsi_inst->Instruction.Opcode == TGSI_OPCODE_LOAD) {
       nir_ssa_dest_init(&instr->instr, &instr->dest, instr->num_components,
-                        32, NULL);
+                        32);
       nir_builder_instr_insert(b, &instr->instr);
       ttn_move_dest(b, dest, &instr->dest.ssa);
    } else {
@@ -2564,6 +2564,67 @@ ttn_optimize_nir(nir_shader *nir)
    } while (progress);
 }
 
+static bool
+lower_clipdistance_to_array(nir_shader *nir)
+{
+   bool progress = false;
+   nir_variable *dist0 = nir_find_variable_with_location(nir, nir_var_shader_out, VARYING_SLOT_CLIP_DIST0);
+   nir_variable *dist1 = nir_find_variable_with_location(nir, nir_var_shader_out, VARYING_SLOT_CLIP_DIST1);
+   /* resize VARYING_SLOT_CLIP_DIST0 to the full array size */
+   dist0->type = glsl_array_type(glsl_float_type(), nir->info.clip_distance_array_size, sizeof(float));
+   struct set *deletes = _mesa_set_create(NULL, _mesa_hash_pointer, _mesa_key_pointer_equal);
+   nir_foreach_function(function, nir) {
+      bool func_progress = false;
+      if (!function->impl)
+         continue;
+      nir_builder b;
+      nir_builder_init(&b, function->impl);
+      b.cursor = nir_before_block(nir_start_block(function->impl));
+      /* create a new deref for the arrayed clipdistance variable at the start of the function */
+      nir_deref_instr *clipdist_deref = nir_build_deref_var(&b, dist0);
+      nir_ssa_def *zero = nir_imm_zero(&b, 1, 32);
+      nir_foreach_block(block, function->impl) {
+         nir_foreach_instr_safe(instr, block) {
+            /* filter through until a clipdistance store is reached */
+            if (instr->type != nir_instr_type_intrinsic)
+               continue;
+            nir_intrinsic_instr *intr = nir_instr_as_intrinsic(instr);
+            if (intr->intrinsic != nir_intrinsic_store_deref)
+               continue;
+            nir_deref_instr *deref = nir_src_as_deref(intr->src[0]);
+            nir_variable *var = nir_deref_instr_get_variable(deref);
+            if (var != dist0 && (!dist1 || var != dist1))
+               continue;
+            b.cursor = nir_before_instr(instr);
+            uint32_t wrmask = nir_intrinsic_write_mask(intr);
+            unsigned offset = var == dist1 ? 4 : 0;
+            /* iterate over the store's writemask for components */
+            for (unsigned i = 0; i < nir->info.clip_distance_array_size; i++) {
+               /* deref the array member and store each component */
+               nir_deref_instr *component_deref = nir_build_deref_array_imm(&b, clipdist_deref, i);
+               nir_ssa_def *val = zero;
+               if (wrmask & BITFIELD_BIT(i - offset))
+                  val = nir_channel(&b, intr->src[1].ssa, i - offset);
+               nir_store_deref(&b, component_deref, val, 0x1);
+            }
+            func_progress = true;
+            /* immediately remove the old store, save the original deref */
+            nir_instr_remove(instr);
+            _mesa_set_add(deletes, deref);
+         }
+      }
+      if (func_progress)
+         nir_metadata_preserve(function->impl, nir_metadata_none);
+      /* derefs must be queued for deletion to avoid deleting the same deref repeatedly */
+      set_foreach_remove(deletes, he)
+         nir_instr_remove((void*)he->key);
+   }
+   /* VARYING_SLOT_CLIP_DIST1 is no longer used and can be removed */
+   if (dist1)
+      exec_node_remove(&dist1->node);
+   return progress;
+}
+
 /**
  * Finalizes the NIR in a similar way as st_glsl_to_nir does.
  *
@@ -2574,6 +2635,8 @@ static void
 ttn_finalize_nir(struct ttn_compile *c, struct pipe_screen *screen)
 {
    struct nir_shader *nir = c->build.shader;
+
+   MESA_TRACE_FUNC();
 
    NIR_PASS_V(nir, nir_lower_vars_to_ssa);
    NIR_PASS_V(nir, nir_lower_regs_to_ssa);
@@ -2589,8 +2652,18 @@ ttn_finalize_nir(struct ttn_compile *c, struct pipe_screen *screen)
       NIR_PASS_V(nir, nir_lower_tex, &opts);
    }
 
+   /* driver needs clipdistance as array<float> */
+   if ((nir->info.outputs_written &
+        (BITFIELD64_BIT(VARYING_SLOT_CLIP_DIST0) | BITFIELD64_BIT(VARYING_SLOT_CLIP_DIST1))) &&
+       screen->get_param(screen, PIPE_CAP_NIR_COMPACT_ARRAYS)) {
+      NIR_PASS_V(nir, lower_clipdistance_to_array);
+   }
+
    if (nir->options->lower_uniforms_to_ubo)
       NIR_PASS_V(nir, nir_lower_uniforms_to_ubo, false, !c->cap_integers);
+
+   if (nir->options->lower_int64_options)
+      NIR_PASS_V(nir, nir_lower_int64);
 
    if (!c->cap_samplers_as_deref)
       NIR_PASS_V(nir, nir_lower_samplers);

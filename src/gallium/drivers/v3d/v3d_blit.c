@@ -174,7 +174,9 @@ v3d_stencil_blit(struct pipe_context *ctx, struct pipe_blit_info *info)
 
         /* Initialize the sampler view. */
         struct pipe_sampler_view src_tmpl = {
-                .target = src->base.target,
+                .target = (src->base.target == PIPE_TEXTURE_CUBE_ARRAY) ?
+                          PIPE_TEXTURE_2D_ARRAY :
+                          src->base.target,
                 .format = src_format,
                 .u.tex = {
                         .first_level = info->src.level,
@@ -552,7 +554,7 @@ v3d_tlb_blit(struct pipe_context *pctx, struct pipe_blit_info *info)
                 info->mask &= ~PIPE_MASK_S;
         }
 
-        v3d41_start_binning(v3d, job);
+        v3d_X(&v3d->screen->devinfo, start_binning)(v3d, job);
 
         v3d_job_submit(v3d, job);
 

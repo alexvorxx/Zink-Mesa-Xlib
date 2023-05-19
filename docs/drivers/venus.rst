@@ -3,12 +3,9 @@ Virtio-GPU Venus
 
 Venus is a Virtio-GPU protocol for Vulkan command serialization.  The protocol
 definition and codegen are hosted at `venus-protocol
-<https://gitlab.freedesktop.org/olv/venus-protocol>`__.  The renderer is
+<https://gitlab.freedesktop.org/virgl/venus-protocol>`__.  The renderer is
 hosted at `virglrenderer
 <https://gitlab.freedesktop.org/virgl/virglrenderer>`__.
-
-The protocol is still under development.  This driver and the renderer are
-both considered experimental.
 
 Requirements
 ------------
@@ -34,6 +31,8 @@ tested with
 
 The Venus driver requires supports for
 
+- ``VIRTGPU_PARAM_3D_FEATURES``
+- ``VIRTGPU_PARAM_CAPSET_QUERY_FIX``
 - ``VIRTGPU_PARAM_RESOURCE_BLOB``
 - ``VIRTGPU_PARAM_HOST_VISIBLE``
 - ``VIRTGPU_PARAM_CROSS_DEVICE``
@@ -56,9 +55,11 @@ build virglrenderer with Venus support and to start the vtest server,
 
     $ git clone https://gitlab.freedesktop.org/virgl/virglrenderer.git
     $ cd virglrenderer
-    $ meson out -Dvenus-experimental=true
+    $ meson out -Dvenus=true
     $ ninja -C out
-    $ ./out/vtest/virgl_test_server --venus
+    $ meson devenv -C out
+    $ ./vtest/virgl_test_server --venus
+    $ exit
 
 In another shell,
 
@@ -100,6 +101,7 @@ This is how one might want to start crosvm
 
  $ sudo LD_LIBRARY_PATH=<...> VK_ICD_FILENAMES=<...> ./target/debug/crosvm run \
        --gpu vulkan=true \
+       --gpu-render-server path=<path-to-virglrenderer>/out/server/virgl_render_server \
        --display-window-keyboard \
        --display-window-mouse \
        --host_ip 192.168.0.1 \

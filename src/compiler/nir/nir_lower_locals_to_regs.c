@@ -210,7 +210,7 @@ lower_locals_to_regs_block(nir_block *block,
          if (intrin->dest.is_ssa) {
             nir_ssa_dest_init(&mov->instr, &mov->dest.dest,
                               intrin->num_components,
-                              intrin->dest.ssa.bit_size, NULL);
+                              intrin->dest.ssa.bit_size);
             nir_ssa_def_rewrite_uses(&intrin->dest.ssa,
                                      &mov->dest.dest.ssa);
          } else {

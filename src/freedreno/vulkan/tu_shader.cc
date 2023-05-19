@@ -41,6 +41,7 @@ tu_spirv_to_nir(struct tu_device *dev,
          .draw_parameters = true,
          .float_controls = true,
          .float16 = true,
+         .fragment_density = true,
          .geometry_streams = true,
          .image_read_without_format = true,
          .image_write_without_format = true,
@@ -321,8 +322,7 @@ lower_ssbo_ubo_intrinsic(struct tu_device *dev,
       if (info->has_dest) {
          nir_ssa_dest_init(&copy->instr, &copy->dest,
                            intrin->dest.ssa.num_components,
-                           intrin->dest.ssa.bit_size,
-                           NULL);
+                           intrin->dest.ssa.bit_size);
          results[i] = &copy->dest.ssa;
       }
 
@@ -441,36 +441,16 @@ lower_intrinsic(nir_builder *b, nir_intrinsic_instr *instr,
    case nir_intrinsic_load_ubo:
    case nir_intrinsic_load_ssbo:
    case nir_intrinsic_store_ssbo:
-   case nir_intrinsic_ssbo_atomic_add:
-   case nir_intrinsic_ssbo_atomic_imin:
-   case nir_intrinsic_ssbo_atomic_umin:
-   case nir_intrinsic_ssbo_atomic_imax:
-   case nir_intrinsic_ssbo_atomic_umax:
-   case nir_intrinsic_ssbo_atomic_and:
-   case nir_intrinsic_ssbo_atomic_or:
-   case nir_intrinsic_ssbo_atomic_xor:
-   case nir_intrinsic_ssbo_atomic_exchange:
-   case nir_intrinsic_ssbo_atomic_comp_swap:
-   case nir_intrinsic_ssbo_atomic_fadd:
-   case nir_intrinsic_ssbo_atomic_fmin:
-   case nir_intrinsic_ssbo_atomic_fmax:
-   case nir_intrinsic_ssbo_atomic_fcomp_swap:
+   case nir_intrinsic_ssbo_atomic:
+   case nir_intrinsic_ssbo_atomic_swap:
    case nir_intrinsic_get_ssbo_size:
       lower_ssbo_ubo_intrinsic(dev, b, instr);
       return true;
 
    case nir_intrinsic_image_deref_load:
    case nir_intrinsic_image_deref_store:
-   case nir_intrinsic_image_deref_atomic_add:
-   case nir_intrinsic_image_deref_atomic_imin:
-   case nir_intrinsic_image_deref_atomic_umin:
-   case nir_intrinsic_image_deref_atomic_imax:
-   case nir_intrinsic_image_deref_atomic_umax:
-   case nir_intrinsic_image_deref_atomic_and:
-   case nir_intrinsic_image_deref_atomic_or:
-   case nir_intrinsic_image_deref_atomic_xor:
-   case nir_intrinsic_image_deref_atomic_exchange:
-   case nir_intrinsic_image_deref_atomic_comp_swap:
+   case nir_intrinsic_image_deref_atomic:
+   case nir_intrinsic_image_deref_atomic_swap:
    case nir_intrinsic_image_deref_size:
    case nir_intrinsic_image_deref_samples:
       lower_image_deref(dev, b, instr, shader, layout);
@@ -846,6 +826,81 @@ tu_lower_io(nir_shader *shader, struct tu_device *dev,
    return progress;
 }
 
+struct lower_fdm_options {
+   unsigned num_views;
+   bool adjust_fragcoord;
+   bool multiview;
+};
+
+static bool
+lower_fdm_filter(const nir_instr *instr, const void *data)
+{
+   const struct lower_fdm_options *options =
+      (const struct lower_fdm_options *)data;
+
+   if (instr->type != nir_instr_type_intrinsic)
+      return false;
+
+   nir_intrinsic_instr *intrin = nir_instr_as_intrinsic(instr);
+   return intrin->intrinsic == nir_intrinsic_load_frag_size ||
+      (intrin->intrinsic == nir_intrinsic_load_frag_coord &&
+       options->adjust_fragcoord);
+}
+
+static nir_ssa_def *
+lower_fdm_instr(struct nir_builder *b, nir_instr *instr, void *data)
+{
+   const struct lower_fdm_options *options =
+      (const struct lower_fdm_options *)data;
+
+   nir_intrinsic_instr *intrin = nir_instr_as_intrinsic(instr);
+
+   nir_ssa_def *view;
+   if (options->multiview) {
+      nir_variable *view_var =
+         nir_find_variable_with_location(b->shader, nir_var_shader_in,
+                                         VARYING_SLOT_VIEW_INDEX);
+
+      if (view_var == NULL) {
+         view_var = nir_variable_create(b->shader, nir_var_shader_in,
+                                        glsl_int_type(), NULL);
+         view_var->data.location = VARYING_SLOT_VIEW_INDEX;
+         view_var->data.interpolation = INTERP_MODE_FLAT;
+         view_var->data.driver_location = b->shader->num_inputs++;
+      }
+
+      view = nir_load_var(b, view_var);
+   } else {
+      view = nir_imm_int(b, 0);
+   }
+
+   nir_ssa_def *frag_size =
+      nir_load_frag_size_ir3(b, view, .range = options->num_views);
+
+   if (intrin->intrinsic == nir_intrinsic_load_frag_coord) {
+      nir_ssa_def *frag_offset =
+         nir_load_frag_offset_ir3(b, view, .range = options->num_views);
+      nir_ssa_def *unscaled_coord = nir_load_frag_coord_unscaled_ir3(b);
+      nir_ssa_def *xy = nir_channels(b, unscaled_coord, 0x3);
+      xy = nir_fmul(b, nir_fsub(b, xy, frag_offset), nir_i2f32(b, frag_size));
+      return nir_vec4(b,
+                      nir_channel(b, xy, 0),
+                      nir_channel(b, xy, 1),
+                      nir_channel(b, unscaled_coord, 2),
+                      nir_channel(b, unscaled_coord, 3));
+   }
+
+   assert(intrin->intrinsic == nir_intrinsic_load_frag_size);
+   return frag_size;
+}
+
+static bool
+tu_nir_lower_fdm(nir_shader *shader, const struct lower_fdm_options *options)
+{
+   return nir_shader_lower_instructions(shader, lower_fdm_filter,
+                                        lower_fdm_instr, (void *)options);
+}
+
 static void
 shared_type_info(const struct glsl_type *type, unsigned *size, unsigned *align)
 {
@@ -931,9 +986,20 @@ tu_shader_create(struct tu_device *dev,
           * multiview is enabled.
           */
          .use_view_id_for_layer = key->multiview_mask != 0,
+         .unscaled_input_attachment_ir3 = key->unscaled_input_fragcoord,
       };
       NIR_PASS_V(nir, nir_lower_input_attachments, &att_options);
    }
+
+   /* This has to happen before lower_input_attachments, because we have to
+    * lower input attachment coordinates except if unscaled.
+    */
+   const struct lower_fdm_options fdm_options = {
+      .num_views = MAX2(util_last_bit(key->multiview_mask), 1),
+      .adjust_fragcoord = key->fragment_density_map,
+   };
+   NIR_PASS_V(nir, tu_nir_lower_fdm, &fdm_options);
+
 
    /* This needs to happen before multiview lowering which rewrites store
     * instructions of the position variable, so that we can just rewrite one

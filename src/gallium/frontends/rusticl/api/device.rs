@@ -1,4 +1,5 @@
 use crate::api::icd::*;
+use crate::api::types::IdpAccelProps;
 use crate::api::util::*;
 use crate::core::device::*;
 use crate::core::platform::*;
@@ -22,10 +23,13 @@ const SPIRV_SUPPORT: [cl_name_version; 5] = [
     mk_cl_version_ext(1, 3, 0, "SPIR-V"),
     mk_cl_version_ext(1, 4, 0, "SPIR-V"),
 ];
-
+type ClDevIdpAccelProps = cl_device_integer_dot_product_acceleration_properties_khr;
 impl CLInfo<cl_device_info> for cl_device_id {
     fn query(&self, q: cl_device_info, _: &[u8]) -> CLResult<Vec<u8>> {
         let dev = self.get_ref()?;
+
+        // curses you CL_DEVICE_INTEGER_DOT_PRODUCT_ACCELERATION_PROPERTIES_4x8BIT_PACKED_KHR
+        #[allow(non_upper_case_globals)]
         Ok(match q {
             CL_DEVICE_ADDRESS_BITS => cl_prop::<cl_uint>(dev.address_bits()),
             CL_DEVICE_ATOMIC_FENCE_CAPABILITIES => cl_prop::<cl_device_atomic_capabilities>(
@@ -45,18 +49,23 @@ impl CLInfo<cl_device_info> for cl_device_id {
             CL_DEVICE_DEVICE_ENQUEUE_CAPABILITIES => {
                 cl_prop::<cl_device_device_enqueue_capabilities>(0)
             }
-            CL_DEVICE_DOUBLE_FP_CONFIG => {
-                cl_prop::<cl_device_fp_config>(if dev.doubles_supported() {
-                    (CL_FP_FMA
+            CL_DEVICE_DOUBLE_FP_CONFIG => cl_prop::<cl_device_fp_config>(
+                if dev.doubles_supported() {
+                    let mut fp64_config = CL_FP_FMA
                         | CL_FP_ROUND_TO_NEAREST
                         | CL_FP_ROUND_TO_ZERO
                         | CL_FP_ROUND_TO_INF
                         | CL_FP_INF_NAN
-                        | CL_FP_DENORM) as cl_device_fp_config
+                        | CL_FP_DENORM;
+                    if dev.doubles_is_softfp() {
+                        fp64_config |= CL_FP_SOFT_FLOAT;
+                    }
+                    fp64_config
                 } else {
                     0
-                })
-            }
+                }
+                .into(),
+            ),
             CL_DEVICE_ENDIAN_LITTLE => cl_prop::<bool>(dev.little_endian()),
             CL_DEVICE_ERROR_CORRECTION_SUPPORT => cl_prop::<bool>(false),
             CL_DEVICE_EXECUTION_CAPABILITIES => {
@@ -86,6 +95,42 @@ impl CLInfo<cl_device_info> for cl_device_id {
             CL_DEVICE_IMAGE3D_MAX_HEIGHT => cl_prop::<usize>(dev.image_3d_size()),
             CL_DEVICE_IMAGE3D_MAX_WIDTH => cl_prop::<usize>(dev.image_3d_size()),
             CL_DEVICE_IMAGE3D_MAX_DEPTH => cl_prop::<usize>(dev.image_3d_size()),
+            CL_DEVICE_INTEGER_DOT_PRODUCT_CAPABILITIES_KHR => {
+                cl_prop::<cl_device_integer_dot_product_capabilities_khr>(
+                    (CL_DEVICE_INTEGER_DOT_PRODUCT_INPUT_4x8BIT_PACKED_KHR
+                        | CL_DEVICE_INTEGER_DOT_PRODUCT_INPUT_4x8BIT_KHR)
+                        .into(),
+                )
+            }
+            CL_DEVICE_INTEGER_DOT_PRODUCT_ACCELERATION_PROPERTIES_8BIT_KHR => {
+                cl_prop::<ClDevIdpAccelProps>({
+                    let pack = dev.pack_32_4x8_supported();
+                    let sdot = dev.sdot_4x8_supported() && pack;
+                    let udot = dev.udot_4x8_supported() && pack;
+                    let sudot = dev.sudot_4x8_supported() && pack;
+                    IdpAccelProps::new(
+                        sdot.into(),
+                        udot.into(),
+                        sudot.into(),
+                        sdot.into(),
+                        udot.into(),
+                        sudot.into(),
+                    )
+                })
+            }
+            CL_DEVICE_INTEGER_DOT_PRODUCT_ACCELERATION_PROPERTIES_4x8BIT_PACKED_KHR => {
+                cl_prop::<ClDevIdpAccelProps>({
+                    IdpAccelProps::new(
+                        dev.sdot_4x8_supported().into(),
+                        dev.udot_4x8_supported().into(),
+                        dev.sudot_4x8_supported().into(),
+                        dev.sdot_4x8_supported().into(),
+                        dev.udot_4x8_supported().into(),
+                        dev.sudot_4x8_supported().into(),
+                    )
+                })
+            }
+
             CL_DEVICE_LATEST_CONFORMANCE_VERSION_PASSED => {
                 cl_prop::<&CStr>(dev.screen().cl_cts_version())
             }
@@ -125,7 +170,9 @@ impl CLInfo<cl_device_info> for cl_device_id {
             }
             CL_DEVICE_NAME => cl_prop(dev.screen().name()),
             CL_DEVICE_NATIVE_VECTOR_WIDTH_CHAR => cl_prop::<cl_uint>(1),
-            CL_DEVICE_NATIVE_VECTOR_WIDTH_DOUBLE => cl_prop::<cl_uint>(0),
+            CL_DEVICE_NATIVE_VECTOR_WIDTH_DOUBLE => {
+                cl_prop::<cl_uint>(if dev.doubles_supported() { 1 } else { 0 })
+            }
             CL_DEVICE_NATIVE_VECTOR_WIDTH_FLOAT => cl_prop::<cl_uint>(1),
             CL_DEVICE_NATIVE_VECTOR_WIDTH_HALF => cl_prop::<cl_uint>(0),
             CL_DEVICE_NATIVE_VECTOR_WIDTH_INT => cl_prop::<cl_uint>(1),
@@ -139,6 +186,9 @@ impl CLInfo<cl_device_info> for cl_device_id {
             CL_DEVICE_PARTITION_MAX_SUB_DEVICES => cl_prop::<cl_uint>(0),
             CL_DEVICE_PARTITION_PROPERTIES => cl_prop::<Vec<cl_device_partition_property>>(vec![0]),
             CL_DEVICE_PARTITION_TYPE => cl_prop::<Vec<cl_device_partition_property>>(Vec::new()),
+            CL_DEVICE_PCI_BUS_INFO_KHR => {
+                cl_prop::<cl_device_pci_bus_info_khr>(dev.pci_info().ok_or(CL_INVALID_VALUE)?)
+            }
             CL_DEVICE_PIPE_MAX_ACTIVE_RESERVATIONS => cl_prop::<cl_uint>(0),
             CL_DEVICE_PIPE_MAX_PACKET_SIZE => cl_prop::<cl_uint>(0),
             CL_DEVICE_PIPE_SUPPORT => cl_prop::<bool>(false),

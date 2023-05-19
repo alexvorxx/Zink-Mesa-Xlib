@@ -177,6 +177,7 @@ add_gpus([
     ))
 
 add_gpus([
+        GPUId(506),
         GPUId(508),
         GPUId(509),
         GPUId(510),
@@ -237,6 +238,7 @@ a6xx_gen3 = dict(
         has_lrz_dir_tracking = True,
         enable_lrz_fast_clear = True,
         lrz_track_quirk = True,
+        has_per_view_viewport = True,
     )
 
 # a635, a660:
@@ -262,6 +264,7 @@ a6xx_gen4 = dict(
         has_dp4acc = True,
         enable_lrz_fast_clear = True,
         has_lrz_dir_tracking = True,
+        has_per_view_viewport = True,
     )
 
 add_gpus([
@@ -273,7 +276,7 @@ add_gpus([
         a6xx_gen1,
         num_ccu = 1,
         tile_align_w = 32,
-        tile_align_h = 16,
+        tile_align_h = 32,
         magic_regs = dict(
             PC_POWER_CNTL = 0,
             TPL1_DBG_ECO_CNTL = 0x00108000,

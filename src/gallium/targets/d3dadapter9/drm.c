@@ -69,6 +69,7 @@ const driOptionDescription __driConfigOptionsNine[] = {
         DRI_CONF_NINE_SHADERINLINECONSTANTS(false)
         DRI_CONF_NINE_SHMEM_LIMIT()
         DRI_CONF_NINE_FORCESWRENDERINGONCPU(false)
+        DRI_CONF_NINE_FORCEFEATURESEMULATION(false)
     DRI_CONF_SECTION_END
     DRI_CONF_SECTION_DEBUG
         DRI_CONF_OVERRIDE_VRAM_SIZE()
@@ -292,6 +293,7 @@ drm_create_adapter( int fd,
     ctx->base.shader_inline_constants = driQueryOptionb(&userInitOptions, "shader_inline_constants");
     ctx->base.memfd_virtualsizelimit = driQueryOptioni(&userInitOptions, "texture_memory_limit");
     ctx->base.override_vram_size = driQueryOptioni(&userInitOptions, "override_vram_size");
+    ctx->base.force_emulation = driQueryOptionb(&userInitOptions, "force_features_emulation");
     sw_rendering = driQueryOptionb(&userInitOptions, "force_sw_rendering_on_cpu");
 
     driDestroyOptionCache(&userInitOptions);

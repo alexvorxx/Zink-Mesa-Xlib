@@ -30,6 +30,7 @@
 #include "d3d12_descriptor_pool.h"
 
 #include "nir.h"
+#include "dxil_versions.h"
 
 #include "d3d12_common.h"
 
@@ -108,7 +109,7 @@ struct d3d12_screen {
 
    /* capabilities */
    D3D_FEATURE_LEVEL max_feature_level;
-   D3D_SHADER_MODEL max_shader_model;
+   enum dxil_shader_model max_shader_model;
    D3D12_FEATURE_DATA_ARCHITECTURE architecture;
    D3D12_FEATURE_DATA_D3D12_OPTIONS opts;
    D3D12_FEATURE_DATA_D3D12_OPTIONS1 opts1;

@@ -22,6 +22,7 @@
 #include "gallium/auxiliary/util/u_draw.h"
 #include "gallium/auxiliary/util/u_framebuffer.h"
 #include "gallium/auxiliary/util/u_helpers.h"
+#include "gallium/auxiliary/util/u_prim_restart.h"
 #include "gallium/auxiliary/util/u_viewport.h"
 #include "pipe/p_context.h"
 #include "pipe/p_defines.h"
@@ -36,59 +37,6 @@
 #include "util/u_resource.h"
 #include "util/u_transfer.h"
 #include "agx_disk_cache.h"
-
-static struct pipe_stream_output_target *
-agx_create_stream_output_target(struct pipe_context *pctx,
-                                struct pipe_resource *prsc,
-                                unsigned buffer_offset, unsigned buffer_size)
-{
-   struct pipe_stream_output_target *target;
-
-   target = &rzalloc(pctx, struct agx_streamout_target)->base;
-
-   if (!target)
-      return NULL;
-
-   pipe_reference_init(&target->reference, 1);
-   pipe_resource_reference(&target->buffer, prsc);
-
-   target->context = pctx;
-   target->buffer_offset = buffer_offset;
-   target->buffer_size = buffer_size;
-
-   return target;
-}
-
-static void
-agx_stream_output_target_destroy(struct pipe_context *pctx,
-                                 struct pipe_stream_output_target *target)
-{
-   pipe_resource_reference(&target->buffer, NULL);
-   ralloc_free(target);
-}
-
-static void
-agx_set_stream_output_targets(struct pipe_context *pctx, unsigned num_targets,
-                              struct pipe_stream_output_target **targets,
-                              const unsigned *offsets)
-{
-   struct agx_context *ctx = agx_context(pctx);
-   struct agx_streamout *so = &ctx->streamout;
-
-   assert(num_targets <= ARRAY_SIZE(so->targets));
-
-   for (unsigned i = 0; i < num_targets; i++) {
-      if (offsets[i] != -1)
-         agx_so_target(targets[i])->offset = offsets[i];
-
-      pipe_so_target_reference(&so->targets[i], targets[i]);
-   }
-
-   for (unsigned i = 0; i < so->num_targets; i++)
-      pipe_so_target_reference(&so->targets[i], NULL);
-
-   so->num_targets = num_targets;
-}
 
 static void
 agx_set_shader_images(struct pipe_context *pctx, enum pipe_shader_type shader,
@@ -282,7 +230,11 @@ agx_create_zsa_state(struct pipe_context *ctx,
 
    so->base = *state;
 
-   /* Z func can be used as-is */
+   /* Handle the enable flag */
+   enum pipe_compare_func depth_func =
+      state->depth_enabled ? state->depth_func : PIPE_FUNC_ALWAYS;
+
+   /* Z func can otherwise be used as-is */
    STATIC_ASSERT((enum agx_zs_func)PIPE_FUNC_NEVER == AGX_ZS_FUNC_NEVER);
    STATIC_ASSERT((enum agx_zs_func)PIPE_FUNC_LESS == AGX_ZS_FUNC_LESS);
    STATIC_ASSERT((enum agx_zs_func)PIPE_FUNC_EQUAL == AGX_ZS_FUNC_EQUAL);
@@ -293,10 +245,7 @@ agx_create_zsa_state(struct pipe_context *ctx,
    STATIC_ASSERT((enum agx_zs_func)PIPE_FUNC_ALWAYS == AGX_ZS_FUNC_ALWAYS);
 
    agx_pack(&so->depth, FRAGMENT_FACE, cfg) {
-      cfg.depth_function = state->depth_enabled
-                              ? ((enum agx_zs_func)state->depth_func)
-                              : AGX_ZS_FUNC_ALWAYS;
-
+      cfg.depth_function = (enum agx_zs_func)depth_func;
       cfg.disable_depth_write = !state->depth_writemask;
    }
 
@@ -309,15 +258,12 @@ agx_create_zsa_state(struct pipe_context *ctx,
       so->back_stencil = so->front_stencil;
    }
 
-   if (state->depth_enabled) {
-      if (state->depth_func != PIPE_FUNC_NEVER &&
-          state->depth_func != PIPE_FUNC_ALWAYS) {
+   if (depth_func != PIPE_FUNC_NEVER && depth_func != PIPE_FUNC_ALWAYS)
+      so->load |= PIPE_CLEAR_DEPTH;
 
-         so->load |= PIPE_CLEAR_DEPTH;
-      }
-
-      if (state->depth_writemask)
-         so->store |= PIPE_CLEAR_DEPTH;
+   if (state->depth_writemask) {
+      so->load |= PIPE_CLEAR_DEPTH;
+      so->store |= PIPE_CLEAR_DEPTH;
    }
 
    if (state->stencil[0].enabled) {
@@ -403,7 +349,6 @@ agx_bind_rasterizer_state(struct pipe_context *pctx, void *cso)
       base_cso_changed || (ctx->rast->base.scissor != so->base.scissor) ||
       (ctx->rast->base.offset_tri != so->base.offset_tri);
 
-   ctx->rast = so;
    ctx->dirty |= AGX_DIRTY_RS;
 
    if (scissor_zbias_changed)
@@ -412,6 +357,8 @@ agx_bind_rasterizer_state(struct pipe_context *pctx, void *cso)
    if (base_cso_changed ||
        (ctx->rast->base.sprite_coord_mode != so->base.sprite_coord_mode))
       ctx->dirty |= AGX_DIRTY_SPRITE_COORD_MODE;
+
+   ctx->rast = so;
 }
 
 static enum agx_wrap
@@ -667,10 +614,11 @@ agx_pack_texture(void *out, struct agx_resource *rsrc,
       desc->swizzle[3],
    };
 
-   if (util_format_has_stencil(desc)) {
-      assert(!util_format_has_depth(desc) && "separate stencil always used");
+   if (util_format_is_depth_or_stencil(format)) {
+      assert(!util_format_is_depth_and_stencil(format) &&
+             "separate stencil always used");
 
-      /* Broadcast stencil */
+      /* Broadcast depth and stencil */
       format_swizzle[0] = 0;
       format_swizzle[1] = 0;
       format_swizzle[2] = 0;
@@ -877,16 +825,22 @@ agx_create_surface(struct pipe_context *ctx, struct pipe_resource *texture,
 
    if (!surface)
       return NULL;
+
+   unsigned level = surf_tmpl->u.tex.level;
+
    pipe_reference_init(&surface->reference, 1);
    pipe_resource_reference(&surface->texture, texture);
+
+   assert(texture->target != PIPE_BUFFER && "buffers are not renderable");
+
    surface->context = ctx;
    surface->format = surf_tmpl->format;
-   surface->width = texture->width0;
-   surface->height = texture->height0;
+   surface->width = u_minify(texture->width0, level);
+   surface->height = u_minify(texture->height0, level);
    surface->texture = texture;
    surface->u.tex.first_layer = surf_tmpl->u.tex.first_layer;
    surface->u.tex.last_layer = surf_tmpl->u.tex.last_layer;
-   surface->u.tex.level = surf_tmpl->u.tex.level;
+   surface->u.tex.level = level;
 
    return surface;
 }
@@ -1396,6 +1350,9 @@ agx_compile_variant(struct agx_device *dev, struct agx_uncompiled_shader *so,
       struct asahi_vs_shader_key *key = &key_->vs;
 
       NIR_PASS_V(nir, agx_nir_lower_vbo, &key->vbuf);
+
+      if (key->xfb.active && nir->xfb_info != NULL)
+         NIR_PASS_V(nir, agx_nir_lower_xfb, &key->xfb);
    } else if (nir->info.stage == MESA_SHADER_FRAGMENT) {
       struct asahi_fs_shader_key *key = &key_->fs;
 
@@ -1423,7 +1380,11 @@ agx_compile_variant(struct agx_device *dev, struct agx_uncompiled_shader *so,
       uint8_t colormasks[PIPE_MAX_COLOR_BUFS] = {0};
 
       for (unsigned i = 0; i < PIPE_MAX_COLOR_BUFS; ++i) {
-         if (agx_tilebuffer_supports_mask(&tib, i)) {
+         /* TODO: Flakes some dEQPs, seems to invoke UB. Revisit later.
+          * dEQP-GLES2.functional.fragment_ops.interaction.basic_shader.77
+          * dEQP-GLES2.functional.fragment_ops.interaction.basic_shader.98
+          */
+         if (0 /* agx_tilebuffer_supports_mask(&tib, i) */) {
             colormasks[i] = key->blend.rt[i].colormask;
             opts.rt[i].colormask = BITFIELD_MASK(4);
          } else {
@@ -1665,12 +1626,14 @@ agx_update_vs(struct agx_context *ctx)
    /* Only proceed if the shader or anything the key depends on changes
     *
     * vb_mask, attributes, vertex_buffers: VERTEX
+    * streamout.active: XFB
     */
-   if (!(ctx->dirty & (AGX_DIRTY_VS_PROG | AGX_DIRTY_VERTEX)))
+   if (!(ctx->dirty & (AGX_DIRTY_VS_PROG | AGX_DIRTY_VERTEX | AGX_DIRTY_XFB)))
       return false;
 
    struct asahi_vs_shader_key key = {
       .vbuf.count = util_last_bit(ctx->vb_mask),
+      .xfb = ctx->streamout.key,
    };
 
    memcpy(key.vbuf.attributes, ctx->attributes,
@@ -2102,6 +2065,14 @@ agx_build_meta(struct agx_batch *batch, bool store, bool partial_render)
 void
 agx_batch_init_state(struct agx_batch *batch)
 {
+   if (batch->initialized)
+      return;
+
+   if (batch->key.width == AGX_COMPUTE_BATCH_WIDTH) {
+      batch->initialized = true;
+      return;
+   }
+
    /* Emit state on the batch that we don't change and so don't dirty track */
    uint8_t *out = batch->encoder_current;
    struct agx_ppp_update ppp =
@@ -2126,6 +2097,9 @@ agx_batch_init_state(struct agx_batch *batch)
    agx_ppp_fini(&out, &ppp);
    batch->encoder_current = out;
 
+   /* Mark it as initialized now, since agx_batch_writes() will check this. */
+   batch->initialized = true;
+
    /* Choose a tilebuffer layout given the framebuffer key */
    enum pipe_format formats[PIPE_MAX_COLOR_BUFS] = {0};
    for (unsigned i = 0; i < batch->key.nr_cbufs; ++i) {
@@ -2137,6 +2111,19 @@ agx_batch_init_state(struct agx_batch *batch)
    batch->tilebuffer_layout = agx_build_tilebuffer_layout(
       formats, batch->key.nr_cbufs,
       util_framebuffer_get_num_samples(&batch->key));
+
+   if (batch->key.zsbuf) {
+      struct agx_resource *rsrc = agx_resource(batch->key.zsbuf->texture);
+      agx_batch_writes(batch, rsrc);
+
+      if (rsrc->separate_stencil)
+         agx_batch_writes(batch, rsrc->separate_stencil);
+   }
+
+   for (unsigned i = 0; i < batch->key.nr_cbufs; ++i) {
+      if (batch->key.cbufs[i])
+         agx_batch_writes(batch, agx_resource(batch->key.cbufs[i]->texture));
+   }
 }
 
 static enum agx_object_type
@@ -2325,8 +2312,8 @@ agx_encode_state(struct agx_batch *batch, uint8_t *out, bool is_lines,
          /* This avoids broken derivatives along primitive edges */
          cfg.disable_tri_merging =
             (is_lines || is_points || ctx->fs->info.disable_tri_merging);
-         cfg.no_colour_output = ctx->fs->info.no_colour_output ||
-                                ctx->rast->base.rasterizer_discard;
+         cfg.tag_write_disable = ctx->fs->info.tag_write_disable ||
+                                 ctx->rast->base.rasterizer_discard;
          cfg.pass_type = agx_pass_type_for_shader(&ctx->fs->info);
       }
    }
@@ -2556,7 +2543,46 @@ agx_draw_vbo(struct pipe_context *pctx, const struct pipe_draw_info *info,
       return;
    }
 
+   if (indirect && indirect->count_from_stream_output) {
+      agx_draw_vbo_from_xfb(pctx, info, drawid_offset, indirect);
+      return;
+   }
+
+   const nir_shader *nir_vs = ctx->stage[PIPE_SHADER_VERTEX].shader->nir;
+   bool uses_xfb = nir_vs->xfb_info && ctx->streamout.num_targets;
+   bool uses_prims_generated = ctx->active_queries && ctx->prims_generated;
+
+   if (indirect && (uses_prims_generated || uses_xfb)) {
+      perf_debug_ctx(ctx, "Emulating indirect draw due to XFB");
+      util_draw_indirect(pctx, info, indirect);
+      return;
+   }
+
+   if (uses_xfb && info->primitive_restart) {
+      perf_debug_ctx(ctx, "Emulating primitive restart due to XFB");
+      util_draw_vbo_without_prim_restart(pctx, info, drawid_offset, indirect,
+                                         draws);
+      return;
+   }
+
+   if (!ctx->streamout.key.active && uses_prims_generated) {
+      agx_primitives_update_direct(ctx, info, draws);
+   }
+
    struct agx_batch *batch = agx_get_batch(ctx);
+   unsigned idx_size = info->index_size;
+   uint64_t ib = 0;
+   size_t ib_extent = 0;
+
+   if (idx_size) {
+      if (indirect != NULL)
+         ib = agx_index_buffer_rsrc_ptr(batch, info, &ib_extent);
+      else
+         ib = agx_index_buffer_direct_ptr(batch, draws, info, &ib_extent);
+   }
+
+   if (uses_xfb)
+      agx_launch_so(pctx, info, draws, ib);
 
 #ifndef NDEBUG
    if (unlikely(agx_device(pctx->screen)->debug & AGX_DBG_DIRTY))
@@ -2566,9 +2592,13 @@ agx_draw_vbo(struct pipe_context *pctx, const struct pipe_draw_info *info,
    if (agx_scissor_culls_everything(ctx))
       return;
 
-   /* We don't support side effects in vertex stages, so this is trivial */
-   if (ctx->rast->base.rasterizer_discard)
+   /* We don't support side effects in vertex stages (only used internally for
+    * transform feedback lowering), so this is trivial.
+    */
+   if (ctx->rast->base.rasterizer_discard && !ctx->streamout.key.active)
       return;
+
+   agx_batch_init_state(batch);
 
    /* Dirty track the reduced prim: lines vs points vs triangles */
    enum pipe_prim_type reduced_prim = u_reduced_prim(info->mode);
@@ -2624,17 +2654,6 @@ agx_draw_vbo(struct pipe_context *pctx, const struct pipe_draw_info *info,
                                    reduced_prim == PIPE_PRIM_POINTS);
 
    enum agx_primitive prim = agx_primitive_for_pipe(info->mode);
-   unsigned idx_size = info->index_size;
-   uint64_t ib = 0;
-   size_t ib_extent = 0;
-
-   if (idx_size) {
-      if (indirect != NULL)
-         ib = agx_index_buffer_rsrc_ptr(batch, info, &ib_extent);
-      else
-         ib = agx_index_buffer_direct_ptr(batch, draws, info, &ib_extent);
-   }
-
    if (idx_size) {
       /* Index sizes are encoded logarithmically */
       STATIC_ASSERT(__builtin_ctz(1) == AGX_INDEX_SIZE_U8);
@@ -2722,6 +2741,21 @@ agx_draw_vbo(struct pipe_context *pctx, const struct pipe_draw_info *info,
       out += AGX_INDEX_LIST_BUFFER_SIZE_LENGTH;
    }
 
+   /* Insert a memory barrier after transform feedback so the result may be
+    * consumed by a subsequent vertex shader.
+    */
+   if (ctx->streamout.key.active) {
+      agx_pack(out, VDM_BARRIER, cfg) {
+         cfg.unk_5 = true;
+         cfg.unk_6 = true;
+         cfg.unk_8 = true;
+         cfg.unk_11 = true;
+         cfg.unk_20 = true;
+      }
+
+      out += AGX_VDM_BARRIER_LENGTH;
+   }
+
    batch->encoder_current = out;
    assert((batch->encoder_current + AGX_VDM_STREAM_LINK_LENGTH) <=
              batch->encoder_end &&
@@ -2743,6 +2777,11 @@ static void
 agx_texture_barrier(struct pipe_context *pipe, unsigned flags)
 {
    struct agx_context *ctx = agx_context(pipe);
+
+   /* Framebuffer fetch is coherent, so barriers are a no-op. */
+   if (flags == PIPE_TEXTURE_BARRIER_FRAMEBUFFER)
+      return;
+
    agx_flush_all(ctx, "Texture barrier");
 }
 
@@ -2751,6 +2790,13 @@ agx_launch_grid(struct pipe_context *pipe, const struct pipe_grid_info *info)
 {
    struct agx_context *ctx = agx_context(pipe);
    struct agx_batch *batch = agx_get_compute_batch(ctx);
+
+   agx_batch_init_state(batch);
+
+   /* Consider compute launches as "draws" for the purposes of sanity
+    * checking batch state.
+    */
+   batch->any_draws = true;
 
    /* To implement load_num_workgroups, the number of workgroups needs to be
     * available in GPU memory. This is either the indirect buffer, or just a
@@ -2882,8 +2928,5 @@ agx_init_state_functions(struct pipe_context *ctx)
    ctx->surface_destroy = agx_surface_destroy;
    ctx->draw_vbo = agx_draw_vbo;
    ctx->launch_grid = agx_launch_grid;
-   ctx->create_stream_output_target = agx_create_stream_output_target;
-   ctx->stream_output_target_destroy = agx_stream_output_target_destroy;
-   ctx->set_stream_output_targets = agx_set_stream_output_targets;
    ctx->texture_barrier = agx_texture_barrier;
 }

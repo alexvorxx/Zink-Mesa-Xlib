@@ -204,7 +204,7 @@ struct _egl_display
       EGLBoolean Zink; /**< Use kopper only */
       EGLBoolean ForceSoftware; /**< Use software path only */
       EGLAttrib *Attribs;     /**< Platform-specific options */
-      int fd; /**< plaform device specific, local fd */
+      int fd; /**< platform device specific, local fd */
    } Options;
 
    /* these fields are set by the driver during init */

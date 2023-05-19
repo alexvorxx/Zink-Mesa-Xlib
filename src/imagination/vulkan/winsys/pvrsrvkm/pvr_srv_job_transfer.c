@@ -77,14 +77,14 @@ VkResult pvr_srv_winsys_transfer_ctx_create(
                        PVR_SRV_TRANSFER_CONTEXT_INITIAL_CCB_SIZE_LOG2,
                        PVR_SRV_TRANSFER_CONTEXT_MAX_CCB_SIZE_LOG2);
 
-   srv_ctx = vk_alloc(srv_ws->alloc,
+   srv_ctx = vk_alloc(ws->alloc,
                       sizeof(*srv_ctx),
                       8U,
                       VK_SYSTEM_ALLOCATION_SCOPE_DEVICE);
    if (!srv_ctx)
       return vk_error(NULL, VK_ERROR_OUT_OF_HOST_MEMORY);
 
-   result = pvr_srv_create_timeline(srv_ws->render_fd, &srv_ctx->timeline_3d);
+   result = pvr_srv_create_timeline(ws->render_fd, &srv_ctx->timeline_3d);
    if (result != VK_SUCCESS)
       goto err_free_srv_ctx;
 
@@ -92,7 +92,7 @@ VkResult pvr_srv_winsys_transfer_ctx_create(
     * reset_cmd.regs size from reset_cmd size to only pass empty flags field.
     */
    result = pvr_srv_rgx_create_transfer_context(
-      srv_ws->render_fd,
+      ws->render_fd,
       pvr_srv_from_winsys_priority(create_info->priority),
       sizeof(reset_cmd) - sizeof(reset_cmd.regs),
       (uint8_t *)&reset_cmd,
@@ -115,7 +115,7 @@ err_close_timeline:
    close(srv_ctx->timeline_3d);
 
 err_free_srv_ctx:
-   vk_free(srv_ws->alloc, srv_ctx);
+   vk_free(ws->alloc, srv_ctx);
 
    return result;
 }
@@ -126,9 +126,10 @@ void pvr_srv_winsys_transfer_ctx_destroy(struct pvr_winsys_transfer_ctx *ctx)
    struct pvr_srv_winsys_transfer_ctx *srv_ctx =
       to_pvr_srv_winsys_transfer_ctx(ctx);
 
-   pvr_srv_rgx_destroy_transfer_context(srv_ws->render_fd, srv_ctx->handle);
+   pvr_srv_rgx_destroy_transfer_context(srv_ws->base.render_fd,
+                                        srv_ctx->handle);
    close(srv_ctx->timeline_3d);
-   vk_free(srv_ws->alloc, srv_ctx);
+   vk_free(srv_ws->base.alloc, srv_ctx);
 }
 
 static void
@@ -292,7 +293,7 @@ VkResult pvr_srv_winsys_transfer_submit(
    job_num = submit_info->job_num;
 
    do {
-      result = pvr_srv_rgx_submit_transfer2(srv_ws->render_fd,
+      result = pvr_srv_rgx_submit_transfer2(srv_ws->base.render_fd,
                                             srv_ctx->handle,
                                             submit_info->cmd_count,
                                             client_update_count,

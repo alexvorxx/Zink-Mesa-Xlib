@@ -720,7 +720,7 @@ insert_vec_mov(nir_alu_instr *vec, unsigned start_idx, nir_shader *shader)
    }
 
    mov->dest.write_mask = (1 << num_components) - 1;
-   nir_ssa_dest_init(&mov->instr, &mov->dest.dest, num_components, 32, NULL);
+   nir_ssa_dest_init(&mov->instr, &mov->dest.dest, num_components, 32);
 
    /* replace vec srcs with inserted mov */
    for (unsigned i = 0, j = 0; i < 4; i++) {

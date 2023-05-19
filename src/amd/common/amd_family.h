@@ -189,6 +189,31 @@ enum amd_vram_type {
    AMD_VRAM_TYPE_LPDDR5,
 };
 
+enum vcn_version{
+   VCN_UNKNOWN,
+   VCN_1_0_0,
+   VCN_1_0_1,
+
+   VCN_2_0_0,
+   VCN_2_0_2,
+   VCN_2_0_3,
+   VCN_2_2_0,
+   VCN_2_5_0,
+   VCN_2_6_0,
+
+   VCN_3_0_0,
+   VCN_3_0_2,
+   VCN_3_0_16,
+   VCN_3_0_33,
+   VCN_3_1_1,
+   VCN_3_1_2,
+
+   VCN_4_0_0,
+   VCN_4_0_2,
+   VCN_4_0_3,
+   VCN_4_0_4,
+};
+
 const char *ac_get_family_name(enum radeon_family family);
 
 #ifdef __cplusplus

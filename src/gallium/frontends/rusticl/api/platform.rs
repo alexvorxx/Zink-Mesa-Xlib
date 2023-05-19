@@ -8,12 +8,12 @@ use rusticl_opencl_gen::*;
 
 impl CLInfo<cl_platform_info> for cl_platform_id {
     fn query(&self, q: cl_platform_info, _: &[u8]) -> CLResult<Vec<u8>> {
-        let p = self.get_ref()?;
+        self.get_ref()?;
         Ok(match q {
             // TODO spirv
-            CL_PLATFORM_EXTENSIONS => cl_prop("cl_khr_icd cl_khr_il_program"),
+            CL_PLATFORM_EXTENSIONS => cl_prop(PLATFORM_EXTENSION_STR),
             CL_PLATFORM_EXTENSIONS_WITH_VERSION => {
-                cl_prop::<Vec<cl_name_version>>(p.extensions.to_vec())
+                cl_prop::<Vec<cl_name_version>>(PLATFORM_EXTENSIONS.to_vec())
             }
             CL_PLATFORM_HOST_TIMER_RESOLUTION => cl_prop::<cl_ulong>(0),
             CL_PLATFORM_ICD_SUFFIX_KHR => cl_prop("MESA"),
@@ -43,6 +43,9 @@ pub fn get_platform_ids(
     if num_platforms.is_null() && platforms.is_null() {
         return Err(CL_INVALID_VALUE);
     }
+
+    // run initialization code once
+    Platform::init_once();
 
     // platforms returns a list of OpenCL platforms available for access through the Khronos ICD Loader.
     // The cl_platform_id values returned in platforms are ICD compatible and can be used to identify a

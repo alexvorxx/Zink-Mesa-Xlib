@@ -714,90 +714,41 @@ validate_intrinsic_instr(nir_intrinsic_instr *instr, validate_state *state)
          util_bitcount(nir_intrinsic_memory_modes(instr)) == 1);
       break;
 
-   case nir_intrinsic_image_deref_atomic_add:
-   case nir_intrinsic_image_deref_atomic_imin:
-   case nir_intrinsic_image_deref_atomic_umin:
-   case nir_intrinsic_image_deref_atomic_imax:
-   case nir_intrinsic_image_deref_atomic_umax:
-   case nir_intrinsic_image_deref_atomic_and:
-   case nir_intrinsic_image_deref_atomic_or:
-   case nir_intrinsic_image_deref_atomic_xor:
-   case nir_intrinsic_image_deref_atomic_comp_swap:
-   case nir_intrinsic_image_deref_atomic_inc_wrap:
-   case nir_intrinsic_image_deref_atomic_dec_wrap:
-   case nir_intrinsic_image_atomic_add:
-   case nir_intrinsic_image_atomic_imin:
-   case nir_intrinsic_image_atomic_umin:
-   case nir_intrinsic_image_atomic_imax:
-   case nir_intrinsic_image_atomic_umax:
-   case nir_intrinsic_image_atomic_and:
-   case nir_intrinsic_image_atomic_or:
-   case nir_intrinsic_image_atomic_xor:
-   case nir_intrinsic_image_atomic_comp_swap:
-   case nir_intrinsic_image_atomic_inc_wrap:
-   case nir_intrinsic_image_atomic_dec_wrap:
-   case nir_intrinsic_bindless_image_atomic_add:
-   case nir_intrinsic_bindless_image_atomic_imin:
-   case nir_intrinsic_bindless_image_atomic_umin:
-   case nir_intrinsic_bindless_image_atomic_imax:
-   case nir_intrinsic_bindless_image_atomic_umax:
-   case nir_intrinsic_bindless_image_atomic_and:
-   case nir_intrinsic_bindless_image_atomic_or:
-   case nir_intrinsic_bindless_image_atomic_xor:
-   case nir_intrinsic_bindless_image_atomic_comp_swap:
-   case nir_intrinsic_bindless_image_atomic_inc_wrap:
-   case nir_intrinsic_bindless_image_atomic_dec_wrap: {
+   case nir_intrinsic_image_deref_atomic:
+   case nir_intrinsic_image_deref_atomic_swap:
+   case nir_intrinsic_bindless_image_atomic:
+   case nir_intrinsic_bindless_image_atomic_swap:
+   case nir_intrinsic_image_atomic:
+   case nir_intrinsic_image_atomic_swap: {
+      nir_atomic_op op = nir_intrinsic_atomic_op(instr);
+
       enum pipe_format format = image_intrin_format(instr);
       if (format != PIPE_FORMAT_COUNT) {
-         validate_assert(state, format == PIPE_FORMAT_R32_UINT ||
-                                format == PIPE_FORMAT_R32_SINT ||
-                                format == PIPE_FORMAT_R64_UINT ||
-                                format == PIPE_FORMAT_R64_SINT);
+         bool allowed = false;
+         bool is_float = (nir_atomic_op_type(op) == nir_type_float);
+
+         switch (format) {
+         case PIPE_FORMAT_R32_FLOAT:
+            allowed = is_float || op == nir_atomic_op_xchg;
+            break;
+         case PIPE_FORMAT_R16_FLOAT:
+         case PIPE_FORMAT_R64_FLOAT:
+            allowed = op == nir_atomic_op_fmin || op == nir_atomic_op_fmax;
+            break;
+         case PIPE_FORMAT_R32_UINT:
+         case PIPE_FORMAT_R32_SINT:
+         case PIPE_FORMAT_R64_UINT:
+         case PIPE_FORMAT_R64_SINT:
+            allowed = !is_float;
+            break;
+         default:
+            break;
+         }
+
+         validate_assert(state, allowed);
          validate_assert(state, nir_dest_bit_size(instr->dest) ==
                                 util_format_get_blocksizebits(format));
       }
-      break;
-   }
-
-   case nir_intrinsic_image_deref_atomic_exchange:
-   case nir_intrinsic_image_atomic_exchange:
-   case nir_intrinsic_bindless_image_atomic_exchange: {
-      enum pipe_format format = image_intrin_format(instr);
-      if (format != PIPE_FORMAT_COUNT) {
-         validate_assert(state, format == PIPE_FORMAT_R32_UINT ||
-                                format == PIPE_FORMAT_R32_SINT ||
-                                format == PIPE_FORMAT_R32_FLOAT ||
-                                format == PIPE_FORMAT_R64_UINT ||
-                                format == PIPE_FORMAT_R64_SINT);
-         validate_assert(state, nir_dest_bit_size(instr->dest) ==
-                                util_format_get_blocksizebits(format));
-      }
-      break;
-   }
-
-   case nir_intrinsic_image_deref_atomic_fadd:
-   case nir_intrinsic_image_atomic_fadd:
-   case nir_intrinsic_bindless_image_atomic_fadd: {
-      enum pipe_format format = image_intrin_format(instr);
-      validate_assert(state, format == PIPE_FORMAT_COUNT ||
-                             format == PIPE_FORMAT_R32_FLOAT);
-      validate_assert(state, nir_dest_bit_size(instr->dest) == 32);
-      break;
-   }
-
-   case nir_intrinsic_image_deref_atomic_fmin:
-   case nir_intrinsic_image_deref_atomic_fmax:
-   case nir_intrinsic_image_atomic_fmin:
-   case nir_intrinsic_image_atomic_fmax:
-   case nir_intrinsic_bindless_image_atomic_fmin:
-   case nir_intrinsic_bindless_image_atomic_fmax: {
-      enum pipe_format format = image_intrin_format(instr);
-      validate_assert(state, format == PIPE_FORMAT_COUNT ||
-                             format == PIPE_FORMAT_R16_FLOAT ||
-                             format == PIPE_FORMAT_R32_FLOAT ||
-                             format == PIPE_FORMAT_R64_FLOAT);
-      validate_assert(state, nir_dest_bit_size(instr->dest) ==
-                             util_format_get_blocksizebits(format));
       break;
    }
 
@@ -872,7 +823,7 @@ validate_intrinsic_instr(nir_intrinsic_instr *instr, validate_state *state)
 
       /* An output that has no effect shouldn't be present in the IR. */
       validate_assert(state,
-                      (nir_slot_is_sysval_output(sem.location) &&
+                      (nir_slot_is_sysval_output(sem.location, MESA_SHADER_NONE) &&
                        !sem.no_sysval_output) ||
                       (nir_slot_is_varying(sem.location) && !sem.no_varying) ||
                       nir_instr_xfb_write_mask(instr));
@@ -1212,11 +1163,8 @@ validate_phi_src(nir_phi_instr *instr, nir_block *pred, validate_state *state)
 static void
 validate_phi_srcs(nir_block *block, nir_block *succ, validate_state *state)
 {
-   nir_foreach_instr(instr, succ) {
-      if (instr->type != nir_instr_type_phi)
-         break;
-
-      validate_phi_src(nir_instr_as_phi(instr), block, state);
+   nir_foreach_phi(phi, succ) {
+      validate_phi_src(phi, block, state);
    }
 }
 

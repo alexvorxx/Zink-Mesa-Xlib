@@ -1,6 +1,12 @@
 #include "rusticl_mesa_inline_bindings_wrapper.h"
 #include "git_sha1.h"
 
+void
+blob_finish(struct blob *blob)
+{
+    __blob_finish(blob);
+}
+
 nir_function_impl *
 nir_shader_get_entrypoint(const nir_shader *shader)
 {

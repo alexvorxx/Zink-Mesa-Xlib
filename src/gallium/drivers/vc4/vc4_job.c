@@ -156,7 +156,7 @@ vc4_flush_jobs_reading_resource(struct vc4_context *vc4,
 }
 
 /**
- * Returns a vc4_job struture for tracking V3D rendering to a particular FBO.
+ * Returns a vc4_job structure for tracking V3D rendering to a particular FBO.
  *
  * If we've already started rendering to this FBO, then return old same job,
  * otherwise make a new one.  If we're beginning rendering to an FBO, make

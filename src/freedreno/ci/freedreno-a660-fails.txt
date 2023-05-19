@@ -1,0 +1,17 @@
+# Shader compilation error log: 0:6(1): error: invalid stream specified 1 is larger than MAX_VERTEX_STREAMS - 1
+KHR-GL45.transform_feedback.draw_xfb_stream_instanced_test,Fail
+
+# Various limits we cannot or do not support:
+KHR-GL45.limits.max_vertex_streams,Fail
+
+KHR-GL45.direct_state_access.renderbuffers_storage_multisample,Fail
+KHR-GL45.gpu_shader_fp64.fp64.max_uniform_components,Fail
+KHR-GL45.multi_bind.dispatch_bind_image_textures,Fail
+KHR-GL45.polygon_offset_clamp.PolygonOffsetClampMinMax,Fail
+KHR-GL45.polygon_offset_clamp.PolygonOffsetClampZeroInfinity,Fail
+KHR-GL45.shader_image_load_store.basic-allTargets-store,Fail
+KHR-GL45.shader_subroutine.control_flow_and_returned_subroutine_values_used_as_subroutine_input,Fail
+KHR-GL45.tessellation_shader.single.max_patch_vertices,Fail
+
+# https://gitlab.freedesktop.org/mesa/mesa/-/issues/8886
+dEQP-GLES31.functional.synchronization.inter_invocation.image_atomic_read_write,Crash

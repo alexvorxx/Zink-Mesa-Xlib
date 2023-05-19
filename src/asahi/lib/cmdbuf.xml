@@ -173,6 +173,8 @@
     <field name="Perspective" size="1" start="4" type="bool"/>
     <field name="Fragcoord Z" size="1" start="5" type="bool"/>
     <field name="Point sprite" size="1" start="6" type="bool"/>
+    <!-- Set with fragcoord Z for a vec2 of bary coords -->
+    <field name="Barycentric coordinates" size="1" start="7" type="bool"/>
     <field name="Base slot" size="8" start="8" type="uint"/>
     <field name="Base coefficient register" size="8" start="16" type="uint"/>
   </struct>
@@ -437,7 +439,7 @@
     <field name="Depth bias enable" size="1" start="17" type="bool"/>
     <field name="Stencil test enable" size="1" start="18" type="bool"/>
     <field name="Two-sided stencil" size="1" start="19" type="bool"/>
-    <field name="No colour output" size="1" start="21" type="bool"/>
+    <field name="Tag write disable" size="1" start="21" type="bool"/>
     <field name="Sample mask after depth/stencil" size="1" start="25" type="bool"/>
     <field name="Disable tri merging" size="1" start="26" type="bool"/>
     <field name="Pass type" size="3" start="29" type="Pass type"/>
@@ -517,6 +519,7 @@
     <field name="Viewport target" size="1" start="19" type="bool"/>
     <field name="Render target" size="1" start="20" type="bool"/>
     <field name="Frag coord Z" size="1" start="21" type="bool"/>
+    <field name="Barycentric coordinates" size="1" start="22" type="bool"/>
   </struct>
 
   <struct name="Output Unknown" size="4">
@@ -744,15 +747,18 @@
     <field name="Restart enable" size="1" start="16" type="bool"/> 
     <field name="Index size" size="3" start="17" type="Index size"/>
 
-    <!-- XXX: Might be backwards, not sure how to check that -->
-    <field name="Index buffer present" size="1" start="20" type="bool"/>
-    <field name="Index buffer size present" size="1" start="21" type="bool"/>
+    <field name="Index buffer size present" size="1" start="20" type="bool"/>
+    <field name="Index buffer present" size="1" start="21" type="bool"/>
 
-    <!-- XXX: Might be mixed up, not sure how to check that -->
+    <!-- Order in the cmdstream is the same as bit order for these -->
     <field name="Index count present" size="1" start="22" type="bool"/>
     <field name="Instance count present" size="1" start="23" type="bool"/>
     <field name="Start present" size="1" start="24" type="bool"/>
+    <!-- 2 words, 1st word is some kind of extra vertex offset? -->
+    <field name="Unk 1 present" size="1" start="25" type="bool"/>
     <field name="Indirect buffer present" size="1" start="26" type="bool"/>
+    <!-- 1 word, unknown purpose -->
+    <field name="Unk 2 present" size="1" start="27" type="bool"/>
 
     <field name="Block Type" size="3" start="29" type="VDM Block Type" default="Index List"/>
   </struct>
@@ -905,6 +911,8 @@
     <field name="S Store Enable" start="18" size="1" type="bool"/>
     <field name="Z Store Enable" start="19" size="1" type="bool"/>
     <field name="Z Format" start="25" size="2" type="ZLS Format"/>
+    <field name="Z Resolve" start="56" size="1" type="bool"/>
+    <field name="S Resolve" start="58" size="1" type="bool"/>
   </struct>
 
   <struct name="IOGPU Header" size="64">

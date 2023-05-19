@@ -184,7 +184,6 @@ static void
 one_time_fini(void)
 {
    glsl_type_singleton_decref();
-   _mesa_locale_fini();
 }
 
 /**
@@ -996,6 +995,24 @@ _mesa_initialize_context(struct gl_context *ctx,
 {
    struct gl_shared_state *shared;
    int i;
+
+   switch (api) {
+   case API_OPENGL_COMPAT:
+   case API_OPENGL_CORE:
+      if (!HAVE_OPENGL)
+         return GL_FALSE;
+      break;
+   case API_OPENGLES2:
+      if (!HAVE_OPENGL_ES_2)
+         return GL_FALSE;
+      break;
+   case API_OPENGLES:
+      if (!HAVE_OPENGL_ES_1)
+         return GL_FALSE;
+      break;
+   default:
+      return GL_FALSE;
+   }
 
    ctx->API = api;
    ctx->DrawBuffer = NULL;

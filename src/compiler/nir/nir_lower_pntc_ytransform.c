@@ -23,7 +23,6 @@
 
 #include "nir.h"
 #include "nir_builder.h"
-#include "program/prog_instruction.h"
 
 /* Lower gl_PointCoord to account for user requested point-coord origin
  * and for whether draw buffer is flipped.
@@ -50,7 +49,6 @@ get_pntc_transform(lower_pntc_ytransform_state *state)
 
       var->num_state_slots = 1;
       var->state_slots = ralloc_array(var, nir_state_slot, 1);
-      var->state_slots[0].swizzle = SWIZZLE_XYZW;
       memcpy(var->state_slots[0].tokens, state->pntc_state_tokens,
              sizeof(var->state_slots[0].tokens));
       var->data.how_declared = nir_var_hidden;

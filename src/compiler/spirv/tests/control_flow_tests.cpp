@@ -137,7 +137,7 @@ OpFunctionEnd
    ASSERT_TRUE(shader);
 }
 
-TEST_F(ControlFlow, DISABLED_EarlyMerge)
+TEST_F(ControlFlow, EarlyMerge)
 {
    // From https://gitlab.khronos.org/spirv/SPIR-V/-/issues/640.
 

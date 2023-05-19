@@ -916,7 +916,7 @@ struct v3dv_framebuffer {
    uint32_t layers;
 
    /* Typically, edge tiles in the framebuffer have padding depending on the
-    * underlying tiling layout. One consequnce of this is that when the
+    * underlying tiling layout. One consequence of this is that when the
     * framebuffer dimensions are not aligned to tile boundaries, tile stores
     * would still write full tiles on the edges and write to the padded area.
     * If the framebuffer is aliasing a smaller region of a larger image, then
@@ -1482,7 +1482,7 @@ struct v3dv_cmd_buffer_state {
    /* FIXME: we have just one client-side BO for the push constants,
     * independently of the stageFlags in vkCmdPushConstants, and the
     * pipelineBindPoint in vkCmdBindPipeline. We could probably do more stage
-    * tunning in the future if it makes sense.
+    * tuning in the future if it makes sense.
     */
    uint32_t push_constants_size;
    uint32_t push_constants_data[MAX_PUSH_CONSTANTS_SIZE / 4];

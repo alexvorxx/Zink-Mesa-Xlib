@@ -32,9 +32,9 @@
 #include "util/simple_mtx.h"
 
 struct radeon_info;
-struct ac_thread_trace;
-struct ac_thread_trace_data;
-struct ac_spm_trace_data;
+struct ac_sqtt_trace;
+struct ac_sqtt;
+struct ac_spm_trace;
 
 enum rgp_hardware_stages {
    RGP_HW_STAGE_VS = 0,
@@ -188,10 +188,8 @@ struct rgp_clock_calibration {
    simple_mtx_t lock;
 };
 
-int
-ac_dump_rgp_capture(struct radeon_info *info,
-                    struct ac_thread_trace *thread_trace,
-                    const struct ac_spm_trace_data *spm_trace);
+int ac_dump_rgp_capture(const struct radeon_info *info, struct ac_sqtt_trace *sqtt_trace,
+                        const struct ac_spm_trace *spm_trace);
 
 void
 ac_rgp_file_write_elf_object(FILE *output, size_t file_elf_start,

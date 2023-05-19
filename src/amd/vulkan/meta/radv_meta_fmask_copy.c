@@ -248,7 +248,7 @@ radv_can_use_fmask_copy(struct radv_cmd_buffer *cmd_buffer,
       return false;
 
    /* TODO: Add support for layers. */
-   if (src_image->info.array_size != 1 || dst_image->info.array_size != 1)
+   if (src_image->vk.array_layers != 1 || dst_image->vk.array_layers != 1)
       return false;
 
    /* Source/destination images must have FMASK. */
@@ -262,12 +262,12 @@ radv_can_use_fmask_copy(struct radv_cmd_buffer *cmd_buffer,
    /* The region must be a whole image copy. */
    if (num_rects != 1 ||
        (rects[0].src_x || rects[0].src_y || rects[0].dst_x || rects[0].dst_y ||
-        rects[0].width != src_image->info.width || rects[0].height != src_image->info.height))
+        rects[0].width != src_image->vk.extent.width || rects[0].height != src_image->vk.extent.height))
       return false;
 
    /* Source/destination images must have identical size. */
-   if (src_image->info.width != dst_image->info.width ||
-       src_image->info.height != dst_image->info.height)
+   if (src_image->vk.extent.width != dst_image->vk.extent.width ||
+       src_image->vk.extent.height != dst_image->vk.extent.height)
       return false;
 
    /* Source/destination images must have identical swizzle. */
@@ -286,7 +286,7 @@ radv_fmask_copy(struct radv_cmd_buffer *cmd_buffer, struct radv_meta_blit2d_surf
 {
    struct radv_device *device = cmd_buffer->device;
    struct radv_image_view src_iview, dst_iview;
-   uint32_t samples = src->image->info.samples;
+   uint32_t samples = src->image->vk.samples;
    uint32_t samples_log2 = ffs(samples) - 1;
 
    VkResult result = radv_device_init_meta_fmask_copy_state_internal(device, samples_log2);
@@ -358,7 +358,7 @@ radv_fmask_copy(struct radv_cmd_buffer *cmd_buffer, struct radv_meta_blit2d_surf
                                     .imageLayout = VK_IMAGE_LAYOUT_GENERAL},
                                 }}});
 
-   radv_unaligned_dispatch(cmd_buffer, src->image->info.width, src->image->info.height, 1);
+   radv_unaligned_dispatch(cmd_buffer, src->image->vk.extent.width, src->image->vk.extent.height, 1);
 
    /* Fixup destination image metadata by copying CMASK/FMASK from the source image. */
    radv_fixup_copy_dst_metadata(cmd_buffer, src->image, dst->image);

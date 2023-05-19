@@ -84,6 +84,11 @@
 /* Number of PBESTATE_REG_WORD values that need setting up. */
 #define ROGUE_NUM_PBESTATE_REG_WORDS 3U
 
+/* Number of PBESTATE_REG_WORD used in transfer.
+ * The last word is not used.
+ */
+#define ROGUE_NUM_PBESTATE_REG_WORDS_FOR_TRANSFER 2U
+
 /* Number of PBESTATE_STATE_WORD values that need setting up. */
 #define ROGUE_NUM_PBESTATE_STATE_WORDS 2U
 

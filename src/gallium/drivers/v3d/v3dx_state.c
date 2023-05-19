@@ -872,8 +872,16 @@ static void
 v3d_setup_texture_shader_state(struct V3DX(TEXTURE_SHADER_STATE) *tex,
                                struct pipe_resource *prsc,
                                int base_level, int last_level,
-                               int first_layer, int last_layer)
+                               int first_layer, int last_layer,
+                               bool sampling_cube_array)
 {
+        /* Due to ARB_texture_view, a cubemap array can be seen as 2D texture
+         * array.
+         */
+        assert(!sampling_cube_array ||
+               prsc->target == PIPE_TEXTURE_CUBE_ARRAY ||
+               prsc->target == PIPE_TEXTURE_2D_ARRAY);
+
         struct v3d_resource *rsc = v3d_resource(prsc);
         int msaa_scale = prsc->nr_samples > 1 ? 2 : 1;
 
@@ -897,6 +905,15 @@ v3d_setup_texture_shader_state(struct V3DX(TEXTURE_SHADER_STATE) *tex,
                 tex->image_depth = prsc->depth0;
         } else {
                 tex->image_depth = (last_layer - first_layer) + 1;
+        }
+
+        /* Empirical testing with CTS shows that when we are sampling from
+         * cube arrays we want to set image depth to layers / 6, but not when
+         * doing image load/store or sampling from 2d image arrays.
+         */
+        if (sampling_cube_array) {
+                assert(tex->image_depth % 6 == 0);
+                tex->image_depth /= 6;
         }
 
         tex->base_level = base_level;
@@ -964,7 +981,8 @@ v3dX(create_texture_shader_state_bo)(struct v3d_context *v3d,
                                                        cso->u.tex.first_level,
                                                        cso->u.tex.last_level,
                                                        cso->u.tex.first_layer,
-                                                       cso->u.tex.last_layer);
+                                                       cso->u.tex.last_layer,
+                                                       cso->target == PIPE_TEXTURE_CUBE_ARRAY);
                 } else {
                         v3d_setup_texture_shader_state_from_buffer(&tex, prsc,
                                                                    cso->format,
@@ -1391,7 +1409,8 @@ v3d_create_image_view_texture_shader_state(struct v3d_context *v3d,
                                                        iview->base.u.tex.level,
                                                        iview->base.u.tex.level,
                                                        iview->base.u.tex.first_layer,
-                                                       iview->base.u.tex.last_layer);
+                                                       iview->base.u.tex.last_layer,
+                                                       false);
                 } else {
                         v3d_setup_texture_shader_state_from_buffer(&tex, prsc,
                                                                    iview->base.format,
@@ -1410,7 +1429,7 @@ v3d_create_image_view_texture_shader_state(struct v3d_context *v3d,
 #else /* V3D_VERSION < 40 */
         /* V3D 3.x doesn't use support shader image load/store operations on
          * textures, so it would get lowered in the shader to general memory
-         * acceses.
+         * accesses.
          */
 #endif
 }

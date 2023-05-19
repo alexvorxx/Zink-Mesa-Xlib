@@ -67,8 +67,9 @@ lower_printf_instr(nir_builder *b, nir_instr *instr, void *_options)
                                   glsl_uint_type(), 0);
    counter->cast.align_mul = 4;
    nir_ssa_def *offset =
-      nir_deref_atomic_add(b, 32, &counter->dest.ssa,
-                           nir_imm_int(b, fmt_str_id_size + args_size));
+      nir_deref_atomic(b, 32, &counter->dest.ssa,
+                       nir_imm_int(b, fmt_str_id_size + args_size),
+                       .atomic_op = nir_atomic_op_iadd);
 
    /* Check if we're still in-bounds */
    const unsigned default_buffer_size = 1024 * 1024;

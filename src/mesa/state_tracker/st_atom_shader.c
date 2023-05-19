@@ -40,6 +40,7 @@
 #include "main/framebuffer.h"
 #include "main/state.h"
 #include "main/texobj.h"
+#include "main/teximage.h"
 #include "main/texstate.h"
 #include "program/program.h"
 
@@ -121,7 +122,8 @@ st_update_fp( struct st_context *st )
 
    if (st->shader_has_one_variant[MESA_SHADER_FRAGMENT] &&
        !fp->ati_fs && /* ATI_fragment_shader always has multiple variants */
-       !fp->ExternalSamplersUsed /* external samplers need variants */) {
+       !fp->ExternalSamplersUsed && /* external samplers need variants */
+       !(!fp->shader_program && fp->ShadowSamplers)) {
       shader = fp->variants->driver_shader;
    } else {
       struct st_fp_variant_key key;
@@ -160,6 +162,18 @@ st_update_fp( struct st_context *st )
 
          for (unsigned u = 0; u < MAX_NUM_FRAGMENT_REGISTERS_ATI; u++) {
             key.texture_index[u] = get_texture_index(st->ctx, u);
+         }
+      }
+
+      if (!fp->shader_program && fp->ShadowSamplers) {
+         u_foreach_bit(i, fp->ShadowSamplers) {
+            struct gl_texture_object *tex_obj =
+                _mesa_get_tex_unit(st->ctx, fp->SamplerUnits[i])->_Current;
+            GLenum16 baseFormat = _mesa_base_tex_image(tex_obj)->_BaseFormat;
+
+            if (baseFormat == GL_DEPTH_COMPONENT ||
+                baseFormat == GL_DEPTH_STENCIL)
+               key.depth_textures |= BITFIELD_BIT(i);
          }
       }
 

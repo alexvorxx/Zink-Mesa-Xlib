@@ -293,7 +293,7 @@ static bool lower_resinfo(nir_builder *b, nir_instr *instr, void *data)
                nir_src_copy(&new_tex->src[0].src, &tex->src[i].src, &new_tex->instr);
                new_tex->src[0].src_type = tex->src[i].src_type;
                nir_ssa_dest_init(&new_tex->instr, &new_tex->dest,
-                                 nir_tex_instr_dest_size(new_tex), 32, NULL);
+                                 nir_tex_instr_dest_size(new_tex), 32);
                nir_builder_instr_insert(b, &new_tex->instr);
                desc = &new_tex->dest.ssa;
                break;

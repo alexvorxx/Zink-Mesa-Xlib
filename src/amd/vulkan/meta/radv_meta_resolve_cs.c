@@ -460,7 +460,7 @@ radv_get_resolve_pipeline(struct radv_cmd_buffer *cmd_buffer, struct radv_image_
 {
    struct radv_device *device = cmd_buffer->device;
    struct radv_meta_state *state = &device->meta_state;
-   uint32_t samples = src_iview->image->info.samples;
+   uint32_t samples = src_iview->image->vk.samples;
    uint32_t samples_log2 = ffs(samples) - 1;
    VkPipeline *pipeline;
 
@@ -487,8 +487,8 @@ radv_get_resolve_pipeline(struct radv_cmd_buffer *cmd_buffer, struct radv_image_
 
 static void
 emit_resolve(struct radv_cmd_buffer *cmd_buffer, struct radv_image_view *src_iview,
-             struct radv_image_view *dest_iview, const VkOffset2D *src_offset,
-             const VkOffset2D *dest_offset, const VkExtent2D *resolve_extent)
+             struct radv_image_view *dst_iview, const VkOffset2D *src_offset,
+             const VkOffset2D *dst_offset, const VkExtent2D *resolve_extent)
 {
    struct radv_device *device = cmd_buffer->device;
    VkPipeline *pipeline;
@@ -516,7 +516,7 @@ emit_resolve(struct radv_cmd_buffer *cmd_buffer, struct radv_image_view *src_ivi
                                 .pImageInfo = (VkDescriptorImageInfo[]){
                                    {
                                       .sampler = VK_NULL_HANDLE,
-                                      .imageView = radv_image_view_to_handle(dest_iview),
+                                      .imageView = radv_image_view_to_handle(dst_iview),
                                       .imageLayout = VK_IMAGE_LAYOUT_GENERAL,
                                    },
                                 }}});
@@ -529,8 +529,8 @@ emit_resolve(struct radv_cmd_buffer *cmd_buffer, struct radv_image_view *src_ivi
    unsigned push_constants[4] = {
       src_offset->x,
       src_offset->y,
-      dest_offset->x,
-      dest_offset->y,
+      dst_offset->x,
+      dst_offset->y,
    };
    radv_CmdPushConstants(radv_cmd_buffer_to_handle(cmd_buffer),
                          device->meta_state.resolve_compute.p_layout, VK_SHADER_STAGE_COMPUTE_BIT,
@@ -540,12 +540,12 @@ emit_resolve(struct radv_cmd_buffer *cmd_buffer, struct radv_image_view *src_ivi
 
 static void
 emit_depth_stencil_resolve(struct radv_cmd_buffer *cmd_buffer, struct radv_image_view *src_iview,
-                           struct radv_image_view *dest_iview, const VkOffset2D *resolve_offset,
+                           struct radv_image_view *dst_iview, const VkOffset2D *resolve_offset,
                            const VkExtent3D *resolve_extent, VkImageAspectFlags aspects,
                            VkResolveModeFlagBits resolve_mode)
 {
    struct radv_device *device = cmd_buffer->device;
-   const uint32_t samples = src_iview->image->info.samples;
+   const uint32_t samples = src_iview->image->vk.samples;
    const uint32_t samples_log2 = ffs(samples) - 1;
    VkPipeline *pipeline;
 
@@ -572,7 +572,7 @@ emit_depth_stencil_resolve(struct radv_cmd_buffer *cmd_buffer, struct radv_image
                                 .pImageInfo = (VkDescriptorImageInfo[]){
                                    {
                                       .sampler = VK_NULL_HANDLE,
-                                      .imageView = radv_image_view_to_handle(dest_iview),
+                                      .imageView = radv_image_view_to_handle(dst_iview),
                                       .imageLayout = VK_IMAGE_LAYOUT_GENERAL,
                                    },
                                 }}});
@@ -631,25 +631,25 @@ emit_depth_stencil_resolve(struct radv_cmd_buffer *cmd_buffer, struct radv_image
 void
 radv_meta_resolve_compute_image(struct radv_cmd_buffer *cmd_buffer, struct radv_image *src_image,
                                 VkFormat src_format, VkImageLayout src_image_layout,
-                                struct radv_image *dest_image, VkFormat dest_format,
-                                VkImageLayout dest_image_layout, const VkImageResolve2 *region)
+                                struct radv_image *dst_image, VkFormat dst_format,
+                                VkImageLayout dst_image_layout, const VkImageResolve2 *region)
 {
    struct radv_meta_saved_state saved_state;
 
    /* For partial resolves, DCC should be decompressed before resolving
     * because the metadata is re-initialized to the uncompressed after.
     */
-   uint32_t queue_mask = radv_image_queue_family_mask(dest_image, cmd_buffer->qf,
+   uint32_t queue_mask = radv_image_queue_family_mask(dst_image, cmd_buffer->qf,
                                                       cmd_buffer->qf);
 
-   if (!radv_image_use_dcc_image_stores(cmd_buffer->device, dest_image) &&
-       radv_layout_dcc_compressed(cmd_buffer->device, dest_image, region->dstSubresource.mipLevel,
-                                  dest_image_layout, queue_mask) &&
+   if (!radv_image_use_dcc_image_stores(cmd_buffer->device, dst_image) &&
+       radv_layout_dcc_compressed(cmd_buffer->device, dst_image, region->dstSubresource.mipLevel,
+                                  dst_image_layout, queue_mask) &&
        (region->dstOffset.x || region->dstOffset.y || region->dstOffset.z ||
-        region->extent.width != dest_image->info.width ||
-        region->extent.height != dest_image->info.height ||
-        region->extent.depth != dest_image->info.depth)) {
-      radv_decompress_dcc(cmd_buffer, dest_image,
+        region->extent.width != dst_image->vk.extent.width ||
+        region->extent.height != dst_image->vk.extent.height ||
+        region->extent.depth != dst_image->vk.extent.depth)) {
+      radv_decompress_dcc(cmd_buffer, dst_image,
                           &(VkImageSubresourceRange){
                              .aspectMask = region->dstSubresource.aspectMask,
                              .baseMipLevel = region->dstSubresource.mipLevel,
@@ -670,12 +670,12 @@ radv_meta_resolve_compute_image(struct radv_cmd_buffer *cmd_buffer, struct radv_
    const uint32_t src_base_layer =
       radv_meta_get_iview_layer(src_image, &region->srcSubresource, &region->srcOffset);
 
-   const uint32_t dest_base_layer =
-      radv_meta_get_iview_layer(dest_image, &region->dstSubresource, &region->dstOffset);
+   const uint32_t dst_base_layer =
+      radv_meta_get_iview_layer(dst_image, &region->dstSubresource, &region->dstOffset);
 
    const struct VkExtent3D extent = vk_image_sanitize_extent(&src_image->vk, region->extent);
    const struct VkOffset3D srcOffset = vk_image_sanitize_offset(&src_image->vk, region->srcOffset);
-   const struct VkOffset3D dstOffset = vk_image_sanitize_offset(&dest_image->vk, region->dstOffset);
+   const struct VkOffset3D dstOffset = vk_image_sanitize_offset(&dst_image->vk, region->dstOffset);
 
    for (uint32_t layer = 0; layer < region->srcSubresource.layerCount; ++layer) {
 
@@ -697,37 +697,37 @@ radv_meta_resolve_compute_image(struct radv_cmd_buffer *cmd_buffer, struct radv_
                            },
                            0, NULL);
 
-      struct radv_image_view dest_iview;
-      radv_image_view_init(&dest_iview, cmd_buffer->device,
+      struct radv_image_view dst_iview;
+      radv_image_view_init(&dst_iview, cmd_buffer->device,
                            &(VkImageViewCreateInfo){
                               .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
-                              .image = radv_image_to_handle(dest_image),
-                              .viewType = radv_meta_get_view_type(dest_image),
-                              .format = vk_to_non_srgb_format(dest_format),
+                              .image = radv_image_to_handle(dst_image),
+                              .viewType = radv_meta_get_view_type(dst_image),
+                              .format = vk_to_non_srgb_format(dst_format),
                               .subresourceRange =
                                  {
                                     .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
                                     .baseMipLevel = region->dstSubresource.mipLevel,
                                     .levelCount = 1,
-                                    .baseArrayLayer = dest_base_layer + layer,
+                                    .baseArrayLayer = dst_base_layer + layer,
                                     .layerCount = 1,
                                  },
                            },
                            0, NULL);
 
-      emit_resolve(cmd_buffer, &src_iview, &dest_iview, &(VkOffset2D){srcOffset.x, srcOffset.y},
+      emit_resolve(cmd_buffer, &src_iview, &dst_iview, &(VkOffset2D){srcOffset.x, srcOffset.y},
                    &(VkOffset2D){dstOffset.x, dstOffset.y},
                    &(VkExtent2D){extent.width, extent.height});
 
       radv_image_view_finish(&src_iview);
-      radv_image_view_finish(&dest_iview);
+      radv_image_view_finish(&dst_iview);
    }
 
    radv_meta_restore(&saved_state, cmd_buffer);
 
-   if (!radv_image_use_dcc_image_stores(cmd_buffer->device, dest_image) &&
-       radv_layout_dcc_compressed(cmd_buffer->device, dest_image, region->dstSubresource.mipLevel,
-                                  dest_image_layout, queue_mask)) {
+   if (!radv_image_use_dcc_image_stores(cmd_buffer->device, dst_image) &&
+       radv_layout_dcc_compressed(cmd_buffer->device, dst_image, region->dstSubresource.mipLevel,
+                                  dst_image_layout, queue_mask)) {
 
       cmd_buffer->state.flush_bits |= RADV_CMD_FLAG_CS_PARTIAL_FLUSH | RADV_CMD_FLAG_INV_VCACHE;
 
@@ -735,11 +735,11 @@ radv_meta_resolve_compute_image(struct radv_cmd_buffer *cmd_buffer, struct radv_
          .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
          .baseMipLevel = region->dstSubresource.mipLevel,
          .levelCount = 1,
-         .baseArrayLayer = dest_base_layer,
+         .baseArrayLayer = dst_base_layer,
          .layerCount = region->dstSubresource.layerCount,
       };
 
-      cmd_buffer->state.flush_bits |= radv_init_dcc(cmd_buffer, dest_image, &range, 0xffffffff);
+      cmd_buffer->state.flush_bits |= radv_init_dcc(cmd_buffer, dst_image, &range, 0xffffffff);
    }
 }
 

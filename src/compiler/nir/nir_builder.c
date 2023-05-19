@@ -116,7 +116,7 @@ nir_builder_alu_instr_finish_and_insert(nir_builder *build, nir_alu_instr *instr
    }
 
    nir_ssa_dest_init(&instr->instr, &instr->dest.dest, num_components,
-                     bit_size, NULL);
+                     bit_size);
    instr->dest.write_mask = nir_component_mask(num_components);
 
    nir_builder_instr_insert(build, &instr->instr);
@@ -310,10 +310,8 @@ nir_build_tex_deref_instr(nir_builder *build, nir_texop op,
    }
    assert(src_idx == num_srcs);
 
-   nir_ssa_dest_init(&tex->instr, &tex->dest,
-                     nir_tex_instr_dest_size(tex),
-                     nir_alu_type_get_type_size(tex->dest_type),
-                     NULL);
+   nir_ssa_dest_init(&tex->instr, &tex->dest, nir_tex_instr_dest_size(tex),
+                     nir_alu_type_get_type_size(tex->dest_type));
    nir_builder_instr_insert(build, &tex->instr);
 
    return &tex->dest.ssa;
@@ -337,7 +335,7 @@ nir_vec_scalars(nir_builder *build, nir_ssa_scalar *comp, unsigned num_component
     * can't re-guess the num_components when num_components == 1 (nir_op_mov).
     */
    nir_ssa_dest_init(&instr->instr, &instr->dest.dest, num_components,
-                     comp[0].def->bit_size, NULL);
+                     comp[0].def->bit_size);
    instr->dest.write_mask = nir_component_mask(num_components);
 
    nir_builder_instr_insert(build, &instr->instr);
@@ -394,8 +392,7 @@ nir_load_system_value(nir_builder *build, nir_intrinsic_op op, int index,
       load->num_components = num_components;
    load->const_index[0] = index;
 
-   nir_ssa_dest_init(&load->instr, &load->dest,
-                     num_components, bit_size, NULL);
+   nir_ssa_dest_init(&load->instr, &load->dest, num_components, bit_size);
    nir_builder_instr_insert(build, &load->instr);
    return &load->dest.ssa;
 }
@@ -482,8 +479,8 @@ nir_if_phi(nir_builder *build, nir_ssa_def *then_def, nir_ssa_def *else_def)
 
    assert(then_def->num_components == else_def->num_components);
    assert(then_def->bit_size == else_def->bit_size);
-   nir_ssa_dest_init(&phi->instr, &phi->dest,
-                     then_def->num_components, then_def->bit_size, NULL);
+   nir_ssa_dest_init(&phi->instr, &phi->dest, then_def->num_components,
+                     then_def->bit_size);
 
    nir_builder_instr_insert(build, &phi->instr);
 

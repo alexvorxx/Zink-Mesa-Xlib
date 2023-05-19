@@ -13,6 +13,7 @@
 
 #define AGX_TEXTURE_DESC_STRIDE   24
 #define AGX_FORMAT_RGB32_EMULATED 0x36
+#define AGX_LAYOUT_LINEAR         0x0
 
 static nir_ssa_def *
 texture_descriptor_ptr(nir_builder *b, nir_tex_instr *tex)
@@ -98,6 +99,30 @@ agx_txs(nir_builder *b, nir_tex_instr *tex)
    if (lod_idx >= 0) {
       lod = nir_iadd(
          b, lod, nir_u2u32(b, nir_ssa_for_src(b, tex->src[lod_idx].src, 1)));
+   }
+
+   if (tex->sampler_dim == GLSL_SAMPLER_DIM_2D && tex->is_array) {
+      /* Linear 2D arrays are special and have their depth in the next word,
+       * since the depth read above is actually the stride for linear. We handle
+       * this case specially.
+       *
+       * TODO: Optimize this, since linear 2D arrays aren't needed for APIs and
+       * this just gets used internally for blits.
+       */
+      nir_ssa_def *layout =
+         nir_iand_imm(b, nir_ushr_imm(b, w0, 4), BITFIELD_MASK(2));
+
+      /* Get the 2 bytes after the first 128-bit descriptor */
+      nir_ssa_def *extension =
+         nir_load_global_constant(b, nir_iadd_imm(b, ptr, 16), 8, 1, 16);
+
+      nir_ssa_def *depth_linear_m1 =
+         nir_iand_imm(b, extension, BITFIELD_MASK(11));
+
+      depth_linear_m1 = nir_u2uN(b, depth_linear_m1, depth_m1->bit_size);
+
+      depth_m1 = nir_bcsel(b, nir_ieq_imm(b, layout, AGX_LAYOUT_LINEAR),
+                           depth_linear_m1, depth_m1);
    }
 
    /* Add 1 to width-1, height-1 to get base dimensions */
@@ -379,7 +404,7 @@ bias_for_tex(nir_builder *b, nir_tex_instr *tex)
    query->op = nir_texop_lod_bias_agx;
    query->dest_type = nir_type_float16;
 
-   nir_ssa_dest_init(instr, &query->dest, 1, 16, NULL);
+   nir_ssa_dest_init(instr, &query->dest, 1, 16);
    return &query->dest.ssa;
 }
 

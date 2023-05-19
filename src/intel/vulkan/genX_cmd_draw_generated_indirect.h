@@ -284,6 +284,7 @@ genX(cmd_buffer_emit_generate_draws_pipeline)(struct anv_cmd_buffer *cmd_buffer)
 
    uint32_t *bt_map = cmd_buffer->generation_bt_state.map;
    bt_map[0] = anv_bindless_state_for_binding_table(
+      cmd_buffer->device,
       cmd_buffer->device->null_surface_state).offset + bt_offset;
 
    cmd_buffer->state.descriptors_dirty |= VK_SHADER_STAGE_FRAGMENT_BIT;
@@ -593,11 +594,13 @@ genX(cmd_buffer_emit_indirect_generated_draws)(struct anv_cmd_buffer *cmd_buffer
     * use the same area.
     */
    if (start_generation_batch) {
-      genX(cmd_buffer_set_binding_for_gfx8_vb_flush)(cmd_buffer, 0,
-                                                     (struct anv_address) {
-                                                        .offset = DYNAMIC_STATE_POOL_MIN_ADDRESS,
-                                                     },
-                                                     DYNAMIC_STATE_POOL_SIZE);
+      struct anv_device *device = cmd_buffer->device;
+      genX(cmd_buffer_set_binding_for_gfx8_vb_flush)(
+         cmd_buffer, 0,
+         (struct anv_address) {
+            .offset = device->physical->va.dynamic_state_pool.addr,
+         },
+         device->physical->va.dynamic_state_pool.size);
    }
 
    struct anv_graphics_pipeline *pipeline = cmd_buffer->state.gfx.pipeline;

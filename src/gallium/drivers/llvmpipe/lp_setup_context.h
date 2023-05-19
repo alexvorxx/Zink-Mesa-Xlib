@@ -102,7 +102,7 @@ struct lp_setup_context
    unsigned flatshade_first:1;
    unsigned ccw_is_frontface:1;
    unsigned scissor_test:1;
-   unsigned point_tri_clip:1;
+   unsigned point_line_tri_clip:1;
    unsigned point_size_per_vertex:1;
    unsigned legacy_points:1;
    unsigned rasterizer_discard:1;

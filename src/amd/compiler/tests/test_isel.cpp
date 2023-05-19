@@ -70,7 +70,7 @@ BEGIN_TEST(isel.compute.simple)
          };
          void main() {
             //>> v1: %data = p_parallelcopy 42
-            //! buffer_store_dword (kill)%_, v1: undef, 0, (kill)%data glc disable_wqm storage:buffer
+            //! buffer_store_dword (kill)%_, v1: undef, 0, (kill)%data disable_wqm storage:buffer
             res = 42;
          }
       );

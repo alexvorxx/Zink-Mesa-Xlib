@@ -221,10 +221,10 @@ class Bitset(object):
 			skip = ""
 
 		if reg.array:
-			print("#define %s(__i, ...) pack_%s(__i, (struct %s) { __VA_ARGS__ })%s\n" %
+			print("#define %s(__i, ...) pack_%s(__i, __struct_cast(%s) { __VA_ARGS__ })%s\n" %
 				  (prefix, prefix, prefix, skip))
 		else:
-			print("#define %s(...) pack_%s((struct %s) { __VA_ARGS__ })%s\n" %
+			print("#define %s(...) pack_%s(__struct_cast(%s) { __VA_ARGS__ })%s\n" %
 				  (prefix, prefix, prefix, skip))
 
 
@@ -648,6 +648,12 @@ def main():
 	print()
 	print("#include <assert.h>")
 	print()
+
+	print("#ifdef __cplusplus");
+	print("#define __struct_cast(X)")
+	print("#else")
+	print("#define __struct_cast(X) (struct X)")
+	print("#endif")
 
 	try:
 		p.parse(rnn_path, xml_file)

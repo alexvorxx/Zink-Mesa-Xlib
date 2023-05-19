@@ -610,7 +610,7 @@ rename_variables(struct lower_variables_state *state)
             mov->dest.write_mask = (1 << intrin->num_components) - 1;
             nir_ssa_dest_init(&mov->instr, &mov->dest.dest,
                               intrin->num_components,
-                              intrin->dest.ssa.bit_size, NULL);
+                              intrin->dest.ssa.bit_size);
 
             nir_instr_insert_before(&intrin->instr, &mov->instr);
             nir_instr_remove(&intrin->instr);

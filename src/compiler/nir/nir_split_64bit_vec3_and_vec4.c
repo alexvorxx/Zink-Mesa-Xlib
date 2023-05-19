@@ -228,8 +228,7 @@ split_phi(nir_builder *b, nir_phi_instr *phi)
 
    nir_alu_instr *vec = nir_alu_instr_create(b->shader, vec_op);
    nir_ssa_dest_init(&vec->instr, &vec->dest.dest,
-                     phi->dest.ssa.num_components,
-                     64, NULL);
+                     phi->dest.ssa.num_components, 64);
    vec->dest.write_mask = (1 << phi->dest.ssa.num_components) - 1;
 
    int num_comp[2] = {2, phi->dest.ssa.num_components - 2};
@@ -239,7 +238,7 @@ split_phi(nir_builder *b, nir_phi_instr *phi)
    for (unsigned i = 0; i < 2; i++) {
       new_phi[i] = nir_phi_instr_create(b->shader);
       nir_ssa_dest_init(&new_phi[i]->instr, &new_phi[i]->dest, num_comp[i],
-                        phi->dest.ssa.bit_size, NULL);
+                        phi->dest.ssa.bit_size);
 
       nir_foreach_phi_src(src, phi) {
          /* Insert at the end of the predecessor but before the jump

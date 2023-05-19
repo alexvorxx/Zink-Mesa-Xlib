@@ -268,7 +268,7 @@ void *si_create_clear_buffer_rmw_cs(struct si_context *sctx)
    data = nir_ior(&b, data, nir_channel(&b, user_sgprs, 0));
 
    nir_store_ssbo(&b, data, zero, address,
-      .access = SI_COMPUTE_DST_CACHE_POLICY != L2_LRU ? ACCESS_STREAM_CACHE_POLICY : 0,
+      .access = SI_COMPUTE_DST_CACHE_POLICY != L2_LRU ? ACCESS_NON_TEMPORAL : 0,
       .align_mul = 4);
 
    return create_shader_state(sctx, b.shader);

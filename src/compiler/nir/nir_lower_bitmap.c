@@ -52,24 +52,6 @@
  * Run before nir_lower_io.
  */
 
-static nir_variable *
-get_texcoord(nir_shader *shader)
-{
-   nir_variable *texcoord =
-      nir_find_variable_with_location(shader, nir_var_shader_in,
-                                      VARYING_SLOT_TEX0);
-   /* otherwise create it: */
-   if (texcoord == NULL) {
-      texcoord = nir_variable_create(shader,
-                                     nir_var_shader_in,
-                                     glsl_vec4_type(),
-                                     "gl_TexCoord");
-      texcoord->data.location = VARYING_SLOT_TEX0;
-   }
-
-   return texcoord;
-}
-
 static void
 lower_bitmap(nir_shader *shader, nir_builder *b,
              const nir_lower_bitmap_options *options)
@@ -78,7 +60,8 @@ lower_bitmap(nir_shader *shader, nir_builder *b,
    nir_tex_instr *tex;
    nir_ssa_def *cond;
 
-   texcoord = nir_load_var(b, get_texcoord(shader));
+   texcoord = nir_load_var(b, nir_get_variable_with_location(shader, nir_var_shader_in,
+                                                             VARYING_SLOT_TEX0, glsl_vec4_type()));
 
    const struct glsl_type *sampler2D =
       glsl_sampler_type(GLSL_SAMPLER_DIM_2D, false, false, GLSL_TYPE_FLOAT);
@@ -105,7 +88,7 @@ lower_bitmap(nir_shader *shader, nir_builder *b,
       nir_src_for_ssa(nir_channels(b, texcoord,
                                    (1 << tex->coord_components) - 1));
 
-   nir_ssa_dest_init(&tex->instr, &tex->dest, 4, 32, NULL);
+   nir_ssa_dest_init(&tex->instr, &tex->dest, 4, 32);
    nir_builder_instr_insert(b, &tex->instr);
 
    /* kill if tex != 0.0.. take .x or .w channel according to format: */

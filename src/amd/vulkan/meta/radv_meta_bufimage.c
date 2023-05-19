@@ -1235,9 +1235,10 @@ fixup_gfx9_cs_copy(struct radv_cmd_buffer *cmd_buffer,
    const unsigned mip_level = img_bsurf->level;
    const struct radv_image *image = img_bsurf->image;
    const struct radeon_surf *surf = &image->planes[0].surface;
-   const struct radv_device *device = cmd_buffer->device;
+   struct radv_device *device = cmd_buffer->device;
    const struct radeon_info *rad_info = &device->physical_device->rad_info;
    struct ac_addrlib *addrlib = device->ws->get_addrlib(device->ws);
+   struct ac_surf_info surf_info = radv_get_ac_surf_info(device, image);
 
    /* GFX10 will use a different workaround unless this is not a 2D image */
    if (rad_info->gfx_level < GFX9 ||
@@ -1283,7 +1284,7 @@ fixup_gfx9_cs_copy(struct radv_cmd_buffer *cmd_buffer,
       uint32_t x = (coordY < hw_mip_extent.height) ? hw_mip_extent.width : 0;
       for (; x < mip_extent.width; x++) {
          uint32_t coordX = x + mip_offset.x;
-         uint64_t addr = ac_surface_addr_from_coord(addrlib, rad_info, surf, &image->info,
+         uint64_t addr = ac_surface_addr_from_coord(addrlib, rad_info, surf, &surf_info,
                                                     mip_level, coordX, coordY, img_bsurf->layer,
                                                     image->vk.image_type == VK_IMAGE_TYPE_3D);
          struct radeon_winsys_bo *img_bo = image->bindings[0].bo;
@@ -1665,7 +1666,7 @@ radv_meta_image_to_image_cs(struct radv_cmd_buffer *cmd_buffer, struct radv_meta
 {
    struct radv_device *device = cmd_buffer->device;
    struct radv_image_view src_view, dst_view;
-   uint32_t samples = src->image->info.samples;
+   uint32_t samples = src->image->vk.samples;
    uint32_t samples_log2 = ffs(samples) - 1;
 
    if (src->format == VK_FORMAT_R32G32B32_UINT || src->format == VK_FORMAT_R32G32B32_SINT ||
@@ -1766,7 +1767,7 @@ radv_meta_clear_image_cs_r32g32b32(struct radv_cmd_buffer *cmd_buffer,
                          device->meta_state.cleari_r32g32b32.img_p_layout,
                          VK_SHADER_STAGE_COMPUTE_BIT, 0, 16, push_constants);
 
-   radv_unaligned_dispatch(cmd_buffer, dst->image->info.width, dst->image->info.height, 1);
+   radv_unaligned_dispatch(cmd_buffer, dst->image->vk.extent.width, dst->image->vk.extent.height, 1);
 
    radv_buffer_view_finish(&dst_view);
    radv_DestroyBuffer(radv_device_to_handle(device), buffer, NULL);
@@ -1803,7 +1804,7 @@ radv_meta_clear_image_cs(struct radv_cmd_buffer *cmd_buffer, struct radv_meta_bl
 {
    struct radv_device *device = cmd_buffer->device;
    struct radv_image_view dst_iview;
-   uint32_t samples = dst->image->info.samples;
+   uint32_t samples = dst->image->vk.samples;
    uint32_t samples_log2 = ffs(samples) - 1;
 
    if (dst->format == VK_FORMAT_R32G32B32_UINT || dst->format == VK_FORMAT_R32G32B32_SINT ||
@@ -1834,7 +1835,7 @@ radv_meta_clear_image_cs(struct radv_cmd_buffer *cmd_buffer, struct radv_meta_bl
                          device->meta_state.cleari.img_p_layout, VK_SHADER_STAGE_COMPUTE_BIT, 0, 20,
                          push_constants);
 
-   radv_unaligned_dispatch(cmd_buffer, dst->image->info.width, dst->image->info.height, 1);
+   radv_unaligned_dispatch(cmd_buffer, dst->image->vk.extent.width, dst->image->vk.extent.height, 1);
 
    radv_image_view_finish(&dst_iview);
 }

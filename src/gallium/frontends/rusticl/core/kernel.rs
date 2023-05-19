@@ -22,7 +22,6 @@ use rusticl_opencl_gen::*;
 use std::cell::RefCell;
 use std::cmp;
 use std::collections::HashMap;
-use std::collections::HashSet;
 use std::convert::TryInto;
 use std::os::raw::c_void;
 use std::ptr;
@@ -255,7 +254,7 @@ impl InternalKernelArg {
 }
 
 struct KernelDevStateInner {
-    nir: NirShader,
+    nir: Arc<NirShader>,
     constant_buffer: Option<Arc<PipeResource>>,
     cso: *mut c_void,
     info: pipe_compute_state_object_info,
@@ -276,7 +275,7 @@ impl Drop for KernelDevState {
 }
 
 impl KernelDevState {
-    fn new(nirs: HashMap<Arc<Device>, NirShader>) -> Arc<Self> {
+    fn new(nirs: HashMap<Arc<Device>, Arc<NirShader>>) -> Arc<Self> {
         let states = nirs
             .into_iter()
             .map(|(dev, nir)| {
@@ -392,7 +391,6 @@ fn opt_nir(nir: &mut NirShader, dev: &Device) {
         progress |= nir.pass0(nir_lower_var_copies);
         progress |= nir.pass0(nir_lower_vars_to_ssa);
         nir.pass0(nir_lower_alu);
-        nir.pass0(nir_lower_pack);
         progress |= nir.pass0(nir_opt_phi_precision);
         progress |= nir.pass0(nir_opt_algebraic);
         progress |= nir.pass1(
@@ -736,94 +734,60 @@ fn deserialize_nir(
     Some((nir, args, internal_args))
 }
 
-fn convert_spirv_to_nir(
-    p: &Program,
+pub(super) fn convert_spirv_to_nir(
+    build: &ProgramBuild,
     name: &str,
-    args: Vec<spirv::SPIRVKernelArg>,
-) -> (
-    HashMap<Arc<Device>, NirShader>,
-    Vec<KernelArg>,
-    Vec<InternalKernelArg>,
-    String,
-) {
-    let mut nirs = HashMap::new();
-    let mut args_set = HashSet::new();
-    let mut internal_args_set = HashSet::new();
-    let mut attributes_string_set = HashSet::new();
+    args: &[spirv::SPIRVKernelArg],
+    dev: &Arc<Device>,
+) -> (NirShader, Vec<KernelArg>, Vec<InternalKernelArg>) {
+    let cache = dev.screen().shader_cache();
+    let key = build.hash_key(dev, name);
 
-    // TODO: we could run this in parallel?
-    for d in p.devs_with_build() {
-        let cache = d.screen().shader_cache();
-        let key = p.hash_key(d, name);
-
-        let res = if let Some(cache) = &cache {
-            cache.get(&mut key.unwrap()).and_then(|entry| {
-                let mut bin: &[u8] = &entry;
-                deserialize_nir(&mut bin, d)
-            })
-        } else {
-            None
-        };
-
-        let (nir, args, internal_args) = if let Some(res) = res {
-            res
-        } else {
-            let mut nir = p.to_nir(name, d);
-
-            /* this is a hack until we support fp16 properly and check for denorms inside
-             * vstore/vload_half
-             */
-            nir.preserve_fp16_denorms();
-
-            lower_and_optimize_nir_pre_inputs(d, &mut nir, &d.lib_clc);
-            let mut args = KernelArg::from_spirv_nir(&args, &mut nir);
-            let internal_args = lower_and_optimize_nir_late(d, &mut nir, &mut args);
-
-            if let Some(cache) = cache {
-                let mut bin = Vec::new();
-                let mut nir = nir.serialize();
-
-                bin.extend_from_slice(&nir.len().to_ne_bytes());
-                bin.append(&mut nir);
-
-                bin.extend_from_slice(&args.len().to_ne_bytes());
-                for arg in &args {
-                    bin.append(&mut arg.serialize());
-                }
-
-                bin.extend_from_slice(&internal_args.len().to_ne_bytes());
-                for arg in &internal_args {
-                    bin.append(&mut arg.serialize());
-                }
-
-                cache.put(&bin, &mut key.unwrap());
-            }
-
-            (nir, args, internal_args)
-        };
-
-        args_set.insert(args);
-        internal_args_set.insert(internal_args);
-        nirs.insert(d.clone(), nir);
-        attributes_string_set.insert(p.attribute_str(name, d));
-    }
-
-    // we want the same (internal) args for every compiled kernel, for now
-    assert!(args_set.len() == 1);
-    assert!(internal_args_set.len() == 1);
-    assert!(attributes_string_set.len() == 1);
-    let args = args_set.into_iter().next().unwrap();
-    let internal_args = internal_args_set.into_iter().next().unwrap();
-
-    // spec: For kernels not created from OpenCL C source and the clCreateProgramWithSource API call
-    // the string returned from this query [CL_KERNEL_ATTRIBUTES] will be empty.
-    let attributes_string = if p.is_src() {
-        attributes_string_set.into_iter().next().unwrap()
+    let res = if let Some(cache) = &cache {
+        cache.get(&mut key.unwrap()).and_then(|entry| {
+            let mut bin: &[u8] = &entry;
+            deserialize_nir(&mut bin, dev)
+        })
     } else {
-        String::new()
+        None
     };
 
-    (nirs, args, internal_args, attributes_string)
+    if let Some(res) = res {
+        res
+    } else {
+        let mut nir = build.to_nir(name, dev);
+
+        /* this is a hack until we support fp16 properly and check for denorms inside
+         * vstore/vload_half
+         */
+        nir.preserve_fp16_denorms();
+
+        lower_and_optimize_nir_pre_inputs(dev, &mut nir, &dev.lib_clc);
+        let mut args = KernelArg::from_spirv_nir(args, &mut nir);
+        let internal_args = lower_and_optimize_nir_late(dev, &mut nir, &mut args);
+
+        if let Some(cache) = cache {
+            let mut bin = Vec::new();
+            let mut nir = nir.serialize();
+
+            bin.extend_from_slice(&nir.len().to_ne_bytes());
+            bin.append(&mut nir);
+
+            bin.extend_from_slice(&args.len().to_ne_bytes());
+            for arg in &args {
+                bin.append(&mut arg.serialize());
+            }
+
+            bin.extend_from_slice(&internal_args.len().to_ne_bytes());
+            for arg in &internal_args {
+                bin.append(&mut arg.serialize());
+            }
+
+            cache.put(&bin, &mut key.unwrap());
+        }
+
+        (nir, args, internal_args)
+    }
 }
 
 fn extract<'a, const S: usize>(buf: &'a mut &[u8]) -> &'a [u8; S] {
@@ -835,9 +799,12 @@ fn extract<'a, const S: usize>(buf: &'a mut &[u8]) -> &'a [u8; S] {
 }
 
 impl Kernel {
-    pub fn new(name: String, prog: Arc<Program>, args: Vec<spirv::SPIRVKernelArg>) -> Arc<Kernel> {
-        let (mut nirs, args, internal_args, attributes_string) =
-            convert_spirv_to_nir(&prog, &name, args);
+    pub fn new(name: String, prog: Arc<Program>) -> Arc<Kernel> {
+        let nir_kernel_build = prog.get_nir_kernel_build(&name);
+        let mut nirs = nir_kernel_build.nirs;
+        let args = nir_kernel_build.args;
+        let internal_args = nir_kernel_build.internal_args;
+        let attributes_string = nir_kernel_build.attributes_string;
 
         let nir = nirs.values_mut().next().unwrap();
         let wgs = nir.workgroup_size();

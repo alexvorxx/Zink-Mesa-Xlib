@@ -387,17 +387,6 @@ static inline VkFormat
 vk_format_from_android(unsigned android_format, unsigned android_usage)
 {
    switch (android_format) {
-   case AHARDWAREBUFFER_FORMAT_R8G8B8A8_UNORM:
-   case AHARDWAREBUFFER_FORMAT_R8G8B8X8_UNORM:
-      return VK_FORMAT_R8G8B8A8_UNORM;
-   case AHARDWAREBUFFER_FORMAT_R8G8B8_UNORM:
-      return VK_FORMAT_R8G8B8_UNORM;
-   case AHARDWAREBUFFER_FORMAT_R5G6B5_UNORM:
-      return VK_FORMAT_R5G6B5_UNORM_PACK16;
-   case AHARDWAREBUFFER_FORMAT_R16G16B16A16_FLOAT:
-      return VK_FORMAT_R16G16B16A16_SFLOAT;
-   case AHARDWAREBUFFER_FORMAT_R10G10B10A2_UNORM:
-      return VK_FORMAT_A2B10G10R10_UNORM_PACK32;
    case AHARDWAREBUFFER_FORMAT_Y8Cb8Cr8_420:
       return VK_FORMAT_G8_B8R8_2PLANE_420_UNORM;
    case AHARDWAREBUFFER_FORMAT_IMPLEMENTATION_DEFINED:
@@ -405,9 +394,8 @@ vk_format_from_android(unsigned android_format, unsigned android_usage)
          return VK_FORMAT_G8_B8R8_2PLANE_420_UNORM;
       else
          return VK_FORMAT_R8G8B8_UNORM;
-   case AHARDWAREBUFFER_FORMAT_BLOB:
    default:
-      return VK_FORMAT_UNDEFINED;
+      return vk_ahb_format_to_image_format(android_format);
    }
 }
 
@@ -415,20 +403,10 @@ unsigned
 radv_ahb_format_for_vk_format(VkFormat vk_format)
 {
    switch (vk_format) {
-   case VK_FORMAT_R8G8B8A8_UNORM:
-      return AHARDWAREBUFFER_FORMAT_R8G8B8A8_UNORM;
-   case VK_FORMAT_R8G8B8_UNORM:
-      return AHARDWAREBUFFER_FORMAT_R8G8B8_UNORM;
-   case VK_FORMAT_R5G6B5_UNORM_PACK16:
-      return AHARDWAREBUFFER_FORMAT_R5G6B5_UNORM;
-   case VK_FORMAT_R16G16B16A16_SFLOAT:
-      return AHARDWAREBUFFER_FORMAT_R16G16B16A16_FLOAT;
-   case VK_FORMAT_A2B10G10R10_UNORM_PACK32:
-      return AHARDWAREBUFFER_FORMAT_R10G10B10A2_UNORM;
    case VK_FORMAT_G8_B8R8_2PLANE_420_UNORM:
       return AHARDWAREBUFFER_FORMAT_Y8Cb8Cr8_420;
    default:
-      return AHARDWAREBUFFER_FORMAT_BLOB;
+      return vk_image_format_to_ahb_format(vk_format);
    }
 }
 
@@ -759,21 +737,11 @@ bool
 radv_android_gralloc_supports_format(VkFormat format, VkImageUsageFlagBits usage)
 {
 #if RADV_SUPPORT_ANDROID_HARDWARE_BUFFER
-   /* Ideally we check Gralloc for what it supports and then merge that with the radv
-      format support, but there is no easy gralloc query besides just creating an image.
-      That seems a bit on the expensive side, so just hardcode for now. */
-   /* TODO: Add multi-plane formats after confirming everything works between radeonsi
-      and radv. */
-   switch (format) {
-   case VK_FORMAT_R8G8B8A8_UNORM:
-   case VK_FORMAT_R5G6B5_UNORM_PACK16:
-      return true;
-   case VK_FORMAT_R8_UNORM:
-   case VK_FORMAT_R8G8_UNORM:
-      return !(usage & VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT);
-   default:
-      return false;
-   }
+   /* Ideally we check AHardwareBuffer_isSupported.  But that test-allocates on most platforms and
+    * seems a bit on the expensive side.  Return true as long as it is a format we understand.
+    */
+   (void)usage;
+   return radv_ahb_format_for_vk_format(format);
 #else
    (void)format;
    (void)usage;

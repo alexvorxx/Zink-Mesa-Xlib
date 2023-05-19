@@ -22,8 +22,7 @@ enum tu_dynamic_state
    /* re-use VK_DYNAMIC_STATE_ enums for non-extended dynamic states */
    TU_DYNAMIC_STATE_SAMPLE_LOCATIONS = VK_DYNAMIC_STATE_STENCIL_REFERENCE + 1,
    TU_DYNAMIC_STATE_SAMPLE_LOCATIONS_ENABLE,
-   TU_DYNAMIC_STATE_RB_DEPTH_CNTL,
-   TU_DYNAMIC_STATE_RB_STENCIL_CNTL,
+   TU_DYNAMIC_STATE_DS,
    TU_DYNAMIC_STATE_VB_STRIDE,
    TU_DYNAMIC_STATE_PC_RASTER_CNTL,
    TU_DYNAMIC_STATE_BLEND,
@@ -47,6 +46,8 @@ enum tu_dynamic_state
    TU_DYNAMIC_STATE_BLEND_ENABLE,
    TU_DYNAMIC_STATE_BLEND_EQUATION,
    TU_DYNAMIC_STATE_COLOR_WRITE_MASK,
+   TU_DYNAMIC_STATE_VIEWPORT_COUNT,
+   TU_DYNAMIC_STATE_SCISSOR_COUNT,
    /* re-use the line width enum as it uses GRAS_SU_CNTL: */
    TU_DYNAMIC_STATE_RAST = VK_DYNAMIC_STATE_LINE_WIDTH,
 };
@@ -169,6 +170,11 @@ struct tu_pipeline
       bool write_enable;
    } ds;
 
+   /* Misc. information provided by the fragment shader stage. */
+   struct {
+      bool fragment_density_map;
+   } fs;
+
    struct {
       unsigned num_rts;
       uint32_t rb_mrt_control[MAX_RTS], rb_mrt_control_mask;
@@ -227,6 +233,9 @@ struct tu_pipeline
       uint32_t hs_param_dwords;
       uint32_t hs_vertices_out;
       uint32_t cs_instrlen;
+
+      bool writes_viewport;
+      bool per_samp;
    } program;
 
    struct
@@ -252,9 +261,12 @@ struct tu_pipeline
 
    struct {
       VkViewport viewports[MAX_VIEWPORTS];
-      unsigned num_viewports;
+      VkRect2D scissors[MAX_SCISSORS];
+      unsigned num_viewports, num_scissors;
       bool set_dynamic_vp_to_static;
+      bool set_dynamic_scissor_to_static;
       bool z_negative_one_to_one;
+      bool per_view_viewport;
    } viewport;
 
    /* Used only for libraries. compiled_shaders only contains variants compiled

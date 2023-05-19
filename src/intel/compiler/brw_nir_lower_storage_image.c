@@ -51,8 +51,7 @@ _load_image_param(nir_builder *b, nir_deref_instr *deref, unsigned offset)
    default:
       unreachable("Invalid param offset");
    }
-   nir_ssa_dest_init(&load->instr, &load->dest,
-                     load->num_components, 32, NULL);
+   nir_ssa_dest_init(&load->instr, &load->dest, load->num_components, 32);
 
    nir_builder_instr_insert(b, &load->instr);
    return &load->dest.ssa;
@@ -700,16 +699,8 @@ brw_nir_lower_storage_image_instr(nir_builder *b,
          return lower_image_store_instr(b, opts->devinfo, intrin);
       return false;
 
-   case nir_intrinsic_image_deref_atomic_add:
-   case nir_intrinsic_image_deref_atomic_imin:
-   case nir_intrinsic_image_deref_atomic_umin:
-   case nir_intrinsic_image_deref_atomic_imax:
-   case nir_intrinsic_image_deref_atomic_umax:
-   case nir_intrinsic_image_deref_atomic_and:
-   case nir_intrinsic_image_deref_atomic_or:
-   case nir_intrinsic_image_deref_atomic_xor:
-   case nir_intrinsic_image_deref_atomic_exchange:
-   case nir_intrinsic_image_deref_atomic_comp_swap:
+   case nir_intrinsic_image_deref_atomic:
+   case nir_intrinsic_image_deref_atomic_swap:
       if (opts->lower_atomics)
          return lower_image_atomic_instr(b, opts->devinfo, intrin);
       return false;

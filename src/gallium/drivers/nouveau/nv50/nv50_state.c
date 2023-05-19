@@ -29,6 +29,7 @@
 
 #include "tgsi/tgsi_parse.h"
 #include "compiler/nir/nir.h"
+#include "nir/tgsi_to_nir.h"
 
 #include "nv50/nv50_stateobj.h"
 #include "nv50/nv50_context.h"
@@ -740,6 +741,7 @@ nv50_sp_state_create(struct pipe_context *pipe,
                      enum pipe_shader_type type)
 {
    struct nv50_program *prog;
+   const struct nouveau_screen *screen = nouveau_screen(pipe->screen);
 
    prog = CALLOC_STRUCT(nv50_program);
    if (!prog)
@@ -750,7 +752,12 @@ nv50_sp_state_create(struct pipe_context *pipe,
 
    switch (cso->type) {
    case PIPE_SHADER_IR_TGSI:
-      prog->pipe.tokens = tgsi_dup_tokens(cso->tokens);
+      if (screen->prefer_nir) {
+         prog->pipe.type = PIPE_SHADER_IR_NIR;
+         prog->pipe.ir.nir = tgsi_to_nir(cso->tokens, pipe->screen, false);
+      } else {
+         prog->pipe.tokens = tgsi_dup_tokens(cso->tokens);
+      }
       break;
    case PIPE_SHADER_IR_NIR:
       prog->pipe.ir.nir = cso->ir.nir;
@@ -841,6 +848,7 @@ nv50_cp_state_create(struct pipe_context *pipe,
                      const struct pipe_compute_state *cso)
 {
    struct nv50_program *prog;
+   const struct nouveau_screen *screen = nouveau_screen(pipe->screen);
 
    prog = CALLOC_STRUCT(nv50_program);
    if (!prog)
@@ -849,9 +857,16 @@ nv50_cp_state_create(struct pipe_context *pipe,
    prog->pipe.type = cso->ir_type;
 
    switch(cso->ir_type) {
-   case PIPE_SHADER_IR_TGSI:
-      prog->pipe.tokens = tgsi_dup_tokens((const struct tgsi_token *)cso->prog);
+   case PIPE_SHADER_IR_TGSI: {
+      const struct tgsi_token *tokens = cso->prog;
+      if (screen->prefer_nir) {
+         prog->pipe.type = PIPE_SHADER_IR_NIR;
+         prog->pipe.ir.nir = tgsi_to_nir(tokens, pipe->screen, false);
+      } else {
+         prog->pipe.tokens = tgsi_dup_tokens(tokens);
+      }
       break;
+   }
    case PIPE_SHADER_IR_NIR:
       prog->pipe.ir.nir = (nir_shader *)cso->prog;
       break;

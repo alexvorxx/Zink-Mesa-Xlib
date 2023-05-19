@@ -99,14 +99,16 @@ bool si_compile_llvm(struct si_screen *sscreen, struct si_shader_binary *binary,
       struct si_llvm_diagnostics diag = {debug};
       LLVMContextSetDiagnosticHandler(ac->context, si_diagnostic_handler, &diag);
 
-      if (!ac_compile_module_to_elf(passes, ac->module, (char **)&binary->elf_buffer,
-                                    &binary->elf_size))
+      if (!ac_compile_module_to_elf(passes, ac->module, (char **)&binary->code_buffer,
+                                    &binary->code_size))
          diag.retval = 1;
 
       if (diag.retval != 0) {
          util_debug_message(debug, SHADER_INFO, "LLVM compilation failed");
          return false;
       }
+
+      binary->type = SI_SHADER_BINARY_ELF;
    }
 
    struct ac_rtld_binary rtld;
@@ -115,8 +117,8 @@ bool si_compile_llvm(struct si_screen *sscreen, struct si_shader_binary *binary,
                                .shader_type = stage,
                                .wave_size = ac->wave_size,
                                .num_parts = 1,
-                               .elf_ptrs = &binary->elf_buffer,
-                               .elf_sizes = &binary->elf_size}))
+                               .elf_ptrs = &binary->code_buffer,
+                               .elf_sizes = &binary->code_size}))
       return false;
 
    bool ok = ac_rtld_read_config(&sscreen->info, &rtld, conf);
@@ -250,9 +252,6 @@ void si_llvm_create_main_func(struct si_shader_context *ctx)
        */
       if (shader->is_monolithic && shader->key.ge.part.vs.prolog.ls_vgpr_fix)
          ac_fixup_ls_hs_input_vgprs(&ctx->ac, &ctx->abi, &ctx->args->ac);
-   } else if (ctx->stage == MESA_SHADER_FRAGMENT) {
-      ctx->abi.persp_centroid = ac_get_arg(&ctx->ac, ctx->args->ac.persp_centroid);
-      ctx->abi.linear_centroid = ac_get_arg(&ctx->ac, ctx->args->ac.linear_centroid);
    }
 }
 
@@ -811,8 +810,6 @@ static bool si_llvm_translate_nir(struct si_shader_context *ctx, struct si_shade
       break;
 
    case MESA_SHADER_GEOMETRY:
-      si_llvm_init_gs_callbacks(ctx);
-
       if (ctx->shader->key.ge.as_ngg) {
          LLVMTypeRef ai32 = LLVMArrayType(ctx->ac.i32, gfx10_ngg_get_scratch_dw_size(shader));
          ctx->gs_ngg_scratch = (struct ac_llvm_pointer) {
@@ -1128,7 +1125,10 @@ bool si_llvm_compile_shader(struct si_screen *sscreen, struct ac_llvm_compiler *
          si_llvm_dispose(&ctx);
          return false;
       }
-      shader->info.uses_instanceid |= prev_shader.selector->info.uses_instanceid;
+
+      shader->info.uses_instanceid |=
+         prev_shader.selector->info.uses_instanceid || prev_shader.info.uses_instanceid;
+
       parts[0] = ctx.main_fn;
 
       /* Preserve main arguments. */

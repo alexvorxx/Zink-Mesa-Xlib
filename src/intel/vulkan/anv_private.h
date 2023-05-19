@@ -132,69 +132,7 @@ struct intel_perf_query_result;
 
 #define NSEC_PER_SEC 1000000000ull
 
-/* anv Virtual Memory Layout
- * =========================
- *
- * When the anv driver is determining the virtual graphics addresses of memory
- * objects itself using the softpin mechanism, the following memory ranges
- * will be used.
- *
- * Three special considerations to notice:
- *
- * (1) the dynamic state pool is located within the same 4 GiB as the low
- * heap. This is to work around a VF cache issue described in a comment in
- * anv_physical_device_init_heaps.
- *
- * (2) the binding table pool is located at lower addresses than the BT
- * (binding table) surface state pool, within a 4 GiB range which also
- * contains the bindless surface state pool. This allows surface state base
- * addresses to cover both binding tables (16 bit offsets), the internal
- * surface states (32 bit offsets) and the bindless surface states.
- *
- * (3) the last 4 GiB of the address space is withheld from the high
- * heap. Various hardware units will read past the end of an object for
- * various reasons. This healthy margin prevents reads from wrapping around
- * 48-bit addresses.
- */
-#define GENERAL_STATE_POOL_MIN_ADDRESS             0x000000200000ULL /* 2 MiB */
-#define GENERAL_STATE_POOL_MAX_ADDRESS             0x00003fffffffULL
-#define LOW_HEAP_MIN_ADDRESS                       0x000040000000ULL /* 1 GiB */
-#define LOW_HEAP_MAX_ADDRESS                       0x00007fffffffULL
-#define DYNAMIC_STATE_POOL_MIN_ADDRESS             0x0000c0000000ULL /* 3 GiB */
-#define DYNAMIC_STATE_POOL_MAX_ADDRESS             0x0000ffffffffULL
-#define BINDING_TABLE_POOL_MIN_ADDRESS             0x000100000000ULL /* 4 GiB */
-#define BINDING_TABLE_POOL_MAX_ADDRESS             0x00013fffffffULL
-#define INTERNAL_SURFACE_STATE_POOL_MIN_ADDRESS    0x000140000000ULL /* 5 GiB */
-#define INTERNAL_SURFACE_STATE_POOL_MAX_ADDRESS    0x0001bfffffffULL
-#define SCRATCH_SURFACE_STATE_POOL_MIN_ADDRESS     0x000140000000ULL /* 5 GiB (8MiB overlaps surface state pool) */
-#define SCRATCH_SURFACE_STATE_POOL_MAX_ADDRESS     0x0001407fffffULL
-#define BINDLESS_SURFACE_STATE_POOL_MIN_ADDRESS    0x0001c0000000ULL /* 7 GiB (64MiB) */
-#define BINDLESS_SURFACE_STATE_POOL_MAX_ADDRESS    0x0001c3ffffffULL
-#define INSTRUCTION_STATE_POOL_MIN_ADDRESS         0x000200000000ULL /* 8 GiB */
-#define INSTRUCTION_STATE_POOL_MAX_ADDRESS         0x00023fffffffULL
-#define CLIENT_VISIBLE_HEAP_MIN_ADDRESS            0x000240000000ULL /* 9 GiB */
-#define CLIENT_VISIBLE_HEAP_MAX_ADDRESS            0x000a3fffffffULL
-#define HIGH_HEAP_MIN_ADDRESS                      0x000a40000000ULL /* 41 GiB */
-
-#define GENERAL_STATE_POOL_SIZE     \
-   (GENERAL_STATE_POOL_MAX_ADDRESS - GENERAL_STATE_POOL_MIN_ADDRESS + 1)
-#define LOW_HEAP_SIZE               \
-   (LOW_HEAP_MAX_ADDRESS - LOW_HEAP_MIN_ADDRESS + 1)
-#define DYNAMIC_STATE_POOL_SIZE     \
-   (DYNAMIC_STATE_POOL_MAX_ADDRESS - DYNAMIC_STATE_POOL_MIN_ADDRESS + 1)
-#define BINDING_TABLE_POOL_SIZE     \
-   (BINDING_TABLE_POOL_MAX_ADDRESS - BINDING_TABLE_POOL_MIN_ADDRESS + 1)
 #define BINDING_TABLE_POOL_BLOCK_SIZE (65536)
-#define SCRATCH_SURFACE_STATE_POOL_SIZE \
-   (SCRATCH_SURFACE_STATE_POOL_MAX_ADDRESS - SCRATCH_SURFACE_STATE_POOL_MIN_ADDRESS + 1)
-#define BINDLESS_SURFACE_STATE_POOL_SIZE \
-   (BINDLESS_SURFACE_STATE_POOL_MAX_ADDRESS - BINDLESS_SURFACE_STATE_POOL_MIN_ADDRESS + 1)
-#define INTERNAL_SURFACE_STATE_POOL_SIZE \
-   (INTERNAL_SURFACE_STATE_POOL_MAX_ADDRESS - INTERNAL_SURFACE_STATE_POOL_MIN_ADDRESS + 1)
-#define INSTRUCTION_STATE_POOL_SIZE \
-   (INSTRUCTION_STATE_POOL_MAX_ADDRESS - INSTRUCTION_STATE_POOL_MIN_ADDRESS + 1)
-#define CLIENT_VISIBLE_HEAP_SIZE               \
-   (CLIENT_VISIBLE_HEAP_MAX_ADDRESS - CLIENT_VISIBLE_HEAP_MIN_ADDRESS + 1)
 
 /* Allowing different clear colors requires us to perform a depth resolve at
  * the end of certain render passes. This is because while slow clears store
@@ -453,6 +391,12 @@ enum anv_bo_alloc_flags {
 struct anv_bo {
    const char *name;
 
+   /* The VMA heap in anv_device from which this BO takes its offset.
+    *
+    * This can only be NULL when has_fixed_address is true.
+    */
+   struct util_vma_heap *vma_heap;
+
    uint32_t gem_handle;
 
    uint32_t refcount;
@@ -591,6 +535,12 @@ anv_address_map(struct anv_address addr)
 
    return addr.bo->map + addr.offset;
 }
+
+/* Represent a virtual address range */
+struct anv_va_range {
+   uint64_t addr;
+   uint64_t size;
+};
 
 /* Represents a lock-free linked list of "free" things.  This is used by
  * both the block pool and the state pools.  Unfortunately, in order to
@@ -913,9 +863,8 @@ struct anv_physical_device {
     struct anv_instance *                       instance;
     char                                        path[20];
     struct intel_device_info                      info;
-    bool                                        supports_48bit_addresses;
+
     bool                                        video_decode_enabled;
-    bool                                        gpl_enabled;
 
     struct brw_compiler *                       compiler;
     struct isl_device                           isl_dev;
@@ -978,6 +927,19 @@ struct anv_physical_device {
       bool                                      need_clflush;
 #endif
     } memory;
+
+    struct {
+       struct anv_va_range                      general_state_pool;
+       struct anv_va_range                      low_heap;
+       struct anv_va_range                      dynamic_state_pool;
+       struct anv_va_range                      binding_table_pool;
+       struct anv_va_range                      internal_surface_state_pool;
+       struct anv_va_range                      scratch_surface_state_pool;
+       struct anv_va_range                      bindless_surface_state_pool;
+       struct anv_va_range                      instruction_state_pool;
+       struct anv_va_range                      client_visible_heap;
+       struct anv_va_range                      high_heap;
+    } va;
 
     /* Either we have a single vram region and it's all mappable, or we have
      * both mappable & non-mappable parts. System memory is always available.
@@ -1135,6 +1097,9 @@ struct anv_device {
     /** List of all anv_device_memory objects */
     struct list_head                            memory_objects;
 
+    /** List of anv_image objects with a private binding for implicit CCS */
+    struct list_head                            image_private_objects;
+
     struct anv_bo_pool                          batch_bo_pool;
     struct anv_bo_pool                          utrace_bo_pool;
 
@@ -1270,10 +1235,11 @@ anv_binding_table_pool_free(struct anv_device *device, struct anv_state state)
 }
 
 static inline struct anv_state
-anv_bindless_state_for_binding_table(struct anv_state state)
+anv_bindless_state_for_binding_table(struct anv_device *device,
+                                     struct anv_state state)
 {
-   state.offset += BINDLESS_SURFACE_STATE_POOL_MIN_ADDRESS -
-                   INTERNAL_SURFACE_STATE_POOL_MIN_ADDRESS;
+   state.offset += device->physical->va.bindless_surface_state_pool.addr -
+                   device->physical->va.internal_surface_state_pool.addr;
    return state;
 }
 
@@ -1370,8 +1336,10 @@ int anv_gem_set_caching(struct anv_device *device, uint32_t gem_handle, uint32_t
 uint64_t anv_vma_alloc(struct anv_device *device,
                        uint64_t size, uint64_t align,
                        enum anv_bo_alloc_flags alloc_flags,
-                       uint64_t client_address);
+                       uint64_t client_address,
+                       struct util_vma_heap **out_vma_heap);
 void anv_vma_free(struct anv_device *device,
+                  struct util_vma_heap *vma_heap,
                   uint64_t address, uint64_t size);
 
 struct anv_reloc_list {
@@ -2637,6 +2605,8 @@ struct anv_cmd_graphics_state {
 
    bool object_preemption;
    bool has_uint_rt;
+
+   uint32_t n_occlusion_queries;
 };
 
 enum anv_depth_reg_mode {
@@ -3520,6 +3490,7 @@ struct anv_format {
    VkFormat vk_format;
    uint8_t n_planes;
    bool can_ycbcr;
+   bool can_video;
 };
 
 static inline void
@@ -3780,6 +3751,9 @@ struct anv_image {
    } planes[3];
 
    struct anv_image_memory_range vid_dmv_top_surface;
+
+   /* Link in the anv_device.image_private_objects list */
+   struct list_head link;
 };
 
 static inline bool
@@ -3968,7 +3942,7 @@ anv_can_sample_mcs_with_clear(const struct intel_device_info * const devinfo,
     * See HSD 1707282275, wa_14013111325. Due to the use of
     * format-reinterpretation, a simplified workaround is implemented.
     */
-   if (devinfo->ver >= 12 &&
+   if (intel_needs_workaround(devinfo, 14013111325) &&
        isl_format_get_layout(anv_surf->isl.format)->bpb <= 16) {
       return false;
    }
@@ -3993,6 +3967,17 @@ anv_cmd_buffer_mark_image_written(struct anv_cmd_buffer *cmd_buffer,
                                   uint32_t level,
                                   uint32_t base_layer,
                                   uint32_t layer_count);
+
+void
+anv_cmd_buffer_mark_image_fast_cleared(struct anv_cmd_buffer *cmd_buffer,
+                                       const struct anv_image *image,
+                                       const enum isl_format format,
+                                       union isl_color_value clear_color);
+
+void
+anv_cmd_buffer_load_clear_color_from_image(struct anv_cmd_buffer *cmd_buffer,
+                                           struct anv_state state,
+                                           const struct anv_image *image);
 
 void
 anv_image_clear_color(struct anv_cmd_buffer *cmd_buffer,
@@ -4061,6 +4046,22 @@ anv_cmd_buffer_fill_area(struct anv_cmd_buffer *cmd_buffer,
                          VkDeviceSize size,
                          uint32_t data);
 
+bool
+anv_can_hiz_clear_ds_view(struct anv_device *device,
+                          const struct anv_image_view *iview,
+                          VkImageLayout layout,
+                          VkImageAspectFlags clear_aspects,
+                          float depth_clear_value,
+                          VkRect2D render_area);
+
+bool
+anv_can_fast_clear_color_view(struct anv_device *device,
+                              struct anv_image_view *iview,
+                              VkImageLayout layout,
+                              union isl_color_value clear_color,
+                              uint32_t num_layers,
+                              VkRect2D render_area);
+
 enum isl_aux_state ATTRIBUTE_PURE
 anv_layout_to_aux_state(const struct intel_device_info * const devinfo,
                         const struct anv_image *image,
@@ -4079,6 +4080,12 @@ anv_layout_to_fast_clear_type(const struct intel_device_info * const devinfo,
                               const struct anv_image * const image,
                               const VkImageAspectFlagBits aspect,
                               const VkImageLayout layout);
+
+bool ATTRIBUTE_PURE
+anv_layout_has_untracked_aux_writes(const struct intel_device_info * const devinfo,
+                                    const struct anv_image * const image,
+                                    const VkImageAspectFlagBits aspect,
+                                    const VkImageLayout layout);
 
 static inline bool
 anv_image_aspects_compatible(VkImageAspectFlags aspects1,
@@ -4318,10 +4325,15 @@ struct anv_vid_mem {
 };
 
 #define ANV_VIDEO_MEM_REQS_H264 4
+#define ANV_VIDEO_MEM_REQS_H265 9
 #define ANV_MB_WIDTH 16
 #define ANV_MB_HEIGHT 16
+#define ANV_VIDEO_H264_MAX_NUM_REF_FRAME 16
+#define ANV_VIDEO_H265_MAX_NUM_REF_FRAME 16
+#define ANV_VIDEO_H265_HCP_NUM_REF_FRAME 8
+#define ANV_MAX_H265_CTB_SIZE 64
 
-enum {
+enum anv_vid_mem_h264_types {
    ANV_VID_MEM_H264_INTRA_ROW_STORE,
    ANV_VID_MEM_H264_DEBLOCK_FILTER_ROW_STORE,
    ANV_VID_MEM_H264_BSD_MPC_ROW_SCRATCH,
@@ -4329,11 +4341,24 @@ enum {
    ANV_VID_MEM_H264_MAX,
 };
 
+enum anv_vid_mem_h265_types {
+   ANV_VID_MEM_H265_DEBLOCK_FILTER_ROW_STORE_LINE,
+   ANV_VID_MEM_H265_DEBLOCK_FILTER_ROW_STORE_TILE_LINE,
+   ANV_VID_MEM_H265_DEBLOCK_FILTER_ROW_STORE_TILE_COLUMN,
+   ANV_VID_MEM_H265_METADATA_LINE,
+   ANV_VID_MEM_H265_METADATA_TILE_LINE,
+   ANV_VID_MEM_H265_METADATA_TILE_COLUMN,
+   ANV_VID_MEM_H265_SAO_LINE,
+   ANV_VID_MEM_H265_SAO_TILE_LINE,
+   ANV_VID_MEM_H265_SAO_TILE_COLUMN,
+   ANV_VID_MEM_H265_MAX,
+};
+
 struct anv_video_session {
    struct vk_video_session vk;
 
    /* the decoder needs some private memory allocations */
-   struct anv_vid_mem vid_mem[ANV_VID_MEM_H264_MAX];
+   struct anv_vid_mem vid_mem[ANV_VID_MEM_H265_MAX];
 };
 
 struct anv_video_session_params {
@@ -4364,6 +4389,7 @@ struct anv_performance_configuration_intel {
    uint64_t                   config_id;
 };
 
+void anv_physical_device_init_va_ranges(struct anv_physical_device *device);
 void anv_physical_device_init_perf(struct anv_physical_device *device, int fd);
 void anv_device_perf_init(struct anv_device *device);
 void anv_perf_write_pass_results(struct intel_perf_config *perf,

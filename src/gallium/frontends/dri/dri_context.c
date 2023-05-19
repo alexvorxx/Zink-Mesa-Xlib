@@ -223,7 +223,7 @@ dri_create_context(struct dri_screen *screen,
       bool user_enable_glthread = debug_get_bool_option("mesa_glthread", false);
       if (user_enable_glthread != enable_glthread) {
          /* print warning to mimic old behavior */
-         fprintf(stderr, "ATTENTION: default value of option mesa_glthread overridden by environment.");
+         fprintf(stderr, "ATTENTION: default value of option mesa_glthread overridden by environment.\n");
       }
       enable_glthread = user_enable_glthread;
    }

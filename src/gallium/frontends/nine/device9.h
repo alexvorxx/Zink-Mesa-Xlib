@@ -95,7 +95,6 @@ struct NineDevice9
     uint16_t vs_const_size;
     uint16_t ps_const_size;
     uint16_t max_vs_const_f;
-    uint16_t max_ps_const_f;
 
     struct pipe_resource *dummy_texture;
     struct pipe_sampler_view *dummy_sampler_view;
@@ -130,9 +129,14 @@ struct NineDevice9
     struct {
         boolean user_sw_vbufs;
         boolean window_space_position_support;
+        boolean disabling_depth_clipping_support;
         boolean vs_integer;
         boolean ps_integer;
         boolean offset_units_unscaled;
+        boolean alpha_test_emulation;
+        boolean always_output_pointsize;
+        boolean emulate_ucp;
+        boolean shader_emulate_features;
     } driver_caps;
 
     struct {

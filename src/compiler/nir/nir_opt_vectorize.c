@@ -206,8 +206,8 @@ instr_try_combine(struct set *instr_set, nir_instr *instr1, nir_instr *instr2)
    b.cursor = nir_after_instr(instr1);
 
    nir_alu_instr *new_alu = nir_alu_instr_create(b.shader, alu1->op);
-   nir_ssa_dest_init(&new_alu->instr, &new_alu->dest.dest,
-                     total_components, alu1->dest.dest.ssa.bit_size, NULL);
+   nir_ssa_dest_init(&new_alu->instr, &new_alu->dest.dest, total_components,
+                     alu1->dest.dest.ssa.bit_size);
    new_alu->dest.write_mask = (1 << total_components) - 1;
    new_alu->instr.pass_flags = alu1->instr.pass_flags;
 

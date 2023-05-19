@@ -522,8 +522,8 @@ opt_split_alu_of_phi(nir_builder *b, nir_loop *loop)
       nir_phi_instr_add_src(phi, prev_block, nir_src_for_ssa(prev_value));
       nir_phi_instr_add_src(phi, continue_block, nir_src_for_ssa(alu_copy));
 
-      nir_ssa_dest_init(&phi->instr, &phi->dest,
-                        alu_copy->num_components, alu_copy->bit_size, NULL);
+      nir_ssa_dest_init(&phi->instr, &phi->dest, alu_copy->num_components,
+                        alu_copy->bit_size);
 
       b->cursor = nir_after_phis(header_block);
       nir_builder_instr_insert(b, &phi->instr);
@@ -684,11 +684,9 @@ opt_simplify_bcsel_of_phi(nir_builder *b, nir_loop *loop)
                             nir_phi_get_src_from_block(nir_instr_as_phi(bcsel->src[continue_src].src.ssa->parent_instr),
                                     continue_block)->src);
 
-      nir_ssa_dest_init(&phi->instr,
-                        &phi->dest,
+      nir_ssa_dest_init(&phi->instr, &phi->dest,
                         nir_dest_num_components(bcsel->dest.dest),
-                        nir_dest_bit_size(bcsel->dest.dest),
-                        NULL);
+                        nir_dest_bit_size(bcsel->dest.dest));
 
       b->cursor = nir_after_phis(header_block);
       nir_builder_instr_insert(b, &phi->instr);
@@ -850,12 +848,7 @@ rewrite_phi_predecessor_blocks(nir_if *nif,
    nir_block *after_if_block =
       nir_cf_node_as_block(nir_cf_node_next(&nif->cf_node));
 
-   nir_foreach_instr(instr, after_if_block) {
-      if (instr->type != nir_instr_type_phi)
-         continue;
-
-      nir_phi_instr *phi = nir_instr_as_phi(instr);
-
+   nir_foreach_phi(phi, after_if_block) {
       nir_foreach_phi_src(src, phi) {
          if (src->pred == old_then_block) {
             src->pred = new_then_block;
@@ -946,11 +939,7 @@ opt_if_phi_is_condition(nir_builder *b, nir_if *nif)
    bool progress = false;
 
    nir_block *after_if_block = nir_cf_node_as_block(nir_cf_node_next(&nif->cf_node));
-   nir_foreach_instr_safe(instr, after_if_block) {
-      if (instr->type != nir_instr_type_phi)
-         break;
-
-      nir_phi_instr *phi = nir_instr_as_phi(instr);
+   nir_foreach_phi_safe(phi, after_if_block) {
       if (phi->dest.ssa.bit_size != cond->bit_size ||
           phi->dest.ssa.num_components != 1)
          continue;
@@ -1217,7 +1206,7 @@ clone_alu_and_replace_src_defs(nir_builder *b, const nir_alu_instr *alu,
 
    nir_ssa_dest_init(&nalu->instr, &nalu->dest.dest,
                      alu->dest.dest.ssa.num_components,
-                     alu->dest.dest.ssa.bit_size, NULL);
+                     alu->dest.dest.ssa.bit_size);
 
    nalu->dest.saturate = alu->dest.saturate;
    nalu->dest.write_mask = alu->dest.write_mask;
@@ -1564,13 +1553,10 @@ opt_if_merge(nir_if *nif)
       nir_block *after_next_if_block =
          nir_cf_node_as_block(nir_cf_node_next(&next_if->cf_node));
 
-      nir_foreach_instr_safe(instr, after_next_if_block) {
-         if (instr->type != nir_instr_type_phi)
-            break;
-
-         exec_node_remove(&instr->node);
-         exec_list_push_tail(&next_blk->instr_list, &instr->node);
-         instr->block = next_blk;
+      nir_foreach_phi_safe(phi, after_next_if_block) {
+         exec_node_remove(&phi->instr.node);
+         exec_list_push_tail(&next_blk->instr_list, &phi->instr.node);
+         phi->instr.block = next_blk;
       }
 
       nir_cf_node_remove(&next_if->cf_node);

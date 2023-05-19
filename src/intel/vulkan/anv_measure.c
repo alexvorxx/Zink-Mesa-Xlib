@@ -111,7 +111,7 @@ anv_measure_init(struct anv_cmd_buffer *cmd_buffer)
    ASSERTED VkResult result =
       anv_device_alloc_bo(device, "measure data",
                           config->batch_size * sizeof(uint64_t),
-                          ANV_BO_ALLOC_MAPPED,
+                          ANV_BO_ALLOC_MAPPED | ANV_BO_ALLOC_SNOOPED,
                           0,
                           (struct anv_bo**)&measure->bo);
    measure->base.timestamps = measure->bo->map;
@@ -137,18 +137,6 @@ anv_measure_start_snapshot(struct anv_cmd_buffer *cmd_buffer,
     */
    if (measure->base.frame == 0)
       measure->base.frame = device_frame;
-
-//   uintptr_t framebuffer = (uintptr_t)cmd_buffer->state.framebuffer;
-//
-//   if (!measure->base.framebuffer &&
-//       cmd_buffer->vk.level == VK_COMMAND_BUFFER_LEVEL_SECONDARY)
-//      /* secondary command buffer inherited the framebuffer from the primary */
-//      measure->base.framebuffer = framebuffer;
-//
-//   /* verify framebuffer has been properly tracked */
-//   assert(type == INTEL_SNAPSHOT_END ||
-//          framebuffer == measure->base.framebuffer ||
-//          framebuffer == 0 ); /* compute has no framebuffer */
 
    unsigned index = measure->base.index++;
    if (event_name == NULL)
@@ -176,7 +164,8 @@ anv_measure_start_snapshot(struct anv_cmd_buffer *cmd_buffer,
    snapshot->count = (unsigned) count;
    snapshot->event_count = measure->base.event_count;
    snapshot->event_name = event_name;
-//   snapshot->framebuffer = framebuffer;
+   snapshot->renderpass = (type == INTEL_SNAPSHOT_COMPUTE) ? 0
+                            : measure->base.renderpass;
 
    if (type == INTEL_SNAPSHOT_COMPUTE && cmd_buffer->state.compute.pipeline) {
       snapshot->cs = (uintptr_t) cmd_buffer->state.compute.pipeline->cs;
@@ -338,7 +327,7 @@ anv_measure_reset(struct anv_cmd_buffer *cmd_buffer)
    assert(cmd_buffer->device != NULL);
 
    measure->base.index = 0;
-//   measure->base.framebuffer = 0;
+   measure->base.renderpass = 0;
    measure->base.frame = 0;
    measure->base.event_count = 0;
    list_inithead(&measure->base.link);
@@ -474,15 +463,11 @@ _anv_measure_beginrenderpass(struct anv_cmd_buffer *cmd_buffer)
 {
    struct intel_measure_config *config = config_from_command_buffer(cmd_buffer);
    struct anv_measure_batch *measure = cmd_buffer->measure;
+   struct anv_physical_device *device = cmd_buffer->device->physical;
+   struct intel_measure_device *measure_device = &device->measure_device;
 
-   if (!config)
+   if (!config || !measure)
       return;
-   if (measure == NULL)
-      return;
-
-//   if (measure->base.framebuffer == (uintptr_t) cmd_buffer->state.framebuffer)
-//      /* no change */
-//      return;
 
    bool filtering = (config->flags & (INTEL_MEASURE_RENDERPASS |
                                       INTEL_MEASURE_SHADER));
@@ -493,7 +478,8 @@ _anv_measure_beginrenderpass(struct anv_cmd_buffer *cmd_buffer)
       measure->base.event_count = 0;
    }
 
-//   measure->base.framebuffer = (uintptr_t) cmd_buffer->state.framebuffer;
+   measure->base.renderpass =
+      (uintptr_t) p_atomic_inc_return(&measure_device->render_pass_count);
 }
 
 void

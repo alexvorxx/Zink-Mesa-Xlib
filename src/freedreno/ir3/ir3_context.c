@@ -34,6 +34,8 @@ struct ir3_context *
 ir3_context_init(struct ir3_compiler *compiler, struct ir3_shader *shader,
                  struct ir3_shader_variant *so)
 {
+   MESA_TRACE_FUNC();
+
    struct ir3_context *ctx = rzalloc(NULL, struct ir3_context);
 
    if (compiler->gen == 4) {

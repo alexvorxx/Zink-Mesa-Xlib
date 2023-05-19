@@ -26,6 +26,7 @@
 
 #include "st_context.h"
 #include "compiler/shader_enums.h"
+#include "util/perf/cpu_trace.h"
 
 #ifdef __cplusplus
 extern "C" {

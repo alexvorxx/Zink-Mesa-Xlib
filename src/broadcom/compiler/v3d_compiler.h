@@ -87,7 +87,7 @@ enum qfile {
 
         /** A physical register, such as the W coordinate payload. */
         QFILE_REG,
-        /** One of the regsiters for fixed function interactions. */
+        /** One of the registers for fixed function interactions. */
         QFILE_MAGIC,
 
         /**
@@ -490,7 +490,7 @@ struct v3d_vs_key {
         bool clamp_color;
 };
 
-/** A basic block of VIR intructions. */
+/** A basic block of VIR instructions. */
 struct qblock {
         struct list_head link;
 
@@ -714,6 +714,11 @@ struct v3d_compile {
          */
         bool disable_constant_ubo_load_sorting;
         bool sorted_any_ubo_loads;
+
+        /* Moves UBO/SSBO loads right before their first user (nir_opt_move).
+         * This can reduce register pressure.
+         */
+        bool move_buffer_loads;
 
         /* Emits ldunif for each new uniform, even if the uniform was already
          * emitted in the same block. Useful to compile shaders with high

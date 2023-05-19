@@ -44,6 +44,8 @@ link_shader(struct gl_context *ctx, struct gl_shader_program *prog)
       return GL_TRUE;
    }
 
+   MESA_TRACE_FUNC();
+
    assert(prog->data->LinkStatus);
 
    /* Skip the GLSL steps when using SPIR-V. */
@@ -102,6 +104,8 @@ GLboolean
 st_link_shader(struct gl_context *ctx, struct gl_shader_program *prog)
 {
    struct pipe_context *pctx = st_context(ctx)->pipe;
+
+   MESA_TRACE_FUNC();
 
    GLboolean ret = link_shader(ctx, prog);
     

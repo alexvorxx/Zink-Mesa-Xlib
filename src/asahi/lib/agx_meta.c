@@ -54,7 +54,7 @@ build_background_op(nir_builder *b, enum agx_meta_op op, unsigned rt,
 
       tex->coord_components = 2;
       tex->texture_index = rt;
-      nir_ssa_dest_init(&tex->instr, &tex->dest, 4, 32, NULL);
+      nir_ssa_dest_init(&tex->instr, &tex->dest, 4, 32);
       nir_builder_instr_insert(b, &tex->instr);
 
       return nir_trim_vector(b, &tex->dest.ssa, nr);

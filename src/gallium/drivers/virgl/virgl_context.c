@@ -1786,6 +1786,20 @@ struct pipe_context *virgl_context_create(struct pipe_screen *pscreen,
    if (rs->caps.caps.v2.capability_bits & VIRGL_CAP_APP_TWEAK_SUPPORT)
       virgl_send_tweaks(vctx, rs);
 
+   /* On Android, a virgl_screen is generally created first by the HWUI
+    * service, followed by the application's no-op attempt to do the same with
+    * eglInitialize(). To retain the ability for apps to set their own driver
+    * config procedurally right before context creation, we must check the
+    * envvar again.
+    */
+#if DETECT_OS_ANDROID
+   if (!rs->shader_sync) {
+      uint64_t debug_options = debug_get_flags_option("VIRGL_DEBUG",
+                                                      virgl_debug_options, 0);
+      rs->shader_sync |= !!(debug_options & VIRGL_DEBUG_SHADER_SYNC);
+   }
+#endif
+
    return &vctx->base;
 fail:
    virgl_context_destroy(&vctx->base);

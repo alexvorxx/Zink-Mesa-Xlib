@@ -348,7 +348,7 @@ draw_set_driver_clipping(struct draw_context *draw,
                          boolean bypass_clip_xy,
                          boolean bypass_clip_z,
                          boolean guard_band_xy,
-                         boolean bypass_clip_points);
+                         boolean bypass_clip_points_lines);
 
 /*******************************************************************************
  * Draw statistics

@@ -103,7 +103,7 @@ radv_compute_generate_pm4(const struct radv_device *device, struct radv_compute_
    struct radv_shader *shader = pipeline->base.shaders[MESA_SHADER_COMPUTE];
    struct radeon_cmdbuf *cs = &pipeline->base.cs;
 
-   cs->max_dw = pdevice->rad_info.gfx_level >= GFX10 ? 19 : 16;
+   cs->reserved_dw = cs->max_dw = pdevice->rad_info.gfx_level >= GFX10 ? 19 : 16;
    cs->buf = malloc(cs->max_dw * 4);
 
    radv_pipeline_emit_hw_cs(pdevice, cs, shader);

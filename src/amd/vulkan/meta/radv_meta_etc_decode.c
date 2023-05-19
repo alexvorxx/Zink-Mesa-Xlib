@@ -629,7 +629,7 @@ radv_get_etc_decode_pipeline(struct radv_cmd_buffer *cmd_buffer)
 
 static void
 decode_etc(struct radv_cmd_buffer *cmd_buffer, struct radv_image_view *src_iview,
-           struct radv_image_view *dest_iview, const VkOffset3D *offset, const VkExtent3D *extent)
+           struct radv_image_view *dst_iview, const VkOffset3D *offset, const VkExtent3D *extent)
 {
    struct radv_device *device = cmd_buffer->device;
 
@@ -656,7 +656,7 @@ decode_etc(struct radv_cmd_buffer *cmd_buffer, struct radv_image_view *src_iview
                                 .pImageInfo = (VkDescriptorImageInfo[]){
                                    {
                                       .sampler = VK_NULL_HANDLE,
-                                      .imageView = radv_image_view_to_handle(dest_iview),
+                                      .imageView = radv_image_view_to_handle(dst_iview),
                                       .imageLayout = VK_IMAGE_LAYOUT_GENERAL,
                                    },
                                 }}});
@@ -731,9 +731,9 @@ radv_meta_decode_etc(struct radv_cmd_buffer *cmd_buffer, struct radv_image *imag
    default:
       store_format = VK_FORMAT_R8G8B8A8_UNORM;
    }
-   struct radv_image_view dest_iview;
+   struct radv_image_view dst_iview;
    radv_image_view_init(
-      &dest_iview, cmd_buffer->device,
+      &dst_iview, cmd_buffer->device,
       &(VkImageViewCreateInfo){
          .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
          .image = radv_image_to_handle(image),
@@ -750,11 +750,11 @@ radv_meta_decode_etc(struct radv_cmd_buffer *cmd_buffer, struct radv_image *imag
       },
       0, NULL);
 
-   decode_etc(cmd_buffer, &src_iview, &dest_iview, &(VkOffset3D){offset.x, offset.y, base_slice},
+   decode_etc(cmd_buffer, &src_iview, &dst_iview, &(VkOffset3D){offset.x, offset.y, base_slice},
               &(VkExtent3D){extent.width, extent.height, slice_count});
 
    radv_image_view_finish(&src_iview);
-   radv_image_view_finish(&dest_iview);
+   radv_image_view_finish(&dst_iview);
 
    radv_meta_restore(&saved_state, cmd_buffer);
 }

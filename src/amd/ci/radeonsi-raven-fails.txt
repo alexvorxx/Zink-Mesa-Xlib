@@ -151,38 +151,6 @@ spec@khr_texture_compression_astc@sliced-3d-miptree-gl srgb-fp@sRGB decode full 
 spec@khr_texture_compression_astc@sliced-3d-miptree-gles srgb-fp,Fail
 spec@khr_texture_compression_astc@sliced-3d-miptree-gles srgb-fp@sRGB decode full precision,Fail
 
-CreateContext/VAAPICreateContext.CreateContext/1035,Crash
-CreateContext/VAAPICreateContext.CreateContext/1120,Crash
-CreateContext/VAAPICreateContext.CreateContext/1121,Crash
-CreateContext/VAAPICreateContext.CreateContext/1205,Crash
-CreateContext/VAAPICreateContext.CreateContext/1290,Crash
-CreateContext/VAAPICreateContext.CreateContext/1375,Crash
-CreateContext/VAAPICreateContext.CreateContext/1545,Crash
-CreateContext/VAAPICreateContext.CreateContext/1715,Crash
-CreateContext/VAAPICreateContext.CreateContext/185,Crash
-CreateContext/VAAPICreateContext.CreateContext/2055,Crash
-CreateContext/VAAPICreateContext.CreateContext/2225,Crash
-CreateContext/VAAPICreateContext.CreateContext/2310,Crash
-CreateContext/VAAPICreateContext.CreateContext/2905,Crash
-CreateContext/VAAPICreateContext.CreateContext/2991,Crash
-CreateContext/VAAPICreateContext.CreateContext/3075,Crash
-CreateContext/VAAPICreateContext.CreateContext/3245,Crash
-CreateContext/VAAPICreateContext.CreateContext/355,Crash
-CreateContext/VAAPICreateContext.CreateContext/3585,Crash
-GetCreateConfig/VAAPIGetCreateConfig.CreateConfigNoAttributes/190,Fail
-GetCreateConfig/VAAPIGetCreateConfig.CreateConfigNoAttributes/210,Fail
-GetCreateConfig/VAAPIGetCreateConfig.CreateConfigWithAttributes/190,Fail
-GetCreateConfig/VAAPIGetCreateConfig.CreateConfigWithAttributes/210,Fail
-GetCreateConfig/VAAPIGetCreateConfig.CreateConfigWithAttributes/215,Fail
-
-# The following tests started to crash after CI fix, see
-# https://gitlab.freedesktop.org/mesa/mesa/-/merge_requests/16325
-CreateContext/VAAPICreateContext.CreateContext/1460,Crash
-CreateContext/VAAPICreateContext.CreateContext/1630,Crash
-CreateContext/VAAPICreateContext.CreateContext/1800,Crash
-CreateContext/VAAPICreateContext.CreateContext/2990,Crash
-CreateContext/VAAPICreateContext.CreateContext/3160,Crash
-
 spec@!opengl 1.0@gl-1.0-user-clip-all-planes,Fail
 
 spec@!opengl 1.1@line-smooth-stipple,Fail

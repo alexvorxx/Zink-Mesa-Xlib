@@ -268,7 +268,6 @@ struct r600_gs_rings_state {
 #define DBG_SB_DISASM	(1 << 27)
 #define DBG_SB_SAFEMATH	(1 << 28)
 #define DBG_NIR_SB	(1 << 28)
-#define DBG_USE_TGSI	(1 << 29)
 
 struct r600_screen {
 	struct r600_common_screen	b;

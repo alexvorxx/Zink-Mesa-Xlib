@@ -2489,7 +2489,14 @@ lower_to_hw_instr(Program* program)
                   break;
 
                Operand scratch_addr = instr->operands[0];
-               if (program->stage.hw != HWStage::CS) {
+               if (scratch_addr.isUndefined()) {
+                  PhysReg reg = instr->definitions[0].physReg();
+                  bld.sop1(aco_opcode::p_load_symbol, Definition(reg, s1),
+                           Operand::c32(aco_symbol_scratch_addr_lo));
+                  bld.sop1(aco_opcode::p_load_symbol, Definition(reg.advance(4), s1),
+                           Operand::c32(aco_symbol_scratch_addr_hi));
+                  scratch_addr.setFixed(reg);
+               } else if (program->stage.hw != HWStage::CS) {
                   bld.smem(aco_opcode::s_load_dwordx2, instr->definitions[0], scratch_addr,
                            Operand::zero());
                   scratch_addr.setFixed(instr->definitions[0].physReg());

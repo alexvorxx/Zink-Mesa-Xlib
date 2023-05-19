@@ -442,6 +442,13 @@
    DRI_CONF_OPT_B(force_integer_tex_nearest, def, \
                   "Force integer textures to use nearest filtering")
 
+/* The GL spec does not allow this but wine has translation bug:
+   https://bugs.winehq.org/show_bug.cgi?id=54787
+*/
+#define DRI_CONF_ALLOW_MULTISAMPLED_COPYTEXIMAGE(def) \
+   DRI_CONF_OPT_B(allow_multisampled_copyteximage, def, \
+                  "Allow CopyTexSubImage and other to copy sampled framebuffer")
+
 /**
  * \brief Initialization configuration options
  */
@@ -498,6 +505,10 @@
 #define DRI_CONF_NINE_FORCESWRENDERINGONCPU(def) \
    DRI_CONF_OPT_B(force_sw_rendering_on_cpu, def, \
                   "If set to false, emulates software rendering on the requested device, else uses a software renderer.")
+
+#define DRI_CONF_NINE_FORCEFEATURESEMULATION(def) \
+   DRI_CONF_OPT_B(force_features_emulation, def, \
+                  "If set to true, force emulation of d3d9 features when possible instead of using native hw support.")
 
 #define DRI_CONF_V3D_NONMSAA_TEXTURE_SIZE_LIMIT(def) \
    DRI_CONF_OPT_B(v3d_nonmsaa_texture_size_limit, def, \
@@ -627,6 +638,10 @@
    DRI_CONF_OPT_B(radv_rt, def, \
                   "Expose support for VK_KHR_ray_tracing_pipeline")
 
+#define DRI_CONF_RADV_FLUSH_BEFORE_TIMESTAMP_WRITE(def) \
+   DRI_CONF_OPT_B(radv_flush_before_timestamp_write, def, \
+                  "Wait for previous commands to finish before writing timestamps")
+
 #define DRI_CONF_RADV_APP_LAYER() DRI_CONF_OPT_S_NODEF(radv_app_layer, "Select an application layer.")
 
 /**
@@ -671,8 +686,5 @@
 
 #define DRI_CONF_DZN_ENABLE_8BIT_LOADS_STORES(def) \
    DRI_CONF_OPT_B(dzn_enable_8bit_loads_stores, def, "Enable VK_KHR_8bit_loads_stores")
-
-#define DRI_CONF_DZN_ENABLE_SUBGROUP_OPS_IN_VTX_PIPELINE(def) \
-   DRI_CONF_OPT_B(dzn_enable_subgroup_ops_in_vtx_pipeline, def, "Enable subgroup ops in pre-rasterizer stages (VS/GS)")
 
 #endif

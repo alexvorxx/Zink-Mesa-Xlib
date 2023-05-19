@@ -24,10 +24,9 @@ cp artifacts/ci-common/intel-gpu-freq.sh results/job-rootfs-overlay/
 cp "$SCRIPTS_DIR"/setup-test-env.sh results/job-rootfs-overlay/
 
 # Prepare env vars for upload.
-KERNEL_IMAGE_BASE_URL="https://${BASE_SYSTEM_HOST_PATH}" \
-	artifacts/ci-common/generate-env.sh > results/job-rootfs-overlay/set-job-env-vars.sh
 section_start variables "Variables passed through:"
-cat results/job-rootfs-overlay/set-job-env-vars.sh
+KERNEL_IMAGE_BASE_URL="https://${BASE_SYSTEM_HOST_PATH}" \
+	artifacts/ci-common/generate-env.sh | tee results/job-rootfs-overlay/set-job-env-vars.sh
 section_end variables
 
 tar zcf job-rootfs-overlay.tar.gz -C results/job-rootfs-overlay/ .

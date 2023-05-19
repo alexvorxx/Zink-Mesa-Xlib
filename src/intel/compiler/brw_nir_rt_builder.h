@@ -837,12 +837,12 @@ brw_nir_rt_load_bvh_instance_leaf(nir_builder *b,
                                   struct brw_nir_rt_bvh_instance_leaf_defs *defs,
                                   nir_ssa_def *leaf_addr)
 {
+   nir_ssa_def *leaf_desc = brw_nir_rt_load(b, leaf_addr, 4, 2, 32);
+
    defs->shader_index =
-      nir_iand_imm(b, brw_nir_rt_load(b, leaf_addr, 4, 1, 32), (1 << 24) - 1);
+      nir_iand_imm(b, nir_channel(b, leaf_desc, 0), (1 << 24) - 1);
    defs->contribution_to_hit_group_index =
-      nir_iand_imm(b,
-                   brw_nir_rt_load(b, nir_iadd_imm(b, leaf_addr, 4), 4, 1, 32),
-                   (1 << 24) - 1);
+      nir_iand_imm(b, nir_channel(b, leaf_desc, 1), (1 << 24) - 1);
 
    defs->world_to_object[0] =
       brw_nir_rt_load(b, nir_iadd_imm(b, leaf_addr, 16), 4, 3, 32);
@@ -902,6 +902,21 @@ brw_nir_rt_load_bvh_primitive_leaf(nir_builder *b,
    defs->geom_flags =
       nir_ubitfield_extract(b, nir_channel(b, desc, 1),
                             nir_imm_int(b, 31), nir_imm_int(b, 30));
+}
+
+struct brw_nir_rt_bvh_primitive_leaf_positions_defs {
+   nir_ssa_def *positions[3];
+};
+
+static inline void
+brw_nir_rt_load_bvh_primitive_leaf_positions(nir_builder *b,
+                                             struct brw_nir_rt_bvh_primitive_leaf_positions_defs *defs,
+                                             nir_ssa_def *leaf_addr)
+{
+   for (unsigned i = 0; i < ARRAY_SIZE(defs->positions); i++) {
+      defs->positions[i] =
+         brw_nir_rt_load(b, nir_iadd_imm(b, leaf_addr, 16 + i * 4 * 3), 4, 3, 32);
+   }
 }
 
 static inline nir_ssa_def *

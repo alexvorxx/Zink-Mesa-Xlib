@@ -771,7 +771,7 @@ read_dest(read_ctx *ctx, nir_dest *dst, nir_instr *instr,
          num_components = blob_read_uint32(ctx->blob);
       else
          num_components = decode_num_components_in_3bits(dest.ssa.num_components);
-      nir_ssa_dest_init(instr, dst, num_components, bit_size, NULL);
+      nir_ssa_dest_init(instr, dst, num_components, bit_size);
       dst->ssa.divergent = dest.ssa.divergent;
       read_add_object(ctx, &dst->ssa);
    } else {

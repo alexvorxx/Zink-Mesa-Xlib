@@ -28,18 +28,7 @@
 
 #include "radeon_video.h"
 
-#define RADEON_VCN_ENGINE_INFO                                        (0x30000001)
-#define RADEON_VCN_SIGNATURE                                          (0x30000002)
-#define RADEON_VCN_ENGINE_TYPE_ENCODE                                 (0x00000002)
-#define RADEON_VCN_ENGINE_TYPE_DECODE                                 (0x00000003)
-
-#define RADEON_VCN_ENGINE_INFO_SIZE                                   (0x00000010)
-#define RADEON_VCN_SIGNATURE_SIZE                                     (0x00000010)
-
-struct rvcn_sq_var {
-   unsigned int *ib_total_size_in_dw;
-   unsigned int *ib_checksum;
-};
+#include "ac_vcn.h"
 
 void rvcn_sq_header(struct radeon_cmdbuf *cs,
                     struct rvcn_sq_var *sq,

@@ -1434,7 +1434,7 @@ cmd_buffer_emit_subpass_clears(struct v3dv_cmd_buffer *cmd_buffer)
                  "VK_ATTACHMENT_LOAD_OP_CLEAR.\n");
    } else if (subpass->do_depth_clear_with_draw ||
               subpass->do_stencil_clear_with_draw) {
-      perf_debug("Subpass clears DEPTH but loads STENCIL (or viceversa), "
+      perf_debug("Subpass clears DEPTH but loads STENCIL (or vice versa), "
                  "falling back to vkCmdClearAttachments for "
                  "VK_ATTACHMENT_LOAD_OP_CLEAR.\n");
    }

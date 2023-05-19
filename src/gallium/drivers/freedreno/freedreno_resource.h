@@ -253,6 +253,19 @@ has_depth(enum pipe_format format)
    return util_format_has_depth(desc);
 }
 
+static inline bool
+is_z32(enum pipe_format format)
+{
+   switch (format) {
+   case PIPE_FORMAT_Z32_FLOAT_S8X24_UINT:
+   case PIPE_FORMAT_Z32_UNORM:
+   case PIPE_FORMAT_Z32_FLOAT:
+      return true;
+   default:
+      return false;
+   }
+}
+
 struct fd_transfer {
    struct threaded_transfer b;
    struct pipe_resource *staging_prsc;
@@ -410,6 +423,8 @@ fd_dirty_resource(struct fd_context *ctx, struct pipe_resource *prsc,
                   BITMASK_ENUM(fd_dirty_3d_state) dirty, bool write)
    assert_dt
 {
+   fd_context_dirty(ctx, dirty);
+
    if (ctx->dirty_resource & dirty)
       return;
 
@@ -426,6 +441,8 @@ fd_dirty_shader_resource(struct fd_context *ctx, struct pipe_resource *prsc,
                          bool write)
    assert_dt
 {
+   fd_context_dirty_shader(ctx, shader, dirty);
+
    if (ctx->dirty_shader_resource[shader] & dirty)
       return;
 

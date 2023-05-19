@@ -489,7 +489,7 @@ static enum pipe_reset_status r600_get_reset_status(struct pipe_context *ctx)
 {
 	struct r600_common_context *rctx = (struct r600_common_context *)ctx;
 
-	return rctx->ws->ctx_query_reset_status(rctx->ctx, false, NULL);
+	return rctx->ws->ctx_query_reset_status(rctx->ctx, false, NULL, NULL);
 }
 
 static void r600_set_debug_callback(struct pipe_context *ctx,
@@ -693,7 +693,6 @@ static const struct debug_named_value common_debug_options[] = {
 	{ "tes", DBG_TES, "Print tessellation evaluation shaders" },
 	{ "preoptir", DBG_PREOPT_IR, "Print the LLVM IR before initial optimizations" },
 	{ "checkir", DBG_CHECK_IR, "Enable additional sanity checks on shader IR" },
-	{ "use_tgsi", DBG_USE_TGSI, "Take TGSI directly instead of using NIR-to-TGSI"},
 
 	{ "testdma", DBG_TEST_DMA, "Invoke SDMA tests and exit." },
 	{ "testvmfaultcp", DBG_TEST_VMFAULT_CP, "Invoke a CP VM fault test and exit." },
@@ -776,13 +775,9 @@ static void r600_disk_cache_create(struct r600_common_screen *rscreen)
 	mesa_bytes_to_hex(cache_id, sha1, 20);
 
 	/* These flags affect shader compilation. */
-	uint64_t shader_debug_flags =
-		rscreen->debug_flags & DBG_USE_TGSI;
-
 	rscreen->disk_shader_cache =
 		disk_cache_create(r600_get_family_name(rscreen),
-				  cache_id,
-				  shader_debug_flags);
+				  cache_id, 0);
 }
 
 static struct disk_cache *r600_get_disk_shader_cache(struct pipe_screen *pscreen)
@@ -1376,7 +1371,8 @@ bool r600_common_screen_init(struct r600_common_screen *rscreen,
 		.lower_int64_options = ~0,
 		.lower_cs_local_index_to_id = true,
 		.lower_uniforms_to_ubo = true,
-		.lower_image_offset_to_range_base = 1
+		.lower_image_offset_to_range_base = 1,
+		.vectorize_tess_levels = 1
 	};
 
 	rscreen->nir_options = nir_options;
@@ -1384,17 +1380,17 @@ bool r600_common_screen_init(struct r600_common_screen *rscreen,
 	if (rscreen->info.family < CHIP_CEDAR)
 		rscreen->nir_options.force_indirect_unrolling_sampler = true;
 
-   if (rscreen->info.gfx_level >= EVERGREEN) {
-      rscreen->nir_options.lower_bitfield_extract = true;
+	if (rscreen->info.gfx_level >= EVERGREEN) {
+		rscreen->nir_options.lower_bitfield_extract = true;
 		rscreen->nir_options.lower_bitfield_insert_to_bitfield_select = true;
-   }
+	}
 
 	if (rscreen->info.gfx_level < EVERGREEN) {
 		/* Pre-EG doesn't have these ALU ops */
 		rscreen->nir_options.lower_bit_count = true;
 		rscreen->nir_options.lower_bitfield_reverse = true;
-      rscreen->nir_options.lower_bitfield_insert_to_shifts = true;
-      rscreen->nir_options.lower_bitfield_extract_to_shifts = true;
+		rscreen->nir_options.lower_bitfield_insert_to_shifts = true;
+		rscreen->nir_options.lower_bitfield_extract_to_shifts = true;
 	}
 
 	if (rscreen->info.gfx_level < CAYMAN) {
@@ -1410,33 +1406,7 @@ bool r600_common_screen_init(struct r600_common_screen *rscreen,
 			nir_lower_dtrunc;
 	}
 
-	if (rscreen->debug_flags & DBG_USE_TGSI) {
-
-		rscreen->nir_options.lower_fpow = false;
-		/* TGSI is vector, and NIR-to-TGSI doesn't like it when the
-		 * input vars have been scalarized.
-		 */
-		rscreen->nir_options.lower_to_scalar = false;
-
-		/* NIR-to-TGSI can't do fused integer csel, and it can't just
-		 * override the flag and get the code lowered back when we ask
-		 * it to handle it.
-		 */
-		rscreen->nir_options.has_fused_comp_and_csel = false;
-
-		/* r600 has a bitfield_select and bitfield_extract opcode
-		 * (called bfi/bfe), but TGSI's BFI/BFE isn't that.
-		 */
-		rscreen->nir_options.lower_bitfield_extract = false;
-		rscreen->nir_options.lower_bitfield_insert_to_bitfield_select = false;
-
-		/* TGSI's ifind is reversed from ours, keep it the TGSI way. */
-		rscreen->nir_options.lower_find_msb_to_reverse = false;
-	} else {
-      rscreen->nir_options.has_fmulz = true;
-   }
-
-	rscreen->nir_options_fs = rscreen->nir_options;
+        rscreen->nir_options_fs = rscreen->nir_options;
 	rscreen->nir_options_fs.lower_all_io_to_temps = true;
 
 	return true;

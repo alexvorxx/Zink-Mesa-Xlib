@@ -122,7 +122,7 @@ bool si_sdma_v4_v5_copy_texture(struct si_context *sctx, struct si_texture *sdst
    if (ssrc->surface.is_linear && sdst->surface.is_linear) {
       struct radeon_cmdbuf *cs = sctx->sdma_cs;
 
-      unsigned bytes = src_pitch * copy_height * bpp;
+      uint64_t bytes = (uint64_t)src_pitch * copy_height * bpp;
 
       if (!(bytes < (1u << 22)))
          return false;
@@ -151,7 +151,7 @@ bool si_sdma_v4_v5_copy_texture(struct si_context *sctx, struct si_texture *sdst
       unsigned tiled_width = DIV_ROUND_UP(tiled->buffer.b.b.width0, tiled->surface.blk_w);
       unsigned tiled_height = DIV_ROUND_UP(tiled->buffer.b.b.height0, tiled->surface.blk_h);
       unsigned linear_pitch = linear == ssrc ? src_pitch : dst_pitch;
-      unsigned linear_slice_pitch = ((uint64_t)linear->surface.u.gfx9.surf_slice_size) / bpp;
+      uint64_t linear_slice_pitch = linear->surface.u.gfx9.surf_slice_size / bpp;
       uint64_t tiled_address = tiled == ssrc ? src_address : dst_address;
       uint64_t linear_address = linear == ssrc ? src_address : dst_address;
       struct radeon_cmdbuf *cs = sctx->sdma_cs;
@@ -358,11 +358,11 @@ bool cik_sdma_copy_texture(struct si_context *sctx, struct si_texture *sdst, str
        * starts reading from an address preceding linear_address!!!
        */
       start_linear_address =
-         linear->surface.u.legacy.level[0].offset_256B * 256;
+         (uint64_t)linear->surface.u.legacy.level[0].offset_256B * 256;
 
       end_linear_address =
-         linear->surface.u.legacy.level[0].offset_256B * 256 +
-         bpp * ((copy_height - 1) * linear_pitch + copy_width);
+         (uint64_t)linear->surface.u.legacy.level[0].offset_256B * 256 +
+         bpp * ((copy_height - 1) * (uint64_t)linear_pitch + copy_width);
 
       if ((0 + copy_width) % granularity)
          end_linear_address += granularity - (0 + copy_width) % granularity;

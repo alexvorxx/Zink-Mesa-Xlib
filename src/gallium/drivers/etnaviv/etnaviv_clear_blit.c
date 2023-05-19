@@ -67,6 +67,9 @@ etna_blit_save_state(struct etna_context *ctx)
          ctx->num_fragment_samplers, (void **)ctx->sampler);
    util_blitter_save_fragment_sampler_views(ctx->blitter,
          ctx->num_fragment_sampler_views, ctx->sampler_view);
+
+   if (DBG_ENABLED(ETNA_DBG_DEQP))
+      util_blitter_save_so_targets(ctx->blitter, 0, NULL);
 }
 
 uint64_t
