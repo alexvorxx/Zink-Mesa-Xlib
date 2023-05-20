@@ -251,7 +251,7 @@ traces:
 
   minetest/minetest-v2.trace:
     freedreno-a306:
-      checksum: 37081a69137df415cfda13dac62966c4
+      checksum: 620ee59628e66684033bb6a44e333d89
     freedreno-a530:
       checksum: 824672b1eef72c0223ac754dfc46e2d5
     freedreno-a618:

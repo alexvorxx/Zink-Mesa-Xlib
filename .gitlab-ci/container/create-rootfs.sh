@@ -62,6 +62,7 @@ apt-get -y install --no-install-recommends \
     bash \
     ca-certificates \
     curl \
+    dropbear \
     firmware-realtek \
     initramfs-tools \
     jq \

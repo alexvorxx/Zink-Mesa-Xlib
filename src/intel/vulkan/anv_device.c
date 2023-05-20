@@ -1218,6 +1218,12 @@ anv_physical_device_try_create(struct vk_instance *vk_instance,
       goto fail_fd;
    }
 
+   if (!devinfo.has_context_isolation) {
+      result = vk_errorf(instance, VK_ERROR_INCOMPATIBLE_DRIVER,
+                         "Vulkan requires context isolation for %s", devinfo.name);
+      goto fail_fd;
+   }
+
    struct anv_physical_device *device =
       vk_zalloc(&instance->vk.alloc, sizeof(*device), 8,
                 VK_SYSTEM_ALLOCATION_SCOPE_INSTANCE);
@@ -1333,8 +1339,7 @@ anv_physical_device_try_create(struct vk_instance *vk_instance,
    }
    device->compiler->shader_debug_log = compiler_debug_log;
    device->compiler->shader_perf_log = compiler_perf_log;
-   device->compiler->constant_buffer_0_is_relative =
-      !device->info.has_context_isolation;
+   device->compiler->constant_buffer_0_is_relative = false;
    device->compiler->supports_shader_constants = true;
    device->compiler->indirect_ubos_use_sampler = device->info.ver < 12;
 
@@ -3224,9 +3229,7 @@ VkResult anv_CreateDevice(
 
    result = anv_device_alloc_bo(device, "workaround", 4096,
                                 ANV_BO_ALLOC_CAPTURE |
-                                ANV_BO_ALLOC_MAPPED |
-                                (device->info->has_local_mem ?
-                                 ANV_BO_ALLOC_WRITE_COMBINE : 0),
+                                ANV_BO_ALLOC_MAPPED,
                                 0 /* explicit_address */,
                                 &device->workaround_bo);
    if (result != VK_SUCCESS)
@@ -3733,16 +3736,8 @@ VkResult anv_AllocateMemory(
        (mem_type->propertyFlags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT))
       alloc_flags |= ANV_BO_ALLOC_LOCAL_MEM_CPU_VISIBLE;
 
-   if (!(mem_type->propertyFlags & VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT))
+   if (!mem_heap->is_local_mem)
       alloc_flags |= ANV_BO_ALLOC_NO_LOCAL_MEM;
-
-   /* If the allocated buffer might end up in local memory and it's host
-    * visible and uncached, enable CPU write-combining. It should be faster.
-    */
-   if (!(alloc_flags & ANV_BO_ALLOC_NO_LOCAL_MEM) &&
-       (mem_type->propertyFlags & VK_MEMORY_PROPERTY_HOST_CACHED_BIT) == 0 &&
-       (mem_type->propertyFlags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT))
-      alloc_flags |= ANV_BO_ALLOC_WRITE_COMBINE;
 
    if (mem->vk.alloc_flags & VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT)
       alloc_flags |= ANV_BO_ALLOC_CLIENT_VISIBLE_ADDRESS;

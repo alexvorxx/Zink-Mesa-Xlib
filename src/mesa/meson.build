@@ -91,7 +91,7 @@ files_libmesa = files(
   'main/fbobject.h',
   'main/feedback.c',
   'main/feedback.h',
-  'main/ff_fragment_shader.cpp',
+  'main/ff_fragment_shader.c',
   'main/ffvertex_prog.c',
   'main/ffvertex_prog.h',
   'main/fog.c',

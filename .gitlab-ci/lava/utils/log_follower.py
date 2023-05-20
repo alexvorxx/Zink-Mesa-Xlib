@@ -124,6 +124,7 @@ class LogFollower:
         for log_section in LOG_SECTIONS:
             if new_section := log_section.from_log_line_to_section(line):
                 self.update_section(new_section)
+                break
 
     def detect_kernel_dump_line(self, line: dict[str, Union[str, list]]) -> bool:
         # line["msg"] can be a list[str] when there is a kernel dump
@@ -279,20 +280,31 @@ def fix_lava_gitlab_section_log():
 
 
 
-def print_log(msg: str) -> None:
+def print_log(msg: str, *args) -> None:
     # Reset color from timestamp, since `msg` can tint the terminal color
-    print(f"{CONSOLE_LOG['RESET']}{datetime.now()}: {msg}")
+    print(f"{CONSOLE_LOG['RESET']}{datetime.now()}: {msg}", *args)
 
 
 def fatal_err(msg, exception=None):
     colored_msg = f"{CONSOLE_LOG['FG_RED']}"
-    f"{msg}"
-    f"{CONSOLE_LOG['RESET']}"
-    print_log(colored_msg)
+    print_log(colored_msg, f"{msg}", f"{CONSOLE_LOG['RESET']}")
     if exception:
         raise exception
     sys.exit(1)
 
 
-def hide_sensitive_data(yaml_data: str, hide_tag: str ="HIDEME"):
-    return "".join(line for line in yaml_data.splitlines(True) if hide_tag not in line)
+def hide_sensitive_data(yaml_data: str, start_hide: str = "HIDE_START", end_hide: str = "HIDE_END") -> str:
+    skip_line = False
+    dump_data: list[str] = []
+    for line in yaml_data.splitlines(True):
+        if start_hide in line:
+            skip_line = True
+        elif end_hide in line:
+            skip_line = False
+
+        if skip_line:
+            continue
+
+        dump_data.append(line)
+
+    return "".join(dump_data)

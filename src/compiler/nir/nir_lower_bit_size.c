@@ -33,6 +33,8 @@
 static nir_ssa_def *convert_to_bit_size(nir_builder *bld, nir_ssa_def *src,
                                         nir_alu_type type, unsigned bit_size)
 {
+   assert(src->bit_size < bit_size);
+
    /* create b2i32(a) instead of i2i32(b2i8(a))/i2i32(b2i16(a)) */
    nir_alu_instr *alu = nir_src_as_alu_instr(nir_src_for_ssa(src));
    if ((type & (nir_type_uint | nir_type_int)) && bit_size == 32 &&

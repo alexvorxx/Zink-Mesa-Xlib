@@ -478,11 +478,10 @@ init_render_queue_state(struct anv_queue *queue)
     *
     * This is only safe on kernels with context isolation support.
     */
-   if (device->physical->info.has_context_isolation) {
-      anv_batch_write_reg(&batch, GENX(CS_DEBUG_MODE2), csdm2) {
-         csdm2.CONSTANT_BUFFERAddressOffsetDisable = true;
-         csdm2.CONSTANT_BUFFERAddressOffsetDisableMask = true;
-      }
+   assert(device->physical->info.has_context_isolation);
+   anv_batch_write_reg(&batch, GENX(CS_DEBUG_MODE2), csdm2) {
+      csdm2.CONSTANT_BUFFERAddressOffsetDisable = true;
+      csdm2.CONSTANT_BUFFERAddressOffsetDisableMask = true;
    }
 
    init_common_queue_state(queue, &batch);

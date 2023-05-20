@@ -841,41 +841,45 @@ st_get_common_variant(struct st_context *st,
  */
 static bool
 st_translate_fragment_program(struct st_context *st,
-                              struct gl_program *fp)
+                              struct gl_program *prog)
 {
    /* This determines which states will be updated when the assembly
     * shader is bound.
     *
     * fragment.position and glDrawPixels always use constants.
     */
-   fp->affected_states = ST_NEW_FS_STATE |
+   prog->affected_states = ST_NEW_FS_STATE |
                            ST_NEW_SAMPLE_SHADING |
                            ST_NEW_FS_CONSTANTS;
 
-   if (fp->ati_fs) {
+   if (prog->ati_fs) {
       /* Just set them for ATI_fs unconditionally. */
-      fp->affected_states |= ST_NEW_FS_SAMPLER_VIEWS |
-                                 ST_NEW_FS_SAMPLERS;
+      prog->affected_states |= ST_NEW_FS_SAMPLER_VIEWS |
+                               ST_NEW_FS_SAMPLERS;
    } else {
       /* ARB_fp */
-      if (fp->SamplersUsed)
-         fp->affected_states |= ST_NEW_FS_SAMPLER_VIEWS |
-                                    ST_NEW_FS_SAMPLERS;
+      if (prog->SamplersUsed)
+         prog->affected_states |= ST_NEW_FS_SAMPLER_VIEWS |
+                                  ST_NEW_FS_SAMPLERS;
    }
 
    /* Translate to NIR.  ATI_fs translates at variant time. */
-   if (!fp->ati_fs) {
-      nir_shader *nir =
-         st_translate_prog_to_nir(st, fp, MESA_SHADER_FRAGMENT);
+   if (!prog->ati_fs) {
+      if (prog->nir && prog->arb.Instructions)
+         ralloc_free(prog->nir);
 
-      if (fp->nir)
-         ralloc_free(fp->nir);
-      if (fp->serialized_nir) {
-         free(fp->serialized_nir);
-         fp->serialized_nir = NULL;
+      if (prog->serialized_nir) {
+         free(prog->serialized_nir);
+         prog->serialized_nir = NULL;
       }
-      fp->state.type = PIPE_SHADER_IR_NIR;
-      fp->nir = nir;
+
+      prog->state.type = PIPE_SHADER_IR_NIR;
+      if (prog->arb.Instructions)
+         prog->nir = st_translate_prog_to_nir(st, prog,
+                                             MESA_SHADER_FRAGMENT);
+      else
+         st_prog_to_nir_postprocess(st, prog->nir, prog);
+      prog->info = prog->nir->info;
    }
 
    return true;

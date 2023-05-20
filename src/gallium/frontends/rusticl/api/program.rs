@@ -228,7 +228,7 @@ pub fn create_program_with_binary(
 
         // just return the last one
         err = dev_err;
-        bins[i] = unsafe { slice::from_raw_parts(binaries[i], lengths[i] as usize) };
+        bins[i] = unsafe { slice::from_raw_parts(binaries[i], lengths[i]) };
     }
 
     if err != 0 {

@@ -224,8 +224,10 @@ where
     }
 }
 
-pub struct IdpAccelProps;
-impl IdpAccelProps {
+#[allow(non_snake_case)]
+pub mod IdpAccelProps {
+    use rusticl_opencl_gen::cl_bool;
+    use rusticl_opencl_gen::cl_device_integer_dot_product_acceleration_properties_khr;
     pub fn new(
         signed_accelerated: cl_bool,
         unsigned_accelerated: cl_bool,

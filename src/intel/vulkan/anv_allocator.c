@@ -376,8 +376,7 @@ anv_block_pool_init(struct anv_block_pool *pool,
       ANV_BO_ALLOC_FIXED_ADDRESS |
       ANV_BO_ALLOC_MAPPED |
       ANV_BO_ALLOC_SNOOPED |
-      ANV_BO_ALLOC_CAPTURE |
-      (device->info->has_local_mem ? ANV_BO_ALLOC_WRITE_COMBINE : 0);
+      ANV_BO_ALLOC_CAPTURE;
 
    result = anv_block_pool_expand_range(pool, initial_size);
    if (result != VK_SUCCESS)
@@ -1095,8 +1094,7 @@ anv_bo_pool_init(struct anv_bo_pool *pool, struct anv_device *device,
    pool->bo_alloc_flags =
       ANV_BO_ALLOC_MAPPED |
       ANV_BO_ALLOC_SNOOPED |
-      ANV_BO_ALLOC_CAPTURE |
-      (device->info->has_local_mem ? ANV_BO_ALLOC_WRITE_COMBINE : 0);
+      ANV_BO_ALLOC_CAPTURE;
 
    for (unsigned i = 0; i < ARRAY_SIZE(pool->free_list); i++) {
       util_sparse_array_free_list_init(&pool->free_list[i],
@@ -1513,7 +1511,6 @@ anv_device_alloc_bo(struct anv_device *device,
          (alloc_flags & ANV_BO_ALLOC_CLIENT_VISIBLE_ADDRESS) != 0,
       .has_implicit_ccs = ccs_size > 0 ||
                           (device->info->verx10 >= 125 && !(alloc_flags & ANV_BO_ALLOC_NO_LOCAL_MEM)),
-      .map_wc = alloc_flags & ANV_BO_ALLOC_WRITE_COMBINE,
       .vram_only = nregions == 1 &&
                    regions[0] == device->physical->vram_non_mappable.region,
    };

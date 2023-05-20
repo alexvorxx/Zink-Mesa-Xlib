@@ -262,6 +262,9 @@ xe_batch_submit(struct iris_batch *batch)
    if (!batch->screen->devinfo->no_hw)
        ret = intel_ioctl(iris_bufmgr_get_fd(bufmgr), DRM_IOCTL_XE_EXEC, &exec);
 
+   if (ret)
+      ret = -errno;
+
    simple_mtx_unlock(bo_deps_lock);
 
    free(syncs);

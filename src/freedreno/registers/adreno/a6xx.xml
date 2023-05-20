@@ -1031,7 +1031,23 @@ to upconvert to 32b float internally?
 	<reg32 offset="0x0825" name="CP_STATUS_1"/>
 	<reg64 offset="0x0830" name="CP_SQE_INSTR_BASE"/>
 	<reg32 offset="0x0840" name="CP_MISC_CNTL"/>
-	<reg32 offset="0x0844" name="CP_APRIV_CNTL"/>
+	<reg32 offset="0x0844" name="CP_APRIV_CNTL">
+		<!-- Crashdumper writes -->
+		<bitfield pos="6" name="CDWRITE" type="boolean"/>
+		<!-- Crashdumper reads -->
+		<bitfield pos="5" name="CDREAD" type="boolean"/>
+
+		<!-- 4 is unknown -->
+
+		<!-- RPTR shadow writes -->
+		<bitfield pos="3" name="RBRPWB" type="boolean"/>
+		<!-- Memory accesses from PM4 packets in the ringbuffer -->
+		<bitfield pos="2" name="RBPRIVLEVEL" type="boolean"/>
+		<!-- Ringbuffer reads -->
+		<bitfield pos="1" name="RBFETCH" type="boolean"/>
+		<!-- Instruction cache fetches -->
+		<bitfield pos="0" name="ICACHE" type="boolean"/>
+	</reg32>
 	<!-- Preemptions taking longer than this threshold increment PERF_CP_LONG_PREEMPTIONS: -->
 	<reg32 offset="0x08C0" name="CP_PREEMPT_THRESHOLD"/>
 	<!-- all the threshold values seem to be in units of quad-dwords: -->
@@ -1460,6 +1476,7 @@ to upconvert to 32b float internally?
 	<reg32 offset="0x00120" name="RBBM_CLOCK_CNTL_TEX_FCHE"/>
 	<reg32 offset="0x00121" name="RBBM_CLOCK_DELAY_TEX_FCHE"/>
 	<reg32 offset="0x00122" name="RBBM_CLOCK_HYST_TEX_FCHE"/>
+	<reg32 offset="0x0012f" name="RBBM_CLOCK_HYST2_VFD" variants="A7XX"/>
 	<reg32 offset="0x005ff" name="RBBM_LPAC_GBIF_CLIENT_QOS_CNTL"/>
 
 	<reg32 offset="0x0600" name="DBGC_CFG_DBGBUS_SEL_A"/>
@@ -4385,9 +4402,10 @@ to upconvert to 32b float internally?
 	<reg32 offset="0x0030" name="CFG_DBGBUS_TRACE_BUF2"/>
 </domain>
 
-<domain name="A6XX_CX_MISC" width="32">
+<domain name="A6XX_CX_MISC" width="32" prefix="variant" varset="chip">
 	<reg32 offset="0x0001" name="SYSTEM_CACHE_CNTL_0"/>
 	<reg32 offset="0x0002" name="SYSTEM_CACHE_CNTL_1"/>
+	<reg32 offset="0x0039" name="CX_MISC_TCM_RET_CNTL" variants="A7XX"/>
 </domain>
 
 </database>

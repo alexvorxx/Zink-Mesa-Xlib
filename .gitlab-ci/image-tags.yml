@@ -21,7 +21,7 @@ variables:
 
    ALPINE_X86_BUILD_TAG: "2023-03-20-3.17-bump"
    FEDORA_X86_BUILD_TAG: "2023-04-26-rusticl"
-   KERNEL_ROOTFS_TAG: "2023-05-18-libva-utils-2.18.1"
+   KERNEL_ROOTFS_TAG: "2023-05-18-lava_ssh"
 
    WINDOWS_X64_VS_PATH: "windows/x64_vs"
    WINDOWS_X64_VS_TAG: "2022-10-20-upgrade-zlib"

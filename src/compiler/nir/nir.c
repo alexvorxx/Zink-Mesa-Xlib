@@ -421,6 +421,19 @@ nir_find_variable_with_driver_location(nir_shader *shader,
    return NULL;
 }
 
+nir_variable *
+nir_find_state_variable(nir_shader *s,
+                        gl_state_index16 tokens[STATE_LENGTH])
+{
+   nir_foreach_variable_with_modes(var, s, nir_var_uniform) {
+      if (var->num_state_slots == 1 &&
+          !memcmp(var->state_slots[0].tokens, tokens,
+                  sizeof(var->state_slots[0].tokens)))
+         return var;
+   }
+   return NULL;
+}
+
 /* Annoyingly, qsort_r is not in the C standard library and, in particular, we
  * can't count on it on MSV and Android.  So we stuff the CMP function into
  * each array element.  It's a bit messy and burns more memory but the list of

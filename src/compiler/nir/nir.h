@@ -3424,6 +3424,7 @@ typedef enum {
    nir_lower_vote_ieq64 = (1 << 19),
    nir_lower_usub_sat64 = (1 << 20),
    nir_lower_iadd_sat64 = (1 << 21),
+   nir_lower_find_lsb64 = (1 << 22),
 } nir_lower_int64_options;
 
 typedef enum {
@@ -4060,6 +4061,9 @@ nir_variable *nir_find_variable_with_location(nir_shader *shader,
 nir_variable *nir_find_variable_with_driver_location(nir_shader *shader,
                                                      nir_variable_mode mode,
                                                      unsigned location);
+
+nir_variable *nir_find_state_variable(nir_shader *s,
+                                      gl_state_index16 tokens[STATE_LENGTH]);
 
 void nir_sort_variables_with_modes(nir_shader *shader,
                                    int (*compar)(const nir_variable *,

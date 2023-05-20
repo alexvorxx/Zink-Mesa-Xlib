@@ -248,7 +248,7 @@ anv_nir_compute_push_layout(nir_shader *nir,
          if (ubo_range->length == 0)
             continue;
 
-         if (n >= 4 || (n == 3 && compiler->constant_buffer_0_is_relative)) {
+         if (n >= 4) {
             memset(ubo_range, 0, sizeof(*ubo_range));
             continue;
          }

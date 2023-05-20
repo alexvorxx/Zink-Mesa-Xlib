@@ -2399,25 +2399,10 @@ dxil_nir_forward_front_face(nir_shader *nir)
 }
 
 static bool
-split_phi_and_const_srcs(nir_builder *b, nir_instr *instr, void *data)
+move_consts(nir_builder *b, nir_instr *instr, void *data)
 {
    bool progress = false;
    switch (instr->type) {
-   case nir_instr_type_phi: {
-      /* Ensure each phi src is used only as a phi src and is not also a phi dest */
-      nir_phi_instr *phi = nir_instr_as_phi(instr);
-      nir_foreach_phi_src(src, phi) {
-         assert(src->src.is_ssa);
-         if (!list_is_singular(&src->src.use_link) ||
-             (src->src.is_ssa && src->src.parent_instr->type == nir_instr_type_phi)) {
-            b->cursor = nir_after_instr_and_phis(src->src.ssa->parent_instr);
-            nir_ssa_def *new_phi_src = nir_mov(b, src->src.ssa);
-            nir_src_rewrite_ssa(&src->src, new_phi_src);
-            progress = true;
-         }
-      }
-      return progress;
-   }
    case nir_instr_type_load_const: {
       /* Sink load_const to their uses if there's multiple */
       nir_load_const_instr *load_const = nir_instr_as_load_const(instr);
@@ -2440,18 +2425,14 @@ split_phi_and_const_srcs(nir_builder *b, nir_instr *instr, void *data)
    }
 }
 
-/* If a value is used by a phi and another instruction (e.g. another phi),
- * copy the value with a mov and use that as the phi source. If the types
- * of the uses are compatible, then the two phi sources will use the same
- * DXIL SSA value, but if the types are not, then the mov provides an opportunity
- * to insert a bitcast. Similarly, sink all consts so that they have only have
- * a single use. The DXIL backend will already de-dupe the constants to the
+/* Sink all consts so that they have only have a single use.
+ * The DXIL backend will already de-dupe the constants to the
  * same dxil_value if they have the same type, but this allows a single constant
  * to have different types without bitcasts. */
 bool
-dxil_nir_split_phis_and_const_srcs(nir_shader *s)
+dxil_nir_move_consts(nir_shader *s)
 {
-   return nir_shader_instructions_pass(s, split_phi_and_const_srcs,
+   return nir_shader_instructions_pass(s, move_consts,
                                        nir_metadata_block_index | nir_metadata_dominance,
                                        NULL);
 }

@@ -1,5 +1,8 @@
 #!/bin/bash
 
+# Second-stage init, used to set up devices and our job environment before
+# running tests.
+
 # Make sure to kill itself and all the children process from this script on
 # exiting, since any console output may interfere with LAVA signals handling,
 # which based on the log console.
@@ -33,10 +36,7 @@ trap cleanup INT TERM EXIT
 BACKGROUND_PIDS=
 
 
-# Second-stage init, used to set up devices and our job environment before
-# running tests.
-
-for path in '/set-job-env-vars.sh' './set-job-env-vars.sh'; do
+for path in '/dut-env-vars.sh' '/set-job-env-vars.sh' './set-job-env-vars.sh'; do
     [ -f "$path" ] && source "$path"
 done
 . "$SCRIPTS_DIR"/setup-test-env.sh
@@ -50,7 +50,7 @@ set -ex
 
 # Set up ZRAM
 HWCI_ZRAM_SIZE=2G
-if zramctl --find --size $HWCI_ZRAM_SIZE -a zstd; then
+if /sbin/zramctl --find --size $HWCI_ZRAM_SIZE -a zstd; then
     mkswap /dev/zram0
     swapon /dev/zram0
     echo "zram: $HWCI_ZRAM_SIZE activated"
@@ -116,7 +116,7 @@ if [ "$HWCI_FREQ_MAX" = "true" ]; then
   # and enable throttling detection & reporting.
   # Additionally, set the upper limit for CPU scaling frequency to 65% of the
   # maximum permitted, as an additional measure to mitigate thermal throttling.
-  ./intel-gpu-freq.sh -s 70% --cpu-set-max 65% -g all -d
+  /intel-gpu-freq.sh -s 70% --cpu-set-max 65% -g all -d
 fi
 
 # Increase freedreno hangcheck timer because it's right at the edge of the

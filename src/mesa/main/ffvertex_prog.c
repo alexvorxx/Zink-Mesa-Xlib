@@ -294,19 +294,6 @@ struct tnl_program {
 };
 
 static nir_variable *
-find_state_var(nir_shader *s,
-               gl_state_index16 tokens[STATE_LENGTH])
-{
-   nir_foreach_variable_with_modes(var, s, nir_var_uniform) {
-      if (var->num_state_slots == 1 &&
-          !memcmp(var->state_slots[0].tokens, tokens,
-                  sizeof(var->state_slots[0].tokens)))
-         return var;
-   }
-   return NULL;
-}
-
-static nir_variable *
 register_state_var(struct tnl_program *p,
                    gl_state_index s0,
                    gl_state_index s1,
@@ -319,7 +306,7 @@ register_state_var(struct tnl_program *p,
    tokens[1] = s1;
    tokens[2] = s2;
    tokens[3] = s3;
-   nir_variable *var = find_state_var(p->b->shader, tokens);
+   nir_variable *var = nir_find_state_variable(p->b->shader, tokens);
    if (var)
       return var;
 
